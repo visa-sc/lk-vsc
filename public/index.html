@@ -1,1 +1,581 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Личный кабинет клиента</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      background: radial-gradient(circle at top, #ffffff 0%, #f5f5f7 42%, #eef1f4 100%);
+      color: #1d1d1f;
+      min-height: 100vh;
+    }
+
+    .page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .shell {
+      width: 100%;
+      max-width: 920px;
+      border-radius: 32px;
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      overflow: hidden;
+    }
+
+    .login-screen {
+      padding: 44px;
+    }
+
+    .cabinet-screen {
+      display: none;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.05);
+      color: #6e6e73;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 18px;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 42px;
+      line-height: 1.05;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .subtitle {
+      margin: 14px 0 0;
+      max-width: 560px;
+      font-size: 17px;
+      line-height: 1.5;
+      color: #6e6e73;
+    }
+
+    .form {
+      margin-top: 32px;
+      display: grid;
+      gap: 18px;
+      max-width: 520px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .label {
+      font-size: 14px;
+      font-weight: 600;
+      color: #3a3a3c;
+    }
+
+    .input {
+      width: 100%;
+      height: 56px;
+      border: 1px solid rgba(60, 60, 67, 0.16);
+      border-radius: 18px;
+      padding: 0 18px;
+      background: rgba(255, 255, 255, 0.88);
+      font-size: 16px;
+      color: #1d1d1f;
+      outline: none;
+      transition: 0.2s ease;
+    }
+
+    .input:focus {
+      border-color: rgba(0, 122, 255, 0.45);
+      box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.12);
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-top: 6px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 18px;
+      height: 56px;
+      padding: 0 22px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+
+    .btn:active {
+      transform: scale(0.99);
+    }
+
+    .btn-primary {
+      background: #0071e3;
+      color: white;
+      box-shadow: 0 12px 24px rgba(0, 113, 227, 0.22);
+    }
+
+    .btn-primary:hover {
+      background: #0077ed;
+    }
+
+    .btn-secondary {
+      background: rgba(0, 0, 0, 0.05);
+      color: #1d1d1f;
+      height: 46px;
+      padding: 0 16px;
+      border-radius: 14px;
+      box-shadow: none;
+      width: auto;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(0, 0, 0, 0.08);
+    }
+
+    .hint {
+      font-size: 14px;
+      color: #86868b;
+    }
+
+    .error-box {
+      display: none;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255, 59, 48, 0.10);
+      color: #b42318;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .cabinet-top {
+      padding: 28px 32px;
+      border-bottom: 1px solid rgba(60, 60, 67, 0.10);
+      background: rgba(255, 255, 255, 0.55);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .cabinet-top-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .cabinet-title {
+      margin: 0;
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .cabinet-subtitle {
+      margin: 8px 0 0;
+      color: #6e6e73;
+      font-size: 15px;
+    }
+
+    .cabinet-content {
+      padding: 28px 32px 34px;
+    }
+
+    .hero-status {
+      padding: 24px;
+      border-radius: 28px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(246,247,249,0.95) 100%);
+      border: 1px solid rgba(60, 60, 67, 0.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.65);
+      margin-bottom: 18px;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    .chip-1 {
+      background: rgba(255, 159, 10, 0.14);
+      color: #9a6700;
+    }
+
+    .chip-2 {
+      background: rgba(0, 122, 255, 0.12);
+      color: #005ecb;
+    }
+
+    .chip-3 {
+      background: rgba(52, 199, 89, 0.14);
+      color: #187d35;
+    }
+
+    .status-main-title {
+      margin: 0 0 10px;
+      font-size: 32px;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+    }
+
+    .status-main-text {
+      margin: 0;
+      max-width: 700px;
+      font-size: 16px;
+      line-height: 1.6;
+      color: #6e6e73;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .meta-card {
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(60, 60, 67, 0.08);
+    }
+
+    .meta-label {
+      font-size: 13px;
+      color: #86868b;
+      margin-bottom: 8px;
+    }
+
+    .meta-value {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #1d1d1f;
+      word-break: break-word;
+    }
+
+    .section-title {
+      margin: 18px 0 14px;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 14px;
+    }
+
+    .timeline-step {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 14px;
+      align-items: start;
+      padding: 18px;
+      border-radius: 24px;
+      border: 1px solid rgba(60, 60, 67, 0.08);
+      background: rgba(255,255,255,0.62);
+      opacity: 0.52;
+      transform: scale(0.995);
+      transition: 0.2s ease;
+    }
+
+    .timeline-step.done,
+    .timeline-step.active {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .timeline-step.done {
+      background: rgba(52, 199, 89, 0.09);
+      border-color: rgba(52, 199, 89, 0.18);
+    }
+
+    .timeline-step.active {
+      background: rgba(0, 122, 255, 0.08);
+      border-color: rgba(0, 122, 255, 0.18);
+      box-shadow: 0 10px 24px rgba(0, 122, 255, 0.08);
+    }
+
+    .dot {
+      width: 18px;
+      height: 18px;
+      margin-top: 4px;
+      border-radius: 50%;
+      background: #d2d2d7;
+    }
+
+    .timeline-step.done .dot {
+      background: #34c759;
+    }
+
+    .timeline-step.active .dot {
+      background: #007aff;
+      box-shadow: 0 0 0 8px rgba(0, 122, 255, 0.10);
+    }
+
+    .step-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #1d1d1f;
+      margin-bottom: 6px;
+    }
+
+    .step-text {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #6e6e73;
+    }
+
+    @media (max-width: 760px) {
+      .page {
+        padding: 14px;
+      }
+
+      .login-screen,
+      .cabinet-top,
+      .cabinet-content {
+        padding-left: 20px;
+        padding-right: 20px;
+      }
+
+      .title {
+        font-size: 34px;
+      }
+
+      .cabinet-title {
+        font-size: 24px;
+      }
+
+      .status-main-title {
+        font-size: 28px;
+      }
+
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .shell {
+        border-radius: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="shell">
+      <div id="loginScreen" class="login-screen">
+        <div class="eyebrow">Visa Cabinet</div>
+        <h1 class="title">Личный кабинет клиента</h1>
+        <p class="subtitle">Введите номер телефона и номер договора, чтобы увидеть текущий этап визового сопровождения.</p>
+
+        <div class="form">
+          <div class="field">
+            <label class="label" for="phone">Телефон</label>
+            <input class="input" id="phone" type="text" placeholder="+7 (999) 123-45-67">
+          </div>
+
+          <div class="field">
+            <label class="label" for="contract">Номер договора</label>
+            <input class="input" id="contract" type="text" placeholder="111, 222 или 333">
+          </div>
+
+          <div class="actions">
+            <button id="loginBtn" class="btn btn-primary" type="button">Открыть кабинет</button>
+            <div class="hint">Тестовые договоры: 111, 222, 333</div>
+            <div id="errorBox" class="error-box"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="cabinetScreen" class="cabinet-screen">
+        <div class="cabinet-top">
+          <div class="cabinet-top-row">
+            <div>
+              <h2 class="cabinet-title">Кабинет клиента</h2>
+              <p class="cabinet-subtitle">Статус по договору и текущий этап процесса</p>
+            </div>
+            <button id="backBtn" class="btn btn-secondary" type="button">Назад</button>
+          </div>
+        </div>
+
+        <div class="cabinet-content">
+          <div class="hero-status">
+            <div id="statusChip" class="status-chip">Этап</div>
+            <h3 id="statusMainTitle" class="status-main-title">—</h3>
+            <p id="statusMainText" class="status-main-text">—</p>
+          </div>
+
+          <div class="meta-grid">
+            <div class="meta-card">
+              <div class="meta-label">Номер договора</div>
+              <div id="contractValue" class="meta-value">—</div>
+            </div>
+
+            <div class="meta-card">
+              <div class="meta-label">Телефон клиента</div>
+              <div id="phoneValue" class="meta-value" style="font-size:17px;">—</div>
+            </div>
+
+            <div class="meta-card">
+              <div class="meta-label">Текущий этап</div>
+              <div id="stageValue" class="meta-value">—</div>
+            </div>
+          </div>
+
+          <div class="section-title">Этапы сопровождения</div>
+
+          <div class="timeline">
+            <div id="step1" class="timeline-step">
+              <div class="dot"></div>
+              <div>
+                <div class="step-title">Документы получены</div>
+                <div class="step-text">Мы получили документы от клиента и проверяем комплект перед следующим этапом.</div>
+              </div>
+            </div>
+
+            <div id="step2" class="timeline-step">
+              <div class="dot"></div>
+              <div>
+                <div class="step-title">Заявка в обработке</div>
+                <div class="step-text">Кейс передан в работу, документы поданы или находятся на стадии основного рассмотрения.</div>
+              </div>
+            </div>
+
+            <div id="step3" class="timeline-step">
+              <div class="dot"></div>
+              <div>
+                <div class="step-title">Виза готова</div>
+                <div class="step-text">Финальный этап завершён, можно переходить к выдаче паспорта и завершению кейса.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const loginScreen = document.getElementById("loginScreen");
+    const cabinetScreen = document.getElementById("cabinetScreen");
+    const loginBtn = document.getElementById("loginBtn");
+    const backBtn = document.getElementById("backBtn");
+    const errorBox = document.getElementById("errorBox");
+
+    function resetTimeline() {
+      document.getElementById("step1").className = "timeline-step";
+      document.getElementById("step2").className = "timeline-step";
+      document.getElementById("step3").className = "timeline-step";
+    }
+
+    function renderCabinet(data, phone, contract) {
+      document.getElementById("contractValue").textContent = contract;
+      document.getElementById("phoneValue").textContent = phone;
+      document.getElementById("stageValue").textContent = "Этап " + data.stage + " из 3";
+
+      const statusChip = document.getElementById("statusChip");
+      statusChip.textContent = "Этап " + data.stage + " из 3";
+      statusChip.className = "status-chip " + data.chipClass;
+
+      document.getElementById("statusMainTitle").textContent = data.title;
+      document.getElementById("statusMainText").textContent = data.text;
+
+      resetTimeline();
+
+      if (data.stage === 1) {
+        document.getElementById("step1").classList.add("active");
+      } else if (data.stage === 2) {
+        document.getElementById("step1").classList.add("done");
+        document.getElementById("step2").classList.add("active");
+      } else if (data.stage === 3) {
+        document.getElementById("step1").classList.add("done");
+        document.getElementById("step2").classList.add("done");
+        document.getElementById("step3").classList.add("active");
+      }
+
+      loginScreen.style.display = "none";
+      cabinetScreen.style.display = "block";
+    }
+
+    loginBtn.addEventListener("click", function () {
+      const phone = document.getElementById("phone").value.trim();
+      const contract = document.getElementById("contract").value.trim();
+
+      errorBox.style.display = "none";
+      errorBox.textContent = "";
+
+      if (phone === "" || contract === "") {
+        errorBox.style.display = "block";
+        errorBox.textContent = "Заполните телефон и номер договора";
+        return;
+      }
+
+      let data = null;
+
+      if (contract === "111") {
+        data = {
+          stage: 1,
+          chipClass: "chip-1",
+          title: "Документы получены",
+          text: "Ваш договор принят в работу. Сейчас команда проверяет комплект документов и готовит кейс к следующему шагу."
+        };
+      } else if (contract === "222") {
+        data = {
+          stage: 2,
+          chipClass: "chip-2",
+          title: "Заявка в обработке",
+          text: "Основной этап уже идёт. Документы находятся в работе, и мы ожидаем следующее обновление по процессу."
+        };
+      } else if (contract === "333") {
+        data = {
+          stage: 3,
+          chipClass: "chip-3",
+          title: "Виза готова",
+          text: "Процесс завершён успешно. Можно переходить к получению паспорта и финальному согласованию с клиентом."
+        };
+      } else {
+        errorBox.style.display = "block";
+        errorBox.textContent = "Договор не найден. Для теста введите 111, 222 или 333.";
+        return;
+      }
+
+      renderCabinet(data, phone, contract);
+    });
+
+    backBtn.addEventListener("click", function () {
+      cabinetScreen.style.display = "none";
+      loginScreen.style.display = "block";
+    });
+  </script>
+</body>
+</html>
 
