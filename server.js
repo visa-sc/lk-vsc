@@ -25,11 +25,16 @@ const upload = multer({
 });
 
 const {
-  AMO_SUBDOMAIN,
   AMO_ACCESS_TOKEN,
   YANDEX_DISK_TOKEN,
   YANDEX_DISK_ROOT = "Документы от клиентов из личного кабинета VSC"
 } = process.env;
+
+const AMO_SUBDOMAIN = String(process.env.AMO_SUBDOMAIN || "")
+  .trim()
+  .replace(/^https?:\/\//, "")
+  .replace(/\/.*$/, "")
+  .replace(/\.amocrm\.ru$/i, "");
 
 function normalizePhone(phone = "") {
   const digits = String(phone).replace(/\D/g, "");
