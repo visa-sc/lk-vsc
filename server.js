@@ -8,6 +8,11 @@ const multer = require("multer");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use((req, res, next) => {
+  console.log("REQUEST:", req.method, req.path, req.query || {});
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -40,12 +45,15 @@ function sanitizeFileName(name = "") {
 }
 
 async function amoGet(url, params = {}) {
+  console.log("AMO GET:", url, params);
+
   const response = await axios.get(url, {
     headers: {
       Authorization: `Bearer ${AMO_ACCESS_TOKEN}`
     },
     params
   });
+
   return response.data;
 }
 
@@ -102,12 +110,20 @@ async function uploadBufferToYandexDisk(buffer, diskPath, contentType = "applica
 async function getLeadsByPhone(phone) {
   const normalized = normalizePhone(phone);
 
+  console.log("PHONE RAW:", phone);
+  console.log("PHONE NORMALIZED:", normalized);
+  console.log("AMO_SUBDOMAIN:", AMO_SUBDOMAIN);
+
   if (!normalized) return [];
 
-  const contactSearch = await amoGet(`https://${AMO_SUBDOMAIN}.amocrm.ru/api/v4/contacts`, {
+  const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+
+  const contactSearch = await amoGet(`${baseUrl}/api/v4/contacts`, {
     query: normalized,
     with: "leads"
   });
+
+  console.log("CONTACT SEARCH RESPONSE:", JSON.stringify(contactSearch).slice(0, 3000));
 
   const contacts = contactSearch._embedded?.contacts || [];
   const leadIds = new Set();
@@ -119,12 +135,17 @@ async function getLeadsByPhone(phone) {
     }
   }
 
+  console.log("FOUND CONTACTS:", contacts.length);
+  console.log("FOUND LEAD IDS:", Array.from(leadIds));
+
   if (!leadIds.size) return [];
 
-  const leadsResponse = await amoGet(`https://${AMO_SUBDOMAIN}.amocrm.ru/api/v4/leads`, {
+  const leadsResponse = await amoGet(`${baseUrl}/api/v4/leads`, {
     "filter[id]": Array.from(leadIds).join(","),
     with: "contacts"
   });
+
+  console.log("LEADS RESPONSE:", JSON.stringify(leadsResponse).slice(0, 3000));
 
   return leadsResponse._embedded?.leads || [];
 }
@@ -132,6 +153,8 @@ async function getLeadsByPhone(phone) {
 app.get("/api/leads", async (req, res) => {
   try {
     const phone = req.query.phone || "";
+
+    console.log("HANDLER /api/leads phone =", phone);
 
     if (!phone) {
       return res.status(400).json({
@@ -154,6 +177,12 @@ app.get("/api/leads", async (req, res) => {
       leads
     });
   } catch (error) {
+    console.error("API /api/leads error:");
+    console.error("message:", error.message);
+    console.error("status:", error.response?.status);
+    console.error("", error.response?.data);
+    console.error("stack:", error.stack);
+
     return res.status(500).json({
       success: false,
       message: "Ошибка при получении сделок",
@@ -172,6 +201,9 @@ app.post(
   async (req, res) => {
     try {
       const phone = normalizePhone(req.body.phone || "");
+
+      console.log("HANDLER /upload-documents phone =", phone);
+      console.log("FILES:", Object.keys(req.files || {}));
 
       if (!phone) {
         return res.status(400).json({
@@ -220,6 +252,8 @@ app.post(
         const finalFileName = `${config.targetName}${ext}`;
         const diskPath = `${phoneFolder}/${finalFileName}`;
 
+        console.log("UPLOAD TO YANDEX:", diskPath);
+
         await uploadBufferToYandexDisk(file.buffer, diskPath, file.mimetype);
 
         uploadedFiles.push({
@@ -243,6 +277,12 @@ app.post(
         uploadedFiles
       });
     } catch (error) {
+      console.error("API /upload-documents error:");
+      console.error("message:", error.message);
+      console.error("status:", error.response?.status);
+      console.error("", error.response?.data);
+      console.error("stack:", error.stack);
+
       return res.status(500).json({
         success: false,
         message: "Ошибка загрузки документов",
