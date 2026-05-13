@@ -11,364 +11,420 @@
 
     body {
       margin: 0;
-      font-family: Inter, Arial, sans-serif;
-      background:
-        radial-gradient(circle at top left, #eef4ff 0%, #f7f8fc 35%, #f4f5f9 100%);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f6fb;
       color: #1f2937;
     }
 
-    .page {
-      min-height: 100vh;
-      padding: 40px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .app {
-      width: 100%;
-      max-width: 980px;
-      background: rgba(255, 255, 255, 0.88);
-      backdrop-filter: blur(14px);
-      border: 1px solid rgba(255, 255, 255, 0.7);
-      border-radius: 28px;
-      box-shadow: 0 30px 80px rgba(31, 41, 55, 0.12);
-      overflow: hidden;
-    }
-
-    .hero {
-      padding: 32px;
-      border-bottom: 1px solid #eceff5;
-      background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
-    }
-
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-      color: #5b6475;
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: #eef2ff;
-      margin-bottom: 16px;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: 40px;
-      line-height: 1.05;
-      color: #111827;
-    }
-
-    .hero p {
-      margin: 12px 0 0;
-      max-width: 620px;
-      color: #667085;
-      font-size: 16px;
-      line-height: 1.6;
-    }
-
-    .content {
-      padding: 32px;
-      display: grid;
-      gap: 24px;
-    }
-
-    .search-box {
-      background: #f8fafc;
-      border: 1px solid #e5e7eb;
-      border-radius: 22px;
+    .wrap {
+      max-width: 1120px;
+      margin: 36px auto;
       padding: 20px;
-    }
-
-    .search-box form {
-      display: grid;
-      grid-template-columns: 1fr 180px;
-      gap: 12px;
-    }
-
-    .search-box input {
-      width: 100%;
-      padding: 16px 18px;
-      border: 1px solid #d7dce5;
-      border-radius: 14px;
-      font-size: 16px;
-      background: white;
-      outline: none;
-    }
-
-    .search-box input:focus {
-      border-color: #8098ff;
-      box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
-    }
-
-    .search-box button {
-      border: none;
-      border-radius: 14px;
-      background: linear-gradient(135deg, #111827 0%, #1f2a44 100%);
-      color: white;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      padding: 16px 18px;
-    }
-
-    .search-box button:hover {
-      opacity: 0.96;
-    }
-
-    .panel {
-      display: none;
-      gap: 24px;
-    }
-
-    .panel.show {
-      display: grid;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 320px 1fr;
-      gap: 24px;
     }
 
     .card {
       background: #ffffff;
-      border: 1px solid #e9edf3;
-      border-radius: 24px;
-      padding: 24px;
-      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+      border: 1px solid #e7eaf1;
+      border-radius: 26px;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.06);
+      overflow: hidden;
     }
 
-    .card h2 {
-      margin: 0 0 18px;
-      font-size: 20px;
+    .hero {
+      padding: 26px 28px 22px;
+      border-bottom: 1px solid #eef1f5;
     }
 
-    .info-item {
-      margin-bottom: 18px;
-    }
-
-    .info-label {
-      font-size: 13px;
-      color: #7a8598;
-      margin-bottom: 6px;
-    }
-
-    .info-value {
-      font-size: 18px;
-      font-weight: 600;
-      color: #111827;
-      line-height: 1.4;
-    }
-
-    .status-chip {
+    .badge {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      padding: 10px 14px;
+      padding: 7px 12px;
       border-radius: 999px;
-      background: #fff4e8;
-      color: #9a5b00;
-      font-weight: 700;
-      font-size: 14px;
+      background: #f0eefb;
+      color: #73708b;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 14px;
     }
 
-    .pipeline-wrap {
-      display: grid;
-      gap: 18px;
+    h1 {
+      margin: 0 0 10px;
+      font-size: 34px;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      color: #101828;
     }
 
-    .pipeline-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-
-    .pipeline-title {
+    .sub {
       margin: 0;
-      font-size: 24px;
+      max-width: 680px;
+      font-size: 14px;
+      line-height: 1.65;
+      color: #667085;
+    }
+
+    .search {
+      padding: 22px 28px 8px;
+    }
+
+    .search-row {
+      display: flex;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid #e8ebf1;
+      border-radius: 22px;
+      background: #fbfcfe;
+    }
+
+    .search-row input {
+      flex: 1;
+      height: 56px;
+      border: 1px solid #d8dee8;
+      border-radius: 16px;
+      padding: 0 18px;
+      font-size: 18px;
+      font-weight: 500;
+      outline: none;
+      color: #111827;
+      background: #fff;
+    }
+
+    .search-row input:focus {
+      border-color: #b9c4d6;
+      box-shadow: 0 0 0 4px rgba(17, 24, 39, 0.04);
+    }
+
+    .search-row button {
+      min-width: 170px;
+      height: 56px;
+      border: none;
+      border-radius: 16px;
+      background: #111a39;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+
+    .search-row button:hover {
+      background: #0d1530;
+    }
+
+    .search-row button:disabled {
+      opacity: 0.7;
+      cursor: default;
+    }
+
+    .message {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 14px;
+      line-height: 1.5;
+      display: none;
+    }
+
+    .message.error {
+      display: block;
+      background: #fff1f2;
+      color: #be123c;
+      border: 1px solid #fecdd3;
+    }
+
+    .message.info {
+      display: block;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: 290px 1fr;
+      gap: 18px;
+      padding: 18px 28px 28px;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #e6eaf0;
+      border-radius: 22px;
+      padding: 20px;
+      min-height: 320px;
+    }
+
+    .panel h2 {
+      margin: 0 0 16px;
+      font-size: 18px;
+      line-height: 1.2;
       color: #111827;
     }
 
-    .pipeline-subtitle {
-      margin: 8px 0 0;
-      color: #6b7280;
-      line-height: 1.5;
-      font-size: 15px;
+    .field {
+      margin-bottom: 14px;
     }
 
-    .steps {
-      display: grid;
-      gap: 14px;
+    .field:last-child {
+      margin-bottom: 0;
+    }
+
+    .label {
+      font-size: 12px;
+      color: #98a2b3;
+      margin-bottom: 5px;
+    }
+
+    .value {
+      font-size: 15px;
+      line-height: 1.45;
+      font-weight: 600;
+      color: #1f2937;
+      word-break: break-word;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #f8efe2;
+      color: #b46b1f;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .status-badge.success {
+      background: #eaf8ef;
+      color: #166534;
+    }
+
+    .timeline-note {
+      color: #6b7280;
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 22px;
+      max-width: 620px;
+    }
+
+    .timeline {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      padding-left: 4px;
     }
 
     .step {
       position: relative;
-      padding: 18px 18px 18px 54px;
-      border-radius: 18px;
-      border: 1px solid #e7ebf2;
-      background: #f8fafc;
-      transition: all 0.2s ease;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      padding: 0 0 18px 0;
+      color: #98a2b3;
+    }
+
+    .step:last-child {
+      padding-bottom: 0;
     }
 
     .step::before {
       content: "";
+      position: relative;
+      z-index: 2;
+      width: 18px;
+      height: 18px;
+      flex: 0 0 18px;
+      margin-top: 2px;
+      border-radius: 999px;
+      background: #fff;
+      border: 2px solid #d0d5dd;
+      box-shadow: 0 0 0 6px #fff;
+    }
+
+    .step:not(:last-child)::after {
+      content: "";
       position: absolute;
-      left: 22px;
-      top: 22px;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: #c6cfdb;
+      left: 8px;
+      top: 24px;
+      width: 2px;
+      height: calc(100% - 6px);
+      background: #e5e7eb;
+      z-index: 1;
     }
 
-    .step.current {
-      background: linear-gradient(135deg, #fff7ed 0%, #fff1db 100%);
-      border-color: #f1c27d;
-      box-shadow: 0 10px 24px rgba(245, 158, 11, 0.12);
+    .step-content {
+      padding-top: 0;
     }
 
-    .step.current::before {
-      background: #f59e0b;
-      box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.15);
+    .step-title {
+      font-size: 14px;
+      line-height: 1.45;
+      font-weight: 600;
+      color: #98a2b3;
     }
 
-    .step.done {
-      background: #eefbf3;
-      border-color: #bde5ca;
+    .step.done::before,
+    .step.active::before {
+      background: #16a34a;
+      border-color: #16a34a;
     }
 
-    .step.done::before {
+    .step.done::after,
+    .step.active::after {
       background: #16a34a;
     }
 
-    .step-name {
+    .step.done .step-title,
+    .step.active .step-title {
+      color: #166534;
+    }
+
+    .step.active .step-title {
       font-weight: 700;
-      font-size: 16px;
-      color: #111827;
-      margin-bottom: 6px;
     }
 
-    .step-meta {
+    .empty-note {
       font-size: 14px;
-      color: #6b7280;
+      color: #98a2b3;
     }
 
-    .loading,
-    .error {
-      display: none;
-      padding: 16px 18px;
-      border-radius: 16px;
-      font-weight: 600;
-    }
-
-    .loading.show {
-      display: block;
-      background: #eef2ff;
-      color: #3730a3;
-    }
-
-    .error.show {
-      display: block;
-      background: #fff1f2;
-      color: #be123c;
-    }
-
-    @media (max-width: 860px) {
-      .grid {
+    @media (max-width: 920px) {
+      .content {
         grid-template-columns: 1fr;
       }
 
-      .search-box form {
-        grid-template-columns: 1fr;
+      .search-row {
+        flex-direction: column;
+      }
+
+      .search-row button {
+        width: 100%;
       }
 
       h1 {
-        font-size: 32px;
+        font-size: 28px;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .wrap {
+        margin: 20px auto;
+        padding: 12px;
       }
 
       .hero,
+      .search,
       .content {
-        padding: 22px;
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .content {
+        padding-bottom: 16px;
+      }
+
+      .panel {
+        padding: 16px;
+      }
+
+      .search-row input {
+        font-size: 16px;
       }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <div class="app">
+  <div class="wrap">
+    <div class="card">
       <div class="hero">
-        <div class="eyebrow">Личный кабинет клиента</div>
+        <div class="badge">Личный кабинет клиента</div>
         <h1>Статус визового дела</h1>
-        <p>
-          Введите телефон, и кабинет покажет клиента, сделку и текущий этап
-          обработки заявки прямо из amoCRM.
+        <p class="sub">
+          Введите телефон, и кабинет покажет клиента, сделку и текущий этап обработки заявки прямо из amoCRM.
         </p>
       </div>
 
+      <div class="search">
+        <div class="search-row">
+          <input
+            id="phoneInput"
+            type="text"
+            placeholder="Введите номер телефона"
+          />
+          <button id="checkBtn" type="button">Открыть статус</button>
+        </div>
+        <div id="messageBox" class="message"></div>
+      </div>
+
       <div class="content">
-        <div class="search-box">
-          <form id="statusForm">
-            <input
-              type="text"
-              id="phone"
-              placeholder="Введите номер телефона, например 79122698266"
-              required
-            />
-            <button type="submit">Открыть статус</button>
-          </form>
+        <div class="panel">
+          <h2>Данные клиента</h2>
+
+          <div class="field">
+            <div class="label">Клиент</div>
+            <div class="value" id="clientName">—</div>
+          </div>
+
+          <div class="field">
+            <div class="label">Телефон</div>
+            <div class="value" id="clientPhone">—</div>
+          </div>
+
+          <div class="field">
+            <div class="label">Сделка</div>
+            <div class="value" id="leadName">—</div>
+          </div>
+
+          <div class="field">
+            <div class="label">Воронка</div>
+            <div class="value" id="pipelineName">—</div>
+          </div>
+
+          <div class="field">
+            <div class="label">Текущий статус</div>
+            <div class="value">
+              <span class="status-badge" id="currentStatus">—</span>
+            </div>
+          </div>
         </div>
 
-        <div id="loading" class="loading">Загружаем данные клиента и этапы воронки...</div>
-        <div id="error" class="error"></div>
+        <div class="panel">
+          <h2>Пайплайн сделки</h2>
+          <div class="timeline-note">
+            Ниже показаны реальные этапы обработки. Текущий этап и все уже пройденные подсвечиваются зелёным.
+          </div>
 
-        <div id="panel" class="panel">
-          <div class="grid">
-            <div class="card">
-              <h2>Данные клиента</h2>
-
-              <div class="info-item">
-                <div class="info-label">Клиент</div>
-                <div class="info-value" id="clientName">—</div>
-              </div>
-
-              <div class="info-item">
-                <div class="info-label">Телефон</div>
-                <div class="info-value" id="clientPhone">—</div>
-              </div>
-
-              <div class="info-item">
-                <div class="info-label">Сделка</div>
-                <div class="info-value" id="leadName">—</div>
-              </div>
-
-              <div class="info-item">
-                <div class="info-label">Воронка</div>
-                <div class="info-value" id="pipelineName">—</div>
-              </div>
-
-              <div class="info-item">
-                <div class="info-label">Текущий статус</div>
-                <div class="status-chip" id="statusChip">—</div>
+          <div class="timeline" id="timeline">
+            <div class="step" data-step="Сбор документов">
+              <div class="step-content">
+                <div class="step-title">Сбор документов</div>
               </div>
             </div>
 
-            <div class="card pipeline-wrap">
-              <div class="pipeline-header">
-                <div>
-                  <h2 class="pipeline-title">Пайплайн сделки</h2>
-                  <p class="pipeline-subtitle">
-                    Ниже показаны реальные этапы воронки из amoCRM. Текущий этап
-                    подсвечен.
-                  </p>
-                </div>
+            <div class="step" data-step="Подготовка документов">
+              <div class="step-content">
+                <div class="step-title">Подготовка документов</div>
               </div>
+            </div>
 
-              <div id="steps" class="steps"></div>
+            <div class="step" data-step="Ожидание записи / подачи">
+              <div class="step-content">
+                <div class="step-title">Ожидание записи / подачи</div>
+              </div>
+            </div>
+
+            <div class="step" data-step="Документы поданы на рассмотрение в Консульство">
+              <div class="step-content">
+                <div class="step-title">Документы поданы на рассмотрение в Консульство</div>
+              </div>
+            </div>
+
+            <div class="step" data-step="Рассмотрение завершено">
+              <div class="step-content">
+                <div class="step-title">Рассмотрение завершено</div>
+              </div>
             </div>
           </div>
         </div>
@@ -377,79 +433,120 @@
   </div>
 
   <script>
-    const form = document.getElementById("statusForm");
-    const phoneInput = document.getElementById("phone");
-    const loading = document.getElementById("loading");
-    const error = document.getElementById("error");
-    const panel = document.getElementById("panel");
+    const phoneInput = document.getElementById("phoneInput");
+    const checkBtn = document.getElementById("checkBtn");
+    const messageBox = document.getElementById("messageBox");
 
     const clientName = document.getElementById("clientName");
     const clientPhone = document.getElementById("clientPhone");
     const leadName = document.getElementById("leadName");
     const pipelineName = document.getElementById("pipelineName");
-    const statusChip = document.getElementById("statusChip");
-    const steps = document.getElementById("steps");
+    const currentStatus = document.getElementById("currentStatus");
+    const steps = Array.from(document.querySelectorAll(".step"));
 
-    function renderSteps(statuses, currentStatusId) {
-      steps.innerHTML = "";
+    const stepOrder = [
+      "Сбор документов",
+      "Подготовка документов",
+      "Ожидание записи / подачи",
+      "Документы поданы на рассмотрение в Консульство",
+      "Рассмотрение завершено"
+    ];
 
-      const sorted = [...statuses].sort((a, b) => Number(a.sort) - Number(b.sort));
-      const currentIndex = sorted.findIndex((item) => Number(item.id) === Number(currentStatusId));
+    function setMessage(text, type = "info") {
+      messageBox.textContent = text;
+      messageBox.className = `message ${type}`;
+    }
 
-      sorted.forEach((status, index) => {
-        const div = document.createElement("div");
-        div.className = "step";
+    function clearMessage() {
+      messageBox.textContent = "";
+      messageBox.className = "message";
+    }
 
-        if (index < currentIndex) {
-          div.classList.add("done");
-        }
+    function clearCards() {
+      clientName.textContent = "—";
+      clientPhone.textContent = "—";
+      leadName.textContent = "—";
+      pipelineName.textContent = "—";
+      currentStatus.textContent = "—";
+      currentStatus.className = "status-badge";
 
-        if (Number(status.id) === Number(currentStatusId)) {
-          div.classList.add("current");
-        }
-
-        div.innerHTML = `
-          <div class="step-name">${status.name}</div>
-          <div class="step-meta">ID этапа: ${status.id}</div>
-        `;
-
-        steps.appendChild(div);
+      steps.forEach(step => {
+        step.classList.remove("done", "active");
       });
     }
 
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
+    function updateTimeline(status) {
+      const activeIndex = stepOrder.indexOf(status);
 
+      steps.forEach((step, index) => {
+        step.classList.remove("done", "active");
+
+        if (activeIndex === -1) return;
+
+        if (index < activeIndex) {
+          step.classList.add("done");
+        } else if (index === activeIndex) {
+          step.classList.add("active");
+        }
+      });
+    }
+
+    async function loadStatus() {
       const phone = phoneInput.value.trim();
 
-      loading.classList.add("show");
-      error.classList.remove("show");
-      panel.classList.remove("show");
+      if (!phone) {
+        setMessage("Введите номер телефона", "error");
+        return;
+      }
+
+      clearMessage();
+      clearCards();
+      currentStatus.textContent = "Загрузка...";
+      checkBtn.disabled = true;
+      checkBtn.textContent = "Загрузка...";
 
       try {
         const response = await fetch(`/client-status?phone=${encodeURIComponent(phone)}`);
         const data = await response.json();
 
-        loading.classList.remove("show");
+        clientName.textContent = data.contact_name || "Не найден";
+        clientPhone.textContent = data.phone || phone;
+        leadName.textContent = data.lead_name || "Нет сделки";
+        pipelineName.textContent = data.pipeline_name || "Не найдено";
 
-        if (!data.success) {
-          error.textContent = data.message || "Не удалось получить данные";
-          error.classList.add("show");
+        if (data.success && data.client_status) {
+          currentStatus.textContent = data.client_status;
+          currentStatus.className = "status-badge success";
+          updateTimeline(data.client_status);
+          setMessage("Статус успешно загружен", "info");
           return;
         }
 
-        clientName.textContent = data.contact_name || "—";
-        clientPhone.textContent = data.phone || "—";
-        leadName.textContent = data.lead_name || "—";
-        pipelineName.textContent = data.pipeline_name || "—";
-        statusChip.textContent = data.status_name || "Статус не найден";
+        if (data.hidden) {
+          currentStatus.textContent = "Статус скрыт";
+          currentStatus.className = "status-badge";
+          setMessage(data.message || "Статус скрыт", "info");
+          return;
+        }
 
-        renderSteps(data.statuses || [], data.status_id);
-        panel.classList.add("show");
-      } catch (err) {
-        loading.classList.remove("show");
-        error.textContent = "Ошибка соединения с сервером";
-        error.classList.add("show");
+        currentStatus.textContent = data.message || "Статус не найден";
+        currentStatus.className = "status-badge";
+        setMessage(data.message || "Статус не найден", "error");
+      } catch (error) {
+        currentStatus.textContent = "Ошибка";
+        currentStatus.className = "status-badge";
+        setMessage("Не удалось получить данные с сервера", "error");
+      } finally {
+        checkBtn.disabled = false;
+        checkBtn.textContent = "Открыть статус";
+      }
+    }
+
+    checkBtn.addEventListener("click", loadStatus);
+
+    phoneInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        loadStatus();
       }
     });
   </script>
