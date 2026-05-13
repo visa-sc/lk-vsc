@@ -1,238 +1,256 @@
-const express = require("express");
-const cors = require("cors");
-const axios = require("axios");
-const path = require("path");
 require("dotenv").config();
+
+const express = require("express");
+const path = require("path");
+const axios = require("axios");
+const multer = require("multer");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
-const STATUS_MAP = {
-  "Отдел продаж": {
-    "Ещё не связывались": { client_status: "Сбор документов" },
-    "Ещё не связывались (для повторных сделок)": { client_status: "Сбор документов" },
-    "Новый после Первой линии": { client_status: "Сбор документов" },
-    "Недозвон": { client_status: "Сбор документов" },
-    "Работа в одно касание": { client_status: "Сбор документов" },
-    "Консультация": { client_status: "Сбор документов" },
-    "Рабочая виза": { client_status: "Сбор документов" },
-    "Юридическое лицо": { client_status: "Сбор документов" },
-    "США через рф": { client_status: "Сбор документов" },
-    "Отправлено на согласование партнеру": { client_status: "Сбор документов" },
-    "Контакт передан партнеру": { client_status: "Сбор документов" },
-    "Ожидаем оплату комиссии": { client_status: "Сбор документов" },
-    "Пришлёт документы на почту": { client_status: "Сбор документов" },
-    "Сбор Документов": { client_status: "Сбор документов" },
-    "Часть оплаты по ВНЖ": { client_status: "Документы поданы на рассмотрение в Консульство" },
-    "Успешно реализовано (для ВНЖ)": { client_status: "Рассмотрение завершено" },
-    "Дубль": { hidden: true },
-    "Партнеры и подрядчики": { hidden: true },
-    "Мусор": { hidden: true },
-    "Мусор Китай (тур и не рф)": { hidden: true },
-    "МУСОР ВНЖ(для старых сделок, не использу...)": { hidden: true },
-    "Спам": { hidden: true },
-    "Закрыто и не реализовано": { hidden: true }
-  },
-
-  "Отдел Оформления": {
-    "Принято в работу": { client_status: "Подготовка документов" },
-    "Согласование документов": { client_status: "Подготовка документов" },
-    "Сбор оплачен": { client_status: "Подготовка документов" },
-    "Исправить": { client_status: "Подготовка документов" },
-    "Пакет документов готов": { client_status: "Подготовка документов" },
-    "Ожидает записи вручную": { client_status: "Ожидание записи / подачи" },
-    "Ожидает записи через Бота": { client_status: "Ожидание записи / подачи" },
-    "Запись сделана": { client_status: "Ожидание записи / подачи" },
-    "Оформлен выкуп": { client_status: "Ожидание записи / подачи" },
-    "Электронное рассмотрение": { client_status: "Документы поданы на рассмотрение в Консульство" },
-    "На паузе по просьбе Клиента": { client_status: "Ожидание записи / подачи" },
-    "ОЖИДАЕТ РЕШЕНИЯ О ВОЗВРАТЕ": { hidden: true },
-    "Закрыто и не реализовано": { hidden: true }
-  },
-
-  "Отдел по работе с Клиентами": {
-    "Визит в офис без оплаты": { client_status: "Сбор документов" },
-    "Произведена оплата": { client_status: "Подготовка документов" },
-    "Сбор документов для ОО": { client_status: "Подготовка документов" },
-    "Сбор дополнительных документов для ОО": { client_status: "Подготовка документов" },
-    "Электронные документы переданы в Отдел ...": { client_status: "Подготовка документов" },
-    "Принято в работу после ОО": { client_status: "Подготовка документов" },
-    "Ожидает передачи на рассмотрение в Консульство": { client_status: "Ожидание записи / подачи" },
-    "Документы готовы к личной подаче": { client_status: "Ожидание записи / подачи" },
-    "Передано Клиенту для личной подачи": { client_status: "Ожидание записи / подачи" },
-    "На рассмотрении в Консульстве": { client_status: "Документы поданы на рассмотрение в Консульство" },
-    "Документы поданы лично Заявителем": { client_status: "Документы поданы на рассмотрение в Консульство" },
-    "Паспорт готов": { client_status: "Рассмотрение завершено" },
-    "Успешно реализовано": { client_status: "Рассмотрение завершено" },
-    "Возврат": { client_status: "Рассмотрение завершено" },
-    "Доплата": { hidden: true },
-    "Закрыто и не реализовано": { hidden: true }
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 20 * 1024 * 1024
   }
-};
+});
 
-function normalizePipelineName(name = "") {
-  const value = name.trim().toLowerCase();
+const {
+  AMO_SUBDOMAIN,
+  AMO_ACCESS_TOKEN,
+  YANDEX_DISK_TOKEN,
+  YANDEX_DISK_ROOT = "Документы от клиентов из личного кабинета VSC"
+} = process.env;
 
-  if (value.includes("отдел продаж")) return "Отдел продаж";
-  if (value.includes("отдел оформления")) return "Отдел Оформления";
-  if (value.includes("отдел по работе с клиент")) return "Отдел по работе с Клиентами";
-
-  return name.trim();
+function normalizePhone(phone = "") {
+  const digits = String(phone).replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 11 && digits.startsWith("8")) {
+    return `7${digits.slice(1)}`;
+  }
+  return digits;
 }
 
-function getClientStatus(pipelineName = "", statusName = "") {
-  const normalizedPipeline = normalizePipelineName(pipelineName);
-  const pipelineMap = STATUS_MAP[normalizedPipeline];
-
-  if (!pipelineMap) {
-    return { client_status: "Сбор документов", hidden: false };
-  }
-
-  const mapped = pipelineMap[statusName];
-
-  if (!mapped) {
-    return { client_status: "Сбор документов", hidden: false };
-  }
-
-  return {
-    client_status: mapped.client_status || null,
-    hidden: mapped.hidden === true
-  };
+function sanitizeFileName(name = "") {
+  return String(name).replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").trim();
 }
 
-function formatLeadDate(createdAt) {
-  if (!createdAt) return "без даты";
-  const date = new Date(createdAt * 1000);
-  return date.toLocaleDateString("ru-RU");
-}
-
-async function amoGet(url) {
+async function amoGet(url, params = {}) {
   const response = await axios.get(url, {
     headers: {
-      Authorization: `Bearer ${process.env.AMO_ACCESS_TOKEN}`,
-      "Content-Type": "application/json"
-    }
+      Authorization: `Bearer ${AMO_ACCESS_TOKEN}`
+    },
+    params
   });
-
   return response.data;
 }
 
-app.get("/client-status", async (req, res) => {
+async function yandexRequest(config) {
+  return axios({
+    ...config,
+    headers: {
+      Authorization: `OAuth ${YANDEX_DISK_TOKEN}`,
+      ...(config.headers || {})
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity
+  });
+}
+
+async function ensureYandexFolder(folderPath) {
   try {
-    const phone = req.query.phone;
+    await yandexRequest({
+      method: "PUT",
+      url: "https://cloud-api.yandex.net/v1/disk/resources",
+      params: {
+        path: folderPath
+      }
+    });
+  } catch (error) {
+    if (error.response?.status === 409) {
+      return;
+    }
+    throw error;
+  }
+}
+
+async function uploadBufferToYandexDisk(buffer, diskPath, contentType = "application/octet-stream") {
+  const uploadLinkResponse = await yandexRequest({
+    method: "GET",
+    url: "https://cloud-api.yandex.net/v1/disk/resources/upload",
+    params: {
+      path: diskPath,
+      overwrite: "true"
+    }
+  });
+
+  const uploadUrl = uploadLinkResponse.data.href;
+
+  await axios.put(uploadUrl, buffer, {
+    headers: {
+      "Content-Type": contentType
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity
+  });
+}
+
+async function getLeadsByPhone(phone) {
+  const normalized = normalizePhone(phone);
+
+  if (!normalized) return [];
+
+  const contactSearch = await amoGet(`https://${AMO_SUBDOMAIN}.amocrm.ru/api/v4/contacts`, {
+    query: normalized,
+    with: "leads"
+  });
+
+  const contacts = contactSearch._embedded?.contacts || [];
+  const leadIds = new Set();
+
+  for (const contact of contacts) {
+    const linkedLeads = contact._embedded?.leads || [];
+    for (const lead of linkedLeads) {
+      if (lead.id) leadIds.add(lead.id);
+    }
+  }
+
+  if (!leadIds.size) return [];
+
+  const leadsResponse = await amoGet(`https://${AMO_SUBDOMAIN}.amocrm.ru/api/v4/leads`, {
+    "filter[id]": Array.from(leadIds).join(","),
+    with: "contacts"
+  });
+
+  return leadsResponse._embedded?.leads || [];
+}
+
+app.get("/api/leads", async (req, res) => {
+  try {
+    const phone = req.query.phone || "";
 
     if (!phone) {
-      return res.json({
+      return res.status(400).json({
         success: false,
-        message: "Телефон не передан"
+        message: "Не передан phone"
       });
     }
 
-    const contactData = await amoGet(
-      `https://${process.env.AMO_SUBDOMAIN}/api/v4/contacts?query=${encodeURIComponent(phone)}`
-    );
-
-    const contact = contactData?._embedded?.contacts?.[0];
-
-    if (!contact) {
-      return res.json({
+    if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
+      return res.status(500).json({
         success: false,
-        message: "Контакт не найден"
+        message: "Не настроены переменные amoCRM"
       });
     }
 
-    const linksData = await amoGet(
-      `https://${process.env.AMO_SUBDOMAIN}/api/v4/contacts/${contact.id}/links`
-    );
-
-    const leadLinks =
-      linksData?._embedded?.links?.filter((item) => item.to_entity_type === "leads") || [];
-
-    if (!leadLinks.length) {
-      return res.json({
-        success: true,
-        phone,
-        contact_id: contact.id,
-        contact_name: contact.name || "",
-        deals: [],
-        message: "У контакта нет сделок"
-      });
-    }
-
-    const deals = [];
-
-    for (const link of leadLinks) {
-      const leadId = link.to_entity_id;
-
-      try {
-        const lead = await amoGet(
-          `https://${process.env.AMO_SUBDOMAIN}/api/v4/leads/${leadId}`
-        );
-
-        const pipelineId = lead.pipeline_id;
-        const statusId = lead.status_id;
-
-        const pipelineData = await amoGet(
-          `https://${process.env.AMO_SUBDOMAIN}/api/v4/leads/pipelines/${pipelineId}`
-        );
-
-        const pipelineName = pipelineData?.name || "";
-        const statuses = pipelineData?._embedded?.statuses || [];
-        const currentStatus = statuses.find((s) => s.id === statusId);
-        const statusName = currentStatus?.name || "";
-
-        const clientStatusData = getClientStatus(pipelineName, statusName);
-
-        if (clientStatusData.hidden) {
-          continue;
-        }
-
-        deals.push({
-          lead_id: lead.id,
-          lead_name: lead.name || "",
-          pipeline_name: pipelineName,
-          amo_status_name: statusName,
-          client_status: clientStatusData.client_status,
-          created_at: lead.created_at || null,
-          display_name: `Обращение от ${formatLeadDate(lead.created_at)}`
-        });
-      } catch (leadError) {
-        continue;
-      }
-    }
-
-    deals.sort((a, b) => {
-      const aTime = a.created_at || 0;
-      const bTime = b.created_at || 0;
-      return bTime - aTime;
-    });
+    const leads = await getLeadsByPhone(phone);
 
     return res.json({
       success: true,
-      phone,
-      contact_id: contact.id,
-      contact_name: contact.name || "",
-      deals,
-      message: deals.length ? "Сделки найдены" : "Нет доступных сделок для отображения"
+      leads
     });
   } catch (error) {
-    const amoMessage =
-      error?.response?.data?.detail ||
-      error?.response?.data?.title ||
-      error?.response?.data?.message ||
-      error.message;
-
     return res.status(500).json({
       success: false,
-      message: "Ошибка получения статуса",
-      error: amoMessage
+      message: "Ошибка при получении сделок",
+      error: error.response?.data || error.message
     });
   }
 });
+
+app.post(
+  "/upload-documents",
+  upload.fields([
+    { name: "passportFile", maxCount: 1 },
+    { name: "innerPassportFile", maxCount: 1 },
+    { name: "workFile", maxCount: 1 }
+  ]),
+  async (req, res) => {
+    try {
+      const phone = normalizePhone(req.body.phone || "");
+
+      if (!phone) {
+        return res.status(400).json({
+          success: false,
+          message: "Телефон не передан"
+        });
+      }
+
+      if (!YANDEX_DISK_TOKEN) {
+        return res.status(500).json({
+          success: false,
+          message: "Не задан YANDEX_DISK_TOKEN"
+        });
+      }
+
+      const rootFolder = YANDEX_DISK_ROOT;
+      const phoneFolder = `${rootFolder}/${phone}`;
+
+      await ensureYandexFolder(rootFolder);
+      await ensureYandexFolder(phoneFolder);
+
+      const fileConfigs = [
+        {
+          field: "passportFile",
+          targetName: "Заграничный паспорт"
+        },
+        {
+          field: "innerPassportFile",
+          targetName: "Внутренний паспорт"
+        },
+        {
+          field: "workFile",
+          targetName: "Справка с работы"
+        }
+      ];
+
+      const uploadedFiles = [];
+
+      for (const config of fileConfigs) {
+        const file = req.files?.[config.field]?.[0];
+        if (!file) continue;
+
+        const originalName = sanitizeFileName(file.originalname || "file");
+        const dotIndex = originalName.lastIndexOf(".");
+        const ext = dotIndex >= 0 ? originalName.slice(dotIndex) : "";
+        const finalFileName = `${config.targetName}${ext}`;
+        const diskPath = `${phoneFolder}/${finalFileName}`;
+
+        await uploadBufferToYandexDisk(file.buffer, diskPath, file.mimetype);
+
+        uploadedFiles.push({
+          field: config.field,
+          name: finalFileName,
+          path: diskPath
+        });
+      }
+
+      if (!uploadedFiles.length) {
+        return res.status(400).json({
+          success: false,
+          message: "Не выбраны файлы для загрузки"
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Документы успешно загружены на Яндекс.Диск",
+        folder: phoneFolder,
+        uploadedFiles
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: "Ошибка загрузки документов",
+        error: error.response?.data || error.message
+      });
+    }
+  }
+);
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
