@@ -57,7 +57,7 @@
 
     .sub {
       margin: 0;
-      max-width: 680px;
+      max-width: 700px;
       font-size: 14px;
       line-height: 1.65;
       color: #667085;
@@ -161,26 +161,60 @@
       color: #111827;
     }
 
-    .field {
-      margin-bottom: 14px;
+    .deals-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
 
-    .field:last-child {
-      margin-bottom: 0;
+    .deal-item {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+      border-radius: 16px;
+      padding: 14px 14px;
+      cursor: pointer;
+      transition: all 0.18s ease;
     }
 
-    .label {
-      font-size: 12px;
-      color: #98a2b3;
-      margin-bottom: 5px;
+    .deal-item:hover {
+      border-color: #cfd6e2;
+      background: #f4f7fb;
     }
 
-    .value {
-      font-size: 15px;
-      line-height: 1.45;
-      font-weight: 600;
+    .deal-item.active {
+      border-color: #c7ead2;
+      background: #eef9f1;
+    }
+
+    .deal-title {
+      font-size: 14px;
+      font-weight: 700;
       color: #1f2937;
-      word-break: break-word;
+      line-height: 1.4;
+      margin-bottom: 6px;
+    }
+
+    .deal-subtitle {
+      font-size: 12px;
+      color: #6b7280;
+      line-height: 1.5;
+    }
+
+    .empty-note {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #98a2b3;
+    }
+
+    .status-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
     }
 
     .status-badge {
@@ -198,6 +232,13 @@
     .status-badge.success {
       background: #eaf8ef;
       color: #166534;
+    }
+
+    .selected-deal-name {
+      font-size: 14px;
+      color: #667085;
+      line-height: 1.5;
+      margin-bottom: 18px;
     }
 
     .timeline-note {
@@ -254,10 +295,6 @@
       z-index: 1;
     }
 
-    .step-content {
-      padding-top: 0;
-    }
-
     .step-title {
       font-size: 14px;
       line-height: 1.45;
@@ -285,9 +322,77 @@
       font-weight: 700;
     }
 
-    .empty-note {
+    .docs-box {
+      margin-top: 26px;
+      padding-top: 22px;
+      border-top: 1px solid #eef1f5;
+      display: none;
+    }
+
+    .docs-box.visible {
+      display: block;
+    }
+
+    .docs-title {
+      margin: 0 0 14px;
       font-size: 14px;
+      line-height: 1.6;
+      font-weight: 400;
+      color: #667085;
+    }
+
+    .docs-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .upload-card {
+      position: relative;
+      border: 1px dashed #cfd6e2;
+      background: #fafbfc;
+      border-radius: 18px;
+      padding: 16px;
+      min-height: 118px;
+      transition: all 0.18s ease;
+    }
+
+    .upload-card:hover {
+      border-color: #b8c3d4;
+      background: #f5f8fb;
+    }
+
+    .upload-card input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .upload-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1f2937;
+      line-height: 1.4;
+      margin-bottom: 8px;
+      padding-right: 8px;
+    }
+
+    .upload-hint {
+      font-size: 12px;
+      line-height: 1.5;
       color: #98a2b3;
+      margin-bottom: 10px;
+    }
+
+    .upload-file-name {
+      font-size: 12px;
+      line-height: 1.45;
+      color: #166534;
+      word-break: break-word;
+      min-height: 18px;
     }
 
     @media (max-width: 920px) {
@@ -305,6 +410,10 @@
 
       h1 {
         font-size: 28px;
+      }
+
+      .docs-grid {
+        grid-template-columns: 1fr;
       }
     }
 
@@ -342,7 +451,7 @@
         <div class="badge">Личный кабинет клиента</div>
         <h1>Статус визового дела</h1>
         <p class="sub">
-          Введите телефон, и кабинет покажет клиента, сделку и текущий этап обработки заявки прямо из amoCRM.
+          Введите телефон, выберите нужное обращение и справа посмотрите текущий этап обработки.
         </p>
       </div>
 
@@ -360,71 +469,72 @@
 
       <div class="content">
         <div class="panel">
-          <h2>Данные клиента</h2>
-
-          <div class="field">
-            <div class="label">Клиент</div>
-            <div class="value" id="clientName">—</div>
-          </div>
-
-          <div class="field">
-            <div class="label">Телефон</div>
-            <div class="value" id="clientPhone">—</div>
-          </div>
-
-          <div class="field">
-            <div class="label">Сделка</div>
-            <div class="value" id="leadName">—</div>
-          </div>
-
-          <div class="field">
-            <div class="label">Воронка</div>
-            <div class="value" id="pipelineName">—</div>
-          </div>
-
-          <div class="field">
-            <div class="label">Текущий статус</div>
-            <div class="value">
-              <span class="status-badge" id="currentStatus">—</span>
-            </div>
+          <h2>Обращения клиента</h2>
+          <div id="dealsList" class="deals-list">
+            <div class="empty-note">Введите телефон и нажмите «Открыть статус».</div>
           </div>
         </div>
 
         <div class="panel">
-          <h2>Пайплайн сделки</h2>
+          <div class="status-head">
+            <h2 style="margin: 0;">Статус обращения</h2>
+            <span class="status-badge" id="currentStatus">—</span>
+          </div>
+
+          <div class="selected-deal-name" id="selectedDealName">
+            Выберите обращение слева.
+          </div>
+
           <div class="timeline-note">
             Ниже показаны реальные этапы обработки. Текущий этап и все уже пройденные подсвечиваются зелёным.
           </div>
 
           <div class="timeline" id="timeline">
             <div class="step" data-step="Сбор документов">
-              <div class="step-content">
-                <div class="step-title">Сбор документов</div>
-              </div>
+              <div class="step-title">Сбор документов</div>
             </div>
 
             <div class="step" data-step="Подготовка документов">
-              <div class="step-content">
-                <div class="step-title">Подготовка документов</div>
-              </div>
+              <div class="step-title">Подготовка документов</div>
             </div>
 
             <div class="step" data-step="Ожидание записи / подачи">
-              <div class="step-content">
-                <div class="step-title">Ожидание записи / подачи</div>
-              </div>
+              <div class="step-title">Ожидание записи / подачи</div>
             </div>
 
             <div class="step" data-step="Документы поданы на рассмотрение в Консульство">
-              <div class="step-content">
-                <div class="step-title">Документы поданы на рассмотрение в Консульство</div>
-              </div>
+              <div class="step-title">Документы поданы на рассмотрение в Консульство</div>
             </div>
 
             <div class="step" data-step="Рассмотрение завершено">
-              <div class="step-content">
-                <div class="step-title">Рассмотрение завершено</div>
-              </div>
+              <div class="step-title">Рассмотрение завершено</div>
+            </div>
+          </div>
+
+          <div class="docs-box" id="docsBox">
+            <p class="docs-title">От вас требуются документы</p>
+
+            <div class="docs-grid">
+              <label class="upload-card">
+                <input type="file" id="passportFile" />
+                <div class="upload-label">Заграничный паспорт</div>
+                <div class="upload-hint">Нажмите, чтобы загрузить файл</div>
+                <div class="upload-file-name" id="passportFileName"></div>
+              </label>
+
+              <label class="upload-card">
+                <input type="file" id="innerPassportFile" />
+                <div class="upload-label">Внутренний паспорт</div>
+                <div class="upload-hint">Нажмите, чтобы загрузить файл</div>
+                <div class="upload-file-name" id="innerPassportFileName"></div>
+              </label>
+
+              <label class="upload-card">
+                <input type="file" id="workFile" />
+                <div class="upload-label">Справка с работы</div>
+                <div class="upload-hint">Нажмите, чтобы загрузить файл</div>
+                <div class="upload-file-name" id="workFileName"></div>
+              </label>
             </div>
           </div>
         </div>
@@ -436,13 +546,19 @@
     const phoneInput = document.getElementById("phoneInput");
     const checkBtn = document.getElementById("checkBtn");
     const messageBox = document.getElementById("messageBox");
-
-    const clientName = document.getElementById("clientName");
-    const clientPhone = document.getElementById("clientPhone");
-    const leadName = document.getElementById("leadName");
-    const pipelineName = document.getElementById("pipelineName");
+    const dealsList = document.getElementById("dealsList");
     const currentStatus = document.getElementById("currentStatus");
+    const selectedDealName = document.getElementById("selectedDealName");
+    const docsBox = document.getElementById("docsBox");
     const steps = Array.from(document.querySelectorAll(".step"));
+
+    const passportFile = document.getElementById("passportFile");
+    const innerPassportFile = document.getElementById("innerPassportFile");
+    const workFile = document.getElementById("workFile");
+
+    const passportFileName = document.getElementById("passportFileName");
+    const innerPassportFileName = document.getElementById("innerPassportFileName");
+    const workFileName = document.getElementById("workFileName");
 
     const stepOrder = [
       "Сбор документов",
@@ -451,6 +567,9 @@
       "Документы поданы на рассмотрение в Консульство",
       "Рассмотрение завершено"
     ];
+
+    let currentDeals = [];
+    let selectedLeadId = null;
 
     function setMessage(text, type = "info") {
       messageBox.textContent = text;
@@ -462,13 +581,30 @@
       messageBox.className = "message";
     }
 
-    function clearCards() {
-      clientName.textContent = "—";
-      clientPhone.textContent = "—";
-      leadName.textContent = "—";
-      pipelineName.textContent = "—";
+    function resetUploads() {
+      passportFile.value = "";
+      innerPassportFile.value = "";
+      workFile.value = "";
+
+      passportFileName.textContent = "";
+      innerPassportFileName.textContent = "";
+      workFileName.textContent = "";
+    }
+
+    function toggleDocsBox(status) {
+      if (status === "Сбор документов") {
+        docsBox.classList.add("visible");
+      } else {
+        docsBox.classList.remove("visible");
+        resetUploads();
+      }
+    }
+
+    function resetTimeline() {
       currentStatus.textContent = "—";
       currentStatus.className = "status-badge";
+      selectedDealName.textContent = "Выберите обращение слева.";
+      toggleDocsBox("");
 
       steps.forEach(step => {
         step.classList.remove("done", "active");
@@ -491,7 +627,51 @@
       });
     }
 
-    async function loadStatus() {
+    function renderDeals() {
+      if (!currentDeals.length) {
+        dealsList.innerHTML = `<div class="empty-note">Нет доступных сделок для отображения.</div>`;
+        resetTimeline();
+        return;
+      }
+
+      dealsList.innerHTML = currentDeals.map(deal => {
+        const isActive = String(deal.lead_id) === String(selectedLeadId);
+        return `
+          <button class="deal-item ${isActive ? "active" : ""}" data-lead-id="${deal.lead_id}">
+            <div class="deal-title">${deal.display_name}</div>
+            <div class="deal-subtitle">${deal.pipeline_name || "Без воронки"}</div>
+          </button>
+        `;
+      }).join("");
+
+      document.querySelectorAll(".deal-item").forEach(button => {
+        button.addEventListener("click", () => {
+          const leadId = button.getAttribute("data-lead-id");
+          selectDeal(leadId);
+        });
+      });
+    }
+
+    function selectDeal(leadId) {
+      selectedLeadId = String(leadId);
+      const deal = currentDeals.find(item => String(item.lead_id) === String(leadId));
+
+      renderDeals();
+
+      if (!deal) {
+        resetTimeline();
+        return;
+      }
+
+      currentStatus.textContent = deal.client_status || "Статус не найден";
+      currentStatus.className = deal.client_status ? "status-badge success" : "status-badge";
+      selectedDealName.textContent = deal.display_name || "Выбранное обращение";
+
+      updateTimeline(deal.client_status || "");
+      toggleDocsBox(deal.client_status || "");
+    }
+
+    async function loadDeals() {
       const phone = phoneInput.value.trim();
 
       if (!phone) {
@@ -500,8 +680,11 @@
       }
 
       clearMessage();
-      clearCards();
-      currentStatus.textContent = "Загрузка...";
+      currentDeals = [];
+      selectedLeadId = null;
+      dealsList.innerHTML = `<div class="empty-note">Загрузка обращений...</div>`;
+      resetTimeline();
+
       checkBtn.disabled = true;
       checkBtn.textContent = "Загрузка...";
 
@@ -509,32 +692,26 @@
         const response = await fetch(`/client-status?phone=${encodeURIComponent(phone)}`);
         const data = await response.json();
 
-        clientName.textContent = data.contact_name || "Не найден";
-        clientPhone.textContent = data.phone || phone;
-        leadName.textContent = data.lead_name || "Нет сделки";
-        pipelineName.textContent = data.pipeline_name || "Не найдено";
-
-        if (data.success && data.client_status) {
-          currentStatus.textContent = data.client_status;
-          currentStatus.className = "status-badge success";
-          updateTimeline(data.client_status);
-          setMessage("Статус успешно загружен", "info");
+        if (!data.success) {
+          dealsList.innerHTML = `<div class="empty-note">Обращения не найдены.</div>`;
+          setMessage(data.message || "Не удалось получить данные", "error");
           return;
         }
 
-        if (data.hidden) {
-          currentStatus.textContent = "Статус скрыт";
-          currentStatus.className = "status-badge";
-          setMessage(data.message || "Статус скрыт", "info");
+        currentDeals = Array.isArray(data.deals) ? data.deals : [];
+
+        if (!currentDeals.length) {
+          dealsList.innerHTML = `<div class="empty-note">Нет доступных сделок для отображения.</div>`;
+          setMessage(data.message || "Нет доступных сделок", "info");
           return;
         }
 
-        currentStatus.textContent = data.message || "Статус не найден";
-        currentStatus.className = "status-badge";
-        setMessage(data.message || "Статус не найден", "error");
+        selectedLeadId = String(currentDeals[0].lead_id);
+        renderDeals();
+        selectDeal(selectedLeadId);
+        setMessage("Выберите нужное обращение слева.", "info");
       } catch (error) {
-        currentStatus.textContent = "Ошибка";
-        currentStatus.className = "status-badge";
+        dealsList.innerHTML = `<div class="empty-note">Ошибка загрузки.</div>`;
         setMessage("Не удалось получить данные с сервера", "error");
       } finally {
         checkBtn.disabled = false;
@@ -542,11 +719,21 @@
       }
     }
 
-    checkBtn.addEventListener("click", loadStatus);
+    function bindFileName(input, output) {
+      input.addEventListener("change", () => {
+        output.textContent = input.files && input.files[0] ? input.files[0].name : "";
+      });
+    }
+
+    bindFileName(passportFile, passportFileName);
+    bindFileName(innerPassportFile, innerPassportFileName);
+    bindFileName(workFile, workFileName);
+
+    checkBtn.addEventListener("click", loadDeals);
 
     phoneInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
-        loadStatus();
+        loadDeals();
       }
     });
   </script>
