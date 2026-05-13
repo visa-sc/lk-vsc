@@ -117,7 +117,7 @@
 
     .grid {
       display: grid;
-      grid-template-columns: 290px 1fr;
+      grid-template-columns: 320px 1fr;
       gap: 16px;
     }
 
@@ -457,7 +457,6 @@
       if (typeof lead.cabinet_stage_index === "number") {
         return lead.cabinet_stage_index;
       }
-
       return 0;
     }
 
@@ -490,8 +489,9 @@
       if (itemEl) itemEl.classList.add("active");
 
       const currentStageIndex = getCurrentStageIndex(lead);
+      const currentStageTitle = STAGES[currentStageIndex] || "Сбор документов";
 
-      statusText.textContent = `Вы выбрали ${getLeadLabel(lead)}. Текущий этап: ${STAGES[currentStageIndex]}.`;
+      statusText.textContent = `Вы выбрали ${getLeadLabel(lead)}. Текущий этап: ${currentStageTitle}.`;
       emptyStatus.style.display = "none";
       documentsBlock.style.display = "block";
       renderStages(currentStageIndex);
