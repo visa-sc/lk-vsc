@@ -36,6 +36,77 @@ const AMO_SUBDOMAIN = String(process.env.AMO_SUBDOMAIN || "")
   .replace(/\/.*$/, "")
   .replace(/\.amocrm\.ru$/i, "");
 
+const STATUS_MAP = {
+  "Отдел продаж": {
+    "Ещё не связывались": { client_status: "Сбор документов" },
+    "Ещё не связывались (для повторных сделок)": { client_status: "Сбор документов" },
+    "Новый после Первой линии": { client_status: "Сбор документов" },
+    "Недозвон": { client_status: "Сбор документов" },
+    "Работа в одно касание": { client_status: "Сбор документов" },
+    "Консультация": { client_status: "Сбор документов" },
+    "Рабочая виза": { client_status: "Сбор документов" },
+    "Юридическое лицо": { client_status: "Сбор документов" },
+    "США через рф": { client_status: "Сбор документов" },
+    "Отправлено на согласование партнеру": { client_status: "Сбор документов" },
+    "Контакт передан партнеру": { client_status: "Сбор документов" },
+    "Ожидаем оплату комиссии": { client_status: "Сбор документов" },
+    "Пришлёт документы на почту": { client_status: "Сбор документов" },
+    "Сбор Документов": { client_status: "Сбор документов" },
+    "Часть оплаты по ВНЖ": { client_status: "Документы поданы на рассмотрение в Консульство" },
+    "Успешно реализовано (для ВНЖ)": { client_status: "Рассмотрение завершено" },
+    "Дубль": { hidden: true },
+    "Партнеры и подрядчики": { hidden: true },
+    "Мусор": { hidden: true },
+    "Мусор Китай (тур и не рф)": { hidden: true },
+    "МУСОР ВНЖ(для старых сделок, не используем!)": { hidden: true },
+    "Спам": { hidden: true },
+    "Закрыто и не реализовано": { hidden: true }
+  },
+
+  "Отдел Оформления": {
+    "Принято в работу": { client_status: "Подготовка документов" },
+    "Согласование документов": { client_status: "Подготовка документов" },
+    "Сбор оплачен": { client_status: "Подготовка документов" },
+    "Исправить": { client_status: "Подготовка документов" },
+    "Пакет документов готов": { client_status: "Подготовка документов" },
+    "Ожидает записи вручную": { client_status: "Ожидание записи / подачи" },
+    "Ожидает записи через Бота": { client_status: "Ожидание записи / подачи" },
+    "Запись сделана": { client_status: "Ожидание записи / подачи" },
+    "Оформлен выкуп": { client_status: "Ожидание записи / подачи" },
+    "Электронное рассмотрение": { client_status: "Документы поданы на рассмотрение в Консульство" },
+    "На паузе по просьбе Клиента": { client_status: "Ожидание записи / подачи" },
+    "ОЖИДАЕТ РЕШЕНИЯ О ВОЗВРАТЕ": { hidden: true },
+    "Закрыто и не реализовано": { hidden: true }
+  },
+
+  "Отдел по работе с Клиентами": {
+    "Визит в офис без оплаты": { client_status: "Сбор документов" },
+    "Произведена оплата": { client_status: "Подготовка документов" },
+    "Сбор документов для ОО": { client_status: "Подготовка документов" },
+    "Сбор дополнительных документов для ОО": { client_status: "Подготовка документов" },
+    "Электронные документы переданы в Отдел Оформления": { client_status: "Подготовка документов" },
+    "Принято в работу после ОО": { client_status: "Подготовка документов" },
+    "Ожидает передачи на рассмотрение в Консульство": { client_status: "Ожидание записи / подачи" },
+    "Документы готовы к личной подаче": { client_status: "Ожидание записи / подачи" },
+    "Передано Клиенту для личной подачи": { client_status: "Ожидание записи / подачи" },
+    "На рассмотрении в Консульстве": { client_status: "Документы поданы на рассмотрение в Консульство" },
+    "Документы поданы лично Заявителем": { client_status: "Документы поданы на рассмотрение в Консульство" },
+    "Паспорт готов": { client_status: "Рассмотрение завершено" },
+    "Успешно реализовано": { client_status: "Рассмотрение завершено" },
+    "Возврат": { client_status: "Рассмотрение завершено" },
+    "Доплата": { hidden: true },
+    "Закрыто и не реализовано": { hidden: true }
+  }
+};
+
+const CABINET_STAGES = [
+  "Сбор документов",
+  "Подготовка документов",
+  "Ожидание записи / подачи",
+  "Документы поданы на рассмотрение в Консульство",
+  "Рассмотрение завершено"
+];
+
 function normalizePhone(phone = "") {
   const digits = String(phone).replace(/\D/g, "");
   if (!digits) return "";
@@ -76,6 +147,31 @@ function contactMatchesPhone(contact, phone) {
   return phones.some((p) => {
     return p === normalizedPhone || p.endsWith(normalizedPhone) || normalizedPhone.endsWith(p);
   });
+}
+
+function normalizeText(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function findStatusMapEntry(pipelineName = "", statusName = "") {
+  const normalizedPipeline = normalizeText(pipelineName);
+  const normalizedStatus = normalizeText(statusName);
+
+  for (const [mapPipelineName, statuses] of Object.entries(STATUS_MAP)) {
+    if (normalizeText(mapPipelineName) !== normalizedPipeline) continue;
+
+    for (const [mapStatusName, config] of Object.entries(statuses)) {
+      if (normalizeText(mapStatusName) === normalizedStatus) {
+        return config;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getCabinetStageIndexByName(clientStatus) {
+  return CABINET_STAGES.findIndex((item) => item === clientStatus);
 }
 
 async function amoGet(url, params = {}) {
@@ -153,13 +249,14 @@ async function getPipelinesMap(baseUrl) {
 
   for (const pipeline of pipelines) {
     const pipelineId = pipeline.id;
+    const pipelineName = pipeline.name || "";
     const statuses = await amoGetAllPages(`${baseUrl}/api/v4/leads/pipelines/${pipelineId}/statuses`);
 
     for (const status of statuses) {
       statusMap.set(`${pipelineId}:${status.id}`, {
         pipeline_id: pipelineId,
         status_id: status.id,
-        pipeline_name: pipeline.name || "",
+        pipeline_name: pipelineName,
         status_name: status.name || ""
       });
     }
@@ -168,72 +265,46 @@ async function getPipelinesMap(baseUrl) {
   return statusMap;
 }
 
-function isHiddenLead(lead, statusesMap) {
-  const key = `${lead.pipeline_id}:${lead.status_id}`;
-  const statusMeta = statusesMap.get(key);
+function enrichLeadWithMappedStatus(lead, statusesMap) {
+  const statusMeta = statusesMap.get(`${lead.pipeline_id}:${lead.status_id}`) || {};
+  const pipelineName = statusMeta.pipeline_name || lead.pipeline_name || "";
+  const statusName = statusMeta.status_name || lead.status_name || "";
 
-  const haystack = [
-    lead?.name,
-    lead?.pipeline_name,
-    lead?.status_name,
-    statusMeta?.pipeline_name,
-    statusMeta?.status_name
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  const mapEntry = findStatusMapEntry(pipelineName, statusName);
 
-  return haystack.includes("hidden") || haystack.includes("скрыт");
-}
-
-function getCabinetStage(statusMeta, lead) {
-  const raw = [
-    statusMeta?.status_name,
-    statusMeta?.pipeline_name,
-    lead?.status_name,
-    lead?.pipeline_name,
-    lead?.name
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  if (
-    raw.includes("рассмотрение завершено") ||
-    raw.includes("завершено") ||
-    raw.includes("готово") ||
-    raw.includes("готов") ||
-    raw.includes("выдан")
-  ) {
-    return 4;
+  if (!mapEntry) {
+    return {
+      ...lead,
+      pipeline_name: pipelineName,
+      status_name: statusName,
+      hidden_in_cabinet: false,
+      cabinet_status: "Сбор документов",
+      cabinet_stage_index: 0
+    };
   }
 
-  if (
-    raw.includes("консуль") ||
-    raw.includes("поданы") ||
-    raw.includes("подано") ||
-    raw.includes("на рассмотрении")
-  ) {
-    return 3;
+  if (mapEntry.hidden) {
+    return {
+      ...lead,
+      pipeline_name: pipelineName,
+      status_name: statusName,
+      hidden_in_cabinet: true,
+      cabinet_status: null,
+      cabinet_stage_index: null
+    };
   }
 
-  if (
-    raw.includes("ожидание записи") ||
-    raw.includes("ожидание подачи") ||
-    raw.includes("запись") ||
-    raw.includes("подач")
-  ) {
-    return 2;
-  }
+  const cabinetStatus = mapEntry.client_status || "Сбор документов";
+  const stageIndex = getCabinetStageIndexByName(cabinetStatus);
 
-  if (
-    raw.includes("подготовка документов") ||
-    raw.includes("подготовка")
-  ) {
-    return 1;
-  }
-
-  return 0;
+  return {
+    ...lead,
+    pipeline_name: pipelineName,
+    status_name: statusName,
+    hidden_in_cabinet: false,
+    cabinet_status: cabinetStatus,
+    cabinet_stage_index: stageIndex >= 0 ? stageIndex : 0
+  };
 }
 
 async function yandexRequest(config) {
@@ -346,18 +417,10 @@ async function loadLeadsByIds(baseUrl, leadIds, statusesMap) {
     const lead = await getLeadById(baseUrl, leadId);
     if (!lead?.id) continue;
 
-    const statusMeta = statusesMap.get(`${lead.pipeline_id}:${lead.status_id}`) || null;
+    const enrichedLead = enrichLeadWithMappedStatus(lead, statusesMap);
+    if (enrichedLead.hidden_in_cabinet) continue;
 
-    if (isHiddenLead(lead, statusesMap)) {
-      continue;
-    }
-
-    leadsMap.set(lead.id, {
-      ...lead,
-      pipeline_name: statusMeta?.pipeline_name || lead.pipeline_name || "",
-      status_name: statusMeta?.status_name || lead.status_name || "",
-      cabinet_stage_index: getCabinetStage(statusMeta, lead)
-    });
+    leadsMap.set(enrichedLead.id, enrichedLead);
   }
 
   return Array.from(leadsMap.values()).sort((a, b) => {
@@ -401,9 +464,9 @@ async function getLeadsByPhone(phone) {
     id: lead.id,
     name: lead.name,
     created_at: lead.created_at,
-    pipeline_id: lead.pipeline_id,
-    status_id: lead.status_id,
+    pipeline_name: lead.pipeline_name,
     status_name: lead.status_name,
+    cabinet_status: lead.cabinet_status,
     cabinet_stage_index: lead.cabinet_stage_index
   })));
 
