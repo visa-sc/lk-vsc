@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Личный кабинет клиента</title>
+  <title>Статус визового дела</title>
   <style>
     * {
       box-sizing: border-box;
@@ -11,556 +11,421 @@
 
     body {
       margin: 0;
-      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #f5f6fb;
-      color: #1f2937;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #f5f3f8;
+      color: #1f2430;
     }
 
-    .wrap {
-      max-width: 1120px;
-      margin: 36px auto;
-      padding: 20px;
-    }
-
-    .card {
-      background: #ffffff;
-      border: 1px solid #e7eaf1;
-      border-radius: 26px;
-      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.06);
-      overflow: hidden;
-    }
-
-    .hero {
-      padding: 26px 28px 22px;
-      border-bottom: 1px solid #eef1f5;
+    .page {
+      max-width: 1240px;
+      margin: 24px auto;
+      background: #faf9fc;
+      border-radius: 28px;
+      padding: 26px;
+      box-shadow: 0 8px 40px rgba(33, 35, 52, 0.06);
     }
 
     .badge {
-      display: inline-flex;
-      align-items: center;
-      padding: 7px 12px;
+      display: inline-block;
+      padding: 10px 14px;
       border-radius: 999px;
-      background: #f0eefb;
-      color: #73708b;
-      font-size: 12px;
-      font-weight: 600;
+      background: #f0ebf7;
+      color: #7b7190;
+      font-size: 14px;
       margin-bottom: 14px;
     }
 
     h1 {
       margin: 0 0 10px;
-      font-size: 34px;
-      line-height: 1.08;
-      letter-spacing: -0.03em;
-      color: #101828;
+      font-size: 52px;
+      line-height: 1.05;
+      color: #151a28;
     }
 
-    .sub {
-      margin: 0;
-      max-width: 700px;
-      font-size: 14px;
-      line-height: 1.65;
-      color: #667085;
-    }
-
-    .search {
-      padding: 22px 28px 8px;
-    }
-
-    .search-row {
-      display: flex;
-      gap: 12px;
-      padding: 14px;
-      border: 1px solid #e8ebf1;
-      border-radius: 22px;
-      background: #fbfcfe;
-    }
-
-    .search-row input {
-      flex: 1;
-      height: 56px;
-      border: 1px solid #d8dee8;
-      border-radius: 16px;
-      padding: 0 18px;
+    .subtitle {
+      margin: 0 0 26px;
+      color: #7b8190;
       font-size: 18px;
-      font-weight: 500;
-      outline: none;
-      color: #111827;
+    }
+
+    .search-box {
+      border: 1px solid #e6e2eb;
+      border-radius: 24px;
+      padding: 12px;
       background: #fff;
+      display: grid;
+      grid-template-columns: 1fr 220px;
+      gap: 12px;
+      margin-bottom: 16px;
     }
 
-    .search-row input:focus {
-      border-color: #b9c4d6;
-      box-shadow: 0 0 0 4px rgba(17, 24, 39, 0.04);
+    .search-box input {
+      width: 100%;
+      height: 60px;
+      border: 1px solid #e8e4ee;
+      border-radius: 18px;
+      padding: 0 18px;
+      font-size: 28px;
+      outline: none;
+      background: #fff;
+      color: #202534;
     }
 
-    .search-row button {
-      min-width: 170px;
-      height: 56px;
+    .search-box button {
+      height: 60px;
       border: none;
-      border-radius: 16px;
-      background: #111a39;
+      border-radius: 18px;
+      background: #171d44;
       color: #fff;
-      font-size: 16px;
+      font-size: 24px;
       font-weight: 700;
       cursor: pointer;
-      transition: background 0.2s ease;
     }
 
-    .search-row button:hover {
-      background: #0d1530;
+    .search-box button:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
     }
 
-    .search-row button:disabled {
-      opacity: 0.7;
-      cursor: default;
-    }
-
-    .message {
-      margin-top: 12px;
-      padding: 12px 14px;
-      border-radius: 14px;
-      font-size: 14px;
-      line-height: 1.5;
+    .error-box,
+    .success-box,
+    .info-box {
+      border-radius: 16px;
+      padding: 14px 16px;
+      margin-bottom: 18px;
+      font-size: 18px;
       display: none;
     }
 
-    .message.error {
-      display: block;
-      background: #fff1f2;
-      color: #be123c;
-      border: 1px solid #fecdd3;
+    .error-box {
+      background: #fbecee;
+      border: 1px solid #efcfd5;
+      color: #a24f5b;
     }
 
-    .message.info {
-      display: block;
-      background: #eff6ff;
-      color: #1d4ed8;
-      border: 1px solid #bfdbfe;
+    .success-box {
+      background: #edf8ef;
+      border: 1px solid #cfe7d2;
+      color: #2d7a43;
+    }
+
+    .info-box {
+      background: #eef3ff;
+      border: 1px solid #d5dfff;
+      color: #445e9c;
     }
 
     .content {
       display: grid;
-      grid-template-columns: 290px 1fr;
-      gap: 18px;
-      padding: 18px 28px 28px;
+      grid-template-columns: 320px 1fr;
+      gap: 20px;
     }
 
-    .panel {
+    .card {
       background: #fff;
-      border: 1px solid #e6eaf0;
-      border-radius: 22px;
-      padding: 20px;
-      min-height: 320px;
+      border: 1px solid #ece7f2;
+      border-radius: 24px;
+      padding: 24px;
+      min-height: 420px;
     }
 
-    .panel h2 {
-      margin: 0 0 16px;
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 22px;
+      color: #1f2430;
+    }
+
+    .muted {
+      color: #9196a4;
       font-size: 18px;
-      line-height: 1.2;
-      color: #111827;
     }
 
-    .deals-list {
+    .lead-list {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 12px;
+      margin-top: 18px;
     }
 
-    .deal-item {
-      width: 100%;
-      text-align: left;
-      border: 1px solid #e5e7eb;
-      background: #f9fafb;
-      border-radius: 16px;
-      padding: 14px 14px;
+    .lead-item {
+      border: 1px solid #ebe5f2;
+      background: #fcfbfe;
+      border-radius: 18px;
+      padding: 16px;
       cursor: pointer;
-      transition: all 0.18s ease;
+      transition: 0.2s ease;
     }
 
-    .deal-item:hover {
-      border-color: #cfd6e2;
-      background: #f4f7fb;
+    .lead-item:hover {
+      border-color: #d8cee8;
+      background: #faf7fd;
     }
 
-    .deal-item.active {
-      border-color: #c7ead2;
-      background: #eef9f1;
+    .lead-item.active {
+      border-color: #5db57b;
+      background: #eff9f2;
     }
 
-    .deal-title {
-      font-size: 14px;
+    .lead-name {
+      font-size: 18px;
       font-weight: 700;
-      color: #1f2937;
-      line-height: 1.4;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
+      color: #1e2535;
     }
 
-    .deal-subtitle {
-      font-size: 12px;
-      color: #6b7280;
-      line-height: 1.5;
+    .lead-meta {
+      font-size: 15px;
+      color: #7d8391;
+      line-height: 1.45;
     }
 
-    .empty-note {
-      font-size: 14px;
-      line-height: 1.6;
-      color: #98a2b3;
-    }
-
-    .status-head {
+    .status-header {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      gap: 14px;
-      margin-bottom: 10px;
-      flex-wrap: wrap;
-    }
-
-    .status-badge {
-      display: inline-flex;
       align-items: center;
-      min-height: 36px;
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: #f8efe2;
-      color: #b46b1f;
-      font-size: 14px;
-      font-weight: 700;
+      gap: 16px;
+      margin-bottom: 10px;
     }
 
-    .status-badge.success {
-      background: #eaf8ef;
-      color: #166534;
+    .collapse-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: none;
+      background: #f4efe4;
+      color: #b58b47;
+      font-size: 26px;
+      cursor: pointer;
+      line-height: 1;
     }
 
-    .selected-deal-name {
-      font-size: 14px;
-      color: #667085;
-      line-height: 1.5;
-      margin-bottom: 18px;
+    .status-text {
+      color: #6d7382;
+      font-size: 18px;
+      line-height: 1.55;
+      margin-bottom: 28px;
+      max-width: 850px;
     }
 
-    .timeline-note {
-      color: #6b7280;
-      font-size: 14px;
-      line-height: 1.6;
-      margin-bottom: 22px;
-      max-width: 620px;
-    }
-
-    .timeline {
-      position: relative;
+    .stages {
       display: flex;
       flex-direction: column;
-      gap: 0;
-      padding-left: 4px;
+      gap: 18px;
+      margin-top: 18px;
     }
 
-    .step {
-      position: relative;
+    .stage {
       display: flex;
+      align-items: center;
       gap: 14px;
-      align-items: flex-start;
-      padding: 0 0 18px 0;
-      color: #98a2b3;
-    }
-
-    .step:last-child {
-      padding-bottom: 0;
-    }
-
-    .step::before {
-      content: "";
-      position: relative;
-      z-index: 2;
-      width: 18px;
-      height: 18px;
-      flex: 0 0 18px;
-      margin-top: 2px;
-      border-radius: 999px;
-      background: #fff;
-      border: 2px solid #d0d5dd;
-      box-shadow: 0 0 0 6px #fff;
-    }
-
-    .step:not(:last-child)::after {
-      content: "";
-      position: absolute;
-      left: 8px;
-      top: 24px;
-      width: 2px;
-      height: calc(100% - 6px);
-      background: #e5e7eb;
-      z-index: 1;
-    }
-
-    .step-title {
-      font-size: 14px;
-      line-height: 1.45;
+      font-size: 28px;
+      color: #a2a7b2;
       font-weight: 600;
-      color: #98a2b3;
     }
 
-    .step.done::before,
-    .step.active::before {
-      background: #16a34a;
-      border-color: #16a34a;
+    .stage-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 3px solid #d5d9e1;
+      background: #fff;
+      flex: 0 0 24px;
     }
 
-    .step.done::after,
-    .step.active::after {
-      background: #16a34a;
+    .stage.done {
+      color: #4da267;
     }
 
-    .step.done .step-title,
-    .step.active .step-title {
-      color: #166534;
+    .stage.done .stage-dot {
+      border-color: #4da267;
+      background: #4da267;
+      box-shadow: inset 0 0 0 5px #fff;
     }
 
-    .step.active .step-title {
-      font-weight: 700;
+    .stage.current {
+      color: #4da267;
     }
 
-    .docs-box {
-      margin-top: 26px;
-      padding-top: 22px;
-      border-top: 1px solid #eef1f5;
+    .stage.current .stage-dot {
+      border-color: #4da267;
+      background: #fff;
+      box-shadow: inset 0 0 0 5px #4da267;
+    }
+
+    .documents {
+      margin-top: 28px;
+      padding-top: 24px;
+      border-top: 1px solid #ebe6f1;
       display: none;
     }
 
-    .docs-box.visible {
-      display: block;
-    }
-
-    .docs-title {
+    .documents h3 {
       margin: 0 0 14px;
-      font-size: 14px;
-      line-height: 1.6;
-      font-weight: 400;
-      color: #667085;
+      font-size: 20px;
+      color: #1f2430;
     }
 
-    .docs-grid {
+    .file-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
+      gap: 14px;
+      margin-bottom: 16px;
     }
 
-    .upload-card {
-      position: relative;
-      border: 1px dashed #cfd6e2;
-      background: #fafbfc;
-      border-radius: 18px;
-      padding: 16px;
-      min-height: 118px;
-      transition: all 0.18s ease;
+    .file-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
 
-    .upload-card:hover {
-      border-color: #b8c3d4;
-      background: #f5f8fb;
-    }
-
-    .upload-card input[type="file"] {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      cursor: pointer;
-      width: 100%;
-      height: 100%;
-    }
-
-    .upload-label {
-      font-size: 14px;
+    .file-group label {
+      font-size: 15px;
+      color: #636978;
       font-weight: 600;
-      color: #1f2937;
-      line-height: 1.4;
-      margin-bottom: 8px;
-      padding-right: 8px;
     }
 
-    .upload-hint {
-      font-size: 12px;
-      line-height: 1.5;
-      color: #98a2b3;
-      margin-bottom: 10px;
+    .file-group input[type="file"] {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #e5deec;
+      border-radius: 12px;
+      background: #fff;
     }
 
-    .upload-file-name {
-      font-size: 12px;
-      line-height: 1.45;
-      color: #166534;
-      word-break: break-word;
-      min-height: 18px;
+    .upload-btn {
+      height: 52px;
+      border: none;
+      border-radius: 16px;
+      background: #171d44;
+      color: #fff;
+      font-size: 18px;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 0 24px;
     }
 
-    @media (max-width: 920px) {
+    .upload-btn:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
+    .empty-note {
+      color: #9aa0ad;
+      font-size: 18px;
+      margin-top: 18px;
+    }
+
+    @media (max-width: 980px) {
       .content {
         grid-template-columns: 1fr;
       }
 
-      .search-row {
-        flex-direction: column;
+      .search-box {
+        grid-template-columns: 1fr;
       }
 
-      .search-row button {
-        width: 100%;
+      .file-grid {
+        grid-template-columns: 1fr;
       }
 
       h1 {
-        font-size: 28px;
+        font-size: 38px;
       }
 
-      .docs-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    @media (max-width: 640px) {
-      .wrap {
-        margin: 20px auto;
-        padding: 12px;
+      .search-box input {
+        font-size: 22px;
       }
 
-      .hero,
-      .search,
-      .content {
-        padding-left: 16px;
-        padding-right: 16px;
+      .search-box button {
+        font-size: 20px;
       }
 
-      .content {
-        padding-bottom: 16px;
-      }
-
-      .panel {
-        padding: 16px;
-      }
-
-      .search-row input {
-        font-size: 16px;
+      .stage {
+        font-size: 22px;
       }
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <div class="hero">
-        <div class="badge">Личный кабинет клиента</div>
-        <h1>Статус визового дела</h1>
-        <p class="sub">
-          Введите телефон, выберите нужное обращение и справа посмотрите текущий этап обработки.
+  <div class="page">
+    <div class="badge">Личный кабинет клиента</div>
+    <h1>Статус визового дела</h1>
+    <p class="subtitle">
+      Введите телефон, выберите нужное обращение и справа посмотрите текущий этап обработки.
+    </p>
+
+    <form id="statusForm" class="search-box">
+      <input
+        id="phoneInput"
+        type="text"
+        name="phone"
+        placeholder="+79991234567"
+        value="+7995922319"
+        required
+      />
+      <button id="searchBtn" type="submit">Открыть статус</button>
+    </form>
+
+    <div id="errorBox" class="error-box"></div>
+    <div id="successBox" class="success-box"></div>
+    <div id="infoBox" class="info-box"></div>
+
+    <div class="content">
+      <div class="card">
+        <h2>Обращения клиента</h2>
+        <div id="leadsPlaceholder" class="muted">Введите телефон и нажмите кнопку.</div>
+        <div id="leadList" class="lead-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="status-header">
+          <div>
+            <h2>Статус обращения</h2>
+          </div>
+          <button class="collapse-btn" type="button">−</button>
+        </div>
+
+        <p class="status-text" id="statusText">
+          Выберите обращение слева.
         </p>
-      </div>
 
-      <div class="search">
-        <div class="search-row">
-          <input
-            id="phoneInput"
-            type="text"
-            placeholder="Введите номер телефона"
-          />
-          <button id="checkBtn" type="button">Открыть статус</button>
-        </div>
-        <div id="messageBox" class="message"></div>
-      </div>
+        <div id="stages" class="stages"></div>
 
-      <div class="content">
-        <div class="panel">
-          <h2>Обращения клиента</h2>
-          <div id="dealsList" class="deals-list">
-            <div class="empty-note">Введите телефон и нажмите «Открыть статус».</div>
-          </div>
+        <div id="emptyStatus" class="empty-note">
+          Ниже показаны реальные этапы обработки. Текущий этап и все уже пройденные подсвечиваются зелёным.
         </div>
 
-        <div class="panel">
-          <div class="status-head">
-            <h2 style="margin: 0;">Статус обращения</h2>
-            <span class="status-badge" id="currentStatus">—</span>
-          </div>
+        <div id="documentsBlock" class="documents">
+          <h3>Загрузка документов</h3>
 
-          <div class="selected-deal-name" id="selectedDealName">
-            Выберите обращение слева.
-          </div>
+          <form id="uploadForm">
+            <div class="file-grid">
+              <div class="file-group">
+                <label for="passportFile">Заграничный паспорт</label>
+                <input id="passportFile" name="passportFile" type="file" />
+              </div>
 
-          <div class="timeline-note">
-            Ниже показаны реальные этапы обработки. Текущий этап и все уже пройденные подсвечиваются зелёным.
-          </div>
+              <div class="file-group">
+                <label for="innerPassportFile">Внутренний паспорт</label>
+                <input id="innerPassportFile" name="innerPassportFile" type="file" />
+              </div>
 
-          <div class="timeline" id="timeline">
-            <div class="step" data-step="Сбор документов">
-              <div class="step-title">Сбор документов</div>
+              <div class="file-group">
+                <label for="workFile">Справка с работы</label>
+                <input id="workFile" name="workFile" type="file" />
+              </div>
             </div>
 
-            <div class="step" data-step="Подготовка документов">
-              <div class="step-title">Подготовка документов</div>
-            </div>
-
-            <div class="step" data-step="Ожидание записи / подачи">
-              <div class="step-title">Ожидание записи / подачи</div>
-            </div>
-
-            <div class="step" data-step="Документы поданы на рассмотрение в Консульство">
-              <div class="step-title">Документы поданы на рассмотрение в Консульство</div>
-            </div>
-
-            <div class="step" data-step="Рассмотрение завершено">
-              <div class="step-title">Рассмотрение завершено</div>
-            </div>
-          </div>
-
-          <div class="docs-box" id="docsBox">
-            <p class="docs-title">От вас требуются документы</p>
-
-            <div class="docs-grid">
-              <label class="upload-card">
-                <input type="file" id="passportFile" />
-                <div class="upload-label">Заграничный паспорт</div>
-                <div class="upload-hint">Нажмите, чтобы загрузить файл</div>
-                <div class="upload-file-name" id="passportFileName"></div>
-              </label>
-
-              <label class="upload-card">
-                <input type="file" id="innerPassportFile" />
-                <div class="upload-label">Внутренний паспорт</div>
-                <div class="upload-hint">Нажмите, чтобы загрузить файл</div>
-                <div class="upload-file-name" id="innerPassportFileName"></div>
-              </label>
-
-              <label class="upload-card">
-                <input type="file" id="workFile" />
-                <div class="upload-label">Справка с работы</div>
-                <div class="upload-hint">Нажмите, чтобы загрузить файл</div>
-                <div class="upload-file-name" id="workFileName"></div>
-              </label>
-            </div>
-          </div>
+            <button id="uploadBtn" class="upload-btn" type="submit">Отправить документы</button>
+          </form>
         </div>
       </div>
     </div>
   </div>
 
   <script>
-    const phoneInput = document.getElementById("phoneInput");
-    const checkBtn = document.getElementById("checkBtn");
-    const messageBox = document.getElementById("messageBox");
-    const dealsList = document.getElementById("dealsList");
-    const currentStatus = document.getElementById("currentStatus");
-    const selectedDealName = document.getElementById("selectedDealName");
-    const docsBox = document.getElementById("docsBox");
-    const steps = Array.from(document.querySelectorAll(".step"));
-
-    const passportFile = document.getElementById("passportFile");
-    const innerPassportFile = document.getElementById("innerPassportFile");
-    const workFile = document.getElementById("workFile");
-
-    const passportFileName = document.getElementById("passportFileName");
-    const innerPassportFileName = document.getElementById("innerPassportFileName");
-    const workFileName = document.getElementById("workFileName");
-
-    const stepOrder = [
+    const STAGES = [
       "Сбор документов",
       "Подготовка документов",
       "Ожидание записи / подачи",
@@ -568,172 +433,271 @@
       "Рассмотрение завершено"
     ];
 
-    let currentDeals = [];
-    let selectedLeadId = null;
+    const statusForm = document.getElementById("statusForm");
+    const uploadForm = document.getElementById("uploadForm");
+    const phoneInput = document.getElementById("phoneInput");
+    const searchBtn = document.getElementById("searchBtn");
+    const uploadBtn = document.getElementById("uploadBtn");
+    const errorBox = document.getElementById("errorBox");
+    const successBox = document.getElementById("successBox");
+    const infoBox = document.getElementById("infoBox");
+    const leadList = document.getElementById("leadList");
+    const leadsPlaceholder = document.getElementById("leadsPlaceholder");
+    const statusText = document.getElementById("statusText");
+    const stagesEl = document.getElementById("stages");
+    const emptyStatus = document.getElementById("emptyStatus");
+    const documentsBlock = document.getElementById("documentsBlock");
 
-    function setMessage(text, type = "info") {
-      messageBox.textContent = text;
-      messageBox.className = `message ${type}`;
+    let selectedLead = null;
+
+    function showError(message) {
+      errorBox.style.display = "block";
+      errorBox.textContent = message || "Произошла ошибка";
     }
 
-    function clearMessage() {
-      messageBox.textContent = "";
-      messageBox.className = "message";
+    function hideError() {
+      errorBox.style.display = "none";
+      errorBox.textContent = "";
     }
 
-    function resetUploads() {
-      passportFile.value = "";
-      innerPassportFile.value = "";
-      workFile.value = "";
-
-      passportFileName.textContent = "";
-      innerPassportFileName.textContent = "";
-      workFileName.textContent = "";
+    function showSuccess(message) {
+      successBox.style.display = "block";
+      successBox.textContent = message || "";
     }
 
-    function toggleDocsBox(status) {
-      if (status === "Сбор документов") {
-        docsBox.classList.add("visible");
-      } else {
-        docsBox.classList.remove("visible");
-        resetUploads();
-      }
+    function hideSuccess() {
+      successBox.style.display = "none";
+      successBox.textContent = "";
     }
 
-    function resetTimeline() {
-      currentStatus.textContent = "—";
-      currentStatus.className = "status-badge";
-      selectedDealName.textContent = "Выберите обращение слева.";
-      toggleDocsBox("");
-
-      steps.forEach(step => {
-        step.classList.remove("done", "active");
-      });
+    function showInfo(message) {
+      infoBox.style.display = "block";
+      infoBox.textContent = message || "";
     }
 
-    function updateTimeline(status) {
-      const activeIndex = stepOrder.indexOf(status);
-
-      steps.forEach((step, index) => {
-        step.classList.remove("done", "active");
-
-        if (activeIndex === -1) return;
-
-        if (index < activeIndex) {
-          step.classList.add("done");
-        } else if (index === activeIndex) {
-          step.classList.add("active");
-        }
-      });
+    function hideInfo() {
+      infoBox.style.display = "none";
+      infoBox.textContent = "";
     }
 
-    function renderDeals() {
-      if (!currentDeals.length) {
-        dealsList.innerHTML = `<div class="empty-note">Нет доступных сделок для отображения.</div>`;
-        resetTimeline();
-        return;
-      }
+    function getLeadTitle(lead, index) {
+      return (
+        lead.name ||
+        lead.title ||
+        `Обращение #${index + 1}`
+      );
+    }
 
-      dealsList.innerHTML = currentDeals.map(deal => {
-        const isActive = String(deal.lead_id) === String(selectedLeadId);
-        return `
-          <button class="deal-item ${isActive ? "active" : ""}" data-lead-id="${deal.lead_id}">
-            <div class="deal-title">${deal.display_name}</div>
-            <div class="deal-subtitle">${deal.pipeline_name || "Без воронки"}</div>
-          </button>
+    function getCurrentStageIndex(lead) {
+      const raw = String(
+        lead.status_name ||
+        lead.pipeline_name ||
+        lead.name ||
+        ""
+      ).toLowerCase();
+
+      if (raw.includes("сбор")) return 0;
+      if (raw.includes("подготов")) return 1;
+      if (raw.includes("ожид")) return 2;
+      if (raw.includes("консуль")) return 3;
+      if (raw.includes("заверш") || raw.includes("готов") || raw.includes("выдан")) return 4;
+
+      return 0;
+    }
+
+    function renderStages(currentIndex) {
+      stagesEl.innerHTML = "";
+
+      STAGES.forEach((stageName, index) => {
+        const item = document.createElement("div");
+        item.className = "stage";
+
+        if (index < currentIndex) item.classList.add("done");
+        if (index === currentIndex) item.classList.add("current");
+
+        item.innerHTML = `
+          <div class="stage-dot"></div>
+          <div>${stageName}</div>
         `;
-      }).join("");
 
-      document.querySelectorAll(".deal-item").forEach(button => {
-        button.addEventListener("click", () => {
-          const leadId = button.getAttribute("data-lead-id");
-          selectDeal(leadId);
-        });
+        stagesEl.appendChild(item);
       });
     }
 
-    function selectDeal(leadId) {
-      selectedLeadId = String(leadId);
-      const deal = currentDeals.find(item => String(item.lead_id) === String(leadId));
+    function selectLead(lead, buttonEl) {
+      selectedLead = lead;
 
-      renderDeals();
+      document.querySelectorAll(".lead-item").forEach((item) => {
+        item.classList.remove("active");
+      });
 
-      if (!deal) {
-        resetTimeline();
+      if (buttonEl) {
+        buttonEl.classList.add("active");
+      }
+
+      const currentStageIndex = getCurrentStageIndex(lead);
+
+      statusText.textContent =
+        `Обращение: ${lead.name || "Без названия"}. Текущий этап обработки определяется по данным amoCRM.`;
+
+      emptyStatus.style.display = "none";
+      documentsBlock.style.display = "block";
+      renderStages(currentStageIndex);
+    }
+
+    function renderLeads(leads) {
+      leadList.innerHTML = "";
+
+      if (!Array.isArray(leads) || !leads.length) {
+        leadsPlaceholder.style.display = "block";
+        leadsPlaceholder.textContent = "По этому номеру обращения не найдены.";
+        statusText.textContent = "Нет данных для отображения.";
+        stagesEl.innerHTML = "";
+        emptyStatus.style.display = "block";
+        documentsBlock.style.display = "none";
+        selectedLead = null;
         return;
       }
 
-      currentStatus.textContent = deal.client_status || "Статус не найден";
-      currentStatus.className = deal.client_status ? "status-badge success" : "status-badge";
-      selectedDealName.textContent = deal.display_name || "Выбранное обращение";
+      leadsPlaceholder.style.display = "none";
 
-      updateTimeline(deal.client_status || "");
-      toggleDocsBox(deal.client_status || "");
+      leads.forEach((lead, index) => {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "lead-item";
+
+        const createdAt = lead.created_at
+          ? new Date(lead.created_at * 1000).toLocaleDateString("ru-RU")
+          : "—";
+
+        item.innerHTML = `
+          <div class="lead-name">${getLeadTitle(lead, index)}</div>
+          <div class="lead-meta">
+            ID: ${lead.id || "—"}<br>
+            Создано: ${createdAt}<br>
+            Статус: ${lead.status_id || "—"}
+          </div>
+        `;
+
+        item.addEventListener("click", () => selectLead(lead, item));
+        leadList.appendChild(item);
+      });
+
+      selectLead(leads[0], leadList.querySelector(".lead-item"));
     }
 
-    async function loadDeals() {
+    statusForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      hideError();
+      hideSuccess();
+      hideInfo();
+
       const phone = phoneInput.value.trim();
 
       if (!phone) {
-        setMessage("Введите номер телефона", "error");
+        showError("Введите номер телефона");
         return;
       }
 
-      clearMessage();
-      currentDeals = [];
-      selectedLeadId = null;
-      dealsList.innerHTML = `<div class="empty-note">Загрузка обращений...</div>`;
-      resetTimeline();
+      searchBtn.disabled = true;
+      searchBtn.textContent = "Загрузка...";
 
-      checkBtn.disabled = true;
-      checkBtn.textContent = "Загрузка...";
+      leadList.innerHTML = "";
+      leadsPlaceholder.style.display = "block";
+      leadsPlaceholder.textContent = "Загрузка обращений...";
+      statusText.textContent = "Получаем данные из amoCRM...";
+      stagesEl.innerHTML = "";
+      emptyStatus.style.display = "block";
+      documentsBlock.style.display = "none";
+      selectedLead = null;
 
       try {
-        const response = await fetch(`/client-status?phone=${encodeURIComponent(phone)}`);
+        const response = await fetch(`/api/leads?phone=${encodeURIComponent(phone)}`);
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || "Ошибка ответа сервера");
+        }
+
         const data = await response.json();
 
         if (!data.success) {
-          dealsList.innerHTML = `<div class="empty-note">Обращения не найдены.</div>`;
-          setMessage(data.message || "Не удалось получить данные", "error");
-          return;
+          throw new Error(data.message || "Не удалось получить данные");
         }
 
-        currentDeals = Array.isArray(data.deals) ? data.deals : [];
+        renderLeads(data.leads || []);
 
-        if (!currentDeals.length) {
-          dealsList.innerHTML = `<div class="empty-note">Нет доступных сделок для отображения.</div>`;
-          setMessage(data.message || "Нет доступных сделок", "info");
-          return;
+        if ((data.leads || []).length) {
+          showSuccess("Данные успешно загружены");
+        } else {
+          showInfo("По этому номеру сделки не найдены");
         }
-
-        selectedLeadId = String(currentDeals[0].lead_id);
-        renderDeals();
-        selectDeal(selectedLeadId);
-        setMessage("Выберите нужное обращение слева.", "info");
       } catch (error) {
-        dealsList.innerHTML = `<div class="empty-note">Ошибка загрузки.</div>`;
-        setMessage("Не удалось получить данные с сервера", "error");
+        console.error("LOAD LEADS ERROR:", error);
+        showError("Не удалось получить данные с сервера");
+        leadsPlaceholder.style.display = "block";
+        leadsPlaceholder.textContent = "Ошибка загрузки.";
+        statusText.textContent = "Выберите обращение слева.";
+        stagesEl.innerHTML = "";
+        emptyStatus.style.display = "block";
+        documentsBlock.style.display = "none";
       } finally {
-        checkBtn.disabled = false;
-        checkBtn.textContent = "Открыть статус";
+        searchBtn.disabled = false;
+        searchBtn.textContent = "Открыть статус";
       }
-    }
+    });
 
-    function bindFileName(input, output) {
-      input.addEventListener("change", () => {
-        output.textContent = input.files && input.files[0] ? input.files[0].name : "";
-      });
-    }
+    uploadForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      hideError();
+      hideSuccess();
+      hideInfo();
 
-    bindFileName(passportFile, passportFileName);
-    bindFileName(innerPassportFile, innerPassportFileName);
-    bindFileName(workFile, workFileName);
+      const phone = phoneInput.value.trim();
 
-    checkBtn.addEventListener("click", loadDeals);
+      if (!phone) {
+        showError("Сначала введите телефон");
+        return;
+      }
 
-    phoneInput.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        loadDeals();
+      const formData = new FormData();
+      formData.append("phone", phone);
+
+      const passportFile = document.getElementById("passportFile").files[0];
+      const innerPassportFile = document.getElementById("innerPassportFile").files[0];
+      const workFile = document.getElementById("workFile").files[0];
+
+      if (passportFile) formData.append("passportFile", passportFile);
+      if (innerPassportFile) formData.append("innerPassportFile", innerPassportFile);
+      if (workFile) formData.append("workFile", workFile);
+
+      if (!passportFile && !innerPassportFile && !workFile) {
+        showError("Выберите хотя бы один файл");
+        return;
+      }
+
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = "Загрузка...";
+
+      try {
+        const response = await fetch("/upload-documents", {
+          method: "POST",
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || "Ошибка загрузки файлов");
+        }
+
+        showSuccess("Документы успешно загружены");
+      } catch (error) {
+        console.error("UPLOAD ERROR:", error);
+        showError("Не удалось загрузить документы");
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = "Отправить документы";
       }
     });
   </script>
