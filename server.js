@@ -62,6 +62,39 @@ function leadIsHidden(lead) {
   return raw.includes("hidden") || raw.includes("скрыт");
 }
 
+function extractPhonesFromContact(contact) {
+  const fields = contact?.custom_fields_values || [];
+  const values = [];
+
+  for (const field of fields) {
+    const code = String(field.field_code || "").toUpperCase();
+    const name = String(field.field_name || "").toLowerCase();
+
+    if (code === "PHONE" || name.includes("телефон")) {
+      for (const item of field.values || []) {
+        if (item?.value) {
+          values.push(normalizePhone(item.value));
+        }
+      }
+    }
+  }
+
+  return values.filter(Boolean);
+}
+
+function contactMatchesPhone(contact, phone) {
+  const normalizedPhone = normalizePhone(phone);
+  const phones = extractPhonesFromContact(contact);
+
+  return phones.some((p) => {
+    return (
+      p === normalizedPhone ||
+      p.endsWith(normalizedPhone) ||
+      normalizedPhone.endsWith(p)
+    );
+  });
+}
+
 async function amoGet(url, params = {}) {
   console.log("AMO GET:", url, params);
 
@@ -75,24 +108,37 @@ async function amoGet(url, params = {}) {
   return response.data;
 }
 
+async function amoGetByFullUrl(url) {
+  console.log("AMO GET FULL URL:", url);
+
+  const response = await axios.get(url, {
+    headers: {
+      Authorization: `Bearer ${AMO_ACCESS_TOKEN}`
+    }
+  });
+
+  return response.data;
+}
+
 async function amoGetAllPages(url, params = {}) {
+  let nextUrl = null;
   let page = 1;
   const limit = 250;
   const allItems = [];
 
   while (true) {
-    const data = await amoGet(url, {
-      ...params,
-      page,
-      limit
-    });
+    const data = nextUrl
+      ? await amoGetByFullUrl(nextUrl)
+      : await amoGet(url, { ...params, page, limit });
 
     const embeddedKey = Object.keys(data._embedded || {})[0];
     const items = embeddedKey ? data._embedded?.[embeddedKey] || [] : [];
 
     allItems.push(...items);
 
-    if (!items.length || items.length < limit) {
+    nextUrl = data?._links?.next?.href || null;
+
+    if (!nextUrl) {
       break;
     }
 
@@ -100,6 +146,26 @@ async function amoGetAllPages(url, params = {}) {
   }
 
   return allItems;
+}
+
+async function getLeadLinks(baseUrl, leadId) {
+  try {
+    const data = await amoGet(`${baseUrl}/api/v4/leads/${leadId}/links`);
+    return data?._embedded?.links || [];
+  } catch (error) {
+    console.error("GET LEAD LINKS ERROR:", leadId, error.response?.data || error.message);
+    return [];
+  }
+}
+
+async function getContactLinks(baseUrl, contactId) {
+  try {
+    const data = await amoGet(`${baseUrl}/api/v4/contacts/${contactId}/links`);
+    return data?._embedded?.links || [];
+  } catch (error) {
+    console.error("GET CONTACT LINKS ERROR:", contactId, error.response?.data || error.message);
+    return [];
+  }
 }
 
 async function yandexRequest(config) {
@@ -163,34 +229,60 @@ async function getLeadsByPhone(phone) {
 
   const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
 
-  const contacts = await amoGetAllPages(`${baseUrl}/api/v4/contacts`, {
-    query: normalized,
-    with: "leads"
-  });
+  const foundContacts = [];
+  const contactIds = new Set();
 
-  console.log("FOUND CONTACTS:", contacts.length);
+  const contactSearchQueries = Array.from(new Set([
+    normalized,
+    normalized.slice(-10),
+    normalized.startsWith("7") ? `8${normalized.slice(1)}` : normalized
+  ].filter(Boolean)));
+
+  for (const query of contactSearchQueries) {
+    const contacts = await amoGetAllPages(`${baseUrl}/api/v4/contacts`, {
+      query,
+      with: "leads"
+    });
+
+    for (const contact of contacts) {
+      if (!contact?.id) continue;
+      if (!contactIds.has(contact.id) && contactMatchesPhone(contact, normalized)) {
+        contactIds.add(contact.id);
+        foundContacts.push(contact);
+      }
+    }
+  }
+
+  console.log("MATCHED CONTACT IDS:", Array.from(contactIds));
 
   const leadIds = new Set();
 
-  for (const contact of contacts) {
-    const linkedLeads = contact._embedded?.leads || [];
-    for (const lead of linkedLeads) {
-      if (lead.id) {
+  for (const contact of foundContacts) {
+    const embeddedLeads = contact?._embedded?.leads || [];
+    for (const lead of embeddedLeads) {
+      if (lead?.id) {
         leadIds.add(lead.id);
+      }
+    }
+
+    const links = await getContactLinks(baseUrl, contact.id);
+    for (const link of links) {
+      const toEntityType = String(link.to_entity_type || "").toLowerCase();
+      if (toEntityType === "leads" && link.to_entity_id) {
+        leadIds.add(link.to_entity_id);
       }
     }
   }
 
   const leadIdsArray = Array.from(leadIds);
-
-  console.log("FOUND LEAD IDS:", leadIdsArray);
+  console.log("ALL LEAD IDS:", leadIdsArray);
 
   if (!leadIdsArray.length) {
     return [];
   }
 
   const chunks = [];
-  for (let i = 0; i < leadIdsArray.length; i += 100) {
+for (let i = 0; i < leadIdsArray.length; i += 100) {
     chunks.push(leadIdsArray.slice(i, i + 100));
   }
 
@@ -202,7 +294,7 @@ async function getLeadsByPhone(phone) {
       with: "contacts"
     });
 
-    const leads = data._embedded?.leads || [];
+    const leads = data?._embedded?.leads || [];
     allLeads.push(...leads);
   }
 
@@ -214,6 +306,20 @@ async function getLeadsByPhone(phone) {
     uniqueLeadsMap.set(lead.id, lead);
   }
 
+  for (const lead of allLeads) {
+    if (!lead?.id) continue;
+
+    const links = await getLeadLinks(baseUrl, lead.id);
+    const hasMatchedContact = links.some((link) => {
+      const toEntityType = String(link.to_entity_type || "").toLowerCase();
+      return toEntityType === "contacts" && contactIds.has(link.to_entity_id);
+    });
+
+    if (hasMatchedContact && !leadIsHidden(lead)) {
+      uniqueLeadsMap.set(lead.id, lead);
+    }
+  }
+
   const uniqueLeads = Array.from(uniqueLeadsMap.values()).sort((a, b) => {
     return (b.created_at || 0) - (a.created_at || 0);
   });
@@ -221,6 +327,7 @@ async function getLeadsByPhone(phone) {
   console.log("VISIBLE LEADS:", uniqueLeads.map((lead) => ({
     id: lead.id,
     name: lead.name,
+    created_at: lead.created_at,
     status_name: lead.status_name
   })));
 
