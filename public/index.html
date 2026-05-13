@@ -250,7 +250,7 @@
 
     .documents-inline {
       display: none;
-      margin: 6px 0 2px 32px;
+      margin: 2px 0 2px 32px;
       padding: 16px;
       border: 1px solid #ece7f2;
       border-radius: 18px;
@@ -441,36 +441,36 @@
     function createDocumentsBlock() {
       const wrapper = document.createElement("div");
       wrapper.className = "documents-inline";
-      wrapper.id = "documentsInline";
+      wrapper.style.display = "block";
 
       wrapper.innerHTML = `
         <h3>Загрузка документов</h3>
-        <form id="uploadForm">
+        <form class="upload-form-inline">
           <div class="file-grid">
             <div class="file-group">
-              <label for="passportFile">Заграничный паспорт</label>
-              <input id="passportFile" name="passportFile" type="file" />
+              <label>Заграничный паспорт</label>
+              <input name="passportFile" type="file" />
             </div>
 
             <div class="file-group">
-              <label for="innerPassportFile">Внутренний паспорт</label>
-              <input id="innerPassportFile" name="innerPassportFile" type="file" />
+              <label>Внутренний паспорт</label>
+              <input name="innerPassportFile" type="file" />
             </div>
 
             <div class="file-group">
-              <label for="workFile">Справка с работы</label>
-              <input id="workFile" name="workFile" type="file" />
+              <label>Справка с работы</label>
+              <input name="workFile" type="file" />
             </div>
           </div>
 
-          <button id="uploadBtn" class="upload-btn" type="submit">Отправить документы</button>
+          <button class="upload-btn" type="submit">Отправить документы</button>
         </form>
       `;
 
-      const form = wrapper.querySelector("#uploadForm");
-      const uploadBtn = wrapper.querySelector("#uploadBtn");
+      const uploadForm = wrapper.querySelector(".upload-form-inline");
+      const uploadBtn = wrapper.querySelector(".upload-btn");
 
-      form.addEventListener("submit", async (event) => {
+      uploadForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         hideMessages();
 
@@ -484,9 +484,9 @@
         const formData = new FormData();
         formData.append("phone", phone);
 
-        const passportFile = wrapper.querySelector("#passportFile").files[0];
-        const innerPassportFile = wrapper.querySelector("#innerPassportFile").files[0];
-        const workFile = wrapper.querySelector("#workFile").files[0];
+        const passportFile = uploadForm.querySelector('input[name="passportFile"]').files[0];
+        const innerPassportFile = uploadForm.querySelector('input[name="innerPassportFile"]').files[0];
+        const workFile = uploadForm.querySelector('input[name="workFile"]').files[0];
 
         if (passportFile) formData.append("passportFile", passportFile);
         if (innerPassportFile) formData.append("innerPassportFile", innerPassportFile);
@@ -528,6 +528,8 @@
     function renderStages(currentIndex) {
       stagesEl.innerHTML = "";
 
+      const stageNodes = [];
+
       STAGES.forEach((stageName, index) => {
         const row = document.createElement("div");
         row.className = "stage";
@@ -541,13 +543,13 @@
         `;
 
         stagesEl.appendChild(row);
-
-        if (index === 0 && currentIndex === 0) {
-          const documentsBlock = createDocumentsBlock();
-          documentsBlock.style.display = "block";
-          stagesEl.appendChild(documentsBlock);
-        }
+        stageNodes.push(row);
       });
+
+      if (currentIndex === 0 && stageNodes[0]) {
+        const documentsBlock = createDocumentsBlock();
+        stageNodes[0].after(documentsBlock);
+      }
     }
 
     function selectLead(lead, itemEl) {
