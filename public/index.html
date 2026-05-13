@@ -17,7 +17,7 @@
     }
 
     .wrap {
-      max-width: 1180px;
+      max-width: 1200px;
       margin: 22px auto;
       background: #faf9fc;
       border-radius: 24px;
@@ -117,7 +117,7 @@
 
     .grid {
       display: grid;
-      grid-template-columns: 230px 1fr;
+      grid-template-columns: 290px 1fr;
       gap: 16px;
     }
 
@@ -160,6 +160,10 @@
       color: #1e2433;
       font-size: 14px;
       line-height: 1.4;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-weight: 700;
     }
 
     .lead-item:hover {
@@ -315,6 +319,10 @@
 
       .file-grid {
         grid-template-columns: 1fr;
+      }
+
+      .lead-item {
+        white-space: normal;
       }
     }
   </style>
