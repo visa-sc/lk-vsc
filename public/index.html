@@ -454,18 +454,9 @@
     }
 
     function getCurrentStageIndex(lead) {
-      const raw = String(
-        lead.status_name ||
-        lead.pipeline_name ||
-        lead.name ||
-        ""
-      ).toLowerCase();
-
-      if (raw.includes("сбор")) return 0;
-      if (raw.includes("подготов")) return 1;
-      if (raw.includes("ожид")) return 2;
-      if (raw.includes("консуль")) return 3;
-      if (raw.includes("заверш") || raw.includes("готов") || raw.includes("выдан")) return 4;
+      if (typeof lead.cabinet_stage_index === "number") {
+        return lead.cabinet_stage_index;
+      }
 
       return 0;
     }
@@ -500,7 +491,7 @@
 
       const currentStageIndex = getCurrentStageIndex(lead);
 
-      statusText.textContent = `Вы выбрали ${getLeadLabel(lead)}. Ниже показан текущий этап обработки.`;
+      statusText.textContent = `Вы выбрали ${getLeadLabel(lead)}. Текущий этап: ${STAGES[currentStageIndex]}.`;
       emptyStatus.style.display = "none";
       documentsBlock.style.display = "block";
       renderStages(currentStageIndex);
