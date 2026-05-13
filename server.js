@@ -104,6 +104,12 @@ function getClientStatus(pipelineName = "", statusName = "") {
   };
 }
 
+function formatLeadDate(createdAt) {
+  if (!createdAt) return "без даты";
+  const date = new Date(createdAt * 1000);
+  return date.toLocaleDateString("ru-RU");
+}
+
 async function amoGet(url) {
   const response = await axios.get(url, {
     headers: {
@@ -152,48 +158,66 @@ app.get("/client-status", async (req, res) => {
         phone,
         contact_id: contact.id,
         contact_name: contact.name || "",
+        deals: [],
         message: "У контакта нет сделок"
       });
     }
 
-    const leadId = leadLinks[0].to_entity_id;
+    const deals = [];
 
-    const lead = await amoGet(
-      `https://${process.env.AMO_SUBDOMAIN}/api/v4/leads/${leadId}`
-    );
+    for (const link of leadLinks) {
+      const leadId = link.to_entity_id;
 
-    const pipelineId = lead.pipeline_id;
-    const statusId = lead.status_id;
+      try {
+        const lead = await amoGet(
+          `https://${process.env.AMO_SUBDOMAIN}/api/v4/leads/${leadId}`
+        );
 
-    const pipelineData = await amoGet(
-      `https://${process.env.AMO_SUBDOMAIN}/api/v4/leads/pipelines/${pipelineId}`
-    );
+        const pipelineId = lead.pipeline_id;
+        const statusId = lead.status_id;
 
-    const pipelineName = pipelineData?.name || "";
-    const statuses = pipelineData?._embedded?.statuses || [];
-    const currentStatus = statuses.find((s) => s.id === statusId);
-    const statusName = currentStatus?.name || "";
+        const pipelineData = await amoGet(
+          `https://${process.env.AMO_SUBDOMAIN}/api/v4/leads/pipelines/${pipelineId}`
+        );
 
-    const clientStatusData = getClientStatus(pipelineName, statusName);
+        const pipelineName = pipelineData?.name || "";
+        const statuses = pipelineData?._embedded?.statuses || [];
+        const currentStatus = statuses.find((s) => s.id === statusId);
+        const statusName = currentStatus?.name || "";
 
-    if (clientStatusData.hidden) {
-      return res.json({
-        success: false,
-        hidden: true,
-        message: "Статус не отображается в личном кабинете"
-      });
+        const clientStatusData = getClientStatus(pipelineName, statusName);
+
+        if (clientStatusData.hidden) {
+          continue;
+        }
+
+        deals.push({
+          lead_id: lead.id,
+          lead_name: lead.name || "",
+          pipeline_name: pipelineName,
+          amo_status_name: statusName,
+          client_status: clientStatusData.client_status,
+          created_at: lead.created_at || null,
+          display_name: `Обращение от ${formatLeadDate(lead.created_at)}`
+        });
+      } catch (leadError) {
+        continue;
+      }
     }
+
+    deals.sort((a, b) => {
+      const aTime = a.created_at || 0;
+      const bTime = b.created_at || 0;
+      return bTime - aTime;
+    });
 
     return res.json({
       success: true,
       phone,
       contact_id: contact.id,
       contact_name: contact.name || "",
-      lead_id: lead.id,
-      lead_name: lead.name || "",
-      pipeline_name: pipelineName,
-      amo_status_name: statusName,
-      client_status: clientStatusData.client_status
+      deals,
+      message: deals.length ? "Сделки найдены" : "Нет доступных сделок для отображения"
     });
   } catch (error) {
     const amoMessage =
