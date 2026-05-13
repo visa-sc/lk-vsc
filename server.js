@@ -32,7 +32,7 @@ const {
 
 const AMO_SUBDOMAIN = String(process.env.AMO_SUBDOMAIN || "")
   .trim()
-  .replace(/^https?:\/\//, "")
+  .replace(/^https?:\/\//i, "")
   .replace(/\/.*$/, "")
   .replace(/\.amocrm\.ru$/i, "");
 
@@ -49,6 +49,19 @@ function sanitizeFileName(name = "") {
   return String(name).replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").trim();
 }
 
+function leadIsHidden(lead) {
+  const raw = [
+    lead?.name,
+    lead?.status_name,
+    lead?.pipeline_name
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return raw.includes("hidden") || raw.includes("скрыт");
+}
+
 async function amoGet(url, params = {}) {
   console.log("AMO GET:", url, params);
 
@@ -60,6 +73,33 @@ async function amoGet(url, params = {}) {
   });
 
   return response.data;
+}
+
+async function amoGetAllPages(url, params = {}) {
+  let page = 1;
+  const limit = 250;
+  const allItems = [];
+
+  while (true) {
+    const data = await amoGet(url, {
+      ...params,
+      page,
+      limit
+    });
+
+    const embeddedKey = Object.keys(data._embedded || {})[0];
+    const items = embeddedKey ? data._embedded?.[embeddedKey] || [] : [];
+
+    allItems.push(...items);
+
+    if (!items.length || items.length < limit) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return allItems;
 }
 
 async function yandexRequest(config) {
@@ -123,36 +163,68 @@ async function getLeadsByPhone(phone) {
 
   const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
 
-  const contactSearch = await amoGet(`${baseUrl}/api/v4/contacts`, {
+  const contacts = await amoGetAllPages(`${baseUrl}/api/v4/contacts`, {
     query: normalized,
     with: "leads"
   });
 
-  console.log("CONTACT SEARCH RESPONSE:", JSON.stringify(contactSearch).slice(0, 3000));
+  console.log("FOUND CONTACTS:", contacts.length);
 
-  const contacts = contactSearch._embedded?.contacts || [];
   const leadIds = new Set();
 
   for (const contact of contacts) {
     const linkedLeads = contact._embedded?.leads || [];
     for (const lead of linkedLeads) {
-      if (lead.id) leadIds.add(lead.id);
+      if (lead.id) {
+        leadIds.add(lead.id);
+      }
     }
   }
 
-  console.log("FOUND CONTACTS:", contacts.length);
-  console.log("FOUND LEAD IDS:", Array.from(leadIds));
+  const leadIdsArray = Array.from(leadIds);
 
-  if (!leadIds.size) return [];
+  console.log("FOUND LEAD IDS:", leadIdsArray);
 
-  const leadsResponse = await amoGet(`${baseUrl}/api/v4/leads`, {
-    "filter[id]": Array.from(leadIds).join(","),
-    with: "contacts"
+  if (!leadIdsArray.length) {
+    return [];
+  }
+
+  const chunks = [];
+  for (let i = 0; i < leadIdsArray.length; i += 100) {
+    chunks.push(leadIdsArray.slice(i, i + 100));
+  }
+
+  const allLeads = [];
+
+  for (const chunk of chunks) {
+    const data = await amoGet(`${baseUrl}/api/v4/leads`, {
+      "filter[id]": chunk.join(","),
+      with: "contacts"
+    });
+
+    const leads = data._embedded?.leads || [];
+    allLeads.push(...leads);
+  }
+
+  const uniqueLeadsMap = new Map();
+
+  for (const lead of allLeads) {
+    if (!lead?.id) continue;
+    if (leadIsHidden(lead)) continue;
+    uniqueLeadsMap.set(lead.id, lead);
+  }
+
+  const uniqueLeads = Array.from(uniqueLeadsMap.values()).sort((a, b) => {
+    return (b.created_at || 0) - (a.created_at || 0);
   });
 
-  console.log("LEADS RESPONSE:", JSON.stringify(leadsResponse).slice(0, 3000));
+  console.log("VISIBLE LEADS:", uniqueLeads.map((lead) => ({
+    id: lead.id,
+    name: lead.name,
+    status_name: lead.status_name
+  })));
 
-  return leadsResponse._embedded?.leads || [];
+  return uniqueLeads;
 }
 
 app.get("/api/leads", async (req, res) => {
