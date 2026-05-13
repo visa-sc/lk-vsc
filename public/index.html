@@ -248,14 +248,16 @@
       box-shadow: inset 0 0 0 4px #4f9f68;
     }
 
-    .documents {
+    .documents-inline {
       display: none;
-      margin-top: 22px;
-      padding-top: 18px;
-      border-top: 1px solid #ece7f2;
+      margin: 6px 0 2px 32px;
+      padding: 16px;
+      border: 1px solid #ece7f2;
+      border-radius: 18px;
+      background: #faf9fc;
     }
 
-    .documents h3 {
+    .documents-inline h3 {
       margin: 0 0 12px;
       font-size: 15px;
       color: #1d2330;
@@ -324,6 +326,10 @@
       .lead-item {
         white-space: normal;
       }
+
+      .documents-inline {
+        margin-left: 0;
+      }
     }
   </style>
 </head>
@@ -372,31 +378,6 @@
         <div id="emptyStatus" class="empty-status">
           Ниже показаны реальные этапы обработки. Текущий этап и уже пройденные шаги подсвечиваются зелёным.
         </div>
-
-        <div id="documentsBlock" class="documents">
-          <h3>Загрузка документов</h3>
-
-          <form id="uploadForm">
-            <div class="file-grid">
-              <div class="file-group">
-                <label for="passportFile">Заграничный паспорт</label>
-                <input id="passportFile" name="passportFile" type="file" />
-              </div>
-
-              <div class="file-group">
-                <label for="innerPassportFile">Внутренний паспорт</label>
-                <input id="innerPassportFile" name="innerPassportFile" type="file" />
-              </div>
-
-              <div class="file-group">
-                <label for="workFile">Справка с работы</label>
-                <input id="workFile" name="workFile" type="file" />
-              </div>
-            </div>
-
-            <button id="uploadBtn" class="upload-btn" type="submit">Отправить документы</button>
-          </form>
-        </div>
       </div>
     </div>
   </div>
@@ -411,10 +392,8 @@
     ];
 
     const statusForm = document.getElementById("statusForm");
-    const uploadForm = document.getElementById("uploadForm");
     const phoneInput = document.getElementById("phoneInput");
     const searchBtn = document.getElementById("searchBtn");
-    const uploadBtn = document.getElementById("uploadBtn");
     const errorBox = document.getElementById("errorBox");
     const successBox = document.getElementById("successBox");
     const infoBox = document.getElementById("infoBox");
@@ -423,7 +402,6 @@
     const statusText = document.getElementById("statusText");
     const stagesEl = document.getElementById("stages");
     const emptyStatus = document.getElementById("emptyStatus");
-    const documentsBlock = document.getElementById("documentsBlock");
 
     let selectedLead = null;
 
@@ -460,6 +438,93 @@
       return 0;
     }
 
+    function createDocumentsBlock() {
+      const wrapper = document.createElement("div");
+      wrapper.className = "documents-inline";
+      wrapper.id = "documentsInline";
+
+      wrapper.innerHTML = `
+        <h3>Загрузка документов</h3>
+        <form id="uploadForm">
+          <div class="file-grid">
+            <div class="file-group">
+              <label for="passportFile">Заграничный паспорт</label>
+              <input id="passportFile" name="passportFile" type="file" />
+            </div>
+
+            <div class="file-group">
+              <label for="innerPassportFile">Внутренний паспорт</label>
+              <input id="innerPassportFile" name="innerPassportFile" type="file" />
+            </div>
+
+            <div class="file-group">
+              <label for="workFile">Справка с работы</label>
+              <input id="workFile" name="workFile" type="file" />
+            </div>
+          </div>
+
+          <button id="uploadBtn" class="upload-btn" type="submit">Отправить документы</button>
+        </form>
+      `;
+
+      const form = wrapper.querySelector("#uploadForm");
+      const uploadBtn = wrapper.querySelector("#uploadBtn");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        hideMessages();
+
+        const phone = phoneInput.value.trim();
+
+        if (!phone) {
+          showBox(errorBox, "Сначала введите телефон");
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("phone", phone);
+
+        const passportFile = wrapper.querySelector("#passportFile").files[0];
+        const innerPassportFile = wrapper.querySelector("#innerPassportFile").files[0];
+        const workFile = wrapper.querySelector("#workFile").files[0];
+
+        if (passportFile) formData.append("passportFile", passportFile);
+        if (innerPassportFile) formData.append("innerPassportFile", innerPassportFile);
+        if (workFile) formData.append("workFile", workFile);
+
+        if (!passportFile && !innerPassportFile && !workFile) {
+          showBox(errorBox, "Выберите хотя бы один файл");
+          return;
+        }
+
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = "Загрузка...";
+
+        try {
+          const response = await fetch("/upload-documents", {
+            method: "POST",
+            body: formData
+          });
+
+          const data = await response.json();
+
+          if (!response.ok || !data.success) {
+            throw new Error(data.message || "Ошибка загрузки файлов");
+          }
+
+          showBox(successBox, "Документы успешно загружены");
+        } catch (error) {
+          console.error("UPLOAD ERROR:", error);
+          showBox(errorBox, "Не удалось загрузить документы");
+        } finally {
+          uploadBtn.disabled = false;
+          uploadBtn.textContent = "Отправить документы";
+        }
+      });
+
+      return wrapper;
+    }
+
     function renderStages(currentIndex) {
       stagesEl.innerHTML = "";
 
@@ -476,6 +541,12 @@
         `;
 
         stagesEl.appendChild(row);
+
+        if (index === 0 && currentIndex === 0) {
+          const documentsBlock = createDocumentsBlock();
+          documentsBlock.style.display = "block";
+          stagesEl.appendChild(documentsBlock);
+        }
       });
     }
 
@@ -493,7 +564,6 @@
 
       statusText.textContent = `Вы выбрали ${getLeadLabel(lead)}. Текущий этап: ${currentStageTitle}.`;
       emptyStatus.style.display = "none";
-      documentsBlock.style.display = "block";
       renderStages(currentStageIndex);
     }
 
@@ -506,7 +576,6 @@
         statusText.textContent = "Нет данных для отображения.";
         stagesEl.innerHTML = "";
         emptyStatus.style.display = "block";
-        documentsBlock.style.display = "none";
         selectedLead = null;
         return;
       }
@@ -551,7 +620,6 @@
       statusText.textContent = "Получаем данные из amoCRM...";
       stagesEl.innerHTML = "";
       emptyStatus.style.display = "block";
-      documentsBlock.style.display = "none";
       selectedLead = null;
 
       try {
@@ -583,62 +651,9 @@
         statusText.textContent = "Выберите обращение слева.";
         stagesEl.innerHTML = "";
         emptyStatus.style.display = "block";
-        documentsBlock.style.display = "none";
       } finally {
         searchBtn.disabled = false;
         searchBtn.textContent = "Открыть статус";
-      }
-    });
-
-    uploadForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      hideMessages();
-
-      const phone = phoneInput.value.trim();
-
-      if (!phone) {
-        showBox(errorBox, "Сначала введите телефон");
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append("phone", phone);
-
-      const passportFile = document.getElementById("passportFile").files[0];
-      const innerPassportFile = document.getElementById("innerPassportFile").files[0];
-      const workFile = document.getElementById("workFile").files[0];
-
-      if (passportFile) formData.append("passportFile", passportFile);
-      if (innerPassportFile) formData.append("innerPassportFile", innerPassportFile);
-      if (workFile) formData.append("workFile", workFile);
-
-      if (!passportFile && !innerPassportFile && !workFile) {
-        showBox(errorBox, "Выберите хотя бы один файл");
-        return;
-      }
-
-      uploadBtn.disabled = true;
-      uploadBtn.textContent = "Загрузка...";
-
-      try {
-        const response = await fetch("/upload-documents", {
-          method: "POST",
-          body: formData
-        });
-
-        const data = await response.json();
-
-        if (!response.ok || !data.success) {
-          throw new Error(data.message || "Ошибка загрузки файлов");
-        }
-
-        showBox(successBox, "Документы успешно загружены");
-      } catch (error) {
-        console.error("UPLOAD ERROR:", error);
-        showBox(errorBox, "Не удалось загрузить документы");
-      } finally {
-        uploadBtn.disabled = false;
-        uploadBtn.textContent = "Отправить документы";
       }
     });
   </script>
