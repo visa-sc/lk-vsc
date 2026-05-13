@@ -70,7 +70,7 @@ function extractPhonesFromContact(contact) {
     const code = String(field.field_code || "").toUpperCase();
     const name = String(field.field_name || "").toLowerCase();
 
-    if (code === "PHONE" || name.includes("телефон")) {
+    if (code === "PHONE" || name.includes("тел")) {
       for (const item of field.values || []) {
         if (item?.value) {
           values.push(normalizePhone(item.value));
@@ -79,7 +79,7 @@ function extractPhonesFromContact(contact) {
     }
   }
 
-  return values.filter(Boolean);
+  return [...new Set(values.filter(Boolean))];
 }
 
 function contactMatchesPhone(contact, phone) {
@@ -87,11 +87,7 @@ function contactMatchesPhone(contact, phone) {
   const phones = extractPhonesFromContact(contact);
 
   return phones.some((p) => {
-    return (
-      p === normalizedPhone ||
-      p.endsWith(normalizedPhone) ||
-      normalizedPhone.endsWith(p)
-    );
+    return p === normalizedPhone || p.endsWith(normalizedPhone) || normalizedPhone.endsWith(p);
   });
 }
 
@@ -137,10 +133,7 @@ async function amoGetAllPages(url, params = {}) {
     allItems.push(...items);
 
     nextUrl = data?._links?.next?.href || null;
-
-    if (!nextUrl) {
-      break;
-    }
+    if (!nextUrl) break;
 
     page += 1;
   }
@@ -148,23 +141,22 @@ async function amoGetAllPages(url, params = {}) {
   return allItems;
 }
 
-async function getLeadLinks(baseUrl, leadId) {
+async function getEntityLinks(baseUrl, entityType, entityId) {
   try {
-    const data = await amoGet(`${baseUrl}/api/v4/leads/${leadId}/links`);
+    const data = await amoGet(`${baseUrl}/api/v4/${entityType}/${entityId}/links`);
     return data?._embedded?.links || [];
   } catch (error) {
-    console.error("GET LEAD LINKS ERROR:", leadId, error.response?.data || error.message);
+    console.error(`GET LINKS ERROR ${entityType}/${entityId}:`, error.response?.data || error.message);
     return [];
   }
 }
 
-async function getContactLinks(baseUrl, contactId) {
+async function getLeadById(baseUrl, leadId) {
   try {
-    const data = await amoGet(`${baseUrl}/api/v4/contacts/${contactId}/links`);
-    return data?._embedded?.links || [];
+    return await amoGet(`${baseUrl}/api/v4/leads/${leadId}`, { with: "contacts" });
   } catch (error) {
-    console.error("GET CONTACT LINKS ERROR:", contactId, error.response?.data || error.message);
-    return [];
+    console.error(`GET LEAD ERROR ${leadId}:`, error.response?.data || error.message);
+    return null;
   }
 }
 
@@ -218,6 +210,81 @@ async function uploadBufferToYandexDisk(buffer, diskPath, contentType = "applica
   });
 }
 
+async function findMatchingContacts(baseUrl, phone) {
+  const normalized = normalizePhone(phone);
+
+  const variants = [...new Set([
+    normalized,
+    normalized.slice(-10),
+    normalized.startsWith("7") ? `8${normalized.slice(1)}` : normalized
+  ].filter(Boolean))];
+
+  const contactsMap = new Map();
+
+  for (const query of variants) {
+    const contacts = await amoGetAllPages(`${baseUrl}/api/v4/contacts`, {
+      query
+    });
+
+    for (const contact of contacts) {
+      if (!contact?.id) continue;
+      if (!contactMatchesPhone(contact, normalized)) continue;
+      contactsMap.set(contact.id, contact);
+    }
+  }
+
+  const matchedContacts = Array.from(contactsMap.values());
+
+  console.log("MATCHED CONTACTS:", matchedContacts.map((c) => ({
+    id: c.id,
+    phones: extractPhonesFromContact(c)
+  })));
+
+  return matchedContacts;
+}
+
+async function collectLeadIdsFromContacts(baseUrl, contacts) {
+  const leadIds = new Set();
+
+  for (const contact of contacts) {
+    const contactFull = await amoGet(`${baseUrl}/api/v4/contacts/${contact.id}`, {
+      with: "leads"
+    });
+
+    const embeddedLeads = contactFull?._embedded?.leads || [];
+    for (const lead of embeddedLeads) {
+      if (lead?.id) {
+        leadIds.add(lead.id);
+      }
+    }
+
+    const links = await getEntityLinks(baseUrl, "contacts", contact.id);
+    for (const link of links) {
+      const toType = String(link.to_entity_type || "").toLowerCase();
+      if ((toType === "leads" || toType === "lead") && link.to_entity_id) {
+        leadIds.add(link.to_entity_id);
+      }
+    }
+  }
+
+  return Array.from(leadIds);
+}
+
+async function loadLeadsByIds(baseUrl, leadIds) {
+  const leadsMap = new Map();
+
+  for (const leadId of leadIds) {
+    const lead = await getLeadById(baseUrl, leadId);
+    if (!lead?.id) continue;
+    if (leadIsHidden(lead)) continue;
+    leadsMap.set(lead.id, lead);
+  }
+
+  return Array.from(leadsMap.values()).sort((a, b) => {
+    return (b.created_at || 0) - (a.created_at || 0);
+  });
+}
+
 async function getLeadsByPhone(phone) {
   const normalized = normalizePhone(phone);
 
@@ -229,109 +296,29 @@ async function getLeadsByPhone(phone) {
 
   const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
 
-  const foundContacts = [];
-  const contactIds = new Set();
-
-  const contactSearchQueries = Array.from(new Set([
-    normalized,
-    normalized.slice(-10),
-    normalized.startsWith("7") ? `8${normalized.slice(1)}` : normalized
-  ].filter(Boolean)));
-
-  for (const query of contactSearchQueries) {
-    const contacts = await amoGetAllPages(`${baseUrl}/api/v4/contacts`, {
-      query,
-      with: "leads"
-    });
-
-    for (const contact of contacts) {
-      if (!contact?.id) continue;
-      if (!contactIds.has(contact.id) && contactMatchesPhone(contact, normalized)) {
-        contactIds.add(contact.id);
-        foundContacts.push(contact);
-      }
-    }
-  }
-
-  console.log("MATCHED CONTACT IDS:", Array.from(contactIds));
-
-  const leadIds = new Set();
-
-  for (const contact of foundContacts) {
-    const embeddedLeads = contact?._embedded?.leads || [];
-    for (const lead of embeddedLeads) {
-      if (lead?.id) {
-        leadIds.add(lead.id);
-      }
-    }
-
-    const links = await getContactLinks(baseUrl, contact.id);
-    for (const link of links) {
-      const toEntityType = String(link.to_entity_type || "").toLowerCase();
-      if (toEntityType === "leads" && link.to_entity_id) {
-        leadIds.add(link.to_entity_id);
-      }
-    }
-  }
-
-  const leadIdsArray = Array.from(leadIds);
-  console.log("ALL LEAD IDS:", leadIdsArray);
-
-  if (!leadIdsArray.length) {
+  const contacts = await findMatchingContacts(baseUrl, normalized);
+  if (!contacts.length) {
+    console.log("NO MATCHING CONTACTS");
     return [];
   }
 
-  const chunks = [];
-for (let i = 0; i < leadIdsArray.length; i += 100) {
-    chunks.push(leadIdsArray.slice(i, i + 100));
+  const leadIds = await collectLeadIdsFromContacts(baseUrl, contacts);
+  console.log("COLLECTED LEAD IDS:", leadIds);
+
+  if (!leadIds.length) {
+    return [];
   }
 
-  const allLeads = [];
+  const leads = await loadLeadsByIds(baseUrl, leadIds);
 
-  for (const chunk of chunks) {
-    const data = await amoGet(`${baseUrl}/api/v4/leads`, {
-      "filter[id]": chunk.join(","),
-      with: "contacts"
-    });
-
-    const leads = data?._embedded?.leads || [];
-    allLeads.push(...leads);
-  }
-
-  const uniqueLeadsMap = new Map();
-
-  for (const lead of allLeads) {
-    if (!lead?.id) continue;
-    if (leadIsHidden(lead)) continue;
-    uniqueLeadsMap.set(lead.id, lead);
-  }
-
-  for (const lead of allLeads) {
-    if (!lead?.id) continue;
-
-    const links = await getLeadLinks(baseUrl, lead.id);
-    const hasMatchedContact = links.some((link) => {
-      const toEntityType = String(link.to_entity_type || "").toLowerCase();
-      return toEntityType === "contacts" && contactIds.has(link.to_entity_id);
-    });
-
-    if (hasMatchedContact && !leadIsHidden(lead)) {
-      uniqueLeadsMap.set(lead.id, lead);
-    }
-  }
-
-  const uniqueLeads = Array.from(uniqueLeadsMap.values()).sort((a, b) => {
-    return (b.created_at || 0) - (a.created_at || 0);
-  });
-
-  console.log("VISIBLE LEADS:", uniqueLeads.map((lead) => ({
+  console.log("VISIBLE LEADS:", leads.map((lead) => ({
     id: lead.id,
     name: lead.name,
     created_at: lead.created_at,
     status_name: lead.status_name
   })));
 
-  return uniqueLeads;
+  return leads;
 }
 
 app.get("/api/leads", async (req, res) => {
