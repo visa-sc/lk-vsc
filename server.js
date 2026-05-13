@@ -49,19 +49,6 @@ function sanitizeFileName(name = "") {
   return String(name).replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").trim();
 }
 
-function leadIsHidden(lead) {
-  const raw = [
-    lead?.name,
-    lead?.status_name,
-    lead?.pipeline_name
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return raw.includes("hidden") || raw.includes("скрыт");
-}
-
 function extractPhonesFromContact(contact) {
   const fields = contact?.custom_fields_values || [];
   const values = [];
@@ -160,6 +147,95 @@ async function getLeadById(baseUrl, leadId) {
   }
 }
 
+async function getPipelinesMap(baseUrl) {
+  const pipelines = await amoGetAllPages(`${baseUrl}/api/v4/leads/pipelines`);
+  const statusMap = new Map();
+
+  for (const pipeline of pipelines) {
+    const pipelineId = pipeline.id;
+    const statuses = await amoGetAllPages(`${baseUrl}/api/v4/leads/pipelines/${pipelineId}/statuses`);
+
+    for (const status of statuses) {
+      statusMap.set(`${pipelineId}:${status.id}`, {
+        pipeline_id: pipelineId,
+        status_id: status.id,
+        pipeline_name: pipeline.name || "",
+        status_name: status.name || ""
+      });
+    }
+  }
+
+  return statusMap;
+}
+
+function isHiddenLead(lead, statusesMap) {
+  const key = `${lead.pipeline_id}:${lead.status_id}`;
+  const statusMeta = statusesMap.get(key);
+
+  const haystack = [
+    lead?.name,
+    lead?.pipeline_name,
+    lead?.status_name,
+    statusMeta?.pipeline_name,
+    statusMeta?.status_name
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return haystack.includes("hidden") || haystack.includes("скрыт");
+}
+
+function getCabinetStage(statusMeta, lead) {
+  const raw = [
+    statusMeta?.status_name,
+    statusMeta?.pipeline_name,
+    lead?.status_name,
+    lead?.pipeline_name,
+    lead?.name
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    raw.includes("рассмотрение завершено") ||
+    raw.includes("завершено") ||
+    raw.includes("готово") ||
+    raw.includes("готов") ||
+    raw.includes("выдан")
+  ) {
+    return 4;
+  }
+
+  if (
+    raw.includes("консуль") ||
+    raw.includes("поданы") ||
+    raw.includes("подано") ||
+    raw.includes("на рассмотрении")
+  ) {
+    return 3;
+  }
+
+  if (
+    raw.includes("ожидание записи") ||
+    raw.includes("ожидание подачи") ||
+    raw.includes("запись") ||
+    raw.includes("подач")
+  ) {
+    return 2;
+  }
+
+  if (
+    raw.includes("подготовка документов") ||
+    raw.includes("подготовка")
+  ) {
+    return 1;
+  }
+
+  return 0;
+}
+
 async function yandexRequest(config) {
   return axios({
     ...config,
@@ -233,14 +309,7 @@ async function findMatchingContacts(baseUrl, phone) {
     }
   }
 
-  const matchedContacts = Array.from(contactsMap.values());
-
-  console.log("MATCHED CONTACTS:", matchedContacts.map((c) => ({
-    id: c.id,
-    phones: extractPhonesFromContact(c)
-  })));
-
-  return matchedContacts;
+  return Array.from(contactsMap.values());
 }
 
 async function collectLeadIdsFromContacts(baseUrl, contacts) {
@@ -270,14 +339,25 @@ async function collectLeadIdsFromContacts(baseUrl, contacts) {
   return Array.from(leadIds);
 }
 
-async function loadLeadsByIds(baseUrl, leadIds) {
+async function loadLeadsByIds(baseUrl, leadIds, statusesMap) {
   const leadsMap = new Map();
 
   for (const leadId of leadIds) {
     const lead = await getLeadById(baseUrl, leadId);
     if (!lead?.id) continue;
-    if (leadIsHidden(lead)) continue;
-    leadsMap.set(lead.id, lead);
+
+    const statusMeta = statusesMap.get(`${lead.pipeline_id}:${lead.status_id}`) || null;
+
+    if (isHiddenLead(lead, statusesMap)) {
+      continue;
+    }
+
+    leadsMap.set(lead.id, {
+      ...lead,
+      pipeline_name: statusMeta?.pipeline_name || lead.pipeline_name || "",
+      status_name: statusMeta?.status_name || lead.status_name || "",
+      cabinet_stage_index: getCabinetStage(statusMeta, lead)
+    });
   }
 
   return Array.from(leadsMap.values()).sort((a, b) => {
@@ -296,9 +376,15 @@ async function getLeadsByPhone(phone) {
 
   const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
 
+  const statusesMap = await getPipelinesMap(baseUrl);
   const contacts = await findMatchingContacts(baseUrl, normalized);
+
+  console.log("MATCHED CONTACTS:", contacts.map((c) => ({
+    id: c.id,
+    phones: extractPhonesFromContact(c)
+  })));
+
   if (!contacts.length) {
-    console.log("NO MATCHING CONTACTS");
     return [];
   }
 
@@ -309,13 +395,16 @@ async function getLeadsByPhone(phone) {
     return [];
   }
 
-  const leads = await loadLeadsByIds(baseUrl, leadIds);
+  const leads = await loadLeadsByIds(baseUrl, leadIds, statusesMap);
 
   console.log("VISIBLE LEADS:", leads.map((lead) => ({
     id: lead.id,
     name: lead.name,
     created_at: lead.created_at,
-    status_name: lead.status_name
+    pipeline_id: lead.pipeline_id,
+    status_id: lead.status_id,
+    status_name: lead.status_name,
+    cabinet_stage_index: lead.cabinet_stage_index
   })));
 
   return leads;
