@@ -12,312 +12,300 @@
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-      background: #f5f3f8;
-      color: #1f2430;
+      background: #f3f2f7;
+      color: #1d2330;
     }
 
-    .page {
-      max-width: 1240px;
-      margin: 24px auto;
+    .wrap {
+      max-width: 1180px;
+      margin: 22px auto;
       background: #faf9fc;
-      border-radius: 28px;
-      padding: 26px;
-      box-shadow: 0 8px 40px rgba(33, 35, 52, 0.06);
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05);
     }
 
     .badge {
-      display: inline-block;
-      padding: 10px 14px;
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
       border-radius: 999px;
       background: #f0ebf7;
-      color: #7b7190;
-      font-size: 14px;
+      color: #7a718d;
+      font-size: 13px;
       margin-bottom: 14px;
     }
 
     h1 {
-      margin: 0 0 10px;
-      font-size: 52px;
-      line-height: 1.05;
-      color: #151a28;
+      margin: 0 0 8px;
+      font-size: 26px;
+      line-height: 1.15;
+      color: #171c29;
     }
 
     .subtitle {
-      margin: 0 0 26px;
-      color: #7b8190;
-      font-size: 18px;
+      margin: 0 0 18px;
+      font-size: 14px;
+      color: #737988;
     }
 
     .search-box {
-      border: 1px solid #e6e2eb;
-      border-radius: 24px;
-      padding: 12px;
-      background: #fff;
       display: grid;
-      grid-template-columns: 1fr 220px;
-      gap: 12px;
+      grid-template-columns: 1fr 180px;
+      gap: 10px;
+      border: 1px solid #e8e3ef;
+      background: #fff;
+      padding: 10px;
+      border-radius: 20px;
       margin-bottom: 16px;
     }
 
     .search-box input {
       width: 100%;
-      height: 60px;
-      border: 1px solid #e8e4ee;
-      border-radius: 18px;
-      padding: 0 18px;
-      font-size: 28px;
+      height: 52px;
+      border: 1px solid #ebe6f1;
+      border-radius: 14px;
+      padding: 0 16px;
+      font-size: 16px;
       outline: none;
+      color: #1f2532;
       background: #fff;
-      color: #202534;
     }
 
     .search-box button {
-      height: 60px;
+      height: 52px;
       border: none;
-      border-radius: 18px;
-      background: #171d44;
+      border-radius: 14px;
+      background: #161d45;
       color: #fff;
-      font-size: 24px;
-      font-weight: 700;
+      font-size: 16px;
+      font-weight: 600;
       cursor: pointer;
     }
 
-    .search-box button:disabled {
-      opacity: 0.65;
+    .search-box button:disabled,
+    .upload-btn:disabled {
+      opacity: 0.7;
       cursor: not-allowed;
     }
 
-    .error-box,
-    .success-box,
-    .info-box {
-      border-radius: 16px;
-      padding: 14px 16px;
-      margin-bottom: 18px;
-      font-size: 18px;
+    .message {
       display: none;
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 14px;
+      margin-bottom: 16px;
     }
 
-    .error-box {
-      background: #fbecee;
+    .message.error {
+      background: #fbebee;
       border: 1px solid #efcfd5;
-      color: #a24f5b;
+      color: #a15561;
     }
 
-    .success-box {
+    .message.success {
       background: #edf8ef;
       border: 1px solid #cfe7d2;
-      color: #2d7a43;
+      color: #2e7a43;
     }
 
-    .info-box {
+    .message.info {
       background: #eef3ff;
-      border: 1px solid #d5dfff;
-      color: #445e9c;
+      border: 1px solid #d7e0ff;
+      color: #4b6198;
     }
 
-    .content {
+    .grid {
       display: grid;
-      grid-template-columns: 320px 1fr;
-      gap: 20px;
+      grid-template-columns: 230px 1fr;
+      gap: 16px;
     }
 
     .card {
       background: #fff;
       border: 1px solid #ece7f2;
-      border-radius: 24px;
-      padding: 24px;
-      min-height: 420px;
+      border-radius: 22px;
+      padding: 18px;
+      min-height: 330px;
     }
 
     .card h2 {
-      margin: 0 0 12px;
-      font-size: 22px;
-      color: #1f2430;
+      margin: 0 0 10px;
+      font-size: 16px;
+      color: #1d2330;
     }
 
     .muted {
-      color: #9196a4;
-      font-size: 18px;
+      color: #9096a3;
+      font-size: 14px;
+      line-height: 1.5;
     }
 
     .lead-list {
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      margin-top: 18px;
+      gap: 10px;
+      margin-top: 12px;
     }
 
     .lead-item {
+      width: 100%;
+      text-align: left;
       border: 1px solid #ebe5f2;
       background: #fcfbfe;
-      border-radius: 18px;
-      padding: 16px;
+      border-radius: 16px;
+      padding: 14px 14px;
       cursor: pointer;
-      transition: 0.2s ease;
+      transition: 0.18s ease;
+      color: #1e2433;
+      font-size: 14px;
+      line-height: 1.4;
     }
 
     .lead-item:hover {
-      border-color: #d8cee8;
+      border-color: #ddd2eb;
       background: #faf7fd;
     }
 
     .lead-item.active {
-      border-color: #5db57b;
-      background: #eff9f2;
+      border-color: #73b489;
+      background: #eef8f1;
     }
 
-    .lead-name {
-      font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 8px;
-      color: #1e2535;
-    }
-
-    .lead-meta {
-      font-size: 15px;
-      color: #7d8391;
-      line-height: 1.45;
-    }
-
-    .status-header {
+    .status-top {
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      gap: 16px;
+      align-items: flex-start;
+      gap: 12px;
       margin-bottom: 10px;
     }
 
-    .collapse-btn {
-      width: 42px;
-      height: 42px;
-      border-radius: 50%;
-      border: none;
-      background: #f4efe4;
-      color: #b58b47;
-      font-size: 26px;
-      cursor: pointer;
-      line-height: 1;
+    .status-top p {
+      margin: 0;
+      font-size: 14px;
+      color: #747b88;
+      line-height: 1.55;
+      max-width: 740px;
     }
 
-    .status-text {
-      color: #6d7382;
-      font-size: 18px;
-      line-height: 1.55;
-      margin-bottom: 28px;
-      max-width: 850px;
+    .mini-btn {
+      width: 34px;
+      height: 34px;
+      border: none;
+      border-radius: 50%;
+      background: #f4efe4;
+      color: #bf9654;
+      font-size: 22px;
+      line-height: 1;
+      cursor: pointer;
+      flex: 0 0 34px;
     }
 
     .stages {
       display: flex;
       flex-direction: column;
-      gap: 18px;
+      gap: 14px;
       margin-top: 18px;
     }
 
     .stage {
       display: flex;
       align-items: center;
-      gap: 14px;
-      font-size: 28px;
-      color: #a2a7b2;
-      font-weight: 600;
+      gap: 12px;
+      font-size: 15px;
+      color: #9da3ae;
+      font-weight: 500;
+      line-height: 1.4;
     }
 
-    .stage-dot {
-      width: 24px;
-      height: 24px;
+    .dot {
+      width: 20px;
+      height: 20px;
       border-radius: 50%;
-      border: 3px solid #d5d9e1;
+      border: 2px solid #d6dbe2;
       background: #fff;
-      flex: 0 0 24px;
+      flex: 0 0 20px;
     }
 
-    .stage.done {
-      color: #4da267;
-    }
-
-    .stage.done .stage-dot {
-      border-color: #4da267;
-      background: #4da267;
-      box-shadow: inset 0 0 0 5px #fff;
-    }
-
+    .stage.done,
     .stage.current {
-      color: #4da267;
+      color: #4f9f68;
     }
 
-    .stage.current .stage-dot {
-      border-color: #4da267;
+    .stage.done .dot {
+      border-color: #4f9f68;
+      background: #4f9f68;
+      box-shadow: inset 0 0 0 4px #fff;
+    }
+
+    .stage.current .dot {
+      border-color: #4f9f68;
       background: #fff;
-      box-shadow: inset 0 0 0 5px #4da267;
+      box-shadow: inset 0 0 0 4px #4f9f68;
     }
 
     .documents {
-      margin-top: 28px;
-      padding-top: 24px;
-      border-top: 1px solid #ebe6f1;
       display: none;
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px solid #ece7f2;
     }
 
     .documents h3 {
-      margin: 0 0 14px;
-      font-size: 20px;
-      color: #1f2430;
+      margin: 0 0 12px;
+      font-size: 15px;
+      color: #1d2330;
     }
 
     .file-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
-      margin-bottom: 16px;
+      gap: 12px;
+      margin-bottom: 14px;
     }
 
     .file-group {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }
 
     .file-group label {
-      font-size: 15px;
-      color: #636978;
+      font-size: 13px;
+      color: #666d7c;
       font-weight: 600;
     }
 
     .file-group input[type="file"] {
-      display: block;
       width: 100%;
-      padding: 10px;
-      border: 1px solid #e5deec;
+      border: 1px solid #e8e2ee;
       border-radius: 12px;
+      padding: 8px;
       background: #fff;
+      font-size: 12px;
     }
 
     .upload-btn {
-      height: 52px;
+      height: 46px;
       border: none;
-      border-radius: 16px;
-      background: #171d44;
+      border-radius: 14px;
+      background: #161d45;
       color: #fff;
-      font-size: 18px;
-      font-weight: 700;
+      font-size: 15px;
+      font-weight: 600;
       cursor: pointer;
-      padding: 0 24px;
+      padding: 0 20px;
     }
 
-    .upload-btn:disabled {
-      opacity: 0.65;
-      cursor: not-allowed;
+    .empty-status {
+      color: #9ca2ae;
+      font-size: 14px;
+      line-height: 1.5;
+      margin-top: 16px;
     }
 
-    .empty-note {
-      color: #9aa0ad;
-      font-size: 18px;
-      margin-top: 18px;
-    }
-
-    @media (max-width: 980px) {
-      .content {
+    @media (max-width: 900px) {
+      .grid {
         grid-template-columns: 1fr;
       }
 
@@ -328,27 +316,11 @@
       .file-grid {
         grid-template-columns: 1fr;
       }
-
-      h1 {
-        font-size: 38px;
-      }
-
-      .search-box input {
-        font-size: 22px;
-      }
-
-      .search-box button {
-        font-size: 20px;
-      }
-
-      .stage {
-        font-size: 22px;
-      }
     }
   </style>
 </head>
 <body>
-  <div class="page">
+  <div class="wrap">
     <div class="badge">Личный кабинет клиента</div>
     <h1>Статус визового дела</h1>
     <p class="subtitle">
@@ -361,17 +333,17 @@
         type="text"
         name="phone"
         placeholder="+79991234567"
-        value="+7995922319"
+        autocomplete="tel"
         required
       />
       <button id="searchBtn" type="submit">Открыть статус</button>
     </form>
 
-    <div id="errorBox" class="error-box"></div>
-    <div id="successBox" class="success-box"></div>
-    <div id="infoBox" class="info-box"></div>
+    <div id="errorBox" class="message error"></div>
+    <div id="successBox" class="message success"></div>
+    <div id="infoBox" class="message info"></div>
 
-    <div class="content">
+    <div class="grid">
       <div class="card">
         <h2>Обращения клиента</h2>
         <div id="leadsPlaceholder" class="muted">Введите телефон и нажмите кнопку.</div>
@@ -379,21 +351,18 @@
       </div>
 
       <div class="card">
-        <div class="status-header">
+        <div class="status-top">
           <div>
             <h2>Статус обращения</h2>
+            <p id="statusText">Выберите обращение слева.</p>
           </div>
-          <button class="collapse-btn" type="button">−</button>
+          <button type="button" class="mini-btn">−</button>
         </div>
-
-        <p class="status-text" id="statusText">
-          Выберите обращение слева.
-        </p>
 
         <div id="stages" class="stages"></div>
 
-        <div id="emptyStatus" class="empty-note">
-          Ниже показаны реальные этапы обработки. Текущий этап и все уже пройденные подсвечиваются зелёным.
+        <div id="emptyStatus" class="empty-status">
+          Ниже показаны реальные этапы обработки. Текущий этап и уже пройденные шаги подсвечиваются зелёным.
         </div>
 
         <div id="documentsBlock" class="documents">
@@ -450,42 +419,30 @@
 
     let selectedLead = null;
 
-    function showError(message) {
-      errorBox.style.display = "block";
-      errorBox.textContent = message || "Произошла ошибка";
+    function showBox(el, message) {
+      el.style.display = "block";
+      el.textContent = message || "";
     }
 
-    function hideError() {
-      errorBox.style.display = "none";
-      errorBox.textContent = "";
+    function hideBox(el) {
+      el.style.display = "none";
+      el.textContent = "";
     }
 
-    function showSuccess(message) {
-      successBox.style.display = "block";
-      successBox.textContent = message || "";
+    function hideMessages() {
+      hideBox(errorBox);
+      hideBox(successBox);
+      hideBox(infoBox);
     }
 
-    function hideSuccess() {
-      successBox.style.display = "none";
-      successBox.textContent = "";
+    function formatDate(timestampSeconds) {
+      if (!timestampSeconds) return "без даты";
+      const date = new Date(timestampSeconds * 1000);
+      return date.toLocaleDateString("ru-RU");
     }
 
-    function showInfo(message) {
-      infoBox.style.display = "block";
-      infoBox.textContent = message || "";
-    }
-
-    function hideInfo() {
-      infoBox.style.display = "none";
-      infoBox.textContent = "";
-    }
-
-    function getLeadTitle(lead, index) {
-      return (
-        lead.name ||
-        lead.title ||
-        `Обращение #${index + 1}`
-      );
+    function getLeadLabel(lead) {
+      return `Обращение от ${formatDate(lead.created_at)}`;
     }
 
     function getCurrentStageIndex(lead) {
@@ -509,37 +466,33 @@
       stagesEl.innerHTML = "";
 
       STAGES.forEach((stageName, index) => {
-        const item = document.createElement("div");
-        item.className = "stage";
+        const row = document.createElement("div");
+        row.className = "stage";
 
-        if (index < currentIndex) item.classList.add("done");
-        if (index === currentIndex) item.classList.add("current");
+        if (index < currentIndex) row.classList.add("done");
+        if (index === currentIndex) row.classList.add("current");
 
-        item.innerHTML = `
-          <div class="stage-dot"></div>
+        row.innerHTML = `
+          <div class="dot"></div>
           <div>${stageName}</div>
         `;
 
-        stagesEl.appendChild(item);
+        stagesEl.appendChild(row);
       });
     }
 
-    function selectLead(lead, buttonEl) {
+    function selectLead(lead, itemEl) {
       selectedLead = lead;
 
-      document.querySelectorAll(".lead-item").forEach((item) => {
-        item.classList.remove("active");
+      document.querySelectorAll(".lead-item").forEach((node) => {
+        node.classList.remove("active");
       });
 
-      if (buttonEl) {
-        buttonEl.classList.add("active");
-      }
+      if (itemEl) itemEl.classList.add("active");
 
       const currentStageIndex = getCurrentStageIndex(lead);
 
-      statusText.textContent =
-        `Обращение: ${lead.name || "Без названия"}. Текущий этап обработки определяется по данным amoCRM.`;
-
+      statusText.textContent = `Вы выбрали ${getLeadLabel(lead)}. Ниже показан текущий этап обработки.`;
       emptyStatus.style.display = "none";
       documentsBlock.style.display = "block";
       renderStages(currentStageIndex);
@@ -562,40 +515,31 @@
       leadsPlaceholder.style.display = "none";
 
       leads.forEach((lead, index) => {
-        const item = document.createElement("button");
-        item.type = "button";
-        item.className = "lead-item";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "lead-item";
+        button.textContent = getLeadLabel(lead);
 
-        const createdAt = lead.created_at
-          ? new Date(lead.created_at * 1000).toLocaleDateString("ru-RU")
-          : "—";
+        button.addEventListener("click", () => {
+          selectLead(lead, button);
+        });
 
-        item.innerHTML = `
-          <div class="lead-name">${getLeadTitle(lead, index)}</div>
-          <div class="lead-meta">
-            ID: ${lead.id || "—"}<br>
-            Создано: ${createdAt}<br>
-            Статус: ${lead.status_id || "—"}
-          </div>
-        `;
+        leadList.appendChild(button);
 
-        item.addEventListener("click", () => selectLead(lead, item));
-        leadList.appendChild(item);
+        if (index === 0) {
+          selectLead(lead, button);
+        }
       });
-
-      selectLead(leads[0], leadList.querySelector(".lead-item"));
     }
 
     statusForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      hideError();
-      hideSuccess();
-      hideInfo();
+      hideMessages();
 
       const phone = phoneInput.value.trim();
 
       if (!phone) {
-        showError("Введите номер телефона");
+        showBox(errorBox, "Введите номер телефона");
         return;
       }
 
@@ -628,13 +572,13 @@
         renderLeads(data.leads || []);
 
         if ((data.leads || []).length) {
-          showSuccess("Данные успешно загружены");
+          showBox(successBox, "Данные успешно загружены");
         } else {
-          showInfo("По этому номеру сделки не найдены");
+          showBox(infoBox, "По этому номеру обращения не найдены");
         }
       } catch (error) {
         console.error("LOAD LEADS ERROR:", error);
-        showError("Не удалось получить данные с сервера");
+        showBox(errorBox, "Не удалось получить данные с сервера");
         leadsPlaceholder.style.display = "block";
         leadsPlaceholder.textContent = "Ошибка загрузки.";
         statusText.textContent = "Выберите обращение слева.";
@@ -649,14 +593,12 @@
 
     uploadForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      hideError();
-      hideSuccess();
-      hideInfo();
+      hideMessages();
 
       const phone = phoneInput.value.trim();
 
       if (!phone) {
-        showError("Сначала введите телефон");
+        showBox(errorBox, "Сначала введите телефон");
         return;
       }
 
@@ -672,7 +614,7 @@
       if (workFile) formData.append("workFile", workFile);
 
       if (!passportFile && !innerPassportFile && !workFile) {
-        showError("Выберите хотя бы один файл");
+        showBox(errorBox, "Выберите хотя бы один файл");
         return;
       }
 
@@ -691,10 +633,10 @@
           throw new Error(data.message || "Ошибка загрузки файлов");
         }
 
-        showSuccess("Документы успешно загружены");
+        showBox(successBox, "Документы успешно загружены");
       } catch (error) {
         console.error("UPLOAD ERROR:", error);
-        showError("Не удалось загрузить документы");
+        showBox(errorBox, "Не удалось загрузить документы");
       } finally {
         uploadBtn.disabled = false;
         uploadBtn.textContent = "Отправить документы";
