@@ -84,7 +84,8 @@
     }
 
     .search-box button:disabled,
-    .upload-btn:disabled {
+    .upload-btn:disabled,
+    .questionnaire-btn:disabled {
       opacity: 0.7;
       cursor: not-allowed;
     }
@@ -248,6 +249,25 @@
       box-shadow: inset 0 0 0 4px #4f9f68;
     }
 
+    .questionnaire-inline {
+      display: none;
+      margin: 0 0 2px 32px;
+      padding: 0;
+      background: transparent;
+    }
+
+    .questionnaire-btn {
+      height: 46px;
+      border: none;
+      border-radius: 14px;
+      background: #4f9f68;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0 20px;
+    }
+
     .documents-inline {
       display: none;
       margin: 2px 0 2px 32px;
@@ -327,7 +347,8 @@
         white-space: normal;
       }
 
-      .documents-inline {
+      .documents-inline,
+      .questionnaire-inline {
         margin-left: 0;
       }
     }
@@ -438,6 +459,33 @@
       return 0;
     }
 
+    function createQuestionnaireBlock(lead) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "questionnaire-inline";
+      wrapper.style.display = "block";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "questionnaire-btn";
+      button.textContent = "Заполните опросник";
+
+      button.addEventListener("click", () => {
+        const phone = phoneInput.value.trim();
+        const leadId = lead?.id;
+
+        if (!phone || !leadId) {
+          showBox(errorBox, "Не удалось открыть опросник");
+          return;
+        }
+
+        const url = `/questionnaire?phone=${encodeURIComponent(phone)}&leadId=${encodeURIComponent(leadId)}`;
+        window.open(url, "_blank");
+      });
+
+      wrapper.appendChild(button);
+      return wrapper;
+    }
+
     function createDocumentsBlock() {
       const wrapper = document.createElement("div");
       wrapper.className = "documents-inline";
@@ -525,7 +573,7 @@
       return wrapper;
     }
 
-    function renderStages(currentIndex) {
+    function renderStages(currentIndex, lead) {
       stagesEl.innerHTML = "";
 
       const stageNodes = [];
@@ -547,8 +595,11 @@
       });
 
       if (currentIndex === 0 && stageNodes[0]) {
+        const questionnaireBlock = createQuestionnaireBlock(lead);
         const documentsBlock = createDocumentsBlock();
-        stageNodes[0].after(documentsBlock);
+
+        stageNodes[0].after(questionnaireBlock);
+        questionnaireBlock.after(documentsBlock);
       }
     }
 
@@ -566,7 +617,7 @@
 
       statusText.textContent = `Вы выбрали ${getLeadLabel(lead)}. Текущий этап: ${currentStageTitle}.`;
       emptyStatus.style.display = "none";
-      renderStages(currentStageIndex);
+      renderStages(currentStageIndex, lead);
     }
 
     function renderLeads(leads) {
