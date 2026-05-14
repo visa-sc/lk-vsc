@@ -2,8 +2,11 @@ require("dotenv").config();
 
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
+const os = require("os");
 const axios = require("axios");
 const multer = require("multer");
+const PDFDocument = require("pdfkit");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -58,7 +61,7 @@ const STATUS_MAP = {
     "Партнеры и подрядчики": { hidden: true },
     "Мусор": { hidden: true },
     "Мусор Китай (тур и не рф)": { hidden: true },
-    "МУСОР ВНЖ(для старых сделок, не используем!)": { hidden: true },
+    "МУСОР ВНЖ(для старых сделок, не использу...)": { hidden: true },
     "Спам": { hidden: true },
     "Закрыто и не реализовано": { hidden: true }
   },
@@ -84,7 +87,7 @@ const STATUS_MAP = {
     "Произведена оплата": { client_status: "Подготовка документов" },
     "Сбор документов для ОО": { client_status: "Подготовка документов" },
     "Сбор дополнительных документов для ОО": { client_status: "Подготовка документов" },
-    "Электронные документы переданы в Отдел Оформления": { client_status: "Подготовка документов" },
+    "Электронные документы переданы в Отдел ...": { client_status: "Подготовка документов" },
     "Принято в работу после ОО": { client_status: "Подготовка документов" },
     "Ожидает передачи на рассмотрение в Консульство": { client_status: "Ожидание записи / подачи" },
     "Документы готовы к личной подаче": { client_status: "Ожидание записи / подачи" },
@@ -118,6 +121,15 @@ function normalizePhone(phone = "") {
 
 function sanitizeFileName(name = "") {
   return String(name).replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").trim();
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function extractPhonesFromContact(contact) {
@@ -172,6 +184,25 @@ function findStatusMapEntry(pipelineName = "", statusName = "") {
 
 function getCabinetStageIndexByName(clientStatus) {
   return CABINET_STAGES.findIndex((item) => item === clientStatus);
+}
+
+function getCustomFieldValue(entity, fieldName) {
+  const fields = entity?.custom_fields_values || [];
+  const normalizedTarget = normalizeText(fieldName);
+
+  for (const field of fields) {
+    if (normalizeText(field.field_name) !== normalizedTarget) continue;
+    const values = field.values || [];
+    const first = values[0];
+
+    if (!first) return "";
+    if (typeof first.value === "string") return first.value;
+    if (typeof first.value === "number") return String(first.value);
+    if (first.enum) return String(first.enum);
+    return "";
+  }
+
+  return "";
 }
 
 async function amoGet(url, params = {}) {
@@ -279,7 +310,8 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
       status_name: statusName,
       hidden_in_cabinet: false,
       cabinet_status: "Сбор документов",
-      cabinet_stage_index: 0
+      cabinet_stage_index: 0,
+      country_service: getCustomFieldValue(lead, "Страна оформления/услуга")
     };
   }
 
@@ -290,7 +322,8 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
       status_name: statusName,
       hidden_in_cabinet: true,
       cabinet_status: null,
-      cabinet_stage_index: null
+      cabinet_stage_index: null,
+      country_service: getCustomFieldValue(lead, "Страна оформления/услуга")
     };
   }
 
@@ -303,7 +336,8 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
     status_name: statusName,
     hidden_in_cabinet: false,
     cabinet_status: cabinetStatus,
-    cabinet_stage_index: stageIndex >= 0 ? stageIndex : 0
+    cabinet_stage_index: stageIndex >= 0 ? stageIndex : 0,
+    country_service: getCustomFieldValue(lead, "Страна оформления/услуга")
   };
 }
 
@@ -467,10 +501,258 @@ async function getLeadsByPhone(phone) {
     pipeline_name: lead.pipeline_name,
     status_name: lead.status_name,
     cabinet_status: lead.cabinet_status,
-    cabinet_stage_index: lead.cabinet_stage_index
+    cabinet_stage_index: lead.cabinet_stage_index,
+    country_service: lead.country_service
   })));
 
   return leads;
+}
+
+function buildQuestionnaireHtml({ phone, leadId, countryService }) {
+  const safePhone = escapeHtml(phone || "");
+  const safeLeadId = escapeHtml(String(leadId || ""));
+  const safeCountry = escapeHtml(countryService || "не указано");
+
+  return `
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Опросный лист</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #f3f2f7;
+      color: #1d2330;
+      padding: 24px;
+    }
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid #ece7f2;
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.15;
+      color: #171c29;
+    }
+    .subtitle {
+      margin: 0 0 22px;
+      font-size: 14px;
+      color: #737988;
+      line-height: 1.5;
+    }
+    form {
+      display: grid;
+      gap: 14px;
+    }
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+    .field label {
+      font-size: 14px;
+      font-weight: 600;
+      color: #3a4150;
+    }
+    .field input {
+      width: 100%;
+      height: 50px;
+      border: 1px solid #e8e2ee;
+      border-radius: 14px;
+      padding: 0 14px;
+      font-size: 16px;
+      outline: none;
+      background: #fff;
+      color: #1f2532;
+    }
+    .message {
+      display: none;
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+    .message.error {
+      background: #fbebee;
+      border: 1px solid #efcfd5;
+      color: #a15561;
+    }
+    .message.success {
+      background: #edf8ef;
+      border: 1px solid #cfe7d2;
+      color: #2e7a43;
+    }
+    .submit-btn {
+      height: 50px;
+      border: none;
+      border-radius: 14px;
+      background: #161d45;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Опросный лист на ${safeCountry}</h1>
+    <p class="subtitle">Заполните, пожалуйста, данные и отправьте опросник.</p>
+
+    <div id="errorBox" class="message error"></div>
+    <div id="successBox" class="message success"></div>
+
+    <form id="questionnaireForm">
+      <input type="hidden" name="phone" value="${safePhone}" />
+      <input type="hidden" name="leadId" value="${safeLeadId}" />
+
+      <div class="field">
+        <label for="lastName">Фамилия</label>
+        <input id="lastName" name="lastName" type="text" required />
+      </div>
+
+      <div class="field">
+        <label for="firstName">Имя</label>
+        <input id="firstName" name="firstName" type="text" required />
+      </div>
+
+      <div class="field">
+        <label for="middleName">Отчество</label>
+        <input id="middleName" name="middleName" type="text" required />
+      </div>
+
+      <button id="submitBtn" class="submit-btn" type="submit">Отправить опросник</button>
+    </form>
+  </div>
+
+  <script>
+    const form = document.getElementById("questionnaireForm");
+    const submitBtn = document.getElementById("submitBtn");
+    const errorBox = document.getElementById("errorBox");
+    const successBox = document.getElementById("successBox");
+
+    function showBox(el, message) {
+      el.style.display = "block";
+      el.textContent = message || "";
+    }
+
+    function hideBox(el) {
+      el.style.display = "none";
+      el.textContent = "";
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      hideBox(errorBox);
+      hideBox(successBox);
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Отправка...";
+
+      try {
+        const formData = new FormData(form);
+        const payload = Object.fromEntries(formData.entries());
+
+        const response = await fetch("/api/questionnaire", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || "Не удалось отправить опросник");
+        }
+
+        showBox(successBox, "Опросник успешно отправлен");
+
+        setTimeout(() => {
+          if (window.opener && !window.opener.closed) {
+            window.close();
+            return;
+          }
+
+          if (window.history.length > 1) {
+            window.history.back();
+            return;
+          }
+
+          window.location.href = "/";
+        }, 700);
+      } catch (error) {
+        console.error("QUESTIONNAIRE SUBMIT ERROR:", error);
+        showBox(errorBox, error.message || "Ошибка отправки опросника");
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Отправить опросник";
+      }
+    });
+  </script>
+</body>
+</html>
+  `;
+}
+
+function getPdfFontPath() {
+  const candidates = [
+    path.join(__dirname, "fonts", "DejaVuSans.ttf"),
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans.ttf"
+  ];
+
+  for (const fontPath of candidates) {
+    if (fs.existsSync(fontPath)) {
+      return fontPath;
+    }
+  }
+
+  return null;
+}
+
+async function generateQuestionnairePdfBuffer(data) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: "A4",
+      margin: 50
+    });
+
+    const chunks = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const fontPath = getPdfFontPath();
+    if (fontPath) {
+      doc.font(fontPath);
+    }
+
+    doc.fontSize(20).text("Опросник", { align: "left" });
+    doc.moveDown();
+    doc.fontSize(14).text(`Страна оформления/услуга: ${data.countryService || "не указано"}`);
+    doc.moveDown();
+    doc.text(`Фамилия: ${data.lastName || ""}`);
+    doc.text(`Имя: ${data.firstName || ""}`);
+    doc.text(`Отчество: ${data.middleName || ""}`);
+    doc.moveDown();
+    doc.fontSize(11).text(`Телефон клиента: ${data.phone || ""}`);
+    doc.text(`ID сделки: ${data.leadId || ""}`);
+    doc.text(`Дата заполнения: ${new Date().toLocaleString("ru-RU")}`);
+
+    doc.end();
+  });
 }
 
 app.get("/api/leads", async (req, res) => {
@@ -509,6 +791,116 @@ app.get("/api/leads", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Ошибка при получении сделок",
+      error: error.response?.data || error.message
+    });
+  }
+});
+
+app.get("/questionnaire", async (req, res) => {
+  try {
+    const phone = normalizePhone(req.query.phone || "");
+    const leadId = String(req.query.leadId || "").trim();
+
+    if (!phone || !leadId) {
+      return res.status(400).send("Не переданы phone или leadId");
+    }
+
+    if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
+      return res.status(500).send("Не настроены переменные amoCRM");
+    }
+
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const lead = await getLeadById(baseUrl, leadId);
+
+    if (!lead?.id) {
+      return res.status(404).send("Сделка не найдена");
+    }
+
+    const countryService = getCustomFieldValue(lead, "Страна оформления/услуга") || "не указано";
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.send(buildQuestionnaireHtml({
+      phone,
+      leadId,
+      countryService
+    }));
+  } catch (error) {
+    console.error("GET /questionnaire error:", error.response?.data || error.message);
+    return res.status(500).send("Ошибка при открытии опросника");
+  }
+});
+
+app.post("/api/questionnaire", async (req, res) => {
+  try {
+    const phone = normalizePhone(req.body.phone || "");
+    const leadId = String(req.body.leadId || "").trim();
+    const lastName = String(req.body.lastName || "").trim();
+    const firstName = String(req.body.firstName || "").trim();
+    const middleName = String(req.body.middleName || "").trim();
+
+    if (!phone || !leadId || !lastName || !firstName || !middleName) {
+      return res.status(400).json({
+        success: false,
+        message: "Заполнены не все поля опросника"
+      });
+    }
+
+    if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
+      return res.status(500).json({
+        success: false,
+        message: "Не настроены переменные amoCRM"
+      });
+    }
+
+    if (!YANDEX_DISK_TOKEN) {
+      return res.status(500).json({
+        success: false,
+        message: "Не задан YANDEX_DISK_TOKEN"
+      });
+    }
+
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const lead = await getLeadById(baseUrl, leadId);
+
+    if (!lead?.id) {
+      return res.status(404).json({
+        success: false,
+        message: "Сделка не найдена"
+      });
+    }
+
+    const countryService = getCustomFieldValue(lead, "Страна оформления/услуга") || "не указано";
+
+    const pdfBuffer = await generateQuestionnairePdfBuffer({
+      phone,
+      leadId,
+      countryService,
+      lastName,
+      firstName,
+      middleName
+    });
+
+    const rootFolder = YANDEX_DISK_ROOT;
+    const phoneFolder = `${rootFolder}/${phone}`;
+    const diskPath = `${phoneFolder}/Опросник.pdf`;
+
+    await ensureYandexFolder(rootFolder);
+    await ensureYandexFolder(phoneFolder);
+    await uploadBufferToYandexDisk(pdfBuffer, diskPath, "application/pdf");
+
+    return res.json({
+      success: true,
+      message: "Опросник успешно сохранён"
+    });
+  } catch (error) {
+    console.error("POST /api/questionnaire error:");
+    console.error("message:", error.message);
+    console.error("status:", error.response?.status);
+    console.error("", error.response?.data);
+
+    return res.status(500).json({
+      success: false,
+      message: "Ошибка при сохранении опросника",
       error: error.response?.data || error.message
     });
   }
@@ -581,30 +973,20 @@ app.post(
 
         uploadedFiles.push({
           field: config.field,
-          name: finalFileName,
-          path: diskPath
-        });
-      }
-
-      if (!uploadedFiles.length) {
-        return res.status(400).json({
-          success: false,
-          message: "Не выбраны файлы для загрузки"
+          fileName: finalFileName
         });
       }
 
       return res.json({
         success: true,
-        message: "Документы успешно загружены на Яндекс.Диск",
-        folder: phoneFolder,
+        message: "Файлы успешно загружены",
         uploadedFiles
       });
     } catch (error) {
-      console.error("API /upload-documents error:");
+      console.error("UPLOAD DOCUMENTS ERROR:");
       console.error("message:", error.message);
       console.error("status:", error.response?.status);
       console.error("", error.response?.data);
-      console.error("stack:", error.stack);
 
       return res.status(500).json({
         success: false,
@@ -615,10 +997,6 @@ app.post(
   }
 );
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
 app.listen(PORT, () => {
-  console.log(`Server started on port ${PORT}`);
+  console.log(`Server started on http://localhost:${PORT}`);
 });
