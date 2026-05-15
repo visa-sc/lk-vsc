@@ -513,8 +513,7 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
   const safeLeadId = escapeHtml(String(leadId || ""));
   const safeCountry = escapeHtml(countryService || "не указано");
 
-  return `
-<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
@@ -538,32 +537,17 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
       padding: 24px;
       box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05);
     }
-    h1 {
-      margin: 0 0 8px;
-      font-size: 28px;
-      line-height: 1.15;
-      color: #171c29;
-    }
-    .subtitle {
-      margin: 0 0 22px;
-      font-size: 14px;
-      color: #737988;
-      line-height: 1.5;
-    }
-    form {
-      display: grid;
-      gap: 14px;
-    }
-    .field {
-      display: grid;
-      gap: 6px;
-    }
-    .field label {
-      font-size: 14px;
-      font-weight: 600;
-      color: #3a4150;
-    }
-    .field input {
+    h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.15; color: #171c29; }
+    .subtitle { margin: 0 0 22px; font-size: 14px; color: #737988; line-height: 1.5; }
+    form { display: grid; gap: 14px; }
+    .field { display: grid; gap: 6px; }
+    .field > label { font-size: 14px; font-weight: 600; color: #3a4150; }
+    .field input[type="text"],
+    .field input[type="tel"],
+    .field input[type="email"],
+    .field input[type="date"],
+    .field select,
+    .field textarea {
       width: 100%;
       height: 50px;
       border: 1px solid #e8e2ee;
@@ -573,7 +557,45 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
       outline: none;
       background: #fff;
       color: #1f2532;
+      font-family: inherit;
     }
+    .field textarea { height: auto; min-height: 80px; padding: 12px 14px; resize: vertical; }
+    .field select {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239096a3' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 36px;
+    }
+    .field input[type="file"] {
+      height: auto;
+      padding: 10px 14px;
+      border: 1px solid #e8e2ee;
+      border-radius: 14px;
+      background: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      width: 100%;
+    }
+    .hint { font-size: 12px; color: #9096a3; line-height: 1.4; }
+    .radio-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    .radio-group label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 400;
+      color: #1d2330;
+      cursor: pointer;
+      padding: 10px 16px;
+      border: 1px solid #e8e2ee;
+      border-radius: 12px;
+      background: #fff;
+    }
+    .radio-group input[type="radio"] { accent-color: #4f9f68; width: 16px; height: 16px; }
+    .radio-group label:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    .cond { display: none; }
+    .cond.show { display: grid; gap: 14px; }
     .message {
       display: none;
       padding: 12px 14px;
@@ -581,16 +603,8 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
       font-size: 14px;
       margin-bottom: 16px;
     }
-    .message.error {
-      background: #fbebee;
-      border: 1px solid #efcfd5;
-      color: #a15561;
-    }
-    .message.success {
-      background: #edf8ef;
-      border: 1px solid #cfe7d2;
-      color: #2e7a43;
-    }
+    .message.error { background: #fbebee; border: 1px solid #efcfd5; color: #a15561; }
+    .message.success { background: #edf8ef; border: 1px solid #cfe7d2; color: #2e7a43; }
     .submit-btn {
       height: 50px;
       border: none;
@@ -602,108 +616,527 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
       cursor: pointer;
       margin-top: 8px;
     }
+    .submit-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+    .date-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Опросный лист на ${safeCountry}</h1>
-    <p class="subtitle">Заполните, пожалуйста, данные и отправьте опросник.</p>
+<div class="wrap">
+  <h1>Опросный лист на ${safeCountry}</h1>
+  <p class="subtitle">Заполните, пожалуйста, данные и отправьте опросник.</p>
 
-    <div id="errorBox" class="message error"></div>
-    <div id="successBox" class="message success"></div>
+  <div id="errorBox" class="message error"></div>
+  <div id="successBox" class="message success"></div>
 
-    <form id="questionnaireForm">
-      <input type="hidden" name="phone" value="${safePhone}" />
-      <input type="hidden" name="leadId" value="${safeLeadId}" />
+  <form id="questionnaireForm">
+    <input type="hidden" name="phone" value="${safePhone}" />
+    <input type="hidden" name="leadId" value="${safeLeadId}" />
 
-      <div class="field">
-        <label for="lastName">Фамилия</label>
-        <input id="lastName" name="lastName" type="text" required />
+    <!-- 1 -->
+    <div class="field">
+      <label>Полное имя (ФИО) *</label>
+      <input type="text" name="fullName" required />
+    </div>
+
+    <!-- 2 -->
+    <div class="field">
+      <label>У меня ранее были предыдущие фамилии *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="hadPrevSurnames" value="Да" required /> Да</label>
+        <label><input type="radio" name="hadPrevSurnames" value="Нет" /> Нет</label>
       </div>
+    </div>
 
+    <!-- 3 условно -->
+    <div class="cond" id="c_prevSurnames">
       <div class="field">
-        <label for="firstName">Имя</label>
-        <input id="firstName" name="firstName" type="text" required />
+        <label>Укажите все предыдущие фамилии *</label>
+        <input type="text" name="prevSurnames" />
       </div>
+    </div>
 
+    <!-- 4 -->
+    <div class="field">
+      <label>Телефон *</label>
+      <input type="tel" name="contactPhone" required />
+      <span class="hint">Тот, по которому Консульство сможет связаться с заявителем</span>
+    </div>
+
+    <!-- 5 -->
+    <div class="field">
+      <label>Почта *</label>
+      <input type="text" name="email" required />
+      <span class="hint">Та, по которой Консульство сможет связаться с заявителем</span>
+    </div>
+
+    <!-- 6 -->
+    <div class="field">
+      <label>Семейное положение *</label>
+      <select name="maritalStatus" required>
+        <option value="">— выберите —</option>
+        <option value="Не в браке">Не в браке</option>
+        <option value="В браке">В браке</option>
+        <option value="Разведён/а">Разведён/а</option>
+        <option value="Вдовец/Вдова">Вдовец/Вдова</option>
+      </select>
+    </div>
+
+    <!-- 7 -->
+    <div class="field">
+      <label>При рождении у меня было иное гражданство *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="hadOtherCitizenshipAtBirth" value="Да" required /> Да</label>
+        <label><input type="radio" name="hadOtherCitizenshipAtBirth" value="Нет" /> Нет</label>
+      </div>
+    </div>
+
+    <!-- 8 условно -->
+    <div class="cond" id="c_birthCitizenship">
       <div class="field">
-        <label for="middleName">Отчество</label>
-        <input id="middleName" name="middleName" type="text" required />
+        <label>Ваше гражданство при рождении *</label>
+        <input type="text" name="birthCitizenship" />
       </div>
+    </div>
 
-      <button id="submitBtn" class="submit-btn" type="submit">Отправить опросник</button>
-    </form>
-  </div>
+    <!-- 9 -->
+    <div class="field">
+      <label>У меня в данный момент есть второе гражданство *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="hasSecondCitizenship" value="Да" required /> Да</label>
+        <label><input type="radio" name="hasSecondCitizenship" value="Нет" /> Нет</label>
+      </div>
+    </div>
 
-  <script>
-    const form = document.getElementById("questionnaireForm");
-    const submitBtn = document.getElementById("submitBtn");
-    const errorBox = document.getElementById("errorBox");
-    const successBox = document.getElementById("successBox");
+    <!-- 10 условно -->
+    <div class="cond" id="c_secondCitizenship">
+      <div class="field">
+        <label>Укажите второе гражданство *</label>
+        <input type="text" name="secondCitizenship" />
+      </div>
+    </div>
 
-    function showBox(el, message) {
-      el.style.display = "block";
-      el.textContent = message || "";
-    }
+    <!-- 11 -->
+    <div class="field">
+      <label>У меня есть второй заграничный паспорт *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="hasSecondPassport" value="Да" required /> Да</label>
+        <label><input type="radio" name="hasSecondPassport" value="Нет" /> Нет</label>
+      </div>
+    </div>
 
-    function hideBox(el) {
-      el.style.display = "none";
-      el.textContent = "";
-    }
+    <!-- 12, 13, 14 условно -->
+    <div class="cond" id="c_secondPassport">
+      <div class="field">
+        <label>На какой паспорт оформляем все документы? *</label>
+        <input type="text" name="whichPassport" />
+      </div>
+      <div class="field">
+        <label>Можете ли вы сдать второй паспорт в ВЦ на период рассмотрения? *</label>
+        <div class="radio-group">
+          <label><input type="radio" name="canSurrenderPassport" value="Да" /> Да</label>
+          <label><input type="radio" name="canSurrenderPassport" value="Нет" /> Нет</label>
+        </div>
+      </div>
+      <div class="cond" id="c_surrenderReason">
+        <div class="field">
+          <label>Укажите, по какой причине не сдаёте паспорт *</label>
+          <input type="text" name="surrenderReason" />
+        </div>
+      </div>
+    </div>
 
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      hideBox(errorBox);
-      hideBox(successBox);
+    <!-- 15 -->
+    <div class="field">
+      <label>Фактический адрес проживания *</label>
+      <input type="text" name="actualAddress" required />
+      <span class="hint">Совпадает с адресом регистрации</span>
+    </div>
 
-      submitBtn.disabled = true;
-      submitBtn.textContent = "Отправка...";
+    <!-- 16 -->
+    <div class="field">
+      <label>Род занятий (занимаемая должность) *</label>
+      <input type="text" name="occupation" required />
+      <span class="hint">Выпускник вписывается в анкету только при наличии подтверждающего документа предыдущего работодателя</span>
+    </div>
 
-      try {
-        const formData = new FormData(form);
-        const payload = Object.fromEntries(formData.entries());
+    <!-- 17 -->
+    <div class="field">
+      <label>Наименование работодателя/учебной организации *</label>
+      <input type="text" name="employerName" required />
+      <span class="hint">Если вы учитесь или не работаете, укажите НЕТ</span>
+    </div>
 
-        const response = await fetch("/api/questionnaire", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(payload)
-        });
+    <!-- 18 -->
+    <div class="field">
+      <label>Адрес работодателя/учебной организации *</label>
+      <input type="text" name="employerAddress" required />
+      <span class="hint">Если вы учитесь или не работаете, укажите НЕТ</span>
+    </div>
 
-        const data = await response.json();
+    <!-- 19 -->
+    <div class="field">
+      <label>Телефон работодателя *</label>
+      <input type="tel" name="employerPhone" required />
+    </div>
 
-        if (!response.ok || !data.success) {
-          throw new Error(data.message || "Не удалось отправить опросник");
-        }
+    <!-- 20 -->
+    <div class="field">
+      <label>Цель поездки *</label>
+      <select name="tripPurpose" id="tripPurpose" required>
+        <option value="">— выберите —</option>
+        <option value="Туризм">Туризм</option>
+        <option value="Частный визит">Частный визит</option>
+        <option value="Лечение">Лечение</option>
+        <option value="Обучение">Обучение</option>
+        <option value="Иное">Иное</option>
+      </select>
+    </div>
 
-        showBox(successBox, "Опросник успешно отправлен");
+    <!-- 21 условно -->
+    <div class="cond" id="c_purposeOther">
+      <div class="field">
+        <label>Укажите подробности цели поездки "Иное" *</label>
+        <input type="text" name="tripPurposeOther" />
+      </div>
+    </div>
 
-        setTimeout(() => {
-          if (window.opener && !window.opener.closed) {
-            window.close();
-            return;
-          }
+    <!-- 22 -->
+    <div class="field">
+      <label>Я делаю визу, чтобы пройти собеседование на США в Польше *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="usaInterviewPoland" value="Да" required /> Да</label>
+        <label><input type="radio" name="usaInterviewPoland" value="Нет" /> Нет</label>
+      </div>
+      <span class="hint">Если да, паспорт должен быть БИОМЕТРИЧЕСКИМ</span>
+    </div>
 
-          if (window.history.length > 1) {
-            window.history.back();
-            return;
-          }
+    <!-- 23 -->
+    <div class="field">
+      <label>Страна поездки *</label>
+      <input type="text" name="travelCountry" required />
+    </div>
 
-          window.location.href = "/";
-        }, 700);
-      } catch (error) {
-        console.error("QUESTIONNAIRE SUBMIT ERROR:", error);
-        showBox(errorBox, error.message || "Ошибка отправки опросника");
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = "Отправить опросник";
+    <!-- 24 -->
+    <div class="field">
+      <label>В какую страну запрашивается виза *</label>
+      <input type="text" name="visaCountry" required />
+    </div>
+
+    <!-- 25 -->
+    <div class="field">
+      <label>Даты поездки *</label>
+      <div class="date-row">
+        <input type="date" name="tripDateFrom" required placeholder="Дата начала" />
+        <input type="date" name="tripDateTo" required placeholder="Дата окончания" />
+      </div>
+    </div>
+
+    <!-- 26 -->
+    <div class="field">
+      <label>У меня есть действующая шенгенская виза *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="hasActiveSchengen" value="Да" required /> Да</label>
+        <label><input type="radio" name="hasActiveSchengen" value="Нет" /> Нет</label>
+      </div>
+    </div>
+
+    <!-- 27 условно -->
+    <div class="cond" id="c_schengenExpiry">
+      <div class="field">
+        <label>Укажите дату окончания текущей визы *</label>
+        <input type="date" name="schengenExpiry" />
+      </div>
+    </div>
+
+    <!-- 28 -->
+    <div class="field">
+      <label>У меня были шенгенские визы за последние 3 года *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="hadSchengen3Years" value="Да" required /> Да</label>
+        <label><input type="radio" name="hadSchengen3Years" value="Нет" /> Нет</label>
+      </div>
+    </div>
+
+    <!-- 29, 30, 31, 32, 33 условно -->
+    <div class="cond" id="c_prevSchengen">
+      <div class="field">
+        <label>Прикрепите фото последней шенгенской визы *</label>
+        <input type="file" name="visaPhoto" accept="image/*,.pdf" />
+      </div>
+      <div class="field">
+        <label>Я не открыл/-а свою последнюю шенгенскую визу *</label>
+        <div class="radio-group">
+          <label><input type="radio" name="didNotUseVisa" value="Да" /> Да</label>
+          <label><input type="radio" name="didNotUseVisa" value="Нет" /> Нет</label>
+        </div>
+        <span class="hint">Отметьте, если не воспользовались визой</span>
+      </div>
+      <div class="cond" id="c_didNotUseReason">
+        <div class="field">
+          <label>Укажите причину, почему виза не была использована *</label>
+          <input type="text" name="didNotUseReason" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Я открыл/-а свою последнюю шенгенскую визу, но её не дали *</label>
+        <div class="radio-group">
+          <label><input type="radio" name="visaRefused" value="Да" /> Да</label>
+          <label><input type="radio" name="visaRefused" value="Нет" /> Нет</label>
+        </div>
+      </div>
+      <div class="cond" id="c_refusalReason">
+        <div class="field">
+          <label>Укажите причину отказа *</label>
+          <input type="text" name="refusalReason" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 34 -->
+    <div class="field">
+      <label>У меня есть действующая страховка для выезда за рубеж *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="hasInsurance" value="Да" required /> Да</label>
+        <label><input type="radio" name="hasInsurance" value="Нет" /> Нет</label>
+      </div>
+      <span class="hint">Страховка на сумму минимум 130 000 EUR, действительная минимум на даты поездки</span>
+    </div>
+
+    <!-- 35 -->
+    <div class="field">
+      <label>На момент подачи документов мне будет меньше 18 лет *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="isUnder18" value="Да" required /> Да</label>
+        <label><input type="radio" name="isUnder18" value="Нет" /> Нет</label>
+      </div>
+    </div>
+
+    <!-- 36 условно -->
+    <div class="cond" id="c_legalRep">
+      <div class="field">
+        <label>ФИО законного представителя *</label>
+        <input type="text" name="legalRepresentative" />
+      </div>
+    </div>
+
+    <!-- 37 -->
+    <div class="field">
+      <label>Мне поможет спонсор (третье лицо/наименование) *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="hasSponsor" value="Да" required /> Да</label>
+        <label><input type="radio" name="hasSponsor" value="Нет" /> Нет</label>
+      </div>
+    </div>
+
+    <!-- 38 условно -->
+    <div class="cond" id="c_sponsorName">
+      <div class="field">
+        <label>Укажите ФИО/наименование спонсора *</label>
+        <input type="text" name="sponsorName" />
+      </div>
+    </div>
+
+    <!-- 39 -->
+    <div class="field">
+      <label>Как вы планируете посетить визовый центр? *</label>
+      <select name="visitType" required>
+        <option value="">— выберите —</option>
+        <option value="Без присутствия">Без присутствия</option>
+        <option value="Лично">Лично</option>
+      </select>
+    </div>
+
+    <!-- 40 -->
+    <div class="field">
+      <label>Как вы хотите забрать готовые документы? *</label>
+      <select name="pickupMethod" required>
+        <option value="">— выберите —</option>
+        <option value="В офисе">В офисе</option>
+        <option value="Курьером">Курьером</option>
+        <option value="Электронная почта">Электронная почта</option>
+        <option value="Доставка курьером">Доставка курьером</option>
+      </select>
+    </div>
+
+    <!-- 41 -->
+    <div class="field">
+      <label>У меня есть документы, подтверждающие консульский сбор *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="hasConsularFeeDoc" value="Да" required /> Да</label>
+        <label><input type="radio" name="hasConsularFeeDoc" value="Нет" /> Нет</label>
+      </div>
+    </div>
+
+    <!-- 42 -->
+    <div class="field">
+      <label>Я хочу воспользоваться услугой записи ботом *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="useBotBooking" value="Да" required /> Да</label>
+        <label><input type="radio" name="useBotBooking" value="Нет" /> Нет</label>
+      </div>
+    </div>
+
+    <!-- 43-47 условно -->
+    <div class="cond" id="c_botBooking">
+      <div class="field">
+        <label>Диапазон записи *</label>
+        <div class="date-row">
+          <input type="date" name="bookingDateFrom" />
+          <input type="date" name="bookingDateTo" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Исключения *</label>
+        <input type="text" name="bookingExclusions" />
+        <span class="hint">Даты в дни, когда Вы не сможете пойти в посольство</span>
+      </div>
+      <div class="field">
+        <label>Город для записи *</label>
+        <input type="text" name="bookingCity" />
+      </div>
+      <div class="field">
+        <label>Пожелания по времени записи *</label>
+        <input type="text" name="bookingTimePrefs" />
+        <span class="hint">Если нет — напишите НЕТ</span>
+      </div>
+      <div class="field">
+        <label>Предпочтение по залу (VIP или стандарт) *</label>
+        <input type="text" name="bookingLoungePrefs" />
+        <span class="hint">При наличии бизнес-залов — какой вас интересует?</span>
+      </div>
+    </div>
+
+    <!-- 48 -->
+    <div class="field">
+      <label>Откуда Вы о нас узнали? *</label>
+      <select name="howFoundUs" required>
+        <option value="">— выберите —</option>
+        <option value="Instagram">Instagram</option>
+        <option value="Реклама Google">Реклама Google</option>
+        <option value="Поиск Яндекс">Поиск Яндекс</option>
+        <option value="По рекомендации">По рекомендации</option>
+        <option value="Реклама в Интернете">Реклама в Интернете</option>
+      </select>
+    </div>
+
+    <!-- 49 -->
+    <div class="field">
+      <label>Примечания</label>
+      <textarea name="notes" rows="3"></textarea>
+      <span class="hint">Любые подробности, которые вы хотите добавить в своём случае</span>
+    </div>
+
+    <!-- 50 -->
+    <div class="field">
+      <label>Я подтверждаю правильность и достоверность информации в своей заявке *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="confirmAccuracy" value="Да" required /> Да</label>
+        <label><input type="radio" name="confirmAccuracy" value="Нет" /> Нет</label>
+      </div>
+    </div>
+
+    <!-- 51 -->
+    <div class="field">
+      <label>Нет претензий к данным, внесённым в ходе предыдущих консультаций *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="confirmPrevData" value="Да" required /> Да</label>
+        <label><input type="radio" name="confirmPrevData" value="Нет" /> Нет</label>
+      </div>
+    </div>
+
+    <!-- 52 -->
+    <div class="field">
+      <label>Согласие на обработку персональных данных *</label>
+      <div class="radio-group">
+        <label><input type="radio" name="personalDataConsent" value="Да" required /> Да</label>
+        <label><input type="radio" name="personalDataConsent" value="Нет" /> Нет</label>
+      </div>
+    </div>
+
+    <button id="submitBtn" class="submit-btn" type="submit">Отправить опросник</button>
+  </form>
+</div>
+
+<script>
+  const form = document.getElementById("questionnaireForm");
+  const submitBtn = document.getElementById("submitBtn");
+  const errorBox = document.getElementById("errorBox");
+  const successBox = document.getElementById("successBox");
+
+  function showBox(el, msg) { el.style.display = "block"; el.textContent = msg || ""; }
+  function hideBox(el) { el.style.display = "none"; el.textContent = ""; }
+
+  function radio(name) {
+    const el = form.querySelector('input[name="' + name + '"]:checked');
+    return el ? el.value : null;
+  }
+
+  function toggle(id, show) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle("show", !!show);
+  }
+
+  function updateConditionals() {
+    toggle("c_prevSurnames",      radio("hadPrevSurnames") === "Да");
+    toggle("c_birthCitizenship",  radio("hadOtherCitizenshipAtBirth") === "Да");
+    toggle("c_secondCitizenship", radio("hasSecondCitizenship") === "Да");
+    toggle("c_secondPassport",    radio("hasSecondPassport") === "Да");
+    toggle("c_surrenderReason",   radio("canSurrenderPassport") === "Нет");
+    const purpose = form.querySelector('[name="tripPurpose"]');
+    toggle("c_purposeOther",      purpose && purpose.value === "Иное");
+    toggle("c_schengenExpiry",    radio("hasActiveSchengen") === "Да");
+    toggle("c_prevSchengen",      radio("hadSchengen3Years") === "Да");
+    toggle("c_didNotUseReason",   radio("didNotUseVisa") === "Да");
+    toggle("c_refusalReason",     radio("visaRefused") === "Да");
+    toggle("c_legalRep",          radio("isUnder18") === "Да");
+    toggle("c_sponsorName",       radio("hasSponsor") === "Да");
+    toggle("c_botBooking",        radio("useBotBooking") === "Да");
+  }
+
+  form.addEventListener("change", updateConditionals);
+  updateConditionals();
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    hideBox(errorBox);
+    hideBox(successBox);
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Отправка...";
+
+    try {
+      const formData = new FormData(form);
+
+      const response = await fetch("/api/questionnaire", {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Не удалось отправить опросник");
       }
-    });
-  </script>
+
+      showBox(successBox, "Опросник успешно отправлен");
+
+      setTimeout(() => {
+        if (window.opener && !window.opener.closed) { window.close(); return; }
+        if (window.history.length > 1) { window.history.back(); return; }
+        window.location.href = "/";
+      }, 700);
+    } catch (error) {
+      console.error("QUESTIONNAIRE SUBMIT ERROR:", error);
+      showBox(errorBox, error.message || "Ошибка отправки опросника");
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Отправить опросник";
+    }
+  });
+</script>
 </body>
-</html>
-  `;
+</html>`;
 }
 
 function getPdfFontPath() {
@@ -724,10 +1157,7 @@ function getPdfFontPath() {
 
 async function generateQuestionnairePdfBuffer(data) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({
-      size: "A4",
-      margin: 50
-    });
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
 
     const chunks = [];
     doc.on("data", (chunk) => chunks.push(chunk));
@@ -735,21 +1165,102 @@ async function generateQuestionnairePdfBuffer(data) {
     doc.on("error", reject);
 
     const fontPath = getPdfFontPath();
-    if (fontPath) {
-      doc.font(fontPath);
-    }
+    if (fontPath) doc.font(fontPath);
 
-    doc.fontSize(20).text("Опросник", { align: "left" });
-    doc.moveDown();
-    doc.fontSize(14).text(`Страна оформления/услуга: ${data.countryService || "не указано"}`);
-    doc.moveDown();
-    doc.text(`Фамилия: ${data.lastName || ""}`);
-    doc.text(`Имя: ${data.firstName || ""}`);
-    doc.text(`Отчество: ${data.middleName || ""}`);
-    doc.moveDown();
+    const line = (label, value) => {
+      if (!value) return;
+      doc.fontSize(11).text(`${label}: ${value}`);
+    };
+
+    doc.fontSize(18).text("Опросный лист", { align: "left" });
+    doc.moveDown(0.3);
+    doc.fontSize(12).text(`Страна оформления/услуга: ${data.countryService || "не указано"}`);
     doc.fontSize(11).text(`Телефон клиента: ${data.phone || ""}`);
     doc.text(`ID сделки: ${data.leadId || ""}`);
     doc.text(`Дата заполнения: ${new Date().toLocaleString("ru-RU")}`);
+    doc.moveDown();
+
+    doc.fontSize(13).text("Личные данные", { underline: true });
+    doc.moveDown(0.3);
+    line("Полное имя (ФИО)", data.fullName);
+    line("Предыдущие фамилии были", data.hadPrevSurnames);
+    line("Предыдущие фамилии", data.prevSurnames);
+    line("Контактный телефон", data.contactPhone);
+    line("Почта", data.email);
+    line("Семейное положение", data.maritalStatus);
+    line("Иное гражданство при рождении", data.hadOtherCitizenshipAtBirth);
+    line("Гражданство при рождении", data.birthCitizenship);
+    line("Есть второе гражданство", data.hasSecondCitizenship);
+    line("Второе гражданство", data.secondCitizenship);
+    line("Есть второй загранпаспорт", data.hasSecondPassport);
+    line("Паспорт для оформления документов", data.whichPassport);
+    line("Готов сдать второй паспорт в ВЦ", data.canSurrenderPassport);
+    line("Причина не сдаёт паспорт", data.surrenderReason);
+    doc.moveDown();
+
+    doc.fontSize(13).text("Адрес и занятость", { underline: true });
+    doc.moveDown(0.3);
+    line("Фактический адрес проживания", data.actualAddress);
+    line("Род занятий", data.occupation);
+    line("Работодатель/учебная организация", data.employerName);
+    line("Адрес работодателя/организации", data.employerAddress);
+    line("Телефон работодателя", data.employerPhone);
+    doc.moveDown();
+
+    doc.fontSize(13).text("Поездка", { underline: true });
+    doc.moveDown(0.3);
+    line("Цель поездки", data.tripPurpose);
+    line("Уточнение цели (Иное)", data.tripPurposeOther);
+    line("Собеседование США в Польше", data.usaInterviewPoland);
+    line("Страна поездки", data.travelCountry);
+    line("В какую страну запрашивается виза", data.visaCountry);
+    if (data.tripDateFrom || data.tripDateTo) {
+      line("Даты поездки", `${data.tripDateFrom || "?"} — ${data.tripDateTo || "?"}`);
+    }
+    doc.moveDown();
+
+    doc.fontSize(13).text("История виз", { underline: true });
+    doc.moveDown(0.3);
+    line("Есть действующая шенгенская виза", data.hasActiveSchengen);
+    line("Дата окончания текущей визы", data.schengenExpiry);
+    line("Были шенгенские визы за 3 года", data.hadSchengen3Years);
+    line("Не открывал/-а последнюю визу", data.didNotUseVisa);
+    line("Причина неиспользования визы", data.didNotUseReason);
+    line("Последняя виза была отказана", data.visaRefused);
+    line("Причина отказа", data.refusalReason);
+    doc.moveDown();
+
+    doc.fontSize(13).text("Документы и услуги", { underline: true });
+    doc.moveDown(0.3);
+    line("Есть страховка для выезда", data.hasInsurance);
+    line("Младше 18 лет на момент подачи", data.isUnder18);
+    line("ФИО законного представителя", data.legalRepresentative);
+    line("Есть спонсор", data.hasSponsor);
+    line("ФИО/наименование спонсора", data.sponsorName);
+    line("Тип посещения ВЦ", data.visitType);
+    line("Способ получения документов", data.pickupMethod);
+    line("Есть документы на консульский сбор", data.hasConsularFeeDoc);
+    doc.moveDown();
+
+    doc.fontSize(13).text("Запись ботом", { underline: true });
+    doc.moveDown(0.3);
+    line("Услуга записи ботом", data.useBotBooking);
+    if (data.bookingDateFrom || data.bookingDateTo) {
+      line("Диапазон записи", `${data.bookingDateFrom || "?"} — ${data.bookingDateTo || "?"}`);
+    }
+    line("Исключения по датам", data.bookingExclusions);
+    line("Город для записи", data.bookingCity);
+    line("Пожелания по времени", data.bookingTimePrefs);
+    line("Предпочтение по залу", data.bookingLoungePrefs);
+    doc.moveDown();
+
+    doc.fontSize(13).text("Прочее", { underline: true });
+    doc.moveDown(0.3);
+    line("Откуда узнали о нас", data.howFoundUs);
+    line("Примечания", data.notes);
+    line("Подтверждение достоверности данных", data.confirmAccuracy);
+    line("Нет претензий к предыдущим данным", data.confirmPrevData);
+    line("Согласие на обработку персональных данных", data.personalDataConsent);
 
     doc.end();
   });
@@ -830,81 +1341,147 @@ app.get("/questionnaire", async (req, res) => {
   }
 });
 
-app.post("/api/questionnaire", async (req, res) => {
-  try {
-    const phone = normalizePhone(req.body.phone || "");
-    const leadId = String(req.body.leadId || "").trim();
-    const lastName = String(req.body.lastName || "").trim();
-    const firstName = String(req.body.firstName || "").trim();
-    const middleName = String(req.body.middleName || "").trim();
+app.post(
+  "/api/questionnaire",
+  upload.fields([{ name: "visaPhoto", maxCount: 1 }]),
+  async (req, res) => {
+    try {
+      const phone = normalizePhone(req.body.phone || "");
+      const leadId = String(req.body.leadId || "").trim();
+      const fullName = String(req.body.fullName || "").trim();
 
-    if (!phone || !leadId || !lastName || !firstName || !middleName) {
-      return res.status(400).json({
-        success: false,
-        message: "Заполнены не все поля опросника"
+      if (!phone || !leadId || !fullName) {
+        return res.status(400).json({
+          success: false,
+          message: "Заполнены не все обязательные поля опросника"
+        });
+      }
+
+      if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
+        return res.status(500).json({
+          success: false,
+          message: "Не настроены переменные amoCRM"
+        });
+      }
+
+      if (!YANDEX_DISK_TOKEN) {
+        return res.status(500).json({
+          success: false,
+          message: "Не задан YANDEX_DISK_TOKEN"
+        });
+      }
+
+      const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+      const lead = await getLeadById(baseUrl, leadId);
+
+      if (!lead?.id) {
+        return res.status(404).json({
+          success: false,
+          message: "Сделка не найдена"
+        });
+      }
+
+      const countryService = getCustomFieldValue(lead, "Страна оформления/услуга") || "не указано";
+
+      const fields = {
+        phone,
+        leadId,
+        countryService,
+        fullName,
+        hadPrevSurnames:            String(req.body.hadPrevSurnames || "").trim(),
+        prevSurnames:               String(req.body.prevSurnames || "").trim(),
+        contactPhone:               String(req.body.contactPhone || "").trim(),
+        email:                      String(req.body.email || "").trim(),
+        maritalStatus:              String(req.body.maritalStatus || "").trim(),
+        hadOtherCitizenshipAtBirth: String(req.body.hadOtherCitizenshipAtBirth || "").trim(),
+        birthCitizenship:           String(req.body.birthCitizenship || "").trim(),
+        hasSecondCitizenship:       String(req.body.hasSecondCitizenship || "").trim(),
+        secondCitizenship:          String(req.body.secondCitizenship || "").trim(),
+        hasSecondPassport:          String(req.body.hasSecondPassport || "").trim(),
+        whichPassport:              String(req.body.whichPassport || "").trim(),
+        canSurrenderPassport:       String(req.body.canSurrenderPassport || "").trim(),
+        surrenderReason:            String(req.body.surrenderReason || "").trim(),
+        actualAddress:              String(req.body.actualAddress || "").trim(),
+        occupation:                 String(req.body.occupation || "").trim(),
+        employerName:               String(req.body.employerName || "").trim(),
+        employerAddress:            String(req.body.employerAddress || "").trim(),
+        employerPhone:              String(req.body.employerPhone || "").trim(),
+        tripPurpose:                String(req.body.tripPurpose || "").trim(),
+        tripPurposeOther:           String(req.body.tripPurposeOther || "").trim(),
+        usaInterviewPoland:         String(req.body.usaInterviewPoland || "").trim(),
+        travelCountry:              String(req.body.travelCountry || "").trim(),
+        visaCountry:                String(req.body.visaCountry || "").trim(),
+        tripDateFrom:               String(req.body.tripDateFrom || "").trim(),
+        tripDateTo:                 String(req.body.tripDateTo || "").trim(),
+        hasActiveSchengen:          String(req.body.hasActiveSchengen || "").trim(),
+        schengenExpiry:             String(req.body.schengenExpiry || "").trim(),
+        hadSchengen3Years:          String(req.body.hadSchengen3Years || "").trim(),
+        didNotUseVisa:              String(req.body.didNotUseVisa || "").trim(),
+        didNotUseReason:            String(req.body.didNotUseReason || "").trim(),
+        visaRefused:                String(req.body.visaRefused || "").trim(),
+        refusalReason:              String(req.body.refusalReason || "").trim(),
+        hasInsurance:               String(req.body.hasInsurance || "").trim(),
+        isUnder18:                  String(req.body.isUnder18 || "").trim(),
+        legalRepresentative:        String(req.body.legalRepresentative || "").trim(),
+        hasSponsor:                 String(req.body.hasSponsor || "").trim(),
+        sponsorName:                String(req.body.sponsorName || "").trim(),
+        visitType:                  String(req.body.visitType || "").trim(),
+        pickupMethod:               String(req.body.pickupMethod || "").trim(),
+        hasConsularFeeDoc:          String(req.body.hasConsularFeeDoc || "").trim(),
+        useBotBooking:              String(req.body.useBotBooking || "").trim(),
+        bookingDateFrom:            String(req.body.bookingDateFrom || "").trim(),
+        bookingDateTo:              String(req.body.bookingDateTo || "").trim(),
+        bookingExclusions:          String(req.body.bookingExclusions || "").trim(),
+        bookingCity:                String(req.body.bookingCity || "").trim(),
+        bookingTimePrefs:           String(req.body.bookingTimePrefs || "").trim(),
+        bookingLoungePrefs:         String(req.body.bookingLoungePrefs || "").trim(),
+        howFoundUs:                 String(req.body.howFoundUs || "").trim(),
+        notes:                      String(req.body.notes || "").trim(),
+        confirmAccuracy:            String(req.body.confirmAccuracy || "").trim(),
+        confirmPrevData:            String(req.body.confirmPrevData || "").trim(),
+        personalDataConsent:        String(req.body.personalDataConsent || "").trim()
+      };
+
+      const pdfBuffer = await generateQuestionnairePdfBuffer(fields);
+
+      const rootFolder = YANDEX_DISK_ROOT;
+      const phoneFolder = `${rootFolder}/${phone}`;
+
+      await ensureYandexFolder(rootFolder);
+      await ensureYandexFolder(phoneFolder);
+
+      await uploadBufferToYandexDisk(pdfBuffer, `${phoneFolder}/Опросник.pdf`, "application/pdf");
+
+      const visaPhotoFile = req.files?.visaPhoto?.[0];
+      if (visaPhotoFile) {
+        const origName = sanitizeFileName(visaPhotoFile.originalname || "visa");
+        const dotIndex = origName.lastIndexOf(".");
+        const ext = dotIndex >= 0 ? origName.slice(dotIndex) : "";
+        await uploadBufferToYandexDisk(
+          visaPhotoFile.buffer,
+          `${phoneFolder}/Фото шенгенской визы${ext}`,
+          visaPhotoFile.mimetype
+        );
+      }
+
+      return res.json({
+        success: true,
+        message: "Опросник успешно сохранён"
       });
-    }
+    } catch (error) {
+      console.error("POST /api/questionnaire error:");
+      console.error("message:", error.message);
+      console.error("status:", error.response?.status);
+      console.error("", error.response?.data);
 
-    if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
       return res.status(500).json({
         success: false,
-        message: "Не настроены переменные amoCRM"
+        message: "Ошибка при сохранении опросника",
+        error: error.response?.data || error.message
       });
     }
-
-    if (!YANDEX_DISK_TOKEN) {
-      return res.status(500).json({
-        success: false,
-        message: "Не задан YANDEX_DISK_TOKEN"
-      });
-    }
-
-    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
-    const lead = await getLeadById(baseUrl, leadId);
-
-    if (!lead?.id) {
-      return res.status(404).json({
-        success: false,
-        message: "Сделка не найдена"
-      });
-    }
-
-    const countryService = getCustomFieldValue(lead, "Страна оформления/услуга") || "не указано";
-
-    const pdfBuffer = await generateQuestionnairePdfBuffer({
-      phone,
-      leadId,
-      countryService,
-      lastName,
-      firstName,
-      middleName
-    });
-
-    const rootFolder = YANDEX_DISK_ROOT;
-    const phoneFolder = `${rootFolder}/${phone}`;
-    const diskPath = `${phoneFolder}/Опросник.pdf`;
-
-    await ensureYandexFolder(rootFolder);
-    await ensureYandexFolder(phoneFolder);
-    await uploadBufferToYandexDisk(pdfBuffer, diskPath, "application/pdf");
-
-    return res.json({
-      success: true,
-      message: "Опросник успешно сохранён"
-    });
-  } catch (error) {
-    console.error("POST /api/questionnaire error:");
-    console.error("message:", error.message);
-    console.error("status:", error.response?.status);
-    console.error("", error.response?.data);
-
-    return res.status(500).json({
-      success: false,
-      message: "Ошибка при сохранении опросника",
-      error: error.response?.data || error.message
-    });
   }
-});
+);
 
 app.post(
   "/upload-documents",
