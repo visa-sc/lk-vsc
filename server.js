@@ -853,7 +853,10 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
     <!-- 25 -->
     <div class="field">
       <label>Даты поездки *</label>
-      <input type="date" name="tripDate" required />
+      <div class="date-row">
+        <input type="date" name="tripDateFrom" required />
+        <input type="date" name="tripDateTo" required />
+      </div>
     </div>
 
     <!-- 26 -->
@@ -1005,7 +1008,10 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
     <div class="cond" id="c_botBooking">
       <div class="field">
         <label>Диапазон записи *</label>
-        <input type="date" name="bookingDate" />
+        <div class="date-row">
+          <input type="date" name="bookingDateFrom" />
+          <input type="date" name="bookingDateTo" />
+        </div>
       </div>
       <div class="field">
         <label>Исключения *</label>
@@ -1235,7 +1241,9 @@ async function generateQuestionnairePdfBuffer(data) {
     line("Виза для собеседования на США в Польше", data.usaInterviewPoland);
     line("Страна поездки", data.travelCountry);
     line("В какую страну запрашивается виза", data.visaCountry);
-    line("Даты поездки", data.tripDate);
+    if (data.tripDateFrom || data.tripDateTo) {
+      line("Даты поездки", `${data.tripDateFrom || "?"} — ${data.tripDateTo || "?"}`);
+    }
     doc.moveDown();
 
     doc.fontSize(13).text("История виз", { underline: true });
@@ -1264,7 +1272,9 @@ async function generateQuestionnairePdfBuffer(data) {
     doc.fontSize(13).text("Запись ботом", { underline: true });
     doc.moveDown(0.3);
     line("Хочу воспользоваться услугой записи ботом", data.useBotBooking);
-    line("Диапазон записи", data.bookingDate);
+    if (data.bookingDateFrom || data.bookingDateTo) {
+      line("Диапазон записи", `${data.bookingDateFrom || "?"} — ${data.bookingDateTo || "?"}`);
+    }
     line("Исключения", data.bookingExclusions);
     line("Город для записи", data.bookingCity);
     line("Пожелания по датам записи", data.bookingTimePrefs);
@@ -1428,7 +1438,8 @@ app.post(
         usaInterviewPoland:         String(req.body.usaInterviewPoland || "").trim(),
         travelCountry:              String(req.body.travelCountry || "").trim(),
         visaCountry:                String(req.body.visaCountry || "").trim(),
-        tripDate:                   String(req.body.tripDate || "").trim(),
+        tripDateFrom:               String(req.body.tripDateFrom || "").trim(),
+        tripDateTo:                 String(req.body.tripDateTo || "").trim(),
         hasActiveSchengen:          String(req.body.hasActiveSchengen || "").trim(),
         schengenExpiry:             String(req.body.schengenExpiry || "").trim(),
         hadSchengen3Years:          String(req.body.hadSchengen3Years || "").trim(),
@@ -1445,7 +1456,8 @@ app.post(
         pickupMethod:               String(req.body.pickupMethod || "").trim(),
         hasConsularFeeDoc:          String(req.body.hasConsularFeeDoc || "").trim(),
         useBotBooking:              String(req.body.useBotBooking || "").trim(),
-        bookingDate:                String(req.body.bookingDate || "").trim(),
+        bookingDateFrom:            String(req.body.bookingDateFrom || "").trim(),
+        bookingDateTo:              String(req.body.bookingDateTo || "").trim(),
         bookingExclusions:          String(req.body.bookingExclusions || "").trim(),
         bookingCity:                String(req.body.bookingCity || "").trim(),
         bookingTimePrefs:           String(req.body.bookingTimePrefs || "").trim(),
