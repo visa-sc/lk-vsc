@@ -640,9 +640,9 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
 
     <!-- 2 -->
     <div class="field">
-      <label>У меня ранее были предыдущие фамилии *</label>
+      <label>У меня ранее были предыдущие фамилии</label>
       <div class="radio-group">
-        <label><input type="radio" name="hadPrevSurnames" value="Да" required /> Да</label>
+        <label><input type="radio" name="hadPrevSurnames" value="Да" /> Да</label>
         <label><input type="radio" name="hadPrevSurnames" value="Нет" /> Нет</label>
       </div>
     </div>
@@ -676,16 +676,16 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
         <option value="">— выберите —</option>
         <option value="Не в браке">Не в браке</option>
         <option value="В браке">В браке</option>
-        <option value="Разведён/а">Разведён/а</option>
-        <option value="Вдовец/Вдова">Вдовец/Вдова</option>
+        <option value="В разводе">В разводе</option>
+        <option value="Вдовец/вдова">Вдовец/вдова</option>
       </select>
     </div>
 
     <!-- 7 -->
     <div class="field">
-      <label>При рождении у меня было иное гражданство *</label>
+      <label>При рождении у меня было иное гражданство</label>
       <div class="radio-group">
-        <label><input type="radio" name="hadOtherCitizenshipAtBirth" value="Да" required /> Да</label>
+        <label><input type="radio" name="hadOtherCitizenshipAtBirth" value="Да" /> Да</label>
         <label><input type="radio" name="hadOtherCitizenshipAtBirth" value="Нет" /> Нет</label>
       </div>
     </div>
@@ -700,9 +700,9 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
 
     <!-- 9 -->
     <div class="field">
-      <label>У меня в данный момент есть второе гражданство *</label>
+      <label>У меня в данный момент есть второе гражданство</label>
       <div class="radio-group">
-        <label><input type="radio" name="hasSecondCitizenship" value="Да" required /> Да</label>
+        <label><input type="radio" name="hasSecondCitizenship" value="Да" /> Да</label>
         <label><input type="radio" name="hasSecondCitizenship" value="Нет" /> Нет</label>
       </div>
     </div>
@@ -717,9 +717,9 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
 
     <!-- 11 -->
     <div class="field">
-      <label>У меня есть второй заграничный паспорт *</label>
+      <label>У меня есть второй заграничный паспорт</label>
       <div class="radio-group">
-        <label><input type="radio" name="hasSecondPassport" value="Да" required /> Да</label>
+        <label><input type="radio" name="hasSecondPassport" value="Да" /> Да</label>
         <label><input type="radio" name="hasSecondPassport" value="Нет" /> Нет</label>
       </div>
     </div>
@@ -727,7 +727,7 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
     <!-- 12, 13, 14 условно -->
     <div class="cond" id="c_secondPassport">
       <div class="field">
-        <label>На какой паспорт оформляем все документы? *</label>
+        <label>На какой паспорт мы оформляем все документы? *</label>
         <input type="text" name="whichPassport" />
       </div>
       <div class="field">
@@ -739,7 +739,7 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
       </div>
       <div class="cond" id="c_surrenderReason">
         <div class="field">
-          <label>Укажите, по какой причине не сдаёте паспорт *</label>
+          <label>Укажите, по какой причине не сдаете паспорт: *</label>
           <input type="text" name="surrenderReason" />
         </div>
       </div>
@@ -749,28 +749,28 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
     <div class="field">
       <label>Фактический адрес проживания *</label>
       <input type="text" name="actualAddress" required />
-      <span class="hint">Совпадает с адресом регистрации</span>
+      <span class="hint">Может не совпадать с адресом регистрации</span>
     </div>
 
     <!-- 16 -->
     <div class="field">
       <label>Род занятий (занимаемая должность) *</label>
       <input type="text" name="occupation" required />
-      <span class="hint">Выпускник вписывается в анкету только при наличии подтверждающего документа предыдущего работодателя</span>
+      <span class="hint">Вносится в анкету только при предоставлении подтверждающего документа (справки, документов на бизнес, пенсионного и т. д.)</span>
     </div>
 
     <!-- 17 -->
     <div class="field">
       <label>Наименование работодателя/учебной организации *</label>
       <input type="text" name="employerName" required />
-      <span class="hint">Если вы учитесь или не работаете, укажите НЕТ</span>
+      <span class="hint">Если вы не учитесь и не работаете, укажите НЕТ.</span>
     </div>
 
     <!-- 18 -->
     <div class="field">
       <label>Адрес работодателя/учебной организации *</label>
       <input type="text" name="employerAddress" required />
-      <span class="hint">Если вы учитесь или не работаете, укажите НЕТ</span>
+      <span class="hint">Если вы не учитесь и не работаете, укажите НЕТ.</span>
     </div>
 
     <!-- 19 -->
@@ -785,6 +785,7 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
       <select name="tripPurpose" id="tripPurpose" required>
         <option value="">— выберите —</option>
         <option value="Туризм">Туризм</option>
+        <option value="Бизнес">Бизнес</option>
         <option value="Частный визит">Частный визит</option>
         <option value="Лечение">Лечение</option>
         <option value="Обучение">Обучение</option>
@@ -795,19 +796,19 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
     <!-- 21 условно -->
     <div class="cond" id="c_purposeOther">
       <div class="field">
-        <label>Укажите подробности цели поездки "Иное" *</label>
+        <label>Если Вы выбрали цель поездки "Иное", укажите подробности в этом поле *</label>
         <input type="text" name="tripPurposeOther" />
       </div>
     </div>
 
     <!-- 22 -->
     <div class="field">
-      <label>Я делаю визу, чтобы пройти собеседование на США в Польше *</label>
+      <label>Я делаю визу, чтобы пройти собеседование на США в Польше</label>
       <div class="radio-group">
-        <label><input type="radio" name="usaInterviewPoland" value="Да" required /> Да</label>
+        <label><input type="radio" name="usaInterviewPoland" value="Да" /> Да</label>
         <label><input type="radio" name="usaInterviewPoland" value="Нет" /> Нет</label>
       </div>
-      <span class="hint">Если да, паспорт должен быть БИОМЕТРИЧЕСКИМ</span>
+      <span class="hint">Если да, ваш паспорт обязан быть БИОМЕТРИЧЕСКИМ.</span>
     </div>
 
     <!-- 23 -->
@@ -825,17 +826,14 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
     <!-- 25 -->
     <div class="field">
       <label>Даты поездки *</label>
-      <div class="date-row">
-        <input type="date" name="tripDateFrom" required placeholder="Дата начала" />
-        <input type="date" name="tripDateTo" required placeholder="Дата окончания" />
-      </div>
+      <input type="date" name="tripDate" required />
     </div>
 
     <!-- 26 -->
     <div class="field">
-      <label>У меня есть действующая шенгенская виза *</label>
+      <label>У меня есть действующая шенгенская виза</label>
       <div class="radio-group">
-        <label><input type="radio" name="hasActiveSchengen" value="Да" required /> Да</label>
+        <label><input type="radio" name="hasActiveSchengen" value="Да" /> Да</label>
         <label><input type="radio" name="hasActiveSchengen" value="Нет" /> Нет</label>
       </div>
     </div>
@@ -850,9 +848,9 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
 
     <!-- 28 -->
     <div class="field">
-      <label>У меня были шенгенские визы за последние 3 года *</label>
+      <label>У меня были Шенгенские визы за последние 3 года</label>
       <div class="radio-group">
-        <label><input type="radio" name="hadSchengen3Years" value="Да" required /> Да</label>
+        <label><input type="radio" name="hadSchengen3Years" value="Да" /> Да</label>
         <label><input type="radio" name="hadSchengen3Years" value="Нет" /> Нет</label>
       </div>
     </div>
@@ -864,21 +862,21 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
         <input type="file" name="visaPhoto" accept="image/*,.pdf" />
       </div>
       <div class="field">
-        <label>Я не открыл/-а свою последнюю шенгенскую визу *</label>
+        <label>Я не открыл/-а свою последнюю шенгенскую визу</label>
         <div class="radio-group">
           <label><input type="radio" name="didNotUseVisa" value="Да" /> Да</label>
           <label><input type="radio" name="didNotUseVisa" value="Нет" /> Нет</label>
         </div>
-        <span class="hint">Отметьте, если не воспользовались визой</span>
+        <span class="hint">Отметьте, если вы ею не воспользовались</span>
       </div>
       <div class="cond" id="c_didNotUseReason">
         <div class="field">
-          <label>Укажите причину, почему виза не была использована *</label>
+          <label>Укажите причину, почему виза не была отъезжена *</label>
           <input type="text" name="didNotUseReason" />
         </div>
       </div>
       <div class="field">
-        <label>Я открыл/-а свою последнюю шенгенскую визу, но её не дали *</label>
+        <label>Я открыл/-а свою последнюю шенгенскую визу не той страной, которая ее выдала</label>
         <div class="radio-group">
           <label><input type="radio" name="visaRefused" value="Да" /> Да</label>
           <label><input type="radio" name="visaRefused" value="Нет" /> Нет</label>
@@ -886,7 +884,7 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
       </div>
       <div class="cond" id="c_refusalReason">
         <div class="field">
-          <label>Укажите причину отказа *</label>
+          <label>Укажите причину *</label>
           <input type="text" name="refusalReason" />
         </div>
       </div>
@@ -894,19 +892,19 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
 
     <!-- 34 -->
     <div class="field">
-      <label>У меня есть действующая страховка для выезда за рубеж *</label>
+      <label>У меня есть действительная страховка для въезда в Шенгенскую зону</label>
       <div class="radio-group">
-        <label><input type="radio" name="hasInsurance" value="Да" required /> Да</label>
+        <label><input type="radio" name="hasInsurance" value="Да" /> Да</label>
         <label><input type="radio" name="hasInsurance" value="Нет" /> Нет</label>
       </div>
-      <span class="hint">Страховка на сумму минимум 130 000 EUR, действительная минимум на даты поездки</span>
+      <span class="hint">Покрывает все страны Шенгена и минимум €30,000, действительная минимум на даты поездки.</span>
     </div>
 
     <!-- 35 -->
     <div class="field">
-      <label>На момент подачи документов мне будет меньше 18 лет *</label>
+      <label>На момент подачи документов я буду младше 18 лет</label>
       <div class="radio-group">
-        <label><input type="radio" name="isUnder18" value="Да" required /> Да</label>
+        <label><input type="radio" name="isUnder18" value="Да" /> Да</label>
         <label><input type="radio" name="isUnder18" value="Нет" /> Нет</label>
       </div>
     </div>
@@ -916,14 +914,15 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
       <div class="field">
         <label>ФИО законного представителя *</label>
         <input type="text" name="legalRepresentative" />
+        <span class="hint">Вносится в анкету для лиц младше 18 лет</span>
       </div>
     </div>
 
     <!-- 37 -->
     <div class="field">
-      <label>Мне поможет спонсор (третье лицо/наименование) *</label>
+      <label>Мою поездку спонсирует третье лицо/компания</label>
       <div class="radio-group">
-        <label><input type="radio" name="hasSponsor" value="Да" required /> Да</label>
+        <label><input type="radio" name="hasSponsor" value="Да" /> Да</label>
         <label><input type="radio" name="hasSponsor" value="Нет" /> Нет</label>
       </div>
     </div>
@@ -938,40 +937,39 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
 
     <!-- 39 -->
     <div class="field">
-      <label>Как вы планируете посетить визовый центр? *</label>
+      <label>Тип подачи *</label>
       <select name="visitType" required>
         <option value="">— выберите —</option>
+        <option value="Личная">Личная</option>
         <option value="Без присутствия">Без присутствия</option>
-        <option value="Лично">Лично</option>
       </select>
     </div>
 
     <!-- 40 -->
     <div class="field">
-      <label>Как вы хотите забрать готовые документы? *</label>
+      <label>Как вы хотите забрать готовые документы для подачи? *</label>
       <select name="pickupMethod" required>
         <option value="">— выберите —</option>
         <option value="В офисе">В офисе</option>
         <option value="Курьером">Курьером</option>
         <option value="Электронная почта">Электронная почта</option>
-        <option value="Доставка курьером">Доставка курьером</option>
       </select>
     </div>
 
     <!-- 41 -->
     <div class="field">
-      <label>У меня есть документы, подтверждающие консульский сбор *</label>
+      <label>У меня есть документы, подтверждающие льготную оплату консульского сбора</label>
       <div class="radio-group">
-        <label><input type="radio" name="hasConsularFeeDoc" value="Да" required /> Да</label>
+        <label><input type="radio" name="hasConsularFeeDoc" value="Да" /> Да</label>
         <label><input type="radio" name="hasConsularFeeDoc" value="Нет" /> Нет</label>
       </div>
     </div>
 
     <!-- 42 -->
     <div class="field">
-      <label>Я хочу воспользоваться услугой записи ботом *</label>
+      <label>Я хочу воспользоваться услугой записи ботом</label>
       <div class="radio-group">
-        <label><input type="radio" name="useBotBooking" value="Да" required /> Да</label>
+        <label><input type="radio" name="useBotBooking" value="Да" /> Да</label>
         <label><input type="radio" name="useBotBooking" value="Нет" /> Нет</label>
       </div>
     </div>
@@ -980,29 +978,25 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
     <div class="cond" id="c_botBooking">
       <div class="field">
         <label>Диапазон записи *</label>
-        <div class="date-row">
-          <input type="date" name="bookingDateFrom" />
-          <input type="date" name="bookingDateTo" />
-        </div>
+        <input type="date" name="bookingDate" />
       </div>
       <div class="field">
         <label>Исключения *</label>
         <input type="text" name="bookingExclusions" />
-        <span class="hint">Даты в дни, когда Вы не сможете пойти в посольство</span>
+        <span class="hint">Даты и дни, когда Вы не сможете пойти на подачу</span>
       </div>
       <div class="field">
         <label>Город для записи *</label>
         <input type="text" name="bookingCity" />
       </div>
       <div class="field">
-        <label>Пожелания по времени записи *</label>
+        <label>Если у вас есть исключения или пожелания по датам, в которые вас можно или нельзя записывать, пропишите их здесь. *</label>
         <input type="text" name="bookingTimePrefs" />
-        <span class="hint">Если нет — напишите НЕТ</span>
+        <span class="hint">Если нет - напишите "НЕТ".</span>
       </div>
       <div class="field">
-        <label>Предпочтение по залу (VIP или стандарт) *</label>
+        <label>При записи в случае наличия бизнес-залов/ускоренных записей (дополнительная услуга в ВЦ), какие из этих услуг вас интересуют? *</label>
         <input type="text" name="bookingLoungePrefs" />
-        <span class="hint">При наличии бизнес-залов — какой вас интересует?</span>
       </div>
     </div>
 
@@ -1012,8 +1006,8 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
       <select name="howFoundUs" required>
         <option value="">— выберите —</option>
         <option value="Instagram">Instagram</option>
-        <option value="Реклама Google">Реклама Google</option>
-        <option value="Поиск Яндекс">Поиск Яндекс</option>
+        <option value="Поиск Google">Поиск Google</option>
+        <option value="Поиск Yandex">Поиск Yandex</option>
         <option value="По рекомендации">По рекомендации</option>
         <option value="Реклама в Интернете">Реклама в Интернете</option>
       </select>
@@ -1023,12 +1017,12 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
     <div class="field">
       <label>Примечания</label>
       <textarea name="notes" rows="3"></textarea>
-      <span class="hint">Любые подробности, которые вы хотите добавить в своём случае</span>
+      <span class="hint">Любые подробности, которые Вы хотите добавить к своей заявке.</span>
     </div>
 
     <!-- 50 -->
     <div class="field">
-      <label>Я подтверждаю правильность и достоверность информации в своей заявке *</label>
+      <label>Я подтверждаю правильность и достоверность указанных мной сведений. *</label>
       <div class="radio-group">
         <label><input type="radio" name="confirmAccuracy" value="Да" required /> Да</label>
         <label><input type="radio" name="confirmAccuracy" value="Нет" /> Нет</label>
@@ -1037,7 +1031,7 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
 
     <!-- 51 -->
     <div class="field">
-      <label>Нет претензий к данным, внесённым в ходе предыдущих консультаций *</label>
+      <label>Настоящим я соглашаюсь, что данные, внесенные в электронный опросник, являются частью заключенного со мной договора и в случае предоставления недостоверных сведений ответственность за возможные последствия несу лично я. *</label>
       <div class="radio-group">
         <label><input type="radio" name="confirmPrevData" value="Да" required /> Да</label>
         <label><input type="radio" name="confirmPrevData" value="Нет" /> Нет</label>
@@ -1183,83 +1177,79 @@ async function generateQuestionnairePdfBuffer(data) {
     doc.fontSize(13).text("Личные данные", { underline: true });
     doc.moveDown(0.3);
     line("Полное имя (ФИО)", data.fullName);
-    line("Предыдущие фамилии были", data.hadPrevSurnames);
-    line("Предыдущие фамилии", data.prevSurnames);
-    line("Контактный телефон", data.contactPhone);
+    line("У меня ранее были предыдущие фамилии", data.hadPrevSurnames);
+    line("Укажите все предыдущие фамилии", data.prevSurnames);
+    line("Телефон", data.contactPhone);
     line("Почта", data.email);
     line("Семейное положение", data.maritalStatus);
-    line("Иное гражданство при рождении", data.hadOtherCitizenshipAtBirth);
-    line("Гражданство при рождении", data.birthCitizenship);
-    line("Есть второе гражданство", data.hasSecondCitizenship);
-    line("Второе гражданство", data.secondCitizenship);
-    line("Есть второй загранпаспорт", data.hasSecondPassport);
-    line("Паспорт для оформления документов", data.whichPassport);
-    line("Готов сдать второй паспорт в ВЦ", data.canSurrenderPassport);
-    line("Причина не сдаёт паспорт", data.surrenderReason);
+    line("При рождении у меня было иное гражданство", data.hadOtherCitizenshipAtBirth);
+    line("Ваше гражданство при рождении", data.birthCitizenship);
+    line("У меня в данный момент есть второе гражданство", data.hasSecondCitizenship);
+    line("Укажите второе гражданство", data.secondCitizenship);
+    line("У меня есть второй заграничный паспорт", data.hasSecondPassport);
+    line("На какой паспорт мы оформляем все документы", data.whichPassport);
+    line("Можете ли вы сдать второй паспорт в ВЦ на период рассмотрения", data.canSurrenderPassport);
+    line("Укажите, по какой причине не сдаете паспорт", data.surrenderReason);
     doc.moveDown();
 
     doc.fontSize(13).text("Адрес и занятость", { underline: true });
     doc.moveDown(0.3);
     line("Фактический адрес проживания", data.actualAddress);
-    line("Род занятий", data.occupation);
-    line("Работодатель/учебная организация", data.employerName);
-    line("Адрес работодателя/организации", data.employerAddress);
+    line("Род занятий (занимаемая должность)", data.occupation);
+    line("Наименование работодателя/учебной организации", data.employerName);
+    line("Адрес работодателя/учебной организации", data.employerAddress);
     line("Телефон работодателя", data.employerPhone);
     doc.moveDown();
 
     doc.fontSize(13).text("Поездка", { underline: true });
     doc.moveDown(0.3);
     line("Цель поездки", data.tripPurpose);
-    line("Уточнение цели (Иное)", data.tripPurposeOther);
-    line("Собеседование США в Польше", data.usaInterviewPoland);
+    line('Подробности цели "Иное"', data.tripPurposeOther);
+    line("Виза для собеседования на США в Польше", data.usaInterviewPoland);
     line("Страна поездки", data.travelCountry);
     line("В какую страну запрашивается виза", data.visaCountry);
-    if (data.tripDateFrom || data.tripDateTo) {
-      line("Даты поездки", `${data.tripDateFrom || "?"} — ${data.tripDateTo || "?"}`);
-    }
+    line("Даты поездки", data.tripDate);
     doc.moveDown();
 
     doc.fontSize(13).text("История виз", { underline: true });
     doc.moveDown(0.3);
     line("Есть действующая шенгенская виза", data.hasActiveSchengen);
     line("Дата окончания текущей визы", data.schengenExpiry);
-    line("Были шенгенские визы за 3 года", data.hadSchengen3Years);
-    line("Не открывал/-а последнюю визу", data.didNotUseVisa);
-    line("Причина неиспользования визы", data.didNotUseReason);
-    line("Последняя виза была отказана", data.visaRefused);
-    line("Причина отказа", data.refusalReason);
+    line("Были Шенгенские визы за последние 3 года", data.hadSchengen3Years);
+    line("Не открыл/-а последнюю шенгенскую визу", data.didNotUseVisa);
+    line("Причина, почему виза не была отъезжена", data.didNotUseReason);
+    line("Открыл/-а визу не той страной, которая её выдала", data.visaRefused);
+    line("Укажите причину", data.refusalReason);
     doc.moveDown();
 
     doc.fontSize(13).text("Документы и услуги", { underline: true });
     doc.moveDown(0.3);
-    line("Есть страховка для выезда", data.hasInsurance);
-    line("Младше 18 лет на момент подачи", data.isUnder18);
+    line("Есть действительная страховка для въезда в Шенгенскую зону", data.hasInsurance);
+    line("На момент подачи документов младше 18 лет", data.isUnder18);
     line("ФИО законного представителя", data.legalRepresentative);
-    line("Есть спонсор", data.hasSponsor);
+    line("Поездку спонсирует третье лицо/компания", data.hasSponsor);
     line("ФИО/наименование спонсора", data.sponsorName);
-    line("Тип посещения ВЦ", data.visitType);
-    line("Способ получения документов", data.pickupMethod);
-    line("Есть документы на консульский сбор", data.hasConsularFeeDoc);
+    line("Тип подачи", data.visitType);
+    line("Способ получения готовых документов", data.pickupMethod);
+    line("Есть документы на льготную оплату консульского сбора", data.hasConsularFeeDoc);
     doc.moveDown();
 
     doc.fontSize(13).text("Запись ботом", { underline: true });
     doc.moveDown(0.3);
-    line("Услуга записи ботом", data.useBotBooking);
-    if (data.bookingDateFrom || data.bookingDateTo) {
-      line("Диапазон записи", `${data.bookingDateFrom || "?"} — ${data.bookingDateTo || "?"}`);
-    }
-    line("Исключения по датам", data.bookingExclusions);
+    line("Хочу воспользоваться услугой записи ботом", data.useBotBooking);
+    line("Диапазон записи", data.bookingDate);
+    line("Исключения", data.bookingExclusions);
     line("Город для записи", data.bookingCity);
-    line("Пожелания по времени", data.bookingTimePrefs);
-    line("Предпочтение по залу", data.bookingLoungePrefs);
+    line("Пожелания по датам записи", data.bookingTimePrefs);
+    line("Дополнительные услуги в ВЦ (бизнес-залы/ускоренные)", data.bookingLoungePrefs);
     doc.moveDown();
 
     doc.fontSize(13).text("Прочее", { underline: true });
     doc.moveDown(0.3);
     line("Откуда узнали о нас", data.howFoundUs);
     line("Примечания", data.notes);
-    line("Подтверждение достоверности данных", data.confirmAccuracy);
-    line("Нет претензий к предыдущим данным", data.confirmPrevData);
+    line("Подтверждаю правильность и достоверность сведений", data.confirmAccuracy);
+    line("Согласие с условиями договора по электронному опроснику", data.confirmPrevData);
     line("Согласие на обработку персональных данных", data.personalDataConsent);
 
     doc.end();
@@ -1411,8 +1401,7 @@ app.post(
         usaInterviewPoland:         String(req.body.usaInterviewPoland || "").trim(),
         travelCountry:              String(req.body.travelCountry || "").trim(),
         visaCountry:                String(req.body.visaCountry || "").trim(),
-        tripDateFrom:               String(req.body.tripDateFrom || "").trim(),
-        tripDateTo:                 String(req.body.tripDateTo || "").trim(),
+        tripDate:                   String(req.body.tripDate || "").trim(),
         hasActiveSchengen:          String(req.body.hasActiveSchengen || "").trim(),
         schengenExpiry:             String(req.body.schengenExpiry || "").trim(),
         hadSchengen3Years:          String(req.body.hadSchengen3Years || "").trim(),
@@ -1429,8 +1418,7 @@ app.post(
         pickupMethod:               String(req.body.pickupMethod || "").trim(),
         hasConsularFeeDoc:          String(req.body.hasConsularFeeDoc || "").trim(),
         useBotBooking:              String(req.body.useBotBooking || "").trim(),
-        bookingDateFrom:            String(req.body.bookingDateFrom || "").trim(),
-        bookingDateTo:              String(req.body.bookingDateTo || "").trim(),
+        bookingDate:                String(req.body.bookingDate || "").trim(),
         bookingExclusions:          String(req.body.bookingExclusions || "").trim(),
         bookingCity:                String(req.body.bookingCity || "").trim(),
         bookingTimePrefs:           String(req.body.bookingTimePrefs || "").trim(),
