@@ -1129,6 +1129,22 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
     hideBox(errorBox);
     hideBox(successBox);
 
+    // Проверка согласий — без сброса данных формы
+    const accuracyVal = radio("confirmAccuracy");
+    if (accuracyVal !== "Да") {
+      showBox(errorBox, 'Чтобы отправить опросник, подтвердите правильность и достоверность указанных сведений (выберите "Да").');
+      const el = form.querySelector('input[name="confirmAccuracy"]');
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    const consentVal = radio("personalDataConsent");
+    if (consentVal !== "Да") {
+      showBox(errorBox, 'Чтобы отправить опросник, согласитесь на обработку персональных данных (выберите "Да").');
+      const el = form.querySelector('input[name="personalDataConsent"]');
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
     submitBtn.disabled = true;
     submitBtn.textContent = "Отправка...";
 
