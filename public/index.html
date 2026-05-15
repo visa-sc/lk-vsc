@@ -486,90 +486,137 @@
       return wrapper;
     }
 
-    function createDocumentsBlock() {
+    async function fetchQuestionnaireState(phone) {
+      try {
+        const response = await fetch(`/api/questionnaire-state?phone=${encodeURIComponent(phone)}`);
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data && data.success ? data.state : null;
+      } catch (err) {
+        console.error("FETCH STATE ERROR:", err);
+        return null;
+      }
+    }
+
+    function buildUploadBlocksConfig(state) {
+      const blocks = [];
+
+      // Всегда после заполнения опросника
+      blocks.push({ field: "mainPassport",  label: "Заграничный паспорт (в который запрашиваем визу)" });
+      blocks.push({ field: "innerPassport", label: "Внутренний паспорт" });
+
+      // По ответам в опроснике
+      if (state.hadSchengen3Years === "Да") {
+        blocks.push({ field: "prevSchengen", label: "Шенгенские визы за последние 3 года" });
+      }
+      if (state.hasSecondPassport === "Да") {
+        blocks.push({ field: "secondPassport", label: "Второй заграничный паспорт" });
+      }
+      const employer = (state.employerName || "").trim();
+      if (employer && employer.toUpperCase() !== "НЕТ") {
+        blocks.push({ field: "workCert", label: "Справка с работы" });
+      }
+
+      return blocks;
+    }
+
+    function createDocumentsBlock(blocksConfig) {
       const wrapper = document.createElement("div");
       wrapper.className = "documents-inline";
       wrapper.style.display = "block";
 
-      wrapper.innerHTML = `
-        <h3>Загрузка документов</h3>
-        <form class="upload-form-inline">
-          <div class="file-grid">
-            <div class="file-group">
-              <label>Заграничный паспорт</label>
-              <input name="passportFile" type="file" />
-            </div>
+      const header = document.createElement("h3");
+      header.textContent = "Загрузка документов";
+      wrapper.appendChild(header);
 
-            <div class="file-group">
-              <label>Внутренний паспорт</label>
-              <input name="innerPassportFile" type="file" />
-            </div>
+      const grid = document.createElement("div");
+      grid.className = "file-grid";
+      wrapper.appendChild(grid);
 
-            <div class="file-group">
-              <label>Справка с работы</label>
-              <input name="workFile" type="file" />
-            </div>
-          </div>
+      blocksConfig.forEach((cfg) => {
+        const group = document.createElement("div");
+        group.className = "file-group";
 
-          <button class="upload-btn" type="submit">Отправить документы</button>
-        </form>
-      `;
+        const label = document.createElement("label");
+        label.textContent = cfg.label;
 
-      const uploadForm = wrapper.querySelector(".upload-form-inline");
-      const uploadBtn = wrapper.querySelector(".upload-btn");
+        const input = document.createElement("input");
+        input.type = "file";
+        input.dataset.field = cfg.field;
 
-      uploadForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        hideMessages();
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "upload-btn";
+        btn.style.marginTop = "6px";
+        btn.style.height = "36px";
+        btn.style.padding = "0 14px";
+        btn.style.fontSize = "13px";
+        btn.textContent = "Загрузить";
 
-        const phone = phoneInput.value.trim();
+        btn.addEventListener("click", async () => {
+          hideMessages();
 
-        if (!phone) {
-          showBox(errorBox, "Сначала введите телефон");
-          return;
-        }
-
-        const formData = new FormData();
-        formData.append("phone", phone);
-
-        const passportFile = uploadForm.querySelector('input[name="passportFile"]').files[0];
-        const innerPassportFile = uploadForm.querySelector('input[name="innerPassportFile"]').files[0];
-        const workFile = uploadForm.querySelector('input[name="workFile"]').files[0];
-
-        if (passportFile) formData.append("passportFile", passportFile);
-        if (innerPassportFile) formData.append("innerPassportFile", innerPassportFile);
-        if (workFile) formData.append("workFile", workFile);
-
-        if (!passportFile && !innerPassportFile && !workFile) {
-          showBox(errorBox, "Выберите хотя бы один файл");
-          return;
-        }
-
-        uploadBtn.disabled = true;
-        uploadBtn.textContent = "Загрузка...";
-
-        try {
-          const response = await fetch("/upload-documents", {
-            method: "POST",
-            body: formData
-          });
-
-          const data = await response.json();
-
-          if (!response.ok || !data.success) {
-            throw new Error(data.message || "Ошибка загрузки файлов");
+          const phone = phoneInput.value.trim();
+          if (!phone) {
+            showBox(errorBox, "Сначала введите телефон");
+            return;
           }
 
-          showBox(successBox, "Документы успешно загружены");
-        } catch (error) {
-          console.error("UPLOAD ERROR:", error);
-          showBox(errorBox, "Не удалось загрузить документы");
-        } finally {
-          uploadBtn.disabled = false;
-          uploadBtn.textContent = "Отправить документы";
-        }
+          const file = input.files[0];
+          if (!file) {
+            showBox(errorBox, `Выберите файл для "${cfg.label}"`);
+            return;
+          }
+
+          const formData = new FormData();
+          formData.append("phone", phone);
+          formData.append("field", cfg.field);
+          formData.append("file", file);
+
+          btn.disabled = true;
+          btn.textContent = "Загрузка...";
+
+          try {
+            const response = await fetch("/upload-document", {
+              method: "POST",
+              body: formData
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+              throw new Error(data.message || "Ошибка загрузки файла");
+            }
+
+            showBox(successBox, `Документ "${cfg.label}" успешно загружен`);
+          } catch (error) {
+            console.error("UPLOAD ERROR:", error);
+            showBox(errorBox, `Не удалось загрузить "${cfg.label}"`);
+          } finally {
+            btn.disabled = false;
+            btn.textContent = "Загрузить";
+          }
+        });
+
+        group.appendChild(label);
+        group.appendChild(input);
+        group.appendChild(btn);
+        grid.appendChild(group);
       });
 
+      return wrapper;
+    }
+
+    function createNoStateNotice() {
+      const wrapper = document.createElement("div");
+      wrapper.className = "documents-inline";
+      wrapper.style.display = "block";
+      wrapper.innerHTML = `
+        <h3>Загрузка документов</h3>
+        <div class="muted">
+          После заполнения опросника здесь появятся поля для загрузки нужных документов.
+        </div>
+      `;
       return wrapper;
     }
 
@@ -596,10 +643,22 @@
 
       if (currentIndex === 0 && stageNodes[0]) {
         const questionnaireBlock = createQuestionnaireBlock(lead);
-        const documentsBlock = createDocumentsBlock();
-
         stageNodes[0].after(questionnaireBlock);
-        questionnaireBlock.after(documentsBlock);
+
+        // Плейсхолдер для блока документов — заполнится после загрузки состояния опросника
+        const placeholder = createNoStateNotice();
+        questionnaireBlock.after(placeholder);
+
+        const phone = phoneInput.value.trim();
+        if (phone) {
+          fetchQuestionnaireState(phone).then((state) => {
+            if (!state) return;
+            const blocksConfig = buildUploadBlocksConfig(state);
+            if (!blocksConfig.length) return;
+            const docsBlock = createDocumentsBlock(blocksConfig);
+            placeholder.replaceWith(docsBlock);
+          });
+        }
       }
     }
 

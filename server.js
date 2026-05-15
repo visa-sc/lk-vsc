@@ -391,6 +391,33 @@ async function uploadBufferToYandexDisk(buffer, diskPath, contentType = "applica
   });
 }
 
+async function downloadJsonFromYandexDisk(diskPath) {
+  try {
+    const linkResponse = await yandexRequest({
+      method: "GET",
+      url: "https://cloud-api.yandex.net/v1/disk/resources/download",
+      params: { path: diskPath }
+    });
+    const downloadUrl = linkResponse.data.href;
+    const fileResponse = await axios.get(downloadUrl, { responseType: "text" });
+    return typeof fileResponse.data === "string"
+      ? JSON.parse(fileResponse.data)
+      : fileResponse.data;
+  } catch (error) {
+    if (error.response?.status === 404) return null;
+    if (error.response?.data?.error === "DiskNotFoundError") return null;
+    throw error;
+  }
+}
+
+const UPLOAD_FIELDS_WHITELIST = {
+  mainPassport:   "Заграничный паспорт (в который запрашиваем визу)",
+  innerPassport:  "Внутренний паспорт",
+  workCert:       "Справка с работы",
+  secondPassport: "Второй заграничный паспорт",
+  prevSchengen:   "Шенгенские визы за последние 3 года"
+};
+
 async function findMatchingContacts(baseUrl, phone) {
   const normalized = normalizePhone(phone);
 
@@ -1440,6 +1467,13 @@ app.post(
 
       await uploadBufferToYandexDisk(pdfBuffer, `${phoneFolder}/Опросник.pdf`, "application/pdf");
 
+      const stateJson = JSON.stringify({ ...fields, savedAt: new Date().toISOString() }, null, 2);
+      await uploadBufferToYandexDisk(
+        Buffer.from(stateJson, "utf-8"),
+        `${phoneFolder}/Опросник.json`,
+        "application/json; charset=utf-8"
+      );
+
       const visaPhotoFile = req.files?.visaPhoto?.[0];
       if (visaPhotoFile) {
         const origName = sanitizeFileName(visaPhotoFile.originalname || "visa");
@@ -1471,32 +1505,61 @@ app.post(
   }
 );
 
+app.get("/api/questionnaire-state", async (req, res) => {
+  try {
+    const phone = normalizePhone(req.query.phone || "");
+
+    if (!phone) {
+      return res.status(400).json({ success: false, message: "Не передан phone" });
+    }
+
+    if (!YANDEX_DISK_TOKEN) {
+      return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
+    }
+
+    const diskPath = `${YANDEX_DISK_ROOT}/${phone}/Опросник.json`;
+    const state = await downloadJsonFromYandexDisk(diskPath);
+
+    return res.json({ success: true, state: state || null });
+  } catch (error) {
+    console.error("GET /api/questionnaire-state error:");
+    console.error("message:", error.message);
+    console.error("status:", error.response?.status);
+    console.error("", error.response?.data);
+
+    return res.status(500).json({
+      success: false,
+      message: "Ошибка чтения состояния опросника",
+      error: error.response?.data || error.message
+    });
+  }
+});
+
 app.post(
-  "/upload-documents",
-  upload.fields([
-    { name: "passportFile", maxCount: 1 },
-    { name: "innerPassportFile", maxCount: 1 },
-    { name: "workFile", maxCount: 1 }
-  ]),
+  "/upload-document",
+  upload.single("file"),
   async (req, res) => {
     try {
       const phone = normalizePhone(req.body.phone || "");
+      const field = String(req.body.field || "").trim();
+      const file = req.file;
 
-      console.log("HANDLER /upload-documents phone =", phone);
-      console.log("FILES:", Object.keys(req.files || {}));
+      console.log("HANDLER /upload-document phone =", phone, "field =", field);
 
       if (!phone) {
-        return res.status(400).json({
-          success: false,
-          message: "Телефон не передан"
-        });
+        return res.status(400).json({ success: false, message: "Телефон не передан" });
+      }
+      if (!file) {
+        return res.status(400).json({ success: false, message: "Файл не передан" });
+      }
+
+      const targetName = UPLOAD_FIELDS_WHITELIST[field];
+      if (!targetName) {
+        return res.status(400).json({ success: false, message: "Неизвестный тип документа" });
       }
 
       if (!YANDEX_DISK_TOKEN) {
-        return res.status(500).json({
-          success: false,
-          message: "Не задан YANDEX_DISK_TOKEN"
-        });
+        return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
       }
 
       const rootFolder = YANDEX_DISK_ROOT;
@@ -1505,57 +1568,29 @@ app.post(
       await ensureYandexFolder(rootFolder);
       await ensureYandexFolder(phoneFolder);
 
-      const fileConfigs = [
-        {
-          field: "passportFile",
-          targetName: "Заграничный паспорт"
-        },
-        {
-          field: "innerPassportFile",
-          targetName: "Внутренний паспорт"
-        },
-        {
-          field: "workFile",
-          targetName: "Справка с работы"
-        }
-      ];
+      const originalName = sanitizeFileName(file.originalname || "file");
+      const dotIndex = originalName.lastIndexOf(".");
+      const ext = dotIndex >= 0 ? originalName.slice(dotIndex) : "";
+      const finalFileName = `${targetName}${ext}`;
+      const diskPath = `${phoneFolder}/${finalFileName}`;
 
-      const uploadedFiles = [];
-
-      for (const config of fileConfigs) {
-        const file = req.files?.[config.field]?.[0];
-        if (!file) continue;
-
-        const originalName = sanitizeFileName(file.originalname || "file");
-        const dotIndex = originalName.lastIndexOf(".");
-        const ext = dotIndex >= 0 ? originalName.slice(dotIndex) : "";
-        const finalFileName = `${config.targetName}${ext}`;
-        const diskPath = `${phoneFolder}/${finalFileName}`;
-
-        console.log("UPLOAD TO YANDEX:", diskPath);
-
-        await uploadBufferToYandexDisk(file.buffer, diskPath, file.mimetype);
-
-        uploadedFiles.push({
-          field: config.field,
-          fileName: finalFileName
-        });
-      }
+      console.log("UPLOAD TO YANDEX:", diskPath);
+      await uploadBufferToYandexDisk(file.buffer, diskPath, file.mimetype);
 
       return res.json({
         success: true,
-        message: "Файлы успешно загружены",
-        uploadedFiles
+        message: "Файл успешно загружен",
+        fileName: finalFileName
       });
     } catch (error) {
-      console.error("UPLOAD DOCUMENTS ERROR:");
+      console.error("UPLOAD DOCUMENT ERROR:");
       console.error("message:", error.message);
       console.error("status:", error.response?.status);
       console.error("", error.response?.data);
 
       return res.status(500).json({
         success: false,
-        message: "Ошибка загрузки документов",
+        message: "Ошибка загрузки документа",
         error: error.response?.data || error.message
       });
     }
