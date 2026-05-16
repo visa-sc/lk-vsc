@@ -120,6 +120,7 @@
       display: grid;
       grid-template-columns: 320px 1fr;
       gap: 16px;
+      align-items: start;
     }
 
     .card {
@@ -127,7 +128,6 @@
       border: 1px solid #ece7f2;
       border-radius: 22px;
       padding: 18px;
-      min-height: 330px;
     }
 
     .card h2 {
@@ -356,8 +356,6 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="badge">Личный кабинет клиента</div>
-    <h1>Статус визового дела</h1>
     <p class="subtitle">
       Введите телефон, выберите нужное обращение и справа посмотрите текущий этап обработки.
     </p>
@@ -380,7 +378,7 @@
 
     <div class="grid">
       <div class="card">
-        <h2>Обращения клиента</h2>
+        <h2>Ваши обращения</h2>
         <div id="leadsPlaceholder" class="muted">Введите телефон и нажмите кнопку.</div>
         <div id="leadList" class="lead-list"></div>
       </div>
@@ -750,14 +748,12 @@
 
         renderLeads(data.leads || []);
 
-        if ((data.leads || []).length) {
-          showBox(successBox, "Данные успешно загружены");
-        } else {
+        if (!(data.leads || []).length) {
           showBox(infoBox, "По этому номеру обращения не найдены");
         }
       } catch (error) {
         console.error("LOAD LEADS ERROR:", error);
-        showBox(errorBox, "Не удалось получить данные с сервера");
+        showBox(errorBox, "Ошибка загрузки данных");
         leadsPlaceholder.style.display = "block";
         leadsPlaceholder.textContent = "Ошибка загрузки.";
         statusText.textContent = "Выберите обращение слева.";
