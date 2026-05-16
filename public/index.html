@@ -25,26 +25,17 @@
       box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05);
     }
 
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: #f0ebf7;
-      color: #7a718d;
-      font-size: 13px;
-      margin-bottom: 14px;
+    .card {
+      background: #fff;
+      border: 1px solid #ece7f2;
+      border-radius: 22px;
+      padding: 18px;
     }
 
-    h1 {
-      margin: 0 0 8px;
-      font-size: 26px;
-      line-height: 1.15;
-      color: #171c29;
-    }
-
-    .search-card {
-      margin-bottom: 16px;
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      color: #1d2330;
     }
 
     .search-box {
@@ -76,9 +67,7 @@
       cursor: pointer;
     }
 
-    .search-box button:disabled,
-    .upload-btn:disabled,
-    .questionnaire-btn:disabled {
+    .search-box button:disabled {
       opacity: 0.7;
       cursor: not-allowed;
     }
@@ -88,7 +77,7 @@
       padding: 12px 14px;
       border-radius: 14px;
       font-size: 14px;
-      margin-bottom: 16px;
+      margin-top: 14px;
     }
 
     .message.error {
@@ -97,293 +86,18 @@
       color: #a15561;
     }
 
-    .message.success {
-      background: #edf8ef;
-      border: 1px solid #cfe7d2;
-      color: #2e7a43;
-    }
-
-    .message.info {
-      background: #eef3ff;
-      border: 1px solid #d7e0ff;
-      color: #4b6198;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 320px 1fr;
-      gap: 16px;
-      align-items: start;
-    }
-
-    .card {
-      background: #fff;
-      border: 1px solid #ece7f2;
-      border-radius: 22px;
-      padding: 18px;
-    }
-
-    .card h2 {
-      margin: 0 0 10px;
-      font-size: 16px;
-      color: #1d2330;
-    }
-
-    .muted {
-      color: #9096a3;
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    .lead-list {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      margin-top: 12px;
-    }
-
-    .lead-item {
-      width: 100%;
-      text-align: left;
-      border: 1px solid #ebe5f2;
-      background: #fcfbfe;
-      border-radius: 16px;
-      padding: 14px 14px;
-      cursor: pointer;
-      transition: 0.18s ease;
-      color: #1e2433;
-      font-size: 14px;
-      line-height: 1.4;
-      font-weight: 700;
-    }
-
-    .lead-item-country {
-      margin-bottom: 2px;
-    }
-
-    .lead-item:hover {
-      border-color: #ddd2eb;
-      background: #faf7fd;
-    }
-
-    .lead-item.active {
-      border-color: #73b489;
-      background: #eef8f1;
-    }
-
-    .status-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 12px;
-      margin-bottom: 10px;
-    }
-
-    .status-top p {
-      margin: 0;
-      font-size: 14px;
-      color: #747b88;
-      line-height: 1.55;
-      max-width: 740px;
-    }
-
-    .stages {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      margin-top: 18px;
-    }
-
-    .stage {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-size: 15px;
-      color: #9da3ae;
-      font-weight: 500;
-      line-height: 1.4;
-    }
-
-    .dot {
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      border: 2px solid #d6dbe2;
-      background: #fff;
-      flex: 0 0 20px;
-    }
-
-    .stage.done,
-    .stage.current {
-      color: #4f9f68;
-    }
-
-    .stage.done .dot {
-      border-color: #4f9f68;
-      background: #4f9f68;
-      box-shadow: inset 0 0 0 4px #fff;
-    }
-
-    .stage.current .dot {
-      border-color: #4f9f68;
-      background: #fff;
-      box-shadow: inset 0 0 0 4px #4f9f68;
-    }
-
-    .questionnaire-inline {
-      display: none;
-      margin: 0 0 2px 32px;
-      padding: 0;
-      background: transparent;
-    }
-
-    .questionnaire-btn {
-      height: 46px;
-      border: none;
-      border-radius: 14px;
-      background: #4f9f68;
-      color: #fff;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      padding: 0 20px;
-    }
-
-    .documents-inline {
-      display: none;
-      margin: 2px 0 2px 32px;
-      padding: 16px;
-      border: 1px solid #ece7f2;
-      border-radius: 18px;
-      background: #faf9fc;
-    }
-
-    .documents-inline + .documents-inline {
-      margin-top: 10px;
-    }
-
-    .documents-inline h3 {
-      margin: 0 0 12px;
-      font-size: 15px;
-      color: #1d2330;
-    }
-
-    .file-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-      margin-bottom: 14px;
-    }
-
-    .file-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .file-group label {
-      font-size: 13px;
-      color: #666d7c;
-      font-weight: 600;
-    }
-
-    .file-group input[type="file"] {
-      width: 100%;
-      border: 1px solid #e8e2ee;
-      border-radius: 12px;
-      padding: 8px;
-      background: #fff;
-      font-size: 12px;
-    }
-
-    .upload-btn {
-      height: 46px;
-      border: none;
-      border-radius: 14px;
-      background: #161d45;
-      color: #fff;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      padding: 0 20px;
-    }
-
-    .help-inline {
-      display: none;
-      margin: 2px 0 2px 32px;
-      padding: 14px 16px;
-      border: 1px solid #ece7f2;
-      border-radius: 18px;
-      background: transparent;
-    }
-
-    .help-inline h3 {
-      margin: 0 0 10px;
-      font-size: 13px;
-      color: #9096a3;
-      font-weight: 600;
-    }
-
-    .help-actions {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-    }
-
-    .help-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      height: 36px;
-      border: 1px solid #c6dceb;
-      border-radius: 12px;
-      background: #fff;
-      color: #3589BD;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      padding: 0 12px;
-      text-decoration: none;
-      text-align: center;
-    }
-
-    .help-btn .help-icon {
-      width: 14px;
-      height: 14px;
-      flex: 0 0 14px;
-    }
-
     @media (max-width: 900px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-
       .search-box {
         grid-template-columns: 1fr;
-      }
-
-      .file-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .help-actions {
-        grid-template-columns: 1fr;
-      }
-
-      .documents-inline,
-      .questionnaire-inline,
-      .help-inline {
-        margin-left: 0;
       }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="card search-card">
+    <div class="card">
       <h2>Введите ваш номер телефона, чтобы найти все обращения</h2>
-      <form id="statusForm" class="search-box">
+      <form id="loginForm" class="search-box">
         <input
           id="phoneInput"
           type="text"
@@ -394,476 +108,36 @@
         />
         <button id="searchBtn" type="submit">Найти обращения</button>
       </form>
-    </div>
-
-    <div id="errorBox" class="message error"></div>
-    <div id="successBox" class="message success"></div>
-    <div id="infoBox" class="message info"></div>
-
-    <div class="grid">
-      <div class="card">
-        <h2>Ваши обращения</h2>
-        <div id="leadsPlaceholder" class="muted">Введите телефон и нажмите кнопку.</div>
-        <div id="leadList" class="lead-list"></div>
-      </div>
-
-      <div class="card">
-        <div class="status-top">
-          <div>
-            <h2>Статус обращения</h2>
-            <p id="statusText">Выберите обращение, чтобы увидеть актуальный статус по нему. Пройденные шаги будут подсвечиваться зелёным цветом.</p>
-          </div>
-        </div>
-
-        <div id="stages" class="stages"></div>
-      </div>
+      <div id="errorBox" class="message error"></div>
     </div>
   </div>
 
   <script>
-    const STAGES = [
-      "Сбор документов",
-      "Подготовка документов",
-      "Ожидание записи / подачи",
-      "Документы поданы на рассмотрение в Консульство",
-      "Рассмотрение завершено"
-    ];
-
-    const statusForm = document.getElementById("statusForm");
+    const form = document.getElementById("loginForm");
     const phoneInput = document.getElementById("phoneInput");
-    const searchBtn = document.getElementById("searchBtn");
     const errorBox = document.getElementById("errorBox");
-    const successBox = document.getElementById("successBox");
-    const infoBox = document.getElementById("infoBox");
-    const leadList = document.getElementById("leadList");
-    const leadsPlaceholder = document.getElementById("leadsPlaceholder");
-    const statusText = document.getElementById("statusText");
-    const stagesEl = document.getElementById("stages");
 
-    let selectedLead = null;
-
-    function showBox(el, message) {
-      el.style.display = "block";
-      el.textContent = message || "";
+    function showError(msg) {
+      errorBox.style.display = "block";
+      errorBox.textContent = msg || "";
     }
 
-    function hideBox(el) {
-      el.style.display = "none";
-      el.textContent = "";
+    function hideError() {
+      errorBox.style.display = "none";
+      errorBox.textContent = "";
     }
 
-    function hideMessages() {
-      hideBox(errorBox);
-      hideBox(successBox);
-      hideBox(infoBox);
-    }
-
-    function formatDate(timestampSeconds) {
-      if (!timestampSeconds) return "без даты";
-      const date = new Date(timestampSeconds * 1000);
-      return date.toLocaleDateString("ru-RU");
-    }
-
-    function getLeadLabel(lead) {
-      return `Обращение от ${formatDate(lead.created_at)}`;
-    }
-
-    function formatCountryService(value) {
-      if (!value || typeof value !== "string") return "";
-
-      const EXCLUDE = new Set([
-        "с", "тх", "vms", "бум.", "эл.", "акк", "тур.", "ост.", "ст", "лич",
-        "альмавива", "через", "вклейка", "астана", "варшава"
-      ]);
-      const EXCLUDE_PREFIXES = ["партнер"];
-
-      const cleaned = value.replace(/[\d|]/g, " ");
-
-      const words = cleaned
-        .split(/\s+/)
-        .filter(Boolean)
-        .filter((w) => {
-          const lw = w.toLowerCase();
-          if (EXCLUDE.has(lw)) return false;
-          if (EXCLUDE_PREFIXES.some((p) => lw.startsWith(p))) return false;
-          return true;
-        });
-
-      if (!words.length) return "";
-
-      const processed = words.map((w) => {
-        if (w.toUpperCase() === "США") return "США";
-        return w.toLowerCase();
-      });
-
-      const first = processed[0];
-      if (first !== "США" && first.length > 0) {
-        processed[0] = first.charAt(0).toUpperCase() + first.slice(1);
-      }
-
-      return processed.join(" ");
-    }
-
-    function getCurrentStageIndex(lead) {
-      if (typeof lead.cabinet_stage_index === "number") {
-        return lead.cabinet_stage_index;
-      }
-      return 0;
-    }
-
-    function createQuestionnaireBlock(lead) {
-      const wrapper = document.createElement("div");
-      wrapper.className = "questionnaire-inline";
-      wrapper.style.display = "block";
-
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "questionnaire-btn";
-      button.textContent = "Заполните опросник";
-
-      button.addEventListener("click", () => {
-        const phone = phoneInput.value.trim();
-        const leadId = lead?.id;
-
-        if (!phone || !leadId) {
-          showBox(errorBox, "Не удалось открыть опросник");
-          return;
-        }
-
-        const url = `/questionnaire?phone=${encodeURIComponent(phone)}&leadId=${encodeURIComponent(leadId)}`;
-        window.open(url, "_blank");
-      });
-
-      wrapper.appendChild(button);
-      return wrapper;
-    }
-
-    async function fetchApplicantStates(phone) {
-      try {
-        const response = await fetch(`/api/questionnaire-state?phone=${encodeURIComponent(phone)}`);
-        if (!response.ok) return [];
-        const data = await response.json();
-        return data && data.success && Array.isArray(data.applicants) ? data.applicants : [];
-      } catch (err) {
-        console.error("FETCH STATE ERROR:", err);
-        return [];
-      }
-    }
-
-    function buildUploadBlocksConfig(state) {
-      const blocks = [];
-
-      // Всегда после заполнения опросника
-      blocks.push({ field: "mainPassport",  label: "Заграничный паспорт (в который запрашиваем визу)" });
-      blocks.push({ field: "innerPassport", label: "Внутренний паспорт" });
-
-      // По ответам в опроснике
-      if (state.hadSchengen3Years === "Да") {
-        blocks.push({ field: "prevSchengen", label: "Шенгенские визы за последние 3 года" });
-      }
-      if (state.hasSecondPassport === "Да") {
-        blocks.push({ field: "secondPassport", label: "Второй заграничный паспорт" });
-      }
-      const employer = (state.employerName || "").trim();
-      if (employer && employer.toUpperCase() !== "НЕТ") {
-        blocks.push({ field: "workCert", label: "Справка с работы" });
-      }
-
-      return blocks;
-    }
-
-    function createDocumentsBlock(applicant, blocksConfig) {
-      const wrapper = document.createElement("div");
-      wrapper.className = "documents-inline";
-      wrapper.style.display = "block";
-
-      const applicantIndex = Math.max(1, parseInt(applicant && applicant.applicantIndex, 10) || 1);
-      const fio = (applicant && applicant.fullName ? String(applicant.fullName) : "").trim();
-
-      const header = document.createElement("h3");
-      header.textContent = fio
-        ? `Загрузите документы для ${fio}`
-        : `Загрузите документы для заявителя ${applicantIndex}`;
-      wrapper.appendChild(header);
-
-      const grid = document.createElement("div");
-      grid.className = "file-grid";
-      wrapper.appendChild(grid);
-
-      blocksConfig.forEach((cfg) => {
-        const group = document.createElement("div");
-        group.className = "file-group";
-
-        const label = document.createElement("label");
-        label.textContent = cfg.label;
-
-        const input = document.createElement("input");
-        input.type = "file";
-        input.dataset.field = cfg.field;
-
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "upload-btn";
-        btn.style.marginTop = "6px";
-        btn.style.height = "36px";
-        btn.style.padding = "0 14px";
-        btn.style.fontSize = "13px";
-        btn.textContent = "Загрузить";
-
-        btn.addEventListener("click", async () => {
-          hideMessages();
-
-          const phone = phoneInput.value.trim();
-          if (!phone) {
-            showBox(errorBox, "Сначала введите телефон");
-            return;
-          }
-
-          const file = input.files[0];
-          if (!file) {
-            showBox(errorBox, `Выберите файл для "${cfg.label}"`);
-            return;
-          }
-
-          const formData = new FormData();
-          formData.append("phone", phone);
-          formData.append("field", cfg.field);
-          formData.append("applicantIndex", String(applicantIndex));
-          formData.append("file", file);
-
-          btn.disabled = true;
-          btn.textContent = "Загрузка...";
-
-          try {
-            const response = await fetch("/upload-document", {
-              method: "POST",
-              body: formData
-            });
-
-            const data = await response.json();
-
-            if (!response.ok || !data.success) {
-              throw new Error(data.message || "Ошибка загрузки файла");
-            }
-
-            showBox(successBox, `Документ "${cfg.label}" успешно загружен`);
-          } catch (error) {
-            console.error("UPLOAD ERROR:", error);
-            showBox(errorBox, `Не удалось загрузить "${cfg.label}"`);
-          } finally {
-            btn.disabled = false;
-            btn.textContent = "Загрузить";
-          }
-        });
-
-        group.appendChild(label);
-        group.appendChild(input);
-        group.appendChild(btn);
-        grid.appendChild(group);
-      });
-
-      return wrapper;
-    }
-
-    function createNoStateNotice() {
-      const wrapper = document.createElement("div");
-      wrapper.className = "documents-inline";
-      wrapper.style.display = "block";
-      wrapper.innerHTML = `
-        <h3>Загрузка документов</h3>
-        <div class="muted">
-          После заполнения опросника здесь появятся поля для загрузки нужных документов.
-        </div>
-      `;
-      return wrapper;
-    }
-
-    function createHelpBlock() {
-      const wrapper = document.createElement("div");
-      wrapper.className = "help-inline";
-      wrapper.style.display = "block";
-
-      const waIcon = '<svg class="help-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>';
-
-      const tgIcon = '<svg class="help-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>';
-
-      const phoneIcon = '<svg class="help-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>';
-
-      wrapper.innerHTML = `
-        <h3>Нужна помощь?</h3>
-        <div class="help-actions">
-          <a class="help-btn" href="https://wa.me/+79299435150" target="_blank" rel="noopener">${waIcon}Написать в WhatsApp</a>
-          <a class="help-btn" href="https://t.me/vsc_operator" target="_blank" rel="noopener">${tgIcon}Написать в Telegram</a>
-          <a class="help-btn" href="tel:+74953691867">${phoneIcon}Позвонить</a>
-        </div>
-      `;
-
-      return wrapper;
-    }
-
-    function renderStages(currentIndex, lead) {
-      stagesEl.innerHTML = "";
-
-      const stageNodes = [];
-
-      STAGES.forEach((stageName, index) => {
-        const row = document.createElement("div");
-        row.className = "stage";
-
-        if (index < currentIndex) row.classList.add("done");
-        if (index === currentIndex) row.classList.add("current");
-
-        row.innerHTML = `
-          <div class="dot"></div>
-          <div>${stageName}</div>
-        `;
-
-        stagesEl.appendChild(row);
-        stageNodes.push(row);
-      });
-
-      if (currentIndex === 0 && stageNodes[0]) {
-        const questionnaireBlock = createQuestionnaireBlock(lead);
-        stageNodes[0].after(questionnaireBlock);
-
-        // Плейсхолдер для блока документов — заполнится после загрузки состояния опросника
-        const placeholder = createNoStateNotice();
-        questionnaireBlock.after(placeholder);
-
-        const helpBlock = createHelpBlock();
-        placeholder.after(helpBlock);
-
-        const phone = phoneInput.value.trim();
-        if (phone) {
-          fetchApplicantStates(phone).then((applicants) => {
-            if (!applicants || !applicants.length) return;
-
-            const fragment = document.createDocumentFragment();
-            applicants.forEach((applicant) => {
-              const blocksConfig = buildUploadBlocksConfig(applicant);
-              if (!blocksConfig.length) return;
-              const docsBlock = createDocumentsBlock(applicant, blocksConfig);
-              fragment.appendChild(docsBlock);
-            });
-
-            if (fragment.childNodes.length) {
-              placeholder.replaceWith(fragment);
-            }
-          });
-        }
-      }
-    }
-
-    function selectLead(lead, itemEl) {
-      selectedLead = lead;
-
-      document.querySelectorAll(".lead-item").forEach((node) => {
-        node.classList.remove("active");
-      });
-
-      if (itemEl) itemEl.classList.add("active");
-
-      const currentStageIndex = getCurrentStageIndex(lead);
-      const currentStageTitle = STAGES[currentStageIndex] || "Сбор документов";
-
-      statusText.textContent = `Вы выбрали ${getLeadLabel(lead)}. Текущий этап: ${currentStageTitle}.`;
-      renderStages(currentStageIndex, lead);
-    }
-
-    function renderLeads(leads) {
-      leadList.innerHTML = "";
-
-      if (!Array.isArray(leads) || !leads.length) {
-        leadsPlaceholder.style.display = "block";
-        leadsPlaceholder.textContent = "По этому номеру обращения не найдены.";
-        statusText.textContent = "Нет данных для отображения.";
-        stagesEl.innerHTML = "";
-        selectedLead = null;
-        return;
-      }
-
-      leadsPlaceholder.style.display = "none";
-
-      leads.forEach((lead, index) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "lead-item";
-
-        const country = formatCountryService(lead.country_service);
-        if (country) {
-          const countryLine = document.createElement("div");
-          countryLine.className = "lead-item-country";
-          countryLine.textContent = country;
-          button.appendChild(countryLine);
-        }
-
-        const dateLine = document.createElement("div");
-        dateLine.textContent = getLeadLabel(lead);
-        button.appendChild(dateLine);
-
-        button.addEventListener("click", () => {
-          selectLead(lead, button);
-        });
-
-        leadList.appendChild(button);
-
-        if (index === 0) {
-          selectLead(lead, button);
-        }
-      });
-    }
-
-    statusForm.addEventListener("submit", async (event) => {
+    form.addEventListener("submit", (event) => {
       event.preventDefault();
-      hideMessages();
+      hideError();
 
       const phone = phoneInput.value.trim();
-
       if (!phone) {
-        showBox(errorBox, "Введите номер телефона");
+        showError("Введите номер телефона");
         return;
       }
 
-      searchBtn.disabled = true;
-      searchBtn.textContent = "Загрузка...";
-
-      leadList.innerHTML = "";
-      leadsPlaceholder.style.display = "block";
-      leadsPlaceholder.textContent = "Загрузка обращений...";
-      statusText.textContent = "Загружаем данные";
-      stagesEl.innerHTML = "";
-      selectedLead = null;
-
-      try {
-        const response = await fetch(`/api/leads?phone=${encodeURIComponent(phone)}`);
-
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(text || "Ошибка ответа сервера");
-        }
-
-        const data = await response.json();
-
-        if (!data.success) {
-          throw new Error(data.message || "Не удалось получить данные");
-        }
-
-        renderLeads(data.leads || []);
-
-        if (!(data.leads || []).length) {
-          showBox(infoBox, "По этому номеру обращения не найдены");
-        }
-      } catch (error) {
-        console.error("LOAD LEADS ERROR:", error);
-        showBox(errorBox, "Ошибка загрузки данных");
-        leadsPlaceholder.style.display = "block";
-        leadsPlaceholder.textContent = "Ошибка загрузки.";
-        statusText.textContent = "Выберите обращение, чтобы увидеть актуальный статус по нему. Пройденные шаги будут подсвечиваться зелёным цветом.";
-        stagesEl.innerHTML = "";
-      } finally {
-        searchBtn.disabled = false;
-        searchBtn.textContent = "Найти обращения";
-      }
+      window.location.href = `/cabinet?phone=${encodeURIComponent(phone)}`;
     });
   </script>
 </body>
