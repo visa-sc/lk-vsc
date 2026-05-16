@@ -154,10 +154,11 @@
       color: #1e2433;
       font-size: 14px;
       line-height: 1.4;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
       font-weight: 700;
+    }
+
+    .lead-item-country {
+      margin-bottom: 2px;
     }
 
     .lead-item:hover {
@@ -316,10 +317,6 @@
         grid-template-columns: 1fr;
       }
 
-      .lead-item {
-        white-space: normal;
-      }
-
       .documents-inline,
       .questionnaire-inline {
         margin-left: 0;
@@ -414,6 +411,35 @@
 
     function getLeadLabel(lead) {
       return `Обращение от ${formatDate(lead.created_at)}`;
+    }
+
+    function formatCountryService(value) {
+      if (!value || typeof value !== "string") return "";
+
+      const EXCLUDE = new Set([
+        "с", "тх", "vms", "бум.", "эл.", "акк", "тур.", "ост.", "ст", "лич"
+      ]);
+
+      const cleaned = value.replace(/[\d|]/g, " ");
+
+      const words = cleaned
+        .split(/\s+/)
+        .filter(Boolean)
+        .filter((w) => !EXCLUDE.has(w.toLowerCase()));
+
+      if (!words.length) return "";
+
+      const processed = words.map((w) => {
+        if (w.toUpperCase() === "США") return "США";
+        return w.toLowerCase();
+      });
+
+      const first = processed[0];
+      if (first !== "США" && first.length > 0) {
+        processed[0] = first.charAt(0).toUpperCase() + first.slice(1);
+      }
+
+      return processed.join(" ");
     }
 
     function getCurrentStageIndex(lead) {
@@ -660,7 +686,18 @@
         const button = document.createElement("button");
         button.type = "button";
         button.className = "lead-item";
-        button.textContent = getLeadLabel(lead);
+
+        const country = formatCountryService(lead.country_service);
+        if (country) {
+          const countryLine = document.createElement("div");
+          countryLine.className = "lead-item-country";
+          countryLine.textContent = country;
+          button.appendChild(countryLine);
+        }
+
+        const dateLine = document.createElement("div");
+        dateLine.textContent = getLeadLabel(lead);
+        button.appendChild(dateLine);
 
         button.addEventListener("click", () => {
           selectLead(lead, button);
