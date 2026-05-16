@@ -1699,12 +1699,28 @@ app.post(
       await ensureYandexFolder(rootFolder);
       await ensureYandexFolder(phoneFolder);
 
+      const questionnaireSuffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
+      const questionnaireJsonPath = `${phoneFolder}/Опросник${questionnaireSuffix}.json`;
+      const applicantState = await downloadJsonFromYandexDisk(questionnaireJsonPath);
+
+      if (!applicantState) {
+        return res.status(409).json({
+          success: false,
+          message: "Опросник заявителя не найден — заполните опросник перед загрузкой документов"
+        });
+      }
+
+      const rawFio = String(applicantState.fullName || "").trim();
+      const fioFolderName = sanitizeFileName(rawFio) || `Заявитель ${applicantIndex}`;
+      const applicantFolder = `${phoneFolder}/${fioFolderName}`;
+
+      await ensureYandexFolder(applicantFolder);
+
       const originalName = sanitizeFileName(file.originalname || "file");
       const dotIndex = originalName.lastIndexOf(".");
       const ext = dotIndex >= 0 ? originalName.slice(dotIndex) : "";
-      const applicantSuffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
-      const finalFileName = `${targetName}${applicantSuffix}${ext}`;
-      const diskPath = `${phoneFolder}/${finalFileName}`;
+      const finalFileName = `${targetName}${ext}`;
+      const diskPath = `${applicantFolder}/${finalFileName}`;
 
       console.log("UPLOAD TO YANDEX:", diskPath);
       await uploadBufferToYandexDisk(file.buffer, diskPath, file.mimetype);
