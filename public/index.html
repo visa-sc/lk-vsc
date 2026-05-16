@@ -258,6 +258,10 @@
       background: #faf9fc;
     }
 
+    .documents-inline + .documents-inline {
+      margin-top: 10px;
+    }
+
     .documents-inline h3 {
       margin: 0 0 12px;
       font-size: 15px;
@@ -534,15 +538,15 @@
       return wrapper;
     }
 
-    async function fetchQuestionnaireState(phone) {
+    async function fetchApplicantStates(phone) {
       try {
         const response = await fetch(`/api/questionnaire-state?phone=${encodeURIComponent(phone)}`);
-        if (!response.ok) return null;
+        if (!response.ok) return [];
         const data = await response.json();
-        return data && data.success ? data.state : null;
+        return data && data.success && Array.isArray(data.applicants) ? data.applicants : [];
       } catch (err) {
         console.error("FETCH STATE ERROR:", err);
-        return null;
+        return [];
       }
     }
 
@@ -568,13 +572,18 @@
       return blocks;
     }
 
-    function createDocumentsBlock(blocksConfig) {
+    function createDocumentsBlock(applicant, blocksConfig) {
       const wrapper = document.createElement("div");
       wrapper.className = "documents-inline";
       wrapper.style.display = "block";
 
+      const applicantIndex = Math.max(1, parseInt(applicant && applicant.applicantIndex, 10) || 1);
+      const fio = (applicant && applicant.fullName ? String(applicant.fullName) : "").trim();
+
       const header = document.createElement("h3");
-      header.textContent = "Загрузка документов";
+      header.textContent = fio
+        ? `Загрузите документы для ${fio}`
+        : `Загрузите документы для заявителя ${applicantIndex}`;
       wrapper.appendChild(header);
 
       const grid = document.createElement("div");
@@ -619,6 +628,7 @@
           const formData = new FormData();
           formData.append("phone", phone);
           formData.append("field", cfg.field);
+          formData.append("applicantIndex", String(applicantIndex));
           formData.append("file", file);
 
           btn.disabled = true;
@@ -725,12 +735,20 @@
 
         const phone = phoneInput.value.trim();
         if (phone) {
-          fetchQuestionnaireState(phone).then((state) => {
-            if (!state) return;
-            const blocksConfig = buildUploadBlocksConfig(state);
-            if (!blocksConfig.length) return;
-            const docsBlock = createDocumentsBlock(blocksConfig);
-            placeholder.replaceWith(docsBlock);
+          fetchApplicantStates(phone).then((applicants) => {
+            if (!applicants || !applicants.length) return;
+
+            const fragment = document.createDocumentFragment();
+            applicants.forEach((applicant) => {
+              const blocksConfig = buildUploadBlocksConfig(applicant);
+              if (!blocksConfig.length) return;
+              const docsBlock = createDocumentsBlock(applicant, blocksConfig);
+              fragment.appendChild(docsBlock);
+            });
+
+            if (fragment.childNodes.length) {
+              placeholder.replaceWith(fragment);
+            }
           });
         }
       }

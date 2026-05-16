@@ -1631,10 +1631,26 @@ app.get("/api/questionnaire-state", async (req, res) => {
       return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
     }
 
-    const diskPath = `${YANDEX_DISK_ROOT}/${phone}/Опросник.json`;
-    const state = await downloadJsonFromYandexDisk(diskPath);
+    const firstPath = `${YANDEX_DISK_ROOT}/${phone}/Опросник.json`;
+    const first = await downloadJsonFromYandexDisk(firstPath);
 
-    return res.json({ success: true, state: state || null });
+    if (!first) {
+      return res.json({ success: true, applicants: [] });
+    }
+
+    const total = Math.max(1, Math.min(10, parseInt(first.totalApplicants, 10) || 1));
+    const restPaths = [];
+    for (let i = 2; i <= total; i++) {
+      restPaths.push(`${YANDEX_DISK_ROOT}/${phone}/Опросник ${i}.json`);
+    }
+    const rest = await Promise.all(restPaths.map((p) => downloadJsonFromYandexDisk(p)));
+
+    const applicants = [{ ...first, applicantIndex: 1 }];
+    rest.forEach((s, i) => {
+      if (s) applicants.push({ ...s, applicantIndex: i + 2 });
+    });
+
+    return res.json({ success: true, applicants });
   } catch (error) {
     console.error("GET /api/questionnaire-state error:");
     console.error("message:", error.message);
@@ -1656,9 +1672,10 @@ app.post(
     try {
       const phone = normalizePhone(req.body.phone || "");
       const field = String(req.body.field || "").trim();
+      const applicantIndex = Math.max(1, Math.min(10, parseInt(req.body.applicantIndex || "1", 10) || 1));
       const file = req.file;
 
-      console.log("HANDLER /upload-document phone =", phone, "field =", field);
+      console.log("HANDLER /upload-document phone =", phone, "field =", field, "applicantIndex =", applicantIndex);
 
       if (!phone) {
         return res.status(400).json({ success: false, message: "Телефон не передан" });
@@ -1685,7 +1702,8 @@ app.post(
       const originalName = sanitizeFileName(file.originalname || "file");
       const dotIndex = originalName.lastIndexOf(".");
       const ext = dotIndex >= 0 ? originalName.slice(dotIndex) : "";
-      const finalFileName = `${targetName}${ext}`;
+      const applicantSuffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
+      const finalFileName = `${targetName}${applicantSuffix}${ext}`;
       const diskPath = `${phoneFolder}/${finalFileName}`;
 
       console.log("UPLOAD TO YANDEX:", diskPath);
