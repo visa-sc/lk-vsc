@@ -535,10 +535,38 @@ async function getLeadsByPhone(phone) {
   return leads;
 }
 
-function buildQuestionnaireHtml({ phone, leadId, countryService }) {
+function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "" }) {
   const safePhone = escapeHtml(phone || "");
   const safeLeadId = escapeHtml(String(leadId || ""));
   const safeCountry = escapeHtml(countryService || "не указано");
+  const idx = Math.max(1, parseInt(applicantIndex, 10) || 1);
+  const total = Math.max(idx, parseInt(totalApplicants, 10) || 1);
+  const safePrevName = escapeHtml(prevApplicantName || "");
+  const isFirstApplicant = idx === 1;
+
+  const handoffNoticeHtml = isFirstApplicant ? "" : `
+    <div class="handoff-notice">
+      Опросник для <strong>${safePrevName || "предыдущего заявителя"}</strong> отправлен. Заполните опросник на следующего заявителя.
+    </div>`;
+
+  const applicantCountFieldHtml = isFirstApplicant ? `
+    <!-- 0 -->
+    <div class="field">
+      <label>На какое количество человек заполняем опросные листы? *</label>
+      <select name="applicantCount" required>
+        <option value="" disabled selected>Выберите количество</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+        <option value="9">9</option>
+        <option value="10">10</option>
+      </select>
+    </div>` : "";
 
   return `<!DOCTYPE html>
 <html lang="ru">
@@ -632,6 +660,16 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
     }
     .message.error { background: #fbebee; border: 1px solid #efcfd5; color: #a15561; }
     .message.success { background: #edf8ef; border: 1px solid #cfe7d2; color: #2e7a43; }
+    .handoff-notice {
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 14px;
+      line-height: 1.5;
+      background: #f0f7fc;
+      border: 1px solid #d3e7f4;
+      color: #2f6e95;
+      margin-bottom: 14px;
+    }
     .submit-btn {
       height: 50px;
       border: none;
@@ -654,11 +692,13 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
 
   <div id="errorBox" class="message error"></div>
   <div id="successBox" class="message success"></div>
-
+${handoffNoticeHtml}
   <form id="questionnaireForm">
     <input type="hidden" name="phone" value="${safePhone}" />
     <input type="hidden" name="leadId" value="${safeLeadId}" />
-
+    <input type="hidden" name="applicantIndex" value="${idx}" />
+    <input type="hidden" name="totalApplicants" value="${total}" />
+${applicantCountFieldHtml}
     <!-- 1 -->
     <div class="field">
       <label>Полное имя (ФИО) *</label>
@@ -1165,6 +1205,10 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
       showBox(successBox, "Опросник успешно отправлен");
 
       setTimeout(() => {
+        if (data.nextApplicantUrl) {
+          window.location.href = data.nextApplicantUrl;
+          return;
+        }
         if (window.opener && !window.opener.closed) { window.close(); return; }
         if (window.history.length > 1) { window.history.back(); return; }
         window.location.href = "/";
@@ -1354,6 +1398,9 @@ app.get("/questionnaire", async (req, res) => {
   try {
     const phone = normalizePhone(req.query.phone || "");
     const leadId = String(req.query.leadId || "").trim();
+    const applicantIndex = Math.max(1, Math.min(10, parseInt(req.query.applicantIndex || "1", 10) || 1));
+    const totalApplicants = Math.max(applicantIndex, Math.min(10, parseInt(req.query.totalApplicants || "1", 10) || 1));
+    const prevApplicantName = String(req.query.prevApplicantName || "").trim();
 
     if (!phone || !leadId) {
       return res.status(400).send("Не переданы phone или leadId");
@@ -1376,7 +1423,10 @@ app.get("/questionnaire", async (req, res) => {
     return res.send(buildQuestionnaireHtml({
       phone,
       leadId,
-      countryService
+      countryService,
+      applicantIndex,
+      totalApplicants,
+      prevApplicantName
     }));
   } catch (error) {
     console.error("GET /questionnaire error:", error.response?.data || error.message);
@@ -1393,10 +1443,24 @@ app.post(
       const leadId = String(req.body.leadId || "").trim();
       const fullName = String(req.body.fullName || "").trim();
 
+      const applicantIndex = Math.max(1, Math.min(10, parseInt(req.body.applicantIndex || "1", 10) || 1));
+      const applicantCountRaw = Math.max(1, Math.min(10, parseInt(req.body.applicantCount || "0", 10) || 0));
+      const incomingTotal = Math.max(1, Math.min(10, parseInt(req.body.totalApplicants || "0", 10) || 0));
+      const totalApplicants = applicantIndex === 1
+        ? Math.max(1, applicantCountRaw)
+        : Math.max(applicantIndex, incomingTotal);
+
       if (!phone || !leadId || !fullName) {
         return res.status(400).json({
           success: false,
           message: "Заполнены не все обязательные поля опросника"
+        });
+      }
+
+      if (applicantIndex === 1 && !applicantCountRaw) {
+        return res.status(400).json({
+          success: false,
+          message: "Не указано количество заявителей"
         });
       }
 
@@ -1485,7 +1549,13 @@ app.post(
         personalDataConsent:        String(req.body.personalDataConsent || "").trim()
       };
 
-      const pdfBuffer = await generateQuestionnairePdfBuffer(fields);
+      const enrichedFields = {
+        ...fields,
+        applicantIndex,
+        totalApplicants
+      };
+
+      const pdfBuffer = await generateQuestionnairePdfBuffer(enrichedFields);
 
       const rootFolder = YANDEX_DISK_ROOT;
       const phoneFolder = `${rootFolder}/${phone}`;
@@ -1493,12 +1563,14 @@ app.post(
       await ensureYandexFolder(rootFolder);
       await ensureYandexFolder(phoneFolder);
 
-      await uploadBufferToYandexDisk(pdfBuffer, `${phoneFolder}/Опросник.pdf`, "application/pdf");
+      const suffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
 
-      const stateJson = JSON.stringify({ ...fields, savedAt: new Date().toISOString() }, null, 2);
+      await uploadBufferToYandexDisk(pdfBuffer, `${phoneFolder}/Опросник${suffix}.pdf`, "application/pdf");
+
+      const stateJson = JSON.stringify({ ...enrichedFields, savedAt: new Date().toISOString() }, null, 2);
       await uploadBufferToYandexDisk(
         Buffer.from(stateJson, "utf-8"),
-        `${phoneFolder}/Опросник.json`,
+        `${phoneFolder}/Опросник${suffix}.json`,
         "application/json; charset=utf-8"
       );
 
@@ -1507,16 +1579,30 @@ app.post(
         const origName = sanitizeFileName(visaPhotoFile.originalname || "visa");
         const dotIndex = origName.lastIndexOf(".");
         const ext = dotIndex >= 0 ? origName.slice(dotIndex) : "";
+        const photoBase = applicantIndex > 1 ? `Фото шенгенской визы ${applicantIndex}` : "Фото шенгенской визы";
         await uploadBufferToYandexDisk(
           visaPhotoFile.buffer,
-          `${phoneFolder}/Фото шенгенской визы${ext}`,
+          `${phoneFolder}/${photoBase}${ext}`,
           visaPhotoFile.mimetype
         );
       }
 
+      let nextApplicantUrl = null;
+      if (applicantIndex < totalApplicants) {
+        const params = new URLSearchParams({
+          phone,
+          leadId,
+          applicantIndex: String(applicantIndex + 1),
+          totalApplicants: String(totalApplicants),
+          prevApplicantName: fullName
+        });
+        nextApplicantUrl = `/questionnaire?${params.toString()}`;
+      }
+
       return res.json({
         success: true,
-        message: "Опросник успешно сохранён"
+        message: "Опросник успешно сохранён",
+        nextApplicantUrl
       });
     } catch (error) {
       console.error("POST /api/questionnaire error:");
