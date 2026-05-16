@@ -44,9 +44,10 @@
     }
 
     .subtitle {
-      margin: 0 0 18px;
-      font-size: 14px;
-      color: #737988;
+      margin: 0 0 10px;
+      font-size: 16px;
+      color: #1d2330;
+      font-weight: 700;
     }
 
     .search-box {
@@ -76,7 +77,7 @@
       height: 52px;
       border: none;
       border-radius: 14px;
-      background: #161d45;
+      background: #3589BD;
       color: #fff;
       font-size: 16px;
       font-weight: 600;
@@ -191,19 +192,6 @@
       color: #747b88;
       line-height: 1.55;
       max-width: 740px;
-    }
-
-    .mini-btn {
-      width: 34px;
-      height: 34px;
-      border: none;
-      border-radius: 50%;
-      background: #f4efe4;
-      color: #bf9654;
-      font-size: 22px;
-      line-height: 1;
-      cursor: pointer;
-      flex: 0 0 34px;
     }
 
     .stages {
@@ -357,7 +345,7 @@
 <body>
   <div class="wrap">
     <p class="subtitle">
-      Введите телефон, выберите нужное обращение и справа посмотрите текущий этап обработки.
+      Введите ваш номер телефона, чтобы найти все обращения
     </p>
 
     <form id="statusForm" class="search-box">
@@ -369,7 +357,7 @@
         autocomplete="tel"
         required
       />
-      <button id="searchBtn" type="submit">Открыть статус</button>
+      <button id="searchBtn" type="submit">Найти обращения</button>
     </form>
 
     <div id="errorBox" class="message error"></div>
@@ -389,7 +377,6 @@
             <h2>Статус обращения</h2>
             <p id="statusText">Выберите обращение слева.</p>
           </div>
-          <button type="button" class="mini-btn">−</button>
         </div>
 
         <div id="stages" class="stages"></div>

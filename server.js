@@ -636,7 +636,7 @@ function buildQuestionnaireHtml({ phone, leadId, countryService }) {
       height: 50px;
       border: none;
       border-radius: 14px;
-      background: #161d45;
+      background: #3589BD;
       color: #fff;
       font-size: 16px;
       font-weight: 600;
