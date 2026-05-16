@@ -417,15 +417,22 @@
       if (!value || typeof value !== "string") return "";
 
       const EXCLUDE = new Set([
-        "с", "тх", "vms", "бум.", "эл.", "акк", "тур.", "ост.", "ст", "лич"
+        "с", "тх", "vms", "бум.", "эл.", "акк", "тур.", "ост.", "ст", "лич",
+        "альмавива", "через", "вклейка", "астана", "варшава"
       ]);
+      const EXCLUDE_PREFIXES = ["партнер"];
 
       const cleaned = value.replace(/[\d|]/g, " ");
 
       const words = cleaned
         .split(/\s+/)
         .filter(Boolean)
-        .filter((w) => !EXCLUDE.has(w.toLowerCase()));
+        .filter((w) => {
+          const lw = w.toLowerCase();
+          if (EXCLUDE.has(lw)) return false;
+          if (EXCLUDE_PREFIXES.some((p) => lw.startsWith(p))) return false;
+          return true;
+        });
 
       if (!words.length) return "";
 
