@@ -303,13 +303,6 @@
       padding: 0 20px;
     }
 
-    .empty-status {
-      color: #9ca2ae;
-      font-size: 14px;
-      line-height: 1.5;
-      margin-top: 16px;
-    }
-
     @media (max-width: 900px) {
       .grid {
         grid-template-columns: 1fr;
@@ -366,15 +359,11 @@
         <div class="status-top">
           <div>
             <h2>Статус обращения</h2>
-            <p id="statusText">Выберите обращение слева.</p>
+            <p id="statusText">Выберите обращение, чтобы увидеть актуальный статус по нему. Пройденные шаги будут подсвечиваться зелёным цветом.</p>
           </div>
         </div>
 
         <div id="stages" class="stages"></div>
-
-        <div id="emptyStatus" class="empty-status">
-          Ниже показаны этапы обработки. Текущий этап и уже пройденные шаги подсвечиваются зелёным.
-        </div>
       </div>
     </div>
   </div>
@@ -398,7 +387,6 @@
     const leadsPlaceholder = document.getElementById("leadsPlaceholder");
     const statusText = document.getElementById("statusText");
     const stagesEl = document.getElementById("stages");
-    const emptyStatus = document.getElementById("emptyStatus");
 
     let selectedLead = null;
 
@@ -651,7 +639,6 @@
       const currentStageTitle = STAGES[currentStageIndex] || "Сбор документов";
 
       statusText.textContent = `Вы выбрали ${getLeadLabel(lead)}. Текущий этап: ${currentStageTitle}.`;
-      emptyStatus.style.display = "none";
       renderStages(currentStageIndex, lead);
     }
 
@@ -663,7 +650,6 @@
         leadsPlaceholder.textContent = "По этому номеру обращения не найдены.";
         statusText.textContent = "Нет данных для отображения.";
         stagesEl.innerHTML = "";
-        emptyStatus.style.display = "block";
         selectedLead = null;
         return;
       }
@@ -707,7 +693,6 @@
       leadsPlaceholder.textContent = "Загрузка обращений...";
       statusText.textContent = "Загружаем данные";
       stagesEl.innerHTML = "";
-      emptyStatus.style.display = "block";
       selectedLead = null;
 
       try {
@@ -734,12 +719,11 @@
         showBox(errorBox, "Ошибка загрузки данных");
         leadsPlaceholder.style.display = "block";
         leadsPlaceholder.textContent = "Ошибка загрузки.";
-        statusText.textContent = "Выберите обращение слева.";
+        statusText.textContent = "Выберите обращение, чтобы увидеть актуальный статус по нему. Пройденные шаги будут подсвечиваться зелёным цветом.";
         stagesEl.innerHTML = "";
-        emptyStatus.style.display = "block";
       } finally {
         searchBtn.disabled = false;
-        searchBtn.textContent = "Открыть статус";
+        searchBtn.textContent = "Найти обращения";
       }
     });
   </script>
