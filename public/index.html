@@ -9,6 +9,22 @@
       box-sizing: border-box;
     }
 
+    :root {
+      --vsc-ease: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @keyframes vsc-fade-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
+
     html, body {
       height: 100%;
     }
@@ -35,12 +51,18 @@
       border: 1px solid #e3e0eb;
       border-radius: 12px;
       text-decoration: none;
-      transition: 0.15s;
+      transition: color 0.2s var(--vsc-ease), border-color 0.2s var(--vsc-ease), transform 0.15s var(--vsc-ease);
+      animation: vsc-fade-in 0.6s 0.1s var(--vsc-ease) both;
     }
 
     .about-link:hover {
       color: #3589BD;
       border-color: #c6dceb;
+      transform: translateY(-1px);
+    }
+
+    .about-link:active {
+      transform: translateY(0);
     }
 
     .login-card {
@@ -51,6 +73,7 @@
       border-radius: 22px;
       padding: 22px;
       box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05);
+      animation: vsc-fade-in 0.5s var(--vsc-ease) both;
     }
 
     .login-logo {
@@ -97,11 +120,31 @@
       font-size: 16px;
       font-weight: 600;
       cursor: pointer;
+      transition: background 0.2s var(--vsc-ease), transform 0.15s var(--vsc-ease), filter 0.2s var(--vsc-ease), opacity 0.2s var(--vsc-ease);
+    }
+
+    .login-form button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      filter: brightness(1.06);
+    }
+
+    .login-form button:active:not(:disabled) {
+      transform: translateY(0);
+      filter: brightness(0.98);
     }
 
     .login-form button:disabled {
       opacity: 0.7;
       cursor: not-allowed;
+    }
+
+    .login-form input {
+      transition: border-color 0.2s var(--vsc-ease), box-shadow 0.2s var(--vsc-ease);
+    }
+
+    .login-form input:focus {
+      border-color: #3589BD;
+      box-shadow: 0 0 0 3px rgba(53, 137, 189, 0.15);
     }
 
     .message {

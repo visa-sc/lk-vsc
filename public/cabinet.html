@@ -9,11 +9,65 @@
       box-sizing: border-box;
     }
 
+    html { scroll-behavior: smooth; }
+
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
       background: #f3f2f7;
       color: #1d2330;
+    }
+
+    :root {
+      --vsc-ease: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @keyframes vsc-fade-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+
+    .questionnaire-inline,
+    .documents-inline,
+    .help-inline {
+      animation: vsc-fade-in 0.32s var(--vsc-ease) both;
+    }
+
+    .stage {
+      transition: color 0.3s var(--vsc-ease);
+    }
+    .dot {
+      transition: border-color 0.3s var(--vsc-ease), background 0.3s var(--vsc-ease), box-shadow 0.3s var(--vsc-ease);
+    }
+
+    .questionnaire-btn,
+    .upload-btn,
+    .docs-correct-btn,
+    .search-box button {
+      transition: background 0.2s var(--vsc-ease), transform 0.15s var(--vsc-ease), opacity 0.2s var(--vsc-ease), filter 0.2s var(--vsc-ease);
+    }
+    .questionnaire-btn:hover:not(:disabled),
+    .upload-btn:hover:not(:disabled),
+    .docs-correct-btn:hover:not(:disabled),
+    .search-box button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      filter: brightness(1.06);
+    }
+    .questionnaire-btn:active:not(:disabled),
+    .upload-btn:active:not(:disabled),
+    .docs-correct-btn:active:not(:disabled),
+    .search-box button:active:not(:disabled) {
+      transform: translateY(0);
+      filter: brightness(0.98);
     }
 
     .brand-bar {
@@ -164,11 +218,15 @@
       border-radius: 16px;
       padding: 14px 14px;
       cursor: pointer;
-      transition: 0.18s ease;
+      transition: border-color 0.25s var(--vsc-ease), background 0.25s var(--vsc-ease), transform 0.18s var(--vsc-ease);
       color: #1e2433;
       font-size: 14px;
       line-height: 1.4;
       font-weight: 700;
+    }
+
+    .lead-item:active {
+      transform: scale(0.99);
     }
 
     .lead-item-country {
@@ -293,10 +351,15 @@
       display: flex;
     }
 
+    .applicant-picker.show {
+      animation: vsc-fade-in 0.28s var(--vsc-ease) both;
+    }
+
     .applicant-pick-btn {
       width: auto;
       max-width: 100%;
       text-align: left;
+      transition: background 0.2s var(--vsc-ease), border-color 0.2s var(--vsc-ease), transform 0.15s var(--vsc-ease);
       border: 1px solid #d3e2ee;
       background: #fff;
       border-radius: 14px;
