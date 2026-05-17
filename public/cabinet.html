@@ -16,9 +16,22 @@
       color: #1d2330;
     }
 
+    .brand-bar {
+      max-width: 1200px;
+      margin: 40px auto 0;
+      padding: 0 24px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .brand-bar img {
+      width: 160px;
+      height: auto;
+    }
+
     .wrap {
       max-width: 1200px;
-      margin: 80px auto 40px;
+      margin: 28px auto 40px;
       background: #faf9fc;
       border-radius: 24px;
       padding: 24px;
@@ -509,8 +522,17 @@
     }
 
     @media (max-width: 900px) {
+      .brand-bar {
+        margin-top: 18px;
+        padding: 0 16px;
+      }
+
+      .brand-bar img {
+        width: 120px;
+      }
+
       .wrap {
-        margin: 22px auto;
+        margin: 14px auto 22px;
       }
 
       .grid {
@@ -547,6 +569,9 @@
   </style>
 </head>
 <body>
+  <div class="brand-bar">
+    <img src="/logo.svg" alt="VOYO" />
+  </div>
   <div class="wrap">
     <input id="phoneInput" type="hidden" />
 
