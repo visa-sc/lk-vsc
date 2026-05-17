@@ -640,6 +640,7 @@
     const stagesEl = document.getElementById("stages");
 
     let selectedLead = null;
+    let applicantsCache = null;
 
     function showBox(el, message) {
       el.style.display = "block";
@@ -779,6 +780,13 @@
         });
         picker.appendChild(a);
       });
+    }
+
+    async function refreshApplicantsCache() {
+      const phone = phoneInput.value.trim();
+      if (!phone) return;
+      const a = await fetchApplicantStates(phone);
+      applicantsCache = a || [];
     }
 
     async function fetchApplicantStates(phone) {
@@ -991,9 +999,10 @@
         }
 
         showDone();
-        // Обновить цвет этапа (жёлтый → зелёный, если всё собрано)
+        // Обновить кэш и цвет этапа (жёлтый → зелёный, если всё собрано)
         if (lead) {
-          setTimeout(() => renderStages(0, lead), 400);
+          await refreshApplicantsCache();
+          renderStages(0, lead);
         }
       });
 
@@ -1142,56 +1151,52 @@
       });
 
       if (currentIndex === 0 && stageNodes[0]) {
-        // Этап подсвечивается жёлтым, пока опросники и документы не собраны полностью
-        stageNodes[0].classList.add("warn");
+        // Используем кэш applicants — собран в loadLeads, чтобы не было лагов
+        const applicants = Array.isArray(applicantsCache) ? applicantsCache : [];
+
+        const totalFromFirst = applicants.length
+          ? (parseInt(applicants[0] && applicants[0].totalApplicants, 10) || applicants.length)
+          : 0;
+        const allFilled = applicants.length >= totalFromFirst && totalFromFirst > 0;
+        const allDocsUploaded = allFilled && applicants.every((a) => {
+          const blocks = buildUploadBlocksConfig(a);
+          const files = Array.isArray(a.uploadedFiles) ? a.uploadedFiles : [];
+          return blocks.every((b) => files.some((f) => {
+            if (!f.startsWith(b.label)) return false;
+            const next = f.charAt(b.label.length);
+            return next === "." || next === " ";
+          }));
+        });
+
+        // Жёлтый только если что-то ещё не собрано
+        if (!(allFilled && allDocsUploaded)) {
+          stageNodes[0].classList.add("warn");
+        }
 
         const questionnaireBlock = createQuestionnaireBlock(lead);
         stageNodes[0].after(questionnaireBlock);
 
-        // Плейсхолдер для блока документов — заполнится после загрузки состояния опросника
-        const placeholder = createNoStateNotice();
-        questionnaireBlock.after(placeholder);
-
-        const phone = phoneInput.value.trim();
-        if (phone) {
-          fetchApplicantStates(phone).then((applicants) => {
-            if (!applicants || !applicants.length) return;
-
-            // Все опросники заполнены? Сравниваем количество с totalApplicants из первого
-            const totalFromFirst = parseInt(applicants[0] && applicants[0].totalApplicants, 10) || applicants.length;
-            const allFilled = applicants.length >= totalFromFirst && totalFromFirst > 0;
-
-            if (allFilled) {
-              switchQuestionnaireBlockToEdit(questionnaireBlock, lead, applicants);
-            }
-
-            const fragment = document.createDocumentFragment();
-            applicants.forEach((applicant) => {
-              const blocksConfig = buildUploadBlocksConfig(applicant);
-              if (!blocksConfig.length) return;
-              const docsBlock = createDocumentsBlock(applicant, blocksConfig, lead);
-              fragment.appendChild(docsBlock);
-            });
-
-            if (fragment.childNodes.length) {
-              placeholder.replaceWith(fragment);
-            }
-
-            // Все документы загружены для каждого заявителя?
-            const allDocsUploaded = allFilled && applicants.every((a) => {
-              const blocks = buildUploadBlocksConfig(a);
-              const files = Array.isArray(a.uploadedFiles) ? a.uploadedFiles : [];
-              return blocks.every((b) => files.some((f) => {
-                if (!f.startsWith(b.label)) return false;
-                const next = f.charAt(b.label.length);
-                return next === "." || next === " ";
-              }));
-            });
-
-            if (allFilled && allDocsUploaded) {
-              stageNodes[0].classList.remove("warn");
-            }
+        if (!applicants.length) {
+          // Опросник не заполнен — стандартный плейсхолдер
+          const placeholder = createNoStateNotice();
+          questionnaireBlock.after(placeholder);
+        } else {
+          if (allFilled) {
+            switchQuestionnaireBlockToEdit(questionnaireBlock, lead, applicants);
+          }
+          const fragment = document.createDocumentFragment();
+          applicants.forEach((applicant) => {
+            const blocksConfig = buildUploadBlocksConfig(applicant);
+            if (!blocksConfig.length) return;
+            const docsBlock = createDocumentsBlock(applicant, blocksConfig, lead);
+            fragment.appendChild(docsBlock);
           });
+          if (fragment.childNodes.length) {
+            questionnaireBlock.after(fragment);
+          } else {
+            const placeholder = createNoStateNotice();
+            questionnaireBlock.after(placeholder);
+          }
         }
       }
 
@@ -1282,14 +1287,19 @@
       selectedLead = null;
 
       try {
-        const response = await fetch(`/api/leads?phone=${encodeURIComponent(phone)}`);
+        const [leadsResp, applicants] = await Promise.all([
+          fetch(`/api/leads?phone=${encodeURIComponent(phone)}`),
+          fetchApplicantStates(phone)
+        ]);
 
-        if (!response.ok) {
-          const text = await response.text();
+        applicantsCache = applicants || [];
+
+        if (!leadsResp.ok) {
+          const text = await leadsResp.text();
           throw new Error(text || "Ошибка ответа сервера");
         }
 
-        const data = await response.json();
+        const data = await leadsResp.json();
 
         if (!data.success) {
           throw new Error(data.message || "Не удалось получить данные");
@@ -1321,7 +1331,7 @@
     })();
 
     // Авто-обновление при сохранении опросника в другой вкладке
-    window.addEventListener("storage", (event) => {
+    window.addEventListener("storage", async (event) => {
       if (event.key !== "vsc_questionnaire_updated" || !event.newValue) return;
       try {
         const payload = JSON.parse(event.newValue);
@@ -1330,6 +1340,7 @@
         if (!evtPhone || !myPhone) return;
         const matches = evtPhone === myPhone || myPhone.endsWith(evtPhone) || evtPhone.endsWith(myPhone);
         if (!matches) return;
+        await refreshApplicantsCache();
         if (selectedLead && getCurrentStageIndex(selectedLead) === 0) {
           renderStages(0, selectedLead);
         }
