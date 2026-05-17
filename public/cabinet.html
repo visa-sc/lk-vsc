@@ -330,6 +330,25 @@
       font-size: 12px;
     }
 
+    .file-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .file-row input[type="file"] {
+      flex: 1 1 auto;
+      min-width: 0;
+      width: auto;
+      height: 36px;
+      padding: 0 8px;
+    }
+
+    .file-row .upload-btn {
+      flex-shrink: 0;
+      margin-top: 0 !important;
+    }
+
     .upload-btn {
       height: 46px;
       border: none;
@@ -549,7 +568,7 @@
           return;
         }
 
-        const url = `/questionnaire?phone=${encodeURIComponent(phone)}&leadId=${encodeURIComponent(leadId)}`;
+        const url = `/questionnaire-start?phone=${encodeURIComponent(phone)}&leadId=${encodeURIComponent(leadId)}`;
         window.open(url, "_blank");
       });
 
@@ -666,7 +685,6 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "upload-btn";
-        btn.style.marginTop = "6px";
         btn.style.height = "36px";
         btn.style.padding = "0 14px";
         btn.style.fontSize = "13px";
@@ -718,9 +736,13 @@
           }
         });
 
+        const row = document.createElement("div");
+        row.className = "file-row";
+        row.appendChild(input);
+        row.appendChild(btn);
+
         group.appendChild(label);
-        group.appendChild(input);
-        group.appendChild(btn);
+        group.appendChild(row);
         grid.appendChild(group);
       });
 

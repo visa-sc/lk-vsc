@@ -539,7 +539,7 @@ async function getLeadsByPhone(phone) {
   return leads;
 }
 
-function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "", prefill = null, isEdit = false }) {
+function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "", prefill = null, isEdit = false, applicantCount = 0 }) {
   const safePhone = escapeHtml(phone || "");
   const safeLeadId = escapeHtml(String(leadId || ""));
   const safeCountry = escapeHtml(countryService || "не указано");
@@ -547,6 +547,7 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
   const total = Math.max(idx, parseInt(totalApplicants, 10) || 1);
   const safePrevName = escapeHtml(prevApplicantName || "");
   const isFirstApplicant = idx === 1;
+  const safeApplicantCount = Math.max(0, parseInt(applicantCount, 10) || 0);
 
   const subtitleText = isEdit
     ? "Внесите изменения и нажмите «Отправить опросник»."
@@ -557,24 +558,8 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
       Опросник для <strong>${safePrevName || "предыдущего заявителя"}</strong> отправлен. Заполните опросник на следующего заявителя.
     </div>`;
 
-  const applicantCountFieldHtml = (isFirstApplicant && !isEdit) ? `
-    <!-- 0 -->
-    <div class="field">
-      <label>На какое количество человек заполняем опросные листы? *</label>
-      <select name="applicantCount" required>
-        <option value="" disabled selected>Выберите количество</option>
-        <option value="1">1</option>
-        <option value="2">2</option>
-        <option value="3">3</option>
-        <option value="4">4</option>
-        <option value="5">5</option>
-        <option value="6">6</option>
-        <option value="7">7</option>
-        <option value="8">8</option>
-        <option value="9">9</option>
-        <option value="10">10</option>
-      </select>
-    </div>` : "";
+  const applicantCountFieldHtml = (isFirstApplicant && !isEdit && safeApplicantCount > 0) ? `
+    <input type="hidden" name="applicantCount" value="${safeApplicantCount}" />` : "";
 
   return `<!DOCTYPE html>
 <html lang="ru">
@@ -1432,6 +1417,209 @@ app.get("/api/leads", async (req, res) => {
   }
 });
 
+const VISA_TYPES = [
+  "Шенгенская виза",
+  "Виза в Японию",
+  "Виза в США",
+  "Виза в Великобританию",
+  "Виза в Австралию",
+  "Виза в Новую Зеландию",
+  "Виза в Южную Корею (K-ETA)",
+  "Виза в Саудовскую Аравию",
+  "Виза в Индию",
+  "Виза в Израиль (ETA)",
+  "Виза в Азербайджан",
+  "Виза в Россию (E-Visa)",
+  "Виза в Северную Македонию",
+  "Виза в Египет",
+  "Виза в Мексику",
+  "Виза во Вьетнам",
+  "Виза на Сейшельские острова",
+  "Виза в Уганду",
+  "Виза на Шри-Ланку",
+  "Виза в Бахрейн",
+  "Виза в Эфиопию",
+  "Виза в Кению"
+];
+
+function buildQuestionnaireStartHtml({ phone, leadId }) {
+  const safePhone = escapeHtml(phone || "");
+  const safeLeadId = escapeHtml(String(leadId || ""));
+  const visaOptionsHtml = VISA_TYPES.map((v) => {
+    const safe = escapeHtml(v);
+    return `<option value="${safe}">${safe}</option>`;
+  }).join("\n");
+
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Опросный лист — начало</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #f3f2f7;
+      color: #1d2330;
+      padding: 24px;
+    }
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid #ece7f2;
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05);
+    }
+    h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.15; color: #171c29; }
+    .subtitle { margin: 0 0 22px; font-size: 14px; color: #737988; line-height: 1.5; }
+    form { display: grid; gap: 14px; }
+    .field { display: grid; gap: 6px; }
+    .field > label { font-size: 14px; font-weight: 600; color: #3a4150; }
+    .field select {
+      width: 100%;
+      height: 50px;
+      border: 1px solid #e8e2ee;
+      border-radius: 14px;
+      padding: 0 14px;
+      font-size: 16px;
+      outline: none;
+      background: #fff;
+      color: #1f2532;
+      font-family: inherit;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239096a3' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 36px;
+    }
+    .cond { display: none; }
+    .cond.show { display: grid; gap: 14px; }
+    .info-box {
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: #f0f7fc;
+      border: 1px solid #d3e7f4;
+      color: #2f6e95;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .submit-btn {
+      height: 50px;
+      border: none;
+      border-radius: 14px;
+      background: #3589BD;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .submit-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Опросный лист</h1>
+  <p class="subtitle">Выберите визу/услугу, на которую заполняем опросный лист.</p>
+
+  <form id="startForm">
+    <div class="field">
+      <label>На какую визу/услугу заполняем опросник? *</label>
+      <select name="visaType" id="visaType" required>
+        <option value="" disabled selected>Выберите визу/услугу</option>
+${visaOptionsHtml}
+      </select>
+    </div>
+
+    <div class="cond" id="c_count">
+      <div class="field">
+        <label>На какое количество человек заполняем опросные листы? *</label>
+        <select name="applicantCount" id="applicantCount">
+          <option value="" disabled selected>Выберите количество</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="cond" id="c_underdev">
+      <div class="info-box">Раздел в разработке</div>
+    </div>
+
+    <button type="submit" class="submit-btn" id="continueBtn" disabled>Продолжить</button>
+  </form>
+</div>
+
+<script>
+  const PHONE = ${JSON.stringify(safePhone)};
+  const LEAD_ID = ${JSON.stringify(safeLeadId)};
+
+  const visaSelect = document.getElementById("visaType");
+  const countSelect = document.getElementById("applicantCount");
+  const countCond = document.getElementById("c_count");
+  const underdevCond = document.getElementById("c_underdev");
+  const continueBtn = document.getElementById("continueBtn");
+
+  function update() {
+    const v = visaSelect.value;
+    const isSchengen = v === "Шенгенская виза";
+    countCond.classList.toggle("show", isSchengen);
+    underdevCond.classList.toggle("show", !!v && !isSchengen);
+    const countVal = parseInt(countSelect.value, 10) || 0;
+    continueBtn.disabled = !(isSchengen && countVal > 0);
+  }
+
+  visaSelect.addEventListener("change", update);
+  countSelect.addEventListener("change", update);
+  update();
+
+  document.getElementById("startForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const v = visaSelect.value;
+    if (v !== "Шенгенская виза") return;
+    const count = parseInt(countSelect.value, 10) || 0;
+    if (count < 1) return;
+    const params = new URLSearchParams({
+      phone: PHONE,
+      leadId: LEAD_ID,
+      applicantCount: String(count)
+    });
+    window.location.href = "/questionnaire?" + params.toString();
+  });
+</script>
+</body>
+</html>`;
+}
+
+app.get("/questionnaire-start", async (req, res) => {
+  try {
+    const phone = normalizePhone(req.query.phone || "");
+    const leadId = String(req.query.leadId || "").trim();
+
+    if (!phone || !leadId) {
+      return res.status(400).send("Не переданы phone или leadId");
+    }
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.send(buildQuestionnaireStartHtml({ phone, leadId }));
+  } catch (error) {
+    console.error("GET /questionnaire-start error:", error.response?.data || error.message);
+    return res.status(500).send("Ошибка при открытии опросника");
+  }
+});
+
 app.get("/questionnaire", async (req, res) => {
   try {
     const phone = normalizePhone(req.query.phone || "");
@@ -1440,9 +1628,16 @@ app.get("/questionnaire", async (req, res) => {
     const totalApplicants = Math.max(applicantIndex, Math.min(10, parseInt(req.query.totalApplicants || "1", 10) || 1));
     const prevApplicantName = String(req.query.prevApplicantName || "").trim();
     const isEdit = String(req.query.edit || "") === "1";
+    const applicantCount = Math.max(0, Math.min(10, parseInt(req.query.applicantCount || "0", 10) || 0));
 
     if (!phone || !leadId) {
       return res.status(400).send("Не переданы phone или leadId");
+    }
+
+    // Первый заявитель без applicantCount — перенаправляем на стартовую страницу выбора визы и количества
+    if (!isEdit && applicantIndex === 1 && !applicantCount) {
+      const params = new URLSearchParams({ phone, leadId });
+      return res.redirect("/questionnaire-start?" + params.toString());
     }
 
     if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
@@ -1490,7 +1685,8 @@ app.get("/questionnaire", async (req, res) => {
       totalApplicants: effectiveTotal,
       prevApplicantName,
       prefill,
-      isEdit
+      isEdit,
+      applicantCount
     }));
   } catch (error) {
     console.error("GET /questionnaire error:", error.response?.data || error.message);
