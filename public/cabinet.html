@@ -730,7 +730,8 @@
       button.replaceWith(fresh);
 
       fresh.addEventListener("click", () => {
-        picker.classList.toggle("show");
+        const isOpen = picker.classList.toggle("show");
+        fresh.textContent = isOpen ? "Отменить корректировку" : "Скорректировать опросник";
       });
 
       picker.innerHTML = "";
@@ -835,6 +836,12 @@
       localError.style.display = "none";
       formState.appendChild(localError);
 
+      const btnRow = document.createElement("div");
+      btnRow.style.display = "flex";
+      btnRow.style.gap = "10px";
+      btnRow.style.flexWrap = "wrap";
+      btnRow.style.alignItems = "center";
+
       const uploadBtn = document.createElement("button");
       uploadBtn.type = "button";
       uploadBtn.className = "upload-btn";
@@ -842,7 +849,17 @@
       uploadBtn.style.padding = "0 18px";
       uploadBtn.style.fontSize = "13px";
       uploadBtn.textContent = "Загрузить";
-      formState.appendChild(uploadBtn);
+      btnRow.appendChild(uploadBtn);
+
+      const cancelCorrectBtn = document.createElement("button");
+      cancelCorrectBtn.type = "button";
+      cancelCorrectBtn.className = "back-to-login-btn";
+      cancelCorrectBtn.style.display = "none";
+      cancelCorrectBtn.style.cursor = "pointer";
+      cancelCorrectBtn.textContent = "Отменить корректировку";
+      btnRow.appendChild(cancelCorrectBtn);
+
+      formState.appendChild(btnRow);
 
       wrapper.appendChild(formState);
 
@@ -867,11 +884,13 @@
       function showDone() {
         formState.style.display = "none";
         doneState.style.display = "block";
+        cancelCorrectBtn.style.display = "none";
       }
-      function showForm() {
+      function showForm(viaCorrection) {
         formState.style.display = "block";
         doneState.style.display = "none";
         inputs.forEach(({ input }) => { input.value = ""; });
+        cancelCorrectBtn.style.display = viaCorrection ? "inline-block" : "none";
       }
 
       // Если все требуемые документы уже загружены — сразу done
@@ -885,7 +904,12 @@
 
       correctBtn.addEventListener("click", () => {
         hideMessages();
-        showForm();
+        showForm(true);
+      });
+
+      cancelCorrectBtn.addEventListener("click", () => {
+        hideLocalError();
+        showDone();
       });
 
       function showLocalError(msg) {
@@ -909,7 +933,7 @@
 
         const selected = inputs.filter(({ input }) => input.files && input.files[0]);
         if (!selected.length) {
-          showLocalError("Ошибка загрузки файлов");
+          showLocalError("Выберите файлы для загрузки.");
           return;
         }
 
