@@ -838,8 +838,9 @@
       const picker = blockEl.querySelector(".applicant-picker");
       if (!button || !picker) return;
 
-      if (!blockEl.querySelector(".questionnaire-done-msg")) {
-        const doneMsg = document.createElement("div");
+      let doneMsg = blockEl.querySelector(".questionnaire-done-msg");
+      if (!doneMsg) {
+        doneMsg = document.createElement("div");
         doneMsg.className = "docs-done-msg questionnaire-done-msg";
         doneMsg.textContent = applicants.length > 1 ? "Опросники заполнены." : "Опросник заполнен.";
         blockEl.insertBefore(doneMsg, button);
@@ -855,6 +856,7 @@
       fresh.addEventListener("click", () => {
         const isOpen = picker.classList.toggle("show");
         fresh.textContent = isOpen ? "Отменить корректировку" : "Скорректировать опросник";
+        doneMsg.style.display = isOpen ? "none" : "";
       });
 
       picker.innerHTML = "";
