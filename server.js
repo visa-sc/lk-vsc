@@ -1680,17 +1680,30 @@ app.get("/questionnaire", async (req, res) => {
     let prefill = null;
     let effectiveTotal = totalApplicants;
     if (isEdit && YANDEX_DISK_TOKEN) {
-      const suffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
-      const statePath = `${YANDEX_DISK_ROOT}/${phone}/Опросник${suffix}.json`;
+      const loadStateForApplicant = async (n) => {
+        const suf = n > 1 ? ` ${n}` : "";
+        const fresh = `${YANDEX_DISK_ROOT}/${phone}/Опросники/Технические файлы/Опросник${suf}.json`;
+        const legacy = `${YANDEX_DISK_ROOT}/${phone}/Опросник${suf}.json`;
+        try {
+          const f = await downloadJsonFromYandexDisk(fresh);
+          if (f) return f;
+        } catch (_) {}
+        try {
+          return await downloadJsonFromYandexDisk(legacy);
+        } catch (_) {
+          return null;
+        }
+      };
+
       try {
-        prefill = await downloadJsonFromYandexDisk(statePath);
+        prefill = await loadStateForApplicant(applicantIndex);
       } catch (err) {
         console.error("EDIT prefill load error:", err.message);
       }
       // Сохраняем общее количество заявителей из первого опросника
       if (applicantIndex !== 1) {
         try {
-          const firstState = await downloadJsonFromYandexDisk(`${YANDEX_DISK_ROOT}/${phone}/Опросник.json`);
+          const firstState = await loadStateForApplicant(1);
           const fromFirst = parseInt(firstState && firstState.totalApplicants, 10);
           if (fromFirst > 0) effectiveTotal = Math.max(applicantIndex, fromFirst);
         } catch (_) {}
@@ -1846,18 +1859,27 @@ app.post(
 
       const rootFolder = YANDEX_DISK_ROOT;
       const phoneFolder = `${rootFolder}/${phone}`;
+      const opsFolder = `${phoneFolder}/Опросники`;
+      const techFolder = `${opsFolder}/Технические файлы`;
 
       await ensureYandexFolder(rootFolder);
       await ensureYandexFolder(phoneFolder);
+      await ensureYandexFolder(opsFolder);
+      await ensureYandexFolder(techFolder);
 
       const suffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
+      const safeFio = sanitizeFileName(fullName) || `Заявитель ${applicantIndex}`;
 
-      await uploadBufferToYandexDisk(pdfBuffer, `${phoneFolder}/Опросник${suffix}.pdf`, "application/pdf");
+      await uploadBufferToYandexDisk(
+        pdfBuffer,
+        `${opsFolder}/Опросник - ${safeFio}.pdf`,
+        "application/pdf"
+      );
 
       const stateJson = JSON.stringify({ ...enrichedFields, savedAt: new Date().toISOString() }, null, 2);
       await uploadBufferToYandexDisk(
         Buffer.from(stateJson, "utf-8"),
-        `${phoneFolder}/Опросник${suffix}.json`,
+        `${techFolder}/Опросник${suffix}.json`,
         "application/json; charset=utf-8"
       );
 
@@ -1866,10 +1888,9 @@ app.post(
         const origName = sanitizeFileName(visaPhotoFile.originalname || "visa");
         const dotIndex = origName.lastIndexOf(".");
         const ext = dotIndex >= 0 ? origName.slice(dotIndex) : "";
-        const photoBase = applicantIndex > 1 ? `Фото шенгенской визы ${applicantIndex}` : "Фото шенгенской визы";
         await uploadBufferToYandexDisk(
           visaPhotoFile.buffer,
-          `${phoneFolder}/${photoBase}${ext}`,
+          `${opsFolder}/Фото шенгенской визы - ${safeFio}${ext}`,
           visaPhotoFile.mimetype
         );
       }
@@ -1918,19 +1939,34 @@ app.get("/api/questionnaire-state", async (req, res) => {
       return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
     }
 
-    const firstPath = `${YANDEX_DISK_ROOT}/${phone}/Опросник.json`;
-    const first = await downloadJsonFromYandexDisk(firstPath);
+    const techPath = (n) => {
+      const suf = n > 1 ? ` ${n}` : "";
+      return `${YANDEX_DISK_ROOT}/${phone}/Опросники/Технические файлы/Опросник${suf}.json`;
+    };
+    const legacyPath = (n) => {
+      const suf = n > 1 ? ` ${n}` : "";
+      return `${YANDEX_DISK_ROOT}/${phone}/Опросник${suf}.json`;
+    };
+    const loadOne = async (n) => {
+      try {
+        const fresh = await downloadJsonFromYandexDisk(techPath(n));
+        if (fresh) return fresh;
+      } catch (_) {}
+      return await downloadJsonFromYandexDisk(legacyPath(n));
+    };
+
+    const first = await loadOne(1);
 
     if (!first) {
       return res.json({ success: true, applicants: [] });
     }
 
     const total = Math.max(1, Math.min(10, parseInt(first.totalApplicants, 10) || 1));
-    const restPaths = [];
+    const restPromises = [];
     for (let i = 2; i <= total; i++) {
-      restPaths.push(`${YANDEX_DISK_ROOT}/${phone}/Опросник ${i}.json`);
+      restPromises.push(loadOne(i));
     }
-    const rest = await Promise.all(restPaths.map((p) => downloadJsonFromYandexDisk(p)));
+    const rest = await Promise.all(restPromises);
 
     const applicants = [{ ...first, applicantIndex: 1 }];
     rest.forEach((s, i) => {
@@ -1987,8 +2023,13 @@ app.post(
       await ensureYandexFolder(phoneFolder);
 
       const questionnaireSuffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
-      const questionnaireJsonPath = `${phoneFolder}/Опросник${questionnaireSuffix}.json`;
-      const applicantState = await downloadJsonFromYandexDisk(questionnaireJsonPath);
+      const freshJsonPath = `${phoneFolder}/Опросники/Технические файлы/Опросник${questionnaireSuffix}.json`;
+      const legacyJsonPath = `${phoneFolder}/Опросник${questionnaireSuffix}.json`;
+      let applicantState = null;
+      try { applicantState = await downloadJsonFromYandexDisk(freshJsonPath); } catch (_) {}
+      if (!applicantState) {
+        try { applicantState = await downloadJsonFromYandexDisk(legacyJsonPath); } catch (_) {}
+      }
 
       if (!applicantState) {
         return res.status(409).json({
@@ -1998,15 +2039,15 @@ app.post(
       }
 
       const rawFio = String(applicantState.fullName || "").trim();
-      const fioFolderName = sanitizeFileName(rawFio) || `Заявитель ${applicantIndex}`;
-      const applicantFolder = `${phoneFolder}/${fioFolderName}`;
+      const safeFio = sanitizeFileName(rawFio) || `Заявитель ${applicantIndex}`;
+      const applicantFolder = `${phoneFolder}/${safeFio}`;
 
       await ensureYandexFolder(applicantFolder);
 
       const originalName = sanitizeFileName(file.originalname || "file");
       const dotIndex = originalName.lastIndexOf(".");
       const ext = dotIndex >= 0 ? originalName.slice(dotIndex) : "";
-      const finalFileName = `${targetName}${ext}`;
+      const finalFileName = `${targetName} - ${safeFio}${ext}`;
       const diskPath = `${applicantFolder}/${finalFileName}`;
 
       console.log("UPLOAD TO YANDEX:", diskPath);
