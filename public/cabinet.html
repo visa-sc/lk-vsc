@@ -1126,6 +1126,22 @@
       return wrapper;
     }
 
+    function createTelegramBlock() {
+      const wrapper = document.createElement("div");
+      wrapper.className = "documents-inline";
+      wrapper.style.display = "block";
+      wrapper.innerHTML = `
+        <h3>Подписывайтесь на наш Telegram-канал</h3>
+        <div class="muted" style="margin-bottom: 12px;">
+          Оставайтесь в курсе туристических новостей.
+        </div>
+        <a class="upload-btn" href="https://t.me/visa_sc" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;height:38px;padding:0 18px;font-size:13px;background:#3589BD;">
+          Перейти на канал
+        </a>
+      `;
+      return wrapper;
+    }
+
     function createBankCardBlock() {
       const wrapper = document.createElement("div");
       wrapper.className = "documents-inline";
@@ -1221,6 +1237,11 @@
       if (currentIndex === 2 && stageNodes[2]) {
         const bankBlock = createBankCardBlock();
         stageNodes[2].after(bankBlock);
+      }
+
+      if (currentIndex === 4 && stageNodes[4]) {
+        const tgBlock = createTelegramBlock();
+        stageNodes[4].after(tgBlock);
       }
     }
 
