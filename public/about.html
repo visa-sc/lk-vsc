@@ -318,6 +318,119 @@
       .steps { grid-template-columns: 1fr; }
     }
 
+    /* ── SHOWCASE (mockups of cabinet) ── */
+    .showcase {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+    .showcase-card {
+      background: #fff;
+      border-radius: 22px;
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      padding: 26px;
+      box-shadow: 0 20px 50px rgba(34, 36, 52, 0.07);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .showcase-tag {
+      display: inline-block;
+      align-self: flex-start;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: rgba(53, 137, 189, 0.08);
+      padding: 5px 10px;
+      border-radius: 999px;
+    }
+    .showcase-title {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.01em;
+      margin: 2px 0 6px;
+    }
+    .mock-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .mock-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .mock-input {
+      background: #f5f5f7;
+      border: 1px solid #ebe6f1;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      color: var(--text);
+    }
+    .mock-radio-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .mock-radio {
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #f5f5f7;
+      border: 1px solid #ebe6f1;
+      color: var(--text-muted);
+    }
+    .mock-radio.on {
+      background: #eaf5ef;
+      border-color: #cfe7d2;
+      color: var(--accent-2);
+      font-weight: 600;
+    }
+    .mock-btn {
+      align-self: flex-start;
+      padding: 10px 18px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      margin-top: 4px;
+    }
+    .mock-btn.green { background: var(--accent-2); }
+    .mock-btn.dark { background: #161d45; }
+    .mock-file-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 0;
+      border-top: 1px dashed #ece7f2;
+      font-size: 12.5px;
+    }
+    .mock-file-row:first-of-type { border-top: none; padding-top: 4px; }
+    .mock-file-label {
+      color: #3a4150;
+      font-weight: 500;
+      line-height: 1.35;
+    }
+    .mock-file-pick {
+      font-size: 11px;
+      color: var(--text-muted);
+      background: #f5f5f7;
+      border: 1px solid #ebe6f1;
+      border-radius: 8px;
+      padding: 6px 10px;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 820px) {
+      .showcase { grid-template-columns: 1fr; }
+    }
+
     /* ── SERVICES ── */
     .services {
       display: grid;
@@ -449,7 +562,7 @@
   <!-- HERO -->
   <section class="hero">
     <h1>Путешествие <span class="accent">начинается здесь.</span></h1>
-    <p>VOYO — тревел-площадка, где легко собрать всё для поездки: визы, страховки, бронирования и зарубежные карты. Один личный кабинет, один менеджер, один источник правды.</p>
+    <p>VOYO — тревел-площадка, где легко собрать всё для поездки: визы, страховки, бронирования и зарубежные карты. Один личный кабинет, свой менеджер на связи и вся подготовка к поездке перед глазами.</p>
     <div class="hero-actions">
       <a class="btn btn-primary" href="/">Открыть личный кабинет</a>
       <a class="btn btn-secondary" href="#process">Как это работает</a>
@@ -538,8 +651,71 @@
     </div>
   </section>
 
+  <!-- SHOWCASE -->
+  <section class="section">
+    <div class="section-inner">
+      <div class="section-eyebrow">Личный кабинет</div>
+      <h2 class="section-title">Всё на виду.</h2>
+      <p class="section-subtitle">Опросник, документы и статус каждой услуги — в одном простом интерфейсе. Без приложений, прямо в браузере.</p>
+
+      <div class="showcase">
+        <div class="showcase-card">
+          <span class="showcase-tag">Опросник</span>
+          <div class="showcase-title">Заполните анкету — мы подскажем, что нужно</div>
+
+          <div class="mock-field">
+            <div class="mock-label">ФИО (как в загранпаспорте)</div>
+            <div class="mock-input">Попов Алексей Александрович</div>
+          </div>
+          <div class="mock-field">
+            <div class="mock-label">Цель поездки</div>
+            <div class="mock-radio-row">
+              <span class="mock-radio">Туризм</span>
+              <span class="mock-radio on">Бизнес</span>
+              <span class="mock-radio">Гостевая</span>
+              <span class="mock-radio">Учёба</span>
+            </div>
+          </div>
+          <div class="mock-field">
+            <div class="mock-label">Были ли шенгенские визы за последние 3 года?</div>
+            <div class="mock-radio-row">
+              <span class="mock-radio on">Да</span>
+              <span class="mock-radio">Нет</span>
+            </div>
+          </div>
+          <div class="mock-btn green">Сохранить ответы</div>
+        </div>
+
+        <div class="showcase-card">
+          <span class="showcase-tag">Документы</span>
+          <div class="showcase-title">Загрузите документы для Попов Алексей Александрович</div>
+
+          <div>
+            <div class="mock-file-row">
+              <div class="mock-file-label">Заграничный паспорт (в который запрашиваем визу)</div>
+              <div class="mock-file-pick">Выбрать файл</div>
+            </div>
+            <div class="mock-file-row">
+              <div class="mock-file-label">Внутренний паспорт</div>
+              <div class="mock-file-pick">Выбрать файл</div>
+            </div>
+            <div class="mock-file-row">
+              <div class="mock-file-label">Справка с работы</div>
+              <div class="mock-file-pick">Выбрать файл</div>
+            </div>
+            <div class="mock-file-row">
+              <div class="mock-file-label">Шенгенские визы за последние 3 года</div>
+              <div class="mock-file-pick">Выбрать файл</div>
+            </div>
+          </div>
+          <div class="mock-btn dark">Загрузить</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- SERVICES -->
-  <section class="section" id="services">
+  <section class="section alt" id="services">
     <div class="section-inner">
       <div class="section-eyebrow">Услуги площадки</div>
       <h2 class="section-title">Под любую часть поездки.</h2>
