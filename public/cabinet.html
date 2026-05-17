@@ -838,6 +838,13 @@
       const picker = blockEl.querySelector(".applicant-picker");
       if (!button || !picker) return;
 
+      if (!blockEl.querySelector(".questionnaire-done-msg")) {
+        const doneMsg = document.createElement("div");
+        doneMsg.className = "docs-done-msg questionnaire-done-msg";
+        doneMsg.textContent = applicants.length > 1 ? "Опросники заполнены." : "Опросник заполнен.";
+        blockEl.insertBefore(doneMsg, button);
+      }
+
       button.textContent = "Скорректировать опросник";
       button.classList.add("questionnaire-btn-edit");
 
