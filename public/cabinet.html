@@ -230,6 +230,16 @@
       box-shadow: inset 0 0 0 4px #4f9f68;
     }
 
+    .stage.current.warn {
+      color: #c89432;
+    }
+
+    .stage.current.warn .dot {
+      border-color: #e1aa3f;
+      background: #fff;
+      box-shadow: inset 0 0 0 4px #e1aa3f;
+    }
+
     .questionnaire-inline {
       display: none;
       margin: 0 0 2px 32px;
@@ -874,6 +884,9 @@
       });
 
       if (currentIndex === 0 && stageNodes[0]) {
+        // Этап подсвечивается жёлтым, пока опросники и документы не собраны полностью
+        stageNodes[0].classList.add("warn");
+
         const questionnaireBlock = createQuestionnaireBlock(lead);
         stageNodes[0].after(questionnaireBlock);
 
@@ -904,6 +917,21 @@
 
             if (fragment.childNodes.length) {
               placeholder.replaceWith(fragment);
+            }
+
+            // Все документы загружены для каждого заявителя?
+            const allDocsUploaded = allFilled && applicants.every((a) => {
+              const blocks = buildUploadBlocksConfig(a);
+              const files = Array.isArray(a.uploadedFiles) ? a.uploadedFiles : [];
+              return blocks.every((b) => files.some((f) => {
+                if (!f.startsWith(b.label)) return false;
+                const next = f.charAt(b.label.length);
+                return next === "." || next === " ";
+              }));
+            });
+
+            if (allFilled && allDocsUploaded) {
+              stageNodes[0].classList.remove("warn");
             }
           });
         }

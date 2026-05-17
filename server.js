@@ -395,6 +395,21 @@ async function uploadBufferToYandexDisk(buffer, diskPath, contentType = "applica
   });
 }
 
+async function listYandexFolderFiles(folderPath) {
+  try {
+    const r = await yandexRequest({
+      method: "GET",
+      url: "https://cloud-api.yandex.net/v1/disk/resources",
+      params: { path: folderPath, limit: 1000, fields: "_embedded.items.name,_embedded.items.type" }
+    });
+    const items = r.data?._embedded?.items || [];
+    return items.filter((i) => i.type === "file").map((i) => i.name);
+  } catch (e) {
+    if (e.response?.status === 404) return [];
+    return [];
+  }
+}
+
 async function downloadJsonFromYandexDisk(diskPath) {
   try {
     const linkResponse = await yandexRequest({
@@ -1986,6 +2001,13 @@ app.get("/api/questionnaire-state", async (req, res) => {
     rest.forEach((s, i) => {
       if (s) applicants.push({ ...s, applicantIndex: i + 2 });
     });
+
+    // Список загруженных файлов в папке заявителя (для подсветки этапа "Сбор документов")
+    await Promise.all(applicants.map(async (a) => {
+      const fio = sanitizeFileName(String(a.fullName || "").trim()) || `Заявитель ${a.applicantIndex}`;
+      const folder = `${YANDEX_DISK_ROOT}/${phone}/${fio}`;
+      a.uploadedFiles = await listYandexFolderFiles(folder);
+    }));
 
     return res.json({ success: true, applicants });
   } catch (error) {
