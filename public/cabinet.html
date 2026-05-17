@@ -249,6 +249,40 @@
       padding: 0 20px;
     }
 
+    .questionnaire-btn.questionnaire-btn-edit {
+      background: #3589BD;
+    }
+
+    .applicant-picker {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 10px;
+      max-width: 480px;
+    }
+
+    .applicant-picker.show {
+      display: flex;
+    }
+
+    .applicant-pick-btn {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #d3e2ee;
+      background: #fff;
+      border-radius: 14px;
+      padding: 12px 14px;
+      cursor: pointer;
+      font-size: 14px;
+      color: #1d2330;
+      font-weight: 600;
+    }
+
+    .applicant-pick-btn:hover {
+      background: #f4faff;
+      border-color: #3589BD;
+    }
+
     .documents-inline {
       display: none;
       margin: 2px 0 2px 32px;
@@ -520,7 +554,50 @@
       });
 
       wrapper.appendChild(button);
+
+      const picker = document.createElement("div");
+      picker.className = "applicant-picker";
+      wrapper.appendChild(picker);
+
       return wrapper;
+    }
+
+    function switchQuestionnaireBlockToEdit(blockEl, lead, applicants) {
+      if (!blockEl) return;
+      const button = blockEl.querySelector(".questionnaire-btn");
+      const picker = blockEl.querySelector(".applicant-picker");
+      if (!button || !picker) return;
+
+      button.textContent = "Скорректировать опросник";
+      button.classList.add("questionnaire-btn-edit");
+
+      // Заменяем оригинальный listener, клонируя кнопку
+      const fresh = button.cloneNode(true);
+      button.replaceWith(fresh);
+
+      fresh.addEventListener("click", () => {
+        picker.classList.toggle("show");
+      });
+
+      picker.innerHTML = "";
+      applicants.forEach((applicant) => {
+        const a = document.createElement("button");
+        a.type = "button";
+        a.className = "applicant-pick-btn";
+        const fio = (applicant && applicant.fullName ? String(applicant.fullName) : "").trim();
+        a.textContent = fio || `Заявитель ${applicant.applicantIndex}`;
+        a.addEventListener("click", () => {
+          const phone = phoneInput.value.trim();
+          const leadId = lead?.id;
+          if (!phone || !leadId) {
+            showBox(errorBox, "Не удалось открыть опросник");
+            return;
+          }
+          const url = `/questionnaire?phone=${encodeURIComponent(phone)}&leadId=${encodeURIComponent(leadId)}&applicantIndex=${applicant.applicantIndex}&edit=1`;
+          window.open(url, "_blank");
+        });
+        picker.appendChild(a);
+      });
     }
 
     async function fetchApplicantStates(phone) {
@@ -722,6 +799,14 @@
         if (phone) {
           fetchApplicantStates(phone).then((applicants) => {
             if (!applicants || !applicants.length) return;
+
+            // Все опросники заполнены? Сравниваем количество с totalApplicants из первого
+            const totalFromFirst = parseInt(applicants[0] && applicants[0].totalApplicants, 10) || applicants.length;
+            const allFilled = applicants.length >= totalFromFirst && totalFromFirst > 0;
+
+            if (allFilled) {
+              switchQuestionnaireBlockToEdit(questionnaireBlock, lead, applicants);
+            }
 
             const fragment = document.createDocumentFragment();
             applicants.forEach((applicant) => {

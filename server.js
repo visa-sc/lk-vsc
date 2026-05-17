@@ -539,7 +539,7 @@ async function getLeadsByPhone(phone) {
   return leads;
 }
 
-function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "" }) {
+function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "", prefill = null, isEdit = false }) {
   const safePhone = escapeHtml(phone || "");
   const safeLeadId = escapeHtml(String(leadId || ""));
   const safeCountry = escapeHtml(countryService || "не указано");
@@ -548,12 +548,16 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
   const safePrevName = escapeHtml(prevApplicantName || "");
   const isFirstApplicant = idx === 1;
 
-  const handoffNoticeHtml = isFirstApplicant ? "" : `
+  const subtitleText = isEdit
+    ? "Внесите изменения и нажмите «Отправить опросник»."
+    : "Заполните, пожалуйста, данные и отправьте опросник.";
+
+  const handoffNoticeHtml = (isFirstApplicant || isEdit) ? "" : `
     <div class="handoff-notice">
       Опросник для <strong>${safePrevName || "предыдущего заявителя"}</strong> отправлен. Заполните опросник на следующего заявителя.
     </div>`;
 
-  const applicantCountFieldHtml = isFirstApplicant ? `
+  const applicantCountFieldHtml = (isFirstApplicant && !isEdit) ? `
     <!-- 0 -->
     <div class="field">
       <label>На какое количество человек заполняем опросные листы? *</label>
@@ -692,7 +696,7 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
 <body>
 <div class="wrap">
   <h1>Опросный лист на ${safeCountry}</h1>
-  <p class="subtitle">Заполните, пожалуйста, данные и отправьте опросник.</p>
+  <p class="subtitle">${subtitleText}</p>
 
   <div id="errorBox" class="message error"></div>
   <div id="successBox" class="message success"></div>
@@ -702,6 +706,7 @@ ${handoffNoticeHtml}
     <input type="hidden" name="leadId" value="${safeLeadId}" />
     <input type="hidden" name="applicantIndex" value="${idx}" />
     <input type="hidden" name="totalApplicants" value="${total}" />
+    <input type="hidden" name="isEdit" value="${isEdit ? "1" : ""}" />
 ${applicantCountFieldHtml}
     <!-- 1 -->
     <div class="field">
@@ -1168,6 +1173,27 @@ ${applicantCountFieldHtml}
   form.addEventListener("change", updateConditionals);
   updateConditionals();
 
+  // Prefill (для режима "Скорректировать опросник")
+  const PREFILL = ${JSON.stringify(prefill || null).replace(/</g, "\\u003c")};
+  if (PREFILL && typeof PREFILL === "object") {
+    Object.keys(PREFILL).forEach((name) => {
+      const val = PREFILL[name];
+      if (val === null || val === undefined || val === "") return;
+      const inputs = form.querySelectorAll('[name="' + name + '"]');
+      inputs.forEach((input) => {
+        const t = (input.type || "").toLowerCase();
+        if (t === "radio" || t === "checkbox") {
+          input.checked = (input.value === String(val));
+        } else if (t === "file" || t === "hidden") {
+          return;
+        } else {
+          input.value = String(val);
+        }
+      });
+    });
+    updateConditionals();
+  }
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     hideBox(errorBox);
@@ -1405,6 +1431,7 @@ app.get("/questionnaire", async (req, res) => {
     const applicantIndex = Math.max(1, Math.min(10, parseInt(req.query.applicantIndex || "1", 10) || 1));
     const totalApplicants = Math.max(applicantIndex, Math.min(10, parseInt(req.query.totalApplicants || "1", 10) || 1));
     const prevApplicantName = String(req.query.prevApplicantName || "").trim();
+    const isEdit = String(req.query.edit || "") === "1";
 
     if (!phone || !leadId) {
       return res.status(400).send("Не переданы phone или leadId");
@@ -1423,14 +1450,39 @@ app.get("/questionnaire", async (req, res) => {
 
     const countryService = getCustomFieldValue(lead, "Страна оформления/услуга") || "не указано";
 
+    let prefill = null;
+    let effectiveTotal = totalApplicants;
+    if (isEdit && YANDEX_DISK_TOKEN) {
+      const suffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
+      const statePath = `${YANDEX_DISK_ROOT}/${phone}/Опросник${suffix}.json`;
+      try {
+        prefill = await downloadJsonFromYandexDisk(statePath);
+      } catch (err) {
+        console.error("EDIT prefill load error:", err.message);
+      }
+      // Сохраняем общее количество заявителей из первого опросника
+      if (applicantIndex !== 1) {
+        try {
+          const firstState = await downloadJsonFromYandexDisk(`${YANDEX_DISK_ROOT}/${phone}/Опросник.json`);
+          const fromFirst = parseInt(firstState && firstState.totalApplicants, 10);
+          if (fromFirst > 0) effectiveTotal = Math.max(applicantIndex, fromFirst);
+        } catch (_) {}
+      } else if (prefill && prefill.totalApplicants) {
+        const fromPrefill = parseInt(prefill.totalApplicants, 10);
+        if (fromPrefill > 0) effectiveTotal = fromPrefill;
+      }
+    }
+
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     return res.send(buildQuestionnaireHtml({
       phone,
       leadId,
       countryService,
       applicantIndex,
-      totalApplicants,
-      prevApplicantName
+      totalApplicants: effectiveTotal,
+      prevApplicantName,
+      prefill,
+      isEdit
     }));
   } catch (error) {
     console.error("GET /questionnaire error:", error.response?.data || error.message);
@@ -1450,9 +1502,12 @@ app.post(
       const applicantIndex = Math.max(1, Math.min(10, parseInt(req.body.applicantIndex || "1", 10) || 1));
       const applicantCountRaw = Math.max(1, Math.min(10, parseInt(req.body.applicantCount || "0", 10) || 0));
       const incomingTotal = Math.max(1, Math.min(10, parseInt(req.body.totalApplicants || "0", 10) || 0));
-      const totalApplicants = applicantIndex === 1
-        ? Math.max(1, applicantCountRaw)
-        : Math.max(applicantIndex, incomingTotal);
+      const isEdit = String(req.body.isEdit || "") === "1";
+      const totalApplicants = isEdit
+        ? Math.max(applicantIndex, incomingTotal)
+        : (applicantIndex === 1
+            ? Math.max(1, applicantCountRaw)
+            : Math.max(applicantIndex, incomingTotal));
 
       if (!phone || !leadId || !fullName) {
         return res.status(400).json({
@@ -1461,7 +1516,7 @@ app.post(
         });
       }
 
-      if (applicantIndex === 1 && !applicantCountRaw) {
+      if (!isEdit && applicantIndex === 1 && !applicantCountRaw) {
         return res.status(400).json({
           success: false,
           message: "Не указано количество заявителей"
@@ -1592,7 +1647,7 @@ app.post(
       }
 
       let nextApplicantUrl = null;
-      if (applicantIndex < totalApplicants) {
+      if (!isEdit && applicantIndex < totalApplicants) {
         const params = new URLSearchParams({
           phone,
           leadId,
