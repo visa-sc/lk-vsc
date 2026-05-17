@@ -283,6 +283,29 @@
       border-color: #3589BD;
     }
 
+    .back-to-login {
+      display: flex;
+      justify-content: center;
+      margin-top: 18px;
+    }
+
+    .back-to-login-btn {
+      display: inline-block;
+      padding: 8px 14px;
+      font-size: 13px;
+      color: #9096a3;
+      background: transparent;
+      border: 1px solid #e3e0eb;
+      border-radius: 12px;
+      text-decoration: none;
+      transition: 0.15s;
+    }
+
+    .back-to-login-btn:hover {
+      color: #3589BD;
+      border-color: #c6dceb;
+    }
+
     .documents-inline {
       display: none;
       margin: 2px 0 2px 32px;
@@ -441,6 +464,10 @@
 
         <div id="stages" class="stages"></div>
       </div>
+    </div>
+
+    <div class="back-to-login">
+      <a href="/" class="back-to-login-btn">Перейти на страницу входа</a>
     </div>
   </div>
 
@@ -766,6 +793,22 @@
       return wrapper;
     }
 
+    function createBankCardBlock() {
+      const wrapper = document.createElement("div");
+      wrapper.className = "documents-inline";
+      wrapper.style.display = "block";
+      wrapper.innerHTML = `
+        <h3>Зарубежная банковская карта</h3>
+        <div class="muted" style="margin-bottom: 12px;">
+          Рассмотрите возможность оформления зарубежной банковской карты, чтобы с комфортом оплачивать товары и услуги в зарубежной поездке.
+        </div>
+        <a class="upload-btn" href="https://visa-sc.ru/bank_lk/" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;height:38px;padding:0 18px;font-size:13px;">
+          Узнать подробнее
+        </a>
+      `;
+      return wrapper;
+    }
+
     function renderStages(currentIndex, lead) {
       stagesEl.innerHTML = "";
 
@@ -824,6 +867,11 @@
             }
           });
         }
+      }
+
+      if (currentIndex === 2 && stageNodes[2]) {
+        const bankBlock = createBankCardBlock();
+        stageNodes[2].after(bankBlock);
       }
     }
 
