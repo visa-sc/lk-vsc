@@ -570,7 +570,7 @@
 </head>
 <body>
   <div class="brand-bar">
-    <img src="/logo.svg" alt="VOYO" />
+    <img src="/logo.png" alt="VOYO" />
   </div>
   <div class="wrap">
     <input id="phoneInput" type="hidden" />
@@ -1035,6 +1035,74 @@
       return wrapper;
     }
 
+    function createExtraDocBlock() {
+      const wrapper = document.createElement("div");
+      wrapper.className = "documents-inline";
+      wrapper.style.display = "block";
+
+      const desc = document.createElement("div");
+      desc.className = "muted";
+      desc.style.marginBottom = "12px";
+      desc.textContent = "Документы для подачи в Консульство сейчас готовятся Отделом оформления. Если сотрудник попросит вас приложить дополнительный документ, ниже есть свободная область для загрузки файла.";
+      wrapper.appendChild(desc);
+
+      const input = document.createElement("input");
+      input.type = "file";
+      input.style.display = "block";
+      input.style.width = "100%";
+      input.style.border = "1px solid #e8e2ee";
+      input.style.borderRadius = "12px";
+      input.style.padding = "8px";
+      input.style.fontSize = "12px";
+      input.style.background = "#fff";
+      input.style.marginBottom = "10px";
+      wrapper.appendChild(input);
+
+      const errMsg = document.createElement("div");
+      errMsg.className = "docs-local-error";
+      errMsg.style.display = "none";
+      wrapper.appendChild(errMsg);
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "docs-correct-btn";
+      btn.textContent = "Загрузить";
+      wrapper.appendChild(btn);
+
+      function showErr(m) { errMsg.textContent = m; errMsg.style.display = "block"; }
+      function hideErr() { errMsg.textContent = ""; errMsg.style.display = "none"; }
+
+      btn.addEventListener("click", async () => {
+        hideErr();
+        const phone = phoneInput.value.trim();
+        if (!phone) { showErr("Ошибка загрузки файла"); return; }
+        const file = input.files && input.files[0];
+        if (!file) { showErr("Выберите файл для загрузки."); return; }
+
+        btn.disabled = true;
+        const orig = btn.textContent;
+        btn.textContent = "Загрузка...";
+
+        try {
+          const fd = new FormData();
+          fd.append("phone", phone);
+          fd.append("file", file);
+          const r = await fetch("/upload-extra-document", { method: "POST", body: fd });
+          const d = await r.json();
+          if (!r.ok || !d.success) throw new Error();
+          input.value = "";
+          btn.textContent = "Файл загружен";
+          setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1800);
+        } catch (e) {
+          showErr("Ошибка загрузки файла");
+          btn.disabled = false;
+          btn.textContent = orig;
+        }
+      });
+
+      return wrapper;
+    }
+
     function createBankCardBlock() {
       const wrapper = document.createElement("div");
       wrapper.className = "documents-inline";
@@ -1124,6 +1192,11 @@
             }
           });
         }
+      }
+
+      if (currentIndex === 1 && stageNodes[1]) {
+        const extraBlock = createExtraDocBlock();
+        stageNodes[1].after(extraBlock);
       }
 
       if (currentIndex === 2 && stageNodes[2]) {

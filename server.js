@@ -2025,6 +2025,51 @@ app.get("/api/questionnaire-state", async (req, res) => {
 });
 
 app.post(
+  "/upload-extra-document",
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      const phone = normalizePhone(req.body.phone || "");
+      const file = req.file;
+
+      if (!phone) return res.status(400).json({ success: false, message: "Телефон не передан" });
+      if (!file) return res.status(400).json({ success: false, message: "Файл не передан" });
+      if (!YANDEX_DISK_TOKEN) return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
+
+      const rootFolder = YANDEX_DISK_ROOT;
+      const phoneFolder = `${rootFolder}/${phone}`;
+      const extraFolder = `${phoneFolder}/Дополнительные документы`;
+
+      await ensureYandexFolder(rootFolder);
+      await ensureYandexFolder(phoneFolder);
+      await ensureYandexFolder(extraFolder);
+
+      const origName = sanitizeFileName(file.originalname || "file");
+      const dotIndex = origName.lastIndexOf(".");
+      const base = dotIndex > 0 ? origName.slice(0, dotIndex) : origName;
+      const ext = dotIndex > 0 ? origName.slice(dotIndex) : "";
+      const ts = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19);
+      const finalName = `${base} - ${ts}${ext}`;
+      const diskPath = `${extraFolder}/${finalName}`;
+
+      await uploadBufferToYandexDisk(file.buffer, diskPath, file.mimetype);
+
+      return res.json({ success: true, message: "Файл успешно загружен", fileName: finalName });
+    } catch (error) {
+      console.error("UPLOAD EXTRA DOC ERROR:");
+      console.error("message:", error.message);
+      console.error("status:", error.response?.status);
+      console.error("", error.response?.data);
+      return res.status(500).json({
+        success: false,
+        message: "Ошибка загрузки документа",
+        error: error.response?.data || error.message
+      });
+    }
+  }
+);
+
+app.post(
   "/upload-document",
   upload.single("file"),
   async (req, res) => {
