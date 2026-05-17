@@ -1234,6 +1234,14 @@ ${applicantCountFieldHtml}
 
       showBox(successBox, "Опросник успешно отправлен");
 
+      try {
+        localStorage.setItem("vsc_questionnaire_updated", JSON.stringify({
+          phone: "${safePhone}",
+          leadId: "${safeLeadId}",
+          ts: Date.now()
+        }));
+      } catch (_) {}
+
       setTimeout(() => {
         if (data.nextApplicantUrl) {
           window.location.href = data.nextApplicantUrl;

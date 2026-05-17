@@ -937,6 +937,22 @@
       phoneInput.value = phoneFromUrl.trim();
       loadLeads();
     })();
+
+    // Авто-обновление при сохранении опросника в другой вкладке
+    window.addEventListener("storage", (event) => {
+      if (event.key !== "vsc_questionnaire_updated" || !event.newValue) return;
+      try {
+        const payload = JSON.parse(event.newValue);
+        const evtPhone = String(payload.phone || "").replace(/\D/g, "");
+        const myPhone = phoneInput.value.replace(/\D/g, "");
+        if (!evtPhone || !myPhone) return;
+        const matches = evtPhone === myPhone || myPhone.endsWith(evtPhone) || evtPhone.endsWith(myPhone);
+        if (!matches) return;
+        if (selectedLead && getCurrentStageIndex(selectedLead) === 0) {
+          renderStages(0, selectedLead);
+        }
+      } catch (_) {}
+    });
   </script>
 </body>
 </html>
