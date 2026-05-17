@@ -539,7 +539,7 @@ async function getLeadsByPhone(phone) {
   return leads;
 }
 
-function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "", prefill = null, isEdit = false, applicantCount = 0 }) {
+function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "", prefill = null, isEdit = false, applicantCount = 0, visaType = "" }) {
   const safePhone = escapeHtml(phone || "");
   const safeLeadId = escapeHtml(String(leadId || ""));
   const safeCountry = escapeHtml(countryService || "не указано");
@@ -548,10 +548,15 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
   const safePrevName = escapeHtml(prevApplicantName || "");
   const isFirstApplicant = idx === 1;
   const safeApplicantCount = Math.max(0, parseInt(applicantCount, 10) || 0);
+  const safeVisaType = escapeHtml(visaType || "");
+
+  const titleText = visaType === "Шенгенская виза"
+    ? "Опросник на Шенгенскую визу"
+    : `Опросный лист на ${safeCountry}`;
 
   const subtitleText = isEdit
     ? "Внесите изменения и нажмите «Отправить опросник»."
-    : "Заполните, пожалуйста, данные и отправьте опросник.";
+    : 'Заполните данные и нажмите "Отправить опросник" внизу страницы';
 
   const handoffNoticeHtml = (isFirstApplicant || isEdit) ? "" : `
     <div class="handoff-notice">
@@ -692,7 +697,7 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
 </head>
 <body>
 <div class="wrap">
-  <h1>Опросный лист на ${safeCountry}</h1>
+  <h1>${titleText}</h1>
   <p class="subtitle">${subtitleText}</p>
 
   <div id="successBox" class="message success"></div>
@@ -703,6 +708,7 @@ ${handoffNoticeHtml}
     <input type="hidden" name="applicantIndex" value="${idx}" />
     <input type="hidden" name="totalApplicants" value="${total}" />
     <input type="hidden" name="isEdit" value="${isEdit ? "1" : ""}" />
+    <input type="hidden" name="visaType" value="${safeVisaType}" />
 ${applicantCountFieldHtml}
     <!-- 1 -->
     <div class="field">
@@ -1618,7 +1624,8 @@ ${visaOptionsHtml}
     const params = new URLSearchParams({
       phone: PHONE,
       leadId: LEAD_ID,
-      applicantCount: String(count)
+      applicantCount: String(count),
+      visaType: v
     });
     window.location.href = "/questionnaire?" + params.toString();
   });
@@ -1653,6 +1660,7 @@ app.get("/questionnaire", async (req, res) => {
     const prevApplicantName = String(req.query.prevApplicantName || "").trim();
     const isEdit = String(req.query.edit || "") === "1";
     const applicantCount = Math.max(0, Math.min(10, parseInt(req.query.applicantCount || "0", 10) || 0));
+    const visaType = String(req.query.visaType || "").trim();
 
     if (!phone || !leadId) {
       return res.status(400).send("Не переданы phone или leadId");
@@ -1713,6 +1721,9 @@ app.get("/questionnaire", async (req, res) => {
       }
     }
 
+    // visaType: из URL, либо из сохранённого state (для edit / 2+ заявителя)
+    const effectiveVisaType = visaType || (prefill && prefill.visaType) || "";
+
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     return res.send(buildQuestionnaireHtml({
       phone,
@@ -1723,7 +1734,8 @@ app.get("/questionnaire", async (req, res) => {
       prevApplicantName,
       prefill,
       isEdit,
-      applicantCount
+      applicantCount,
+      visaType: effectiveVisaType
     }));
   } catch (error) {
     console.error("GET /questionnaire error:", error.response?.data || error.message);
@@ -1846,7 +1858,8 @@ app.post(
         notes:                      String(req.body.notes || "").trim(),
         confirmAccuracy:            String(req.body.confirmAccuracy || "").trim(),
         confirmPrevData:            String(req.body.confirmPrevData || "").trim(),
-        personalDataConsent:        String(req.body.personalDataConsent || "").trim()
+        personalDataConsent:        String(req.body.personalDataConsent || "").trim(),
+        visaType:                   String(req.body.visaType || "").trim()
       };
 
       const enrichedFields = {
@@ -1904,6 +1917,7 @@ app.post(
           totalApplicants: String(totalApplicants),
           prevApplicantName: fullName
         });
+        if (fields.visaType) params.set("visaType", fields.visaType);
         nextApplicantUrl = `/questionnaire?${params.toString()}`;
       }
 
