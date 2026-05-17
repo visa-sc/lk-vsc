@@ -642,6 +642,18 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
     }
     .radio-group input[type="radio"] { accent-color: #4f9f68; width: 16px; height: 16px; }
     .radio-group label:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    .radio-group label:has(input[name="confirmAccuracy"][value="Нет"]:checked),
+    .radio-group label:has(input[name="confirmPrevData"][value="Нет"]:checked),
+    .radio-group label:has(input[name="personalDataConsent"][value="Нет"]:checked) {
+      border-color: #d97a8a;
+      background: #fbebee;
+      color: #a15561;
+    }
+    .radio-group label:has(input[name="confirmAccuracy"][value="Нет"]:checked) input,
+    .radio-group label:has(input[name="confirmPrevData"][value="Нет"]:checked) input,
+    .radio-group label:has(input[name="personalDataConsent"][value="Нет"]:checked) input {
+      accent-color: #d97a8a;
+    }
     .cond { display: none; }
     .cond.show { display: grid; gap: 14px; }
     .message {
@@ -1107,7 +1119,7 @@ ${applicantCountFieldHtml}
 
     <!-- 52 -->
     <div class="field">
-      <label>Согласие на обработку персональных данных *</label>
+      <label>Даю согласие на обработку персональных данных. *</label>
       <div class="radio-group">
         <label><input type="radio" name="personalDataConsent" value="Да" required /> Да</label>
         <label><input type="radio" name="personalDataConsent" value="Нет" /> Нет</label>

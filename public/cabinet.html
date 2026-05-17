@@ -319,6 +319,9 @@
       font-size: 13px;
       color: #666d7c;
       font-weight: 600;
+      min-height: 2.8em;
+      line-height: 1.35;
+      display: block;
     }
 
     .file-group input[type="file"] {
@@ -328,25 +331,6 @@
       padding: 8px;
       background: #fff;
       font-size: 12px;
-    }
-
-    .file-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .file-row input[type="file"] {
-      flex: 1 1 auto;
-      min-width: 0;
-      width: auto;
-      height: 36px;
-      padding: 0 8px;
-    }
-
-    .file-row .upload-btn {
-      flex-shrink: 0;
-      margin-top: 0 !important;
     }
 
     .upload-btn {
@@ -685,6 +669,7 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "upload-btn";
+        btn.style.marginTop = "6px";
         btn.style.height = "36px";
         btn.style.padding = "0 14px";
         btn.style.fontSize = "13px";
@@ -736,13 +721,9 @@
           }
         });
 
-        const row = document.createElement("div");
-        row.className = "file-row";
-        row.appendChild(input);
-        row.appendChild(btn);
-
         group.appendChild(label);
-        group.appendChild(row);
+        group.appendChild(input);
+        group.appendChild(btn);
         grid.appendChild(group);
       });
 
