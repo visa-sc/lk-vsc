@@ -1009,12 +1009,14 @@
         formState.style.display = "none";
         doneState.style.display = "block";
         cancelCorrectBtn.style.display = "none";
+        header.style.display = "none";
       }
       function showForm(viaCorrection) {
         formState.style.display = "block";
         doneState.style.display = "none";
         inputs.forEach(({ input }) => { input.value = ""; });
         cancelCorrectBtn.style.display = viaCorrection ? "inline-block" : "none";
+        header.style.display = "";
       }
 
       // Если все требуемые документы уже загружены — сразу done
