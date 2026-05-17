@@ -40,17 +40,14 @@
       }
     }
 
-    .stage {
-      transition: color 0.3s var(--vsc-ease);
-      animation: vsc-fade-in 0.3s var(--vsc-ease) both;
-      animation-delay: calc(var(--stage-i, 0) * 0.05s);
-    }
-
     .questionnaire-inline,
     .documents-inline,
     .help-inline {
-      animation: vsc-fade-in 0.4s var(--vsc-ease) both;
-      animation-delay: 0.4s;
+      animation: vsc-fade-in 0.32s var(--vsc-ease) both;
+    }
+
+    .stage {
+      transition: color 0.3s var(--vsc-ease);
     }
     .dot {
       transition: border-color 0.3s var(--vsc-ease), background 0.3s var(--vsc-ease), box-shadow 0.3s var(--vsc-ease);
@@ -1257,7 +1254,6 @@
       STAGES.forEach((stageName, index) => {
         const row = document.createElement("div");
         row.className = "stage";
-        row.style.setProperty("--stage-i", index);
 
         if (index < currentIndex) row.classList.add("done");
         if (index === currentIndex) row.classList.add("current");
