@@ -1312,6 +1312,11 @@
         stageNodes[2].after(bankBlock);
       }
 
+      if (currentIndex === 3 && stageNodes[3]) {
+        const bankBlock = createBankCardBlock();
+        stageNodes[3].after(bankBlock);
+      }
+
       if (currentIndex === 4 && stageNodes[4]) {
         const tgBlock = createTelegramBlock();
         stageNodes[4].after(tgBlock);
