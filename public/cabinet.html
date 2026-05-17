@@ -323,7 +323,7 @@
       text-align: center;
     }
 
-    .footer-back {
+    .footer-back-standalone {
       display: flex;
       justify-content: center;
       margin-top: 14px;
@@ -615,9 +615,10 @@
           Позвонить
         </a>
       </div>
-      <div class="footer-back">
-        <a href="/" class="back-to-login-btn">Перейти на страницу входа</a>
-      </div>
+    </div>
+
+    <div class="footer-back-standalone">
+      <a href="/" class="back-to-login-btn">Перейти на страницу входа</a>
     </div>
   </div>
 
@@ -641,6 +642,12 @@
 
     let selectedLead = null;
     let applicantsCache = null;
+
+    function formatFio(name) {
+      const s = String(name || "").trim().toLowerCase();
+      if (!s) return "";
+      return s.replace(/(^|[\s-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+    }
 
     function showBox(el, message) {
       el.style.display = "block";
@@ -767,7 +774,7 @@
         a.type = "button";
         a.className = "applicant-pick-btn";
         const fio = (applicant && applicant.fullName ? String(applicant.fullName) : "").trim();
-        a.textContent = fio || `Заявитель ${applicant.applicantIndex}`;
+        a.textContent = formatFio(fio) || `Заявитель ${applicant.applicantIndex}`;
         a.addEventListener("click", () => {
           const phone = phoneInput.value.trim();
           const leadId = lead?.id;
@@ -830,11 +837,12 @@
 
       const applicantIndex = Math.max(1, parseInt(applicant && applicant.applicantIndex, 10) || 1);
       const fio = (applicant && applicant.fullName ? String(applicant.fullName) : "").trim();
-      const fioForLabel = fio || `Заявителя ${applicantIndex}`;
+      const fioFormatted = formatFio(fio);
+      const fioForLabel = fioFormatted || `Заявителя ${applicantIndex}`;
 
       const header = document.createElement("h3");
-      header.textContent = fio
-        ? `Загрузите документы для ${fio}`
+      header.textContent = fioFormatted
+        ? `Загрузите документы для ${fioFormatted}`
         : `Загрузите документы для заявителя ${applicantIndex}`;
       wrapper.appendChild(header);
 
