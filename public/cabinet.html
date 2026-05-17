@@ -83,6 +83,14 @@
       height: auto;
       aspect-ratio: 2 / 1;
       mix-blend-mode: multiply;
+      opacity: 0;
+      transform: scale(0.96);
+      transition: opacity 0.55s var(--vsc-ease), transform 0.55s var(--vsc-ease);
+    }
+
+    .brand-bar img.is-loaded {
+      opacity: 1;
+      transform: scale(1);
     }
 
     .wrap {
@@ -640,7 +648,8 @@
 </head>
 <body>
   <div class="brand-bar">
-    <img src="/logo.png" alt="VOYO" width="600" height="300" />
+    <img src="/logo.png" alt="VOYO" width="600" height="300" fetchpriority="high" onload="this.classList.add('is-loaded')" onerror="this.classList.add('is-loaded')" />
+    <noscript><style>.brand-bar img{opacity:1;transform:none;}</style></noscript>
   </div>
   <div class="wrap">
     <input id="phoneInput" type="hidden" />

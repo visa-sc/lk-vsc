@@ -83,6 +83,14 @@
       aspect-ratio: 2 / 1;
       margin: 0 auto 22px;
       mix-blend-mode: multiply;
+      opacity: 0;
+      transform: scale(0.96);
+      transition: opacity 0.55s var(--vsc-ease), transform 0.55s var(--vsc-ease);
+    }
+
+    .login-logo.is-loaded {
+      opacity: 1;
+      transform: scale(1);
     }
 
     .login-card h2 {
@@ -165,7 +173,8 @@
 </head>
 <body>
   <div class="login-card">
-    <img class="login-logo" src="/logo.png" alt="VOYO" width="600" height="300" />
+    <img class="login-logo" src="/logo.png" alt="VOYO" width="600" height="300" fetchpriority="high" onload="this.classList.add('is-loaded')" onerror="this.classList.add('is-loaded')" />
+    <noscript><style>.login-logo{opacity:1;transform:none;}</style></noscript>
     <h2>Введите ваш номер телефона, чтобы найти все обращения</h2>
     <form id="loginForm" class="login-form">
       <input
