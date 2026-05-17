@@ -425,6 +425,13 @@
       margin-bottom: 12px;
     }
 
+    .docs-local-error {
+      color: #c4314b;
+      font-size: 13px;
+      font-weight: 500;
+      margin: 8px 0 0;
+    }
+
     .docs-correct-btn {
       height: 38px;
       border: none;
@@ -823,6 +830,11 @@
         list.appendChild(row);
       });
 
+      const localError = document.createElement("div");
+      localError.className = "docs-local-error";
+      localError.style.display = "none";
+      formState.appendChild(localError);
+
       const uploadBtn = document.createElement("button");
       uploadBtn.type = "button";
       uploadBtn.className = "upload-btn";
@@ -876,18 +888,28 @@
         showForm();
       });
 
+      function showLocalError(msg) {
+        localError.textContent = msg;
+        localError.style.display = "block";
+      }
+      function hideLocalError() {
+        localError.textContent = "";
+        localError.style.display = "none";
+      }
+
       uploadBtn.addEventListener("click", async () => {
         hideMessages();
+        hideLocalError();
 
         const phone = phoneInput.value.trim();
         if (!phone) {
-          showBox(errorBox, "Сначала введите телефон");
+          showLocalError("Ошибка загрузки файлов");
           return;
         }
 
         const selected = inputs.filter(({ input }) => input.files && input.files[0]);
         if (!selected.length) {
-          showBox(errorBox, "Выберите хотя бы один файл для загрузки");
+          showLocalError("Ошибка загрузки файлов");
           return;
         }
 
@@ -913,16 +935,11 @@
         uploadBtn.textContent = "Загрузить";
 
         const failed = results.filter((r) => !r.ok);
-        if (failed.length === results.length) {
-          showBox(errorBox, "Не удалось загрузить документы");
-          return;
-        }
         if (failed.length) {
-          showBox(errorBox, "Часть документов не загрузилась: " + failed.map((f) => f.label).join(", "));
+          showLocalError("Ошибка загрузки файлов");
           return;
         }
 
-        showBox(successBox, `Документы для ${fioForLabel} загружены`);
         showDone();
         // Обновить цвет этапа (жёлтый → зелёный, если всё собрано)
         if (lead) {
