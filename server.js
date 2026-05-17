@@ -24,6 +24,10 @@ app.get("/cabinet", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "cabinet.html"));
 });
 
+app.get("/about", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "about.html"));
+});
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
