@@ -382,6 +382,61 @@
       font-size: 12px;
     }
 
+    .file-list {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 14px;
+    }
+
+    .file-list-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 0;
+      border-top: 1px dashed #ece7f2;
+    }
+
+    .file-list-row:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .file-list-label {
+      font-size: 13px;
+      color: #3a4150;
+      font-weight: 500;
+      line-height: 1.35;
+    }
+
+    .file-list-row input[type="file"] {
+      max-width: 260px;
+      font-size: 12px;
+      border: 1px solid #e8e2ee;
+      border-radius: 10px;
+      padding: 6px 8px;
+      background: #fff;
+    }
+
+    .docs-done-msg {
+      font-size: 14px;
+      color: #4f9f68;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .docs-correct-btn {
+      height: 38px;
+      border: none;
+      border-radius: 14px;
+      background: #3589BD;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0 18px;
+    }
+
     .upload-btn {
       height: 46px;
       border: none;
@@ -461,6 +516,15 @@
 
       .file-grid {
         grid-template-columns: 1fr;
+      }
+
+      .file-list-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+
+      .file-list-row input[type="file"] {
+        max-width: 100%;
       }
 
       .help-actions {
@@ -717,13 +781,14 @@
       return blocks;
     }
 
-    function createDocumentsBlock(applicant, blocksConfig) {
+    function createDocumentsBlock(applicant, blocksConfig, lead) {
       const wrapper = document.createElement("div");
       wrapper.className = "documents-inline";
       wrapper.style.display = "block";
 
       const applicantIndex = Math.max(1, parseInt(applicant && applicant.applicantIndex, 10) || 1);
       const fio = (applicant && applicant.fullName ? String(applicant.fullName) : "").trim();
+      const fioForLabel = fio || `Заявителя ${applicantIndex}`;
 
       const header = document.createElement("h3");
       header.textContent = fio
@@ -731,80 +796,138 @@
         : `Загрузите документы для заявителя ${applicantIndex}`;
       wrapper.appendChild(header);
 
-      const grid = document.createElement("div");
-      grid.className = "file-grid";
-      wrapper.appendChild(grid);
+      // ─── Состояние формы ───
+      const formState = document.createElement("div");
+      formState.className = "docs-form-state";
 
+      const list = document.createElement("div");
+      list.className = "file-list";
+      formState.appendChild(list);
+
+      const inputs = [];
       blocksConfig.forEach((cfg) => {
-        const group = document.createElement("div");
-        group.className = "file-group";
+        const row = document.createElement("div");
+        row.className = "file-list-row";
 
-        const label = document.createElement("label");
-        label.textContent = cfg.label;
+        const labelEl = document.createElement("div");
+        labelEl.className = "file-list-label";
+        labelEl.textContent = cfg.label;
 
         const input = document.createElement("input");
         input.type = "file";
         input.dataset.field = cfg.field;
+        inputs.push({ input, cfg });
 
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "upload-btn";
-        btn.style.marginTop = "6px";
-        btn.style.height = "36px";
-        btn.style.padding = "0 14px";
-        btn.style.fontSize = "13px";
-        btn.textContent = "Загрузить";
+        row.appendChild(labelEl);
+        row.appendChild(input);
+        list.appendChild(row);
+      });
 
-        btn.addEventListener("click", async () => {
-          hideMessages();
+      const uploadBtn = document.createElement("button");
+      uploadBtn.type = "button";
+      uploadBtn.className = "upload-btn";
+      uploadBtn.style.height = "38px";
+      uploadBtn.style.padding = "0 18px";
+      uploadBtn.style.fontSize = "13px";
+      uploadBtn.textContent = "Загрузить";
+      formState.appendChild(uploadBtn);
 
-          const phone = phoneInput.value.trim();
-          if (!phone) {
-            showBox(errorBox, "Сначала введите телефон");
-            return;
-          }
+      wrapper.appendChild(formState);
 
-          const file = input.files[0];
-          if (!file) {
-            showBox(errorBox, `Выберите файл для "${cfg.label}"`);
-            return;
-          }
+      // ─── Состояние "Документы загружены" ───
+      const doneState = document.createElement("div");
+      doneState.className = "docs-done-state";
+      doneState.style.display = "none";
 
-          const formData = new FormData();
-          formData.append("phone", phone);
-          formData.append("field", cfg.field);
-          formData.append("applicantIndex", String(applicantIndex));
-          formData.append("file", file);
+      const doneMsg = document.createElement("div");
+      doneMsg.className = "docs-done-msg";
+      doneMsg.textContent = `Документы для ${fioForLabel} загружены.`;
+      doneState.appendChild(doneMsg);
 
-          btn.disabled = true;
-          btn.textContent = "Загрузка...";
+      const correctBtn = document.createElement("button");
+      correctBtn.type = "button";
+      correctBtn.className = "docs-correct-btn";
+      correctBtn.textContent = "Скорректировать документы";
+      doneState.appendChild(correctBtn);
 
+      wrapper.appendChild(doneState);
+
+      function showDone() {
+        formState.style.display = "none";
+        doneState.style.display = "block";
+      }
+      function showForm() {
+        formState.style.display = "block";
+        doneState.style.display = "none";
+        inputs.forEach(({ input }) => { input.value = ""; });
+      }
+
+      // Если все требуемые документы уже загружены — сразу done
+      const initialFiles = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
+      const alreadyAll = blocksConfig.every((b) => initialFiles.some((f) => {
+        if (!f.startsWith(b.label)) return false;
+        const next = f.charAt(b.label.length);
+        return next === "." || next === " ";
+      }));
+      if (alreadyAll) showDone();
+
+      correctBtn.addEventListener("click", () => {
+        hideMessages();
+        showForm();
+      });
+
+      uploadBtn.addEventListener("click", async () => {
+        hideMessages();
+
+        const phone = phoneInput.value.trim();
+        if (!phone) {
+          showBox(errorBox, "Сначала введите телефон");
+          return;
+        }
+
+        const selected = inputs.filter(({ input }) => input.files && input.files[0]);
+        if (!selected.length) {
+          showBox(errorBox, "Выберите хотя бы один файл для загрузки");
+          return;
+        }
+
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = "Загрузка...";
+
+        const results = await Promise.all(selected.map(async ({ input, cfg }) => {
           try {
-            const response = await fetch("/upload-document", {
-              method: "POST",
-              body: formData
-            });
-
-            const data = await response.json();
-
-            if (!response.ok || !data.success) {
-              throw new Error(data.message || "Ошибка загрузки файла");
-            }
-
-            showBox(successBox, `Документ "${cfg.label}" успешно загружен`);
-          } catch (error) {
-            console.error("UPLOAD ERROR:", error);
-            showBox(errorBox, `Не удалось загрузить "${cfg.label}"`);
-          } finally {
-            btn.disabled = false;
-            btn.textContent = "Загрузить";
+            const fd = new FormData();
+            fd.append("phone", phone);
+            fd.append("field", cfg.field);
+            fd.append("applicantIndex", String(applicantIndex));
+            fd.append("file", input.files[0]);
+            const r = await fetch("/upload-document", { method: "POST", body: fd });
+            const d = await r.json();
+            return { ok: !!(r.ok && d.success), label: cfg.label };
+          } catch (e) {
+            return { ok: false, label: cfg.label };
           }
-        });
+        }));
 
-        group.appendChild(label);
-        group.appendChild(input);
-        group.appendChild(btn);
-        grid.appendChild(group);
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = "Загрузить";
+
+        const failed = results.filter((r) => !r.ok);
+        if (failed.length === results.length) {
+          showBox(errorBox, "Не удалось загрузить документы");
+          return;
+        }
+        if (failed.length) {
+          showBox(errorBox, "Часть документов не загрузилась: " + failed.map((f) => f.label).join(", "));
+          return;
+        }
+
+        showBox(successBox, `Документы для ${fioForLabel} загружены`);
+        showDone();
+        // Обновить цвет этапа (жёлтый → зелёный, если всё собрано)
+        if (lead) {
+          setTimeout(() => renderStages(0, lead), 400);
+        }
       });
 
       return wrapper;
@@ -911,7 +1034,7 @@
             applicants.forEach((applicant) => {
               const blocksConfig = buildUploadBlocksConfig(applicant);
               if (!blocksConfig.length) return;
-              const docsBlock = createDocumentsBlock(applicant, blocksConfig);
+              const docsBlock = createDocumentsBlock(applicant, blocksConfig, lead);
               fragment.appendChild(docsBlock);
             });
 
