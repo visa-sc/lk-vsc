@@ -695,7 +695,6 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
   <h1>Опросный лист на ${safeCountry}</h1>
   <p class="subtitle">${subtitleText}</p>
 
-  <div id="errorBox" class="message error"></div>
   <div id="successBox" class="message success"></div>
 ${handoffNoticeHtml}
   <form id="questionnaireForm">
@@ -1085,8 +1084,12 @@ ${applicantCountFieldHtml}
       <select name="howFoundUs" required>
         <option value="">— выберите —</option>
         <option value="Instagram">Instagram</option>
+        <option value="Telegram-канал">Telegram-канал</option>
         <option value="Поиск Google">Поиск Google</option>
         <option value="Поиск Yandex">Поиск Yandex</option>
+        <option value="Яндекс Карты">Яндекс Карты</option>
+        <option value="2Гис">2Гис</option>
+        <option value="Google Maps">Google Maps</option>
         <option value="По рекомендации">По рекомендации</option>
         <option value="Реклама в Интернете">Реклама в Интернете</option>
       </select>
@@ -1125,6 +1128,8 @@ ${applicantCountFieldHtml}
         <label><input type="radio" name="personalDataConsent" value="Нет" /> Нет</label>
       </div>
     </div>
+
+    <div id="errorBox" class="message error"></div>
 
     <button id="submitBtn" class="submit-btn" type="submit">Отправить опросник</button>
   </form>
@@ -1201,6 +1206,13 @@ ${applicantCountFieldHtml}
     if (accuracyVal !== "Да") {
       showBox(errorBox, 'Чтобы отправить опросник, подтвердите правильность и достоверность указанных сведений (выберите "Да").');
       const el = form.querySelector('input[name="confirmAccuracy"]');
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    const prevDataVal = radio("confirmPrevData");
+    if (prevDataVal !== "Да") {
+      showBox(errorBox, 'Чтобы отправить опросник, согласитесь с условиями электронного опросника (выберите "Да").');
+      const el = form.querySelector('input[name="confirmPrevData"]');
       if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
