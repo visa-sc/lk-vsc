@@ -204,6 +204,68 @@
     }
     .not-found-info.show { display: block; }
 
+    .bio-offer {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 6px;
+      animation: vsc-fade-in 0.35s var(--vsc-ease) both;
+    }
+    .bio-offer.show { display: flex; }
+    .bio-offer-title {
+      margin: 0;
+      font-size: 16px;
+      color: #1d2330;
+      font-weight: 600;
+      text-align: center;
+    }
+    .bio-offer-desc {
+      margin: 0;
+      font-size: 13px;
+      color: #737988;
+      line-height: 1.5;
+      text-align: center;
+    }
+    .bio-offer-actions {
+      display: flex;
+      gap: 10px;
+      align-items: stretch;
+    }
+    .login-form .bio-offer-actions button {
+      flex: 1 1 0;
+      width: auto;
+      height: 40px;
+      padding: 0 14px;
+      border-radius: 12px;
+      border: 1.5px solid #3589BD;
+      background: #fff;
+      color: #3589BD;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s var(--vsc-ease), color 0.2s var(--vsc-ease),
+                  border-color 0.2s var(--vsc-ease), opacity 0.2s var(--vsc-ease);
+    }
+    .login-form .bio-offer-actions button.primary {
+      background: #3589BD;
+      color: #fff;
+    }
+    .login-form .bio-offer-actions button.primary:hover:not(:disabled) {
+      background: #2c79a8;
+      transform: none;
+      filter: none;
+    }
+    .login-form .bio-offer-actions button:not(.primary):hover:not(:disabled) {
+      background: #f0f7fc;
+      transform: none;
+      filter: none;
+    }
+    .login-form .bio-offer-actions button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
     .code-section {
       display: none;
       flex-direction: column;
@@ -324,6 +386,15 @@
           <button type="button" id="resendBtn" class="code-resend-btn" disabled>Отправить ещё раз</button>
         </div>
       </div>
+
+      <div id="bioOfferSection" class="bio-offer">
+        <h3 class="bio-offer-title">Входить без SMS?</h3>
+        <p class="bio-offer-desc">Включите вход по Face ID / отпечатку — больше не придётся каждый раз вводить SMS-код.</p>
+        <div class="bio-offer-actions">
+          <button type="button" id="bioSkipBtn">Не сейчас</button>
+          <button type="button" id="bioEnableBtn" class="primary">Включить</button>
+        </div>
+      </div>
     </form>
     <div id="errorBox" class="message error"></div>
   </div>
@@ -343,6 +414,9 @@
     const changePhoneBtn = document.getElementById("changePhoneBtn");
     const resendBtn = document.getElementById("resendBtn");
     const notFoundBox = document.getElementById("notFoundBox");
+    const bioOfferSection = document.getElementById("bioOfferSection");
+    const bioSkipBtn = document.getElementById("bioSkipBtn");
+    const bioEnableBtn = document.getElementById("bioEnableBtn");
 
     function hideNotFound() {
       notFoundBox.classList.remove("show");
@@ -454,6 +528,9 @@
         if (!r.ok || !data.success) {
           throw new Error(data.message || "Неверный код");
         }
+        // Предложим зарегистрировать passkey (если устройство поддерживает и passkey'ов ещё нет).
+        // Внутри либо ничего не делает, либо ждёт выбора пользователя.
+        try { await maybeOfferBiometricRegistration(serverPhone); } catch (_) {}
         // replace, чтобы кнопка "Назад" в браузере не возвращала на использованный код
         window.location.replace("/cabinet?phone=" + encodeURIComponent(serverPhone));
       } catch (err) {
@@ -532,6 +609,153 @@
       if (ok) codeCells[0].focus();
     });
 
+    // ────── WebAuthn (биометрия) ──────
+    function b64uToBytes(b64u) {
+      const s = String(b64u || "").replace(/-/g, "+").replace(/_/g, "/");
+      const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
+      const bin = atob(s + pad);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return arr.buffer;
+    }
+    function bytesToB64u(buf) {
+      const arr = new Uint8Array(buf);
+      let bin = "";
+      for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+      return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    }
+    async function isPlatformAuthAvailable() {
+      if (!window.PublicKeyCredential) return false;
+      if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== "function") return false;
+      try { return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }
+      catch (_) { return false; }
+    }
+    async function checkHasCredentials(phone) {
+      try {
+        const r = await fetch("/api/auth/webauthn/has-credentials", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone })
+        });
+        const d = await r.json();
+        return !!d.hasCredentials;
+      } catch (_) { return false; }
+    }
+    async function tryWebauthnLogin(phone) {
+      if (!window.PublicKeyCredential) return false;
+      try {
+        const optsR = await fetch("/api/auth/webauthn/auth-options", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone })
+        });
+        if (!optsR.ok) return false;
+        const opts = await optsR.json();
+        const publicKey = {
+          ...opts,
+          challenge: b64uToBytes(opts.challenge),
+          allowCredentials: (opts.allowCredentials || []).map((c) => ({
+            ...c,
+            id: b64uToBytes(c.id),
+          })),
+        };
+        const assertion = await navigator.credentials.get({ publicKey });
+        const verifyR = await fetch("/api/auth/webauthn/auth-verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone,
+            assertionResponse: {
+              id: assertion.id,
+              rawId: bytesToB64u(assertion.rawId),
+              type: assertion.type,
+              response: {
+                clientDataJSON: bytesToB64u(assertion.response.clientDataJSON),
+                authenticatorData: bytesToB64u(assertion.response.authenticatorData),
+                signature: bytesToB64u(assertion.response.signature),
+                userHandle: assertion.response.userHandle ? bytesToB64u(assertion.response.userHandle) : null,
+              },
+              clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {},
+            },
+          }),
+        });
+        const data = await verifyR.json();
+        return data && data.success === true;
+      } catch (err) {
+        console.warn("WebAuthn login failed/cancelled:", err);
+        return false;
+      }
+    }
+    async function tryWebauthnRegister(phone) {
+      if (!window.PublicKeyCredential) return false;
+      try {
+        const optsR = await fetch("/api/auth/webauthn/register-options", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone })
+        });
+        if (!optsR.ok) return false;
+        const opts = await optsR.json();
+        const publicKey = {
+          ...opts,
+          challenge: b64uToBytes(opts.challenge),
+          user: { ...opts.user, id: b64uToBytes(opts.user.id) },
+          excludeCredentials: (opts.excludeCredentials || []).map((c) => ({
+            ...c,
+            id: b64uToBytes(c.id),
+          })),
+        };
+        const attestation = await navigator.credentials.create({ publicKey });
+        const verifyR = await fetch("/api/auth/webauthn/register-verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone,
+            attestationResponse: {
+              id: attestation.id,
+              rawId: bytesToB64u(attestation.rawId),
+              type: attestation.type,
+              response: {
+                clientDataJSON: bytesToB64u(attestation.response.clientDataJSON),
+                attestationObject: bytesToB64u(attestation.response.attestationObject),
+              },
+              clientExtensionResults: attestation.getClientExtensionResults ? attestation.getClientExtensionResults() : {},
+            },
+          }),
+        });
+        const data = await verifyR.json();
+        return data && data.success === true;
+      } catch (err) {
+        console.warn("WebAuthn register failed/cancelled:", err);
+        return false;
+      }
+    }
+    async function maybeOfferBiometricRegistration(phone) {
+      if (!(await isPlatformAuthAvailable())) return;
+      const has = await checkHasCredentials(phone);
+      if (has) return; // уже есть passkey для этого номера — не предлагаем повторно
+      // Показываем секцию предложения
+      codeSection.classList.remove("show");
+      bioOfferSection.classList.add("show");
+      await new Promise((resolve) => {
+        function cleanup() {
+          bioOfferSection.classList.remove("show");
+          bioEnableBtn.removeEventListener("click", onEnable);
+          bioSkipBtn.removeEventListener("click", onSkip);
+        }
+        const onSkip = () => { cleanup(); resolve(); };
+        const onEnable = async () => {
+          bioEnableBtn.disabled = true;
+          bioSkipBtn.disabled = true;
+          await tryWebauthnRegister(phone);
+          cleanup();
+          resolve();
+        };
+        bioSkipBtn.addEventListener("click", onSkip);
+        bioEnableBtn.addEventListener("click", onEnable);
+      });
+    }
+
     async function checkHasLeads(phone) {
       try {
         const r = await fetch("/api/auth/has-leads", {
@@ -578,13 +802,32 @@
       searchBtn.disabled = true;
       const prevText = searchBtn.textContent;
       searchBtn.textContent = "Проверка...";
-      const hasLeads = await checkHasLeads(phone);
+      const [hasLeads, hasCreds] = await Promise.all([
+        checkHasLeads(phone),
+        checkHasCredentials(phone)
+      ]);
       searchBtn.disabled = false;
       searchBtn.textContent = prevText;
 
       if (!hasLeads) {
         showNotFound();
         return;
+      }
+
+      // Если у этого номера зарегистрирован passkey — пробуем биометрию.
+      // При отмене / ошибке падаем в обычный SMS-флоу.
+      if (hasCreds) {
+        searchBtn.disabled = true;
+        searchBtn.textContent = "Подтвердите вход...";
+        const bioOk = await tryWebauthnLogin(phone);
+        searchBtn.disabled = false;
+        searchBtn.textContent = prevText;
+        if (bioOk) {
+          serverPhone = phone;
+          window.location.replace("/cabinet?phone=" + encodeURIComponent(phone));
+          return;
+        }
+        // не получилось — продолжаем SMS-флоу
       }
 
       await requestCode(phone);

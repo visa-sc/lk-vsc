@@ -2258,6 +2258,205 @@ async function getNextApplicantIndex(phone) {
 
 loadShareTokens();
 
+// ──────────────────────────────────────────────────────────
+// WebAuthn — вход по биометрии (Face ID / Touch ID / Windows Hello)
+// ──────────────────────────────────────────────────────────
+const webauthn = require("@simplewebauthn/server");
+
+const WEBAUTHN_RP_NAME = "VOYO";
+const WEBAUTHN_RP_ID = process.env.WEBAUTHN_RP_ID || "voyovoyo.ru";
+const WEBAUTHN_ORIGIN = process.env.WEBAUTHN_ORIGIN || "https://voyovoyo.ru";
+
+const PASSKEYS_FILE = path.join(__dirname, ".passkeys.json");
+const passkeysByPhone = new Map();
+const webauthnChallenges = new Map();
+const WEBAUTHN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+function loadPasskeys() {
+  try {
+    const raw = fs.readFileSync(PASSKEYS_FILE, "utf8");
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === "object") {
+      Object.keys(obj).forEach((phone) => {
+        if (Array.isArray(obj[phone])) passkeysByPhone.set(phone, obj[phone]);
+      });
+    }
+  } catch (_) {}
+}
+function savePasskeys() {
+  try {
+    const obj = {};
+    for (const [phone, arr] of passkeysByPhone.entries()) obj[phone] = arr;
+    fs.writeFileSync(PASSKEYS_FILE, JSON.stringify(obj, null, 2), "utf8");
+  } catch (e) {
+    console.error("savePasskeys error:", e.message);
+  }
+}
+function setWebauthnChallenge(phone, challenge, type) {
+  webauthnChallenges.set(phone, { challenge, type, expiresAt: Date.now() + WEBAUTHN_CHALLENGE_TTL_MS });
+}
+function getWebauthnChallenge(phone, type) {
+  const c = webauthnChallenges.get(phone);
+  if (!c || c.type !== type) return null;
+  if (Date.now() > c.expiresAt) { webauthnChallenges.delete(phone); return null; }
+  return c.challenge;
+}
+function clearWebauthnChallenge(phone) { webauthnChallenges.delete(phone); }
+
+function b64uFromBuffer(buf) { return Buffer.from(buf).toString("base64url"); }
+function bufferFromB64u(s) { return Buffer.from(String(s || ""), "base64url"); }
+
+loadPasskeys();
+
+app.post("/api/auth/webauthn/has-credentials", (req, res) => {
+  try {
+    const phone = sms.normalizePhone((req.body && req.body.phone) || "");
+    if (!phone) return res.json({ hasCredentials: false });
+    const arr = passkeysByPhone.get(phone) || [];
+    return res.json({ hasCredentials: arr.length > 0 });
+  } catch (_) {
+    return res.json({ hasCredentials: false });
+  }
+});
+
+app.post("/api/auth/webauthn/register-options", async (req, res) => {
+  try {
+    const phone = sms.normalizePhone((req.body && req.body.phone) || "");
+    if (!phone || phone.length < 11) {
+      return res.status(400).json({ success: false, message: "Некорректный номер" });
+    }
+    const existing = passkeysByPhone.get(phone) || [];
+    const options = await webauthn.generateRegistrationOptions({
+      rpName: WEBAUTHN_RP_NAME,
+      rpID: WEBAUTHN_RP_ID,
+      userID: phone,
+      userName: phone,
+      userDisplayName: "+" + phone,
+      attestationType: "none",
+      excludeCredentials: existing.map((c) => ({
+        id: bufferFromB64u(c.credentialID),
+        type: "public-key",
+      })),
+      authenticatorSelection: {
+        residentKey: "preferred",
+        userVerification: "preferred",
+      },
+    });
+    setWebauthnChallenge(phone, options.challenge, "register");
+    return res.json(options);
+  } catch (err) {
+    console.error("WEBAUTHN REGISTER OPTIONS:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/auth/webauthn/register-verify", async (req, res) => {
+  try {
+    const phone = sms.normalizePhone((req.body && req.body.phone) || "");
+    const attestationResponse = req.body && req.body.attestationResponse;
+    if (!phone || !attestationResponse) {
+      return res.status(400).json({ success: false, message: "Невалидный запрос" });
+    }
+    const expectedChallenge = getWebauthnChallenge(phone, "register");
+    if (!expectedChallenge) {
+      return res.status(400).json({ success: false, message: "Регистрация просрочена" });
+    }
+    const verification = await webauthn.verifyRegistrationResponse({
+      response: attestationResponse,
+      expectedChallenge,
+      expectedOrigin: WEBAUTHN_ORIGIN,
+      expectedRPID: WEBAUTHN_RP_ID,
+      requireUserVerification: false,
+    });
+    if (!verification.verified || !verification.registrationInfo) {
+      clearWebauthnChallenge(phone);
+      return res.status(400).json({ success: false, message: "Проверка не прошла" });
+    }
+    const info = verification.registrationInfo;
+    const newCredential = {
+      credentialID: b64uFromBuffer(info.credentialID),
+      publicKey: b64uFromBuffer(info.credentialPublicKey),
+      counter: info.counter || 0,
+      createdAt: Date.now(),
+    };
+    const arr = passkeysByPhone.get(phone) || [];
+    arr.push(newCredential);
+    passkeysByPhone.set(phone, arr);
+    savePasskeys();
+    clearWebauthnChallenge(phone);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("WEBAUTHN REGISTER VERIFY:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/auth/webauthn/auth-options", async (req, res) => {
+  try {
+    const phone = sms.normalizePhone((req.body && req.body.phone) || "");
+    if (!phone) return res.status(400).json({ success: false, message: "Не передан номер" });
+    const arr = passkeysByPhone.get(phone) || [];
+    if (arr.length === 0) {
+      return res.status(404).json({ success: false, message: "Нет зарегистрированных passkey" });
+    }
+    const options = await webauthn.generateAuthenticationOptions({
+      rpID: WEBAUTHN_RP_ID,
+      allowCredentials: arr.map((c) => ({
+        id: bufferFromB64u(c.credentialID),
+        type: "public-key",
+      })),
+      userVerification: "preferred",
+    });
+    setWebauthnChallenge(phone, options.challenge, "auth");
+    return res.json(options);
+  } catch (err) {
+    console.error("WEBAUTHN AUTH OPTIONS:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/auth/webauthn/auth-verify", async (req, res) => {
+  try {
+    const phone = sms.normalizePhone((req.body && req.body.phone) || "");
+    const assertionResponse = req.body && req.body.assertionResponse;
+    if (!phone || !assertionResponse) {
+      return res.status(400).json({ success: false, message: "Невалидный запрос" });
+    }
+    const expectedChallenge = getWebauthnChallenge(phone, "auth");
+    if (!expectedChallenge) {
+      return res.status(400).json({ success: false, message: "Сессия просрочена" });
+    }
+    const arr = passkeysByPhone.get(phone) || [];
+    const cred = arr.find((c) => c.credentialID === assertionResponse.id);
+    if (!cred) {
+      return res.status(404).json({ success: false, message: "Passkey не найден" });
+    }
+    const verification = await webauthn.verifyAuthenticationResponse({
+      response: assertionResponse,
+      expectedChallenge,
+      expectedOrigin: WEBAUTHN_ORIGIN,
+      expectedRPID: WEBAUTHN_RP_ID,
+      authenticator: {
+        credentialID: bufferFromB64u(cred.credentialID),
+        credentialPublicKey: bufferFromB64u(cred.publicKey),
+        counter: cred.counter || 0,
+      },
+      requireUserVerification: false,
+    });
+    if (!verification.verified) {
+      clearWebauthnChallenge(phone);
+      return res.status(400).json({ success: false, message: "Подпись не прошла" });
+    }
+    cred.counter = verification.authenticationInfo.newCounter;
+    savePasskeys();
+    clearWebauthnChallenge(phone);
+    return res.json({ success: true, phone });
+  } catch (err) {
+    console.error("WEBAUTHN AUTH VERIFY:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 app.get("/questionnaire-start", async (req, res) => {
   try {
     const phone = normalizePhone(req.query.phone || "");
