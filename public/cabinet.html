@@ -631,7 +631,19 @@
       color: #c4314b;
       font-size: 13px;
       font-weight: 500;
-      margin: 8px 0 0;
+      margin: 12px 0 14px;
+    }
+
+    .file-list-row.is-required-missing .file-list-label {
+      color: #c4314b;
+    }
+    .file-list-row.is-required-missing .file-attach-btn {
+      border-color: #d97a8a;
+      color: #c4314b;
+      background: #fff;
+    }
+    .file-list-row.is-required-missing .file-attach-btn:hover {
+      background: #fbebee;
     }
 
     .docs-correct-btn {
@@ -1019,6 +1031,16 @@
       }
     }
 
+    // Необязательные области загрузки документов: их пропуск не блокирует кнопку "Загрузить".
+    const OPTIONAL_UPLOAD_FIELDS = new Set([
+      "invitation",
+      "thirdCountryTickets",
+      "birthCertificate",
+      "sponsorPassport",
+      "insurancePolicy",
+      "workCert"
+    ]);
+
     function buildUploadBlocksConfig(state) {
       const blocks = [];
 
@@ -1066,19 +1088,11 @@
         blocks.push({ field: "workCert", label: "Справка с работы / учёбы" });
       }
 
-      return blocks;
+      // Сортируем: сначала обязательные, потом необязательные. Внутри групп — исходный порядок.
+      const required = blocks.filter((b) => !OPTIONAL_UPLOAD_FIELDS.has(b.field));
+      const optional = blocks.filter((b) =>  OPTIONAL_UPLOAD_FIELDS.has(b.field));
+      return required.concat(optional);
     }
-
-    // Необязательные области загрузки документов: при отсутствии файлов в них
-    // клиент всё равно может нажать "Загрузить" и считается, что документы собраны.
-    const OPTIONAL_UPLOAD_FIELDS = new Set([
-      "invitation",
-      "thirdCountryTickets",
-      "birthCertificate",
-      "sponsorPassport",
-      "insurancePolicy",
-      "workCert"
-    ]);
 
     function createDocumentsBlock(applicant, blocksConfig, lead) {
       const wrapper = document.createElement("div");
@@ -1143,6 +1157,10 @@
 
         function renderPreviews() {
           previewWrap.innerHTML = "";
+          // Если в обязательной области появились файлы — снимаем красную подсветку
+          if (pendingFiles.length > 0) {
+            row.classList.remove("is-required-missing");
+          }
           pendingFiles.forEach((file, idx) => {
             const tile = document.createElement("div");
             tile.className = "file-preview-tile";
@@ -1198,7 +1216,7 @@
           }
         });
 
-        inputs.push({ cfg, pendingFiles, fileInput, renderPreviews });
+        inputs.push({ cfg, pendingFiles, fileInput, renderPreviews, row });
 
         row.appendChild(controls);
         list.appendChild(row);
@@ -1314,12 +1332,21 @@
           return;
         }
 
+        // Снимаем подсветку со всех строк перед новой проверкой
+        inputs.forEach(({ row }) => { if (row) row.classList.remove("is-required-missing"); });
+
         // Проверяем обязательные области: должны быть прикреплены файлы
         const missingRequired = inputs.filter(({ cfg, pendingFiles }) =>
           !OPTIONAL_UPLOAD_FIELDS.has(cfg.field) && (!pendingFiles || pendingFiles.length === 0)
         );
         if (missingRequired.length > 0) {
+          missingRequired.forEach(({ row }) => { if (row) row.classList.add("is-required-missing"); });
           showLocalError("Загрузите оставшиеся файлы.");
+          // Прокручиваем к первому пустому обязательному
+          const firstMissing = missingRequired[0] && missingRequired[0].row;
+          if (firstMissing && firstMissing.scrollIntoView) {
+            firstMissing.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
           return;
         }
 
