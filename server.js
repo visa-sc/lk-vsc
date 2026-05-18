@@ -527,11 +527,17 @@ async function downloadJsonFromYandexDisk(diskPath) {
 }
 
 const UPLOAD_FIELDS_WHITELIST = {
-  mainPassport:   "Заграничный паспорт (в который запрашиваем визу)",
-  innerPassport:  "Внутренний паспорт",
-  workCert:       "Справка с работы",
-  secondPassport: "Второй заграничный паспорт",
-  prevSchengen:   "Шенгенские визы за последние 3 года"
+  mainPassport:         "Загран. паспорт (в который запрашиваем визу)",
+  innerPassport:        "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)",
+  secondPassport:       "2-ой загран. паспорт",
+  thirdCountryTickets:  "Билеты в 3-ю страну на второй загран. паспорт",
+  invitation:           "Приглашение",
+  activeSchengenPhoto:  "Фото действующей Шенгенской визы",
+  prevSchengenPhoto:    "Фото последней Шенгенской визы",
+  birthCertificate:     "Свидетельство о рождении",
+  sponsorPassport:      "1-ый разворот внутреннего паспорта РФ спонсора",
+  insurancePolicy:      "Страховой полис для въезда в Шенген",
+  workCert:             "Справка с работы / учёбы"
 };
 
 async function findMatchingContacts(baseUrl, phone) {
@@ -2843,7 +2849,10 @@ app.post(
       const originalName = sanitizeFileName(file.originalname || "file");
       const dotIndex = originalName.lastIndexOf(".");
       const ext = dotIndex >= 0 ? originalName.slice(dotIndex) : "";
-      const finalFileName = `${targetName} - ${safeFio}${ext}`;
+      // Если для одного поля грузится несколько файлов — добавляем суффикс (2), (3) и т.д.
+      const partIndex = Math.max(1, parseInt(req.body.partIndex || "1", 10) || 1);
+      const partSuffix = partIndex > 1 ? ` (${partIndex})` : "";
+      const finalFileName = `${targetName} - ${safeFio}${partSuffix}${ext}`;
       const diskPath = `${applicantFolder}/${finalFileName}`;
 
       console.log("UPLOAD TO YANDEX:", diskPath);
