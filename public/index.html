@@ -238,34 +238,44 @@
     }
     .code-footer {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
       gap: 10px;
-      font-size: 13px;
-      color: #737988;
+      align-items: stretch;
+      margin-top: 2px;
     }
-    .code-resend-btn {
-      background: transparent;
-      border: none;
+    /* Перебиваем глобальный .login-form button */
+    .login-form .code-footer button {
+      flex: 1 1 0;
+      width: auto;
+      height: 40px;
+      padding: 0 14px;
+      border: 1.5px solid #3589BD;
+      border-radius: 12px;
+      background: #fff;
       color: #3589BD;
-      cursor: pointer;
-      padding: 0;
-      font: inherit;
+      font-size: 13px;
       font-weight: 600;
-    }
-    .code-resend-btn:disabled {
-      color: #9096a3;
-      cursor: not-allowed;
-    }
-    .code-change-phone {
-      background: transparent;
-      border: none;
-      color: #9096a3;
       cursor: pointer;
-      padding: 0;
-      font: inherit;
+      white-space: nowrap;
+      transition: background 0.2s var(--vsc-ease), color 0.2s var(--vsc-ease),
+                  border-color 0.2s var(--vsc-ease), opacity 0.2s var(--vsc-ease),
+                  transform 0.15s var(--vsc-ease), filter 0.2s var(--vsc-ease);
     }
-    .code-change-phone:hover { color: #3589BD; }
+    .login-form .code-footer button:hover:not(:disabled) {
+      background: #f0f7fc;
+      transform: none;
+      filter: none;
+    }
+    .login-form .code-footer button:active:not(:disabled) {
+      transform: none;
+      filter: none;
+    }
+    .login-form .code-footer button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      background: #fff;
+      color: #9096a3;
+      border-color: #d6dbe3;
+    }
   </style>
 </head>
 <body>
@@ -417,7 +427,8 @@
         if (!r.ok || !data.success) {
           throw new Error(data.message || "Неверный код");
         }
-        window.location.href = "/cabinet?phone=" + encodeURIComponent(serverPhone);
+        // replace, чтобы кнопка "Назад" в браузере не возвращала на использованный код
+        window.location.replace("/cabinet?phone=" + encodeURIComponent(serverPhone));
       } catch (err) {
         codeCellsWrap.classList.add("is-error");
         showError(err.message || "Неверный код");
@@ -506,7 +517,7 @@
 
       // Секретный обходной код — перекидываем на /search (без SMS)
       if (raw === SECRET_BYPASS) {
-        window.location.href = "/search";
+        window.location.replace("/search");
         return;
       }
 
