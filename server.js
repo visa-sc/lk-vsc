@@ -651,7 +651,7 @@ async function getLeadsByPhone(phone) {
   return leads;
 }
 
-function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "", prefill = null, isEdit = false, applicantCount = 0, visaType = "", shareToken = "" }) {
+function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "", prefill = null, isEdit = false, applicantCount = 0, visaType = "", shareToken = "", isMixed = false, selfFillCount = 0, selfStep = 0 }) {
   const safePhone = escapeHtml(phone || "");
   const safeLeadId = escapeHtml(String(leadId || ""));
   const safeCountry = escapeHtml(countryService || "не указано");
@@ -663,6 +663,9 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
   const safeVisaType = escapeHtml(visaType || "");
   const safeShareToken = escapeHtml(String(shareToken || ""));
   const isShareMode = !!shareToken;
+  const mixedFlag = isMixed ? "1" : "";
+  const safeSelfFillCount = Math.max(0, parseInt(selfFillCount, 10) || 0);
+  const safeSelfStep = Math.max(0, parseInt(selfStep, 10) || 0);
 
   const titleText = visaType === "Шенгенская виза"
     ? "Опросник на Шенгенскую визу"
@@ -672,13 +675,22 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
     ? "Внесите изменения и нажмите «Отправить опросник»."
     : 'Заполните данные и нажмите "Отправить опросник" внизу страницы';
 
-  const handoffNoticeHtml = (isFirstApplicant || isEdit) ? "" : `
+  // В обычном режиме handoff показывается со 2-го applicantIndex.
+  // В mixed-режиме applicantIndex может быть любым (first-free), поэтому используем selfStep.
+  const showHandoff = isMixed
+    ? (safeSelfStep > 1 && !isEdit)
+    : (!isFirstApplicant && !isEdit);
+  const handoffNoticeHtml = !showHandoff ? "" : `
     <div class="handoff-notice">
       Опросник для <strong>${safePrevName || "предыдущего заявителя"}</strong> отправлен. Заполните опросник на следующего заявителя.
     </div>`;
 
-  const applicantCountFieldHtml = (isFirstApplicant && !isEdit && safeApplicantCount > 0) ? `
+  const applicantCountFieldHtml = (!isEdit && safeApplicantCount > 0) ? `
     <input type="hidden" name="applicantCount" value="${safeApplicantCount}" />` : "";
+  const mixedFieldsHtml = isMixed ? `
+    <input type="hidden" name="mixed" value="1" />
+    <input type="hidden" name="selfFillCount" value="${safeSelfFillCount}" />
+    <input type="hidden" name="selfStep" value="${safeSelfStep}" />` : "";
 
   return `<!DOCTYPE html>
 <html lang="ru">
@@ -825,6 +837,7 @@ ${handoffNoticeHtml}
     <input type="hidden" name="visaType" value="${safeVisaType}" />
     <input type="hidden" name="shareToken" value="${safeShareToken}" />
 ${applicantCountFieldHtml}
+${mixedFieldsHtml}
     <!-- 1 -->
     <div class="field">
       <label>Полное имя (ФИО) *</label>
@@ -1984,10 +1997,11 @@ ${visaOptionsHtml}
     if (count < 1) return;
 
     const sent = sentSms.size;
-    const remaining = Math.max(0, count - sent);
+    const isMixed = count > 1 && fillModeVal() === "sms" && sent > 0;
+    const selfFillCount = isMixed ? Math.max(0, count - sent) : count;
 
     // Если все опросники разосланы по SMS — возвращаемся в кабинет
-    if (count > 1 && fillModeVal() === "sms" && remaining === 0) {
+    if (isMixed && selfFillCount === 0) {
       window.location.href = "/cabinet?phone=" + encodeURIComponent(PHONE);
       return;
     }
@@ -1995,9 +2009,14 @@ ${visaOptionsHtml}
     const params = new URLSearchParams({
       phone: PHONE,
       leadId: LEAD_ID,
-      applicantCount: String(remaining > 0 ? remaining : count),
+      applicantCount: String(count),
       visaType: v
     });
+    if (isMixed) {
+      params.set("mixed", "1");
+      params.set("selfFillCount", String(selfFillCount));
+      params.set("selfStep", "1");
+    }
     window.location.href = "/questionnaire?" + params.toString();
   });
 </script>
@@ -2136,6 +2155,15 @@ app.get("/questionnaire", async (req, res) => {
       ? String(shareData.visaType || "").trim()
       : String(req.query.visaType || "").trim();
 
+    // Mixed-режим: клиент сам заполняет часть опросников, остальное уходит по SMS
+    const isMixed = !shareData && String(req.query.mixed || "") === "1";
+    const selfFillCount = isMixed
+      ? Math.max(1, Math.min(10, parseInt(req.query.selfFillCount || "0", 10) || 0))
+      : 0;
+    const selfStep = isMixed
+      ? Math.max(1, Math.min(10, parseInt(req.query.selfStep || "1", 10) || 1))
+      : 0;
+
     if (!phone || !leadId) {
       return res.status(400).send("Не переданы phone или leadId");
     }
@@ -2210,7 +2238,10 @@ app.get("/questionnaire", async (req, res) => {
       isEdit,
       applicantCount,
       visaType: effectiveVisaType,
-      shareToken: shareData ? shareData.token : ""
+      shareToken: shareData ? shareData.token : "",
+      isMixed,
+      selfFillCount,
+      selfStep
     }));
   } catch (error) {
     console.error("GET /questionnaire error:", error.response?.data || error.message);
@@ -2239,19 +2270,37 @@ app.post(
         : String(req.body.leadId || "").trim();
 
       const isEdit = !isShareMode && String(req.body.isEdit || "") === "1";
+      const isMixed = !isShareMode && !isEdit && String(req.body.mixed || "") === "1";
+      const selfFillCount = isMixed
+        ? Math.max(1, Math.min(10, parseInt(req.body.selfFillCount || "0", 10) || 0))
+        : 0;
+      const selfStep = isMixed
+        ? Math.max(1, Math.min(10, parseInt(req.body.selfStep || "1", 10) || 1))
+        : 0;
 
       // applicantIndex и totalApplicants:
-      // - share-режим: applicantIndex = первый свободный в Технических файлах; total = max(applicantCountFromToken, idx)
-      // - обычный режим: как раньше
+      // - share-режим:   first-free; total = max(idx, applicantCount из токена)
+      // - mixed-режим:   first-free; total = max(idx, applicantCount из формы)
+      // - обычный режим: как раньше — берётся из формы
       let applicantIndex;
       let totalApplicants;
+
+      const applicantCountRaw = Math.max(1, Math.min(10, parseInt(req.body.applicantCount || "0", 10) || 0));
 
       if (isShareMode) {
         applicantIndex = await getNextApplicantIndex(phone);
         totalApplicants = Math.max(applicantIndex, parseInt(shareData.applicantCount, 10) || 1);
+      } else if (isMixed) {
+        if (!applicantCountRaw) {
+          return res.status(400).json({
+            success: false,
+            message: "Не указано количество заявителей"
+          });
+        }
+        applicantIndex = await getNextApplicantIndex(phone);
+        totalApplicants = Math.max(applicantIndex, applicantCountRaw);
       } else {
         applicantIndex = Math.max(1, Math.min(10, parseInt(req.body.applicantIndex || "1", 10) || 1));
-        const applicantCountRaw = Math.max(1, Math.min(10, parseInt(req.body.applicantCount || "0", 10) || 0));
         const incomingTotal = Math.max(1, Math.min(10, parseInt(req.body.totalApplicants || "0", 10) || 0));
         totalApplicants = isEdit
           ? Math.max(applicantIndex, incomingTotal)
@@ -2407,16 +2456,33 @@ app.post(
       }
 
       let nextApplicantUrl = null;
-      if (!isShareMode && !isEdit && applicantIndex < totalApplicants) {
-        const params = new URLSearchParams({
-          phone,
-          leadId,
-          applicantIndex: String(applicantIndex + 1),
-          totalApplicants: String(totalApplicants),
-          prevApplicantName: fullName
-        });
-        if (fields.visaType) params.set("visaType", fields.visaType);
-        nextApplicantUrl = `/questionnaire?${params.toString()}`;
+      if (!isShareMode && !isEdit) {
+        if (isMixed) {
+          // Mixed: ведём по selfStep до selfFillCount
+          if (selfStep < selfFillCount) {
+            const params = new URLSearchParams({
+              phone,
+              leadId,
+              applicantCount: String(applicantCountRaw),
+              mixed: "1",
+              selfFillCount: String(selfFillCount),
+              selfStep: String(selfStep + 1),
+              prevApplicantName: fullName
+            });
+            if (fields.visaType) params.set("visaType", fields.visaType);
+            nextApplicantUrl = `/questionnaire?${params.toString()}`;
+          }
+        } else if (applicantIndex < totalApplicants) {
+          const params = new URLSearchParams({
+            phone,
+            leadId,
+            applicantIndex: String(applicantIndex + 1),
+            totalApplicants: String(totalApplicants),
+            prevApplicantName: fullName
+          });
+          if (fields.visaType) params.set("visaType", fields.visaType);
+          nextApplicantUrl = `/questionnaire?${params.toString()}`;
+        }
       }
 
       return res.json({
