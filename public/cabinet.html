@@ -1069,6 +1069,17 @@
       return blocks;
     }
 
+    // Необязательные области загрузки документов: при отсутствии файлов в них
+    // клиент всё равно может нажать "Загрузить" и считается, что документы собраны.
+    const OPTIONAL_UPLOAD_FIELDS = new Set([
+      "invitation",
+      "thirdCountryTickets",
+      "birthCertificate",
+      "sponsorPassport",
+      "insurancePolicy",
+      "workCert"
+    ]);
+
     function createDocumentsBlock(applicant, blocksConfig, lead) {
       const wrapper = document.createElement("div");
       wrapper.className = "documents-inline";
@@ -1261,13 +1272,17 @@
         header.style.display = "";
       }
 
-      // Если все требуемые документы уже загружены — сразу done
+      // Если все ОБЯЗАТЕЛЬНЫЕ документы уже загружены — сразу done
+      // (необязательные области могут быть пустыми)
       const initialFiles = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
-      const alreadyAll = blocksConfig.every((b) => initialFiles.some((f) => {
-        if (!f.startsWith(b.label)) return false;
-        const next = f.charAt(b.label.length);
-        return next === "." || next === " ";
-      }));
+      const alreadyAll = blocksConfig.every((b) => {
+        if (OPTIONAL_UPLOAD_FIELDS.has(b.field)) return true;
+        return initialFiles.some((f) => {
+          if (!f.startsWith(b.label)) return false;
+          const next = f.charAt(b.label.length);
+          return next === "." || next === " ";
+        });
+      });
       if (alreadyAll) showDone();
 
       correctBtn.addEventListener("click", () => {
@@ -1299,8 +1314,18 @@
           return;
         }
 
+        // Проверяем обязательные области: должны быть прикреплены файлы
+        const missingRequired = inputs.filter(({ cfg, pendingFiles }) =>
+          !OPTIONAL_UPLOAD_FIELDS.has(cfg.field) && (!pendingFiles || pendingFiles.length === 0)
+        );
+        if (missingRequired.length > 0) {
+          showLocalError("Загрузите оставшиеся файлы.");
+          return;
+        }
+
         const selected = inputs.filter(({ pendingFiles }) => pendingFiles && pendingFiles.length > 0);
         if (!selected.length) {
+          // Все области пустые (включая необязательные) — нечего загружать
           showLocalError("Выберите файлы для загрузки.");
           return;
         }
