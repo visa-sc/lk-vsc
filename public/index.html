@@ -188,6 +188,20 @@
       color: #a15561;
     }
 
+    .not-found-info {
+      display: none;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #f0f7fc;
+      border: 1px solid #d3e7f4;
+      color: #2f6e95;
+      font-size: 14px;
+      line-height: 1.5;
+      text-align: center;
+      animation: vsc-fade-in 0.3s var(--vsc-ease) both;
+    }
+    .not-found-info.show { display: block; }
+
     .code-section {
       display: none;
       flex-direction: column;
@@ -292,6 +306,7 @@
         autocomplete="tel"
         required
       />
+      <div id="notFoundBox" class="not-found-info">По этому номеру обращения не найдены</div>
       <button id="searchBtn" type="submit">Найти обращения</button>
 
       <div id="codeSection" class="code-section">
@@ -325,6 +340,16 @@
     const codeCells = Array.from(codeCellsWrap.querySelectorAll(".code-cell"));
     const changePhoneBtn = document.getElementById("changePhoneBtn");
     const resendBtn = document.getElementById("resendBtn");
+    const notFoundBox = document.getElementById("notFoundBox");
+
+    function hideNotFound() {
+      notFoundBox.classList.remove("show");
+    }
+    function showNotFound() {
+      notFoundBox.classList.add("show");
+    }
+    // Скрываем плашку, как только пользователь меняет номер
+    document.getElementById("phoneInput").addEventListener("input", hideNotFound);
 
     let serverPhone = ""; // нормализованный телефон, на который ушёл код
     let resendTimer = null;
@@ -505,9 +530,29 @@
       if (ok) codeCells[0].focus();
     });
 
+    async function checkHasLeads(phone) {
+      try {
+        const r = await fetch("/api/auth/has-leads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone })
+        });
+        const data = await r.json();
+        if (!r.ok || !data.success) {
+          // При сбое проверки — не блокируем, пусть SMS уйдёт
+          return true;
+        }
+        return !!data.hasLeads;
+      } catch (_) {
+        // Сетевые ошибки — fallthrough в обычный SMS-флоу
+        return true;
+      }
+    }
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       hideError();
+      hideNotFound();
 
       const raw = phoneInput.value.trim();
       if (!raw) {
@@ -524,6 +569,19 @@
       const phone = normalizePhoneJs(raw);
       if (!phone || phone.length < 11) {
         showError("Введите корректный номер телефона");
+        return;
+      }
+
+      // Проверяем, есть ли обращения в amoCRM. Если нет — показываем плашку, SMS не шлём.
+      searchBtn.disabled = true;
+      const prevText = searchBtn.textContent;
+      searchBtn.textContent = "Проверка...";
+      const hasLeads = await checkHasLeads(phone);
+      searchBtn.disabled = false;
+      searchBtn.textContent = prevText;
+
+      if (!hasLeads) {
+        showNotFound();
         return;
       }
 

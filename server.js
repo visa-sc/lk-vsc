@@ -55,6 +55,24 @@ function smsGate(req, res, next) {
   next();
 }
 
+app.post("/api/auth/has-leads", async (req, res) => {
+  try {
+    const phone = sms.normalizePhone((req.body && req.body.phone) || "");
+    if (!phone || phone.length < 11) {
+      return res.status(400).json({ success: false, message: "Некорректный номер телефона" });
+    }
+    if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
+      return res.status(500).json({ success: false, message: "Не настроены переменные amoCRM" });
+    }
+    const leads = await getLeadsByPhone(phone);
+    return res.json({ success: true, hasLeads: Array.isArray(leads) && leads.length > 0 });
+  } catch (err) {
+    console.error("HAS-LEADS ERROR:", err.message);
+    // Не блокируем поток — если проверка упала, пусть SMS уйдёт по обычному пути
+    return res.status(500).json({ success: false, message: "Ошибка проверки" });
+  }
+});
+
 app.post("/api/auth/request-code", smsGate, async (req, res) => {
   try {
     const phone = sms.normalizePhone((req.body && req.body.phone) || "");
