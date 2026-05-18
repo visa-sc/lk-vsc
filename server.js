@@ -2524,6 +2524,12 @@ app.post(
         );
       }
 
+      // Share-режим: токен одноразовый — после успешного сохранения удаляем
+      if (isShareMode && shareData) {
+        shareTokens.delete(shareData.token);
+        saveShareTokens();
+      }
+
       let nextApplicantUrl = null;
       if (!isShareMode && !isEdit) {
         if (isMixed) {
