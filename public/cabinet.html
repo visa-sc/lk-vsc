@@ -1159,6 +1159,7 @@
 
       const input = document.createElement("input");
       input.type = "file";
+      input.multiple = true;
       input.style.display = "block";
       input.style.width = "100%";
       input.style.border = "1px solid #e8e2ee";
@@ -1187,22 +1188,26 @@
         hideErr();
         const phone = phoneInput.value.trim();
         if (!phone) { showErr("Ошибка загрузки файла"); return; }
-        const file = input.files && input.files[0];
-        if (!file) { showErr("Выберите файл для загрузки."); return; }
+        const files = input.files && input.files.length ? Array.from(input.files) : [];
+        if (!files.length) { showErr("Выберите файл для загрузки."); return; }
 
         btn.disabled = true;
         const orig = btn.textContent;
         btn.textContent = "Загрузка...";
 
         try {
-          const fd = new FormData();
-          fd.append("phone", phone);
-          fd.append("file", file);
-          const r = await fetch("/upload-extra-document", { method: "POST", body: fd });
-          const d = await r.json();
-          if (!r.ok || !d.success) throw new Error();
+          const results = await Promise.all(files.map(async (file) => {
+            const fd = new FormData();
+            fd.append("phone", phone);
+            fd.append("file", file);
+            const r = await fetch("/upload-extra-document", { method: "POST", body: fd });
+            const d = await r.json().catch(() => ({}));
+            return !!(r.ok && d && d.success);
+          }));
+          const allOk = results.every(Boolean);
+          if (!allOk) throw new Error();
           input.value = "";
-          btn.textContent = "Файл загружен";
+          btn.textContent = files.length > 1 ? "Файлы загружены" : "Файл загружен";
           setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1800);
         } catch (e) {
           showErr("Ошибка загрузки файла");
