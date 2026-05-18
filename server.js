@@ -7,6 +7,7 @@ const os = require("os");
 const axios = require("axios");
 const multer = require("multer");
 const PDFDocument = require("pdfkit");
+const sms = require("./sms");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,6 +31,93 @@ app.get("/about", (req, res) => {
 
 app.get("/about/v1", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "about-v1.html"));
+});
+
+// ──────────────────────────────────────────────────────────
+// SMS-аутентификация (спящий режим). Включается флагом SMS_AUTH_ENABLED=true.
+// Пока флаг false — эндпоинты возвращают 404, чтобы внешне ничего не светилось.
+// ──────────────────────────────────────────────────────────
+
+const smsCodeStore = new Map(); // phone(E.164 без +) -> { code, expiresAt, attempts, lastSentAt }
+const SMS_CODE_TTL_MS = 5 * 60 * 1000; // 5 минут
+const SMS_RESEND_COOLDOWN_MS = 60 * 1000; // 60 секунд
+const SMS_MAX_ATTEMPTS = 5;
+
+function smsGate(req, res, next) {
+  if (!sms.isEnabled()) {
+    return res.status(404).send("Not found");
+  }
+  next();
+}
+
+app.post("/api/auth/request-code", smsGate, async (req, res) => {
+  try {
+    const phone = sms.normalizePhone((req.body && req.body.phone) || "");
+    if (!phone || phone.length < 11) {
+      return res.status(400).json({ success: false, message: "Некорректный номер телефона" });
+    }
+
+    const existing = smsCodeStore.get(phone);
+    if (existing && Date.now() - (existing.lastSentAt || 0) < SMS_RESEND_COOLDOWN_MS) {
+      const wait = Math.ceil((SMS_RESEND_COOLDOWN_MS - (Date.now() - existing.lastSentAt)) / 1000);
+      return res.status(429).json({ success: false, message: `Подождите ${wait} с перед повторной отправкой` });
+    }
+
+    const code = sms.generateCode();
+    const result = await sms.sendCode(phone, code);
+
+    if (!result.ok) {
+      return res.status(502).json({ success: false, message: result.error || "Не удалось отправить SMS" });
+    }
+
+    smsCodeStore.set(phone, {
+      code,
+      expiresAt: Date.now() + SMS_CODE_TTL_MS,
+      attempts: 0,
+      lastSentAt: Date.now(),
+    });
+
+    return res.json({ success: true, testMode: !!result.testMode });
+  } catch (err) {
+    console.error("REQUEST CODE ERROR:", err);
+    return res.status(500).json({ success: false, message: "Внутренняя ошибка" });
+  }
+});
+
+app.post("/api/auth/verify", smsGate, (req, res) => {
+  try {
+    const phone = sms.normalizePhone((req.body && req.body.phone) || "");
+    const code = String((req.body && req.body.code) || "").trim();
+
+    if (!phone || !code) {
+      return res.status(400).json({ success: false, message: "Введите код" });
+    }
+
+    const entry = smsCodeStore.get(phone);
+    if (!entry) {
+      return res.status(400).json({ success: false, message: "Запросите код заново" });
+    }
+    if (Date.now() > entry.expiresAt) {
+      smsCodeStore.delete(phone);
+      return res.status(400).json({ success: false, message: "Код истёк, запросите заново" });
+    }
+    if (entry.attempts >= SMS_MAX_ATTEMPTS) {
+      smsCodeStore.delete(phone);
+      return res.status(429).json({ success: false, message: "Слишком много попыток, запросите код заново" });
+    }
+    entry.attempts += 1;
+
+    if (entry.code !== code) {
+      return res.status(400).json({ success: false, message: "Неверный код" });
+    }
+
+    smsCodeStore.delete(phone);
+    // TODO (этап 2): выдать session cookie / JWT здесь
+    return res.json({ success: true, phone });
+  } catch (err) {
+    console.error("VERIFY CODE ERROR:", err);
+    return res.status(500).json({ success: false, message: "Внутренняя ошибка" });
+  }
 });
 
 const upload = multer({
