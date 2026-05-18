@@ -1701,38 +1701,81 @@ function buildQuestionnaireStartHtml({ phone, leadId }) {
     }
     .radio-group input[type="radio"] { accent-color: #4f9f68; width: 16px; height: 16px; }
     .radio-group label:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
-    .sms-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch; }
+    #smsRows { display: grid; gap: 10px; }
+    .sms-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
     .sms-row input[type="tel"] {
-      height: 50px;
+      flex: 1 1 200px;
+      height: 44px;
       border: 1px solid #e8e2ee;
-      border-radius: 14px;
+      border-radius: 12px;
       padding: 0 14px;
-      font-size: 16px;
+      font-size: 15px;
       outline: none;
       background: #fff;
       color: #1f2532;
       font-family: inherit;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
-    .sms-row input[type="tel"]:focus { border-color: #3589BD; }
+    .sms-row input[type="tel"]:focus {
+      border-color: #3589BD;
+      box-shadow: 0 0 0 3px rgba(53, 137, 189, 0.12);
+    }
     .sms-send-btn {
-      height: 50px;
-      padding: 0 14px;
-      border: none;
-      border-radius: 14px;
-      background: #3589BD;
-      color: #fff;
-      font-size: 14px;
+      flex: 0 0 auto;
+      height: 44px;
+      padding: 0 16px;
+      border: 1.5px solid #3589BD;
+      border-radius: 12px;
+      background: #fff;
+      color: #3589BD;
+      font-size: 13px;
       font-weight: 600;
       cursor: pointer;
       white-space: nowrap;
+      transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
     }
+    .sms-send-btn:hover:not(:disabled) { background: #f0f7fc; }
     .sms-send-btn:disabled { opacity: 0.55; cursor: not-allowed; }
     .sms-row.is-sent input[type="tel"] {
       background: #f6fbf8;
       border-color: #cfe7d2;
       color: #2e7a43;
     }
-    .sms-row.is-sent .sms-send-btn { background: #4f9f68; cursor: default; }
+    .sms-row.is-sent .sms-send-btn {
+      background: #f0faf3;
+      border-color: #4f9f68;
+      color: #4f9f68;
+      cursor: default;
+    }
+    .sms-remove-btn {
+      flex: 0 0 auto;
+      width: 40px;
+      height: 44px;
+      padding: 0;
+      border: 1px solid #e8e2ee;
+      border-radius: 12px;
+      background: #fff;
+      color: #9096a3;
+      font-size: 22px;
+      line-height: 1;
+      cursor: pointer;
+      font-weight: 600;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+    }
+    .sms-row.has-remove .sms-remove-btn { display: inline-flex; }
+    .sms-remove-btn:hover {
+      border-color: #d97a8a;
+      color: #a15561;
+      background: #fbebee;
+    }
     .sms-add-btn {
       background: transparent;
       border: none;
@@ -1740,15 +1783,16 @@ function buildQuestionnaireStartHtml({ phone, leadId }) {
       font-size: 14px;
       font-weight: 600;
       padding: 6px 0;
+      margin-top: 4px;
       cursor: pointer;
       text-align: left;
       display: inline-block;
     }
     .sms-add-btn:disabled { opacity: 0.45; cursor: not-allowed; }
     .sms-msg {
+      flex-basis: 100%;
       font-size: 13px;
       line-height: 1.4;
-      padding: 6px 0 0;
     }
     .sms-msg.error { color: #a15561; }
     .sms-msg.success { color: #2e7a43; }
@@ -1895,13 +1939,38 @@ ${visaOptionsHtml}
     row.innerHTML = ''
       + '<input type="tel" placeholder="+7 999 123-45-67" autocomplete="off" inputmode="tel" />'
       + '<button type="button" class="sms-send-btn">Отправить SMS с опросником</button>'
-      + '<div class="sms-msg" style="grid-column: 1 / -1; display:none;"></div>';
+      + '<button type="button" class="sms-remove-btn" aria-label="Убрать поле" title="Убрать поле">−</button>'
+      + '<div class="sms-msg" style="display:none;"></div>';
     smsRows.appendChild(row);
     const input = row.querySelector('input[type="tel"]');
     const sendBtn = row.querySelector('.sms-send-btn');
+    const removeBtn = row.querySelector('.sms-remove-btn');
     const msg = row.querySelector('.sms-msg');
     sendBtn.addEventListener("click", () => sendSms(row, input, sendBtn, msg));
+    removeBtn.addEventListener("click", () => removeSmsRow(row));
+    refreshRowsLayout();
     refreshSmsAddState();
+  }
+
+  function removeSmsRow(row) {
+    // Если эта строка уже отправляла SMS — снимаем из набора
+    if (row.classList.contains("is-sent")) {
+      const input = row.querySelector('input[type="tel"]');
+      const norm = input ? normalizePhoneJs(input.value.trim()) : "";
+      if (norm) sentSms.delete(norm);
+    }
+    if (row.parentNode) row.parentNode.removeChild(row);
+    refreshRowsLayout();
+    refreshSmsAddState();
+    update();
+  }
+
+  function refreshRowsLayout() {
+    // Кнопка "−" отображается на каждой строке, кроме первой
+    const rows = Array.from(smsRows.children);
+    rows.forEach((row, idx) => {
+      row.classList.toggle("has-remove", idx > 0);
+    });
   }
 
   function refreshSmsAddState() {
