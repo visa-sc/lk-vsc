@@ -527,6 +527,99 @@
       background: #fff;
     }
 
+    .file-list-row .file-row-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .file-attach-btn {
+      height: 38px;
+      padding: 0 16px;
+      border: 1.5px solid #3589BD;
+      border-radius: 12px;
+      background: #fff;
+      color: #3589BD;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    }
+    .file-attach-btn:hover { background: #f0f7fc; }
+    .file-attach-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .file-previews {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      max-width: 260px;
+    }
+
+    .file-preview-tile {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      border: 1px solid #e8e2ee;
+      border-radius: 10px;
+      background: #fafafa;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .file-preview-tile img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .file-preview-placeholder {
+      font-size: 24px;
+      color: #9096a3;
+      line-height: 1;
+    }
+    .file-preview-name {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 2px 4px;
+      background: rgba(255,255,255,0.92);
+      font-size: 10px;
+      color: #3a4150;
+      line-height: 1.2;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .file-preview-remove {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(29, 35, 48, 0.78);
+      color: #fff;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease;
+    }
+    .file-preview-remove:hover {
+      background: #d97a8a;
+    }
+
     .docs-done-msg {
       font-size: 14px;
       color: #4f9f68;
@@ -650,6 +743,19 @@
 
       .file-list-row input[type="file"] {
         max-width: 100%;
+      }
+
+      .file-list-row .file-row-controls {
+        align-items: stretch;
+      }
+
+      .file-previews {
+        justify-content: flex-start;
+        max-width: 100%;
+      }
+
+      .file-attach-btn {
+        width: 100%;
       }
 
       .help-actions {
@@ -995,16 +1101,95 @@
         const labelEl = document.createElement("div");
         labelEl.className = "file-list-label";
         labelEl.textContent = cfg.label;
-
-        const input = document.createElement("input");
-        input.type = "file";
-        input.multiple = true;
-        input.accept = "image/*,application/pdf";
-        input.dataset.field = cfg.field;
-        inputs.push({ input, cfg });
-
         row.appendChild(labelEl);
-        row.appendChild(input);
+
+        // Контейнер для кнопки + превью
+        const controls = document.createElement("div");
+        controls.className = "file-row-controls";
+
+        // Скрытый input
+        const fileInput = document.createElement("input");
+        fileInput.type = "file";
+        fileInput.multiple = true;
+        fileInput.accept = "image/*,application/pdf";
+        fileInput.style.display = "none";
+        controls.appendChild(fileInput);
+
+        // Кнопка-аттач
+        const attachBtn = document.createElement("button");
+        attachBtn.type = "button";
+        attachBtn.className = "file-attach-btn";
+        attachBtn.textContent = "Прикрепить фото или файл";
+        attachBtn.addEventListener("click", () => fileInput.click());
+        controls.appendChild(attachBtn);
+
+        // Сетка превью
+        const previewWrap = document.createElement("div");
+        previewWrap.className = "file-previews";
+        controls.appendChild(previewWrap);
+
+        const pendingFiles = [];
+
+        function renderPreviews() {
+          previewWrap.innerHTML = "";
+          pendingFiles.forEach((file, idx) => {
+            const tile = document.createElement("div");
+            tile.className = "file-preview-tile";
+
+            const isImage = (file.type || "").indexOf("image/") === 0;
+            if (isImage) {
+              const img = document.createElement("img");
+              img.alt = file.name || "preview";
+              const reader = new FileReader();
+              reader.onload = (e) => { img.src = e.target.result; };
+              reader.readAsDataURL(file);
+              tile.appendChild(img);
+            } else {
+              const placeholder = document.createElement("div");
+              placeholder.className = "file-preview-placeholder";
+              placeholder.textContent = "📄";
+              tile.appendChild(placeholder);
+            }
+
+            const nameEl = document.createElement("div");
+            nameEl.className = "file-preview-name";
+            nameEl.textContent = file.name || "file";
+            tile.appendChild(nameEl);
+
+            const removeBtn = document.createElement("button");
+            removeBtn.type = "button";
+            removeBtn.className = "file-preview-remove";
+            removeBtn.setAttribute("aria-label", "Убрать файл");
+            removeBtn.title = "Убрать файл";
+            removeBtn.textContent = "×";
+            removeBtn.addEventListener("click", () => {
+              pendingFiles.splice(idx, 1);
+              renderPreviews();
+            });
+            tile.appendChild(removeBtn);
+
+            previewWrap.appendChild(tile);
+          });
+          // Кнопка меняет надпись, если уже что-то прикреплено
+          attachBtn.textContent = pendingFiles.length > 0
+            ? "Добавить ещё"
+            : "Прикрепить фото или файл";
+        }
+
+        fileInput.addEventListener("change", () => {
+          if (fileInput.files && fileInput.files.length > 0) {
+            for (let i = 0; i < fileInput.files.length; i++) {
+              pendingFiles.push(fileInput.files[i]);
+            }
+            renderPreviews();
+            // Сбрасываем значение, чтобы можно было повторно выбрать тот же файл / сделать ещё одно фото
+            fileInput.value = "";
+          }
+        });
+
+        inputs.push({ cfg, pendingFiles, fileInput, renderPreviews });
+
+        row.appendChild(controls);
         list.appendChild(row);
       });
 
@@ -1067,7 +1252,11 @@
       function showForm(viaCorrection) {
         formState.style.display = "block";
         doneState.style.display = "none";
-        inputs.forEach(({ input }) => { input.value = ""; });
+        inputs.forEach(({ pendingFiles, fileInput, renderPreviews }) => {
+          pendingFiles.length = 0;
+          if (fileInput) fileInput.value = "";
+          if (renderPreviews) renderPreviews();
+        });
         cancelCorrectBtn.style.display = viaCorrection ? "inline-block" : "none";
         header.style.display = "";
       }
@@ -1110,7 +1299,7 @@
           return;
         }
 
-        const selected = inputs.filter(({ input }) => input.files && input.files.length > 0);
+        const selected = inputs.filter(({ pendingFiles }) => pendingFiles && pendingFiles.length > 0);
         if (!selected.length) {
           showLocalError("Выберите файлы для загрузки.");
           return;
@@ -1119,12 +1308,12 @@
         uploadBtn.disabled = true;
         uploadBtn.textContent = "Загрузка...";
 
-        // Раскрываем все файлы: каждый input может содержать несколько файлов
+        // Раскрываем все файлы из pending-очередей в плоский список
         const allTasks = [];
-        selected.forEach(({ input, cfg }) => {
-          for (let i = 0; i < input.files.length; i++) {
-            allTasks.push({ file: input.files[i], cfg, partIndex: i + 1 });
-          }
+        selected.forEach(({ pendingFiles, cfg }) => {
+          pendingFiles.forEach((file, i) => {
+            allTasks.push({ file, cfg, partIndex: i + 1 });
+          });
         });
 
         const results = await Promise.all(allTasks.map(async ({ file, cfg, partIndex }) => {
