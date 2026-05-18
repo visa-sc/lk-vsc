@@ -819,6 +819,16 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
     }
     .submit-btn:disabled { opacity: 0.7; cursor: not-allowed; }
     .date-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .date-row > input { min-width: 0; width: 100%; }
+    @media (max-width: 480px) {
+      .date-row { grid-template-columns: 1fr; }
+    }
+    .field input.input-error,
+    .date-row input.input-error {
+      border-color: #d97a8a !important;
+      background: #fbebee !important;
+      box-shadow: 0 0 0 3px rgba(217, 122, 138, 0.18) !important;
+    }
   </style>
 </head>
 <body>
@@ -1330,10 +1340,53 @@ ${mixedFieldsHtml}
     updateConditionals();
   }
 
+  // Снимаем подсветку ошибки с поля при изменении/вводе
+  form.addEventListener("input", (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains("input-error")) {
+      e.target.classList.remove("input-error");
+    }
+  });
+  form.addEventListener("change", (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains("input-error")) {
+      e.target.classList.remove("input-error");
+    }
+  });
+
+  function validateRequiredFields() {
+    // Список пар «обязательных» дат — проверяем только те, что видимы (не внутри скрытого .cond)
+    const datePairs = [
+      ["tripDateFrom", "tripDateTo"],
+      ["bookingDateFrom", "bookingDateTo"]
+    ];
+    let firstBad = null;
+    datePairs.forEach((pair) => {
+      pair.forEach((name) => {
+        const el = form.querySelector('input[name="' + name + '"]');
+        if (!el) return;
+        // Проверяем только видимые поля
+        if (el.offsetParent === null) return;
+        if (!el.value) {
+          el.classList.add("input-error");
+          if (!firstBad) firstBad = el;
+        }
+      });
+    });
+    return firstBad;
+  }
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     hideBox(errorBox);
     hideBox(successBox);
+
+    // Проверка обязательных дат — подсвечиваем и не отправляем
+    const badDate = validateRequiredFields();
+    if (badDate) {
+      showBox(errorBox, "Заполните даты поездки — оба поля обязательны.");
+      if (badDate.scrollIntoView) badDate.scrollIntoView({ behavior: "smooth", block: "center" });
+      try { badDate.focus({ preventScroll: true }); } catch (_) { badDate.focus(); }
+      return;
+    }
 
     // Проверка согласий — без сброса данных формы
     const accuracyVal = radio("confirmAccuracy");
