@@ -139,30 +139,32 @@
 
     .login-form button {
       width: 100%;
-      height: 52px;
-      border: none;
-      border-radius: 14px;
-      background: #3589BD;
-      color: #fff;
-      font-size: 16px;
+      height: 44px;
+      border: 1.5px solid #3589BD;
+      border-radius: 12px;
+      background: #fff;
+      color: #3589BD;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.2s var(--vsc-ease), transform 0.15s var(--vsc-ease), filter 0.2s var(--vsc-ease), opacity 0.2s var(--vsc-ease);
+      transition: background 0.2s var(--vsc-ease), color 0.2s var(--vsc-ease),
+                  border-color 0.2s var(--vsc-ease), opacity 0.2s var(--vsc-ease);
     }
 
     .login-form button:hover:not(:disabled) {
-      transform: translateY(-1px);
-      filter: brightness(1.06);
+      background: #f0f7fc;
     }
 
     .login-form button:active:not(:disabled) {
-      transform: translateY(0);
-      filter: brightness(0.98);
+      background: #e6f1f8;
     }
 
     .login-form button:disabled {
-      opacity: 0.7;
+      opacity: 0.55;
       cursor: not-allowed;
+      background: #fff;
+      color: #9096a3;
+      border-color: #d6dbe3;
     }
 
     .login-form input {
@@ -296,7 +298,7 @@
   <div class="login-card">
     <img class="login-logo" src="/logo.png" alt="VOYO" width="600" height="300" fetchpriority="high" onload="this.classList.add('is-loaded')" onerror="this.classList.add('is-loaded')" />
     <noscript><style>.login-logo{opacity:1;transform:none;}</style></noscript>
-    <h2>Введите ваш номер телефона, чтобы найти все обращения</h2>
+    <h2>Введите номер телефона для входа в личный кабинет</h2>
     <form id="loginForm" class="login-form">
       <input
         id="phoneInput"
@@ -307,7 +309,7 @@
         required
       />
       <div id="notFoundBox" class="not-found-info">По этому номеру обращения не найдены</div>
-      <button id="searchBtn" type="submit">Найти обращения</button>
+      <button id="searchBtn" type="submit">Войти</button>
 
       <div id="codeSection" class="code-section">
         <div class="code-label">Введите код из SMS, отправленный на ваш номер</div>
