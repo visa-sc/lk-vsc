@@ -187,6 +187,85 @@
       border: 1px solid #efcfd5;
       color: #a15561;
     }
+
+    .code-section {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+      animation: vsc-fade-in 0.35s var(--vsc-ease) both;
+    }
+    .code-section.show { display: flex; }
+    .code-label {
+      font-size: 13px;
+      color: #737988;
+      line-height: 1.4;
+      text-align: center;
+    }
+    .code-cells {
+      display: flex;
+      gap: 8px;
+      justify-content: space-between;
+    }
+    .code-cell {
+      flex: 1 1 0;
+      min-width: 0;
+      max-width: 80px;
+      height: 60px;
+      border: 1px solid #ebe6f1;
+      border-radius: 14px;
+      text-align: center;
+      font-size: 26px;
+      font-weight: 600;
+      outline: none;
+      color: #1f2532;
+      background: #fff;
+      transition: border-color 0.2s var(--vsc-ease), box-shadow 0.2s var(--vsc-ease), background 0.2s var(--vsc-ease);
+      -moz-appearance: textfield;
+    }
+    .code-cell::-webkit-outer-spin-button,
+    .code-cell::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .code-cell:focus {
+      border-color: #3589BD;
+      box-shadow: 0 0 0 3px rgba(53, 137, 189, 0.15);
+    }
+    .code-cells.is-error .code-cell {
+      border-color: #d97a8a;
+      background: #fbebee;
+    }
+    .code-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #737988;
+    }
+    .code-resend-btn {
+      background: transparent;
+      border: none;
+      color: #3589BD;
+      cursor: pointer;
+      padding: 0;
+      font: inherit;
+      font-weight: 600;
+    }
+    .code-resend-btn:disabled {
+      color: #9096a3;
+      cursor: not-allowed;
+    }
+    .code-change-phone {
+      background: transparent;
+      border: none;
+      color: #9096a3;
+      cursor: pointer;
+      padding: 0;
+      font: inherit;
+    }
+    .code-change-phone:hover { color: #3589BD; }
   </style>
 </head>
 <body>
@@ -204,6 +283,20 @@
         required
       />
       <button id="searchBtn" type="submit">Найти обращения</button>
+
+      <div id="codeSection" class="code-section">
+        <div class="code-label">Введите код из SMS, отправленный на ваш номер</div>
+        <div id="codeCells" class="code-cells">
+          <input class="code-cell" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" aria-label="Код, цифра 1" />
+          <input class="code-cell" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Код, цифра 2" />
+          <input class="code-cell" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Код, цифра 3" />
+          <input class="code-cell" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Код, цифра 4" />
+        </div>
+        <div class="code-footer">
+          <button type="button" id="changePhoneBtn" class="code-change-phone">Изменить номер</button>
+          <button type="button" id="resendBtn" class="code-resend-btn" disabled>Отправить ещё раз</button>
+        </div>
+      </div>
     </form>
     <div id="errorBox" class="message error"></div>
   </div>
@@ -211,31 +304,219 @@
   <a href="/about" class="about-link" target="_blank" rel="noopener">Что такое VOYO?</a>
 
   <script>
+    const SECRET_BYPASS = "250960";
+
     const form = document.getElementById("loginForm");
     const phoneInput = document.getElementById("phoneInput");
+    const searchBtn = document.getElementById("searchBtn");
     const errorBox = document.getElementById("errorBox");
+    const codeSection = document.getElementById("codeSection");
+    const codeCellsWrap = document.getElementById("codeCells");
+    const codeCells = Array.from(codeCellsWrap.querySelectorAll(".code-cell"));
+    const changePhoneBtn = document.getElementById("changePhoneBtn");
+    const resendBtn = document.getElementById("resendBtn");
+
+    let serverPhone = ""; // нормализованный телефон, на который ушёл код
+    let resendTimer = null;
+    let isVerifying = false;
 
     function showError(msg) {
       errorBox.style.display = "block";
       errorBox.textContent = msg || "";
     }
-
     function hideError() {
       errorBox.style.display = "none";
       errorBox.textContent = "";
     }
 
-    form.addEventListener("submit", (event) => {
+    function normalizePhoneJs(raw) {
+      const digits = String(raw || "").replace(/\D/g, "");
+      if (!digits) return "";
+      if (digits.length === 11 && digits.startsWith("8")) return "7" + digits.slice(1);
+      if (digits.length === 10) return "7" + digits;
+      return digits;
+    }
+
+    function startResendCooldown(seconds) {
+      let remaining = seconds;
+      resendBtn.disabled = true;
+      resendBtn.textContent = `Отправить ещё раз (${remaining})`;
+      if (resendTimer) clearInterval(resendTimer);
+      resendTimer = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) {
+          clearInterval(resendTimer);
+          resendTimer = null;
+          resendBtn.disabled = false;
+          resendBtn.textContent = "Отправить ещё раз";
+        } else {
+          resendBtn.textContent = `Отправить ещё раз (${remaining})`;
+        }
+      }, 1000);
+    }
+
+    function showCodeStage() {
+      codeSection.classList.add("show");
+      searchBtn.style.display = "none";
+      phoneInput.readOnly = true;
+      codeCells.forEach((c) => { c.value = ""; });
+      codeCellsWrap.classList.remove("is-error");
+      setTimeout(() => codeCells[0].focus(), 50);
+    }
+
+    function backToPhoneStage() {
+      codeSection.classList.remove("show");
+      searchBtn.style.display = "";
+      phoneInput.readOnly = false;
+      codeCells.forEach((c) => { c.value = ""; });
+      codeCellsWrap.classList.remove("is-error");
+      if (resendTimer) { clearInterval(resendTimer); resendTimer = null; }
+      hideError();
+      setTimeout(() => phoneInput.focus(), 50);
+    }
+
+    async function requestCode(phone) {
+      searchBtn.disabled = true;
+      const prevText = searchBtn.textContent;
+      searchBtn.textContent = "Отправка SMS...";
+      try {
+        const r = await fetch("/api/auth/request-code", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone })
+        });
+        const data = await r.json();
+        if (!r.ok || !data.success) {
+          throw new Error(data.message || "Не удалось отправить SMS");
+        }
+        serverPhone = phone;
+        showCodeStage();
+        startResendCooldown(60);
+        return true;
+      } catch (err) {
+        showError(err.message || "Ошибка отправки SMS");
+        return false;
+      } finally {
+        searchBtn.disabled = false;
+        searchBtn.textContent = prevText;
+      }
+    }
+
+    async function verifyCode(code) {
+      if (isVerifying) return;
+      isVerifying = true;
+      hideError();
+      codeCellsWrap.classList.remove("is-error");
+      try {
+        const r = await fetch("/api/auth/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: serverPhone, code })
+        });
+        const data = await r.json();
+        if (!r.ok || !data.success) {
+          throw new Error(data.message || "Неверный код");
+        }
+        window.location.href = "/cabinet?phone=" + encodeURIComponent(serverPhone);
+      } catch (err) {
+        codeCellsWrap.classList.add("is-error");
+        showError(err.message || "Неверный код");
+        codeCells.forEach((c) => { c.value = ""; });
+        codeCells[0].focus();
+        isVerifying = false;
+      }
+    }
+
+    function fillCellsFrom(str) {
+      const digits = String(str || "").replace(/\D/g, "").slice(0, 4);
+      codeCells.forEach((c, i) => { c.value = digits[i] || ""; });
+      if (digits.length < 4) {
+        codeCells[digits.length].focus();
+      } else {
+        codeCells[3].blur();
+        verifyCode(digits);
+      }
+    }
+
+    // Поведение ячеек: вставка кода целиком, авто-переход, бэкспейс
+    codeCells.forEach((cell, idx) => {
+      cell.addEventListener("input", (e) => {
+        const v = String(cell.value || "").replace(/\D/g, "");
+        // Если получили несколько цифр (paste / iOS one-time-code) — раскладываем
+        if (v.length > 1) {
+          fillCellsFrom(v);
+          return;
+        }
+        cell.value = v;
+        if (v && idx < codeCells.length - 1) {
+          codeCells[idx + 1].focus();
+        }
+        // Если последний и заполнен — проверяем код
+        const all = codeCells.map((c) => c.value).join("");
+        if (all.length === 4 && /^\d{4}$/.test(all)) {
+          verifyCode(all);
+        }
+      });
+
+      cell.addEventListener("keydown", (e) => {
+        if (e.key === "Backspace" && !cell.value && idx > 0) {
+          codeCells[idx - 1].focus();
+          codeCells[idx - 1].value = "";
+          e.preventDefault();
+        } else if (e.key === "ArrowLeft" && idx > 0) {
+          codeCells[idx - 1].focus();
+          e.preventDefault();
+        } else if (e.key === "ArrowRight" && idx < codeCells.length - 1) {
+          codeCells[idx + 1].focus();
+          e.preventDefault();
+        }
+      });
+
+      cell.addEventListener("paste", (e) => {
+        const text = (e.clipboardData || window.clipboardData).getData("text") || "";
+        if (/\d/.test(text)) {
+          e.preventDefault();
+          fillCellsFrom(text);
+        }
+      });
+
+      cell.addEventListener("focus", () => cell.select && cell.select());
+    });
+
+    changePhoneBtn.addEventListener("click", backToPhoneStage);
+
+    resendBtn.addEventListener("click", async () => {
+      if (resendBtn.disabled || !serverPhone) return;
+      hideError();
+      codeCellsWrap.classList.remove("is-error");
+      codeCells.forEach((c) => { c.value = ""; });
+      const ok = await requestCode(serverPhone);
+      if (ok) codeCells[0].focus();
+    });
+
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
       hideError();
 
-      const phone = phoneInput.value.trim();
-      if (!phone) {
+      const raw = phoneInput.value.trim();
+      if (!raw) {
         showError("Введите номер телефона");
         return;
       }
 
-      window.location.href = `/cabinet?phone=${encodeURIComponent(phone)}`;
+      // Секретный обходной код — перекидываем на /search (без SMS)
+      if (raw === SECRET_BYPASS) {
+        window.location.href = "/search";
+        return;
+      }
+
+      const phone = normalizePhoneJs(raw);
+      if (!phone || phone.length < 11) {
+        showError("Введите корректный номер телефона");
+        return;
+      }
+
+      await requestCode(phone);
     });
   </script>
 </body>

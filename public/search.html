@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Поиск обращений — VOYO</title>
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" href="/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="VOYO" />
+  <meta name="robots" content="noindex,nofollow" />
+  <style>
+    * { box-sizing: border-box; }
+
+    :root {
+      --vsc-ease: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @keyframes vsc-fade-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #f3f2f7;
+      color: #1d2330;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      gap: 14px;
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 420px;
+      background: #fff;
+      border: 1px solid #ece7f2;
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05);
+      animation: vsc-fade-in 0.5s var(--vsc-ease) both;
+    }
+
+    .login-logo {
+      display: block;
+      width: 140px;
+      height: auto;
+      aspect-ratio: 2 / 1;
+      margin: 0 auto 22px;
+      mix-blend-mode: multiply;
+      opacity: 0;
+      transform: scale(0.96);
+      transition: opacity 0.55s var(--vsc-ease), transform 0.55s var(--vsc-ease);
+    }
+
+    .login-logo.is-loaded {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .login-card h2 {
+      margin: 0 0 14px;
+      font-size: 16px;
+      color: #1d2330;
+      line-height: 1.4;
+      text-align: center;
+    }
+
+    .login-form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .login-form input {
+      width: 100%;
+      height: 52px;
+      border: 1px solid #ebe6f1;
+      border-radius: 14px;
+      padding: 0 16px;
+      font-size: 16px;
+      outline: none;
+      color: #1f2532;
+      background: #fff;
+      transition: border-color 0.2s var(--vsc-ease), box-shadow 0.2s var(--vsc-ease);
+    }
+
+    .login-form input:focus {
+      border-color: #3589BD;
+      box-shadow: 0 0 0 3px rgba(53, 137, 189, 0.15);
+    }
+
+    .login-form button {
+      width: 100%;
+      height: 52px;
+      border: none;
+      border-radius: 14px;
+      background: #3589BD;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s var(--vsc-ease), transform 0.15s var(--vsc-ease), filter 0.2s var(--vsc-ease), opacity 0.2s var(--vsc-ease);
+    }
+
+    .login-form button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      filter: brightness(1.06);
+    }
+
+    .login-form button:active:not(:disabled) {
+      transform: translateY(0);
+      filter: brightness(0.98);
+    }
+
+    .login-form button:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    .message {
+      display: none;
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 14px;
+      margin-top: 14px;
+    }
+
+    .message.error {
+      background: #fbebee;
+      border: 1px solid #efcfd5;
+      color: #a15561;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <img class="login-logo" src="/logo.png" alt="VOYO" width="600" height="300" fetchpriority="high" onload="this.classList.add('is-loaded')" onerror="this.classList.add('is-loaded')" />
+    <noscript><style>.login-logo{opacity:1;transform:none;}</style></noscript>
+    <h2>Введите номер телефона клиента, чтобы найти его обращения</h2>
+    <form id="loginForm" class="login-form">
+      <input
+        id="phoneInput"
+        type="text"
+        name="phone"
+        placeholder="+79991234567"
+        autocomplete="off"
+        required
+      />
+      <button id="searchBtn" type="submit">Найти обращения</button>
+    </form>
+    <div id="errorBox" class="message error"></div>
+  </div>
+
+  <script>
+    const form = document.getElementById("loginForm");
+    const phoneInput = document.getElementById("phoneInput");
+    const errorBox = document.getElementById("errorBox");
+
+    function showError(msg) {
+      errorBox.style.display = "block";
+      errorBox.textContent = msg || "";
+    }
+
+    function hideError() {
+      errorBox.style.display = "none";
+      errorBox.textContent = "";
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      hideError();
+      const phone = phoneInput.value.trim();
+      if (!phone) {
+        showError("Введите номер телефона");
+        return;
+      }
+      window.location.href = `/cabinet?phone=${encodeURIComponent(phone)}`;
+    });
+  </script>
+</body>
+</html>
