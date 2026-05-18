@@ -34,7 +34,7 @@ function generateCode() {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 
-async function sendCode(phone, code) {
+async function sendMessage(phone, message) {
   const apiId = getApiId();
   if (!apiId) {
     throw new Error("SMS_RU_API_ID is not set");
@@ -48,7 +48,7 @@ async function sendCode(phone, code) {
   const params = {
     api_id: apiId,
     to: normalizedPhone,
-    msg: `Код для входа в личный кабинет VOYO: ${code}`,
+    msg: String(message || ""),
     json: 1,
   };
 
@@ -87,6 +87,14 @@ async function sendCode(phone, code) {
   }
 }
 
+async function sendCode(phone, code) {
+  return sendMessage(phone, `Код для входа в личный кабинет VOYO: ${code}`);
+}
+
+async function sendQuestionnaireLink(phone, link) {
+  return sendMessage(phone, `Заполните опросный лист VOYO: ${link}`);
+}
+
 async function getBalance() {
   const apiId = getApiId();
   if (!apiId) return null;
@@ -107,5 +115,7 @@ module.exports = {
   normalizePhone,
   generateCode,
   sendCode,
+  sendMessage,
+  sendQuestionnaireLink,
   getBalance,
 };

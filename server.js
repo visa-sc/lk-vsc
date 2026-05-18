@@ -7,6 +7,7 @@ const os = require("os");
 const axios = require("axios");
 const multer = require("multer");
 const PDFDocument = require("pdfkit");
+const crypto = require("crypto");
 const sms = require("./sms");
 
 const app = express();
@@ -650,7 +651,7 @@ async function getLeadsByPhone(phone) {
   return leads;
 }
 
-function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "", prefill = null, isEdit = false, applicantCount = 0, visaType = "" }) {
+function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "", prefill = null, isEdit = false, applicantCount = 0, visaType = "", shareToken = "" }) {
   const safePhone = escapeHtml(phone || "");
   const safeLeadId = escapeHtml(String(leadId || ""));
   const safeCountry = escapeHtml(countryService || "не указано");
@@ -660,6 +661,8 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
   const isFirstApplicant = idx === 1;
   const safeApplicantCount = Math.max(0, parseInt(applicantCount, 10) || 0);
   const safeVisaType = escapeHtml(visaType || "");
+  const safeShareToken = escapeHtml(String(shareToken || ""));
+  const isShareMode = !!shareToken;
 
   const titleText = visaType === "Шенгенская виза"
     ? "Опросник на Шенгенскую визу"
@@ -820,6 +823,7 @@ ${handoffNoticeHtml}
     <input type="hidden" name="totalApplicants" value="${total}" />
     <input type="hidden" name="isEdit" value="${isEdit ? "1" : ""}" />
     <input type="hidden" name="visaType" value="${safeVisaType}" />
+    <input type="hidden" name="shareToken" value="${safeShareToken}" />
 ${applicantCountFieldHtml}
     <!-- 1 -->
     <div class="field">
@@ -1358,6 +1362,14 @@ ${applicantCountFieldHtml}
         throw new Error(data.message || "Не удалось отправить опросник");
       }
 
+      const IS_SHARE_MODE = ${JSON.stringify(isShareMode)};
+      if (IS_SHARE_MODE) {
+        showBox(successBox, "Спасибо! Опросник отправлен. Можете закрыть страницу.");
+        submitBtn.style.display = "none";
+        if (successBox.scrollIntoView) successBox.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+
       showBox(successBox, "Опросник успешно отправлен");
 
       try {
@@ -1660,6 +1672,74 @@ function buildQuestionnaireStartHtml({ phone, leadId }) {
       margin-top: 8px;
     }
     .submit-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .radio-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    .radio-group label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: #1d2330;
+      cursor: pointer;
+      padding: 10px 16px;
+      border: 1px solid #e8e2ee;
+      border-radius: 12px;
+      background: #fff;
+      flex: 1 1 220px;
+    }
+    .radio-group input[type="radio"] { accent-color: #4f9f68; width: 16px; height: 16px; }
+    .radio-group label:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    .sms-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch; }
+    .sms-row input[type="tel"] {
+      height: 50px;
+      border: 1px solid #e8e2ee;
+      border-radius: 14px;
+      padding: 0 14px;
+      font-size: 16px;
+      outline: none;
+      background: #fff;
+      color: #1f2532;
+      font-family: inherit;
+    }
+    .sms-row input[type="tel"]:focus { border-color: #3589BD; }
+    .sms-send-btn {
+      height: 50px;
+      padding: 0 14px;
+      border: none;
+      border-radius: 14px;
+      background: #3589BD;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .sms-send-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .sms-row.is-sent input[type="tel"] {
+      background: #f6fbf8;
+      border-color: #cfe7d2;
+      color: #2e7a43;
+    }
+    .sms-row.is-sent .sms-send-btn { background: #4f9f68; cursor: default; }
+    .sms-add-btn {
+      background: transparent;
+      border: none;
+      color: #3589BD;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 6px 0;
+      cursor: pointer;
+      text-align: left;
+      display: inline-block;
+    }
+    .sms-add-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .sms-msg {
+      font-size: 13px;
+      line-height: 1.4;
+      padding: 6px 0 0;
+    }
+    .sms-msg.error { color: #a15561; }
+    .sms-msg.success { color: #2e7a43; }
+    .sms-hint { font-size: 12px; color: #9096a3; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -1695,6 +1775,24 @@ ${visaOptionsHtml}
       </div>
     </div>
 
+    <div class="cond" id="c_mode">
+      <div class="field">
+        <label>Вы будете заполнять опросники за всех заявителей, или хотите, чтобы кому-то из заявителей ушло SMS со ссылкой на заполнение опросника?</label>
+        <div class="radio-group" id="modeGroup">
+          <label><input type="radio" name="fillMode" value="self" /> Я заполню за всех</label>
+          <label><input type="radio" name="fillMode" value="sms" /> Некоторым нужно отправить SMS со ссылкой на заполнение опросника</label>
+        </div>
+      </div>
+      <div class="cond" id="c_smsBlock">
+        <div class="field">
+          <label>Отправьте SMS со ссылкой на заполнение опросника</label>
+          <div id="smsRows"></div>
+          <button type="button" class="sms-add-btn" id="smsAddBtn">+ Добавить поле</button>
+          <p class="sms-hint" id="smsHint"></p>
+        </div>
+      </div>
+    </div>
+
     <div class="cond" id="c_underdev">
       <div class="info-box">Раздел в разработке</div>
     </div>
@@ -1710,32 +1808,194 @@ ${visaOptionsHtml}
   const visaSelect = document.getElementById("visaType");
   const countSelect = document.getElementById("applicantCount");
   const countCond = document.getElementById("c_count");
+  const modeCond = document.getElementById("c_mode");
+  const smsBlockCond = document.getElementById("c_smsBlock");
   const underdevCond = document.getElementById("c_underdev");
   const continueBtn = document.getElementById("continueBtn");
+  const smsRows = document.getElementById("smsRows");
+  const smsAddBtn = document.getElementById("smsAddBtn");
+  const smsHint = document.getElementById("smsHint");
+
+  // sentSms: набор номеров (нормализованных), на которые уже отправили SMS
+  const sentSms = new Set();
+
+  function applicantCountVal() {
+    return parseInt(countSelect.value, 10) || 0;
+  }
+
+  function fillModeVal() {
+    const el = document.querySelector('input[name="fillMode"]:checked');
+    return el ? el.value : null;
+  }
+
+  function normalizePhoneJs(raw) {
+    const digits = String(raw || "").replace(/\\D/g, "");
+    if (!digits) return "";
+    if (digits.length === 11 && digits.startsWith("8")) return "7" + digits.slice(1);
+    if (digits.length === 10) return "7" + digits;
+    return digits;
+  }
 
   function update() {
     const v = visaSelect.value;
     const isSchengen = v === "Шенгенская виза";
     countCond.classList.toggle("show", isSchengen);
     underdevCond.classList.toggle("show", !!v && !isSchengen);
-    const countVal = parseInt(countSelect.value, 10) || 0;
-    continueBtn.disabled = !(isSchengen && countVal > 0);
+
+    const countVal = applicantCountVal();
+    const showMode = isSchengen && countVal > 1;
+    modeCond.classList.toggle("show", showMode);
+    if (!showMode) {
+      // сбрасываем выбор режима, чтобы случайный «sms» не залип после смены количества
+      const checked = document.querySelector('input[name="fillMode"]:checked');
+      if (checked) checked.checked = false;
+    }
+    const isSmsMode = showMode && fillModeVal() === "sms";
+    smsBlockCond.classList.toggle("show", isSmsMode);
+
+    if (isSmsMode && smsRows.children.length === 0) addSmsRow();
+    refreshSmsAddState();
+
+    // Кнопка «Продолжить» доступна для:
+    // — шенген + count >= 1 (один заявитель — без вопроса о режиме)
+    // — count > 1 + выбран режим (любой)
+    let canContinue = false;
+    if (isSchengen && countVal > 0) {
+      if (countVal === 1) canContinue = true;
+      else if (fillModeVal()) canContinue = true;
+    }
+    continueBtn.disabled = !canContinue;
+
+    // Текст кнопки: если все опросники уже разосланы SMS — «Готово»
+    if (isSmsMode && sentSms.size >= countVal) {
+      continueBtn.textContent = "Готово";
+    } else {
+      continueBtn.textContent = "Продолжить";
+    }
   }
 
+  function addSmsRow() {
+    const countVal = applicantCountVal();
+    if (smsRows.children.length >= countVal) return;
+    const row = document.createElement("div");
+    row.className = "sms-row";
+    row.innerHTML = ''
+      + '<input type="tel" placeholder="+7 999 123-45-67" autocomplete="off" inputmode="tel" />'
+      + '<button type="button" class="sms-send-btn">Отправить SMS с опросником</button>'
+      + '<div class="sms-msg" style="grid-column: 1 / -1; display:none;"></div>';
+    smsRows.appendChild(row);
+    const input = row.querySelector('input[type="tel"]');
+    const sendBtn = row.querySelector('.sms-send-btn');
+    const msg = row.querySelector('.sms-msg');
+    sendBtn.addEventListener("click", () => sendSms(row, input, sendBtn, msg));
+    refreshSmsAddState();
+  }
+
+  function refreshSmsAddState() {
+    const countVal = applicantCountVal();
+    const rows = smsRows.children.length;
+    smsAddBtn.disabled = rows >= countVal;
+    smsHint.textContent = countVal > 0
+      ? "Добавлено полей: " + rows + " из " + countVal + " (по количеству заявителей)"
+      : "";
+  }
+
+  async function sendSms(row, input, btn, msg) {
+    msg.style.display = "none";
+    msg.className = "sms-msg";
+    const raw = input.value.trim();
+    const norm = normalizePhoneJs(raw);
+    if (!norm || norm.length < 11) {
+      msg.style.display = "block";
+      msg.className = "sms-msg error";
+      msg.textContent = "Введите корректный номер телефона";
+      return;
+    }
+    if (sentSms.has(norm)) {
+      msg.style.display = "block";
+      msg.className = "sms-msg error";
+      msg.textContent = "На этот номер уже отправлено SMS";
+      return;
+    }
+    btn.disabled = true;
+    const prevText = btn.textContent;
+    btn.textContent = "Отправка...";
+    try {
+      const r = await fetch("/api/questionnaire/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: PHONE,
+          leadId: LEAD_ID,
+          applicantCount: applicantCountVal(),
+          visaType: visaSelect.value,
+          recipientPhone: norm
+        })
+      });
+      const data = await r.json();
+      if (!r.ok || !data.success) {
+        throw new Error(data.message || "Не удалось отправить SMS");
+      }
+      sentSms.add(norm);
+      input.value = norm;
+      input.readOnly = true;
+      row.classList.add("is-sent");
+      btn.textContent = data.testMode ? "Отправлено (тестовый режим)" : "SMS отправлено";
+      msg.style.display = "block";
+      msg.className = "sms-msg success";
+      msg.textContent = data.testMode
+        ? "Тестовый режим SMS.ru — реальное сообщение не отправлено, но логика работает."
+        : "Ссылка отправлена.";
+      update();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = prevText;
+      msg.style.display = "block";
+      msg.className = "sms-msg error";
+      msg.textContent = err.message || "Ошибка отправки";
+    }
+  }
+
+  smsAddBtn.addEventListener("click", addSmsRow);
   visaSelect.addEventListener("change", update);
-  countSelect.addEventListener("change", update);
+  countSelect.addEventListener("change", () => {
+    // Если количество уменьшили — удаляем лишние SMS-строки (только не отправленные)
+    const target = applicantCountVal();
+    while (smsRows.children.length > target) {
+      const last = smsRows.lastElementChild;
+      if (last && !last.classList.contains("is-sent")) {
+        smsRows.removeChild(last);
+      } else {
+        break;
+      }
+    }
+    update();
+  });
+  document.addEventListener("change", (e) => {
+    if (e.target && e.target.name === "fillMode") update();
+  });
   update();
 
   document.getElementById("startForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const v = visaSelect.value;
     if (v !== "Шенгенская виза") return;
-    const count = parseInt(countSelect.value, 10) || 0;
+    const count = applicantCountVal();
     if (count < 1) return;
+
+    const sent = sentSms.size;
+    const remaining = Math.max(0, count - sent);
+
+    // Если все опросники разосланы по SMS — возвращаемся в кабинет
+    if (count > 1 && fillModeVal() === "sms" && remaining === 0) {
+      window.location.href = "/cabinet?phone=" + encodeURIComponent(PHONE);
+      return;
+    }
+
     const params = new URLSearchParams({
       phone: PHONE,
       leadId: LEAD_ID,
-      applicantCount: String(count),
+      applicantCount: String(remaining > 0 ? remaining : count),
       visaType: v
     });
     window.location.href = "/questionnaire?" + params.toString();
@@ -1744,6 +2004,90 @@ ${visaOptionsHtml}
 </body>
 </html>`;
 }
+
+// ──────────────────────────────────────────────────────────
+// Share-токены опросника (SMS-ссылки на заполнение)
+// ──────────────────────────────────────────────────────────
+const SHARE_TOKENS_FILE = path.join(__dirname, ".shareTokens.json");
+const SHARE_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 дней
+const shareTokens = new Map();
+
+function loadShareTokens() {
+  try {
+    const raw = fs.readFileSync(SHARE_TOKENS_FILE, "utf8");
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) {
+      const now = Date.now();
+      arr.forEach((item) => {
+        if (item && item.token && item.createdAt && now - item.createdAt < SHARE_TOKEN_TTL_MS) {
+          shareTokens.set(item.token, item);
+        }
+      });
+    }
+  } catch (_) {}
+}
+
+function saveShareTokens() {
+  try {
+    const arr = Array.from(shareTokens.values());
+    fs.writeFileSync(SHARE_TOKENS_FILE, JSON.stringify(arr, null, 2), "utf8");
+  } catch (e) {
+    console.error("saveShareTokens error:", e.message);
+  }
+}
+
+function purgeOldShareTokens() {
+  const now = Date.now();
+  let changed = false;
+  for (const [token, data] of shareTokens.entries()) {
+    if (now - data.createdAt >= SHARE_TOKEN_TTL_MS) {
+      shareTokens.delete(token);
+      changed = true;
+    }
+  }
+  if (changed) saveShareTokens();
+}
+
+function createShareToken({ phone, leadId, applicantCount, visaType }) {
+  const token = crypto.randomBytes(24).toString("hex");
+  const data = {
+    token,
+    phone,
+    leadId,
+    applicantCount: Math.max(1, parseInt(applicantCount, 10) || 1),
+    visaType: visaType || "",
+    createdAt: Date.now()
+  };
+  shareTokens.set(token, data);
+  saveShareTokens();
+  return token;
+}
+
+function getShareToken(token) {
+  purgeOldShareTokens();
+  if (!token || typeof token !== "string") return null;
+  return shareTokens.get(token) || null;
+}
+
+async function getNextApplicantIndex(phone) {
+  try {
+    const techFolder = `${YANDEX_DISK_ROOT}/${phone}/Опросники/Технические файлы`;
+    const files = await listYandexFolderFiles(techFolder);
+    const used = new Set();
+    files.forEach((name) => {
+      const m = /^Опросник(?:\s+(\d+))?\.json$/i.exec(name);
+      if (m) used.add(parseInt(m[1] || "1", 10));
+    });
+    let idx = 1;
+    while (used.has(idx)) idx++;
+    return idx;
+  } catch (e) {
+    console.error("getNextApplicantIndex error:", e.message);
+    return 1;
+  }
+}
+
+loadShareTokens();
 
 app.get("/questionnaire-start", async (req, res) => {
   try {
@@ -1764,21 +2108,40 @@ app.get("/questionnaire-start", async (req, res) => {
 
 app.get("/questionnaire", async (req, res) => {
   try {
-    const phone = normalizePhone(req.query.phone || "");
-    const leadId = String(req.query.leadId || "").trim();
-    const applicantIndex = Math.max(1, Math.min(10, parseInt(req.query.applicantIndex || "1", 10) || 1));
-    const totalApplicants = Math.max(applicantIndex, Math.min(10, parseInt(req.query.totalApplicants || "1", 10) || 1));
-    const prevApplicantName = String(req.query.prevApplicantName || "").trim();
-    const isEdit = String(req.query.edit || "") === "1";
-    const applicantCount = Math.max(0, Math.min(10, parseInt(req.query.applicantCount || "0", 10) || 0));
-    const visaType = String(req.query.visaType || "").trim();
+    // Share-режим: ссылка отправлена по SMS, всё контекстное берём из токена
+    const shareTokenParam = String(req.query.share || "").trim();
+    const shareData = shareTokenParam ? getShareToken(shareTokenParam) : null;
+    if (shareTokenParam && !shareData) {
+      return res.status(404).send("Ссылка устарела или недействительна. Запросите новую ссылку у заказчика.");
+    }
+
+    const phone = shareData
+      ? normalizePhone(shareData.phone || "")
+      : normalizePhone(req.query.phone || "");
+    const leadId = shareData
+      ? String(shareData.leadId || "").trim()
+      : String(req.query.leadId || "").trim();
+    const applicantIndex = shareData
+      ? 1
+      : Math.max(1, Math.min(10, parseInt(req.query.applicantIndex || "1", 10) || 1));
+    const totalApplicants = shareData
+      ? 1
+      : Math.max(applicantIndex, Math.min(10, parseInt(req.query.totalApplicants || "1", 10) || 1));
+    const prevApplicantName = shareData ? "" : String(req.query.prevApplicantName || "").trim();
+    const isEdit = shareData ? false : String(req.query.edit || "") === "1";
+    const applicantCount = shareData
+      ? 0
+      : Math.max(0, Math.min(10, parseInt(req.query.applicantCount || "0", 10) || 0));
+    const visaType = shareData
+      ? String(shareData.visaType || "").trim()
+      : String(req.query.visaType || "").trim();
 
     if (!phone || !leadId) {
       return res.status(400).send("Не переданы phone или leadId");
     }
 
     // Первый заявитель без applicantCount — перенаправляем на стартовую страницу выбора визы и количества
-    if (!isEdit && applicantIndex === 1 && !applicantCount) {
+    if (!shareData && !isEdit && applicantIndex === 1 && !applicantCount) {
       const params = new URLSearchParams({ phone, leadId });
       return res.redirect("/questionnaire-start?" + params.toString());
     }
@@ -1846,7 +2209,8 @@ app.get("/questionnaire", async (req, res) => {
       prefill,
       isEdit,
       applicantCount,
-      visaType: effectiveVisaType
+      visaType: effectiveVisaType,
+      shareToken: shareData ? shareData.token : ""
     }));
   } catch (error) {
     console.error("GET /questionnaire error:", error.response?.data || error.message);
@@ -1859,31 +2223,54 @@ app.post(
   upload.fields([{ name: "visaPhoto", maxCount: 1 }]),
   async (req, res) => {
     try {
-      const phone = normalizePhone(req.body.phone || "");
-      const leadId = String(req.body.leadId || "").trim();
       const fullName = String(req.body.fullName || "").trim();
+      const shareTokenInput = String(req.body.shareToken || "").trim();
+      const shareData = shareTokenInput ? getShareToken(shareTokenInput) : null;
+      if (shareTokenInput && !shareData) {
+        return res.status(400).json({ success: false, message: "Ссылка устарела или недействительна" });
+      }
+      const isShareMode = !!shareData;
 
-      const applicantIndex = Math.max(1, Math.min(10, parseInt(req.body.applicantIndex || "1", 10) || 1));
-      const applicantCountRaw = Math.max(1, Math.min(10, parseInt(req.body.applicantCount || "0", 10) || 0));
-      const incomingTotal = Math.max(1, Math.min(10, parseInt(req.body.totalApplicants || "0", 10) || 0));
-      const isEdit = String(req.body.isEdit || "") === "1";
-      const totalApplicants = isEdit
-        ? Math.max(applicantIndex, incomingTotal)
-        : (applicantIndex === 1
-            ? Math.max(1, applicantCountRaw)
-            : Math.max(applicantIndex, incomingTotal));
+      const phone = isShareMode
+        ? normalizePhone(shareData.phone || "")
+        : normalizePhone(req.body.phone || "");
+      const leadId = isShareMode
+        ? String(shareData.leadId || "").trim()
+        : String(req.body.leadId || "").trim();
+
+      const isEdit = !isShareMode && String(req.body.isEdit || "") === "1";
+
+      // applicantIndex и totalApplicants:
+      // - share-режим: applicantIndex = первый свободный в Технических файлах; total = max(applicantCountFromToken, idx)
+      // - обычный режим: как раньше
+      let applicantIndex;
+      let totalApplicants;
+
+      if (isShareMode) {
+        applicantIndex = await getNextApplicantIndex(phone);
+        totalApplicants = Math.max(applicantIndex, parseInt(shareData.applicantCount, 10) || 1);
+      } else {
+        applicantIndex = Math.max(1, Math.min(10, parseInt(req.body.applicantIndex || "1", 10) || 1));
+        const applicantCountRaw = Math.max(1, Math.min(10, parseInt(req.body.applicantCount || "0", 10) || 0));
+        const incomingTotal = Math.max(1, Math.min(10, parseInt(req.body.totalApplicants || "0", 10) || 0));
+        totalApplicants = isEdit
+          ? Math.max(applicantIndex, incomingTotal)
+          : (applicantIndex === 1
+              ? Math.max(1, applicantCountRaw)
+              : Math.max(applicantIndex, incomingTotal));
+
+        if (!isEdit && applicantIndex === 1 && !applicantCountRaw) {
+          return res.status(400).json({
+            success: false,
+            message: "Не указано количество заявителей"
+          });
+        }
+      }
 
       if (!phone || !leadId || !fullName) {
         return res.status(400).json({
           success: false,
           message: "Заполнены не все обязательные поля опросника"
-        });
-      }
-
-      if (!isEdit && applicantIndex === 1 && !applicantCountRaw) {
-        return res.status(400).json({
-          success: false,
-          message: "Не указано количество заявителей"
         });
       }
 
@@ -2020,7 +2407,7 @@ app.post(
       }
 
       let nextApplicantUrl = null;
-      if (!isEdit && applicantIndex < totalApplicants) {
+      if (!isShareMode && !isEdit && applicantIndex < totalApplicants) {
         const params = new URLSearchParams({
           phone,
           leadId,
@@ -2051,6 +2438,44 @@ app.post(
     }
   }
 );
+
+app.post("/api/questionnaire/share", async (req, res) => {
+  try {
+    const phone = normalizePhone(req.body.phone || "");
+    const leadId = String(req.body.leadId || "").trim();
+    const applicantCount = Math.max(1, Math.min(10, parseInt(req.body.applicantCount || "0", 10) || 0));
+    const visaType = String(req.body.visaType || "").trim();
+    const recipientPhone = sms.normalizePhone(String(req.body.recipientPhone || ""));
+
+    if (!phone || !leadId) {
+      return res.status(400).json({ success: false, message: "Не переданы phone или leadId" });
+    }
+    if (!recipientPhone || recipientPhone.length < 11) {
+      return res.status(400).json({ success: false, message: "Некорректный номер телефона получателя" });
+    }
+    if (!applicantCount) {
+      return res.status(400).json({ success: false, message: "Не указано количество заявителей" });
+    }
+
+    const token = createShareToken({ phone, leadId, applicantCount, visaType });
+    const origin = `${req.protocol}://${req.get("host")}`;
+    const link = `${origin}/questionnaire?share=${token}`;
+
+    const r = await sms.sendQuestionnaireLink(recipientPhone, link);
+    if (!r.ok) {
+      return res.status(502).json({
+        success: false,
+        message: r.error || "Не удалось отправить SMS",
+        testMode: !!r.testMode
+      });
+    }
+
+    return res.json({ success: true, testMode: !!r.testMode, recipientPhone });
+  } catch (error) {
+    console.error("POST /api/questionnaire/share error:", error.message);
+    return res.status(500).json({ success: false, message: "Ошибка при отправке SMS" });
+  }
+});
 
 app.get("/api/questionnaire-state", async (req, res) => {
   try {
