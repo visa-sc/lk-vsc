@@ -1105,10 +1105,6 @@ ${mixedFieldsHtml}
     <!-- 29, 30, 31, 32, 33 условно -->
     <div class="cond" id="c_prevSchengen">
       <div class="field">
-        <label>Прикрепите фото последней шенгенской визы *</label>
-        <input type="file" name="visaPhoto" accept="image/*,.pdf" />
-      </div>
-      <div class="field">
         <label>Я не открыл/-а свою последнюю шенгенскую визу</label>
         <div class="radio-group">
           <label><input type="radio" name="didNotUseVisa" value="Да" /> Да</label>
@@ -2600,7 +2596,7 @@ app.get("/questionnaire", async (req, res) => {
 
 app.post(
   "/api/questionnaire",
-  upload.fields([{ name: "visaPhoto", maxCount: 1 }]),
+  upload.none(),
   async (req, res) => {
     try {
       const fullName = String(req.body.fullName || "").trim();
@@ -2791,18 +2787,6 @@ app.post(
         `${techFolder}/Опросник${suffix}.json`,
         "application/json; charset=utf-8"
       );
-
-      const visaPhotoFile = req.files?.visaPhoto?.[0];
-      if (visaPhotoFile) {
-        const origName = sanitizeFileName(visaPhotoFile.originalname || "visa");
-        const dotIndex = origName.lastIndexOf(".");
-        const ext = dotIndex >= 0 ? origName.slice(dotIndex) : "";
-        await uploadBufferToYandexDisk(
-          visaPhotoFile.buffer,
-          `${opsFolder}/Фото шенгенской визы - ${safeFio}${ext}`,
-          visaPhotoFile.mimetype
-        );
-      }
 
       // Share-режим: токен одноразовый — после успешного сохранения удаляем
       if (isShareMode && shareData) {
