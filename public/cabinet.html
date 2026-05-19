@@ -265,6 +265,34 @@
       background: #faf7fd;
     }
 
+    .lead-toggle-btn {
+      align-self: stretch;
+      border: 1.5px solid #3589BD;
+      background: #fff;
+      color: #3589BD;
+      border-radius: 14px;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s var(--vsc-ease), color 0.2s var(--vsc-ease);
+    }
+    .lead-toggle-btn:hover {
+      background: #f0f7fc;
+    }
+    .lead-toggle-btn.lead-prev-btn {
+      margin-top: 6px;
+    }
+    .lead-completed-list {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .lead-completed-list.show {
+      display: flex;
+    }
+
     .lead-item.active {
       border-color: #73b489;
       background: #eef8f1;
@@ -2021,7 +2049,13 @@
 
       leadsPlaceholder.style.display = "none";
 
-      leads.forEach((lead, index) => {
+      // Делим обращения: активные (любой статус кроме «Рассмотрение завершено») и завершённые.
+      const COMPLETED_STAGE = "Рассмотрение завершено";
+      const isCompleted = (l) => String(l && l.cabinet_status || "") === COMPLETED_STAGE;
+      const active = leads.filter((l) => !isCompleted(l));
+      const completed = leads.filter(isCompleted);
+
+      function makeLeadButton(lead, autoSelect) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "lead-item";
@@ -2042,12 +2076,52 @@
           selectLead(lead, button);
         });
 
-        leadList.appendChild(button);
-
-        if (index === 0) {
-          selectLead(lead, button);
+        if (autoSelect) {
+          // Откладываем на следующий тик, чтобы успели добавиться все .lead-item в DOM
+          setTimeout(() => selectLead(lead, button), 0);
         }
+        return button;
+      }
+
+      // Активные — всегда видны
+      active.forEach((lead, i) => {
+        leadList.appendChild(makeLeadButton(lead, i === 0));
       });
+
+      if (completed.length) {
+        // Кнопка «Предыдущие обращения» + контейнер с завершёнными (скрыт по умолчанию)
+        const prevBtn = document.createElement("button");
+        prevBtn.type = "button";
+        prevBtn.className = "lead-toggle-btn lead-prev-btn";
+        prevBtn.textContent = "Предыдущие обращения";
+
+        const completedWrap = document.createElement("div");
+        completedWrap.className = "lead-completed-list";
+
+        completed.forEach((lead) => {
+          // Если нет активных — первый завершённый выберем автоматически
+          const shouldAutoSelect = !active.length && lead === completed[0];
+          completedWrap.appendChild(makeLeadButton(lead, shouldAutoSelect));
+        });
+
+        const hideBtn = document.createElement("button");
+        hideBtn.type = "button";
+        hideBtn.className = "lead-toggle-btn";
+        hideBtn.textContent = "Скрыть неактивные обращения";
+        completedWrap.appendChild(hideBtn);
+
+        prevBtn.addEventListener("click", () => {
+          completedWrap.classList.add("show");
+          prevBtn.style.display = "none";
+        });
+        hideBtn.addEventListener("click", () => {
+          completedWrap.classList.remove("show");
+          prevBtn.style.display = "";
+        });
+
+        leadList.appendChild(prevBtn);
+        leadList.appendChild(completedWrap);
+      }
     }
 
     async function loadLeads() {
