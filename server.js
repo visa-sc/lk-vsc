@@ -8,6 +8,7 @@ const axios = require("axios");
 const multer = require("multer");
 const PDFDocument = require("pdfkit");
 const crypto = require("crypto");
+const archiver = require("archiver");
 const sms = require("./sms");
 
 const app = express();
@@ -548,6 +549,217 @@ async function downloadJsonFromYandexDisk(diskPath) {
   }
 }
 
+// ─── amoCRM↔Я.Диск интеграция: зеркалирование документов в папку сделки + zip ───
+// Папки сделок лежат в /AmoCRM/Сделки/<lead_id>/, внутри создаём свою папку «Документы из ЛК».
+const AMO_DEALS_ROOT = "AmoCRM/Сделки";
+const AMO_DOCS_FOLDER_NAME = "Документы из ЛК";
+const AMO_DOCS_ZIP_NAME = "Документы из ЛК.zip";
+const TASK_RESPONSIBLE_FIELD_ID = 443488;
+
+function amoDealFolder(leadId) {
+  return `${AMO_DEALS_ROOT}/${leadId}`;
+}
+function amoDocsFolder(leadId) {
+  return `${amoDealFolder(leadId)}/${AMO_DOCS_FOLDER_NAME}`;
+}
+
+async function ensureNestedYandexFolder(absolutePath) {
+  // Создаём весь путь по сегментам, пропуская существующие.
+  const parts = absolutePath.split("/").filter(Boolean);
+  let p = "";
+  for (const part of parts) {
+    p = p ? `${p}/${part}` : part;
+    await ensureYandexFolder(p);
+  }
+}
+
+async function uploadToAmoDealDocs(leadId, relativePath, buffer, contentType) {
+  await ensureNestedYandexFolder(amoDocsFolder(leadId));
+  const segments = String(relativePath).split("/").filter(Boolean);
+  const fileName = segments.pop();
+  if (!fileName) throw new Error("relativePath is empty");
+  let current = amoDocsFolder(leadId);
+  for (const seg of segments) {
+    current = `${current}/${seg}`;
+    await ensureYandexFolder(current);
+  }
+  const fullPath = `${current}/${fileName}`;
+  await uploadBufferToYandexDisk(buffer, fullPath, contentType);
+  return fullPath;
+}
+
+async function listYandexFolderRecursive(folderPath, basePath = folderPath) {
+  const out = [];
+  try {
+    const r = await yandexRequest({
+      method: "GET",
+      url: "https://cloud-api.yandex.net/v1/disk/resources",
+      params: {
+        path: folderPath,
+        limit: 1000,
+        fields: "_embedded.items.name,_embedded.items.type,_embedded.items.path,_embedded.items.size"
+      }
+    });
+    const items = r.data?._embedded?.items || [];
+    for (const item of items) {
+      if (item.type === "dir") {
+        const sub = await listYandexFolderRecursive(`${folderPath}/${item.name}`, basePath);
+        out.push(...sub);
+      } else if (item.type === "file") {
+        const fullPath = `${folderPath}/${item.name}`;
+        out.push({
+          name: item.name,
+          fullPath,
+          relativePath: fullPath.slice(basePath.length + 1),
+          size: item.size
+        });
+      }
+    }
+  } catch (e) {
+    if (e.response?.status !== 404) {
+      console.error("LIST FOLDER ERROR:", folderPath, e.response?.data || e.message);
+    }
+  }
+  return out;
+}
+
+async function downloadYandexFileBuffer(diskPath) {
+  const linkResponse = await yandexRequest({
+    method: "GET",
+    url: "https://cloud-api.yandex.net/v1/disk/resources/download",
+    params: { path: diskPath }
+  });
+  const downloadUrl = linkResponse.data.href;
+  const response = await axios.get(downloadUrl, {
+    responseType: "arraybuffer",
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity
+  });
+  return Buffer.from(response.data);
+}
+
+async function deleteYandexResourceIfExists(diskPath) {
+  try {
+    await yandexRequest({
+      method: "DELETE",
+      url: "https://cloud-api.yandex.net/v1/disk/resources",
+      params: { path: diskPath, permanently: "true" }
+    });
+  } catch (e) {
+    if (e.response?.status === 404) return;
+    console.error("DELETE Y.DISK ERROR:", diskPath, e.response?.data || e.message);
+  }
+}
+
+async function rebuildAmoDocsZip(leadId) {
+  const folder = amoDocsFolder(leadId);
+  const zipPath = `${folder}/${AMO_DOCS_ZIP_NAME}`;
+
+  // Удаляем старый архив, чтобы не попал в новый
+  await deleteYandexResourceIfExists(zipPath);
+
+  const items = await listYandexFolderRecursive(folder);
+  const filtered = items.filter((f) => !f.name.toLowerCase().endsWith(".zip"));
+  if (!filtered.length) return;
+
+  const archive = archiver("zip", { zlib: { level: 9 } });
+  const chunks = [];
+  const done = new Promise((resolve, reject) => {
+    archive.on("data", (chunk) => chunks.push(chunk));
+    archive.on("end", resolve);
+    archive.on("error", reject);
+  });
+
+  for (const item of filtered) {
+    try {
+      const buf = await downloadYandexFileBuffer(item.fullPath);
+      archive.append(buf, { name: item.relativePath });
+    } catch (e) {
+      console.error("ZIP FETCH ERROR:", item.fullPath, e.response?.data || e.message);
+    }
+  }
+  archive.finalize();
+  await done;
+  const zipBuffer = Buffer.concat(chunks);
+  await uploadBufferToYandexDisk(zipBuffer, zipPath, "application/zip");
+}
+
+async function amoPost(url, body) {
+  console.log("AMO POST:", url, JSON.stringify(body));
+  const response = await axios.post(url, body, {
+    headers: {
+      Authorization: `Bearer ${AMO_ACCESS_TOKEN}`,
+      "Content-Type": "application/json"
+    }
+  });
+  return response.data;
+}
+
+function getEntityCustomFieldValue(entity, fieldId) {
+  const fields = entity?.custom_fields_values || [];
+  for (const f of fields) {
+    if (Number(f.field_id) === Number(fieldId)) {
+      const values = f.values || [];
+      if (values.length) return values[0].value;
+    }
+  }
+  return null;
+}
+
+async function createAmoUploadTask(leadId) {
+  if (!AMO_ACCESS_TOKEN || !AMO_SUBDOMAIN) return;
+  if (!leadId) return;
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const lead = await getLeadById(baseUrl, leadId);
+    if (!lead) return;
+    const respRaw = getEntityCustomFieldValue(lead, TASK_RESPONSIBLE_FIELD_ID);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const taskBody = [{
+      task_type_id: 1,
+      text: "Загрузились новые документы от клиента из ЛК.",
+      complete_till: nowSec,
+      entity_id: Number(leadId),
+      entity_type: "leads"
+    }];
+    const respNum = respRaw != null ? Number(respRaw) : NaN;
+    if (Number.isFinite(respNum) && respNum > 0) {
+      taskBody[0].responsible_user_id = respNum;
+    }
+    await amoPost(`${baseUrl}/api/v4/tasks`, taskBody);
+  } catch (e) {
+    console.error("CREATE AMO TASK ERROR:", e.response?.data || e.message);
+  }
+}
+
+// Фоновое зеркалирование: один или несколько файлов → папка сделки на Я.Диске,
+// затем один пересбор zip, затем (опционально) amoCRM-задача.
+// Не блокирует ответ клиенту (fire-and-forget).
+function mirrorToAmoFolderInBackground(leadId, files, options = {}) {
+  if (!leadId) return;
+  const list = Array.isArray(files) ? files : [files];
+  if (!list.length) return;
+  const { createTask = false } = options;
+  setImmediate(async () => {
+    for (const f of list) {
+      if (!f || !f.relativePath || !f.buffer) continue;
+      try {
+        await uploadToAmoDealDocs(leadId, f.relativePath, f.buffer, f.contentType || "application/octet-stream");
+      } catch (e) {
+        console.error("AMO MIRROR ERROR:", f.relativePath, e.response?.data || e.message);
+      }
+    }
+    try {
+      await rebuildAmoDocsZip(leadId);
+    } catch (e) {
+      console.error("AMO ZIP ERROR:", e.response?.data || e.message);
+    }
+    if (createTask) {
+      await createAmoUploadTask(leadId);
+    }
+  });
+}
+
 const UPLOAD_FIELDS_WHITELIST = {
   mainPassport:         "Загран. паспорт (в который запрашиваем визу)",
   innerPassport:        "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)",
@@ -559,7 +771,7 @@ const UPLOAD_FIELDS_WHITELIST = {
   birthCertificate:     "Свидетельство о рождении",
   sponsorPassport:      "1-ый разворот внутреннего паспорта РФ спонсора",
   insurancePolicy:      "Страховой полис для въезда в Шенген",
-  workCert:             "Справка с работы / учёбы"
+  workCert:             "Справка с работы или учёбы"
 };
 
 async function findMatchingContacts(baseUrl, phone) {
@@ -902,14 +1114,14 @@ ${mixedFieldsHtml}
     <!-- 4 -->
     <div class="field">
       <label>Телефон *</label>
-      <input type="tel" name="contactPhone" required />
+      <input type="tel" name="contactPhone" inputmode="tel" autocomplete="tel" placeholder="+7 (___) ___-__-__" data-phone-mask required />
       <span class="hint">Тот, по которому Консульство сможет связаться с заявителем</span>
     </div>
 
     <!-- 5 -->
     <div class="field">
       <label>Почта *</label>
-      <input type="text" name="email" required />
+      <input type="email" name="email" inputmode="email" autocomplete="email" placeholder="example@mail.ru" required />
       <span class="hint">Та, по которой Консульство сможет связаться с заявителем</span>
     </div>
 
@@ -1020,7 +1232,7 @@ ${mixedFieldsHtml}
     <!-- 19 -->
     <div class="field">
       <label>Телефон работодателя *</label>
-      <input type="tel" name="employerPhone" required />
+      <input type="tel" name="employerPhone" inputmode="tel" placeholder="+7 (___) ___-__-__" data-phone-mask required />
     </div>
 
     <!-- 20 -->
@@ -1342,6 +1554,67 @@ ${mixedFieldsHtml}
 
   form.addEventListener("change", updateConditionals);
   updateConditionals();
+
+  // ─── Маска для телефонных полей: +7 (XXX) XXX-XX-XX ───
+  function formatPhoneRu(rawDigits) {
+    let d = String(rawDigits || "").replace(/\\D/g, "");
+    if (d.length && d[0] === "8") d = "7" + d.slice(1);
+    if (d.length && d[0] !== "7") d = "7" + d;
+    d = d.slice(0, 11);
+    const a = d.slice(1, 4);
+    const b = d.slice(4, 7);
+    const c = d.slice(7, 9);
+    const e = d.slice(9, 11);
+    let out = "+7";
+    if (a) out += " (" + a;
+    if (a.length === 3) out += ")";
+    if (b) out += " " + b;
+    if (c) out += "-" + c;
+    if (e) out += "-" + e;
+    return out;
+  }
+  function attachPhoneMask(input) {
+    if (!input) return;
+    function applyMask(skipIfEmpty) {
+      const v = input.value || "";
+      if (skipIfEmpty && !v.replace(/\\D/g, "")) return;
+      input.value = formatPhoneRu(v);
+    }
+    if (input.value) applyMask(true);
+    input.addEventListener("input", () => applyMask(false));
+    input.addEventListener("focus", () => {
+      if (!input.value) input.value = "+7 ";
+    });
+    input.addEventListener("blur", () => {
+      if (input.value.replace(/\\D/g, "").length <= 1) input.value = "";
+    });
+  }
+  document.querySelectorAll('input[data-phone-mask]').forEach(attachPhoneMask);
+
+  // ─── Даты поездки: первая ≥ завтра, вторая ≥ первой ───
+  function pad2(n) { return n < 10 ? "0" + n : String(n); }
+  function ymd(date) {
+    return date.getFullYear() + "-" + pad2(date.getMonth() + 1) + "-" + pad2(date.getDate());
+  }
+  function applyTripDateConstraints() {
+    const tripFrom = form.querySelector('input[name="tripDateFrom"]');
+    const tripTo = form.querySelector('input[name="tripDateTo"]');
+    if (!tripFrom || !tripTo) return;
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = ymd(tomorrow);
+    tripFrom.min = tomorrowStr;
+    if (tripFrom.value && tripFrom.value < tomorrowStr) tripFrom.value = tomorrowStr;
+    const fromVal = tripFrom.value || tomorrowStr;
+    tripTo.min = fromVal;
+    if (tripTo.value && tripTo.value < fromVal) tripTo.value = fromVal;
+    tripFrom.addEventListener("change", () => {
+      const v = tripFrom.value || tomorrowStr;
+      tripTo.min = v;
+      if (tripTo.value && tripTo.value < v) tripTo.value = v;
+    });
+  }
+  applyTripDateConstraints();
 
   // Prefill (для режима "Скорректировать опросник")
   const PREFILL = ${JSON.stringify(prefill || null).replace(/</g, "\\u003c")};
@@ -2775,18 +3048,42 @@ app.post(
       const suffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
       const safeFio = sanitizeFileName(fullName) || `Заявитель ${applicantIndex}`;
 
+      const pdfFileName = `Опросник - ${safeFio}.pdf`;
       await uploadBufferToYandexDisk(
         pdfBuffer,
-        `${opsFolder}/Опросник - ${safeFio}.pdf`,
+        `${opsFolder}/${pdfFileName}`,
         "application/pdf"
       );
 
       const stateJson = JSON.stringify({ ...enrichedFields, savedAt: new Date().toISOString() }, null, 2);
+      const jsonFileName = `Опросник${suffix}.json`;
+      const jsonBuffer = Buffer.from(stateJson, "utf-8");
       await uploadBufferToYandexDisk(
-        Buffer.from(stateJson, "utf-8"),
-        `${techFolder}/Опросник${suffix}.json`,
+        jsonBuffer,
+        `${techFolder}/${jsonFileName}`,
         "application/json; charset=utf-8"
       );
+
+      // Зеркалирование в папку сделки: опросник (PDF) + JSON в подпапке Технические файлы.
+      // Задачу при сабмите опросника не создаём — только при загрузке документов.
+      if (leadId) {
+        mirrorToAmoFolderInBackground(
+          leadId,
+          [
+            {
+              relativePath: `Опросники/${pdfFileName}`,
+              buffer: pdfBuffer,
+              contentType: "application/pdf"
+            },
+            {
+              relativePath: `Опросники/Технические файлы/${jsonFileName}`,
+              buffer: jsonBuffer,
+              contentType: "application/json; charset=utf-8"
+            }
+          ],
+          { createTask: false }
+        );
+      }
 
       // Share-режим: токен одноразовый — после успешного сохранения удаляем
       if (isShareMode && shareData) {
@@ -2980,6 +3277,18 @@ app.post(
 
       await uploadBufferToYandexDisk(file.buffer, diskPath, file.mimetype);
 
+      // Зеркалирование в папку сделки на Я.Диске + amoCRM-задача (фоном)
+      const leadId = String(req.body.leadId || "").trim();
+      mirrorToAmoFolderInBackground(
+        leadId,
+        {
+          relativePath: `Дополнительные документы/${finalName}`,
+          buffer: file.buffer,
+          contentType: file.mimetype
+        },
+        { createTask: true }
+      );
+
       return res.json({ success: true, message: "Файл успешно загружен", fileName: finalName });
     } catch (error) {
       console.error("UPLOAD EXTRA DOC ERROR:");
@@ -3062,6 +3371,18 @@ app.post(
 
       console.log("UPLOAD TO YANDEX:", diskPath);
       await uploadBufferToYandexDisk(file.buffer, diskPath, file.mimetype);
+
+      // Зеркалирование в папку сделки на Я.Диске + amoCRM-задача (фоном)
+      const leadId = String(req.body.leadId || "").trim();
+      mirrorToAmoFolderInBackground(
+        leadId,
+        {
+          relativePath: `${safeFio}/${finalFileName}`,
+          buffer: file.buffer,
+          contentType: file.mimetype
+        },
+        { createTask: true }
+      );
 
       return res.json({
         success: true,

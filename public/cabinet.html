@@ -987,7 +987,7 @@
 
       fresh.addEventListener("click", () => {
         const isOpen = picker.classList.toggle("show");
-        fresh.textContent = isOpen ? "Отменить корректировку" : "Скорректировать опросник";
+        fresh.textContent = isOpen ? "Скрыть опросники" : "Скорректировать опросник";
         doneMsg.style.display = isOpen ? "none" : "";
       });
 
@@ -1082,10 +1082,10 @@
       if (state.hasInsurance === "Да") {
         blocks.push({ field: "insurancePolicy", label: "Страховой полис для въезда в Шенген" });
       }
-      // "Наименование работодателя/учебной организации" → любой ответ кроме "НЕТ" → "Справка с работы / учёбы"
+      // "Наименование работодателя/учебной организации" → любой ответ кроме "НЕТ" → "Справка с работы или учёбы"
       const employer = (state.employerName || "").trim();
       if (employer && employer.toUpperCase() !== "НЕТ") {
-        blocks.push({ field: "workCert", label: "Справка с работы / учёбы" });
+        blocks.push({ field: "workCert", label: "Справка с работы или учёбы" });
       }
 
       // Сортируем: сначала обязательные, потом необязательные. Внутри групп — исходный порядок.
@@ -1272,15 +1272,208 @@
 
       wrapper.appendChild(doneState);
 
+      // ─── Состояние "Корректировка отдельного документа" ───
+      const correctionState = document.createElement("div");
+      correctionState.className = "docs-correction-state";
+      correctionState.style.display = "none";
+
+      const corrPickerWrap = document.createElement("div");
+      corrPickerWrap.className = "field";
+      corrPickerWrap.style.marginBottom = "12px";
+      const corrPickerLabel = document.createElement("label");
+      corrPickerLabel.textContent = "Выберите документ для корректировки";
+      corrPickerLabel.style.display = "block";
+      corrPickerLabel.style.fontSize = "13px";
+      corrPickerLabel.style.color = "#737988";
+      corrPickerLabel.style.marginBottom = "6px";
+      corrPickerWrap.appendChild(corrPickerLabel);
+      const corrPicker = document.createElement("select");
+      corrPicker.className = "docs-correction-picker";
+      const corrDefaultOpt = document.createElement("option");
+      corrDefaultOpt.value = "";
+      corrDefaultOpt.textContent = "— выберите документ —";
+      corrPicker.appendChild(corrDefaultOpt);
+      blocksConfig.forEach((cfg) => {
+        const opt = document.createElement("option");
+        opt.value = cfg.field;
+        opt.textContent = cfg.label;
+        corrPicker.appendChild(opt);
+      });
+      corrPickerWrap.appendChild(corrPicker);
+      correctionState.appendChild(corrPickerWrap);
+
+      // Слот для области загрузки выбранного документа
+      const corrSlot = document.createElement("div");
+      corrSlot.className = "docs-correction-slot";
+      corrSlot.style.display = "none";
+      correctionState.appendChild(corrSlot);
+
+      const corrError = document.createElement("div");
+      corrError.className = "docs-local-error";
+      corrError.style.display = "none";
+      correctionState.appendChild(corrError);
+
+      const corrBtnRow = document.createElement("div");
+      corrBtnRow.style.display = "flex";
+      corrBtnRow.style.gap = "10px";
+      corrBtnRow.style.flexWrap = "wrap";
+      corrBtnRow.style.alignItems = "center";
+      const corrUploadBtn = document.createElement("button");
+      corrUploadBtn.type = "button";
+      corrUploadBtn.className = "upload-btn";
+      corrUploadBtn.style.height = "38px";
+      corrUploadBtn.style.padding = "0 18px";
+      corrUploadBtn.style.fontSize = "13px";
+      corrUploadBtn.textContent = "Загрузить";
+      corrUploadBtn.disabled = true;
+      corrBtnRow.appendChild(corrUploadBtn);
+      const corrCancelBtn = document.createElement("button");
+      corrCancelBtn.type = "button";
+      corrCancelBtn.className = "back-to-login-btn";
+      corrCancelBtn.style.cursor = "pointer";
+      corrCancelBtn.textContent = "Отменить корректировку";
+      corrBtnRow.appendChild(corrCancelBtn);
+      correctionState.appendChild(corrBtnRow);
+
+      wrapper.appendChild(correctionState);
+
+      let corrCurrent = null; // { cfg, pendingFiles }
+
+      function corrShowError(msg) { corrError.textContent = msg; corrError.style.display = "block"; }
+      function corrHideError() { corrError.textContent = ""; corrError.style.display = "none"; }
+
+      function corrUpdateUploadBtn() {
+        corrUploadBtn.disabled = !(corrCurrent && corrCurrent.pendingFiles.length > 0);
+      }
+
+      function buildCorrectionRow(cfg) {
+        const row = document.createElement("div");
+        row.className = "file-list-row";
+
+        const labelEl = document.createElement("div");
+        labelEl.className = "file-list-label";
+        labelEl.textContent = cfg.label;
+        row.appendChild(labelEl);
+
+        const controls = document.createElement("div");
+        controls.className = "file-row-controls";
+
+        const fileInput = document.createElement("input");
+        fileInput.type = "file";
+        fileInput.multiple = true;
+        fileInput.accept = "image/*,application/pdf";
+        fileInput.style.display = "none";
+        controls.appendChild(fileInput);
+
+        const attachBtn = document.createElement("button");
+        attachBtn.type = "button";
+        attachBtn.className = "file-attach-btn";
+        attachBtn.textContent = "Прикрепить фото или файл";
+        attachBtn.addEventListener("click", () => fileInput.click());
+        controls.appendChild(attachBtn);
+
+        const previewWrap = document.createElement("div");
+        previewWrap.className = "file-previews";
+        controls.appendChild(previewWrap);
+
+        const pendingFiles = [];
+
+        function renderPreviews() {
+          previewWrap.innerHTML = "";
+          pendingFiles.forEach((file, idx) => {
+            const tile = document.createElement("div");
+            tile.className = "file-preview-tile";
+            const isImage = (file.type || "").indexOf("image/") === 0;
+            if (isImage) {
+              const img = document.createElement("img");
+              img.alt = file.name || "preview";
+              const reader = new FileReader();
+              reader.onload = (e) => { img.src = e.target.result; };
+              reader.readAsDataURL(file);
+              tile.appendChild(img);
+            } else {
+              const placeholder = document.createElement("div");
+              placeholder.className = "file-preview-placeholder";
+              placeholder.textContent = "📄";
+              tile.appendChild(placeholder);
+            }
+            const nameEl = document.createElement("div");
+            nameEl.className = "file-preview-name";
+            nameEl.textContent = file.name || "file";
+            tile.appendChild(nameEl);
+            const removeBtn = document.createElement("button");
+            removeBtn.type = "button";
+            removeBtn.className = "file-preview-remove";
+            removeBtn.setAttribute("aria-label", "Убрать файл");
+            removeBtn.title = "Убрать файл";
+            removeBtn.textContent = "×";
+            removeBtn.addEventListener("click", () => {
+              pendingFiles.splice(idx, 1);
+              renderPreviews();
+              corrUpdateUploadBtn();
+            });
+            tile.appendChild(removeBtn);
+            previewWrap.appendChild(tile);
+          });
+          attachBtn.textContent = pendingFiles.length > 0 ? "Добавить ещё" : "Прикрепить фото или файл";
+        }
+
+        fileInput.addEventListener("change", () => {
+          if (fileInput.files && fileInput.files.length > 0) {
+            for (let i = 0; i < fileInput.files.length; i++) {
+              pendingFiles.push(fileInput.files[i]);
+            }
+            renderPreviews();
+            fileInput.value = "";
+            corrUpdateUploadBtn();
+          }
+        });
+
+        row.appendChild(controls);
+        return { row, pendingFiles };
+      }
+
+      corrPicker.addEventListener("change", () => {
+        corrHideError();
+        const field = corrPicker.value;
+        if (!field) {
+          corrSlot.style.display = "none";
+          corrSlot.innerHTML = "";
+          corrCurrent = null;
+          corrUpdateUploadBtn();
+          return;
+        }
+        const cfg = blocksConfig.find((b) => b.field === field);
+        if (!cfg) return;
+        corrSlot.innerHTML = "";
+        const built = buildCorrectionRow(cfg);
+        corrSlot.appendChild(built.row);
+        corrSlot.style.display = "block";
+        corrCurrent = { cfg, pendingFiles: built.pendingFiles };
+        corrUpdateUploadBtn();
+      });
+
+      function resetCorrection() {
+        corrPicker.value = "";
+        corrSlot.style.display = "none";
+        corrSlot.innerHTML = "";
+        corrCurrent = null;
+        corrHideError();
+        corrUpdateUploadBtn();
+      }
+
       function showDone() {
         formState.style.display = "none";
         doneState.style.display = "block";
+        correctionState.style.display = "none";
         cancelCorrectBtn.style.display = "none";
         header.style.display = "none";
+        resetCorrection();
       }
       function showForm(viaCorrection) {
         formState.style.display = "block";
         doneState.style.display = "none";
+        correctionState.style.display = "none";
         inputs.forEach(({ pendingFiles, fileInput, renderPreviews }) => {
           pendingFiles.length = 0;
           if (fileInput) fileInput.value = "";
@@ -1288,6 +1481,13 @@
         });
         cancelCorrectBtn.style.display = viaCorrection ? "inline-block" : "none";
         header.style.display = "";
+      }
+      function showCorrection() {
+        formState.style.display = "none";
+        doneState.style.display = "none";
+        correctionState.style.display = "block";
+        header.style.display = "";
+        resetCorrection();
       }
 
       // Если все ОБЯЗАТЕЛЬНЫЕ документы уже загружены — сразу done
@@ -1305,12 +1505,56 @@
 
       correctBtn.addEventListener("click", () => {
         hideMessages();
-        showForm(true);
+        showCorrection();
       });
 
       cancelCorrectBtn.addEventListener("click", () => {
         hideLocalError();
         showDone();
+      });
+
+      corrCancelBtn.addEventListener("click", () => {
+        showDone();
+      });
+
+      corrUploadBtn.addEventListener("click", async () => {
+        if (!corrCurrent || !corrCurrent.pendingFiles.length) return;
+        corrHideError();
+        const phone = phoneInput.value.trim();
+        if (!phone) { corrShowError("Ошибка загрузки файла"); return; }
+
+        corrUploadBtn.disabled = true;
+        const origText = corrUploadBtn.textContent;
+        corrUploadBtn.textContent = "Загрузка...";
+
+        const cfg = corrCurrent.cfg;
+        const filesToSend = corrCurrent.pendingFiles.slice();
+        const leadIdForUpload = lead && lead.id ? String(lead.id) : "";
+
+        try {
+          const results = await Promise.all(filesToSend.map(async (file, i) => {
+            const fd = new FormData();
+            fd.append("phone", phone);
+            fd.append("field", cfg.field);
+            fd.append("applicantIndex", String(applicantIndex));
+            fd.append("partIndex", String(i + 1));
+            if (leadIdForUpload) fd.append("leadId", leadIdForUpload);
+            fd.append("file", file);
+            const r = await fetch("/upload-document", { method: "POST", body: fd });
+            const d = await r.json().catch(() => ({}));
+            return !!(r.ok && d && d.success);
+          }));
+          if (!results.every(Boolean)) throw new Error();
+          if (lead) {
+            await refreshApplicantsCache();
+            renderStages(0, lead);
+          }
+          showDone();
+        } catch (_) {
+          corrShowError("Ошибка загрузки файла");
+          corrUploadBtn.disabled = false;
+          corrUploadBtn.textContent = origText;
+        }
       });
 
       function showLocalError(msg) {
@@ -1368,6 +1612,7 @@
           });
         });
 
+        const leadIdForUpload = lead && lead.id ? String(lead.id) : "";
         const results = await Promise.all(allTasks.map(async ({ file, cfg, partIndex }) => {
           try {
             const fd = new FormData();
@@ -1375,6 +1620,7 @@
             fd.append("field", cfg.field);
             fd.append("applicantIndex", String(applicantIndex));
             fd.append("partIndex", String(partIndex));
+            if (leadIdForUpload) fd.append("leadId", leadIdForUpload);
             fd.append("file", file);
             const r = await fetch("/upload-document", { method: "POST", body: fd });
             const d = await r.json();
@@ -1440,7 +1686,7 @@
       return wrapper;
     }
 
-    function createExtraDocBlock() {
+    function createExtraDocBlock(lead) {
       const wrapper = document.createElement("div");
       wrapper.className = "documents-inline";
       wrapper.style.display = "block";
@@ -1490,9 +1736,11 @@
         btn.textContent = "Загрузка...";
 
         try {
+          const leadIdForExtra = lead && lead.id ? String(lead.id) : "";
           const results = await Promise.all(files.map(async (file) => {
             const fd = new FormData();
             fd.append("phone", phone);
+            if (leadIdForExtra) fd.append("leadId", leadIdForExtra);
             fd.append("file", file);
             const r = await fetch("/upload-extra-document", { method: "POST", body: fd });
             const d = await r.json().catch(() => ({}));
@@ -1617,7 +1865,7 @@
       }
 
       if (currentIndex === 1 && stageNodes[1]) {
-        const extraBlock = createExtraDocBlock();
+        const extraBlock = createExtraDocBlock(lead);
         stageNodes[1].after(extraBlock);
       }
 
