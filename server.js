@@ -570,6 +570,42 @@ async function downloadJsonFromYandexDisk(diskPath) {
   }
 }
 
+// ─── Тех. папка для JSON-стейта опросников ───
+// Раньше JSON лежал в "<phone>/Опросники/Технические файлы/", теперь — плоско в "<phone>/TECH FOLDER/".
+// При чтении ходим во все три варианта, чтобы старые клиенты продолжали работать.
+const TECH_FOLDER_NAME = "TECH FOLDER";
+
+function techFolderPath(phone) {
+  return `${YANDEX_DISK_ROOT}/${phone}/${TECH_FOLDER_NAME}`;
+}
+function legacyTechFolderPath(phone) {
+  return `${YANDEX_DISK_ROOT}/${phone}/Опросники/Технические файлы`;
+}
+
+async function listAllTechFiles(phone) {
+  if (!phone) return [];
+  const fresh = await listYandexFolderFiles(techFolderPath(phone));
+  const legacy = await listYandexFolderFiles(legacyTechFolderPath(phone));
+  return Array.from(new Set([...(fresh || []), ...(legacy || [])]));
+}
+
+async function loadApplicantJson(phone, applicantIndex) {
+  const suf = applicantIndex > 1 ? ` ${applicantIndex}` : "";
+  const fileName = `Опросник${suf}.json`;
+  const candidates = [
+    `${techFolderPath(phone)}/${fileName}`,
+    `${legacyTechFolderPath(phone)}/${fileName}`,
+    `${YANDEX_DISK_ROOT}/${phone}/${fileName}` // самый старый legacy
+  ];
+  for (const p of candidates) {
+    try {
+      const data = await downloadJsonFromYandexDisk(p);
+      if (data) return data;
+    } catch (_) {}
+  }
+  return null;
+}
+
 // ─── amoCRM↔Я.Диск интеграция: зеркалирование документов в папку сделки + zip ───
 // Папки сделок лежат в /amoCRM/Сделки/<lead_id>/ (создаются интеграцией amoCRM↔Я.Диск),
 // внутри сделки создаём свою папку «Документы из ЛК».
@@ -677,33 +713,52 @@ async function rebuildAmoDocsZip(leadId) {
   const folder = amoDocsFolder(leadId);
   const zipPath = `${folder}/${AMO_DOCS_ZIP_NAME}`;
 
+  console.log(`AMO ZIP: rebuild start, folder=${folder}`);
+
   // Удаляем старый архив, чтобы не попал в новый
   await deleteYandexResourceIfExists(zipPath);
 
   const items = await listYandexFolderRecursive(folder);
   const filtered = items.filter((f) => !f.name.toLowerCase().endsWith(".zip"));
-  if (!filtered.length) return;
+  console.log(`AMO ZIP: ${items.length} items found, ${filtered.length} after filtering .zip`);
+  if (!filtered.length) {
+    console.log(`AMO ZIP: nothing to zip, skipping upload`);
+    return;
+  }
 
-  const archive = archiver("zip", { zlib: { level: 9 } });
-  const chunks = [];
-  const done = new Promise((resolve, reject) => {
-    archive.on("data", (chunk) => chunks.push(chunk));
-    archive.on("end", resolve);
-    archive.on("error", reject);
-  });
-
+  // Сначала качаем все буферы (последовательно, чтобы не словить 423/429 на Я.Диске).
+  const entries = [];
   for (const item of filtered) {
     try {
       const buf = await downloadYandexFileBuffer(item.fullPath);
-      archive.append(buf, { name: item.relativePath });
+      entries.push({ buf, name: item.relativePath });
     } catch (e) {
-      console.error("ZIP FETCH ERROR:", item.fullPath, e.response?.data || e.message);
+      console.error("AMO ZIP fetch error:", item.fullPath, e.response?.data || e.message);
     }
   }
-  archive.finalize();
-  await done;
-  const zipBuffer = Buffer.concat(chunks);
+  console.log(`AMO ZIP: downloaded ${entries.length}/${filtered.length} files`);
+  if (!entries.length) {
+    console.log("AMO ZIP: no entries downloaded, skipping upload");
+    return;
+  }
+
+  // Собираем zip в Buffer, надёжно дожидаясь end-события.
+  const zipBuffer = await new Promise((resolve, reject) => {
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    const chunks = [];
+    archive.on("data", (chunk) => chunks.push(chunk));
+    archive.on("warning", (w) => console.warn("AMO ZIP warning:", w.message || w));
+    archive.on("error", reject);
+    archive.on("end", () => resolve(Buffer.concat(chunks)));
+    for (const e of entries) {
+      archive.append(e.buf, { name: e.name });
+    }
+    archive.finalize().catch(reject);
+  });
+
+  console.log(`AMO ZIP: built ${zipBuffer.length} bytes, uploading to ${zipPath}`);
   await uploadBufferToYandexDisk(zipBuffer, zipPath, "application/zip");
+  console.log(`AMO ZIP: uploaded successfully`);
 }
 
 async function amoPost(url, body) {
@@ -754,28 +809,54 @@ async function createAmoUploadTask(leadId) {
   }
 }
 
-// Фоновое зеркалирование: один или несколько файлов → папка сделки на Я.Диске,
-// затем один пересбор zip, затем (опционально) amoCRM-задача.
-// Не блокирует ответ клиенту (fire-and-forget).
-function mirrorToAmoFolderInBackground(leadId, files, options = {}) {
-  if (!leadId) return;
+// Per-leadId последовательная очередь: все операции с amoCRM/<lead_id>/Документы из ЛК/
+// идут строго по порядку (зеркало файла → пересборка zip → задача), чтобы избежать гонок
+// при загрузке батчем и race condition при пересборе zip.
+const amoQueues = new Map();
+function amoEnqueue(leadId, label, fn) {
+  if (!leadId) return Promise.resolve();
+  const key = String(leadId);
+  const prev = amoQueues.get(key) || Promise.resolve();
+  const next = prev.then(async () => {
+    console.log(`AMO QUEUE START [lead ${key}] ${label}`);
+    try {
+      await fn();
+      console.log(`AMO QUEUE DONE  [lead ${key}] ${label}`);
+    } catch (e) {
+      console.error(`AMO QUEUE ERROR [lead ${key}] ${label}:`, e.response?.data || e.message || e);
+    }
+  });
+  amoQueues.set(key, next);
+  return next;
+}
+
+// Зеркалирование одного или нескольких файлов в /amoCRM/Сделки/<lead_id>/Документы из ЛК/...
+// БЕЗ пересборки zip и БЕЗ создания задачи — финализация делается отдельно.
+function mirrorFilesToAmoFolder(leadId, files) {
+  if (!leadId) {
+    console.log("AMO MIRROR SKIP: no leadId");
+    return;
+  }
   const list = Array.isArray(files) ? files : [files];
   if (!list.length) return;
+  for (const f of list) {
+    if (!f || !f.relativePath || !f.buffer) continue;
+    amoEnqueue(leadId, `mirror ${f.relativePath}`, async () => {
+      await uploadToAmoDealDocs(leadId, f.relativePath, f.buffer, f.contentType || "application/octet-stream");
+    });
+  }
+}
+
+// Финализация: пересборка zip + (опционально) создание задачи в amoCRM.
+// Встаёт в очередь ПОСЛЕ всех ранее поставленных mirror-операций для этого leadId.
+function finalizeAmoUpload(leadId, options = {}) {
+  if (!leadId) {
+    console.log("AMO FINALIZE SKIP: no leadId");
+    return Promise.resolve();
+  }
   const { createTask = false } = options;
-  setImmediate(async () => {
-    for (const f of list) {
-      if (!f || !f.relativePath || !f.buffer) continue;
-      try {
-        await uploadToAmoDealDocs(leadId, f.relativePath, f.buffer, f.contentType || "application/octet-stream");
-      } catch (e) {
-        console.error("AMO MIRROR ERROR:", f.relativePath, e.response?.data || e.message);
-      }
-    }
-    try {
-      await rebuildAmoDocsZip(leadId);
-    } catch (e) {
-      console.error("AMO ZIP ERROR:", e.response?.data || e.message);
-    }
+  return amoEnqueue(leadId, `finalize (zip${createTask ? "+task" : ""})`, async () => {
+    await rebuildAmoDocsZip(leadId);
     if (createTask) {
       await createAmoUploadTask(leadId);
     }
@@ -2597,17 +2678,16 @@ function getShareToken(token) {
 async function getExistingApplicantFios(phone) {
   if (!phone || !YANDEX_DISK_TOKEN) return [];
   try {
-    const techFolder = `${YANDEX_DISK_ROOT}/${phone}/Опросники/Технические файлы`;
-    const files = await listYandexFolderFiles(techFolder);
-    const targets = [];
+    const files = await listAllTechFiles(phone);
+    const indexes = new Set();
     files.forEach((name) => {
       const m = /^Опросник(?:\s+(\d+))?\.json$/i.exec(name);
-      if (m) targets.push({ idx: parseInt(m[1] || "1", 10), file: name });
+      if (m) indexes.add(parseInt(m[1] || "1", 10));
     });
     const out = [];
-    for (const { idx, file } of targets) {
+    for (const idx of indexes) {
       try {
-        const state = await downloadJsonFromYandexDisk(`${techFolder}/${file}`);
+        const state = await loadApplicantJson(phone, idx);
         if (state && state.fullName) {
           out.push({ idx, fullName: String(state.fullName).trim() });
         }
@@ -2626,8 +2706,7 @@ function normalizeFioForCompare(s) {
 
 async function getNextApplicantIndex(phone) {
   try {
-    const techFolder = `${YANDEX_DISK_ROOT}/${phone}/Опросники/Технические файлы`;
-    const files = await listYandexFolderFiles(techFolder);
+    const files = await listAllTechFiles(phone);
     const used = new Set();
     files.forEach((name) => {
       const m = /^Опросник(?:\s+(\d+))?\.json$/i.exec(name);
@@ -2925,30 +3004,15 @@ app.get("/questionnaire", async (req, res) => {
     let prefill = null;
     let effectiveTotal = totalApplicants;
     if (isEdit && YANDEX_DISK_TOKEN) {
-      const loadStateForApplicant = async (n) => {
-        const suf = n > 1 ? ` ${n}` : "";
-        const fresh = `${YANDEX_DISK_ROOT}/${phone}/Опросники/Технические файлы/Опросник${suf}.json`;
-        const legacy = `${YANDEX_DISK_ROOT}/${phone}/Опросник${suf}.json`;
-        try {
-          const f = await downloadJsonFromYandexDisk(fresh);
-          if (f) return f;
-        } catch (_) {}
-        try {
-          return await downloadJsonFromYandexDisk(legacy);
-        } catch (_) {
-          return null;
-        }
-      };
-
       try {
-        prefill = await loadStateForApplicant(applicantIndex);
+        prefill = await loadApplicantJson(phone, applicantIndex);
       } catch (err) {
         console.error("EDIT prefill load error:", err.message);
       }
       // Сохраняем общее количество заявителей из первого опросника
       if (applicantIndex !== 1) {
         try {
-          const firstState = await loadStateForApplicant(1);
+          const firstState = await loadApplicantJson(phone, 1);
           const fromFirst = parseInt(firstState && firstState.totalApplicants, 10);
           if (fromFirst > 0) effectiveTotal = Math.max(applicantIndex, fromFirst);
         } catch (_) {}
@@ -3177,8 +3241,7 @@ app.post(
 
       const rootFolder = YANDEX_DISK_ROOT;
       const phoneFolder = `${rootFolder}/${phone}`;
-      const opsFolder = `${phoneFolder}/Опросники`;
-      const techFolder = `${opsFolder}/Технические файлы`;
+      const techFolder = techFolderPath(phone); // "<phone>/TECH FOLDER"
 
       const suffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
       const safeFio = sanitizeFileName(fullName) || `Заявитель ${applicantIndex}`;
@@ -3186,7 +3249,6 @@ app.post(
 
       await ensureYandexFolder(rootFolder);
       await ensureYandexFolder(phoneFolder);
-      await ensureYandexFolder(opsFolder);
       await ensureYandexFolder(techFolder);
       await ensureYandexFolder(applicantFolder);
 
@@ -3198,8 +3260,8 @@ app.post(
         "application/pdf"
       );
 
-      // JSON — служебный, остаётся в Опросники/Технические файлы (используется бэкендом
-      // для prefill при «Скорректировать опросник» и для определения уже загруженных файлов).
+      // JSON — служебный, кладётся в TECH FOLDER (используется бэкендом для prefill
+      // при «Скорректировать опросник» и для определения уже загруженных файлов).
       const stateJson = JSON.stringify({ ...enrichedFields, savedAt: new Date().toISOString() }, null, 2);
       const jsonFileName = `Опросник${suffix}.json`;
       const jsonBuffer = Buffer.from(stateJson, "utf-8");
@@ -3209,25 +3271,22 @@ app.post(
         "application/json; charset=utf-8"
       );
 
-      // Зеркалирование в папку сделки: PDF — в папку ФИО, JSON — служебно в Опросники/Технические файлы.
+      // Зеркалирование в папку сделки: PDF — в папку ФИО, JSON — в служебную TECH FOLDER.
       // Задачу при сабмите опросника не создаём — только при загрузке документов.
       if (leadId) {
-        mirrorToAmoFolderInBackground(
-          leadId,
-          [
-            {
-              relativePath: `${safeFio}/${pdfFileName}`,
-              buffer: pdfBuffer,
-              contentType: "application/pdf"
-            },
-            {
-              relativePath: `Опросники/Технические файлы/${jsonFileName}`,
-              buffer: jsonBuffer,
-              contentType: "application/json; charset=utf-8"
-            }
-          ],
-          { createTask: false }
-        );
+        mirrorFilesToAmoFolder(leadId, [
+          {
+            relativePath: `${safeFio}/${pdfFileName}`,
+            buffer: pdfBuffer,
+            contentType: "application/pdf"
+          },
+          {
+            relativePath: `TECH FOLDER/${jsonFileName}`,
+            buffer: jsonBuffer,
+            contentType: "application/json; charset=utf-8"
+          }
+        ]);
+        finalizeAmoUpload(leadId, { createTask: false });
       }
 
       // Share-режим: токен одноразовый — после успешного сохранения удаляем
@@ -3336,21 +3395,7 @@ app.get("/api/questionnaire-state", async (req, res) => {
       return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
     }
 
-    const techPath = (n) => {
-      const suf = n > 1 ? ` ${n}` : "";
-      return `${YANDEX_DISK_ROOT}/${phone}/Опросники/Технические файлы/Опросник${suf}.json`;
-    };
-    const legacyPath = (n) => {
-      const suf = n > 1 ? ` ${n}` : "";
-      return `${YANDEX_DISK_ROOT}/${phone}/Опросник${suf}.json`;
-    };
-    const loadOne = async (n) => {
-      try {
-        const fresh = await downloadJsonFromYandexDisk(techPath(n));
-        if (fresh) return fresh;
-      } catch (_) {}
-      return await downloadJsonFromYandexDisk(legacyPath(n));
-    };
+    const loadOne = (n) => loadApplicantJson(phone, n);
 
     const first = await loadOne(1);
 
@@ -3422,17 +3467,15 @@ app.post(
 
       await uploadBufferToYandexDisk(file.buffer, diskPath, file.mimetype);
 
-      // Зеркалирование в папку сделки на Я.Диске + amoCRM-задача (фоном)
+      // Зеркалирование одного файла в папку сделки (фоном, без zip и task).
+      // Финализация (zip + task) — отдельный вызов клиента к /api/amo/finish-upload
+      // после батча, чтобы получить ровно 1 задачу на нажатие «Загрузить».
       const leadId = String(req.body.leadId || "").trim();
-      mirrorToAmoFolderInBackground(
-        leadId,
-        {
-          relativePath: `Дополнительные документы/${finalName}`,
-          buffer: file.buffer,
-          contentType: file.mimetype
-        },
-        { createTask: true }
-      );
+      mirrorFilesToAmoFolder(leadId, {
+        relativePath: `Дополнительные документы/${finalName}`,
+        buffer: file.buffer,
+        contentType: file.mimetype
+      });
 
       return res.json({ success: true, message: "Файл успешно загружен", fileName: finalName });
     } catch (error) {
@@ -3483,14 +3526,8 @@ app.post(
       await ensureYandexFolder(rootFolder);
       await ensureYandexFolder(phoneFolder);
 
-      const questionnaireSuffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
-      const freshJsonPath = `${phoneFolder}/Опросники/Технические файлы/Опросник${questionnaireSuffix}.json`;
-      const legacyJsonPath = `${phoneFolder}/Опросник${questionnaireSuffix}.json`;
       let applicantState = null;
-      try { applicantState = await downloadJsonFromYandexDisk(freshJsonPath); } catch (_) {}
-      if (!applicantState) {
-        try { applicantState = await downloadJsonFromYandexDisk(legacyJsonPath); } catch (_) {}
-      }
+      try { applicantState = await loadApplicantJson(phone, applicantIndex); } catch (_) {}
 
       if (!applicantState) {
         return res.status(409).json({
@@ -3517,17 +3554,16 @@ app.post(
       console.log("UPLOAD TO YANDEX:", diskPath);
       await uploadBufferToYandexDisk(file.buffer, diskPath, file.mimetype);
 
-      // Зеркалирование в папку сделки на Я.Диске + amoCRM-задача (фоном)
+      // Зеркалирование одного файла в папку сделки (фоном, без zip и task).
+      // Финализация (zip + 1 задача) — отдельный вызов /api/amo/finish-upload
+      // после успешного завершения батча, чтобы получить ровно 1 задачу на нажатие «Загрузить».
       const leadId = String(req.body.leadId || "").trim();
-      mirrorToAmoFolderInBackground(
-        leadId,
-        {
-          relativePath: `${safeFio}/${finalFileName}`,
-          buffer: file.buffer,
-          contentType: file.mimetype
-        },
-        { createTask: true }
-      );
+      console.log("UPLOAD-DOC leadId =", leadId || "(empty)");
+      mirrorFilesToAmoFolder(leadId, {
+        relativePath: `${safeFio}/${finalFileName}`,
+        buffer: file.buffer,
+        contentType: file.mimetype
+      });
 
       return res.json({
         success: true,
@@ -3548,6 +3584,26 @@ app.post(
     }
   }
 );
+
+// Финализация батча загрузки: один общий пересбор zip + одна задача в amoCRM
+// на всё нажатие «Загрузить». Клиент вызывает этот эндпоинт ОДИН раз после
+// успешной загрузки всех файлов из батча.
+app.post("/api/amo/finish-upload", express.json(), async (req, res) => {
+  try {
+    const leadId = String((req.body && req.body.leadId) || "").trim();
+    const withTask = !!(req.body && req.body.withTask);
+    if (!leadId) {
+      return res.status(400).json({ success: false, message: "leadId не передан" });
+    }
+    console.log("FINISH-UPLOAD leadId =", leadId, "withTask =", withTask);
+    // Не блокируем ответ клиенту — финализация уйдёт в очередь и выполнится по порядку.
+    finalizeAmoUpload(leadId, { createTask: withTask });
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("FINISH-UPLOAD ERROR:", e.response?.data || e.message);
+    return res.status(500).json({ success: false, message: "Ошибка финализации" });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);

@@ -879,6 +879,20 @@
       hideBox(infoBox);
     }
 
+    // Финализация батча загрузки на amoCRM-стороне: ОДИН пересбор zip и (опционально) ОДНА задача
+    // на всё нажатие «Загрузить». Вызывается клиентом один раз после успешной загрузки всех файлов.
+    function finishAmoUploadBatch(leadId, withTask) {
+      if (!leadId) return;
+      // Fire-and-forget — не блокируем UX.
+      try {
+        fetch("/api/amo/finish-upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ leadId: String(leadId), withTask: !!withTask })
+        }).catch(() => {});
+      } catch (_) {}
+    }
+
     function formatDate(timestampSeconds) {
       if (!timestampSeconds) return "без даты";
       const date = new Date(timestampSeconds * 1000);
@@ -1615,6 +1629,9 @@
             results.push(!!(r.ok && d && d.success));
           }
           if (!results.every(Boolean)) throw new Error();
+          if (leadIdForUpload) {
+            finishAmoUploadBatch(leadIdForUpload, true);
+          }
           if (lead) {
             await refreshApplicantsCache();
             renderStages(0, lead);
@@ -1713,6 +1730,10 @@
         }
 
         showDone();
+        // Один общий «финиш» на нажатие «Загрузить»: пересборка zip + одна задача в amoCRM.
+        if (leadIdForUpload) {
+          finishAmoUploadBatch(leadIdForUpload, true);
+        }
         // Обновить кэш и цвет этапа (жёлтый → зелёный, если всё собрано)
         if (lead) {
           await refreshApplicantsCache();
@@ -1830,6 +1851,9 @@
           }
           const allOk = results.every(Boolean);
           if (!allOk) throw new Error();
+          if (leadIdForExtra) {
+            finishAmoUploadBatch(leadIdForExtra, true);
+          }
           input.value = "";
           btn.textContent = files.length > 1 ? "Файлы загружены" : "Файл загружен";
           setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1800);
