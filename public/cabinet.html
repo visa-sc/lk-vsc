@@ -283,6 +283,12 @@
     .lead-toggle-btn.lead-prev-btn {
       margin-top: 6px;
     }
+    .lead-no-active {
+      font-size: 13px;
+      color: #9096a3;
+      text-align: center;
+      padding: 2px 0;
+    }
     .lead-completed-list {
       display: none;
       flex-direction: column;
@@ -2087,6 +2093,14 @@
       active.forEach((lead, i) => {
         leadList.appendChild(makeLeadButton(lead, i === 0));
       });
+
+      // Если активных нет — мелкая серая подпись над кнопкой «Предыдущие обращения»
+      if (!active.length && completed.length) {
+        const noActive = document.createElement("div");
+        noActive.className = "lead-no-active";
+        noActive.textContent = "Нет активных обращений";
+        leadList.appendChild(noActive);
+      }
 
       if (completed.length) {
         // Кнопка «Предыдущие обращения» + контейнер с завершёнными (скрыт по умолчанию)
