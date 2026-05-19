@@ -1019,8 +1019,25 @@
             showBox(errorBox, "Не удалось открыть опросник");
             return;
           }
-          const url = `/questionnaire-start?phone=${encodeURIComponent(phone)}&leadId=${encodeURIComponent(leadId)}`;
-          window.open(url, "_blank");
+          // Открываем ровно опросник (без шага выбора количества заявителей) —
+          // добавляем нового заявителя следующим индексом.
+          const currentCount = Array.isArray(applicants) ? applicants.length : 0;
+          const nextIndex = currentCount + 1;
+          const newTotal = nextIndex;
+          const params = new URLSearchParams({
+            phone,
+            leadId,
+            applicantIndex: String(nextIndex),
+            totalApplicants: String(newTotal),
+            applicantCount: String(newTotal)
+          });
+          const firstVisaType = applicants[0] && applicants[0].visaType ? String(applicants[0].visaType) : "";
+          if (firstVisaType) params.set("visaType", firstVisaType);
+          const prevName = applicants[currentCount - 1] && applicants[currentCount - 1].fullName
+            ? String(applicants[currentCount - 1].fullName)
+            : "";
+          if (prevName) params.set("prevApplicantName", prevName);
+          window.open(`/questionnaire?${params.toString()}`, "_blank");
         });
         // Вставляем сразу после кнопки «Скорректировать опросник», на отдельной строке.
         const lineBreak = document.createElement("div");

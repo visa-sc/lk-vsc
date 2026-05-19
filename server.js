@@ -913,7 +913,7 @@ async function getLeadsByPhone(phone) {
   return leads;
 }
 
-function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "", prefill = null, isEdit = false, applicantCount = 0, visaType = "", shareToken = "", isMixed = false, selfFillCount = 0, selfStep = 0 }) {
+function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "", prefill = null, isEdit = false, applicantCount = 0, visaType = "", shareToken = "", isMixed = false, selfFillCount = 0, selfStep = 0, existingFios = [] }) {
   const safePhone = escapeHtml(phone || "");
   const safeLeadId = escapeHtml(String(leadId || ""));
   const safeCountry = escapeHtml(countryService || "не указано");
@@ -1638,6 +1638,60 @@ ${mixedFieldsHtml}
   }
   applyTripDateConstraints();
 
+  // ─── Проверка дубликата ФИО в рамках этой сделки ───
+  const EXISTING_FIOS = ${JSON.stringify(existingFios || []).replace(/</g, "\\u003c")};
+  const CURRENT_APPLICANT_INDEX = ${JSON.stringify(applicantIndex)};
+  function normFio(s) {
+    return String(s || "").trim().replace(/\\s+/g, " ").toLowerCase();
+  }
+  const fullNameInput = form.querySelector('input[name="fullName"]');
+  let fioDupErrEl = null;
+  if (fullNameInput) {
+    fioDupErrEl = document.createElement("div");
+    fioDupErrEl.className = "field-inline-error";
+    fioDupErrEl.style.color = "#c4314b";
+    fioDupErrEl.style.fontSize = "13px";
+    fioDupErrEl.style.marginTop = "6px";
+    fioDupErrEl.style.lineHeight = "1.4";
+    fioDupErrEl.style.display = "none";
+    fioDupErrEl.textContent = "Опросник на это ФИО уже заполнен в этой сделке. Укажите другое ФИО.";
+    fullNameInput.insertAdjacentElement("afterend", fioDupErrEl);
+  }
+  function checkFioDuplicate() {
+    if (!fullNameInput) return false;
+    const v = normFio(fullNameInput.value);
+    if (!v) {
+      if (fioDupErrEl) fioDupErrEl.style.display = "none";
+      fullNameInput.classList.remove("input-error");
+      if (submitBtn) submitBtn.disabled = false;
+      return false;
+    }
+    const isDup = EXISTING_FIOS.some((it) => {
+      const otherIdx = parseInt(it && it.idx, 10);
+      const otherFio = normFio(it && it.fullName);
+      if (!otherFio) return false;
+      // В edit-режиме своё ФИО разрешено (тот же applicantIndex).
+      if (otherIdx === CURRENT_APPLICANT_INDEX) return false;
+      return otherFio === v;
+    });
+    if (isDup) {
+      if (fioDupErrEl) fioDupErrEl.style.display = "block";
+      fullNameInput.classList.add("input-error");
+      if (submitBtn) submitBtn.disabled = true;
+    } else {
+      if (fioDupErrEl) fioDupErrEl.style.display = "none";
+      fullNameInput.classList.remove("input-error");
+      if (submitBtn) submitBtn.disabled = false;
+    }
+    return isDup;
+  }
+  if (fullNameInput) {
+    fullNameInput.addEventListener("input", checkFioDuplicate);
+    fullNameInput.addEventListener("blur", checkFioDuplicate);
+    // Первичная проверка (например, при prefill)
+    setTimeout(checkFioDuplicate, 0);
+  }
+
   // Prefill (для режима "Скорректировать опросник")
   const PREFILL = ${JSON.stringify(prefill || null).replace(/</g, "\\u003c")};
   if (PREFILL && typeof PREFILL === "object") {
@@ -1697,6 +1751,15 @@ ${mixedFieldsHtml}
     event.preventDefault();
     hideBox(errorBox);
     hideBox(successBox);
+
+    // Проверка дубликата ФИО — финальная страховка перед отправкой
+    if (checkFioDuplicate()) {
+      if (fullNameInput && fullNameInput.scrollIntoView) {
+        fullNameInput.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      try { if (fullNameInput) fullNameInput.focus({ preventScroll: true }); } catch (_) { if (fullNameInput) fullNameInput.focus(); }
+      return;
+    }
 
     // Проверка обязательных дат — подсвечиваем и не отправляем
     const badDate = validateRequiredFields();
@@ -2529,6 +2592,38 @@ function getShareToken(token) {
   return shareTokens.get(token) || null;
 }
 
+// Список заполненных ФИО заявителей по этому телефону: [{ idx, fullName }, ...].
+// Используется для блокировки дубликатов ФИО в опроснике.
+async function getExistingApplicantFios(phone) {
+  if (!phone || !YANDEX_DISK_TOKEN) return [];
+  try {
+    const techFolder = `${YANDEX_DISK_ROOT}/${phone}/Опросники/Технические файлы`;
+    const files = await listYandexFolderFiles(techFolder);
+    const targets = [];
+    files.forEach((name) => {
+      const m = /^Опросник(?:\s+(\d+))?\.json$/i.exec(name);
+      if (m) targets.push({ idx: parseInt(m[1] || "1", 10), file: name });
+    });
+    const out = [];
+    for (const { idx, file } of targets) {
+      try {
+        const state = await downloadJsonFromYandexDisk(`${techFolder}/${file}`);
+        if (state && state.fullName) {
+          out.push({ idx, fullName: String(state.fullName).trim() });
+        }
+      } catch (_) {}
+    }
+    return out;
+  } catch (e) {
+    console.error("getExistingApplicantFios error:", e.message);
+    return [];
+  }
+}
+
+function normalizeFioForCompare(s) {
+  return String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 async function getNextApplicantIndex(phone) {
   try {
     const techFolder = `${YANDEX_DISK_ROOT}/${phone}/Опросники/Технические файлы`;
@@ -2866,6 +2961,9 @@ app.get("/questionnaire", async (req, res) => {
     // visaType: из URL, либо из сохранённого state (для edit / 2+ заявителя)
     const effectiveVisaType = visaType || (prefill && prefill.visaType) || "";
 
+    // ФИО уже заполненных заявителей — для блокировки дубликатов на клиенте.
+    const existingFios = await getExistingApplicantFios(phone);
+
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     return res.send(buildQuestionnaireHtml({
       phone,
@@ -2881,7 +2979,8 @@ app.get("/questionnaire", async (req, res) => {
       shareToken: shareData ? shareData.token : "",
       isMixed,
       selfFillCount,
-      selfStep
+      selfStep,
+      existingFios
     }));
   } catch (error) {
     console.error("GET /questionnaire error:", error.response?.data || error.message);
@@ -2961,6 +3060,25 @@ app.post(
           success: false,
           message: "Заполнены не все обязательные поля опросника"
         });
+      }
+
+      // Серверная страховка от дубликата ФИО внутри одной сделки (на случай обхода клиентской валидации).
+      try {
+        const existingFios = await getExistingApplicantFios(phone);
+        const wanted = normalizeFioForCompare(fullName);
+        const conflict = existingFios.find((it) => {
+          if (!it || !it.fullName) return false;
+          if (parseInt(it.idx, 10) === applicantIndex) return false; // своё ФИО в edit-режиме разрешено
+          return normalizeFioForCompare(it.fullName) === wanted;
+        });
+        if (conflict) {
+          return res.status(409).json({
+            success: false,
+            message: "Опросник на это ФИО уже заполнен в этой сделке. Укажите другое ФИО."
+          });
+        }
+      } catch (e) {
+        console.error("POST /api/questionnaire fio dup check error:", e.message);
       }
 
       if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
