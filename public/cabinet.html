@@ -1222,6 +1222,13 @@
         list.appendChild(row);
       });
 
+      const sizeHint = document.createElement("div");
+      sizeHint.textContent = "Макс. размер — 20 МБ";
+      sizeHint.style.fontSize = "12px";
+      sizeHint.style.color = "#9096a3";
+      sizeHint.style.marginTop = "8px";
+      formState.appendChild(sizeHint);
+
       const localError = document.createElement("div");
       localError.className = "docs-local-error";
       localError.style.display = "none";
@@ -1307,6 +1314,14 @@
       corrSlot.className = "docs-correction-slot";
       corrSlot.style.display = "none";
       correctionState.appendChild(corrSlot);
+
+      const corrSizeHint = document.createElement("div");
+      corrSizeHint.textContent = "Макс. размер — 20 МБ";
+      corrSizeHint.style.fontSize = "12px";
+      corrSizeHint.style.color = "#9096a3";
+      corrSizeHint.style.marginTop = "8px";
+      corrSizeHint.style.display = "none";
+      correctionState.appendChild(corrSizeHint);
 
       const corrError = document.createElement("div");
       corrError.className = "docs-local-error";
@@ -1439,6 +1454,7 @@
         if (!field) {
           corrSlot.style.display = "none";
           corrSlot.innerHTML = "";
+          corrSizeHint.style.display = "none";
           corrCurrent = null;
           corrUpdateUploadBtn();
           return;
@@ -1449,6 +1465,7 @@
         const built = buildCorrectionRow(cfg);
         corrSlot.appendChild(built.row);
         corrSlot.style.display = "block";
+        corrSizeHint.style.display = "block";
         corrCurrent = { cfg, pendingFiles: built.pendingFiles };
         corrUpdateUploadBtn();
       });
@@ -1457,6 +1474,7 @@
         corrPicker.value = "";
         corrSlot.style.display = "none";
         corrSlot.innerHTML = "";
+        corrSizeHint.style.display = "none";
         corrCurrent = null;
         corrHideError();
         corrUpdateUploadBtn();
@@ -1707,8 +1725,15 @@
       input.style.padding = "8px";
       input.style.fontSize = "12px";
       input.style.background = "#fff";
-      input.style.marginBottom = "10px";
+      input.style.marginBottom = "4px";
       wrapper.appendChild(input);
+
+      const extraSizeHint = document.createElement("div");
+      extraSizeHint.textContent = "Макс. размер — 20 МБ";
+      extraSizeHint.style.fontSize = "12px";
+      extraSizeHint.style.color = "#9096a3";
+      extraSizeHint.style.marginBottom = "10px";
+      wrapper.appendChild(extraSizeHint);
 
       const errMsg = document.createElement("div");
       errMsg.className = "docs-local-error";
