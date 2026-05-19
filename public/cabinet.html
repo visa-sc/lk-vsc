@@ -1125,7 +1125,16 @@
 
         const labelEl = document.createElement("div");
         labelEl.className = "file-list-label";
-        labelEl.textContent = cfg.label;
+        const labelText = document.createElement("div");
+        labelText.textContent = cfg.label;
+        labelEl.appendChild(labelText);
+        const labelHint = document.createElement("div");
+        labelHint.textContent = "Макс. размер 1 файла — 20 МБ";
+        labelHint.style.fontSize = "12px";
+        labelHint.style.color = "#9096a3";
+        labelHint.style.fontWeight = "400";
+        labelHint.style.marginTop = "4px";
+        labelEl.appendChild(labelHint);
         row.appendChild(labelEl);
 
         // Контейнер для кнопки + превью
@@ -1222,13 +1231,6 @@
         list.appendChild(row);
       });
 
-      const sizeHint = document.createElement("div");
-      sizeHint.textContent = "Макс. размер — 20 МБ";
-      sizeHint.style.fontSize = "12px";
-      sizeHint.style.color = "#9096a3";
-      sizeHint.style.marginTop = "8px";
-      formState.appendChild(sizeHint);
-
       const localError = document.createElement("div");
       localError.className = "docs-local-error";
       localError.style.display = "none";
@@ -1315,14 +1317,6 @@
       corrSlot.style.display = "none";
       correctionState.appendChild(corrSlot);
 
-      const corrSizeHint = document.createElement("div");
-      corrSizeHint.textContent = "Макс. размер — 20 МБ";
-      corrSizeHint.style.fontSize = "12px";
-      corrSizeHint.style.color = "#9096a3";
-      corrSizeHint.style.marginTop = "8px";
-      corrSizeHint.style.display = "none";
-      correctionState.appendChild(corrSizeHint);
-
       const corrError = document.createElement("div");
       corrError.className = "docs-local-error";
       corrError.style.display = "none";
@@ -1367,7 +1361,16 @@
 
         const labelEl = document.createElement("div");
         labelEl.className = "file-list-label";
-        labelEl.textContent = cfg.label;
+        const labelText = document.createElement("div");
+        labelText.textContent = cfg.label;
+        labelEl.appendChild(labelText);
+        const labelHint = document.createElement("div");
+        labelHint.textContent = "Макс. размер 1 файла — 20 МБ";
+        labelHint.style.fontSize = "12px";
+        labelHint.style.color = "#9096a3";
+        labelHint.style.fontWeight = "400";
+        labelHint.style.marginTop = "4px";
+        labelEl.appendChild(labelHint);
         row.appendChild(labelEl);
 
         const controls = document.createElement("div");
@@ -1454,7 +1457,6 @@
         if (!field) {
           corrSlot.style.display = "none";
           corrSlot.innerHTML = "";
-          corrSizeHint.style.display = "none";
           corrCurrent = null;
           corrUpdateUploadBtn();
           return;
@@ -1465,7 +1467,6 @@
         const built = buildCorrectionRow(cfg);
         corrSlot.appendChild(built.row);
         corrSlot.style.display = "block";
-        corrSizeHint.style.display = "block";
         corrCurrent = { cfg, pendingFiles: built.pendingFiles };
         corrUpdateUploadBtn();
       });
@@ -1474,7 +1475,6 @@
         corrPicker.value = "";
         corrSlot.style.display = "none";
         corrSlot.innerHTML = "";
-        corrSizeHint.style.display = "none";
         corrCurrent = null;
         corrHideError();
         corrUpdateUploadBtn();
@@ -1711,9 +1711,16 @@
 
       const desc = document.createElement("div");
       desc.className = "muted";
-      desc.style.marginBottom = "12px";
+      desc.style.marginBottom = "8px";
       desc.textContent = "Документы для подачи в Консульство сейчас готовятся Отделом оформления. Если сотрудник попросит вас приложить дополнительный документ, ниже есть свободная область для загрузки файла.";
       wrapper.appendChild(desc);
+
+      const extraSizeHint = document.createElement("div");
+      extraSizeHint.textContent = "Макс. размер 1 файла — 20 МБ";
+      extraSizeHint.style.fontSize = "12px";
+      extraSizeHint.style.color = "#9096a3";
+      extraSizeHint.style.marginBottom = "12px";
+      wrapper.appendChild(extraSizeHint);
 
       const input = document.createElement("input");
       input.type = "file";
@@ -1725,15 +1732,8 @@
       input.style.padding = "8px";
       input.style.fontSize = "12px";
       input.style.background = "#fff";
-      input.style.marginBottom = "4px";
+      input.style.marginBottom = "10px";
       wrapper.appendChild(input);
-
-      const extraSizeHint = document.createElement("div");
-      extraSizeHint.textContent = "Макс. размер — 20 МБ";
-      extraSizeHint.style.fontSize = "12px";
-      extraSizeHint.style.color = "#9096a3";
-      extraSizeHint.style.marginBottom = "10px";
-      wrapper.appendChild(extraSizeHint);
 
       const errMsg = document.createElement("div");
       errMsg.className = "docs-local-error";
