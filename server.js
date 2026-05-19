@@ -466,15 +466,36 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
 }
 
 async function yandexRequest(config) {
-  return axios({
-    ...config,
-    headers: {
-      Authorization: `OAuth ${YANDEX_DISK_TOKEN}`,
-      ...(config.headers || {})
-    },
-    maxBodyLength: Infinity,
-    maxContentLength: Infinity
-  });
+  // Я.Диск может ответить 423 (Resource is locked), если одну и ту же папку/ресурс
+  // одновременно трогает другая операция (параллельные ensureYandexFolder/upload в одну папку).
+  // Делаем мягкий retry с экспоненциальной паузой, чтобы не падать на гонке.
+  const maxAttempts = 5;
+  let attempt = 0;
+  let lastError;
+  while (attempt < maxAttempts) {
+    try {
+      return await axios({
+        ...config,
+        headers: {
+          Authorization: `OAuth ${YANDEX_DISK_TOKEN}`,
+          ...(config.headers || {})
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity
+      });
+    } catch (err) {
+      lastError = err;
+      const status = err.response?.status;
+      // Ретраим только 423 и сетевые таймауты/5xx. 4xx-ошибки бизнес-логики не ретраим.
+      const retryable = status === 423 || status === 429 || (status >= 500 && status < 600) || !status;
+      if (!retryable) throw err;
+      attempt++;
+      if (attempt >= maxAttempts) break;
+      const delay = Math.min(2000, 200 * Math.pow(2, attempt - 1)) + Math.floor(Math.random() * 150);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastError;
 }
 
 async function ensureYandexFolder(folderPath) {
@@ -3041,21 +3062,26 @@ app.post(
       const opsFolder = `${phoneFolder}/Опросники`;
       const techFolder = `${opsFolder}/Технические файлы`;
 
+      const suffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
+      const safeFio = sanitizeFileName(fullName) || `Заявитель ${applicantIndex}`;
+      const applicantFolder = `${phoneFolder}/${safeFio}`;
+
       await ensureYandexFolder(rootFolder);
       await ensureYandexFolder(phoneFolder);
       await ensureYandexFolder(opsFolder);
       await ensureYandexFolder(techFolder);
+      await ensureYandexFolder(applicantFolder);
 
-      const suffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
-      const safeFio = sanitizeFileName(fullName) || `Заявитель ${applicantIndex}`;
-
+      // PDF опросника кладём в папку с ФИО клиента (рядом с документами).
       const pdfFileName = `Опросник - ${safeFio}.pdf`;
       await uploadBufferToYandexDisk(
         pdfBuffer,
-        `${opsFolder}/${pdfFileName}`,
+        `${applicantFolder}/${pdfFileName}`,
         "application/pdf"
       );
 
+      // JSON — служебный, остаётся в Опросники/Технические файлы (используется бэкендом
+      // для prefill при «Скорректировать опросник» и для определения уже загруженных файлов).
       const stateJson = JSON.stringify({ ...enrichedFields, savedAt: new Date().toISOString() }, null, 2);
       const jsonFileName = `Опросник${suffix}.json`;
       const jsonBuffer = Buffer.from(stateJson, "utf-8");
@@ -3065,14 +3091,14 @@ app.post(
         "application/json; charset=utf-8"
       );
 
-      // Зеркалирование в папку сделки: опросник (PDF) + JSON в подпапке Технические файлы.
+      // Зеркалирование в папку сделки: PDF — в папку ФИО, JSON — служебно в Опросники/Технические файлы.
       // Задачу при сабмите опросника не создаём — только при загрузке документов.
       if (leadId) {
         mirrorToAmoFolderInBackground(
           leadId,
           [
             {
-              relativePath: `Опросники/${pdfFileName}`,
+              relativePath: `${safeFio}/${pdfFileName}`,
               buffer: pdfBuffer,
               contentType: "application/pdf"
             },

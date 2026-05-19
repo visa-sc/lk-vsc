@@ -991,6 +991,43 @@
         doneMsg.style.display = isOpen ? "none" : "";
       });
 
+      // Белая кнопка «Заполнить ещё опросник» под «Скорректировать опросник» —
+      // запускает тот же поток, что и исходная «Заполните опросник» (новая вкладка с /questionnaire-start).
+      let fillMoreBtn = blockEl.querySelector(".questionnaire-btn-fill-more");
+      if (!fillMoreBtn) {
+        fillMoreBtn = document.createElement("button");
+        fillMoreBtn.type = "button";
+        fillMoreBtn.className = "questionnaire-btn-fill-more";
+        fillMoreBtn.textContent = "Заполнить ещё опросник";
+        fillMoreBtn.style.display = "inline-block";
+        fillMoreBtn.style.marginTop = "8px";
+        fillMoreBtn.style.height = "38px";
+        fillMoreBtn.style.padding = "0 18px";
+        fillMoreBtn.style.fontSize = "13px";
+        fillMoreBtn.style.fontWeight = "600";
+        fillMoreBtn.style.color = "#3589BD";
+        fillMoreBtn.style.background = "#fff";
+        fillMoreBtn.style.border = "1.5px solid #3589BD";
+        fillMoreBtn.style.borderRadius = "12px";
+        fillMoreBtn.style.cursor = "pointer";
+        fillMoreBtn.addEventListener("mouseenter", () => { fillMoreBtn.style.background = "#f0f7fc"; });
+        fillMoreBtn.addEventListener("mouseleave", () => { fillMoreBtn.style.background = "#fff"; });
+        fillMoreBtn.addEventListener("click", () => {
+          const phone = phoneInput.value.trim();
+          const leadId = lead?.id;
+          if (!phone || !leadId) {
+            showBox(errorBox, "Не удалось открыть опросник");
+            return;
+          }
+          const url = `/questionnaire-start?phone=${encodeURIComponent(phone)}&leadId=${encodeURIComponent(leadId)}`;
+          window.open(url, "_blank");
+        });
+        // Вставляем сразу после кнопки «Скорректировать опросник», на отдельной строке.
+        const lineBreak = document.createElement("div");
+        lineBreak.style.height = "0";
+        fresh.after(lineBreak, fillMoreBtn);
+      }
+
       picker.innerHTML = "";
       applicants.forEach((applicant) => {
         const a = document.createElement("button");
@@ -1545,7 +1582,10 @@
         const leadIdForUpload = lead && lead.id ? String(lead.id) : "";
 
         try {
-          const results = await Promise.all(filesToSend.map(async (file, i) => {
+          // Последовательно — см. комментарий в основной загрузке выше.
+          const results = [];
+          for (let i = 0; i < filesToSend.length; i++) {
+            const file = filesToSend[i];
             const fd = new FormData();
             fd.append("phone", phone);
             fd.append("field", cfg.field);
@@ -1555,8 +1595,8 @@
             fd.append("file", file);
             const r = await fetch("/upload-document", { method: "POST", body: fd });
             const d = await r.json().catch(() => ({}));
-            return !!(r.ok && d && d.success);
-          }));
+            results.push(!!(r.ok && d && d.success));
+          }
           if (!results.every(Boolean)) throw new Error();
           if (lead) {
             await refreshApplicantsCache();
@@ -1626,7 +1666,10 @@
         });
 
         const leadIdForUpload = lead && lead.id ? String(lead.id) : "";
-        const results = await Promise.all(allTasks.map(async ({ file, cfg, partIndex }) => {
+        // Последовательно: Я.Диск возвращает 423, если несколько запросов
+        // одновременно создают/трогают одну и ту же папку.
+        const results = [];
+        for (const { file, cfg, partIndex } of allTasks) {
           try {
             const fd = new FormData();
             fd.append("phone", phone);
@@ -1636,12 +1679,12 @@
             if (leadIdForUpload) fd.append("leadId", leadIdForUpload);
             fd.append("file", file);
             const r = await fetch("/upload-document", { method: "POST", body: fd });
-            const d = await r.json();
-            return { ok: !!(r.ok && d.success), label: cfg.label };
+            const d = await r.json().catch(() => ({}));
+            results.push({ ok: !!(r.ok && d.success), label: cfg.label });
           } catch (e) {
-            return { ok: false, label: cfg.label };
+            results.push({ ok: false, label: cfg.label });
           }
-        }));
+        }
 
         uploadBtn.disabled = false;
         uploadBtn.textContent = "Загрузить";
@@ -1757,15 +1800,17 @@
 
         try {
           const leadIdForExtra = lead && lead.id ? String(lead.id) : "";
-          const results = await Promise.all(files.map(async (file) => {
+          // Последовательно — см. комментарий выше про 423.
+          const results = [];
+          for (const file of files) {
             const fd = new FormData();
             fd.append("phone", phone);
             if (leadIdForExtra) fd.append("leadId", leadIdForExtra);
             fd.append("file", file);
             const r = await fetch("/upload-extra-document", { method: "POST", body: fd });
             const d = await r.json().catch(() => ({}));
-            return !!(r.ok && d && d.success);
-          }));
+            results.push(!!(r.ok && d && d.success));
+          }
           const allOk = results.every(Boolean);
           if (!allOk) throw new Error();
           input.value = "";
