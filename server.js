@@ -550,9 +550,9 @@ async function downloadJsonFromYandexDisk(diskPath) {
 }
 
 // ─── amoCRM↔Я.Диск интеграция: зеркалирование документов в папку сделки + zip ───
-// Папки сделок лежат прямо в /amoCRM/<lead_id>/ (создаются интеграцией amoCRM↔Я.Диск),
+// Папки сделок лежат в /amoCRM/Сделки/<lead_id>/ (создаются интеграцией amoCRM↔Я.Диск),
 // внутри сделки создаём свою папку «Документы из ЛК».
-const AMO_DEALS_ROOT = "amoCRM";
+const AMO_DEALS_ROOT = "amoCRM/Сделки";
 const AMO_DOCS_FOLDER_NAME = "Документы из ЛК";
 const AMO_DOCS_ZIP_NAME = "Документы из ЛК.zip";
 const TASK_RESPONSIBLE_FIELD_ID = 443488;

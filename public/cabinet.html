@@ -1110,6 +1110,16 @@
         : `Загрузите документы для заявителя ${applicantIndex}`;
       wrapper.appendChild(header);
 
+      // Хинт про лимит размера файла — один на весь блок, под заголовком.
+      // Прячется вместе с заголовком в done-состоянии.
+      const blockSizeHint = document.createElement("div");
+      blockSizeHint.textContent = "Макс. размер 1 файла — 20 МБ";
+      blockSizeHint.style.fontSize = "12px";
+      blockSizeHint.style.color = "#9096a3";
+      blockSizeHint.style.marginTop = "-8px";
+      blockSizeHint.style.marginBottom = "10px";
+      wrapper.appendChild(blockSizeHint);
+
       // ─── Состояние формы ───
       const formState = document.createElement("div");
       formState.className = "docs-form-state";
@@ -1125,16 +1135,7 @@
 
         const labelEl = document.createElement("div");
         labelEl.className = "file-list-label";
-        const labelText = document.createElement("div");
-        labelText.textContent = cfg.label;
-        labelEl.appendChild(labelText);
-        const labelHint = document.createElement("div");
-        labelHint.textContent = "Макс. размер 1 файла — 20 МБ";
-        labelHint.style.fontSize = "12px";
-        labelHint.style.color = "#9096a3";
-        labelHint.style.fontWeight = "400";
-        labelHint.style.marginTop = "4px";
-        labelEl.appendChild(labelHint);
+        labelEl.textContent = cfg.label;
         row.appendChild(labelEl);
 
         // Контейнер для кнопки + превью
@@ -1361,16 +1362,7 @@
 
         const labelEl = document.createElement("div");
         labelEl.className = "file-list-label";
-        const labelText = document.createElement("div");
-        labelText.textContent = cfg.label;
-        labelEl.appendChild(labelText);
-        const labelHint = document.createElement("div");
-        labelHint.textContent = "Макс. размер 1 файла — 20 МБ";
-        labelHint.style.fontSize = "12px";
-        labelHint.style.color = "#9096a3";
-        labelHint.style.fontWeight = "400";
-        labelHint.style.marginTop = "4px";
-        labelEl.appendChild(labelHint);
+        labelEl.textContent = cfg.label;
         row.appendChild(labelEl);
 
         const controls = document.createElement("div");
@@ -1486,6 +1478,7 @@
         correctionState.style.display = "none";
         cancelCorrectBtn.style.display = "none";
         header.style.display = "none";
+        blockSizeHint.style.display = "none";
         resetCorrection();
       }
       function showForm(viaCorrection) {
@@ -1499,12 +1492,14 @@
         });
         cancelCorrectBtn.style.display = viaCorrection ? "inline-block" : "none";
         header.style.display = "";
+        blockSizeHint.style.display = "";
       }
       function showCorrection() {
         formState.style.display = "none";
         doneState.style.display = "none";
         correctionState.style.display = "block";
         header.style.display = "";
+        blockSizeHint.style.display = "";
         resetCorrection();
       }
 
