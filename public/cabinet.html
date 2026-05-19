@@ -2089,17 +2089,23 @@
         return button;
       }
 
-      // Активные — всегда видны
+      // Активные — всегда видны, первый из них выбирается автоматически
       active.forEach((lead, i) => {
         leadList.appendChild(makeLeadButton(lead, i === 0));
       });
 
-      // Если активных нет — мелкая серая подпись над кнопкой «Предыдущие обращения»
+      // Если активных нет — мелкая серая подпись над кнопкой «Предыдущие обращения»,
+      // и в блок «Статус обращения» выводим ненавязчивую подсказку «Выберите обращение»
+      // (никакое завершённое не выбираем автоматически — пользователь сам кликнет, если надо).
       if (!active.length && completed.length) {
         const noActive = document.createElement("div");
         noActive.className = "lead-no-active";
         noActive.textContent = "Нет активных обращений";
         leadList.appendChild(noActive);
+
+        statusText.textContent = "Выберите обращение";
+        stagesEl.innerHTML = "";
+        selectedLead = null;
       }
 
       if (completed.length) {
@@ -2113,9 +2119,8 @@
         completedWrap.className = "lead-completed-list";
 
         completed.forEach((lead) => {
-          // Если нет активных — первый завершённый выберем автоматически
-          const shouldAutoSelect = !active.length && lead === completed[0];
-          completedWrap.appendChild(makeLeadButton(lead, shouldAutoSelect));
+          // Автоматически ничего не выбираем — пользователь сам кликнет на нужное обращение.
+          completedWrap.appendChild(makeLeadButton(lead, false));
         });
 
         const hideBtn = document.createElement("button");
