@@ -304,20 +304,6 @@
     .promo-result.show { display: block; }
     .promo-result.ok { color: #1f7a3f; }
     .promo-result.err { color: #c4314b; }
-    .promo-cancel-btn {
-      display: none;
-      align-self: flex-start;
-      padding: 4px 0;
-      border: none;
-      background: transparent;
-      color: #9096a3;
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      text-decoration: underline;
-    }
-    .promo-cancel-btn.show { display: inline-block; }
-    .promo-cancel-btn:hover { color: #6d7382; }
 
     .bio-offer {
       display: none;
@@ -500,7 +486,6 @@
               <button type="button" id="promoApplyBtn" class="promo-apply-btn">Применить промокод</button>
             </div>
             <div id="promoResult" class="promo-result"></div>
-            <button type="button" id="promoCancelBtn" class="promo-cancel-btn">Отменить ввод промокода</button>
           </div>
         </div>
       </div>
@@ -556,7 +541,6 @@
     const promoInput = document.getElementById("promoInput");
     const promoApplyBtn = document.getElementById("promoApplyBtn");
     const promoResult = document.getElementById("promoResult");
-    const promoCancelBtn = document.getElementById("promoCancelBtn");
     const usePromoRadios = Array.from(document.querySelectorAll('input[name="usePromo"]'));
 
     // Режим регистрации = синий блок «не найдено» сейчас показан.
@@ -573,7 +557,7 @@
       promoResult.textContent = "";
       promoInput.value = "";
       promoInput.classList.remove("input-error");
-      promoCancelBtn.classList.remove("show");
+      promoApplyBtn.style.display = ""; // восстанавливаем после возможного скрытия при валидном коде
       usePromoRadios.forEach((r) => { r.checked = false; });
     }
 
@@ -594,20 +578,6 @@
       resetPromoState();
     }
 
-    function hidePromoAreaCompletely() {
-      // По задумке клиента: «скрывать всю область с введением промокода,
-      // останется только логика регистрации».
-      promoArea.classList.remove("show");
-      promoResult.classList.remove("show", "ok", "err");
-      promoResult.textContent = "";
-      promoInput.value = "";
-      promoInput.classList.remove("input-error");
-      promoCancelBtn.classList.remove("show");
-      isPromoApplied = false;
-      // Скрываем вопрос + радио — клиент дальше может просто нажать главную
-      // «Зарегистрироваться», регистрация пройдёт без промо.
-      registerSection.classList.remove("show");
-    }
 
     usePromoRadios.forEach((radio) => {
       radio.addEventListener("change", () => {
@@ -620,7 +590,7 @@
           promoResult.textContent = "";
           promoInput.value = "";
           promoInput.classList.remove("input-error");
-          promoCancelBtn.classList.remove("show");
+          promoApplyBtn.style.display = "";
           isPromoApplied = false;
         }
       });
@@ -628,28 +598,20 @@
 
     promoApplyBtn.addEventListener("click", () => {
       const code = promoInput.value.trim();
-      if (!code) {
-        promoResult.classList.remove("ok");
-        promoResult.classList.add("show", "err");
-        promoResult.textContent = "Неверный промокод.";
-        promoInput.classList.add("input-error");
-        promoCancelBtn.classList.add("show");
-        isPromoApplied = false;
-        return;
-      }
       if (code === "15OFFBRO") {
+        // Валидный — оставляем только зелёный текст, кнопку «Применить промокод» скрываем
         promoResult.classList.remove("err");
         promoResult.classList.add("show", "ok");
         promoResult.textContent = "Промокод успешно применён.";
         promoInput.classList.remove("input-error");
-        promoCancelBtn.classList.remove("show");
+        promoApplyBtn.style.display = "none";
         isPromoApplied = true;
       } else {
+        // Невалидный — красный текст; кнопка «Применить» остаётся, никаких кнопок «Отменить» нет
         promoResult.classList.remove("ok");
         promoResult.classList.add("show", "err");
         promoResult.textContent = "Неверный промокод.";
         promoInput.classList.add("input-error");
-        promoCancelBtn.classList.add("show");
         isPromoApplied = false;
       }
     });
@@ -659,10 +621,6 @@
       if (promoInput.classList.contains("input-error")) {
         promoInput.classList.remove("input-error");
       }
-    });
-
-    promoCancelBtn.addEventListener("click", () => {
-      hidePromoAreaCompletely();
     });
 
     // Скрываем плашку и сбрасываем режим регистрации, как только пользователь меняет номер
