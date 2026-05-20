@@ -1332,6 +1332,33 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
       background: #fbebee !important;
       box-shadow: 0 0 0 3px rgba(217, 122, 138, 0.18) !important;
     }
+
+    .ack-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-top: 12px;
+      font-size: 14px;
+      color: #1d2330;
+      line-height: 1.45;
+      cursor: pointer;
+    }
+    .ack-row input[type="checkbox"] {
+      margin: 3px 0 0;
+      accent-color: #4f9f68;
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+    }
+    .ack-row.ack-error,
+    .ack-row.ack-error span {
+      color: #c4314b;
+    }
+    .ack-row.ack-error input[type="checkbox"] {
+      outline: 2px solid #c4314b;
+      outline-offset: 2px;
+      border-radius: 3px;
+    }
   </style>
 </head>
 <body>
@@ -1545,10 +1572,18 @@ ${mixedFieldsHtml}
     <!-- 25 -->
     <div class="field">
       <label>Даты поездки *</label>
-      <div class="date-row">
+      <div class="date-row" id="tripDatesInputs">
         <input type="date" name="tripDateFrom" required />
         <input type="date" name="tripDateTo" required />
       </div>
+      <label class="ack-row" id="tripDatesUnknownRow">
+        <input type="checkbox" name="tripDatesUnknown" value="Да" />
+        <span>Я ещё не знаю точных дат поездки.</span>
+      </label>
+      <label class="ack-row" id="tripDatesAckRow" style="display: none;">
+        <input type="checkbox" name="tripDatesAck" value="Да" />
+        <span>Я проинформирован (-а) о сроках рассмотрения, обязуюсь предоставить информацию о датах поездки минимум за неделю до подачи документов в Консульство.<br />Я так же и проинформирован (-а) о том, что при изменении дат поездки после того, как пакет документов уже подготовлен, может потребоваться дополнительная оплата.</span>
+      </label>
     </div>
 
     <!-- 26 -->
@@ -1879,6 +1914,49 @@ ${mixedFieldsHtml}
   }
   applyTripDateConstraints();
 
+  // ─── Логика «Я ещё не знаю точных дат поездки» ───
+  const tripUnknownInput = form.querySelector('input[name="tripDatesUnknown"]');
+  const tripAckInput = form.querySelector('input[name="tripDatesAck"]');
+  const tripAckRow = document.getElementById("tripDatesAckRow");
+  const tripDatesInputsEl = document.getElementById("tripDatesInputs");
+  const tripFromInputEl = form.querySelector('input[name="tripDateFrom"]');
+  const tripToInputEl = form.querySelector('input[name="tripDateTo"]');
+
+  function applyTripDatesUnknownState() {
+    if (!tripUnknownInput) return;
+    const unknown = tripUnknownInput.checked;
+    if (unknown) {
+      if (tripDatesInputsEl) tripDatesInputsEl.style.display = "none";
+      if (tripFromInputEl) {
+        tripFromInputEl.required = false;
+        tripFromInputEl.classList.remove("input-error");
+      }
+      if (tripToInputEl) {
+        tripToInputEl.required = false;
+        tripToInputEl.classList.remove("input-error");
+      }
+      if (tripAckRow) tripAckRow.style.display = "";
+    } else {
+      if (tripDatesInputsEl) tripDatesInputsEl.style.display = "";
+      if (tripFromInputEl) tripFromInputEl.required = true;
+      if (tripToInputEl) tripToInputEl.required = true;
+      if (tripAckRow) {
+        tripAckRow.style.display = "none";
+        tripAckRow.classList.remove("ack-error");
+      }
+      if (tripAckInput) tripAckInput.checked = false;
+    }
+  }
+  if (tripUnknownInput) {
+    tripUnknownInput.addEventListener("change", applyTripDatesUnknownState);
+  }
+  if (tripAckInput && tripAckRow) {
+    tripAckInput.addEventListener("change", () => {
+      if (tripAckInput.checked) tripAckRow.classList.remove("ack-error");
+    });
+  }
+  applyTripDatesUnknownState();
+
   // ─── Проверка дубликата ФИО в рамках этой сделки ───
   const EXISTING_FIOS = ${JSON.stringify(existingFios || []).replace(/</g, "\\u003c")};
   const CURRENT_APPLICANT_INDEX = ${JSON.stringify(applicantIndex)};
@@ -1952,6 +2030,8 @@ ${mixedFieldsHtml}
       });
     });
     updateConditionals();
+    // После prefill пересинхронизируем UI чек-бокса «не знаю дат» (скрытие/показ полей дат)
+    applyTripDatesUnknownState();
   }
 
   // Снимаем подсветку ошибки с поля при изменении/вводе
@@ -2002,13 +2082,27 @@ ${mixedFieldsHtml}
       return;
     }
 
-    // Проверка обязательных дат — подсвечиваем и не отправляем
-    const badDate = validateRequiredFields();
-    if (badDate) {
-      showBox(errorBox, "Заполните даты поездки — оба поля обязательны.");
-      if (badDate.scrollIntoView) badDate.scrollIntoView({ behavior: "smooth", block: "center" });
-      try { badDate.focus({ preventScroll: true }); } catch (_) { badDate.focus(); }
-      return;
+    // Если клиент выбрал «Я ещё не знаю точных дат поездки» — даты не обязательны,
+    // зато требуется подтверждающий чек-бокс ниже. Если он не отмечен — блокируем сабмит,
+    // подсвечиваем строку красным.
+    if (tripUnknownInput && tripUnknownInput.checked) {
+      if (tripAckInput && !tripAckInput.checked) {
+        if (tripAckRow) {
+          tripAckRow.classList.add("ack-error");
+          if (tripAckRow.scrollIntoView) tripAckRow.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+        showBox(errorBox, "Поставьте галочку в чек-боксе подтверждения сроков.");
+        return;
+      }
+    } else {
+      // Обычный путь — обе даты обязательны (validateRequiredFields пропускает скрытые поля).
+      const badDate = validateRequiredFields();
+      if (badDate) {
+        showBox(errorBox, "Заполните даты поездки — оба поля обязательны.");
+        if (badDate.scrollIntoView) badDate.scrollIntoView({ behavior: "smooth", block: "center" });
+        try { badDate.focus({ preventScroll: true }); } catch (_) { badDate.focus(); }
+        return;
+      }
     }
 
     // Проверка согласий — без сброса данных формы
@@ -2166,7 +2260,15 @@ async function generateQuestionnairePdfBuffer(data) {
     line("Виза для собеседования на США в Польше", data.usaInterviewPoland);
     line("Страна поездки", data.travelCountry);
     line("В какую страну запрашивается виза", data.visaCountry);
-    if (data.tripDateFrom || data.tripDateTo) {
+    if (data.tripDatesUnknown === "Да") {
+      line("Даты поездки", "Точные даты пока не известны");
+      if (data.tripDatesAck === "Да") {
+        line(
+          "Подтверждение клиента",
+          "проинформирован о сроках рассмотрения; обязуется предоставить даты минимум за неделю до подачи в Консульство; в курсе о возможной доплате при изменении дат после подготовки пакета"
+        );
+      }
+    } else if (data.tripDateFrom || data.tripDateTo) {
       line("Даты поездки", `${data.tripDateFrom || "?"} — ${data.tripDateTo || "?"}`);
     }
     doc.moveDown();
@@ -3361,6 +3463,8 @@ app.post(
         visaCountry:                String(req.body.visaCountry || "").trim(),
         tripDateFrom:               String(req.body.tripDateFrom || "").trim(),
         tripDateTo:                 String(req.body.tripDateTo || "").trim(),
+        tripDatesUnknown:           String(req.body.tripDatesUnknown || "").trim(),
+        tripDatesAck:               String(req.body.tripDatesAck || "").trim(),
         hasActiveSchengen:          String(req.body.hasActiveSchengen || "").trim(),
         schengenExpiry:             String(req.body.schengenExpiry || "").trim(),
         hadSchengen3Years:          String(req.body.hadSchengen3Years || "").trim(),
