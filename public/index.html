@@ -544,12 +544,15 @@
     const usePromoRadios = Array.from(document.querySelectorAll('input[name="usePromo"]'));
 
     // Режим регистрации = синий блок «не найдено» сейчас показан.
+    const VALID_PROMO_CODES = new Set(["10OFFBRO", "15OFFBRO", "20OFFBRO"]);
     let isRegistrationMode = false;
     let isPromoApplied = false;        // true только когда введён валидный промокод и не отменён
+    let lastAppliedPromoCode = "";     // конкретный код, который успешно применили (для отправки на сервер)
     let promoQuestionRevealed = false; // true после первого клика по «Зарегистрироваться»
 
     function resetPromoState() {
       isPromoApplied = false;
+      lastAppliedPromoCode = "";
       promoQuestionRevealed = false;
       registerSection.classList.remove("show");
       promoArea.classList.remove("show");
@@ -592,13 +595,14 @@
           promoInput.classList.remove("input-error");
           promoApplyBtn.style.display = "";
           isPromoApplied = false;
+          lastAppliedPromoCode = "";
         }
       });
     });
 
     promoApplyBtn.addEventListener("click", () => {
       const code = promoInput.value.trim();
-      if (code === "15OFFBRO") {
+      if (VALID_PROMO_CODES.has(code)) {
         // Валидный — оставляем только зелёный текст, кнопку «Применить промокод» скрываем
         promoResult.classList.remove("err");
         promoResult.classList.add("show", "ok");
@@ -606,6 +610,7 @@
         promoInput.classList.remove("input-error");
         promoApplyBtn.style.display = "none";
         isPromoApplied = true;
+        lastAppliedPromoCode = code;
       } else {
         // Невалидный — красный текст; кнопка «Применить» остаётся, никаких кнопок «Отменить» нет
         promoResult.classList.remove("ok");
@@ -613,6 +618,7 @@
         promoResult.textContent = "Неверный промокод.";
         promoInput.classList.add("input-error");
         isPromoApplied = false;
+        lastAppliedPromoCode = "";
       }
     });
 
@@ -981,8 +987,8 @@
 
     async function registerNewClient(phone) {
       // Промокод отправляем, только если он был успешно применён.
-      // Если клиент ввёл невалидный и не отменил — регистрируемся БЕЗ промо (комментарий не ставится).
-      const promoCode = isPromoApplied ? "15OFFBRO" : "";
+      // Если клиент ввёл невалидный — регистрируемся БЕЗ промо (комментарий не ставится).
+      const promoCode = isPromoApplied ? lastAppliedPromoCode : "";
       searchBtn.disabled = true;
       const prevText = searchBtn.textContent;
       searchBtn.textContent = "Регистрируем...";

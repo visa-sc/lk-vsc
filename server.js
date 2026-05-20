@@ -76,8 +76,15 @@ app.post("/api/auth/has-leads", async (req, res) => {
 
 // Регистрация нового клиента: создание контакта + сделки в воронке «Отдел продаж»,
 // статус «Ещё не связывались». Опционально — закреплённый комментарий при валидном промокоде.
-const PROMO_CODE = "15OFFBRO";
-const PROMO_COMMENT_TEXT = "-15% скидка на услуги от Андрея К. Можно перекрыть сертификатом.";
+// Промокоды → размер скидки в %. Текст комментария формируется единообразно.
+const PROMO_CODES = {
+  "10OFFBRO": 10,
+  "15OFFBRO": 15,
+  "20OFFBRO": 20
+};
+function promoCommentText(percent) {
+  return `-${percent}% скидка на услуги от Андрея К. Можно перекрыть сертификатом.`;
+}
 
 app.post("/api/auth/register", async (req, res) => {
   try {
@@ -89,16 +96,20 @@ app.post("/api/auth/register", async (req, res) => {
     if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
       return res.status(500).json({ success: false, message: "Не настроены переменные amoCRM" });
     }
-    const promoApplied = promoCodeRaw === PROMO_CODE;
+    const promoPercent = Object.prototype.hasOwnProperty.call(PROMO_CODES, promoCodeRaw)
+      ? PROMO_CODES[promoCodeRaw]
+      : 0;
+    const promoApplied = promoPercent > 0;
     const result = await createAmoContactAndLeadForRegistration(phone, {
       promoApplied,
-      promoText: promoApplied ? PROMO_COMMENT_TEXT : ""
+      promoText: promoApplied ? promoCommentText(promoPercent) : ""
     });
     return res.json({
       success: true,
       contactId: result.contactId,
       leadId: result.leadId,
-      promoApplied
+      promoApplied,
+      promoPercent
     });
   } catch (err) {
     console.error("REGISTER ERROR:", err.response?.data || err.message);
