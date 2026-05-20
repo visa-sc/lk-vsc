@@ -1519,10 +1519,12 @@ ${mixedFieldsHtml}
       <span class="hint">Если вы не учитесь и не работаете, укажите НЕТ.</span>
     </div>
 
-    <!-- 19 -->
-    <div class="field">
-      <label>Телефон работодателя *</label>
-      <input type="tel" name="employerPhone" inputmode="tel" placeholder="+7 (___) ___-__-__" data-phone-mask required />
+    <!-- 19 — скрываем, если employerName === «НЕТ» (любой регистр) -->
+    <div class="cond" id="c_employerPhone">
+      <div class="field">
+        <label>Телефон работодателя *</label>
+        <input type="tel" name="employerPhone" inputmode="tel" placeholder="+7 (___) ___-__-__" data-phone-mask required />
+      </div>
     </div>
 
     <!-- 20 -->
@@ -1848,9 +1850,29 @@ ${mixedFieldsHtml}
     toggle("c_legalRep",          radio("isUnder18") === "Да");
     toggle("c_sponsorName",       radio("hasSponsor") === "Да");
     toggle("c_botBooking",        radio("useBotBooking") === "Да");
+
+    // «Телефон работодателя» — скрываем, если работодатель = «НЕТ» (любой регистр).
+    const empNameEl = form.querySelector('input[name="employerName"]');
+    const empNameVal = (empNameEl && empNameEl.value || "").trim().toUpperCase();
+    const showEmployerPhone = empNameVal !== "НЕТ";
+    toggle("c_employerPhone", showEmployerPhone);
+    // Снимаем/возвращаем required, чтобы скрытое поле не блокировало сабмит браузером.
+    const empPhoneEl = form.querySelector('input[name="employerPhone"]');
+    if (empPhoneEl) {
+      if (showEmployerPhone) {
+        empPhoneEl.required = true;
+      } else {
+        empPhoneEl.required = false;
+        empPhoneEl.classList.remove("input-error");
+      }
+    }
   }
 
   form.addEventListener("change", updateConditionals);
+  // employerName — текстовое поле, нужно слушать input для мгновенной реакции.
+  form.addEventListener("input", (e) => {
+    if (e.target && e.target.name === "employerName") updateConditionals();
+  });
   updateConditionals();
 
   // ─── Маска для телефонных полей: +7 (XXX) XXX-XX-XX ───
