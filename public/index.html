@@ -204,6 +204,117 @@
     }
     .not-found-info.show { display: block; }
 
+    .register-link {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: #3589BD;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .register-link:hover { color: #246c98; }
+
+    .register-section {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 4px;
+      animation: vsc-fade-in 0.3s var(--vsc-ease) both;
+    }
+    .register-section.show { display: flex; }
+    .register-question {
+      font-size: 14px;
+      color: #1d2330;
+      font-weight: 500;
+    }
+    .register-radio {
+      display: flex;
+      gap: 16px;
+      font-size: 14px;
+      color: #1d2330;
+    }
+    .register-radio label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    .promo-area {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      animation: vsc-fade-in 0.25s var(--vsc-ease) both;
+    }
+    .promo-area.show { display: flex; }
+    .promo-input-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: stretch;
+    }
+    .promo-input-row input[type="text"] {
+      flex: 1 1 140px;
+      min-width: 0;
+      height: 44px;
+      border: 1px solid #ebe6f1;
+      border-radius: 12px;
+      padding: 0 14px;
+      font-size: 14px;
+      background: #fff;
+      color: #1f2532;
+      outline: none;
+    }
+    .promo-input-row input[type="text"]:focus {
+      border-color: #3589BD;
+      box-shadow: 0 0 0 3px rgba(53, 137, 189, 0.15);
+    }
+    .promo-input-row input[type="text"].input-error {
+      border-color: #d97a8a;
+      background: #fbebee;
+    }
+    .promo-apply-btn {
+      height: 44px;
+      padding: 0 14px;
+      border: 1.5px solid #3589BD;
+      border-radius: 12px;
+      background: #fff;
+      color: #3589BD;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s var(--vsc-ease);
+    }
+    .promo-apply-btn:hover:not(:disabled) { background: #f0f7fc; }
+    .promo-apply-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .promo-result {
+      font-size: 13px;
+      line-height: 1.4;
+      display: none;
+    }
+    .promo-result.show { display: block; }
+    .promo-result.ok { color: #1f7a3f; }
+    .promo-result.err { color: #c4314b; }
+    .promo-cancel-btn {
+      display: none;
+      align-self: flex-start;
+      padding: 4px 0;
+      border: none;
+      background: transparent;
+      color: #9096a3;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .promo-cancel-btn.show { display: inline-block; }
+    .promo-cancel-btn:hover { color: #6d7382; }
+
     .bio-offer {
       display: none;
       flex-direction: column;
@@ -371,8 +482,27 @@
         autocomplete="tel"
         required
       />
-      <div id="notFoundBox" class="not-found-info">По этому номеру обращения не найдены</div>
+      <div id="notFoundBox" class="not-found-info">
+        <div>По этому номеру обращения не найдены.</div>
+        <button type="button" id="registerLink" class="register-link">Зарегистрироваться</button>
+      </div>
       <button id="searchBtn" type="submit">Войти</button>
+
+      <div id="registerSection" class="register-section">
+        <div class="register-question">Хотите использовать промокод?</div>
+        <div class="register-radio">
+          <label><input type="radio" name="usePromo" value="Да" /> Да</label>
+          <label><input type="radio" name="usePromo" value="Нет" /> Нет</label>
+        </div>
+        <div id="promoArea" class="promo-area">
+          <div class="promo-input-row">
+            <input id="promoInput" type="text" placeholder="Введите промокод" autocomplete="off" />
+            <button type="button" id="promoApplyBtn" class="promo-apply-btn">Применить промокод</button>
+          </div>
+          <div id="promoResult" class="promo-result"></div>
+          <button type="button" id="promoCancelBtn" class="promo-cancel-btn">Отменить ввод промокода</button>
+        </div>
+      </div>
 
       <div id="codeSection" class="code-section">
         <div class="code-label">Введите код из SMS, отправленный на ваш номер</div>
@@ -419,14 +549,130 @@
     const bioSkipBtn = document.getElementById("bioSkipBtn");
     const bioEnableBtn = document.getElementById("bioEnableBtn");
 
+    const registerLink = document.getElementById("registerLink");
+    const registerSection = document.getElementById("registerSection");
+    const promoArea = document.getElementById("promoArea");
+    const promoInput = document.getElementById("promoInput");
+    const promoApplyBtn = document.getElementById("promoApplyBtn");
+    const promoResult = document.getElementById("promoResult");
+    const promoCancelBtn = document.getElementById("promoCancelBtn");
+    const usePromoRadios = Array.from(document.querySelectorAll('input[name="usePromo"]'));
+
+    let isRegistrationMode = false;
+    let isPromoApplied = false; // true только когда введён валидный промокод и не отменён
+
     function hideNotFound() {
       notFoundBox.classList.remove("show");
     }
     function showNotFound() {
       notFoundBox.classList.add("show");
+      registerLink.style.display = "";
     }
-    // Скрываем плашку, как только пользователь меняет номер
-    document.getElementById("phoneInput").addEventListener("input", hideNotFound);
+
+    function exitRegistrationMode() {
+      isRegistrationMode = false;
+      isPromoApplied = false;
+      registerSection.classList.remove("show");
+      promoArea.classList.remove("show");
+      promoResult.classList.remove("show", "ok", "err");
+      promoResult.textContent = "";
+      promoInput.value = "";
+      promoInput.classList.remove("input-error");
+      promoCancelBtn.classList.remove("show");
+      usePromoRadios.forEach((r) => { r.checked = false; });
+      searchBtn.textContent = "Войти";
+      registerLink.style.display = "";
+    }
+
+    function enterRegistrationMode() {
+      isRegistrationMode = true;
+      isPromoApplied = false;
+      registerLink.style.display = "none";
+      searchBtn.textContent = "Зарегистрироваться";
+      registerSection.classList.add("show");
+    }
+
+    function hidePromoAreaCompletely() {
+      promoArea.classList.remove("show");
+      promoResult.classList.remove("show", "ok", "err");
+      promoResult.textContent = "";
+      promoInput.value = "";
+      promoInput.classList.remove("input-error");
+      promoCancelBtn.classList.remove("show");
+      isPromoApplied = false;
+      // Скрываем сам вопрос «Хотите использовать промокод?» и радио, как просил клиент
+      // («скрывать всю область с введением промо-кода»). Логика регистрации остаётся —
+      // нажатие на главную кнопку «Зарегистрироваться» отправит данные на сервер.
+      registerSection.classList.remove("show");
+    }
+
+    registerLink.addEventListener("click", () => {
+      enterRegistrationMode();
+    });
+
+    usePromoRadios.forEach((radio) => {
+      radio.addEventListener("change", () => {
+        if (radio.value === "Да" && radio.checked) {
+          promoArea.classList.add("show");
+        } else if (radio.value === "Нет" && radio.checked) {
+          promoArea.classList.remove("show");
+          // Сброс ранее введённого
+          promoResult.classList.remove("show", "ok", "err");
+          promoResult.textContent = "";
+          promoInput.value = "";
+          promoInput.classList.remove("input-error");
+          promoCancelBtn.classList.remove("show");
+          isPromoApplied = false;
+        }
+      });
+    });
+
+    promoApplyBtn.addEventListener("click", () => {
+      const code = promoInput.value.trim();
+      if (!code) {
+        promoResult.classList.remove("ok");
+        promoResult.classList.add("show", "err");
+        promoResult.textContent = "Неверный промокод.";
+        promoInput.classList.add("input-error");
+        promoCancelBtn.classList.add("show");
+        isPromoApplied = false;
+        return;
+      }
+      if (code === "15OFFBRO") {
+        promoResult.classList.remove("err");
+        promoResult.classList.add("show", "ok");
+        promoResult.textContent = "Промокод успешно применён.";
+        promoInput.classList.remove("input-error");
+        promoCancelBtn.classList.remove("show");
+        isPromoApplied = true;
+      } else {
+        promoResult.classList.remove("ok");
+        promoResult.classList.add("show", "err");
+        promoResult.textContent = "Неверный промокод.";
+        promoInput.classList.add("input-error");
+        promoCancelBtn.classList.add("show");
+        isPromoApplied = false;
+      }
+    });
+
+    promoInput.addEventListener("input", () => {
+      // Сбрасываем подсветку ошибки при вводе
+      if (promoInput.classList.contains("input-error")) {
+        promoInput.classList.remove("input-error");
+      }
+    });
+
+    promoCancelBtn.addEventListener("click", () => {
+      hidePromoAreaCompletely();
+    });
+
+    // Скрываем плашку и сбрасываем режим регистрации, как только пользователь меняет номер
+    document.getElementById("phoneInput").addEventListener("input", () => {
+      hideNotFound();
+      if (isRegistrationMode) {
+        exitRegistrationMode();
+      }
+    });
 
     let serverPhone = ""; // нормализованный телефон, на который ушёл код
     let resendTimer = null;
@@ -776,10 +1022,36 @@
       }
     }
 
+    async function registerNewClient(phone) {
+      // Промокод отправляем, только если он был успешно применён.
+      // Если клиент ввёл невалидный и не отменил — регистрируемся БЕЗ промо (комментарий не ставится).
+      const promoCode = isPromoApplied ? "15OFFBRO" : "";
+      searchBtn.disabled = true;
+      const prevText = searchBtn.textContent;
+      searchBtn.textContent = "Регистрируем...";
+      try {
+        const r = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone, promoCode })
+        });
+        const data = await r.json();
+        if (!r.ok || !data.success) {
+          throw new Error(data.message || "Не удалось зарегистрировать");
+        }
+        return true;
+      } catch (err) {
+        showError(err.message || "Не удалось зарегистрировать");
+        return false;
+      } finally {
+        searchBtn.disabled = false;
+        searchBtn.textContent = prevText;
+      }
+    }
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       hideError();
-      hideNotFound();
 
       const raw = phoneInput.value.trim();
       if (!raw) {
@@ -787,8 +1059,9 @@
         return;
       }
 
-      // Секретный обходной код — перекидываем на /search (без SMS)
-      if (raw === SECRET_BYPASS) {
+      // Секретный обходной код — перекидываем на /search (без SMS).
+      // Только в обычном (не регистрационном) режиме.
+      if (!isRegistrationMode && raw === SECRET_BYPASS) {
         window.location.replace("/search");
         return;
       }
@@ -799,6 +1072,20 @@
         return;
       }
 
+      // ── Режим регистрации ──
+      if (isRegistrationMode) {
+        const ok = await registerNewClient(phone);
+        if (!ok) return;
+        // Дальше — стандартный SMS-флоу. После verify клиент попадёт в /cabinet,
+        // где увидит свежесозданную сделку на этапе «Сбор документов».
+        hideNotFound();
+        registerSection.classList.remove("show");
+        await requestCode(phone);
+        return;
+      }
+
+      // ── Обычный логин ──
+      hideNotFound();
       // Проверяем, есть ли обращения в amoCRM. Если нет — показываем плашку, SMS не шлём.
       searchBtn.disabled = true;
       const prevText = searchBtn.textContent;

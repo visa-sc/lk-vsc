@@ -74,6 +74,41 @@ app.post("/api/auth/has-leads", async (req, res) => {
   }
 });
 
+// Регистрация нового клиента: создание контакта + сделки в воронке «Отдел продаж»,
+// статус «Ещё не связывались». Опционально — закреплённый комментарий при валидном промокоде.
+const PROMO_CODE = "15OFFBRO";
+const PROMO_COMMENT_TEXT = "-15% скидка на услуги от Андрея К. Можно перекрыть сертификатом.";
+
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const phone = sms.normalizePhone((req.body && req.body.phone) || "");
+    const promoCodeRaw = String((req.body && req.body.promoCode) || "").trim();
+    if (!phone || phone.length < 11) {
+      return res.status(400).json({ success: false, message: "Некорректный номер телефона" });
+    }
+    if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
+      return res.status(500).json({ success: false, message: "Не настроены переменные amoCRM" });
+    }
+    const promoApplied = promoCodeRaw === PROMO_CODE;
+    const result = await createAmoContactAndLeadForRegistration(phone, {
+      promoApplied,
+      promoText: promoApplied ? PROMO_COMMENT_TEXT : ""
+    });
+    return res.json({
+      success: true,
+      contactId: result.contactId,
+      leadId: result.leadId,
+      promoApplied
+    });
+  } catch (err) {
+    console.error("REGISTER ERROR:", err.response?.data || err.message);
+    return res.status(500).json({
+      success: false,
+      message: "Не удалось зарегистрировать. Попробуйте позже."
+    });
+  }
+});
+
 app.post("/api/auth/request-code", smsGate, async (req, res) => {
   try {
     const phone = sms.normalizePhone((req.body && req.body.phone) || "");
@@ -861,6 +896,86 @@ function finalizeAmoUpload(leadId, options = {}) {
       await createAmoUploadTask(leadId);
     }
   });
+}
+
+// Создание контакта (если ещё нет) + новой сделки в воронке «Отдел продаж»,
+// статус «Ещё не связывались». При applyPromo — добавляем закреплённый комментарий.
+async function createAmoContactAndLeadForRegistration(phone, { promoApplied = false, promoText = "" } = {}) {
+  const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+
+  // 1) Ищем существующий контакт по телефону, чтобы не дублировать.
+  let contactId = null;
+  try {
+    const existing = await findMatchingContacts(baseUrl, phone);
+    if (existing && existing.length) contactId = existing[0].id;
+  } catch (e) {
+    console.error("REGISTER find contact err:", e.message);
+  }
+
+  // 2) Если контакта нет — создаём.
+  if (!contactId) {
+    const displayPhone = `+${phone}`;
+    const contactBody = [{
+      name: displayPhone,
+      custom_fields_values: [{
+        field_code: "PHONE",
+        values: [{ value: displayPhone, enum_code: "WORK" }]
+      }]
+    }];
+    const createRes = await amoPost(`${baseUrl}/api/v4/contacts`, contactBody);
+    contactId = createRes?._embedded?.contacts?.[0]?.id;
+    if (!contactId) throw new Error("Не удалось создать контакт");
+  }
+
+  // 3) Находим воронку «Отдел продаж» и статус «Ещё не связывались».
+  const pipelines = await amoGetAllPages(`${baseUrl}/api/v4/leads/pipelines`);
+  let pipelineId = null, statusId = null;
+  for (const p of pipelines) {
+    const pname = normalizeText(p.name);
+    if (pname === "отдел продаж" || pname.startsWith("отдел продаж")) {
+      pipelineId = p.id;
+      const statuses = await amoGetAllPages(`${baseUrl}/api/v4/leads/pipelines/${p.id}/statuses`);
+      for (const s of statuses) {
+        if (normalizeText(s.name) === "ещё не связывались") {
+          statusId = s.id;
+          break;
+        }
+      }
+      break;
+    }
+  }
+  if (!pipelineId || !statusId) {
+    throw new Error("Не найдена воронка/статус «Отдел продаж» → «Ещё не связывались»");
+  }
+
+  // 4) Создаём сделку, привязанную к контакту.
+  const leadBody = [{
+    name: "Новое обращение из ЛК",
+    pipeline_id: pipelineId,
+    status_id: statusId,
+    _embedded: { contacts: [{ id: contactId }] }
+  }];
+  const leadRes = await amoPost(`${baseUrl}/api/v4/leads`, leadBody);
+  const leadId = leadRes?._embedded?.leads?.[0]?.id;
+  if (!leadId) throw new Error("Не удалось создать сделку");
+
+  console.log(`REGISTER OK: phone=${phone} contactId=${contactId} leadId=${leadId} promo=${promoApplied}`);
+
+  // 5) При applyPromo — закреплённый комментарий на сделке.
+  if (promoApplied && promoText) {
+    try {
+      const noteBody = [{
+        note_type: "common",
+        is_pinned: true,
+        params: { text: promoText }
+      }];
+      await amoPost(`${baseUrl}/api/v4/leads/${leadId}/notes`, noteBody);
+    } catch (e) {
+      console.error("REGISTER promo note err:", e.response?.data || e.message);
+    }
+  }
+
+  return { contactId, leadId };
 }
 
 const UPLOAD_FIELDS_WHITELIST = {
