@@ -898,6 +898,35 @@ function mirrorFilesToAmoFolder(leadId, files) {
   }
 }
 
+// Подходит ли файл под «поле заявителя» — имя начинается с "<targetName> - <safeFio>",
+// дальше либо «.» (расширение сразу), либо « » (затем " (2).ext" / " (3).ext").
+// Используется для очистки предыдущих версий загрузки при повторной загрузке того же поля.
+function matchesFieldFile(filename, targetName, safeFio) {
+  const prefix = `${targetName} - ${safeFio}`;
+  if (!String(filename).startsWith(prefix)) return false;
+  const next = String(filename).charAt(prefix.length);
+  return next === "." || next === " ";
+}
+
+// Удаляет в зеркале сделки все ранее загруженные файлы этого поля для этого заявителя
+// (любое расширение / любой partSuffix). Встаёт в очередь ПЕРЕД новыми mirror-операциями.
+function cleanupAmoFieldFilesInMirror(leadId, safeFio, targetName) {
+  if (!leadId) return;
+  amoEnqueue(leadId, `cleanup ${safeFio}/${targetName}`, async () => {
+    const folder = `${amoDocsFolder(leadId)}/${safeFio}`;
+    try {
+      const items = await listYandexFolderFiles(folder);
+      for (const name of items) {
+        if (matchesFieldFile(name, targetName, safeFio)) {
+          await deleteYandexResourceIfExists(`${folder}/${name}`);
+        }
+      }
+    } catch (e) {
+      console.error("AMO MIRROR cleanup error:", e.message);
+    }
+  });
+}
+
 // Финализация: пересборка zip + (опционально) создание задачи в amoCRM.
 // Встаёт в очередь ПОСЛЕ всех ранее поставленных mirror-операций для этого leadId.
 function finalizeAmoUpload(leadId, options = {}) {
@@ -3698,6 +3727,26 @@ app.post(
       const partSuffix = partIndex > 1 ? ` (${partIndex})` : "";
       const finalFileName = `${targetName} - ${safeFio}${partSuffix}${ext}`;
       const diskPath = `${applicantFolder}/${finalFileName}`;
+      const leadIdForMirror = String(req.body.leadId || "").trim();
+
+      // При partIndex === 1 (первый файл батча для этого поля) подчищаем все
+      // предыдущие версии загрузки в этом поле — любое расширение, любой суффикс « (2)»/« (3)».
+      // Это нужно, чтобы при замене JPG на PDF (или наоборот) старая версия не оставалась
+      // ни в основной папке клиента, ни в zip-архиве сделки.
+      if (partIndex === 1) {
+        try {
+          const existing = await listYandexFolderFiles(applicantFolder);
+          for (const name of existing) {
+            if (matchesFieldFile(name, targetName, safeFio)) {
+              await deleteYandexResourceIfExists(`${applicantFolder}/${name}`);
+            }
+          }
+        } catch (e) {
+          console.error("CLEANUP OLD FIELD FILES (phone folder) error:", e.message);
+        }
+        // Параллельно подчистим зеркало сделки — встаёт в очередь ПЕРЕД новой mirror-операцией.
+        cleanupAmoFieldFilesInMirror(leadIdForMirror, safeFio, targetName);
+      }
 
       console.log("UPLOAD TO YANDEX:", diskPath);
       await uploadBufferToYandexDisk(file.buffer, diskPath, file.mimetype);
@@ -3705,9 +3754,8 @@ app.post(
       // Зеркалирование одного файла в папку сделки (фоном, без zip и task).
       // Финализация (zip + 1 задача) — отдельный вызов /api/amo/finish-upload
       // после успешного завершения батча, чтобы получить ровно 1 задачу на нажатие «Загрузить».
-      const leadId = String(req.body.leadId || "").trim();
-      console.log("UPLOAD-DOC leadId =", leadId || "(empty)");
-      mirrorFilesToAmoFolder(leadId, {
+      console.log("UPLOAD-DOC leadId =", leadIdForMirror || "(empty)");
+      mirrorFilesToAmoFolder(leadIdForMirror, {
         relativePath: `${safeFio}/${finalFileName}`,
         buffer: file.buffer,
         contentType: file.mimetype
