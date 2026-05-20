@@ -204,15 +204,17 @@
     }
     .not-found-info.show { display: block; }
 
-    /* Секция регистрации лежит ВНУТРИ .not-found-info, поэтому появляется/прячется вместе с ним */
+    /* Секция регистрации лежит ВНУТРИ .not-found-info. По умолчанию скрыта —
+       раскрывается только после первого клика по главной кнопке «Зарегистрироваться». */
     .register-section {
-      display: flex;
+      display: none;
       flex-direction: column;
       gap: 10px;
       margin-top: 12px;
       text-align: left;
       animation: vsc-fade-in 0.3s var(--vsc-ease) both;
     }
+    .register-section.show { display: flex; }
     .register-question {
       font-size: 14px;
       color: #1d2330;
@@ -559,10 +561,13 @@
 
     // Режим регистрации = синий блок «не найдено» сейчас показан.
     let isRegistrationMode = false;
-    let isPromoApplied = false; // true только когда введён валидный промокод и не отменён
+    let isPromoApplied = false;        // true только когда введён валидный промокод и не отменён
+    let promoQuestionRevealed = false; // true после первого клика по «Зарегистрироваться»
 
     function resetPromoState() {
       isPromoApplied = false;
+      promoQuestionRevealed = false;
+      registerSection.classList.remove("show");
       promoArea.classList.remove("show");
       promoResult.classList.remove("show", "ok", "err");
       promoResult.textContent = "";
@@ -570,7 +575,6 @@
       promoInput.classList.remove("input-error");
       promoCancelBtn.classList.remove("show");
       usePromoRadios.forEach((r) => { r.checked = false; });
-      registerSection.style.display = ""; // на случай, если ранее был hidePromoAreaCompletely
     }
 
     function hideNotFound() {
@@ -583,7 +587,8 @@
 
     function showNotFound() {
       notFoundBox.classList.add("show");
-      // Вход в режим регистрации — синхронно с показом блока
+      // Вход в режим регистрации — синхронно с показом блока, но вопрос промокода
+      // ещё не раскрываем — он покажется только после первого клика по «Зарегистрироваться»
       isRegistrationMode = true;
       searchBtn.textContent = "Зарегистрироваться";
       resetPromoState();
@@ -599,9 +604,9 @@
       promoInput.classList.remove("input-error");
       promoCancelBtn.classList.remove("show");
       isPromoApplied = false;
-      // Скрываем вопрос + радио (внутри register-section) — клиент дальше может
-      // просто нажать главную «Зарегистрироваться», регистрация пройдёт без промо.
-      registerSection.style.display = "none";
+      // Скрываем вопрос + радио — клиент дальше может просто нажать главную
+      // «Зарегистрироваться», регистрация пройдёт без промо.
+      registerSection.classList.remove("show");
     }
 
     usePromoRadios.forEach((radio) => {
@@ -1068,6 +1073,13 @@
 
       // ── Режим регистрации ──
       if (isRegistrationMode) {
+        // Первый клик по «Зарегистрироваться» — раскрываем вопрос «Хотите использовать промокод?»,
+        // регистрацию пока не отправляем. Второй клик уже отправит.
+        if (!promoQuestionRevealed) {
+          promoQuestionRevealed = true;
+          registerSection.classList.add("show");
+          return;
+        }
         const ok = await registerNewClient(phone);
         if (!ok) return;
         // Дальше — стандартный SMS-флоу. После verify клиент попадёт в /cabinet,
