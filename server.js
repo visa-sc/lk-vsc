@@ -757,12 +757,17 @@ async function deleteYandexResourceIfExists(diskPath) {
 
 async function rebuildAmoDocsZip(leadId) {
   const folder = amoDocsFolder(leadId);
-  const zipPath = `${folder}/${AMO_DOCS_ZIP_NAME}`;
+  // Zip кладём в КОРЕНЬ папки сделки (а не внутрь «Документы из ЛК»), чтобы
+  // интеграция amoCRM↔Я.Диск показывала его во вкладке «Файлы» сделки.
+  const zipPath = `${amoDealFolder(leadId)}/${AMO_DOCS_ZIP_NAME}`;
+  // Старый путь (внутри подпапки) тоже подчищаем — мог остаться от прошлых сборок.
+  const legacyZipPath = `${folder}/${AMO_DOCS_ZIP_NAME}`;
 
   console.log(`AMO ZIP: rebuild start, folder=${folder}`);
 
-  // Удаляем старый архив, чтобы не попал в новый
+  // Удаляем старые архивы, чтобы не попали в новый
   await deleteYandexResourceIfExists(zipPath);
+  await deleteYandexResourceIfExists(legacyZipPath);
 
   const items = await listYandexFolderRecursive(folder);
   const filtered = items.filter((f) => !f.name.toLowerCase().endsWith(".zip"));
@@ -3529,7 +3534,24 @@ app.get("/api/questionnaire-state", async (req, res) => {
       return res.json({ success: true, applicants: [] });
     }
 
-    const total = Math.max(1, Math.min(10, parseInt(first.totalApplicants, 10) || 1));
+    // Считаем фактическое количество заявителей по файлам JSON на диске
+    // (TECH FOLDER + legacy «Опросники/Технические файлы»).
+    // Это закрывает случай «Заполнить ещё опросник»: новые JSON-файлы
+    // добавляются для applicantIndex > 1, но первый JSON остаётся с totalApplicants=1.
+    let maxIdxOnDisk = 1;
+    try {
+      const files = await listAllTechFiles(phone);
+      files.forEach((name) => {
+        const m = /^Опросник(?:\s+(\d+))?\.json$/i.exec(name);
+        if (m) {
+          const idx = parseInt(m[1] || "1", 10);
+          if (idx > maxIdxOnDisk) maxIdxOnDisk = idx;
+        }
+      });
+    } catch (_) {}
+
+    const fromFirst = Math.max(1, Math.min(10, parseInt(first.totalApplicants, 10) || 1));
+    const total = Math.min(10, Math.max(fromFirst, maxIdxOnDisk));
     const restPromises = [];
     for (let i = 2; i <= total; i++) {
       restPromises.push(loadOne(i));
