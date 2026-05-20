@@ -204,36 +204,25 @@
     }
     .not-found-info.show { display: block; }
 
-    .register-link {
-      display: inline-block;
-      margin-top: 6px;
-      padding: 0;
-      border: none;
-      background: transparent;
-      color: #3589BD;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      text-decoration: underline;
-    }
-    .register-link:hover { color: #246c98; }
-
+    /* Секция регистрации лежит ВНУТРИ .not-found-info, поэтому появляется/прячется вместе с ним */
     .register-section {
-      display: none;
+      display: flex;
       flex-direction: column;
       gap: 10px;
-      margin-top: 4px;
+      margin-top: 12px;
+      text-align: left;
       animation: vsc-fade-in 0.3s var(--vsc-ease) both;
     }
-    .register-section.show { display: flex; }
     .register-question {
       font-size: 14px;
       color: #1d2330;
-      font-weight: 500;
+      font-weight: 600;
+      text-align: center;
     }
     .register-radio {
       display: flex;
-      gap: 16px;
+      justify-content: center;
+      gap: 24px;
       font-size: 14px;
       color: #1d2330;
     }
@@ -242,6 +231,19 @@
       align-items: center;
       gap: 6px;
       cursor: pointer;
+    }
+    /* Перебиваем .login-form input { width:100%; height:52px; ... } для радио */
+    .register-radio input[type="radio"] {
+      appearance: auto;
+      -webkit-appearance: auto;
+      width: auto;
+      height: auto;
+      padding: 0;
+      margin: 0;
+      border: initial;
+      border-radius: initial;
+      background: initial;
+      vertical-align: middle;
     }
 
     .promo-area {
@@ -483,26 +485,24 @@
         required
       />
       <div id="notFoundBox" class="not-found-info">
-        <div>По этому номеру обращения не найдены.</div>
-        <button type="button" id="registerLink" class="register-link">Зарегистрироваться</button>
+        <div class="not-found-text">По этому номеру обращения не найдены.</div>
+        <div id="registerSection" class="register-section">
+          <div class="register-question">Хотите использовать промокод?</div>
+          <div class="register-radio">
+            <label><input type="radio" name="usePromo" value="Да" /> Да</label>
+            <label><input type="radio" name="usePromo" value="Нет" /> Нет</label>
+          </div>
+          <div id="promoArea" class="promo-area">
+            <div class="promo-input-row">
+              <input id="promoInput" type="text" placeholder="Введите промокод" autocomplete="off" />
+              <button type="button" id="promoApplyBtn" class="promo-apply-btn">Применить промокод</button>
+            </div>
+            <div id="promoResult" class="promo-result"></div>
+            <button type="button" id="promoCancelBtn" class="promo-cancel-btn">Отменить ввод промокода</button>
+          </div>
+        </div>
       </div>
       <button id="searchBtn" type="submit">Войти</button>
-
-      <div id="registerSection" class="register-section">
-        <div class="register-question">Хотите использовать промокод?</div>
-        <div class="register-radio">
-          <label><input type="radio" name="usePromo" value="Да" /> Да</label>
-          <label><input type="radio" name="usePromo" value="Нет" /> Нет</label>
-        </div>
-        <div id="promoArea" class="promo-area">
-          <div class="promo-input-row">
-            <input id="promoInput" type="text" placeholder="Введите промокод" autocomplete="off" />
-            <button type="button" id="promoApplyBtn" class="promo-apply-btn">Применить промокод</button>
-          </div>
-          <div id="promoResult" class="promo-result"></div>
-          <button type="button" id="promoCancelBtn" class="promo-cancel-btn">Отменить ввод промокода</button>
-        </div>
-      </div>
 
       <div id="codeSection" class="code-section">
         <div class="code-label">Введите код из SMS, отправленный на ваш номер</div>
@@ -549,7 +549,6 @@
     const bioSkipBtn = document.getElementById("bioSkipBtn");
     const bioEnableBtn = document.getElementById("bioEnableBtn");
 
-    const registerLink = document.getElementById("registerLink");
     const registerSection = document.getElementById("registerSection");
     const promoArea = document.getElementById("promoArea");
     const promoInput = document.getElementById("promoInput");
@@ -558,21 +557,12 @@
     const promoCancelBtn = document.getElementById("promoCancelBtn");
     const usePromoRadios = Array.from(document.querySelectorAll('input[name="usePromo"]'));
 
+    // Режим регистрации = синий блок «не найдено» сейчас показан.
     let isRegistrationMode = false;
     let isPromoApplied = false; // true только когда введён валидный промокод и не отменён
 
-    function hideNotFound() {
-      notFoundBox.classList.remove("show");
-    }
-    function showNotFound() {
-      notFoundBox.classList.add("show");
-      registerLink.style.display = "";
-    }
-
-    function exitRegistrationMode() {
-      isRegistrationMode = false;
+    function resetPromoState() {
       isPromoApplied = false;
-      registerSection.classList.remove("show");
       promoArea.classList.remove("show");
       promoResult.classList.remove("show", "ok", "err");
       promoResult.textContent = "";
@@ -580,19 +570,28 @@
       promoInput.classList.remove("input-error");
       promoCancelBtn.classList.remove("show");
       usePromoRadios.forEach((r) => { r.checked = false; });
-      searchBtn.textContent = "Войти";
-      registerLink.style.display = "";
+      registerSection.style.display = ""; // на случай, если ранее был hidePromoAreaCompletely
     }
 
-    function enterRegistrationMode() {
+    function hideNotFound() {
+      notFoundBox.classList.remove("show");
+      // Выход из режима регистрации — синхронно с прятаньем блока
+      isRegistrationMode = false;
+      searchBtn.textContent = "Войти";
+      resetPromoState();
+    }
+
+    function showNotFound() {
+      notFoundBox.classList.add("show");
+      // Вход в режим регистрации — синхронно с показом блока
       isRegistrationMode = true;
-      isPromoApplied = false;
-      registerLink.style.display = "none";
       searchBtn.textContent = "Зарегистрироваться";
-      registerSection.classList.add("show");
+      resetPromoState();
     }
 
     function hidePromoAreaCompletely() {
+      // По задумке клиента: «скрывать всю область с введением промокода,
+      // останется только логика регистрации».
       promoArea.classList.remove("show");
       promoResult.classList.remove("show", "ok", "err");
       promoResult.textContent = "";
@@ -600,15 +599,10 @@
       promoInput.classList.remove("input-error");
       promoCancelBtn.classList.remove("show");
       isPromoApplied = false;
-      // Скрываем сам вопрос «Хотите использовать промокод?» и радио, как просил клиент
-      // («скрывать всю область с введением промо-кода»). Логика регистрации остаётся —
-      // нажатие на главную кнопку «Зарегистрироваться» отправит данные на сервер.
-      registerSection.classList.remove("show");
+      // Скрываем вопрос + радио (внутри register-section) — клиент дальше может
+      // просто нажать главную «Зарегистрироваться», регистрация пройдёт без промо.
+      registerSection.style.display = "none";
     }
-
-    registerLink.addEventListener("click", () => {
-      enterRegistrationMode();
-    });
 
     usePromoRadios.forEach((radio) => {
       radio.addEventListener("change", () => {
@@ -1079,7 +1073,6 @@
         // Дальше — стандартный SMS-флоу. После verify клиент попадёт в /cabinet,
         // где увидит свежесозданную сделку на этапе «Сбор документов».
         hideNotFound();
-        registerSection.classList.remove("show");
         await requestCode(phone);
         return;
       }
