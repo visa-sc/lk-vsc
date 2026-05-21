@@ -1185,6 +1185,50 @@ function finalizeAmoUpload(leadId, options = {}) {
   });
 }
 
+// ── Метка источника для leads, созданных через ЛК ───────────────────
+// В amoCRM обычно есть техническое поле «REFERER» (например, Flexbe создаёт
+// его автоматически при подключении интеграции). В сделках, созданных через
+// ЛК VOYO, в это поле пишем фиксированную метку «lkvoyo» — чтобы менеджер
+// сразу видел источник.
+// Если поля «REFERER» в amoCRM нет — просто не пишем (никаких ошибок).
+const LK_SOURCE_VALUE = "lkvoyo";
+let _lkRefererFieldCache = undefined; // undefined = ещё не проверяли, null = нет, { id, type }
+
+async function getLeadRefererFieldId() {
+  if (_lkRefererFieldCache !== undefined) {
+    return _lkRefererFieldCache ? _lkRefererFieldCache.id : null;
+  }
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const fields = await amoGetAllPages(`${baseUrl}/api/v4/leads/custom_fields`);
+    const referer = (fields || []).find((f) => {
+      const code = String((f && f.code) || "").toUpperCase();
+      const name = String((f && f.name) || "").toUpperCase();
+      return code === "REFERER" || name === "REFERER";
+    });
+    if (!referer) {
+      console.log("AMO REFERER field NOT FOUND — метка ЛК не будет проставлена");
+      _lkRefererFieldCache = null;
+      return null;
+    }
+    // Текстовое поле — принимает простое строковое значение.
+    // На остальные типы (select/multiselect/numeric и т.д.) безопаснее не лезть,
+    // чтобы случайно не уронить создание сделки.
+    if (String(referer.type || "").toLowerCase() !== "text") {
+      console.log(`AMO REFERER field has type "${referer.type}" — пропускаем (только text поддерживается)`);
+      _lkRefererFieldCache = null;
+      return null;
+    }
+    _lkRefererFieldCache = { id: referer.id, type: referer.type };
+    console.log(`AMO REFERER field detected: id=${referer.id} type=${referer.type} name=${referer.name || ""}`);
+    return referer.id;
+  } catch (e) {
+    console.error("getLeadRefererFieldId error:", e.message);
+    _lkRefererFieldCache = null;
+    return null;
+  }
+}
+
 // Создание контакта (если ещё нет) + новой сделки в воронке «Отдел продаж»,
 // статус «Ещё не связывались». При applyPromo — добавляем закреплённый комментарий.
 async function createAmoContactAndLeadForRegistration(phone, { promoApplied = false, promoText = "" } = {}) {
@@ -1235,13 +1279,20 @@ async function createAmoContactAndLeadForRegistration(phone, { promoApplied = fa
     throw new Error("Не найдена воронка/статус «Отдел продаж» → «Ещё не связывались»");
   }
 
-  // 4) Создаём сделку, привязанную к контакту.
+  // 4) Создаём сделку, привязанную к контакту. Метка «lkvoyo» в поле REFERER
+  //    (если оно настроено) — чтобы менеджер сразу видел источник.
   const leadBody = [{
     name: "Новое обращение из ЛК",
     pipeline_id: pipelineId,
     status_id: statusId,
     _embedded: { contacts: [{ id: contactId }] }
   }];
+  const refererFieldId = await getLeadRefererFieldId();
+  if (refererFieldId) {
+    leadBody[0].custom_fields_values = [
+      { field_id: refererFieldId, values: [{ value: LK_SOURCE_VALUE }] }
+    ];
+  }
   const leadRes = await amoPost(`${baseUrl}/api/v4/leads`, leadBody);
   const leadId = leadRes?._embedded?.leads?.[0]?.id;
   if (!leadId) throw new Error("Не удалось создать сделку");
