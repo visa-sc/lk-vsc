@@ -95,6 +95,10 @@ async function sendQuestionnaireLink(phone, link) {
   return sendMessage(phone, `Заполните опросный лист VOYO: ${link}`);
 }
 
+async function sendFeedbackLink(phone, link) {
+  return sendMessage(phone, `Поделитесь вашим опытом использования личного кабинета VOYO: ${link}`);
+}
+
 async function getBalance() {
   const apiId = getApiId();
   if (!apiId) return null;
@@ -117,5 +121,6 @@ module.exports = {
   sendCode,
   sendMessage,
   sendQuestionnaireLink,
+  sendFeedbackLink,
   getBalance,
 };

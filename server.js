@@ -2533,6 +2533,13 @@ app.get("/api/leads", async (req, res) => {
 
     const leads = await getLeadsByPhone(phone);
 
+    // Триггер «обратная связь по ЛК»: одна SMS на номер за всё время, после того
+    // как сделка перешла на этап «Подготовка документов». Не блокируем ответ —
+    // если что-то пойдёт не так, кабинет всё равно покажется.
+    maybeSendFeedbackSms(phone, leads).catch((e) => {
+      console.error("FEEDBACK trigger error:", e && e.message);
+    });
+
     return res.json({
       success: true,
       leads
@@ -3175,6 +3182,499 @@ async function getNextApplicantIndex(phone) {
 }
 
 loadShareTokens();
+
+// ──────────────────────────────────────────────────────────
+// Feedback (обратная связь по ЛК): SMS-ссылка после перехода
+// сделки в «Подготовка документов» + страница опроса + PDF на Я.Диск.
+// Одному номеру шлём максимум ОДИН раз за всё время.
+// ──────────────────────────────────────────────────────────
+
+const FEEDBACK_DISK_FOLDER = "Опросники по ЛК VOYO";
+
+const FEEDBACK_SENT_FILE = path.join(__dirname, ".feedbackSent.json");
+const FEEDBACK_TOKENS_FILE = path.join(__dirname, ".feedbackTokens.json");
+const feedbackSent = new Map();    // phone(7XXXXXXXXXX) -> { sentAt, fullName }
+const feedbackTokens = new Map();  // token -> { token, phone, fullName, createdAt, submittedAt? }
+
+function loadFeedbackSent() {
+  try {
+    const raw = fs.readFileSync(FEEDBACK_SENT_FILE, "utf8");
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === "object") {
+      Object.entries(obj).forEach(([phone, data]) => {
+        if (data && typeof data === "object") {
+          feedbackSent.set(phone, data);
+        } else if (data) {
+          feedbackSent.set(phone, { sentAt: Number(data) || Date.now(), fullName: "" });
+        }
+      });
+    }
+  } catch (_) {}
+}
+
+function saveFeedbackSent() {
+  try {
+    const obj = Object.fromEntries(feedbackSent.entries());
+    fs.writeFileSync(FEEDBACK_SENT_FILE, JSON.stringify(obj, null, 2), "utf8");
+  } catch (e) {
+    console.error("saveFeedbackSent error:", e.message);
+  }
+}
+
+function loadFeedbackTokens() {
+  try {
+    const raw = fs.readFileSync(FEEDBACK_TOKENS_FILE, "utf8");
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) {
+      arr.forEach((item) => {
+        if (item && item.token) feedbackTokens.set(item.token, item);
+      });
+    }
+  } catch (_) {}
+}
+
+function saveFeedbackTokens() {
+  try {
+    const arr = Array.from(feedbackTokens.values());
+    fs.writeFileSync(FEEDBACK_TOKENS_FILE, JSON.stringify(arr, null, 2), "utf8");
+  } catch (e) {
+    console.error("saveFeedbackTokens error:", e.message);
+  }
+}
+
+function wasFeedbackSent(phone) {
+  return feedbackSent.has(phone);
+}
+
+function markFeedbackSent(phone, fullName) {
+  feedbackSent.set(phone, { sentAt: Date.now(), fullName: String(fullName || "") });
+  saveFeedbackSent();
+}
+
+function createFeedbackToken(phone, fullName) {
+  const token = crypto.randomBytes(6).toString("hex"); // 12 hex — короткая ссылка
+  const data = {
+    token,
+    phone,
+    fullName: String(fullName || ""),
+    createdAt: Date.now()
+  };
+  feedbackTokens.set(token, data);
+  saveFeedbackTokens();
+  return token;
+}
+
+function getFeedbackToken(token) {
+  if (!token || typeof token !== "string") return null;
+  return feedbackTokens.get(token) || null;
+}
+
+loadFeedbackSent();
+loadFeedbackTokens();
+
+// Проверяет триггер «клиент перешёл на «Подготовка документов» и опросник заполнен».
+// Если выполнены условия и SMS этому клиенту ещё не уходила — берёт ФИО из первого
+// опросника, создаёт токен и шлёт SMS со ссылкой. Помечает phone как отправленный
+// ДО фактической отправки, чтобы не было повторов при параллельных вызовах.
+async function maybeSendFeedbackSms(phone, leads) {
+  try {
+    const normPhone = normalizePhone(phone || "");
+    if (!normPhone) return;
+    if (wasFeedbackSent(normPhone)) return;
+    if (!Array.isArray(leads) || !leads.length) return;
+
+    // Триггер — есть хотя бы одна активная сделка в «Подготовка документов».
+    const hasPrepStage = leads.some((l) => l && l.cabinet_status === "Подготовка документов");
+    if (!hasPrepStage) return;
+
+    // Sanity-check: клиент действительно пользовался ЛК — должен быть хотя бы один опросник.
+    let fullName = "";
+    try {
+      const techFiles = await listAllTechFiles(normPhone);
+      const hasAnyJson = techFiles.some((n) => /^Опросник.*\.json$/i.test(n));
+      if (!hasAnyJson) return;
+      const firstQ = await loadApplicantJson(normPhone, 1);
+      fullName = (firstQ && firstQ.fullName) ? String(firstQ.fullName).trim() : "";
+    } catch (e) {
+      console.error("FEEDBACK precheck error (tech files):", e.message);
+      return;
+    }
+
+    // Помечаем ДО SMS, чтобы при параллельных запросах /api/leads не отправилось дважды.
+    markFeedbackSent(normPhone, fullName);
+
+    const token = createFeedbackToken(normPhone, fullName);
+    const link = `https://voyovoyo.ru/feedback?t=${token}`;
+    console.log(`FEEDBACK SMS: phone=${normPhone} token=${token} link=${link}`);
+
+    const result = await sms.sendFeedbackLink(normPhone, link);
+    if (!result || !result.ok) {
+      console.error("FEEDBACK SMS send failed:", result && result.error);
+      // Не откатываем флаг: лучше «возможный пропуск» чем риск спама при ретраях.
+    }
+  } catch (e) {
+    console.error("maybeSendFeedbackSms error:", e && e.message);
+  }
+}
+
+function buildFeedbackHtml(token, fullName) {
+  const safeToken = escapeHtml(token);
+  const safeName = escapeHtml(fullName || "");
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>Обратная связь — VOYO</title>
+  <link rel="icon" href="/favicon.ico" />
+  <style>
+    :root { --vsc-ease: cubic-bezier(0.4, 0, 0.2, 1); }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #f3f2f7;
+      color: #1d2330;
+      padding: 24px 16px 48px;
+      min-height: 100vh;
+    }
+    .brand-bar { max-width: 760px; margin: 8px auto 0; padding: 0 12px; display: flex; justify-content: center; }
+    .brand-bar img {
+      width: 160px; height: auto; aspect-ratio: 2 / 1; mix-blend-mode: multiply;
+      opacity: 0; transform: scale(0.96);
+      transition: opacity 0.55s var(--vsc-ease), transform 0.55s var(--vsc-ease);
+    }
+    .brand-bar img.is-loaded { opacity: 1; transform: scale(1); }
+    .wrap {
+      max-width: 760px;
+      margin: 20px auto 0;
+      background: #fff;
+      border: 1px solid #ece7f2;
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05);
+    }
+    h1 { margin: 0 0 8px; font-size: 24px; line-height: 1.2; color: #171c29; }
+    .subtitle { margin: 0 0 22px; font-size: 14px; color: #737988; line-height: 1.5; }
+    form { display: grid; gap: 18px; }
+    .field { display: grid; gap: 8px; }
+    .field > label { font-size: 14px; font-weight: 600; color: #3a4150; }
+    .q-text { font-size: 16px; color: #1d2330; line-height: 1.45; margin: 0 0 4px; font-weight: 500; }
+    .radio-group { display: grid; gap: 8px; }
+    .radio-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid #e8e2ee;
+      border-radius: 14px;
+      cursor: pointer;
+      font-size: 15px;
+      background: #fff;
+      transition: border-color 0.2s var(--vsc-ease), background 0.2s var(--vsc-ease);
+    }
+    .radio-row:hover { background: #faf9fc; }
+    .radio-row input[type="radio"] { width: 18px; height: 18px; accent-color: #3589BD; margin: 0; }
+    .radio-row.is-checked { border-color: #3589BD; background: #f0f7fc; }
+    textarea {
+      width: 100%; min-height: 120px;
+      border: 1px solid #e8e2ee;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 15px;
+      font-family: inherit;
+      color: #1f2532;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s var(--vsc-ease);
+    }
+    textarea:focus { border-color: #3589BD; }
+    .step-block { display: none; }
+    .step-block.show { display: grid; gap: 8px; }
+    .submit-btn {
+      height: 50px;
+      border: 0;
+      border-radius: 14px;
+      background: #3589BD;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter 0.2s var(--vsc-ease);
+      font-family: inherit;
+    }
+    .submit-btn:hover { filter: brightness(0.95); }
+    .submit-btn:disabled { opacity: 0.6; cursor: progress; }
+    .error-msg {
+      color: #c4314b;
+      font-size: 14px;
+      padding: 10px 12px;
+      background: #fbebee;
+      border: 1px solid #d97a8a;
+      border-radius: 12px;
+      display: none;
+    }
+    .error-msg.show { display: block; }
+    .success-screen {
+      display: none;
+      text-align: center;
+      padding: 16px 8px 8px;
+    }
+    .success-screen.show { display: block; }
+    .success-screen .check {
+      width: 64px; height: 64px; margin: 0 auto 16px;
+      border-radius: 50%;
+      background: #e6f4eb;
+      display: flex; align-items: center; justify-content: center;
+      color: #1f7a3f;
+      font-size: 32px;
+    }
+    .success-screen h2 {
+      margin: 0;
+      font-size: 22px;
+      color: #1d2330;
+    }
+  </style>
+</head>
+<body>
+  <div class="brand-bar">
+    <img src="/logo.png" alt="VOYO" width="600" height="300" onload="this.classList.add('is-loaded')" onerror="this.classList.add('is-loaded')" />
+  </div>
+  <div class="wrap">
+    <div id="formBlock">
+      <h1>Обратная связь</h1>
+      <p class="subtitle">${safeName ? `${safeName}, н` : "Н"}ам важно ваше мнение о работе личного кабинета VOYO. Ответы займут меньше минуты.</p>
+
+      <form id="fbForm">
+        <div class="field">
+          <p class="q-text">Оказался ли процесс заполнения опросника, сбора и предоставления документов для оформления визы через личный кабинет VOYO для вас удобным?</p>
+          <div class="radio-group">
+            <label class="radio-row">
+              <input type="radio" name="q1" value="Да" />
+              <span>Да</span>
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="q1" value="Нет" />
+              <span>Нет</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="field step-block" id="stepYes">
+          <label for="qYes" class="q-text">Скажите, что вы бы порекомендовали нам улучшить в личном кабинете VOYO?</label>
+          <textarea id="qYes" name="qYes" placeholder="Поле необязательное. Можно оставить пустым."></textarea>
+        </div>
+
+        <div class="field step-block" id="stepNo">
+          <label for="qNo" class="q-text">Что было не так?</label>
+          <textarea id="qNo" name="qNo" placeholder="Поле необязательное. Можно оставить пустым."></textarea>
+        </div>
+
+        <div id="errorBox" class="error-msg"></div>
+
+        <button type="submit" class="submit-btn" id="submitBtn" disabled>Отправить ответы</button>
+      </form>
+    </div>
+
+    <div id="successBlock" class="success-screen">
+      <div class="check">✓</div>
+      <h2>Спасибо за вашу обратную связь!</h2>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const TOKEN = ${JSON.stringify(safeToken)};
+      const form = document.getElementById("fbForm");
+      const formBlock = document.getElementById("formBlock");
+      const successBlock = document.getElementById("successBlock");
+      const stepYes = document.getElementById("stepYes");
+      const stepNo  = document.getElementById("stepNo");
+      const submitBtn = document.getElementById("submitBtn");
+      const errorBox = document.getElementById("errorBox");
+      const radios = Array.from(form.querySelectorAll('input[name="q1"]'));
+
+      function syncRadioStyles() {
+        radios.forEach((r) => {
+          const row = r.closest(".radio-row");
+          if (!row) return;
+          if (r.checked) row.classList.add("is-checked");
+          else row.classList.remove("is-checked");
+        });
+      }
+
+      radios.forEach((r) => {
+        r.addEventListener("change", () => {
+          syncRadioStyles();
+          if (r.value === "Да" && r.checked) {
+            stepYes.classList.add("show");
+            stepNo.classList.remove("show");
+          } else if (r.value === "Нет" && r.checked) {
+            stepNo.classList.add("show");
+            stepYes.classList.remove("show");
+          }
+          submitBtn.disabled = !radios.some((x) => x.checked);
+        });
+      });
+
+      function showError(msg) {
+        errorBox.textContent = msg;
+        errorBox.classList.add("show");
+      }
+      function hideError() {
+        errorBox.classList.remove("show");
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        hideError();
+        const q1 = radios.find((r) => r.checked);
+        if (!q1) {
+          showError("Пожалуйста, выберите ответ.");
+          return;
+        }
+        const q2 = q1.value === "Да"
+          ? (document.getElementById("qYes").value || "").trim()
+          : (document.getElementById("qNo").value || "").trim();
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Отправляем...";
+        try {
+          const r = await fetch("/api/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: TOKEN, q1: q1.value, q2 })
+          });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || !data.success) {
+            showError(data.message || "Не удалось отправить. Попробуйте позже.");
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Отправить ответы";
+            return;
+          }
+          formBlock.style.display = "none";
+          successBlock.classList.add("show");
+        } catch (err) {
+          showError("Сетевая ошибка. Проверьте интернет и попробуйте снова.");
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Отправить ответы";
+        }
+      });
+    })();
+  </script>
+</body>
+</html>`;
+}
+
+async function generateFeedbackPdfBuffer({ fullName, phone, q1, q2 }) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    const chunks = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const fontPath = getPdfFontPath();
+    if (fontPath) doc.font(fontPath);
+
+    doc.fontSize(18).text("Обратная связь — личный кабинет VOYO", { align: "left" });
+    doc.moveDown(0.5);
+    doc.fontSize(11).text(`Клиент: ${fullName || "—"}`);
+    doc.text(`Телефон: ${phone || "—"}`);
+    doc.text(`Дата заполнения: ${new Date().toLocaleString("ru-RU")}`);
+    doc.moveDown();
+
+    doc.fontSize(12).text(
+      "Вопрос 1. Оказался ли процесс заполнения опросника, сбора и предоставления документов для оформления визы через личный кабинет VOYO для вас удобным?",
+      { lineGap: 2 }
+    );
+    doc.moveDown(0.3);
+    doc.fontSize(13).fillColor(q1 === "Да" ? "#1f7a3f" : "#c4314b").text(`Ответ: ${q1 || "—"}`);
+    doc.fillColor("#000");
+    doc.moveDown();
+
+    if (q1 === "Да") {
+      doc.fontSize(12).text("Вопрос 2. Скажите, что вы бы порекомендовали нам улучшить в личном кабинете VOYO?", { lineGap: 2 });
+    } else if (q1 === "Нет") {
+      doc.fontSize(12).text("Вопрос 2. Что было не так?", { lineGap: 2 });
+    } else {
+      doc.fontSize(12).text("Вопрос 2.", { lineGap: 2 });
+    }
+    doc.moveDown(0.3);
+    doc.fontSize(12).text(`Ответ: ${q2 && q2.trim() ? q2.trim() : "(пусто, клиент не заполнил)"}`);
+
+    doc.end();
+  });
+}
+
+// Возвращает безопасное имя файла для PDF: «<ФИО>.pdf», при коллизиях — «<ФИО> (2).pdf» и т.д.
+async function pickFeedbackPdfName(safeFio) {
+  const base = safeFio || "Без имени";
+  const existing = await listYandexFolderFiles(FEEDBACK_DISK_FOLDER);
+  const baseFile = `${base}.pdf`;
+  if (!existing.includes(baseFile)) return baseFile;
+  for (let i = 2; i < 100; i++) {
+    const candidate = `${base} (${i}).pdf`;
+    if (!existing.includes(candidate)) return candidate;
+  }
+  // Краевой случай — добавим timestamp
+  return `${base} - ${new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19)}.pdf`;
+}
+
+app.get("/feedback", (req, res) => {
+  const token = String((req.query && req.query.t) || "").trim();
+  const data = getFeedbackToken(token);
+  if (!data) {
+    res.status(404).send(
+      `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8" /><title>Ссылка не найдена</title>` +
+      `<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f3f2f7;color:#1d2330;padding:48px 24px;text-align:center;}` +
+      `.box{max-width:560px;margin:0 auto;background:#fff;border:1px solid #ece7f2;border-radius:24px;padding:32px;}h1{margin:0 0 8px;font-size:22px;}</style></head>` +
+      `<body><div class="box"><h1>Ссылка не найдена</h1><p>Возможно, опрос уже был заполнен или ссылка устарела.</p></div></body></html>`
+    );
+    return;
+  }
+  res.send(buildFeedbackHtml(data.token, data.fullName));
+});
+
+app.post("/api/feedback", async (req, res) => {
+  try {
+    const token = String((req.body && req.body.token) || "").trim();
+    const q1 = String((req.body && req.body.q1) || "").trim();
+    const q2 = String((req.body && req.body.q2) || "").trim();
+
+    const data = getFeedbackToken(token);
+    if (!data) {
+      return res.status(404).json({ success: false, message: "Ссылка устарела или уже использована" });
+    }
+    if (q1 !== "Да" && q1 !== "Нет") {
+      return res.status(400).json({ success: false, message: "Выберите ответ на первый вопрос" });
+    }
+
+    const fullName = data.fullName || "Клиент VOYO";
+    const phone = data.phone || "";
+
+    // 1. PDF
+    const pdfBuffer = await generateFeedbackPdfBuffer({ fullName, phone, q1, q2 });
+
+    // 2. Папка на Я.Диске
+    await ensureNestedYandexFolder(FEEDBACK_DISK_FOLDER);
+
+    // 3. Имя файла с защитой от коллизий
+    const safeFio = sanitizeFileName(fullName) || "Без имени";
+    const fileName = await pickFeedbackPdfName(safeFio);
+    const diskPath = `${FEEDBACK_DISK_FOLDER}/${fileName}`;
+
+    await uploadBufferToYandexDisk(pdfBuffer, diskPath, "application/pdf");
+    console.log(`FEEDBACK PDF saved: ${diskPath}`);
+
+    // 4. Удаляем токен — повторно использовать нельзя.
+    feedbackTokens.delete(token);
+    saveFeedbackTokens();
+
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("POST /api/feedback error:", e.response?.data || e.message);
+    return res.status(500).json({ success: false, message: "Ошибка сохранения. Попробуйте позже." });
+  }
+});
 
 // ──────────────────────────────────────────────────────────
 // WebAuthn — вход по биометрии (Face ID / Touch ID / Windows Hello)
