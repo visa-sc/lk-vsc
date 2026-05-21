@@ -1114,16 +1114,21 @@
       });
     }
 
-    async function refreshApplicantsCache() {
+    async function refreshApplicantsCache(leadIdOverride) {
       const phone = phoneInput.value.trim();
       if (!phone) return;
-      const a = await fetchApplicantStates(phone);
+      const leadId = leadIdOverride || (selectedLead && selectedLead.id) || "";
+      if (!leadId) return;
+      const a = await fetchApplicantStates(phone, leadId);
       applicantsCache = a || [];
     }
 
-    async function fetchApplicantStates(phone) {
+    async function fetchApplicantStates(phone, leadId) {
+      if (!leadId) return [];
       try {
-        const response = await fetch(`/api/questionnaire-state?phone=${encodeURIComponent(phone)}`);
+        const response = await fetch(
+          `/api/questionnaire-state?phone=${encodeURIComponent(phone)}&leadId=${encodeURIComponent(leadId)}`
+        );
         if (!response.ok) return [];
         const data = await response.json();
         return data && data.success && Array.isArray(data.applicants) ? data.applicants : [];
@@ -2025,8 +2030,13 @@
       }
     }
 
-    function selectLead(lead, itemEl) {
+    // Защита от гонки: если пользователь быстро кликает по разным сделкам,
+    // мы рендерим только последний выбор. Каждый вызов получает уникальный токен.
+    let selectLeadToken = 0;
+
+    async function selectLead(lead, itemEl) {
       selectedLead = lead;
+      const myToken = ++selectLeadToken;
 
       document.querySelectorAll(".lead-item").forEach((node) => {
         node.classList.remove("active");
@@ -2036,6 +2046,14 @@
 
       const currentStageIndex = getCurrentStageIndex(lead);
       const currentStageTitle = STAGES[currentStageIndex] || "Сбор документов";
+
+      // Стейт опросников/файлов — per-lead (lead-scoped с 2026-05-21).
+      // Грузим только для этой сделки.
+      statusText.textContent = `Загружаем данные по обращению...`;
+      const phone = phoneInput.value.trim();
+      const fetched = await fetchApplicantStates(phone, lead.id);
+      if (myToken !== selectLeadToken) return; // пользователь выбрал другой lead — отменяем рендер
+      applicantsCache = fetched || [];
 
       statusText.textContent = `Вы выбрали ${getLeadLabel(lead)}. Текущий этап: ${currentStageTitle}.`;
       renderStages(currentStageIndex, lead);
@@ -2160,12 +2178,11 @@
       selectedLead = null;
 
       try {
-        const [leadsResp, applicants] = await Promise.all([
-          fetch(`/api/leads?phone=${encodeURIComponent(phone)}`),
-          fetchApplicantStates(phone)
-        ]);
-
-        applicantsCache = applicants || [];
+        // Стейт опросников/файлов больше НЕ грузим заранее одним пакетом.
+        // С lead-scoped схемой каждый клик по сделке делает fetch для именно этой сделки
+        // (см. selectLead → fetchApplicantStates(phone, lead.id)).
+        applicantsCache = [];
+        const leadsResp = await fetch(`/api/leads?phone=${encodeURIComponent(phone)}`);
 
         if (!leadsResp.ok) {
           const text = await leadsResp.text();

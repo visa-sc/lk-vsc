@@ -745,32 +745,75 @@ async function downloadJsonFromYandexDisk(diskPath) {
 }
 
 // ─── Тех. папка для JSON-стейта опросников ───
-// Раньше JSON лежал в "<phone>/Опросники/Технические файлы/", теперь — плоско в "<phone>/TECH FOLDER/".
-// При чтении ходим во все три варианта, чтобы старые клиенты продолжали работать.
+// С 2026-05-21 данные scope-ятся по (phone, leadId): "<phone>/<leadId>/TECH FOLDER/".
+// До этой даты данные лежали по phone: "<phone>/TECH FOLDER/" — этот путь
+// сохраняется как legacy и читается ТОЛЬКО для leadId-владельца (см. getLegacyOwnerLeadId).
+// Ещё более старый legacy: "<phone>/Опросники/Технические файлы/".
 const TECH_FOLDER_NAME = "TECH FOLDER";
 
-function techFolderPath(phone) {
+function leadScopedFolder(phone, leadId) {
+  return `${YANDEX_DISK_ROOT}/${phone}/${leadId}`;
+}
+
+function techFolderPath(phone, leadId) {
+  // Новая схема (lead-scoped). Если leadId не передан — старый путь
+  // (используется только при чтении legacy).
+  if (leadId) return `${leadScopedFolder(phone, leadId)}/${TECH_FOLDER_NAME}`;
   return `${YANDEX_DISK_ROOT}/${phone}/${TECH_FOLDER_NAME}`;
 }
 function legacyTechFolderPath(phone) {
   return `${YANDEX_DISK_ROOT}/${phone}/Опросники/Технические файлы`;
 }
 
-async function listAllTechFiles(phone) {
+// Список Опросник*.json для конкретного lead'а.
+// Если leadId == legacy-owner → дополнительно мерджим файлы из legacy-папок.
+async function listAllTechFiles(phone, leadId) {
   if (!phone) return [];
-  const fresh = await listYandexFolderFiles(techFolderPath(phone));
-  const legacy = await listYandexFolderFiles(legacyTechFolderPath(phone));
-  return Array.from(new Set([...(fresh || []), ...(legacy || [])]));
+  const out = new Set();
+
+  if (leadId) {
+    const leadScoped = await listYandexFolderFiles(techFolderPath(phone, leadId));
+    (leadScoped || []).forEach((n) => out.add(n));
+
+    const ownerId = await getLegacyOwnerLeadId(phone);
+    if (ownerId && String(ownerId) === String(leadId)) {
+      const legacy1 = await listYandexFolderFiles(`${YANDEX_DISK_ROOT}/${phone}/${TECH_FOLDER_NAME}`);
+      (legacy1 || []).forEach((n) => out.add(n));
+      const legacy2 = await listYandexFolderFiles(legacyTechFolderPath(phone));
+      (legacy2 || []).forEach((n) => out.add(n));
+    }
+  } else {
+    // Backward compat: leadId не передан — читаем всё legacy
+    const legacy1 = await listYandexFolderFiles(`${YANDEX_DISK_ROOT}/${phone}/${TECH_FOLDER_NAME}`);
+    (legacy1 || []).forEach((n) => out.add(n));
+    const legacy2 = await listYandexFolderFiles(legacyTechFolderPath(phone));
+    (legacy2 || []).forEach((n) => out.add(n));
+  }
+  return Array.from(out);
 }
 
-async function loadApplicantJson(phone, applicantIndex) {
+async function loadApplicantJson(phone, leadId, applicantIndex) {
   const suf = applicantIndex > 1 ? ` ${applicantIndex}` : "";
   const fileName = `Опросник${suf}.json`;
-  const candidates = [
-    `${techFolderPath(phone)}/${fileName}`,
-    `${legacyTechFolderPath(phone)}/${fileName}`,
-    `${YANDEX_DISK_ROOT}/${phone}/${fileName}` // самый старый legacy
-  ];
+  const candidates = [];
+
+  if (leadId) {
+    // Сначала пробуем lead-scoped
+    candidates.push(`${techFolderPath(phone, leadId)}/${fileName}`);
+    // Если этот leadId — legacy owner, добавляем legacy-пути как fallback
+    const ownerId = await getLegacyOwnerLeadId(phone);
+    if (ownerId && String(ownerId) === String(leadId)) {
+      candidates.push(`${YANDEX_DISK_ROOT}/${phone}/${TECH_FOLDER_NAME}/${fileName}`);
+      candidates.push(`${legacyTechFolderPath(phone)}/${fileName}`);
+      candidates.push(`${YANDEX_DISK_ROOT}/${phone}/${fileName}`); // самый старый legacy
+    }
+  } else {
+    // Backward compat
+    candidates.push(`${YANDEX_DISK_ROOT}/${phone}/${TECH_FOLDER_NAME}/${fileName}`);
+    candidates.push(`${legacyTechFolderPath(phone)}/${fileName}`);
+    candidates.push(`${YANDEX_DISK_ROOT}/${phone}/${fileName}`);
+  }
+
   for (const p of candidates) {
     try {
       const data = await downloadJsonFromYandexDisk(p);
@@ -3133,12 +3176,12 @@ function getShareToken(token) {
   return shareTokens.get(token) || null;
 }
 
-// Список заполненных ФИО заявителей по этому телефону: [{ idx, fullName }, ...].
-// Используется для блокировки дубликатов ФИО в опроснике.
-async function getExistingApplicantFios(phone) {
+// Список заполненных ФИО заявителей в рамках конкретной сделки.
+// Используется для блокировки дубликатов ФИО в опроснике этой сделки.
+async function getExistingApplicantFios(phone, leadId) {
   if (!phone || !YANDEX_DISK_TOKEN) return [];
   try {
-    const files = await listAllTechFiles(phone);
+    const files = await listAllTechFiles(phone, leadId);
     const indexes = new Set();
     files.forEach((name) => {
       const m = /^Опросник(?:\s+(\d+))?\.json$/i.exec(name);
@@ -3147,7 +3190,7 @@ async function getExistingApplicantFios(phone) {
     const out = [];
     for (const idx of indexes) {
       try {
-        const state = await loadApplicantJson(phone, idx);
+        const state = await loadApplicantJson(phone, leadId, idx);
         if (state && state.fullName) {
           out.push({ idx, fullName: String(state.fullName).trim() });
         }
@@ -3164,9 +3207,10 @@ function normalizeFioForCompare(s) {
   return String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-async function getNextApplicantIndex(phone) {
+// Следующий свободный applicantIndex для НОВОГО опросника в рамках конкретной сделки.
+async function getNextApplicantIndex(phone, leadId) {
   try {
-    const files = await listAllTechFiles(phone);
+    const files = await listAllTechFiles(phone, leadId);
     const used = new Set();
     files.forEach((name) => {
       const m = /^Опросник(?:\s+(\d+))?\.json$/i.exec(name);
@@ -3292,15 +3336,81 @@ function getFeedbackToken(token) {
 loadFeedbackSent();
 loadFeedbackTokens();
 
-// Проверяет, что у клиента ВСЕ заявители имеют хотя бы один загруженный документ
-// в своей папке ФИО на Я.Диске. PDF опросника (`Опросник - <ФИО>.pdf`) не считается
-// «документом» — это автогенерация при сабмите опросника. Файл считается «загруженным»,
-// если его имя НЕ матчится паттерн «Опросник - …pdf».
-// Возвращает true только если у каждого заявителя из TECH FOLDER есть хотя бы 1 такой файл.
-async function hasUploadedDocsForAllApplicants(phone) {
-  if (!phone || !YANDEX_DISK_TOKEN) return false;
+// ──────────────────────────────────────────────────────────
+// Legacy-owner для существующих данных в phone-scoped папках Я.Диска
+// (до 2026-05-21 файлы лежали в <phone>/..., без leadId-партиции).
+// Чтобы сохранить совместимость со старыми клиентами и не показывать их
+// данные в новых сделках, определяем «владельца» legacy-данных = САМАЯ
+// ПЕРВАЯ сделка клиента в amoCRM (по created_at). Эта связка кешируется.
+// ──────────────────────────────────────────────────────────
+const LEGACY_OWNERS_FILE = path.join(__dirname, ".legacyOwners.json");
+const legacyOwnersCache = new Map(); // phone -> { leadId: string|null, computedAt: number }
+
+function loadLegacyOwners() {
   try {
-    const techFiles = await listAllTechFiles(phone);
+    const raw = fs.readFileSync(LEGACY_OWNERS_FILE, "utf8");
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === "object") {
+      Object.entries(obj).forEach(([phone, data]) => {
+        if (data) legacyOwnersCache.set(phone, data);
+      });
+    }
+  } catch (_) {}
+}
+
+function saveLegacyOwners() {
+  try {
+    const obj = Object.fromEntries(legacyOwnersCache.entries());
+    fs.writeFileSync(LEGACY_OWNERS_FILE, JSON.stringify(obj, null, 2), "utf8");
+  } catch (e) {
+    console.error("saveLegacyOwners error:", e.message);
+  }
+}
+
+loadLegacyOwners();
+
+// Определяет «владельца» legacy-данных для phone:
+// - если в <phone>/TECH FOLDER или <phone>/Опросники/Технические файлы лежат
+//   Опросник*.json — берём самую первую сделку клиента из amoCRM (oldest by created_at)
+//   и кешируем результат;
+// - если legacy-данных нет — кешируем null (новый клиент, всё лежит lead-scoped с самого начала).
+// На вход — номер уже в формате 7XXXXXXXXXX (normalizePhone).
+async function getLegacyOwnerLeadId(phone) {
+  if (!phone) return null;
+  const cached = legacyOwnersCache.get(phone);
+  if (cached) return cached.leadId ? String(cached.leadId) : null;
+
+  let leadId = null;
+  try {
+    // Проверяем, есть ли вообще legacy-tech-данные
+    const legacy1 = await listYandexFolderFiles(`${YANDEX_DISK_ROOT}/${phone}/${TECH_FOLDER_NAME}`);
+    const legacy2 = await listYandexFolderFiles(`${YANDEX_DISK_ROOT}/${phone}/Опросники/Технические файлы`);
+    const hasLegacy = [...legacy1, ...legacy2].some((n) => /^Опросник.*\.json$/i.test(n));
+    if (hasLegacy) {
+      // Определяем владельца — самая ранняя сделка клиента
+      const leads = await getLeadsByPhone(phone);
+      if (leads && leads.length) {
+        const sorted = [...leads].sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+        leadId = String(sorted[0].id);
+      }
+    }
+  } catch (e) {
+    console.error("getLegacyOwnerLeadId compute error:", e.message);
+  }
+  legacyOwnersCache.set(phone, { leadId, computedAt: Date.now() });
+  saveLegacyOwners();
+  return leadId;
+}
+
+// Проверяет, что у клиента ВСЕ заявители в рамках КОНКРЕТНОЙ сделки имеют хотя бы
+// один загруженный документ в своей папке ФИО на Я.Диске.
+// PDF опросника («Опросник - <ФИО>.pdf») не считается «документом» — это автогенерация.
+// Возвращает true только если у каждого заявителя из TECH FOLDER этой сделки есть
+// хотя бы 1 «реально загруженный» файл.
+async function hasUploadedDocsForAllApplicants(phone, leadId) {
+  if (!phone || !YANDEX_DISK_TOKEN || !leadId) return false;
+  try {
+    const techFiles = await listAllTechFiles(phone, leadId);
     const indices = new Set();
     techFiles.forEach((n) => {
       const m = /^Опросник(?:\s+(\d+))?\.json$/i.exec(n);
@@ -3308,16 +3418,26 @@ async function hasUploadedDocsForAllApplicants(phone) {
     });
     if (!indices.size) return false;
 
-    const phoneFolder = `${YANDEX_DISK_ROOT}/${phone}`;
+    const ownerId = await getLegacyOwnerLeadId(phone);
+    const isLegacyOwner = ownerId && String(ownerId) === String(leadId);
+    const phoneRoot = `${YANDEX_DISK_ROOT}/${phone}`;
+    const leadRoot = leadScopedFolder(phone, leadId);
+
     for (const idx of indices) {
-      const data = await loadApplicantJson(phone, idx);
+      const data = await loadApplicantJson(phone, leadId, idx);
       if (!data || !data.fullName) return false;
       const safeFio = sanitizeFileName(String(data.fullName).trim());
       if (!safeFio) return false;
-      const folderPath = `${phoneFolder}/${safeFio}`;
-      const files = await listYandexFolderFiles(folderPath);
-      // Документом считаем любой файл, который НЕ автоген «Опросник - …pdf».
-      const hasRealDoc = files.some((name) => !/^Опросник\s+-\s+.*\.pdf$/i.test(name));
+
+      // Сначала смотрим lead-scoped папку заявителя.
+      let files = await listYandexFolderFiles(`${leadRoot}/${safeFio}`);
+
+      // Если пусто И этот лид — legacy owner — пробуем legacy-папку заявителя.
+      if ((!files || !files.length) && isLegacyOwner) {
+        files = await listYandexFolderFiles(`${phoneRoot}/${safeFio}`);
+      }
+
+      const hasRealDoc = (files || []).some((name) => !/^Опросник\s+-\s+.*\.pdf$/i.test(name));
       if (!hasRealDoc) return false;
     }
     return true;
@@ -3327,11 +3447,11 @@ async function hasUploadedDocsForAllApplicants(phone) {
   }
 }
 
-// Проверяет триггер «клиент перешёл на «Подготовка документов» и опросник заполнен
-// и реально загружены документы для всех заявителей».
-// Если выполнены ВСЕ условия и SMS этому клиенту ещё не уходила — берёт ФИО из первого
-// опросника, создаёт токен и шлёт SMS со ссылкой. Помечает phone как отправленный
-// ДО фактической отправки, чтобы не было повторов при параллельных вызовах.
+// Проверяет триггер «у клиента есть сделка в "Подготовка документов" + опросник
+// заполнен + документы загружены для всех заявителей этой сделки».
+// Проверка идёт ПО КАЖДОЙ сделке отдельно (lead-scoped), а лимит «1 SMS на номер
+// за всё время» — общий по phone. Если несколько сделок одновременно подходят,
+// триггерит первая, для которой условия выполнены целиком.
 async function maybeSendFeedbackSms(phone, leads) {
   try {
     const normPhone = normalizePhone(phone || "");
@@ -3339,33 +3459,37 @@ async function maybeSendFeedbackSms(phone, leads) {
     if (wasFeedbackSent(normPhone)) return;
     if (!Array.isArray(leads) || !leads.length) return;
 
-    // Условие #3 — есть хотя бы одна активная сделка в «Подготовка документов».
-    const hasPrepStage = leads.some((l) => l && l.cabinet_status === "Подготовка документов");
-    if (!hasPrepStage) return;
+    // Условие #3 — кандидаты: сделки в «Подготовка документов».
+    const candidates = leads.filter((l) => l && l.cabinet_status === "Подготовка документов");
+    if (!candidates.length) return;
 
-    // Условие #1 — клиент действительно заполнил хотя бы один опросник.
-    let fullName = "";
-    try {
-      const techFiles = await listAllTechFiles(normPhone);
+    // Ищем первого кандидата, у которого выполнены условия #1 и #2.
+    let triggeredFullName = "";
+    let triggeredLeadId = "";
+    for (const lead of candidates) {
+      const leadId = String(lead.id);
+      // Условие #1 — для ЭТОЙ сделки должен быть хотя бы один заполненный опросник.
+      const techFiles = await listAllTechFiles(normPhone, leadId);
       const hasAnyJson = techFiles.some((n) => /^Опросник.*\.json$/i.test(n));
-      if (!hasAnyJson) return;
-      const firstQ = await loadApplicantJson(normPhone, 1);
-      fullName = (firstQ && firstQ.fullName) ? String(firstQ.fullName).trim() : "";
-    } catch (e) {
-      console.error("FEEDBACK precheck error (tech files):", e.message);
-      return;
+      if (!hasAnyJson) continue;
+      // Условие #2 — для ЭТОЙ сделки документы должны быть загружены у каждого заявителя.
+      const allDocs = await hasUploadedDocsForAllApplicants(normPhone, leadId);
+      if (!allDocs) continue;
+      // Подходит — берём ФИО первого заявителя для PDF и имени файла.
+      const firstQ = await loadApplicantJson(normPhone, leadId, 1);
+      triggeredFullName = (firstQ && firstQ.fullName) ? String(firstQ.fullName).trim() : "";
+      triggeredLeadId = leadId;
+      break;
     }
 
-    // Условие #2 — у КАЖДОГО заявителя загружен хотя бы 1 реальный документ
-    // (не считая автосгенерированного PDF самого опросника).
-    const allDocsUploaded = await hasUploadedDocsForAllApplicants(normPhone);
-    if (!allDocsUploaded) {
-      console.log(`FEEDBACK skip: phone=${normPhone} — не у всех заявителей загружены документы`);
+    if (!triggeredLeadId) {
+      console.log(`FEEDBACK skip: phone=${normPhone} — нет сделки, удовлетворяющей всем условиям`);
       return;
     }
 
     // Помечаем ДО SMS, чтобы при параллельных запросах /api/leads не отправилось дважды.
-    markFeedbackSent(normPhone, fullName);
+    markFeedbackSent(normPhone, triggeredFullName);
+    const fullName = triggeredFullName;
 
     const token = createFeedbackToken(normPhone, fullName);
     const link = `https://voyovoyo.ru/feedback?t=${token}`;
@@ -4130,14 +4254,14 @@ app.get("/questionnaire", async (req, res) => {
     let effectiveTotal = totalApplicants;
     if (isEdit && YANDEX_DISK_TOKEN) {
       try {
-        prefill = await loadApplicantJson(phone, applicantIndex);
+        prefill = await loadApplicantJson(phone, leadId, applicantIndex);
       } catch (err) {
         console.error("EDIT prefill load error:", err.message);
       }
       // Сохраняем общее количество заявителей из первого опросника
       if (applicantIndex !== 1) {
         try {
-          const firstState = await loadApplicantJson(phone, 1);
+          const firstState = await loadApplicantJson(phone, leadId, 1);
           const fromFirst = parseInt(firstState && firstState.totalApplicants, 10);
           if (fromFirst > 0) effectiveTotal = Math.max(applicantIndex, fromFirst);
         } catch (_) {}
@@ -4150,8 +4274,8 @@ app.get("/questionnaire", async (req, res) => {
     // visaType: из URL, либо из сохранённого state (для edit / 2+ заявителя)
     const effectiveVisaType = visaType || (prefill && prefill.visaType) || "";
 
-    // ФИО уже заполненных заявителей — для блокировки дубликатов на клиенте.
-    const existingFios = await getExistingApplicantFios(phone);
+    // ФИО уже заполненных заявителей В РАМКАХ ЭТОЙ СДЕЛКИ — для блокировки дубликатов на клиенте.
+    const existingFios = await getExistingApplicantFios(phone, leadId);
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     return res.send(buildQuestionnaireHtml({
@@ -4216,7 +4340,7 @@ app.post(
       const applicantCountRaw = Math.max(1, Math.min(10, parseInt(req.body.applicantCount || "0", 10) || 0));
 
       if (isShareMode) {
-        applicantIndex = await getNextApplicantIndex(phone);
+        applicantIndex = await getNextApplicantIndex(phone, leadId);
         totalApplicants = Math.max(applicantIndex, parseInt(shareData.applicantCount, 10) || 1);
       } else if (isMixed) {
         if (!applicantCountRaw) {
@@ -4225,7 +4349,7 @@ app.post(
             message: "Не указано количество заявителей"
           });
         }
-        applicantIndex = await getNextApplicantIndex(phone);
+        applicantIndex = await getNextApplicantIndex(phone, leadId);
         totalApplicants = Math.max(applicantIndex, applicantCountRaw);
       } else {
         applicantIndex = Math.max(1, Math.min(10, parseInt(req.body.applicantIndex || "1", 10) || 1));
@@ -4253,7 +4377,7 @@ app.post(
 
       // Серверная страховка от дубликата ФИО внутри одной сделки (на случай обхода клиентской валидации).
       try {
-        const existingFios = await getExistingApplicantFios(phone);
+        const existingFios = await getExistingApplicantFios(phone, leadId);
         const wanted = normalizeFioForCompare(fullName);
         const conflict = existingFios.find((it) => {
           if (!it || !it.fullName) return false;
@@ -4368,14 +4492,16 @@ app.post(
 
       const rootFolder = YANDEX_DISK_ROOT;
       const phoneFolder = `${rootFolder}/${phone}`;
-      const techFolder = techFolderPath(phone); // "<phone>/TECH FOLDER"
+      const leadFolder = leadScopedFolder(phone, leadId); // "<phone>/<leadId>"
+      const techFolder = techFolderPath(phone, leadId);   // "<phone>/<leadId>/TECH FOLDER"
 
       const suffix = applicantIndex > 1 ? ` ${applicantIndex}` : "";
       const safeFio = sanitizeFileName(fullName) || `Заявитель ${applicantIndex}`;
-      const applicantFolder = `${phoneFolder}/${safeFio}`;
+      const applicantFolder = `${leadFolder}/${safeFio}`; // "<phone>/<leadId>/<ФИО>"
 
       await ensureYandexFolder(rootFolder);
       await ensureYandexFolder(phoneFolder);
+      await ensureYandexFolder(leadFolder);
       await ensureYandexFolder(techFolder);
       await ensureYandexFolder(applicantFolder);
 
@@ -4513,16 +4639,22 @@ app.post("/api/questionnaire/share", async (req, res) => {
 app.get("/api/questionnaire-state", async (req, res) => {
   try {
     const phone = normalizePhone(req.query.phone || "");
+    const leadId = String(req.query.leadId || "").trim();
 
     if (!phone) {
       return res.status(400).json({ success: false, message: "Не передан phone" });
+    }
+    if (!leadId) {
+      // С 2026-05-21 lead-scoped — leadId обязателен.
+      // Без него все сделки бы видели общий стейт и зеркалили чужие документы.
+      return res.status(400).json({ success: false, message: "Не передан leadId" });
     }
 
     if (!YANDEX_DISK_TOKEN) {
       return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
     }
 
-    const loadOne = (n) => loadApplicantJson(phone, n);
+    const loadOne = (n) => loadApplicantJson(phone, leadId, n);
 
     const first = await loadOne(1);
 
@@ -4530,13 +4662,11 @@ app.get("/api/questionnaire-state", async (req, res) => {
       return res.json({ success: true, applicants: [] });
     }
 
-    // Считаем фактическое количество заявителей по файлам JSON на диске
-    // (TECH FOLDER + legacy «Опросники/Технические файлы»).
-    // Это закрывает случай «Заполнить ещё опросник»: новые JSON-файлы
-    // добавляются для applicantIndex > 1, но первый JSON остаётся с totalApplicants=1.
+    // Считаем фактическое количество заявителей по файлам JSON на диске для ЭТОЙ сделки
+    // (lead-scoped TECH FOLDER + legacy TECH FOLDER только если этот лид — legacy owner).
     let maxIdxOnDisk = 1;
     try {
-      const files = await listAllTechFiles(phone);
+      const files = await listAllTechFiles(phone, leadId);
       files.forEach((name) => {
         const m = /^Опросник(?:\s+(\d+))?\.json$/i.exec(name);
         if (m) {
@@ -4559,11 +4689,18 @@ app.get("/api/questionnaire-state", async (req, res) => {
       if (s) applicants.push({ ...s, applicantIndex: i + 2 });
     });
 
-    // Список загруженных файлов в папке заявителя (для подсветки этапа "Сбор документов")
+    // Список загруженных файлов в папке заявителя — сначала lead-scoped,
+    // при пустом результате (и если этот лид = legacy owner) — fallback на legacy <phone>/<ФИО>/.
+    const ownerId = await getLegacyOwnerLeadId(phone);
+    const isLegacyOwner = ownerId && String(ownerId) === String(leadId);
     await Promise.all(applicants.map(async (a) => {
       const fio = sanitizeFileName(String(a.fullName || "").trim()) || `Заявитель ${a.applicantIndex}`;
-      const folder = `${YANDEX_DISK_ROOT}/${phone}/${fio}`;
-      a.uploadedFiles = await listYandexFolderFiles(folder);
+      const leadScopedPath = `${leadScopedFolder(phone, leadId)}/${fio}`;
+      let files = await listYandexFolderFiles(leadScopedPath);
+      if ((!files || !files.length) && isLegacyOwner) {
+        files = await listYandexFolderFiles(`${YANDEX_DISK_ROOT}/${phone}/${fio}`);
+      }
+      a.uploadedFiles = files || [];
     }));
 
     return res.json({ success: true, applicants });
@@ -4588,29 +4725,30 @@ app.post(
     try {
       const phone = normalizePhone(req.body.phone || "");
       const file = req.file;
+      const leadId = String(req.body.leadId || "").trim();
 
       if (!phone) return res.status(400).json({ success: false, message: "Телефон не передан" });
       if (!file) return res.status(400).json({ success: false, message: "Файл не передан" });
+      if (!leadId) return res.status(400).json({ success: false, message: "leadId не передан" });
       if (!YANDEX_DISK_TOKEN) return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
 
       // Лимит файлов на обращение (200 на одну сделку).
-      const leadIdForLimit = String(req.body.leadId || "").trim();
-      if (leadIdForLimit) {
-        const currentCount = await getAmoLeadFileCount(leadIdForLimit);
-        if (currentCount >= LEAD_FILE_LIMIT) {
-          return res.status(429).json({
-            success: false,
-            message: `Превышен лимит файлов для этого обращения (${LEAD_FILE_LIMIT}). Обратитесь к менеджеру или дождитесь нового обращения.`
-          });
-        }
+      const currentCount = await getAmoLeadFileCount(leadId);
+      if (currentCount >= LEAD_FILE_LIMIT) {
+        return res.status(429).json({
+          success: false,
+          message: `Превышен лимит файлов для этого обращения (${LEAD_FILE_LIMIT}). Обратитесь к менеджеру или дождитесь нового обращения.`
+        });
       }
 
       const rootFolder = YANDEX_DISK_ROOT;
       const phoneFolder = `${rootFolder}/${phone}`;
-      const extraFolder = `${phoneFolder}/Дополнительные документы`;
+      const leadFolder = leadScopedFolder(phone, leadId);
+      const extraFolder = `${leadFolder}/Дополнительные документы`;
 
       await ensureYandexFolder(rootFolder);
       await ensureYandexFolder(phoneFolder);
+      await ensureYandexFolder(leadFolder);
       await ensureYandexFolder(extraFolder);
 
       const origName = sanitizeFileName(file.originalname || "file");
@@ -4626,7 +4764,6 @@ app.post(
       // Зеркалирование одного файла в папку сделки (фоном, без zip и task).
       // Финализация (zip + task) — отдельный вызов клиента к /api/amo/finish-upload
       // после батча, чтобы получить ровно 1 задачу на нажатие «Загрузить».
-      const leadId = String(req.body.leadId || "").trim();
       mirrorFilesToAmoFolder(leadId, {
         relativePath: `Дополнительные документы/${finalName}`,
         buffer: file.buffer,
@@ -4658,14 +4795,18 @@ app.post(
       const field = String(req.body.field || "").trim();
       const applicantIndex = Math.max(1, Math.min(10, parseInt(req.body.applicantIndex || "1", 10) || 1));
       const file = req.file;
+      const leadId = String(req.body.leadId || "").trim();
 
-      console.log("HANDLER /upload-document phone =", phone, "field =", field, "applicantIndex =", applicantIndex);
+      console.log("HANDLER /upload-document phone =", phone, "field =", field, "applicantIndex =", applicantIndex, "leadId =", leadId);
 
       if (!phone) {
         return res.status(400).json({ success: false, message: "Телефон не передан" });
       }
       if (!file) {
         return res.status(400).json({ success: false, message: "Файл не передан" });
+      }
+      if (!leadId) {
+        return res.status(400).json({ success: false, message: "leadId не передан" });
       }
 
       const targetName = UPLOAD_FIELDS_WHITELIST[field];
@@ -4679,13 +4820,9 @@ app.post(
 
       // Лимит файлов на обращение (200 на одну сделку).
       // Проверяем только для partIndex === 1 (новая загрузка для поля).
-      // При partIndex > 1 (доп. файлы того же поля в одной операции) и при
-      // partIndex === 1 + замене (clean-up удалит старые версии) уровень контроля
-      // обеспечен на этапе входа в загрузку.
-      const leadIdForLimit = String(req.body.leadId || "").trim();
       const partIndexForLimit = Math.max(1, parseInt(req.body.partIndex || "1", 10) || 1);
-      if (leadIdForLimit && partIndexForLimit === 1) {
-        const currentCount = await getAmoLeadFileCount(leadIdForLimit);
+      if (partIndexForLimit === 1) {
+        const currentCount = await getAmoLeadFileCount(leadId);
         if (currentCount >= LEAD_FILE_LIMIT) {
           return res.status(429).json({
             success: false,
@@ -4696,12 +4833,14 @@ app.post(
 
       const rootFolder = YANDEX_DISK_ROOT;
       const phoneFolder = `${rootFolder}/${phone}`;
+      const leadFolder = leadScopedFolder(phone, leadId); // "<phone>/<leadId>"
 
       await ensureYandexFolder(rootFolder);
       await ensureYandexFolder(phoneFolder);
+      await ensureYandexFolder(leadFolder);
 
       let applicantState = null;
-      try { applicantState = await loadApplicantJson(phone, applicantIndex); } catch (_) {}
+      try { applicantState = await loadApplicantJson(phone, leadId, applicantIndex); } catch (_) {}
 
       if (!applicantState) {
         return res.status(409).json({
@@ -4712,7 +4851,7 @@ app.post(
 
       const rawFio = String(applicantState.fullName || "").trim();
       const safeFio = sanitizeFileName(rawFio) || `Заявитель ${applicantIndex}`;
-      const applicantFolder = `${phoneFolder}/${safeFio}`;
+      const applicantFolder = `${leadFolder}/${safeFio}`; // "<phone>/<leadId>/<ФИО>"
 
       await ensureYandexFolder(applicantFolder);
 
@@ -4724,7 +4863,6 @@ app.post(
       const partSuffix = partIndex > 1 ? ` (${partIndex})` : "";
       const finalFileName = `${targetName} - ${safeFio}${partSuffix}${ext}`;
       const diskPath = `${applicantFolder}/${finalFileName}`;
-      const leadIdForMirror = String(req.body.leadId || "").trim();
 
       // При partIndex === 1 (первый файл батча для этого поля) подчищаем все
       // предыдущие версии загрузки в этом поле — любое расширение, любой суффикс « (2)»/« (3)».
@@ -4739,13 +4877,13 @@ app.post(
             }
           }
         } catch (e) {
-          console.error("CLEANUP OLD FIELD FILES (phone folder) error:", e.message);
+          console.error("CLEANUP OLD FIELD FILES (lead folder) error:", e.message);
         }
         // Параллельно подчистим зеркало сделки — встаёт в очередь ПЕРЕД новой mirror-операцией.
-        cleanupAmoFieldFilesInMirror(leadIdForMirror, safeFio, targetName);
+        cleanupAmoFieldFilesInMirror(leadId, safeFio, targetName);
         // Cleanup мог удалить файлы из папки сделки — сбрасываем кеш счётчика,
         // следующий запрос пересчитает с Я.Диска.
-        invalidateAmoLeadFileCount(leadIdForMirror);
+        invalidateAmoLeadFileCount(leadId);
       }
 
       console.log("UPLOAD TO YANDEX:", diskPath);
@@ -4754,13 +4892,12 @@ app.post(
       // Зеркалирование одного файла в папку сделки (фоном, без zip и task).
       // Финализация (zip + 1 задача) — отдельный вызов /api/amo/finish-upload
       // после успешного завершения батча, чтобы получить ровно 1 задачу на нажатие «Загрузить».
-      console.log("UPLOAD-DOC leadId =", leadIdForMirror || "(empty)");
-      mirrorFilesToAmoFolder(leadIdForMirror, {
+      mirrorFilesToAmoFolder(leadId, {
         relativePath: `${safeFio}/${finalFileName}`,
         buffer: file.buffer,
         contentType: file.mimetype
       });
-      bumpAmoLeadFileCount(leadIdForMirror, 1);
+      bumpAmoLeadFileCount(leadId, 1);
 
       return res.json({
         success: true,
