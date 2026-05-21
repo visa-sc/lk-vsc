@@ -49,6 +49,100 @@ const SMS_CODE_TTL_MS = 5 * 60 * 1000; // 5 минут
 const SMS_RESEND_COOLDOWN_MS = 60 * 1000; // 60 секунд
 const SMS_MAX_ATTEMPTS = 5;
 
+// ─── Rate limits ───────────────────────────────────────────
+// Защита sms.ru-баланса и от перебора служебного кода.
+// Все счётчики живут в памяти процесса — при рестарте сбрасываются.
+// Для текущей нагрузки этого достаточно; persistent-хранение можно прикрутить позже.
+const MS_10MIN = 10 * 60 * 1000;
+const MS_1H = 60 * 60 * 1000;
+const MS_24H = 24 * 60 * 60 * 1000;
+
+const SMS_LIMIT_PER_PHONE_10MIN = 3;     // <= 3 SMS в 10 мин на номер
+const SMS_LIMIT_PER_PHONE_1H = 5;        // <= 5 SMS в час на номер (значит после 3 в 10 мин — ещё максимум 2 за 50 мин)
+const SMS_LIMIT_PER_PHONE_24H = 15;      // <= 15 SMS в сутки на номер
+const SMS_LIMIT_PER_IP_24H = 15;         // <= 15 SMS в сутки с одного IP
+
+const STAFF_BYPASS_CODE = (process.env.STAFF_BYPASS_CODE || "111");
+const STAFF_BYPASS_FAIL_LIMIT_24H = 15;  // <= 15 неудачных попыток ввода служебного кода в сутки с одного IP
+
+// История отправок SMS: ключ → массив timestamp'ов
+const smsSendHistory = new Map();
+// История неудачных попыток ввода служебного кода: IP → массив timestamp'ов
+const staffBypassFailHistory = new Map();
+
+function getClientIp(req) {
+  const xff = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return xff || req.ip || (req.connection && req.connection.remoteAddress) || "unknown";
+}
+
+function pruneHistory(store, key, cutoffMs) {
+  const list = store.get(key) || [];
+  const cutoff = Date.now() - cutoffMs;
+  const fresh = list.filter((t) => t >= cutoff);
+  if (fresh.length !== list.length) {
+    if (fresh.length === 0) store.delete(key);
+    else store.set(key, fresh);
+  }
+  return fresh;
+}
+
+function formatWait(sec) {
+  if (sec >= 3600) return `${Math.ceil(sec / 3600)} ч`;
+  if (sec >= 60) return `${Math.ceil(sec / 60)} мин`;
+  return `${Math.max(1, sec)} с`;
+}
+
+function checkSmsRateLimit(phone, ip) {
+  // Возвращает { ok: true } или { ok: false, message, retryAfterSec }
+  const phoneKey = `p:${phone}`;
+  const ipKey = `i:${ip}`;
+  const phoneHist = pruneHistory(smsSendHistory, phoneKey, MS_24H);
+  const ipHist = pruneHistory(smsSendHistory, ipKey, MS_24H);
+  const now = Date.now();
+
+  const in10min = phoneHist.filter((t) => t >= now - MS_10MIN);
+  if (in10min.length >= SMS_LIMIT_PER_PHONE_10MIN) {
+    const oldest = in10min[0];
+    const wait = Math.ceil((oldest + MS_10MIN - now) / 1000);
+    return { ok: false, retryAfterSec: wait, message: `Слишком много запросов SMS. Попробуйте через ${formatWait(wait)}.` };
+  }
+  const in1h = phoneHist.filter((t) => t >= now - MS_1H);
+  if (in1h.length >= SMS_LIMIT_PER_PHONE_1H) {
+    const oldest = in1h[0];
+    const wait = Math.ceil((oldest + MS_1H - now) / 1000);
+    return { ok: false, retryAfterSec: wait, message: `Превышен часовой лимит SMS на этот номер. Попробуйте через ${formatWait(wait)}.` };
+  }
+  if (phoneHist.length >= SMS_LIMIT_PER_PHONE_24H) {
+    return { ok: false, retryAfterSec: 24 * 3600, message: "Превышен суточный лимит SMS на этот номер. Попробуйте завтра." };
+  }
+  if (ipHist.length >= SMS_LIMIT_PER_IP_24H) {
+    return { ok: false, retryAfterSec: 24 * 3600, message: "Превышен суточный лимит SMS с вашего устройства. Попробуйте завтра." };
+  }
+  return { ok: true };
+}
+
+function recordSmsSent(phone, ip) {
+  const phoneKey = `p:${phone}`;
+  const ipKey = `i:${ip}`;
+  const now = Date.now();
+  smsSendHistory.set(phoneKey, [...(smsSendHistory.get(phoneKey) || []), now]);
+  smsSendHistory.set(ipKey, [...(smsSendHistory.get(ipKey) || []), now]);
+}
+
+function checkStaffBypassRateLimit(ip) {
+  const key = ip;
+  const hist = pruneHistory(staffBypassFailHistory, key, MS_24H);
+  if (hist.length >= STAFF_BYPASS_FAIL_LIMIT_24H) {
+    return { ok: false, message: "Слишком много неудачных попыток. Попробуйте через сутки." };
+  }
+  return { ok: true };
+}
+
+function recordStaffBypassFail(ip) {
+  const key = ip;
+  staffBypassFailHistory.set(key, [...(staffBypassFailHistory.get(key) || []), Date.now()]);
+}
+
 function smsGate(req, res, next) {
   if (!sms.isEnabled()) {
     return res.status(404).send("Not found");
@@ -127,6 +221,13 @@ app.post("/api/auth/request-code", smsGate, async (req, res) => {
       return res.status(400).json({ success: false, message: "Некорректный номер телефона" });
     }
 
+    const ip = getClientIp(req);
+    const rateLimit = checkSmsRateLimit(phone, ip);
+    if (!rateLimit.ok) {
+      console.log(`SMS RATE LIMIT: phone=${phone} ip=${ip} → ${rateLimit.message}`);
+      return res.status(429).json({ success: false, message: rateLimit.message, retryAfterSec: rateLimit.retryAfterSec });
+    }
+
     const existing = smsCodeStore.get(phone);
     if (existing && Date.now() - (existing.lastSentAt || 0) < SMS_RESEND_COOLDOWN_MS) {
       const wait = Math.ceil((SMS_RESEND_COOLDOWN_MS - (Date.now() - existing.lastSentAt)) / 1000);
@@ -140,6 +241,10 @@ app.post("/api/auth/request-code", smsGate, async (req, res) => {
       return res.status(502).json({ success: false, message: result.error || "Не удалось отправить SMS" });
     }
 
+    // Учитываем в лимитах только успешно ушедшую SMS — чтобы ошибки sms.ru
+    // не сжигали клиенту его квоту 3/10мин и 5/час.
+    recordSmsSent(phone, ip);
+
     smsCodeStore.set(phone, {
       code,
       expiresAt: Date.now() + SMS_CODE_TTL_MS,
@@ -152,6 +257,29 @@ app.post("/api/auth/request-code", smsGate, async (req, res) => {
     console.error("REQUEST CODE ERROR:", err);
     return res.status(500).json({ success: false, message: "Внутренняя ошибка" });
   }
+});
+
+// Серверная проверка служебного «обходного» кода входа.
+// Раньше код хардкодился в HTML — каждый, кто открыл DevTools, видел его.
+// Теперь код хранится только на сервере (env STAFF_BYPASS_CODE, дефолт «111»)
+// и есть rate-limit 15 неудачных попыток в сутки на IP.
+app.post("/api/auth/staff-bypass", (req, res) => {
+  const ip = getClientIp(req);
+  const limit = checkStaffBypassRateLimit(ip);
+  if (!limit.ok) {
+    return res.status(429).json({ success: false, message: limit.message });
+  }
+  const provided = String((req.body && req.body.code) || "").trim();
+  if (!provided) {
+    // Пустой ввод не считаем как неудачную попытку, чтобы случайные ENTER'ы
+    // не сжигали лимит.
+    return res.status(400).json({ success: false, message: "Введите код" });
+  }
+  if (provided !== STAFF_BYPASS_CODE) {
+    recordStaffBypassFail(ip);
+    return res.status(403).json({ success: false, message: "Неверный код" });
+  }
+  return res.json({ success: true });
 });
 
 app.post("/api/auth/verify", smsGate, (req, res) => {
@@ -659,6 +787,47 @@ const AMO_DEALS_ROOT = "amoCRM/Сделки";
 const AMO_DOCS_FOLDER_NAME = "Документы из ЛК";
 const AMO_DOCS_ZIP_NAME = "Документы из ЛК.zip";
 const TASK_RESPONSIBLE_FIELD_ID = 443488;
+
+// ─── Лимит файлов на одно обращение (lead) ──────────────────
+// 200 файлов в папке «Документы из ЛК» (т.е. в зеркале сделки на Я.Диске).
+// Считаем рекурсивно по факту с Я.Диска и кешируем в памяти на короткий TTL.
+// .zip-архив и системные файлы в счёт не идут — это автогенерация.
+const LEAD_FILE_LIMIT = 200;
+const LEAD_COUNT_CACHE_TTL_MS = 30 * 1000;
+const leadFileCountCache = new Map(); // leadId -> { count, ts }
+
+async function getAmoLeadFileCount(leadId, { forceFresh = false } = {}) {
+  if (!leadId) return 0;
+  const cached = leadFileCountCache.get(leadId);
+  if (!forceFresh && cached && (Date.now() - cached.ts) < LEAD_COUNT_CACHE_TTL_MS) {
+    return cached.count;
+  }
+  let count = 0;
+  try {
+    const items = await listYandexFolderRecursive(amoDocsFolder(leadId));
+    // Исключаем .zip-архивы (это сам автособираемый «Документы из ЛК.zip»,
+    // если он по какой-то причине окажется внутри подпапки).
+    count = items.filter((it) => !/\.zip$/i.test(it.name)).length;
+  } catch (e) {
+    // Если папки ещё нет (свежий lead) — count = 0, fail-open.
+    count = 0;
+  }
+  leadFileCountCache.set(leadId, { count, ts: Date.now() });
+  return count;
+}
+
+function bumpAmoLeadFileCount(leadId, delta) {
+  if (!leadId) return;
+  const cached = leadFileCountCache.get(leadId);
+  if (cached) {
+    cached.count = Math.max(0, cached.count + delta);
+    cached.ts = Date.now();
+  }
+}
+
+function invalidateAmoLeadFileCount(leadId) {
+  if (leadId) leadFileCountCache.delete(leadId);
+}
 
 function amoDealFolder(leadId) {
   return `${AMO_DEALS_ROOT}/${leadId}`;
@@ -3752,6 +3921,18 @@ app.post(
       if (!file) return res.status(400).json({ success: false, message: "Файл не передан" });
       if (!YANDEX_DISK_TOKEN) return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
 
+      // Лимит файлов на обращение (200 на одну сделку).
+      const leadIdForLimit = String(req.body.leadId || "").trim();
+      if (leadIdForLimit) {
+        const currentCount = await getAmoLeadFileCount(leadIdForLimit);
+        if (currentCount >= LEAD_FILE_LIMIT) {
+          return res.status(429).json({
+            success: false,
+            message: `Превышен лимит файлов для этого обращения (${LEAD_FILE_LIMIT}). Обратитесь к менеджеру или дождитесь нового обращения.`
+          });
+        }
+      }
+
       const rootFolder = YANDEX_DISK_ROOT;
       const phoneFolder = `${rootFolder}/${phone}`;
       const extraFolder = `${phoneFolder}/Дополнительные документы`;
@@ -3779,6 +3960,7 @@ app.post(
         buffer: file.buffer,
         contentType: file.mimetype
       });
+      bumpAmoLeadFileCount(leadId, 1);
 
       return res.json({ success: true, message: "Файл успешно загружен", fileName: finalName });
     } catch (error) {
@@ -3821,6 +4003,23 @@ app.post(
 
       if (!YANDEX_DISK_TOKEN) {
         return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
+      }
+
+      // Лимит файлов на обращение (200 на одну сделку).
+      // Проверяем только для partIndex === 1 (новая загрузка для поля).
+      // При partIndex > 1 (доп. файлы того же поля в одной операции) и при
+      // partIndex === 1 + замене (clean-up удалит старые версии) уровень контроля
+      // обеспечен на этапе входа в загрузку.
+      const leadIdForLimit = String(req.body.leadId || "").trim();
+      const partIndexForLimit = Math.max(1, parseInt(req.body.partIndex || "1", 10) || 1);
+      if (leadIdForLimit && partIndexForLimit === 1) {
+        const currentCount = await getAmoLeadFileCount(leadIdForLimit);
+        if (currentCount >= LEAD_FILE_LIMIT) {
+          return res.status(429).json({
+            success: false,
+            message: `Превышен лимит файлов для этого обращения (${LEAD_FILE_LIMIT}). Обратитесь к менеджеру или дождитесь нового обращения.`
+          });
+        }
       }
 
       const rootFolder = YANDEX_DISK_ROOT;
@@ -3872,6 +4071,9 @@ app.post(
         }
         // Параллельно подчистим зеркало сделки — встаёт в очередь ПЕРЕД новой mirror-операцией.
         cleanupAmoFieldFilesInMirror(leadIdForMirror, safeFio, targetName);
+        // Cleanup мог удалить файлы из папки сделки — сбрасываем кеш счётчика,
+        // следующий запрос пересчитает с Я.Диска.
+        invalidateAmoLeadFileCount(leadIdForMirror);
       }
 
       console.log("UPLOAD TO YANDEX:", diskPath);
@@ -3886,6 +4088,7 @@ app.post(
         buffer: file.buffer,
         contentType: file.mimetype
       });
+      bumpAmoLeadFileCount(leadIdForMirror, 1);
 
       return res.json({
         success: true,

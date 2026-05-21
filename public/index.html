@@ -520,7 +520,10 @@
   <a href="/about" class="about-link" target="_blank" rel="noopener">Что такое VOYO?</a>
 
   <script>
-    const SECRET_BYPASS = "111";
+    // Служебный «обходной» код входа: проверка делается на сервере
+    // (POST /api/auth/staff-bypass) с rate-limit 15 неудачных попыток в сутки на IP.
+    // Клиент НЕ знает значение кода — на любую короткую цифровую строку, не похожую
+    // на телефон, отправляем запрос; сервер сам решит, верно/неверно/превышен лимит.
 
     const form = document.getElementById("loginForm");
     const phoneInput = document.getElementById("phoneInput");
@@ -1022,15 +1025,36 @@
         return;
       }
 
-      // Секретный обходной код — перекидываем на /search (без SMS).
-      // Только в обычном (не регистрационном) режиме.
-      if (!isRegistrationMode && raw === SECRET_BYPASS) {
-        window.location.replace("/search");
-        return;
+      // Если введённая строка не похожа на номер телефона (короткая, только цифры,
+      // не нормализуется в 11+ цифр) — пробуем как служебный код через сервер.
+      // Это ровно одна попытка, рейт-лимит работает на стороне сервера.
+      const phone = normalizePhoneJs(raw);
+      const looksLikePhone = !!(phone && phone.length >= 11);
+      const looksLikeServiceCode = !isRegistrationMode && !looksLikePhone && /^\d{1,9}$/.test(raw);
+
+      if (looksLikeServiceCode) {
+        try {
+          const r = await fetch("/api/auth/staff-bypass", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: raw })
+          });
+          const data = await r.json().catch(() => ({}));
+          if (r.ok && data && data.success) {
+            window.location.replace("/search");
+            return;
+          }
+          if (r.status === 429) {
+            showError(data.message || "Слишком много попыток. Попробуйте позже.");
+            return;
+          }
+          // r.status === 403 (неверный код) или 400 — падаем в стандартное сообщение
+        } catch (_) {
+          // Сетевая ошибка — покажем стандартное сообщение про телефон
+        }
       }
 
-      const phone = normalizePhoneJs(raw);
-      if (!phone || phone.length < 11) {
+      if (!looksLikePhone) {
         showError("Введите корректный номер телефона");
         return;
       }
