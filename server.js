@@ -3554,7 +3554,7 @@ function buildFeedbackHtml(token, fullName) {
         </div>
 
         <div class="field step-block" id="stepQ3">
-          <p class="q-text">Что ещё вы бы хотели видеть в личном кабинете VOYO? <span style="color:#c4314b;">*</span></p>
+          <p class="q-text">Что ещё вы хотели бы видеть в личном кабинете VOYO? <span style="color:#c4314b;">*</span></p>
           <div class="radio-group">${q3OptionsHtml}
           </div>
         </div>
@@ -3746,7 +3746,7 @@ async function generateFeedbackPdfBuffer({ fullName, phone, q1, q2, q3 }) {
     // Вопрос 3 — только если ответ на Q1 «Да».
     if (q1 === "Да") {
       doc.moveDown();
-      doc.fontSize(12).text("Вопрос 3. Что ещё вы бы хотели видеть в личном кабинете VOYO?", { lineGap: 2 });
+      doc.fontSize(12).text("Вопрос 3. Что ещё вы хотели бы видеть в личном кабинете VOYO?", { lineGap: 2 });
       doc.moveDown(0.3);
       const selected = Array.isArray(q3) ? q3 : [];
       if (selected.length) {
