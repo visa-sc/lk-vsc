@@ -3549,7 +3549,7 @@ function buildFeedbackHtml(token, fullName) {
         </div>
 
         <div class="field step-block" id="stepYes">
-          <label for="qYes" class="q-text">Скажите, что вы бы порекомендовали нам улучшить в личном кабинете VOYO?</label>
+          <label for="qYes" class="q-text">Скажите, что вы порекомендовали бы нам улучшить в личном кабинете VOYO?</label>
           <textarea id="qYes" name="qYes" placeholder="Поле необязательное. Можно оставить пустым."></textarea>
         </div>
 
@@ -3734,7 +3734,7 @@ async function generateFeedbackPdfBuffer({ fullName, phone, q1, q2, q3 }) {
     doc.moveDown();
 
     if (q1 === "Да") {
-      doc.fontSize(12).text("Вопрос 2. Скажите, что вы бы порекомендовали нам улучшить в личном кабинете VOYO?", { lineGap: 2 });
+      doc.fontSize(12).text("Вопрос 2. Скажите, что вы порекомендовали бы нам улучшить в личном кабинете VOYO?", { lineGap: 2 });
     } else if (q1 === "Нет") {
       doc.fontSize(12).text("Вопрос 2. Что было не так?", { lineGap: 2 });
     } else {
