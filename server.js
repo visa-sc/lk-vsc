@@ -3191,6 +3191,26 @@ loadShareTokens();
 
 const FEEDBACK_DISK_FOLDER = "Опросники по ЛК VOYO";
 
+// ФИО с большой буквы — тот же приём, что и formatFio в cabinet.html
+// (lowercase всё → capitalize первую букву каждого «слова», разделители \s и -).
+function formatFioTitleCase(s) {
+  const lower = String(s || "").trim().toLowerCase();
+  if (!lower) return "";
+  return lower.replace(/(^|[\s-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+}
+
+// Опции 3-го вопроса (показывается, если на Q1 ответили «Да»).
+// Тексты используются и как value на чекбоксах, и как метка в PDF —
+// чтобы не дублировать справочник в двух местах.
+const FEEDBACK_Q3_OPTIONS = [
+  "eSIM (быстрое подключение зарубежной eSIM в поездке для использования мобильного интернета)",
+  "Оформление туристической страховки (включая страхование от экстремальных видов спорта, и прочие нестандартные виды страхования)",
+  "Поиск отеля (аналог booking / ostrovok)",
+  "Поиск экскурсий в городах назначения",
+  "Поиск авторских туров",
+  "Раздел для организации деловых поездок"
+];
+
 const FEEDBACK_SENT_FILE = path.join(__dirname, ".feedbackSent.json");
 const FEEDBACK_TOKENS_FILE = path.join(__dirname, ".feedbackTokens.json");
 const feedbackSent = new Map();    // phone(7XXXXXXXXXX) -> { sentAt, fullName }
@@ -3363,7 +3383,16 @@ async function maybeSendFeedbackSms(phone, leads) {
 
 function buildFeedbackHtml(token, fullName) {
   const safeToken = escapeHtml(token);
-  const safeName = escapeHtml(fullName || "");
+  const prettyName = formatFioTitleCase(fullName);
+  const safeName = escapeHtml(prettyName);
+  const q3OptionsHtml = FEEDBACK_Q3_OPTIONS.map((opt) => {
+    const safeOpt = escapeHtml(opt);
+    return `
+            <label class="checkbox-row">
+              <input type="checkbox" name="q3" value="${safeOpt}" />
+              <span>${safeOpt}</span>
+            </label>`;
+  }).join("");
   return `<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -3419,6 +3448,22 @@ function buildFeedbackHtml(token, fullName) {
     .radio-row:hover { background: #faf9fc; }
     .radio-row input[type="radio"] { width: 18px; height: 18px; accent-color: #3589BD; margin: 0; }
     .radio-row.is-checked { border-color: #3589BD; background: #f0f7fc; }
+    .checkbox-row {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid #e8e2ee;
+      border-radius: 14px;
+      cursor: pointer;
+      font-size: 15px;
+      background: #fff;
+      line-height: 1.4;
+      transition: border-color 0.2s var(--vsc-ease), background 0.2s var(--vsc-ease);
+    }
+    .checkbox-row:hover { background: #faf9fc; }
+    .checkbox-row input[type="checkbox"] {
+      width: 18px; height: 18px; accent-color: #3589BD; margin: 1px 0 0; flex-shrink: 0;
+    }
+    .checkbox-row.is-checked { border-color: #3589BD; background: #f0f7fc; }
     textarea {
       width: 100%; min-height: 120px;
       border: 1px solid #e8e2ee;
@@ -3508,6 +3553,12 @@ function buildFeedbackHtml(token, fullName) {
           <textarea id="qYes" name="qYes" placeholder="Поле необязательное. Можно оставить пустым."></textarea>
         </div>
 
+        <div class="field step-block" id="stepQ3">
+          <p class="q-text">Что ещё вы бы хотели видеть в личном кабинете VOYO? <span style="color:#c4314b;">*</span></p>
+          <div class="radio-group">${q3OptionsHtml}
+          </div>
+        </div>
+
         <div class="field step-block" id="stepNo">
           <label for="qNo" class="q-text">Что было не так?</label>
           <textarea id="qNo" name="qNo" placeholder="Поле необязательное. Можно оставить пустым."></textarea>
@@ -3532,10 +3583,12 @@ function buildFeedbackHtml(token, fullName) {
       const formBlock = document.getElementById("formBlock");
       const successBlock = document.getElementById("successBlock");
       const stepYes = document.getElementById("stepYes");
+      const stepQ3  = document.getElementById("stepQ3");
       const stepNo  = document.getElementById("stepNo");
       const submitBtn = document.getElementById("submitBtn");
       const errorBox = document.getElementById("errorBox");
       const radios = Array.from(form.querySelectorAll('input[name="q1"]'));
+      const q3Checks = Array.from(form.querySelectorAll('input[name="q3"]'));
 
       function syncRadioStyles() {
         radios.forEach((r) => {
@@ -3546,17 +3599,54 @@ function buildFeedbackHtml(token, fullName) {
         });
       }
 
+      function syncCheckboxStyles() {
+        q3Checks.forEach((c) => {
+          const row = c.closest(".checkbox-row");
+          if (!row) return;
+          if (c.checked) row.classList.add("is-checked");
+          else row.classList.remove("is-checked");
+        });
+      }
+
+      function isYesSelected() {
+        const r = radios.find((x) => x.checked);
+        return r && r.value === "Да";
+      }
+
+      function anyQ3Checked() {
+        return q3Checks.some((c) => c.checked);
+      }
+
+      function refreshSubmitState() {
+        const r = radios.find((x) => x.checked);
+        if (!r) { submitBtn.disabled = true; return; }
+        if (r.value === "Да") {
+          submitBtn.disabled = !anyQ3Checked();
+        } else {
+          submitBtn.disabled = false;
+        }
+      }
+
       radios.forEach((r) => {
         r.addEventListener("change", () => {
           syncRadioStyles();
           if (r.value === "Да" && r.checked) {
             stepYes.classList.add("show");
+            stepQ3.classList.add("show");
             stepNo.classList.remove("show");
           } else if (r.value === "Нет" && r.checked) {
             stepNo.classList.add("show");
             stepYes.classList.remove("show");
+            stepQ3.classList.remove("show");
           }
-          submitBtn.disabled = !radios.some((x) => x.checked);
+          refreshSubmitState();
+        });
+      });
+
+      q3Checks.forEach((c) => {
+        c.addEventListener("change", () => {
+          syncCheckboxStyles();
+          refreshSubmitState();
         });
       });
 
@@ -3573,19 +3663,27 @@ function buildFeedbackHtml(token, fullName) {
         hideError();
         const q1 = radios.find((r) => r.checked);
         if (!q1) {
-          showError("Пожалуйста, выберите ответ.");
+          showError("Пожалуйста, выберите ответ на первый вопрос.");
           return;
         }
         const q2 = q1.value === "Да"
           ? (document.getElementById("qYes").value || "").trim()
           : (document.getElementById("qNo").value || "").trim();
+        let q3 = [];
+        if (q1.value === "Да") {
+          q3 = q3Checks.filter((c) => c.checked).map((c) => c.value);
+          if (!q3.length) {
+            showError("Выберите минимум один пункт в последнем вопросе.");
+            return;
+          }
+        }
         submitBtn.disabled = true;
         submitBtn.textContent = "Отправляем...";
         try {
           const r = await fetch("/api/feedback", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token: TOKEN, q1: q1.value, q2 })
+            body: JSON.stringify({ token: TOKEN, q1: q1.value, q2, q3 })
           });
           const data = await r.json().catch(() => ({}));
           if (!r.ok || !data.success) {
@@ -3608,7 +3706,7 @@ function buildFeedbackHtml(token, fullName) {
 </html>`;
 }
 
-async function generateFeedbackPdfBuffer({ fullName, phone, q1, q2 }) {
+async function generateFeedbackPdfBuffer({ fullName, phone, q1, q2, q3 }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: 50 });
     const chunks = [];
@@ -3644,6 +3742,21 @@ async function generateFeedbackPdfBuffer({ fullName, phone, q1, q2 }) {
     }
     doc.moveDown(0.3);
     doc.fontSize(12).text(`Ответ: ${q2 && q2.trim() ? q2.trim() : "(пусто, клиент не заполнил)"}`);
+
+    // Вопрос 3 — только если ответ на Q1 «Да».
+    if (q1 === "Да") {
+      doc.moveDown();
+      doc.fontSize(12).text("Вопрос 3. Что ещё вы бы хотели видеть в личном кабинете VOYO?", { lineGap: 2 });
+      doc.moveDown(0.3);
+      const selected = Array.isArray(q3) ? q3 : [];
+      if (selected.length) {
+        selected.forEach((opt) => {
+          doc.fontSize(12).text(`• ${opt}`, { lineGap: 1, indent: 6 });
+        });
+      } else {
+        doc.fontSize(12).text("(пусто)");
+      }
+    }
 
     doc.end();
   });
@@ -3683,6 +3796,12 @@ app.post("/api/feedback", async (req, res) => {
     const token = String((req.body && req.body.token) || "").trim();
     const q1 = String((req.body && req.body.q1) || "").trim();
     const q2 = String((req.body && req.body.q2) || "").trim();
+    const q3Raw = (req.body && req.body.q3) || [];
+    // Принимаем только значения из строго заданного списка (FEEDBACK_Q3_OPTIONS) —
+    // отсекаем любые посторонние варианты, которые могли прийти при подделке запроса.
+    const q3 = (Array.isArray(q3Raw) ? q3Raw : [])
+      .map((v) => String(v || "").trim())
+      .filter((v) => FEEDBACK_Q3_OPTIONS.includes(v));
 
     const data = getFeedbackToken(token);
     if (!data) {
@@ -3691,12 +3810,20 @@ app.post("/api/feedback", async (req, res) => {
     if (q1 !== "Да" && q1 !== "Нет") {
       return res.status(400).json({ success: false, message: "Выберите ответ на первый вопрос" });
     }
+    // Если ответили «Да» — на 3-м вопросе должен быть выбран хотя бы 1 пункт.
+    if (q1 === "Да" && q3.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Выберите минимум один пункт в последнем вопросе"
+      });
+    }
 
-    const fullName = data.fullName || "Клиент VOYO";
+    // ФИО в Title Case (как в ЛК) — попадает и в PDF, и в имя файла.
+    const fullName = formatFioTitleCase(data.fullName) || "Клиент VOYO";
     const phone = data.phone || "";
 
     // 1. PDF
-    const pdfBuffer = await generateFeedbackPdfBuffer({ fullName, phone, q1, q2 });
+    const pdfBuffer = await generateFeedbackPdfBuffer({ fullName, phone, q1, q2, q3 });
 
     // 2. Папка на Я.Диске
     await ensureNestedYandexFolder(FEEDBACK_DISK_FOLDER);
@@ -3710,6 +3837,7 @@ app.post("/api/feedback", async (req, res) => {
     console.log(`FEEDBACK PDF saved: ${diskPath}`);
 
     // 4. Удаляем токен — повторно использовать нельзя.
+    //    Ссылка из SMS сразу перестаёт работать (GET /feedback вернёт 404).
     feedbackTokens.delete(token);
     saveFeedbackTokens();
 
