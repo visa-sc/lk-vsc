@@ -1186,45 +1186,76 @@ function finalizeAmoUpload(leadId, options = {}) {
 }
 
 // ── Метка источника для leads, созданных через ЛК ───────────────────
-// В amoCRM обычно есть техническое поле «REFERER» (например, Flexbe создаёт
-// его автоматически при подключении интеграции). В сделках, созданных через
-// ЛК VOYO, в это поле пишем фиксированную метку «lkvoyo» — чтобы менеджер
-// сразу видел источник.
-// Если поля «REFERER» в amoCRM нет — просто не пишем (никаких ошибок).
-const LK_SOURCE_VALUE = "lkvoyo";
-let _lkRefererFieldCache = undefined; // undefined = ещё не проверяли, null = нет, { id, type }
+// При создании сделки через ЛК VOYO пишем фиксированную метку «lkvoyo» в
+// техническое поле сделки (обычно настраивается интеграциями типа Flexbe).
+// Целевое поле: «utm_term». Если не найдено — пробуем альтернативные имена.
+//
+// Можно переопределить через .env:
+//   LK_SOURCE_FIELD_NAMES — список имён/кодов поля через запятую (приоритет слева→направо)
+//   LK_SOURCE_VALUE       — значение метки (по умолчанию «lkvoyo»)
+const LK_SOURCE_VALUE = process.env.LK_SOURCE_VALUE || "lkvoyo";
+const LK_SOURCE_FIELD_CANDIDATES = (
+  process.env.LK_SOURCE_FIELD_NAMES ||
+  "utm_term,UTM_TERM,utm term,UTM TERM,referer,REFERER"
+).split(",").map((s) => s.trim()).filter(Boolean);
+
+// Разрешённые типы полей. URL- и text-поля одинаково принимают строковое значение.
+const LK_SOURCE_ALLOWED_TYPES = new Set(["text", "url"]);
+
+let _lkSourceFieldCache = undefined; // undefined = не проверяли; null = нет; { id, type, name } = найдено
 
 async function getLeadRefererFieldId() {
-  if (_lkRefererFieldCache !== undefined) {
-    return _lkRefererFieldCache ? _lkRefererFieldCache.id : null;
+  if (_lkSourceFieldCache !== undefined) {
+    return _lkSourceFieldCache ? _lkSourceFieldCache.id : null;
   }
   try {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
     const fields = await amoGetAllPages(`${baseUrl}/api/v4/leads/custom_fields`);
-    const referer = (fields || []).find((f) => {
-      const code = String((f && f.code) || "").toUpperCase();
-      const name = String((f && f.name) || "").toUpperCase();
-      return code === "REFERER" || name === "REFERER";
+
+    // Однократно дампим все поля в лог — чтобы в случае «не нашли» было видно,
+    // какие имена/коды на самом деле есть в amoCRM этой компании.
+    console.log(`AMO LK SOURCE: scanning ${(fields || []).length} lead custom fields...`);
+    (fields || []).forEach((f) => {
+      console.log(`  • id=${f.id} name="${f.name || ""}" code="${f.code || ""}" type="${f.type || ""}"`);
     });
-    if (!referer) {
-      console.log("AMO REFERER field NOT FOUND — метка ЛК не будет проставлена");
-      _lkRefererFieldCache = null;
+
+    // Ищем по списку кандидатов в порядке приоритета. Имя сравниваем
+    // case-insensitive; пробелы и подчёркивания трактуем как эквивалентные
+    // (utm_term == utm term).
+    function normKey(s) {
+      return String(s || "").toLowerCase().replace(/[\s_]+/g, "");
+    }
+    let match = null;
+    for (const candidate of LK_SOURCE_FIELD_CANDIDATES) {
+      const target = normKey(candidate);
+      match = (fields || []).find((f) => {
+        return normKey(f.name) === target || normKey(f.code) === target;
+      });
+      if (match) {
+        console.log(`AMO LK SOURCE: matched by candidate "${candidate}" → field id=${match.id} type=${match.type}`);
+        break;
+      }
+    }
+
+    if (!match) {
+      console.log(`AMO LK SOURCE: no candidate field found. Tried: [${LK_SOURCE_FIELD_CANDIDATES.join(", ")}]`);
+      _lkSourceFieldCache = null;
       return null;
     }
-    // Текстовое поле — принимает простое строковое значение.
-    // На остальные типы (select/multiselect/numeric и т.д.) безопаснее не лезть,
-    // чтобы случайно не уронить создание сделки.
-    if (String(referer.type || "").toLowerCase() !== "text") {
-      console.log(`AMO REFERER field has type "${referer.type}" — пропускаем (только text поддерживается)`);
-      _lkRefererFieldCache = null;
+
+    const fieldType = String(match.type || "").toLowerCase();
+    if (!LK_SOURCE_ALLOWED_TYPES.has(fieldType)) {
+      console.log(`AMO LK SOURCE: field "${match.name}" has type "${match.type}" — пропускаем (поддерживаются: ${[...LK_SOURCE_ALLOWED_TYPES].join(", ")})`);
+      _lkSourceFieldCache = null;
       return null;
     }
-    _lkRefererFieldCache = { id: referer.id, type: referer.type };
-    console.log(`AMO REFERER field detected: id=${referer.id} type=${referer.type} name=${referer.name || ""}`);
-    return referer.id;
+
+    _lkSourceFieldCache = { id: match.id, type: match.type, name: match.name || "" };
+    console.log(`AMO LK SOURCE: using field id=${match.id} name="${match.name}" type=${match.type} → value="${LK_SOURCE_VALUE}"`);
+    return match.id;
   } catch (e) {
     console.error("getLeadRefererFieldId error:", e.message);
-    _lkRefererFieldCache = null;
+    _lkSourceFieldCache = null;
     return null;
   }
 }
