@@ -4689,18 +4689,24 @@ app.get("/api/questionnaire-state", async (req, res) => {
       if (s) applicants.push({ ...s, applicantIndex: i + 2 });
     });
 
-    // Список загруженных файлов в папке заявителя — сначала lead-scoped,
-    // при пустом результате (и если этот лид = legacy owner) — fallback на legacy <phone>/<ФИО>/.
+    // Список загруженных файлов в папке заявителя.
+    // Если этот лид — legacy owner: мерджим lead-scoped + legacy <phone>/<ФИО>/.
+    // Это обеспечивает, что если клиент дозагружает что-то новое в свою «старую» сделку
+    // (после деплоя 2026-05-21) — он продолжит видеть и старые файлы, и новые.
+    // Для новых сделок (не-owner) — только lead-scoped, legacy не подмешивается.
     const ownerId = await getLegacyOwnerLeadId(phone);
     const isLegacyOwner = ownerId && String(ownerId) === String(leadId);
     await Promise.all(applicants.map(async (a) => {
       const fio = sanitizeFileName(String(a.fullName || "").trim()) || `Заявитель ${a.applicantIndex}`;
+      const merged = new Set();
       const leadScopedPath = `${leadScopedFolder(phone, leadId)}/${fio}`;
-      let files = await listYandexFolderFiles(leadScopedPath);
-      if ((!files || !files.length) && isLegacyOwner) {
-        files = await listYandexFolderFiles(`${YANDEX_DISK_ROOT}/${phone}/${fio}`);
+      const leadFiles = await listYandexFolderFiles(leadScopedPath);
+      (leadFiles || []).forEach((n) => merged.add(n));
+      if (isLegacyOwner) {
+        const legacyFiles = await listYandexFolderFiles(`${YANDEX_DISK_ROOT}/${phone}/${fio}`);
+        (legacyFiles || []).forEach((n) => merged.add(n));
       }
-      a.uploadedFiles = files || [];
+      a.uploadedFiles = Array.from(merged);
     }));
 
     return res.json({ success: true, applicants });
