@@ -1065,6 +1065,17 @@ async function amoPost(url, body) {
   return response.data;
 }
 
+async function amoPatch(url, body) {
+  console.log("AMO PATCH:", url, JSON.stringify(body));
+  const response = await axios.patch(url, body, {
+    headers: {
+      Authorization: `Bearer ${AMO_ACCESS_TOKEN}`,
+      "Content-Type": "application/json"
+    }
+  });
+  return response.data;
+}
+
 function getEntityCustomFieldValue(entity, fieldId) {
   const fields = entity?.custom_fields_values || [];
   for (const f of fields) {
@@ -1186,76 +1197,51 @@ function finalizeAmoUpload(leadId, options = {}) {
 }
 
 // ── Метка источника для leads, созданных через ЛК ───────────────────
-// При создании сделки через ЛК VOYO пишем фиксированную метку «lkvoyo» в
-// техническое поле сделки (обычно настраивается интеграциями типа Flexbe).
-// Целевое поле: «utm_term». Если не найдено — пробуем альтернативные имена.
+// При создании сделки через ЛК VOYO пишем фиксированную метку в техническое
+// поле сделки. Целевое поле: «utm term» (с пробелом, как в amoCRM пользователя).
 //
 // Можно переопределить через .env:
 //   LK_SOURCE_FIELD_NAMES — список имён/кодов поля через запятую (приоритет слева→направо)
-//   LK_SOURCE_VALUE       — значение метки (по умолчанию «lkvoyo»)
-const LK_SOURCE_VALUE = process.env.LK_SOURCE_VALUE || "lkvoyo";
+//   LK_SOURCE_VALUE       — значение метки (по умолчанию «VOYO»)
+const LK_SOURCE_VALUE = process.env.LK_SOURCE_VALUE || "VOYO";
 const LK_SOURCE_FIELD_CANDIDATES = (
   process.env.LK_SOURCE_FIELD_NAMES ||
-  "utm_term,UTM_TERM,utm term,UTM TERM,referer,REFERER"
+  "utm term,utm_term,UTM term,UTM TERM,UTM_TERM,referer,REFERER"
 ).split(",").map((s) => s.trim()).filter(Boolean);
 
-// Разрешённые типы полей. URL- и text-поля одинаково принимают строковое значение.
-const LK_SOURCE_ALLOWED_TYPES = new Set(["text", "url"]);
+// Без кеша — на каждое создание сделки заново ищем поле. Это всего 1 запрос
+// к amoCRM, и при изменениях/добавлении полей в amoCRM не нужен рестарт.
+function normSourceKey(s) {
+  return String(s || "").toLowerCase().replace(/[\s_]+/g, "");
+}
 
-let _lkSourceFieldCache = undefined; // undefined = не проверяли; null = нет; { id, type, name } = найдено
-
-async function getLeadRefererFieldId() {
-  if (_lkSourceFieldCache !== undefined) {
-    return _lkSourceFieldCache ? _lkSourceFieldCache.id : null;
-  }
+async function findLkSourceField() {
   try {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
     const fields = await amoGetAllPages(`${baseUrl}/api/v4/leads/custom_fields`);
 
-    // Однократно дампим все поля в лог — чтобы в случае «не нашли» было видно,
-    // какие имена/коды на самом деле есть в amoCRM этой компании.
-    console.log(`AMO LK SOURCE: scanning ${(fields || []).length} lead custom fields...`);
-    (fields || []).forEach((f) => {
-      console.log(`  • id=${f.id} name="${f.name || ""}" code="${f.code || ""}" type="${f.type || ""}"`);
-    });
+    console.log(`AMO LK SOURCE: scanning ${(fields || []).length} lead custom fields`);
 
-    // Ищем по списку кандидатов в порядке приоритета. Имя сравниваем
-    // case-insensitive; пробелы и подчёркивания трактуем как эквивалентные
-    // (utm_term == utm term).
-    function normKey(s) {
-      return String(s || "").toLowerCase().replace(/[\s_]+/g, "");
-    }
     let match = null;
     for (const candidate of LK_SOURCE_FIELD_CANDIDATES) {
-      const target = normKey(candidate);
+      const target = normSourceKey(candidate);
       match = (fields || []).find((f) => {
-        return normKey(f.name) === target || normKey(f.code) === target;
+        return normSourceKey(f.name) === target || normSourceKey(f.code) === target;
       });
       if (match) {
-        console.log(`AMO LK SOURCE: matched by candidate "${candidate}" → field id=${match.id} type=${match.type}`);
-        break;
+        console.log(`AMO LK SOURCE: matched candidate "${candidate}" → field id=${match.id} name="${match.name}" code="${match.code || ""}" type="${match.type}"`);
+        return match;
       }
     }
 
-    if (!match) {
-      console.log(`AMO LK SOURCE: no candidate field found. Tried: [${LK_SOURCE_FIELD_CANDIDATES.join(", ")}]`);
-      _lkSourceFieldCache = null;
-      return null;
-    }
-
-    const fieldType = String(match.type || "").toLowerCase();
-    if (!LK_SOURCE_ALLOWED_TYPES.has(fieldType)) {
-      console.log(`AMO LK SOURCE: field "${match.name}" has type "${match.type}" — пропускаем (поддерживаются: ${[...LK_SOURCE_ALLOWED_TYPES].join(", ")})`);
-      _lkSourceFieldCache = null;
-      return null;
-    }
-
-    _lkSourceFieldCache = { id: match.id, type: match.type, name: match.name || "" };
-    console.log(`AMO LK SOURCE: using field id=${match.id} name="${match.name}" type=${match.type} → value="${LK_SOURCE_VALUE}"`);
-    return match.id;
+    console.log(`AMO LK SOURCE: NO MATCH. Tried candidates: [${LK_SOURCE_FIELD_CANDIDATES.join(", ")}]`);
+    console.log("AMO LK SOURCE: full lead custom_fields dump follows:");
+    (fields || []).forEach((f) => {
+      console.log(`  • id=${f.id} name="${f.name || ""}" code="${f.code || ""}" type="${f.type || ""}"`);
+    });
+    return null;
   } catch (e) {
-    console.error("getLeadRefererFieldId error:", e.message);
-    _lkSourceFieldCache = null;
+    console.error("findLkSourceField error:", e.response?.data || e.message);
     return null;
   }
 }
@@ -1310,25 +1296,44 @@ async function createAmoContactAndLeadForRegistration(phone, { promoApplied = fa
     throw new Error("Не найдена воронка/статус «Отдел продаж» → «Ещё не связывались»");
   }
 
-  // 4) Создаём сделку, привязанную к контакту. Метка «lkvoyo» в поле REFERER
-  //    (если оно настроено) — чтобы менеджер сразу видел источник.
+  // 4) Создаём сделку, привязанную к контакту. Custom-поля проставляем
+  //    отдельным PATCH-ом — чтобы любая ошибка с полем источника не валила
+  //    само создание сделки.
   const leadBody = [{
     name: "Новое обращение из ЛК",
     pipeline_id: pipelineId,
     status_id: statusId,
     _embedded: { contacts: [{ id: contactId }] }
   }];
-  const refererFieldId = await getLeadRefererFieldId();
-  if (refererFieldId) {
-    leadBody[0].custom_fields_values = [
-      { field_id: refererFieldId, values: [{ value: LK_SOURCE_VALUE }] }
-    ];
-  }
   const leadRes = await amoPost(`${baseUrl}/api/v4/leads`, leadBody);
   const leadId = leadRes?._embedded?.leads?.[0]?.id;
   if (!leadId) throw new Error("Не удалось создать сделку");
 
   console.log(`REGISTER OK: phone=${phone} contactId=${contactId} leadId=${leadId} promo=${promoApplied}`);
+
+  // 4.1) Метка «VOYO» в поле «utm term» (или альтернативы из LK_SOURCE_FIELD_NAMES).
+  //      Best-effort: даже если PATCH упадёт — сделка уже создана.
+  try {
+    const field = await findLkSourceField();
+    if (field) {
+      const patchBody = {
+        custom_fields_values: [{
+          field_id: field.id,
+          values: [{ value: LK_SOURCE_VALUE }]
+        }]
+      };
+      const patchRes = await amoPatch(`${baseUrl}/api/v4/leads/${leadId}`, patchBody);
+      // Достаём подтверждение из ответа amoCRM (если оно прислало значение обратно)
+      const setValues = (patchRes && patchRes.custom_fields_values) || [];
+      const setOne = setValues.find((f) => Number(f.field_id) === Number(field.id));
+      const echoed = setOne && setOne.values && setOne.values[0] && setOne.values[0].value;
+      console.log(`AMO LK SOURCE: PATCH lead ${leadId} ok. amoCRM echoed value: ${JSON.stringify(echoed)}`);
+    } else {
+      console.log(`AMO LK SOURCE: skip for lead ${leadId} — целевое поле не найдено`);
+    }
+  } catch (e) {
+    console.error(`AMO LK SOURCE: PATCH FAILED for lead ${leadId}:`, e.response?.status, JSON.stringify(e.response?.data) || e.message);
+  }
 
   // 5) При applyPromo — закреплённый комментарий на сделке.
   if (promoApplied && promoText) {
