@@ -637,6 +637,28 @@
       padding-top: 0;
     }
 
+    /* Заголовок-разделитель внутри списка областей загрузки.
+       Используется на «Отделе Продаж» — делит блоки на «обязательно сейчас» и «можно позже». */
+    .file-list-section {
+      padding: 14px 0 6px;
+      border-top: 1px dashed #ece7f2;
+      font-size: 13px;
+      font-weight: 600;
+      color: #3a4150;
+    }
+    .file-list-section:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+    .file-list-section.muted {
+      color: #737988;
+      font-weight: 500;
+    }
+    .file-list-section + .file-list-row {
+      border-top: none;
+      padding-top: 4px;
+    }
+
     .file-list-label {
       font-size: 13px;
       color: #3a4150;
@@ -1242,7 +1264,8 @@
       }
     }
 
-    // Необязательные области загрузки документов: их пропуск не блокирует кнопку "Загрузить".
+    // Необязательные области загрузки документов на этапах ОтделОформления /
+    // ОтделПоРаботеСКлиентами — их пропуск не блокирует кнопку "Загрузить".
     const OPTIONAL_UPLOAD_FIELDS = new Set([
       "invitation",
       "thirdCountryTickets",
@@ -1252,7 +1275,24 @@
       "workCert"
     ]);
 
-    function buildUploadBlocksConfig(state) {
+    // На воронке «Отдел Продаж» обязателен ТОЛЬКО внутренний паспорт.
+    // Всё остальное — «можно загрузить позже» (на следующих этапах).
+    const SALES_REQUIRED_FIELDS = new Set(["innerPassport"]);
+
+    function isSalesPipeline(lead) {
+      if (!lead) return false;
+      const name = String(lead.pipeline_name || "").trim().toLowerCase();
+      return name.indexOf("отдел продаж") === 0;
+    }
+
+    function isFieldOptionalForLead(field, lead) {
+      if (isSalesPipeline(lead)) {
+        return !SALES_REQUIRED_FIELDS.has(field);
+      }
+      return OPTIONAL_UPLOAD_FIELDS.has(field);
+    }
+
+    function buildUploadBlocksConfig(state, lead) {
       const blocks = [];
 
       // ── Всегда после "Отправить опросник" ──
@@ -1299,9 +1339,11 @@
         blocks.push({ field: "workCert", label: "Справка с работы или учёбы" });
       }
 
-      // Сортируем: сначала обязательные, потом необязательные. Внутри групп — исходный порядок.
-      const required = blocks.filter((b) => !OPTIONAL_UPLOAD_FIELDS.has(b.field));
-      const optional = blocks.filter((b) =>  OPTIONAL_UPLOAD_FIELDS.has(b.field));
+      // Сортируем: сначала обязательные, потом необязательные.
+      // Состав «обязательного» набора зависит от воронки сделки —
+      // на «Отделе продаж» только innerPassport, в остальных — текущий набор.
+      const required = blocks.filter((b) => !isFieldOptionalForLead(b.field, lead));
+      const optional = blocks.filter((b) =>  isFieldOptionalForLead(b.field, lead));
       return required.concat(optional);
     }
 
@@ -1340,7 +1382,33 @@
       formState.appendChild(list);
 
       const inputs = [];
+
+      // На «Отделе продаж» делим блок на две секции:
+      //   «Требуется сейчас для начала оформления:» — обязательные (по факту только внутренний паспорт)
+      //   «Можно загрузить позже:» — всё остальное (необязательное для текущего этапа).
+      const showSalesSections = isSalesPipeline(lead);
+      let sectionFlags = { requiredShown: false, optionalShown: false };
+      function maybeAddSection(cfg) {
+        if (!showSalesSections) return;
+        const isOptional = isFieldOptionalForLead(cfg.field, lead);
+        if (!isOptional && !sectionFlags.requiredShown) {
+          const h = document.createElement("div");
+          h.className = "file-list-section";
+          h.textContent = "Требуется сейчас для начала оформления:";
+          list.appendChild(h);
+          sectionFlags.requiredShown = true;
+        }
+        if (isOptional && !sectionFlags.optionalShown) {
+          const h = document.createElement("div");
+          h.className = "file-list-section muted";
+          h.textContent = "Можно загрузить позже:";
+          list.appendChild(h);
+          sectionFlags.optionalShown = true;
+        }
+      }
+
       blocksConfig.forEach((cfg) => {
+        maybeAddSection(cfg);
         const row = document.createElement("div");
         row.className = "file-list-row";
 
@@ -1514,6 +1582,15 @@
       corrDefaultOpt.value = "";
       corrDefaultOpt.textContent = "— выберите документ —";
       corrPicker.appendChild(corrDefaultOpt);
+
+      // Список «непредоставленных» документов — заполняется при показе picker'а,
+      // чтобы динамически реагировать на свежезагруженные файлы.
+      const corrMissingOpt = document.createElement("option");
+      corrMissingOpt.value = "__missing__";
+      corrMissingOpt.textContent = "Непредоставленные документы";
+      corrMissingOpt.style.display = "none"; // прячем, пока не пересчитаем
+      corrPicker.appendChild(corrMissingOpt);
+
       blocksConfig.forEach((cfg) => {
         const opt = document.createElement("option");
         opt.value = cfg.field;
@@ -1521,6 +1598,28 @@
         corrPicker.appendChild(opt);
       });
       corrPickerWrap.appendChild(corrPicker);
+
+      // Вычисляет cfg-блоки, для которых файлы ещё не загружены.
+      // Сюда попадают и обязательные, и необязательные — раз клиент явно
+      // зашёл «Скорректировать документы» и видит этот пункт, мы даём ему
+      // догрузить любые недостающие, не только обязательные.
+      function computeMissingBlocks() {
+        const files = Array.isArray(applicant && applicant.uploadedFiles) ? applicant.uploadedFiles : [];
+        return blocksConfig.filter((b) => {
+          return !files.some((f) => {
+            if (!f.startsWith(b.label)) return false;
+            const next = f.charAt(b.label.length);
+            return next === "." || next === " ";
+          });
+        });
+      }
+
+      function refreshMissingOption() {
+        const missing = computeMissingBlocks();
+        corrMissingOpt.style.display = missing.length ? "" : "none";
+      }
+      // Первоначальная пересчётка — на случай если файлы уже частично загружены
+      refreshMissingOption();
       correctionState.appendChild(corrPickerWrap);
 
       // Слот для области загрузки выбранного документа
@@ -1558,13 +1657,17 @@
 
       wrapper.appendChild(correctionState);
 
-      let corrCurrent = null; // { cfg, pendingFiles }
+      // Массив текущих элементов корректировки: [{ cfg, pendingFiles }, ...]
+      // Для одиночного документа — длина 1. Для «Непредоставленные документы» —
+      // по одному элементу на каждый недостающий блок.
+      let corrItems = [];
 
       function corrShowError(msg) { corrError.textContent = msg; corrError.style.display = "block"; }
       function corrHideError() { corrError.textContent = ""; corrError.style.display = "none"; }
 
       function corrUpdateUploadBtn() {
-        corrUploadBtn.disabled = !(corrCurrent && corrCurrent.pendingFiles.length > 0);
+        const total = corrItems.reduce((n, it) => n + ((it && it.pendingFiles) ? it.pendingFiles.length : 0), 0);
+        corrUploadBtn.disabled = total === 0;
       }
 
       function buildCorrectionRow(cfg) {
@@ -1657,20 +1760,40 @@
       corrPicker.addEventListener("change", () => {
         corrHideError();
         const field = corrPicker.value;
+        corrSlot.innerHTML = "";
+        corrItems = [];
+
         if (!field) {
           corrSlot.style.display = "none";
-          corrSlot.innerHTML = "";
-          corrCurrent = null;
           corrUpdateUploadBtn();
           return;
         }
+
+        if (field === "__missing__") {
+          const missing = computeMissingBlocks();
+          if (!missing.length) {
+            // Уже все загружено — прячем
+            corrSlot.style.display = "none";
+            corrMissingOpt.style.display = "none";
+            corrUpdateUploadBtn();
+            return;
+          }
+          missing.forEach((cfg) => {
+            const built = buildCorrectionRow(cfg);
+            corrSlot.appendChild(built.row);
+            corrItems.push({ cfg, pendingFiles: built.pendingFiles });
+          });
+          corrSlot.style.display = "block";
+          corrUpdateUploadBtn();
+          return;
+        }
+
         const cfg = blocksConfig.find((b) => b.field === field);
         if (!cfg) return;
-        corrSlot.innerHTML = "";
         const built = buildCorrectionRow(cfg);
         corrSlot.appendChild(built.row);
         corrSlot.style.display = "block";
-        corrCurrent = { cfg, pendingFiles: built.pendingFiles };
+        corrItems = [{ cfg, pendingFiles: built.pendingFiles }];
         corrUpdateUploadBtn();
       });
 
@@ -1678,7 +1801,8 @@
         corrPicker.value = "";
         corrSlot.style.display = "none";
         corrSlot.innerHTML = "";
-        corrCurrent = null;
+        corrItems = [];
+        refreshMissingOption();
         corrHideError();
         corrUpdateUploadBtn();
       }
@@ -1718,7 +1842,7 @@
       // (необязательные области могут быть пустыми)
       const initialFiles = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
       const alreadyAll = blocksConfig.every((b) => {
-        if (OPTIONAL_UPLOAD_FIELDS.has(b.field)) return true;
+        if (isFieldOptionalForLead(b.field, lead)) return true;
         return initialFiles.some((f) => {
           if (!f.startsWith(b.label)) return false;
           const next = f.charAt(b.label.length);
@@ -1742,7 +1866,11 @@
       });
 
       corrUploadBtn.addEventListener("click", async () => {
-        if (!corrCurrent || !corrCurrent.pendingFiles.length) return;
+        // Грузим все cfg'и из corrItems, у которых есть прикреплённые файлы.
+        // partIndex считается отдельно для КАЖДОГО cfg (для одного и того же поля
+        // это позволяет нескольким файлам идти как (2), (3) и т.д.).
+        const itemsToUpload = corrItems.filter((it) => it.pendingFiles && it.pendingFiles.length > 0);
+        if (!itemsToUpload.length) return;
         corrHideError();
         const phone = phoneInput.value.trim();
         if (!phone) { corrShowError("Ошибка загрузки файла"); return; }
@@ -1751,25 +1879,26 @@
         const origText = corrUploadBtn.textContent;
         corrUploadBtn.textContent = "Загрузка...";
 
-        const cfg = corrCurrent.cfg;
-        const filesToSend = corrCurrent.pendingFiles.slice();
         const leadIdForUpload = lead && lead.id ? String(lead.id) : "";
 
         try {
-          // Последовательно — см. комментарий в основной загрузке выше.
           const results = [];
-          for (let i = 0; i < filesToSend.length; i++) {
-            const file = filesToSend[i];
-            const fd = new FormData();
-            fd.append("phone", phone);
-            fd.append("field", cfg.field);
-            fd.append("applicantIndex", String(applicantIndex));
-            fd.append("partIndex", String(i + 1));
-            if (leadIdForUpload) fd.append("leadId", leadIdForUpload);
-            fd.append("file", file);
-            const r = await fetch("/upload-document", { method: "POST", body: fd });
-            const d = await r.json().catch(() => ({}));
-            results.push(!!(r.ok && d && d.success));
+          for (const item of itemsToUpload) {
+            const cfg = item.cfg;
+            const filesToSend = item.pendingFiles.slice();
+            for (let i = 0; i < filesToSend.length; i++) {
+              const file = filesToSend[i];
+              const fd = new FormData();
+              fd.append("phone", phone);
+              fd.append("field", cfg.field);
+              fd.append("applicantIndex", String(applicantIndex));
+              fd.append("partIndex", String(i + 1));
+              if (leadIdForUpload) fd.append("leadId", leadIdForUpload);
+              fd.append("file", file);
+              const r = await fetch("/upload-document", { method: "POST", body: fd });
+              const d = await r.json().catch(() => ({}));
+              results.push(!!(r.ok && d && d.success));
+            }
           }
           if (!results.every(Boolean)) throw new Error();
           if (leadIdForUpload) {
@@ -1811,7 +1940,7 @@
 
         // Проверяем обязательные области: должны быть прикреплены файлы
         const missingRequired = inputs.filter(({ cfg, pendingFiles }) =>
-          !OPTIONAL_UPLOAD_FIELDS.has(cfg.field) && (!pendingFiles || pendingFiles.length === 0)
+          !isFieldOptionalForLead(cfg.field, lead) && (!pendingFiles || pendingFiles.length === 0)
         );
         if (missingRequired.length > 0) {
           missingRequired.forEach(({ row }) => { if (row) row.classList.add("is-required-missing"); });
@@ -2072,13 +2201,18 @@
           : 0;
         const allFilled = applicants.length >= totalFromFirst && totalFromFirst > 0;
         const allDocsUploaded = allFilled && applicants.every((a) => {
-          const blocks = buildUploadBlocksConfig(a);
+          const blocks = buildUploadBlocksConfig(a, lead);
           const files = Array.isArray(a.uploadedFiles) ? a.uploadedFiles : [];
-          return blocks.every((b) => files.some((f) => {
-            if (!f.startsWith(b.label)) return false;
-            const next = f.charAt(b.label.length);
-            return next === "." || next === " ";
-          }));
+          // Жёлтый снимаем только если все ОБЯЗАТЕЛЬНЫЕ для этой воронки документы загружены.
+          // Необязательные могут быть пустыми.
+          return blocks.every((b) => {
+            if (isFieldOptionalForLead(b.field, lead)) return true;
+            return files.some((f) => {
+              if (!f.startsWith(b.label)) return false;
+              const next = f.charAt(b.label.length);
+              return next === "." || next === " ";
+            });
+          });
         });
 
         // Жёлтый только если что-то ещё не собрано
@@ -2099,7 +2233,7 @@
           }
           const fragment = document.createDocumentFragment();
           applicants.forEach((applicant) => {
-            const blocksConfig = buildUploadBlocksConfig(applicant);
+            const blocksConfig = buildUploadBlocksConfig(applicant, lead);
             if (!blocksConfig.length) return;
             const docsBlock = createDocumentsBlock(applicant, blocksConfig, lead);
             fragment.appendChild(docsBlock);

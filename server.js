@@ -341,6 +341,7 @@ app.post("/api/auth/verify", smsGate, (req, res) => {
 
     smsCodeStore.delete(phone);
     // TODO (этап 2): выдать session cookie / JWT здесь
+    try { recordLkAuth(phone); } catch (_) {}
     return res.json({ success: true, phone });
   } catch (err) {
     console.error("VERIFY CODE ERROR:", err);
@@ -1076,6 +1077,95 @@ function getEntityCustomFieldValue(entity, fieldId) {
   return null;
 }
 
+// ── Авто-обнаружение элементов amoCRM (id'шники, которые могут отличаться у разных аккаунтов) ──
+// Кешируем в памяти на время жизни процесса. Sentinel undefined = ещё не искали.
+let _cachedTaskTypeProveritDokiId = undefined;
+let _cachedKtoPrinyalFieldId = undefined;
+let _cachedVscUserId = undefined;
+
+async function getProveritDokiTaskTypeId() {
+  if (_cachedTaskTypeProveritDokiId !== undefined) return _cachedTaskTypeProveritDokiId;
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const r = await amoGet(`${baseUrl}/api/v4/account`, { with: "task_types" });
+    const taskTypes = (r && r._embedded && r._embedded.task_types) || [];
+    const found = taskTypes.find((t) => {
+      const name = String(t.name || "").toLowerCase().trim();
+      return name === "проверить доки" || name.startsWith("проверить док");
+    });
+    if (found) {
+      _cachedTaskTypeProveritDokiId = found.id;
+      console.log(`AMO TASK TYPE «Проверить доки»: id=${found.id} name="${found.name}"`);
+    } else {
+      _cachedTaskTypeProveritDokiId = null;
+      console.log(`AMO TASK TYPE «Проверить доки» NOT FOUND. Available: ${taskTypes.map((t) => `"${t.name}"(id=${t.id})`).join(", ")}`);
+    }
+  } catch (e) {
+    console.error("getProveritDokiTaskTypeId error:", e.response?.data || e.message);
+    _cachedTaskTypeProveritDokiId = null;
+  }
+  return _cachedTaskTypeProveritDokiId;
+}
+
+async function getKtoPrinyalFieldId() {
+  if (_cachedKtoPrinyalFieldId !== undefined) return _cachedKtoPrinyalFieldId;
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const fields = await amoGetAllPages(`${baseUrl}/api/v4/leads/custom_fields`);
+    const found = (fields || []).find((f) => {
+      const name = String(f.name || "").toLowerCase().trim();
+      return name.indexOf("кто принял") === 0;
+    });
+    if (found) {
+      _cachedKtoPrinyalFieldId = found.id;
+      console.log(`AMO FIELD «Кто принял клиента»: id=${found.id} name="${found.name}" type="${found.type}"`);
+    } else {
+      _cachedKtoPrinyalFieldId = null;
+      console.log("AMO FIELD «Кто принял клиента» NOT FOUND — задачи будут падать на Visa Services Center");
+    }
+  } catch (e) {
+    console.error("getKtoPrinyalFieldId error:", e.response?.data || e.message);
+    _cachedKtoPrinyalFieldId = null;
+  }
+  return _cachedKtoPrinyalFieldId;
+}
+
+async function getVscUserId() {
+  if (_cachedVscUserId !== undefined) return _cachedVscUserId;
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const users = await amoGetAllPages(`${baseUrl}/api/v4/users`);
+    const found = (users || []).find((u) => {
+      const name = String(u.name || "").toLowerCase().trim();
+      return name === "visa services center" || name.indexOf("visa services center") >= 0;
+    });
+    if (found) {
+      _cachedVscUserId = found.id;
+      console.log(`AMO USER «Visa Services Center»: id=${found.id} name="${found.name}"`);
+    } else {
+      _cachedVscUserId = null;
+      console.log("AMO USER «Visa Services Center» NOT FOUND — fallback не сработает, задачи будут без responsible");
+    }
+  } catch (e) {
+    console.error("getVscUserId error:", e.response?.data || e.message);
+    _cachedVscUserId = null;
+  }
+  return _cachedVscUserId;
+}
+
+// Возвращает {pipelineName, statusName} для (pipeline_id, status_id) сделки.
+// Используется для определения, какой воронке принадлежит лид при выборе ответственного.
+async function getLeadPipelineName(lead) {
+  if (!lead || !lead.pipeline_id) return "";
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const statusMap = await getPipelinesMap(baseUrl);
+    const meta = statusMap.get(`${lead.pipeline_id}:${lead.status_id}`);
+    if (meta && meta.pipeline_name) return meta.pipeline_name;
+  } catch (_) {}
+  return "";
+}
+
 async function createAmoUploadTask(leadId) {
   if (!AMO_ACCESS_TOKEN || !AMO_SUBDOMAIN) return;
   if (!leadId) return;
@@ -1083,19 +1173,49 @@ async function createAmoUploadTask(leadId) {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
     const lead = await getLeadById(baseUrl, leadId);
     if (!lead) return;
-    const respRaw = getEntityCustomFieldValue(lead, TASK_RESPONSIBLE_FIELD_ID);
+
+    // Тип задачи: «Проверить доки» (если есть в amoCRM), fallback — встроенный «Связаться» (id=1).
+    let taskTypeId = await getProveritDokiTaskTypeId();
+    if (!taskTypeId) taskTypeId = 1;
+
+    // По воронке выбираем, кому ставим задачу.
+    // «Отдел Продаж» (любые этапы, кроме hidden) → поле «Отв-ный/Ответственный» (TASK_RESPONSIBLE_FIELD_ID).
+    // «Отдел Оформления» / «Отдел по работе с Клиентами» → поле «Кто принял клиента»;
+    //                                                     пусто → пользователь «Visa Services Center».
+    const pipelineName = await getLeadPipelineName(lead);
+    const pipelineLow = String(pipelineName || "").toLowerCase().trim();
+    const isSales = pipelineLow.indexOf("отдел продаж") === 0;
+
+    let responsibleUserId = null;
+    if (isSales) {
+      const respRaw = getEntityCustomFieldValue(lead, TASK_RESPONSIBLE_FIELD_ID);
+      const respNum = respRaw != null ? Number(respRaw) : NaN;
+      if (Number.isFinite(respNum) && respNum > 0) responsibleUserId = respNum;
+    } else {
+      const ktoFieldId = await getKtoPrinyalFieldId();
+      if (ktoFieldId) {
+        const ktoRaw = getEntityCustomFieldValue(lead, ktoFieldId);
+        const ktoNum = ktoRaw != null ? Number(ktoRaw) : NaN;
+        if (Number.isFinite(ktoNum) && ktoNum > 0) responsibleUserId = ktoNum;
+      }
+      if (!responsibleUserId) {
+        const vscId = await getVscUserId();
+        if (vscId) responsibleUserId = vscId;
+      }
+    }
+
     const nowSec = Math.floor(Date.now() / 1000);
     const taskBody = [{
-      task_type_id: 1,
+      task_type_id: taskTypeId,
       text: "Загрузились новые документы от клиента из ЛК.",
       complete_till: nowSec,
       entity_id: Number(leadId),
       entity_type: "leads"
     }];
-    const respNum = respRaw != null ? Number(respRaw) : NaN;
-    if (Number.isFinite(respNum) && respNum > 0) {
-      taskBody[0].responsible_user_id = respNum;
+    if (responsibleUserId) {
+      taskBody[0].responsible_user_id = responsibleUserId;
     }
+    console.log(`CREATE TASK lead=${leadId} pipeline="${pipelineName}" isSales=${isSales} taskTypeId=${taskTypeId} responsible=${responsibleUserId || "(default)"}`);
     await amoPost(`${baseUrl}/api/v4/tasks`, taskBody);
   } catch (e) {
     console.error("CREATE AMO TASK ERROR:", e.response?.data || e.message);
@@ -1909,6 +2029,17 @@ ${mixedFieldsHtml}
       <span class="hint">Покрывает все страны Шенгена и минимум €30,000, действительная минимум на даты поездки.</span>
     </div>
 
+    <!-- 34а условно -->
+    <div class="cond" id="c_wantBuyInsurance">
+      <div class="field">
+        <label>Я хочу приобрести страховку для оформления визы у вас</label>
+        <div class="radio-group">
+          <label><input type="radio" name="wantBuyInsurance" value="Да" /> Да</label>
+          <label><input type="radio" name="wantBuyInsurance" value="Нет" /> Нет</label>
+        </div>
+      </div>
+    </div>
+
     <!-- 35 -->
     <div class="field">
       <label>На момент подачи документов я буду младше 18 лет</label>
@@ -2104,6 +2235,8 @@ ${mixedFieldsHtml}
     toggle("c_legalRep",          radio("isUnder18") === "Да");
     toggle("c_sponsorName",       radio("hasSponsor") === "Да");
     toggle("c_botBooking",        radio("useBotBooking") === "Да");
+    // «Я хочу приобрести страховку у вас» — показываем, если у клиента нет своей страховки.
+    toggle("c_wantBuyInsurance",  radio("hasInsurance") === "Нет");
 
     // «Телефон работодателя» — скрываем, если работодатель = «НЕТ» (любой регистр).
     const empNameEl = form.querySelector('input[name="employerName"]');
@@ -2479,7 +2612,7 @@ function getPdfFontPath() {
 
 async function generateQuestionnairePdfBuffer(data) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    const doc = new PDFDocument({ size: "A4", margin: 40 });
 
     const chunks = [];
     doc.on("data", (chunk) => chunks.push(chunk));
@@ -2489,108 +2622,170 @@ async function generateQuestionnairePdfBuffer(data) {
     const fontPath = getPdfFontPath();
     if (fontPath) doc.font(fontPath);
 
-    const line = (label, value) => {
-      if (!value) return;
-      doc.fontSize(11).text(`${label}: ${value}`);
-    };
+    // ── Геометрия таблицы ──
+    const MARGIN = 40;
+    const TABLE_W = doc.page.width - 2 * MARGIN;
+    const Q_W = Math.floor(TABLE_W * 0.55);
+    const A_W = TABLE_W - Q_W;
+    const PAD_X = 6;
+    const PAD_Y = 5;
+    const FS_Q = 10;
+    const FS_A = 10;
+    const FS_SECTION = 12;
 
-    doc.fontSize(18).text("Опросный лист", { align: "left" });
-    doc.moveDown(0.3);
-    doc.fontSize(12).text(`Страна оформления/услуга: ${data.countryService || "не указано"}`);
-    doc.fontSize(11).text(`Телефон клиента: ${data.phone || ""}`);
+    function ensureSpace(needed) {
+      const bottom = doc.page.height - MARGIN;
+      if (doc.y + needed > bottom) doc.addPage();
+    }
+
+    function drawSectionHeader(title) {
+      doc.moveDown(0.4);
+      const h = FS_SECTION + 8;
+      ensureSpace(h + 4);
+      const y = doc.y;
+      doc.rect(MARGIN, y, TABLE_W, h).fillAndStroke("#3589BD", "#3589BD");
+      doc.fillColor("#ffffff").fontSize(FS_SECTION).text(
+        title,
+        MARGIN + PAD_X,
+        y + (h - FS_SECTION) / 2,
+        { width: TABLE_W - 2 * PAD_X, lineBreak: false }
+      );
+      doc.fillColor("#000000");
+      doc.y = y + h;
+    }
+
+    // Строка-«ячейка» опросника. Левая — вопрос (серый фон), правая — ответ (белый).
+    // Если значение пустое — строка не рисуется.
+    function drawRow(question, answer) {
+      if (answer === undefined || answer === null) return;
+      const a = String(answer);
+      if (!a.trim()) return;
+      const q = String(question || "");
+
+      doc.fontSize(FS_Q);
+      const qHeight = doc.heightOfString(q, { width: Q_W - 2 * PAD_X });
+      doc.fontSize(FS_A);
+      const aHeight = doc.heightOfString(a, { width: A_W - 2 * PAD_X });
+      const rowHeight = Math.max(qHeight, aHeight) + 2 * PAD_Y;
+
+      ensureSpace(rowHeight);
+      const y = doc.y;
+
+      doc.lineWidth(0.5).strokeColor("#c8ccd4");
+      doc.rect(MARGIN, y, Q_W, rowHeight).fillAndStroke("#f3f2f7", "#c8ccd4");
+      doc.rect(MARGIN + Q_W, y, A_W, rowHeight).fillAndStroke("#ffffff", "#c8ccd4");
+
+      doc.fillColor("#1d2330").fontSize(FS_Q).text(
+        q,
+        MARGIN + PAD_X,
+        y + PAD_Y,
+        { width: Q_W - 2 * PAD_X }
+      );
+      doc.fillColor("#1d2330").fontSize(FS_A).text(
+        a,
+        MARGIN + Q_W + PAD_X,
+        y + PAD_Y,
+        { width: A_W - 2 * PAD_X }
+      );
+
+      doc.y = y + rowHeight;
+    }
+
+    // ── Шапка ──
+    doc.fontSize(18).fillColor("#161d45").text("Опросный лист", { align: "left" });
+    doc.fillColor("#1d2330").moveDown(0.3);
+    doc.fontSize(11);
+    doc.text(`Страна оформления/услуга: ${data.countryService || "не указано"}`);
+    doc.text(`Телефон клиента: ${data.phone || ""}`);
     doc.text(`ID сделки: ${data.leadId || ""}`);
     doc.text(`Дата заполнения: ${new Date().toLocaleString("ru-RU")}`);
-    doc.moveDown();
 
-    doc.fontSize(13).text("Личные данные", { underline: true });
-    doc.moveDown(0.3);
-    line("Полное имя (ФИО)", data.fullName);
-    line("У меня ранее были предыдущие фамилии", data.hadPrevSurnames);
-    line("Укажите все предыдущие фамилии", data.prevSurnames);
-    line("Телефон", data.contactPhone);
-    line("Почта", data.email);
-    line("Семейное положение", data.maritalStatus);
-    line("При рождении у меня было иное гражданство", data.hadOtherCitizenshipAtBirth);
-    line("Ваше гражданство при рождении", data.birthCitizenship);
-    line("У меня в данный момент есть второе гражданство", data.hasSecondCitizenship);
-    line("Укажите второе гражданство", data.secondCitizenship);
-    line("У меня есть второй заграничный паспорт", data.hasSecondPassport);
-    line("На какой паспорт мы оформляем все документы", data.whichPassport);
-    line("Можете ли вы сдать второй паспорт в ВЦ на период рассмотрения", data.canSurrenderPassport);
-    line("Укажите, по какой причине не сдаете паспорт", data.surrenderReason);
-    doc.moveDown();
+    // ── Личные данные ──
+    drawSectionHeader("Личные данные");
+    drawRow("Полное имя (ФИО)", data.fullName);
+    drawRow("У меня ранее были предыдущие фамилии", data.hadPrevSurnames);
+    drawRow("Укажите все предыдущие фамилии", data.prevSurnames);
+    drawRow("Телефон", data.contactPhone);
+    drawRow("Почта", data.email);
+    drawRow("Семейное положение", data.maritalStatus);
+    drawRow("При рождении у меня было иное гражданство", data.hadOtherCitizenshipAtBirth);
+    drawRow("Ваше гражданство при рождении", data.birthCitizenship);
+    drawRow("У меня в данный момент есть второе гражданство", data.hasSecondCitizenship);
+    drawRow("Укажите второе гражданство", data.secondCitizenship);
+    drawRow("У меня есть второй заграничный паспорт", data.hasSecondPassport);
+    drawRow("На какой паспорт мы оформляем все документы", data.whichPassport);
+    drawRow("Можете ли вы сдать второй паспорт в ВЦ на период рассмотрения", data.canSurrenderPassport);
+    drawRow("Укажите, по какой причине не сдаете паспорт", data.surrenderReason);
 
-    doc.fontSize(13).text("Адрес и занятость", { underline: true });
-    doc.moveDown(0.3);
-    line("Фактический адрес проживания", data.actualAddress);
-    line("Род занятий (занимаемая должность)", data.occupation);
-    line("Наименование работодателя/учебной организации", data.employerName);
-    line("Адрес работодателя/учебной организации", data.employerAddress);
-    line("Телефон работодателя", data.employerPhone);
-    doc.moveDown();
+    // ── Адрес и занятость ──
+    drawSectionHeader("Адрес и занятость");
+    drawRow("Фактический адрес проживания", data.actualAddress);
+    drawRow("Род занятий (занимаемая должность)", data.occupation);
+    drawRow("Наименование работодателя/учебной организации", data.employerName);
+    drawRow("Адрес работодателя/учебной организации", data.employerAddress);
+    drawRow("Телефон работодателя", data.employerPhone);
 
-    doc.fontSize(13).text("Поездка", { underline: true });
-    doc.moveDown(0.3);
-    line("Цель поездки", data.tripPurpose);
-    line('Подробности цели "Иное"', data.tripPurposeOther);
-    line("Виза для собеседования на США в Польше", data.usaInterviewPoland);
-    line("Страна поездки", data.travelCountry);
-    line("В какую страну запрашивается виза", data.visaCountry);
+    // ── Поездка ──
+    drawSectionHeader("Поездка");
+    drawRow("Цель поездки", data.tripPurpose);
+    drawRow('Подробности цели "Иное"', data.tripPurposeOther);
+    drawRow("Виза для собеседования на США в Польше", data.usaInterviewPoland);
+    drawRow("Страна поездки", data.travelCountry);
+    drawRow("В какую страну запрашивается виза", data.visaCountry);
     if (data.tripDatesUnknown === "Да") {
-      line("Даты поездки", "Точные даты пока не известны");
+      drawRow("Даты поездки", "Точные даты пока не известны");
       if (data.tripDatesAck === "Да") {
-        line(
+        drawRow(
           "Подтверждение клиента",
           "проинформирован о сроках рассмотрения; обязуется предоставить даты минимум за неделю до подачи в Консульство; в курсе о возможной доплате при изменении дат после подготовки пакета"
         );
       }
     } else if (data.tripDateFrom || data.tripDateTo) {
-      line("Даты поездки", `${data.tripDateFrom || "?"} — ${data.tripDateTo || "?"}`);
+      drawRow("Даты поездки", `${data.tripDateFrom || "?"} — ${data.tripDateTo || "?"}`);
     }
-    doc.moveDown();
 
-    doc.fontSize(13).text("История виз", { underline: true });
-    doc.moveDown(0.3);
-    line("Есть действующая шенгенская виза", data.hasActiveSchengen);
-    line("Дата окончания текущей визы", data.schengenExpiry);
-    line("Были Шенгенские визы за последние 3 года", data.hadSchengen3Years);
-    line("Не открыл/-а последнюю шенгенскую визу", data.didNotUseVisa);
-    line("Причина, почему виза не была отъезжена", data.didNotUseReason);
-    line("Открыл/-а визу не той страной, которая её выдала", data.visaRefused);
-    line("Укажите причину", data.refusalReason);
-    doc.moveDown();
+    // ── История виз ──
+    drawSectionHeader("История виз");
+    drawRow("Есть действующая шенгенская виза", data.hasActiveSchengen);
+    drawRow("Дата окончания текущей визы", data.schengenExpiry);
+    drawRow("Были Шенгенские визы за последние 3 года", data.hadSchengen3Years);
+    drawRow("Не открыл/-а последнюю шенгенскую визу", data.didNotUseVisa);
+    drawRow("Причина, почему виза не была отъезжена", data.didNotUseReason);
+    drawRow("Открыл/-а визу не той страной, которая её выдала", data.visaRefused);
+    drawRow("Укажите причину", data.refusalReason);
 
-    doc.fontSize(13).text("Документы и услуги", { underline: true });
-    doc.moveDown(0.3);
-    line("Есть действительная страховка для въезда в Шенгенскую зону", data.hasInsurance);
-    line("На момент подачи документов младше 18 лет", data.isUnder18);
-    line("ФИО законного представителя", data.legalRepresentative);
-    line("Поездку спонсирует третье лицо/компания", data.hasSponsor);
-    line("ФИО/наименование спонсора", data.sponsorName);
-    line("Тип подачи", data.visitType);
-    line("Способ получения готовых документов", data.pickupMethod);
-    line("Есть документы на льготную оплату консульского сбора", data.hasConsularFeeDoc);
-    doc.moveDown();
+    // ── Документы и услуги ──
+    drawSectionHeader("Документы и услуги");
+    drawRow("Есть действительная страховка для въезда в Шенгенскую зону", data.hasInsurance);
+    if (data.hasInsurance === "Нет") {
+      drawRow("Хочу приобрести страховку для оформления визы у вас", data.wantBuyInsurance);
+    }
+    drawRow("На момент подачи документов младше 18 лет", data.isUnder18);
+    drawRow("ФИО законного представителя", data.legalRepresentative);
+    drawRow("Поездку спонсирует третье лицо/компания", data.hasSponsor);
+    drawRow("ФИО/наименование спонсора", data.sponsorName);
+    drawRow("Тип подачи", data.visitType);
+    drawRow("Способ получения готовых документов", data.pickupMethod);
+    drawRow("Есть документы на льготную оплату консульского сбора", data.hasConsularFeeDoc);
 
-    doc.fontSize(13).text("Запись ботом", { underline: true });
-    doc.moveDown(0.3);
-    line("Хочу воспользоваться услугой записи ботом", data.useBotBooking);
+    // ── Запись ботом ──
+    drawSectionHeader("Запись ботом");
+    drawRow("Хочу воспользоваться услугой записи ботом", data.useBotBooking);
     if (data.bookingDateFrom || data.bookingDateTo) {
-      line("Диапазон записи", `${data.bookingDateFrom || "?"} — ${data.bookingDateTo || "?"}`);
+      drawRow("Диапазон записи", `${data.bookingDateFrom || "?"} — ${data.bookingDateTo || "?"}`);
     }
-    line("Исключения", data.bookingExclusions);
-    line("Город для записи", data.bookingCity);
-    line("Пожелания по датам записи", data.bookingTimePrefs);
-    line("Дополнительные услуги в ВЦ (бизнес-залы/ускоренные)", data.bookingLoungePrefs);
-    doc.moveDown();
+    drawRow("Исключения", data.bookingExclusions);
+    drawRow("Город для записи", data.bookingCity);
+    drawRow("Пожелания по датам записи", data.bookingTimePrefs);
+    drawRow("Дополнительные услуги в ВЦ (бизнес-залы/ускоренные)", data.bookingLoungePrefs);
 
-    doc.fontSize(13).text("Прочее", { underline: true });
-    doc.moveDown(0.3);
-    line("Откуда узнали о нас", data.howFoundUs);
-    line("Примечания", data.notes);
-    line("Подтверждаю правильность и достоверность сведений", data.confirmAccuracy);
-    line("Согласие с условиями договора по электронному опроснику", data.confirmPrevData);
-    line("Согласие на обработку персональных данных", data.personalDataConsent);
+    // ── Прочее ──
+    drawSectionHeader("Прочее");
+    drawRow("Откуда узнали о нас", data.howFoundUs);
+    drawRow("Примечания", data.notes);
+    drawRow("Подтверждаю правильность и достоверность сведений", data.confirmAccuracy);
+    drawRow("Согласие с условиями договора по электронному опроснику", data.confirmPrevData);
+    drawRow("Согласие на обработку персональных данных", data.personalDataConsent);
 
     doc.end();
   });
@@ -3377,6 +3572,165 @@ function getFeedbackToken(token) {
 
 loadFeedbackSent();
 loadFeedbackTokens();
+
+// ──────────────────────────────────────────────────────────
+// Статистика ЛК: уникальные авторизации по номеру телефона.
+// Каждый номер учитывается ровно один раз (первая авторизация). Ежедневно
+// в 00:00 МСК пересобираем PDF и кладём в папку «Статистика ЛК VOYO» на
+// Я.Диске, удаляя предыдущие версии .pdf.
+// ──────────────────────────────────────────────────────────
+
+const LK_STATS_DISK_FOLDER = "Статистика ЛК VOYO";
+const LK_STATS_START_DATE = "21.05.2026"; // отсчёт «с какой даты»
+const LK_AUTH_PHONES_FILE = path.join(__dirname, ".lkAuthPhones.json");
+const lkAuthPhones = new Map(); // phone(7XXXXXXXXXX) -> firstAuthAt(ms)
+
+function loadLkAuthPhones() {
+  try {
+    const raw = fs.readFileSync(LK_AUTH_PHONES_FILE, "utf8");
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === "object") {
+      Object.entries(obj).forEach(([phone, ts]) => {
+        lkAuthPhones.set(phone, Number(ts) || Date.now());
+      });
+    }
+  } catch (_) {}
+}
+
+function saveLkAuthPhones() {
+  try {
+    const obj = Object.fromEntries(lkAuthPhones.entries());
+    fs.writeFileSync(LK_AUTH_PHONES_FILE, JSON.stringify(obj, null, 2), "utf8");
+  } catch (e) {
+    console.error("saveLkAuthPhones error:", e.message);
+  }
+}
+
+function recordLkAuth(phone) {
+  const norm = normalizePhone(phone || "");
+  if (!norm) return;
+  if (lkAuthPhones.has(norm)) return; // уже учтён
+  lkAuthPhones.set(norm, Date.now());
+  saveLkAuthPhones();
+  console.log(`LK STATS: new unique auth phone=${norm} totalNow=${lkAuthPhones.size}`);
+}
+
+loadLkAuthPhones();
+
+// ── PDF + Я.Диск ──
+function nowMskDateString() {
+  const mskNow = new Date(Date.now() + 3 * 3600 * 1000);
+  const y = mskNow.getUTCFullYear();
+  const m = String(mskNow.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(mskNow.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function formatPhoneForDisplay(norm) {
+  if (!norm || norm.length !== 11) return `+${norm}`;
+  return `+${norm[0]} (${norm.slice(1, 4)}) ${norm.slice(4, 7)}-${norm.slice(7, 9)}-${norm.slice(9, 11)}`;
+}
+
+async function generateLkStatsPdfBuffer() {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: "A4", margin: 40 });
+    const chunks = [];
+    doc.on("data", (c) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const fontPath = getPdfFontPath();
+    if (fontPath) doc.font(fontPath);
+
+    doc.fontSize(18).fillColor("#161d45").text("Статистика ЛК VOYO", { align: "left" });
+    doc.moveDown(0.4);
+
+    const total = lkAuthPhones.size;
+    doc.fillColor("#1d2330").fontSize(13).text(`Количество уникальных авторизаций с ${LK_STATS_START_DATE}: ${total}`);
+    doc.moveDown(0.2);
+    doc.fontSize(10).fillColor("#737988").text(`Дата обновления: ${nowMskDateString()} (МСК)`);
+    doc.fillColor("#1d2330");
+    doc.moveDown(0.8);
+
+    // Список номеров — сортируем по дате первой авторизации (свежие сверху).
+    const entries = Array.from(lkAuthPhones.entries()).sort((a, b) => b[1] - a[1]);
+    if (!entries.length) {
+      doc.fontSize(11).fillColor("#737988").text("Авторизаций пока нет.");
+    } else {
+      doc.fontSize(12).text("Список номеров (повторные не учитываются):");
+      doc.moveDown(0.4);
+      doc.fontSize(11);
+      entries.forEach(([phone], idx) => {
+        doc.text(`${idx + 1}. ${formatPhoneForDisplay(phone)}`);
+      });
+    }
+
+    doc.end();
+  });
+}
+
+async function uploadLkStatsPdfAndCleanup() {
+  if (!YANDEX_DISK_TOKEN) {
+    console.log("LK STATS: YANDEX_DISK_TOKEN не задан, пропускаем выгрузку.");
+    return;
+  }
+  try {
+    await ensureNestedYandexFolder(LK_STATS_DISK_FOLDER);
+    const dateStr = nowMskDateString();
+    const fileName = `Статистика на ${dateStr}.pdf`;
+    const diskPath = `${LK_STATS_DISK_FOLDER}/${fileName}`;
+
+    // Сначала удаляем все старые PDF в папке (кроме одноимённого — overwrite сам разберётся),
+    // потом грузим новый.
+    try {
+      const existing = await listYandexFolderFiles(LK_STATS_DISK_FOLDER);
+      for (const name of existing) {
+        if (!/\.pdf$/i.test(name)) continue;
+        if (name === fileName) continue;
+        await deleteYandexResourceIfExists(`${LK_STATS_DISK_FOLDER}/${name}`);
+      }
+    } catch (e) {
+      console.error("LK STATS cleanup old PDFs error:", e.message);
+    }
+
+    const pdfBuffer = await generateLkStatsPdfBuffer();
+    await uploadBufferToYandexDisk(pdfBuffer, diskPath, "application/pdf");
+    console.log(`LK STATS: uploaded ${diskPath} (total=${lkAuthPhones.size})`);
+  } catch (e) {
+    console.error("uploadLkStatsPdfAndCleanup error:", e.response?.data || e.message);
+  }
+}
+
+// ── Расписание: ежедневно в 00:00 МСК ──
+function msUntilNextMoscowMidnight() {
+  const now = Date.now();
+  const mskOffsetMs = 3 * 3600 * 1000;
+  const mskNow = new Date(now + mskOffsetMs);
+  const nextMskMidnightAsUtcEpoch = Date.UTC(
+    mskNow.getUTCFullYear(),
+    mskNow.getUTCMonth(),
+    mskNow.getUTCDate() + 1,
+    0, 0, 0, 0
+  );
+  const target = nextMskMidnightAsUtcEpoch - mskOffsetMs;
+  return target - now;
+}
+
+function scheduleLkStatsJob() {
+  const delay = msUntilNextMoscowMidnight();
+  console.log(`LK STATS: next run in ${Math.round(delay / 1000 / 60)} min (${new Date(Date.now() + delay).toISOString()} UTC)`);
+  setTimeout(async () => {
+    try { await uploadLkStatsPdfAndCleanup(); } catch (_) {}
+    scheduleLkStatsJob();
+  }, delay).unref?.();
+}
+
+// Один раз при старте — чтобы файл существовал сразу, не дожидаясь полуночи.
+// Через 30 секунд после старта (чтобы не блокировать прогрев процесса).
+setTimeout(() => {
+  uploadLkStatsPdfAndCleanup().catch(() => {});
+}, 30 * 1000).unref?.();
+scheduleLkStatsJob();
 
 // ──────────────────────────────────────────────────────────
 // Legacy-owner для существующих данных в phone-scoped папках Я.Диска
@@ -4206,6 +4560,7 @@ app.post("/api/auth/webauthn/auth-verify", async (req, res) => {
     cred.counter = verification.authenticationInfo.newCounter;
     savePasskeys();
     clearWebauthnChallenge(phone);
+    try { recordLkAuth(phone); } catch (_) {}
     return res.json({ success: true, phone });
   } catch (err) {
     console.error("WEBAUTHN AUTH VERIFY:", err.message);
@@ -4502,6 +4857,7 @@ app.post(
         visaRefused:                String(req.body.visaRefused || "").trim(),
         refusalReason:              String(req.body.refusalReason || "").trim(),
         hasInsurance:               String(req.body.hasInsurance || "").trim(),
+        wantBuyInsurance:           String(req.body.wantBuyInsurance || "").trim(),
         isUnder18:                  String(req.body.isUnder18 || "").trim(),
         legalRepresentative:        String(req.body.legalRepresentative || "").trim(),
         hasSponsor:                 String(req.body.hasSponsor || "").trim(),
