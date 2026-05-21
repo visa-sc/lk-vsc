@@ -367,6 +367,34 @@
       cursor: not-allowed;
     }
 
+    /* Согласие на обработку персональных данных (152-ФЗ). Намеренно мелкое
+       и приглушённое — не должно перетягивать внимание с кнопки. */
+    .consent-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 6px 2px 0;
+      margin: 0;
+      cursor: pointer;
+    }
+    .consent-row input[type="checkbox"] {
+      margin: 2px 0 0;
+      width: 14px;
+      height: 14px;
+      accent-color: #3589BD;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .consent-text {
+      font-size: 11px;
+      line-height: 1.4;
+      color: #9096a3;
+      user-select: none;
+    }
+    .consent-row.is-error .consent-text {
+      color: #c4314b;
+    }
+
     .code-section {
       display: none;
       flex-direction: column;
@@ -490,6 +518,11 @@
         </div>
       </div>
       <button id="searchBtn" type="submit">Войти</button>
+
+      <label id="consentRow" class="consent-row">
+        <input type="checkbox" id="consentCheckbox" checked />
+        <span class="consent-text">Нажимая кнопку, я даю согласие на обработку моих персональных данных VOYO в целях оказания услуг в соответствии с Федеральным законом № 152-ФЗ «О персональных данных».</span>
+      </label>
 
       <div id="codeSection" class="code-section">
         <div class="code-label">Введите код из SMS, отправленный на ваш номер</div>
@@ -679,9 +712,65 @@
       }, 1000);
     }
 
+    // ── Маска ввода телефона ──
+    // Любой ввод в виде 9999999999 / 89999999999 / 79999999999 / +79999999999
+    // приводим к формату «+7 (999) 999-99-99». Маска НЕ применяется к коротким
+    // числовым строкам без префикса +/7/8 — это сохраняет работу служебного кода входа.
+    function applyPhoneMask(raw) {
+      const trimmed = String(raw || "").trim();
+      if (!trimmed) return "";
+      const digitsOnly = trimmed.replace(/\D/g, "");
+      if (!digitsOnly) return trimmed;
+      // Включаем маску, если ввод выглядит как явный phone-attempt:
+      //   • начинается с +, 7 или 8;
+      //   • либо набрано 4+ цифр (короткий служебный код = только 3 знака).
+      const startsWithPhonePrefix = /^[+78]/.test(trimmed);
+      const hasEnoughDigits = digitsOnly.length >= 4;
+      if (!startsWithPhonePrefix && !hasEnoughDigits) return trimmed;
+
+      let body = digitsOnly;
+      if (body.startsWith("7") || body.startsWith("8")) body = body.slice(1);
+      body = body.slice(0, 10); // 10-значный «тело» номера
+
+      let result = "+7";
+      if (body.length === 0) return result;
+      result += " (" + body.slice(0, 3);
+      if (body.length >= 3) result += ")";
+      if (body.length > 3) result += " " + body.slice(3, 6);
+      if (body.length > 6) result += "-" + body.slice(6, 8);
+      if (body.length > 8) result += "-" + body.slice(8, 10);
+      return result;
+    }
+
+    phoneInput.addEventListener("input", () => {
+      const formatted = applyPhoneMask(phoneInput.value);
+      if (formatted !== phoneInput.value) {
+        phoneInput.value = formatted;
+        // Курсор — в конец (компромисс для простоты редактирования)
+        try { phoneInput.setSelectionRange(formatted.length, formatted.length); } catch (_) {}
+      }
+    });
+    // На случай paste / autofill — прогоняем маску ещё раз асинхронно
+    phoneInput.addEventListener("paste", () => {
+      setTimeout(() => { phoneInput.value = applyPhoneMask(phoneInput.value); }, 0);
+    });
+
+    // ── Чек-бокс согласия на обработку персональных данных (152-ФЗ) ──
+    const consentRow = document.getElementById("consentRow");
+    const consentCheckbox = document.getElementById("consentCheckbox");
+
+    function setConsentError(on) {
+      if (on) consentRow.classList.add("is-error");
+      else consentRow.classList.remove("is-error");
+    }
+    consentCheckbox.addEventListener("change", () => {
+      if (consentCheckbox.checked) setConsentError(false);
+    });
+
     function showCodeStage() {
       codeSection.classList.add("show");
       searchBtn.style.display = "none";
+      consentRow.style.display = "none";
       phoneInput.readOnly = true;
       codeCells.forEach((c) => { c.value = ""; });
       codeCellsWrap.classList.remove("is-error");
@@ -691,6 +780,7 @@
     function backToPhoneStage() {
       codeSection.classList.remove("show");
       searchBtn.style.display = "";
+      consentRow.style.display = "";
       phoneInput.readOnly = false;
       codeCells.forEach((c) => { c.value = ""; });
       codeCellsWrap.classList.remove("is-error");
@@ -1018,6 +1108,15 @@
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       hideError();
+
+      // Согласие на обработку персональных данных (152-ФЗ) — обязательно.
+      // Чек-бокс по умолчанию отмечен; если клиент снял галку — блокируем сабмит.
+      if (!consentCheckbox.checked) {
+        setConsentError(true);
+        showError("Чтобы продолжить, подтвердите согласие на обработку персональных данных.");
+        return;
+      }
+      setConsentError(false);
 
       const raw = phoneInput.value.trim();
       if (!raw) {
