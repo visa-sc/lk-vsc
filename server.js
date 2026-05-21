@@ -1065,17 +1065,6 @@ async function amoPost(url, body) {
   return response.data;
 }
 
-async function amoPatch(url, body) {
-  console.log("AMO PATCH:", url, JSON.stringify(body));
-  const response = await axios.patch(url, body, {
-    headers: {
-      Authorization: `Bearer ${AMO_ACCESS_TOKEN}`,
-      "Content-Type": "application/json"
-    }
-  });
-  return response.data;
-}
-
 function getEntityCustomFieldValue(entity, fieldId) {
   const fields = entity?.custom_fields_values || [];
   for (const f of fields) {
@@ -1196,55 +1185,9 @@ function finalizeAmoUpload(leadId, options = {}) {
   });
 }
 
-// ── Метка источника для leads, созданных через ЛК ───────────────────
-// При создании сделки через ЛК VOYO пишем фиксированную метку в техническое
-// поле сделки. Целевое поле: «utm term» (с пробелом, как в amoCRM пользователя).
-//
-// Можно переопределить через .env:
-//   LK_SOURCE_FIELD_NAMES — список имён/кодов поля через запятую (приоритет слева→направо)
-//   LK_SOURCE_VALUE       — значение метки (по умолчанию «VOYO»)
+// Метка источника для leads, созданных через ЛК. Кладётся как тег amoCRM.
+// Можно переопределить через .env: LK_SOURCE_VALUE (по умолчанию «VOYO»).
 const LK_SOURCE_VALUE = process.env.LK_SOURCE_VALUE || "VOYO";
-const LK_SOURCE_FIELD_CANDIDATES = (
-  process.env.LK_SOURCE_FIELD_NAMES ||
-  "utm term,utm_term,UTM term,UTM TERM,UTM_TERM,referer,REFERER"
-).split(",").map((s) => s.trim()).filter(Boolean);
-
-// Без кеша — на каждое создание сделки заново ищем поле. Это всего 1 запрос
-// к amoCRM, и при изменениях/добавлении полей в amoCRM не нужен рестарт.
-function normSourceKey(s) {
-  return String(s || "").toLowerCase().replace(/[\s_]+/g, "");
-}
-
-async function findLkSourceField() {
-  try {
-    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
-    const fields = await amoGetAllPages(`${baseUrl}/api/v4/leads/custom_fields`);
-
-    console.log(`AMO LK SOURCE: scanning ${(fields || []).length} lead custom fields`);
-
-    let match = null;
-    for (const candidate of LK_SOURCE_FIELD_CANDIDATES) {
-      const target = normSourceKey(candidate);
-      match = (fields || []).find((f) => {
-        return normSourceKey(f.name) === target || normSourceKey(f.code) === target;
-      });
-      if (match) {
-        console.log(`AMO LK SOURCE: matched candidate "${candidate}" → field id=${match.id} name="${match.name}" code="${match.code || ""}" type="${match.type}"`);
-        return match;
-      }
-    }
-
-    console.log(`AMO LK SOURCE: NO MATCH. Tried candidates: [${LK_SOURCE_FIELD_CANDIDATES.join(", ")}]`);
-    console.log("AMO LK SOURCE: full lead custom_fields dump follows:");
-    (fields || []).forEach((f) => {
-      console.log(`  • id=${f.id} name="${f.name || ""}" code="${f.code || ""}" type="${f.type || ""}"`);
-    });
-    return null;
-  } catch (e) {
-    console.error("findLkSourceField error:", e.response?.data || e.message);
-    return null;
-  }
-}
 
 // Создание контакта (если ещё нет) + новой сделки в воронке «Отдел продаж»,
 // статус «Ещё не связывались». При applyPromo — добавляем закреплённый комментарий.
