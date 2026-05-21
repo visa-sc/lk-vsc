@@ -180,6 +180,36 @@ function promoCommentText(percent) {
   return `-${percent}% скидка на услуги от Андрея К. Можно перекрыть сертификатом.`;
 }
 
+// Создание новой сделки для УЖЕ АВТОРИЗОВАННОГО клиента (из кабинета по кнопке
+// «Новое обращение»). По логике аналогично /api/auth/register, но без промо
+// (комментарий со скидкой не пишется).
+app.post("/api/leads/new", async (req, res) => {
+  try {
+    const phone = sms.normalizePhone((req.body && req.body.phone) || "");
+    if (!phone || phone.length < 11) {
+      return res.status(400).json({ success: false, message: "Некорректный номер телефона" });
+    }
+    if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
+      return res.status(500).json({ success: false, message: "Не настроены переменные amoCRM" });
+    }
+    const result = await createAmoContactAndLeadForRegistration(phone, {
+      promoApplied: false,
+      promoText: ""
+    });
+    return res.json({
+      success: true,
+      contactId: result.contactId,
+      leadId: result.leadId
+    });
+  } catch (err) {
+    console.error("POST /api/leads/new error:", err.response?.data || err.message);
+    return res.status(500).json({
+      success: false,
+      message: "Не удалось создать новое обращение. Попробуйте позже."
+    });
+  }
+});
+
 app.post("/api/auth/register", async (req, res) => {
   try {
     const phone = sms.normalizePhone((req.body && req.body.phone) || "");

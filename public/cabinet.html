@@ -283,11 +283,103 @@
     .lead-toggle-btn.lead-prev-btn {
       margin-top: 6px;
     }
+    .lead-toggle-btn.lead-new-btn {
+      margin-top: 6px;
+    }
+    /* Если на экране одновременно «Новое обращение» И «История обращений» —
+       первая становится primary (синяя), чтобы визуально отделить акцент. */
+    .lead-toggle-btn.lead-new-btn-primary {
+      background: #3589BD;
+      color: #fff;
+      border-color: #3589BD;
+    }
+    .lead-toggle-btn.lead-new-btn-primary:hover {
+      background: #2c7aa6;
+    }
+    .lead-toggle-btn:disabled {
+      opacity: 0.6;
+      cursor: progress;
+    }
     .lead-no-active {
       font-size: 13px;
       color: #9096a3;
       text-align: left;
       padding: 2px 0;
+    }
+
+    /* Модалка «Новое обращение» */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(23, 28, 41, 0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 16px;
+    }
+    .modal-backdrop.show {
+      display: flex;
+    }
+    .modal-box {
+      background: #fff;
+      border-radius: 20px;
+      padding: 24px;
+      max-width: 460px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+    }
+    .modal-question {
+      font-size: 16px;
+      line-height: 1.5;
+      color: #1d2330;
+      margin: 0 0 20px;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+    }
+    .modal-btn {
+      flex: 1;
+      height: 46px;
+      border-radius: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1.5px solid #3589BD;
+      font-family: inherit;
+      transition: filter 0.2s var(--vsc-ease), background 0.2s var(--vsc-ease);
+    }
+    .modal-btn-no {
+      background: #fff;
+      color: #3589BD;
+    }
+    .modal-btn-no:hover {
+      background: #f0f7fc;
+    }
+    .modal-btn-yes {
+      background: #3589BD;
+      color: #fff;
+    }
+    .modal-btn-yes:hover {
+      filter: brightness(0.95);
+    }
+    .modal-btn:disabled {
+      opacity: 0.6;
+      cursor: progress;
+    }
+    .modal-error {
+      margin: 0 0 12px;
+      color: #c4314b;
+      font-size: 14px;
+      padding: 10px 12px;
+      background: #fbebee;
+      border: 1px solid #d97a8a;
+      border-radius: 12px;
+      display: none;
+    }
+    .modal-error.show {
+      display: block;
     }
     .lead-completed-list {
       display: none;
@@ -867,6 +959,18 @@
 
     <div class="footer-back-standalone">
       <a href="/" class="back-to-login-btn">Перейти на страницу входа</a>
+    </div>
+  </div>
+
+  <!-- Модалка подтверждения: «Новое обращение» -->
+  <div id="newLeadModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="newLeadModalText">
+    <div class="modal-box">
+      <p id="newLeadModalText" class="modal-question">Вы хотите начать оформление новой визы, банковской карты, или иной услуги?</p>
+      <div id="newLeadModalError" class="modal-error"></div>
+      <div class="modal-actions">
+        <button type="button" id="newLeadModalNo" class="modal-btn modal-btn-no">Нет</button>
+        <button type="button" id="newLeadModalYes" class="modal-btn modal-btn-yes">Да</button>
+      </div>
     </div>
   </div>
 
@@ -2126,6 +2230,20 @@
         selectedLead = null;
       }
 
+      // Кнопка «Новое обращение». Показываем всегда, когда у клиента есть хоть одна
+      // сделка (активная или завершённая). Стиль:
+      //  - если будет показана ещё и «История обращений» (есть completed) → primary (синяя),
+      //  - иначе обычная белая (как «История обращений»).
+      if (active.length || completed.length) {
+        const newBtn = document.createElement("button");
+        newBtn.type = "button";
+        newBtn.className = "lead-toggle-btn lead-new-btn";
+        if (completed.length) newBtn.classList.add("lead-new-btn-primary");
+        newBtn.textContent = "Новое обращение";
+        newBtn.addEventListener("click", () => openNewLeadModal());
+        leadList.appendChild(newBtn);
+      }
+
       if (completed.length) {
         // Кнопка «Предыдущие обращения» + контейнер с завершёнными (скрыт по умолчанию)
         const prevBtn = document.createElement("button");
@@ -2160,6 +2278,68 @@
         leadList.appendChild(completedWrap);
       }
     }
+
+    // ── Модалка «Новое обращение» ──
+    const newLeadModal = document.getElementById("newLeadModal");
+    const newLeadModalNo = document.getElementById("newLeadModalNo");
+    const newLeadModalYes = document.getElementById("newLeadModalYes");
+    const newLeadModalError = document.getElementById("newLeadModalError");
+
+    function openNewLeadModal() {
+      newLeadModalError.classList.remove("show");
+      newLeadModalError.textContent = "";
+      newLeadModalNo.disabled = false;
+      newLeadModalYes.disabled = false;
+      newLeadModalYes.textContent = "Да";
+      newLeadModal.classList.add("show");
+    }
+
+    function closeNewLeadModal() {
+      newLeadModal.classList.remove("show");
+    }
+
+    newLeadModalNo.addEventListener("click", () => {
+      closeNewLeadModal();
+    });
+
+    // Клик по подложке (вне белой карточки) — тоже закрывает (как «Нет»).
+    newLeadModal.addEventListener("click", (e) => {
+      if (e.target === newLeadModal) closeNewLeadModal();
+    });
+
+    newLeadModalYes.addEventListener("click", async () => {
+      const phone = phoneInput.value.trim();
+      if (!phone) {
+        newLeadModalError.textContent = "Не удалось определить телефон";
+        newLeadModalError.classList.add("show");
+        return;
+      }
+      newLeadModalNo.disabled = true;
+      newLeadModalYes.disabled = true;
+      newLeadModalYes.textContent = "Создаём...";
+      newLeadModalError.classList.remove("show");
+      try {
+        const r = await fetch("/api/leads/new", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone })
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || !data.success) {
+          throw new Error(data.message || "Не удалось создать обращение");
+        }
+        closeNewLeadModal();
+        // Перезагружаем список — новое обращение само попадёт наверх
+        // (сортировка по created_at desc) и автоматически выберется как первое активное.
+        await loadLeads();
+      } catch (err) {
+        newLeadModalError.textContent = err.message || "Не удалось создать обращение. Попробуйте позже.";
+        newLeadModalError.classList.add("show");
+        newLeadModalNo.disabled = false;
+        newLeadModalYes.disabled = false;
+        newLeadModalYes.textContent = "Да";
+      }
+    });
 
     async function loadLeads() {
       hideMessages();
