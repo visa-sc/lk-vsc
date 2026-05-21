@@ -1296,44 +1296,26 @@ async function createAmoContactAndLeadForRegistration(phone, { promoApplied = fa
     throw new Error("Не найдена воронка/статус «Отдел продаж» → «Ещё не связывались»");
   }
 
-  // 4) Создаём сделку, привязанную к контакту. Custom-поля проставляем
-  //    отдельным PATCH-ом — чтобы любая ошибка с полем источника не валила
-  //    само создание сделки.
+  // 4) Создаём сделку, привязанную к контакту, с тегом-источником «VOYO».
+  //    Раньше пробовали писать в custom-поле utm_term — оно у пользователя
+  //    оказалось типа tracking_data (служебное для UTM-аналитики Flexbe).
+  //    Запись туда технически проходит, но в UI карточки не показывается,
+  //    и плюс переписывает реальные UTM от Flexbe. Поэтому используем теги —
+  //    они видны в шапке сделки, фильтруются и ни с чем не конфликтуют.
   const leadBody = [{
     name: "Новое обращение из ЛК",
     pipeline_id: pipelineId,
     status_id: statusId,
-    _embedded: { contacts: [{ id: contactId }] }
+    _embedded: {
+      contacts: [{ id: contactId }],
+      tags: [{ name: LK_SOURCE_VALUE }]
+    }
   }];
   const leadRes = await amoPost(`${baseUrl}/api/v4/leads`, leadBody);
   const leadId = leadRes?._embedded?.leads?.[0]?.id;
   if (!leadId) throw new Error("Не удалось создать сделку");
 
-  console.log(`REGISTER OK: phone=${phone} contactId=${contactId} leadId=${leadId} promo=${promoApplied}`);
-
-  // 4.1) Метка «VOYO» в поле «utm term» (или альтернативы из LK_SOURCE_FIELD_NAMES).
-  //      Best-effort: даже если PATCH упадёт — сделка уже создана.
-  try {
-    const field = await findLkSourceField();
-    if (field) {
-      const patchBody = {
-        custom_fields_values: [{
-          field_id: field.id,
-          values: [{ value: LK_SOURCE_VALUE }]
-        }]
-      };
-      const patchRes = await amoPatch(`${baseUrl}/api/v4/leads/${leadId}`, patchBody);
-      // Достаём подтверждение из ответа amoCRM (если оно прислало значение обратно)
-      const setValues = (patchRes && patchRes.custom_fields_values) || [];
-      const setOne = setValues.find((f) => Number(f.field_id) === Number(field.id));
-      const echoed = setOne && setOne.values && setOne.values[0] && setOne.values[0].value;
-      console.log(`AMO LK SOURCE: PATCH lead ${leadId} ok. amoCRM echoed value: ${JSON.stringify(echoed)}`);
-    } else {
-      console.log(`AMO LK SOURCE: skip for lead ${leadId} — целевое поле не найдено`);
-    }
-  } catch (e) {
-    console.error(`AMO LK SOURCE: PATCH FAILED for lead ${leadId}:`, e.response?.status, JSON.stringify(e.response?.data) || e.message);
-  }
+  console.log(`REGISTER OK: phone=${phone} contactId=${contactId} leadId=${leadId} promo=${promoApplied} tag=${LK_SOURCE_VALUE}`);
 
   // 5) При applyPromo — закреплённый комментарий на сделке.
   if (promoApplied && promoText) {
