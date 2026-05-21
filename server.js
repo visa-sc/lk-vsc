@@ -3272,8 +3272,44 @@ function getFeedbackToken(token) {
 loadFeedbackSent();
 loadFeedbackTokens();
 
-// Проверяет триггер «клиент перешёл на «Подготовка документов» и опросник заполнен».
-// Если выполнены условия и SMS этому клиенту ещё не уходила — берёт ФИО из первого
+// Проверяет, что у клиента ВСЕ заявители имеют хотя бы один загруженный документ
+// в своей папке ФИО на Я.Диске. PDF опросника (`Опросник - <ФИО>.pdf`) не считается
+// «документом» — это автогенерация при сабмите опросника. Файл считается «загруженным»,
+// если его имя НЕ матчится паттерн «Опросник - …pdf».
+// Возвращает true только если у каждого заявителя из TECH FOLDER есть хотя бы 1 такой файл.
+async function hasUploadedDocsForAllApplicants(phone) {
+  if (!phone || !YANDEX_DISK_TOKEN) return false;
+  try {
+    const techFiles = await listAllTechFiles(phone);
+    const indices = new Set();
+    techFiles.forEach((n) => {
+      const m = /^Опросник(?:\s+(\d+))?\.json$/i.exec(n);
+      if (m) indices.add(parseInt(m[1] || "1", 10));
+    });
+    if (!indices.size) return false;
+
+    const phoneFolder = `${YANDEX_DISK_ROOT}/${phone}`;
+    for (const idx of indices) {
+      const data = await loadApplicantJson(phone, idx);
+      if (!data || !data.fullName) return false;
+      const safeFio = sanitizeFileName(String(data.fullName).trim());
+      if (!safeFio) return false;
+      const folderPath = `${phoneFolder}/${safeFio}`;
+      const files = await listYandexFolderFiles(folderPath);
+      // Документом считаем любой файл, который НЕ автоген «Опросник - …pdf».
+      const hasRealDoc = files.some((name) => !/^Опросник\s+-\s+.*\.pdf$/i.test(name));
+      if (!hasRealDoc) return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("hasUploadedDocsForAllApplicants error:", e && e.message);
+    return false;
+  }
+}
+
+// Проверяет триггер «клиент перешёл на «Подготовка документов» и опросник заполнен
+// и реально загружены документы для всех заявителей».
+// Если выполнены ВСЕ условия и SMS этому клиенту ещё не уходила — берёт ФИО из первого
 // опросника, создаёт токен и шлёт SMS со ссылкой. Помечает phone как отправленный
 // ДО фактической отправки, чтобы не было повторов при параллельных вызовах.
 async function maybeSendFeedbackSms(phone, leads) {
@@ -3283,11 +3319,11 @@ async function maybeSendFeedbackSms(phone, leads) {
     if (wasFeedbackSent(normPhone)) return;
     if (!Array.isArray(leads) || !leads.length) return;
 
-    // Триггер — есть хотя бы одна активная сделка в «Подготовка документов».
+    // Условие #3 — есть хотя бы одна активная сделка в «Подготовка документов».
     const hasPrepStage = leads.some((l) => l && l.cabinet_status === "Подготовка документов");
     if (!hasPrepStage) return;
 
-    // Sanity-check: клиент действительно пользовался ЛК — должен быть хотя бы один опросник.
+    // Условие #1 — клиент действительно заполнил хотя бы один опросник.
     let fullName = "";
     try {
       const techFiles = await listAllTechFiles(normPhone);
@@ -3297,6 +3333,14 @@ async function maybeSendFeedbackSms(phone, leads) {
       fullName = (firstQ && firstQ.fullName) ? String(firstQ.fullName).trim() : "";
     } catch (e) {
       console.error("FEEDBACK precheck error (tech files):", e.message);
+      return;
+    }
+
+    // Условие #2 — у КАЖДОГО заявителя загружен хотя бы 1 реальный документ
+    // (не считая автосгенерированного PDF самого опросника).
+    const allDocsUploaded = await hasUploadedDocsForAllApplicants(normPhone);
+    if (!allDocsUploaded) {
+      console.log(`FEEDBACK skip: phone=${normPhone} — не у всех заявителей загружены документы`);
       return;
     }
 
