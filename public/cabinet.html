@@ -1394,7 +1394,7 @@
         if (!isOptional && !sectionFlags.requiredShown) {
           const h = document.createElement("div");
           h.className = "file-list-section";
-          h.textContent = "Требуется сейчас для начала оформления:";
+          h.textContent = "Необходимо загрузить сейчас для начала оформления:";
           list.appendChild(h);
           sectionFlags.requiredShown = true;
         }
@@ -1944,7 +1944,7 @@
         );
         if (missingRequired.length > 0) {
           missingRequired.forEach(({ row }) => { if (row) row.classList.add("is-required-missing"); });
-          showLocalError("Загрузите оставшиеся файлы.");
+          showLocalError("Загрузите обязательные документы.");
           // Прокручиваем к первому пустому обязательному
           const firstMissing = missingRequired[0] && missingRequired[0].row;
           if (firstMissing && firstMissing.scrollIntoView) {

@@ -1188,9 +1188,19 @@ async function createAmoUploadTask(leadId) {
 
     let responsibleUserId = null;
     if (isSales) {
+      // 1) Сначала пробуем кастомное поле «Отв-ный» (TASK_RESPONSIBLE_FIELD_ID=443488),
+      //    если оно настроено и заполнено.
       const respRaw = getEntityCustomFieldValue(lead, TASK_RESPONSIBLE_FIELD_ID);
       const respNum = respRaw != null ? Number(respRaw) : NaN;
       if (Number.isFinite(respNum) && respNum > 0) responsibleUserId = respNum;
+      // 2) Если пусто — берём СТАНДАРТНОЕ поле «Ответственный» сделки (это и есть
+      //    «Ответственный» в шапке раздела «Основное»). Без этого amoCRM при пустом
+      //    responsible_user_id подставляет дефолт интеграции (часто = Visa Services Center).
+      if (!responsibleUserId) {
+        const standardResp = lead && lead.responsible_user_id;
+        const standardNum = standardResp != null ? Number(standardResp) : NaN;
+        if (Number.isFinite(standardNum) && standardNum > 0) responsibleUserId = standardNum;
+      }
     } else {
       const ktoFieldId = await getKtoPrinyalFieldId();
       if (ktoFieldId) {
