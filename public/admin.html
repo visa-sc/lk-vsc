@@ -41,29 +41,48 @@
     .login-card {
       background: #fff;
       border: 1px solid #ece7f2;
-      border-radius: 20px;
-      padding: 24px;
-      box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05);
+      border-radius: 22px;
+      padding: 28px 24px 24px;
+      box-shadow: 0 12px 36px rgba(34, 36, 52, 0.06);
     }
-    .login-card h1 { margin: 0 0 6px; font-size: 22px; color: #161d45; }
-    .login-card p { margin: 0 0 20px; font-size: 14px; color: #737988; }
+    .login-card h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+      letter-spacing: -0.01em;
+      color: #161d45;
+    }
+    .login-card p {
+      margin: 0 0 22px;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #737988;
+    }
     .login-input {
       width: 100%;
-      height: 50px;
+      height: 52px;
       border: 1px solid #e8e2ee;
       border-radius: 14px;
-      padding: 0 14px;
+      padding: 0 16px;
       font-size: 16px;
       outline: none;
       font-family: inherit;
-      letter-spacing: 0.1em;
-      transition: border-color 0.2s var(--vsc-ease);
+      color: #1f2532;
+      background: #fff;
+      transition: border-color 0.2s var(--vsc-ease), background 0.2s var(--vsc-ease);
     }
+    /* Если поле паролевое — крупные «булиты» выглядят лучше с небольшим
+       letter-spacing'ом. Применяется ТОЛЬКО когда поле заполнено (paint
+       value). Placeholder остаётся обычной плотности. */
+    .login-input[type="password"]:not(:placeholder-shown) {
+      letter-spacing: 0.12em;
+      font-size: 22px;
+    }
+    .login-input::placeholder { letter-spacing: normal; color: #9a9faa; }
     .login-input:focus { border-color: #3589BD; }
     .login-input.is-error { border-color: #d97a8a; background: #fbebee; }
     .login-btn {
       width: 100%;
-      height: 50px;
+      height: 52px;
       margin-top: 14px;
       border: 0;
       border-radius: 14px;
@@ -73,10 +92,13 @@
       font-weight: 600;
       cursor: pointer;
       font-family: inherit;
-      transition: filter 0.2s var(--vsc-ease);
+      letter-spacing: 0.01em;
+      box-shadow: 0 6px 18px rgba(53, 137, 189, 0.22);
+      transition: filter 0.2s var(--vsc-ease), box-shadow 0.2s var(--vsc-ease), transform 0.05s var(--vsc-ease);
     }
-    .login-btn:hover { filter: brightness(0.95); }
-    .login-btn:disabled { opacity: 0.6; cursor: progress; }
+    .login-btn:hover { filter: brightness(0.97); box-shadow: 0 8px 22px rgba(53, 137, 189, 0.28); }
+    .login-btn:active { transform: translateY(1px); }
+    .login-btn:disabled { opacity: 0.6; cursor: progress; box-shadow: none; }
     .login-error {
       margin-top: 14px;
       color: #c4314b;
@@ -245,6 +267,36 @@
       0% { box-shadow: 0 0 0 0 rgba(79, 159, 104, 0.55); }
       70% { box-shadow: 0 0 0 8px rgba(79, 159, 104, 0); }
       100% { box-shadow: 0 0 0 0 rgba(79, 159, 104, 0); }
+    }
+
+    /* ── Hero-карточка «сквозной конверсии» (только в Статистике) ── */
+    .hero-conv {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 20px 22px;
+      background: linear-gradient(135deg, #3589BD 0%, #2b6f96 100%);
+      border-radius: 18px;
+      color: #fff;
+      margin-bottom: 16px;
+      box-shadow: 0 12px 28px rgba(53, 137, 189, 0.22);
+    }
+    .hero-conv .num {
+      font-size: 56px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      flex-shrink: 0;
+    }
+    .hero-conv .text {
+      font-size: 13px;
+      line-height: 1.45;
+      opacity: 0.95;
+    }
+    .hero-conv .text strong { font-weight: 600; }
+    @media (max-width: 720px) {
+      .hero-conv { gap: 14px; padding: 18px; }
+      .hero-conv .num { font-size: 44px; }
     }
 
     /* ── Воронка (универсальная для Статистики и Опросников) ── */
@@ -910,6 +962,22 @@
         header.appendChild(since);
         header.appendChild(updated);
         wrap.appendChild(header);
+
+        // Hero: сквозная конверсия «Авторизовались → Загрузили все документы».
+        const hero = document.createElement("div");
+        hero.className = "hero-conv";
+        const heroNum = document.createElement("div");
+        heroNum.className = "num";
+        heroNum.textContent = (conv.auth_to_all || 0) + "%";
+        const heroText = document.createElement("div");
+        heroText.className = "text";
+        heroText.innerHTML =
+          "<strong>Сквозная конверсия</strong><br>" +
+          "из «Авторизовались» в «Загрузили все документы»<br>" +
+          (totals.uploadedAll || 0) + " из " + (totals.authorized || 0) + " клиентов прошли весь путь";
+        hero.appendChild(heroNum);
+        hero.appendChild(heroText);
+        wrap.appendChild(hero);
 
         // Воронка: step → conv → step → conv → step → conv → step (интерлив).
         // Этот порядок работает одинаково и в row, и в column.

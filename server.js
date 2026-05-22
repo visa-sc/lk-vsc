@@ -4185,7 +4185,9 @@ async function computeAdminStats() {
     conversions: {
       auth_to_submitted: pct(countSubmitted, totalAuth),
       submitted_to_required: pct(countRequired, countSubmitted),
-      required_to_all: pct(countAll, countRequired)
+      required_to_all: pct(countAll, countRequired),
+      // Сквозная конверсия: «авторизовались → загрузили все документы».
+      auth_to_all: pct(countAll, totalAuth)
     },
     phones: perPhone
   };
