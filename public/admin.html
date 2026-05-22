@@ -22,7 +22,9 @@
       margin: 24px auto 0;
       padding: 0 16px;
       display: flex;
-      justify-content: center;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
     }
     .brand-bar img {
       width: 140px; height: auto; aspect-ratio: 2 / 1;
@@ -31,6 +33,14 @@
       transition: opacity 0.55s var(--vsc-ease), transform 0.55s var(--vsc-ease);
     }
     .brand-bar img.is-loaded { opacity: 1; transform: scale(1); }
+    .brand-sub {
+      font-size: 13px;
+      font-weight: 500;
+      color: #9096a3;
+      letter-spacing: 0.02em;
+      text-align: center;
+      margin-top: -4px; /* придвигаем чуть ближе к лого */
+    }
 
     /* ── Логин ── */
     .login-wrap {
@@ -551,12 +561,12 @@
   <div class="brand-bar">
     <img src="/logo.png" alt="VOYO" width="600" height="300" onload="this.classList.add('is-loaded')" onerror="this.classList.add('is-loaded')" />
     <noscript><style>.brand-bar img{opacity:1;transform:none;}</style></noscript>
+    <div class="brand-sub">Админка</div>
   </div>
 
   <!-- ── Логин ── -->
   <div id="loginBlock" class="login-wrap">
     <div class="login-card">
-      <h2>Админка VOYO</h2>
       <div class="sub">Введите код доступа</div>
 
       <button id="bioLoginBtn" type="button" class="bio-btn">
@@ -593,10 +603,6 @@
 
   <!-- ── Дашборд ── -->
   <div id="dashBlock" class="dash">
-    <div class="dash-top">
-      <h1 class="dash-title">Админка VOYO</h1>
-    </div>
-
     <div class="tabs">
       <button type="button" class="tab-btn active" data-tab="stats">Статистика</button>
       <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
