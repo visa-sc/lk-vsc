@@ -40,7 +40,12 @@ app.get("/about/v1", (req, res) => {
 });
 
 app.get("/admin", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "admin.html"));
+  // Не кешируем — админка часто меняется, не хочется получать stale HTML/CSS
+  // в Safari/Chrome (особенно на iOS). Снимаем и ETag, чтобы не возвращался 304.
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  res.sendFile(path.join(__dirname, "public", "admin.html"), { etag: false, lastModified: false });
 });
 
 // ──────────────────────────────────────────────────────────
