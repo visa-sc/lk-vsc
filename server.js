@@ -389,19 +389,17 @@ app.post("/admin/api/logout", requireAdmin, (req, res) => {
   return res.json({ success: true });
 });
 
-// Статистика — отдаём ту же выборку, что и в PDF, но JSON'ом для UI.
-app.get("/admin/api/stats", requireAdmin, (req, res) => {
-  const entries = Array.from(lkAuthPhones.entries()).sort((a, b) => b[1] - a[1]);
-  return res.json({
-    success: true,
-    startDate: LK_STATS_START_DATE,
-    total: entries.length,
-    phones: entries.map(([phone, ts]) => ({
-      phone,
-      formatted: formatPhoneForDisplay(phone),
-      firstAuthAt: ts
-    }))
-  });
+// Статистика воронки ЛК. Расчёт «онлайн» — без кеша; на полл-вызовы
+// клиент сам реагирует своей частотой. При большом росте номеров здесь
+// можно навесить лёгкий кеш с TTL ~5с и инвалидацию на recordLkAuth/etc.
+app.get("/admin/api/stats", requireAdmin, async (req, res) => {
+  try {
+    const data = await computeAdminStats();
+    return res.json(Object.assign({ success: true }, data));
+  } catch (e) {
+    console.error("/admin/api/stats error:", e && e.message);
+    return res.status(500).json({ success: false, message: "Ошибка расчёта статистики" });
+  }
 });
 
 // Список PDF-опросников обратной связи на Я.Диске.
@@ -3764,6 +3762,307 @@ function formatPhoneForDisplay(norm) {
   return `+${norm[0]} (${norm.slice(1, 4)}) ${norm.slice(4, 7)}-${norm.slice(7, 9)}-${norm.slice(9, 11)}`;
 }
 
+// ── First-LK-questionnaire-lead для статистики воронки ──
+// Для каждого phone запоминаем САМУЮ ПЕРВУЮ сделку, в которой клиент через ЛК
+// отправил опросник. Эта связка определяет «учётную сделку клиента» для всех
+// последующих этапов воронки (опросник → обязательные доки → все доки).
+// Последующие сделки того же клиента в воронке не учитываются.
+const LK_FIRST_Q_FILE = path.join(__dirname, ".lkFirstQuestionnaireLead.json");
+const lkFirstQuestionnaireLead = new Map(); // phone -> { leadId: string|null, firstAt: number|null, checked: boolean }
+
+function loadLkFirstQ() {
+  try {
+    const raw = fs.readFileSync(LK_FIRST_Q_FILE, "utf8");
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === "object") {
+      Object.entries(obj).forEach(([phone, data]) => {
+        if (data && typeof data === "object") {
+          lkFirstQuestionnaireLead.set(phone, {
+            leadId: data.leadId ? String(data.leadId) : null,
+            firstAt: Number(data.firstAt) || null,
+            checked: !!data.checked
+          });
+        }
+      });
+    }
+  } catch (_) {}
+}
+
+function saveLkFirstQ() {
+  try {
+    const obj = Object.fromEntries(lkFirstQuestionnaireLead.entries());
+    fs.writeFileSync(LK_FIRST_Q_FILE, JSON.stringify(obj, null, 2), "utf8");
+  } catch (e) {
+    console.error("saveLkFirstQ error:", e.message);
+  }
+}
+
+// Вызывается ТОЛЬКО при успешном сохранении опросника через ЛК.
+// Если у phone уже зафиксирована «первая ЛК-сделка с опросником» — не меняем.
+function recordFirstQuestionnaireForPhone(phone, leadId) {
+  const norm = normalizePhone(phone || "");
+  if (!norm || !leadId) return;
+  const existing = lkFirstQuestionnaireLead.get(norm);
+  if (existing && existing.leadId) return; // уже зафиксирован настоящий первый
+  lkFirstQuestionnaireLead.set(norm, {
+    leadId: String(leadId),
+    firstAt: Date.now(),
+    checked: true
+  });
+  saveLkFirstQ();
+  console.log(`LK STATS: first questionnaire phone=${norm} leadId=${leadId}`);
+}
+
+loadLkFirstQ();
+
+// Бэкфилл: для phone из lkAuthPhones, у которого нет записи в lkFirstQuestionnaireLead,
+// сканируем Я.Диск и ищем самый ранний leadId с опросником. Кешируем результат
+// (даже отрицательный — со флагом checked=true). Вызывается лениво из computeAdminStats.
+async function ensureFirstQuestionnaireLookup(phone) {
+  const norm = normalizePhone(phone || "");
+  if (!norm) return null;
+  const cached = lkFirstQuestionnaireLead.get(norm);
+  if (cached && (cached.leadId || cached.checked)) return cached.leadId || null;
+
+  let foundLeadId = null;
+  let foundAt = null;
+  try {
+    if (YANDEX_DISK_TOKEN) {
+      // Шаг 1. Смотрим lead-scoped подпапки <phone>/<leadId>/TECH FOLDER/Опросник.json.
+      // Listing верхнего уровня <phone>/* — все подпапки.
+      const baseFolder = `${YANDEX_DISK_ROOT}/${norm}`;
+      let topItems = [];
+      try {
+        const r = await yandexRequest({
+          method: "GET",
+          url: "https://cloud-api.yandex.net/v1/disk/resources",
+          params: { path: baseFolder, limit: 1000, fields: "_embedded.items.name,_embedded.items.type" }
+        });
+        topItems = (r.data && r.data._embedded && r.data._embedded.items) || [];
+      } catch (_) {}
+      // leadId-папки — это подпапки с числовым именем.
+      const numericFolders = topItems
+        .filter((it) => it.type === "dir" && /^\d+$/.test(String(it.name || "")))
+        .map((it) => String(it.name))
+        .sort(); // числовой/лексикографический порядок (леды растут со временем)
+      for (const leadId of numericFolders) {
+        // Проверяем наличие хоть одного Опросник*.json в этой папке.
+        const files = await listYandexFolderFiles(`${baseFolder}/${leadId}/${TECH_FOLDER_NAME}`);
+        const hasQ = (files || []).some((n) => /^Опросник.*\.json$/i.test(n));
+        if (hasQ) {
+          foundLeadId = String(leadId);
+          break;
+        }
+      }
+      // Шаг 2. Если не нашли — проверяем legacy phone-scoped TECH FOLDER:
+      //   если в нём есть Опросник*.json, владельцем считаем legacy owner.
+      if (!foundLeadId) {
+        const legacyFiles = await listYandexFolderFiles(`${baseFolder}/${TECH_FOLDER_NAME}`);
+        const legacyHasQ = (legacyFiles || []).some((n) => /^Опросник.*\.json$/i.test(n));
+        if (legacyHasQ) {
+          const ownerId = await getLegacyOwnerLeadId(norm);
+          if (ownerId) foundLeadId = String(ownerId);
+        }
+      }
+    }
+  } catch (e) {
+    console.error("ensureFirstQuestionnaireLookup error:", e && e.message);
+  }
+
+  lkFirstQuestionnaireLead.set(norm, {
+    leadId: foundLeadId,
+    firstAt: foundLeadId ? Date.now() : null, // время найдено приблизительно как «когда обнаружили»
+    checked: true
+  });
+  saveLkFirstQ();
+  return foundLeadId;
+}
+
+// ── Реплика логики buildUploadBlocksConfig из cabinet.html (для подсчёта статистики).
+// Если меняешь в cabinet.html — синхронизируй и здесь.
+const STATS_DEFAULT_OPTIONAL_FIELDS = new Set([
+  "invitation",
+  "thirdCountryTickets",
+  "birthCertificate",
+  "sponsorPassport",
+  "insurancePolicy",
+  "workCert"
+]);
+
+function buildUploadBlocksForApplicantStats(state) {
+  const blocks = [];
+  blocks.push({ field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" });
+  blocks.push({ field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" });
+  if (state.hasSecondPassport === "Да") {
+    blocks.push({ field: "secondPassport", label: "2-ой загран. паспорт" });
+  }
+  if (state.canSurrenderPassport === "Нет") {
+    blocks.push({ field: "thirdCountryTickets", label: "Билеты в 3-ю страну на второй загран. паспорт" });
+  }
+  const tripPurpose = String(state.tripPurpose || "").trim();
+  if (tripPurpose && tripPurpose !== "Туризм") {
+    blocks.push({ field: "invitation", label: "Приглашение" });
+  }
+  if (state.hasActiveSchengen === "Да") {
+    blocks.push({ field: "activeSchengenPhoto", label: "Фото действующей Шенгенской визы" });
+  }
+  if (state.hadSchengen3Years === "Да") {
+    blocks.push({ field: "prevSchengenPhoto", label: "Фото последней Шенгенской визы" });
+  }
+  if (state.isUnder18 === "Да") {
+    blocks.push({ field: "birthCertificate", label: "Свидетельство о рождении" });
+  }
+  if (state.hasSponsor === "Да") {
+    blocks.push({ field: "sponsorPassport", label: "1-ый разворот внутреннего паспорта РФ спонсора" });
+  }
+  if (state.hasInsurance === "Да") {
+    blocks.push({ field: "insurancePolicy", label: "Страховой полис для въезда в Шенген" });
+  }
+  const employer = String(state.employerName || "").trim();
+  if (employer && employer.toUpperCase() !== "НЕТ") {
+    blocks.push({ field: "workCert", label: "Справка с работы или учёбы" });
+  }
+  return blocks;
+}
+
+// Для конкретного (phone, leadId) считает по всем заявителям этой сделки:
+//   hasAllRequired — у каждого заявителя загружены ВСЕ required-блоки,
+//   hasAllBlocks   — у каждого заявителя загружены ВСЕ блоки (required + optional).
+// "Загружено" определяется так же, как в кабинете: имя файла начинается с label.
+async function computeUploadStatusForLead(phone, leadId) {
+  if (!phone || !leadId) return { hasAllRequired: false, hasAllBlocks: false };
+  try {
+    const techFiles = await listAllTechFiles(phone, leadId);
+    const indices = new Set();
+    techFiles.forEach((n) => {
+      const m = /^Опросник(?:\s+(\d+))?\.json$/i.exec(n);
+      if (m) indices.add(parseInt(m[1] || "1", 10));
+    });
+    if (!indices.size) return { hasAllRequired: false, hasAllBlocks: false };
+
+    const ownerId = await getLegacyOwnerLeadId(phone);
+    const isLegacyOwner = ownerId && String(ownerId) === String(leadId);
+    const leadRoot = leadScopedFolder(phone, leadId);
+    const phoneRoot = `${YANDEX_DISK_ROOT}/${phone}`;
+
+    let allReq = true;
+    let allBlk = true;
+
+    for (const idx of indices) {
+      const data = await loadApplicantJson(phone, leadId, idx);
+      if (!data || !data.fullName) {
+        allReq = false; allBlk = false;
+        continue;
+      }
+      const blocks = buildUploadBlocksForApplicantStats(data);
+      if (!blocks.length) continue;
+
+      const safeFio = sanitizeFileName(String(data.fullName).trim());
+      if (!safeFio) {
+        allReq = false; allBlk = false;
+        continue;
+      }
+
+      // Сливаем файлы lead-scoped + legacy (если этот лид — owner).
+      const merged = new Set();
+      (await listYandexFolderFiles(`${leadRoot}/${safeFio}`) || []).forEach((n) => merged.add(n));
+      if (isLegacyOwner) {
+        (await listYandexFolderFiles(`${phoneRoot}/${safeFio}`) || []).forEach((n) => merged.add(n));
+      }
+
+      for (const b of blocks) {
+        const hasFile = Array.from(merged).some((f) => {
+          if (!f.startsWith(b.label)) return false;
+          const next = f.charAt(b.label.length);
+          return next === "." || next === " ";
+        });
+        if (!hasFile) {
+          allBlk = false;
+          if (!STATS_DEFAULT_OPTIONAL_FIELDS.has(b.field)) allReq = false;
+        }
+      }
+    }
+    return { hasAllRequired: allReq, hasAllBlocks: allBlk };
+  } catch (e) {
+    console.error("computeUploadStatusForLead error:", e && e.message);
+    return { hasAllRequired: false, hasAllBlocks: false };
+  }
+}
+
+async function computeAdminStats() {
+  // Базовый набор — авторизованные клиенты.
+  const phoneEntries = Array.from(lkAuthPhones.entries()).sort((a, b) => b[1] - a[1]);
+
+  const perPhone = [];
+  let countSubmitted = 0;
+  let countRequired = 0;
+  let countAll = 0;
+
+  for (const [phone, ts] of phoneEntries) {
+    // Этап 2: «опросник заполнен» — есть first-questionnaire-lead.
+    const firstLeadId = await ensureFirstQuestionnaireLookup(phone);
+    let stage = 1;
+    let submittedQ = false, uploadedReq = false, uploadedAll = false;
+
+    if (firstLeadId) {
+      submittedQ = true;
+      stage = 2;
+      countSubmitted++;
+      // Этапы 3/4 — по факту загруженных доков именно для этой сделки.
+      const up = await computeUploadStatusForLead(phone, firstLeadId);
+      if (up.hasAllRequired) {
+        uploadedReq = true;
+        stage = 3;
+        countRequired++;
+        if (up.hasAllBlocks) {
+          uploadedAll = true;
+          stage = 4;
+          countAll++;
+        }
+      }
+    }
+
+    perPhone.push({
+      phone,
+      formatted: formatPhoneForDisplay(phone),
+      firstAuthAt: ts,
+      stage,
+      stages: {
+        authorized: true,
+        submittedQuestionnaire: submittedQ,
+        uploadedRequired: uploadedReq,
+        uploadedAll: uploadedAll
+      },
+      firstQuestionnaireLeadId: firstLeadId || null
+    });
+  }
+
+  // Сортировка: сначала те, кто дальше НЕ прошёл (stage 1), потом 2, 3, 4.
+  perPhone.sort((a, b) => a.stage - b.stage || (b.firstAuthAt - a.firstAuthAt));
+
+  const totalAuth = phoneEntries.length;
+  function pct(num, den) {
+    if (!den) return 0;
+    return Math.round((num / den) * 100);
+  }
+
+  return {
+    startDate: LK_STATS_START_DATE,
+    totals: {
+      authorized: totalAuth,
+      submittedQuestionnaire: countSubmitted,
+      uploadedRequired: countRequired,
+      uploadedAll: countAll
+    },
+    conversions: {
+      auth_to_submitted: pct(countSubmitted, totalAuth),
+      submitted_to_required: pct(countRequired, countSubmitted),
+      required_to_all: pct(countAll, countRequired)
+    },
+    phones: perPhone
+  };
+}
+
 // ──────────────────────────────────────────────────────────
 // Legacy-owner для существующих данных в phone-scoped папках Я.Диска
 // (до 2026-05-21 файлы лежали в <phone>/..., без leadId-партиции).
@@ -5007,6 +5306,11 @@ app.post(
           nextApplicantUrl = `/questionnaire?${params.toString()}`;
         }
       }
+
+      // Для статистики воронки админки: фиксируем первую ЛК-сделку,
+      // в которой клиент отправил опросник. Идемпотентно — повторные
+      // сабмиты для других сделок не перетирают первый.
+      try { recordFirstQuestionnaireForPhone(phone, leadId); } catch (_) {}
 
       return res.json({
         success: true,
