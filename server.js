@@ -459,7 +459,9 @@ app.get("/admin/api/surveys-funnel", requireAdmin, async (req, res) => {
       },
       conversions: {
         sent_to_clicked: pct(totalClicked, totalSent),
-        clicked_to_submitted: pct(totalSubmitted, totalClicked)
+        clicked_to_submitted: pct(totalSubmitted, totalClicked),
+        // Сквозная: «получили SMS → отправили опросник».
+        sent_to_submitted: pct(totalSubmitted, totalSent)
       },
       phones: perPhone
     });

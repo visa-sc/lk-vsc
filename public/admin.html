@@ -1111,6 +1111,22 @@
         header.appendChild(updated);
         wrap.appendChild(header);
 
+        // Hero: сквозная конверсия «Получили SMS → Отправили опросник».
+        const hero = document.createElement("div");
+        hero.className = "hero-conv";
+        const heroNum = document.createElement("div");
+        heroNum.className = "num";
+        heroNum.textContent = (conv.sent_to_submitted || 0) + "%";
+        const heroText = document.createElement("div");
+        heroText.className = "text";
+        heroText.innerHTML =
+          "<strong>Сквозная конверсия</strong><br>" +
+          "из «Получили SMS» в «Отправили опросник»<br>" +
+          (totals.submitted || 0) + " из " + (totals.smsSent || 0) + " клиентов прошли весь путь";
+        hero.appendChild(heroNum);
+        hero.appendChild(heroText);
+        wrap.appendChild(hero);
+
         // Воронка 3 шага
         const funnel = buildFunnel([
           { idx: 1, num: totals.smsSent,   label: "Получили SMS с опросом" },
