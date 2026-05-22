@@ -3718,12 +3718,11 @@ loadFeedbackTokens();
 
 // ──────────────────────────────────────────────────────────
 // Статистика ЛК: уникальные авторизации по номеру телефона.
-// Каждый номер учитывается ровно один раз (первая авторизация). Ежедневно
-// в 00:00 МСК пересобираем PDF и кладём в папку «Статистика ЛК VOYO» на
-// Я.Диске, удаляя предыдущие версии .pdf.
+// Каждый номер учитывается ровно один раз (первая авторизация).
+// Статистика отдаётся только через /admin/api/stats — на Я.Диск ничего
+// не выгружается (раньше был ежедневный PDF, потом каждые 3 часа — убрано).
 // ──────────────────────────────────────────────────────────
 
-const LK_STATS_DISK_FOLDER = "Статистика ЛК VOYO";
 const LK_STATS_START_DATE = "21.05.2026"; // отсчёт «с какой даты»
 const LK_AUTH_PHONES_FILE = path.join(__dirname, ".lkAuthPhones.json");
 const lkAuthPhones = new Map(); // phone(7XXXXXXXXXX) -> firstAuthAt(ms)
@@ -3760,124 +3759,10 @@ function recordLkAuth(phone) {
 
 loadLkAuthPhones();
 
-// ── PDF + Я.Диск ──
-function nowMskDateString() {
-  const mskNow = new Date(Date.now() + 3 * 3600 * 1000);
-  const y = mskNow.getUTCFullYear();
-  const m = String(mskNow.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(mskNow.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 function formatPhoneForDisplay(norm) {
   if (!norm || norm.length !== 11) return `+${norm}`;
   return `+${norm[0]} (${norm.slice(1, 4)}) ${norm.slice(4, 7)}-${norm.slice(7, 9)}-${norm.slice(9, 11)}`;
 }
-
-async function generateLkStatsPdfBuffer() {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 40 });
-    const chunks = [];
-    doc.on("data", (c) => chunks.push(c));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-
-    const fontPath = getPdfFontPath();
-    if (fontPath) doc.font(fontPath);
-
-    doc.fontSize(18).fillColor("#161d45").text("Статистика ЛК VOYO", { align: "left" });
-    doc.moveDown(0.4);
-
-    const total = lkAuthPhones.size;
-    doc.fillColor("#1d2330").fontSize(13).text(`Количество уникальных авторизаций с ${LK_STATS_START_DATE}: ${total}`);
-    doc.moveDown(0.2);
-    doc.fontSize(10).fillColor("#737988").text(`Дата обновления: ${nowMskDateString()} (МСК)`);
-    doc.fillColor("#1d2330");
-    doc.moveDown(0.8);
-
-    // Список номеров — сортируем по дате первой авторизации (свежие сверху).
-    const entries = Array.from(lkAuthPhones.entries()).sort((a, b) => b[1] - a[1]);
-    if (!entries.length) {
-      doc.fontSize(11).fillColor("#737988").text("Авторизаций пока нет.");
-    } else {
-      doc.fontSize(12).text("Список номеров (повторные не учитываются):");
-      doc.moveDown(0.4);
-      doc.fontSize(11);
-      entries.forEach(([phone], idx) => {
-        doc.text(`${idx + 1}. ${formatPhoneForDisplay(phone)}`);
-      });
-    }
-
-    doc.end();
-  });
-}
-
-async function uploadLkStatsPdfAndCleanup() {
-  if (!YANDEX_DISK_TOKEN) {
-    console.log("LK STATS: YANDEX_DISK_TOKEN не задан, пропускаем выгрузку.");
-    return;
-  }
-  try {
-    await ensureNestedYandexFolder(LK_STATS_DISK_FOLDER);
-    const dateStr = nowMskDateString();
-    const fileName = `Статистика на ${dateStr}.pdf`;
-    const diskPath = `${LK_STATS_DISK_FOLDER}/${fileName}`;
-
-    // Сначала удаляем все старые PDF в папке (кроме одноимённого — overwrite сам разберётся),
-    // потом грузим новый.
-    try {
-      const existing = await listYandexFolderFiles(LK_STATS_DISK_FOLDER);
-      for (const name of existing) {
-        if (!/\.pdf$/i.test(name)) continue;
-        if (name === fileName) continue;
-        await deleteYandexResourceIfExists(`${LK_STATS_DISK_FOLDER}/${name}`);
-      }
-    } catch (e) {
-      console.error("LK STATS cleanup old PDFs error:", e.message);
-    }
-
-    const pdfBuffer = await generateLkStatsPdfBuffer();
-    await uploadBufferToYandexDisk(pdfBuffer, diskPath, "application/pdf");
-    console.log(`LK STATS: uploaded ${diskPath} (total=${lkAuthPhones.size})`);
-  } catch (e) {
-    console.error("uploadLkStatsPdfAndCleanup error:", e.response?.data || e.message);
-  }
-}
-
-// ── Расписание: каждые 3 часа по МСК (00:00, 03:00, 06:00, 09:00, ...) ──
-function msUntilNextMoscow3hSlot() {
-  const now = Date.now();
-  const mskOffsetMs = 3 * 3600 * 1000;
-  const mskNow = new Date(now + mskOffsetMs);
-  // Текущий час по МСК и следующая 3-часовая граница: 00,03,06,...,21.
-  const curHour = mskNow.getUTCHours();
-  const nextSlotHour = (Math.floor(curHour / 3) + 1) * 3; // 24 — это уже завтра
-  const targetUtcEpoch = Date.UTC(
-    mskNow.getUTCFullYear(),
-    mskNow.getUTCMonth(),
-    mskNow.getUTCDate(),
-    nextSlotHour, // если ==24, Date.UTC сама перенесёт на следующий день
-    0, 0, 0
-  );
-  const target = targetUtcEpoch - mskOffsetMs;
-  return target - now;
-}
-
-function scheduleLkStatsJob() {
-  const delay = msUntilNextMoscow3hSlot();
-  console.log(`LK STATS: next run in ${Math.round(delay / 1000 / 60)} min (${new Date(Date.now() + delay).toISOString()} UTC)`);
-  setTimeout(async () => {
-    try { await uploadLkStatsPdfAndCleanup(); } catch (_) {}
-    scheduleLkStatsJob();
-  }, delay).unref?.();
-}
-
-// Один раз при старте — чтобы файл существовал сразу, не дожидаясь полуночи.
-// Через 30 секунд после старта (чтобы не блокировать прогрев процесса).
-setTimeout(() => {
-  uploadLkStatsPdfAndCleanup().catch(() => {});
-}, 30 * 1000).unref?.();
-scheduleLkStatsJob();
 
 // ──────────────────────────────────────────────────────────
 // Legacy-owner для существующих данных в phone-scoped папках Я.Диска
