@@ -402,6 +402,68 @@ app.get("/admin/api/stats", requireAdmin, async (req, res) => {
   }
 });
 
+// Воронка «Опросники»: SMS отправлено → кликнул → отправил.
+// Считаем по уникальным номерам. Базой берём feedbackSent — туда попадают
+// номера, которым ушло приглашение (фиксируется ДО самой отправки SMS).
+app.get("/admin/api/surveys-funnel", requireAdmin, async (req, res) => {
+  try {
+    const sentEntries = Array.from(feedbackSent.entries());
+    let totalSent = 0, totalClicked = 0, totalSubmitted = 0;
+    const perPhone = [];
+
+    for (const [phone, sentData] of sentEntries) {
+      totalSent++;
+      const click = feedbackClicked.get(phone);
+      const sub = feedbackSubmitted.get(phone);
+      if (click) totalClicked++;
+      if (sub) totalSubmitted++;
+      let stage = 1;
+      if (click) stage = 2;
+      if (sub) stage = 3;
+      perPhone.push({
+        phone,
+        formatted: formatPhoneForDisplay(phone),
+        fullName: (sub && sub.fullName) || (sentData && sentData.fullName) || "",
+        sentAt: sentData ? sentData.sentAt : null,
+        clickedAt: click ? click.clickedAt : null,
+        submittedAt: sub ? sub.submittedAt : null,
+        pdfFileName: sub ? sub.pdfFileName : null,
+        stage,
+        stages: {
+          sent: true,
+          clicked: !!click,
+          submitted: !!sub
+        }
+      });
+    }
+
+    // Сортировка: stage ASC (отстающие сверху), внутри стадии — свежие сверху.
+    perPhone.sort((a, b) => a.stage - b.stage || (b.sentAt - a.sentAt));
+
+    function pct(num, den) {
+      if (!den) return 0;
+      return Math.round((num / den) * 100);
+    }
+
+    return res.json({
+      success: true,
+      totals: {
+        smsSent: totalSent,
+        clicked: totalClicked,
+        submitted: totalSubmitted
+      },
+      conversions: {
+        sent_to_clicked: pct(totalClicked, totalSent),
+        clicked_to_submitted: pct(totalSubmitted, totalClicked)
+      },
+      phones: perPhone
+    });
+  } catch (e) {
+    console.error("/admin/api/surveys-funnel error:", e && e.message);
+    return res.status(500).json({ success: false, message: "Ошибка расчёта воронки" });
+  }
+});
+
 // Список PDF-опросников обратной связи на Я.Диске.
 app.get("/admin/api/surveys", requireAdmin, async (req, res) => {
   try {
@@ -3688,6 +3750,72 @@ function wasFeedbackSent(phone) {
   return feedbackSent.has(phone);
 }
 
+// ── Воронка опросников: учёт переходов по ссылке и отправок ──
+// SMS → клик по ссылке → отправка формы. Один номер учитывается один раз
+// на каждом этапе (как с lkAuthPhones).
+const FEEDBACK_CLICKED_FILE = path.join(__dirname, ".feedbackClicked.json");
+const FEEDBACK_SUBMITTED_FILE = path.join(__dirname, ".feedbackSubmitted.json");
+const feedbackClicked = new Map();   // phone -> { clickedAt }
+const feedbackSubmitted = new Map(); // phone -> { submittedAt, fullName, pdfFileName }
+
+function loadFeedbackClicked() {
+  try {
+    const raw = fs.readFileSync(FEEDBACK_CLICKED_FILE, "utf8");
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === "object") {
+      Object.entries(obj).forEach(([phone, data]) => {
+        if (data && typeof data === "object") feedbackClicked.set(phone, data);
+      });
+    }
+  } catch (_) {}
+}
+function saveFeedbackClicked() {
+  try {
+    fs.writeFileSync(FEEDBACK_CLICKED_FILE, JSON.stringify(Object.fromEntries(feedbackClicked.entries()), null, 2), "utf8");
+  } catch (e) {
+    console.error("saveFeedbackClicked error:", e.message);
+  }
+}
+function recordFeedbackClick(phone) {
+  const norm = normalizePhone(phone || "");
+  if (!norm) return;
+  if (feedbackClicked.has(norm)) return;
+  feedbackClicked.set(norm, { clickedAt: Date.now() });
+  saveFeedbackClicked();
+}
+
+function loadFeedbackSubmitted() {
+  try {
+    const raw = fs.readFileSync(FEEDBACK_SUBMITTED_FILE, "utf8");
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === "object") {
+      Object.entries(obj).forEach(([phone, data]) => {
+        if (data && typeof data === "object") feedbackSubmitted.set(phone, data);
+      });
+    }
+  } catch (_) {}
+}
+function saveFeedbackSubmitted() {
+  try {
+    fs.writeFileSync(FEEDBACK_SUBMITTED_FILE, JSON.stringify(Object.fromEntries(feedbackSubmitted.entries()), null, 2), "utf8");
+  } catch (e) {
+    console.error("saveFeedbackSubmitted error:", e.message);
+  }
+}
+function recordFeedbackSubmission(phone, fullName, pdfFileName) {
+  const norm = normalizePhone(phone || "");
+  if (!norm) return;
+  feedbackSubmitted.set(norm, {
+    submittedAt: Date.now(),
+    fullName: String(fullName || ""),
+    pdfFileName: String(pdfFileName || "")
+  });
+  saveFeedbackSubmitted();
+}
+
+loadFeedbackClicked();
+loadFeedbackSubmitted();
+
 function markFeedbackSent(phone, fullName) {
   feedbackSent.set(phone, { sentAt: Date.now(), fullName: String(fullName || "") });
   saveFeedbackSent();
@@ -4639,6 +4767,8 @@ app.get("/feedback", (req, res) => {
     );
     return;
   }
+  // Учитываем переход по ссылке (для статистики «Опросники» в админке).
+  try { recordFeedbackClick(data.phone); } catch (_) {}
   res.send(buildFeedbackHtml(data.token, data.fullName));
 });
 
@@ -4691,6 +4821,9 @@ app.post("/api/feedback", async (req, res) => {
     //    Ссылка из SMS сразу перестаёт работать (GET /feedback вернёт 404).
     feedbackTokens.delete(token);
     saveFeedbackTokens();
+
+    // 5. Учитываем отправку в воронке «Опросники» админки.
+    try { recordFeedbackSubmission(phone, fullName, fileName); } catch (_) {}
 
     return res.json({ success: true });
   } catch (e) {

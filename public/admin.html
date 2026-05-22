@@ -247,22 +247,24 @@
       100% { box-shadow: 0 0 0 0 rgba(79, 159, 104, 0); }
     }
 
-    /* ── Воронка с 4 метриками + конверсиями ── */
+    /* ── Воронка (универсальная для Статистики и Опросников) ── */
+    /* Подход: flex-row на десктопе, flex-column на мобиле. Шаги и чипы
+       идут в интерливе в DOM, занимают своё естественное место в обоих
+       ориентациях — никаких абсолютных позиционирований. */
     .funnel {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 0;
+      display: flex;
+      flex-direction: row;
       align-items: stretch;
-      position: relative;
+      gap: 6px;
     }
     .funnel-step {
+      flex: 1 1 0;
+      min-width: 0;
       padding: 16px 12px;
       text-align: center;
       background: #f8f7fb;
       border: 1px solid #ece7f2;
       border-radius: 16px;
-      position: relative;
-      margin: 0 4px;
     }
     .funnel-step.step-1 { background: #f0f7fc; border-color: #d3e7f4; }
     .funnel-step.step-2 { background: #f6f4fb; }
@@ -277,21 +279,18 @@
       font-size: 12px; line-height: 1.3;
       color: #4a5260;
     }
-
     .funnel-conv {
-      position: absolute;
-      top: 50%; transform: translate(-50%, -50%);
-      width: 56px;
+      flex: 0 0 auto;
+      align-self: center;
       background: #fff;
       border: 1px solid #ece7f2;
       border-radius: 999px;
-      padding: 4px 8px;
+      padding: 4px 10px;
       text-align: center;
       font-size: 12px;
       font-weight: 600;
       color: #3589BD;
-      z-index: 2;
-      pointer-events: none;
+      white-space: nowrap;
     }
 
     /* ── Кнопка раскрытия списка ── */
@@ -430,15 +429,8 @@
 
     /* ── Мобила ── */
     @media (max-width: 720px) {
-      .funnel { grid-template-columns: 1fr; gap: 12px; }
-      .funnel-step { margin: 0; }
-      .funnel-conv {
-        position: static;
-        transform: none;
-        align-self: center;
-        margin: -6px auto;
-        width: 64px;
-      }
+      .funnel { flex-direction: column; gap: 8px; }
+      .funnel-conv { margin: -2px auto; padding: 4px 14px; }
       .phone-row {
         grid-template-columns: 1fr;
         gap: 8px;
@@ -799,8 +791,8 @@
           panelStats.classList.toggle("show", which === "stats");
           panelSurveys.classList.toggle("show", which === "surveys");
           if (which === "surveys") {
-            stopPolling();
             loadSurveys();
+            startPolling();
           } else if (which === "stats") {
             loadStats();
             startPolling();
@@ -808,19 +800,22 @@
         });
       });
 
-      // ── Polling ──
+      // ── Polling ── единый таймер, опрашивает АКТИВНУЮ вкладку каждые N сек.
       function startPolling() {
         if (statsPollTimer) return;
         statsPollTimer = setInterval(() => {
-          if (activeTab !== "stats" || document.hidden) return;
-          loadStats({ silent: true });
+          if (document.hidden) return;
+          if (activeTab === "stats") loadStats({ silent: true });
+          else if (activeTab === "surveys") loadSurveys({ silent: true });
         }, POLL_INTERVAL_MS);
       }
       function stopPolling() {
         if (statsPollTimer) { clearInterval(statsPollTimer); statsPollTimer = null; }
       }
       document.addEventListener("visibilitychange", () => {
-        if (!document.hidden && activeTab === "stats") loadStats({ silent: true });
+        if (document.hidden) return;
+        if (activeTab === "stats") loadStats({ silent: true });
+        else if (activeTab === "surveys") loadSurveys({ silent: true });
       });
 
       // ── Fetch helpers ──
@@ -853,6 +848,33 @@
           .replace(/>/g, "&gt;")
           .replace(/"/g, "&quot;")
           .replace(/'/g, "&#039;");
+      }
+
+      // Универсальный билдер воронки. steps: [{idx,num,label}], convs: [pct, pct, ...]
+      // Возвращает корневой <div class="funnel"> с интерливом step → conv → step → ...
+      function buildFunnel(steps, convs) {
+        const f = document.createElement("div");
+        f.className = "funnel";
+        steps.forEach((s, i) => {
+          const cell = document.createElement("div");
+          cell.className = "funnel-step step-" + s.idx;
+          const n = document.createElement("div");
+          n.className = "funnel-num";
+          n.textContent = String(s.num || 0);
+          const l = document.createElement("div");
+          l.className = "funnel-label";
+          l.textContent = s.label;
+          cell.appendChild(n);
+          cell.appendChild(l);
+          f.appendChild(cell);
+          if (i < steps.length - 1 && i < convs.length) {
+            const c = document.createElement("div");
+            c.className = "funnel-conv";
+            c.textContent = (convs[i] || 0) + "%";
+            f.appendChild(c);
+          }
+        });
+        return f;
       }
 
       // ── Статистика ──
@@ -889,41 +911,18 @@
         header.appendChild(updated);
         wrap.appendChild(header);
 
-        // Воронка
-        const funnel = document.createElement("div");
-        funnel.className = "funnel";
-
-        function step(idx, num, label) {
-          const cell = document.createElement("div");
-          cell.className = "funnel-step step-" + idx;
-          const n = document.createElement("div");
-          n.className = "funnel-num";
-          n.textContent = String(num || 0);
-          const l = document.createElement("div");
-          l.className = "funnel-label";
-          l.textContent = label;
-          cell.appendChild(n);
-          cell.appendChild(l);
-          return cell;
-        }
-
-        funnel.appendChild(step(1, totals.authorized, "Авторизовались"));
-        funnel.appendChild(step(2, totals.submittedQuestionnaire, "Заполнили опросник"));
-        funnel.appendChild(step(3, totals.uploadedRequired, "Загрузили обязательные документы"));
-        funnel.appendChild(step(4, totals.uploadedAll, "Загрузили все документы"));
-
-        // Конверсии «между» — позиционируем абсолютно над границами; на мобилке flex выстроит вертикально (см. CSS).
-        function convChip(pct, left) {
-          const c = document.createElement("div");
-          c.className = "funnel-conv";
-          c.textContent = pct + "%";
-          c.style.left = left;
-          return c;
-        }
-        funnel.appendChild(convChip(conv.auth_to_submitted || 0, "25%"));
-        funnel.appendChild(convChip(conv.submitted_to_required || 0, "50%"));
-        funnel.appendChild(convChip(conv.required_to_all || 0, "75%"));
-
+        // Воронка: step → conv → step → conv → step → conv → step (интерлив).
+        // Этот порядок работает одинаково и в row, и в column.
+        const funnel = buildFunnel([
+          { idx: 1, num: totals.authorized, label: "Авторизовались" },
+          { idx: 2, num: totals.submittedQuestionnaire, label: "Заполнили опросник" },
+          { idx: 3, num: totals.uploadedRequired, label: "Загрузили обязательные документы" },
+          { idx: 4, num: totals.uploadedAll, label: "Загрузили все документы" }
+        ], [
+          conv.auth_to_submitted || 0,
+          conv.submitted_to_required || 0,
+          conv.required_to_all || 0
+        ]);
         wrap.appendChild(funnel);
 
         // Кнопка раскрытия списка
@@ -1010,64 +1009,144 @@
       }
 
       // ── Опросники ──
-      async function loadSurveys() {
-        surveysContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+      let surveysPhonesExpanded = false;
+
+      async function loadSurveys(opts) {
+        const silent = opts && opts.silent;
+        if (!silent) surveysContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
         try {
-          const data = await apiFetch("/admin/api/surveys");
-          renderSurveys(data);
+          const data = await apiFetch("/admin/api/surveys-funnel");
+          renderSurveysFunnel(data);
         } catch (e) {
-          surveysContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+          if (!silent) surveysContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
         }
       }
 
-      function renderSurveys(data) {
-        const files = Array.isArray(data.files) ? data.files : [];
+      function renderSurveysFunnel(data) {
+        const totals = (data && data.totals) || {};
+        const conv = (data && data.conversions) || {};
+        const phones = Array.isArray(data && data.phones) ? data.phones : [];
+
         const wrap = document.createElement("div");
 
-        const summary = document.createElement("div");
-        summary.className = "surveys-summary";
-        const big = document.createElement("div");
-        big.className = "surveys-big";
-        big.textContent = String(files.length);
-        const sub = document.createElement("div");
-        sub.className = "surveys-sub";
-        sub.innerHTML = "Полученных опросников обратной связи<br>" +
-                       'папка: <strong>' + escapeHtml(data.folder || "") + '</strong>';
-        summary.appendChild(big);
-        summary.appendChild(sub);
-        wrap.appendChild(summary);
+        // Шапка
+        const header = document.createElement("div");
+        header.className = "stats-header";
+        const live = document.createElement("div");
+        live.className = "stats-since";
+        live.innerHTML = '<span class="live-dot"></span>Опросники обратной связи · данные обновляются онлайн';
+        const updated = document.createElement("div");
+        updated.className = "stats-since";
+        updated.style.color = "#9096a3";
+        updated.textContent = "Обновлено: " + new Date().toLocaleTimeString("ru-RU", { timeZone: "Europe/Moscow" }) + " МСК";
+        header.appendChild(live);
+        header.appendChild(updated);
+        wrap.appendChild(header);
 
-        if (!files.length) {
+        // Воронка 3 шага
+        const funnel = buildFunnel([
+          { idx: 1, num: totals.smsSent,   label: "Получили SMS с опросом" },
+          { idx: 3, num: totals.clicked,   label: "Перешли по ссылке" },
+          { idx: 4, num: totals.submitted, label: "Отправили опросник" }
+        ], [
+          conv.sent_to_clicked || 0,
+          conv.clicked_to_submitted || 0
+        ]);
+        wrap.appendChild(funnel);
+
+        // Кнопка раскрытия списка
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "toggle-phones";
+        toggleBtn.textContent = surveysPhonesExpanded
+          ? "Скрыть список номеров"
+          : "Показать список номеров (" + phones.length + ")";
+        wrap.appendChild(toggleBtn);
+
+        // Список
+        const list = document.createElement("div");
+        list.className = "phones-list" + (surveysPhonesExpanded ? " show" : "");
+
+        if (!phones.length) {
           const empty = document.createElement("div");
           empty.className = "empty-state";
-          empty.textContent = "Опросников пока нет.";
-          wrap.appendChild(empty);
+          empty.textContent = "SMS пока никому не отправлялась.";
+          list.appendChild(empty);
         } else {
-          const list = document.createElement("div");
-          list.className = "surveys-list";
-          files.forEach((name) => {
+          phones.forEach((it) => {
             const row = document.createElement("div");
-            row.className = "survey-row";
-            const nm = document.createElement("div");
-            nm.className = "survey-name";
-            nm.textContent = name;
-            row.appendChild(nm);
-            const actions = document.createElement("div");
-            actions.className = "survey-actions";
-            const openBtn = document.createElement("a");
-            openBtn.className = "survey-btn primary";
-            openBtn.target = "_blank";
-            openBtn.rel = "noopener";
-            openBtn.href = "/admin/api/surveys/download"
-              + "?name=" + encodeURIComponent(name)
-              + "&token=" + encodeURIComponent(getToken());
-            openBtn.textContent = "Открыть";
-            actions.appendChild(openBtn);
-            row.appendChild(actions);
+            row.className = "phone-row";
+
+            // Номер + (если есть) ФИО
+            const numWrap = document.createElement("div");
+            const num = document.createElement("div");
+            num.className = "phone-num";
+            num.textContent = it.formatted || it.phone;
+            numWrap.appendChild(num);
+            if (it.fullName) {
+              const fio = document.createElement("div");
+              fio.style.fontSize = "11px";
+              fio.style.color = "#9096a3";
+              fio.style.marginTop = "2px";
+              fio.textContent = it.fullName;
+              numWrap.appendChild(fio);
+            }
+            row.appendChild(numWrap);
+
+            // 3-шаговая шкала
+            const stagesWrap = document.createElement("div");
+            const stages = document.createElement("div");
+            stages.className = "phone-stages";
+            const s = it.stages || {};
+            function dot(done) { const d = document.createElement("div"); d.className = "stage-dot" + (done ? " done" : ""); return d; }
+            function line(done) { const l = document.createElement("div"); l.className = "stage-line" + (done ? " done" : ""); return l; }
+            stages.appendChild(dot(!!s.sent));
+            stages.appendChild(line(!!s.clicked));
+            stages.appendChild(dot(!!s.clicked));
+            stages.appendChild(line(!!s.submitted));
+            stages.appendChild(dot(!!s.submitted));
+
+            const titles = document.createElement("div");
+            titles.className = "stage-titles";
+            titles.style.gridTemplateColumns = "1fr 1fr 1fr";
+            titles.innerHTML = "<span>SMS</span><span>клик</span><span>отправил</span>";
+
+            stagesWrap.appendChild(stages);
+            stagesWrap.appendChild(titles);
+            row.appendChild(stagesWrap);
+
+            // Мета + (если есть PDF) кнопка «Открыть»
+            const meta = document.createElement("div");
+            meta.className = "phone-meta";
+            meta.textContent = formatDateMsk(it.sentAt);
+            if (it.pdfFileName) {
+              const linkWrap = document.createElement("div");
+              linkWrap.style.marginTop = "4px";
+              const a = document.createElement("a");
+              a.className = "survey-btn primary";
+              a.target = "_blank";
+              a.rel = "noopener";
+              a.href = "/admin/api/surveys/download?name="
+                + encodeURIComponent(it.pdfFileName)
+                + "&token=" + encodeURIComponent(getToken());
+              a.textContent = "Открыть PDF";
+              linkWrap.appendChild(a);
+              meta.appendChild(linkWrap);
+            }
+            row.appendChild(meta);
+
             list.appendChild(row);
           });
-          wrap.appendChild(list);
         }
+        wrap.appendChild(list);
+
+        toggleBtn.addEventListener("click", () => {
+          surveysPhonesExpanded = !surveysPhonesExpanded;
+          list.classList.toggle("show", surveysPhonesExpanded);
+          toggleBtn.textContent = surveysPhonesExpanded
+            ? "Скрыть список номеров"
+            : "Показать список номеров (" + phones.length + ")";
+        });
 
         surveysContent.innerHTML = "";
         surveysContent.appendChild(wrap);
