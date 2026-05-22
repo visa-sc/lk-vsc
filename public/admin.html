@@ -38,88 +38,122 @@
       margin: 28px auto;
       padding: 0 16px;
     }
+    /* ── Логин-карточка в стиле основного ЛК ── */
     .login-card {
+      width: 100%;
+      max-width: 420px;
       background: #fff;
       border: 1px solid #ece7f2;
       border-radius: 22px;
-      padding: 28px 24px 24px;
-      box-shadow: 0 12px 36px rgba(34, 36, 52, 0.06);
+      padding: 22px;
+      box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05);
+      text-align: center;
     }
-    .login-card h1 {
+    .login-card h2 {
       margin: 0 0 6px;
-      font-size: 24px;
-      letter-spacing: -0.01em;
-      color: #161d45;
+      font-size: 16px;
+      font-weight: 500;
+      color: #1d2330;
+      line-height: 1.4;
+      text-align: center;
+      letter-spacing: 0;
     }
-    .login-card p {
-      margin: 0 0 22px;
-      font-size: 14px;
-      line-height: 1.5;
-      color: #737988;
+    .login-card .sub {
+      margin: 0 0 18px;
+      font-size: 13px;
+      font-weight: 400;
+      color: #9096a3;
+      text-align: center;
     }
+
+    .login-form-inner {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: stretch;
+      text-align: center;
+    }
+
     .login-input {
       width: 100%;
       height: 52px;
-      border: 1px solid #e8e2ee;
+      border: 1px solid #ebe6f1;
       border-radius: 14px;
       padding: 0 16px;
       font-size: 16px;
+      font-weight: 400;
       outline: none;
       font-family: inherit;
       color: #1f2532;
       background: #fff;
-      transition: border-color 0.2s var(--vsc-ease), background 0.2s var(--vsc-ease);
+      text-align: center;
+      letter-spacing: normal;
+      transition: border-color 0.2s var(--vsc-ease), box-shadow 0.2s var(--vsc-ease);
     }
-    /* Если поле паролевое — крупные «булиты» выглядят лучше с небольшим
-       letter-spacing'ом. Применяется ТОЛЬКО когда поле заполнено (paint
-       value). Placeholder остаётся обычной плотности. */
+    /* Введённый код — крупнее и с интервалом, чтобы password-«булиты»
+       смотрелись красиво. Placeholder и пустое состояние без spacing'а. */
     .login-input[type="password"]:not(:placeholder-shown) {
-      letter-spacing: 0.12em;
+      letter-spacing: 0.18em;
       font-size: 22px;
     }
-    .login-input::placeholder { letter-spacing: normal; color: #9a9faa; }
-    .login-input:focus { border-color: #3589BD; }
+    .login-input::placeholder { color: #9a9faa; letter-spacing: normal; font-weight: 400; }
+    .login-input:focus {
+      border-color: #3589BD;
+      box-shadow: 0 0 0 3px rgba(53, 137, 189, 0.15);
+    }
     .login-input.is-error { border-color: #d97a8a; background: #fbebee; }
+
+    /* Главная кнопка — белая с синей обводкой, ровно как в LK. */
     .login-btn {
       width: 100%;
-      height: 52px;
-      margin-top: 14px;
-      border: 0;
-      border-radius: 14px;
-      background: #3589BD;
-      color: #fff;
-      font-size: 16px;
+      height: 44px;
+      margin: 0;
+      border: 1.5px solid #3589BD;
+      border-radius: 12px;
+      background: #fff;
+      color: #3589BD;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       font-family: inherit;
-      letter-spacing: 0.01em;
-      box-shadow: 0 6px 18px rgba(53, 137, 189, 0.22);
-      transition: filter 0.2s var(--vsc-ease), box-shadow 0.2s var(--vsc-ease), transform 0.05s var(--vsc-ease);
+      letter-spacing: 0;
+      box-shadow: none;
+      transition: background 0.2s var(--vsc-ease), color 0.2s var(--vsc-ease),
+                  border-color 0.2s var(--vsc-ease), opacity 0.2s var(--vsc-ease);
     }
-    .login-btn:hover { filter: brightness(0.97); box-shadow: 0 8px 22px rgba(53, 137, 189, 0.28); }
-    .login-btn:active { transform: translateY(1px); }
-    .login-btn:disabled { opacity: 0.6; cursor: progress; box-shadow: none; }
+    .login-btn:hover:not(:disabled) { background: #f0f7fc; }
+    .login-btn:active:not(:disabled) { background: #e6f1f8; transform: none; }
+    .login-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      background: #fff;
+      color: #9096a3;
+      border-color: #d6dbe3;
+    }
+
     .login-error {
       margin-top: 14px;
-      color: #c4314b;
+      color: #a15561;
       font-size: 14px;
-      padding: 10px 12px;
+      padding: 12px 14px;
       background: #fbebee;
-      border: 1px solid #d97a8a;
-      border-radius: 12px;
+      border: 1px solid #efcfd5;
+      border-radius: 14px;
+      text-align: center;
       display: none;
     }
     .login-error.show { display: block; }
 
+    /* Био-кнопка — такая же белая с синей обводкой, чуть выше, с иконкой. */
     .bio-btn {
       width: 100%;
-      height: 50px;
-      margin-bottom: 14px;
+      height: 48px;
+      margin: 0 0 10px;
       border: 1.5px solid #3589BD;
       background: #fff;
       color: #3589BD;
-      border-radius: 14px;
-      font-size: 15px;
+      border-radius: 12px;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       font-family: inherit;
@@ -127,19 +161,24 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      transition: background 0.2s var(--vsc-ease);
+      transition: background 0.2s var(--vsc-ease), color 0.2s var(--vsc-ease),
+                  border-color 0.2s var(--vsc-ease);
     }
     .bio-btn.show { display: flex; }
-    .bio-btn:hover { background: #f0f7fc; }
+    .bio-btn:hover:not(:disabled) { background: #f0f7fc; }
+    .bio-btn:active:not(:disabled) { background: #e6f1f8; }
     .bio-btn:disabled { opacity: 0.6; cursor: progress; }
     .bio-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+
     .login-divider {
       display: none;
       align-items: center;
       gap: 10px;
-      margin: 4px 0 12px;
+      margin: 2px 0 8px;
       font-size: 12px;
       color: #9096a3;
+      font-weight: 400;
+      text-align: center;
     }
     .login-divider.show { display: flex; }
     .login-divider::before,
@@ -210,15 +249,31 @@
       flex-wrap: wrap;
     }
     .dash-title { margin: 0; font-size: 22px; color: #161d45; }
-    .logout-btn {
-      height: 36px; padding: 0 14px;
-      border-radius: 12px; border: 1.5px solid #3589BD;
-      background: #fff; color: #3589BD;
-      font-size: 13px; font-weight: 600;
-      cursor: pointer; font-family: inherit;
-      transition: background 0.2s var(--vsc-ease);
+    /* Кнопка «Выйти» — в стиле «Перейти на страницу входа» в LK-кабинете:
+       прозрачная, серая обводка, серый текст, маленькая, внизу страницы. */
+    .footer-logout {
+      display: flex;
+      justify-content: center;
+      margin: 28px 0 16px;
     }
-    .logout-btn:hover { background: #f0f7fc; }
+    .logout-btn {
+      display: inline-block;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 400;
+      color: #9096a3;
+      background: transparent;
+      border: 1px solid #e3e0eb;
+      border-radius: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      text-decoration: none;
+      transition: color 0.15s var(--vsc-ease), border-color 0.15s var(--vsc-ease);
+    }
+    .logout-btn:hover {
+      color: #3589BD;
+      border-color: #c6dceb;
+    }
 
     .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
     .tab-btn {
@@ -501,8 +556,8 @@
   <!-- ── Логин ── -->
   <div id="loginBlock" class="login-wrap">
     <div class="login-card">
-      <h1>Админка VOYO</h1>
-      <p>Введите код доступа.</p>
+      <h2>Админка VOYO</h2>
+      <div class="sub">Введите код доступа</div>
 
       <button id="bioLoginBtn" type="button" class="bio-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -512,7 +567,7 @@
       </button>
       <div id="loginDivider" class="login-divider">или по коду</div>
 
-      <form id="loginForm">
+      <form id="loginForm" class="login-form-inner">
         <input
           id="codeInput"
           class="login-input"
@@ -540,7 +595,6 @@
   <div id="dashBlock" class="dash">
     <div class="dash-top">
       <h1 class="dash-title">Админка VOYO</h1>
-      <button id="logoutBtn" class="logout-btn">Выйти</button>
     </div>
 
     <div class="tabs">
@@ -558,6 +612,10 @@
       <div id="surveysContent">
         <div class="loading-state">Загружаем…</div>
       </div>
+    </div>
+
+    <div class="footer-logout">
+      <button id="logoutBtn" type="button" class="logout-btn">Выйти</button>
     </div>
   </div>
 
