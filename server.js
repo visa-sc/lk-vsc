@@ -39,6 +39,10 @@ app.get("/about/v1", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "about-v1.html"));
 });
 
+app.get("/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
+});
+
 // ──────────────────────────────────────────────────────────
 // SMS-аутентификация (спящий режим). Включается флагом SMS_AUTH_ENABLED=true.
 // Пока флаг false — эндпоинты возвращают 404, чтобы внешне ничего не светилось.
@@ -310,6 +314,135 @@ app.post("/api/auth/staff-bypass", (req, res) => {
     return res.status(403).json({ success: false, message: "Неверный код" });
   }
   return res.json({ success: true });
+});
+
+// ──────────────────────────────────────────────────────────
+// Админ-дашборд: /admin
+// Авторизация по коду (env ADMIN_CODE, дефолт «250960»). После успешного
+// логина — токен живёт 24 часа. Защищённые эндпоинты помечены requireAdmin.
+// ──────────────────────────────────────────────────────────
+const ADMIN_CODE = process.env.ADMIN_CODE || "250960";
+const ADMIN_SESSION_TTL_MS = 24 * 3600 * 1000;
+const ADMIN_LOGIN_FAIL_LIMIT_24H = 15;
+const adminSessions = new Map();          // token -> expiresAt(ms)
+const adminLoginFailHistory = new Map();  // ip -> [timestamp,...]
+
+function createAdminSession() {
+  const token = crypto.randomBytes(24).toString("hex");
+  adminSessions.set(token, Date.now() + ADMIN_SESSION_TTL_MS);
+  return token;
+}
+
+function isAdminTokenValid(token) {
+  if (!token || typeof token !== "string") return false;
+  const exp = adminSessions.get(token);
+  if (!exp) return false;
+  if (Date.now() > exp) {
+    adminSessions.delete(token);
+    return false;
+  }
+  return true;
+}
+
+function requireAdmin(req, res, next) {
+  const headerToken = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  const queryToken = String(req.query.token || "").trim();
+  const token = headerToken || queryToken;
+  if (!isAdminTokenValid(token)) {
+    return res.status(401).json({ success: false, message: "Не авторизован" });
+  }
+  next();
+}
+
+function checkAdminLoginRateLimit(ip) {
+  const hist = pruneHistory(adminLoginFailHistory, ip, MS_24H);
+  if (hist.length >= ADMIN_LOGIN_FAIL_LIMIT_24H) {
+    return { ok: false, message: "Слишком много неудачных попыток. Попробуйте через сутки." };
+  }
+  return { ok: true };
+}
+function recordAdminLoginFail(ip) {
+  adminLoginFailHistory.set(ip, [...(adminLoginFailHistory.get(ip) || []), Date.now()]);
+}
+
+app.post("/admin/api/login", (req, res) => {
+  const ip = getClientIp(req);
+  const limit = checkAdminLoginRateLimit(ip);
+  if (!limit.ok) {
+    return res.status(429).json({ success: false, message: limit.message });
+  }
+  const provided = String((req.body && req.body.code) || "").trim();
+  if (!provided) {
+    return res.status(400).json({ success: false, message: "Введите код доступа" });
+  }
+  if (provided !== ADMIN_CODE) {
+    recordAdminLoginFail(ip);
+    return res.status(403).json({ success: false, message: "Неверный код" });
+  }
+  const token = createAdminSession();
+  return res.json({ success: true, token, expiresInSec: Math.floor(ADMIN_SESSION_TTL_MS / 1000) });
+});
+
+app.post("/admin/api/logout", requireAdmin, (req, res) => {
+  const headerToken = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  if (headerToken) adminSessions.delete(headerToken);
+  return res.json({ success: true });
+});
+
+// Статистика — отдаём ту же выборку, что и в PDF, но JSON'ом для UI.
+app.get("/admin/api/stats", requireAdmin, (req, res) => {
+  const entries = Array.from(lkAuthPhones.entries()).sort((a, b) => b[1] - a[1]);
+  return res.json({
+    success: true,
+    startDate: LK_STATS_START_DATE,
+    total: entries.length,
+    phones: entries.map(([phone, ts]) => ({
+      phone,
+      formatted: formatPhoneForDisplay(phone),
+      firstAuthAt: ts
+    }))
+  });
+});
+
+// Список PDF-опросников обратной связи на Я.Диске.
+app.get("/admin/api/surveys", requireAdmin, async (req, res) => {
+  try {
+    if (!YANDEX_DISK_TOKEN) {
+      return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
+    }
+    const files = await listYandexFolderFiles(FEEDBACK_DISK_FOLDER);
+    const pdfs = (files || []).filter((n) => /\.pdf$/i.test(n)).sort();
+    return res.json({
+      success: true,
+      folder: FEEDBACK_DISK_FOLDER,
+      files: pdfs
+    });
+  } catch (e) {
+    console.error("ADMIN /surveys list error:", e.response?.data || e.message);
+    return res.status(500).json({ success: false, message: "Ошибка чтения списка опросников" });
+  }
+});
+
+// Скачивание конкретного PDF: проксируем поток с Я.Диска, чтобы клиенту
+// не нужно было знать токен и пути на Диске.
+app.get("/admin/api/surveys/download", requireAdmin, async (req, res) => {
+  try {
+    const name = String(req.query.name || "").trim();
+    if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+      return res.status(400).send("Bad name");
+    }
+    if (!YANDEX_DISK_TOKEN) {
+      return res.status(500).send("YANDEX_DISK_TOKEN missing");
+    }
+    const diskPath = `${FEEDBACK_DISK_FOLDER}/${name}`;
+    const buf = await downloadYandexFileBuffer(diskPath);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(name)}`);
+    return res.send(buf);
+  } catch (e) {
+    console.error("ADMIN /surveys download error:", e.response?.data || e.message);
+    return res.status(404).send("Not found");
+  }
 });
 
 app.post("/api/auth/verify", smsGate, (req, res) => {
@@ -3711,23 +3844,27 @@ async function uploadLkStatsPdfAndCleanup() {
   }
 }
 
-// ── Расписание: ежедневно в 00:00 МСК ──
-function msUntilNextMoscowMidnight() {
+// ── Расписание: каждые 3 часа по МСК (00:00, 03:00, 06:00, 09:00, ...) ──
+function msUntilNextMoscow3hSlot() {
   const now = Date.now();
   const mskOffsetMs = 3 * 3600 * 1000;
   const mskNow = new Date(now + mskOffsetMs);
-  const nextMskMidnightAsUtcEpoch = Date.UTC(
+  // Текущий час по МСК и следующая 3-часовая граница: 00,03,06,...,21.
+  const curHour = mskNow.getUTCHours();
+  const nextSlotHour = (Math.floor(curHour / 3) + 1) * 3; // 24 — это уже завтра
+  const targetUtcEpoch = Date.UTC(
     mskNow.getUTCFullYear(),
     mskNow.getUTCMonth(),
-    mskNow.getUTCDate() + 1,
-    0, 0, 0, 0
+    mskNow.getUTCDate(),
+    nextSlotHour, // если ==24, Date.UTC сама перенесёт на следующий день
+    0, 0, 0
   );
-  const target = nextMskMidnightAsUtcEpoch - mskOffsetMs;
+  const target = targetUtcEpoch - mskOffsetMs;
   return target - now;
 }
 
 function scheduleLkStatsJob() {
-  const delay = msUntilNextMoscowMidnight();
+  const delay = msUntilNextMoscow3hSlot();
   console.log(`LK STATS: next run in ${Math.round(delay / 1000 / 60)} min (${new Date(Date.now() + delay).toISOString()} UTC)`);
   setTimeout(async () => {
     try { await uploadLkStatsPdfAndCleanup(); } catch (_) {}

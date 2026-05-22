@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>VOYO — админка</title>
+  <link rel="icon" href="/favicon.ico" />
+  <style>
+    :root { --vsc-ease: cubic-bezier(0.4, 0, 0.2, 1); }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #f3f2f7;
+      color: #1d2330;
+      min-height: 100vh;
+    }
+
+    /* ── Логотип ── */
+    .brand-bar {
+      max-width: 1100px;
+      margin: 24px auto 0;
+      padding: 0 16px;
+      display: flex;
+      justify-content: center;
+    }
+    .brand-bar img {
+      width: 140px; height: auto; aspect-ratio: 2 / 1;
+      mix-blend-mode: multiply;
+      opacity: 0; transform: scale(0.96);
+      transition: opacity 0.55s var(--vsc-ease), transform 0.55s var(--vsc-ease);
+    }
+    .brand-bar img.is-loaded { opacity: 1; transform: scale(1); }
+
+    /* ── Логин ── */
+    .login-wrap {
+      max-width: 420px; width: 100%;
+      margin: 28px auto;
+      padding: 0 16px;
+    }
+    .login-card {
+      background: #fff;
+      border: 1px solid #ece7f2;
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05);
+    }
+    .login-card h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      color: #161d45;
+    }
+    .login-card p {
+      margin: 0 0 20px;
+      font-size: 14px;
+      color: #737988;
+    }
+    .login-input {
+      width: 100%;
+      height: 50px;
+      border: 1px solid #e8e2ee;
+      border-radius: 14px;
+      padding: 0 14px;
+      font-size: 16px;
+      outline: none;
+      font-family: inherit;
+      letter-spacing: 0.1em;
+      transition: border-color 0.2s var(--vsc-ease);
+    }
+    .login-input:focus { border-color: #3589BD; }
+    .login-input.is-error { border-color: #d97a8a; background: #fbebee; }
+    .login-btn {
+      width: 100%;
+      height: 50px;
+      margin-top: 14px;
+      border: 0;
+      border-radius: 14px;
+      background: #3589BD;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: filter 0.2s var(--vsc-ease);
+    }
+    .login-btn:hover { filter: brightness(0.95); }
+    .login-btn:disabled { opacity: 0.6; cursor: progress; }
+    .login-error {
+      margin-top: 14px;
+      color: #c4314b;
+      font-size: 14px;
+      padding: 10px 12px;
+      background: #fbebee;
+      border: 1px solid #d97a8a;
+      border-radius: 12px;
+      display: none;
+    }
+    .login-error.show { display: block; }
+
+    /* ── Дашборд ── */
+    .dash {
+      display: none;
+      max-width: 1100px;
+      margin: 28px auto 64px;
+      padding: 0 16px;
+    }
+    .dash.show { display: block; }
+    .dash-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+    .dash-title {
+      margin: 0;
+      font-size: 22px;
+      color: #161d45;
+    }
+    .logout-btn {
+      height: 36px;
+      padding: 0 14px;
+      border-radius: 12px;
+      border: 1.5px solid #3589BD;
+      background: #fff;
+      color: #3589BD;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.2s var(--vsc-ease);
+    }
+    .logout-btn:hover { background: #f0f7fc; }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      height: 38px;
+      padding: 0 18px;
+      border: 1.5px solid #e8e2ee;
+      background: #fff;
+      color: #3a4150;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.2s var(--vsc-ease), border-color 0.2s var(--vsc-ease), color 0.2s var(--vsc-ease);
+    }
+    .tab-btn:hover { background: #faf9fc; }
+    .tab-btn.active {
+      background: #3589BD;
+      color: #fff;
+      border-color: #3589BD;
+    }
+
+    .panel {
+      display: none;
+      background: #fff;
+      border: 1px solid #ece7f2;
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05);
+    }
+    .panel.show { display: block; }
+
+    .stats-summary {
+      display: flex;
+      gap: 20px;
+      align-items: baseline;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+      padding-bottom: 16px;
+      border-bottom: 1px dashed #ece7f2;
+    }
+    .stats-big {
+      font-size: 48px;
+      font-weight: 700;
+      color: #161d45;
+      line-height: 1;
+    }
+    .stats-label {
+      font-size: 14px;
+      color: #737988;
+      line-height: 1.4;
+    }
+
+    .stats-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 24px;
+    }
+    .stats-list-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid #f3f2f7;
+      font-size: 14px;
+    }
+    .stats-list-row .num {
+      color: #9096a3;
+      width: 28px;
+      flex-shrink: 0;
+    }
+    .stats-list-row .phone {
+      flex: 1;
+      color: #1d2330;
+    }
+    .stats-list-row .when {
+      color: #9096a3;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .stats-empty,
+    .surveys-empty {
+      padding: 24px 0;
+      text-align: center;
+      color: #9096a3;
+      font-size: 14px;
+    }
+
+    .surveys-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .survey-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #f3f2f7;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .survey-row:last-child { border-bottom: none; }
+    .survey-name {
+      flex: 1;
+      font-size: 14px;
+      color: #1d2330;
+      word-break: break-word;
+    }
+    .survey-actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .survey-btn {
+      height: 32px;
+      padding: 0 12px;
+      border: 1.5px solid #3589BD;
+      background: #fff;
+      color: #3589BD;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s var(--vsc-ease);
+    }
+    .survey-btn:hover { background: #f0f7fc; }
+    .survey-btn.primary {
+      background: #3589BD;
+      color: #fff;
+    }
+    .survey-btn.primary:hover { background: #2c7aa6; }
+
+    .loading {
+      padding: 16px 0;
+      text-align: center;
+      color: #9096a3;
+      font-size: 13px;
+    }
+
+    @media (max-width: 640px) {
+      .stats-list { grid-template-columns: 1fr; }
+      .stats-big { font-size: 38px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="brand-bar">
+    <img src="/logo.png" alt="VOYO" width="600" height="300" onload="this.classList.add('is-loaded')" onerror="this.classList.add('is-loaded')" />
+    <noscript><style>.brand-bar img{opacity:1;transform:none;}</style></noscript>
+  </div>
+
+  <!-- ── Логин ── -->
+  <div id="loginBlock" class="login-wrap">
+    <div class="login-card">
+      <h1>Админка VOYO</h1>
+      <p>Введите код доступа.</p>
+      <form id="loginForm">
+        <input
+          id="codeInput"
+          class="login-input"
+          type="password"
+          inputmode="numeric"
+          autocomplete="off"
+          placeholder="Код доступа"
+        />
+        <button id="loginBtn" type="submit" class="login-btn">Войти</button>
+      </form>
+      <div id="loginError" class="login-error"></div>
+    </div>
+  </div>
+
+  <!-- ── Дашборд ── -->
+  <div id="dashBlock" class="dash">
+    <div class="dash-top">
+      <h1 class="dash-title">Админка VOYO</h1>
+      <button id="logoutBtn" class="logout-btn">Выйти</button>
+    </div>
+
+    <div class="tabs">
+      <button type="button" class="tab-btn active" data-tab="stats">Статистика</button>
+      <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
+    </div>
+
+    <!-- Статистика -->
+    <div id="panelStats" class="panel show">
+      <div id="statsContent">
+        <div class="loading">Загружаем…</div>
+      </div>
+    </div>
+
+    <!-- Опросники -->
+    <div id="panelSurveys" class="panel">
+      <div id="surveysContent">
+        <div class="loading">Загружаем…</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const TOKEN_KEY = "voyo_admin_token";
+
+      const loginBlock = document.getElementById("loginBlock");
+      const dashBlock = document.getElementById("dashBlock");
+      const loginForm = document.getElementById("loginForm");
+      const codeInput = document.getElementById("codeInput");
+      const loginBtn = document.getElementById("loginBtn");
+      const loginError = document.getElementById("loginError");
+      const logoutBtn = document.getElementById("logoutBtn");
+
+      const tabBtns = Array.from(document.querySelectorAll(".tab-btn"));
+      const panelStats = document.getElementById("panelStats");
+      const panelSurveys = document.getElementById("panelSurveys");
+      const statsContent = document.getElementById("statsContent");
+      const surveysContent = document.getElementById("surveysContent");
+
+      function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
+      function setToken(t) { localStorage.setItem(TOKEN_KEY, t || ""); }
+      function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+
+      function showLogin() {
+        loginBlock.style.display = "";
+        dashBlock.classList.remove("show");
+        codeInput.value = "";
+        codeInput.focus();
+      }
+      function showDash() {
+        loginBlock.style.display = "none";
+        dashBlock.classList.add("show");
+        loadStats();
+      }
+
+      function showLoginError(msg) {
+        loginError.textContent = msg || "";
+        loginError.classList.add("show");
+        codeInput.classList.add("is-error");
+      }
+      function hideLoginError() {
+        loginError.classList.remove("show");
+        codeInput.classList.remove("is-error");
+      }
+      codeInput.addEventListener("input", hideLoginError);
+
+      loginForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        hideLoginError();
+        const code = (codeInput.value || "").trim();
+        if (!code) {
+          showLoginError("Введите код доступа");
+          return;
+        }
+        loginBtn.disabled = true;
+        const prevText = loginBtn.textContent;
+        loginBtn.textContent = "Проверка…";
+        try {
+          const r = await fetch("/admin/api/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code })
+          });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || !data.success || !data.token) {
+            showLoginError(data.message || "Не удалось войти");
+            return;
+          }
+          setToken(data.token);
+          showDash();
+        } catch (_) {
+          showLoginError("Сетевая ошибка");
+        } finally {
+          loginBtn.disabled = false;
+          loginBtn.textContent = prevText;
+        }
+      });
+
+      logoutBtn.addEventListener("click", async () => {
+        const t = getToken();
+        if (t) {
+          try {
+            await fetch("/admin/api/logout", {
+              method: "POST",
+              headers: { Authorization: "Bearer " + t }
+            });
+          } catch (_) {}
+        }
+        clearToken();
+        showLogin();
+      });
+
+      // Табы
+      tabBtns.forEach((b) => {
+        b.addEventListener("click", () => {
+          const which = b.dataset.tab;
+          tabBtns.forEach((x) => x.classList.toggle("active", x === b));
+          panelStats.classList.toggle("show", which === "stats");
+          panelSurveys.classList.toggle("show", which === "surveys");
+          if (which === "surveys") loadSurveys();
+          if (which === "stats") loadStats();
+        });
+      });
+
+      // ── Загрузки ──
+      async function apiFetch(url) {
+        const t = getToken();
+        const r = await fetch(url, { headers: { Authorization: "Bearer " + t } });
+        if (r.status === 401) {
+          clearToken();
+          showLogin();
+          throw new Error("Unauthorized");
+        }
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.success) throw new Error(d.message || "Ошибка");
+        return d;
+      }
+
+      function formatDateMsk(ms) {
+        try {
+          return new Date(ms).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
+        } catch (_) {
+          return new Date(ms).toLocaleString("ru-RU");
+        }
+      }
+
+      async function loadStats() {
+        statsContent.innerHTML = '<div class="loading">Загружаем…</div>';
+        try {
+          const data = await apiFetch("/admin/api/stats");
+          renderStats(data);
+        } catch (e) {
+          statsContent.innerHTML = '<div class="stats-empty">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+        }
+      }
+
+      function renderStats(data) {
+        const wrap = document.createElement("div");
+
+        const summary = document.createElement("div");
+        summary.className = "stats-summary";
+        const big = document.createElement("div");
+        big.className = "stats-big";
+        big.textContent = String(data.total || 0);
+        const lbl = document.createElement("div");
+        lbl.className = "stats-label";
+        lbl.innerHTML =
+          "Уникальных авторизаций<br>" +
+          'с <strong>' + escapeHtml(data.startDate || "") + '</strong>';
+        summary.appendChild(big);
+        summary.appendChild(lbl);
+        wrap.appendChild(summary);
+
+        if (!data.phones || !data.phones.length) {
+          const empty = document.createElement("div");
+          empty.className = "stats-empty";
+          empty.textContent = "Авторизаций пока нет.";
+          wrap.appendChild(empty);
+        } else {
+          const list = document.createElement("div");
+          list.className = "stats-list";
+          data.phones.forEach((it, idx) => {
+            const row = document.createElement("div");
+            row.className = "stats-list-row";
+            const num = document.createElement("span");
+            num.className = "num";
+            num.textContent = (idx + 1) + ".";
+            const ph = document.createElement("span");
+            ph.className = "phone";
+            ph.textContent = it.formatted || it.phone;
+            const when = document.createElement("span");
+            when.className = "when";
+            when.textContent = formatDateMsk(it.firstAuthAt);
+            row.appendChild(num);
+            row.appendChild(ph);
+            row.appendChild(when);
+            list.appendChild(row);
+          });
+          wrap.appendChild(list);
+        }
+
+        statsContent.innerHTML = "";
+        statsContent.appendChild(wrap);
+      }
+
+      async function loadSurveys() {
+        surveysContent.innerHTML = '<div class="loading">Загружаем…</div>';
+        try {
+          const data = await apiFetch("/admin/api/surveys");
+          renderSurveys(data);
+        } catch (e) {
+          surveysContent.innerHTML = '<div class="surveys-empty">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+        }
+      }
+
+      function renderSurveys(data) {
+        const files = Array.isArray(data.files) ? data.files : [];
+        const wrap = document.createElement("div");
+
+        const summary = document.createElement("div");
+        summary.className = "stats-summary";
+        const big = document.createElement("div");
+        big.className = "stats-big";
+        big.textContent = String(files.length);
+        const lbl = document.createElement("div");
+        lbl.className = "stats-label";
+        lbl.innerHTML =
+          "Полученных опросников обратной связи<br>" +
+          '<span style="font-size:12px;">папка: ' + escapeHtml(data.folder || "") + '</span>';
+        summary.appendChild(big);
+        summary.appendChild(lbl);
+        wrap.appendChild(summary);
+
+        if (!files.length) {
+          const empty = document.createElement("div");
+          empty.className = "surveys-empty";
+          empty.textContent = "Опросников пока нет.";
+          wrap.appendChild(empty);
+        } else {
+          const list = document.createElement("div");
+          list.className = "surveys-list";
+          files.forEach((name) => {
+            const row = document.createElement("div");
+            row.className = "survey-row";
+            const nm = document.createElement("div");
+            nm.className = "survey-name";
+            nm.textContent = name;
+            row.appendChild(nm);
+
+            const actions = document.createElement("div");
+            actions.className = "survey-actions";
+
+            // Открыть во вкладке (inline PDF). Токен передаём в query,
+            // чтобы тег <a target="_blank"> не пытался слать Authorization-header.
+            const openBtn = document.createElement("a");
+            openBtn.className = "survey-btn primary";
+            openBtn.target = "_blank";
+            openBtn.rel = "noopener";
+            openBtn.href = "/admin/api/surveys/download"
+              + "?name=" + encodeURIComponent(name)
+              + "&token=" + encodeURIComponent(getToken());
+            openBtn.textContent = "Открыть";
+            actions.appendChild(openBtn);
+
+            row.appendChild(actions);
+            list.appendChild(row);
+          });
+          wrap.appendChild(list);
+        }
+
+        surveysContent.innerHTML = "";
+        surveysContent.appendChild(wrap);
+      }
+
+      function escapeHtml(s) {
+        return String(s == null ? "" : s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      // Старт: если есть валидный токен — показываем дашборд (проверяем через первый запрос),
+      // иначе показываем логин.
+      (async function bootstrap() {
+        const t = getToken();
+        if (!t) { showLogin(); return; }
+        try {
+          await apiFetch("/admin/api/stats");
+          showDash();
+        } catch (_) {
+          showLogin();
+        }
+      })();
+    })();
+  </script>
+</body>
+</html>
