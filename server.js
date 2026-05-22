@@ -4899,6 +4899,191 @@ app.post("/api/auth/webauthn/auth-verify", async (req, res) => {
   }
 });
 
+// ──────────────────────────────────────────────────────────
+// WebAuthn для админки (/admin). Биометрия / passkey.
+// Одиночный «пользователь» — единственный админ. Несколько устройств можно
+// прописать — каждое получит свой credential. Регистрировать можно только
+// после успешного входа по коду (требует admin-токен).
+// ──────────────────────────────────────────────────────────
+const ADMIN_PASSKEYS_FILE = path.join(__dirname, ".adminPasskeys.json");
+const adminPasskeys = []; // [{ credentialID, publicKey, counter, createdAt }]
+const adminWebauthnChallenges = new Map(); // ключ всегда "admin" — единственная активная challenge.
+const ADMIN_WEBAUTHN_USER_NAME = "voyo-admin";
+const ADMIN_WEBAUTHN_USER_DISPLAY = "VOYO Admin";
+
+function loadAdminPasskeys() {
+  try {
+    const raw = fs.readFileSync(ADMIN_PASSKEYS_FILE, "utf8");
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) {
+      adminPasskeys.splice(0, adminPasskeys.length, ...arr);
+    }
+  } catch (_) {}
+}
+function saveAdminPasskeys() {
+  try {
+    fs.writeFileSync(ADMIN_PASSKEYS_FILE, JSON.stringify(adminPasskeys, null, 2), "utf8");
+  } catch (e) {
+    console.error("saveAdminPasskeys error:", e.message);
+  }
+}
+function setAdminChallenge(challenge, type) {
+  adminWebauthnChallenges.set("admin", {
+    challenge,
+    type,
+    expiresAt: Date.now() + WEBAUTHN_CHALLENGE_TTL_MS
+  });
+}
+function getAdminChallenge(type) {
+  const c = adminWebauthnChallenges.get("admin");
+  if (!c || c.type !== type) return null;
+  if (Date.now() > c.expiresAt) {
+    adminWebauthnChallenges.delete("admin");
+    return null;
+  }
+  return c.challenge;
+}
+function clearAdminChallenge() { adminWebauthnChallenges.delete("admin"); }
+
+loadAdminPasskeys();
+
+// 1) Есть ли вообще зарегистрированный admin-passkey? Публичный эндпоинт —
+//    клиент решает, показать ли кнопку «Войти по Face ID».
+app.get("/admin/api/webauthn/has-credentials", (req, res) => {
+  return res.json({ hasCredentials: adminPasskeys.length > 0 });
+});
+
+// 2) Опции для аутентификации (Face ID без кода). Публично.
+app.post("/admin/api/webauthn/auth-options", async (req, res) => {
+  try {
+    if (!adminPasskeys.length) {
+      return res.status(404).json({ success: false, message: "Нет зарегистрированных passkey" });
+    }
+    const options = await webauthn.generateAuthenticationOptions({
+      rpID: WEBAUTHN_RP_ID,
+      allowCredentials: adminPasskeys.map((c) => ({
+        id: bufferFromB64u(c.credentialID),
+        type: "public-key"
+      })),
+      userVerification: "preferred"
+    });
+    setAdminChallenge(options.challenge, "auth");
+    return res.json(options);
+  } catch (err) {
+    console.error("ADMIN WEBAUTHN AUTH OPTIONS:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 3) Верификация ответа passkey'я. При успехе — выдаём admin-токен (24 часа).
+app.post("/admin/api/webauthn/auth-verify", async (req, res) => {
+  try {
+    const assertionResponse = req.body && req.body.assertionResponse;
+    if (!assertionResponse) {
+      return res.status(400).json({ success: false, message: "Невалидный запрос" });
+    }
+    const expectedChallenge = getAdminChallenge("auth");
+    if (!expectedChallenge) {
+      return res.status(400).json({ success: false, message: "Сессия просрочена" });
+    }
+    const cred = adminPasskeys.find((c) => c.credentialID === assertionResponse.id);
+    if (!cred) {
+      return res.status(404).json({ success: false, message: "Passkey не найден" });
+    }
+    const verification = await webauthn.verifyAuthenticationResponse({
+      response: assertionResponse,
+      expectedChallenge,
+      expectedOrigin: WEBAUTHN_ORIGIN,
+      expectedRPID: WEBAUTHN_RP_ID,
+      authenticator: {
+        credentialID: bufferFromB64u(cred.credentialID),
+        credentialPublicKey: bufferFromB64u(cred.publicKey),
+        counter: cred.counter || 0
+      },
+      requireUserVerification: false
+    });
+    if (!verification.verified) {
+      clearAdminChallenge();
+      return res.status(400).json({ success: false, message: "Подпись не прошла" });
+    }
+    cred.counter = verification.authenticationInfo.newCounter;
+    saveAdminPasskeys();
+    clearAdminChallenge();
+    const token = createAdminSession();
+    return res.json({ success: true, token, expiresInSec: Math.floor(ADMIN_SESSION_TTL_MS / 1000) });
+  } catch (err) {
+    console.error("ADMIN WEBAUTHN AUTH VERIFY:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 4) Опции для регистрации нового passkey'я. Требует admin-токен —
+//    регистрировать биометрию может только уже залогиненный по коду админ.
+app.post("/admin/api/webauthn/register-options", requireAdmin, async (req, res) => {
+  try {
+    const options = await webauthn.generateRegistrationOptions({
+      rpName: WEBAUTHN_RP_NAME,
+      rpID: WEBAUTHN_RP_ID,
+      userID: ADMIN_WEBAUTHN_USER_NAME,
+      userName: ADMIN_WEBAUTHN_USER_NAME,
+      userDisplayName: ADMIN_WEBAUTHN_USER_DISPLAY,
+      attestationType: "none",
+      excludeCredentials: adminPasskeys.map((c) => ({
+        id: bufferFromB64u(c.credentialID),
+        type: "public-key"
+      })),
+      authenticatorSelection: {
+        residentKey: "preferred",
+        userVerification: "preferred"
+      }
+    });
+    setAdminChallenge(options.challenge, "register");
+    return res.json(options);
+  } catch (err) {
+    console.error("ADMIN WEBAUTHN REGISTER OPTIONS:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 5) Верификация регистрации. Требует admin-токен. После успеха —
+//    credential сохраняется в .adminPasskeys.json.
+app.post("/admin/api/webauthn/register-verify", requireAdmin, async (req, res) => {
+  try {
+    const attestationResponse = req.body && req.body.attestationResponse;
+    if (!attestationResponse) {
+      return res.status(400).json({ success: false, message: "Невалидный запрос" });
+    }
+    const expectedChallenge = getAdminChallenge("register");
+    if (!expectedChallenge) {
+      return res.status(400).json({ success: false, message: "Регистрация просрочена" });
+    }
+    const verification = await webauthn.verifyRegistrationResponse({
+      response: attestationResponse,
+      expectedChallenge,
+      expectedOrigin: WEBAUTHN_ORIGIN,
+      expectedRPID: WEBAUTHN_RP_ID,
+      requireUserVerification: false
+    });
+    if (!verification.verified || !verification.registrationInfo) {
+      clearAdminChallenge();
+      return res.status(400).json({ success: false, message: "Проверка не прошла" });
+    }
+    const info = verification.registrationInfo;
+    adminPasskeys.push({
+      credentialID: b64uFromBuffer(info.credentialID),
+      publicKey: b64uFromBuffer(info.credentialPublicKey),
+      counter: info.counter || 0,
+      createdAt: Date.now()
+    });
+    saveAdminPasskeys();
+    clearAdminChallenge();
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("ADMIN WEBAUTHN REGISTER VERIFY:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 app.get("/questionnaire-start", async (req, res) => {
   try {
     const phone = normalizePhone(req.query.phone || "");

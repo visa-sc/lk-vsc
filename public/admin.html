@@ -89,6 +89,88 @@
     }
     .login-error.show { display: block; }
 
+    .bio-btn {
+      width: 100%;
+      height: 50px;
+      margin-bottom: 14px;
+      border: 1.5px solid #3589BD;
+      background: #fff;
+      color: #3589BD;
+      border-radius: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background 0.2s var(--vsc-ease);
+    }
+    .bio-btn.show { display: flex; }
+    .bio-btn:hover { background: #f0f7fc; }
+    .bio-btn:disabled { opacity: 0.6; cursor: progress; }
+    .bio-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+    .login-divider {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      margin: 4px 0 12px;
+      font-size: 12px;
+      color: #9096a3;
+    }
+    .login-divider.show { display: flex; }
+    .login-divider::before,
+    .login-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: #ece7f2;
+    }
+
+    /* Оффер после кода — «Включить Face ID» */
+    .bio-offer {
+      display: none;
+      margin-top: 14px;
+      padding: 16px;
+      background: #f0f7fc;
+      border: 1px solid #d3e7f4;
+      border-radius: 14px;
+    }
+    .bio-offer.show { display: block; }
+    .bio-offer h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      color: #2f6e95;
+    }
+    .bio-offer p {
+      margin: 0 0 12px;
+      font-size: 13px;
+      color: #4a5260;
+      line-height: 1.4;
+    }
+    .bio-offer-actions { display: flex; gap: 10px; }
+    .bio-offer-actions button {
+      flex: 1;
+      height: 38px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .bio-skip {
+      border: 1.5px solid #d3d2da;
+      background: #fff;
+      color: #4a5260;
+    }
+    .bio-enable {
+      border: 0;
+      background: #3589BD;
+      color: #fff;
+    }
+    .bio-offer-actions button:disabled { opacity: 0.6; cursor: progress; }
+
     /* ── Дашборд ── */
     .dash {
       display: none;
@@ -377,6 +459,15 @@
     <div class="login-card">
       <h1>Админка VOYO</h1>
       <p>Введите код доступа.</p>
+
+      <button id="bioLoginBtn" type="button" class="bio-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 11a3 3 0 0 0-3 3v1m6-1v3a3 3 0 0 1-6 0M6 11a6 6 0 0 1 12 0v3m-9 4a3 3 0 0 0 6 0M5 8a8 8 0 0 1 14 0M5 14v1a8 8 0 0 0 .35 2.34" />
+        </svg>
+        Войти по Face ID / отпечатку
+      </button>
+      <div id="loginDivider" class="login-divider">или по коду</div>
+
       <form id="loginForm">
         <input
           id="codeInput"
@@ -389,6 +480,15 @@
         <button id="loginBtn" type="submit" class="login-btn">Войти</button>
       </form>
       <div id="loginError" class="login-error"></div>
+
+      <div id="bioOffer" class="bio-offer">
+        <h3>Входить без кода?</h3>
+        <p>Включите вход по Face ID / отпечатку — больше не нужно будет вводить код каждый раз на этом устройстве.</p>
+        <div class="bio-offer-actions">
+          <button type="button" id="bioSkipBtn" class="bio-skip">Не сейчас</button>
+          <button type="button" id="bioEnableBtn" class="bio-enable">Включить</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -430,6 +530,12 @@
       const loginError = document.getElementById("loginError");
       const logoutBtn = document.getElementById("logoutBtn");
 
+      const bioLoginBtn = document.getElementById("bioLoginBtn");
+      const loginDivider = document.getElementById("loginDivider");
+      const bioOffer = document.getElementById("bioOffer");
+      const bioSkipBtn = document.getElementById("bioSkipBtn");
+      const bioEnableBtn = document.getElementById("bioEnableBtn");
+
       const tabBtns = Array.from(document.querySelectorAll(".tab-btn"));
       const panelStats = document.getElementById("panelStats");
       const panelSurveys = document.getElementById("panelSurveys");
@@ -448,15 +554,177 @@
         loginBlock.style.display = "";
         dashBlock.classList.remove("show");
         codeInput.value = "";
-        codeInput.focus();
+        bioOffer.classList.remove("show");
         stopPolling();
+        maybeShowBioLoginBtn();
       }
       function showDash() {
         loginBlock.style.display = "none";
         dashBlock.classList.add("show");
+        bioOffer.classList.remove("show");
         loadStats();
         startPolling();
       }
+
+      // ── WebAuthn helpers ──
+      function b64uToBytes(s) {
+        const pad = (s + "=".repeat((4 - (s.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+        const bin = atob(pad);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return out;
+      }
+      function bytesToB64u(buf) {
+        const arr = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+        let bin = "";
+        for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+        return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+      }
+      async function isPlatformAuthAvailable() {
+        if (!window.PublicKeyCredential) return false;
+        if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== "function") return false;
+        try { return !!(await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); }
+        catch (_) { return false; }
+      }
+      async function adminHasCredentials() {
+        try {
+          const r = await fetch("/admin/api/webauthn/has-credentials");
+          const d = await r.json();
+          return !!(d && d.hasCredentials);
+        } catch (_) { return false; }
+      }
+      async function maybeShowBioLoginBtn() {
+        const [platformOk, hasCreds] = await Promise.all([
+          isPlatformAuthAvailable(),
+          adminHasCredentials()
+        ]);
+        const showIt = platformOk && hasCreds;
+        bioLoginBtn.classList.toggle("show", showIt);
+        loginDivider.classList.toggle("show", showIt);
+      }
+
+      async function tryAdminBioLogin() {
+        try {
+          const optsR = await fetch("/admin/api/webauthn/auth-options", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}"
+          });
+          if (!optsR.ok) return false;
+          const opts = await optsR.json();
+          const publicKey = {
+            ...opts,
+            challenge: b64uToBytes(opts.challenge),
+            allowCredentials: (opts.allowCredentials || []).map((c) => ({ ...c, id: b64uToBytes(c.id) }))
+          };
+          const assertion = await navigator.credentials.get({ publicKey });
+          const verifyR = await fetch("/admin/api/webauthn/auth-verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              assertionResponse: {
+                id: assertion.id,
+                rawId: bytesToB64u(assertion.rawId),
+                type: assertion.type,
+                response: {
+                  clientDataJSON: bytesToB64u(assertion.response.clientDataJSON),
+                  authenticatorData: bytesToB64u(assertion.response.authenticatorData),
+                  signature: bytesToB64u(assertion.response.signature),
+                  userHandle: assertion.response.userHandle ? bytesToB64u(assertion.response.userHandle) : null
+                },
+                clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {}
+              }
+            })
+          });
+          const data = await verifyR.json().catch(() => ({}));
+          if (verifyR.ok && data.success && data.token) {
+            setToken(data.token);
+            return true;
+          }
+          return false;
+        } catch (err) {
+          console.warn("admin bio login failed/cancelled:", err);
+          return false;
+        }
+      }
+
+      async function tryAdminBioRegister() {
+        const t = getToken();
+        if (!t) return false;
+        try {
+          const optsR = await fetch("/admin/api/webauthn/register-options", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + t
+            },
+            body: "{}"
+          });
+          if (!optsR.ok) return false;
+          const opts = await optsR.json();
+          const publicKey = {
+            ...opts,
+            challenge: b64uToBytes(opts.challenge),
+            user: { ...opts.user, id: b64uToBytes(opts.user.id) },
+            excludeCredentials: (opts.excludeCredentials || []).map((c) => ({ ...c, id: b64uToBytes(c.id) }))
+          };
+          const attestation = await navigator.credentials.create({ publicKey });
+          const verifyR = await fetch("/admin/api/webauthn/register-verify", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + t
+            },
+            body: JSON.stringify({
+              attestationResponse: {
+                id: attestation.id,
+                rawId: bytesToB64u(attestation.rawId),
+                type: attestation.type,
+                response: {
+                  clientDataJSON: bytesToB64u(attestation.response.clientDataJSON),
+                  attestationObject: bytesToB64u(attestation.response.attestationObject)
+                },
+                clientExtensionResults: attestation.getClientExtensionResults ? attestation.getClientExtensionResults() : {}
+              }
+            })
+          });
+          const data = await verifyR.json().catch(() => ({}));
+          return !!(verifyR.ok && data.success);
+        } catch (err) {
+          console.warn("admin bio register failed/cancelled:", err);
+          return false;
+        }
+      }
+
+      bioLoginBtn.addEventListener("click", async () => {
+        if (bioLoginBtn.disabled) return;
+        bioLoginBtn.disabled = true;
+        const prev = bioLoginBtn.innerHTML;
+        bioLoginBtn.innerHTML = "Подтвердите вход…";
+        const ok = await tryAdminBioLogin();
+        bioLoginBtn.disabled = false;
+        bioLoginBtn.innerHTML = prev;
+        if (ok) {
+          showDash();
+        } else {
+          showLoginError("Не удалось войти по биометрии. Попробуйте код.");
+        }
+      });
+
+      bioSkipBtn.addEventListener("click", () => {
+        bioOffer.classList.remove("show");
+        showDash();
+      });
+      bioEnableBtn.addEventListener("click", async () => {
+        bioEnableBtn.disabled = true;
+        bioSkipBtn.disabled = true;
+        const ok = await tryAdminBioRegister();
+        bioEnableBtn.disabled = false;
+        bioSkipBtn.disabled = false;
+        bioOffer.classList.remove("show");
+        showDash();
+        // Если успешно — следующая сессия покажет кнопку Bio на логине.
+      });
       function showLoginError(msg) {
         loginError.textContent = msg || "";
         loginError.classList.add("show");
@@ -488,6 +756,17 @@
             return;
           }
           setToken(data.token);
+          // Если устройство поддерживает биометрию И ещё нет
+          // зарегистрированного passkey — предлагаем включить.
+          const [platformOk, hasCreds] = await Promise.all([
+            isPlatformAuthAvailable(),
+            adminHasCredentials()
+          ]);
+          if (platformOk && !hasCreds) {
+            // Показываем оффер; на «Не сейчас» / «Включить» уйдём в дашборд.
+            bioOffer.classList.add("show");
+            return;
+          }
           showDash();
         } catch (_) {
           showLoginError("Сетевая ошибка");
