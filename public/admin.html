@@ -709,6 +709,26 @@
         const showIt = platformOk && hasCreds;
         bioLoginBtn.classList.toggle("show", showIt);
         loginDivider.classList.toggle("show", showIt);
+        return showIt;
+      }
+
+      // Авто-prompt Face ID / Touch ID при заходе на /admin без сессии:
+      // если устройство поддерживает платформенный аутентификатор И на сервере
+      // уже есть зарегистрированный passkey — сразу показываем системный диалог.
+      // Если пользователь отменил / биометрия не прошла — молча падаем в форму
+      // с кодом (и кнопка Face ID остаётся видна как fallback).
+      async function tryAutoBioOnLoad() {
+        const eligible = await maybeShowBioLoginBtn();
+        if (!eligible) return false;
+        // Небольшая задержка, чтобы LK-форма успела отрисоваться до системного
+        // popup'а — пользователь понимает, ГДЕ он находится, когда видит диалог.
+        await new Promise((r) => setTimeout(r, 120));
+        const ok = await tryAdminBioLogin();
+        if (ok) {
+          showDash();
+          return true;
+        }
+        return false; // форма входа уже видна, ошибку не показываем (это отмена).
       }
 
       async function tryAdminBioLogin() {
@@ -1303,12 +1323,17 @@
       // Старт
       (async function bootstrap() {
         const t = getToken();
-        if (!t) { showLogin(); return; }
+        if (!t) {
+          showLogin();
+          await tryAutoBioOnLoad();
+          return;
+        }
         try {
           await apiFetch("/admin/api/stats");
           showDash();
         } catch (_) {
           showLogin();
+          await tryAutoBioOnLoad();
         }
       })();
     })();

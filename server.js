@@ -3856,7 +3856,11 @@ loadFeedbackTokens();
 // не выгружается (раньше был ежедневный PDF, потом каждые 3 часа — убрано).
 // ──────────────────────────────────────────────────────────
 
-const LK_STATS_START_DATE = "21.05.2026"; // отсчёт «с какой даты»
+const LK_STATS_START_DATE = "22.05.2026"; // отсчёт «с какой даты» (label для админки)
+// Точка отсечки в ms (МСК): записи о первой авторизации с timestamp'ом ДО этой
+// даты в статистику не попадают (сами записи в .lkAuthPhones.json не удаляем —
+// просто игнорируем при подсчёте, чтобы при необходимости можно было откатить).
+const LK_STATS_START_MS = new Date("2026-05-22T00:00:00+03:00").getTime();
 const LK_AUTH_PHONES_FILE = path.join(__dirname, ".lkAuthPhones.json");
 const lkAuthPhones = new Map(); // phone(7XXXXXXXXXX) -> firstAuthAt(ms)
 
@@ -4125,8 +4129,12 @@ async function computeUploadStatusForLead(phone, leadId) {
 }
 
 async function computeAdminStats() {
-  // Базовый набор — авторизованные клиенты.
-  const phoneEntries = Array.from(lkAuthPhones.entries()).sort((a, b) => b[1] - a[1]);
+  // Базовый набор — авторизованные клиенты, чья первая авторизация попадает
+  // в окно отслеживания (с LK_STATS_START_MS). Старые записи остаются в
+  // .lkAuthPhones.json (на случай отката), но в воронку не идут.
+  const phoneEntries = Array.from(lkAuthPhones.entries())
+    .filter(([_, ts]) => Number(ts) >= LK_STATS_START_MS)
+    .sort((a, b) => b[1] - a[1]);
 
   const perPhone = [];
   let countSubmitted = 0;
