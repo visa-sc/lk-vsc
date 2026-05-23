@@ -154,11 +154,12 @@
     }
     .login-error.show { display: block; }
 
-    /* Био-кнопка — такая же белая с синей обводкой, чуть выше, с иконкой. */
+    /* Био-кнопка — такая же белая с синей обводкой, чуть выше, с иконкой.
+       Размещена ПОД кнопкой «Войти» — отсюда margin-top, а не margin-bottom. */
     .bio-btn {
       width: 100%;
       height: 48px;
-      margin: 0 0 10px;
+      margin: 10px 0 0;
       border: 1.5px solid #3589BD;
       background: #fff;
       color: #3589BD;
@@ -179,25 +180,6 @@
     .bio-btn:active:not(:disabled) { background: #e6f1f8; }
     .bio-btn:disabled { opacity: 0.6; cursor: progress; }
     .bio-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
-
-    .login-divider {
-      display: none;
-      align-items: center;
-      gap: 10px;
-      margin: 2px 0 8px;
-      font-size: 12px;
-      color: #9096a3;
-      font-weight: 400;
-      text-align: center;
-    }
-    .login-divider.show { display: flex; }
-    .login-divider::before,
-    .login-divider::after {
-      content: "";
-      flex: 1;
-      height: 1px;
-      background: #ece7f2;
-    }
 
     /* Оффер после кода — «Включить Face ID» */
     .bio-offer {
@@ -569,14 +551,6 @@
     <div class="login-card">
       <div class="sub">Введите код доступа</div>
 
-      <button id="bioLoginBtn" type="button" class="bio-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 11a3 3 0 0 0-3 3v1m6-1v3a3 3 0 0 1-6 0M6 11a6 6 0 0 1 12 0v3m-9 4a3 3 0 0 0 6 0M5 8a8 8 0 0 1 14 0M5 14v1a8 8 0 0 0 .35 2.34" />
-        </svg>
-        Войти по Face ID / отпечатку
-      </button>
-      <div id="loginDivider" class="login-divider">или по коду</div>
-
       <form id="loginForm" class="login-form-inner">
         <input
           id="codeInput"
@@ -588,6 +562,14 @@
         />
         <button id="loginBtn" type="submit" class="login-btn">Войти</button>
       </form>
+
+      <button id="bioLoginBtn" type="button" class="bio-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 11a3 3 0 0 0-3 3v1m6-1v3a3 3 0 0 1-6 0M6 11a6 6 0 0 1 12 0v3m-9 4a3 3 0 0 0 6 0M5 8a8 8 0 0 1 14 0M5 14v1a8 8 0 0 0 .35 2.34" />
+        </svg>
+        Войти по Face ID / отпечатку
+      </button>
+
       <div id="loginError" class="login-error"></div>
 
       <div id="bioOffer" class="bio-offer">
@@ -639,7 +621,6 @@
       const logoutBtn = document.getElementById("logoutBtn");
 
       const bioLoginBtn = document.getElementById("bioLoginBtn");
-      const loginDivider = document.getElementById("loginDivider");
       const bioOffer = document.getElementById("bioOffer");
       const bioSkipBtn = document.getElementById("bioSkipBtn");
       const bioEnableBtn = document.getElementById("bioEnableBtn");
@@ -708,7 +689,6 @@
         ]);
         const showIt = platformOk && hasCreds;
         bioLoginBtn.classList.toggle("show", showIt);
-        loginDivider.classList.toggle("show", showIt);
         return showIt;
       }
 
