@@ -1236,18 +1236,24 @@
       await requestCode(phone);
     });
 
-    // ── Вход по Face ID / Touch ID на «/» ─────────────────────────────────
-    // Если на этом устройстве уже логинились по passkey'ю (или после SMS-входа
-    // включали «Вход без кода»), мы запомнили номер в localStorage:
-    //  1) При заходе на «/» сразу автоматически показываем системный диалог
-    //     Face ID / Touch ID для последнего номера (auto-prompt).
-    //  2) Под кнопкой «Войти» появляется кнопка «Войти по Face ID / отпечатку» —
-    //     ручной триггер тот же passkey-флоу.
-    // Видимость кнопки: после успешной проверки has-credentials выставляем
-    // флаг bioEligible=true и добавляем класс .show. В режимах ввода SMS-кода
-    // и регистрации (showNotFound) кнопку прячем, при возврате — восстанавливаем.
-    // На отмену / неудачу passkey'я НИКАКОГО автоматического SMS — пользователь
-    // должен явно нажать «Войти».
+    // ── Вход по Face ID / Touch ID на «/» (admin-style) ───────────────────
+    // Симметрия с админкой /admin: при заходе на «/» сразу спрашиваем сервер
+    // GET /api/auth/webauthn/any-credentials — есть ли вообще хоть один
+    // зарегистрированный passkey. Если есть И устройство поддерживает
+    // платформенный аутентификатор:
+    //  1) Поднимаем флаг bioEligible → показываем кнопку «Войти по Face ID /
+    //     отпечатку» под «Войти» как fallback.
+    //  2) Через 150 ms (форма успевает отрисоваться) дёргаем
+    //     navigator.credentials.get() через tryWebauthnLoginAny() — без знания
+    //     phone'а. ОС показывает системный диалог и сама выбирает подходящий
+    //     passkey среди доступных на устройстве (iCloud Keychain и т. п.).
+    //     Сервер при verify ищет phone по credentialID и возвращает его —
+    //     клиент сразу делает window.location.replace("/cabinet?phone=...").
+    //  3) На отмену / неуспех — НИЧЕГО не происходит автоматически: форма
+    //     ввода телефона видна, кнопка Face ID остаётся, никакого SMS.
+    // Если passkey'ев нет вообще — bioEligible остаётся false, кнопка скрыта,
+    // никаких системных диалогов. Дальше — обычный SMS-флоу через ввод
+    // телефона и кнопку «Войти».
     let bioEligible = false;
 
     function applyBioBtnVisibility() {
@@ -1255,12 +1261,69 @@
       else bioLoginBtn.classList.remove("show");
     }
 
-    async function triggerWebauthnLoginForLastPhone() {
-      let phone = "";
-      try { phone = localStorage.getItem("voyo_last_phone") || ""; } catch (_) {}
-      if (!phone) return false;
-      const ok = await tryWebauthnLogin(phone);
-      if (ok) {
+    async function anyCredentialsRegistered() {
+      try {
+        const r = await fetch("/api/auth/webauthn/any-credentials", { cache: "no-store" });
+        if (!r.ok) return false;
+        const d = await r.json();
+        return !!(d && d.hasCredentials);
+      } catch (_) { return false; }
+    }
+
+    // WebAuthn-вход без знания phone'а. Возвращает строку с phone при успехе,
+    // null при отмене / ошибке. Используется и auto-prompt'ом, и кнопкой.
+    async function tryWebauthnLoginAny() {
+      if (!window.PublicKeyCredential) return null;
+      try {
+        const optsR = await fetch("/api/auth/webauthn/auth-options-any", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}"
+        });
+        if (!optsR.ok) return null;
+        const opts = await optsR.json();
+        const publicKey = {
+          ...opts,
+          challenge: b64uToBytes(opts.challenge),
+          allowCredentials: (opts.allowCredentials || []).map((c) => ({
+            ...c,
+            id: b64uToBytes(c.id),
+          })),
+        };
+        const assertion = await navigator.credentials.get({ publicKey });
+        const verifyR = await fetch("/api/auth/webauthn/auth-verify-any", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            assertionResponse: {
+              id: assertion.id,
+              rawId: bytesToB64u(assertion.rawId),
+              type: assertion.type,
+              response: {
+                clientDataJSON: bytesToB64u(assertion.response.clientDataJSON),
+                authenticatorData: bytesToB64u(assertion.response.authenticatorData),
+                signature: bytesToB64u(assertion.response.signature),
+                userHandle: assertion.response.userHandle ? bytesToB64u(assertion.response.userHandle) : null,
+              },
+              clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {},
+            },
+          }),
+        });
+        if (!verifyR.ok) return null;
+        const data = await verifyR.json();
+        if (data && data.success === true && data.phone) return data.phone;
+        return null;
+      } catch (err) {
+        console.warn("WebAuthn login (any) failed/cancelled:", err);
+        return null;
+      }
+    }
+
+    async function triggerWebauthnLoginAny() {
+      const phone = await tryWebauthnLoginAny();
+      if (phone) {
+        // Запоминаем для совместимости + удобства (cabinet/index по-прежнему
+        // ожидают ?phone=...). Авто-prompt в admin-style работает и без localStorage.
         try { localStorage.setItem("voyo_last_phone", phone); } catch (_) {}
         window.location.replace("/cabinet?phone=" + encodeURIComponent(phone));
         return true;
@@ -1273,31 +1336,26 @@
       bioLoginBtn.disabled = true;
       const prev = bioLoginBtn.innerHTML;
       bioLoginBtn.innerHTML = "Подтвердите вход...";
-      const ok = await triggerWebauthnLoginForLastPhone();
+      await triggerWebauthnLoginAny();
       bioLoginBtn.disabled = false;
       bioLoginBtn.innerHTML = prev;
       // На отмену / неуспех — ничего не делаем; форма остаётся видна.
       // SMS-флоу не запускаем — это решение пользователя через кнопку «Войти».
     });
 
-    (async function tryAutoBioForLastPhone() {
-      let lastPhone = "";
-      try { lastPhone = localStorage.getItem("voyo_last_phone") || ""; } catch (_) {}
-      if (!lastPhone) return;
+    (async function tryAutoBioOnLoad() {
       if (!(await isPlatformAuthAvailable())) return;
-      const hasCreds = await checkHasCredentials(lastPhone);
-      if (!hasCreds) return;
-      // Passkey есть — показываем ручную кнопку «Войти по Face ID / отпечатку»
-      // под «Войти», независимо от того, согласится ли пользователь сейчас
-      // подтвердить системный диалог.
+      if (!(await anyCredentialsRegistered())) return;
+      // Passkey на сервере есть И устройство поддерживает биометрию — показываем
+      // ручную кнопку «Войти по Face ID / отпечатку» под «Войти».
       bioEligible = true;
       applyBioBtnVisibility();
       // Небольшая задержка, чтобы LK-форма успела отрисоваться до системного
       // popup'а — пользователь видит, ГДЕ он, когда появляется диалог.
       await new Promise((r) => setTimeout(r, 150));
-      await triggerWebauthnLoginForLastPhone();
+      await triggerWebauthnLoginAny();
       // На отмену / неуспех — ничего не делаем; форма ввода телефона видна,
-      // кнопка «Войти по Face ID / отпечатку» под «Войти» остаётся как fallback.
+      // кнопка остаётся как fallback.
     })();
   </script>
 </body>

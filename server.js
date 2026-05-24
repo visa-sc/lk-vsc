@@ -5056,6 +5056,137 @@ app.post("/api/auth/webauthn/auth-verify", async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────
+// WebAuthn клиентский — «anonymous» поток для экрана входа на «/».
+// Симметрия с админкой: страница «/» не знает номер телефона до момента
+// аутентификации, но если на сервере вообще есть зарегистрированный
+// passkey — мы показываем системный диалог Face ID/Touch ID, ОС сама
+// выбирает подходящий passkey среди allowCredentials (это весь набор
+// passkey'ев со всех phones), а сервер при verify ищет phone по credentialID
+// и возвращает его клиенту → /cabinet?phone=<resolved>.
+// Per-phone эндпоинты (has-credentials/auth-options/auth-verify) сохранены —
+// они нужны в потоке регистрации passkey'я после SMS-входа и проч.
+// ──────────────────────────────────────────────────────────
+const anonWebauthnState = { challenge: null, expiresAt: 0 };
+function setAnonChallenge(c) {
+  anonWebauthnState.challenge = c;
+  anonWebauthnState.expiresAt = Date.now() + WEBAUTHN_CHALLENGE_TTL_MS;
+}
+function getAnonChallenge() {
+  if (!anonWebauthnState.challenge) return null;
+  if (Date.now() > anonWebauthnState.expiresAt) {
+    anonWebauthnState.challenge = null;
+    return null;
+  }
+  return anonWebauthnState.challenge;
+}
+function clearAnonChallenge() {
+  anonWebauthnState.challenge = null;
+  anonWebauthnState.expiresAt = 0;
+}
+
+// 1) Есть ли НА СЕРВЕРЕ вообще хоть один зарегистрированный passkey?
+//    Публичный эндпоинт — клиент по нему решает, дёргать ли авто-prompt
+//    Face ID и показывать ли кнопку «Войти по Face ID / отпечатку».
+app.get("/api/auth/webauthn/any-credentials", (req, res) => {
+  let any = false;
+  for (const arr of passkeysByPhone.values()) {
+    if (Array.isArray(arr) && arr.length > 0) { any = true; break; }
+  }
+  return res.json({ hasCredentials: any });
+});
+
+// 2) Опции для аутентификации без знания phone'а. allowCredentials —
+//    все известные credential ID со всех phones; ОС покажет пользователю
+//    подходящий из доступных на устройстве (iCloud Keychain / Google
+//    Password Manager). Публичный эндпоинт.
+app.post("/api/auth/webauthn/auth-options-any", async (req, res) => {
+  try {
+    const allowCredentials = [];
+    for (const arr of passkeysByPhone.values()) {
+      if (!Array.isArray(arr)) continue;
+      for (const c of arr) {
+        if (!c || !c.credentialID) continue;
+        allowCredentials.push({
+          id: bufferFromB64u(c.credentialID),
+          type: "public-key"
+        });
+      }
+    }
+    if (!allowCredentials.length) {
+      return res.status(404).json({ success: false, message: "Нет зарегистрированных passkey" });
+    }
+    const options = await webauthn.generateAuthenticationOptions({
+      rpID: WEBAUTHN_RP_ID,
+      allowCredentials,
+      userVerification: "preferred"
+    });
+    setAnonChallenge(options.challenge);
+    return res.json(options);
+  } catch (err) {
+    console.error("WEBAUTHN AUTH-OPTIONS-ANY:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 3) Верификация подписи. На вход — только assertionResponse без phone.
+//    Сервер ищет phone по credentialID в passkeysByPhone, проверяет подпись
+//    стандартным verifyAuthenticationResponse и возвращает phone клиенту.
+app.post("/api/auth/webauthn/auth-verify-any", async (req, res) => {
+  try {
+    const assertionResponse = req.body && req.body.assertionResponse;
+    if (!assertionResponse || !assertionResponse.id) {
+      return res.status(400).json({ success: false, message: "Невалидный запрос" });
+    }
+    const expectedChallenge = getAnonChallenge();
+    if (!expectedChallenge) {
+      return res.status(400).json({ success: false, message: "Сессия просрочена" });
+    }
+    // Найти phone и кредитку по credentialID.
+    let foundPhone = null;
+    let foundCred = null;
+    for (const [phone, arr] of passkeysByPhone.entries()) {
+      if (!Array.isArray(arr)) continue;
+      for (const c of arr) {
+        if (c && c.credentialID === assertionResponse.id) {
+          foundPhone = phone;
+          foundCred = c;
+          break;
+        }
+      }
+      if (foundPhone) break;
+    }
+    if (!foundPhone || !foundCred) {
+      clearAnonChallenge();
+      return res.status(404).json({ success: false, message: "Passkey не найден" });
+    }
+    const verification = await webauthn.verifyAuthenticationResponse({
+      response: assertionResponse,
+      expectedChallenge,
+      expectedOrigin: WEBAUTHN_ORIGIN,
+      expectedRPID: WEBAUTHN_RP_ID,
+      authenticator: {
+        credentialID: bufferFromB64u(foundCred.credentialID),
+        credentialPublicKey: bufferFromB64u(foundCred.publicKey),
+        counter: foundCred.counter || 0,
+      },
+      requireUserVerification: false,
+    });
+    if (!verification.verified) {
+      clearAnonChallenge();
+      return res.status(400).json({ success: false, message: "Подпись не прошла" });
+    }
+    foundCred.counter = verification.authenticationInfo.newCounter;
+    savePasskeys();
+    clearAnonChallenge();
+    try { recordLkAuth(foundPhone); } catch (_) {}
+    return res.json({ success: true, phone: foundPhone });
+  } catch (err) {
+    console.error("WEBAUTHN AUTH-VERIFY-ANY:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────
 // WebAuthn для админки (/admin). Биометрия / passkey.
 // Одиночный «пользователь» — единственный админ. Несколько устройств можно
 // прописать — каждое получит свой credential. Регистрировать можно только
