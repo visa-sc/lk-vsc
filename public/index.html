@@ -718,6 +718,13 @@
     let serverPhone = ""; // нормализованный телефон, на который ушёл код
     let resendTimer = null;
     let isVerifying = false;
+    // После УСПЕШНОГО verify ставим в true и держим до навигации на /cabinet.
+    // Защитный флаг от случайного повторного запроса /api/auth/request-code
+    // (например, если в момент показа bioOffer'а каким-то путём ре-триггерится
+    // submit формы — кейс-баг из репорта: «через 2-4 сек после faceid-вопроса
+    // приходит ещё 1 СМС и снова открывается поле для ввода»). Никакая
+    // существующая видимая логика этим флагом не меняется.
+    let loginFinalizing = false;
 
     function showError(msg) {
       errorBox.style.display = "block";
@@ -923,6 +930,9 @@
         if (!r.ok || !data.success) {
           throw new Error(data.message || "Неверный код");
         }
+        // ВСЁ дальше — пост-verify-фаза. Любой ре-submit формы / клик по
+        // resend в этой фазе НЕ должен слать новую SMS.
+        loginFinalizing = true;
         // Предложим зарегистрировать passkey (если устройство поддерживает и passkey'ов ещё нет).
         // Внутри либо ничего не делает, либо ждёт выбора пользователя.
         try { await maybeOfferBiometricRegistration(serverPhone); } catch (_) {}
@@ -1000,6 +1010,9 @@
 
     resendBtn.addEventListener("click", async () => {
       if (resendBtn.disabled || !serverPhone) return;
+      // После успешного verify resend тоже отключён — иначе случайный клик
+      // в момент показа bioOffer'а отправит новую SMS.
+      if (loginFinalizing) return;
       hideError();
       codeCellsWrap.classList.remove("is-error");
       codeCells.forEach((c) => { c.value = ""; });
@@ -1232,6 +1245,10 @@
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      // После успешного verify никакие пересабмиты формы не должны слать
+      // новую SMS — даже если что-то (iOS-autofill, фокус на phoneInput,
+      // Enter из кнопки bioOffer'а и т. п.) случайно триггернёт submit.
+      if (loginFinalizing) return;
       hideError();
 
       // Согласие на обработку персональных данных (152-ФЗ) — обязательно.
