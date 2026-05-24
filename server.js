@@ -410,9 +410,15 @@ app.get("/admin/api/stats", requireAdmin, async (req, res) => {
 // Воронка «Опросники»: SMS отправлено → кликнул → отправил.
 // Считаем по уникальным номерам. Базой берём feedbackSent — туда попадают
 // номера, которым ушло приглашение (фиксируется ДО самой отправки SMS).
+// Окно отслеживания такое же, как у «Статистики» (LK_STATS_START_MS) — номера
+// с sentAt ДО точки отсечки в воронку не идут. Старые записи в .feedbackSent.json
+// не удаляются (см. README по recordLkAuth), просто игнорируются здесь.
 app.get("/admin/api/surveys-funnel", requireAdmin, async (req, res) => {
   try {
-    const sentEntries = Array.from(feedbackSent.entries());
+    const sentEntries = Array.from(feedbackSent.entries()).filter(([, d]) => {
+      const ts = Number(d && d.sentAt);
+      return Number.isFinite(ts) && ts >= LK_STATS_START_MS;
+    });
     let totalSent = 0, totalClicked = 0, totalSubmitted = 0;
     const perPhone = [];
 
