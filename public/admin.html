@@ -1346,19 +1346,17 @@
 
       // Старт
       (async function bootstrap() {
-        const t = getToken();
-        if (!t) {
-          showLogin();
-          await tryAutoBioOnLoad();
-          return;
-        }
-        try {
-          await apiFetch("/admin/api/stats");
-          showDash();
-        } catch (_) {
-          showLogin();
-          await tryAutoBioOnLoad();
-        }
+        // Каждый заход на /admin требует свежей аутентификации — Face ID/Touch ID
+        // (если passkey зарегистрирован) или код. Старый admin-токен из
+        // localStorage НЕ используется для молчаливого входа: раньше это
+        // позволяло попасть в дашборд без какой-либо проверки, если 24-часовой
+        // токен с прошлого входа ещё не истёк на сервере. Сам механизм токена
+        // остаётся — он создаётся при успешной аутентификации и используется
+        // для API-запросов из дашборда (polling и т. д.) в рамках открытой
+        // страницы. Закрытие/обновление вкладки → снова требуется auth.
+        clearToken();
+        showLogin();
+        await tryAutoBioOnLoad();
       })();
     })();
   </script>
