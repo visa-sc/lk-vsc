@@ -167,26 +167,6 @@
       border-color: #d6dbe3;
     }
 
-    /* Кнопка «Войти по Face ID / отпечатку» — отдельная, под «Войти».
-       Показывается ТОЛЬКО когда на этом устройстве уже зарегистрирован
-       passkey для последнего использованного номера (видимость даёт JS
-       через .show). Стиль матчит .login-form button, но чуть выше
-       и с иконкой — как в админке. */
-    .login-form .bio-btn {
-      display: none;
-      height: 48px;
-      margin-top: 10px;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-    .login-form .bio-btn.show { display: flex; }
-    .login-form .bio-btn svg {
-      width: 18px;
-      height: 18px;
-      flex-shrink: 0;
-    }
-
     .login-form input {
       transition: border-color 0.2s var(--vsc-ease), box-shadow 0.2s var(--vsc-ease);
     }
@@ -549,12 +529,6 @@
         </div>
       </div>
       <button id="searchBtn" type="submit">Войти</button>
-      <button id="bioLoginBtn" type="button" class="bio-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 11a3 3 0 0 0-3 3v1m6-1v3a3 3 0 0 1-6 0M6 11a6 6 0 0 1 12 0v3m-9 4a3 3 0 0 0 6 0M5 8a8 8 0 0 1 14 0M5 14v1a8 8 0 0 0 .35 2.34" />
-        </svg>
-        Войти по Face ID / отпечатку
-      </button>
 
       <label id="consentRow" class="consent-row">
         <input type="checkbox" id="consentCheckbox" checked />
@@ -598,7 +572,6 @@
     const form = document.getElementById("loginForm");
     const phoneInput = document.getElementById("phoneInput");
     const searchBtn = document.getElementById("searchBtn");
-    const bioLoginBtn = document.getElementById("bioLoginBtn");
     const errorBox = document.getElementById("errorBox");
     const codeSection = document.getElementById("codeSection");
     const codeCellsWrap = document.getElementById("codeCells");
@@ -622,12 +595,6 @@
     let isRegistrationMode = false;
     let isPromoApplied = false;        // true только когда введён валидный промокод и не отменён
     let lastAppliedPromoCode = "";     // конкретный код, который успешно применили (для отправки на сервер)
-    // После НЕУДАЧНОЙ попытки Face ID после клика «Войти» меняем текст кнопки
-    // на «Войти по SMS» — следующий клик уходит в SMS-флоу. Сбрасывается при
-    // редактировании телефона, возврате из code-стадии или входе в режим
-    // регистрации. Между загрузками страницы НЕ персистится: каждая новая
-    // загрузка снова пробует Face ID первым (юзер просил «и так каждый раз»).
-    let awaitingSmsConfirmation = false;
     let promoQuestionRevealed = false; // true после первого клика по «Зарегистрироваться»
 
     function resetPromoState() {
@@ -648,13 +615,8 @@
       notFoundBox.classList.remove("show");
       // Выход из режима регистрации — синхронно с прятаньем блока
       isRegistrationMode = false;
-      // Сбрасываем SMS-fallback из предыдущей попытки (если был) и
-      // возвращаем дефолтный текст «Войти».
-      awaitingSmsConfirmation = false;
       searchBtn.textContent = "Войти";
       resetPromoState();
-      // Возврат к обычной форме входа — восстанавливаем bio-кнопку, если eligible.
-      if (typeof applyBioBtnVisibility === "function") applyBioBtnVisibility();
     }
 
     function showNotFound() {
@@ -662,12 +624,8 @@
       // Вход в режим регистрации — синхронно с показом блока, но вопрос промокода
       // ещё не раскрываем — он покажется только после первого клика по «Зарегистрироваться»
       isRegistrationMode = true;
-      // Регистрация — это новый номер, Face ID-first флоу не нужен.
-      awaitingSmsConfirmation = false;
       searchBtn.textContent = "Зарегистрироваться";
       resetPromoState();
-      // В режиме регистрации нового номера bio-кнопка для старого номера сбивает с толку.
-      bioLoginBtn.classList.remove("show");
     }
 
 
@@ -729,13 +687,6 @@
     let serverPhone = ""; // нормализованный телефон, на который ушёл код
     let resendTimer = null;
     let isVerifying = false;
-    // После УСПЕШНОГО verify ставим в true и держим до навигации на /cabinet.
-    // Защитный флаг от случайного повторного запроса /api/auth/request-code
-    // (например, если в момент показа bioOffer'а каким-то путём ре-триггерится
-    // submit формы — кейс-баг из репорта: «через 2-4 сек после faceid-вопроса
-    // приходит ещё 1 СМС и снова открывается поле для ввода»). Никакая
-    // существующая видимая логика этим флагом не меняется.
-    let loginFinalizing = false;
 
     function showError(msg) {
       errorBox.style.display = "block";
@@ -815,35 +766,13 @@
         phoneInput.classList.remove("is-error");
         hideError();
       }
-      // Меняется номер → SMS-fallback от предыдущей неудавшейся Face ID попытки
-      // больше не актуален. Возвращаем кнопке исходный текст и снова даём
-      // Face ID попробовать на следующий submit. Не трогаем, если открыт
-      // режим регистрации (там текст уже «Зарегистрироваться»).
-      if (awaitingSmsConfirmation && !isRegistrationMode) {
-        awaitingSmsConfirmation = false;
-        searchBtn.textContent = "Войти";
-      }
       const current = phoneInput.value;
       const formatted = applyPhoneMask(current);
-      // Отличаем «удаление» от «ввода». При вводе цифры (например 3-й цифры
-      // тела) маска тоже хочет ДОПИСАТЬ сепаратор «)» — formatted длиннее,
-      // количество цифр совпадает. Раньше из-за этого набор пятой/восьмой
-      // цифры обрезался. Используем InputEvent.inputType: "deleteContent*" /
-      // "deleteByCut" / "deleteByDrag" — это действительно удаление.
-      const isDeleting = !!(e && e.inputType && (
-        e.inputType === "deleteContentBackward" ||
-        e.inputType === "deleteContentForward" ||
-        e.inputType === "deleteByCut" ||
-        e.inputType === "deleteByDrag" ||
-        e.inputType.indexOf("delete") === 0
-      ));
       // Кейс «удалил только сепаратор» (backspace на `)`, `(`, пробеле, дефисе):
-      // количество цифр в current и в formatted одинаковое, но formatted длиннее —
-      // маска хочет дорисовать сепаратор обратно. Без спец-обработки пользователь
-      // не сможет удалить дальше: backspace → маска возвращает скобку → backspace
-      // снова → маска возвращает скобку. Уважаем намерение «удалять»: вместо
-      // обратной дорисовки убираем последнюю цифру тела номера.
-      // ВАЖНО: срабатывает ТОЛЬКО при удалении (isDeleting), иначе ломается ввод.
+      // количество цифр совпадает, но formatted длиннее — маска хочет дорисовать
+      // сепаратор обратно. Срабатывает ТОЛЬКО при удалении (inputType начинается
+      // на "delete"), иначе ломает ввод 3-й/6-й/8-й цифры.
+      const isDeleting = !!(e && e.inputType && e.inputType.indexOf("delete") === 0);
       if (
         isDeleting &&
         formatted.length > current.length &&
@@ -884,8 +813,6 @@
     function showCodeStage() {
       codeSection.classList.add("show");
       searchBtn.style.display = "none";
-      // Кнопка «Войти по Face ID / отпечатку» в режиме ввода SMS не нужна.
-      bioLoginBtn.classList.remove("show");
       consentRow.style.display = "none";
       phoneInput.readOnly = true;
       codeCells.forEach((c) => { c.value = ""; });
@@ -896,13 +823,6 @@
     function backToPhoneStage() {
       codeSection.classList.remove("show");
       searchBtn.style.display = "";
-      // Возврат к стадии телефона — снова стартуем с Face ID-first флоу.
-      if (awaitingSmsConfirmation && !isRegistrationMode) {
-        awaitingSmsConfirmation = false;
-        searchBtn.textContent = "Войти";
-      }
-      // Возврат к вводу телефона — восстанавливаем bio-кнопку, если eligible.
-      if (typeof applyBioBtnVisibility === "function") applyBioBtnVisibility();
       consentRow.style.display = "";
       phoneInput.readOnly = false;
       codeCells.forEach((c) => { c.value = ""; });
@@ -954,15 +874,9 @@
         if (!r.ok || !data.success) {
           throw new Error(data.message || "Неверный код");
         }
-        // ВСЁ дальше — пост-verify-фаза. Любой ре-submit формы / клик по
-        // resend в этой фазе НЕ должен слать новую SMS.
-        loginFinalizing = true;
         // Предложим зарегистрировать passkey (если устройство поддерживает и passkey'ов ещё нет).
         // Внутри либо ничего не делает, либо ждёт выбора пользователя.
         try { await maybeOfferBiometricRegistration(serverPhone); } catch (_) {}
-        // Запоминаем номер на устройстве — при следующем заходе на «/» сразу
-        // предложим Face ID / Touch ID для этого номера (если passkey есть).
-        try { localStorage.setItem("voyo_last_phone", serverPhone); } catch (_) {}
         // replace, чтобы кнопка "Назад" в браузере не возвращала на использованный код
         window.location.replace("/cabinet?phone=" + encodeURIComponent(serverPhone));
       } catch (err) {
@@ -1034,10 +948,6 @@
 
     resendBtn.addEventListener("click", async () => {
       if (resendBtn.disabled || !serverPhone) return;
-      // Resend SMS блокируем, пока verify в полёте (isVerifying) или уже
-      // прошёл успешно (loginFinalizing) — иначе случайный клик в этом
-      // окне отправит лишнюю SMS, а пользователь её точно не ждёт.
-      if (loginFinalizing || isVerifying) return;
       hideError();
       codeCellsWrap.classList.remove("is-error");
       codeCells.forEach((c) => { c.value = ""; });
@@ -1064,28 +974,6 @@
       if (!window.PublicKeyCredential) return false;
       if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== "function") return false;
       try { return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }
-      catch (_) { return false; }
-    }
-
-    // ── Локальный «есть ли на ЭТОМ устройстве passkey» ──────────────────────
-    // Без этого флага navigator.credentials.get() на устройстве, где passkey
-    // не регистрировали, всё равно показывает системный диалог «You don't
-    // have any passwords or passkeys saved» (на iOS), даже если на сервере
-    // есть passkey'и для других устройств. Флаг выставляем после успешной
-    // регистрации passkey'я (tryWebauthnRegister) и после успешной
-    // аутентификации (tryWebauthnLoginAny / tryWebauthnLogin) — оба доказывают,
-    // что на этом устройстве passkey есть. Чистим, если сервер достоверно
-    // ответил «зарегистрированных passkey'ев нет» (значит локальный флаг
-    // устарел — passkey удалили из админки или вручную).
-    const LOCAL_PASSKEY_KEY = "voyo_has_local_passkey";
-    function setLocalPasskeyFlag() {
-      try { localStorage.setItem(LOCAL_PASSKEY_KEY, "1"); } catch (_) {}
-    }
-    function clearLocalPasskeyFlag() {
-      try { localStorage.removeItem(LOCAL_PASSKEY_KEY); } catch (_) {}
-    }
-    function hasLocalPasskeyFlag() {
-      try { return localStorage.getItem(LOCAL_PASSKEY_KEY) === "1"; }
       catch (_) { return false; }
     }
     async function checkHasCredentials(phone) {
@@ -1138,9 +1026,7 @@
           }),
         });
         const data = await verifyR.json();
-        const ok = !!(data && data.success === true);
-        if (ok) setLocalPasskeyFlag();
-        return ok;
+        return data && data.success === true;
       } catch (err) {
         console.warn("WebAuthn login failed/cancelled:", err);
         return false;
@@ -1184,9 +1070,7 @@
           }),
         });
         const data = await verifyR.json();
-        const ok = !!(data && data.success === true);
-        if (ok) setLocalPasskeyFlag();
-        return ok;
+        return data && data.success === true;
       } catch (err) {
         console.warn("WebAuthn register failed/cancelled:", err);
         return false;
@@ -1194,11 +1078,8 @@
     }
     async function maybeOfferBiometricRegistration(phone) {
       if (!(await isPlatformAuthAvailable())) return;
-      // По ЭТОМУ номеру уже есть passkey на сервере — повторно не предлагаем.
-      // Каждый раз после SMS-входа, пока passkey'я для номера нет, оффер будет
-      // появляться — это и нужно, чтобы пользователь рано или поздно его привязал.
       const has = await checkHasCredentials(phone);
-      if (has) return;
+      if (has) return; // уже есть passkey для этого номера — не предлагаем повторно
       // Показываем секцию предложения
       codeSection.classList.remove("show");
       bioOfferSection.classList.add("show");
@@ -1269,24 +1150,6 @@
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      // Submit формы шлёт SMS — он легитимен ТОЛЬКО на стадии «ввод телефона».
-      // Любой submit в стадии ввода SMS-кода, в момент verify-запроса или на
-      // bioOffer'е — это случайный/гоночный событие (iOS-клавиатурная кнопка
-      // "Go"/"Done" / Enter / autofill / возврат фокуса от системного passkey-
-      // popup'а), и второй SMS отправляться не должен.
-      //   • loginFinalizing — verify уже прошёл успешно, идём к /cabinet;
-      //   • isVerifying — verify сейчас в полёте (окно ~100-500 мс между
-      //     stuck-в-fetch и loginFinalizing=true);
-      //   • codeSection.show — пользователь в стадии ввода SMS-кода;
-      //   • bioOfferSection.show — пользователь видит «Включите Face ID».
-      if (
-        loginFinalizing ||
-        isVerifying ||
-        codeSection.classList.contains("show") ||
-        bioOfferSection.classList.contains("show")
-      ) {
-        return;
-      }
       hideError();
 
       // Согласие на обработку персональных данных (152-ФЗ) — обязательно.
@@ -1367,7 +1230,10 @@
       searchBtn.disabled = true;
       const prevText = searchBtn.textContent;
       searchBtn.textContent = "Проверка...";
-      const hasLeads = await checkHasLeads(phone);
+      const [hasLeads, hasCreds] = await Promise.all([
+        checkHasLeads(phone),
+        checkHasCredentials(phone)
+      ]);
       searchBtn.disabled = false;
       searchBtn.textContent = prevText;
 
@@ -1376,186 +1242,24 @@
         return;
       }
 
-      // ── Face ID / Touch ID ПЕРВЫМ — только если у ЭТОГО номера есть passkey ──
-      // Раньше тут стоял bioEligible (= «есть passkey у любого номера»). Из-за
-      // этого пользователь с НОВЫМ номером без passkey попадал в тупик: Face ID
-      // диалог появлялся, никакого passkey'я для его номера нет, пользователь
-      // закрывал диалог, жал «Войти по SMS» — и снова получал Face ID.
-      // Сейчас перед попыткой Face ID проверяем persistent server-state ровно
-      // для этого номера. Нет creds на сервере → сразу SMS, без иллюзий.
-      if (!awaitingSmsConfirmation) {
-        const [platformOk, hasCredsForThisPhone] = await Promise.all([
-          isPlatformAuthAvailable(),
-          checkHasCredentials(phone),
-        ]);
-        if (platformOk && hasCredsForThisPhone) {
-          searchBtn.disabled = true;
-          searchBtn.textContent = "Подтвердите вход...";
-          const ok = await tryWebauthnLogin(phone);
-          searchBtn.disabled = false;
-          if (ok) {
-            serverPhone = phone;
-            try { localStorage.setItem("voyo_last_phone", phone); } catch (_) {}
-            window.location.replace("/cabinet?phone=" + encodeURIComponent(phone));
-            return;
-          }
-          // Face ID не сошёл — переключаем кнопку в «Войти по SMS».
-          // Следующий клик безусловно уйдёт в requestCode (awaitingSmsConfirmation=true).
-          awaitingSmsConfirmation = true;
-          searchBtn.textContent = "Войти по SMS";
+      // Если у этого номера зарегистрирован passkey — пробуем биометрию.
+      // При отмене / ошибке падаем в обычный SMS-флоу.
+      if (hasCreds) {
+        searchBtn.disabled = true;
+        searchBtn.textContent = "Подтвердите вход...";
+        const bioOk = await tryWebauthnLogin(phone);
+        searchBtn.disabled = false;
+        searchBtn.textContent = prevText;
+        if (bioOk) {
+          serverPhone = phone;
+          window.location.replace("/cabinet?phone=" + encodeURIComponent(phone));
           return;
         }
-        // У этого номера passkey'я нет — никакого Face ID, сразу SMS.
+        // не получилось — продолжаем SMS-флоу
       }
 
-      // SMS-флоу.
       await requestCode(phone);
     });
-
-    // ── Вход по Face ID / Touch ID на «/» (admin-style) ───────────────────
-    // Симметрия с админкой /admin: при заходе на «/» сразу спрашиваем сервер
-    // GET /api/auth/webauthn/any-credentials — есть ли вообще хоть один
-    // зарегистрированный passkey. Если есть И устройство поддерживает
-    // платформенный аутентификатор:
-    //  1) Поднимаем флаг bioEligible → показываем кнопку «Войти по Face ID /
-    //     отпечатку» под «Войти» как fallback.
-    //  2) Через 150 ms (форма успевает отрисоваться) дёргаем
-    //     navigator.credentials.get() через tryWebauthnLoginAny() — без знания
-    //     phone'а. ОС показывает системный диалог и сама выбирает подходящий
-    //     passkey среди доступных на устройстве (iCloud Keychain и т. п.).
-    //     Сервер при verify ищет phone по credentialID и возвращает его —
-    //     клиент сразу делает window.location.replace("/cabinet?phone=...").
-    //  3) На отмену / неуспех — НИЧЕГО не происходит автоматически: форма
-    //     ввода телефона видна, кнопка Face ID остаётся, никакого SMS.
-    // Если passkey'ев нет вообще — bioEligible остаётся false, кнопка скрыта,
-    // никаких системных диалогов. Дальше — обычный SMS-флоу через ввод
-    // телефона и кнопку «Войти».
-    let bioEligible = false;
-
-    function applyBioBtnVisibility() {
-      if (bioEligible) bioLoginBtn.classList.add("show");
-      else bioLoginBtn.classList.remove("show");
-    }
-
-    async function anyCredentialsRegistered() {
-      try {
-        const r = await fetch("/api/auth/webauthn/any-credentials", { cache: "no-store" });
-        if (!r.ok) return false;
-        const d = await r.json();
-        return !!(d && d.hasCredentials);
-      } catch (_) { return false; }
-    }
-
-    // WebAuthn-вход без знания phone'а. Возвращает строку с phone при успехе,
-    // null при отмене / ошибке. Используется и auto-prompt'ом, и кнопкой.
-    async function tryWebauthnLoginAny() {
-      if (!window.PublicKeyCredential) return null;
-      try {
-        const optsR = await fetch("/api/auth/webauthn/auth-options-any", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}"
-        });
-        if (!optsR.ok) return null;
-        const opts = await optsR.json();
-        const publicKey = {
-          ...opts,
-          challenge: b64uToBytes(opts.challenge),
-          allowCredentials: (opts.allowCredentials || []).map((c) => ({
-            ...c,
-            id: b64uToBytes(c.id),
-          })),
-        };
-        const assertion = await navigator.credentials.get({ publicKey });
-        const verifyR = await fetch("/api/auth/webauthn/auth-verify-any", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            assertionResponse: {
-              id: assertion.id,
-              rawId: bytesToB64u(assertion.rawId),
-              type: assertion.type,
-              response: {
-                clientDataJSON: bytesToB64u(assertion.response.clientDataJSON),
-                authenticatorData: bytesToB64u(assertion.response.authenticatorData),
-                signature: bytesToB64u(assertion.response.signature),
-                userHandle: assertion.response.userHandle ? bytesToB64u(assertion.response.userHandle) : null,
-              },
-              clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {},
-            },
-          }),
-        });
-        if (!verifyR.ok) return null;
-        const data = await verifyR.json();
-        if (data && data.success === true && data.phone) {
-          setLocalPasskeyFlag();
-          return data.phone;
-        }
-        return null;
-      } catch (err) {
-        console.warn("WebAuthn login (any) failed/cancelled:", err);
-        return null;
-      }
-    }
-
-    async function triggerWebauthnLoginAny() {
-      const phone = await tryWebauthnLoginAny();
-      if (phone) {
-        // Запоминаем для совместимости + удобства (cabinet/index по-прежнему
-        // ожидают ?phone=...). Авто-prompt в admin-style работает и без localStorage.
-        try { localStorage.setItem("voyo_last_phone", phone); } catch (_) {}
-        window.location.replace("/cabinet?phone=" + encodeURIComponent(phone));
-        return true;
-      }
-      return false;
-    }
-
-    // Порог эвристики «passkey удалили из системного хранилища»:
-    // реальная отмена Face ID / Touch ID занимает ≥ 2 секунд (биометрический
-    // диалог + взаимодействие пользователя). Системный диалог «You don't have
-    // any passwords or passkeys saved» закрывается тапом по X / Continue и
-    // обычно отрабатывает быстрее. Если получили отказ быстрее этого порога —
-    // считаем, что passkey'я локально больше нет, и чистим LOCAL_PASSKEY_KEY,
-    // чтобы при следующем заходе системное окно не выскакивало зря.
-    const BIO_FAST_FAIL_MS = 2000;
-    function handleFastBioFailure() {
-      clearLocalPasskeyFlag();
-      bioEligible = false;
-      applyBioBtnVisibility();
-    }
-
-    bioLoginBtn.addEventListener("click", async () => {
-      if (bioLoginBtn.disabled) return;
-      bioLoginBtn.disabled = true;
-      const prev = bioLoginBtn.innerHTML;
-      bioLoginBtn.innerHTML = "Подтвердите вход...";
-      const start = Date.now();
-      const ok = await triggerWebauthnLoginAny();
-      bioLoginBtn.disabled = false;
-      bioLoginBtn.innerHTML = prev;
-      // На отмену / неуспех — форма остаётся видна, SMS-флоу не запускаем.
-      // Но если отказ быстрый — passkey удалён локально, чистим флаг и
-      // прячем кнопку, чтобы не предлагать снова бессмысленно.
-      if (!ok && Date.now() - start < BIO_FAST_FAIL_MS) handleFastBioFailure();
-    });
-
-    (async function tryAutoBioOnLoad() {
-      if (!(await isPlatformAuthAvailable())) return;
-      // Гейтинг ТОЛЬКО по серверной has-credentials. Раньше тут стояла
-      // дополнительная проверка hasLocalPasskeyFlag() (что passkey локально
-      // регистрировался на ЭТОМ устройстве). Но iOS Safari часто теряет
-      // localStorage (private mode, ITP, очистка данных сайта), и пользователь
-      // оставался без Face ID, хотя на сервере credential есть. Сейчас
-      // показываем кнопку и пробуем auto-prompt всегда, когда на сервере
-      // есть creds — как в админке. Цена: пользователь, реально удаливший
-      // passkey с устройства, увидит iOS-диалог «no passkeys saved» один
-      // раз, после чего fast-fail в click-handler'е кнопки уберёт её.
-      if (!(await anyCredentialsRegistered())) return;
-      bioEligible = true;
-      applyBioBtnVisibility();
-      await new Promise((r) => setTimeout(r, 150));
-      await triggerWebauthnLoginAny();
-    })();
   </script>
 </body>
 </html>
