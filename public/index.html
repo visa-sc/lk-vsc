@@ -196,6 +196,18 @@
       box-shadow: 0 0 0 3px rgba(53, 137, 189, 0.15);
     }
 
+    /* Красная подсветка поля телефона, когда пользователь нажал «Войти»
+       при пустом инпуте. Цвета — те же, что у .message.error и у
+       .login-input.is-error в админском ЛК. Сбрасывается на первый input. */
+    #phoneInput.is-error {
+      border-color: #d97a8a;
+      background: #fbebee;
+    }
+    #phoneInput.is-error:focus {
+      border-color: #d97a8a;
+      box-shadow: 0 0 0 3px rgba(217, 122, 138, 0.15);
+    }
+
     .message {
       display: none;
       padding: 12px 14px;
@@ -518,7 +530,6 @@
         name="phone"
         placeholder="+79991234567"
         autocomplete="tel"
-        required
       />
       <div id="notFoundBox" class="not-found-info">
         <div class="not-found-text">По этому номеру обращения не найдены.</div>
@@ -780,6 +791,12 @@
     }
 
     phoneInput.addEventListener("input", () => {
+      // На первый input сбрасываем красную подсветку и месседж «Введите номер
+      // телефона» — аналог админки (codeInput.addEventListener('input', hideLoginError)).
+      if (phoneInput.classList.contains("is-error")) {
+        phoneInput.classList.remove("is-error");
+        hideError();
+      }
       const formatted = applyPhoneMask(phoneInput.value);
       if (formatted !== phoneInput.value) {
         phoneInput.value = formatted;
@@ -1164,7 +1181,12 @@
 
       const raw = phoneInput.value.trim();
       if (!raw) {
+        // Аналог админки: подсвечиваем поле красным + красный месседж под
+        // кнопками. Без браузерного «Please fill out this form» (required
+        // у инпута снят), без изменений в логике дальше.
+        phoneInput.classList.add("is-error");
         showError("Введите номер телефона");
+        try { phoneInput.focus(); } catch (_) {}
         return;
       }
 
