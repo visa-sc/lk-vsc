@@ -746,20 +746,26 @@
     // ── Маска ввода телефона ──
     // Любой ввод в виде 9999999999 / 89999999999 / 79999999999 / +79999999999
     // приводим к формату «+7 (999) 999-99-99». Маска НЕ применяется к коротким
-    // числовым строкам без префикса +/7/8 — это сохраняет работу служебного кода входа.
+    // числовым строкам, не похожим на phone-attempt — это сохраняет работу
+    // служебного кода входа (`111`, `STAFF_BYPASS_CODE` в env).
     function applyPhoneMask(raw) {
       const trimmed = String(raw || "").trim();
       if (!trimmed) return "";
       const digitsOnly = trimmed.replace(/\D/g, "");
       if (!digitsOnly) return trimmed;
       // Включаем маску, если ввод выглядит как явный phone-attempt:
-      //   • начинается с +, 7 или 8;
-      //   • либо набрано 4+ цифр (короткий служебный код = только 3 знака).
-      const startsWithPhonePrefix = /^[+78]/.test(trimmed);
+      //   • начинается с +, 7, 8 или 9 (все RU-мобильные начинаются с +7 9XX,
+      //     так что любая цифра 7/8/9 в начале — это однозначно попытка
+      //     ввести номер, и сразу же подставляем +7 как country-code);
+      //   • либо набрано 4+ цифр (служебные коды короче).
+      // Цифры 0–6 в начале без + не маскируем — это путь для bypass-кода.
+      const startsWithPhonePrefix = /^[+789]/.test(trimmed);
       const hasEnoughDigits = digitsOnly.length >= 4;
       if (!startsWithPhonePrefix && !hasEnoughDigits) return trimmed;
 
       let body = digitsOnly;
+      // 7 и 8 в начале body — это всегда «country code», их игнорируем.
+      // Поэтому ввод 799… / 899… / 99… даёт одинаковое тело «99…».
       if (body.startsWith("7") || body.startsWith("8")) body = body.slice(1);
       body = body.slice(0, 10); // 10-значный «тело» номера
 
