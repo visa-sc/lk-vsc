@@ -3867,6 +3867,20 @@ const LK_STATS_START_DATE = "22.05.2026"; // отсчёт «с какой дат
 // даты в статистику не попадают (сами записи в .lkAuthPhones.json не удаляем —
 // просто игнорируем при подсчёте, чтобы при необходимости можно было откатить).
 const LK_STATS_START_MS = new Date("2026-05-22T00:00:00+03:00").getTime();
+
+// Тестовые номера команды — НЕ показываем в админке /admin → Статистика
+// (ни в totals, ни в conversions, ни в списке номеров). Записи в
+// .lkAuthPhones.json / .lkFirstQuestionnaireLead.json не удаляем, просто
+// игнорируем при подсчёте — чтобы можно было откатить без потери данных.
+// Формат: нормализованный номер (без +, скобок, дефисов, пробелов).
+//   +7 (916) 923-66-38 → 79169236638
+//   +7 (995) 918-90-58 → 79959189058
+//   +7 (999) 989-90-58 → 79999899058
+const LK_STATS_EXCLUDED_PHONES = new Set([
+  "79169236638",
+  "79959189058",
+  "79999899058"
+]);
 const LK_AUTH_PHONES_FILE = path.join(__dirname, ".lkAuthPhones.json");
 const lkAuthPhones = new Map(); // phone(7XXXXXXXXXX) -> firstAuthAt(ms)
 
@@ -4136,10 +4150,14 @@ async function computeUploadStatusForLead(phone, leadId) {
 
 async function computeAdminStats() {
   // Базовый набор — авторизованные клиенты, чья первая авторизация попадает
-  // в окно отслеживания (с LK_STATS_START_MS). Старые записи остаются в
-  // .lkAuthPhones.json (на случай отката), но в воронку не идут.
+  // в окно отслеживания (с LK_STATS_START_MS) И не попала в чёрный список
+  // тестовых номеров команды (LK_STATS_EXCLUDED_PHONES). Старые записи
+  // остаются в .lkAuthPhones.json (на случай отката), но в воронку не идут.
   const phoneEntries = Array.from(lkAuthPhones.entries())
-    .filter(([_, ts]) => Number(ts) >= LK_STATS_START_MS)
+    .filter(([phone, ts]) =>
+      Number(ts) >= LK_STATS_START_MS &&
+      !LK_STATS_EXCLUDED_PHONES.has(phone)
+    )
     .sort((a, b) => b[1] - a[1]);
 
   const perPhone = [];
