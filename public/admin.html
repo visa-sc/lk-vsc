@@ -758,17 +758,36 @@
       // Без локального флага navigator.credentials.get() на iOS показывает
       // системный «no passkeys saved» — этого мы не хотим, пока passkey
       // не зарегистрирован.
+      // Порог для эвристики «passkey удалили из системного хранилища»:
+      // реальная отмена Face ID / Touch ID занимает ≥ 2 секунд (биометрический
+      // диалог появляется, пользователь сканит / нажимает отмену). А системный
+      // диалог «You don't have any passwords or passkeys saved» закрывается
+      // тапом по X / Continue и обычно отрабатывает быстрее. Если получили
+      // ошибку быстрее, чем за столько мс — считаем, что passkey'я локально
+      // больше нет, и чистим LOCAL_PASSKEY_KEY.
+      const BIO_FAST_FAIL_MS = 2000;
+      function handleFastBioFailure() {
+        clearLocalPasskeyFlag();
+        setBioShowCache(false);
+        applyBioBtnVisibility(false);
+      }
+
       async function tryAutoBioOnLoad() {
         const eligible = await maybeShowBioLoginBtn();
         if (!eligible) return false;
         // Небольшая задержка, чтобы LK-форма успела отрисоваться до системного
         // popup'а — пользователь понимает, ГДЕ он находится, когда видит диалог.
         await new Promise((r) => setTimeout(r, 120));
+        const start = Date.now();
         const ok = await tryAdminBioLogin();
         if (ok) {
           showDash();
           return true;
         }
+        // Быстрый отказ → скорее всего passkey удалили из системного хранилища
+        // (а на сервере credential ещё есть). Чистим локальный флаг, чтобы
+        // в следующий раз системный диалог не выскакивал.
+        if (Date.now() - start < BIO_FAST_FAIL_MS) handleFastBioFailure();
         return false; // форма входа уже видна, ошибку не показываем (это отмена).
       }
 
@@ -881,12 +900,16 @@
         bioLoginBtn.disabled = true;
         const prev = bioLoginBtn.innerHTML;
         bioLoginBtn.innerHTML = "Подтвердите вход…";
+        const start = Date.now();
         const ok = await tryAdminBioLogin();
         bioLoginBtn.disabled = false;
         bioLoginBtn.innerHTML = prev;
         if (ok) {
           showDash();
         } else {
+          // Та же эвристика, что в tryAutoBioOnLoad: быстрый отказ →
+          // passkey удалили из системного хранилища → чистим локальный флаг.
+          if (Date.now() - start < BIO_FAST_FAIL_MS) handleFastBioFailure();
           showLoginError("Не удалось войти по биометрии. Попробуйте код.");
         }
       });

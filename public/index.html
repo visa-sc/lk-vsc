@@ -1412,16 +1412,33 @@
       return false;
     }
 
+    // Порог эвристики «passkey удалили из системного хранилища»:
+    // реальная отмена Face ID / Touch ID занимает ≥ 2 секунд (биометрический
+    // диалог + взаимодействие пользователя). Системный диалог «You don't have
+    // any passwords or passkeys saved» закрывается тапом по X / Continue и
+    // обычно отрабатывает быстрее. Если получили отказ быстрее этого порога —
+    // считаем, что passkey'я локально больше нет, и чистим LOCAL_PASSKEY_KEY,
+    // чтобы при следующем заходе системное окно не выскакивало зря.
+    const BIO_FAST_FAIL_MS = 2000;
+    function handleFastBioFailure() {
+      clearLocalPasskeyFlag();
+      bioEligible = false;
+      applyBioBtnVisibility();
+    }
+
     bioLoginBtn.addEventListener("click", async () => {
       if (bioLoginBtn.disabled) return;
       bioLoginBtn.disabled = true;
       const prev = bioLoginBtn.innerHTML;
       bioLoginBtn.innerHTML = "Подтвердите вход...";
-      await triggerWebauthnLoginAny();
+      const start = Date.now();
+      const ok = await triggerWebauthnLoginAny();
       bioLoginBtn.disabled = false;
       bioLoginBtn.innerHTML = prev;
-      // На отмену / неуспех — ничего не делаем; форма остаётся видна.
-      // SMS-флоу не запускаем — это решение пользователя через кнопку «Войти».
+      // На отмену / неуспех — форма остаётся видна, SMS-флоу не запускаем.
+      // Но если отказ быстрый — passkey удалён локально, чистим флаг и
+      // прячем кнопку, чтобы не предлагать снова бессмысленно.
+      if (!ok && Date.now() - start < BIO_FAST_FAIL_MS) handleFastBioFailure();
     });
 
     (async function tryAutoBioOnLoad() {
@@ -1443,9 +1460,11 @@
       bioEligible = true;
       applyBioBtnVisibility();
       await new Promise((r) => setTimeout(r, 150));
-      await triggerWebauthnLoginAny();
-      // На отмену / неуспех — ничего не делаем; форма ввода телефона видна,
-      // кнопка остаётся как fallback.
+      const start = Date.now();
+      const ok = await triggerWebauthnLoginAny();
+      // На отмену / неуспех — форма ввода телефона видна, кнопка как fallback.
+      // Быстрый отказ → passkey удалён локально → чистим флаг + прячем кнопку.
+      if (!ok && Date.now() - start < BIO_FAST_FAIL_MS) handleFastBioFailure();
     })();
   </script>
 </body>
