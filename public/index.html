@@ -167,6 +167,26 @@
       border-color: #d6dbe3;
     }
 
+    /* Кнопка «Войти по Face ID / отпечатку» — отдельная, под «Войти».
+       Показывается ТОЛЬКО когда на этом устройстве уже зарегистрирован
+       passkey для последнего использованного номера (видимость даёт JS
+       через .show). Стиль матчит .login-form button, но чуть выше
+       и с иконкой — как в админке. */
+    .login-form .bio-btn {
+      display: none;
+      height: 48px;
+      margin-top: 10px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .login-form .bio-btn.show { display: flex; }
+    .login-form .bio-btn svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
     .login-form input {
       transition: border-color 0.2s var(--vsc-ease), box-shadow 0.2s var(--vsc-ease);
     }
@@ -518,6 +538,12 @@
         </div>
       </div>
       <button id="searchBtn" type="submit">Войти</button>
+      <button id="bioLoginBtn" type="button" class="bio-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 11a3 3 0 0 0-3 3v1m6-1v3a3 3 0 0 1-6 0M6 11a6 6 0 0 1 12 0v3m-9 4a3 3 0 0 0 6 0M5 8a8 8 0 0 1 14 0M5 14v1a8 8 0 0 0 .35 2.34" />
+        </svg>
+        Войти по Face ID / отпечатку
+      </button>
 
       <label id="consentRow" class="consent-row">
         <input type="checkbox" id="consentCheckbox" checked />
@@ -561,6 +587,7 @@
     const form = document.getElementById("loginForm");
     const phoneInput = document.getElementById("phoneInput");
     const searchBtn = document.getElementById("searchBtn");
+    const bioLoginBtn = document.getElementById("bioLoginBtn");
     const errorBox = document.getElementById("errorBox");
     const codeSection = document.getElementById("codeSection");
     const codeCellsWrap = document.getElementById("codeCells");
@@ -606,6 +633,8 @@
       isRegistrationMode = false;
       searchBtn.textContent = "Войти";
       resetPromoState();
+      // Возврат к обычной форме входа — восстанавливаем bio-кнопку, если eligible.
+      if (typeof applyBioBtnVisibility === "function") applyBioBtnVisibility();
     }
 
     function showNotFound() {
@@ -615,6 +644,8 @@
       isRegistrationMode = true;
       searchBtn.textContent = "Зарегистрироваться";
       resetPromoState();
+      // В режиме регистрации нового номера bio-кнопка для старого номера сбивает с толку.
+      bioLoginBtn.classList.remove("show");
     }
 
 
@@ -770,6 +801,8 @@
     function showCodeStage() {
       codeSection.classList.add("show");
       searchBtn.style.display = "none";
+      // Кнопка «Войти по Face ID / отпечатку» в режиме ввода SMS не нужна.
+      bioLoginBtn.classList.remove("show");
       consentRow.style.display = "none";
       phoneInput.readOnly = true;
       codeCells.forEach((c) => { c.value = ""; });
@@ -780,6 +813,8 @@
     function backToPhoneStage() {
       codeSection.classList.remove("show");
       searchBtn.style.display = "";
+      // Возврат к вводу телефона — восстанавливаем bio-кнопку, если eligible.
+      if (typeof applyBioBtnVisibility === "function") applyBioBtnVisibility();
       consentRow.style.display = "";
       phoneInput.readOnly = false;
       codeCells.forEach((c) => { c.value = ""; });
@@ -1185,10 +1220,7 @@
       searchBtn.disabled = true;
       const prevText = searchBtn.textContent;
       searchBtn.textContent = "Проверка...";
-      const [hasLeads, hasCreds] = await Promise.all([
-        checkHasLeads(phone),
-        checkHasCredentials(phone)
-      ]);
+      const hasLeads = await checkHasLeads(phone);
       searchBtn.disabled = false;
       searchBtn.textContent = prevText;
 
@@ -1197,35 +1229,57 @@
         return;
       }
 
-      // Если у этого номера зарегистрирован passkey — пробуем биометрию.
-      // При отмене / ошибке падаем в обычный SMS-флоу.
-      if (hasCreds) {
-        searchBtn.disabled = true;
-        searchBtn.textContent = "Подтвердите вход...";
-        const bioOk = await tryWebauthnLogin(phone);
-        searchBtn.disabled = false;
-        searchBtn.textContent = prevText;
-        if (bioOk) {
-          serverPhone = phone;
-          // Запоминаем номер — при следующем заходе сразу предложим Face ID.
-          try { localStorage.setItem("voyo_last_phone", phone); } catch (_) {}
-          window.location.replace("/cabinet?phone=" + encodeURIComponent(phone));
-          return;
-        }
-        // не получилось — продолжаем SMS-флоу
-      }
-
+      // Кнопка «Войти» — это всегда SMS-флоу. Face ID / Touch ID — отдельная
+      // кнопка «Войти по Face ID / отпечатку» ниже, она появляется автоматически,
+      // если на этом устройстве уже зарегистрирован passkey. После неуспешного
+      // passkey'я НЕ шлём SMS автоматически — клиент должен явно нажать «Войти».
       await requestCode(phone);
     });
 
-    // ── Авто-вход по Face ID / Touch ID при заходе на «/» ──────────────────
+    // ── Вход по Face ID / Touch ID на «/» ─────────────────────────────────
     // Если на этом устройстве уже логинились по passkey'ю (или после SMS-входа
-    // включали «Вход без кода»), мы запомнили номер в localStorage. При новом
-    // заходе на главную: проверяем платформенный аутентификатор + наличие
-    // passkey'я на сервере → сразу показываем системный диалог Face ID /
-    // Touch ID для последнего номера. При отмене / ошибке — молча оставляем
-    // обычную форму ввода телефона (структура и поведение не меняются).
-    // Регистрация / staff-bypass / SMS-флоу — без изменений.
+    // включали «Вход без кода»), мы запомнили номер в localStorage:
+    //  1) При заходе на «/» сразу автоматически показываем системный диалог
+    //     Face ID / Touch ID для последнего номера (auto-prompt).
+    //  2) Под кнопкой «Войти» появляется кнопка «Войти по Face ID / отпечатку» —
+    //     ручной триггер тот же passkey-флоу.
+    // Видимость кнопки: после успешной проверки has-credentials выставляем
+    // флаг bioEligible=true и добавляем класс .show. В режимах ввода SMS-кода
+    // и регистрации (showNotFound) кнопку прячем, при возврате — восстанавливаем.
+    // На отмену / неудачу passkey'я НИКАКОГО автоматического SMS — пользователь
+    // должен явно нажать «Войти».
+    let bioEligible = false;
+
+    function applyBioBtnVisibility() {
+      if (bioEligible) bioLoginBtn.classList.add("show");
+      else bioLoginBtn.classList.remove("show");
+    }
+
+    async function triggerWebauthnLoginForLastPhone() {
+      let phone = "";
+      try { phone = localStorage.getItem("voyo_last_phone") || ""; } catch (_) {}
+      if (!phone) return false;
+      const ok = await tryWebauthnLogin(phone);
+      if (ok) {
+        try { localStorage.setItem("voyo_last_phone", phone); } catch (_) {}
+        window.location.replace("/cabinet?phone=" + encodeURIComponent(phone));
+        return true;
+      }
+      return false;
+    }
+
+    bioLoginBtn.addEventListener("click", async () => {
+      if (bioLoginBtn.disabled) return;
+      bioLoginBtn.disabled = true;
+      const prev = bioLoginBtn.innerHTML;
+      bioLoginBtn.innerHTML = "Подтвердите вход...";
+      const ok = await triggerWebauthnLoginForLastPhone();
+      bioLoginBtn.disabled = false;
+      bioLoginBtn.innerHTML = prev;
+      // На отмену / неуспех — ничего не делаем; форма остаётся видна.
+      // SMS-флоу не запускаем — это решение пользователя через кнопку «Войти».
+    });
+
     (async function tryAutoBioForLastPhone() {
       let lastPhone = "";
       try { lastPhone = localStorage.getItem("voyo_last_phone") || ""; } catch (_) {}
@@ -1233,14 +1287,17 @@
       if (!(await isPlatformAuthAvailable())) return;
       const hasCreds = await checkHasCredentials(lastPhone);
       if (!hasCreds) return;
+      // Passkey есть — показываем ручную кнопку «Войти по Face ID / отпечатку»
+      // под «Войти», независимо от того, согласится ли пользователь сейчас
+      // подтвердить системный диалог.
+      bioEligible = true;
+      applyBioBtnVisibility();
       // Небольшая задержка, чтобы LK-форма успела отрисоваться до системного
       // popup'а — пользователь видит, ГДЕ он, когда появляется диалог.
       await new Promise((r) => setTimeout(r, 150));
-      const ok = await tryWebauthnLogin(lastPhone);
-      if (ok) {
-        window.location.replace("/cabinet?phone=" + encodeURIComponent(lastPhone));
-      }
-      // На отмену / неуспех — ничего не делаем; форма ввода телефона уже видна.
+      await triggerWebauthnLoginForLastPhone();
+      // На отмену / неуспех — ничего не делаем; форма ввода телефона видна,
+      // кнопка «Войти по Face ID / отпечатку» под «Войти» остаётся как fallback.
     })();
   </script>
 </body>
