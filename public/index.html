@@ -528,7 +528,7 @@
         id="phoneInput"
         type="text"
         name="phone"
-        placeholder="+79991234567"
+        placeholder="+7 (912) 345-67-89"
         autocomplete="tel"
       />
       <div id="notFoundBox" class="not-found-info">
@@ -797,8 +797,28 @@
         phoneInput.classList.remove("is-error");
         hideError();
       }
-      const formatted = applyPhoneMask(phoneInput.value);
-      if (formatted !== phoneInput.value) {
+      const current = phoneInput.value;
+      const formatted = applyPhoneMask(current);
+      // Кейс «удалил только сепаратор» (backspace на `)`, `(`, пробеле, дефисе):
+      // количество цифр в current и в formatted одинаковое, но formatted длиннее —
+      // маска хочет дорисовать сепаратор обратно. Без спец-обработки пользователь
+      // не сможет удалить дальше: backspace → маска возвращает скобку → backspace
+      // снова → маска возвращает скобку. Уважаем намерение «удалять»: вместо
+      // обратной дорисовки убираем последнюю цифру тела номера.
+      if (
+        formatted.length > current.length &&
+        formatted.replace(/\D/g, "") === current.replace(/\D/g, "")
+      ) {
+        const digits = current.replace(/\D/g, "");
+        let body = digits;
+        if (body.startsWith("7") || body.startsWith("8")) body = body.slice(1);
+        body = body.slice(0, -1);
+        const shorter = body.length === 0 ? "" : applyPhoneMask("+7" + body);
+        phoneInput.value = shorter;
+        try { phoneInput.setSelectionRange(shorter.length, shorter.length); } catch (_) {}
+        return;
+      }
+      if (formatted !== current) {
         phoneInput.value = formatted;
         // Курсор — в конец (компромисс для простоты редактирования)
         try { phoneInput.setSelectionRange(formatted.length, formatted.length); } catch (_) {}
