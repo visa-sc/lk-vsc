@@ -834,6 +834,9 @@
         // Предложим зарегистрировать passkey (если устройство поддерживает и passkey'ов ещё нет).
         // Внутри либо ничего не делает, либо ждёт выбора пользователя.
         try { await maybeOfferBiometricRegistration(serverPhone); } catch (_) {}
+        // Запоминаем номер на устройстве — при следующем заходе на «/» сразу
+        // предложим Face ID / Touch ID для этого номера (если passkey есть).
+        try { localStorage.setItem("voyo_last_phone", serverPhone); } catch (_) {}
         // replace, чтобы кнопка "Назад" в браузере не возвращала на использованный код
         window.location.replace("/cabinet?phone=" + encodeURIComponent(serverPhone));
       } catch (err) {
@@ -1204,6 +1207,8 @@
         searchBtn.textContent = prevText;
         if (bioOk) {
           serverPhone = phone;
+          // Запоминаем номер — при следующем заходе сразу предложим Face ID.
+          try { localStorage.setItem("voyo_last_phone", phone); } catch (_) {}
           window.location.replace("/cabinet?phone=" + encodeURIComponent(phone));
           return;
         }
@@ -1212,6 +1217,31 @@
 
       await requestCode(phone);
     });
+
+    // ── Авто-вход по Face ID / Touch ID при заходе на «/» ──────────────────
+    // Если на этом устройстве уже логинились по passkey'ю (или после SMS-входа
+    // включали «Вход без кода»), мы запомнили номер в localStorage. При новом
+    // заходе на главную: проверяем платформенный аутентификатор + наличие
+    // passkey'я на сервере → сразу показываем системный диалог Face ID /
+    // Touch ID для последнего номера. При отмене / ошибке — молча оставляем
+    // обычную форму ввода телефона (структура и поведение не меняются).
+    // Регистрация / staff-bypass / SMS-флоу — без изменений.
+    (async function tryAutoBioForLastPhone() {
+      let lastPhone = "";
+      try { lastPhone = localStorage.getItem("voyo_last_phone") || ""; } catch (_) {}
+      if (!lastPhone) return;
+      if (!(await isPlatformAuthAvailable())) return;
+      const hasCreds = await checkHasCredentials(lastPhone);
+      if (!hasCreds) return;
+      // Небольшая задержка, чтобы LK-форма успела отрисоваться до системного
+      // popup'а — пользователь видит, ГДЕ он, когда появляется диалог.
+      await new Promise((r) => setTimeout(r, 150));
+      const ok = await tryWebauthnLogin(lastPhone);
+      if (ok) {
+        window.location.replace("/cabinet?phone=" + encodeURIComponent(lastPhone));
+      }
+      // На отмену / неуспех — ничего не делаем; форма ввода телефона уже видна.
+    })();
   </script>
 </body>
 </html>
