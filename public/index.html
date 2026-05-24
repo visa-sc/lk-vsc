@@ -790,7 +790,7 @@
       return result;
     }
 
-    phoneInput.addEventListener("input", () => {
+    phoneInput.addEventListener("input", (e) => {
       // На первый input сбрасываем красную подсветку и месседж «Введите номер
       // телефона» — аналог админки (codeInput.addEventListener('input', hideLoginError)).
       if (phoneInput.classList.contains("is-error")) {
@@ -799,13 +799,27 @@
       }
       const current = phoneInput.value;
       const formatted = applyPhoneMask(current);
+      // Отличаем «удаление» от «ввода». При вводе цифры (например 3-й цифры
+      // тела) маска тоже хочет ДОПИСАТЬ сепаратор «)» — formatted длиннее,
+      // количество цифр совпадает. Раньше из-за этого набор пятой/восьмой
+      // цифры обрезался. Используем InputEvent.inputType: "deleteContent*" /
+      // "deleteByCut" / "deleteByDrag" — это действительно удаление.
+      const isDeleting = !!(e && e.inputType && (
+        e.inputType === "deleteContentBackward" ||
+        e.inputType === "deleteContentForward" ||
+        e.inputType === "deleteByCut" ||
+        e.inputType === "deleteByDrag" ||
+        e.inputType.indexOf("delete") === 0
+      ));
       // Кейс «удалил только сепаратор» (backspace на `)`, `(`, пробеле, дефисе):
       // количество цифр в current и в formatted одинаковое, но formatted длиннее —
       // маска хочет дорисовать сепаратор обратно. Без спец-обработки пользователь
       // не сможет удалить дальше: backspace → маска возвращает скобку → backspace
       // снова → маска возвращает скобку. Уважаем намерение «удалять»: вместо
       // обратной дорисовки убираем последнюю цифру тела номера.
+      // ВАЖНО: срабатывает ТОЛЬКО при удалении (isDeleting), иначе ломается ввод.
       if (
+        isDeleting &&
         formatted.length > current.length &&
         formatted.replace(/\D/g, "") === current.replace(/\D/g, "")
       ) {
