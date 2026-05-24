@@ -1010,9 +1010,10 @@
 
     resendBtn.addEventListener("click", async () => {
       if (resendBtn.disabled || !serverPhone) return;
-      // После успешного verify resend тоже отключён — иначе случайный клик
-      // в момент показа bioOffer'а отправит новую SMS.
-      if (loginFinalizing) return;
+      // Resend SMS блокируем, пока verify в полёте (isVerifying) или уже
+      // прошёл успешно (loginFinalizing) — иначе случайный клик в этом
+      // окне отправит лишнюю SMS, а пользователь её точно не ждёт.
+      if (loginFinalizing || isVerifying) return;
       hideError();
       codeCellsWrap.classList.remove("is-error");
       codeCells.forEach((c) => { c.value = ""; });
@@ -1245,10 +1246,24 @@
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      // После успешного verify никакие пересабмиты формы не должны слать
-      // новую SMS — даже если что-то (iOS-autofill, фокус на phoneInput,
-      // Enter из кнопки bioOffer'а и т. п.) случайно триггернёт submit.
-      if (loginFinalizing) return;
+      // Submit формы шлёт SMS — он легитимен ТОЛЬКО на стадии «ввод телефона».
+      // Любой submit в стадии ввода SMS-кода, в момент verify-запроса или на
+      // bioOffer'е — это случайный/гоночный событие (iOS-клавиатурная кнопка
+      // "Go"/"Done" / Enter / autofill / возврат фокуса от системного passkey-
+      // popup'а), и второй SMS отправляться не должен.
+      //   • loginFinalizing — verify уже прошёл успешно, идём к /cabinet;
+      //   • isVerifying — verify сейчас в полёте (окно ~100-500 мс между
+      //     stuck-в-fetch и loginFinalizing=true);
+      //   • codeSection.show — пользователь в стадии ввода SMS-кода;
+      //   • bioOfferSection.show — пользователь видит «Включите Face ID».
+      if (
+        loginFinalizing ||
+        isVerifying ||
+        codeSection.classList.contains("show") ||
+        bioOfferSection.classList.contains("show")
+      ) {
+        return;
+      }
       hideError();
 
       // Согласие на обработку персональных данных (152-ФЗ) — обязательно.
