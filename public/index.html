@@ -1194,12 +1194,11 @@
     }
     async function maybeOfferBiometricRegistration(phone) {
       if (!(await isPlatformAuthAvailable())) return;
-      // Не предлагаем повторно ТОЛЬКО если passkey есть И он локально на ЭТОМ
-      // устройстве (LOCAL_PASSKEY_KEY). Если passkey есть только на сервере
-      // (например, с другого устройства, или после миграции на новый код) —
-      // показываем оффер, чтобы можно было привязать к этому устройству.
+      // По ЭТОМУ номеру уже есть passkey на сервере — повторно не предлагаем.
+      // Каждый раз после SMS-входа, пока passkey'я для номера нет, оффер будет
+      // появляться — это и нужно, чтобы пользователь рано или поздно его привязал.
       const has = await checkHasCredentials(phone);
-      if (has && hasLocalPasskeyFlag()) return;
+      if (has) return;
       // Показываем секцию предложения
       codeSection.classList.remove("show");
       bioOfferSection.classList.add("show");
@@ -1377,34 +1376,39 @@
         return;
       }
 
-      // ── Face ID / Touch ID ПЕРВЫМ, если на этом устройстве есть passkey ──
-      // Когда у клиента уже подключён вход по Face ID (bioEligible=true) и он
-      // ещё не отменил Face ID в этой попытке (!awaitingSmsConfirmation) —
-      // не шлём SMS, а сразу пробуем системный диалог с per-phone webauthn.
-      // На успех — редирект в /cabinet. На отмену/неуспех — переключаем
-      // кнопку «Войти» в «Войти по SMS», следующий клик уйдёт в обычный
-      // SMS-флоу (а пользователь ещё может тапнуть отдельную кнопку
-      // «Войти по Face ID / отпечатку» под Войти).
-      if (bioEligible && !awaitingSmsConfirmation) {
-        searchBtn.disabled = true;
-        searchBtn.textContent = "Подтвердите вход...";
-        const ok = await tryWebauthnLogin(phone);
-        searchBtn.disabled = false;
-        if (ok) {
-          serverPhone = phone;
-          try { localStorage.setItem("voyo_last_phone", phone); } catch (_) {}
-          window.location.replace("/cabinet?phone=" + encodeURIComponent(phone));
+      // ── Face ID / Touch ID ПЕРВЫМ — только если у ЭТОГО номера есть passkey ──
+      // Раньше тут стоял bioEligible (= «есть passkey у любого номера»). Из-за
+      // этого пользователь с НОВЫМ номером без passkey попадал в тупик: Face ID
+      // диалог появлялся, никакого passkey'я для его номера нет, пользователь
+      // закрывал диалог, жал «Войти по SMS» — и снова получал Face ID.
+      // Сейчас перед попыткой Face ID проверяем persistent server-state ровно
+      // для этого номера. Нет creds на сервере → сразу SMS, без иллюзий.
+      if (!awaitingSmsConfirmation) {
+        const [platformOk, hasCredsForThisPhone] = await Promise.all([
+          isPlatformAuthAvailable(),
+          checkHasCredentials(phone),
+        ]);
+        if (platformOk && hasCredsForThisPhone) {
+          searchBtn.disabled = true;
+          searchBtn.textContent = "Подтвердите вход...";
+          const ok = await tryWebauthnLogin(phone);
+          searchBtn.disabled = false;
+          if (ok) {
+            serverPhone = phone;
+            try { localStorage.setItem("voyo_last_phone", phone); } catch (_) {}
+            window.location.replace("/cabinet?phone=" + encodeURIComponent(phone));
+            return;
+          }
+          // Face ID не сошёл — переключаем кнопку в «Войти по SMS».
+          // Следующий клик безусловно уйдёт в requestCode (awaitingSmsConfirmation=true).
+          awaitingSmsConfirmation = true;
+          searchBtn.textContent = "Войти по SMS";
           return;
         }
-        // Face ID не сошлась — даём пользователю явный путь в SMS:
-        // меняем текст кнопки на «Войти по SMS». На следующий клик пойдёт
-        // обычный SMS-флоу (через эту же ветку, awaitingSmsConfirmation=true).
-        awaitingSmsConfirmation = true;
-        searchBtn.textContent = "Войти по SMS";
-        return;
+        // У этого номера passkey'я нет — никакого Face ID, сразу SMS.
       }
 
-      // SMS-флоу (нет passkey'я или пользователь явно выбрал SMS-fallback).
+      // SMS-флоу.
       await requestCode(phone);
     });
 
