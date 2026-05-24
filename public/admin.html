@@ -654,6 +654,23 @@
           else localStorage.removeItem(BIO_SHOW_CACHE_KEY);
         } catch (_) {}
       }
+      // Отдельный флаг: «на ЭТОМ устройстве локально есть admin-passkey».
+      // Без него navigator.credentials.get() на iOS показывает системный
+      // «You don't have any passwords or passkeys saved», даже если на сервере
+      // есть passkey'и для других устройств. Флаг ставим только когда
+      // tryAdminBioLogin/tryAdminBioRegister прошёл успешно на этом устройстве.
+      // Чистим, когда сервер достоверно ответил «hasCredentials: false».
+      const LOCAL_PASSKEY_KEY = "voyo_admin_local_passkey";
+      function hasLocalPasskeyFlag() {
+        try { return localStorage.getItem(LOCAL_PASSKEY_KEY) === "1"; }
+        catch (_) { return false; }
+      }
+      function setLocalPasskeyFlag() {
+        try { localStorage.setItem(LOCAL_PASSKEY_KEY, "1"); } catch (_) {}
+      }
+      function clearLocalPasskeyFlag() {
+        try { localStorage.removeItem(LOCAL_PASSKEY_KEY); } catch (_) {}
+      }
       function applyBioBtnVisibility(show) {
         bioLoginBtn.classList.toggle("show", !!show);
       }
@@ -715,25 +732,32 @@
           isPlatformAuthAvailable(),
           adminHasCredentials()
         ]);
-        const eligible = platformOk && credsRes.hasCreds;
+        const localOk = hasLocalPasskeyFlag();
+        // Кнопку показываем только при ВСЕХ трёх: platform поддерживает,
+        // на сервере есть creds, И на ЭТОМ устройстве passkey локально есть.
+        // Иначе клик по кнопке вызовет системный «no passkeys saved» — этого
+        // на странице с «нет passkey'я» не должно быть видно.
+        const eligible = platformOk && credsRes.hasCreds && localOk;
         if (credsRes.known) {
-          // Достоверный ответ от сервера — обновляем и видимость, и кэш.
+          // Достоверный ответ от сервера — обновляем видимость и кэш.
           applyBioBtnVisibility(eligible);
           setBioShowCache(eligible);
+          // Если сервер сказал «creds нет» — локальный флаг точно устарел.
+          if (!credsRes.hasCreds && localOk) clearLocalPasskeyFlag();
         } else if (eligible) {
-          // Сетевой сбой, но platform + (по кэшу) creds есть — оставляем видимой.
+          // Сетевой сбой, но всё сходится по кэшу + локальному флагу.
           applyBioBtnVisibility(true);
         }
-        // Если known=false и eligible=false — НЕ прячем, оставляем как было
-        // (cached state). Это и решает «пропадает на мобиле».
+        // Если known=false и eligible=false — НЕ прячем, оставляем как было.
         return eligible;
       }
 
       // Авто-prompt Face ID / Touch ID при заходе на /admin без сессии:
-      // если устройство поддерживает платформенный аутентификатор И на сервере
-      // уже есть зарегистрированный passkey — сразу показываем системный диалог.
-      // Если пользователь отменил / биометрия не прошла — молча падаем в форму
-      // с кодом (и кнопка Face ID остаётся видна как fallback).
+      // запускаем только если на сервере есть passkey И на ЭТОМ устройстве
+      // он реально зарегистрирован локально (флаг hasLocalPasskeyFlag).
+      // Без локального флага navigator.credentials.get() на iOS показывает
+      // системный «no passkeys saved» — этого мы не хотим, пока passkey
+      // не зарегистрирован.
       async function tryAutoBioOnLoad() {
         const eligible = await maybeShowBioLoginBtn();
         if (!eligible) return false;
@@ -784,9 +808,10 @@
           const data = await verifyR.json().catch(() => ({}));
           if (verifyR.ok && data.success && data.token) {
             setToken(data.token);
-            // Успешный вход — фиксируем, что на этом устройстве кнопка
-            // должна быть видна СРАЗУ при следующих заходах.
+            // Успешный вход — passkey ТОЧНО есть локально на этом устройстве,
+            // фиксируем оба флага: и кэш видимости кнопки, и local-passkey.
             setBioShowCache(true);
+            setLocalPasskeyFlag();
             return true;
           }
           return false;
@@ -838,9 +863,12 @@
           });
           const data = await verifyR.json().catch(() => ({}));
           const ok = !!(verifyR.ok && data.success);
-          // Регистрация прошла — кнопка Face ID отныне «существует» с т.з.
-          // этого устройства, кэшируем для синхронного показа на /admin.
-          if (ok) setBioShowCache(true);
+          // Регистрация прошла — passkey локально создан на этом устройстве,
+          // фиксируем оба флага: видимость кнопки + local-passkey.
+          if (ok) {
+            setBioShowCache(true);
+            setLocalPasskeyFlag();
+          }
           return ok;
         } catch (err) {
           console.warn("admin bio register failed/cancelled:", err);
@@ -908,13 +936,16 @@
             return;
           }
           setToken(data.token);
-          // Если устройство поддерживает биометрию И ещё нет
-          // зарегистрированного passkey — предлагаем включить.
+          // Предлагаем включить вход по Face ID если:
+          //  • устройство поддерживает платформенный аутентификатор;
+          //  • И либо на сервере вообще нет passkey'я, либо у нас не выставлен
+          //    локальный флаг (значит на ЭТОМ устройстве passkey не привязан —
+          //    нужно зарегистрировать новую кредитку для текущего девайса).
           const [platformOk, credsRes] = await Promise.all([
             isPlatformAuthAvailable(),
             adminHasCredentials()
           ]);
-          if (platformOk && credsRes.known && !credsRes.hasCreds) {
+          if (platformOk && credsRes.known && (!credsRes.hasCreds || !hasLocalPasskeyFlag())) {
             // Показываем оффер; на «Не сейчас» / «Включить» уйдём в дашборд.
             bioOffer.classList.add("show");
             return;

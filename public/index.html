@@ -994,6 +994,28 @@
       try { return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }
       catch (_) { return false; }
     }
+
+    // ── Локальный «есть ли на ЭТОМ устройстве passkey» ──────────────────────
+    // Без этого флага navigator.credentials.get() на устройстве, где passkey
+    // не регистрировали, всё равно показывает системный диалог «You don't
+    // have any passwords or passkeys saved» (на iOS), даже если на сервере
+    // есть passkey'и для других устройств. Флаг выставляем после успешной
+    // регистрации passkey'я (tryWebauthnRegister) и после успешной
+    // аутентификации (tryWebauthnLoginAny / tryWebauthnLogin) — оба доказывают,
+    // что на этом устройстве passkey есть. Чистим, если сервер достоверно
+    // ответил «зарегистрированных passkey'ев нет» (значит локальный флаг
+    // устарел — passkey удалили из админки или вручную).
+    const LOCAL_PASSKEY_KEY = "voyo_has_local_passkey";
+    function setLocalPasskeyFlag() {
+      try { localStorage.setItem(LOCAL_PASSKEY_KEY, "1"); } catch (_) {}
+    }
+    function clearLocalPasskeyFlag() {
+      try { localStorage.removeItem(LOCAL_PASSKEY_KEY); } catch (_) {}
+    }
+    function hasLocalPasskeyFlag() {
+      try { return localStorage.getItem(LOCAL_PASSKEY_KEY) === "1"; }
+      catch (_) { return false; }
+    }
     async function checkHasCredentials(phone) {
       try {
         const r = await fetch("/api/auth/webauthn/has-credentials", {
@@ -1044,7 +1066,9 @@
           }),
         });
         const data = await verifyR.json();
-        return data && data.success === true;
+        const ok = !!(data && data.success === true);
+        if (ok) setLocalPasskeyFlag();
+        return ok;
       } catch (err) {
         console.warn("WebAuthn login failed/cancelled:", err);
         return false;
@@ -1088,7 +1112,9 @@
           }),
         });
         const data = await verifyR.json();
-        return data && data.success === true;
+        const ok = !!(data && data.success === true);
+        if (ok) setLocalPasskeyFlag();
+        return ok;
       } catch (err) {
         console.warn("WebAuthn register failed/cancelled:", err);
         return false;
@@ -1096,8 +1122,12 @@
     }
     async function maybeOfferBiometricRegistration(phone) {
       if (!(await isPlatformAuthAvailable())) return;
+      // Не предлагаем повторно ТОЛЬКО если passkey есть И он локально на ЭТОМ
+      // устройстве (LOCAL_PASSKEY_KEY). Если passkey есть только на сервере
+      // (например, с другого устройства, или после миграции на новый код) —
+      // показываем оффер, чтобы можно было привязать к этому устройству.
       const has = await checkHasCredentials(phone);
-      if (has) return; // уже есть passkey для этого номера — не предлагаем повторно
+      if (has && hasLocalPasskeyFlag()) return;
       // Показываем секцию предложения
       codeSection.classList.remove("show");
       bioOfferSection.classList.add("show");
@@ -1339,7 +1369,10 @@
         });
         if (!verifyR.ok) return null;
         const data = await verifyR.json();
-        if (data && data.success === true && data.phone) return data.phone;
+        if (data && data.success === true && data.phone) {
+          setLocalPasskeyFlag();
+          return data.phone;
+        }
         return null;
       } catch (err) {
         console.warn("WebAuthn login (any) failed/cancelled:", err);
@@ -1373,13 +1406,22 @@
 
     (async function tryAutoBioOnLoad() {
       if (!(await isPlatformAuthAvailable())) return;
-      if (!(await anyCredentialsRegistered())) return;
-      // Passkey на сервере есть И устройство поддерживает биометрию — показываем
-      // ручную кнопку «Войти по Face ID / отпечатку» под «Войти».
+      // Главное условие: passkey должен быть НА ЭТОМ устройстве (флаг
+      // LOCAL_PASSKEY_KEY выставляется после успешной регистрации/логина).
+      // Без флага navigator.credentials.get() на iOS показывает системное
+      // окно «You don't have any passwords or passkeys saved» — даже если
+      // на сервере есть passkey'и для других устройств. Этого нам не надо.
+      if (!hasLocalPasskeyFlag()) return;
+      // Если на сервере вообще нет passkey'ев — локальный флаг точно
+      // устарел (passkey удалили). Чистим и выходим.
+      if (!(await anyCredentialsRegistered())) {
+        clearLocalPasskeyFlag();
+        return;
+      }
+      // Passkey есть и на устройстве, и на сервере — показываем ручную кнопку
+      // «Войти по Face ID / отпечатку» и через 150 ms дёргаем системный диалог.
       bioEligible = true;
       applyBioBtnVisibility();
-      // Небольшая задержка, чтобы LK-форма успела отрисоваться до системного
-      // popup'а — пользователь видит, ГДЕ он, когда появляется диалог.
       await new Promise((r) => setTimeout(r, 150));
       await triggerWebauthnLoginAny();
       // На отмену / неуспех — ничего не делаем; форма ввода телефона видна,
