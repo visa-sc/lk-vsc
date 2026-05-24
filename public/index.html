@@ -1537,30 +1537,20 @@
 
     (async function tryAutoBioOnLoad() {
       if (!(await isPlatformAuthAvailable())) return;
-      // Главное условие: passkey должен быть НА ЭТОМ устройстве (флаг
-      // LOCAL_PASSKEY_KEY выставляется после успешной регистрации/логина).
-      // Без флага navigator.credentials.get() на iOS показывает системное
-      // окно «You don't have any passwords or passkeys saved» — даже если
-      // на сервере есть passkey'и для других устройств. Этого нам не надо.
-      if (!hasLocalPasskeyFlag()) return;
-      // Если на сервере вообще нет passkey'ев — локальный флаг точно
-      // устарел (passkey удалили). Чистим и выходим.
-      if (!(await anyCredentialsRegistered())) {
-        clearLocalPasskeyFlag();
-        return;
-      }
-      // Passkey есть и на устройстве, и на сервере — показываем ручную кнопку
-      // «Войти по Face ID / отпечатку» и через 150 ms дёргаем системный диалог.
+      // Гейтинг ТОЛЬКО по серверной has-credentials. Раньше тут стояла
+      // дополнительная проверка hasLocalPasskeyFlag() (что passkey локально
+      // регистрировался на ЭТОМ устройстве). Но iOS Safari часто теряет
+      // localStorage (private mode, ITP, очистка данных сайта), и пользователь
+      // оставался без Face ID, хотя на сервере credential есть. Сейчас
+      // показываем кнопку и пробуем auto-prompt всегда, когда на сервере
+      // есть creds — как в админке. Цена: пользователь, реально удаливший
+      // passkey с устройства, увидит iOS-диалог «no passkeys saved» один
+      // раз, после чего fast-fail в click-handler'е кнопки уберёт её.
+      if (!(await anyCredentialsRegistered())) return;
       bioEligible = true;
       applyBioBtnVisibility();
       await new Promise((r) => setTimeout(r, 150));
       await triggerWebauthnLoginAny();
-      // На отмену / неуспех — форма ввода телефона видна, кнопка как fallback.
-      // Локальный флаг НЕ чистим даже при быстром отказе: iOS Safari может
-      // молча отклонять navigator.credentials.get() из IIFE без user-gesture,
-      // и это не означает, что passkey'я нет. Если passkey'я реально нет на
-      // устройстве — fast-fail сработает в click-handler'е кнопки (там есть
-      // user-gesture и быстрый отказ — реальный сигнал).
     })();
   </script>
 </body>
