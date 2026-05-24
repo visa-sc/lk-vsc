@@ -778,17 +778,18 @@
         // Небольшая задержка, чтобы LK-форма успела отрисоваться до системного
         // popup'а — пользователь понимает, ГДЕ он находится, когда видит диалог.
         await new Promise((r) => setTimeout(r, 120));
-        const start = Date.now();
         const ok = await tryAdminBioLogin();
         if (ok) {
           showDash();
           return true;
         }
-        // Быстрый отказ → скорее всего passkey удалили из системного хранилища
-        // (а на сервере credential ещё есть). Чистим локальный флаг, чтобы
-        // в следующий раз системный диалог не выскакивал.
-        if (Date.now() - start < BIO_FAST_FAIL_MS) handleFastBioFailure();
-        return false; // форма входа уже видна, ошибку не показываем (это отмена).
+        // На отмену / неуспех — форма с кодом уже видна, кнопка Face ID
+        // остаётся как fallback. Локальный флаг НЕ чистим даже при быстром
+        // отказе: iOS Safari может молча отклонить navigator.credentials.get()
+        // из IIFE без user-gesture, и это НЕ означает, что passkey'я нет.
+        // Если passkey'я реально нет — fast-fail сработает в click-handler'е
+        // кнопки (там есть user-gesture, быстрый отказ — реальный сигнал).
+        return false;
       }
 
       async function tryAdminBioLogin() {

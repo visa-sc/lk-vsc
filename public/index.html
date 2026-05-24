@@ -1491,11 +1491,13 @@
       bioEligible = true;
       applyBioBtnVisibility();
       await new Promise((r) => setTimeout(r, 150));
-      const start = Date.now();
-      const ok = await triggerWebauthnLoginAny();
+      await triggerWebauthnLoginAny();
       // На отмену / неуспех — форма ввода телефона видна, кнопка как fallback.
-      // Быстрый отказ → passkey удалён локально → чистим флаг + прячем кнопку.
-      if (!ok && Date.now() - start < BIO_FAST_FAIL_MS) handleFastBioFailure();
+      // Локальный флаг НЕ чистим даже при быстром отказе: iOS Safari может
+      // молча отклонять navigator.credentials.get() из IIFE без user-gesture,
+      // и это не означает, что passkey'я нет. Если passkey'я реально нет на
+      // устройстве — fast-fail сработает в click-handler'е кнопки (там есть
+      // user-gesture и быстрый отказ — реальный сигнал).
     })();
   </script>
 </body>
