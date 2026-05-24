@@ -622,6 +622,12 @@
     let isRegistrationMode = false;
     let isPromoApplied = false;        // true только когда введён валидный промокод и не отменён
     let lastAppliedPromoCode = "";     // конкретный код, который успешно применили (для отправки на сервер)
+    // После НЕУДАЧНОЙ попытки Face ID после клика «Войти» меняем текст кнопки
+    // на «Войти по SMS» — следующий клик уходит в SMS-флоу. Сбрасывается при
+    // редактировании телефона, возврате из code-стадии или входе в режим
+    // регистрации. Между загрузками страницы НЕ персистится: каждая новая
+    // загрузка снова пробует Face ID первым (юзер просил «и так каждый раз»).
+    let awaitingSmsConfirmation = false;
     let promoQuestionRevealed = false; // true после первого клика по «Зарегистрироваться»
 
     function resetPromoState() {
@@ -642,6 +648,9 @@
       notFoundBox.classList.remove("show");
       // Выход из режима регистрации — синхронно с прятаньем блока
       isRegistrationMode = false;
+      // Сбрасываем SMS-fallback из предыдущей попытки (если был) и
+      // возвращаем дефолтный текст «Войти».
+      awaitingSmsConfirmation = false;
       searchBtn.textContent = "Войти";
       resetPromoState();
       // Возврат к обычной форме входа — восстанавливаем bio-кнопку, если eligible.
@@ -653,6 +662,8 @@
       // Вход в режим регистрации — синхронно с показом блока, но вопрос промокода
       // ещё не раскрываем — он покажется только после первого клика по «Зарегистрироваться»
       isRegistrationMode = true;
+      // Регистрация — это новый номер, Face ID-first флоу не нужен.
+      awaitingSmsConfirmation = false;
       searchBtn.textContent = "Зарегистрироваться";
       resetPromoState();
       // В режиме регистрации нового номера bio-кнопка для старого номера сбивает с толку.
@@ -804,6 +815,14 @@
         phoneInput.classList.remove("is-error");
         hideError();
       }
+      // Меняется номер → SMS-fallback от предыдущей неудавшейся Face ID попытки
+      // больше не актуален. Возвращаем кнопке исходный текст и снова даём
+      // Face ID попробовать на следующий submit. Не трогаем, если открыт
+      // режим регистрации (там текст уже «Зарегистрироваться»).
+      if (awaitingSmsConfirmation && !isRegistrationMode) {
+        awaitingSmsConfirmation = false;
+        searchBtn.textContent = "Войти";
+      }
       const current = phoneInput.value;
       const formatted = applyPhoneMask(current);
       // Отличаем «удаление» от «ввода». При вводе цифры (например 3-й цифры
@@ -877,6 +896,11 @@
     function backToPhoneStage() {
       codeSection.classList.remove("show");
       searchBtn.style.display = "";
+      // Возврат к стадии телефона — снова стартуем с Face ID-first флоу.
+      if (awaitingSmsConfirmation && !isRegistrationMode) {
+        awaitingSmsConfirmation = false;
+        searchBtn.textContent = "Войти";
+      }
       // Возврат к вводу телефона — восстанавливаем bio-кнопку, если eligible.
       if (typeof applyBioBtnVisibility === "function") applyBioBtnVisibility();
       consentRow.style.display = "";
@@ -1353,10 +1377,34 @@
         return;
       }
 
-      // Кнопка «Войти» — это всегда SMS-флоу. Face ID / Touch ID — отдельная
-      // кнопка «Войти по Face ID / отпечатку» ниже, она появляется автоматически,
-      // если на этом устройстве уже зарегистрирован passkey. После неуспешного
-      // passkey'я НЕ шлём SMS автоматически — клиент должен явно нажать «Войти».
+      // ── Face ID / Touch ID ПЕРВЫМ, если на этом устройстве есть passkey ──
+      // Когда у клиента уже подключён вход по Face ID (bioEligible=true) и он
+      // ещё не отменил Face ID в этой попытке (!awaitingSmsConfirmation) —
+      // не шлём SMS, а сразу пробуем системный диалог с per-phone webauthn.
+      // На успех — редирект в /cabinet. На отмену/неуспех — переключаем
+      // кнопку «Войти» в «Войти по SMS», следующий клик уйдёт в обычный
+      // SMS-флоу (а пользователь ещё может тапнуть отдельную кнопку
+      // «Войти по Face ID / отпечатку» под Войти).
+      if (bioEligible && !awaitingSmsConfirmation) {
+        searchBtn.disabled = true;
+        searchBtn.textContent = "Подтвердите вход...";
+        const ok = await tryWebauthnLogin(phone);
+        searchBtn.disabled = false;
+        if (ok) {
+          serverPhone = phone;
+          try { localStorage.setItem("voyo_last_phone", phone); } catch (_) {}
+          window.location.replace("/cabinet?phone=" + encodeURIComponent(phone));
+          return;
+        }
+        // Face ID не сошлась — даём пользователю явный путь в SMS:
+        // меняем текст кнопки на «Войти по SMS». На следующий клик пойдёт
+        // обычный SMS-флоу (через эту же ветку, awaitingSmsConfirmation=true).
+        awaitingSmsConfirmation = true;
+        searchBtn.textContent = "Войти по SMS";
+        return;
+      }
+
+      // SMS-флоу (нет passkey'я или пользователь явно выбрал SMS-fallback).
       await requestCode(phone);
     });
 
