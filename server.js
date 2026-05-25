@@ -2810,6 +2810,443 @@ ${mixedFieldsHtml}
 </html>`;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// Опросник: ВИЗА В ЯПОНИЮ.
+// Отдельная функция, параллельная buildQuestionnaireHtml (Шенген).
+// Общий wrapper / CSS / submit-handler — те же, что у Шенгена, чтобы не
+// расходилось визуально. Поля и их состав — по скриншотам, которые
+// пользователь приложил (vision-документ). Поля имеют префикс `jp_`,
+// кроме семантически идентичных с Шенгеном (fullName / actualAddress /
+// contactPhone / email) — чтобы multi-applicant логика, имя папки на
+// Я.Диске, маска телефона работали «из коробки» так же.
+// ────────────────────────────────────────────────────────────────────
+function buildJapanQuestionnaireHtml({ phone, leadId, countryService, applicantIndex = 1, totalApplicants = 1, prevApplicantName = "", prefill = null, isEdit = false, applicantCount = 0, visaType = "", shareToken = "", isMixed = false, selfFillCount = 0, selfStep = 0, existingFios = [] }) {
+  const safePhone = escapeHtml(phone || "");
+  const safeLeadId = escapeHtml(String(leadId || ""));
+  const safeCountry = escapeHtml(countryService || "не указано");
+  const idx = Math.max(1, parseInt(applicantIndex, 10) || 1);
+  const total = Math.max(idx, parseInt(totalApplicants, 10) || 1);
+  const safePrevName = escapeHtml(prevApplicantName || "");
+  const isFirstApplicant = idx === 1;
+  const safeApplicantCount = Math.max(0, parseInt(applicantCount, 10) || 0);
+  const safeVisaType = escapeHtml(visaType || "Виза в Японию");
+  const safeShareToken = escapeHtml(String(shareToken || ""));
+  const isShareMode = !!shareToken;
+  const safeSelfFillCount = Math.max(0, parseInt(selfFillCount, 10) || 0);
+  const safeSelfStep = Math.max(0, parseInt(selfStep, 10) || 0);
+
+  const titleText = "Опросник на визу в Японию";
+  const subtitleText = isEdit
+    ? "Внесите изменения и нажмите «Отправить опросник»."
+    : 'Заполните данные и нажмите "Отправить опросник" внизу страницы';
+
+  const showHandoff = isMixed
+    ? (safeSelfStep > 1 && !isEdit)
+    : (!isFirstApplicant && !isEdit);
+  const handoffNoticeHtml = !showHandoff ? "" : `
+    <div class="handoff-notice">
+      Опросник для <strong>${safePrevName || "предыдущего заявителя"}</strong> отправлен. Заполните опросник на следующего заявителя.
+    </div>`;
+
+  const applicantCountFieldHtml = (!isEdit && safeApplicantCount > 0) ? `
+    <input type="hidden" name="applicantCount" value="${safeApplicantCount}" />` : "";
+  const mixedFieldsHtml = isMixed ? `
+    <input type="hidden" name="mixed" value="1" />
+    <input type="hidden" name="selfFillCount" value="${safeSelfFillCount}" />
+    <input type="hidden" name="selfStep" value="${safeSelfStep}" />` : "";
+
+  // Хелперы prefill-значений: при «Скорректировать опросник» подставляют
+  // ранее введённое из JSON-стейта.
+  const pv = (name) => {
+    if (!prefill) return "";
+    const v = prefill[name];
+    return v == null ? "" : escapeHtml(String(v));
+  };
+  const pvRaw = (name) => {
+    if (!prefill) return "";
+    return prefill[name] == null ? "" : String(prefill[name]);
+  };
+  const radioSel = (name, val) => pvRaw(name) === val ? "checked" : "";
+  // Чекбокс «Да/Нет» (одиночный) — checked, если в state записано "Да".
+  const chkYes = (name) => pvRaw(name) === "Да" ? "checked" : "";
+  const selectSel = (name, val) => pvRaw(name) === val ? "selected" : "";
+  const existingFiosJsonSafe = JSON.stringify(Array.isArray(existingFios) ? existingFios : []).replace(/</g, "\\u003c");
+
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Опросный лист</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #f3f2f7; color: #1d2330; padding: 24px; }
+    .wrap { max-width: 760px; margin: 0 auto; background: #fff; border: 1px solid #ece7f2; border-radius: 24px; padding: 24px; box-shadow: 0 10px 30px rgba(34, 36, 52, 0.05); }
+    h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.15; color: #171c29; }
+    .subtitle { margin: 0 0 22px; font-size: 14px; color: #737988; line-height: 1.5; }
+    form { display: grid; gap: 14px; }
+    .field { display: grid; gap: 6px; }
+    .field > label { font-size: 14px; font-weight: 600; color: #3a4150; }
+    .field input[type="text"], .field input[type="tel"], .field input[type="email"], .field input[type="date"], .field select, .field textarea {
+      width: 100%; height: 50px; border: 1px solid #e8e2ee; border-radius: 14px; padding: 0 14px; font-size: 16px; outline: none; background: #fff; color: #1f2532; font-family: inherit;
+    }
+    .field textarea { height: auto; min-height: 80px; padding: 12px 14px; resize: vertical; }
+    .hint { font-size: 12px; color: #9096a3; line-height: 1.4; }
+    .radio-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    .radio-group label {
+      display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 400; color: #1d2330; cursor: pointer;
+      padding: 10px 16px; border: 1px solid #e8e2ee; border-radius: 12px; background: #fff;
+    }
+    .radio-group input[type="radio"] { accent-color: #4f9f68; width: 16px; height: 16px; }
+    .radio-group label:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    /* Вертикальный список «пилюль» для длинных radio-списков (цель визита, род занятий, статус приглашающего). */
+    .radio-stack { display: grid; gap: 8px; }
+    .radio-stack label {
+      display: flex; align-items: center; gap: 8px; font-size: 14px; color: #1d2330; cursor: pointer;
+      padding: 12px 16px; border: 1px solid #e8e2ee; border-radius: 12px; background: #fff;
+    }
+    .radio-stack input[type="radio"] { accent-color: #4f9f68; width: 16px; height: 16px; }
+    .radio-stack label:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    /* Одиночные «карточки-чекбоксы» (Да-если-отмечено). */
+    .checkbox-card {
+      display: flex; align-items: center; gap: 10px; font-size: 14px; color: #1d2330; cursor: pointer;
+      padding: 12px 16px; border: 1px solid #e8e2ee; border-radius: 12px; background: #fff;
+    }
+    .checkbox-card input[type="checkbox"] { accent-color: #4f9f68; width: 16px; height: 16px; flex: 0 0 auto; }
+    .checkbox-card:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    /* Группа чекбоксов (multi-select) для «что применимо к вам». */
+    .checkbox-stack { display: grid; gap: 8px; }
+    .checkbox-stack label {
+      display: flex; align-items: flex-start; gap: 10px; font-size: 14px; color: #1d2330; cursor: pointer;
+      padding: 12px 16px; border: 1px solid #e8e2ee; border-radius: 12px; background: #fff; line-height: 1.4;
+    }
+    .checkbox-stack input[type="checkbox"] { accent-color: #4f9f68; width: 16px; height: 16px; flex: 0 0 auto; margin-top: 1px; }
+    .checkbox-stack label:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    .message { display: none; padding: 12px 14px; border-radius: 14px; font-size: 14px; margin-bottom: 16px; }
+    .message.error { background: #fbebee; border: 1px solid #efcfd5; color: #a15561; }
+    .message.success { background: #edf8ef; border: 1px solid #cfe7d2; color: #2e7a43; }
+    .handoff-notice { padding: 12px 14px; border-radius: 14px; font-size: 14px; line-height: 1.5; background: #f0f7fc; border: 1px solid #d3e7f4; color: #2f6e95; margin-bottom: 14px; }
+    .submit-btn { height: 50px; border: none; border-radius: 14px; background: #3589BD; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+    .submit-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+    .date-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .date-row > input { min-width: 0; width: 100%; }
+    @media (max-width: 480px) { .date-row { grid-template-columns: 1fr; } }
+    .field input.input-error, .date-row input.input-error, .checkbox-card.input-error, .checkbox-stack.input-error label {
+      border-color: #d97a8a !important; background: #fbebee !important;
+    }
+    .required-star { color: #d97a8a; margin-right: 4px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>${titleText}</h1>
+  <p class="subtitle">${subtitleText}</p>
+
+  <div id="errorBox" class="message error"></div>
+  <div id="successBox" class="message success"></div>
+${handoffNoticeHtml}
+  <form id="questionnaireForm">
+    <input type="hidden" name="phone" value="${safePhone}" />
+    <input type="hidden" name="leadId" value="${safeLeadId}" />
+    <input type="hidden" name="applicantIndex" value="${idx}" />
+    <input type="hidden" name="totalApplicants" value="${total}" />
+    <input type="hidden" name="isEdit" value="${isEdit ? "1" : ""}" />
+    <input type="hidden" name="visaType" value="${safeVisaType}" />
+    <input type="hidden" name="shareToken" value="${safeShareToken}" />
+${applicantCountFieldHtml}
+${mixedFieldsHtml}
+
+    <!-- 1 -->
+    <div class="field">
+      <label><span class="required-star">*</span>Полное ФИО заявителя</label>
+      <input type="text" name="fullName" value="${pv("fullName")}" required />
+    </div>
+
+    <!-- 2 -->
+    <label class="checkbox-card">
+      <input type="checkbox" name="jp_hadOtherNames" value="Да" ${chkYes("jp_hadOtherNames")} />
+      <span>У меня ранее были другие имена/фамилии</span>
+    </label>
+
+    <!-- 3 -->
+    <div class="field">
+      <label><span class="required-star">*</span>Семейное положение</label>
+      <div class="radio-stack">
+        <label><input type="radio" name="jp_maritalStatus" value="Состою в браке" ${radioSel("jp_maritalStatus","Состою в браке")} required /> Состою в браке</label>
+        <label><input type="radio" name="jp_maritalStatus" value="Холост/не замужем" ${radioSel("jp_maritalStatus","Холост/не замужем")} /> Холост/не замужем</label>
+        <label><input type="radio" name="jp_maritalStatus" value="В разводе" ${radioSel("jp_maritalStatus","В разводе")} /> В разводе</label>
+        <label><input type="radio" name="jp_maritalStatus" value="Вдовец/вдова" ${radioSel("jp_maritalStatus","Вдовец/вдова")} /> Вдовец/вдова</label>
+      </div>
+    </div>
+
+    <!-- 4 -->
+    <label class="checkbox-card">
+      <input type="checkbox" name="jp_hasSecondCitizenship" value="Да" ${chkYes("jp_hasSecondCitizenship")} />
+      <span>У меня есть второе гражданство</span>
+    </label>
+
+    <!-- 5 -->
+    <div class="field">
+      <label><span class="required-star">*</span>На какой загранпаспорт оформляем визу?</label>
+      <input type="text" name="jp_passportForVisa" value="${pv("jp_passportForVisa")}" required />
+    </div>
+
+    <!-- 6 -->
+    <div class="field">
+      <label><span class="required-star">*</span>В каком городе выдан этот паспорт?</label>
+      <input type="text" name="jp_passportCity" value="${pv("jp_passportCity")}" required />
+    </div>
+
+    <!-- 7 -->
+    <div class="field">
+      <label>Цель визита в Японию</label>
+      <div class="radio-stack">
+        <label><input type="radio" name="jp_tripPurpose" value="Туризм" ${radioSel("jp_tripPurpose","Туризм")} /> Туризм</label>
+        <label><input type="radio" name="jp_tripPurpose" value="Бизнес" ${radioSel("jp_tripPurpose","Бизнес")} /> Бизнес</label>
+        <label><input type="radio" name="jp_tripPurpose" value="Посещение семьи и друзей" ${radioSel("jp_tripPurpose","Посещение семьи и друзей")} /> Посещение семьи и друзей</label>
+        <label><input type="radio" name="jp_tripPurpose" value="Учеба" ${radioSel("jp_tripPurpose","Учеба")} /> Учеба</label>
+        <label><input type="radio" name="jp_tripPurpose" value="Работа" ${radioSel("jp_tripPurpose","Работа")} /> Работа</label>
+      </div>
+    </div>
+
+    <!-- 8 -->
+    <div class="field">
+      <label><span class="required-star">*</span>Даты визита в Японию</label>
+      <div class="date-row">
+        <input type="date" name="jp_tripDateFrom" value="${pv("jp_tripDateFrom")}" placeholder="с" required />
+        <input type="date" name="jp_tripDateTo" value="${pv("jp_tripDateTo")}" placeholder="по" required />
+      </div>
+    </div>
+
+    <!-- 9 -->
+    <div class="field">
+      <label><span class="required-star">*</span>Города, которые вы планируете посетить</label>
+      <input type="text" name="jp_citiesToVisit" value="${pv("jp_citiesToVisit")}" required />
+    </div>
+
+    <!-- 10 -->
+    <label class="checkbox-card">
+      <input type="checkbox" name="jp_knowsAccommodation" value="Да" ${chkYes("jp_knowsAccommodation")} />
+      <span>Я уже знаю, где буду проживать во время визита в Японию</span>
+    </label>
+
+    <!-- 11 -->
+    <label class="checkbox-card">
+      <input type="checkbox" name="jp_visitedJapanBefore" value="Да" ${chkYes("jp_visitedJapanBefore")} />
+      <span>Я уже был/-а в Японии ранее</span>
+    </label>
+
+    <!-- 12 -->
+    <div class="field">
+      <label><span class="required-star">*</span>Фактический адрес проживания в РФ</label>
+      <input type="text" name="actualAddress" value="${pv("actualAddress")}" required />
+      <span class="hint">Может не совпадать с пропиской</span>
+    </div>
+
+    <!-- 13 -->
+    <div class="field">
+      <label><span class="required-star">*</span>Контактный телефон</label>
+      <input type="tel" name="contactPhone" value="${pv("contactPhone")}" inputmode="tel" autocomplete="tel" placeholder="+7 (___) ___-__-__" data-phone-mask required />
+    </div>
+
+    <!-- 14 -->
+    <div class="field">
+      <label><span class="required-star">*</span>Электронная почта</label>
+      <input type="email" name="email" value="${pv("email")}" inputmode="email" autocomplete="email" placeholder="example@mail.ru" required />
+    </div>
+
+    <!-- 15 -->
+    <div class="field">
+      <label><span class="required-star">*</span>Род занятий</label>
+      <div class="radio-stack">
+        <label><input type="radio" name="jp_occupation" value="Работа по найму" ${radioSel("jp_occupation","Работа по найму")} required /> Работа по найму</label>
+        <label><input type="radio" name="jp_occupation" value="Индивидуальный предприниматель" ${radioSel("jp_occupation","Индивидуальный предприниматель")} /> Индивидуальный предприниматель</label>
+        <label><input type="radio" name="jp_occupation" value="Самозанятый" ${radioSel("jp_occupation","Самозанятый")} /> Самозанятый</label>
+        <label><input type="radio" name="jp_occupation" value="Учащийся" ${radioSel("jp_occupation","Учащийся")} /> Учащийся</label>
+        <label><input type="radio" name="jp_occupation" value="Пенсионер" ${radioSel("jp_occupation","Пенсионер")} /> Пенсионер</label>
+        <label><input type="radio" name="jp_occupation" value="Безработный" ${radioSel("jp_occupation","Безработный")} /> Безработный</label>
+        <label><input type="radio" name="jp_occupation" value="Другое" ${radioSel("jp_occupation","Другое")} /> Другое</label>
+      </div>
+    </div>
+
+    <!-- 16 -->
+    <label class="checkbox-card">
+      <input type="checkbox" name="jp_isUnder18" value="Да" ${chkYes("jp_isUnder18")} />
+      <span>Заявитель младше 18 лет</span>
+    </label>
+
+    <!-- 17 -->
+    <label class="checkbox-card">
+      <input type="checkbox" name="jp_hasInvitation" value="Да" ${chkYes("jp_hasInvitation")} />
+      <span>Меня приглашают в Японию</span>
+    </label>
+
+    <!-- 18 -->
+    <div class="field">
+      <label><span class="required-star">*</span>Статус приглашающего лица в Японии</label>
+      <div class="radio-stack">
+        <label><input type="radio" name="jp_inviterStatus" value="Гражданин" ${radioSel("jp_inviterStatus","Гражданин")} required /> Гражданин</label>
+        <label><input type="radio" name="jp_inviterStatus" value="Постоянный резидент" ${radioSel("jp_inviterStatus","Постоянный резидент")} /> Постоянный резидент</label>
+        <label><input type="radio" name="jp_inviterStatus" value="Рабочая виза" ${radioSel("jp_inviterStatus","Рабочая виза")} /> Рабочая виза</label>
+        <label><input type="radio" name="jp_inviterStatus" value="Учебная виза" ${radioSel("jp_inviterStatus","Учебная виза")} /> Учебная виза</label>
+        <label><input type="radio" name="jp_inviterStatus" value="Иное" ${radioSel("jp_inviterStatus","Иное")} /> Иное</label>
+      </div>
+    </div>
+
+    <!-- 19 -->
+    <div class="field">
+      <label><span class="required-star">*</span>Что из нижеследующего применимо к вам?</label>
+      <div class="checkbox-stack" id="jp_applicable_group">
+        <label><input type="checkbox" name="jp_appl_crimes" value="Да" ${chkYes("jp_appl_crimes")} /> <span>Совершал/-а преступления или правонарушения в какой-либо стране</span></label>
+        <label><input type="checkbox" name="jp_appl_prison" value="Да" ${chkYes("jp_appl_prison")} /> <span>Подвергался/-лась тюремному заключению</span></label>
+        <label><input type="checkbox" name="jp_appl_deport" value="Да" ${chkYes("jp_appl_deport")} /> <span>Был/-а депортирована за нарушения визового режима</span></label>
+        <label><input type="checkbox" name="jp_appl_drugs" value="Да" ${chkYes("jp_appl_drugs")} /> <span>Подвергался/-лась наказанию за преступления, связанные с запрещенными веществами</span></label>
+        <label><input type="checkbox" name="jp_appl_traffic" value="Да" ${chkYes("jp_appl_traffic")} /> <span>Был/-а когда-либо вовлечена в деятельность, связанную с торговлей людьми</span></label>
+        <label><input type="checkbox" name="jp_appl_none" value="Да" ${chkYes("jp_appl_none")} /> <span>Ничего из вышеперечисленного</span></label>
+      </div>
+    </div>
+
+    <!-- 20 -->
+    <label class="checkbox-card" id="card_jp_confirmAccuracy">
+      <input type="checkbox" name="jp_confirmAccuracy" value="Да" ${chkYes("jp_confirmAccuracy")} required />
+      <span><span class="required-star">*</span>Я подтверждаю правильность и достоверность указанных мной сведений.</span>
+    </label>
+
+    <!-- 21 -->
+    <label class="checkbox-card" id="card_jp_confirmContract">
+      <input type="checkbox" name="jp_confirmContract" value="Да" ${chkYes("jp_confirmContract")} required />
+      <span><span class="required-star">*</span>Настоящим я соглашаюсь, что данные, внесенные в электронный опросник, являются частью заключенного со мной договора и в случае предоставления недостоверных сведений ответственность за возможные последствия несу лично я.</span>
+    </label>
+
+    <!-- 22 -->
+    <label class="checkbox-card" id="card_jp_personalDataConsent">
+      <input type="checkbox" name="jp_personalDataConsent" value="Да" ${chkYes("jp_personalDataConsent")} required />
+      <span><span class="required-star">*</span>Согласие на обработку персональных данных</span>
+    </label>
+
+    <button id="submitBtn" class="submit-btn" type="submit">Отправить опросник</button>
+  </form>
+</div>
+
+<script>
+  const form = document.getElementById("questionnaireForm");
+  const submitBtn = document.getElementById("submitBtn");
+  const errorBox = document.getElementById("errorBox");
+  const successBox = document.getElementById("successBox");
+  const EXISTING_FIOS = ${existingFiosJsonSafe};
+
+  function showBox(el, msg) { el.style.display = "block"; el.textContent = msg || ""; }
+  function hideBox(el) { el.style.display = "none"; el.textContent = ""; }
+
+  // ── Маска телефона +7 (XXX) XXX-XX-XX (тот же приём, что у Шенгена) ──
+  function formatPhoneRu(rawDigits) {
+    let d = String(rawDigits || "").replace(/\\D/g, "");
+    if (d.length && d[0] === "8") d = "7" + d.slice(1);
+    if (d.length && d[0] !== "7") d = "7" + d;
+    d = d.slice(0, 11);
+    const a = d.slice(1, 4); const b = d.slice(4, 7); const c = d.slice(7, 9); const e = d.slice(9, 11);
+    let out = "+7";
+    if (a) out += " (" + a;
+    if (a.length === 3) out += ")";
+    if (b) out += " " + b;
+    if (c) out += "-" + c;
+    if (e) out += "-" + e;
+    return out;
+  }
+  function attachPhoneMask(input) {
+    const handler = () => { input.value = formatPhoneRu(input.value); };
+    input.addEventListener("input", handler);
+    input.addEventListener("blur", handler);
+    if (input.value) handler();
+  }
+  form.querySelectorAll('input[data-phone-mask]').forEach(attachPhoneMask);
+
+  // ── Live duplicate-ФИО check ──
+  const fioInput = form.querySelector('input[name="fullName"]');
+  if (fioInput && EXISTING_FIOS && EXISTING_FIOS.length) {
+    const normalize = (s) => String(s || "").trim().toLowerCase().replace(/\\s+/g, " ");
+    const knownLowercased = new Set(EXISTING_FIOS.map(normalize));
+    fioInput.addEventListener("input", () => {
+      const v = normalize(fioInput.value);
+      const isDup = knownLowercased.has(v) && v.length > 0;
+      fioInput.classList.toggle("input-error", isDup);
+      if (isDup) showBox(errorBox, "Опросник на этого заявителя уже заполнен в рамках этой сделки.");
+      else hideBox(errorBox);
+    });
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    hideBox(errorBox);
+
+    // Проверка дубликата ФИО на сабмите (на случай вставки уже-существующего).
+    if (fioInput && EXISTING_FIOS && EXISTING_FIOS.length) {
+      const normalize = (s) => String(s || "").trim().toLowerCase().replace(/\\s+/g, " ");
+      const knownLowercased = new Set(EXISTING_FIOS.map(normalize));
+      if (knownLowercased.has(normalize(fioInput.value))) {
+        showBox(errorBox, "Опросник на этого заявителя уже заполнен в рамках этой сделки.");
+        fioInput.classList.add("input-error");
+        fioInput.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+    }
+
+    // 3 обязательных чек-бокса в конце.
+    const requireChecked = (name, msg) => {
+      const el = form.querySelector('input[name="' + name + '"]');
+      if (!el || !el.checked) {
+        showBox(errorBox, msg);
+        const card = el && el.closest('.checkbox-card');
+        if (card) { card.classList.add("input-error"); card.scrollIntoView({ behavior: "smooth", block: "center" }); }
+        return false;
+      }
+      return true;
+    };
+    if (!requireChecked("jp_confirmAccuracy", "Подтвердите правильность указанных сведений.")) return;
+    if (!requireChecked("jp_confirmContract", "Подтвердите согласие с пунктом про договор.")) return;
+    if (!requireChecked("jp_personalDataConsent", "Подтвердите согласие на обработку персональных данных.")) return;
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Отправка...";
+
+    try {
+      const formData = new FormData(form);
+      const response = await fetch("/api/questionnaire", { method: "POST", body: formData });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || "Не удалось отправить опросник");
+
+      const IS_SHARE_MODE = ${JSON.stringify(isShareMode)};
+      if (IS_SHARE_MODE) {
+        showBox(successBox, "Спасибо! Опросник отправлен. Можете закрыть страницу.");
+        submitBtn.style.display = "none";
+        if (successBox.scrollIntoView) successBox.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      showBox(successBox, "Опросник успешно отправлен");
+      try {
+        localStorage.setItem("vsc_questionnaire_updated", JSON.stringify({
+          phone: "${safePhone}", leadId: "${safeLeadId}", ts: Date.now()
+        }));
+      } catch (_) {}
+      setTimeout(() => {
+        if (data.nextApplicantUrl) { window.location.href = data.nextApplicantUrl; return; }
+        if (window.opener && !window.opener.closed) { window.close(); return; }
+        if (window.history.length > 1) { window.history.back(); return; }
+        window.location.href = "/";
+      }, 700);
+    } catch (error) {
+      console.error("QUESTIONNAIRE SUBMIT ERROR (JP):", error);
+      showBox(errorBox, error.message || "Ошибка отправки опросника");
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Отправить опросник";
+    }
+  });
+</script>
+</body>
+</html>`;
+}
+
 function getPdfFontPath() {
   const candidates = [
     path.join(__dirname, "fonts", "DejaVuSans.ttf"),
@@ -5496,7 +5933,11 @@ app.get("/questionnaire", async (req, res) => {
     const existingFios = await getExistingApplicantFios(phone, leadId);
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    return res.send(buildQuestionnaireHtml({
+    // Диспатч по типу визы: для Японии — отдельная функция, для остального — общий шенгенский шаблон.
+    const builder = (effectiveVisaType === "Виза в Японию")
+      ? buildJapanQuestionnaireHtml
+      : buildQuestionnaireHtml;
+    return res.send(builder({
       phone,
       leadId,
       countryService,
@@ -5698,7 +6139,32 @@ app.post(
         confirmAccuracy:            String(req.body.confirmAccuracy || "").trim(),
         confirmPrevData:            String(req.body.confirmPrevData || "").trim(),
         personalDataConsent:        String(req.body.personalDataConsent || "").trim(),
-        visaType:                   String(req.body.visaType || "").trim()
+        visaType:                   String(req.body.visaType || "").trim(),
+        // ── Поля опросника на визу в Японию (jp_*). Заполнены только для visaType="Виза в Японию". ──
+        jp_hadOtherNames:           String(req.body.jp_hadOtherNames || "").trim(),
+        jp_maritalStatus:           String(req.body.jp_maritalStatus || "").trim(),
+        jp_hasSecondCitizenship:    String(req.body.jp_hasSecondCitizenship || "").trim(),
+        jp_passportForVisa:         String(req.body.jp_passportForVisa || "").trim(),
+        jp_passportCity:            String(req.body.jp_passportCity || "").trim(),
+        jp_tripPurpose:             String(req.body.jp_tripPurpose || "").trim(),
+        jp_tripDateFrom:            String(req.body.jp_tripDateFrom || "").trim(),
+        jp_tripDateTo:              String(req.body.jp_tripDateTo || "").trim(),
+        jp_citiesToVisit:           String(req.body.jp_citiesToVisit || "").trim(),
+        jp_knowsAccommodation:      String(req.body.jp_knowsAccommodation || "").trim(),
+        jp_visitedJapanBefore:      String(req.body.jp_visitedJapanBefore || "").trim(),
+        jp_occupation:              String(req.body.jp_occupation || "").trim(),
+        jp_isUnder18:               String(req.body.jp_isUnder18 || "").trim(),
+        jp_hasInvitation:           String(req.body.jp_hasInvitation || "").trim(),
+        jp_inviterStatus:           String(req.body.jp_inviterStatus || "").trim(),
+        jp_appl_crimes:             String(req.body.jp_appl_crimes || "").trim(),
+        jp_appl_prison:             String(req.body.jp_appl_prison || "").trim(),
+        jp_appl_deport:             String(req.body.jp_appl_deport || "").trim(),
+        jp_appl_drugs:              String(req.body.jp_appl_drugs || "").trim(),
+        jp_appl_traffic:            String(req.body.jp_appl_traffic || "").trim(),
+        jp_appl_none:               String(req.body.jp_appl_none || "").trim(),
+        jp_confirmAccuracy:         String(req.body.jp_confirmAccuracy || "").trim(),
+        jp_confirmContract:         String(req.body.jp_confirmContract || "").trim(),
+        jp_personalDataConsent:     String(req.body.jp_personalDataConsent || "").trim()
       };
 
       const enrichedFields = {
