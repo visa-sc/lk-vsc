@@ -639,24 +639,39 @@
 
     /* Заголовок-разделитель внутри списка областей загрузки.
        Используется на «Отделе Продаж» — делит блоки на «обязательно сейчас» и «можно позже». */
+    /* «Необходимо загрузить сейчас…» — обязательная секция: яркий заметный
+       блок с левой синей акцентной полосой, светло-голубой подложкой и крупным
+       тёмно-синим заголовком. Клиент сразу видит, что это нужно сделать СЕЙЧАС. */
     .file-list-section {
-      padding: 14px 0 6px;
-      border-top: 1px dashed #ece7f2;
-      font-size: 13px;
-      font-weight: 600;
-      color: #3a4150;
+      margin: 18px 0 8px;
+      padding: 12px 14px 12px 16px;
+      background: #f0f7fc;
+      border: 1px solid #d3e7f4;
+      border-left: 4px solid #3589BD;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #1d4d72;
+      line-height: 1.35;
+      letter-spacing: 0.01em;
     }
     .file-list-section:first-child {
-      border-top: none;
-      padding-top: 0;
+      margin-top: 0;
     }
+    /* «Можно загрузить позже:» — необязательная секция: ровный серый
+       плашка-сепаратор. Чтобы клиент видел границу с обязательным блоком
+       и понимал, что эти доки можно отложить. */
     .file-list-section.muted {
-      color: #737988;
-      font-weight: 500;
+      background: #f4f4f7;
+      border: 1px solid #e3e3ea;
+      border-left: 4px solid #b5bac4;
+      color: #5a6070;
+      font-weight: 600;
+      margin-top: 22px;
     }
     .file-list-section + .file-list-row {
       border-top: none;
-      padding-top: 4px;
+      padding-top: 10px;
     }
 
     .file-list-label {
@@ -1285,7 +1300,11 @@
       return name.indexOf("отдел продаж") === 0;
     }
 
-    function isFieldOptionalForLead(field, lead) {
+    function isFieldOptionalForLead(field, lead, state) {
+      // Япония: оба поля (паспорт + загранник) обязательны независимо от воронки.
+      if (state && state.visaType === "Виза в Японию") {
+        return false;
+      }
       if (isSalesPipeline(lead)) {
         return !SALES_REQUIRED_FIELDS.has(field);
       }
@@ -1293,6 +1312,15 @@
     }
 
     function buildUploadBlocksConfig(state, lead) {
+      // Опросник на визу в Японию — только 2 области (паспорт + загранник),
+      // обе обязательны независимо от воронки. Условных шенгенских блоков нет.
+      if (state && state.visaType === "Виза в Японию") {
+        return [
+          { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" },
+          { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" }
+        ];
+      }
+
       const blocks = [];
 
       // ── Всегда после "Отправить опросник" ──
@@ -1342,8 +1370,8 @@
       // Сортируем: сначала обязательные, потом необязательные.
       // Состав «обязательного» набора зависит от воронки сделки —
       // на «Отделе продаж» только innerPassport, в остальных — текущий набор.
-      const required = blocks.filter((b) => !isFieldOptionalForLead(b.field, lead));
-      const optional = blocks.filter((b) =>  isFieldOptionalForLead(b.field, lead));
+      const required = blocks.filter((b) => !isFieldOptionalForLead(b.field, lead, state));
+      const optional = blocks.filter((b) =>  isFieldOptionalForLead(b.field, lead, state));
       return required.concat(optional);
     }
 
@@ -1386,11 +1414,13 @@
       // На «Отделе продаж» делим блок на две секции:
       //   «Требуется сейчас для начала оформления:» — обязательные (по факту только внутренний паспорт)
       //   «Можно загрузить позже:» — всё остальное (необязательное для текущего этапа).
-      const showSalesSections = isSalesPipeline(lead);
+      // На Японии все 2 поля обязательные → секции не нужны.
+      const isJapanState = applicant && applicant.visaType === "Виза в Японию";
+      const showSalesSections = isSalesPipeline(lead) && !isJapanState;
       let sectionFlags = { requiredShown: false, optionalShown: false };
       function maybeAddSection(cfg) {
         if (!showSalesSections) return;
-        const isOptional = isFieldOptionalForLead(cfg.field, lead);
+        const isOptional = isFieldOptionalForLead(cfg.field, lead, applicant);
         if (!isOptional && !sectionFlags.requiredShown) {
           const h = document.createElement("div");
           h.className = "file-list-section";
@@ -1842,7 +1872,7 @@
       // (необязательные области могут быть пустыми)
       const initialFiles = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
       const alreadyAll = blocksConfig.every((b) => {
-        if (isFieldOptionalForLead(b.field, lead)) return true;
+        if (isFieldOptionalForLead(b.field, lead, applicant)) return true;
         return initialFiles.some((f) => {
           if (!f.startsWith(b.label)) return false;
           const next = f.charAt(b.label.length);
@@ -1940,7 +1970,7 @@
 
         // Проверяем обязательные области: должны быть прикреплены файлы
         const missingRequired = inputs.filter(({ cfg, pendingFiles }) =>
-          !isFieldOptionalForLead(cfg.field, lead) && (!pendingFiles || pendingFiles.length === 0)
+          !isFieldOptionalForLead(cfg.field, lead, applicant) && (!pendingFiles || pendingFiles.length === 0)
         );
         if (missingRequired.length > 0) {
           missingRequired.forEach(({ row }) => { if (row) row.classList.add("is-required-missing"); });
@@ -2206,7 +2236,7 @@
           // Жёлтый снимаем только если все ОБЯЗАТЕЛЬНЫЕ для этой воронки документы загружены.
           // Необязательные могут быть пустыми.
           return blocks.every((b) => {
-            if (isFieldOptionalForLead(b.field, lead)) return true;
+            if (isFieldOptionalForLead(b.field, lead, a)) return true;
             return files.some((f) => {
               if (!f.startsWith(b.label)) return false;
               const next = f.charAt(b.label.length);

@@ -4489,6 +4489,14 @@ const STATS_DEFAULT_OPTIONAL_FIELDS = new Set([
 ]);
 
 function buildUploadBlocksForApplicantStats(state) {
+  // Опросник на визу в Японию — только 2 области (внутренний + загранник),
+  // оба обязательны независимо от воронки. Условные шенгенские блоки не идут.
+  if (state && String(state.visaType || "").trim() === "Виза в Японию") {
+    return [
+      { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" },
+      { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" }
+    ];
+  }
   const blocks = [];
   blocks.push({ field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" });
   blocks.push({ field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" });
