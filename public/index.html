@@ -957,8 +957,10 @@
 
     resendBtn.addEventListener("click", async () => {
       if (resendBtn.disabled || !serverPhone) return;
-      // После успешного verify (фаза bioOffer + редирект) — никаких новых SMS.
-      if (loginFinalizing) return;
+      // Resend SMS блокируем пока verify в полёте (isVerifying) или уже
+      // прошёл успешно (loginFinalizing) — иначе случайный клик в этом
+      // окне отправит лишнюю SMS, а пользователь её точно не ждёт.
+      if (loginFinalizing || isVerifying) return;
       hideError();
       codeCellsWrap.classList.remove("is-error");
       codeCells.forEach((c) => { c.value = ""; });
@@ -1161,10 +1163,24 @@
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      // После успешного verify никакие пересабмиты формы не должны слать
-      // новую SMS — даже если что-то (iOS-autofill, фокус на phoneInput,
-      // Enter из кнопки bioOffer'а и т. п.) случайно триггернёт submit.
-      if (loginFinalizing) return;
+      // Submit формы шлёт SMS — он легитимен ТОЛЬКО на стадии ввода телефона.
+      // Любой submit в стадии ввода SMS-кода, в момент verify-запроса или на
+      // bioOffer'е — это случайное / гоночное событие (iOS-клавиатурная кнопка
+      // "Go"/"Done" / Enter / OTC-autofill / возврат фокуса от системного
+      // диалога), и второй SMS отправляться не должен.
+      //   • loginFinalizing — verify уже прошёл, идём к /cabinet;
+      //   • isVerifying — verify сейчас в полёте (окно ~100-500 мс между
+      //     стартом fetch и loginFinalizing=true);
+      //   • codeSection.show — пользователь в стадии ввода SMS-кода;
+      //   • bioOfferSection.show — после verify, до выбора Не сейчас / Включить.
+      if (
+        loginFinalizing ||
+        isVerifying ||
+        codeSection.classList.contains("show") ||
+        bioOfferSection.classList.contains("show")
+      ) {
+        return;
+      }
       hideError();
 
       // Согласие на обработку персональных данных (152-ФЗ) — обязательно.
