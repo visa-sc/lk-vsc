@@ -2922,6 +2922,9 @@ function buildJapanQuestionnaireHtml({ phone, leadId, countryService, applicantI
     }
     .checkbox-stack input[type="checkbox"] { accent-color: #4f9f68; width: 16px; height: 16px; flex: 0 0 auto; margin-top: 1px; }
     .checkbox-stack label:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    /* Условные блоки — показываются только после установки галки/выбора. */
+    .cond { display: none; }
+    .cond.show { display: grid; gap: 14px; }
     .message { display: none; padding: 12px 14px; border-radius: 14px; font-size: 14px; margin-bottom: 16px; }
     .message.error { background: #fbebee; border: 1px solid #efcfd5; color: #a15561; }
     .message.success { background: #edf8ef; border: 1px solid #cfe7d2; color: #2e7a43; }
@@ -2968,6 +2971,14 @@ ${mixedFieldsHtml}
       <span>У меня ранее были другие имена/фамилии</span>
     </label>
 
+    <!-- 2a — условно (jp_hadOtherNames === "Да") -->
+    <div class="cond" id="c_jp_otherNames">
+      <div class="field">
+        <label><span class="required-star">*</span>Укажите другие имена/фамилии</label>
+        <input type="text" name="jp_otherNames" value="${pv("jp_otherNames")}" />
+      </div>
+    </div>
+
     <!-- 3 -->
     <div class="field">
       <label><span class="required-star">*</span>Семейное положение</label>
@@ -2979,11 +2990,27 @@ ${mixedFieldsHtml}
       </div>
     </div>
 
+    <!-- 3a — условно (jp_maritalStatus === "Состою в браке") -->
+    <div class="cond" id="c_jp_spouseOccupation">
+      <div class="field">
+        <label><span class="required-star">*</span>Род занятий супруга/супруги</label>
+        <input type="text" name="jp_spouseOccupation" value="${pv("jp_spouseOccupation")}" />
+      </div>
+    </div>
+
     <!-- 4 -->
     <label class="checkbox-card">
       <input type="checkbox" name="jp_hasSecondCitizenship" value="Да" ${chkYes("jp_hasSecondCitizenship")} />
       <span>У меня есть второе гражданство</span>
     </label>
+
+    <!-- 4a — условно (jp_hasSecondCitizenship === "Да") -->
+    <div class="cond" id="c_jp_secondCitizenship">
+      <div class="field">
+        <label><span class="required-star">*</span>Какое второе гражданство?</label>
+        <input type="text" name="jp_secondCitizenship" value="${pv("jp_secondCitizenship")}" />
+      </div>
+    </div>
 
     <!-- 5 -->
     <div class="field">
@@ -3030,11 +3057,32 @@ ${mixedFieldsHtml}
       <span>Я уже знаю, где буду проживать во время визита в Японию</span>
     </label>
 
+    <!-- 10a — условно (jp_knowsAccommodation === "Да") -->
+    <div class="cond" id="c_jp_accommodation">
+      <div class="field">
+        <label><span class="required-star">*</span>Название отеля / места проживания</label>
+        <input type="text" name="jp_accommodationName" value="${pv("jp_accommodationName")}" />
+      </div>
+      <div class="field">
+        <label><span class="required-star">*</span>Адрес места проживания</label>
+        <input type="text" name="jp_accommodationAddress" value="${pv("jp_accommodationAddress")}" />
+      </div>
+    </div>
+
     <!-- 11 -->
     <label class="checkbox-card">
       <input type="checkbox" name="jp_visitedJapanBefore" value="Да" ${chkYes("jp_visitedJapanBefore")} />
       <span>Я уже был/-а в Японии ранее</span>
     </label>
+
+    <!-- 11a — условно (jp_visitedJapanBefore === "Да") -->
+    <div class="cond" id="c_jp_japanVisits">
+      <div class="field">
+        <label><span class="required-star">*</span>Укажите визиты в Японию</label>
+        <textarea name="jp_japanVisits" rows="3" placeholder="Например: 03.2023 — Токио, 10 дней; 11.2024 — Осака, 7 дней">${pv("jp_japanVisits")}</textarea>
+        <span class="hint">Даты, города, продолжительность каждого визита</span>
+      </div>
+    </div>
 
     <!-- 12 -->
     <div class="field">
@@ -3069,11 +3117,91 @@ ${mixedFieldsHtml}
       </div>
     </div>
 
+    <!-- 15a — условно: «Работа по найму» -->
+    <div class="cond" id="c_jp_employed">
+      <div class="field">
+        <label><span class="required-star">*</span>Наименование работодателя</label>
+        <input type="text" name="jp_employerName" value="${pv("jp_employerName")}" />
+      </div>
+      <div class="field">
+        <label><span class="required-star">*</span>Адрес работодателя</label>
+        <input type="text" name="jp_employerAddress" value="${pv("jp_employerAddress")}" />
+      </div>
+      <div class="field">
+        <label><span class="required-star">*</span>Телефон работодателя</label>
+        <input type="tel" name="jp_employerPhone" value="${pv("jp_employerPhone")}" inputmode="tel" placeholder="+7 (___) ___-__-__" data-phone-mask />
+      </div>
+      <div class="field">
+        <label><span class="required-star">*</span>Должность</label>
+        <input type="text" name="jp_position" value="${pv("jp_position")}" />
+      </div>
+    </div>
+
+    <!-- 15b — условно: «Индивидуальный предприниматель» -->
+    <div class="cond" id="c_jp_ip">
+      <div class="field">
+        <label><span class="required-star">*</span>Наименование ИП / ОГРНИП</label>
+        <input type="text" name="jp_ipName" value="${pv("jp_ipName")}" />
+      </div>
+      <div class="field">
+        <label><span class="required-star">*</span>Вид деятельности</label>
+        <input type="text" name="jp_ipActivity" value="${pv("jp_ipActivity")}" />
+      </div>
+    </div>
+
+    <!-- 15c — условно: «Самозанятый» -->
+    <div class="cond" id="c_jp_selfemployed">
+      <div class="field">
+        <label><span class="required-star">*</span>Вид деятельности</label>
+        <input type="text" name="jp_selfActivity" value="${pv("jp_selfActivity")}" />
+      </div>
+    </div>
+
+    <!-- 15d — условно: «Учащийся» -->
+    <div class="cond" id="c_jp_student">
+      <div class="field">
+        <label><span class="required-star">*</span>Наименование учебного заведения</label>
+        <input type="text" name="jp_studyPlace" value="${pv("jp_studyPlace")}" />
+      </div>
+      <div class="field">
+        <label><span class="required-star">*</span>Адрес учебного заведения</label>
+        <input type="text" name="jp_studyAddress" value="${pv("jp_studyAddress")}" />
+      </div>
+    </div>
+
+    <!-- 15e — условно: «Безработный» -->
+    <div class="cond" id="c_jp_unemployed">
+      <div class="field">
+        <label><span class="required-star">*</span>Источник дохода / средств к существованию</label>
+        <input type="text" name="jp_unemployedIncome" value="${pv("jp_unemployedIncome")}" />
+      </div>
+    </div>
+
+    <!-- 15f — условно: «Другое» -->
+    <div class="cond" id="c_jp_occupationOther">
+      <div class="field">
+        <label><span class="required-star">*</span>Опишите ваш род занятий</label>
+        <input type="text" name="jp_occupationOther" value="${pv("jp_occupationOther")}" />
+      </div>
+    </div>
+
     <!-- 16 -->
     <label class="checkbox-card">
       <input type="checkbox" name="jp_isUnder18" value="Да" ${chkYes("jp_isUnder18")} />
       <span>Заявитель младше 18 лет</span>
     </label>
+
+    <!-- 16a — условно (jp_isUnder18 === "Да") -->
+    <div class="cond" id="c_jp_parents">
+      <div class="field">
+        <label><span class="required-star">*</span>ФИО отца</label>
+        <input type="text" name="jp_fatherFullName" value="${pv("jp_fatherFullName")}" />
+      </div>
+      <div class="field">
+        <label><span class="required-star">*</span>ФИО матери</label>
+        <input type="text" name="jp_motherFullName" value="${pv("jp_motherFullName")}" />
+      </div>
+    </div>
 
     <!-- 17 -->
     <label class="checkbox-card">
@@ -3081,15 +3209,29 @@ ${mixedFieldsHtml}
       <span>Меня приглашают в Японию</span>
     </label>
 
-    <!-- 18 -->
-    <div class="field">
-      <label><span class="required-star">*</span>Статус приглашающего лица в Японии</label>
-      <div class="radio-stack">
-        <label><input type="radio" name="jp_inviterStatus" value="Гражданин" ${radioSel("jp_inviterStatus","Гражданин")} required /> Гражданин</label>
-        <label><input type="radio" name="jp_inviterStatus" value="Постоянный резидент" ${radioSel("jp_inviterStatus","Постоянный резидент")} /> Постоянный резидент</label>
-        <label><input type="radio" name="jp_inviterStatus" value="Рабочая виза" ${radioSel("jp_inviterStatus","Рабочая виза")} /> Рабочая виза</label>
-        <label><input type="radio" name="jp_inviterStatus" value="Учебная виза" ${radioSel("jp_inviterStatus","Учебная виза")} /> Учебная виза</label>
-        <label><input type="radio" name="jp_inviterStatus" value="Иное" ${radioSel("jp_inviterStatus","Иное")} /> Иное</label>
+    <!-- 18 — условно (jp_hasInvitation === "Да") -->
+    <div class="cond" id="c_jp_inviter">
+      <div class="field">
+        <label><span class="required-star">*</span>ФИО приглашающего лица</label>
+        <input type="text" name="jp_inviterName" value="${pv("jp_inviterName")}" />
+      </div>
+      <div class="field">
+        <label><span class="required-star">*</span>Адрес приглашающего лица</label>
+        <input type="text" name="jp_inviterAddress" value="${pv("jp_inviterAddress")}" />
+      </div>
+      <div class="field">
+        <label><span class="required-star">*</span>Кем приходится приглашающее лицо</label>
+        <input type="text" name="jp_inviterRelation" value="${pv("jp_inviterRelation")}" placeholder="Например: друг, родственник, коллега" />
+      </div>
+      <div class="field">
+        <label><span class="required-star">*</span>Статус приглашающего лица в Японии</label>
+        <div class="radio-stack">
+          <label><input type="radio" name="jp_inviterStatus" value="Гражданин" ${radioSel("jp_inviterStatus","Гражданин")} /> Гражданин</label>
+          <label><input type="radio" name="jp_inviterStatus" value="Постоянный резидент" ${radioSel("jp_inviterStatus","Постоянный резидент")} /> Постоянный резидент</label>
+          <label><input type="radio" name="jp_inviterStatus" value="Рабочая виза" ${radioSel("jp_inviterStatus","Рабочая виза")} /> Рабочая виза</label>
+          <label><input type="radio" name="jp_inviterStatus" value="Учебная виза" ${radioSel("jp_inviterStatus","Учебная виза")} /> Учебная виза</label>
+          <label><input type="radio" name="jp_inviterStatus" value="Иное" ${radioSel("jp_inviterStatus","Иное")} /> Иное</label>
+        </div>
       </div>
     </div>
 
@@ -3103,6 +3245,15 @@ ${mixedFieldsHtml}
         <label><input type="checkbox" name="jp_appl_drugs" value="Да" ${chkYes("jp_appl_drugs")} /> <span>Подвергался/-лась наказанию за преступления, связанные с запрещенными веществами</span></label>
         <label><input type="checkbox" name="jp_appl_traffic" value="Да" ${chkYes("jp_appl_traffic")} /> <span>Был/-а когда-либо вовлечена в деятельность, связанную с торговлей людьми</span></label>
         <label><input type="checkbox" name="jp_appl_none" value="Да" ${chkYes("jp_appl_none")} /> <span>Ничего из вышеперечисленного</span></label>
+      </div>
+    </div>
+
+    <!-- 19a — условно: любая из jp_appl_* кроме jp_appl_none -->
+    <div class="cond" id="c_jp_applicableExplain">
+      <div class="field">
+        <label><span class="required-star">*</span>Поясните</label>
+        <textarea name="jp_applicableExplain" rows="3">${pv("jp_applicableExplain")}</textarea>
+        <span class="hint">Опишите подробнее отмеченные выше пункты</span>
       </div>
     </div>
 
@@ -3160,6 +3311,89 @@ ${mixedFieldsHtml}
     if (input.value) handler();
   }
   form.querySelectorAll('input[data-phone-mask]').forEach(attachPhoneMask);
+
+  // ─── Условные блоки (.cond) ───
+  function chk(name) {
+    const el = form.querySelector('input[name="' + name + '"][type="checkbox"]');
+    return !!(el && el.checked);
+  }
+  function radio(name) {
+    const el = form.querySelector('input[name="' + name + '"]:checked');
+    return el ? el.value : null;
+  }
+  function toggleCond(id, show) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle("show", !!show);
+    // Поля внутри скрытых блоков не должны блокировать сабмит и оставаться помеченными required.
+    const inputs = el.querySelectorAll('input, textarea, select');
+    inputs.forEach((inp) => {
+      if (show) {
+        if (inp.dataset.condRequired === "1") inp.required = true;
+      } else {
+        if (inp.required) inp.dataset.condRequired = "1";
+        inp.required = false;
+        inp.classList.remove("input-error");
+      }
+    });
+  }
+  // Помечаем поля в условных блоках как «по-умолчанию обязательные» (атрибут data-cond-required)
+  // — кроме textarea «Поясните» (jp_applicableExplain), jp_occupationOther и jp_inviterStatus radio,
+  // которые становятся обязательными только при показе и устанавливаются в toggleCond.
+  // Здесь — упрощенно: ВСЕ input/textarea в .cond становятся required при показе.
+  document.querySelectorAll('.cond input[type="text"], .cond input[type="tel"], .cond input[type="email"], .cond textarea').forEach((inp) => {
+    inp.dataset.condRequired = "1";
+    inp.required = false;
+  });
+
+  function updateJapanConditionals() {
+    toggleCond("c_jp_otherNames",          chk("jp_hadOtherNames"));
+    toggleCond("c_jp_spouseOccupation",    radio("jp_maritalStatus") === "Состою в браке");
+    toggleCond("c_jp_secondCitizenship",   chk("jp_hasSecondCitizenship"));
+    toggleCond("c_jp_accommodation",       chk("jp_knowsAccommodation"));
+    toggleCond("c_jp_japanVisits",         chk("jp_visitedJapanBefore"));
+    toggleCond("c_jp_parents",             chk("jp_isUnder18"));
+    toggleCond("c_jp_inviter",             chk("jp_hasInvitation"));
+
+    const occ = radio("jp_occupation");
+    toggleCond("c_jp_employed",         occ === "Работа по найму");
+    toggleCond("c_jp_ip",               occ === "Индивидуальный предприниматель");
+    toggleCond("c_jp_selfemployed",     occ === "Самозанятый");
+    toggleCond("c_jp_student",          occ === "Учащийся");
+    toggleCond("c_jp_unemployed",       occ === "Безработный");
+    toggleCond("c_jp_occupationOther",  occ === "Другое");
+
+    // «Поясните» — любая чекбокс кроме jp_appl_none.
+    const anyBad = chk("jp_appl_crimes") || chk("jp_appl_prison") || chk("jp_appl_deport")
+                 || chk("jp_appl_drugs") || chk("jp_appl_traffic");
+    toggleCond("c_jp_applicableExplain", anyBad);
+  }
+  form.addEventListener("change", updateJapanConditionals);
+  updateJapanConditionals();
+
+  // ─── Даты поездки: tripDateFrom ≥ завтра, tripDateTo ≥ tripDateFrom ───
+  function pad2(n) { return n < 10 ? "0" + n : String(n); }
+  function ymd(date) {
+    return date.getFullYear() + "-" + pad2(date.getMonth() + 1) + "-" + pad2(date.getDate());
+  }
+  (function applyJapanTripDateConstraints() {
+    const tripFrom = form.querySelector('input[name="jp_tripDateFrom"]');
+    const tripTo = form.querySelector('input[name="jp_tripDateTo"]');
+    if (!tripFrom || !tripTo) return;
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = ymd(tomorrow);
+    tripFrom.min = tomorrowStr;
+    if (tripFrom.value && tripFrom.value < tomorrowStr) tripFrom.value = tomorrowStr;
+    const fromVal = tripFrom.value || tomorrowStr;
+    tripTo.min = fromVal;
+    if (tripTo.value && tripTo.value < fromVal) tripTo.value = fromVal;
+    tripFrom.addEventListener("change", () => {
+      const v = tripFrom.value || tomorrowStr;
+      tripTo.min = v;
+      if (tripTo.value && tripTo.value < v) tripTo.value = v;
+    });
+  })();
 
   // ── Live duplicate-ФИО check ──
   const fioInput = form.querySelector('input[name="fullName"]');
@@ -6153,8 +6387,11 @@ app.post(
         visaType:                   String(req.body.visaType || "").trim(),
         // ── Поля опросника на визу в Японию (jp_*). Заполнены только для visaType="Виза в Японию". ──
         jp_hadOtherNames:           String(req.body.jp_hadOtherNames || "").trim(),
+        jp_otherNames:              String(req.body.jp_otherNames || "").trim(),
         jp_maritalStatus:           String(req.body.jp_maritalStatus || "").trim(),
+        jp_spouseOccupation:        String(req.body.jp_spouseOccupation || "").trim(),
         jp_hasSecondCitizenship:    String(req.body.jp_hasSecondCitizenship || "").trim(),
+        jp_secondCitizenship:       String(req.body.jp_secondCitizenship || "").trim(),
         jp_passportForVisa:         String(req.body.jp_passportForVisa || "").trim(),
         jp_passportCity:            String(req.body.jp_passportCity || "").trim(),
         jp_tripPurpose:             String(req.body.jp_tripPurpose || "").trim(),
@@ -6162,10 +6399,29 @@ app.post(
         jp_tripDateTo:              String(req.body.jp_tripDateTo || "").trim(),
         jp_citiesToVisit:           String(req.body.jp_citiesToVisit || "").trim(),
         jp_knowsAccommodation:      String(req.body.jp_knowsAccommodation || "").trim(),
+        jp_accommodationName:       String(req.body.jp_accommodationName || "").trim(),
+        jp_accommodationAddress:    String(req.body.jp_accommodationAddress || "").trim(),
         jp_visitedJapanBefore:      String(req.body.jp_visitedJapanBefore || "").trim(),
+        jp_japanVisits:             String(req.body.jp_japanVisits || "").trim(),
         jp_occupation:              String(req.body.jp_occupation || "").trim(),
+        jp_employerName:            String(req.body.jp_employerName || "").trim(),
+        jp_employerAddress:         String(req.body.jp_employerAddress || "").trim(),
+        jp_employerPhone:           String(req.body.jp_employerPhone || "").trim(),
+        jp_position:                String(req.body.jp_position || "").trim(),
+        jp_ipName:                  String(req.body.jp_ipName || "").trim(),
+        jp_ipActivity:              String(req.body.jp_ipActivity || "").trim(),
+        jp_selfActivity:            String(req.body.jp_selfActivity || "").trim(),
+        jp_studyPlace:              String(req.body.jp_studyPlace || "").trim(),
+        jp_studyAddress:            String(req.body.jp_studyAddress || "").trim(),
+        jp_unemployedIncome:        String(req.body.jp_unemployedIncome || "").trim(),
+        jp_occupationOther:         String(req.body.jp_occupationOther || "").trim(),
         jp_isUnder18:               String(req.body.jp_isUnder18 || "").trim(),
+        jp_fatherFullName:          String(req.body.jp_fatherFullName || "").trim(),
+        jp_motherFullName:          String(req.body.jp_motherFullName || "").trim(),
         jp_hasInvitation:           String(req.body.jp_hasInvitation || "").trim(),
+        jp_inviterName:             String(req.body.jp_inviterName || "").trim(),
+        jp_inviterAddress:          String(req.body.jp_inviterAddress || "").trim(),
+        jp_inviterRelation:         String(req.body.jp_inviterRelation || "").trim(),
         jp_inviterStatus:           String(req.body.jp_inviterStatus || "").trim(),
         jp_appl_crimes:             String(req.body.jp_appl_crimes || "").trim(),
         jp_appl_prison:             String(req.body.jp_appl_prison || "").trim(),
@@ -6173,6 +6429,7 @@ app.post(
         jp_appl_drugs:              String(req.body.jp_appl_drugs || "").trim(),
         jp_appl_traffic:            String(req.body.jp_appl_traffic || "").trim(),
         jp_appl_none:               String(req.body.jp_appl_none || "").trim(),
+        jp_applicableExplain:       String(req.body.jp_applicableExplain || "").trim(),
         jp_confirmAccuracy:         String(req.body.jp_confirmAccuracy || "").trim(),
         jp_confirmContract:         String(req.body.jp_confirmContract || "").trim(),
         jp_personalDataConsent:     String(req.body.jp_personalDataConsent || "").trim()
