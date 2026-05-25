@@ -639,34 +639,42 @@
 
     /* Заголовок-разделитель внутри списка областей загрузки.
        Используется на «Отделе Продаж» — делит блоки на «обязательно сейчас» и «можно позже». */
-    /* «Необходимо загрузить сейчас…» — обязательная секция: яркий заметный
-       блок с левой синей акцентной полосой, светло-голубой подложкой и крупным
-       тёмно-синим заголовком. Клиент сразу видит, что это нужно сделать СЕЙЧАС. */
+    /* «Необходимо загрузить сейчас…» — обязательная секция.
+       По умолчанию (есть незаполненные обязательные) — КРАСНАЯ карточка,
+       привлекает внимание. Как только все обязательные прикреплены —
+       JS добавляет класс .required-done, и она становится ЗЕЛЁНОЙ. */
     .file-list-section {
       margin: 18px 0 8px;
       padding: 12px 14px 12px 16px;
-      background: #f0f7fc;
-      border: 1px solid #d3e7f4;
-      border-left: 4px solid #3589BD;
+      background: #fbebee;
+      border: 1px solid #efcfd5;
+      border-left: 4px solid #c4314b;
       border-radius: 12px;
       font-size: 14px;
       font-weight: 700;
-      color: #1d4d72;
+      color: #7a2d39;
       line-height: 1.35;
       letter-spacing: 0.01em;
+      transition: background 0.2s var(--vsc-ease), border-color 0.2s var(--vsc-ease), color 0.2s var(--vsc-ease);
     }
     .file-list-section:first-child {
       margin-top: 0;
     }
-    /* «Можно загрузить позже:» — необязательная секция: ровный серый
-       плашка-сепаратор. Чтобы клиент видел границу с обязательным блоком
-       и понимал, что эти доки можно отложить. */
+    .file-list-section.required-done {
+      background: #edf8ef;
+      border-color: #cfe7d2;
+      border-left-color: #4f9f68;
+      color: #1f5a2e;
+    }
+    /* «Можно загрузить позже:» — необязательная секция: СИНЯЯ карточка
+       (тон, который раньше был у обязательной). Между секциями явный
+       вертикальный gap. */
     .file-list-section.muted {
-      background: #f4f4f7;
-      border: 1px solid #e3e3ea;
-      border-left: 4px solid #b5bac4;
-      color: #5a6070;
-      font-weight: 600;
+      background: #f0f7fc;
+      border: 1px solid #d3e7f4;
+      border-left: 4px solid #3589BD;
+      color: #1d4d72;
+      font-weight: 700;
       margin-top: 22px;
     }
     .file-list-section + .file-list-row {
@@ -1418,6 +1426,9 @@
       const isJapanState = applicant && applicant.visaType === "Виза в Японию";
       const showSalesSections = isSalesPipeline(lead) && !isJapanState;
       let sectionFlags = { requiredShown: false, optionalShown: false };
+      // Reference на заголовок обязательной секции — нужна, чтобы переключать
+      // .required-done (red→green), когда все обязательные доки прикреплены.
+      let requiredSectionEl = null;
       function maybeAddSection(cfg) {
         if (!showSalesSections) return;
         const isOptional = isFieldOptionalForLead(cfg.field, lead, applicant);
@@ -1427,6 +1438,7 @@
           h.textContent = "Необходимо загрузить сейчас для начала оформления:";
           list.appendChild(h);
           sectionFlags.requiredShown = true;
+          requiredSectionEl = h;
         }
         if (isOptional && !sectionFlags.optionalShown) {
           const h = document.createElement("div");
@@ -1435,6 +1447,24 @@
           list.appendChild(h);
           sectionFlags.optionalShown = true;
         }
+      }
+
+      // Пересчитывает «все обязательные доки прикреплены?» (initial OR pending)
+      // и переключает заголовок красный↔зелёный. Вызывается после первичного
+      // рендера и из каждого renderPreviews при изменении состава файлов.
+      function updateRequiredSectionState() {
+        if (!requiredSectionEl) return;
+        const uploaded = Array.isArray(applicant && applicant.uploadedFiles) ? applicant.uploadedFiles : [];
+        const allDone = inputs.every((it) => {
+          if (isFieldOptionalForLead(it.cfg.field, lead, applicant)) return true;
+          if (it.pendingFiles && it.pendingFiles.length > 0) return true;
+          return uploaded.some((f) => {
+            if (!f.startsWith(it.cfg.label)) return false;
+            const next = f.charAt(it.cfg.label.length);
+            return next === "." || next === " ";
+          });
+        });
+        requiredSectionEl.classList.toggle("required-done", allDone);
       }
 
       blocksConfig.forEach((cfg) => {
@@ -1522,6 +1552,9 @@
           attachBtn.textContent = pendingFiles.length > 0
             ? "Добавить ещё"
             : "Прикрепить фото или файл";
+          // Файлы изменились → пересчитываем «обязательные заполнены?» и
+          // переключаем заголовок секции красный↔зелёный.
+          updateRequiredSectionState();
         }
 
         fileInput.addEventListener("change", () => {
@@ -1540,6 +1573,11 @@
         row.appendChild(controls);
         list.appendChild(row);
       });
+
+      // Начальное состояние заголовка «Необходимо загрузить сейчас…»:
+      // если уже на этапе открытия кабинета все обязательные доки прикреплены —
+      // показываем заголовок сразу зелёным.
+      updateRequiredSectionState();
 
       const localError = document.createElement("div");
       localError.className = "docs-local-error";
