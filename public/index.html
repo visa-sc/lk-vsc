@@ -687,6 +687,11 @@
     let serverPhone = ""; // нормализованный телефон, на который ушёл код
     let resendTimer = null;
     let isVerifying = false;
+    // После УСПЕШНОГО verify ставим в true и держим до навигации на /cabinet.
+    // Защитный флаг от случайного повторного запроса /api/auth/request-code
+    // в момент показа bioOffer'а (iOS-клавиатура / autofill / Enter могут
+    // случайно ре-триггернуть submit формы, и юзеру уходит ещё одна SMS).
+    let loginFinalizing = false;
 
     function showError(msg) {
       errorBox.style.display = "block";
@@ -874,6 +879,10 @@
         if (!r.ok || !data.success) {
           throw new Error(data.message || "Неверный код");
         }
+        // Verify прошёл. Всё дальше — пост-verify-фаза: bioOffer, потом
+        // редирект. Любой повторный submit формы / клик resend в этой фазе
+        // НЕ должен слать новую SMS.
+        loginFinalizing = true;
         // Предложим зарегистрировать passkey (если устройство поддерживает и passkey'ов ещё нет).
         // Внутри либо ничего не делает, либо ждёт выбора пользователя.
         try { await maybeOfferBiometricRegistration(serverPhone); } catch (_) {}
@@ -948,6 +957,8 @@
 
     resendBtn.addEventListener("click", async () => {
       if (resendBtn.disabled || !serverPhone) return;
+      // После успешного verify (фаза bioOffer + редирект) — никаких новых SMS.
+      if (loginFinalizing) return;
       hideError();
       codeCellsWrap.classList.remove("is-error");
       codeCells.forEach((c) => { c.value = ""; });
@@ -1150,6 +1161,10 @@
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      // После успешного verify никакие пересабмиты формы не должны слать
+      // новую SMS — даже если что-то (iOS-autofill, фокус на phoneInput,
+      // Enter из кнопки bioOffer'а и т. п.) случайно триггернёт submit.
+      if (loginFinalizing) return;
       hideError();
 
       // Согласие на обработку персональных данных (152-ФЗ) — обязательно.
