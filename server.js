@@ -3804,12 +3804,14 @@ ${visaOptionsHtml}
 
   function update() {
     const v = visaSelect.value;
-    const isSchengen = v === "Шенгенская виза";
-    countCond.classList.toggle("show", isSchengen);
-    underdevCond.classList.toggle("show", !!v && !isSchengen);
+    // Поддерживаемые опросники в ЛК: Шенген + Япония. Для остальных
+    // показываем «Раздел в разработке» — как раньше.
+    const isSupported = v === "Шенгенская виза" || v === "Виза в Японию";
+    countCond.classList.toggle("show", isSupported);
+    underdevCond.classList.toggle("show", !!v && !isSupported);
 
     const countVal = applicantCountVal();
-    const showMode = isSchengen && countVal > 1;
+    const showMode = isSupported && countVal > 1;
     modeCond.classList.toggle("show", showMode);
     if (!showMode) {
       // сбрасываем выбор режима, чтобы случайный «sms» не залип после смены количества
@@ -3826,7 +3828,7 @@ ${visaOptionsHtml}
     // — шенген + count >= 1 (один заявитель — без вопроса о режиме)
     // — count > 1 + выбран режим (любой)
     let canContinue = false;
-    if (isSchengen && countVal > 0) {
+    if (isSupported && countVal > 0) {
       if (countVal === 1) canContinue = true;
       else if (fillModeVal()) canContinue = true;
     }
@@ -3970,7 +3972,8 @@ ${visaOptionsHtml}
   document.getElementById("startForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const v = visaSelect.value;
-    if (v !== "Шенгенская виза") return;
+    // Поддерживаемые опросники в ЛК — Шенген и Япония.
+    if (v !== "Шенгенская виза" && v !== "Виза в Японию") return;
     const count = applicantCountVal();
     if (count < 1) return;
 
