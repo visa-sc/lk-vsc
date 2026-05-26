@@ -5050,46 +5050,71 @@ async function computePaidConversionStats() {
       "filter[updated_at][from]": String(fromTs),
       with: "contacts"
     };
+    const t0 = Date.now();
     const allLeads = await amoGetAllPages(`${baseUrl}/api/v4/leads`, params);
-    console.log(`PAID-CONV STATS: fetched ${allLeads.length} leads updated_at >= ${fromTs}`);
-    // Локальный фильтр: «Дата оплаты» — это unix-секунды в custom field.
-    const leads = allLeads.filter((lead) => {
+    console.log(`PAID-CONV STATS: fetched ${allLeads.length} leads updated_at >= ${fromTs} (${Date.now()-t0}ms)`);
+
+    // ── Сначала отфильтруем сделки по «Дата оплаты» + стране — чтобы потом
+    //    тянуть телефоны ТОЛЬКО для контактов, которые реально нужны.
+    const matchedLeads = [];
+    for (const lead of allLeads) {
+      // Дата оплаты
       const fields = (lead && lead.custom_fields_values) || [];
       const pf = fields.find((f) => Number(f.field_id) === Number(paymentDateFieldId));
-      if (!pf) return false;
-      const v = (pf.values && pf.values[0] && pf.values[0].value) || 0;
-      return Number(v) >= fromTs;
-    });
-    console.log(`PAID-CONV STATS: ${leads.length} leads have «Дата оплаты» >= ${fromTs}`);
+      if (!pf) continue;
+      const payTs = Number((pf.values && pf.values[0] && pf.values[0].value) || 0);
+      if (!payTs || payTs < fromTs) continue;
+      // Страна
+      const country = getCustomFieldValue(lead, "Страна оформления/услуга") || "";
+      if (!paidConvCountryMatchesAny(country, PAID_CONV_ALL_COUNTRIES)) continue;
+      matchedLeads.push({ lead, country });
+    }
+    console.log(`PAID-CONV STATS: ${matchedLeads.length} leads match payment_date + country filter`);
 
-    // Соберём уникальные contact_id, чтобы пакетно достать телефоны (по 1 контакту в API).
+    // Соберём contact_id только по «выжившим» лидам.
     const contactIds = new Set();
-    for (const lead of leads) {
+    for (const { lead } of matchedLeads) {
       const cs = (lead && lead._embedded && lead._embedded.contacts) || [];
       for (const c of cs) {
         if (c && c.id) contactIds.add(c.id);
       }
     }
+
+    // ── Пакетная загрузка контактов: amoCRM поддерживает filter[id][]=...,
+    //    тащим пачками по 50 (URL длинна остаётся управляемой). Это драматически
+    //    быстрее, чем по 1 контакту за запрос.
+    const t1 = Date.now();
     const contactPhonesMap = new Map(); // contactId -> Set<normalizedPhone>
-    for (const cid of contactIds) {
+    const idList = Array.from(contactIds);
+    const BATCH = 50;
+    for (let i = 0; i < idList.length; i += BATCH) {
+      const chunk = idList.slice(i, i + BATCH);
       try {
-        const contact = await amoGet(`${baseUrl}/api/v4/contacts/${cid}`);
-        const phones = new Set(extractPhonesFromContact(contact));
-        contactPhonesMap.set(cid, phones);
+        const chunkParams = {};
+        chunk.forEach((id, idx) => { chunkParams[`filter[id][${idx}]`] = String(id); });
+        chunkParams["limit"] = String(BATCH);
+        const data = await amoGet(`${baseUrl}/api/v4/contacts`, chunkParams);
+        const items = (data && data._embedded && data._embedded.contacts) || [];
+        for (const contact of items) {
+          if (!contact || !contact.id) continue;
+          contactPhonesMap.set(contact.id, new Set(extractPhonesFromContact(contact)));
+        }
       } catch (e) {
-        // молча — пустой набор телефонов = считается «не авторизовался»
-        contactPhonesMap.set(cid, new Set());
+        console.error(`PAID-CONV STATS contact batch ${i}-${i+chunk.length} error:`, e.response?.data || e.message);
+        // Пустые наборы — те, для кого данных нет, по умолчанию считаются «не авторизовался».
       }
     }
+    // Для тех id, кого batch не вернул (deleted/permission issue) — пустой Set, чтобы
+    // получить детерминированный результат «не авторизован».
+    for (const id of idList) if (!contactPhonesMap.has(id)) contactPhonesMap.set(id, new Set());
+    console.log(`PAID-CONV STATS: fetched ${idList.length} contacts in ${Math.ceil(idList.length / BATCH)} batches (${Date.now()-t1}ms)`);
 
-    // Считаем 3 ведра.
+    // ── Считаем 3 ведра.
     let denomAll = 0, numAll = 0;
     let denomNJ  = 0, numNJ  = 0;
     let denomJP  = 0, numJP  = 0;
 
-    for (const lead of leads) {
-      const country = getCustomFieldValue(lead, "Страна оформления/услуга") || "";
-      if (!paidConvCountryMatchesAny(country, PAID_CONV_ALL_COUNTRIES)) continue;
+    for (const { lead, country } of matchedLeads) {
       const isJp = paidConvIsJapan(country);
 
       // Авторизовался ли контакт этой сделки?
