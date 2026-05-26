@@ -7137,6 +7137,13 @@ function shouldSkipDuplicate(contactId) {
   return false;
 }
 
+// GET для верификации URL при сохранении webhook'а в amoCRM. amoCRM перед
+// сохранением проверяет, что endpoint доступен (HEAD/GET с ожиданием 2xx).
+// Без этого сохранение падает с «URL ведёт во внутреннюю сеть».
+app.get("/api/amo/webhook", (_req, res) => {
+  res.status(200).type("text/plain").send("amo webhook endpoint ok");
+});
+
 // Endpoint, который надо прописать в amoCRM как webhook URL.
 // Подписать на события: «Изменение контакта» + «Смена этапа сделки».
 // (Опционально + «Объединение контактов», если в твоей версии amoCRM есть.)
