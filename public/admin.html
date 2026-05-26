@@ -1058,6 +1058,13 @@
         showLogin();
       });
 
+      // Видимость блока «Конверсия по оплаченным сделкам» — только на вкладке «Статистика».
+      function applyPaidConvVisibility() {
+        const block = document.getElementById("paidConvBlock");
+        if (block) block.style.display = (activeTab === "stats") ? "" : "none";
+      }
+      applyPaidConvVisibility();
+
       // Табы
       tabBtns.forEach((b) => {
         b.addEventListener("click", () => {
@@ -1066,6 +1073,7 @@
           tabBtns.forEach((x) => x.classList.toggle("active", x === b));
           panelStats.classList.toggle("show", which === "stats");
           panelSurveys.classList.toggle("show", which === "surveys");
+          applyPaidConvVisibility();
           if (which === "surveys") {
             loadSurveys();
             startPolling();
