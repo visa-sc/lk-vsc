@@ -1624,7 +1624,8 @@ const UPLOAD_FIELDS_WHITELIST = {
   birthCertificate:     "Свидетельство о рождении",
   sponsorPassport:      "1-ый разворот внутреннего паспорта РФ спонсора",
   insurancePolicy:      "Страховой полис для въезда в Шенген",
-  workCert:             "Справка с работы или учёбы"
+  workCert:             "Справка с работы или учёбы",
+  routeSheet:           "Маршрутный лист"
 };
 
 async function findMatchingContacts(baseUrl, phone) {
@@ -4723,13 +4724,23 @@ const STATS_DEFAULT_OPTIONAL_FIELDS = new Set([
 ]);
 
 function buildUploadBlocksForApplicantStats(state) {
-  // Опросник на визу в Японию — только 2 области (внутренний + загранник),
-  // оба обязательны независимо от воронки. Условные шенгенские блоки не идут.
+  // Опросник на визу в Японию — innerPassport обязателен, всё остальное
+  // (загранник + условные блоки по ответам) — optional. Метим явным флагом,
+  // чтобы расчёт «все обязательные загружены» не путал нас с STATS_DEFAULT_OPTIONAL_FIELDS.
   if (state && String(state.visaType || "").trim() === "Виза в Японию") {
-    return [
-      { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" },
-      { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" }
+    const jpBlocks = [
+      { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)", optional: false },
+      { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)", optional: true }
     ];
+    const occ = String(state.jp_occupation || "").trim();
+    if (occ === "Работа по найму" || occ === "Учащийся") {
+      jpBlocks.push({ field: "workCert", label: "Справка с работы или учёбы", optional: true });
+    }
+    if (String(state.jp_hasInvitation || "").trim() === "Да") {
+      jpBlocks.push({ field: "invitation", label: "Приглашение", optional: true });
+      jpBlocks.push({ field: "routeSheet", label: "Маршрутный лист", optional: true });
+    }
+    return jpBlocks;
   }
   const blocks = [];
   blocks.push({ field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" });
@@ -4819,7 +4830,13 @@ async function computeUploadStatusForLead(phone, leadId) {
         });
         if (!hasFile) {
           allBlk = false;
-          if (!STATS_DEFAULT_OPTIONAL_FIELDS.has(b.field)) allReq = false;
+          // Если у блока явно проставлен флаг optional — используем его (так делаем
+          // в японской ветке, где набор «необязательных» полей отличается от
+          // дефолтного шенгенского). Иначе — fallback на STATS_DEFAULT_OPTIONAL_FIELDS.
+          const isOptional = (typeof b.optional === "boolean")
+            ? b.optional
+            : STATS_DEFAULT_OPTIONAL_FIELDS.has(b.field);
+          if (!isOptional) allReq = false;
         }
       }
     }

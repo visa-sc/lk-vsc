@@ -1309,9 +1309,10 @@
     }
 
     function isFieldOptionalForLead(field, lead, state) {
-      // Япония: оба поля (паспорт + загранник) обязательны независимо от воронки.
+      // Япония: обязателен ТОЛЬКО innerPassport. Всё остальное (загранник,
+      // workCert, invitation, routeSheet) — необязательное (можно позже).
       if (state && state.visaType === "Виза в Японию") {
-        return false;
+        return field !== "innerPassport";
       }
       if (isSalesPipeline(lead)) {
         return !SALES_REQUIRED_FIELDS.has(field);
@@ -1320,13 +1321,22 @@
     }
 
     function buildUploadBlocksConfig(state, lead) {
-      // Опросник на визу в Японию — только 2 области (паспорт + загранник),
-      // обе обязательны независимо от воронки. Условных шенгенских блоков нет.
+      // Опросник на визу в Японию — innerPassport (обязательный) + загранник всегда
+      // + условные блоки по ответам (workCert / invitation / routeSheet).
       if (state && state.visaType === "Виза в Японию") {
-        return [
-          { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" },
-          { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" }
+        const jpBlocks = [
+          { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" },
+          { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" }
         ];
+        const occ = String(state.jp_occupation || "").trim();
+        if (occ === "Работа по найму" || occ === "Учащийся") {
+          jpBlocks.push({ field: "workCert", label: "Справка с работы или учёбы" });
+        }
+        if (String(state.jp_hasInvitation || "").trim() === "Да") {
+          jpBlocks.push({ field: "invitation",  label: "Приглашение" });
+          jpBlocks.push({ field: "routeSheet",  label: "Маршрутный лист" });
+        }
+        return jpBlocks;
       }
 
       const blocks = [];
