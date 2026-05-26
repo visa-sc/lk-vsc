@@ -392,13 +392,13 @@
       white-space: nowrap;
     }
 
-    /* ── Блок «Конверсия по оплаченным сделкам amoCRM» (только в Статистике) ── */
+    /* ── Блок «Конверсия по оплаченным сделкам amoCRM» (обособленный, над табами) ── */
+    #paidConvBlock { margin: 0 0 18px; }
     .paid-conv {
       background: #fff;
       border: 1px solid #ece7f2;
       border-radius: 18px;
       padding: 18px;
-      margin: 18px 0;
     }
     .paid-conv-title {
       font-size: 14px;
@@ -638,6 +638,13 @@
 
   <!-- ── Дашборд ── -->
   <div id="dashBlock" class="dash">
+
+    <!-- Обособленный блок «Конверсия авторизаций по оплаченным сделкам».
+         Виден всегда, независимо от активной вкладки. -->
+    <div id="paidConvBlock">
+      <div class="loading-state">Загружаем конверсию по оплаченным сделкам…</div>
+    </div>
+
     <div class="tabs">
       <button type="button" class="tab-btn active" data-tab="stats">Статистика</button>
       <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
@@ -744,6 +751,7 @@
         dashBlock.classList.add("show");
         bioOffer.classList.remove("show");
         loadStats();
+        loadPaidConvStats();
         startPolling();
       }
 
@@ -1068,13 +1076,16 @@
         });
       });
 
-      // ── Polling ── единый таймер, опрашивает АКТИВНУЮ вкладку каждые N сек.
+      // ── Polling ── единый таймер. Активная вкладка обновляется на каждом тике;
+      // paid-conv (обособленный блок над табами) обновляется параллельно — он не
+      // зависит от вкладки и всегда виден.
       function startPolling() {
         if (statsPollTimer) return;
         statsPollTimer = setInterval(() => {
           if (document.hidden) return;
           if (activeTab === "stats") loadStats({ silent: true });
           else if (activeTab === "surveys") loadSurveys({ silent: true });
+          loadPaidConvStats({ silent: true });
         }, POLL_INTERVAL_MS);
       }
       function stopPolling() {
@@ -1084,6 +1095,7 @@
         if (document.hidden) return;
         if (activeTab === "stats") loadStats({ silent: true });
         else if (activeTab === "surveys") loadSurveys({ silent: true });
+        loadPaidConvStats({ silent: true });
       });
 
       // ── Fetch helpers ──
@@ -1150,19 +1162,86 @@
         const silent = opts && opts.silent;
         if (!silent) statsContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
         try {
-          // Основная воронка — критична для отрисовки. Конверсия по оплате — фоновая,
-          // тянем параллельно и не валим UI если она упала.
-          const [statsData, paidConv] = await Promise.all([
-            apiFetch("/admin/api/stats"),
-            apiFetch("/admin/api/paid-conversion-stats").catch((err) => ({ error: err && err.message || "ошибка" }))
-          ]);
-          renderStats(statsData, paidConv);
+          const statsData = await apiFetch("/admin/api/stats");
+          renderStats(statsData);
         } catch (e) {
           if (!silent) statsContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
         }
       }
 
-      function renderStats(data, paidConv) {
+      // ── Обособленный блок «Конверсия по оплаченным сделкам» (над табами) ──
+      const paidConvBlock = document.getElementById("paidConvBlock");
+      async function loadPaidConvStats(opts) {
+        const silent = opts && opts.silent;
+        if (!silent && paidConvBlock) {
+          paidConvBlock.innerHTML = '<div class="loading-state">Загружаем конверсию по оплаченным сделкам…</div>';
+        }
+        try {
+          const paidConv = await apiFetch("/admin/api/paid-conversion-stats");
+          renderPaidConvBlock(paidConv);
+        } catch (e) {
+          renderPaidConvBlock({ error: e && e.message || "ошибка" });
+        }
+      }
+      function renderPaidConvBlock(paidConv) {
+        if (!paidConvBlock) return;
+        paidConvBlock.innerHTML = "";
+
+        const box = document.createElement("div");
+        box.className = "paid-conv";
+
+        const title = document.createElement("div");
+        title.className = "paid-conv-title";
+        title.textContent = "Конверсия авторизаций по оплаченным сделкам";
+
+        const startDate = (paidConv && paidConv.startDate) || "22.05.2026";
+        const sub = document.createElement("div");
+        sub.className = "paid-conv-sub";
+        sub.innerHTML =
+          'Сделки в amoCRM с «Дата оплаты» от <strong>' + escapeHtml(startDate) + '</strong> ' +
+          'и подходящим значением «Страна оформления/услуга» (32 страны Шенгена + Япония). ' +
+          'Конверсия = % сделок, у которых телефон контакта авторизовался в ЛК.';
+        box.appendChild(title);
+        box.appendChild(sub);
+
+        if (paidConv && paidConv.error) {
+          const err = document.createElement("div");
+          err.className = "paid-conv-error";
+          err.textContent = "Не удалось посчитать: " + paidConv.error;
+          box.appendChild(err);
+        } else {
+          const pc = paidConv || {};
+          const c = pc.conversions || {};
+          const den = pc.countries || {};
+          const num = pc.authorized || {};
+          function paidCell(cls, value, label, n, d) {
+            const cell = document.createElement("div");
+            cell.className = "paid-conv-cell " + cls;
+            const v = document.createElement("div");
+            v.className = "paid-conv-num";
+            v.textContent = (value || 0) + "%";
+            const l = document.createElement("div");
+            l.className = "paid-conv-label";
+            l.textContent = label;
+            const f = document.createElement("div");
+            f.className = "paid-conv-frac";
+            f.textContent = (n || 0) + " из " + (d || 0) + " сделок";
+            cell.appendChild(v);
+            cell.appendChild(l);
+            cell.appendChild(f);
+            return cell;
+          }
+          const grid = document.createElement("div");
+          grid.className = "paid-conv-grid";
+          grid.appendChild(paidCell("cell-all",  c.all,      "Общая (все 32 страны + Япония)", num.all,      den.all));
+          grid.appendChild(paidCell("cell-nojp", c.nonJapan, "Без Японии",                     num.nonJapan, den.nonJapan));
+          grid.appendChild(paidCell("cell-jp",   c.japan,    "Только Япония",                  num.japan,    den.japan));
+          box.appendChild(grid);
+        }
+        paidConvBlock.appendChild(box);
+      }
+
+      function renderStats(data) {
         const totals = (data && data.totals) || {};
         const conv = (data && data.conversions) || {};
         const phones = Array.isArray(data && data.phones) ? data.phones : [];
@@ -1213,58 +1292,6 @@
           conv.required_to_all || 0
         ]);
         wrap.appendChild(funnel);
-
-        // Блок «Конверсия авторизаций по оплаченным сделкам amoCRM».
-        const paidBox = document.createElement("div");
-        paidBox.className = "paid-conv";
-        const paidTitle = document.createElement("div");
-        paidTitle.className = "paid-conv-title";
-        paidTitle.textContent = "Конверсия авторизаций по оплаченным сделкам";
-        const paidSub = document.createElement("div");
-        paidSub.className = "paid-conv-sub";
-        paidSub.innerHTML =
-          'Сделки в amoCRM с «Дата оплаты» от <strong>' + escapeHtml(data.startDate || "") + '</strong> ' +
-          'и подходящим значением «Страна оформления/услуга» (32 страны Шенгена + Япония). ' +
-          'Конверсия = % сделок, у которых телефон контакта авторизовался в ЛК.';
-        paidBox.appendChild(paidTitle);
-        paidBox.appendChild(paidSub);
-
-        if (paidConv && paidConv.error) {
-          const err = document.createElement("div");
-          err.className = "paid-conv-error";
-          err.textContent = "Не удалось посчитать: " + paidConv.error;
-          paidBox.appendChild(err);
-        } else {
-          const pc = paidConv || {};
-          const c = pc.conversions || {};
-          const den = pc.countries || {};
-          const num = pc.authorized || {};
-
-          function paidCell(cls, value, label, n, d) {
-            const cell = document.createElement("div");
-            cell.className = "paid-conv-cell " + cls;
-            const v = document.createElement("div");
-            v.className = "paid-conv-num";
-            v.textContent = (value || 0) + "%";
-            const l = document.createElement("div");
-            l.className = "paid-conv-label";
-            l.textContent = label;
-            const f = document.createElement("div");
-            f.className = "paid-conv-frac";
-            f.textContent = (n || 0) + " из " + (d || 0) + " сделок";
-            cell.appendChild(v);
-            cell.appendChild(l);
-            cell.appendChild(f);
-            return cell;
-          }
-          const grid = document.createElement("div");
-          grid.className = "paid-conv-grid";
-          grid.appendChild(paidCell("cell-all", c.all, "Общая (все 32 страны + Япония)", num.all, den.all));
-          grid.appendChild(paidCell("cell-nojp", c.nonJapan, "Без Японии", num.nonJapan, den.nonJapan));
-          grid.appendChild(paidCell("cell-jp", c.japan, "Только Япония", num.japan, den.japan));
-          paidBox.appendChild(grid);
-        }
-        wrap.appendChild(paidBox);
 
         // Кнопка раскрытия списка
         const toggleBtn = document.createElement("button");
