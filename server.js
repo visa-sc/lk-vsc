@@ -815,6 +815,18 @@ async function getLeadById(baseUrl, leadId) {
   }
 }
 
+// Возвращает массив id всех сделок контакта.
+async function getContactLeadIds(baseUrl, contactId) {
+  try {
+    const data = await amoGet(`${baseUrl}/api/v4/contacts/${contactId}`, { with: "leads" });
+    const leads = (data && data._embedded && data._embedded.leads) || [];
+    return leads.map((l) => l.id).filter(Boolean);
+  } catch (error) {
+    console.error(`GET CONTACT LEADS ERROR ${contactId}:`, error.response?.data || error.message);
+    return [];
+  }
+}
+
 async function getPipelinesMap(baseUrl) {
   const pipelines = await amoGetAllPages(`${baseUrl}/api/v4/leads/pipelines`);
   const statusMap = new Map();
@@ -835,6 +847,21 @@ async function getPipelinesMap(baseUrl) {
   }
 
   return statusMap;
+}
+
+// Кеш карты воронок/статусов на 10 минут — чтобы webhook'и от amoCRM, которые
+// прилетают часто, не плодили лишние API-запросы.
+let _cachedPipelinesMap = null;
+let _cachedPipelinesMapTs = 0;
+const PIPELINES_MAP_TTL_MS = 10 * 60 * 1000;
+async function getCachedPipelinesMap(baseUrl) {
+  const now = Date.now();
+  if (_cachedPipelinesMap && (now - _cachedPipelinesMapTs) < PIPELINES_MAP_TTL_MS) {
+    return _cachedPipelinesMap;
+  }
+  _cachedPipelinesMap = await getPipelinesMap(baseUrl);
+  _cachedPipelinesMapTs = now;
+  return _cachedPipelinesMap;
 }
 
 function enrichLeadWithMappedStatus(lead, statusesMap) {
@@ -966,6 +993,51 @@ async function listYandexFolderFiles(folderPath) {
     if (e.response?.status === 404) return [];
     return [];
   }
+}
+
+// Проверяет, есть ли в папке хоть один ребёнок (файл или подпапка). Возвращает
+// false если папки нет вовсе или она пуста.
+async function yandexFolderHasAnyChildren(folderPath) {
+  try {
+    const r = await yandexRequest({
+      method: "GET",
+      url: "https://cloud-api.yandex.net/v1/disk/resources",
+      params: { path: folderPath, limit: 1, fields: "_embedded.items.name" }
+    });
+    const items = r.data?._embedded?.items || [];
+    return items.length > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Проверяет существование ресурса (файла или папки) по path.
+async function yandexResourceExists(path) {
+  try {
+    await yandexRequest({
+      method: "GET",
+      url: "https://cloud-api.yandex.net/v1/disk/resources",
+      params: { path, fields: "type" }
+    });
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+// Серверное копирование ресурса (папки или файла) на Я.Диске. По умолчанию
+// overwrite=false — если цель существует, бросает 409. Большие папки могут
+// вернуть 202 с async-link, но axios не считает это ошибкой — окей.
+async function copyYandexResource(fromPath, toPath, { overwrite = false } = {}) {
+  await yandexRequest({
+    method: "POST",
+    url: "https://cloud-api.yandex.net/v1/disk/resources/copy",
+    params: {
+      from: fromPath,
+      path: toPath,
+      overwrite: overwrite ? "true" : "false"
+    }
+  });
 }
 
 async function downloadJsonFromYandexDisk(diskPath) {
@@ -6923,6 +6995,198 @@ app.post("/api/amo/finish-upload", express.json(), async (req, res) => {
   } catch (e) {
     console.error("FINISH-UPLOAD ERROR:", e.response?.data || e.message);
     return res.status(500).json({ success: false, message: "Ошибка финализации" });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────────
+// AMO MERGE TRANSFER: webhook от amoCRM для копирования содержимого папки
+// сделки-дубля в основную сделку того же контакта.
+//
+// Триггеры (оба слушаем):
+//   • contacts[merge]            — объединение контактов
+//   • leads[status]→«Дубль»      — перевод сделки в статус «Дубль»
+//
+// Условия копирования (ВСЕ должны быть выполнены):
+//   1. У контакта есть сделка в статусе «Дубль» И есть сделка не в «Дубль»
+//   2. Разница в датах создания обеих сделок ≤ 4 дней
+//   3. Папка дубль-сделки на Я.Диске существует и содержит хоть что-то
+//   4. В основной сделке ещё нет папки «Перенос из Дубля #<dup_id> от (DD.MM.YYYY)»
+//
+// Копируется ВСЁ содержимое `amoCRM/<dup>/` в
+// `amoCRM/<main>/Перенос из Дубля #<dup_id> от (DD.MM.YYYY)/`.
+// Папка `Документы из ЛК` основной сделки НЕ ТРОГАЕТСЯ.
+// ────────────────────────────────────────────────────────────────────
+
+function formatDdMmYyyy(d) {
+  const pad2 = (n) => (n < 10 ? `0${n}` : String(n));
+  return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}`;
+}
+
+async function transferDupFolderToMain(dupLeadId, mainLeadId) {
+  const dupFolder = amoDealFolder(dupLeadId);
+  const mainFolder = amoDealFolder(mainLeadId);
+
+  // 1. Папка дубль-сделки непуста?
+  const hasContent = await yandexFolderHasAnyChildren(dupFolder);
+  if (!hasContent) {
+    console.log(`AMO MERGE TRANSFER: dup=${dupLeadId} → main=${mainLeadId} skipped (dup folder empty/missing)`);
+    return;
+  }
+
+  const targetSubfolder = `Перенос из Дубля #${dupLeadId} от (${formatDdMmYyyy(new Date())})`;
+  const targetPath = `${mainFolder}/${targetSubfolder}`;
+
+  // 2. Идемпотентность: цель уже существует?
+  const alreadyExists = await yandexResourceExists(targetPath);
+  if (alreadyExists) {
+    console.log(`AMO MERGE TRANSFER: dup=${dupLeadId} → main=${mainLeadId} skipped (already at "${targetSubfolder}")`);
+    return;
+  }
+
+  // 3. Папка основной сделки должна существовать перед copy. amoCRM↔Я.Диск
+  //    обычно её создаёт, но на всякий случай гарантируем.
+  try {
+    await ensureNestedYandexFolder(mainFolder);
+  } catch (e) {
+    console.error(`AMO MERGE TRANSFER ensure main folder error:`, e.response?.data || e.message);
+    return;
+  }
+
+  // 4. Копируем через очередь основной сделки — чтобы не конфликтовать с
+  //    активными аплоадами/zip-сборкой для этой же сделки.
+  return amoEnqueue(String(mainLeadId), `transfer dup folder #${dupLeadId}`, async () => {
+    try {
+      await copyYandexResource(dupFolder, targetPath, { overwrite: false });
+      console.log(`AMO MERGE TRANSFER: dup=${dupLeadId} → main=${mainLeadId} copied to "${targetSubfolder}"`);
+    } catch (e) {
+      const status = e.response?.status;
+      if (status === 409) {
+        console.log(`AMO MERGE TRANSFER: dup=${dupLeadId} → main=${mainLeadId} race-collision (409, target appeared between checks)`);
+      } else {
+        console.error(`AMO MERGE TRANSFER copy error dup=${dupLeadId} → main=${mainLeadId}:`, e.response?.data || e.message);
+      }
+    }
+  });
+}
+
+async function tryTransferDupFilesForContact(contactId, triggerReason) {
+  if (!contactId || !AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return;
+  const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+  console.log(`AMO MERGE TRANSFER: check contact=${contactId} trigger=${triggerReason}`);
+
+  const leadIds = await getContactLeadIds(baseUrl, contactId);
+  if (leadIds.length < 2) {
+    console.log(`AMO MERGE TRANSFER: contact=${contactId} skipped (leads=${leadIds.length})`);
+    return;
+  }
+
+  const statusesMap = await getCachedPipelinesMap(baseUrl);
+  const leads = [];
+  for (const id of leadIds) {
+    const lead = await getLeadById(baseUrl, id);
+    if (lead) leads.push(lead);
+  }
+
+  const dupLeads = [];
+  const workingLeads = [];
+  for (const lead of leads) {
+    const meta = statusesMap.get(`${lead.pipeline_id}:${lead.status_id}`) || {};
+    const statusName = String(meta.status_name || "").trim();
+    if (statusName === "Дубль") dupLeads.push(lead);
+    else workingLeads.push(lead);
+  }
+
+  if (!dupLeads.length || !workingLeads.length) {
+    console.log(`AMO MERGE TRANSFER: contact=${contactId} skipped (dup=${dupLeads.length}, working=${workingLeads.length})`);
+    return;
+  }
+
+  // Окно ±4 дня по created_at (epoch seconds в amoCRM).
+  const FOUR_DAYS_MS = 4 * 24 * 60 * 60 * 1000;
+  for (const dup of dupLeads) {
+    for (const work of workingLeads) {
+      const dupTs = (dup.created_at || 0) * 1000;
+      const workTs = (work.created_at || 0) * 1000;
+      const diff = Math.abs(dupTs - workTs);
+      if (diff > FOUR_DAYS_MS) {
+        console.log(`AMO MERGE TRANSFER: dup=${dup.id} ↔ work=${work.id} skipped (diff ${Math.round(diff/86400000)}d > 4d)`);
+        continue;
+      }
+      await transferDupFolderToMain(dup.id, work.id);
+    }
+  }
+}
+
+// Endpoint, который надо прописать в amoCRM как webhook URL.
+// Подписать на события: «Объединение контактов» + «Смена этапа сделки».
+app.post("/api/amo/webhook", async (req, res) => {
+  // amoCRM ожидает быстрый 200 — иначе будет ретраить вебхук. Всё дальнейшее
+  // выполняем в фоне.
+  res.status(200).send("ok");
+
+  try {
+    const body = req.body || {};
+    const accountSubdomain = body?.account?.subdomain;
+
+    // Слабая защита от чужих POST'ов: subdomain в payload должен совпасть
+    // с нашим AMO_SUBDOMAIN. Если поля нет (не amo) — игнорим тихо.
+    if (!accountSubdomain) {
+      console.warn("AMO WEBHOOK: missing account.subdomain — ignoring");
+      return;
+    }
+    if (accountSubdomain !== AMO_SUBDOMAIN) {
+      console.warn(`AMO WEBHOOK: subdomain mismatch (${accountSubdomain} vs ${AMO_SUBDOMAIN})`);
+      return;
+    }
+
+    const eventKeys = [];
+
+    // 1) contacts[merge] — событие объединения контактов
+    const mergedContacts = body?.contacts?.merge;
+    if (Array.isArray(mergedContacts) && mergedContacts.length) {
+      eventKeys.push(`merge×${mergedContacts.length}`);
+      for (const m of mergedContacts) {
+        const contactId = parseInt(m?.id, 10);
+        if (contactId) {
+          // Не ждём — пусть бежит в фоне; ошибки логируем.
+          tryTransferDupFilesForContact(contactId, "merge_contacts")
+            .catch((e) => console.error("AMO WEBHOOK merge handler error:", e.message));
+        }
+      }
+    }
+
+    // 2) leads[status] — смена этапа сделки. Реагируем только на новый статус «Дубль».
+    const leadsStatuses = body?.leads?.status;
+    if (Array.isArray(leadsStatuses) && leadsStatuses.length) {
+      eventKeys.push(`status×${leadsStatuses.length}`);
+      const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+      for (const ls of leadsStatuses) {
+        const leadId = parseInt(ls?.id, 10);
+        if (!leadId) continue;
+        (async () => {
+          try {
+            const lead = await getLeadById(baseUrl, leadId);
+            if (!lead) return;
+            const statusesMap = await getCachedPipelinesMap(baseUrl);
+            const meta = statusesMap.get(`${lead.pipeline_id}:${lead.status_id}`) || {};
+            const statusName = String(meta.status_name || "").trim();
+            if (statusName !== "Дубль") return;
+            const contacts = (lead && lead._embedded && lead._embedded.contacts) || [];
+            const mainContact = contacts.find((c) => c.is_main) || contacts[0];
+            const contactId = mainContact && mainContact.id;
+            if (contactId) {
+              await tryTransferDupFilesForContact(contactId, `lead_status:${leadId}→Дубль`);
+            }
+          } catch (e) {
+            console.error(`AMO WEBHOOK status handler error lead=${leadId}:`, e.message);
+          }
+        })();
+      }
+    }
+
+    console.log(`AMO WEBHOOK accepted: ${eventKeys.join(", ") || "no relevant events"}`);
+  } catch (e) {
+    console.error("AMO WEBHOOK fatal:", e.message);
   }
 });
 
