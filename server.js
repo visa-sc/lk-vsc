@@ -4736,6 +4736,9 @@ function recordLkAuth(phone) {
   lkAuthPhones.set(norm, Date.now());
   saveLkAuthPhones();
   console.log(`LK STATS: new unique auth phone=${norm} totalNow=${lkAuthPhones.size}`);
+  // Свежая авторизация = новая воронка-точка → сбрасываем кеш статистики, чтобы
+  // на следующем polling-тике (10 сек) админ увидел свежие цифры.
+  if (typeof invalidateAdminStatsCache === "function") invalidateAdminStatsCache();
 }
 
 loadLkAuthPhones();
@@ -5230,7 +5233,21 @@ async function computePaidConversionStats() {
   }
 }
 
+// Кеш результата computeAdminStats — короткий TTL (30 сек), чтобы между быстрыми
+// polling-запросами (каждые 10 сек) не пересчитывать всё с нуля.
+let _cachedAdminStats = null;
+let _cachedAdminStatsTs = 0;
+const ADMIN_STATS_CACHE_TTL_MS = 30 * 1000;
+function invalidateAdminStatsCache() {
+  _cachedAdminStats = null;
+  _cachedAdminStatsTs = 0;
+}
+
 async function computeAdminStats() {
+  const now = Date.now();
+  if (_cachedAdminStats && (now - _cachedAdminStatsTs) < ADMIN_STATS_CACHE_TTL_MS) {
+    return _cachedAdminStats;
+  }
   // Базовый набор — авторизованные клиенты, чья первая авторизация попадает
   // в окно отслеживания (с LK_STATS_START_MS) И не попала в чёрный список
   // тестовых номеров команды (LK_STATS_EXCLUDED_PHONES). Старые записи
@@ -5242,36 +5259,29 @@ async function computeAdminStats() {
     )
     .sort((a, b) => b[1] - a[1]);
 
-  const perPhone = [];
-  let countSubmitted = 0;
-  let countRequired = 0;
-  let countAll = 0;
-
-  for (const [phone, ts] of phoneEntries) {
-    // Этап 2: «опросник заполнен» — есть first-questionnaire-lead.
+  // ── Параллельная обработка клиентов по 8 одновременно ──
+  // Раньше было последовательно: для каждого клиента ждали запросы к Я.Диску
+  // (проверить опросник + проверить документы), что давало N × ~200мс задержки.
+  // Параллелизация чанками по 8 даёт ~8x ускорение при том же качестве.
+  const CONCURRENCY = 8;
+  async function processPhone([phone, ts]) {
     const firstLeadId = await ensureFirstQuestionnaireLookup(phone);
     let stage = 1;
     let submittedQ = false, uploadedReq = false, uploadedAll = false;
-
     if (firstLeadId) {
       submittedQ = true;
       stage = 2;
-      countSubmitted++;
-      // Этапы 3/4 — по факту загруженных доков именно для этой сделки.
       const up = await computeUploadStatusForLead(phone, firstLeadId);
       if (up.hasAllRequired) {
         uploadedReq = true;
         stage = 3;
-        countRequired++;
         if (up.hasAllBlocks) {
           uploadedAll = true;
           stage = 4;
-          countAll++;
         }
       }
     }
-
-    perPhone.push({
+    return {
       phone,
       formatted: formatPhoneForDisplay(phone),
       firstAuthAt: ts,
@@ -5283,8 +5293,24 @@ async function computeAdminStats() {
         uploadedAll: uploadedAll
       },
       firstQuestionnaireLeadId: firstLeadId || null
-    });
+    };
   }
+  const perPhone = [];
+  let countSubmitted = 0;
+  let countRequired = 0;
+  let countAll = 0;
+  const tStart = Date.now();
+  for (let i = 0; i < phoneEntries.length; i += CONCURRENCY) {
+    const chunk = phoneEntries.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(chunk.map(processPhone));
+    for (const r of results) {
+      perPhone.push(r);
+      if (r.stages.submittedQuestionnaire) countSubmitted++;
+      if (r.stages.uploadedRequired) countRequired++;
+      if (r.stages.uploadedAll) countAll++;
+    }
+  }
+  console.log(`ADMIN STATS: processed ${phoneEntries.length} phones in ${Date.now()-tStart}ms`);
 
   // Сортировка: сначала те, кто дальше НЕ прошёл (stage 1), потом 2, 3, 4.
   perPhone.sort((a, b) => a.stage - b.stage || (b.firstAuthAt - a.firstAuthAt));
@@ -5295,7 +5321,7 @@ async function computeAdminStats() {
     return Math.round((num / den) * 100);
   }
 
-  return {
+  const result = {
     startDate: LK_STATS_START_DATE,
     totals: {
       authorized: totalAuth,
@@ -5312,6 +5338,9 @@ async function computeAdminStats() {
     },
     phones: perPhone
   };
+  _cachedAdminStats = result;
+  _cachedAdminStatsTs = Date.now();
+  return result;
 }
 
 // ──────────────────────────────────────────────────────────
