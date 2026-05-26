@@ -7117,8 +7117,29 @@ async function tryTransferDupFilesForContact(contactId, triggerReason) {
   }
 }
 
+// Дедуп вебхуков по contactId, чтобы при шторме contacts[update] не плодить
+// параллельных проверок одного и того же контакта. Окно 30 секунд.
+const recentContactChecks = new Map(); // contactId -> ts
+const RECENT_CHECK_WINDOW_MS = 30 * 1000;
+function shouldSkipDuplicate(contactId) {
+  if (!contactId) return true;
+  const now = Date.now();
+  const prev = recentContactChecks.get(contactId);
+  if (prev && (now - prev) < RECENT_CHECK_WINDOW_MS) return true;
+  recentContactChecks.set(contactId, now);
+  // Periodic cleanup, чтобы карта не росла бесконтрольно.
+  if (recentContactChecks.size > 500) {
+    const cutoff = now - RECENT_CHECK_WINDOW_MS;
+    for (const [k, ts] of recentContactChecks) {
+      if (ts < cutoff) recentContactChecks.delete(k);
+    }
+  }
+  return false;
+}
+
 // Endpoint, который надо прописать в amoCRM как webhook URL.
-// Подписать на события: «Объединение контактов» + «Смена этапа сделки».
+// Подписать на события: «Изменение контакта» + «Смена этапа сделки».
+// (Опционально + «Объединение контактов», если в твоей версии amoCRM есть.)
 app.post("/api/amo/webhook", async (req, res) => {
   // amoCRM ожидает быстрый 200 — иначе будет ретраить вебхук. Всё дальнейшее
   // выполняем в фоне.
@@ -7141,21 +7162,36 @@ app.post("/api/amo/webhook", async (req, res) => {
 
     const eventKeys = [];
 
-    // 1) contacts[merge] — событие объединения контактов
+    // 1) contacts[merge] — отдельное событие объединения (есть не во всех версиях amoCRM).
     const mergedContacts = body?.contacts?.merge;
     if (Array.isArray(mergedContacts) && mergedContacts.length) {
       eventKeys.push(`merge×${mergedContacts.length}`);
       for (const m of mergedContacts) {
         const contactId = parseInt(m?.id, 10);
-        if (contactId) {
-          // Не ждём — пусть бежит в фоне; ошибки логируем.
+        if (contactId && !shouldSkipDuplicate(contactId)) {
           tryTransferDupFilesForContact(contactId, "merge_contacts")
             .catch((e) => console.error("AMO WEBHOOK merge handler error:", e.message));
         }
       }
     }
 
-    // 2) leads[status] — смена этапа сделки. Реагируем только на новый статус «Дубль».
+    // 2) contacts[update] — событие изменения контакта. ВАЖНО: amoCRM присылает
+    //    update на оставшийся контакт В ТОМ ЧИСЛЕ при объединении контактов.
+    //    Это покрывает кейс «сначала ставим Дубль, потом мержим». Дедуп по contactId
+    //    защищает от шторма (множество разных правок одного контакта).
+    const updatedContacts = body?.contacts?.update;
+    if (Array.isArray(updatedContacts) && updatedContacts.length) {
+      eventKeys.push(`contact_update×${updatedContacts.length}`);
+      for (const c of updatedContacts) {
+        const contactId = parseInt(c?.id, 10);
+        if (contactId && !shouldSkipDuplicate(contactId)) {
+          tryTransferDupFilesForContact(contactId, "contact_update")
+            .catch((e) => console.error("AMO WEBHOOK contact_update handler error:", e.message));
+        }
+      }
+    }
+
+    // 3) leads[status] — смена этапа сделки. Реагируем только на новый статус «Дубль».
     const leadsStatuses = body?.leads?.status;
     if (Array.isArray(leadsStatuses) && leadsStatuses.length) {
       eventKeys.push(`status×${leadsStatuses.length}`);
@@ -7174,7 +7210,7 @@ app.post("/api/amo/webhook", async (req, res) => {
             const contacts = (lead && lead._embedded && lead._embedded.contacts) || [];
             const mainContact = contacts.find((c) => c.is_main) || contacts[0];
             const contactId = mainContact && mainContact.id;
-            if (contactId) {
+            if (contactId && !shouldSkipDuplicate(contactId)) {
               await tryTransferDupFilesForContact(contactId, `lead_status:${leadId}→Дубль`);
             }
           } catch (e) {
