@@ -806,24 +806,54 @@ async function amoGetAllPages(url, params = {}) {
   return allItems;
 }
 
-// Параллельная пагинация — для случаев, когда страниц много и важно время.
-// Тянем по `concurrency` страниц одновременно. Останавливаемся, как только
-// в одной из страниц батча придёт меньше элементов, чем limit (= последняя
-// страница). amoCRM rate-limit ~7 RPS; concurrency=8 хорошо вписывается.
-async function amoGetAllPagesParallel(url, params = {}, concurrency = 8) {
+// Параллельная пагинация. Концепция: тянем `concurrency` страниц одновременно,
+// но различаем «реально пустую страницу» (= конец) и «упавший запрос» (rate-limit /
+// network). Упавшие — повторяем последовательно с retry, чтобы НЕ ТЕРЯТЬ страницы.
+// amoCRM rate-limit ~7 RPS; concurrency=4 даёт безопасный запас.
+async function amoGetPageWithRetry(url, params, page, limit, maxAttempts = 3) {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await amoGet(url, { ...params, page, limit });
+    } catch (e) {
+      lastErr = e;
+      const status = e.response && e.response.status;
+      const retryable = status === 429 || status === 503 || (status >= 500 && status < 600) || !status;
+      if (!retryable || attempt === maxAttempts) throw e;
+      // Экспоненциальный backoff: 300мс, 900мс, 2.7сек.
+      await new Promise((r) => setTimeout(r, 300 * Math.pow(3, attempt - 1)));
+    }
+  }
+  throw lastErr;
+}
+
+async function amoGetAllPagesParallel(url, params = {}, concurrency = 4) {
   const limit = 250;
   const allItems = [];
   let nextStart = 1;
   while (true) {
     const pages = Array.from({ length: concurrency }, (_, i) => nextStart + i);
-    const responses = await Promise.all(
-      pages.map((p) =>
-        amoGet(url, { ...params, page: p, limit })
-          .catch(() => ({ _embedded: {} }))
-      )
+    const results = await Promise.allSettled(
+      pages.map((p) => amoGetPageWithRetry(url, params, p, limit))
     );
+
+    // Обрабатываем результаты СТРОГО по порядку: на любом «упавшем» делаем
+    // последовательный retry (вне race), чтобы данные не потерялись.
     let foundShortPage = false;
-    for (const data of responses) {
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      let data;
+      if (r.status === "fulfilled") {
+        data = r.value;
+      } else {
+        try {
+          data = await amoGetPageWithRetry(url, params, pages[i], limit);
+        } catch (e) {
+          console.error(`amoGetAllPagesParallel page=${pages[i]} final fail:`, (e.response && e.response.data) || e.message);
+          // Считаем, что данных там нет — продолжаем (НЕ обрываем общую пагинацию).
+          continue;
+        }
+      }
       const embeddedKey = Object.keys(data._embedded || {})[0];
       const items = embeddedKey ? (data._embedded[embeddedKey] || []) : [];
       allItems.push(...items);
