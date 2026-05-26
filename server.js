@@ -407,6 +407,17 @@ app.get("/admin/api/stats", requireAdmin, async (req, res) => {
   }
 });
 
+// Конверсия авторизаций по «оплаченным» сделкам (3 цифры: все / без Японии / только Япония).
+app.get("/admin/api/paid-conversion-stats", requireAdmin, async (req, res) => {
+  try {
+    const data = await computePaidConversionStats();
+    return res.json(Object.assign({ success: true }, data));
+  } catch (e) {
+    console.error("/admin/api/paid-conversion-stats error:", e && e.message);
+    return res.status(500).json({ success: false, message: "Ошибка расчёта конверсии" });
+  }
+});
+
 // Воронка «Опросники»: SMS отправлено → кликнул → отправил.
 // Считаем по уникальным номерам. Базой берём feedbackSent — туда попадают
 // номера, которым ушло приглашение (фиксируется ДО самой отправки SMS).
@@ -4922,6 +4933,201 @@ async function computeUploadStatusForLead(phone, leadId) {
   } catch (e) {
     console.error("computeUploadStatusForLead error:", e && e.message);
     return { hasAllRequired: false, hasAllBlocks: false };
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Конверсия авторизаций по «оплаченным» сделкам amoCRM.
+// Источник — сделки, у которых:
+//   • Кастомное поле «Дата оплаты» ≥ 22.05.2026
+//   • «Страна оформления/услуга» содержит подстроку из списка целевых стран
+//
+// Показываем 3 процента:
+//   1. Общая конверсия по всем сделкам из списка
+//   2. Без Японии — конверсия среди сделок-не-японских из списка
+//   3. Только Япония — конверсия среди сделок где страна содержит «Япония»
+//
+// «Авторизовался» = телефон контакта сделки попал в lkAuthPhones (после
+// LK_STATS_START_MS и не в LK_STATS_EXCLUDED_PHONES).
+// ──────────────────────────────────────────────────────────────────────
+
+// Список целевых стран (без Японии). Подстрочный матч — case-insensitive.
+const PAID_CONV_NON_JAPAN_COUNTRIES = [
+  "Австрия", "Бельгия", "Болгария", "Венгрия", "Германия", "Греция",
+  "Дания", "Исландия", "Испания", "Италия", "Кипр", "Латвия", "Литва",
+  "Лихтенштейн", "Люксембург", "Мальта", "Нидерланды", "Норвегия",
+  "Польша", "Португалия", "Румыния", "Словакия", "Словения", "Финляндия",
+  "Франция", "Хорватия", "Чехия", "Швейцария", "Швеция", "Шенген", "Эстония"
+];
+const PAID_CONV_JAPAN_TOKEN = "Япония";
+const PAID_CONV_ALL_COUNTRIES = [...PAID_CONV_NON_JAPAN_COUNTRIES, PAID_CONV_JAPAN_TOKEN];
+
+function paidConvNormalize(s) {
+  return String(s || "").toLowerCase();
+}
+function paidConvCountryMatchesAny(countryValue, list) {
+  const v = paidConvNormalize(countryValue);
+  if (!v) return false;
+  return list.some((tok) => v.includes(tok.toLowerCase()));
+}
+function paidConvIsJapan(countryValue) {
+  return paidConvNormalize(countryValue).includes(PAID_CONV_JAPAN_TOKEN.toLowerCase());
+}
+
+// Кеш id кастомных полей сделок (отдельные слоты, не зависят от воронки).
+let _cachedPaymentDateFieldId = undefined;
+let _cachedCountryServiceFieldId = undefined;
+async function getCustomFieldIdByPredicate(baseUrl, predicate) {
+  const fields = await amoGetAllPages(`${baseUrl}/api/v4/leads/custom_fields`);
+  const found = (fields || []).find(predicate);
+  return found ? found.id : null;
+}
+async function getPaymentDateFieldId() {
+  if (_cachedPaymentDateFieldId !== undefined) return _cachedPaymentDateFieldId;
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    _cachedPaymentDateFieldId = await getCustomFieldIdByPredicate(baseUrl, (f) => {
+      const name = String(f.name || "").trim().toLowerCase();
+      return name === "дата оплаты" || name.startsWith("дата оплат");
+    });
+    console.log(`AMO FIELD «Дата оплаты»: id=${_cachedPaymentDateFieldId || "NOT FOUND"}`);
+  } catch (e) {
+    console.error("getPaymentDateFieldId error:", e.response?.data || e.message);
+    _cachedPaymentDateFieldId = null;
+  }
+  return _cachedPaymentDateFieldId;
+}
+async function getCountryServiceFieldId() {
+  if (_cachedCountryServiceFieldId !== undefined) return _cachedCountryServiceFieldId;
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    _cachedCountryServiceFieldId = await getCustomFieldIdByPredicate(baseUrl, (f) => {
+      const name = String(f.name || "").trim().toLowerCase();
+      return name === "страна оформления/услуга" || name.startsWith("страна оформления");
+    });
+    console.log(`AMO FIELD «Страна оформления/услуга»: id=${_cachedCountryServiceFieldId || "NOT FOUND"}`);
+  } catch (e) {
+    console.error("getCountryServiceFieldId error:", e.response?.data || e.message);
+    _cachedCountryServiceFieldId = null;
+  }
+  return _cachedCountryServiceFieldId;
+}
+
+// Кеш результата вычисления — 5 минут.
+let _cachedPaidConvStats = null;
+let _cachedPaidConvStatsTs = 0;
+const PAID_CONV_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function computePaidConversionStats() {
+  const now = Date.now();
+  if (_cachedPaidConvStats && (now - _cachedPaidConvStatsTs) < PAID_CONV_CACHE_TTL_MS) {
+    return _cachedPaidConvStats;
+  }
+  const empty = {
+    startDate: LK_STATS_START_DATE,
+    countries: { all: 0, nonJapan: 0, japan: 0 },
+    authorized: { all: 0, nonJapan: 0, japan: 0 },
+    conversions: { all: 0, nonJapan: 0, japan: 0 },
+    error: null
+  };
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
+    return Object.assign({}, empty, { error: "AMO not configured" });
+  }
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const paymentDateFieldId = await getPaymentDateFieldId();
+    if (!paymentDateFieldId) {
+      return Object.assign({}, empty, { error: "Не найдено поле «Дата оплаты»" });
+    }
+
+    // Стартовая дата = LK_STATS_START_MS (00:00 22.05.2026 МСК) в секундах epoch.
+    const fromTs = Math.floor(LK_STATS_START_MS / 1000);
+    // Тянем все сделки с paymentDate >= fromTs через filter API.
+    const params = {
+      [`filter[custom_fields_values][${paymentDateFieldId}][from]`]: String(fromTs),
+      with: "contacts"
+    };
+    const leads = await amoGetAllPages(`${baseUrl}/api/v4/leads`, params);
+    console.log(`PAID-CONV STATS: fetched ${leads.length} leads with payment_date >= ${fromTs}`);
+
+    // Соберём уникальные contact_id, чтобы пакетно достать телефоны (по 1 контакту в API).
+    const contactIds = new Set();
+    for (const lead of leads) {
+      const cs = (lead && lead._embedded && lead._embedded.contacts) || [];
+      for (const c of cs) {
+        if (c && c.id) contactIds.add(c.id);
+      }
+    }
+    const contactPhonesMap = new Map(); // contactId -> Set<normalizedPhone>
+    for (const cid of contactIds) {
+      try {
+        const contact = await amoGet(`${baseUrl}/api/v4/contacts/${cid}`);
+        const phones = new Set(extractPhonesFromContact(contact));
+        contactPhonesMap.set(cid, phones);
+      } catch (e) {
+        // молча — пустой набор телефонов = считается «не авторизовался»
+        contactPhonesMap.set(cid, new Set());
+      }
+    }
+
+    // Считаем 3 ведра.
+    let denomAll = 0, numAll = 0;
+    let denomNJ  = 0, numNJ  = 0;
+    let denomJP  = 0, numJP  = 0;
+
+    for (const lead of leads) {
+      const country = getCustomFieldValue(lead, "Страна оформления/услуга") || "";
+      if (!paidConvCountryMatchesAny(country, PAID_CONV_ALL_COUNTRIES)) continue;
+      const isJp = paidConvIsJapan(country);
+
+      // Авторизовался ли контакт этой сделки?
+      const cs = (lead && lead._embedded && lead._embedded.contacts) || [];
+      let authorized = false;
+      for (const c of cs) {
+        const phones = contactPhonesMap.get(c && c.id);
+        if (!phones || !phones.size) continue;
+        for (const p of phones) {
+          const ts = lkAuthPhones.get(p);
+          if (ts != null && Number(ts) >= LK_STATS_START_MS && !LK_STATS_EXCLUDED_PHONES.has(p)) {
+            authorized = true;
+            break;
+          }
+        }
+        if (authorized) break;
+      }
+
+      denomAll++;
+      if (authorized) numAll++;
+      if (isJp) {
+        denomJP++;
+        if (authorized) numJP++;
+      } else {
+        denomNJ++;
+        if (authorized) numNJ++;
+      }
+    }
+
+    function pct(num, den) {
+      if (!den) return 0;
+      return Math.round((num / den) * 100);
+    }
+    const result = {
+      startDate: LK_STATS_START_DATE,
+      countries: { all: denomAll, nonJapan: denomNJ, japan: denomJP },
+      authorized: { all: numAll, nonJapan: numNJ, japan: numJP },
+      conversions: {
+        all: pct(numAll, denomAll),
+        nonJapan: pct(numNJ, denomNJ),
+        japan: pct(numJP, denomJP)
+      },
+      error: null
+    };
+    _cachedPaidConvStats = result;
+    _cachedPaidConvStatsTs = now;
+    return result;
+  } catch (e) {
+    console.error("computePaidConversionStats error:", e.response?.data || e.message);
+    return Object.assign({}, empty, { error: e.message || "amoCRM error" });
   }
 }
 
