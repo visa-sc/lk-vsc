@@ -757,29 +757,49 @@ function getCustomFieldValue(entity, fieldName) {
   return "";
 }
 
+// Унифицированный retry для всех вызовов amoCRM API. Защищает ВСЕ кодовые пути
+// от 429/503/5xx и временных сетевых сбоев — включая клиентский флоу (find contact,
+// load leads и т.д.). amoCRM rate-limit ~7 RPS; всплески от прева-warm + webhook
+// активности могут давать 429 — без retry это бы валило клиентскую авторизацию.
+async function amoRequestWithRetry(doRequest, label, maxAttempts = 5) {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await doRequest();
+    } catch (e) {
+      lastErr = e;
+      const status = e.response && e.response.status;
+      const retryable = status === 429 || status === 503 || (status >= 500 && status < 600) || !status;
+      if (!retryable || attempt === maxAttempts) throw e;
+      // Экспоненциальный backoff + джиттер: 250мс, 600мс, 1.4с, 3.2с.
+      const base = 250 * Math.pow(2.3, attempt - 1);
+      const delay = base + Math.floor(Math.random() * 150);
+      console.warn(`AMO RETRY ${label} attempt=${attempt}/${maxAttempts} status=${status || "net"} delay=${Math.round(delay)}ms`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
 async function amoGet(url, params = {}) {
   console.log("AMO GET:", url, params);
-
-  const response = await axios.get(url, {
-    headers: {
-      Authorization: `Bearer ${AMO_ACCESS_TOKEN}`
-    },
-    params
-  });
-
-  return response.data;
+  return amoRequestWithRetry(async () => {
+    const response = await axios.get(url, {
+      headers: { Authorization: `Bearer ${AMO_ACCESS_TOKEN}` },
+      params
+    });
+    return response.data;
+  }, `GET ${url}`);
 }
 
 async function amoGetByFullUrl(url) {
   console.log("AMO GET FULL URL:", url);
-
-  const response = await axios.get(url, {
-    headers: {
-      Authorization: `Bearer ${AMO_ACCESS_TOKEN}`
-    }
-  });
-
-  return response.data;
+  return amoRequestWithRetry(async () => {
+    const response = await axios.get(url, {
+      headers: { Authorization: `Bearer ${AMO_ACCESS_TOKEN}` }
+    });
+    return response.data;
+  }, `GET ${url}`);
 }
 
 async function amoGetAllPages(url, params = {}) {
@@ -1412,13 +1432,15 @@ async function rebuildAmoDocsZip(leadId) {
 
 async function amoPost(url, body) {
   console.log("AMO POST:", url, JSON.stringify(body));
-  const response = await axios.post(url, body, {
-    headers: {
-      Authorization: `Bearer ${AMO_ACCESS_TOKEN}`,
-      "Content-Type": "application/json"
-    }
-  });
-  return response.data;
+  return amoRequestWithRetry(async () => {
+    const response = await axios.post(url, body, {
+      headers: {
+        Authorization: `Bearer ${AMO_ACCESS_TOKEN}`,
+        "Content-Type": "application/json"
+      }
+    });
+    return response.data;
+  }, `POST ${url}`);
 }
 
 function getEntityCustomFieldValue(entity, fieldId) {
