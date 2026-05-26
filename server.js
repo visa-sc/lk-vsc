@@ -1796,7 +1796,9 @@ const UPLOAD_FIELDS_WHITELIST = {
   sponsorPassport:      "1-ый разворот внутреннего паспорта РФ спонсора",
   insurancePolicy:      "Страховой полис для въезда в Шенген",
   workCert:             "Справка с работы или учёбы",
-  routeSheet:           "Маршрутный лист"
+  routeSheet:           "Маршрутный лист",
+  ownAccommodation:     "Своё проживание (бронь / аренда / собственность)",
+  ownTransport:         "Свои авиабилеты / другой транспорт"
 };
 
 async function findMatchingContacts(baseUrl, phone) {
@@ -2206,6 +2208,14 @@ ${mixedFieldsHtml}
       </div>
     </div>
 
+    <!-- 8.5 — чекбокс «Я не гражданин РФ» -->
+    <div class="field">
+      <label class="ack-row">
+        <input type="checkbox" name="notRussianCitizen" value="Да" />
+        <span>Я не гражданин РФ</span>
+      </label>
+    </div>
+
     <!-- 9 -->
     <div class="field">
       <label>У меня в данный момент есть второе гражданство</label>
@@ -2248,7 +2258,18 @@ ${mixedFieldsHtml}
       <div class="cond" id="c_surrenderReason">
         <div class="field">
           <label>Укажите, по какой причине не сдаете паспорт: *</label>
-          <input type="text" name="surrenderReason" />
+          <select name="surrenderReason">
+            <option value="">— выберите —</option>
+            <option value="Поездка в третью страну">Поездка в третью страну</option>
+            <option value="Подача на другую визу">Подача на другую визу</option>
+            <option value="Иное">Иное</option>
+          </select>
+        </div>
+        <div class="cond" id="c_surrenderReasonOther">
+          <div class="field">
+            <label>Объясните причину *</label>
+            <input type="text" name="surrenderReasonOther" />
+          </div>
         </div>
       </div>
     </div>
@@ -2426,6 +2447,26 @@ ${mixedFieldsHtml}
           <label><input type="radio" name="wantBuyInsurance" value="Нет" /> Нет</label>
         </div>
       </div>
+    </div>
+
+    <!-- 34б — своё проживание (отель/аренда/собственность) -->
+    <div class="field">
+      <label>У меня будет своё проживание (отель, аренда, собственность)</label>
+      <div class="radio-group">
+        <label><input type="radio" name="hasOwnAccommodation" value="Да" /> Да</label>
+        <label><input type="radio" name="hasOwnAccommodation" value="Нет" /> Нет</label>
+      </div>
+      <span class="hint">Если «Да» — на этапе загрузки документов появится область «Своё проживание».</span>
+    </div>
+
+    <!-- 34в — свои авиа/другой транспорт -->
+    <div class="field">
+      <label>У меня будут свои авиа/другой транспорт</label>
+      <div class="radio-group">
+        <label><input type="radio" name="hasOwnTransport" value="Да" /> Да</label>
+        <label><input type="radio" name="hasOwnTransport" value="Нет" /> Нет</label>
+      </div>
+      <span class="hint">Если «Да» — на этапе загрузки документов появится область «Свой транспорт».</span>
     </div>
 
     <!-- 35 -->
@@ -2614,6 +2655,8 @@ ${mixedFieldsHtml}
     toggle("c_secondCitizenship", radio("hasSecondCitizenship") === "Да");
     toggle("c_secondPassport",    radio("hasSecondPassport") === "Да");
     toggle("c_surrenderReason",   radio("canSurrenderPassport") === "Нет");
+    const surrenderReasonEl = form.querySelector('[name="surrenderReason"]');
+    toggle("c_surrenderReasonOther", surrenderReasonEl && surrenderReasonEl.value === "Иное" && radio("canSurrenderPassport") === "Нет");
     const purpose = form.querySelector('[name="tripPurpose"]');
     toggle("c_purposeOther",      purpose && purpose.value === "Иное");
     toggle("c_schengenExpiry",    radio("hasActiveSchengen") === "Да");
@@ -3241,6 +3284,12 @@ ${mixedFieldsHtml}
       </div>
     </div>
 
+    <!-- 10b — свои авиабилеты -->
+    <label class="checkbox-card">
+      <input type="checkbox" name="jp_hasOwnFlights" value="Да" ${chkYes("jp_hasOwnFlights")} />
+      <span>У меня есть свои авиабилеты</span>
+    </label>
+
     <!-- 11 -->
     <label class="checkbox-card">
       <input type="checkbox" name="jp_visitedJapanBefore" value="Да" ${chkYes("jp_visitedJapanBefore")} />
@@ -3251,8 +3300,8 @@ ${mixedFieldsHtml}
     <div class="cond" id="c_jp_japanVisits">
       <div class="field">
         <label><span class="required-star">*</span>Укажите визиты в Японию</label>
-        <textarea name="jp_japanVisits" rows="3" placeholder="Например: 03.2023 — Токио, 10 дней; 11.2024 — Осака, 7 дней">${pv("jp_japanVisits")}</textarea>
-        <span class="hint">Даты, города, продолжительность каждого визита</span>
+        <textarea name="jp_japanVisits" rows="3" placeholder="Например: с 01.01.2026 10 дней, Токио">${pv("jp_japanVisits")}</textarea>
+        <span class="hint">Точные даты, продолжительность и города каждого визита</span>
       </div>
     </div>
 
@@ -3406,6 +3455,12 @@ ${mixedFieldsHtml}
         </div>
       </div>
     </div>
+
+    <!-- 18a — спонсор поездки -->
+    <label class="checkbox-card">
+      <input type="checkbox" name="jp_hasSponsor" value="Да" ${chkYes("jp_hasSponsor")} />
+      <span>Мою поездку спонсирует другой человек</span>
+    </label>
 
     <!-- 19 -->
     <div class="field">
@@ -4894,7 +4949,9 @@ const STATS_DEFAULT_OPTIONAL_FIELDS = new Set([
   "birthCertificate",
   "sponsorPassport",
   "insurancePolicy",
-  "workCert"
+  "workCert",
+  "ownAccommodation",
+  "ownTransport"
 ]);
 
 function buildUploadBlocksForApplicantStats(state) {
@@ -4947,6 +5004,12 @@ function buildUploadBlocksForApplicantStats(state) {
   const employer = String(state.employerName || "").trim();
   if (employer && employer.toUpperCase() !== "НЕТ") {
     blocks.push({ field: "workCert", label: "Справка с работы или учёбы" });
+  }
+  if (state.hasOwnAccommodation === "Да") {
+    blocks.push({ field: "ownAccommodation", label: "Своё проживание (бронь / аренда / собственность)" });
+  }
+  if (state.hasOwnTransport === "Да") {
+    blocks.push({ field: "ownTransport", label: "Свои авиабилеты / другой транспорт" });
   }
   return blocks;
 }
@@ -6787,12 +6850,14 @@ app.post(
         maritalStatus:              String(req.body.maritalStatus || "").trim(),
         hadOtherCitizenshipAtBirth: String(req.body.hadOtherCitizenshipAtBirth || "").trim(),
         birthCitizenship:           String(req.body.birthCitizenship || "").trim(),
+        notRussianCitizen:          String(req.body.notRussianCitizen || "").trim(),
         hasSecondCitizenship:       String(req.body.hasSecondCitizenship || "").trim(),
         secondCitizenship:          String(req.body.secondCitizenship || "").trim(),
         hasSecondPassport:          String(req.body.hasSecondPassport || "").trim(),
         whichPassport:              String(req.body.whichPassport || "").trim(),
         canSurrenderPassport:       String(req.body.canSurrenderPassport || "").trim(),
         surrenderReason:            String(req.body.surrenderReason || "").trim(),
+        surrenderReasonOther:       String(req.body.surrenderReasonOther || "").trim(),
         actualAddress:              String(req.body.actualAddress || "").trim(),
         occupation:                 String(req.body.occupation || "").trim(),
         employerName:               String(req.body.employerName || "").trim(),
@@ -6816,6 +6881,8 @@ app.post(
         refusalReason:              String(req.body.refusalReason || "").trim(),
         hasInsurance:               String(req.body.hasInsurance || "").trim(),
         wantBuyInsurance:           String(req.body.wantBuyInsurance || "").trim(),
+        hasOwnAccommodation:        String(req.body.hasOwnAccommodation || "").trim(),
+        hasOwnTransport:            String(req.body.hasOwnTransport || "").trim(),
         isUnder18:                  String(req.body.isUnder18 || "").trim(),
         legalRepresentative:        String(req.body.legalRepresentative || "").trim(),
         hasSponsor:                 String(req.body.hasSponsor || "").trim(),
@@ -6852,6 +6919,7 @@ app.post(
         jp_knowsAccommodation:      String(req.body.jp_knowsAccommodation || "").trim(),
         jp_accommodationName:       String(req.body.jp_accommodationName || "").trim(),
         jp_accommodationAddress:    String(req.body.jp_accommodationAddress || "").trim(),
+        jp_hasOwnFlights:           String(req.body.jp_hasOwnFlights || "").trim(),
         jp_visitedJapanBefore:      String(req.body.jp_visitedJapanBefore || "").trim(),
         jp_japanVisits:             String(req.body.jp_japanVisits || "").trim(),
         jp_occupation:              String(req.body.jp_occupation || "").trim(),
@@ -6874,6 +6942,7 @@ app.post(
         jp_inviterAddress:          String(req.body.jp_inviterAddress || "").trim(),
         jp_inviterRelation:         String(req.body.jp_inviterRelation || "").trim(),
         jp_inviterStatus:           String(req.body.jp_inviterStatus || "").trim(),
+        jp_hasSponsor:              String(req.body.jp_hasSponsor || "").trim(),
         jp_appl_crimes:             String(req.body.jp_appl_crimes || "").trim(),
         jp_appl_prison:             String(req.body.jp_appl_prison || "").trim(),
         jp_appl_deport:             String(req.body.jp_appl_deport || "").trim(),

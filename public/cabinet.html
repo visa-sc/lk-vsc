@@ -1295,7 +1295,9 @@
       "birthCertificate",
       "sponsorPassport",
       "insurancePolicy",
-      "workCert"
+      "workCert",
+      "ownAccommodation",
+      "ownTransport"
     ]);
 
     // На воронке «Отдел Продаж» обязателен ТОЛЬКО внутренний паспорт.
@@ -1383,6 +1385,14 @@
       const employer = (state.employerName || "").trim();
       if (employer && employer.toUpperCase() !== "НЕТ") {
         blocks.push({ field: "workCert", label: "Справка с работы или учёбы" });
+      }
+      // "У меня будет своё проживание" → "Да" → "Своё проживание (бронь / аренда / собственность)"
+      if (state.hasOwnAccommodation === "Да") {
+        blocks.push({ field: "ownAccommodation", label: "Своё проживание (бронь / аренда / собственность)" });
+      }
+      // "У меня будут свои авиа/другой транспорт" → "Да" → "Свои авиабилеты / другой транспорт"
+      if (state.hasOwnTransport === "Да") {
+        blocks.push({ field: "ownTransport", label: "Свои авиабилеты / другой транспорт" });
       }
 
       // Сортируем: сначала обязательные, потом необязательные.
