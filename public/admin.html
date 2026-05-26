@@ -392,8 +392,8 @@
       white-space: nowrap;
     }
 
-    /* ── Блок «Конверсия по оплаченным сделкам amoCRM» (обособленный, над табами) ── */
-    #paidConvBlock { margin: 0 0 18px; }
+    /* ── Блок «Конверсия по оплаченным сделкам amoCRM» (обособленный, сразу под табами) ── */
+    #paidConvBlock { margin: 14px 0 18px; }
     .paid-conv {
       background: #fff;
       border: 1px solid #ece7f2;
@@ -639,15 +639,15 @@
   <!-- ── Дашборд ── -->
   <div id="dashBlock" class="dash">
 
+    <div class="tabs">
+      <button type="button" class="tab-btn active" data-tab="stats">Статистика</button>
+      <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
+    </div>
+
     <!-- Обособленный блок «Конверсия авторизаций по оплаченным сделкам».
          Виден всегда, независимо от активной вкладки. -->
     <div id="paidConvBlock">
       <div class="loading-state">Загружаем конверсию по оплаченным сделкам…</div>
-    </div>
-
-    <div class="tabs">
-      <button type="button" class="tab-btn active" data-tab="stats">Статистика</button>
-      <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
     </div>
 
     <div id="panelStats" class="panel show">
