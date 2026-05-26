@@ -800,10 +800,40 @@ async function amoGetAllPages(url, params = {}) {
 
     nextUrl = data?._links?.next?.href || null;
     if (!nextUrl) break;
-
-    page += 1;
+    page++;
   }
 
+  return allItems;
+}
+
+// Параллельная пагинация — для случаев, когда страниц много и важно время.
+// Тянем по `concurrency` страниц одновременно. Останавливаемся, как только
+// в одной из страниц батча придёт меньше элементов, чем limit (= последняя
+// страница). amoCRM rate-limit ~7 RPS; concurrency=8 хорошо вписывается.
+async function amoGetAllPagesParallel(url, params = {}, concurrency = 8) {
+  const limit = 250;
+  const allItems = [];
+  let nextStart = 1;
+  while (true) {
+    const pages = Array.from({ length: concurrency }, (_, i) => nextStart + i);
+    const responses = await Promise.all(
+      pages.map((p) =>
+        amoGet(url, { ...params, page: p, limit })
+          .catch(() => ({ _embedded: {} }))
+      )
+    );
+    let foundShortPage = false;
+    for (const data of responses) {
+      const embeddedKey = Object.keys(data._embedded || {})[0];
+      const items = embeddedKey ? (data._embedded[embeddedKey] || []) : [];
+      allItems.push(...items);
+      if (items.length < limit) foundShortPage = true;
+    }
+    if (foundShortPage) break;
+    nextStart += concurrency;
+    // Защита от runaway: > 200 страниц = 50 000 элементов, явно что-то не так.
+    if (nextStart > 200) break;
+  }
   return allItems;
 }
 
@@ -5051,7 +5081,9 @@ async function computePaidConversionStats() {
       with: "contacts"
     };
     const t0 = Date.now();
-    const allLeads = await amoGetAllPages(`${baseUrl}/api/v4/leads`, params);
+    // Параллельная пагинация (concurrency=8) — драматически быстрее последовательной
+    // на больших объёмах (>1000 сделок).
+    const allLeads = await amoGetAllPagesParallel(`${baseUrl}/api/v4/leads`, params, 8);
     console.log(`PAID-CONV STATS: fetched ${allLeads.length} leads updated_at >= ${fromTs} (${Date.now()-t0}ms)`);
 
     // ── Сначала отфильтруем сделки по «Дата оплаты» + стране — чтобы потом
@@ -7475,6 +7507,43 @@ app.post("/api/amo/webhook", async (req, res) => {
     console.error("AMO WEBHOOK fatal:", e.message);
   }
 });
+
+// ────────────────────────────────────────────────────────────────────
+// Фоновый пре-warm кеша «конверсия по оплаченным сделкам». Каждые 4 минуты
+// перевычисляем результат в фоне (TTL кеша 5 мин — успеваем обновить до
+// истечения). Это значит: первый заход админа в Статистику показывает
+// данные мгновенно из кеша, без 5-10 секунд ожидания.
+// ────────────────────────────────────────────────────────────────────
+const PAID_CONV_PREWARM_INTERVAL_MS = 4 * 60 * 1000;
+function schedulePaidConvPrewarm() {
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return; // нет смысла без amoCRM
+  // Первый пре-warm — через 20 сек после старта, чтобы не блокировать первый запуск.
+  setTimeout(async () => {
+    try {
+      // Сбрасываем кеш, чтобы computePaidConversionStats реально пересчитал.
+      _cachedPaidConvStats = null;
+      _cachedPaidConvStatsTs = 0;
+      const t = Date.now();
+      await computePaidConversionStats();
+      console.log(`PAID-CONV PREWARM (initial) done in ${Date.now()-t}ms`);
+    } catch (e) {
+      console.error("PAID-CONV PREWARM initial error:", e.message);
+    }
+  }, 20 * 1000);
+  // Периодический пре-warm.
+  setInterval(async () => {
+    try {
+      _cachedPaidConvStats = null;
+      _cachedPaidConvStatsTs = 0;
+      const t = Date.now();
+      await computePaidConversionStats();
+      console.log(`PAID-CONV PREWARM done in ${Date.now()-t}ms`);
+    } catch (e) {
+      console.error("PAID-CONV PREWARM error:", e.message);
+    }
+  }, PAID_CONV_PREWARM_INTERVAL_MS);
+}
+schedulePaidConvPrewarm();
 
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);
