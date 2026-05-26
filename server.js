@@ -5041,14 +5041,26 @@ async function computePaidConversionStats() {
     }
 
     // Стартовая дата = LK_STATS_START_MS (00:00 22.05.2026 МСК) в секундах epoch.
+    // amoCRM не принимает filter[custom_fields_values][*][from] на этом аккаунте
+    // ("Invalid filter for current account"). Поэтому фильтруем по updated_at —
+    // оплата меняет лида и его updated_at, поэтому окно покрывает все наши кейсы.
+    // Уже в коде дополнительно проверяем фактическое значение «Дата оплаты».
     const fromTs = Math.floor(LK_STATS_START_MS / 1000);
-    // Тянем все сделки с paymentDate >= fromTs через filter API.
     const params = {
-      [`filter[custom_fields_values][${paymentDateFieldId}][from]`]: String(fromTs),
+      "filter[updated_at][from]": String(fromTs),
       with: "contacts"
     };
-    const leads = await amoGetAllPages(`${baseUrl}/api/v4/leads`, params);
-    console.log(`PAID-CONV STATS: fetched ${leads.length} leads with payment_date >= ${fromTs}`);
+    const allLeads = await amoGetAllPages(`${baseUrl}/api/v4/leads`, params);
+    console.log(`PAID-CONV STATS: fetched ${allLeads.length} leads updated_at >= ${fromTs}`);
+    // Локальный фильтр: «Дата оплаты» — это unix-секунды в custom field.
+    const leads = allLeads.filter((lead) => {
+      const fields = (lead && lead.custom_fields_values) || [];
+      const pf = fields.find((f) => Number(f.field_id) === Number(paymentDateFieldId));
+      if (!pf) return false;
+      const v = (pf.values && pf.values[0] && pf.values[0].value) || 0;
+      return Number(v) >= fromTs;
+    });
+    console.log(`PAID-CONV STATS: ${leads.length} leads have «Дата оплаты» >= ${fromTs}`);
 
     // Соберём уникальные contact_id, чтобы пакетно достать телефоны (по 1 контакту в API).
     const contactIds = new Set();
