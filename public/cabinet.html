@@ -2686,18 +2686,34 @@
           }
         } else if (currentIndex === 1) {
           // ─── Этап «Первичный сбор документов» ───
-          // Только нормальные applicants — условные блоки A. Без нормальных
-          // applicants — стандартный плейсхолдер «Заполните опросник».
+          // Условные блоки этапа 1 + добавляем 2 паспорта (innerPassport +
+          // mainPassport) для тех заявителей, у которых их ещё нет — это
+          // 2-й и последующие заявители из опросника, на «Начале оформления»
+          // паспорта от них не загружали. Если у applicant'а оба паспорта
+          // уже есть — паспортные блоки не добавляем, идём по стандартной
+          // схеме (только stage 1).
           if (!applicants.length) {
             fragment.appendChild(createNoStateNotice());
           } else {
-            applicants.forEach((applicant) => {
-              const blocksConfig = buildUploadBlocksConfig(applicant, lead, 1);
-              if (!blocksConfig.length) return;
-              fragment.appendChild(createDocumentsBlock(applicant, blocksConfig, lead));
+            const stage0PassportBlocks = [
+              { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" },
+              { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" }
+            ];
+            const isLabelLoaded = (files, label) => files.some((f) => {
+              if (!f.startsWith(label)) return false;
+              const next = f.charAt(label.length);
+              return next === "." || next === " ";
             });
-            // Условных блоков нет — показываем «дополнительные документы
-            // на этом этапе не требуются» вместо misleading-плейсхолдера.
+
+            applicants.forEach((applicant) => {
+              const files = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
+              const missingPassports = stage0PassportBlocks.filter((b) => !isLabelLoaded(files, b.label));
+              const stage1Blocks = buildUploadBlocksConfig(applicant, lead, 1);
+              const combined = missingPassports.concat(stage1Blocks);
+              if (!combined.length) return;
+              fragment.appendChild(createDocumentsBlock(applicant, combined, lead));
+            });
+            // Ни одному заявителю ничего не нужно — показываем уведомление.
             if (!fragment.childNodes.length) {
               fragment.appendChild(createNoMoreDocsNotice());
             }
