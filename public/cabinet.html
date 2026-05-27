@@ -2773,13 +2773,14 @@
 
       leadsPlaceholder.style.display = "none";
 
-      // Делим обращения: активные и завершённые. Завершённый — это «Обращение
-      // исполнено» (Успешно реализовано / Возврат). «Паспорт готов» считается
-      // активным — на нём мы ещё показываем предложение карты VOYO.
-      const COMPLETED_STAGE = "Обращение исполнено";
-      const isCompleted = (l) => String(l && l.cabinet_status || "") === COMPLETED_STAGE;
-      const active = leads.filter((l) => !isCompleted(l));
-      const completed = leads.filter(isCompleted);
+      // С 27.05.2026 не делим сделки на активные/завершённые: все видимые
+      // обращения (то есть все не-hidden) показываем в основном списке.
+      // Сделки на «Обращение исполнено» остаются visible там же — иначе
+      // клиент терял их из вида после статуса «Успешно реализовано» /
+      // «Возврат» в amoCRM, хотя должен иметь возможность открыть и
+      // увидеть телеграм-блок.
+      const active = leads.slice();
+      const completed = [];
 
       function makeLeadButton(lead, autoSelect) {
         const button = document.createElement("button");
