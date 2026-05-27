@@ -1349,10 +1349,15 @@
       "routeSheet"
     ]);
 
-    function isFieldOptionalForLead(field, lead, state) {
+    function isFieldOptionalForLead(field, lead, state, cfg) {
       // innerPassport и mainPassport обязательны на этапе «Начало оформления»
-      // для обеих виз. Всё остальное — optional.
+      // для обеих виз. Всё остальное — по умолчанию optional, НО если cfg.
+      // requiredOnStage === true (выставляется в buildUploadBlocksConfig для
+      // этапов «Первичный сбор документов» и «Подготовка документов») —
+      // блок обязателен на текущем этапе. На этапах 1 и 2 все условные
+      // блоки требуются.
       if (field === "innerPassport" || field === "mainPassport") return false;
+      if (cfg && cfg.requiredOnStage === true) return false;
       return OPTIONAL_UPLOAD_FIELDS.has(field);
     }
 
@@ -1413,6 +1418,11 @@
         // renderStages), а не через blocks. Здесь возвращаем пустой массив.
         const stage2Blocks = [];
 
+        // Все условные блоки этапов 1 и 2 обязательны (требование от
+        // 27.05.2026 — «сделай все области для загрузки обязательными»).
+        stage1Blocks.forEach((b) => { b.requiredOnStage = true; });
+        stage2Blocks.forEach((b) => { b.requiredOnStage = true; });
+
         if (includeAll) return stage0Blocks.concat(stage1Blocks).concat(stage2Blocks);
         if (stageIndex === 0) return stage0Blocks.slice();
         if (stageIndex === 1) return stage1Blocks;
@@ -1472,11 +1482,20 @@
       if (employerNameSch && employerNameSch.toUpperCase() !== "НЕТ") {
         stage2Blocks.push({ field: "workCert", label: "Справка с работы или учёбы" });
       }
+      // Возврат старого поведения: страховой полис.
+      if (state.hasInsurance === "Да") {
+        stage2Blocks.push({ field: "insurancePolicy", label: "Страховой полис для въезда в Шенген" });
+      }
+
+      // Все условные блоки этапов 1 и 2 обязательны (требование от
+      // 27.05.2026 — «сделай все области для загрузки обязательными»).
+      stage1Blocks.forEach((b) => { b.requiredOnStage = true; });
+      stage2Blocks.forEach((b) => { b.requiredOnStage = true; });
 
       if (includeAll) {
         const all = stage0Blocks.concat(stage1Blocks).concat(stage2Blocks);
-        const required = all.filter(function (b) { return !isFieldOptionalForLead(b.field, lead, state); });
-        const optional = all.filter(function (b) { return  isFieldOptionalForLead(b.field, lead, state); });
+        const required = all.filter(function (b) { return !isFieldOptionalForLead(b.field, lead, state, b); });
+        const optional = all.filter(function (b) { return  isFieldOptionalForLead(b.field, lead, state, b); });
         return required.concat(optional);
       }
       if (stageIndex === 0) return stage0Blocks.slice();
@@ -1537,7 +1556,7 @@
         if (!requiredSectionEl) return;
         const uploaded = Array.isArray(applicant && applicant.uploadedFiles) ? applicant.uploadedFiles : [];
         const allDone = inputs.every((it) => {
-          if (isFieldOptionalForLead(it.cfg.field, lead, applicant)) return true;
+          if (isFieldOptionalForLead(it.cfg.field, lead, applicant, it.cfg)) return true;
           if (it.pendingFiles && it.pendingFiles.length > 0) return true;
           return uploaded.some((f) => {
             if (!f.startsWith(it.cfg.label)) return false;
@@ -2100,7 +2119,7 @@
 
         // Проверяем обязательные области: должны быть прикреплены файлы
         const missingRequired = inputs.filter(({ cfg, pendingFiles }) =>
-          !isFieldOptionalForLead(cfg.field, lead, applicant) && (!pendingFiles || pendingFiles.length === 0)
+          !isFieldOptionalForLead(cfg.field, lead, applicant, cfg) && (!pendingFiles || pendingFiles.length === 0)
         );
         if (missingRequired.length > 0) {
           missingRequired.forEach(({ row }) => { if (row) row.classList.add("is-required-missing"); });
@@ -2583,7 +2602,7 @@
           const blocks = buildUploadBlocksConfig(a, lead);
           const files = Array.isArray(a.uploadedFiles) ? a.uploadedFiles : [];
           return blocks.every((b) => {
-            if (isFieldOptionalForLead(b.field, lead, a)) return true;
+            if (isFieldOptionalForLead(b.field, lead, a, b)) return true;
             return files.some((f) => {
               if (!f.startsWith(b.label)) return false;
               const next = f.charAt(b.label.length);

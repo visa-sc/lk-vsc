@@ -5336,6 +5336,10 @@ function buildUploadBlocksForApplicantStats(state, lead, stageIndex) {
   if (employerNameSch && employerNameSch.toUpperCase() !== "НЕТ") {
     stage2.push({ field: "workCert", label: "Справка с работы или учёбы", optional: true });
   }
+  // Страховой полис — если есть в опроснике (старое условие).
+  if (state.hasInsurance === "Да") {
+    stage2.push({ field: "insurancePolicy", label: "Страховой полис для въезда в Шенген", optional: true });
+  }
 
   if (includeAll) return stage0.concat(stage1).concat(stage2);
   if (stageIndex === 0) return stage0;
