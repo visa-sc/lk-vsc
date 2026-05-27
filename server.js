@@ -5496,8 +5496,17 @@ async function computeUploadStatusForLead(phone, leadId, leadObj) {
         allStage1 = false; allStage2 = false;
         continue;
       }
+      // Кумулятивная логика «прошёл этап X»: учитываем не только блоки
+      // самого X, но и всех предыдущих этапов. То есть «прошёл «Первичный
+      // сбор»» = stage 0 (2 паспорта) + stage 1 (условные A) загружены;
+      // «прошёл «Подготовку»» = stage 0 + stage 1 + stage 2 загружены.
+      // Иначе пустые stage 1/2 (Шенген: туризм, не Испания/Португалия/Кипр,
+      // hasInsurance=Нет и т.п.) автоматом проходили этап даже без паспортов.
+      const stage0Blocks = buildUploadBlocksForApplicantStats(data, leadObj, 0);
       const stage1Blocks = buildUploadBlocksForApplicantStats(data, leadObj, 1);
       const stage2Blocks = buildUploadBlocksForApplicantStats(data, leadObj, 2);
+      const cumulative1 = stage0Blocks.concat(stage1Blocks);
+      const cumulative2 = cumulative1.concat(stage2Blocks);
 
       const safeFio = sanitizeFileName(String(data.fullName).trim());
       if (!safeFio) {
@@ -5518,10 +5527,10 @@ async function computeUploadStatusForLead(phone, leadId, leadObj) {
         return next === "." || next === " ";
       }));
 
-      // Пустой набор блоков на этапе — этап считается «пройденным» по
-      // умолчанию (нечего грузить из условных по этому опроснику).
-      if (stage1Blocks.length && !allLoaded(stage1Blocks)) allStage1 = false;
-      if (stage2Blocks.length && !allLoaded(stage2Blocks)) allStage2 = false;
+      // Кумулятив включает 2 паспорта (stage 0), поэтому пустого набора
+      // быть не может — клиент обязан загрузить хотя бы паспорта.
+      if (!allLoaded(cumulative1)) allStage1 = false;
+      if (!allLoaded(cumulative2)) allStage2 = false;
     }
     return { hasAllRequired: allStage1, hasAllBlocks: allStage2 };
   } catch (e) {
