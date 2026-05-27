@@ -1648,6 +1648,12 @@
         list.appendChild(row);
       });
 
+      // Exposed для обёрток (createEmptyPreApplicantBlock /
+      // performPreApplicantUpload): обычный input.files после прикрепления
+      // пустеет (мы сами очищаем fileInput.value = "" и держим File-объекты
+      // в pendingFiles). Поэтому отдадим ссылку на inputs наружу через DOM.
+      wrapper.__cabinetInputs__ = inputs;
+
       // Начальное состояние заголовка «Необходимо загрузить сейчас…»:
       // если уже на этапе открытия кабинета все обязательные доки прикреплены —
       // показываем заголовок сразу зелёным.
@@ -2289,25 +2295,18 @@
       const fresh = uploadBtn.cloneNode(true);
       uploadBtn.replaceWith(fresh);
       fresh.addEventListener("click", () => {
-        // Сначала локально проверим, что оба файла прикреплены (как
-        // делал бы старый обработчик).
-        const inputs = block.querySelectorAll('input[type="file"]');
-        let hasAll = true;
-        inputs.forEach((inp) => { if (!inp.files || !inp.files.length) hasAll = false; });
-        if (!hasAll) {
-          // Дадим стандартный UI отработать — он сам подсветит пустые.
-          // Имитируем клик старой кнопки нет смысла, просто выходим.
+        // createDocumentsBlock хранит File-объекты в внутреннем pendingFiles[]
+        // и обнуляет input.files после прикрепления — поэтому проверяем через
+        // exposed wrapper.__cabinetInputs__, а не через input.files.
+        const cabInputs = Array.isArray(block.__cabinetInputs__) ? block.__cabinetInputs__ : [];
+        const empty = cabInputs.filter((it) => !it.pendingFiles || !it.pendingFiles.length);
+        if (empty.length) {
           const localError = block.querySelector(".docs-local-error");
           if (localError) {
             localError.textContent = "Загрузите оба паспорта.";
             localError.style.display = "block";
           }
-          inputs.forEach((inp) => {
-            if (!inp.files || !inp.files.length) {
-              const row = inp.closest(".file-list-row");
-              if (row) row.classList.add("is-required-missing");
-            }
-          });
+          empty.forEach((it) => { if (it.row) it.row.classList.add("is-required-missing"); });
           return;
         }
 
@@ -2341,15 +2340,12 @@
       const leadId = lead && lead.id ? String(lead.id) : "";
       if (!phone || !leadId) return;
 
-      const rows = block.querySelectorAll(".file-list-row");
+      const cabInputs = Array.isArray(block.__cabinetInputs__) ? block.__cabinetInputs__ : [];
       const tasks = [];
-      blocksConfig.forEach((cfg, idx) => {
-        const row = rows[idx];
-        if (!row) return;
-        const input = row.querySelector('input[type="file"]');
-        if (!input || !input.files || !input.files.length) return;
-        Array.from(input.files).forEach((file, i) => {
-          tasks.push({ file, cfg, partIndex: i + 1 });
+      cabInputs.forEach((it) => {
+        const files = (it && it.pendingFiles) ? it.pendingFiles : [];
+        files.forEach((file, i) => {
+          tasks.push({ file, cfg: it.cfg, partIndex: i + 1 });
         });
       });
 
