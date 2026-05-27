@@ -1465,6 +1465,13 @@
       if (state.notRussianCitizen === "Да") {
         stage2Blocks.push({ field: "residencePermit", label: "ВНЖ/регистрация" });
       }
+      // Возврат старого поведения: если в опроснике указан работодатель /
+      // учебное заведение (employerName ≠ «НЕТ») — запрашиваем справку.
+      // На этапе «Подготовка документов» по новой схеме 8 этапов.
+      const employerNameSch = String(state.employerName || "").trim();
+      if (employerNameSch && employerNameSch.toUpperCase() !== "НЕТ") {
+        stage2Blocks.push({ field: "workCert", label: "Справка с работы или учёбы" });
+      }
 
       if (includeAll) {
         const all = stage0Blocks.concat(stage1Blocks).concat(stage2Blocks);
@@ -1986,11 +1993,13 @@
         resetCorrection();
       }
 
-      // Если все ОБЯЗАТЕЛЬНЫЕ документы уже загружены — сразу done
-      // (необязательные области могут быть пустыми)
+      // Done-state включаем ТОЛЬКО когда все блоки фактически загружены,
+      // не делая поблажку для optional. Иначе на этапах «Первичный сбор» /
+      // «Подготовка документов» все условные блоки optional → блок сразу
+      // уходил в корректировочный режим (select) и клиент не видел input
+      // для самих документов.
       const initialFiles = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
-      const alreadyAll = blocksConfig.every((b) => {
-        if (isFieldOptionalForLead(b.field, lead, applicant)) return true;
+      const alreadyAll = blocksConfig.length > 0 && blocksConfig.every((b) => {
         return initialFiles.some((f) => {
           if (!f.startsWith(b.label)) return false;
           const next = f.charAt(b.label.length);

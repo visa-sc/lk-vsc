@@ -5331,6 +5331,11 @@ function buildUploadBlocksForApplicantStats(state, lead, stageIndex) {
   if (state.notRussianCitizen === "Да") {
     stage2.push({ field: "residencePermit", label: "ВНЖ/регистрация", optional: true });
   }
+  // Справка с работы/учёбы — если в опроснике указан работодатель.
+  const employerNameSch = String(state.employerName || "").trim();
+  if (employerNameSch && employerNameSch.toUpperCase() !== "НЕТ") {
+    stage2.push({ field: "workCert", label: "Справка с работы или учёбы", optional: true });
+  }
 
   if (includeAll) return stage0.concat(stage1).concat(stage2);
   if (stageIndex === 0) return stage0;
