@@ -3969,6 +3969,88 @@ async function generateQuestionnairePdfBuffer(data) {
     doc.text(`ID сделки: ${data.leadId || ""}`);
     doc.text(`Дата заполнения: ${new Date().toLocaleString("ru-RU")}`);
 
+    // ───────────────────────────────────────────────────────────────
+    // Опросник «Виза в Японию» — отдельный набор jp_*-полей. Если
+    // тащим Шенгенский шаблон на Японский state, ячейки выходят
+    // пустыми (handoff 26.05, known issue). Японская ветка ниже
+    // рисует ВСЕ jp_* поля + общие fullName/email/contactPhone/
+    // actualAddress.
+    // ───────────────────────────────────────────────────────────────
+    if (String(data.visaType || "").trim() === "Виза в Японию") {
+      drawSectionHeader("Личные данные");
+      drawRow("Полное имя (ФИО)", data.fullName);
+      drawRow("Ранее были другие фамилии/имена", data.jp_hadOtherNames);
+      drawRow("Укажите все предыдущие фамилии/имена", data.jp_otherNames);
+      drawRow("Телефон", data.contactPhone);
+      drawRow("Почта", data.email);
+      drawRow("Семейное положение", data.jp_maritalStatus);
+      drawRow("Род занятий супруга/и", data.jp_spouseOccupation);
+      drawRow("Есть второе гражданство", data.jp_hasSecondCitizenship);
+      drawRow("Какое второе гражданство", data.jp_secondCitizenship);
+      drawRow("Паспорт, на который оформляем визу", data.jp_passportForVisa);
+      drawRow("Город получения паспорта", data.jp_passportCity);
+
+      drawSectionHeader("Адрес и занятость");
+      drawRow("Фактический адрес проживания", data.actualAddress);
+      drawRow("Род занятий", data.jp_occupation);
+      drawRow("Наименование работодателя", data.jp_employerName);
+      drawRow("Адрес работодателя", data.jp_employerAddress);
+      drawRow("Телефон работодателя", data.jp_employerPhone);
+      drawRow("Должность", data.jp_position);
+      drawRow("ИП — название", data.jp_ipName);
+      drawRow("ИП — вид деятельности", data.jp_ipActivity);
+      drawRow("Самозанятый — вид деятельности", data.jp_selfActivity);
+      drawRow("Место учёбы", data.jp_studyPlace);
+      drawRow("Адрес учебной организации", data.jp_studyAddress);
+      drawRow("Безработный — источник доходов", data.jp_unemployedIncome);
+      drawRow('Род занятий "Иное" — пояснение', data.jp_occupationOther);
+
+      drawSectionHeader("Поездка");
+      drawRow("Цель поездки", data.jp_tripPurpose);
+      if (data.jp_tripDateFrom || data.jp_tripDateTo) {
+        drawRow("Даты поездки", `${data.jp_tripDateFrom || "?"} — ${data.jp_tripDateTo || "?"}`);
+      }
+      drawRow("Города/места поездки", data.jp_citiesToVisit);
+      drawRow("Уже известно проживание", data.jp_knowsAccommodation);
+      drawRow("Название проживания", data.jp_accommodationName);
+      drawRow("Адрес проживания", data.jp_accommodationAddress);
+      drawRow("У меня есть свои авиабилеты", data.jp_hasOwnFlights);
+      drawRow("Уже был(а) в Японии раньше", data.jp_visitedJapanBefore);
+      drawRow("Подробности предыдущих визитов в Японию", data.jp_japanVisits);
+
+      if (data.jp_isUnder18 === "Да" || data.jp_fatherFullName || data.jp_motherFullName) {
+        drawSectionHeader("Заявитель младше 18 лет");
+        drawRow("Заявитель младше 18 лет", data.jp_isUnder18);
+        drawRow("ФИО отца", data.jp_fatherFullName);
+        drawRow("ФИО матери", data.jp_motherFullName);
+      }
+
+      drawSectionHeader("Приглашение и спонсор");
+      drawRow("Есть приглашение в Японию", data.jp_hasInvitation);
+      drawRow("ФИО приглашающего", data.jp_inviterName);
+      drawRow("Адрес приглашающего", data.jp_inviterAddress);
+      drawRow("Степень родства/отношений с приглашающим", data.jp_inviterRelation);
+      drawRow("Статус приглашающего", data.jp_inviterStatus);
+      drawRow("Мою поездку спонсирует другой человек/компания", data.jp_hasSponsor);
+
+      drawSectionHeader("Применимые обстоятельства");
+      drawRow("Совершал(а) преступления/правонарушения", data.jp_appl_crimes);
+      drawRow("Подвергался(лась) тюремному заключению", data.jp_appl_prison);
+      drawRow("Был(а) депортирован(а) за нарушение визового режима", data.jp_appl_deport);
+      drawRow("Привлекался(лась) за преступления, связанные с запрещ. веществами", data.jp_appl_drugs);
+      drawRow("Был(а) вовлечён(а) в торговлю людьми", data.jp_appl_traffic);
+      drawRow("Ничего из вышеперечисленного", data.jp_appl_none);
+      drawRow("Пояснение к применимым обстоятельствам", data.jp_applicableExplain);
+
+      drawSectionHeader("Подтверждения");
+      drawRow("Подтверждаю правильность и достоверность сведений", data.jp_confirmAccuracy);
+      drawRow("Согласие с условиями договора по электронному опроснику", data.jp_confirmContract);
+      drawRow("Согласие на обработку персональных данных", data.jp_personalDataConsent);
+
+      doc.end();
+      return;
+    }
+
     // ── Личные данные ──
     drawSectionHeader("Личные данные");
     drawRow("Полное имя (ФИО)", data.fullName);
