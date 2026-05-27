@@ -2716,12 +2716,14 @@
       const currentStageTitle = STAGES[currentStageIndex] || "Начало оформления";
 
       // Стейт опросников/файлов — per-lead (lead-scoped с 2026-05-21).
-      // Грузим только для этой сделки.
+      // Грузим только для этой сделки. fetchApplicantStates с 2026-05-27
+      // отдаёт { applicants, preApplicants } — раскладываем по двум кэшам.
       statusText.textContent = `Загружаем данные по обращению...`;
       const phone = phoneInput.value.trim();
       const fetched = await fetchApplicantStates(phone, lead.id);
       if (myToken !== selectLeadToken) return; // пользователь выбрал другой lead — отменяем рендер
-      applicantsCache = fetched || [];
+      applicantsCache    = (fetched && Array.isArray(fetched.applicants))    ? fetched.applicants    : [];
+      preApplicantsCache = (fetched && Array.isArray(fetched.preApplicants)) ? fetched.preApplicants : [];
 
       statusText.textContent = `Вы выбрали ${getLeadLabel(lead)}. Текущий этап: ${currentStageTitle}.`;
       renderStages(currentStageIndex, lead);
@@ -2928,6 +2930,7 @@
         // С lead-scoped схемой каждый клик по сделке делает fetch для именно этой сделки
         // (см. selectLead → fetchApplicantStates(phone, lead.id)).
         applicantsCache = [];
+        preApplicantsCache = [];
         const leadsResp = await fetch(`/api/leads?phone=${encodeURIComponent(phone)}`);
 
         if (!leadsResp.ok) {
