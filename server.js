@@ -24,6 +24,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/cabinet", (req, res) => {
+  // no-cache: правки UX/блоков ЛК идут пачкой, нельзя чтобы клиент
+  // смотрел вчерашнюю закэшированную версию (как было с pre-applicants).
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
   res.sendFile(path.join(__dirname, "public", "cabinet.html"));
 });
 
