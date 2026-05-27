@@ -7123,7 +7123,7 @@ app.post(
   upload.none(),
   async (req, res) => {
     try {
-      const fullName = String(req.body.fullName || "").trim();
+      let fullName = String(req.body.fullName || "").trim();
       const shareTokenInput = String(req.body.shareToken || "").trim();
       const shareData = shareTokenInput ? getShareToken(shareTokenInput) : null;
       if (shareTokenInput && !shareData) {
@@ -7137,6 +7137,35 @@ app.post(
       const leadId = isShareMode
         ? String(shareData.leadId || "").trim()
         : String(req.body.leadId || "").trim();
+
+      // Case-insensitive выравнивание ФИО к УЖЕ существующему заявителю —
+      // pre-applicant'у или нормальному. Сценарий: клиент через модал
+      // ввёл «Иванов Иван Иванович» и загрузил паспорта в папку
+      // `<phone>/<leadId>/Иванов Иван Иванович/`. Потом в опроснике указал
+      // «Иванов Иван ивановиЧ» (другой регистр). Без выравнивания мы
+      // создадим вторую папку с другим регистром, файлы старого pre-applicant
+      // не подтянутся, клиент увидит «загрузите паспорта снова». Берём
+      // ОРИГИНАЛЬНОЕ написание (из pre-applicant или из существующего
+      // applicant'а) как canonical и работаем дальше уже с ним
+      // (в state.fullName, safeFio, applicantFolder).
+      if (phone && leadId && fullName) {
+        try {
+          const norm = normalizeFioForCompare(fullName);
+          let canon = null;
+          const preList = await loadPreApplicants(phone, leadId);
+          const matchPre = preList.find((p) => normalizeFioForCompare(p.fullName) === norm);
+          if (matchPre) canon = matchPre.fullName;
+          if (!canon) {
+            const existing = await getExistingApplicantFios(phone, leadId);
+            const matchEx = existing.find((e) => normalizeFioForCompare(e.fullName) === norm);
+            if (matchEx) canon = matchEx.fullName;
+          }
+          if (canon && canon !== fullName) {
+            console.log(`QUESTIONNAIRE: aligning fullName "${fullName}" → "${canon}" (canonical case)`);
+            fullName = canon;
+          }
+        } catch (_) {}
+      }
 
       const isEdit = !isShareMode && String(req.body.isEdit || "") === "1";
       const isMixed = !isShareMode && !isEdit && String(req.body.mixed || "") === "1";
