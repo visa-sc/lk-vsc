@@ -2296,6 +2296,11 @@
       ];
       const block = createDocumentsBlock(fakeApplicant, blocksConfig, lead);
 
+      // ТЗ: «Над областями загрузок писать ничего не нужно» — убираем
+      // h3-заголовок (для empty-блока он бесполезен: ФИО ещё нет).
+      const header = block.querySelector("h3");
+      if (header) header.remove();
+
       // Перехватываем «Загрузить»: до отправки на сервер — модал ФИО.
       // Стандартный обработчик уже привязан к кнопке внутри createDocumentsBlock,
       // и мы можем подменить его, заменив кнопку на клон.
@@ -2646,6 +2651,18 @@
           applicants.forEach((applicant) => {
             const blocksConfig = buildUploadBlocksConfig(applicant, lead, 0);
             if (!blocksConfig.length) return;
+            // ТЗ: «если в опроснике есть ФИО заявителя, который уже загрузил
+            // внутр и загран паспорта (вводил ФИО при загрузке) — на такого
+            // заявителя область для загрузки не создавай». Проверяем по
+            // факту наличия файлов в папке заявителя: если оба stage0-блока
+            // уже залиты — блок не отрисовываем.
+            const files = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
+            const allStage0Loaded = blocksConfig.every((b) => files.some((f) => {
+              if (!f.startsWith(b.label)) return false;
+              const next = f.charAt(b.label.length);
+              return next === "." || next === " ";
+            }));
+            if (allStage0Loaded) return;
             fragment.appendChild(createDocumentsBlock(applicant, blocksConfig, lead));
           });
 
