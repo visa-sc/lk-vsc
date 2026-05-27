@@ -4774,6 +4774,17 @@ const LK_STATS_START_MS = new Date("2026-05-22T00:00:00+03:00").getTime();
 // .lkAuthPhones.json / .lkFirstQuestionnaireLead.json не удаляем, просто
 // игнорируем при подсчёте — чтобы можно было откатить без потери данных.
 // Формат: нормализованный номер (без +, скобок, дефисов, пробелов).
+//
+// Источник списка двухуровневый:
+//   1) Hardcoded дефолт (ниже) — всегда применяется. Это safety net на случай,
+//      если JSON-файл сломан или удалён.
+//   2) JSON-файл .lkStatsExcludedPhones.json (опционально) — добавляется к
+//      дефолту, перечитывается при изменении (fs.watch). Это позволяет править
+//      список на проде БЕЗ git push и pm2 restart.
+//
+// Формат JSON: {"phones": ["79111111111", "79222222222", ...]}
+//
+// Дефолтные номера (актуальная команда на момент написания):
 //   +7 (916) 923-66-38 → 79169236638
 //   +7 (995) 918-90-58 → 79959189058
 //   +7 (999) 989-90-58 → 79999899058
@@ -4783,7 +4794,7 @@ const LK_STATS_START_MS = new Date("2026-05-22T00:00:00+03:00").getTime();
 //   +7 (926) 084-77-26 → 79260847726
 //   +7 (982) 640-45-43 → 79826404543
 //   +7 (929) 609-43-13 → 79296094313
-const LK_STATS_EXCLUDED_PHONES = new Set([
+const LK_STATS_EXCLUDED_PHONES_DEFAULT = [
   "79169236638",
   "79959189058",
   "79999899058",
@@ -4793,7 +4804,64 @@ const LK_STATS_EXCLUDED_PHONES = new Set([
   "79260847726",
   "79826404543",
   "79296094313"
-]);
+];
+// Stable reference — все потребители (computeAdminStats, recordLkAuth,
+// computePaidConversionStats) обращаются к этому самому объекту через .has().
+// При hot-reload содержимое перезаливается через .clear() + .add(), reference
+// не меняется.
+const LK_STATS_EXCLUDED_PHONES = new Set(LK_STATS_EXCLUDED_PHONES_DEFAULT);
+const LK_STATS_EXCLUDED_PHONES_FILE = path.join(__dirname, ".lkStatsExcludedPhones.json");
+
+function reloadLkStatsExcludedPhones() {
+  // Стартуем с дефолта, поверх него мержим валидные номера из файла.
+  const next = new Set(LK_STATS_EXCLUDED_PHONES_DEFAULT);
+  let fromFile = 0;
+  try {
+    if (fs.existsSync(LK_STATS_EXCLUDED_PHONES_FILE)) {
+      const raw = fs.readFileSync(LK_STATS_EXCLUDED_PHONES_FILE, "utf8");
+      const obj = JSON.parse(raw);
+      const arr = Array.isArray(obj?.phones) ? obj.phones : [];
+      for (const p of arr) {
+        // Принимаем только строки из 10-15 цифр (нормализованный российский
+        // номер — 11 цифр, но даём запас). Всё прочее тихо игнорируем.
+        if (typeof p === "string" && /^\d{10,15}$/.test(p)) {
+          next.add(p);
+          fromFile++;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`LK_STATS_EXCLUDED_PHONES: file load failed, using defaults only: ${e.message}`);
+  }
+  LK_STATS_EXCLUDED_PHONES.clear();
+  for (const p of next) LK_STATS_EXCLUDED_PHONES.add(p);
+  console.log(`LK_STATS_EXCLUDED_PHONES: ${LK_STATS_EXCLUDED_PHONES.size} entries (${LK_STATS_EXCLUDED_PHONES_DEFAULT.length} default + ${fromFile} from file)`);
+  // При смене списка имеет смысл инвалидировать кеш админ-воронки — иначе
+  // до истечения TTL (5 мин) исключённые номера будут продолжать висеть.
+  try { invalidateAdminStatsCache(); } catch (_) {}
+}
+
+// Первичная загрузка — синхронно на старте процесса.
+reloadLkStatsExcludedPhones();
+
+// Hot-reload через fs.watch с дебаунсом 200мс (защита от двойных событий
+// редактора и атомарных перезаписей). Если watcher не стартует (например,
+// файла ещё нет) — мы всё равно работаем на дефолтах + перечитаем при
+// следующем рестарте.
+let _excludedPhonesReloadTimer = null;
+function _scheduleExcludedPhonesReload() {
+  if (_excludedPhonesReloadTimer) clearTimeout(_excludedPhonesReloadTimer);
+  _excludedPhonesReloadTimer = setTimeout(reloadLkStatsExcludedPhones, 200);
+}
+try {
+  // fs.watch на директории, чтобы переживать удаление/пересоздание файла
+  // (rename-based атомарная запись из редакторов).
+  fs.watch(__dirname, (eventType, filename) => {
+    if (filename === ".lkStatsExcludedPhones.json") _scheduleExcludedPhonesReload();
+  });
+} catch (e) {
+  console.warn(`LK_STATS_EXCLUDED_PHONES: fs.watch failed, hot-reload disabled: ${e.message}`);
+}
 const LK_AUTH_PHONES_FILE = path.join(__dirname, ".lkAuthPhones.json");
 const lkAuthPhones = new Map(); // phone(7XXXXXXXXXX) -> firstAuthAt(ms)
 
