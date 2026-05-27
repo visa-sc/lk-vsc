@@ -1290,8 +1290,10 @@
       }
     }
 
-    // Необязательные области загрузки документов на этапах ОтделОформления /
-    // ОтделПоРаботеСКлиентами — их пропуск не блокирует кнопку "Загрузить".
+    // Необязательные блоки загрузки — их пропуск не блокирует «Загрузить».
+    // Обязательные на «Начале оформления» (этап 0): innerPassport + mainPassport.
+    // Все условные блоки с этапов «Первичный сбор» (1) и «Подготовка» (2)
+    // считаем optional — клиент может загрузить позже.
     const OPTIONAL_UPLOAD_FIELDS = new Set([
       "invitation",
       "thirdCountryTickets",
@@ -1299,111 +1301,146 @@
       "sponsorPassport",
       "insurancePolicy",
       "workCert",
+      "studyCert",
       "ownAccommodation",
-      "ownTransport"
+      "ownTransport",
+      "ownFlights",
+      "routePlan",
+      "electronicPhoto",
+      "residencePermit",
+      "secondPassport",
+      "activeSchengenPhoto",
+      "prevSchengenPhoto",
+      "routeSheet"
     ]);
 
-    // На воронке «Отдел Продаж» обязателен ТОЛЬКО внутренний паспорт.
-    // Всё остальное — «можно загрузить позже» (на следующих этапах).
-    const SALES_REQUIRED_FIELDS = new Set(["innerPassport"]);
-
-    function isSalesPipeline(lead) {
-      if (!lead) return false;
-      const name = String(lead.pipeline_name || "").trim().toLowerCase();
-      return name.indexOf("отдел продаж") === 0;
-    }
-
     function isFieldOptionalForLead(field, lead, state) {
-      // Япония: обязателен ТОЛЬКО innerPassport. Всё остальное (загранник,
-      // workCert, invitation, routeSheet) — необязательное (можно позже).
-      if (state && state.visaType === "Виза в Японию") {
-        return field !== "innerPassport";
-      }
-      if (isSalesPipeline(lead)) {
-        return !SALES_REQUIRED_FIELDS.has(field);
-      }
+      // innerPassport и mainPassport обязательны на этапе «Начало оформления»
+      // для обеих виз. Всё остальное — optional.
+      if (field === "innerPassport" || field === "mainPassport") return false;
       return OPTIONAL_UPLOAD_FIELDS.has(field);
     }
 
-    function buildUploadBlocksConfig(state, lead) {
-      // Опросник на визу в Японию — innerPassport (обязательный) + загранник всегда
-      // + условные блоки по ответам (workCert / invitation / routeSheet).
-      if (state && state.visaType === "Виза в Японию") {
-        const jpBlocks = [
-          { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" },
-          { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" }
-        ];
+    // Страны Шенгена, для которых на этапе «Первичный сбор» добавляется
+    // блок «Электронное фото».
+    const ELECTRONIC_PHOTO_COUNTRIES = ["Испания", "Португалия", "Кипр"];
+    function countryMatchesAny(countryValue, list) {
+      const v = String(countryValue || "").toLowerCase();
+      if (!v) return false;
+      return list.some(function (c) { return v.indexOf(c.toLowerCase()) >= 0; });
+    }
+
+    // Состав блоков загрузки зависит от этапа ЛК (stageIndex):
+    //   0 «Начало оформления»          — innerPassport + mainPassport (обяз.)
+    //   1 «Первичный сбор документов»  — условные блоки A
+    //   2 «Подготовка документов»      — условные блоки B
+    // На этапах 3-7 этой функции вообще не должно быть видно (там карта/тг).
+    // Если stageIndex не передан — возвращаем ОБЪЕДИНЁННЫЙ набор всех блоков
+    // (нужно для расчёта «всё ли загружено» — totalApplicants × все блоки).
+    function buildUploadBlocksConfig(state, lead, stageIndex) {
+      const includeAll = (typeof stageIndex !== "number");
+      const isJp = state && state.visaType === "Виза в Японию";
+
+      // ── Этап 0: всегда 2 паспорта, без зависимости от опросника ──
+      const stage0Blocks = [
+        { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" },
+        { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" }
+      ];
+
+      if (isJp) {
+        // ─── ЯПОНИЯ ───
+        const stage1Blocks = [];
         const occ = String(state.jp_occupation || "").trim();
-        if (occ === "Работа по найму" || occ === "Учащийся") {
-          jpBlocks.push({ field: "workCert", label: "Справка с работы или учёбы" });
+        const jpTripPurpose = String(state.jp_tripPurpose || "").trim();
+        if (jpTripPurpose && jpTripPurpose !== "Туризм") {
+          stage1Blocks.push({ field: "invitation", label: "Приглашение" });
+          stage1Blocks.push({ field: "routePlan",  label: "План поездки" });
         }
-        if (String(state.jp_hasInvitation || "").trim() === "Да") {
-          jpBlocks.push({ field: "invitation",  label: "Приглашение" });
-          jpBlocks.push({ field: "routeSheet",  label: "Маршрутный лист" });
+        if (String(state.jp_hasOwnFlights || "").trim() === "Да") {
+          stage1Blocks.push({ field: "ownFlights", label: "Авиабилеты" });
         }
-        return jpBlocks;
+        if (String(state.jp_hasSponsor || "").trim() === "Да") {
+          // Для Японии — отдельный label, ведётся в общий field sponsorPassport
+          // только для статистики/whitelist. Здесь явно показываем «Внутр.
+          // паспорт спонсора» без приписки «Спонсорское письмо».
+          stage1Blocks.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора" });
+        }
+        if (String(state.jp_isUnder18 || "").trim() === "Да") {
+          stage1Blocks.push({ field: "birthCertificate", label: "Свидетельство о рождении" });
+        }
+        if (occ === "Работа по найму") {
+          stage1Blocks.push({ field: "workCert",  label: "Справка с работы" });
+        }
+        if (occ === "Учащийся") {
+          stage1Blocks.push({ field: "studyCert", label: "Справка с учёбы" });
+        }
+        // Этап 2 для Японии — отдельный extra-doc-block (рендерится в
+        // renderStages), а не через blocks. Здесь возвращаем пустой массив.
+        const stage2Blocks = [];
+
+        if (includeAll) return stage0Blocks.concat(stage1Blocks).concat(stage2Blocks);
+        if (stageIndex === 0) return stage0Blocks.slice();
+        if (stageIndex === 1) return stage1Blocks;
+        if (stageIndex === 2) return stage2Blocks;
+        return [];
       }
 
-      const blocks = [];
-
-      // ── Всегда после "Отправить опросник" ──
-      blocks.push({ field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" });
-      blocks.push({ field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" });
-
-      // ── По ответам в опроснике ──
-      // "У меня есть второй заграничный паспорт" → "Да" → "2-ой загран. паспорт"
-      if (state.hasSecondPassport === "Да") {
-        blocks.push({ field: "secondPassport", label: "2-ой загран. паспорт" });
+      // ─── ШЕНГЕН ───
+      const stage1Blocks = [];
+      const country = (lead && lead.country_service) || "";
+      if (countryMatchesAny(country, ELECTRONIC_PHOTO_COUNTRIES)) {
+        stage1Blocks.push({ field: "electronicPhoto", label: "Электронное фото" });
       }
-      // "Можете ли вы сдать второй паспорт в ВЦ на период рассмотрения?" → "Нет" → "Билеты в 3-ю страну..."
-      if (state.canSurrenderPassport === "Нет") {
-        blocks.push({ field: "thirdCountryTickets", label: "Билеты в 3-ю страну на второй загран. паспорт" });
-      }
-      // "Цель поездки" → не "Туризм" → "Приглашение"
-      const tripPurpose = (state.tripPurpose || "").trim();
+      const tripPurpose = String(state.tripPurpose || "").trim();
       if (tripPurpose && tripPurpose !== "Туризм") {
-        blocks.push({ field: "invitation", label: "Приглашение" });
-      }
-      // "У меня есть действующая Шенгенская виза" → "Да" → "Фото действующей Шенгенской визы"
-      if (state.hasActiveSchengen === "Да") {
-        blocks.push({ field: "activeSchengenPhoto", label: "Фото действующей Шенгенской визы" });
-      }
-      // "У меня были Шенгенские визы за последние 3 года" → "Да" → "Фото последней Шенгенской визы"
-      if (state.hadSchengen3Years === "Да") {
-        blocks.push({ field: "prevSchengenPhoto", label: "Фото последней Шенгенской визы" });
-      }
-      // "На момент подачи я буду младше 18 лет" → "Да" → "Свидетельство о рождении"
-      if (state.isUnder18 === "Да") {
-        blocks.push({ field: "birthCertificate", label: "Свидетельство о рождении" });
-      }
-      // "Мою поездку спонсирует 3 лицо" → "Да" → "1-ый разворот внутреннего паспорта РФ спонсора"
-      if (state.hasSponsor === "Да") {
-        blocks.push({ field: "sponsorPassport", label: "1-ый разворот внутреннего паспорта РФ спонсора" });
-      }
-      // "У меня есть действительная страховка для въезда в Шенген" → "Да" → "Страховой полис для въезда в Шенген"
-      if (state.hasInsurance === "Да") {
-        blocks.push({ field: "insurancePolicy", label: "Страховой полис для въезда в Шенген" });
-      }
-      // "Наименование работодателя/учебной организации" → любой ответ кроме "НЕТ" → "Справка с работы или учёбы"
-      const employer = (state.employerName || "").trim();
-      if (employer && employer.toUpperCase() !== "НЕТ") {
-        blocks.push({ field: "workCert", label: "Справка с работы или учёбы" });
-      }
-      // "У меня будет своё проживание" → "Да" → "Своё проживание (бронь / аренда / собственность)"
-      if (state.hasOwnAccommodation === "Да") {
-        blocks.push({ field: "ownAccommodation", label: "Своё проживание (бронь / аренда / собственность)" });
-      }
-      // "У меня будут свои авиа/другой транспорт" → "Да" → "Свои авиабилеты / другой транспорт"
-      if (state.hasOwnTransport === "Да") {
-        blocks.push({ field: "ownTransport", label: "Свои авиабилеты / другой транспорт" });
+        stage1Blocks.push({ field: "invitation", label: "Приглашение" });
       }
 
-      // Сортируем: сначала обязательные, потом необязательные.
-      // Состав «обязательного» набора зависит от воронки сделки —
-      // на «Отделе продаж» только innerPassport, в остальных — текущий набор.
-      const required = blocks.filter((b) => !isFieldOptionalForLead(b.field, lead, state));
-      const optional = blocks.filter((b) =>  isFieldOptionalForLead(b.field, lead, state));
-      return required.concat(optional);
+      const stage2Blocks = [];
+      if (state.hasActiveSchengen === "Да") {
+        stage2Blocks.push({ field: "activeSchengenPhoto", label: "Фото действующей Шенгенской визы" });
+      }
+      if (state.hadSchengen3Years === "Да") {
+        stage2Blocks.push({ field: "prevSchengenPhoto", label: "Фото последней Шенгенской визы" });
+      }
+      if (state.hasSponsor === "Да") {
+        stage2Blocks.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора / Спонсорское письмо от компании" });
+      }
+      if (state.isUnder18 === "Да") {
+        stage2Blocks.push({ field: "birthCertificate", label: "Свидетельство о рождении" });
+      }
+      if (state.hasSecondPassport === "Да") {
+        stage2Blocks.push({ field: "secondPassport", label: "2-ой загран. паспорт" });
+      }
+      if (state.hasOwnAccommodation === "Да") {
+        stage2Blocks.push({ field: "ownAccommodation", label: "Своё проживание (бронь / аренда / собственность)" });
+      }
+      if (state.hasOwnTransport === "Да") {
+        stage2Blocks.push({ field: "ownTransport", label: "Свои авиабилеты / другой транспорт" });
+      }
+      // Билеты в третью страну: "Есть 2й паспорт" = да И "Могу сдать действующий"
+      // = нет И "причина" = "Поездка в третью страну".
+      if (
+        state.hasSecondPassport === "Да" &&
+        state.canSurrenderPassport === "Нет" &&
+        /треть.*страну/i.test(String(state.surrenderReason || ""))
+      ) {
+        stage2Blocks.push({ field: "thirdCountryTickets", label: "Билеты в третью страну" });
+      }
+      if (state.notRussianCitizen === "Да") {
+        stage2Blocks.push({ field: "residencePermit", label: "ВНЖ/регистрация" });
+      }
+
+      if (includeAll) {
+        const all = stage0Blocks.concat(stage1Blocks).concat(stage2Blocks);
+        const required = all.filter(function (b) { return !isFieldOptionalForLead(b.field, lead, state); });
+        const optional = all.filter(function (b) { return  isFieldOptionalForLead(b.field, lead, state); });
+        return required.concat(optional);
+      }
+      if (stageIndex === 0) return stage0Blocks.slice();
+      if (stageIndex === 1) return stage1Blocks;
+      if (stageIndex === 2) return stage2Blocks;
+      return [];
     }
 
     function createDocumentsBlock(applicant, blocksConfig, lead) {
@@ -2284,21 +2321,19 @@
       });
 
       // ─── Гейтинг блоков по этапу клиентского ЛК ───
-      // Индексы соответствуют STAGES выше (8 этапов):
-      //   0 Начало оформления          → опросник + блоки документов
-      //   1 Первичный сбор документов  → опросник + блоки документов
-      //   2 Подготовка документов      → свободная зона для доп. документов
+      // Индексы соответствуют STAGES (8 этапов):
+      //   0 Начало оформления          → опросник + 2 паспорта (обяз.)
+      //   1 Первичный сбор документов  → опросник + условные блоки A
+      //   2 Подготовка документов      → корректировка опросника + условные
+      //                                   блоки B (Шенген) / свободная зона (Япония)
       //   3 Ожидание подачи            → банковская карта VOYO
       //   4 Оформление на паузе        → банковская карта VOYO
       //   5 Рассмотрение               → банковская карта VOYO
       //   6 Паспорт готов              → банковская карта VOYO
       //   7 Обращение исполнено        → подписка на телеграм-канал
-      // Условные блоки документов по опросникам Шенген/Япония на этапах
-      // 0/1/2 — отдельная фаза (Фаза 3), сейчас buildUploadBlocksConfig
-      // продолжает работать по прежней логике.
 
-      if ((currentIndex === 0 || currentIndex === 1) && stageNodes[currentIndex]) {
-        // Используем кэш applicants — собран в loadLeads, чтобы не было лагов
+      // Этапы 0, 1, 2 — с опросником и блоками загрузки документов.
+      if (currentIndex >= 0 && currentIndex <= 2 && stageNodes[currentIndex]) {
         const applicants = Array.isArray(applicantsCache) ? applicantsCache : [];
         const node = stageNodes[currentIndex];
 
@@ -2306,11 +2341,13 @@
           ? (parseInt(applicants[0] && applicants[0].totalApplicants, 10) || applicants.length)
           : 0;
         const allFilled = applicants.length >= totalFromFirst && totalFromFirst > 0;
+        // Для жёлтого индикатора считаем «всё ли собрано» по ОБЪЕДИНЁННОМУ
+        // списку блоков по всем этапам (без stageIndex → includeAll). Иначе
+        // на этапе 0 жёлтый снимался бы при загрузке только 2 паспортов,
+        // вводя клиента в заблуждение.
         const allDocsUploaded = allFilled && applicants.every((a) => {
           const blocks = buildUploadBlocksConfig(a, lead);
           const files = Array.isArray(a.uploadedFiles) ? a.uploadedFiles : [];
-          // Жёлтый снимаем только если все ОБЯЗАТЕЛЬНЫЕ для этой воронки документы загружены.
-          // Необязательные могут быть пустыми.
           return blocks.every((b) => {
             if (isFieldOptionalForLead(b.field, lead, a)) return true;
             return files.some((f) => {
@@ -2321,7 +2358,6 @@
           });
         });
 
-        // Жёлтый только если что-то ещё не собрано
         if (!(allFilled && allDocsUploaded)) {
           node.classList.add("warn");
         }
@@ -2329,21 +2365,43 @@
         const questionnaireBlock = createQuestionnaireBlock(lead);
         node.after(questionnaireBlock);
 
+        // Контейнер для блоков ниже опросника. На этапах 0/1 — условные блоки
+        // из buildUploadBlocksConfig(state, lead, currentIndex). На этапе 2 —
+        // то же для Шенгена, а для Японии — свободная зона extra-doc-block.
+        const isJp = applicants.length && String(applicants[0].visaType || "").trim() === "Виза в Японию";
+
         if (!applicants.length) {
-          // Опросник не заполнен — стандартный плейсхолдер
-          const placeholder = createNoStateNotice();
-          questionnaireBlock.after(placeholder);
+          // Опросник не заполнен.
+          if (currentIndex === 2) {
+            // На «Подготовке документов» свободного flow нет — направляем
+            // клиента на предыдущие этапы.
+            const placeholder = createNoStateNotice();
+            questionnaireBlock.after(placeholder);
+          } else {
+            // На 0/1 — стандартный плейсхолдер «Заполните опросник».
+            const placeholder = createNoStateNotice();
+            questionnaireBlock.after(placeholder);
+          }
         } else {
           if (allFilled) {
             switchQuestionnaireBlockToEdit(questionnaireBlock, lead, applicants);
           }
           const fragment = document.createDocumentFragment();
-          applicants.forEach((applicant) => {
-            const blocksConfig = buildUploadBlocksConfig(applicant, lead);
-            if (!blocksConfig.length) return;
-            const docsBlock = createDocumentsBlock(applicant, blocksConfig, lead);
-            fragment.appendChild(docsBlock);
-          });
+
+          if (currentIndex === 2 && isJp) {
+            // Япония на «Подготовке документов» — свободная зона.
+            fragment.appendChild(createExtraDocBlock(lead));
+          } else {
+            // Этапы 0/1 для обеих виз + этап 2 для Шенгена — условные блоки
+            // в разрезе текущего stageIndex.
+            applicants.forEach((applicant) => {
+              const blocksConfig = buildUploadBlocksConfig(applicant, lead, currentIndex);
+              if (!blocksConfig.length) return;
+              const docsBlock = createDocumentsBlock(applicant, blocksConfig, lead);
+              fragment.appendChild(docsBlock);
+            });
+          }
+
           if (fragment.childNodes.length) {
             questionnaireBlock.after(fragment);
           } else {
@@ -2351,11 +2409,6 @@
             questionnaireBlock.after(placeholder);
           }
         }
-      }
-
-      if (currentIndex === 2 && stageNodes[2]) {
-        const extraBlock = createExtraDocBlock(lead);
-        stageNodes[2].after(extraBlock);
       }
 
       // Этапы 3-6: банковская карта (Ожидание подачи, Оформление на паузе,
@@ -2651,9 +2704,9 @@
         if (!matches) return;
         await refreshApplicantsCache();
         // Перерендер только на этапах с опросником+блоками (Начало оформления,
-        // Первичный сбор документов). На прочих этапах эти данные не показываются.
+        // Первичный сбор документов, Подготовка документов).
         const idx = selectedLead ? getCurrentStageIndex(selectedLead) : -1;
-        if (selectedLead && (idx === 0 || idx === 1)) {
+        if (selectedLead && idx >= 0 && idx <= 2) {
           renderStages(idx, selectedLead);
         }
       } catch (_) {}

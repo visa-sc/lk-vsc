@@ -1857,17 +1857,27 @@ const UPLOAD_FIELDS_WHITELIST = {
   mainPassport:         "Загран. паспорт (в который запрашиваем визу)",
   innerPassport:        "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)",
   secondPassport:       "2-ой загран. паспорт",
-  thirdCountryTickets:  "Билеты в 3-ю страну на второй загран. паспорт",
+  thirdCountryTickets:  "Билеты в третью страну",
   invitation:           "Приглашение",
   activeSchengenPhoto:  "Фото действующей Шенгенской визы",
   prevSchengenPhoto:    "Фото последней Шенгенской визы",
   birthCertificate:     "Свидетельство о рождении",
-  sponsorPassport:      "1-ый разворот внутреннего паспорта РФ спонсора",
+  // ВНИМАНИЕ: с 27.05.2026 для Шенгена этот label переименован c "1-ый разворот
+  // внутреннего паспорта РФ спонсора" на "Внутр. паспорт спонсора / Спонсорское
+  // письмо от компании". Файлы, загруженные ранее под прежним префиксом,
+  // остаются в папке клиента и продолжают попадать в zip. Для Японии используем
+  // отдельный label через виза-зависимую логику в cabinet.html.
+  sponsorPassport:      "Внутр. паспорт спонсора / Спонсорское письмо от компании",
   insurancePolicy:      "Страховой полис для въезда в Шенген",
-  workCert:             "Справка с работы или учёбы",
+  workCert:             "Справка с работы",
+  studyCert:            "Справка с учёбы",
   routeSheet:           "Маршрутный лист",
+  routePlan:            "План поездки",
+  ownFlights:           "Авиабилеты",
   ownAccommodation:     "Своё проживание (бронь / аренда / собственность)",
-  ownTransport:         "Свои авиабилеты / другой транспорт"
+  ownTransport:         "Свои авиабилеты / другой транспорт",
+  electronicPhoto:      "Электронное фото",
+  residencePermit:      "ВНЖ/регистрация"
 };
 
 async function findMatchingContacts(baseUrl, phone) {
@@ -5090,8 +5100,13 @@ async function ensureFirstQuestionnaireLookup(phone) {
   return foundLeadId;
 }
 
-// ── Реплика логики buildUploadBlocksConfig из cabinet.html (для подсчёта статистики).
-// Если меняешь в cabinet.html — синхронизируй и здесь.
+// ── Реплика логики buildUploadBlocksConfig из cabinet.html (для подсчёта
+// статистики). Здесь собираем ОБЪЕДИНЁННЫЙ набор всех блоков, которые могут
+// быть запрошены у клиента на любом из 3 «загрузочных» этапов (Начало
+// оформления, Первичный сбор документов, Подготовка документов). Стат-расчёт
+// «загрузил ли клиент все нужные документы» не должен зависеть от текущего
+// этапа — клиенту в итоге надо отдать всё, что подходит по его опроснику.
+// Если меняешь условия в cabinet.html → синхронизируй здесь.
 const STATS_DEFAULT_OPTIONAL_FIELDS = new Set([
   "invitation",
   "thirdCountryTickets",
@@ -5099,66 +5114,101 @@ const STATS_DEFAULT_OPTIONAL_FIELDS = new Set([
   "sponsorPassport",
   "insurancePolicy",
   "workCert",
+  "studyCert",
   "ownAccommodation",
-  "ownTransport"
+  "ownTransport",
+  "ownFlights",
+  "routePlan",
+  "electronicPhoto",
+  "residencePermit"
 ]);
 
-function buildUploadBlocksForApplicantStats(state) {
-  // Опросник на визу в Японию — innerPassport обязателен, всё остальное
-  // (загранник + условные блоки по ответам) — optional. Метим явным флагом,
-  // чтобы расчёт «все обязательные загружены» не путал нас с STATS_DEFAULT_OPTIONAL_FIELDS.
+const ELECTRONIC_PHOTO_COUNTRIES = ["Испания", "Португалия", "Кипр"];
+function countryMatchesAny(countryValue, list) {
+  const v = String(countryValue || "").toLowerCase();
+  if (!v) return false;
+  return list.some((c) => v.includes(c.toLowerCase()));
+}
+
+function buildUploadBlocksForApplicantStats(state, lead) {
+  // Опросник на визу в Японию.
   if (state && String(state.visaType || "").trim() === "Виза в Японию") {
     const jpBlocks = [
       { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)", optional: false },
-      { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)", optional: true }
+      { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)", optional: false }
     ];
     const occ = String(state.jp_occupation || "").trim();
-    if (occ === "Работа по найму" || occ === "Учащийся") {
-      jpBlocks.push({ field: "workCert", label: "Справка с работы или учёбы", optional: true });
+    if (occ === "Работа по найму") {
+      jpBlocks.push({ field: "workCert",  label: "Справка с работы", optional: true });
     }
-    if (String(state.jp_hasInvitation || "").trim() === "Да") {
+    if (occ === "Учащийся") {
+      jpBlocks.push({ field: "studyCert", label: "Справка с учёбы", optional: true });
+    }
+    const jpTripPurpose = String(state.jp_tripPurpose || "").trim();
+    if (jpTripPurpose && jpTripPurpose !== "Туризм") {
       jpBlocks.push({ field: "invitation", label: "Приглашение", optional: true });
-      jpBlocks.push({ field: "routeSheet", label: "Маршрутный лист", optional: true });
+      jpBlocks.push({ field: "routePlan",  label: "План поездки", optional: true });
+    }
+    if (String(state.jp_hasOwnFlights || "").trim() === "Да") {
+      jpBlocks.push({ field: "ownFlights", label: "Авиабилеты", optional: true });
+    }
+    if (String(state.jp_hasSponsor || "").trim() === "Да") {
+      jpBlocks.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора", optional: true });
+    }
+    if (String(state.jp_isUnder18 || "").trim() === "Да") {
+      jpBlocks.push({ field: "birthCertificate", label: "Свидетельство о рождении", optional: true });
     }
     return jpBlocks;
   }
+
+  // Опросник на Шенгенскую визу.
   const blocks = [];
   blocks.push({ field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" });
   blocks.push({ field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" });
-  if (state.hasSecondPassport === "Да") {
-    blocks.push({ field: "secondPassport", label: "2-ой загран. паспорт" });
-  }
-  if (state.canSurrenderPassport === "Нет") {
-    blocks.push({ field: "thirdCountryTickets", label: "Билеты в 3-ю страну на второй загран. паспорт" });
+
+  // Этап 1: «Первичный сбор документов»
+  const country = (lead && lead.country_service) || "";
+  if (countryMatchesAny(country, ELECTRONIC_PHOTO_COUNTRIES)) {
+    blocks.push({ field: "electronicPhoto", label: "Электронное фото" });
   }
   const tripPurpose = String(state.tripPurpose || "").trim();
   if (tripPurpose && tripPurpose !== "Туризм") {
     blocks.push({ field: "invitation", label: "Приглашение" });
   }
+
+  // Этап 2: «Подготовка документов»
   if (state.hasActiveSchengen === "Да") {
     blocks.push({ field: "activeSchengenPhoto", label: "Фото действующей Шенгенской визы" });
   }
   if (state.hadSchengen3Years === "Да") {
     blocks.push({ field: "prevSchengenPhoto", label: "Фото последней Шенгенской визы" });
   }
+  if (state.hasSponsor === "Да") {
+    blocks.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора / Спонсорское письмо от компании" });
+  }
   if (state.isUnder18 === "Да") {
     blocks.push({ field: "birthCertificate", label: "Свидетельство о рождении" });
   }
-  if (state.hasSponsor === "Да") {
-    blocks.push({ field: "sponsorPassport", label: "1-ый разворот внутреннего паспорта РФ спонсора" });
-  }
-  if (state.hasInsurance === "Да") {
-    blocks.push({ field: "insurancePolicy", label: "Страховой полис для въезда в Шенген" });
-  }
-  const employer = String(state.employerName || "").trim();
-  if (employer && employer.toUpperCase() !== "НЕТ") {
-    blocks.push({ field: "workCert", label: "Справка с работы или учёбы" });
+  if (state.hasSecondPassport === "Да") {
+    blocks.push({ field: "secondPassport", label: "2-ой загран. паспорт" });
   }
   if (state.hasOwnAccommodation === "Да") {
     blocks.push({ field: "ownAccommodation", label: "Своё проживание (бронь / аренда / собственность)" });
   }
   if (state.hasOwnTransport === "Да") {
     blocks.push({ field: "ownTransport", label: "Свои авиабилеты / другой транспорт" });
+  }
+  // Билеты в третью страну: "Есть 2й паспорт" = да И "Могу сдать действующий"
+  // = нет И "причина" = "поездка в третью страну".
+  if (
+    state.hasSecondPassport === "Да" &&
+    state.canSurrenderPassport === "Нет" &&
+    /треть.*страну/i.test(String(state.surrenderReason || ""))
+  ) {
+    blocks.push({ field: "thirdCountryTickets", label: "Билеты в третью страну" });
+  }
+  if (state.notRussianCitizen === "Да") {
+    blocks.push({ field: "residencePermit", label: "ВНЖ/регистрация" });
   }
   return blocks;
 }
