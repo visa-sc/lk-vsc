@@ -2885,6 +2885,20 @@ ${mixedFieldsHtml}
   }
   applyTripDateConstraints();
 
+  // Срок действия действующей Шенгенской визы — не ранее даты заполнения
+  // опросника (просроченная виза = не действующая, нет смысла её указывать).
+  function applySchengenExpiryConstraint() {
+    const expiry = form.querySelector('input[name="schengenExpiry"]');
+    if (!expiry) return;
+    const todayStr = ymd(new Date());
+    expiry.min = todayStr;
+    if (expiry.value && expiry.value < todayStr) expiry.value = todayStr;
+    expiry.addEventListener("change", () => {
+      if (expiry.value && expiry.value < todayStr) expiry.value = todayStr;
+    });
+  }
+  applySchengenExpiryConstraint();
+
   // ─── Логика «Я ещё не знаю точных дат поездки» ───
   const tripUnknownInput = form.querySelector('input[name="tripDatesUnknown"]');
   const tripAckInput = form.querySelector('input[name="tripDatesAck"]');
