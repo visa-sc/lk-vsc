@@ -1042,6 +1042,10 @@
 
     let selectedLead = null;
     let applicantsCache = null;
+    // Pre-applicants: клиенты, которые на этапе «Начало оформления» ввели
+    // ФИО через модал и загрузили паспорта до отправки опросника. После
+    // отправки опросника на это же ФИО они переходят в applicantsCache.
+    let preApplicantsCache = null;
 
     function formatFio(name) {
       const s = String(name || "").trim().toLowerCase();
@@ -1297,22 +1301,27 @@
       if (!phone) return;
       const leadId = leadIdOverride || (selectedLead && selectedLead.id) || "";
       if (!leadId) return;
-      const a = await fetchApplicantStates(phone, leadId);
-      applicantsCache = a || [];
+      const { applicants, preApplicants } = await fetchApplicantStates(phone, leadId);
+      applicantsCache = applicants || [];
+      preApplicantsCache = preApplicants || [];
     }
 
     async function fetchApplicantStates(phone, leadId) {
-      if (!leadId) return [];
+      if (!leadId) return { applicants: [], preApplicants: [] };
       try {
         const response = await fetch(
           `/api/questionnaire-state?phone=${encodeURIComponent(phone)}&leadId=${encodeURIComponent(leadId)}`
         );
-        if (!response.ok) return [];
+        if (!response.ok) return { applicants: [], preApplicants: [] };
         const data = await response.json();
-        return data && data.success && Array.isArray(data.applicants) ? data.applicants : [];
+        if (!data || !data.success) return { applicants: [], preApplicants: [] };
+        return {
+          applicants: Array.isArray(data.applicants) ? data.applicants : [],
+          preApplicants: Array.isArray(data.preApplicants) ? data.preApplicants : []
+        };
       } catch (err) {
         console.error("FETCH STATE ERROR:", err);
-        return [];
+        return { applicants: [], preApplicants: [] };
       }
     }
 
@@ -2048,6 +2057,9 @@
               fd.append("applicantIndex", String(applicantIndex));
               fd.append("partIndex", String(i + 1));
               if (leadIdForUpload) fd.append("leadId", leadIdForUpload);
+              if (applicant && applicant.isPreApplicant && applicant.fullName) {
+                fd.append("preApplicantFio", String(applicant.fullName));
+              }
               fd.append("file", file);
               const r = await fetch("/upload-document", { method: "POST", body: fd });
               const d = await r.json().catch(() => ({}));
@@ -2137,6 +2149,9 @@
             fd.append("applicantIndex", String(applicantIndex));
             fd.append("partIndex", String(partIndex));
             if (leadIdForUpload) fd.append("leadId", leadIdForUpload);
+            if (applicant && applicant.isPreApplicant && applicant.fullName) {
+              fd.append("preApplicantFio", String(applicant.fullName));
+            }
             fd.append("file", file);
             const r = await fetch("/upload-document", { method: "POST", body: fd });
             const d = await r.json().catch(() => ({}));
@@ -2181,6 +2196,216 @@
         </div>
       `;
       return wrapper;
+    }
+
+    function createNoMoreDocsNotice() {
+      const wrapper = document.createElement("div");
+      wrapper.className = "documents-inline";
+      wrapper.style.display = "block";
+      wrapper.innerHTML = `
+        <h3>Документы на текущем этапе не требуются</h3>
+        <div class="muted">
+          По вашему опроснику дополнительных документов на этапе «Подготовка документов»
+          загружать не нужно. Если сотрудник попросит — мы свяжемся с вами.
+        </div>
+      `;
+      return wrapper;
+    }
+
+    // Модальное окно «Напишите ФИО заявителя на русском языке».
+    // Используется на этапе «Начало оформления» при первой попытке загрузить
+    // паспорта до заполнения опросника. callback(fio) вызывается при «Отправить»,
+    // если пользователь ввёл непустое ФИО.
+    function showFioModal(callback) {
+      const backdrop = document.createElement("div");
+      backdrop.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;";
+
+      const modal = document.createElement("div");
+      modal.style.cssText = "background:#fff;border-radius:16px;padding:24px;max-width:420px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.2);";
+
+      const title = document.createElement("div");
+      title.textContent = "Напишите пожалуйста ФИО заявителя на русском языке";
+      title.style.cssText = "font-size:16px;font-weight:600;margin-bottom:14px;color:#1f2330;line-height:1.4;";
+      modal.appendChild(title);
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "Иванов Иван Иванович";
+      input.style.cssText = "width:100%;box-sizing:border-box;padding:10px 12px;font-size:14px;border:1px solid #d3dae5;border-radius:10px;margin-bottom:8px;";
+      modal.appendChild(input);
+
+      const errMsg = document.createElement("div");
+      errMsg.style.cssText = "color:#c4314b;font-size:12px;min-height:16px;margin-bottom:8px;";
+      modal.appendChild(errMsg);
+
+      const btnRow = document.createElement("div");
+      btnRow.style.cssText = "display:flex;gap:10px;justify-content:flex-end;";
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.textContent = "Отмена";
+      cancelBtn.style.cssText = "padding:9px 16px;font-size:13px;font-weight:600;background:#fff;color:#5a6275;border:1px solid #d3dae5;border-radius:10px;cursor:pointer;";
+      cancelBtn.addEventListener("click", () => { document.body.removeChild(backdrop); });
+      btnRow.appendChild(cancelBtn);
+
+      const submitBtn = document.createElement("button");
+      submitBtn.type = "button";
+      submitBtn.textContent = "Отправить";
+      submitBtn.style.cssText = "padding:9px 18px;font-size:13px;font-weight:600;background:#3589BD;color:#fff;border:none;border-radius:10px;cursor:pointer;";
+      submitBtn.addEventListener("click", async () => {
+        const fio = input.value.trim().replace(/\s+/g, " ");
+        if (fio.length < 3) {
+          errMsg.textContent = "Введите полное ФИО.";
+          return;
+        }
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Сохраняем...";
+        try {
+          await callback(fio);
+          document.body.removeChild(backdrop);
+        } catch (e) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Отправить";
+          errMsg.textContent = "Не удалось сохранить, попробуйте ещё раз.";
+        }
+      });
+      btnRow.appendChild(submitBtn);
+      modal.appendChild(btnRow);
+
+      backdrop.appendChild(modal);
+      document.body.appendChild(backdrop);
+      input.focus();
+    }
+
+    // Блок «empty pre-applicant» — на этапе «Начало оформления», когда у
+    // клиента ещё нет ни одного нормального applicant'а и ни одного
+    // pre-applicant'а. Показываем 2 паспорта; при нажатии «Загрузить»
+    // открываем модал ФИО, затем регистрируем pre-applicant и продолжаем
+    // загрузку через стандартный createDocumentsBlock с маркером
+    // isPreApplicant=true.
+    function createEmptyPreApplicantBlock(lead) {
+      const fakeApplicant = {
+        fullName: "",
+        applicantIndex: 1,
+        isPreApplicant: true,
+        uploadedFiles: []
+      };
+      const blocksConfig = [
+        { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" },
+        { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" }
+      ];
+      const block = createDocumentsBlock(fakeApplicant, blocksConfig, lead);
+
+      // Перехватываем «Загрузить»: до отправки на сервер — модал ФИО.
+      // Стандартный обработчик уже привязан к кнопке внутри createDocumentsBlock,
+      // и мы можем подменить его, заменив кнопку на клон.
+      const uploadBtn = block.querySelector(".docs-upload-btn") ||
+                        block.querySelector("button.upload-btn") ||
+                        Array.from(block.querySelectorAll("button")).find((b) => /^\s*Загрузить\s*$/i.test(b.textContent));
+      if (!uploadBtn) return block;
+
+      const phone = phoneInput.value.trim();
+      const leadId = lead && lead.id ? String(lead.id) : "";
+
+      const fresh = uploadBtn.cloneNode(true);
+      uploadBtn.replaceWith(fresh);
+      fresh.addEventListener("click", () => {
+        // Сначала локально проверим, что оба файла прикреплены (как
+        // делал бы старый обработчик).
+        const inputs = block.querySelectorAll('input[type="file"]');
+        let hasAll = true;
+        inputs.forEach((inp) => { if (!inp.files || !inp.files.length) hasAll = false; });
+        if (!hasAll) {
+          // Дадим стандартный UI отработать — он сам подсветит пустые.
+          // Имитируем клик старой кнопки нет смысла, просто выходим.
+          const localError = block.querySelector(".docs-local-error");
+          if (localError) {
+            localError.textContent = "Загрузите оба паспорта.";
+            localError.style.display = "block";
+          }
+          inputs.forEach((inp) => {
+            if (!inp.files || !inp.files.length) {
+              const row = inp.closest(".file-list-row");
+              if (row) row.classList.add("is-required-missing");
+            }
+          });
+          return;
+        }
+
+        showFioModal(async (fio) => {
+          // Регистрируем pre-applicant на сервере. Если упадёт — модал
+          // оставим открытым, callback кинет throw.
+          const r = await fetch("/api/cabinet/pre-applicant", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone, leadId, fullName: fio })
+          });
+          if (!r.ok) throw new Error("pre-applicant POST failed");
+          const data = await r.json().catch(() => ({}));
+          if (!data || !data.success) throw new Error("pre-applicant POST not success");
+
+          // ФИО зафиксировано — кладём в fakeApplicant и руками шлём
+          // файлы (исходный upload-handler из createDocumentsBlock мы
+          // потеряли при clone-замене кнопки; делаем повторно вручную).
+          fakeApplicant.fullName = String(data.fullName || fio);
+          await performPreApplicantUpload(block, fakeApplicant, blocksConfig, lead);
+        });
+      });
+      return block;
+    }
+
+    // Минимальный uploader для pre-applicant'а: собирает прикреплённые файлы
+    // из createDocumentsBlock и шлёт на /upload-document с preApplicantFio.
+    // После успеха — refreshApplicantsCache + renderStages.
+    async function performPreApplicantUpload(block, applicant, blocksConfig, lead) {
+      const phone = phoneInput.value.trim();
+      const leadId = lead && lead.id ? String(lead.id) : "";
+      if (!phone || !leadId) return;
+
+      const rows = block.querySelectorAll(".file-list-row");
+      const tasks = [];
+      blocksConfig.forEach((cfg, idx) => {
+        const row = rows[idx];
+        if (!row) return;
+        const input = row.querySelector('input[type="file"]');
+        if (!input || !input.files || !input.files.length) return;
+        Array.from(input.files).forEach((file, i) => {
+          tasks.push({ file, cfg, partIndex: i + 1 });
+        });
+      });
+
+      const btn = Array.from(block.querySelectorAll("button")).find((b) => /^\s*Загрузить\s*$/i.test(b.textContent));
+      if (btn) { btn.disabled = true; btn.textContent = "Загрузка..."; }
+
+      let allOk = true;
+      for (const t of tasks) {
+        try {
+          const fd = new FormData();
+          fd.append("phone", phone);
+          fd.append("leadId", leadId);
+          fd.append("field", t.cfg.field);
+          fd.append("applicantIndex", "1");
+          fd.append("partIndex", String(t.partIndex));
+          fd.append("preApplicantFio", applicant.fullName);
+          fd.append("file", t.file);
+          const r = await fetch("/upload-document", { method: "POST", body: fd });
+          const d = await r.json().catch(() => ({}));
+          if (!(r.ok && d.success)) allOk = false;
+        } catch (_) { allOk = false; }
+      }
+
+      if (allOk) {
+        try { finishAmoUploadBatch(leadId, true); } catch (_) {}
+        await refreshApplicantsCache();
+        renderStages(getCurrentStageIndex(lead), lead);
+      } else {
+        if (btn) { btn.disabled = false; btn.textContent = "Загрузить"; }
+        const localError = block.querySelector(".docs-local-error");
+        if (localError) {
+          localError.textContent = "Не удалось загрузить файлы. Попробуйте ещё раз.";
+          localError.style.display = "block";
+        }
+      }
     }
 
     function createHelpBlock() {
@@ -2361,6 +2586,7 @@
       // Этапы 0, 1, 2 — с опросником и блоками загрузки документов.
       if (currentIndex >= 0 && currentIndex <= 2 && stageNodes[currentIndex]) {
         const applicants = Array.isArray(applicantsCache) ? applicantsCache : [];
+        const preApplicants = Array.isArray(preApplicantsCache) ? preApplicantsCache : [];
         const node = stageNodes[currentIndex];
 
         const totalFromFirst = applicants.length
@@ -2368,9 +2594,7 @@
           : 0;
         const allFilled = applicants.length >= totalFromFirst && totalFromFirst > 0;
         // Для жёлтого индикатора считаем «всё ли собрано» по ОБЪЕДИНЁННОМУ
-        // списку блоков по всем этапам (без stageIndex → includeAll). Иначе
-        // на этапе 0 жёлтый снимался бы при загрузке только 2 паспортов,
-        // вводя клиента в заблуждение.
+        // списку блоков по всем этапам (без stageIndex → includeAll).
         const allDocsUploaded = allFilled && applicants.every((a) => {
           const blocks = buildUploadBlocksConfig(a, lead);
           const files = Array.isArray(a.uploadedFiles) ? a.uploadedFiles : [];
@@ -2391,50 +2615,82 @@
         const questionnaireBlock = createQuestionnaireBlock(lead);
         node.after(questionnaireBlock);
 
-        // Контейнер для блоков ниже опросника. На этапах 0/1 — условные блоки
-        // из buildUploadBlocksConfig(state, lead, currentIndex). На этапе 2 —
-        // то же для Шенгена, а для Японии — свободная зона extra-doc-block.
         const isJp = applicants.length && String(applicants[0].visaType || "").trim() === "Виза в Японию";
+        const fragment = document.createDocumentFragment();
 
-        if (!applicants.length) {
-          // Опросник не заполнен.
-          if (currentIndex === 2) {
-            // На «Подготовке документов» свободного flow нет — направляем
-            // клиента на предыдущие этапы.
-            const placeholder = createNoStateNotice();
-            questionnaireBlock.after(placeholder);
+        if (applicants.length && allFilled) {
+          switchQuestionnaireBlockToEdit(questionnaireBlock, lead, applicants, currentIndex);
+        }
+
+        if (currentIndex === 0) {
+          // ─── Этап «Начало оформления» ───
+          // Pre-applicants идут первыми (с уже загруженными паспортами),
+          // затем нормальные applicants (если у нормального ФИО совпадает
+          // с pre — он не дублируется, потому что сервер фильтрует pre).
+          // Если нет ни одного — empty block с модалом ФИО.
+          const stage0Blocks = [
+            { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" },
+            { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" }
+          ];
+
+          preApplicants.forEach((pa) => {
+            const fakeApplicant = {
+              fullName: pa.fullName,
+              applicantIndex: 1,
+              isPreApplicant: true,
+              uploadedFiles: Array.isArray(pa.uploadedFiles) ? pa.uploadedFiles : []
+            };
+            fragment.appendChild(createDocumentsBlock(fakeApplicant, stage0Blocks, lead));
+          });
+
+          applicants.forEach((applicant) => {
+            const blocksConfig = buildUploadBlocksConfig(applicant, lead, 0);
+            if (!blocksConfig.length) return;
+            fragment.appendChild(createDocumentsBlock(applicant, blocksConfig, lead));
+          });
+
+          if (!fragment.childNodes.length) {
+            // Нет ни pre, ни normal — empty pre-applicant с модалом ФИО.
+            fragment.appendChild(createEmptyPreApplicantBlock(lead));
+          }
+        } else if (currentIndex === 1) {
+          // ─── Этап «Первичный сбор документов» ───
+          // Только нормальные applicants — условные блоки A. Без нормальных
+          // applicants — стандартный плейсхолдер «Заполните опросник».
+          if (!applicants.length) {
+            fragment.appendChild(createNoStateNotice());
           } else {
-            // На 0/1 — стандартный плейсхолдер «Заполните опросник».
-            const placeholder = createNoStateNotice();
-            questionnaireBlock.after(placeholder);
+            applicants.forEach((applicant) => {
+              const blocksConfig = buildUploadBlocksConfig(applicant, lead, 1);
+              if (!blocksConfig.length) return;
+              fragment.appendChild(createDocumentsBlock(applicant, blocksConfig, lead));
+            });
+            // Условных блоков нет — показываем «дополнительные документы
+            // на этом этапе не требуются» вместо misleading-плейсхолдера.
+            if (!fragment.childNodes.length) {
+              fragment.appendChild(createNoMoreDocsNotice());
+            }
           }
-        } else {
-          if (allFilled) {
-            switchQuestionnaireBlockToEdit(questionnaireBlock, lead, applicants, currentIndex);
-          }
-          const fragment = document.createDocumentFragment();
-
-          if (currentIndex === 2 && isJp) {
-            // Япония на «Подготовке документов» — свободная зона.
+        } else if (currentIndex === 2) {
+          // ─── Этап «Подготовка документов» ───
+          // Шенген: условные блоки B. Япония: свободная зона.
+          if (!applicants.length) {
+            fragment.appendChild(createNoStateNotice());
+          } else if (isJp) {
             fragment.appendChild(createExtraDocBlock(lead));
           } else {
-            // Этапы 0/1 для обеих виз + этап 2 для Шенгена — условные блоки
-            // в разрезе текущего stageIndex.
             applicants.forEach((applicant) => {
-              const blocksConfig = buildUploadBlocksConfig(applicant, lead, currentIndex);
+              const blocksConfig = buildUploadBlocksConfig(applicant, lead, 2);
               if (!blocksConfig.length) return;
-              const docsBlock = createDocumentsBlock(applicant, blocksConfig, lead);
-              fragment.appendChild(docsBlock);
+              fragment.appendChild(createDocumentsBlock(applicant, blocksConfig, lead));
             });
-          }
-
-          if (fragment.childNodes.length) {
-            questionnaireBlock.after(fragment);
-          } else {
-            const placeholder = createNoStateNotice();
-            questionnaireBlock.after(placeholder);
+            if (!fragment.childNodes.length) {
+              fragment.appendChild(createNoMoreDocsNotice());
+            }
           }
         }
+
+        questionnaireBlock.after(fragment);
       }
 
       // Этапы 3-6: банковская карта (Ожидание подачи, Оформление на паузе,

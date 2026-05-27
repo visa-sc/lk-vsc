@@ -4687,6 +4687,69 @@ function normalizeFioForCompare(s) {
   return String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+// ── Pre-applicants: клиенты, которые загрузили 2 паспорта на этапе
+// «Начало оформления» ДО заполнения опросника. Храним список ФИО в
+// TECH FOLDER/_preApplicants.json. Файлы уже лежат в обычной папке
+// заявителя <phone>/<leadId>/<safeFio>, так что после сохранения
+// опросника на это же ФИО мы просто удаляем запись из pre-applicants
+// (мерж происходит автоматически — нормальный applicant видит файлы
+// в своей папке).
+const PRE_APPLICANTS_FILE = "_preApplicants.json";
+
+function preApplicantsFilePath(phone, leadId) {
+  return `${techFolderPath(phone, leadId)}/${PRE_APPLICANTS_FILE}`;
+}
+
+async function loadPreApplicants(phone, leadId) {
+  if (!phone || !leadId || !YANDEX_DISK_TOKEN) return [];
+  try {
+    const data = await downloadJsonFromYandexDisk(preApplicantsFilePath(phone, leadId));
+    if (!data) return [];
+    const items = Array.isArray(data.items) ? data.items : [];
+    return items
+      .map((it) => ({
+        fullName: String(it && it.fullName || "").trim(),
+        createdAt: String(it && it.createdAt || "")
+      }))
+      .filter((it) => it.fullName);
+  } catch (e) {
+    return [];
+  }
+}
+
+async function savePreApplicants(phone, leadId, items) {
+  if (!phone || !leadId || !YANDEX_DISK_TOKEN) return;
+  const body = JSON.stringify({ items: items || [] }, null, 2);
+  const buffer = Buffer.from(body, "utf-8");
+  await ensureNestedYandexFolder(techFolderPath(phone, leadId));
+  await uploadBufferToYandexDisk(buffer, preApplicantsFilePath(phone, leadId), "application/json; charset=utf-8");
+}
+
+// Добавляет pre-applicant, если такого ФИО ещё нет. Идемпотентно.
+async function addPreApplicantFio(phone, leadId, fullName) {
+  const fio = String(fullName || "").trim();
+  if (!fio) return null;
+  const list = await loadPreApplicants(phone, leadId);
+  const norm = normalizeFioForCompare(fio);
+  const existing = list.find((it) => normalizeFioForCompare(it.fullName) === norm);
+  if (existing) return existing;
+  const item = { fullName: fio, createdAt: new Date().toISOString() };
+  list.push(item);
+  await savePreApplicants(phone, leadId, list);
+  return item;
+}
+
+// Удаляет pre-applicant по ФИО (для мерж при сохранении опросника).
+async function removePreApplicantByFio(phone, leadId, fullName) {
+  const norm = normalizeFioForCompare(fullName);
+  if (!norm) return;
+  const list = await loadPreApplicants(phone, leadId);
+  const next = list.filter((it) => normalizeFioForCompare(it.fullName) !== norm);
+  if (next.length !== list.length) {
+    await savePreApplicants(phone, leadId, next);
+  }
+}
+
 // Следующий свободный applicantIndex для НОВОГО опросника в рамках конкретной сделки.
 async function getNextApplicantIndex(phone, leadId) {
   try {
@@ -7337,6 +7400,14 @@ app.post(
       // сабмиты для других сделок не перетирают первый.
       try { recordFirstQuestionnaireForPhone(phone, leadId); } catch (_) {}
 
+      // Мерж с pre-applicant: если ФИО опросника совпадает с ФИО, под
+      // которым клиент уже загрузил паспорта до опросника, — удаляем
+      // pre-applicant. Файлы паспортов остаются в той же папке заявителя
+      // и автоматически подхватываются нормальной логикой.
+      if (leadId && fullName) {
+        try { await removePreApplicantByFio(phone, leadId, fullName); } catch (_) {}
+      }
+
       // Корректировка опросника → задача «Проверить доки» с пометкой,
       // что клиент сам внёс правки. Запускаем фоном, не блокируем ответ.
       if (isEdit && leadId) {
@@ -7401,6 +7472,26 @@ app.post("/api/questionnaire/share", async (req, res) => {
   }
 });
 
+// Регистрирует pre-applicant: фиксирует ФИО, под которым клиент будет
+// грузить паспорта на этапе «Начало оформления» до отправки опросника.
+// Идемпотентно: повторный вызов с тем же ФИО возвращает existing.
+app.post("/api/cabinet/pre-applicant", express.json(), async (req, res) => {
+  try {
+    const phone = normalizePhone((req.body && req.body.phone) || "");
+    const leadId = String((req.body && req.body.leadId) || "").trim();
+    const fullName = String((req.body && req.body.fullName) || "").trim();
+    if (!phone) return res.status(400).json({ success: false, message: "Не передан phone" });
+    if (!leadId) return res.status(400).json({ success: false, message: "Не передан leadId" });
+    if (!fullName) return res.status(400).json({ success: false, message: "Не передан fullName" });
+    if (!YANDEX_DISK_TOKEN) return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
+    const item = await addPreApplicantFio(phone, leadId, fullName);
+    return res.json({ success: true, fullName: item ? item.fullName : fullName });
+  } catch (e) {
+    console.error("POST /api/cabinet/pre-applicant error:", e.message);
+    return res.status(500).json({ success: false, message: "Ошибка сохранения" });
+  }
+});
+
 app.get("/api/questionnaire-state", async (req, res) => {
   try {
     const phone = normalizePhone(req.query.phone || "");
@@ -7423,8 +7514,30 @@ app.get("/api/questionnaire-state", async (req, res) => {
 
     const first = await loadOne(1);
 
+    // Pre-applicants: ФИО, которые ввели через модал на этапе «Начало
+    // оформления» до заполнения опросника. У них только uploadedFiles из
+    // папки заявителя — никакого опросника. Если опросник на это же ФИО
+    // потом был сохранён — pre-applicant будет удалён в POST /api/questionnaire,
+    // и сюда он не вернётся (нормальный applicant покажет файлы из своей папки).
+    const preApplicantsRaw = await loadPreApplicants(phone, leadId);
+    const normalFiosSet = new Set();
+
+    const preApplicantsOut = [];
+    for (const pa of preApplicantsRaw) {
+      const fio = String(pa.fullName || "").trim();
+      if (!fio) continue;
+      const safeFio = sanitizeFileName(fio);
+      const path = `${leadScopedFolder(phone, leadId)}/${safeFio}`;
+      let files = [];
+      try { files = await listYandexFolderFiles(path) || []; } catch (_) { files = []; }
+      preApplicantsOut.push({
+        fullName: fio,
+        uploadedFiles: files
+      });
+    }
+
     if (!first) {
-      return res.json({ success: true, applicants: [] });
+      return res.json({ success: true, applicants: [], preApplicants: preApplicantsOut });
     }
 
     // Считаем фактическое количество заявителей по файлам JSON на диске для ЭТОЙ сделки
@@ -7474,7 +7587,19 @@ app.get("/api/questionnaire-state", async (req, res) => {
       a.uploadedFiles = Array.from(merged);
     }));
 
-    return res.json({ success: true, applicants });
+    // Если pre-applicant пересекается по ФИО с нормальным applicant —
+    // в ответе показываем только нормального (мерж уже произошёл по факту,
+    // pre-applicant ещё не удалён из json, но это произойдёт при следующем сохранении).
+    applicants.forEach((a) => {
+      const norm = normalizeFioForCompare(a && a.fullName);
+      if (norm) normalFiosSet.add(norm);
+    });
+    const preApplicantsFiltered = preApplicantsOut.filter((pa) => {
+      const norm = normalizeFioForCompare(pa.fullName);
+      return !normalFiosSet.has(norm);
+    });
+
+    return res.json({ success: true, applicants, preApplicants: preApplicantsFiltered });
   } catch (error) {
     console.error("GET /api/questionnaire-state error:");
     console.error("message:", error.message);
@@ -7610,17 +7735,26 @@ app.post(
       await ensureYandexFolder(phoneFolder);
       await ensureYandexFolder(leadFolder);
 
-      let applicantState = null;
-      try { applicantState = await loadApplicantJson(phone, leadId, applicantIndex); } catch (_) {}
+      // preApplicantFio — режим загрузки на этапе «Начало оформления»
+      // до заполнения опросника. Клиент уже ввёл ФИО через модал, мы
+      // используем его напрямую для имени папки. JSON опросника НЕ нужен.
+      const preApplicantFio = String(req.body.preApplicantFio || "").trim();
 
-      if (!applicantState) {
-        return res.status(409).json({
-          success: false,
-          message: "Опросник заявителя не найден — заполните опросник перед загрузкой документов"
-        });
+      let applicantState = null;
+      let rawFio = "";
+      if (preApplicantFio) {
+        rawFio = preApplicantFio;
+      } else {
+        try { applicantState = await loadApplicantJson(phone, leadId, applicantIndex); } catch (_) {}
+        if (!applicantState) {
+          return res.status(409).json({
+            success: false,
+            message: "Опросник заявителя не найден — заполните опросник перед загрузкой документов"
+          });
+        }
+        rawFio = String(applicantState.fullName || "").trim();
       }
 
-      const rawFio = String(applicantState.fullName || "").trim();
       const safeFio = sanitizeFileName(rawFio) || `Заявитель ${applicantIndex}`;
       const applicantFolder = `${leadFolder}/${safeFio}`; // "<phone>/<leadId>/<ФИО>"
 
