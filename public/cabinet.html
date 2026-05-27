@@ -1757,13 +1757,12 @@
       corrDefaultOpt.textContent = "— выберите документ —";
       corrPicker.appendChild(corrDefaultOpt);
 
-      // Список «непредоставленных» документов — заполняется при показе picker'а,
-      // чтобы динамически реагировать на свежезагруженные файлы.
+      // Псевдо-опция «Непредоставленные документы» убрана 27.05.2026 по
+      // запросу — оставляем фейковый объект для совместимости со старой
+      // логикой refreshMissingOption() / ниже, но в picker НЕ добавляем.
       const corrMissingOpt = document.createElement("option");
       corrMissingOpt.value = "__missing__";
-      corrMissingOpt.textContent = "Непредоставленные документы";
-      corrMissingOpt.style.display = "none"; // прячем, пока не пересчитаем
-      corrPicker.appendChild(corrMissingOpt);
+      corrMissingOpt.style.display = "none";
 
       blocksConfig.forEach((cfg) => {
         const opt = document.createElement("option");
@@ -2596,10 +2595,11 @@
           ? (parseInt(applicants[0] && applicants[0].totalApplicants, 10) || applicants.length)
           : 0;
         const allFilled = applicants.length >= totalFromFirst && totalFromFirst > 0;
-        // Для жёлтого индикатора считаем «всё ли собрано» по ОБЪЕДИНЁННОМУ
-        // списку блоков по всем этапам (без stageIndex → includeAll).
-        const allDocsUploaded = allFilled && applicants.every((a) => {
-          const blocks = buildUploadBlocksConfig(a, lead);
+        // Жёлтый индикатор — по блокам ТЕКУЩЕГО этапа. Если на этом этапе
+        // нечего грузить (или всё уже загружено), warn не ставим, даже если
+        // на следующих этапах ещё есть условные блоки.
+        const allCurrentDocsUploaded = allFilled && applicants.every((a) => {
+          const blocks = buildUploadBlocksConfig(a, lead, currentIndex);
           const files = Array.isArray(a.uploadedFiles) ? a.uploadedFiles : [];
           return blocks.every((b) => {
             if (isFieldOptionalForLead(b.field, lead, a, b)) return true;
@@ -2611,7 +2611,7 @@
           });
         });
 
-        if (!(allFilled && allDocsUploaded)) {
+        if (!(allFilled && allCurrentDocsUploaded)) {
           node.classList.add("warn");
         }
 
