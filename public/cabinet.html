@@ -1255,10 +1255,13 @@
           if (prevName) params.set("prevApplicantName", prevName);
           window.open(`/questionnaire?${params.toString()}`, "_blank");
         });
-        // Вставляем сразу после кнопки «Скорректировать опросник», на отдельной строке.
+        // Порядок DOM: «Скорректировать опросник» → picker (раскрывающийся
+        // список заявителей) → «Заполнить ещё опросник». При клике
+        // «Скорректировать» picker.show появляется ровно между двумя кнопками.
         const lineBreak = document.createElement("div");
         lineBreak.style.height = "0";
-        fresh.after(lineBreak, fillMoreBtn);
+        fresh.after(picker);
+        picker.after(lineBreak, fillMoreBtn);
       }
 
       // Этап «Подготовка документов» (index 2): если кол-во уникальных ФИО
@@ -2611,9 +2614,34 @@
           });
         });
 
-        if (!(allFilled && allCurrentDocsUploaded)) {
-          node.classList.add("warn");
+        let warn = !(allFilled && allCurrentDocsUploaded);
+
+        // Специальный кейс для этапа «Начало оформления»: если 2 паспорта
+        // фактически загружены (через pre-applicant ИЛИ через нормального
+        // applicant), статус считаем выполненным — зелёный, даже если
+        // опросник ещё не заполнен. На «Первичном сборе» и «Подготовке»
+        // эта поблажка не действует — там нужен заполненный опросник.
+        if (currentIndex === 0 && warn) {
+          const stage0Labels = [
+            "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)",
+            "Загран. паспорт (в который запрашиваем визу)"
+          ];
+          const hasStage0Files = (entity) => {
+            const files = Array.isArray(entity && entity.uploadedFiles) ? entity.uploadedFiles : [];
+            return stage0Labels.every((label) => files.some((f) => {
+              if (!f.startsWith(label)) return false;
+              const next = f.charAt(label.length);
+              return next === "." || next === " ";
+            }));
+          };
+          const anyone = (preApplicants.length > 0 || applicants.length > 0);
+          const allLoaded = anyone
+            && preApplicants.every(hasStage0Files)
+            && applicants.every(hasStage0Files);
+          if (allLoaded) warn = false;
         }
+
+        if (warn) node.classList.add("warn");
 
         const questionnaireBlock = createQuestionnaireBlock(lead);
         node.after(questionnaireBlock);

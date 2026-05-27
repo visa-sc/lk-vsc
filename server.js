@@ -3611,20 +3611,23 @@ ${mixedFieldsHtml}
     </div>
 
     <!-- 20 -->
+    <!-- Без required: иначе браузер показывает свой tooltip «Select this tickbox».
+         Валидация делается ниже в JS (requireChecked), подсветка красным через
+         .input-error на .checkbox-card. -->
     <label class="checkbox-card" id="card_jp_confirmAccuracy">
-      <input type="checkbox" name="jp_confirmAccuracy" value="Да" ${chkYes("jp_confirmAccuracy")} required />
+      <input type="checkbox" name="jp_confirmAccuracy" value="Да" ${chkYes("jp_confirmAccuracy")} />
       <span><span class="required-star">*</span>Я подтверждаю правильность и достоверность указанных мной сведений.</span>
     </label>
 
     <!-- 21 -->
     <label class="checkbox-card" id="card_jp_confirmContract">
-      <input type="checkbox" name="jp_confirmContract" value="Да" ${chkYes("jp_confirmContract")} required />
+      <input type="checkbox" name="jp_confirmContract" value="Да" ${chkYes("jp_confirmContract")} />
       <span><span class="required-star">*</span>Настоящим я соглашаюсь, что данные, внесенные в электронный опросник, являются частью заключенного со мной договора и в случае предоставления недостоверных сведений ответственность за возможные последствия несу лично я.</span>
     </label>
 
     <!-- 22 -->
     <label class="checkbox-card" id="card_jp_personalDataConsent">
-      <input type="checkbox" name="jp_personalDataConsent" value="Да" ${chkYes("jp_personalDataConsent")} required />
+      <input type="checkbox" name="jp_personalDataConsent" value="Да" ${chkYes("jp_personalDataConsent")} />
       <span><span class="required-star">*</span>Согласие на обработку персональных данных</span>
     </label>
 
@@ -3778,20 +3781,41 @@ ${mixedFieldsHtml}
       }
     }
 
-    // 3 обязательных чек-бокса в конце.
-    const requireChecked = (name, msg) => {
+    // 3 обязательных чек-бокса в конце. Подсвечиваем красным ВСЕ
+    // непомеченные сразу, а не только первую — у клиента сразу полная
+    // картина что нужно отметить.
+    const finalCheckboxes = ["jp_confirmAccuracy", "jp_confirmContract", "jp_personalDataConsent"];
+    const missingFinal = [];
+    finalCheckboxes.forEach((name) => {
       const el = form.querySelector('input[name="' + name + '"]');
-      if (!el || !el.checked) {
-        showBox(errorBox, msg);
-        const card = el && el.closest('.checkbox-card');
-        if (card) { card.classList.add("input-error"); card.scrollIntoView({ behavior: "smooth", block: "center" }); }
-        return false;
+      const card = el && el.closest('.checkbox-card');
+      if (el && !el.checked) {
+        if (card) card.classList.add("input-error");
+        missingFinal.push({ el, card });
+      } else if (card) {
+        card.classList.remove("input-error");
       }
-      return true;
-    };
-    if (!requireChecked("jp_confirmAccuracy", "Подтвердите правильность указанных сведений.")) return;
-    if (!requireChecked("jp_confirmContract", "Подтвердите согласие с пунктом про договор.")) return;
-    if (!requireChecked("jp_personalDataConsent", "Подтвердите согласие на обработку персональных данных.")) return;
+    });
+    if (missingFinal.length) {
+      showBox(errorBox, "Отметьте обязательные пункты в конце опросника.");
+      const firstCard = missingFinal[0].card;
+      if (firstCard && firstCard.scrollIntoView) {
+        firstCard.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return;
+    }
+
+    // Снимаем подсветку с финальных чекбоксов при отметке — сразу
+    // после клика, без ожидания повторного submit.
+    finalCheckboxes.forEach((name) => {
+      const el = form.querySelector('input[name="' + name + '"]');
+      if (!el || el.dataset._jpFinalBound === "1") return;
+      el.dataset._jpFinalBound = "1";
+      el.addEventListener("change", () => {
+        const card = el.closest('.checkbox-card');
+        if (card && el.checked) card.classList.remove("input-error");
+      });
+    });
 
     submitBtn.disabled = true;
     submitBtn.textContent = "Отправка...";
