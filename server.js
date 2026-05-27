@@ -5179,12 +5179,25 @@ async function getCountryServiceFieldId() {
 let _cachedPaidConvStats = null;
 let _cachedPaidConvStatsTs = 0;
 const PAID_CONV_CACHE_TTL_MS = 20 * 60 * 1000;
+// Single-flight: параллельные вызовы ждут результат уже идущего пересчёта,
+// а не запускают свои. Без этого admin polling + пре-warm + open-страница
+// плодят 5-10 одновременных пересчётов, которые забивают amoCRM 429.
+let _paidConvInflight = null;
 
 async function computePaidConversionStats() {
   const now = Date.now();
   if (_cachedPaidConvStats && (now - _cachedPaidConvStatsTs) < PAID_CONV_CACHE_TTL_MS) {
     return _cachedPaidConvStats;
   }
+  if (_paidConvInflight) return _paidConvInflight;
+  _paidConvInflight = _computePaidConversionStatsInner().finally(() => {
+    _paidConvInflight = null;
+  });
+  return _paidConvInflight;
+}
+
+async function _computePaidConversionStatsInner() {
+  const now = Date.now();
   const empty = {
     startDate: LK_STATS_START_DATE,
     countries: { all: 0, nonJapan: 0, japan: 0 },
@@ -5342,6 +5355,11 @@ async function computePaidConversionStats() {
 let _cachedAdminStats = null;
 let _cachedAdminStatsTs = 0;
 const ADMIN_STATS_CACHE_TTL_MS = 5 * 60 * 1000;
+// Single-flight для воронки: admin-страница polling-ит /admin/api/stats каждые
+// 10 сек. Когда кеш холодный (после рестарта или TTL), без single-flight
+// каждый polling-запрос запускал отдельный пересчёт — 5-10 параллельных
+// проходов по всем телефонам, все дерутся за amoCRM rate-limit.
+let _adminStatsInflight = null;
 function invalidateAdminStatsCache() {
   _cachedAdminStats = null;
   _cachedAdminStatsTs = 0;
@@ -5352,6 +5370,14 @@ async function computeAdminStats() {
   if (_cachedAdminStats && (now - _cachedAdminStatsTs) < ADMIN_STATS_CACHE_TTL_MS) {
     return _cachedAdminStats;
   }
+  if (_adminStatsInflight) return _adminStatsInflight;
+  _adminStatsInflight = _computeAdminStatsInner().finally(() => {
+    _adminStatsInflight = null;
+  });
+  return _adminStatsInflight;
+}
+
+async function _computeAdminStatsInner() {
   // Базовый набор — авторизованные клиенты, чья первая авторизация попадает
   // в окно отслеживания (с LK_STATS_START_MS) И не попала в чёрный список
   // тестовых номеров команды (LK_STATS_EXCLUDED_PHONES). Старые записи
