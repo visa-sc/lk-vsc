@@ -6041,8 +6041,14 @@ async function maybeSendFeedbackSms(phone, leads) {
     if (wasFeedbackSent(normPhone)) return;
     if (!Array.isArray(leads) || !leads.length) return;
 
-    // Условие #3 — кандидаты: сделки в «Подготовка документов».
-    const candidates = leads.filter((l) => l && l.cabinet_status === "Подготовка документов");
+    // Условие #3 — кандидаты: сделки на этапе ЛК «Ожидание подачи» ИЛИ
+    // «Рассмотрение». Триггерим SMS на том этапе, на который сделка
+    // попала первым. Идемпотентность («не дублировать на обоих этапах»)
+    // уже обеспечена markFeedbackSent → wasFeedbackSent: после первой
+    // отправки номер в .feedbackSent.json, повторных SMS нет — даже если
+    // сделка потом меняет этап туда-обратно.
+    const FEEDBACK_TRIGGER_STAGES = new Set(["Ожидание подачи", "Рассмотрение"]);
+    const candidates = leads.filter((l) => l && FEEDBACK_TRIGGER_STAGES.has(l.cabinet_status));
     if (!candidates.length) return;
 
     // Ищем первого кандидата, у которого выполнены условия #1 и #2.
