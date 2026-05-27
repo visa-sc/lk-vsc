@@ -5173,10 +5173,12 @@ async function getCountryServiceFieldId() {
   return _cachedCountryServiceFieldId;
 }
 
-// Кеш результата вычисления — 5 минут.
+// Кеш результата вычисления — 20 минут. Должен быть с запасом длиннее интервала
+// фонового пре-warm (15 мин), чтобы между прогревами не было «провалов»,
+// когда живой запрос /admin вынужден ждать холодного пересчёта.
 let _cachedPaidConvStats = null;
 let _cachedPaidConvStatsTs = 0;
-const PAID_CONV_CACHE_TTL_MS = 5 * 60 * 1000;
+const PAID_CONV_CACHE_TTL_MS = 20 * 60 * 1000;
 
 async function computePaidConversionStats() {
   const now = Date.now();
@@ -5211,9 +5213,11 @@ async function computePaidConversionStats() {
       with: "contacts"
     };
     const t0 = Date.now();
-    // Параллельная пагинация (concurrency=8) — драматически быстрее последовательной
-    // на больших объёмах (>1000 сделок).
-    const allLeads = await amoGetAllPagesParallel(`${baseUrl}/api/v4/leads`, params, 8);
+    // Параллельная пагинация — драматически быстрее последовательной
+    // на больших объёмах (>1000 сделок). Concurrency снижен с 8 до 4, чтобы
+    // не выжирать amoCRM rate-limit (7 RPS) — это синхронизировано с понижением
+    // CONCURRENCY в computeAdminStats по той же причине.
+    const allLeads = await amoGetAllPagesParallel(`${baseUrl}/api/v4/leads`, params, 4);
     console.log(`PAID-CONV STATS: fetched ${allLeads.length} leads updated_at >= ${fromTs} (${Date.now()-t0}ms)`);
 
     // ── Сначала отфильтруем сделки по «Дата оплаты» + стране — чтобы потом
@@ -5330,11 +5334,14 @@ async function computePaidConversionStats() {
   }
 }
 
-// Кеш результата computeAdminStats — короткий TTL (30 сек), чтобы между быстрыми
-// polling-запросами (каждые 10 сек) не пересчитывать всё с нуля.
+// Кеш результата computeAdminStats. TTL держим заметно длиннее реального
+// пересчёта (минуты при холодном кеше под нагрузкой) — иначе polling каждые
+// 10 сек гонит каскад пересчётов, которые ещё и упираются в rate-limit amoCRM.
+// invalidateAdminStatsCache() всё равно дёргается из recordLkAuth — новые
+// авторизации появятся в воронке быстро, без ожидания TTL.
 let _cachedAdminStats = null;
 let _cachedAdminStatsTs = 0;
-const ADMIN_STATS_CACHE_TTL_MS = 30 * 1000;
+const ADMIN_STATS_CACHE_TTL_MS = 5 * 60 * 1000;
 function invalidateAdminStatsCache() {
   _cachedAdminStats = null;
   _cachedAdminStatsTs = 0;
@@ -5356,11 +5363,13 @@ async function computeAdminStats() {
     )
     .sort((a, b) => b[1] - a[1]);
 
-  // ── Параллельная обработка клиентов по 8 одновременно ──
+  // ── Параллельная обработка клиентов чанками по 4 одновременно ──
   // Раньше было последовательно: для каждого клиента ждали запросы к Я.Диску
   // (проверить опросник + проверить документы), что давало N × ~200мс задержки.
-  // Параллелизация чанками по 8 даёт ~8x ускорение при том же качестве.
-  const CONCURRENCY = 8;
+  // Параллелизация даёт большое ускорение, но при 8 одновременных клиентах
+  // вкупе с пре-warm paid-conv мы упирались в amoCRM rate-limit (429) —
+  // снизили до 4, чтобы оставить запас другим потребителям API.
+  const CONCURRENCY = 4;
   async function processPhone([phone, ts]) {
     const firstLeadId = await ensureFirstQuestionnaireLookup(phone);
     let stage = 1;
@@ -7671,12 +7680,13 @@ app.post("/api/amo/webhook", async (req, res) => {
 });
 
 // ────────────────────────────────────────────────────────────────────
-// Фоновый пре-warm кеша «конверсия по оплаченным сделкам». Каждые 4 минуты
-// перевычисляем результат в фоне (TTL кеша 5 мин — успеваем обновить до
-// истечения). Это значит: первый заход админа в Статистику показывает
-// данные мгновенно из кеша, без 5-10 секунд ожидания.
+// Фоновый пре-warm кеша «конверсия по оплаченным сделкам». Каждые 15 минут
+// перевычисляем результат в фоне (TTL кеша 20 мин — успеваем обновить до
+// истечения). Интервал поднят с 4 мин: при росте объёмов данных пре-warm
+// конкурировал с admin-воронкой за amoCRM rate-limit (7 RPS), это давало
+// каскад 429-retry и подвисания. 15 мин достаточно для свежести дашборда.
 // ────────────────────────────────────────────────────────────────────
-const PAID_CONV_PREWARM_INTERVAL_MS = 4 * 60 * 1000;
+const PAID_CONV_PREWARM_INTERVAL_MS = 15 * 60 * 1000;
 function schedulePaidConvPrewarm() {
   if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return; // нет смысла без amoCRM
   // Первый пре-warm — через 20 сек после старта, чтобы не блокировать первый запуск.
