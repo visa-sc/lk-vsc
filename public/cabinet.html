@@ -1164,7 +1164,19 @@
       return wrapper;
     }
 
-    function switchQuestionnaireBlockToEdit(blockEl, lead, applicants) {
+    // Кол-во уникальных заявителей по ФИО — нужно для решения «можно ли
+    // добавить ещё опросник» на этапе «Подготовка документов».
+    function countUniqueApplicantFios(applicants) {
+      if (!Array.isArray(applicants)) return 0;
+      const seen = new Set();
+      applicants.forEach((a) => {
+        const fio = String(a && a.fullName || "").trim().toLowerCase().replace(/\s+/g, " ");
+        if (fio) seen.add(fio);
+      });
+      return seen.size;
+    }
+
+    function switchQuestionnaireBlockToEdit(blockEl, lead, applicants, currentStageIndex) {
       if (!blockEl) return;
       const button = blockEl.querySelector(".questionnaire-btn");
       const picker = blockEl.querySelector(".applicant-picker");
@@ -1243,6 +1255,20 @@
         const lineBreak = document.createElement("div");
         lineBreak.style.height = "0";
         fresh.after(lineBreak, fillMoreBtn);
+      }
+
+      // Этап «Подготовка документов» (index 2): если кол-во уникальных ФИО
+      // заявителей уже >= «Количество пакетов» из amoCRM — скрываем кнопку
+      // «Заполнить ещё опросник». На прочих этапах оставляем как было.
+      // Если packets_count в amoCRM не задано (null) — кнопку не ограничиваем.
+      if (currentStageIndex === 2) {
+        const packets = lead && typeof lead.packets_count === "number" ? lead.packets_count : null;
+        const uniqueFios = countUniqueApplicantFios(applicants);
+        if (packets !== null && uniqueFios >= packets) {
+          fillMoreBtn.style.display = "none";
+        } else {
+          fillMoreBtn.style.display = "inline-block";
+        }
       }
 
       picker.innerHTML = "";
@@ -2384,7 +2410,7 @@
           }
         } else {
           if (allFilled) {
-            switchQuestionnaireBlockToEdit(questionnaireBlock, lead, applicants);
+            switchQuestionnaireBlockToEdit(questionnaireBlock, lead, applicants, currentIndex);
           }
           const fragment = document.createDocumentFragment();
 

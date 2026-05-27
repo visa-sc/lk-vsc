@@ -988,6 +988,12 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
   const pipelineName = statusMeta.pipeline_name || lead.pipeline_name || "";
   const statusName = statusMeta.status_name || lead.status_name || "";
   const countryService = getCustomFieldValue(lead, "Страна оформления/услуга");
+  // «Количество пакетов» — целое число; используется в кабинете на этапе
+  // «Подготовка документов» для решения, показывать ли кнопку «Заполнить
+  // ещё опросник» (если опросников уже >= packets_count → скрываем).
+  const packetsRaw = getCustomFieldValue(lead, "Количество пакетов");
+  const packetsNum = parseInt(String(packetsRaw || "").trim(), 10);
+  const packetsCount = Number.isFinite(packetsNum) && packetsNum > 0 ? packetsNum : null;
 
   const mapEntry = findStatusMapEntry(pipelineName, statusName);
 
@@ -999,7 +1005,8 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
       hidden_in_cabinet: false,
       cabinet_status: CABINET_DEFAULT_STAGE,
       cabinet_stage_index: getCabinetStageIndexByName(CABINET_DEFAULT_STAGE),
-      country_service: countryService
+      country_service: countryService,
+      packets_count: packetsCount
     };
   }
 
@@ -1011,7 +1018,8 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
       hidden_in_cabinet: true,
       cabinet_status: null,
       cabinet_stage_index: null,
-      country_service: countryService
+      country_service: countryService,
+      packets_count: packetsCount
     };
   }
 
@@ -1037,7 +1045,8 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
     hidden_in_cabinet: false,
     cabinet_status: cabinetStatus,
     cabinet_stage_index: stageIndex >= 0 ? stageIndex : 0,
-    country_service: countryService
+    country_service: countryService,
+    packets_count: packetsCount
   };
 }
 
@@ -1528,6 +1537,7 @@ function getEntityCustomFieldValue(entity, fieldId) {
 let _cachedTaskTypeProveritDokiId = undefined;
 let _cachedKtoPrinyalFieldId = undefined;
 let _cachedVscUserId = undefined;
+let _cachedPacketsCountFieldId = undefined;
 
 async function getProveritDokiTaskTypeId() {
   if (_cachedTaskTypeProveritDokiId !== undefined) return _cachedTaskTypeProveritDokiId;
@@ -1576,6 +1586,29 @@ async function getKtoPrinyalFieldId() {
   return _cachedKtoPrinyalFieldId;
 }
 
+async function getPacketsCountFieldId() {
+  if (_cachedPacketsCountFieldId !== undefined) return _cachedPacketsCountFieldId;
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const fields = await amoGetAllPages(`${baseUrl}/api/v4/leads/custom_fields`);
+    const found = (fields || []).find((f) => {
+      const name = String(f.name || "").toLowerCase().trim();
+      return name === "количество пакетов" || name.indexOf("количество пакетов") >= 0;
+    });
+    if (found) {
+      _cachedPacketsCountFieldId = found.id;
+      console.log(`AMO FIELD «Количество пакетов»: id=${found.id} name="${found.name}" type="${found.type}"`);
+    } else {
+      _cachedPacketsCountFieldId = null;
+      console.log("AMO FIELD «Количество пакетов» NOT FOUND — кнопка «Заполнить ещё опросник» на «Подготовке документов» не будет ограничиваться");
+    }
+  } catch (e) {
+    console.error("getPacketsCountFieldId error:", e.response?.data || e.message);
+    _cachedPacketsCountFieldId = null;
+  }
+  return _cachedPacketsCountFieldId;
+}
+
 async function getVscUserId() {
   if (_cachedVscUserId !== undefined) return _cachedVscUserId;
   try {
@@ -1612,70 +1645,84 @@ async function getLeadPipelineName(lead) {
   return "";
 }
 
-async function createAmoUploadTask(leadId) {
+// Общая «начинка» для создания задачи «Проверить доки» на лиде: получаем
+// тип задачи, ответственного по правилам воронки. Возвращает готовое тело
+// для POST /api/v4/tasks (без поля text — его задаёт конкретный кейс).
+async function _resolveAmoTaskTarget(leadId) {
+  const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+  const lead = await getLeadById(baseUrl, leadId);
+  if (!lead) return null;
+
+  // Тип задачи: «Проверить доки» (если есть в amoCRM), fallback — встроенный «Связаться» (id=1).
+  let taskTypeId = await getProveritDokiTaskTypeId();
+  if (!taskTypeId) taskTypeId = 1;
+
+  // По воронке выбираем, кому ставим задачу.
+  // «Отдел Продаж» (любые этапы, кроме hidden) → поле «Отв-ный/Ответственный» (TASK_RESPONSIBLE_FIELD_ID).
+  // «Отдел Оформления» / «Отдел по работе с Клиентами» → поле «Кто принял клиента»;
+  //                                                     пусто → пользователь «Visa Services Center».
+  const pipelineName = await getLeadPipelineName(lead);
+  const pipelineLow = String(pipelineName || "").toLowerCase().trim();
+  const isSales = pipelineLow.indexOf("отдел продаж") === 0;
+
+  let responsibleUserId = null;
+  if (isSales) {
+    const respRaw = getEntityCustomFieldValue(lead, TASK_RESPONSIBLE_FIELD_ID);
+    const respNum = respRaw != null ? Number(respRaw) : NaN;
+    if (Number.isFinite(respNum) && respNum > 0) responsibleUserId = respNum;
+    if (!responsibleUserId) {
+      const standardResp = lead && lead.responsible_user_id;
+      const standardNum = standardResp != null ? Number(standardResp) : NaN;
+      if (Number.isFinite(standardNum) && standardNum > 0) responsibleUserId = standardNum;
+    }
+  } else {
+    const ktoFieldId = await getKtoPrinyalFieldId();
+    if (ktoFieldId) {
+      const ktoRaw = getEntityCustomFieldValue(lead, ktoFieldId);
+      const ktoNum = ktoRaw != null ? Number(ktoRaw) : NaN;
+      if (Number.isFinite(ktoNum) && ktoNum > 0) responsibleUserId = ktoNum;
+    }
+    if (!responsibleUserId) {
+      const vscId = await getVscUserId();
+      if (vscId) responsibleUserId = vscId;
+    }
+  }
+
+  return { baseUrl, taskTypeId, pipelineName, isSales, responsibleUserId };
+}
+
+async function _createAmoTaskWithText(leadId, label, text) {
   if (!AMO_ACCESS_TOKEN || !AMO_SUBDOMAIN) return;
   if (!leadId) return;
   try {
-    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
-    const lead = await getLeadById(baseUrl, leadId);
-    if (!lead) return;
-
-    // Тип задачи: «Проверить доки» (если есть в amoCRM), fallback — встроенный «Связаться» (id=1).
-    let taskTypeId = await getProveritDokiTaskTypeId();
-    if (!taskTypeId) taskTypeId = 1;
-
-    // По воронке выбираем, кому ставим задачу.
-    // «Отдел Продаж» (любые этапы, кроме hidden) → поле «Отв-ный/Ответственный» (TASK_RESPONSIBLE_FIELD_ID).
-    // «Отдел Оформления» / «Отдел по работе с Клиентами» → поле «Кто принял клиента»;
-    //                                                     пусто → пользователь «Visa Services Center».
-    const pipelineName = await getLeadPipelineName(lead);
-    const pipelineLow = String(pipelineName || "").toLowerCase().trim();
-    const isSales = pipelineLow.indexOf("отдел продаж") === 0;
-
-    let responsibleUserId = null;
-    if (isSales) {
-      // 1) Сначала пробуем кастомное поле «Отв-ный» (TASK_RESPONSIBLE_FIELD_ID=443488),
-      //    если оно настроено и заполнено.
-      const respRaw = getEntityCustomFieldValue(lead, TASK_RESPONSIBLE_FIELD_ID);
-      const respNum = respRaw != null ? Number(respRaw) : NaN;
-      if (Number.isFinite(respNum) && respNum > 0) responsibleUserId = respNum;
-      // 2) Если пусто — берём СТАНДАРТНОЕ поле «Ответственный» сделки (это и есть
-      //    «Ответственный» в шапке раздела «Основное»). Без этого amoCRM при пустом
-      //    responsible_user_id подставляет дефолт интеграции (часто = Visa Services Center).
-      if (!responsibleUserId) {
-        const standardResp = lead && lead.responsible_user_id;
-        const standardNum = standardResp != null ? Number(standardResp) : NaN;
-        if (Number.isFinite(standardNum) && standardNum > 0) responsibleUserId = standardNum;
-      }
-    } else {
-      const ktoFieldId = await getKtoPrinyalFieldId();
-      if (ktoFieldId) {
-        const ktoRaw = getEntityCustomFieldValue(lead, ktoFieldId);
-        const ktoNum = ktoRaw != null ? Number(ktoRaw) : NaN;
-        if (Number.isFinite(ktoNum) && ktoNum > 0) responsibleUserId = ktoNum;
-      }
-      if (!responsibleUserId) {
-        const vscId = await getVscUserId();
-        if (vscId) responsibleUserId = vscId;
-      }
-    }
-
+    const target = await _resolveAmoTaskTarget(leadId);
+    if (!target) return;
+    const { baseUrl, taskTypeId, pipelineName, isSales, responsibleUserId } = target;
     const nowSec = Math.floor(Date.now() / 1000);
     const taskBody = [{
       task_type_id: taskTypeId,
-      text: "Загрузились новые документы от клиента из ЛК.",
+      text,
       complete_till: nowSec,
       entity_id: Number(leadId),
       entity_type: "leads"
     }];
-    if (responsibleUserId) {
-      taskBody[0].responsible_user_id = responsibleUserId;
-    }
-    console.log(`CREATE TASK lead=${leadId} pipeline="${pipelineName}" isSales=${isSales} taskTypeId=${taskTypeId} responsible=${responsibleUserId || "(default)"}`);
+    if (responsibleUserId) taskBody[0].responsible_user_id = responsibleUserId;
+    console.log(`CREATE TASK [${label}] lead=${leadId} pipeline="${pipelineName}" isSales=${isSales} taskTypeId=${taskTypeId} responsible=${responsibleUserId || "(default)"}`);
     await amoPost(`${baseUrl}/api/v4/tasks`, taskBody);
   } catch (e) {
-    console.error("CREATE AMO TASK ERROR:", e.response?.data || e.message);
+    console.error(`CREATE AMO TASK ERROR [${label}]:`, e.response?.data || e.message);
   }
+}
+
+async function createAmoUploadTask(leadId) {
+  return _createAmoTaskWithText(leadId, "upload", "Загрузились новые документы от клиента из ЛК.");
+}
+
+// Срабатывает при сохранении опросника в режиме корректировки (isEdit=1
+// в /api/questionnaire). Тип задачи и ответственный — те же, что у задачи
+// на загрузку документов, отличается только текст.
+async function createAmoQuestionnaireCorrectionTask(leadId) {
+  return _createAmoTaskWithText(leadId, "questionnaire-correction", "Клиент скорректировал опросник в личном кабинете VOYO");
 }
 
 // Per-leadId последовательная очередь: все операции с amoCRM/<lead_id>/Документы из ЛК/
@@ -7289,6 +7336,12 @@ app.post(
       // в которой клиент отправил опросник. Идемпотентно — повторные
       // сабмиты для других сделок не перетирают первый.
       try { recordFirstQuestionnaireForPhone(phone, leadId); } catch (_) {}
+
+      // Корректировка опросника → задача «Проверить доки» с пометкой,
+      // что клиент сам внёс правки. Запускаем фоном, не блокируем ответ.
+      if (isEdit && leadId) {
+        createAmoQuestionnaireCorrectionTask(leadId).catch(() => {});
+      }
 
       return res.json({
         success: true,
