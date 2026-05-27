@@ -8225,7 +8225,10 @@ app.post("/api/amo/webhook", async (req, res) => {
       }
     }
 
-    // 3) leads[status] — смена этапа сделки. Реагируем только на новый статус «Дубль».
+    // 3) leads[status] — смена этапа сделки. Два независимых триггера:
+    //   а) перевод в «Дубль» → AMO MERGE TRANSFER
+    //   б) перевод в этап ЛК «Ожидание подачи» / «Рассмотрение» →
+    //      feedback SMS с опросником клиенту (если ещё не отправляли).
     const leadsStatuses = body?.leads?.status;
     if (Array.isArray(leadsStatuses) && leadsStatuses.length) {
       eventKeys.push(`status×${leadsStatuses.length}`);
@@ -8240,12 +8243,37 @@ app.post("/api/amo/webhook", async (req, res) => {
             const statusesMap = await getCachedPipelinesMap(baseUrl);
             const meta = statusesMap.get(`${lead.pipeline_id}:${lead.status_id}`) || {};
             const statusName = String(meta.status_name || "").trim();
-            if (statusName !== "Дубль") return;
             const contacts = (lead && lead._embedded && lead._embedded.contacts) || [];
             const mainContact = contacts.find((c) => c.is_main) || contacts[0];
             const contactId = mainContact && mainContact.id;
-            if (contactId && !shouldSkipDuplicate(contactId)) {
+
+            // (а) Дубль → AMO MERGE TRANSFER
+            if (statusName === "Дубль" && contactId && !shouldSkipDuplicate(contactId)) {
               await tryTransferDupFilesForContact(contactId, `lead_status:${leadId}→Дубль`);
+            }
+
+            // (б) Feedback SMS — триггер при попадании сделки в этап ЛК
+            //     «Ожидание подачи» или «Рассмотрение», не дожидаясь, пока
+            //     клиент сам зайдёт в кабинет. Идемпотентно через
+            //     wasFeedbackSent: повторного SMS на втором этапе не будет.
+            try {
+              const enriched = enrichLeadWithMappedStatus(lead, statusesMap);
+              if (enriched && !enriched.hidden_in_cabinet
+                  && (enriched.cabinet_status === "Ожидание подачи"
+                      || enriched.cabinet_status === "Рассмотрение")
+                  && contactId) {
+                let contactFull = null;
+                try {
+                  contactFull = await amoGet(`${baseUrl}/api/v4/contacts/${contactId}`);
+                } catch (_) {}
+                const phones = contactFull ? extractPhonesFromContact(contactFull) : [];
+                const phone = phones[0];
+                if (phone) {
+                  await maybeSendFeedbackSms(phone, [enriched]);
+                }
+              }
+            } catch (eFb) {
+              console.error(`FEEDBACK trigger from webhook error lead=${leadId}:`, eFb && eFb.message);
             }
           } catch (e) {
             console.error(`AMO WEBHOOK status handler error lead=${leadId}:`, e.message);
