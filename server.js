@@ -1000,37 +1000,46 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
   };
 }
 
-async function yandexRequest(config) {
-  // Я.Диск может ответить 423 (Resource is locked), если одну и ту же папку/ресурс
-  // одновременно трогает другая операция (параллельные ensureYandexFolder/upload в одну папку).
-  // Делаем мягкий retry с экспоненциальной паузой, чтобы не падать на гонке.
+// Общая retry-обёртка для всех запросов к Я.Диску. Дёргает thunk до 5 раз
+// с экспоненциальной паузой + jitter. Ретраим 423/429/5xx/сетевые таймауты.
+// 4xx бизнес-логики (404/409/etc) — не ретраим, кидаем сразу.
+async function yandexCallWithRetry(thunk, label = "") {
   const maxAttempts = 5;
   let attempt = 0;
   let lastError;
   while (attempt < maxAttempts) {
     try {
-      return await axios({
-        ...config,
-        headers: {
-          Authorization: `OAuth ${YANDEX_DISK_TOKEN}`,
-          ...(config.headers || {})
-        },
-        maxBodyLength: Infinity,
-        maxContentLength: Infinity
-      });
+      return await thunk();
     } catch (err) {
       lastError = err;
       const status = err.response?.status;
-      // Ретраим только 423 и сетевые таймауты/5xx. 4xx-ошибки бизнес-логики не ретраим.
       const retryable = status === 423 || status === 429 || (status >= 500 && status < 600) || !status;
       if (!retryable) throw err;
       attempt++;
       if (attempt >= maxAttempts) break;
       const delay = Math.min(2000, 200 * Math.pow(2, attempt - 1)) + Math.floor(Math.random() * 150);
+      if (label) {
+        console.log(`YANDEX RETRY ${label} attempt=${attempt}/${maxAttempts} status=${status || "?"} delay=${delay}ms`);
+      }
       await new Promise((r) => setTimeout(r, delay));
     }
   }
   throw lastError;
+}
+
+async function yandexRequest(config) {
+  // Я.Диск может ответить 423 (Resource is locked), если одну и ту же папку/ресурс
+  // одновременно трогает другая операция (параллельные ensureYandexFolder/upload в одну папку).
+  // Делаем мягкий retry с экспоненциальной паузой, чтобы не падать на гонке.
+  return yandexCallWithRetry(() => axios({
+    ...config,
+    headers: {
+      Authorization: `OAuth ${YANDEX_DISK_TOKEN}`,
+      ...(config.headers || {})
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity
+  }), `${(config.method || "GET").toUpperCase()} ${config.url || ""}`);
 }
 
 async function ensureYandexFolder(folderPath) {
@@ -1062,13 +1071,16 @@ async function uploadBufferToYandexDisk(buffer, diskPath, contentType = "applica
 
   const uploadUrl = uploadLinkResponse.data.href;
 
-  await axios.put(uploadUrl, buffer, {
+  // Сам PUT файла на полученную upload-ссылку — тоже может ответить 423,
+  // если параллельно идёт другая операция с этим же ресурсом. Без retry
+  // юзер видит «Ошибка загрузки документа», хотя ретрай через секунду прошёл бы.
+  await yandexCallWithRetry(() => axios.put(uploadUrl, buffer, {
     headers: {
       "Content-Type": contentType
     },
     maxBodyLength: Infinity,
     maxContentLength: Infinity
-  });
+  }), `PUT upload ${diskPath}`);
 }
 
 async function listYandexFolderFiles(folderPath) {
@@ -1139,7 +1151,10 @@ async function downloadJsonFromYandexDisk(diskPath) {
       params: { path: diskPath }
     });
     const downloadUrl = linkResponse.data.href;
-    const fileResponse = await axios.get(downloadUrl, { responseType: "text" });
+    const fileResponse = await yandexCallWithRetry(
+      () => axios.get(downloadUrl, { responseType: "text" }),
+      `GET download(json) ${diskPath}`
+    );
     return typeof fileResponse.data === "string"
       ? JSON.parse(fileResponse.data)
       : fileResponse.data;
@@ -1285,14 +1300,27 @@ function amoDocsFolder(leadId) {
   return `${amoDealFolder(leadId)}/${AMO_DOCS_FOLDER_NAME}`;
 }
 
+// Single-flight по absolutePath: если для этой же папки уже идёт создание
+// (например, две одновременных webhook-обработки одного контакта), второй
+// вызов ждёт результат первого вместо параллельной гонки за создание тех
+// же сегментов. Без этого Я.Диск пробивает retry-цепочку 423 и выкидывает
+// ошибку в верхний слой (AMO MERGE TRANSFER ensure main folder error).
+const _ensureNestedInflight = new Map(); // absolutePath → Promise
 async function ensureNestedYandexFolder(absolutePath) {
-  // Создаём весь путь по сегментам, пропуская существующие.
-  const parts = absolutePath.split("/").filter(Boolean);
-  let p = "";
-  for (const part of parts) {
-    p = p ? `${p}/${part}` : part;
-    await ensureYandexFolder(p);
-  }
+  const existing = _ensureNestedInflight.get(absolutePath);
+  if (existing) return existing;
+  const p = (async () => {
+    const parts = absolutePath.split("/").filter(Boolean);
+    let acc = "";
+    for (const part of parts) {
+      acc = acc ? `${acc}/${part}` : part;
+      await ensureYandexFolder(acc);
+    }
+  })().finally(() => {
+    _ensureNestedInflight.delete(absolutePath);
+  });
+  _ensureNestedInflight.set(absolutePath, p);
+  return p;
 }
 
 async function uploadToAmoDealDocs(leadId, relativePath, buffer, contentType) {
@@ -1352,11 +1380,11 @@ async function downloadYandexFileBuffer(diskPath) {
     params: { path: diskPath }
   });
   const downloadUrl = linkResponse.data.href;
-  const response = await axios.get(downloadUrl, {
+  const response = await yandexCallWithRetry(() => axios.get(downloadUrl, {
     responseType: "arraybuffer",
     maxBodyLength: Infinity,
     maxContentLength: Infinity
-  });
+  }), `GET download(buf) ${diskPath}`);
   return Buffer.from(response.data);
 }
 
