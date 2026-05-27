@@ -585,26 +585,32 @@ const AMO_SUBDOMAIN = String(process.env.AMO_SUBDOMAIN || "")
   .replace(/\/.*$/, "")
   .replace(/\.amocrm\.ru$/i, "");
 
+// Маппинг статусов 3 воронок amoCRM на этапы клиентского ЛК (8 этапов).
+// Этапы определены в CABINET_STAGES ниже. Особый случай — "Электронное
+// рассмотрение" (Отдел Оформления): по дефолту → "Рассмотрение", но если
+// "Страна оформления/услуга" содержит США / Великобритания — переезжает
+// в "Подготовка документов". Эта развилка реализована в enrichLeadWithMappedStatus.
 const STATUS_MAP = {
   "Отдел продаж": {
-    "Ещё не связывались": { client_status: "Сбор документов" },
-    "Ещё не связывались (для повторных сделок)": { client_status: "Сбор документов" },
-    "Новый после Первой линии": { client_status: "Сбор документов" },
-    "Недозвон": { client_status: "Сбор документов" },
-    "Работа в одно касание": { client_status: "Сбор документов" },
-    "Консультация": { client_status: "Сбор документов" },
-    "Рабочая виза": { client_status: "Сбор документов" },
-    "Юридическое лицо": { client_status: "Сбор документов" },
-    "США через рф": { client_status: "Сбор документов" },
-    "Отправлено на согласование партнеру": { client_status: "Сбор документов" },
-    "Контакт передан партнеру": { client_status: "Сбор документов" },
-    "Ожидаем оплату комиссии": { client_status: "Сбор документов" },
-    "Пришлёт документы на почту": { client_status: "Сбор документов" },
-    "Сбор Документов": { client_status: "Сбор документов" },
-    "Выставлен счёт через раздел Касса": { client_status: "Сбор документов" },
-    "Оплачен счёт через раздел Касса": { client_status: "Сбор документов" },
-    "Часть оплаты по ВНЖ": { client_status: "Документы поданы на рассмотрение в Консульство" },
-    "Успешно реализовано (для ВНЖ)": { client_status: "Рассмотрение завершено" },
+    "Ещё не связывались": { client_status: "Начало оформления" },
+    "Ещё не связывались (для повторных сделок)": { client_status: "Начало оформления" },
+    "Новый после Первой линии": { client_status: "Начало оформления" },
+    "Недозвон": { client_status: "Начало оформления" },
+    "Работа в одно касание": { client_status: "Начало оформления" },
+    "Консультация": { client_status: "Начало оформления" },
+    "Пришлёт документы на почту": { client_status: "Начало оформления" },
+    "Сбор Документов": { client_status: "Начало оформления" },
+    "Выставлен счёт через раздел Касса": { client_status: "Начало оформления" },
+    "Оплачен счёт через раздел Касса": { client_status: "Начало оформления" },
+    // Перенесены в hidden по ТЗ от 27.05.2026:
+    "Рабочая виза": { hidden: true },
+    "Юридическое лицо": { hidden: true },
+    "США через рф": { hidden: true },
+    "Отправлено на согласование партнеру": { hidden: true },
+    "Контакт передан партнеру": { hidden: true },
+    "Ожидаем оплату комиссии": { hidden: true },
+    "Часть оплаты по ВНЖ": { hidden: true },
+    "Успешно реализовано (для ВНЖ)": { hidden: true },
     "Дубль": { hidden: true },
     "Партнеры и подрядчики": { hidden: true },
     "Мусор": { hidden: true },
@@ -615,52 +621,74 @@ const STATUS_MAP = {
   },
 
   "Отдел Оформления": {
-    "Выставлен счёт через раздел Касса": { client_status: "Сбор документов" },
-    "Оплачен счёт через раздел Касса": { client_status: "Сбор документов" },
+    "Выставлен счёт через раздел Касса": { client_status: "Начало оформления" },
+    "Оплачен счёт через раздел Касса": { client_status: "Начало оформления" },
     "Принято в работу": { client_status: "Подготовка документов" },
     "Согласование документов": { client_status: "Подготовка документов" },
     "Сбор оплачен": { client_status: "Подготовка документов" },
     "Исправить": { client_status: "Подготовка документов" },
     "Пакет документов готов": { client_status: "Подготовка документов" },
-    "Ожидает записи вручную": { client_status: "Ожидание записи / подачи" },
-    "Ожидает записи через Бота": { client_status: "Ожидание записи / подачи" },
     "Запись сделана": { client_status: "Подготовка документов" },
     "Оформлен выкуп": { client_status: "Подготовка документов" },
-    "Электронное рассмотрение": { client_status: "Документы поданы на рассмотрение в Консульство" },
-    "На паузе по просьбе Клиента": { client_status: "Ожидание записи / подачи" },
-    "ОЖИДАЕТ РЕШЕНИЯ О ВОЗВРАТЕ": { hidden: true },
+    "Ожидает записи вручную": { client_status: "Ожидание подачи" },
+    "Ожидает записи через Бота": { client_status: "Ожидание подачи" },
+    "На паузе по просьбе Клиента": { client_status: "Оформление на паузе" },
+    "ОЖИДАЕТ РЕШЕНИЯ О ВОЗВРАТЕ": { client_status: "Оформление на паузе" },
+    // Дефолтная цель — "Рассмотрение"; для США/Великобритании переопределяется
+    // на "Подготовка документов" в enrichLeadWithMappedStatus.
+    "Электронное рассмотрение": { client_status: "Рассмотрение" },
     "Закрыто и не реализовано": { hidden: true }
   },
 
   "Отдел по работе с Клиентами": {
-    "Визит в офис без оплаты": { client_status: "Сбор документов" },
-    "Выставлен счёт через раздел Касса": { client_status: "Сбор документов" },
-    "Оплачен счёт через раздел Касса": { client_status: "Сбор документов" },
-    "Произведена оплата": { client_status: "Подготовка документов" },
-    "Сбор документов для ОО": { client_status: "Подготовка документов" },
+    "Визит в офис без оплаты": { client_status: "Начало оформления" },
+    "Выставлен счёт через раздел Касса": { client_status: "Начало оформления" },
+    "Оплачен счёт через раздел Касса": { client_status: "Начало оформления" },
+    "Произведена оплата": { client_status: "Начало оформления" },
+    "Сбор документов для ОО": { client_status: "Первичный сбор документов" },
     "Сбор дополнительных документов для ОО": { client_status: "Подготовка документов" },
     "Электронные документы переданы в Отдел ...": { client_status: "Подготовка документов" },
     "Принято в работу после ОО": { client_status: "Подготовка документов" },
-    "Ожидает передачи на рассмотрение в Консульство": { client_status: "Ожидание записи / подачи" },
-    "Документы готовы к личной подаче": { client_status: "Ожидание записи / подачи" },
-    "Передано Клиенту для личной подачи": { client_status: "Документы поданы на рассмотрение в Консульство" },
-    "На рассмотрении в Консульстве": { client_status: "Документы поданы на рассмотрение в Консульство" },
-    "Документы поданы лично Заявителем": { client_status: "Документы поданы на рассмотрение в Консульство" },
-    "Паспорт готов": { client_status: "Рассмотрение завершено" },
-    "Успешно реализовано": { client_status: "Рассмотрение завершено" },
-    "Возврат": { client_status: "Рассмотрение завершено" },
+    "Ожидает передачи на рассмотрение в Консульство": { client_status: "Ожидание подачи" },
+    "Документы готовы к личной подаче": { client_status: "Ожидание подачи" },
+    "Передано Клиенту для личной подачи": { client_status: "Ожидание подачи" },
+    "На рассмотрении в Консульстве": { client_status: "Рассмотрение" },
+    "Документы поданы лично Заявителем": { client_status: "Рассмотрение" },
+    "Паспорт готов": { client_status: "Паспорт готов" },
+    "Успешно реализовано": { client_status: "Обращение исполнено" },
+    "Возврат": { client_status: "Обращение исполнено" },
     "Доплата": { hidden: true },
     "Закрыто и не реализовано": { hidden: true }
   }
 };
 
+// Порядок этапов клиентского ЛК. cabinet_stage_index в лидах = индекс в этом
+// массиве. Изменение порядка/состава ломает сортировки в кабинете и админке —
+// при ревизии всегда синхронно обновляй public/cabinet.html STAGES.
 const CABINET_STAGES = [
-  "Сбор документов",
+  "Начало оформления",
+  "Первичный сбор документов",
   "Подготовка документов",
-  "Ожидание записи / подачи",
-  "Документы поданы на рассмотрение в Консульство",
-  "Рассмотрение завершено"
+  "Ожидание подачи",
+  "Оформление на паузе",
+  "Рассмотрение",
+  "Паспорт готов",
+  "Обращение исполнено"
 ];
+
+// Дефолтный этап ЛК для лида, у которого pipeline/status не нашёлся в STATUS_MAP
+// (новые статусы amoCRM, опечатки и т.п.). Берём самый ранний — "Начало оформления".
+const CABINET_DEFAULT_STAGE = "Начало оформления";
+
+// Страны, для которых "Электронное рассмотрение" из Отдела Оформления
+// маппится не в "Рассмотрение", а в "Подготовка документов" (продолжается
+// работа с документами на стороне VOYO).
+const ELECTRONIC_REVIEW_PREP_COUNTRIES = ["США", "Великобритания"];
+function isElectronicReviewPrepCountry(countryServiceValue) {
+  const v = String(countryServiceValue || "").toLowerCase();
+  if (!v) return false;
+  return ELECTRONIC_REVIEW_PREP_COUNTRIES.some((c) => v.includes(c.toLowerCase()));
+}
 
 function normalizePhone(phone = "") {
   const digits = String(phone).replace(/\D/g, "");
@@ -959,6 +987,7 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
   const statusMeta = statusesMap.get(`${lead.pipeline_id}:${lead.status_id}`) || {};
   const pipelineName = statusMeta.pipeline_name || lead.pipeline_name || "";
   const statusName = statusMeta.status_name || lead.status_name || "";
+  const countryService = getCustomFieldValue(lead, "Страна оформления/услуга");
 
   const mapEntry = findStatusMapEntry(pipelineName, statusName);
 
@@ -968,9 +997,9 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
       pipeline_name: pipelineName,
       status_name: statusName,
       hidden_in_cabinet: false,
-      cabinet_status: "Сбор документов",
-      cabinet_stage_index: 0,
-      country_service: getCustomFieldValue(lead, "Страна оформления/услуга")
+      cabinet_status: CABINET_DEFAULT_STAGE,
+      cabinet_stage_index: getCabinetStageIndexByName(CABINET_DEFAULT_STAGE),
+      country_service: countryService
     };
   }
 
@@ -982,11 +1011,23 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
       hidden_in_cabinet: true,
       cabinet_status: null,
       cabinet_stage_index: null,
-      country_service: getCustomFieldValue(lead, "Страна оформления/услуга")
+      country_service: countryService
     };
   }
 
-  const cabinetStatus = mapEntry.client_status || "Сбор документов";
+  let cabinetStatus = mapEntry.client_status || CABINET_DEFAULT_STAGE;
+
+  // Особый кейс: "Электронное рассмотрение" в Отделе Оформления для США/
+  // Великобритании ведётся как "Подготовка документов" на стороне VOYO,
+  // а не как реальное рассмотрение в Консульстве.
+  if (
+    normalizeText(pipelineName) === normalizeText("Отдел Оформления") &&
+    normalizeText(statusName) === normalizeText("Электронное рассмотрение") &&
+    isElectronicReviewPrepCountry(countryService)
+  ) {
+    cabinetStatus = "Подготовка документов";
+  }
+
   const stageIndex = getCabinetStageIndexByName(cabinetStatus);
 
   return {
@@ -996,7 +1037,7 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
     hidden_in_cabinet: false,
     cabinet_status: cabinetStatus,
     cabinet_stage_index: stageIndex >= 0 ? stageIndex : 0,
-    country_service: getCustomFieldValue(lead, "Страна оформления/услуга")
+    country_service: countryService
   };
 }
 

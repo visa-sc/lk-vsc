@@ -1021,11 +1021,14 @@
 
   <script>
     const STAGES = [
-      "Сбор документов",
+      "Начало оформления",
+      "Первичный сбор документов",
       "Подготовка документов",
-      "Ожидание записи / подачи",
-      "Документы поданы на рассмотрение в Консульство",
-      "Рассмотрение завершено"
+      "Ожидание подачи",
+      "Оформление на паузе",
+      "Рассмотрение",
+      "Паспорт готов",
+      "Обращение исполнено"
     ];
 
     const phoneInput = document.getElementById("phoneInput");
@@ -1994,7 +1997,7 @@
           }
           if (lead) {
             await refreshApplicantsCache();
-            renderStages(0, lead);
+            renderStages(getCurrentStageIndex(lead), lead);
           }
           showDone();
         } catch (_) {
@@ -2097,7 +2100,7 @@
         // Обновить кэш и цвет этапа (жёлтый → зелёный, если всё собрано)
         if (lead) {
           await refreshApplicantsCache();
-          renderStages(0, lead);
+          renderStages(getCurrentStageIndex(lead), lead);
         }
       });
 
@@ -2280,9 +2283,24 @@
         stageNodes.push(row);
       });
 
-      if (currentIndex === 0 && stageNodes[0]) {
+      // ─── Гейтинг блоков по этапу клиентского ЛК ───
+      // Индексы соответствуют STAGES выше (8 этапов):
+      //   0 Начало оформления          → опросник + блоки документов
+      //   1 Первичный сбор документов  → опросник + блоки документов
+      //   2 Подготовка документов      → свободная зона для доп. документов
+      //   3 Ожидание подачи            → банковская карта VOYO
+      //   4 Оформление на паузе        → банковская карта VOYO
+      //   5 Рассмотрение               → банковская карта VOYO
+      //   6 Паспорт готов              → банковская карта VOYO
+      //   7 Обращение исполнено        → подписка на телеграм-канал
+      // Условные блоки документов по опросникам Шенген/Япония на этапах
+      // 0/1/2 — отдельная фаза (Фаза 3), сейчас buildUploadBlocksConfig
+      // продолжает работать по прежней логике.
+
+      if ((currentIndex === 0 || currentIndex === 1) && stageNodes[currentIndex]) {
         // Используем кэш applicants — собран в loadLeads, чтобы не было лагов
         const applicants = Array.isArray(applicantsCache) ? applicantsCache : [];
+        const node = stageNodes[currentIndex];
 
         const totalFromFirst = applicants.length
           ? (parseInt(applicants[0] && applicants[0].totalApplicants, 10) || applicants.length)
@@ -2305,11 +2323,11 @@
 
         // Жёлтый только если что-то ещё не собрано
         if (!(allFilled && allDocsUploaded)) {
-          stageNodes[0].classList.add("warn");
+          node.classList.add("warn");
         }
 
         const questionnaireBlock = createQuestionnaireBlock(lead);
-        stageNodes[0].after(questionnaireBlock);
+        node.after(questionnaireBlock);
 
         if (!applicants.length) {
           // Опросник не заполнен — стандартный плейсхолдер
@@ -2335,24 +2353,21 @@
         }
       }
 
-      if (currentIndex === 1 && stageNodes[1]) {
-        const extraBlock = createExtraDocBlock(lead);
-        stageNodes[1].after(extraBlock);
-      }
-
       if (currentIndex === 2 && stageNodes[2]) {
-        const bankBlock = createBankCardBlock();
-        stageNodes[2].after(bankBlock);
+        const extraBlock = createExtraDocBlock(lead);
+        stageNodes[2].after(extraBlock);
       }
 
-      if (currentIndex === 3 && stageNodes[3]) {
+      // Этапы 3-6: банковская карта (Ожидание подачи, Оформление на паузе,
+      // Рассмотрение, Паспорт готов).
+      if (currentIndex >= 3 && currentIndex <= 6 && stageNodes[currentIndex]) {
         const bankBlock = createBankCardBlock();
-        stageNodes[3].after(bankBlock);
+        stageNodes[currentIndex].after(bankBlock);
       }
 
-      if (currentIndex === 4 && stageNodes[4]) {
+      if (currentIndex === 7 && stageNodes[7]) {
         const tgBlock = createTelegramBlock();
-        stageNodes[4].after(tgBlock);
+        stageNodes[7].after(tgBlock);
       }
     }
 
@@ -2371,7 +2386,7 @@
       if (itemEl) itemEl.classList.add("active");
 
       const currentStageIndex = getCurrentStageIndex(lead);
-      const currentStageTitle = STAGES[currentStageIndex] || "Сбор документов";
+      const currentStageTitle = STAGES[currentStageIndex] || "Начало оформления";
 
       // Стейт опросников/файлов — per-lead (lead-scoped с 2026-05-21).
       // Грузим только для этой сделки.
@@ -2399,8 +2414,10 @@
 
       leadsPlaceholder.style.display = "none";
 
-      // Делим обращения: активные (любой статус кроме «Рассмотрение завершено») и завершённые.
-      const COMPLETED_STAGE = "Рассмотрение завершено";
+      // Делим обращения: активные и завершённые. Завершённый — это «Обращение
+      // исполнено» (Успешно реализовано / Возврат). «Паспорт готов» считается
+      // активным — на нём мы ещё показываем предложение карты VOYO.
+      const COMPLETED_STAGE = "Обращение исполнено";
       const isCompleted = (l) => String(l && l.cabinet_status || "") === COMPLETED_STAGE;
       const active = leads.filter((l) => !isCompleted(l));
       const completed = leads.filter(isCompleted);
@@ -2633,8 +2650,11 @@
         const matches = evtPhone === myPhone || myPhone.endsWith(evtPhone) || evtPhone.endsWith(myPhone);
         if (!matches) return;
         await refreshApplicantsCache();
-        if (selectedLead && getCurrentStageIndex(selectedLead) === 0) {
-          renderStages(0, selectedLead);
+        // Перерендер только на этапах с опросником+блоками (Начало оформления,
+        // Первичный сбор документов). На прочих этапах эти данные не показываются.
+        const idx = selectedLead ? getCurrentStageIndex(selectedLead) : -1;
+        if (selectedLead && (idx === 0 || idx === 1)) {
+          renderStages(idx, selectedLead);
         }
       } catch (_) {}
     });
