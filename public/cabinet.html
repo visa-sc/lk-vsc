@@ -1458,10 +1458,10 @@
         stage2Blocks.push({ field: "secondPassport", label: "2-ой загран. паспорт" });
       }
       if (state.hasOwnAccommodation === "Да") {
-        stage2Blocks.push({ field: "ownAccommodation", label: "Своё проживание (бронь / аренда / собственность)" });
+        stage2Blocks.push({ field: "ownAccommodation", label: "Своё проживание (бронь или аренда или собственность)" });
       }
       if (state.hasOwnTransport === "Да") {
-        stage2Blocks.push({ field: "ownTransport", label: "Свои авиабилеты / другой транспорт" });
+        stage2Blocks.push({ field: "ownTransport", label: "Свои авиабилеты или другой транспорт" });
       }
       // Билеты в третью страну: "Есть 2й паспорт" = да И "Могу сдать действующий"
       // = нет И "причина" = "Поездка в третью страну".
@@ -1473,7 +1473,7 @@
         stage2Blocks.push({ field: "thirdCountryTickets", label: "Билеты в третью страну" });
       }
       if (state.notRussianCitizen === "Да") {
-        stage2Blocks.push({ field: "residencePermit", label: "ВНЖ/регистрация" });
+        stage2Blocks.push({ field: "residencePermit", label: "ВНЖ или регистрация" });
       }
       // Возврат старого поведения: если в опроснике указан работодатель /
       // учебное заведение (employerName ≠ «НЕТ») — запрашиваем справку.

@@ -1921,10 +1921,10 @@ const UPLOAD_FIELDS_WHITELIST = {
   routeSheet:           "Маршрутный лист",
   routePlan:            "План поездки",
   ownFlights:           "Авиабилеты",
-  ownAccommodation:     "Своё проживание (бронь / аренда / собственность)",
-  ownTransport:         "Свои авиабилеты / другой транспорт",
+  ownAccommodation:     "Своё проживание (бронь или аренда или собственность)",
+  ownTransport:         "Свои авиабилеты или другой транспорт",
   electronicPhoto:      "Электронное фото",
-  residencePermit:      "ВНЖ/регистрация"
+  residencePermit:      "ВНЖ или регистрация"
 };
 
 async function findMatchingContacts(baseUrl, phone) {
@@ -5316,10 +5316,10 @@ function buildUploadBlocksForApplicantStats(state, lead, stageIndex) {
     stage2.push({ field: "secondPassport", label: "2-ой загран. паспорт", optional: true });
   }
   if (state.hasOwnAccommodation === "Да") {
-    stage2.push({ field: "ownAccommodation", label: "Своё проживание (бронь / аренда / собственность)", optional: true });
+    stage2.push({ field: "ownAccommodation", label: "Своё проживание (бронь или аренда или собственность)", optional: true });
   }
   if (state.hasOwnTransport === "Да") {
-    stage2.push({ field: "ownTransport", label: "Свои авиабилеты / другой транспорт", optional: true });
+    stage2.push({ field: "ownTransport", label: "Свои авиабилеты или другой транспорт", optional: true });
   }
   if (
     state.hasSecondPassport === "Да" &&
@@ -5329,7 +5329,7 @@ function buildUploadBlocksForApplicantStats(state, lead, stageIndex) {
     stage2.push({ field: "thirdCountryTickets", label: "Билеты в третью страну", optional: true });
   }
   if (state.notRussianCitizen === "Да") {
-    stage2.push({ field: "residencePermit", label: "ВНЖ/регистрация", optional: true });
+    stage2.push({ field: "residencePermit", label: "ВНЖ или регистрация", optional: true });
   }
   // Справка с работы/учёбы — если в опроснике указан работодатель.
   const employerNameSch = String(state.employerName || "").trim();
