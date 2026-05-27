@@ -5240,94 +5240,118 @@ function countryMatchesAny(countryValue, list) {
   return list.some((c) => v.includes(c.toLowerCase()));
 }
 
-function buildUploadBlocksForApplicantStats(state, lead) {
-  // Опросник на визу в Японию.
-  if (state && String(state.visaType || "").trim() === "Виза в Японию") {
-    const jpBlocks = [
-      { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)", optional: false },
-      { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)", optional: false }
-    ];
+// Если stageIndex передан — возвращаем блоки только для этого этапа ЛК.
+// stageIndex undefined → ОБЪЕДИНЁННЫЙ набор всех «загрузочных» этапов
+// (нужно для общего расчёта «всё ли загружено», когда этап не важен).
+function buildUploadBlocksForApplicantStats(state, lead, stageIndex) {
+  const isJp = state && String(state.visaType || "").trim() === "Виза в Японию";
+  const includeAll = (typeof stageIndex !== "number");
+
+  // Stage 0: «Начало оформления» — 2 паспорта для обеих виз.
+  const stage0 = [
+    { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)", optional: false },
+    { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)", optional: false }
+  ];
+
+  if (isJp) {
+    // Stage 1 Японии — условные блоки по опроснику.
+    const stage1 = [];
     const occ = String(state.jp_occupation || "").trim();
-    if (occ === "Работа по найму") {
-      jpBlocks.push({ field: "workCert",  label: "Справка с работы", optional: true });
-    }
-    if (occ === "Учащийся") {
-      jpBlocks.push({ field: "studyCert", label: "Справка с учёбы", optional: true });
-    }
     const jpTripPurpose = String(state.jp_tripPurpose || "").trim();
     if (jpTripPurpose && jpTripPurpose !== "Туризм") {
-      jpBlocks.push({ field: "invitation", label: "Приглашение", optional: true });
-      jpBlocks.push({ field: "routePlan",  label: "План поездки", optional: true });
+      stage1.push({ field: "invitation", label: "Приглашение", optional: true });
+      stage1.push({ field: "routePlan",  label: "План поездки", optional: true });
     }
     if (String(state.jp_hasOwnFlights || "").trim() === "Да") {
-      jpBlocks.push({ field: "ownFlights", label: "Авиабилеты", optional: true });
+      stage1.push({ field: "ownFlights", label: "Авиабилеты", optional: true });
     }
     if (String(state.jp_hasSponsor || "").trim() === "Да") {
-      jpBlocks.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора", optional: true });
+      stage1.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора", optional: true });
     }
     if (String(state.jp_isUnder18 || "").trim() === "Да") {
-      jpBlocks.push({ field: "birthCertificate", label: "Свидетельство о рождении", optional: true });
+      stage1.push({ field: "birthCertificate", label: "Свидетельство о рождении", optional: true });
     }
-    return jpBlocks;
+    if (occ === "Работа по найму") {
+      stage1.push({ field: "workCert",  label: "Справка с работы", optional: true });
+    }
+    if (occ === "Учащийся") {
+      stage1.push({ field: "studyCert", label: "Справка с учёбы", optional: true });
+    }
+    // Stage 2 Японии — свободная зона (extra-doc), здесь её не считаем
+    // в воронке: блок есть всегда и не имеет «строго требуемых» файлов.
+    const stage2 = [];
+
+    if (includeAll) return stage0.concat(stage1).concat(stage2);
+    if (stageIndex === 0) return stage0;
+    if (stageIndex === 1) return stage1;
+    if (stageIndex === 2) return stage2;
+    return [];
   }
 
-  // Опросник на Шенгенскую визу.
-  const blocks = [];
-  blocks.push({ field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" });
-  blocks.push({ field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" });
-
-  // Этап 1: «Первичный сбор документов»
+  // ─── Шенген ───
   const country = (lead && lead.country_service) || "";
+  const stage1 = [];
   if (countryMatchesAny(country, ELECTRONIC_PHOTO_COUNTRIES)) {
-    blocks.push({ field: "electronicPhoto", label: "Электронное фото" });
+    stage1.push({ field: "electronicPhoto", label: "Электронное фото", optional: true });
   }
   const tripPurpose = String(state.tripPurpose || "").trim();
   if (tripPurpose && tripPurpose !== "Туризм") {
-    blocks.push({ field: "invitation", label: "Приглашение" });
+    stage1.push({ field: "invitation", label: "Приглашение", optional: true });
   }
 
-  // Этап 2: «Подготовка документов»
+  const stage2 = [];
   if (state.hasActiveSchengen === "Да") {
-    blocks.push({ field: "activeSchengenPhoto", label: "Фото действующей Шенгенской визы" });
+    stage2.push({ field: "activeSchengenPhoto", label: "Фото действующей Шенгенской визы", optional: true });
   }
   if (state.hadSchengen3Years === "Да") {
-    blocks.push({ field: "prevSchengenPhoto", label: "Фото последней Шенгенской визы" });
+    stage2.push({ field: "prevSchengenPhoto", label: "Фото последней Шенгенской визы", optional: true });
   }
   if (state.hasSponsor === "Да") {
-    blocks.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора / Спонсорское письмо от компании" });
+    stage2.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора / Спонсорское письмо от компании", optional: true });
   }
   if (state.isUnder18 === "Да") {
-    blocks.push({ field: "birthCertificate", label: "Свидетельство о рождении" });
+    stage2.push({ field: "birthCertificate", label: "Свидетельство о рождении", optional: true });
   }
   if (state.hasSecondPassport === "Да") {
-    blocks.push({ field: "secondPassport", label: "2-ой загран. паспорт" });
+    stage2.push({ field: "secondPassport", label: "2-ой загран. паспорт", optional: true });
   }
   if (state.hasOwnAccommodation === "Да") {
-    blocks.push({ field: "ownAccommodation", label: "Своё проживание (бронь / аренда / собственность)" });
+    stage2.push({ field: "ownAccommodation", label: "Своё проживание (бронь / аренда / собственность)", optional: true });
   }
   if (state.hasOwnTransport === "Да") {
-    blocks.push({ field: "ownTransport", label: "Свои авиабилеты / другой транспорт" });
+    stage2.push({ field: "ownTransport", label: "Свои авиабилеты / другой транспорт", optional: true });
   }
-  // Билеты в третью страну: "Есть 2й паспорт" = да И "Могу сдать действующий"
-  // = нет И "причина" = "поездка в третью страну".
   if (
     state.hasSecondPassport === "Да" &&
     state.canSurrenderPassport === "Нет" &&
     /треть.*страну/i.test(String(state.surrenderReason || ""))
   ) {
-    blocks.push({ field: "thirdCountryTickets", label: "Билеты в третью страну" });
+    stage2.push({ field: "thirdCountryTickets", label: "Билеты в третью страну", optional: true });
   }
   if (state.notRussianCitizen === "Да") {
-    blocks.push({ field: "residencePermit", label: "ВНЖ/регистрация" });
+    stage2.push({ field: "residencePermit", label: "ВНЖ/регистрация", optional: true });
   }
-  return blocks;
+
+  if (includeAll) return stage0.concat(stage1).concat(stage2);
+  if (stageIndex === 0) return stage0;
+  if (stageIndex === 1) return stage1;
+  if (stageIndex === 2) return stage2;
+  return [];
 }
 
-// Для конкретного (phone, leadId) считает по всем заявителям этой сделки:
-//   hasAllRequired — у каждого заявителя загружены ВСЕ required-блоки,
-//   hasAllBlocks   — у каждого заявителя загружены ВСЕ блоки (required + optional).
-// "Загружено" определяется так же, как в кабинете: имя файла начинается с label.
-async function computeUploadStatusForLead(phone, leadId) {
+// Для конкретного (phone, leadId) считает по всем заявителям этой сделки,
+// прошёл ли клиент этапы ЛК «Первичный сбор документов» (stage 1) и
+// «Подготовка документов» (stage 2). «Прошёл этап X» = для каждого
+// заявителя ВСЕ блоки этого этапа из его опросника фактически загружены.
+//
+// Имена ключей сохранены — { hasAllRequired, hasAllBlocks } — для backward
+// compat с потребителями (computeAdminStats, frontend admin.html), но
+// семантика теперь stage-based:
+//   hasAllRequired — все блоки stage 1 загружены (прошёл «Первичный сбор»)
+//   hasAllBlocks   — все блоки stage 2 загружены (прошёл «Подготовку»)
+// «Загружено» определяется так же, как в кабинете: имя файла начинается
+// с label блока, далее точка или пробел.
+async function computeUploadStatusForLead(phone, leadId, leadObj) {
   if (!phone || !leadId) return { hasAllRequired: false, hasAllBlocks: false };
   try {
     const techFiles = await listAllTechFiles(phone, leadId);
@@ -5343,50 +5367,43 @@ async function computeUploadStatusForLead(phone, leadId) {
     const leadRoot = leadScopedFolder(phone, leadId);
     const phoneRoot = `${YANDEX_DISK_ROOT}/${phone}`;
 
-    let allReq = true;
-    let allBlk = true;
+    let allStage1 = true;
+    let allStage2 = true;
 
     for (const idx of indices) {
       const data = await loadApplicantJson(phone, leadId, idx);
       if (!data || !data.fullName) {
-        allReq = false; allBlk = false;
+        allStage1 = false; allStage2 = false;
         continue;
       }
-      const blocks = buildUploadBlocksForApplicantStats(data);
-      if (!blocks.length) continue;
+      const stage1Blocks = buildUploadBlocksForApplicantStats(data, leadObj, 1);
+      const stage2Blocks = buildUploadBlocksForApplicantStats(data, leadObj, 2);
 
       const safeFio = sanitizeFileName(String(data.fullName).trim());
       if (!safeFio) {
-        allReq = false; allBlk = false;
+        allStage1 = false; allStage2 = false;
         continue;
       }
 
-      // Сливаем файлы lead-scoped + legacy (если этот лид — owner).
       const merged = new Set();
       (await listYandexFolderFiles(`${leadRoot}/${safeFio}`) || []).forEach((n) => merged.add(n));
       if (isLegacyOwner) {
         (await listYandexFolderFiles(`${phoneRoot}/${safeFio}`) || []).forEach((n) => merged.add(n));
       }
+      const files = Array.from(merged);
 
-      for (const b of blocks) {
-        const hasFile = Array.from(merged).some((f) => {
-          if (!f.startsWith(b.label)) return false;
-          const next = f.charAt(b.label.length);
-          return next === "." || next === " ";
-        });
-        if (!hasFile) {
-          allBlk = false;
-          // Если у блока явно проставлен флаг optional — используем его (так делаем
-          // в японской ветке, где набор «необязательных» полей отличается от
-          // дефолтного шенгенского). Иначе — fallback на STATS_DEFAULT_OPTIONAL_FIELDS.
-          const isOptional = (typeof b.optional === "boolean")
-            ? b.optional
-            : STATS_DEFAULT_OPTIONAL_FIELDS.has(b.field);
-          if (!isOptional) allReq = false;
-        }
-      }
+      const allLoaded = (blocks) => blocks.every((b) => files.some((f) => {
+        if (!f.startsWith(b.label)) return false;
+        const next = f.charAt(b.label.length);
+        return next === "." || next === " ";
+      }));
+
+      // Пустой набор блоков на этапе — этап считается «пройденным» по
+      // умолчанию (нечего грузить из условных по этому опроснику).
+      if (stage1Blocks.length && !allLoaded(stage1Blocks)) allStage1 = false;
+      if (stage2Blocks.length && !allLoaded(stage2Blocks)) allStage2 = false;
     }
-    return { hasAllRequired: allReq, hasAllBlocks: allBlk };
+    return { hasAllRequired: allStage1, hasAllBlocks: allStage2 };
   } catch (e) {
     console.error("computeUploadStatusForLead error:", e && e.message);
     return { hasAllRequired: false, hasAllBlocks: false };

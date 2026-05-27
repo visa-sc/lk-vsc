@@ -2675,8 +2675,25 @@
       // Этапы 3-6: банковская карта (Ожидание подачи, Оформление на паузе,
       // Рассмотрение, Паспорт готов).
       if (currentIndex >= 3 && currentIndex <= 6 && stageNodes[currentIndex]) {
+        // На «Ожидание подачи» (index 3), если в amoCRM статус «Документы
+        // готовы к личной подаче» — над картой добавляем сообщение клиенту,
+        // что документы нужно забрать.
+        let lastInserted = stageNodes[currentIndex];
+        if (currentIndex === 3 && lead && typeof lead.status_name === "string"
+            && /документы\s+готовы\s+к\s+личной\s+подаче/i.test(lead.status_name)) {
+          const pickupNotice = document.createElement("div");
+          pickupNotice.className = "documents-inline";
+          pickupNotice.style.display = "block";
+          pickupNotice.innerHTML = `
+            <div style="font-size:14px;line-height:1.5;color:#1f2330;">
+              Ваши документы. Их <strong><u>необходимо забрать</u></strong>.
+            </div>
+          `;
+          lastInserted.after(pickupNotice);
+          lastInserted = pickupNotice;
+        }
         const bankBlock = createBankCardBlock();
-        stageNodes[currentIndex].after(bankBlock);
+        lastInserted.after(bankBlock);
       }
 
       if (currentIndex === 7 && stageNodes[7]) {

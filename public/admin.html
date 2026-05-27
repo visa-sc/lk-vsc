@@ -1271,7 +1271,7 @@
         header.appendChild(updated);
         wrap.appendChild(header);
 
-        // Hero: сквозная конверсия «Авторизовались → Загрузили все документы».
+        // Hero: сквозная конверсия «Авторизовались → Прошёл «Подготовка документов»».
         const hero = document.createElement("div");
         hero.className = "hero-conv";
         const heroNum = document.createElement("div");
@@ -1281,7 +1281,7 @@
         heroText.className = "text";
         heroText.innerHTML =
           "<strong>Сквозная конверсия</strong><br>" +
-          "из «Авторизовались» в «Загрузили все документы»<br>" +
+          "из «Авторизовались» в «Прошёл «Подготовка документов»»<br>" +
           (totals.uploadedAll || 0) + " из " + (totals.authorized || 0) + " клиентов прошли весь путь";
         hero.appendChild(heroNum);
         hero.appendChild(heroText);
@@ -1292,8 +1292,8 @@
         const funnel = buildFunnel([
           { idx: 1, num: totals.authorized, label: "Авторизовались" },
           { idx: 2, num: totals.submittedQuestionnaire, label: "Заполнили опросник" },
-          { idx: 3, num: totals.uploadedRequired, label: "Загрузили обязательные документы" },
-          { idx: 4, num: totals.uploadedAll, label: "Загрузили все документы" }
+          { idx: 3, num: totals.uploadedRequired, label: "Прошёл «Первичный сбор документов»" },
+          { idx: 4, num: totals.uploadedAll, label: "Прошёл «Подготовка документов»" }
         ], [
           conv.auth_to_submitted || 0,
           conv.submitted_to_required || 0,
