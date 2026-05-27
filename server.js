@@ -1910,11 +1910,11 @@ const UPLOAD_FIELDS_WHITELIST = {
   prevSchengenPhoto:    "Фото последней Шенгенской визы",
   birthCertificate:     "Свидетельство о рождении",
   // ВНИМАНИЕ: с 27.05.2026 для Шенгена этот label переименован c "1-ый разворот
-  // внутреннего паспорта РФ спонсора" на "Внутр. паспорт спонсора / Спонсорское
-  // письмо от компании". Файлы, загруженные ранее под прежним префиксом,
-  // остаются в папке клиента и продолжают попадать в zip. Для Японии используем
-  // отдельный label через виза-зависимую логику в cabinet.html.
-  sponsorPassport:      "Внутр. паспорт спонсора / Спонсорское письмо от компании",
+  // внутреннего паспорта РФ спонсора". Слэш в label нельзя — Я.Диск трактует
+  // его как разделитель пути и валит загрузку с 409 DiskPathDoesntExistsError;
+  // поэтому используем "или" вместо "/". Для Японии используем отдельный
+  // короткий label через виза-зависимую логику в cabinet.html.
+  sponsorPassport:      "Внутр. паспорт спонсора или Спонсорское письмо от компании",
   insurancePolicy:      "Страховой полис для въезда в Шенген",
   workCert:             "Справка с работы",
   studyCert:            "Справка с учёбы",
@@ -5307,7 +5307,7 @@ function buildUploadBlocksForApplicantStats(state, lead, stageIndex) {
     stage2.push({ field: "prevSchengenPhoto", label: "Фото последней Шенгенской визы", optional: true });
   }
   if (state.hasSponsor === "Да") {
-    stage2.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора / Спонсорское письмо от компании", optional: true });
+    stage2.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора или Спонсорское письмо от компании", optional: true });
   }
   if (state.isUnder18 === "Да") {
     stage2.push({ field: "birthCertificate", label: "Свидетельство о рождении", optional: true });
