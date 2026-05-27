@@ -1514,35 +1514,14 @@
 
       const inputs = [];
 
-      // На «Отделе продаж» делим блок на две секции:
-      //   «Требуется сейчас для начала оформления:» — обязательные (по факту только внутренний паспорт)
-      //   «Можно загрузить позже:» — всё остальное (необязательное для текущего этапа).
-      // На Японии все 2 поля обязательные → секции не нужны.
+      // С 27.05.2026 (новая структура 8 этапов ЛК) подразделение блока на
+      // «Необходимо загрузить сейчас» / «Можно загрузить позже» убрано —
+      // на каждом из 3 «загрузочных» этапов состав блоков уже фильтруется
+      // по stageIndex. Здесь — заглушки для совместимости с остальным кодом
+      // createDocumentsBlock (updateRequiredSectionState/renderPreviews).
       const isJapanState = applicant && applicant.visaType === "Виза в Японию";
-      const showSalesSections = isSalesPipeline(lead) && !isJapanState;
-      let sectionFlags = { requiredShown: false, optionalShown: false };
-      // Reference на заголовок обязательной секции — нужна, чтобы переключать
-      // .required-done (red→green), когда все обязательные доки прикреплены.
       let requiredSectionEl = null;
-      function maybeAddSection(cfg) {
-        if (!showSalesSections) return;
-        const isOptional = isFieldOptionalForLead(cfg.field, lead, applicant);
-        if (!isOptional && !sectionFlags.requiredShown) {
-          const h = document.createElement("div");
-          h.className = "file-list-section";
-          h.textContent = "Необходимо загрузить сейчас для начала оформления:";
-          list.appendChild(h);
-          sectionFlags.requiredShown = true;
-          requiredSectionEl = h;
-        }
-        if (isOptional && !sectionFlags.optionalShown) {
-          const h = document.createElement("div");
-          h.className = "file-list-section muted";
-          h.textContent = "Можно загрузить позже:";
-          list.appendChild(h);
-          sectionFlags.optionalShown = true;
-        }
-      }
+      function maybeAddSection() { /* no-op */ }
 
       // Пересчитывает «все обязательные доки прикреплены?» (initial OR pending)
       // и переключает заголовок красный↔зелёный. Вызывается после первичного
