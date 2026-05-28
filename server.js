@@ -5690,8 +5690,22 @@ async function _computePaidConversionStatsInner() {
     const allLeads = await amoGetAllPagesParallel(`${baseUrl}/api/v4/leads`, params, 4);
     console.log(`PAID-CONV STATS: fetched ${allLeads.length} leads updated_at >= ${fromTs} (${Date.now()-t0}ms)`);
 
-    // ── Сначала отфильтруем сделки по «Дата оплаты» + стране — чтобы потом
-    //    тянуть телефоны ТОЛЬКО для контактов, которые реально нужны.
+    // Карта воронок/статусов — уже кешируется на 10 минут (getCachedPipelinesMap),
+    // поэтому добавление здесь дополнительного шага НЕ замедляет работу.
+    // Используем для фильтрации статуса «Доплата» (исключение из расчёта
+    // по требованию от 28.05.2026).
+    let statusesMap = null;
+    try {
+      statusesMap = await getCachedPipelinesMap(baseUrl);
+    } catch (e) {
+      console.error("PAID-CONV STATS: pipelines map error (продолжаем без фильтра по «Доплата»):", e.message);
+    }
+
+    // ── Сначала отфильтруем сделки по «Дата оплаты» + стране + статус/услуга
+    //    (исключения «Доплата» и «ВНЖ» в стране) — чтобы потом тянуть
+    //    телефоны ТОЛЬКО для контактов, которые реально нужны.
+    let excludedDoplata = 0;
+    let excludedVnj = 0;
     const matchedLeads = [];
     for (const lead of allLeads) {
       // Дата оплаты
@@ -5703,9 +5717,21 @@ async function _computePaidConversionStatsInner() {
       // Страна
       const country = getCustomFieldValue(lead, "Страна оформления/услуга") || "";
       if (!paidConvCountryMatchesAny(country, PAID_CONV_ALL_COUNTRIES)) continue;
+      // Исключаем сделки со «ВНЖ» в поле «Страна оформления/услуга»
+      // (подстрочно, case-insensitive — «ВНЖ» может быть в сочетании
+      // с другими словами и символами).
+      if (/внж/i.test(country)) { excludedVnj++; continue; }
+      // Исключаем сделки на статусе amoCRM «Доплата». statusesMap опционален —
+      // если он не загрузился, фильтр пропускается (лучше показать «лишнее»,
+      // чем уронить весь блок статистики).
+      if (statusesMap) {
+        const meta = statusesMap.get(`${lead.pipeline_id}:${lead.status_id}`) || {};
+        const statusName = String(meta.status_name || "").trim().toLowerCase();
+        if (statusName === "доплата") { excludedDoplata++; continue; }
+      }
       matchedLeads.push({ lead, country });
     }
-    console.log(`PAID-CONV STATS: ${matchedLeads.length} leads match payment_date + country filter`);
+    console.log(`PAID-CONV STATS: ${matchedLeads.length} leads match payment_date + country filter (excluded: Доплата=${excludedDoplata}, ВНЖ=${excludedVnj})`);
 
     // Соберём contact_id только по «выжившим» лидам.
     const contactIds = new Set();

@@ -2720,16 +2720,37 @@
           }
         } else if (currentIndex === 2) {
           // ─── Этап «Подготовка документов» ───
-          // Шенген: условные блоки B. Япония: свободная зона.
+          // Шенген: условные блоки этапа 2 + догрузка всех неподгруженных
+          // блоков с этапов 0 (паспорта) и 1 (условные A) — если клиента
+          // перевели в этап 2 без полной загрузки на предыдущих этапах.
+          // По каждому заявителю свой набор. Япония: свободная зона.
           if (!applicants.length) {
             fragment.appendChild(createNoStateNotice());
           } else if (isJp) {
             fragment.appendChild(createExtraDocBlock(lead));
           } else {
+            const stage0PassportBlocks = [
+              { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" },
+              { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" }
+            ];
+            const isLabelLoaded = (files, label) => files.some((f) => {
+              if (!f.startsWith(label)) return false;
+              const next = f.charAt(label.length);
+              return next === "." || next === " ";
+            });
+
             applicants.forEach((applicant) => {
-              const blocksConfig = buildUploadBlocksConfig(applicant, lead, 2);
-              if (!blocksConfig.length) return;
-              fragment.appendChild(createDocumentsBlock(applicant, blocksConfig, lead));
+              const files = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
+              const missingPassports = stage0PassportBlocks.filter((b) => !isLabelLoaded(files, b.label));
+              const stage1Blocks = buildUploadBlocksConfig(applicant, lead, 1);
+              const stage2Blocks = buildUploadBlocksConfig(applicant, lead, 2);
+              // Стандартный порядок: догрузка паспортов (этап 0), затем
+              // условные блоки этапа 1, затем условные блоки этапа 2.
+              // createDocumentsBlock сам распознает уже загруженные блоки
+              // (показывает «готово»), а недозагруженные требует.
+              const combined = missingPassports.concat(stage1Blocks).concat(stage2Blocks);
+              if (!combined.length) return;
+              fragment.appendChild(createDocumentsBlock(applicant, combined, lead));
             });
             if (!fragment.childNodes.length) {
               fragment.appendChild(createNoMoreDocsNotice());
@@ -2757,6 +2778,18 @@
             <div style="font-size:14px;line-height:1.5;color:#1f2330;">
               Ваши документы готовы.<br>
               Их <strong><u>необходимо забрать</u></strong>.
+              <div style="margin-top:12px;">
+                Ваши документы готовы к получению.<br>
+                Получите документы одним из следующих способов:
+                <ul style="margin:6px 0 0;padding-left:20px;">
+                  <li>лично в офисе (в Москве или Санкт-Петербурге);</li>
+                  <li>через курьера;</li>
+                  <li>в электронном виде (потребуется распечатать самостоятельно).</li>
+                </ul>
+                <div style="margin-top:8px;">
+                  Свяжитесь с вашим менеджером, чтобы договориться о способе передачи документов.
+                </div>
+              </div>
             </div>
           `;
           stageNodes[currentIndex].after(pickupNotice);
