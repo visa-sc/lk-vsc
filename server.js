@@ -5721,17 +5721,42 @@ async function _computePaidConversionStatsInner() {
       // (подстрочно, case-insensitive — «ВНЖ» может быть в сочетании
       // с другими словами и символами).
       if (/внж/i.test(country)) { excludedVnj++; continue; }
-      // Исключаем сделки на статусе amoCRM «Доплата». statusesMap опционален —
-      // если он не загрузился, фильтр пропускается (лучше показать «лишнее»,
-      // чем уронить весь блок статистики).
+      // Исключаем сделки на статусе amoCRM «Доплата» (case-insensitive,
+      // подстрочно — чтобы поймать вариации типа «Доплата по сделке»).
+      // statusesMap опционален — если он не загрузился, фильтр пропускается.
       if (statusesMap) {
         const meta = statusesMap.get(`${lead.pipeline_id}:${lead.status_id}`) || {};
         const statusName = String(meta.status_name || "").trim().toLowerCase();
-        if (statusName === "доплата") { excludedDoplata++; continue; }
+        if (statusName.includes("доплат")) { excludedDoplata++; continue; }
       }
       matchedLeads.push({ lead, country });
     }
     console.log(`PAID-CONV STATS: ${matchedLeads.length} leads match payment_date + country filter (excluded: Доплата=${excludedDoplata}, ВНЖ=${excludedVnj})`);
+
+    // ── DEBUG: распределение статусов и стран среди прошедших фильтр.
+    //    Чтобы понять, почему фильтр «Доплата»/«ВНЖ» отбрасывает 0
+    //    (возможно, такие сделки реально отсутствуют, или их статус
+    //    в amoCRM назван иначе). Лог пишется один раз за пересчёт (раз в
+    //    20 минут под cache TTL) — нагрузки не создаёт.
+    if (statusesMap) {
+      const statusCount = new Map();
+      const countryCount = new Map();
+      for (const { lead, country } of matchedLeads) {
+        const meta = statusesMap.get(`${lead.pipeline_id}:${lead.status_id}`) || {};
+        const key = `${meta.pipeline_name || "?"} / ${meta.status_name || "?"}`;
+        statusCount.set(key, (statusCount.get(key) || 0) + 1);
+        countryCount.set(country, (countryCount.get(country) || 0) + 1);
+      }
+      const topStatuses = Array.from(statusCount.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${k}=${v}`);
+      console.log(`PAID-CONV DEBUG statuses: ${topStatuses.join(" | ")}`);
+      const topCountries = Array.from(countryCount.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15)
+        .map(([k, v]) => `${k}=${v}`);
+      console.log(`PAID-CONV DEBUG countries (top 15): ${topCountries.join(" | ")}`);
+    }
 
     // Соберём contact_id только по «выжившим» лидам.
     const contactIds = new Set();
