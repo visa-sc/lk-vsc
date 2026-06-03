@@ -40,6 +40,15 @@ app.get("/about", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "about.html"));
 });
 
+// Лендинг под Яндекс.Директ — конверсионная страница «авторизуйся в ЛК»,
+// промокод WELCOME −10%. no-cache, чтобы правки маркетинга применялись сразу.
+app.get("/welcome", (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  res.sendFile(path.join(__dirname, "public", "welcome.html"));
+});
+
 app.get("/about/v1", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "about-v1.html"));
 });
