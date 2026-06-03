@@ -635,8 +635,8 @@ const STATUS_MAP = {
     "Пакет документов готов": { client_status: "Подготовка документов" },
     "Запись сделана": { client_status: "Подготовка документов" },
     "Оформлен выкуп": { client_status: "Подготовка документов" },
-    "Ожидает записи вручную": { client_status: "Ожидание подачи" },
-    "Ожидает записи через Бота": { client_status: "Ожидание подачи" },
+    "Ожидает записи вручную": { client_status: "Подготовка документов" },
+    "Ожидает записи через Бота": { client_status: "Подготовка документов" },
     "На паузе по просьбе Клиента": { client_status: "Оформление на паузе" },
     "ОЖИДАЕТ РЕШЕНИЯ О ВОЗВРАТЕ": { client_status: "Оформление на паузе" },
     // Дефолтная цель — "Рассмотрение"; для США/Великобритании переопределяется
@@ -2493,6 +2493,14 @@ ${mixedFieldsHtml}
     <div class="field">
       <label>Страна поездки *</label>
       <input type="text" name="travelCountry" required />
+      <label class="ack-row" id="biometricAckRow" style="display: none;">
+        <input type="checkbox" name="biometricAck" value="Да" />
+        <span>Я уведомлен, что гражданам РФ для въезда в эту страну требуется биометрический (десятилетний) заграничный паспорт.</span>
+      </label>
+      <label class="ack-row" id="biometricAckFrRow" style="display: none;">
+        <input type="checkbox" name="biometricAckFr" value="Да" />
+        <span>Я уведомлен, что гражданам РФ старше 14 лет для въезда в эту страну требуется биометрический (десятилетний) заграничный паспорт.</span>
+      </label>
     </div>
 
     <!-- 24 -->
@@ -2862,12 +2870,16 @@ ${mixedFieldsHtml}
         empPhoneEl.classList.remove("input-error");
       }
     }
+
+    // Биометрический паспорт — показ обязательных галочек-уведомлений по «Стране поездки».
+    applyBiometricAckState();
   }
 
   form.addEventListener("change", updateConditionals);
-  // employerName — текстовое поле, нужно слушать input для мгновенной реакции.
+  // employerName / travelCountry — текстовые поля, нужно слушать input для мгновенной реакции.
   form.addEventListener("input", (e) => {
     if (e.target && e.target.name === "employerName") updateConditionals();
+    if (e.target && e.target.name === "travelCountry") applyBiometricAckState();
   });
   updateConditionals();
 
@@ -2988,6 +3000,40 @@ ${mixedFieldsHtml}
     });
   }
   applyTripDatesUnknownState();
+
+  // ─── Биометрический паспорт: обязательные галочки-уведомления по стране поездки ───
+  // BIO10 — страны, для въезда в которые гражданам РФ нужен биометрический
+  // (10-летний) загранпаспорт. «Страна поездки» — свободный текст, поэтому
+  // сравнение регистронезависимое и по вхождению подстроки. Франция — отдельная
+  // формулировка («старше 14 лет»), поэтому отдельная галочка.
+  function applyBiometricAckState() {
+    const BIO10 = ["чехия","дания","германия","эстония","литва","латвия","польша","румыния","исландия","финляндия"];
+    const tcEl = form.querySelector('input[name="travelCountry"]');
+    const val = (tcEl && tcEl.value || "").trim().toLowerCase();
+    const show10 = BIO10.some((c) => val.includes(c));
+    const showFr = val.includes("франция");
+    const row10 = document.getElementById("biometricAckRow");
+    const in10 = form.querySelector('input[name="biometricAck"]');
+    if (row10) {
+      row10.style.display = show10 ? "" : "none";
+      if (!show10) { row10.classList.remove("ack-error"); if (in10) in10.checked = false; }
+    }
+    const rowFr = document.getElementById("biometricAckFrRow");
+    const inFr = form.querySelector('input[name="biometricAckFr"]');
+    if (rowFr) {
+      rowFr.style.display = showFr ? "" : "none";
+      if (!showFr) { rowFr.classList.remove("ack-error"); if (inFr) inFr.checked = false; }
+    }
+  }
+  const bioAckIn10 = form.querySelector('input[name="biometricAck"]');
+  if (bioAckIn10) bioAckIn10.addEventListener("change", () => {
+    if (bioAckIn10.checked) { const r = document.getElementById("biometricAckRow"); if (r) r.classList.remove("ack-error"); }
+  });
+  const bioAckInFr = form.querySelector('input[name="biometricAckFr"]');
+  if (bioAckInFr) bioAckInFr.addEventListener("change", () => {
+    if (bioAckInFr.checked) { const r = document.getElementById("biometricAckFrRow"); if (r) r.classList.remove("ack-error"); }
+  });
+  applyBiometricAckState();
 
   // ─── Проверка дубликата ФИО в рамках этой сделки ───
   const EXISTING_FIOS = ${JSON.stringify(existingFios || []).replace(/</g, "\\u003c")};
@@ -3133,6 +3179,23 @@ ${mixedFieldsHtml}
         showBox(errorBox, "Заполните даты поездки — оба поля обязательны.");
         if (badDate.scrollIntoView) badDate.scrollIntoView({ behavior: "smooth", block: "center" });
         try { badDate.focus({ preventScroll: true }); } catch (_) { badDate.focus(); }
+        return;
+      }
+    }
+
+    // Биометрический паспорт — если уведомление видимо (страна из списка),
+    // галочка обязательна. Не отмечена → подсветка красным + скролл к пункту.
+    const bioAckRows = [
+      ["biometricAckRow", "biometricAck"],
+      ["biometricAckFrRow", "biometricAckFr"]
+    ];
+    for (const pair of bioAckRows) {
+      const rowEl = document.getElementById(pair[0]);
+      const inEl = form.querySelector('input[name="' + pair[1] + '"]');
+      if (rowEl && rowEl.style.display !== "none" && inEl && !inEl.checked) {
+        rowEl.classList.add("ack-error");
+        if (rowEl.scrollIntoView) rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        showBox(errorBox, "Поставьте галочку: подтвердите, что уведомлены о требовании биометрического загранпаспорта.");
         return;
       }
     }
@@ -4143,6 +4206,12 @@ async function generateQuestionnairePdfBuffer(data) {
     drawRow('Подробности цели "Иное"', data.tripPurposeOther);
     drawRow("Виза для собеседования на США в Польше", data.usaInterviewPoland);
     drawRow("Страна поездки", data.travelCountry);
+    if (data.biometricAck === "Да") {
+      drawRow("Уведомлён: для въезда нужен биометрический (10-летний) загранпаспорт", "Да");
+    }
+    if (data.biometricAckFr === "Да") {
+      drawRow("Уведомлён: биометрический загранпаспорт (Франция, граждане РФ старше 14 лет)", "Да");
+    }
     drawRow("В какую страну запрашивается виза", data.visaCountry);
     if (data.tripDatesUnknown === "Да") {
       drawRow("Даты поездки", "Точные даты пока не известны");
@@ -7517,6 +7586,8 @@ app.post(
         tripPurposeOther:           String(req.body.tripPurposeOther || "").trim(),
         usaInterviewPoland:         String(req.body.usaInterviewPoland || "").trim(),
         travelCountry:              String(req.body.travelCountry || "").trim(),
+        biometricAck:               String(req.body.biometricAck || "").trim(),
+        biometricAckFr:             String(req.body.biometricAckFr || "").trim(),
         visaCountry:                String(req.body.visaCountry || "").trim(),
         tripDateFrom:               String(req.body.tripDateFrom || "").trim(),
         tripDateTo:                 String(req.body.tripDateTo || "").trim(),
