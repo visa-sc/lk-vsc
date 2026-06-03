@@ -591,7 +591,7 @@
     const usePromoRadios = Array.from(document.querySelectorAll('input[name="usePromo"]'));
 
     // Режим регистрации = синий блок «не найдено» сейчас показан.
-    const VALID_PROMO_CODES = new Set(["10OFFBRO", "15OFFBRO", "20OFFBRO"]);
+    const VALID_PROMO_CODES = new Set(["10OFFBRO", "15OFFBRO", "20OFFBRO", "WELCOME"]);
     let isRegistrationMode = false;
     let isPromoApplied = false;        // true только когда введён валидный промокод и не отменён
     let lastAppliedPromoCode = "";     // конкретный код, который успешно применили (для отправки на сервер)
@@ -648,7 +648,7 @@
     });
 
     promoApplyBtn.addEventListener("click", () => {
-      const code = promoInput.value.trim();
+      const code = promoInput.value.trim().toUpperCase();
       if (VALID_PROMO_CODES.has(code)) {
         // Валидный — оставляем только зелёный текст, кнопку «Применить промокод» скрываем
         promoResult.classList.remove("err");

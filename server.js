@@ -212,9 +212,14 @@ app.post("/api/auth/has-leads", async (req, res) => {
 const PROMO_CODES = {
   "10OFFBRO": 10,
   "15OFFBRO": 15,
-  "20OFFBRO": 20
+  "20OFFBRO": 20,
+  "WELCOME": 10
 };
-function promoCommentText(percent) {
+function promoCommentText(percent, code) {
+  // Промокод WELCOME (лендинги /welcome*) — отдельный текст комментария.
+  if (String(code || "").toUpperCase() === "WELCOME") {
+    return "Скидка -10% на услуги по промокоду WELCOME при регистрации в VOYO.";
+  }
   return `-${percent}% скидка на услуги от Андрея К. Можно перекрыть сертификатом.`;
 }
 
@@ -251,7 +256,7 @@ app.post("/api/leads/new", async (req, res) => {
 app.post("/api/auth/register", async (req, res) => {
   try {
     const phone = sms.normalizePhone((req.body && req.body.phone) || "");
-    const promoCodeRaw = String((req.body && req.body.promoCode) || "").trim();
+    const promoCodeRaw = String((req.body && req.body.promoCode) || "").trim().toUpperCase();
     if (!phone || phone.length < 11) {
       return res.status(400).json({ success: false, message: "Некорректный номер телефона" });
     }
@@ -264,7 +269,7 @@ app.post("/api/auth/register", async (req, res) => {
     const promoApplied = promoPercent > 0;
     const result = await createAmoContactAndLeadForRegistration(phone, {
       promoApplied,
-      promoText: promoApplied ? promoCommentText(promoPercent) : ""
+      promoText: promoApplied ? promoCommentText(promoPercent, promoCodeRaw) : ""
     });
     return res.json({
       success: true,
