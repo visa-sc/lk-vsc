@@ -31,9 +31,9 @@
     .d1{animation-delay:.05s;} .d2{animation-delay:.12s;} .d3{animation-delay:.2s;} .d4{animation-delay:.28s;}
     @media (prefers-reduced-motion: reduce){ .anim{animation:none;} }
     .accent-text { background:linear-gradient(135deg,#3589BD 0%,#4f9f68 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
-    .nav { position:sticky; top:0; z-index:50; backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px); background:rgba(255,255,255,.72); border-bottom:1px solid rgba(0,0,0,.06); }
-    .nav-inner { max-width:1024px; margin:0 auto; padding:14px 22px; display:flex; align-items:center; justify-content:space-between; }
-    .nav-logo { height:26px; width:52px; aspect-ratio:2/1; mix-blend-mode:multiply; }
+    .nav { position:sticky; top:0; z-index:50; isolation:isolate; background:#ffffff; border-bottom:1px solid rgba(0,0,0,.06); }
+    .nav-inner { max-width:1024px; margin:0 auto; padding:9px 22px; display:flex; align-items:center; justify-content:space-between; }
+    .nav-logo { height:38px; width:76px; aspect-ratio:2/1; mix-blend-mode:multiply; }
     .nav-cta { background:var(--accent); color:#fff; padding:9px 18px; border-radius:980px; font-size:13px; font-weight:600; transition:.2s; }
     .nav-cta:hover { background:#2c75a3; }
     .btn { display:inline-flex; align-items:center; justify-content:center; padding:16px 32px; border-radius:980px; font-size:16px; font-weight:600; transition:.2s; border:none; cursor:pointer; line-height:1; }
@@ -100,9 +100,9 @@
     .stats-section .section-lead { color:#c8d4ea; }
     .stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; max-width:920px; margin:0 auto; }
     @media (max-width:760px){ .stats-grid{grid-template-columns:1fr 1fr;} }
-    .stat { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:24px 16px; text-align:center; }
-    .stat-num { font-size:clamp(26px,4vw,38px); font-weight:800; line-height:1.1; background:linear-gradient(135deg,#7fc0ea,#8fd3a6); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
-    .stat-cap { margin-top:8px; font-size:13px; color:#c8d4ea; }
+    .stat { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:22px 14px; min-height:146px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+    .stat-num { font-size:clamp(27px,3.2vw,34px); font-weight:800; line-height:1.1; white-space:nowrap; background:linear-gradient(135deg,#7fc0ea,#8fd3a6); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+    .stat-cap { margin-top:10px; font-size:13px; color:#c8d4ea; line-height:1.35; min-height:36px; display:flex; align-items:center; justify-content:center; }
     /* ── SLIDES (cabinet mockups) ── */
     .slides-hint { text-align:center; font-size:13px; color:var(--text-muted); margin-bottom:26px; }
     .slides { display:flex; gap:20px; overflow-x:auto; scroll-snap-type:x mandatory; padding:6px 22px 24px; -webkit-overflow-scrolling:touch; }
@@ -308,7 +308,7 @@
         <div class="stat"><div class="stat-num">11 лет</div><div class="stat-cap">оформляем визы</div></div>
         <div class="stat"><div class="stat-num">240 000+</div><div class="stat-cap">клиентов с нами</div></div>
         <div class="stat"><div class="stat-num">75</div><div class="stat-cap">специалистов в штате</div></div>
-        <div class="stat"><div class="stat-num">Москва · СПб</div><div class="stat-cap">офисы в двух городах</div></div>
+        <div class="stat"><div class="stat-num">2 города</div><div class="stat-cap">офисы в Москве и Санкт-Петербурге</div></div>
       </div>
     </div>
   </section>
