@@ -1929,7 +1929,14 @@ const UPLOAD_FIELDS_WHITELIST = {
   ownAccommodation:     "Своё проживание (бронь или аренда или собственность)",
   ownTransport:         "Свои авиабилеты или другой транспорт",
   electronicPhoto:      "Электронное фото",
-  residencePermit:      "ВНЖ или регистрация"
+  residencePermit:      "ВНЖ или регистрация",
+  // Посадочные талоны — по ТЗ от 29.05.2026 (Шенген: посещал зону после
+  // 10.04.2026, но штампы в загранпаспорт не ставили). Слэша в label нет
+  // («и (или)» вместо «и/или») — иначе Я.Диск валит загрузку 409. Строка
+  // обязана быть идентична label в buildUploadBlocksConfig (cabinet.html) и
+  // buildUploadBlocksForApplicantStats (server.js), иначе ломается детект
+  // «загружено» (startsWith(label)).
+  boardingPasses:       "Посадочные талоны и (или) иные подтверждения того, что вы использовали предыдущую визу."
 };
 
 async function findMatchingContacts(baseUrl, phone) {
@@ -2203,6 +2210,15 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
       border: 1px solid #d3e7f4;
       color: #2f6e95;
       margin-bottom: 14px;
+    }
+    .notice-green {
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 14px;
+      line-height: 1.5;
+      background: #edf8ef;
+      border: 1px solid #cfe7d2;
+      color: #2e7a43;
     }
     .submit-btn {
       height: 50px;
@@ -2559,6 +2575,31 @@ ${mixedFieldsHtml}
       </div>
     </div>
 
+    <!-- 33а условно: посещение Шенгена после 10.04.2026 — если есть действующая виза ИЛИ были визы за 3 года -->
+    <div class="cond" id="c_visitedSchengen">
+      <div class="field">
+        <label>Я посещал (-а) Шенгенскую зону после 10 апреля 2026 года</label>
+        <div class="radio-group">
+          <label><input type="radio" name="visitedSchengenAfterApr2026" value="Да" /> Да</label>
+          <label><input type="radio" name="visitedSchengenAfterApr2026" value="Нет" /> Нет</label>
+        </div>
+      </div>
+      <div class="cond" id="c_borderStamps">
+        <div class="field">
+          <label>Вам ставили штампы о пересечении границы в ваш заграничный паспорт?</label>
+          <div class="radio-group">
+            <label><input type="radio" name="hadBorderStamps" value="Да" /> Да</label>
+            <label><input type="radio" name="hadBorderStamps" value="Нет" /> Нет</label>
+          </div>
+        </div>
+        <div class="cond" id="c_borderStampsNotice">
+          <div class="notice-green">
+            Необходимо будет предоставить посадочные талоны / иное подтверждение того, что вы посетили Шенгенскую зону.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 34 -->
     <div class="field">
       <label>У меня есть действительная страховка для въезда в Шенгенскую зону</label>
@@ -2794,6 +2835,12 @@ ${mixedFieldsHtml}
     toggle("c_prevSchengen",      radio("hadSchengen3Years") === "Да");
     toggle("c_didNotUseReason",   radio("didNotUseVisa") === "Да");
     toggle("c_refusalReason",     radio("visaRefused") === "Да");
+    // Посещение Шенгена после 10.04.2026 — показываем, если есть действующая
+    // виза ИЛИ были визы за последние 3 года. Затем вопрос про штампы, и при
+    // ответе «Нет» — зелёное уведомление о необходимости посадочных талонов.
+    toggle("c_visitedSchengen",   radio("hasActiveSchengen") === "Да" || radio("hadSchengen3Years") === "Да");
+    toggle("c_borderStamps",      radio("visitedSchengenAfterApr2026") === "Да");
+    toggle("c_borderStampsNotice", radio("hadBorderStamps") === "Нет");
     toggle("c_legalRep",          radio("isUnder18") === "Да");
     toggle("c_sponsorName",       radio("hasSponsor") === "Да");
     toggle("c_botBooking",        radio("useBotBooking") === "Да");
@@ -4118,6 +4165,8 @@ async function generateQuestionnairePdfBuffer(data) {
     drawRow("Причина, почему виза не была отъезжена", data.didNotUseReason);
     drawRow("Открыл/-а визу не той страной, которая её выдала", data.visaRefused);
     drawRow("Укажите причину", data.refusalReason);
+    drawRow("Посещал Шенгенскую зону после 10.04.2026", data.visitedSchengenAfterApr2026);
+    drawRow("Ставили штампы о пересечении границы в загранпаспорт", data.hadBorderStamps);
 
     // ── Документы и услуги ──
     drawSectionHeader("Документы и услуги");
@@ -5464,6 +5513,17 @@ function buildUploadBlocksForApplicantStats(state, lead, stageIndex) {
   // Страховой полис — если есть в опроснике (старое условие).
   if (state.hasInsurance === "Да") {
     stage2.push({ field: "insurancePolicy", label: "Страховой полис для въезда в Шенген", optional: true });
+  }
+  // Посадочные талоны — если клиент посещал Шенген после 10.04.2026, но штампы
+  // в загранпаспорт ему не ставили. Гейтим и по родительскому условию (есть
+  // действующая виза ИЛИ были визы за 3 года), чтобы не сработать на устаревших
+  // значениях скрытых полей опросника. Зеркало cabinet.html buildUploadBlocksConfig.
+  if (
+    (state.hasActiveSchengen === "Да" || state.hadSchengen3Years === "Да") &&
+    state.visitedSchengenAfterApr2026 === "Да" &&
+    state.hadBorderStamps === "Нет"
+  ) {
+    stage2.push({ field: "boardingPasses", label: "Посадочные талоны и (или) иные подтверждения того, что вы использовали предыдущую визу.", optional: true });
   }
 
   if (includeAll) return stage0.concat(stage1).concat(stage2);
@@ -7469,6 +7529,8 @@ app.post(
         didNotUseReason:            String(req.body.didNotUseReason || "").trim(),
         visaRefused:                String(req.body.visaRefused || "").trim(),
         refusalReason:              String(req.body.refusalReason || "").trim(),
+        visitedSchengenAfterApr2026: String(req.body.visitedSchengenAfterApr2026 || "").trim(),
+        hadBorderStamps:            String(req.body.hadBorderStamps || "").trim(),
         hasInsurance:               String(req.body.hasInsurance || "").trim(),
         wantBuyInsurance:           String(req.body.wantBuyInsurance || "").trim(),
         hasOwnAccommodation:        String(req.body.hasOwnAccommodation || "").trim(),

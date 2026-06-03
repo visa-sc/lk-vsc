@@ -1349,6 +1349,7 @@
       "secondPassport",
       "activeSchengenPhoto",
       "prevSchengenPhoto",
+      "boardingPasses",
       "routeSheet"
     ]);
 
@@ -1488,6 +1489,17 @@
       // Возврат старого поведения: страховой полис.
       if (state.hasInsurance === "Да") {
         stage2Blocks.push({ field: "insurancePolicy", label: "Страховой полис для въезда в Шенген" });
+      }
+      // Посадочные талоны — если клиент посещал Шенген после 10.04.2026, но
+      // штампы в загранпаспорт ему не ставили. Гейтим и по родительскому
+      // условию (есть действующая виза ИЛИ были визы за 3 года), чтобы не
+      // сработать на устаревших значениях скрытых полей опросника.
+      if (
+        (state.hasActiveSchengen === "Да" || state.hadSchengen3Years === "Да") &&
+        state.visitedSchengenAfterApr2026 === "Да" &&
+        state.hadBorderStamps === "Нет"
+      ) {
+        stage2Blocks.push({ field: "boardingPasses", label: "Посадочные талоны и (или) иные подтверждения того, что вы использовали предыдущую визу." });
       }
 
       // Все условные блоки этапов 1 и 2 обязательны (требование от
