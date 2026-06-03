@@ -49,6 +49,21 @@ app.get("/welcome", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "welcome.html"));
 });
 
+// Лендинги под конкретные кампании Яндекс.Директ: Шенген и Япония.
+app.get("/welcome_schengen", (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  res.sendFile(path.join(__dirname, "public", "welcome_schengen.html"));
+});
+
+app.get("/welcome_japan", (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  res.sendFile(path.join(__dirname, "public", "welcome_japan.html"));
+});
+
 app.get("/about/v1", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "about-v1.html"));
 });

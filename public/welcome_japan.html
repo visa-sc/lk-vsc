@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VOYO — оформление визы онлайн в личном кабинете · промокод WELCOME −10%</title>
+  <title>Виза в Японию онлайн в личном кабинете VOYO · промокод WELCOME −10%</title>
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="/apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-title" content="VOYO" />
-  <meta name="description" content="Оформите визу онлайн в личном кабинете VOYO: умный опросник, загрузка документов с телефона и прозрачный статус на каждом этапе. Промокод WELCOME — скидка 10% на первое оформление." />
+  <meta name="description" content="Оформите визу в Японию онлайн в личном кабинете VOYO: умный опросник, загрузка документов с телефона и прозрачный статус на каждом этапе. Промокод WELCOME — скидка 10% на первое оформление." />
   <meta name="robots" content="index, follow" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="VOYO" />
-  <meta property="og:title" content="Виза онлайн в личном кабинете VOYO · промокод WELCOME −10%" />
-  <meta property="og:description" content="Умный опросник, загрузка документов с телефона и прозрачный статус визы. Скидка 10% по промокоду WELCOME." />
-  <meta property="og:url" content="https://voyovoyo.ru/welcome" />
+  <meta property="og:title" content="Виза в Японию онлайн в личном кабинете VOYO · WELCOME −10%" />
+  <meta property="og:description" content="Умный опросник, загрузка документов с телефона и прозрачный статус визы в Японию. Скидка 10% по промокоду WELCOME." />
+  <meta property="og:url" content="https://voyovoyo.ru/welcome_japan" />
   <meta property="og:image" content="https://voyovoyo.ru/logo.png" />
   <meta property="og:image:width" content="600" />
   <meta property="og:image:height" content="300" />
@@ -44,7 +44,6 @@
     }
     a { color: inherit; text-decoration: none; }
 
-    /* entrance animation — pure CSS, контент всегда заканчивается видимым */
     @keyframes fadeUp { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
     .anim { animation: fadeUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
     .d1 { animation-delay: 0.05s; } .d2 { animation-delay: 0.12s; }
@@ -56,7 +55,6 @@
       -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
     }
 
-    /* ── NAV ── */
     .nav {
       position: sticky; top: 0; z-index: 50;
       backdrop-filter: saturate(180%) blur(20px);
@@ -75,7 +73,6 @@
     }
     .nav-cta:hover { background: #2c75a3; }
 
-    /* ── BUTTONS ── */
     .btn {
       display: inline-flex; align-items: center; justify-content: center;
       padding: 16px 32px; border-radius: 980px; font-size: 16px; font-weight: 600;
@@ -86,7 +83,6 @@
     .btn-secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
     .btn-secondary:hover { background: var(--accent); color: #fff; }
 
-    /* ── HERO ── */
     .hero { padding: 72px 22px 56px; text-align: center; background: linear-gradient(180deg, #ffffff 0%, #eef4f8 100%); }
     .hero .eyebrow {
       display: inline-block; font-size: 13px; font-weight: 600; letter-spacing: 0.06em;
@@ -103,7 +99,6 @@
     .hero-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
     .hero-note { margin-top: 16px; font-size: 13px; color: var(--text-muted); }
 
-    /* ── PROMO BANNER ── */
     .promo-wrap { padding: 0 22px; margin-top: 38px; }
     .promo {
       max-width: 720px; margin: 0 auto;
@@ -128,7 +123,6 @@
     }
     .copy-btn:hover { background: #438a59; }
 
-    /* ── SECTION ── */
     .section { padding: 78px 22px; }
     .section.alt { background: var(--bg-alt); }
     .section-inner { max-width: 1024px; margin: 0 auto; }
@@ -142,14 +136,12 @@
     }
     .section-lead { font-size: 18px; color: var(--text-muted); text-align: center; max-width: 620px; margin: 0 auto 48px; }
 
-    /* feature grid */
     .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
     @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
     .feature-card {
       background: #fff; border: 1px solid var(--border); border-radius: 18px; padding: 26px 24px;
       transition: 0.2s;
     }
-    .section.alt .feature-card { background: #fff; }
     .feature-card:hover { transform: translateY(-3px); box-shadow: 0 18px 40px rgba(34,36,52,0.10); }
     .feature-ic {
       width: 46px; height: 46px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
@@ -159,7 +151,6 @@
     .feature-card h3 { font-size: 18px; margin-bottom: 8px; color: var(--navy); }
     .feature-card p { font-size: 14.5px; color: var(--text-muted); }
 
-    /* steps */
     .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; counter-reset: step; }
     @media (max-width: 860px) { .steps { grid-template-columns: 1fr 1fr; } }
     @media (max-width: 520px) { .steps { grid-template-columns: 1fr; } }
@@ -176,7 +167,6 @@
     .step h3 { font-size: 16px; margin-bottom: 6px; color: var(--navy); }
     .step p { font-size: 13.5px; color: var(--text-muted); }
 
-    /* advantages list */
     .adv { max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 14px 28px; }
     @media (max-width: 620px) { .adv { grid-template-columns: 1fr; } }
     .adv li { list-style: none; position: relative; padding-left: 32px; font-size: 15.5px; color: var(--text); }
@@ -186,7 +176,6 @@
       display: flex; align-items: center; justify-content: center;
     }
 
-    /* final CTA */
     .cta { padding: 88px 22px; text-align: center; background: linear-gradient(180deg, #eef4f8 0%, #ffffff 100%); }
     .cta h2 { font-size: clamp(30px, 4.4vw, 50px); font-weight: 700; letter-spacing: -0.02em; margin-bottom: 14px; color: var(--navy); }
     .cta p { font-size: 18px; color: var(--text-muted); max-width: 560px; margin: 0 auto 28px; }
@@ -196,7 +185,6 @@
     }
     .cta .pill b { color: var(--accent-2); }
 
-    /* footer */
     .footer { background: var(--bg-dark); color: #a1a1a6; padding: 40px 22px; text-align: center; font-size: 13px; }
     .footer-links { display: flex; gap: 26px; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; }
     .footer-links a { color: #f5f5f7; }
@@ -212,7 +200,6 @@
 </head>
 <body>
 
-  <!-- NAV -->
   <nav class="nav">
     <div class="nav-inner">
       <img class="nav-logo" src="/logo.png" alt="VOYO" width="600" height="300" />
@@ -220,11 +207,10 @@
     </div>
   </nav>
 
-  <!-- HERO -->
   <header class="hero">
-    <span class="eyebrow anim">Визы нового поколения</span>
-    <h1 class="anim d1">Оформление визы <span class="accent-text">онлайн</span>,<br>как и должно быть</h1>
-    <p class="sub anim d2">Личный кабинет, где видно каждый шаг: умный опросник, загрузка документов с телефона и прозрачный статус подачи. Без бесконечных чатов и «а что там с моей визой?».</p>
+    <span class="eyebrow anim">Виза в Японию · онлайн</span>
+    <h1 class="anim d1">Виза в Японию <span class="accent-text">онлайн</span>,<br>как и должно быть</h1>
+    <p class="sub anim d2">Личный кабинет, где видно каждый шаг оформления визы в Японию: умный опросник, загрузка документов с телефона и прозрачный статус подачи. Без бесконечных чатов и «а что там с моей визой?».</p>
     <div class="hero-actions anim d3">
       <a class="btn btn-primary" href="/">Получить скидку 10%</a>
       <a class="btn btn-secondary" href="#how">Как это работает</a>
@@ -235,7 +221,7 @@
       <div class="promo">
         <div class="promo-left">
           <div class="promo-percent">−10<span>%</span></div>
-          <div class="promo-desc">на первое оформление визы. Активируйте промокод при входе в личный кабинет.</div>
+          <div class="promo-desc">на первое оформление визы в Японию. Активируйте промокод при входе в личный кабинет.</div>
         </div>
         <div class="promo-code-box">
           <div class="promo-code" id="promoCode">WELCOME</div>
@@ -245,17 +231,16 @@
     </div>
   </header>
 
-  <!-- WHY / INNOVATIVE -->
   <section class="section" id="why">
     <div class="section-inner">
       <div class="section-eyebrow">Инновационный подход</div>
-      <h2 class="section-title">Виза — это больше не стресс</h2>
-      <p class="section-lead">Мы перенесли всё оформление в удобный личный кабинет. Вы управляете процессом со смартфона и всегда знаете, что происходит.</p>
+      <h2 class="section-title">Япония — это больше не стресс</h2>
+      <p class="section-lead">Мы перенесли всё оформление визы в Японию в удобный личный кабинет. Вы управляете процессом со смартфона и всегда знаете, что происходит.</p>
       <div class="grid">
         <div class="feature-card">
           <div class="feature-ic">📲</div>
           <h3>Личный кабинет 24/7</h3>
-          <p>Все ваши заявки, документы и статусы — в одном месте, доступны в любой момент.</p>
+          <p>Все ваши заявки, документы и статусы по визе в Японию — в одном месте, в любой момент.</p>
         </div>
         <div class="feature-card">
           <div class="feature-ic">📊</div>
@@ -265,7 +250,7 @@
         <div class="feature-card">
           <div class="feature-ic">🧠</div>
           <h3>Умный опросник</h3>
-          <p>Заполняете один раз — система сама подскажет, какие документы нужны именно вам.</p>
+          <p>Заполняете один раз — система сама подскажет, какие документы нужны для визы в Японию.</p>
         </div>
         <div class="feature-card">
           <div class="feature-ic">📤</div>
@@ -273,24 +258,23 @@
           <p>Загружайте фото или PDF прямо с телефона. Никаких визитов ради «донести бумажку».</p>
         </div>
         <div class="feature-card">
-          <div class="feature-ic">🔒</div>
-          <h3>Вход по Face ID</h3>
-          <p>Быстрый и безопасный доступ — без паролей, по отпечатку или лицу.</p>
+          <div class="feature-ic">🗾</div>
+          <h3>Япония ждёт</h3>
+          <p>Помогаем с визой в Японию: туризм, гости и другие цели поездки.</p>
         </div>
         <div class="feature-card">
           <div class="feature-ic">🤝</div>
           <h3>Эксперты на связи</h3>
-          <p>Опытная команда подскажет и проверит — в WhatsApp и Telegram.</p>
+          <p>Опытная команда подскажет и проверит документы — в WhatsApp и Telegram.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- HOW IT WORKS -->
   <section class="section alt" id="how">
     <div class="section-inner">
       <div class="section-eyebrow">Всего 4 шага</div>
-      <h2 class="section-title">Как это работает</h2>
+      <h2 class="section-title">Как оформить визу в Японию</h2>
       <p class="section-lead">От входа до готовой визы — понятный путь, который занимает минуты вашего времени.</p>
       <div class="steps">
         <div class="step">
@@ -301,7 +285,7 @@
         <div class="step">
           <div class="step-num"></div>
           <h3>Заполните опросник</h3>
-          <p>Умная анкета подскажет, что именно нужно для вашей поездки.</p>
+          <p>Умная анкета подскажет, что именно нужно для визы в Японию.</p>
         </div>
         <div class="step">
           <div class="step-num"></div>
@@ -317,32 +301,29 @@
     </div>
   </section>
 
-  <!-- ADVANTAGES -->
   <section class="section" id="adv">
     <div class="section-inner">
       <div class="section-eyebrow">Почему VOYO</div>
       <h2 class="section-title">Вам спокойно — мы всё держим под контролем</h2>
-      <p class="section-lead">Многолетний опыт оформления виз и технологичный сервис, которому доверяют путешественники.</p>
+      <p class="section-lead">Многолетний опыт оформления виз в Японию и технологичный сервис, которому доверяют путешественники.</p>
       <ul class="adv">
-        <li>Шенген, Япония и другие направления</li>
+        <li>Виза в Японию — туризм и гости</li>
+        <li>Поможем с приглашением и маршрутом</li>
+        <li>Многолетний опыт оформления виз</li>
         <li>Документы под контролем — ничего не потеряется</li>
         <li>Честная прозрачность на каждом этапе</li>
-        <li>Поддержка реальных специалистов</li>
-        <li>Всё онлайн — без лишних визитов в офис</li>
         <li>Скидка 10% по промокоду WELCOME</li>
       </ul>
     </div>
   </section>
 
-  <!-- FINAL CTA -->
   <section class="cta">
     <div class="pill">Промокод <b>WELCOME</b> · скидка <b>−10%</b> на первое оформление</div>
-    <h2>Готовы оформить визу <span class="accent-text">проще?</span></h2>
+    <h2>Готовы в Японию <span class="accent-text">проще?</span></h2>
     <p>Войдите в личный кабинет по номеру телефона, активируйте промокод и начните оформление уже сегодня.</p>
     <a class="btn btn-primary" href="/">Войти и получить −10%</a>
   </section>
 
-  <!-- FOOTER -->
   <footer class="footer">
     <div class="footer-links">
       <a href="https://wa.me/+79299435150" target="_blank" rel="noopener">WhatsApp</a>
