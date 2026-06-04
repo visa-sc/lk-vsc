@@ -392,6 +392,13 @@
       white-space: nowrap;
     }
 
+    /* Воронка «по этапам» — 7 шагов. Аккуратные карточки фикс. ширины,
+       при нехватке места — горизонтальный скролл (метки не вылезают). */
+    .funnel.funnel-stages { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
+    .funnel.funnel-stages .funnel-step { flex: 0 0 124px; min-width: 124px; padding: 16px 10px; }
+    .funnel.funnel-stages .funnel-num { font-size: 32px; }
+    .funnel.funnel-stages .funnel-label { overflow-wrap: anywhere; }
+
     /* ── Блок «Конверсия по оплаченным сделкам amoCRM» (обособленный, сразу под табами) ── */
     #paidConvBlock { margin: 14px 0 18px; }
     .paid-conv {
@@ -583,6 +590,8 @@
     @media (max-width: 720px) {
       .funnel { flex-direction: column; gap: 8px; }
       .funnel-conv { margin: -2px auto; padding: 4px 14px; }
+      .funnel.funnel-stages { overflow-x: visible; }
+      .funnel.funnel-stages .funnel-step { flex: 1 1 auto; min-width: 0; width: 100%; }
       .phone-row {
         grid-template-columns: 1fr;
         gap: 8px;
@@ -1538,6 +1547,7 @@
           conv.review_to_passport || 0,
           conv.passport_to_done || 0
         ]);
+        funnel.classList.add("funnel-stages");
         wrap.appendChild(funnel);
 
         // Кнопка раскрытия списка
