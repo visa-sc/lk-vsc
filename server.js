@@ -8654,6 +8654,33 @@ function schedulePaidConvPrewarm() {
 }
 schedulePaidConvPrewarm();
 
+// Фоновый пре-warm воронки «Авторизовались → … → Прошёл «Подготовка документов»».
+// Раньше блок считался лениво (на первый polling-запрос при холодном кеше) — после
+// рестарта/истечения TTL админ ждал полный проход по всем телефонам (десятки
+// запросов к Я.Диску). Теперь держим кеш всегда тёплым в фоне → блок открывается
+// мгновенно. Нагрузка — только на Я.Диск (листинг папок), на amoCRM и клиентский
+// ЛК не влияет; интервал чуть меньше TTL кеша, чтобы он не успевал остыть.
+const ADMIN_STATS_PREWARM_INTERVAL_MS = 4 * 60 * 1000;
+function scheduleAdminStatsPrewarm() {
+  setTimeout(async () => {
+    try {
+      invalidateAdminStatsCache();
+      const t = Date.now();
+      await computeAdminStats();
+      console.log(`ADMIN STATS PREWARM (initial) done in ${Date.now()-t}ms`);
+    } catch (e) { console.error("ADMIN STATS PREWARM initial error:", e.message); }
+  }, 25 * 1000);
+  setInterval(async () => {
+    try {
+      invalidateAdminStatsCache();
+      const t = Date.now();
+      await computeAdminStats();
+      console.log(`ADMIN STATS PREWARM done in ${Date.now()-t}ms`);
+    } catch (e) { console.error("ADMIN STATS PREWARM error:", e.message); }
+  }, ADMIN_STATS_PREWARM_INTERVAL_MS);
+}
+scheduleAdminStatsPrewarm();
+
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);
 });

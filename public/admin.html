@@ -707,6 +707,7 @@
 
       let activeTab = "stats";
       let phonesExpanded = false;
+      let statsSortMode = "stage"; // "stage" (по умолчанию) | "date_asc"
       let statsPollTimer = null;
 
       function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
@@ -1325,17 +1326,51 @@
           : "Показать список номеров (" + phones.length + ")";
         wrap.appendChild(toggleBtn);
 
-        // Список
+        // Список (с панелью сортировки — видна при раскрытии списка)
         const list = document.createElement("div");
         list.className = "phones-list" + (phonesExpanded ? " show" : "");
 
-        if (!phones.length) {
-          const empty = document.createElement("div");
-          empty.className = "empty-state";
-          empty.textContent = "Авторизаций пока нет.";
-          list.appendChild(empty);
-        } else {
-          phones.forEach((it) => {
+        // Панель сортировки
+        const sortBar = document.createElement("div");
+        sortBar.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;font-size:13px;color:#737988;";
+        const sortLabel = document.createElement("span");
+        sortLabel.textContent = "Сортировка:";
+        const sortSel = document.createElement("select");
+        sortSel.style.cssText = "padding:7px 11px;border:1px solid #e2dded;border-radius:10px;font-size:13px;background:#fff;color:#1d2330;cursor:pointer;";
+        [["stage", "По этапу (от ранних к конечным)"], ["date_asc", "По дате создания (сначала ранние)"]].forEach(function (opt) {
+          const o = document.createElement("option");
+          o.value = opt[0]; o.textContent = opt[1];
+          if (opt[0] === statsSortMode) o.selected = true;
+          sortSel.appendChild(o);
+        });
+        sortBar.appendChild(sortLabel);
+        sortBar.appendChild(sortSel);
+
+        const rowsWrap = document.createElement("div");
+
+        function sortedStatsPhones() {
+          const arr = phones.slice();
+          if (statsSortMode === "date_asc") {
+            // По дате создания (первой авторизации) — сначала самые ранние.
+            arr.sort(function (a, b) { return (a.firstAuthAt || 0) - (b.firstAuthAt || 0); });
+          } else {
+            // По этапу — от начальных к конечным (как было по умолчанию).
+            arr.sort(function (a, b) { return (a.stage || 0) - (b.stage || 0) || (b.firstAuthAt || 0) - (a.firstAuthAt || 0); });
+          }
+          return arr;
+        }
+
+        function fillStatsRows() {
+          rowsWrap.innerHTML = "";
+          const arr = sortedStatsPhones();
+          if (!arr.length) {
+            const empty = document.createElement("div");
+            empty.className = "empty-state";
+            empty.textContent = "Авторизаций пока нет.";
+            rowsWrap.appendChild(empty);
+            return;
+          }
+          arr.forEach((it) => {
             const row = document.createElement("div");
             row.className = "phone-row";
 
@@ -1381,9 +1416,18 @@
             meta.textContent = formatDateMsk(it.firstAuthAt);
             row.appendChild(meta);
 
-            list.appendChild(row);
+            rowsWrap.appendChild(row);
           });
         }
+
+        sortSel.addEventListener("change", function () {
+          statsSortMode = sortSel.value;
+          fillStatsRows();
+        });
+
+        list.appendChild(sortBar);
+        list.appendChild(rowsWrap);
+        fillStatsRows();
 
         wrap.appendChild(list);
 
