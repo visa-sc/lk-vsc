@@ -7,3 +7,6 @@ npm-debug.log*
 .shareTokens.json
 .passkeys.json
 .lkStatsExcludedPhones.json
+
+# Трафик-аналитика (runtime state)
+.trafficStats.json

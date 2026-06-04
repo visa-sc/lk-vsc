@@ -36,33 +36,120 @@ app.get("/search", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "search.html"));
 });
 
+// ──────────────────────────────────────────────────────────
+// ТРАФИК с лендингов (/welcome*): визиты (в т.ч. переходы с Яндекс.Директа)
+// и конверсии. Конверсия = уникальная регистрация в ЛК (новая авторизация +
+// создание нового контакта в amoCRM — оба действия в одном /api/auth/register).
+// Лёгкая серверная аналитика: дневные агрегаты в JSON + дебаунс-сохранение.
+// Атрибуция к лендингу/источнику — через cookie voyo_src, выставляемую при визите.
+// ──────────────────────────────────────────────────────────
+const TRAFFIC_FILE = path.join(__dirname, ".trafficStats.json");
+const TRAFFIC_PAGES = ["welcome", "welcome_schengen", "welcome_japan"];
+const trafficStats = { visits: {}, conversions: {}, convertedPhones: [] };
+const _trafficConvertedSet = new Set();
+
+function loadTrafficStats() {
+  try {
+    const obj = JSON.parse(fs.readFileSync(TRAFFIC_FILE, "utf8"));
+    if (obj && typeof obj === "object") {
+      trafficStats.visits = obj.visits || {};
+      trafficStats.conversions = obj.conversions || {};
+      (Array.isArray(obj.convertedPhones) ? obj.convertedPhones : []).forEach((p) => _trafficConvertedSet.add(p));
+    }
+  } catch (_) {}
+}
+let _trafficSaveTimer = null;
+function saveTrafficStats() {
+  if (_trafficSaveTimer) return; // дебаунс — не чаще раза в 5с
+  _trafficSaveTimer = setTimeout(() => {
+    _trafficSaveTimer = null;
+    try {
+      trafficStats.convertedPhones = Array.from(_trafficConvertedSet);
+      fs.writeFileSync(TRAFFIC_FILE, JSON.stringify(trafficStats), "utf8");
+    } catch (e) { console.error("saveTrafficStats error:", e.message); }
+  }, 5000);
+}
+function trafficDayKey(ts) {
+  const d = new Date((ts || Date.now()) + 3 * 3600 * 1000); // МСК (UTC+3)
+  return d.toISOString().slice(0, 10);
+}
+function isYandexDirectReq(req) {
+  const q = (req && req.query) || {};
+  if (q.yclid) return true; // автометка Яндекс.Директа
+  const src = String(q.utm_source || "").toLowerCase();
+  return src.includes("yandex") || src.includes("direct");
+}
+function parseTrafficCookie(req) {
+  const m = String((req && req.headers && req.headers.cookie) || "").match(/(?:^|;\s*)voyo_src=([^;]+)/);
+  if (!m) return null;
+  try {
+    const val = decodeURIComponent(m[1]);
+    const dot = val.lastIndexOf(".");
+    if (dot < 0) return null;
+    const page = val.slice(0, dot);
+    if (!TRAFFIC_PAGES.includes(page)) return null;
+    return { page, yd: val.slice(dot + 1) === "1" };
+  } catch (_) { return null; }
+}
+function recordLandingVisit(page, yd) {
+  if (!TRAFFIC_PAGES.includes(page)) return;
+  const key = trafficDayKey();
+  const day = trafficStats.visits[key] || (trafficStats.visits[key] = {});
+  const pv = day[page] || (day[page] = { total: 0, yd: 0 });
+  pv.total++; if (yd) pv.yd++;
+  saveTrafficStats();
+}
+function recordTrafficConversion(normPhone, attr) {
+  if (normPhone) {
+    if (_trafficConvertedSet.has(normPhone)) return; // уникальность по номеру
+    _trafficConvertedSet.add(normPhone);
+  }
+  const key = trafficDayKey();
+  const c = trafficStats.conversions[key] || (trafficStats.conversions[key] = { total: 0, yd: 0, byPage: {} });
+  c.total++;
+  if (attr && attr.yd) c.yd++;
+  if (attr && TRAFFIC_PAGES.includes(attr.page)) c.byPage[attr.page] = (c.byPage[attr.page] || 0) + 1;
+  saveTrafficStats();
+  console.log(`TRAFFIC conversion: total=${c.total} yd=${c.yd} page=${(attr && attr.page) || "-"}`);
+}
+function aggregateTraffic() {
+  const visits = {}; TRAFFIC_PAGES.forEach((p) => { visits[p] = { total: 0, yd: 0 }; });
+  Object.values(trafficStats.visits || {}).forEach((day) => {
+    TRAFFIC_PAGES.forEach((p) => { if (day[p]) { visits[p].total += day[p].total || 0; visits[p].yd += day[p].yd || 0; } });
+  });
+  let vt = 0, vy = 0; TRAFFIC_PAGES.forEach((p) => { vt += visits[p].total; vy += visits[p].yd; });
+  const conv = { total: 0, yd: 0, byPage: {} }; TRAFFIC_PAGES.forEach((p) => { conv.byPage[p] = 0; });
+  Object.values(trafficStats.conversions || {}).forEach((day) => {
+    conv.total += day.total || 0; conv.yd += day.yd || 0;
+    if (day.byPage) TRAFFIC_PAGES.forEach((p) => { conv.byPage[p] += day.byPage[p] || 0; });
+  });
+  return { pages: TRAFFIC_PAGES, visits, visitsAll: { total: vt, yd: vy }, conversions: conv };
+}
+loadTrafficStats();
+
+function serveLanding(page, file) {
+  return (req, res) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+    try {
+      const yd = isYandexDirectReq(req);
+      recordLandingVisit(page, yd);
+      // cookie атрибуции: переживёт переход на «/» и регистрацию (последний клик).
+      res.cookie("voyo_src", page + "." + (yd ? "1" : "0"), { maxAge: 30 * 24 * 3600 * 1000, httpOnly: true, sameSite: "lax", path: "/" });
+    } catch (e) { console.error("serveLanding track error:", e.message); }
+    res.sendFile(path.join(__dirname, "public", file));
+  };
+}
+
 app.get("/about", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "about.html"));
 });
 
-// Лендинг под Яндекс.Директ — конверсионная страница «авторизуйся в ЛК»,
-// промокод WELCOME −10%. no-cache, чтобы правки маркетинга применялись сразу.
-app.get("/welcome", (req, res) => {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.set("Pragma", "no-cache");
-  res.set("Expires", "0");
-  res.sendFile(path.join(__dirname, "public", "welcome.html"));
-});
-
-// Лендинги под конкретные кампании Яндекс.Директ: Шенген и Япония.
-app.get("/welcome_schengen", (req, res) => {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.set("Pragma", "no-cache");
-  res.set("Expires", "0");
-  res.sendFile(path.join(__dirname, "public", "welcome_schengen.html"));
-});
-
-app.get("/welcome_japan", (req, res) => {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.set("Pragma", "no-cache");
-  res.set("Expires", "0");
-  res.sendFile(path.join(__dirname, "public", "welcome_japan.html"));
-});
+// Лендинги под Яндекс.Директ (+ трекинг визитов и источника). no-cache.
+app.get("/welcome", serveLanding("welcome", "welcome.html"));
+app.get("/welcome_schengen", serveLanding("welcome_schengen", "welcome_schengen.html"));
+app.get("/welcome_japan", serveLanding("welcome_japan", "welcome_japan.html"));
 
 app.get("/about/v1", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "about-v1.html"));
@@ -271,6 +358,9 @@ app.post("/api/auth/register", async (req, res) => {
       promoApplied,
       promoText: promoApplied ? promoCommentText(promoPercent, promoCodeRaw) : ""
     });
+    // Трафик: конверсия = уникальная регистрация (новая авторизация + новый
+    // контакт в amoCRM). Атрибуция к лендингу/источнику — из cookie voyo_src.
+    try { recordTrafficConversion(phone, parseTrafficCookie(req)); } catch (_) {}
     return res.json({
       success: true,
       contactId: result.contactId,
@@ -449,6 +539,17 @@ app.get("/admin/api/paid-conversion-stats", requireAdmin, async (req, res) => {
   } catch (e) {
     console.error("/admin/api/paid-conversion-stats error:", e && e.message);
     return res.status(500).json({ success: false, message: "Ошибка расчёта конверсии" });
+  }
+});
+
+// Трафик: визиты лендингов /welcome* (всего и с Яндекс.Директа) + конверсии
+// (уникальные регистрации = новая авторизация + новый контакт в amoCRM).
+app.get("/admin/api/traffic", requireAdmin, (req, res) => {
+  try {
+    return res.json(Object.assign({ success: true }, aggregateTraffic()));
+  } catch (e) {
+    console.error("/admin/api/traffic error:", e && e.message);
+    return res.status(500).json({ success: false, message: "Ошибка расчёта трафика" });
   }
 });
 

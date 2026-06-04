@@ -642,6 +642,7 @@
     <div class="tabs">
       <button type="button" class="tab-btn active" data-tab="stats">Статистика</button>
       <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
+      <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
     </div>
 
     <!-- Обособленный блок «Конверсия авторизаций по оплаченным сделкам».
@@ -658,6 +659,12 @@
 
     <div id="panelSurveys" class="panel">
       <div id="surveysContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
+    <div id="panelTraffic" class="panel">
+      <div id="trafficContent">
         <div class="loading-state">Загружаем…</div>
       </div>
     </div>
@@ -693,8 +700,10 @@
       const tabBtns = Array.from(document.querySelectorAll(".tab-btn"));
       const panelStats = document.getElementById("panelStats");
       const panelSurveys = document.getElementById("panelSurveys");
+      const panelTraffic = document.getElementById("panelTraffic");
       const statsContent = document.getElementById("statsContent");
       const surveysContent = document.getElementById("surveysContent");
+      const trafficContent = document.getElementById("trafficContent");
 
       let activeTab = "stats";
       let phonesExpanded = false;
@@ -1073,9 +1082,13 @@
           tabBtns.forEach((x) => x.classList.toggle("active", x === b));
           panelStats.classList.toggle("show", which === "stats");
           panelSurveys.classList.toggle("show", which === "surveys");
+          panelTraffic.classList.toggle("show", which === "traffic");
           applyPaidConvVisibility();
           if (which === "surveys") {
             loadSurveys();
+            startPolling();
+          } else if (which === "traffic") {
+            loadTraffic();
             startPolling();
           } else if (which === "stats") {
             loadStats();
@@ -1093,6 +1106,7 @@
           if (document.hidden) return;
           if (activeTab === "stats") loadStats({ silent: true });
           else if (activeTab === "surveys") loadSurveys({ silent: true });
+          else if (activeTab === "traffic") loadTraffic({ silent: true });
           loadPaidConvStats({ silent: true });
         }, POLL_INTERVAL_MS);
       }
@@ -1103,6 +1117,7 @@
         if (document.hidden) return;
         if (activeTab === "stats") loadStats({ silent: true });
         else if (activeTab === "surveys") loadSurveys({ silent: true });
+        else if (activeTab === "traffic") loadTraffic({ silent: true });
         loadPaidConvStats({ silent: true });
       });
 
@@ -1382,6 +1397,67 @@
 
         statsContent.innerHTML = "";
         statsContent.appendChild(wrap);
+      }
+
+      // ── Трафик ──
+      async function loadTraffic(opts) {
+        const silent = opts && opts.silent;
+        if (!silent) trafficContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        try {
+          const data = await apiFetch("/admin/api/traffic");
+          renderTraffic(data);
+        } catch (e) {
+          if (!silent) trafficContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+        }
+      }
+
+      function trafficSummary(label, val, color) {
+        return '<div style="flex:1;min-width:160px;background:#faf9fc;border:1px solid #ece7f3;border-radius:14px;padding:16px 18px;text-align:center;">'
+          + '<div style="font-size:26px;font-weight:700;color:' + color + ';">' + (val || 0) + '</div>'
+          + '<div style="font-size:12px;color:#737988;margin-top:4px;">' + label + '</div></div>';
+      }
+
+      function renderTraffic(data) {
+        const pages = (data && data.pages) || ["welcome", "welcome_schengen", "welcome_japan"];
+        const visits = (data && data.visits) || {};
+        const visitsAll = (data && data.visitsAll) || { total: 0, yd: 0 };
+        const conv = (data && data.conversions) || { total: 0, yd: 0, byPage: {} };
+        const NAMES = {
+          welcome: "Общая · /welcome",
+          welcome_schengen: "Шенген · /welcome_schengen",
+          welcome_japan: "Япония · /welcome_japan"
+        };
+        function pct(n, d) { return d > 0 ? Math.round((n / d) * 100) : 0; }
+
+        const rate = pct(conv.yd, visitsAll.yd);
+
+        const cards = pages.map((p) => {
+          const v = visits[p] || { total: 0, yd: 0 };
+          const cp = (conv.byPage && conv.byPage[p]) || 0;
+          return ''
+            + '<div style="flex:1;min-width:210px;background:#fff;border:1px solid #ece7f3;border-radius:16px;padding:18px 20px;">'
+            +   '<div style="font-size:13px;font-weight:600;color:#1d2330;margin-bottom:12px;">' + escapeHtml(NAMES[p] || p) + '</div>'
+            +   '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#737988;margin-bottom:6px;"><span>Переходы с Я.Директа</span><b style="color:#3589BD;font-size:18px;">' + (v.yd || 0) + '</b></div>'
+            +   '<div style="display:flex;justify-content:space-between;font-size:12px;color:#9096a3;margin-bottom:10px;"><span>Всего визитов</span><span>' + (v.total || 0) + '</span></div>'
+            +   '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#737988;border-top:1px solid #f0eef5;padding-top:10px;"><span>Регистраций</span><b style="color:#4f9f68;font-size:18px;">' + cp + '</b></div>'
+            +   '<div style="font-size:11px;color:#9096a3;margin-top:4px;">конверсия Я.Директ → рег.: ' + pct(cp, v.yd) + '%</div>'
+            + '</div>';
+        }).join("");
+
+        trafficContent.innerHTML = ''
+          + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px;">'
+          +   '<div class="stats-since"><span class="live-dot"></span>Трафик с лендингов · переходы и регистрации · обновляется онлайн</div>'
+          +   '<div class="stats-since" style="color:#9096a3;">Обновлено: ' + new Date().toLocaleTimeString("ru-RU", { timeZone: "Europe/Moscow" }) + ' МСК</div>'
+          + '</div>'
+          + '<div class="hero-conv"><div class="num">' + rate + '%</div><div class="text"><strong>Конверсия Яндекс.Директ → регистрация</strong><br>' + (conv.yd || 0) + ' из ' + (visitsAll.yd || 0) + ' переходов с Я.Директа завершились регистрацией в ЛК</div></div>'
+          + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin:16px 0;">' + cards + '</div>'
+          + '<div style="display:flex;gap:14px;flex-wrap:wrap;">'
+          +   trafficSummary("Переходы с Я.Директа", visitsAll.yd, "#3589BD")
+          +   trafficSummary("Все визиты лендингов", visitsAll.total, "#1d2330")
+          +   trafficSummary("Регистрации с Я.Директа", conv.yd, "#4f9f68")
+          +   trafficSummary("Регистрации (всего)", conv.total, "#1d2330")
+          + '</div>'
+          + '<div style="font-size:12px;color:#9096a3;margin-top:16px;line-height:1.5;">Конверсия = уникальная регистрация в ЛК (новая авторизация + создание нового контакта в amoCRM, одним действием). Переход считается «с Яндекс.Директа», если в ссылке есть <code>yclid</code> или <code>utm_source=yandex</code>. Атрибуция к лендингу — по последнему переходу (cookie, 30 дней).</div>';
       }
 
       // ── Опросники ──
