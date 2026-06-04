@@ -46,12 +46,12 @@
     .hero h1 { font-size:clamp(36px,6.4vw,68px); font-weight:700; letter-spacing:-.02em; line-height:1.06; margin-bottom:20px; max-width:880px; margin-left:auto; margin-right:auto; }
     .hero p.sub { font-size:clamp(17px,2.2vw,22px); color:var(--text-muted); max-width:600px; margin:0 auto 30px; line-height:1.4; }
     .hero-actions { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
-    .hero-note { margin-top:16px; font-size:13px; color:var(--text-muted); }
+    .hero-note { margin-top:28px; font-size:13px; color:var(--text-muted); }
     .free-chip { display:inline-flex; align-items:center; gap:9px; background:#edf8ef; border:1px solid #cfe7d2; color:#2e7a43; border-radius:980px; padding:9px 18px; font-size:14px; font-weight:600; line-height:1.3; }
     .free-chip::before { content:"✓"; display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; flex:0 0 18px; border-radius:50%; background:#4f9f68; color:#fff; font-size:11px; font-weight:700; }
-    .cta-free { margin:30px auto 0; max-width:560px; font-size:14px; color:var(--text-muted); line-height:1.5; }
+    .cta-free { margin:38px auto 0; max-width:560px; font-size:14px; color:var(--text-muted); line-height:1.5; }
     .cta-free b { color:var(--accent-2); }
-    .promo-wrap { padding:0 22px; margin-top:38px; }
+    .promo-wrap { padding:0 22px; margin-top:28px; }
     .promo { max-width:720px; margin:0 auto; background:linear-gradient(135deg,#161d45 0%,#29356f 100%); color:#fff; border-radius:22px; padding:26px 28px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; box-shadow:0 26px 60px rgba(22,29,69,.28); }
     .promo .promo-left { text-align:left; }
     .promo .promo-percent { font-size:40px; font-weight:800; line-height:1; }
@@ -83,6 +83,7 @@
     .step .step-num::before { content:counter(step); }
     .step h3 { font-size:16px; margin-bottom:6px; color:var(--navy); }
     .step p { font-size:13.5px; color:var(--text-muted); }
+    .step-free { display:inline-block; margin-top:10px; background:#edf8ef; border:1px solid #cfe7d2; color:#2e7a43; border-radius:980px; padding:3px 11px; font-size:11.5px; font-weight:600; }
     .adv { max-width:760px; margin:0 auto; display:grid; grid-template-columns:1fr 1fr; gap:18px 30px; align-items:start; }
     @media (max-width:620px){ .adv{grid-template-columns:1fr;} }
     .adv li { list-style:none; position:relative; padding-left:34px; font-size:15.5px; color:var(--text); min-height:26px; display:flex; align-items:center; }
@@ -174,7 +175,7 @@
       <a class="btn btn-primary" href="/">Получить скидку 10%</a>
       <a class="btn btn-secondary" href="#cabinet">Посмотреть кабинет</a>
     </div>
-    <div class="hero-note anim d3"><span class="free-chip">Регистрация бесплатна — личный кабинет можно посмотреть без оплаты</span></div>
+    <div class="hero-note anim d3"><span class="free-chip">Зарегистрируйтесь бесплатно — посмотрите личный кабинет без оплаты</span></div>
     <div class="promo-wrap anim d4">
       <div class="promo">
         <div class="promo-left">
@@ -323,7 +324,7 @@
       <h2 class="section-title">Как оформить визу в Японию</h2>
       <p class="section-lead">От входа до готовой визы — понятный путь, который займёт минуты вашего времени.</p>
       <div class="steps">
-        <div class="step"><div class="step-num"></div><h3>Войдите по телефону</h3><p>Введите номер и промокод <b>WELCOME</b> — −10% на первую визу.</p></div>
+        <div class="step"><div class="step-num"></div><h3>Войдите по телефону</h3><p>Введите номер и промокод <b>WELCOME</b> — −10% на первую визу.</p><span class="step-free">Бесплатный вход</span></div>
         <div class="step"><div class="step-num"></div><h3>Заполните опросник</h3><p>Умная анкета подскажет, что именно нужно для вашей поездки.</p></div>
         <div class="step"><div class="step-num"></div><h3>Загрузите документы</h3><p>Прямо из кабинета, с телефона — фото или PDF.</p></div>
         <div class="step"><div class="step-num"></div><h3>Следите за статусом</h3><p>Вы видите каждый этап онлайн, пока мы помогаем получить визу.</p></div>
