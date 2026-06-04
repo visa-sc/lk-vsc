@@ -6160,6 +6160,15 @@ async function computeAdminStats() {
   });
   return _adminStatsInflight;
 }
+// Пересчёт для пре-warm без обнуления кеша заранее: старый результат отдаётся
+// поллерам, пока считается новый (без подвисаний на холодном кеше).
+function refreshAdminStats() {
+  if (_adminStatsInflight) return _adminStatsInflight;
+  _adminStatsInflight = _computeAdminStatsInner().finally(() => {
+    _adminStatsInflight = null;
+  });
+  return _adminStatsInflight;
+}
 
 async function _computeAdminStatsInner() {
   // Базовый набор — авторизованные клиенты, чья первая авторизация попадает
@@ -6299,6 +6308,13 @@ async function getMaxCabinetStageForPhone(phone, statusesMap, baseUrl) {
 async function computeStageStats() {
   const now = Date.now();
   if (_cachedStageStats && (now - _cachedStageStatsTs) < STAGE_STATS_CACHE_TTL_MS) return _cachedStageStats;
+  if (_stageStatsInflight) return _stageStatsInflight;
+  _stageStatsInflight = _computeStageStatsInner().finally(() => { _stageStatsInflight = null; });
+  return _stageStatsInflight;
+}
+// Принудительный пересчёт для пре-warm: старый кеш остаётся валидным до
+// завершения (поллеры не виснут), затем кеш атомарно обновляется в _inner.
+function refreshStageStats() {
   if (_stageStatsInflight) return _stageStatsInflight;
   _stageStatsInflight = _computeStageStatsInner().finally(() => { _stageStatsInflight = null; });
   return _stageStatsInflight;
@@ -8797,17 +8813,15 @@ const ADMIN_STATS_PREWARM_INTERVAL_MS = 4 * 60 * 1000;
 function scheduleAdminStatsPrewarm() {
   setTimeout(async () => {
     try {
-      invalidateAdminStatsCache();
       const t = Date.now();
-      await computeAdminStats();
+      await refreshAdminStats();
       console.log(`ADMIN STATS PREWARM (initial) done in ${Date.now()-t}ms`);
     } catch (e) { console.error("ADMIN STATS PREWARM initial error:", e.message); }
   }, 25 * 1000);
   setInterval(async () => {
     try {
-      invalidateAdminStatsCache();
       const t = Date.now();
-      await computeAdminStats();
+      await refreshAdminStats();
       console.log(`ADMIN STATS PREWARM done in ${Date.now()-t}ms`);
     } catch (e) { console.error("ADMIN STATS PREWARM error:", e.message); }
   }, ADMIN_STATS_PREWARM_INTERVAL_MS);
@@ -8821,11 +8835,11 @@ const STAGE_STATS_PREWARM_INTERVAL_MS = 15 * 60 * 1000;
 function scheduleStageStatsPrewarm() {
   if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return;
   setTimeout(async () => {
-    try { invalidateStageStatsCache(); const t = Date.now(); await computeStageStats(); console.log(`STAGE STATS PREWARM (initial) done in ${Date.now()-t}ms`); }
+    try { const t = Date.now(); await refreshStageStats(); console.log(`STAGE STATS PREWARM (initial) done in ${Date.now()-t}ms`); }
     catch (e) { console.error("STAGE STATS PREWARM initial error:", e.message); }
   }, 35 * 1000);
   setInterval(async () => {
-    try { invalidateStageStatsCache(); const t = Date.now(); await computeStageStats(); console.log(`STAGE STATS PREWARM done in ${Date.now()-t}ms`); }
+    try { const t = Date.now(); await refreshStageStats(); console.log(`STAGE STATS PREWARM done in ${Date.now()-t}ms`); }
     catch (e) { console.error("STAGE STATS PREWARM error:", e.message); }
   }, STAGE_STATS_PREWARM_INTERVAL_MS);
 }
