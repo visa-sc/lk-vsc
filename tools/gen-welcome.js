@@ -30,6 +30,10 @@ const CSS = `
     .hero p.sub { font-size:clamp(17px,2.2vw,22px); color:var(--text-muted); max-width:600px; margin:0 auto 30px; line-height:1.4; }
     .hero-actions { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
     .hero-note { margin-top:16px; font-size:13px; color:var(--text-muted); }
+    .free-chip { display:inline-flex; align-items:center; gap:9px; background:#edf8ef; border:1px solid #cfe7d2; color:#2e7a43; border-radius:980px; padding:9px 18px; font-size:14px; font-weight:600; line-height:1.3; }
+    .free-chip::before { content:"✓"; display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; flex:0 0 18px; border-radius:50%; background:#4f9f68; color:#fff; font-size:11px; font-weight:700; }
+    .cta-free { margin:16px auto 0; max-width:520px; font-size:14px; color:var(--text-muted); line-height:1.45; }
+    .cta-free b { color:var(--accent-2); }
     .promo-wrap { padding:0 22px; margin-top:38px; }
     .promo { max-width:720px; margin:0 auto; background:linear-gradient(135deg,#161d45 0%,#29356f 100%); color:#fff; border-radius:22px; padding:26px 28px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; box-shadow:0 26px 60px rgba(22,29,69,.28); }
     .promo .promo-left { text-align:left; }
@@ -278,7 +282,7 @@ ${METRIKA}
       <a class="btn btn-primary" href="/">Получить скидку 10%</a>
       <a class="btn btn-secondary" href="#cabinet">Посмотреть кабинет</a>
     </div>
-    <div class="hero-note anim d3">Промокод <b>WELCOME</b> — −10% на первую визу при входе в кабинет</div>
+    <div class="hero-note anim d3"><span class="free-chip">Регистрация бесплатна — личный кабинет можно посмотреть без оплаты</span></div>
     <div class="promo-wrap anim d4">
       <div class="promo">
         <div class="promo-left">
@@ -360,6 +364,7 @@ ${adv}
     <h2>${p.ctaH2}</h2>
     <p>${p.ctaP}</p>
     <a class="btn btn-primary" href="/">Войти и получить −10%</a>
+    <p class="cta-free">Вход и просмотр кабинета — <b>бесплатно</b>. Промокод <b>WELCOME</b> примените, если решите оформлять визу.</p>
   </section>
 
   <footer class="footer">
