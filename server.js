@@ -75,9 +75,15 @@ function trafficDayKey(ts) {
 }
 function isYandexDirectReq(req) {
   const q = (req && req.query) || {};
-  if (q.yclid) return true; // автометка Яндекс.Директа
+  if (q.yclid) return true; // автометка Яндекс.Директа — самый надёжный сигнал
   const src = String(q.utm_source || "").toLowerCase();
-  return src.includes("yandex") || src.includes("direct");
+  if (src.includes("yandex") || src.includes("direct")) return true;
+  // Фолбэк: реферер с доменов Яндекса. Лендинги /welcome* — посадочные под
+  // рекламу (органических ссылок на них нет), поэтому переход с yandex.* почти
+  // наверняка = Яндекс.Директ. Ловит клики, где yclid не проставлен.
+  const ref = String((req && req.headers && req.headers.referer) || "").toLowerCase();
+  if (/(?:\/\/|\.)yandex\.[a-z]/.test(ref) || ref.includes("yabs.") || ref.includes("an.yandex")) return true;
+  return false;
 }
 function parseTrafficCookie(req) {
   const m = String((req && req.headers && req.headers.cookie) || "").match(/(?:^|;\s*)voyo_src=([^;]+)/);
