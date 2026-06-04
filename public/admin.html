@@ -1363,7 +1363,7 @@
         sortLabel.textContent = "Сортировка:";
         const sortSel = document.createElement("select");
         sortSel.style.cssText = "padding:7px 11px;border:1px solid #e2dded;border-radius:10px;font-size:13px;background:#fff;color:#1d2330;cursor:pointer;";
-        [["stage", "По этапу (от ранних к конечным)"], ["date_asc", "По дате создания (сначала ранние)"]].forEach(function (opt) {
+        [["stage", "По этапу (от ранних к конечным)"], ["date_desc", "По дате создания (сначала новые)"]].forEach(function (opt) {
           const o = document.createElement("option");
           o.value = opt[0]; o.textContent = opt[1];
           if (opt[0] === statsSortMode) o.selected = true;
@@ -1376,9 +1376,9 @@
 
         function sortedStatsPhones() {
           const arr = phones.slice();
-          if (statsSortMode === "date_asc") {
-            // По дате создания (первой авторизации) — сначала самые ранние.
-            arr.sort(function (a, b) { return (a.firstAuthAt || 0) - (b.firstAuthAt || 0); });
+          if (statsSortMode === "date_desc") {
+            // По дате создания (первой авторизации) — сначала самые новые.
+            arr.sort(function (a, b) { return (b.firstAuthAt || 0) - (a.firstAuthAt || 0); });
           } else {
             // По этапу — от начальных к конечным (как было по умолчанию).
             arr.sort(function (a, b) { return (a.stage || 0) - (b.stage || 0) || (b.firstAuthAt || 0) - (a.firstAuthAt || 0); });
@@ -1569,7 +1569,7 @@
         sortLabel.textContent = "Сортировка:";
         const sortSel = document.createElement("select");
         sortSel.style.cssText = "padding:7px 11px;border:1px solid #e2dded;border-radius:10px;font-size:13px;background:#fff;color:#1d2330;cursor:pointer;";
-        [["stage", "По этапу (от ранних к конечным)"], ["date_asc", "По дате создания (сначала ранние)"]].forEach(function (opt) {
+        [["stage", "По этапу (от ранних к конечным)"], ["date_desc", "По дате создания (сначала новые)"]].forEach(function (opt) {
           const o = document.createElement("option");
           o.value = opt[0]; o.textContent = opt[1];
           if (opt[0] === stagesSortMode) o.selected = true;
@@ -1582,8 +1582,9 @@
 
         function sortedStagePhones() {
           const arr = phones.slice();
-          if (stagesSortMode === "date_asc") {
-            arr.sort(function (a, b) { return (a.firstAuthAt || 0) - (b.firstAuthAt || 0); });
+          if (stagesSortMode === "date_desc") {
+            // По дате создания — сначала самые новые.
+            arr.sort(function (a, b) { return (b.firstAuthAt || 0) - (a.firstAuthAt || 0); });
           } else {
             arr.sort(function (a, b) { return ((a.reachedIndex || 0) - (b.reachedIndex || 0)) || ((b.firstAuthAt || 0) - (a.firstAuthAt || 0)); });
           }
