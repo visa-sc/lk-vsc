@@ -570,6 +570,17 @@ app.get("/admin/api/traffic", requireAdmin, (req, res) => {
   }
 });
 
+// График новых авторизаций по дням за последние 30 дней (скользящее окно).
+// In-memory расчёт по lkAuthPhones — лёгкий и всегда свежий, кеш не нужен.
+app.get("/admin/api/auth-daily", requireAdmin, (req, res) => {
+  try {
+    return res.json(computeDailyAuthSeries());
+  } catch (e) {
+    console.error("/admin/api/auth-daily error:", e && e.message);
+    return res.status(500).json({ success: false, message: "Ошибка расчёта графика авторизаций" });
+  }
+});
+
 // Воронка «Опросники»: SMS отправлено → кликнул → отправил.
 // Считаем по уникальным номерам. Базой берём feedbackSent — туда попадают
 // номера, которым ушло приглашение (фиксируется ДО самой отправки SMS).
@@ -5482,6 +5493,51 @@ loadLkAuthPhones();
 function formatPhoneForDisplay(norm) {
   if (!norm || norm.length !== 11) return `+${norm}`;
   return `+${norm[0]} (${norm.slice(1, 4)}) ${norm.slice(4, 7)}-${norm.slice(7, 9)}-${norm.slice(9, 11)}`;
+}
+
+// ── График новых авторизаций по дням (скользящее окно «последние 30 дней») ──
+// Источник — lkAuthPhones (phone → firstAuthAt ms), полностью in-memory, поэтому
+// расчёт дешёвый (один проход по Map на пару сотен записей) и всегда свежий —
+// кеш не нужен, клиентский ЛК не затрагивается.
+//
+// Логика окна:
+//   • День = МСК-сутки (UTC+3), как в trafficDayKey.
+//   • Конец окна = сегодня (МСК). Начало = сегодня − 29 дней (итого 30 дней),
+//     но не раньше LK_STATS_START_MS (22.05.2026 — когда начали отслеживать).
+//   • Пока с 22.05.2026 не набралось 30 суток, показываем меньше дней; дальше
+//     окно автоматически «едет» вперёд — всегда последние 30 дней.
+//   • Исключаем тестовые номера команды и записи до точки отсчёта — как в
+//     остальной статистике, чтобы цифры сходились с «Авторизовались».
+function computeDailyAuthSeries() {
+  const DAY_MS = 86400000;
+  const MSK_OFFSET = 3 * 3600 * 1000; // UTC+3
+  const mskDayIdx = (ts) => Math.floor((ts + MSK_OFFSET) / DAY_MS);
+  const keyForIdx = (idx) => new Date(idx * DAY_MS).toISOString().slice(0, 10);
+
+  const startFloorIdx = mskDayIdx(LK_STATS_START_MS); // 22.05.2026
+  const todayIdx = mskDayIdx(Date.now());
+  let startIdx = todayIdx - 29; // 30 дней включительно
+  if (startIdx < startFloorIdx) startIdx = startFloorIdx;
+
+  const counts = new Map(); // dayIdx -> кол-во новых авторизаций
+  for (const [phone, ts] of lkAuthPhones.entries()) {
+    if (!Number.isFinite(ts)) continue;
+    if (ts < LK_STATS_START_MS) continue;
+    if (LK_STATS_EXCLUDED_PHONES.has(phone)) continue;
+    const idx = mskDayIdx(ts);
+    if (idx < startIdx || idx > todayIdx) continue;
+    counts.set(idx, (counts.get(idx) || 0) + 1);
+  }
+
+  const days = [];
+  let total = 0, peak = 0;
+  for (let i = startIdx; i <= todayIdx; i++) {
+    const c = counts.get(i) || 0;
+    total += c;
+    if (c > peak) peak = c;
+    days.push({ date: keyForIdx(i), count: c });
+  }
+  return { success: true, days, total, peak, windowDays: 30, startDate: LK_STATS_START_DATE };
 }
 
 // ── First-LK-questionnaire-lead для статистики воронки ──

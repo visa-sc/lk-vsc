@@ -452,6 +452,64 @@
       .paid-conv-num { font-size: 28px; }
     }
 
+    /* ── График новых авторизаций по дням (последние 30 дней) ── */
+    .auth-chart {
+      background: #fff;
+      border: 1px solid #e6e8ef;
+      border-radius: 16px;
+      padding: 18px 18px 14px;
+      margin: 0 0 18px;
+      box-shadow: 0 1px 2px rgba(22, 29, 69, .04);
+    }
+    .auth-chart-title {
+      font-size: 15px; font-weight: 700; color: #161d45; line-height: 1.25;
+    }
+    .auth-chart-sub {
+      font-size: 12px; color: #7a8090; margin-top: 3px; line-height: 1.35;
+    }
+    .auth-chart-meta {
+      display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px;
+    }
+    .auth-chart-meta span { font-size: 12px; color: #4a5260; }
+    .auth-chart-meta b { color: #161d45; font-weight: 700; }
+    .auth-chart-body {
+      display: flex; align-items: flex-end; gap: 4px;
+      height: 176px; margin-top: 14px; padding-bottom: 2px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+    }
+    .auth-col {
+      flex: 1 1 0; min-width: 22px;
+      display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+      height: 100%;
+    }
+    .auth-col-val {
+      font-size: 11px; font-weight: 700; color: #2d3550; line-height: 1; margin-bottom: 4px;
+      min-height: 11px;
+    }
+    .auth-col-val.zero { color: #c2c7d2; font-weight: 600; }
+    .auth-bar {
+      width: 100%; max-width: 30px;
+      background: linear-gradient(180deg, #4aa3d6 0%, #3589BD 100%);
+      border-radius: 5px 5px 2px 2px;
+      min-height: 3px;
+      transition: height .2s ease;
+    }
+    .auth-bar.empty { background: #eceef4; }
+    .auth-col-x {
+      font-size: 10px; color: #8a90a0; line-height: 1.1; margin-top: 6px; text-align: center;
+      white-space: nowrap;
+    }
+    .auth-col.is-today .auth-bar { background: linear-gradient(180deg, #ffb44d 0%, #f59324 100%); }
+    .auth-col.is-today .auth-col-x { color: #d9820f; font-weight: 700; }
+    .auth-chart-empty {
+      font-size: 13px; color: #7a8090; padding: 18px 0; text-align: center;
+    }
+    @media (max-width: 720px) {
+      .auth-chart-body { height: 150px; gap: 3px; }
+      .auth-col { min-width: 18px; }
+      .auth-col-x { font-size: 9px; }
+    }
+
     /* ── Кнопка раскрытия списка ── */
     .toggle-phones {
       margin-top: 18px;
@@ -662,12 +720,14 @@
     </div>
 
     <div id="panelStats" class="panel show">
+      <div id="authChartStats"></div>
       <div id="statsContent">
         <div class="loading-state">Загружаем…</div>
       </div>
     </div>
 
     <div id="panelStages" class="panel">
+      <div id="authChartStages"></div>
       <div id="stagesContent">
         <div class="loading-state">Загружаем…</div>
       </div>
@@ -722,6 +782,8 @@
       const stagesContent = document.getElementById("stagesContent");
       const surveysContent = document.getElementById("surveysContent");
       const trafficContent = document.getElementById("trafficContent");
+      const authChartStats = document.getElementById("authChartStats");
+      const authChartStages = document.getElementById("authChartStages");
 
       let activeTab = "stats";
       let phonesExpanded = false;
@@ -729,6 +791,7 @@
       let stagesExpanded = false;
       let stagesSortMode = "stage";
       let statsPollTimer = null;
+      let authDailyData = null; // кеш последнего ответа /admin/api/auth-daily
 
       function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
       function setToken(t) { localStorage.setItem(TOKEN_KEY, t || ""); }
@@ -1207,10 +1270,114 @@
         return f;
       }
 
+      // ── График новых авторизаций по дням (последние 30 дней) ──
+      // Один и тот же график показывается в обеих вкладках статистики (доки/этапы),
+      // между блоком «Конверсия по оплаченным сделкам» и воронкой этапов.
+      function isoToRu(iso) { // "YYYY-MM-DD" -> "DD.MM.YYYY"
+        const p = String(iso || "").split("-");
+        return p.length === 3 ? (p[2] + "." + p[1] + "." + p[0]) : (iso || "");
+      }
+      function isoToDayLabel(iso) { // "YYYY-MM-DD" -> "DD"
+        const p = String(iso || "").split("-");
+        return p.length === 3 ? p[2] : (iso || "");
+      }
+      function renderAuthChart(container, data) {
+        if (!container) return;
+        container.innerHTML = "";
+        const card = document.createElement("div");
+        card.className = "auth-chart";
+
+        const title = document.createElement("div");
+        title.className = "auth-chart-title";
+        title.textContent = "Новые авторизации в ЛК по дням";
+        card.appendChild(title);
+
+        const days = (data && Array.isArray(data.days)) ? data.days : [];
+        const sub = document.createElement("div");
+        sub.className = "auth-chart-sub";
+        if (days.length) {
+          sub.textContent = "Скользящее окно последних 30 дней · " +
+            isoToRu(days[0].date) + " — " + isoToRu(days[days.length - 1].date);
+        } else {
+          sub.textContent = "Скользящее окно последних 30 дней";
+        }
+        card.appendChild(sub);
+
+        if (!days.length) {
+          const empty = document.createElement("div");
+          empty.className = "auth-chart-empty";
+          empty.textContent = "Пока нет данных за период.";
+          card.appendChild(empty);
+          container.appendChild(card);
+          return;
+        }
+
+        const total = (typeof data.total === "number")
+          ? data.total : days.reduce(function (s, d) { return s + (d.count || 0); }, 0);
+        const peak = (typeof data.peak === "number")
+          ? data.peak : days.reduce(function (m, d) { return Math.max(m, d.count || 0); }, 0);
+        const avg = days.length ? (total / days.length) : 0;
+
+        const meta = document.createElement("div");
+        meta.className = "auth-chart-meta";
+        meta.innerHTML =
+          '<span>Всего за период: <b>' + total + '</b></span>' +
+          '<span>В среднем: <b>' + (Math.round(avg * 10) / 10) + '</b>/день</span>' +
+          '<span>Пик: <b>' + peak + '</b>/день</span>';
+        card.appendChild(meta);
+
+        const body = document.createElement("div");
+        body.className = "auth-chart-body";
+        const MAX_PX = 122;
+        const lastIdx = days.length - 1;
+        days.forEach(function (d, i) {
+          const cnt = d.count || 0;
+          const col = document.createElement("div");
+          col.className = "auth-col" + (i === lastIdx ? " is-today" : "");
+          col.title = isoToRu(d.date) + ": " + cnt;
+
+          const val = document.createElement("div");
+          val.className = "auth-col-val" + (cnt === 0 ? " zero" : "");
+          val.textContent = String(cnt);
+
+          const bar = document.createElement("div");
+          bar.className = "auth-bar" + (cnt === 0 ? " empty" : "");
+          bar.style.height = (peak > 0 ? Math.max(3, Math.round((cnt / peak) * MAX_PX)) : 3) + "px";
+
+          const x = document.createElement("div");
+          x.className = "auth-col-x";
+          x.textContent = isoToDayLabel(d.date);
+
+          col.appendChild(val);
+          col.appendChild(bar);
+          col.appendChild(x);
+          body.appendChild(col);
+        });
+        card.appendChild(body);
+        container.appendChild(card);
+      }
+      async function loadAuthDaily(opts) {
+        const silent = opts && opts.silent;
+        try {
+          const data = await apiFetch("/admin/api/auth-daily");
+          authDailyData = data;
+          renderAuthChart(authChartStats, data);
+          renderAuthChart(authChartStages, data);
+        } catch (e) {
+          if (!silent && !authDailyData) {
+            const msg = '<div class="auth-chart"><div class="auth-chart-title">Новые авторизации в ЛК по дням</div>' +
+              '<div class="auth-chart-empty">Не удалось загрузить график: ' + escapeHtml(e.message) + '</div></div>';
+            if (authChartStats) authChartStats.innerHTML = msg;
+            if (authChartStages) authChartStages.innerHTML = msg;
+          }
+        }
+      }
+
       // ── Статистика ──
       async function loadStats(opts) {
         const silent = opts && opts.silent;
         if (!silent) statsContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        loadAuthDaily({ silent: silent }); // график (общий для обеих вкладок) — параллельно, не блокирует воронку
         try {
           const statsData = await apiFetch("/admin/api/stats");
           renderStats(statsData);
@@ -1473,6 +1640,7 @@
       async function loadStages(opts) {
         const silent = opts && opts.silent;
         if (!silent) stagesContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        loadAuthDaily({ silent: silent }); // график (общий для обеих вкладок) — параллельно, не блокирует воронку
         try {
           const data = await apiFetch("/admin/api/stage-stats");
           renderStageStats(data);
