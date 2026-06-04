@@ -1,0 +1,461 @@
+const fs = require("fs");
+
+const CSS = `
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#ffffff; --bg-alt:#f5f5f7; --bg-dark:#1d1d1f; --text:#1d1d1f;
+      --text-muted:#6e6e73; --accent:#3589BD; --accent-2:#4f9f68; --border:#d2d2d7; --navy:#161d45;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--text); line-height:1.47; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+    a { color: inherit; text-decoration: none; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(22px);} to { opacity:1; transform:none;} }
+    .anim { animation: fadeUp .7s cubic-bezier(.22,1,.36,1) both; }
+    .d1{animation-delay:.05s;} .d2{animation-delay:.12s;} .d3{animation-delay:.2s;} .d4{animation-delay:.28s;}
+    @media (prefers-reduced-motion: reduce){ .anim{animation:none;} }
+    .accent-text { background:linear-gradient(135deg,#3589BD 0%,#4f9f68 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+    .nav { position:sticky; top:0; z-index:50; background:rgba(255,255,255,.86); backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px); border-bottom:1px solid rgba(0,0,0,.06); }
+    .nav-inner { max-width:1024px; margin:0 auto; padding:9px 22px; display:flex; align-items:center; justify-content:space-between; }
+    .nav-logo { height:38px; width:76px; aspect-ratio:2/1; }
+    .nav-cta { background:var(--accent); color:#fff; padding:9px 18px; border-radius:980px; font-size:13px; font-weight:600; transition:.2s; }
+    .nav-cta:hover { background:#2c75a3; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; padding:16px 32px; border-radius:980px; font-size:16px; font-weight:600; transition:.2s; border:none; cursor:pointer; line-height:1; }
+    .btn-primary { background:var(--accent); color:#fff; box-shadow:0 10px 28px rgba(53,137,189,.32); }
+    .btn-primary:hover { background:#2c75a3; transform:translateY(-1px); }
+    .btn-secondary { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+    .btn-secondary:hover { background:var(--accent); color:#fff; }
+    .hero { padding:72px 22px 56px; text-align:center; background:linear-gradient(180deg,#fff 0%,#eef4f8 100%); }
+    .hero .eyebrow { display:inline-block; font-size:13px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); margin-bottom:18px; }
+    .hero h1 { font-size:clamp(36px,6.4vw,68px); font-weight:700; letter-spacing:-.02em; line-height:1.06; margin-bottom:20px; max-width:880px; margin-left:auto; margin-right:auto; }
+    .hero p.sub { font-size:clamp(17px,2.2vw,22px); color:var(--text-muted); max-width:600px; margin:0 auto 30px; line-height:1.4; }
+    .hero-actions { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
+    .hero-note { margin-top:16px; font-size:13px; color:var(--text-muted); }
+    .promo-wrap { padding:0 22px; margin-top:38px; }
+    .promo { max-width:720px; margin:0 auto; background:linear-gradient(135deg,#161d45 0%,#29356f 100%); color:#fff; border-radius:22px; padding:26px 28px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; box-shadow:0 26px 60px rgba(22,29,69,.28); }
+    .promo .promo-left { text-align:left; }
+    .promo .promo-percent { font-size:40px; font-weight:800; line-height:1; }
+    .promo .promo-percent span { color:#8fd3a6; }
+    .promo .promo-desc { font-size:14px; color:#d6e0f2; margin-top:6px; max-width:340px; }
+    .promo-code-box { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+    .promo-code { font-size:22px; font-weight:800; letter-spacing:2px; background:rgba(255,255,255,.12); border:1px dashed rgba(255,255,255,.5); padding:12px 18px; border-radius:12px; }
+    .copy-btn { background:#4f9f68; color:#fff; border:none; cursor:pointer; padding:12px 16px; border-radius:12px; font-size:13px; font-weight:600; transition:.2s; white-space:nowrap; }
+    .copy-btn:hover { background:#438a59; }
+    @media (max-width:600px){ .promo{flex-direction:column; align-items:stretch; gap:16px; padding:22px 20px;} .promo .promo-left{text-align:center;} .promo .promo-desc{max-width:none; margin-left:auto; margin-right:auto;} .promo-code-box{width:100%; justify-content:center;} .promo-code{font-size:20px; letter-spacing:1px; padding:12px 16px;} }
+    .section { padding:78px 22px; }
+    .section.alt { background:var(--bg-alt); }
+    .section-inner { max-width:1024px; margin:0 auto; }
+    .section-eyebrow { font-size:14px; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:.05em; margin-bottom:12px; text-align:center; }
+    .section-title { font-size:clamp(28px,4vw,44px); font-weight:700; letter-spacing:-.02em; text-align:center; margin-bottom:14px; color:var(--navy); }
+    .section-lead { font-size:18px; color:var(--text-muted); text-align:center; max-width:640px; margin:0 auto 48px; }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
+    @media (max-width:860px){ .grid{grid-template-columns:1fr;} }
+    .feature-card { background:#fff; border:1px solid var(--border); border-radius:18px; padding:26px 24px; transition:.2s; }
+    .feature-card:hover { transform:translateY(-3px); box-shadow:0 18px 40px rgba(34,36,52,.10); }
+    .feature-ic { width:46px; height:46px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:22px; margin-bottom:16px; background:linear-gradient(135deg,rgba(53,137,189,.12),rgba(79,159,104,.12)); }
+    .feature-card h3 { font-size:18px; margin-bottom:8px; color:var(--navy); }
+    .feature-card p { font-size:14.5px; color:var(--text-muted); }
+    .steps { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; counter-reset:step; }
+    @media (max-width:860px){ .steps{grid-template-columns:1fr 1fr;} }
+    @media (max-width:520px){ .steps{grid-template-columns:1fr;} }
+    .step { position:relative; background:#fff; border:1px solid var(--border); border-radius:16px; padding:26px 20px 22px; }
+    .step .step-num { counter-increment:step; width:34px; height:34px; border-radius:50%; background:var(--accent); color:#fff; font-weight:700; display:flex; align-items:center; justify-content:center; margin-bottom:14px; }
+    .step .step-num::before { content:counter(step); }
+    .step h3 { font-size:16px; margin-bottom:6px; color:var(--navy); }
+    .step p { font-size:13.5px; color:var(--text-muted); }
+    .adv { max-width:760px; margin:0 auto; display:grid; grid-template-columns:1fr 1fr; gap:18px 30px; align-items:start; }
+    @media (max-width:620px){ .adv{grid-template-columns:1fr;} }
+    .adv li { list-style:none; position:relative; padding-left:34px; font-size:15.5px; color:var(--text); min-height:26px; display:flex; align-items:center; }
+    .adv li::before { content:"✓"; position:absolute; left:0; top:50%; transform:translateY(-50%); width:24px; height:24px; border-radius:50%; background:var(--accent-2); color:#fff; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+    .cta { padding:88px 22px; text-align:center; background:linear-gradient(180deg,#eef4f8 0%,#fff 100%); }
+    .cta h2 { font-size:clamp(30px,4.4vw,50px); font-weight:700; letter-spacing:-.02em; margin-bottom:14px; color:var(--navy); }
+    .cta p { font-size:18px; color:var(--text-muted); max-width:560px; margin:0 auto 28px; }
+    .cta .pill { display:inline-block; margin-bottom:22px; background:#fff; border:1px solid var(--border); border-radius:980px; padding:8px 18px; font-size:14px; font-weight:600; color:var(--navy); }
+    .cta .pill b { color:var(--accent-2); }
+    .footer { background:var(--bg-dark); color:#a1a1a6; padding:40px 22px; text-align:center; font-size:13px; }
+    .footer-links { display:flex; gap:26px; justify-content:center; flex-wrap:wrap; margin-bottom:14px; }
+    .footer-links a { color:#f5f5f7; } .footer-links a:hover { color:var(--accent); }
+    .toast { position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(20px); background:#161d45; color:#fff; padding:12px 22px; border-radius:12px; font-size:14px; opacity:0; pointer-events:none; transition:.25s; z-index:100; }
+    .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+    /* ── STATS (dark) ── */
+    .stats-section { background:linear-gradient(135deg,#161d45 0%,#29356f 100%); }
+    .stats-section .section-eyebrow { color:#8fb4dd; }
+    .stats-section .section-title { color:#fff; }
+    .stats-section .section-lead { color:#c8d4ea; }
+    .stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; max-width:920px; margin:0 auto; }
+    @media (max-width:760px){ .stats-grid{grid-template-columns:1fr 1fr;} }
+    .stat { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:22px 14px; min-height:146px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+    .stat-num { font-size:clamp(27px,3.2vw,34px); font-weight:800; line-height:1.1; white-space:nowrap; background:linear-gradient(135deg,#7fc0ea,#8fd3a6); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+    .stat-cap { margin-top:10px; font-size:13px; color:#c8d4ea; line-height:1.35; min-height:36px; display:flex; align-items:center; justify-content:center; }
+    /* ── SLIDES (cabinet mockups) ── */
+    .slides-hint { text-align:center; font-size:13px; color:var(--text-muted); margin-bottom:26px; }
+    .slides { display:flex; gap:20px; overflow-x:auto; scroll-snap-type:x mandatory; padding:6px 22px 24px; -webkit-overflow-scrolling:touch; }
+    .slides::-webkit-scrollbar { height:6px; }
+    .slides::-webkit-scrollbar-thumb { background:#cfd3da; border-radius:3px; }
+    .slide { scroll-snap-align:center; flex:0 0 auto; width:288px; }
+    .phone { background:#fff; border:1px solid var(--border); border-radius:24px; box-shadow:0 24px 56px rgba(34,36,52,.16); overflow:hidden; }
+    .phone-top { background:linear-gradient(135deg,#161d45,#29356f); color:#fff; padding:15px 18px; }
+    .pt-name { font-weight:700; font-size:14px; }
+    .pt-sub { font-size:11.5px; color:#b9c4de; margin-top:2px; }
+    .phone-body { padding:16px; min-height:232px; }
+    .slide-cap { text-align:center; margin-top:14px; font-weight:600; color:var(--navy); font-size:14.5px; }
+    .mk-stage { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--text-muted); padding:6px 0; }
+    .mk-dot { width:14px; height:14px; border-radius:50%; border:2px solid #d6dbe2; background:#fff; flex:0 0 14px; }
+    .mk-stage.done { color:var(--accent-2); }
+    .mk-stage.done .mk-dot { border-color:var(--accent-2); background:var(--accent-2); box-shadow:inset 0 0 0 3px #fff; }
+    .mk-stage.cur { color:var(--navy); font-weight:700; }
+    .mk-stage.cur .mk-dot { border-color:var(--accent); box-shadow:inset 0 0 0 3px var(--accent); }
+    .mk-field { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; margin-bottom:8px; font-size:13px; }
+    .mk-field span { color:var(--text-muted); }
+    .mk-field b { color:var(--navy); text-align:right; }
+    .mk-hint { background:#edf8ef; border:1px solid #cfe7d2; color:#2e7a43; border-radius:10px; padding:10px 12px; font-size:12.5px; margin-top:4px; }
+    .mk-doc { display:flex; justify-content:space-between; align-items:center; padding:11px 12px; border:1px solid var(--border); border-radius:10px; margin-bottom:8px; font-size:13px; color:var(--navy); }
+    .mk-doc.done { background:#f4faf6; border-color:#cfe7d2; }
+    .mk-doc.done > span { color:var(--accent-2); font-weight:700; }
+    .mk-up { color:var(--accent); font-weight:600; font-size:12px; }
+    .mk-status { background:linear-gradient(135deg,#3589BD,#4f9f68); color:#fff; border-radius:12px; padding:18px 16px; font-weight:700; font-size:15px; text-align:center; }
+    .mk-statusline { text-align:center; font-size:12px; color:var(--text-muted); margin-top:10px; }
+    .mk-bar { height:8px; background:#eef1f5; border-radius:5px; margin-top:14px; overflow:hidden; }
+    .mk-bar-fill { height:100%; width:72%; background:linear-gradient(90deg,#3589BD,#4f9f68); border-radius:5px; }
+    .mk-statushint { font-size:12.5px; color:var(--text-muted); text-align:center; margin-top:16px; }
+    .mk-ready { font-weight:700; color:var(--navy); font-size:15px; margin-bottom:12px; }
+    .mk-dl { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px; border:1px solid var(--border); border-radius:10px; margin-bottom:8px; font-size:13px; color:var(--navy); }
+    .mk-dlbtn { background:var(--accent-2); color:#fff; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:600; white-space:nowrap; }`;
+
+const METRIKA = `
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function(m,e,t,r,i,k,a){
+        m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();
+        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+    })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=109614823', 'ym');
+
+    ym(109614823, 'init', {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/109614823" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->`;
+
+const SCRIPTS = `
+  <script>
+    (function () {
+      var btn = document.getElementById("copyBtn");
+      var toast = document.getElementById("toast");
+      if (!btn) return;
+      btn.addEventListener("click", function () {
+        var code = "WELCOME";
+        function done() { if (!toast) return; toast.classList.add("show"); setTimeout(function(){ toast.classList.remove("show"); }, 1800); }
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(code).then(done).catch(done); }
+        else { try { var t=document.createElement("textarea"); t.value=code; document.body.appendChild(t); t.select(); document.execCommand("copy"); document.body.removeChild(t);} catch(e){} done(); }
+      });
+    })();
+    // Яндекс.Метрика — второстепенная цель: клики по кнопкам (CTA, «Войти», «Скопировать»).
+    document.addEventListener("click", function (e) {
+      var t = (e.target && e.target.closest) ? e.target.closest(".btn, .nav-cta, .copy-btn") : null;
+      if (t && typeof ym === "function") { try { ym(109614823, "reachGoal", "button_click"); } catch (err) {} }
+    });
+  </script>`;
+
+const sharedFeatures = [
+  ["📲","Личный кабинет 24/7","Все заявки, документы и статусы — в одном месте и под рукой в любой момент."],
+  ["📊","Статус в реальном времени","Видно, на каком этапе виза прямо сейчас — от сбора документов до готового паспорта."],
+  ["🧠","Умный опросник","Заполняете один раз — система сама подскажет, какие документы нужны именно вам."],
+  ["📤","Документы онлайн","Фото или PDF прямо с телефона — без лишних поездок в офис."],
+];
+const faceCard = ["🔒","Вход по Face ID","Быстрый и безопасный вход — по лицу или отпечатку, без паролей."];
+
+function slides(p){
+  return `
+      <div class="slide">
+        <div class="phone">
+          <div class="phone-top"><div class="pt-name">Иванов Иван Иванович</div><div class="pt-sub">${p.ptSub}</div></div>
+          <div class="phone-body">
+            <div class="mk-stage done"><span class="mk-dot"></span>Начало оформления</div>
+            <div class="mk-stage done"><span class="mk-dot"></span>Первичный сбор документов</div>
+            <div class="mk-stage done"><span class="mk-dot"></span>Подготовка документов</div>
+            <div class="mk-stage cur"><span class="mk-dot"></span>Ожидание подачи</div>
+            <div class="mk-stage"><span class="mk-dot"></span>Рассмотрение</div>
+            <div class="mk-stage"><span class="mk-dot"></span>Паспорт готов</div>
+          </div>
+        </div>
+        <div class="slide-cap">Этапы вашей визы — на одном экране</div>
+      </div>
+      <div class="slide">
+        <div class="phone">
+          <div class="phone-top"><div class="pt-name">Иванов Иван Иванович</div><div class="pt-sub">Опросник заявителя</div></div>
+          <div class="phone-body">
+            <div class="mk-field"><span>Цель поездки</span><b>Туризм</b></div>
+            <div class="mk-field"><span>Страна поездки</span><b>${p.country}</b></div>
+            <div class="mk-field"><span>Даты поездки</span><b>${p.dates}</b></div>
+            <div class="mk-hint">✓ Подскажем, какие документы нужны именно вам</div>
+          </div>
+        </div>
+        <div class="slide-cap">Умный опросник заполняется один раз</div>
+      </div>
+      <div class="slide">
+        <div class="phone">
+          <div class="phone-top"><div class="pt-name">Иванов Иван Иванович</div><div class="pt-sub">Загрузка документов</div></div>
+          <div class="phone-body">
+            <div class="mk-doc done">Внутренний паспорт<span>✓</span></div>
+            <div class="mk-doc done">Загран. паспорт<span>✓</span></div>
+            <div class="mk-doc done">Справка с работы<span>✓</span></div>
+            <div class="mk-doc">Фото 3.5 × 4.5<span class="mk-up">Загрузить</span></div>
+          </div>
+        </div>
+        <div class="slide-cap">Документы — с телефона, без поездок</div>
+      </div>
+      <div class="slide">
+        <div class="phone">
+          <div class="phone-top"><div class="pt-name">Иванов Иван Иванович</div><div class="pt-sub">${p.ptSub}</div></div>
+          <div class="phone-body">
+            <div class="mk-status">На рассмотрении в консульстве</div>
+            <div class="mk-statusline">Обновлено сегодня, 14:32</div>
+            <div class="mk-bar"><div class="mk-bar-fill"></div></div>
+            <div class="mk-statushint">Сообщим, как только паспорт будет готов</div>
+          </div>
+        </div>
+        <div class="slide-cap">Статус визы — в реальном времени</div>
+      </div>
+      <div class="slide">
+        <div class="phone">
+          <div class="phone-top"><div class="pt-name">Иванов Иван Иванович</div><div class="pt-sub">Готовые документы</div></div>
+          <div class="phone-body">
+            <div class="mk-ready">📄 Ваши документы готовы</div>
+            <div class="mk-dl"><span>Архив со всеми документами</span><span class="mk-dlbtn">Скачать</span></div>
+            <div class="mk-dl"><span>Один PDF для печати</span><span class="mk-dlbtn">Скачать</span></div>
+            <div class="mk-statushint">Заберите онлайн, лично или курьером</div>
+          </div>
+        </div>
+        <div class="slide-cap">Готовые документы — сразу в кабинете</div>
+      </div>`;
+}
+
+function render(p){
+  const features = sharedFeatures.concat([p.feat5, faceCard])
+    .map(f => `        <div class="feature-card">
+          <div class="feature-ic">${f[0]}</div>
+          <h3>${f[1]}</h3>
+          <p>${f[2]}</p>
+        </div>`).join("\n");
+  const adv = p.adv.map(x => `        <li>${x}</li>`).join("\n");
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${p.title}</title>
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" href="/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="VOYO" />
+  <meta name="description" content="${p.metaDesc}" />
+  <meta name="robots" content="index, follow" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="VOYO" />
+  <meta property="og:title" content="${p.ogTitle}" />
+  <meta property="og:description" content="${p.ogDesc}" />
+  <meta property="og:url" content="${p.ogUrl}" />
+  <meta property="og:image" content="https://voyovoyo.ru/logo.png" />
+  <meta property="og:image:width" content="600" />
+  <meta property="og:image:height" content="300" />
+  <style>${CSS}
+  </style>
+${METRIKA}
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="nav-inner">
+      <img class="nav-logo" src="/logo-voyo.png" alt="VOYO" width="600" height="300" />
+      <a class="nav-cta" href="/">Войти в кабинет</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <span class="eyebrow anim">${p.eyebrow}</span>
+    <h1 class="anim d1">${p.h1}</h1>
+    <p class="sub anim d2">${p.sub}</p>
+    <div class="hero-actions anim d3">
+      <a class="btn btn-primary" href="/">Получить скидку 10%</a>
+      <a class="btn btn-secondary" href="#cabinet">Посмотреть кабинет</a>
+    </div>
+    <div class="hero-note anim d3">Промокод <b>WELCOME</b> — −10% на первую визу при входе в кабинет</div>
+    <div class="promo-wrap anim d4">
+      <div class="promo">
+        <div class="promo-left">
+          <div class="promo-percent">−10<span>%</span></div>
+          <div class="promo-desc">${p.promoDesc}</div>
+        </div>
+        <div class="promo-code-box">
+          <div class="promo-code" id="promoCode">WELCOME</div>
+          <button class="copy-btn" id="copyBtn" type="button">Скопировать</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="section" id="why">
+    <div class="section-inner">
+      <div class="section-eyebrow">Личный кабинет</div>
+      <h2 class="section-title">${p.whyTitle}</h2>
+      <p class="section-lead">${p.whyLead}</p>
+      <div class="grid">
+${features}
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt" id="cabinet">
+    <div class="section-inner">
+      <div class="section-eyebrow">Загляните внутрь</div>
+      <h2 class="section-title">Так выглядит ваш кабинет</h2>
+      <p class="section-lead">Несколько экранов из личного кабинета — от опросника до готовых документов.</p>
+      <div class="slides-hint">← листайте слайды →</div>
+    </div>
+    <div class="slides">
+${slides(p)}
+    </div>
+  </section>
+
+  <section class="section stats-section">
+    <div class="section-inner">
+      <div class="section-eyebrow">О нас — фактами</div>
+      <h2 class="section-title">За кабинетом — опыт, а не обещания</h2>
+      <p class="section-lead">11 лет, 240 000 клиентов и команда из 75 специалистов в Москве и Санкт-Петербурге. Весь этот опыт мы собрали в одном личном кабинете.</p>
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-num">11 лет</div><div class="stat-cap">оформляем визы</div></div>
+        <div class="stat"><div class="stat-num">240 000+</div><div class="stat-cap">клиентов с нами</div></div>
+        <div class="stat"><div class="stat-num">75</div><div class="stat-cap">специалистов в штате</div></div>
+        <div class="stat"><div class="stat-num">2 города</div><div class="stat-cap">офисы в Москве и Санкт-Петербурге</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="how">
+    <div class="section-inner">
+      <div class="section-eyebrow">Всего 4 шага</div>
+      <h2 class="section-title">${p.howTitle}</h2>
+      <p class="section-lead">От входа до готовой визы — понятный путь, который займёт минуты вашего времени.</p>
+      <div class="steps">
+        <div class="step"><div class="step-num"></div><h3>Войдите по телефону</h3><p>Введите номер и промокод <b>WELCOME</b> — −10% на первую визу.</p></div>
+        <div class="step"><div class="step-num"></div><h3>Заполните опросник</h3><p>Умная анкета подскажет, что именно нужно для вашей поездки.</p></div>
+        <div class="step"><div class="step-num"></div><h3>Загрузите документы</h3><p>Прямо из кабинета, с телефона — фото или PDF.</p></div>
+        <div class="step"><div class="step-num"></div><h3>Следите за статусом</h3><p>Вы видите каждый этап онлайн, пока мы помогаем получить визу.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt" id="adv">
+    <div class="section-inner">
+      <div class="section-eyebrow">Почему VOYO</div>
+      <h2 class="section-title">${p.advTitle}</h2>
+      <p class="section-lead">${p.advLead}</p>
+      <ul class="adv">
+${adv}
+      </ul>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="pill">Промокод <b>WELCOME</b> · <b>−10%</b> на первую визу</div>
+    <h2>${p.ctaH2}</h2>
+    <p>${p.ctaP}</p>
+    <a class="btn btn-primary" href="/">Войти и получить −10%</a>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-links">
+      <a href="https://wa.me/+79299435150" target="_blank" rel="noopener">WhatsApp</a>
+      <a href="https://t.me/vsc_operator" target="_blank" rel="noopener">Telegram</a>
+      <a href="tel:+74993258683">+7 (499) 325-86-83</a>
+    </div>
+    <div>© VOYO. Все права защищены.</div>
+  </footer>
+
+  <div class="toast" id="toast">Промокод WELCOME скопирован</div>
+${SCRIPTS}
+</body>
+</html>
+`;
+}
+
+const ADV_COMMON_TOP = [
+  "Проверяем документы до подачи",
+  "Сопровождаем до результата",
+];
+const ADV_COMMON_BOTTOM = [
+  "Видно каждый этап — без сюрпризов",
+  "Живые эксперты на связи",
+  "−10% по промокоду WELCOME",
+];
+
+const PAGES = [
+{ slug:"welcome",
+  title:"VOYO — виза онлайн в личном кабинете · промокод WELCOME на первую визу",
+  metaDesc:"Оформите визу онлайн в личном кабинете VOYO: умный опросник, загрузка документов с телефона и статус в реальном времени. 11 лет опыта, 240 000 клиентов. Промокод WELCOME — −10% на первую визу.",
+  ogTitle:"Виза онлайн в личном кабинете VOYO · −10% по промокоду WELCOME",
+  ogDesc:"11 лет опыта, 240 000 клиентов, 75 специалистов. Умный опросник, документы с телефона и статус визы онлайн.",
+  ogUrl:"https://voyovoyo.ru/welcome",
+  eyebrow:"Визы нового поколения",
+  h1:`Виза <span class="accent-text">онлайн</span> —<br>ясно на каждом шаге`,
+  sub:"Личный кабинет, где виден каждый этап оформления — от заявки до готового паспорта.",
+  promoDesc:"−10% на первую визу. Активируйте промокод при входе в личный кабинет.",
+  whyTitle:"Виза без суеты",
+  whyLead:"Оформление переехало в личный кабинет: вы ведёте процесс со смартфона и всегда знаете, что происходит с вашей визой.",
+  feat5:["🌍","Десятки направлений","Шенген, Япония и другие страны — оформляем визы под вашу поездку."],
+  howTitle:"Как это работает",
+  ptSub:"Виза · Италия", country:"Италия", dates:"12.07 — 26.07.2026",
+  advTitle:"Помогаем получить визу — спокойно",
+  advLead:"За технологичным кабинетом — команда, которая оформляет визы каждый день и доводит до результата.",
+  adv:[...ADV_COMMON_TOP, "Шенген, Япония и десятки стран", ...ADV_COMMON_BOTTOM],
+  ctaH2:`Ваша поездка <span class="accent-text">начинается здесь</span>`,
+  ctaP:"Войдите в личный кабинет по номеру телефона и активируйте промокод — это займёт пару минут.",
+},
+{ slug:"welcome_schengen",
+  title:"VOYO — шенгенская виза онлайн в личном кабинете · промокод WELCOME",
+  metaDesc:"Оформите шенгенскую визу онлайн в личном кабинете VOYO: умный опросник, документы с телефона и статус в реальном времени. 11 лет опыта, 240 000 клиентов. Промокод WELCOME — −10% на первую визу.",
+  ogTitle:"Шенгенская виза онлайн в личном кабинете VOYO · −10% по WELCOME",
+  ogDesc:"11 лет опыта, 240 000 клиентов, 75 специалистов. Умный опросник, документы с телефона и статус шенгена онлайн.",
+  ogUrl:"https://voyovoyo.ru/welcome_schengen",
+  eyebrow:"Шенгенская виза · онлайн",
+  h1:`Шенгенская виза <span class="accent-text">онлайн</span> —<br>ясно на каждом шаге`,
+  sub:"Личный кабинет, где виден каждый этап оформления шенгена — от заявки до готового паспорта.",
+  promoDesc:"−10% на первую шенгенскую визу. Активируйте промокод при входе в кабинет.",
+  whyTitle:"Шенген без суеты",
+  whyLead:"Оформление шенгена переехало в личный кабинет: вы ведёте процесс со смартфона и всегда знаете, что происходит.",
+  feat5:["🇪🇺","Вся Европа","Помогаем с визами в страны Шенгена: туризм, гости, бизнес и другие цели."],
+  howTitle:"Как оформить шенген",
+  ptSub:"Шенгенская виза · Италия", country:"Италия", dates:"12.07 — 26.07.2026",
+  advTitle:"Помогаем получить шенген — спокойно",
+  advLead:"За технологичным кабинетом — команда, которая оформляет визы каждый день и доводит до результата.",
+  adv:[...ADV_COMMON_TOP, "Все страны Шенгена", ...ADV_COMMON_BOTTOM],
+  ctaH2:`Ваш <span class="accent-text">Шенген</span> начинается здесь`,
+  ctaP:"Войдите в личный кабинет по номеру телефона и активируйте промокод — это займёт пару минут.",
+},
+{ slug:"welcome_japan",
+  title:"VOYO — виза в Японию онлайн в личном кабинете · промокод WELCOME",
+  metaDesc:"Оформите визу в Японию онлайн в личном кабинете VOYO: умный опросник, документы с телефона и статус в реальном времени. 11 лет опыта, 240 000 клиентов. Промокод WELCOME — −10% на первую визу.",
+  ogTitle:"Виза в Японию онлайн в личном кабинете VOYO · −10% по WELCOME",
+  ogDesc:"11 лет опыта, 240 000 клиентов, 75 специалистов. Умный опросник, документы с телефона и статус визы в Японию онлайн.",
+  ogUrl:"https://voyovoyo.ru/welcome_japan",
+  eyebrow:"Виза в Японию · онлайн",
+  h1:`Виза в Японию <span class="accent-text">онлайн</span> —<br>ясно на каждом шаге`,
+  sub:"Личный кабинет, где виден каждый этап оформления визы в Японию — от заявки до готового паспорта.",
+  promoDesc:"−10% на первую визу в Японию. Активируйте промокод при входе в кабинет.",
+  whyTitle:"Япония без суеты",
+  whyLead:"Оформление визы в Японию переехало в личный кабинет: вы ведёте процесс со смартфона и всегда в курсе.",
+  feat5:["🗾","Япония ждёт","Помогаем с визой в Японию: туризм, гости и другие цели поездки."],
+  howTitle:"Как оформить визу в Японию",
+  ptSub:"Виза в Японию · Токио", country:"Япония", dates:"05.09 — 15.09.2026",
+  advTitle:"Помогаем получить визу — спокойно",
+  advLead:"За технологичным кабинетом — команда, которая оформляет визы каждый день и доводит до результата.",
+  adv:[...ADV_COMMON_TOP, "Виза в Японию — туризм и гости", ...ADV_COMMON_BOTTOM],
+  ctaH2:`Виза в Японию <span class="accent-text">начинается здесь</span>`,
+  ctaP:"Войдите в личный кабинет по номеру телефона и активируйте промокод — это займёт пару минут.",
+},
+];
+
+for (const p of PAGES){
+  const html = render(p);
+  fs.writeFileSync(`/Users/andrey/Desktop/lk-vsc-macbook/public/${p.slug}.html`, html);
+  console.log(`${p.slug}.html written — ${html.length} bytes`);
+}
