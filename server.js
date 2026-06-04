@@ -537,6 +537,17 @@ app.get("/admin/api/stats", requireAdmin, async (req, res) => {
   }
 });
 
+// Воронка по этапам сделки (статусы ЛК из amoCRM), кумулятивно.
+app.get("/admin/api/stage-stats", requireAdmin, async (req, res) => {
+  try {
+    const data = await computeStageStats();
+    return res.json(Object.assign({ success: true }, data));
+  } catch (e) {
+    console.error("/admin/api/stage-stats error:", e && e.message);
+    return res.status(500).json({ success: false, message: "Ошибка расчёта по этапам" });
+  }
+});
+
 // Конверсия авторизаций по «оплаченным» сделкам (3 цифры: все / без Японии / только Япония).
 app.get("/admin/api/paid-conversion-stats", requireAdmin, async (req, res) => {
   try {
@@ -6249,6 +6260,122 @@ async function _computeAdminStatsInner() {
 }
 
 // ──────────────────────────────────────────────────────────
+// Воронка по ЭТАПАМ сделки (статусы ЛК из amoCRM), кумулятивно.
+// «Прошёл этап X» = у клиента есть сделка, дошедшая до этапа X
+// (по максимальному cabinet_stage_index среди его видимых сделок).
+// Этап «Оформление на паузе» (idx 4) в воронку не выводим, но он засчитывается
+// как достижение предыдущих этапов (сравнение по индексу).
+// Кеш + single-flight + пре-warm, concurrency 2 — щадим amoCRM rate-limit,
+// чтобы фоновый расчёт не мешал клиентскому кабинету (общий лимит 7 RPS).
+// ──────────────────────────────────────────────────────────
+let _cachedStageStats = null;
+let _cachedStageStatsTs = 0;
+let _stageStatsInflight = null;
+const STAGE_STATS_CACHE_TTL_MS = 16 * 60 * 1000;
+function invalidateStageStatsCache() { _cachedStageStats = null; _cachedStageStatsTs = 0; }
+
+// Тихий помощник: максимальный cabinet_stage_index по видимым сделкам номера.
+// Переиспользует те же кирпичики, что getLeadsByPhone, но без verbose-логов и
+// возвращает только индекс (или -1, если видимых сделок нет).
+async function getMaxCabinetStageForPhone(phone, statusesMap, baseUrl) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return -1;
+  const contacts = await findMatchingContacts(baseUrl, normalized);
+  if (!contacts.length) return -1;
+  const leadIds = await collectLeadIdsFromContacts(baseUrl, contacts);
+  if (!leadIds.length) return -1;
+  let maxIdx = -1;
+  for (const leadId of leadIds) {
+    const lead = await getLeadById(baseUrl, leadId);
+    if (!lead || !lead.id) continue;
+    const enriched = enrichLeadWithMappedStatus(lead, statusesMap);
+    if (enriched.hidden_in_cabinet) continue;
+    const idx = Number(enriched.cabinet_stage_index);
+    if (Number.isFinite(idx) && idx > maxIdx) maxIdx = idx;
+  }
+  return maxIdx;
+}
+
+async function computeStageStats() {
+  const now = Date.now();
+  if (_cachedStageStats && (now - _cachedStageStatsTs) < STAGE_STATS_CACHE_TTL_MS) return _cachedStageStats;
+  if (_stageStatsInflight) return _stageStatsInflight;
+  _stageStatsInflight = _computeStageStatsInner().finally(() => { _stageStatsInflight = null; });
+  return _stageStatsInflight;
+}
+
+async function _computeStageStatsInner() {
+  const phoneEntries = Array.from(lkAuthPhones.entries())
+    .filter(([phone, ts]) => Number(ts) >= LK_STATS_START_MS && !LK_STATS_EXCLUDED_PHONES.has(phone))
+    .sort((a, b) => b[1] - a[1]);
+
+  function pct(n, d) { return d > 0 ? Math.round((n / d) * 100) : 0; }
+  const baseResult = (perPhone, authorized, c) => ({
+    startDate: LK_STATS_START_DATE,
+    totals: { authorized, primary: c.primary, prep: c.prep, waiting: c.waiting, review: c.review, passport: c.passport, done: c.done },
+    conversions: {
+      auth_to_primary: pct(c.primary, authorized),
+      primary_to_prep: pct(c.prep, c.primary),
+      prep_to_waiting: pct(c.waiting, c.prep),
+      waiting_to_review: pct(c.review, c.waiting),
+      review_to_passport: pct(c.passport, c.review),
+      passport_to_done: pct(c.done, c.passport),
+      auth_to_done: pct(c.done, authorized)
+    },
+    phones: perPhone
+  });
+
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
+    const r = baseResult([], phoneEntries.length, { primary:0, prep:0, waiting:0, review:0, passport:0, done:0 });
+    _cachedStageStats = r; _cachedStageStatsTs = Date.now(); return r;
+  }
+  const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+  let statusesMap = null;
+  try { statusesMap = await getPipelinesMap(baseUrl); } catch (e) { console.error("STAGE STATS pipelines err:", e.message); }
+
+  const CONCURRENCY = 2; // щадим amoCRM, чтобы не мешать клиентскому кабинету
+  async function processPhone([phone, ts]) {
+    let idx = -1;
+    try { idx = await getMaxCabinetStageForPhone(phone, statusesMap, baseUrl); }
+    catch (e) { console.error("STAGE STATS phone err", phone, e && e.message); }
+    return {
+      phone, formatted: formatPhoneForDisplay(phone), firstAuthAt: ts,
+      reachedIndex: idx,
+      reachedLabel: (idx >= 0 && CABINET_STAGES[idx]) ? CABINET_STAGES[idx] : "—",
+      stages: {
+        authorized: true,
+        primary: idx >= 1, prep: idx >= 2, waiting: idx >= 3,
+        review: idx >= 5, passport: idx >= 6, done: idx >= 7
+      }
+    };
+  }
+  const perPhone = [];
+  const tStart = Date.now();
+  for (let i = 0; i < phoneEntries.length; i += CONCURRENCY) {
+    const chunk = phoneEntries.slice(i, i + CONCURRENCY);
+    const res = await Promise.all(chunk.map(processPhone));
+    perPhone.push(...res);
+  }
+  console.log(`STAGE STATS: processed ${phoneEntries.length} phones in ${Date.now()-tStart}ms`);
+
+  const c = { primary:0, prep:0, waiting:0, review:0, passport:0, done:0 };
+  for (const p of perPhone) {
+    if (p.stages.primary) c.primary++;
+    if (p.stages.prep) c.prep++;
+    if (p.stages.waiting) c.waiting++;
+    if (p.stages.review) c.review++;
+    if (p.stages.passport) c.passport++;
+    if (p.stages.done) c.done++;
+  }
+  // По умолчанию — по этапу (отстающие сверху), как в doc-вкладке.
+  perPhone.sort((a, b) => (a.reachedIndex - b.reachedIndex) || (b.firstAuthAt - a.firstAuthAt));
+
+  const result = baseResult(perPhone, phoneEntries.length, c);
+  _cachedStageStats = result; _cachedStageStatsTs = Date.now();
+  return result;
+}
+
+// ──────────────────────────────────────────────────────────
 // Legacy-owner для существующих данных в phone-scoped папках Я.Диска
 // (до 2026-05-21 файлы лежали в <phone>/..., без leadId-партиции).
 // Чтобы сохранить совместимость со старыми клиентами и не показывать их
@@ -8686,6 +8813,23 @@ function scheduleAdminStatsPrewarm() {
   }, ADMIN_STATS_PREWARM_INTERVAL_MS);
 }
 scheduleAdminStatsPrewarm();
+
+// Фоновый пре-warm воронки «по этапам» (amoCRM). Реже и с низкой concurrency
+// (2), т.к. бьёт по amoCRM rate-limit — держим кеш тёплым, не мешая клиентскому
+// кабинету. На auth НЕ инвалидируем (свежесть обеспечивает TTL/пре-warm).
+const STAGE_STATS_PREWARM_INTERVAL_MS = 15 * 60 * 1000;
+function scheduleStageStatsPrewarm() {
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return;
+  setTimeout(async () => {
+    try { invalidateStageStatsCache(); const t = Date.now(); await computeStageStats(); console.log(`STAGE STATS PREWARM (initial) done in ${Date.now()-t}ms`); }
+    catch (e) { console.error("STAGE STATS PREWARM initial error:", e.message); }
+  }, 35 * 1000);
+  setInterval(async () => {
+    try { invalidateStageStatsCache(); const t = Date.now(); await computeStageStats(); console.log(`STAGE STATS PREWARM done in ${Date.now()-t}ms`); }
+    catch (e) { console.error("STAGE STATS PREWARM error:", e.message); }
+  }, STAGE_STATS_PREWARM_INTERVAL_MS);
+}
+scheduleStageStatsPrewarm();
 
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);

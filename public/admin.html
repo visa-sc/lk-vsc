@@ -640,7 +640,8 @@
   <div id="dashBlock" class="dash">
 
     <div class="tabs">
-      <button type="button" class="tab-btn active" data-tab="stats">Статистика</button>
+      <button type="button" class="tab-btn active" data-tab="stats">Статистика (доки)</button>
+      <button type="button" class="tab-btn" data-tab="stages">Статистика (этапы)</button>
       <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
       <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
     </div>
@@ -653,6 +654,12 @@
 
     <div id="panelStats" class="panel show">
       <div id="statsContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
+    <div id="panelStages" class="panel">
+      <div id="stagesContent">
         <div class="loading-state">Загружаем…</div>
       </div>
     </div>
@@ -699,15 +706,19 @@
 
       const tabBtns = Array.from(document.querySelectorAll(".tab-btn"));
       const panelStats = document.getElementById("panelStats");
+      const panelStages = document.getElementById("panelStages");
       const panelSurveys = document.getElementById("panelSurveys");
       const panelTraffic = document.getElementById("panelTraffic");
       const statsContent = document.getElementById("statsContent");
+      const stagesContent = document.getElementById("stagesContent");
       const surveysContent = document.getElementById("surveysContent");
       const trafficContent = document.getElementById("trafficContent");
 
       let activeTab = "stats";
       let phonesExpanded = false;
       let statsSortMode = "stage"; // "stage" (по умолчанию) | "date_asc"
+      let stagesExpanded = false;
+      let stagesSortMode = "stage";
       let statsPollTimer = null;
 
       function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
@@ -1071,7 +1082,7 @@
       // Видимость блока «Конверсия по оплаченным сделкам» — только на вкладке «Статистика».
       function applyPaidConvVisibility() {
         const block = document.getElementById("paidConvBlock");
-        if (block) block.style.display = (activeTab === "stats") ? "" : "none";
+        if (block) block.style.display = (activeTab === "stats" || activeTab === "stages") ? "" : "none";
       }
       applyPaidConvVisibility();
 
@@ -1082,6 +1093,7 @@
           activeTab = which;
           tabBtns.forEach((x) => x.classList.toggle("active", x === b));
           panelStats.classList.toggle("show", which === "stats");
+          panelStages.classList.toggle("show", which === "stages");
           panelSurveys.classList.toggle("show", which === "surveys");
           panelTraffic.classList.toggle("show", which === "traffic");
           applyPaidConvVisibility();
@@ -1090,6 +1102,9 @@
             startPolling();
           } else if (which === "traffic") {
             loadTraffic();
+            startPolling();
+          } else if (which === "stages") {
+            loadStages();
             startPolling();
           } else if (which === "stats") {
             loadStats();
@@ -1106,6 +1121,7 @@
         statsPollTimer = setInterval(() => {
           if (document.hidden) return;
           if (activeTab === "stats") loadStats({ silent: true });
+          else if (activeTab === "stages") loadStages({ silent: true });
           else if (activeTab === "surveys") loadSurveys({ silent: true });
           else if (activeTab === "traffic") loadTraffic({ silent: true });
           loadPaidConvStats({ silent: true });
@@ -1117,6 +1133,7 @@
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) return;
         if (activeTab === "stats") loadStats({ silent: true });
+        else if (activeTab === "stages") loadStages({ silent: true });
         else if (activeTab === "surveys") loadSurveys({ silent: true });
         else if (activeTab === "traffic") loadTraffic({ silent: true });
         loadPaidConvStats({ silent: true });
@@ -1441,6 +1458,181 @@
 
         statsContent.innerHTML = "";
         statsContent.appendChild(wrap);
+      }
+
+      // ── Статистика (этапы) — воронка по статусам сделки в amoCRM ──
+      async function loadStages(opts) {
+        const silent = opts && opts.silent;
+        if (!silent) stagesContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        try {
+          const data = await apiFetch("/admin/api/stage-stats");
+          renderStageStats(data);
+        } catch (e) {
+          if (!silent) stagesContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+        }
+      }
+
+      function stageBadge(it) {
+        const idx = it.reachedIndex;
+        let color = "#737988", bg = "#f3f1f7", border = "#e2dded";
+        if (idx >= 7) { color = "#2e7a43"; bg = "#eef8f1"; border = "#cfe6d8"; }
+        else if (idx >= 5) { color = "#9a6a1a"; bg = "#fdf6ec"; border = "#f0dfc2"; }
+        else if (idx >= 1) { color = "#2f6e95"; bg = "#f0f7fc"; border = "#d3e7f4"; }
+        const b = document.createElement("span");
+        b.textContent = it.reachedLabel || "—";
+        b.style.cssText = "display:inline-block;padding:4px 12px;border-radius:980px;font-size:12.5px;font-weight:600;color:" + color + ";background:" + bg + ";border:1px solid " + border + ";";
+        return b;
+      }
+
+      function renderStageStats(data) {
+        const totals = (data && data.totals) || {};
+        const conv = (data && data.conversions) || {};
+        const phones = Array.isArray(data && data.phones) ? data.phones : [];
+
+        const wrap = document.createElement("div");
+
+        // Шапка
+        const header = document.createElement("div");
+        header.className = "stats-header";
+        const since = document.createElement("div");
+        since.className = "stats-since";
+        since.innerHTML = '<span class="live-dot"></span>Этапы сделок (статусы ЛК из amoCRM) · обновляется онлайн · период с <strong>' + escapeHtml(data.startDate || "") + '</strong>';
+        const updated = document.createElement("div");
+        updated.className = "stats-since";
+        updated.style.color = "#9096a3";
+        updated.textContent = "Обновлено: " + new Date().toLocaleTimeString("ru-RU", { timeZone: "Europe/Moscow" }) + " МСК";
+        header.appendChild(since);
+        header.appendChild(updated);
+        wrap.appendChild(header);
+
+        // Hero: сквозная конверсия «Авторизовались → Обращение исполнено».
+        const hero = document.createElement("div");
+        hero.className = "hero-conv";
+        const heroNum = document.createElement("div");
+        heroNum.className = "num";
+        heroNum.textContent = (conv.auth_to_done || 0) + "%";
+        const heroText = document.createElement("div");
+        heroText.className = "text";
+        heroText.innerHTML =
+          "<strong>Сквозная конверсия по этапам</strong><br>" +
+          "из «Авторизовались» в «Обращение исполнено»<br>" +
+          (totals.done || 0) + " из " + (totals.authorized || 0) + " клиентов прошли весь путь";
+        hero.appendChild(heroNum);
+        hero.appendChild(heroText);
+        wrap.appendChild(hero);
+
+        // Воронка по этапам (без «Оформление на паузе»).
+        const funnel = buildFunnel([
+          { idx: 1, num: totals.authorized, label: "Авторизовались" },
+          { idx: 2, num: totals.primary, label: "Первичный сбор документов" },
+          { idx: 3, num: totals.prep, label: "Подготовка документов" },
+          { idx: 4, num: totals.waiting, label: "Ожидание подачи" },
+          { idx: 5, num: totals.review, label: "Рассмотрение" },
+          { idx: 6, num: totals.passport, label: "Паспорт готов" },
+          { idx: 7, num: totals.done, label: "Обращение исполнено" }
+        ], [
+          conv.auth_to_primary || 0,
+          conv.primary_to_prep || 0,
+          conv.prep_to_waiting || 0,
+          conv.waiting_to_review || 0,
+          conv.review_to_passport || 0,
+          conv.passport_to_done || 0
+        ]);
+        wrap.appendChild(funnel);
+
+        // Кнопка раскрытия списка
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "toggle-phones";
+        toggleBtn.textContent = stagesExpanded
+          ? "Скрыть список номеров"
+          : "Показать список номеров (" + phones.length + ")";
+        wrap.appendChild(toggleBtn);
+
+        // Список с панелью сортировки
+        const list = document.createElement("div");
+        list.className = "phones-list" + (stagesExpanded ? " show" : "");
+
+        const sortBar = document.createElement("div");
+        sortBar.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;font-size:13px;color:#737988;";
+        const sortLabel = document.createElement("span");
+        sortLabel.textContent = "Сортировка:";
+        const sortSel = document.createElement("select");
+        sortSel.style.cssText = "padding:7px 11px;border:1px solid #e2dded;border-radius:10px;font-size:13px;background:#fff;color:#1d2330;cursor:pointer;";
+        [["stage", "По этапу (от ранних к конечным)"], ["date_asc", "По дате создания (сначала ранние)"]].forEach(function (opt) {
+          const o = document.createElement("option");
+          o.value = opt[0]; o.textContent = opt[1];
+          if (opt[0] === stagesSortMode) o.selected = true;
+          sortSel.appendChild(o);
+        });
+        sortBar.appendChild(sortLabel);
+        sortBar.appendChild(sortSel);
+
+        const rowsWrap = document.createElement("div");
+
+        function sortedStagePhones() {
+          const arr = phones.slice();
+          if (stagesSortMode === "date_asc") {
+            arr.sort(function (a, b) { return (a.firstAuthAt || 0) - (b.firstAuthAt || 0); });
+          } else {
+            arr.sort(function (a, b) { return ((a.reachedIndex || 0) - (b.reachedIndex || 0)) || ((b.firstAuthAt || 0) - (a.firstAuthAt || 0)); });
+          }
+          return arr;
+        }
+
+        function fillStageRows() {
+          rowsWrap.innerHTML = "";
+          const arr = sortedStagePhones();
+          if (!arr.length) {
+            const empty = document.createElement("div");
+            empty.className = "empty-state";
+            empty.textContent = "Авторизаций пока нет.";
+            rowsWrap.appendChild(empty);
+            return;
+          }
+          arr.forEach((it) => {
+            const row = document.createElement("div");
+            row.className = "phone-row";
+
+            const num = document.createElement("div");
+            num.className = "phone-num";
+            num.textContent = it.formatted || it.phone;
+            row.appendChild(num);
+
+            const mid = document.createElement("div");
+            mid.style.cssText = "flex:1;display:flex;justify-content:center;";
+            mid.appendChild(stageBadge(it));
+            row.appendChild(mid);
+
+            const meta = document.createElement("div");
+            meta.className = "phone-meta";
+            meta.textContent = formatDateMsk(it.firstAuthAt);
+            row.appendChild(meta);
+
+            rowsWrap.appendChild(row);
+          });
+        }
+
+        sortSel.addEventListener("change", function () {
+          stagesSortMode = sortSel.value;
+          fillStageRows();
+        });
+
+        list.appendChild(sortBar);
+        list.appendChild(rowsWrap);
+        fillStageRows();
+        wrap.appendChild(list);
+
+        toggleBtn.addEventListener("click", () => {
+          stagesExpanded = !stagesExpanded;
+          list.classList.toggle("show", stagesExpanded);
+          toggleBtn.textContent = stagesExpanded
+            ? "Скрыть список номеров"
+            : "Показать список номеров (" + phones.length + ")";
+        });
+
+        stagesContent.innerHTML = "";
+        stagesContent.appendChild(wrap);
       }
 
       // ── Трафик ──
