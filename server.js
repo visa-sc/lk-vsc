@@ -1167,6 +1167,10 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
   const pipelineName = statusMeta.pipeline_name || lead.pipeline_name || "";
   const statusName = statusMeta.status_name || lead.status_name || "";
   const countryService = getCustomFieldValue(lead, "Страна оформления/услуга");
+  // «Дата записи на подачу» — дата (amoCRM возвращает unix-секунды строкой).
+  // Используется в кабинете на этапе «Подготовка документов»: за 7 дней до этой
+  // даты открываем подобласть загрузки предподачных документов. Пусто → ничего.
+  const submissionDateRaw = getCustomFieldValue(lead, "Дата записи на подачу");
   // «Количество пакетов» — целое число; используется в кабинете на этапе
   // «Подготовка документов» для решения, показывать ли кнопку «Заполнить
   // ещё опросник» (если опросников уже >= packets_count → скрываем).
@@ -1185,6 +1189,7 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
       cabinet_status: CABINET_DEFAULT_STAGE,
       cabinet_stage_index: getCabinetStageIndexByName(CABINET_DEFAULT_STAGE),
       country_service: countryService,
+      submission_date: submissionDateRaw,
       packets_count: packetsCount
     };
   }
@@ -1198,6 +1203,7 @@ function enrichLeadWithMappedStatus(lead, statusesMap) {
       cabinet_status: null,
       cabinet_stage_index: null,
       country_service: countryService,
+      submission_date: submissionDateRaw,
       packets_count: packetsCount
     };
   }
@@ -2415,7 +2421,24 @@ const UPLOAD_FIELDS_WHITELIST = {
   // обязана быть идентична label в buildUploadBlocksConfig (cabinet.html) и
   // buildUploadBlocksForApplicantStats (server.js), иначе ломается детект
   // «загружено» (startsWith(label)).
-  boardingPasses:       "Посадочные талоны и (или) иные подтверждения того, что вы использовали предыдущую визу."
+  boardingPasses:       "Посадочные талоны и (или) иные подтверждения того, что вы использовали предыдущую визу.",
+  // ── Предподачные документы (этап «Подготовка документов», за 7 дней до
+  // «Даты записи на подачу»). Названия БЕЗ «/» — иначе Я.Диск валит загрузку.
+  // Строки обязаны совпадать с label в cabinet.html (детект «загружено» по startsWith).
+  bankBalance:             "Справка из банка об остатке средств",
+  accountStatement:        "Выписка (детализация) по счету",
+  ipDocs:                  "Документы на ИП (лист записи + свидетельство о регистрации)",
+  studyCertPre:            "Справка из учебного заведения",
+  pensionDoc:              "Пенсионное удостоверение или справка о пенсии",
+  selfEmployedDoc:         "Справка о самозанятости",
+  childTravelConsent:      "Согласие на выезд ребенка или замещающий документ",
+  pfrStatement:            "Электронная выписка из ПФР",
+  ndfl2:                   "Справка 2-НДФЛ",
+  sponsorBankBalance:      "Справка из банка об остатке средств от спонсора",
+  sponsorAccountStatement: "Выписка (детализация) по счету спонсора",
+  sponsorInnerPassport:    "Внутренний паспорт спонсора",
+  sponsorWorkCert:         "Справка с места работы спонсора",
+  parentsPassports:        "Внутренние паспорта родителей"
 };
 
 async function findMatchingContacts(baseUrl, phone) {

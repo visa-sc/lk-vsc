@@ -2239,6 +2239,270 @@
       return wrapper;
     }
 
+    // ════════════════════════════════════════════════════════════════
+    // Предподачные документы (этап «Подготовка документов»).
+    // Окно: за 7 календарных дней до «Даты записи на подачу» (поле сделки).
+    // Если дата пустая — окно неактивно, ничего нового не показываем.
+    // ════════════════════════════════════════════════════════════════
+    function presubSubmissionDateMs(lead) {
+      const raw = lead && lead.submission_date;
+      if (raw === undefined || raw === null || String(raw).trim() === "") return null;
+      const s = String(raw).trim();
+      let ms = null;
+      if (/^\d+$/.test(s)) {
+        const n = parseInt(s, 10);
+        ms = s.length >= 13 ? n : n * 1000; // amoCRM-дата — unix-секунды
+      } else {
+        const t = Date.parse(s);
+        if (!isNaN(t)) ms = t;
+      }
+      return (ms && isFinite(ms)) ? ms : null;
+    }
+    function isPreSubmissionWindowActive(lead) {
+      const ms = presubSubmissionDateMs(lead);
+      if (ms === null) return false;
+      return Date.now() >= (ms - 7 * 24 * 60 * 60 * 1000);
+    }
+
+    function presubMatchOccupation(state) {
+      const occ = String((state && (state.occupation || state.jp_occupation)) || "").toLowerCase();
+      const tokens = occ.split(/[^а-яёa-z0-9]+/i).filter(Boolean);
+      return {
+        isIP: tokens.indexOf("ип") >= 0 || occ.indexOf("индивидуальн") >= 0 || occ.indexOf("предприниматель") >= 0,
+        isStudent: occ.indexOf("учащ") >= 0 || occ.indexOf("студент") >= 0,
+        isPensioner: occ.indexOf("пенси") >= 0,
+        isSelfEmployed: occ.indexOf("самозанят") >= 0
+      };
+    }
+
+    // Список предподачных документов для заявителя (по ответам опросника).
+    function buildPreSubmissionDocs(state, lead) {
+      state = state || {};
+      const occ = presubMatchOccupation(state);
+      const sponsored = (String(state.hasSponsor || "").trim() === "Да") || (String(state.jp_hasSponsor || "").trim() === "Да");
+      const under18 = (String(state.isUnder18 || "").trim() === "Да") || (String(state.jp_isUnder18 || "").trim() === "Да");
+      const OPT_NOTE = "В вашем случае может быть не обязательным документом. Уточните у менеджера.";
+      const docs = [];
+      docs.push({ field: "bankBalance",      label: "Справка из банка об остатке средств", optional: sponsored });
+      docs.push({ field: "accountStatement", label: "Выписка (детализация) по счету",       optional: sponsored });
+      if (occ.isIP)          docs.push({ field: "ipDocs",          label: "Документы на ИП (лист записи + свидетельство о регистрации)", optional: false });
+      if (occ.isStudent)     docs.push({ field: "studyCertPre",    label: "Справка из учебного заведения", optional: false });
+      if (occ.isPensioner)   docs.push({ field: "pensionDoc",      label: "Пенсионное удостоверение или справка о пенсии", optional: false });
+      if (occ.isSelfEmployed)docs.push({ field: "selfEmployedDoc", label: "Справка о самозанятости", optional: false });
+      if (sponsored) {
+        docs.push({ field: "sponsorBankBalance",      label: "Справка из банка об остатке средств от спонсора", optional: false });
+        docs.push({ field: "sponsorAccountStatement", label: "Выписка (детализация) по счету спонсора", optional: false });
+        docs.push({ field: "sponsorInnerPassport",    label: "Внутренний паспорт спонсора", optional: false });
+        docs.push({ field: "sponsorWorkCert",         label: "Справка с места работы спонсора", optional: true, note: OPT_NOTE });
+      }
+      if (under18) {
+        docs.push({ field: "childTravelConsent", label: "Согласие на выезд ребенка или замещающий документ", optional: true, note: OPT_NOTE });
+        docs.push({ field: "parentsPassports",   label: "Внутренние паспорта родителей", optional: false });
+      }
+      docs.push({ field: "pfrStatement", label: "Электронная выписка из ПФР", optional: true, note: OPT_NOTE });
+      docs.push({ field: "ndfl2",        label: "Справка 2-НДФЛ", optional: true, note: OPT_NOTE });
+      return docs;
+    }
+
+    // Независимый загрузчик одного документа: «Загрузить» → зелёный + скрытие +
+    // «Скорректировать файл» (повторная загрузка заменяет файл на Я.Диске).
+    function createSingleDocUnit(applicant, cfg, lead) {
+      const applicantIndex = Math.max(1, parseInt(applicant && applicant.applicantIndex, 10) || 1);
+      const uploaded = Array.isArray(applicant && applicant.uploadedFiles) ? applicant.uploadedFiles : [];
+      // Строгая граница после label: серверное имя всегда «<label> - <ФИО>…».
+      // Это исключает ложное совпадение коротких лейблов с более длинными
+      // (напр. «…по счету» ⊂ «…по счету спонсора»).
+      const isUploaded = uploaded.some((f) => {
+        if (!f.startsWith(cfg.label)) return false;
+        const tail = f.slice(cfg.label.length);
+        return tail.charAt(0) === "." || tail.startsWith(" - ");
+      });
+
+      const row = document.createElement("div");
+      row.className = "file-list-row";
+      row.style.flexDirection = "column";
+      row.style.alignItems = "stretch";
+      row.style.gap = "8px";
+      row.style.paddingBottom = "12px";
+      row.style.marginBottom = "12px";
+      row.style.borderBottom = "1px solid #eef0f4";
+
+      const labelEl = document.createElement("div");
+      labelEl.className = "file-list-label";
+      labelEl.textContent = cfg.label;
+      row.appendChild(labelEl);
+      if (cfg.note) {
+        const noteEl = document.createElement("div");
+        noteEl.textContent = cfg.note;
+        noteEl.style.fontSize = "12px";
+        noteEl.style.color = "#3589BD";
+        noteEl.style.marginTop = "-2px";
+        row.appendChild(noteEl);
+      }
+
+      // done-state
+      const doneEl = document.createElement("div");
+      doneEl.style.display = "none";
+      doneEl.style.alignItems = "center";
+      doneEl.style.gap = "10px";
+      doneEl.style.flexWrap = "wrap";
+      const doneBadge = document.createElement("div");
+      doneBadge.textContent = "✓ Загружено";
+      doneBadge.style.color = "#2e7a43";
+      doneBadge.style.fontWeight = "600";
+      doneBadge.style.fontSize = "13px";
+      doneEl.appendChild(doneBadge);
+      const correctBtn = document.createElement("button");
+      correctBtn.type = "button";
+      correctBtn.className = "back-to-login-btn";
+      correctBtn.style.cursor = "pointer";
+      correctBtn.textContent = "Скорректировать файл";
+      doneEl.appendChild(correctBtn);
+      row.appendChild(doneEl);
+
+      // form-state
+      const controls = document.createElement("div");
+      controls.className = "file-row-controls";
+      const fileInput = document.createElement("input");
+      fileInput.type = "file"; fileInput.multiple = true; fileInput.accept = "image/*,application/pdf";
+      fileInput.style.display = "none";
+      controls.appendChild(fileInput);
+      const attachBtn = document.createElement("button");
+      attachBtn.type = "button"; attachBtn.className = "file-attach-btn"; attachBtn.textContent = "Прикрепить фото или файл";
+      attachBtn.addEventListener("click", () => fileInput.click());
+      controls.appendChild(attachBtn);
+      const previewWrap = document.createElement("div");
+      previewWrap.className = "file-previews";
+      controls.appendChild(previewWrap);
+      row.appendChild(controls);
+
+      const errEl = document.createElement("div");
+      errEl.className = "docs-local-error";
+      errEl.style.display = "none";
+      row.appendChild(errEl);
+
+      const btnRow = document.createElement("div");
+      btnRow.style.display = "flex"; btnRow.style.gap = "10px"; btnRow.style.flexWrap = "wrap";
+      const uploadBtn = document.createElement("button");
+      uploadBtn.type = "button"; uploadBtn.className = "upload-btn";
+      uploadBtn.style.height = "36px"; uploadBtn.style.padding = "0 16px"; uploadBtn.style.fontSize = "13px";
+      uploadBtn.textContent = "Загрузить";
+      btnRow.appendChild(uploadBtn);
+      row.appendChild(btnRow);
+
+      const pendingFiles = [];
+      function renderPreviews() {
+        previewWrap.innerHTML = "";
+        pendingFiles.forEach((file, idx) => {
+          const tile = document.createElement("div"); tile.className = "file-preview-tile";
+          const isImage = (file.type || "").indexOf("image/") === 0;
+          if (isImage) {
+            const img = document.createElement("img"); img.alt = file.name || "preview";
+            const r = new FileReader(); r.onload = (e) => { img.src = e.target.result; }; r.readAsDataURL(file);
+            tile.appendChild(img);
+          } else {
+            const p = document.createElement("div"); p.className = "file-preview-placeholder"; p.textContent = "📄"; tile.appendChild(p);
+          }
+          const nameEl = document.createElement("div"); nameEl.className = "file-preview-name"; nameEl.textContent = file.name || "file"; tile.appendChild(nameEl);
+          const rm = document.createElement("button"); rm.type = "button"; rm.className = "file-preview-remove"; rm.title = "Убрать файл"; rm.textContent = "×";
+          rm.addEventListener("click", () => { pendingFiles.splice(idx, 1); renderPreviews(); });
+          tile.appendChild(rm);
+          previewWrap.appendChild(tile);
+        });
+        attachBtn.textContent = pendingFiles.length > 0 ? "Добавить ещё" : "Прикрепить фото или файл";
+      }
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files && fileInput.files.length) {
+          for (let i = 0; i < fileInput.files.length; i++) pendingFiles.push(fileInput.files[i]);
+          renderPreviews(); fileInput.value = "";
+        }
+      });
+
+      function showDone() { doneEl.style.display = "flex"; controls.style.display = "none"; btnRow.style.display = "none"; errEl.style.display = "none"; }
+      function showForm() { doneEl.style.display = "none"; controls.style.display = ""; btnRow.style.display = "flex"; pendingFiles.length = 0; renderPreviews(); }
+      if (isUploaded) showDone(); else showForm();
+      correctBtn.addEventListener("click", () => { showForm(); });
+
+      uploadBtn.addEventListener("click", async () => {
+        errEl.style.display = "none";
+        const phone = phoneInput.value.trim();
+        if (!phone) { errEl.textContent = "Ошибка загрузки файла"; errEl.style.display = "block"; return; }
+        if (!pendingFiles.length) { errEl.textContent = "Прикрепите файл для загрузки."; errEl.style.display = "block"; return; }
+        const leadId = lead && lead.id ? String(lead.id) : "";
+        uploadBtn.disabled = true; const t = uploadBtn.textContent; uploadBtn.textContent = "Загрузка...";
+        const files = pendingFiles.slice();
+        let ok = true;
+        for (let i = 0; i < files.length; i++) {
+          try {
+            const fd = new FormData();
+            fd.append("phone", phone);
+            fd.append("field", cfg.field);
+            fd.append("applicantIndex", String(applicantIndex));
+            fd.append("partIndex", String(i + 1));
+            if (leadId) fd.append("leadId", leadId);
+            if (applicant && applicant.isPreApplicant && applicant.fullName) fd.append("preApplicantFio", String(applicant.fullName));
+            fd.append("file", files[i]);
+            const r = await fetch("/upload-document", { method: "POST", body: fd });
+            const d = await r.json().catch(() => ({}));
+            if (!(r.ok && d && d.success)) ok = false;
+          } catch (_) { ok = false; }
+        }
+        uploadBtn.disabled = false; uploadBtn.textContent = t;
+        if (!ok) { errEl.textContent = "Ошибка загрузки файла"; errEl.style.display = "block"; return; }
+        showDone();
+        // Обновляем zip сделки (без создания задачи на каждый документ) и кэш.
+        if (leadId) finishAmoUploadBatch(leadId, false);
+        refreshApplicantsCache().catch(() => {});
+      });
+
+      return row;
+    }
+
+    // Подобласть предподачных документов для одного заявителя.
+    function createPreSubmissionArea(applicant, lead) {
+      const docs = buildPreSubmissionDocs(applicant, lead);
+      if (!docs.length) return null;
+      const mandatory = docs.filter((d) => !d.optional);
+      const optional = docs.filter((d) => d.optional);
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "documents-inline";
+      wrapper.style.display = "block";
+
+      const applicantIndex = Math.max(1, parseInt(applicant && applicant.applicantIndex, 10) || 1);
+      const fioFormatted = formatFio(applicant && applicant.fullName ? String(applicant.fullName) : "");
+      const header = document.createElement("h3");
+      header.textContent = fioFormatted
+        ? `Документы для проверки перед подачей — ${fioFormatted}`
+        : `Документы для проверки перед подачей — заявитель ${applicantIndex}`;
+      wrapper.appendChild(header);
+
+      const sizeHint = document.createElement("div");
+      sizeHint.textContent = "Макс. размер 1 файла — 20 МБ. Можно прикрепить несколько файлов.";
+      sizeHint.style.fontSize = "12px"; sizeHint.style.color = "#9096a3";
+      sizeHint.style.marginTop = "-8px"; sizeHint.style.marginBottom = "12px";
+      wrapper.appendChild(sizeHint);
+
+      if (mandatory.length) {
+        const red = document.createElement("div");
+        red.textContent = "Необходимо обязательно загрузить все документы ниже — они нужны для проверки перед подачей.";
+        red.style.background = "#fdecec"; red.style.border = "1px solid #f3bcbc"; red.style.color = "#b03a3a";
+        red.style.borderRadius = "10px"; red.style.padding = "10px 12px"; red.style.fontSize = "13px";
+        red.style.fontWeight = "600"; red.style.marginBottom = "14px"; red.style.lineHeight = "1.4";
+        wrapper.appendChild(red);
+        mandatory.forEach((cfg) => wrapper.appendChild(createSingleDocUnit(applicant, cfg, lead)));
+      }
+      if (optional.length) {
+        const blue = document.createElement("div");
+        blue.textContent = "Так же могут потребоваться следующие документы — уточните у менеджера.";
+        blue.style.color = "#3589BD"; blue.style.fontWeight = "600"; blue.style.fontSize = "13px";
+        blue.style.margin = "16px 0 12px"; blue.style.lineHeight = "1.4";
+        wrapper.appendChild(blue);
+        optional.forEach((cfg) => wrapper.appendChild(createSingleDocUnit(applicant, cfg, lead)));
+      }
+      return wrapper;
+    }
+
     // Модальное окно «Напишите ФИО заявителя на русском языке».
     // Используется на этапе «Начало оформления» при первой попытке загрузить
     // паспорта до заполнения опросника. callback(fio) вызывается при «Отправить»,
@@ -2815,9 +3079,20 @@
           // блоков с этапов 0 (паспорта) и 1 (условные A) — если клиента
           // перевели в этап 2 без полной загрузки на предыдущих этапах.
           // По каждому заявителю свой набор. Япония: свободная зона.
+          // Предподачные документы: за 7 дней до «Даты записи на подачу».
+          // Если дата не задана — presubActive=false, и НИЧЕГО нового не делаем
+          // (вся старая логика этапа «Подготовка документов» сохраняется).
+          const presubActive = isPreSubmissionWindowActive(lead);
+
           if (!applicants.length) {
             fragment.appendChild(createNoStateNotice());
           } else if (isJp) {
+            if (presubActive) {
+              applicants.forEach((applicant) => {
+                const area = createPreSubmissionArea(applicant, lead);
+                if (area) fragment.appendChild(area);
+              });
+            }
             fragment.appendChild(createExtraDocBlock(lead));
           } else {
             const stage0PassportBlocks = [
@@ -2831,6 +3106,11 @@
             });
 
             applicants.forEach((applicant) => {
+              // Подобласть предподачных документов — НАД блоком этого заявителя.
+              if (presubActive) {
+                const area = createPreSubmissionArea(applicant, lead);
+                if (area) fragment.appendChild(area);
+              }
               const files = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
               const missingPassports = stage0PassportBlocks.filter((b) => !isLabelLoaded(files, b.label));
               const stage1Blocks = buildUploadBlocksConfig(applicant, lead, 1);
@@ -2840,8 +3120,7 @@
               // createDocumentsBlock сам распознает уже загруженные блоки
               // (показывает «готово»), а недозагруженные требует.
               const combined = missingPassports.concat(stage1Blocks).concat(stage2Blocks);
-              if (!combined.length) return;
-              fragment.appendChild(createDocumentsBlock(applicant, combined, lead));
+              if (combined.length) fragment.appendChild(createDocumentsBlock(applicant, combined, lead));
             });
             if (!fragment.childNodes.length) {
               fragment.appendChild(createNoMoreDocsNotice());
