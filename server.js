@@ -9,6 +9,8 @@ const multer = require("multer");
 const PDFDocument = require("pdfkit");
 const crypto = require("crypto");
 const archiver = require("archiver");
+const AdmZip = require("adm-zip");
+const iconv = require("iconv-lite");
 const sms = require("./sms");
 
 const app = express();
@@ -1479,6 +1481,34 @@ const AMO_DOCS_FOLDER_NAME = "Документы из ЛК";
 const AMO_DOCS_ZIP_NAME = "Документы из ЛК.zip";
 const TASK_RESPONSIBLE_FIELD_ID = 443488;
 
+// ─── «Готовые документы (ЛК)» — выдача готовых документов клиенту ──────
+// Лежит в папке сделки на Я.Диске РЯДОМ с «Документы из ЛК»
+// (т.е. amoCRM/Сделки/<leadId>/Готовые документы (ЛК)). ОО кидают сюда
+// архив (zip), внутри — подпапка на каждого заявителя (<ФИО>), а в ней —
+// подпапка «Чек по страховке» (туда ОРК кладут чек по страховке).
+const READY_DOCS_FOLDER_NAME = "Готовые документы (ЛК)";
+const INSURANCE_SUBFOLDER_NAME = "Чек по страховке";
+// Статусы amoCRM (этап ЛК «Ожидание подачи»), на которых клиенту показываем
+// готовые документы. Все три относятся к «Ожидание подачи».
+const READY_DOCS_VISIBLE_STATUSES = new Set([
+  "Документы готовы к личной подаче",
+  "Ожидает передачи на рассмотрение в Консульство",
+  "Передано Клиенту для личной подачи"
+]);
+// Этапы ЛК, для активных сделок которых НЕ создаём «Готовые документы (ЛК)»
+// при провижне (завершённые обращения).
+const READY_DOCS_SKIP_STAGES = new Set(["Паспорт готов", "Обращение исполнено"]);
+
+function readyDocsFolder(leadId) {
+  return `${amoDealFolder(leadId)}/${READY_DOCS_FOLDER_NAME}`;
+}
+function readyDocsApplicantFolder(leadId, safeFio) {
+  return `${readyDocsFolder(leadId)}/${safeFio}`;
+}
+function readyDocsInsuranceFolder(leadId, safeFio) {
+  return `${readyDocsApplicantFolder(leadId, safeFio)}/${INSURANCE_SUBFOLDER_NAME}`;
+}
+
 // ─── Лимит файлов на одно обращение (lead) ──────────────────
 // 200 файлов в папке «Документы из ЛК» (т.е. в зеркале сделки на Я.Диске).
 // Считаем рекурсивно по факту с Я.Диска и кешируем в памяти на короткий TTL.
@@ -1983,6 +2013,279 @@ function finalizeAmoUpload(leadId, options = {}) {
       await createAmoUploadTask(leadId);
     }
   });
+}
+
+// Метка источника для leads, созданных через ЛК. Кладётся как тег amoCRM.
+// Можно переопределить через .env: LK_SOURCE_VALUE (по умолчанию «VOYO»).
+// ════════════════════════════════════════════════════════════════════
+// «Готовые документы (ЛК)»: провижн папок, распаковка ZIP, дедуп, выдача.
+// Всё фоновое (распаковка/дедуп) идёт ВНЕ пути клиентских запросов и
+// сериализуется per-lead через amoEnqueue, чтобы не словить гонки на Я.Диске.
+// ════════════════════════════════════════════════════════════════════
+
+const _readyDocsProcessing = new Set(); // leadId, по которым прямо сейчас идёт обработка
+
+// Листинг ОДНОЙ папки с метаданными (created/modified) — для дедупа по времени.
+async function listYandexDirEntries(folderPath) {
+  try {
+    const r = await yandexRequest({
+      method: "GET",
+      url: "https://cloud-api.yandex.net/v1/disk/resources",
+      params: {
+        path: folderPath,
+        limit: 1000,
+        fields: "_embedded.items.name,_embedded.items.type,_embedded.items.created,_embedded.items.modified"
+      }
+    });
+    return (r.data && r.data._embedded && r.data._embedded.items) || [];
+  } catch (e) {
+    if (e.response?.status !== 404) {
+      console.error("READY-DOCS list dir error:", folderPath, e.response?.data || e.message);
+    }
+    return [];
+  }
+}
+
+// Создание корневой папки «Готовые документы (ЛК)» сделки (идемпотентно).
+function ensureReadyDocsFolderForLead(leadId) {
+  if (!leadId) return Promise.resolve();
+  return amoEnqueue(leadId, `ready-docs ensure root`, async () => {
+    await ensureNestedYandexFolder(readyDocsFolder(leadId));
+  });
+}
+
+// Создание папки заявителя <ФИО> + вложенной «Чек по страховке» (идемпотентно).
+function ensureReadyDocsApplicantFolder(leadId, safeFio) {
+  if (!leadId || !safeFio) return Promise.resolve();
+  return amoEnqueue(leadId, `ready-docs ensure applicant ${safeFio}`, async () => {
+    await ensureNestedYandexFolder(readyDocsInsuranceFolder(leadId, safeFio));
+  });
+}
+
+// Провижн «Готовые документы (ЛК)» для всех активных видимых сделок номера.
+// Вызывается асинхронно (вход не блокирует) при первой авторизации и при бэкафилле.
+async function provisionReadyDocsForActiveLeads(phone) {
+  const norm = normalizePhone(phone || "");
+  if (!norm) return;
+  let leads = [];
+  try {
+    leads = await getLeadsByPhone(norm); // только видимые (hidden исключены внутри)
+  } catch (e) {
+    console.error(`READY-DOCS provision: getLeadsByPhone error phone=${norm}:`, e.message);
+    return;
+  }
+  let made = 0;
+  for (const lead of leads) {
+    if (!lead || !lead.id) continue;
+    if (READY_DOCS_SKIP_STAGES.has(String(lead.cabinet_status || ""))) continue;
+    try {
+      await ensureReadyDocsFolderForLead(lead.id);
+      made++;
+    } catch (e) {
+      console.error(`READY-DOCS provision lead=${lead.id} error:`, e.message);
+    }
+  }
+  if (made) console.log(`READY-DOCS provision: phone=${norm} ensured ${made} active lead folder(s)`);
+}
+
+// content-type по расширению (для загрузки распакованных файлов).
+function guessContentType(name) {
+  const ext = String(name).toLowerCase().split(".").pop();
+  const map = {
+    pdf: "application/pdf",
+    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif",
+    webp: "image/webp", heic: "image/heic", bmp: "image/bmp", tif: "image/tiff", tiff: "image/tiff",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    txt: "text/plain; charset=utf-8", rtf: "application/rtf"
+  };
+  return map[ext] || "application/octet-stream";
+}
+
+// Имя файла из zip-записи: UTF-8 если выставлен флаг bit-11, иначе cp866
+// (русская Windows-кодировка имён в zip).
+function decodeZipEntryName(entry) {
+  try {
+    const raw = entry.rawEntryName; // Buffer
+    if (!raw) return entry.entryName;
+    const isUtf8 = (((entry.header && entry.header.flags) || 0) & 0x800) !== 0;
+    if (isUtf8) return raw.toString("utf8");
+    return iconv.decode(raw, "cp866");
+  } catch (_) {
+    return entry.entryName;
+  }
+}
+
+// Безопасный сегмент имени файла (без traversal/слешей).
+function safePathSegment(s) {
+  return String(s || "")
+    .replace(/[\\/]+/g, "_")
+    .replace(/\.\.+/g, "_")
+    .replace(/[<>:"|?*\x00-\x1F]/g, "_")
+    .trim();
+}
+
+// Распаковка одного zip в указанную папку (плоско, имя = basename записи).
+async function unpackZipIntoFolder(zipDiskPath, destFolder) {
+  const buf = await downloadYandexFileBuffer(zipDiskPath);
+  let zip;
+  try { zip = new AdmZip(buf); } catch (e) { console.error("READY-DOCS bad zip:", zipDiskPath, e.message); return 0; }
+  const entries = zip.getEntries();
+  let n = 0;
+  for (const entry of entries) {
+    if (entry.isDirectory) continue;
+    const decoded = decodeZipEntryName(entry);
+    const base = safePathSegment(String(decoded).replace(/\\/g, "/").split("/").pop());
+    if (!base || /\.zip$/i.test(base)) continue;
+    let data;
+    try { data = entry.getData(); } catch (e) { console.error("READY-DOCS entry read error:", base, e.message); continue; }
+    try {
+      await uploadBufferToYandexDisk(data, `${destFolder}/${base}`, guessContentType(base));
+      n++;
+    } catch (e) {
+      console.error("READY-DOCS upload extracted error:", `${destFolder}/${base}`, e.message);
+    }
+  }
+  return n;
+}
+
+// Ключ дедупа: нормализованное имя без хвостов " (2)" / " копия" / " - copy".
+function readyDocsDedupKey(filename) {
+  const s = String(filename);
+  const dot = s.lastIndexOf(".");
+  let base = dot > 0 ? s.slice(0, dot) : s;
+  const ext = dot > 0 ? s.slice(dot).toLowerCase() : "";
+  base = base.toLowerCase().trim();
+  base = base.replace(/\s*-?\s*копия(\s*\(\d+\))?\s*$/u, "");
+  base = base.replace(/\s*-?\s*copy(\s*\(\d+\))?\s*$/u, "");
+  base = base.replace(/\s*\(\d+\)\s*$/u, "");
+  base = base.trim();
+  return base + ext;
+}
+
+// Дедуп файлов в одной папке: при совпадении ключа оставляем самый свежий.
+async function dedupReadyDocsDir(folderPath, entries) {
+  const files = (entries || []).filter((e) => e.type === "file" && !/\.zip$/i.test(e.name));
+  const groups = new Map();
+  for (const f of files) {
+    const key = readyDocsDedupKey(f.name);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(f);
+  }
+  for (const arr of groups.values()) {
+    if (arr.length <= 1) continue;
+    arr.sort((a, b) => {
+      const ta = Date.parse(a.modified || a.created || 0) || 0;
+      const tb = Date.parse(b.modified || b.created || 0) || 0;
+      return tb - ta; // свежие первыми
+    });
+    for (let i = 1; i < arr.length; i++) {
+      await deleteYandexResourceIfExists(`${folderPath}/${arr[i].name}`);
+      console.log(`READY-DOCS dedup: removed old ${folderPath}/${arr[i].name}`);
+    }
+  }
+}
+
+// Полная обработка папки готовых документов сделки: распаковать все zip
+// (в ту же папку, где лежит архив), удалить архив, прогнать дедуп. Идемпотентно.
+async function processReadyDocsArchivesForLead(leadId) {
+  if (!leadId) return;
+  const key = String(leadId);
+  if (_readyDocsProcessing.has(key)) return;
+  _readyDocsProcessing.add(key);
+  try {
+    await amoEnqueue(leadId, `ready-docs process`, async () => {
+      const root = readyDocsFolder(leadId);
+      const queue = [root];
+      const seen = new Set();
+      while (queue.length) {
+        const dir = queue.shift();
+        if (seen.has(dir)) continue;
+        seen.add(dir);
+        let entries = await listYandexDirEntries(dir);
+        const zips = entries.filter((e) => e.type === "file" && /\.zip$/i.test(e.name));
+        for (const z of zips) {
+          try {
+            const cnt = await unpackZipIntoFolder(`${dir}/${z.name}`, dir);
+            await deleteYandexResourceIfExists(`${dir}/${z.name}`);
+            console.log(`READY-DOCS unpacked ${cnt} file(s) from ${dir}/${z.name}, archive removed`);
+          } catch (e) {
+            console.error("READY-DOCS unpack error:", `${dir}/${z.name}`, e.message);
+          }
+        }
+        if (zips.length) entries = await listYandexDirEntries(dir); // перечитать после распаковки
+        await dedupReadyDocsDir(dir, entries);
+        for (const e of entries) {
+          if (e.type === "dir") queue.push(`${dir}/${e.name}`);
+        }
+      }
+    });
+  } finally {
+    _readyDocsProcessing.delete(key);
+  }
+}
+
+// Сбор списка готовых документов сделки по заявителям (для ЛК).
+// Возвращает { applicants:[{fio,files:[{name,rel}]}], hasZip, needsDedup }.
+async function collectReadyDocsForLead(leadId) {
+  const root = readyDocsFolder(leadId);
+  const rootEntries = await listYandexDirEntries(root);
+  let hasZip = rootEntries.some((e) => e.type === "file" && /\.zip$/i.test(e.name));
+  const dupSeen = new Map(); // dir|key -> count
+  const markDup = (dir, name) => {
+    const k = `${dir}|${readyDocsDedupKey(name)}`;
+    dupSeen.set(k, (dupSeen.get(k) || 0) + 1);
+  };
+
+  const applicants = [];
+  const rootFiles = [];
+  for (const e of rootEntries) {
+    if (e.type === "file" && !/\.zip$/i.test(e.name)) {
+      rootFiles.push({ name: e.name, rel: e.name });
+      markDup("", e.name);
+    }
+  }
+  for (const e of rootEntries) {
+    if (e.type !== "dir") continue;
+    const fio = e.name;
+    const appFolder = `${root}/${fio}`;
+    const sub = await listYandexFolderRecursive(appFolder); // {name, fullPath, relativePath, size}
+    const files = [];
+    for (const f of sub) {
+      if (/\.zip$/i.test(f.name)) { hasZip = true; continue; }
+      files.push({ name: f.name, rel: `${fio}/${f.relativePath}` });
+      const parentDir = f.relativePath.includes("/") ? `${fio}/${f.relativePath.slice(0, f.relativePath.lastIndexOf("/"))}` : fio;
+      markDup(parentDir, f.name);
+    }
+    applicants.push({ fio, files });
+  }
+  if (rootFiles.length) applicants.push({ fio: "", files: rootFiles });
+
+  let needsDedup = false;
+  for (const c of dupSeen.values()) { if (c > 1) { needsDedup = true; break; } }
+  return { applicants, hasZip, needsDedup };
+}
+
+// Проверка доступа клиента к готовым документам сделки: владение номером +
+// статус сделки входит в READY_DOCS_VISIBLE_STATUSES.
+async function verifyReadyDocsAccess(phone, leadId) {
+  const norm = normalizePhone(phone || "");
+  const lid = parseInt(leadId, 10);
+  if (!norm || !lid) return { ok: false };
+  const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+  const contacts = await findMatchingContacts(baseUrl, norm);
+  if (!contacts.length) return { ok: false };
+  const leadIds = await collectLeadIdsFromContacts(baseUrl, contacts);
+  if (!leadIds.map(String).includes(String(lid))) return { ok: false };
+  const lead = await getLeadById(baseUrl, lid);
+  if (!lead) return { ok: false };
+  const statusesMap = await getCachedPipelinesMap(baseUrl);
+  const enriched = enrichLeadWithMappedStatus(lead, statusesMap);
+  const statusName = String(enriched.status_name || "");
+  const visible = !enriched.hidden_in_cabinet && READY_DOCS_VISIBLE_STATUSES.has(statusName);
+  return { ok: true, visible, statusName };
 }
 
 // Метка источника для leads, созданных через ЛК. Кладётся как тег amoCRM.
@@ -5500,6 +5803,12 @@ function recordLkAuth(phone) {
   // Свежая авторизация = новая воронка-точка → сбрасываем кеш статистики, чтобы
   // на следующем polling-тике (10 сек) админ увидел свежие цифры.
   if (typeof invalidateAdminStatsCache === "function") invalidateAdminStatsCache();
+  // Первая авторизация: асинхронно создаём «Готовые документы (ЛК)» в активных
+  // сделках номера. Вход не блокируем (вызвано из auth-обработчика).
+  setImmediate(() => {
+    provisionReadyDocsForActiveLeads(norm).catch((e) =>
+      console.error("READY-DOCS provision on auth error:", e.message));
+  });
 }
 
 loadLkAuthPhones();
@@ -8086,6 +8395,9 @@ app.post(
       // Зеркалирование в папку сделки: PDF — в папку ФИО, JSON — в служебную TECH FOLDER.
       // Задачу при сабмите опросника не создаём — только при загрузке документов.
       if (leadId) {
+        // Готовые документы (ЛК): на каждый опросник создаём папку заявителя
+        // <ФИО> + вложенную «Чек по страховке» (идемпотентно, fire-and-forget).
+        ensureReadyDocsApplicantFolder(leadId, safeFio);
         mirrorFilesToAmoFolder(leadId, [
           {
             relativePath: `${safeFio}/${pdfFileName}`,
@@ -8231,6 +8543,87 @@ app.post("/api/cabinet/pre-applicant", express.json(), async (req, res) => {
   } catch (e) {
     console.error("POST /api/cabinet/pre-applicant error:", e.message);
     return res.status(500).json({ success: false, message: "Ошибка сохранения" });
+  }
+});
+
+// ─── «Готовые документы (ЛК)»: список / скачать файл / скачать всё ───
+// Показываем только на этапе ЛК «Ожидание подачи» (3 статуса amoCRM).
+app.get("/api/ready-docs", async (req, res) => {
+  try {
+    const phone = req.query.phone || "";
+    const leadId = req.query.leadId || "";
+    if (!phone || !leadId) return res.status(400).json({ success: false, message: "Не передан phone/leadId" });
+    if (!YANDEX_DISK_TOKEN) return res.status(500).json({ success: false, message: "Я.Диск не настроен" });
+    const acc = await verifyReadyDocsAccess(phone, leadId);
+    if (!acc.ok) return res.status(403).json({ success: false, message: "Нет доступа" });
+    if (!acc.visible) return res.json({ success: true, visible: false, applicants: [] });
+
+    const { applicants, hasZip, needsDedup } = await collectReadyDocsForLead(parseInt(leadId, 10));
+    if (hasZip || needsDedup) {
+      // ленивый фоновый триггер: распаковать архивы / почистить дубли (не блокируем ответ)
+      setImmediate(() => processReadyDocsArchivesForLead(parseInt(leadId, 10)).catch(() => {}));
+    }
+    return res.json({ success: true, visible: true, processing: !!hasZip, applicants });
+  } catch (e) {
+    console.error("GET /api/ready-docs error:", e.message);
+    return res.status(500).json({ success: false, message: "Ошибка" });
+  }
+});
+
+app.get("/api/ready-docs/file", async (req, res) => {
+  try {
+    const phone = req.query.phone || "";
+    const leadId = req.query.leadId || "";
+    const rel = String(req.query.path || "");
+    if (!phone || !leadId || !rel) return res.status(400).send("bad request");
+    if (rel.includes("..") || rel.startsWith("/")) return res.status(400).send("bad path");
+    const acc = await verifyReadyDocsAccess(phone, leadId);
+    if (!acc.ok || !acc.visible) return res.status(403).send("forbidden");
+    const diskPath = `${readyDocsFolder(parseInt(leadId, 10))}/${rel}`;
+    const linkResp = await yandexRequest({
+      method: "GET",
+      url: "https://cloud-api.yandex.net/v1/disk/resources/download",
+      params: { path: diskPath }
+    });
+    const href = linkResp.data && linkResp.data.href;
+    if (!href) return res.status(404).send("not found");
+    return res.redirect(href); // лёгкий путь: отдаём скачивание напрямую с Я.Диска
+  } catch (e) {
+    if (e.response?.status === 404) return res.status(404).send("not found");
+    console.error("GET /api/ready-docs/file error:", e.message);
+    return res.status(500).send("error");
+  }
+});
+
+app.get("/api/ready-docs/zip", async (req, res) => {
+  try {
+    const phone = req.query.phone || "";
+    const leadId = req.query.leadId || "";
+    const fio = String(req.query.fio || "");
+    if (!phone || !leadId || !fio) return res.status(400).send("bad request");
+    if (fio.includes("..") || fio.includes("/") || fio.includes("\\")) return res.status(400).send("bad fio");
+    const acc = await verifyReadyDocsAccess(phone, leadId);
+    if (!acc.ok || !acc.visible) return res.status(403).send("forbidden");
+    const folder = readyDocsApplicantFolder(parseInt(leadId, 10), fio);
+    const items = (await listYandexFolderRecursive(folder)).filter((f) => !/\.zip$/i.test(f.name));
+    if (!items.length) return res.status(404).send("no files");
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + encodeURIComponent(`Документы - ${fio}.zip`));
+    const archive = archiver("zip", { zlib: { level: 6 } });
+    archive.on("error", (err) => { console.error("READY-DOCS zip stream error:", err.message); try { res.status(500).end(); } catch (_) {} });
+    archive.pipe(res);
+    for (const it of items) {
+      try {
+        const buf = await downloadYandexFileBuffer(it.fullPath);
+        archive.append(buf, { name: it.relativePath });
+      } catch (e) {
+        console.error("READY-DOCS zip fetch error:", it.fullPath, e.message);
+      }
+    }
+    await archive.finalize();
+  } catch (e) {
+    console.error("GET /api/ready-docs/zip error:", e.message);
+    try { res.status(500).end(); } catch (_) {}
   }
 });
 
@@ -8804,6 +9197,13 @@ app.post("/api/amo/webhook", async (req, res) => {
             const statusesMap = await getCachedPipelinesMap(baseUrl);
             const meta = statusesMap.get(`${lead.pipeline_id}:${lead.status_id}`) || {};
             const statusName = String(meta.status_name || "").trim();
+
+            // Готовые документы (ЛК): если сделка попала в статус выдачи —
+            // распаковать архивы / почистить дубли в фоне (вне пути запроса).
+            if (READY_DOCS_VISIBLE_STATUSES.has(statusName)) {
+              processReadyDocsArchivesForLead(leadId).catch(() => {});
+            }
+
             const contacts = (lead && lead._embedded && lead._embedded.contacts) || [];
             const mainContact = contacts.find((c) => c.is_main) || contacts[0];
             const contactId = mainContact && mainContact.id;
@@ -8928,6 +9328,33 @@ function scheduleStageStatsPrewarm() {
   }, STAGE_STATS_PREWARM_INTERVAL_MS);
 }
 scheduleStageStatsPrewarm();
+
+// ─── Разовый бэкафилл «Готовые документы (ЛК)» для уже авторизованных номеров ───
+// Создаёт папку «Готовые документы (ЛК)» в активных сделках тех, кто уже
+// авторизовался в ЛК. Идёт один раз (флаг-файл), с задержкой после старта и
+// щадящим троттлингом — чтобы не конкурировать с пре-warm'ами за amoCRM/Я.Диск.
+const READY_DOCS_BACKFILL_FLAG = path.join(__dirname, ".readyDocsBackfillDone");
+(function scheduleReadyDocsBackfill() {
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN || !YANDEX_DISK_TOKEN) return;
+  let alreadyDone = false;
+  try { alreadyDone = fs.existsSync(READY_DOCS_BACKFILL_FLAG); } catch (_) {}
+  if (alreadyDone) { console.log("READY-DOCS backfill: already done, skip"); return; }
+  setTimeout(async () => {
+    try {
+      const phones = Array.from(lkAuthPhones.keys());
+      console.log(`READY-DOCS backfill: start for ${phones.length} authorized phone(s)`);
+      for (const ph of phones) {
+        try { await provisionReadyDocsForActiveLeads(ph); }
+        catch (e) { console.error("READY-DOCS backfill phone error:", ph, e.message); }
+        await new Promise((r) => setTimeout(r, 2500)); // щадящий троттлинг между номерами
+      }
+      try { fs.writeFileSync(READY_DOCS_BACKFILL_FLAG, new Date().toISOString()); } catch (_) {}
+      console.log("READY-DOCS backfill: done");
+    } catch (e) {
+      console.error("READY-DOCS backfill fatal:", e.message);
+    }
+  }, 90 * 1000); // через 90с после старта
+})();
 
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);

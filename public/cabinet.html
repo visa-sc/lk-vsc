@@ -2567,6 +2567,85 @@
       return wrapper;
     }
 
+    function escapeHtmlClient(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    function capitalizeFileName(name) {
+      const s = String(name || "");
+      return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+    }
+
+    // Блок «Ваши готовые документы» на этапе «Ожидание подачи».
+    // Тянет список лениво (только для текущей сделки) через /api/ready-docs.
+    function createReadyDocsBlock(lead) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "documents-inline";
+      wrapper.style.display = "block";
+      wrapper.innerHTML = `<h3>Ваши готовые документы</h3><div class="muted" style="margin-bottom:12px;">Загружаем список документов…</div>`;
+
+      const phone = phoneInput.value.trim();
+      const leadId = lead && lead.id;
+      let refreshed = false;
+
+      function scheduleRefresh() {
+        if (refreshed) return;
+        refreshed = true;
+        setTimeout(fetchData, 6000);
+      }
+
+      function renderData(data) {
+        if (!data || !data.success || !data.visible) {
+          wrapper.style.display = "none";
+          return;
+        }
+        const applicants = Array.isArray(data.applicants) ? data.applicants : [];
+        const hasAnyFiles = applicants.some((a) => a.files && a.files.length);
+        if (!hasAnyFiles) {
+          wrapper.innerHTML = `<h3>Ваши готовые документы</h3><div class="muted">`
+            + (data.processing ? "Готовим документы к выдаче…" : "Документы готовятся к выдаче — они появятся здесь.")
+            + `</div>`;
+          if (data.processing) scheduleRefresh();
+          return;
+        }
+        let html = `<h3>Ваши готовые документы</h3>`;
+        applicants.forEach((a) => {
+          if (!a.files || !a.files.length) return;
+          const title = a.fio ? formatFio(a.fio) : "Документы";
+          html += `<div style="margin-top:14px;">`;
+          html += `<div style="font-weight:600;margin-bottom:6px;color:#1f2330;">${escapeHtmlClient(title)}</div>`;
+          a.files.forEach((f) => {
+            const url = `/api/ready-docs/file?phone=${encodeURIComponent(phone)}&leadId=${encodeURIComponent(leadId)}&path=${encodeURIComponent(f.rel)}`;
+            html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid #eef0f4;">`
+              + `<div style="font-size:14px;color:#1f2330;word-break:break-word;">${escapeHtmlClient(capitalizeFileName(f.name))}</div>`
+              + `<a class="upload-btn" href="${url}" target="_blank" rel="noopener" style="flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;height:32px;padding:0 14px;font-size:13px;text-decoration:none;background:#3589BD;">Скачать</a>`
+              + `</div>`;
+          });
+          if (a.fio) {
+            const zipUrl = `/api/ready-docs/zip?phone=${encodeURIComponent(phone)}&leadId=${encodeURIComponent(leadId)}&fio=${encodeURIComponent(a.fio)}`;
+            html += `<div style="margin-top:10px;"><a class="upload-btn" href="${zipUrl}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 16px;font-size:13px;text-decoration:none;background:#2e7a43;">Скачать все документы</a></div>`;
+          }
+          html += `</div>`;
+        });
+        wrapper.innerHTML = html;
+        if (data.processing) scheduleRefresh();
+      }
+
+      function fetchData() {
+        if (!phone || !leadId) { wrapper.style.display = "none"; return; }
+        fetch(`/api/ready-docs?phone=${encodeURIComponent(phone)}&leadId=${encodeURIComponent(leadId)}`)
+          .then((r) => r.json())
+          .then(renderData)
+          .catch(() => {
+            wrapper.innerHTML = `<h3>Ваши готовые документы</h3><div class="muted">Не удалось загрузить документы. Обновите страницу.</div>`;
+          });
+      }
+      fetchData();
+      return wrapper;
+    }
+
     function renderStages(currentIndex, lead) {
       stagesEl.innerHTML = "";
 
@@ -2779,32 +2858,40 @@
       // к личной подаче» вместо карты показываем сообщение клиенту, что
       // документы готовы и их нужно забрать.
       if (currentIndex >= 3 && currentIndex <= 6 && stageNodes[currentIndex]) {
-        const isPickupReady = currentIndex === 3 && lead
-          && typeof lead.status_name === "string"
-          && /документы\s+готовы\s+к\s+личной\s+подаче/i.test(lead.status_name);
-        if (isPickupReady) {
-          const pickupNotice = document.createElement("div");
-          pickupNotice.className = "documents-inline";
-          pickupNotice.style.display = "block";
-          pickupNotice.innerHTML = `
-            <div style="font-size:14px;line-height:1.5;color:#1f2330;">
-              Ваши документы готовы.<br>
-              Их <strong><u>необходимо забрать</u></strong>.
-              <div style="margin-top:12px;">
-                Ваши документы готовы к получению.<br>
-                Получите документы одним из следующих способов:
-                <ul style="margin:6px 0 0;padding-left:20px;">
-                  <li>лично в офисе (в Москве или Санкт-Петербурге);</li>
-                  <li>через курьера;</li>
-                  <li>в электронном виде (потребуется распечатать самостоятельно).</li>
-                </ul>
-                <div style="margin-top:8px;">
-                  Свяжитесь с вашим менеджером, чтобы договориться о способе передачи документов.
+        if (currentIndex === 3) {
+          // ─── Этап «Ожидание подачи» ───
+          // Показываем готовые документы (для 3 статусов amoCRM выдачи).
+          // Для «Документы готовы к личной подаче» дополнительно — памятка о получении.
+          let anchor = stageNodes[3];
+          const isPickupReady = lead && typeof lead.status_name === "string"
+            && /документы\s+готовы\s+к\s+личной\s+подаче/i.test(lead.status_name);
+          if (isPickupReady) {
+            const pickupNotice = document.createElement("div");
+            pickupNotice.className = "documents-inline";
+            pickupNotice.style.display = "block";
+            pickupNotice.innerHTML = `
+              <div style="font-size:14px;line-height:1.5;color:#1f2330;">
+                Ваши документы готовы.<br>
+                Их <strong><u>необходимо забрать</u></strong>.
+                <div style="margin-top:12px;">
+                  Ваши документы готовы к получению.<br>
+                  Получите документы одним из следующих способов:
+                  <ul style="margin:6px 0 0;padding-left:20px;">
+                    <li>лично в офисе (в Москве или Санкт-Петербурге);</li>
+                    <li>через курьера;</li>
+                    <li>в электронном виде (потребуется распечатать самостоятельно).</li>
+                  </ul>
+                  <div style="margin-top:8px;">
+                    Свяжитесь с вашим менеджером, чтобы договориться о способе передачи документов.
+                  </div>
                 </div>
               </div>
-            </div>
-          `;
-          stageNodes[currentIndex].after(pickupNotice);
+            `;
+            anchor.after(pickupNotice);
+            anchor = pickupNotice;
+          }
+          const readyBlock = createReadyDocsBlock(lead);
+          anchor.after(readyBlock);
         } else {
           const bankBlock = createBankCardBlock();
           stageNodes[currentIndex].after(bankBlock);

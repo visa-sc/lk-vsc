@@ -10,3 +10,6 @@ npm-debug.log*
 
 # Трафик-аналитика (runtime state)
 .trafficStats.json
+
+# Разовый флаг бэкафилла «Готовые документы (ЛК)»
+.readyDocsBackfillDone
