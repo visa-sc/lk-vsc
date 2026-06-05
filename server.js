@@ -6363,16 +6363,30 @@ async function getMaxCabinetStageForPhone(phone, statusesMap, baseUrl) {
   if (!contacts.length) return -1;
   const leadIds = await collectLeadIdsFromContacts(baseUrl, contacts);
   if (!leadIds.length) return -1;
-  let maxIdx = -1;
+  // Приоритет АКТИВНОЙ сделки. «Обращение исполнено» (последний этап) —
+  // терминальное состояние завершённой сделки. Если у клиента есть хоть одна
+  // активная (видимая, НЕ завершённая) сделка — статистика представляет его
+  // по ней; завершённую берём, только если активных нет вовсе. Так у клиента
+  // с новой сделкой в работе + старой закрытой больше не показывается «обращение
+  // исполнено». Дубли/мусор/«закрыто и не реализовано» уже отсеяны через
+  // hidden_in_cabinet — ровно как в клиентском ЛК (там их тоже не показываем).
+  const DONE_IDX = CABINET_STAGES.indexOf("Обращение исполнено");
+  let maxActiveIdx = -1; // максимум среди активных (незавершённых) видимых сделок
+  let maxDoneIdx = -1;   // максимум среди завершённых видимых сделок (фактически DONE_IDX)
   for (const leadId of leadIds) {
     const lead = await getLeadById(baseUrl, leadId);
     if (!lead || !lead.id) continue;
     const enriched = enrichLeadWithMappedStatus(lead, statusesMap);
     if (enriched.hidden_in_cabinet) continue;
     const idx = Number(enriched.cabinet_stage_index);
-    if (Number.isFinite(idx) && idx > maxIdx) maxIdx = idx;
+    if (!Number.isFinite(idx) || idx < 0) continue;
+    if (DONE_IDX >= 0 && idx === DONE_IDX) {
+      if (idx > maxDoneIdx) maxDoneIdx = idx;
+    } else if (idx > maxActiveIdx) {
+      maxActiveIdx = idx;
+    }
   }
-  return maxIdx;
+  return maxActiveIdx >= 0 ? maxActiveIdx : maxDoneIdx;
 }
 
 async function computeStageStats() {
