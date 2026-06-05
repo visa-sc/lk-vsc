@@ -2264,6 +2264,19 @@
       return Date.now() >= (ms - 7 * 24 * 60 * 60 * 1000);
     }
 
+    // Все ли ОБЯЗАТЕЛЬНЫЕ предподачные документы заявителя загружены
+    // (для жёлтого/зелёного статуса этапа «Подготовка документов»).
+    function presubMandatoryAllUploaded(applicant, lead) {
+      const docs = buildPreSubmissionDocs(applicant, lead).filter((d) => !d.optional);
+      if (!docs.length) return true;
+      const files = Array.isArray(applicant && applicant.uploadedFiles) ? applicant.uploadedFiles : [];
+      return docs.every((cfg) => files.some((f) => {
+        if (!f.startsWith(cfg.label)) return false;
+        const tail = f.slice(cfg.label.length);
+        return tail.charAt(0) === "." || tail.startsWith(" - ");
+      }));
+    }
+
     function presubMatchOccupation(state) {
       const occ = String((state && (state.occupation || state.jp_occupation)) || "").toLowerCase();
       const tokens = occ.split(/[^а-яёa-z0-9]+/i).filter(Boolean);
@@ -2450,9 +2463,16 @@
         uploadBtn.disabled = false; uploadBtn.textContent = t;
         if (!ok) { errEl.textContent = "Ошибка загрузки файла"; errEl.style.display = "block"; return; }
         showDone();
-        // Обновляем zip сделки (без создания задачи на каждый документ) и кэш.
+        // Обновляем zip сделки (без создания задачи на каждый документ).
         if (leadId) finishAmoUploadBatch(leadId, false);
-        refreshApplicantsCache().catch(() => {});
+        // Перерисовываем этап: обновляется статус-точка (жёлтый→зелёный, когда
+        // все обязательные предподачные документы загружены) и done-состояние.
+        if (lead) {
+          try { await refreshApplicantsCache(); } catch (_) {}
+          renderStages(getCurrentStageIndex(lead), lead);
+        } else {
+          refreshApplicantsCache().catch(() => {});
+        }
       });
 
       return row;
@@ -2994,6 +3014,14 @@
             && preApplicants.every(hasStage0Files)
             && applicants.every(hasStage0Files);
           if (allLoaded) warn = false;
+        }
+
+        // Этап «Подготовка документов»: если открыта подобласть предподачных
+        // документов — статус ЖЁЛТЫЙ, пока не загружены ВСЕ обязательные
+        // предподачные документы (даже если обычные блоки уже зелёные).
+        if (currentIndex === 2 && isPreSubmissionWindowActive(lead)) {
+          const allPresubDone = applicants.every((a) => presubMandatoryAllUploaded(a, lead));
+          if (!allPresubDone) warn = true;
         }
 
         if (warn) node.classList.add("warn");
