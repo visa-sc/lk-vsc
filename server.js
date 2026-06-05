@@ -157,6 +157,20 @@ app.get("/welcome", serveLanding("welcome", "welcome.html"));
 app.get("/welcome_schengen", serveLanding("welcome_schengen", "welcome_schengen.html"));
 app.get("/welcome_japan", serveLanding("welcome_japan", "welcome_japan.html"));
 
+// Резервные (старые) версии лендингов — на случай отката оффера. Без трекинга
+// трафика (это не рекламные посадочные), no-cache как и у основных.
+function serveStaticNoCache(file) {
+  return (req, res) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+    res.sendFile(path.join(__dirname, "public", file));
+  };
+}
+app.get("/welcome_old", serveStaticNoCache("welcome_old.html"));
+app.get("/welcome_schengen_old", serveStaticNoCache("welcome_schengen_old.html"));
+app.get("/welcome_japan_old", serveStaticNoCache("welcome_japan_old.html"));
+
 app.get("/about/v1", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "about-v1.html"));
 });

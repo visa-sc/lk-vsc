@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VOYO — виза в Японию онлайн в личном кабинете · бесплатная регистрация</title>
+  <title>VOYO — виза в Японию онлайн в личном кабинете · промокод WELCOME</title>
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="/apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-title" content="VOYO" />
-  <meta name="description" content="Оформите визу в Японию онлайн в личном кабинете VOYO: умный опросник, документы с телефона, статус в реальном времени, отслеживание слотов и запись на подачу. 11 лет опыта, 240 000 клиентов. Регистрация — бесплатно." />
+  <meta name="description" content="Оформите визу в Японию онлайн в личном кабинете VOYO: умный опросник, документы с телефона и статус в реальном времени. 11 лет опыта, 240 000 клиентов. Промокод WELCOME — −10% на первую визу." />
   <meta name="robots" content="index, follow" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="VOYO" />
-  <meta property="og:title" content="Виза в Японию онлайн в личном кабинете VOYO · бесплатная регистрация" />
-  <meta property="og:description" content="11 лет опыта, 240 000 клиентов, 75 специалистов. Умный опросник, слоты и запись на подачу, статус визы в Японию онлайн." />
+  <meta property="og:title" content="Виза в Японию онлайн в личном кабинете VOYO · −10% по WELCOME" />
+  <meta property="og:description" content="11 лет опыта, 240 000 клиентов, 75 специалистов. Умный опросник, документы с телефона и статус визы в Японию онлайн." />
   <meta property="og:url" content="https://voyovoyo.ru/welcome_japan" />
   <meta property="og:image" content="https://voyovoyo.ru/logo.png" />
   <meta property="og:image:width" content="600" />
@@ -52,11 +52,16 @@
     .cta p.cta-free { margin:26px auto 0; max-width:560px; font-size:14px; color:var(--text-muted); line-height:1.5; }
     .cta-free b { color:var(--accent-2); }
     .promo-wrap { padding:0 22px; margin-top:28px; }
-    .free-card { max-width:720px; margin:0 auto; background:linear-gradient(135deg,#eef8f0 0%,#e1f2e6 100%); border:1px solid #cfe7d2; border-radius:22px; padding:24px 28px; display:flex; align-items:center; gap:18px; box-shadow:0 22px 52px rgba(79,159,104,.16); text-align:left; }
-    .free-card-ic { flex:0 0 48px; width:48px; height:48px; border-radius:50%; background:#4f9f68; color:#fff; font-size:24px; font-weight:700; display:flex; align-items:center; justify-content:center; }
-    .free-card-text b { display:block; font-size:18px; color:#2e7a43; margin-bottom:4px; }
-    .free-card-text span { display:block; font-size:14.5px; color:#3c5a44; line-height:1.46; }
-    @media (max-width:600px){ .free-card{flex-direction:column; text-align:center; align-items:center; gap:14px; padding:22px 20px;} }
+    .promo { max-width:720px; margin:0 auto; background:linear-gradient(135deg,#161d45 0%,#29356f 100%); color:#fff; border-radius:22px; padding:26px 28px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; box-shadow:0 26px 60px rgba(22,29,69,.28); }
+    .promo .promo-left { text-align:left; }
+    .promo .promo-percent { font-size:40px; font-weight:800; line-height:1; }
+    .promo .promo-percent span { color:#8fd3a6; }
+    .promo .promo-desc { font-size:14px; color:#d6e0f2; margin-top:6px; max-width:340px; }
+    .promo-code-box { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+    .promo-code { font-size:22px; font-weight:800; letter-spacing:2px; background:rgba(255,255,255,.12); border:1px dashed rgba(255,255,255,.5); padding:12px 18px; border-radius:12px; }
+    .copy-btn { background:#4f9f68; color:#fff; border:none; cursor:pointer; padding:12px 16px; border-radius:12px; font-size:13px; font-weight:600; transition:.2s; white-space:nowrap; }
+    .copy-btn:hover { background:#438a59; }
+    @media (max-width:600px){ .promo{flex-direction:column; align-items:stretch; gap:16px; padding:22px 20px;} .promo .promo-left{text-align:center;} .promo .promo-desc{max-width:none; margin-left:auto; margin-right:auto;} .promo-code-box{width:100%; justify-content:center;} .promo-code{font-size:20px; letter-spacing:1px; padding:12px 16px;} }
     .section { padding:78px 22px; }
     .section.alt { background:var(--bg-alt); }
     .section-inner { max-width:1024px; margin:0 auto; }
@@ -91,6 +96,8 @@
     .footer { background:var(--bg-dark); color:#a1a1a6; padding:40px 22px; text-align:center; font-size:13px; }
     .footer-links { display:flex; gap:26px; justify-content:center; flex-wrap:wrap; margin-bottom:14px; }
     .footer-links a { color:#f5f5f7; } .footer-links a:hover { color:var(--accent); }
+    .toast { position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(20px); background:#161d45; color:#fff; padding:12px 22px; border-radius:12px; font-size:14px; opacity:0; pointer-events:none; transition:.25s; z-index:100; }
+    .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
     /* ── STATS (dark) ── */
     .stats-section { background:linear-gradient(135deg,#161d45 0%,#29356f 100%); }
     .stats-section .section-eyebrow { color:#8fb4dd; }
@@ -165,16 +172,19 @@
     <h1 class="anim d1">Виза в Японию <span class="accent-text">онлайн</span> —<br>ясно на каждом шаге</h1>
     <p class="sub anim d2">Личный кабинет, где виден каждый этап оформления визы в Японию — от заявки до готового паспорта.</p>
     <div class="hero-actions anim d3">
-      <a class="btn btn-primary" href="/">Зарегистрироваться бесплатно</a>
+      <a class="btn btn-primary" href="/">Получить скидку 10%</a>
       <a class="btn btn-secondary" href="#cabinet">Посмотреть кабинет</a>
     </div>
-    <div class="hero-note anim d3"><span class="free-chip">Регистрация бесплатна — без карты и оплаты</span></div>
+    <div class="hero-note anim d3"><span class="free-chip">Зарегистрируйтесь бесплатно — посмотрите личный кабинет без оплаты</span></div>
     <div class="promo-wrap anim d4">
-      <div class="free-card">
-        <div class="free-card-ic">✓</div>
-        <div class="free-card-text">
-          <b>Личный кабинет — бесплатно</b>
-          <span>Зарегистрируйтесь и попробуйте без оплаты: умный опросник, загрузка документов и статус визы онлайн. Платите только за оформление визы — если решите оформлять с нами.</span>
+      <div class="promo">
+        <div class="promo-left">
+          <div class="promo-percent">−10<span>%</span></div>
+          <div class="promo-desc">−10% на первую визу в Японию. Активируйте промокод при входе в кабинет.</div>
+        </div>
+        <div class="promo-code-box">
+          <div class="promo-code" id="promoCode">WELCOME</div>
+          <button class="copy-btn" id="copyBtn" type="button">Скопировать</button>
         </div>
       </div>
     </div>
@@ -202,19 +212,19 @@
           <p>Заполняете один раз — система сама подскажет, какие документы нужны именно вам.</p>
         </div>
         <div class="feature-card">
-          <div class="feature-ic">📝</div>
-          <h3>Анкеты и документы</h3>
-          <p>Поможем заполнить консульские формы и оформить документы для визы; загрузка — фото или PDF с телефона.</p>
+          <div class="feature-ic">📤</div>
+          <h3>Документы онлайн</h3>
+          <p>Фото или PDF прямо с телефона — без лишних поездок в офис.</p>
         </div>
         <div class="feature-card">
-          <div class="feature-ic">📅</div>
-          <h3>Слоты и запись на подачу</h3>
-          <p>Отслеживаем свободные слоты и записываем вас на подачу — без ручной охоты за окнами.</p>
+          <div class="feature-ic">🗾</div>
+          <h3>Япония ждёт</h3>
+          <p>Помогаем с визой в Японию: туризм, гости и другие цели поездки.</p>
         </div>
         <div class="feature-card">
-          <div class="feature-ic">💬</div>
-          <h3>Эксперты на связи</h3>
-          <p>Консультация специалистов и поддержка на всех этапах оформления.</p>
+          <div class="feature-ic">🔒</div>
+          <h3>Вход по Face ID</h3>
+          <p>Быстрый и безопасный вход — по лицу или отпечатку, без паролей.</p>
         </div>
       </div>
     </div>
@@ -314,7 +324,7 @@
       <h2 class="section-title">Как оформить визу в Японию</h2>
       <p class="section-lead">От входа до готовой визы — понятный путь, который займёт минуты вашего времени.</p>
       <div class="steps">
-        <div class="step"><div class="step-num"></div><h3>Войдите по телефону</h3><p>Введите номер телефона — регистрация в личном кабинете бесплатна.</p><span class="step-free">Бесплатно</span></div>
+        <div class="step"><div class="step-num"></div><h3>Войдите по телефону</h3><p>Введите номер и промокод <b>WELCOME</b> — −10% на первую визу.</p><span class="step-free">Бесплатный вход</span></div>
         <div class="step"><div class="step-num"></div><h3>Заполните опросник</h3><p>Умная анкета подскажет, что именно нужно для вашей поездки.</p></div>
         <div class="step"><div class="step-num"></div><h3>Загрузите документы</h3><p>Прямо из кабинета, с телефона — фото или PDF.</p></div>
         <div class="step"><div class="step-num"></div><h3>Следите за статусом</h3><p>Вы видите каждый этап онлайн, пока мы помогаем получить визу.</p></div>
@@ -328,22 +338,22 @@
       <h2 class="section-title">Помогаем получить визу — спокойно</h2>
       <p class="section-lead">За технологичным кабинетом — команда, которая оформляет визы каждый день и доводит до результата.</p>
       <ul class="adv">
-        <li>Отслеживаем слоты и записываем на подачу</li>
-        <li>Помогаем с консульскими анкетами и документами</li>
-        <li>Консультация экспертов и поддержка на всех этапах</li>
         <li>Проверяем документы до подачи</li>
-        <li>Видно каждый этап — без сюрпризов</li>
+        <li>Сопровождаем до результата</li>
         <li>Виза в Японию — туризм и гости</li>
+        <li>Видно каждый этап — без сюрпризов</li>
+        <li>Живые эксперты на связи</li>
+        <li>−10% по промокоду WELCOME</li>
       </ul>
     </div>
   </section>
 
   <section class="cta">
-    <div class="pill">Регистрация в личном кабинете — <b>бесплатно</b></div>
+    <div class="pill">Промокод <b>WELCOME</b> · <b>−10%</b> на первую визу</div>
     <h2>Виза в Японию <span class="accent-text">начинается здесь</span></h2>
-    <p>Войдите в личный кабинет по номеру телефона — это займёт пару минут. Регистрация бесплатна.</p>
-    <a class="btn btn-primary" href="/">Зарегистрироваться бесплатно</a>
-    <p class="cta-free">Регистрация и просмотр кабинета — <b>бесплатно</b>.<br>Платите только за оформление визы, если решите оформлять с нами.</p>
+    <p>Войдите в личный кабинет по номеру телефона и активируйте промокод — это займёт пару минут.</p>
+    <a class="btn btn-primary" href="/">Войти и получить −10%</a>
+    <p class="cta-free">Вход и просмотр кабинета — <b>бесплатно</b>.<br>Примените промокод <b>WELCOME</b>, если решите оформить визу с нами.</p>
   </section>
 
   <footer class="footer">
@@ -355,10 +365,23 @@
     <div>© VOYO. Все права защищены.</div>
   </footer>
 
+  <div class="toast" id="toast">Промокод WELCOME скопирован</div>
+
   <script>
-    // Яндекс.Метрика — второстепенная цель: клики по кнопкам (CTA, «Войти»).
+    (function () {
+      var btn = document.getElementById("copyBtn");
+      var toast = document.getElementById("toast");
+      if (!btn) return;
+      btn.addEventListener("click", function () {
+        var code = "WELCOME";
+        function done() { if (!toast) return; toast.classList.add("show"); setTimeout(function(){ toast.classList.remove("show"); }, 1800); }
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(code).then(done).catch(done); }
+        else { try { var t=document.createElement("textarea"); t.value=code; document.body.appendChild(t); t.select(); document.execCommand("copy"); document.body.removeChild(t);} catch(e){} done(); }
+      });
+    })();
+    // Яндекс.Метрика — второстепенная цель: клики по кнопкам (CTA, «Войти», «Скопировать»).
     document.addEventListener("click", function (e) {
-      var t = (e.target && e.target.closest) ? e.target.closest(".btn, .nav-cta") : null;
+      var t = (e.target && e.target.closest) ? e.target.closest(".btn, .nav-cta, .copy-btn") : null;
       if (t && typeof ym === "function") { try { ym(109614823, "reachGoal", "button_click"); } catch (err) {} }
     });
   </script>
