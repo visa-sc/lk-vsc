@@ -6544,7 +6544,7 @@ async function _computePaidConversionStatsInner() {
 // авторизации появятся в воронке быстро, без ожидания TTL.
 let _cachedAdminStats = null;
 let _cachedAdminStatsTs = 0;
-const ADMIN_STATS_CACHE_TTL_MS = 5 * 60 * 1000;
+const ADMIN_STATS_CACHE_TTL_MS = 13 * 60 * 1000; // > интервала пре-warm (12 мин), чтобы кеш не остывал между прогревами
 // Single-flight для воронки: admin-страница polling-ит /admin/api/stats каждые
 // 10 сек. Когда кеш холодный (после рестарта или TTL), без single-flight
 // каждый polling-запрос запускал отдельный пересчёт — 5-10 параллельных
@@ -6686,7 +6686,7 @@ async function _computeAdminStatsInner() {
 let _cachedStageStats = null;
 let _cachedStageStatsTs = 0;
 let _stageStatsInflight = null;
-const STAGE_STATS_CACHE_TTL_MS = 16 * 60 * 1000;
+const STAGE_STATS_CACHE_TTL_MS = 22 * 60 * 1000; // > интервала пре-warm (20 мин), чтобы кеш не остывал
 function invalidateStageStatsCache() { _cachedStageStats = null; _cachedStageStatsTs = 0; }
 
 // Тихий помощник: максимальный cabinet_stage_index по видимым сделкам номера.
@@ -6787,10 +6787,18 @@ async function _computeStageStatsInner() {
   }
   const perPhone = [];
   const tStart = Date.now();
+  // Пауза между чанками: размазываем запросы к amoCRM во времени, чтобы фоновый
+  // прогон не давал пиковых всплесков RPS (общий лимит аккаунта 7 RPS делится с
+  // клиентским ЛК и веб-интерфейсом amoCRM). При concurrency=2 и паузе ~700мс
+  // job держит ≈3 RPS вместо рваных всплесков → меньше каскадов 429-retry.
+  const STAGE_STATS_CHUNK_PAUSE_MS = 700;
   for (let i = 0; i < phoneEntries.length; i += CONCURRENCY) {
     const chunk = phoneEntries.slice(i, i + CONCURRENCY);
     const res = await Promise.all(chunk.map(processPhone));
     perPhone.push(...res);
+    if (i + CONCURRENCY < phoneEntries.length) {
+      await new Promise((r) => setTimeout(r, STAGE_STATS_CHUNK_PAUSE_MS));
+    }
   }
   console.log(`STAGE STATS: processed ${phoneEntries.length} phones in ${Date.now()-tStart}ms`);
 
@@ -9319,8 +9327,10 @@ schedulePaidConvPrewarm();
 // рестарта/истечения TTL админ ждал полный проход по всем телефонам (десятки
 // запросов к Я.Диску). Теперь держим кеш всегда тёплым в фоне → блок открывается
 // мгновенно. Нагрузка — только на Я.Диск (листинг папок), на amoCRM и клиентский
-// ЛК не влияет; интервал чуть меньше TTL кеша, чтобы он не успевал остыть.
-const ADMIN_STATS_PREWARM_INTERVAL_MS = 4 * 60 * 1000;
+// ЛК не влияет; интервал чуть меньше TTL кеша (13 мин), чтобы он не успевал остыть.
+// Интервал поднят 4 → 12 мин: воронка меняется медленно (клиенты грузят доки
+// часами/днями), а 12 мин ощутимо снижают фоновый churn листингов Я.Диска.
+const ADMIN_STATS_PREWARM_INTERVAL_MS = 12 * 60 * 1000;
 function scheduleAdminStatsPrewarm() {
   setTimeout(async () => {
     try {
@@ -9342,7 +9352,7 @@ scheduleAdminStatsPrewarm();
 // Фоновый пре-warm воронки «по этапам» (amoCRM). Реже и с низкой concurrency
 // (2), т.к. бьёт по amoCRM rate-limit — держим кеш тёплым, не мешая клиентскому
 // кабинету. На auth НЕ инвалидируем (свежесть обеспечивает TTL/пре-warm).
-const STAGE_STATS_PREWARM_INTERVAL_MS = 15 * 60 * 1000;
+const STAGE_STATS_PREWARM_INTERVAL_MS = 20 * 60 * 1000;
 function scheduleStageStatsPrewarm() {
   if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return;
   setTimeout(async () => {
