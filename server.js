@@ -2255,7 +2255,11 @@ async function collectReadyDocsForLead(leadId) {
     const files = [];
     for (const f of sub) {
       if (/\.zip$/i.test(f.name)) { hasZip = true; continue; }
-      files.push({ name: f.name, rel: `${fio}/${f.relativePath}` });
+      // Файл из подпапки «Чек по страховке» показываем под именем «Чек по
+      // страховке» (как просили). Пустая папка файлов не даёт — игнорируется.
+      const inInsurance = f.relativePath.startsWith(`${INSURANCE_SUBFOLDER_NAME}/`);
+      const displayName = inInsurance ? INSURANCE_SUBFOLDER_NAME : f.name;
+      files.push({ name: displayName, rel: `${fio}/${f.relativePath}` });
       const parentDir = f.relativePath.includes("/") ? `${fio}/${f.relativePath.slice(0, f.relativePath.lastIndexOf("/"))}` : fio;
       markDup(parentDir, f.name);
     }

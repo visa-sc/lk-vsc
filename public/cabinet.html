@@ -2860,38 +2860,10 @@
       if (currentIndex >= 3 && currentIndex <= 6 && stageNodes[currentIndex]) {
         if (currentIndex === 3) {
           // ─── Этап «Ожидание подачи» ───
-          // Показываем готовые документы (для 3 статусов amoCRM выдачи).
-          // Для «Документы готовы к личной подаче» дополнительно — памятка о получении.
-          let anchor = stageNodes[3];
-          const isPickupReady = lead && typeof lead.status_name === "string"
-            && /документы\s+готовы\s+к\s+личной\s+подаче/i.test(lead.status_name);
-          if (isPickupReady) {
-            const pickupNotice = document.createElement("div");
-            pickupNotice.className = "documents-inline";
-            pickupNotice.style.display = "block";
-            pickupNotice.innerHTML = `
-              <div style="font-size:14px;line-height:1.5;color:#1f2330;">
-                Ваши документы готовы.<br>
-                Их <strong><u>необходимо забрать</u></strong>.
-                <div style="margin-top:12px;">
-                  Ваши документы готовы к получению.<br>
-                  Получите документы одним из следующих способов:
-                  <ul style="margin:6px 0 0;padding-left:20px;">
-                    <li>лично в офисе (в Москве или Санкт-Петербурге);</li>
-                    <li>через курьера;</li>
-                    <li>в электронном виде (потребуется распечатать самостоятельно).</li>
-                  </ul>
-                  <div style="margin-top:8px;">
-                    Свяжитесь с вашим менеджером, чтобы договориться о способе передачи документов.
-                  </div>
-                </div>
-              </div>
-            `;
-            anchor.after(pickupNotice);
-            anchor = pickupNotice;
-          }
+          // Только блок готовых документов: банковская карта и памятка
+          // «необходимо забрать» на этом этапе убраны.
           const readyBlock = createReadyDocsBlock(lead);
-          anchor.after(readyBlock);
+          stageNodes[3].after(readyBlock);
         } else {
           const bankBlock = createBankCardBlock();
           stageNodes[currentIndex].after(bankBlock);
