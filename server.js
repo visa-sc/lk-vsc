@@ -3508,7 +3508,7 @@ ${mixedFieldsHtml}
   // Испания: убираем «Исключения», до 3 диапазонов (кнопка «Добавить ещё диапазон»).
   // Прочие страны: всё как раньше (диапазон + исключения).
   const BOT_TODAY = new Date().toISOString().slice(0, 10);
-  let botRangeCount = 1; // базовый диапазон уже есть в разметке
+  const BOT_MAX_RANGES = 3; // базовый (1) + до 2 дополнительных диапазонов (Испания)
 
   function wireBotDatePair(fromEl, toEl) {
     if (!fromEl || !toEl) return;
@@ -3527,41 +3527,69 @@ ${mixedFieldsHtml}
     return el ? (el.value || "") : "";
   }
 
+  function botExtraWraps() {
+    const cont = document.getElementById("botExtraRanges");
+    return cont ? [].slice.call(cont.querySelectorAll("[data-range-slot]")) : [];
+  }
+  function botUsedSlots() {
+    return botExtraWraps().map(function (el) { return parseInt(el.getAttribute("data-range-slot"), 10); });
+  }
+  // Подписи доп. диапазонов пересчитываем по позиции: базовый = 1, доп. — со 2-го.
+  function relabelBotRanges() {
+    botExtraWraps().forEach(function (w, i) {
+      const lab = w.querySelector("label");
+      if (lab) lab.textContent = "Диапазон записи " + (i + 2);
+    });
+  }
   function updateBotAddRangeBtn() {
     const btn = document.getElementById("botAddRangeBtn");
     if (!btn) return;
-    const show = (radio("useBotBooking") === "Да") && botVisaCountry() === "Испания" && botRangeCount < 3;
+    const show = (radio("useBotBooking") === "Да") && botVisaCountry() === "Испания" && botUsedSlots().length < (BOT_MAX_RANGES - 1);
     btn.style.display = show ? "inline-block" : "none";
   }
-
+  function removeBotRange(wrap) {
+    if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+    relabelBotRanges();
+    updateBotAddRangeBtn();
+  }
   function addBotRange(prefFrom, prefTo) {
-    if (botRangeCount >= 3) return;
-    const idx = botRangeCount + 1; // 2 или 3
     const cont = document.getElementById("botExtraRanges");
     if (!cont) return;
+    const used = botUsedSlots();
+    if (used.length >= (BOT_MAX_RANGES - 1)) return;
+    // Берём наименьший свободный слот (2..BOT_MAX_RANGES) — имена полей стабильны,
+    // поэтому удаление одного диапазона не ломает остальные.
+    let slot = null;
+    for (let s = 2; s <= BOT_MAX_RANGES; s++) { if (used.indexOf(s) < 0) { slot = s; break; } }
+    if (slot === null) return;
     const wrap = document.createElement("div");
     wrap.className = "field";
     wrap.style.marginTop = "10px";
+    wrap.setAttribute("data-range-slot", String(slot));
     wrap.innerHTML =
-      '<label>Диапазон записи ' + idx + '</label>' +
+      "<label></label>" +
       '<div class="date-row">' +
-      '<input type="date" name="bookingDateFrom' + idx + '" />' +
-      '<input type="date" name="bookingDateTo' + idx + '" />' +
-      '</div>';
+      '<input type="date" name="bookingDateFrom' + slot + '" />' +
+      '<input type="date" name="bookingDateTo' + slot + '" />' +
+      "</div>";
+    const rm = document.createElement("button");
+    rm.type = "button";
+    rm.textContent = "Удалить диапазон";
+    rm.style.cssText = "margin-top:6px;background:none;border:none;color:#b03a3a;font-size:12px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline;";
+    rm.addEventListener("click", function () { removeBotRange(wrap); });
+    wrap.appendChild(rm);
     cont.appendChild(wrap);
-    botRangeCount = idx;
-    const f = wrap.querySelector('input[name="bookingDateFrom' + idx + '"]');
-    const t = wrap.querySelector('input[name="bookingDateTo' + idx + '"]');
+    const f = wrap.querySelector('input[name="bookingDateFrom' + slot + '"]');
+    const t = wrap.querySelector('input[name="bookingDateTo' + slot + '"]');
     if (prefFrom) f.value = prefFrom;
     if (prefTo) t.value = prefTo;
     wireBotDatePair(f, t);
+    relabelBotRanges();
     updateBotAddRangeBtn();
   }
-
   function clearBotExtraRanges() {
     const cont = document.getElementById("botExtraRanges");
     if (cont) cont.innerHTML = "";
-    botRangeCount = 1;
   }
 
   function updateBotBooking() {
@@ -5004,12 +5032,10 @@ async function generateQuestionnairePdfBuffer(data) {
     if (data.bookingDateFrom || data.bookingDateTo) {
       drawRow("Диапазон записи", `${data.bookingDateFrom || "?"} — ${data.bookingDateTo || "?"}`);
     }
-    if (data.bookingDateFrom2 || data.bookingDateTo2) {
-      drawRow("Диапазон записи 2", `${data.bookingDateFrom2 || "?"} — ${data.bookingDateTo2 || "?"}`);
-    }
-    if (data.bookingDateFrom3 || data.bookingDateTo3) {
-      drawRow("Диапазон записи 3", `${data.bookingDateFrom3 || "?"} — ${data.bookingDateTo3 || "?"}`);
-    }
+    const botExtraRanges = [];
+    if (data.bookingDateFrom2 || data.bookingDateTo2) botExtraRanges.push(`${data.bookingDateFrom2 || "?"} — ${data.bookingDateTo2 || "?"}`);
+    if (data.bookingDateFrom3 || data.bookingDateTo3) botExtraRanges.push(`${data.bookingDateFrom3 || "?"} — ${data.bookingDateTo3 || "?"}`);
+    botExtraRanges.forEach((r, i) => drawRow("Диапазон записи " + (i + 2), r));
     if (data.bookingExclusions) drawRow("Исключения", data.bookingExclusions);
     drawRow("Город для записи", data.bookingCity);
     drawRow("Пожелания по датам записи", data.bookingTimePrefs);
