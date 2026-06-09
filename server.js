@@ -964,13 +964,47 @@ function getCustomFieldValue(entity, fieldName) {
   return "";
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Глобальный ограничитель исходящих запросов к amoCRM (token bucket).
+// amoCRM лимит ~7 RPS на аккаунт; его ПРЕВЫШЕНИЕ приводит не просто к 429, а к
+// БЛОКИРОВКЕ аккаунта (инцидент 09.06.2026: шквал GET /contacts?query=...).
+// Держим запас: не более AMO_MAX_RPS исходящих в секунду со ВСЕХ кодовых путей
+// (кабинет, прогревы статистики, вебхуки и в т.ч. повторы-ретраи). При нормальной
+// нагрузке токены доступны сразу — задержки нет; под всплеском запросы встают в
+// очередь, но суммарный темп физически не может превысить лимит.
+// AMO_MAX_RPS — устойчивый темп (refill, запр./сек); AMO_BURST — ёмкость бакета
+// (допустимый мгновенный всплеск). Худшее окно в 1 сек = AMO_BURST + AMO_MAX_RPS,
+// держим его ≤ лимита amoCRM (7/сек): 2 + 5 = 7.
+const AMO_MAX_RPS = 5;
+const AMO_BURST = 2;
+let _amoTokens = AMO_BURST;
+let _amoTokensTs = Date.now();
+function _amoRefillTokens() {
+  const now = Date.now();
+  const elapsedSec = (now - _amoTokensTs) / 1000;
+  if (elapsedSec > 0) {
+    _amoTokens = Math.min(AMO_BURST, _amoTokens + elapsedSec * AMO_MAX_RPS);
+    _amoTokensTs = now;
+  }
+}
+async function amoAcquireToken() {
+  // JS однопоточный: проверка+декремент токена атомарны между await.
+  while (true) {
+    _amoRefillTokens();
+    if (_amoTokens >= 1) { _amoTokens -= 1; return; }
+    const waitMs = Math.max(20, Math.ceil(((1 - _amoTokens) / AMO_MAX_RPS) * 1000));
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+}
+
 // Унифицированный retry для всех вызовов amoCRM API. Защищает ВСЕ кодовые пути
 // от 429/503/5xx и временных сетевых сбоев — включая клиентский флоу (find contact,
-// load leads и т.д.). amoCRM rate-limit ~7 RPS; всплески от прева-warm + webhook
-// активности могут давать 429 — без retry это бы валило клиентскую авторизацию.
+// load leads и т.д.). Каждая попытка (включая повторы) проходит через глобальный
+// лимитер RPS — чтобы ретраи на 429 НЕ разгоняли счётчик обращений к блокировке.
 async function amoRequestWithRetry(doRequest, label, maxAttempts = 5) {
   let lastErr;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await amoAcquireToken(); // глобальный лимит RPS (распространяется и на повторы)
     try {
       return await doRequest();
     } catch (e) {
@@ -978,9 +1012,12 @@ async function amoRequestWithRetry(doRequest, label, maxAttempts = 5) {
       const status = e.response && e.response.status;
       const retryable = status === 429 || status === 503 || (status >= 500 && status < 600) || !status;
       if (!retryable || attempt === maxAttempts) throw e;
-      // Экспоненциальный backoff + джиттер: 250мс, 600мс, 1.4с, 3.2с.
+      // Уважаем Retry-After (сек) от amoCRM, если прислан; иначе экспоненциальный
+      // backoff + джиттер: 250мс, 600мс, 1.4с, 3.2с.
+      const retryAfterRaw = e.response && e.response.headers && e.response.headers["retry-after"];
+      const retryAfterMs = retryAfterRaw ? Math.min(10000, (parseInt(retryAfterRaw, 10) || 0) * 1000) : 0;
       const base = 250 * Math.pow(2.3, attempt - 1);
-      const delay = base + Math.floor(Math.random() * 150);
+      const delay = retryAfterMs || (base + Math.floor(Math.random() * 150));
       console.warn(`AMO RETRY ${label} attempt=${attempt}/${maxAttempts} status=${status || "net"} delay=${Math.round(delay)}ms`);
       await new Promise((r) => setTimeout(r, delay));
     }
@@ -1851,7 +1888,7 @@ async function getLeadPipelineName(lead) {
   if (!lead || !lead.pipeline_id) return "";
   try {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
-    const statusMap = await getPipelinesMap(baseUrl);
+    const statusMap = await getCachedPipelinesMap(baseUrl);
     const meta = statusMap.get(`${lead.pipeline_id}:${lead.status_id}`);
     if (meta && meta.pipeline_name) return meta.pipeline_name;
   } catch (_) {}
@@ -2441,9 +2478,30 @@ const UPLOAD_FIELDS_WHITELIST = {
   parentsPassports:        "Внутренние паспорта родителей"
 };
 
+// Кэш поиска контактов по телефону. Эндпоинт GET /contacts?query=<phone> — главный
+// виновник блокировки аккаунта 09.06.2026 (один номер запрашивался по 7–17 раз).
+// Контакты по номеру меняются редко → держим результат (в т.ч. пустой) на TTL,
+// схлопывая быстрые обновления кабинета и параллельных потребителей в 1 запрос.
+const _contactsByPhoneCache = new Map();   // normalized -> { ts, data }
+const _contactsByPhoneInflight = new Map(); // normalized -> Promise
+const CONTACTS_BY_PHONE_TTL_MS = 120 * 1000;
+
 async function findMatchingContacts(baseUrl, phone) {
   const normalized = normalizePhone(phone);
+  if (!normalized) return [];
+  const now = Date.now();
+  const cached = _contactsByPhoneCache.get(normalized);
+  if (cached && (now - cached.ts) < CONTACTS_BY_PHONE_TTL_MS) return cached.data;
+  const inflight = _contactsByPhoneInflight.get(normalized);
+  if (inflight) return inflight;
+  const p = _findMatchingContactsUncached(baseUrl, normalized)
+    .then((data) => { _contactsByPhoneCache.set(normalized, { ts: Date.now(), data }); return data; })
+    .finally(() => { _contactsByPhoneInflight.delete(normalized); });
+  _contactsByPhoneInflight.set(normalized, p);
+  return p;
+}
 
+async function _findMatchingContactsUncached(baseUrl, normalized) {
   const variants = [...new Set([
     normalized,
     normalized.slice(-10),
@@ -2512,7 +2570,30 @@ async function loadLeadsByIds(baseUrl, leadIds, statusesMap) {
   });
 }
 
+// Кэш «сделки по телефону» (полный обход: контакты → их сделки → enrich статусов).
+// Короткий TTL: схлопывает быстрые F5/повторные заходы в кабинет в один обход,
+// при этом статус сделки остаётся достаточно свежим (изменение этапа видно в
+// течение TTL). Защищает amoCRM от лавины запросов (инцидент-блокировка 09.06.2026).
+const _leadsByPhoneCache = new Map();   // normalized -> { ts, data }
+const _leadsByPhoneInflight = new Map(); // normalized -> Promise
+const LEADS_BY_PHONE_TTL_MS = 30 * 1000;
+
 async function getLeadsByPhone(phone) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return [];
+  const now = Date.now();
+  const cached = _leadsByPhoneCache.get(normalized);
+  if (cached && (now - cached.ts) < LEADS_BY_PHONE_TTL_MS) return cached.data;
+  const inflight = _leadsByPhoneInflight.get(normalized);
+  if (inflight) return inflight;
+  const p = _getLeadsByPhoneUncached(phone)
+    .then((data) => { _leadsByPhoneCache.set(normalized, { ts: Date.now(), data }); return data; })
+    .finally(() => { _leadsByPhoneInflight.delete(normalized); });
+  _leadsByPhoneInflight.set(normalized, p);
+  return p;
+}
+
+async function _getLeadsByPhoneUncached(phone) {
   const normalized = normalizePhone(phone);
 
   console.log("PHONE RAW:", phone);
@@ -2523,7 +2604,7 @@ async function getLeadsByPhone(phone) {
 
   const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
 
-  const statusesMap = await getPipelinesMap(baseUrl);
+  const statusesMap = await getCachedPipelinesMap(baseUrl);
   const contacts = await findMatchingContacts(baseUrl, normalized);
 
   console.log("MATCHED CONTACTS:", contacts.map((c) => ({
@@ -6767,7 +6848,7 @@ async function _computeStageStatsInner() {
   }
   const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
   let statusesMap = null;
-  try { statusesMap = await getPipelinesMap(baseUrl); } catch (e) { console.error("STAGE STATS pipelines err:", e.message); }
+  try { statusesMap = await getCachedPipelinesMap(baseUrl); } catch (e) { console.error("STAGE STATS pipelines err:", e.message); }
 
   const CONCURRENCY = 2; // щадим amoCRM, чтобы не мешать клиентскому кабинету
   async function processPhone([phone, ts]) {
