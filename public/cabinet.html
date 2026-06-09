@@ -1407,7 +1407,7 @@
           // Для Японии — отдельный label, ведётся в общий field sponsorPassport
           // только для статистики/whitelist. Здесь явно показываем «Внутр.
           // паспорт спонсора» без приписки «Спонсорское письмо».
-          stage1Blocks.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора" });
+          stage1Blocks.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора", note: "Потому что вы отметили, что вашу поездку оплачивает третье лицо." });
         }
         if (String(state.jp_isUnder18 || "").trim() === "Да") {
           stage1Blocks.push({ field: "birthCertificate", label: "Свидетельство о рождении" });
@@ -1453,7 +1453,7 @@
         stage2Blocks.push({ field: "prevSchengenPhoto", label: "Фото последней Шенгенской визы" });
       }
       if (state.hasSponsor === "Да") {
-        stage2Blocks.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора или Спонсорское письмо от компании" });
+        stage2Blocks.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора или Спонсорское письмо от компании", note: "Потому что вы отметили, что вашу поездку оплачивает третье лицо." });
       }
       if (state.isUnder18 === "Да") {
         stage2Blocks.push({ field: "birthCertificate", label: "Свидетельство о рождении" });
@@ -1474,7 +1474,7 @@
         state.canSurrenderPassport === "Нет" &&
         /треть.*страну/i.test(String(state.surrenderReason || ""))
       ) {
-        stage2Blocks.push({ field: "thirdCountryTickets", label: "Билеты в третью страну" });
+        stage2Blocks.push({ field: "thirdCountryTickets", label: "Билеты в третью страну", note: "Потому что вы отметили, что не можете сдать второй загранпаспорт из-за поездки в другую страну." });
       }
       if (state.notRussianCitizen === "Да") {
         stage2Blocks.push({ field: "residencePermit", label: "ВНЖ или регистрация" });
@@ -1499,7 +1499,7 @@
         state.visitedSchengenAfterApr2026 === "Да" &&
         state.hadBorderStamps === "Нет"
       ) {
-        stage2Blocks.push({ field: "boardingPasses", label: "Посадочные талоны и (или) иные подтверждения того, что вы использовали предыдущую визу." });
+        stage2Blocks.push({ field: "boardingPasses", label: "Посадочные талоны и (или) иные подтверждения того, что вы использовали предыдущую визу" });
       }
 
       // Все условные блоки этапов 1 и 2 обязательны (требование от
@@ -1590,6 +1590,18 @@
         const labelEl = document.createElement("div");
         labelEl.className = "file-list-label";
         labelEl.textContent = cfg.label;
+        // Пояснение к документу (почему его запросили) — под названием, спокойным
+        // синим шрифтом. Остаётся в той же grid-колонке, что и название.
+        if (cfg.note) {
+          const noteEl = document.createElement("div");
+          noteEl.textContent = cfg.note;
+          noteEl.style.fontSize = "12px";
+          noteEl.style.color = "#3589BD";
+          noteEl.style.fontWeight = "400";
+          noteEl.style.marginTop = "3px";
+          noteEl.style.lineHeight = "1.35";
+          labelEl.appendChild(noteEl);
+        }
         row.appendChild(labelEl);
 
         // Контейнер для кнопки + превью

@@ -1908,9 +1908,10 @@ async function _resolveAmoTaskTarget(leadId) {
   if (!taskTypeId) taskTypeId = 1;
 
   // По воронке выбираем, кому ставим задачу.
-  // «Отдел Продаж» (любые этапы, кроме hidden) → поле «Отв-ный/Ответственный» (TASK_RESPONSIBLE_FIELD_ID).
+  // «Отдел Продаж» (любые этапы, кроме hidden) → поле «Отв-ный/Ответственный» (TASK_RESPONSIBLE_FIELD_ID),
+  //                                              пусто → ответственный по сделке.
   // «Отдел Оформления» / «Отдел по работе с Клиентами» → поле «Кто принял клиента»;
-  //                                                     пусто → пользователь «Visa Services Center».
+  //                                пусто → ОТВЕТСТВЕННЫЙ по сделке; и только если и его нет — «Visa Services Center».
   const pipelineName = await getLeadPipelineName(lead);
   const pipelineLow = String(pipelineName || "").toLowerCase().trim();
   const isSales = pipelineLow.indexOf("отдел продаж") === 0;
@@ -1932,6 +1933,14 @@ async function _resolveAmoTaskTarget(leadId) {
       const ktoNum = ktoRaw != null ? Number(ktoRaw) : NaN;
       if (Number.isFinite(ktoNum) && ktoNum > 0) responsibleUserId = ktoNum;
     }
+    // Поле «Кто принял клиента» пустое → ставим на ОТВЕТСТВЕННОГО по сделке,
+    // а не на служебного «Visa Services Center» (из-за этого задачи падали на VSC).
+    if (!responsibleUserId) {
+      const standardResp = lead && lead.responsible_user_id;
+      const standardNum = standardResp != null ? Number(standardResp) : NaN;
+      if (Number.isFinite(standardNum) && standardNum > 0) responsibleUserId = standardNum;
+    }
+    // Крайний случай (нет ни поля, ни ответственного) — служебный VSC.
     if (!responsibleUserId) {
       const vscId = await getVscUserId();
       if (vscId) responsibleUserId = vscId;
@@ -2458,7 +2467,7 @@ const UPLOAD_FIELDS_WHITELIST = {
   // обязана быть идентична label в buildUploadBlocksConfig (cabinet.html) и
   // buildUploadBlocksForApplicantStats (server.js), иначе ломается детект
   // «загружено» (startsWith(label)).
-  boardingPasses:       "Посадочные талоны и (или) иные подтверждения того, что вы использовали предыдущую визу.",
+  boardingPasses:       "Посадочные талоны и (или) иные подтверждения того, что вы использовали предыдущую визу",
   // ── Предподачные документы (этап «Подготовка документов», за 7 дней до
   // «Даты записи на подачу»). Названия БЕЗ «/» — иначе Я.Диск валит загрузку.
   // Строки обязаны совпадать с label в cabinet.html (детект «загружено» по startsWith).
@@ -3089,7 +3098,39 @@ ${mixedFieldsHtml}
     <!-- 24 -->
     <div class="field">
       <label>В какую страну запрашивается виза *</label>
-      <input type="text" name="visaCountry" required />
+      <select name="visaCountry" required>
+        <option value="">— выберите —</option>
+        <option value="Австрия">Австрия</option>
+        <option value="Бельгия">Бельгия</option>
+        <option value="Болгария">Болгария</option>
+        <option value="Венгрия">Венгрия</option>
+        <option value="Германия">Германия</option>
+        <option value="Греция">Греция</option>
+        <option value="Дания">Дания</option>
+        <option value="Исландия">Исландия</option>
+        <option value="Испания">Испания</option>
+        <option value="Италия">Италия</option>
+        <option value="Кипр">Кипр</option>
+        <option value="Латвия">Латвия</option>
+        <option value="Литва">Литва</option>
+        <option value="Лихтенштейн">Лихтенштейн</option>
+        <option value="Люксембург">Люксембург</option>
+        <option value="Мальта">Мальта</option>
+        <option value="Нидерланды">Нидерланды</option>
+        <option value="Норвегия">Норвегия</option>
+        <option value="Польша">Польша</option>
+        <option value="Португалия">Португалия</option>
+        <option value="Румыния">Румыния</option>
+        <option value="Словакия">Словакия</option>
+        <option value="Словения">Словения</option>
+        <option value="Финляндия">Финляндия</option>
+        <option value="Франция">Франция</option>
+        <option value="Хорватия">Хорватия</option>
+        <option value="Чехия">Чехия</option>
+        <option value="Швейцария">Швейцария</option>
+        <option value="Швеция">Швеция</option>
+        <option value="Эстония">Эстония</option>
+      </select>
     </div>
 
     <!-- 25 -->
@@ -3314,8 +3355,11 @@ ${mixedFieldsHtml}
           <input type="date" name="bookingDateFrom" />
           <input type="date" name="bookingDateTo" />
         </div>
+        <div id="botExtraRanges"></div>
+        <button type="button" id="botAddRangeBtn" style="display:none;margin-top:10px;background:#eef5fa;color:#3589BD;border:1px solid #cfe3f0;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer;">+ Добавить ещё диапазон</button>
+        <span class="hint" id="botRangeHint" style="display:none;color:#3589BD;font-weight:500;"></span>
       </div>
-      <div class="field">
+      <div class="field" id="f_bookingExclusions">
         <label>Исключения *</label>
         <input type="text" name="bookingExclusions" />
         <span class="hint">Даты и дни, когда Вы не сможете пойти на подачу</span>
@@ -3435,6 +3479,7 @@ ${mixedFieldsHtml}
     toggle("c_legalRep",          radio("isUnder18") === "Да");
     toggle("c_sponsorName",       radio("hasSponsor") === "Да");
     toggle("c_botBooking",        radio("useBotBooking") === "Да");
+    updateBotBooking();
     // «Я хочу приобрести страховку у вас» — показываем, если у клиента нет своей страховки.
     toggle("c_wantBuyInsurance",  radio("hasInsurance") === "Нет");
 
@@ -3457,6 +3502,109 @@ ${mixedFieldsHtml}
     // Биометрический паспорт — показ обязательных галочек-уведомлений по «Стране поездки».
     applyBiometricAckState();
   }
+
+  // ─── Запись ботом: зависимость от «В какую страну виза» + ограничения дат ───
+  // Франция: убираем «Исключения», один диапазон, поясняющий текст.
+  // Испания: убираем «Исключения», до 3 диапазонов (кнопка «Добавить ещё диапазон»).
+  // Прочие страны: всё как раньше (диапазон + исключения).
+  const BOT_TODAY = new Date().toISOString().slice(0, 10);
+  let botRangeCount = 1; // базовый диапазон уже есть в разметке
+
+  function wireBotDatePair(fromEl, toEl) {
+    if (!fromEl || !toEl) return;
+    fromEl.min = BOT_TODAY;                       // первая дата — не раньше сегодня
+    const sync = () => {
+      const minTo = fromEl.value || BOT_TODAY;
+      toEl.min = minTo;                           // вторая дата — не раньше первой
+      if (toEl.value && toEl.value < minTo) toEl.value = "";
+    };
+    fromEl.addEventListener("change", sync);
+    sync();
+  }
+
+  function botVisaCountry() {
+    const el = form.querySelector('[name="visaCountry"]');
+    return el ? (el.value || "") : "";
+  }
+
+  function updateBotAddRangeBtn() {
+    const btn = document.getElementById("botAddRangeBtn");
+    if (!btn) return;
+    const show = (radio("useBotBooking") === "Да") && botVisaCountry() === "Испания" && botRangeCount < 3;
+    btn.style.display = show ? "inline-block" : "none";
+  }
+
+  function addBotRange(prefFrom, prefTo) {
+    if (botRangeCount >= 3) return;
+    const idx = botRangeCount + 1; // 2 или 3
+    const cont = document.getElementById("botExtraRanges");
+    if (!cont) return;
+    const wrap = document.createElement("div");
+    wrap.className = "field";
+    wrap.style.marginTop = "10px";
+    wrap.innerHTML =
+      '<label>Диапазон записи ' + idx + '</label>' +
+      '<div class="date-row">' +
+      '<input type="date" name="bookingDateFrom' + idx + '" />' +
+      '<input type="date" name="bookingDateTo' + idx + '" />' +
+      '</div>';
+    cont.appendChild(wrap);
+    botRangeCount = idx;
+    const f = wrap.querySelector('input[name="bookingDateFrom' + idx + '"]');
+    const t = wrap.querySelector('input[name="bookingDateTo' + idx + '"]');
+    if (prefFrom) f.value = prefFrom;
+    if (prefTo) t.value = prefTo;
+    wireBotDatePair(f, t);
+    updateBotAddRangeBtn();
+  }
+
+  function clearBotExtraRanges() {
+    const cont = document.getElementById("botExtraRanges");
+    if (cont) cont.innerHTML = "";
+    botRangeCount = 1;
+  }
+
+  function updateBotBooking() {
+    const wantBot = radio("useBotBooking") === "Да";
+    const visa = botVisaCountry();
+    const isFrance = visa === "Франция";
+    const isSpain = visa === "Испания";
+
+    // «Исключения» — скрываем для Франции и Испании (без исключений).
+    const exclWrap = document.getElementById("f_bookingExclusions");
+    const exclInput = form.querySelector('input[name="bookingExclusions"]');
+    const hideExcl = wantBot && (isFrance || isSpain);
+    if (exclWrap) exclWrap.style.display = hideExcl ? "none" : "";
+    if (hideExcl && exclInput) exclInput.value = "";
+
+    // Поясняющий текст по стране.
+    const hint = document.getElementById("botRangeHint");
+    if (hint) {
+      if (wantBot && isFrance) {
+        hint.textContent = "При записи ботом на французскую визу вы можете выбрать только один диапазон, без исключений.";
+        hint.style.display = "block";
+      } else if (wantBot && isSpain) {
+        hint.textContent = "При записи ботом на испанскую визу вы можете выбрать не более трёх диапазонов записи, без исключений внутри них.";
+        hint.style.display = "block";
+      } else {
+        hint.style.display = "none";
+      }
+    }
+
+    // Доп. диапазоны — только для Испании. Для остальных убираем.
+    if (!(wantBot && isSpain)) clearBotExtraRanges();
+    updateBotAddRangeBtn();
+  }
+
+  // Инициализация бот-секции: ограничения дат базового диапазона + кнопка.
+  wireBotDatePair(
+    form.querySelector('input[name="bookingDateFrom"]'),
+    form.querySelector('input[name="bookingDateTo"]')
+  );
+  (function () {
+    const addBtn = document.getElementById("botAddRangeBtn");
+    if (addBtn) addBtn.addEventListener("click", function () { addBotRange("", ""); });
+  })();
 
   form.addEventListener("change", updateConditionals);
   // employerName / travelCountry — текстовые поля, нужно слушать input для мгновенной реакции.
@@ -3693,6 +3841,22 @@ ${mixedFieldsHtml}
     updateConditionals();
     // После prefill пересинхронизируем UI чек-бокса «не знаю дат» (скрытие/показ полей дат)
     applyTripDatesUnknownState();
+    // visaCountry стал выпадающим списком: если сохранённое (старое, «несписочное»)
+    // значение не совпадает ни с одним пунктом — добавляем его, чтобы не потерять.
+    if (PREFILL.visaCountry) {
+      const vsel = form.querySelector('select[name="visaCountry"]');
+      if (vsel) {
+        const want = String(PREFILL.visaCountry);
+        if (![].some.call(vsel.options, function (o) { return o.value === want; })) {
+          const o = document.createElement("option"); o.value = want; o.textContent = want; vsel.appendChild(o);
+        }
+        vsel.value = want;
+      }
+    }
+    // Доп. диапазоны записи (Испания) — восстанавливаем при правке.
+    if (PREFILL.bookingDateFrom2 || PREFILL.bookingDateTo2) addBotRange(PREFILL.bookingDateFrom2 || "", PREFILL.bookingDateTo2 || "");
+    if (PREFILL.bookingDateFrom3 || PREFILL.bookingDateTo3) addBotRange(PREFILL.bookingDateFrom3 || "", PREFILL.bookingDateTo3 || "");
+    updateBotBooking();
   }
 
   // Снимаем подсветку ошибки с поля при изменении/вводе
@@ -4840,7 +5004,13 @@ async function generateQuestionnairePdfBuffer(data) {
     if (data.bookingDateFrom || data.bookingDateTo) {
       drawRow("Диапазон записи", `${data.bookingDateFrom || "?"} — ${data.bookingDateTo || "?"}`);
     }
-    drawRow("Исключения", data.bookingExclusions);
+    if (data.bookingDateFrom2 || data.bookingDateTo2) {
+      drawRow("Диапазон записи 2", `${data.bookingDateFrom2 || "?"} — ${data.bookingDateTo2 || "?"}`);
+    }
+    if (data.bookingDateFrom3 || data.bookingDateTo3) {
+      drawRow("Диапазон записи 3", `${data.bookingDateFrom3 || "?"} — ${data.bookingDateTo3 || "?"}`);
+    }
+    if (data.bookingExclusions) drawRow("Исключения", data.bookingExclusions);
     drawRow("Город для записи", data.bookingCity);
     drawRow("Пожелания по датам записи", data.bookingTimePrefs);
     drawRow("Дополнительные услуги в ВЦ (бизнес-залы/ускоренные)", data.bookingLoungePrefs);
@@ -6226,7 +6396,7 @@ function buildUploadBlocksForApplicantStats(state, lead, stageIndex) {
     state.visitedSchengenAfterApr2026 === "Да" &&
     state.hadBorderStamps === "Нет"
   ) {
-    stage2.push({ field: "boardingPasses", label: "Посадочные талоны и (или) иные подтверждения того, что вы использовали предыдущую визу.", optional: true });
+    stage2.push({ field: "boardingPasses", label: "Посадочные талоны и (или) иные подтверждения того, что вы использовали предыдущую визу", optional: true });
   }
 
   if (includeAll) return stage0.concat(stage1).concat(stage2);
@@ -8404,6 +8574,10 @@ app.post(
         useBotBooking:              String(req.body.useBotBooking || "").trim(),
         bookingDateFrom:            String(req.body.bookingDateFrom || "").trim(),
         bookingDateTo:              String(req.body.bookingDateTo || "").trim(),
+        bookingDateFrom2:           String(req.body.bookingDateFrom2 || "").trim(),
+        bookingDateTo2:             String(req.body.bookingDateTo2 || "").trim(),
+        bookingDateFrom3:           String(req.body.bookingDateFrom3 || "").trim(),
+        bookingDateTo3:             String(req.body.bookingDateTo3 || "").trim(),
         bookingExclusions:          String(req.body.bookingExclusions || "").trim(),
         bookingCity:                String(req.body.bookingCity || "").trim(),
         bookingTimePrefs:           String(req.body.bookingTimePrefs || "").trim(),
