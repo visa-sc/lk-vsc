@@ -3023,7 +3023,15 @@ ${mixedFieldsHtml}
     <!-- 16 -->
     <div class="field">
       <label>Род занятий (занимаемая должность) *</label>
-      <input type="text" name="occupation" required />
+      <select name="occupation" required>
+        <option value="">— выберите —</option>
+        <option value="Работа по найму">Работа по найму</option>
+        <option value="Владелец бизнеса или ИП">Владелец бизнеса или ИП</option>
+        <option value="Самозанятый">Самозанятый</option>
+        <option value="Пенсионер">Пенсионер</option>
+        <option value="Учащийся">Учащийся</option>
+        <option value="Безработный">Безработный</option>
+      </select>
       <span class="hint">Вносится в анкету только при предоставлении подтверждающего документа (справки, документов на бизнес, пенсионного и т. д.)</span>
     </div>
 
@@ -3879,6 +3887,17 @@ ${mixedFieldsHtml}
           const o = document.createElement("option"); o.value = want; o.textContent = want; vsel.appendChild(o);
         }
         vsel.value = want;
+      }
+    }
+    // occupation тоже стал выпадающим списком — сохраняем старое значение при правке.
+    if (PREFILL.occupation) {
+      const osel = form.querySelector('select[name="occupation"]');
+      if (osel) {
+        const want = String(PREFILL.occupation);
+        if (![].some.call(osel.options, function (o) { return o.value === want; })) {
+          const o = document.createElement("option"); o.value = want; o.textContent = want; osel.appendChild(o);
+        }
+        osel.value = want;
       }
     }
     // Доп. диапазоны записи (Испания) — восстанавливаем при правке.
