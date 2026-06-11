@@ -565,6 +565,14 @@
     .corr-comment-btn, .corr-note-btn { height: 34px; padding: 0 14px; border: 1px solid #3589BD; background: #fff; color: #3589BD; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
     .corr-comment-btn:hover, .corr-note-btn:hover { background: #f0f7fc; }
 
+    /* ── База знаний ЛК ── */
+    .kb-intro { color: #6b7280; font-size: 13px; margin: 4px 0 14px; }
+    .kb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+    .kb-tile { display: block; text-decoration: none; background: #fff; border: 1px solid #e6e9f0; border-left: 4px solid #3589BD; border-radius: 14px; padding: 14px 16px; transition: box-shadow .15s var(--vsc-ease); }
+    .kb-tile:hover { box-shadow: 0 3px 12px rgba(20, 29, 69, .08); }
+    .kb-tile-t { font-size: 15px; font-weight: 700; color: #161d45; margin-bottom: 4px; }
+    .kb-tile-d { font-size: 12.5px; color: #6b7280; line-height: 1.4; }
+
     /* ── Кнопка раскрытия списка ── */
     .toggle-phones {
       margin-top: 18px;
@@ -738,6 +746,12 @@
         <button id="loginBtn" type="submit" class="login-btn">Войти</button>
       </form>
 
+      <form id="managerLoginForm" class="login-form-inner" style="display:none;">
+        <input id="mgrEmail" class="login-input" type="email" autocomplete="username" placeholder="Рабочий e-mail" />
+        <input id="mgrPass" class="login-input" type="password" autocomplete="current-password" placeholder="Пароль (придумайте при первом входе)" />
+        <button id="mgrLoginBtn" type="submit" class="login-btn">Войти</button>
+      </form>
+
       <button id="bioLoginBtn" type="button" class="bio-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 11a3 3 0 0 0-3 3v1m6-1v3a3 3 0 0 1-6 0M6 11a6 6 0 0 1 12 0v3m-9 4a3 3 0 0 0 6 0M5 8a8 8 0 0 1 14 0M5 14v1a8 8 0 0 0 .35 2.34" />
@@ -767,6 +781,7 @@
       <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
       <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
       <button type="button" class="tab-btn" data-tab="corrections">Корректировки ЛК</button>
+      <button type="button" class="tab-btn" data-tab="kb">База знаний ЛК</button>
     </div>
 
     <!-- Обособленный блок «Конверсия авторизаций по оплаченным сделкам».
@@ -812,6 +827,12 @@
       </div>
     </div>
 
+    <div id="panelKb" class="panel">
+      <div id="kbContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
     <div class="footer-logout">
       <button id="logoutBtn" type="button" class="logout-btn">Выйти</button>
     </div>
@@ -819,7 +840,8 @@
 
   <script>
     (function() {
-      const TOKEN_KEY = "voyo_admin_token";
+      const IS_TEAM = location.pathname.replace(/\/+$/, "") === "/team";
+      const TOKEN_KEY = IS_TEAM ? "voyo_team_token" : "voyo_admin_token";
       // Кэш «на этом устройстве кнопка Face ID должна быть видна» — выставляется
       // после успешной аутентификации/регистрации passkey, чтобы при следующих
       // заходах кнопка появлялась СИНХРОННО на render'е, без ожидания async-
@@ -851,6 +873,8 @@
       const trafficContent = document.getElementById("trafficContent");
       const panelCorrections = document.getElementById("panelCorrections");
       const correctionsContent = document.getElementById("correctionsContent");
+      const panelKb = document.getElementById("panelKb");
+      const kbContent = document.getElementById("kbContent");
       const authDailyBlock = document.getElementById("authDailyBlock");
 
       let activeTab = "stats";
@@ -899,18 +923,69 @@
       function showLogin() {
         loginBlock.style.display = "";
         dashBlock.classList.remove("show");
-        codeInput.value = "";
         bioOffer.classList.remove("show");
         stopPolling();
+        if (IS_TEAM) return; // на портале руководителей форма уже настроена (email+пароль)
+        codeInput.value = "";
         // Оптимистично показываем кнопку из кэша СРАЗУ, чтобы она не «пропадала»
-        // на время async-проверки. Реальная сверка идёт в tryAutoBioOnLoad()
-        // и при необходимости поправит видимость + кэш.
+        // на время async-проверки. Реальная сверка идёт в tryAutoBioOnLoad().
         if (getBioShowCache()) applyBioBtnVisibility(true);
+      }
+      function currentRole() { return IS_TEAM ? "manager" : "admin"; }
+      function applyRoleUI() {
+        const mgr = currentRole() === "manager";
+        tabBtns.forEach((b) => {
+          const t = b.dataset.tab;
+          const allowed = mgr ? (t === "corrections" || t === "kb") : true;
+          b.style.display = allowed ? "" : "none";
+        });
+        if (mgr) {
+          const pc = document.getElementById("paidConvBlock"); if (pc) pc.style.display = "none";
+          const ad = document.getElementById("authDailyBlock"); if (ad) ad.style.display = "none";
+        }
+      }
+      function setupManagerLoginUI() {
+        const sub = document.querySelector("#loginBlock .sub"); if (sub) sub.textContent = "Вход для руководителей";
+        const cf = document.getElementById("loginForm"); if (cf) cf.style.display = "none";
+        const bb = document.getElementById("bioLoginBtn"); if (bb) bb.style.display = "none";
+        const mf = document.getElementById("managerLoginForm"); if (mf) mf.style.display = "";
+      }
+      function renderKb() {
+        if (!kbContent) return;
+        const tk = encodeURIComponent(getToken());
+        const links = [
+          { t: "Карта статусов", d: "Какой статус amoCRM → этап в ЛК (генерируется из кода).", u: "/admin/kb/statuses" },
+          { t: "Карта документов", d: "Какие документы, на каком этапе, что обязательно.", u: "/admin/kb/documents" },
+          { t: "Как работает ЛК", d: "Поведение по этапам, от чего зависит (фильтр по этапам).", u: "/admin/kb/logic" },
+          { t: "Что изменилось", d: "Лента реализованных корректировок.", u: "/admin/kb/changelog" }
+        ];
+        kbContent.innerHTML = '<p class="kb-intro">Открываются в новой вкладке. Информация всегда актуальная — генерируется из текущего кода ЛК, обновлять вручную не нужно.</p>';
+        const grid = document.createElement("div"); grid.className = "kb-grid";
+        links.forEach((l) => {
+          const a = document.createElement("a");
+          a.className = "kb-tile"; a.href = l.u + "?token=" + tk; a.target = "_blank"; a.rel = "noopener";
+          a.innerHTML = '<div class="kb-tile-t">' + escapeHtml(l.t) + '</div><div class="kb-tile-d">' + escapeHtml(l.d) + '</div>';
+          grid.appendChild(a);
+        });
+        kbContent.appendChild(grid);
       }
       function showDash() {
         loginBlock.style.display = "none";
         dashBlock.classList.add("show");
         bioOffer.classList.remove("show");
+        applyRoleUI();
+        if (currentRole() === "manager") {
+          activeTab = "corrections";
+          tabBtns.forEach((x) => x.classList.toggle("active", x.dataset.tab === "corrections"));
+          panelStats.classList.remove("show"); panelStages.classList.remove("show");
+          panelSurveys.classList.remove("show"); panelTraffic.classList.remove("show");
+          if (panelKb) panelKb.classList.remove("show");
+          panelCorrections.classList.add("show");
+          applyPaidConvVisibility();
+          loadCorrections();
+          startPolling();
+          return;
+        }
         loadStats();
         loadPaidConvStats();
         loadAuthDaily();
@@ -1242,6 +1317,7 @@
           panelSurveys.classList.toggle("show", which === "surveys");
           panelTraffic.classList.toggle("show", which === "traffic");
           panelCorrections.classList.toggle("show", which === "corrections");
+          panelKb.classList.toggle("show", which === "kb");
           applyPaidConvVisibility();
           if (which === "surveys") {
             loadSurveys();
@@ -1258,6 +1334,9 @@
           } else if (which === "corrections") {
             loadCorrections();
             startPolling();
+          } else if (which === "kb") {
+            renderKb();
+            startPolling();
           }
         });
       });
@@ -1269,6 +1348,7 @@
         if (statsPollTimer) return;
         statsPollTimer = setInterval(() => {
           if (document.hidden) return;
+          if (currentRole() === "manager") { loadCorrections({ silent: true }); return; }
           if (activeTab === "stats") loadStats({ silent: true });
           else if (activeTab === "stages") loadStages({ silent: true });
           else if (activeTab === "surveys") loadSurveys({ silent: true });
@@ -1283,6 +1363,7 @@
       }
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) return;
+        if (currentRole() === "manager") { loadCorrections({ silent: true }); return; }
         if (activeTab === "stats") loadStats({ silent: true });
         else if (activeTab === "stages") loadStages({ silent: true });
         else if (activeTab === "surveys") loadSurveys({ silent: true });
@@ -1432,8 +1513,11 @@
       function buildCorrForm() {
         const f = document.createElement("div");
         f.className = "corr-form";
+        const authorRow = currentRole() === "admin"
+          ? '<div class="corr-f-row"><label>Автор / отдел</label><input class="corr-i" data-k="author" placeholder="Напр.: ОО (Плинер)"></div>'
+          : '';
         f.innerHTML =
-          '<div class="corr-f-row"><label>Автор / отдел</label><input class="corr-i" data-k="author" placeholder="Напр.: ОО (Плинер)"></div>' +
+          authorRow +
           '<div class="corr-f-row"><label>Раздел ЛК</label><select class="corr-i" data-k="area"><option value="">— выберите —</option>' +
           CORR_AREAS.map((a) => '<option>' + escapeHtml(a) + '</option>').join('') + '</select></div>' +
           '<div class="corr-f-row"><label>Что нужно / что не так *</label><textarea class="corr-i" data-k="what" rows="3" placeholder="Опишите корректировку максимально конкретно"></textarea></div>' +
@@ -1499,6 +1583,7 @@
         }
 
         const ctrl = document.createElement("div"); ctrl.className = "corr-ctrl";
+        if (currentRole() === "admin") {
         const sel = document.createElement("select"); sel.className = "corr-status-sel";
         Object.keys(CORR_STATUS).forEach((k) => { const o = document.createElement("option"); o.value = k; o.textContent = CORR_STATUS[k].label; if (k === it.status) o.selected = true; sel.appendChild(o); });
         sel.addEventListener("change", async () => {
@@ -1517,6 +1602,7 @@
             catch (e) { alert(e.message || "Ошибка"); nb.disabled = false; }
           });
           ctrl.appendChild(ni); ctrl.appendChild(nb);
+        }
         }
 
         const ci = document.createElement("input"); ci.className = "corr-comment-input"; ci.placeholder = "Комментарий / уточнение…";
@@ -2339,6 +2425,28 @@
       }
 
       // Старт
+      // Вход руководителя (портал /team): e-mail + пароль (первый вход = задание пароля).
+      const managerLoginForm = document.getElementById("managerLoginForm");
+      if (managerLoginForm) {
+        managerLoginForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const email = (document.getElementById("mgrEmail").value || "").trim();
+          const pass = document.getElementById("mgrPass").value || "";
+          if (!email || !pass) { showLoginError("Введите e-mail и пароль"); return; }
+          try {
+            const r = await fetch("/admin/api/manager-login", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: email, password: pass })
+            });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok || !data.success) { showLoginError(data.message || "Не удалось войти"); return; }
+            setToken(data.token);
+            showDash();
+          } catch (_) { showLoginError("Сетевая ошибка"); }
+        });
+      }
+
       (async function bootstrap() {
         // Каждый заход на /admin требует свежей аутентификации — Face ID/Touch ID
         // (если passkey зарегистрирован) или код. Старый admin-токен из
@@ -2348,6 +2456,16 @@
         // остаётся — он создаётся при успешной аутентификации и используется
         // для API-запросов из дашборда (polling и т. д.) в рамках открытой
         // страницы. Закрытие/обновление вкладки → снова требуется auth.
+        if (IS_TEAM) {
+          // Портал руководителей: вход по e-mail+пароль, сессия живёт (до 30 дней).
+          setupManagerLoginUI();
+          const t = getToken();
+          if (t) {
+            try { const d = await apiFetch("/admin/api/whoami"); if (d && d.success) { showDash(); return; } } catch (_) {}
+          }
+          showLogin();
+          return;
+        }
         clearToken();
         showLogin();
         await tryAutoBioOnLoad();

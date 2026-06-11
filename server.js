@@ -177,9 +177,10 @@ app.get("/about/v1", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "about-v1.html"));
 });
 
-app.get("/admin", (req, res) => {
+app.get(["/admin", "/team"], (req, res) => {
   // Не кешируем — админка часто меняется, не хочется получать stale HTML/CSS
   // в Safari/Chrome (особенно на iOS). Снимаем и ETag, чтобы не возвращался 304.
+  // /team — портал руководителей (тот же файл, вход email+пароль, ролевой UI).
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.set("Pragma", "no-cache");
   res.set("Expires", "0");
@@ -709,6 +710,121 @@ app.get("/admin/api/surveys/download", requireAdmin, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// Доступы руководителей (разделы «Корректировки ЛК» + «База знаний ЛК»).
+// Отдельный вход email+пароль (первый вход = задание пароля). Только e-mail из
+// списка приглашённых (lkManagers.seed.json). Сессии отдельные от админских.
+// requireStaff = админ (код 250960) ИЛИ руководитель. Админ-вход не меняется.
+// ─────────────────────────────────────────────────────────────────────────
+const LK_MANAGERS_FILE = path.join(__dirname, ".lkManagers.json");
+const LK_MANAGERS_SEED = path.join(__dirname, "lkManagers.seed.json");
+const MANAGER_SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 дней
+const managerSessions = new Map(); // token -> { email, name, exp }
+let lkManagers = null; // { email: { name, salt, hash, createdAt, lastLoginAt } }
+
+function saveManagers() {
+  try { fs.writeFileSync(LK_MANAGERS_FILE, JSON.stringify(lkManagers || {}, null, 2), "utf8"); }
+  catch (e) { console.error("saveManagers error:", e.message); }
+}
+function loadManagers() {
+  if (lkManagers) return lkManagers;
+  lkManagers = {};
+  try {
+    if (fs.existsSync(LK_MANAGERS_FILE)) {
+      lkManagers = JSON.parse(fs.readFileSync(LK_MANAGERS_FILE, "utf8")) || {};
+    }
+    // Досеваем e-mail из seed (приглашённые добавляются туда), обновляем имена.
+    if (fs.existsSync(LK_MANAGERS_SEED)) {
+      const seed = JSON.parse(fs.readFileSync(LK_MANAGERS_SEED, "utf8")) || [];
+      let changed = false;
+      seed.forEach((m) => {
+        const email = String(m.email || "").toLowerCase().trim();
+        if (!email) return;
+        if (!lkManagers[email]) { lkManagers[email] = { name: m.name || email, salt: "", hash: "", createdAt: "", lastLoginAt: "" }; changed = true; }
+        else if (m.name && lkManagers[email].name !== m.name) { lkManagers[email].name = m.name; changed = true; }
+      });
+      if (changed) saveManagers();
+    }
+  } catch (e) { console.error("loadManagers error:", e.message); }
+  return lkManagers;
+}
+function hashPassword(password, salt) {
+  return crypto.scryptSync(String(password), salt, 64).toString("hex");
+}
+function createManagerSession(email, name) {
+  const token = crypto.randomBytes(24).toString("hex");
+  managerSessions.set(token, { email, name, exp: Date.now() + MANAGER_SESSION_TTL_MS });
+  return token;
+}
+function getManagerSession(token) {
+  if (!token || typeof token !== "string") return null;
+  const s = managerSessions.get(token);
+  if (!s) return null;
+  if (Date.now() > s.exp) { managerSessions.delete(token); return null; }
+  return s;
+}
+// Роль запроса: админ (полный доступ) ИЛИ руководитель. Токен из заголовка или ?token=.
+function getStaffFromReq(req) {
+  const headerToken = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  const queryToken = String(req.query.token || "").trim();
+  const token = headerToken || queryToken;
+  if (isAdminTokenValid(token)) return { role: "admin", name: "Админ", token };
+  const m = getManagerSession(token);
+  if (m) return { role: "manager", name: m.name, email: m.email, token };
+  return null;
+}
+function requireStaff(req, res, next) {
+  const s = getStaffFromReq(req);
+  if (!s) return res.status(401).json({ success: false, message: "Не авторизован" });
+  req.staff = s;
+  next();
+}
+
+app.post("/admin/api/manager-login", (req, res) => {
+  const ip = getClientIp(req);
+  const limit = checkAdminLoginRateLimit(ip);
+  if (!limit.ok) return res.status(429).json({ success: false, message: limit.message });
+  const email = String((req.body && req.body.email) || "").toLowerCase().trim();
+  const password = String((req.body && req.body.password) || "");
+  if (!email || !password) return res.status(400).json({ success: false, message: "Введите e-mail и пароль" });
+  const mgrs = loadManagers();
+  const acc = mgrs[email];
+  if (!acc) { recordAdminLoginFail(ip); return res.status(403).json({ success: false, message: "Нет доступа для этого e-mail" }); }
+  if (!acc.hash) {
+    // Первый вход — задаём пароль.
+    if (password.length < 6) return res.status(400).json({ success: false, message: "Придумайте пароль не короче 6 символов" });
+    acc.salt = crypto.randomBytes(16).toString("hex");
+    acc.hash = hashPassword(password, acc.salt);
+    acc.createdAt = new Date().toISOString();
+    acc.lastLoginAt = acc.createdAt;
+    saveManagers();
+    const token = createManagerSession(email, acc.name);
+    return res.json({ success: true, token, role: "manager", name: acc.name, firstLogin: true });
+  }
+  // Обычный вход — проверяем пароль (constant-time).
+  let ok = false;
+  try {
+    const a = Buffer.from(hashPassword(password, acc.salt), "hex");
+    const b = Buffer.from(acc.hash, "hex");
+    ok = a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch (_) { ok = false; }
+  if (!ok) { recordAdminLoginFail(ip); return res.status(403).json({ success: false, message: "Неверный e-mail или пароль" }); }
+  acc.lastLoginAt = new Date().toISOString();
+  saveManagers();
+  const token = createManagerSession(email, acc.name);
+  return res.json({ success: true, token, role: "manager", name: acc.name });
+});
+
+app.post("/admin/api/manager-logout", requireStaff, (req, res) => {
+  if (req.staff && req.staff.token) managerSessions.delete(req.staff.token);
+  return res.json({ success: true });
+});
+
+// «Кто я» — роль + имя (для фронта). Принимает админский и менеджерский токен.
+app.get("/admin/api/whoami", requireStaff, (req, res) => {
+  return res.json({ success: true, role: req.staff.role, name: req.staff.name });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // Раздел «Корректировки ЛК» (админка). Приём корректировок от руководителей:
 // структурированные заявки + статусы + тред-комментарии. Хранение — JSON-файл
 // (рантайм .lkCorrections.json; при отсутствии инициализируется из коммита
@@ -750,26 +866,29 @@ function corrText(s, max) {
   return String(s == null ? "" : s).trim().slice(0, max || 4000);
 }
 
-app.get("/admin/api/corrections", requireAdmin, (req, res) => {
+app.get("/admin/api/corrections", requireStaff, (req, res) => {
   try {
-    return res.json({ success: true, items: loadCorrections() });
+    return res.json({ success: true, items: loadCorrections(), me: { role: req.staff.role, name: req.staff.name } });
   } catch (e) {
     return res.status(500).json({ success: false, message: "Ошибка" });
   }
 });
 
-app.post("/admin/api/corrections", requireAdmin, (req, res) => {
+app.post("/admin/api/corrections", requireStaff, (req, res) => {
   try {
     const b = req.body || {};
     const what = corrText(b.what, 6000);
     if (!what) return res.status(400).json({ success: false, message: "Заполните поле «Что нужно»" });
     loadCorrections();
     const now = Date.now();
+    // Для руководителя автор = его имя из аккаунта (поле в форме скрыто).
+    // Админ может указать автора вручную.
+    const author = req.staff.role === "manager" ? req.staff.name : corrText(b.author, 120);
     const item = {
       id: "c" + now + Math.floor(Math.random() * 1000),
       ts: now,
       createdAt: new Date(now).toISOString(),
-      author: corrText(b.author, 120),
+      author: author,
       area: corrText(b.area, 200),
       what,
       expected: corrText(b.expected, 4000),
@@ -814,7 +933,7 @@ app.post("/admin/api/corrections/:id/update", requireAdmin, (req, res) => {
   }
 });
 
-app.post("/admin/api/corrections/:id/comment", requireAdmin, (req, res) => {
+app.post("/admin/api/corrections/:id/comment", requireStaff, (req, res) => {
   try {
     loadCorrections();
     const it = lkCorrections.find((x) => x && x.id === String(req.params.id));
@@ -823,13 +942,177 @@ app.post("/admin/api/corrections/:id/comment", requireAdmin, (req, res) => {
     const text = corrText(b.text, 4000);
     if (!text) return res.status(400).json({ success: false, message: "Пустой комментарий" });
     if (!Array.isArray(it.comments)) it.comments = [];
-    it.comments.push({ ts: Date.now(), author: corrText(b.author, 120), text });
+    it.comments.push({ ts: Date.now(), author: req.staff.name || corrText(b.author, 120), text });
     saveCorrections();
     return res.json({ success: true, item: it });
   } catch (e) {
     console.error("comment correction error:", e.message);
     return res.status(500).json({ success: false, message: "Ошибка" });
   }
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// База знаний ЛК. Живые HTML-страницы — генерятся из кода/данных в момент
+// открытия (всегда актуально, файлы не хранятся). Доступ: requireStaff
+// (токен в заголовке или ?token= — чтобы открывать в новой вкладке).
+// ═════════════════════════════════════════════════════════════════════════
+function kbEsc(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function kbPage(title, bodyHtml) {
+  const now = new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
+  return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${kbEsc(title)} · VOYO ЛК</title>
+<style>
+:root{--navy:#161d45;--blue:#3589BD;}
+*{box-sizing:border-box;} body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#23272f;line-height:1.5;max-width:1000px;margin:0 auto;padding:24px 18px 70px;background:#f6f7f9;}
+h1{font-size:23px;color:var(--navy);margin:0 0 4px;} h2{font-size:18px;color:var(--navy);margin:26px 0 8px;padding-bottom:6px;border-bottom:2px solid #e6e9f0;}
+h3{font-size:15px;color:var(--navy);margin:16px 0 6px;} p{margin:7px 0;} .sub{color:#6b7280;margin:0 0 14px;font-size:13px;}
+table{width:100%;border-collapse:collapse;margin:8px 0;background:#fff;font-size:13.5px;} th,td{border:1px solid #e6e9f0;padding:7px 10px;text-align:left;vertical-align:top;}
+th{background:var(--navy);color:#fff;font-weight:600;font-size:12.5px;} tr:nth-child(even) td{background:#fafbfc;}
+.card{background:#fff;border:1px solid #e6e9f0;border-radius:14px;padding:14px 16px;margin:12px 0;}
+.badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap;}
+.b-req{background:#fbebee;color:#7a2d39;border:1px solid #efcfd5;} .b-opt{background:#f0f7fc;color:#1d4d72;border:1px solid #d3e7f4;}
+.muted{color:#9aa0ab;font-size:12px;} ul{margin:6px 0;padding-left:20px;} li{margin:4px 0;}
+.filt{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 6px;} .filt button{border:1px solid #cfd8e3;background:#fff;color:#33415a;border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer;font-family:inherit;} .filt button.active{background:var(--blue);color:#fff;border-color:var(--blue);}
+.upd{color:#9aa0ab;font-size:11px;margin-top:24px;border-top:1px dashed #e0e3ea;padding-top:10px;}
+@media print{body{background:#fff;padding:0;} .filt{display:none;} tr{page-break-inside:avoid;} h2{page-break-after:avoid;}}
+</style></head><body>
+${bodyHtml}
+<div class="upd">Сгенерировано из текущего кода ЛК · ${now} (МСК). Страница всегда отражает актуальную логику — обновлять вручную не нужно.</div>
+</body></html>`;
+}
+
+// ── Карта статусов (полностью авто из STATUS_MAP / CABINET_STAGES) ──
+app.get("/admin/kb/statuses", requireStaff, (req, res) => {
+  try {
+    let b = `<h1>Карта статусов</h1><p class="sub">Какой статус сделки в amoCRM → какой этап показывается клиенту в ЛК. Генерируется из кода — всегда актуально.</p>`;
+    b += `<div class="card"><b>Этапы ЛК по порядку:</b><br>` + CABINET_STAGES.map((s, i) => `${i}. ${kbEsc(s)}`).join(" · ") + `</div>`;
+    Object.keys(STATUS_MAP).forEach((pipeline) => {
+      b += `<h2>${kbEsc(pipeline)}</h2><table><tr><th>Статус сделки (amoCRM)</th><th>Этап в ЛК</th></tr>`;
+      const st = STATUS_MAP[pipeline];
+      Object.keys(st).forEach((status) => {
+        const v = st[status];
+        const target = v.hidden ? '<span class="muted">скрыт в ЛК</span>' : kbEsc(v.client_status || "—");
+        b += `<tr><td>${kbEsc(status)}</td><td>${target}</td></tr>`;
+      });
+      b += `</table>`;
+    });
+    b += `<div class="card muted">Особый случай: «Электронное рассмотрение» (Отдел Оформления) обычно → «Рассмотрение», но если «Страна оформления/услуга» в CRM = США/Великобритания → «Подготовка документов».</div>`;
+    res.set("Content-Type", "text/html; charset=utf-8");
+    return res.send(kbPage("Карта статусов", b));
+  } catch (e) { return res.status(500).send("Ошибка генерации страницы"); }
+});
+
+// ── Карта документов (по этапам; источник правды — логика ЛК) ──
+const KB_DOC_GROUPS = [
+  { stage: "Начало оформления (этап 0)", note: "Показывается всегда, обеим визам.", docs: [
+    { n: "Внутренний паспорт (1-й разворот, прописка, последний разворот)", c: "всегда", r: true },
+    { n: "Загран. паспорт (в который запрашиваем визу)", c: "всегда", r: true }
+  ]},
+  { stage: "Первичный сбор документов (этап 1) — Шенген", docs: [
+    { n: "Электронное фото", c: "если «Страна оформления/услуга» в amoCRM = Испания / Португалия / Кипр (берётся из CRM, не из опросника)", r: true },
+    { n: "Приглашение", c: "если цель поездки ≠ Туризм", r: true }
+  ]},
+  { stage: "Первичный сбор документов (этап 1) — Япония", docs: [
+    { n: "Приглашение + План поездки", c: "если цель поездки ≠ Туризм", r: true },
+    { n: "Авиабилеты", c: "если есть свои авиабилеты", r: true },
+    { n: "Внутр. паспорт спонсора", c: "если поездку оплачивает спонсор", r: true },
+    { n: "Свидетельство о рождении", c: "если заявителю < 18", r: true },
+    { n: "Справка с работы", c: "если род занятий = «Работа по найму»", r: true },
+    { n: "Справка с учёбы", c: "если род занятий = «Учащийся»", r: true }
+  ]},
+  { stage: "Подготовка документов (этап 2) — Шенген, обычный список", docs: [
+    { n: "Фото действующей шенгенской визы", c: "если есть действующая виза", r: true },
+    { n: "Фото последней шенгенской визы", c: "если были визы за 3 года", r: true },
+    { n: "Внутр. паспорт спонсора или Спонсорское письмо", c: "если спонсируют", r: true },
+    { n: "Свидетельство о рождении", c: "если < 18", r: true },
+    { n: "2-й загран. паспорт", c: "если есть 2-й загран", r: true },
+    { n: "Своё проживание (бронь/аренда/собственность)", c: "если своё проживание", r: true },
+    { n: "Свои авиабилеты / транспорт", c: "если свой транспорт", r: true },
+    { n: "Билеты в третью страну", c: "если 2-й загран + не сдаёт действующий + причина «третья страна»", r: true },
+    { n: "ВНЖ или регистрация", c: "если не гражданин РФ", r: true },
+    { n: "Справка с работы или учёбы", c: "если указан работодатель/учёба (≠ «НЕТ»)", r: true },
+    { n: "Страховой полис для въезда в Шенген", c: "если есть своя страховка", r: true },
+    { n: "Посадочные талоны и (или) иные подтверждения использования визы", c: "если посещал Шенген после 10.04.2026 и штампы не ставили", r: true }
+  ]},
+  { stage: "Подготовка документов — подобласть «Документы для проверки перед подачей»", note: "Появляется за 7 дней до поля сделки «Дата записи на подачу». Деление обяз/необяз — красным/синим.", docs: [
+    { n: "Справка из банка об остатке средств", c: "всем; необяз. если спонсируют", r: true },
+    { n: "Выписка (детализация) по счёту", c: "всем; необяз. если спонсируют", r: true },
+    { n: "Документы на ИП", c: "если род занятий = ИП", r: true },
+    { n: "Справка из учебного заведения", c: "если «Учащийся»", r: true },
+    { n: "Пенсионное удостоверение или справка о пенсии", c: "если «Пенсионер»", r: true },
+    { n: "Справка о самозанятости", c: "если «Самозанятый»", r: true },
+    { n: "Справка из банка от спонсора / Выписка по счёту спонсора / Внутр. паспорт спонсора", c: "если спонсируют", r: true },
+    { n: "Внутренние паспорта родителей", c: "если < 18", r: true },
+    { n: "Справка с места работы спонсора", c: "если спонсируют", r: false },
+    { n: "Согласие на выезд ребёнка", c: "если < 18", r: false },
+    { n: "Электронная выписка из ПФР", c: "всем", r: false },
+    { n: "Справка 2-НДФЛ", c: "всем", r: false }
+  ]},
+  { stage: "Ожидание подачи (этап 3) и далее", note: "Загрузки документов нет — пакет собран. На «Ожидание подачи» клиенту выдаются готовые документы для скачивания.", docs: [] }
+];
+app.get("/admin/kb/documents", requireStaff, (req, res) => {
+  try {
+    let b = `<h1>Карта документов</h1><p class="sub">Какие документы и на каком этапе запрашиваются у клиента, и что обязательно. <span class="badge b-req">обязательный</span> · <span class="badge b-opt">необязательный</span></p>`;
+    KB_DOC_GROUPS.forEach((g) => {
+      b += `<h2>${kbEsc(g.stage)}</h2>`;
+      if (g.note) b += `<p class="sub">${kbEsc(g.note)}</p>`;
+      if (g.docs.length) {
+        b += `<table><tr><th>Документ</th><th>Когда (условие)</th><th>Статус</th></tr>`;
+        g.docs.forEach((d) => { b += `<tr><td>${kbEsc(d.n)}</td><td>${kbEsc(d.c)}</td><td><span class="badge ${d.r ? "b-req" : "b-opt"}">${d.r ? "обяз." : "необяз."}</span></td></tr>`; });
+        b += `</table>`;
+      }
+    });
+    b += `<p class="muted">Необязательные в подобласли «перед подачей» помечены: «В вашем случае может быть не обязательным документом. Уточните у менеджера.»</p>`;
+    res.set("Content-Type", "text/html; charset=utf-8");
+    return res.send(kbPage("Карта документов", b));
+  } catch (e) { return res.status(500).send("Ошибка генерации страницы"); }
+});
+
+// ── Полная логика ЛК + поведение по этапам (фильтр) ──
+const KB_LOGIC_STAGES = [
+  { key: "Начало оформления", sees: "Загрузка 2 паспортов (внутренний + загран). Возможность заполнить опросник (паспорта можно загрузить и до опросника — тогда спросим ФИО).", dep: ["Этап определяется статусом сделки в amoCRM (см. «Карту статусов»).", "Опросник: Шенген или Япония — по полю визы."] },
+  { key: "Первичный сбор документов", sees: "Паспорта (этап 0) + первый набор условных документов по ответам опросника.", dep: ["Состав документов зависит от ответов опросника и от поля CRM «Страна оформления/услуга» (электронное фото).", "Все условные документы сейчас обязательны."] },
+  { key: "Подготовка документов", sees: "Документы этапов 0–1 + второй набор условных документов (кумулятивно). За 7 дней до «Даты записи на подачу» появляется подобласть «Документы для проверки перед подачей» (красным — обязательные, синим — нет).", dep: ["Сюда же ведут статусы «Ожидает записи через Бота», «Запись сделана» и т.д. (см. «Карту статусов»).", "Подобласть «перед подачей» — по полю сделки «Дата записи на подачу» (−7 дней). Если поле пустое — подобласти нет.", "Пока обязательные в подобласли не загружены — точка этапа жёлтая."] },
+  { key: "Ожидание подачи", sees: "Документы клиент больше не грузит. Вместо этого видит блок «Ваши готовые документы» — список по заявителям с кнопками «Скачать» и «Скачать все документы».", dep: ["Готовые документы кладёт отдел оформления в папку сделки на Я.Диске.", "Блок виден на статусах: «Документы готовы к личной подаче», «Ожидает передачи на рассмотрение в Консульство», «Передано Клиенту для личной подачи»."] },
+  { key: "Оформление на паузе", sees: "Информационный статус «на паузе».", dep: ["Статусы «На паузе по просьбе Клиента», «Ожидает решения о возврате»."] },
+  { key: "Рассмотрение", sees: "Информация, что документы на рассмотрении в Консульстве.", dep: ["Статусы «На рассмотрении в Консульстве», «Документы поданы лично», «Электронное рассмотрение»."] },
+  { key: "Паспорт готов", sees: "Сообщение, что паспорт готов.", dep: ["Статус «Паспорт готов»."] },
+  { key: "Обращение исполнено", sees: "Обращение завершено.", dep: ["Статусы «Успешно реализовано», «Возврат»."] }
+];
+app.get("/admin/kb/logic", requireStaff, (req, res) => {
+  try {
+    let b = `<h1>Как работает клиентский ЛК</h1><p class="sub">Поведение по этапам: что видит клиент и от чего это зависит. Для не-технических сотрудников. Фильтр по этапу:</p>`;
+    b += `<div class="filt"><button class="active" data-f="all">Все этапы</button>` + KB_LOGIC_STAGES.map((s, i) => `<button data-f="${i}">${kbEsc(s.key)}</button>`).join("") + `</div>`;
+    KB_LOGIC_STAGES.forEach((s, i) => {
+      b += `<div class="card kb-stage" data-i="${i}"><h3>${kbEsc(s.key)}</h3><p><b>Что видит клиент:</b> ${kbEsc(s.sees)}</p><p><b>От чего зависит / нюансы:</b></p><ul>` + s.dep.map((d) => `<li>${kbEsc(d)}</li>`).join("") + `</ul></div>`;
+    });
+    b += `<div class="card muted">Общая механика: этап в ЛК определяется статусом сделки в amoCRM (см. «Карту статусов»). Состав документов — ответами опросника + полем «Страна оформления/услуга». Это «как задумано и проверено»; при правках страница обновляется автоматически.</div>`;
+    b += `<script>(function(){var btns=document.querySelectorAll('.filt button');var cards=document.querySelectorAll('.kb-stage');btns.forEach(function(btn){btn.addEventListener('click',function(){btns.forEach(function(x){x.classList.remove('active');});btn.classList.add('active');var f=btn.dataset.f;cards.forEach(function(c){c.style.display=(f==='all'||c.dataset.i===f)?'':'none';});});});})();</script>`;
+    res.set("Content-Type", "text/html; charset=utf-8");
+    return res.send(kbPage("Как работает ЛК", b));
+  } catch (e) { return res.status(500).send("Ошибка генерации страницы"); }
+});
+
+// ── Что изменилось (changelog) — из реализованных корректировок ──
+app.get("/admin/kb/changelog", requireStaff, (req, res) => {
+  try {
+    const items = (loadCorrections() || []).filter((x) => x && x.status === "done");
+    items.sort((a, b) => String(b.resolvedAt || "").localeCompare(String(a.resolvedAt || "")) || (b.ts || 0) - (a.ts || 0));
+    let b = `<h1>Что изменилось в ЛК</h1><p class="sub">Лента реализованных корректировок (из раздела «Корректировки ЛК»). Обновляется автоматически.</p>`;
+    if (!items.length) { b += `<div class="card muted">Пока нет реализованных корректировок.</div>`; }
+    else {
+      b += `<table><tr><th>Дата</th><th>Что сделано</th><th>Примечание</th><th>Автор</th></tr>`;
+      items.forEach((it) => {
+        const date = String(it.resolvedAt || it.createdAt || "").slice(0, 10).split("-").reverse().join(".");
+        b += `<tr><td>${kbEsc(date)}</td><td>${kbEsc(it.what || "")}</td><td>${kbEsc(it.note || "")}</td><td>${kbEsc(it.author || "")}</td></tr>`;
+      });
+      b += `</table>`;
+    }
+    res.set("Content-Type", "text/html; charset=utf-8");
+    return res.send(kbPage("Что изменилось", b));
+  } catch (e) { return res.status(500).send("Ошибка генерации страницы"); }
 });
 
 app.post("/api/auth/verify", smsGate, (req, res) => {

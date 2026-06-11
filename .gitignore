@@ -16,3 +16,6 @@ npm-debug.log*
 
 # Корректировки ЛК — рантайм-состояние (инициализируется из lkCorrections.seed.json)
 .lkCorrections.json
+
+# Аккаунты руководителей (пароли-хэши) — рантайм, из lkManagers.seed.json
+.lkManagers.json
