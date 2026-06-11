@@ -576,6 +576,40 @@
     .kb-tile:hover { box-shadow: 0 3px 12px rgba(20, 29, 69, .08); }
     .kb-tile-t { font-size: 15px; font-weight: 700; color: #161d45; margin-bottom: 4px; }
     .kb-tile-d { font-size: 12.5px; color: #6b7280; line-height: 1.4; }
+    /* Тестировщик ЛК */
+    .tst-intro { font-size: 13px; color: #6b7280; margin: 0 0 12px; line-height: 1.5; }
+    .tst-flags { background: #fff8ec; border: 1px solid #f0d9a8; border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+    .tst-flags-h { font-weight: 700; color: #8a5a12; font-size: 13.5px; margin-bottom: 6px; }
+    .tst-flags ul { margin: 0; padding-left: 18px; }
+    .tst-flags li { font-size: 12.5px; color: #5c4a2a; margin: 5px 0; line-height: 1.45; }
+    .tst-dirs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .tst-dir-btn { border: 1px solid #cfd8e3; background: #fff; color: #33415a; border-radius: 999px; padding: 6px 16px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .tst-dir-btn.active { background: #161d45; color: #fff; border-color: #161d45; }
+    .tst-ctrls { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; background: #f6f7f9; border: 1px solid #e6e9f0; border-radius: 12px; padding: 12px; margin-bottom: 14px; }
+    .tst-field { display: flex; flex-direction: column; gap: 4px; }
+    .tst-field label { font-size: 11.5px; color: #6b7280; font-weight: 600; }
+    .tst-field select { padding: 7px 8px; border: 1px solid #cfd8e3; border-radius: 8px; font-size: 13px; font-family: inherit; background: #fff; }
+    .tst-field-stage select { border-color: #3589BD; font-weight: 600; }
+    .tst-result { display: flex; flex-direction: column; gap: 12px; }
+    .tst-sees { background: #f0f7fc; border: 1px solid #d3e7f4; border-radius: 12px; padding: 12px 14px; }
+    .tst-sees-h { font-weight: 700; color: #161d45; font-size: 14px; margin-bottom: 4px; }
+    .tst-sees-t { font-size: 13px; color: #33415a; line-height: 1.5; }
+    .tst-docbox { border: 1px solid #e6e9f0; border-radius: 12px; padding: 12px 14px; background: #fff; }
+    .tst-presub { background: #fbfaff; border-color: #e7e1f3; }
+    .tst-docbox-h { font-weight: 700; color: #161d45; font-size: 13.5px; margin-bottom: 8px; }
+    .tst-doc { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-top: 1px solid #f0f2f6; }
+    .tst-doc:first-of-type { border-top: none; }
+    .tst-doc-badge { flex-shrink: 0; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; white-space: nowrap; margin-top: 1px; }
+    .tst-doc-badge.req { background: #fbebee; color: #7a2d39; border: 1px solid #efcfd5; }
+    .tst-doc-badge.opt { background: #f0f7fc; color: #1d4d72; border: 1px solid #d3e7f4; }
+    .tst-doc-name { font-size: 13px; color: #23272f; font-weight: 600; }
+    .tst-doc-when { font-size: 11.5px; color: #9096a3; margin-top: 1px; }
+    .tst-note { font-size: 12px; color: #6b7280; font-style: italic; margin-top: 8px; }
+    .tst-empty { font-size: 12.5px; color: #9096a3; padding: 4px 0; }
+    .tst-internal { background: #f7f8fa; border: 1px solid #e6e9f0; border-radius: 12px; padding: 12px 14px; }
+    .tst-internal-h { font-weight: 700; color: #4a5260; font-size: 13.5px; margin-bottom: 6px; }
+    .tst-internal ul { margin: 0; padding-left: 18px; }
+    .tst-internal li { font-size: 12px; color: #5a626f; margin: 5px 0; line-height: 1.45; }
 
     /* ── Кнопка раскрытия списка ── */
     .toggle-phones {
@@ -784,6 +818,7 @@
       <button type="button" class="tab-btn" data-tab="stages">Статистика (этапы)</button>
       <button type="button" class="tab-btn" data-tab="corrections">Корректировки ЛК</button>
       <button type="button" class="tab-btn" data-tab="kb">База знаний ЛК</button>
+      <button type="button" class="tab-btn" data-tab="tester">Тестировщик ЛК</button>
       <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
       <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
     </div>
@@ -837,6 +872,12 @@
       </div>
     </div>
 
+    <div id="panelTester" class="panel">
+      <div id="testerContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
     <div class="footer-logout">
       <button id="logoutBtn" type="button" class="logout-btn">Выйти</button>
     </div>
@@ -879,6 +920,8 @@
       const correctionsContent = document.getElementById("correctionsContent");
       const panelKb = document.getElementById("panelKb");
       const kbContent = document.getElementById("kbContent");
+      const panelTester = document.getElementById("panelTester");
+      const testerContent = document.getElementById("testerContent");
       const authDailyBlock = document.getElementById("authDailyBlock");
 
       let activeTab = "stats";
@@ -940,7 +983,7 @@
         const mgr = currentRole() === "manager";
         tabBtns.forEach((b) => {
           const t = b.dataset.tab;
-          const allowed = mgr ? (t === "corrections" || t === "kb") : true;
+          const allowed = mgr ? (t === "corrections" || t === "kb" || t === "tester") : true;
           b.style.display = allowed ? "" : "none";
         });
         if (mgr) {
@@ -961,7 +1004,6 @@
           { t: "Карта статусов", d: "Какой статус amoCRM → этап в ЛК (генерируется из кода).", u: "/admin/kb/statuses" },
           { t: "Карта документов", d: "Какие документы, на каком этапе, что обязательно.", u: "/admin/kb/documents" },
           { t: "Как работает ЛК", d: "Поведение по этапам, от чего зависит (фильтр по этапам).", u: "/admin/kb/logic" },
-          { t: "Автотестирование (в разработке)", d: "Все сценарии ЛК по направлениям: что видит клиент + внутренняя логика. С фильтром.", u: "/admin/kb/autotest" },
           { t: "История изменений", d: "Лента реализованных корректировок.", u: "/admin/kb/changelog" }
         ];
         kbContent.innerHTML = '<p class="kb-intro">Открываются в новой вкладке. Информация всегда актуальная — генерируется из текущего кода ЛК, обновлять вручную не нужно.</p>';
@@ -973,6 +1015,148 @@
           grid.appendChild(a);
         });
         kbContent.appendChild(grid);
+      }
+
+      // ── Тестировщик ЛК (калькулятор логики) ──
+      let testerSpec = null;
+      let testerDir = "schengen";
+      let testerStage = 0;
+      let testerAnswers = {};
+
+      function evalTCond(c, ans) {
+        if (!c) return true;
+        if (c.all) return c.all.every((x) => evalTCond(x, ans));
+        if (c.any) return c.any.some((x) => evalTCond(x, ans));
+        const v = ans[c.f];
+        if ("eq" in c) return v === c.eq;
+        if ("ne" in c) return v !== c.ne;
+        if ("in" in c) return c.in.indexOf(v) >= 0;
+        return true;
+      }
+      function testerInitAnswers(dirKey) {
+        const d = testerSpec.directions[dirKey];
+        const a = {};
+        (d.params || []).forEach((p) => { a[p.key] = (p.def != null) ? p.def : (p.opts && p.opts[0]); });
+        return a;
+      }
+      async function loadTester() {
+        if (!testerContent) return;
+        if (!testerSpec) {
+          testerContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+          try {
+            const d = await apiFetch("/admin/api/lk-tester-spec");
+            testerSpec = d.spec;
+          } catch (e) {
+            testerContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+            return;
+          }
+          if (!testerSpec.directions[testerDir]) testerDir = Object.keys(testerSpec.directions)[0];
+          testerAnswers = testerInitAnswers(testerDir);
+        }
+        renderTester();
+      }
+      function tstDocRow(label, required, when) {
+        const row = document.createElement("div"); row.className = "tst-doc " + (required ? "req" : "opt");
+        const b = document.createElement("span"); b.className = "tst-doc-badge " + (required ? "req" : "opt"); b.textContent = required ? "обязателен" : "необязателен";
+        const main = document.createElement("div"); main.className = "tst-doc-main";
+        const nm = document.createElement("div"); nm.className = "tst-doc-name"; nm.textContent = label; main.appendChild(nm);
+        if (when) { const w = document.createElement("div"); w.className = "tst-doc-when"; w.textContent = when; main.appendChild(w); }
+        row.appendChild(b); row.appendChild(main);
+        return row;
+      }
+      function renderTesterResult(spec, dir) {
+        const ans = testerAnswers, st = testerStage;
+        const wrap = document.createElement("div"); wrap.className = "tst-result";
+        const sees = document.createElement("div"); sees.className = "tst-sees";
+        sees.innerHTML = '<div class="tst-sees-h">Что видит клиент на этапе «' + escapeHtml(spec.stages[st]) + '»</div><div class="tst-sees-t">' + escapeHtml(spec.stageSees[st] || "") + '</div>';
+        wrap.appendChild(sees);
+        if (st <= 2) {
+          const docBox = document.createElement("div"); docBox.className = "tst-docbox";
+          const h = document.createElement("div"); h.className = "tst-docbox-h"; h.textContent = "Документы, которые видит клиент (кумулятивно, этапы 0–" + st + ")";
+          docBox.appendChild(h);
+          let any = false;
+          for (let s = 0; s <= st && s <= 2; s++) {
+            (dir.docsByStage[String(s)] || []).filter((doc) => evalTCond(doc.cond, ans)).forEach((doc) => {
+              docBox.appendChild(tstDocRow(doc.label, true, "этап " + s + (doc.when ? " · " + doc.when : ""))); any = true;
+            });
+          }
+          if (!any) { const e = document.createElement("div"); e.className = "tst-empty"; e.textContent = "Нет запрашиваемых документов при таких параметрах."; docBox.appendChild(e); }
+          if (st === 2 && dir.stage2Note) { const n = document.createElement("div"); n.className = "tst-note"; n.textContent = dir.stage2Note; docBox.appendChild(n); }
+          wrap.appendChild(docBox);
+          if (st === 2) {
+            const windowOn = ans.submitWindow === "≤ 7 дней";
+            const pre = document.createElement("div"); pre.className = "tst-docbox tst-presub";
+            const ph = document.createElement("div"); ph.className = "tst-docbox-h"; ph.textContent = "Подобласть «Документы для проверки перед подачей»";
+            pre.appendChild(ph);
+            if (!windowOn) {
+              const n = document.createElement("div"); n.className = "tst-note"; n.textContent = "Появляется за 7 дней до «Даты записи на подачу». Сейчас выбрано «" + (ans.submitWindow || "") + "» → подобласть скрыта.";
+              pre.appendChild(n);
+            } else {
+              const list = (dir.presub || []).filter((doc) => evalTCond(doc.cond, ans));
+              if (!list.length) { const e = document.createElement("div"); e.className = "tst-empty"; e.textContent = "Нет документов при таких параметрах."; pre.appendChild(e); }
+              list.forEach((doc) => {
+                const isOpt = doc.opt === true ? true : (doc.opt ? evalTCond(doc.opt, ans) : false);
+                pre.appendChild(tstDocRow(doc.label, !isOpt, doc.when || ""));
+              });
+            }
+            wrap.appendChild(pre);
+          }
+        } else {
+          const info = document.createElement("div"); info.className = "tst-note"; info.textContent = "На этом этапе клиент документы не загружает.";
+          wrap.appendChild(info);
+        }
+        const intBox = document.createElement("div"); intBox.className = "tst-internal";
+        const ih = document.createElement("div"); ih.className = "tst-internal-h"; ih.textContent = "🔒 Внутренняя логика (незаметно клиенту)";
+        intBox.appendChild(ih);
+        const notes = [];
+        if (st <= 2) { notes.push(spec.internal.docStages); notes.push(spec.internal.questionnaireSubmit); }
+        if (st === 3) notes.push(spec.internal.stage3);
+        if (!notes.length) notes.push("Особых внутренних эффектов на этом этапе нет.");
+        const ul = document.createElement("ul");
+        notes.forEach((t) => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
+        intBox.appendChild(ul);
+        wrap.appendChild(intBox);
+        return wrap;
+      }
+      function renderTester() {
+        if (!testerSpec || !testerContent) return;
+        const spec = testerSpec, dir = spec.directions[testerDir];
+        testerContent.innerHTML = "";
+        const intro = document.createElement("p"); intro.className = "tst-intro";
+        intro.textContent = "Выберите направление, этап и параметры клиента — ниже сразу появится, что увидит клиент: какие документы обязательны (красным) и необязательны (синим), когда они появляются, плюс внутренняя логика (что незаметно клиенту). Данные тянутся из актуальной логики ЛК.";
+        testerContent.appendChild(intro);
+        if (Array.isArray(spec.contentious) && spec.contentious.length) {
+          const cw = document.createElement("div"); cw.className = "tst-flags";
+          cw.innerHTML = '<div class="tst-flags-h">⚠️ На что обратить внимание (моя оценка — спорное / дублирующееся / хрупкое):</div>';
+          const ul = document.createElement("ul");
+          spec.contentious.forEach((t) => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
+          cw.appendChild(ul); testerContent.appendChild(cw);
+        }
+        const dirRow = document.createElement("div"); dirRow.className = "tst-dirs";
+        Object.keys(spec.directions).forEach((k) => {
+          const btn = document.createElement("button"); btn.type = "button"; btn.className = "tst-dir-btn" + (k === testerDir ? " active" : "");
+          btn.textContent = spec.directions[k].title;
+          btn.addEventListener("click", () => { testerDir = k; testerAnswers = testerInitAnswers(k); renderTester(); });
+          dirRow.appendChild(btn);
+        });
+        testerContent.appendChild(dirRow);
+        const ctrlWrap = document.createElement("div"); ctrlWrap.className = "tst-ctrls";
+        const stageField = document.createElement("div"); stageField.className = "tst-field tst-field-stage";
+        const stageLab = document.createElement("label"); stageLab.textContent = "Этап ЛК (статус)";
+        const stageSel = document.createElement("select");
+        spec.stages.forEach((s, i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = i + ". " + s; if (i === testerStage) o.selected = true; stageSel.appendChild(o); });
+        stageSel.addEventListener("change", () => { testerStage = parseInt(stageSel.value, 10) || 0; renderTester(); });
+        stageField.appendChild(stageLab); stageField.appendChild(stageSel); ctrlWrap.appendChild(stageField);
+        (dir.params || []).forEach((p) => {
+          const f = document.createElement("div"); f.className = "tst-field";
+          const lab = document.createElement("label"); lab.textContent = p.label;
+          const sel = document.createElement("select");
+          p.opts.forEach((o) => { const op = document.createElement("option"); op.value = o; op.textContent = o; if (testerAnswers[p.key] === o) op.selected = true; sel.appendChild(op); });
+          sel.addEventListener("change", () => { testerAnswers[p.key] = sel.value; renderTester(); });
+          f.appendChild(lab); f.appendChild(sel); ctrlWrap.appendChild(f);
+        });
+        testerContent.appendChild(ctrlWrap);
+        testerContent.appendChild(renderTesterResult(spec, dir));
       }
       function showDash() {
         loginBlock.style.display = "none";
@@ -1323,6 +1507,7 @@
           panelTraffic.classList.toggle("show", which === "traffic");
           panelCorrections.classList.toggle("show", which === "corrections");
           panelKb.classList.toggle("show", which === "kb");
+          panelTester.classList.toggle("show", which === "tester");
           applyPaidConvVisibility();
           if (which === "surveys") {
             loadSurveys();
@@ -1341,6 +1526,9 @@
             startPolling();
           } else if (which === "kb") {
             renderKb();
+            startPolling();
+          } else if (which === "tester") {
+            loadTester();
             startPolling();
           }
         });
