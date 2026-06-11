@@ -473,11 +473,11 @@
     .auth-chart-meta span { font-size: 12px; color: #4a5260; }
     .auth-chart-meta b { color: #161d45; font-weight: 700; }
     .auth-chart-body {
-      margin-top: 14px; width: 100%;
+      display: flex; align-items: flex-end; gap: 4px;
+      height: 176px; margin-top: 14px; padding-bottom: 2px;
     }
-    .auth-svg { display: block; max-width: 100%; height: auto; }
     .auth-col {
-      flex: 1 1 0; min-width: 22px;
+      flex: 1 1 0; min-width: 0;
       display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
       height: 100%;
     }
@@ -511,7 +511,12 @@
       font-size: 13px; color: #7a8090; padding: 18px 0; text-align: center;
     }
     @media (max-width: 720px) {
-      .auth-chart { padding: 14px 12px 12px; }
+      .auth-chart { padding: 14px 10px 12px; }
+      .auth-chart-body { height: 150px; gap: 2px; }
+      .auth-col-val { font-size: 9px; min-height: 9px; margin-bottom: 3px; }
+      .auth-bar { border-radius: 4px 4px 2px 2px; }
+      .auth-col-x { font-size: 8px; margin-top: 4px; }
+      .auth-col-wd { font-size: 7px; }
     }
 
     /* ── Кнопка раскрытия списка ── */
@@ -1349,83 +1354,42 @@
           '<span>Пик: <b>' + peak + '</b>/день</span>';
         card.appendChild(meta);
 
-        // ── Линейный график (SVG): кривая + точка с числом на каждый день ──
+        // ── Столбчатый график: высота столбца ∝ числу авторизаций ──
         const body = document.createElement("div");
         body.className = "auth-chart-body";
+        const MAX_PX = 122;
+        const lastIdx = days.length - 1;
+        days.forEach(function (d, i) {
+          const cnt = d.count || 0;
+          const wd = isoWeekday(d.date);
+          const col = document.createElement("div");
+          col.className = "auth-col" + (wd.weekend ? " is-weekend" : "") + (i === lastIdx ? " is-today" : "");
+          col.title = isoToRu(d.date) + " (" + wd.label + "): " + cnt;
 
-        const W = Math.max(280, Math.round(container.clientWidth || container.offsetWidth || 600));
-        const H = 210;
-        const padL = 16, padR = 16, padT = 24, padB = 34;
-        const plotW = W - padL - padR;
-        const plotH = H - padT - padB;
-        const n = days.length;
-        const yMax = Math.max(peak, 1);
-        const step = n > 1 ? plotW / (n - 1) : 0;
-        const baseY = padT + plotH;
-        const xAt = function (i) { return n > 1 ? (padL + i * step) : (padL + plotW / 2); };
-        const yAt = function (c) { return padT + plotH * (1 - (c / yMax)); };
-        const pts = days.map(function (d, i) { return { x: xAt(i), y: yAt(d.count || 0), c: d.count || 0, d: d }; });
+          const val = document.createElement("div");
+          val.className = "auth-col-val" + (cnt === 0 ? " zero" : "");
+          val.textContent = String(cnt);
 
-        // Гладкая кривая (Catmull-Rom → кубические безье).
-        function smoothPath(p) {
-          if (!p.length) return "";
-          if (p.length === 1) return "M" + p[0].x.toFixed(1) + " " + p[0].y.toFixed(1);
-          let s = "M" + p[0].x.toFixed(1) + " " + p[0].y.toFixed(1);
-          for (let i = 0; i < p.length - 1; i++) {
-            const p0 = p[i - 1] || p[i], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2] || p2;
-            const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
-            const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
-            s += " C" + c1x.toFixed(1) + " " + c1y.toFixed(1) + " " + c2x.toFixed(1) + " " + c2y.toFixed(1) + " " + p2.x.toFixed(1) + " " + p2.y.toFixed(1);
-          }
-          return s;
-        }
-        const linePath = smoothPath(pts);
-        const areaPath = linePath
-          ? (linePath + " L" + pts[pts.length - 1].x.toFixed(1) + " " + baseY + " L" + pts[0].x.toFixed(1) + " " + baseY + " Z")
-          : "";
+          const bar = document.createElement("div");
+          bar.className = "auth-bar" + (cnt === 0 ? " empty" : "");
+          bar.style.height = (peak > 0 ? Math.max(3, Math.round((cnt / peak) * MAX_PX)) : 3) + "px";
 
-        // Прореживание подписей оси X, если точки стоят близко.
-        const labelEvery = step >= 26 ? 1 : (step >= 16 ? 2 : (step >= 11 ? 3 : 4));
-        const showWd = step >= 22;
-        const tight = step < 22; // на узком экране числа стаггерим по чётности
+          const x = document.createElement("div");
+          x.className = "auth-col-x";
+          x.textContent = isoToDayLabel(d.date);
 
-        function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
-        let svg = '<svg class="auth-svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="График новых авторизаций по дням">';
-        svg += '<defs><linearGradient id="authFill" x1="0" y1="0" x2="0" y2="1">'
-             + '<stop offset="0%" stop-color="#3589BD" stop-opacity="0.18"/>'
-             + '<stop offset="100%" stop-color="#3589BD" stop-opacity="0"/></linearGradient></defs>';
-        svg += '<line x1="' + padL + '" y1="' + baseY + '" x2="' + (W - padR) + '" y2="' + baseY + '" stroke="#eceef4" stroke-width="1"/>';
-        if (areaPath) svg += '<path d="' + areaPath + '" fill="url(#authFill)"/>';
-        if (linePath) svg += '<path d="' + linePath + '" fill="none" stroke="#3589BD" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
-        pts.forEach(function (p, i) {
-          const isToday = (i === pts.length - 1);
-          const wd = isoWeekday(p.d.date);
-          svg += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="' + (isToday ? 4.5 : 3.2) + '" fill="' + (isToday ? "#f59324" : "#3589BD") + '" stroke="#fff" stroke-width="1.5"><title>' + esc(isoToRu(p.d.date) + " (" + wd.label + "): " + p.c) + '</title></circle>';
-          const ly = (tight && i % 2 === 1) ? (p.y - 18) : (p.y - 9);
-          svg += '<text x="' + p.x.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle" font-size="' + (tight ? 9 : 10) + '" font-weight="700" fill="' + (p.c === 0 ? "#c2c7d2" : (isToday ? "#d9820f" : "#2d3550")) + '">' + p.c + '</text>';
-          if (i % labelEvery === 0 || isToday) {
-            svg += '<text x="' + p.x.toFixed(1) + '" y="' + (baseY + 15) + '" text-anchor="middle" font-size="10" font-weight="' + (isToday ? 700 : 400) + '" fill="' + (wd.weekend ? "#cf8696" : (isToday ? "#d9820f" : "#8a90a0")) + '">' + esc(isoToDayLabel(p.d.date)) + '</text>';
-            if (showWd) svg += '<text x="' + p.x.toFixed(1) + '" y="' + (baseY + 27) + '" text-anchor="middle" font-size="9" fill="' + (wd.weekend ? "#cf8696" : "#aab0bd") + '">' + esc(wd.label) + '</text>';
-          }
+          const wdEl = document.createElement("div");
+          wdEl.className = "auth-col-wd";
+          wdEl.textContent = wd.label;
+
+          col.appendChild(val);
+          col.appendChild(bar);
+          col.appendChild(x);
+          col.appendChild(wdEl);
+          body.appendChild(col);
         });
-        svg += '</svg>';
-        body.innerHTML = svg;
         card.appendChild(body);
         container.appendChild(card);
-
-        // Перерисовка при изменении ширины окна — чтобы график всегда вмещался.
-        if (!renderAuthChart._resizeBound) {
-          renderAuthChart._resizeBound = true;
-          let _rt = null;
-          window.addEventListener("resize", function () {
-            clearTimeout(_rt);
-            _rt = setTimeout(function () {
-              if (authDailyData && authDailyBlock && authDailyBlock.offsetParent !== null && authDailyBlock.clientWidth > 0) {
-                renderAuthChart(authDailyBlock, authDailyData);
-              }
-            }, 180);
-          });
-        }
       }
       async function loadAuthDaily(opts) {
         const silent = opts && opts.silent;
