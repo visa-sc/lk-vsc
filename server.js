@@ -1116,7 +1116,7 @@ app.get("/admin/kb/changelog", requireStaff, (req, res) => {
   try {
     const items = (loadCorrections() || []).filter((x) => x && x.status === "done");
     items.sort((a, b) => String(b.resolvedAt || "").localeCompare(String(a.resolvedAt || "")) || (b.ts || 0) - (a.ts || 0));
-    let b = `<h1>Что изменилось в ЛК</h1><p class="sub">Лента реализованных корректировок (из раздела «Корректировки ЛК»). Обновляется автоматически.</p>`;
+    let b = `<h1>История изменений ЛК</h1><p class="sub">Лента реализованных корректировок (из раздела «Корректировки ЛК»). Обновляется автоматически.</p>`;
     if (!items.length) { b += `<div class="card muted">Пока нет реализованных корректировок.</div>`; }
     else {
       b += `<table><tr><th>Дата</th><th>Что сделано</th><th>Примечание</th><th>Автор</th></tr>`;
@@ -1127,7 +1127,75 @@ app.get("/admin/kb/changelog", requireStaff, (req, res) => {
       b += `</table>`;
     }
     res.set("Content-Type", "text/html; charset=utf-8");
-    return res.send(kbPage("Что изменилось", b));
+    return res.send(kbPage("История изменений", b));
+  } catch (e) { return res.status(500).send("Ошибка генерации страницы"); }
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// Автотестирование ЛК — фаза 1, часть 1: КАРКАС.
+// Матрица сценариев по направлениям (опросникам). Сейчас строится только
+// структура: реальные измерения, влияющие на ЛК, оценка масштаба и фильтр.
+// Наполнение сценариями + скриншоты «что видит клиент» + разметка внутренней
+// логики + авто-дифф при изменениях ЛК — следующими кусками.
+// ═════════════════════════════════════════════════════════════════════════
+const AUTOTEST_DIRECTIONS = [
+  {
+    key: "schengen",
+    title: "Шенген",
+    note: "Опросник «Шенгенская виза». Состав документов зависит от ответов опросника и поля CRM «Страна оформления/услуга».",
+    dims: [
+      { key: "stage", label: "Этап ЛК", values: ["Начало оформления", "Первичный сбор", "Подготовка документов", "Ожидание подачи", "Рассмотрение", "Паспорт готов", "Пауза", "Обращение исполнено"] },
+      { key: "occupation", label: "Род деятельности", values: ["Работа по найму", "Владелец бизнеса/ИП", "Самозанятый", "Пенсионер", "Учащийся", "Безработный"] },
+      { key: "crmCountry", label: "Страна оформления (CRM)", values: ["Обычная", "Испания/Португалия/Кипр (эл. фото)"] },
+      { key: "purpose", label: "Цель поездки", values: ["Туризм", "Иная (нужно приглашение)"] },
+      { key: "sponsor", label: "Спонсор", values: ["Без спонсора", "Со спонсором"] },
+      { key: "age", label: "Возраст", values: ["Взрослый", "Ребёнок (<18)"] },
+      { key: "booking", label: "Запись на подачу", values: ["Самостоятельно", "Через бота (Франция/Испания)"] },
+      { key: "history", label: "История виз", values: ["Виз не было", "Действующая виза", "Были за 3 года"] },
+      { key: "passport2", label: "2-й загранпаспорт", values: ["Нет", "Есть"] },
+      { key: "submitWindow", label: "Окно «перед подачей»", values: ["> 7 дней / нет даты", "≤ 7 дней до записи"] }
+    ]
+  },
+  {
+    key: "japan",
+    title: "Япония",
+    note: "Опросник «Виза в Японию».",
+    dims: [
+      { key: "stage", label: "Этап ЛК", values: ["Начало оформления", "Первичный сбор", "Подготовка документов", "Ожидание подачи", "Рассмотрение", "Паспорт готов", "Пауза", "Обращение исполнено"] },
+      { key: "occupation", label: "Род деятельности", values: ["Работа по найму", "Учащийся", "Иное"] },
+      { key: "purpose", label: "Цель поездки", values: ["Туризм", "Иная (приглашение + план)"] },
+      { key: "sponsor", label: "Спонсор", values: ["Без спонсора", "Со спонсором"] },
+      { key: "age", label: "Возраст", values: ["Взрослый", "Ребёнок (<18)"] },
+      { key: "tickets", label: "Авиабилеты", values: ["Нет своих", "Есть свои"] }
+    ]
+  }
+];
+function atThousands(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+app.get("/admin/kb/autotest", requireStaff, (req, res) => {
+  try {
+    let b = `<h1>Автотестирование ЛК</h1>`;
+    b += `<p class="sub">Цель: автоматически проверять, что видит клиент и как работает внутренняя логика — во всех вариациях по каждому направлению. Вместо ручного тестирования: при изменении ЛК страница перегенерируется, и видно, что именно поменялось.</p>`;
+    b += `<div class="card" style="border-left:4px solid #e0a800;background:#fffdf5"><b>Статус сборки:</b> фаза 1, часть 1 — <b>структура и фильтры</b>. Дальше по шагам: матрица сценариев → скриншоты «что видит клиент» → разметка внутренней логики → авто-дифф при изменениях ЛК.</div>`;
+    b += `<div class="filt"><button class="active" data-f="all">Все направления</button>` + AUTOTEST_DIRECTIONS.map((d, i) => `<button data-f="${i}">${kbEsc(d.title)}</button>`).join("") + `</div>`;
+    AUTOTEST_DIRECTIONS.forEach((d, i) => {
+      const full = d.dims.reduce((a, dim) => a * dim.values.length, 1);
+      const sizes = d.dims.map((dim) => dim.values.length).sort((a, b2) => b2 - a);
+      const pairwise = (sizes[0] || 1) * (sizes[1] || 1);
+      b += `<div class="card at-dir" data-i="${i}">`;
+      b += `<h2 style="margin-top:4px">${kbEsc(d.title)}</h2>`;
+      if (d.note) b += `<p class="sub">${kbEsc(d.note)}</p>`;
+      b += `<h3>Измерения, влияющие на ЛК</h3>`;
+      b += `<table><tr><th>Измерение</th><th>Варианты</th><th>Кол-во</th></tr>`;
+      d.dims.forEach((dim) => { b += `<tr><td>${kbEsc(dim.label)}</td><td>${dim.values.map((v) => kbEsc(v)).join(" · ")}</td><td>${dim.values.length}</td></tr>`; });
+      b += `</table>`;
+      b += `<div class="card" style="background:#f0f7fc;border-color:#d3e7f4"><b>Масштаб:</b> полный перебор = <b>${atThousands(full)}</b> сценариев (показывать всё нереально). Умное сокращение (классы эквивалентности + парные комбинации) ≈ <b>${pairwise}–${pairwise * 3}</b> значимых сценариев. Точное число зафиксируем при генерации матрицы.</div>`;
+      b += `<h3>Сценарии</h3><p class="muted">Появятся здесь следующим куском: для каждого сценария — что видит клиент (скриншот) + обязательные/необязательные документы + внутренняя логика (что незаметно клиенту).</p>`;
+      b += `</div>`;
+    });
+    b += `<div class="card muted">Просмотр будет мгновенным: тяжёлая генерация (рендер ЛК и скриншоты) идёт заранее и вне прод-сервера — страница лишь показывает готовый результат. Планируемая фильтрация: направление → этап → статус → профиль клиента → переключатель «что видит клиент / внутренняя логика».</div>`;
+    b += `<script>(function(){var btns=document.querySelectorAll('.filt button');var cards=document.querySelectorAll('.at-dir');btns.forEach(function(btn){btn.addEventListener('click',function(){btns.forEach(function(x){x.classList.remove('active');});btn.classList.add('active');var f=btn.dataset.f;cards.forEach(function(c){c.style.display=(f==='all'||c.dataset.i===f)?'':'none';});});});})();</script>`;
+    res.set("Content-Type", "text/html; charset=utf-8");
+    return res.send(kbPage("Автотестирование ЛК", b));
   } catch (e) { return res.status(500).send("Ошибка генерации страницы"); }
 });
 
