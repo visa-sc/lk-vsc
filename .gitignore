@@ -13,3 +13,6 @@ npm-debug.log*
 
 # Разовый флаг бэкафилла «Готовые документы (ЛК)»
 .readyDocsBackfillDone
+
+# Корректировки ЛК — рантайм-состояние (инициализируется из lkCorrections.seed.json)
+.lkCorrections.json

@@ -519,6 +519,50 @@
       .auth-col-wd { font-size: 7px; }
     }
 
+    /* ── Корректировки ЛК ── */
+    .corr-add-btn { width: 100%; height: 44px; margin: 4px 0 16px; border: none; background: #3589BD; color: #fff; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .corr-add-btn:hover { background: #2c7aa6; }
+    .corr-form { background: #fbfaff; border: 1px solid #ece7f2; border-radius: 14px; padding: 14px; margin-bottom: 18px; }
+    .corr-f-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+    .corr-f-row label { font-size: 12px; font-weight: 600; color: #4a5260; }
+    .corr-i { width: 100%; border: 1px solid #d7dbe3; border-radius: 10px; padding: 9px 11px; font-size: 14px; font-family: inherit; background: #fff; box-sizing: border-box; }
+    textarea.corr-i { resize: vertical; }
+    .corr-submit { height: 40px; padding: 0 18px; border: none; background: #4f9f68; color: #fff; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .corr-submit:disabled { opacity: .6; cursor: default; }
+    .corr-form-err { color: #c4314b; font-size: 13px; margin-bottom: 8px; }
+    .corr-section-head { font-size: 14px; font-weight: 700; color: #161d45; margin: 16px 0 10px; }
+    .corr-empty { font-size: 13px; color: #9096a3; padding: 8px 0 14px; }
+    .corr-card { border: 1px solid #ece7f2; border-left: 4px solid #c2c7d2; border-radius: 14px; padding: 14px; margin-bottom: 12px; background: #fff; }
+    .corr-card.cs-new { border-left-color: #3589BD; background: #f7fbfe; }
+    .corr-card.cs-clarify { border-left-color: #e0a800; background: #fffdf5; }
+    .corr-card.cs-prog { border-left-color: #7a5cd0; background: #faf8ff; }
+    .corr-card.cs-done { border-left-color: #4f9f68; background: #f1f9f3; }
+    .corr-card.cs-rej { border-left-color: #b0b6c2; background: #f7f8fa; }
+    .corr-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+    .corr-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
+    .corr-author { font-weight: 700; color: #161d45; }
+    .corr-date { color: #9096a3; }
+    .corr-area { background: #eef2f7; color: #4a5260; border-radius: 6px; padding: 1px 7px; }
+    .corr-prio { background: #fff0e6; color: #b5651d; border-radius: 6px; padding: 1px 7px; font-weight: 600; }
+    .corr-badge { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+    .corr-badge.cs-new { background: #e7f1fa; color: #1d5e8a; }
+    .corr-badge.cs-clarify { background: #fdf3d6; color: #8a6500; }
+    .corr-badge.cs-prog { background: #efeaff; color: #5a3db0; }
+    .corr-badge.cs-done { background: #e3f3e8; color: #1f7a3d; }
+    .corr-badge.cs-rej { background: #eceef2; color: #6b7280; }
+    .corr-what { font-size: 14px; color: #1d2330; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+    .corr-sub { font-size: 13px; color: #4a5260; margin-top: 6px; white-space: pre-wrap; word-break: break-word; }
+    .corr-sub b, .corr-note b { color: #161d45; }
+    .corr-note { font-size: 13px; color: #2d5a3a; margin-top: 8px; background: #eef8f1; border-radius: 8px; padding: 7px 10px; white-space: pre-wrap; word-break: break-word; }
+    .corr-thread { margin-top: 10px; border-top: 1px dashed #ece7f2; padding-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+    .corr-comment { font-size: 13px; color: #3a4150; word-break: break-word; }
+    .corr-c-author { font-weight: 600; color: #161d45; }
+    .corr-ctrl { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+    .corr-status-sel { height: 34px; border: 1px solid #d7dbe3; border-radius: 9px; padding: 0 8px; font-size: 13px; font-family: inherit; background: #fff; }
+    .corr-comment-input, .corr-note-input { flex: 1 1 160px; min-width: 120px; height: 34px; border: 1px solid #d7dbe3; border-radius: 9px; padding: 0 10px; font-size: 13px; font-family: inherit; box-sizing: border-box; }
+    .corr-comment-btn, .corr-note-btn { height: 34px; padding: 0 14px; border: 1px solid #3589BD; background: #fff; color: #3589BD; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .corr-comment-btn:hover, .corr-note-btn:hover { background: #f0f7fc; }
+
     /* ── Кнопка раскрытия списка ── */
     .toggle-phones {
       margin-top: 18px;
@@ -720,6 +764,7 @@
       <button type="button" class="tab-btn" data-tab="stages">Статистика (этапы)</button>
       <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
       <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
+      <button type="button" class="tab-btn" data-tab="corrections">Корректировки ЛК</button>
     </div>
 
     <!-- Обособленный блок «Конверсия авторизаций по оплаченным сделкам».
@@ -755,6 +800,12 @@
 
     <div id="panelTraffic" class="panel">
       <div id="trafficContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
+    <div id="panelCorrections" class="panel">
+      <div id="correctionsContent">
         <div class="loading-state">Загружаем…</div>
       </div>
     </div>
@@ -796,6 +847,8 @@
       const stagesContent = document.getElementById("stagesContent");
       const surveysContent = document.getElementById("surveysContent");
       const trafficContent = document.getElementById("trafficContent");
+      const panelCorrections = document.getElementById("panelCorrections");
+      const correctionsContent = document.getElementById("correctionsContent");
       const authDailyBlock = document.getElementById("authDailyBlock");
 
       let activeTab = "stats";
@@ -1186,6 +1239,7 @@
           panelStages.classList.toggle("show", which === "stages");
           panelSurveys.classList.toggle("show", which === "surveys");
           panelTraffic.classList.toggle("show", which === "traffic");
+          panelCorrections.classList.toggle("show", which === "corrections");
           applyPaidConvVisibility();
           if (which === "surveys") {
             loadSurveys();
@@ -1198,6 +1252,9 @@
             startPolling();
           } else if (which === "stats") {
             loadStats();
+            startPolling();
+          } else if (which === "corrections") {
+            loadCorrections();
             startPolling();
           }
         });
@@ -1214,6 +1271,7 @@
           else if (activeTab === "stages") loadStages({ silent: true });
           else if (activeTab === "surveys") loadSurveys({ silent: true });
           else if (activeTab === "traffic") loadTraffic({ silent: true });
+          else if (activeTab === "corrections") loadCorrections({ silent: true });
           loadPaidConvStats({ silent: true });
           loadAuthDaily({ silent: true });
         }, POLL_INTERVAL_MS);
@@ -1227,6 +1285,7 @@
         else if (activeTab === "stages") loadStages({ silent: true });
         else if (activeTab === "surveys") loadSurveys({ silent: true });
         else if (activeTab === "traffic") loadTraffic({ silent: true });
+          else if (activeTab === "corrections") loadCorrections({ silent: true });
         loadPaidConvStats({ silent: true });
         loadAuthDaily({ silent: true });
       });
@@ -1261,6 +1320,210 @@
           .replace(/>/g, "&gt;")
           .replace(/"/g, "&quot;")
           .replace(/'/g, "&#039;");
+      }
+
+      // ══════════════ Корректировки ЛК ══════════════
+      const CORR_STATUS = {
+        new:         { label: "Новая",           cls: "cs-new" },
+        clarify:     { label: "Нужны уточнения",  cls: "cs-clarify" },
+        in_progress: { label: "В работе",         cls: "cs-prog" },
+        done:        { label: "Реализовано",      cls: "cs-done" },
+        rejected:    { label: "Отклонено",        cls: "cs-rej" }
+      };
+      const CORR_AREAS = ["Опросник (Шенген)","Опросник (Япония)","Загрузка документов","Этапы / статусы ЛК","Готовые документы","Авторизация / вход","Админка","Лендинги","Другое"];
+      let correctionsData = null;
+      let corrFormOpen = false;
+      let corrDoneExpanded = false;
+      let corrRejExpanded = false;
+
+      async function apiSend(url, body) {
+        const t = getToken();
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + t },
+          body: JSON.stringify(body || {})
+        });
+        if (r.status === 401) { clearToken(); showLogin(); throw new Error("Unauthorized"); }
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.success) throw new Error(d.message || "Ошибка");
+        return d;
+      }
+
+      function corrDateText(v) {
+        if (!v) return "";
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
+        return m ? (m[3] + "." + m[2] + "." + m[1]) : String(v);
+      }
+
+      async function loadCorrections(opts) {
+        const silent = opts && opts.silent;
+        if (!silent && correctionsContent && !correctionsData) {
+          correctionsContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        }
+        try {
+          const d = await apiFetch("/admin/api/corrections");
+          correctionsData = Array.isArray(d.items) ? d.items : [];
+          // При фоновом обновлении не перерисовываем, если открыта форма или
+          // пользователь печатает в разделе — иначе сотрётся введённый текст.
+          if (silent) {
+            if (corrFormOpen) return;
+            const ae = document.activeElement;
+            if (ae && correctionsContent && correctionsContent.contains(ae)) return;
+          }
+          renderCorrections();
+        } catch (e) {
+          if (!silent && correctionsContent && !correctionsData) {
+            correctionsContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+          }
+        }
+      }
+
+      function renderCorrections() {
+        if (!correctionsContent) return;
+        const items = (correctionsData || []).slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        const active = items.filter((x) => x.status === "new" || x.status === "clarify" || x.status === "in_progress");
+        const done = items.filter((x) => x.status === "done");
+        const rejected = items.filter((x) => x.status === "rejected");
+
+        correctionsContent.innerHTML = "";
+
+        const addBtn = document.createElement("button");
+        addBtn.type = "button"; addBtn.className = "corr-add-btn";
+        addBtn.textContent = corrFormOpen ? "× Свернуть форму" : "+ Добавить корректировку";
+        addBtn.addEventListener("click", () => { corrFormOpen = !corrFormOpen; renderCorrections(); });
+        correctionsContent.appendChild(addBtn);
+        if (corrFormOpen) correctionsContent.appendChild(buildCorrForm());
+
+        const head = document.createElement("div");
+        head.className = "corr-section-head";
+        head.textContent = "В работе и новые (" + active.length + ")";
+        correctionsContent.appendChild(head);
+        if (!active.length) {
+          const e = document.createElement("div"); e.className = "corr-empty"; e.textContent = "Пока нет активных заявок.";
+          correctionsContent.appendChild(e);
+        } else {
+          active.forEach((it) => correctionsContent.appendChild(buildCorrCard(it)));
+        }
+
+        correctionsContent.appendChild(buildCorrCollapse("Реализованные", done, corrDoneExpanded, (v) => { corrDoneExpanded = v; renderCorrections(); }));
+        correctionsContent.appendChild(buildCorrCollapse("Отклонённые", rejected, corrRejExpanded, (v) => { corrRejExpanded = v; renderCorrections(); }));
+      }
+
+      function buildCorrCollapse(title, list, expanded, onToggle) {
+        const wrap = document.createElement("div");
+        const btn = document.createElement("button");
+        btn.type = "button"; btn.className = "toggle-phones";
+        btn.textContent = (expanded ? "Скрыть: " : "Показать: ") + title + " (" + list.length + ")";
+        btn.addEventListener("click", () => onToggle(!expanded));
+        wrap.appendChild(btn);
+        if (expanded) {
+          if (!list.length) { const e = document.createElement("div"); e.className = "corr-empty"; e.textContent = "Пусто."; wrap.appendChild(e); }
+          list.forEach((it) => wrap.appendChild(buildCorrCard(it)));
+        }
+        return wrap;
+      }
+
+      function buildCorrForm() {
+        const f = document.createElement("div");
+        f.className = "corr-form";
+        f.innerHTML =
+          '<div class="corr-f-row"><label>Автор / отдел</label><input class="corr-i" data-k="author" placeholder="Напр.: ОО (Плинер)"></div>' +
+          '<div class="corr-f-row"><label>Раздел ЛК</label><select class="corr-i" data-k="area"><option value="">— выберите —</option>' +
+          CORR_AREAS.map((a) => '<option>' + escapeHtml(a) + '</option>').join('') + '</select></div>' +
+          '<div class="corr-f-row"><label>Что нужно / что не так *</label><textarea class="corr-i" data-k="what" rows="3" placeholder="Опишите корректировку максимально конкретно"></textarea></div>' +
+          '<div class="corr-f-row"><label>Как должно быть (ожидаемый результат)</label><textarea class="corr-i" data-k="expected" rows="2"></textarea></div>' +
+          '<div class="corr-f-row"><label>Пример / ссылка на сделку</label><input class="corr-i" data-k="example" placeholder="ссылка amoCRM или пример"></div>' +
+          '<div class="corr-f-row"><label>Приоритет</label><select class="corr-i" data-k="priority"><option value="">—</option><option>Низкий</option><option>Средний</option><option>Высокий</option></select></div>';
+        const err = document.createElement("div"); err.className = "corr-form-err"; err.style.display = "none";
+        const submit = document.createElement("button");
+        submit.type = "button"; submit.className = "corr-submit"; submit.textContent = "Отправить заявку";
+        submit.addEventListener("click", async () => {
+          const body = {};
+          f.querySelectorAll(".corr-i").forEach((el) => { body[el.dataset.k] = el.value; });
+          if (!String(body.what || "").trim()) { err.textContent = "Заполните поле «Что нужно / что не так»."; err.style.display = "block"; return; }
+          submit.disabled = true; submit.textContent = "Отправка…";
+          try {
+            await apiSend("/admin/api/corrections", body);
+            corrFormOpen = false; correctionsData = null;
+            await loadCorrections();
+          } catch (e) {
+            err.textContent = e.message || "Ошибка"; err.style.display = "block";
+            submit.disabled = false; submit.textContent = "Отправить заявку";
+          }
+        });
+        f.appendChild(err); f.appendChild(submit);
+        return f;
+      }
+
+      function buildCorrCard(it) {
+        const st = CORR_STATUS[it.status] || CORR_STATUS.new;
+        const card = document.createElement("div");
+        card.className = "corr-card " + st.cls;
+
+        const headEl = document.createElement("div");
+        headEl.className = "corr-card-head";
+        const meta = document.createElement("div");
+        meta.className = "corr-meta";
+        meta.innerHTML =
+          '<span class="corr-author">' + escapeHtml(it.author || "—") + '</span>' +
+          '<span class="corr-date">' + escapeHtml(corrDateText(it.createdAt)) + '</span>' +
+          (it.area ? '<span class="corr-area">' + escapeHtml(it.area) + '</span>' : '') +
+          (it.priority ? '<span class="corr-prio">' + escapeHtml(it.priority) + '</span>' : '');
+        const badge = document.createElement("span");
+        badge.className = "corr-badge " + st.cls;
+        badge.textContent = st.label;
+        headEl.appendChild(meta); headEl.appendChild(badge);
+        card.appendChild(headEl);
+
+        const what = document.createElement("div");
+        what.className = "corr-what"; what.textContent = it.what || "";
+        card.appendChild(what);
+        if (it.expected) { const d = document.createElement("div"); d.className = "corr-sub"; d.innerHTML = '<b>Ожидается:</b> ' + escapeHtml(it.expected); card.appendChild(d); }
+        if (it.example) { const d = document.createElement("div"); d.className = "corr-sub"; d.innerHTML = '<b>Пример:</b> ' + escapeHtml(it.example); card.appendChild(d); }
+        if (it.note) { const d = document.createElement("div"); d.className = "corr-note"; d.innerHTML = '<b>Примечание:</b> ' + escapeHtml(it.note) + (it.resolvedAt ? ' · ' + escapeHtml(corrDateText(it.resolvedAt)) : ''); card.appendChild(d); }
+
+        if (Array.isArray(it.comments) && it.comments.length) {
+          const th = document.createElement("div"); th.className = "corr-thread";
+          it.comments.forEach((c) => {
+            const cm = document.createElement("div"); cm.className = "corr-comment";
+            cm.innerHTML = '<span class="corr-c-author">' + escapeHtml(c.author || "—") + ':</span> ' + escapeHtml(c.text || "");
+            th.appendChild(cm);
+          });
+          card.appendChild(th);
+        }
+
+        const ctrl = document.createElement("div"); ctrl.className = "corr-ctrl";
+        const sel = document.createElement("select"); sel.className = "corr-status-sel";
+        Object.keys(CORR_STATUS).forEach((k) => { const o = document.createElement("option"); o.value = k; o.textContent = CORR_STATUS[k].label; if (k === it.status) o.selected = true; sel.appendChild(o); });
+        sel.addEventListener("change", async () => {
+          try { await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/update", { status: sel.value }); correctionsData = null; await loadCorrections(); }
+          catch (e) { alert(e.message || "Ошибка"); }
+        });
+        ctrl.appendChild(sel);
+
+        if (it.status === "done" || it.status === "rejected") {
+          const ni = document.createElement("input"); ni.className = "corr-note-input"; ni.placeholder = (it.status === "rejected" ? "Причина отклонения…" : "Примечание / решение…"); ni.value = it.note || "";
+          const nb = document.createElement("button"); nb.type = "button"; nb.className = "corr-note-btn"; nb.textContent = "Сохранить";
+          nb.addEventListener("click", async () => {
+            nb.disabled = true;
+            try { await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/update", { note: ni.value }); correctionsData = null; await loadCorrections(); }
+            catch (e) { alert(e.message || "Ошибка"); nb.disabled = false; }
+          });
+          ctrl.appendChild(ni); ctrl.appendChild(nb);
+        }
+
+        const ci = document.createElement("input"); ci.className = "corr-comment-input"; ci.placeholder = "Комментарий / уточнение…";
+        const cb = document.createElement("button"); cb.type = "button"; cb.className = "corr-comment-btn"; cb.textContent = "Отправить";
+        cb.addEventListener("click", async () => {
+          const text = ci.value.trim(); if (!text) return;
+          cb.disabled = true;
+          try { await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/comment", { author: "Админ", text }); correctionsData = null; await loadCorrections(); }
+          catch (e) { alert(e.message || "Ошибка"); cb.disabled = false; }
+        });
+        ctrl.appendChild(ci); ctrl.appendChild(cb);
+        card.appendChild(ctrl);
+
+        return card;
       }
 
       // Универсальный билдер воронки. steps: [{idx,num,label}], convs: [pct, pct, ...]

@@ -708,6 +708,128 @@ app.get("/admin/api/surveys/download", requireAdmin, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// Раздел «Корректировки ЛК» (админка). Приём корректировок от руководителей:
+// структурированные заявки + статусы + тред-комментарии. Хранение — JSON-файл
+// (рантайм .lkCorrections.json; при отсутствии инициализируется из коммита
+// lkCorrections.seed.json, куда импортирована история из таблицы). Изолировано
+// от клиентского ЛК / amoCRM / Я.Диска.
+// ─────────────────────────────────────────────────────────────────────────
+const LK_CORRECTIONS_FILE = path.join(__dirname, ".lkCorrections.json");
+const LK_CORRECTIONS_SEED = path.join(__dirname, "lkCorrections.seed.json");
+const CORRECTION_STATUSES = new Set(["new", "clarify", "in_progress", "done", "rejected"]);
+let lkCorrections = null; // массив в памяти
+
+function saveCorrections() {
+  try {
+    fs.writeFileSync(LK_CORRECTIONS_FILE, JSON.stringify(lkCorrections || [], null, 2), "utf8");
+  } catch (e) {
+    console.error("saveCorrections error:", e.message);
+  }
+}
+function loadCorrections() {
+  if (lkCorrections) return lkCorrections;
+  try {
+    if (fs.existsSync(LK_CORRECTIONS_FILE)) {
+      lkCorrections = JSON.parse(fs.readFileSync(LK_CORRECTIONS_FILE, "utf8"));
+    } else if (fs.existsSync(LK_CORRECTIONS_SEED)) {
+      lkCorrections = JSON.parse(fs.readFileSync(LK_CORRECTIONS_SEED, "utf8"));
+      saveCorrections(); // материализуем рантайм-файл из seed при первом запуске
+    } else {
+      lkCorrections = [];
+    }
+  } catch (e) {
+    console.error("loadCorrections error:", e.message);
+  }
+  if (!Array.isArray(lkCorrections)) lkCorrections = [];
+  return lkCorrections;
+}
+function corrText(s, max) {
+  return String(s == null ? "" : s).trim().slice(0, max || 4000);
+}
+
+app.get("/admin/api/corrections", requireAdmin, (req, res) => {
+  try {
+    return res.json({ success: true, items: loadCorrections() });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: "Ошибка" });
+  }
+});
+
+app.post("/admin/api/corrections", requireAdmin, (req, res) => {
+  try {
+    const b = req.body || {};
+    const what = corrText(b.what, 6000);
+    if (!what) return res.status(400).json({ success: false, message: "Заполните поле «Что нужно»" });
+    loadCorrections();
+    const now = Date.now();
+    const item = {
+      id: "c" + now + Math.floor(Math.random() * 1000),
+      ts: now,
+      createdAt: new Date(now).toISOString(),
+      author: corrText(b.author, 120),
+      area: corrText(b.area, 200),
+      what,
+      expected: corrText(b.expected, 4000),
+      example: corrText(b.example, 1000),
+      priority: corrText(b.priority, 40),
+      status: "new",
+      resolvedAt: "",
+      note: "",
+      comments: [],
+      legacy: false
+    };
+    lkCorrections.unshift(item);
+    saveCorrections();
+    return res.json({ success: true, item });
+  } catch (e) {
+    console.error("create correction error:", e.message);
+    return res.status(500).json({ success: false, message: "Ошибка" });
+  }
+});
+
+app.post("/admin/api/corrections/:id/update", requireAdmin, (req, res) => {
+  try {
+    loadCorrections();
+    const it = lkCorrections.find((x) => x && x.id === String(req.params.id));
+    if (!it) return res.status(404).json({ success: false, message: "Не найдено" });
+    const b = req.body || {};
+    if (b.status !== undefined) {
+      const st = String(b.status);
+      if (!CORRECTION_STATUSES.has(st)) return res.status(400).json({ success: false, message: "Неизвестный статус" });
+      it.status = st;
+      if ((st === "done" || st === "rejected") && !it.resolvedAt) {
+        it.resolvedAt = new Date().toISOString().slice(0, 10);
+      }
+      if (st !== "done" && st !== "rejected") it.resolvedAt = "";
+    }
+    if (b.note !== undefined) it.note = corrText(b.note, 4000);
+    saveCorrections();
+    return res.json({ success: true, item: it });
+  } catch (e) {
+    console.error("update correction error:", e.message);
+    return res.status(500).json({ success: false, message: "Ошибка" });
+  }
+});
+
+app.post("/admin/api/corrections/:id/comment", requireAdmin, (req, res) => {
+  try {
+    loadCorrections();
+    const it = lkCorrections.find((x) => x && x.id === String(req.params.id));
+    if (!it) return res.status(404).json({ success: false, message: "Не найдено" });
+    const b = req.body || {};
+    const text = corrText(b.text, 4000);
+    if (!text) return res.status(400).json({ success: false, message: "Пустой комментарий" });
+    if (!Array.isArray(it.comments)) it.comments = [];
+    it.comments.push({ ts: Date.now(), author: corrText(b.author, 120), text });
+    saveCorrections();
+    return res.json({ success: true, item: it });
+  } catch (e) {
+    console.error("comment correction error:", e.message);
+    return res.status(500).json({ success: false, message: "Ошибка" });
+  }
+});
+
 app.post("/api/auth/verify", smsGate, (req, res) => {
   try {
     const phone = sms.normalizePhone((req.body && req.body.phone) || "");
