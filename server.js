@@ -951,6 +951,22 @@ app.post("/admin/api/corrections/:id/comment", requireStaff, (req, res) => {
   }
 });
 
+// Удаление корректировки — ТОЛЬКО админ (вход по коду). Руководителям нельзя.
+app.post("/admin/api/corrections/:id/delete", requireAdmin, (req, res) => {
+  try {
+    loadCorrections();
+    const id = String(req.params.id);
+    const idx = lkCorrections.findIndex((x) => x && x.id === id);
+    if (idx === -1) return res.status(404).json({ success: false, message: "Не найдено" });
+    lkCorrections.splice(idx, 1);
+    saveCorrections();
+    return res.json({ success: true, id });
+  } catch (e) {
+    console.error("delete correction error:", e.message);
+    return res.status(500).json({ success: false, message: "Ошибка" });
+  }
+});
+
 // ═════════════════════════════════════════════════════════════════════════
 // База знаний ЛК. Живые HTML-страницы — генерятся из кода/данных в момент
 // открытия (всегда актуально, файлы не хранятся). Доступ: requireStaff
