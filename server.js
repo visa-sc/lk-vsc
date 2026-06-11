@@ -1173,7 +1173,7 @@ const AUTOTEST_DIRECTIONS = [
 function atThousands(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
 app.get("/admin/kb/autotest", requireStaff, (req, res) => {
   try {
-    let b = `<h1>Автотестирование ЛК</h1>`;
+    let b = `<h1>Автотестирование ЛК <span style="font-size:14px;color:#b5651d;font-weight:600">(в разработке)</span></h1>`;
     b += `<p class="sub">Цель: автоматически проверять, что видит клиент и как работает внутренняя логика — во всех вариациях по каждому направлению. Вместо ручного тестирования: при изменении ЛК страница перегенерируется, и видно, что именно поменялось.</p>`;
     b += `<div class="card" style="border-left:4px solid #e0a800;background:#fffdf5"><b>Статус сборки:</b> фаза 1, часть 1 — <b>структура и фильтры</b>. Дальше по шагам: матрица сценариев → скриншоты «что видит клиент» → разметка внутренней логики → авто-дифф при изменениях ЛК.</div>`;
     b += `<div class="filt"><button class="active" data-f="all">Все направления</button>` + AUTOTEST_DIRECTIONS.map((d, i) => `<button data-f="${i}">${kbEsc(d.title)}</button>`).join("") + `</div>`;
