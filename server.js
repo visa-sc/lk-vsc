@@ -767,7 +767,7 @@ function getStaffFromReq(req) {
   const headerToken = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
   const queryToken = String(req.query.token || "").trim();
   const token = headerToken || queryToken;
-  if (isAdminTokenValid(token)) return { role: "admin", name: "Админ", token };
+  if (isAdminTokenValid(token)) return { role: "admin", name: "Андрей Комисаренко", token };
   const m = getManagerSession(token);
   if (m) return { role: "manager", name: m.name, email: m.email, token };
   return null;

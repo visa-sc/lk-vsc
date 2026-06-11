@@ -1436,8 +1436,26 @@
 
       function corrDateText(v) {
         if (!v) return "";
-        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
-        return m ? (m[3] + "." + m[2] + "." + m[1]) : String(v);
+        const s = String(v);
+        // ISO с временем (новые заявки) → показываем дату и время в МСК.
+        if (/T\d{2}:\d{2}/.test(s)) {
+          const dt = new Date(s);
+          if (!isNaN(dt)) {
+            return dt.toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", "");
+          }
+        }
+        // Старые (только дата) → дата + 00:00.
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+        return m ? (m[3] + "." + m[2] + "." + m[1] + " 00:00") : s;
+      }
+      let correctionsMe = null;
+      function appendCommentToCard(card, c) {
+        if (!card) return;
+        let th = card.querySelector(".corr-thread");
+        if (!th) { th = document.createElement("div"); th.className = "corr-thread"; const ctrl = card.querySelector(".corr-ctrl"); card.insertBefore(th, ctrl || null); }
+        const cm = document.createElement("div"); cm.className = "corr-comment";
+        cm.innerHTML = '<span class="corr-c-author">' + escapeHtml(c.author || "—") + ':</span> ' + escapeHtml(c.text || "");
+        th.appendChild(cm);
       }
 
       async function loadCorrections(opts) {
@@ -1448,6 +1466,7 @@
         try {
           const d = await apiFetch("/admin/api/corrections");
           correctionsData = Array.isArray(d.items) ? d.items : [];
+          if (d.me) correctionsMe = d.me;
           // При фоновом обновлении не перерисовываем, если открыта форма или
           // пользователь печатает в разделе — иначе сотрётся введённый текст.
           if (silent) {
@@ -1466,7 +1485,8 @@
       function renderCorrections() {
         if (!correctionsContent) return;
         const items = (correctionsData || []).slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
-        const active = items.filter((x) => x.status === "new" || x.status === "clarify" || x.status === "in_progress");
+        const newOnes = items.filter((x) => x.status === "new");
+        const working = items.filter((x) => x.status === "in_progress" || x.status === "clarify");
         const done = items.filter((x) => x.status === "done");
         const deferred = items.filter((x) => x.status === "deferred");
         const rejected = items.filter((x) => x.status === "rejected");
@@ -1480,16 +1500,14 @@
         correctionsContent.appendChild(addBtn);
         if (corrFormOpen) correctionsContent.appendChild(buildCorrForm());
 
-        const head = document.createElement("div");
-        head.className = "corr-section-head";
-        head.textContent = "В работе и новые (" + active.length + ")";
-        correctionsContent.appendChild(head);
-        if (!active.length) {
-          const e = document.createElement("div"); e.className = "corr-empty"; e.textContent = "Пока нет активных заявок.";
-          correctionsContent.appendChild(e);
-        } else {
-          active.forEach((it) => correctionsContent.appendChild(buildCorrCard(it)));
-        }
+        const renderSection = (title, list) => {
+          const h = document.createElement("div"); h.className = "corr-section-head"; h.textContent = title + " (" + list.length + ")";
+          correctionsContent.appendChild(h);
+          if (!list.length) { const e = document.createElement("div"); e.className = "corr-empty"; e.textContent = "Пусто."; correctionsContent.appendChild(e); }
+          else list.forEach((it) => correctionsContent.appendChild(buildCorrCard(it)));
+        };
+        renderSection("Новые", newOnes);
+        renderSection("В работе", working);
 
         correctionsContent.appendChild(buildCorrCollapse("Реализованные", done, corrDoneExpanded, (v) => { corrDoneExpanded = v; renderCorrections(); }));
         correctionsContent.appendChild(buildCorrCollapse("Отложенные", deferred, corrDeferExpanded, (v) => { corrDeferExpanded = v; renderCorrections(); }));
@@ -1587,8 +1605,17 @@
         const sel = document.createElement("select"); sel.className = "corr-status-sel";
         Object.keys(CORR_STATUS).forEach((k) => { const o = document.createElement("option"); o.value = k; o.textContent = CORR_STATUS[k].label; if (k === it.status) o.selected = true; sel.appendChild(o); });
         sel.addEventListener("change", async () => {
-          try { await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/update", { status: sel.value }); correctionsData = null; await loadCorrections(); }
-          catch (e) { alert(e.message || "Ошибка"); }
+          const prev = it.status;
+          try {
+            const d = await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/update", { status: sel.value });
+            const upd = (d && d.item) ? d.item : null;
+            it.status = upd ? upd.status : sel.value;
+            it.resolvedAt = upd ? upd.resolvedAt : it.resolvedAt;
+            const stNew = CORR_STATUS[it.status] || CORR_STATUS.new;
+            badge.className = "corr-badge " + stNew.cls; badge.textContent = stNew.label;
+            card.className = "corr-card " + stNew.cls;
+            // переупорядочивание/перенос в другую группу — при следующем обновлении, без скачка сейчас
+          } catch (e) { alert(e.message || "Ошибка"); sel.value = prev; }
         });
         ctrl.appendChild(sel);
 
@@ -1598,8 +1625,12 @@
           const nb = document.createElement("button"); nb.type = "button"; nb.className = "corr-note-btn"; nb.textContent = "Сохранить";
           nb.addEventListener("click", async () => {
             nb.disabled = true;
-            try { await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/update", { note: ni.value }); correctionsData = null; await loadCorrections(); }
-            catch (e) { alert(e.message || "Ошибка"); nb.disabled = false; }
+            try {
+              await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/update", { note: ni.value });
+              it.note = ni.value;
+              nb.textContent = "Сохранено";
+              setTimeout(() => { nb.textContent = "Сохранить"; nb.disabled = false; }, 1200);
+            } catch (e) { alert(e.message || "Ошибка"); nb.disabled = false; }
           });
           ctrl.appendChild(ni); ctrl.appendChild(nb);
         }
@@ -1610,8 +1641,15 @@
         cb.addEventListener("click", async () => {
           const text = ci.value.trim(); if (!text) return;
           cb.disabled = true;
-          try { await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/comment", { author: "Админ", text }); correctionsData = null; await loadCorrections(); }
-          catch (e) { alert(e.message || "Ошибка"); cb.disabled = false; }
+          try {
+            await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/comment", { text });
+            const c = { ts: Date.now(), author: (correctionsMe && correctionsMe.name) || "—", text };
+            if (!Array.isArray(it.comments)) it.comments = [];
+            it.comments.push(c);
+            appendCommentToCard(card, c);
+            ci.value = "";
+          } catch (e) { alert(e.message || "Ошибка"); }
+          finally { cb.disabled = false; }
         });
         ctrl.appendChild(ci); ctrl.appendChild(cb);
         card.appendChild(ctrl);
