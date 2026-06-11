@@ -537,6 +537,7 @@
     .corr-card.cs-clarify { border-left-color: #e0a800; background: #fffdf5; }
     .corr-card.cs-prog { border-left-color: #7a5cd0; background: #faf8ff; }
     .corr-card.cs-done { border-left-color: #4f9f68; background: #f1f9f3; }
+    .corr-card.cs-defer { border-left-color: #a98b6a; background: #f7f4ef; }
     .corr-card.cs-rej { border-left-color: #b0b6c2; background: #f7f8fa; }
     .corr-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
     .corr-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
@@ -549,6 +550,7 @@
     .corr-badge.cs-clarify { background: #fdf3d6; color: #8a6500; }
     .corr-badge.cs-prog { background: #efeaff; color: #5a3db0; }
     .corr-badge.cs-done { background: #e3f3e8; color: #1f7a3d; }
+    .corr-badge.cs-defer { background: #efe6d8; color: #7a6038; }
     .corr-badge.cs-rej { background: #eceef2; color: #6b7280; }
     .corr-what { font-size: 14px; color: #1d2330; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
     .corr-sub { font-size: 13px; color: #4a5260; margin-top: 6px; white-space: pre-wrap; word-break: break-word; }
@@ -1327,6 +1329,7 @@
         new:         { label: "Новая",           cls: "cs-new" },
         clarify:     { label: "Нужны уточнения",  cls: "cs-clarify" },
         in_progress: { label: "В работе",         cls: "cs-prog" },
+        deferred:    { label: "Отложено",         cls: "cs-defer" },
         done:        { label: "Реализовано",      cls: "cs-done" },
         rejected:    { label: "Отклонено",        cls: "cs-rej" }
       };
@@ -1334,6 +1337,7 @@
       let correctionsData = null;
       let corrFormOpen = false;
       let corrDoneExpanded = false;
+      let corrDeferExpanded = false;
       let corrRejExpanded = false;
 
       async function apiSend(url, body) {
@@ -1383,6 +1387,7 @@
         const items = (correctionsData || []).slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
         const active = items.filter((x) => x.status === "new" || x.status === "clarify" || x.status === "in_progress");
         const done = items.filter((x) => x.status === "done");
+        const deferred = items.filter((x) => x.status === "deferred");
         const rejected = items.filter((x) => x.status === "rejected");
 
         correctionsContent.innerHTML = "";
@@ -1406,6 +1411,7 @@
         }
 
         correctionsContent.appendChild(buildCorrCollapse("Реализованные", done, corrDoneExpanded, (v) => { corrDoneExpanded = v; renderCorrections(); }));
+        correctionsContent.appendChild(buildCorrCollapse("Отложенные", deferred, corrDeferExpanded, (v) => { corrDeferExpanded = v; renderCorrections(); }));
         correctionsContent.appendChild(buildCorrCollapse("Отклонённые", rejected, corrRejExpanded, (v) => { corrRejExpanded = v; renderCorrections(); }));
       }
 
@@ -1501,8 +1507,9 @@
         });
         ctrl.appendChild(sel);
 
-        if (it.status === "done" || it.status === "rejected") {
-          const ni = document.createElement("input"); ni.className = "corr-note-input"; ni.placeholder = (it.status === "rejected" ? "Причина отклонения…" : "Примечание / решение…"); ni.value = it.note || "";
+        if (it.status === "done" || it.status === "rejected" || it.status === "deferred") {
+          const notePh = it.status === "rejected" ? "Причина отклонения…" : (it.status === "deferred" ? "Причина / до когда отложено…" : "Примечание / решение…");
+          const ni = document.createElement("input"); ni.className = "corr-note-input"; ni.placeholder = notePh; ni.value = it.note || "";
           const nb = document.createElement("button"); nb.type = "button"; nb.className = "corr-note-btn"; nb.textContent = "Сохранить";
           nb.addEventListener("click", async () => {
             nb.disabled = true;

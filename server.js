@@ -717,7 +717,9 @@ app.get("/admin/api/surveys/download", requireAdmin, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────
 const LK_CORRECTIONS_FILE = path.join(__dirname, ".lkCorrections.json");
 const LK_CORRECTIONS_SEED = path.join(__dirname, "lkCorrections.seed.json");
-const CORRECTION_STATUSES = new Set(["new", "clarify", "in_progress", "done", "rejected"]);
+const CORRECTION_STATUSES = new Set(["new", "clarify", "in_progress", "deferred", "done", "rejected"]);
+// Статусы, считающиеся «закрытыми» (скрываются в сворачиваемые секции, проставляется дата).
+const CORRECTION_CLOSED_STATUSES = new Set(["deferred", "done", "rejected"]);
 let lkCorrections = null; // массив в памяти
 
 function saveCorrections() {
@@ -798,10 +800,10 @@ app.post("/admin/api/corrections/:id/update", requireAdmin, (req, res) => {
       const st = String(b.status);
       if (!CORRECTION_STATUSES.has(st)) return res.status(400).json({ success: false, message: "Неизвестный статус" });
       it.status = st;
-      if ((st === "done" || st === "rejected") && !it.resolvedAt) {
+      if (CORRECTION_CLOSED_STATUSES.has(st) && !it.resolvedAt) {
         it.resolvedAt = new Date().toISOString().slice(0, 10);
       }
-      if (st !== "done" && st !== "rejected") it.resolvedAt = "";
+      if (!CORRECTION_CLOSED_STATUSES.has(st)) it.resolvedAt = "";
     }
     if (b.note !== undefined) it.note = corrText(b.note, 4000);
     saveCorrections();
