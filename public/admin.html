@@ -582,6 +582,12 @@
     .tst-flags-h { font-weight: 700; color: #8a5a12; font-size: 13.5px; margin-bottom: 6px; }
     .tst-flags ul { margin: 0; padding-left: 18px; }
     .tst-flags li { font-size: 12.5px; color: #5c4a2a; margin: 5px 0; line-height: 1.45; }
+    .rec-item { border-top: 1px dashed #ecd9ab; padding: 8px 0 6px; }
+    .rec-item:first-of-type { border-top: none; }
+    .rec-main { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+    .rec-text { font-size: 12.5px; color: #5c4a2a; line-height: 1.45; }
+    .qc-apply { color: #2c6b43; border-color: #bfe3cc; }
+    .qc-apply:hover { background: #e9f7ee; }
     .tst-dirs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
     .tst-dir-btn { border: 1px solid #cfd8e3; background: #fff; color: #33415a; border-radius: 999px; padding: 6px 16px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
     .tst-dir-btn.active { background: #161d45; color: #fff; border-color: #161d45; }
@@ -1168,12 +1174,68 @@
         (dir.params || []).forEach((p) => parts.push(p.label + ": " + (testerAnswers[p.key] || "—")));
         return parts.join("\n");
       }
-      // Заголовок блока с кнопкой «Корректировка» справа
+      // Заголовок блока с кнопкой «Скорректировать» справа
       function tstBoxHead(titleEl, areaLabel, contextFn, mount) {
         const head = document.createElement("div"); head.className = "tst-box-head";
         head.appendChild(titleEl);
         head.appendChild(corrQuickButton(areaLabel, contextFn, mount));
         return head;
+      }
+
+      // ── Блок «Рекомендации» (жёлтый) — единый для Тестировщика и справочников.
+      // У каждой рекомендации кнопка «Применить»: комментарий (необязательно) →
+      // заявка в «Корректировки ЛК» с текстом рекомендации и контекстом.
+      function recApplyButton(areaLabel, recText, contextFn, mount) {
+        const btn = document.createElement("button");
+        btn.type = "button"; btn.className = "qc-btn qc-apply"; btn.textContent = "Применить";
+        btn.title = "Отправить эту рекомендацию в «Корректировки ЛК» (можно добавить комментарий)";
+        btn.addEventListener("click", () => {
+          const existing = mount.querySelector(":scope > .qc-form");
+          if (existing) { existing.remove(); return; }
+          const f = document.createElement("div"); f.className = "qc-form";
+          const ta = document.createElement("textarea"); ta.className = "qc-ta"; ta.rows = 2; ta.placeholder = "Ваш комментарий (необязательно)";
+          const err = document.createElement("div"); err.className = "qc-err";
+          const send = document.createElement("button"); send.type = "button"; send.className = "qc-send"; send.textContent = "Отправить в «Корректировки ЛК»";
+          const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "qc-cancel"; cancel.textContent = "Отмена";
+          cancel.addEventListener("click", () => f.remove());
+          send.addEventListener("click", async () => {
+            send.disabled = true; send.textContent = "Отправка…";
+            try {
+              await apiSend("/admin/api/corrections", {
+                area: areaLabel,
+                what: "Применить рекомендацию: " + recText,
+                expected: ta.value.trim(),
+                context: contextFn() + "\nИсточник: блок «Рекомендации»"
+              });
+              f.innerHTML = '<div class="qc-done">✓ Отправлено в «Корректировки ЛК»</div>';
+              setTimeout(() => { f.remove(); }, 2500);
+            } catch (e) {
+              err.textContent = e.message || "Ошибка"; err.style.display = "block";
+              send.disabled = false; send.textContent = "Отправить в «Корректировки ЛК»";
+            }
+          });
+          const row = document.createElement("div"); row.className = "qc-row"; row.appendChild(send); row.appendChild(cancel);
+          f.appendChild(ta); f.appendChild(err); f.appendChild(row);
+          mount.appendChild(f);
+          ta.focus();
+        });
+        return btn;
+      }
+      function recBlock(areaLabel, recs, contextFn) {
+        const cw = document.createElement("div"); cw.className = "tst-flags";
+        const ct = document.createElement("div"); ct.className = "tst-flags-h";
+        ct.textContent = "💡 Рекомендации — на что я обратил бы внимание (спорное / дубли / можно качественнее):";
+        cw.appendChild(tstBoxHead(ct, areaLabel, contextFn, cw));
+        (recs || []).forEach((t) => {
+          const item = document.createElement("div"); item.className = "rec-item";
+          const main = document.createElement("div"); main.className = "rec-main";
+          const tx = document.createElement("div"); tx.className = "rec-text"; tx.textContent = t;
+          main.appendChild(tx);
+          main.appendChild(recApplyButton(areaLabel, t, contextFn, item));
+          item.appendChild(main);
+          cw.appendChild(item);
+        });
+        return cw;
       }
 
       // Человекочитаемое описание условия из спека (для opt-условий подобласти)
@@ -1237,6 +1299,9 @@
         intro.textContent = "Полный список документов по направлению: когда каждый запрашивается (этап, ответы опросника, дни до подачи) и обязательность. Напротив каждого — кнопка «Корректировка»: если что-то неверно, заявка с полным контекстом сразу уйдёт в «Корректировки ЛК». Данные — из той же логики, что и Тестировщик ЛК.";
         docsreqContent.appendChild(intro);
         docsreqContent.appendChild(refDirButtons(docsreqDir, (k) => { docsreqDir = k; renderDocsReq(); }));
+        if (Array.isArray(dir.docRecs) && dir.docRecs.length) {
+          docsreqContent.appendChild(recBlock("Запрос документов", dir.docRecs, () => "Раздел: Запрос документов\nНаправление: " + dir.title + "\nБлок: Рекомендации"));
+        }
         for (let s = 0; s <= 2; s++) {
           const docs = dir.docsByStage[String(s)] || [];
           const h = document.createElement("div"); h.className = "ref-sec-h";
@@ -1287,15 +1352,8 @@
         intro.textContent = "Все вопросы опросника по направлению: обязательность ответа, когда вопрос показывается (в т.ч. вопросы, открывающиеся после других ответов) и что влечёт каждый ответ — какие документы и на каком этапе запросятся. Кнопка «Корректировка» — отправить замечание сразу в «Корректировки ЛК».";
         qlogicContent.appendChild(intro);
         qlogicContent.appendChild(refDirButtons(qlogicDir, (k) => { qlogicDir = k; renderQLogic(); }));
-        if (dir.qnote) {
-          const n = document.createElement("div"); n.className = "ref-note";
-          const head = document.createElement("div"); head.className = "tst-box-head";
-          const txt = document.createElement("div"); txt.textContent = dir.qnote;
-          head.appendChild(txt);
-          const nctx = "Раздел: Опросники (логика)\nНаправление: " + dir.title + "\nБлок: жёлтое примечание\nТекст: " + dir.qnote;
-          head.appendChild(corrQuickButton("Опросники (логика)", () => nctx, n));
-          n.appendChild(head);
-          qlogicContent.appendChild(n);
+        if (Array.isArray(dir.qrecs) && dir.qrecs.length) {
+          qlogicContent.appendChild(recBlock("Опросники (логика)", dir.qrecs, () => "Раздел: Опросники (логика)\nНаправление: " + dir.title + "\nБлок: Рекомендации"));
         }
         (dir.questions || []).forEach((qq) => {
           const rb = QREQ_LABELS[qq.req] || ["opt", String(qq.req || "—")];
@@ -1322,6 +1380,9 @@
         const intro = document.createElement("p"); intro.className = "ref-intro";
         intro.textContent = "Все действия, которые ЛК инициирует во внешних системах (amoCRM, Яндекс.Диск, sms.ru) и значимые внутренние — сгруппированы по сервису; внутри группы — в порядке, в котором действия происходят по ходу пути клиента. Кнопка «Скорректировать» — отправить замечание сразу в «Корректировки ЛК».";
         actionsContent.appendChild(intro);
+        if (Array.isArray(testerSpec.actionRecs) && testerSpec.actionRecs.length) {
+          actionsContent.appendChild(recBlock("Действия", testerSpec.actionRecs, () => "Раздел: Действия\nБлок: Рекомендации"));
+        }
         // Группировка по сервису; порядок групп = хронология первого действия сервиса.
         const SYS_TITLES = { "Я.Диск": "Яндекс.Диск", "ЛК": "ЛК (внутренние действия)" };
         const sysOrder = []; const sysGroups = {};
@@ -1416,12 +1477,7 @@
         intro.textContent = "Выберите направление, этап и параметры клиента — ниже сразу появится, что увидит клиент: какие документы обязательны (красным) и необязательны (синим), когда они появляются, плюс внутренняя логика (что незаметно клиенту). Данные тянутся из актуальной логики ЛК.";
         testerContent.appendChild(intro);
         if (Array.isArray(spec.contentious) && spec.contentious.length) {
-          const cw = document.createElement("div"); cw.className = "tst-flags";
-          const ct = document.createElement("div"); ct.className = "tst-flags-h"; ct.textContent = "⚠️ На что обратить внимание (моя оценка — спорное / дублирующееся / хрупкое):";
-          cw.appendChild(tstBoxHead(ct, "Тестировщик ЛК", () => testerContextText("Жёлтый блок «На что обратить внимание»"), cw));
-          const ul = document.createElement("ul");
-          spec.contentious.forEach((t) => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
-          cw.appendChild(ul); testerContent.appendChild(cw);
+          testerContent.appendChild(recBlock("Тестировщик ЛК", spec.contentious, () => testerContextText("Блок «Рекомендации»")));
         }
         const dirRow = document.createElement("div"); dirRow.className = "tst-dirs";
         Object.keys(spec.directions).forEach((k) => {
