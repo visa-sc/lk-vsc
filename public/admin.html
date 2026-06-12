@@ -271,10 +271,17 @@
     .tab-group { border: 1px solid #e8e2ee; border-radius: 16px; padding: 8px 10px 10px; background: #fbfafd; }
     .tab-group-label { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #9096a3; margin: 0 4px 7px; }
     .tab-group-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    /* Мобила: меню — компактные горизонтально прокручиваемые ряды чипсов
+       (по одному ряду на группу), без рамок-коробок. Вся навигация ~100px
+       высоты вместо полэкрана. Полускрытая крайняя кнопка подсказывает,
+       что ряд листается. */
     @media (max-width: 720px) {
-      .tabs { flex-direction: column; gap: 8px; }
-      .tab-group { width: 100%; box-sizing: border-box; }
-      .tab-btn { height: 34px; padding: 0 12px; font-size: 13px; }
+      .tabs { flex-direction: column; gap: 10px; }
+      .tab-group { width: 100%; box-sizing: border-box; border: none; background: transparent; padding: 0; border-radius: 0; }
+      .tab-group-label { margin: 0 2px 6px; }
+      .tab-group-btns { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; gap: 6px; padding-bottom: 2px; }
+      .tab-group-btns::-webkit-scrollbar { display: none; }
+      .tab-btn { height: 34px; padding: 0 14px; font-size: 13px; flex: 0 0 auto; white-space: nowrap; }
     }
     .tab-btn {
       height: 38px; padding: 0 18px;
@@ -1459,6 +1466,9 @@
         const intro = document.createElement("p"); intro.className = "ref-intro";
         intro.textContent = "Все области загрузки документов клиентского ЛК: на каком этапе и при каких условиях появляются, что в составе, когда плашка меняет цвет с красной на зелёную, когда область можно закрыть полностью, и нюансы. Кнопка «Скорректировать» — замечание сразу в «Корректировки ЛК» с контекстом области. Данные — из той же актуальной логики ЛК.";
         uploadsContent.appendChild(intro);
+        if (Array.isArray(testerSpec.uploadRecs) && testerSpec.uploadRecs.length) {
+          uploadsContent.appendChild(recBlock("Области загрузки", testerSpec.uploadRecs, () => "Раздел: Области загрузки\nБлок: Рекомендации"));
+        }
         (testerSpec.uploadAreas || []).forEach((a) => {
           const parts = [];
           if (a.dirs) parts.push("<b>Направления:</b> " + escapeHtml(a.dirs));
