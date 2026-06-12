@@ -622,6 +622,10 @@
     .ref-cond b { color: #33415a; }
     .ref-badges { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
     .ref-badges .tst-doc-badge, .ref-badges .sys-badge { min-width: 116px; text-align: center; box-sizing: border-box; }
+    .ref-row-3 { grid-template-columns: minmax(170px, 1.1fr) 2fr 118px; }
+    .ref-sec-sys { display: flex; align-items: center; gap: 8px; }
+    .ref-sec-sys .sys-badge { font-size: 12px; padding: 3px 12px; }
+    .ref-sec-cnt { font-weight: 400; color: #9096a3; font-size: 12px; }
     .sys-badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
     .sys-amo { background: #f3edff; color: #5b3fa8; border: 1px solid #e0d4f7; }
     .sys-disk { background: #fff4e0; color: #8a5a12; border: 1px solid #f0dcae; }
@@ -1199,9 +1203,14 @@
         const row = document.createElement("div"); row.className = "ref-row";
         const n = document.createElement("div"); n.className = "ref-name"; n.textContent = name;
         const c = document.createElement("div"); c.className = "ref-cond"; c.innerHTML = condHtml;
-        const bw = document.createElement("div"); bw.className = "ref-badges";
-        if (badge) bw.appendChild(badge);
-        row.appendChild(n); row.appendChild(c); row.appendChild(bw);
+        row.appendChild(n); row.appendChild(c);
+        if (badge) {
+          const bw = document.createElement("div"); bw.className = "ref-badges";
+          bw.appendChild(badge);
+          row.appendChild(bw);
+        } else {
+          row.classList.add("ref-row-3"); // без колонки бейджа — 3 трека
+        }
         row.appendChild(corrQuickButton(area, () => contextText, row));
         return row;
       }
@@ -1302,13 +1311,26 @@
         if (!testerSpec || !actionsContent) return;
         actionsContent.innerHTML = "";
         const intro = document.createElement("p"); intro.className = "ref-intro";
-        intro.textContent = "Все действия, которые ЛК инициирует во внешних системах (amoCRM, Яндекс.Диск, sms.ru) и значимые внутренние: когда и при каких условиях каждое срабатывает. Кнопка «Корректировка» — отправить замечание сразу в «Корректировки ЛК».";
+        intro.textContent = "Все действия, которые ЛК инициирует во внешних системах (amoCRM, Яндекс.Диск, sms.ru) и значимые внутренние — сгруппированы по сервису; внутри группы — в порядке, в котором действия происходят по ходу пути клиента. Кнопка «Скорректировать» — отправить замечание сразу в «Корректировки ЛК».";
         actionsContent.appendChild(intro);
+        // Группировка по сервису; порядок групп = хронология первого действия сервиса.
+        const SYS_TITLES = { "Я.Диск": "Яндекс.Диск", "ЛК": "ЛК (внутренние действия)" };
+        const sysOrder = []; const sysGroups = {};
         (testerSpec.actions || []).forEach((a) => {
-          const sb = document.createElement("span"); sb.className = "sys-badge " + (SYS_BADGE_CLS[a.sys] || "sys-lk"); sb.textContent = a.sys;
-          const cond = "<b>Когда:</b> " + escapeHtml(a.when || "") + "<br><b>Подробности:</b> " + escapeHtml(a.details || "");
-          const ctx = "Раздел: Действия\nСистема: " + a.sys + "\nДействие: " + a.name + "\nКогда: " + (a.when || "") + "\nПодробности: " + (a.details || "");
-          actionsContent.appendChild(refRow(a.name, cond, sb, "Действия", ctx));
+          if (!sysGroups[a.sys]) { sysGroups[a.sys] = []; sysOrder.push(a.sys); }
+          sysGroups[a.sys].push(a);
+        });
+        sysOrder.forEach((sys) => {
+          const h = document.createElement("div"); h.className = "ref-sec-h ref-sec-sys";
+          const sb = document.createElement("span"); sb.className = "sys-badge " + (SYS_BADGE_CLS[sys] || "sys-lk"); sb.textContent = SYS_TITLES[sys] || sys;
+          const cnt = document.createElement("span"); cnt.className = "ref-sec-cnt"; cnt.textContent = sysGroups[sys].length + " действ.";
+          h.appendChild(sb); h.appendChild(cnt);
+          actionsContent.appendChild(h);
+          sysGroups[sys].forEach((a) => {
+            const cond = "<b>Когда:</b> " + escapeHtml(a.when || "") + "<br><b>Подробности:</b> " + escapeHtml(a.details || "");
+            const ctx = "Раздел: Действия\nСистема: " + a.sys + "\nДействие: " + a.name + "\nКогда: " + (a.when || "") + "\nПодробности: " + (a.details || "");
+            actionsContent.appendChild(refRow(a.name, cond, null, "Действия", ctx));
+          });
         });
       }
       function tstDocRow(label, required, when) {
