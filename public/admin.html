@@ -1225,7 +1225,7 @@
         const cw = document.createElement("div"); cw.className = "tst-flags";
         const ct = document.createElement("div"); ct.className = "tst-flags-h";
         ct.textContent = "💡 Рекомендации — на что я обратил бы внимание (спорное / дубли / можно качественнее):";
-        cw.appendChild(tstBoxHead(ct, areaLabel, contextFn, cw));
+        cw.appendChild(ct); // без кнопки «Скорректировать» — у каждой рекомендации своя «Применить»
         (recs || []).forEach((t) => {
           const item = document.createElement("div"); item.className = "rec-item";
           const main = document.createElement("div"); main.className = "rec-main";
