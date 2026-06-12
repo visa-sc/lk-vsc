@@ -1561,7 +1561,17 @@
       // по stageIndex. Здесь — заглушки для совместимости с остальным кодом
       // createDocumentsBlock (updateRequiredSectionState/renderPreviews).
       const isJapanState = applicant && applicant.visaType === "Виза в Японию";
+      // Плашка состояния области: КРАСНАЯ, пока прикреплены/загружены не все
+      // обязательные документы ниже; когда все на месте — ЗЕЛЕНЕЕТ
+      // (.required-done). Все блоки на этапах 0–2 обязательные, поэтому
+      // плашка одна на весь блок. Текст обновляет updateRequiredSectionState.
       let requiredSectionEl = null;
+      if (blocksConfig.length) {
+        requiredSectionEl = document.createElement("div");
+        requiredSectionEl.className = "file-list-section";
+        requiredSectionEl.textContent = "Необходимо загрузить все документы ниже.";
+        list.appendChild(requiredSectionEl);
+      }
       function maybeAddSection() { /* no-op */ }
 
       // Пересчитывает «все обязательные доки прикреплены?» (initial OR pending)
@@ -1580,6 +1590,9 @@
           });
         });
         requiredSectionEl.classList.toggle("required-done", allDone);
+        requiredSectionEl.textContent = allDone
+          ? "✓ Все обязательные документы прикреплены."
+          : "Необходимо загрузить все документы ниже.";
       }
 
       blocksConfig.forEach((cfg) => {
@@ -2516,12 +2529,21 @@
       wrapper.appendChild(sizeHint);
 
       if (mandatory.length) {
-        const red = document.createElement("div");
-        red.textContent = "Необходимо обязательно загрузить все документы ниже — они нужны для проверки перед подачей.";
-        red.style.background = "#fdecec"; red.style.border = "1px solid #f3bcbc"; red.style.color = "#b03a3a";
-        red.style.borderRadius = "10px"; red.style.padding = "10px 12px"; red.style.fontSize = "13px";
-        red.style.fontWeight = "600"; red.style.marginBottom = "14px"; red.style.lineHeight = "1.4";
-        wrapper.appendChild(red);
+        // Плашка области: красная, пока загружены не все обязательные ниже;
+        // когда все загружены — зелёная. Область полностью пересоздаётся
+        // после каждой загрузки (renderStages), поэтому состояние достаточно
+        // вычислить при построении.
+        const plate = document.createElement("div");
+        if (presubMandatoryAllUploaded(applicant, lead)) {
+          plate.textContent = "✓ Все обязательные документы для проверки перед подачей загружены.";
+          plate.style.background = "#edf8ef"; plate.style.border = "1px solid #cfe7d2"; plate.style.color = "#1f5a2e";
+        } else {
+          plate.textContent = "Необходимо обязательно загрузить все документы ниже — они нужны для проверки перед подачей.";
+          plate.style.background = "#fdecec"; plate.style.border = "1px solid #f3bcbc"; plate.style.color = "#b03a3a";
+        }
+        plate.style.borderRadius = "10px"; plate.style.padding = "10px 12px"; plate.style.fontSize = "13px";
+        plate.style.fontWeight = "600"; plate.style.marginBottom = "14px"; plate.style.lineHeight = "1.4";
+        wrapper.appendChild(plate);
         mandatory.forEach((cfg) => wrapper.appendChild(createSingleDocUnit(applicant, cfg, lead)));
       }
       if (optional.length) {
