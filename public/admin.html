@@ -267,7 +267,15 @@
       border-color: #c6dceb;
     }
 
-    .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: stretch; }
+    .tab-group { border: 1px solid #e8e2ee; border-radius: 16px; padding: 8px 10px 10px; background: #fbfafd; }
+    .tab-group-label { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #9096a3; margin: 0 4px 7px; }
+    .tab-group-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    @media (max-width: 720px) {
+      .tabs { flex-direction: column; gap: 8px; }
+      .tab-group { width: 100%; box-sizing: border-box; }
+      .tab-btn { height: 34px; padding: 0 12px; font-size: 13px; }
+    }
     .tab-btn {
       height: 38px; padding: 0 18px;
       border: 1.5px solid #e8e2ee;
@@ -544,6 +552,11 @@
     .corr-del-btn { font-size: 12px; color: #b0263a; background: #fff; border: 1px solid #f0c7ce; border-radius: 8px; padding: 3px 9px; cursor: pointer; line-height: 1.3; }
     .corr-del-btn:hover { background: #fbeaed; }
     .corr-del-btn:disabled { opacity: .5; cursor: default; }
+    .corr-restore-btn { font-size: 12px; color: #2c6b43; background: #fff; border: 1px solid #bfe3cc; border-radius: 8px; padding: 3px 9px; cursor: pointer; line-height: 1.3; }
+    .corr-restore-btn:hover { background: #e9f7ee; }
+    .corr-restore-btn:disabled { opacity: .5; cursor: default; }
+    .corr-purge-btn { display: block; margin: 8px 0 10px; }
+    .corr-del-mark { color: #b0263a; font-size: 12px; font-weight: 600; }
     .corr-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
     .corr-author { font-weight: 700; color: #161d45; }
     .corr-date { color: #9096a3; }
@@ -855,16 +868,26 @@
   <div id="dashBlock" class="dash">
 
     <div class="tabs">
-      <button type="button" class="tab-btn active" data-tab="stats">Статистика (доки)</button>
-      <button type="button" class="tab-btn" data-tab="stages">Статистика (этапы)</button>
-      <button type="button" class="tab-btn" data-tab="corrections">Корректировки ЛК</button>
-      <button type="button" class="tab-btn" data-tab="tester">Тестировщик ЛК</button>
-      <button type="button" class="tab-btn" data-tab="docsreq">Запрос документов</button>
-      <button type="button" class="tab-btn" data-tab="qlogic">Опросники (логика)</button>
-      <button type="button" class="tab-btn" data-tab="actions">Действия</button>
-      <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
-      <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
-      <button type="button" class="tab-btn" data-tab="kb">База знаний ЛК</button>
+      <div class="tab-group" data-group="admin">
+        <div class="tab-group-label">Статистика и данные</div>
+        <div class="tab-group-btns">
+          <button type="button" class="tab-btn active" data-tab="stats">Статистика (доки)</button>
+          <button type="button" class="tab-btn" data-tab="stages">Статистика (этапы)</button>
+          <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
+          <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
+        </div>
+      </div>
+      <div class="tab-group" data-group="team">
+        <div class="tab-group-label">Работа с ЛК · доступно сотрудникам</div>
+        <div class="tab-group-btns">
+          <button type="button" class="tab-btn" data-tab="corrections">Корректировки ЛК</button>
+          <button type="button" class="tab-btn" data-tab="tester">Тестировщик ЛК</button>
+          <button type="button" class="tab-btn" data-tab="docsreq">Запрос документов</button>
+          <button type="button" class="tab-btn" data-tab="qlogic">Опросники (логика)</button>
+          <button type="button" class="tab-btn" data-tab="actions">Действия</button>
+          <button type="button" class="tab-btn" data-tab="kb">База знаний ЛК</button>
+        </div>
+      </div>
     </div>
 
     <!-- Обособленный блок «Конверсия авторизаций по оплаченным сделкам».
@@ -1054,6 +1077,12 @@
           const allowed = mgr ? (t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions") : true;
           b.style.display = allowed ? "" : "none";
         });
+        // Руководителям скрываем всю группу «Статистика и данные» (рамку с подписью),
+        // а подпись группы «Работа с ЛК» упрощаем — пометка про доступ им не нужна.
+        const adminGroup = document.querySelector('.tab-group[data-group="admin"]');
+        if (adminGroup) adminGroup.style.display = mgr ? "none" : "";
+        const teamLabel = document.querySelector('.tab-group[data-group="team"] .tab-group-label');
+        if (teamLabel && mgr) teamLabel.textContent = "Разделы";
         if (mgr) {
           const pc = document.getElementById("paidConvBlock"); if (pc) pc.style.display = "none";
           const ad = document.getElementById("authDailyBlock"); if (ad) ad.style.display = "none";
@@ -1069,6 +1098,7 @@
         if (!kbContent) return;
         const tk = encodeURIComponent(getToken());
         const links = [
+          { t: "Инструкция по админке", d: "Цели и возможности разделов: Корректировки, Тестировщик, Запрос документов, Опросники (логика), Действия.", u: "/admin/kb/admin-guide" },
           { t: "Карта статусов", d: "Какой статус amoCRM → этап в ЛК (генерируется из кода).", u: "/admin/kb/statuses" },
           { t: "Карта документов", d: "Какие документы, на каком этапе, что обязательно.", u: "/admin/kb/documents" },
           { t: "Как работает ЛК", d: "Поведение по этапам, от чего зависит (фильтр по этапам).", u: "/admin/kb/logic" },
@@ -1972,6 +2002,7 @@
       let corrDoneExpanded = false;
       let corrDeferExpanded = false;
       let corrRejExpanded = false;
+      let corrDelExpanded = false;
 
       async function apiSend(url, body) {
         const t = getToken();
@@ -2037,11 +2068,13 @@
       function renderCorrections() {
         if (!correctionsContent) return;
         const items = (correctionsData || []).slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
-        const newOnes = items.filter((x) => x.status === "new");
-        const working = items.filter((x) => x.status === "in_progress" || x.status === "clarify");
-        const done = items.filter((x) => x.status === "done");
-        const deferred = items.filter((x) => x.status === "deferred");
-        const rejected = items.filter((x) => x.status === "rejected");
+        const live = items.filter((x) => !x.deleted);
+        const removed = items.filter((x) => x.deleted);
+        const newOnes = live.filter((x) => x.status === "new");
+        const working = live.filter((x) => x.status === "in_progress" || x.status === "clarify");
+        const done = live.filter((x) => x.status === "done");
+        const deferred = live.filter((x) => x.status === "deferred");
+        const rejected = live.filter((x) => x.status === "rejected");
 
         correctionsContent.innerHTML = "";
 
@@ -2064,6 +2097,27 @@
         correctionsContent.appendChild(buildCorrCollapse("Реализованные", done, corrDoneExpanded, (v) => { corrDoneExpanded = v; renderCorrections(); }));
         correctionsContent.appendChild(buildCorrCollapse("Отложенные", deferred, corrDeferExpanded, (v) => { corrDeferExpanded = v; renderCorrections(); }));
         correctionsContent.appendChild(buildCorrCollapse("Отклонённые", rejected, corrRejExpanded, (v) => { corrRejExpanded = v; renderCorrections(); }));
+
+        // Корзина «Удалённые» — только у админа. Внутри — кнопка «Удалить все».
+        if (currentRole() === "admin") {
+          const delWrap = buildCorrCollapse("Удалённые", removed, corrDelExpanded, (v) => { corrDelExpanded = v; renderCorrections(); });
+          if (corrDelExpanded && removed.length) {
+            const purge = document.createElement("button");
+            purge.type = "button"; purge.className = "corr-del-btn corr-purge-btn";
+            purge.textContent = "Удалить все безвозвратно (" + removed.length + ")";
+            purge.addEventListener("click", async () => {
+              if (!confirm("Безвозвратно удалить ВСЕ корректировки из «Удалённых» (" + removed.length + " шт.)? Это действие нельзя отменить.")) return;
+              purge.disabled = true;
+              try {
+                await apiSend("/admin/api/corrections/purge-deleted", {});
+                if (Array.isArray(correctionsData)) correctionsData = correctionsData.filter((x) => x && !x.deleted);
+                renderCorrections();
+              } catch (e) { alert(e.message || "Ошибка"); purge.disabled = false; }
+            });
+            delWrap.insertBefore(purge, delWrap.children[1] || null);
+          }
+          correctionsContent.appendChild(delWrap);
+        }
       }
 
       function buildCorrCollapse(title, list, expanded, onToggle) {
@@ -2128,32 +2182,46 @@
           '<span class="corr-author">' + escapeHtml(it.author || "—") + '</span>' +
           '<span class="corr-date">' + escapeHtml(corrDateText(it.createdAt)) + '</span>' +
           (it.area ? '<span class="corr-area">' + escapeHtml(it.area) + '</span>' : '') +
-          (it.priority ? '<span class="corr-prio">' + escapeHtml(it.priority) + '</span>' : '');
+          (it.priority ? '<span class="corr-prio">' + escapeHtml(it.priority) + '</span>' : '') +
+          (it.deleted ? '<span class="corr-del-mark">удалена' + (it.deletedAt ? ' · ' + escapeHtml(corrDateText(it.deletedAt)) : '') + '</span>' : '');
         const badge = document.createElement("span");
         badge.className = "corr-badge " + st.cls;
         badge.textContent = st.label;
         const headRight = document.createElement("div");
         headRight.className = "corr-head-right";
         headRight.appendChild(badge);
-        // Удаление — только админу (вход по коду 250960). Руководители кнопку не видят.
+        // Удаление/восстановление — только админу (вход по коду 250960).
         if (currentRole() === "admin") {
-          const del = document.createElement("button");
-          del.type = "button"; del.className = "corr-del-btn"; del.textContent = "Удалить";
-          del.title = "Удалить корректировку безвозвратно";
-          del.addEventListener("click", async () => {
-            const preview = (it.what || "").trim().slice(0, 160);
-            if (!confirm("Удалить эту корректировку безвозвратно?\n\n" + preview)) return;
-            del.disabled = true;
-            try {
-              await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/delete", {});
-              if (Array.isArray(correctionsData)) {
-                const i = correctionsData.findIndex((x) => x && x.id === it.id);
-                if (i !== -1) correctionsData.splice(i, 1);
-              }
-              card.remove();
-            } catch (e) { alert(e.message || "Ошибка"); del.disabled = false; }
-          });
-          headRight.appendChild(del);
+          if (it.deleted) {
+            const rst = document.createElement("button");
+            rst.type = "button"; rst.className = "corr-restore-btn"; rst.textContent = "Восстановить";
+            rst.title = "Вернуть корректировку из «Удалённых» в её группу";
+            rst.addEventListener("click", async () => {
+              rst.disabled = true;
+              try {
+                await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/restore", {});
+                it.deleted = false; it.deletedAt = "";
+                card.remove(); // вернётся в свою группу при следующем обновлении раздела
+              } catch (e) { alert(e.message || "Ошибка"); rst.disabled = false; }
+            });
+            headRight.appendChild(rst);
+          } else {
+            const del = document.createElement("button");
+            del.type = "button"; del.className = "corr-del-btn"; del.textContent = "Удалить";
+            del.title = "Переместить корректировку в «Удалённые» (внизу раздела)";
+            del.addEventListener("click", async () => {
+              const preview = (it.what || "").trim().slice(0, 160);
+              if (!confirm("Удалить корректировку? Она попадёт в «Удалённые» внизу раздела (можно восстановить).\n\n" + preview)) return;
+              del.disabled = true;
+              try {
+                const d = await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/delete", {});
+                it.deleted = true;
+                it.deletedAt = (d && d.item && d.item.deletedAt) || "";
+                card.remove(); // появится в «Удалённых» при следующем обновлении раздела
+              } catch (e) { alert(e.message || "Ошибка"); del.disabled = false; }
+            });
+            headRight.appendChild(del);
+          }
         }
         headEl.appendChild(meta); headEl.appendChild(headRight);
         card.appendChild(headEl);
@@ -2177,7 +2245,7 @@
         }
 
         const ctrl = document.createElement("div"); ctrl.className = "corr-ctrl";
-        if (currentRole() === "admin") {
+        if (currentRole() === "admin" && !it.deleted) {
         const sel = document.createElement("select"); sel.className = "corr-status-sel";
         Object.keys(CORR_STATUS).forEach((k) => { const o = document.createElement("option"); o.value = k; o.textContent = CORR_STATUS[k].label; if (k === it.status) o.selected = true; sel.appendChild(o); });
         sel.addEventListener("change", async () => {
@@ -2212,23 +2280,25 @@
         }
         }
 
-        const ci = document.createElement("input"); ci.className = "corr-comment-input"; ci.placeholder = "Комментарий / уточнение…";
-        const cb = document.createElement("button"); cb.type = "button"; cb.className = "corr-comment-btn"; cb.textContent = "Отправить";
-        cb.addEventListener("click", async () => {
-          const text = ci.value.trim(); if (!text) return;
-          cb.disabled = true;
-          try {
-            await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/comment", { text });
-            const c = { ts: Date.now(), author: (correctionsMe && correctionsMe.name) || "—", text };
-            if (!Array.isArray(it.comments)) it.comments = [];
-            it.comments.push(c);
-            appendCommentToCard(card, c);
-            ci.value = "";
-          } catch (e) { alert(e.message || "Ошибка"); }
-          finally { cb.disabled = false; }
-        });
-        ctrl.appendChild(ci); ctrl.appendChild(cb);
-        card.appendChild(ctrl);
+        if (!it.deleted) {
+          const ci = document.createElement("input"); ci.className = "corr-comment-input"; ci.placeholder = "Комментарий / уточнение…";
+          const cb = document.createElement("button"); cb.type = "button"; cb.className = "corr-comment-btn"; cb.textContent = "Отправить";
+          cb.addEventListener("click", async () => {
+            const text = ci.value.trim(); if (!text) return;
+            cb.disabled = true;
+            try {
+              await apiSend("/admin/api/corrections/" + encodeURIComponent(it.id) + "/comment", { text });
+              const c = { ts: Date.now(), author: (correctionsMe && correctionsMe.name) || "—", text };
+              if (!Array.isArray(it.comments)) it.comments = [];
+              it.comments.push(c);
+              appendCommentToCard(card, c);
+              ci.value = "";
+            } catch (e) { alert(e.message || "Ошибка"); }
+            finally { cb.disabled = false; }
+          });
+          ctrl.appendChild(ci); ctrl.appendChild(cb);
+        }
+        if (ctrl.childNodes.length) card.appendChild(ctrl);
 
         return card;
       }
