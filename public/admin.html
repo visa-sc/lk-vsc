@@ -610,6 +610,35 @@
     .tst-internal-h { font-weight: 700; color: #4a5260; font-size: 13.5px; margin-bottom: 6px; }
     .tst-internal ul { margin: 0; padding-left: 18px; }
     .tst-internal li { font-size: 12px; color: #5a626f; margin: 5px 0; line-height: 1.45; }
+    /* Справочники: Запрос документов / Опросники (логика) / Действия */
+    .ref-intro { font-size: 13px; color: #6b7280; margin: 0 0 12px; line-height: 1.5; }
+    .ref-note { background: #fff8ec; border: 1px solid #f0d9a8; border-radius: 10px; padding: 9px 12px; font-size: 12.5px; color: #5c4a2a; margin: 0 0 12px; line-height: 1.45; }
+    .ref-sec-h { font-weight: 700; color: #161d45; font-size: 14px; margin: 16px 0 8px; padding-bottom: 5px; border-bottom: 2px solid #e6e9f0; }
+    .ref-row { display: grid; grid-template-columns: minmax(170px, 1fr) 1.6fr auto auto; gap: 10px; align-items: start; border: 1px solid #ece9f1; border-radius: 10px; background: #fff; padding: 9px 12px; margin-bottom: 7px; }
+    .ref-row-form { grid-column: 1 / -1; }
+    .ref-name { font-size: 13px; font-weight: 600; color: #23272f; line-height: 1.35; }
+    .ref-cond { font-size: 12px; color: #5a626f; line-height: 1.45; }
+    .ref-cond b { color: #33415a; }
+    .ref-badges { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+    .sys-badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+    .sys-amo { background: #f3edff; color: #5b3fa8; border: 1px solid #e0d4f7; }
+    .sys-disk { background: #fff4e0; color: #8a5a12; border: 1px solid #f0dcae; }
+    .sys-sms { background: #e9f7ee; color: #2c6b43; border: 1px solid #cdebd8; }
+    .sys-lk { background: #f0f7fc; color: #1d4d72; border: 1px solid #d3e7f4; }
+    @media (max-width: 700px) { .ref-row { grid-template-columns: 1fr; gap: 6px; } }
+    /* Быстрая форма «Корректировка» */
+    .qc-btn { flex-shrink: 0; font-size: 11.5px; color: #1d4d72; background: #fff; border: 1px solid #c9dff0; border-radius: 8px; padding: 3px 10px; cursor: pointer; font-family: inherit; line-height: 1.4; white-space: nowrap; }
+    .qc-btn:hover { background: #f0f7fc; }
+    .qc-form { margin-top: 10px; background: #f6f7f9; border: 1px solid #e0e4ec; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .qc-ta { width: 100%; box-sizing: border-box; border: 1px solid #cfd8e3; border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit; resize: vertical; }
+    .qc-row { display: flex; gap: 8px; align-items: center; }
+    .qc-send { background: #3589BD; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .qc-send:disabled { opacity: .6; cursor: default; }
+    .qc-cancel { background: #fff; color: #6b7280; border: 1px solid #cfd8e3; border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; font-family: inherit; }
+    .qc-err { color: #b0263a; font-size: 12px; display: none; }
+    .qc-done { color: #2c6b43; font-size: 13px; font-weight: 600; padding: 4px 0; }
+    .tst-box-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    .corr-context { background: #f6f7f9; border-radius: 8px; padding: 8px 10px; font-size: 12px; color: #5a626f; margin-top: 6px; line-height: 1.5; }
 
     /* ── Кнопка раскрытия списка ── */
     .toggle-phones {
@@ -817,10 +846,13 @@
       <button type="button" class="tab-btn active" data-tab="stats">Статистика (доки)</button>
       <button type="button" class="tab-btn" data-tab="stages">Статистика (этапы)</button>
       <button type="button" class="tab-btn" data-tab="corrections">Корректировки ЛК</button>
-      <button type="button" class="tab-btn" data-tab="kb">База знаний ЛК</button>
       <button type="button" class="tab-btn" data-tab="tester">Тестировщик ЛК</button>
+      <button type="button" class="tab-btn" data-tab="docsreq">Запрос документов</button>
+      <button type="button" class="tab-btn" data-tab="qlogic">Опросники (логика)</button>
+      <button type="button" class="tab-btn" data-tab="actions">Действия</button>
       <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
       <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
+      <button type="button" class="tab-btn" data-tab="kb">База знаний ЛК</button>
     </div>
 
     <!-- Обособленный блок «Конверсия авторизаций по оплаченным сделкам».
@@ -878,6 +910,24 @@
       </div>
     </div>
 
+    <div id="panelDocsReq" class="panel">
+      <div id="docsreqContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
+    <div id="panelQLogic" class="panel">
+      <div id="qlogicContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
+    <div id="panelActions" class="panel">
+      <div id="actionsContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
     <div class="footer-logout">
       <button id="logoutBtn" type="button" class="logout-btn">Выйти</button>
     </div>
@@ -922,6 +972,12 @@
       const kbContent = document.getElementById("kbContent");
       const panelTester = document.getElementById("panelTester");
       const testerContent = document.getElementById("testerContent");
+      const panelDocsReq = document.getElementById("panelDocsReq");
+      const docsreqContent = document.getElementById("docsreqContent");
+      const panelQLogic = document.getElementById("panelQLogic");
+      const qlogicContent = document.getElementById("qlogicContent");
+      const panelActions = document.getElementById("panelActions");
+      const actionsContent = document.getElementById("actionsContent");
       const authDailyBlock = document.getElementById("authDailyBlock");
 
       let activeTab = "stats";
@@ -983,7 +1039,7 @@
         const mgr = currentRole() === "manager";
         tabBtns.forEach((b) => {
           const t = b.dataset.tab;
-          const allowed = mgr ? (t === "corrections" || t === "kb" || t === "tester") : true;
+          const allowed = mgr ? (t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions") : true;
           b.style.display = allowed ? "" : "none";
         });
         if (mgr) {
@@ -1039,21 +1095,219 @@
         (d.params || []).forEach((p) => { a[p.key] = (p.def != null) ? p.def : (p.opts && p.opts[0]); });
         return a;
       }
+      let testerSpecPromise = null;
+      function ensureTesterSpec() {
+        if (testerSpec) return Promise.resolve(testerSpec);
+        if (!testerSpecPromise) {
+          testerSpecPromise = apiFetch("/admin/api/lk-tester-spec").then((d) => {
+            testerSpec = d.spec;
+            if (!testerSpec.directions[testerDir]) testerDir = Object.keys(testerSpec.directions)[0];
+            if (!Object.keys(testerAnswers).length) testerAnswers = testerInitAnswers(testerDir);
+            return testerSpec;
+          }).catch((e) => { testerSpecPromise = null; throw e; });
+        }
+        return testerSpecPromise;
+      }
       async function loadTester() {
         if (!testerContent) return;
-        if (!testerSpec) {
-          testerContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
-          try {
-            const d = await apiFetch("/admin/api/lk-tester-spec");
-            testerSpec = d.spec;
-          } catch (e) {
-            testerContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
-            return;
-          }
-          if (!testerSpec.directions[testerDir]) testerDir = Object.keys(testerSpec.directions)[0];
-          testerAnswers = testerInitAnswers(testerDir);
+        if (!testerSpec) testerContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        try { await ensureTesterSpec(); } catch (e) {
+          testerContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+          return;
         }
         renderTester();
+      }
+
+      // ── Быстрая отправка корректировки из любого справочного блока ──
+      // Кнопка открывает форму «что не так / как нужно»; при отправке в раздел
+      // «Корректировки ЛК» уходит заявка с полным контекстом ситуации.
+      function corrQuickButton(areaLabel, buildContext, mount) {
+        const btn = document.createElement("button");
+        btn.type = "button"; btn.className = "qc-btn"; btn.textContent = "Корректировка";
+        btn.title = "Отправить запрос на корректировку в раздел «Корректировки ЛК» — параметры ситуации приложатся автоматически";
+        btn.addEventListener("click", () => {
+          const existing = mount.querySelector(":scope > .qc-form");
+          if (existing) { existing.remove(); return; }
+          const f = document.createElement("div"); f.className = "qc-form";
+          if (mount.classList.contains("ref-row")) f.classList.add("ref-row-form");
+          const ta1 = document.createElement("textarea"); ta1.className = "qc-ta"; ta1.rows = 2; ta1.placeholder = "Что не так?";
+          const ta2 = document.createElement("textarea"); ta2.className = "qc-ta"; ta2.rows = 2; ta2.placeholder = "Как нужно сделать?";
+          const err = document.createElement("div"); err.className = "qc-err";
+          const send = document.createElement("button"); send.type = "button"; send.className = "qc-send"; send.textContent = "Добавить корректировку";
+          const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "qc-cancel"; cancel.textContent = "Отмена";
+          cancel.addEventListener("click", () => f.remove());
+          send.addEventListener("click", async () => {
+            const what = ta1.value.trim();
+            if (!what) { err.textContent = "Опишите, что не так."; err.style.display = "block"; return; }
+            send.disabled = true; send.textContent = "Отправка…";
+            try {
+              await apiSend("/admin/api/corrections", { area: areaLabel, what: what, expected: ta2.value.trim(), context: buildContext() });
+              f.innerHTML = '<div class="qc-done">✓ Отправлено в «Корректировки ЛК»</div>';
+              setTimeout(() => { f.remove(); }, 2500);
+            } catch (e) {
+              err.textContent = e.message || "Ошибка"; err.style.display = "block";
+              send.disabled = false; send.textContent = "Добавить корректировку";
+            }
+          });
+          const row = document.createElement("div"); row.className = "qc-row"; row.appendChild(send); row.appendChild(cancel);
+          f.appendChild(ta1); f.appendChild(ta2); f.appendChild(err); f.appendChild(row);
+          mount.appendChild(f);
+          ta1.focus();
+        });
+        return btn;
+      }
+      function testerContextText(block) {
+        const spec = testerSpec, dir = spec.directions[testerDir];
+        const parts = ["Блок: " + block, "Направление: " + dir.title, "Этап: " + testerStage + ". " + spec.stages[testerStage]];
+        (dir.params || []).forEach((p) => parts.push(p.label + ": " + (testerAnswers[p.key] || "—")));
+        return parts.join("\n");
+      }
+      // Заголовок блока с кнопкой «Корректировка» справа
+      function tstBoxHead(titleEl, areaLabel, contextFn, mount) {
+        const head = document.createElement("div"); head.className = "tst-box-head";
+        head.appendChild(titleEl);
+        head.appendChild(corrQuickButton(areaLabel, contextFn, mount));
+        return head;
+      }
+
+      // Человекочитаемое описание условия из спека (для opt-условий подобласти)
+      function tCondText(c, dir) {
+        if (!c) return "";
+        if (c.all) return c.all.map((x) => tCondText(x, dir)).join(" И ");
+        if (c.any) return "(" + c.any.map((x) => tCondText(x, dir)).join(" ИЛИ ") + ")";
+        const p = (dir.params || []).find((x) => x.key === c.f);
+        const lab = p ? p.label : c.f;
+        if ("eq" in c) return lab + " = «" + c.eq + "»";
+        if ("ne" in c) return lab + " ≠ «" + c.ne + "»";
+        if ("in" in c) return lab + ": " + c.in.join(" / ");
+        return "";
+      }
+      function refDirButtons(current, onPick) {
+        const row = document.createElement("div"); row.className = "tst-dirs";
+        Object.keys(testerSpec.directions).forEach((k) => {
+          const b = document.createElement("button"); b.type = "button";
+          b.className = "tst-dir-btn" + (k === current ? " active" : "");
+          b.textContent = testerSpec.directions[k].title;
+          b.addEventListener("click", () => onPick(k));
+          row.appendChild(b);
+        });
+        return row;
+      }
+      function refRow(name, condHtml, badge, area, contextText) {
+        const row = document.createElement("div"); row.className = "ref-row";
+        const n = document.createElement("div"); n.className = "ref-name"; n.textContent = name;
+        const c = document.createElement("div"); c.className = "ref-cond"; c.innerHTML = condHtml;
+        const bw = document.createElement("div"); bw.className = "ref-badges";
+        if (badge) bw.appendChild(badge);
+        row.appendChild(n); row.appendChild(c); row.appendChild(bw);
+        row.appendChild(corrQuickButton(area, () => contextText, row));
+        return row;
+      }
+      function docBadge(kind, text) {
+        const b = document.createElement("span"); b.className = "tst-doc-badge " + kind; b.textContent = text; return b;
+      }
+
+      // ── Раздел «Запрос документов» ──
+      let docsreqDir = "schengen";
+      async function loadDocsReq() {
+        if (!docsreqContent) return;
+        if (!testerSpec) docsreqContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        try { await ensureTesterSpec(); } catch (e) {
+          docsreqContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+          return;
+        }
+        renderDocsReq();
+      }
+      function renderDocsReq() {
+        if (!testerSpec || !docsreqContent) return;
+        const spec = testerSpec, dir = spec.directions[docsreqDir];
+        docsreqContent.innerHTML = "";
+        const intro = document.createElement("p"); intro.className = "ref-intro";
+        intro.textContent = "Полный список документов по направлению: когда каждый запрашивается (этап, ответы опросника, дни до подачи) и обязательность. Напротив каждого — кнопка «Корректировка»: если что-то неверно, заявка с полным контекстом сразу уйдёт в «Корректировки ЛК». Данные — из той же логики, что и Тестировщик ЛК.";
+        docsreqContent.appendChild(intro);
+        docsreqContent.appendChild(refDirButtons(docsreqDir, (k) => { docsreqDir = k; renderDocsReq(); }));
+        for (let s = 0; s <= 2; s++) {
+          const docs = dir.docsByStage[String(s)] || [];
+          const h = document.createElement("div"); h.className = "ref-sec-h";
+          h.textContent = "Этап " + s + " — «" + spec.stages[s] + "»";
+          docsreqContent.appendChild(h);
+          if (s === 2 && dir.stage2Note) { const n = document.createElement("div"); n.className = "ref-note"; n.textContent = dir.stage2Note; docsreqContent.appendChild(n); }
+          if (!docs.length) { const e = document.createElement("div"); e.className = "tst-empty"; e.textContent = "Нет стандартных документов на этом этапе."; docsreqContent.appendChild(e); }
+          docs.forEach((doc) => {
+            const cond = "<b>Когда:</b> " + escapeHtml(doc.when || "всегда") + "<br><b>Обязательность:</b> обязателен с момента появления; остаётся в списке на следующих этапах, пока не загружен (кумулятивно до этапа 2).";
+            const ctx = "Раздел: Запрос документов\nНаправление: " + dir.title + "\nДокумент: " + doc.label + "\nЭтап: " + s + ". " + spec.stages[s] + "\nКогда: " + (doc.when || "всегда");
+            docsreqContent.appendChild(refRow(doc.label, cond, docBadge("req", "обязателен"), "Запрос документов", ctx));
+          });
+        }
+        const ph = document.createElement("div"); ph.className = "ref-sec-h";
+        ph.textContent = "Подобласть «Документы для проверки перед подачей» (этап 2)";
+        docsreqContent.appendChild(ph);
+        const pn = document.createElement("div"); pn.className = "ref-note";
+        pn.textContent = "Появляется за 7 дней до «Даты записи на подачу» (поле сделки в amoCRM). Если дата не заполнена — подобласть не показывается. Обязательные выделены красным, необязательные — синим. Пока обязательные не загружены, точка этапа в ЛК — жёлтая.";
+        docsreqContent.appendChild(pn);
+        (dir.presub || []).forEach((doc) => {
+          let badge, mandTxt;
+          if (doc.opt === true) { badge = docBadge("opt", "необязателен"); mandTxt = "необязательный (с пометкой «уточните у менеджера»)"; }
+          else if (doc.opt) { badge = docBadge("req", "обязателен*"); mandTxt = "обязательный; становится НЕобязательным, если " + tCondText(doc.opt, dir); }
+          else { badge = docBadge("req", "обязателен"); mandTxt = "обязательный (с момента появления подобласти, т.е. за 7 дней до записи)"; }
+          const cond = "<b>Когда:</b> " + escapeHtml(doc.when || "всегда") + "<br><b>Обязательность:</b> " + escapeHtml(mandTxt);
+          const ctx = "Раздел: Запрос документов\nНаправление: " + dir.title + "\nДокумент: " + doc.label + " (подобласть «перед подачей»)\nКогда: " + (doc.when || "всегда") + "\nОбязательность: " + mandTxt;
+          docsreqContent.appendChild(refRow(doc.label, cond, badge, "Запрос документов", ctx));
+        });
+      }
+
+      // ── Раздел «Опросники (логика)» ──
+      let qlogicDir = "schengen";
+      const QREQ_LABELS = { "Да": ["req", "ответ обязателен"], "Да*": ["req", "обязателен*"], "Нет": ["opt", "необязателен"], "Нет ⚠": ["opt", "необязателен ⚠"], "—": ["opt", "—"] };
+      async function loadQLogic() {
+        if (!qlogicContent) return;
+        if (!testerSpec) qlogicContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        try { await ensureTesterSpec(); } catch (e) {
+          qlogicContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+          return;
+        }
+        renderQLogic();
+      }
+      function renderQLogic() {
+        if (!testerSpec || !qlogicContent) return;
+        const spec = testerSpec, dir = spec.directions[qlogicDir];
+        qlogicContent.innerHTML = "";
+        const intro = document.createElement("p"); intro.className = "ref-intro";
+        intro.textContent = "Все вопросы опросника по направлению: обязательность ответа, когда вопрос показывается (в т.ч. вопросы, открывающиеся после других ответов) и что влечёт каждый ответ — какие документы и на каком этапе запросятся. Кнопка «Корректировка» — отправить замечание сразу в «Корректировки ЛК».";
+        qlogicContent.appendChild(intro);
+        qlogicContent.appendChild(refDirButtons(qlogicDir, (k) => { qlogicDir = k; renderQLogic(); }));
+        if (dir.qnote) { const n = document.createElement("div"); n.className = "ref-note"; n.textContent = dir.qnote; qlogicContent.appendChild(n); }
+        (dir.questions || []).forEach((qq) => {
+          const rb = QREQ_LABELS[qq.req] || ["opt", String(qq.req || "—")];
+          const cond = "<b>Показывается:</b> " + escapeHtml(qq.shows || "всегда") + "<br><b>Что влечёт:</b> " + escapeHtml(qq.effect || "");
+          const ctx = "Раздел: Опросники (логика)\nНаправление: " + dir.title + "\nВопрос: " + qq.q + "\nОбязательность ответа: " + qq.req + "\nПоказывается: " + (qq.shows || "всегда") + "\nЧто влечёт: " + (qq.effect || "");
+          qlogicContent.appendChild(refRow(qq.q, cond, docBadge(rb[0], rb[1]), "Опросники (логика)", ctx));
+        });
+      }
+
+      // ── Раздел «Действия» ──
+      const SYS_BADGE_CLS = { "amoCRM": "sys-amo", "Я.Диск": "sys-disk", "sms.ru": "sys-sms", "ЛК": "sys-lk" };
+      async function loadActions() {
+        if (!actionsContent) return;
+        if (!testerSpec) actionsContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        try { await ensureTesterSpec(); } catch (e) {
+          actionsContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+          return;
+        }
+        renderActions();
+      }
+      function renderActions() {
+        if (!testerSpec || !actionsContent) return;
+        actionsContent.innerHTML = "";
+        const intro = document.createElement("p"); intro.className = "ref-intro";
+        intro.textContent = "Все действия, которые ЛК инициирует во внешних системах (amoCRM, Яндекс.Диск, sms.ru) и значимые внутренние: когда и при каких условиях каждое срабатывает. Кнопка «Корректировка» — отправить замечание сразу в «Корректировки ЛК».";
+        actionsContent.appendChild(intro);
+        (testerSpec.actions || []).forEach((a) => {
+          const sb = document.createElement("span"); sb.className = "sys-badge " + (SYS_BADGE_CLS[a.sys] || "sys-lk"); sb.textContent = a.sys;
+          const cond = "<b>Когда:</b> " + escapeHtml(a.when || "") + "<br><b>Подробности:</b> " + escapeHtml(a.details || "");
+          const ctx = "Раздел: Действия\nСистема: " + a.sys + "\nДействие: " + a.name + "\nКогда: " + (a.when || "") + "\nПодробности: " + (a.details || "");
+          actionsContent.appendChild(refRow(a.name, cond, sb, "Действия", ctx));
+        });
       }
       function tstDocRow(label, required, when) {
         const row = document.createElement("div"); row.className = "tst-doc " + (required ? "req" : "opt");
@@ -1068,12 +1322,15 @@
         const ans = testerAnswers, st = testerStage;
         const wrap = document.createElement("div"); wrap.className = "tst-result";
         const sees = document.createElement("div"); sees.className = "tst-sees";
-        sees.innerHTML = '<div class="tst-sees-h">Что видит клиент на этапе «' + escapeHtml(spec.stages[st]) + '»</div><div class="tst-sees-t">' + escapeHtml(spec.stageSees[st] || "") + '</div>';
+        const seesTitle = document.createElement("div"); seesTitle.className = "tst-sees-h"; seesTitle.textContent = "Что видит клиент на этапе «" + spec.stages[st] + "»";
+        sees.appendChild(tstBoxHead(seesTitle, "Тестировщик ЛК", () => testerContextText("Что видит клиент"), sees));
+        const seesT = document.createElement("div"); seesT.className = "tst-sees-t"; seesT.textContent = spec.stageSees[st] || "";
+        sees.appendChild(seesT);
         wrap.appendChild(sees);
         if (st <= 2) {
           const docBox = document.createElement("div"); docBox.className = "tst-docbox";
           const h = document.createElement("div"); h.className = "tst-docbox-h"; h.textContent = "Документы, которые видит клиент (кумулятивно, этапы 0–" + st + ")";
-          docBox.appendChild(h);
+          docBox.appendChild(tstBoxHead(h, "Тестировщик ЛК", () => testerContextText("Документы, которые видит клиент"), docBox));
           let any = false;
           for (let s = 0; s <= st && s <= 2; s++) {
             (dir.docsByStage[String(s)] || []).filter((doc) => evalTCond(doc.cond, ans)).forEach((doc) => {
@@ -1087,7 +1344,7 @@
             const windowOn = ans.submitWindow === "≤ 7 дней";
             const pre = document.createElement("div"); pre.className = "tst-docbox tst-presub";
             const ph = document.createElement("div"); ph.className = "tst-docbox-h"; ph.textContent = "Подобласть «Документы для проверки перед подачей»";
-            pre.appendChild(ph);
+            pre.appendChild(tstBoxHead(ph, "Тестировщик ЛК", () => testerContextText("Подобласть «Документы для проверки перед подачей»"), pre));
             if (!windowOn) {
               const n = document.createElement("div"); n.className = "tst-note"; n.textContent = "Появляется за 7 дней до «Даты записи на подачу». Сейчас выбрано «" + (ans.submitWindow || "") + "» → подобласть скрыта.";
               pre.appendChild(n);
@@ -1107,7 +1364,7 @@
         }
         const intBox = document.createElement("div"); intBox.className = "tst-internal";
         const ih = document.createElement("div"); ih.className = "tst-internal-h"; ih.textContent = "🔒 Внутренняя логика (незаметно клиенту)";
-        intBox.appendChild(ih);
+        intBox.appendChild(tstBoxHead(ih, "Тестировщик ЛК", () => testerContextText("Внутренняя логика"), intBox));
         const notes = [];
         if (st <= 2) { notes.push(spec.internal.docStages); notes.push(spec.internal.questionnaireSubmit); }
         if (st === 3) notes.push(spec.internal.stage3);
@@ -1127,7 +1384,8 @@
         testerContent.appendChild(intro);
         if (Array.isArray(spec.contentious) && spec.contentious.length) {
           const cw = document.createElement("div"); cw.className = "tst-flags";
-          cw.innerHTML = '<div class="tst-flags-h">⚠️ На что обратить внимание (моя оценка — спорное / дублирующееся / хрупкое):</div>';
+          const ct = document.createElement("div"); ct.className = "tst-flags-h"; ct.textContent = "⚠️ На что обратить внимание (моя оценка — спорное / дублирующееся / хрупкое):";
+          cw.appendChild(tstBoxHead(ct, "Тестировщик ЛК", () => testerContextText("Жёлтый блок «На что обратить внимание»"), cw));
           const ul = document.createElement("ul");
           spec.contentious.forEach((t) => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
           cw.appendChild(ul); testerContent.appendChild(cw);
@@ -1508,6 +1766,9 @@
           panelCorrections.classList.toggle("show", which === "corrections");
           panelKb.classList.toggle("show", which === "kb");
           panelTester.classList.toggle("show", which === "tester");
+          panelDocsReq.classList.toggle("show", which === "docsreq");
+          panelQLogic.classList.toggle("show", which === "qlogic");
+          panelActions.classList.toggle("show", which === "actions");
           applyPaidConvVisibility();
           if (which === "surveys") {
             loadSurveys();
@@ -1529,6 +1790,15 @@
             startPolling();
           } else if (which === "tester") {
             loadTester();
+            startPolling();
+          } else if (which === "docsreq") {
+            loadDocsReq();
+            startPolling();
+          } else if (which === "qlogic") {
+            loadQLogic();
+            startPolling();
+          } else if (which === "actions") {
+            loadActions();
             startPolling();
           }
         });
@@ -1804,6 +2074,7 @@
         card.appendChild(what);
         if (it.expected) { const d = document.createElement("div"); d.className = "corr-sub"; d.innerHTML = '<b>Ожидается:</b> ' + escapeHtml(it.expected); card.appendChild(d); }
         if (it.example) { const d = document.createElement("div"); d.className = "corr-sub"; d.innerHTML = '<b>Пример:</b> ' + escapeHtml(it.example); card.appendChild(d); }
+        if (it.context) { const d = document.createElement("div"); d.className = "corr-context"; d.innerHTML = '<b>Параметры ситуации:</b><br>' + escapeHtml(it.context).replace(/\n/g, "<br>"); card.appendChild(d); }
         if (it.note) { const d = document.createElement("div"); d.className = "corr-note"; d.innerHTML = '<b>Примечание:</b> ' + escapeHtml(it.note) + (it.resolvedAt ? ' · ' + escapeHtml(corrDateText(it.resolvedAt)) : ''); card.appendChild(d); }
 
         if (Array.isArray(it.comments) && it.comments.length) {
