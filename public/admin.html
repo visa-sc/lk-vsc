@@ -1287,7 +1287,16 @@
         intro.textContent = "Все вопросы опросника по направлению: обязательность ответа, когда вопрос показывается (в т.ч. вопросы, открывающиеся после других ответов) и что влечёт каждый ответ — какие документы и на каком этапе запросятся. Кнопка «Корректировка» — отправить замечание сразу в «Корректировки ЛК».";
         qlogicContent.appendChild(intro);
         qlogicContent.appendChild(refDirButtons(qlogicDir, (k) => { qlogicDir = k; renderQLogic(); }));
-        if (dir.qnote) { const n = document.createElement("div"); n.className = "ref-note"; n.textContent = dir.qnote; qlogicContent.appendChild(n); }
+        if (dir.qnote) {
+          const n = document.createElement("div"); n.className = "ref-note";
+          const head = document.createElement("div"); head.className = "tst-box-head";
+          const txt = document.createElement("div"); txt.textContent = dir.qnote;
+          head.appendChild(txt);
+          const nctx = "Раздел: Опросники (логика)\nНаправление: " + dir.title + "\nБлок: жёлтое примечание\nТекст: " + dir.qnote;
+          head.appendChild(corrQuickButton("Опросники (логика)", () => nctx, n));
+          n.appendChild(head);
+          qlogicContent.appendChild(n);
+        }
         (dir.questions || []).forEach((qq) => {
           const rb = QREQ_LABELS[qq.req] || ["opt", String(qq.req || "—")];
           const cond = "<b>Показывается:</b> " + escapeHtml(qq.shows || "всегда") + "<br><b>Что влечёт:</b> " + escapeHtml(qq.effect || "");
