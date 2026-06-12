@@ -1123,7 +1123,7 @@
       // «Корректировки ЛК» уходит заявка с полным контекстом ситуации.
       function corrQuickButton(areaLabel, buildContext, mount) {
         const btn = document.createElement("button");
-        btn.type = "button"; btn.className = "qc-btn"; btn.textContent = "Корректировка";
+        btn.type = "button"; btn.className = "qc-btn"; btn.textContent = "Скорректировать";
         btn.title = "Отправить запрос на корректировку в раздел «Корректировки ЛК» — параметры ситуации приложатся автоматически";
         btn.addEventListener("click", () => {
           const existing = mount.querySelector(":scope > .qc-form");
