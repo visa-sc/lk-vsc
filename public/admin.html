@@ -885,6 +885,7 @@
           <button type="button" class="tab-btn" data-tab="docsreq">Запрос документов</button>
           <button type="button" class="tab-btn" data-tab="qlogic">Опросники (логика)</button>
           <button type="button" class="tab-btn" data-tab="actions">Действия</button>
+          <button type="button" class="tab-btn" data-tab="uploads">Области загрузки</button>
           <button type="button" class="tab-btn" data-tab="kb">База знаний ЛК</button>
         </div>
       </div>
@@ -963,6 +964,12 @@
       </div>
     </div>
 
+    <div id="panelUploads" class="panel">
+      <div id="uploadsContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
     <div class="footer-logout">
       <button id="logoutBtn" type="button" class="logout-btn">Выйти</button>
     </div>
@@ -1013,6 +1020,8 @@
       const qlogicContent = document.getElementById("qlogicContent");
       const panelActions = document.getElementById("panelActions");
       const actionsContent = document.getElementById("actionsContent");
+      const panelUploads = document.getElementById("panelUploads");
+      const uploadsContent = document.getElementById("uploadsContent");
       const authDailyBlock = document.getElementById("authDailyBlock");
 
       let activeTab = "stats";
@@ -1074,7 +1083,7 @@
         const mgr = currentRole() === "manager";
         tabBtns.forEach((b) => {
           const t = b.dataset.tab;
-          const allowed = mgr ? (t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions") : true;
+          const allowed = mgr ? (t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads") : true;
           b.style.display = allowed ? "" : "none";
         });
         // Руководителям скрываем всю группу «Статистика и данные» (рамку с подписью),
@@ -1101,8 +1110,8 @@
           { t: "Инструкция по админке", d: "Цели и возможности разделов: Корректировки, Тестировщик, Запрос документов, Опросники (логика), Действия.", u: "/admin/kb/admin-guide" },
           { t: "Карта статусов", d: "Какой статус amoCRM → этап в ЛК (генерируется из кода).", u: "/admin/kb/statuses" },
           { t: "Карта документов", d: "Какие документы, на каком этапе, что обязательно.", u: "/admin/kb/documents" },
-          { t: "Как работает ЛК", d: "Поведение по этапам, от чего зависит (фильтр по этапам).", u: "/admin/kb/logic" },
-          { t: "История изменений", d: "Лента реализованных корректировок.", u: "/admin/kb/changelog" }
+          { t: "Как работает клиентский ЛК", d: "Поведение по этапам, от чего зависит (фильтр по этапам).", u: "/admin/kb/logic" },
+          { t: "История изменений клиентского ЛК", d: "Лента реализованных корректировок.", u: "/admin/kb/changelog" }
         ];
         kbContent.innerHTML = '<p class="kb-intro">Открываются в новой вкладке. Информация всегда актуальная — генерируется из текущего кода ЛК, обновлять вручную не нужно.</p>';
         const grid = document.createElement("div"); grid.className = "kb-grid";
@@ -1431,6 +1440,35 @@
             const ctx = "Раздел: Действия\nСистема: " + a.sys + "\nДействие: " + a.name + "\nКогда: " + (a.when || "") + "\nПодробности: " + (a.details || "");
             actionsContent.appendChild(refRow(a.name, cond, null, "Действия", ctx));
           });
+        });
+      }
+
+      // ── Раздел «Области загрузки» ──
+      async function loadUploads() {
+        if (!uploadsContent) return;
+        if (!testerSpec) uploadsContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        try { await ensureTesterSpec(); } catch (e) {
+          uploadsContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+          return;
+        }
+        renderUploads();
+      }
+      function renderUploads() {
+        if (!testerSpec || !uploadsContent) return;
+        uploadsContent.innerHTML = "";
+        const intro = document.createElement("p"); intro.className = "ref-intro";
+        intro.textContent = "Все области загрузки документов клиентского ЛК: на каком этапе и при каких условиях появляются, что в составе, когда плашка меняет цвет с красной на зелёную, когда область можно закрыть полностью, и нюансы. Кнопка «Скорректировать» — замечание сразу в «Корректировки ЛК» с контекстом области. Данные — из той же актуальной логики ЛК.";
+        uploadsContent.appendChild(intro);
+        (testerSpec.uploadAreas || []).forEach((a) => {
+          const parts = [];
+          if (a.dirs) parts.push("<b>Направления:</b> " + escapeHtml(a.dirs));
+          if (a.appears) parts.push("<b>Когда появляется:</b> " + escapeHtml(a.appears));
+          if (a.composition) parts.push("<b>Состав:</b> " + escapeHtml(a.composition));
+          if (a.color && a.color !== "—") parts.push("<b>Цвет плашки:</b> " + escapeHtml(a.color));
+          if (a.complete && a.complete !== "—") parts.push("<b>Полная загрузка:</b> " + escapeHtml(a.complete));
+          if (a.notes) parts.push("<b>Нюансы:</b> " + escapeHtml(a.notes));
+          const ctx = "Раздел: Области загрузки\nОбласть: " + a.name + "\nНаправления: " + (a.dirs || "—") + "\nКогда появляется: " + (a.appears || "—") + "\nЦвет: " + (a.color || "—");
+          uploadsContent.appendChild(refRow(a.name, parts.join("<br>"), null, "Области загрузки", ctx));
         });
       }
       function tstDocRow(label, required, when) {
@@ -1888,6 +1926,7 @@
           panelDocsReq.classList.toggle("show", which === "docsreq");
           panelQLogic.classList.toggle("show", which === "qlogic");
           panelActions.classList.toggle("show", which === "actions");
+          panelUploads.classList.toggle("show", which === "uploads");
           applyPaidConvVisibility();
           if (which === "surveys") {
             loadSurveys();
@@ -1918,6 +1957,9 @@
             startPolling();
           } else if (which === "actions") {
             loadActions();
+            startPolling();
+          } else if (which === "uploads") {
+            loadUploads();
             startPolling();
           }
         });
