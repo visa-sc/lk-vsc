@@ -1623,6 +1623,139 @@ app.get("/admin/api/lk-tester-spec", requireStaff, (req, res) => {
   }
 });
 
+// ═════════════════════════════════════════════════════════════════════════
+// VSC — дашборд показателей визового агентства из Google-таблицы.
+// Источник — опубликованная в вебе таблица (CSV по листам-месяцам). Сервер
+// тянет листы, парсит и отдаёт агрегаты; кэш 15 мин. Только админ. На
+// клиентский ЛК / amoCRM / Я.Диск никак не влияет (отдельный источник).
+// ═════════════════════════════════════════════════════════════════════════
+const VSC_PUB_BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQfS5TX6tFZbbSZTNZhWVqRYvxBSt84vUERG1HRzJ5NOjsHDD4dd5DSkg_fWrSzIRKVk0evV6BVnC1V/pub";
+const VSC_SHEETS = [
+  { name: "Январь 2026", gid: "1488691450" },
+  { name: "Февраль 2026", gid: "1568094283" },
+  { name: "Март 2026", gid: "1502719932" },
+  { name: "Апрель 2026", gid: "1868729159" },
+  { name: "Май 2026", gid: "352648437" },
+  { name: "Июнь 2026", gid: "1371246931" },
+  { name: "Июль 2026", gid: "95777680" }
+];
+// Парсер CSV (учитывает кавычки, экранирование "" и переводы строк внутри ячеек).
+function vscParseCsv(text) {
+  const rows = []; let row = [], field = "", i = 0, q = false;
+  const s = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  while (i < s.length) {
+    const c = s[i];
+    if (q) {
+      if (c === '"') { if (s[i + 1] === '"') { field += '"'; i += 2; continue; } q = false; i++; continue; }
+      field += c; i++; continue;
+    }
+    if (c === '"') { q = true; i++; continue; }
+    if (c === ",") { row.push(field); field = ""; i++; continue; }
+    if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; i++; continue; }
+    field += c; i++;
+  }
+  row.push(field); rows.push(row);
+  return rows;
+}
+function vscNum(s) {
+  if (s == null) return null;
+  let t = String(s).replace(/ /g, " ").trim();
+  if (!t || t.indexOf("#") >= 0 || /р\./.test(t)) return null;
+  t = t.replace(/%/g, "").replace(/\s/g, "").replace(/,/g, ".");
+  const v = parseFloat(t);
+  return isNaN(v) ? null : v;
+}
+function vscIsDate(s) { return /^\d{2}\.\d{2}\.\d{4}$/.test(String(s || "").trim()); }
+function vscParseMonth(rows) {
+  let hi = -1;
+  for (let i = 0; i < Math.min(rows.length, 15); i++) { if (rows[i] && String(rows[i][0]).trim() === "Дата") { hi = i; break; } }
+  if (hi < 0) return null;
+  const hdr = rows[hi];
+  const col = (...kw) => {
+    for (let i = 0; i < hdr.length; i++) {
+      const nn = String(hdr[i] || "").replace(/\s+/g, " ").toLowerCase();
+      if (kw.every((k) => nn.indexOf(k.toLowerCase()) >= 0)) return i;
+    }
+    return -1;
+  };
+  const C = {
+    atv: col("atv", "формула"), fullAtv: col("fulll", "atv"), asp: col("asp"), upt: col("upt"),
+    cv: col("итоговая конверсия общая"), cpl: col("cpl", "общий"), drr: col("дрр общая"),
+    over: col("недобор/перебор"), rev: col("общая сумма выручки"), ad: col("рекламные расходы общие"),
+    leads: col("обработанные контакты всего"), leadsOP: col("обработанные сотрудниками оп"),
+    planMSK: col("таргет мск", "план"), planSPB: col("таргет спб", "план")
+  };
+  const pick = (r) => {
+    const planDen = (vscNum(r[C.planMSK]) || 0) + (vscNum(r[C.planSPB]) || 0);
+    const lop = vscNum(r[C.leadsOP]);
+    return {
+      atv: (vscNum(r[C.atv]) != null ? vscNum(r[C.atv]) : vscNum(r[C.fullAtv])), asp: vscNum(r[C.asp]), upt: vscNum(r[C.upt]),
+      cv: vscNum(r[C.cv]), cpl: vscNum(r[C.cpl]), drr: vscNum(r[C.drr]),
+      over: vscNum(r[C.over]), rev: vscNum(r[C.rev]), ad: vscNum(r[C.ad]),
+      leads: vscNum(r[C.leads]), leadsOP: lop,
+      planPct: (planDen > 0 && lop != null) ? (lop / planDen * 100) : null
+    };
+  };
+  const days = [], weeks = []; let blockStart = null, blockEnd = null, total = null;
+  for (let i = hi + 1; i < rows.length; i++) {
+    const r = rows[i]; if (!r || !r.length) continue;
+    const c0 = String(r[0] || "").trim();
+    if (vscIsDate(c0)) {
+      days.push(Object.assign({ date: c0, weekday: String(r[1] || "").trim() }, pick(r)));
+      if (!blockStart) blockStart = c0; blockEnd = c0;
+    } else if (c0.toLowerCase() === "total") {
+      const lbl = blockStart ? (blockStart.slice(0, 5) + "–" + (blockEnd || blockStart).slice(0, 5)) : ("Неделя " + (weeks.length + 1));
+      weeks.push(Object.assign({ label: lbl }, pick(r)));
+      blockStart = null; blockEnd = null;
+    } else if (c0.toLowerCase() === "grand total") {
+      total = pick(r);
+    }
+  }
+  return { days, weeks, total };
+}
+let _vscCache = null, _vscCacheAt = 0, _vscInflight = null;
+const VSC_TTL_MS = 15 * 60 * 1000;
+async function vscFetchAll() {
+  const months = [];
+  for (const sh of VSC_SHEETS) {
+    try {
+      const url = VSC_PUB_BASE + "?gid=" + sh.gid + "&single=true&output=csv";
+      const r = await axios.get(url, { timeout: 15000, responseType: "text", transformResponse: [(d) => d] });
+      const parsed = vscParseMonth(vscParseCsv(r.data));
+      if (parsed) months.push(Object.assign({ name: sh.name }, parsed));
+    } catch (e) { /* пропускаем недоступный лист */ }
+  }
+  // Год: суммируем аддитивные базы из месячных Grand total, ratio — производные/среднее.
+  const withTotal = months.filter((m) => m.total);
+  const sum = (f) => withTotal.reduce((a, m) => a + (m.total[f] || 0), 0);
+  const avg = (f) => { const v = withTotal.map((m) => m.total[f]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const rev = sum("rev"), ad = sum("ad"), leads = sum("leads"), leadsOP = sum("leadsOP");
+  const year = {
+    rev, ad, leads, over: sum("over"),
+    drr: rev > 0 ? ad / rev * 100 : null,
+    cpl: leads > 0 ? ad / leads : null,
+    atv: avg("atv"), cv: avg("cv"), asp: avg("asp"), upt: avg("upt"),
+    planPct: avg("planPct")
+  };
+  return { months, year, updatedAt: new Date().toISOString() };
+}
+async function getVscDashboard() {
+  const now = Date.now();
+  if (_vscCache && (now - _vscCacheAt) < VSC_TTL_MS) return _vscCache;
+  if (_vscInflight) return _vscInflight;
+  _vscInflight = vscFetchAll().then((res) => { _vscCache = res; _vscCacheAt = Date.now(); return res; }).finally(() => { _vscInflight = null; });
+  return _vscInflight;
+}
+app.get("/admin/api/vsc-dashboard", requireAdmin, async (req, res) => {
+  try {
+    const data = await getVscDashboard();
+    return res.json(Object.assign({ success: true }, data));
+  } catch (e) {
+    console.error("vsc dashboard error:", e.message);
+    return res.status(500).json({ success: false, message: "Не удалось загрузить данные таблицы" });
+  }
+});
+
 app.post("/api/auth/verify", smsGate, (req, res) => {
   try {
     const phone = sms.normalizePhone((req.body && req.body.phone) || "");
