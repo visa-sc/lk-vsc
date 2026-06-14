@@ -934,13 +934,16 @@
       <div class="tab-group" data-group="logic">
         <div class="tab-group-label">Логика и справочники ЛК · доступно сотрудникам</div>
         <div class="tab-group-btns">
-          <button type="button" class="tab-btn" data-tab="refhub">Справочник ЛК</button>
+          <button type="button" class="tab-btn" data-tab="docsreq">Запрос документов</button>
+          <button type="button" class="tab-btn" data-tab="qlogic">Опросники (логика)</button>
+          <button type="button" class="tab-btn" data-tab="actions">Действия</button>
+          <button type="button" class="tab-btn" data-tab="uploads">Области загрузки</button>
+          <button type="button" class="tab-btn" data-tab="screens">Экраны клиента</button>
+          <button type="button" class="tab-btn" data-tab="applicants">Заявители</button>
           <button type="button" class="tab-btn" data-tab="kb">База знаний ЛК</button>
         </div>
       </div>
     </div>
-    <!-- Под-меню раздела «Справочник ЛК» (6 справочников). Видно только на вкладке refhub. -->
-    <div id="refhubNav" class="refhub-nav" style="display:none;"></div>
 
     <!-- Обособленный блок «Конверсия авторизаций по оплаченным сделкам».
          Виден всегда, независимо от активной вкладки. -->
@@ -1162,7 +1165,7 @@
         const canStages = mgr && Array.isArray(managerPerms) && managerPerms.indexOf("stages") >= 0;
         tabBtns.forEach((b) => {
           const t = b.dataset.tab;
-          const allowed = mgr ? ((t === "corrections" || t === "kb" || t === "tester" || t === "refhub") || (canStages && t === "stages")) : true;
+          const allowed = mgr ? ((t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads" || t === "screens" || t === "applicants") || (canStages && t === "stages")) : true;
           b.style.display = allowed ? "" : "none";
         });
         // Группу «Статистика и данные» руководителю показываем только если у него
@@ -1677,33 +1680,50 @@
         if (fmt === "signed") { const r = Math.round(v); return (r > 0 ? "+" : r < 0 ? "−" : "") + Math.abs(r); }
         return String(v);
       }
-      // Последняя и предыдущая непустые точки ряда по показателю.
-      function vscLastTwo(series, key) {
-        let cur = null, prev = null;
-        for (let i = series.length - 1; i >= 0; i--) {
-          const v = series[i].k ? series[i].k[key] : null;
-          if (v == null || isNaN(v)) continue;
-          if (cur === null) cur = v; else { prev = v; break; }
-        }
-        return { cur, prev };
+      // Аддитивные показатели (суммируются по дням) vs коэффициенты (усредняются).
+      const VSC_ADDITIVE = { budget: 1, processed: 1, over: 1, targetDev: 1 };
+      function vscMonthFilled(m) { return !!(m && m.total && ((m.total.budget != null && m.total.budget > 0) || m.total.cv != null)); }
+      function vscFilledMonths() { return (vscData.months || []).map((m, i) => ({ m: m, i: i })).filter((x) => vscMonthFilled(x.m)); }
+      function vscFilledDays(m) { return (m.days || []).filter((d) => (d.processed != null && d.processed > 0) || (d.budget != null && d.budget > 0)).length; }
+      function vscPrevFilledIdx(idx) { const f = vscFilledMonths().map((x) => x.i).filter((i) => i < idx); return f.length ? f[f.length - 1] : -1; }
+      // Сравнение месяца с предыдущим за СОПОСТАВИМОЕ число прошедших дней:
+      // аддитивные KPI — сумма первых N дней пред. месяца; коэффициенты — среднее
+      // первых N дней; план ОП — помесячно. N = число заполненных дней текущего.
+      function vscMonthCompare(curM, prevM) {
+        const N = vscFilledDays(curM) || (curM.days || []).length;
+        const firstN = prevM ? (prevM.days || []).slice(0, N) : [];
+        const agg = (days, k, isAvg) => { const v = days.map((d) => d[k]).filter((x) => x != null); if (!v.length) return null; const s = v.reduce((a, b) => a + b, 0); return isAvg ? s / v.length : s; };
+        const res = {};
+        VSC_KPIS.forEach((kpi) => {
+          const cur = curM.total ? curM.total[kpi.key] : null;
+          let prev = null;
+          if (prevM) {
+            if (VSC_ADDITIVE[kpi.key]) prev = agg(firstN, kpi.key, false);
+            else if (kpi.key === "planPct") prev = prevM.total ? prevM.total.planPct : null;
+            else prev = agg(firstN, kpi.key, true);
+          }
+          res[kpi.key] = { cur: cur, prev: prev };
+        });
+        return { res: res, N: N };
       }
-      // Автоподсветка: что ухудшилось (последний период против предыдущего).
-      function vscAttention(series) {
+      // Автоподсветка: ухудшения последнего ЗАПОЛНЕННОГО месяца против предыдущего
+      // (за сопоставимое число дней). Будущие/пустые месяцы игнорируем.
+      function vscAttention() {
+        const filled = vscFilledMonths();
+        if (filled.length < 2) return [];
+        const curM = filled[filled.length - 1].m, prevM = filled[filled.length - 2].m;
+        const cmp = vscMonthCompare(curM, prevM).res;
         const out = [];
         VSC_KPIS.forEach((kpi) => {
-          if (!kpi.good) return; // нейтральные не оцениваем
-          const { cur, prev } = vscLastTwo(series, kpi.key);
+          if (!kpi.good) return;
+          const cur = cmp[kpi.key].cur, prev = cmp[kpi.key].prev;
           if (cur == null || prev == null) return;
-          const delta = cur - prev;
-          if (delta === 0) return;
-          const worse = (delta * kpi.good) < 0;
-          if (!worse) return;
-          const base = Math.abs(prev) || 1;
-          const relPct = Math.abs(delta) / base * 100;
-          // порог значимости: проценты — от 1 п.п., деньги/счётные — от 3% относит.
+          const delta = cur - prev; if (delta === 0) return;
+          if ((delta * kpi.good) >= 0) return;
+          const base = Math.abs(prev) || 1; const relPct = Math.abs(delta) / base * 100;
           const significant = (kpi.fmt === "pct") ? Math.abs(delta) >= 1 : relPct >= 3;
           if (!significant) return;
-          out.push({ kpi, cur, prev, relPct, msg: kpi.label + ": " + vscFmt(prev, kpi.fmt) + " → " + vscFmt(cur, kpi.fmt) + (kpi.fmt === "pct" ? "" : " (" + (delta < 0 ? "−" : "+") + Math.round(relPct) + "%)") });
+          out.push({ relPct: relPct, msg: kpi.label + ": " + vscFmt(prev, kpi.fmt) + " → " + vscFmt(cur, kpi.fmt) + (kpi.fmt === "pct" ? "" : " (" + (delta < 0 ? "−" : "+") + Math.round(relPct) + "%)") });
         });
         out.sort((a, b) => b.relPct - a.relPct);
         return out;
@@ -1787,12 +1807,12 @@
         vscContent.appendChild(ctrls);
 
         const series = vscBuildSeries();
-        // Автоподсветка считается стабильно «месяц к месяцу» (последние 2 месяца с данными).
-        const monthSeries = (vscData.months || []).map((m) => ({ x: m.name.replace(" 2026", "").trim(), k: m.total || {} }));
-        const attn = vscAttention(monthSeries);
+        // Автоподсветка: последний заполненный месяц против предыдущего, за
+        // сопоставимое число дней; будущие/пустые месяцы игнорируются.
+        const attn = vscAttention();
         const ab = document.createElement("div"); ab.className = "vsc-attn " + (attn.length ? "warn" : "ok");
         if (attn.length) {
-          let h = '<div class="vsc-attn-h">⚠️ На что обратить внимание (ухудшилось за последний месяц):</div><ul>';
+          let h = '<div class="vsc-attn-h">⚠️ На что обратить внимание (ухудшилось за последний месяц, к сопоставимому периоду прошлого):</div><ul>';
           attn.forEach((a) => { h += "<li>" + escapeHtml(a.msg) + "</li>"; });
           ab.innerHTML = h + "</ul>";
         } else {
@@ -1800,17 +1820,22 @@
         }
         vscContent.appendChild(ab);
 
-        // Текущий период для плиток: год → агрегат; месяц → выбранный; неделя/день → последний.
-        let curIdx = -1, curSub = "";
+        // Значения плиток + изменение «к пред.». Месяц — сравнение за сопоставимое
+        // число прошедших дней (текущий неполный месяц не искажается).
+        let curSub = "", cmpRes = null;
         if (vscGran === "year") { curSub = "2026 · коэффициенты — среднее за месяцы"; }
-        else if (vscGran === "month") { curIdx = vscMonthIdx; curSub = (series[curIdx] || {}).x || ""; }
-        else { curIdx = series.length - 1; curSub = (series[curIdx] || {}).x || ""; }
+        else if (vscGran === "month") {
+          const curM = (vscData.months || [])[vscMonthIdx];
+          curSub = curM ? curM.name : "";
+          if (curM) { const pIdx = vscPrevFilledIdx(vscMonthIdx); cmpRes = vscMonthCompare(curM, pIdx >= 0 ? vscData.months[pIdx] : null).res; }
+        } else { curSub = (series[series.length - 1] || {}).x || ""; }
 
         const tiles = document.createElement("div"); tiles.className = "vsc-tiles";
         VSC_KPIS.forEach((kpi) => {
           let v = null, prev = null;
           if (vscGran === "year") { v = vscData.year ? vscData.year[kpi.key] : null; }
-          else if (curIdx >= 0 && series[curIdx]) { v = series[curIdx].k ? series[curIdx].k[kpi.key] : null; prev = vscNearestPrev(series, kpi.key, curIdx); }
+          else if (vscGran === "month") { if (cmpRes) { v = cmpRes[kpi.key].cur; prev = cmpRes[kpi.key].prev; } }
+          else { const idx = series.length - 1; if (series[idx]) { v = series[idx].k ? series[idx].k[kpi.key] : null; prev = vscNearestPrev(series, kpi.key, idx); } }
           const tile = document.createElement("div"); tile.className = "vsc-tile";
           const cls = kpi.fmt === "signed" ? (v > 0 ? " pos" : v < 0 ? " neg" : "") : "";
           let delta = "";
@@ -2283,11 +2308,13 @@
           panelCorrections.classList.toggle("show", which === "corrections");
           panelKb.classList.toggle("show", which === "kb");
           panelTester.classList.toggle("show", which === "tester");
+          panelDocsReq.classList.toggle("show", which === "docsreq");
+          panelQLogic.classList.toggle("show", which === "qlogic");
+          panelActions.classList.toggle("show", which === "actions");
+          panelUploads.classList.toggle("show", which === "uploads");
+          panelScreens.classList.toggle("show", which === "screens");
+          panelApplicants.classList.toggle("show", which === "applicants");
           panelVsc.classList.toggle("show", which === "vsc");
-          // Справочник ЛК: под-меню + дочерние панели прячем, если вкладка не refhub.
-          const isRef = which === "refhub";
-          refhubNav.style.display = isRef ? "" : "none";
-          if (!isRef) [panelDocsReq, panelQLogic, panelActions, panelUploads, panelScreens, panelApplicants].forEach((p) => { if (p) p.classList.remove("show"); });
           applyPaidConvVisibility();
           if (which === "surveys") {
             loadSurveys();
@@ -2310,8 +2337,23 @@
           } else if (which === "tester") {
             loadTester();
             startPolling();
-          } else if (which === "refhub") {
-            showRefhub();
+          } else if (which === "docsreq") {
+            loadDocsReq();
+            startPolling();
+          } else if (which === "qlogic") {
+            loadQLogic();
+            startPolling();
+          } else if (which === "actions") {
+            loadActions();
+            startPolling();
+          } else if (which === "uploads") {
+            loadUploads();
+            startPolling();
+          } else if (which === "screens") {
+            loadScreens();
+            startPolling();
+          } else if (which === "applicants") {
+            loadApplicants();
             startPolling();
           } else if (which === "vsc") {
             loadVsc();
