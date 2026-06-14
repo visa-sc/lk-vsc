@@ -884,11 +884,16 @@
           <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
         </div>
       </div>
-      <div class="tab-group" data-group="team">
-        <div class="tab-group-label">Работа с ЛК · доступно сотрудникам</div>
+      <div class="tab-group" data-group="tools">
+        <div class="tab-group-label">Инструменты · доступно сотрудникам</div>
         <div class="tab-group-btns">
           <button type="button" class="tab-btn" data-tab="corrections">Корректировки ЛК</button>
           <button type="button" class="tab-btn" data-tab="tester">Тестировщик ЛК</button>
+        </div>
+      </div>
+      <div class="tab-group" data-group="logic">
+        <div class="tab-group-label">Логика и справочники ЛК · доступно сотрудникам</div>
+        <div class="tab-group-btns">
           <button type="button" class="tab-btn" data-tab="docsreq">Запрос документов</button>
           <button type="button" class="tab-btn" data-tab="qlogic">Опросники (логика)</button>
           <button type="button" class="tab-btn" data-tab="actions">Действия</button>
@@ -1115,8 +1120,14 @@
         // а подпись группы «Работа с ЛК» упрощаем — пометка про доступ им не нужна.
         const adminGroup = document.querySelector('.tab-group[data-group="admin"]');
         if (adminGroup) adminGroup.style.display = mgr ? "none" : "";
-        const teamLabel = document.querySelector('.tab-group[data-group="team"] .tab-group-label');
-        if (teamLabel && mgr) teamLabel.textContent = "Разделы";
+        // У руководителей нет «своих»/«админских» разделов — пометку про доступ
+        // в подписях групп убираем (для них всё и так доступно).
+        if (mgr) {
+          const tl = document.querySelector('.tab-group[data-group="tools"] .tab-group-label');
+          if (tl) tl.textContent = "Инструменты";
+          const ll = document.querySelector('.tab-group[data-group="logic"] .tab-group-label');
+          if (ll) ll.textContent = "Логика и справочники ЛК";
+        }
         if (mgr) {
           const pc = document.getElementById("paidConvBlock"); if (pc) pc.style.display = "none";
           const ad = document.getElementById("authDailyBlock"); if (ad) ad.style.display = "none";
