@@ -1671,31 +1671,36 @@ function vscParseMonth(rows) {
   for (let i = 0; i < Math.min(rows.length, 15); i++) { if (rows[i] && String(rows[i][0]).trim() === "Дата") { hi = i; break; } }
   if (hi < 0) return null;
   const hdr = rows[hi];
-  const col = (...kw) => {
+  // Все колонки, чьё имя содержит ВСЕ ключевые слова (минус excl-подстроки).
+  const colsAll = (kw, excl) => {
+    const out = [];
     for (let i = 0; i < hdr.length; i++) {
       const nn = String(hdr[i] || "").replace(/\s+/g, " ").toLowerCase();
-      if (kw.every((k) => nn.indexOf(k.toLowerCase()) >= 0)) return i;
+      if (kw.every((k) => nn.indexOf(k.toLowerCase()) >= 0) && !(excl || []).some((e) => nn.indexOf(e) >= 0)) out.push(i);
     }
-    return -1;
+    return out;
   };
+  // Предпочитаем вариант с «(ФОРМУЛА)», иначе обычную колонку.
+  const colF = (...kw) => { const f = colsAll(kw.concat("формула")); if (f.length) return f[0]; const o = colsAll(kw); return o.length ? o[0] : -1; };
+  // ATV: «(ФОРМУЛА)» если есть, иначе обычная «ATV» — НЕ «Fulll ATV».
+  const atvF = colsAll(["atv", "формула"]); const atvP = colsAll(["atv"], ["fulll", "формула"]);
   const C = {
-    atv: col("atv", "формула"), fullAtv: col("fulll", "atv"), asp: col("asp"), upt: col("upt"),
-    cv: col("итоговая конверсия общая"), cpl: col("cpl", "общий"), drr: col("дрр общая"),
-    over: col("недобор/перебор"), rev: col("общая сумма выручки"), ad: col("рекламные расходы общие"),
-    leads: col("обработанные контакты всего"), leadsOP: col("обработанные сотрудниками оп"),
-    planMSK: col("таргет мск", "план"), planSPB: col("таргет спб", "план")
+    atv: atvF.length ? atvF[0] : (atvP.length ? atvP[0] : -1),
+    asp: colF("asp"), upt: colF("upt"),
+    cv: colF("итоговая конверсия общая"), cpl: colF("cpl", "общий"), drr: colF("дрр общая"),
+    rev: colF("общая сумма выручки"), ad: colF("рекламные расходы общие"),
+    budget: colF("общая сумма в бюджете")
   };
-  const pick = (r) => {
-    const planDen = (vscNum(r[C.planMSK]) || 0) + (vscNum(r[C.planSPB]) || 0);
-    const lop = vscNum(r[C.leadsOP]);
-    return {
-      atv: (vscNum(r[C.atv]) != null ? vscNum(r[C.atv]) : vscNum(r[C.fullAtv])), asp: vscNum(r[C.asp]), upt: vscNum(r[C.upt]),
-      cv: vscNum(r[C.cv]), cpl: vscNum(r[C.cpl]), drr: vscNum(r[C.drr]),
-      over: vscNum(r[C.over]), rev: vscNum(r[C.rev]), ad: vscNum(r[C.ad]),
-      leads: vscNum(r[C.leads]), leadsOP: lop,
-      planPct: (planDen > 0 && lop != null) ? (lop / planDen * 100) : null
-    };
-  };
+  // Недобор/перебор ОП — суммируем все региональные колонки (МСК/СПБ/ЕКБ или одну общую).
+  const overCols = colsAll(["недобор/перебор", "оп"]);
+  const sumNN = (r, cols) => { const v = cols.map((i) => vscNum(r[i])).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
+  const pick = (r) => ({
+    atv: C.atv >= 0 ? vscNum(r[C.atv]) : null, asp: vscNum(r[C.asp]), upt: vscNum(r[C.upt]),
+    cv: vscNum(r[C.cv]), cpl: vscNum(r[C.cpl]), drr: vscNum(r[C.drr]),
+    over: sumNN(r, overCols),
+    rev: vscNum(r[C.rev]), ad: vscNum(r[C.ad]), budget: C.budget >= 0 ? vscNum(r[C.budget]) : null,
+    planPct: null // план ОП — месячная величина из сводного блока (см. ниже), не из дневной строки
+  });
   const days = [], weeks = []; let blockStart = null, blockEnd = null, total = null;
   for (let i = hi + 1; i < rows.length; i++) {
     const r = rows[i]; if (!r || !r.length) continue;
@@ -1710,6 +1715,16 @@ function vscParseMonth(rows) {
     } else if (c0.toLowerCase() === "grand total") {
       total = pick(r);
     }
+  }
+  // План ОП (% выполнения) — из сводного блока месяца: строка «Выручка общая
+  // от набора», колонка «ПРОЦЕНТ ВЫПОЛНЕНИЯ». Это одна величина на месяц.
+  let pctCol = -1;
+  for (let i = 0; i < rows.length && pctCol < 0; i++) {
+    const r = rows[i] || [];
+    for (let ci = 0; ci < r.length; ci++) { if (String(r[ci] || "").replace(/\s+/g, " ").toUpperCase() === "ПРОЦЕНТ ВЫПОЛНЕНИЯ") { pctCol = ci; break; } }
+  }
+  if (pctCol >= 0 && total) {
+    for (const r of rows) { if (r && r.some((v) => String(v || "").toLowerCase().indexOf("выручка общая от набора") >= 0)) { total.planPct = vscNum(r[pctCol]); break; } }
   }
   return { days, weeks, total };
 }
@@ -1734,7 +1749,7 @@ async function vscFetchAll() {
   // (у CPL/конверсии в таблице свои знаменатели, не равные суммируемым колонкам).
   // Точные годовые формулы докрутим, если в таблице появится годовая сводка.
   const year = {
-    rev: sum("rev"), ad: sum("ad"), over: sum("over"),
+    rev: sum("rev"), ad: sum("ad"), over: sum("over"), budget: sum("budget"),
     atv: avg("atv"), cv: avg("cv"), cpl: avg("cpl"), drr: avg("drr"),
     asp: avg("asp"), upt: avg("upt"), planPct: avg("planPct"),
     aggregate: "avg"
