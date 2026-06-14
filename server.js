@@ -1689,15 +1689,25 @@ function vscParseMonth(rows) {
     asp: colF("asp"), upt: colF("upt"),
     cv: colF("итоговая конверсия общая"), cpl: colF("cpl", "общий"), drr: colF("дрр общая"),
     rev: colF("общая сумма выручки"), ad: colF("рекламные расходы общие"),
-    budget: colF("общая сумма в бюджете")
+    budget: colF("общая сумма в бюджете"),
+    processed: colF("обработанные контакты всего"),
+    factMSK: colF("таргет мск", "факт"), planMSK: colF("таргет мск", "план"),
+    factSPB: colF("таргет спб", "факт"), planSPB: colF("таргет спб", "план")
   };
   // Недобор/перебор ОП — суммируем все региональные колонки (МСК/СПБ/ЕКБ или одну общую).
   const overCols = colsAll(["недобор/перебор", "оп"]);
   const sumNN = (r, cols) => { const v = cols.map((i) => vscNum(r[i])).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
+  // Отклонение таргета: (ФАКТ МСК + ФАКТ СПБ) − (ПЛАН МСК + ПЛАН СПБ).
+  const targetDev = (r) => {
+    const f = sumNN(r, [C.factMSK, C.factSPB].filter((i) => i >= 0));
+    const p = sumNN(r, [C.planMSK, C.planSPB].filter((i) => i >= 0));
+    return (f == null && p == null) ? null : ((f || 0) - (p || 0));
+  };
   const pick = (r) => ({
     atv: C.atv >= 0 ? vscNum(r[C.atv]) : null, asp: vscNum(r[C.asp]), upt: vscNum(r[C.upt]),
     cv: vscNum(r[C.cv]), cpl: vscNum(r[C.cpl]), drr: vscNum(r[C.drr]),
-    over: sumNN(r, overCols),
+    over: sumNN(r, overCols), targetDev: targetDev(r),
+    processed: C.processed >= 0 ? vscNum(r[C.processed]) : null,
     rev: vscNum(r[C.rev]), ad: vscNum(r[C.ad]), budget: C.budget >= 0 ? vscNum(r[C.budget]) : null,
     planPct: null // план ОП — месячная величина из сводного блока (см. ниже), не из дневной строки
   });
@@ -1715,6 +1725,17 @@ function vscParseMonth(rows) {
     } else if (c0.toLowerCase() === "grand total") {
       total = pick(r);
     }
+  }
+  // Накопительные за месяц (недобор/перебор, отклонение таргета, обработанные)
+  // считаем суммой по ФАКТИЧЕСКИ заполненным дням — Grand total у незавершённого
+  // месяца включает пустые будущие дни и искажает накопленный эффект.
+  if (total) {
+    const filled = days.filter((d) => (d.processed != null && d.processed > 0) || (d.budget != null && d.budget > 0));
+    const sumD = (k) => { const v = filled.map((d) => d[k]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
+    total.over = sumD("over");
+    total.targetDev = sumD("targetDev");
+    total.processed = sumD("processed");
+    total._filledDays = filled.length;
   }
   // План ОП (% выполнения) — из сводного блока месяца: строка «Выручка общая
   // от набора», колонка «ПРОЦЕНТ ВЫПОЛНЕНИЯ». Это одна величина на месяц.
@@ -1750,6 +1771,7 @@ async function vscFetchAll() {
   // Точные годовые формулы докрутим, если в таблице появится годовая сводка.
   const year = {
     rev: sum("rev"), ad: sum("ad"), over: sum("over"), budget: sum("budget"),
+    targetDev: sum("targetDev"), processed: sum("processed"),
     atv: avg("atv"), cv: avg("cv"), cpl: avg("cpl"), drr: avg("drr"),
     asp: avg("asp"), upt: avg("upt"), planPct: avg("planPct"),
     aggregate: "avg"

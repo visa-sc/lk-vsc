@@ -694,6 +694,15 @@
     .vsc-bar.pos { background: #4f9f68; } .vsc-bar.neg { background: #d2685f; }
     .vsc-bar-x { font-size: 9.5px; color: #9aa0ab; white-space: nowrap; margin-top: 4px; transform: rotate(0deg); }
     .vsc-empty { color: #9aa0ab; font-size: 13px; padding: 10px 0; }
+    .vsc-tile-d { font-size: 12px; font-weight: 700; margin-top: 2px; }
+    .vsc-tile-d.up { color: #2c7a43; } .vsc-tile-d.down { color: #b0263a; } .vsc-tile-d.neu { color: #9aa0ab; }
+    .vsc-attn { border-radius: 14px; padding: 13px 16px; margin-bottom: 16px; }
+    .vsc-attn.warn { background: #fff8ec; border: 1px solid #f0d9a8; }
+    .vsc-attn.ok { background: #edf8ef; border: 1px solid #cfe7d2; }
+    .vsc-attn-h { font-weight: 700; font-size: 13.5px; margin-bottom: 6px; }
+    .vsc-attn.warn .vsc-attn-h { color: #8a5a12; } .vsc-attn.ok .vsc-attn-h { color: #1f5a2e; }
+    .vsc-attn ul { margin: 0; padding-left: 18px; }
+    .vsc-attn li { font-size: 12.5px; color: #5c4a2a; margin: 4px 0; line-height: 1.4; }
     @media (max-width: 720px) { .vsc-bar-x { font-size: 8px; } .vsc-tile-v { font-size: 21px; } }
 
     /* ── Кнопка раскрытия списка ── */
@@ -1606,21 +1615,56 @@
 
       // ── Раздел «VSC · дашборд» (показатели визового агентства из Google-таблицы) ──
       let vscData = null, vscGran = "month", vscMonthIdx = 0;
+      // good: +1 — чем больше тем лучше; −1 — чем меньше тем лучше; 0 — нейтрально (без оценки тренда).
       const VSC_KPIS = [
-        { key: "budget", label: "Выручка (сумма в бюджете)", fmt: "money" },
-        { key: "atv", label: "ATV", fmt: "money" },
-        { key: "cv", label: "CV отдела продаж (общая)", fmt: "pct" },
-        { key: "cpl", label: "CPL (общий)", fmt: "money" },
-        { key: "drr", label: "ДРР (общая)", fmt: "pct" },
-        { key: "over", label: "Набор таргета (недобор/перебор ОП)", fmt: "signed" },
-        { key: "planPct", label: "План ОП (% выполнения)", fmt: "pct" }
+        { key: "budget", label: "Выручка (сумма в бюджете)", fmt: "money", good: 1 },
+        { key: "processed", label: "Обработанные контакты", fmt: "int", good: 1 },
+        { key: "atv", label: "ATV", fmt: "money", good: 1 },
+        { key: "cv", label: "CV отдела продаж (общая)", fmt: "pct", good: 1 },
+        { key: "cpl", label: "CPL (общий)", fmt: "money", good: -1 },
+        { key: "drr", label: "ДРР (общая)", fmt: "pct", good: -1 },
+        { key: "over", label: "Набор таргета (недобор/перебор ОП)", fmt: "signed", good: 0 },
+        { key: "targetDev", label: "Отклонение таргета (факт − план, МСК+СПБ)", fmt: "signed", good: 1 },
+        { key: "planPct", label: "План ОП (% выполнения)", fmt: "pct", good: 1 }
       ];
       function vscFmt(v, fmt) {
         if (v == null || isNaN(v)) return "—";
         if (fmt === "money") return Math.round(v).toLocaleString("ru-RU") + " ₽";
+        if (fmt === "int") return Math.round(v).toLocaleString("ru-RU");
         if (fmt === "pct") return (Math.round(v * 10) / 10).toLocaleString("ru-RU") + "%";
         if (fmt === "signed") { const r = Math.round(v); return (r > 0 ? "+" : r < 0 ? "−" : "") + Math.abs(r); }
         return String(v);
+      }
+      // Последняя и предыдущая непустые точки ряда по показателю.
+      function vscLastTwo(series, key) {
+        let cur = null, prev = null;
+        for (let i = series.length - 1; i >= 0; i--) {
+          const v = series[i].k ? series[i].k[key] : null;
+          if (v == null || isNaN(v)) continue;
+          if (cur === null) cur = v; else { prev = v; break; }
+        }
+        return { cur, prev };
+      }
+      // Автоподсветка: что ухудшилось (последний период против предыдущего).
+      function vscAttention(series) {
+        const out = [];
+        VSC_KPIS.forEach((kpi) => {
+          if (!kpi.good) return; // нейтральные не оцениваем
+          const { cur, prev } = vscLastTwo(series, kpi.key);
+          if (cur == null || prev == null) return;
+          const delta = cur - prev;
+          if (delta === 0) return;
+          const worse = (delta * kpi.good) < 0;
+          if (!worse) return;
+          const base = Math.abs(prev) || 1;
+          const relPct = Math.abs(delta) / base * 100;
+          // порог значимости: проценты — от 1 п.п., деньги/счётные — от 3% относит.
+          const significant = (kpi.fmt === "pct") ? Math.abs(delta) >= 1 : relPct >= 3;
+          if (!significant) return;
+          out.push({ kpi, cur, prev, relPct, msg: kpi.label + ": " + vscFmt(prev, kpi.fmt) + " → " + vscFmt(cur, kpi.fmt) + (kpi.fmt === "pct" ? "" : " (" + (delta < 0 ? "−" : "+") + Math.round(relPct) + "%)") });
+        });
+        out.sort((a, b) => b.relPct - a.relPct);
+        return out;
       }
       async function loadVsc() {
         if (!vscContent) return;
@@ -1648,13 +1692,9 @@
         if (vscGran === "week") return (m.weeks || []).map((w) => ({ x: w.label, k: w }));
         return (m.days || []).map((d) => ({ x: (d.date || "").slice(0, 5), k: d }));
       }
-      function vscCurrent() {
-        const ms = vscData.months || [];
-        if (vscGran === "year") return { vals: vscData.year || {}, sub: "2026 · коэффициенты — среднее за месяцы" };
-        const m = ms[vscMonthIdx] || {};
-        if (vscGran === "month") return { vals: m.total || {}, sub: m.name || "" };
-        if (vscGran === "week") { const w = (m.weeks || []); const last = w[w.length - 1] || {}; return { vals: last, sub: (m.name || "") + " · " + (last.label || "посл. неделя") }; }
-        const dd = (m.days || []).filter((x) => x.cv != null || x.rev != null); const last = dd[dd.length - 1] || {}; return { vals: last, sub: (last.date || m.name || "") };
+      function vscNearestPrev(series, key, fromIdx) {
+        for (let i = fromIdx - 1; i >= 0; i--) { const v = series[i].k ? series[i].k[key] : null; if (v != null && !isNaN(v)) return v; }
+        return null;
       }
       function vscBarChart(kpi, series) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
@@ -1704,18 +1744,45 @@
         }
         vscContent.appendChild(ctrls);
 
-        const cur = vscCurrent();
+        const series = vscBuildSeries();
+        // Автоподсветка считается стабильно «месяц к месяцу» (последние 2 месяца с данными).
+        const monthSeries = (vscData.months || []).map((m) => ({ x: m.name.replace(" 2026", "").trim(), k: m.total || {} }));
+        const attn = vscAttention(monthSeries);
+        const ab = document.createElement("div"); ab.className = "vsc-attn " + (attn.length ? "warn" : "ok");
+        if (attn.length) {
+          let h = '<div class="vsc-attn-h">⚠️ На что обратить внимание (ухудшилось за последний месяц):</div><ul>';
+          attn.forEach((a) => { h += "<li>" + escapeHtml(a.msg) + "</li>"; });
+          ab.innerHTML = h + "</ul>";
+        } else {
+          ab.innerHTML = '<div class="vsc-attn-h">✓ Ухудшений за последний месяц не вижу — показатели в норме.</div>';
+        }
+        vscContent.appendChild(ab);
+
+        // Текущий период для плиток: год → агрегат; месяц → выбранный; неделя/день → последний.
+        let curIdx = -1, curSub = "";
+        if (vscGran === "year") { curSub = "2026 · коэффициенты — среднее за месяцы"; }
+        else if (vscGran === "month") { curIdx = vscMonthIdx; curSub = (series[curIdx] || {}).x || ""; }
+        else { curIdx = series.length - 1; curSub = (series[curIdx] || {}).x || ""; }
+
         const tiles = document.createElement("div"); tiles.className = "vsc-tiles";
         VSC_KPIS.forEach((kpi) => {
-          const v = cur.vals ? cur.vals[kpi.key] : null;
+          let v = null, prev = null;
+          if (vscGran === "year") { v = vscData.year ? vscData.year[kpi.key] : null; }
+          else if (curIdx >= 0 && series[curIdx]) { v = series[curIdx].k ? series[curIdx].k[kpi.key] : null; prev = vscNearestPrev(series, kpi.key, curIdx); }
           const tile = document.createElement("div"); tile.className = "vsc-tile";
           const cls = kpi.fmt === "signed" ? (v > 0 ? " pos" : v < 0 ? " neg" : "") : "";
-          tile.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(kpi.label) + '</div><div class="vsc-tile-v' + cls + '">' + vscFmt(v, kpi.fmt) + '</div><div class="vsc-tile-s">' + escapeHtml(cur.sub || "") + '</div>';
+          let delta = "";
+          if (v != null && prev != null && prev !== v) {
+            const d = v - prev; const up = d > 0;
+            const dirCls = kpi.good === 0 ? "neu" : ((d * kpi.good > 0) ? "up" : "down");
+            const rel = Math.abs(prev) ? Math.round(Math.abs(d) / Math.abs(prev) * 100) : null;
+            delta = '<div class="vsc-tile-d ' + dirCls + '">' + (up ? "▲" : "▼") + " " + vscFmt(Math.abs(d), kpi.fmt).replace(" ₽", "") + (rel != null && kpi.fmt !== "pct" ? " (" + rel + "%)" : "") + " к пред.</div>";
+          }
+          tile.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(kpi.label) + '</div><div class="vsc-tile-v' + cls + '">' + vscFmt(v, kpi.fmt) + '</div>' + delta + '<div class="vsc-tile-s">' + escapeHtml(curSub || "") + '</div>';
           tiles.appendChild(tile);
         });
         vscContent.appendChild(tiles);
 
-        const series = vscBuildSeries();
         const chartsH = document.createElement("div"); chartsH.className = "ref-sec-h";
         chartsH.textContent = "Динамика — " + ({ year: "по месяцам", month: "по месяцам", week: "по неделям", day: "по дням" })[vscGran];
         vscContent.appendChild(chartsH);
