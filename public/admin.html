@@ -1737,9 +1737,15 @@
         // «Заполненный» период — есть реальная активность (обработанные контакты
         // или выручка). cv/прочие формулы дают 0 даже у пустых дней — их НЕ считаем.
         const filled = (o) => o && ((o.processed != null && o.processed > 0) || (o.budget != null && o.budget > 0));
-        if (vscGran === "week") return (m.weeks || []).filter(filled).map((w) => ({ x: w.label, k: w }));
-        // День: ещё и строго ДО сегодня — чтобы показывался вчерашний день, а не сегодня.
         const today = new Date(); today.setHours(0, 0, 0, 0);
+        if (vscGran === "week") {
+          // Неделя: показываем все недели, которые УЖЕ начались (старт ≤ сегодня),
+          // включая текущую — даже если данных за неё ещё нет. Будущие недели не показываем.
+          const yr = parseInt((String(m.name || "").match(/\d{4}/) || [])[0], 10) || today.getFullYear();
+          const weekStarted = (label) => { const s = String(label || "").slice(0, 5).split("."); if (s.length !== 2 || isNaN(+s[0]) || isNaN(+s[1])) return true; const d = new Date(yr, +s[1] - 1, +s[0]); d.setHours(0, 0, 0, 0); return d <= today; };
+          return (m.weeks || []).filter((w) => weekStarted(w.label)).map((w) => ({ x: w.label, k: w }));
+        }
+        // День: ещё и строго ДО сегодня — чтобы показывался вчерашний день, а не сегодня.
         const beforeToday = (dateStr) => { const p = String(dateStr || "").split("."); if (p.length !== 3) return true; const d = new Date(+p[2], +p[1] - 1, +p[0]); return d < today; };
         return (m.days || []).filter((d) => filled(d) && beforeToday(d.date)).map((d) => ({ x: (d.date || "").slice(0, 5), k: d }));
       }
