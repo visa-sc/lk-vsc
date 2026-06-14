@@ -893,6 +893,8 @@
           <button type="button" class="tab-btn" data-tab="qlogic">Опросники (логика)</button>
           <button type="button" class="tab-btn" data-tab="actions">Действия</button>
           <button type="button" class="tab-btn" data-tab="uploads">Области загрузки</button>
+          <button type="button" class="tab-btn" data-tab="screens">Экраны клиента</button>
+          <button type="button" class="tab-btn" data-tab="applicants">Заявители</button>
           <button type="button" class="tab-btn" data-tab="kb">База знаний ЛК</button>
         </div>
       </div>
@@ -977,6 +979,18 @@
       </div>
     </div>
 
+    <div id="panelScreens" class="panel">
+      <div id="screensContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
+    <div id="panelApplicants" class="panel">
+      <div id="applicantsContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
     <div class="footer-logout">
       <button id="logoutBtn" type="button" class="logout-btn">Выйти</button>
     </div>
@@ -1029,6 +1043,10 @@
       const actionsContent = document.getElementById("actionsContent");
       const panelUploads = document.getElementById("panelUploads");
       const uploadsContent = document.getElementById("uploadsContent");
+      const panelScreens = document.getElementById("panelScreens");
+      const screensContent = document.getElementById("screensContent");
+      const panelApplicants = document.getElementById("panelApplicants");
+      const applicantsContent = document.getElementById("applicantsContent");
       const authDailyBlock = document.getElementById("authDailyBlock");
 
       let activeTab = "stats";
@@ -1090,7 +1108,7 @@
         const mgr = currentRole() === "manager";
         tabBtns.forEach((b) => {
           const t = b.dataset.tab;
-          const allowed = mgr ? (t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads") : true;
+          const allowed = mgr ? (t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads" || t === "screens" || t === "applicants") : true;
           b.style.display = allowed ? "" : "none";
         });
         // Руководителям скрываем всю группу «Статистика и данные» (рамку с подписью),
@@ -1479,6 +1497,66 @@
           if (a.notes) parts.push("<b>Нюансы:</b> " + escapeHtml(a.notes));
           const ctx = "Раздел: Области загрузки\nОбласть: " + a.name + "\nНаправления: " + (a.dirs || "—") + "\nКогда появляется: " + (a.appears || "—") + "\nЦвет: " + (a.color || "—");
           uploadsContent.appendChild(refRow(a.name, parts.join("<br>"), null, "Области загрузки", ctx));
+        });
+      }
+
+      // ── Раздел «Экраны клиента» (экраны по этапам + цвет точки + валидации) ──
+      async function loadScreens() {
+        if (!screensContent) return;
+        if (!testerSpec) screensContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        try { await ensureTesterSpec(); } catch (e) {
+          screensContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+          return;
+        }
+        renderScreens();
+      }
+      function renderScreens() {
+        if (!testerSpec || !screensContent) return;
+        const spec = testerSpec;
+        screensContent.innerHTML = "";
+        const intro = document.createElement("p"); intro.className = "ref-intro";
+        intro.textContent = "Что видит клиент на каждом из 8 этапов ЛК, как при этом окрашена точка этапа, и какие валидации/сообщения об ошибках он встречает. Кнопка «Скорректировать» — замечание сразу в «Корректировки ЛК». Данные — из актуальной логики ЛК.";
+        screensContent.appendChild(intro);
+        if (Array.isArray(spec.screensRecs) && spec.screensRecs.length) {
+          screensContent.appendChild(recBlock("Экраны клиента", spec.screensRecs, () => "Раздел: Экраны клиента\nБлок: Рекомендации"));
+        }
+        if (spec.dotRule) { const n = document.createElement("div"); n.className = "ref-note"; n.textContent = spec.dotRule; screensContent.appendChild(n); }
+        const h1 = document.createElement("div"); h1.className = "ref-sec-h"; h1.textContent = "Экраны по этапам"; screensContent.appendChild(h1);
+        (spec.screens || []).forEach((s) => {
+          const cond = "<b>Что видит клиент:</b> " + escapeHtml(s.sees || "") + "<br><b>Цвет точки этапа:</b> " + escapeHtml(s.dot || "");
+          const ctx = "Раздел: Экраны клиента\nЭтап: " + s.title + "\nЧто видит клиент: " + (s.sees || "") + "\nЦвет точки: " + (s.dot || "");
+          screensContent.appendChild(refRow(s.title, cond, null, "Экраны клиента", ctx));
+        });
+        const h2 = document.createElement("div"); h2.className = "ref-sec-h"; h2.textContent = "Валидации и сообщения об ошибках"; screensContent.appendChild(h2);
+        (spec.validations || []).forEach((v) => {
+          const ctx = "Раздел: Экраны клиента (валидации)\nПравило: " + v.rule + "\nСообщение/логика: " + (v.msg || "");
+          screensContent.appendChild(refRow(v.rule, escapeHtml(v.msg || ""), null, "Экраны клиента", ctx));
+        });
+      }
+
+      // ── Раздел «Заявители» (мультизаявитель, пакеты, пред-заявители) ──
+      async function loadApplicants() {
+        if (!applicantsContent) return;
+        if (!testerSpec) applicantsContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        try { await ensureTesterSpec(); } catch (e) {
+          applicantsContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+          return;
+        }
+        renderApplicants();
+      }
+      function renderApplicants() {
+        if (!testerSpec || !applicantsContent) return;
+        const spec = testerSpec;
+        applicantsContent.innerHTML = "";
+        const intro = document.createElement("p"); intro.className = "ref-intro";
+        intro.textContent = "Как устроена работа с несколькими заявителями в одной сделке: пакеты, добавление и правка заявителей, предварительные заявители (паспорта до опросника) и их слияние, папки и проверка дублей ФИО. Кнопка «Скорректировать» — замечание сразу в «Корректировки ЛК».";
+        applicantsContent.appendChild(intro);
+        if (Array.isArray(spec.applicantsRecs) && spec.applicantsRecs.length) {
+          applicantsContent.appendChild(recBlock("Заявители", spec.applicantsRecs, () => "Раздел: Заявители\nБлок: Рекомендации"));
+        }
+        (spec.applicantsInfo || []).forEach((it) => {
+          const ctx = "Раздел: Заявители\nТема: " + it.topic + "\nОписание: " + (it.detail || "");
+          applicantsContent.appendChild(refRow(it.topic, escapeHtml(it.detail || ""), null, "Заявители", ctx));
         });
       }
       function tstDocRow(label, required, when) {
@@ -1937,6 +2015,8 @@
           panelQLogic.classList.toggle("show", which === "qlogic");
           panelActions.classList.toggle("show", which === "actions");
           panelUploads.classList.toggle("show", which === "uploads");
+          panelScreens.classList.toggle("show", which === "screens");
+          panelApplicants.classList.toggle("show", which === "applicants");
           applyPaidConvVisibility();
           if (which === "surveys") {
             loadSurveys();
@@ -1970,6 +2050,12 @@
             startPolling();
           } else if (which === "uploads") {
             loadUploads();
+            startPolling();
+          } else if (which === "screens") {
+            loadScreens();
+            startPolling();
+          } else if (which === "applicants") {
+            loadApplicants();
             startPolling();
           }
         });
