@@ -1100,8 +1100,6 @@
       const applicantsContent = document.getElementById("applicantsContent");
       const panelVsc = document.getElementById("panelVsc");
       const vscContent = document.getElementById("vscContent");
-      const refhubNav = document.getElementById("refhubNav");
-      let refhubSub = "docsreq";
       const authDailyBlock = document.getElementById("authDailyBlock");
 
       let activeTab = "stats";
@@ -1622,40 +1620,6 @@
           const ctx = "Раздел: Заявители\nТема: " + it.topic + "\nОписание: " + (it.detail || "");
           applicantsContent.appendChild(refRow(it.topic, escapeHtml(it.detail || ""), null, "Заявители", ctx));
         });
-      }
-
-      // ── Раздел «Справочник ЛК» — 6 справочников под одним переключателем ──
-      // (объединены сюда, чтобы не плодить вкладки; ничего не потеряно — это
-      //  те же разделы. Откат: вернуть отдельные вкладки в разметке/обработчике.)
-      function refhubTabs() {
-        return [
-          { key: "docsreq", label: "Запрос документов", panel: panelDocsReq, load: loadDocsReq },
-          { key: "qlogic", label: "Опросники (логика)", panel: panelQLogic, load: loadQLogic },
-          { key: "actions", label: "Действия", panel: panelActions, load: loadActions },
-          { key: "uploads", label: "Области загрузки", panel: panelUploads, load: loadUploads },
-          { key: "screens", label: "Экраны клиента", panel: panelScreens, load: loadScreens },
-          { key: "applicants", label: "Заявители", panel: panelApplicants, load: loadApplicants }
-        ];
-      }
-      function renderRefhubNav() {
-        if (!refhubNav) return;
-        refhubNav.innerHTML = "";
-        refhubTabs().forEach((t) => {
-          const b = document.createElement("button");
-          b.type = "button"; b.className = "refhub-pill" + (t.key === refhubSub ? " active" : "");
-          b.textContent = t.label;
-          b.addEventListener("click", () => { refhubSub = t.key; showRefhub(); });
-          refhubNav.appendChild(b);
-        });
-      }
-      function showRefhub() {
-        const tabs = refhubTabs();
-        const cur = tabs.find((t) => t.key === refhubSub) || tabs[0];
-        refhubSub = cur.key;
-        if (refhubNav) refhubNav.style.display = "";
-        renderRefhubNav();
-        tabs.forEach((t) => { if (t.panel) t.panel.classList.toggle("show", t.key === cur.key); });
-        cur.load();
       }
 
       // ── Раздел «VSC · дашборд» (показатели визового агентства из Google-таблицы) ──
