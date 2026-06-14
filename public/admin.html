@@ -1649,7 +1649,7 @@
       }
       function vscCurrent() {
         const ms = vscData.months || [];
-        if (vscGran === "year") return { vals: vscData.year || {}, sub: "2026 · за месяцы с данными" };
+        if (vscGran === "year") return { vals: vscData.year || {}, sub: "2026 · коэффициенты — среднее за месяцы" };
         const m = ms[vscMonthIdx] || {};
         if (vscGran === "month") return { vals: m.total || {}, sub: m.name || "" };
         if (vscGran === "week") { const w = (m.weeks || []); const last = w[w.length - 1] || {}; return { vals: last, sub: (m.name || "") + " · " + (last.label || "посл. неделя") }; }

@@ -1729,13 +1729,15 @@ async function vscFetchAll() {
   const withTotal = months.filter((m) => m.total);
   const sum = (f) => withTotal.reduce((a, m) => a + (m.total[f] || 0), 0);
   const avg = (f) => { const v = withTotal.map((m) => m.total[f]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-  const rev = sum("rev"), ad = sum("ad"), leads = sum("leads"), leadsOP = sum("leadsOP");
+  // Аддитивные базы суммируем; коэффициенты (ATV/CV/CPL/ДРР/план%) на год берём
+  // как СРЕДНЕЕ по месяцам с данными — пересчитывать их из «сырых» баз рискованно
+  // (у CPL/конверсии в таблице свои знаменатели, не равные суммируемым колонкам).
+  // Точные годовые формулы докрутим, если в таблице появится годовая сводка.
   const year = {
-    rev, ad, leads, over: sum("over"),
-    drr: rev > 0 ? ad / rev * 100 : null,
-    cpl: leads > 0 ? ad / leads : null,
-    atv: avg("atv"), cv: avg("cv"), asp: avg("asp"), upt: avg("upt"),
-    planPct: avg("planPct")
+    rev: sum("rev"), ad: sum("ad"), over: sum("over"),
+    atv: avg("atv"), cv: avg("cv"), cpl: avg("cpl"), drr: avg("drr"),
+    asp: avg("asp"), upt: avg("upt"), planPct: avg("planPct"),
+    aggregate: "avg"
   };
   return { months, year, updatedAt: new Date().toISOString() };
 }
