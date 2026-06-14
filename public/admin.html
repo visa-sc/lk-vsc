@@ -1064,7 +1064,8 @@
             _img.src = "/vsc-logo.png"; _img.alt = "VSC";
           }
           const _sub = document.querySelector(".brand-sub"); if (_sub) _sub.remove();
-          const _icon = document.createElement("link"); _icon.rel = "apple-touch-icon"; _icon.href = "/vsc-logo.png"; document.head.appendChild(_icon);
+          // apple-touch-icon для /vsc вставляется на сервере прямо в <head>
+          // (см. роут /vsc) — iOS читает иконку из HTML, не из JS.
         } catch (_) {}
       }
       // Кэш «на этом устройстве кнопка Face ID должна быть видна» — выставляется
@@ -1731,8 +1732,11 @@
           return ms.map((m) => ({ x: m.name.replace(" 2026", "").trim(), k: m.total || {} }));
         }
         const m = ms[vscMonthIdx]; if (!m) return [];
-        if (vscGran === "week") return (m.weeks || []).map((w) => ({ x: w.label, k: w }));
-        return (m.days || []).map((d) => ({ x: (d.date || "").slice(0, 5), k: d }));
+        // Только заполненные периоды — без пустых будущих дней/недель в конце месяца.
+        // Так последняя неделя = текущая, последний день = последний с данными (≈ вчера).
+        const filled = (o) => o && ((o.processed != null && o.processed > 0) || (o.budget != null && o.budget > 0) || o.cv != null);
+        if (vscGran === "week") return (m.weeks || []).filter(filled).map((w) => ({ x: w.label, k: w }));
+        return (m.days || []).filter(filled).map((d) => ({ x: (d.date || "").slice(0, 5), k: d }));
       }
       function vscNearestPrev(series, key, fromIdx) {
         for (let i = fromIdx - 1; i >= 0; i--) { const v = series[i].k ? series[i].k[key] : null; if (v != null && !isNaN(v)) return v; }

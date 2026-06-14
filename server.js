@@ -185,7 +185,20 @@ app.get(["/admin", "/team", "/vsc"], (req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.set("Pragma", "no-cache");
   res.set("Expires", "0");
-  res.sendFile(path.join(__dirname, "public", "admin.html"), { etag: false, lastModified: false });
+  const adminFile = path.join(__dirname, "public", "admin.html");
+  // Только для /vsc вставляем в <head> ссылку на apple-touch-icon = логотип VSC.
+  // iOS «Добавить на экран» читает иконку из HTML страницы → у /vsc будет VSC.
+  // Остальные страницы (/admin, /team и весь сайт) HTML не меняют и продолжают
+  // использовать корневой /apple-touch-icon.png (VOYO) — их иконка не затрагивается.
+  if (String(req.path || "").replace(/\/+$/, "") === "/vsc") {
+    try {
+      const html = fs.readFileSync(adminFile, "utf8")
+        .replace("</head>", '<link rel="apple-touch-icon" href="/vsc-logo.png">\n<link rel="apple-touch-icon" sizes="180x180" href="/vsc-logo.png">\n</head>');
+      res.set("Content-Type", "text/html; charset=utf-8");
+      return res.send(html);
+    } catch (e) { /* при сбое — отдаём как есть ниже */ }
+  }
+  res.sendFile(adminFile, { etag: false, lastModified: false });
 });
 
 // ──────────────────────────────────────────────────────────
