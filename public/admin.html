@@ -1156,17 +1156,20 @@
         if (getBioShowCache()) applyBioBtnVisibility(true);
       }
       function currentRole() { return IS_TEAM ? "manager" : "admin"; }
+      let managerPerms = []; // персональные права руководителя (напр. ["stages"])
       function applyRoleUI() {
         const mgr = currentRole() === "manager";
+        const canStages = mgr && Array.isArray(managerPerms) && managerPerms.indexOf("stages") >= 0;
         tabBtns.forEach((b) => {
           const t = b.dataset.tab;
-          const allowed = mgr ? (t === "corrections" || t === "kb" || t === "tester" || t === "refhub") : true;
+          const allowed = mgr ? ((t === "corrections" || t === "kb" || t === "tester" || t === "refhub") || (canStages && t === "stages")) : true;
           b.style.display = allowed ? "" : "none";
         });
-        // Руководителям скрываем всю группу «Статистика и данные» (рамку с подписью),
-        // а подпись группы «Работа с ЛК» упрощаем — пометка про доступ им не нужна.
+        // Группу «Статистика и данные» руководителю показываем только если у него
+        // есть персональный доступ (тогда внутри видна лишь разрешённая вкладка).
         const adminGroup = document.querySelector('.tab-group[data-group="admin"]');
-        if (adminGroup) adminGroup.style.display = mgr ? "none" : "";
+        if (adminGroup) adminGroup.style.display = (mgr && !canStages) ? "none" : "";
+        if (mgr && canStages) { const ag = document.querySelector('.tab-group[data-group="admin"] .tab-group-label'); if (ag) ag.textContent = "Статистика"; }
         // У руководителей нет «своих»/«админских» разделов — пометку про доступ
         // в подписях групп убираем (для них всё и так доступно).
         if (mgr) {
@@ -3520,6 +3523,7 @@
             const data = await r.json().catch(() => ({}));
             if (!r.ok || !data.success) { showLoginError(data.message || "Не удалось войти"); return; }
             setToken(data.token);
+            managerPerms = Array.isArray(data.perms) ? data.perms : [];
             showDash();
           } catch (_) { showLoginError("Сетевая ошибка"); }
         });
@@ -3539,7 +3543,7 @@
           setupManagerLoginUI();
           const t = getToken();
           if (t) {
-            try { const d = await apiFetch("/admin/api/whoami"); if (d && d.success) { showDash(); return; } } catch (_) {}
+            try { const d = await apiFetch("/admin/api/whoami"); if (d && d.success) { managerPerms = Array.isArray(d.perms) ? d.perms : []; showDash(); return; } } catch (_) {}
           }
           showLogin();
           return;

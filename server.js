@@ -555,7 +555,7 @@ app.get("/admin/api/stats", requireAdmin, async (req, res) => {
 });
 
 // Воронка по этапам сделки (статусы ЛК из amoCRM), кумулятивно.
-app.get("/admin/api/stage-stats", requireAdmin, async (req, res) => {
+app.get("/admin/api/stage-stats", requireStagesAccess, async (req, res) => {
   try {
     const data = await computeStageStats();
     return res.json(Object.assign({ success: true }, data));
@@ -739,8 +739,13 @@ function loadManagers() {
       seed.forEach((m) => {
         const email = String(m.email || "").toLowerCase().trim();
         if (!email) return;
-        if (!lkManagers[email]) { lkManagers[email] = { name: m.name || email, salt: "", hash: "", createdAt: "", lastLoginAt: "" }; changed = true; }
-        else if (m.name && lkManagers[email].name !== m.name) { lkManagers[email].name = m.name; changed = true; }
+        const seedPerms = Array.isArray(m.perms) ? m.perms : [];
+        if (!lkManagers[email]) { lkManagers[email] = { name: m.name || email, salt: "", hash: "", createdAt: "", lastLoginAt: "", perms: seedPerms }; changed = true; }
+        else {
+          if (m.name && lkManagers[email].name !== m.name) { lkManagers[email].name = m.name; changed = true; }
+          // Права доступа синхронизируем из seed (источник правды для прав).
+          if (JSON.stringify(lkManagers[email].perms || []) !== JSON.stringify(seedPerms)) { lkManagers[email].perms = seedPerms; changed = true; }
+        }
       });
       if (changed) saveManagers();
     }
@@ -767,9 +772,13 @@ function getStaffFromReq(req) {
   const headerToken = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
   const queryToken = String(req.query.token || "").trim();
   const token = headerToken || queryToken;
-  if (isAdminTokenValid(token)) return { role: "admin", name: "Андрей Комисаренко", token };
+  if (isAdminTokenValid(token)) return { role: "admin", name: "Андрей Комисаренко", perms: ["stages"], token };
   const m = getManagerSession(token);
-  if (m) return { role: "manager", name: m.name, email: m.email, token };
+  if (m) {
+    // Права берём из актуальной записи руководителя (источник — seed).
+    const acc = (loadManagers() || {})[String(m.email || "").toLowerCase()] || {};
+    return { role: "manager", name: m.name, email: m.email, perms: Array.isArray(acc.perms) ? acc.perms : [], token };
+  }
   return null;
 }
 function requireStaff(req, res, next) {
@@ -777,6 +786,12 @@ function requireStaff(req, res, next) {
   if (!s) return res.status(401).json({ success: false, message: "Не авторизован" });
   req.staff = s;
   next();
+}
+// Доступ к статистике этапов: админ ИЛИ руководитель с правом «stages».
+function requireStagesAccess(req, res, next) {
+  const s = getStaffFromReq(req);
+  if (s && (s.role === "admin" || (Array.isArray(s.perms) && s.perms.indexOf("stages") >= 0))) { req.staff = s; return next(); }
+  return res.status(401).json({ success: false, message: "Нет доступа" });
 }
 
 app.post("/admin/api/manager-login", (req, res) => {
@@ -798,7 +813,7 @@ app.post("/admin/api/manager-login", (req, res) => {
     acc.lastLoginAt = acc.createdAt;
     saveManagers();
     const token = createManagerSession(email, acc.name);
-    return res.json({ success: true, token, role: "manager", name: acc.name, firstLogin: true });
+    return res.json({ success: true, token, role: "manager", name: acc.name, perms: acc.perms || [], firstLogin: true });
   }
   // Обычный вход — проверяем пароль (constant-time).
   let ok = false;
@@ -811,7 +826,7 @@ app.post("/admin/api/manager-login", (req, res) => {
   acc.lastLoginAt = new Date().toISOString();
   saveManagers();
   const token = createManagerSession(email, acc.name);
-  return res.json({ success: true, token, role: "manager", name: acc.name });
+  return res.json({ success: true, token, role: "manager", name: acc.name, perms: acc.perms || [] });
 });
 
 app.post("/admin/api/manager-logout", requireStaff, (req, res) => {
@@ -821,7 +836,7 @@ app.post("/admin/api/manager-logout", requireStaff, (req, res) => {
 
 // «Кто я» — роль + имя (для фронта). Принимает админский и менеджерский токен.
 app.get("/admin/api/whoami", requireStaff, (req, res) => {
-  return res.json({ success: true, role: req.staff.role, name: req.staff.name });
+  return res.json({ success: true, role: req.staff.role, name: req.staff.name, perms: req.staff.perms || [] });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
