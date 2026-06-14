@@ -267,7 +267,7 @@
       border-color: #c6dceb;
     }
 
-    .tabs { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: stretch; }
+    .tabs { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 16px; }
     .tab-group { border: 1px solid #e8e2ee; border-radius: 16px; padding: 8px 10px 10px; background: #fbfafd; }
     .tab-group-label { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #9096a3; margin: 0 4px 7px; }
     .tab-group-btns { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -863,7 +863,7 @@
   <div class="brand-bar">
     <img src="/logo.png" alt="VOYO" width="600" height="300" onload="this.classList.add('is-loaded')" onerror="this.classList.add('is-loaded')" />
     <noscript><style>.brand-bar img{opacity:1;transform:none;}</style></noscript>
-    <div class="brand-sub">Development</div>
+    <div class="brand-sub">development</div>
   </div>
 
   <!-- ── Логин ── -->
@@ -1059,6 +1059,8 @@
           const _img = document.querySelector(".brand-bar img");
           if (_img) {
             _img.onerror = function () { const p = document.createElement("div"); p.textContent = "VSC"; p.style.cssText = "font-weight:800;font-size:34px;letter-spacing:.06em;color:#161d45;"; this.replaceWith(p); };
+            // VSC-логотип квадратный — переопределяем геометрию VOYO (2:1) и режим наложения.
+            _img.style.aspectRatio = "1 / 1"; _img.style.width = "92px"; _img.style.mixBlendMode = "normal"; _img.style.borderRadius = "18px";
             _img.src = "/vsc-logo.png"; _img.alt = "VSC";
           }
           const _sub = document.querySelector(".brand-sub"); if (_sub) _sub.remove();
