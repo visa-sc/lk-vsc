@@ -703,6 +703,11 @@
     .vsc-attn.warn .vsc-attn-h { color: #8a5a12; } .vsc-attn.ok .vsc-attn-h { color: #1f5a2e; }
     .vsc-attn ul { margin: 0; padding-left: 18px; }
     .vsc-attn li { font-size: 12.5px; color: #5c4a2a; margin: 4px 0; line-height: 1.4; }
+    .login-hint { font-size: 11.5px; color: #9aa0ab; margin: -2px 2px 2px; line-height: 1.35; }
+    .refhub-nav { display: flex; gap: 6px; flex-wrap: wrap; margin: -4px 0 16px; padding: 8px 10px; background: #f6f7f9; border: 1px solid #e6e9f0; border-radius: 12px; }
+    .refhub-pill { border: 1px solid #cfd8e3; background: #fff; color: #33415a; border-radius: 999px; padding: 5px 13px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .refhub-pill.active { background: #3589BD; color: #fff; border-color: #3589BD; }
+    @media (max-width: 720px) { .refhub-nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .refhub-nav::-webkit-scrollbar { display: none; } .refhub-pill { flex: 0 0 auto; white-space: nowrap; } }
     @media (max-width: 720px) { .vsc-bar-x { font-size: 8px; } .vsc-tile-v { font-size: 21px; } }
 
     /* ── Кнопка раскрытия списка ── */
@@ -880,7 +885,8 @@
 
       <form id="managerLoginForm" class="login-form-inner" style="display:none;">
         <input id="mgrEmail" class="login-input" type="email" autocomplete="username" placeholder="Рабочий e-mail" />
-        <input id="mgrPass" class="login-input" type="password" autocomplete="current-password" placeholder="Пароль (придумайте при первом входе)" />
+        <input id="mgrPass" class="login-input" type="password" autocomplete="current-password" placeholder="Пароль" />
+        <div class="login-hint">Первый вход — придумайте пароль, он сохранится.</div>
         <button id="mgrLoginBtn" type="submit" class="login-btn">Войти</button>
       </form>
 
@@ -928,16 +934,13 @@
       <div class="tab-group" data-group="logic">
         <div class="tab-group-label">Логика и справочники ЛК · доступно сотрудникам</div>
         <div class="tab-group-btns">
-          <button type="button" class="tab-btn" data-tab="docsreq">Запрос документов</button>
-          <button type="button" class="tab-btn" data-tab="qlogic">Опросники (логика)</button>
-          <button type="button" class="tab-btn" data-tab="actions">Действия</button>
-          <button type="button" class="tab-btn" data-tab="uploads">Области загрузки</button>
-          <button type="button" class="tab-btn" data-tab="screens">Экраны клиента</button>
-          <button type="button" class="tab-btn" data-tab="applicants">Заявители</button>
+          <button type="button" class="tab-btn" data-tab="refhub">Справочник ЛК</button>
           <button type="button" class="tab-btn" data-tab="kb">База знаний ЛК</button>
         </div>
       </div>
     </div>
+    <!-- Под-меню раздела «Справочник ЛК» (6 справочников). Видно только на вкладке refhub. -->
+    <div id="refhubNav" class="refhub-nav" style="display:none;"></div>
 
     <!-- Обособленный блок «Конверсия авторизаций по оплаченным сделкам».
          Виден всегда, независимо от активной вкладки. -->
@@ -1094,6 +1097,8 @@
       const applicantsContent = document.getElementById("applicantsContent");
       const panelVsc = document.getElementById("panelVsc");
       const vscContent = document.getElementById("vscContent");
+      const refhubNav = document.getElementById("refhubNav");
+      let refhubSub = "docsreq";
       const authDailyBlock = document.getElementById("authDailyBlock");
 
       let activeTab = "stats";
@@ -1155,7 +1160,7 @@
         const mgr = currentRole() === "manager";
         tabBtns.forEach((b) => {
           const t = b.dataset.tab;
-          const allowed = mgr ? (t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads" || t === "screens" || t === "applicants") : true;
+          const allowed = mgr ? (t === "corrections" || t === "kb" || t === "tester" || t === "refhub") : true;
           b.style.display = allowed ? "" : "none";
         });
         // Руководителям скрываем всю группу «Статистика и данные» (рамку с подписью),
@@ -1611,6 +1616,40 @@
           const ctx = "Раздел: Заявители\nТема: " + it.topic + "\nОписание: " + (it.detail || "");
           applicantsContent.appendChild(refRow(it.topic, escapeHtml(it.detail || ""), null, "Заявители", ctx));
         });
+      }
+
+      // ── Раздел «Справочник ЛК» — 6 справочников под одним переключателем ──
+      // (объединены сюда, чтобы не плодить вкладки; ничего не потеряно — это
+      //  те же разделы. Откат: вернуть отдельные вкладки в разметке/обработчике.)
+      function refhubTabs() {
+        return [
+          { key: "docsreq", label: "Запрос документов", panel: panelDocsReq, load: loadDocsReq },
+          { key: "qlogic", label: "Опросники (логика)", panel: panelQLogic, load: loadQLogic },
+          { key: "actions", label: "Действия", panel: panelActions, load: loadActions },
+          { key: "uploads", label: "Области загрузки", panel: panelUploads, load: loadUploads },
+          { key: "screens", label: "Экраны клиента", panel: panelScreens, load: loadScreens },
+          { key: "applicants", label: "Заявители", panel: panelApplicants, load: loadApplicants }
+        ];
+      }
+      function renderRefhubNav() {
+        if (!refhubNav) return;
+        refhubNav.innerHTML = "";
+        refhubTabs().forEach((t) => {
+          const b = document.createElement("button");
+          b.type = "button"; b.className = "refhub-pill" + (t.key === refhubSub ? " active" : "");
+          b.textContent = t.label;
+          b.addEventListener("click", () => { refhubSub = t.key; showRefhub(); });
+          refhubNav.appendChild(b);
+        });
+      }
+      function showRefhub() {
+        const tabs = refhubTabs();
+        const cur = tabs.find((t) => t.key === refhubSub) || tabs[0];
+        refhubSub = cur.key;
+        if (refhubNav) refhubNav.style.display = "";
+        renderRefhubNav();
+        tabs.forEach((t) => { if (t.panel) t.panel.classList.toggle("show", t.key === cur.key); });
+        cur.load();
       }
 
       // ── Раздел «VSC · дашборд» (показатели визового агентства из Google-таблицы) ──
@@ -2241,13 +2280,11 @@
           panelCorrections.classList.toggle("show", which === "corrections");
           panelKb.classList.toggle("show", which === "kb");
           panelTester.classList.toggle("show", which === "tester");
-          panelDocsReq.classList.toggle("show", which === "docsreq");
-          panelQLogic.classList.toggle("show", which === "qlogic");
-          panelActions.classList.toggle("show", which === "actions");
-          panelUploads.classList.toggle("show", which === "uploads");
-          panelScreens.classList.toggle("show", which === "screens");
-          panelApplicants.classList.toggle("show", which === "applicants");
           panelVsc.classList.toggle("show", which === "vsc");
+          // Справочник ЛК: под-меню + дочерние панели прячем, если вкладка не refhub.
+          const isRef = which === "refhub";
+          refhubNav.style.display = isRef ? "" : "none";
+          if (!isRef) [panelDocsReq, panelQLogic, panelActions, panelUploads, panelScreens, panelApplicants].forEach((p) => { if (p) p.classList.remove("show"); });
           applyPaidConvVisibility();
           if (which === "surveys") {
             loadSurveys();
@@ -2270,23 +2307,8 @@
           } else if (which === "tester") {
             loadTester();
             startPolling();
-          } else if (which === "docsreq") {
-            loadDocsReq();
-            startPolling();
-          } else if (which === "qlogic") {
-            loadQLogic();
-            startPolling();
-          } else if (which === "actions") {
-            loadActions();
-            startPolling();
-          } else if (which === "uploads") {
-            loadUploads();
-            startPolling();
-          } else if (which === "screens") {
-            loadScreens();
-            startPolling();
-          } else if (which === "applicants") {
-            loadApplicants();
+          } else if (which === "refhub") {
+            showRefhub();
             startPolling();
           } else if (which === "vsc") {
             loadVsc();
