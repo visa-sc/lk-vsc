@@ -2015,7 +2015,10 @@
           isPlatformAuthAvailable(),
           adminHasCredentials()
         ]);
-        const localOk = hasLocalPasskeyFlag();
+        // На /vsc (часто открыт как Web-app с изолированным хранилищем) локального
+        // флага может не быть, хотя системный passkey домена существует — опираемся
+        // на серверный ответ «creds есть». Только для IS_VSC; /admin не затрагиваем.
+        const localOk = hasLocalPasskeyFlag() || IS_VSC;
         // Кнопку показываем только при ВСЕХ трёх: platform поддерживает,
         // на сервере есть creds, И на ЭТОМ устройстве passkey локально есть.
         // Иначе клик по кнопке вызовет системный «no passkeys saved» — этого
@@ -2252,8 +2255,10 @@
             isPlatformAuthAvailable(),
             adminHasCredentials()
           ]);
-          if (platformOk && credsRes.known && (!credsRes.hasCreds || !hasLocalPasskeyFlag())) {
+          if (platformOk && credsRes.known && (!credsRes.hasCreds || (!hasLocalPasskeyFlag() && !IS_VSC))) {
             // Показываем оффер; на «Не сейчас» / «Включить» уйдём в дашборд.
+            // На /vsc не переспрашиваем регистрацию, если passkey уже есть на сервере
+            // (вход — через Face ID-кнопку/авто); /admin условие не меняется.
             bioOffer.classList.add("show");
             return;
           }
