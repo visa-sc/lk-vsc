@@ -177,10 +177,11 @@ app.get("/about/v1", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "about-v1.html"));
 });
 
-app.get(["/admin", "/team"], (req, res) => {
+app.get(["/admin", "/team", "/vsc"], (req, res) => {
   // Не кешируем — админка часто меняется, не хочется получать stale HTML/CSS
   // в Safari/Chrome (особенно на iOS). Снимаем и ETag, чтобы не возвращался 304.
-  // /team — портал руководителей (тот же файл, вход email+пароль, ролевой UI).
+  // /team — портал руководителей; /vsc — отдельный VSC-дашборд (тот же файл,
+  // вход как в админку по коду, своя вывеска VSC, показывается только дашборд).
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.set("Pragma", "no-cache");
   res.set("Expires", "0");

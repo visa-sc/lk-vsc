@@ -921,7 +921,6 @@
           <button type="button" class="tab-btn" data-tab="stages">Статистика (этапы)</button>
           <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
           <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
-          <button type="button" class="tab-btn" data-tab="vsc">VSC · дашборд</button>
         </div>
       </div>
       <div class="tab-group" data-group="tools">
@@ -1050,7 +1049,22 @@
   <script>
     (function() {
       const IS_TEAM = location.pathname.replace(/\/+$/, "") === "/team";
-      const TOKEN_KEY = IS_TEAM ? "voyo_team_token" : "voyo_admin_token";
+      // /vsc — отдельный VSC-дашборд: вход как в админку (код), но своя вывеска
+      // VSC и показывается только дашборд. По авторизации ведёт себя как админ.
+      const IS_VSC = location.pathname.replace(/\/+$/, "") === "/vsc";
+      const TOKEN_KEY = IS_TEAM ? "voyo_team_token" : (IS_VSC ? "voyo_vsc_token" : "voyo_admin_token");
+      if (IS_VSC) {
+        try {
+          document.title = "VSC · Дашборд";
+          const _img = document.querySelector(".brand-bar img");
+          if (_img) {
+            _img.onerror = function () { const p = document.createElement("div"); p.textContent = "VSC"; p.style.cssText = "font-weight:800;font-size:34px;letter-spacing:.06em;color:#161d45;"; this.replaceWith(p); };
+            _img.src = "/vsc-logo.png"; _img.alt = "VSC";
+          }
+          const _sub = document.querySelector(".brand-sub"); if (_sub) _sub.remove();
+          const _icon = document.createElement("link"); _icon.rel = "apple-touch-icon"; _icon.href = "/vsc-logo.png"; document.head.appendChild(_icon);
+        } catch (_) {}
+      }
       // Кэш «на этом устройстве кнопка Face ID должна быть видна» — выставляется
       // после успешной аутентификации/регистрации passkey, чтобы при следующих
       // заходах кнопка появлялась СИНХРОННО на render'е, без ожидания async-
@@ -1926,6 +1940,18 @@
         loginBlock.style.display = "none";
         dashBlock.classList.add("show");
         bioOffer.classList.remove("show");
+        // /vsc — показываем ТОЛЬКО VSC-дашборд: прячем вкладки и все прочие панели.
+        if (IS_VSC) {
+          const tabsBar = document.querySelector(".tabs"); if (tabsBar) tabsBar.style.display = "none";
+          [panelStats, panelStages, panelSurveys, panelTraffic, panelCorrections, panelKb, panelTester, panelDocsReq, panelQLogic, panelActions, panelUploads, panelScreens, panelApplicants].forEach((p) => { if (p) p.classList.remove("show"); });
+          const pc = document.getElementById("paidConvBlock"); if (pc) pc.style.display = "none";
+          const ad = document.getElementById("authDailyBlock"); if (ad) ad.style.display = "none";
+          panelVsc.classList.add("show");
+          activeTab = "vsc";
+          loadVsc();
+          startPolling();
+          return;
+        }
         applyRoleUI();
         if (currentRole() === "manager") {
           activeTab = "corrections";
