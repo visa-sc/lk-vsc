@@ -2084,20 +2084,45 @@ function getCustomFieldValue(entity, fieldName) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Глобальный ограничитель исходящих запросов к amoCRM (token bucket).
+// Глобальный ограничитель исходящих запросов к amoCRM (token bucket + приоритет).
 // amoCRM лимит ~7 RPS на аккаунт; его ПРЕВЫШЕНИЕ приводит не просто к 429, а к
-// БЛОКИРОВКЕ аккаунта (инцидент 09.06.2026: шквал GET /contacts?query=...).
+// БЛОКИРОВКЕ аккаунта (инцидент 09.06.2026: шквал GET /contacts?query=...;
+// повторный бан 15.06.2026 — превышение общего лимита аккаунта по API).
 // Держим запас: не более AMO_MAX_RPS исходящих в секунду со ВСЕХ кодовых путей
 // (кабинет, прогревы статистики, вебхуки и в т.ч. повторы-ретраи). При нормальной
 // нагрузке токены доступны сразу — задержки нет; под всплеском запросы встают в
 // очередь, но суммарный темп физически не может превысить лимит.
 // AMO_MAX_RPS — устойчивый темп (refill, запр./сек); AMO_BURST — ёмкость бакета
 // (допустимый мгновенный всплеск). Худшее окно в 1 сек = AMO_BURST + AMO_MAX_RPS,
-// держим его ≤ лимита amoCRM (7/сек): 2 + 5 = 7.
-const AMO_MAX_RPS = 5;
-const AMO_BURST = 2;
+// держим его НИЖЕ лимита amoCRM (7/сек) с запасом для веб-интерфейса/других
+// интеграций аккаунта: 1 + 4 = 5 < 7.
+//
+// ДВЕ ОЧЕРЕДИ ПО ПРИОРИТЕТУ:
+//   • high — клиентский ЛК и админка (по умолчанию, без обёртки). Всегда вперёд.
+//   • low  — фон (вебхуки, прогревы статистики). Помечается amoBg(() => ...).
+// Клиентский запрос НИКОГДА не ждёт за фоновым: при наличии токена он берётся
+// первым; при его отсутствии будит лимитер по времени пополнения токена, а не
+// по паузе фона. Так лимит RPS не создаёт клиенту дискомфорта.
+//
+// ПРЕДОХРАНИТЕЛЬ (circuit breaker): при 429/403 от amoCRM ставим на паузу ТОЛЬКО
+// фон (low) — чтобы наши ретраи не разгоняли счётчик к бану. Клиент (high) при
+// этом продолжает идти. Фон — основной источник объёма, его пауза снимает
+// нагрузку и даёт аккаунту восстановиться без ущерба для клиентов.
+const { AsyncLocalStorage } = require("async_hooks");
+const amoPriorityStore = new AsyncLocalStorage();
+// Пометить фоновый код низким приоритетом для лимитера amoCRM. ALS пробрасывает
+// контекст сквозь await и колбэки, созданные синхронно внутри fn.
+const amoBg = (fn) => amoPriorityStore.run("low", fn);
+
+const AMO_MAX_RPS = 4;   // было 5
+const AMO_BURST = 1;     // было 2; худшее окно теперь 4+1 = 5 < 7 (запас аккаунту)
 let _amoTokens = AMO_BURST;
 let _amoTokensTs = Date.now();
+const _amoQHigh = []; // ожидающие резолверы — клиент/админ
+const _amoQLow = [];  // ожидающие резолверы — фон
+let _amoTimer = null;
+let _amoLowPauseUntil = 0; // до этого времени фон (low) не обслуживается
+
 function _amoRefillTokens() {
   const now = Date.now();
   const elapsedSec = (now - _amoTokensTs) / 1000;
@@ -2106,14 +2131,40 @@ function _amoRefillTokens() {
     _amoTokensTs = now;
   }
 }
-async function amoAcquireToken() {
-  // JS однопоточный: проверка+декремент токена атомарны между await.
-  while (true) {
-    _amoRefillTokens();
-    if (_amoTokens >= 1) { _amoTokens -= 1; return; }
-    const waitMs = Math.max(20, Math.ceil(((1 - _amoTokens) / AMO_MAX_RPS) * 1000));
-    await new Promise((r) => setTimeout(r, waitMs));
+function _amoSchedulePump() {
+  if (_amoTimer) { clearTimeout(_amoTimer); _amoTimer = null; }
+  const now = Date.now();
+  const tokenWaitMs = _amoTokens >= 1 ? 0 : Math.ceil(((1 - _amoTokens) / AMO_MAX_RPS) * 1000);
+  const wakes = [];
+  if (_amoQHigh.length) wakes.push(tokenWaitMs); // клиент — только по токену
+  if (_amoQLow.length) wakes.push(Math.max(tokenWaitMs, _amoLowPauseUntil - now)); // фон — ещё и пауза
+  if (!wakes.length) return;
+  _amoTimer = setTimeout(() => { _amoTimer = null; _amoPump(); }, Math.max(20, Math.min(...wakes)));
+}
+function _amoPump() {
+  _amoRefillTokens();
+  const now = Date.now();
+  while (_amoTokens >= 1) {
+    let resolve = null;
+    if (_amoQHigh.length) resolve = _amoQHigh.shift();           // приоритет клиента
+    else if (_amoQLow.length && now >= _amoLowPauseUntil) resolve = _amoQLow.shift();
+    else break;
+    _amoTokens -= 1;
+    resolve();
   }
+  _amoSchedulePump();
+}
+function amoAcquireToken() {
+  const low = amoPriorityStore.getStore() === "low";
+  return new Promise((resolve) => {
+    (low ? _amoQLow : _amoQHigh).push(resolve);
+    _amoPump();
+  });
+}
+// Вызывается из retry при ответе amoCRM 429/403: тормозим ТОЛЬКО фон.
+function amoNoteThrottle(status) {
+  if (status === 429) _amoLowPauseUntil = Math.max(_amoLowPauseUntil, Date.now() + 4000);
+  else if (status === 403) _amoLowPauseUntil = Math.max(_amoLowPauseUntil, Date.now() + 30000);
 }
 
 // Унифицированный retry для всех вызовов amoCRM API. Защищает ВСЕ кодовые пути
@@ -2129,6 +2180,7 @@ async function amoRequestWithRetry(doRequest, label, maxAttempts = 5) {
     } catch (e) {
       lastErr = e;
       const status = e.response && e.response.status;
+      amoNoteThrottle(status); // 429/403 → пауза ТОЛЬКО фона (клиента не тормозим)
       const retryable = status === 429 || status === 503 || (status >= 500 && status < 600) || !status;
       if (!retryable || attempt === maxAttempts) throw e;
       // Уважаем Retry-After (сек) от amoCRM, если прислан; иначе экспоненциальный
@@ -10553,9 +10605,15 @@ async function tryTransferDupFilesForContact(contactId, triggerReason) {
 }
 
 // Дедуп вебхуков по contactId, чтобы при шторме contacts[update] не плодить
-// параллельных проверок одного и того же контакта. Окно 30 секунд.
+// параллельных проверок одного и того же контакта (каждая проверка = каскад
+// GET к amoCRM по сделкам контакта — основной усилитель нагрузки).
+// Окно расширено 30с → 90с: amoCRM при правках шлёт по нескольку update на один
+// контакт за минуту; склеиваем их в одну проверку. Это ЧИСТО фоновая служебная
+// операция (перенос файлов дублей) — клиент в ЛК её не видит, а перевод сделки
+// в «Дубль» триггерит перенос отдельным событием leads[status], так что реальные
+// дубли не теряются.
 const recentContactChecks = new Map(); // contactId -> ts
-const RECENT_CHECK_WINDOW_MS = 30 * 1000;
+const RECENT_CHECK_WINDOW_MS = 90 * 1000;
 function shouldSkipDuplicate(contactId) {
   if (!contactId) return true;
   const now = Date.now();
@@ -10587,6 +10645,9 @@ app.post("/api/amo/webhook", async (req, res) => {
   // выполняем в фоне.
   res.status(200).send("ok");
 
+  // Вся фоновая обработка вебхука — низкий приоритет в лимитере amoCRM: клиентские
+  // запросы ЛК всегда идут впереди, а при 429/403 фон ставится на паузу (предохранитель).
+  amoBg(() => {
   try {
     const body = req.body || {};
     const accountSubdomain = body?.account?.subdomain;
@@ -10701,6 +10762,7 @@ app.post("/api/amo/webhook", async (req, res) => {
   } catch (e) {
     console.error("AMO WEBHOOK fatal:", e.message);
   }
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -10720,7 +10782,7 @@ function schedulePaidConvPrewarm() {
       _cachedPaidConvStats = null;
       _cachedPaidConvStatsTs = 0;
       const t = Date.now();
-      await computePaidConversionStats();
+      await amoBg(() => computePaidConversionStats());
       console.log(`PAID-CONV PREWARM (initial) done in ${Date.now()-t}ms`);
     } catch (e) {
       console.error("PAID-CONV PREWARM initial error:", e.message);
@@ -10732,7 +10794,7 @@ function schedulePaidConvPrewarm() {
       _cachedPaidConvStats = null;
       _cachedPaidConvStatsTs = 0;
       const t = Date.now();
-      await computePaidConversionStats();
+      await amoBg(() => computePaidConversionStats());
       console.log(`PAID-CONV PREWARM done in ${Date.now()-t}ms`);
     } catch (e) {
       console.error("PAID-CONV PREWARM error:", e.message);
@@ -10754,14 +10816,14 @@ function scheduleAdminStatsPrewarm() {
   setTimeout(async () => {
     try {
       const t = Date.now();
-      await refreshAdminStats();
+      await amoBg(() => refreshAdminStats());
       console.log(`ADMIN STATS PREWARM (initial) done in ${Date.now()-t}ms`);
     } catch (e) { console.error("ADMIN STATS PREWARM initial error:", e.message); }
   }, 25 * 1000);
   setInterval(async () => {
     try {
       const t = Date.now();
-      await refreshAdminStats();
+      await amoBg(() => refreshAdminStats());
       console.log(`ADMIN STATS PREWARM done in ${Date.now()-t}ms`);
     } catch (e) { console.error("ADMIN STATS PREWARM error:", e.message); }
   }, ADMIN_STATS_PREWARM_INTERVAL_MS);
@@ -10775,11 +10837,11 @@ const STAGE_STATS_PREWARM_INTERVAL_MS = 20 * 60 * 1000;
 function scheduleStageStatsPrewarm() {
   if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return;
   setTimeout(async () => {
-    try { const t = Date.now(); await refreshStageStats(); console.log(`STAGE STATS PREWARM (initial) done in ${Date.now()-t}ms`); }
+    try { const t = Date.now(); await amoBg(() => refreshStageStats()); console.log(`STAGE STATS PREWARM (initial) done in ${Date.now()-t}ms`); }
     catch (e) { console.error("STAGE STATS PREWARM initial error:", e.message); }
   }, 35 * 1000);
   setInterval(async () => {
-    try { const t = Date.now(); await refreshStageStats(); console.log(`STAGE STATS PREWARM done in ${Date.now()-t}ms`); }
+    try { const t = Date.now(); await amoBg(() => refreshStageStats()); console.log(`STAGE STATS PREWARM done in ${Date.now()-t}ms`); }
     catch (e) { console.error("STAGE STATS PREWARM error:", e.message); }
   }, STAGE_STATS_PREWARM_INTERVAL_MS);
 }
@@ -10800,7 +10862,7 @@ const READY_DOCS_BACKFILL_FLAG = path.join(__dirname, ".readyDocsBackfillDone");
       const phones = Array.from(lkAuthPhones.keys());
       console.log(`READY-DOCS backfill: start for ${phones.length} authorized phone(s)`);
       for (const ph of phones) {
-        try { await provisionReadyDocsForActiveLeads(ph); }
+        try { await amoBg(() => provisionReadyDocsForActiveLeads(ph)); }
         catch (e) { console.error("READY-DOCS backfill phone error:", ph, e.message); }
         await new Promise((r) => setTimeout(r, 2500)); // щадящий троттлинг между номерами
       }
