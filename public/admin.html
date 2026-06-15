@@ -2336,9 +2336,13 @@
             startPolling();
           } else if (which === "stages") {
             loadStages();
+            loadPaidConvStats();   // блоки «конверсия» и «график авторизаций»
+            loadAuthDaily();       // видны на «Этапах» → грузим и их (в т.ч. руководителям)
             startPolling();
           } else if (which === "stats") {
             loadStats();
+            loadPaidConvStats();
+            loadAuthDaily();
             startPolling();
           } else if (which === "corrections") {
             loadCorrections();
