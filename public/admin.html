@@ -628,6 +628,7 @@
     .tst-doc-badge { flex-shrink: 0; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; white-space: nowrap; margin-top: 1px; min-width: 96px; text-align: center; box-sizing: border-box; }
     .tst-doc-badge.req { background: #fbebee; color: #7a2d39; border: 1px solid #efcfd5; }
     .tst-doc-badge.opt { background: #f0f7fc; color: #1d4d72; border: 1px solid #d3e7f4; }
+    .tst-doc-badge.stat { background: #fdf3e3; color: #8a5a12; border: 1px solid #f0dcb8; }
     .tst-doc-name { font-size: 13px; color: #23272f; font-weight: 600; }
     .tst-doc-when { font-size: 11.5px; color: #9096a3; margin-top: 1px; }
     .tst-note { font-size: 12px; color: #6b7280; font-style: italic; margin-top: 8px; }
@@ -1441,7 +1442,7 @@
         const spec = testerSpec, dir = spec.directions[docsreqDir];
         docsreqContent.innerHTML = "";
         const intro = document.createElement("p"); intro.className = "ref-intro";
-        intro.textContent = "Полный список документов по направлению: когда каждый запрашивается (этап, ответы опросника, дни до подачи) и обязательность. Напротив каждого — кнопка «Корректировка»: если что-то неверно, заявка с полным контекстом сразу уйдёт в «Корректировки ЛК». Данные — из той же логики, что и Тестировщик ЛК.";
+        intro.innerHTML = "Полный список документов по направлению: когда каждый запрашивается (этап, ответы опросника, дни до подачи) и обязательность. Напротив каждого — кнопка «Корректировка»: если что-то неверно, заявка с полным контекстом сразу уйдёт в «Корректировки ЛК». Данные — из той же логики, что и Тестировщик ЛК.<br><b>Обязательность документов оформления (этапы 1–2) — по статусу сделки и «Дате записи на подачу» (логика Насти, июнь 2026):</b> на ранних статусах документ открыт, но НЕобязателен; становится обязательным на «Запись сделана / Электронное рассмотрение / Оформлен выкуп» за ≤7 рабочих дней до подачи и на финальных статусах («Исправить / Пакет готов / Принято после ОО / Ожидает передачи / Готовы к личной подаче»); предохранитель: &lt;3 календарных дней до подачи — обязателен. Паспорта (этап 0) обязательны всегда.";
         docsreqContent.appendChild(intro);
         docsreqContent.appendChild(refDirButtons(docsreqDir, (k) => { docsreqDir = k; renderDocsReq(); }));
         if (Array.isArray(dir.docRecs) && dir.docRecs.length) {
@@ -1455,9 +1456,13 @@
           if (s === 2 && dir.stage2Note) { const n = document.createElement("div"); n.className = "ref-note"; n.textContent = dir.stage2Note; docsreqContent.appendChild(n); }
           if (!docs.length) { const e = document.createElement("div"); e.className = "tst-empty"; e.textContent = "Нет стандартных документов на этом этапе."; docsreqContent.appendChild(e); }
           docs.forEach((doc) => {
-            const cond = "<b>Когда:</b> " + escapeHtml(doc.when || "всегда") + "<br><b>Обязательность:</b> обязателен с момента появления; остаётся в списке на следующих этапах, пока не загружен (кумулятивно до этапа 2).";
-            const ctx = "Раздел: Запрос документов\nНаправление: " + dir.title + "\nДокумент: " + doc.label + "\nЭтап: " + s + ". " + spec.stages[s] + "\nКогда: " + (doc.when || "всегда");
-            docsreqContent.appendChild(refRow(doc.label, cond, docBadge("req", "обязателен"), "Запрос документов", ctx));
+            const mand = (s === 0)
+              ? "обязателен всегда (паспорта запрашиваются с самого начала)."
+              : "по статусу сделки и «Дате записи на подачу»: на ранних статусах открыт, но НЕобязателен (помечен «необязательно»); обязателен на «Запись сделана / Электронное рассмотрение / Оформлен выкуп» за ≤7 рабочих дней до подачи и на финальных статусах («Исправить / Пакет готов / Принято после ОО / Ожидает передачи / Готовы к личной подаче»); предохранитель: &lt;3 кал. дней до подачи — обязателен. Кумулятивно остаётся в списке до этапа 2, пока не загружен.";
+            const cond = "<b>Когда:</b> " + escapeHtml(doc.when || "всегда") + "<br><b>Обязательность:</b> " + mand;
+            const ctx = "Раздел: Запрос документов\nНаправление: " + dir.title + "\nДокумент: " + doc.label + "\nЭтап: " + s + ". " + spec.stages[s] + "\nОбязательность: " + (s === 0 ? "всегда" : "по статусу сделки + «Дате записи на подачу»");
+            const badge = (s === 0) ? docBadge("req", "обязателен") : docBadge("stat", "по статусу");
+            docsreqContent.appendChild(refRow(doc.label, cond, badge, "Запрос документов", ctx));
           });
         }
         const ph = document.createElement("div"); ph.className = "ref-sec-h";
@@ -1858,8 +1863,10 @@
         else VSC_KPIS.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, series)));
       }
       function tstDocRow(label, required, when) {
-        const row = document.createElement("div"); row.className = "tst-doc " + (required ? "req" : "opt");
-        const b = document.createElement("span"); b.className = "tst-doc-badge " + (required ? "req" : "opt"); b.textContent = required ? "обязателен" : "необязателен";
+        const kind = required === "stat" ? "stat" : (required ? "req" : "opt");
+        const txt = required === "stat" ? "по статусу" : (required ? "обязателен" : "необязателен");
+        const row = document.createElement("div"); row.className = "tst-doc " + kind;
+        const b = document.createElement("span"); b.className = "tst-doc-badge " + kind; b.textContent = txt;
         const main = document.createElement("div"); main.className = "tst-doc-main";
         const nm = document.createElement("div"); nm.className = "tst-doc-name"; nm.textContent = label; main.appendChild(nm);
         if (when) { const w = document.createElement("div"); w.className = "tst-doc-when"; w.textContent = when; main.appendChild(w); }
@@ -1879,13 +1886,15 @@
           const docBox = document.createElement("div"); docBox.className = "tst-docbox";
           const h = document.createElement("div"); h.className = "tst-docbox-h"; h.textContent = "Документы, которые видит клиент (кумулятивно, этапы 0–" + st + ")";
           docBox.appendChild(tstBoxHead(h, "Тестировщик ЛК", () => testerContextText("Документы, которые видит клиент"), docBox));
-          let any = false;
+          let any = false, anyStat = false;
           for (let s = 0; s <= st && s <= 2; s++) {
             (dir.docsByStage[String(s)] || []).filter((doc) => evalTCond(doc.cond, ans)).forEach((doc) => {
-              docBox.appendChild(tstDocRow(doc.label, true, "этап " + s + (doc.when ? " · " + doc.when : ""))); any = true;
+              const req = s === 0 ? true : "stat"; if (req === "stat") anyStat = true;
+              docBox.appendChild(tstDocRow(doc.label, req, "этап " + s + (doc.when ? " · " + doc.when : ""))); any = true;
             });
           }
           if (!any) { const e = document.createElement("div"); e.className = "tst-empty"; e.textContent = "Нет запрашиваемых документов при таких параметрах."; docBox.appendChild(e); }
+          if (anyStat) { const sn = document.createElement("div"); sn.className = "tst-note"; sn.textContent = "«По статусу» (документы оформления, этапы 1–2): открыты для загрузки, но обязательными становятся по статусу сделки в amoCRM и «Дате записи на подачу» — ранние статусы необязательно; «Запись сделана / Электронное рассмотрение / Оформлен выкуп» обязательно за ≤7 рабочих дней до подачи; финальные статусы — всё; <3 кал. дней до подачи — всё. Паспорта (этап 0) обязательны всегда."; docBox.appendChild(sn); }
           if (st === 2 && dir.stage2Note) { const n = document.createElement("div"); n.className = "tst-note"; n.textContent = dir.stage2Note; docBox.appendChild(n); }
           wrap.appendChild(docBox);
           if (st === 2) {
