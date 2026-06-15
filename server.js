@@ -426,9 +426,25 @@ function cleanNick(s) {
   if (at >= 0) t = t.slice(at + 1);              // берём всё ПОСЛЕ последнего @
   return t.replace(/\s+/g, "");
 }
-function contactMatchesNick(contact, handle) {
+function contactFieldByNamePart(contact, part) {
+  const fields = (contact && contact.custom_fields_values) || [];
+  for (const f of fields) {
+    const fn = (String(f.field_name || "") + " " + String(f.field_code || "")).toLowerCase();
+    if (fn.indexOf(part) >= 0) {
+      for (const v of (f.values || [])) if (v && v.value != null) return String(v.value);
+    }
+  }
+  return "";
+}
+function contactMatchesNick(contact, handle, channel) {
   const target = cleanNick(handle);
   if (!target || target.length < 3) return false; // слишком короткий ник не матчим
+  channel = String(channel || "").toLowerCase();
+  // Точная сверка по профильному полю мессенджера (телеграм: TelegramUsername_WZ
+  // со значением вида «@nick»; инстаграм — если есть аналогичное поле).
+  if (channel.indexOf("telegram") >= 0 && cleanNick(contactFieldByNamePart(contact, "telegram")) === target) return true;
+  if (channel.indexOf("insta") >= 0 && cleanNick(contactFieldByNamePart(contact, "instagram")) === target) return true;
+  // Запасная универсальная сверка (имя + любые поля), любой регистр, с/без «@».
   const hay = [];
   if (contact && contact.name) hay.push(String(contact.name).toLowerCase());
   ((contact && contact.custom_fields_values) || []).forEach((f) =>
@@ -467,7 +483,7 @@ app.post("/api/auth/identify", async (req, res) => {
       const nick = cleanNick(handle);
       if (nick && nick.length >= 3) {
         const candidates = await amoGetAllPages(`${baseUrl}/api/v4/contacts`, { query: nick });
-        found = (candidates || []).find((c) => contactMatchesNick(c, handle)) || null;
+        found = (candidates || []).find((c) => contactMatchesNick(c, handle, channel)) || null;
       }
     }
     if (!found) return res.json({ success: true, found: false });
