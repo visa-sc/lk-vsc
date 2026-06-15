@@ -647,6 +647,12 @@
     .ref-name { font-size: 13px; font-weight: 600; color: #23272f; line-height: 1.35; }
     .ref-cond { font-size: 12px; color: #5a626f; line-height: 1.45; }
     .ref-cond b { color: #33415a; }
+    .ref-cond .ref-field { margin: 4px 0; }
+    .ref-cond .ref-field:first-child { margin-top: 0; }
+    .ref-cond ul.ref-ul { margin: 2px 0 5px; padding-left: 16px; }
+    .ref-cond ul.ref-ul li { margin: 2px 0; line-height: 1.4; }
+    .tst-sees-t ul.ref-ul { margin: 4px 0 0; padding-left: 18px; }
+    .tst-sees-t ul.ref-ul li { margin: 3px 0; }
     .ref-badges { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
     .ref-badges .tst-doc-badge, .ref-badges .sys-badge { min-width: 116px; text-align: center; box-sizing: border-box; }
     .ref-row-3 { grid-template-columns: minmax(170px, 1.1fr) 2fr 118px; }
@@ -1425,6 +1431,20 @@
       function docBadge(kind, text) {
         const b = document.createElement("span"); b.className = "tst-doc-badge " + kind; b.textContent = text; return b;
       }
+      // Тезисный список из массива строк (escape внутри) — для читаемых описаний.
+      function refList(items) {
+        return '<ul class="ref-ul">' + (items || []).map(function (x) { return "<li>" + escapeHtml(String(x)) + "</li>"; }).join("") + "</ul>";
+      }
+      // Поле «Метка: значение»; если значение — массив, выводится тезисами (ul).
+      function refField(label, val) {
+        if (Array.isArray(val)) return '<div class="ref-field"><b>' + escapeHtml(label) + ":</b>" + refList(val) + "</div>";
+        return '<div class="ref-field"><b>' + escapeHtml(label) + ":</b> " + escapeHtml(val == null ? "" : String(val)) + "</div>";
+      }
+      // Тот же контент для текстового контекста кнопки «Корректировка».
+      function ctxField(label, val) {
+        if (Array.isArray(val)) return label + ":\n  - " + val.join("\n  - ");
+        return label + ": " + (val == null ? "" : String(val));
+      }
 
       // ── Раздел «Запрос документов» ──
       let docsreqDir = "schengen";
@@ -1442,7 +1462,14 @@
         const spec = testerSpec, dir = spec.directions[docsreqDir];
         docsreqContent.innerHTML = "";
         const intro = document.createElement("p"); intro.className = "ref-intro";
-        intro.innerHTML = "Полный список документов по направлению: когда каждый запрашивается (этап, ответы опросника, дни до подачи) и обязательность. Напротив каждого — кнопка «Корректировка»: если что-то неверно, заявка с полным контекстом сразу уйдёт в «Корректировки ЛК». Данные — из той же логики, что и Тестировщик ЛК.<br><b>Обязательность документов оформления (этапы 1–2) — по статусу сделки и «Дате записи на подачу» (логика Насти, июнь 2026):</b> на ранних статусах документ открыт, но НЕобязателен; становится обязательным на «Запись сделана / Электронное рассмотрение / Оформлен выкуп» за ≤7 рабочих дней до подачи и на финальных статусах («Исправить / Пакет готов / Принято после ОО / Ожидает передачи / Готовы к личной подаче»); предохранитель: &lt;3 календарных дней до подачи — обязателен. Паспорта (этап 0) обязательны всегда.";
+        intro.innerHTML = "Полный список документов по направлению: когда каждый запрашивается (этап, ответы опросника, дни до подачи) и обязательность. Напротив каждого — кнопка «Корректировка»: если что-то неверно, заявка с полным контекстом сразу уйдёт в «Корректировки ЛК». Данные — из той же логики, что и Тестировщик ЛК."
+          + "<br><b>Обязательность документов оформления (этапы 1–2) — по статусу сделки и «Дате записи на подачу» (логика Насти, июнь 2026):</b>"
+          + "<ul class='ref-ul'>"
+          + "<li>ранние статусы — открыты, но НЕобязательны;</li>"
+          + "<li>«Запись сделана / Электронное рассмотрение / Оформлен выкуп» — за ≤7 рабочих дней обязательно становится только <b>ядро оформления</b> (справка с работы/учёбы, паспорт спонсора, своё проживание, авиабилеты, 2-й загран, билеты в 3-ю страну, свид-во о рождении);</li>"
+          + "<li>остальные условные документы — обязательны только в финальных статусах или при &lt;3 кал. дней;</li>"
+          + "<li>финальные статусы («Исправить / Пакет готов / Принято после ОО / Ожидает передачи / Готовы к личной подаче») — обязательно всё; предохранитель &lt;3 кал. дней — всё; паспорта (этап 0) — всегда.</li>"
+          + "</ul>";
         docsreqContent.appendChild(intro);
         docsreqContent.appendChild(refDirButtons(docsreqDir, (k) => { docsreqDir = k; renderDocsReq(); }));
         if (Array.isArray(dir.docRecs) && dir.docRecs.length) {
@@ -1457,10 +1484,16 @@
           if (!docs.length) { const e = document.createElement("div"); e.className = "tst-empty"; e.textContent = "Нет стандартных документов на этом этапе."; docsreqContent.appendChild(e); }
           docs.forEach((doc) => {
             const mand = (s === 0)
-              ? "обязателен всегда (паспорта запрашиваются с самого начала)."
-              : "по статусу сделки и «Дате записи на подачу»: на ранних статусах открыт, но НЕобязателен (помечен «необязательно»); обязателен на «Запись сделана / Электронное рассмотрение / Оформлен выкуп» за ≤7 рабочих дней до подачи и на финальных статусах («Исправить / Пакет готов / Принято после ОО / Ожидает передачи / Готовы к личной подаче»); предохранитель: &lt;3 кал. дней до подачи — обязателен. Кумулятивно остаётся в списке до этапа 2, пока не загружен.";
-            const cond = "<b>Когда:</b> " + escapeHtml(doc.when || "всегда") + "<br><b>Обязательность:</b> " + mand;
-            const ctx = "Раздел: Запрос документов\nНаправление: " + dir.title + "\nДокумент: " + doc.label + "\nЭтап: " + s + ". " + spec.stages[s] + "\nОбязательность: " + (s === 0 ? "всегда" : "по статусу сделки + «Дате записи на подачу»");
+              ? ["Обязателен всегда — паспорта запрашиваются с самого начала."]
+              : [
+                  "Открыт для загрузки заранее; обязательность — по статусу сделки + «Дате записи на подачу».",
+                  "Ядро оформления (справка с работы/учёбы, паспорт спонсора, своё проживание, авиабилеты, 2-й загран, билеты в 3-ю страну, свид-во о рождении): обязательно в статусах «Запись сделана / Электронное рассмотрение / Оформлен выкуп» за ≤7 раб. дней до подачи.",
+                  "Остальные условные документы этапов 1–2: обязательны только в финальных статусах («Исправить / Пакет готов / Принято после ОО / Ожидает передачи / Готовы к личной подаче») или при <3 кал. дней.",
+                  "Предохранитель: <3 календарных дней до подачи — обязательно всё.",
+                  "Кумулятивно остаётся в списке до этапа 2, пока не загружен."
+                ];
+            const cond = refField("Когда", doc.when || "всегда") + refField("Обязательность", mand);
+            const ctx = "Раздел: Запрос документов\nНаправление: " + dir.title + "\nДокумент: " + doc.label + "\nЭтап: " + s + ". " + spec.stages[s] + "\n" + ctxField("Обязательность", mand);
             const badge = (s === 0) ? docBadge("req", "обязателен") : docBadge("stat", "по статусу");
             docsreqContent.appendChild(refRow(doc.label, cond, badge, "Запрос документов", ctx));
           });
@@ -1476,8 +1509,8 @@
           if (doc.opt === true) { badge = docBadge("opt", "необязателен"); mandTxt = "необязательный (с пометкой «уточните у менеджера»)"; }
           else if (doc.opt) { badge = docBadge("req", "обязателен*"); mandTxt = "обязательный; становится НЕобязательным, если " + tCondText(doc.opt, dir); }
           else { badge = docBadge("req", "обязателен"); mandTxt = "обязательный (с момента появления подобласти, т.е. за 7 дней до записи)"; }
-          const cond = "<b>Когда:</b> " + escapeHtml(doc.when || "всегда") + "<br><b>Обязательность:</b> " + escapeHtml(mandTxt);
-          const ctx = "Раздел: Запрос документов\nНаправление: " + dir.title + "\nДокумент: " + doc.label + " (подобласть «перед подачей»)\nКогда: " + (doc.when || "всегда") + "\nОбязательность: " + mandTxt;
+          const cond = refField("Когда", doc.when || "всегда") + refField("Обязательность", mandTxt);
+          const ctx = "Раздел: Запрос документов\nНаправление: " + dir.title + "\nДокумент: " + doc.label + " (подобласть «перед подачей»)\n" + ctxField("Когда", doc.when || "всегда") + "\n" + ctxField("Обязательность", mandTxt);
           docsreqContent.appendChild(refRow(doc.label, cond, badge, "Запрос документов", ctx));
         });
       }
@@ -1507,8 +1540,8 @@
         }
         (dir.questions || []).forEach((qq) => {
           const rb = QREQ_LABELS[qq.req] || ["opt", String(qq.req || "—")];
-          const cond = "<b>Показывается:</b> " + escapeHtml(qq.shows || "всегда") + "<br><b>Что влечёт:</b> " + escapeHtml(qq.effect || "");
-          const ctx = "Раздел: Опросники (логика)\nНаправление: " + dir.title + "\nВопрос: " + qq.q + "\nОбязательность ответа: " + qq.req + "\nПоказывается: " + (qq.shows || "всегда") + "\nЧто влечёт: " + (qq.effect || "");
+          const cond = refField("Показывается", qq.shows || "всегда") + refField("Что влечёт", qq.effect);
+          const ctx = "Раздел: Опросники (логика)\nНаправление: " + dir.title + "\nВопрос: " + qq.q + "\nОбязательность ответа: " + qq.req + "\n" + ctxField("Показывается", qq.shows || "всегда") + "\n" + ctxField("Что влечёт", qq.effect);
           qlogicContent.appendChild(refRow(qq.q, cond, docBadge(rb[0], rb[1]), "Опросники (логика)", ctx));
         });
       }
@@ -1547,8 +1580,8 @@
           h.appendChild(sb); h.appendChild(cnt);
           actionsContent.appendChild(h);
           sysGroups[sys].forEach((a) => {
-            const cond = "<b>Когда:</b> " + escapeHtml(a.when || "") + "<br><b>Подробности:</b> " + escapeHtml(a.details || "");
-            const ctx = "Раздел: Действия\nСистема: " + a.sys + "\nДействие: " + a.name + "\nКогда: " + (a.when || "") + "\nПодробности: " + (a.details || "");
+            const cond = refField("Когда", a.when) + refField("Подробности", a.details);
+            const ctx = "Раздел: Действия\nСистема: " + a.sys + "\nДействие: " + a.name + "\n" + ctxField("Когда", a.when) + "\n" + ctxField("Подробности", a.details);
             actionsContent.appendChild(refRow(a.name, cond, null, "Действия", ctx));
           });
         });
@@ -1575,14 +1608,14 @@
         }
         (testerSpec.uploadAreas || []).forEach((a) => {
           const parts = [];
-          if (a.dirs) parts.push("<b>Направления:</b> " + escapeHtml(a.dirs));
-          if (a.appears) parts.push("<b>Когда появляется:</b> " + escapeHtml(a.appears));
-          if (a.composition) parts.push("<b>Состав:</b> " + escapeHtml(a.composition));
-          if (a.color && a.color !== "—") parts.push("<b>Цвет плашки:</b> " + escapeHtml(a.color));
-          if (a.complete && a.complete !== "—") parts.push("<b>Полная загрузка:</b> " + escapeHtml(a.complete));
-          if (a.notes) parts.push("<b>Нюансы:</b> " + escapeHtml(a.notes));
-          const ctx = "Раздел: Области загрузки\nОбласть: " + a.name + "\nНаправления: " + (a.dirs || "—") + "\nКогда появляется: " + (a.appears || "—") + "\nЦвет: " + (a.color || "—");
-          uploadsContent.appendChild(refRow(a.name, parts.join("<br>"), null, "Области загрузки", ctx));
+          if (a.dirs) parts.push(refField("Направления", a.dirs));
+          if (a.appears) parts.push(refField("Когда появляется", a.appears));
+          if (a.composition) parts.push(refField("Состав", a.composition));
+          if (a.color && a.color !== "—") parts.push(refField("Цвет плашки", a.color));
+          if (a.complete && a.complete !== "—") parts.push(refField("Полная загрузка", a.complete));
+          if (a.notes) parts.push(refField("Нюансы", a.notes));
+          const ctx = "Раздел: Области загрузки\nОбласть: " + a.name + "\n" + ctxField("Направления", a.dirs) + "\n" + ctxField("Когда появляется", a.appears) + "\n" + ctxField("Состав", a.composition) + "\n" + ctxField("Цвет плашки", a.color) + "\n" + ctxField("Полная загрузка", a.complete) + "\n" + ctxField("Нюансы", a.notes);
+          uploadsContent.appendChild(refRow(a.name, parts.join(""), null, "Области загрузки", ctx));
         });
       }
 
@@ -1601,7 +1634,7 @@
         const spec = testerSpec;
         screensContent.innerHTML = "";
         const intro = document.createElement("p"); intro.className = "ref-intro";
-        intro.textContent = "Что видит клиент на каждом из 8 этапов ЛК, как при этом окрашена точка этапа, и какие валидации/сообщения об ошибках он встречает. Кнопка «Скорректировать» — замечание сразу в «Корректировки ЛК». Данные — из актуальной логики ЛК.";
+        intro.innerHTML = "Что видит клиент на каждом из 8 этапов ЛК, как при этом окрашена точка этапа, и какие валидации/сообщения об ошибках он встречает. Кнопка «Скорректировать» — замечание сразу в «Корректировки ЛК». Данные — из актуальной логики ЛК.<br>Экран <b>входа и идентификации</b> (вход по SMS / Face ID; для незнакомого номера — вопрос про обращение в Telegram / WhatsApp / Instagram и привязка к контакту) описан в разделе «Действия» и в «Инструкции по админке».";
         screensContent.appendChild(intro);
         if (Array.isArray(spec.screensRecs) && spec.screensRecs.length) {
           screensContent.appendChild(recBlock("Экраны клиента", spec.screensRecs, () => "Раздел: Экраны клиента\nБлок: Рекомендации"));
@@ -1609,14 +1642,15 @@
         if (spec.dotRule) { const n = document.createElement("div"); n.className = "ref-note"; n.textContent = spec.dotRule; screensContent.appendChild(n); }
         const h1 = document.createElement("div"); h1.className = "ref-sec-h"; h1.textContent = "Экраны по этапам"; screensContent.appendChild(h1);
         (spec.screens || []).forEach((s) => {
-          const cond = "<b>Что видит клиент:</b> " + escapeHtml(s.sees || "") + "<br><b>Цвет точки этапа:</b> " + escapeHtml(s.dot || "");
-          const ctx = "Раздел: Экраны клиента\nЭтап: " + s.title + "\nЧто видит клиент: " + (s.sees || "") + "\nЦвет точки: " + (s.dot || "");
+          const cond = refField("Что видит клиент", s.sees) + refField("Цвет точки этапа", s.dot);
+          const ctx = "Раздел: Экраны клиента\nЭтап: " + s.title + "\n" + ctxField("Что видит клиент", s.sees) + "\n" + ctxField("Цвет точки", s.dot);
           screensContent.appendChild(refRow(s.title, cond, null, "Экраны клиента", ctx));
         });
         const h2 = document.createElement("div"); h2.className = "ref-sec-h"; h2.textContent = "Валидации и сообщения об ошибках"; screensContent.appendChild(h2);
         (spec.validations || []).forEach((v) => {
-          const ctx = "Раздел: Экраны клиента (валидации)\nПравило: " + v.rule + "\nСообщение/логика: " + (v.msg || "");
-          screensContent.appendChild(refRow(v.rule, escapeHtml(v.msg || ""), null, "Экраны клиента", ctx));
+          const cond = Array.isArray(v.msg) ? refList(v.msg) : escapeHtml(v.msg || "");
+          const ctx = "Раздел: Экраны клиента (валидации)\nПравило: " + v.rule + "\n" + ctxField("Сообщение/логика", v.msg);
+          screensContent.appendChild(refRow(v.rule, cond, null, "Экраны клиента", ctx));
         });
       }
 
@@ -1641,8 +1675,9 @@
           applicantsContent.appendChild(recBlock("Заявители", spec.applicantsRecs, () => "Раздел: Заявители\nБлок: Рекомендации"));
         }
         (spec.applicantsInfo || []).forEach((it) => {
-          const ctx = "Раздел: Заявители\nТема: " + it.topic + "\nОписание: " + (it.detail || "");
-          applicantsContent.appendChild(refRow(it.topic, escapeHtml(it.detail || ""), null, "Заявители", ctx));
+          const cond = Array.isArray(it.detail) ? refList(it.detail) : escapeHtml(it.detail || "");
+          const ctx = "Раздел: Заявители\nТема: " + it.topic + "\n" + ctxField("Описание", it.detail);
+          applicantsContent.appendChild(refRow(it.topic, cond, null, "Заявители", ctx));
         });
       }
 
@@ -1879,7 +1914,9 @@
         const sees = document.createElement("div"); sees.className = "tst-sees";
         const seesTitle = document.createElement("div"); seesTitle.className = "tst-sees-h"; seesTitle.textContent = "Что видит клиент на этапе «" + spec.stages[st] + "»";
         sees.appendChild(tstBoxHead(seesTitle, "Тестировщик ЛК", () => testerContextText("Что видит клиент"), sees));
-        const seesT = document.createElement("div"); seesT.className = "tst-sees-t"; seesT.textContent = spec.stageSees[st] || "";
+        const seesT = document.createElement("div"); seesT.className = "tst-sees-t";
+        const seesVal = spec.stageSees[st];
+        if (Array.isArray(seesVal)) seesT.innerHTML = refList(seesVal); else seesT.textContent = seesVal || "";
         sees.appendChild(seesT);
         wrap.appendChild(sees);
         if (st <= 2) {
@@ -1894,7 +1931,7 @@
             });
           }
           if (!any) { const e = document.createElement("div"); e.className = "tst-empty"; e.textContent = "Нет запрашиваемых документов при таких параметрах."; docBox.appendChild(e); }
-          if (anyStat) { const sn = document.createElement("div"); sn.className = "tst-note"; sn.textContent = "«По статусу» (документы оформления, этапы 1–2): открыты для загрузки, но обязательными становятся по статусу сделки в amoCRM и «Дате записи на подачу» — ранние статусы необязательно; «Запись сделана / Электронное рассмотрение / Оформлен выкуп» обязательно за ≤7 рабочих дней до подачи; финальные статусы — всё; <3 кал. дней до подачи — всё. Паспорта (этап 0) обязательны всегда."; docBox.appendChild(sn); }
+          if (anyStat) { const sn = document.createElement("div"); sn.className = "tst-note"; sn.textContent = "«По статусу» (документы оформления, этапы 1–2): открыты заранее, обязательность — по статусу сделки + «Дате записи на подачу». Ранние статусы — необязательно. «Запись сделана / Электронное рассмотрение / Оформлен выкуп» — за ≤7 раб. дней обязательно только ядро оформления (справка с работы/учёбы, паспорт спонсора, своё проживание, авиабилеты, 2-й загран, билеты в 3-ю страну, свид-во о рождении); остальные условные — только в финальных статусах или при <3 кал. дней. Паспорта (этап 0) — всегда."; docBox.appendChild(sn); }
           if (st === 2 && dir.stage2Note) { const n = document.createElement("div"); n.className = "tst-note"; n.textContent = dir.stage2Note; docBox.appendChild(n); }
           wrap.appendChild(docBox);
           if (st === 2) {
@@ -1922,9 +1959,9 @@
         const intBox = document.createElement("div"); intBox.className = "tst-internal";
         const ih = document.createElement("div"); ih.className = "tst-internal-h"; ih.textContent = "🔒 Внутренняя логика (незаметно клиенту)";
         intBox.appendChild(tstBoxHead(ih, "Тестировщик ЛК", () => testerContextText("Внутренняя логика"), intBox));
-        const notes = [];
-        if (st <= 2) { notes.push(spec.internal.docStages); notes.push(spec.internal.questionnaireSubmit); }
-        if (st === 3) notes.push(spec.internal.stage3);
+        let notes = [];
+        if (st <= 2) { notes = notes.concat(spec.internal.docStages, spec.internal.questionnaireSubmit); }
+        if (st === 3) notes = notes.concat(spec.internal.stage3);
         if (!notes.length) notes.push("Особых внутренних эффектов на этом этапе нет.");
         const ul = document.createElement("ul");
         notes.forEach((t) => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
