@@ -496,6 +496,51 @@ app.post("/api/auth/identify", async (req, res) => {
   }
 });
 
+// ── Быстрая анкета для ОП (s49, каркас) ──────────────────────────────────────
+// Клиент отправляет 3 поля (ФИО + страна поездки + даты оформления) на «Начале
+// оформления» → создаётся задача в amoCRM на ТЕКУЩЕГО ответственного (срок =
+// сейчас) + значения сохраняются (для будущей авто-подстановки в опросник —
+// финальный список полей пришлёт Ксюша, тогда скорректируем). Вход/опросник/
+// загрузка документов этим НЕ затрагиваются.
+const LK_OPQUICK_FILE = path.join(__dirname, ".lkOpQuick.json");
+let lkOpQuick = null;
+function loadOpQuick() {
+  if (lkOpQuick) return lkOpQuick;
+  try { lkOpQuick = fs.existsSync(LK_OPQUICK_FILE) ? JSON.parse(fs.readFileSync(LK_OPQUICK_FILE, "utf8")) : {}; }
+  catch (_) { lkOpQuick = {}; }
+  return lkOpQuick;
+}
+function saveOpQuick() {
+  try { fs.writeFileSync(LK_OPQUICK_FILE, JSON.stringify(lkOpQuick || {}, null, 2), "utf8"); }
+  catch (e) { console.error("op-quick save err:", e.message); }
+}
+app.get("/api/cabinet/op-quick", (req, res) => {
+  const leadId = String(req.query.leadId || "");
+  if (!leadId) return res.status(400).json({ success: false });
+  const d = loadOpQuick()[leadId] || null;
+  return res.json({ success: true, submitted: !!d, data: d });
+});
+app.post("/api/cabinet/op-quick", express.json(), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const leadId = String(b.leadId || "").trim();
+    const fio = String(b.fio || "").trim().slice(0, 200);
+    const country = String(b.country || "").trim().slice(0, 200);
+    const dates = String(b.dates || "").trim().slice(0, 200);
+    if (!leadId || (!fio && !country && !dates)) return res.status(400).json({ success: false, message: "Заполните поля" });
+    loadOpQuick();
+    lkOpQuick[leadId] = { fio, country, dates, ts: Date.now() };
+    saveOpQuick();
+    const txt = `Быстрая анкета из ЛК (для ОП):\nФИО: ${fio || "—"}\nСтрана поездки: ${country || "—"}\nДаты оформления: ${dates || "—"}`;
+    try { await _createAmoTaskWithText(parseInt(leadId, 10), "op-quick", txt); }
+    catch (e) { console.error("op-quick amo task err:", e.message); } // мягко: анкета сохранена даже если задача не создалась
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("op-quick error:", e.message);
+    return res.status(500).json({ success: false, message: "Ошибка" });
+  }
+});
+
 app.post("/api/auth/request-code", smsGate, async (req, res) => {
   try {
     const phone = sms.normalizePhone((req.body && req.body.phone) || "");

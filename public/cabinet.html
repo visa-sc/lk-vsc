@@ -1136,6 +1136,55 @@
       return 0;
     }
 
+    // Быстрая анкета для менеджера (s49, каркас): ФИО + страна поездки + даты →
+    // задача в amoCRM на ответственного. Показывается на «Начале оформления».
+    function createOpQuickBlock(lead) {
+      const wrap = document.createElement("div");
+      wrap.className = "documents-inline"; wrap.style.display = "block";
+      const leadId = lead && lead.id;
+      const h = document.createElement("h3"); h.textContent = "Быстрая анкета для менеджера"; wrap.appendChild(h);
+      const hint = document.createElement("div");
+      hint.textContent = "Заполните — менеджер быстрее подготовит расчёт. Эти данные подставятся в опросник.";
+      hint.style.fontSize = "12px"; hint.style.color = "#9096a3"; hint.style.marginTop = "-8px"; hint.style.marginBottom = "12px";
+      wrap.appendChild(hint);
+      const formEl = document.createElement("div");
+      function mkField(labelText, ph) {
+        const row = document.createElement("div"); row.style.marginBottom = "10px";
+        const l = document.createElement("div"); l.textContent = labelText; l.style.fontSize = "13px"; l.style.marginBottom = "4px"; l.style.fontWeight = "600";
+        const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = ph;
+        inp.style.width = "100%"; inp.style.boxSizing = "border-box"; inp.style.padding = "10px 12px";
+        inp.style.border = "1px solid #d8dde6"; inp.style.borderRadius = "10px"; inp.style.fontSize = "15px";
+        row.appendChild(l); row.appendChild(inp); formEl.appendChild(row); return inp;
+      }
+      const fioInp = mkField("ФИО", "Фамилия Имя Отчество");
+      const countryInp = mkField("Страна поездки", "Например: Италия");
+      const datesInp = mkField("Даты оформления", "Например: 10–20 августа");
+      const btn = document.createElement("button"); btn.type = "button"; btn.className = "file-attach-btn"; btn.textContent = "Отправить"; formEl.appendChild(btn);
+      const resEl = document.createElement("div"); resEl.style.marginTop = "8px"; resEl.style.fontSize = "13px"; formEl.appendChild(resEl);
+      wrap.appendChild(formEl);
+      const doneEl = document.createElement("div"); doneEl.style.display = "none"; doneEl.style.color = "#2e7a43"; doneEl.style.fontWeight = "600";
+      doneEl.textContent = "✓ Анкета для менеджера отправлена."; wrap.appendChild(doneEl);
+      function showDone() { formEl.style.display = "none"; doneEl.style.display = ""; }
+      if (leadId) {
+        fetch("/api/cabinet/op-quick?leadId=" + encodeURIComponent(leadId))
+          .then((r) => r.json()).then((j) => { if (j && j.submitted) showDone(); }).catch(() => {});
+      }
+      btn.addEventListener("click", async () => {
+        const fio = fioInp.value.trim(), country = countryInp.value.trim(), dates = datesInp.value.trim();
+        if (!fio && !country && !dates) { resEl.textContent = "Заполните хотя бы одно поле."; resEl.style.color = "#b03a3a"; return; }
+        btn.disabled = true; const pt = btn.textContent; btn.textContent = "Отправляем...";
+        try {
+          const r = await fetch("/api/cabinet/op-quick", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone: phoneInput.value.trim(), leadId, fio, country, dates }) });
+          const j = await r.json().catch(() => ({}));
+          if (j && j.success) showDone();
+          else { resEl.textContent = (j && j.message) || "Не удалось отправить."; resEl.style.color = "#b03a3a"; }
+        } catch (_) { resEl.textContent = "Сетевая ошибка, попробуйте ещё раз."; resEl.style.color = "#b03a3a"; }
+        finally { btn.disabled = false; btn.textContent = pt; }
+      });
+      return wrap;
+    }
+
     function createQuestionnaireBlock(lead) {
       const wrapper = document.createElement("div");
       wrapper.className = "questionnaire-inline";
@@ -3159,6 +3208,7 @@
           // затем нормальные applicants (если у нормального ФИО совпадает
           // с pre — он не дублируется, потому что сервер фильтрует pre).
           // Если нет ни одного — empty block с модалом ФИО.
+          fragment.appendChild(createOpQuickBlock(lead)); // быстрая анкета для ОП (s49, каркас)
           const stage0Blocks = [
             { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" },
             { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" }
