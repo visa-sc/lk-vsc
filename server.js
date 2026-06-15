@@ -414,6 +414,72 @@ app.post("/api/auth/register", async (req, res) => {
   }
 });
 
+// ── Идентификация при регистрации (когда телефона НЕТ в amoCRM) ──────────────
+// Клиент ввёл новый телефон + указал, что раньше обращался с телеграма/инсты/
+// воцапа → ищем его контакт в amoCRM по нику/номеру и ПРИВЯЗЫВАЕМ новый телефон
+// к найденному контакту (решение Андрея 15.06.2026, «Вариант A» — автопривязка;
+// компромисс по безопасности осознан). Не нашли → found:false → регистрация как
+// нового клиента (как обычно). Вход по SMS/Face ID этим НЕ затрагивается.
+function cleanNick(s) {
+  let t = String(s || "").trim().toLowerCase();
+  const at = t.lastIndexOf("@");
+  if (at >= 0) t = t.slice(at + 1);              // берём всё ПОСЛЕ последнего @
+  return t.replace(/\s+/g, "");
+}
+function contactMatchesNick(contact, handle) {
+  const target = cleanNick(handle);
+  if (!target || target.length < 3) return false; // слишком короткий ник не матчим
+  const hay = [];
+  if (contact && contact.name) hay.push(String(contact.name).toLowerCase());
+  ((contact && contact.custom_fields_values) || []).forEach((f) =>
+    (f.values || []).forEach((v) => { if (v && v.value != null) hay.push(String(v.value).toLowerCase()); }));
+  return hay.some((h) => { const clean = h.replace(/\s+/g, ""); return cleanNick(h) === target || clean.includes("@" + target); });
+}
+async function attachPhoneToContact(baseUrl, contactId, phone) {
+  const norm = normalizePhone(phone);
+  const contact = await amoGet(`${baseUrl}/api/v4/contacts/${contactId}`);
+  if (contactMatchesPhone(contact, norm)) return; // телефон уже привязан — ничего не делаем
+  const fields = Array.isArray(contact.custom_fields_values) ? contact.custom_fields_values.slice() : [];
+  const display = `+${norm}`;
+  const pf = fields.find((f) => f.field_code === "PHONE");
+  if (pf) pf.values = (pf.values || []).concat([{ value: display, enum_code: "WORK" }]);
+  else fields.push({ field_code: "PHONE", values: [{ value: display, enum_code: "WORK" }] });
+  await amoPatch(`${baseUrl}/api/v4/contacts/${contactId}`, { custom_fields_values: fields });
+}
+app.post("/api/auth/identify", async (req, res) => {
+  try {
+    const phone = sms.normalizePhone((req.body && req.body.phone) || "");
+    const channel = String((req.body && req.body.channel) || "").toLowerCase().trim();
+    const handle = String((req.body && req.body.handle) || "").trim();
+    if (!phone || phone.length < 11 || !channel || !handle) {
+      return res.status(400).json({ success: false, message: "Не хватает данных" });
+    }
+    if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return res.json({ success: true, found: false });
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    let found = null;
+    if (channel.indexOf("whats") >= 0 || channel.indexOf("воцап") >= 0 || channel.indexOf("вотс") >= 0 || channel === "wa") {
+      const num = normalizePhone(handle);
+      if (num && num.replace(/\D/g, "").length >= 10) {
+        const contacts = await findMatchingContacts(baseUrl, num);
+        found = (contacts && contacts[0]) || null;
+      }
+    } else { // telegram / instagram — поиск по нику
+      const nick = cleanNick(handle);
+      if (nick && nick.length >= 3) {
+        const candidates = await amoGetAllPages(`${baseUrl}/api/v4/contacts`, { query: nick });
+        found = (candidates || []).find((c) => contactMatchesNick(c, handle)) || null;
+      }
+    }
+    if (!found) return res.json({ success: true, found: false });
+    await attachPhoneToContact(baseUrl, found.id, phone);
+    console.log(`IDENTIFY: phone ${phone} -> contact ${found.id} via ${channel}`);
+    return res.json({ success: true, found: true });
+  } catch (e) {
+    console.error("IDENTIFY error:", e && e.message);
+    return res.json({ success: true, found: false }); // мягко: считаем как нового клиента
+  }
+});
+
 app.post("/api/auth/request-code", smsGate, async (req, res) => {
   try {
     const phone = sms.normalizePhone((req.body && req.body.phone) || "");
@@ -3006,6 +3072,19 @@ async function amoPost(url, body) {
     });
     return response.data;
   }, `POST ${url}`);
+}
+
+async function amoPatch(url, body) {
+  console.log("AMO PATCH:", url, JSON.stringify(body));
+  return amoRequestWithRetry(async () => {
+    const response = await axios.patch(url, body, {
+      headers: {
+        Authorization: `Bearer ${AMO_ACCESS_TOKEN}`,
+        "Content-Type": "application/json"
+      }
+    });
+    return response.data;
+  }, `PATCH ${url}`);
 }
 
 function getEntityCustomFieldValue(entity, fieldId) {

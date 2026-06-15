@@ -267,6 +267,8 @@
       animation: vsc-fade-in 0.25s var(--vsc-ease) both;
     }
     .promo-area.show { display: flex; }
+    .ident-sub { display: none; }
+    .ident-sub.show { display: block; animation: vsc-fade-in 0.25s var(--vsc-ease) both; }
     .promo-input-row {
       display: flex;
       flex-wrap: wrap;
@@ -527,6 +529,30 @@
       />
       <div id="notFoundBox" class="not-found-info">
         <div class="not-found-text">По этому номеру обращения не найдены.</div>
+        <!-- Шаг идентификации: показывается только когда номера нет в amoCRM,
+             ПЕРЕД промокодом. Один вопрос сменяет другой. -->
+        <div id="identSection" class="register-section">
+          <div class="register-question">Вы обращались к нам раньше — в Telegram, WhatsApp или Instagram?</div>
+          <div class="register-radio">
+            <label><input type="radio" name="identPrev" value="Да" /> Да</label>
+            <label><input type="radio" name="identPrev" value="Нет" /> Нет</label>
+          </div>
+          <div id="identChannelArea" class="ident-sub">
+            <div class="register-question" style="margin-top:10px">Откуда обращались?</div>
+            <div class="register-radio">
+              <label><input type="radio" name="identChannel" value="telegram" /> Telegram</label>
+              <label><input type="radio" name="identChannel" value="whatsapp" /> WhatsApp</label>
+              <label><input type="radio" name="identChannel" value="instagram" /> Instagram</label>
+            </div>
+            <div id="identHandleArea" class="ident-sub">
+              <div class="promo-input-row">
+                <input id="identHandleInput" type="text" placeholder="Ваш ник" autocomplete="off" />
+                <button type="button" id="identFindBtn" class="promo-apply-btn">Найти</button>
+              </div>
+              <div id="identResult" class="promo-result"></div>
+            </div>
+          </div>
+        </div>
         <div id="registerSection" class="register-section">
           <div class="register-question">Хотите использовать промокод?</div>
           <div class="register-radio">
@@ -611,6 +637,18 @@
     let lastAppliedPromoCode = "";     // конкретный код, который успешно применили (для отправки на сервер)
     let promoQuestionRevealed = false; // true после первого клика по «Зарегистрироваться»
 
+    // ── Шаг идентификации (только когда номера нет в amoCRM, перед промокодом) ──
+    const identSection = document.getElementById("identSection");
+    const identChannelArea = document.getElementById("identChannelArea");
+    const identHandleArea = document.getElementById("identHandleArea");
+    const identHandleInput = document.getElementById("identHandleInput");
+    const identFindBtn = document.getElementById("identFindBtn");
+    const identResult = document.getElementById("identResult");
+    const identPrevRadios = Array.from(document.querySelectorAll('input[name="identPrev"]'));
+    const identChannelRadios = Array.from(document.querySelectorAll('input[name="identChannel"]'));
+    let identRevealed = false;  // показан ли шаг идентификации (после 1-го клика «Зарегистрироваться»)
+    let identResolved = false;  // клиент ответил: «Нет» ИЛИ «Да» + нажал «Найти»
+
     function resetPromoState() {
       isPromoApplied = false;
       lastAppliedPromoCode = "";
@@ -623,6 +661,17 @@
       promoInput.classList.remove("input-error");
       promoApplyBtn.style.display = ""; // восстанавливаем после возможного скрытия при валидном коде
       usePromoRadios.forEach((r) => { r.checked = false; });
+      // Сброс шага идентификации
+      identRevealed = false;
+      identResolved = false;
+      identSection.classList.remove("show");
+      identChannelArea.classList.remove("show");
+      identHandleArea.classList.remove("show");
+      identResult.classList.remove("show", "ok", "err");
+      identResult.textContent = "";
+      identHandleInput.value = "";
+      identPrevRadios.forEach((r) => { r.checked = false; });
+      identChannelRadios.forEach((r) => { r.checked = false; });
     }
 
     function hideNotFound() {
@@ -642,6 +691,67 @@
       resetPromoState();
     }
 
+    // Завершение шага идентификации → открываем вопрос про промокод и даём
+    // продолжить регистрацию (следующий клик «Зарегистрироваться» зарегистрирует).
+    function revealPromoStep() {
+      identResolved = true;
+      promoQuestionRevealed = true;
+      registerSection.classList.add("show");
+    }
+    // «Обращались раньше?»: Нет → сразу к промокоду; Да → выбор канала.
+    identPrevRadios.forEach((radio) => {
+      radio.addEventListener("change", () => {
+        if (!radio.checked) return;
+        if (radio.value === "Да") {
+          identChannelArea.classList.add("show");
+        } else {
+          identChannelArea.classList.remove("show");
+          revealPromoStep();
+        }
+      });
+    });
+    // Выбор канала → поле ввода ника/номера с подсказкой.
+    identChannelRadios.forEach((radio) => {
+      radio.addEventListener("change", () => {
+        if (!radio.checked) return;
+        identHandleArea.classList.add("show");
+        identHandleInput.placeholder = radio.value === "whatsapp"
+          ? "Номер WhatsApp"
+          : (radio.value === "instagram" ? "Ваш ник в Instagram" : "Ваш ник в Telegram");
+        identResult.classList.remove("show", "ok", "err");
+        identResult.textContent = "";
+      });
+    });
+    // «Найти» → ищем контакт в amoCRM по нику/номеру и привязываем телефон.
+    // В любом исходе (нашли / не нашли / ошибка) даём продолжить регистрацию.
+    identFindBtn.addEventListener("click", async () => {
+      const sel = identChannelRadios.find((r) => r.checked);
+      const channel = sel ? sel.value : "";
+      const handle = identHandleInput.value.trim();
+      if (!channel) return;
+      if (!handle) { identResult.textContent = "Введите ник или номер"; identResult.classList.add("show", "err"); return; }
+      const phone = normalizePhoneJs(phoneInput.value.trim());
+      if (!phone || phone.length < 11) { identResult.textContent = "Сначала введите ваш номер телефона выше"; identResult.classList.add("show", "err"); return; }
+      identFindBtn.disabled = true; const prev = identFindBtn.textContent; identFindBtn.textContent = "Ищем...";
+      try {
+        const r = await fetch("/api/auth/identify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, channel, handle }) });
+        const data = await r.json().catch(() => ({}));
+        identResult.classList.add("show");
+        if (data && data.found) {
+          identResult.classList.remove("err"); identResult.classList.add("ok");
+          identResult.textContent = "Нашли ваш профиль — привязали этот номер. Продолжайте регистрацию.";
+        } else {
+          identResult.classList.remove("ok");
+          identResult.textContent = "Профиль не найден — продолжим как новый клиент.";
+        }
+      } catch (_) {
+        identResult.classList.remove("ok"); identResult.classList.add("show");
+        identResult.textContent = "Не удалось проверить — продолжим как новый клиент.";
+      } finally {
+        identFindBtn.disabled = false; identFindBtn.textContent = prev;
+        revealPromoStep();
+      }
+    });
 
     usePromoRadios.forEach((radio) => {
       radio.addEventListener("change", () => {
@@ -1255,11 +1365,17 @@
 
       // ── Режим регистрации ──
       if (isRegistrationMode) {
-        // Первый клик по «Зарегистрироваться» — раскрываем вопрос «Хотите использовать промокод?»,
-        // регистрацию пока не отправляем. Второй клик уже отправит.
-        if (!promoQuestionRevealed) {
-          promoQuestionRevealed = true;
-          registerSection.classList.add("show");
+        // Первый клик по «Зарегистрироваться» — показываем шаг идентификации
+        // («обращались раньше?»), ПЕРЕД промокодом. Регистрацию пока не шлём.
+        if (!identRevealed) {
+          identRevealed = true;
+          identSection.classList.add("show");
+          return;
+        }
+        // Пока клиент не ответил (Нет / Да + «Найти») — дальше не пускаем.
+        // После ответа промокод раскрывается сам (revealPromoStep).
+        if (!identResolved) {
+          showError("Ответьте, обращались ли вы раньше (а если «Да» — нажмите «Найти»).");
           return;
         }
         const ok = await registerNewClient(phone);
