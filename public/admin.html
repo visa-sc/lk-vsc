@@ -1802,6 +1802,12 @@
         vscContent.appendChild(ctrls);
 
         const series = vscBuildSeries();
+        // Для плиток «Неделя»/«День» берём последний период С ДАННЫМИ: текущий
+        // период (напр. только начавшаяся неделя) пока пустой — не показываем
+        // нулями, откатываемся к последнему заполненному. График — весь ряд.
+        const vscHasData = (o) => o && o.k && ((o.k.processed != null && o.k.processed > 0) || (o.k.budget != null && o.k.budget > 0));
+        let vscCurIdx = series.length - 1;
+        for (let i = series.length - 1; i >= 0; i--) { if (vscHasData(series[i])) { vscCurIdx = i; break; } }
         // Автоподсветка: последний заполненный месяц против предыдущего, за
         // сопоставимое число дней; будущие/пустые месяцы игнорируются.
         const attn = vscAttention();
@@ -1823,14 +1829,14 @@
           const curM = (vscData.months || [])[vscMonthIdx];
           curSub = curM ? curM.name : "";
           if (curM) { const pIdx = vscPrevFilledIdx(vscMonthIdx); cmpRes = vscMonthCompare(curM, pIdx >= 0 ? vscData.months[pIdx] : null).res; }
-        } else { curSub = (series[series.length - 1] || {}).x || ""; }
+        } else { curSub = (series[vscCurIdx] || {}).x || ""; }
 
         const tiles = document.createElement("div"); tiles.className = "vsc-tiles";
         VSC_KPIS.forEach((kpi) => {
           let v = null, prev = null;
           if (vscGran === "year") { v = vscData.year ? vscData.year[kpi.key] : null; }
           else if (vscGran === "month") { if (cmpRes) { v = cmpRes[kpi.key].cur; prev = cmpRes[kpi.key].prev; } }
-          else { const idx = series.length - 1; if (series[idx]) { v = series[idx].k ? series[idx].k[kpi.key] : null; prev = vscNearestPrev(series, kpi.key, idx); } }
+          else { const idx = vscCurIdx; if (series[idx]) { v = series[idx].k ? series[idx].k[kpi.key] : null; prev = vscNearestPrev(series, kpi.key, idx); } }
           const tile = document.createElement("div"); tile.className = "vsc-tile";
           const cls = kpi.fmt === "signed" ? (v > 0 ? " pos" : v < 0 ? " neg" : "") : "";
           let delta = "";

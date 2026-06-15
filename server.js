@@ -1784,15 +1784,17 @@ function vscParseMonth(rows) {
 let _vscCache = null, _vscCacheAt = 0, _vscInflight = null;
 const VSC_TTL_MS = 15 * 60 * 1000;
 async function vscFetchAll() {
-  const months = [];
-  for (const sh of VSC_SHEETS) {
+  // Листы Google тянем ПАРАЛЛЕЛЬНО (раньше — последовательно, 7 листов = долго).
+  // Promise.all сохраняет порядок VSC_SHEETS; недоступный лист → null → отфильтруем.
+  const results = await Promise.all(VSC_SHEETS.map(async (sh) => {
     try {
       const url = VSC_PUB_BASE + "?gid=" + sh.gid + "&single=true&output=csv";
       const r = await axios.get(url, { timeout: 15000, responseType: "text", transformResponse: [(d) => d] });
       const parsed = vscParseMonth(vscParseCsv(r.data));
-      if (parsed) months.push(Object.assign({ name: sh.name }, parsed));
-    } catch (e) { /* пропускаем недоступный лист */ }
-  }
+      return parsed ? Object.assign({ name: sh.name }, parsed) : null;
+    } catch (e) { return null; /* пропускаем недоступный лист */ }
+  }));
+  const months = results.filter(Boolean);
   // Год: суммируем аддитивные базы из месячных Grand total, ratio — производные/среднее.
   const withTotal = months.filter((m) => m.total);
   const sum = (f) => withTotal.reduce((a, m) => a + (m.total[f] || 0), 0);
@@ -1817,6 +1819,17 @@ async function getVscDashboard() {
   _vscInflight = vscFetchAll().then((res) => { _vscCache = res; _vscCacheAt = Date.now(); return res; }).finally(() => { _vscInflight = null; });
   return _vscInflight;
 }
+// Фоновый прогрев VSC-кэша (Google-таблица). Тянем свежее в фоне и атомарно
+// подменяем кэш (stale-while-revalidate) — пользователю /vsc всегда отдаётся
+// тёплый кэш, без ожидания. Интервал < TTL (15 мин). amoCRM здесь не трогаем.
+(function scheduleVscPrewarm() {
+  const VSC_PREWARM_MS = 13 * 60 * 1000;
+  const warm = () => vscFetchAll()
+    .then((res) => { _vscCache = res; _vscCacheAt = Date.now(); })
+    .catch((e) => console.error("VSC PREWARM err:", e && e.message));
+  setTimeout(warm, 15 * 1000);
+  setInterval(warm, VSC_PREWARM_MS);
+})();
 app.get("/admin/api/vsc-dashboard", requireAdmin, async (req, res) => {
   try {
     const data = await getVscDashboard();
