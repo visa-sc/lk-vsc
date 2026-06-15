@@ -1393,9 +1393,7 @@
     // отдельная задача под полную карту Насти.
     const OFORMLENIE_FIELDS = new Set([
       "workCert", "studyCert", "sponsorPassport", "ownAccommodation",
-      "ownFlights", "ownTransport", "secondPassport", "thirdCountryTickets", "birthCertificate",
-      // Документы «финального сбора» (область перед подачей), обязательные по списку Насти:
-      "ipDocs", "studyCertPre", "parentsPassports"
+      "ownFlights", "secondPassport", "thirdCountryTickets", "birthCertificate"
     ]);
     // Дней до «Даты записи на подачу»: workingOnly=true — только рабочие (без сб/вс).
     function _submissionDaysLeft(lead, workingOnly) {
@@ -2377,7 +2375,7 @@
     // Все ли ОБЯЗАТЕЛЬНЫЕ предподачные документы заявителя загружены
     // (для жёлтого/зелёного статуса этапа «Подготовка документов»).
     function presubMandatoryAllUploaded(applicant, lead) {
-      const docs = buildPreSubmissionDocs(applicant, lead).filter((d) => !isFieldOptionalForLead(d.field, lead, applicant, d));
+      const docs = buildPreSubmissionDocs(applicant, lead).filter((d) => !d.optional);
       if (!docs.length) return true;
       const files = Array.isArray(applicant && applicant.uploadedFiles) ? applicant.uploadedFiles : [];
       return docs.every((cfg) => files.some((f) => {
@@ -2413,11 +2411,9 @@
       if (occ.isPensioner)   docs.push({ field: "pensionDoc",      label: "Пенсионное удостоверение или справка о пенсии", optional: false });
       if (occ.isSelfEmployed)docs.push({ field: "selfEmployedDoc", label: "Справка о самозанятости", optional: false });
       if (sponsored) {
-        // Внутр. паспорт спонсора уже запрашивается в основном блоке (поле
-        // sponsorPassport «Внутр. паспорт спонсора или Спонсорское письмо») —
-        // здесь не дублируем (решение «архитектора», на проверку Насте).
         docs.push({ field: "sponsorBankBalance",      label: "Справка из банка об остатке средств от спонсора", optional: false });
         docs.push({ field: "sponsorAccountStatement", label: "Выписка (детализация) по счету спонсора", optional: false });
+        docs.push({ field: "sponsorInnerPassport",    label: "Внутренний паспорт спонсора", optional: false });
         docs.push({ field: "sponsorWorkCert",         label: "Справка с места работы спонсора", optional: true, note: OPT_NOTE });
       }
       if (under18) {
@@ -2594,10 +2590,8 @@
     function createPreSubmissionArea(applicant, lead) {
       const docs = buildPreSubmissionDocs(applicant, lead);
       if (!docs.length) return null;
-      // Обяз/необяз — по статус-движку (логика Насти): красная секция = обязательные
-      // сейчас (статус+дата), синяя = можно загрузить заранее.
-      const mandatory = docs.filter((d) => !isFieldOptionalForLead(d.field, lead, applicant, d));
-      const optional = docs.filter((d) => isFieldOptionalForLead(d.field, lead, applicant, d));
+      const mandatory = docs.filter((d) => !d.optional);
+      const optional = docs.filter((d) => d.optional);
 
       const wrapper = document.createElement("div");
       wrapper.className = "documents-inline";
@@ -2607,8 +2601,8 @@
       const fioFormatted = formatFio(applicant && applicant.fullName ? String(applicant.fullName) : "");
       const header = document.createElement("h3");
       header.textContent = fioFormatted
-        ? `Финальный сбор документов — ${fioFormatted}`
-        : `Финальный сбор документов — заявитель ${applicantIndex}`;
+        ? `Документы для проверки перед подачей — ${fioFormatted}`
+        : `Документы для проверки перед подачей — заявитель ${applicantIndex}`;
       wrapper.appendChild(header);
 
       const sizeHint = document.createElement("div");
@@ -3142,10 +3136,7 @@
         // Этап «Подготовка документов»: если открыта подобласть предподачных
         // документов — статус ЖЁЛТЫЙ, пока не загружены ВСЕ обязательные
         // предподачные документы (даже если обычные блоки уже зелёные).
-        if (currentIndex === 2) {
-          // Финал.сбор показываем всегда; обязательность — по статус-движку.
-          // Точка жёлтая, только если ЕСТЬ обязательные (G3 ≤7 раб.дн / G4 /
-          // предохранитель <3 кал.дн) и они не догружены.
+        if (currentIndex === 2 && isPreSubmissionWindowActive(lead)) {
           const allPresubDone = applicants.every((a) => presubMandatoryAllUploaded(a, lead));
           if (!allPresubDone) warn = true;
         }
@@ -3233,11 +3224,10 @@
           // блоков с этапов 0 (паспорта) и 1 (условные A) — если клиента
           // перевели в этап 2 без полной загрузки на предыдущих этапах.
           // По каждому заявителю свой набор. Япония: свободная зона.
-          // Финальный сбор документов: показываем на «Подготовке» ВСЕГДА (раньше —
-          // только за 7 дней до «Даты записи на подачу»). Обязательность внутри —
-          // по статус-движку (логика Насти, июнь 2026): необязательно на ранних
-          // статусах, обязательно в группах 3/4 + предохранитель.
-          const presubActive = true;
+          // Предподачные документы: за 7 дней до «Даты записи на подачу».
+          // Если дата не задана — presubActive=false, и НИЧЕГО нового не делаем
+          // (вся старая логика этапа «Подготовка документов» сохраняется).
+          const presubActive = isPreSubmissionWindowActive(lead);
 
           if (!applicants.length) {
             fragment.appendChild(createNoStateNotice());
