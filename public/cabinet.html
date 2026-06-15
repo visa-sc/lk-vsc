@@ -1353,16 +1353,78 @@
       "routeSheet"
     ]);
 
+    // ── Обязательность документов по статусу amoCRM + дате подачи ──
+    // Логика Насти (Плинер), июнь 2026. ВНИМАНИЕ: возможна корректировка по её
+    // полной карте статусов — все правила сосредоточены здесь.
+    //   Группы статусов сделки:
+    //   1 «Сбор документов для ОО» — минимум (паспорта/опросник); доки необяз.
+    //   2 Принято в работу / Согласование документов / Сбор оплачен / Ожидает
+    //     записи вручную|через бота / Эл.документы переданы — список открыт,
+    //     но НЕобязателен.
+    //   3 Запись сделана / Электронное рассмотрение / Оформлен выкуп — документы
+    //     оформления обязательны за ≤7 РАБОЧИХ дней до «Даты записи на подачу»,
+    //     остальное необяз.
+    //   4 Исправить / Пакет документов готов / Принято в работу после ОО /
+    //     Ожидает передачи на рассмотрение / Документы готовы к личной подаче —
+    //     обязательны ВСЕ.
+    //   Предохранитель: < 3 КАЛЕНДАРНЫХ дней до даты подачи → всё обязательно.
+    //   Безопасный дефолт: статус не распознан / нет даты → НЕобязательно
+    //   (клиента не блокируем, грузить можно заранее).
+    function _normStatus(s) {
+      return String(s || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+    }
+    function docStatusGroup(lead) {
+      const s = _normStatus(lead && lead.status_name);
+      if (!s) return null;
+      const has = (arr) => arr.some((x) => s.indexOf(_normStatus(x)) >= 0);
+      // Порядок важен: «после оо» проверяем раньше «принято в работу».
+      if (has(["исправить", "пакет документов готов", "принято в работу после оо",
+               "ожидает передачи на рассмотрение", "документы готовы к личной подаче"])) return 4;
+      if (has(["запись сделана", "электронное рассмотрение", "оформлен выкуп"])) return 3;
+      if (has(["принято в работу", "согласование документов", "сбор оплачен",
+               "ожидает записи вручную", "ожидает записи через бота",
+               "электронные документы переданы"])) return 2;
+      if (has(["сбор документов для оо"])) return 1;
+      return null;
+    }
+    // Документы «оформления» (становятся обязательными в группе 3 за ≤7 раб.дней
+    // и всегда в группе 4) — сопоставление списка Насти с существующими полями.
+    // Док-ты без поля в ЛК (выписки, 2-НДФЛ, ИП, паспорта родителей и т.п.) —
+    // отдельная задача под полную карту Насти.
+    const OFORMLENIE_FIELDS = new Set([
+      "workCert", "studyCert", "sponsorPassport", "ownAccommodation",
+      "ownFlights", "secondPassport", "thirdCountryTickets", "birthCertificate"
+    ]);
+    // Дней до «Даты записи на подачу»: workingOnly=true — только рабочие (без сб/вс).
+    function _submissionDaysLeft(lead, workingOnly) {
+      const ms = presubSubmissionDateMs(lead);
+      if (ms === null) return null;
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const target = new Date(ms); target.setHours(0, 0, 0, 0);
+      if (target <= today) return 0;
+      if (!workingOnly) return Math.round((target - today) / 86400000);
+      let count = 0; const cur = new Date(today);
+      while (cur < target) { cur.setDate(cur.getDate() + 1); const wd = cur.getDay(); if (wd !== 0 && wd !== 6) count++; }
+      return count;
+    }
+
     function isFieldOptionalForLead(field, lead, state, cfg) {
-      // innerPassport и mainPassport обязательны на этапе «Начало оформления»
-      // для обеих виз. Всё остальное — по умолчанию optional, НО если cfg.
-      // requiredOnStage === true (выставляется в buildUploadBlocksConfig для
-      // этапов «Первичный сбор документов» и «Подготовка документов») —
-      // блок обязателен на текущем этапе. На этапах 1 и 2 все условные
-      // блоки требуются.
+      // Паспорта (этап «Начало оформления») — всегда обязательны.
       if (field === "innerPassport" || field === "mainPassport") return false;
-      if (cfg && cfg.requiredOnStage === true) return false;
-      return OPTIONAL_UPLOAD_FIELDS.has(field);
+      // Предохранитель: < 3 календарных дней до подачи → всё обязательно.
+      const calLeft = _submissionDaysLeft(lead, false);
+      if (calLeft !== null && calLeft < 3) return false;
+      const grp = docStatusGroup(lead);
+      if (grp === 4) return false; // финальный сбор — обязательны все
+      if (grp === 3) {             // оформление обязательно за ≤7 рабочих дней
+        if (OFORMLENIE_FIELDS.has(field)) {
+          const wd = _submissionDaysLeft(lead, true);
+          if (wd !== null && wd <= 7) return false;
+        }
+        return true;
+      }
+      // Группы 1, 2, нераспознанный статус → необязательно.
+      return true;
     }
 
     // Страны Шенгена, для которых на этапе «Первичный сбор» добавляется
@@ -1580,6 +1642,15 @@
       function updateRequiredSectionState() {
         if (!requiredSectionEl) return;
         const uploaded = Array.isArray(applicant && applicant.uploadedFiles) ? applicant.uploadedFiles : [];
+        // Есть ли вообще обязательные документы на текущем статусе/в окне.
+        const hasRequired = inputs.some((it) => !isFieldOptionalForLead(it.cfg.field, lead, applicant, it.cfg));
+        if (!hasRequired) {
+          // Обязательных нет — не показываем «обязательную» плашку (иначе зелёное
+          // «всё прикреплено» при нуле загруженных вводит в заблуждение).
+          requiredSectionEl.style.display = "none";
+          return;
+        }
+        requiredSectionEl.style.display = "";
         const allDone = inputs.every((it) => {
           if (isFieldOptionalForLead(it.cfg.field, lead, applicant, it.cfg)) return true;
           if (it.pendingFiles && it.pendingFiles.length > 0) return true;
@@ -1592,7 +1663,7 @@
         requiredSectionEl.classList.toggle("required-done", allDone);
         requiredSectionEl.textContent = allDone
           ? "✓ Все обязательные документы прикреплены."
-          : "Необходимо загрузить все документы ниже.";
+          : "Необходимо загрузить обязательные документы ниже (остальные — по желанию).";
       }
 
       blocksConfig.forEach((cfg) => {
@@ -1603,6 +1674,18 @@
         const labelEl = document.createElement("div");
         labelEl.className = "file-list-label";
         labelEl.textContent = cfg.label;
+        // Пометка «необязательно» (логика Насти): документ можно загрузить, но на
+        // текущем статусе/в текущем окне он не обязателен. Обязательные — без метки.
+        if (isFieldOptionalForLead(cfg.field, lead, applicant, cfg)) {
+          row.classList.add("is-optional-doc");
+          const optTag = document.createElement("span");
+          optTag.textContent = " · необязательно";
+          optTag.style.fontSize = "12px";
+          optTag.style.color = "#3589BD";
+          optTag.style.fontWeight = "400";
+          optTag.style.whiteSpace = "nowrap";
+          labelEl.appendChild(optTag);
+        }
         // Пояснение к документу (почему его запросили) — под названием, спокойным
         // синим шрифтом. Остаётся в той же grid-колонке, что и название.
         if (cfg.note) {
