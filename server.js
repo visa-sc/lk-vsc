@@ -1827,6 +1827,59 @@ app.get("/admin/api/vsc-dashboard", requireAdmin, async (req, res) => {
   }
 });
 
+// ═════════════════════════════════════════════════════════════════════════
+// Клиентская сессия (ФАЗА 1). Подписанный токен (HMAC-SHA256) в httpOnly-cookie
+// `voyo_sess`. Выдаётся при ЛЮБОМ успешном входе (SMS / Face ID по номеру /
+// Face ID кнопкой). Stateless → переживает рестарты/деплои (никого не
+// разлогинивает). На этом этапе cookie ТОЛЬКО выдаётся и читается через /api/me;
+// существующие эндпоинты данных пока работают как раньше (по ?phone=) —
+// обратная совместимость 100% (Фаза 2 переведёт их на сессию и закроет ?phone=).
+// Если LK_SESSION_SECRET не задан — cookie просто не ставится, поведение = текущее.
+const LK_SESSION_SECRET = process.env.LK_SESSION_SECRET || "";
+const LK_SESSION_TTL_MS = 90 * 24 * 3600 * 1000; // 90 дней — «залогинен» как сейчас
+const _b64url = (buf) => Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function signClientSession(phone) {
+  if (!LK_SESSION_SECRET || !phone) return null;
+  const body = _b64url(JSON.stringify({ phone: String(phone), exp: Date.now() + LK_SESSION_TTL_MS }));
+  const sig = _b64url(crypto.createHmac("sha256", LK_SESSION_SECRET).update(body).digest());
+  return body + "." + sig;
+}
+function verifyClientSession(token) {
+  if (!LK_SESSION_SECRET || !token || typeof token !== "string") return null;
+  const dot = token.indexOf(".");
+  if (dot <= 0) return null;
+  const body = token.slice(0, dot), sig = token.slice(dot + 1);
+  const expSig = _b64url(crypto.createHmac("sha256", LK_SESSION_SECRET).update(body).digest());
+  let a, b;
+  try { a = Buffer.from(sig); b = Buffer.from(expSig); } catch (_) { return null; }
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  let payload;
+  try { payload = JSON.parse(Buffer.from(body.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8")); } catch (_) { return null; }
+  if (!payload || !payload.phone || !payload.exp || Date.now() > payload.exp) return null;
+  return payload;
+}
+function readCookie(req, name) {
+  const raw = String((req && req.headers && req.headers.cookie) || "");
+  const m = raw.match(new RegExp("(?:^|;\\s*)" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "=([^;]+)"));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+function setClientSessionCookie(res, phone) {
+  const token = signClientSession(phone);
+  if (!token) return; // нет секрета — тихо пропускаем, поведение прежнее
+  res.cookie("voyo_sess", token, { httpOnly: true, secure: true, sameSite: "lax", maxAge: LK_SESSION_TTL_MS, path: "/" });
+}
+// Текущий клиент по сессии (или null). На Фазе 1 используется только /api/me.
+function clientPhoneFromSession(req) {
+  const p = verifyClientSession(readCookie(req, "voyo_sess"));
+  return p ? p.phone : null;
+}
+// Кто я по сессии. Фронт (Фаза 2) будет брать телефон отсюда вместо URL.
+app.get("/api/me", (req, res) => {
+  const phone = clientPhoneFromSession(req);
+  if (!phone) return res.status(401).json({ success: false });
+  return res.json({ success: true, phone });
+});
+
 app.post("/api/auth/verify", smsGate, (req, res) => {
   try {
     const phone = sms.normalizePhone((req.body && req.body.phone) || "");
@@ -1855,7 +1908,7 @@ app.post("/api/auth/verify", smsGate, (req, res) => {
     }
 
     smsCodeStore.delete(phone);
-    // TODO (этап 2): выдать session cookie / JWT здесь
+    setClientSessionCookie(res, phone); // ФАЗА 1: выдаём сессию (тело ответа без изменений)
     try { recordLkAuth(phone); } catch (_) {}
     return res.json({ success: true, phone });
   } catch (err) {
@@ -9125,6 +9178,7 @@ app.post("/api/auth/webauthn/auth-verify", async (req, res) => {
     cred.counter = verification.authenticationInfo.newCounter;
     savePasskeys();
     clearWebauthnChallenge(phone);
+    setClientSessionCookie(res, phone); // ФАЗА 1: сессия после Face ID по номеру
     try { recordLkAuth(phone); } catch (_) {}
     return res.json({ success: true, phone });
   } catch (err) {
@@ -9256,6 +9310,7 @@ app.post("/api/auth/webauthn/auth-verify-any", async (req, res) => {
     foundCred.counter = verification.authenticationInfo.newCounter;
     savePasskeys();
     clearAnonChallenge();
+    setClientSessionCookie(res, foundPhone); // ФАЗА 1: сессия после Face ID кнопкой
     try { recordLkAuth(foundPhone); } catch (_) {}
     return res.json({ success: true, phone: foundPhone });
   } catch (err) {
