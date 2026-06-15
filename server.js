@@ -580,7 +580,7 @@ app.get("/admin/api/stage-stats", requireStagesAccess, async (req, res) => {
 });
 
 // Конверсия авторизаций по «оплаченным» сделкам (3 цифры: все / без Японии / только Япония).
-app.get("/admin/api/paid-conversion-stats", requireAdmin, async (req, res) => {
+app.get("/admin/api/paid-conversion-stats", requireStagesAccess, async (req, res) => {
   try {
     const data = await computePaidConversionStats();
     return res.json(Object.assign({ success: true }, data));
@@ -603,7 +603,7 @@ app.get("/admin/api/traffic", requireAdmin, (req, res) => {
 
 // График новых авторизаций по дням за последние 30 дней (скользящее окно).
 // In-memory расчёт по lkAuthPhones — лёгкий и всегда свежий, кеш не нужен.
-app.get("/admin/api/auth-daily", requireAdmin, (req, res) => {
+app.get("/admin/api/auth-daily", requireStagesAccess, (req, res) => {
   try {
     return res.json(computeDailyAuthSeries());
   } catch (e) {
