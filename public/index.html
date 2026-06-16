@@ -704,6 +704,11 @@
         if (!radio.checked) return;
         if (radio.value === "Да") {
           identChannelArea.classList.add("show");
+          // Промокод показываем ТОЛЬКО при ответе «Нет». В ветке «Да» — прячем;
+          // продолжить регистрацию можно после нажатия «Найти».
+          registerSection.classList.remove("show");
+          promoQuestionRevealed = false;
+          identResolved = false;
         } else {
           identChannelArea.classList.remove("show");
           revealPromoStep();
@@ -749,7 +754,9 @@
         identResult.textContent = "Не удалось проверить — продолжим как новый клиент.";
       } finally {
         identFindBtn.disabled = false; identFindBtn.textContent = prev;
-        revealPromoStep();
+        // Ветка «Да»: идентификация завершена — регистрацию разрешаем,
+        // но вопрос про промокод НЕ показываем (он только при ответе «Нет»).
+        identResolved = true;
       }
     });
 
