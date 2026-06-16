@@ -777,16 +777,12 @@ app.get("/admin/api/auth-daily", requireStagesAccess, (req, res) => {
 });
 
 // Раздел «Статус amoCRM при авторизации» (задача Зайцевой): для каждой регистрации
-// в ЛК — воронка/этап сделки и ответственный менеджер в момент регистрации, плюс
-// агрегаты по менеджерам/воронкам/этапам. Расчёт in-memory (дёшево). Если есть
-// номера без снимка — поднимаем фоновый бэкфилл (low-priority, single-flight).
+// в ЛК — воронка/этап сделки и ответственный менеджер В МОМЕНТ регистрации, плюс
+// агрегаты по менеджерам/воронкам/этапам. Расчёт in-memory (дёшево). Только снимки
+// captured==="auth" — учёт с первой новой авторизации, без восстановления истории.
 app.get("/admin/api/auth-status-stats", requireStagesAccess, (req, res) => {
   try {
-    const data = computeAuthStatusStats();
-    if (data.totals.pending > 0 && !_authStatusBackfillRunning) {
-      setImmediate(() => { Promise.resolve(amoBg(() => backfillAuthStatuses())).catch(() => {}); });
-    }
-    return res.json(Object.assign({ success: true, backfillRunning: _authStatusBackfillRunning }, data));
+    return res.json(Object.assign({ success: true }, computeAuthStatusStats()));
   } catch (e) {
     console.error("/admin/api/auth-status-stats error:", e && e.message);
     return res.status(500).json({ success: false, message: "Ошибка расчёта статистики авторизаций" });
@@ -1262,7 +1258,7 @@ app.get("/admin/kb/admin-guide", requireStaff, (req, res) => {
 <li><b>Снимок в момент регистрации:</b> при первой авторизации клиента фиксируем воронку, статус сделки amoCRM и ответственного — на тот момент (потом статус в amo может уйти вперёд, снимок остаётся «как было при регистрации»).</li>
 <li><b>Ответственный</b> определяется как для задач: поле «Ответственный» (Отдел продаж) / «Кто принял клиента» (другие воронки), иначе — ответственный по сделке.</li>
 <li><b>Агрегаты</b> по менеджерам, воронкам (отделам) и этапам (статусам amoCRM) + детальный список всех регистраций (дата, телефон, воронка, статус, ответственный).</li>
-<li><b>Бэкфилл:</b> для номеров, зарегистрированных до запуска раздела, статус собирается фоном из amoCRM и помечается «бэкфилл» (это статус на момент сбора, не на момент регистрации). Новые регистрации помечаются «при входе».</li>
+<li><b>Учёт с 16.06.2026:</b> данные фиксируются строго в момент первого входа клиента в ЛК и далее НЕ меняются (даже если статус/ответственный в amoCRM потом изменятся). По регистрациям до этой даты исторических данных нет — восстановить статус «на момент входа» по ним нельзя, поэтому в разделе их нет; учёт идёт с первой новой уникальной авторизации.</li>
 </ul>`;
 
     b += `<h2>Корректировки ЛК</h2>
@@ -7811,10 +7807,11 @@ function formatPhoneForDisplay(norm) {
 // ── Снимок «статус amoCRM + ответственный В МОМЕНТ авторизации» ──────────────
 // Задача Зайцевой (корректировка c1781611739294291): для каждой регистрации в ЛК
 // фиксируем, на какой воронке/этапе сделки amoCRM и у какого ОТВЕТСТВЕННОГО
-// менеджера клиент авторизовался. Снимок делаем ОДИН РАЗ при первой авторизации
-// (captured="auth") — это и есть «момент регистрации». Для номеров, авторизовав-
-// шихся ДО внедрения фичи, есть фоновый бэкфилл (captured="backfill") — он
-// отражает статус на момент бэкфилла и помечается отдельно. «Ответственный»
+// менеджера клиент авторизовался. Снимок делается ОДИН РАЗ при первой авторизации
+// (captured="auth") — это и есть «момент регистрации» — и далее НЕ меняется.
+// Бэкфилла по старым номерам НЕТ: восстановить статус «на момент входа» постфактум
+// нельзя (получится «сейчас», а не «тогда»), поэтому учёт идёт строго с первой
+// новой уникальной авторизации (см. AUTH_STATUS_TRACK_START_DATE). «Ответственный»
 // резолвится по тем же правилам, что и для задач: поле «Ответственный» (Отдел
 // продаж) / «Кто принял клиента» (прочие воронки) → иначе ответственный по сделке.
 const LK_AUTH_STATUS_FILE = path.join(__dirname, ".lkAuthStatus.json");
@@ -7923,60 +7920,39 @@ async function enrichAndSaveAuthStatus(norm, captured) {
   } catch (e) { console.error("LK AUTH-STATUS snapshot err", norm, e && e.message); }
 }
 
-// Фоновый бэкфилл снимков для уже авторизованных номеров без снимка. Throttle как
-// в stage-stats (concurrency 2 + пауза 700мс) — щадим лимит amoCRM и клиентский ЛК.
-let _authStatusBackfillRunning = false;
-async function backfillAuthStatuses() {
-  if (_authStatusBackfillRunning) return;
-  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return;
-  _authStatusBackfillRunning = true;
-  try {
-    const todo = Array.from(lkAuthPhones.entries())
-      .filter(([phone, ts]) => Number(ts) >= LK_STATS_START_MS && !LK_STATS_EXCLUDED_PHONES.has(phone) && !lkAuthStatus.has(phone))
-      .sort((a, b) => b[1] - a[1]);
-    if (!todo.length) return;
-    console.log(`LK AUTH-STATUS backfill start: ${todo.length} phones`);
-    const CONC = 2, PAUSE = 700;
-    for (let i = 0; i < todo.length; i += CONC) {
-      const chunk = todo.slice(i, i + CONC);
-      await Promise.all(chunk.map(([phone]) => enrichAndSaveAuthStatus(phone, "backfill")));
-      if (i + CONC < todo.length) await new Promise((r) => setTimeout(r, PAUSE));
-    }
-    console.log("LK AUTH-STATUS backfill done");
-  } finally { _authStatusBackfillRunning = false; }
-}
+// Дата начала учёта в разделе «Статус amoCRM при авторизации». До неё снимков «в
+// момент авторизации» не делалось, а исторический статус по таким номерам восстано-
+// вить нельзя (это была бы картина «сейчас», а не «на момент входа»). Поэтому учёт
+// ведём строго с первой НОВОЙ уникальной авторизации после запуска.
+const AUTH_STATUS_TRACK_START_DATE = "16.06.2026";
 
 // Агрегация для раздела админки «Статус amoCRM при авторизации» (in-memory, дёшево).
+// Берём ТОЛЬКО снимки, сделанные в момент авторизации (captured==="auth"). Номера,
+// авторизовавшиеся до запуска учёта, сюда НЕ попадают — их статус «на момент входа»
+// неизвестен, и выдумывать его (текущим статусом) нельзя.
 function computeAuthStatusStats() {
   const rows = [];
-  let withSnapshot = 0, pending = 0, noLead = 0;
+  let noLead = 0;
   const byResp = new Map(), byPipeline = new Map(), byStatus = new Map();
   const bump = (m, k) => { const key = k || "—"; m.set(key, (m.get(key) || 0) + 1); };
-  const entries = Array.from(lkAuthPhones.entries())
-    .filter(([phone, ts]) => Number(ts) >= LK_STATS_START_MS && !LK_STATS_EXCLUDED_PHONES.has(phone))
-    .sort((a, b) => b[1] - a[1]);
-  for (const [phone, ts] of entries) {
-    const snap = lkAuthStatus.get(phone);
-    if (!snap) {
-      pending++;
-      rows.push({ phone, formatted: formatPhoneForDisplay(phone), firstAuthAt: ts, captured: null, pending: true, noLead: false, pipeline: "", status: "", cabinetStage: "", responsibleName: "", leadId: null });
-      continue;
-    }
-    withSnapshot++;
+  const entries = Array.from(lkAuthStatus.entries())
+    .filter(([phone, snap]) => snap && snap.captured === "auth" && !LK_STATS_EXCLUDED_PHONES.has(phone))
+    .sort((a, b) => (Number(b[1] && b[1].ts) || 0) - (Number(a[1] && a[1].ts) || 0));
+  for (const [phone, snap] of entries) {
     const respName = snap.responsibleName || (snap.responsibleId ? ("ID " + snap.responsibleId) : "");
     if (snap.noLead) { noLead++; }
     else { bump(byResp, respName); bump(byPipeline, snap.pipeline); bump(byStatus, snap.status); }
     rows.push({
-      phone, formatted: formatPhoneForDisplay(phone), firstAuthAt: ts,
-      captured: snap.captured || "auth", pending: false, noLead: !!snap.noLead,
+      phone, formatted: formatPhoneForDisplay(phone), firstAuthAt: Number(snap.ts) || 0,
+      captured: "auth", noLead: !!snap.noLead,
       pipeline: snap.pipeline || "", status: snap.status || "", cabinetStage: snap.cabinetStage || "",
       responsibleName: respName, leadId: snap.leadId || null
     });
   }
   const toSorted = (m) => Array.from(m.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
   return {
-    startDate: LK_STATS_START_DATE,
-    totals: { authorized: entries.length, withSnapshot, pending, noLead },
+    startDate: AUTH_STATUS_TRACK_START_DATE,
+    totals: { tracked: rows.length, noLead },
     byResponsible: toSorted(byResp),
     byPipeline: toSorted(byPipeline),
     byStatus: toSorted(byStatus),

@@ -3266,9 +3266,7 @@
       }
       function authStatusSnapBadge(r) {
         const base = "display:inline-block;padding:3px 10px;border-radius:980px;font-size:11.5px;font-weight:600;";
-        if (r.pending) return '<span style="' + base + 'color:#737988;background:#f3f1f7;border:1px solid #e2dded;">собирается…</span>';
         if (r.noLead) return '<span style="' + base + 'color:#9a6a1a;background:#fdf6ec;border:1px solid #f0dfc2;">сделка не найдена</span>';
-        if (r.captured === "backfill") return '<span style="' + base + 'color:#2f6e95;background:#f0f7fc;border:1px solid #d3e7f4;">бэкфилл</span>';
         return '<span style="' + base + 'color:#2e7a43;background:#eef8f1;border:1px solid #cfe6d8;">при входе</span>';
       }
       function renderAuthStatus(data) {
@@ -3281,7 +3279,7 @@
         header.className = "stats-header";
         const since = document.createElement("div");
         since.className = "stats-since";
-        since.innerHTML = '<span class="live-dot"></span>Статус amoCRM при авторизации · с какой воронки/этапа и у какого ответственного клиент регистрируется в ЛК · период с <strong>' + escapeHtml(data.startDate || "") + '</strong>';
+        since.innerHTML = '<span class="live-dot"></span>Статус amoCRM при авторизации · с какой воронки/этапа и у какого ответственного клиент регистрируется в ЛК · учёт с <strong>' + escapeHtml(data.startDate || "") + '</strong>';
         const updated = document.createElement("div");
         updated.className = "stats-since"; updated.style.color = "#9096a3";
         updated.textContent = "Обновлено: " + new Date().toLocaleTimeString("ru-RU", { timeZone: "Europe/Moscow" }) + " МСК";
@@ -3290,13 +3288,9 @@
 
         const summary = document.createElement("div");
         summary.style.cssText = "background:#faf9fc;border:1px solid #ece9f2;border-radius:14px;padding:14px 18px;margin-bottom:16px;font-size:13.5px;color:#3a3f4d;line-height:1.55;";
-        let sHtml = '<div style="font-size:14px;color:#1d2330;margin-bottom:6px;"><strong>Авторизовалось: ' + (totals.authorized || 0) + '</strong> · со снимком: ' + (totals.withSnapshot || 0)
-          + (totals.pending ? ' · собирается: ' + totals.pending : '')
-          + (totals.noLead ? ' · без сделки: ' + totals.noLead : '') + '</div>';
-        if (totals.pending > 0 || data.backfillRunning) {
-          sHtml += '<div style="color:#9a6a1a;">Идёт фоновый сбор данных из amoCRM — цифры дозаполняются автоматически (обновление каждые 10 сек). Можно не ждать.</div>';
-        }
-        sHtml += '<div style="color:#9096a3;margin-top:6px;">Снимок делается <b>в момент регистрации</b>. Строки «бэкфилл» — для номеров, зарегистрированных до запуска раздела (статус собран позже, на момент сбора). «Ответственный» — поле «Ответственный»/«Кто принял клиента», иначе ответственный по сделке.</div>';
+        let sHtml = '<div style="font-size:14px;color:#1d2330;margin-bottom:6px;"><strong>Учтено регистраций: ' + (totals.tracked || 0) + '</strong>'
+          + (totals.noLead ? ' · без активной сделки: ' + totals.noLead : '') + '</div>';
+        sHtml += '<div style="color:#9096a3;margin-top:6px;">Учёт ведётся с <b>' + escapeHtml(data.startDate || "") + '</b>. Данные фиксируются строго <b>в момент первого входа клиента в ЛК</b> и далее не меняются — даже если статус/ответственный в amoCRM потом изменятся. По регистрациям до этой даты исторических данных нет (восстановить статус «на момент входа» нельзя), поэтому они здесь не показываются. «Ответственный» — поле «Ответственный»/«Кто принял клиента», иначе ответственный по сделке.</div>';
         summary.innerHTML = sHtml;
         wrap.appendChild(summary);
 
