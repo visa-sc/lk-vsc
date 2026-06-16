@@ -1136,15 +1136,16 @@
       return 0;
     }
 
-    // Быстрая анкета для менеджера (s49, каркас): ФИО + страна поездки + даты →
-    // задача в amoCRM на ответственного. Показывается на «Начале оформления».
+    // Быстрая анкета для менеджера (s49): ФИО + страна поездки + даты → задача в
+    // amoCRM на ответственного + автоподстановка в опросник 1-го заявителя
+    // (server: opquickPrefill). Показывается на «Начале оформления».
     function createOpQuickBlock(lead) {
       const wrap = document.createElement("div");
       wrap.className = "documents-inline"; wrap.style.display = "block";
       const leadId = lead && lead.id;
       const h = document.createElement("h3"); h.textContent = "Быстрая анкета для менеджера"; wrap.appendChild(h);
       const hint = document.createElement("div");
-      hint.textContent = "Заполните — менеджер быстрее подготовит расчёт.";
+      hint.textContent = "Заполните — менеджер быстрее подготовит расчёт, а данные подставятся в опросник.";
       hint.style.fontSize = "12px"; hint.style.color = "#9096a3"; hint.style.marginTop = "-8px"; hint.style.marginBottom = "12px";
       wrap.appendChild(hint);
       const formEl = document.createElement("div");
