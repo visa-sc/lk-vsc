@@ -926,8 +926,8 @@
       <div class="tab-group" data-group="admin">
         <div class="tab-group-label">Статистика и данные</div>
         <div class="tab-group-btns">
-          <button type="button" class="tab-btn active" data-tab="stats">Статистика (доки)</button>
-          <button type="button" class="tab-btn" data-tab="stages">Статистика (этапы)</button>
+          <button type="button" class="tab-btn active" data-tab="stages">Статистика (этапы)</button>
+          <button type="button" class="tab-btn" data-tab="stats">Статистика (доки)</button>
           <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
           <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
           <button type="button" class="tab-btn" data-tab="authstatus">Статус amoCRM при авторизации</button>
@@ -967,7 +967,7 @@
       <div class="loading-state">Загружаем график авторизаций…</div>
     </div>
 
-    <div id="panelAuthStatus" class="panel show">
+    <div id="panelAuthStatus" class="panel">
       <div id="authStatusContent">
         <div class="loading-state">Загружаем…</div>
       </div>
@@ -979,7 +979,7 @@
       </div>
     </div>
 
-    <div id="panelStages" class="panel">
+    <div id="panelStages" class="panel show">
       <div id="stagesContent">
         <div class="loading-state">Загружаем…</div>
       </div>
@@ -2034,9 +2034,10 @@
         applyRoleUI();
         if (currentRole() === "manager") {
           const canStages = Array.isArray(managerPerms) && managerPerms.indexOf("stages") >= 0;
-          // Руководителю с правом «stages» (Зайцева, director@) ОСНОВНЫМ делаем
-          // раздел «Статус amoCRM при авторизации»; остальным — «Корректировки ЛК».
-          const landing = canStages ? "authstatus" : "corrections";
+          // Руководителю с правом «stages» (Зайцева, director@) при входе открываем
+          // «Статистика (этапы)»; остальным — «Корректировки ЛК». Раздел «Статус
+          // amoCRM при авторизации» остаётся доступным вкладкой, но не дефолтным.
+          const landing = canStages ? "stages" : "corrections";
           activeTab = landing;
           tabBtns.forEach((x) => x.classList.toggle("active", x.dataset.tab === landing));
           if (panelAuthStatus) panelAuthStatus.classList.remove("show");
@@ -2044,20 +2045,21 @@
           panelSurveys.classList.remove("show"); panelTraffic.classList.remove("show");
           if (panelKb) panelKb.classList.remove("show");
           panelCorrections.classList.remove("show");
-          if (landing === "authstatus") { if (panelAuthStatus) panelAuthStatus.classList.add("show"); loadAuthStatus(); }
+          if (landing === "stages") { panelStages.classList.add("show"); loadStages(); loadPaidConvStats(); loadAuthDaily(); }
           else { panelCorrections.classList.add("show"); loadCorrections(); }
           applyPaidConvVisibility();
           startPolling();
           return;
         }
-        // Админ-портал (/admin): ОСНОВНОЙ раздел — «Статус amoCRM при авторизации».
-        activeTab = "authstatus";
-        tabBtns.forEach((x) => x.classList.toggle("active", x.dataset.tab === "authstatus"));
+        // Админ-портал (/admin): при входе открываем «Статистика (этапы)».
+        activeTab = "stages";
+        tabBtns.forEach((x) => x.classList.toggle("active", x.dataset.tab === "stages"));
+        if (panelAuthStatus) panelAuthStatus.classList.remove("show");
         panelStats.classList.remove("show");
-        if (panelAuthStatus) panelAuthStatus.classList.add("show");
+        panelStages.classList.add("show");
         applyPaidConvVisibility();
-        loadAuthStatus();
-        loadPaidConvStats();   // держим кеш тёплым для вкладок «Статистика»/«Этапы»
+        loadStages();
+        loadPaidConvStats();   // блоки «конверсия» и «график авторизаций» видны на «Этапах»
         loadAuthDaily();
         startPolling();
       }
