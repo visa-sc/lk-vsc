@@ -19,3 +19,6 @@ npm-debug.log*
 
 # Аккаунты руководителей (пароли-хэши) — рантайм, из lkManagers.seed.json
 .lkManagers.json
+
+# Снимки «статус amoCRM + ответственный при авторизации» — рантайм-состояние
+.lkAuthStatus.json

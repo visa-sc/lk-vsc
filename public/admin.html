@@ -926,7 +926,8 @@
       <div class="tab-group" data-group="admin">
         <div class="tab-group-label">Статистика и данные</div>
         <div class="tab-group-btns">
-          <button type="button" class="tab-btn active" data-tab="stats">Статистика (доки)</button>
+          <button type="button" class="tab-btn active" data-tab="authstatus">Статус amoCRM при авторизации</button>
+          <button type="button" class="tab-btn" data-tab="stats">Статистика (доки)</button>
           <button type="button" class="tab-btn" data-tab="stages">Статистика (этапы)</button>
           <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
           <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
@@ -966,7 +967,13 @@
       <div class="loading-state">Загружаем график авторизаций…</div>
     </div>
 
-    <div id="panelStats" class="panel show">
+    <div id="panelAuthStatus" class="panel show">
+      <div id="authStatusContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
+    <div id="panelStats" class="panel">
       <div id="statsContent">
         <div class="loading-state">Загружаем…</div>
       </div>
@@ -1098,6 +1105,8 @@
       const bioEnableBtn = document.getElementById("bioEnableBtn");
 
       const tabBtns = Array.from(document.querySelectorAll(".tab-btn"));
+      const panelAuthStatus = document.getElementById("panelAuthStatus");
+      const authStatusContent = document.getElementById("authStatusContent");
       const panelStats = document.getElementById("panelStats");
       const panelStages = document.getElementById("panelStages");
       const panelSurveys = document.getElementById("panelSurveys");
@@ -1133,6 +1142,7 @@
       let statsSortMode = "stage"; // "stage" (по умолчанию) | "date_desc" (новые сверху)
       let stagesExpanded = false;
       let stagesSortMode = "stage";
+      let authStatusExpanded = false; // раскрыт ли детальный список в «Статус amoCRM при авторизации»
       let statsPollTimer = null;
       let authDailyData = null; // кеш последнего ответа /admin/api/auth-daily
 
@@ -1189,7 +1199,7 @@
         const canStages = mgr && Array.isArray(managerPerms) && managerPerms.indexOf("stages") >= 0;
         tabBtns.forEach((b) => {
           const t = b.dataset.tab;
-          const allowed = mgr ? ((t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads" || t === "screens" || t === "applicants") || (canStages && t === "stages")) : true;
+          const allowed = mgr ? ((t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads" || t === "screens" || t === "applicants") || (canStages && (t === "stages" || t === "authstatus"))) : true;
           b.style.display = allowed ? "" : "none";
         });
         // Группу «Статистика и данные» руководителю показываем только если у него
@@ -2012,7 +2022,7 @@
         // /vsc — показываем ТОЛЬКО VSC-дашборд: прячем вкладки и все прочие панели.
         if (IS_VSC) {
           const tabsBar = document.querySelector(".tabs"); if (tabsBar) tabsBar.style.display = "none";
-          [panelStats, panelStages, panelSurveys, panelTraffic, panelCorrections, panelKb, panelTester, panelDocsReq, panelQLogic, panelActions, panelUploads, panelScreens, panelApplicants].forEach((p) => { if (p) p.classList.remove("show"); });
+          [panelAuthStatus, panelStats, panelStages, panelSurveys, panelTraffic, panelCorrections, panelKb, panelTester, panelDocsReq, panelQLogic, panelActions, panelUploads, panelScreens, panelApplicants].forEach((p) => { if (p) p.classList.remove("show"); });
           const pc = document.getElementById("paidConvBlock"); if (pc) pc.style.display = "none";
           const ad = document.getElementById("authDailyBlock"); if (ad) ad.style.display = "none";
           panelVsc.classList.add("show");
@@ -2023,19 +2033,31 @@
         }
         applyRoleUI();
         if (currentRole() === "manager") {
-          activeTab = "corrections";
-          tabBtns.forEach((x) => x.classList.toggle("active", x.dataset.tab === "corrections"));
+          const canStages = Array.isArray(managerPerms) && managerPerms.indexOf("stages") >= 0;
+          // Руководителю с правом «stages» (Зайцева, director@) ОСНОВНЫМ делаем
+          // раздел «Статус amoCRM при авторизации»; остальным — «Корректировки ЛК».
+          const landing = canStages ? "authstatus" : "corrections";
+          activeTab = landing;
+          tabBtns.forEach((x) => x.classList.toggle("active", x.dataset.tab === landing));
+          if (panelAuthStatus) panelAuthStatus.classList.remove("show");
           panelStats.classList.remove("show"); panelStages.classList.remove("show");
           panelSurveys.classList.remove("show"); panelTraffic.classList.remove("show");
           if (panelKb) panelKb.classList.remove("show");
-          panelCorrections.classList.add("show");
+          panelCorrections.classList.remove("show");
+          if (landing === "authstatus") { if (panelAuthStatus) panelAuthStatus.classList.add("show"); loadAuthStatus(); }
+          else { panelCorrections.classList.add("show"); loadCorrections(); }
           applyPaidConvVisibility();
-          loadCorrections();
           startPolling();
           return;
         }
-        loadStats();
-        loadPaidConvStats();
+        // Админ-портал (/admin): ОСНОВНОЙ раздел — «Статус amoCRM при авторизации».
+        activeTab = "authstatus";
+        tabBtns.forEach((x) => x.classList.toggle("active", x.dataset.tab === "authstatus"));
+        panelStats.classList.remove("show");
+        if (panelAuthStatus) panelAuthStatus.classList.add("show");
+        applyPaidConvVisibility();
+        loadAuthStatus();
+        loadPaidConvStats();   // держим кеш тёплым для вкладок «Статистика»/«Этапы»
         loadAuthDaily();
         startPolling();
       }
@@ -2365,6 +2387,7 @@
           const which = b.dataset.tab;
           activeTab = which;
           tabBtns.forEach((x) => x.classList.toggle("active", x === b));
+          if (panelAuthStatus) panelAuthStatus.classList.toggle("show", which === "authstatus");
           panelStats.classList.toggle("show", which === "stats");
           panelStages.classList.toggle("show", which === "stages");
           panelSurveys.classList.toggle("show", which === "surveys");
@@ -2380,7 +2403,10 @@
           panelApplicants.classList.toggle("show", which === "applicants");
           panelVsc.classList.toggle("show", which === "vsc");
           applyPaidConvVisibility();
-          if (which === "surveys") {
+          if (which === "authstatus") {
+            loadAuthStatus();
+            startPolling();
+          } else if (which === "surveys") {
             loadSurveys();
             startPolling();
           } else if (which === "traffic") {
@@ -2437,8 +2463,9 @@
         if (statsPollTimer) return;
         statsPollTimer = setInterval(() => {
           if (document.hidden) return;
-          if (currentRole() === "manager") { loadCorrections({ silent: true }); return; }
-          if (activeTab === "stats") loadStats({ silent: true });
+          if (currentRole() === "manager") { if (activeTab === "authstatus") loadAuthStatus({ silent: true }); else loadCorrections({ silent: true }); return; }
+          if (activeTab === "authstatus") loadAuthStatus({ silent: true });
+          else if (activeTab === "stats") loadStats({ silent: true });
           else if (activeTab === "stages") loadStages({ silent: true });
           else if (activeTab === "surveys") loadSurveys({ silent: true });
           else if (activeTab === "traffic") loadTraffic({ silent: true });
@@ -2452,8 +2479,9 @@
       }
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) return;
-        if (currentRole() === "manager") { loadCorrections({ silent: true }); return; }
-        if (activeTab === "stats") loadStats({ silent: true });
+        if (currentRole() === "manager") { if (activeTab === "authstatus") loadAuthStatus({ silent: true }); else loadCorrections({ silent: true }); return; }
+        if (activeTab === "authstatus") loadAuthStatus({ silent: true });
+        else if (activeTab === "stats") loadStats({ silent: true });
         else if (activeTab === "stages") loadStages({ silent: true });
         else if (activeTab === "surveys") loadSurveys({ silent: true });
         else if (activeTab === "traffic") loadTraffic({ silent: true });
@@ -3218,6 +3246,118 @@
       }
 
       // ── Статистика (этапы) — воронка по статусам сделки в amoCRM ──
+      // ── Раздел «Статус amoCRM при авторизации» (задача Зайцевой) ──
+      function authStatusAggCard(title, items, hint) {
+        const arr = Array.isArray(items) ? items : [];
+        const total = arr.reduce((s, it) => s + (it.count || 0), 0);
+        const max = arr.reduce((m, it) => Math.max(m, it.count || 0), 0) || 1;
+        let html = '<div style="background:#fff;border:1px solid #ece9f2;border-radius:14px;padding:16px 18px;">';
+        html += '<div style="font-weight:700;font-size:14px;color:#1d2330;margin-bottom:2px;">' + escapeHtml(title) + '</div>';
+        html += '<div style="font-size:12px;color:#9096a3;margin-bottom:12px;">' + escapeHtml(hint || ("всего: " + total)) + '</div>';
+        if (!arr.length) { return html + '<div style="font-size:13px;color:#9096a3;">Пока нет данных</div></div>'; }
+        arr.forEach((it) => {
+          const w = Math.max(4, Math.round(((it.count || 0) / max) * 100));
+          html += '<div style="margin-bottom:9px;">'
+            + '<div style="display:flex;justify-content:space-between;font-size:13px;color:#1d2330;margin-bottom:3px;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:78%;">' + escapeHtml(it.name || "—") + '</span><strong style="margin-left:8px;">' + (it.count || 0) + '</strong></div>'
+            + '<div style="height:7px;background:#f1eef7;border-radius:6px;overflow:hidden;"><div style="height:100%;width:' + w + '%;background:#7b61c9;border-radius:6px;"></div></div>'
+            + '</div>';
+        });
+        return html + '</div>';
+      }
+      function authStatusSnapBadge(r) {
+        const base = "display:inline-block;padding:3px 10px;border-radius:980px;font-size:11.5px;font-weight:600;";
+        if (r.pending) return '<span style="' + base + 'color:#737988;background:#f3f1f7;border:1px solid #e2dded;">собирается…</span>';
+        if (r.noLead) return '<span style="' + base + 'color:#9a6a1a;background:#fdf6ec;border:1px solid #f0dfc2;">сделка не найдена</span>';
+        if (r.captured === "backfill") return '<span style="' + base + 'color:#2f6e95;background:#f0f7fc;border:1px solid #d3e7f4;">бэкфилл</span>';
+        return '<span style="' + base + 'color:#2e7a43;background:#eef8f1;border:1px solid #cfe6d8;">при входе</span>';
+      }
+      function renderAuthStatus(data) {
+        if (!authStatusContent) return;
+        const totals = (data && data.totals) || {};
+        const rows = Array.isArray(data && data.rows) ? data.rows : [];
+        const wrap = document.createElement("div");
+
+        const header = document.createElement("div");
+        header.className = "stats-header";
+        const since = document.createElement("div");
+        since.className = "stats-since";
+        since.innerHTML = '<span class="live-dot"></span>Статус amoCRM при авторизации · с какой воронки/этапа и у какого ответственного клиент регистрируется в ЛК · период с <strong>' + escapeHtml(data.startDate || "") + '</strong>';
+        const updated = document.createElement("div");
+        updated.className = "stats-since"; updated.style.color = "#9096a3";
+        updated.textContent = "Обновлено: " + new Date().toLocaleTimeString("ru-RU", { timeZone: "Europe/Moscow" }) + " МСК";
+        header.appendChild(since); header.appendChild(updated);
+        wrap.appendChild(header);
+
+        const summary = document.createElement("div");
+        summary.style.cssText = "background:#faf9fc;border:1px solid #ece9f2;border-radius:14px;padding:14px 18px;margin-bottom:16px;font-size:13.5px;color:#3a3f4d;line-height:1.55;";
+        let sHtml = '<div style="font-size:14px;color:#1d2330;margin-bottom:6px;"><strong>Авторизовалось: ' + (totals.authorized || 0) + '</strong> · со снимком: ' + (totals.withSnapshot || 0)
+          + (totals.pending ? ' · собирается: ' + totals.pending : '')
+          + (totals.noLead ? ' · без сделки: ' + totals.noLead : '') + '</div>';
+        if (totals.pending > 0 || data.backfillRunning) {
+          sHtml += '<div style="color:#9a6a1a;">Идёт фоновый сбор данных из amoCRM — цифры дозаполняются автоматически (обновление каждые 10 сек). Можно не ждать.</div>';
+        }
+        sHtml += '<div style="color:#9096a3;margin-top:6px;">Снимок делается <b>в момент регистрации</b>. Строки «бэкфилл» — для номеров, зарегистрированных до запуска раздела (статус собран позже, на момент сбора). «Ответственный» — поле «Ответственный»/«Кто принял клиента», иначе ответственный по сделке.</div>';
+        summary.innerHTML = sHtml;
+        wrap.appendChild(summary);
+
+        const grid = document.createElement("div");
+        grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:18px;";
+        grid.innerHTML =
+          authStatusAggCard("По ответственным менеджерам", data.byResponsible, "кто был ответственным в момент регистрации")
+          + authStatusAggCard("По воронкам (отделам)", data.byPipeline, "воронка amoCRM в момент регистрации")
+          + authStatusAggCard("По этапам (статус amoCRM)", data.byStatus, "статус сделки в момент регистрации");
+        wrap.appendChild(grid);
+
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button"; toggleBtn.className = "toggle-phones";
+        toggleBtn.textContent = authStatusExpanded ? "Скрыть список регистраций" : ("Показать список регистраций (" + rows.length + ")");
+        toggleBtn.addEventListener("click", () => { authStatusExpanded = !authStatusExpanded; renderAuthStatus(data); });
+        wrap.appendChild(toggleBtn);
+
+        if (authStatusExpanded) {
+          const tableWrap = document.createElement("div");
+          tableWrap.style.cssText = "overflow-x:auto;margin-top:12px;border:1px solid #ece9f2;border-radius:14px;";
+          let t = '<table style="width:100%;border-collapse:collapse;font-size:13px;min-width:760px;">';
+          t += '<thead><tr style="background:#f6f4fb;color:#5b6072;text-align:left;">'
+            + '<th style="padding:10px 12px;font-weight:600;">Дата регистрации (МСК)</th>'
+            + '<th style="padding:10px 12px;font-weight:600;">Телефон</th>'
+            + '<th style="padding:10px 12px;font-weight:600;">Воронка (отдел)</th>'
+            + '<th style="padding:10px 12px;font-weight:600;">Статус amoCRM</th>'
+            + '<th style="padding:10px 12px;font-weight:600;">Ответственный</th>'
+            + '<th style="padding:10px 12px;font-weight:600;">Снимок</th>'
+            + '</tr></thead><tbody>';
+          rows.forEach((r) => {
+            t += '<tr style="border-top:1px solid #f0eef5;">'
+              + '<td style="padding:9px 12px;white-space:nowrap;color:#737988;">' + escapeHtml(formatDateMsk(r.firstAuthAt)) + '</td>'
+              + '<td style="padding:9px 12px;white-space:nowrap;">' + escapeHtml(r.formatted || "") + '</td>'
+              + '<td style="padding:9px 12px;">' + escapeHtml(r.pipeline || "—") + '</td>'
+              + '<td style="padding:9px 12px;">' + escapeHtml(r.status || "—") + '</td>'
+              + '<td style="padding:9px 12px;">' + escapeHtml(r.responsibleName || "—") + '</td>'
+              + '<td style="padding:9px 12px;white-space:nowrap;">' + authStatusSnapBadge(r) + '</td>'
+              + '</tr>';
+          });
+          t += '</tbody></table>';
+          tableWrap.innerHTML = t;
+          wrap.appendChild(tableWrap);
+        }
+
+        authStatusContent.innerHTML = "";
+        authStatusContent.appendChild(wrap);
+      }
+      async function loadAuthStatus(opts) {
+        const silent = opts && opts.silent;
+        if (!authStatusContent) return;
+        if (!silent && !authStatusContent.querySelector(".stats-header")) {
+          authStatusContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        }
+        try {
+          const data = await apiFetch("/admin/api/auth-status-stats");
+          renderAuthStatus(data);
+        } catch (e) {
+          if (!silent) authStatusContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+        }
+      }
+
       async function loadStages(opts) {
         const silent = opts && opts.silent;
         if (!silent) stagesContent.innerHTML = '<div class="loading-state">Загружаем…</div>';

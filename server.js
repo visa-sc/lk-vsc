@@ -776,6 +776,23 @@ app.get("/admin/api/auth-daily", requireStagesAccess, (req, res) => {
   }
 });
 
+// Раздел «Статус amoCRM при авторизации» (задача Зайцевой): для каждой регистрации
+// в ЛК — воронка/этап сделки и ответственный менеджер в момент регистрации, плюс
+// агрегаты по менеджерам/воронкам/этапам. Расчёт in-memory (дёшево). Если есть
+// номера без снимка — поднимаем фоновый бэкфилл (low-priority, single-flight).
+app.get("/admin/api/auth-status-stats", requireStagesAccess, (req, res) => {
+  try {
+    const data = computeAuthStatusStats();
+    if (data.totals.pending > 0 && !_authStatusBackfillRunning) {
+      setImmediate(() => { Promise.resolve(amoBg(() => backfillAuthStatuses())).catch(() => {}); });
+    }
+    return res.json(Object.assign({ success: true, backfillRunning: _authStatusBackfillRunning }, data));
+  } catch (e) {
+    console.error("/admin/api/auth-status-stats error:", e && e.message);
+    return res.status(500).json({ success: false, message: "Ошибка расчёта статистики авторизаций" });
+  }
+});
+
 // Воронка «Опросники»: SMS отправлено → кликнул → отправил.
 // Считаем по уникальным номерам. Базой берём feedbackSent — туда попадают
 // номера, которым ушло приглашение (фиксируется ДО самой отправки SMS).
@@ -1238,6 +1255,15 @@ app.get("/admin/kb/admin-guide", requireStaff, (req, res) => {
     let b = `<h1>Инструкция по админке</h1><p class="sub">Цели и возможности разделов — без воды, со всеми нюансами. Страница соответствует текущей версии админки и обновляется вместе с ней.</p>`;
 
     b += `<div class="card"><b>Доступы.</b> Сотрудники входят на <b>voyovoyo.ru/team</b> (email + пароль; при первом входе придумываете пароль не короче 6 символов). Сотрудникам видна группа «Работа с ЛК»: «Корректировки ЛК», «Тестировщик ЛК», «Запрос документов», «Опросники (логика)», «Действия», «Области загрузки», «База знаний ЛК». Статистика и данные клиентов недоступны. Админ входит по коду и видит всё.</div>`;
+
+    b += `<h2>Статус amoCRM при авторизации</h2>
+<p><b>Цель:</b> понять, с какой воронки/этапа сделки и у какого ответственного менеджера клиенты регистрируются в ЛК — чтобы видеть, кто активно подключает клиентов, а где процесс тормозит, и на каком статусе уместно автоприглашение. Доступ: только админ и руководители с правом «Статистика» (Зайцева, director@). Это основной раздел при входе для них.</p>
+<ul>
+<li><b>Снимок в момент регистрации:</b> при первой авторизации клиента фиксируем воронку, статус сделки amoCRM и ответственного — на тот момент (потом статус в amo может уйти вперёд, снимок остаётся «как было при регистрации»).</li>
+<li><b>Ответственный</b> определяется как для задач: поле «Ответственный» (Отдел продаж) / «Кто принял клиента» (другие воронки), иначе — ответственный по сделке.</li>
+<li><b>Агрегаты</b> по менеджерам, воронкам (отделам) и этапам (статусам amoCRM) + детальный список всех регистраций (дата, телефон, воронка, статус, ответственный).</li>
+<li><b>Бэкфилл:</b> для номеров, зарегистрированных до запуска раздела, статус собирается фоном из amoCRM и помечается «бэкфилл» (это статус на момент сбора, не на момент регистрации). Новые регистрации помечаются «при входе».</li>
+</ul>`;
 
     b += `<h2>Корректировки ЛК</h2>
 <p><b>Цель:</b> единый канал заявок на изменения ЛК — ничего не теряется в чатах, по каждой заявке виден статус и история обсуждения.</p>
@@ -7765,6 +7791,14 @@ function recordLkAuth(phone) {
     provisionReadyDocsForActiveLeads(norm).catch((e) =>
       console.error("READY-DOCS provision on auth error:", e.message));
   });
+  // Снимок «статус amoCRM + ответственный в момент авторизации» (раздел админки
+  // «Статус amoCRM при авторизации», задача Зайцевой). В фоне, низкий приоритет —
+  // вход и клиентский ЛК не затрагиваем.
+  setImmediate(() => {
+    if (typeof amoBg === "function" && typeof enrichAndSaveAuthStatus === "function") {
+      Promise.resolve(amoBg(() => enrichAndSaveAuthStatus(norm, "auth"))).catch(() => {});
+    }
+  });
 }
 
 loadLkAuthPhones();
@@ -7772,6 +7806,182 @@ loadLkAuthPhones();
 function formatPhoneForDisplay(norm) {
   if (!norm || norm.length !== 11) return `+${norm}`;
   return `+${norm[0]} (${norm.slice(1, 4)}) ${norm.slice(4, 7)}-${norm.slice(7, 9)}-${norm.slice(9, 11)}`;
+}
+
+// ── Снимок «статус amoCRM + ответственный В МОМЕНТ авторизации» ──────────────
+// Задача Зайцевой (корректировка c1781611739294291): для каждой регистрации в ЛК
+// фиксируем, на какой воронке/этапе сделки amoCRM и у какого ОТВЕТСТВЕННОГО
+// менеджера клиент авторизовался. Снимок делаем ОДИН РАЗ при первой авторизации
+// (captured="auth") — это и есть «момент регистрации». Для номеров, авторизовав-
+// шихся ДО внедрения фичи, есть фоновый бэкфилл (captured="backfill") — он
+// отражает статус на момент бэкфилла и помечается отдельно. «Ответственный»
+// резолвится по тем же правилам, что и для задач: поле «Ответственный» (Отдел
+// продаж) / «Кто принял клиента» (прочие воронки) → иначе ответственный по сделке.
+const LK_AUTH_STATUS_FILE = path.join(__dirname, ".lkAuthStatus.json");
+const lkAuthStatus = new Map(); // phone -> { ts, captured, capturedTs, leadId, pipeline, status, cabinetStage, responsibleId, responsibleName, noLead }
+
+function loadLkAuthStatus() {
+  try {
+    const obj = JSON.parse(fs.readFileSync(LK_AUTH_STATUS_FILE, "utf8"));
+    if (obj && typeof obj === "object") {
+      Object.entries(obj).forEach(([phone, d]) => { if (d && typeof d === "object") lkAuthStatus.set(phone, d); });
+    }
+  } catch (_) {}
+}
+function saveLkAuthStatus() {
+  try { fs.writeFileSync(LK_AUTH_STATUS_FILE, JSON.stringify(Object.fromEntries(lkAuthStatus.entries()), null, 2), "utf8"); }
+  catch (e) { console.error("saveLkAuthStatus error:", e.message); }
+}
+loadLkAuthStatus();
+
+// Кеш карты пользователей amoCRM (id → имя) — для подписи ответственного.
+let _cachedAmoUsersMap = null, _cachedAmoUsersMapTs = 0;
+const AMO_USERS_MAP_TTL_MS = 10 * 60 * 1000;
+async function getAmoUsersMap(baseUrl) {
+  const now = Date.now();
+  if (_cachedAmoUsersMap && (now - _cachedAmoUsersMapTs) < AMO_USERS_MAP_TTL_MS) return _cachedAmoUsersMap;
+  const map = new Map();
+  try {
+    const users = await amoGetAllPages(`${baseUrl}/api/v4/users`);
+    (users || []).forEach((u) => { if (u && u.id != null) map.set(Number(u.id), String(u.name || "").trim()); });
+  } catch (e) { console.error("getAmoUsersMap error:", e.message); }
+  _cachedAmoUsersMap = map; _cachedAmoUsersMapTs = Date.now();
+  return map;
+}
+
+// Выбирает представительную сделку номера для снимка: новейшая ВИДИМАЯ активная
+// (не «Обращение исполнено»), иначе — новейшая видимая. getLeadsByPhone отдаёт
+// видимые сделки, отсортированные по убыванию даты создания.
+function _pickRepresentativeLead(leads) {
+  if (!Array.isArray(leads) || !leads.length) return null;
+  const active = leads.find((l) => l && l.cabinet_status && l.cabinet_status !== "Обращение исполнено");
+  return active || leads[0];
+}
+
+// Резолв ответственного из УЖЕ обогащённой сделки (без повторного запроса в amo),
+// по тем же правилам, что _resolveAmoTaskTarget, но без служебного fallback на
+// «Visa Services Center» (для статистики важен реальный менеджер, иначе «—»).
+async function resolveResponsibleForSnapshot(lead) {
+  if (!lead) return { id: null, name: "" };
+  const pipelineLow = String(lead.pipeline_name || "").toLowerCase().trim();
+  const isSales = pipelineLow.indexOf("отдел продаж") === 0;
+  let respId = null;
+  if (isSales) {
+    const raw = getEntityCustomFieldValue(lead, TASK_RESPONSIBLE_FIELD_ID);
+    const n = raw != null ? Number(raw) : NaN;
+    if (Number.isFinite(n) && n > 0) respId = n;
+  } else {
+    try {
+      const ktoFieldId = await getKtoPrinyalFieldId();
+      if (ktoFieldId) {
+        const raw = getEntityCustomFieldValue(lead, ktoFieldId);
+        const n = raw != null ? Number(raw) : NaN;
+        if (Number.isFinite(n) && n > 0) respId = n;
+      }
+    } catch (_) {}
+  }
+  if (!respId) {
+    const n = lead.responsible_user_id != null ? Number(lead.responsible_user_id) : NaN;
+    if (Number.isFinite(n) && n > 0) respId = n;
+  }
+  if (!respId) return { id: null, name: "" };
+  let name = "";
+  try { const um = await getAmoUsersMap(`https://${AMO_SUBDOMAIN}.amocrm.ru`); name = um.get(respId) || ""; } catch (_) {}
+  return { id: respId, name };
+}
+
+async function buildAuthStatusSnapshot(norm) {
+  const leads = await getLeadsByPhone(norm);
+  const lead = _pickRepresentativeLead(leads);
+  if (!lead) return { leadId: null, pipeline: "", status: "", cabinetStage: "", responsibleId: null, responsibleName: "", noLead: true };
+  const resp = await resolveResponsibleForSnapshot(lead);
+  return {
+    leadId: String(lead.id),
+    pipeline: lead.pipeline_name || "",
+    status: lead.status_name || "",
+    cabinetStage: lead.cabinet_status || "",
+    responsibleId: resp.id || null,
+    responsibleName: resp.name || "",
+    noLead: false
+  };
+}
+
+async function enrichAndSaveAuthStatus(norm, captured) {
+  if (!norm) return;
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return;
+  const existing = lkAuthStatus.get(norm);
+  if (existing && existing.captured === "auth") return; // снимок «в момент авторизации» не перезаписываем
+  try {
+    const snap = await buildAuthStatusSnapshot(norm);
+    lkAuthStatus.set(norm, Object.assign({
+      ts: lkAuthPhones.get(norm) || Date.now(),
+      captured: captured || "auth",
+      capturedTs: Date.now()
+    }, snap));
+    saveLkAuthStatus();
+    console.log(`LK AUTH-STATUS [${captured}] phone=${norm} pipeline="${snap.pipeline}" status="${snap.status}" resp="${snap.responsibleName || snap.responsibleId || "—"}"`);
+  } catch (e) { console.error("LK AUTH-STATUS snapshot err", norm, e && e.message); }
+}
+
+// Фоновый бэкфилл снимков для уже авторизованных номеров без снимка. Throttle как
+// в stage-stats (concurrency 2 + пауза 700мс) — щадим лимит amoCRM и клиентский ЛК.
+let _authStatusBackfillRunning = false;
+async function backfillAuthStatuses() {
+  if (_authStatusBackfillRunning) return;
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return;
+  _authStatusBackfillRunning = true;
+  try {
+    const todo = Array.from(lkAuthPhones.entries())
+      .filter(([phone, ts]) => Number(ts) >= LK_STATS_START_MS && !LK_STATS_EXCLUDED_PHONES.has(phone) && !lkAuthStatus.has(phone))
+      .sort((a, b) => b[1] - a[1]);
+    if (!todo.length) return;
+    console.log(`LK AUTH-STATUS backfill start: ${todo.length} phones`);
+    const CONC = 2, PAUSE = 700;
+    for (let i = 0; i < todo.length; i += CONC) {
+      const chunk = todo.slice(i, i + CONC);
+      await Promise.all(chunk.map(([phone]) => enrichAndSaveAuthStatus(phone, "backfill")));
+      if (i + CONC < todo.length) await new Promise((r) => setTimeout(r, PAUSE));
+    }
+    console.log("LK AUTH-STATUS backfill done");
+  } finally { _authStatusBackfillRunning = false; }
+}
+
+// Агрегация для раздела админки «Статус amoCRM при авторизации» (in-memory, дёшево).
+function computeAuthStatusStats() {
+  const rows = [];
+  let withSnapshot = 0, pending = 0, noLead = 0;
+  const byResp = new Map(), byPipeline = new Map(), byStatus = new Map();
+  const bump = (m, k) => { const key = k || "—"; m.set(key, (m.get(key) || 0) + 1); };
+  const entries = Array.from(lkAuthPhones.entries())
+    .filter(([phone, ts]) => Number(ts) >= LK_STATS_START_MS && !LK_STATS_EXCLUDED_PHONES.has(phone))
+    .sort((a, b) => b[1] - a[1]);
+  for (const [phone, ts] of entries) {
+    const snap = lkAuthStatus.get(phone);
+    if (!snap) {
+      pending++;
+      rows.push({ phone, formatted: formatPhoneForDisplay(phone), firstAuthAt: ts, captured: null, pending: true, noLead: false, pipeline: "", status: "", cabinetStage: "", responsibleName: "", leadId: null });
+      continue;
+    }
+    withSnapshot++;
+    const respName = snap.responsibleName || (snap.responsibleId ? ("ID " + snap.responsibleId) : "");
+    if (snap.noLead) { noLead++; }
+    else { bump(byResp, respName); bump(byPipeline, snap.pipeline); bump(byStatus, snap.status); }
+    rows.push({
+      phone, formatted: formatPhoneForDisplay(phone), firstAuthAt: ts,
+      captured: snap.captured || "auth", pending: false, noLead: !!snap.noLead,
+      pipeline: snap.pipeline || "", status: snap.status || "", cabinetStage: snap.cabinetStage || "",
+      responsibleName: respName, leadId: snap.leadId || null
+    });
+  }
+  const toSorted = (m) => Array.from(m.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  return {
+    startDate: LK_STATS_START_DATE,
+    totals: { authorized: entries.length, withSnapshot, pending, noLead },
+    byResponsible: toSorted(byResp),
+    byPipeline: toSorted(byPipeline),
+    byStatus: toSorted(byStatus),
+    rows
+  };
 }
 
 // ── График новых авторизаций по дням (скользящее окно «последние 30 дней») ──
