@@ -815,6 +815,32 @@ app.get("/admin/api/auth-status-stats", requireStagesAccess, (req, res) => {
   }
 });
 
+// Раздел «Логи ЛК»: вся известная активность по номеру клиента (таймлайн).
+// Источник — in-memory хранилища ЛК (amoCRM НЕ дёргаем). Доступно всем сотрудникам.
+app.get("/admin/api/client-logs", requireStaff, (req, res) => {
+  try {
+    const phone = normalizePhone(String(req.query.phone || ""));
+    if (!phone || phone.length !== 11) return res.status(400).json({ success: false, message: "Введите корректный номер телефона" });
+    const events = [];
+    const add = (ts, type, text) => { const n = Number(ts); if (n) events.push({ ts: n, type, text }); };
+    if (lkAuthPhones.has(phone)) add(lkAuthPhones.get(phone), "Регистрация в ЛК", "Первый (уникальный) вход в личный кабинет");
+    const snap = lkAuthStatus.get(phone);
+    if (snap && snap.captured === "auth") add(snap.capturedTs || snap.ts, "Статус amoCRM при входе", `Воронка: ${snap.pipeline || "—"} · Этап: ${snap.status || "—"} · Ответственный: ${snap.responsibleName || "—"}`);
+    const fSent = feedbackSent.get(phone); if (fSent) add(fSent.sentAt, "SMS-приглашение", "Отправлено приглашение в ЛК" + (fSent.fullName ? ` — ${fSent.fullName}` : ""));
+    const fClick = feedbackClicked.get(phone); if (fClick) add(fClick.clickedAt, "Переход по ссылке", "Клиент открыл ссылку-приглашение");
+    const fSub = feedbackSubmitted.get(phone); if (fSub) add(fSub.submittedAt, "Обратная связь", "Отправлена форма обратной связи" + (fSub.fullName ? ` — ${fSub.fullName}` : ""));
+    const fq = lkFirstQuestionnaireLead.get(phone);
+    if (fq && fq.firstAt) add(fq.firstAt, "Опросник", `Первый опросник отправлен через ЛК (сделка ${fq.leadId || "—"})`);
+    if (fq && fq.leadId) { const oq = (loadOpQuick() || {})[String(fq.leadId)]; if (oq && oq.ts) add(oq.ts, "Анкета для договора", "Клиент заполнил «Данные для подготовки договора»"); }
+    const converted = Array.isArray(trafficStats.convertedPhones) && trafficStats.convertedPhones.indexOf(phone) >= 0;
+    events.sort((a, b) => a.ts - b.ts);
+    return res.json({ success: true, phone, formatted: formatPhoneForDisplay(phone), converted, events, found: events.length > 0 });
+  } catch (e) {
+    console.error("/admin/api/client-logs error:", e && e.message);
+    return res.status(500).json({ success: false, message: "Ошибка" });
+  }
+});
+
 // Воронка «Опросники»: SMS отправлено → кликнул → отправил.
 // Считаем по уникальным номерам. Базой берём feedbackSent — туда попадают
 // номера, которым ушло приглашение (фиксируется ДО самой отправки SMS).
@@ -1493,12 +1519,47 @@ app.get("/admin/kb/logic", requireStaff, (req, res) => {
   } catch (e) { return res.status(500).send("Ошибка генерации страницы"); }
 });
 
-// ── Что изменилось (changelog) — из реализованных корректировок ──
+// ── Живая история изменений клиентского ЛК ───────────────────────────────────
+// Курируемая лента правок, КОТОРЫЕ ВИДИТ/ЧУВСТВУЕТ КЛИЕНТ в ЛК (не внутренняя
+// инфраструктура). Пишем понятно, без воды, но со всеми нюансами + кто просил.
+// ВАЖНО: при любой правке клиентского ЛК — добавлять сюда новую запись сверху.
+const LK_CHANGELOG = [
+  { date: "18.06.2026", title: "Анкета «Данные для подготовки договора» на «Начале оформления»", by: "просила Екатерина Зайцева", points: [
+    "Карточка с полями: даты поездки, электронная почта, страховка (есть своя / оформить у нас — зависимый вопрос, как в опроснике), внутренний паспорт РФ для договора (ФИО, прописка, серия/номер — поля для ввода).",
+    "По отправке создаётся задача в amoCRM на ответственного со всей инфой структурированно (даты, email, страховка, паспорт).",
+    "Даты поездки и блок страховки автоматически подставляются в опросники ВСЕХ заявителей по сделке (в пустые поля). ФИО, email и паспорт в опросник не подставляются (ФИО индивидуально, внутреннего паспорта в опроснике нет, email некому однозначно).",
+    "Области загрузки документов на старте не менялись — паспорта по-прежнему запрашиваются как раньше."
+  ] },
+  { date: "16.06.2026", title: "Вопрос про промокод — только если клиент раньше не обращался", by: "просил Андрей", points: [
+    "При входе по номеру, которого нет в amoCRM: вопрос «Хотите использовать промокод?» показывается ТОЛЬКО при ответе «Нет» на «обращались раньше в Telegram/WhatsApp/Instagram?».",
+    "При ответе «Да» промокод не предлагается. Вход по SMS и Face ID/Touch ID не изменился."
+  ] },
+  { date: "15.06.2026", title: "Идентификация по мессенджеру при входе нового номера", by: "просила Екатерина Зайцева (s46)", points: [
+    "Если введённого номера нет в amoCRM — клиент указывает, что обращался в Telegram / WhatsApp / Instagram, и вводит ник или номер.",
+    "Сервер ищет контакт в amoCRM (воцап — по номеру; ник — по значению) и при совпадении привязывает новый телефон к найденному контакту — клиент сразу видит свою историю/сделку.",
+    "Не нашли — регистрируется как новый клиент. Вход по SMS / Face ID не изменён."
+  ] },
+  { date: "15.06.2026", title: "Обязательность документов — по статусу сделки и дате подачи", by: "просила Анастасия Плинер (ОО)", points: [
+    "Раньше на этапах сбора всё было «обязательно». Теперь обязательность зависит от статуса сделки в amoCRM и «Даты записи на подачу».",
+    "Ранние статусы — документы открыты, но необязательны (помечены). В статусах «Запись сделана / Электронное рассмотрение / Оформлен выкуп» за ≤7 рабочих дней обязательным становится только ядро оформления.",
+    "В финальных статусах или при <3 календарных дней до подачи — обязательно всё. Паспорта обязательны всегда."
+  ] }
+];
+
+// ── Что изменилось (changelog): живая лента + полный авто-список корректировок ──
 app.get("/admin/kb/changelog", requireStaff, (req, res) => {
   try {
+    let b = `<h1>История изменений клиентского ЛК</h1><p class="sub">Что менялось в клиентском ЛК — понятным языком, со всеми нюансами. Ниже — полный авто-список реализованных корректировок.</p>`;
+    // 1) Живая курируемая лента (что видит клиент).
+    LK_CHANGELOG.forEach((e) => {
+      b += `<div class="card"><h3>${kbEsc(e.date)} · ${kbEsc(e.title)}</h3>`;
+      if (e.by) b += `<p class="sub" style="margin-top:-6px;">${kbEsc(e.by)}</p>`;
+      b += `<ul>` + (e.points || []).map((p) => `<li>${kbEsc(p)}</li>`).join("") + `</ul></div>`;
+    });
+    // 2) Полный авто-список реализованных корректировок (из раздела «Корректировки ЛК»).
     const items = (loadCorrections() || []).filter((x) => x && x.status === "done");
-    items.sort((a, b) => String(b.resolvedAt || "").localeCompare(String(a.resolvedAt || "")) || (b.ts || 0) - (a.ts || 0));
-    let b = `<h1>История изменений клиентского ЛК</h1><p class="sub">Лента реализованных корректировок (из раздела «Корректировки ЛК»). Обновляется автоматически.</p>`;
+    items.sort((a, b2) => String(b2.resolvedAt || "").localeCompare(String(a.resolvedAt || "")) || (b2.ts || 0) - (a.ts || 0));
+    b += `<h2>Все реализованные корректировки</h2><p class="sub">Формируется автоматически из заявок со статусом «Реализовано».</p>`;
     if (!items.length) { b += `<div class="card muted">Пока нет реализованных корректировок.</div>`; }
     else {
       b += `<table><tr><th>Дата</th><th>Что сделано</th><th>Примечание</th><th>Автор</th></tr>`;

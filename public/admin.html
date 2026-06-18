@@ -931,6 +931,7 @@
           <button type="button" class="tab-btn" data-tab="surveys">Опросники</button>
           <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
           <button type="button" class="tab-btn" data-tab="authstatus">Статус amoCRM при авторизации</button>
+          <button type="button" class="tab-btn" data-tab="clientlogs">Логи ЛК</button>
         </div>
       </div>
       <div class="tab-group" data-group="tools">
@@ -970,6 +971,12 @@
     <div id="panelAuthStatus" class="panel">
       <div id="authStatusContent">
         <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
+    <div id="panelClientLogs" class="panel">
+      <div id="clientLogsContent">
+        <div class="loading-state">Введите номер телефона.</div>
       </div>
     </div>
 
@@ -1107,6 +1114,8 @@
       const tabBtns = Array.from(document.querySelectorAll(".tab-btn"));
       const panelAuthStatus = document.getElementById("panelAuthStatus");
       const authStatusContent = document.getElementById("authStatusContent");
+      const panelClientLogs = document.getElementById("panelClientLogs");
+      const clientLogsContent = document.getElementById("clientLogsContent");
       const panelStats = document.getElementById("panelStats");
       const panelStages = document.getElementById("panelStages");
       const panelSurveys = document.getElementById("panelSurveys");
@@ -1199,13 +1208,13 @@
         const canStages = mgr && Array.isArray(managerPerms) && managerPerms.indexOf("stages") >= 0;
         tabBtns.forEach((b) => {
           const t = b.dataset.tab;
-          const allowed = mgr ? ((t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads" || t === "screens" || t === "applicants") || (canStages && (t === "stages" || t === "authstatus"))) : true;
+          const allowed = mgr ? ((t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads" || t === "screens" || t === "applicants") || (t === "clientlogs") || (canStages && (t === "stages" || t === "authstatus"))) : true;
           b.style.display = allowed ? "" : "none";
         });
-        // Группу «Статистика и данные» руководителю показываем только если у него
-        // есть персональный доступ (тогда внутри видна лишь разрешённая вкладка).
+        // Группу «Статистика и данные» показываем всем (там есть «Логи ЛК», доступные
+        // всем сотрудникам). Статистику внутри видит только тот, у кого есть «stages».
         const adminGroup = document.querySelector('.tab-group[data-group="admin"]');
-        if (adminGroup) adminGroup.style.display = (mgr && !canStages) ? "none" : "";
+        if (adminGroup) adminGroup.style.display = "";
         if (mgr && canStages) { const ag = document.querySelector('.tab-group[data-group="admin"] .tab-group-label'); if (ag) ag.textContent = "Статистика"; }
         // У руководителей нет «своих»/«админских» разделов — пометку про доступ
         // в подписях групп убираем (для них всё и так доступно).
@@ -2022,7 +2031,7 @@
         // /vsc — показываем ТОЛЬКО VSC-дашборд: прячем вкладки и все прочие панели.
         if (IS_VSC) {
           const tabsBar = document.querySelector(".tabs"); if (tabsBar) tabsBar.style.display = "none";
-          [panelAuthStatus, panelStats, panelStages, panelSurveys, panelTraffic, panelCorrections, panelKb, panelTester, panelDocsReq, panelQLogic, panelActions, panelUploads, panelScreens, panelApplicants].forEach((p) => { if (p) p.classList.remove("show"); });
+          [panelAuthStatus, panelClientLogs, panelStats, panelStages, panelSurveys, panelTraffic, panelCorrections, panelKb, panelTester, panelDocsReq, panelQLogic, panelActions, panelUploads, panelScreens, panelApplicants].forEach((p) => { if (p) p.classList.remove("show"); });
           const pc = document.getElementById("paidConvBlock"); if (pc) pc.style.display = "none";
           const ad = document.getElementById("authDailyBlock"); if (ad) ad.style.display = "none";
           panelVsc.classList.add("show");
@@ -2390,6 +2399,7 @@
           activeTab = which;
           tabBtns.forEach((x) => x.classList.toggle("active", x === b));
           if (panelAuthStatus) panelAuthStatus.classList.toggle("show", which === "authstatus");
+          if (panelClientLogs) panelClientLogs.classList.toggle("show", which === "clientlogs");
           panelStats.classList.toggle("show", which === "stats");
           panelStages.classList.toggle("show", which === "stages");
           panelSurveys.classList.toggle("show", which === "surveys");
@@ -2408,6 +2418,8 @@
           if (which === "authstatus") {
             loadAuthStatus();
             startPolling();
+          } else if (which === "clientlogs") {
+            loadClientLogs();
           } else if (which === "surveys") {
             loadSurveys();
             startPolling();
@@ -2465,7 +2477,7 @@
         if (statsPollTimer) return;
         statsPollTimer = setInterval(() => {
           if (document.hidden) return;
-          if (currentRole() === "manager") { if (activeTab === "authstatus") loadAuthStatus({ silent: true }); else loadCorrections({ silent: true }); return; }
+          if (currentRole() === "manager") { if (activeTab === "authstatus") loadAuthStatus({ silent: true }); else if (activeTab === "corrections") loadCorrections({ silent: true }); return; }
           if (activeTab === "authstatus") loadAuthStatus({ silent: true });
           else if (activeTab === "stats") loadStats({ silent: true });
           else if (activeTab === "stages") loadStages({ silent: true });
@@ -2481,7 +2493,7 @@
       }
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) return;
-        if (currentRole() === "manager") { if (activeTab === "authstatus") loadAuthStatus({ silent: true }); else loadCorrections({ silent: true }); return; }
+        if (currentRole() === "manager") { if (activeTab === "authstatus") loadAuthStatus({ silent: true }); else if (activeTab === "corrections") loadCorrections({ silent: true }); return; }
         if (activeTab === "authstatus") loadAuthStatus({ silent: true });
         else if (activeTab === "stats") loadStats({ silent: true });
         else if (activeTab === "stages") loadStages({ silent: true });
@@ -3352,6 +3364,47 @@
         } catch (e) {
           if (!silent) authStatusContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
         }
+      }
+
+      // ── Раздел «Логи ЛК» (активность по номеру; in-memory, без amoCRM) ──
+      function renderClientLogsResult(out, d) {
+        if (!d || !Array.isArray(d.events) || !d.events.length) {
+          out.innerHTML = '<div class="empty-state">По номеру ' + escapeHtml((d && d.formatted) || "") + ' событий в ЛК не найдено.</div>';
+          return;
+        }
+        let h = '<div style="font-size:14px;margin-bottom:12px;"><strong>' + escapeHtml(d.formatted) + '</strong>' + (d.converted ? ' · <span style="color:#2e7a43;">пришёл с лендинга</span>' : '') + '</div>';
+        h += '<div style="border:1px solid #ece9f2;border-radius:14px;overflow:hidden;">';
+        d.events.forEach(function (ev, i) {
+          h += '<div style="display:flex;gap:12px;padding:11px 14px;' + (i ? 'border-top:1px solid #f0eef5;' : '') + '">'
+            + '<div style="white-space:nowrap;color:#737988;font-size:12.5px;min-width:150px;">' + escapeHtml(formatDateMsk(ev.ts)) + '</div>'
+            + '<div style="flex:1;min-width:0;"><div style="font-weight:600;font-size:13px;color:#1d2330;">' + escapeHtml(ev.type) + '</div><div style="font-size:13px;color:#3a3f4d;">' + escapeHtml(ev.text) + '</div></div>'
+            + '</div>';
+        });
+        h += '</div>';
+        out.innerHTML = h;
+      }
+      function loadClientLogs() {
+        if (!clientLogsContent) return;
+        if (clientLogsContent.dataset.ready === "1") return; // форма уже построена
+        clientLogsContent.dataset.ready = "1";
+        clientLogsContent.innerHTML = "";
+        const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;";
+        const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Телефон клиента, напр. +7 999 123-45-67";
+        inp.style.cssText = "flex:1;min-width:240px;padding:10px 12px;border:1px solid #e2dded;border-radius:10px;font-size:15px;";
+        const btn = document.createElement("button"); btn.type = "button"; btn.className = "file-attach-btn"; btn.textContent = "Показать логи";
+        bar.appendChild(inp); bar.appendChild(btn); clientLogsContent.appendChild(bar);
+        const out = document.createElement("div"); clientLogsContent.appendChild(out);
+        async function run() {
+          const phone = inp.value.trim();
+          if (!phone) { out.innerHTML = '<div class="empty-state">Введите номер телефона.</div>'; return; }
+          out.innerHTML = '<div class="loading-state">Загружаем…</div>';
+          try {
+            const d = await apiFetch("/admin/api/client-logs?phone=" + encodeURIComponent(phone));
+            renderClientLogsResult(out, d);
+          } catch (e) { out.innerHTML = '<div class="empty-state">' + escapeHtml(e.message) + '</div>'; }
+        }
+        btn.addEventListener("click", run);
+        inp.addEventListener("keydown", function (e) { if (e.key === "Enter") run(); });
       }
 
       async function loadStages(opts) {
