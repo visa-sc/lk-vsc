@@ -841,6 +841,90 @@ app.get("/admin/api/client-logs", requireStaff, (req, res) => {
   }
 });
 
+// ── «Сделки без задач»: ежедневная проверка 21:00 МСК + блок в /vsc ───────────
+// Проверяем сделки в рабочих статусах 3 воронок БЕЗ открытых задач — по ВСЕМ
+// ответственным (список пользователей НЕ пиним: новый сотрудник учитывается
+// автоматически). На каждую такую сделку ставим задачу на её ответственного.
+// Фоном (amoBg, низкий приоритет), раз в сутки — нагрузку на amoCRM не создаёт.
+const NO_TASK_STATUSES = [].concat(
+  [10687611, 10687614, 12122583, 14133133, 21411408, 21914946, 64030065, 81648369, 81648373, 81648377, 85862533, 85963077].map((s) => ({ pipeline_id: 138231, status_id: s })),   // Отдел Продаж
+  [21232020, 21232023, 21256203, 21256455, 21256458, 21271230, 30302436, 70381749, 70957793, 70957929, 76835705, 76836473].map((s) => ({ pipeline_id: 1309524, status_id: s })), // Отдел по работе с Клиентами
+  [21256590, 21256593, 21256668, 22535466, 26918115, 58405049, 58405421, 61251437, 76836369].map((s) => ({ pipeline_id: 1312578, status_id: s }))                                  // Отдел Оформления
+);
+const LK_NOTASK_FILE = path.join(__dirname, ".lkNoTaskCheck.json");
+let _noTaskLog = null;
+function loadNoTaskLog() {
+  if (_noTaskLog) return _noTaskLog;
+  try { _noTaskLog = JSON.parse(fs.readFileSync(LK_NOTASK_FILE, "utf8")); } catch (_) { _noTaskLog = { history: [] }; }
+  if (!_noTaskLog || !Array.isArray(_noTaskLog.history)) _noTaskLog = { history: [] };
+  return _noTaskLog;
+}
+function saveNoTaskLog() {
+  try { fs.writeFileSync(LK_NOTASK_FILE, JSON.stringify(_noTaskLog || { history: [] }, null, 2), "utf8"); }
+  catch (e) { console.error("saveNoTaskLog error:", e.message); }
+}
+let _noTaskRunning = false;
+async function runNoTaskCheck(trigger) {
+  if (_noTaskRunning) return { skipped: true, reason: "Проверка уже выполняется" };
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
+  _noTaskRunning = true;
+  const rec = { ts: Date.now(), trigger: trigger || "cron", found: 0, assigned: 0, errors: 0, leadIds: [], assignedTs: null, error: null };
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const params = {};
+    NO_TASK_STATUSES.forEach((s, i) => { params[`filter[statuses][${i}][pipeline_id]`] = String(s.pipeline_id); params[`filter[statuses][${i}][status_id]`] = String(s.status_id); });
+    const leads = await amoGetAllPages(`${baseUrl}/api/v4/leads`, params);
+    const tasks = await amoGetAllPages(`${baseUrl}/api/v4/tasks`, { "filter[is_completed]": "0", "filter[entity_type]": "leads" });
+    const withTask = new Set((tasks || []).map((t) => String(t && t.entity_id)));
+    const noTask = (leads || []).filter((l) => l && l.id && !withTask.has(String(l.id)));
+    rec.found = noTask.length;
+    rec.leadIds = noTask.map((l) => Number(l.id));
+    let taskTypeId = await getProveritDokiTaskTypeId(); if (!taskTypeId) taskTypeId = 1;
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const lead of noTask) {
+      try {
+        const body = [{ task_type_id: taskTypeId, text: "Сделка без задачи. Поставьте задачу.", complete_till: nowSec, entity_id: Number(lead.id), entity_type: "leads" }];
+        const resp = Number(lead.responsible_user_id);
+        if (Number.isFinite(resp) && resp > 0) body[0].responsible_user_id = resp;
+        await amoPost(`${baseUrl}/api/v4/tasks`, body);
+        rec.assigned++;
+      } catch (e) { rec.errors++; console.error("NO-TASK assign err lead", lead.id, e && e.message); }
+    }
+    rec.assignedTs = Date.now();
+    console.log(`NO-TASK CHECK [${rec.trigger}]: leads=${(leads || []).length} found=${rec.found} assigned=${rec.assigned} errors=${rec.errors}`);
+  } catch (e) {
+    rec.error = e && e.message; console.error("NO-TASK CHECK fatal:", e && e.message);
+  } finally { _noTaskRunning = false; }
+  loadNoTaskLog();
+  _noTaskLog.history.unshift(rec);
+  if (_noTaskLog.history.length > 120) _noTaskLog.history = _noTaskLog.history.slice(0, 120);
+  saveNoTaskLog();
+  return rec;
+}
+function scheduleNoTaskDaily() {
+  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000;
+  (function nextRun() {
+    const mskNow = Date.now() + MSK_OFFSET;
+    const mskMidnight = Math.floor(mskNow / DAY_MS) * DAY_MS;
+    let target = mskMidnight + 21 * 3600 * 1000; // 21:00 МСК
+    if (target <= mskNow) target += DAY_MS;
+    const delay = Math.max(1000, target - mskNow);
+    setTimeout(() => { Promise.resolve(amoBg(() => runNoTaskCheck("cron"))).catch(() => {}); nextRun(); }, delay);
+  })();
+  console.log("NO-TASK CHECK: ежедневная проверка запланирована на 21:00 МСК");
+}
+app.get("/admin/api/no-task-check", requireAdmin, (req, res) => {
+  const log = loadNoTaskLog();
+  return res.json({ success: true, running: _noTaskRunning, lastRun: log.history[0] || null, history: log.history });
+});
+app.post("/admin/api/no-task-check/run", requireAdmin, async (req, res) => {
+  try {
+    const rec = await amoBg(() => runNoTaskCheck("manual"));
+    return res.json({ success: true, result: rec });
+  } catch (e) { return res.status(500).json({ success: false, message: e && e.message }); }
+});
+scheduleNoTaskDaily();
+
 // Воронка «Опросники»: SMS отправлено → кликнул → отправил.
 // Считаем по уникальным номерам. Базой берём feedbackSent — туда попадают
 // номера, которым ушло приглашение (фиксируется ДО самой отправки SMS).

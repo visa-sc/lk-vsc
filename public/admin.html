@@ -1069,6 +1069,7 @@
       <div id="vscContent">
         <div class="loading-state">Загружаем…</div>
       </div>
+      <div id="vscNoTaskBlock" style="margin-top:18px;"></div>
     </div>
 
     <div class="footer-logout">
@@ -1153,6 +1154,7 @@
       const applicantsContent = document.getElementById("applicantsContent");
       const panelVsc = document.getElementById("panelVsc");
       const vscContent = document.getElementById("vscContent");
+      const vscNoTaskBlock = document.getElementById("vscNoTaskBlock");
       const authDailyBlock = document.getElementById("authDailyBlock");
 
       let activeTab = "stats";
@@ -1779,8 +1781,61 @@
         out.sort((a, b) => b.relPct - a.relPct);
         return out;
       }
+      // ── Блок «Сделки без задач» в /vsc (ежедневная проверка 21:00 МСК) ──
+      let noTaskExpanded = false;
+      function fmtNoTaskRun(r) {
+        if (!r) return "проверок ещё не было";
+        return "последняя проверка: " + formatDateMsk(r.ts) + " · " + (r.trigger === "manual" ? "вручную" : "по расписанию");
+      }
+      async function loadNoTaskBlock() {
+        if (!vscNoTaskBlock) return;
+        try { renderNoTaskBlock(await apiFetch("/admin/api/no-task-check")); }
+        catch (e) { vscNoTaskBlock.innerHTML = ""; }
+      }
+      function renderNoTaskBlock(d) {
+        if (!vscNoTaskBlock) return;
+        const last = d && d.lastRun;
+        const cnt = last ? (last.found || 0) : null;
+        let h = '<div style="background:#fff;border:1px solid #ece9f2;border-radius:14px;padding:16px 18px;">';
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">'
+          + '<div><div style="font-weight:700;font-size:15px;color:#1d2330;">Сделки без задач</div>'
+          + '<div style="font-size:12.5px;color:#9096a3;margin-top:2px;">' + escapeHtml(d && d.running ? "идёт проверка…" : fmtNoTaskRun(last)) + '</div></div>'
+          + '<div style="font-size:30px;font-weight:800;color:' + (cnt ? "#b8602a" : "#2e7a43") + ';">' + (cnt == null ? "—" : cnt) + '</div>'
+          + '</div>';
+        h += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">'
+          + '<button type="button" id="noTaskToggle" class="file-attach-btn" style="background:#f3f1f7;color:#1d2330;">' + (noTaskExpanded ? "Скрыть логи" : "Показать логи проверок") + '</button>'
+          + '<button type="button" id="noTaskRun" class="file-attach-btn">Проверить сейчас</button>'
+          + '</div>';
+        if (noTaskExpanded) {
+          const hist = (d && d.history) || [];
+          h += '<div style="margin-top:12px;border:1px solid #ece9f2;border-radius:12px;overflow:hidden;">';
+          if (!hist.length) h += '<div style="padding:12px;color:#9096a3;font-size:13px;">Проверок ещё не было.</div>';
+          hist.forEach(function (r, i) {
+            h += '<div style="padding:10px 12px;font-size:13px;' + (i ? "border-top:1px solid #f0eef5;" : "") + '">'
+              + '<span style="color:#737988;">' + escapeHtml(formatDateMsk(r.ts)) + '</span> · ' + (r.trigger === "manual" ? "вручную" : "по расписанию")
+              + ' · найдено без задач: <b>' + (r.found || 0) + '</b> · назначено задач: <b>' + (r.assigned || 0) + '</b>'
+              + (r.errors ? ' · ошибок: ' + r.errors : "")
+              + (r.error ? ' · <span style="color:#b03a3a;">' + escapeHtml(r.error) + '</span>' : "")
+              + '</div>';
+          });
+          h += '</div>';
+        }
+        h += '</div>';
+        vscNoTaskBlock.innerHTML = h;
+        const tgl = document.getElementById("noTaskToggle");
+        if (tgl) tgl.addEventListener("click", function () { noTaskExpanded = !noTaskExpanded; renderNoTaskBlock(d); });
+        const runBtn = document.getElementById("noTaskRun");
+        if (runBtn) runBtn.addEventListener("click", async function () {
+          if (!confirm("Запустить проверку сейчас? На найденные сделки без задач будут поставлены задачи ответственным.")) return;
+          runBtn.disabled = true; runBtn.textContent = "Проверяем…";
+          try { await fetch("/admin/api/no-task-check/run", { method: "POST", headers: { Authorization: "Bearer " + getToken() } }); } catch (_) {}
+          await loadNoTaskBlock();
+        });
+      }
+
       async function loadVsc() {
         if (!vscContent) return;
+        loadNoTaskBlock();
         if (!vscData) vscContent.innerHTML = '<div class="loading-state">Загружаем данные из Google-таблицы…</div>';
         try {
           const d = await apiFetch("/admin/api/vsc-dashboard");
