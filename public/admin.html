@@ -1785,6 +1785,17 @@
       }
       // ── Блок «Сделки без задач» в /vsc (ежедневная проверка 21:00 МСК) ──
       let noTaskExpanded = false;
+      let noTaskPollTimer = null;
+      function noTaskStartPoll() {
+        if (noTaskPollTimer) return;
+        noTaskPollTimer = setInterval(async function () {
+          try {
+            const d = await apiFetch("/admin/api/no-task-check");
+            renderNoTaskBlock(d);
+            if (!d || !d.running) { clearInterval(noTaskPollTimer); noTaskPollTimer = null; }
+          } catch (_) { clearInterval(noTaskPollTimer); noTaskPollTimer = null; }
+        }, 2500);
+      }
       function fmtNoTaskRun(r) {
         if (!r) return "проверок ещё не было";
         return "последняя проверка: " + formatDateMsk(r.ts) + " · " + (r.trigger === "manual" ? "вручную" : "по расписанию");
@@ -1809,7 +1820,7 @@
         const _btnPrimary = _btnBase + "background:#3589BD;color:#fff;border:1px solid #3589BD;";
         h += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">'
           + '<button type="button" id="noTaskToggle" style="' + _btnSecondary + '">' + (noTaskExpanded ? "Скрыть логи" : "Показать логи проверок") + '</button>'
-          + '<button type="button" id="noTaskRun" style="' + _btnPrimary + '">Проверить сейчас</button>'
+          + '<button type="button" id="noTaskRun" style="' + _btnPrimary + ((d && d.running) ? "opacity:.6;cursor:default;" : "") + '"' + ((d && d.running) ? " disabled" : "") + '>' + ((d && d.running) ? "Проверяем…" : "Проверить сейчас") + '</button>'
           + '</div>';
         if (noTaskExpanded) {
           const hist = (d && d.history) || [];
@@ -1830,12 +1841,15 @@
         const tgl = document.getElementById("noTaskToggle");
         if (tgl) tgl.addEventListener("click", function () { noTaskExpanded = !noTaskExpanded; renderNoTaskBlock(d); });
         const runBtn = document.getElementById("noTaskRun");
-        if (runBtn) runBtn.addEventListener("click", async function () {
+        if (runBtn && !(d && d.running)) runBtn.addEventListener("click", async function () {
           if (!confirm("Запустить проверку сейчас? На найденные сделки без задач будут поставлены задачи ответственным.")) return;
-          runBtn.disabled = true; runBtn.textContent = "Проверяем…";
+          runBtn.disabled = true; runBtn.textContent = "Запускаем…";
           try { await fetch("/admin/api/no-task-check/run", { method: "POST", headers: { Authorization: "Bearer " + getToken() } }); } catch (_) {}
-          await loadNoTaskBlock();
+          await loadNoTaskBlock();   // ответ мгновенный → покажет «Проверяем…»
+          noTaskStartPoll();         // поллим до завершения, UI не виснет
         });
+        // Если проверка уже идёт (открыли страницу во время прогона) — продолжаем поллить.
+        if (d && d.running) noTaskStartPoll();
       }
 
       async function loadVsc() {
@@ -1881,6 +1895,16 @@
         for (let i = fromIdx - 1; i >= 0; i--) { const v = series[i].k ? series[i].k[key] : null; if (v != null && !isNaN(v)) return v; }
         return null;
       }
+      // ── Сравнение «те же дни» (неделя/день) ──
+      function vscParseDMY(s) { const p = String(s || "").split("."); if (p.length < 3) return null; const d = new Date(+p[2], +p[1] - 1, +p[0]); d.setHours(0, 0, 0, 0); return isNaN(d.getTime()) ? null : d; }
+      function vscDayFilled(d) { return d && ((d.processed != null && d.processed > 0) || (d.budget != null && d.budget > 0)); }
+      function vscDayByOffset(days, dateStr, offsetDays) {
+        const base = vscParseDMY(dateStr); if (!base) return null;
+        const tgt = new Date(base.getTime() + offsetDays * 86400000); tgt.setHours(0, 0, 0, 0);
+        for (const d of (days || [])) { const dd = vscParseDMY(d.date); if (dd && dd.getTime() === tgt.getTime()) return d; }
+        return null;
+      }
+      function vscSumDays(days, key) { const v = (days || []).map((d) => (d ? d[key] : null)).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) : null; }
       function vscBarChart(kpi, series) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
         const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = kpi.label;
@@ -1957,14 +1981,39 @@
           const curM = (vscData.months || [])[vscMonthIdx];
           curSub = curM ? curM.name : "";
           if (curM) { const pIdx = vscPrevFilledIdx(vscMonthIdx); cmpRes = vscMonthCompare(curM, pIdx >= 0 ? vscData.months[pIdx] : null).res; }
-        } else { curSub = (series[vscCurIdx] || {}).x || ""; }
+        } else {
+          curSub = (series[vscCurIdx] || {}).x || "";
+          const _ck = (series[vscCurIdx] || {}).k;
+          if (vscGran === "day" && _ck && _ck.weekday) curSub += " · в сравнении с прошлым " + _ck.weekday;
+        }
+        const vscCurM = (vscData.months || [])[vscMonthIdx] || {};
+        const vscAllDays = (vscData.months || []).reduce((a, m) => a.concat(m.days || []), []);
 
         const tiles = document.createElement("div"); tiles.className = "vsc-tiles";
         VSC_KPIS.forEach((kpi) => {
           let v = null, prev = null;
           if (vscGran === "year") { v = vscData.year ? vscData.year[kpi.key] : null; }
           else if (vscGran === "month") { if (cmpRes) { v = cmpRes[kpi.key].cur; prev = cmpRes[kpi.key].prev; } }
-          else { const idx = vscCurIdx; if (series[idx]) { v = series[idx].k ? series[idx].k[kpi.key] : null; prev = vscNearestPrev(series, kpi.key, idx); } }
+          else {
+            // НЕДЕЛЯ / ДЕНЬ — сравниваем с теми же днями прошлой недели.
+            const idx = vscCurIdx; const curK = series[idx] ? series[idx].k : null;
+            v = curK ? curK[kpi.key] : null;
+            if (vscGran === "day") {
+              // День vs тот же день недели неделю назад (−7 дней).
+              const prevDay = curK ? vscDayByOffset(vscAllDays, curK.date, -7) : null;
+              prev = prevDay ? prevDay[kpi.key] : null;
+            } else {
+              // Неделя: аддитивные KPI (выручка и т.п.) — сумма тех же дней прошлой
+              // недели (первые N дней, где N — кол-во заполненных дней текущей недели).
+              const prevK = series[idx - 1] ? series[idx - 1].k : null;
+              if (VSC_ADDITIVE[kpi.key] && curK && prevK) {
+                const n = (curK.days || []).filter(vscDayFilled).length;
+                prev = vscSumDays((prevK.days || []).slice(0, n), kpi.key);
+              } else {
+                prev = vscNearestPrev(series, kpi.key, idx);
+              }
+            }
+          }
           const tile = document.createElement("div"); tile.className = "vsc-tile";
           const cls = kpi.fmt === "signed" ? (v > 0 ? " pos" : v < 0 ? " neg" : "") : "";
           let delta = "";

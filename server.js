@@ -892,13 +892,15 @@ async function runNoTaskCheck(trigger) {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
     const params = {};
     NO_TASK_STATUSES.forEach((s, i) => { params[`filter[statuses][${i}][pipeline_id]`] = String(s.pipeline_id); params[`filter[statuses][${i}][status_id]`] = String(s.status_id); });
-    const leads = await amoGetAllPages(`${baseUrl}/api/v4/leads`, params);
-    const tasks = await amoGetAllPages(`${baseUrl}/api/v4/tasks`, { "filter[is_completed]": "0", "filter[entity_type]": "leads" });
+    // Параллельная пагинация — быстрее последовательной (перекрывает задержки
+    // round-trip); общий темп всё равно ограничен лимитером 4 RPS.
+    const leads = await amoGetAllPagesParallel(`${baseUrl}/api/v4/leads`, params, 4);
+    const tasks = await amoGetAllPagesParallel(`${baseUrl}/api/v4/tasks`, { "filter[is_completed]": "0", "filter[entity_type]": "leads" }, 4);
     const withTask = new Set((tasks || []).map((t) => String(t && t.entity_id)));
     const noTask = (leads || []).filter((l) => l && l.id && !withTask.has(String(l.id)));
     rec.found = noTask.length;
     rec.leadIds = noTask.map((l) => Number(l.id));
-    let taskTypeId = await getProveritDokiTaskTypeId(); if (!taskTypeId) taskTypeId = 1;
+    const taskTypeId = 1; // встроенный тип задачи «Связаться» (по просьбе Андрея)
     const nowSec = Math.floor(Date.now() / 1000);
     for (const lead of noTask) {
       try {
@@ -936,11 +938,11 @@ app.get("/admin/api/no-task-check", requireAdmin, (req, res) => {
   const log = loadNoTaskLog();
   return res.json({ success: true, running: _noTaskRunning, lastRun: log.history[0] || null, history: log.history });
 });
-app.post("/admin/api/no-task-check/run", requireAdmin, async (req, res) => {
-  try {
-    const rec = await amoBg(() => runNoTaskCheck("manual"));
-    return res.json({ success: true, result: rec });
-  } catch (e) { return res.status(500).json({ success: false, message: e && e.message }); }
+app.post("/admin/api/no-task-check/run", requireAdmin, (req, res) => {
+  // Неблокирующий запуск: проверка идёт в фоне, ответ сразу. Фронт поллит статус.
+  if (_noTaskRunning) return res.json({ success: true, started: false, running: true });
+  setImmediate(() => { Promise.resolve(amoBg(() => runNoTaskCheck("manual"))).catch(() => {}); });
+  return res.json({ success: true, started: true, running: true });
 });
 scheduleNoTaskDaily();
 
@@ -2363,17 +2365,18 @@ function vscParseMonth(rows) {
     rev: vscNum(r[C.rev]), ad: vscNum(r[C.ad]), budget: C.budget >= 0 ? vscNum(r[C.budget]) : null,
     planPct: null // план ОП — месячная величина из сводного блока (см. ниже), не из дневной строки
   });
-  const days = [], weeks = []; let blockStart = null, blockEnd = null, total = null;
+  const days = [], weeks = []; let blockStart = null, blockEnd = null, blockDays = [], total = null;
   for (let i = hi + 1; i < rows.length; i++) {
     const r = rows[i]; if (!r || !r.length) continue;
     const c0 = String(r[0] || "").trim();
     if (vscIsDate(c0)) {
-      days.push(Object.assign({ date: c0, weekday: String(r[1] || "").trim() }, pick(r)));
+      const dayObj = Object.assign({ date: c0, weekday: String(r[1] || "").trim() }, pick(r));
+      days.push(dayObj); blockDays.push(dayObj);
       if (!blockStart) blockStart = c0; blockEnd = c0;
     } else if (c0.toLowerCase() === "total") {
       const lbl = blockStart ? (blockStart.slice(0, 5) + "–" + (blockEnd || blockStart).slice(0, 5)) : ("Неделя " + (weeks.length + 1));
-      weeks.push(Object.assign({ label: lbl }, pick(r)));
-      blockStart = null; blockEnd = null;
+      weeks.push(Object.assign({ label: lbl, days: blockDays }, pick(r)));
+      blockStart = null; blockEnd = null; blockDays = [];
     } else if (c0.toLowerCase() === "grand total") {
       total = pick(r);
     }
