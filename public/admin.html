@@ -1804,9 +1804,12 @@
           + '<div style="font-size:12.5px;color:#9096a3;margin-top:2px;">' + escapeHtml(d && d.running ? "идёт проверка…" : fmtNoTaskRun(last)) + '</div></div>'
           + '<div style="font-size:30px;font-weight:800;color:' + (cnt ? "#b8602a" : "#2e7a43") + ';">' + (cnt == null ? "—" : cnt) + '</div>'
           + '</div>';
+        const _btnBase = "padding:9px 16px;font-size:13px;font-weight:600;border-radius:10px;cursor:pointer;line-height:1;";
+        const _btnSecondary = _btnBase + "background:#fff;color:#3589BD;border:1px solid #bcdcef;";
+        const _btnPrimary = _btnBase + "background:#3589BD;color:#fff;border:1px solid #3589BD;";
         h += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">'
-          + '<button type="button" id="noTaskToggle" class="file-attach-btn" style="background:#f3f1f7;color:#1d2330;">' + (noTaskExpanded ? "Скрыть логи" : "Показать логи проверок") + '</button>'
-          + '<button type="button" id="noTaskRun" class="file-attach-btn">Проверить сейчас</button>'
+          + '<button type="button" id="noTaskToggle" style="' + _btnSecondary + '">' + (noTaskExpanded ? "Скрыть логи" : "Показать логи проверок") + '</button>'
+          + '<button type="button" id="noTaskRun" style="' + _btnPrimary + '">Проверить сейчас</button>'
           + '</div>';
         if (noTaskExpanded) {
           const hist = (d && d.history) || [];
