@@ -933,8 +933,6 @@
           <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
           -->
           <button type="button" class="tab-btn" data-tab="authstatus">Статус amoCRM при авторизации</button>
-          <button type="button" class="tab-btn" data-tab="clientlogs">Логи ЛК</button>
-          <button type="button" class="tab-btn" data-tab="clientview">Вход в ЛК клиента</button>
         </div>
       </div>
       <div class="tab-group" data-group="tools">
@@ -953,6 +951,8 @@
           <button type="button" class="tab-btn" data-tab="uploads">Области загрузки</button>
           <button type="button" class="tab-btn" data-tab="screens">Экраны клиента</button>
           <button type="button" class="tab-btn" data-tab="applicants">Заявители</button>
+          <button type="button" class="tab-btn" data-tab="clientlogs">Логи ЛК</button>
+          <button type="button" class="tab-btn" data-tab="clientview">Вход в ЛК Клиента</button>
           <button type="button" class="tab-btn" data-tab="kb">База знаний ЛК</button>
         </div>
       </div>
@@ -1224,10 +1224,11 @@
           const allowed = mgr ? ((t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads" || t === "screens" || t === "applicants") || (t === "clientlogs") || (t === "clientview") || (canStages && (t === "stages" || t === "authstatus"))) : true;
           b.style.display = allowed ? "" : "none";
         });
-        // Группу «Статистика и данные» показываем всем (там есть «Логи ЛК», доступные
-        // всем сотрудникам). Статистику внутри видит только тот, у кого есть «stages».
+        // Группу «Статистика и данные» показываем только тем, у кого есть доступ к
+        // статистике («stages»). «Логи ЛК»/«Вход в ЛК Клиента» теперь в группе
+        // «Логика и справочники» (доступны всем сотрудникам).
         const adminGroup = document.querySelector('.tab-group[data-group="admin"]');
-        if (adminGroup) adminGroup.style.display = "";
+        if (adminGroup) adminGroup.style.display = (mgr && !canStages) ? "none" : "";
         if (mgr && canStages) { const ag = document.querySelector('.tab-group[data-group="admin"] .tab-group-label'); if (ag) ag.textContent = "Статистика"; }
         // У руководителей нет «своих»/«админских» разделов — пометку про доступ
         // в подписях групп убираем (для них всё и так доступно).
@@ -3512,7 +3513,7 @@
         const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;";
         const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Телефон клиента, напр. +7 999 123-45-67";
         inp.style.cssText = "flex:1;min-width:240px;padding:10px 12px;border:1px solid #e2dded;border-radius:10px;font-size:15px;";
-        const btn = document.createElement("button"); btn.type = "button"; btn.className = "file-attach-btn"; btn.textContent = "Показать логи";
+        const btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Показать логи"; btn.style.cssText = "background:#fff;color:#3589BD;border:1px solid #bcdcef;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;";
         bar.appendChild(inp); bar.appendChild(btn); clientLogsContent.appendChild(bar);
         const out = document.createElement("div"); clientLogsContent.appendChild(out);
         async function run() {
@@ -3547,7 +3548,7 @@
         const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:10px;flex-wrap:wrap;align-items:center;";
         const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Телефон клиента, напр. +7 999 123-45-67";
         inp.style.cssText = "flex:1;min-width:240px;padding:10px 12px;border:1px solid #e2dded;border-radius:10px;font-size:15px;";
-        const btn = document.createElement("button"); btn.type = "button"; btn.className = "file-attach-btn"; btn.textContent = "Войти в ЛК";
+        const btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Войти в ЛК"; btn.style.cssText = "background:#fff;color:#3589BD;border:1px solid #bcdcef;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;";
         bar.appendChild(inp); bar.appendChild(btn); clientViewContent.appendChild(bar);
         const err = document.createElement("div"); err.style.cssText = "font-size:13px;color:#b03a3a;margin-top:8px;"; clientViewContent.appendChild(err);
         function openIt() {
@@ -3563,7 +3564,7 @@
         clientViewContent.innerHTML = "";
         const top = document.createElement("div"); top.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;";
         const lab = document.createElement("div"); lab.style.cssText = "font-size:14px;font-weight:600;color:#1d2330;"; lab.textContent = "ЛК клиента: " + phone;
-        const exit = document.createElement("button"); exit.type = "button"; exit.className = "file-attach-btn"; exit.textContent = "Выйти";
+        const exit = document.createElement("button"); exit.type = "button"; exit.textContent = "Выйти"; exit.style.cssText = "background:#fff;color:#3589BD;border:1px solid #bcdcef;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;";
         exit.addEventListener("click", showClientViewForm);
         top.appendChild(lab); top.appendChild(exit); clientViewContent.appendChild(top);
         const frame = document.createElement("iframe");

@@ -1172,7 +1172,7 @@
           group.appendChild(lab); radios.push(r);
         });
         row.appendChild(group); formEl.appendChild(row);
-        return { row, radios, val: function () { const c = radios.find(function (x) { return x.checked; }); return c ? c.value : ""; } };
+        return { row, label: l, radios, val: function () { const c = radios.find(function (x) { return x.checked; }); return c ? c.value : ""; } };
       }
       // Комплекс дат поездки — как в опроснике: даты ИЛИ галка «не знаю точных дат»
       // + зависимая обязательная галка подтверждения сроков.
@@ -1200,7 +1200,7 @@
         function sync() { const u = uChk.checked; dr.style.display = u ? "none" : "flex"; aLab.style.display = u ? "flex" : "none"; if (!u) aChk.checked = false; }
         uChk.addEventListener("change", sync); sync();
         formEl.appendChild(row);
-        return { from: function () { return fromI.value; }, to: function () { return toI.value; }, unknown: function () { return uChk.checked; }, ack: function () { return aChk.checked; } };
+        return { from: function () { return fromI.value; }, to: function () { return toI.value; }, unknown: function () { return uChk.checked; }, ack: function () { return aChk.checked; }, label: l, fromEl: fromI, toEl: toI, ackLab: aLab };
       }
       const dates = mkDates();
       const emailInp = mkField("Электронная почта *", "you@example.com");
@@ -1215,28 +1215,38 @@
       const btn = document.createElement("button"); btn.type = "button"; btn.className = "file-attach-btn"; btn.textContent = "Отправить"; formEl.appendChild(btn);
       const resEl = document.createElement("div"); resEl.style.marginTop = "8px"; resEl.style.fontSize = "13px"; formEl.appendChild(resEl);
       wrap.appendChild(formEl);
-      const doneEl = document.createElement("div"); doneEl.style.display = "none"; doneEl.style.color = "#2e7a43"; doneEl.style.fontWeight = "600";
-      doneEl.textContent = "✓ Данные отправлены менеджеру."; wrap.appendChild(doneEl);
-      function showDone() { formEl.style.display = "none"; doneEl.style.display = ""; }
+      // После успешной отправки (или если уже отправляли ранее) — карточку убираем.
+      function removeCard() { try { wrap.remove(); } catch (_) { wrap.style.display = "none"; } }
       if (leadId) {
         fetch("/api/cabinet/op-quick?leadId=" + encodeURIComponent(leadId))
-          .then((r) => r.json()).then((j) => { if (j && j.submitted) showDone(); }).catch(() => {});
+          .then((r) => r.json()).then((j) => { if (j && j.submitted) removeCard(); }).catch(() => {});
       }
       btn.addEventListener("click", async () => {
-        const fail = function (msg) { resEl.textContent = msg; resEl.style.color = "#b03a3a"; };
-        // Все поля обязательны.
+        const setErr = function (el, on) { if (el) el.style.borderColor = on ? "#d9534f" : "#d8dde6"; };
+        const setLab = function (el, on) { if (el) el.style.color = on ? "#d9534f" : ""; };
+        // Сброс подсветки.
+        [emailInp, passFioInp, passRegInp, passSeriesInp, dates.fromEl, dates.toEl].forEach(function (el) { setErr(el, false); });
+        [ins.label, wantBuy.label, dates.label, dates.ackLab].forEach(function (el) { setLab(el, false); });
+        resEl.textContent = "";
+        // Проверяем ВСЕ поля сразу, подсвечиваем красным все незаполненные/неотмеченные.
+        let bad = false;
         const unknown = dates.unknown();
-        if (!unknown && (!dates.from() || !dates.to())) { fail("Укажите даты поездки (оба поля) или отметьте «Я ещё не знаю точных дат поездки»."); return; }
-        if (!unknown && dates.to() < dates.from()) { fail("Вторая дата поездки не может быть раньше первой."); return; }
-        if (unknown && !dates.ack()) { fail("Поставьте галочку подтверждения сроков."); return; }
+        let dErr = false;
+        if (unknown) { if (!dates.ack()) { setLab(dates.ackLab, true); dErr = true; } }
+        else {
+          if (!dates.from()) { setErr(dates.fromEl, true); dErr = true; }
+          if (!dates.to()) { setErr(dates.toEl, true); dErr = true; }
+          if (dates.from() && dates.to() && dates.to() < dates.from()) { setErr(dates.toEl, true); dErr = true; }
+        }
+        if (dErr) { setLab(dates.label, true); bad = true; }
         const email = emailInp.value.trim();
-        if (!email) { fail("Укажите электронную почту."); return; }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { fail("Проверьте формат электронной почты."); return; }
-        if (!ins.val()) { fail("Ответьте, есть ли у вас своя страховка."); return; }
-        if (ins.val() === "Нет" && !wantBuy.val()) { fail("Ответьте, оформить ли страховку у нас."); return; }
-        if (!passFioInp.value.trim()) { fail("Укажите ФИО (внутренний паспорт)."); return; }
-        if (!passRegInp.value.trim()) { fail("Укажите прописку (адрес регистрации)."); return; }
-        if (!passSeriesInp.value.trim()) { fail("Укажите серию и номер паспорта."); return; }
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setErr(emailInp, true); bad = true; }
+        if (!ins.val()) { setLab(ins.label, true); bad = true; }
+        if (ins.val() === "Нет" && !wantBuy.val()) { setLab(wantBuy.label, true); bad = true; }
+        if (!passFioInp.value.trim()) { setErr(passFioInp, true); bad = true; }
+        if (!passRegInp.value.trim()) { setErr(passRegInp, true); bad = true; }
+        if (!passSeriesInp.value.trim()) { setErr(passSeriesInp, true); bad = true; }
+        if (bad) { resEl.textContent = "Заполните и отметьте все обязательные поля (выделены красным)."; resEl.style.color = "#b03a3a"; return; }
         const payload = {
           phone: phoneInput.value.trim(), leadId,
           tripDateFrom: unknown ? "" : dates.from(),
@@ -1254,7 +1264,7 @@
         try {
           const r = await fetch("/api/cabinet/op-quick", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
           const j = await r.json().catch(() => ({}));
-          if (j && j.success) showDone();
+          if (j && j.success) removeCard();
           else { resEl.textContent = (j && j.message) || "Не удалось отправить."; resEl.style.color = "#b03a3a"; }
         } catch (_) { resEl.textContent = "Сетевая ошибка, попробуйте ещё раз."; resEl.style.color = "#b03a3a"; }
         finally { btn.disabled = false; btn.textContent = pt; }
@@ -3274,6 +3284,7 @@
 
         const isJp = applicants.length && String(applicants[0].visaType || "").trim() === "Виза в Японию";
         const fragment = document.createDocumentFragment();
+        let opQuickCard = null; // карточка «Данные для договора» (этап 0) — вставляется НАД кнопкой опросника и паспортами
 
         if (applicants.length && allFilled) {
           switchQuestionnaireBlockToEdit(questionnaireBlock, lead, applicants, currentIndex);
@@ -3285,7 +3296,7 @@
           // затем нормальные applicants (если у нормального ФИО совпадает
           // с pre — он не дублируется, потому что сервер фильтрует pre).
           // Если нет ни одного — empty block с модалом ФИО.
-          fragment.appendChild(createOpQuickBlock(lead)); // данные для договора (s49, корректировка Зайцевой 18.06)
+          opQuickCard = createOpQuickBlock(lead); // данные для договора (s49) — вставим выше, над кнопкой/паспортами
           const stage0Blocks = [
             { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" },
             { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" }
@@ -3401,6 +3412,8 @@
         }
 
         questionnaireBlock.after(fragment);
+        // Карточку договора (этап 0) ставим НАД кнопкой опросника и областью загрузки.
+        if (opQuickCard) node.after(opQuickCard);
       }
 
       // Этапы 3-6: банковская карта (Ожидание подачи, Оформление на паузе,
