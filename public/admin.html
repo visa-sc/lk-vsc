@@ -932,6 +932,7 @@
           <button type="button" class="tab-btn" data-tab="traffic">Трафик</button>
           <button type="button" class="tab-btn" data-tab="authstatus">Статус amoCRM при авторизации</button>
           <button type="button" class="tab-btn" data-tab="clientlogs">Логи ЛК</button>
+          <button type="button" class="tab-btn" data-tab="clientview">Вход в ЛК клиента</button>
         </div>
       </div>
       <div class="tab-group" data-group="tools">
@@ -976,6 +977,12 @@
 
     <div id="panelClientLogs" class="panel">
       <div id="clientLogsContent">
+        <div class="loading-state">Введите номер телефона.</div>
+      </div>
+    </div>
+
+    <div id="panelClientView" class="panel">
+      <div id="clientViewContent">
         <div class="loading-state">Введите номер телефона.</div>
       </div>
     </div>
@@ -1116,6 +1123,8 @@
       const authStatusContent = document.getElementById("authStatusContent");
       const panelClientLogs = document.getElementById("panelClientLogs");
       const clientLogsContent = document.getElementById("clientLogsContent");
+      const panelClientView = document.getElementById("panelClientView");
+      const clientViewContent = document.getElementById("clientViewContent");
       const panelStats = document.getElementById("panelStats");
       const panelStages = document.getElementById("panelStages");
       const panelSurveys = document.getElementById("panelSurveys");
@@ -1208,7 +1217,7 @@
         const canStages = mgr && Array.isArray(managerPerms) && managerPerms.indexOf("stages") >= 0;
         tabBtns.forEach((b) => {
           const t = b.dataset.tab;
-          const allowed = mgr ? ((t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads" || t === "screens" || t === "applicants") || (t === "clientlogs") || (canStages && (t === "stages" || t === "authstatus"))) : true;
+          const allowed = mgr ? ((t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads" || t === "screens" || t === "applicants") || (t === "clientlogs") || (t === "clientview") || (canStages && (t === "stages" || t === "authstatus"))) : true;
           b.style.display = allowed ? "" : "none";
         });
         // Группу «Статистика и данные» показываем всем (там есть «Логи ЛК», доступные
@@ -2031,7 +2040,7 @@
         // /vsc — показываем ТОЛЬКО VSC-дашборд: прячем вкладки и все прочие панели.
         if (IS_VSC) {
           const tabsBar = document.querySelector(".tabs"); if (tabsBar) tabsBar.style.display = "none";
-          [panelAuthStatus, panelClientLogs, panelStats, panelStages, panelSurveys, panelTraffic, panelCorrections, panelKb, panelTester, panelDocsReq, panelQLogic, panelActions, panelUploads, panelScreens, panelApplicants].forEach((p) => { if (p) p.classList.remove("show"); });
+          [panelAuthStatus, panelClientLogs, panelClientView, panelStats, panelStages, panelSurveys, panelTraffic, panelCorrections, panelKb, panelTester, panelDocsReq, panelQLogic, panelActions, panelUploads, panelScreens, panelApplicants].forEach((p) => { if (p) p.classList.remove("show"); });
           const pc = document.getElementById("paidConvBlock"); if (pc) pc.style.display = "none";
           const ad = document.getElementById("authDailyBlock"); if (ad) ad.style.display = "none";
           panelVsc.classList.add("show");
@@ -2400,6 +2409,7 @@
           tabBtns.forEach((x) => x.classList.toggle("active", x === b));
           if (panelAuthStatus) panelAuthStatus.classList.toggle("show", which === "authstatus");
           if (panelClientLogs) panelClientLogs.classList.toggle("show", which === "clientlogs");
+          if (panelClientView) panelClientView.classList.toggle("show", which === "clientview");
           panelStats.classList.toggle("show", which === "stats");
           panelStages.classList.toggle("show", which === "stages");
           panelSurveys.classList.toggle("show", which === "surveys");
@@ -2420,6 +2430,8 @@
             startPolling();
           } else if (which === "clientlogs") {
             loadClientLogs();
+          } else if (which === "clientview") {
+            loadClientView();
           } else if (which === "surveys") {
             loadSurveys();
             startPolling();
@@ -3405,6 +3417,57 @@
         }
         btn.addEventListener("click", run);
         inp.addEventListener("keydown", function (e) { if (e.key === "Enter") run(); });
+      }
+
+      // ── Раздел «Вход в ЛК клиента» (просмотр реального ЛК во фрейме) ──
+      // ЛК клиента открывается в <iframe> ВНУТРИ раздела (cabinet.html не меняем).
+      // «Выйти» — кнопка раздела, возвращает к форме. Для клиента ничего не меняется.
+      function normPhoneForUrl(s) {
+        let d = String(s || "").replace(/\D/g, "");
+        if (d.length === 11 && d[0] === "8") d = "7" + d.slice(1);
+        if (d.length === 10) d = "7" + d;
+        return d;
+      }
+      function showClientViewForm() {
+        if (!clientViewContent) return;
+        clientViewContent.innerHTML = "";
+        const note = document.createElement("div");
+        note.style.cssText = "font-size:13px;color:#9096a3;margin-bottom:12px;";
+        note.textContent = "Откройте реальный ЛК клиента по его номеру (для сотрудников). Клиент этого не видит — на его стороне ничего не меняется.";
+        clientViewContent.appendChild(note);
+        const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:10px;flex-wrap:wrap;align-items:center;";
+        const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Телефон клиента, напр. +7 999 123-45-67";
+        inp.style.cssText = "flex:1;min-width:240px;padding:10px 12px;border:1px solid #e2dded;border-radius:10px;font-size:15px;";
+        const btn = document.createElement("button"); btn.type = "button"; btn.className = "file-attach-btn"; btn.textContent = "Войти в ЛК";
+        bar.appendChild(inp); bar.appendChild(btn); clientViewContent.appendChild(bar);
+        const err = document.createElement("div"); err.style.cssText = "font-size:13px;color:#b03a3a;margin-top:8px;"; clientViewContent.appendChild(err);
+        function openIt() {
+          const norm = normPhoneForUrl(inp.value);
+          if (norm.length !== 11) { err.textContent = "Введите корректный номер телефона."; return; }
+          openClientView(norm);
+        }
+        btn.addEventListener("click", openIt);
+        inp.addEventListener("keydown", function (e) { if (e.key === "Enter") openIt(); });
+      }
+      function openClientView(phone) {
+        if (!clientViewContent) return;
+        clientViewContent.innerHTML = "";
+        const top = document.createElement("div"); top.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;";
+        const lab = document.createElement("div"); lab.style.cssText = "font-size:14px;font-weight:600;color:#1d2330;"; lab.textContent = "ЛК клиента: " + phone;
+        const exit = document.createElement("button"); exit.type = "button"; exit.className = "file-attach-btn"; exit.textContent = "Выйти";
+        exit.addEventListener("click", showClientViewForm);
+        top.appendChild(lab); top.appendChild(exit); clientViewContent.appendChild(top);
+        const frame = document.createElement("iframe");
+        frame.src = "/cabinet.html?phone=" + encodeURIComponent(phone);
+        frame.setAttribute("title", "ЛК клиента");
+        frame.style.cssText = "width:100%;height:78vh;border:1px solid #e2dded;border-radius:14px;background:#fff;";
+        clientViewContent.appendChild(frame);
+      }
+      function loadClientView() {
+        if (!clientViewContent) return;
+        if (clientViewContent.dataset.ready === "1") return; // форма уже на месте (iframe не сбрасываем)
+        clientViewContent.dataset.ready = "1";
+        showClientViewForm();
       }
 
       async function loadStages(opts) {
