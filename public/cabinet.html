@@ -1136,16 +1136,18 @@
       return 0;
     }
 
-    // Быстрая анкета для менеджера (s49): ФИО + страна поездки + даты → задача в
-    // amoCRM на ответственного + автоподстановка в опросник 1-го заявителя
-    // (server: opquickPrefill). Показывается на «Начале оформления».
+    // Данные для подготовки договора (s49, по корректировке Зайцевой 18.06):
+    // даты поездки + email + страховка (есть своя / оформить у нас) + внутренний
+    // паспорт (ФИО, прописка, серия-номер). По отправке → задача в amoCRM на
+    // ответственного со всей инфой; даты и блок страховки автоподставляются в
+    // опросники ВСЕХ заявителей (server: opquickPrefill). На «Начале оформления».
     function createOpQuickBlock(lead) {
       const wrap = document.createElement("div");
       wrap.className = "documents-inline"; wrap.style.display = "block";
       const leadId = lead && lead.id;
-      const h = document.createElement("h3"); h.textContent = "Быстрая анкета для менеджера"; wrap.appendChild(h);
+      const h = document.createElement("h3"); h.textContent = "Данные для подготовки договора"; wrap.appendChild(h);
       const hint = document.createElement("div");
-      hint.textContent = "Заполните — менеджер быстрее подготовит расчёт, а данные подставятся в опросник.";
+      hint.textContent = "Заполните — менеджер быстрее подготовит расчёт и договор. Даты поездки и страховка подставятся в опросники всех заявителей.";
       hint.style.fontSize = "12px"; hint.style.color = "#9096a3"; hint.style.marginTop = "-8px"; hint.style.marginBottom = "12px";
       wrap.appendChild(hint);
       const formEl = document.createElement("div");
@@ -1157,26 +1159,58 @@
         inp.style.border = "1px solid #d8dde6"; inp.style.borderRadius = "10px"; inp.style.fontSize = "15px";
         row.appendChild(l); row.appendChild(inp); formEl.appendChild(row); return inp;
       }
-      const fioInp = mkField("ФИО", "Фамилия Имя Отчество");
-      const countryInp = mkField("Страна поездки", "Например: Италия");
-      const datesInp = mkField("Даты поездки", "Например: 10–20 августа");
+      function mkRadio(labelText, name, opts) {
+        const row = document.createElement("div"); row.style.marginBottom = "10px";
+        const l = document.createElement("div"); l.textContent = labelText; l.style.fontSize = "13px"; l.style.marginBottom = "6px"; l.style.fontWeight = "600";
+        row.appendChild(l);
+        const group = document.createElement("div"); group.style.display = "flex"; group.style.gap = "18px";
+        const radios = [];
+        opts.forEach((o) => {
+          const lab = document.createElement("label"); lab.style.fontSize = "14px"; lab.style.display = "flex"; lab.style.alignItems = "center"; lab.style.gap = "5px"; lab.style.cursor = "pointer";
+          const r = document.createElement("input"); r.type = "radio"; r.name = name; r.value = o;
+          lab.appendChild(r); lab.appendChild(document.createTextNode(o));
+          group.appendChild(lab); radios.push(r);
+        });
+        row.appendChild(group); formEl.appendChild(row);
+        return { row, radios, val: function () { const c = radios.find(function (x) { return x.checked; }); return c ? c.value : ""; } };
+      }
+      const datesInp = mkField("Даты поездки (предварительно)", "Например: 10–20 августа 2026");
+      const emailInp = mkField("Электронная почта", "you@example.com");
+      const ins = mkRadio("У вас есть своя действующая страховка для поездки?", "oq_hasInsurance", ["Да", "Нет"]);
+      const wantBuy = mkRadio("Хотите оформить страховку у нас?", "oq_wantBuyInsurance", ["Да", "Нет"]);
+      wantBuy.row.style.display = "none"; // показываем только если своей страховки нет
+      ins.radios.forEach(function (r) { r.addEventListener("change", function () { wantBuy.row.style.display = (ins.val() === "Нет") ? "" : "none"; }); });
+      const pNote = document.createElement("div"); pNote.textContent = "Внутренний паспорт РФ (для договора):"; pNote.style.fontSize = "13px"; pNote.style.fontWeight = "700"; pNote.style.margin = "14px 0 6px"; formEl.appendChild(pNote);
+      const passFioInp = mkField("ФИО (как во внутреннем паспорте)", "Фамилия Имя Отчество");
+      const passRegInp = mkField("Прописка (адрес регистрации)", "Город, улица, дом, квартира");
+      const passSeriesInp = mkField("Серия и номер паспорта", "1234 567890");
       const btn = document.createElement("button"); btn.type = "button"; btn.className = "file-attach-btn"; btn.textContent = "Отправить"; formEl.appendChild(btn);
       const resEl = document.createElement("div"); resEl.style.marginTop = "8px"; resEl.style.fontSize = "13px"; formEl.appendChild(resEl);
       wrap.appendChild(formEl);
       const doneEl = document.createElement("div"); doneEl.style.display = "none"; doneEl.style.color = "#2e7a43"; doneEl.style.fontWeight = "600";
-      doneEl.textContent = "✓ Анкета для менеджера отправлена."; wrap.appendChild(doneEl);
+      doneEl.textContent = "✓ Данные отправлены менеджеру."; wrap.appendChild(doneEl);
       function showDone() { formEl.style.display = "none"; doneEl.style.display = ""; }
       if (leadId) {
         fetch("/api/cabinet/op-quick?leadId=" + encodeURIComponent(leadId))
           .then((r) => r.json()).then((j) => { if (j && j.submitted) showDone(); }).catch(() => {});
       }
       btn.addEventListener("click", async () => {
-        const fio = fioInp.value.trim(), country = countryInp.value.trim(), dates = datesInp.value.trim();
-        if (!fio && !country && !dates) { resEl.textContent = "Заполните хотя бы одно поле."; resEl.style.color = "#b03a3a"; return; }
+        const payload = {
+          phone: phoneInput.value.trim(), leadId,
+          dates: datesInp.value.trim(),
+          email: emailInp.value.trim(),
+          hasInsurance: ins.val(),
+          wantBuyInsurance: (ins.val() === "Нет") ? wantBuy.val() : "",
+          passFio: passFioInp.value.trim(),
+          passReg: passRegInp.value.trim(),
+          passSeries: passSeriesInp.value.trim()
+        };
+        if (!payload.dates && !payload.email && !payload.hasInsurance && !payload.passFio && !payload.passReg && !payload.passSeries) {
+          resEl.textContent = "Заполните хотя бы одно поле."; resEl.style.color = "#b03a3a"; return;
+        }
         btn.disabled = true; const pt = btn.textContent; btn.textContent = "Отправляем...";
         try {
-          const r = await fetch("/api/cabinet/op-quick", { method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ phone: phoneInput.value.trim(), leadId, fio, country, dates }) });
+          const r = await fetch("/api/cabinet/op-quick", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
           const j = await r.json().catch(() => ({}));
           if (j && j.success) showDone();
           else { resEl.textContent = (j && j.message) || "Не удалось отправить."; resEl.style.color = "#b03a3a"; }
@@ -3209,8 +3243,7 @@
           // затем нормальные applicants (если у нормального ФИО совпадает
           // с pre — он не дублируется, потому что сервер фильтрует pre).
           // Если нет ни одного — empty block с модалом ФИО.
-          // s49 СКРЫТО 16.06 (путаница у руководителей; вернуть = раскомментировать строку ниже):
-          // fragment.appendChild(createOpQuickBlock(lead)); // быстрая анкета для ОП (s49)
+          fragment.appendChild(createOpQuickBlock(lead)); // данные для договора (s49, корректировка Зайцевой 18.06)
           const stage0Blocks = [
             { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" },
             { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" }
