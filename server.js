@@ -544,10 +544,19 @@ function opquickPrefill(leadId, isJp) {
   const oq = (loadOpQuick() || {})[String(leadId || "")];
   const p = {};
   if (!oq) return p;
-  if (oq.dates) {
+  // Имена полей дат — соответствующие опроснику (Шенген / Япония).
+  const fk = isJp ? "jp_tripDateFrom" : "tripDateFrom";
+  const tk = isJp ? "jp_tripDateTo" : "tripDateTo";
+  const uk = isJp ? "jp_tripDatesUnknown" : "tripDatesUnknown";
+  const ak = isJp ? "jp_tripDatesAck" : "tripDatesAck";
+  if (oq.tripDatesUnknown === "Да") {
+    p[uk] = "Да";
+    if (oq.tripDatesAck === "Да") p[ak] = "Да";
+  } else if (oq.tripDateFrom || oq.tripDateTo) {
+    if (oq.tripDateFrom) p[fk] = oq.tripDateFrom;
+    if (oq.tripDateTo) p[tk] = oq.tripDateTo;
+  } else if (oq.dates) { // легаси: свободный текст дат (до 18.06) — пытаемся распознать
     const d = opquickParseDates(oq.dates);
-    const fk = isJp ? "jp_tripDateFrom" : "tripDateFrom";
-    const tk = isJp ? "jp_tripDateTo" : "tripDateTo";
     if (d.from) p[fk] = d.from;
     if (d.to) p[tk] = d.to;
   }
@@ -566,27 +575,35 @@ app.post("/api/cabinet/op-quick", express.json(), async (req, res) => {
     const b = req.body || {};
     const leadId = String(b.leadId || "").trim();
     const clip = (v) => String(v || "").trim().slice(0, 300);
-    const dates = clip(b.dates);
+    const clipDate = (v) => { const s = String(v || "").trim(); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ""; };
+    const tripDatesUnknown = (b.tripDatesUnknown === "Да") ? "Да" : "";
+    const tripDatesAck = (tripDatesUnknown === "Да" && b.tripDatesAck === "Да") ? "Да" : "";
+    const tripDateFrom = tripDatesUnknown ? "" : clipDate(b.tripDateFrom);
+    const tripDateTo = tripDatesUnknown ? "" : clipDate(b.tripDateTo);
     const email = clip(b.email);
     const hasInsurance = (b.hasInsurance === "Да" || b.hasInsurance === "Нет") ? b.hasInsurance : "";
     const wantBuyInsurance = (hasInsurance === "Нет" && (b.wantBuyInsurance === "Да" || b.wantBuyInsurance === "Нет")) ? b.wantBuyInsurance : "";
     const passFio = clip(b.passFio);
     const passReg = clip(b.passReg);
     const passSeries = clip(b.passSeries);
-    if (!leadId || (!dates && !email && !hasInsurance && !passFio && !passReg && !passSeries)) {
+    if (!leadId || (!tripDateFrom && !tripDateTo && !tripDatesUnknown && !email && !hasInsurance && !passFio && !passReg && !passSeries)) {
       return res.status(400).json({ success: false, message: "Заполните поля" });
     }
     loadOpQuick();
-    lkOpQuick[leadId] = { dates, email, hasInsurance, wantBuyInsurance, passFio, passReg, passSeries, ts: Date.now() };
+    lkOpQuick[leadId] = { tripDateFrom, tripDateTo, tripDatesUnknown, tripDatesAck, email, hasInsurance, wantBuyInsurance, passFio, passReg, passSeries, ts: Date.now() };
     saveOpQuick();
     // Структурированный текст задачи на ответственного (читабельно, всё в одном месте).
     let insLine = "—";
     if (hasInsurance === "Да") insLine = "Есть своя страховка";
     else if (hasInsurance === "Нет") insLine = "Своей страховки нет" + (wantBuyInsurance ? ` · оформить у нас: ${wantBuyInsurance}` : "");
+    let datesLine;
+    if (tripDatesUnknown === "Да") datesLine = "пока не знает точных дат (подтвердил сроки)";
+    else if (tripDateFrom || tripDateTo) datesLine = `${tripDateFrom || "?"} — ${tripDateTo || "?"}`;
+    else datesLine = "—";
     const txt = [
       "Клиент заполнил данные в ЛК для подготовки договора:",
       "",
-      `Даты поездки: ${dates || "—"}`,
+      `Даты поездки: ${datesLine}`,
       `Email: ${email || "—"}`,
       `Страховка: ${insLine}`,
       "",
@@ -1632,6 +1649,11 @@ app.get("/admin/kb/logic", requireStaff, (req, res) => {
 // инфраструктура). Пишем понятно, без воды, но со всеми нюансами + кто просил.
 // ВАЖНО: при любой правке клиентского ЛК — добавлять сюда новую запись сверху.
 const LK_CHANGELOG = [
+  { date: "18.06.2026", title: "Даты поездки в анкете ЛК — как в опроснике (календарь + «не знаю дат»)", by: "просил Андрей", points: [
+    "В карточке «Данные для подготовки договора» поле дат заменено на тот же комплекс, что в опроснике: два поля-календаря + галка «Я ещё не знаю точных дат поездки» + зависимая обязательная галка подтверждения сроков.",
+    "После отправки даты (или статус «не знаю» + подтверждение) автоподставляются в опросники ВСЕХ заявителей — и в шенгенский, и в японский. Поля видимы и редактируемы — выглядит, будто клиент заполнил сам.",
+    "В японский опросник добавлен такой же блок «не знаю дат» + подтверждение (раньше там были только поля дат)."
+  ] },
   { date: "18.06.2026", title: "Отключена авто-SMS клиенту с опросником / обратной связью", by: "просил Андрей", points: [
     "Раньше при переходе сделки в «Ожидание подачи» / «Рассмотрение» клиенту автоматически уходила SMS со ссылкой на опросник/обратную связь. Эта рассылка ОТКЛЮЧЕНА.",
     "Вся логика сохранена в коде (можно вернуть флагом). Раздел админки «Опросники» (воронка по этой SMS) убран в архив вместе с «Статистика (доки)» и «Трафик»."
@@ -6151,10 +6173,18 @@ ${mixedFieldsHtml}
     <!-- 8 -->
     <div class="field">
       <label><span class="required-star">*</span>Даты визита в Японию</label>
-      <div class="date-row">
+      <div class="date-row" id="jp_tripDatesInputs">
         <input type="date" name="jp_tripDateFrom" value="${pv("jp_tripDateFrom")}" placeholder="с" required />
         <input type="date" name="jp_tripDateTo" value="${pv("jp_tripDateTo")}" placeholder="по" required />
       </div>
+      <label class="checkbox-card" id="jp_tripDatesUnknownRow" style="margin-top:8px;">
+        <input type="checkbox" name="jp_tripDatesUnknown" value="Да" ${chkYes("jp_tripDatesUnknown")} />
+        <span>Я ещё не знаю точных дат поездки.</span>
+      </label>
+      <label class="checkbox-card" id="jp_tripDatesAckRow" style="display:none;margin-top:8px;">
+        <input type="checkbox" name="jp_tripDatesAck" value="Да" ${chkYes("jp_tripDatesAck")} />
+        <span>Я проинформирован(-а) о сроках рассмотрения, обязуюсь предоставить даты поездки минимум за неделю до подачи документов в Консульство. Также проинформирован(-а), что при изменении дат после подготовки пакета может потребоваться дополнительная оплата.</span>
+      </label>
     </div>
 
     <!-- 9 -->
@@ -6522,6 +6552,27 @@ ${mixedFieldsHtml}
     });
   })();
 
+  // ─── «Я ещё не знаю точных дат поездки» (Япония) — как в Шенгене ───
+  (function applyJpTripDatesUnknown() {
+    const u = form.querySelector('input[name="jp_tripDatesUnknown"]');
+    if (!u) return;
+    const ackRow = document.getElementById("jp_tripDatesAckRow");
+    const ack = form.querySelector('input[name="jp_tripDatesAck"]');
+    const inputs = document.getElementById("jp_tripDatesInputs");
+    const fromI = form.querySelector('input[name="jp_tripDateFrom"]');
+    const toI = form.querySelector('input[name="jp_tripDateTo"]');
+    function sync() {
+      const unknown = u.checked;
+      if (inputs) inputs.style.display = unknown ? "none" : "";
+      if (fromI) fromI.required = !unknown;
+      if (toI) toI.required = !unknown;
+      if (ackRow) ackRow.style.display = unknown ? "" : "none";
+      if (ack) { ack.required = unknown; if (!unknown) ack.checked = false; }
+    }
+    u.addEventListener("change", sync);
+    sync();
+  })();
+
   // ── Live duplicate-ФИО check ──
   const fioInput = form.querySelector('input[name="fullName"]');
   if (fioInput && EXISTING_FIOS && EXISTING_FIOS.length) {
@@ -6773,7 +6824,9 @@ async function generateQuestionnairePdfBuffer(data) {
 
       drawSectionHeader("Поездка");
       drawRow("Цель поездки", data.jp_tripPurpose);
-      if (data.jp_tripDateFrom || data.jp_tripDateTo) {
+      if (data.jp_tripDatesUnknown === "Да") {
+        drawRow("Даты поездки", "Точные даты пока не известны");
+      } else if (data.jp_tripDateFrom || data.jp_tripDateTo) {
         drawRow("Даты поездки", `${data.jp_tripDateFrom || "?"} — ${data.jp_tripDateTo || "?"}`);
       }
       drawRow("Города/места поездки", data.jp_citiesToVisit);
@@ -10679,6 +10732,8 @@ app.post(
         jp_tripPurpose:             String(req.body.jp_tripPurpose || "").trim(),
         jp_tripDateFrom:            String(req.body.jp_tripDateFrom || "").trim(),
         jp_tripDateTo:              String(req.body.jp_tripDateTo || "").trim(),
+        jp_tripDatesUnknown:        String(req.body.jp_tripDatesUnknown || "").trim(),
+        jp_tripDatesAck:            String(req.body.jp_tripDatesAck || "").trim(),
         jp_citiesToVisit:           String(req.body.jp_citiesToVisit || "").trim(),
         jp_knowsAccommodation:      String(req.body.jp_knowsAccommodation || "").trim(),
         jp_accommodationName:       String(req.body.jp_accommodationName || "").trim(),

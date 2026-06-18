@@ -1174,7 +1174,29 @@
         row.appendChild(group); formEl.appendChild(row);
         return { row, radios, val: function () { const c = radios.find(function (x) { return x.checked; }); return c ? c.value : ""; } };
       }
-      const datesInp = mkField("Даты поездки (предварительно)", "Например: 10–20 августа 2026");
+      // Комплекс дат поездки — как в опроснике: даты ИЛИ галка «не знаю точных дат»
+      // + зависимая обязательная галка подтверждения сроков.
+      function mkDates() {
+        const row = document.createElement("div"); row.style.marginBottom = "10px";
+        const l = document.createElement("div"); l.textContent = "Даты поездки (предварительно)"; l.style.fontSize = "13px"; l.style.marginBottom = "4px"; l.style.fontWeight = "600";
+        row.appendChild(l);
+        const dr = document.createElement("div"); dr.style.display = "flex"; dr.style.gap = "10px";
+        function mkDate() { const i = document.createElement("input"); i.type = "date"; i.style.cssText = "flex:1;min-width:0;box-sizing:border-box;padding:10px 12px;border:1px solid #d8dde6;border-radius:10px;font-size:15px;"; return i; }
+        const fromI = mkDate(), toI = mkDate(); dr.appendChild(fromI); dr.appendChild(toI); row.appendChild(dr);
+        const uLab = document.createElement("label"); uLab.style.cssText = "display:flex;align-items:flex-start;gap:8px;margin-top:8px;font-size:13px;cursor:pointer;";
+        const uChk = document.createElement("input"); uChk.type = "checkbox";
+        const uSpan = document.createElement("span"); uSpan.textContent = "Я ещё не знаю точных дат поездки.";
+        uLab.appendChild(uChk); uLab.appendChild(uSpan); row.appendChild(uLab);
+        const aLab = document.createElement("label"); aLab.style.cssText = "display:none;align-items:flex-start;gap:8px;margin-top:8px;font-size:12.5px;color:#3a3f4d;cursor:pointer;";
+        const aChk = document.createElement("input"); aChk.type = "checkbox"; aChk.style.marginTop = "2px";
+        const aSpan = document.createElement("span"); aSpan.textContent = "Я проинформирован(-а) о сроках рассмотрения, обязуюсь предоставить даты поездки минимум за неделю до подачи документов в Консульство. Также проинформирован(-а), что при изменении дат после подготовки пакета может потребоваться дополнительная оплата.";
+        aLab.appendChild(aChk); aLab.appendChild(aSpan); row.appendChild(aLab);
+        function sync() { const u = uChk.checked; dr.style.display = u ? "none" : "flex"; aLab.style.display = u ? "flex" : "none"; if (!u) aChk.checked = false; }
+        uChk.addEventListener("change", sync); sync();
+        formEl.appendChild(row);
+        return { from: function () { return fromI.value; }, to: function () { return toI.value; }, unknown: function () { return uChk.checked; }, ack: function () { return aChk.checked; } };
+      }
+      const dates = mkDates();
       const emailInp = mkField("Электронная почта", "you@example.com");
       const ins = mkRadio("У вас есть своя действующая страховка для поездки?", "oq_hasInsurance", ["Да", "Нет"]);
       const wantBuy = mkRadio("Хотите оформить страховку у нас?", "oq_wantBuyInsurance", ["Да", "Нет"]);
@@ -1195,9 +1217,15 @@
           .then((r) => r.json()).then((j) => { if (j && j.submitted) showDone(); }).catch(() => {});
       }
       btn.addEventListener("click", async () => {
+        if (dates.unknown() && !dates.ack()) {
+          resEl.textContent = "Поставьте галочку подтверждения сроков."; resEl.style.color = "#b03a3a"; return;
+        }
         const payload = {
           phone: phoneInput.value.trim(), leadId,
-          dates: datesInp.value.trim(),
+          tripDateFrom: dates.unknown() ? "" : dates.from(),
+          tripDateTo: dates.unknown() ? "" : dates.to(),
+          tripDatesUnknown: dates.unknown() ? "Да" : "",
+          tripDatesAck: (dates.unknown() && dates.ack()) ? "Да" : "",
           email: emailInp.value.trim(),
           hasInsurance: ins.val(),
           wantBuyInsurance: (ins.val() === "Нет") ? wantBuy.val() : "",
@@ -1205,7 +1233,7 @@
           passReg: passRegInp.value.trim(),
           passSeries: passSeriesInp.value.trim()
         };
-        if (!payload.dates && !payload.email && !payload.hasInsurance && !payload.passFio && !payload.passReg && !payload.passSeries) {
+        if (!payload.tripDateFrom && !payload.tripDateTo && !payload.tripDatesUnknown && !payload.email && !payload.hasInsurance && !payload.passFio && !payload.passReg && !payload.passSeries) {
           resEl.textContent = "Заполните хотя бы одно поле."; resEl.style.color = "#b03a3a"; return;
         }
         btn.disabled = true; const pt = btn.textContent; btn.textContent = "Отправляем...";
