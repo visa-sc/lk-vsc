@@ -1183,6 +1183,12 @@
         const dr = document.createElement("div"); dr.style.display = "flex"; dr.style.gap = "10px";
         function mkDate() { const i = document.createElement("input"); i.type = "date"; i.style.cssText = "flex:1;min-width:0;box-sizing:border-box;padding:10px 12px;border:1px solid #d8dde6;border-radius:10px;font-size:15px;"; return i; }
         const fromI = mkDate(), toI = mkDate(); dr.appendChild(fromI); dr.appendChild(toI); row.appendChild(dr);
+        // Контроль дат как в опроснике: первая ≥ завтра, вторая не раньше первой.
+        function _pad2(n) { return n < 10 ? "0" + n : String(n); }
+        function _ymd(d) { return d.getFullYear() + "-" + _pad2(d.getMonth() + 1) + "-" + _pad2(d.getDate()); }
+        var _tm = new Date(); _tm.setDate(_tm.getDate() + 1); var _tmStr = _ymd(_tm);
+        fromI.min = _tmStr; toI.min = _tmStr;
+        fromI.addEventListener("change", function () { var v = fromI.value || _tmStr; toI.min = v; if (toI.value && toI.value < v) toI.value = v; });
         const uLab = document.createElement("label"); uLab.style.cssText = "display:flex;align-items:flex-start;gap:8px;margin-top:8px;font-size:13px;cursor:pointer;";
         const uChk = document.createElement("input"); uChk.type = "checkbox";
         const uSpan = document.createElement("span"); uSpan.textContent = "Я ещё не знаю точных дат поездки.";
@@ -1221,6 +1227,7 @@
         // Все поля обязательны.
         const unknown = dates.unknown();
         if (!unknown && (!dates.from() || !dates.to())) { fail("Укажите даты поездки (оба поля) или отметьте «Я ещё не знаю точных дат поездки»."); return; }
+        if (!unknown && dates.to() < dates.from()) { fail("Вторая дата поездки не может быть раньше первой."); return; }
         if (unknown && !dates.ack()) { fail("Поставьте галочку подтверждения сроков."); return; }
         const email = emailInp.value.trim();
         if (!email) { fail("Укажите электронную почту."); return; }
