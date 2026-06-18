@@ -819,7 +819,9 @@ app.get("/admin/api/auth-status-stats", requireStagesAccess, (req, res) => {
 // Источник — in-memory хранилища ЛК (amoCRM НЕ дёргаем). Доступно всем сотрудникам.
 app.get("/admin/api/client-logs", requireStaff, (req, res) => {
   try {
-    const phone = normalizePhone(String(req.query.phone || ""));
+    // Нормализуем как на входе в ЛК (sms.normalizePhone): принимаем любой формат
+    // (+7…, 8…, 10 цифр, со скобками/дефисами) и приводим к amoCRM-виду 7XXXXXXXXXX.
+    const phone = sms.normalizePhone(String(req.query.phone || ""));
     if (!phone || phone.length !== 11) return res.status(400).json({ success: false, message: "Введите корректный номер телефона" });
     const events = [];
     const add = (ts, type, text) => { const n = Number(ts); if (n) events.push({ ts: n, type, text }); };
