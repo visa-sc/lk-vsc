@@ -1091,10 +1091,17 @@
           document.title = "VSC · Дашборд";
           const _img = document.querySelector(".brand-bar img");
           if (_img) {
-            _img.onerror = function () { const p = document.createElement("div"); p.textContent = "VSC"; p.style.cssText = "font-weight:800;font-size:34px;letter-spacing:.06em;color:#161d45;"; this.replaceWith(p); };
-            // VSC-логотип квадратный — переопределяем геометрию VOYO (2:1) и режим наложения.
-            _img.style.aspectRatio = "1 / 1"; _img.style.width = "92px"; _img.style.mixBlendMode = "normal"; _img.style.borderRadius = "18px";
-            _img.src = "/vsc-logo.png"; _img.alt = "VSC";
+            // Вместо квадратного PNG-лого — текстовая вывеска «V | S | C» тем же
+            // стилем, что и в квадрате (жирные буквы + тонкие разделители), но в
+            // фирменном синем (#0097ca) — на светлом фоне дашборда белый не виден.
+            const wm = document.createElement("div");
+            wm.setAttribute("aria-label", "VSC");
+            wm.style.cssText = "display:flex;align-items:center;gap:14px;font-weight:800;font-size:46px;line-height:1;letter-spacing:.01em;color:#0097ca;";
+            ["V", "S", "C"].forEach(function (ch, i) {
+              if (i > 0) { const d = document.createElement("span"); d.style.cssText = "width:2px;height:32px;background:#0097ca;opacity:.45;border-radius:1px;"; wm.appendChild(d); }
+              const s = document.createElement("span"); s.textContent = ch; wm.appendChild(s);
+            });
+            _img.replaceWith(wm);
           }
           const _sub = document.querySelector(".brand-sub"); if (_sub) _sub.remove();
           // apple-touch-icon для /vsc вставляется на сервере прямо в <head>
