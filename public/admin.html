@@ -1098,7 +1098,7 @@
             // голубого лого и в тон тёмному тексту/серым подписям дашборда.
             const wm = document.createElement("div");
             wm.setAttribute("aria-label", "VSC");
-            wm.style.cssText = "display:flex;align-items:center;gap:9px;font-family:ui-rounded,'SF Pro Rounded','Hiragino Maru Gothic ProN',Quicksand,system-ui,-apple-system,sans-serif;font-weight:700;font-size:47px;line-height:1;letter-spacing:0;color:#46566e;";
+            wm.style.cssText = "display:flex;align-items:center;gap:9px;font-family:ui-rounded,'SF Pro Rounded','Hiragino Maru Gothic ProN',Quicksand,system-ui,-apple-system,sans-serif;font-weight:600;font-size:47px;line-height:1;letter-spacing:0;color:#46566e;";
             ["V", "S", "C"].forEach(function (ch, i) {
               if (i > 0) { const d = document.createElement("span"); d.style.cssText = "width:2px;height:25px;background:#46566e;opacity:.24;border-radius:2px;"; wm.appendChild(d); }
               const s = document.createElement("span"); s.textContent = ch; wm.appendChild(s);
