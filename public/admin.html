@@ -1091,14 +1091,16 @@
           document.title = "VSC · Дашборд";
           const _img = document.querySelector(".brand-bar img");
           if (_img) {
-            // Вместо квадратного PNG-лого — текстовая вывеска «V | S | C» тем же
-            // стилем, что и в квадрате (жирные буквы + тонкие разделители), но в
-            // фирменном синем (#0097ca) — на светлом фоне дашборда белый не виден.
+            // Вместо квадратного PNG-лого — текстовая вывеска «V | S | C».
+            // Скруглённые буквы: ui-rounded = SF Pro Rounded на Apple-устройствах
+            // (Mac/iOS у команды) без сетевых шрифтов; есть запасные варианты.
+            // Цвет — спокойный сине-серый сланец (#46566e), гармоничнее яркого
+            // голубого лого и в тон тёмному тексту/серым подписям дашборда.
             const wm = document.createElement("div");
             wm.setAttribute("aria-label", "VSC");
-            wm.style.cssText = "display:flex;align-items:center;gap:14px;font-weight:800;font-size:46px;line-height:1;letter-spacing:.01em;color:#0097ca;";
+            wm.style.cssText = "display:flex;align-items:center;gap:15px;font-family:ui-rounded,'SF Pro Rounded','Hiragino Maru Gothic ProN',Quicksand,system-ui,-apple-system,sans-serif;font-weight:800;font-size:48px;line-height:1;letter-spacing:.02em;color:#46566e;";
             ["V", "S", "C"].forEach(function (ch, i) {
-              if (i > 0) { const d = document.createElement("span"); d.style.cssText = "width:2px;height:32px;background:#0097ca;opacity:.45;border-radius:1px;"; wm.appendChild(d); }
+              if (i > 0) { const d = document.createElement("span"); d.style.cssText = "width:2px;height:26px;background:#46566e;opacity:.28;border-radius:2px;"; wm.appendChild(d); }
               const s = document.createElement("span"); s.textContent = ch; wm.appendChild(s);
             });
             _img.replaceWith(wm);
