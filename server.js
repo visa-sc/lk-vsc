@@ -2290,6 +2290,9 @@ const VSC_SHEETS = [
   { name: "Июнь 2026", gid: "1371246931" },
   { name: "Июль 2026", gid: "95777680" }
 ];
+// Отзывы (отдельная Google-таблица, лист «Статистика 2026»). Колонки по буквам:
+// A=месяц, D=позитивные МСК, F=негативные МСК, J=позитивные СПб, L=негативные СПб.
+const VSC_REVIEWS_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWz9BWp9Dzqj1TQivSvTQ12tE_06UzV3Dy2Lix5kyVBYUkUou9EHhCQvT3fVzafqwNYfCFeyp6UMrT/pub?gid=786742187&single=true&output=csv";
 // Парсер CSV (учитывает кавычки, экранирование "" и переводы строк внутри ячеек).
 function vscParseCsv(text) {
   const rows = []; let row = [], field = "", i = 0, q = false;
@@ -2411,19 +2414,47 @@ function vscParseMonth(rows) {
   }
   return { days, weeks, total };
 }
+// Отзывы по месяцам: строки «<Месяц> 2026», колонки по фиксированным буквам
+// (D/F = позитив/негатив МСК, J/L = позитив/негатив СПб). Отдаём только месяцы,
+// где есть хоть одно ненулевое значение — пустые будущие месяцы не показываем.
+const VSC_RU_MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+function vscParseReviews(rows) {
+  const out = [];
+  for (const r of rows) {
+    const a = String((r && r[0]) || "").trim();
+    if (!/20\d\d/.test(a) || !VSC_RU_MONTHS.some((mn) => a.toLowerCase().indexOf(mn) >= 0)) continue;
+    const o = {
+      name: a,
+      mskPos: vscNum(r[3]), mskNeg: vscNum(r[5]),   // D, F
+      spbPos: vscNum(r[9]), spbNeg: vscNum(r[11])   // J, L
+    };
+    if (o.mskPos != null || o.mskNeg != null || o.spbPos != null || o.spbNeg != null) out.push(o);
+  }
+  return out;
+}
+async function vscFetchReviews() {
+  try {
+    const r = await axios.get(VSC_REVIEWS_CSV, { timeout: 15000, responseType: "text", transformResponse: [(d) => d] });
+    return vscParseReviews(vscParseCsv(r.data));
+  } catch (e) { return []; /* недоступна таблица отзывов — просто без неё */ }
+}
 let _vscCache = null, _vscCacheAt = 0, _vscInflight = null;
 const VSC_TTL_MS = 15 * 60 * 1000;
 async function vscFetchAll() {
   // Листы Google тянем ПАРАЛЛЕЛЬНО (раньше — последовательно, 7 листов = долго).
   // Promise.all сохраняет порядок VSC_SHEETS; недоступный лист → null → отфильтруем.
-  const results = await Promise.all(VSC_SHEETS.map(async (sh) => {
-    try {
-      const url = VSC_PUB_BASE + "?gid=" + sh.gid + "&single=true&output=csv";
-      const r = await axios.get(url, { timeout: 15000, responseType: "text", transformResponse: [(d) => d] });
-      const parsed = vscParseMonth(vscParseCsv(r.data));
-      return parsed ? Object.assign({ name: sh.name }, parsed) : null;
-    } catch (e) { return null; /* пропускаем недоступный лист */ }
-  }));
+  // Отзывы (отдельная таблица) тянем тем же параллельным заходом.
+  const [results, reviews] = await Promise.all([
+    Promise.all(VSC_SHEETS.map(async (sh) => {
+      try {
+        const url = VSC_PUB_BASE + "?gid=" + sh.gid + "&single=true&output=csv";
+        const r = await axios.get(url, { timeout: 15000, responseType: "text", transformResponse: [(d) => d] });
+        const parsed = vscParseMonth(vscParseCsv(r.data));
+        return parsed ? Object.assign({ name: sh.name }, parsed) : null;
+      } catch (e) { return null; /* пропускаем недоступный лист */ }
+    })),
+    vscFetchReviews()
+  ]);
   const months = results.filter(Boolean);
   // Год: суммируем аддитивные базы из месячных Grand total, ratio — производные/среднее.
   const withTotal = months.filter((m) => m.total);
@@ -2440,7 +2471,7 @@ async function vscFetchAll() {
     asp: avg("asp"), upt: avg("upt"), planPct: avg("planPct"),
     aggregate: "avg"
   };
-  return { months, year, updatedAt: new Date().toISOString() };
+  return { months, year, reviews, updatedAt: new Date().toISOString() };
 }
 async function getVscDashboard() {
   const now = Date.now();

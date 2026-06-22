@@ -681,6 +681,9 @@
     /* VSC дашборд */
     .vsc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
     .vsc-upd { font-size: 11.5px; color: #9aa0ab; }
+    .vsc-maintabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 4px; }
+    .vsc-maintabs button { border: 1px solid #cfd8e3; background: #fff; color: #33415a; border-radius: 10px; padding: 9px 18px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .vsc-maintabs button.active { background: #0097ca; color: #fff; border-color: #0097ca; }
     .vsc-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 12px 0 16px; }
     .vsc-gran { display: flex; gap: 6px; flex-wrap: wrap; }
     .vsc-gran button { border: 1px solid #cfd8e3; background: #fff; color: #33415a; border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
@@ -694,7 +697,7 @@
     .vsc-tile-s { font-size: 11.5px; color: #9aa0ab; margin-top: 3px; }
     .vsc-chart { background: #fff; border: 1px solid #e6e9f0; border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }
     .vsc-chart-h { font-size: 13.5px; font-weight: 700; color: #161d45; margin-bottom: 12px; }
-    .vsc-bars { display: flex; align-items: flex-end; gap: 8px; height: 160px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
+    .vsc-bars { display: flex; align-items: flex-end; gap: 8px; height: 188px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
     .vsc-bars::-webkit-scrollbar { height: 6px; }
     .vsc-bars::-webkit-scrollbar-thumb { background: #d3d8e0; border-radius: 3px; }
     .vsc-bar-col { flex: 0 0 58px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; }
@@ -702,6 +705,25 @@
     .vsc-bar { width: 34px; background: #3589BD; border-radius: 5px 5px 0 0; min-height: 2px; transition: height .2s var(--vsc-ease); }
     .vsc-bar.pos { background: #4f9f68; } .vsc-bar.neg { background: #d2685f; }
     .vsc-bar-x { font-size: 9.5px; color: #9aa0ab; white-space: nowrap; margin-top: 4px; transform: rotate(0deg); }
+    /* Прирост/спад к пред. периоду — аккуратно под подписью столбца */
+    .vsc-bar-d { font-size: 9.5px; font-weight: 700; white-space: nowrap; line-height: 1.2; margin-top: 1px; min-height: 11px; }
+    .vsc-bar-d.up { color: #2c7a43; } .vsc-bar-d.down { color: #b0263a; } .vsc-bar-d.flat { color: #b9bec8; }
+    /* Отзывы — диверг-график: позитив вверх (зелёный), негатив вниз (красный) */
+    .rev-legend { display: flex; gap: 16px; margin-bottom: 10px; font-size: 11.5px; color: #5a626f; }
+    .rev-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+    .rev-bars { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
+    .rev-bars::-webkit-scrollbar { height: 6px; }
+    .rev-bars::-webkit-scrollbar-thumb { background: #d3d8e0; border-radius: 3px; }
+    .rev-col { flex: 0 0 60px; display: flex; flex-direction: column; align-items: center; }
+    .rev-half { width: 100%; height: 92px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .rev-half.top { justify-content: flex-end; }
+    .rev-half.bot { justify-content: flex-start; }
+    .rev-bar-pos { width: 30px; background: #4f9f68; border-radius: 5px 5px 0 0; min-height: 2px; }
+    .rev-bar-neg { width: 30px; background: #d2685f; border-radius: 0 0 5px 5px; min-height: 2px; }
+    .rev-axis { width: 100%; height: 1px; background: #dfe3ea; }
+    .rev-v { font-size: 10px; font-weight: 700; line-height: 1; }
+    .rev-v.pos { color: #2c7a43; } .rev-v.neg { color: #b0263a; } .rev-v.zero { color: #c3c8d1; }
+    .rev-x { font-size: 9.5px; color: #9aa0ab; white-space: nowrap; margin-top: 6px; }
     .vsc-empty { color: #9aa0ab; font-size: 13px; padding: 10px 0; }
     .vsc-tile-d { font-size: 12px; font-weight: 700; margin-top: 2px; }
     .vsc-tile-d.up { color: #2c7a43; } .vsc-tile-d.down { color: #b0263a; } .vsc-tile-d.neu { color: #9aa0ab; }
@@ -1723,7 +1745,7 @@
       }
 
       // ── Раздел «VSC · дашборд» (показатели визового агентства из Google-таблицы) ──
-      let vscData = null, vscGran = "month", vscMonthIdx = 0;
+      let vscData = null, vscGran = "month", vscMonthIdx = 0, vscTab = "dash";
       // good: +1 — чем больше тем лучше; −1 — чем меньше тем лучше; 0 — нейтрально (без оценки тренда).
       const VSC_KPIS = [
         { key: "budget", label: "Выручка (сумма в бюджете)", fmt: "money", good: 1 },
@@ -1959,7 +1981,47 @@
           const bar = document.createElement("div"); bar.className = "vsc-bar" + (kpi.fmt === "signed" ? (v > 0 ? " pos" : v < 0 ? " neg" : "") : "");
           bar.style.height = v == null ? "2px" : (Math.max(2, Math.round(Math.abs(v) / maxAbs * 120)) + "px");
           const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = s.x;
-          col.appendChild(vl); col.appendChild(bar); col.appendChild(xl);
+          // Прирост/спад к предыдущему непустому периоду: рост — зелёным, спад — красным.
+          let prevV = null;
+          for (let j = i - 1; j >= 0; j--) { if (vals[j] != null) { prevV = vals[j]; break; } }
+          const dl = document.createElement("div"); dl.className = "vsc-bar-d";
+          if (v != null && prevV != null && prevV !== 0) {
+            const pct = Math.round((v - prevV) / Math.abs(prevV) * 100);
+            if (pct > 0) { dl.className = "vsc-bar-d up"; dl.textContent = "▲ " + pct + "%"; }
+            else if (pct < 0) { dl.className = "vsc-bar-d down"; dl.textContent = "▼ " + Math.abs(pct) + "%"; }
+            else { dl.className = "vsc-bar-d flat"; dl.textContent = "0%"; }
+          }
+          col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(dl);
+          bars.appendChild(col);
+        });
+        wrap.appendChild(bars);
+        return wrap;
+      }
+      // Диверг-график отзывов: для каждого месяца позитив — зелёным столбцом вверх,
+      // негатив — красным вниз от общей оси. data = [{ x, pos, neg }].
+      function vscReviewsChart(title, data) {
+        const wrap = document.createElement("div"); wrap.className = "vsc-chart";
+        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = title; wrap.appendChild(h);
+        const leg = document.createElement("div"); leg.className = "rev-legend";
+        leg.innerHTML = '<span><i style="background:#4f9f68"></i>позитивные</span><span><i style="background:#d2685f"></i>негативные</span>';
+        wrap.appendChild(leg);
+        const pts = (data || []).filter((d) => d && (d.pos != null || d.neg != null));
+        if (!pts.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных по отзывам."; wrap.appendChild(e); return wrap; }
+        const maxAbs = Math.max.apply(null, pts.map((d) => Math.max(d.pos || 0, d.neg || 0))) || 1;
+        const bars = document.createElement("div"); bars.className = "rev-bars";
+        pts.forEach((d) => {
+          const col = document.createElement("div"); col.className = "rev-col";
+          const top = document.createElement("div"); top.className = "rev-half top";
+          const pv = document.createElement("div"); pv.className = "rev-v " + ((d.pos || 0) > 0 ? "pos" : "zero"); pv.textContent = d.pos == null ? "" : d.pos;
+          const pb = document.createElement("div"); pb.className = "rev-bar-pos"; pb.style.height = Math.max(2, Math.round((d.pos || 0) / maxAbs * 88)) + "px";
+          top.appendChild(pv); top.appendChild(pb);
+          const axis = document.createElement("div"); axis.className = "rev-axis";
+          const bot = document.createElement("div"); bot.className = "rev-half bot";
+          const nb = document.createElement("div"); nb.className = "rev-bar-neg"; nb.style.height = Math.max(2, Math.round((d.neg || 0) / maxAbs * 88)) + "px";
+          const nv = document.createElement("div"); nv.className = "rev-v " + ((d.neg || 0) > 0 ? "neg" : "zero"); nv.textContent = d.neg == null ? "" : d.neg;
+          bot.appendChild(nb); bot.appendChild(nv);
+          const xl = document.createElement("div"); xl.className = "rev-x"; xl.textContent = d.x;
+          col.appendChild(top); col.appendChild(axis); col.appendChild(bot); col.appendChild(xl);
           bars.appendChild(col);
         });
         wrap.appendChild(bars);
@@ -1973,6 +2035,18 @@
         const upd = document.createElement("div"); upd.className = "vsc-upd";
         upd.textContent = "Источник: Google-таблица · обновляется автоматически (кэш ~15 мин)";
         head.appendChild(t); head.appendChild(upd); vscContent.appendChild(head);
+
+        // Вкладки /vsc: «Дашборд» (основные показатели) и «Ежемесячный контроль».
+        const maintabs = document.createElement("div"); maintabs.className = "vsc-maintabs";
+        [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"]].forEach(([tb, lbl]) => {
+          const b = document.createElement("button"); b.type = "button"; b.textContent = lbl; if (tb === vscTab) b.className = "active";
+          b.addEventListener("click", () => { vscTab = tb; renderVsc(); });
+          maintabs.appendChild(b);
+        });
+        vscContent.appendChild(maintabs);
+        // Блок «Сделки без задач» относится к Дашборду — на «Ежемесячном контроле» прячем.
+        if (vscNoTaskBlock) vscNoTaskBlock.style.display = (vscTab === "monthly") ? "none" : "";
+        if (vscTab === "monthly") { renderVscMonthly(); return; }
 
         const ctrls = document.createElement("div"); ctrls.className = "vsc-controls";
         const gran = document.createElement("div"); gran.className = "vsc-gran";
@@ -2071,14 +2145,22 @@
         vscContent.appendChild(chartsH);
         if (!series.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных за выбранный месяц."; vscContent.appendChild(e); }
         else VSC_KPIS.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, series)));
-
-        // Доп. графики ВСЕГДА по месяцам (не зависят от переключателя гранулярности),
-        // внизу — перед блоком «Сделки без задач». На плитки-цифры не выносим.
-        const extraSeries = (vscData.months || []).map((mm) => ({ x: (mm.name || "").replace(" 2026", "").trim(), k: mm.total || {} }));
-        const extraH = document.createElement("div"); extraH.className = "ref-sec-h"; extraH.style.marginTop = "22px";
-        extraH.textContent = "Качество звонков и контактов — по месяцам";
-        vscContent.appendChild(extraH);
-        VSC_EXTRA_MONTHLY.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, extraSeries)));
+      }
+      // Вкладка «Ежемесячный контроль»: качество звонков/контактов + отзывы — всё по
+      // месяцам, без плиток-цифр. Не зависит от переключателя гранулярности дашборда.
+      function renderVscMonthly() {
+        const monthSeries = (vscData.months || []).map((mm) => ({ x: (mm.name || "").replace(" 2026", "").trim(), k: mm.total || {} }));
+        const h1 = document.createElement("div"); h1.className = "ref-sec-h"; h1.textContent = "Качество звонков и контактов — по месяцам";
+        vscContent.appendChild(h1);
+        VSC_EXTRA_MONTHLY.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, monthSeries)));
+        const h2 = document.createElement("div"); h2.className = "ref-sec-h"; h2.style.marginTop = "22px"; h2.textContent = "Отзывы клиентов — по месяцам (2026)";
+        vscContent.appendChild(h2);
+        const rev = vscData.reviews || [];
+        const short = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
+        const msk = rev.map((r) => ({ x: short(r.name), pos: r.mskPos, neg: r.mskNeg }));
+        const spb = rev.map((r) => ({ x: short(r.name), pos: r.spbPos, neg: r.spbNeg }));
+        vscContent.appendChild(vscReviewsChart("Отзывы — Москва", msk));
+        vscContent.appendChild(vscReviewsChart("Отзывы — Санкт-Петербург", spb));
       }
       function tstDocRow(label, required, when) {
         const kind = required === "stat" ? "stat" : (required ? "req" : "opt");
