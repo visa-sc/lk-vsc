@@ -2342,7 +2342,12 @@ function vscParseMonth(rows) {
     rev: colF("общая сумма выручки"), ad: colF("рекламные расходы общие"),
     budget: colF("общая сумма в бюджете"),
     factMSK: colF("таргет мск", "факт"), planMSK: colF("таргет мск", "план"),
-    factSPB: colF("таргет спб", "факт"), planSPB: colF("таргет спб", "план")
+    factSPB: colF("таргет спб", "факт"), planSPB: colF("таргет спб", "план"),
+    // «Процент пропущенных звонков» (из PBX) — именно «Процент…», НЕ «% пропущенных
+    // звонков» (старая колонка из АТС, у неё #DIV/0!/#REF!). «Доля мусора от общего
+    // числа контактов» — НЕ «Набранные контакты (мусор)» (там нет слова «доля»).
+    // Позиции колонок гуляют по месяцам — берём по ключевым словам заголовка.
+    missedPct: colF("процент", "пропущен", "звонк"), junkPct: colF("доля", "мусор")
   };
   // Обработанные контакты = сумма «Контакты, полученные до/после конца рабочего
   // дня» по всем городам (МСК/СПБ/ЕКБ/Остальные). Так считает заказчик
@@ -2363,6 +2368,8 @@ function vscParseMonth(rows) {
     over: sumNN(r, overCols), targetDev: targetDev(r),
     processed: sumNN(r, processedCols),
     rev: vscNum(r[C.rev]), ad: vscNum(r[C.ad]), budget: C.budget >= 0 ? vscNum(r[C.budget]) : null,
+    missedPct: C.missedPct >= 0 ? vscNum(r[C.missedPct]) : null,
+    junkPct: C.junkPct >= 0 ? vscNum(r[C.junkPct]) : null,
     planPct: null // план ОП — месячная величина из сводного блока (см. ниже), не из дневной строки
   });
   const days = [], weeks = []; let blockStart = null, blockEnd = null, blockDays = [], total = null;

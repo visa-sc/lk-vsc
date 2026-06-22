@@ -1736,6 +1736,11 @@
         { key: "targetDev", label: "Отклонение таргета (факт − план, МСК+СПБ)", fmt: "signed", good: 1 },
         { key: "planPct", label: "План ОП (% выполнения)", fmt: "pct", good: 1 }
       ];
+      // Доп. показатели — только графики по месяцам внизу /vsc, БЕЗ плиток-цифр.
+      const VSC_EXTRA_MONTHLY = [
+        { key: "missedPct", label: "Процент пропущенных звонков", fmt: "pct", good: -1 },
+        { key: "junkPct", label: "Доля мусора от общего числа контактов", fmt: "pct", good: -1 }
+      ];
       function vscFmt(v, fmt) {
         if (v == null || isNaN(v)) return "—";
         if (fmt === "money") return Math.round(v).toLocaleString("ru-RU") + " ₽";
@@ -2066,6 +2071,14 @@
         vscContent.appendChild(chartsH);
         if (!series.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных за выбранный месяц."; vscContent.appendChild(e); }
         else VSC_KPIS.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, series)));
+
+        // Доп. графики ВСЕГДА по месяцам (не зависят от переключателя гранулярности),
+        // внизу — перед блоком «Сделки без задач». На плитки-цифры не выносим.
+        const extraSeries = (vscData.months || []).map((mm) => ({ x: (mm.name || "").replace(" 2026", "").trim(), k: mm.total || {} }));
+        const extraH = document.createElement("div"); extraH.className = "ref-sec-h"; extraH.style.marginTop = "22px";
+        extraH.textContent = "Качество звонков и контактов — по месяцам";
+        vscContent.appendChild(extraH);
+        VSC_EXTRA_MONTHLY.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, extraSeries)));
       }
       function tstDocRow(label, required, when) {
         const kind = required === "stat" ? "stat" : (required ? "req" : "opt");
