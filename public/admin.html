@@ -1890,18 +1890,35 @@
         const filled = (o) => o && ((o.processed != null && o.processed > 0) || (o.budget != null && o.budget > 0));
         const today = new Date(); today.setHours(0, 0, 0, 0);
         if (vscGran === "week") {
-          // Неделя: ВСЕ недели текущего года — из всех месяцев подряд, а не только
-          // из выбранного. Показываем недели, которые УЖЕ начались (старт ≤ сегодня),
-          // включая текущую; будущие не показываем. Метка «DD.MM–DD.MM» содержит
-          // месяц, поэтому недели из разных месяцев в ряду различимы; график
-          // прокручивается по горизонтали (overflow-x у .vsc-bars).
-          const weekStarted = (label, yr) => { const s = String(label || "").slice(0, 5).split("."); if (s.length !== 2 || isNaN(+s[0]) || isNaN(+s[1])) return true; const d = new Date(yr, +s[1] - 1, +s[0]); d.setHours(0, 0, 0, 0); return d <= today; };
-          const out = [];
-          ms.forEach((mm) => {
-            const yr = parseInt((String(mm.name || "").match(/\d{4}/) || [])[0], 10) || today.getFullYear();
-            (mm.weeks || []).forEach((w) => { if (weekStarted(w.label, yr)) out.push({ x: w.label, k: w }); });
-          });
-          return out;
+          // Неделя: пересобираем ВСЕ дни года в КАЛЕНДАРНЫЕ недели пн–вс.
+          // В таблице недельные блоки («Total») обрываются на границе месяца —
+          // из-за этого у краёв месяца появляются короткие огрызки (напр.
+          // «01.02–01.02», «01.01–04.01»). Группируя дни по понедельнику недели,
+          // мы автоматически склеиваем хвост одного месяца с началом следующего
+          // в одну полную неделю. Аддитивные KPI суммируем по дням, коэффициенты
+          // усредняем — так же, как считаются год и сравнение месяцев.
+          const mondayOf = (d) => { const x = new Date(d.getTime()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); x.setHours(0, 0, 0, 0); return x; };
+          const dm = (d) => ("0" + d.getDate()).slice(-2) + "." + ("0" + (d.getMonth() + 1)).slice(-2);
+          const buckets = new Map();
+          ms.forEach((mm) => (mm.days || []).forEach((day) => {
+            const dt = vscParseDMY(day.date); if (!dt) return;
+            const mon = mondayOf(dt), key = mon.getTime();
+            let b = buckets.get(key);
+            if (!b) { const sun = new Date(mon.getTime() + 6 * 86400000); b = { mon: mon, label: dm(mon) + "–" + dm(sun), days: [] }; buckets.set(key, b); }
+            b.days.push(day);
+          }));
+          const sumK = ["budget", "processed", "over", "targetDev"], avgK = ["atv", "asp", "upt", "cv", "cpl", "drr"];
+          const aggWeek = (days) => {
+            const k = { days: days };
+            sumK.forEach((key) => { const v = days.map((d) => d[key]).filter((x) => x != null && !isNaN(x)); k[key] = v.length ? v.reduce((a, b) => a + b, 0) : null; });
+            avgK.forEach((key) => { const v = days.map((d) => d[key]).filter((x) => x != null && !isNaN(x)); k[key] = v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; });
+            k.planPct = null; // план ОП — месячная величина, в дневных строках её нет
+            return k;
+          };
+          return Array.from(buckets.values())
+            .filter((b) => b.mon <= today)               // недели, которые уже начались
+            .sort((a, b) => a.mon - b.mon)
+            .map((b) => { const k = aggWeek(b.days); k.label = b.label; return { x: b.label, k: k }; });
         }
         // День: ещё и строго ДО сегодня — чтобы показывался вчерашний день, а не сегодня.
         const beforeToday = (dateStr) => { const p = String(dateStr || "").split("."); if (p.length !== 3) return true; const d = new Date(+p[2], +p[1] - 1, +p[0]); return d < today; };
