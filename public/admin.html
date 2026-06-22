@@ -1092,15 +1092,14 @@
           const _img = document.querySelector(".brand-bar img");
           if (_img) {
             // Вместо квадратного PNG-лого — текстовая вывеска «V | S | C».
-            // Скруглённые буквы: ui-rounded = SF Pro Rounded на Apple-устройствах
-            // (Mac/iOS у команды) без сетевых шрифтов; есть запасные варианты.
-            // Цвет — спокойный сине-серый сланец (#46566e), гармоничнее яркого
-            // голубого лого и в тон тёмному тексту/серым подписям дашборда.
+            // Форма букв как на исходном лого: плотный гротеск (системный
+            // SF Pro, НЕ скруглённый), жирное начертание; без сетевых шрифтов.
+            // Цвет — фирменный голубой лого #0097ca; разделители тем же цветом.
             const wm = document.createElement("div");
             wm.setAttribute("aria-label", "VSC");
-            wm.style.cssText = "display:flex;align-items:center;gap:9px;font-family:ui-rounded,'SF Pro Rounded','Hiragino Maru Gothic ProN',Quicksand,system-ui,-apple-system,sans-serif;font-weight:600;font-size:47px;line-height:1;letter-spacing:0;color:#46566e;";
+            wm.style.cssText = "display:flex;align-items:center;gap:11px;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-weight:800;font-size:46px;line-height:1;letter-spacing:0;color:#0097ca;";
             ["V", "S", "C"].forEach(function (ch, i) {
-              if (i > 0) { const d = document.createElement("span"); d.style.cssText = "width:2px;height:25px;background:#46566e;opacity:.24;border-radius:2px;"; wm.appendChild(d); }
+              if (i > 0) { const d = document.createElement("span"); d.style.cssText = "width:2px;height:27px;background:#0097ca;opacity:.45;border-radius:2px;"; wm.appendChild(d); }
               const s = document.createElement("span"); s.textContent = ch; wm.appendChild(s);
             });
             _img.replaceWith(wm);
@@ -1891,11 +1890,18 @@
         const filled = (o) => o && ((o.processed != null && o.processed > 0) || (o.budget != null && o.budget > 0));
         const today = new Date(); today.setHours(0, 0, 0, 0);
         if (vscGran === "week") {
-          // Неделя: показываем все недели, которые УЖЕ начались (старт ≤ сегодня),
-          // включая текущую — даже если данных за неё ещё нет. Будущие недели не показываем.
-          const yr = parseInt((String(m.name || "").match(/\d{4}/) || [])[0], 10) || today.getFullYear();
-          const weekStarted = (label) => { const s = String(label || "").slice(0, 5).split("."); if (s.length !== 2 || isNaN(+s[0]) || isNaN(+s[1])) return true; const d = new Date(yr, +s[1] - 1, +s[0]); d.setHours(0, 0, 0, 0); return d <= today; };
-          return (m.weeks || []).filter((w) => weekStarted(w.label)).map((w) => ({ x: w.label, k: w }));
+          // Неделя: ВСЕ недели текущего года — из всех месяцев подряд, а не только
+          // из выбранного. Показываем недели, которые УЖЕ начались (старт ≤ сегодня),
+          // включая текущую; будущие не показываем. Метка «DD.MM–DD.MM» содержит
+          // месяц, поэтому недели из разных месяцев в ряду различимы; график
+          // прокручивается по горизонтали (overflow-x у .vsc-bars).
+          const weekStarted = (label, yr) => { const s = String(label || "").slice(0, 5).split("."); if (s.length !== 2 || isNaN(+s[0]) || isNaN(+s[1])) return true; const d = new Date(yr, +s[1] - 1, +s[0]); d.setHours(0, 0, 0, 0); return d <= today; };
+          const out = [];
+          ms.forEach((mm) => {
+            const yr = parseInt((String(mm.name || "").match(/\d{4}/) || [])[0], 10) || today.getFullYear();
+            (mm.weeks || []).forEach((w) => { if (weekStarted(w.label, yr)) out.push({ x: w.label, k: w }); });
+          });
+          return out;
         }
         // День: ещё и строго ДО сегодня — чтобы показывался вчерашний день, а не сегодня.
         const beforeToday = (dateStr) => { const p = String(dateStr || "").split("."); if (p.length !== 3) return true; const d = new Date(+p[2], +p[1] - 1, +p[0]); return d < today; };
@@ -1954,7 +1960,7 @@
           gran.appendChild(b);
         });
         ctrls.appendChild(gran);
-        if (vscGran === "month" || vscGran === "week" || vscGran === "day") {
+        if (vscGran === "month" || vscGran === "day") {
           const mw = document.createElement("div"); mw.className = "vsc-month";
           const sel = document.createElement("select");
           (vscData.months || []).forEach((m, i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = m.name; if (i === vscMonthIdx) o.selected = true; sel.appendChild(o); });
