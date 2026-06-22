@@ -812,7 +812,13 @@ app.get("/admin/api/traffic", requireAdmin, (req, res) => {
 // In-memory расчёт по lkAuthPhones — лёгкий и всегда свежий, кеш не нужен.
 app.get("/admin/api/auth-daily", requireStagesAccess, (req, res) => {
   try {
-    return res.json(computeDailyAuthSeries());
+    // В одном ответе — и дневной ряд (последние 30 дней), и недельный (вся история
+    // по календарным неделям). Переключатель на клиенте работает без повторного запроса.
+    const daily = computeDailyAuthSeries();
+    const weekly = computeWeeklyAuthSeries();
+    return res.json(Object.assign({}, daily, {
+      weeks: weekly.weeks, weeklyTotal: weekly.total, weeklyPeak: weekly.peak, weeklyStartDate: weekly.startDate
+    }));
   } catch (e) {
     console.error("/admin/api/auth-daily error:", e && e.message);
     return res.status(500).json({ success: false, message: "Ошибка расчёта графика авторизаций" });
@@ -8290,6 +8296,43 @@ function computeDailyAuthSeries() {
     days.push({ date: keyForIdx(i), count: c });
   }
   return { success: true, days, total, peak, windowDays: 30, startDate: LK_STATS_START_DATE };
+}
+
+// ── Новые авторизации по КАЛЕНДАРНЫМ неделям (пн–вс) ──
+// Не скользящее окно, а вся история: от недели, в которую попадает точка отсчёта
+// (22.05.2026), по текущую неделю включительно. Недели до начала отслеживания НЕ
+// показываем — там не «ноль авторизаций», а просто нет данных. МСК-сутки, как в
+// дневном ряду; те же исключения (тестовые номера, записи до точки отсчёта).
+function computeWeeklyAuthSeries() {
+  const DAY_MS = 86400000;
+  const MSK_OFFSET = 3 * 3600 * 1000; // UTC+3
+  const mskDayIdx = (ts) => Math.floor((ts + MSK_OFFSET) / DAY_MS);
+  const keyForIdx = (idx) => new Date(idx * DAY_MS).toISOString().slice(0, 10);
+  // Понедельник недели данного дня: dow 0=вс..6=сб → отнять (dow+6)%7 дней.
+  const mondayOfIdx = (idx) => { const dow = new Date(idx * DAY_MS).getUTCDay(); return idx - ((dow + 6) % 7); };
+
+  const startMonIdx = mondayOfIdx(mskDayIdx(LK_STATS_START_MS));
+  const curMonIdx = mondayOfIdx(mskDayIdx(Date.now()));
+
+  const counts = new Map(); // monIdx -> кол-во
+  for (const [phone, ts] of lkAuthPhones.entries()) {
+    if (!Number.isFinite(ts)) continue;
+    if (ts < LK_STATS_START_MS) continue;
+    if (LK_STATS_EXCLUDED_PHONES.has(phone)) continue;
+    const mon = mondayOfIdx(mskDayIdx(ts));
+    if (mon < startMonIdx || mon > curMonIdx) continue;
+    counts.set(mon, (counts.get(mon) || 0) + 1);
+  }
+
+  const weeks = [];
+  let total = 0, peak = 0;
+  for (let mon = startMonIdx; mon <= curMonIdx; mon += 7) {
+    const c = counts.get(mon) || 0;
+    total += c;
+    if (c > peak) peak = c;
+    weeks.push({ weekStart: keyForIdx(mon), weekEnd: keyForIdx(mon + 6), count: c });
+  }
+  return { weeks, total, peak, startDate: LK_STATS_START_DATE };
 }
 
 // ── First-LK-questionnaire-lead для статистики воронки ──

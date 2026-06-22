@@ -482,6 +482,12 @@
     .auth-chart-sub {
       font-size: 12px; color: #7a8090; margin-top: 3px; line-height: 1.35;
     }
+    .auth-toggle { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .auth-toggle button {
+      border: 1px solid #cfd8e3; background: #fff; color: #33415a; border-radius: 999px;
+      padding: 5px 13px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .auth-toggle button.active { background: #3589BD; color: #fff; border-color: #3589BD; }
     .auth-chart-meta {
       display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px;
     }
@@ -3139,6 +3145,13 @@
         const p = String(iso || "").split("-");
         return p.length === 3 ? p[2] : (iso || "");
       }
+      function isoToDM(iso) { // "YYYY-MM-DD" -> "DD.MM"
+        const p = String(iso || "").split("-");
+        return p.length === 3 ? (p[2] + "." + p[1]) : (iso || "");
+      }
+      // Режим графика авторизаций: "weeks" (все недели года) или "days" (последние 30).
+      // По умолчанию — недели (как просили). Сквозной для /admin и /team.
+      let authChartMode = "weeks";
       // День недели по календарной дате (через UTC, чтобы не зависеть от TZ браузера).
       const WD_SHORT = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"]; // 0=вс
       function isoWeekday(iso) { // -> { label: "пн", weekend: bool }
@@ -3155,18 +3168,35 @@
 
         const title = document.createElement("div");
         title.className = "auth-chart-title";
-        title.textContent = "Новые авторизации в ЛК по дням";
+        title.textContent = "Новые авторизации в ЛК";
         card.appendChild(title);
 
+        // Переключатель: по неделям (вся история) / последние 30 дней (по дням).
+        const toggle = document.createElement("div");
+        toggle.className = "auth-toggle";
+        [["weeks", "По неделям"], ["days", "Последние 30 дней"]].forEach(function (pair) {
+          const b = document.createElement("button");
+          b.type = "button"; b.textContent = pair[1];
+          if (pair[0] === authChartMode) b.className = "active";
+          b.addEventListener("click", function () {
+            if (authChartMode !== pair[0]) { authChartMode = pair[0]; renderAuthChart(container, data); }
+          });
+          toggle.appendChild(b);
+        });
+        card.appendChild(toggle);
+
+        if (authChartMode === "weeks") renderAuthWeeks(card, data);
+        else renderAuthDays(card, data);
+        container.appendChild(card);
+      }
+      // ── Режим «Последние 30 дней» — столбцы по дням (с днём недели и выходными) ──
+      function renderAuthDays(card, data) {
         const days = (data && Array.isArray(data.days)) ? data.days : [];
         const sub = document.createElement("div");
         sub.className = "auth-chart-sub";
-        if (days.length) {
-          sub.textContent = "Скользящее окно последних 30 дней · " +
-            isoToRu(days[0].date) + " — " + isoToRu(days[days.length - 1].date);
-        } else {
-          sub.textContent = "Скользящее окно последних 30 дней";
-        }
+        sub.textContent = days.length
+          ? ("Скользящее окно последних 30 дней · " + isoToRu(days[0].date) + " — " + isoToRu(days[days.length - 1].date))
+          : "Скользящее окно последних 30 дней";
         card.appendChild(sub);
 
         if (!days.length) {
@@ -3174,14 +3204,11 @@
           empty.className = "auth-chart-empty";
           empty.textContent = "Пока нет данных за период.";
           card.appendChild(empty);
-          container.appendChild(card);
           return;
         }
 
-        const total = (typeof data.total === "number")
-          ? data.total : days.reduce(function (s, d) { return s + (d.count || 0); }, 0);
-        const peak = (typeof data.peak === "number")
-          ? data.peak : days.reduce(function (m, d) { return Math.max(m, d.count || 0); }, 0);
+        const total = (typeof data.total === "number") ? data.total : days.reduce(function (s, d) { return s + (d.count || 0); }, 0);
+        const peak = (typeof data.peak === "number") ? data.peak : days.reduce(function (m, d) { return Math.max(m, d.count || 0); }, 0);
         const avg = days.length ? (total / days.length) : 0;
 
         const meta = document.createElement("div");
@@ -3192,7 +3219,6 @@
           '<span>Пик: <b>' + peak + '</b>/день</span>';
         card.appendChild(meta);
 
-        // ── Столбчатый график: высота столбца ∝ числу авторизаций ──
         const body = document.createElement("div");
         body.className = "auth-chart-body";
         const MAX_PX = 122;
@@ -3220,14 +3246,71 @@
           wdEl.className = "auth-col-wd";
           wdEl.textContent = wd.label;
 
-          col.appendChild(val);
-          col.appendChild(bar);
-          col.appendChild(x);
-          col.appendChild(wdEl);
+          col.appendChild(val); col.appendChild(bar); col.appendChild(x); col.appendChild(wdEl);
           body.appendChild(col);
         });
         card.appendChild(body);
-        container.appendChild(card);
+      }
+      // ── Режим «По неделям» — все календарные недели (пн–вс) с начала отслеживания ──
+      function renderAuthWeeks(card, data) {
+        const weeks = (data && Array.isArray(data.weeks)) ? data.weeks : [];
+        const sub = document.createElement("div");
+        sub.className = "auth-chart-sub";
+        sub.textContent = weeks.length
+          ? ("Все недели 2026 (пн–вс), с начала отслеживания · " + isoToRu(weeks[0].weekStart) + " — " + isoToRu(weeks[weeks.length - 1].weekEnd))
+          : "Все недели 2026 (пн–вс), с начала отслеживания";
+        card.appendChild(sub);
+
+        if (!weeks.length) {
+          const empty = document.createElement("div");
+          empty.className = "auth-chart-empty";
+          empty.textContent = "Пока нет данных за период.";
+          card.appendChild(empty);
+          return;
+        }
+
+        const total = (typeof data.weeklyTotal === "number") ? data.weeklyTotal : weeks.reduce(function (s, w) { return s + (w.count || 0); }, 0);
+        const peak = (typeof data.weeklyPeak === "number") ? data.weeklyPeak : weeks.reduce(function (m, w) { return Math.max(m, w.count || 0); }, 0);
+        const avg = weeks.length ? (total / weeks.length) : 0;
+
+        const meta = document.createElement("div");
+        meta.className = "auth-chart-meta";
+        meta.innerHTML =
+          '<span>Всего за период: <b>' + total + '</b></span>' +
+          '<span>В среднем: <b>' + (Math.round(avg * 10) / 10) + '</b>/неделю</span>' +
+          '<span>Пик: <b>' + peak + '</b>/неделю</span>';
+        card.appendChild(meta);
+
+        const body = document.createElement("div");
+        body.className = "auth-chart-body";
+        const MAX_PX = 122;
+        const lastIdx = weeks.length - 1;
+        weeks.forEach(function (w, i) {
+          const cnt = w.count || 0;
+          const col = document.createElement("div");
+          col.className = "auth-col" + (i === lastIdx ? " is-today" : "");
+          col.title = isoToRu(w.weekStart) + " — " + isoToRu(w.weekEnd) + ": " + cnt;
+
+          const val = document.createElement("div");
+          val.className = "auth-col-val" + (cnt === 0 ? " zero" : "");
+          val.textContent = String(cnt);
+
+          const bar = document.createElement("div");
+          bar.className = "auth-bar" + (cnt === 0 ? " empty" : "");
+          bar.style.height = (peak > 0 ? Math.max(3, Math.round((cnt / peak) * MAX_PX)) : 3) + "px";
+
+          const x = document.createElement("div");
+          x.className = "auth-col-x";
+          x.textContent = isoToDM(w.weekStart);
+
+          const wdEl = document.createElement("div");
+          wdEl.className = "auth-col-wd";
+          wdEl.textContent = "–" + isoToDM(w.weekEnd);
+
+          col.appendChild(val); col.appendChild(bar); col.appendChild(x); col.appendChild(wdEl);
+          body.appendChild(col);
+        });
+        card.appendChild(body);
       }
       async function loadAuthDaily(opts) {
         const silent = opts && opts.silent;
@@ -3240,7 +3323,7 @@
           renderAuthChart(authDailyBlock, data);
         } catch (e) {
           if (!silent && !authDailyData && authDailyBlock) {
-            authDailyBlock.innerHTML = '<div class="auth-chart"><div class="auth-chart-title">Новые авторизации в ЛК по дням</div>' +
+            authDailyBlock.innerHTML = '<div class="auth-chart"><div class="auth-chart-title">Новые авторизации в ЛК</div>' +
               '<div class="auth-chart-empty">Не удалось загрузить график: ' + escapeHtml(e.message) + '</div></div>';
           }
         }
