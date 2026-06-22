@@ -1142,9 +1142,20 @@
     // ответственного со всей инфой; даты и блок страховки автоподставляются в
     // опросники ВСЕХ заявителей (server: opquickPrefill). На «Начале оформления».
     function createOpQuickBlock(lead) {
-      const wrap = document.createElement("div");
-      wrap.className = "documents-inline"; wrap.style.display = "block";
       const leadId = lead && lead.id;
+      // Внешняя обёртка: кнопка-триггер «Заполнить данные для договора» + сама
+      // карточка (по умолчанию скрыта). Триггер раскрывает карточку на том же
+      // экране и прячет себя; «Скрыть» внутри карточки возвращает кнопку-триггер.
+      const outer = document.createElement("div");
+      const trigger = document.createElement("button");
+      trigger.type = "button";
+      trigger.textContent = "Заполнить данные для договора";
+      trigger.style.cssText = "display:inline-block;height:44px;padding:0 18px;margin:0 0 2px 32px;border:1.5px solid #3589BD;border-radius:14px;background:#fff;color:#3589BD;font-size:14px;font-weight:600;cursor:pointer;";
+      trigger.addEventListener("mouseenter", function () { trigger.style.background = "#f0f7fc"; });
+      trigger.addEventListener("mouseleave", function () { trigger.style.background = "#fff"; });
+      outer.appendChild(trigger);
+      const wrap = document.createElement("div");
+      wrap.className = "documents-inline"; wrap.style.display = "none";
       const h = document.createElement("h3"); h.textContent = "Данные для подготовки договора"; wrap.appendChild(h);
       const hint = document.createElement("div");
       hint.textContent = "Заполните — менеджер быстрее подготовит расчёт и договор. Даты поездки и страховка подставятся в опросники всех заявителей.";
@@ -1212,11 +1223,22 @@
       const passFioInp = mkField("ФИО (как во внутреннем паспорте) *", "Фамилия Имя Отчество");
       const passRegInp = mkField("Прописка (адрес регистрации) *", "Город, улица, дом, квартира");
       const passSeriesInp = mkField("Серия и номер паспорта *", "1234 567890");
-      const btn = document.createElement("button"); btn.type = "button"; btn.className = "file-attach-btn"; btn.textContent = "Отправить"; formEl.appendChild(btn);
+      const btnRow = document.createElement("div"); btnRow.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;";
+      const btn = document.createElement("button"); btn.type = "button"; btn.className = "file-attach-btn"; btn.textContent = "Отправить"; btnRow.appendChild(btn);
+      const hideBtn = document.createElement("button"); hideBtn.type = "button"; hideBtn.textContent = "Скрыть";
+      hideBtn.style.cssText = "height:38px;padding:0 16px;border:1.5px solid #cfd4dd;border-radius:12px;background:#fff;color:#6b7280;font-size:13px;font-weight:600;cursor:pointer;";
+      hideBtn.addEventListener("mouseenter", function () { hideBtn.style.background = "#f4f5f7"; });
+      hideBtn.addEventListener("mouseleave", function () { hideBtn.style.background = "#fff"; });
+      hideBtn.addEventListener("click", function () { wrap.style.display = "none"; trigger.style.display = "inline-block"; });
+      btnRow.appendChild(hideBtn);
+      formEl.appendChild(btnRow);
       const resEl = document.createElement("div"); resEl.style.marginTop = "8px"; resEl.style.fontSize = "13px"; formEl.appendChild(resEl);
       wrap.appendChild(formEl);
-      // После успешной отправки (или если уже отправляли ранее) — карточку убираем.
-      function removeCard() { try { wrap.remove(); } catch (_) { wrap.style.display = "none"; } }
+      outer.appendChild(wrap);
+      // Триггер раскрывает карточку на том же экране и прячет сам себя.
+      trigger.addEventListener("click", function () { wrap.style.display = "block"; trigger.style.display = "none"; });
+      // После успешной отправки (или если уже отправляли ранее) — убираем весь блок целиком.
+      function removeCard() { try { outer.remove(); } catch (_) { outer.style.display = "none"; } }
       if (leadId) {
         fetch("/api/cabinet/op-quick?leadId=" + encodeURIComponent(leadId))
           .then((r) => r.json()).then((j) => { if (j && j.submitted) removeCard(); }).catch(() => {});
@@ -1269,7 +1291,7 @@
         } catch (_) { resEl.textContent = "Сетевая ошибка, попробуйте ещё раз."; resEl.style.color = "#b03a3a"; }
         finally { btn.disabled = false; btn.textContent = pt; }
       });
-      return wrap;
+      return outer;
     }
 
     function createQuestionnaireBlock(lead) {
@@ -1280,7 +1302,7 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "questionnaire-btn";
-      button.textContent = "Заполните опросник";
+      button.textContent = "Заполнить опросник";
 
       button.addEventListener("click", () => {
         const phone = phoneInput.value.trim();
@@ -1344,7 +1366,7 @@
       });
 
       // Белая кнопка «Заполнить ещё опросник» под «Скорректировать опросник» —
-      // запускает тот же поток, что и исходная «Заполните опросник» (новая вкладка с /questionnaire-start).
+      // запускает тот же поток, что и исходная «Заполнить опросник» (новая вкладка с /questionnaire-start).
       let fillMoreBtn = blockEl.querySelector(".questionnaire-btn-fill-more");
       if (!fillMoreBtn) {
         fillMoreBtn = document.createElement("button");
