@@ -36,3 +36,6 @@ npm-debug.log*
 # Рассылка приглашений сотрудникам — маркер отправленных + лог (рантайм)
 .staffInvitesSent.json
 .staffInvites.log
+
+# Passkey-ключи руководителей (Face ID) — рантайм-состояние
+.managerPasskeys.json

@@ -11221,6 +11221,110 @@ app.post("/admin/api/webauthn/register-verify", requireAdmin, async (req, res) =
   }
 });
 
+// ── Face ID / Touch ID для руководителей (passkey по e-mail) ──
+// Отдельное хранилище и эндпоинты — НЕ пересекаются с клиентским (по телефону)
+// и админским (singleton) passkey. rpId host-aware (работает на dev. и vsc.).
+const MANAGER_PASSKEYS_FILE = path.join(__dirname, ".managerPasskeys.json");
+let managerPasskeys = {}; // { email: [{ credentialID, publicKey, counter, createdAt }] }
+const managerWebauthnChallenges = new Map(); // email -> { challenge, type, expiresAt }
+function loadManagerPasskeys() { try { const o = JSON.parse(fs.readFileSync(MANAGER_PASSKEYS_FILE, "utf8")); if (o && typeof o === "object") managerPasskeys = o; } catch (_) {} }
+function saveManagerPasskeys() { try { fs.writeFileSync(MANAGER_PASSKEYS_FILE, JSON.stringify(managerPasskeys, null, 2), "utf8"); } catch (e) { console.error("saveManagerPasskeys:", e.message); } }
+function setMgrChallenge(email, challenge, type) { managerWebauthnChallenges.set(email, { challenge, type, expiresAt: Date.now() + WEBAUTHN_CHALLENGE_TTL_MS }); }
+function getMgrChallenge(email, type) { const c = managerWebauthnChallenges.get(email); if (!c || c.type !== type) return null; if (Date.now() > c.expiresAt) { managerWebauthnChallenges.delete(email); return null; } return c.challenge; }
+function clearMgrChallenge(email) { managerWebauthnChallenges.delete(email); }
+loadManagerPasskeys();
+
+app.post("/team/api/webauthn/has-credentials", (req, res) => {
+  const email = String((req.body && req.body.email) || "").toLowerCase().trim();
+  return res.json({ hasCredentials: (managerPasskeys[email] || []).length > 0 });
+});
+app.post("/team/api/webauthn/auth-options", async (req, res) => {
+  try {
+    const email = String((req.body && req.body.email) || "").toLowerCase().trim();
+    const list = managerPasskeys[email] || [];
+    if (!list.length) return res.status(404).json({ success: false, message: "Нет passkey для этого e-mail" });
+    const options = await webauthn.generateAuthenticationOptions({
+      rpID: rpIdFor(req),
+      allowCredentials: list.map((c) => ({ id: bufferFromB64u(c.credentialID), type: "public-key" })),
+      userVerification: "preferred"
+    });
+    setMgrChallenge(email, options.challenge, "auth");
+    return res.json(options);
+  } catch (err) { console.error("MGR WEBAUTHN AUTH OPTIONS:", err.message); return res.status(500).json({ success: false, message: err.message }); }
+});
+app.post("/team/api/webauthn/auth-verify", async (req, res) => {
+  try {
+    const email = String((req.body && req.body.email) || "").toLowerCase().trim();
+    const assertionResponse = req.body && req.body.assertionResponse;
+    if (!email || !assertionResponse) return res.status(400).json({ success: false, message: "Невалидный запрос" });
+    const expectedChallenge = getMgrChallenge(email, "auth");
+    if (!expectedChallenge) return res.status(400).json({ success: false, message: "Сессия просрочена" });
+    const cred = (managerPasskeys[email] || []).find((c) => c.credentialID === assertionResponse.id);
+    if (!cred) return res.status(404).json({ success: false, message: "Passkey не найден" });
+    const acc = (loadManagers() || {})[email];
+    if (!acc) return res.status(403).json({ success: false, message: "Нет доступа" });
+    const verification = await webauthn.verifyAuthenticationResponse({
+      response: assertionResponse,
+      expectedChallenge,
+      expectedOrigin: originFor(req),
+      expectedRPID: rpIdFor(req),
+      authenticator: { credentialID: bufferFromB64u(cred.credentialID), credentialPublicKey: bufferFromB64u(cred.publicKey), counter: cred.counter || 0 },
+      requireUserVerification: false
+    });
+    if (!verification.verified) { clearMgrChallenge(email); return res.status(400).json({ success: false, message: "Подпись не прошла" }); }
+    cred.counter = verification.authenticationInfo.newCounter;
+    saveManagerPasskeys();
+    clearMgrChallenge(email);
+    acc.lastLoginAt = new Date().toISOString();
+    saveManagers();
+    const token = createManagerSession(email, acc.name);
+    return res.json({ success: true, token, role: "manager", name: acc.name, perms: acc.perms || [] });
+  } catch (err) { console.error("MGR WEBAUTHN AUTH VERIFY:", err.message); return res.status(500).json({ success: false, message: err.message }); }
+});
+app.post("/team/api/webauthn/register-options", requireStaff, async (req, res) => {
+  try {
+    if (req.staff.role !== "manager" || !req.staff.email) return res.status(403).json({ success: false, message: "Только для руководителей" });
+    const email = String(req.staff.email).toLowerCase().trim();
+    const list = managerPasskeys[email] || [];
+    const options = await webauthn.generateRegistrationOptions({
+      rpName: WEBAUTHN_RP_NAME,
+      rpID: rpIdFor(req),
+      userID: email,
+      userName: email,
+      userDisplayName: req.staff.name || email,
+      attestationType: "none",
+      excludeCredentials: list.map((c) => ({ id: bufferFromB64u(c.credentialID), type: "public-key" })),
+      authenticatorSelection: { residentKey: "preferred", userVerification: "preferred" }
+    });
+    setMgrChallenge(email, options.challenge, "register");
+    return res.json(options);
+  } catch (err) { console.error("MGR WEBAUTHN REGISTER OPTIONS:", err.message); return res.status(500).json({ success: false, message: err.message }); }
+});
+app.post("/team/api/webauthn/register-verify", requireStaff, async (req, res) => {
+  try {
+    if (req.staff.role !== "manager" || !req.staff.email) return res.status(403).json({ success: false, message: "Только для руководителей" });
+    const email = String(req.staff.email).toLowerCase().trim();
+    const attestationResponse = req.body && req.body.attestationResponse;
+    if (!attestationResponse) return res.status(400).json({ success: false, message: "Невалидный запрос" });
+    const expectedChallenge = getMgrChallenge(email, "register");
+    if (!expectedChallenge) return res.status(400).json({ success: false, message: "Регистрация просрочена" });
+    const verification = await webauthn.verifyRegistrationResponse({
+      response: attestationResponse,
+      expectedChallenge,
+      expectedOrigin: originFor(req),
+      expectedRPID: rpIdFor(req),
+      requireUserVerification: false
+    });
+    if (!verification.verified || !verification.registrationInfo) { clearMgrChallenge(email); return res.status(400).json({ success: false, message: "Проверка не прошла" }); }
+    const info = verification.registrationInfo;
+    if (!managerPasskeys[email]) managerPasskeys[email] = [];
+    managerPasskeys[email].push({ credentialID: b64uFromBuffer(info.credentialID), publicKey: b64uFromBuffer(info.credentialPublicKey), counter: info.counter || 0, createdAt: Date.now() });
+    saveManagerPasskeys();
+    clearMgrChallenge(email);
+    return res.json({ success: true });
+  } catch (err) { console.error("MGR WEBAUTHN REGISTER VERIFY:", err.message); return res.status(500).json({ success: false, message: err.message }); }
+});
+
 app.get("/questionnaire-start", async (req, res) => {
   try {
     const phone = normalizePhone(req.query.phone || "");

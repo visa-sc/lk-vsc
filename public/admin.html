@@ -928,6 +928,7 @@
         <button id="mgrLoginBtn" type="submit" class="login-btn">Войти</button>
         <button id="mgrForgotBtn" type="button" style="margin-top:10px;background:none;border:none;color:#3589BD;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Забыли пароль?</button>
         <div id="mgrResetMsg" style="display:none;margin-top:8px;font-size:13px;line-height:1.45;"></div>
+        <button id="mgrBioBtn" type="button" style="margin-top:12px;width:100%;padding:11px;background:#fff;border:1px solid #cdddef;border-radius:10px;color:#3589BD;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Войти по Face ID / отпечатку</button>
       </form>
 
       <button id="bioLoginBtn" type="button" class="bio-btn">
@@ -940,8 +941,8 @@
       <div id="loginError" class="login-error"></div>
 
       <div id="bioOffer" class="bio-offer">
-        <h3>Входить без кода?</h3>
-        <p>Включите вход по Face ID / отпечатку — больше не нужно будет вводить код каждый раз на этом устройстве.</p>
+        <h3>Входить по Face ID?</h3>
+        <p>Включите вход по Face ID / отпечатку — не нужно будет каждый раз вводить пароль или код на этом устройстве.</p>
         <div class="bio-offer-actions">
           <button type="button" id="bioSkipBtn" class="bio-skip">Не сейчас</button>
           <button type="button" id="bioEnableBtn" class="bio-enable">Включить</button>
@@ -3109,6 +3110,36 @@
         }
       }
 
+      // ── Face ID для руководителей (по e-mail; эндпоинты /team/api/webauthn/*) ──
+      async function tryManagerBioLogin(email) {
+        email = String(email || "").toLowerCase().trim();
+        if (!email) return false;
+        try {
+          const optsR = await fetch("/team/api/webauthn/auth-options", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+          if (!optsR.ok) return false;
+          const opts = await optsR.json();
+          const publicKey = { ...opts, challenge: b64uToBytes(opts.challenge), allowCredentials: (opts.allowCredentials || []).map((c) => ({ ...c, id: b64uToBytes(c.id) })) };
+          const assertion = await navigator.credentials.get({ publicKey });
+          const verifyR = await fetch("/team/api/webauthn/auth-verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, assertionResponse: { id: assertion.id, rawId: bytesToB64u(assertion.rawId), type: assertion.type, response: { clientDataJSON: bytesToB64u(assertion.response.clientDataJSON), authenticatorData: bytesToB64u(assertion.response.authenticatorData), signature: bytesToB64u(assertion.response.signature), userHandle: assertion.response.userHandle ? bytesToB64u(assertion.response.userHandle) : null }, clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {} } }) });
+          const data = await verifyR.json().catch(() => ({}));
+          if (verifyR.ok && data.success && data.token) { setToken(data.token); managerPerms = Array.isArray(data.perms) ? data.perms : []; myRole = "manager"; try { localStorage.setItem("voyo_mgr_bio_" + email, "1"); } catch (_) {} return true; }
+          return false;
+        } catch (err) { console.warn("manager bio login failed/cancelled:", err); return false; }
+      }
+      async function tryManagerBioRegister() {
+        const t = getToken(); if (!t) return false;
+        try {
+          const optsR = await fetch("/team/api/webauthn/register-options", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: "{}" });
+          if (!optsR.ok) return false;
+          const opts = await optsR.json();
+          const publicKey = { ...opts, challenge: b64uToBytes(opts.challenge), user: { ...opts.user, id: b64uToBytes(opts.user.id) }, excludeCredentials: (opts.excludeCredentials || []).map((c) => ({ ...c, id: b64uToBytes(c.id) })) };
+          const attestation = await navigator.credentials.create({ publicKey });
+          const verifyR = await fetch("/team/api/webauthn/register-verify", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ attestationResponse: { id: attestation.id, rawId: bytesToB64u(attestation.rawId), type: attestation.type, response: { clientDataJSON: bytesToB64u(attestation.response.clientDataJSON), attestationObject: bytesToB64u(attestation.response.attestationObject) }, clientExtensionResults: attestation.getClientExtensionResults ? attestation.getClientExtensionResults() : {} } }) });
+          const data = await verifyR.json().catch(() => ({}));
+          return !!(verifyR.ok && data.success);
+        } catch (err) { console.warn("manager bio register failed/cancelled:", err); return false; }
+      }
+
       bioLoginBtn.addEventListener("click", async () => {
         if (bioLoginBtn.disabled) return;
         bioLoginBtn.disabled = true;
@@ -3129,18 +3160,25 @@
       });
 
       bioSkipBtn.addEventListener("click", () => {
+        if (myRole === "manager" && window.__mgrBioEmail) { try { localStorage.setItem("voyo_mgr_bio_" + window.__mgrBioEmail, "1"); } catch (_) {} }
         bioOffer.classList.remove("show");
         showDash();
       });
       bioEnableBtn.addEventListener("click", async () => {
         bioEnableBtn.disabled = true;
         bioSkipBtn.disabled = true;
-        const ok = await tryAdminBioRegister();
+        let ok;
+        if (myRole === "manager") {
+          ok = await tryManagerBioRegister();
+          if (ok && window.__mgrBioEmail) { try { localStorage.setItem("voyo_mgr_bio_" + window.__mgrBioEmail, "1"); } catch (_) {} }
+        } else {
+          ok = await tryAdminBioRegister();
+        }
         bioEnableBtn.disabled = false;
         bioSkipBtn.disabled = false;
         bioOffer.classList.remove("show");
         showDash();
-        // Если успешно — следующая сессия покажет кнопку Bio на логине.
+        // Если успешно — следующая сессия покажет вход по Face ID.
       });
       function showLoginError(msg) {
         loginError.textContent = msg || "";
@@ -4786,6 +4824,12 @@
             setToken(data.token);
             managerPerms = Array.isArray(data.perms) ? data.perms : [];
             myRole = "manager";
+            // Предложить включить Face ID на этом устройстве (один раз на e-mail/устройство).
+            try {
+              const platformOk = await isPlatformAuthAvailable();
+              const flagged = localStorage.getItem("voyo_mgr_bio_" + email) === "1";
+              if (platformOk && !flagged) { window.__mgrBioEmail = email; if (bioOffer) bioOffer.classList.add("show"); return; }
+            } catch (_) {}
             showDash();
           } catch (_) { showLoginError("Сетевая ошибка"); }
         });
@@ -4802,6 +4846,20 @@
           rm.style.display = "block"; rm.style.color = "#1f7a3d";
           rm.textContent = "Если такой e-mail есть в системе — на него отправлена ссылка для смены пароля (действует 1 час).";
           mgrForgotBtn.disabled = false;
+        });
+      }
+
+      const mgrBioBtn = document.getElementById("mgrBioBtn");
+      if (mgrBioBtn) {
+        mgrBioBtn.addEventListener("click", async () => {
+          const email = (document.getElementById("mgrEmail").value || "").trim();
+          const rm = document.getElementById("mgrResetMsg");
+          if (!email) { rm.style.display = "block"; rm.style.color = "#b0263a"; rm.textContent = "Введите e-mail в поле выше, затем войдите по Face ID."; return; }
+          mgrBioBtn.disabled = true; const prev = mgrBioBtn.textContent; mgrBioBtn.textContent = "Подтвердите вход…";
+          const ok = await tryManagerBioLogin(email);
+          mgrBioBtn.disabled = false; mgrBioBtn.textContent = prev;
+          if (ok) { showDash(); }
+          else { rm.style.display = "block"; rm.style.color = "#b0263a"; rm.textContent = "Не удалось войти по Face ID. Войдите по паролю — Face ID можно включить после входа."; }
         });
       }
 
