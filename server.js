@@ -2573,26 +2573,44 @@ async function vscForecastModel() {
     cand.push({ key: (+mm[2]) * 12 + mi, name: sh.name, rid: sh.rid, year: +mm[2], mi });
   }
   cand.sort((a, b) => b.key - a.key);
-  const parseColB = (file) => {
-    const xml = read(file); const model = {}; const labels = {};
+  const parseSheet = (file) => {
+    const xml = read(file); const labels = {}; const cols = {};
     const re = /<c\s+r="([A-Z]+)(\d+)"([^>]*)>([\s\S]*?)<\/c>/g; let m;
     while ((m = re.exec(xml))) {
       const col = m[1], row = +m[2], attrs = m[3], body = m[4];
-      if (col !== "A" && col !== "B") continue;
+      if (!/^[A-F]$/.test(col)) continue;
       const fm = /<f[^>]*>([\s\S]*?)<\/f>/.exec(body); const vm = /<v>([\s\S]*?)<\/v>/.exec(body);
       let v = vm ? vm[1] : ""; if (/t="s"/.test(attrs) && v !== "") v = ss[+v];
       if (col === "A") { if (v) labels[row] = String(v); continue; }
-      model[row] = { f: fm ? fm[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">") : null, v: v };
+      (cols[col] || (cols[col] = {}))[row] = { f: fm ? fm[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">") : null, v: v };
     }
-    return { model, labels };
+    return { labels, cols };
   };
-  // берём самую свежую вкладку, у которой есть формула прибыли (стр. 38)
+  // Сборка модели с учётом ОБЩИХ ФОРМУЛ (shared formulas): в xlsx у общих формул
+  // текст хранится только в ячейке-мастере, остальные — пустые ссылки. У директора
+  // мастера разбросаны по колонкам (напр. актуальный ФОТ ×0.22 — мастер в недельной
+  // колонке C, а в B устаревший ×0.12). Поэтому для КАЖДОЙ строки берём текст
+  // формулы из самой правой НЕДЕЛЬНОЙ колонки (F..C), где он есть, иначе из B.
+  // Все ссылки нормализуем к «B», чтобы вычислитель (ждёт B<row>) работал.
+  const buildModel = (cols) => {
+    const model = {}; const rows = new Set();
+    ["B", "C", "D", "E", "F"].forEach((L) => cols[L] && Object.keys(cols[L]).forEach((r) => rows.add(+r)));
+    rows.forEach((r) => {
+      let f = null;
+      for (const L of ["F", "E", "D", "C"]) { const c = cols[L] && cols[L][r]; if (c && c.f && c.f.trim()) { f = c.f; break; } }
+      if (!f) { const b = cols.B && cols.B[r]; if (b && b.f && b.f.trim()) f = b.f; }
+      const vc = (cols.B && cols.B[r]) || (cols.C && cols.C[r]);
+      model[r] = { f: f ? f.replace(/[A-F](\d+)/g, "B$1") : null, v: vc ? vc.v : "" };
+    });
+    return model;
+  };
   for (const c of cand) {
     const t = new RegExp('Id="' + c.rid + '"[^>]*Target="([^"]*)"').exec(rels);
     if (!t) continue;
     const file = "xl/" + t[1].replace("../", "");
-    const { model, labels } = parseColB(file);
-    if (model[38] && model[38].f) {
+    const { labels, cols } = parseSheet(file);
+    const model = buildModel(cols);
+    if (model[38] && model[38].f && model[1] && model[1].f) {
       _vscFcModel = { model, labels, tab: c.name, year: c.year, mi: c.mi };
       _vscFcModelAt = Date.now();
       return _vscFcModel;
