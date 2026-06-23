@@ -924,7 +924,7 @@
       <form id="managerLoginForm" class="login-form-inner" style="display:none;">
         <input id="mgrEmail" class="login-input" type="email" autocomplete="username" placeholder="Рабочий e-mail" />
         <input id="mgrPass" class="login-input" type="password" autocomplete="current-password" placeholder="Пароль" />
-        <div class="login-hint">Первый вход — придумайте пароль, он сохранится.</div>
+        <div id="mgrPassHint" class="login-hint">Первый вход — придумайте пароль, он сохранится.</div>
         <button id="mgrLoginBtn" type="submit" class="login-btn">Войти</button>
         <button id="mgrForgotBtn" type="button" style="margin-top:10px;background:none;border:none;color:#3589BD;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Забыли пароль?</button>
         <div id="mgrResetMsg" style="display:none;margin-top:8px;font-size:13px;line-height:1.45;"></div>
@@ -4877,6 +4877,28 @@
           else { rm.style.display = "block"; rm.style.color = "#b0263a"; rm.textContent = "Не удалось войти по Face ID. Войдите по паролю — Face ID можно включить после входа."; }
         });
       }
+
+      // Динамическая подпись под полем пароля: «Первый вход — придумайте пароль» показываем
+      // ТОЛЬКО если у введённого e-mail пароля ещё нет; если пароль уже задан — скрываем.
+      (function () {
+        const emailEl = document.getElementById("mgrEmail");
+        const hintEl = document.getElementById("mgrPassHint");
+        if (!emailEl || !hintEl) return;
+        const FIRST = "Первый вход — придумайте пароль, он сохранится.";
+        let timer = null;
+        async function updateHint() {
+          const email = (emailEl.value || "").trim().toLowerCase();
+          if (!email || email.indexOf("@") < 1) { hintEl.textContent = FIRST; hintEl.style.display = ""; return; }
+          try {
+            const r = await fetch("/admin/api/manager-has-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email }) });
+            const d = await r.json().catch(() => ({}));
+            if (d && d.hasPassword) { hintEl.style.display = "none"; }
+            else { hintEl.textContent = FIRST; hintEl.style.display = ""; }
+          } catch (_) {}
+        }
+        emailEl.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(updateHint, 350); });
+        emailEl.addEventListener("blur", updateHint);
+      })();
 
       (async function bootstrap() {
         // Каждый заход на /admin требует свежей аутентификации — Face ID/Touch ID

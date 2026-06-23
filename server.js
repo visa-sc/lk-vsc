@@ -1327,6 +1327,13 @@ app.post("/admin/api/manager-reset-confirm", (req, res) => {
   } catch (e) { console.error("reset-confirm:", e && e.message); return res.status(500).json({ success: false, message: "Ошибка" }); }
 });
 app.get("/team-reset", (req, res) => { res.set("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "public", "team-reset.html")); });
+// Есть ли у e-mail уже заданный пароль (для динамической подписи «Первый вход — придумайте пароль»).
+// Возвращает hasPassword:false и для неизвестных e-mail (не раскрываем список аккаунтов).
+app.post("/admin/api/manager-has-password", (req, res) => {
+  const email = String((req.body && req.body.email) || "").toLowerCase().trim();
+  const acc = (loadManagers() || {})[email];
+  return res.json({ success: true, hasPassword: !!(acc && acc.hash) });
+});
 
 // «Кто я» — роль + имя (для фронта). Принимает админский и менеджерский токен.
 app.get("/admin/api/whoami", requireStaff, (req, res) => {
