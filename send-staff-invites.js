@@ -65,8 +65,8 @@ function plinnerBotInvite() {
 
 const INVITES = [
   { key: "rustam-team-2026-06", to: "rustam.b@visa-sc.ru", subject: "Доступ в панель управления ЛК VOYO", html: rustamTeamInvite(), ready: true },
-  // Плинер — ВКЛЮЧИТЬ (ready:true) ПОСЛЕ того, как заработает вход руководителей на vsc:
-  { key: "plinner-bot-2026-06", to: "anastasia.p@visa-sc.ru", subject: "Бот VFS · Франция — нужны данные для теста", html: plinnerBotInvite(), ready: false }
+  // Вход руководителей на vsc готов (23.06) → Плинер включена в рассылку.
+  { key: "plinner-bot-2026-06", to: "anastasia.p@visa-sc.ru", subject: "Бот VFS · Франция — нужны данные для теста", html: plinnerBotInvite(), ready: true }
 ];
 
 (async () => {
