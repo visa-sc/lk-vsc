@@ -2114,6 +2114,41 @@
         wrap.appendChild(bars);
         return wrap;
       }
+      // Диверг-график одной знаковой величины: положительное — зелёным вверх, отрицательное —
+      // красным вниз от общей оси. data = [{ x, v }]. (Для «расхождения с фактом НДС».)
+      function vscDivergingBars(title, data, fmt) {
+        const wrap = document.createElement("div"); wrap.className = "vsc-chart";
+        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = title; wrap.appendChild(h);
+        const leg = document.createElement("div"); leg.className = "rev-legend";
+        leg.innerHTML = '<span><i style="background:#4f9f68"></i>запас (+)</span><span><i style="background:#d2685f"></i>нехватка (−)</span>';
+        wrap.appendChild(leg);
+        const pts = (data || []).filter((d) => d && d.v != null && !isNaN(d.v));
+        if (!pts.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных."; wrap.appendChild(e); return wrap; }
+        const maxAbs = Math.max.apply(null, pts.map((d) => Math.abs(d.v))) || 1;
+        const lbl = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + (fmt === "money" ? Math.abs(Math.round(v)).toLocaleString("ru-RU") : Math.abs(Math.round(v)));
+        const bars = document.createElement("div"); bars.className = "rev-bars";
+        pts.forEach((d) => {
+          const col = document.createElement("div"); col.className = "rev-col";
+          const top = document.createElement("div"); top.className = "rev-half top";
+          const axis = document.createElement("div"); axis.className = "rev-axis";
+          const bot = document.createElement("div"); bot.className = "rev-half bot";
+          const ht = Math.max(2, Math.round(Math.abs(d.v) / maxAbs * 88)) + "px";
+          if (d.v >= 0) {
+            const pv = document.createElement("div"); pv.className = "rev-v pos"; pv.textContent = lbl(d.v);
+            const pb = document.createElement("div"); pb.className = "rev-bar-pos"; pb.style.height = ht;
+            top.appendChild(pv); top.appendChild(pb);
+          } else {
+            const nb = document.createElement("div"); nb.className = "rev-bar-neg"; nb.style.height = ht;
+            const nv = document.createElement("div"); nv.className = "rev-v neg"; nv.textContent = lbl(d.v);
+            bot.appendChild(nb); bot.appendChild(nv);
+          }
+          const xl = document.createElement("div"); xl.className = "rev-x"; xl.textContent = d.x;
+          col.appendChild(top); col.appendChild(axis); col.appendChild(bot); col.appendChild(xl);
+          bars.appendChild(col);
+        });
+        wrap.appendChild(bars);
+        return wrap;
+      }
       function renderVsc() {
         if (!vscData || !vscContent) return;
         vscContent.innerHTML = "";
@@ -2155,10 +2190,10 @@
 
         const series = vscBuildSeries();
         // «План ОП (% выполнения)» — только месяц/год: в неделях/днях он пуст (item 7).
-        // «% возвратов» — в год/месяц/неделю (item 11), но не по дням (слишком волатильно).
+        // «% возвратов» — ТОЛЬКО в «Год» (на дашборде) + в «Ежемесячном контроле».
         const kpisForView = VSC_KPIS.filter((k) => {
           if ((vscGran === "week" || vscGran === "day") && k.key === "planPct") return false;
-          if (vscGran === "day" && k.key === "returnsPct") return false;
+          if (k.key === "returnsPct" && vscGran !== "year") return false;
           return true;
         });
         // Для плиток «Неделя»/«День» берём последний период С ДАННЫМИ: текущий
@@ -2174,12 +2209,26 @@
         // Автоподсветка: последний заполненный месяц против предыдущего, за
         // сопоставимое число дней; будущие/пустые месяцы игнорируются.
         const attn = vscAttention();
-        // Превышение лимита CPL (1100 ₽) за периоды текущего разреза → в жёлтую секцию.
+        // Превышение лимита CPL (1100 ₽) — ТОЛЬКО за ПОСЛЕДНИЙ ЗАВЕРШЁННЫЙ период:
+        // день — отображаемый (вчерашний); неделя — прошлая завершённая (не текущая);
+        // месяц — прошлый завершённый. Старые периоды в жёлтый блок не выводим.
         const CPL_LIMIT = 1100;
-        const granWord = ({ year: "по месяцам", month: "по месяцам", week: "по неделям", day: "по дням" })[vscGran] || "";
-        const cplOver = series.map((s) => ({ x: s.x, v: (s.k && s.k.cpl != null && !isNaN(s.k.cpl)) ? s.k.cpl : null })).filter((o) => o.v != null && o.v > CPL_LIMIT);
-        const cplOverShown = cplOver.slice(0, 10);
-        const hasWarn = attn.length || cplOver.length;
+        const granWord = ({ year: "за прошлый месяц", month: "за прошлый месяц", week: "за прошлую неделю", day: "за прошедший день" })[vscGran] || "";
+        let cplAlert = null;
+        (function () {
+          const tdy = new Date(); tdy.setHours(0, 0, 0, 0);
+          const mondayOf = (dd) => { const x = new Date(dd.getTime()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); x.setHours(0, 0, 0, 0); return x; };
+          const curMonShort = VSC_MON_NAMES[tdy.getMonth()];
+          const inProgress = (s) => {
+            if (vscGran === "week") { const d0 = (s.k && s.k.days && s.k.days[0]) ? vscParseDMY(s.k.days[0].date) : null; return d0 ? (mondayOf(d0).getTime() === mondayOf(tdy).getTime()) : false; }
+            return s.x === curMonShort; // месяц/год — текущий календарный месяц (незакрытый)
+          };
+          let cand = null;
+          if (vscGran === "day") { cand = series[vscCurIdx] || null; }
+          else { for (let i = series.length - 1; i >= 0; i--) { const s = series[i]; if (!s || !s.k || s.k.cpl == null || isNaN(s.k.cpl)) continue; if (inProgress(s)) continue; cand = s; break; } }
+          if (cand && cand.k && cand.k.cpl != null && cand.k.cpl > CPL_LIMIT) cplAlert = { x: cand.x, v: cand.k.cpl };
+        })();
+        const hasWarn = attn.length || cplAlert;
         const ab = document.createElement("div"); ab.className = "vsc-attn " + (hasWarn ? "warn" : "ok");
         if (hasWarn) {
           let h = "";
@@ -2188,11 +2237,8 @@
             attn.forEach((a) => { h += "<li>" + escapeHtml(a.msg) + "</li>"; });
             h += "</ul>";
           }
-          if (cplOver.length) {
-            h += '<div class="vsc-attn-h"' + (attn.length ? ' style="margin-top:9px;"' : '') + '>⚠️ CPL выше лимита 1100 ₽ (' + granWord + '):</div><ul>';
-            cplOverShown.forEach((o) => { h += "<li>" + escapeHtml(o.x) + ": " + vscFmt(o.v, "money") + "</li>"; });
-            if (cplOver.length > cplOverShown.length) h += "<li>…и ещё " + (cplOver.length - cplOverShown.length) + "</li>";
-            h += "</ul>";
+          if (cplAlert) {
+            h += '<div class="vsc-attn-h"' + (attn.length ? ' style="margin-top:9px;"' : '') + '>⚠️ CPL выше лимита 1100 ₽ (' + granWord + ', ' + escapeHtml(cplAlert.x) + '): <b>' + vscFmt(cplAlert.v, "money") + '</b></div>';
           }
           ab.innerHTML = h;
         } else {
@@ -2330,7 +2376,8 @@
         vscContent.appendChild(h6);
         vscContent.appendChild(vscBarChart({ key: "nds", label: "Вынесенный НДС (предполагаемый, из выручки)", fmt: "money", good: 0 }, taxSeries));
         vscContent.appendChild(vscBarChart({ key: "tax5", label: "Налог 5%", fmt: "money", good: 0 }, taxSeries));
-        vscContent.appendChild(vscBarChart({ key: "rasx", label: "Расхождение с фактом вынесенного НДС (+ запас / − нехватка)", fmt: "signed", good: 0 }, taxSeries));
+        const rasxData = (vscData.months || []).map((mm) => ({ x: short(mm.name), v: mm.taxes ? mm.taxes.rasx : null }));
+        vscContent.appendChild(vscDivergingBars("Расхождение с фактом вынесенного НДС (+ запас / − нехватка)", rasxData, "money"));
       }
       // Проверка Плана ОП (item 9): план ATV и план итоговой конверсии текущего месяца
       // (строка «ТАРГЕТ» под Grand total) должны быть ВЫШЕ факта прошлого месяца (Grand
