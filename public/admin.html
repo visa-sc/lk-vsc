@@ -1905,9 +1905,13 @@
       }
 
       // ── Блок «Остановки кампаний Я.Директа» (опрос API каждые 6 ч + по кнопке) ──
+      // Пока заявка на доступ к API на рассмотрении — НЕ выводим ничего на дашборд.
+      // Как Директ одобрит — поставить true (бэкенд уже готов, опрос идёт сам).
+      const YD_UI_ENABLED = false;
       let ydStopsData = null, ydStopsExpanded = false;
       const YD_STATE_RU = { SUSPENDED: "приостановлена", OFF: "остановлена", ON: "активна", ENDED: "завершена", ARCHIVED: "в архиве", CONVERTED: "конвертируется" };
       async function loadYdStops() {
+        if (!YD_UI_ENABLED) { if (vscYdStopsBlock) vscYdStopsBlock.innerHTML = ""; return; }
         if (!vscYdStopsBlock) return;
         try { ydStopsData = await apiFetch("/admin/api/yd-stops"); renderYdStopsBlock(ydStopsData); }
         catch (e) { vscYdStopsBlock.innerHTML = ""; }
@@ -2385,7 +2389,7 @@
           }
         }
         // Остановки кампаний Я.Директа (item 2): счётчик за 30 дн + «Подробнее» — на «Неделя»/«Месяц».
-        if (vscGran === "week" || vscGran === "month") {
+        if (YD_UI_ENABLED && (vscGran === "week" || vscGran === "month")) {
           const ydCnt = ydStopsData ? (ydStopsData.count || 0) : null;
           const t = document.createElement("div"); t.className = "vsc-tile";
           t.innerHTML = '<div class="vsc-tile-l">Остановки кампаний Я.Директа (30 дн)</div><div class="vsc-tile-v" style="color:' + (ydCnt ? "#b8602a" : "#161d45") + ';">' + (ydCnt == null ? "…" : ydCnt) + '</div><div class="vsc-tile-s"><a href="#" id="ydMoreLink" style="color:#3589BD;font-weight:600;text-decoration:none;">Подробнее ↓</a></div>';
