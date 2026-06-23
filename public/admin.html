@@ -2487,16 +2487,22 @@
       }
       // Вкладка «Прогноз прибыли»: считается на сервере по формулам твоей таблицы
       // (вкладка <Месяц> года) + наши KPI. Блок на месяц + блоки по неделям.
+      let _vscFcClient = null; // кэш прогноза в сессии — чтобы повторное открытие было мгновенным
       async function renderVscForecast() {
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Прогноз прибыли";
         vscContent.appendChild(h);
         const box = document.createElement("div");
-        box.innerHTML = '<div class="loading-state">Считаем прогноз по вашей модели…</div>';
         vscContent.appendChild(box);
+        if (_vscFcClient && _vscFcClient.month) paintForecast(box, _vscFcClient); // сразу из кэша
+        else box.innerHTML = '<div class="loading-state">Считаем прогноз по вашей модели…</div>';
         let d;
         try { d = await apiFetch("/admin/api/vsc-forecast"); }
-        catch (e) { box.innerHTML = '<div class="vsc-empty">Не удалось построить прогноз: ' + escapeHtml(e.message) + '</div>'; return; }
+        catch (e) { if (!(_vscFcClient && _vscFcClient.month)) box.innerHTML = '<div class="vsc-empty">Не удалось построить прогноз: ' + escapeHtml(e.message) + '</div>'; return; }
+        if (d && d.month) _vscFcClient = d;
         if (vscTab !== "forecast") return; // пользователь переключил вкладку, пока считалось
+        paintForecast(box, d);
+      }
+      function paintForecast(box, d) {
         box.innerHTML = "";
         if (!d || !d.month) { box.innerHTML = '<div class="vsc-empty">Недостаточно данных для прогноза.</div>'; return; }
         const money = (v) => (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽";

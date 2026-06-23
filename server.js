@@ -2958,22 +2958,33 @@ async function vscBuildForecast() {
     month, baseline: month, weeks
   };
 }
-let _vscFcCache = null, _vscFcAt = 0;
+let _vscFcCache = null, _vscFcAt = 0, _vscFcInflight = null;
 const VSC_FC_TTL = 15 * 60 * 1000;
+// Тёплый кэш + single-flight: пока считается — параллельные запросы ждут один расчёт,
+// а не запускают свой. Пустой результат (дашборд не прогрет) НЕ кэшируем.
+function getVscForecast() {
+  const now = Date.now();
+  if (_vscFcCache && (now - _vscFcAt) < VSC_FC_TTL) return Promise.resolve(_vscFcCache);
+  if (_vscFcInflight) return _vscFcInflight;
+  _vscFcInflight = vscBuildForecast().then((data) => {
+    if (data && data.month) { _vscFcCache = data; _vscFcAt = Date.now(); }
+    return (data && data.month) ? data : (_vscFcCache || data);
+  }).finally(() => { _vscFcInflight = null; });
+  return _vscFcInflight;
+}
 app.get("/admin/api/vsc-forecast", requireAdmin, async (req, res) => {
-  try {
-    const now = Date.now();
-    if (_vscFcCache && (now - _vscFcAt) < VSC_FC_TTL) return res.json(_vscFcCache);
-    const data = await vscBuildForecast();
-    // Не кэшируем пустой результат (напр. KPI-дашборд ещё не прогрелся после
-    // рестарта) — иначе пустой прогноз залипнет на TTL; пусть пере-считается.
-    if (data && data.month) { _vscFcCache = data; _vscFcAt = now; }
-    return res.json(data);
-  } catch (e) {
+  try { return res.json(await getVscForecast()); }
+  catch (e) {
     console.error("vsc forecast error:", e && e.message);
     return res.status(500).json({ success: false, message: "Не удалось построить прогноз прибыли" });
   }
 });
+// Фоновый прогрев прогноза — чтобы пользователю всегда отдавался тёплый кэш (как у дашборда).
+(function scheduleVscForecastPrewarm() {
+  const warm = () => getVscForecast().catch((e) => console.error("VSC FC PREWARM:", e && e.message));
+  setTimeout(warm, 25 * 1000);              // после прогрева дашборда (~15с)
+  setInterval(warm, 10 * 60 * 1000);        // < TTL (15 мин) → кэш не остывает
+})();
 
 // ═════════════════════════════════════════════════════════════════════════
 // Клиентская сессия (ФАЗА 1). Подписанный токен (HMAC-SHA256) в httpOnly-cookie
