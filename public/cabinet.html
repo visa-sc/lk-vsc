@@ -1792,6 +1792,17 @@
         requiredSectionEl.textContent = "Необходимо загрузить все документы ниже.";
         list.appendChild(requiredSectionEl);
       }
+      // s51 (Рита; согл. Настя П.): общая подсказка про срок действия справок —
+      // показываем только если среди документов этапа есть справка (на этапе паспортов её нет).
+      if (blocksConfig.some((b) => /справк/i.test(String(b && b.label || "")))) {
+        const certHint = document.createElement("div");
+        certHint.textContent = "Уточняйте у менеджера актуальный срок действия справок и не оформляйте их заранее — для некоторых стран он короткий (например, для Кипра — около недели).";
+        certHint.style.fontSize = "12px";
+        certHint.style.color = "#3589BD";
+        certHint.style.lineHeight = "1.4";
+        certHint.style.margin = "2px 0 12px";
+        list.appendChild(certHint);
+      }
       function maybeAddSection() { /* no-op */ }
 
       // Пересчитывает «все обязательные доки прикреплены?» (initial OR pending)
@@ -2768,6 +2779,14 @@
       sizeHint.style.fontSize = "12px"; sizeHint.style.color = "#9096a3";
       sizeHint.style.marginTop = "-8px"; sizeHint.style.marginBottom = "12px";
       wrapper.appendChild(sizeHint);
+
+      // s51 (Рита; согл. Настя П.): подсказка про срок действия справок — вся
+      // эта подобласть состоит из справок/выписок, поэтому показываем всегда.
+      const certHint = document.createElement("div");
+      certHint.textContent = "Уточняйте у менеджера актуальный срок действия справок и не оформляйте их заранее — для некоторых стран он короткий (например, для Кипра — около недели).";
+      certHint.style.fontSize = "12px"; certHint.style.color = "#3589BD";
+      certHint.style.lineHeight = "1.4"; certHint.style.margin = "2px 0 14px";
+      wrapper.appendChild(certHint);
 
       if (mandatory.length) {
         // Плашка области: красная, пока загружены не все обязательные ниже;
