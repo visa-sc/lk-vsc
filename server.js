@@ -2423,7 +2423,38 @@ function vscParseMonth(rows) {
   if (pctCol >= 0 && total) {
     for (const r of rows) { if (r && r.some((v) => String(v || "").toLowerCase().indexOf("выручка общая от набора") >= 0)) { total.planPct = vscNum(r[pctCol]); break; } }
   }
-  return { days, weeks, total };
+  // ── «Ежемесячный контроль»: помесячные сводные показатели из нижнего блока листа.
+  // Колонки/строки плавают по месяцам — берём по смыслу (заголовок / ячейка над значением).
+  let ctrl = null;
+  if (total) {
+    let gtIdx = -1;
+    for (let i = hi + 1; i < rows.length; i++) { if (String((rows[i] || [])[0] || "").trim().toLowerCase() === "grand total") { gtIdx = i; break; } }
+    const gtRow = gtIdx >= 0 ? (rows[gtIdx] || []) : [];
+    const planRow = gtIdx >= 0 ? (rows[gtIdx + 1] || []) : [];   // строка «ТАРГЕТ» (план) под Grand total
+    // Item 9 — план ОП: план ATV / итоговой конверсии текущего месяца (в тех же колонках,
+    // что ATV и «Итоговая конверсия общая»); факт — из total (Grand total).
+    const planATV = C.atv >= 0 ? vscNum(planRow[C.atv]) : null;
+    const planCV = C.cv >= 0 ? vscNum(planRow[C.cv]) : null;
+    // Item 10 — % повторных сделок: Σ «Количество сделок из повторных заявок …» /
+    // Σ «Кол-во сделок …» (все регионы), по строке Grand total. Май: 185/591 = 31.3%.
+    const repCols = colsAll(["количество сделок", "повторных"]);
+    const dealCnt = colsAll(["кол-во сделок"]);
+    const repDeals = sumNN(gtRow, repCols), totDeals = sumNN(gtRow, dealCnt);
+    const repeatPct = (repDeals != null && totDeals) ? repDeals / totDeals * 100 : null;
+    // Item 14 — CPL/ДРР с учётом доп. расходов: значение в ячейке ПОД заголовком.
+    const belowOf = (needle) => {
+      const N = needle.toLowerCase();
+      for (let i = 0; i < rows.length; i++) { const r = rows[i] || []; for (let c = 0; c < r.length; c++) { if (String(r[c] || "").replace(/\s+/g, " ").trim().toLowerCase().indexOf(N) >= 0) return vscNum((rows[i + 1] || [])[c]); } }
+      return null;
+    };
+    ctrl = {
+      planATV: planATV, planCV: planCV, actualATV: total.atv, actualCV: total.cv,
+      repeatPct: repeatPct,
+      cplExtra: belowOf("cpl с учетом доп расходов"),
+      drrExtra: belowOf("дрр с учетом доп расходов")
+    };
+  }
+  return { days, weeks, total, ctrl };
 }
 // Отзывы по месяцам: строки «<Месяц> 2026», колонки по фиксированным буквам
 // (D/F = позитив/негатив МСК, J/L = позитив/негатив СПб). Отдаём только месяцы,

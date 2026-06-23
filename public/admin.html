@@ -1770,6 +1770,11 @@
         { key: "missedPct", label: "Процент пропущенных звонков", fmt: "pct", good: -1 },
         { key: "junkPct", label: "Доля мусора от общего числа контактов", fmt: "pct", good: -1 }
       ];
+      // Фактическая прибыль по месяцам 2026 (предоставлено директором). При появлении
+      // новых месяцев — дополнить. Рентабельность = прибыль / выручка (сумма в бюджете).
+      const VSC_PROFIT_2026 = { "Январь": 3468536.87, "Февраль": 3353959.46, "Март": 3004338.08, "Апрель": 2715751.13, "Май": 4404363.73 };
+      const vscShortMonth = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
+      const vscRentPct = (m) => { if (!m) return null; const p = VSC_PROFIT_2026[vscShortMonth(m.name)]; const b = m.total ? m.total.budget : null; return (p != null && b) ? p / b * 100 : null; };
       function vscFmt(v, fmt) {
         if (v == null || isNaN(v)) return "—";
         if (fmt === "money") return Math.round(v).toLocaleString("ru-RU") + " ₽";
@@ -2196,6 +2201,19 @@
           tile.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(kpi.label) + '</div><div class="vsc-tile-v' + cls + '">' + vscFmt(v, kpi.fmt) + '</div>' + delta + extra + '<div class="vsc-tile-s">' + escapeHtml(curSub || "") + '</div>';
           tiles.appendChild(tile);
         });
+        // Item 12 — рентабельность (прибыль / выручка): плитка только в месячной вкладке.
+        if (vscGran === "month") {
+          const curMo = (vscData.months || [])[vscMonthIdx];
+          const rent = vscRentPct(curMo);
+          const pIdx = vscPrevFilledIdx(vscMonthIdx);
+          const rentPrev = pIdx >= 0 ? vscRentPct(vscData.months[pIdx]) : null;
+          const pr = VSC_PROFIT_2026[vscShortMonth(curMo && curMo.name)];
+          const rtile = document.createElement("div"); rtile.className = "vsc-tile";
+          let rdl = "";
+          if (rent != null && rentPrev != null && rent !== rentPrev) { const d = rent - rentPrev; rdl = '<div class="vsc-tile-d ' + (d > 0 ? "up" : "down") + '">' + (d > 0 ? "▲" : "▼") + " " + vscFmt(Math.abs(d), "pct") + " к пред.</div>"; }
+          rtile.innerHTML = '<div class="vsc-tile-l">Рентабельность (прибыль / выручка)</div><div class="vsc-tile-v">' + vscFmt(rent, "pct") + '</div>' + rdl + '<div class="vsc-tile-s">' + (pr != null ? "прибыль " + vscFmt(pr, "money") : "нет данных о прибыли за месяц") + '</div>';
+          tiles.appendChild(rtile);
+        }
         vscContent.appendChild(tiles);
 
         const chartsH = document.createElement("div"); chartsH.className = "ref-sec-h";
@@ -2203,6 +2221,11 @@
         vscContent.appendChild(chartsH);
         if (!series.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных за выбранный месяц."; vscContent.appendChild(e); }
         else kpisForView.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, series)));
+        // Item 12 — график рентабельности по месяцам (только в месячной вкладке).
+        if (vscGran === "month") {
+          const rentSeries = (vscData.months || []).map((mm) => ({ x: vscShortMonth(mm.name), k: { rent: vscRentPct(mm) } }));
+          vscContent.appendChild(vscBarChart({ key: "rent", label: "Рентабельность (прибыль / выручка), %", fmt: "pct", good: 1 }, rentSeries));
+        }
       }
       // Вкладка «Ежемесячный контроль»: качество звонков/контактов + отзывы — всё по
       // месяцам, без плиток-цифр. Не зависит от переключателя гранулярности дашборда.
@@ -2219,6 +2242,48 @@
         const spb = rev.map((r) => ({ x: short(r.name), pos: r.spbPos, neg: r.spbNeg }));
         vscContent.appendChild(vscReviewsChart("Отзывы — Москва", msk));
         vscContent.appendChild(vscReviewsChart("Отзывы — Санкт-Петербург", spb));
+
+        // ── Сделки и реклама по месяцам (из нижнего сводного блока листа) ──
+        const ctrlSeries = (vscData.months || []).filter((mm) => mm.ctrl).map((mm) => ({ x: short(mm.name), k: mm.ctrl }));
+        // Item 10 — % повторных сделок.
+        const h3 = document.createElement("div"); h3.className = "ref-sec-h"; h3.style.marginTop = "22px"; h3.textContent = "Сделки — по месяцам (2026)";
+        vscContent.appendChild(h3);
+        vscContent.appendChild(vscBarChart({ key: "repeatPct", label: "% повторных сделок", fmt: "pct", good: 1 }, ctrlSeries));
+        // Item 9 — проверка Плана ОП.
+        vscContent.appendChild(vscPlanOpCheck());
+        // Item 14 — CPL/ДРР с учётом доп. расходов.
+        const h4 = document.createElement("div"); h4.className = "ref-sec-h"; h4.style.marginTop = "22px"; h4.textContent = "Реклама с учётом доп. расходов — по месяцам";
+        vscContent.appendChild(h4);
+        vscContent.appendChild(vscBarChart({ key: "cplExtra", label: "CPL с учётом доп. расходов", fmt: "money", good: -1 }, ctrlSeries));
+        vscContent.appendChild(vscBarChart({ key: "drrExtra", label: "ДРР с учётом доп. расходов", fmt: "pct", good: -1 }, ctrlSeries));
+      }
+      // Проверка Плана ОП (item 9): план ATV и план итоговой конверсии текущего месяца
+      // (строка «ТАРГЕТ» под Grand total) должны быть ВЫШЕ факта прошлого месяца (Grand
+      // total). Если ниже — подсветим красным.
+      function vscPlanOpCheck() {
+        const wrap = document.createElement("div"); wrap.className = "vsc-chart"; wrap.style.marginTop = "22px";
+        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = "План ОП — проверка (план месяца должен быть выше факта прошлого)";
+        wrap.appendChild(h);
+        const ms = vscData.months || [];
+        const shortN = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
+        const cell = (plan, fact, fmt) => {
+          if (plan == null || fact == null) return '<td style="padding:7px 10px;color:#9aa0ab;">—</td>';
+          const ok = plan > fact, col = ok ? "#2c7a43" : "#b0263a";
+          return '<td style="padding:7px 10px;color:' + col + ';font-weight:600;white-space:nowrap;">' + (ok ? "✓ " : "✗ ") + vscFmt(plan, fmt) + ' <span style="color:#9aa0ab;font-weight:400;">vs ' + vscFmt(fact, fmt) + '</span></td>';
+        };
+        const rowsHtml = [];
+        for (let i = 0; i < ms.length; i++) {
+          const c = ms[i] && ms[i].ctrl; if (!c || (c.planATV == null && c.planCV == null)) continue;
+          let prevC = null;
+          for (let j = i - 1; j >= 0; j--) { const pc = ms[j] && ms[j].ctrl; if (pc && (pc.actualATV != null || pc.actualCV != null)) { prevC = pc; break; } }
+          if (!prevC) continue;
+          rowsHtml.push('<tr style="border-top:1px solid #f0eef5;"><td style="padding:7px 10px;font-weight:600;color:#1d2330;">' + escapeHtml(shortN(ms[i].name)) + '</td>' + cell(c.planATV, prevC.actualATV, "money") + cell(c.planCV, prevC.actualCV, "pct") + '</tr>');
+        }
+        if (!rowsHtml.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Недостаточно данных для проверки."; wrap.appendChild(e); return wrap; }
+        const tbl = document.createElement("div"); tbl.style.overflowX = "auto";
+        tbl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 10px;">Месяц</th><th style="text-align:left;padding:7px 10px;">План ATV vs факт пред.</th><th style="text-align:left;padding:7px 10px;">План конверсии vs факт пред.</th></tr></thead><tbody>' + rowsHtml.join("") + '</tbody></table>';
+        wrap.appendChild(tbl);
+        return wrap;
       }
       // Вкладка «Прогноз прибыли»: считается на сервере по формулам твоей таблицы
       // (вкладка <Месяц> года) + наши KPI. Блок на месяц + блоки по неделям.
