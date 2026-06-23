@@ -2042,17 +2042,18 @@
         upd.textContent = "Источник: Google-таблица · обновляется автоматически (кэш ~15 мин)";
         head.appendChild(t); head.appendChild(upd); vscContent.appendChild(head);
 
-        // Вкладки /vsc: «Дашборд» (основные показатели) и «Ежемесячный контроль».
+        // Вкладки /vsc: «Дашборд», «Ежемесячный контроль», «Прогноз прибыли».
         const maintabs = document.createElement("div"); maintabs.className = "vsc-maintabs";
-        [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"]].forEach(([tb, lbl]) => {
+        [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"]].forEach(([tb, lbl]) => {
           const b = document.createElement("button"); b.type = "button"; b.textContent = lbl; if (tb === vscTab) b.className = "active";
           b.addEventListener("click", () => { vscTab = tb; renderVsc(); });
           maintabs.appendChild(b);
         });
         vscContent.appendChild(maintabs);
-        // Блок «Сделки без задач» относится к Дашборду — на «Ежемесячном контроле» прячем.
-        if (vscNoTaskBlock) vscNoTaskBlock.style.display = (vscTab === "monthly") ? "none" : "";
+        // Блок «Сделки без задач» относится к Дашборду — на остальных вкладках прячем.
+        if (vscNoTaskBlock) vscNoTaskBlock.style.display = (vscTab === "dash") ? "" : "none";
         if (vscTab === "monthly") { renderVscMonthly(); return; }
+        if (vscTab === "forecast") { renderVscForecast(); return; }
 
         const ctrls = document.createElement("div"); ctrls.className = "vsc-controls";
         const gran = document.createElement("div"); gran.className = "vsc-gran";
@@ -2167,6 +2168,68 @@
         const spb = rev.map((r) => ({ x: short(r.name), pos: r.spbPos, neg: r.spbNeg }));
         vscContent.appendChild(vscReviewsChart("Отзывы — Москва", msk));
         vscContent.appendChild(vscReviewsChart("Отзывы — Санкт-Петербург", spb));
+      }
+      // Вкладка «Прогноз прибыли»: считается на сервере по формулам твоей таблицы
+      // (вкладка <Месяц> года) + наши KPI. Блок на месяц + блоки по неделям.
+      async function renderVscForecast() {
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Прогноз прибыли";
+        vscContent.appendChild(h);
+        const box = document.createElement("div");
+        box.innerHTML = '<div class="loading-state">Считаем прогноз по вашей модели…</div>';
+        vscContent.appendChild(box);
+        let d;
+        try { d = await apiFetch("/admin/api/vsc-forecast"); }
+        catch (e) { box.innerHTML = '<div class="vsc-empty">Не удалось построить прогноз: ' + escapeHtml(e.message) + '</div>'; return; }
+        if (vscTab !== "forecast") return; // пользователь переключил вкладку, пока считалось
+        box.innerHTML = "";
+        if (!d || !d.month) { box.innerHTML = '<div class="vsc-empty">Недостаточно данных для прогноза.</div>'; return; }
+        const money = (v) => (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽";
+        const ru = (v) => Math.round(v || 0).toLocaleString("ru-RU");
+        const shortM = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
+
+        const head = document.createElement("div"); head.className = "vsc-chart";
+        const pos = d.month.profitMonth >= 0;
+        head.innerHTML =
+          '<div style="font-size:13px;color:#6b7280;font-weight:600;">Прогноз прибыли на месяц · ' + escapeHtml(shortM(d.monthName)) + '</div>' +
+          '<div style="font-size:30px;font-weight:800;letter-spacing:-.02em;margin:4px 0 2px;color:' + (pos ? "#2c7a43" : "#b0263a") + ';">' + money(d.month.profitMonth) + '</div>' +
+          '<div style="font-size:12.5px;color:#5a626f;">В пересчёте на неделю: <b>' + money(d.month.profitWeek) + '</b> · прогноз выручки: <b>' + money(d.month.revenue) + '</b></div>';
+        box.appendChild(head);
+
+        const tiles = document.createElement("div"); tiles.className = "vsc-tiles";
+        const tile = (label, val, sub, cls) => {
+          const t = document.createElement("div"); t.className = "vsc-tile";
+          t.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(label) + '</div><div class="vsc-tile-v' + (cls || "") + '">' + money(val) + '</div>' + (sub ? '<div class="vsc-tile-s">' + escapeHtml(sub) + '</div>' : '');
+          return t;
+        };
+        tiles.appendChild(tile("Прибыль/мес — текущие ставки", d.month.profitMonth, "ставки " + shortM(d.monthName), d.month.profitMonth >= 0 ? " pos" : " neg"));
+        if (d.baseline) tiles.appendChild(tile("База — прошлый месяц", d.baseline.profitMonth, "ставки " + shortM(d.basisMonth), d.baseline.profitMonth >= 0 ? " pos" : " neg"));
+        box.appendChild(tiles);
+
+        const r = d.month.rates || {};
+        const ass = document.createElement("div"); ass.className = "vsc-chart"; ass.style.fontSize = "12.5px"; ass.style.color = "#5a626f"; ass.style.lineHeight = "1.6";
+        ass.innerHTML =
+          '<div class="vsc-chart-h">Как считается</div>' +
+          'Модель и параметры расходов — из вашей таблицы (вкладка «<b>' + escapeHtml(d.tab) + '</b>»), считаются у нас по вашим формулам. ' +
+          'KPI-ставки — из наших данных: ASP <b>' + ru(r.asp) + '</b>, CPL <b>' + ru(r.cpl) + '</b>, CV <b>' + (Math.round((r.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((r.upt || 0) * 100) / 100) + '</b>. ' +
+          'Контакт-план <b>' + ru(d.month.contactsMonth) + '</b>/мес (из фактических контактов прошлого месяца «' + escapeHtml(shortM(d.basisMonth)) + '»: ' + ru(d.basisContacts) + '). Персонал ОП ' + d.persOP + ', смен ' + d.shifts + '.';
+        box.appendChild(ass);
+
+        if (d.weeks && d.weeks.length) {
+          const wh = document.createElement("div"); wh.className = "ref-sec-h"; wh.style.marginTop = "20px";
+          wh.textContent = "По неделям — прогноз месяца по ставкам недели";
+          box.appendChild(wh);
+          d.weeks.forEach((w) => {
+            const c = document.createElement("div"); c.className = "vsc-chart";
+            const wp = w.profitMonth >= 0; const wr = w.rates || {};
+            c.innerHTML =
+              '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">' +
+              '<div style="font-weight:700;color:#161d45;">' + escapeHtml(w.label) + '</div>' +
+              '<div style="font-size:11.5px;color:#8a90a0;">ASP ' + ru(wr.asp) + ' · CPL ' + ru(wr.cpl) + ' · CV ' + (Math.round((wr.cv || 0) * 10) / 10) + '% · UPT ' + (Math.round((wr.upt || 0) * 100) / 100) + '</div>' +
+              '</div>' +
+              '<div style="margin-top:6px;font-size:13px;color:#3a3f4d;">Прогноз месяца: <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(w.profitMonth) + '</b> · за неделю: <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(w.profitWeek) + '</b></div>';
+            box.appendChild(c);
+          });
+        }
       }
       function tstDocRow(label, required, when) {
         const kind = required === "stat" ? "stat" : (required ? "req" : "opt");

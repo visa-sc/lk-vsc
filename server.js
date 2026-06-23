@@ -2513,6 +2513,137 @@ app.get("/admin/api/vsc-dashboard", requireAdmin, async (req, res) => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════
+// VSC «Прогноз прибыли». P&L-модель живёт в отдельной Google-таблице директора
+// (вкладка на каждый месяц). Мы НЕ дублируем её числа: берём ФОРМУЛЫ и связи
+// ячеек из последней вкладки (xlsx-экспорт, доступ только на чтение), считаем
+// сами (включая круговую ссылку «ФОТ-админ ↔ прибыль» через итерации), а ВХОДЫ
+// подставляем свои: ставки ASP/CPL/CV/UPT — из наших KPI (месяц + недели листа,
+// у недель ставки корректные — из строк Total); Таргет — из фактических контактов;
+// персонал/часы/смены — параметры из той же вкладки. Параметры расходов остаются
+// в формулах таблицы → меняешь модель там, прогноз подхватывает сам. Сверено Δ=0.
+const VSC_FORECAST_XLSX = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSRGoK2ihh0IiWYR5YdoVNDOvyoLK4NhPivNY4UEENT4fe2KPDGm6uOsk8Y_5OqiN22qz4pi0Xy3iTm/pub?output=xlsx";
+const VSC_RU_MONTH_IDX = { "январь": 0, "февраль": 1, "март": 2, "апрель": 3, "май": 4, "июнь": 5, "июль": 6, "август": 7, "сентябрь": 8, "октябрь": 9, "ноябрь": 10, "декабрь": 11 };
+// Безопасный вычислитель арифметики «+ - * / ( )» со ссылками вида B<row>.
+function vscFcEval(expr, vals) {
+  let s = String(expr).replace(/^=/, "").replace(/B(\d+)/g, (_, r) => { const x = vals[+r]; const n = (typeof x === "number" && isFinite(x)) ? x : 0; return "(" + n + ")"; });
+  s = s.replace(/\s+/g, "");
+  if (!/^[0-9.+\-*/()]*$/.test(s)) return NaN;
+  let i = 0;
+  function num() {
+    if (s[i] === "(") { i++; const v = expr2(); i++; return v; }
+    let j = i; if (s[i] === "+" || s[i] === "-") i++;
+    while (i < s.length && /[0-9.]/.test(s[i])) i++;
+    return parseFloat(s.slice(j, i));
+  }
+  function term() { let v = num(); while (s[i] === "*" || s[i] === "/") { const op = s[i++]; const r = num(); v = op === "*" ? v * r : v / r; } return v; }
+  function expr2() { let v = term(); while (s[i] === "+" || s[i] === "-") { const op = s[i++]; const r = term(); v = op === "+" ? v + r : v - r; } return v; }
+  const out = expr2(); return isFinite(out) ? out : NaN;
+}
+// Итеративный расчёт модели: формулы пересчитываем, пока не сойдётся (круговая ссылка).
+function vscFcCompute(model, overrides) {
+  const vals = {};
+  for (const r in model) vals[r] = model[r].f ? 0 : (parseFloat(model[r].v) || 0);
+  Object.assign(vals, overrides);
+  for (let it = 0; it < 200; it++) {
+    for (const r in model) {
+      if (overrides[+r] != null) continue;
+      if (model[r].f) { const x = vscFcEval(model[r].f, vals); vals[r] = isFinite(x) ? x : 0; }
+    }
+  }
+  return vals; // 37=выручка, 38=прибыль/мес, 39=прибыль/нед, 34=контакты/мес
+}
+let _vscFcModel = null, _vscFcModelAt = 0;
+const VSC_FC_MODEL_TTL = 6 * 3600 * 1000;
+async function vscForecastModel() {
+  const now = Date.now();
+  if (_vscFcModel && (now - _vscFcModelAt) < VSC_FC_MODEL_TTL) return _vscFcModel;
+  const r = await axios.get(VSC_FORECAST_XLSX, { timeout: 20000, responseType: "arraybuffer" });
+  const zip = new AdmZip(Buffer.from(r.data));
+  const read = (n) => { const e = zip.getEntry(n); return e ? e.getData().toString("utf8") : ""; };
+  const ss = [];
+  { const sx = read("xl/sharedStrings.xml"); const re = /<si>([\s\S]*?)<\/si>/g; let m; while ((m = re.exec(sx))) { const t = (m[1].match(/<t[^>]*>([\s\S]*?)<\/t>/g) || []).map((x) => x.replace(/<[^>]+>/g, "")).join(""); ss.push(t); } }
+  const wb = read("xl/workbook.xml"); const rels = read("xl/_rels/workbook.xml.rels");
+  const sheets = [];
+  { const re = /<sheet[^>]*name="([^"]*)"[^>]*r:id="(rId\d+)"/g; let m; while ((m = re.exec(wb))) sheets.push({ name: m[1], rid: m[2] }); }
+  // кандидаты «<Месяц> <год>», по убыванию свежести
+  const cand = [];
+  for (const sh of sheets) {
+    const mm = /^([А-Яа-яёЁ]+)\s+(\d{4})$/.exec(String(sh.name).trim());
+    if (!mm) continue; const mi = VSC_RU_MONTH_IDX[mm[1].toLowerCase()]; if (mi == null) continue;
+    cand.push({ key: (+mm[2]) * 12 + mi, name: sh.name, rid: sh.rid, year: +mm[2], mi });
+  }
+  cand.sort((a, b) => b.key - a.key);
+  const parseColB = (file) => {
+    const xml = read(file); const model = {}; const labels = {};
+    const re = /<c\s+r="([A-Z]+)(\d+)"([^>]*)>([\s\S]*?)<\/c>/g; let m;
+    while ((m = re.exec(xml))) {
+      const col = m[1], row = +m[2], attrs = m[3], body = m[4];
+      if (col !== "A" && col !== "B") continue;
+      const fm = /<f[^>]*>([\s\S]*?)<\/f>/.exec(body); const vm = /<v>([\s\S]*?)<\/v>/.exec(body);
+      let v = vm ? vm[1] : ""; if (/t="s"/.test(attrs) && v !== "") v = ss[+v];
+      if (col === "A") { if (v) labels[row] = String(v); continue; }
+      model[row] = { f: fm ? fm[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">") : null, v: v };
+    }
+    return { model, labels };
+  };
+  // берём самую свежую вкладку, у которой есть формула прибыли (стр. 38)
+  for (const c of cand) {
+    const t = new RegExp('Id="' + c.rid + '"[^>]*Target="([^"]*)"').exec(rels);
+    if (!t) continue;
+    const file = "xl/" + t[1].replace("../", "");
+    const { model, labels } = parseColB(file);
+    if (model[38] && model[38].f) {
+      _vscFcModel = { model, labels, tab: c.name, year: c.year, mi: c.mi };
+      _vscFcModelAt = Date.now();
+      return _vscFcModel;
+    }
+  }
+  throw new Error("в таблице прогноза не найдена вкладка с моделью (строка «Прибыль»)");
+}
+async function vscBuildForecast() {
+  const [fc, dash] = await Promise.all([vscForecastModel(), getVscDashboard()]);
+  const months = (dash.months || []).map((m, i) => ({ m, i })).filter((x) => x.m.total && ((x.m.total.processed > 0) || (x.m.total.budget > 0)));
+  if (!months.length) return { success: true, tab: fc.tab, month: null, weeks: [], baseline: null };
+  const cur = months[months.length - 1].m;
+  const prev = months.length > 1 ? months[months.length - 2].m : cur;
+  const persOP = parseFloat(fc.model[2] && fc.model[2].v) || 0;
+  const shifts = parseFloat(fc.model[29] && fc.model[29].v) || 0;
+  // Таргет (контакт-интенсивность) из ФАКТИЧЕСКИХ контактов прошлого месяца:
+  // «ожидаем объём как в прошлом месяце». target = контакты / (персонал × смены).
+  const basisContacts = (prev.total && prev.total.processed) || (cur.total && cur.total.processed) || 0;
+  const target = (persOP > 0 && shifts > 0) ? basisContacts / (persOP * shifts) : 0;
+  // проекция месяца по ставкам периода (target/персонал/смены постоянны — как у директора)
+  const proj = (k) => {
+    if (!k) return null;
+    const ov = { 24: target, 25: +k.asp || 0, 27: +k.cpl || 0, 28: (k.cv != null ? +k.cv / 100 : 0), 30: +k.upt || 0 };
+    if (!(ov[25] && ov[28] && ov[30])) return null; // нет ключевых ставок — период неполный
+    const v = vscFcCompute(fc.model, ov);
+    return { revenue: v[37], profitMonth: v[38], profitWeek: v[39], contactsMonth: v[34], rates: { asp: ov[25], cpl: ov[27], cv: ov[28] * 100, upt: ov[30] } };
+  };
+  const weeks = (cur.weeks || []).filter((w) => (w.processed > 0) || (w.budget > 0))
+    .map((w) => { const p = proj(w); return p ? Object.assign({ label: w.label }, p) : null; }).filter(Boolean);
+  return {
+    success: true, tab: fc.tab, monthName: cur.name, basisMonth: prev.name,
+    persOP, shifts, target, basisContacts,
+    month: proj(cur.total), baseline: proj(prev.total), weeks
+  };
+}
+let _vscFcCache = null, _vscFcAt = 0;
+const VSC_FC_TTL = 15 * 60 * 1000;
+app.get("/admin/api/vsc-forecast", requireAdmin, async (req, res) => {
+  try {
+    const now = Date.now();
+    if (_vscFcCache && (now - _vscFcAt) < VSC_FC_TTL) return res.json(_vscFcCache);
+    const data = await vscBuildForecast();
+    _vscFcCache = data; _vscFcAt = now;
+    return res.json(data);
+  } catch (e) {
+    console.error("vsc forecast error:", e && e.message);
+    return res.status(500).json({ success: false, message: "Не удалось построить прогноз прибыли" });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════
 // Клиентская сессия (ФАЗА 1). Подписанный токен (HMAC-SHA256) в httpOnly-cookie
 // `voyo_sess`. Выдаётся при ЛЮБОМ успешном входе (SMS / Face ID по номеру /
 // Face ID кнопкой). Stateless → переживает рестарты/деплои (никого не
