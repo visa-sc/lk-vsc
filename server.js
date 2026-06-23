@@ -12,6 +12,7 @@ const archiver = require("archiver");
 const AdmZip = require("adm-zip");
 const iconv = require("iconv-lite");
 const sms = require("./sms");
+const mail = require("./mail");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1334,6 +1335,52 @@ app.get("/admin/api/corrections", requireStaff, (req, res) => {
   }
 });
 
+// ── Служебные письма по корректировкам ЛК (через mail.js) ──
+const VOYO_DIRECTOR_EMAIL = "director@visa-sc.ru";
+function emailDoc(inner, accent, footer) {
+  accent = accent || "#3589BD";
+  footer = footer || 'Служебное письмо для сотрудников VOYO. Отвечать на него не нужно.<br>С уважением, команда VOYO · Visa Services Center';
+  return '<!doctype html><html><head><meta charset="utf-8"></head>' +
+    '<body style="margin:0;padding:24px 12px;background:#eef1f5;">' +
+    '<div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e6e9f0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1d2330;">' +
+    '<div style="height:4px;background:' + accent + ';"></div>' +
+    '<div style="text-align:center;padding:24px 24px 6px;"><img src="https://voyotravel.ru/logo.png" alt="VOYO" width="150" style="width:150px;height:auto;max-width:55%;" /></div>' +
+    '<div style="padding:10px 32px 26px;line-height:1.55;font-size:15px;">' + inner + '</div>' +
+    '<div style="background:#f7f9fc;border-top:1px solid #eef0f4;padding:16px 32px;font-size:12px;color:#8a93a3;line-height:1.5;">' + footer + '</div>' +
+    '</div></body></html>';
+}
+function correctionDoneEmailHtml(name, it) {
+  const e = escapeHtml;
+  const comments = Array.isArray(it.comments) ? it.comments : [];
+  const lastComment = comments.length ? (comments[comments.length - 1].text || "") : "";
+  const done = (it.note && String(it.note).trim()) ? it.note : (lastComment || "Готово.");
+  const inner =
+    '<p style="margin:0 0 14px;">Привет, ' + e(name || "") + '!</p>' +
+    '<p style="margin:0 0 16px;"><span style="display:inline-block;background:#e7f6ec;color:#1f7a3d;font-weight:600;font-size:13px;padding:5px 12px;border-radius:20px;">✓ Корректировка выполнена</span></p>' +
+    '<p style="margin:0 0 16px;">Твоя корректировка по личному кабинету клиента выполнена и уже работает на боевом сайте.</p>' +
+    '<div style="background:#eef5fb;border-left:4px solid #3589BD;border-radius:8px;padding:14px 16px;margin:0 0 16px;font-size:14px;">' +
+      '<div style="color:#6b7280;font-size:12px;margin-bottom:3px;">Корректировка</div>' +
+      '<div style="margin-bottom:12px;">' + e(it.what || "") + '</div>' +
+      '<div style="color:#6b7280;font-size:12px;margin-bottom:3px;">Что сделано</div>' +
+      '<div>' + e(done) + '</div>' +
+    '</div>' +
+    '<p style="margin:0 0 22px;">Посмотреть все твои корректировки и статусы можно в панели:</p>' +
+    '<p style="margin:0 0 8px;"><a href="https://dev.voyotravel.ru" style="display:inline-block;background:#3589BD;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:13px 26px;border-radius:10px;">Открыть панель ЛК</a></p>';
+  return emailDoc(inner, "#3589BD", 'Это автоматическое уведомление — отвечать на него не нужно.<br>С уважением, команда VOYO · Visa Services Center');
+}
+function newCorrectionDirectorEmailHtml(it) {
+  const e = escapeHtml;
+  const inner =
+    '<p style="margin:0 0 14px;">Добавлена новая корректировка по клиентскому ЛК.</p>' +
+    '<div style="background:#eef5fb;border-left:4px solid #3589BD;border-radius:8px;padding:14px 16px;margin:0 0 16px;font-size:14px;line-height:1.7;">' +
+      '<div><span style="color:#6b7280;">Автор:</span> ' + e(it.author || "—") + '</div>' +
+      (it.area ? ('<div><span style="color:#6b7280;">Раздел:</span> ' + e(it.area) + '</div>') : '') +
+      '<div style="margin-top:6px;"><span style="color:#6b7280;">Что нужно:</span><br>' + e(it.what || "") + '</div>' +
+    '</div>' +
+    '<p style="margin:0 0 8px;"><a href="https://voyotravel.ru/admin" style="display:inline-block;background:#3589BD;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 24px;border-radius:10px;">Открыть «Корректировки ЛК»</a></p>';
+  return emailDoc(inner);
+}
+
 app.post("/admin/api/corrections", requireStaff, (req, res) => {
   try {
     const b = req.body || {};
@@ -1360,10 +1407,20 @@ app.post("/admin/api/corrections", requireStaff, (req, res) => {
       resolvedAt: "",
       note: "",
       comments: [],
-      legacy: false
+      legacy: false,
+      // Кто создал — для авто-письма автору при выполнении (только новые заявки).
+      createdBy: { name: req.staff.name || "", role: req.staff.role || "", email: (req.staff.email || "").toLowerCase() }
     };
     lkCorrections.unshift(item);
     saveCorrections();
+    // Письмо директору о новой корректировке (служебное, не блокирует ответ).
+    try {
+      mail.sendMail({
+        to: VOYO_DIRECTOR_EMAIL,
+        subject: "Новая корректировка ЛК — " + (item.author || "—"),
+        html: newCorrectionDirectorEmailHtml(item)
+      }).then((r) => { if (!r.ok) console.error("MAIL new-correction:", r.error); }).catch(() => {});
+    } catch (e) { console.error("MAIL new-correction throw:", e && e.message); }
     return res.json({ success: true, item });
   } catch (e) {
     console.error("create correction error:", e.message);
@@ -1377,17 +1434,32 @@ app.post("/admin/api/corrections/:id/update", requireAdmin, (req, res) => {
     const it = lkCorrections.find((x) => x && x.id === String(req.params.id));
     if (!it) return res.status(404).json({ success: false, message: "Не найдено" });
     const b = req.body || {};
+    let justDone = false;
     if (b.status !== undefined) {
       const st = String(b.status);
       if (!CORRECTION_STATUSES.has(st)) return res.status(400).json({ success: false, message: "Неизвестный статус" });
+      const wasClosed = !!it.resolvedAt;
       it.status = st;
       if (CORRECTION_CLOSED_STATUSES.has(st) && !it.resolvedAt) {
         it.resolvedAt = new Date().toISOString().slice(0, 10);
       }
       if (!CORRECTION_CLOSED_STATUSES.has(st)) it.resolvedAt = "";
+      // Переход именно в «Выполнено» (впервые) → письмо автору-руководителю.
+      justDone = (st === "done" && !wasClosed);
     }
     if (b.note !== undefined) it.note = corrText(b.note, 4000);
     saveCorrections();
+    // Авто-письмо «корректировка выполнена» — только для НОВЫХ заявок (есть createdBy
+    // с e-mail руководителя). По старым (без createdBy) не шлём.
+    if (justDone && it.createdBy && it.createdBy.role === "manager" && it.createdBy.email) {
+      try {
+        mail.sendMail({
+          to: it.createdBy.email,
+          subject: "Твоя корректировка по ЛК выполнена",
+          html: correctionDoneEmailHtml(it.createdBy.name, it)
+        }).then((r) => { if (!r.ok) console.error("MAIL correction-done:", r.error); }).catch(() => {});
+      } catch (e) { console.error("MAIL correction-done throw:", e && e.message); }
+    }
     return res.json({ success: true, item: it });
   } catch (e) {
     console.error("update correction error:", e.message);
@@ -2747,6 +2819,30 @@ app.post("/admin/api/vsc-profit", requireAdmin, (req, res) => {
 
 // ── Калькулятор ВНЖ: курсы EUR/USD с ЦБ РФ (B4/B5) + ручной курс расхода usdt (B7) ──
 let _cbrCache = null, _cbrAt = 0;
+// Лог актуализаций курса в калькуляторе (дата+время МСК, одна запись на день).
+const VSC_RATES_LOG_FILE = path.join(__dirname, ".vscRatesLog.json");
+function mskParts(ts) {
+  const d = new Date(ts + 3 * 3600 * 1000); // UTC+3 (МСК)
+  const p = (n) => ("0" + n).slice(-2);
+  return { date: p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear(), time: p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) };
+}
+function appendRatesLog(eur, usd, ts) {
+  try {
+    if (!(eur && usd)) return;
+    let log = []; try { log = JSON.parse(fs.readFileSync(VSC_RATES_LOG_FILE, "utf8")) || []; } catch (_) {}
+    const day = mskParts(ts).date;
+    log = log.filter((e) => mskParts(e.ts).date !== day); // одна (последняя) актуализация на день
+    log.push({ ts, eur, usd });
+    log.sort((a, b) => a.ts - b.ts);
+    if (log.length > 90) log = log.slice(-90);
+    fs.writeFileSync(VSC_RATES_LOG_FILE, JSON.stringify(log));
+  } catch (e) { console.error("appendRatesLog:", e && e.message); }
+}
+function ratesLogTimesByDate() {
+  const m = {};
+  try { (JSON.parse(fs.readFileSync(VSC_RATES_LOG_FILE, "utf8")) || []).forEach((e) => { const p = mskParts(e.ts); m[p.date] = p.time; }); } catch (_) {}
+  return m;
+}
 async function fetchCbrRates() {
   const now = Date.now();
   if (_cbrCache && (now - _cbrAt) < 60 * 60 * 1000) return _cbrCache;   // курс ЦБ обновляется раз в день — кэш 1 ч
@@ -2763,6 +2859,7 @@ async function fetchCbrRates() {
   }
   const date = (/<ValCurs[^>]*Date="([^"]+)"/.exec(xml) || [])[1] || null;
   _cbrCache = { rates, date }; _cbrAt = now;
+  appendRatesLog(rates.EUR, rates.USD, now); // фиксируем время актуализации курса в калькуляторе
   return _cbrCache;
 }
 const VSC_CALC_FILE = path.join(__dirname, ".vscCalc.json");
@@ -2787,13 +2884,13 @@ app.post("/admin/api/vsc-rates", requireAdmin, (req, res) => {
   setTimeout(warm, 20 * 1000);
   setInterval(warm, 60 * 60 * 1000);
 })();
-// История курса ЦБ за последние ~7 дней (официальный XML_dynamic: EUR R01239, USD R01235).
+// История курса ЦБ за последние ~30 дней (официальный XML_dynamic: EUR R01239, USD R01235).
 let _cbrHistCache = null, _cbrHistAt = 0;
 async function fetchCbrHistory() {
   const now = Date.now();
   if (_cbrHistCache && (now - _cbrHistAt) < 60 * 60 * 1000) return _cbrHistCache;
   const fmt = (dt) => ("0" + dt.getDate()).slice(-2) + "/" + ("0" + (dt.getMonth() + 1)).slice(-2) + "/" + dt.getFullYear();
-  const to = new Date(now), from = new Date(now - 8 * 86400000);
+  const to = new Date(now), from = new Date(now - 31 * 86400000);
   const url = (id) => "https://www.cbr.ru/scripts/XML_dynamic.asp?date_req1=" + fmt(from) + "&date_req2=" + fmt(to) + "&VAL_NM_RQ=" + id;
   const parse = (xml) => { const o = {}; const re = /<Record\s+Date="([^"]+)"[^>]*>([\s\S]*?)<\/Record>/g; let m; while ((m = re.exec(xml))) { const dt = m[1]; const v = parseFloat((((/<Value>([\d,]+)<\/Value>/.exec(m[2]) || [])[1]) || "0").replace(",", ".")); const nom = parseFloat(((/<Nominal>(\d+)<\/Nominal>/.exec(m[2]) || [])[1]) || "1") || 1; if (v) o[dt] = v / nom; } return o; };
   const [eR, uR] = await Promise.all([
@@ -2808,8 +2905,12 @@ async function fetchCbrHistory() {
   return hist;
 }
 app.get("/admin/api/vsc-rates-history", requireAdmin, async (req, res) => {
-  try { return res.json({ success: true, history: await fetchCbrHistory() }); }
-  catch (e) { return res.json({ success: false, history: [], error: e && e.message }); }
+  try {
+    const hist = await fetchCbrHistory();
+    const tm = ratesLogTimesByDate();
+    hist.forEach((h) => { h.time = tm[h.date] || ""; }); // время актуализации курса в калькуляторе
+    return res.json({ success: true, history: hist });
+  } catch (e) { return res.json({ success: false, history: [], error: e && e.message }); }
 });
 
 // ── Бот VFS (Франция): конфиг — получатели уведомлений + предзагруженные клиенты.
