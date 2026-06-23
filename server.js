@@ -2369,16 +2369,6 @@ function vscParseMonth(rows) {
   const processedCols = colsAll(["полученные", "конца рабочего дня"]);
   // Недобор/перебор ОП — суммируем все региональные колонки (МСК/СПБ/ЕКБ или одну общую).
   const overCols = colsAll(["недобор/перебор", "оп"]);
-  // Аддитивные базы для КОРРЕКТНОГО пересчёта коэффициентов на произвольный период
-  // (неделя/слияние огрызков). Коэффициенты в таблице считаются по взвешенным
-  // формулам в строках Total — усреднять дневные значения НЕЛЬЗЯ. Поэтому держим базы:
-  //   units    — «Кол-во пакетов» (шт.); ASP = budget/units, UPT = units/deals.
-  //   deals    — сумма 6 региональных «Кол-во сделок …» = транзакции; ATV = budget/deals, CV = deals/contactsAll.
-  //   contactsAll — «Обработанные контакты ВСЕГО» (знаменатель CV; НЕ «processed» = сумма «полученные…»).
-  // (DRR = ad/budget, CPL для слияния = ad/Σ(ad/cpl по блокам).) Позиции колонок плавают — берём по заголовку.
-  const unitsCol = colF("кол-во пакетов");
-  const dealCols = colsAll(["кол-во сделок"]);   // «Кол-во сделок МСК/СПБ …» (НЕ «Количество сделок из новых/повторных»)
-  const contactsAllCol = colF("обработанные контакты", "всего");
   const sumNN = (r, cols) => { const v = cols.map((i) => vscNum(r[i])).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
   // Отклонение таргета: (ФАКТ МСК + ФАКТ СПБ) − (ПЛАН МСК + ПЛАН СПБ).
   const targetDev = (r) => {
@@ -2392,9 +2382,6 @@ function vscParseMonth(rows) {
     over: sumNN(r, overCols), targetDev: targetDev(r),
     processed: sumNN(r, processedCols),
     rev: vscNum(r[C.rev]), ad: vscNum(r[C.ad]), budget: C.budget >= 0 ? vscNum(r[C.budget]) : null,
-    units: unitsCol >= 0 ? vscNum(r[unitsCol]) : null,
-    deals: sumNN(r, dealCols),
-    contactsAll: contactsAllCol >= 0 ? vscNum(r[contactsAllCol]) : null,
     missedPct: C.missedPct >= 0 ? vscNum(r[C.missedPct]) : null,
     junkPct: C.junkPct >= 0 ? vscNum(r[C.junkPct]) : null,
     planPct: null // план ОП — месячная величина из сводного блока (см. ниже), не из дневной строки
@@ -2484,20 +2471,26 @@ async function vscFetchAll() {
   const withTotal = months.filter((m) => m.total);
   const sum = (f) => withTotal.reduce((a, m) => a + (m.total[f] || 0), 0);
   const avg = (f) => { const v = withTotal.map((m) => m.total[f]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-  // Аддитивные базы суммируем; коэффициенты на год считаем ВЗВЕШЕННО из этих баз —
-  // ровно как «Grand total» в таблице (усреднять помесячные коэффициенты НЕЛЬЗЯ —
-  // та же ошибка, что и в неделях). ATV=Σbudget/Σdeals, CV=Σdeals/ΣcontactsAll,
-  // ASP=Σbudget/Σunits, UPT=Σunits/Σdeals, ДРР=Σad/Σbudget, CPL=Σad/Σ(ad/cpl по месяцам).
-  const sumU = sum("units"), sumD = sum("deals"), sumC = sum("contactsAll");
+  // Коэффициенты на год считаем ВЗВЕШЕННО (как «Grand total»), а не средним по
+  // месяцам — усреднять коэффициенты НЕЛЬЗЯ (та же ошибка, что была в неделях).
+  // Знаменатели восстанавливаем из НАДЁЖНЫХ аддитивных баз (budget, ad) и самих
+  // коэффициентов месяца — это не зависит от вёрстки листа (в янв–мар колонки
+  // контактов/сделок другие, чем в апр+): T=budget/ATV, контакты=T/(CV/100),
+  // units=budget/ASP, лиды=ad/CPL. Тогда год: ATV=Σbudget/ΣT, CV=ΣT/Σконтакты,
+  // ASP=Σbudget/Σunits, UPT=Σunits/ΣT, ДРР=Σad/Σbudget, CPL=Σad/Σлиды.
   const sumB = sum("budget"), sumA = sum("ad");
-  const leadsYr = withTotal.reduce((a, m) => { const t = m.total; return a + ((t.ad != null && t.cpl) ? t.ad / t.cpl : 0); }, 0);
+  const impT = (t) => (t && t.atv) ? (t.budget || 0) / t.atv : 0;            // транзакции
+  const impC = (t) => { const T = impT(t); return (t && t.cv) ? T / (t.cv / 100) : 0; }; // контакты (знаменатель CV)
+  const impU = (t) => (t && t.asp) ? (t.budget || 0) / t.asp : 0;            // units (пакеты)
+  const impL = (t) => (t && t.cpl) ? (t.ad || 0) / t.cpl : 0;                // лиды (знаменатель CPL)
+  const sumImp = (fn) => withTotal.reduce((a, m) => a + fn(m.total), 0);
+  const yT = sumImp(impT), yC = sumImp(impC), yU = sumImp(impU), yL = sumImp(impL);
   const year = {
     rev: sum("rev"), ad: sumA, over: sum("over"), budget: sumB,
     targetDev: sum("targetDev"), processed: sum("processed"),
-    units: sumU, deals: sumD, contactsAll: sumC,
-    atv: sumD ? sumB / sumD : null, cv: sumC ? sumD / sumC * 100 : null,
-    cpl: leadsYr ? sumA / leadsYr : null, drr: sumB ? sumA / sumB * 100 : null,
-    asp: sumU ? sumB / sumU : null, upt: sumD ? sumU / sumD : null,
+    atv: yT ? sumB / yT : null, cv: yC ? yT / yC * 100 : null,
+    cpl: yL ? sumA / yL : null, drr: sumB ? sumA / sumB * 100 : null,
+    asp: yU ? sumB / yU : null, upt: yT ? yU / yT : null,
     planPct: avg("planPct"),
     aggregate: "weighted"
   };

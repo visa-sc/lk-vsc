@@ -1942,23 +1942,31 @@
             if (!b) { const sun = new Date(mon.getTime() + 6 * 86400000); b = { mon: mon, label: dm(mon) + "–" + dm(sun), blocks: [] }; buckets.set(key, b); }
             b.blocks.push(wk);
           }));
-          const sumK = ["budget", "processed", "over", "targetDev", "ad", "rev", "units", "deals", "contactsAll"];
+          const sumK = ["budget", "processed", "over", "targetDev", "ad", "rev"];
           const sumBlk = (blocks, key) => { const v = blocks.map((b) => b[key]).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, c) => a + c, 0) : null; };
+          // Знаменатели коэффициентов восстанавливаем из НАДЁЖНЫХ баз (budget/ad) и
+          // самих коэффициентов блока: T=budget/ATV, контакты=T/(CV/100), units=budget/ASP,
+          // лиды=ad/CPL. Не зависит от вёрстки листа (в янв–мар колонки контактов другие).
+          const impT = (b) => b.atv ? (b.budget || 0) / b.atv : 0;
+          const impC = (b) => { const T = impT(b); return b.cv ? T / (b.cv / 100) : 0; };
+          const impU = (b) => b.asp ? (b.budget || 0) / b.asp : 0;
+          const impL = (b) => b.cpl ? (b.ad || 0) / b.cpl : 0;
+          const sumImp = (blocks, fn) => blocks.reduce((a, b) => a + fn(b), 0);
           const aggBlocks = (blocks) => {
             const days = blocks.reduce((a, b) => a.concat(b.days || []), []);
             // Один блок (обычный случай) = строка Total недели → берём значения как есть.
             if (blocks.length === 1) { const k = Object.assign({}, blocks[0]); k.days = days; return k; }
-            // Склейка огрызков: суммируем базы, коэффициенты пересчитываем взвешенно.
+            // Склейка огрызков: базы суммируем, коэффициенты пересчитываем взвешенно.
             const k = { days: days };
             sumK.forEach((key) => { k[key] = sumBlk(blocks, key); });
-            const B = k.budget, D = k.deals, Cc = k.contactsAll, A = k.ad, U = k.units;
-            k.atv = D ? B / D : null;
-            k.cv = Cc ? D / Cc * 100 : null;
+            const B = k.budget, A = k.ad;
+            const T = sumImp(blocks, impT), Cc = sumImp(blocks, impC), U = sumImp(blocks, impU), L = sumImp(blocks, impL);
+            k.atv = T ? B / T : null;
+            k.cv = Cc ? T / Cc * 100 : null;
             k.drr = B ? A / B * 100 : null;
             k.asp = U ? B / U : null;
-            k.upt = D ? U / D : null;
-            const leads = blocks.reduce((a, b) => a + ((b.ad != null && b.cpl) ? b.ad / b.cpl : 0), 0);
-            k.cpl = leads ? A / leads : null;
+            k.upt = T ? U / T : null;
+            k.cpl = L ? A / L : null;
             k.planPct = null; // план ОП — месячная величина, в неделях не показываем
             return k;
           };
