@@ -2580,30 +2580,38 @@
         const card = "background:#fff;border:1px solid #e6e9f0;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;";
         const lbl = "font-size:12px;color:#6b7280;font-weight:600;line-height:1.3;min-height:32px;";
         const val = "font-size:20px;font-weight:800;color:#161d45;margin-top:auto;";
-        const inpR = "width:100%;box-sizing:border-box;padding:9px 12px;font-size:18px;font-weight:700;border:1px solid #cdddef;border-radius:10px;margin-top:auto;";
+        const inpR = "width:100%;box-sizing:border-box;padding:9px 12px;font-size:18px;font-weight:700;border:1.5px solid #3d92c9;border-radius:10px;margin-top:auto;background:#fff;";
         const card2 = "background:#fff;border:1px solid #e6e9f0;border-radius:14px;padding:16px;";
-        const lbl2 = "font-size:12px;color:#6b7280;font-weight:600;margin-bottom:5px;";
-        const inp2 = "width:100%;box-sizing:border-box;padding:10px 12px;font-size:15px;border:1px solid #d4d8e2;border-radius:10px;";
+        const lbl2 = "font-size:12px;color:#216aa0;font-weight:700;margin-bottom:5px;";
+        const inp2 = "width:100%;box-sizing:border-box;padding:10px 12px;font-size:15px;border:1.5px solid #3d92c9;border-radius:10px;background:#fff;";
+        // Визуальное разделение: голубые «editable» карточки vs серые «read-only/авто».
+        const cardRO = "background:#f5f6f8;border:1px solid #e4e7ee;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;";
+        const cardEd = "background:#eaf4fe;border:1.5px solid #3d92c9;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;";
+        const lblEd = "font-size:12px;color:#216aa0;font-weight:700;line-height:1.3;min-height:32px;";
+        const card2Ed = "background:#eaf4fe;border:1.5px solid #3d92c9;border-radius:14px;padding:16px;";
         const fr = (v, dg) => (v == null || isNaN(v)) ? "—" : (Math.round(v * Math.pow(10, dg)) / Math.pow(10, dg)).toLocaleString("ru-RU");
         const b6 = d.usd ? d.eur / d.usd : 0;
         const curBtn = (k, t) => '<button type="button" data-cur="' + k + '" class="calc-cur" style="flex:1;padding:10px;border-radius:10px;cursor:pointer;font-weight:700;font-size:14px;border:1px solid ' + (vscCalcState.cur === k ? "#3589BD;background:#3589BD;color:#fff" : "#cfd6e4;background:#fff;color:#3a3f4d") + ';">' + t + '</button>';
-        const outCard = (id, title) => '<div style="background:#fff4ef;border:1px solid #f3cdbe;border-radius:14px;padding:14px 16px;"><div style="font-size:12px;color:#9a5b45;font-weight:600;line-height:1.3;min-height:30px;">' + title + '</div><div id="' + id + '" style="font-size:22px;font-weight:800;color:#c0492b;margin-top:6px;">—</div></div>';
+        const outCard = (id, title) => '<div style="background:#eef8f1;border:1px solid #cde7d5;border-radius:14px;padding:14px 16px;"><div style="font-size:12px;color:#3f7a57;font-weight:600;line-height:1.3;min-height:30px;">' + title + '</div><div id="' + id + '" style="font-size:22px;font-weight:800;color:#2e7d52;margin-top:6px;">—</div></div>';
         box.innerHTML =
           '<div class="ref-sec-h">Калькулятор ВНЖ</div>' +
           '<div style="' + card2 + 'font-size:12.5px;color:#5a626f;line-height:1.55;margin-bottom:14px;">' +
             '<b>Как пользоваться:</b> курсы EUR/USD берутся с ЦБ РФ автоматически. Курс usdt для расхода ставите вы — сохраняется. Выберите валюту прихода, укажите сумму прихода и сколько должны партнёру (в USDT). Значения на оранжевом фоне — для занесения в учёт/amo.' +
           '</div>' +
-          '<div style="font-size:12px;color:#9096a3;margin:0 0 8px 2px;">Курсы ЦБ РФ' + (d.date ? " на " + escapeHtml(d.date) : "") + ' · обновляются автоматически</div>' +
+          '<div style="font-size:12px;color:#9096a3;margin:0 0 4px 2px;">Курсы ЦБ РФ' + (d.date ? " на " + escapeHtml(d.date) : "") + ' · обновляются автоматически</div>' +
+          '<div style="font-size:12px;color:#7b8294;margin:0 0 10px 2px;line-height:1.6;"><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#eaf4fe;border:1.5px solid #3d92c9;vertical-align:-1px;margin-right:5px;"></span>голубым — поля, которые заполняете вы&nbsp;&nbsp;·&nbsp;&nbsp;<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#f5f6f8;border:1px solid #d7dbe3;vertical-align:-1px;margin-right:5px;"></span>серым — считается автоматически</div>' +
           '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px;align-items:stretch;">' +
-            '<div style="' + card + '"><div style="' + lbl + '">Курс евро к рублю</div><div id="calcEurVal" style="' + val + '">' + fr(d.eur, 4) + '</div></div>' +
-            '<div style="' + card + '"><div style="' + lbl + '">Курс usdt / доллар к рублю</div><div id="calcUsdVal" style="' + val + '">' + fr(d.usd, 4) + '</div></div>' +
-            '<div style="' + card + '"><div style="' + lbl + '">USDT к евро (расчёт)</div><div id="calcB6" style="' + val + '">' + fr(b6, 3) + '</div></div>' +
-            '<div style="' + card + (vscCalcIsAdmin ? 'background:#f7fbff;border-color:#cdddef;' : '') + '"><div style="' + lbl + '">Курс usdt для расхода' + (vscCalcIsAdmin ? ' (ваш)' : ' 🔒') + '</div>' + (vscCalcIsAdmin ? ('<input id="calcB7" type="number" step="0.01" value="' + b7v + '" style="' + inpR + '">') : ('<div style="' + val + '">' + fr(b7v, 2) + '</div>')) + '</div>' +
+            '<div style="' + cardRO + '"><div style="' + lbl + '">Курс евро к рублю</div><div id="calcEurVal" style="' + val + '">' + fr(d.eur, 4) + '</div></div>' +
+            '<div style="' + cardRO + '"><div style="' + lbl + '">Курс usdt / доллар к рублю</div><div id="calcUsdVal" style="' + val + '">' + fr(d.usd, 4) + '</div></div>' +
+            '<div style="' + cardRO + '"><div style="' + lbl + '">USDT к евро (расчёт)</div><div id="calcB6" style="' + val + '">' + fr(b6, 3) + '</div></div>' +
+            (vscCalcIsAdmin
+              ? ('<div style="' + cardEd + '"><div style="' + lblEd + '">✎ Курс usdt для расхода (ваш)</div><input id="calcB7" type="number" step="0.01" value="' + b7v + '" style="' + inpR + '"></div>')
+              : ('<div style="' + cardRO + '"><div style="' + lbl + '">Курс usdt для расхода 🔒</div><div style="' + val + '">' + fr(b7v, 2) + '</div></div>')) +
           '</div>' +
           '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' + curBtn("rub", "Приход в рублях") + curBtn("eur", "Приход в евро") + curBtn("usdt", "Приход в USDT") + '</div>' +
           '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px;">' +
-            '<div style="' + card2 + '"><div style="' + lbl2 + '" id="calcPrihodLbl">Сумма прихода</div><input id="calcPrihod" type="number" step="0.01" placeholder="0" style="' + inp2 + '"></div>' +
-            '<div style="' + card2 + '"><div style="' + lbl2 + '">Должны партнёру (в USDT)</div><input id="calcPartner" type="number" step="0.01" placeholder="0" style="' + inp2 + '"></div>' +
+            '<div style="' + card2Ed + '"><div style="' + lbl2 + '" id="calcPrihodLbl">✎ Сумма прихода</div><input id="calcPrihod" type="number" step="0.01" placeholder="0" style="' + inp2 + '"></div>' +
+            '<div style="' + card2Ed + '"><div style="' + lbl2 + '">✎ Должны партнёру (в USDT)</div><input id="calcPartner" type="number" step="0.01" placeholder="0" style="' + inp2 + '"></div>' +
           '</div>' +
           '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">' +
             outCard("outSeif", "Учёт сейфа (срм-факт), ₽") + outCard("outUsl", "В amo «Услуги АКК», ₽") + outCard("outBudget", "В amo «Бюджет», ₽") + outCard("outPartner", "Оплата партнёру") +
@@ -2653,10 +2661,10 @@
         box.querySelectorAll(".calc-cur").forEach((b) => b.addEventListener("click", function () {
           vscCalcState.cur = b.getAttribute("data-cur");
           box.querySelectorAll(".calc-cur").forEach((x) => { const on = x.getAttribute("data-cur") === vscCalcState.cur; x.style.cssText = "flex:1;padding:10px;border-radius:10px;cursor:pointer;font-weight:700;font-size:14px;border:1px solid " + (on ? "#3589BD;background:#3589BD;color:#fff" : "#cfd6e4;background:#fff;color:#3a3f4d") + ";"; });
-          $("calcPrihodLbl").textContent = "Сумма прихода (" + ({ rub: "₽", eur: "€", usdt: "USDT" })[vscCalcState.cur] + ")";
+          $("calcPrihodLbl").textContent = "✎ Сумма прихода (" + ({ rub: "₽", eur: "€", usdt: "USDT" })[vscCalcState.cur] + ")";
           comp();
         }));
-        $("calcPrihodLbl").textContent = "Сумма прихода (" + ({ rub: "₽", eur: "€", usdt: "USDT" })[vscCalcState.cur] + ")";
+        $("calcPrihodLbl").textContent = "✎ Сумма прихода (" + ({ rub: "₽", eur: "€", usdt: "USDT" })[vscCalcState.cur] + ")";
         $("calcRefresh").addEventListener("click", async function () {
           const btn = $("calcRefresh"); btn.textContent = "Обновляем…"; btn.disabled = true;
           try { const r = await apiFetch("/admin/api/vsc-rates"); if (r && r.eur != null) { vscCalcRates.eur = r.eur; vscCalcRates.usd = r.usd; vscCalcRates.date = r.date; $("calcEurVal").textContent = fr(r.eur, 4); $("calcUsdVal").textContent = fr(r.usd, 4); $("calcB6").textContent = fr(r.usd ? r.eur / r.usd : 0, 3); } } catch (_) {}
