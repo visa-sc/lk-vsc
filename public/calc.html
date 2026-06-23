@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Калькулятор ВНЖ — VOYO</title>
+<link rel="icon" href="/favicon.ico" />
+<style>
+  :root { --b: #3589BD; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #eef1f5; color: #1d2330; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; line-height: 1.5; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 22px 16px 60px; }
+  .top { text-align: center; padding: 8px 0 18px; }
+  .top img { width: 150px; height: auto; max-width: 55%; }
+  .card { background: #fff; border: 1px solid #e6e9f0; border-radius: 14px; padding: 16px; }
+  h1 { font-size: 22px; font-weight: 800; margin: 4px 0 14px; }
+  .howto { font-size: 12.5px; color: #5a626f; line-height: 1.55; margin-bottom: 14px; }
+  .legend { font-size: 12px; color: #7b8294; margin: 0 0 10px 2px; line-height: 1.6; }
+  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
+  .grid { display: grid; gap: 12px; }
+  .g-rates { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 14px; align-items: stretch; }
+  .g-in { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 16px; }
+  .g-out { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  .ro { background: #f5f6f8; border: 1px solid #e4e7ee; border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; }
+  .ed { background: #eaf4fe; border: 1.5px solid #3d92c9; border-radius: 14px; padding: 16px; }
+  .lbl { font-size: 12px; color: #7b8294; font-weight: 600; line-height: 1.3; min-height: 32px; }
+  .lbl-ed { font-size: 12px; color: #216aa0; font-weight: 700; margin-bottom: 5px; }
+  .val { font-size: 20px; font-weight: 800; color: #2b3350; margin-top: auto; }
+  input[type=number] { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 15px; border: 1.5px solid #3d92c9; border-radius: 10px; background: #fff; font-family: inherit; }
+  .curbtns { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .curbtns button { flex: 1; padding: 10px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 14px; border: 1px solid #cfd6e4; background: #fff; color: #3a3f4d; font-family: inherit; }
+  .curbtns button.on { border-color: var(--b); background: var(--b); color: #fff; }
+  .out { background: #eef8f1; border: 1px solid #cde7d5; border-radius: 14px; padding: 14px 16px; }
+  .out .t { font-size: 12px; color: #3f7a57; font-weight: 600; line-height: 1.3; min-height: 30px; }
+  .out .v { font-size: 22px; font-weight: 800; color: #2e7d52; margin-top: 6px; }
+  .acts { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .acts button { padding: 9px 16px; font-size: 13px; font-weight: 600; border-radius: 10px; cursor: pointer; background: #fff; color: var(--b); border: 1px solid #bcdcef; font-family: inherit; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { color: #6b7280; font-size: 11px; text-transform: uppercase; font-weight: 600; padding: 8px 14px; text-align: left; }
+  td { padding: 8px 14px; color: #1d2330; }
+  .muted { color: #9096a3; font-size: 13px; padding: 8px; }
+  .ft { text-align: center; color: #9aa1ad; font-size: 12px; margin-top: 22px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><img src="/logo.png" alt="VOYO" /></div>
+  <div class="card">
+    <h1>Калькулятор ВНЖ</h1>
+    <div class="howto"><b>Как пользоваться:</b> курсы EUR/USD берутся с ЦБ РФ автоматически. Выбери валюту прихода, укажи сумму прихода и сколько должны партнёру (в USDT). Значения на зелёном фоне — для занесения в учёт/amo.</div>
+    <div class="legend"><span class="sw" style="background:#eaf4fe;border:1.5px solid #3d92c9;"></span>голубым — поля, которые заполняешь ты&nbsp;&nbsp;·&nbsp;&nbsp;<span class="sw" style="background:#f5f6f8;border:1px solid #d7dbe3;"></span>серым — считается автоматически</div>
+    <div id="ratesNote" class="legend" style="margin-bottom:8px;">Загружаем курсы ЦБ РФ…</div>
+
+    <div class="grid g-rates">
+      <div class="ro"><div class="lbl">Курс евро к рублю</div><div class="val" id="vEur">—</div></div>
+      <div class="ro"><div class="lbl">Курс usdt / доллар к рублю</div><div class="val" id="vUsd">—</div></div>
+      <div class="ro"><div class="lbl">USDT к евро (расчёт)</div><div class="val" id="vB6">—</div></div>
+      <div class="ro"><div class="lbl">Курс usdt для расхода 🔒</div><div class="val" id="vB7">—</div></div>
+    </div>
+
+    <div class="curbtns" id="curBtns">
+      <button type="button" data-cur="rub" class="on">Приход в рублях</button>
+      <button type="button" data-cur="eur">Приход в евро</button>
+      <button type="button" data-cur="usdt">Приход в USDT</button>
+    </div>
+
+    <div class="grid g-in">
+      <div class="ed"><div class="lbl-ed" id="prihodLbl">✎ Сумма прихода</div><input id="prihod" type="number" step="0.01" placeholder="0" /></div>
+      <div class="ed"><div class="lbl-ed">✎ Должны партнёру (в USDT)</div><input id="partner" type="number" step="0.01" placeholder="0" /></div>
+    </div>
+
+    <div class="grid g-out">
+      <div class="out"><div class="t">Учёт сейфа (срм-факт), ₽</div><div class="v" id="oSeif">—</div></div>
+      <div class="out"><div class="t">В amo «Услуги АКК», ₽</div><div class="v" id="oUsl">—</div></div>
+      <div class="out"><div class="t">В amo «Бюджет», ₽</div><div class="v" id="oBudget">—</div></div>
+      <div class="out"><div class="t">Оплата партнёру (<span id="oPartnerUnit">€</span>)</div><div class="v" id="oPartner">—</div></div>
+    </div>
+
+    <div class="acts">
+      <button type="button" id="btnRefresh">Обновить курсы с ЦБ</button>
+      <button type="button" id="btnHist">История обновлений</button>
+    </div>
+    <div id="histPanel" style="display:none;margin-top:10px;"></div>
+  </div>
+  <div class="ft">VOYO · Visa Services Center</div>
+</div>
+
+<script>
+  var rates = { eur: 0, usd: 0, date: "", usdtExpense: 79.4 };
+  var cur = "rub";
+  var histLoaded = false;
+  function $(id){ return document.getElementById(id); }
+  function r2(x){ return Math.round(x * 100) / 100; }
+  function fr(v, dg){ if (v == null || isNaN(v)) return "—"; var k = Math.pow(10, dg); return (Math.round(v * k) / k).toLocaleString("ru-RU"); }
+  function ru0(v){ return (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU"); }
+  function ru2(v){ return (v == null || isNaN(v)) ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU"); }
+  function pf(el){ var v = parseFloat(String(el.value).replace(/\s/g, "").replace(",", ".")); return isFinite(v) ? v : 0; }
+
+  function paintRates(){
+    $("vEur").textContent = fr(rates.eur, 2);
+    $("vUsd").textContent = fr(rates.usd, 2);
+    $("vB6").textContent = fr(rates.usd ? rates.eur / rates.usd : 0, 2);
+    $("vB7").textContent = fr(rates.usdtExpense, 2);
+  }
+  function comp(){
+    var eur = r2(rates.eur || 0), usd = r2(rates.usd || 0), b7 = rates.usdtExpense || 0, b6c = usd ? r2(eur / usd) : 0;
+    var prihod = pf($("prihod")), partner = pf($("partner"));
+    var seif = 0, uslugi = 0, partnerOut = 0, unit = "€";
+    if (cur === "eur") { seif = prihod * eur; uslugi = partner * b7; partnerOut = b6c ? partner / b6c : 0; unit = "€"; }
+    else if (cur === "rub") { seif = prihod; uslugi = partner * b7; partnerOut = b6c ? partner / b6c : 0; unit = "€"; }
+    else { seif = prihod * usd; uslugi = partner * usd; partnerOut = partner; unit = "$"; }
+    $("oSeif").textContent = ru0(seif) + " ₽";
+    $("oUsl").textContent = ru0(uslugi) + " ₽";
+    $("oBudget").textContent = ru0(seif - uslugi) + " ₽";
+    $("oPartner").textContent = ru2(partnerOut);
+    $("oPartnerUnit").textContent = unit;
+  }
+  function setCur(c){
+    cur = c;
+    [].forEach.call(document.querySelectorAll("#curBtns button"), function(b){ b.classList.toggle("on", b.getAttribute("data-cur") === cur); });
+    $("prihodLbl").textContent = "✎ Сумма прихода (" + ({ rub: "₽", eur: "€", usdt: "USDT" })[cur] + ")";
+    comp();
+  }
+  async function loadRates(){
+    try {
+      var r = await fetch("/api/calc-rates").then(function(x){ return x.json(); });
+      if (r && r.eur != null) { rates.eur = r.eur; rates.usd = r.usd; rates.date = r.date; rates.usdtExpense = (r.usdtExpense != null ? r.usdtExpense : rates.usdtExpense); }
+      $("ratesNote").textContent = "Курсы ЦБ РФ" + (rates.date ? " на " + rates.date : "") + " · обновляются автоматически";
+    } catch (e) { $("ratesNote").textContent = "Не удалось загрузить курсы ЦБ."; }
+    paintRates(); comp();
+  }
+
+  document.addEventListener("input", function(e){ if (e.target.id === "prihod" || e.target.id === "partner") comp(); });
+  [].forEach.call(document.querySelectorAll("#curBtns button"), function(b){ b.addEventListener("click", function(){ setCur(b.getAttribute("data-cur")); }); });
+  $("btnRefresh").addEventListener("click", async function(){ var b = $("btnRefresh"); b.textContent = "Обновляем…"; b.disabled = true; await loadRates(); b.textContent = "Обновить курсы с ЦБ"; b.disabled = false; });
+  $("btnHist").addEventListener("click", async function(){
+    var p = $("histPanel");
+    if (p.style.display !== "none") { p.style.display = "none"; return; }
+    p.style.display = "block";
+    if (histLoaded) return;
+    p.innerHTML = '<div class="muted">Загружаем историю…</div>';
+    try {
+      var r = await fetch("/api/calc-rates-history").then(function(x){ return x.json(); });
+      var hist = (r && r.history) || [];
+      if (!hist.length) { p.innerHTML = '<div class="muted">Нет данных по истории.</div>'; histLoaded = true; return; }
+      var html = '<div class="card" style="padding:0;overflow:hidden;"><div style="padding:10px 14px;font-weight:700;border-bottom:1px solid #f0eef5;">Курс ЦБ РФ за последние 30 дней</div><table><thead><tr><th>Дата</th><th>Актуализация в калькуляторе</th><th style="text-align:right;">Евро</th><th style="text-align:right;">USDT / доллар</th></tr></thead><tbody>';
+      hist.forEach(function(e, i){ html += '<tr style="' + (i ? "border-top:1px solid #f0eef5;" : "") + '"><td>' + e.date + '</td><td style="color:#6b7280;">' + (e.time ? (e.date + " " + e.time) : "—") + '</td><td style="text-align:right;">' + fr(e.eur, 2) + '</td><td style="text-align:right;">' + fr(e.usd, 2) + '</td></tr>'; });
+      html += '</tbody></table></div>';
+      p.innerHTML = html; histLoaded = true;
+    } catch (e) { p.innerHTML = '<div class="muted" style="color:#b0263a;">Не удалось загрузить историю.</div>'; }
+  });
+
+  setCur("rub");
+  loadRates();
+</script>
+</body>
+</html>

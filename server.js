@@ -2913,6 +2913,28 @@ app.get("/admin/api/vsc-rates-history", requireAdmin, async (req, res) => {
   } catch (e) { return res.json({ success: false, history: [], error: e && e.message }); }
 });
 
+// ── ПУБЛИЧНЫЙ калькулятор ВНЖ (voyotravel.ru/calc) ──
+// Курсы EUR/USD с ЦБ + usdtExpense (B7) ТОЛЬКО ДЛЯ ЧТЕНИЯ (меняет только админ в /vsc).
+app.get("/api/calc-rates", async (req, res) => {
+  const cfg = loadCalcCfg();
+  let eur = null, usd = null, date = null, error = null;
+  try { const c = await fetchCbrRates(); eur = c.rates.EUR || null; usd = c.rates.USD || null; date = c.date; }
+  catch (e) { error = e && e.message; }
+  return res.json({ success: true, eur, usd, date, usdtExpense: (cfg.usdtExpense != null ? cfg.usdtExpense : 79.4), source: "ЦБ РФ", error });
+});
+app.get("/api/calc-rates-history", async (req, res) => {
+  try {
+    const hist = await fetchCbrHistory();
+    const tm = ratesLogTimesByDate();
+    hist.forEach((h) => { h.time = tm[h.date] || ""; });
+    return res.json({ success: true, history: hist });
+  } catch (e) { return res.json({ success: false, history: [], error: e && e.message }); }
+});
+app.get("/calc", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.sendFile(path.join(__dirname, "public", "calc.html"));
+});
+
 // ── Бот VFS (Франция): конфиг — получатели уведомлений + предзагруженные клиенты.
 // Сейчас это НАСТРОЙКА (данные + почта). Сам мониторинг слотов/авто-запись и отправка
 // писем — следующий этап (нужны доступы к аккаунтам VFS и почтовый сервис).
