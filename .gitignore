@@ -29,3 +29,10 @@ npm-debug.log*
 # Локальные настройки и хуки Claude Code (машинно-специфичны: абсолютные пути, права)
 .claude/settings.local.json
 .claude/hooks/
+
+# Лог актуализаций курса калькулятора — рантайм-состояние
+.vscRatesLog.json
+
+# Рассылка приглашений сотрудникам — маркер отправленных + лог (рантайм)
+.staffInvitesSent.json
+.staffInvites.log
