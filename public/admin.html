@@ -2558,7 +2558,7 @@
       // авто с ЦБ РФ; «USDT к Евро» (B6) = EUR/USD; курс расхода usdt (B7) — вручную (сохраняется).
       // Конвертации по формулам листа: сейф (₽), Услуги АКК (₽), Бюджет (₽), оплата партнёру.
       const vscCalcState = { cur: "rub" };
-      let vscCalcRates = null; // {eur, usd, usdtExpense, date} — кэш курсов в сессии (мгновенное повторное открытие)
+      let vscCalcRates = null, vscCalcIsAdmin = null; // курсы в сессии + признак админа (для правки курса расхода)
       async function renderVscCalc() {
         const box = document.createElement("div"); vscContent.appendChild(box);
         if (!vscCalcRates) {
@@ -2567,6 +2567,8 @@
           catch (e) { box.innerHTML = '<div class="ref-sec-h">Калькулятор ВНЖ</div><div class="vsc-empty">Не удалось загрузить курсы: ' + escapeHtml(e.message) + '</div>'; return; }
           if (vscTab !== "calc") return;
         }
+        // Курс usdt для расхода правит ТОЛЬКО админ (вход по коду). Сотрудникам (логин/пароль) — read-only.
+        if (vscCalcIsAdmin === null) { try { const w = await apiFetch("/admin/api/whoami"); vscCalcIsAdmin = !!(w && w.role === "admin"); } catch (_) { vscCalcIsAdmin = false; } if (vscTab !== "calc") return; }
         paintCalc(box);
       }
       function paintCalc(box) {
@@ -2593,7 +2595,7 @@
             '<div style="' + card + '"><div style="' + lbl + '">Курс евро к рублю</div><div id="calcEurVal" style="' + val + '">' + fr(d.eur, 4) + '</div></div>' +
             '<div style="' + card + '"><div style="' + lbl + '">Курс usdt / доллар к рублю</div><div id="calcUsdVal" style="' + val + '">' + fr(d.usd, 4) + '</div></div>' +
             '<div style="' + card + '"><div style="' + lbl + '">USDT к евро (расчёт)</div><div id="calcB6" style="' + val + '">' + fr(b6, 3) + '</div></div>' +
-            '<div style="' + card + 'background:#f7fbff;border-color:#cdddef;"><div style="' + lbl + '">Курс usdt для расхода (ваш)</div><input id="calcB7" type="number" step="0.01" value="' + b7v + '" style="' + inpR + '"></div>' +
+            '<div style="' + card + (vscCalcIsAdmin ? 'background:#f7fbff;border-color:#cdddef;' : '') + '"><div style="' + lbl + '">Курс usdt для расхода' + (vscCalcIsAdmin ? ' (ваш)' : ' 🔒') + '</div>' + (vscCalcIsAdmin ? ('<input id="calcB7" type="number" step="0.01" value="' + b7v + '" style="' + inpR + '">') : ('<div style="' + val + '">' + fr(b7v, 2) + '</div>')) + '</div>' +
           '</div>' +
           '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' + curBtn("rub", "Приход в рублях") + curBtn("eur", "Приход в евро") + curBtn("usdt", "Приход в USDT") + '</div>' +
           '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px;">' +
@@ -2603,14 +2605,16 @@
           '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">' +
             outCard("outSeif", "Учёт сейфа (срм-факт), ₽") + outCard("outUsl", "В amo «Услуги АКК», ₽") + outCard("outBudget", "В amo «Бюджет», ₽") + outCard("outPartner", "Оплата партнёру") +
           '</div>' +
-          '<div style="margin-top:12px;"><button type="button" id="calcRefresh" style="padding:9px 16px;font-size:13px;font-weight:600;border-radius:10px;cursor:pointer;background:#fff;color:#3589BD;border:1px solid #bcdcef;">Обновить курсы с ЦБ</button></div>';
+          '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"><button type="button" id="calcRefresh" style="padding:9px 16px;font-size:13px;font-weight:600;border-radius:10px;cursor:pointer;background:#fff;color:#3589BD;border:1px solid #bcdcef;">Обновить курсы с ЦБ</button>' +
+          '<button type="button" id="calcHist" style="padding:9px 16px;font-size:13px;font-weight:600;border-radius:10px;cursor:pointer;background:#fff;color:#3589BD;border:1px solid #bcdcef;">История обновлений</button></div>' +
+          '<div id="calcHistPanel" style="display:none;margin-top:10px;"></div>';
         const $ = (id) => box.querySelector("#" + id);
         const pf = (el) => { const v = parseFloat(String(el.value).replace(/\s/g, "").replace(",", ".")); return isFinite(v) ? v : 0; };
         const ru0 = (v) => (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU");
         const ru2 = (v) => (v == null || isNaN(v)) ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU");
         const b7El = $("calcB7"), prihodEl = $("calcPrihod"), partnerEl = $("calcPartner");
         function comp() {
-          const eur = vscCalcRates.eur || 0, usd = vscCalcRates.usd || 0, b7 = pf(b7El), b6c = usd ? eur / usd : 0;
+          const eur = vscCalcRates.eur || 0, usd = vscCalcRates.usd || 0, b7 = (b7El ? pf(b7El) : (vscCalcRates.usdtExpense || 0)), b6c = usd ? eur / usd : 0;
           const prihod = pf(prihodEl), partner = pf(partnerEl), cur = vscCalcState.cur;
           let seif = 0, uslugi = 0, partnerOut = 0, unit = "€";
           if (cur === "eur") { seif = prihod * eur; uslugi = partner * b7; partnerOut = b6c ? partner / b6c : 0; unit = "€"; }
@@ -2621,8 +2625,28 @@
           $("outBudget").textContent = ru0(seif - uslugi) + " ₽";
           $("outPartner").textContent = ru2(partnerOut) + " " + unit;
         }
-        [b7El, prihodEl, partnerEl].forEach((el) => el.addEventListener("input", comp));
-        b7El.addEventListener("change", async function () { const v = pf(b7El); if (v > 0) { vscCalcRates.usdtExpense = v; try { await fetch("/admin/api/vsc-rates", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ usdtExpense: v }) }); } catch (_) {} } });
+        [prihodEl, partnerEl].forEach((el) => el.addEventListener("input", comp));
+        if (b7El) {
+          b7El.addEventListener("input", comp);
+          b7El.addEventListener("change", async function () { const v = pf(b7El); if (v > 0) { vscCalcRates.usdtExpense = v; try { await fetch("/admin/api/vsc-rates", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ usdtExpense: v }) }); } catch (_) {} } });
+        }
+        let calcHistLoaded = false;
+        $("calcHist").addEventListener("click", async function () {
+          const p = $("calcHistPanel");
+          if (p.style.display !== "none") { p.style.display = "none"; return; }
+          p.style.display = "block";
+          if (calcHistLoaded) return;
+          p.innerHTML = '<div style="color:#9096a3;font-size:13px;padding:8px;">Загружаем историю…</div>';
+          try {
+            const r = await apiFetch("/admin/api/vsc-rates-history");
+            const hist = (r && r.history) || [];
+            if (!hist.length) { p.innerHTML = '<div style="color:#9096a3;font-size:13px;padding:8px;">Нет данных по истории.</div>'; calcHistLoaded = true; return; }
+            let html = '<div style="' + card2 + 'padding:0;overflow:hidden;"><div style="padding:10px 14px;font-weight:700;color:#1d2330;border-bottom:1px solid #f0eef5;">Курс ЦБ РФ за последние 7 дней</div><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:8px 14px;">Дата</th><th style="text-align:right;padding:8px 14px;">Евро</th><th style="text-align:right;padding:8px 14px;">USDT / доллар</th></tr></thead><tbody>';
+            hist.forEach((e, i) => { html += '<tr style="' + (i ? "border-top:1px solid #f0eef5;" : "") + '"><td style="padding:8px 14px;color:#1d2330;">' + escapeHtml(e.date) + '</td><td style="padding:8px 14px;text-align:right;color:#1d2330;">' + fr(e.eur, 4) + '</td><td style="padding:8px 14px;text-align:right;color:#1d2330;">' + fr(e.usd, 4) + '</td></tr>'; });
+            html += '</tbody></table></div>';
+            p.innerHTML = html; calcHistLoaded = true;
+          } catch (e) { p.innerHTML = '<div style="color:#b0263a;font-size:13px;padding:8px;">Не удалось загрузить историю.</div>'; }
+        });
         box.querySelectorAll(".calc-cur").forEach((b) => b.addEventListener("click", function () {
           vscCalcState.cur = b.getAttribute("data-cur");
           box.querySelectorAll(".calc-cur").forEach((x) => { const on = x.getAttribute("data-cur") === vscCalcState.cur; x.style.cssText = "flex:1;padding:10px;border-radius:10px;cursor:pointer;font-weight:700;font-size:14px;border:1px solid " + (on ? "#3589BD;background:#3589BD;color:#fff" : "#cfd6e4;background:#fff;color:#3a3f4d") + ";"; });
@@ -2662,10 +2686,6 @@
           + '<b>Статус:</b> сейчас — <b>предзагрузка клиентов</b>. '
           + 'Мониторинг слотов VFS (Франция, раз в минуту) и авто-запись — следующий этап: нужны доступы к аккаунтам VFS и почтовый сервис (подключим позже). '
           + 'Как подключим почту — при появлении мест бот отправит уведомление.</div>';
-        // получатель уведомлений (фиксированный, меняется по запросу)
-        h += '<div style="' + card + '"><div style="font-weight:700;color:#1d2330;margin-bottom:4px;">Уведомления приходят на</div>'
-          + '<div style="font-size:14px;color:#1d2330;">' + (cfg.recipients && cfg.recipients.length ? cfg.recipients.map(escapeHtml).join(", ") : "—") + '</div>'
-          + '<div style="font-size:12px;color:#9096a3;margin-top:4px;">Изменить адрес — напиши, поставлю.</div></div>';
         // клиенты
         h += '<div style="' + card + '"><div style="font-weight:700;color:#1d2330;margin-bottom:8px;">Клиенты на запись (предзагрузка)</div>';
         if (cfg.clients.length) {

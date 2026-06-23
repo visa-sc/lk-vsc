@@ -2761,6 +2761,30 @@ app.post("/admin/api/vsc-rates", requireAdmin, (req, res) => {
   setTimeout(warm, 20 * 1000);
   setInterval(warm, 60 * 60 * 1000);
 })();
+// История курса ЦБ за последние ~7 дней (официальный XML_dynamic: EUR R01239, USD R01235).
+let _cbrHistCache = null, _cbrHistAt = 0;
+async function fetchCbrHistory() {
+  const now = Date.now();
+  if (_cbrHistCache && (now - _cbrHistAt) < 60 * 60 * 1000) return _cbrHistCache;
+  const fmt = (dt) => ("0" + dt.getDate()).slice(-2) + "/" + ("0" + (dt.getMonth() + 1)).slice(-2) + "/" + dt.getFullYear();
+  const to = new Date(now), from = new Date(now - 8 * 86400000);
+  const url = (id) => "https://www.cbr.ru/scripts/XML_dynamic.asp?date_req1=" + fmt(from) + "&date_req2=" + fmt(to) + "&VAL_NM_RQ=" + id;
+  const parse = (xml) => { const o = {}; const re = /<Record\s+Date="([^"]+)"[^>]*>([\s\S]*?)<\/Record>/g; let m; while ((m = re.exec(xml))) { const dt = m[1]; const v = parseFloat((((/<Value>([\d,]+)<\/Value>/.exec(m[2]) || [])[1]) || "0").replace(",", ".")); const nom = parseFloat(((/<Nominal>(\d+)<\/Nominal>/.exec(m[2]) || [])[1]) || "1") || 1; if (v) o[dt] = v / nom; } return o; };
+  const [eR, uR] = await Promise.all([
+    axios.get(url("R01239"), { timeout: 12000, responseType: "arraybuffer" }),
+    axios.get(url("R01235"), { timeout: 12000, responseType: "arraybuffer" })
+  ]);
+  const eur = parse(Buffer.from(eR.data).toString("latin1")), usd = parse(Buffer.from(uR.data).toString("latin1"));
+  const dates = Array.from(new Set([].concat(Object.keys(eur), Object.keys(usd))));
+  const hist = dates.map((d) => ({ date: d, eur: eur[d] || null, usd: usd[d] || null }))
+    .sort((a, b) => { const pa = a.date.split("."), pb = b.date.split("."); return new Date(pb[2], pb[1] - 1, pb[0]) - new Date(pa[2], pa[1] - 1, pa[0]); });
+  _cbrHistCache = hist; _cbrHistAt = now;
+  return hist;
+}
+app.get("/admin/api/vsc-rates-history", requireAdmin, async (req, res) => {
+  try { return res.json({ success: true, history: await fetchCbrHistory() }); }
+  catch (e) { return res.json({ success: false, history: [], error: e && e.message }); }
+});
 
 // ── Бот VFS (Франция): конфиг — получатели уведомлений + предзагруженные клиенты.
 // Сейчас это НАСТРОЙКА (данные + почта). Сам мониторинг слотов/авто-запись и отправка
