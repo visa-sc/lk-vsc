@@ -2596,7 +2596,7 @@
         box.innerHTML =
           '<div class="ref-sec-h">Калькулятор ВНЖ</div>' +
           '<div style="' + card2 + 'font-size:12.5px;color:#5a626f;line-height:1.55;margin-bottom:14px;">' +
-            '<b>Как пользоваться:</b> курсы EUR/USD берутся с ЦБ РФ автоматически. Курс usdt для расхода ставите вы — сохраняется. Выберите валюту прихода, укажите сумму прихода и сколько должны партнёру (в USDT). Значения на оранжевом фоне — для занесения в учёт/amo.' +
+            '<b>Как пользоваться:</b> курсы EUR/USD берутся с ЦБ РФ автоматически. Курс usdt для расхода ставите вы — сохраняется. Выберите валюту прихода, укажите сумму прихода и сколько должны партнёру (в USDT). Значения на зелёном фоне — для занесения в учёт/amo.' +
           '</div>' +
           '<div style="font-size:12px;color:#9096a3;margin:0 0 4px 2px;">Курсы ЦБ РФ' + (d.date ? " на " + escapeHtml(d.date) : "") + ' · обновляются автоматически</div>' +
           '<div style="font-size:12px;color:#7b8294;margin:0 0 10px 2px;line-height:1.6;"><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#eaf4fe;border:1.5px solid #3d92c9;vertical-align:-1px;margin-right:5px;"></span>голубым — поля, которые заполняете вы&nbsp;&nbsp;·&nbsp;&nbsp;<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#f5f6f8;border:1px solid #d7dbe3;vertical-align:-1px;margin-right:5px;"></span>серым — считается автоматически</div>' +
@@ -2614,7 +2614,7 @@
             '<div style="' + card2Ed + '"><div style="' + lbl2 + '">✎ Должны партнёру (в USDT)</div><input id="calcPartner" type="number" step="0.01" placeholder="0" style="' + inp2 + '"></div>' +
           '</div>' +
           '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">' +
-            outCard("outSeif", "Учёт сейфа (срм-факт), ₽") + outCard("outUsl", "В amo «Услуги АКК», ₽") + outCard("outBudget", "В amo «Бюджет», ₽") + outCard("outPartner", "Оплата партнёру") +
+            outCard("outSeif", "Учёт сейфа (срм-факт), ₽") + outCard("outUsl", "В amo «Услуги АКК», ₽") + outCard("outBudget", "В amo «Бюджет», ₽") + outCard("outPartner", 'Оплата партнёру (<span id="outPartnerUnit">€</span>)') +
           '</div>' +
           '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"><button type="button" id="calcRefresh" style="padding:9px 16px;font-size:13px;font-weight:600;border-radius:10px;cursor:pointer;background:#fff;color:#3589BD;border:1px solid #bcdcef;">Обновить курсы с ЦБ</button>' +
           '<button type="button" id="calcHist" style="padding:9px 16px;font-size:13px;font-weight:600;border-radius:10px;cursor:pointer;background:#fff;color:#3589BD;border:1px solid #bcdcef;">История обновлений</button></div>' +
@@ -2635,7 +2635,8 @@
           $("outSeif").textContent = ru0(seif) + " ₽";
           $("outUsl").textContent = ru0(uslugi) + " ₽";
           $("outBudget").textContent = ru0(seif - uslugi) + " ₽";
-          $("outPartner").textContent = ru2(partnerOut) + " " + unit;
+          $("outPartner").textContent = ru2(partnerOut);
+          const _upu = $("outPartnerUnit"); if (_upu) _upu.textContent = unit;
         }
         [prihodEl, partnerEl].forEach((el) => el.addEventListener("input", comp));
         if (b7El) {
