@@ -1413,7 +1413,7 @@ app.get("/admin/kb/admin-guide", requireStaff, (req, res) => {
   try {
     let b = `<h1>Инструкция по админке</h1><p class="sub">Цели и возможности разделов — без воды, со всеми нюансами. Страница соответствует текущей версии админки и обновляется вместе с ней.</p>`;
 
-    b += `<div class="card"><b>Доступы.</b> Сотрудники входят на <b>voyovoyo.ru/team</b> (email + пароль; при первом входе придумываете пароль не короче 6 символов). Сотрудникам видна группа «Работа с ЛК»: «Корректировки ЛК», «Тестировщик ЛК», «Запрос документов», «Опросники (логика)», «Действия», «Области загрузки», «База знаний ЛК». Статистика и данные клиентов недоступны. Админ входит по коду и видит всё.</div>`;
+    b += `<div class="card"><b>Доступы.</b> Сотрудники входят на <b>voyotravel.ru/team</b> или <b>voyovoyo.ru/team</b> (оба домена работают; email + пароль; при первом входе придумываете пароль не короче 6 символов). Сотрудникам видна группа «Работа с ЛК»: «Корректировки ЛК», «Тестировщик ЛК», «Запрос документов», «Опросники (логика)», «Действия», «Области загрузки», «База знаний ЛК». Статистика и данные клиентов недоступны. Админ входит по коду и видит всё.</div>`;
 
     b += `<h2>Статус amoCRM при авторизации</h2>
 <p><b>Цель:</b> понять, с какой воронки/этапа сделки и у какого ответственного менеджера клиенты регистрируются в ЛК — чтобы видеть, кто активно подключает клиентов, а где процесс тормозит, и на каком статусе уместно автоприглашение. Доступ: только админ и руководители с правом «Статистика» (Зайцева, director@). Вкладка в конце строки «Статистика и данные»; при входе по умолчанию открывается «Статистика (этапы)».</p>
@@ -9436,7 +9436,10 @@ async function maybeSendFeedbackSms(phone, leads) {
     const fullName = triggeredFullName;
 
     const token = createFeedbackToken(normPhone, fullName);
-    const link = `https://voyovoyo.ru/feedback?t=${token}`;
+    // Исходящая клиентская ссылка → основной домен voyotravel.ru (страница
+    // /feedback работает на обоих доменах, токен домен-независим). Это фоновая
+    // отправка без req — поэтому домен фиксированный, host-aware тут неприменим.
+    const link = `https://voyotravel.ru/feedback?t=${token}`;
     console.log(`FEEDBACK SMS: phone=${normPhone} token=${token} link=${link}`);
 
     const result = await sms.sendFeedbackLink(normPhone, link);
@@ -9929,6 +9932,19 @@ const webauthn = require("@simplewebauthn/server");
 const WEBAUTHN_RP_NAME = "VOYO";
 const WEBAUTHN_RP_ID = process.env.WEBAUTHN_RP_ID || "voyovoyo.ru";
 const WEBAUTHN_ORIGIN = process.env.WEBAUTHN_ORIGIN || "https://voyovoyo.ru";
+// Хост-зависимый WebAuthn. Паспорт-ки (Face ID/Touch ID) ЖЁСТКО привязаны к домену,
+// поэтому rpID/origin берём из домена ТЕКУЩЕГО запроса по белому списку, а не из
+// одной константы — чтобы биометрия работала и на voyovoyo.ru, и на voyotravel.ru,
+// НЕ ломая уже зарегистрированные паспорт-ки (на каждом домене свои). Для
+// voyovoyo.ru helper возвращает ровно прежние значения → поведение не меняется.
+// Неизвестный/поддельный Host → дефолт voyovoyo.ru. www.* считаем тем же доменом.
+const WEBAUTHN_ALLOWED_HOSTS = { "voyovoyo.ru": true, "voyotravel.ru": true };
+function webauthnHostName(req) {
+  const h = String((req && req.headers && req.headers.host) || "").toLowerCase().split(":")[0].replace(/^www\./, "");
+  return WEBAUTHN_ALLOWED_HOSTS[h] ? h : WEBAUTHN_RP_ID;
+}
+function rpIdFor(req) { return webauthnHostName(req); }
+function originFor(req) { return "https://" + webauthnHostName(req); }
 
 const PASSKEYS_FILE = path.join(__dirname, ".passkeys.json");
 const passkeysByPhone = new Map();
@@ -9991,7 +10007,7 @@ app.post("/api/auth/webauthn/register-options", async (req, res) => {
     const existing = passkeysByPhone.get(phone) || [];
     const options = await webauthn.generateRegistrationOptions({
       rpName: WEBAUTHN_RP_NAME,
-      rpID: WEBAUTHN_RP_ID,
+      rpID: rpIdFor(req),
       userID: phone,
       userName: phone,
       userDisplayName: "+" + phone,
@@ -10027,8 +10043,8 @@ app.post("/api/auth/webauthn/register-verify", async (req, res) => {
     const verification = await webauthn.verifyRegistrationResponse({
       response: attestationResponse,
       expectedChallenge,
-      expectedOrigin: WEBAUTHN_ORIGIN,
-      expectedRPID: WEBAUTHN_RP_ID,
+      expectedOrigin: originFor(req),
+      expectedRPID: rpIdFor(req),
       requireUserVerification: false,
     });
     if (!verification.verified || !verification.registrationInfo) {
@@ -10063,7 +10079,7 @@ app.post("/api/auth/webauthn/auth-options", async (req, res) => {
       return res.status(404).json({ success: false, message: "Нет зарегистрированных passkey" });
     }
     const options = await webauthn.generateAuthenticationOptions({
-      rpID: WEBAUTHN_RP_ID,
+      rpID: rpIdFor(req),
       allowCredentials: arr.map((c) => ({
         id: bufferFromB64u(c.credentialID),
         type: "public-key",
@@ -10097,8 +10113,8 @@ app.post("/api/auth/webauthn/auth-verify", async (req, res) => {
     const verification = await webauthn.verifyAuthenticationResponse({
       response: assertionResponse,
       expectedChallenge,
-      expectedOrigin: WEBAUTHN_ORIGIN,
-      expectedRPID: WEBAUTHN_RP_ID,
+      expectedOrigin: originFor(req),
+      expectedRPID: rpIdFor(req),
       authenticator: {
         credentialID: bufferFromB64u(cred.credentialID),
         credentialPublicKey: bufferFromB64u(cred.publicKey),
@@ -10183,7 +10199,7 @@ app.post("/api/auth/webauthn/auth-options-any", async (req, res) => {
       return res.status(404).json({ success: false, message: "Нет зарегистрированных passkey" });
     }
     const options = await webauthn.generateAuthenticationOptions({
-      rpID: WEBAUTHN_RP_ID,
+      rpID: rpIdFor(req),
       allowCredentials,
       userVerification: "preferred"
     });
@@ -10229,8 +10245,8 @@ app.post("/api/auth/webauthn/auth-verify-any", async (req, res) => {
     const verification = await webauthn.verifyAuthenticationResponse({
       response: assertionResponse,
       expectedChallenge,
-      expectedOrigin: WEBAUTHN_ORIGIN,
-      expectedRPID: WEBAUTHN_RP_ID,
+      expectedOrigin: originFor(req),
+      expectedRPID: rpIdFor(req),
       authenticator: {
         credentialID: bufferFromB64u(foundCred.credentialID),
         credentialPublicKey: bufferFromB64u(foundCred.publicKey),
@@ -10315,7 +10331,7 @@ app.post("/admin/api/webauthn/auth-options", async (req, res) => {
       return res.status(404).json({ success: false, message: "Нет зарегистрированных passkey" });
     }
     const options = await webauthn.generateAuthenticationOptions({
-      rpID: WEBAUTHN_RP_ID,
+      rpID: rpIdFor(req),
       allowCredentials: adminPasskeys.map((c) => ({
         id: bufferFromB64u(c.credentialID),
         type: "public-key"
@@ -10348,8 +10364,8 @@ app.post("/admin/api/webauthn/auth-verify", async (req, res) => {
     const verification = await webauthn.verifyAuthenticationResponse({
       response: assertionResponse,
       expectedChallenge,
-      expectedOrigin: WEBAUTHN_ORIGIN,
-      expectedRPID: WEBAUTHN_RP_ID,
+      expectedOrigin: originFor(req),
+      expectedRPID: rpIdFor(req),
       authenticator: {
         credentialID: bufferFromB64u(cred.credentialID),
         credentialPublicKey: bufferFromB64u(cred.publicKey),
@@ -10378,7 +10394,7 @@ app.post("/admin/api/webauthn/register-options", requireAdmin, async (req, res) 
   try {
     const options = await webauthn.generateRegistrationOptions({
       rpName: WEBAUTHN_RP_NAME,
-      rpID: WEBAUTHN_RP_ID,
+      rpID: rpIdFor(req),
       userID: ADMIN_WEBAUTHN_USER_NAME,
       userName: ADMIN_WEBAUTHN_USER_NAME,
       userDisplayName: ADMIN_WEBAUTHN_USER_DISPLAY,
@@ -10415,8 +10431,8 @@ app.post("/admin/api/webauthn/register-verify", requireAdmin, async (req, res) =
     const verification = await webauthn.verifyRegistrationResponse({
       response: attestationResponse,
       expectedChallenge,
-      expectedOrigin: WEBAUTHN_ORIGIN,
-      expectedRPID: WEBAUTHN_RP_ID,
+      expectedOrigin: originFor(req),
+      expectedRPID: rpIdFor(req),
       requireUserVerification: false
     });
     if (!verification.verified || !verification.registrationInfo) {
