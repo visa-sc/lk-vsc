@@ -2304,6 +2304,12 @@ const VSC_SHEETS = [
 // Отзывы (отдельная Google-таблица, лист «Статистика 2026»). Колонки по буквам:
 // A=месяц, D=позитивные МСК, F=негативные МСК, J=позитивные СПб, L=негативные СПб.
 const VSC_REVIEWS_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWz9BWp9Dzqj1TQivSvTQ12tE_06UzV3Dy2Lix5kyVBYUkUou9EHhCQvT3fVzafqwNYfCFeyp6UMrT/pub?gid=786742187&single=true&output=csv";
+// «Возвраты» и «Налоги» — отдельные Google-таблицы с ПОМЕСЯЧНЫМИ вкладками (2026).
+// Тянем нужные вкладки по gid (публикация в вебе). Колонки/строки внутри ищем по смыслу.
+const VSC_RETURNS_PUB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRZXCCyCQMDzaSgbuBTf7Uqn9_93uLpEZR7RBEhk_oFEYS67-QjaBv8pnjWtFa4zc8YOkQcgihH2Up-/pub";
+const VSC_TAXES_PUB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRwsrbTIn1uoxuP8lKh2MFM7dpxtHKbF7zU8Jz1_9BXjgxpruguaf9B5QYCXGPNoiTzfNWWxG-DxqAD/pub";
+const VSC_RETURNS_GID = { "Январь 2026": "1436150116", "Февраль 2026": "2074430542", "Март 2026": "198350610", "Апрель 2026": "1458511972", "Май 2026": "1992585040", "Июнь 2026": "1100248812" };
+const VSC_TAXES_GID = { "Январь 2026": "9809588", "Февраль 2026": "1136035263", "Март 2026": "2018995646", "Апрель 2026": "437724355", "Май 2026": "2024110337", "Июнь 2026": "1935139822" };
 // Парсер CSV (учитывает кавычки, экранирование "" и переводы строк внутри ячеек).
 function vscParseCsv(text) {
   const rows = []; let row = [], field = "", i = 0, q = false;
@@ -2480,13 +2486,46 @@ async function vscFetchReviews() {
     return vscParseReviews(vscParseCsv(r.data));
   } catch (e) { return []; /* недоступна таблица отзывов — просто без неё */ }
 }
+// Возвраты по дням месяца: { "DD.MM.YYYY": суммаУслуг }. У вкладок 2026 шапка из двух
+// строк; столбец «Услуги» и «Дата возврата» ищем по имени (позиции плавают).
+function vscReturnsByDay(rows) {
+  let uslCol = -1, dateCol = -1, hdr = -1;
+  for (let i = 0; i < Math.min(rows.length, 6) && uslCol < 0; i++) {
+    const r = rows[i] || [];
+    for (let c = 0; c < r.length; c++) {
+      const n = String(r[c] || "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (n === "услуги") { uslCol = c; hdr = i; }
+      if (n.indexOf("дата возврата") >= 0) dateCol = c;
+    }
+  }
+  const out = {};
+  if (uslCol < 0 || dateCol < 0) return out;
+  for (let i = hdr + 1; i < rows.length; i++) { const d = String((rows[i] || [])[dateCol] || "").trim(); if (!vscIsDate(d)) continue; const v = vscNum((rows[i] || [])[uslCol]); if (v == null) continue; out[d] = (out[d] || 0) + v; }
+  return out;
+}
+// Налоги месяца из строки «Итог»: НДС (предполагаемый), расхождение с фактом, налог 5%.
+function vscParseTaxes(rows) {
+  let itog = -1; for (let i = rows.length - 1; i >= 0; i--) { if (String((rows[i] || [])[0] || "").toLowerCase().indexOf("итог") >= 0) { itog = i; break; } }
+  if (itog < 0) return null;
+  const findCol = (kws) => { for (let i = 0; i < Math.min(rows.length, 6); i++) { const r = rows[i] || []; for (let c = 0; c < r.length; c++) { const n = String(r[c] || "").replace(/\s+/g, " ").trim().toLowerCase(); if (kws.every((k) => n.indexOf(k) >= 0)) return c; } } return -1; };
+  const di = findCol(["предполагаемый", "ндс"]), dj = findCol(["расхождение", "вынесенного"]), dk = findCol(["налог", "5%"]);
+  return { nds: di >= 0 ? vscNum(rows[itog][di]) : null, rasx: dj >= 0 ? vscNum(rows[itog][dj]) : null, tax5: dk >= 0 ? vscNum(rows[itog][dk]) : null };
+}
+// Возвраты (по дням) + налоги (Итог) для всех месяцев 2026 — параллельно, мягко к сбоям.
+async function vscFetchExtra() {
+  const ret = {}, tax = {};
+  const oneRet = async (name) => { try { const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + VSC_RETURNS_GID[name] + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] }); ret[name] = vscReturnsByDay(vscParseCsv(r.data)); } catch (e) {} };
+  const oneTax = async (name) => { try { const r = await axios.get(VSC_TAXES_PUB + "?gid=" + VSC_TAXES_GID[name] + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] }); tax[name] = vscParseTaxes(vscParseCsv(r.data)); } catch (e) {} };
+  await Promise.all([].concat(Object.keys(VSC_RETURNS_GID).map(oneRet), Object.keys(VSC_TAXES_GID).map(oneTax)));
+  return { ret, tax };
+}
 let _vscCache = null, _vscCacheAt = 0, _vscInflight = null;
 const VSC_TTL_MS = 15 * 60 * 1000;
 async function vscFetchAll() {
   // Листы Google тянем ПАРАЛЛЕЛЬНО (раньше — последовательно, 7 листов = долго).
   // Promise.all сохраняет порядок VSC_SHEETS; недоступный лист → null → отфильтруем.
   // Отзывы (отдельная таблица) тянем тем же параллельным заходом.
-  const [results, reviews] = await Promise.all([
+  const [results, reviews, extra] = await Promise.all([
     Promise.all(VSC_SHEETS.map(async (sh) => {
       try {
         const url = VSC_PUB_BASE + "?gid=" + sh.gid + "&single=true&output=csv";
@@ -2495,9 +2534,23 @@ async function vscFetchAll() {
         return parsed ? Object.assign({ name: sh.name }, parsed) : null;
       } catch (e) { return null; /* пропускаем недоступный лист */ }
     })),
-    vscFetchReviews()
+    vscFetchReviews(),
+    vscFetchExtra().catch(() => ({ ret: {}, tax: {} }))
   ]);
   const months = results.filter(Boolean);
+  // Возвраты и налоги (item 11/13): мерджим в месяцы. Возвраты — по дням (для недель),
+  // итог по месяцу = сумма всех возвратов месяца. % возвратов = Услуги / выручка (бюджет).
+  months.forEach((m) => {
+    const byDay = (extra.ret && extra.ret[m.name]) || {};
+    (m.days || []).forEach((d) => { d.retUslugi = (byDay[d.date] != null) ? byDay[d.date] : null; });
+    (m.weeks || []).forEach((w) => { const v = (w.days || []).map((d) => d.retUslugi).filter((x) => x != null); const s = v.length ? v.reduce((a, b) => a + b, 0) : null; w.retUslugi = s; w.returnsPct = (s != null && w.budget) ? s / w.budget * 100 : null; });
+    if (m.total) {
+      const keys = Object.keys(byDay);
+      m.total.retUslugi = keys.length ? keys.reduce((a, k) => a + byDay[k], 0) : null;
+      m.total.returnsPct = (m.total.retUslugi != null && m.total.budget) ? m.total.retUslugi / m.total.budget * 100 : null;
+    }
+    m.taxes = (extra.tax && extra.tax[m.name]) || null;
+  });
   // Год: суммируем аддитивные базы из месячных Grand total, ratio — производные/среднее.
   const withTotal = months.filter((m) => m.total);
   const sum = (f) => withTotal.reduce((a, m) => a + (m.total[f] || 0), 0);
@@ -2525,6 +2578,9 @@ async function vscFetchAll() {
     planPct: avg("planPct"),
     aggregate: "weighted"
   };
+  // % возвратов за год = Σ Услуги (возвраты) / Σ выручка (бюджет).
+  year.retUslugi = sum("retUslugi");
+  year.returnsPct = (year.retUslugi && sumB) ? year.retUslugi / sumB * 100 : null;
   return { months, year, reviews, updatedAt: new Date().toISOString() };
 }
 async function getVscDashboard() {

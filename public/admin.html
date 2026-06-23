@@ -1763,7 +1763,8 @@
         { key: "drr", label: "ДРР (общая)", fmt: "pct", good: -1 },
         { key: "over", label: "Набор таргета (недобор/перебор ОП)", fmt: "signed", good: 0 },
         { key: "targetDev", label: "Отклонение таргета (факт − план, МСК+СПБ)", fmt: "signed", good: 1 },
-        { key: "planPct", label: "План ОП (% выполнения)", fmt: "pct", good: 1 }
+        { key: "planPct", label: "План ОП (% выполнения)", fmt: "pct", good: 1 },
+        { key: "returnsPct", label: "% возвратов (от выручки)", fmt: "pct", good: -1 }
       ];
       // Доп. показатели — только графики по месяцам внизу /vsc, БЕЗ плиток-цифр.
       const VSC_EXTRA_MONTHLY = [
@@ -1947,7 +1948,7 @@
             if (!b) { const sun = new Date(mon.getTime() + 6 * 86400000); b = { mon: mon, label: dm(mon) + "–" + dm(sun), blocks: [] }; buckets.set(key, b); }
             b.blocks.push(wk);
           }));
-          const sumK = ["budget", "processed", "over", "targetDev", "ad", "rev"];
+          const sumK = ["budget", "processed", "over", "targetDev", "ad", "rev", "retUslugi"];
           const sumBlk = (blocks, key) => { const v = blocks.map((b) => b[key]).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, c) => a + c, 0) : null; };
           // Знаменатели коэффициентов восстанавливаем из НАДЁЖНЫХ баз (budget/ad) и
           // самих коэффициентов блока: T=budget/ATV, контакты=T/(CV/100), units=budget/ASP,
@@ -1972,6 +1973,7 @@
             k.asp = U ? B / U : null;
             k.upt = T ? U / T : null;
             k.cpl = L ? A / L : null;
+            k.returnsPct = (k.retUslugi != null && B) ? k.retUslugi / B * 100 : null;
             k.planPct = null; // план ОП — месячная величина, в неделях не показываем
             return k;
           };
@@ -2100,9 +2102,13 @@
         vscContent.appendChild(ctrls);
 
         const series = vscBuildSeries();
-        // «План ОП (% выполнения)» — только месяц/год: в неделях/днях он пуст (item 7),
-        // поэтому в этих разрезах не показываем ни плитку, ни график.
-        const kpisForView = (vscGran === "week" || vscGran === "day") ? VSC_KPIS.filter((k) => k.key !== "planPct") : VSC_KPIS;
+        // «План ОП (% выполнения)» — только месяц/год: в неделях/днях он пуст (item 7).
+        // «% возвратов» — в год/месяц/неделю (item 11), но не по дням (слишком волатильно).
+        const kpisForView = VSC_KPIS.filter((k) => {
+          if ((vscGran === "week" || vscGran === "day") && k.key === "planPct") return false;
+          if (vscGran === "day" && k.key === "returnsPct") return false;
+          return true;
+        });
         // Для плиток «Неделя»/«День» берём последний период С ДАННЫМИ: текущий
         // период (напр. только начавшаяся неделя) пока пустой — не показываем
         // нулями, откатываемся к последнему заполненному. График — весь ряд.
@@ -2256,6 +2262,18 @@
         vscContent.appendChild(h4);
         vscContent.appendChild(vscBarChart({ key: "cplExtra", label: "CPL с учётом доп. расходов", fmt: "money", good: -1 }, ctrlSeries));
         vscContent.appendChild(vscBarChart({ key: "drrExtra", label: "ДРР с учётом доп. расходов", fmt: "pct", good: -1 }, ctrlSeries));
+        // Item 11 — % возвратов по месяцам (Услуги / выручка).
+        const retSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: { returnsPct: mm.total ? mm.total.returnsPct : null, retUslugi: mm.total ? mm.total.retUslugi : null } }));
+        const h5 = document.createElement("div"); h5.className = "ref-sec-h"; h5.style.marginTop = "22px"; h5.textContent = "Возвраты — по месяцам";
+        vscContent.appendChild(h5);
+        vscContent.appendChild(vscBarChart({ key: "returnsPct", label: "% возвратов (от выручки)", fmt: "pct", good: -1 }, retSeries));
+        // Item 13 — налоги (вынесенный НДС, налог 5%, расхождение с фактом НДС).
+        const taxSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: mm.taxes || {} }));
+        const h6 = document.createElement("div"); h6.className = "ref-sec-h"; h6.style.marginTop = "22px"; h6.textContent = "Налоги — по месяцам";
+        vscContent.appendChild(h6);
+        vscContent.appendChild(vscBarChart({ key: "nds", label: "Вынесенный НДС (предполагаемый, из выручки)", fmt: "money", good: 0 }, taxSeries));
+        vscContent.appendChild(vscBarChart({ key: "tax5", label: "Налог 5%", fmt: "money", good: 0 }, taxSeries));
+        vscContent.appendChild(vscBarChart({ key: "rasx", label: "Расхождение с фактом вынесенного НДС (+ запас / − нехватка)", fmt: "signed", good: 0 }, taxSeries));
       }
       // Проверка Плана ОП (item 9): план ATV и план итоговой конверсии текущего месяца
       // (строка «ТАРГЕТ» под Grand total) должны быть ВЫШЕ факта прошлого месяца (Grand
