@@ -2587,8 +2587,26 @@ async function getVscDashboard() {
   const now = Date.now();
   if (_vscCache && (now - _vscCacheAt) < VSC_TTL_MS) return _vscCache;
   if (_vscInflight) return _vscInflight;
-  _vscInflight = vscFetchAll().then((res) => { _vscCache = res; _vscCacheAt = Date.now(); return res; }).finally(() => { _vscInflight = null; });
+  _vscInflight = vscFetchAll().then((res) => {
+    // Не кэшируем ПУСТОЙ результат (Google мог throttle'ить холодный заход — все листы
+    // вернули null) — иначе пустой дашборд залип бы на 15 мин. Держим старый кэш /
+    // пере-запросим в следующий раз.
+    const ok = res && res.months && res.months.length;
+    if (ok) { _vscCache = res; _vscCacheAt = Date.now(); }
+    return ok ? res : (_vscCache || res);
+  }).finally(() => { _vscInflight = null; });
   return _vscInflight;
+}
+// ── Прибыль по месяцам (вводит директор раз в месяц через /vsc) → рентабельность ──
+const VSC_PROFIT_FILE = path.join(__dirname, ".vscProfit.json");
+const VSC_PROFIT_SEED = { "Январь 2026": 3468536.87, "Февраль 2026": 3353959.46, "Март 2026": 3004338.08, "Апрель 2026": 2715751.13, "Май 2026": 4404363.73 };
+function vscLoadProfit() {
+  try { return Object.assign({}, VSC_PROFIT_SEED, JSON.parse(fs.readFileSync(VSC_PROFIT_FILE, "utf8")) || {}); }
+  catch (_) { return Object.assign({}, VSC_PROFIT_SEED); }
+}
+function vscSaveProfit(map) {
+  try { fs.writeFileSync(VSC_PROFIT_FILE, JSON.stringify(map || {}, null, 2), "utf8"); return true; }
+  catch (e) { console.error("vsc profit save:", e && e.message); return false; }
 }
 // Фоновый прогрев VSC-кэша (Google-таблица). Тянем свежее в фоне и атомарно
 // подменяем кэш (stale-while-revalidate) — пользователю /vsc всегда отдаётся
@@ -2604,11 +2622,22 @@ async function getVscDashboard() {
 app.get("/admin/api/vsc-dashboard", requireAdmin, async (req, res) => {
   try {
     const data = await getVscDashboard();
-    return res.json(Object.assign({ success: true }, data));
+    // Прибыль читаем СВЕЖО (не из 15-мин кэша) — чтобы только что введённое значение
+    // сразу отражалось в рентабельности. Рентабельность считается на клиенте.
+    return res.json(Object.assign({ success: true }, data, { profit: vscLoadProfit() }));
   } catch (e) {
     console.error("vsc dashboard error:", e.message);
     return res.status(500).json({ success: false, message: "Не удалось загрузить данные таблицы" });
   }
+});
+// Ввод прибыли за месяц (директор). { month: "Май 2026", profit: число }.
+app.post("/admin/api/vsc-profit", requireAdmin, (req, res) => {
+  const month = String((req.body && req.body.month) || "").trim();
+  const profit = parseFloat(req.body && req.body.profit);
+  if (!month || !isFinite(profit) || profit < 0) return res.status(400).json({ success: false, message: "Нужны month и неотрицательный profit" });
+  const m = vscLoadProfit(); m[month] = profit;
+  const ok = vscSaveProfit(m);
+  return res.json({ success: ok, profit: m });
 });
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -2657,7 +2686,7 @@ async function vscForecastModel() {
   const now = Date.now();
   if (_vscFcModel && (now - _vscFcModelAt) < VSC_FC_MODEL_TTL) return _vscFcModel;
   try {
-  const r = await axios.get(VSC_FORECAST_XLSX, { timeout: 20000, responseType: "arraybuffer" });
+  const r = await axios.get(VSC_FORECAST_XLSX, { timeout: 30000, responseType: "arraybuffer" });
   const zip = new AdmZip(Buffer.from(r.data));
   const read = (n) => { const e = zip.getEntry(n); return e ? e.getData().toString("utf8") : ""; };
   const ss = [];

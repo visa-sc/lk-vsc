@@ -1771,11 +1771,12 @@
         { key: "missedPct", label: "Процент пропущенных звонков", fmt: "pct", good: -1 },
         { key: "junkPct", label: "Доля мусора от общего числа контактов", fmt: "pct", good: -1 }
       ];
-      // Фактическая прибыль по месяцам 2026 (предоставлено директором). При появлении
-      // новых месяцев — дополнить. Рентабельность = прибыль / выручка (сумма в бюджете).
-      const VSC_PROFIT_2026 = { "Январь": 3468536.87, "Февраль": 3353959.46, "Март": 3004338.08, "Апрель": 2715751.13, "Май": 4404363.73 };
+      // Прибыль по месяцам приходит с сервера (vscData.profit, ключ — ПОЛНОЕ имя месяца);
+      // директор вводит её раз в месяц через /vsc. Рентабельность = прибыль / выручка (бюджет).
       const vscShortMonth = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
-      const vscRentPct = (m) => { if (!m) return null; const p = VSC_PROFIT_2026[vscShortMonth(m.name)]; const b = m.total ? m.total.budget : null; return (p != null && b) ? p / b * 100 : null; };
+      const vscProfitOf = (m) => (m && vscData && vscData.profit) ? vscData.profit[m.name] : null;
+      const vscRentPct = (m) => { const p = vscProfitOf(m); const b = m && m.total ? m.total.budget : null; return (p != null && b) ? p / b * 100 : null; };
+      const vscLastProfitIdx = (uptoIdx) => { const ms = (vscData && vscData.months) || []; for (let i = Math.min(uptoIdx, ms.length - 1); i >= 0; i--) { if (vscProfitOf(ms[i]) != null) return i; } return -1; };
       function vscFmt(v, fmt) {
         if (v == null || isNaN(v)) return "—";
         if (fmt === "money") return Math.round(v).toLocaleString("ru-RU") + " ₽";
@@ -1918,6 +1919,57 @@
           return;
         }
         renderVsc();
+        vscMaybeAskProfit();
+      }
+      // Запрос прибыли за прошлый месяц: в первый понедельник ПОСЛЕ 15 числа (день > 15)
+      // при входе в /vsc, если прибыль за прошлый месяц ещё не введена.
+      const VSC_MON_NAMES = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+      function vscFirstMondayAfter15(y, mIdx) { for (let day = 16; day <= 22; day++) { const d = new Date(y, mIdx, day); if (d.getDay() === 1) return d; } return new Date(y, mIdx, 22); }
+      function vscMaybeAskProfit() {
+        if (!vscData) return;
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        if (today < vscFirstMondayAfter15(today.getFullYear(), today.getMonth())) return;
+        const pm = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
+        const py = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+        const prevName = VSC_MON_NAMES[pm] + " " + py;
+        const ms = vscData.months || [];
+        if (!ms.some((m) => m.name === prevName && m.total)) return;          // нет такого месяца с данными
+        if (vscData.profit && vscData.profit[prevName] != null) return;        // прибыль уже введена
+        if (sessionStorage.getItem("vscProfitAsked_" + prevName) === "1") return; // отложили в этой сессии
+        vscShowProfitPrompt(prevName);
+      }
+      function vscShowProfitPrompt(monthName) {
+        if (document.getElementById("vscProfitModal")) return;
+        const ov = document.createElement("div"); ov.id = "vscProfitModal";
+        ov.style.cssText = "position:fixed;inset:0;background:rgba(20,24,40,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;";
+        const card = document.createElement("div");
+        card.style.cssText = "background:#fff;border-radius:16px;max-width:420px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.25);";
+        card.innerHTML =
+          '<div style="font-size:17px;font-weight:800;color:#161d45;margin-bottom:6px;">Прибыль за ' + escapeHtml(monthName) + '</div>' +
+          '<div style="font-size:13px;color:#6b7280;margin-bottom:14px;">Введите чистую прибыль за прошлый месяц (₽). На её основе посчитается рентабельность.</div>' +
+          '<input id="vscProfitInput" type="number" inputmode="numeric" placeholder="например, 4400000" style="width:100%;padding:11px 13px;font-size:15px;border:1px solid #d4d8e2;border-radius:10px;box-sizing:border-box;" />' +
+          '<div id="vscProfitErr" style="color:#b0263a;font-size:12.5px;margin-top:6px;display:none;"></div>' +
+          '<div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">' +
+          '<button id="vscProfitLater" type="button" style="padding:10px 16px;border-radius:10px;border:1px solid #d4d8e2;background:#fff;color:#5a626f;font-weight:600;cursor:pointer;">Позже</button>' +
+          '<button id="vscProfitSave" type="button" style="padding:10px 18px;border-radius:10px;border:1px solid #3589BD;background:#3589BD;color:#fff;font-weight:700;cursor:pointer;">Сохранить</button>' +
+          '</div>';
+        ov.appendChild(card); document.body.appendChild(ov);
+        const input = document.getElementById("vscProfitInput"); input.focus();
+        document.getElementById("vscProfitLater").addEventListener("click", () => { sessionStorage.setItem("vscProfitAsked_" + monthName, "1"); ov.remove(); });
+        const save = async () => {
+          const err = document.getElementById("vscProfitErr");
+          const val = parseFloat(String(input.value).replace(/\s/g, "").replace(",", "."));
+          if (!isFinite(val) || val < 0) { err.textContent = "Введите число ≥ 0"; err.style.display = "block"; return; }
+          const btn = document.getElementById("vscProfitSave"); btn.disabled = true; btn.textContent = "Сохраняем…";
+          try {
+            const resp = await fetch("/admin/api/vsc-profit", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ month: monthName, profit: val }) });
+            const j = await resp.json();
+            if (j && j.success) { if (vscData) vscData.profit = j.profit; ov.remove(); renderVsc(); }
+            else { err.textContent = (j && j.message) || "Не удалось сохранить"; err.style.display = "block"; btn.disabled = false; btn.textContent = "Сохранить"; }
+          } catch (e) { err.textContent = "Ошибка сети"; err.style.display = "block"; btn.disabled = false; btn.textContent = "Сохранить"; }
+        };
+        document.getElementById("vscProfitSave").addEventListener("click", save);
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
       }
       function vscBuildSeries() {
         const ms = vscData.months || [];
@@ -2207,18 +2259,22 @@
           tile.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(kpi.label) + '</div><div class="vsc-tile-v' + cls + '">' + vscFmt(v, kpi.fmt) + '</div>' + delta + extra + '<div class="vsc-tile-s">' + escapeHtml(curSub || "") + '</div>';
           tiles.appendChild(tile);
         });
-        // Item 12 — рентабельность (прибыль / выручка): плитка только в месячной вкладке.
-        if (vscGran === "month") {
-          const curMo = (vscData.months || [])[vscMonthIdx];
-          const rent = vscRentPct(curMo);
-          const pIdx = vscPrevFilledIdx(vscMonthIdx);
-          const rentPrev = pIdx >= 0 ? vscRentPct(vscData.months[pIdx]) : null;
-          const pr = VSC_PROFIT_2026[vscShortMonth(curMo && curMo.name)];
-          const rtile = document.createElement("div"); rtile.className = "vsc-tile";
-          let rdl = "";
-          if (rent != null && rentPrev != null && rent !== rentPrev) { const d = rent - rentPrev; rdl = '<div class="vsc-tile-d ' + (d > 0 ? "up" : "down") + '">' + (d > 0 ? "▲" : "▼") + " " + vscFmt(Math.abs(d), "pct") + " к пред.</div>"; }
-          rtile.innerHTML = '<div class="vsc-tile-l">Рентабельность (прибыль / выручка)</div><div class="vsc-tile-v">' + vscFmt(rent, "pct") + '</div>' + rdl + '<div class="vsc-tile-s">' + (pr != null ? "прибыль " + vscFmt(pr, "money") : "нет данных о прибыли за месяц") + '</div>';
-          tiles.appendChild(rtile);
+        // Прибыль и рентабельность (item 12 + расширение): плитки в «Год» и «Месяц».
+        // В «Месяц» — за ПОСЛЕДНИЙ месяц с введённой прибылью (текущий ещё не закрыт).
+        if (vscGran === "month" || vscGran === "year") {
+          const ms = vscData.months || [];
+          const sTile = (label, txt, sub) => { const t = document.createElement("div"); t.className = "vsc-tile"; t.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(label) + '</div><div class="vsc-tile-v">' + txt + '</div><div class="vsc-tile-s">' + escapeHtml(sub) + '</div>'; return t; };
+          if (vscGran === "year") {
+            let sp = 0, sb = 0, has = false;
+            ms.forEach((mm) => { const p = vscProfitOf(mm), b = mm.total ? mm.total.budget : null; if (p != null && b) { sp += p; sb += b; has = true; } });
+            tiles.appendChild(sTile("Прибыль за 2026", has ? vscFmt(sp, "money") : "—", "сумма по месяцам с прибылью"));
+            tiles.appendChild(sTile("Рентабельность за 2026", (has && sb) ? vscFmt(sp / sb * 100, "pct") : "—", "прибыль ÷ выручка, заполн. мес."));
+          } else {
+            const li = vscLastProfitIdx(vscMonthIdx), lm = li >= 0 ? ms[li] : null;
+            const pr = lm ? vscProfitOf(lm) : null, rt = lm ? vscRentPct(lm) : null;
+            tiles.appendChild(sTile("Прибыль за " + (lm ? vscShortMonth(lm.name) : "месяц"), pr != null ? vscFmt(pr, "money") : "—", lm ? "последний месяц с данными" : "прибыль ещё не введена"));
+            tiles.appendChild(sTile("Рентабельность за " + (lm ? vscShortMonth(lm.name) : "месяц"), rt != null ? vscFmt(rt, "pct") : "—", "прибыль ÷ выручка"));
+          }
         }
         vscContent.appendChild(tiles);
 
@@ -2227,10 +2283,11 @@
         vscContent.appendChild(chartsH);
         if (!series.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных за выбранный месяц."; vscContent.appendChild(e); }
         else kpisForView.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, series)));
-        // Item 12 — график рентабельности по месяцам (только в месячной вкладке).
-        if (vscGran === "month") {
-          const rentSeries = (vscData.months || []).map((mm) => ({ x: vscShortMonth(mm.name), k: { rent: vscRentPct(mm) } }));
-          vscContent.appendChild(vscBarChart({ key: "rent", label: "Рентабельность (прибыль / выручка), %", fmt: "pct", good: 1 }, rentSeries));
+        // Прибыль и рентабельность по месяцам — графики в «Год» и «Месяц».
+        if (vscGran === "month" || vscGran === "year") {
+          const profSeries = (vscData.months || []).map((mm) => ({ x: vscShortMonth(mm.name), k: { profit: vscProfitOf(mm), rent: vscRentPct(mm) } }));
+          vscContent.appendChild(vscBarChart({ key: "profit", label: "Прибыль по месяцам, ₽", fmt: "money", good: 1 }, profSeries));
+          vscContent.appendChild(vscBarChart({ key: "rent", label: "Рентабельность (прибыль / выручка), %", fmt: "pct", good: 1 }, profSeries));
         }
       }
       // Вкладка «Ежемесячный контроль»: качество звонков/контактов + отзывы — всё по
