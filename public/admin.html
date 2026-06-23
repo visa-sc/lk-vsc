@@ -928,7 +928,7 @@
         <button id="mgrLoginBtn" type="submit" class="login-btn">Войти</button>
         <button id="mgrForgotBtn" type="button" style="margin-top:10px;background:none;border:none;color:#3589BD;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Забыли пароль?</button>
         <div id="mgrResetMsg" style="display:none;margin-top:8px;font-size:13px;line-height:1.45;"></div>
-        <button id="mgrBioBtn" type="button" style="margin-top:12px;width:100%;padding:11px;background:#fff;border:1px solid #cdddef;border-radius:10px;color:#3589BD;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Войти по Face ID / отпечатку</button>
+        <button id="mgrBioBtn" type="button" style="display:none;margin-top:12px;width:100%;padding:11px;background:#fff;border:1px solid #cdddef;border-radius:10px;color:#3589BD;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Войти по Face ID / отпечатку</button>
       </form>
 
       <button id="bioLoginBtn" type="button" class="bio-btn">
@@ -1121,6 +1121,10 @@
       // /vsc — отдельный VSC-дашборд: вход как в админку (код), но своя вывеска
       // VSC и показывается только дашборд. По авторизации ведёт себя как админ.
       const IS_VSC = location.pathname.replace(/\/+$/, "") === "/vsc" || _host === "vsc.voyotravel.ru";
+      // Вход по e-mail+паролю — ТОЛЬКО для персонала: /team, dev.voyotravel.ru и поддомен vsc.voyotravel.ru.
+      // Путь /vsc (админ-дашборд Андрея) и /admin остаются ТОЛЬКО на коде доступа — форму входа там НЕ трогаем.
+      const IS_VSC_HOST = _host === "vsc.voyotravel.ru";
+      const IS_STAFF_LOGIN = IS_TEAM || IS_VSC_HOST;
       const TOKEN_KEY = IS_TEAM ? "voyo_team_token" : (IS_VSC ? "voyo_vsc_token" : "voyo_admin_token");
       if (IS_VSC) {
         try {
@@ -1289,18 +1293,20 @@
           const ad = document.getElementById("authDailyBlock"); if (ad) ad.style.display = "none";
         }
       }
+      // Вход для персонала (/team, dev., vsc.voyotravel.ru): только e-mail+пароль.
+      // НЕТ поля кода доступа, НЕТ админской кнопки Face ID. Кнопка «Войти по Face ID»
+      // (mgrBioBtn) показывается ТОЛЬКО если на этом устройстве уже привязан Face ID.
       function setupManagerLoginUI() {
-        const sub = document.querySelector("#loginBlock .sub"); if (sub) sub.textContent = "Вход для руководителей";
+        const sub = document.querySelector("#loginBlock .sub"); if (sub) sub.textContent = "Вход для сотрудников";
         const cf = document.getElementById("loginForm"); if (cf) cf.style.display = "none";
         const bb = document.getElementById("bioLoginBtn"); if (bb) bb.style.display = "none";
         const mf = document.getElementById("managerLoginForm"); if (mf) mf.style.display = "";
-      }
-      // vsc: показываем форму руководителя (e-mail+пароль), НО оставляем форму кода
-      // и Face ID для админа (на vsc вход по коду 280992 / Face ID сохраняется).
-      function setupVscLoginUI() {
-        const sub = document.querySelector("#loginBlock .sub"); if (sub) sub.textContent = "Вход для сотрудников";
-        const mf = document.getElementById("managerLoginForm"); if (mf) mf.style.display = "";
-        const cf = document.getElementById("loginForm"); if (cf) cf.style.display = "";
+        const mbio = document.getElementById("mgrBioBtn");
+        if (mbio) {
+          const saved = localStorage.getItem("voyo_mgr_bio_email") || "";
+          if (saved) { mbio.style.display = ""; const me = document.getElementById("mgrEmail"); if (me && !me.value) me.value = saved; }
+          else { mbio.style.display = "none"; }
+        }
       }
       function renderKb() {
         if (!kbContent) return;
@@ -3122,7 +3128,7 @@
           const assertion = await navigator.credentials.get({ publicKey });
           const verifyR = await fetch("/team/api/webauthn/auth-verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, assertionResponse: { id: assertion.id, rawId: bytesToB64u(assertion.rawId), type: assertion.type, response: { clientDataJSON: bytesToB64u(assertion.response.clientDataJSON), authenticatorData: bytesToB64u(assertion.response.authenticatorData), signature: bytesToB64u(assertion.response.signature), userHandle: assertion.response.userHandle ? bytesToB64u(assertion.response.userHandle) : null }, clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {} } }) });
           const data = await verifyR.json().catch(() => ({}));
-          if (verifyR.ok && data.success && data.token) { setToken(data.token); managerPerms = Array.isArray(data.perms) ? data.perms : []; myRole = "manager"; try { localStorage.setItem("voyo_mgr_bio_" + email, "1"); } catch (_) {} return true; }
+          if (verifyR.ok && data.success && data.token) { setToken(data.token); managerPerms = Array.isArray(data.perms) ? data.perms : []; myRole = "manager"; try { localStorage.setItem("voyo_mgr_bio_email", email); } catch (_) {} return true; }
           return false;
         } catch (err) { console.warn("manager bio login failed/cancelled:", err); return false; }
       }
@@ -3160,25 +3166,33 @@
       });
 
       bioSkipBtn.addEventListener("click", () => {
-        if (myRole === "manager" && window.__mgrBioEmail) { try { localStorage.setItem("voyo_mgr_bio_" + window.__mgrBioEmail, "1"); } catch (_) {} }
+        // «Не сейчас» — больше не предлагаем этому e-mail на этом устройстве.
+        if (myRole === "manager" && window.__mgrBioEmail) { try { localStorage.setItem("voyo_mgr_bio_skip_" + window.__mgrBioEmail, "1"); } catch (_) {} }
         bioOffer.classList.remove("show");
         showDash();
       });
       bioEnableBtn.addEventListener("click", async () => {
         bioEnableBtn.disabled = true;
         bioSkipBtn.disabled = true;
-        let ok;
         if (myRole === "manager") {
-          ok = await tryManagerBioRegister();
-          if (ok && window.__mgrBioEmail) { try { localStorage.setItem("voyo_mgr_bio_" + window.__mgrBioEmail, "1"); } catch (_) {} }
-        } else {
-          ok = await tryAdminBioRegister();
+          const ok = await tryManagerBioRegister();
+          bioEnableBtn.disabled = false;
+          bioSkipBtn.disabled = false;
+          if (ok && window.__mgrBioEmail) {
+            try { localStorage.setItem("voyo_mgr_bio_email", window.__mgrBioEmail); } catch (_) {}
+            bioOffer.classList.remove("show");
+            showDash();
+          } else {
+            // Раньше тут «ничего не происходило» — теперь явно сообщаем об ошибке.
+            alert("Не удалось включить Face ID на этом устройстве. Убедитесь, что оно поддерживает Face ID / отпечаток, и попробуйте ещё раз.");
+          }
+          return;
         }
+        const ok = await tryAdminBioRegister();
         bioEnableBtn.disabled = false;
         bioSkipBtn.disabled = false;
         bioOffer.classList.remove("show");
         showDash();
-        // Если успешно — следующая сессия покажет вход по Face ID.
       });
       function showLoginError(msg) {
         loginError.textContent = msg || "";
@@ -4824,11 +4838,12 @@
             setToken(data.token);
             managerPerms = Array.isArray(data.perms) ? data.perms : [];
             myRole = "manager";
-            // Предложить включить Face ID на этом устройстве (один раз на e-mail/устройство).
+            // Предложить включить Face ID на этом устройстве (если ещё не подключён и не отказывался).
             try {
               const platformOk = await isPlatformAuthAvailable();
-              const flagged = localStorage.getItem("voyo_mgr_bio_" + email) === "1";
-              if (platformOk && !flagged) { window.__mgrBioEmail = email; if (bioOffer) bioOffer.classList.add("show"); return; }
+              const already = localStorage.getItem("voyo_mgr_bio_email") === email;
+              const skipped = localStorage.getItem("voyo_mgr_bio_skip_" + email) === "1";
+              if (platformOk && !already && !skipped) { window.__mgrBioEmail = email; if (bioOffer) bioOffer.classList.add("show"); return; }
             } catch (_) {}
             showDash();
           } catch (_) { showLoginError("Сетевая ошибка"); }
@@ -4852,7 +4867,7 @@
       const mgrBioBtn = document.getElementById("mgrBioBtn");
       if (mgrBioBtn) {
         mgrBioBtn.addEventListener("click", async () => {
-          const email = (document.getElementById("mgrEmail").value || "").trim();
+          const email = (document.getElementById("mgrEmail").value || localStorage.getItem("voyo_mgr_bio_email") || "").trim();
           const rm = document.getElementById("mgrResetMsg");
           if (!email) { rm.style.display = "block"; rm.style.color = "#b0263a"; rm.textContent = "Введите e-mail в поле выше, затем войдите по Face ID."; return; }
           mgrBioBtn.disabled = true; const prev = mgrBioBtn.textContent; mgrBioBtn.textContent = "Подтвердите вход…";
@@ -4872,8 +4887,9 @@
         // остаётся — он создаётся при успешной аутентификации и используется
         // для API-запросов из дашборда (polling и т. д.) в рамках открытой
         // страницы. Закрытие/обновление вкладки → снова требуется auth.
-        if (IS_TEAM) {
-          // Портал руководителей: вход по e-mail+пароль, сессия живёт (до 30 дней).
+        if (IS_STAFF_LOGIN) {
+          // Персонал (/team, dev.voyotravel.ru, vsc.voyotravel.ru): вход по e-mail+паролю;
+          // сессия живёт (до 30 дней). НЕТ поля кода и админского Face ID.
           setupManagerLoginUI();
           const t = getToken();
           if (t) {
@@ -4882,18 +4898,7 @@
           showLogin();
           return;
         }
-        if (IS_VSC) {
-          // vsc: руководители входят по e-mail+паролю (вкладки гейтятся по правам),
-          // админ — по коду/Face ID (формы кода и Face ID остаются доступны).
-          setupVscLoginUI();
-          const t = getToken();
-          if (t) {
-            try { const d = await apiFetch("/admin/api/whoami"); if (d && d.success) { managerPerms = Array.isArray(d.perms) ? d.perms : []; myRole = d.role || ""; showDash(); return; } } catch (_) {}
-          }
-          showLogin();
-          await tryAutoBioOnLoad();
-          return;
-        }
+        // /vsc (путь, админ-дашборд Андрея) и /admin — вход ТОЛЬКО по коду доступа + Face ID админа.
         clearToken();
         showLogin();
         await tryAutoBioOnLoad();
