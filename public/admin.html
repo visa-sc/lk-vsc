@@ -2379,10 +2379,11 @@
           const ms = vscData.months || [];
           const sTile = (label, txt, sub) => { const t = document.createElement("div"); t.className = "vsc-tile"; t.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(label) + '</div><div class="vsc-tile-v">' + txt + '</div><div class="vsc-tile-s">' + escapeHtml(sub) + '</div>'; return t; };
           if (vscGran === "year") {
-            let sp = 0, sb = 0, has = false;
-            ms.forEach((mm) => { const p = vscProfitOf(mm), b = mm.total ? mm.total.budget : null; if (p != null && b) { sp += p; sb += b; has = true; } });
-            tiles.appendChild(sTile("Прибыль за 2026", has ? vscFmt(sp, "money") : "—", "сумма по месяцам с прибылью"));
-            tiles.appendChild(sTile("Рентабельность за 2026", (has && sb) ? vscFmt(sp / sb * 100, "pct") : "—", "прибыль ÷ выручка, заполн. мес."));
+            let sp = 0, cnt = 0, spR = 0, sb = 0;
+            ms.forEach((mm) => { const p = vscProfitOf(mm), b = mm.total ? mm.total.budget : null; if (p != null) { sp += p; cnt++; if (b) { spR += p; sb += b; } } });
+            const avg = cnt ? sp / cnt : null;
+            tiles.appendChild(sTile("Прибыль за 2026", cnt ? vscFmt(sp, "money") : "—", cnt ? ("в среднем " + vscFmt(avg, "money") + "/мес · " + cnt + " мес.") : "введите прибыль по месяцам"));
+            tiles.appendChild(sTile("Рентабельность за 2026", (cnt && sb) ? vscFmt(spR / sb * 100, "pct") : "—", "прибыль ÷ выручка, заполн. мес."));
           } else {
             const li = vscLastProfitIdx(vscMonthIdx), lm = li >= 0 ? ms[li] : null;
             const pr = lm ? vscProfitOf(lm) : null, rt = lm ? vscRentPct(lm) : null;
