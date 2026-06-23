@@ -952,6 +952,85 @@ app.post("/admin/api/no-task-check/run", requireAdmin, (req, res) => {
 });
 scheduleNoTaskDaily();
 
+// ═════════════════════════════════════════════════════════════════════════
+// Остановки рекламных кампаний Яндекс.Директа (item 2). API v5 НЕ отдаёт ленту
+// «история остановок» — поэтому периодически опрашиваем campaigns.get (только
+// ЧТЕНИЕ) и сами фиксируем переходы «активна → остановлена» с таймстампом.
+// Лог копится вперёд; ретроспективы за прошлое у API нет. Токен/логин — в env.
+const YD_API_URL = "https://api.direct.yandex.com/json/v5/";
+const YD_TOKEN = process.env.YANDEX_DIRECT_TOKEN || "";
+const YD_LOGIN = process.env.YANDEX_DIRECT_LOGIN || "";
+const YD_STOP_FILE = path.join(__dirname, ".ydStopLog.json");
+const YD_STOPPED_STATES = { SUSPENDED: "приостановлена", OFF: "остановлена" }; // «остановка» = переход в это
+let _ydLog = null, _ydRunning = false;
+function loadYdLog() {
+  if (_ydLog) return _ydLog;
+  try { _ydLog = JSON.parse(fs.readFileSync(YD_STOP_FILE, "utf8")); } catch (_) { _ydLog = {}; }
+  if (!_ydLog || typeof _ydLog !== "object") _ydLog = {};
+  if (!_ydLog.snapshot) _ydLog.snapshot = {};   // { id: { name, state } }
+  if (!Array.isArray(_ydLog.events)) _ydLog.events = []; // [{ id, name, ts, from, to }]
+  if (!Array.isArray(_ydLog.runs)) _ydLog.runs = [];     // история проверок
+  return _ydLog;
+}
+function saveYdLog() { try { fs.writeFileSync(YD_STOP_FILE, JSON.stringify(_ydLog || {}, null, 2), "utf8"); } catch (e) { console.error("saveYdLog:", e.message); } }
+async function ydApiCampaigns() {
+  if (!YD_TOKEN) throw Object.assign(new Error("Токен Я.Директа не задан"), { ydCode: "no_token" });
+  const headers = { Authorization: "Bearer " + YD_TOKEN, "Accept-Language": "ru", "Content-Type": "application/json; charset=utf-8" };
+  if (YD_LOGIN) headers["Client-Login"] = YD_LOGIN;
+  const body = { method: "get", params: { SelectionCriteria: {}, FieldNames: ["Id", "Name", "State", "Status", "StatusClarification"] } };
+  const r = await axios.post(YD_API_URL + "campaigns", body, { headers, timeout: 20000 });
+  if (r.data && r.data.error) { const e = r.data.error; throw Object.assign(new Error(e.error_string + (e.error_detail ? ": " + e.error_detail : "")), { ydCode: e.error_code }); }
+  return (r.data && r.data.result && r.data.result.Campaigns) || [];
+}
+async function ydRunCheck(trigger) {
+  if (_ydRunning) return { skipped: true };
+  _ydRunning = true;
+  const log = loadYdLog();
+  const rec = { ts: Date.now(), trigger: trigger || "cron", checked: 0, newStops: 0, error: null, ydCode: null };
+  try {
+    const camps = await ydApiCampaigns();
+    rec.checked = camps.length;
+    const now = Date.now();
+    camps.forEach((c) => {
+      const id = String(c.Id), st = String(c.State || ""), nm = c.Name || ("Кампания " + id);
+      const prev = log.snapshot[id];
+      // Переход из активного (не-остановленного) в остановленное (SUSPENDED/OFF) = событие.
+      // На первом заходе prev нет → событий не создаём, только снимок (ретроспективы нет).
+      if (prev && prev.state && prev.state !== st && YD_STOPPED_STATES[st] && !YD_STOPPED_STATES[prev.state]) {
+        log.events.unshift({ id: id, name: nm, ts: now, from: prev.state, to: st });
+        rec.newStops++;
+      }
+      log.snapshot[id] = { name: nm, state: st };
+    });
+    log.events = log.events.filter((e) => e.ts >= now - 60 * 86400000); // храним 60 дней
+    console.log(`YD STOPS [${rec.trigger}]: campaigns=${rec.checked} newStops=${rec.newStops}`);
+  } catch (e) {
+    rec.error = e && e.message; rec.ydCode = (e && e.ydCode) != null ? e.ydCode : null;
+    console.error("YD STOPS check:", rec.ydCode, rec.error);
+  } finally { _ydRunning = false; }
+  log.runs.unshift(rec); if (log.runs.length > 60) log.runs = log.runs.slice(0, 60);
+  saveYdLog();
+  return rec;
+}
+function ydStopsPayload() {
+  const log = loadYdLog();
+  const cutoff = Date.now() - 30 * 86400000;            // показываем за 30 дней
+  const events = (log.events || []).filter((e) => e.ts >= cutoff);
+  return { running: _ydRunning, events: events, count: events.length, lastRun: log.runs[0] || null, configured: !!YD_TOKEN };
+}
+(function scheduleYdStops() {
+  setTimeout(() => { ydRunCheck("cron").catch(() => {}); }, 60 * 1000);          // через минуту после старта
+  setInterval(() => { ydRunCheck("cron").catch(() => {}); }, 6 * 3600 * 1000);   // и каждые 6 часов
+})();
+app.get("/admin/api/yd-stops", requireAdmin, (req, res) => {
+  return res.json(Object.assign({ success: true }, ydStopsPayload()));
+});
+app.post("/admin/api/yd-stops/run", requireAdmin, async (req, res) => {
+  if (_ydRunning) return res.json(Object.assign({ success: true }, ydStopsPayload()));
+  await ydRunCheck("manual");                            // один запрос к API — быстро, можно синхронно
+  return res.json(Object.assign({ success: true }, ydStopsPayload()));
+});
+
 // Воронка «Опросники»: SMS отправлено → кликнул → отправил.
 // Считаем по уникальным номерам. Базой берём feedbackSent — туда попадают
 // номера, которым ушло приглашение (фиксируется ДО самой отправки SMS).
