@@ -23,6 +23,16 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Поддомены-удобства: vsc.voyotravel.ru → интерфейс /vsc, dev.voyotravel.ru → /team.
+// Корень поддомена отдаёт ту же admin.html (с нужной вывеской); /vsc и /team на
+// основных доменах продолжают работать как раньше. Должно быть ДО express.static
+// (иначе "/" перехватит index.html). serveAdminPanel — функция-декларация (hoisted).
+app.get("/", (req, res, next) => {
+  const h = String(req.hostname || "").toLowerCase();
+  if (h === "vsc.voyotravel.ru") return serveAdminPanel(res, true);
+  if (h === "dev.voyotravel.ru") return serveAdminPanel(res, false);
+  next();
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/cabinet", (req, res) => {
@@ -177,20 +187,15 @@ app.get("/about/v1", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "about-v1.html"));
 });
 
-app.get(["/admin", "/team", "/vsc"], (req, res) => {
-  // Не кешируем — админка часто меняется, не хочется получать stale HTML/CSS
-  // в Safari/Chrome (особенно на iOS). Снимаем и ETag, чтобы не возвращался 304.
-  // /team — портал руководителей; /vsc — отдельный VSC-дашборд (тот же файл,
-  // вход как в админку по коду, своя вывеска VSC, показывается только дашборд).
+// Отдаём admin.html (админка/руководители/VSC). Не кешируем — часто меняется, иначе
+// Safari/Chrome (особ. iOS) держат stale. Для VSC вставляем apple-touch-icon = логотип
+// VSC (iOS «Добавить на экран»). Используется и для /admin,/team,/vsc, и для поддоменов.
+function serveAdminPanel(res, asVsc) {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.set("Pragma", "no-cache");
   res.set("Expires", "0");
   const adminFile = path.join(__dirname, "public", "admin.html");
-  // Только для /vsc вставляем в <head> ссылку на apple-touch-icon = логотип VSC.
-  // iOS «Добавить на экран» читает иконку из HTML страницы → у /vsc будет VSC.
-  // Остальные страницы (/admin, /team и весь сайт) HTML не меняют и продолжают
-  // использовать корневой /apple-touch-icon.png (VOYO) — их иконка не затрагивается.
-  if (String(req.path || "").replace(/\/+$/, "") === "/vsc") {
+  if (asVsc) {
     try {
       const html = fs.readFileSync(adminFile, "utf8")
         .replace("</head>", '<link rel="apple-touch-icon" href="/vsc-logo.png">\n<link rel="apple-touch-icon" sizes="180x180" href="/vsc-logo.png">\n</head>');
@@ -198,7 +203,11 @@ app.get(["/admin", "/team", "/vsc"], (req, res) => {
       return res.send(html);
     } catch (e) { /* при сбое — отдаём как есть ниже */ }
   }
-  res.sendFile(adminFile, { etag: false, lastModified: false });
+  return res.sendFile(adminFile, { etag: false, lastModified: false });
+}
+app.get(["/admin", "/team", "/vsc"], (req, res) => {
+  // /team — портал руководителей; /vsc — VSC-дашборд (тот же файл, вход по коду, своя вывеска).
+  return serveAdminPanel(res, String(req.path || "").replace(/\/+$/, "") === "/vsc");
 });
 
 // ──────────────────────────────────────────────────────────
@@ -10442,7 +10451,7 @@ const WEBAUTHN_ORIGIN = process.env.WEBAUTHN_ORIGIN || "https://voyovoyo.ru";
 // НЕ ломая уже зарегистрированные паспорт-ки (на каждом домене свои). Для
 // voyovoyo.ru helper возвращает ровно прежние значения → поведение не меняется.
 // Неизвестный/поддельный Host → дефолт voyovoyo.ru. www.* считаем тем же доменом.
-const WEBAUTHN_ALLOWED_HOSTS = { "voyovoyo.ru": true, "voyotravel.ru": true };
+const WEBAUTHN_ALLOWED_HOSTS = { "voyovoyo.ru": true, "voyotravel.ru": true, "dev.voyotravel.ru": true, "vsc.voyotravel.ru": true };
 function webauthnHostName(req) {
   const h = String((req && req.headers && req.headers.host) || "").toLowerCase().split(":")[0].replace(/^www\./, "");
   return WEBAUTHN_ALLOWED_HOSTS[h] ? h : WEBAUTHN_RP_ID;

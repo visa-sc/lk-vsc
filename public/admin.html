@@ -1111,10 +1111,13 @@
 
   <script>
     (function() {
-      const IS_TEAM = location.pathname.replace(/\/+$/, "") === "/team";
+      // Определяем по пути И по поддомену: dev.voyotravel.ru = /team, vsc.voyotravel.ru = /vsc
+      // (на поддомене путь "/", поэтому учитываем hostname). /team и /vsc на основных доменах — как раньше.
+      const _host = (location.hostname || "").toLowerCase();
+      const IS_TEAM = location.pathname.replace(/\/+$/, "") === "/team" || _host === "dev.voyotravel.ru";
       // /vsc — отдельный VSC-дашборд: вход как в админку (код), но своя вывеска
       // VSC и показывается только дашборд. По авторизации ведёт себя как админ.
-      const IS_VSC = location.pathname.replace(/\/+$/, "") === "/vsc";
+      const IS_VSC = location.pathname.replace(/\/+$/, "") === "/vsc" || _host === "vsc.voyotravel.ru";
       const TOKEN_KEY = IS_TEAM ? "voyo_team_token" : (IS_VSC ? "voyo_vsc_token" : "voyo_admin_token");
       if (IS_VSC) {
         try {
