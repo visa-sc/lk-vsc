@@ -1230,6 +1230,18 @@ function requireStaff(req, res, next) {
   req.staff = s;
   next();
 }
+// Доступ к vsc-калькулятору: админ ИЛИ руководитель с правом «vsc».
+function requireVscAccess(req, res, next) {
+  const s = getStaffFromReq(req);
+  if (s && (s.role === "admin" || (Array.isArray(s.perms) && s.perms.indexOf("vsc") >= 0))) { req.staff = s; return next(); }
+  return res.status(401).json({ success: false, message: "Нет доступа" });
+}
+// Доступ к «Бот VFS»: админ ИЛИ руководитель с правом «vfsbot» (сейчас — Плинер).
+function requireVscBot(req, res, next) {
+  const s = getStaffFromReq(req);
+  if (s && (s.role === "admin" || (Array.isArray(s.perms) && s.perms.indexOf("vfsbot") >= 0))) { req.staff = s; return next(); }
+  return res.status(401).json({ success: false, message: "Нет доступа" });
+}
 // Доступ к статистике этапов: админ ИЛИ руководитель с правом «stages».
 function requireStagesAccess(req, res, next) {
   const s = getStaffFromReq(req);
@@ -2865,7 +2877,7 @@ async function fetchCbrRates() {
 const VSC_CALC_FILE = path.join(__dirname, ".vscCalc.json");
 function loadCalcCfg() { try { return JSON.parse(fs.readFileSync(VSC_CALC_FILE, "utf8")) || {}; } catch (_) { return {}; } }
 function saveCalcCfg(c) { try { fs.writeFileSync(VSC_CALC_FILE, JSON.stringify(c || {}, null, 2), "utf8"); return true; } catch (e) { console.error("saveCalcCfg:", e.message); return false; } }
-app.get("/admin/api/vsc-rates", requireAdmin, async (req, res) => {
+app.get("/admin/api/vsc-rates", requireVscAccess, async (req, res) => {
   const cfg = loadCalcCfg();
   let eur = null, usd = null, date = null, error = null;
   try { const c = await fetchCbrRates(); eur = c.rates.EUR || null; usd = c.rates.USD || null; date = c.date; }
@@ -2904,7 +2916,7 @@ async function fetchCbrHistory() {
   _cbrHistCache = hist; _cbrHistAt = now;
   return hist;
 }
-app.get("/admin/api/vsc-rates-history", requireAdmin, async (req, res) => {
+app.get("/admin/api/vsc-rates-history", requireVscAccess, async (req, res) => {
   try {
     const hist = await fetchCbrHistory();
     const tm = ratesLogTimesByDate();
@@ -2948,10 +2960,10 @@ function loadVfsBot() {
   return c;
 }
 function saveVfsBot(c) { try { fs.writeFileSync(VFS_BOT_FILE, JSON.stringify(c || {}, null, 2), "utf8"); return true; } catch (e) { console.error("saveVfsBot:", e.message); return false; } }
-app.get("/admin/api/vfs-bot", requireAdmin, (req, res) => {
+app.get("/admin/api/vfs-bot", requireVscBot, (req, res) => {
   return res.json(Object.assign({ success: true, emailService: false }, loadVfsBot()));
 });
-app.post("/admin/api/vfs-bot", requireAdmin, (req, res) => {
+app.post("/admin/api/vfs-bot", requireVscBot, (req, res) => {
   const b = req.body || {};
   const cur = loadVfsBot();
   if (Array.isArray(b.recipients)) cur.recipients = b.recipients.map((x) => String(x || "").trim()).filter((x) => /.+@.+\..+/.test(x)).slice(0, 50);

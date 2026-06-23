@@ -1256,8 +1256,9 @@
         // на время async-проверки. Реальная сверка идёт в tryAutoBioOnLoad().
         if (getBioShowCache()) applyBioBtnVisibility(true);
       }
-      function currentRole() { return IS_TEAM ? "manager" : "admin"; }
-      let managerPerms = []; // персональные права руководителя (напр. ["stages"])
+      let myRole = ""; // реальная роль из whoami/login: "admin" | "manager" (приоритетнее эвристики по хосту)
+      function currentRole() { return myRole || (IS_TEAM ? "manager" : "admin"); }
+      let managerPerms = []; // персональные права руководителя (напр. ["stages"], ["vsc"], ["vfsbot"])
       function applyRoleUI() {
         const mgr = currentRole() === "manager";
         const canStages = mgr && Array.isArray(managerPerms) && managerPerms.indexOf("stages") >= 0;
@@ -1290,6 +1291,13 @@
         const cf = document.getElementById("loginForm"); if (cf) cf.style.display = "none";
         const bb = document.getElementById("bioLoginBtn"); if (bb) bb.style.display = "none";
         const mf = document.getElementById("managerLoginForm"); if (mf) mf.style.display = "";
+      }
+      // vsc: показываем форму руководителя (e-mail+пароль), НО оставляем форму кода
+      // и Face ID для админа (на vsc вход по коду 250960 / Face ID сохраняется).
+      function setupVscLoginUI() {
+        const sub = document.querySelector("#loginBlock .sub"); if (sub) sub.textContent = "Вход для сотрудников";
+        const mf = document.getElementById("managerLoginForm"); if (mf) mf.style.display = "";
+        const cf = document.getElementById("loginForm"); if (cf) cf.style.display = "";
       }
       function renderKb() {
         if (!kbContent) return;
@@ -1971,6 +1979,9 @@
 
       async function loadVsc() {
         if (!vscContent) return;
+        // Руководители (не админ) видят на vsc только калькулятор/бота — без админского
+        // дашборда (vsc-dashboard requireAdmin). Сразу к рендеру вкладок (гейтинг внутри).
+        if (currentRole() === "manager") { renderVsc(); return; }
         loadNoTaskBlock();
         loadYdStops();
         if (!vscData) vscContent.innerHTML = '<div class="loading-state">Загружаем данные из Google-таблицы…</div>';
@@ -2220,15 +2231,23 @@
       function renderVsc() {
         if (!vscData || !vscContent) return;
         vscContent.innerHTML = "";
-        const head = document.createElement("div"); head.className = "vsc-head";
-        const t = document.createElement("div"); t.innerHTML = '<h2 style="margin:0;font-size:18px;color:#161d45;">Показатели визового агентства</h2>';
-        const upd = document.createElement("div"); upd.className = "vsc-upd";
-        upd.textContent = "Источник: Google-таблица · обновляется автоматически (кэш ~15 мин)";
-        head.appendChild(t); head.appendChild(upd); vscContent.appendChild(head);
+        const isMgr = currentRole() === "manager";
+        if (!isMgr) {
+          const head = document.createElement("div"); head.className = "vsc-head";
+          const t = document.createElement("div"); t.innerHTML = '<h2 style="margin:0;font-size:18px;color:#161d45;">Показатели визового агентства</h2>';
+          const upd = document.createElement("div"); upd.className = "vsc-upd";
+          upd.textContent = "Источник: Google-таблица · обновляется автоматически (кэш ~15 мин)";
+          head.appendChild(t); head.appendChild(upd); vscContent.appendChild(head);
+        }
 
-        // Вкладки /vsc: «Дашборд», «Ежемесячный контроль», «Прогноз прибыли».
+        // Вкладки /vsc. Руководителям — только «Калькулятор ВНЖ» (+ «Бот VFS» при праве vfsbot); админу — все.
+        let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
+        if (isMgr) {
+          TABS = TABS.filter(([tb]) => tb === "calc" || (tb === "bot" && Array.isArray(managerPerms) && managerPerms.indexOf("vfsbot") >= 0));
+          if (!TABS.some(([tb]) => tb === vscTab)) vscTab = "calc";
+        }
         const maintabs = document.createElement("div"); maintabs.className = "vsc-maintabs";
-        [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]].forEach(([tb, lbl]) => {
+        TABS.forEach(([tb, lbl]) => {
           const b = document.createElement("button"); b.type = "button"; b.textContent = lbl; if (tb === vscTab) b.className = "active";
           b.addEventListener("click", () => { vscTab = tb; renderVsc(); });
           maintabs.appendChild(b);
@@ -4764,6 +4783,7 @@
             if (!r.ok || !data.success) { showLoginError(data.message || "Не удалось войти"); return; }
             setToken(data.token);
             managerPerms = Array.isArray(data.perms) ? data.perms : [];
+            myRole = "manager";
             showDash();
           } catch (_) { showLoginError("Сетевая ошибка"); }
         });
@@ -4783,9 +4803,21 @@
           setupManagerLoginUI();
           const t = getToken();
           if (t) {
-            try { const d = await apiFetch("/admin/api/whoami"); if (d && d.success) { managerPerms = Array.isArray(d.perms) ? d.perms : []; showDash(); return; } } catch (_) {}
+            try { const d = await apiFetch("/admin/api/whoami"); if (d && d.success) { managerPerms = Array.isArray(d.perms) ? d.perms : []; myRole = d.role || "manager"; showDash(); return; } } catch (_) {}
           }
           showLogin();
+          return;
+        }
+        if (IS_VSC) {
+          // vsc: руководители входят по e-mail+паролю (вкладки гейтятся по правам),
+          // админ — по коду/Face ID (формы кода и Face ID остаются доступны).
+          setupVscLoginUI();
+          const t = getToken();
+          if (t) {
+            try { const d = await apiFetch("/admin/api/whoami"); if (d && d.success) { managerPerms = Array.isArray(d.perms) ? d.perms : []; myRole = d.role || ""; showDash(); return; } } catch (_) {}
+          }
+          showLogin();
+          await tryAutoBioOnLoad();
           return;
         }
         clearToken();
