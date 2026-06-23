@@ -2746,22 +2746,39 @@ async function vscBuildForecast() {
     const sum = dd.reduce((a, d) => a + (d.processed || 0), 0);
     return dd.length ? Math.round(sum / dd.length * monthCalDays(mObj)) : sum;
   };
-  const targetFor = (mObj) => { const c = projectContacts(mObj); return { contacts: c, target: (persOP > 0 && shifts > 0) ? c / (persOP * shifts) : 0 }; };
-  const curT = targetFor(cur), prevT = targetFor(prev);
-  // проекция месяца по ставкам периода (контакт-план/персонал/смены постоянны — как у директора)
-  const proj = (k, tgt) => {
+  // Таргет (контакт-план месяца): план директора из модели (строка 24), но НЕ выше
+  // динамической проекции по темпу текущего месяца — пессимистично (лучше занизить).
+  const modelTarget = parseFloat(fc.model[24] && fc.model[24].v) || 0;
+  const dynContacts = projectContacts(cur);
+  const dynTarget = (persOP > 0 && shifts > 0) ? dynContacts / (persOP * shifts) : 0;
+  const target = (modelTarget > 0 && dynTarget > 0) ? Math.min(modelTarget, dynTarget) : (modelTarget || dynTarget);
+  // Проекция месяца по ставкам периода-ОСНОВЫ + фикс. таргет (контакт-план/персонал/смены
+  // постоянны на месяц — как у директора). ФОТ берём из рабочих недельных колонок модели
+  // (×0.22 — реальные взносы; в устаревшем столбце B директора стоит ×0.12, мы его НЕ берём).
+  const proj = (k) => {
     if (!k) return null;
-    const ov = { 24: tgt, 25: +k.asp || 0, 27: +k.cpl || 0, 28: (k.cv != null ? +k.cv / 100 : 0), 30: +k.upt || 0 };
+    const ov = { 24: target, 25: +k.asp || 0, 27: +k.cpl || 0, 28: (k.cv != null ? +k.cv / 100 : 0), 30: +k.upt || 0 };
     if (!(ov[25] && ov[28] && ov[30])) return null; // нет ключевых ставок — период неполный
     const v = vscFcCompute(fc.model, ov);
     return { revenue: v[37], profitMonth: v[38], profitWeek: v[39], contactsMonth: v[34], rates: { asp: ov[25], cpl: ov[27], cv: ov[28] * 100, upt: ov[30] } };
   };
-  const weeks = (cur.weeks || []).filter((w) => (w.processed > 0) || (w.budget > 0))
-    .map((w) => { const p = proj(w, curT.target); return p ? Object.assign({ label: w.label }, p) : null; }).filter(Boolean);
+  // КЛЮЧЕВОЕ: прогноз каждого периода считается по ИТОГАМ ПРЕДЫДУЩЕГО завершённого
+  // периода (а не по самому периоду — это была ошибка, сдвиг на неделю). Первая неделя
+  // месяца — по прошлому МЕСЯЦУ; неделя N — по неделе N−1. Заголовок «на месяц» — тоже
+  // по прошлому месяцу (стабильная база = столбец B таблицы директора).
+  const curWeeks = (cur.weeks || []).filter((w) => (w.processed > 0) || (w.budget > 0));
+  const weeks = curWeeks.map((w, idx) => {
+    const basis = idx === 0 ? prev.total : curWeeks[idx - 1];
+    const basisLabel = idx === 0 ? prev.name : curWeeks[idx - 1].label;
+    const p = proj(basis);
+    return p ? Object.assign({ label: w.label, basis: basisLabel }, p) : null;
+  }).filter(Boolean);
+  const month = proj(prev.total); // прогноз на текущий месяц по итогам прошлого месяца
   return {
     success: true, tab: fc.tab, monthName: cur.name, basisMonth: prev.name,
-    persOP, shifts, target: curT.target, basisContacts: curT.contacts, contactsBasis: "проекция по темпу месяца",
-    month: proj(cur.total, curT.target), baseline: proj(prev.total, prevT.target), weeks
+    persOP, shifts, target, basisContacts: Math.round(target * persOP * shifts),
+    contactsBasis: "план модели, не выше темпа месяца", fotPct: 22,
+    month, baseline: month, weeks
   };
 }
 let _vscFcCache = null, _vscFcAt = 0;
