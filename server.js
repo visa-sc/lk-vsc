@@ -2608,24 +2608,36 @@ async function vscBuildForecast() {
   const prev = months.length > 1 ? months[months.length - 2].m : cur;
   const persOP = parseFloat(fc.model[2] && fc.model[2].v) || 0;
   const shifts = parseFloat(fc.model[29] && fc.model[29].v) || 0;
-  // Таргет (контакт-интенсивность) из ФАКТИЧЕСКИХ контактов прошлого месяца:
-  // «ожидаем объём как в прошлом месяце». target = контакты / (персонал × смены).
-  const basisContacts = (prev.total && prev.total.processed) || (cur.total && cur.total.processed) || 0;
-  const target = (persOP > 0 && shifts > 0) ? basisContacts / (persOP * shifts) : 0;
-  // проекция месяца по ставкам периода (target/персонал/смены постоянны — как у директора)
-  const proj = (k) => {
+  // Месячный контакт-план — ПРОЕКЦИЯ по фактическому темпу месяца (а не факт
+  // прошлого месяца): контакты с начала месяца / отработанных дней × дней в месяце.
+  // Так план сам подгоняется под реальную динамику (для завершённого месяца =
+  // факт). target = контакт-план / (персонал × смены).
+  const monthCalDays = (mObj) => {
+    const mm = /([А-Яа-яёЁ]+)\s+(\d{4})/.exec(String(mObj && mObj.name) || "");
+    const mi = mm ? VSC_RU_MONTH_IDX[mm[1].toLowerCase()] : null;
+    return (mm && mi != null) ? new Date(+mm[2], mi + 1, 0).getDate() : 30;
+  };
+  const projectContacts = (mObj) => {
+    const dd = (mObj.days || []).filter((d) => d.processed > 0);
+    const sum = dd.reduce((a, d) => a + (d.processed || 0), 0);
+    return dd.length ? Math.round(sum / dd.length * monthCalDays(mObj)) : sum;
+  };
+  const targetFor = (mObj) => { const c = projectContacts(mObj); return { contacts: c, target: (persOP > 0 && shifts > 0) ? c / (persOP * shifts) : 0 }; };
+  const curT = targetFor(cur), prevT = targetFor(prev);
+  // проекция месяца по ставкам периода (контакт-план/персонал/смены постоянны — как у директора)
+  const proj = (k, tgt) => {
     if (!k) return null;
-    const ov = { 24: target, 25: +k.asp || 0, 27: +k.cpl || 0, 28: (k.cv != null ? +k.cv / 100 : 0), 30: +k.upt || 0 };
+    const ov = { 24: tgt, 25: +k.asp || 0, 27: +k.cpl || 0, 28: (k.cv != null ? +k.cv / 100 : 0), 30: +k.upt || 0 };
     if (!(ov[25] && ov[28] && ov[30])) return null; // нет ключевых ставок — период неполный
     const v = vscFcCompute(fc.model, ov);
     return { revenue: v[37], profitMonth: v[38], profitWeek: v[39], contactsMonth: v[34], rates: { asp: ov[25], cpl: ov[27], cv: ov[28] * 100, upt: ov[30] } };
   };
   const weeks = (cur.weeks || []).filter((w) => (w.processed > 0) || (w.budget > 0))
-    .map((w) => { const p = proj(w); return p ? Object.assign({ label: w.label }, p) : null; }).filter(Boolean);
+    .map((w) => { const p = proj(w, curT.target); return p ? Object.assign({ label: w.label }, p) : null; }).filter(Boolean);
   return {
     success: true, tab: fc.tab, monthName: cur.name, basisMonth: prev.name,
-    persOP, shifts, target, basisContacts,
-    month: proj(cur.total), baseline: proj(prev.total), weeks
+    persOP, shifts, target: curT.target, basisContacts: curT.contacts, contactsBasis: "проекция по темпу месяца",
+    month: proj(cur.total, curT.target), baseline: proj(prev.total, prevT.target), weeks
   };
 }
 let _vscFcCache = null, _vscFcAt = 0;

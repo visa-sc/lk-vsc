@@ -2211,7 +2211,7 @@
           '<div class="vsc-chart-h">Как считается</div>' +
           'Модель и параметры расходов — из вашей таблицы (вкладка «<b>' + escapeHtml(d.tab) + '</b>»), считаются у нас по вашим формулам. ' +
           'KPI-ставки — из наших данных: ASP <b>' + ru(r.asp) + '</b>, CPL <b>' + ru(r.cpl) + '</b>, CV <b>' + (Math.round((r.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((r.upt || 0) * 100) / 100) + '</b>. ' +
-          'Контакт-план <b>' + ru(d.month.contactsMonth) + '</b>/мес (из фактических контактов прошлого месяца «' + escapeHtml(shortM(d.basisMonth)) + '»: ' + ru(d.basisContacts) + '). Персонал ОП ' + d.persOP + ', смен ' + d.shifts + '.';
+          'Контакт-план <b>' + ru(d.month.contactsMonth) + '</b>/мес — проекция по фактическому темпу месяца (контакты с начала месяца ÷ отработанные дни × дней в месяце). Персонал ОП ' + d.persOP + ', смен ' + d.shifts + '.';
         box.appendChild(ass);
 
         if (d.weeks && d.weeks.length) {
