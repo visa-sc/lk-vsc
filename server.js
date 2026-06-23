@@ -2665,7 +2665,9 @@ app.get("/admin/api/vsc-forecast", requireAdmin, async (req, res) => {
     const now = Date.now();
     if (_vscFcCache && (now - _vscFcAt) < VSC_FC_TTL) return res.json(_vscFcCache);
     const data = await vscBuildForecast();
-    _vscFcCache = data; _vscFcAt = now;
+    // Не кэшируем пустой результат (напр. KPI-дашборд ещё не прогрелся после
+    // рестарта) — иначе пустой прогноз залипнет на TTL; пусть пере-считается.
+    if (data && data.month) { _vscFcCache = data; _vscFcAt = now; }
     return res.json(data);
   } catch (e) {
     console.error("vsc forecast error:", e && e.message);
