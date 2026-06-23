@@ -2719,6 +2719,43 @@ app.post("/admin/api/vsc-profit", requireAdmin, (req, res) => {
   return res.json({ success: ok, profit: m });
 });
 
+// ── Калькулятор ВНЖ: курсы EUR/USD с ЦБ РФ (B4/B5) + ручной курс расхода usdt (B7) ──
+let _cbrCache = null, _cbrAt = 0;
+async function fetchCbrRates() {
+  const now = Date.now();
+  if (_cbrCache && (now - _cbrAt) < 60 * 60 * 1000) return _cbrCache;   // курс ЦБ обновляется раз в день — кэш 1 ч
+  const r = await axios.get("https://www.cbr.ru/scripts/XML_daily.asp", { timeout: 12000, responseType: "arraybuffer" });
+  const xml = Buffer.from(r.data).toString("latin1"); // CharCode/Value — ASCII, кириллицу (Name) не используем
+  const rates = {};
+  const re = /<Valute[^>]*>([\s\S]*?)<\/Valute>/g; let m;
+  while ((m = re.exec(xml))) {
+    const blk = m[1];
+    const cc = (/<CharCode>([A-Z]{3})<\/CharCode>/.exec(blk) || [])[1];
+    const nom = parseFloat(((/<Nominal>(\d+)<\/Nominal>/.exec(blk) || [])[1]) || "1") || 1;
+    const val = parseFloat((((/<Value>([\d,]+)<\/Value>/.exec(blk) || [])[1]) || "0").replace(",", "."));
+    if (cc && val) rates[cc] = val / nom;
+  }
+  const date = (/<ValCurs[^>]*Date="([^"]+)"/.exec(xml) || [])[1] || null;
+  _cbrCache = { rates, date }; _cbrAt = now;
+  return _cbrCache;
+}
+const VSC_CALC_FILE = path.join(__dirname, ".vscCalc.json");
+function loadCalcCfg() { try { return JSON.parse(fs.readFileSync(VSC_CALC_FILE, "utf8")) || {}; } catch (_) { return {}; } }
+function saveCalcCfg(c) { try { fs.writeFileSync(VSC_CALC_FILE, JSON.stringify(c || {}, null, 2), "utf8"); return true; } catch (e) { console.error("saveCalcCfg:", e.message); return false; } }
+app.get("/admin/api/vsc-rates", requireAdmin, async (req, res) => {
+  const cfg = loadCalcCfg();
+  let eur = null, usd = null, date = null, error = null;
+  try { const c = await fetchCbrRates(); eur = c.rates.EUR || null; usd = c.rates.USD || null; date = c.date; }
+  catch (e) { error = e && e.message; }
+  return res.json({ success: true, eur, usd, date, usdtExpense: (cfg.usdtExpense != null ? cfg.usdtExpense : 79.4), source: "ЦБ РФ", error });
+});
+app.post("/admin/api/vsc-rates", requireAdmin, (req, res) => {
+  const v = parseFloat(req.body && req.body.usdtExpense);
+  if (!isFinite(v) || v <= 0) return res.status(400).json({ success: false, message: "Нужен usdtExpense > 0" });
+  const cfg = loadCalcCfg(); cfg.usdtExpense = v; saveCalcCfg(cfg);
+  return res.json({ success: true, usdtExpense: v });
+});
+
 // ═════════════════════════════════════════════════════════════════════════
 // VSC «Прогноз прибыли». P&L-модель живёт в отдельной Google-таблице директора
 // (вкладка на каждый месяц). Мы НЕ дублируем её числа: берём ФОРМУЛЫ и связи
