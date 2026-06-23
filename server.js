@@ -2755,6 +2755,12 @@ app.post("/admin/api/vsc-rates", requireAdmin, (req, res) => {
   const cfg = loadCalcCfg(); cfg.usdtExpense = v; saveCalcCfg(cfg);
   return res.json({ success: true, usdtExpense: v });
 });
+// Прогрев курсов ЦБ — чтобы первое открытие калькулятора было быстрым.
+(function scheduleCbrPrewarm() {
+  const warm = () => fetchCbrRates().catch((e) => console.error("CBR PREWARM:", e && e.message));
+  setTimeout(warm, 20 * 1000);
+  setInterval(warm, 60 * 60 * 1000);
+})();
 
 // ── Бот VFS (Франция): конфиг — получатели уведомлений + предзагруженные клиенты.
 // Сейчас это НАСТРОЙКА (данные + почта). Сам мониторинг слотов/авто-запись и отправка
@@ -2763,7 +2769,7 @@ const VFS_BOT_FILE = path.join(__dirname, ".vfsBot.json");
 function loadVfsBot() {
   let c; try { c = JSON.parse(fs.readFileSync(VFS_BOT_FILE, "utf8")); } catch (_) { c = {}; }
   if (!c || typeof c !== "object") c = {};
-  if (!Array.isArray(c.recipients)) c.recipients = [];
+  if (!Array.isArray(c.recipients) || !c.recipients.length) c.recipients = ["anastasia.p@visa-sc.ru"]; // получатель по умолчанию (Настя Плинер)
   if (!Array.isArray(c.clients)) c.clients = [];
   if (typeof c.enabled !== "boolean") c.enabled = false;
   return c;
