@@ -1162,6 +1162,7 @@ const LK_MANAGERS_FILE = path.join(__dirname, ".lkManagers.json");
 const LK_MANAGERS_SEED = path.join(__dirname, "lkManagers.seed.json");
 const MANAGER_SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 дней
 const managerSessions = new Map(); // token -> { email, name, exp }
+const managerResetTokens = new Map(); // resetToken -> { email, exp } (восстановление пароля, TTL 1ч)
 let lkManagers = null; // { email: { name, salt, hash, createdAt, lastLoginAt } }
 
 function saveManagers() {
@@ -1289,6 +1290,44 @@ app.post("/admin/api/manager-logout", requireStaff, (req, res) => {
   return res.json({ success: true });
 });
 
+// ── Восстановление пароля руководителя (/team, dev., vsc) ──
+// Запрос ссылки на e-mail. Ответ всегда success (не раскрываем, есть ли e-mail).
+app.post("/admin/api/manager-reset-request", (req, res) => {
+  try {
+    const email = String((req.body && req.body.email) || "").toLowerCase().trim();
+    const mgrs = loadManagers();
+    if (email && mgrs[email]) {
+      const token = crypto.randomBytes(24).toString("hex");
+      managerResetTokens.set(token, { email, exp: Date.now() + 60 * 60 * 1000 });
+      const host = String(req.headers.host || "voyotravel.ru").toLowerCase().split(":")[0];
+      const link = "https://" + host + "/team-reset?token=" + token;
+      mail.sendMail({ to: email, subject: "VOYO — восстановление пароля", html: passwordResetEmailHtml(mgrs[email].name, link) })
+        .then((r) => { if (!r.ok) console.error("MAIL reset:", r.error); }).catch(() => {});
+    }
+    return res.json({ success: true });
+  } catch (e) { console.error("reset-request:", e && e.message); return res.json({ success: true }); }
+});
+// Установка нового пароля по токену из письма.
+app.post("/admin/api/manager-reset-confirm", (req, res) => {
+  try {
+    const token = String((req.body && req.body.token) || "").trim();
+    const password = String((req.body && req.body.password) || "");
+    const rec = managerResetTokens.get(token);
+    if (!rec || rec.exp < Date.now()) { managerResetTokens.delete(token); return res.status(400).json({ success: false, message: "Ссылка недействительна или устарела. Запросите восстановление заново." }); }
+    if (password.length < 6) return res.status(400).json({ success: false, message: "Пароль не короче 6 символов" });
+    const mgrs = loadManagers();
+    const acc = mgrs[rec.email];
+    if (!acc) { managerResetTokens.delete(token); return res.status(400).json({ success: false, message: "Аккаунт не найден" }); }
+    acc.salt = crypto.randomBytes(16).toString("hex");
+    acc.hash = hashPassword(password, acc.salt);
+    if (!acc.createdAt) acc.createdAt = new Date().toISOString();
+    saveManagers();
+    managerResetTokens.delete(token);
+    return res.json({ success: true });
+  } catch (e) { console.error("reset-confirm:", e && e.message); return res.status(500).json({ success: false, message: "Ошибка" }); }
+});
+app.get("/team-reset", (req, res) => { res.set("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "public", "team-reset.html")); });
+
 // «Кто я» — роль + имя (для фронта). Принимает админский и менеджерский токен.
 app.get("/admin/api/whoami", requireStaff, (req, res) => {
   return res.json({ success: true, role: req.staff.role, name: req.staff.name, perms: req.staff.perms || [] });
@@ -1391,6 +1430,15 @@ function newCorrectionDirectorEmailHtml(it) {
     '</div>' +
     '<p style="margin:0 0 8px;"><a href="https://voyotravel.ru/admin" style="display:inline-block;background:#3589BD;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 24px;border-radius:10px;">Открыть «Корректировки ЛК»</a></p>';
   return emailDoc(inner);
+}
+function passwordResetEmailHtml(name, link) {
+  const e = escapeHtml;
+  const inner =
+    '<p style="margin:0 0 14px;">Привет' + (name ? (", " + e(name)) : "") + '!</p>' +
+    '<p style="margin:0 0 16px;">Поступил запрос на восстановление пароля для входа в панель VOYO. Чтобы задать новый пароль, нажми кнопку ниже — ссылка действует <b>1 час</b>:</p>' +
+    '<p style="margin:0 0 16px;"><a href="' + e(link) + '" style="display:inline-block;background:#3589BD;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:13px 26px;border-radius:10px;">Задать новый пароль</a></p>' +
+    '<p style="margin:0 0 4px;font-size:13px;color:#6b7280;">Если ты не запрашивал восстановление — просто проигнорируй это письмо, пароль не изменится.</p>';
+  return emailDoc(inner, "#3589BD", "Это автоматическое уведомление — отвечать на него не нужно.<br>С уважением, команда VOYO · Visa Services Center");
 }
 
 app.post("/admin/api/corrections", requireStaff, (req, res) => {

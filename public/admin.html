@@ -926,6 +926,8 @@
         <input id="mgrPass" class="login-input" type="password" autocomplete="current-password" placeholder="Пароль" />
         <div class="login-hint">Первый вход — придумайте пароль, он сохранится.</div>
         <button id="mgrLoginBtn" type="submit" class="login-btn">Войти</button>
+        <button id="mgrForgotBtn" type="button" style="margin-top:10px;background:none;border:none;color:#3589BD;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Забыли пароль?</button>
+        <div id="mgrResetMsg" style="display:none;margin-top:8px;font-size:13px;line-height:1.45;"></div>
       </form>
 
       <button id="bioLoginBtn" type="button" class="bio-btn">
@@ -4786,6 +4788,20 @@
             myRole = "manager";
             showDash();
           } catch (_) { showLoginError("Сетевая ошибка"); }
+        });
+      }
+
+      const mgrForgotBtn = document.getElementById("mgrForgotBtn");
+      if (mgrForgotBtn) {
+        mgrForgotBtn.addEventListener("click", async () => {
+          const email = (document.getElementById("mgrEmail").value || "").trim();
+          const rm = document.getElementById("mgrResetMsg");
+          if (!email) { rm.style.display = "block"; rm.style.color = "#b0263a"; rm.textContent = "Введите рабочий e-mail в поле выше, затем нажмите «Забыли пароль?»."; return; }
+          mgrForgotBtn.disabled = true;
+          try { await fetch("/admin/api/manager-reset-request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email }) }); } catch (_) {}
+          rm.style.display = "block"; rm.style.color = "#1f7a3d";
+          rm.textContent = "Если такой e-mail есть в системе — на него отправлена ссылка для смены пароля (действует 1 час).";
+          mgrForgotBtn.disabled = false;
         });
       }
 

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Восстановление пароля — VOYO</title>
+<link rel="icon" href="/favicon.ico" />
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #eef1f5; color: #1d2330; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; line-height: 1.5; }
+  .wrap { max-width: 420px; margin: 0 auto; padding: 60px 16px; }
+  .card { background: #fff; border: 1px solid #e6e9f0; border-radius: 16px; padding: 28px 26px; }
+  h1 { font-size: 20px; font-weight: 800; margin: 0 0 6px; }
+  .sub { font-size: 14px; color: #6b7280; margin: 0 0 20px; }
+  label { display: block; font-size: 13px; color: #444; font-weight: 600; margin: 14px 0 6px; }
+  input { width: 100%; box-sizing: border-box; padding: 12px 14px; font-size: 15px; border: 1.5px solid #cdddef; border-radius: 10px; font-family: inherit; }
+  button { width: 100%; margin-top: 20px; padding: 13px; font-size: 15px; font-weight: 700; color: #fff; background: #3589BD; border: none; border-radius: 10px; cursor: pointer; font-family: inherit; }
+  button:disabled { opacity: .6; cursor: default; }
+  .msg { margin-top: 16px; font-size: 14px; line-height: 1.5; }
+  .err { color: #b0263a; }
+  .ok { color: #1f7a3d; }
+  a.btnlink { display: inline-block; margin-top: 16px; color: #3589BD; font-weight: 600; text-decoration: none; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Новый пароль</h1>
+    <div class="sub">Придумай новый пароль для входа в панель VOYO (не короче 6 символов).</div>
+    <div id="form">
+      <label for="p1">Новый пароль</label>
+      <input id="p1" type="password" autocomplete="new-password" placeholder="••••••" />
+      <label for="p2">Повтори пароль</label>
+      <input id="p2" type="password" autocomplete="new-password" placeholder="••••••" />
+      <button id="go" type="button">Сохранить пароль</button>
+      <div id="msg" class="msg"></div>
+    </div>
+    <div id="done" style="display:none;">
+      <div class="msg ok">✓ Пароль изменён. Теперь можно войти с новым паролем.</div>
+      <a class="btnlink" id="loginLink" href="/team">Перейти ко входу →</a>
+    </div>
+  </div>
+</div>
+<script>
+  var token = new URLSearchParams(location.search).get("token") || "";
+  var host = location.hostname;
+  // Ссылка на вход — на тот же поддомен, откуда пришли (dev. → /team, vsc. → /vsc, иначе /team).
+  document.getElementById("loginLink").setAttribute("href", host === "vsc.voyotravel.ru" ? "/vsc" : (host === "dev.voyotravel.ru" ? "/" : "/team"));
+  var msg = document.getElementById("msg");
+  if (!token) { msg.className = "msg err"; msg.textContent = "Ссылка неполная. Запроси восстановление пароля заново."; document.getElementById("go").disabled = true; }
+  document.getElementById("go").addEventListener("click", async function () {
+    var p1 = document.getElementById("p1").value || "", p2 = document.getElementById("p2").value || "";
+    msg.className = "msg"; msg.textContent = "";
+    if (p1.length < 6) { msg.className = "msg err"; msg.textContent = "Пароль не короче 6 символов."; return; }
+    if (p1 !== p2) { msg.className = "msg err"; msg.textContent = "Пароли не совпадают."; return; }
+    var btn = document.getElementById("go"); btn.disabled = true; btn.textContent = "Сохраняем…";
+    try {
+      var r = await fetch("/admin/api/manager-reset-confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: token, password: p1 }) });
+      var d = await r.json().catch(function () { return {}; });
+      if (!r.ok || !d.success) { msg.className = "msg err"; msg.textContent = d.message || "Не удалось сохранить пароль."; btn.disabled = false; btn.textContent = "Сохранить пароль"; return; }
+      document.getElementById("form").style.display = "none";
+      document.getElementById("done").style.display = "block";
+    } catch (e) { msg.className = "msg err"; msg.textContent = "Сетевая ошибка."; btn.disabled = false; btn.textContent = "Сохранить пароль"; }
+  });
+</script>
+</body>
+</html>
