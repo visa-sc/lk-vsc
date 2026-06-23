@@ -2756,6 +2756,38 @@ app.post("/admin/api/vsc-rates", requireAdmin, (req, res) => {
   return res.json({ success: true, usdtExpense: v });
 });
 
+// ── Бот VFS (Франция): конфиг — получатели уведомлений + предзагруженные клиенты.
+// Сейчас это НАСТРОЙКА (данные + почта). Сам мониторинг слотов/авто-запись и отправка
+// писем — следующий этап (нужны доступы к аккаунтам VFS и почтовый сервис).
+const VFS_BOT_FILE = path.join(__dirname, ".vfsBot.json");
+function loadVfsBot() {
+  let c; try { c = JSON.parse(fs.readFileSync(VFS_BOT_FILE, "utf8")); } catch (_) { c = {}; }
+  if (!c || typeof c !== "object") c = {};
+  if (!Array.isArray(c.recipients)) c.recipients = [];
+  if (!Array.isArray(c.clients)) c.clients = [];
+  if (typeof c.enabled !== "boolean") c.enabled = false;
+  return c;
+}
+function saveVfsBot(c) { try { fs.writeFileSync(VFS_BOT_FILE, JSON.stringify(c || {}, null, 2), "utf8"); return true; } catch (e) { console.error("saveVfsBot:", e.message); return false; } }
+app.get("/admin/api/vfs-bot", requireAdmin, (req, res) => {
+  return res.json(Object.assign({ success: true, emailService: false }, loadVfsBot()));
+});
+app.post("/admin/api/vfs-bot", requireAdmin, (req, res) => {
+  const b = req.body || {};
+  const cur = loadVfsBot();
+  if (Array.isArray(b.recipients)) cur.recipients = b.recipients.map((x) => String(x || "").trim()).filter((x) => /.+@.+\..+/.test(x)).slice(0, 50);
+  if (Array.isArray(b.clients)) cur.clients = b.clients.slice(0, 500).map((c) => ({
+    firstName: String(c.firstName || "").trim(), lastName: String(c.lastName || "").trim(),
+    birthDate: String(c.birthDate || "").trim(), citizenship: String(c.citizenship || "").trim(),
+    passport: String(c.passport || "").trim(), passportExpiry: String(c.passportExpiry || "").trim(),
+    phone: String(c.phone || "").trim(), email: String(c.email || "").trim(),
+    dateFrom: String(c.dateFrom || "").trim(), dateTo: String(c.dateTo || "").trim()
+  }));
+  if (typeof b.enabled === "boolean") cur.enabled = b.enabled;
+  const ok = saveVfsBot(cur);
+  return res.json(Object.assign({ success: ok }, cur));
+});
+
 // ═════════════════════════════════════════════════════════════════════════
 // VSC «Прогноз прибыли». P&L-модель живёт в отдельной Google-таблице директора
 // (вкладка на каждый месяц). Мы НЕ дублируем её числа: берём ФОРМУЛЫ и связи

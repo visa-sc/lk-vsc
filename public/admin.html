@@ -2225,7 +2225,7 @@
 
         // Вкладки /vsc: «Дашборд», «Ежемесячный контроль», «Прогноз прибыли».
         const maintabs = document.createElement("div"); maintabs.className = "vsc-maintabs";
-        [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["calc", "Калькулятор ВНЖ"]].forEach(([tb, lbl]) => {
+        [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]].forEach(([tb, lbl]) => {
           const b = document.createElement("button"); b.type = "button"; b.textContent = lbl; if (tb === vscTab) b.className = "active";
           b.addEventListener("click", () => { vscTab = tb; renderVsc(); });
           maintabs.appendChild(b);
@@ -2237,6 +2237,7 @@
         if (vscTab === "monthly") { renderVscMonthly(); return; }
         if (vscTab === "forecast") { renderVscForecast(); return; }
         if (vscTab === "calc") { renderVscCalc(); return; }
+        if (vscTab === "bot") { renderVscBot(); return; }
 
         const ctrls = document.createElement("div"); ctrls.className = "vsc-controls";
         const gran = document.createElement("div"); gran.className = "vsc-gran";
@@ -2618,6 +2619,65 @@
           btn.textContent = "Обновить курсы с ЦБ"; btn.disabled = false; comp();
         });
         comp();
+      }
+      // ── Вкладка «Бот VFS · Франция»: настройка получателей уведомлений + предзагрузка
+      // клиентов. Мониторинг слотов/авто-запись и отправка писем — следующий этап.
+      let vscBotCfg = null;
+      async function renderVscBot() {
+        const box = document.createElement("div"); vscContent.appendChild(box);
+        box.innerHTML = '<div class="ref-sec-h">Бот VFS · Франция</div><div class="loading-state">Загружаем…</div>';
+        try { vscBotCfg = await apiFetch("/admin/api/vfs-bot"); } catch (e) { box.innerHTML = '<div class="ref-sec-h">Бот VFS · Франция</div><div class="vsc-empty">Не удалось загрузить: ' + escapeHtml(e.message) + '</div>'; return; }
+        if (vscTab !== "bot") return;
+        paintBot(box);
+      }
+      function vscBotPersist(box) {
+        fetch("/admin/api/vfs-bot", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify(vscBotCfg) })
+          .then((r) => r.json()).then((j) => { if (j && j.success) vscBotCfg = j; paintBot(box); }).catch(() => paintBot(box));
+      }
+      function paintBot(box) {
+        const cfg = vscBotCfg || { recipients: [], clients: [] };
+        const card = "background:#fff;border:1px solid #e6e9f0;border-radius:14px;padding:16px;margin-bottom:14px;";
+        const inp = "box-sizing:border-box;padding:9px 11px;font-size:14px;border:1px solid #d4d8e2;border-radius:9px;";
+        const btnP = "padding:9px 16px;font-size:13px;font-weight:700;border-radius:10px;cursor:pointer;background:#3589BD;color:#fff;border:1px solid #3589BD;";
+        const btnS = "padding:6px 11px;font-size:12px;font-weight:600;border-radius:9px;cursor:pointer;background:#fff;color:#b0263a;border:1px solid #e6c4c4;";
+        let h = '<div class="ref-sec-h">Бот VFS · Франция</div>';
+        h += '<div style="background:#fff8ec;border:1px solid #f0d9a8;border-radius:14px;padding:14px 16px;margin-bottom:14px;font-size:12.5px;color:#8a5a12;line-height:1.55;">'
+          + '<b>Статус:</b> сейчас настраиваем <b>получателей уведомлений</b> и <b>предзагрузку клиентов</b>. '
+          + 'Сам мониторинг слотов VFS (Франция, раз в минуту) и авто-запись — следующий этап: нужны доступы к аккаунтам VFS и почтовый сервис (подключим позже). '
+          + 'Как подключим почту — при появлении мест бот отправит письмо получателям ниже.</div>';
+        // получатели
+        h += '<div style="' + card + '"><div style="font-weight:700;color:#1d2330;margin-bottom:8px;">Кому слать уведомления</div>';
+        if (!cfg.recipients.length) h += '<div style="color:#9096a3;font-size:13px;margin-bottom:8px;">Пока никого. Добавьте почту (например, Насти Плинер).</div>';
+        cfg.recipients.forEach((e, i) => { h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="font-size:14px;color:#1d2330;">' + escapeHtml(e) + '</span><button type="button" data-rm-rec="' + i + '" style="' + btnS + '">убрать</button></div>'; });
+        h += '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;"><input id="botRecInput" type="email" placeholder="email@example.com" style="' + inp + 'flex:1;min-width:200px;"><button type="button" id="botRecAdd" style="' + btnP + '">Добавить</button></div></div>';
+        // клиенты
+        h += '<div style="' + card + '"><div style="font-weight:700;color:#1d2330;margin-bottom:8px;">Клиенты на запись (предзагрузка)</div>';
+        if (cfg.clients.length) {
+          h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;"><thead><tr style="color:#6b7280;text-transform:uppercase;font-size:10px;">'
+            + ["Имя", "Фамилия", "Дата рожд.", "Гражд.", "Паспорт", "Срок", "Телефон", "Почта", "Диапазон", ""].map((t) => '<th style="text-align:left;padding:5px 7px;white-space:nowrap;">' + t + '</th>').join("") + '</tr></thead><tbody>';
+          cfg.clients.forEach((c, i) => {
+            h += '<tr style="border-top:1px solid #f0eef5;">'
+              + [c.firstName, c.lastName, c.birthDate, c.citizenship, c.passport, c.passportExpiry, c.phone, c.email, ((c.dateFrom || "?") + "–" + (c.dateTo || "?"))].map((v) => '<td style="padding:5px 7px;color:#1d2330;white-space:nowrap;">' + escapeHtml(v || "") + '</td>').join("")
+              + '<td style="padding:5px 7px;"><button type="button" data-rm-cl="' + i + '" style="' + btnS + '">×</button></td></tr>';
+          });
+          h += '</tbody></table></div>';
+        } else h += '<div style="color:#9096a3;font-size:13px;">Пока нет клиентов.</div>';
+        const f = (id, ph) => '<input id="' + id + '" placeholder="' + ph + '" style="' + inp + '">';
+        h += '<div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">'
+          + f("bcFirst", "Имя") + f("bcLast", "Фамилия") + f("bcBirth", "Дата рождения") + f("bcCit", "Гражданство")
+          + f("bcPass", "Номер паспорта") + f("bcExp", "Срок действия паспорта") + f("bcPhone", "Телефон") + f("bcEmail", "Почта")
+          + f("bcFrom", "Записывать с (дата)") + f("bcTo", "Записывать по (дата)")
+          + '</div><div style="margin-top:10px;"><button type="button" id="botClAdd" style="' + btnP + '">Добавить клиента</button></div></div>';
+        box.innerHTML = h;
+        const $ = (id) => box.querySelector("#" + id);
+        box.querySelectorAll("[data-rm-rec]").forEach((b) => b.addEventListener("click", () => { cfg.recipients.splice(+b.getAttribute("data-rm-rec"), 1); vscBotPersist(box); }));
+        box.querySelectorAll("[data-rm-cl]").forEach((b) => b.addEventListener("click", () => { cfg.clients.splice(+b.getAttribute("data-rm-cl"), 1); vscBotPersist(box); }));
+        $("botRecAdd").addEventListener("click", () => { const v = String($("botRecInput").value || "").trim(); if (!/.+@.+\..+/.test(v)) { alert("Введите корректный email"); return; } cfg.recipients.push(v); vscBotPersist(box); });
+        $("botClAdd").addEventListener("click", () => {
+          const c = { firstName: $("bcFirst").value.trim(), lastName: $("bcLast").value.trim(), birthDate: $("bcBirth").value.trim(), citizenship: $("bcCit").value.trim(), passport: $("bcPass").value.trim(), passportExpiry: $("bcExp").value.trim(), phone: $("bcPhone").value.trim(), email: $("bcEmail").value.trim(), dateFrom: $("bcFrom").value.trim(), dateTo: $("bcTo").value.trim() };
+          if (!c.firstName || !c.lastName) { alert("Минимум имя и фамилия"); return; }
+          cfg.clients.push(c); vscBotPersist(box);
+        });
       }
       function tstDocRow(label, required, when) {
         const kind = required === "stat" ? "stat" : (required ? "req" : "opt");
