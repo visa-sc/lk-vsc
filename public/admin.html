@@ -643,7 +643,7 @@
     .tst-internal-h { font-weight: 700; color: #4a5260; font-size: 13.5px; margin-bottom: 6px; }
     .tst-internal ul { margin: 0; padding-left: 18px; }
     .tst-internal li { font-size: 12px; color: #5a626f; margin: 5px 0; line-height: 1.45; }
-    /* Справочники: Запрос документов / Опросники (логика) / Действия */
+    /* Справочники: Запрос документов / Опросники / Действия */
     .ref-intro { font-size: 13px; color: #6b7280; margin: 0 0 12px; line-height: 1.5; }
     .ref-note { background: #fff8ec; border: 1px solid #f0d9a8; border-radius: 10px; padding: 9px 12px; font-size: 12.5px; color: #5c4a2a; margin: 0 0 12px; line-height: 1.45; }
     .ref-sec-h { font-weight: 700; color: #161d45; font-size: 14px; margin: 16px 0 8px; padding-bottom: 5px; border-bottom: 2px solid #e6e9f0; }
@@ -687,8 +687,8 @@
     /* VSC дашборд */
     .vsc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
     .vsc-upd { font-size: 11.5px; color: #9aa0ab; }
-    .vsc-maintabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 4px; }
-    .vsc-maintabs button { border: 1px solid #cfd8e3; background: #fff; color: #33415a; border-radius: 10px; padding: 9px 18px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .vsc-maintabs { display: flex; gap: 8px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 10px 0 4px; padding-bottom: 4px; }
+    .vsc-maintabs button { border: 1px solid #cfd8e3; background: #fff; color: #33415a; border-radius: 10px; padding: 9px 18px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; flex: 0 0 auto; }
     .vsc-maintabs button.active { background: #0097ca; color: #fff; border-color: #0097ca; }
     .vsc-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 12px 0 16px; }
     .vsc-gran { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -980,7 +980,7 @@
         <div class="tab-group-label">Логика и справочники ЛК · доступно сотрудникам</div>
         <div class="tab-group-btns">
           <button type="button" class="tab-btn" data-tab="docsreq">Запрос документов</button>
-          <button type="button" class="tab-btn" data-tab="qlogic">Опросники (логика)</button>
+          <button type="button" class="tab-btn" data-tab="qlogic">Опросники</button>
           <button type="button" class="tab-btn" data-tab="actions">Действия</button>
           <button type="button" class="tab-btn" data-tab="uploads">Области загрузки</button>
           <button type="button" class="tab-btn" data-tab="screens">Экраны клиента</button>
@@ -1296,7 +1296,7 @@
         const mf = document.getElementById("managerLoginForm"); if (mf) mf.style.display = "";
       }
       // vsc: показываем форму руководителя (e-mail+пароль), НО оставляем форму кода
-      // и Face ID для админа (на vsc вход по коду 250960 / Face ID сохраняется).
+      // и Face ID для админа (на vsc вход по коду 280992 / Face ID сохраняется).
       function setupVscLoginUI() {
         const sub = document.querySelector("#loginBlock .sub"); if (sub) sub.textContent = "Вход для сотрудников";
         const mf = document.getElementById("managerLoginForm"); if (mf) mf.style.display = "";
@@ -1306,7 +1306,7 @@
         if (!kbContent) return;
         const tk = encodeURIComponent(getToken());
         const links = [
-          { t: "Инструкция по админке", d: "Цели и возможности разделов: Корректировки, Тестировщик, Запрос документов, Опросники (логика), Действия.", u: "/admin/kb/admin-guide" },
+          { t: "Инструкция по админке", d: "Цели и возможности разделов: Корректировки, Тестировщик, Запрос документов, Опросники, Действия.", u: "/admin/kb/admin-guide" },
           { t: "Карта статусов", d: "Какой статус amoCRM → этап в ЛК (генерируется из кода).", u: "/admin/kb/statuses" },
           { t: "Карта документов", d: "Какие документы, на каком этапе, что обязательно.", u: "/admin/kb/documents" },
           { t: "Как работает клиентский ЛК", d: "Поведение по этапам, от чего зависит (фильтр по этапам).", u: "/admin/kb/logic" },
@@ -1601,7 +1601,7 @@
         });
       }
 
-      // ── Раздел «Опросники (логика)» ──
+      // ── Раздел «Опросники» ──
       let qlogicDir = "schengen";
       const QREQ_LABELS = { "Да": ["req", "ответ обязателен"], "Да*": ["req", "обязателен*"], "Нет": ["opt", "необязателен"], "Нет ⚠": ["opt", "необязателен ⚠"], "—": ["opt", "—"] };
       async function loadQLogic() {
@@ -1622,13 +1622,13 @@
         qlogicContent.appendChild(intro);
         qlogicContent.appendChild(refDirButtons(qlogicDir, (k) => { qlogicDir = k; renderQLogic(); }));
         if (Array.isArray(dir.qrecs) && dir.qrecs.length) {
-          qlogicContent.appendChild(recBlock("Опросники (логика)", dir.qrecs, () => "Раздел: Опросники (логика)\nНаправление: " + dir.title + "\nБлок: Рекомендации"));
+          qlogicContent.appendChild(recBlock("Опросники", dir.qrecs, () => "Раздел: Опросники\nНаправление: " + dir.title + "\nБлок: Рекомендации"));
         }
         (dir.questions || []).forEach((qq) => {
           const rb = QREQ_LABELS[qq.req] || ["opt", String(qq.req || "—")];
           const cond = refField("Показывается", qq.shows || "всегда") + refField("Что влечёт", qq.effect);
-          const ctx = "Раздел: Опросники (логика)\nНаправление: " + dir.title + "\nВопрос: " + qq.q + "\nОбязательность ответа: " + qq.req + "\n" + ctxField("Показывается", qq.shows || "всегда") + "\n" + ctxField("Что влечёт", qq.effect);
-          qlogicContent.appendChild(refRow(qq.q, cond, docBadge(rb[0], rb[1]), "Опросники (логика)", ctx));
+          const ctx = "Раздел: Опросники\nНаправление: " + dir.title + "\nВопрос: " + qq.q + "\nОбязательность ответа: " + qq.req + "\n" + ctxField("Показывается", qq.shows || "всегда") + "\n" + ctxField("Что влечёт", qq.effect);
+          qlogicContent.appendChild(refRow(qq.q, cond, docBadge(rb[0], rb[1]), "Опросники", ctx));
         });
       }
 
@@ -3611,7 +3611,7 @@
         const headRight = document.createElement("div");
         headRight.className = "corr-head-right";
         headRight.appendChild(badge);
-        // Удаление/восстановление — только админу (вход по коду 250960).
+        // Удаление/восстановление — только админу (вход по коду 280992).
         if (currentRole() === "admin") {
           if (it.deleted) {
             const rst = document.createElement("button");
