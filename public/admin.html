@@ -701,6 +701,7 @@
     .vsc-tile-v { font-size: 24px; font-weight: 800; color: #161d45; margin-top: 6px; letter-spacing: -.01em; }
     .vsc-tile-v.pos { color: #2c7a43; } .vsc-tile-v.neg { color: #b0263a; }
     .vsc-tile-s { font-size: 11.5px; color: #9aa0ab; margin-top: 3px; }
+    .vsc-tile-extra { font-size: 11.5px; color: #5563d6; font-weight: 600; margin-top: 5px; background: #f1f3ff; border: 1px solid #e0e4ff; border-radius: 8px; padding: 3px 8px; display: inline-block; }
     .vsc-chart { background: #fff; border: 1px solid #e6e9f0; border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }
     .vsc-chart-h { font-size: 13.5px; font-weight: 700; color: #161d45; margin-bottom: 12px; }
     .vsc-bars { display: flex; align-items: flex-end; gap: 8px; height: 188px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
@@ -1923,35 +1924,48 @@
         const filled = (o) => o && ((o.processed != null && o.processed > 0) || (o.budget != null && o.budget > 0));
         const today = new Date(); today.setHours(0, 0, 0, 0);
         if (vscGran === "week") {
-          // Неделя: пересобираем ВСЕ дни года в КАЛЕНДАРНЫЕ недели пн–вс.
-          // В таблице недельные блоки («Total») обрываются на границе месяца —
-          // из-за этого у краёв месяца появляются короткие огрызки (напр.
-          // «01.02–01.02», «01.01–04.01»). Группируя дни по понедельнику недели,
-          // мы автоматически склеиваем хвост одного месяца с началом следующего
-          // в одну полную неделю. Аддитивные KPI суммируем по дням, коэффициенты
-          // усредняем — так же, как считаются год и сравнение месяцев.
+          // Неделя: КАЛЕНДАРНЫЕ недели пн–вс. Берём НЕДЕЛЬНЫЕ строки таблицы («Total») —
+          // в них коэффициенты (ATV/CV/CPL/ДРР/ASP/UPT) посчитаны ВЗВЕШЕННО и совпадают
+          // с таблицей KPI. Усреднять дневные коэффициенты НЕЛЬЗЯ (была эта ошибка —
+          // недели расходились с KPI, хотя месяцы сходились). Блоки группируем по
+          // понедельнику: огрызки на границе месяца (напр. 29–30.06 + 01–05.07)
+          // склеиваются в одну полную неделю; ПРИ СКЛЕЙКЕ коэффициенты пересчитываем
+          // из аддитивных баз (budget/deals/contactsAll/ad/units), а не усреднением.
           const mondayOf = (d) => { const x = new Date(d.getTime()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); x.setHours(0, 0, 0, 0); return x; };
           const dm = (d) => ("0" + d.getDate()).slice(-2) + "." + ("0" + (d.getMonth() + 1)).slice(-2);
           const buckets = new Map();
-          ms.forEach((mm) => (mm.days || []).forEach((day) => {
-            const dt = vscParseDMY(day.date); if (!dt) return;
-            const mon = mondayOf(dt), key = mon.getTime();
+          ms.forEach((mm) => (mm.weeks || []).forEach((wk) => {
+            const first = (wk.days && wk.days[0]) ? vscParseDMY(wk.days[0].date) : null;
+            if (!first) return;
+            const mon = mondayOf(first), key = mon.getTime();
             let b = buckets.get(key);
-            if (!b) { const sun = new Date(mon.getTime() + 6 * 86400000); b = { mon: mon, label: dm(mon) + "–" + dm(sun), days: [] }; buckets.set(key, b); }
-            b.days.push(day);
+            if (!b) { const sun = new Date(mon.getTime() + 6 * 86400000); b = { mon: mon, label: dm(mon) + "–" + dm(sun), blocks: [] }; buckets.set(key, b); }
+            b.blocks.push(wk);
           }));
-          const sumK = ["budget", "processed", "over", "targetDev"], avgK = ["atv", "asp", "upt", "cv", "cpl", "drr"];
-          const aggWeek = (days) => {
+          const sumK = ["budget", "processed", "over", "targetDev", "ad", "rev", "units", "deals", "contactsAll"];
+          const sumBlk = (blocks, key) => { const v = blocks.map((b) => b[key]).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, c) => a + c, 0) : null; };
+          const aggBlocks = (blocks) => {
+            const days = blocks.reduce((a, b) => a.concat(b.days || []), []);
+            // Один блок (обычный случай) = строка Total недели → берём значения как есть.
+            if (blocks.length === 1) { const k = Object.assign({}, blocks[0]); k.days = days; return k; }
+            // Склейка огрызков: суммируем базы, коэффициенты пересчитываем взвешенно.
             const k = { days: days };
-            sumK.forEach((key) => { const v = days.map((d) => d[key]).filter((x) => x != null && !isNaN(x)); k[key] = v.length ? v.reduce((a, b) => a + b, 0) : null; });
-            avgK.forEach((key) => { const v = days.map((d) => d[key]).filter((x) => x != null && !isNaN(x)); k[key] = v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; });
-            k.planPct = null; // план ОП — месячная величина, в дневных строках её нет
+            sumK.forEach((key) => { k[key] = sumBlk(blocks, key); });
+            const B = k.budget, D = k.deals, Cc = k.contactsAll, A = k.ad, U = k.units;
+            k.atv = D ? B / D : null;
+            k.cv = Cc ? D / Cc * 100 : null;
+            k.drr = B ? A / B * 100 : null;
+            k.asp = U ? B / U : null;
+            k.upt = D ? U / D : null;
+            const leads = blocks.reduce((a, b) => a + ((b.ad != null && b.cpl) ? b.ad / b.cpl : 0), 0);
+            k.cpl = leads ? A / leads : null;
+            k.planPct = null; // план ОП — месячная величина, в неделях не показываем
             return k;
           };
           return Array.from(buckets.values())
             .filter((b) => b.mon <= today)               // недели, которые уже начались
             .sort((a, b) => a.mon - b.mon)
-            .map((b) => { const k = aggWeek(b.days); k.label = b.label; return { x: b.label, k: k }; });
+            .map((b) => { const k = aggBlocks(b.blocks); k.label = b.label; return { x: b.label, k: k }; });
         }
         // День: ещё и строго ДО сегодня — чтобы показывался вчерашний день, а не сегодня.
         const beforeToday = (dateStr) => { const p = String(dateStr || "").split("."); if (p.length !== 3) return true; const d = new Date(+p[2], +p[1] - 1, +p[0]); return d < today; };
@@ -2073,29 +2087,52 @@
         vscContent.appendChild(ctrls);
 
         const series = vscBuildSeries();
+        // «План ОП (% выполнения)» — только месяц/год: в неделях/днях он пуст (item 7),
+        // поэтому в этих разрезах не показываем ни плитку, ни график.
+        const kpisForView = (vscGran === "week" || vscGran === "day") ? VSC_KPIS.filter((k) => k.key !== "planPct") : VSC_KPIS;
         // Для плиток «Неделя»/«День» берём последний период С ДАННЫМИ: текущий
         // период (напр. только начавшаяся неделя) пока пустой — не показываем
         // нулями, откатываемся к последнему заполненному. График — весь ряд.
         const vscHasData = (o) => o && o.k && ((o.k.processed != null && o.k.processed > 0) || (o.k.budget != null && o.k.budget > 0));
         let vscCurIdx = series.length - 1;
         for (let i = series.length - 1; i >= 0; i--) { if (vscHasData(series[i])) { vscCurIdx = i; break; } }
+        // Источник ASP/UPT для блока ATV — тот же период, что и ATV (item 1).
+        const periodK = (vscGran === "year") ? (vscData.year || {})
+          : (vscGran === "month") ? (((vscData.months || [])[vscMonthIdx] || {}).total || {})
+          : (((series[vscCurIdx] || {}).k) || {});
         // Автоподсветка: последний заполненный месяц против предыдущего, за
         // сопоставимое число дней; будущие/пустые месяцы игнорируются.
         const attn = vscAttention();
-        const ab = document.createElement("div"); ab.className = "vsc-attn " + (attn.length ? "warn" : "ok");
-        if (attn.length) {
-          let h = '<div class="vsc-attn-h">⚠️ На что обратить внимание (ухудшилось за последний месяц, к сопоставимому периоду прошлого):</div><ul>';
-          attn.forEach((a) => { h += "<li>" + escapeHtml(a.msg) + "</li>"; });
-          ab.innerHTML = h + "</ul>";
+        // Превышение лимита CPL (1100 ₽) за периоды текущего разреза → в жёлтую секцию.
+        const CPL_LIMIT = 1100;
+        const granWord = ({ year: "по месяцам", month: "по месяцам", week: "по неделям", day: "по дням" })[vscGran] || "";
+        const cplOver = series.map((s) => ({ x: s.x, v: (s.k && s.k.cpl != null && !isNaN(s.k.cpl)) ? s.k.cpl : null })).filter((o) => o.v != null && o.v > CPL_LIMIT);
+        const cplOverShown = cplOver.slice(0, 10);
+        const hasWarn = attn.length || cplOver.length;
+        const ab = document.createElement("div"); ab.className = "vsc-attn " + (hasWarn ? "warn" : "ok");
+        if (hasWarn) {
+          let h = "";
+          if (attn.length) {
+            h += '<div class="vsc-attn-h">⚠️ На что обратить внимание (ухудшилось за последний месяц, к сопоставимому периоду прошлого):</div><ul>';
+            attn.forEach((a) => { h += "<li>" + escapeHtml(a.msg) + "</li>"; });
+            h += "</ul>";
+          }
+          if (cplOver.length) {
+            h += '<div class="vsc-attn-h"' + (attn.length ? ' style="margin-top:9px;"' : '') + '>⚠️ CPL выше лимита 1100 ₽ (' + granWord + '):</div><ul>';
+            cplOverShown.forEach((o) => { h += "<li>" + escapeHtml(o.x) + ": " + vscFmt(o.v, "money") + "</li>"; });
+            if (cplOver.length > cplOverShown.length) h += "<li>…и ещё " + (cplOver.length - cplOverShown.length) + "</li>";
+            h += "</ul>";
+          }
+          ab.innerHTML = h;
         } else {
-          ab.innerHTML = '<div class="vsc-attn-h">✓ Ухудшений за последний месяц не вижу — показатели в норме.</div>';
+          ab.innerHTML = '<div class="vsc-attn-h">✓ Ухудшений за последний месяц не вижу, CPL в пределах лимита — показатели в норме.</div>';
         }
         vscContent.appendChild(ab);
 
         // Значения плиток + изменение «к пред.». Месяц — сравнение за сопоставимое
         // число прошедших дней (текущий неполный месяц не искажается).
         let curSub = "", cmpRes = null;
-        if (vscGran === "year") { curSub = "2026 · коэффициенты — среднее за месяцы"; }
+        if (vscGran === "year") { curSub = "2026 · коэффициенты — взвешенно за год (как Grand total)"; }
         else if (vscGran === "month") {
           const curM = (vscData.months || [])[vscMonthIdx];
           curSub = curM ? curM.name : "";
@@ -2109,7 +2146,7 @@
         const vscAllDays = (vscData.months || []).reduce((a, m) => a.concat(m.days || []), []);
 
         const tiles = document.createElement("div"); tiles.className = "vsc-tiles";
-        VSC_KPIS.forEach((kpi) => {
+        kpisForView.forEach((kpi) => {
           let v = null, prev = null;
           if (vscGran === "year") { v = vscData.year ? vscData.year[kpi.key] : null; }
           else if (vscGran === "month") { if (cmpRes) { v = cmpRes[kpi.key].cur; prev = cmpRes[kpi.key].prev; } }
@@ -2142,7 +2179,13 @@
             const rel = Math.abs(prev) ? Math.round(Math.abs(d) / Math.abs(prev) * 100) : null;
             delta = '<div class="vsc-tile-d ' + dirCls + '">' + (up ? "▲" : "▼") + " " + vscFmt(Math.abs(d), kpi.fmt).replace(" ₽", "") + (rel != null && kpi.fmt !== "pct" ? " (" + rel + "%)" : "") + " к пред.</div>";
           }
-          tile.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(kpi.label) + '</div><div class="vsc-tile-v' + cls + '">' + vscFmt(v, kpi.fmt) + '</div>' + delta + '<div class="vsc-tile-s">' + escapeHtml(curSub || "") + '</div>';
+          // В блоке ATV компактно показываем ASP и UPT за тот же период (item 1).
+          let extra = "";
+          if (kpi.key === "atv") {
+            const _asp = periodK.asp, _upt = periodK.upt;
+            extra = '<div class="vsc-tile-extra">ASP ' + (_asp != null ? vscFmt(_asp, "money") : "—") + ' · UPT ' + (_upt != null ? (Math.round(_upt * 100) / 100).toLocaleString("ru-RU") : "—") + '</div>';
+          }
+          tile.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(kpi.label) + '</div><div class="vsc-tile-v' + cls + '">' + vscFmt(v, kpi.fmt) + '</div>' + delta + extra + '<div class="vsc-tile-s">' + escapeHtml(curSub || "") + '</div>';
           tiles.appendChild(tile);
         });
         vscContent.appendChild(tiles);
@@ -2151,7 +2194,7 @@
         chartsH.textContent = "Динамика — " + ({ year: "по месяцам", month: "по месяцам", week: "по неделям", day: "по дням" })[vscGran];
         vscContent.appendChild(chartsH);
         if (!series.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных за выбранный месяц."; vscContent.appendChild(e); }
-        else VSC_KPIS.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, series)));
+        else kpisForView.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, series)));
       }
       // Вкладка «Ежемесячный контроль»: качество звонков/контактов + отзывы — всё по
       // месяцам, без плиток-цифр. Не зависит от переключателя гранулярности дашборда.
