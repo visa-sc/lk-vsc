@@ -2557,6 +2557,7 @@ const VSC_FC_MODEL_TTL = 6 * 3600 * 1000;
 async function vscForecastModel() {
   const now = Date.now();
   if (_vscFcModel && (now - _vscFcModelAt) < VSC_FC_MODEL_TTL) return _vscFcModel;
+  try {
   const r = await axios.get(VSC_FORECAST_XLSX, { timeout: 20000, responseType: "arraybuffer" });
   const zip = new AdmZip(Buffer.from(r.data));
   const read = (n) => { const e = zip.getEntry(n); return e ? e.getData().toString("utf8") : ""; };
@@ -2617,6 +2618,12 @@ async function vscForecastModel() {
     }
   }
   throw new Error("в таблице прогноза не найдена вкладка с моделью (строка «Прибыль»)");
+  } catch (e) {
+    // Google недоступен/сбой парсинга — отдаём последнюю удачную модель (если есть),
+    // чтобы прогноз продолжал работать автономно, а не падал.
+    if (_vscFcModel) { console.error("VSC forecast model: обновление не удалось, использую кэш:", e && e.message); return _vscFcModel; }
+    throw e;
+  }
 }
 async function vscBuildForecast() {
   const [fc, dash] = await Promise.all([vscForecastModel(), getVscDashboard()]);
