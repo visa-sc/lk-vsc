@@ -47,7 +47,7 @@ function correctionDoneEmailHtml(name, it) {
   const lastComment = comments.length ? (comments[comments.length - 1].text || "") : "";
   const done = (it.note && String(it.note).trim()) ? it.note : (lastComment || "Готово.");
   const inner =
-    '<p style="margin:0 0 14px;">Привет, ' + e(name || "") + '!</p>' +
+    '<p style="margin:0 0 14px;">Привет, ' + e(String(name || "").trim().split(/\s+/)[0]) + '!</p>' +
     '<p style="margin:0 0 16px;"><span style="display:inline-block;background:#e7f6ec;color:#1f7a3d;font-weight:600;font-size:13px;padding:5px 12px;border-radius:20px;">✓ Корректировка выполнена</span></p>' +
     '<p style="margin:0 0 16px;">Твоя корректировка по личному кабинету клиента выполнена и уже работает на боевом сайте.</p>' +
     '<div style="background:#eef5fb;border-left:4px solid #3589BD;border-radius:8px;padding:14px 16px;margin:0 0 16px;font-size:14px;">' +
