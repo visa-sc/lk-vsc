@@ -3148,16 +3148,23 @@
         } catch (err) { console.warn("manager bio login failed/cancelled:", err); return false; }
       }
       async function tryManagerBioRegister() {
-        const t = getToken(); if (!t) return false;
+        window.__mgrBioErr = "";
+        const t = getToken(); if (!t) { window.__mgrBioErr = "нет токена сессии"; return false; }
         try {
           const optsR = await fetch("/team/api/webauthn/register-options", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: "{}" });
-          if (!optsR.ok) return false;
+          if (!optsR.ok) { const e = await optsR.json().catch(() => ({})); window.__mgrBioErr = "options HTTP " + optsR.status + (e.message ? (": " + e.message) : ""); return false; }
           const opts = await optsR.json();
-          const publicKey = { ...opts, challenge: b64uToBytes(opts.challenge), user: { ...opts.user, id: b64uToBytes(opts.user.id) }, excludeCredentials: (opts.excludeCredentials || []).map((c) => ({ ...c, id: b64uToBytes(c.id) })) };
+          // user.id приходит «сырой» строкой (e-mail), а в e-mail есть @ и . — это НЕ валидный
+          // base64url, поэтому atob() ломается. Декодируем устойчиво: пробуем base64url,
+          // иначе берём UTF-8 байты строки (user.id для WebAuthn — просто непрозрачный хэндл).
+          let userIdBytes;
+          try { userIdBytes = b64uToBytes(opts.user.id); } catch (_) { userIdBytes = new TextEncoder().encode(String((opts.user && opts.user.id) || "")); }
+          const publicKey = { ...opts, challenge: b64uToBytes(opts.challenge), user: { ...opts.user, id: userIdBytes }, excludeCredentials: (opts.excludeCredentials || []).map((c) => ({ ...c, id: b64uToBytes(c.id) })) };
           const attestation = await navigator.credentials.create({ publicKey });
           const verifyR = await fetch("/team/api/webauthn/register-verify", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ attestationResponse: { id: attestation.id, rawId: bytesToB64u(attestation.rawId), type: attestation.type, response: { clientDataJSON: bytesToB64u(attestation.response.clientDataJSON), attestationObject: bytesToB64u(attestation.response.attestationObject) }, clientExtensionResults: attestation.getClientExtensionResults ? attestation.getClientExtensionResults() : {} } }) });
           const data = await verifyR.json().catch(() => ({}));
-          return !!(verifyR.ok && data.success);
+          if (!(verifyR.ok && data.success)) { window.__mgrBioErr = "verify HTTP " + verifyR.status + (data.message ? (": " + data.message) : ""); return false; }
+          return true;
         } catch (err) { console.warn("manager bio register failed/cancelled:", err); window.__mgrBioErr = err && (err.name + (err.message ? (": " + err.message) : "")); return false; }
       }
 
