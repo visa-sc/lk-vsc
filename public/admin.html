@@ -2238,7 +2238,10 @@
         return wrap;
       }
       function renderVsc() {
-        if (!vscData || !vscContent) return;
+        if (!vscContent) return;
+        // Руководителю дашборд (vscData) не нужен — он видит только калькулятор/бота.
+        // Раньше тут был ранний выход при !vscData → у руководителя вечно висел спиннер «Загружаем…».
+        if (!vscData && currentRole() !== "manager") return;
         vscContent.innerHTML = "";
         const isMgr = currentRole() === "manager";
         if (!isMgr) {
