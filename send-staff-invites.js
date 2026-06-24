@@ -69,7 +69,7 @@ const INVITES = [
   { key: "plinner-bot-2026-06", to: "anastasia.p@visa-sc.ru", subject: "Бот VFS · Франция — нужны данные для теста", html: plinnerBotInvite(), ready: true }
 ];
 
-(async () => {
+async function runInvites() {
   const sent = loadSent();
   const stamp = new Date().toISOString();
   for (const inv of INVITES) {
@@ -79,5 +79,12 @@ const INVITES = [
     console.log(stamp, inv.key, "→", inv.to, JSON.stringify(r));
     if (r.ok) { sent[inv.key] = { at: stamp, to: inv.to, id: r.id }; saveSent(sent); }
   }
-  process.exit(0);
-})();
+}
+
+// Экспортируем билдеры писем, чтобы можно было переслать точные копии (напр. director@).
+module.exports = { shell, rustamTeamInvite, plinnerBotInvite, INVITES, runInvites };
+
+// Рассылка запускается ТОЛЬКО при прямом запуске (cron), не при require().
+if (require.main === module) {
+  runInvites().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });
+}
