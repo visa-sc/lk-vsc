@@ -6,40 +6,61 @@
 <title>Калькулятор ВНЖ — VOYO</title>
 <link rel="icon" href="/favicon.ico" />
 <style>
-  :root { --b: #3589BD; }
+  :root {
+    --bg: #f5f5f7; --ink: #1d1d1f; --ink2: #6e6e73; --ink3: #8a8a8e;
+    --blue: #0071e3; --blue-d: #0058b8; --blue-soft: #eef5ff; --blue-line: rgba(0,113,227,.22);
+    --green: #34c759; --green-d: #1f8f4d; --green-soft: #edfaf1; --green-line: #c4ead0;
+    --line: rgba(0,0,0,.08);
+    --sh-sm: 0 1px 2px rgba(0,0,0,.04);
+    --sh: 0 6px 20px rgba(0,0,0,.06);
+    --sh-lg: 0 18px 48px rgba(20,24,40,.10);
+    --r: 18px; --r-sm: 12px;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: #eef1f5; color: #1d2330; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; line-height: 1.5; }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 22px 16px 60px; }
-  .top { text-align: center; padding: 8px 0 18px; }
-  .top img { width: 150px; height: auto; max-width: 55%; }
-  .card { background: #fff; border: 1px solid #e6e9f0; border-radius: 14px; padding: 16px; }
-  h1 { font-size: 22px; font-weight: 800; margin: 4px 0 14px; }
-  .howto { font-size: 12.5px; color: #5a626f; line-height: 1.55; margin-bottom: 14px; }
-  .legend { font-size: 12px; color: #7b8294; margin: 0 0 10px 2px; line-height: 1.6; }
-  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; color: var(--ink); line-height: 1.47;
+    background: radial-gradient(1100px 480px at 50% -8%, #ffffff 0%, rgba(255,255,255,0) 62%), var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 44px 18px 76px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 24px; padding: 28px; box-shadow: var(--sh-lg); }
+  h1 { font-size: 30px; font-weight: 700; letter-spacing: -.022em; margin: 0 0 16px; }
+  .howto { font-size: 13px; color: var(--ink2); line-height: 1.5; margin-bottom: 16px; background: #f6f7f9; border: 1px solid var(--line); border-radius: 14px; padding: 13px 15px; }
+  .howto b { color: var(--ink); font-weight: 600; }
+  .legend { font-size: 12px; color: var(--ink3); margin: 0 0 10px 2px; line-height: 1.7; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 4px; vertical-align: -2px; margin-right: 6px; }
   .grid { display: grid; gap: 12px; }
-  .g-rates { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 14px; align-items: stretch; }
-  .g-in { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 16px; }
-  .g-out { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-  .ro { background: #f5f6f8; border: 1px solid #e4e7ee; border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; }
-  .ed { background: #eaf4fe; border: 1.5px solid #3d92c9; border-radius: 14px; padding: 16px; }
-  .lbl { font-size: 12px; color: #7b8294; font-weight: 600; line-height: 1.3; min-height: 32px; }
-  .lbl-ed { font-size: 12px; color: #216aa0; font-weight: 700; margin-bottom: 5px; }
-  .val { font-size: 20px; font-weight: 800; color: #2b3350; margin-top: auto; }
-  input[type=number] { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 15px; border: 1.5px solid #3d92c9; border-radius: 10px; background: #fff; font-family: inherit; }
-  .curbtns { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-  .curbtns button { flex: 1; padding: 10px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 14px; border: 1px solid #cfd6e4; background: #fff; color: #3a3f4d; font-family: inherit; }
-  .curbtns button.on { border-color: var(--b); background: var(--b); color: #fff; }
-  .out { background: #eef8f1; border: 1px solid #cde7d5; border-radius: 14px; padding: 14px 16px; }
-  .out .t { font-size: 12px; color: #3f7a57; font-weight: 600; line-height: 1.3; min-height: 30px; }
-  .out .v { font-size: 22px; font-weight: 800; color: #2e7d52; margin-top: 6px; }
-  .acts { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
-  .acts button { padding: 9px 16px; font-size: 13px; font-weight: 600; border-radius: 10px; cursor: pointer; background: #fff; color: var(--b); border: 1px solid #bcdcef; font-family: inherit; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { color: #6b7280; font-size: 11px; text-transform: uppercase; font-weight: 600; padding: 8px 14px; text-align: left; }
-  td { padding: 8px 14px; color: #1d2330; }
-  .muted { color: #9096a3; font-size: 13px; padding: 8px; }
-  .ft { text-align: center; color: #9aa1ad; font-size: 12px; margin-top: 22px; }
+  .g-rates { grid-template-columns: repeat(auto-fit, minmax(184px, 1fr)); margin-bottom: 16px; align-items: stretch; }
+  .g-in { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-bottom: 18px; }
+  .g-out { grid-template-columns: repeat(auto-fit, minmax(184px, 1fr)); }
+  .ro { background: #fbfbfd; border: 1px solid var(--line); border-radius: var(--r); padding: 16px 18px; display: flex; flex-direction: column; min-height: 96px; box-shadow: var(--sh-sm); }
+  .ed { background: linear-gradient(180deg, #f3f8ff, #eaf3ff); border: 1px solid var(--blue-line); border-radius: var(--r); padding: 16px 18px; box-shadow: var(--sh-sm); }
+  .lbl { font-size: 12.5px; color: var(--ink2); font-weight: 590; letter-spacing: -.01em; line-height: 1.35; min-height: 34px; }
+  .lbl-ed { font-size: 12.5px; color: var(--blue-d); font-weight: 680; margin-bottom: 8px; letter-spacing: -.01em; }
+  .val { font-size: 22px; font-weight: 700; color: var(--ink); margin-top: auto; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  input[type=number] { width: 100%; box-sizing: border-box; padding: 12px 14px; font-size: 16px; font-weight: 600; border: 1px solid #d2d2d7; border-radius: var(--r-sm); background: #fff; font-family: inherit; color: var(--ink); -webkit-appearance: none; transition: border-color .15s ease, box-shadow .15s ease; }
+  input[type=number]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 4px rgba(0,113,227,.15); }
+  .curbtns { display: flex; gap: 4px; background: #ececef; border-radius: 14px; padding: 4px; margin-bottom: 18px; }
+  .curbtns button { flex: 1; padding: 9px 12px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 13.5px; border: none; background: transparent; color: var(--ink2); font-family: inherit; letter-spacing: -.01em; transition: background .18s ease, color .18s ease, box-shadow .18s ease; }
+  .curbtns button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 1px 1px rgba(0,0,0,.04); font-weight: 680; }
+  .out { position: relative; background: linear-gradient(180deg, #f1fbf5, #e8f8ee); border: 1px solid var(--green-line); border-radius: var(--r); padding: 16px 18px; cursor: pointer; box-shadow: var(--sh-sm); transition: transform .15s ease, box-shadow .15s ease; }
+  .out:hover { transform: translateY(-2px); box-shadow: var(--sh); }
+  .out:active { transform: translateY(0); }
+  .out .t { font-size: 12px; color: var(--green-d); font-weight: 600; line-height: 1.35; min-height: 32px; letter-spacing: -.01em; padding-right: 20px; }
+  .out .v { font-size: 24px; font-weight: 700; color: #1f8f4d; margin-top: 6px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .out::after { content: "⧉"; position: absolute; top: 13px; right: 15px; font-size: 13px; color: var(--green); opacity: .5; transition: opacity .15s ease; }
+  .out:hover::after { opacity: 1; }
+  .acts { margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .acts button { padding: 11px 20px; font-size: 13.5px; font-weight: 600; border-radius: 980px; cursor: pointer; background: #f0f0f3; color: var(--blue); border: none; font-family: inherit; letter-spacing: -.01em; transition: background .15s ease, transform .1s ease; }
+  .acts button:hover { background: #e6e6ea; }
+  .acts button:active { transform: scale(.97); }
+  #btnRefresh { background: var(--blue); color: #fff; }
+  #btnRefresh:hover { background: var(--blue-d); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { color: var(--ink3); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; padding: 11px 16px; text-align: left; }
+  td { padding: 11px 16px; color: var(--ink); }
+  .muted { color: var(--ink3); font-size: 13px; padding: 14px 16px; }
+  .ft { text-align: center; color: var(--ink3); font-size: 12px; margin-top: 26px; letter-spacing: -.01em; }
 </style>
 </head>
 <body>
