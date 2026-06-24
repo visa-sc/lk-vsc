@@ -39,3 +39,6 @@ npm-debug.log*
 
 # Passkey-ключи руководителей (Face ID) — рантайм-состояние
 .managerPasskeys.json
+
+# Бот VFS — клиенты/получатели (рантайм-состояние, содержит ПДн клиентов)
+.vfsBot.json

@@ -2765,9 +2765,33 @@
         if (vscTab !== "bot") return;
         paintBot(box);
       }
+      function vscBotToast(msg, okState) {
+        try {
+          const t = document.createElement("div");
+          t.textContent = msg;
+          t.style.cssText = "position:fixed;left:50%;top:18px;transform:translateX(-50%);background:" + (okState ? "#2e7d52" : "#b0263a") + ";color:#fff;padding:9px 16px;border-radius:10px;font-size:13px;font-weight:600;z-index:3000;box-shadow:0 8px 24px rgba(0,0,0,.18);max-width:90%;text-align:center;";
+          document.body.appendChild(t);
+          setTimeout(() => { try { t.remove(); } catch (_) {} }, okState ? 1600 : 4200);
+        } catch (_) {}
+      }
+      function vscBotResync(box) {
+        apiFetch("/admin/api/vfs-bot").then((j) => { if (j) { vscBotCfg = j; paintBot(box); } }).catch(() => {});
+      }
       function vscBotPersist(box) {
+        // ВАЖНО: показываем результат сохранения. Раньше при сбое POST (истёкшая
+        // сессия / нет сети) клиент молча оставался в локальном списке — менеджер
+        // думал, что сохранил, а на сервере записи не было (директор её не видел).
         fetch("/admin/api/vfs-bot", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify(vscBotCfg) })
-          .then((r) => r.json()).then((j) => { if (j && j.success) vscBotCfg = j; paintBot(box); }).catch(() => paintBot(box));
+          .then((r) => r.json().then((j) => ({ ok: r.ok && j && j.success === true, j })).catch(() => ({ ok: false, j: null })))
+          .then((res) => {
+            if (res.ok) { vscBotCfg = res.j; paintBot(box); vscBotToast("✓ Сохранено", true); return; }
+            vscBotToast("Не удалось сохранить — запись НЕ сохранена. Войдите снова и повторите.", false);
+            vscBotResync(box); // вернуть реальное состояние с сервера (мнимая запись исчезнет)
+          })
+          .catch(() => {
+            vscBotToast("Нет связи с сервером — изменения не сохранены.", false);
+            vscBotResync(box);
+          });
       }
       function paintBot(box) {
         const cfg = vscBotCfg || { recipients: [], clients: [] };
