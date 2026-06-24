@@ -396,6 +396,40 @@
       background: #eef8f1;
     }
 
+    /* ── Мобильный «шильдик» обращений + всплывающая панель ── */
+    /* На десктопе шильдик/крестик/подложка скрыты, карточка «Ваши обращения»
+       показывается как обычно. На мобиле карточка прячется, открывается по
+       шильдику всплывающим окном. */
+    .obr-chip { display: none; }
+    .obr-close { display: none; }
+    .obr-backdrop { display: none; position: fixed; inset: 0; background: rgba(20,24,40,.45); z-index: 1000; }
+    .obr-backdrop.show { display: block; }
+    @media (max-width: 760px) {
+      .obr-chip {
+        display: flex; align-items: center; gap: 10px;
+        width: 100%; box-sizing: border-box; margin: 0 0 14px;
+        padding: 13px 16px; background: #fff; border: 1px solid #e6e9f0;
+        border-radius: 14px; font-size: 15px; font-weight: 600; color: #1d2330;
+        cursor: pointer; font-family: inherit; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+        -webkit-tap-highlight-color: transparent;
+      }
+      .obr-chip-ic { color: #3589BD; font-size: 17px; flex-shrink: 0; }
+      .obr-chip-label { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .obr-chip-caret { color: #9096a3; flex-shrink: 0; }
+      #obrCard { display: none; }
+      #obrCard.sheet-open {
+        display: block; position: fixed; left: 12px; right: 12px; top: 50%;
+        transform: translateY(-50%); max-height: 82vh; overflow-y: auto;
+        z-index: 1001; margin: 0; box-shadow: 0 24px 60px rgba(20,24,40,.28);
+      }
+      .obr-close {
+        display: flex; align-items: center; justify-content: center;
+        position: absolute; top: 14px; right: 14px; width: 32px; height: 32px;
+        border: none; background: #f1f2f5; border-radius: 50%; cursor: pointer;
+        font-size: 16px; color: #6b7280; line-height: 1; font-family: inherit; padding: 0;
+      }
+    }
+
     .status-top {
       display: flex;
       justify-content: space-between;
@@ -965,8 +999,15 @@
     <div id="successBox" class="message success"></div>
     <div id="infoBox" class="message info"></div>
 
+    <button type="button" id="obrChip" class="obr-chip" aria-label="Открыть список обращений">
+      <span class="obr-chip-ic" aria-hidden="true">☰</span>
+      <span id="obrChipLabel" class="obr-chip-label">Ваши обращения</span>
+      <span class="obr-chip-caret" aria-hidden="true">▾</span>
+    </button>
+
     <div class="grid">
-      <div class="card">
+      <div class="card" id="obrCard">
+        <button type="button" id="obrClose" class="obr-close" aria-label="Закрыть">✕</button>
         <h2>Ваши обращения</h2>
         <div id="leadsPlaceholder" class="muted">Введите телефон и нажмите кнопку.</div>
         <div id="leadList" class="lead-list"></div>
@@ -1007,6 +1048,9 @@
     </div>
   </div>
 
+  <!-- Подложка всплывающей панели «Ваши обращения» (мобильные) -->
+  <div id="obrBackdrop" class="obr-backdrop"></div>
+
   <!-- Модалка подтверждения: «Новое обращение» -->
   <div id="newLeadModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="newLeadModalText">
     <div class="modal-box">
@@ -1039,6 +1083,29 @@
     const leadsPlaceholder = document.getElementById("leadsPlaceholder");
     const statusText = document.getElementById("statusText");
     const stagesEl = document.getElementById("stages");
+
+    // ── Мобильная всплывающая панель «Ваши обращения» ──
+    // На мобиле карточка обращений скрыта; открывается по шильдику. Выбор
+    // обращения / клик по подложке / крестик — закрывают панель. Вся логика
+    // выбора (selectLead) и «Новое обращение» переиспользуется как есть.
+    const obrChip = document.getElementById("obrChip");
+    const obrCard = document.getElementById("obrCard");
+    const obrClose = document.getElementById("obrClose");
+    const obrBackdrop = document.getElementById("obrBackdrop");
+    const obrChipLabel = document.getElementById("obrChipLabel");
+    function openObrSheet() {
+      if (obrCard) obrCard.classList.add("sheet-open");
+      if (obrBackdrop) obrBackdrop.classList.add("show");
+      try { document.body.style.overflow = "hidden"; } catch (_) {}
+    }
+    function closeObrSheet() {
+      if (obrCard) obrCard.classList.remove("sheet-open");
+      if (obrBackdrop) obrBackdrop.classList.remove("show");
+      try { document.body.style.overflow = ""; } catch (_) {}
+    }
+    if (obrChip) obrChip.addEventListener("click", openObrSheet);
+    if (obrClose) obrClose.addEventListener("click", closeObrSheet);
+    if (obrBackdrop) obrBackdrop.addEventListener("click", closeObrSheet);
 
     let selectedLead = null;
     let applicantsCache = null;
@@ -3520,7 +3587,11 @@
       applicantsCache    = (fetched && Array.isArray(fetched.applicants))    ? fetched.applicants    : [];
       preApplicantsCache = (fetched && Array.isArray(fetched.preApplicants)) ? fetched.preApplicants : [];
 
-      statusText.textContent = `Вы выбрали ${getLeadLabel(lead)}. Текущий этап: ${currentStageTitle}.`;
+      // «Текущий этап…» — с новой строки (через <br>; значения наши, не пользовательские).
+      statusText.innerHTML = `Вы выбрали ${getLeadLabel(lead)}.<br>Текущий этап: ${currentStageTitle}.`;
+      // Подпись на мобильном «шильдике» обращений — показываем выбранное обращение.
+      if (typeof obrChipLabel !== "undefined" && obrChipLabel) obrChipLabel.textContent = getLeadLabel(lead);
+      closeObrSheet();
       renderStages(currentStageIndex, lead);
     }
 
@@ -3649,6 +3720,7 @@
     const newLeadModalError = document.getElementById("newLeadModalError");
 
     function openNewLeadModal() {
+      closeObrSheet(); // чтобы модалка не оказалась под мобильной панелью обращений
       newLeadModalError.classList.remove("show");
       newLeadModalError.textContent = "";
       newLeadModalNo.disabled = false;
