@@ -3664,6 +3664,21 @@
         return d;
       }
 
+      // Отправка multipart-формы (с файлом). Content-Type НЕ задаём — браузер сам
+      // выставит boundary; токен — в заголовке Authorization.
+      async function apiSendForm(url, formData) {
+        const t = getToken();
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { Authorization: "Bearer " + t },
+          body: formData
+        });
+        if (r.status === 401) { clearToken(); showLogin(); throw new Error("Unauthorized"); }
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.success) throw new Error(d.message || "Ошибка");
+        return d;
+      }
+
       function corrDateText(v) {
         if (!v) return "";
         const s = String(v);
@@ -3794,7 +3809,8 @@
           '<div class="corr-f-row"><label>Что нужно / что не так *</label><textarea class="corr-i" data-k="what" rows="3" placeholder="Опишите корректировку максимально конкретно"></textarea></div>' +
           '<div class="corr-f-row"><label>Как должно быть (ожидаемый результат)</label><textarea class="corr-i" data-k="expected" rows="2"></textarea></div>' +
           '<div class="corr-f-row"><label>Пример / ссылка на сделку</label><input class="corr-i" data-k="example" placeholder="ссылка amoCRM или пример"></div>' +
-          '<div class="corr-f-row"><label>Приоритет</label><select class="corr-i" data-k="priority"><option value="">—</option><option>Низкий</option><option>Средний</option><option>Высокий</option></select></div>';
+          '<div class="corr-f-row"><label>Приоритет</label><select class="corr-i" data-k="priority"><option value="">—</option><option>Низкий</option><option>Средний</option><option>Высокий</option></select></div>' +
+          '<div class="corr-f-row"><label>Прикрепить файл (скриншот и т.п.) — необязательно</label><input type="file" class="corr-file" accept="image/*,application/pdf,.heic" /></div>';
         const err = document.createElement("div"); err.className = "corr-form-err"; err.style.display = "none";
         const submit = document.createElement("button");
         submit.type = "button"; submit.className = "corr-submit"; submit.textContent = "Отправить заявку";
@@ -3802,9 +3818,19 @@
           const body = {};
           f.querySelectorAll(".corr-i").forEach((el) => { body[el.dataset.k] = el.value; });
           if (!String(body.what || "").trim()) { err.textContent = "Заполните поле «Что нужно / что не так»."; err.style.display = "block"; return; }
+          const fileEl = f.querySelector(".corr-file");
+          const file = fileEl && fileEl.files && fileEl.files[0];
+          if (file && file.size > 20 * 1024 * 1024) { err.textContent = "Файл больше 20 МБ — выберите поменьше."; err.style.display = "block"; return; }
           submit.disabled = true; submit.textContent = "Отправка…";
           try {
-            await apiSend("/admin/api/corrections", body);
+            if (file) {
+              const fd = new FormData();
+              Object.keys(body).forEach((k) => fd.append(k, body[k] == null ? "" : body[k]));
+              fd.append("attachment", file);
+              await apiSendForm("/admin/api/corrections", fd);
+            } else {
+              await apiSend("/admin/api/corrections", body);
+            }
             corrFormOpen = false; correctionsData = null;
             await loadCorrections();
           } catch (e) {
@@ -3889,6 +3915,29 @@
             th.appendChild(cm);
           });
           card.appendChild(th);
+        }
+
+        if (Array.isArray(it.attachments) && it.attachments.length) {
+          const at = document.createElement("div");
+          at.style.cssText = "margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;";
+          it.attachments.forEach((a, i) => {
+            const url = "/admin/api/corrections/" + encodeURIComponent(it.id) + "/attachment?i=" + i + "&token=" + encodeURIComponent(getToken());
+            const isImg = /\.(png|jpe?g|gif|webp|heic|bmp)$/i.test(a.name || "");
+            const link = document.createElement("a");
+            link.href = isImg ? url : (url + "&dl=1");
+            link.target = "_blank"; link.rel = "noopener"; link.title = a.name || "вложение";
+            if (isImg) {
+              const img = document.createElement("img");
+              img.src = url; img.alt = a.name || "вложение"; img.loading = "lazy";
+              img.style.cssText = "max-width:120px;max-height:120px;border-radius:8px;border:1px solid #e6e9f0;display:block;";
+              link.appendChild(img);
+            } else {
+              link.textContent = "📎 " + (a.name || "вложение");
+              link.style.cssText = "font-size:13px;color:#3589BD;text-decoration:none;background:#eef5fb;padding:6px 12px;border-radius:8px;border:1px solid #dce8f3;";
+            }
+            at.appendChild(link);
+          });
+          card.appendChild(at);
         }
 
         const ctrl = document.createElement("div"); ctrl.className = "corr-ctrl";

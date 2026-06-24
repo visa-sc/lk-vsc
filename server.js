@@ -1349,6 +1349,11 @@ app.get("/admin/api/whoami", requireStaff, (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────
 const LK_CORRECTIONS_FILE = path.join(__dirname, ".lkCorrections.json");
 const LK_CORRECTIONS_SEED = path.join(__dirname, "lkCorrections.seed.json");
+// Техническая папка на Я.Диске для вложений к корректировкам (скриншоты и т.п.).
+// Отдельный top-level каталог — НЕ пересекается с клиентскими папками и amoCRM.
+const LK_CORR_ATTACH_FOLDER = "Корректировки ЛК (вложения)";
+// Отдельный приёмник файлов для корректировок (в память, лимит 20 МБ).
+const corrUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 const CORRECTION_STATUSES = new Set(["new", "clarify", "in_progress", "deferred", "done", "rejected"]);
 // Статусы, считающиеся «закрытыми» (скрываются в сворачиваемые секции, проставляется дата).
 const CORRECTION_CLOSED_STATUSES = new Set(["deferred", "done", "rejected"]);
@@ -1390,6 +1395,26 @@ app.get("/admin/api/corrections", requireStaff, (req, res) => {
     return res.json({ success: true, items, me: { role: req.staff.role, name: req.staff.name } });
   } catch (e) {
     return res.status(500).json({ success: false, message: "Ошибка" });
+  }
+});
+
+// Просмотр/скачивание вложения корректировки (staff; токен можно передать в ?token=).
+app.get("/admin/api/corrections/:id/attachment", requireStaff, async (req, res) => {
+  try {
+    loadCorrections();
+    const it = lkCorrections.find((x) => x && x.id === String(req.params.id));
+    if (!it || !Array.isArray(it.attachments) || !it.attachments.length) return res.status(404).send("not found");
+    const idx = Math.max(0, Math.min(it.attachments.length - 1, parseInt(req.query.i || "0", 10) || 0));
+    const att = it.attachments[idx];
+    if (!att || !att.path) return res.status(404).send("not found");
+    const buf = await downloadYandexFileBuffer(att.path);
+    res.setHeader("Content-Type", guessContentType(att.name));
+    const disp = req.query.dl === "1" ? "attachment" : "inline";
+    res.setHeader("Content-Disposition", disp + "; filename*=UTF-8''" + encodeURIComponent(att.name));
+    return res.end(buf);
+  } catch (e) {
+    console.error("correction attachment download error:", e.message);
+    return res.status(500).send("error");
   }
 });
 
@@ -1448,7 +1473,7 @@ function passwordResetEmailHtml(name, link) {
   return emailDoc(inner, "#3589BD", "Это автоматическое уведомление — отвечать на него не нужно.<br>С уважением, команда VOYO · Visa Services Center");
 }
 
-app.post("/admin/api/corrections", requireStaff, (req, res) => {
+app.post("/admin/api/corrections", requireStaff, corrUpload.single("attachment"), async (req, res) => {
   try {
     const b = req.body || {};
     const what = corrText(b.what, 6000);
@@ -1478,6 +1503,20 @@ app.post("/admin/api/corrections", requireStaff, (req, res) => {
       // Кто создал — для авто-письма автору при выполнении (только новые заявки).
       createdBy: { name: req.staff.name || "", role: req.staff.role || "", email: (req.staff.email || "").toLowerCase() }
     };
+    // Вложение (необязательно): кладём в техпапку Я.Диска, ссылку сохраняем в заявке.
+    if (req.file && req.file.buffer && req.file.buffer.length && YANDEX_DISK_TOKEN) {
+      try {
+        const origName = Buffer.from(String(req.file.originalname || "file"), "latin1").toString("utf8");
+        const safe = safePathSegment(origName) || ("file_" + now);
+        const folder = `${LK_CORR_ATTACH_FOLDER}/${item.id}`;
+        await ensureNestedYandexFolder(folder);
+        const diskPath = `${folder}/${safe}`;
+        await uploadBufferToYandexDisk(req.file.buffer, diskPath, req.file.mimetype || guessContentType(safe));
+        item.attachments = [{ name: safe, path: diskPath, size: req.file.size || req.file.buffer.length, ts: now }];
+      } catch (e) {
+        console.error("correction attachment upload error:", e.message);
+      }
+    }
     lkCorrections.unshift(item);
     saveCorrections();
     // Письмо директору о новой корректировке (служебное, не блокирует ответ).
@@ -1676,7 +1715,7 @@ app.get("/admin/kb/admin-guide", requireStaff, (req, res) => {
     b += `<h2>Корректировки ЛК</h2>
 <p><b>Цель:</b> единый канал заявок на изменения ЛК — ничего не теряется в чатах, по каждой заявке виден статус и история обсуждения.</p>
 <ul>
-<li><b>Подать заявку:</b> «+ Добавить корректировку» → раздел ЛК, «что не так» (обязательно), «как должно быть», пример/ссылка на сделку, приоритет. Автор подставляется автоматически из вашего аккаунта.</li>
+<li><b>Подать заявку:</b> «+ Добавить корректировку» → раздел ЛК, «что не так» (обязательно), «как должно быть», пример/ссылка на сделку, приоритет, при необходимости — <b>прикрепить файл</b> (скриншот и т.п.). Автор подставляется автоматически из вашего аккаунта.</li>
 <li><b>Статусы</b> (меняет только админ; сотрудники видят): Новая → Нужны уточнения / В работе → Реализовано / Отложено / Отклонено.</li>
 <li><b>Структура:</b> сверху «Новые» и «В работе» (новые → старые); «Реализованные», «Отложенные», «Отклонённые» свёрнуты внизу и разворачиваются кнопкой. У админа дополнительно корзина «Удалённые»: восстановление заявки или «Удалить все безвозвратно».</li>
 <li><b>Комментарии:</b> тред под каждой заявкой для вопросов и уточнений; имя автора и время (МСК) подставляются автоматически.</li>
@@ -1859,7 +1898,7 @@ const KB_LOGIC_STAGES = [
   { key: "Начало оформления", sees: "Загрузка 2 паспортов (внутренний + загран). Возможность заполнить опросник (паспорта можно загрузить и до опросника — тогда спросим ФИО).", dep: ["Этап определяется статусом сделки в amoCRM (см. «Карту статусов»).", "Опросник: Шенген или Япония — по полю визы.", "Шенген-опросник (корректировки Риты): добавлены «Город подачи» + «Прописка в паспорте РФ в городе подачи?» (при «Нет» — город прописки) и блок «Данные принимающей стороны» при цели «Частный визит» — все в PDF-выгрузке."] },
   { key: "Первичный сбор документов", sees: "Паспорта (этап 0) + первый набор условных документов по ответам опросника. Где есть справка с работы/учёбы — подсказка: уточнять у менеджера срок действия справок, не оформлять заранее (у некоторых стран короткий, напр. Кипр ~1 нед).", dep: ["Состав документов зависит от ответов опросника и от поля CRM «Страна оформления/услуга» (электронное фото).", "Обязательность — по статусу сделки в amoCRM + «Дате записи на подачу».", "Ранние статусы (Сбор документов для ОО; Принято в работу; Согласование; Сбор оплачен; Ожидает записи; Эл.документы переданы) — документы открыты, но НЕобязательны.", "«Запись сделана / Электронное рассмотрение / Оформлен выкуп» — за ≤7 рабочих дней обязательно становится только ядро оформления (справка с работы/учёбы, паспорт спонсора, своё проживание, авиабилеты, 2-й загран, билеты в 3-ю страну, свид-во о рождении).", "Остальные условные документы — обязательны только в финальных статусах или при <3 кал. дней.", "Финальные статусы (Исправить / Пакет готов / Принято после ОО / Ожидает передачи / Готовы к личной подаче) — обязательно всё. Предохранитель: <3 кал. дней — всё. Паспорта (этап 0) — всегда."] },
   { key: "Подготовка документов", sees: "Документы этапов 0–1 + второй набор условных документов (кумулятивно). За 7 дней до «Даты записи на подачу» появляется подобласть «Документы для проверки перед подачей» (красным — обязательные, синим — нет). На экранах со справками и в подобласти — подсказка: уточнять у менеджера срок действия справок, не оформлять заранее (у некоторых стран короткий, напр. Кипр ~1 нед).", dep: ["Сюда же ведут статусы «Ожидает записи через Бота», «Запись сделана» и т.д. (см. «Карту статусов»).", "Подобласть «перед подачей» — по полю сделки «Дата записи на подачу» (−7 дней). Если поле пустое — подобласти нет.", "Пока обязательные в подобласли не загружены — точка этапа жёлтая."] },
-  { key: "Ожидание подачи", sees: "Документы клиент больше не грузит. Вместо этого видит блок «Ваши готовые документы» — список по заявителям с кнопками «Скачать» и «Скачать все документы».", dep: ["Готовые документы кладёт отдел оформления в папку сделки на Я.Диске.", "Блок виден на статусах: «Документы готовы к личной подаче», «Ожидает передачи на рассмотрение в Консульство», «Передано Клиенту для личной подачи»."] },
+  { key: "Ожидание подачи", sees: "Документы клиент больше не грузит. Вместо этого видит блок «Ваши готовые документы» — список по заявителям с кнопками «Скачать» и «Скачать все документы».", dep: ["Готовые документы кладёт отдел оформления в папку сделки на Я.Диске.", "Блок виден на статусах: «Документы готовы к личной подаче», «Ожидает передачи на рассмотрение в Консульство», «Передано Клиенту для личной подачи».", "Служебный мусор архивов (._*, .DS_Store, __MACOSX, Thumbs.db) в список не попадает; нечитаемые имена («кракозябры») чинятся автоматически; файлы отдаются через наш сервер (надёжное скачивание, без ERR_INVALID_RESPONSE)."] },
   { key: "Оформление на паузе", sees: "Информационный статус «на паузе».", dep: ["Статусы «На паузе по просьбе Клиента», «Ожидает решения о возврате»."] },
   { key: "Рассмотрение", sees: "Информация, что документы на рассмотрении в Консульстве.", dep: ["Статусы «На рассмотрении в Консульстве», «Документы поданы лично», «Электронное рассмотрение»."] },
   { key: "Паспорт готов", sees: "Сообщение, что паспорт готов.", dep: ["Статус «Паспорт готов»."] },
@@ -1884,6 +1923,12 @@ app.get("/admin/kb/logic", requireStaff, (req, res) => {
 // инфраструктура). Пишем понятно, без воды, но со всеми нюансами + кто просил.
 // ВАЖНО: при любой правке клиентского ЛК — добавлять сюда новую запись сверху.
 const LK_CHANGELOG = [
+  { date: "24.06.2026", title: "Готовые документы: убран служебный мусор и «кракозябры» в названиях, починено скачивание; вложения к корректировкам", by: "корректировки Насти П. + просил Андрей", points: [
+    "В блоке «Ваши готовые документы» больше не показываются служебные файлы архивов (._Имя, .DS_Store, __MACOSX, Thumbs.db) — они скрыты в списке и подчищаются на Я.Диске при открытии раздела.",
+    "Исправлены нечитаемые названия файлов («╨╜╨Э…»): имена из ZIP теперь корректно распознаются (UTF-8 даже без флага, иначе cp866); уже залитые файлы показываются и скачиваются с восстановленным именем.",
+    "Кнопка «Скачать» теперь отдаёт файл через наш сервер потоком (раньше — редирект на прямую ссылку Я.Диска, иногда выдававшую ERR_INVALID_RESPONSE). «Скачать все» — тоже без мусора и с верными именами.",
+    "В «Корректировках ЛК» при создании заявки можно прикрепить файл (скриншот и т.п.); вложение хранится в отдельной техпапке Я.Диска «Корректировки ЛК (вложения)» (не пересекается с клиентскими папками и amoCRM) и открывается прямо из карточки корректировки.",
+  ] },
   { date: "24.06.2026", title: "Мобильная панель «Ваши обращения», перенос строки в статусе, мгновенное появление нового обращения", by: "просил Андрей", points: [
     "На мобильных секция «Ваши обращения» свёрнута в шильдик-меню вверху (☰ + название выбранного обращения). По тапу открывается всплывающая панель со списком обращений и кнопкой «Новое обращение»; выбор обращения / тап по подложке / крестик в углу — закрывают её. На десктопе всё как было.",
     "В блоке «Статус обращения» фраза «Текущий этап: …» перенесена на новую строку.",
@@ -2292,11 +2337,11 @@ const LK_TESTER_SPEC = {
       "Ответственный по той же схеме: «Отдел продаж» → «Ответственный»; другие воронки → «Кто принял клиента»; затем ответственный сделки; крайний случай — «Visa Services Center»."
     ] },
     { sys: "Я.Диск", name: "Распаковка ZIP и дедупликация файлов", when: "Фоном после загрузки документов", details: [
-      "ZIP-архивы распаковываются, дубликаты файлов убираются — чтобы офис видел чистый список."
+      "ZIP-архивы распаковываются, дубликаты файлов убираются, служебный мусор (._*, .DS_Store, __MACOSX) удаляется, имена файлов из архива корректно раскодируются (без «кракозябр») — чтобы офис и клиент видели чистый список."
     ] },
     { sys: "ЛК", name: "Блок «Ваши готовые документы»", when: "Этап «Ожидание подачи»", details: [
-      "Клиент видит файлы из папки «Готовые документы (ЛК)» (их кладёт отдел оформления).",
-      "Можно скачать каждый файл или все сразу.",
+      "Клиент видит файлы из папки «Готовые документы (ЛК)» (их кладёт отдел оформления); служебный мусор скрыт, нечитаемые имена чинятся.",
+      "Можно скачать каждый файл или все сразу — файлы отдаются потоком через наш сервер (надёжно, без ERR_INVALID_RESPONSE).",
       "Статусы: «Документы готовы к личной подаче», «Ожидает передачи на рассмотрение в Консульство», «Передано Клиенту для личной подачи»."
     ] },
     { sys: "amoCRM", name: "Задача по анкете «Данные для подготовки договора» (корректировка Зайцевой)", when: "Клиент отправил карточку «Данные для подготовки договора» на этапе «Начало оформления»", details: [
@@ -4864,16 +4909,55 @@ function guessContentType(name) {
 
 // Имя файла из zip-записи: UTF-8 если выставлен флаг bit-11, иначе cp866
 // (русская Windows-кодировка имён в zip).
+// Похоже ли содержимое буфера на валидный UTF-8 (без потерь при round-trip).
+function bufLooksUtf8(buf) {
+  try {
+    const s = buf.toString("utf8");
+    return !s.includes("�") && Buffer.from(s, "utf8").equals(buf);
+  } catch (_) { return false; }
+}
+
 function decodeZipEntryName(entry) {
   try {
     const raw = entry.rawEntryName; // Buffer
     if (!raw) return entry.entryName;
     const isUtf8 = (((entry.header && entry.header.flags) || 0) & 0x800) !== 0;
     if (isUtf8) return raw.toString("utf8");
+    // Многие архиваторы пишут имена в UTF-8, НЕ выставляя флаг (0x800). Если байты —
+    // валидный UTF-8, используем его; иначе уже падаем на cp866 (старый русский ZIP).
+    if (bufLooksUtf8(raw)) return raw.toString("utf8");
     return iconv.decode(raw, "cp866");
   } catch (_) {
     return entry.entryName;
   }
+}
+
+// Служебный мусор архивов (macOS/Windows), который не должен попадать в выдачу клиенту.
+function isReadyDocJunk(name) {
+  const b = String(name || "").trim();
+  if (!b) return true;
+  const lower = b.toLowerCase();
+  return /^\._/.test(b) ||              // AppleDouble (._Имя)
+    /^__macosx$/i.test(b) ||            // папка-обёртка macOS
+    lower === ".ds_store" ||
+    lower === "thumbs.db" ||
+    lower === "desktop.ini";
+}
+
+// Починка «кракозябр»: имя, которое было ошибочно раскодировано из UTF-8-байт как
+// cp866 (типичная каша «╨╜╨Э…»). Реверсим только если получается валидная кириллица.
+function fixMojibakeName(name) {
+  const s = String(name || "");
+  if (!s) return s;
+  try {
+    const bytes = iconv.encode(s, "cp866");      // обратно в исходные байты
+    const utf = bytes.toString("utf8");
+    if (utf && utf !== s && !utf.includes("�") &&
+        /[А-Яа-яЁё]/.test(utf) && Buffer.from(utf, "utf8").equals(bytes)) {
+      return utf;
+    }
+  } catch (_) {}
+  return s;
 }
 
 // Безопасный сегмент имени файла (без traversal/слешей).
@@ -4895,8 +4979,10 @@ async function unpackZipIntoFolder(zipDiskPath, destFolder) {
   for (const entry of entries) {
     if (entry.isDirectory) continue;
     const decoded = decodeZipEntryName(entry);
-    const base = safePathSegment(String(decoded).replace(/\\/g, "/").split("/").pop());
-    if (!base || /\.zip$/i.test(base)) continue;
+    const full = String(decoded).replace(/\\/g, "/");
+    if (/(^|\/)__MACOSX(\/|$)/i.test(full)) continue; // папка-мусор macOS целиком
+    const base = safePathSegment(full.split("/").pop());
+    if (!base || /\.zip$/i.test(base) || isReadyDocJunk(base)) continue; // архивы и служебный мусор
     let data;
     try { data = entry.getData(); } catch (e) { console.error("READY-DOCS entry read error:", base, e.message); continue; }
     try {
@@ -4974,6 +5060,14 @@ async function processReadyDocsArchivesForLead(leadId) {
           }
         }
         if (zips.length) entries = await listYandexDirEntries(dir); // перечитать после распаковки
+        // Удаляем служебный мусор архивов (._*, .DS_Store, __MACOSX и т.п.), уже залитый ранее.
+        for (const e of entries) {
+          if (e.type === "file" && isReadyDocJunk(e.name)) {
+            await deleteYandexResourceIfExists(`${dir}/${e.name}`);
+            console.log(`READY-DOCS junk removed ${dir}/${e.name}`);
+          }
+        }
+        entries = entries.filter((e) => !(e.type === "file" && isReadyDocJunk(e.name)));
         await dedupReadyDocsDir(dir, entries);
         for (const e of entries) {
           if (e.type === "dir") queue.push(`${dir}/${e.name}`);
@@ -4991,6 +5085,7 @@ async function collectReadyDocsForLead(leadId) {
   const root = readyDocsFolder(leadId);
   const rootEntries = await listYandexDirEntries(root);
   let hasZip = rootEntries.some((e) => e.type === "file" && /\.zip$/i.test(e.name));
+  let hasJunk = false;
   const dupSeen = new Map(); // dir|key -> count
   const markDup = (dir, name) => {
     const k = `${dir}|${readyDocsDedupKey(name)}`;
@@ -5001,22 +5096,25 @@ async function collectReadyDocsForLead(leadId) {
   const rootFiles = [];
   for (const e of rootEntries) {
     if (e.type === "file" && !/\.zip$/i.test(e.name)) {
-      rootFiles.push({ name: e.name, rel: e.name });
+      if (isReadyDocJunk(e.name)) { hasJunk = true; continue; } // ._*, .DS_Store и т.п. не показываем
+      rootFiles.push({ name: fixMojibakeName(e.name), rel: e.name }); // name — для показа (чиним кракозябры), rel — реальный путь
       markDup("", e.name);
     }
   }
   for (const e of rootEntries) {
     if (e.type !== "dir") continue;
+    if (isReadyDocJunk(e.name)) { hasJunk = true; continue; } // папка-мусор (__MACOSX)
     const fio = e.name;
     const appFolder = `${root}/${fio}`;
     const sub = await listYandexFolderRecursive(appFolder); // {name, fullPath, relativePath, size}
     const files = [];
     for (const f of sub) {
       if (/\.zip$/i.test(f.name)) { hasZip = true; continue; }
+      if (isReadyDocJunk(f.name) || /(^|\/)(__MACOSX|\._)/i.test(f.relativePath)) { hasJunk = true; continue; }
       // Файл из подпапки «Чек по страховке» показываем под именем «Чек по
       // страховке» (как просили). Пустая папка файлов не даёт — игнорируется.
       const inInsurance = f.relativePath.startsWith(`${INSURANCE_SUBFOLDER_NAME}/`);
-      const displayName = inInsurance ? INSURANCE_SUBFOLDER_NAME : f.name;
+      const displayName = inInsurance ? INSURANCE_SUBFOLDER_NAME : fixMojibakeName(f.name);
       files.push({ name: displayName, rel: `${fio}/${f.relativePath}` });
       const parentDir = f.relativePath.includes("/") ? `${fio}/${f.relativePath.slice(0, f.relativePath.lastIndexOf("/"))}` : fio;
       markDup(parentDir, f.name);
@@ -5027,7 +5125,7 @@ async function collectReadyDocsForLead(leadId) {
 
   let needsDedup = false;
   for (const c of dupSeen.values()) { if (c > 1) { needsDedup = true; break; } }
-  return { applicants, hasZip, needsDedup };
+  return { applicants, hasZip, needsDedup, hasJunk };
 }
 
 // Проверка доступа клиента к готовым документам сделки: владение номером +
@@ -12053,9 +12151,9 @@ app.get("/api/ready-docs", async (req, res) => {
     if (!acc.ok) return res.status(403).json({ success: false, message: "Нет доступа" });
     if (!acc.visible) return res.json({ success: true, visible: false, applicants: [] });
 
-    const { applicants, hasZip, needsDedup } = await collectReadyDocsForLead(parseInt(leadId, 10));
-    if (hasZip || needsDedup) {
-      // ленивый фоновый триггер: распаковать архивы / почистить дубли (не блокируем ответ)
+    const { applicants, hasZip, needsDedup, hasJunk } = await collectReadyDocsForLead(parseInt(leadId, 10));
+    if (hasZip || needsDedup || hasJunk) {
+      // ленивый фоновый триггер: распаковать архивы / почистить дубли и служебный мусор (не блокируем ответ)
       setImmediate(() => processReadyDocsArchivesForLead(parseInt(leadId, 10)).catch(() => {}));
     }
     return res.json({ success: true, visible: true, processing: !!hasZip, applicants });
@@ -12074,15 +12172,15 @@ app.get("/api/ready-docs/file", async (req, res) => {
     if (rel.includes("..") || rel.startsWith("/")) return res.status(400).send("bad path");
     const acc = await verifyReadyDocsAccess(phone, leadId);
     if (!acc.ok || !acc.visible) return res.status(403).send("forbidden");
+    const base = rel.split("/").pop();
+    if (isReadyDocJunk(base)) return res.status(404).send("not found");
     const diskPath = `${readyDocsFolder(parseInt(leadId, 10))}/${rel}`;
-    const linkResp = await yandexRequest({
-      method: "GET",
-      url: "https://cloud-api.yandex.net/v1/disk/resources/download",
-      params: { path: diskPath }
-    });
-    const href = linkResp.data && linkResp.data.href;
-    if (!href) return res.status(404).send("not found");
-    return res.redirect(href); // лёгкий путь: отдаём скачивание напрямую с Я.Диска
+    // Отдаём файл потоком через наш сервер (надёжно), а не редиректом на прямую
+    // ссылку Я.Диска — она иногда отвечает ERR_INVALID_RESPONSE. Имя — чиним кракозябры.
+    const buf = await downloadYandexFileBuffer(diskPath);
+    res.setHeader("Content-Type", guessContentType(base));
+    res.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + encodeURIComponent(fixMojibakeName(base)));
+    return res.end(buf);
   } catch (e) {
     if (e.response?.status === 404) return res.status(404).send("not found");
     console.error("GET /api/ready-docs/file error:", e.message);
@@ -12100,7 +12198,8 @@ app.get("/api/ready-docs/zip", async (req, res) => {
     const acc = await verifyReadyDocsAccess(phone, leadId);
     if (!acc.ok || !acc.visible) return res.status(403).send("forbidden");
     const folder = readyDocsApplicantFolder(parseInt(leadId, 10), fio);
-    const items = (await listYandexFolderRecursive(folder)).filter((f) => !/\.zip$/i.test(f.name));
+    const items = (await listYandexFolderRecursive(folder)).filter((f) =>
+      !/\.zip$/i.test(f.name) && !isReadyDocJunk(f.name) && !/(^|\/)(__MACOSX|\._)/i.test(f.relativePath));
     if (!items.length) return res.status(404).send("no files");
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + encodeURIComponent(`Документы - ${fio}.zip`));
@@ -12110,7 +12209,7 @@ app.get("/api/ready-docs/zip", async (req, res) => {
     for (const it of items) {
       try {
         const buf = await downloadYandexFileBuffer(it.fullPath);
-        archive.append(buf, { name: it.relativePath });
+        archive.append(buf, { name: fixMojibakeName(it.relativePath) });
       } catch (e) {
         console.error("READY-DOCS zip fetch error:", it.fullPath, e.message);
       }
