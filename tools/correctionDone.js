@@ -4,9 +4,11 @@
 // в обход API писем не шлёт.
 //
 // Запуск из каталога приложения (/var/www/voyo):
-//   node tools/correctionDone.js <id> [<id> ...] [--comment "что сделано"] [--no-status]
+//   node tools/correctionDone.js <id> [<id> ...] [--comment "что сделано"] [--no-status] [--to email]
 //     --comment    добавить комментарий от «Андрей Комисаренко» (текст «Что сделано»)
 //     --no-status  не менять данные (только отправить письмо по уже закрытой заявке)
+//     --to <email> отправить ТО ЖЕ письмо на указанный адрес (копия для проверки),
+//                  вместо автора-руководителя (напр. дублировать на director@visa-sc.ru)
 //
 // ВАЖНО: шаблон письма ниже — ЗЕРКАЛО server.js (emailDoc / correctionDoneEmailHtml /
 // escapeHtml). При изменении шаблона в server.js синхронизировать и здесь.
@@ -64,9 +66,11 @@ function correctionDoneEmailHtml(name, it) {
   const ids = [];
   let comment = "";
   let noStatus = false;
+  let toOverride = "";
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--comment") comment = args[++i] || "";
     else if (args[i] === "--no-status") noStatus = true;
+    else if (args[i] === "--to") toOverride = args[++i] || "";
     else ids.push(args[i]);
   }
   if (!ids.length) { console.error("Укажи id корректировки (см. .lkCorrections.json)"); process.exit(2); }
@@ -89,15 +93,16 @@ function correctionDoneEmailHtml(name, it) {
       }
     }
     const cb = it.createdBy || {};
-    if (cb.role === "manager" && cb.email) {
+    const recipient = toOverride || ((cb.role === "manager" && cb.email) ? cb.email : "");
+    if (recipient) {
       const r = await mail.sendMail({
-        to: cb.email,
+        to: recipient,
         subject: "Твоя корректировка по ЛК выполнена",
         html: correctionDoneEmailHtml(cb.name, it),
       });
-      console.log("письмо →", cb.email, "(" + id + "):", r.ok ? ("OK " + (r.id || "")) : ("FAIL " + r.error));
+      console.log("письмо →", recipient, "(" + id + "):", r.ok ? ("OK " + (r.id || "")) : ("FAIL " + r.error));
     } else {
-      console.log("письмо НЕ отправлено (нет manager-email в createdBy):", id, JSON.stringify(cb));
+      console.log("письмо НЕ отправлено (нет получателя — ни --to, ни manager-email):", id, JSON.stringify(cb));
     }
   }
 
