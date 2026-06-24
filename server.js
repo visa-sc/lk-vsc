@@ -3031,8 +3031,25 @@ function loadVfsBot() {
   return c;
 }
 function saveVfsBot(c) { try { fs.writeFileSync(VFS_BOT_FILE, JSON.stringify(c || {}, null, 2), "utf8"); return true; } catch (e) { console.error("saveVfsBot:", e.message); return false; } }
-app.get("/admin/api/vfs-bot", requireVscBot, (req, res) => {
-  return res.json(Object.assign({ success: true, emailService: false }, loadVfsBot()));
+// Баланс 2Captcha — чтобы предупредить в разделе бота, если деньги кончаются.
+// Кэш 5 мин (не дёргаем API на каждый заход). Ключ — в .env (TWOCAPTCHA_KEY).
+let _twoCaptchaBal = { val: null, ts: 0 };
+async function getTwoCaptchaBalance() {
+  const key = process.env.TWOCAPTCHA_KEY;
+  if (!key) return null;
+  const now = Date.now();
+  if (_twoCaptchaBal.val !== null && (now - _twoCaptchaBal.ts) < 5 * 60 * 1000) return _twoCaptchaBal.val;
+  try {
+    const r = await axios.get("https://2captcha.com/res.php", { params: { key, action: "getbalance", json: 1 }, timeout: 8000 });
+    const d = r.data || {};
+    const bal = parseFloat(d.request);
+    if (d.status === 1 && !isNaN(bal)) { _twoCaptchaBal = { val: bal, ts: now }; return bal; }
+  } catch (_) {}
+  return _twoCaptchaBal.val; // отдаём прошлое значение, если свежий запрос не удался
+}
+app.get("/admin/api/vfs-bot", requireVscBot, async (req, res) => {
+  let bal = null; try { bal = await getTwoCaptchaBalance(); } catch (_) {}
+  return res.json(Object.assign({ success: true, emailService: false, twoCaptchaBalance: bal }, loadVfsBot()));
 });
 app.post("/admin/api/vfs-bot", requireVscBot, (req, res) => {
   const b = req.body || {};
