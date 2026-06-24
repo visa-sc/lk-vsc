@@ -1141,18 +1141,22 @@
     // паспорт (ФИО, прописка, серия-номер). По отправке → задача в amoCRM на
     // ответственного со всей инфой; даты и блок страховки автоподставляются в
     // опросники ВСЕХ заявителей (server: opquickPrefill). На «Начале оформления».
-    function createOpQuickBlock(lead) {
+    function createOpQuickBlock(lead, questionnaireBlock) {
       const leadId = lead && lead.id;
       // Внешняя обёртка: кнопка-триггер «Заполнить данные для договора» + сама
       // карточка (по умолчанию скрыта). Триггер раскрывает карточку на том же
       // экране и прячет себя; «Скрыть» внутри карточки возвращает кнопку-триггер.
+      // Обёртке даём класс .questionnaire-inline — те же отступы и адаптив
+      // (на мобиле margin-left:0), что у блока «Заполнить опросник», чтобы
+      // кнопки стояли на одном уровне.
       const outer = document.createElement("div");
+      outer.className = "questionnaire-inline";
+      outer.style.display = "block";
       const trigger = document.createElement("button");
       trigger.type = "button";
+      // Единый стиль с «Заполнить опросник» (зелёная .questionnaire-btn).
+      trigger.className = "questionnaire-btn";
       trigger.textContent = "Заполнить данные для договора";
-      trigger.style.cssText = "display:inline-block;height:44px;padding:0 18px;margin:0 0 2px 32px;border:1.5px solid #3589BD;border-radius:14px;background:#fff;color:#3589BD;font-size:14px;font-weight:600;cursor:pointer;";
-      trigger.addEventListener("mouseenter", function () { trigger.style.background = "#f0f7fc"; });
-      trigger.addEventListener("mouseleave", function () { trigger.style.background = "#fff"; });
       outer.appendChild(trigger);
       const wrap = document.createElement("div");
       wrap.className = "documents-inline"; wrap.style.display = "none";
@@ -1229,16 +1233,20 @@
       hideBtn.style.cssText = "height:38px;padding:0 16px;border:1.5px solid #cfd4dd;border-radius:12px;background:#fff;color:#6b7280;font-size:13px;font-weight:600;cursor:pointer;";
       hideBtn.addEventListener("mouseenter", function () { hideBtn.style.background = "#f4f5f7"; });
       hideBtn.addEventListener("mouseleave", function () { hideBtn.style.background = "#fff"; });
-      hideBtn.addEventListener("click", function () { wrap.style.display = "none"; trigger.style.display = "inline-block"; });
+      // Сворачивание формы — возвращаем кнопку-триггер И блок опросника
+      // («Заполнить опросник» или «Скорректировать опросник», если уже заполнен).
+      hideBtn.addEventListener("click", function () { wrap.style.display = "none"; trigger.style.display = ""; if (questionnaireBlock) questionnaireBlock.style.display = "block"; });
       btnRow.appendChild(hideBtn);
       formEl.appendChild(btnRow);
       const resEl = document.createElement("div"); resEl.style.marginTop = "8px"; resEl.style.fontSize = "13px"; formEl.appendChild(resEl);
       wrap.appendChild(formEl);
       outer.appendChild(wrap);
-      // Триггер раскрывает карточку на том же экране и прячет сам себя.
-      trigger.addEventListener("click", function () { wrap.style.display = "block"; trigger.style.display = "none"; });
-      // После успешной отправки (или если уже отправляли ранее) — убираем весь блок целиком.
-      function removeCard() { try { outer.remove(); } catch (_) { outer.style.display = "none"; } }
+      // Триггер раскрывает карточку на том же экране, прячет сам себя И блок
+      // опросника (чтобы на этом шаге был виден только один открытый блок).
+      trigger.addEventListener("click", function () { wrap.style.display = "block"; trigger.style.display = "none"; if (questionnaireBlock) questionnaireBlock.style.display = "none"; });
+      // После успешной отправки (или если уже отправляли ранее) — убираем весь
+      // блок целиком и возвращаем кнопку опросника.
+      function removeCard() { try { outer.remove(); } catch (_) { outer.style.display = "none"; } if (questionnaireBlock) questionnaireBlock.style.display = "block"; }
       if (leadId) {
         fetch("/api/cabinet/op-quick?leadId=" + encodeURIComponent(leadId))
           .then((r) => r.json()).then((j) => { if (j && j.submitted) removeCard(); }).catch(() => {});
@@ -3337,7 +3345,7 @@
           // затем нормальные applicants (если у нормального ФИО совпадает
           // с pre — он не дублируется, потому что сервер фильтрует pre).
           // Если нет ни одного — empty block с модалом ФИО.
-          opQuickCard = createOpQuickBlock(lead); // данные для договора (s49) — вставим выше, над кнопкой/паспортами
+          opQuickCard = createOpQuickBlock(lead, questionnaireBlock); // данные для договора (s49) — вставим выше, над кнопкой/паспортами
           const stage0Blocks = [
             { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" },
             { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" }
