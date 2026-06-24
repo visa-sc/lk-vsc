@@ -2655,8 +2655,9 @@
             "#vscContent .vc-hist{background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:18px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.06);}" +
             "#vscContent .vc-hist-h{padding:12px 16px;font-weight:680;color:#1d1d1f;border-bottom:1px solid rgba(0,0,0,.06);letter-spacing:-.01em;}" +
             "#vscContent .vc-hist table{width:100%;border-collapse:collapse;font-size:13.5px;}" +
-            "#vscContent .vc-hist th{color:#8a8a8e;font-size:11px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;padding:10px 16px;text-align:left;}" +
-            "#vscContent .vc-hist td{padding:10px 16px;color:#1d1d1f;}" +
+            "#vscContent .vc-hist th{color:#8a8a8e;font-size:11px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;padding:10px 16px;text-align:left;white-space:nowrap;}" +
+            "#vscContent .vc-hist td{padding:10px 16px;color:#1d1d1f;white-space:nowrap;}" +
+            "#vscContent .vc-hist-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}" +
             "#vscContent .vc-muted{color:#8a8a8e;font-size:13px;padding:14px 16px;}";
           document.head.appendChild(st);
         }
@@ -2735,9 +2736,9 @@
             const r = await apiFetch("/admin/api/vsc-rates-history");
             const hist = (r && r.history) || [];
             if (!hist.length) { p.innerHTML = '<div class="vc-muted">Нет данных по истории.</div>'; calcHistLoaded = true; return; }
-            let html = '<div class="vc-hist"><div class="vc-hist-h">Курс ЦБ РФ за последние 30 дней</div><table><thead><tr><th>Дата</th><th>Актуализация в калькуляторе</th><th style="text-align:right;">Евро</th><th style="text-align:right;">USDT / доллар</th></tr></thead><tbody>';
+            let html = '<div class="vc-hist"><div class="vc-hist-h">Курс ЦБ РФ за последние 30 дней</div><div class="vc-hist-scroll"><table><thead><tr><th>Дата</th><th>Актуализация в калькуляторе</th><th style="text-align:right;">Евро</th><th style="text-align:right;">USDT / доллар</th></tr></thead><tbody>';
             hist.forEach((e, i) => { html += '<tr style="' + (i ? "border-top:1px solid rgba(0,0,0,.05);" : "") + '"><td>' + escapeHtml(e.date) + '</td><td style="color:#8a8a8e;">' + (e.time ? escapeHtml(e.date) + " " + escapeHtml(e.time) : "—") + '</td><td style="text-align:right;">' + fr(e.eur, 2) + '</td><td style="text-align:right;">' + fr(e.usd, 2) + '</td></tr>'; });
-            html += '</tbody></table></div>';
+            html += '</tbody></table></div></div>';
             p.innerHTML = html; calcHistLoaded = true;
           } catch (e) { p.innerHTML = '<div class="vc-muted" style="color:#c0392b;">Не удалось загрузить историю.</div>'; }
         });

@@ -58,8 +58,8 @@
   #btnRefresh { background: var(--blue); color: #fff; }
   #btnRefresh:hover { background: var(--blue-d); }
   table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-  th { color: var(--ink3); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; padding: 11px 16px; text-align: left; }
-  td { padding: 11px 16px; color: var(--ink); }
+  th { color: var(--ink3); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; padding: 11px 16px; text-align: left; white-space: nowrap; }
+  td { padding: 11px 16px; color: var(--ink); white-space: nowrap; }
   .muted { color: var(--ink3); font-size: 13px; padding: 14px 16px; }
   .ft { text-align: center; color: var(--ink3); font-size: 12px; margin-top: 26px; letter-spacing: -.01em; }
 </style>
@@ -164,9 +164,9 @@
       var r = await fetch("/api/calc-rates-history").then(function(x){ return x.json(); });
       var hist = (r && r.history) || [];
       if (!hist.length) { p.innerHTML = '<div class="muted">Нет данных по истории.</div>'; histLoaded = true; return; }
-      var html = '<div class="card" style="padding:0;overflow:hidden;"><div style="padding:10px 14px;font-weight:700;border-bottom:1px solid #f0eef5;">Курс ЦБ РФ за последние 30 дней</div><table><thead><tr><th>Дата</th><th>Актуализация в калькуляторе</th><th style="text-align:right;">Евро</th><th style="text-align:right;">USDT / доллар</th></tr></thead><tbody>';
+      var html = '<div class="card" style="padding:0;overflow:hidden;"><div style="padding:10px 14px;font-weight:700;border-bottom:1px solid #f0eef5;">Курс ЦБ РФ за последние 30 дней</div><div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table><thead><tr><th>Дата</th><th>Актуализация в калькуляторе</th><th style="text-align:right;">Евро</th><th style="text-align:right;">USDT / доллар</th></tr></thead><tbody>';
       hist.forEach(function(e, i){ html += '<tr style="' + (i ? "border-top:1px solid #f0eef5;" : "") + '"><td>' + e.date + '</td><td style="color:#6b7280;">' + (e.time ? (e.date + " " + e.time) : "—") + '</td><td style="text-align:right;">' + fr(e.eur, 2) + '</td><td style="text-align:right;">' + fr(e.usd, 2) + '</td></tr>'; });
-      html += '</tbody></table></div>';
+      html += '</tbody></table></div></div>';
       p.innerHTML = html; histLoaded = true;
     } catch (e) { p.innerHTML = '<div class="muted" style="color:#b0263a;">Не удалось загрузить историю.</div>'; }
   });
