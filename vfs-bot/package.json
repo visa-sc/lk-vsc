@@ -1,0 +1,16 @@
+{
+  "name": "voyo-vfs-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VFS France (Moscow, type C) appointment slot monitor — runs on a SEPARATE machine, NOT on the VOYO production server.",
+  "main": "monitor.js",
+  "scripts": {
+    "start": "node monitor.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "nodemailer": "^6.9.16",
+    "playwright": "^1.48.0",
+    "@2captcha/captcha-solver": "^1.1.0"
+  }
+}

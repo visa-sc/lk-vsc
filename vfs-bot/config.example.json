@@ -1,0 +1,17 @@
+{
+  "monitorAll": true,
+  "recipients": ["anastasia.p@visa-sc.ru"],
+  "clients": [
+    {
+      "firstName": "DARIA",
+      "lastName": "POTAPOVA",
+      "citizenship": "Russian Federation",
+      "passport": "0000000000",
+      "vfsLogin": "ВПИШИ_ЛОГИН_VFS",
+      "vfsPassword": "ВПИШИ_ПАРОЛЬ_VFS",
+      "dateFrom": "01/09/2026",
+      "dateTo": "30/09/2026",
+      "status": "Мониторинг слотов"
+    }
+  ]
+}

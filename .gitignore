@@ -42,3 +42,9 @@ npm-debug.log*
 
 # Бот VFS — клиенты/получатели (рантайм-состояние, содержит ПДн клиентов)
 .vfsBot.json
+
+# VFS-монитор (отдельная машина): зависимости, секреты, конфиг с ПДн/паролями, состояние
+vfs-bot/node_modules/
+vfs-bot/.env
+vfs-bot/config.json
+vfs-bot/state.json
