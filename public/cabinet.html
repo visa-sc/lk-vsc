@@ -1838,9 +1838,13 @@
           });
         });
         requiredSectionEl.classList.toggle("required-done", allDone);
+        // Приписку «(остальные — по желанию)» показываем ТОЛЬКО если в этом же
+        // блоке реально есть хотя бы один необязательный документ. Если блок
+        // целиком обязательный (напр. паспорта) — приписки нет, она там лишняя.
+        const hasOptional = inputs.some((it) => isFieldOptionalForLead(it.cfg.field, lead, applicant, it.cfg));
         requiredSectionEl.textContent = allDone
           ? "✓ Все обязательные документы прикреплены."
-          : "Необходимо загрузить обязательные документы ниже (остальные — по желанию).";
+          : ("Необходимо загрузить обязательные документы ниже" + (hasOptional ? " (остальные — по желанию)." : "."));
       }
 
       blocksConfig.forEach((cfg) => {

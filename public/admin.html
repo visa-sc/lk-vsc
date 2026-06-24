@@ -1113,6 +1113,10 @@
   </div>
 
   <script>
+    // Не даём браузеру восстанавливать прошлую позицию прокрутки при перезагрузке/
+    // возврате (из-за этого страница входа/ЛК иногда открывалась проскроленной вниз
+    // и логотип уходил за верх окна). Грузимся всегда с самого верха.
+    try { if ("scrollRestoration" in history) history.scrollRestoration = "manual"; } catch (_) {}
     (function() {
       // Определяем по пути И по поддомену: dev.voyotravel.ru = /team, vsc.voyotravel.ru = /vsc
       // (на поддомене путь "/", поэтому учитываем hostname). /team и /vsc на основных доменах — как раньше.
@@ -1253,6 +1257,7 @@
       }
 
       function showLogin() {
+        try { window.scrollTo(0, 0); } catch (_) {}
         loginBlock.style.display = "";
         dashBlock.classList.remove("show");
         bioOffer.classList.remove("show");
