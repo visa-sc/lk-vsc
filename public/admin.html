@@ -926,9 +926,9 @@
         <input id="mgrPass" class="login-input" type="password" autocomplete="current-password" placeholder="Пароль" />
         <div id="mgrPassHint" class="login-hint">Первый вход — придумайте пароль, он сохранится.</div>
         <button id="mgrLoginBtn" type="submit" class="login-btn">Войти</button>
-        <button id="mgrForgotBtn" type="button" style="margin-top:10px;background:none;border:none;color:#3589BD;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Забыли пароль?</button>
-        <div id="mgrResetMsg" style="display:none;margin-top:8px;font-size:13px;line-height:1.45;"></div>
         <button id="mgrBioBtn" type="button" style="display:none;margin-top:12px;width:100%;padding:11px;background:#fff;border:1px solid #cdddef;border-radius:10px;color:#3589BD;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Войти по Face ID / отпечатку</button>
+        <button id="mgrForgotBtn" type="button" style="margin-top:14px;background:none;border:none;color:#3589BD;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Забыли пароль?</button>
+        <div id="mgrResetMsg" style="display:none;margin-top:8px;font-size:13px;line-height:1.45;"></div>
       </form>
 
       <button id="bioLoginBtn" type="button" class="bio-btn">
@@ -1302,7 +1302,7 @@
       // НЕТ поля кода доступа, НЕТ админской кнопки Face ID. Кнопка «Войти по Face ID»
       // (mgrBioBtn) показывается ТОЛЬКО если на этом устройстве уже привязан Face ID.
       function setupManagerLoginUI() {
-        const sub = document.querySelector("#loginBlock .sub"); if (sub) sub.textContent = "Вход для сотрудников";
+        const sub = document.querySelector("#loginBlock .sub"); if (sub) sub.textContent = "Вход для руководителей";
         const cf = document.getElementById("loginForm"); if (cf) cf.style.display = "none";
         const bb = document.getElementById("bioLoginBtn"); if (bb) bb.style.display = "none";
         const mf = document.getElementById("managerLoginForm"); if (mf) mf.style.display = "";
@@ -3185,6 +3185,21 @@
           return false;
         } catch (err) { console.warn("manager bio login failed/cancelled:", err); return false; }
       }
+      // Автовход по Face ID при открытии страницы персонала (dev./vsc./team) —
+      // как на /vsc и /admin: если на этом устройстве уже включён Face ID (есть
+      // voyo_mgr_bio_email), сразу предлагаем биометрию. На отмену/сбой остаётся
+      // обычная форма (e-mail+пароль) и кнопка «Войти по Face ID» как fallback.
+      async function tryAutoMgrBioOnLoad() {
+        let email = "";
+        try { email = localStorage.getItem("voyo_mgr_bio_email") || ""; } catch (_) {}
+        if (!email) return false;
+        if (!(await isPlatformAuthAvailable())) return false;
+        // Небольшая задержка, чтобы форма успела отрисоваться до системного popup'а.
+        await new Promise((r) => setTimeout(r, 120));
+        const ok = await tryManagerBioLogin(email);
+        if (ok) { showDash(); return true; }
+        return false;
+      }
       async function tryManagerBioRegister() {
         window.__mgrBioErr = "";
         const t = getToken(); if (!t) { window.__mgrBioErr = "нет токена сессии"; return false; }
@@ -4982,6 +4997,7 @@
             try { const d = await apiFetch("/admin/api/whoami"); if (d && d.success) { managerPerms = Array.isArray(d.perms) ? d.perms : []; myRole = d.role || "manager"; showDash(); return; } } catch (_) {}
           }
           showLogin();
+          await tryAutoMgrBioOnLoad();
           return;
         }
         // /vsc (путь, админ-дашборд Андрея) и /admin — вход ТОЛЬКО по коду доступа + Face ID админа.
