@@ -3180,12 +3180,12 @@
           bioSkipBtn.disabled = false;
           if (ok && window.__mgrBioEmail) {
             try { localStorage.setItem("voyo_mgr_bio_email", window.__mgrBioEmail); } catch (_) {}
-            bioOffer.classList.remove("show");
-            showDash();
           } else {
-            // Раньше тут «ничего не происходило» — теперь явно сообщаем об ошибке.
-            alert("Не удалось включить Face ID на этом устройстве. Убедитесь, что оно поддерживает Face ID / отпечаток, и попробуйте ещё раз.");
+            // Не удалось привязать биометрию — НЕ блокируем вход, просто сообщаем и пускаем в ЛК.
+            alert("Не удалось подключить Face ID на этом устройстве (возможно, оно не поддерживает биометрию или запрос отменён). Можно продолжить с паролем — Face ID подключите позже.");
           }
+          bioOffer.classList.remove("show");
+          showDash();
           return;
         }
         const ok = await tryAdminBioRegister();
