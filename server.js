@@ -3043,7 +3043,9 @@ app.post("/admin/api/vfs-bot", requireVscBot, (req, res) => {
     birthDate: String(c.birthDate || "").trim(), citizenship: String(c.citizenship || "").trim(),
     passport: String(c.passport || "").trim(), passportExpiry: String(c.passportExpiry || "").trim(),
     phone: String(c.phone || "").trim(), email: String(c.email || "").trim(),
-    dateFrom: String(c.dateFrom || "").trim(), dateTo: String(c.dateTo || "").trim()
+    vfsLogin: String(c.vfsLogin || "").trim(), vfsPassword: String(c.vfsPassword || "").trim(),
+    dateFrom: String(c.dateFrom || "").trim(), dateTo: String(c.dateTo || "").trim(),
+    status: String(c.status || "").trim()
   }));
   if (typeof b.enabled === "boolean") cur.enabled = b.enabled;
   const ok = saveVfsBot(cur);

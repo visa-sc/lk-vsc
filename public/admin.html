@@ -2758,6 +2758,30 @@
       // ── Вкладка «Бот VFS · Франция»: настройка получателей уведомлений + предзагрузка
       // клиентов. Мониторинг слотов/авто-запись и отправка писем — следующий этап.
       let vscBotCfg = null;
+      let botEditIndex = -1; // -1 = добавление нового; иначе индекс редактируемого клиента
+      // Статусы клиента по боту. «Мониторинг слотов»/«В работе» = бот активен по клиенту
+      // → в кабинет VFS руками заходить НЕ нужно (может разлогинить/заблокировать).
+      const BOT_STATUSES = ["Добавлен", "Мониторинг слотов", "В работе", "Записан", "Пауза", "Ошибка"];
+      const BOT_BOT_ACTIVE = ["Мониторинг слотов", "В работе"];
+      // Список национальностей (страны на английском) — как просит формат VFS.
+      const BOT_COUNTRIES = ["Afghanistan","Albania","Algeria","Andorra","Angola","Antigua and Barbuda","Argentina","Armenia","Australia","Austria","Azerbaijan","Bahamas","Bahrain","Bangladesh","Barbados","Belarus","Belgium","Belize","Benin","Bhutan","Bolivia","Bosnia and Herzegovina","Botswana","Brazil","Brunei","Bulgaria","Burkina Faso","Burundi","Cambodia","Cameroon","Canada","Cape Verde","Central African Republic","Chad","Chile","China","Colombia","Comoros","Congo","Costa Rica","Croatia","Cuba","Cyprus","Czech Republic","Denmark","Djibouti","Dominica","Dominican Republic","Ecuador","Egypt","El Salvador","Equatorial Guinea","Eritrea","Estonia","Eswatini","Ethiopia","Fiji","Finland","France","Gabon","Gambia","Georgia","Germany","Ghana","Greece","Grenada","Guatemala","Guinea","Guinea-Bissau","Guyana","Haiti","Honduras","Hungary","Iceland","India","Indonesia","Iran","Iraq","Ireland","Israel","Italy","Ivory Coast","Jamaica","Japan","Jordan","Kazakhstan","Kenya","Kiribati","Kosovo","Kuwait","Kyrgyzstan","Laos","Latvia","Lebanon","Lesotho","Liberia","Libya","Liechtenstein","Lithuania","Luxembourg","Madagascar","Malawi","Malaysia","Maldives","Mali","Malta","Marshall Islands","Mauritania","Mauritius","Mexico","Micronesia","Moldova","Monaco","Mongolia","Montenegro","Morocco","Mozambique","Myanmar","Namibia","Nauru","Nepal","Netherlands","New Zealand","Nicaragua","Niger","Nigeria","North Korea","North Macedonia","Norway","Oman","Pakistan","Palau","Palestine","Panama","Papua New Guinea","Paraguay","Peru","Philippines","Poland","Portugal","Qatar","Romania","Russia","Rwanda","Saint Kitts and Nevis","Saint Lucia","Saint Vincent and the Grenadines","Samoa","San Marino","Sao Tome and Principe","Saudi Arabia","Senegal","Serbia","Seychelles","Sierra Leone","Singapore","Slovakia","Slovenia","Solomon Islands","Somalia","South Africa","South Korea","South Sudan","Spain","Sri Lanka","Sudan","Suriname","Sweden","Switzerland","Syria","Taiwan","Tajikistan","Tanzania","Thailand","Timor-Leste","Togo","Tonga","Trinidad and Tobago","Tunisia","Turkey","Turkmenistan","Tuvalu","Uganda","Ukraine","United Arab Emirates","United Kingdom","United States","Uruguay","Uzbekistan","Vanuatu","Vatican City","Venezuela","Vietnam","Yemen","Zambia","Zimbabwe"];
+      // Маска даты → ДД/ММ/ГГГГ (из набранных цифр).
+      function botDateMask(v) {
+        const d = String(v || "").replace(/\D/g, "").slice(0, 8);
+        let out = d.slice(0, 2);
+        if (d.length > 2) out += "/" + d.slice(2, 4);
+        if (d.length > 4) out += "/" + d.slice(4, 8);
+        return out;
+      }
+      // Валидна ли дата ДД/ММ/ГГГГ (пустая считается валидной — поле необязательно).
+      function botDateValid(s) {
+        s = String(s || "").trim(); if (!s) return true;
+        const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s); if (!m) return false;
+        const dd = +m[1], mm = +m[2], yy = +m[3];
+        if (mm < 1 || mm > 12 || dd < 1 || dd > 31 || yy < 1900 || yy > 2100) return false;
+        const dt = new Date(yy, mm - 1, dd);
+        return dt.getFullYear() === yy && dt.getMonth() === mm - 1 && dt.getDate() === dd;
+      }
       async function renderVscBot() {
         const box = document.createElement("div"); vscContent.appendChild(box);
         box.innerHTML = '<div class="ref-sec-h">Бот VFS · Франция</div><div class="loading-state">Загружаем…</div>';
@@ -2795,40 +2819,100 @@
       }
       function paintBot(box) {
         const cfg = vscBotCfg || { recipients: [], clients: [] };
+        if (!Array.isArray(cfg.clients)) cfg.clients = [];
         const card = "background:#fff;border:1px solid #e6e9f0;border-radius:14px;padding:16px;margin-bottom:14px;";
-        const inp = "box-sizing:border-box;padding:9px 11px;font-size:14px;border:1px solid #d4d8e2;border-radius:9px;";
-        const btnP = "padding:9px 16px;font-size:13px;font-weight:700;border-radius:10px;cursor:pointer;background:#3589BD;color:#fff;border:1px solid #3589BD;";
-        const btnS = "padding:6px 11px;font-size:12px;font-weight:600;border-radius:9px;cursor:pointer;background:#fff;color:#b0263a;border:1px solid #e6c4c4;";
+        const inp = "box-sizing:border-box;width:100%;padding:9px 11px;font-size:14px;border:1px solid #d4d8e2;border-radius:9px;font-family:inherit;background:#fff;";
+        const btnP = "padding:9px 16px;font-size:13px;font-weight:700;border-radius:10px;cursor:pointer;background:#3589BD;color:#fff;border:1px solid #3589BD;font-family:inherit;";
+        const btnS = "padding:7px 13px;font-size:12px;font-weight:600;border-radius:9px;cursor:pointer;background:#fff;color:#b0263a;border:1px solid #e6c4c4;font-family:inherit;";
+        const btnE = "padding:7px 13px;font-size:12px;font-weight:600;border-radius:9px;cursor:pointer;background:#fff;color:#3589BD;border:1px solid #bcdcef;font-family:inherit;";
+        const lnk = "background:none;border:none;color:#3589BD;font-size:11px;font-weight:600;cursor:pointer;padding:0 0 0 4px;font-family:inherit;text-decoration:underline;";
+        const editing = botEditIndex >= 0 && botEditIndex < cfg.clients.length;
+        const ec = editing ? cfg.clients[botEditIndex] : {};
         let h = '<div class="ref-sec-h">Бот VFS · Франция</div>';
-        h += '<div style="background:#fff8ec;border:1px solid #f0d9a8;border-radius:14px;padding:14px 16px;margin-bottom:14px;font-size:12.5px;color:#8a5a12;line-height:1.55;">'
-          + '<b>Статус:</b> сейчас — <b>предзагрузка клиентов</b>. '
-          + 'Мониторинг слотов VFS (Франция, раз в минуту) и авто-запись — следующий этап: нужны доступы к аккаунтам VFS и почтовый сервис (подключим позже). '
-          + 'Как подключим почту — при появлении мест бот отправит уведомление.</div>';
-        // клиенты
-        h += '<div style="' + card + '"><div style="font-weight:700;color:#1d2330;margin-bottom:8px;">Клиенты на запись (предзагрузка)</div>';
+        h += '<div style="background:#fff8ec;border:1px solid #f0d9a8;border-radius:14px;padding:14px 16px;margin-bottom:14px;font-size:12.5px;color:#8a5a12;line-height:1.6;">'
+          + '<b>Статус:</b> сейчас — <b>предзагрузка клиентов</b>. Мониторинг слотов VFS (Франция) и авто-запись — следующий этап (нужны доступы к аккаунтам VFS и почтовый сервис).'
+          + '<br><b>Вход в кабинет VFS вручную:</b> пока бот по клиенту не запущен (статусы «Добавлен», «Пауза», «Записан») — заходить можно. При статусе «Мониторинг слотов» или «В работе» — <b>не заходите одновременно с ботом</b> (VFS может разлогинить/заблокировать сессию).</div>';
+        // ── Список клиентов (карточки) ──
+        h += '<div style="' + card + '"><div style="font-weight:700;color:#1d2330;margin-bottom:10px;">Клиенты на запись (' + cfg.clients.length + ')</div>';
         if (cfg.clients.length) {
-          h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;"><thead><tr style="color:#6b7280;text-transform:uppercase;font-size:10px;">'
-            + ["Имя", "Фамилия", "Дата рожд.", "Гражд.", "Паспорт", "Срок", "Телефон", "Почта", "Диапазон", ""].map((t) => '<th style="text-align:left;padding:5px 7px;white-space:nowrap;">' + t + '</th>').join("") + '</tr></thead><tbody>';
           cfg.clients.forEach((c, i) => {
-            h += '<tr style="border-top:1px solid #f0eef5;">'
-              + [c.firstName, c.lastName, c.birthDate, c.citizenship, c.passport, c.passportExpiry, c.phone, c.email, ((c.dateFrom || "?") + "–" + (c.dateTo || "?"))].map((v) => '<td style="padding:5px 7px;color:#1d2330;white-space:nowrap;">' + escapeHtml(v || "") + '</td>').join("")
-              + '<td style="padding:5px 7px;"><button type="button" data-rm-cl="' + i + '" style="' + btnS + '">×</button></td></tr>';
+            const st = c.status || "Добавлен";
+            const botActive = BOT_BOT_ACTIVE.indexOf(st) >= 0;
+            h += '<div style="border:1px solid #e6e9f0;border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fbfcfe;">'
+              + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">'
+                + '<div style="font-weight:700;font-size:14px;color:#1d2330;">' + escapeHtml(((c.firstName || "") + " " + (c.lastName || "")).trim() || "Без имени") + '</div>'
+                + '<select data-st="' + i + '" style="' + inp + 'width:auto;padding:6px 9px;font-size:12.5px;">' + BOT_STATUSES.map((s) => '<option' + (s === st ? ' selected' : '') + '>' + s + '</option>').join("") + '</select>'
+              + '</div>'
+              + '<div style="font-size:12.5px;color:#5a626f;line-height:1.8;margin-top:7px;">'
+                + 'Паспорт: <b style="color:#1d2330;">' + escapeHtml(c.passport || "—") + '</b> · срок: ' + escapeHtml(c.passportExpiry || "—") + '<br>'
+                + 'Дата рожд.: ' + escapeHtml(c.birthDate || "—") + ' · Гражданство: ' + escapeHtml(c.citizenship || "—") + '<br>'
+                + 'Тел.: ' + escapeHtml(c.phone || "—") + ' · Почта: ' + escapeHtml(c.email || "—") + '<br>'
+                + 'Запись: ' + escapeHtml(c.dateFrom || "?") + ' – ' + escapeHtml(c.dateTo || "?") + '<br>'
+                + 'VFS логин: <b style="color:#1d2330;">' + escapeHtml(c.vfsLogin || "—") + '</b> · пароль: <span data-pw="' + i + '" data-pwval="' + escapeHtml(c.vfsPassword || "") + '">' + (c.vfsPassword ? "••••••" : "—") + '</span>' + (c.vfsPassword ? '<button type="button" data-pwtoggle="' + i + '" style="' + lnk + '">показать</button>' : '')
+              + '</div>'
+              + '<div style="margin-top:8px;font-size:11.5px;font-weight:600;color:' + (botActive ? '#b0263a' : '#2e7d52') + ';">' + (botActive ? '🚫 Бот работает по клиенту — НЕ заходите в кабинет VFS вручную сейчас.' : '✓ В кабинет VFS можно заходить вручную.') + '</div>'
+              + '<div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;">'
+                + '<button type="button" data-ed-cl="' + i + '" style="' + btnE + '">✎ Изменить</button>'
+                + '<button type="button" data-rm-cl="' + i + '" style="' + btnS + '">Удалить</button>'
+              + '</div>'
+            + '</div>';
           });
-          h += '</tbody></table></div>';
         } else h += '<div style="color:#9096a3;font-size:13px;">Пока нет клиентов.</div>';
-        const f = (id, ph) => '<input id="' + id + '" placeholder="' + ph + '" style="' + inp + '">';
-        h += '<div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">'
-          + f("bcFirst", "Имя") + f("bcLast", "Фамилия") + f("bcBirth", "Дата рождения") + f("bcCit", "Гражданство")
-          + f("bcPass", "Номер паспорта") + f("bcExp", "Срок действия паспорта") + f("bcPhone", "Телефон") + f("bcEmail", "Почта")
-          + f("bcFrom", "Записывать с (дата)") + f("bcTo", "Записывать по (дата)")
-          + '</div><div style="margin-top:10px;"><button type="button" id="botClAdd" style="' + btnP + '">Добавить клиента</button></div></div>';
+        h += '</div>';
+        // ── Форма добавления / редактирования ──
+        const fv = (id, ph, val) => '<input id="' + id + '" placeholder="' + ph + '" value="' + escapeHtml(val || "") + '" style="' + inp + '">';
+        const citSel = '<select id="bcCit" style="' + inp + '"><option value="">Гражданство (страна)…</option>' + BOT_COUNTRIES.map((c) => '<option' + (c === (ec.citizenship || "") ? ' selected' : '') + '>' + c + '</option>').join("") + '</select>';
+        const stSel = '<select id="bcStatus" style="' + inp + '">' + BOT_STATUSES.map((s) => '<option' + (s === (ec.status || "Добавлен") ? ' selected' : '') + '>' + s + '</option>').join("") + '</select>';
+        h += '<div style="' + card + '"><div style="font-weight:700;color:#1d2330;margin-bottom:4px;">' + (editing ? 'Изменить клиента' : 'Добавить клиента') + '</div>'
+          + '<div style="font-size:12px;color:#9096a3;margin-bottom:10px;">Даты — в формате ДД/ММ/ГГГГ; гражданство — из списка (на английском).</div>'
+          + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;">'
+            + fv("bcFirst", "Имя", ec.firstName) + fv("bcLast", "Фамилия", ec.lastName)
+            + fv("bcBirth", "Дата рожд. ДД/ММ/ГГГГ", ec.birthDate) + citSel
+            + fv("bcPass", "Номер паспорта", ec.passport) + fv("bcExp", "Срок паспорта ДД/ММ/ГГГГ", ec.passportExpiry)
+            + fv("bcPhone", "Телефон", ec.phone) + fv("bcEmail", "Почта", ec.email)
+            + fv("bcLogin", "Логин VFS", ec.vfsLogin) + fv("bcPwd", "Пароль VFS", ec.vfsPassword)
+            + fv("bcFrom", "Записывать с ДД/ММ/ГГГГ", ec.dateFrom) + fv("bcTo", "Записывать по ДД/ММ/ГГГГ", ec.dateTo)
+            + stSel
+          + '</div>'
+          + '<div id="bcErr" style="display:none;color:#b0263a;font-size:12.5px;margin-top:8px;font-weight:600;"></div>'
+          + '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">'
+            + '<button type="button" id="botClSave" style="' + btnP + '">' + (editing ? 'Сохранить изменения' : 'Добавить клиента') + '</button>'
+            + (editing ? '<button type="button" id="botClCancel" style="' + btnE + '">Отмена</button>' : '')
+          + '</div></div>';
         box.innerHTML = h;
         const $ = (id) => box.querySelector("#" + id);
-        box.querySelectorAll("[data-rm-cl]").forEach((b) => b.addEventListener("click", () => { cfg.clients.splice(+b.getAttribute("data-rm-cl"), 1); vscBotPersist(box); }));
-        $("botClAdd").addEventListener("click", () => {
-          const c = { firstName: $("bcFirst").value.trim(), lastName: $("bcLast").value.trim(), birthDate: $("bcBirth").value.trim(), citizenship: $("bcCit").value.trim(), passport: $("bcPass").value.trim(), passportExpiry: $("bcExp").value.trim(), phone: $("bcPhone").value.trim(), email: $("bcEmail").value.trim(), dateFrom: $("bcFrom").value.trim(), dateTo: $("bcTo").value.trim() };
-          if (!c.firstName || !c.lastName) { alert("Минимум имя и фамилия"); return; }
-          cfg.clients.push(c); vscBotPersist(box);
+        // Маска дат → ДД/ММ/ГГГГ по мере ввода.
+        ["bcBirth", "bcExp", "bcFrom", "bcTo"].forEach((id) => { const el = $(id); if (el) el.addEventListener("input", () => { el.value = botDateMask(el.value); }); });
+        // Показать/скрыть пароль VFS.
+        box.querySelectorAll("[data-pwtoggle]").forEach((b) => b.addEventListener("click", () => {
+          const i = b.getAttribute("data-pwtoggle"); const span = box.querySelector('[data-pw="' + i + '"]'); if (!span) return;
+          const val = span.getAttribute("data-pwval") || "";
+          if (b.textContent === "показать") { span.textContent = val || "—"; b.textContent = "скрыть"; }
+          else { span.textContent = val ? "••••••" : "—"; b.textContent = "показать"; }
+        }));
+        // Смена статуса — сохраняем сразу.
+        box.querySelectorAll("[data-st]").forEach((s) => s.addEventListener("change", () => { const i = +s.getAttribute("data-st"); if (cfg.clients[i]) { cfg.clients[i].status = s.value; vscBotPersist(box); } }));
+        // Удалить клиента.
+        box.querySelectorAll("[data-rm-cl]").forEach((b) => b.addEventListener("click", () => { if (!confirm("Удалить клиента?")) return; cfg.clients.splice(+b.getAttribute("data-rm-cl"), 1); botEditIndex = -1; vscBotPersist(box); }));
+        // Изменить клиента → форма редактирования.
+        box.querySelectorAll("[data-ed-cl]").forEach((b) => b.addEventListener("click", () => { botEditIndex = +b.getAttribute("data-ed-cl"); paintBot(box); try { box.scrollIntoView({ behavior: "smooth", block: "end" }); } catch (_) {} }));
+        if (editing && $("botClCancel")) $("botClCancel").addEventListener("click", () => { botEditIndex = -1; paintBot(box); });
+        // Сохранить (добавить/изменить) с проверками: имя+фамилия, формат дат, уникальный паспорт.
+        $("botClSave").addEventListener("click", () => {
+          const errEl = $("bcErr"); const showErr = (m) => { errEl.textContent = m; errEl.style.display = ""; };
+          errEl.style.display = "none";
+          const c = { firstName: $("bcFirst").value.trim(), lastName: $("bcLast").value.trim(), birthDate: $("bcBirth").value.trim(), citizenship: $("bcCit").value, passport: $("bcPass").value.trim(), passportExpiry: $("bcExp").value.trim(), phone: $("bcPhone").value.trim(), email: $("bcEmail").value.trim(), vfsLogin: $("bcLogin").value.trim(), vfsPassword: $("bcPwd").value.trim(), dateFrom: $("bcFrom").value.trim(), dateTo: $("bcTo").value.trim(), status: $("bcStatus").value };
+          if (!c.firstName || !c.lastName) { showErr("Укажите минимум имя и фамилию."); return; }
+          const dl = [["birthDate", "дата рождения"], ["passportExpiry", "срок паспорта"], ["dateFrom", "записывать с"], ["dateTo", "записывать по"]];
+          for (let k = 0; k < dl.length; k++) { if (c[dl[k][0]] && !botDateValid(c[dl[k][0]])) { showErr("Дата «" + dl[k][1] + "» — в формате ДД/ММ/ГГГГ (например 31/12/2026)."); return; } }
+          if (c.passport) {
+            const norm = (x) => String(x || "").replace(/\s/g, "").toLowerCase();
+            const dup = cfg.clients.some((x, idx) => idx !== botEditIndex && norm(x.passport) === norm(c.passport));
+            if (dup) { showErr("Клиент с таким номером паспорта уже добавлен."); return; }
+          }
+          if (editing) cfg.clients[botEditIndex] = c; else cfg.clients.push(c);
+          botEditIndex = -1;
+          vscBotPersist(box);
         });
       }
       function tstDocRow(label, required, when) {
