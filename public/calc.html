@@ -149,6 +149,24 @@
     } catch (e) { p.innerHTML = '<div class="muted" style="color:#b0263a;">Не удалось загрузить историю.</div>'; }
   });
 
+  // Копирование значения зелёной области по клику (для переноса в amoCRM / таблицы).
+  [].forEach.call(document.querySelectorAll(".out"), function (card) {
+    card.style.cursor = "pointer";
+    card.title = "Нажмите, чтобы скопировать число";
+    card.addEventListener("click", function () {
+      var v = card.querySelector(".v"), t = card.querySelector(".t");
+      if (!v || !t) return;
+      var num = (v.textContent || "").replace(/[^\d.,-]/g, "").replace(/\s/g, "").trim();
+      if (!num || num === "—") return;
+      function flash() { var orig = t.innerHTML; t.innerHTML = "✓ Скопировано"; card.style.background = "#dff3e6"; setTimeout(function () { t.innerHTML = orig; card.style.background = ""; }, 1000); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(num).then(flash).catch(function () {});
+      } else {
+        var ta = document.createElement("textarea"); ta.value = num; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch (_) {} document.body.removeChild(ta); flash();
+      }
+    });
+  });
+
   setCur("rub");
   loadRates();
 </script>
