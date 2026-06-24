@@ -3047,9 +3047,38 @@ async function getTwoCaptchaBalance() {
   } catch (_) {}
   return _twoCaptchaBal.val; // отдаём прошлое значение, если свежий запрос не удался
 }
+// Пакет резидентного прокси Proxy-Seller: остаток трафика + срок действия. Кэш 5 мин.
+let _psPkg = { val: null, ts: 0 };
+function _parseRuDate(s) { const m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(String(s || "")); return m ? new Date(+m[3], +m[2] - 1, +m[1], 23, 59, 59) : null; }
+async function getProxySellerPackage() {
+  const key = process.env.PROXYSELLER_KEY;
+  if (!key) return null;
+  const now = Date.now();
+  if (_psPkg.val && (now - _psPkg.ts) < 5 * 60 * 1000) return _psPkg.val;
+  try {
+    const r = await axios.get("https://proxy-seller.com/personal/api/v1/" + key + "/resident/package", { timeout: 8000 });
+    const d = r.data && r.data.data;
+    if (r.data && r.data.status === "success" && d) {
+      const limit = parseFloat(d.traffic_limit) || 0, left = parseFloat(d.traffic_left) || 0;
+      const exp = _parseRuDate(d.expired_at);
+      const info = {
+        trafficLeftGb: Math.round(left / 1073741824 * 100) / 100,
+        trafficLimitGb: Math.round(limit / 1073741824 * 100) / 100,
+        leftPct: limit ? Math.round(left / limit * 100) : null,
+        expiredAt: d.expired_at || "",
+        expiryDays: exp ? Math.ceil((exp.getTime() - now) / 86400000) : null,
+        isActive: !!d.is_active
+      };
+      _psPkg = { val: info, ts: now };
+      return info;
+    }
+  } catch (_) {}
+  return _psPkg.val;
+}
 app.get("/admin/api/vfs-bot", requireVscBot, async (req, res) => {
-  let bal = null; try { bal = await getTwoCaptchaBalance(); } catch (_) {}
-  return res.json(Object.assign({ success: true, emailService: false, twoCaptchaBalance: bal }, loadVfsBot()));
+  let bal = null, proxy = null;
+  try { const r = await Promise.all([getTwoCaptchaBalance().catch(() => null), getProxySellerPackage().catch(() => null)]); bal = r[0]; proxy = r[1]; } catch (_) {}
+  return res.json(Object.assign({ success: true, emailService: false, twoCaptchaBalance: bal, proxy }, loadVfsBot()));
 });
 app.post("/admin/api/vfs-bot", requireVscBot, (req, res) => {
   const b = req.body || {};

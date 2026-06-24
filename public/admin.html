@@ -2761,6 +2761,7 @@
       let vscBotCfg = null;
       let botEditIndex = -1; // -1 = добавление нового; иначе индекс редактируемого клиента
       let vscBotLastBal = null; // последний известный баланс 2Captcha ($), чтобы плашка не пропадала после сохранения
+      let vscBotLastProxy = null; // последний известный пакет прокси (трафик/срок)
       // Статусы клиента по боту. «Мониторинг слотов»/«В работе» = бот активен по клиенту
       // → в кабинет VFS руками заходить НЕ нужно (может разлогинить/заблокировать).
       const BOT_STATUSES = ["Добавлен", "Мониторинг слотов", "В работе", "Записан", "Пауза", "Ошибка"];
@@ -2842,6 +2843,23 @@
           else if (vscBotLastBal < 5) { bg = "#fff8ec"; bd = "#f0d9a8"; col = "#8a5a12"; txt = "Баланс 2Captcha: $" + vscBotLastBal.toFixed(2) + " — скоро закончится, пополните заранее."; }
           else { bg = "#eef8f1"; bd = "#cde7d5"; col = "#2e7d52"; txt = "Баланс 2Captcha: $" + vscBotLastBal.toFixed(2) + " — ок."; }
           h += '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;font-weight:600;color:' + col + ';">' + txt + '</div>';
+        }
+        // ── Прокси Proxy-Seller: остаток трафика + срок пакета ──
+        if (cfg && cfg.proxy) vscBotLastProxy = cfg.proxy;
+        if (vscBotLastProxy) {
+          const px = vscBotLastProxy;
+          const lowT = px.leftPct !== null && px.leftPct < 10;
+          const midT = px.leftPct !== null && px.leftPct < 25;
+          const soonE = px.expiryDays !== null && px.expiryDays <= 3;
+          const midE = px.expiryDays !== null && px.expiryDays <= 7;
+          let pbg, pbd, pcol;
+          if (!px.isActive || lowT || soonE) { pbg = "#fdeaea"; pbd = "#e6b3b3"; pcol = "#b0263a"; }
+          else if (midT || midE) { pbg = "#fff8ec"; pbd = "#f0d9a8"; pcol = "#8a5a12"; }
+          else { pbg = "#eef8f1"; pbd = "#cde7d5"; pcol = "#2e7d52"; }
+          let ptxt = "Прокси: осталось " + (px.trafficLeftGb != null ? px.trafficLeftGb : "?") + " ГБ из " + (px.trafficLimitGb != null ? px.trafficLimitGb : "?") + " ГБ" + (px.leftPct !== null ? " (" + px.leftPct + "%)" : "") + " · активен до " + (px.expiredAt || "—") + (px.expiryDays !== null ? " (" + px.expiryDays + " дн.)" : "");
+          if (!px.isActive) ptxt = "⚠️ Прокси неактивен — продлите/пополните пакет, иначе бот не сможет заходить в VFS. " + ptxt;
+          else if (lowT || soonE) ptxt = "⚠️ " + ptxt + " — пополните трафик / продлите пакет!";
+          h += '<div style="background:' + pbg + ';border:1px solid ' + pbd + ';border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;font-weight:600;color:' + pcol + ';">' + ptxt + '</div>';
         }
         // ── Список клиентов (карточки) ──
         h += '<div style="' + card + '"><div style="font-weight:700;color:#1d2330;margin-bottom:10px;">Клиенты на запись (' + cfg.clients.length + ')</div>';
