@@ -747,6 +747,16 @@
     .refhub-pill.active { background: #3589BD; color: #fff; border-color: #3589BD; }
     @media (max-width: 720px) { .refhub-nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .refhub-nav::-webkit-scrollbar { display: none; } .refhub-pill { flex: 0 0 auto; white-space: nowrap; } }
     @media (max-width: 720px) { .vsc-bar-x { font-size: 8px; } .vsc-tile-v { font-size: 21px; } }
+    /* Телефоны: плитки KPI по 2 в ряд (компактнее, меньше листать). Десктоп и графики не трогаем. */
+    @media (max-width: 520px) {
+      .vsc-tiles { grid-template-columns: repeat(2, 1fr); gap: 9px; margin-bottom: 14px; }
+      .vsc-tile { padding: 11px 12px; }
+      .vsc-tile-l { font-size: 11px; min-height: 40px; }
+      .vsc-tile-v { font-size: 18px; }
+      .vsc-tile-d { font-size: 11px; }
+      .vsc-tile-s { font-size: 10.5px; }
+      .vsc-tile-extra { font-size: 10.5px; padding: 2px 6px; }
+    }
 
     /* ── Кнопка раскрытия списка ── */
     .toggle-phones {
