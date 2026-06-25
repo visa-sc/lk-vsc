@@ -1783,7 +1783,7 @@
       // good: +1 — чем больше тем лучше; −1 — чем меньше тем лучше; 0 — нейтрально (без оценки тренда).
       const VSC_KPIS = [
         { key: "budget", label: "Выручка (сумма в бюджете)", fmt: "money", good: 1 },
-        { key: "processed", label: "Обработанные контакты", fmt: "int", good: 1 },
+        { key: "processed", label: "Набранные контакты (с добавленными вручную)", labelHtml: "Набранные контакты (<b>с добавленными вручную</b>)", fmt: "int", good: 1 },
         { key: "atv", label: "ATV", fmt: "money", good: 1 },
         { key: "cv", label: "CV отдела продаж (общая)", fmt: "pct", good: 1 },
         { key: "cpl", label: "CPL (общий)", fmt: "money", good: -1 },
@@ -2147,7 +2147,7 @@
       function vscSumDays(days, key) { const v = (days || []).map((d) => (d ? d[key] : null)).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) : null; }
       function vscBarChart(kpi, series) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
-        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = kpi.label;
+        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.innerHTML = kpi.labelHtml || escapeHtml(kpi.label);
         wrap.appendChild(h);
         const vals = series.map((s) => (s.k && s.k[kpi.key] != null && !isNaN(s.k[kpi.key])) ? s.k[kpi.key] : null);
         const present = vals.filter((v) => v != null);
@@ -2409,7 +2409,7 @@
             const _asp = periodK.asp, _upt = periodK.upt;
             extra = '<div class="vsc-tile-extra">ASP ' + (_asp != null ? vscFmt(_asp, "money") : "—") + ' · UPT ' + (_upt != null ? (Math.round(_upt * 100) / 100).toLocaleString("ru-RU") : "—") + '</div>';
           }
-          tile.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(kpi.label) + '</div><div class="vsc-tile-v' + cls + '">' + vscFmt(v, kpi.fmt) + '</div>' + delta + extra + '<div class="vsc-tile-s">' + escapeHtml(curSub || "") + '</div>';
+          tile.innerHTML = '<div class="vsc-tile-l">' + (kpi.labelHtml || escapeHtml(kpi.label)) + '</div><div class="vsc-tile-v' + cls + '">' + vscFmt(v, kpi.fmt) + '</div>' + delta + extra + '<div class="vsc-tile-s">' + escapeHtml(curSub || "") + '</div>';
           tiles.appendChild(tile);
         });
         // Прибыль и рентабельность (item 12 + расширение): плитки в «Год» и «Месяц».
