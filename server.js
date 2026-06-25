@@ -1132,8 +1132,8 @@ const YD_API_URL = "https://api.direct.yandex.com/json/v5/";
 const YD_TOKEN = process.env.YANDEX_DIRECT_TOKEN || "";
 const YD_LOGIN = process.env.YANDEX_DIRECT_LOGIN || "";
 const YD_STOP_FILE = path.join(__dirname, ".ydStopLog.json");
-const YD_STOPPED_STATES = { SUSPENDED: "приостановлена", OFF: "остановлена" }; // «остановка» = переход в это
-let _ydLog = null, _ydRunning = false;
+const YD_STOPPED_STATES = { SUSPENDED: "приостановлена" }; // ТОЛЬКО ручная остановка (SUSPENDED). OFF/ENDED/ARCHIVED не считаем — по требованию Андрея (ловим только остановку руками).
+let _ydLog = null, _ydRunning = false, _ydUnits = null; // _ydUnits = остаток баллов API (из заголовка Units)
 function loadYdLog() {
   if (_ydLog) return _ydLog;
   try { _ydLog = JSON.parse(fs.readFileSync(YD_STOP_FILE, "utf8")); } catch (_) { _ydLog = {}; }
@@ -1150,11 +1150,16 @@ async function ydApiCampaigns() {
   if (YD_LOGIN) headers["Client-Login"] = YD_LOGIN;
   const body = { method: "get", params: { SelectionCriteria: {}, FieldNames: ["Id", "Name", "State", "Status", "StatusClarification"] } };
   const r = await axios.post(YD_API_URL + "campaigns", body, { headers, timeout: 20000 });
+  // Заголовок Units: «потрачено/остаток/суточный лимит» — учитываем баллы (как в заявке Я.Директу).
+  const uh = r.headers && (r.headers.units || r.headers.Units);
+  if (uh) { const p = String(uh).split("/").map((x) => parseInt(x, 10)); if (p.length === 3 && p.every((n) => Number.isFinite(n))) _ydUnits = { spent: p[0], balance: p[1], limit: p[2], ts: Date.now() }; }
   if (r.data && r.data.error) { const e = r.data.error; throw Object.assign(new Error(e.error_string + (e.error_detail ? ": " + e.error_detail : "")), { ydCode: e.error_code }); }
   return (r.data && r.data.result && r.data.result.Campaigns) || [];
 }
 async function ydRunCheck(trigger) {
   if (_ydRunning) return { skipped: true };
+  // Бережём баллы API: если остаток критически мал — пропускаем цикл (как в заявке Я.Директу).
+  if (_ydUnits && _ydUnits.balance != null && _ydUnits.balance < 5000) { console.warn("YD STOPS: мало баллов (" + _ydUnits.balance + "), пропуск цикла"); return { skipped: true, reason: "low_units", unitsBalance: _ydUnits.balance }; }
   _ydRunning = true;
   const log = loadYdLog();
   const rec = { ts: Date.now(), trigger: trigger || "cron", checked: 0, newStops: 0, error: null, ydCode: null };
@@ -1174,11 +1179,12 @@ async function ydRunCheck(trigger) {
       log.snapshot[id] = { name: nm, state: st };
     });
     log.events = log.events.filter((e) => e.ts >= now - 60 * 86400000); // храним 60 дней
-    console.log(`YD STOPS [${rec.trigger}]: campaigns=${rec.checked} newStops=${rec.newStops}`);
+    console.log(`YD STOPS [${rec.trigger}]: campaigns=${rec.checked} newStops=${rec.newStops} units=${_ydUnits ? _ydUnits.balance : "?"}`);
   } catch (e) {
     rec.error = e && e.message; rec.ydCode = (e && e.ydCode) != null ? e.ydCode : null;
     console.error("YD STOPS check:", rec.ydCode, rec.error);
   } finally { _ydRunning = false; }
+  rec.unitsBalance = _ydUnits ? _ydUnits.balance : null;
   log.runs.unshift(rec); if (log.runs.length > 60) log.runs = log.runs.slice(0, 60);
   saveYdLog();
   return rec;
@@ -1187,11 +1193,21 @@ function ydStopsPayload() {
   const log = loadYdLog();
   const cutoff = Date.now() - 30 * 86400000;            // показываем за 30 дней
   const events = (log.events || []).filter((e) => e.ts >= cutoff);
-  return { running: _ydRunning, events: events, count: events.length, lastRun: log.runs[0] || null, configured: !!YD_TOKEN };
+  return { running: _ydRunning, events: events, count: events.length, lastRun: log.runs[0] || null, configured: !!YD_TOKEN, units: _ydUnits };
+}
+// Опрос: Пн-Пт 10:00–19:00 и Сб-Вс 12:00–18:00 МСК — каждые 10 мин; иначе — каждые 30 мин.
+function ydActiveNow() {
+  const msk = new Date(Date.now() + 3 * 3600 * 1000);
+  const day = msk.getUTCDay(), h = msk.getUTCHours();
+  if (day >= 1 && day <= 5) return h >= 10 && h < 19; // Пн-Пт 10:00–18:59
+  return h >= 12 && h < 18;                            // Сб-Вс 12:00–17:59
 }
 (function scheduleYdStops() {
-  setTimeout(() => { ydRunCheck("cron").catch(() => {}); }, 60 * 1000);          // через минуту после старта
-  setInterval(() => { ydRunCheck("cron").catch(() => {}); }, 6 * 3600 * 1000);   // и каждые 6 часов
+  const tick = () => {
+    Promise.resolve(ydRunCheck("cron")).catch(() => {});
+    setTimeout(tick, (ydActiveNow() ? 10 : 30) * 60 * 1000);
+  };
+  setTimeout(tick, 60 * 1000); // первый запуск через минуту после старта
 })();
 app.get("/admin/api/yd-stops", requireAdmin, (req, res) => {
   return res.json(Object.assign({ success: true }, ydStopsPayload()));
