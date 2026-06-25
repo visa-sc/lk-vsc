@@ -962,6 +962,98 @@ app.post("/admin/api/no-task-check/run", requireAdmin, (req, res) => {
 });
 scheduleNoTaskDaily();
 
+// ── «Выручка по городам» (СПб/МСК) из amoCRM — раз в сутки 05:00 МСК ──────────
+// СПб = Σ бюджета выигрышных сделок под 2 фильтра менеджера (поле сделки 573762 +
+// поле ГЛАВНОГО контакта 571754). МСК = вся выручка месяца − СПб. Месяц — по дате
+// выручки (кастом-поле 427242). API НЕ фильтрует по кастом-полям → тянем выигрышные
+// сделки (updated_at ≥ 2026) и фильтруем В КОДЕ. Всё через ЛИМИТЕР (amoBg низкий
+// приоритет), ночью; результат — в кэш-файл, дашборд читает кэш, не живой amoCRM.
+const CITY_REV_FILE = path.join(__dirname, ".lkCityRevenue.json");
+const CITY_REV_STATUSES = [].concat(
+  [142, 83715629, 85862533].map((s) => ({ pipeline_id: 138231, status_id: s })),
+  [142, 143, 21232020, 21232023, 21256203, 21256455, 21256458, 21256761, 21271227, 21271230, 30302436, 70381749, 70957793, 70957929, 76835705, 76836473].map((s) => ({ pipeline_id: 1309524, status_id: s })),
+  [142, 143, 21256590, 21256593, 21256668, 22535466, 22916152, 26918115, 43200834, 58405049, 58405421, 58406233, 61251437, 76836369].map((s) => ({ pipeline_id: 1312578, status_id: s }))
+);
+const CITY_CF_DATE = 427242, CITY_CF_LEAD = 573762, CITY_CF_CONTACT = 571754;
+const CITY_F1_LEAD = new Set([1093564, 1093566, 1093568, 1095864]);
+const CITY_F1_CONTACT = 1090888;
+const CITY_F2_LEAD = 1093566;
+const CITY_F2_CONTACT = new Set([1090890, 1091298, 1095266, 1095432, 1096240]);
+let _cityRev, _cityRevRunning = false, _cityRevLog = [];
+function loadCityRev() {
+  if (_cityRev !== undefined) return _cityRev;
+  try { _cityRev = JSON.parse(fs.readFileSync(CITY_REV_FILE, "utf8")); } catch (_) { _cityRev = null; }
+  return _cityRev;
+}
+function saveCityRev(d) { _cityRev = d; try { fs.writeFileSync(CITY_REV_FILE, JSON.stringify(d, null, 2), "utf8"); } catch (e) { console.error("saveCityRev:", e.message); } }
+function _cityCfEnums(e, fid) { const cf = (e.custom_fields_values || []).find((f) => f.field_id === fid); return (cf && cf.values && cf.values.length) ? cf.values.map((v) => (v.enum_id != null ? v.enum_id : v.value)) : []; }
+function _cityCfVal(e, fid) { const cf = (e.custom_fields_values || []).find((f) => f.field_id === fid); return (cf && cf.values && cf.values.length) ? cf.values[0].value : null; }
+function _cityYm(ts) { if (ts == null || ts === "" || isNaN(Number(ts))) return null; const d = new Date(Number(ts) * 1000 + 3 * 3600 * 1000); return { y: d.getUTCFullYear(), m: d.getUTCMonth() }; }
+async function runCityRevenue(trigger) {
+  if (_cityRevRunning) return { skipped: true };
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
+  _cityRevRunning = true;
+  const t0 = Date.now();
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const params = { with: "contacts" };
+    CITY_REV_STATUSES.forEach((s, i) => { params[`filter[statuses][${i}][pipeline_id]`] = String(s.pipeline_id); params[`filter[statuses][${i}][status_id]`] = String(s.status_id); });
+    params["filter[updated_at][from]"] = String(Math.floor(Date.UTC(2026, 0, 1, 0, 0, 0) / 1000) - 3 * 3600);
+    const leads = await amoGetAllPagesParallel(`${baseUrl}/api/v4/leads`, params, 4);
+    const rev = (leads || []).filter((l) => { const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); return ym && ym.y === 2026; });
+    const mainCid = (l) => { const cs = (l._embedded && l._embedded.contacts) || []; const m = cs.find((c) => c.is_main); return m ? m.id : null; };
+    const cids = [...new Set(rev.map(mainCid).filter(Boolean))];
+    const cmap = {};
+    for (let i = 0; i < cids.length; i += 250) {
+      const batch = cids.slice(i, i + 250); const cp = { limit: 250 };
+      batch.forEach((id, k) => { cp[`filter[id][${k}]`] = String(id); });
+      const data = await amoGet(`${baseUrl}/api/v4/contacts`, cp);
+      const list = (data && data._embedded && data._embedded.contacts) || [];
+      list.forEach((c) => { cmap[c.id] = _cityCfEnums(c, CITY_CF_CONTACT); });
+    }
+    const months = {};
+    for (const l of rev) {
+      const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); const mk = String(ym.m);
+      const price = Number(l.price) || 0;
+      const l573 = _cityCfEnums(l, CITY_CF_LEAD); const emptyL = l573.length === 0;
+      const cid = mainCid(l); const c571 = cid ? (cmap[cid] || []) : [];
+      const inF1 = (emptyL || l573.some((v) => CITY_F1_LEAD.has(v))) && c571.includes(CITY_F1_CONTACT);
+      const inF2 = l573.includes(CITY_F2_LEAD) && (c571.length === 0 || c571.some((v) => CITY_F2_CONTACT.has(v)));
+      if (!months[mk]) months[mk] = { total: 0, spb: 0 };
+      months[mk].total += price;
+      if (inF1 || inF2) months[mk].spb += price;
+    }
+    const out = {};
+    Object.keys(months).forEach((mk) => { out[mk] = { total: Math.round(months[mk].total), spb: Math.round(months[mk].spb), msk: Math.round(months[mk].total - months[mk].spb) }; });
+    const result = { ts: Date.now(), year: 2026, leads: rev.length, durationMs: Date.now() - t0, months: out };
+    saveCityRev(result);
+    _cityRevLog.unshift({ ts: result.ts, trigger: trigger || "cron", leads: rev.length, ms: result.durationMs }); _cityRevLog = _cityRevLog.slice(0, 30);
+    console.log(`CITY REVENUE: ok, сделок ${rev.length}, месяцев ${Object.keys(out).length}, ${result.durationMs}ms`);
+    return result;
+  } catch (e) { console.error("runCityRevenue:", e.message); _cityRevLog.unshift({ ts: Date.now(), trigger, error: e.message }); return { error: e.message }; }
+  finally { _cityRevRunning = false; }
+}
+function scheduleCityRevenueDaily() {
+  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000;
+  (function nextRun() {
+    const mskNow = Date.now() + MSK_OFFSET;
+    const mskMidnight = Math.floor(mskNow / DAY_MS) * DAY_MS;
+    let target = mskMidnight + 5 * 3600 * 1000; // 05:00 МСК
+    if (target <= mskNow) target += DAY_MS;
+    setTimeout(() => { Promise.resolve(amoBg(() => runCityRevenue("cron"))).catch(() => {}); nextRun(); }, Math.max(1000, target - mskNow));
+  })();
+  console.log("CITY REVENUE: ежедневный расчёт запланирован на 05:00 МСК");
+}
+app.get("/admin/api/vsc/city-revenue", requireVscAccess, (req, res) => { return res.json({ success: true, data: loadCityRev(), log: _cityRevLog.slice(0, 5) }); });
+app.post("/admin/api/vsc/city-revenue/run", requireAdmin, (req, res) => {
+  if (_cityRevRunning) return res.json({ success: true, started: false, running: true });
+  setImmediate(() => { Promise.resolve(amoBg(() => runCityRevenue("manual"))).catch(() => {}); });
+  return res.json({ success: true, started: true });
+});
+scheduleCityRevenueDaily();
+// Первичный расчёт через 2 мин после старта, если кэша ещё нет (далее — крон 05:00).
+if (!loadCityRev()) setTimeout(() => { Promise.resolve(amoBg(() => runCityRevenue("startup"))).catch(() => {}); }, 120 * 1000);
+
 // ═════════════════════════════════════════════════════════════════════════
 // Остановки рекламных кампаний Яндекс.Директа (item 2). API v5 НЕ отдаёт ленту
 // «история остановок» — поэтому периодически опрашиваем campaigns.get (только
