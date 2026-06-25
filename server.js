@@ -2985,7 +2985,7 @@ async function vscFetchAll() {
   // % возвратов за год = Σ Услуги (возвраты) / Σ выручка (бюджет).
   year.retUslugi = sum("retUslugi");
   year.returnsPct = (year.retUslugi && sumB) ? year.retUslugi / sumB * 100 : null;
-  return { months, year, reviews, updatedAt: new Date().toISOString() };
+  return { months, year, reviews, cityRevenue: loadCityRev(), updatedAt: new Date().toISOString() };
 }
 async function getVscDashboard() {
   const now = Date.now();

@@ -2457,7 +2457,21 @@
       // месяцам, без плиток-цифр. Не зависит от переключателя гранулярности дашборда.
       function renderVscMonthly() {
         const monthSeries = (vscData.months || []).map((mm) => ({ x: (mm.name || "").replace(" 2026", "").trim(), k: mm.total || {} }));
-        const h1 = document.createElement("div"); h1.className = "ref-sec-h"; h1.textContent = "Качество звонков и контактов — по месяцам";
+        // ── Выручка по городам (СПб/МСК) — по месяцам, из amoCRM (ночной расчёт 05:00) ──
+        const hCity = document.createElement("div"); hCity.className = "ref-sec-h"; hCity.textContent = "Выручка по городам — по месяцам (2026)";
+        vscContent.appendChild(hCity);
+        const cr = vscData.cityRevenue;
+        if (cr && cr.months && Object.keys(cr.months).length) {
+          const MONTHS_RU = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
+          const crSeries = Object.keys(cr.months).map(Number).sort((a, b) => a - b).map((m) => ({ x: MONTHS_RU[m], k: cr.months[String(m)] }));
+          vscContent.appendChild(vscBarChart({ key: "spb", label: "Выручка СПб", fmt: "money", good: 1 }, crSeries));
+          vscContent.appendChild(vscBarChart({ key: "msk", label: "Выручка МСК", fmt: "money", good: 1 }, crSeries));
+        } else {
+          const e = document.createElement("div"); e.className = "vsc-chart";
+          e.innerHTML = '<div class="vsc-empty">Выручка по городам считается ночью (05:00 МСК) из amoCRM — данные появятся после первого расчёта.</div>';
+          vscContent.appendChild(e);
+        }
+        const h1 = document.createElement("div"); h1.className = "ref-sec-h"; h1.style.marginTop = "22px"; h1.textContent = "Качество звонков и контактов — по месяцам";
         vscContent.appendChild(h1);
         VSC_EXTRA_MONTHLY.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, monthSeries)));
         const h2 = document.createElement("div"); h2.className = "ref-sec-h"; h2.style.marginTop = "22px"; h2.textContent = "Отзывы клиентов — по месяцам (2026)";
