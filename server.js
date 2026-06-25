@@ -2676,10 +2676,15 @@ function vscParseMonth(rows) {
     // Позиции колонок гуляют по месяцам — берём по ключевым словам заголовка.
     missedPct: colF("процент", "пропущен", "звонк"), junkPct: colF("доля", "мусор")
   };
-  // Обработанные контакты = сумма «Контакты, полученные до/после конца рабочего
-  // дня» по всем городам (МСК/СПБ/ЕКБ/Остальные). Так считает заказчик
-  // (март: AC+AD+AE+AF). НЕ путать с «Обработанные контакты <город>».
+  // «Набранные контакты» = сумма «Контакты, полученные до/после конца рабочего
+  // дня» по всем городам (МСК/СПБ/ЕКБ/Остальные) МИНУС «Контакты с тегом
+  // "Дополнительный контакт" (созданы вручную к существующей сделке)» — иначе
+  // добавленные вручную контакты учитываются дважды (база полученных уже их включает),
+  // после вычета цифра совпадает с проверочным столбцом amoCRM («сумма за день»).
+  // Колонка «Дополнительный контакт» есть только с апреля 2026 (в янв–мар её нет →
+  // вычитать нечего → старые месяцы без изменений). Всё по заголовкам, НЕ по буквам.
   const processedCols = colsAll(["полученные", "конца рабочего дня"]);
+  const manualAddCols = colsAll(["дополнительный контакт", "вручную"]);
   // Недобор/перебор ОП — суммируем все региональные колонки (МСК/СПБ/ЕКБ или одну общую).
   const overCols = colsAll(["недобор/перебор", "оп"]);
   const sumNN = (r, cols) => { const v = cols.map((i) => vscNum(r[i])).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
@@ -2693,7 +2698,7 @@ function vscParseMonth(rows) {
     atv: C.atv >= 0 ? vscNum(r[C.atv]) : null, asp: vscNum(r[C.asp]), upt: vscNum(r[C.upt]),
     cv: vscNum(r[C.cv]), cpl: vscNum(r[C.cpl]), drr: vscNum(r[C.drr]),
     over: sumNN(r, overCols), targetDev: targetDev(r),
-    processed: sumNN(r, processedCols),
+    processed: (function () { const b = sumNN(r, processedCols); if (b == null) return null; const a = sumNN(r, manualAddCols); return b - (a || 0); })(),
     rev: vscNum(r[C.rev]), ad: vscNum(r[C.ad]), budget: C.budget >= 0 ? vscNum(r[C.budget]) : null,
     missedPct: C.missedPct >= 0 ? vscNum(r[C.missedPct]) : null,
     junkPct: C.junkPct >= 0 ? vscNum(r[C.junkPct]) : null,
