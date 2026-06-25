@@ -1054,6 +1054,75 @@ scheduleCityRevenueDaily();
 // Первичный расчёт через 2 мин после старта, если кэша ещё нет (далее — крон 05:00).
 if (!loadCityRev()) setTimeout(() => { Promise.resolve(amoBg(() => runCityRevenue("startup"))).catch(() => {}); }, 120 * 1000);
 
+// ── Выручка за ТЕКУЩИЕ сутки (раздел «День» дашборда /vsc) ────────────────────
+// «Вся выручка» по тому же набору статусов 3 воронок, что и «Выручка по городам»
+// (тот же фильтр amoCRM, что прислал Андрей), но СРЕЗ по дате выручки (поле 427242)
+// = СЕГОДНЯ (МСК). Ответственные — ВСЕ (без фильтра по пользователю → новые
+// сотрудники попадают в сумму автоматически, как в «Сделках без задач»). Считаем
+// 2 раза в сутки (15:00 и 20:00 МСК) через ЛИМИТЕР, САМЫМ НИЗКИМ приоритетом
+// (amoBg → «low»): пропускает вперёд клиентский ЛК/вебхуки/всё. Кэш-файл, дашборд
+// читает кэш. amoCRM-фильтр по кастом-полям недоступен (HTTP 400) → тянем тот же
+// универсум, что и городская выручка (updated_at ≥ 2026, БЕЗ контактов — для суммы
+// они не нужны), и фильтруем дату выручки В КОДЕ.
+const DAY_REV_FILE = path.join(__dirname, ".lkDayRevenue.json");
+function _mskDayKey(ms) { const d = new Date(ms + 3 * 3600 * 1000); return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0"); }
+let _dayRev, _dayRevRunning = false, _dayRevLog = [];
+function loadDayRev() {
+  if (_dayRev !== undefined) return _dayRev;
+  try { _dayRev = JSON.parse(fs.readFileSync(DAY_REV_FILE, "utf8")); } catch (_) { _dayRev = null; }
+  return _dayRev;
+}
+function saveDayRev(d) { _dayRev = d; try { fs.writeFileSync(DAY_REV_FILE, JSON.stringify(d, null, 2), "utf8"); } catch (e) { console.error("saveDayRev:", e.message); } }
+async function runDayRevenue(trigger) {
+  if (_dayRevRunning) return { skipped: true };
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
+  _dayRevRunning = true;
+  const t0 = Date.now();
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const params = {};
+    CITY_REV_STATUSES.forEach((s, i) => { params[`filter[statuses][${i}][pipeline_id]`] = String(s.pipeline_id); params[`filter[statuses][${i}][status_id]`] = String(s.status_id); });
+    params["filter[updated_at][from]"] = String(Math.floor(Date.UTC(2026, 0, 1, 0, 0, 0) / 1000) - 3 * 3600);
+    const leads = await amoGetAllPagesParallel(`${baseUrl}/api/v4/leads`, params, 4);
+    const todayKey = _mskDayKey(Date.now());
+    let total = 0, cnt = 0;
+    for (const l of (leads || [])) {
+      const v = _cityCfVal(l, CITY_CF_DATE);
+      if (v == null || v === "" || isNaN(Number(v))) continue;
+      if (_mskDayKey(Number(v) * 1000) !== todayKey) continue;
+      total += Number(l.price) || 0; cnt++;
+    }
+    const result = { ts: Date.now(), dayKey: todayKey, total: Math.round(total), leads: cnt, scanned: (leads || []).length, durationMs: Date.now() - t0 };
+    saveDayRev(result);
+    _dayRevLog.unshift({ ts: result.ts, trigger: trigger || "cron", dayKey: todayKey, total: result.total, leads: cnt, ms: result.durationMs }); _dayRevLog = _dayRevLog.slice(0, 30);
+    console.log(`DAY REVENUE [${trigger || "cron"}]: ${todayKey} = ${result.total} ₽, сделок ${cnt}/${(leads || []).length}, ${result.durationMs}ms`);
+    return result;
+  } catch (e) { console.error("runDayRevenue:", e.message); _dayRevLog.unshift({ ts: Date.now(), trigger, error: e.message }); return { error: e.message }; }
+  finally { _dayRevRunning = false; }
+}
+function scheduleDayRevenueTwice() {
+  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000, HOURS = [15, 20];
+  (function nextRun() {
+    const mskNow = Date.now() + MSK_OFFSET;
+    const mskMidnight = Math.floor(mskNow / DAY_MS) * DAY_MS;
+    let target = Infinity;
+    for (const h of HOURS) { let t = mskMidnight + h * 3600 * 1000; if (t <= mskNow) t += DAY_MS; if (t < target) target = t; }
+    setTimeout(() => { Promise.resolve(amoBg(() => runDayRevenue("cron"))).catch(() => {}); nextRun(); }, Math.max(1000, target - mskNow));
+  })();
+  console.log("DAY REVENUE: расчёт запланирован на 15:00 и 20:00 МСК");
+}
+app.get("/admin/api/vsc/day-revenue", requireVscAccess, (req, res) => { return res.json({ success: true, data: loadDayRev(), log: _dayRevLog.slice(0, 5) }); });
+app.post("/admin/api/vsc/day-revenue/run", requireAdmin, (req, res) => {
+  if (_dayRevRunning) return res.json({ success: true, started: false, running: true });
+  setImmediate(() => { Promise.resolve(amoBg(() => runDayRevenue("manual"))).catch(() => {}); });
+  return res.json({ success: true, started: true });
+});
+scheduleDayRevenueTwice();
+// Первичный расчёт через ~150 с после старта, если кэша нет или он за прошлый день
+// (чтобы блок не пустовал после рестарта; далее — крон 15:00/20:00). Старт ПОСЛЕ
+// городской выручки (120 с), лимитер всё равно сериализует фон.
+(function () { const c = loadDayRev(); if (!c || c.dayKey !== _mskDayKey(Date.now())) setTimeout(() => { Promise.resolve(amoBg(() => runDayRevenue("startup"))).catch(() => {}); }, 150 * 1000); })();
+
 // ═════════════════════════════════════════════════════════════════════════
 // Остановки рекламных кампаний Яндекс.Директа (item 2). API v5 НЕ отдаёт ленту
 // «история остановок» — поэтому периодически опрашиваем campaigns.get (только
@@ -3028,7 +3097,9 @@ app.get("/admin/api/vsc-dashboard", requireAdmin, async (req, res) => {
     const data = await getVscDashboard();
     // Прибыль читаем СВЕЖО (не из 15-мин кэша) — чтобы только что введённое значение
     // сразу отражалось в рентабельности. Рентабельность считается на клиенте.
-    return res.json(Object.assign({ success: true }, data, { profit: vscLoadProfit() }));
+    // dayRevenue читаем СВЕЖО (вне 15-мин кэша) — чтобы перерасчёт 15:00/20:00
+    // отражался сразу, не дожидаясь протухания кэша дашборда.
+    return res.json(Object.assign({ success: true }, data, { profit: vscLoadProfit(), dayRevenue: loadDayRev() }));
   } catch (e) {
     console.error("vsc dashboard error:", e.message);
     return res.status(500).json({ success: false, message: "Не удалось загрузить данные таблицы" });

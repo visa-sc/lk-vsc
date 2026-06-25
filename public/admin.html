@@ -2452,6 +2452,29 @@
           vscContent.appendChild(vscBarChart({ key: "profit", label: "Прибыль по месяцам, ₽", fmt: "money", good: 1 }, profSeries));
           vscContent.appendChild(vscBarChart({ key: "rent", label: "Рентабельность (прибыль / выручка), %", fmt: "pct", good: 1 }, profSeries));
         }
+        // «День»: ПОСЛЕДНИМ блоком — вся выручка за текущие сутки из amoCRM (дата
+        // выручки = сегодня, все ответственные). Без графика. Считается на сервере
+        // 2 раза в день (15:00 и 20:00 МСК), низким приоритетом; здесь — готовая сумма.
+        if (vscGran === "day") {
+          const dr = vscData.dayRevenue;
+          const drH = document.createElement("div"); drH.className = "ref-sec-h"; drH.textContent = "Выручка за текущие сутки (amoCRM)";
+          vscContent.appendChild(drH);
+          const drBox = document.createElement("div"); drBox.className = "vsc-tiles";
+          const drTile = document.createElement("div"); drTile.className = "vsc-tile";
+          if (dr && dr.total != null) {
+            const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Moscow" });
+            const forToday = dr.dayKey === todayKey;
+            const dateRu = dr.dayKey ? dr.dayKey.split("-").reverse().join(".") : "";
+            const upd = dr.ts ? new Date(dr.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+            drTile.innerHTML = '<div class="vsc-tile-l">' + (forToday ? "Выручка за сегодня" : ("Выручка за " + escapeHtml(dateRu))) + '</div>'
+              + '<div class="vsc-tile-v">' + vscFmt(dr.total, "money") + '</div>'
+              + '<div class="vsc-tile-s">на ' + escapeHtml(upd) + ' МСК · сделок: ' + (dr.leads != null ? dr.leads : "—") + ' · обновляется в 15:00 и 20:00 МСК</div>';
+          } else {
+            drTile.innerHTML = '<div class="vsc-tile-l">Выручка за сегодня</div><div class="vsc-tile-v">—</div><div class="vsc-tile-s">обновляется в 15:00 и 20:00 МСК (расчёт ещё не выполнялся)</div>';
+          }
+          drBox.appendChild(drTile);
+          vscContent.appendChild(drBox);
+        }
       }
       // Вкладка «Ежемесячный контроль»: качество звонков/контактов + отзывы — всё по
       // месяцам, без плиток-цифр. Не зависит от переключателя гранулярности дашборда.
