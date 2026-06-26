@@ -1907,6 +1907,22 @@ function newCorrectionDirectorEmailHtml(it) {
     '<p style="margin:0 0 8px;"><a href="https://voyotravel.ru/admin" style="display:inline-block;background:#3589BD;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 24px;border-radius:10px;">Открыть «Корректировки ЛК»</a></p>';
   return emailDoc(inner);
 }
+// Письмо директору: руководитель оставил комментарий по корректировке (напр.
+// постановщик ответил по заявке «в работе»). Чтобы Андрей видел ответ и доделал.
+function correctionCommentDirectorEmailHtml(it, c) {
+  const e = escapeHtml;
+  const inner =
+    '<p style="margin:0 0 14px;">По корректировке ЛК оставлен комментарий руководителем — возможно, требуется ваше действие.</p>' +
+    '<div style="background:#eef5fb;border-left:4px solid #3589BD;border-radius:8px;padding:14px 16px;margin:0 0 16px;font-size:14px;line-height:1.7;">' +
+      '<div><span style="color:#6b7280;">Автор корректировки:</span> ' + e(it.author || "—") + '</div>' +
+      (it.area ? ('<div><span style="color:#6b7280;">Раздел:</span> ' + e(it.area) + '</div>') : '') +
+      '<div><span style="color:#6b7280;">Статус:</span> ' + e(it.status || "—") + '</div>' +
+      '<div style="margin-top:6px;"><span style="color:#6b7280;">Корректировка:</span><br>' + e(it.what || "") + '</div>' +
+      '<div style="margin-top:10px;"><span style="color:#6b7280;">Новый комментарий (' + e((c && c.author) || "—") + '):</span><br>' + e((c && c.text) || "") + '</div>' +
+    '</div>' +
+    '<p style="margin:0 0 8px;"><a href="https://voyotravel.ru/admin" style="display:inline-block;background:#3589BD;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 24px;border-radius:10px;">Открыть «Корректировки ЛК»</a></p>';
+  return emailDoc(inner);
+}
 function passwordResetEmailHtml(name, link) {
   const e = escapeHtml;
   const inner =
@@ -2026,8 +2042,20 @@ app.post("/admin/api/corrections/:id/comment", requireStaff, (req, res) => {
     const text = corrText(b.text, 4000);
     if (!text) return res.status(400).json({ success: false, message: "Пустой комментарий" });
     if (!Array.isArray(it.comments)) it.comments = [];
-    it.comments.push({ ts: Date.now(), author: req.staff.name || corrText(b.author, 120), text });
+    const cAuthor = req.staff.name || corrText(b.author, 120);
+    it.comments.push({ ts: Date.now(), author: cAuthor, text });
     saveCorrections();
+    // Комментарий оставил РУКОВОДИТЕЛЬ (не админ) → уведомляем директора по почте,
+    // чтобы Андрей видел ответ постановщика (напр. Насти по заявке «в работе») и доделал.
+    if (req.staff.role === "manager") {
+      try {
+        mail.sendMail({
+          to: VOYO_DIRECTOR_EMAIL,
+          subject: "Ответ по корректировке ЛК — " + (it.author || cAuthor || "—"),
+          html: correctionCommentDirectorEmailHtml(it, { author: cAuthor, text })
+        }).then((r) => { if (!r.ok) console.error("MAIL correction-comment:", r.error); }).catch(() => {});
+      } catch (e) { console.error("MAIL correction-comment throw:", e && e.message); }
+    }
     return res.json({ success: true, item: it });
   } catch (e) {
     console.error("comment correction error:", e.message);
