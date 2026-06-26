@@ -10018,9 +10018,9 @@ function buildUploadBlocksForApplicantStats(state, lead, stageIndex) {
   if (state.notRussianCitizen === "Да") {
     stage2.push({ field: "residencePermit", label: "ВНЖ или регистрация", optional: true });
   }
-  // Справка с работы/учёбы — если в опроснике указан работодатель.
-  const employerNameSch = String(state.employerName || "").trim();
-  if (employerNameSch && employerNameSch.toUpperCase() !== "НЕТ") {
+  // Справка с работы/учёбы — по «Роду деятельности» (зеркало cabinet.html, корр. 26.06).
+  const occSch = String(state.occupation || "").trim();
+  if (occSch === "Работа по найму" || occSch === "Учащийся") {
     stage2.push({ field: "workCert", label: "Справка с работы или учёбы", optional: true });
   }
   // Страховой полис — если есть в опроснике (старое условие).
