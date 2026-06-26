@@ -3971,6 +3971,16 @@
           '<div class="corr-f-row"><label>Пример / ссылка на сделку</label><input class="corr-i" data-k="example" placeholder="ссылка amoCRM или пример"></div>' +
           '<div class="corr-f-row"><label>Приоритет</label><select class="corr-i" data-k="priority"><option value="">—</option><option>Низкий</option><option>Средний</option><option>Высокий</option></select></div>' +
           '<div class="corr-f-row"><label>Прикрепить файл (скриншот и т.п.) — необязательно</label><input type="file" class="corr-file" accept="image/*,application/pdf,.heic" /></div>';
+        // Черновик: автосохранение в браузере, чтобы текст не пропал при разлогине/
+        // перезагрузке. Восстанавливается при открытии формы, чистится после отправки.
+        const DRAFT_KEY = "voyo_corr_draft";
+        const corrFields = () => f.querySelectorAll(".corr-i");
+        try {
+          const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+          if (saved && typeof saved === "object") corrFields().forEach((el) => { if (saved[el.dataset.k]) el.value = saved[el.dataset.k]; });
+        } catch (_) {}
+        const saveDraft = () => { try { const o = {}; corrFields().forEach((el) => { if (el.value) o[el.dataset.k] = el.value; }); localStorage.setItem(DRAFT_KEY, JSON.stringify(o)); } catch (_) {} };
+        corrFields().forEach((el) => { el.addEventListener("input", saveDraft); el.addEventListener("change", saveDraft); });
         const err = document.createElement("div"); err.className = "corr-form-err"; err.style.display = "none";
         const submit = document.createElement("button");
         submit.type = "button"; submit.className = "corr-submit"; submit.textContent = "Отправить заявку";
@@ -3991,6 +4001,7 @@
             } else {
               await apiSend("/admin/api/corrections", body);
             }
+            try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
             corrFormOpen = false; correctionsData = null;
             await loadCorrections();
           } catch (e) {

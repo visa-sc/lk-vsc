@@ -1559,6 +1559,13 @@ const LK_MANAGERS_SEED = path.join(__dirname, "lkManagers.seed.json");
 const MANAGER_SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 дней
 const managerSessions = new Map(); // token -> { email, name, exp }
 const managerResetTokens = new Map(); // resetToken -> { email, exp } (восстановление пароля, TTL 1ч)
+// Сессии руководителей ПЕРЕЖИВАЮТ рестарт/деплой: пишем на диск и грузим при старте,
+// чтобы pm2 restart не разлогинивал работающих сотрудников (напр. Настю во время наших правок).
+const MGR_SESSIONS_FILE = path.join(__dirname, ".lkManagerSessions.json");
+function saveManagerSessions() {
+  try { fs.writeFileSync(MGR_SESSIONS_FILE, JSON.stringify(Array.from(managerSessions.entries())), "utf8"); }
+  catch (e) { console.error("saveManagerSessions:", e.message); }
+}
 let lkManagers = null; // { email: { name, salt, hash, createdAt, lastLoginAt } }
 
 function saveManagers() {
@@ -1601,6 +1608,7 @@ function hashPassword(password, salt) {
 function createManagerSession(email, name) {
   const token = crypto.randomBytes(24).toString("hex");
   managerSessions.set(token, { email, name, exp: Date.now() + MANAGER_SESSION_TTL_MS });
+  saveManagerSessions();
   return token;
 }
 function getManagerSession(token) {
@@ -1610,6 +1618,17 @@ function getManagerSession(token) {
   if (Date.now() > s.exp) { managerSessions.delete(token); return null; }
   return s;
 }
+// Восстанавливаем сессии руководителей с диска при старте (просроченные отбрасываем),
+// чтобы рестарт/деплой не разлогинивал. Вход/логику не меняем — только хранилище.
+(function loadManagerSessionsFromDisk() {
+  try {
+    if (!fs.existsSync(MGR_SESSIONS_FILE)) return;
+    const arr = JSON.parse(fs.readFileSync(MGR_SESSIONS_FILE, "utf8")) || [];
+    const now = Date.now(); let n = 0;
+    arr.forEach((pair) => { if (Array.isArray(pair) && pair[0] && pair[1] && pair[1].exp > now) { managerSessions.set(pair[0], pair[1]); n++; } });
+    console.log("MGR SESSIONS: восстановлено с диска " + n);
+  } catch (e) { console.error("loadManagerSessionsFromDisk:", e.message); }
+})();
 // Роль запроса: админ (полный доступ) ИЛИ руководитель. Токен из заголовка или ?token=.
 function getStaffFromReq(req) {
   const headerToken = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
@@ -1696,7 +1715,7 @@ app.post("/admin/api/manager-login", (req, res) => {
 });
 
 app.post("/admin/api/manager-logout", requireStaff, (req, res) => {
-  if (req.staff && req.staff.token) managerSessions.delete(req.staff.token);
+  if (req.staff && req.staff.token) { managerSessions.delete(req.staff.token); saveManagerSessions(); }
   return res.json({ success: true });
 });
 
