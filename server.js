@@ -1321,18 +1321,19 @@ app.get("/loyalty", (req, res) => { res.set("Cache-Control", "no-store, no-cache
 // не загружается, серверной логики нет). «Помощник с проверкой», не интегрирован.
 app.get("/scanner", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "scanner.html")); });
 
-function scheduleLoyaltyTwice() {
-  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000, HOURS = [6, 21];
+function scheduleLoyaltyDaily() {
+  // 1×/сутки ночью (03:00 МСК) — минимизируем фоновую нагрузку на amoCRM, пока пилот
+  // лояльности не используется. Ночью клиентского трафика почти нет.
+  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000, HOUR = 3;
   (function nextRun() {
     const mskNow = Date.now() + MSK_OFFSET;
     const mid = Math.floor(mskNow / DAY_MS) * DAY_MS;
-    let target = Infinity;
-    for (const h of HOURS) { let t = mid + h * 3600 * 1000; if (t <= mskNow) t += DAY_MS; if (t < target) target = t; }
+    let target = mid + HOUR * 3600 * 1000; if (target <= mskNow) target += DAY_MS;
     setTimeout(() => { Promise.resolve(amoBg(() => runLoyaltyAccrual("cron"))).catch(() => {}); nextRun(); }, Math.max(1000, target - mskNow));
   })();
-  console.log("LOYALTY: расчёт начислений запланирован на 06:00 и 21:00 МСК");
+  console.log("LOYALTY: расчёт начислений запланирован 1×/сутки на 03:00 МСК");
 }
-scheduleLoyaltyTwice();
+scheduleLoyaltyDaily();
 // Первичный расчёт через ~180 с после старта (если кэша ещё нет) — после городской
 // (120с) и суточной (150с) выручки, лимитер всё равно сериализует фон.
 if (!loadLoyalty()) setTimeout(() => { Promise.resolve(amoBg(() => runLoyaltyAccrual("startup"))).catch(() => {}); }, 180 * 1000);
