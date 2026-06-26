@@ -2593,7 +2593,43 @@
           e.innerHTML = '<div class="vsc-empty">Выручка по городам считается ночью (05:00 МСК) из amoCRM — данные появятся после первого расчёта.</div>';
           vscContent.appendChild(e);
         }
-        // ── Реклама Я.Директ vs таблица «Рекламные расходы ОБЩИЕ» — последний завершённый месяц ──
+        const h1 = document.createElement("div"); h1.className = "ref-sec-h"; h1.style.marginTop = "22px"; h1.textContent = "Качество звонков и контактов — по месяцам";
+        vscContent.appendChild(h1);
+        VSC_EXTRA_MONTHLY.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, monthSeries)));
+        const h2 = document.createElement("div"); h2.className = "ref-sec-h"; h2.style.marginTop = "22px"; h2.textContent = "Отзывы клиентов — по месяцам (2026)";
+        vscContent.appendChild(h2);
+        const rev = vscData.reviews || [];
+        const short = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
+        const msk = rev.map((r) => ({ x: short(r.name), pos: r.mskPos, neg: r.mskNeg }));
+        const spb = rev.map((r) => ({ x: short(r.name), pos: r.spbPos, neg: r.spbNeg }));
+        vscContent.appendChild(vscReviewsChart("Отзывы — Москва", msk));
+        vscContent.appendChild(vscReviewsChart("Отзывы — Санкт-Петербург", spb));
+
+        // ── Сделки и реклама по месяцам (из нижнего сводного блока листа) ──
+        const ctrlSeries = (vscData.months || []).filter((mm) => mm.ctrl).map((mm) => ({ x: short(mm.name), k: mm.ctrl }));
+        // Item 10 — % повторных сделок.
+        const h3 = document.createElement("div"); h3.className = "ref-sec-h"; h3.style.marginTop = "22px"; h3.textContent = "Сделки — по месяцам (2026)";
+        vscContent.appendChild(h3);
+        vscContent.appendChild(vscBarChart({ key: "repeatPct", label: "% повторных сделок", fmt: "pct", good: 1 }, ctrlSeries));
+        // Item 14 — CPL/ДРР с учётом доп. расходов.
+        const h4 = document.createElement("div"); h4.className = "ref-sec-h"; h4.style.marginTop = "22px"; h4.textContent = "Реклама с учётом доп. расходов — по месяцам";
+        vscContent.appendChild(h4);
+        vscContent.appendChild(vscBarChart({ key: "cplExtra", label: "CPL с учётом доп. расходов", fmt: "money", good: -1 }, ctrlSeries));
+        vscContent.appendChild(vscBarChart({ key: "drrExtra", label: "ДРР с учётом доп. расходов", fmt: "pct", good: -1 }, ctrlSeries));
+        // Item 11 — % возвратов по месяцам (Услуги / выручка).
+        const retSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: { returnsPct: mm.total ? mm.total.returnsPct : null, retUslugi: mm.total ? mm.total.retUslugi : null } }));
+        const h5 = document.createElement("div"); h5.className = "ref-sec-h"; h5.style.marginTop = "22px"; h5.textContent = "Возвраты — по месяцам";
+        vscContent.appendChild(h5);
+        vscContent.appendChild(vscBarChart({ key: "returnsPct", label: "% возвратов (от выручки)", fmt: "pct", good: -1 }, retSeries));
+        // Item 13 — налоги (вынесенный НДС, налог 5%, расхождение с фактом НДС).
+        const taxSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: mm.taxes || {} }));
+        const h6 = document.createElement("div"); h6.className = "ref-sec-h"; h6.style.marginTop = "22px"; h6.textContent = "Налоги — по месяцам";
+        vscContent.appendChild(h6);
+        vscContent.appendChild(vscBarChart({ key: "nds", label: "Вынесенный НДС (предполагаемый, из выручки)", fmt: "money", good: 0 }, taxSeries));
+        vscContent.appendChild(vscBarChart({ key: "tax5", label: "Налог 5%", fmt: "money", good: 0 }, taxSeries));
+        const rasxData = (vscData.months || []).map((mm) => ({ x: short(mm.name), v: mm.taxes ? mm.taxes.rasx : null }));
+        vscContent.appendChild(vscDivergingBars("Расхождение с фактом вынесенного НДС (+ запас / − нехватка)", rasxData, "money"));
+        // ── Не-графики — опущены ВНИЗ (по просьбе Андрея): «Реклама Я.Директ vs таблица» и «План ОП — проверка» ──
         const hYd = document.createElement("div"); hYd.className = "ref-sec-h"; hYd.style.marginTop = "22px"; hYd.textContent = "Реклама Я.Директ vs таблица — последний месяц";
         vscContent.appendChild(hYd);
         const yc = vscData.ydSpendCompare;
@@ -2617,44 +2653,7 @@
           ydBox.innerHTML = '<div class="vsc-empty">Сопоставление расхода Я.Директа считается 1-го и 12-го числа (15:00 МСК) — данные появятся после первого расчёта.</div>';
         }
         vscContent.appendChild(ydBox);
-        const h1 = document.createElement("div"); h1.className = "ref-sec-h"; h1.style.marginTop = "22px"; h1.textContent = "Качество звонков и контактов — по месяцам";
-        vscContent.appendChild(h1);
-        VSC_EXTRA_MONTHLY.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, monthSeries)));
-        const h2 = document.createElement("div"); h2.className = "ref-sec-h"; h2.style.marginTop = "22px"; h2.textContent = "Отзывы клиентов — по месяцам (2026)";
-        vscContent.appendChild(h2);
-        const rev = vscData.reviews || [];
-        const short = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
-        const msk = rev.map((r) => ({ x: short(r.name), pos: r.mskPos, neg: r.mskNeg }));
-        const spb = rev.map((r) => ({ x: short(r.name), pos: r.spbPos, neg: r.spbNeg }));
-        vscContent.appendChild(vscReviewsChart("Отзывы — Москва", msk));
-        vscContent.appendChild(vscReviewsChart("Отзывы — Санкт-Петербург", spb));
-
-        // ── Сделки и реклама по месяцам (из нижнего сводного блока листа) ──
-        const ctrlSeries = (vscData.months || []).filter((mm) => mm.ctrl).map((mm) => ({ x: short(mm.name), k: mm.ctrl }));
-        // Item 10 — % повторных сделок.
-        const h3 = document.createElement("div"); h3.className = "ref-sec-h"; h3.style.marginTop = "22px"; h3.textContent = "Сделки — по месяцам (2026)";
-        vscContent.appendChild(h3);
-        vscContent.appendChild(vscBarChart({ key: "repeatPct", label: "% повторных сделок", fmt: "pct", good: 1 }, ctrlSeries));
-        // Item 9 — проверка Плана ОП.
         vscContent.appendChild(vscPlanOpCheck());
-        // Item 14 — CPL/ДРР с учётом доп. расходов.
-        const h4 = document.createElement("div"); h4.className = "ref-sec-h"; h4.style.marginTop = "22px"; h4.textContent = "Реклама с учётом доп. расходов — по месяцам";
-        vscContent.appendChild(h4);
-        vscContent.appendChild(vscBarChart({ key: "cplExtra", label: "CPL с учётом доп. расходов", fmt: "money", good: -1 }, ctrlSeries));
-        vscContent.appendChild(vscBarChart({ key: "drrExtra", label: "ДРР с учётом доп. расходов", fmt: "pct", good: -1 }, ctrlSeries));
-        // Item 11 — % возвратов по месяцам (Услуги / выручка).
-        const retSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: { returnsPct: mm.total ? mm.total.returnsPct : null, retUslugi: mm.total ? mm.total.retUslugi : null } }));
-        const h5 = document.createElement("div"); h5.className = "ref-sec-h"; h5.style.marginTop = "22px"; h5.textContent = "Возвраты — по месяцам";
-        vscContent.appendChild(h5);
-        vscContent.appendChild(vscBarChart({ key: "returnsPct", label: "% возвратов (от выручки)", fmt: "pct", good: -1 }, retSeries));
-        // Item 13 — налоги (вынесенный НДС, налог 5%, расхождение с фактом НДС).
-        const taxSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: mm.taxes || {} }));
-        const h6 = document.createElement("div"); h6.className = "ref-sec-h"; h6.style.marginTop = "22px"; h6.textContent = "Налоги — по месяцам";
-        vscContent.appendChild(h6);
-        vscContent.appendChild(vscBarChart({ key: "nds", label: "Вынесенный НДС (предполагаемый, из выручки)", fmt: "money", good: 0 }, taxSeries));
-        vscContent.appendChild(vscBarChart({ key: "tax5", label: "Налог 5%", fmt: "money", good: 0 }, taxSeries));
-        const rasxData = (vscData.months || []).map((mm) => ({ x: short(mm.name), v: mm.taxes ? mm.taxes.rasx : null }));
-        vscContent.appendChild(vscDivergingBars("Расхождение с фактом вынесенного НДС (+ запас / − нехватка)", rasxData, "money"));
       }
       // Проверка Плана ОП (item 9): план ATV и план итоговой конверсии текущего месяца
       // (строка «ТАРГЕТ» под Grand total) должны быть ВЫШЕ факта прошлого месяца (Grand
