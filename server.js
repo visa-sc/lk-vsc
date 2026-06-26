@@ -13,6 +13,7 @@ const AdmZip = require("adm-zip");
 const iconv = require("iconv-lite");
 const sms = require("./sms");
 const mail = require("./mail");
+const esign = require("./esign"); // ПЭП-подпись (аналог fdoc) — отдельный модуль, монтируется ниже
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1122,6 +1123,223 @@ scheduleDayRevenueTwice();
 // (чтобы блок не пустовал после рестарта; далее — крон 15:00/20:00). Старт ПОСЛЕ
 // городской выручки (120 с), лимитер всё равно сериализует фон.
 (function () { const c = loadDayRev(); if (!c || c.dayKey !== _mskDayKey(Date.now())) setTimeout(() => { Promise.resolve(amoBg(() => runDayRevenue("startup"))).catch(() => {}); }, 150 * 1000); })();
+// В 00:00 МСК обнуляем кэш «Выручки за сегодня» (БЕЗ обращения к amoCRM), чтобы
+// плитка не показывала вчерашнюю сумму до первого дневного пересчёта (15:00 МСК).
+function scheduleDayRevenueMidnightReset() {
+  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000;
+  (function nextRun() {
+    const mskNow = Date.now() + MSK_OFFSET;
+    const target = (Math.floor(mskNow / DAY_MS) + 1) * DAY_MS; // следующая полночь МСК
+    setTimeout(() => {
+      const todayKey = _mskDayKey(Date.now());
+      const cur = loadDayRev();
+      if (!cur || cur.dayKey !== todayKey) saveDayRev({ ts: Date.now(), dayKey: todayKey, total: 0, leads: 0, scanned: (cur && cur.scanned) || 0, reset: true });
+      nextRun();
+    }, Math.max(1000, target - mskNow));
+  })();
+  console.log("DAY REVENUE: обнуление плитки на 0 в 00:00 МСК запланировано");
+}
+scheduleDayRevenueMidnightReset();
+
+// ═════════════════════════════════════════════════════════════════════════
+// БОНУСНАЯ ПРОГРАММА (лояльность) — /loyalty
+// С 26.06.2026 каждому клиенту начисляем LOYALTY_RATE (5%) от «суммы в бюджете»
+// (l.price) выигрышных сделок — ТОТ ЖЕ универсум 3 воронок, что и «Выручка по
+// городам» (CITY_REV_STATUSES), срез по ДАТЕ ВЫРУЧКИ (поле 427242, CITY_CF_DATE)
+// ≥ старта программы (МСК). 1 балл = 1 ₽.
+// amoCRM — ИСТОЧНИК ИСТИНЫ по начислениям: при каждом прогоне пересчитываем их
+// полностью из amoCRM → идемпотентно, без двойного счёта при повторных запусках.
+// Списания и ручные корректировки (в amoCRM их нет) — в отдельном локальном
+// журнале .loyaltyLedger.json. Баланс = начислено(amoCRM) + Σ(журнал).
+// Всё ЧЕРЕЗ ЛИМИТЕР (amoBg, низкий приоритет), 2×/сутки — нагрузку на amoCRM не
+// создаёт (тот же приём, что городская/суточная выручка). Пока показываем только
+// на /loyalty (внутренний предпросмотр для команды); в клиентский ЛК встроим
+// потом отдельным шагом — ЛК сейчас НЕ трогаем.
+const LOYALTY_FILE = path.join(__dirname, ".loyalty.json");
+const LOYALTY_LEDGER_FILE = path.join(__dirname, ".loyaltyLedger.json");
+const LOYALTY_START_DAY = "2026-06-26";        // старт начислений (МСК), включительно
+const LOYALTY_RATE = 0.05;                     // 5% от выручки → баллы
+const LOYALTY_REDEEM_MAX_SHARE = 0.30;         // баллами можно оплатить до 30% заказа (политика; показываем клиенту)
+const LOYALTY_POINTS_TTL_DAYS = 0;             // 0 = баллы бессрочные (по умолчанию). >0 — срок сгорания (пока выключено)
+// Статусы клиента по сумме покупок В ПРОГРАММЕ (Σ бюджета зачтённых сделок).
+// Базовая ставка 5% едина для всех (как просил директор); тиры — статус + перки,
+// дифференцированную ставку по тиру можно включить позже (поле rate на будущее).
+const LOYALTY_TIERS = [
+  { key: "base",     name: "Базовый",     min: 0,       rate: LOYALTY_RATE, perk: "Кэшбэк 5% баллами с каждой поездки" },
+  { key: "silver",   name: "Серебряный",  min: 100000,  rate: LOYALTY_RATE, perk: "Кэшбэк 5% + приоритетная поддержка" },
+  { key: "gold",     name: "Золотой",     min: 300000,  rate: LOYALTY_RATE, perk: "Кэшбэк 5% + персональный менеджер" },
+  { key: "platinum", name: "Платиновый",  min: 700000,  rate: LOYALTY_RATE, perk: "Кэшбэк 5% + premium-сервис и бонус ко дню рождения" }
+];
+let _loyalty, _loyaltyRunning = false, _loyaltyLog = [];
+function loadLoyalty() { if (_loyalty !== undefined) return _loyalty; try { _loyalty = JSON.parse(fs.readFileSync(LOYALTY_FILE, "utf8")); } catch (_) { _loyalty = null; } return _loyalty; }
+function saveLoyalty(d) { _loyalty = d; try { fs.writeFileSync(LOYALTY_FILE, JSON.stringify(d, null, 2), "utf8"); } catch (e) { console.error("saveLoyalty:", e.message); } }
+let _loyaltyLedger;
+function loadLoyaltyLedger() { if (_loyaltyLedger !== undefined) return _loyaltyLedger; try { _loyaltyLedger = JSON.parse(fs.readFileSync(LOYALTY_LEDGER_FILE, "utf8")); } catch (_) { _loyaltyLedger = {}; } return _loyaltyLedger; }
+function saveLoyaltyLedger(d) { _loyaltyLedger = d; try { fs.writeFileSync(LOYALTY_LEDGER_FILE, JSON.stringify(d, null, 2), "utf8"); } catch (e) { console.error("saveLoyaltyLedger:", e.message); } }
+function loyaltyTierFor(spend) { let t = LOYALTY_TIERS[0], next = null; for (let i = 0; i < LOYALTY_TIERS.length; i++) { if (spend >= LOYALTY_TIERS[i].min) t = LOYALTY_TIERS[i]; else { next = LOYALTY_TIERS[i]; break; } } return { tier: t, next: next }; }
+
+// Полный пересчёт начислений из amoCRM (идемпотентный). Под лимитером (amoBg).
+async function runLoyaltyAccrual(trigger) {
+  if (_loyaltyRunning) return { skipped: true };
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
+  _loyaltyRunning = true;
+  const t0 = Date.now();
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const params = { with: "contacts" };
+    CITY_REV_STATUSES.forEach((s, i) => { params[`filter[statuses][${i}][pipeline_id]`] = String(s.pipeline_id); params[`filter[statuses][${i}][status_id]`] = String(s.status_id); });
+    params["filter[updated_at][from]"] = String(Math.floor(Date.UTC(2026, 0, 1, 0, 0, 0) / 1000) - 3 * 3600);
+    const leads = await amoGetAllPagesParallel(`${baseUrl}/api/v4/leads`, params, 4);
+    // Отбираем сделки с датой выручки (поле 427242) ≥ старта программы (по дню МСК).
+    const qual = [];
+    for (const l of (leads || [])) {
+      const v = _cityCfVal(l, CITY_CF_DATE);
+      if (v == null || v === "" || isNaN(Number(v))) continue;
+      const day = _mskDayKey(Number(v) * 1000);
+      if (day < LOYALTY_START_DAY) continue;
+      qual.push({ l, day, ts: Number(v) * 1000 });
+    }
+    // Главный контакт сделки → тянем телефоны/имена контактов батчами (как в городской выручке).
+    const mainCid = (l) => { const cs = (l._embedded && l._embedded.contacts) || []; const m = cs.find((c) => c.is_main) || cs[0]; return m ? m.id : null; };
+    const cids = [...new Set(qual.map((q) => mainCid(q.l)).filter(Boolean))];
+    const cmap = {};
+    for (let i = 0; i < cids.length; i += 250) {
+      const batch = cids.slice(i, i + 250); const cp = { limit: 250 };
+      batch.forEach((id, k) => { cp[`filter[id][${k}]`] = String(id); });
+      const data = await amoGet(`${baseUrl}/api/v4/contacts`, cp);
+      const list = (data && data._embedded && data._embedded.contacts) || [];
+      list.forEach((c) => { cmap[c.id] = { name: c.name || "", phones: extractPhonesFromContact(c) }; });
+    }
+    const accounts = {}; const unmatched = []; let totalEarned = 0;
+    for (const q of qual) {
+      const l = q.l; const price = Number(l.price) || 0; if (price <= 0) continue;
+      const points = Math.round(price * LOYALTY_RATE);
+      const cid = mainCid(l); const info = cid ? cmap[cid] : null;
+      const deal = { id: l.id, name: l.name || "", price, points, dateRevTs: q.ts, day: q.day };
+      if (!cid || !info || !info.phones.length) { unmatched.push(deal); continue; }
+      const acc = accounts[cid] || (accounts[cid] = { contactId: cid, name: info.name, phones: info.phones, earned: 0, spend: 0, deals: [] });
+      acc.earned += points; acc.spend += price; acc.deals.push(deal); totalEarned += points;
+    }
+    Object.values(accounts).forEach((a) => a.deals.sort((x, y) => y.dateRevTs - x.dateRevTs));
+    const result = {
+      ts: Date.now(), programStart: LOYALTY_START_DAY, rate: LOYALTY_RATE, durationMs: Date.now() - t0,
+      scanned: (leads || []).length, qualified: qual.length, accountsCount: Object.keys(accounts).length,
+      totalEarned, unmatchedCount: unmatched.length, unmatchedPoints: unmatched.reduce((a, d) => a + d.points, 0),
+      accounts, unmatched: unmatched.slice(0, 200)
+    };
+    saveLoyalty(result);
+    _loyaltyLog.unshift({ ts: result.ts, trigger: trigger || "cron", accounts: result.accountsCount, earned: totalEarned, ms: result.durationMs }); _loyaltyLog = _loyaltyLog.slice(0, 30);
+    console.log(`LOYALTY [${trigger || "cron"}]: аккаунтов ${result.accountsCount}, начислено ${totalEarned} баллов, сделок ${qual.length}/${(leads || []).length}, ${result.durationMs}ms`);
+    return result;
+  } catch (e) { console.error("runLoyaltyAccrual:", e.message); _loyaltyLog.unshift({ ts: Date.now(), trigger, error: e.message }); return { error: e.message }; }
+  finally { _loyaltyRunning = false; }
+}
+
+function loyaltyLedgerFor(contactId) { const led = loadLoyaltyLedger(); return led[String(contactId)] || []; }
+// Сборка клиентской карты: начисления (amoCRM) + журнал (списания/корректировки).
+function loyaltyCardForAccount(acc) {
+  const ledger = loyaltyLedgerFor(acc.contactId);
+  const ledgerSum = ledger.reduce((a, e) => a + (Number(e.points) || 0), 0); // списания — отрицательные
+  const balance = Math.max(0, acc.earned + ledgerSum);
+  const { tier, next } = loyaltyTierFor(acc.spend);
+  const hist = []
+    .concat(acc.deals.map((d) => ({ ts: d.dateRevTs, type: "earn", points: d.points, note: d.name || ("Сделка #" + d.id), dealId: d.id })))
+    .concat(ledger.map((e) => ({ ts: e.ts, type: e.type, points: Number(e.points) || 0, note: e.note || "" })))
+    .sort((a, b) => b.ts - a.ts);
+  return {
+    contactId: acc.contactId, name: acc.name, phones: acc.phones,
+    balance, earnedTotal: acc.earned,
+    redeemedTotal: -ledger.filter((e) => e.type === "redeem").reduce((a, e) => a + (Number(e.points) || 0), 0),
+    spend: acc.spend, tier: tier.key, tierName: tier.name, nextTier: next ? next.name : null, toNextSpend: next ? Math.max(0, next.min - acc.spend) : 0,
+    rate: LOYALTY_RATE, redeemMaxShare: LOYALTY_REDEEM_MAX_SHARE, pointsTtlDays: LOYALTY_POINTS_TTL_DAYS,
+    history: hist
+  };
+}
+function loyaltyFindAccountByPhone(phone) {
+  const norm = normalizePhone(phone); if (!norm) return null;
+  const d = loadLoyalty(); if (!d || !d.accounts) return null;
+  for (const cid of Object.keys(d.accounts)) {
+    const a = d.accounts[cid];
+    if ((a.phones || []).some((p) => p === norm || p.endsWith(norm) || norm.endsWith(p))) return a;
+  }
+  return null;
+}
+function loyaltyEmptyCard(phone) {
+  const next = LOYALTY_TIERS[1] || null;
+  return {
+    contactId: null, name: "", phones: phone ? [normalizePhone(phone)] : [], balance: 0, earnedTotal: 0, redeemedTotal: 0, spend: 0,
+    tier: "base", tierName: LOYALTY_TIERS[0].name, nextTier: next ? next.name : null, toNextSpend: next ? next.min : 0,
+    rate: LOYALTY_RATE, redeemMaxShare: LOYALTY_REDEEM_MAX_SHARE, pointsTtlDays: LOYALTY_POINTS_TTL_DAYS, history: []
+  };
+}
+
+// ── API лояльности ──
+// Сводка для команды (аккаунты + суммарный «долг» по баллам). Доступ: VSC/админ.
+app.get("/admin/api/loyalty/overview", requireVscAccess, (req, res) => {
+  const d = loadLoyalty();
+  if (!d) return res.json({ success: true, data: null, accounts: [], log: _loyaltyLog.slice(0, 5), running: _loyaltyRunning, config: { rate: LOYALTY_RATE, programStart: LOYALTY_START_DAY } });
+  let liability = 0; const accounts = [];
+  Object.values(d.accounts || {}).forEach((a) => { const c = loyaltyCardForAccount(a); liability += c.balance; accounts.push({ contactId: a.contactId, name: a.name, phones: a.phones, balance: c.balance, earned: a.earned, spend: a.spend, tierName: c.tierName, deals: a.deals.length }); });
+  accounts.sort((x, y) => y.balance - x.balance);
+  return res.json({ success: true, running: _loyaltyRunning, log: _loyaltyLog.slice(0, 5), data: { ts: d.ts, programStart: d.programStart, rate: d.rate, accountsCount: d.accountsCount, totalEarned: d.totalEarned, liability, unmatchedCount: d.unmatchedCount, unmatchedPoints: d.unmatchedPoints, scanned: d.scanned, qualified: d.qualified }, accounts });
+});
+// Карта по телефону (для операторского предпросмотра). Доступ: VSC/админ.
+app.get("/admin/api/loyalty/card", requireVscAccess, (req, res) => {
+  const phone = String(req.query.phone || ""); if (!phone) return res.status(400).json({ success: false, message: "Укажите телефон" });
+  const acc = loyaltyFindAccountByPhone(phone);
+  return res.json({ success: true, card: acc ? loyaltyCardForAccount(acc) : loyaltyEmptyCard(phone) });
+});
+// Запустить пересчёт начислений из amoCRM сейчас (низкий приоритет). Только админ.
+app.post("/admin/api/loyalty/run", requireAdmin, (req, res) => {
+  if (_loyaltyRunning) return res.json({ success: true, started: false, running: true });
+  setImmediate(() => { Promise.resolve(amoBg(() => runLoyaltyAccrual("manual"))).catch(() => {}); });
+  return res.json({ success: true, started: true });
+});
+// Ручная корректировка: points<0 — списание (redeem), >0 — бонус (adjust). Только админ.
+app.post("/admin/api/loyalty/adjust", requireAdmin, (req, res) => {
+  const phone = String((req.body && req.body.phone) || "");
+  const points = Math.round(Number(req.body && req.body.points));
+  const note = String((req.body && req.body.note) || "").slice(0, 200);
+  const type = String((req.body && req.body.type) || (points < 0 ? "redeem" : "adjust"));
+  if (!phone || !points || isNaN(points)) return res.status(400).json({ success: false, message: "Телефон и ненулевые баллы обязательны" });
+  const acc = loyaltyFindAccountByPhone(phone);
+  if (!acc) return res.status(404).json({ success: false, message: "Аккаунт по телефону не найден — сначала запустите пересчёт" });
+  const card = loyaltyCardForAccount(acc);
+  if (points < 0 && (card.balance + points) < 0) return res.status(400).json({ success: false, message: `Недостаточно баллов: на счету ${card.balance}` });
+  const led = loadLoyaltyLedger(); const key = String(acc.contactId); (led[key] = led[key] || []).push({ ts: Date.now(), type, points, note, by: (req.staff && req.staff.email) || "admin" }); saveLoyaltyLedger(led);
+  return res.json({ success: true, card: loyaltyCardForAccount(acc) });
+});
+// Хук для будущего встраивания в клиентский ЛК: карта текущего клиента по сессии.
+app.get("/api/loyalty/me", (req, res) => {
+  const phone = clientPhoneFromSession(req); if (!phone) return res.status(401).json({ success: false });
+  const acc = loyaltyFindAccountByPhone(phone);
+  return res.json({ success: true, card: acc ? loyaltyCardForAccount(acc) : loyaltyEmptyCard(phone) });
+});
+// Отдельная страница /loyalty (ЛК не трогаем; карту встроим в кабинет позже).
+app.get("/loyalty", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "loyalty.html")); });
+// Пилот сканера паспорта /scanner (MRZ + OCR ПОЛНОСТЬЮ в браузере — на сервер фото
+// не загружается, серверной логики нет). «Помощник с проверкой», не интегрирован.
+app.get("/scanner", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "scanner.html")); });
+
+function scheduleLoyaltyTwice() {
+  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000, HOURS = [6, 21];
+  (function nextRun() {
+    const mskNow = Date.now() + MSK_OFFSET;
+    const mid = Math.floor(mskNow / DAY_MS) * DAY_MS;
+    let target = Infinity;
+    for (const h of HOURS) { let t = mid + h * 3600 * 1000; if (t <= mskNow) t += DAY_MS; if (t < target) target = t; }
+    setTimeout(() => { Promise.resolve(amoBg(() => runLoyaltyAccrual("cron"))).catch(() => {}); nextRun(); }, Math.max(1000, target - mskNow));
+  })();
+  console.log("LOYALTY: расчёт начислений запланирован на 06:00 и 21:00 МСК");
+}
+scheduleLoyaltyTwice();
+// Первичный расчёт через ~180 с после старта (если кэша ещё нет) — после городской
+// (120с) и суточной (150с) выручки, лимитер всё равно сериализует фон.
+if (!loadLoyalty()) setTimeout(() => { Promise.resolve(amoBg(() => runLoyaltyAccrual("startup"))).catch(() => {}); }, 180 * 1000);
+
+// ── Подписание документов ПЭП (аналог fdoc) — отдельные маршруты /esign*, /api/esign*.
+// НЕ интегрировано в клиентский ЛК и не меняет вход/авторизацию (требование Андрея).
+esign.mount(app, { requireVscAccess, requireAdmin });
 
 // ═════════════════════════════════════════════════════════════════════════
 // Остановки рекламных кампаний Яндекс.Директа (item 2). API v5 НЕ отдаёт ленту
@@ -1361,11 +1579,14 @@ function loadManagers() {
         const email = String(m.email || "").toLowerCase().trim();
         if (!email) return;
         const seedPerms = Array.isArray(m.perms) ? m.perms : [];
-        if (!lkManagers[email]) { lkManagers[email] = { name: m.name || email, salt: "", hash: "", createdAt: "", lastLoginAt: "", perms: seedPerms }; changed = true; }
+        const seedRestrict = m.vscRestrict || null; // персональное ограничение вида /vsc (напр. показывать не все вкладки / скрыть прибыль)
+        if (!lkManagers[email]) { lkManagers[email] = { name: m.name || email, salt: "", hash: "", createdAt: "", lastLoginAt: "", perms: seedPerms, vscRestrict: seedRestrict }; changed = true; }
         else {
           if (m.name && lkManagers[email].name !== m.name) { lkManagers[email].name = m.name; changed = true; }
           // Права доступа синхронизируем из seed (источник правды для прав).
           if (JSON.stringify(lkManagers[email].perms || []) !== JSON.stringify(seedPerms)) { lkManagers[email].perms = seedPerms; changed = true; }
+          // Персональное ограничение /vsc тоже синхронизируем из seed.
+          if (JSON.stringify(lkManagers[email].vscRestrict || null) !== JSON.stringify(seedRestrict)) { lkManagers[email].vscRestrict = seedRestrict; changed = true; }
         }
       });
       if (changed) saveManagers();
@@ -1398,7 +1619,7 @@ function getStaffFromReq(req) {
   if (m) {
     // Права берём из актуальной записи руководителя (источник — seed).
     const acc = (loadManagers() || {})[String(m.email || "").toLowerCase()] || {};
-    return { role: "manager", name: m.name, email: m.email, perms: Array.isArray(acc.perms) ? acc.perms : [], token };
+    return { role: "manager", name: m.name, email: m.email, perms: Array.isArray(acc.perms) ? acc.perms : [], vscRestrict: acc.vscRestrict || null, token };
   }
   return null;
 }
@@ -1412,6 +1633,17 @@ function requireStaff(req, res, next) {
 function requireVscAccess(req, res, next) {
   const s = getStaffFromReq(req);
   if (s && (s.role === "admin" || (Array.isArray(s.perms) && s.perms.indexOf("vsc") >= 0))) { req.staff = s; return next(); }
+  return res.status(401).json({ success: false, message: "Нет доступа" });
+}
+// Доступ к данным дашборда /vsc: админ ИЛИ руководитель, которому ПЕРСОНАЛЬНО открыт
+// дашборд/ежемесячный контроль через vscRestrict.tabs (обычным руководителям дашборд
+// по-прежнему закрыт — для них этот эндпоинт отдаёт 401, как и раньше при requireAdmin).
+function requireVscDashboard(req, res, next) {
+  const s = getStaffFromReq(req);
+  if (!s) return res.status(401).json({ success: false, message: "Нет доступа" });
+  if (s.role === "admin") { req.staff = s; return next(); }
+  const r = s.vscRestrict;
+  if (r && Array.isArray(r.tabs) && (r.tabs.indexOf("dash") >= 0 || r.tabs.indexOf("monthly") >= 0)) { req.staff = s; return next(); }
   return res.status(401).json({ success: false, message: "Нет доступа" });
 }
 // Доступ к «Бот VFS»: админ ИЛИ руководитель с правом «vfsbot» (сейчас — Плинер).
@@ -1446,7 +1678,7 @@ app.post("/admin/api/manager-login", (req, res) => {
     acc.lastLoginAt = acc.createdAt;
     saveManagers();
     const token = createManagerSession(email, acc.name);
-    return res.json({ success: true, token, role: "manager", name: acc.name, perms: acc.perms || [], firstLogin: true });
+    return res.json({ success: true, token, role: "manager", name: acc.name, perms: acc.perms || [], vscRestrict: acc.vscRestrict || null, firstLogin: true });
   }
   // Обычный вход — проверяем пароль (constant-time).
   let ok = false;
@@ -1459,7 +1691,7 @@ app.post("/admin/api/manager-login", (req, res) => {
   acc.lastLoginAt = new Date().toISOString();
   saveManagers();
   const token = createManagerSession(email, acc.name);
-  return res.json({ success: true, token, role: "manager", name: acc.name, perms: acc.perms || [] });
+  return res.json({ success: true, token, role: "manager", name: acc.name, perms: acc.perms || [], vscRestrict: acc.vscRestrict || null });
 });
 
 app.post("/admin/api/manager-logout", requireStaff, (req, res) => {
@@ -1514,7 +1746,7 @@ app.post("/admin/api/manager-has-password", (req, res) => {
 
 // «Кто я» — роль + имя (для фронта). Принимает админский и менеджерский токен.
 app.get("/admin/api/whoami", requireStaff, (req, res) => {
-  return res.json({ success: true, role: req.staff.role, name: req.staff.name, perms: req.staff.perms || [] });
+  return res.json({ success: true, role: req.staff.role, name: req.staff.name, perms: req.staff.perms || [], vscRestrict: req.staff.vscRestrict || null });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1563,6 +1795,40 @@ function loadCorrections() {
 function corrText(s, max) {
   return String(s == null ? "" : s).trim().slice(0, max || 4000);
 }
+
+// ── Отклонённые рекомендации (жёлтые блоки «Рекомендации» в инструментах ЛК) ──
+// Общий список для ВСЕХ сотрудников (отклонил один — скрыто у всех). Ключ — хэш
+// (раздел+текст), считается на фронте. Рантайм-файл (не ПДн), в .gitignore.
+const LK_REC_DISMISSED_FILE = path.join(__dirname, ".lkRecDismissed.json");
+let lkRecDismissed = null; // { [hash]: { area, text, by, ts } }
+function loadRecDismissed() {
+  if (lkRecDismissed) return lkRecDismissed;
+  try { lkRecDismissed = JSON.parse(fs.readFileSync(LK_REC_DISMISSED_FILE, "utf8")); } catch (_) { lkRecDismissed = {}; }
+  if (!lkRecDismissed || typeof lkRecDismissed !== "object") lkRecDismissed = {};
+  return lkRecDismissed;
+}
+function saveRecDismissed() { try { fs.writeFileSync(LK_REC_DISMISSED_FILE, JSON.stringify(lkRecDismissed || {}, null, 2), "utf8"); } catch (e) { console.error("saveRecDismissed:", e.message); } }
+app.get("/admin/api/rec-dismissed", requireStaff, (req, res) => {
+  const d = loadRecDismissed();
+  const items = {}; Object.keys(d).forEach((k) => { items[k] = { action: (d[k] && d[k].action) || "dismissed" }; });
+  return res.json({ success: true, ids: Object.keys(d), items: items });
+});
+app.post("/admin/api/rec-dismissed", requireStaff, (req, res) => {
+  const id = String((req.body && req.body.id) || "").trim();
+  if (!id) return res.status(400).json({ success: false, message: "id обязателен" });
+  // action: "applied" (ушла в корректировки и скрыта) | "dismissed" (отклонена). По умолчанию — dismissed.
+  const action = String((req.body && req.body.action) || "dismissed") === "applied" ? "applied" : "dismissed";
+  const d = loadRecDismissed();
+  d[id] = { action: action, area: corrText(req.body && req.body.area, 80), text: corrText(req.body && req.body.text, 400), by: (req.staff && (req.staff.email || req.staff.name)) || "staff", ts: Date.now() };
+  saveRecDismissed();
+  return res.json({ success: true });
+});
+app.post("/admin/api/rec-dismissed/restore", requireStaff, (req, res) => {
+  const id = String((req.body && req.body.id) || "").trim();
+  const d = loadRecDismissed();
+  if (id && d[id]) { delete d[id]; saveRecDismissed(); }
+  return res.json({ success: true });
+});
 
 app.get("/admin/api/corrections", requireStaff, (req, res) => {
   try {
@@ -3108,14 +3374,19 @@ function vscSaveProfit(map) {
   setTimeout(warm, 15 * 1000);
   setInterval(warm, VSC_PREWARM_MS);
 })();
-app.get("/admin/api/vsc-dashboard", requireAdmin, async (req, res) => {
+app.get("/admin/api/vsc-dashboard", requireVscDashboard, async (req, res) => {
   try {
     const data = await getVscDashboard();
     // Прибыль читаем СВЕЖО (не из 15-мин кэша) — чтобы только что введённое значение
     // сразу отражалось в рентабельности. Рентабельность считается на клиенте.
     // dayRevenue читаем СВЕЖО (вне 15-мин кэша) — чтобы перерасчёт 15:00/20:00
     // отражался сразу, не дожидаясь протухания кэша дашборда.
-    return res.json(Object.assign({ success: true }, data, { profit: vscLoadProfit(), dayRevenue: loadDayRev() }));
+    // Для руководителя с ограничением hideProfit прибыль НЕ отдаём вовсе (не только
+    // прячем на фронте) — чтобы цифры не утекали в сетевой ответ. Рентабельность
+    // считается из прибыли на клиенте → без прибыли её тоже не будет.
+    const restrict = req.staff && req.staff.vscRestrict;
+    const profit = (restrict && restrict.hideProfit) ? {} : vscLoadProfit();
+    return res.json(Object.assign({ success: true }, data, { profit, dayRevenue: loadDayRev() }));
   } catch (e) {
     console.error("vsc dashboard error:", e.message);
     return res.status(500).json({ success: false, message: "Не удалось загрузить данные таблицы" });
@@ -11651,7 +11922,7 @@ app.post("/team/api/webauthn/auth-verify", async (req, res) => {
     acc.lastLoginAt = new Date().toISOString();
     saveManagers();
     const token = createManagerSession(email, acc.name);
-    return res.json({ success: true, token, role: "manager", name: acc.name, perms: acc.perms || [] });
+    return res.json({ success: true, token, role: "manager", name: acc.name, perms: acc.perms || [], vscRestrict: acc.vscRestrict || null });
   } catch (err) { console.error("MGR WEBAUTHN AUTH VERIFY:", err.message); return res.status(500).json({ success: false, message: err.message }); }
 });
 app.post("/team/api/webauthn/register-options", requireStaff, async (req, res) => {

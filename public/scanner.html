@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Сканер паспорта (пилот) · VOYO</title>
+<style>
+  :root{--bg:#f4f6fa;--card:#fff;--line:#e7ebf2;--ink:#1d2433;--mut:#8a90a0;--accent:#3589bd;--accent-d:#2c6f96;--green:#2c7a43;--red:#b0263a;--amber:#7a5b12;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;}
+  .wrap{max-width:720px;margin:0 auto;padding:22px 16px 70px;}
+  h1{font-size:21px;margin:4px 0 2px;}
+  .sub{color:var(--mut);font-size:13px;margin-bottom:14px;}
+  .priv{background:#eef7f0;border:1px solid #cfe9d6;color:#256138;border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:16px;}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:16px;}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:0 0 12px;font-weight:700;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  button{cursor:pointer;border:0;border-radius:10px;padding:11px 16px;font-weight:600;background:var(--accent);color:#fff;}
+  button.sec{background:#eef2f7;color:var(--ink);}
+  button:disabled{opacity:.5;cursor:default;}
+  input[type=file]{font:inherit;}
+  .preview{max-width:100%;max-height:260px;border-radius:10px;border:1px solid var(--line);margin-top:12px;display:none;}
+  .prog{margin-top:12px;font-size:13px;color:var(--accent-d);display:none;}
+  .prog .bar{height:6px;background:#e8eef4;border-radius:99px;overflow:hidden;margin-top:6px;}
+  .prog .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s;}
+  table.fields{width:100%;border-collapse:collapse;font-size:14px;}
+  table.fields td{padding:6px 6px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  table.fields td.k{color:var(--mut);width:42%;font-size:13px;}
+  table.fields input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;}
+  table.fields input:focus{outline:none;border-color:var(--accent);}
+  .badge{font-size:11px;font-weight:700;padding:2px 7px;border-radius:99px;margin-left:6px;}
+  .ok{background:#e7f6ec;color:var(--green);} .bad{background:#fdeaea;color:var(--red);} .neutral{background:#eef2f7;color:#667;}
+  .mrz{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:#0f1b25;color:#cfe6f5;padding:10px;border-radius:8px;white-space:pre;overflow:auto;}
+  details{margin-top:10px;} summary{cursor:pointer;font-size:13px;color:var(--accent-d);font-weight:600;}
+  .raw{white-space:pre-wrap;font-size:12px;color:#444;background:#fafbfd;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px;max-height:240px;overflow:auto;}
+  .warn{background:#fff7e6;border:1px solid #ffe2a8;color:var(--amber);border-radius:10px;padding:9px 12px;font-size:12.5px;margin-top:10px;}
+  .hint{font-size:12px;color:var(--mut);margin-top:6px;}
+  .conf{font-size:12px;color:var(--mut);margin-top:8px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Сканер паспорта — пилот (помощник с проверкой)</h1>
+  <div class="sub">MRZ (загранпаспорт) + бесплатный OCR (tesseract.js). Не интегрирован — данные никуда не отправляются.</div>
+  <div class="priv">🔒 Фото обрабатывается <b>прямо в этом браузере</b> и <b>не загружается на сервер</b>. Распознавание локальное (tesseract.js).</div>
+
+  <div class="panel">
+    <h2>1. Загрузите фото / скан паспорта</h2>
+    <div class="row">
+      <input type="file" id="file" accept="image/*" capture="environment" />
+      <button id="runBtn" disabled>Распознать</button>
+    </div>
+    <div class="hint">Лучше всего — главная страница загранпаспорта целиком, ровно, без бликов (нужны 2 нижние строки MRZ).</div>
+    <img id="preview" class="preview" alt="preview" />
+    <div class="prog" id="prog"><span id="progTxt">Готовлю распознавание…</span><div class="bar"><i id="progBar"></i></div></div>
+  </div>
+
+  <div class="panel" id="mrzPanel" style="display:none;">
+    <h2>2. Данные из MRZ (машинно-читаемая зона)</h2>
+    <div id="mrzStatus" class="conf"></div>
+    <div class="mrz" id="mrzRaw"></div>
+    <div class="warn" id="mrzWarn" style="display:none;">MRZ не найдена/не распозналась. Поля ниже заполните по визуальной зоне и проверьте вручную. MRZ есть у загранпаспорта (2 строки внизу); у внутреннего РФ-паспорта — отдельный формат, его лучше вводить вручную.</div>
+  </div>
+
+  <div class="panel" id="resPanel" style="display:none;">
+    <h2>3. Поля для договора / опросника — ПРОВЕРЬТЕ и поправьте</h2>
+    <table class="fields"><tbody id="fields"></tbody></table>
+    <div class="row" style="margin-top:12px;">
+      <button class="sec" id="copyBtn">Скопировать JSON</button>
+      <span class="conf" id="copyMsg"></span>
+    </div>
+    <div class="warn">⚠️ Это пилот-«помощник»: OCR ошибается, особенно на фото с телефона и на кириллице. <b>Обязательно сверьте каждое поле с оригиналом</b> перед использованием. Никуда автоматически ничего не подставляется.</div>
+    <details><summary>Показать весь распознанный текст (для проверки)</summary>
+      <div class="raw" id="rawText"></div>
+    </details>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  var fileEl=document.getElementById("file"), runBtn=document.getElementById("runBtn"), preview=document.getElementById("preview");
+  var prog=document.getElementById("prog"), progTxt=document.getElementById("progTxt"), progBar=document.getElementById("progBar");
+  var curFile=null;
+
+  fileEl.addEventListener("change", function(){
+    curFile = fileEl.files && fileEl.files[0];
+    if(!curFile){ runBtn.disabled=true; preview.style.display="none"; return; }
+    preview.src = URL.createObjectURL(curFile); preview.style.display="block"; runBtn.disabled=false;
+  });
+
+  function setProg(show, txt, pct){ prog.style.display=show?"block":"none"; if(txt) progTxt.textContent=txt; if(pct!=null) progBar.style.width=Math.round(pct*100)+"%"; }
+
+  // ── MRZ TD3 (загранпаспорт): 2 строки по 44 символа ──
+  function mrzCharVal(c){ if(c==="<")return 0; if(c>="0"&&c<="9")return c.charCodeAt(0)-48; if(c>="A"&&c<="Z")return c.charCodeAt(0)-55; return 0; }
+  function mrzCheck(s){ var w=[7,3,1], sum=0; for(var i=0;i<s.length;i++) sum+=mrzCharVal(s[i])*w[i%3]; return sum%10; }
+  function fmtMrzDate(s, future){
+    if(!/^\d{6}$/.test(s)) return "";
+    var yy=parseInt(s.slice(0,2),10), mm=s.slice(2,4), dd=s.slice(4,6), now=new Date().getFullYear()%100, yyyy;
+    if(future){ yyyy=2000+yy; } else { yyyy = yy<=now ? 2000+yy : 1900+yy; }
+    return dd+"."+mm+"."+yyyy;
+  }
+  function cleanMrzLine(l){ return (l||"").toUpperCase().replace(/[^A-Z0-9<]/g,""); }
+  function findMrzLines(text){
+    var lines=(text||"").split(/\r?\n/).map(cleanMrzLine).filter(function(l){ return l.length>=28 && (l.indexOf("<")>=0); });
+    // кандидаты — самые длинные «MRZ-похожие» строки; берём 2 последние
+    lines.sort(function(a,b){ return b.length-a.length; });
+    var cand = lines.slice(0,4).sort(function(a,b){ return 0; });
+    // ищем пару, где вторая строка похожа на data-line (есть цифры и позиции)
+    // простая эвристика: берём 2 самые длинные, в исходном порядке
+    var byLen=lines.slice(0,2);
+    return byLen.length>=2 ? byLen : (lines.length?[lines[0]]:[]);
+  }
+  function parseTD3(l1,l2){
+    l1=(l1+"<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<").slice(0,44);
+    l2=(l2+"<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<").slice(0,44);
+    var docType=l1.slice(0,2).replace(/</g,"");
+    var country=l1.slice(2,5).replace(/</g,"");
+    var nm=l1.slice(5).split("<<");
+    var surname=(nm[0]||"").replace(/</g," ").trim();
+    var given=(nm[1]||"").replace(/</g," ").trim();
+    var passNo=l2.slice(0,9), passNoCd=l2[9];
+    var nat=l2.slice(10,13).replace(/</g,"");
+    var dob=l2.slice(13,19), dobCd=l2[19];
+    var sex=l2[20];
+    var exp=l2.slice(21,27), expCd=l2[27];
+    var checks={
+      passNo: String(mrzCheck(passNo))===passNoCd,
+      dob: String(mrzCheck(dob))===dobCd,
+      exp: String(mrzCheck(exp))===expCd
+    };
+    var okCount=(checks.passNo?1:0)+(checks.dob?1:0)+(checks.exp?1:0);
+    return {
+      docType:docType, country:country, surnameLat:surname, givenLat:given,
+      passNo:passNo.replace(/</g,""), nationality:nat,
+      dob:fmtMrzDate(dob,false), sex:(sex==="M"?"М":sex==="F"?"Ж":""),
+      expiry:fmtMrzDate(exp,true), checks:checks, okCount:okCount
+    };
+  }
+
+  var FIELD_DEFS=[
+    ["surnameCyr","Фамилия (кириллица)"],
+    ["givenCyr","Имя (кириллица)"],
+    ["patronymicCyr","Отчество (кириллица)"],
+    ["dob","Дата рождения"],
+    ["sex","Пол"],
+    ["nationality","Гражданство"],
+    ["passNo","Серия и номер"],
+    ["issueDate","Дата выдачи"],
+    ["expiry","Срок действия"],
+    ["authority","Кем выдан"],
+    ["surnameLat","Фамилия (латиница, MRZ)"],
+    ["givenLat","Имя (латиница, MRZ)"]
+  ];
+  function renderFields(values){
+    var tb=document.getElementById("fields"); tb.innerHTML="";
+    FIELD_DEFS.forEach(function(f){
+      var tr=document.createElement("tr");
+      tr.innerHTML='<td class="k">'+f[1]+'</td><td><input data-k="'+f[0]+'" value="'+(values[f[0]]?String(values[f[0]]).replace(/"/g,"&quot;"):"")+'"></td>';
+      tb.appendChild(tr);
+    });
+    document.getElementById("resPanel").style.display="block";
+  }
+
+  // эвристики по кириллическому тексту (очень грубо — пилот)
+  function guessFromCyrillic(text, out){
+    var t=(text||"");
+    var m;
+    if((m=t.match(/Код подразделения[^\d]*(\d{3}[\-\s]?\d{3})/i))) out.authorityCode=m[1];
+    // дата выдачи: ищем дату рядом со словом «выдан»
+    if((m=t.match(/выдан[^\d]{0,40}(\d{2}[.\s]\d{2}[.\s]\d{4})/i))) out.issueDate=m[1].replace(/\s/g,".");
+  }
+
+  async function recognize(){
+    if(!curFile) return;
+    runBtn.disabled=true; document.getElementById("mrzPanel").style.display="none"; document.getElementById("resPanel").style.display="none";
+    var values={};
+    try{
+      // Проход 1 — MRZ (латиница/цифры, ограниченный набор символов)
+      setProg(true,"Загружаю движок и распознаю MRZ…",0.02);
+      var w1=await Tesseract.createWorker("eng",1,{ logger:function(m){ if(m.status==="recognizing text") setProg(true,"Распознаю MRZ…",m.progress); else if(m.status) setProg(true,m.status+"…",null); } });
+      await w1.setParameters({ tessedit_char_whitelist:"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ<" });
+      var r1=await w1.recognize(curFile);
+      await w1.terminate();
+      var mrzText=r1.data.text||"";
+      var lines=findMrzLines(mrzText);
+      var mrzPanel=document.getElementById("mrzPanel"); mrzPanel.style.display="block";
+      var parsed=null;
+      if(lines.length>=2){ parsed=parseTD3(lines[0],lines[1]); }
+      if(parsed && parsed.okCount>=1){
+        document.getElementById("mrzRaw").textContent=lines[0]+"\n"+lines[1];
+        document.getElementById("mrzWarn").style.display="none";
+        var badge=function(ok){ return '<span class="badge '+(ok?"ok":"bad")+'">'+(ok?"✓ контр.число":"✗ контр.число")+'</span>'; };
+        document.getElementById("mrzStatus").innerHTML="Совпало контрольных чисел: <b>"+parsed.okCount+"/3</b> · номер"+badge(parsed.checks.passNo)+" дата рожд."+badge(parsed.checks.dob)+" срок"+badge(parsed.checks.exp);
+        values.surnameLat=parsed.surnameLat; values.givenLat=parsed.givenLat;
+        values.passNo=parsed.passNo; values.dob=parsed.dob; values.sex=parsed.sex;
+        values.nationality=parsed.nationality==="RUS"?"РФ":parsed.nationality; values.expiry=parsed.expiry;
+      } else {
+        document.getElementById("mrzRaw").textContent=(lines.join("\n"))||"(MRZ-строки не найдены)";
+        document.getElementById("mrzWarn").style.display="block";
+        document.getElementById("mrzStatus").innerHTML="";
+      }
+
+      // Проход 2 — кириллица (визуальная зона)
+      setProg(true,"Загружаю русский язык и распознаю текст…",0.02);
+      var w2=await Tesseract.createWorker("rus",1,{ logger:function(m){ if(m.status==="recognizing text") setProg(true,"Распознаю кириллицу…",m.progress); else if(m.status) setProg(true,m.status+"…",null); } });
+      var r2=await w2.recognize(curFile);
+      await w2.terminate();
+      var cyr=r2.data.text||"";
+      document.getElementById("rawText").textContent="── MRZ-проход ──\n"+mrzText+"\n\n── Кириллица ──\n"+cyr;
+      guessFromCyrillic(cyr, values);
+
+      renderFields(values);
+      setProg(false);
+    }catch(e){
+      setProg(false);
+      alert("Ошибка распознавания: "+(e&&e.message||e));
+    }
+    runBtn.disabled=false;
+  }
+  runBtn.addEventListener("click", recognize);
+
+  document.getElementById("copyBtn").addEventListener("click", function(){
+    var out={};
+    document.querySelectorAll("#fields input").forEach(function(i){ var v=i.value.trim(); if(v) out[i.getAttribute("data-k")]=v; });
+    var json=JSON.stringify(out,null,2);
+    if(navigator.clipboard) navigator.clipboard.writeText(json);
+    document.getElementById("copyMsg").textContent="Скопировано (проверенные поля).";
+    setTimeout(function(){ document.getElementById("copyMsg").textContent=""; }, 2500);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Подписание документа · VOYO</title>
+<style>
+  :root{--bg:#f4f6fa;--card:#fff;--line:#e7ebf2;--ink:#1d2433;--mut:#8a90a0;--accent:#3589bd;--accent-d:#2c6f96;--green:#2c7a43;--red:#b0263a;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:520px;margin:0 auto;padding:22px 16px 60px;}
+  .brand{font-weight:800;letter-spacing:.08em;color:var(--accent-d);font-size:14px;margin-bottom:14px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 18px;margin-bottom:14px;box-shadow:0 6px 18px rgba(40,70,100,.05);}
+  h1{font-size:19px;margin:2px 0 4px;}
+  .sub{color:var(--mut);font-size:13px;}
+  .docbox{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:12px;}
+  .docbox .ic{width:38px;height:38px;border-radius:9px;background:#eaf3f9;color:var(--accent-d);display:flex;align-items:center;justify-content:center;font-size:18px;flex:0 0 auto;}
+  .docbox .t{font-weight:600;font-size:14px;line-height:1.3;}
+  .docbox .m{color:var(--mut);font-size:12px;margin-top:2px;}
+  a.view{color:var(--accent);font-weight:600;text-decoration:none;font-size:13px;white-space:nowrap;}
+  .consent{margin-top:14px;border:1px solid var(--line);border-radius:12px;background:#fafbfd;}
+  .consent .h{padding:10px 12px;font-size:13px;font-weight:600;cursor:pointer;display:flex;justify-content:space-between;}
+  .consent .body{display:none;padding:0 12px 12px;max-height:230px;overflow:auto;white-space:pre-wrap;font-size:11.5px;color:#444;line-height:1.5;}
+  .consent.open .body{display:block;}
+  label.chk{display:flex;gap:9px;align-items:flex-start;margin-top:14px;font-size:13px;line-height:1.45;cursor:pointer;}
+  label.chk input{margin-top:2px;width:18px;height:18px;flex:0 0 auto;}
+  .otp{display:flex;gap:8px;margin-top:14px;}
+  input[type=text]{flex:1;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:16px;letter-spacing:.12em;text-align:center;}
+  input:focus{outline:none;border-color:var(--accent);}
+  button{cursor:pointer;border:0;border-radius:11px;padding:13px 16px;font-weight:700;font-size:15px;background:var(--accent);color:#fff;width:100%;margin-top:12px;}
+  button.sec{background:#eef2f7;color:var(--ink);font-size:14px;margin-top:0;width:auto;white-space:nowrap;}
+  button:disabled{opacity:.5;cursor:default;}
+  .msg{font-size:13px;margin-top:10px;}
+  .msg.err{color:var(--red);} .msg.ok{color:var(--green);}
+  .done{text-align:center;padding:8px 0;}
+  .done .big{font-size:44px;}
+  .legal{font-size:11px;color:var(--mut);line-height:1.5;margin-top:14px;}
+  .hidden{display:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">VOYO</div>
+  <div class="card" id="root">
+    <div class="sub" id="loading">Загрузка…</div>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var id = (location.pathname.split("/sign/")[1]||"").replace(/[^a-f0-9]/gi,""); // работает и для /esign/sign/ и для /fdoc/sign/
+  var root = document.getElementById("root");
+  function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
+  async function api(url,opts){var r=await fetch(url,Object.assign({headers:{"Content-Type":"application/json"}},opts||{}));var j=null;try{j=await r.json();}catch(e){}return{ok:r.ok,status:r.status,j:j};}
+
+  function renderDone(){
+    root.innerHTML='<div class="done"><div class="big">✅</div><h1>Документ подписан</h1>'+
+      '<div class="sub">Подписано простой электронной подписью (ПЭП).</div>'+
+      '<a class="view" href="/api/esign/'+id+'/protocol" target="_blank" style="display:inline-block;margin-top:14px;">Скачать протокол подписания →</a></div>';
+  }
+
+  function renderInfo(msg){ root.innerHTML='<h1>'+esc(msg)+'</h1>'; }
+
+  function render(req,consent){
+    if(req.status==="signed"){ renderDone(); return; }
+    if(req.status==="expired"){ renderInfo("Срок действия ссылки истёк"); return; }
+    root.innerHTML =
+      '<h1>Подписание документа</h1>'+
+      '<div class="sub">Ознакомьтесь с документом и подпишите его кодом из SMS.</div>'+
+      '<div class="docbox"><div class="ic">📄</div><div style="flex:1;"><div class="t">'+esc(req.docName)+'</div>'+
+        '<div class="m">'+esc(req.docType)+' · для: '+esc(req.signerName||"—")+'</div></div>'+
+        '<a class="view" href="/api/esign/'+id+'/document" target="_blank">Открыть</a></div>'+
+      '<div class="consent" id="cons"><div class="h" id="consH"><span>Соглашение об использовании ПЭП</span><span>▾</span></div>'+
+        '<div class="body">'+esc(consent.text)+'</div></div>'+
+      '<label class="chk"><input type="checkbox" id="agree"><span>Я ознакомлен(а) с Соглашением, согласен(на) использовать простую электронную подпись и обязуюсь не передавать код третьим лицам.</span></label>'+
+      '<button id="getCode" disabled>Получить код по SMS на '+esc(req.signerPhoneMasked)+'</button>'+
+      '<div id="otpBlock" class="hidden"><div class="otp"><input type="text" id="code" inputmode="numeric" placeholder="Код из SMS" maxlength="8"><button class="sec" id="resend">Ещё раз</button></div>'+
+        '<button id="signBtn">Подписать</button></div>'+
+      '<div class="msg" id="msg"></div>'+
+      '<div class="legal">Подписывая документ, вы применяете простую электронную подпись по ст. 5, 6, 9 Федерального закона № 63-ФЗ «Об электронной подписи». ПЭП равнозначна собственноручной подписи.</div>';
+
+    document.getElementById("consH").addEventListener("click",function(){ document.getElementById("cons").classList.toggle("open"); });
+    var agree=document.getElementById("agree"), getCode=document.getElementById("getCode");
+    agree.addEventListener("change",function(){ getCode.disabled=!agree.checked; });
+
+    var msg=document.getElementById("msg");
+    function setMsg(t,cls){ msg.textContent=t||""; msg.className="msg"+(cls?(" "+cls):""); }
+
+    async function requestCode(btn){
+      btn.disabled=true; var old=btn.textContent; btn.textContent="Отправляю…";
+      var r=await api("/api/esign/"+id+"/otp",{method:"POST",body:JSON.stringify({})});
+      if(r.j&&r.j.success){ document.getElementById("otpBlock").classList.remove("hidden"); setMsg(r.j.testMode?"Тестовый режим SMS: код во внутреннем логе.":"Код отправлен по SMS.","ok"); document.getElementById("code").focus(); }
+      else { setMsg((r.j&&r.j.message)||"Не удалось отправить код","err"); }
+      setTimeout(function(){ btn.disabled=false; btn.textContent=old; },1500);
+    }
+    getCode.addEventListener("click",function(){ requestCode(getCode); });
+    document.getElementById("resend").addEventListener("click",function(){ requestCode(document.getElementById("resend")); });
+
+    document.getElementById("signBtn").addEventListener("click",async function(){
+      var code=document.getElementById("code").value.trim();
+      if(!code){ setMsg("Введите код из SMS","err"); return; }
+      var b=this; b.disabled=true; b.textContent="Подписываю…";
+      var r=await api("/api/esign/"+id+"/sign",{method:"POST",body:JSON.stringify({code:code,consent:true})});
+      if(r.j&&r.j.success){ renderDone(); }
+      else { setMsg((r.j&&r.j.message)||"Ошибка подписания","err"); b.disabled=false; b.textContent="Подписать"; }
+    });
+  }
+
+  if(!id){ renderInfo("Ссылка недействительна"); return; }
+  api("/api/esign/"+id).then(function(r){
+    if(r.status===404){ renderInfo("Документ не найден"); return; }
+    if(!r.ok||!r.j||!r.j.success){ renderInfo("Не удалось загрузить документ"); return; }
+    render(r.j.request, r.j.consent);
+  });
+})();
+</script>
+</body>
+</html>

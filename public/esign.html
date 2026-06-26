@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Подписание документов (ПЭП) · VOYO</title>
+<style>
+  :root{--bg:#f4f6fa;--card:#fff;--line:#e7ebf2;--ink:#1d2433;--mut:#8a90a0;--accent:#3589bd;--accent-d:#2c6f96;--green:#2c7a43;--red:#b0263a;--amber:#7a5b12;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;}
+  .wrap{max-width:760px;margin:0 auto;padding:22px 16px 60px;}
+  h1{font-size:21px;margin:4px 0 2px;}
+  .sub{color:var(--mut);font-size:13px;margin-bottom:16px;}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:16px;}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:0 0 12px;font-weight:700;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  label.f{display:block;font-size:12px;color:var(--mut);margin-bottom:4px;}
+  input,select{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;background:#fff;color:var(--ink);}
+  input:focus,select:focus{outline:none;border-color:var(--accent);}
+  .full{grid-column:1 / -1;}
+  button{cursor:pointer;border:0;border-radius:10px;padding:11px 15px;font-weight:600;background:var(--accent);color:#fff;margin-top:12px;}
+  button.sec{background:#eef2f7;color:var(--ink);}
+  .warn{background:#fff7e6;border:1px solid #ffe2a8;color:var(--amber);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px;}
+  .res{margin-top:12px;border:1px dashed var(--accent);border-radius:10px;padding:12px;background:#f5fafd;font-size:13px;display:none;}
+  .res .lnk{word-break:break-all;color:var(--accent-d);font-weight:600;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);}
+  th{color:var(--mut);font-size:11.5px;text-transform:uppercase;font-weight:600;}
+  .badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;}
+  .b-pending{background:#eef2f7;color:#566;} .b-signed{background:#e7f6ec;color:var(--green);} .b-expired{background:#fdeaea;color:var(--red);}
+  .err{color:var(--red);font-size:13px;margin-top:8px;}
+  .muted{color:var(--mut);font-size:12px;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .consent-box{display:none;white-space:pre-wrap;font-size:11.5px;line-height:1.5;color:#444;background:#fafbfd;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:10px;max-height:300px;overflow:auto;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Подписание документов простой электронной подписью</h1>
+  <div class="sub">Внутренний инструмент команды. Аналог fdoc · ПЭП по SMS (63-ФЗ). Не интегрирован в ЛК.</div>
+  <div id="authWarn"></div>
+
+  <div class="panel">
+    <h2>Создать запрос на подпись</h2>
+    <div class="grid">
+      <div><label class="f">Тип документа</label>
+        <select id="docType"><option>Опросник</option><option>Договор оказания услуг</option><option>Согласие на обработку ПДн</option><option>Заявление</option></select></div>
+      <div><label class="f">Название документа</label><input type="text" id="docName" value="Опросник (тест)" /></div>
+      <div><label class="f">ФИО подписанта</label><input type="text" id="signerName" placeholder="Иванов Иван Иванович" /></div>
+      <div><label class="f">Телефон подписанта</label><input type="tel" id="signerPhone" placeholder="+7 999 123-45-67" /></div>
+    </div>
+    <div class="muted" style="margin-top:8px;">Для теста документ генерируется автоматически (образец). При интеграции сюда подаётся готовый PDF опросника/договора.</div>
+    <button id="createBtn">Создать запрос → получить ссылку</button>
+    <div class="err" id="createErr"></div>
+    <div class="res" id="createRes"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Запросы на подпись</h2>
+    <div class="row">
+      <button class="sec" id="refreshBtn">Обновить</button>
+      <button class="sec" id="consentBtn">Показать текст соглашения ПЭП</button>
+      <span class="muted" id="ver"></span>
+    </div>
+    <div class="consent-box" id="consentBox"></div>
+    <div id="list" style="margin-top:12px;"><span class="muted">Загрузка…</span></div>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
+  function fdate(ts){try{return new Date(ts).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});}catch(e){return"";}}
+  async function api(url,opts){var r=await fetch(url,Object.assign({headers:{"Content-Type":"application/json"}},opts||{}));var j=null;try{j=await r.json();}catch(e){}return{ok:r.ok,status:r.status,j:j};}
+  var authed=true;
+
+  document.getElementById("createBtn").addEventListener("click",async function(){
+    var err=document.getElementById("createErr"); err.textContent="";
+    var body={docType:document.getElementById("docType").value,docName:document.getElementById("docName").value.trim(),signerName:document.getElementById("signerName").value.trim(),signerPhone:document.getElementById("signerPhone").value.trim()};
+    if(!body.signerPhone){ err.textContent="Укажите телефон подписанта"; return; }
+    var b=this; b.disabled=true; b.textContent="Создаю…";
+    var r=await api("/admin/api/esign/create",{method:"POST",body:JSON.stringify(body)});
+    b.disabled=false; b.textContent="Создать запрос → получить ссылку";
+    if(r.status===401){ err.textContent="Нет доступа — войдите в /vsc этим же браузером."; return; }
+    if(!r.j||!r.j.success){ err.textContent=(r.j&&r.j.message)||"Ошибка"; return; }
+    var res=document.getElementById("createRes"); res.style.display="block";
+    res.innerHTML='Ссылка для подписания (отправьте клиенту):<br><a class="lnk" href="'+esc(r.signUrl||r.j.signUrl)+'" target="_blank">'+esc(r.j.signUrl)+'</a>'+
+      '<div style="margin-top:8px;"><button class="sec" onclick="navigator.clipboard&&navigator.clipboard.writeText(\''+esc(r.j.signUrl)+'\')">Скопировать</button> '+
+      '<button class="sec" onclick="window.open(\''+esc(r.j.signUrl)+'\')">Открыть</button></div>';
+    loadList();
+  });
+
+  document.getElementById("refreshBtn").addEventListener("click",loadList);
+  document.getElementById("consentBtn").addEventListener("click",async function(){
+    var box=document.getElementById("consentBox");
+    if(box.style.display==="block"){ box.style.display="none"; return; }
+    var r=await api("/admin/api/esign/consent");
+    if(r.j&&r.j.success){ box.textContent=r.j.text; box.style.display="block"; }
+  });
+
+  async function loadList(){
+    var r=await api("/admin/api/esign/list");
+    var list=document.getElementById("list");
+    if(r.status===401){ authed=false; document.getElementById("authWarn").innerHTML='<div class="warn">Нет доступа. Войдите в <b>/vsc</b> в этом же браузере и обновите страницу.</div>'; list.innerHTML=""; return; }
+    if(!r.j||!r.j.success){ list.innerHTML='<span class="muted">Ошибка загрузки.</span>'; return; }
+    document.getElementById("ver").textContent="Версия соглашения: "+(r.j.consentVersion||"");
+    var items=r.j.items||[];
+    if(!items.length){ list.innerHTML='<span class="muted">Запросов пока нет.</span>'; return; }
+    var rows=items.map(function(it){
+      var cls=it.status==="signed"?"b-signed":it.status==="expired"?"b-expired":"b-pending";
+      var st=it.status==="signed"?"Подписан":it.status==="expired"?"Истёк":"Ожидает";
+      var links='<a href="/esign/sign/'+it.id+'" target="_blank">ссылка</a>';
+      if(it.status==="signed") links+=' · <a href="/api/esign/'+it.id+'/protocol" target="_blank">протокол</a>';
+      return '<tr><td>'+esc(it.docName)+'<div class="muted">'+esc(it.docType)+'</div></td>'+
+        '<td>'+esc(it.signerName||"—")+'<div class="muted">'+esc(it.signerPhoneMasked||"")+'</div></td>'+
+        '<td><span class="badge '+cls+'">'+st+'</span></td>'+
+        '<td class="muted">'+fdate(it.createdAt)+'</td><td>'+links+'</td></tr>';
+    }).join("");
+    list.innerHTML='<table><thead><tr><th>Документ</th><th>Подписант</th><th>Статус</th><th>Создан</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+  }
+  loadList();
+})();
+</script>
+</body>
+</html>

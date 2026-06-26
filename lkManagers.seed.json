@@ -5,6 +5,7 @@
   { "email": "ksenia.m@visa-sc.ru", "name": "Ксения Маслова", "perms": ["vsc"] },
   { "email": "anastasia.p@visa-sc.ru", "name": "Анастасия Плинер", "perms": ["vsc", "vfsbot"] },
   { "email": "ap@sp1.ru", "name": "Андрей Петров", "perms": ["vsc"] },
+  { "email": "ap@spt1.ru", "name": "Андрей Петров", "perms": ["vsc"], "vscRestrict": { "tabs": ["dash", "monthly"], "hideProfit": true } },
   { "email": "director@visa-sc.ru", "name": "Андрей Комисаренко", "perms": ["stages", "vsc", "vfsbot"] },
   { "email": "rustam.b@visa-sc.ru", "name": "Рустам Бурханов", "perms": ["vsc"] }
 ]

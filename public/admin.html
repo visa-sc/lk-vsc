@@ -614,6 +614,14 @@
     .rec-text { font-size: 12.5px; color: #5c4a2a; line-height: 1.45; }
     .qc-apply { color: #2c6b43; border-color: #bfe3cc; }
     .qc-apply:hover { background: #e9f7ee; }
+    .qc-dismiss { color: #b0455a; border-color: #f0c9d1; background: #fff6f7; } /* «Отклонить» — бледно-красная */
+    .qc-dismiss:hover { background: #fdeef1; }
+    .rec-btns { display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; align-items: flex-end; }
+    .rec-hidden { margin-top: 10px; border-top: 1px dashed #ecd9ab; padding-top: 8px; }
+    .rec-hidden > summary { font-size: 12px; color: #8a5a12; font-weight: 600; cursor: pointer; }
+    .rec-hidden-item { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; font-size: 12px; color: #9a8a6a; padding: 6px 0; border-top: 1px dashed #ecd9ab; }
+    .rec-hidden-item:first-of-type { border-top: none; }
+    .rec-hidden-item span { line-height: 1.45; }
     .tst-dirs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
     .tst-dir-btn { border: 1px solid #cfd8e3; background: #fff; color: #33415a; border-radius: 999px; padding: 6px 16px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
     .tst-dir-btn.active { background: #161d45; color: #fff; border-color: #161d45; }
@@ -697,6 +705,7 @@
     .vsc-month select { padding: 7px 10px; border: 1px solid #cfd8e3; border-radius: 8px; font-size: 13px; font-family: inherit; background: #fff; }
     .vsc-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
     .vsc-tile { background: #fff; border: 1px solid #e6e9f0; border-radius: 14px; padding: 14px 16px; }
+    .vsc-tile-dayrev { background: #f2faf3; border-color: #d6ecdb; } /* «Выручка за сегодня» — бледно-зелёная плитка */
     .vsc-tile-l { font-size: 12px; color: #6b7280; font-weight: 600; line-height: 1.3; min-height: 31px; }
     .vsc-tile-v { font-size: 24px; font-weight: 800; color: #161d45; margin-top: 6px; letter-spacing: -.01em; }
     .vsc-tile-v.pos { color: #2c7a43; } .vsc-tile-v.neg { color: #b0263a; }
@@ -1281,6 +1290,8 @@
       let myRole = ""; // реальная роль из whoami/login: "admin" | "manager" (приоритетнее эвристики по хосту)
       function currentRole() { return myRole || (IS_TEAM ? "manager" : "admin"); }
       let managerPerms = []; // персональные права руководителя (напр. ["stages"], ["vsc"], ["vfsbot"])
+      let myVscRestrict = null; // персональное ограничение вида /vsc: { tabs:[...], hideProfit:true } — только у отдельных руководителей (напр. Андрей Петров)
+      function vscHideProfit() { return !!(myVscRestrict && myVscRestrict.hideProfit); } // скрывать ли прибыль/рентабельность
       function applyRoleUI() {
         const mgr = currentRole() === "manager";
         const canStages = mgr && Array.isArray(managerPerms) && managerPerms.indexOf("stages") >= 0;
@@ -1443,11 +1454,13 @@
 
       // ── Блок «Рекомендации» (жёлтый) — единый для Тестировщика и справочников.
       // У каждой рекомендации кнопка «Применить»: комментарий (необязательно) →
-      // заявка в «Корректировки ЛК» с текстом рекомендации и контекстом.
-      function recApplyButton(areaLabel, recText, contextFn, mount) {
+      // заявка в «Корректировки ЛК» с текстом рекомендации и контекстом. После успешной
+      // отправки рекомендация ПОМЕЧАЕТСЯ как «применена» и уходит из активного списка
+      // (в «Скрытые рекомендации», откуда её можно «Вернуть») — чтобы не мешалась.
+      function recApplyButton(areaLabel, recText, contextFn, mount, id, onApplied) {
         const btn = document.createElement("button");
         btn.type = "button"; btn.className = "qc-btn qc-apply"; btn.textContent = "Применить";
-        btn.title = "Отправить эту рекомендацию в «Корректировки ЛК» (можно добавить комментарий)";
+        btn.title = "Отправить эту рекомендацию в «Корректировки ЛК» (можно добавить комментарий). После отправки она скроется из списка.";
         btn.addEventListener("click", () => {
           const existing = mount.querySelector(":scope > .qc-form");
           if (existing) { existing.remove(); return; }
@@ -1466,8 +1479,10 @@
                 expected: ta.value.trim(),
                 context: contextFn() + "\nИсточник: блок «Рекомендации»"
               });
+              // помечаем как «применена» → исчезает из активного списка (restorable)
+              if (id) { try { await apiSend("/admin/api/rec-dismissed", { id: id, area: areaLabel, text: recText, action: "applied" }); recDismissed.add(id); recDismissedInfo[id] = { action: "applied" }; } catch (_) {} }
               f.innerHTML = '<div class="qc-done">✓ Отправлено в «Корректировки ЛК»</div>';
-              setTimeout(() => { f.remove(); }, 2500);
+              setTimeout(() => { if (typeof onApplied === "function") onApplied(); }, 1400);
             } catch (e) {
               err.textContent = e.message || "Ошибка"; err.style.display = "block";
               send.disabled = false; send.textContent = "Отправить в «Корректировки ЛК»";
@@ -1480,20 +1495,73 @@
         });
         return btn;
       }
+      // Скрытые рекомендации — общий список для всех сотрудников (серверный): и
+      // «отклонённые» (Отклонить), и «применённые» (ушли в корректировки). Ключ —
+      // стабильный хэш (раздел + текст). Загружаем один раз при showDash.
+      let recDismissed = new Set();
+      let recDismissedInfo = {}; // id -> { action: "applied" | "dismissed" }
+      async function loadRecDismissed() {
+        try { const d = await apiFetch("/admin/api/rec-dismissed"); if (d && d.success && Array.isArray(d.ids)) { recDismissed = new Set(d.ids); recDismissedInfo = d.items || {}; } } catch (_) {}
+      }
+      function recHash(area, text) {
+        const s = (area || "") + "" + (text || "");
+        let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+        return "r" + (h >>> 0).toString(36);
+      }
+      // Кнопка «Отклонить» (бледно-красная): скрывает рекомендацию для всех сотрудников.
+      function recDismissButton(areaLabel, recText, id, onChange) {
+        const btn = document.createElement("button");
+        btn.type = "button"; btn.className = "qc-btn qc-dismiss"; btn.textContent = "Отклонить";
+        btn.title = "Скрыть эту рекомендацию (для всех сотрудников). Вернуть можно ниже, в «Скрытые рекомендации».";
+        btn.addEventListener("click", async () => {
+          btn.disabled = true; btn.textContent = "Скрываю…";
+          try { await apiSend("/admin/api/rec-dismissed", { id: id, area: areaLabel, text: recText, action: "dismissed" }); recDismissed.add(id); recDismissedInfo[id] = { action: "dismissed" }; onChange(); }
+          catch (e) { btn.disabled = false; btn.textContent = "Отклонить"; alert((e && e.message) || "Ошибка"); }
+        });
+        return btn;
+      }
       function recBlock(areaLabel, recs, contextFn) {
         const cw = document.createElement("div"); cw.className = "tst-flags";
         const ct = document.createElement("div"); ct.className = "tst-flags-h";
         ct.textContent = "💡 Рекомендации — на что я обратил бы внимание (спорное / дубли / можно качественнее):";
-        cw.appendChild(ct); // без кнопки «Скорректировать» — у каждой рекомендации своя «Применить»
-        (recs || []).forEach((t) => {
-          const item = document.createElement("div"); item.className = "rec-item";
-          const main = document.createElement("div"); main.className = "rec-main";
-          const tx = document.createElement("div"); tx.className = "rec-text"; tx.textContent = t;
-          main.appendChild(tx);
-          main.appendChild(recApplyButton(areaLabel, t, contextFn, item));
-          item.appendChild(main);
-          cw.appendChild(item);
-        });
+        cw.appendChild(ct);
+        const list = document.createElement("div"); cw.appendChild(list);
+        const all = recs || [];
+        function render() {
+          list.innerHTML = "";
+          const hidden = [];
+          all.forEach((t) => {
+            const id = recHash(areaLabel, t);
+            if (recDismissed.has(id)) { hidden.push({ t: t, id: id }); return; }
+            const item = document.createElement("div"); item.className = "rec-item";
+            const main = document.createElement("div"); main.className = "rec-main";
+            const tx = document.createElement("div"); tx.className = "rec-text"; tx.textContent = t;
+            const btns = document.createElement("div"); btns.className = "rec-btns";
+            btns.appendChild(recApplyButton(areaLabel, t, contextFn, item, id, render));
+            btns.appendChild(recDismissButton(areaLabel, t, id, render));
+            main.appendChild(tx); main.appendChild(btns);
+            item.appendChild(main);
+            list.appendChild(item);
+          });
+          if (hidden.length) {
+            const det = document.createElement("details"); det.className = "rec-hidden";
+            const sm = document.createElement("summary"); sm.textContent = "Скрытые рекомендации (" + hidden.length + ")"; det.appendChild(sm);
+            hidden.forEach((h) => {
+              const hi = document.createElement("div"); hi.className = "rec-hidden-item";
+              const applied = recDismissedInfo[h.id] && recDismissedInfo[h.id].action === "applied";
+              const tx = document.createElement("span"); tx.textContent = (applied ? "✓ применена · " : "✕ отклонена · ") + h.t;
+              const back = document.createElement("button"); back.type = "button"; back.className = "qc-btn"; back.textContent = "Вернуть";
+              back.addEventListener("click", async () => {
+                back.disabled = true;
+                try { await apiSend("/admin/api/rec-dismissed/restore", { id: h.id }); recDismissed.delete(h.id); render(); }
+                catch (e) { back.disabled = false; alert((e && e.message) || "Ошибка"); }
+              });
+              hi.appendChild(tx); hi.appendChild(back); det.appendChild(hi);
+            });
+            list.appendChild(det);
+          }
+        }
+        render();
         return cw;
       }
 
@@ -1805,8 +1873,8 @@
       ];
       // Доп. показатели — только графики по месяцам внизу /vsc, БЕЗ плиток-цифр.
       const VSC_EXTRA_MONTHLY = [
-        { key: "missedPct", label: "Процент пропущенных звонков", fmt: "pct", good: -1 },
-        { key: "junkPct", label: "Доля мусора от общего числа контактов", fmt: "pct", good: -1 }
+        { key: "missedPct", label: "% пропущенных звонков", fmt: "pct", good: -1 },
+        { key: "junkPct", label: "% мусора от набранных контактов", fmt: "pct", good: -1 }
       ];
       // Прибыль по месяцам приходит с сервера (vscData.profit, ключ — ПОЛНОЕ имя месяца);
       // директор вводит её раз в месяц через /vsc. Рентабельность = прибыль / выручка (бюджет).
@@ -2003,11 +2071,14 @@
 
       async function loadVsc() {
         if (!vscContent) return;
-        // Руководители (не админ) видят на vsc только калькулятор/бота — без админского
-        // дашборда (vsc-dashboard requireAdmin). Сразу к рендеру вкладок (гейтинг внутри).
-        if (currentRole() === "manager") { renderVsc(); return; }
-        loadNoTaskBlock();
-        loadYdStops();
+        // Руководители (не админ) обычно видят на vsc только калькулятор/бота — без
+        // админского дашборда. Исключение — руководитель с персональным доступом
+        // (myVscRestrict.tabs, напр. Андрей Петров): ему дашборд/контроль открыт, грузим
+        // данные. vsc-dashboard для него отдаёт сервер (requireVscDashboard), прибыль
+        // вырезается на сервере (hideProfit).
+        const vscMgrAllowed = currentRole() === "manager" && myVscRestrict && Array.isArray(myVscRestrict.tabs);
+        if (currentRole() === "manager" && !vscMgrAllowed) { renderVsc(); return; }
+        if (!vscMgrAllowed) { loadNoTaskBlock(); loadYdStops(); } // админские блоки — только админу
         if (!vscData) vscContent.innerHTML = '<div class="loading-state">Загружаем данные из Google-таблицы…</div>';
         try {
           const d = await apiFetch("/admin/api/vsc-dashboard");
@@ -2171,15 +2242,22 @@
           const bar = document.createElement("div"); bar.className = "vsc-bar" + (kpi.fmt === "signed" ? (v > 0 ? " pos" : v < 0 ? " neg" : "") : "");
           bar.style.height = v == null ? "2px" : (Math.max(2, Math.round(Math.abs(v) / maxAbs * 120)) + "px");
           const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = s.x;
-          // Прирост/спад к предыдущему непустому периоду: рост — зелёным, спад — красным.
+          // Прирост/спад к предыдущему непустому периоду. Цвет — по «хорошо/плохо»
+          // (как в плитках, см. dirCls): для метрик good===-1 (CPL, ДРР, % возвратов,
+          // % пропущенных, % мусора) рост — плохо (красный), спад — хорошо (зелёный);
+          // для остальных (выручка и пр., good 1/0) — рост зелёным, спад красным.
+          // Стрелка ▲/▼ всегда по факту направления — меняется только цвет.
           let prevV = null;
           for (let j = i - 1; j >= 0; j--) { if (vals[j] != null) { prevV = vals[j]; break; } }
           const dl = document.createElement("div"); dl.className = "vsc-bar-d";
           if (v != null && prevV != null && prevV !== 0) {
             const pct = Math.round((v - prevV) / Math.abs(prevV) * 100);
-            if (pct > 0) { dl.className = "vsc-bar-d up"; dl.textContent = "▲ " + pct + "%"; }
-            else if (pct < 0) { dl.className = "vsc-bar-d down"; dl.textContent = "▼ " + Math.abs(pct) + "%"; }
-            else { dl.className = "vsc-bar-d flat"; dl.textContent = "0%"; }
+            if (pct === 0) { dl.className = "vsc-bar-d flat"; dl.textContent = "0%"; }
+            else {
+              const goodChange = kpi.good === -1 ? (pct < 0) : (pct > 0);
+              dl.className = "vsc-bar-d " + (goodChange ? "up" : "down");
+              dl.textContent = (pct > 0 ? "▲ " : "▼ ") + Math.abs(pct) + "%";
+            }
           }
           col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(dl);
           bars.appendChild(col);
@@ -2270,8 +2348,14 @@
         // Вкладки /vsc. Руководителям — только «Калькулятор ВНЖ» (+ «Бот VFS» при праве vfsbot); админу — все.
         let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
         if (isMgr) {
-          TABS = TABS.filter(([tb]) => tb === "calc" || (tb === "bot" && Array.isArray(managerPerms) && managerPerms.indexOf("vfsbot") >= 0));
-          if (!TABS.some(([tb]) => tb === vscTab)) vscTab = "calc";
+          if (myVscRestrict && Array.isArray(myVscRestrict.tabs)) {
+            // Персональный доступ (напр. Андрей Петров): показываем ровно его список вкладок.
+            TABS = TABS.filter(([tb]) => myVscRestrict.tabs.indexOf(tb) >= 0);
+          } else {
+            // Обычный руководитель — только калькулятор (+ бот при праве vfsbot). Без изменений.
+            TABS = TABS.filter(([tb]) => tb === "calc" || (tb === "bot" && Array.isArray(managerPerms) && managerPerms.indexOf("vfsbot") >= 0));
+          }
+          if (!TABS.some(([tb]) => tb === vscTab)) vscTab = (TABS[0] && TABS[0][0]) || "calc";
         }
         const maintabs = document.createElement("div"); maintabs.className = "vsc-maintabs";
         TABS.forEach(([tb, lbl]) => {
@@ -2281,8 +2365,11 @@
         });
         vscContent.appendChild(maintabs);
         // Блок «Сделки без задач» относится к Дашборду — на остальных вкладках прячем.
-        if (vscNoTaskBlock) vscNoTaskBlock.style.display = (vscTab === "dash") ? "" : "none";
-        if (vscYdStopsBlock) vscYdStopsBlock.style.display = (vscTab === "dash") ? "" : "none";
+        // Для руководителя с персональным доступом (myVscRestrict) админские блоки
+        // «Сделки без задач» и «Остановки Я.Директа» не показываем (их API — requireAdmin).
+        const vscRestricted = !!(myVscRestrict && Array.isArray(myVscRestrict.tabs));
+        if (vscNoTaskBlock) vscNoTaskBlock.style.display = (vscTab === "dash" && !vscRestricted) ? "" : "none";
+        if (vscYdStopsBlock) vscYdStopsBlock.style.display = (vscTab === "dash" && !vscRestricted) ? "" : "none";
         if (vscTab === "monthly") { renderVscMonthly(); return; }
         if (vscTab === "forecast") { renderVscForecast(); return; }
         if (vscTab === "calc") { renderVscCalc(); return; }
@@ -2428,23 +2515,26 @@
         // 2×/день (15:00 и 20:00 МСК) низким приоритетом; здесь — готовая сумма из кэша.
         if (vscGran === "day") {
           const dr = vscData.dayRevenue;
-          const drT = document.createElement("div"); drT.className = "vsc-tile";
-          if (dr && dr.total != null) {
-            const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Moscow" });
-            const forToday = dr.dayKey === todayKey;
-            const dateRu = dr.dayKey ? dr.dayKey.split("-").reverse().join(".") : "";
+          const drT = document.createElement("div"); drT.className = "vsc-tile vsc-tile-dayrev";
+          const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Moscow" });
+          if (dr && dr.total != null && dr.dayKey === todayKey) {
             const upd = dr.ts ? new Date(dr.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
             drT.innerHTML = '<div class="vsc-tile-l">Выручка за сегодня (amoCRM)</div>'
               + '<div class="vsc-tile-v">' + vscFmt(dr.total, "money") + '</div>'
-              + '<div class="vsc-tile-s">' + (forToday ? "сегодня" : escapeHtml(dateRu)) + ' · на ' + escapeHtml(upd) + ' МСК · сделок ' + (dr.leads != null ? dr.leads : "—") + ' · обновл. 15:00 и 20:00</div>';
+              + '<div class="vsc-tile-s">сегодня · на ' + escapeHtml(upd) + ' МСК · сделок ' + (dr.leads != null ? dr.leads : "—") + ' · обновл. 15:00 и 20:00</div>';
           } else {
-            drT.innerHTML = '<div class="vsc-tile-l">Выручка за сегодня (amoCRM)</div><div class="vsc-tile-v">—</div><div class="vsc-tile-s">обновляется в 15:00 и 20:00 МСК</div>';
+            // Новый день начался, а кэш ещё за прошлый день (или его нет) → показываем 0,
+            // чтобы вчерашняя сумма не путала. Реальные данные появятся в 15:00/20:00 МСК.
+            drT.innerHTML = '<div class="vsc-tile-l">Выручка за сегодня (amoCRM)</div>'
+              + '<div class="vsc-tile-v">' + vscFmt(0, "money") + '</div>'
+              + '<div class="vsc-tile-s">день только начался · обновится в 15:00 и 20:00 МСК</div>';
           }
           tiles.appendChild(drT);
         }
         // Прибыль и рентабельность (item 12 + расширение): плитки в «Год» и «Месяц».
         // В «Месяц» — за ПОСЛЕДНИЙ месяц с введённой прибылью (текущий ещё не закрыт).
-        if (vscGran === "month" || vscGran === "year") {
+        // Скрываем для руководителя с ограничением hideProfit (напр. Андрей Петров).
+        if ((vscGran === "month" || vscGran === "year") && !vscHideProfit()) {
           const ms = vscData.months || [];
           const sTile = (label, txt, sub) => { const t = document.createElement("div"); t.className = "vsc-tile"; t.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(label) + '</div><div class="vsc-tile-v">' + txt + '</div><div class="vsc-tile-s">' + escapeHtml(sub) + '</div>'; return t; };
           if (vscGran === "year") {
@@ -2477,7 +2567,8 @@
         if (!series.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных за выбранный месяц."; vscContent.appendChild(e); }
         else kpisForView.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, series)));
         // Прибыль и рентабельность по месяцам — графики в «Год» и «Месяц».
-        if (vscGran === "month" || vscGran === "year") {
+        // Скрываем для руководителя с ограничением hideProfit (напр. Андрей Петров).
+        if ((vscGran === "month" || vscGran === "year") && !vscHideProfit()) {
           const profSeries = (vscData.months || []).map((mm) => ({ x: vscShortMonth(mm.name), k: { profit: vscProfitOf(mm), rent: vscRentPct(mm) } }));
           vscContent.appendChild(vscBarChart({ key: "profit", label: "Прибыль по месяцам, ₽", fmt: "money", good: 1 }, profSeries));
           vscContent.appendChild(vscBarChart({ key: "rent", label: "Рентабельность (прибыль / выручка), %", fmt: "pct", good: 1 }, profSeries));
@@ -3100,6 +3191,7 @@
         loginBlock.style.display = "none";
         dashBlock.classList.add("show");
         bioOffer.classList.remove("show");
+        loadRecDismissed(); // подтягиваем список отклонённых рекомендаций (для жёлтых блоков инструментов)
         // /vsc — показываем ТОЛЬКО VSC-дашборд: прячем вкладки и все прочие панели.
         if (IS_VSC) {
           const tabsBar = document.querySelector(".tabs"); if (tabsBar) tabsBar.style.display = "none";
@@ -3362,7 +3454,7 @@
           const assertion = await navigator.credentials.get({ publicKey });
           const verifyR = await fetch("/team/api/webauthn/auth-verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, assertionResponse: { id: assertion.id, rawId: bytesToB64u(assertion.rawId), type: assertion.type, response: { clientDataJSON: bytesToB64u(assertion.response.clientDataJSON), authenticatorData: bytesToB64u(assertion.response.authenticatorData), signature: bytesToB64u(assertion.response.signature), userHandle: assertion.response.userHandle ? bytesToB64u(assertion.response.userHandle) : null }, clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {} } }) });
           const data = await verifyR.json().catch(() => ({}));
-          if (verifyR.ok && data.success && data.token) { setToken(data.token); managerPerms = Array.isArray(data.perms) ? data.perms : []; myRole = "manager"; try { localStorage.setItem("voyo_mgr_bio_email", email); } catch (_) {} return true; }
+          if (verifyR.ok && data.success && data.token) { setToken(data.token); managerPerms = Array.isArray(data.perms) ? data.perms : []; myVscRestrict = data.vscRestrict || null; myRole = "manager"; try { localStorage.setItem("voyo_mgr_bio_email", email); } catch (_) {} return true; }
           return false;
         } catch (err) { console.warn("manager bio login failed/cancelled:", err); return false; }
       }
@@ -5142,6 +5234,7 @@
             if (!r.ok || !data.success) { showLoginError(data.message || "Не удалось войти"); return; }
             setToken(data.token);
             managerPerms = Array.isArray(data.perms) ? data.perms : [];
+            myVscRestrict = data.vscRestrict || null;
             myRole = "manager";
             // Предложить включить Face ID на этом устройстве (если ещё не подключён и не отказывался).
             try {
@@ -5224,7 +5317,7 @@
           setupManagerLoginUI();
           const t = getToken();
           if (t) {
-            try { const d = await apiFetch("/admin/api/whoami"); if (d && d.success) { managerPerms = Array.isArray(d.perms) ? d.perms : []; myRole = d.role || "manager"; showDash(); return; } } catch (_) {}
+            try { const d = await apiFetch("/admin/api/whoami"); if (d && d.success) { managerPerms = Array.isArray(d.perms) ? d.perms : []; myVscRestrict = d.vscRestrict || null; myRole = d.role || "manager"; showDash(); return; } } catch (_) {}
           }
           showLogin();
           await tryAutoMgrBioOnLoad();
