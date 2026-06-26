@@ -3369,6 +3369,108 @@ async function vscFetchAll() {
   year.returnsPct = (year.retUslugi && sumB) ? year.retUslugi / sumB * 100 : null;
   return { months, year, reviews, cityRevenue: loadCityRev(), updatedAt: new Date().toISOString() };
 }
+// ── Расход Я.Директа vs «Рекламные расходы ОБЩИЕ» (таблица) — блок «Ежемесячный
+// контроль». За ПОСЛЕДНИЙ ЗАВЕРШЁННЫЙ месяц: открученные деньги из Я.Директа
+// (Reports API, ACCOUNT_PERFORMANCE_REPORT, Cost БЕЗ НДС) × НДС, и Grand total
+// колонки «Рекламные расходы ОБЩИЕ» из листа месяца (ОБА ищем ПО ИМЕНИ). Read-only,
+// 1-го и 12-го числа в 15:00 МСК + старт при пустом/старом кэше. Дашборд читает
+// кэш-файл, Я.Директ на каждый заход НЕ дёргается. Точечный блок, ядро /vsc не трогает.
+const YD_VAT_RATE = 0.22; // НДС для расхода Я.Директа (по указанию Андрея; обычно 20% — менять тут)
+const YD_SPEND_FILE = path.join(__dirname, ".lkYdSpend.json");
+let _ydSpend, _ydSpendRunning = false;
+function loadYdSpend() { if (_ydSpend !== undefined) return _ydSpend; try { _ydSpend = JSON.parse(fs.readFileSync(YD_SPEND_FILE, "utf8")); } catch (_) { _ydSpend = null; } return _ydSpend; }
+function saveYdSpend(d) { _ydSpend = d; try { fs.writeFileSync(YD_SPEND_FILE, JSON.stringify(d, null, 2), "utf8"); } catch (e) { console.error("saveYdSpend:", e.message); } }
+function ydLastCompletedMonth() {
+  const d = new Date(Date.now() + 3 * 3600 * 1000); // МСК
+  let y = d.getUTCFullYear(), m = d.getUTCMonth() - 1; if (m < 0) { m = 11; y -= 1; }
+  const mm = String(m + 1).padStart(2, "0");
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const cap = VSC_RU_MONTHS[m].charAt(0).toUpperCase() + VSC_RU_MONTHS[m].slice(1);
+  return { ym: y + "-" + mm, from: y + "-" + mm + "-01", to: y + "-" + mm + "-" + String(last).padStart(2, "0"), sheetName: cap + " " + y };
+}
+// Reports API: открученный расход (Cost) за период, БЕЗ НДС. Число или null.
+async function ydFetchSpendNet(dateFrom, dateTo) {
+  if (!YD_TOKEN) return null;
+  const headers = {
+    Authorization: "Bearer " + YD_TOKEN, "Accept-Language": "ru", "Content-Type": "application/json; charset=utf-8",
+    processingMode: "auto", returnMoneyInMicros: "false", skipReportHeader: "true", skipColumnHeader: "true", skipReportSummary: "true"
+  };
+  if (YD_LOGIN) headers["Client-Login"] = YD_LOGIN;
+  const body = { params: {
+    SelectionCriteria: { DateFrom: dateFrom, DateTo: dateTo }, FieldNames: ["Cost"],
+    ReportName: "voyo_spend_" + dateFrom + "_" + Date.now(), ReportType: "ACCOUNT_PERFORMANCE_REPORT",
+    DateRangeType: "CUSTOM_DATE", Format: "TSV", IncludeVAT: "NO", IncludeDiscount: "NO"
+  } };
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    const r = await axios.post(YD_API_URL + "reports", body, { headers, timeout: 60000, validateStatus: () => true });
+    const uh = r.headers && (r.headers.units || r.headers.Units);
+    if (uh) { const p = String(uh).split("/").map((x) => parseInt(x, 10)); if (p.length === 3 && p.every(Number.isFinite)) _ydUnits = { spent: p[0], balance: p[1], limit: p[2], ts: Date.now() }; }
+    if (r.status === 200) { const n = parseFloat(String(r.data).trim().replace(/\s+/g, "").replace(",", ".")); return Number.isFinite(n) ? n : null; }
+    if (r.status === 201 || r.status === 202) { const ri = parseInt((r.headers && (r.headers.retryin || r.headers.RetryIn)) || 5, 10); await new Promise((s) => setTimeout(s, (ri || 5) * 1000 + 1000)); continue; }
+    console.error("YD SPEND report error:", r.status, String(r.data).slice(0, 200)); return null;
+  }
+  return null;
+}
+// Grand total колонки «Рекламные расходы ОБЩИЕ» из строк листа (оба — по имени).
+function extractSheetAdTotal(rows) {
+  let col = -1;
+  for (let i = 0; i < rows.length && col < 0; i++) {
+    for (let j = 0; j < rows[i].length; j++) {
+      if (/рекламные\s+расходы\s+общие/i.test(String(rows[i][j] || "").replace(/\s+/g, " ").trim())) { col = j; break; }
+    }
+  }
+  if (col < 0) return null;
+  for (let i = 0; i < rows.length; i++) {
+    if ((rows[i] || []).some((c) => /^\s*grand total\s*$/i.test(String(c || "")))) return vscNum(rows[i][col]);
+  }
+  return null;
+}
+async function runYdSpendCompare(trigger) {
+  if (_ydSpendRunning) return { skipped: true };
+  _ydSpendRunning = true;
+  try {
+    if (_ydUnits && _ydUnits.balance != null && _ydUnits.balance < 5000) { console.warn("YD SPEND: мало баллов (" + _ydUnits.balance + "), пропуск"); return { skipped: true, reason: "low_units" }; }
+    const mo = ydLastCompletedMonth();
+    const ydNet = await ydFetchSpendNet(mo.from, mo.to);
+    let sheetTotal = null;
+    const sh = VSC_SHEETS.find((s) => s.name === mo.sheetName);
+    if (sh) {
+      try {
+        const resp = await axios.get(VSC_PUB_BASE + "?gid=" + sh.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
+        sheetTotal = extractSheetAdTotal(vscParseCsv(resp.data));
+      } catch (e) { console.error("YD SPEND sheet fetch:", e.message); }
+    }
+    const ydWithVat = (ydNet != null) ? Math.round(ydNet * (1 + YD_VAT_RATE)) : null;
+    const deltaAbs = (ydWithVat != null && sheetTotal != null) ? (ydWithVat - sheetTotal) : null;
+    const deltaPct = (deltaAbs != null && sheetTotal) ? Math.round(deltaAbs / sheetTotal * 1000) / 10 : null;
+    const result = { ts: Date.now(), ym: mo.ym, monthName: mo.sheetName, vatRate: YD_VAT_RATE, ydNet: (ydNet != null ? Math.round(ydNet) : null), ydWithVat, sheetTotal, deltaAbs, deltaPct, trigger: trigger || "cron" };
+    saveYdSpend(result);
+    console.log("YD SPEND [" + (trigger || "cron") + "]: " + mo.sheetName + " ЯД(с НДС)=" + ydWithVat + " таблица=" + sheetTotal + " Δ=" + deltaAbs);
+    return result;
+  } catch (e) { console.error("runYdSpendCompare:", e.message); return { error: e.message }; }
+  finally { _ydSpendRunning = false; }
+}
+function scheduleYdSpendCompare() {
+  const MSK = 3 * 3600 * 1000;
+  (function tick() {
+    const now = Date.now();
+    let target = now + 86400000;
+    for (let add = 0; add < 70; add++) {
+      const c = new Date(now + MSK + add * 86400000);
+      const day = c.getUTCDate();
+      if (day === 1 || day === 12) {
+        const t = Date.UTC(c.getUTCFullYear(), c.getUTCMonth(), c.getUTCDate(), 15, 0, 0) - MSK;
+        if (t > now) { target = t; break; }
+      }
+    }
+    setTimeout(() => { Promise.resolve(runYdSpendCompare("cron")).catch(() => {}); tick(); }, Math.max(1000, target - now));
+  })();
+  console.log("YD SPEND: сопоставление расхода запланировано на 1-е и 12-е число, 15:00 МСК");
+}
+scheduleYdSpendCompare();
+// Стартовый расчёт, если кэша нет или он за другой месяц (read-only, один отчёт).
+(function () { const c = loadYdSpend(); const mo = ydLastCompletedMonth(); if (!c || c.ym !== mo.ym) setTimeout(() => { Promise.resolve(runYdSpendCompare("startup")).catch(() => {}); }, 90 * 1000); })();
+
 async function getVscDashboard() {
   const now = Date.now();
   if (_vscCache && (now - _vscCacheAt) < VSC_TTL_MS) return _vscCache;
@@ -3417,7 +3519,7 @@ app.get("/admin/api/vsc-dashboard", requireVscDashboard, async (req, res) => {
     // считается из прибыли на клиенте → без прибыли её тоже не будет.
     const restrict = req.staff && req.staff.vscRestrict;
     const profit = (restrict && restrict.hideProfit) ? {} : vscLoadProfit();
-    return res.json(Object.assign({ success: true }, data, { profit, dayRevenue: loadDayRev() }));
+    return res.json(Object.assign({ success: true }, data, { profit, dayRevenue: loadDayRev(), ydSpendCompare: loadYdSpend() }));
   } catch (e) {
     console.error("vsc dashboard error:", e.message);
     return res.status(500).json({ success: false, message: "Не удалось загрузить данные таблицы" });

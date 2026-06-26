@@ -2593,6 +2593,30 @@
           e.innerHTML = '<div class="vsc-empty">Выручка по городам считается ночью (05:00 МСК) из amoCRM — данные появятся после первого расчёта.</div>';
           vscContent.appendChild(e);
         }
+        // ── Реклама Я.Директ vs таблица «Рекламные расходы ОБЩИЕ» — последний завершённый месяц ──
+        const hYd = document.createElement("div"); hYd.className = "ref-sec-h"; hYd.style.marginTop = "22px"; hYd.textContent = "Реклама Я.Директ vs таблица — последний месяц";
+        vscContent.appendChild(hYd);
+        const yc = vscData.ydSpendCompare;
+        const ydBox = document.createElement("div"); ydBox.className = "vsc-chart";
+        if (yc && (yc.ydWithVat != null || yc.sheetTotal != null)) {
+          const money = (v) => (v == null ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
+          const dAbs = yc.deltaAbs, dPct = yc.deltaPct;
+          const dColor = (dAbs == null) ? "#6b7280" : (Math.abs(dPct || 0) <= 2 ? "#2c7a43" : "#b8602a");
+          const dStr = (dAbs == null) ? "—" : ((dAbs > 0 ? "+" : dAbs < 0 ? "−" : "") + Math.abs(Math.round(dAbs)).toLocaleString("ru-RU") + " ₽" + (dPct != null ? " (" + (dPct > 0 ? "+" : dPct < 0 ? "−" : "") + Math.abs(dPct) + "%)" : ""));
+          const vatPct = Math.round((yc.vatRate || 0.22) * 100);
+          const upd = yc.ts ? new Date(yc.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+          ydBox.innerHTML =
+            '<div class="vsc-chart-h">Сопоставление рекламных расходов — ' + escapeHtml(yc.monthName || "") + '</div>' +
+            '<table style="width:100%;border-collapse:collapse;font-size:13.5px;">' +
+            '<tr><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;color:#33415a;">Я.Директ (откручено, с НДС ' + vatPct + '%)</td><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;text-align:right;font-weight:700;">' + money(yc.ydWithVat) + '</td></tr>' +
+            '<tr><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;color:#33415a;">Таблица «Рекламные расходы ОБЩИЕ» (Grand total)</td><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;text-align:right;font-weight:700;">' + money(yc.sheetTotal) + '</td></tr>' +
+            '<tr><td style="padding:7px 6px;color:#33415a;">Расхождение (Я.Директ − таблица)</td><td style="padding:7px 6px;text-align:right;font-weight:700;color:' + dColor + ';">' + dStr + '</td></tr>' +
+            '</table>' +
+            '<div style="font-size:11.5px;color:#8a90a0;margin-top:8px;">Открученные деньги из кабинета Я.Директа (Reports API) × НДС ' + vatPct + '%. Обновляется 1-го и 12-го числа в 15:00 МСК · на ' + escapeHtml(upd) + '.</div>';
+        } else {
+          ydBox.innerHTML = '<div class="vsc-empty">Сопоставление расхода Я.Директа считается 1-го и 12-го числа (15:00 МСК) — данные появятся после первого расчёта.</div>';
+        }
+        vscContent.appendChild(ydBox);
         const h1 = document.createElement("div"); h1.className = "ref-sec-h"; h1.style.marginTop = "22px"; h1.textContent = "Качество звонков и контактов — по месяцам";
         vscContent.appendChild(h1);
         VSC_EXTRA_MONTHLY.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, monthSeries)));
