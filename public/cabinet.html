@@ -1774,12 +1774,17 @@
       if (state.notRussianCitizen === "Да") {
         stage2Blocks.push({ field: "residencePermit", label: "ВНЖ или регистрация" });
       }
-      // Справка с работы/учёбы — строго по «Роду деятельности» (выпадающий список),
-      // а не по тексту поля «Наименование работодателя» (было хрупко). Корректировка
-      // Насти Плинер 26.06: запрашивать при «Работа по найму» или «Учащийся».
+      // Справка по «Роду деятельности» (выпадающий список), а не по тексту поля
+      // «Наименование работодателя» (было хрупко). Корректировка Насти Плинер 26.06:
+      // РАЗНОСИМ справку — учащемуся просим ИМЕННО справку с учёбы (раньше была общая
+      // «…или учёбы», и работающий студент гарантированно грузил не то). Подписи блоков
+      // совпадают с whitelist (workCert / studyCert), чтобы детекция «загружено»
+      // корректно матчила имена файлов «<подпись> - ФИО…».
       const occSch = String(state.occupation || "").trim();
-      if (occSch === "Работа по найму" || occSch === "Учащийся") {
-        stage2Blocks.push({ field: "workCert", label: "Справка с работы или учёбы" });
+      if (occSch === "Работа по найму") {
+        stage2Blocks.push({ field: "workCert", label: "Справка с работы" });
+      } else if (occSch === "Учащийся") {
+        stage2Blocks.push({ field: "studyCert", label: "Справка с учёбы" });
       }
       // Возврат старого поведения: страховой полис.
       if (state.hasInsurance === "Да") {
@@ -2622,15 +2627,40 @@
 
     // Все ли ОБЯЗАТЕЛЬНЫЕ предподачные документы заявителя загружены
     // (для жёлтого/зелёного статуса этапа «Подготовка документов»).
+    // Корректировка Насти 26.06 (дубли документов): часть предподачных документов —
+    // это ТОТ ЖЕ документ, что мог быть загружен раньше на обычном этапе под другим
+    // именем. Если эквивалент уже загружен — показываем «✓ уже получена» и не просим
+    // повторно. Эквиваленты задаём по whitelist-подписям (имя файла = «<подпись> - ФИО…»).
+    var PRESUB_EQUIVALENT_LABELS = {
+      // «Внутренний паспорт спонсора» (перед подачей) ≡ «Внутр. паспорт спонсора или
+      // Спонсорское письмо…» (обычный этап «Подготовка документов»).
+      sponsorInnerPassport: ["Внутр. паспорт спонсора или Спонсорское письмо от компании"],
+      // «Справка из учебного заведения» (перед подачей) ≡ справка с учёбы (обычный этап);
+      // плюс старая объединённая подпись — для файлов, загруженных до правки 26.06.
+      studyCertPre: ["Справка с учёбы", "Справка с работы или учёбы"]
+    };
+    function presubFileMatchesLabel(files, label) {
+      return files.some(function (f) {
+        if (!f.startsWith(label)) return false;
+        var tail = f.slice(label.length);
+        return tail.charAt(0) === "." || tail.startsWith(" - ");
+      });
+    }
+    // Загружен ли документ — сам или его эквивалент (ранее, под другим именем).
+    function presubDocUploadState(files, cfg) {
+      if (presubFileMatchesLabel(files, cfg.label)) return { uploaded: true, viaEquivalent: false };
+      var eq = PRESUB_EQUIVALENT_LABELS[cfg.field] || [];
+      if (eq.some(function (lbl) { return presubFileMatchesLabel(files, lbl); })) {
+        return { uploaded: true, viaEquivalent: true };
+      }
+      return { uploaded: false, viaEquivalent: false };
+    }
+
     function presubMandatoryAllUploaded(applicant, lead) {
       const docs = buildPreSubmissionDocs(applicant, lead).filter((d) => !d.optional);
       if (!docs.length) return true;
       const files = Array.isArray(applicant && applicant.uploadedFiles) ? applicant.uploadedFiles : [];
-      return docs.every((cfg) => files.some((f) => {
-        if (!f.startsWith(cfg.label)) return false;
-        const tail = f.slice(cfg.label.length);
-        return tail.charAt(0) === "." || tail.startsWith(" - ");
-      }));
+      return docs.every((cfg) => presubDocUploadState(files, cfg).uploaded);
     }
 
     function presubMatchOccupation(state) {
@@ -2681,11 +2711,8 @@
       // Строгая граница после label: серверное имя всегда «<label> - <ФИО>…».
       // Это исключает ложное совпадение коротких лейблов с более длинными
       // (напр. «…по счету» ⊂ «…по счету спонсора»).
-      const isUploaded = uploaded.some((f) => {
-        if (!f.startsWith(cfg.label)) return false;
-        const tail = f.slice(cfg.label.length);
-        return tail.charAt(0) === "." || tail.startsWith(" - ");
-      });
+      const uploadState = presubDocUploadState(uploaded, cfg);
+      const isUploaded = uploadState.uploaded;
 
       const row = document.createElement("div");
       row.className = "file-list-row";
@@ -2716,7 +2743,7 @@
       doneEl.style.gap = "10px";
       doneEl.style.flexWrap = "wrap";
       const doneBadge = document.createElement("div");
-      doneBadge.textContent = "✓ Загружено";
+      doneBadge.textContent = uploadState.viaEquivalent ? "✓ Уже получена (загружена ранее)" : "✓ Загружено";
       doneBadge.style.color = "#2e7a43";
       doneBadge.style.fontWeight = "600";
       doneBadge.style.fontSize = "13px";
