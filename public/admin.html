@@ -1920,6 +1920,10 @@
           }
           res[kpi.key] = { cur: cur, prev: prev };
         });
+        // «Конверсия из трафика в лид» (paid traf conv общая) — НЕ в VSC_KPIS, но плитка
+        // в «Месяц» сравнивается ТАК ЖЕ, как коэффициенты: cur = Grand total месяца,
+        // prev = среднее первых N дней пред. месяца (сопоставимый период).
+        res.trafConv = { cur: curM.total ? curM.total.trafConv : null, prev: prevM ? agg(firstN, "trafConv", true) : null };
         return { res: res, N: N };
       }
       // Автоподсветка: ухудшения последнего ЗАПОЛНЕННОГО месяца против предыдущего
@@ -2541,15 +2545,24 @@
           }
           tiles.appendChild(drT);
         }
-        // Плитка «Конверсия из трафика в лид за год» — ВСЕГДА годовое значение
-        // (взвешенно за 2026), только в разрезах «Год» и «Месяц». Не прячем по
-        // hideProfit (это не прибыль). График метрики — ниже, во всех разрезах.
+        // Плитка «Конверсия из трафика в лид» — только в «Год» и «Месяц» (в «Неделя»/«День»
+        // плитки нет, по просьбе). Год — взвеш. значение за 2026 (Σлиды/Σтрафик), без дельты
+        // (как все годовые плитки). Месяц — значение ВЫБРАННОГО месяца (Grand total) +
+        // индикатор изменения к пред. месяцу, ровно как CV/CPL (cmpRes.trafConv). Не прячем
+        // по hideProfit (это не прибыль). График метрики — ниже, во всех разрезах.
         if (vscGran === "month" || vscGran === "year") {
-          const yv = vscData.year ? vscData.year.trafConv : null;
+          let tcV = null, tcPrev = null;
+          if (vscGran === "year") { tcV = vscData.year ? vscData.year.trafConv : null; }
+          else if (cmpRes && cmpRes.trafConv) { tcV = cmpRes.trafConv.cur; tcPrev = cmpRes.trafConv.prev; }
+          let tcD = "";
+          if (tcV != null && tcPrev != null && tcPrev !== tcV) {
+            const d = tcV - tcPrev; // good=1 (рост конверсии — хорошо)
+            tcD = '<div class="vsc-tile-d ' + (d > 0 ? "up" : "down") + '">' + (d > 0 ? "▲" : "▼") + " " + vscFmt(Math.abs(d), "pct") + " к пред.</div>";
+          }
           const tcT = document.createElement("div"); tcT.className = "vsc-tile";
-          tcT.innerHTML = '<div class="vsc-tile-l">Конверсия из трафика в лид за 2026</div>'
-            + '<div class="vsc-tile-v">' + vscFmt(yv, "pct") + '</div>'
-            + '<div class="vsc-tile-s">paid traf conv общая · взвешенно за год</div>';
+          tcT.innerHTML = '<div class="vsc-tile-l">Конверсия из трафика в лид</div>'
+            + '<div class="vsc-tile-v">' + vscFmt(tcV, "pct") + '</div>' + tcD
+            + '<div class="vsc-tile-s">' + escapeHtml(curSub || "") + '</div>';
           tiles.appendChild(tcT);
         }
         // Прибыль и рентабельность (item 12 + расширение): плитки в «Год» и «Месяц».
