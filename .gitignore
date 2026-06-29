@@ -65,8 +65,16 @@ npm-debug.log*
 .esign.json
 esign_store/
 
-# VFS-монитор (отдельная машина): зависимости, секреты, конфиг с ПДн/паролями, состояние
+# VFS-монитор (отдельная машина): зависимости, секреты, конфиг с ПДн/паролями, состояние.
+# Бэкап с VPS бота лежит локально целиком (vfs-bot/); в гит идёт только НЕсекретный
+# переиспользуемый код. Секреты, рантайм-артефакты и регенерируемое — только локально.
 vfs-bot/node_modules/
+vfs-bot/venv/
+vfs-bot/.pwp_*/
+vfs-bot/.pw-profile*/
 vfs-bot/.env
 vfs-bot/config.json
 vfs-bot/state.json
+vfs-bot/*.out
+vfs-bot/*.png
+vfs-bot/*.log
