@@ -3952,22 +3952,78 @@ async function vscBuildForecast() {
     const v = vscFcCompute(fc.model, ov);
     return { revenue: v[37], profitMonth: v[38], profitWeek: v[39], contactsMonth: v[34], rates: { asp: ov[25], cpl: ov[27], cv: ov[28] * 100, upt: ov[30] } };
   };
-  // КЛЮЧЕВОЕ: прогноз каждого периода считается по ИТОГАМ ПРЕДЫДУЩЕГО завершённого
-  // периода (а не по самому периоду — это была ошибка, сдвиг на неделю). Первая неделя
-  // месяца — по прошлому МЕСЯЦУ; неделя N — по неделе N−1. Заголовок «на месяц» — тоже
-  // по прошлому месяцу (стабильная база = столбец B таблицы директора).
-  const curWeeks = (cur.weeks || []).filter((w) => (w.processed > 0) || (w.budget > 0));
-  const weeks = curWeeks.map((w, idx) => {
-    const basis = idx === 0 ? prev.total : curWeeks[idx - 1];
-    const basisLabel = idx === 0 ? prev.name : curWeeks[idx - 1].label;
+  // НЕДЕЛЬНАЯ ЦЕПОЧКА ВПЕРЁД (логика по ТЗ Андрея):
+  //  • каждый период прогнозируется по ИТОГАМ предыдущего периода;
+  //  • первая неделя месяца — по итогам прошлого МЕСЯЦА;
+  //  • первая полная неделя после стартового хвоста — по «стыковой» неделе
+  //    (хвост прошлого месяца + начало текущего, объёмно-взвешенно);
+  //  • неполные недели (хвост/начало месяца) пересчитываются /7×дни — ВСЕ дни рабочие;
+  //  • будущие недели без факта берут последние известные ставки (перенос), чтобы
+  //    месяц был полным; данные неполных недель не финальны и доуточнятся сами.
+  //  Headline «прогноз на месяц» = СУММА недельных прогнозов (партиалы прорейчены).
+  const dim = monthCalDays(cur); // календарных дней в текущем месяце
+  const wkDays = (lbl) => {
+    const m = /(\d{1,2})\.(\d{1,2}).*?(\d{1,2})\.(\d{1,2})/.exec(String(lbl || ""));
+    if (!m) return 7;
+    const d = (+m[3]) - (+m[1]) + 1;
+    return (d >= 1 && d <= 7) ? d : 7;
+  };
+  const hasRates = (p) => !!(p && +p.asp && (p.cv != null && +p.cv) && +p.upt);
+  // Объёмно-взвешенное пуллирование ставок двух периодов (стыковая неделя на границе месяцев).
+  const poolRates = (a, b) => {
+    let ws = 0, asp = 0, cv = 0, upt = 0, cost = 0, leads = 0;
+    for (const p of [a, b]) {
+      if (!hasRates(p)) continue; const w = +p.processed || 0; if (w <= 0) continue;
+      ws += w; asp += (+p.asp) * w; cv += (+p.cv) * w; upt += (+p.upt) * w;
+      const c = +p.budget || 0, cpl = +p.cpl || 0; if (c > 0 && cpl > 0) { cost += c; leads += c / cpl; }
+    }
+    return ws > 0 ? { asp: asp / ws, cpl: leads > 0 ? cost / leads : 0, cv: cv / ws, upt: upt / ws, processed: ws } : null;
+  };
+  const allW = (cur.weeks || []);
+  const startStub = !!(allW.length && wkDays(allW[0].label) < 7); // месяц начинается с неполной недели
+  const prevWeeksData = (prev.weeks || []).filter(hasRates);
+  const straddle = (startStub && prevWeeksData.length)
+    ? poolRates(prevWeeksData[prevWeeksData.length - 1], allW[0]) : null;
+  let lastActual = prev.total; // последние известные ФАКТИЧЕСКИЕ ставки (для переноса в будущее)
+  const weeks = [];
+  allW.forEach((w, idx) => {
+    const days = wkDays(w.label);
+    let basis, basisLabel, carried = false;
+    if (idx === 0) { basis = prev.total; basisLabel = "итоги " + prev.name; }
+    else if (startStub && idx === 1 && straddle) { basis = straddle; basisLabel = "стыковая неделя (" + prev.name + " + " + cur.name + ")"; }
+    else {
+      const pw = allW[idx - 1];
+      if (hasRates(pw)) { basis = pw; basisLabel = pw.label; }
+      else { basis = lastActual; basisLabel = (lastActual.label || ("итоги " + prev.name)) + " (перенос)"; carried = true; }
+    }
     const p = proj(basis);
-    return p ? Object.assign({ label: w.label, basis: basisLabel }, p) : null;
-  }).filter(Boolean);
-  const month = proj(prev.total); // прогноз на текущий месяц по итогам прошлого месяца
+    if (p) {
+      const f = days / 7;
+      weeks.push({
+        label: w.label, basis: basisLabel, days: days, partial: days < 7, carried: carried,
+        periodProfit: p.profitWeek * f, periodRevenue: (p.revenue || 0) * days / dim,
+        profitWeek: p.profitWeek, profitMonth: p.profitMonth, revenue: p.revenue,
+        contactsMonth: p.contactsMonth, rates: p.rates
+      });
+    }
+    if (hasRates(w)) lastActual = w; // двигаем «последний факт»
+  });
+  // Headline текущего месяца = сумма недельных прогнозов (неполные уже прорейчены /7×дни).
+  const sumProfit = weeks.reduce((a, x) => a + (x.periodProfit || 0), 0);
+  const sumRevenue = weeks.reduce((a, x) => a + (x.periodRevenue || 0), 0);
+  const lastRates = hasRates(lastActual)
+    ? { asp: +lastActual.asp || 0, cpl: +lastActual.cpl || 0, cv: +lastActual.cv || 0, upt: +lastActual.upt || 0 }
+    : ((proj(prev.total) || {}).rates || null);
+  const month = weeks.length ? {
+    revenue: sumRevenue, profitMonth: sumProfit, profitWeek: dim > 0 ? sumProfit * 7 / dim : sumProfit,
+    contactsMonth: (proj(prev.total) || {}).contactsMonth || 0,
+    rates: lastRates
+  } : proj(prev.total);
   return {
-    success: true, tab: fc.tab, monthName: cur.name, basisMonth: prev.name,
+    success: true, tab: fc.tab, monthName: cur.name, basisMonth: prev.name, basisKind: "weekly-chain",
+    ratesLabel: (hasRates(lastActual) && lastActual.label) ? lastActual.label : prev.name,
     persOP, shifts, target, basisContacts: Math.round(target * persOP * shifts),
-    contactsBasis: "план модели, не выше темпа месяца", fotPct: 22,
+    contactsBasis: "сумма недельных прогнозов (неполные недели — /7×дни)", fotPct: 22,
     month, baseline: month, weeks
   };
 }

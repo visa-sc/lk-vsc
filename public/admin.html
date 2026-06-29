@@ -2710,7 +2710,7 @@
         const head = document.createElement("div"); head.className = "vsc-chart";
         const pos = d.month.profitMonth >= 0;
         head.innerHTML =
-          '<div style="font-size:13px;color:#6b7280;font-weight:600;">Прогноз прибыли на ' + escapeHtml(shortM(d.monthName)) + ' · по итогам ' + escapeHtml(shortM(d.basisMonth)) + '</div>' +
+          '<div style="font-size:13px;color:#6b7280;font-weight:600;">Прогноз прибыли на ' + escapeHtml(shortM(d.monthName)) + ' · ' + escapeHtml(d.basisKind === "weekly-chain" ? "сумма недельных прогнозов" : ("по итогам " + shortM(d.basisMonth))) + '</div>' +
           '<div style="font-size:30px;font-weight:800;letter-spacing:-.02em;margin:4px 0 2px;color:' + (pos ? "#2c7a43" : "#b0263a") + ';">' + money(d.month.profitMonth) + '</div>' +
           '<div style="font-size:12.5px;color:#5a626f;">В пересчёте на неделю: <b>' + money(d.month.profitWeek) + '</b> · прогноз выручки: <b>' + money(d.month.revenue) + '</b></div>';
         box.appendChild(head);
@@ -2721,8 +2721,9 @@
           t.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(label) + '</div><div class="vsc-tile-v' + (cls || "") + '">' + money(val) + '</div>' + (sub ? '<div class="vsc-tile-s">' + escapeHtml(sub) + '</div>' : '');
           return t;
         };
-        tiles.appendChild(tile("Прибыль / мес", d.month.profitMonth, "по итогам " + shortM(d.basisMonth), d.month.profitMonth >= 0 ? " pos" : " neg"));
-        tiles.appendChild(tile("Прибыль / нед", d.month.profitWeek, "по итогам " + shortM(d.basisMonth), d.month.profitWeek >= 0 ? " pos" : " neg"));
+        const basisSub = d.basisKind === "weekly-chain" ? "сумма недельных прогнозов" : ("по итогам " + shortM(d.basisMonth));
+        tiles.appendChild(tile("Прибыль / мес", d.month.profitMonth, basisSub, d.month.profitMonth >= 0 ? " pos" : " neg"));
+        tiles.appendChild(tile("Прибыль / нед", d.month.profitWeek, "в среднем за неделю", d.month.profitWeek >= 0 ? " pos" : " neg"));
         box.appendChild(tiles);
 
         const r = d.month.rates || {};
@@ -2730,9 +2731,11 @@
         ass.innerHTML =
           '<div class="vsc-chart-h">Как считается</div>' +
           'Модель и параметры расходов — из вашей таблицы (вкладка «<b>' + escapeHtml(d.tab) + '</b>»), считаются у нас по вашим формулам. ' +
-          '<b>Каждый период прогнозируется по ИТОГАМ предыдущего завершённого</b>: первая неделя месяца — по прошлому месяцу, неделя N — по неделе N−1. ' +
-          'Ставки прошлого месяца (' + escapeHtml(shortM(d.basisMonth)) + '): ASP <b>' + ru(r.asp) + '</b>, CPL <b>' + ru(r.cpl) + '</b>, CV <b>' + (Math.round((r.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((r.upt || 0) * 100) / 100) + '</b>. ' +
-          'Контакт-план <b>' + ru(d.basisContacts) + '</b>/мес (' + escapeHtml(d.contactsBasis || "") + '), персонал ОП ' + d.persOP + ', смен ' + d.shifts + '. ФОТ ' + (d.fotPct || 22) + '% (актуальные взносы, как в недельных столбцах модели).';
+          '<b>Каждая неделя прогнозируется по ИТОГАМ предыдущего периода</b>: первая неделя месяца — по итогам прошлого месяца; неделя N — по неделе N−1; первая полная неделя после неполной — по «стыковой» неделе (хвост прошлого месяца + начало текущего). ' +
+          '<b>Неполные недели</b> на стыке месяцев пересчитываются /7×дни (все дни считаем рабочими). ' +
+          '<b>Прогноз на месяц = сумма недельных прогнозов.</b> ' +
+          'Ставки последней недели (' + escapeHtml(shortM(d.ratesLabel || d.basisMonth)) + '): ASP <b>' + ru(r.asp) + '</b>, CPL <b>' + ru(r.cpl) + '</b>, CV <b>' + (Math.round((r.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((r.upt || 0) * 100) / 100) + '</b>. ' +
+          'Контакт-план <b>' + ru(d.basisContacts) + '</b>/мес, персонал ОП ' + d.persOP + ', смен ' + d.shifts + '. ФОТ ' + (d.fotPct || 22) + '% (актуальные взносы, как в недельных столбцах модели).';
         box.appendChild(ass);
 
         if (d.weeks && d.weeks.length) {
@@ -2741,13 +2744,15 @@
           box.appendChild(wh);
           d.weeks.forEach((w) => {
             const c = document.createElement("div"); c.className = "vsc-chart";
-            const wp = w.profitMonth >= 0; const wr = w.rates || {};
+            const pp = (w.periodProfit != null ? w.periodProfit : w.profitWeek);
+            const wp = (pp || 0) >= 0; const wr = w.rates || {};
+            const daysTag = (w.partial ? (' · ' + w.days + ' дн.') : '') + (w.carried ? ' · перенос ставок' : '');
             c.innerHTML =
               '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">' +
-              '<div style="font-weight:700;color:#161d45;">' + escapeHtml(w.label) + ' <span style="font-weight:500;color:#8a90a0;font-size:12px;">· по итогам ' + escapeHtml(shortM(w.basis || "")) + '</span></div>' +
+              '<div style="font-weight:700;color:#161d45;">' + escapeHtml(w.label) + ' <span style="font-weight:500;color:#8a90a0;font-size:12px;">· по итогам ' + escapeHtml(shortM(w.basis || "")) + daysTag + '</span></div>' +
               '<div style="font-size:11.5px;color:#8a90a0;">ASP ' + ru(wr.asp) + ' · CPL ' + ru(wr.cpl) + ' · CV ' + (Math.round((wr.cv || 0) * 10) / 10) + '% · UPT ' + (Math.round((wr.upt || 0) * 100) / 100) + '</div>' +
               '</div>' +
-              '<div style="margin-top:6px;font-size:13px;color:#3a3f4d;">Прогноз месяца: <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(w.profitMonth) + '</b> · за неделю: <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(w.profitWeek) + '</b></div>';
+              '<div style="margin-top:6px;font-size:13px;color:#3a3f4d;">За период' + (w.partial ? (' (' + w.days + ' дн.)') : '') + ': <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(pp) + '</b> · полный месяц по этим ставкам: <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(w.profitMonth) + '</b></div>';
             box.appendChild(c);
           });
         }
