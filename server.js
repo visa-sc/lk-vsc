@@ -3936,12 +3936,29 @@ async function vscBuildForecast() {
     const sum = dd.reduce((a, d) => a + (d.processed || 0), 0);
     return dd.length ? Math.round(sum / dd.length * monthCalDays(mObj)) : sum;
   };
-  // Таргет (контакт-план месяца): план директора из модели (строка 24), но НЕ выше
-  // динамической проекции по темпу текущего месяца — пессимистично (лучше занизить).
+  // Таргет (контакт-план месяца, строка 24 модели) = РЕАЛЬНО ожидаемые набранные контакты,
+  // а не аспирационный план директора. Смотрим на темп ТЕКУЩЕГО месяца (по неделям/дням) И на
+  // прошлый месяц: текущий темп экстраполируем на полный месяц и блендим с прошлым месяцем по
+  // доле уже отработанного месяца — в начале опираемся на прошлый месяц, к концу — на текущий
+  // темп. target = ожидаемые контакты / (персонал × смены). Строка 24 — только запасной вариант.
+  const wkEndDay = (lbl) => { const mm = /(\d{1,2})\.(\d{1,2}).*?(\d{1,2})\.(\d{1,2})/.exec(String(lbl || "")); return mm ? (+mm[3]) : 0; };
+  const calMonthDays = monthCalDays(cur);
+  const dataWeeks = (cur.weeks || []).filter((w) => (w.processed || 0) > 0 || (w.budget || 0) > 0);
+  const elapsedDays = dataWeeks.length ? wkEndDay(dataWeeks[dataWeeks.length - 1].label) : 0;
+  const observedContacts = (cur.total && +cur.total.processed) || 0;
+  const prevContacts = (prev.total && +prev.total.processed) || 0;
+  let expectedContacts;
+  if (observedContacts > 0 && elapsedDays > 0 && calMonthDays > 0) {
+    const curProj = observedContacts * calMonthDays / elapsedDays; // текущий темп → полный месяц
+    const frac = Math.min(1, elapsedDays / calMonthDays);
+    expectedContacts = Math.round(curProj * frac + prevContacts * (1 - frac)); // бленд с прошлым месяцем
+  } else {
+    expectedContacts = prevContacts; // нет данных текущего месяца — берём прошлый месяц
+  }
   const modelTarget = parseFloat(fc.model[24] && fc.model[24].v) || 0;
-  const dynContacts = projectContacts(cur);
-  const dynTarget = (persOP > 0 && shifts > 0) ? dynContacts / (persOP * shifts) : 0;
-  const target = (modelTarget > 0 && dynTarget > 0) ? Math.min(modelTarget, dynTarget) : (modelTarget || dynTarget);
+  const target = (persOP > 0 && shifts > 0 && expectedContacts > 0)
+    ? expectedContacts / (persOP * shifts)
+    : modelTarget;
   // Проекция месяца по ставкам периода-ОСНОВЫ + фикс. таргет (контакт-план/персонал/смены
   // постоянны на месяц — как у директора). ФОТ берём из рабочих недельных колонок модели
   // (×0.22 — реальные взносы; в устаревшем столбце B директора стоит ×0.12, мы его НЕ берём).
@@ -4008,22 +4025,17 @@ async function vscBuildForecast() {
     }
     if (hasRates(w)) lastActual = w; // двигаем «последний факт»
   });
-  // Headline текущего месяца = сумма недельных прогнозов (неполные уже прорейчены /7×дни).
-  const sumProfit = weeks.reduce((a, x) => a + (x.periodProfit || 0), 0);
-  const sumRevenue = weeks.reduce((a, x) => a + (x.periodRevenue || 0), 0);
-  const lastRates = hasRates(lastActual)
-    ? { asp: +lastActual.asp || 0, cpl: +lastActual.cpl || 0, cv: +lastActual.cv || 0, upt: +lastActual.upt || 0 }
-    : ((proj(prev.total) || {}).rates || null);
-  const month = weeks.length ? {
-    revenue: sumRevenue, profitMonth: sumProfit, profitWeek: dim > 0 ? sumProfit * 7 / dim : sumProfit,
-    contactsMonth: (proj(prev.total) || {}).contactsMonth || 0,
-    rates: lastRates
-  } : proj(prev.total);
+  // Headline текущего месяца = проекция по ПУЛЛИРОВАННЫМ (объёмно-взвешенным) ФАКТИЧЕСКИМ
+  // ставкам месяца-к-дате (cur.total). Устойчивее «суммы недель» и не завышается выпуклостью
+  // кривой (это «прибыль при средней ставке», а не «среднее из волатильных недельных прибылей»).
+  // Контакты — реальный ожидаемый таргет (expectedContacts). Недельную детализацию НЕ трогаем.
+  const poolBasis = hasRates(cur.total) ? cur.total : prev.total;
+  const month = proj(poolBasis) || proj(prev.total);
   return {
-    success: true, tab: fc.tab, monthName: cur.name, basisMonth: prev.name, basisKind: "weekly-chain",
-    ratesLabel: (hasRates(lastActual) && lastActual.label) ? lastActual.label : prev.name,
-    persOP, shifts, target, basisContacts: Math.round(target * persOP * shifts),
-    contactsBasis: "сумма недельных прогнозов (неполные недели — /7×дни)", fotPct: 22,
+    success: true, tab: fc.tab, monthName: cur.name, basisMonth: prev.name, basisKind: "pooled-month",
+    ratesLabel: hasRates(cur.total) ? (cur.name + " (к дате)") : prev.name,
+    persOP, shifts, target, basisContacts: Math.round(target * persOP * shifts), expectedContacts: expectedContacts,
+    contactsBasis: "реальный темп месяца + прошлый месяц", fotPct: 22,
     month, baseline: month, weeks
   };
 }
