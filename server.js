@@ -3648,6 +3648,44 @@ async function fetchCbrRates() {
   appendRatesLog(rates.EUR, rates.USD, now); // фиксируем время актуализации курса в калькуляторе
   return _cbrCache;
 }
+// ── banki.ru: средний/лучший курс ПОКУПКИ евро (для проверки прихода в рублях) ──
+// На banki.ru у банка два курса: "buy" (банк ПОКУПАЕТ евро у клиента) и "sale" (банк
+// ПРОДАЁТ евро клиенту). Нам нужен курс, по которому МЫ покупаем евро (чтобы заплатить
+// партнёру) = "sale". Берём средний и лучший (минимальный) по Москве.
+let _bankiEur = null, _bankiEurAt = 0;
+async function fetchBankiEurBuy() {
+  const now = Date.now();
+  if (_bankiEur && (now - _bankiEurAt) < 30 * 60 * 1000) return _bankiEur; // banki обновляет часто — кэш 30 мин
+  const r = await axios.get("https://www.banki.ru/products/currency/cash/eur/moskva/", {
+    timeout: 12000,
+    headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36", "Accept-Language": "ru-RU,ru;q=0.9" }
+  });
+  const h = String(r.data).replace(/&quot;/g, '"');
+  // Банк-уровневый список: "sale" = курс, по которому банк продаёт нам евро = наш курс покупки.
+  const re = /"@type":"Bank","id":(\d+),"name":"([^"]+)","code":"[^"]*","logo":"[^"]*","exchange":\{[^}]*?"sale":([\d.]+)/g;
+  let m, rows = [], seen = {};
+  while ((m = re.exec(h))) { const id = m[1]; if (seen[id]) continue; seen[id] = 1; const sale = parseFloat(m[3]); if (sale > 0) rows.push({ bank: m[2], sale }); }
+  // Фолбэк, если разметка banki.ru поменялась — сырые пары buy/sale.
+  if (rows.length < 3) {
+    rows = []; const re2 = /"buy":[\d.]+,"sale":([\d.]+)/g; let mm;
+    while ((mm = re2.exec(h))) { const s = parseFloat(mm[1]); if (s > 0) rows.push({ bank: "", sale: s }); }
+  }
+  if (!rows.length) throw new Error("banki.ru: курсы не распознаны");
+  const sales = rows.map((x) => x.sale);
+  const avg = sales.reduce((a, b) => a + b, 0) / sales.length;
+  const best = rows.reduce((a, b) => (b.sale < a.sale ? b : a));
+  _bankiEur = { eurBuyAvg: Math.round(avg * 100) / 100, eurBuyBest: best.sale, eurBuyBestBank: best.bank || "", banks: rows.length };
+  _bankiEurAt = now;
+  return _bankiEur;
+}
+async function bankiEurSafe() { try { return await fetchBankiEurBuy(); } catch (e) { console.error("banki.ru EUR:", e && e.message); return null; } }
+// Прогрев курса banki.ru вместе с ЦБ.
+(function scheduleBankiPrewarm() {
+  const warm = () => fetchBankiEurBuy().catch((e) => console.error("BANKI PREWARM:", e && e.message));
+  setTimeout(warm, 25 * 1000);
+  setInterval(warm, 30 * 60 * 1000);
+})();
+
 const VSC_CALC_FILE = path.join(__dirname, ".vscCalc.json");
 function loadCalcCfg() { try { return JSON.parse(fs.readFileSync(VSC_CALC_FILE, "utf8")) || {}; } catch (_) { return {}; } }
 function saveCalcCfg(c) { try { fs.writeFileSync(VSC_CALC_FILE, JSON.stringify(c || {}, null, 2), "utf8"); return true; } catch (e) { console.error("saveCalcCfg:", e.message); return false; } }
@@ -3656,7 +3694,8 @@ app.get("/admin/api/vsc-rates", requireVscAccess, async (req, res) => {
   let eur = null, usd = null, date = null, error = null;
   try { const c = await fetchCbrRates(); eur = c.rates.EUR || null; usd = c.rates.USD || null; date = c.date; }
   catch (e) { error = e && e.message; }
-  return res.json({ success: true, eur, usd, date, usdtExpense: (cfg.usdtExpense != null ? cfg.usdtExpense : 79.4), source: "ЦБ РФ", error });
+  const banki = await bankiEurSafe();
+  return res.json({ success: true, eur, usd, date, usdtExpense: (cfg.usdtExpense != null ? cfg.usdtExpense : 79.4), banki, source: "ЦБ РФ", error });
 });
 app.post("/admin/api/vsc-rates", requireAdmin, (req, res) => {
   const v = parseFloat(req.body && req.body.usdtExpense);
@@ -3706,7 +3745,8 @@ app.get("/api/calc-rates", async (req, res) => {
   let eur = null, usd = null, date = null, error = null;
   try { const c = await fetchCbrRates(); eur = c.rates.EUR || null; usd = c.rates.USD || null; date = c.date; }
   catch (e) { error = e && e.message; }
-  return res.json({ success: true, eur, usd, date, usdtExpense: (cfg.usdtExpense != null ? cfg.usdtExpense : 79.4), source: "ЦБ РФ", error });
+  const banki = await bankiEurSafe();
+  return res.json({ success: true, eur, usd, date, usdtExpense: (cfg.usdtExpense != null ? cfg.usdtExpense : 79.4), banki, source: "ЦБ РФ", error });
 });
 app.get("/api/calc-rates-history", async (req, res) => {
   try {

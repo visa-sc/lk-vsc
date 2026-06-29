@@ -47,6 +47,9 @@
   .out { position: relative; background: linear-gradient(180deg, #f1fbf5, #e8f8ee); border: 1px solid var(--green-line); border-radius: var(--r); padding: 16px 18px; cursor: pointer; box-shadow: var(--sh-sm); transition: transform .15s ease, box-shadow .15s ease; }
   .out:hover { transform: translateY(-2px); box-shadow: var(--sh); }
   .out:active { transform: translateY(0); }
+  .out.bad { background: linear-gradient(180deg, #fdecec, #fbe0e0) !important; border-color: #f0a9a9 !important; }
+  .out.bad .t, .out.bad .v { color: #b0263a !important; }
+  .out.bad::after { color: #d05a5a !important; }
   .out .t { font-size: 12px; color: var(--green-d); font-weight: 600; line-height: 1.35; min-height: 32px; letter-spacing: -.01em; padding-right: 20px; }
   .out .v { font-size: 24px; font-weight: 700; color: #1f8f4d; margin-top: 6px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .out::after { content: "⧉"; position: absolute; top: 13px; right: 15px; font-size: 13px; color: var(--green); opacity: .5; transition: opacity .15s ease; }
@@ -77,17 +80,19 @@
       <div class="ro"><div class="lbl">Курс usdt / доллар к рублю</div><div class="val" id="vUsd">—</div></div>
       <div class="ro"><div class="lbl">USDT к евро (расчёт)</div><div class="val" id="vB6">—</div></div>
       <div class="ro"><div class="lbl">Курс usdt для расхода 🔒</div><div class="val" id="vB7">—</div></div>
+      <div class="ro" id="roBanki" style="display:none;"><div class="lbl">Курс покупки евро · banki.ru (средн.)</div><div class="val" id="vBanki">—</div><div id="vBankiBest" style="font-size:10px;color:var(--ink3);font-weight:600;margin-top:2px;line-height:1.2;"></div></div>
     </div>
 
     <div class="curbtns" id="curBtns">
-      <button type="button" data-cur="rub" class="on">Приход в рублях</button>
       <button type="button" data-cur="eur">Приход в евро</button>
+      <button type="button" data-cur="rub" class="on">Приход в рублях</button>
       <button type="button" data-cur="usdt">Приход в USDT</button>
     </div>
 
     <div class="grid g-in">
       <div class="ed"><div class="lbl-ed" id="prihodLbl">✎ Сумма прихода</div><input id="prihod" type="number" step="0.01" placeholder="0" /></div>
       <div class="ed"><div class="lbl-ed">✎ Должны партнёру (в USDT)</div><input id="partner" type="number" step="0.01" placeholder="0" /></div>
+      <div class="ed" id="mustEurBox" style="display:none;"><div class="lbl-ed">✎ Клиент должен был заплатить в евро</div><input id="mustEur" type="number" step="0.01" placeholder="0" /></div>
     </div>
 
     <div class="grid g-out">
@@ -96,6 +101,8 @@
       <div class="out"><div class="t">В amo «Бюджет», ₽</div><div class="v" id="oBudget">—</div></div>
       <div class="out"><div class="t">Оплата партнёру (<span id="oPartnerUnit">€</span>)</div><div class="v" id="oPartner">—</div></div>
     </div>
+
+    <div id="calcWarn" style="display:none;margin-top:14px;background:#fdecec;border:1px solid #f3b6b6;border-radius:14px;padding:13px 15px;font-size:13px;color:#b0263a;line-height:1.5;font-weight:600;"></div>
 
     <div class="acts">
       <button type="button" id="btnRefresh">Обновить курсы с ЦБ</button>
@@ -107,7 +114,7 @@
 </div>
 
 <script>
-  var rates = { eur: 0, usd: 0, date: "", usdtExpense: 79.4 };
+  var rates = { eur: 0, usd: 0, date: "", usdtExpense: 79.4, banki: null };
   var cur = "rub";
   var histLoaded = false;
   function $(id){ return document.getElementById(id); }
@@ -122,6 +129,14 @@
     $("vUsd").textContent = fr(rates.usd, 2);
     $("vB6").textContent = fr(rates.usd ? rates.eur / rates.usd : 0, 2);
     $("vB7").textContent = fr(rates.usdtExpense, 2);
+    var bk = rates.banki;
+    if (bk && bk.eurBuyAvg) {
+      $("vBanki").textContent = fr(bk.eurBuyAvg, 2) + " ₽";
+      $("vBankiBest").textContent = bk.eurBuyBest ? ("выгоднее: " + fr(bk.eurBuyBest, 2) + " ₽" + (bk.eurBuyBestBank ? " · " + bk.eurBuyBestBank : "")) : "";
+    } else {
+      $("vBanki").textContent = "н/д";
+      $("vBankiBest").textContent = "banki.ru недоступен";
+    }
   }
   function comp(){
     var eur = r2(rates.eur || 0), usd = r2(rates.usd || 0), b7 = rates.usdtExpense || 0, b6c = usd ? r2(eur / usd) : 0;
@@ -135,23 +150,42 @@
     $("oBudget").textContent = ru0(seif - uslugi) + " ₽";
     $("oPartner").textContent = ru2(partnerOut);
     $("oPartnerUnit").textContent = unit;
+
+    // Проверка «не добрали с клиента» — только при приходе в рублях, по среднему курсу покупки евро banki.ru.
+    var budgetCard = $("oBudget").parentNode, warn = $("calcWarn");
+    budgetCard.classList.remove("bad"); warn.style.display = "none"; warn.textContent = "";
+    var bk = rates.banki, mustEur = pf($("mustEur"));
+    if (cur === "rub" && bk && bk.eurBuyAvg && mustEur > 0) {
+      var needRub = mustEur * bk.eurBuyAvg;
+      if (prihod < needRub - 0.5) {
+        var diff = needRub - prihod;
+        budgetCard.classList.add("bad");
+        warn.style.display = "block";
+        warn.textContent = "Не добрали с клиента (разница между «Клиент должен был заплатить в евро» и «Приход в рублях»): "
+          + ru0(diff) + " ₽. Нужно ≥ " + ru0(needRub) + " ₽ (" + ru2(mustEur) + " € × " + ru2(bk.eurBuyAvg) + " ₽, средний курс покупки евро banki.ru).";
+      }
+    }
   }
   function setCur(c){
     cur = c;
     [].forEach.call(document.querySelectorAll("#curBtns button"), function(b){ b.classList.toggle("on", b.getAttribute("data-cur") === cur); });
     $("prihodLbl").textContent = "✎ Сумма прихода (" + ({ rub: "₽", eur: "€", usdt: "USDT" })[cur] + ")";
+    var rub = (cur === "rub");
+    $("roBanki").style.display = rub ? "" : "none";
+    $("mustEurBox").style.display = rub ? "" : "none";
     comp();
   }
   async function loadRates(){
     try {
       var r = await fetch("/api/calc-rates").then(function(x){ return x.json(); });
       if (r && r.eur != null) { rates.eur = r.eur; rates.usd = r.usd; rates.date = r.date; rates.usdtExpense = (r.usdtExpense != null ? r.usdtExpense : rates.usdtExpense); }
+      if (r) rates.banki = r.banki || null;
       $("ratesNote").textContent = "Курсы ЦБ РФ" + (rates.date ? " на " + rates.date : "") + " · обновляются автоматически";
     } catch (e) { $("ratesNote").textContent = "Не удалось загрузить курсы ЦБ."; }
     paintRates(); comp();
   }
 
-  document.addEventListener("input", function(e){ if (e.target.id === "prihod" || e.target.id === "partner") comp(); });
+  document.addEventListener("input", function(e){ if (e.target.id === "prihod" || e.target.id === "partner" || e.target.id === "mustEur") comp(); });
   [].forEach.call(document.querySelectorAll("#curBtns button"), function(b){ b.addEventListener("click", function(){ setCur(b.getAttribute("data-cur")); }); });
   $("btnRefresh").addEventListener("click", async function(){ var b = $("btnRefresh"); b.textContent = "Обновляем…"; b.disabled = true; await loadRates(); b.textContent = "Обновить курсы с ЦБ"; b.disabled = false; });
   $("btnHist").addEventListener("click", async function(){

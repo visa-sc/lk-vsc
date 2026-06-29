@@ -2807,6 +2807,9 @@
             "#vscContent .vc-out:active{transform:translateY(0);}" +
             "#vscContent .vc-out-t{font-size:12px;color:#1f8f4d;font-weight:600;line-height:1.35;min-height:32px;letter-spacing:-.01em;padding-right:20px;}" +
             "#vscContent .vc-out-v{font-size:24px;font-weight:700;color:#1f8f4d;margin-top:6px;letter-spacing:-.02em;font-variant-numeric:tabular-nums;}" +
+            "#vscContent .vc-out.bad{background:linear-gradient(180deg,#fdecec,#fbe0e0)!important;border-color:#f0a9a9!important;}" +
+            "#vscContent .vc-out.bad .vc-out-t,#vscContent .vc-out.bad .vc-out-v{color:#b0263a!important;}" +
+            "#vscContent .vc-out.bad::after{color:#d05a5a!important;}" +
             "#vscContent .vc-out::after{content:'\\29C9';position:absolute;top:13px;right:15px;font-size:13px;color:#34c759;opacity:.5;transition:opacity .15s ease;}" +
             "#vscContent .vc-out:hover::after{opacity:1;}" +
             "#vscContent .vc-btn{padding:11px 20px;font-size:13.5px;font-weight:600;border-radius:980px;cursor:pointer;background:#f0f0f3;color:#0071e3;border:none;font-family:inherit;letter-spacing:-.01em;transition:background .15s ease,transform .1s ease;}" +
@@ -2839,15 +2842,18 @@
             (vscCalcIsAdmin
               ? ('<div class="vc-tile vc-tile-ed"><div class="vc-tlabel vc-tlabel-ed">✎ Курс usdt для расхода (ваш)</div><input id="calcB7" type="number" step="0.01" value="' + b7v + '" class="vc-input"></div>')
               : ('<div class="vc-tile"><div class="vc-tlabel">Курс usdt для расхода 🔒</div><div class="vc-tval">' + fr(b7v, 2) + '</div></div>')) +
+            '<div class="vc-tile" id="calcBankiTile" style="display:none;"><div class="vc-tlabel">Курс покупки евро · banki.ru (средн.)</div><div id="calcBankiVal" class="vc-tval">—</div><div id="calcBankiBest" style="font-size:10px;color:#8a8a8e;font-weight:600;margin-top:2px;line-height:1.2;"></div></div>' +
           '</div>' +
-          '<div class="vc-seg">' + curBtn("rub", "Приход в рублях") + curBtn("eur", "Приход в евро") + curBtn("usdt", "Приход в USDT") + '</div>' +
+          '<div class="vc-seg">' + curBtn("eur", "Приход в евро") + curBtn("rub", "Приход в рублях") + curBtn("usdt", "Приход в USDT") + '</div>' +
           '<div class="vc-grid vc-grid-in">' +
             '<div class="vc-field"><div class="vc-flabel" id="calcPrihodLbl">✎ Сумма прихода</div><input id="calcPrihod" type="number" step="0.01" placeholder="0" class="vc-finput"></div>' +
             '<div class="vc-field"><div class="vc-flabel">✎ Должны партнёру (в USDT)</div><input id="calcPartner" type="number" step="0.01" placeholder="0" class="vc-finput"></div>' +
+            '<div class="vc-field" id="calcMustEurBox" style="display:none;"><div class="vc-flabel">✎ Клиент должен был заплатить в евро</div><input id="calcMustEur" type="number" step="0.01" placeholder="0" class="vc-finput"></div>' +
           '</div>' +
           '<div class="vc-grid vc-grid-out">' +
             outCard("outSeif", "Учёт сейфа (срм-факт), ₽") + outCard("outUsl", "В amo «Услуги АКК», ₽") + outCard("outBudget", "В amo «Бюджет», ₽") + outCard("outPartner", 'Оплата партнёру (<span id="outPartnerUnit">€</span>)') +
           '</div>' +
+          '<div id="calcWarn" style="display:none;margin-top:14px;background:#fdecec;border:1px solid #f3b6b6;border-radius:14px;padding:13px 15px;font-size:13px;color:#b0263a;line-height:1.5;font-weight:600;"></div>' +
           '<div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;"><button type="button" id="calcRefresh" class="vc-btn vc-btn-primary">Обновить курсы с ЦБ</button>' +
           '<button type="button" id="calcHist" class="vc-btn">История обновлений</button></div>' +
           '<div id="calcHistPanel" style="display:none;margin-top:10px;"></div>';
@@ -2867,7 +2873,17 @@
         const pf = (el) => { const v = parseFloat(String(el.value).replace(/\s/g, "").replace(",", ".")); return isFinite(v) ? v : 0; };
         const ru0 = (v) => (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU");
         const ru2 = (v) => (v == null || isNaN(v)) ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU");
-        const b7El = $("calcB7"), prihodEl = $("calcPrihod"), partnerEl = $("calcPartner");
+        const b7El = $("calcB7"), prihodEl = $("calcPrihod"), partnerEl = $("calcPartner"), mustEurEl = $("calcMustEur");
+        function paintBanki() {
+          const bk = vscCalcRates && vscCalcRates.banki;
+          const bv = $("calcBankiVal"), bb = $("calcBankiBest");
+          if (!bv) return;
+          if (bk && bk.eurBuyAvg) {
+            bv.textContent = fr(bk.eurBuyAvg, 2) + " ₽";
+            bb.textContent = bk.eurBuyBest ? ("выгоднее: " + fr(bk.eurBuyBest, 2) + " ₽" + (bk.eurBuyBestBank ? " · " + bk.eurBuyBestBank : "")) : "";
+          } else { bv.textContent = "н/д"; bb.textContent = "banki.ru недоступен"; }
+        }
+        paintBanki();
         function comp() {
           const r2 = (x) => Math.round(x * 100) / 100; // курсы и USDT→€ считаем по сотым, как в исходной таблице
           const eur = r2(vscCalcRates.eur || 0), usd = r2(vscCalcRates.usd || 0), b7 = (b7El ? pf(b7El) : (vscCalcRates.usdtExpense || 0)), b6c = usd ? r2(eur / usd) : 0;
@@ -2881,8 +2897,21 @@
           $("outBudget").textContent = ru0(seif - uslugi) + " ₽";
           $("outPartner").textContent = ru2(partnerOut);
           const _upu = $("outPartnerUnit"); if (_upu) _upu.textContent = unit;
+          // Проверка «не добрали с клиента» — только при приходе в рублях, по среднему курсу покупки евро banki.ru.
+          const budgetCard = $("outBudget").closest(".vc-out"), warn = $("calcWarn");
+          if (budgetCard) budgetCard.classList.remove("bad");
+          if (warn) { warn.style.display = "none"; warn.textContent = ""; }
+          const bk = vscCalcRates && vscCalcRates.banki, mustEur = mustEurEl ? pf(mustEurEl) : 0;
+          if (cur === "rub" && bk && bk.eurBuyAvg && mustEur > 0) {
+            const needRub = mustEur * bk.eurBuyAvg;
+            if (prihod < needRub - 0.5) {
+              const diff = needRub - prihod;
+              if (budgetCard) budgetCard.classList.add("bad");
+              if (warn) { warn.style.display = "block"; warn.textContent = "Не добрали с клиента (разница между «Клиент должен был заплатить в евро» и «Приход в рублях»): " + ru0(diff) + " ₽. Нужно ≥ " + ru0(needRub) + " ₽ (" + ru2(mustEur) + " € × " + ru2(bk.eurBuyAvg) + " ₽, средний курс покупки евро banki.ru)."; }
+            }
+          }
         }
-        [prihodEl, partnerEl].forEach((el) => el.addEventListener("input", comp));
+        [prihodEl, partnerEl, mustEurEl].forEach((el) => el && el.addEventListener("input", comp));
         if (b7El) {
           b7El.addEventListener("input", comp);
           b7El.addEventListener("change", async function () { const v = pf(b7El); if (v > 0) { vscCalcRates.usdtExpense = v; try { await fetch("/admin/api/vsc-rates", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ usdtExpense: v }) }); } catch (_) {} } });
@@ -2904,16 +2933,24 @@
             p.innerHTML = html; calcHistLoaded = true;
           } catch (e) { p.innerHTML = '<div class="vc-muted" style="color:#c0392b;">Не удалось загрузить историю.</div>'; }
         });
+        function toggleRubFields() {
+          const rub = (vscCalcState.cur === "rub");
+          const t = $("calcBankiTile"), mb = $("calcMustEurBox");
+          if (t) t.style.display = rub ? "" : "none";
+          if (mb) mb.style.display = rub ? "" : "none";
+        }
         box.querySelectorAll(".calc-cur").forEach((b) => b.addEventListener("click", function () {
           vscCalcState.cur = b.getAttribute("data-cur");
           box.querySelectorAll(".calc-cur").forEach((x) => x.classList.toggle("on", x.getAttribute("data-cur") === vscCalcState.cur));
           $("calcPrihodLbl").textContent = "✎ Сумма прихода (" + ({ rub: "₽", eur: "€", usdt: "USDT" })[vscCalcState.cur] + ")";
+          toggleRubFields();
           comp();
         }));
+        toggleRubFields();
         $("calcPrihodLbl").textContent = "✎ Сумма прихода (" + ({ rub: "₽", eur: "€", usdt: "USDT" })[vscCalcState.cur] + ")";
         $("calcRefresh").addEventListener("click", async function () {
           const btn = $("calcRefresh"); btn.textContent = "Обновляем…"; btn.disabled = true;
-          try { const r = await apiFetch("/admin/api/vsc-rates"); if (r && r.eur != null) { vscCalcRates.eur = r.eur; vscCalcRates.usd = r.usd; vscCalcRates.date = r.date; $("calcEurVal").textContent = fr(r.eur, 2); $("calcUsdVal").textContent = fr(r.usd, 2); $("calcB6").textContent = fr(r.usd ? r.eur / r.usd : 0, 2); } } catch (_) {}
+          try { const r = await apiFetch("/admin/api/vsc-rates"); if (r && r.eur != null) { vscCalcRates.eur = r.eur; vscCalcRates.usd = r.usd; vscCalcRates.date = r.date; $("calcEurVal").textContent = fr(r.eur, 2); $("calcUsdVal").textContent = fr(r.usd, 2); $("calcB6").textContent = fr(r.usd ? r.eur / r.usd : 0, 2); } if (r) { vscCalcRates.banki = r.banki || null; paintBanki(); } } catch (_) {}
           btn.textContent = "Обновить курсы с ЦБ"; btn.disabled = false; comp();
         });
         comp();
