@@ -1877,6 +1877,11 @@
         { key: "missedPct", label: "% пропущенных звонков", fmt: "pct", good: -1 },
         { key: "junkPct", label: "% мусора от набранных контактов", fmt: "pct", good: -1 }
       ];
+      // «Конверсия из трафика в лид» (paid traf conv ОБЩАЯ). Отдельный график во ВСЕХ
+      // разрезах (год/месяц/неделя/день) — БЕЗ плитки периода; годовое значение
+      // показываем плиткой только в «Год»/«Месяц». Данные текут через тот же
+      // pick()/Total/Grand total/склейку недель, что и CV/CPL — логика идентична.
+      const VSC_TRAFCONV = { key: "trafConv", label: "Конверсия из трафика в лид (paid traf conv общая)", fmt: "pct", good: 1 };
       // Прибыль по месяцам приходит с сервера (vscData.profit, ключ — ПОЛНОЕ имя месяца);
       // директор вводит её раз в месяц через /vsc. Рентабельность = прибыль / выручка (бюджет).
       const vscShortMonth = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
@@ -2200,6 +2205,10 @@
             k.asp = U ? B / U : null;
             k.upt = T ? U / T : null;
             k.cpl = L ? A / L : null;
+            // Конверсия трафик→лид при склейке огрызков — взвешенно: traffic блока =
+            // leads / (trafConv/100); k.trafConv = Σleads / Σtraffic. (L уже = Σleads.)
+            const Tr = sumImp(blocks, (b) => { const Lb = impL(b); return b.trafConv ? Lb / (b.trafConv / 100) : 0; });
+            k.trafConv = Tr ? L / Tr * 100 : null;
             k.returnsPct = (k.retUslugi != null && B) ? k.retUslugi / B * 100 : null;
             k.planPct = null; // план ОП — месячная величина, в неделях не показываем
             return k;
@@ -2532,6 +2541,17 @@
           }
           tiles.appendChild(drT);
         }
+        // Плитка «Конверсия из трафика в лид за год» — ВСЕГДА годовое значение
+        // (взвешенно за 2026), только в разрезах «Год» и «Месяц». Не прячем по
+        // hideProfit (это не прибыль). График метрики — ниже, во всех разрезах.
+        if (vscGran === "month" || vscGran === "year") {
+          const yv = vscData.year ? vscData.year.trafConv : null;
+          const tcT = document.createElement("div"); tcT.className = "vsc-tile";
+          tcT.innerHTML = '<div class="vsc-tile-l">Конверсия из трафика в лид за 2026</div>'
+            + '<div class="vsc-tile-v">' + vscFmt(yv, "pct") + '</div>'
+            + '<div class="vsc-tile-s">paid traf conv общая · взвешенно за год</div>';
+          tiles.appendChild(tcT);
+        }
         // Прибыль и рентабельность (item 12 + расширение): плитки в «Год» и «Месяц».
         // В «Месяц» — за ПОСЛЕДНИЙ месяц с введённой прибылью (текущий ещё не закрыт).
         // Скрываем для руководителя с ограничением hideProfit (напр. Андрей Петров).
@@ -2567,6 +2587,10 @@
         vscContent.appendChild(chartsH);
         if (!series.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных за выбранный месяц."; vscContent.appendChild(e); }
         else kpisForView.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, series)));
+        // График «Конверсия из трафика в лид» — во ВСЕХ разрезах (год/месяц/неделя/день).
+        // series уже несёт trafConv в k: день — строка дня; неделя — Total/склейка огрызков;
+        // месяц/год — Grand total месяца. Та же логика, что у остальных графиков.
+        if (series.length) vscContent.appendChild(vscBarChart(VSC_TRAFCONV, series));
         // Прибыль и рентабельность по месяцам — графики в «Год» и «Месяц».
         // Скрываем для руководителя с ограничением hideProfit (напр. Андрей Петров).
         if ((vscGran === "month" || vscGran === "year") && !vscHideProfit()) {

@@ -3216,7 +3216,11 @@ function vscParseMonth(rows) {
     // звонков» (старая колонка из АТС, у неё #DIV/0!/#REF!). «Доля мусора от общего
     // числа контактов» — НЕ «Набранные контакты (мусор)» (там нет слова «доля»).
     // Позиции колонок гуляют по месяцам — берём по ключевым словам заголовка.
-    missedPct: colF("процент", "пропущен", "звонк"), junkPct: colF("доля", "мусор")
+    missedPct: colF("процент", "пропущен", "звонк"), junkPct: colF("доля", "мусор"),
+    // «paid traf conv ОБЩАЯ» — конверсия из платного трафика в лид. Колонка плавает
+    // по месяцам (80 в мае/июне, 94 в январе) — берём ПО ИМЕНИ, именно «ОБЩАЯ»
+    // (не МСК/СПБ/региональные, у тех нет слова «общая»). Значение — процент.
+    trafConv: colF("paid traf conv", "общая")
   };
   // «Набранные контакты» = сумма «Контакты, полученные до/после конца рабочего
   // дня» по всем городам (МСК/СПБ/ЕКБ/Остальные) МИНУС «Контакты с тегом
@@ -3244,6 +3248,7 @@ function vscParseMonth(rows) {
     rev: vscNum(r[C.rev]), ad: vscNum(r[C.ad]), budget: C.budget >= 0 ? vscNum(r[C.budget]) : null,
     missedPct: C.missedPct >= 0 ? vscNum(r[C.missedPct]) : null,
     junkPct: C.junkPct >= 0 ? vscNum(r[C.junkPct]) : null,
+    trafConv: C.trafConv >= 0 ? vscNum(r[C.trafConv]) : null, // конверсия трафик→лид (%) — день/неделя(Total)/месяц(Grand total)
     planPct: null // план ОП — месячная величина из сводного блока (см. ниже), не из дневной строки
   });
   const days = [], weeks = []; let blockStart = null, blockEnd = null, blockDays = [], total = null;
@@ -3432,6 +3437,14 @@ async function vscFetchAll() {
     planPct: avg("planPct"),
     aggregate: "weighted"
   };
+  // Конверсия из трафика в лид за год — ВЗВЕШЕННО (как Grand total), а не средним по
+  // месяцам: Σлиды / Σтрафик. leads месяца = ad/cpl (та же реконструкция, что у CV/CPL);
+  // traffic месяца = leads / (trafConv/100). Месяцы без trafConv/cpl в расчёт не входят
+  // (числитель и знаменатель парные — по одному набору месяцев).
+  const impTrafL = (t) => (t && t.trafConv && t.cpl) ? (t.ad || 0) / t.cpl : 0;       // лиды (где есть конверсия)
+  const impTraf = (t) => { const L = impTrafL(t); return (t && t.trafConv) ? L / (t.trafConv / 100) : 0; }; // трафик
+  const yTrafL = sumImp(impTrafL), yTraf = sumImp(impTraf);
+  year.trafConv = yTraf ? yTrafL / yTraf * 100 : null;
   // % возвратов за год = Σ Услуги (возвраты) / Σ выручка (бюджет).
   year.retUslugi = sum("retUslugi");
   year.returnsPct = (year.retUslugi && sumB) ? year.retUslugi / sumB * 100 : null;
