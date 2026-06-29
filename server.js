@@ -3612,26 +3612,36 @@ function mskParts(ts) {
   const p = (n) => ("0" + n).slice(-2);
   return { date: p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear(), time: p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) };
 }
-function appendRatesLog(eur, usd, ts) {
+function readRatesLog() { try { return JSON.parse(fs.readFileSync(VSC_RATES_LOG_FILE, "utf8")) || []; } catch (_) { return []; } }
+// Одна (последняя) запись на день; поля доливаются (ЦБ eur/usd + выгодный курс евро banki.ru).
+function upsertRatesLog(fields, ts) {
   try {
-    if (!(eur && usd)) return;
-    let log = []; try { log = JSON.parse(fs.readFileSync(VSC_RATES_LOG_FILE, "utf8")) || []; } catch (_) {}
+    let log = readRatesLog();
     const day = mskParts(ts).date;
-    log = log.filter((e) => mskParts(e.ts).date !== day); // одна (последняя) актуализация на день
-    log.push({ ts, eur, usd });
+    let e = log.find((x) => mskParts(x.ts).date === day);
+    if (!e) { e = { ts }; log.push(e); }
+    e.ts = ts; // время последней актуализации курса в калькуляторе
+    if (fields.eur) e.eur = fields.eur;
+    if (fields.usd) e.usd = fields.usd;
+    if (fields.bankiEur) e.bankiEur = fields.bankiEur;
     log.sort((a, b) => a.ts - b.ts);
     if (log.length > 90) log = log.slice(-90);
     fs.writeFileSync(VSC_RATES_LOG_FILE, JSON.stringify(log));
-  } catch (e) { console.error("appendRatesLog:", e && e.message); }
+  } catch (err) { console.error("upsertRatesLog:", err && err.message); }
 }
 function ratesLogTimesByDate() {
   const m = {};
-  try { (JSON.parse(fs.readFileSync(VSC_RATES_LOG_FILE, "utf8")) || []).forEach((e) => { const p = mskParts(e.ts); m[p.date] = p.time; }); } catch (_) {}
+  readRatesLog().forEach((e) => { const p = mskParts(e.ts); m[p.date] = p.time; });
   return m;
 }
-async function fetchCbrRates() {
+function ratesLogBankiByDate() {
+  const m = {};
+  readRatesLog().forEach((e) => { if (e.bankiEur != null) m[mskParts(e.ts).date] = e.bankiEur; });
+  return m;
+}
+async function fetchCbrRates(force) {
   const now = Date.now();
-  if (_cbrCache && (now - _cbrAt) < 60 * 60 * 1000) return _cbrCache;   // курс ЦБ обновляется раз в день — кэш 1 ч
+  if (!force && _cbrCache && (now - _cbrAt) < 60 * 60 * 1000) return _cbrCache;   // курс ЦБ обновляется раз в день — кэш 1 ч
   const r = await axios.get("https://www.cbr.ru/scripts/XML_daily.asp", { timeout: 12000, responseType: "arraybuffer" });
   const xml = Buffer.from(r.data).toString("latin1"); // CharCode/Value — ASCII, кириллицу (Name) не используем
   const rates = {};
@@ -3645,7 +3655,7 @@ async function fetchCbrRates() {
   }
   const date = (/<ValCurs[^>]*Date="([^"]+)"/.exec(xml) || [])[1] || null;
   _cbrCache = { rates, date }; _cbrAt = now;
-  appendRatesLog(rates.EUR, rates.USD, now); // фиксируем время актуализации курса в калькуляторе
+  upsertRatesLog({ eur: rates.EUR, usd: rates.USD }, now); // фиксируем актуализацию курса в калькуляторе
   return _cbrCache;
 }
 // ── banki.ru: средний/лучший курс ПОКУПКИ евро (для проверки прихода в рублях) ──
@@ -3653,9 +3663,9 @@ async function fetchCbrRates() {
 // ПРОДАЁТ евро клиенту). Нам нужен курс, по которому МЫ покупаем евро (чтобы заплатить
 // партнёру) = "sale". Берём средний и лучший (минимальный) по Москве.
 let _bankiEur = null, _bankiEurAt = 0;
-async function fetchBankiEurBuy() {
+async function fetchBankiEurBuy(force) {
   const now = Date.now();
-  if (_bankiEur && (now - _bankiEurAt) < 30 * 60 * 1000) return _bankiEur; // banki обновляет часто — кэш 30 мин
+  if (!force && _bankiEur && (now - _bankiEurAt) < 30 * 60 * 1000) return _bankiEur; // banki обновляет часто — кэш 30 мин
   const r = await axios.get("https://www.banki.ru/products/currency/cash/eur/moskva/", {
     timeout: 12000,
     headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36", "Accept-Language": "ru-RU,ru;q=0.9" }
@@ -3676,9 +3686,10 @@ async function fetchBankiEurBuy() {
   const best = rows.reduce((a, b) => (b.sale < a.sale ? b : a));
   _bankiEur = { eurBuyAvg: Math.round(avg * 100) / 100, eurBuyBest: best.sale, eurBuyBestBank: best.bank || "", banks: rows.length };
   _bankiEurAt = now;
+  upsertRatesLog({ bankiEur: best.sale }, now); // дневная история выгодного курса евро banki.ru
   return _bankiEur;
 }
-async function bankiEurSafe() { try { return await fetchBankiEurBuy(); } catch (e) { console.error("banki.ru EUR:", e && e.message); return null; } }
+async function bankiEurSafe(force) { try { return await fetchBankiEurBuy(force); } catch (e) { console.error("banki.ru EUR:", e && e.message); return null; } }
 // Прогрев курса banki.ru вместе с ЦБ.
 (function scheduleBankiPrewarm() {
   const warm = () => fetchBankiEurBuy().catch((e) => console.error("BANKI PREWARM:", e && e.message));
@@ -3691,10 +3702,11 @@ function loadCalcCfg() { try { return JSON.parse(fs.readFileSync(VSC_CALC_FILE, 
 function saveCalcCfg(c) { try { fs.writeFileSync(VSC_CALC_FILE, JSON.stringify(c || {}, null, 2), "utf8"); return true; } catch (e) { console.error("saveCalcCfg:", e.message); return false; } }
 app.get("/admin/api/vsc-rates", requireVscAccess, async (req, res) => {
   const cfg = loadCalcCfg();
+  const fresh = !!(req.query && req.query.fresh === "1"); // кнопка «Обновить курсы» — минуя кэш
   let eur = null, usd = null, date = null, error = null;
-  try { const c = await fetchCbrRates(); eur = c.rates.EUR || null; usd = c.rates.USD || null; date = c.date; }
+  try { const c = await fetchCbrRates(fresh); eur = c.rates.EUR || null; usd = c.rates.USD || null; date = c.date; }
   catch (e) { error = e && e.message; }
-  const banki = await bankiEurSafe();
+  const banki = await bankiEurSafe(fresh);
   return res.json({ success: true, eur, usd, date, usdtExpense: (cfg.usdtExpense != null ? cfg.usdtExpense : 79.4), banki, source: "ЦБ РФ", error });
 });
 app.post("/admin/api/vsc-rates", requireAdmin, (req, res) => {
@@ -3729,11 +3741,20 @@ async function fetchCbrHistory() {
   _cbrHistCache = hist; _cbrHistAt = now;
   return hist;
 }
+// Сводная история: дни ЦБ (eur/usd) + наш дневной лог выгодного курса евро banki.ru.
+// Клонируем кэш ЦБ (не мутируем), доливаем дни, которых нет в ЦБ, но есть в логе banki.
+function buildRatesHistory(cbrHist) {
+  const tm = ratesLogTimesByDate(), bm = ratesLogBankiByDate();
+  const hist = (cbrHist || []).map((h) => ({ ...h }));
+  const have = {}; hist.forEach((h) => { have[h.date] = true; });
+  Object.keys(bm).forEach((d) => { if (!have[d]) hist.push({ date: d, eur: null, usd: null }); });
+  hist.forEach((h) => { h.time = tm[h.date] || ""; h.bankiEur = (bm[h.date] != null ? bm[h.date] : null); });
+  hist.sort((a, b) => { const pa = a.date.split("."), pb = b.date.split("."); return new Date(pb[2], pb[1] - 1, pb[0]) - new Date(pa[2], pa[1] - 1, pa[0]); });
+  return hist;
+}
 app.get("/admin/api/vsc-rates-history", requireVscAccess, async (req, res) => {
   try {
-    const hist = await fetchCbrHistory();
-    const tm = ratesLogTimesByDate();
-    hist.forEach((h) => { h.time = tm[h.date] || ""; }); // время актуализации курса в калькуляторе
+    const hist = buildRatesHistory(await fetchCbrHistory()); // ЦБ + дневной лог banki.ru
     return res.json({ success: true, history: hist });
   } catch (e) { return res.json({ success: false, history: [], error: e && e.message }); }
 });
@@ -3742,17 +3763,16 @@ app.get("/admin/api/vsc-rates-history", requireVscAccess, async (req, res) => {
 // Курсы EUR/USD с ЦБ + usdtExpense (B7) ТОЛЬКО ДЛЯ ЧТЕНИЯ (меняет только админ в /vsc).
 app.get("/api/calc-rates", async (req, res) => {
   const cfg = loadCalcCfg();
+  const fresh = !!(req.query && req.query.fresh === "1"); // кнопка «Обновить курсы» — минуя кэш
   let eur = null, usd = null, date = null, error = null;
-  try { const c = await fetchCbrRates(); eur = c.rates.EUR || null; usd = c.rates.USD || null; date = c.date; }
+  try { const c = await fetchCbrRates(fresh); eur = c.rates.EUR || null; usd = c.rates.USD || null; date = c.date; }
   catch (e) { error = e && e.message; }
-  const banki = await bankiEurSafe();
+  const banki = await bankiEurSafe(fresh);
   return res.json({ success: true, eur, usd, date, usdtExpense: (cfg.usdtExpense != null ? cfg.usdtExpense : 79.4), banki, source: "ЦБ РФ", error });
 });
 app.get("/api/calc-rates-history", async (req, res) => {
   try {
-    const hist = await fetchCbrHistory();
-    const tm = ratesLogTimesByDate();
-    hist.forEach((h) => { h.time = tm[h.date] || ""; });
+    const hist = buildRatesHistory(await fetchCbrHistory()); // ЦБ + дневной лог banki.ru
     return res.json({ success: true, history: hist });
   } catch (e) { return res.json({ success: false, history: [], error: e && e.message }); }
 });

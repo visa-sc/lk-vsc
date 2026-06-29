@@ -87,9 +87,9 @@
     </div>
 
     <div class="curbtns" id="curBtns">
-      <button type="button" data-cur="eur">Приход в евро</button>
-      <button type="button" data-cur="rub" class="on">Приход в рублях</button>
+      <button type="button" data-cur="eur" class="on">Приход в евро</button>
       <button type="button" data-cur="usdt">Приход в USDT</button>
+      <button type="button" data-cur="rub">Приход в рублях</button>
     </div>
 
     <div class="grid g-in">
@@ -108,7 +108,7 @@
     <div id="calcWarn" style="display:none;margin-top:14px;background:#fdecec;border:1px solid #f3b6b6;border-radius:14px;padding:13px 15px;font-size:13px;color:#b0263a;line-height:1.5;font-weight:600;"></div>
 
     <div class="acts">
-      <button type="button" id="btnRefresh">Обновить курсы с ЦБ</button>
+      <button type="button" id="btnRefresh">Обновить курсы с ЦБ и banki.ru</button>
       <button type="button" id="btnHist">История обновлений</button>
     </div>
     <div id="histPanel" style="display:none;margin-top:10px;"></div>
@@ -196,9 +196,9 @@
     $("mustEurBox").style.display = rub ? "" : "none";
     comp();
   }
-  async function loadRates(){
+  async function loadRates(fresh){
     try {
-      var r = await fetch("/api/calc-rates").then(function(x){ return x.json(); });
+      var r = await fetch("/api/calc-rates" + (fresh ? "?fresh=1" : "")).then(function(x){ return x.json(); });
       if (r && r.eur != null) { rates.eur = r.eur; rates.usd = r.usd; rates.date = r.date; rates.usdtExpense = (r.usdtExpense != null ? r.usdtExpense : rates.usdtExpense); }
       if (r) rates.banki = r.banki || null;
       $("ratesNote").textContent = "Курсы ЦБ РФ" + (rates.date ? " на " + rates.date : "") + " · обновляются автоматически";
@@ -208,7 +208,7 @@
 
   document.addEventListener("input", function(e){ if (e.target.id === "prihod" || e.target.id === "partner" || e.target.id === "mustEur") comp(); });
   [].forEach.call(document.querySelectorAll("#curBtns button"), function(b){ b.addEventListener("click", function(){ setCur(b.getAttribute("data-cur")); }); });
-  $("btnRefresh").addEventListener("click", async function(){ var b = $("btnRefresh"); b.textContent = "Обновляем…"; b.disabled = true; await loadRates(); b.textContent = "Обновить курсы с ЦБ"; b.disabled = false; });
+  $("btnRefresh").addEventListener("click", async function(){ var b = $("btnRefresh"); b.textContent = "Обновляем…"; b.disabled = true; histLoaded = false; await loadRates(true); b.textContent = "Обновить курсы с ЦБ и banki.ru"; b.disabled = false; });
   $("btnHist").addEventListener("click", async function(){
     var p = $("histPanel");
     if (p.style.display !== "none") { p.style.display = "none"; return; }
@@ -219,8 +219,8 @@
       var r = await fetch("/api/calc-rates-history").then(function(x){ return x.json(); });
       var hist = (r && r.history) || [];
       if (!hist.length) { p.innerHTML = '<div class="muted">Нет данных по истории.</div>'; histLoaded = true; return; }
-      var html = '<div class="card" style="padding:0;overflow:hidden;"><div style="padding:10px 14px;font-weight:700;border-bottom:1px solid #f0eef5;">Курс ЦБ РФ за последние 30 дней</div><div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table><thead><tr><th>Дата</th><th>Актуализация в калькуляторе</th><th style="text-align:right;">Евро</th><th style="text-align:right;">USDT / доллар</th></tr></thead><tbody>';
-      hist.forEach(function(e, i){ html += '<tr style="' + (i ? "border-top:1px solid #f0eef5;" : "") + '"><td>' + e.date + '</td><td style="color:#6b7280;">' + (e.time ? (e.date + " " + e.time) : "—") + '</td><td style="text-align:right;">' + fr(e.eur, 2) + '</td><td style="text-align:right;">' + fr(e.usd, 2) + '</td></tr>'; });
+      var html = '<div class="card" style="padding:0;overflow:hidden;"><div style="padding:10px 14px;font-weight:700;border-bottom:1px solid #f0eef5;">Курсы за последние 30 дней (ЦБ РФ + banki.ru)</div><div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table><thead><tr><th>Дата</th><th>Актуализация в калькуляторе</th><th style="text-align:right;">Евро ЦБ</th><th style="text-align:right;">USDT / доллар</th><th style="text-align:right;">Евро banki.ru (выгодный)</th></tr></thead><tbody>';
+      hist.forEach(function(e, i){ html += '<tr style="' + (i ? "border-top:1px solid #f0eef5;" : "") + '"><td>' + e.date + '</td><td style="color:#6b7280;">' + (e.time ? (e.date + " " + e.time) : "—") + '</td><td style="text-align:right;">' + fr(e.eur, 2) + '</td><td style="text-align:right;">' + fr(e.usd, 2) + '</td><td style="text-align:right;">' + (e.bankiEur != null ? fr(e.bankiEur, 2) + " ₽" : "—") + '</td></tr>'; });
       html += '</tbody></table></div></div>';
       p.innerHTML = html; histLoaded = true;
     } catch (e) { p.innerHTML = '<div class="muted" style="color:#b0263a;">Не удалось загрузить историю.</div>'; }
@@ -244,7 +244,7 @@
     });
   });
 
-  setCur("rub");
+  setCur("eur");
   loadRates();
 </script>
 </body>
