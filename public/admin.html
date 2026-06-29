@@ -2849,9 +2849,9 @@
           '</div>' +
           '<div class="vc-seg">' + curBtn("eur", "Приход в евро") + curBtn("usdt", "Приход в USDT") + curBtn("rub", "Приход в рублях") + '</div>' +
           '<div class="vc-grid vc-grid-in">' +
-            '<div class="vc-field"><div class="vc-flabel" id="calcPrihodLbl">✎ Сумма прихода</div><input id="calcPrihod" type="number" step="0.01" placeholder="0" class="vc-finput"></div>' +
-            '<div class="vc-field" id="calcMustEurBox" style="display:none;"><div class="vc-flabel">✎ Клиент должен был в евро</div><input id="calcMustEur" type="number" step="0.01" placeholder="0" class="vc-finput"></div>' +
-            '<div class="vc-field"><div class="vc-flabel">✎ Должны партнёру (в USDT)</div><input id="calcPartner" type="number" step="0.01" placeholder="0" class="vc-finput"></div>' +
+            '<div class="vc-field"><div class="vc-flabel" id="calcPrihodLbl">✎ Сумма прихода</div><input id="calcPrihod" type="text" inputmode="decimal" placeholder="0" class="vc-finput"></div>' +
+            '<div class="vc-field" id="calcMustEurBox" style="display:none;"><div class="vc-flabel">✎ Клиент должен был в евро</div><input id="calcMustEur" type="text" inputmode="decimal" placeholder="0" class="vc-finput"></div>' +
+            '<div class="vc-field"><div class="vc-flabel">✎ Должны партнёру (в USDT)</div><input id="calcPartner" type="text" inputmode="decimal" placeholder="0" class="vc-finput"></div>' +
           '</div>' +
           '<div class="vc-grid vc-grid-out">' +
             outCard("outSeif", "Учёт сейфа (срм-факт), ₽") + outCard("outUsl", "В amo «Услуги АКК», ₽") + outCard("outBudget", "В amo «Бюджет», ₽") + outCard("outPartner", 'Оплата партнёру (<span id="outPartnerUnit">€</span>)') +
@@ -2874,6 +2874,23 @@
           });
         });
         const pf = (el) => { const v = parseFloat(String(el.value).replace(/\s/g, "").replace(",", ".")); return isFinite(v) ? v : 0; };
+        // Разделение тысяч пробелами прямо в поле ввода (с сохранением позиции курсора).
+        const fmtNum = (el) => {
+          const before = el.value, start = (el.selectionStart == null ? before.length : el.selectionStart);
+          let v = before.replace(/[^\d.,]/g, "").replace(/,/g, ".");
+          const fd = v.indexOf(".");
+          if (fd !== -1) v = v.slice(0, fd + 1) + v.slice(fd + 1).replace(/\./g, "");
+          const intp = (fd === -1 ? v : v.slice(0, fd)).replace(/^0+(?=\d)/, "");
+          let decp = (fd === -1 ? "" : v.slice(fd));
+          if (decp.length > 3) decp = decp.slice(0, 3);
+          const out = intp.replace(/\B(?=(\d{3})+(?!\d))/g, " ") + decp;
+          if (out === before) return;
+          const digitsLeft = before.slice(0, start).replace(/\D/g, "").length;
+          el.value = out;
+          let pos = 0, seen = 0;
+          while (pos < out.length && seen < digitsLeft) { const c = out.charCodeAt(pos); if (c >= 48 && c <= 57) seen++; pos++; }
+          try { el.setSelectionRange(pos, pos); } catch (_) {}
+        };
         const ru0 = (v) => (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU");
         const ru2 = (v) => (v == null || isNaN(v)) ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU");
         const b7El = $("calcB7"), prihodEl = $("calcPrihod"), partnerEl = $("calcPartner"), mustEurEl = $("calcMustEur");
@@ -2884,7 +2901,7 @@
           if (!bv) return;
           if (bk && bk.eurBuyBest) {
             bv.textContent = fr(bk.eurBuyBest, 2) + " ₽";
-            bb.textContent = "выгодный" + (bk.eurBuyBestBank ? " · " + bk.eurBuyBestBank : "");
+            bb.textContent = "";
           } else { bv.textContent = "н/д"; bb.textContent = "banki.ru недоступен"; }
         }
         paintBanki();
@@ -2930,7 +2947,7 @@
             }
           }
         }
-        [prihodEl, partnerEl, mustEurEl].forEach((el) => el && el.addEventListener("input", comp));
+        [prihodEl, partnerEl, mustEurEl].forEach((el) => el && el.addEventListener("input", () => { fmtNum(el); comp(); }));
         if (b7El) {
           b7El.addEventListener("input", comp);
           b7El.addEventListener("change", async function () { const v = pf(b7El); if (v > 0) { vscCalcRates.usdtExpense = v; try { await fetch("/admin/api/vsc-rates", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ usdtExpense: v }) }); } catch (_) {} } });

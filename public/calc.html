@@ -39,11 +39,11 @@
   .lbl { font-size: 11px; color: var(--ink3); font-weight: 590; letter-spacing: -.01em; line-height: 1.25; min-height: 24px; }
   .lbl-ed { font-size: 12px; color: var(--blue-d); font-weight: 680; margin-bottom: 6px; letter-spacing: -.01em; }
   .val { font-size: 15px; font-weight: 700; color: var(--ink); margin-top: auto; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-  input[type=number] { width: 100%; box-sizing: border-box; padding: 9px 12px; font-size: 15px; font-weight: 600; border: 1px solid #d2d2d7; border-radius: 10px; background: #fff; font-family: inherit; color: var(--ink); -webkit-appearance: none; transition: border-color .15s ease, box-shadow .15s ease; }
-  input[type=number]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 4px rgba(0,113,227,.15); }
+  .ed input { width: 100%; box-sizing: border-box; padding: 9px 12px; font-size: 15px; font-weight: 600; border: 1px solid #d2d2d7; border-radius: 10px; background: #fff; font-family: inherit; color: var(--ink); -webkit-appearance: none; transition: border-color .15s ease, box-shadow .15s ease; }
+  .ed input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 4px rgba(0,113,227,.15); }
   .ed.needfill { background: linear-gradient(180deg, #fdecec, #fbe0e0); border-color: #f0a9a9; }
   .ed.needfill .lbl-ed { color: #b0263a; }
-  .ed.needfill input[type=number] { border-color: #e0a0a0; box-shadow: 0 0 0 4px rgba(208,38,58,.12); }
+  .ed.needfill input { border-color: #e0a0a0; box-shadow: 0 0 0 4px rgba(208,38,58,.12); }
   .curbtns { display: flex; gap: 4px; background: #ececef; border-radius: 14px; padding: 4px; margin-bottom: 18px; }
   .curbtns button { flex: 1; padding: 9px 12px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 13.5px; border: none; background: transparent; color: var(--ink2); font-family: inherit; letter-spacing: -.01em; transition: background .18s ease, color .18s ease, box-shadow .18s ease; }
   .curbtns button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 1px 1px rgba(0,0,0,.04); font-weight: 680; }
@@ -93,9 +93,9 @@
     </div>
 
     <div class="grid g-in">
-      <div class="ed"><div class="lbl-ed" id="prihodLbl">✎ Сумма прихода</div><input id="prihod" type="number" step="0.01" placeholder="0" /></div>
-      <div class="ed" id="mustEurBox" style="display:none;"><div class="lbl-ed">✎ Клиент должен был в евро</div><input id="mustEur" type="number" step="0.01" placeholder="0" /></div>
-      <div class="ed"><div class="lbl-ed">✎ Должны партнёру (в USDT)</div><input id="partner" type="number" step="0.01" placeholder="0" /></div>
+      <div class="ed"><div class="lbl-ed" id="prihodLbl">✎ Сумма прихода</div><input id="prihod" type="text" inputmode="decimal" placeholder="0" /></div>
+      <div class="ed" id="mustEurBox" style="display:none;"><div class="lbl-ed">✎ Клиент должен был в евро</div><input id="mustEur" type="text" inputmode="decimal" placeholder="0" /></div>
+      <div class="ed"><div class="lbl-ed">✎ Должны партнёру (в USDT)</div><input id="partner" type="text" inputmode="decimal" placeholder="0" /></div>
     </div>
 
     <div class="grid g-out">
@@ -127,6 +127,23 @@
   function ru0(v){ return (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU"); }
   function ru2(v){ return (v == null || isNaN(v)) ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU"); }
   function pf(el){ var v = parseFloat(String(el.value).replace(/\s/g, "").replace(",", ".")); return isFinite(v) ? v : 0; }
+  // Разделение тысяч пробелами прямо в поле ввода (с сохранением позиции курсора).
+  function fmtNum(el){
+    var before = el.value, start = (el.selectionStart == null ? before.length : el.selectionStart);
+    var v = before.replace(/[^\d.,]/g, "").replace(/,/g, ".");
+    var fd = v.indexOf(".");
+    if (fd !== -1) v = v.slice(0, fd + 1) + v.slice(fd + 1).replace(/\./g, ""); // только одна точка
+    var intp = (fd === -1 ? v : v.slice(0, fd)).replace(/^0+(?=\d)/, "");
+    var decp = (fd === -1 ? "" : v.slice(fd));
+    if (decp.length > 3) decp = decp.slice(0, 3); // максимум 2 знака после точки
+    var out = intp.replace(/\B(?=(\d{3})+(?!\d))/g, " ") + decp;
+    if (out === before) return;
+    var digitsLeft = before.slice(0, start).replace(/\D/g, "").length;
+    el.value = out;
+    var pos = 0, seen = 0;
+    while (pos < out.length && seen < digitsLeft) { var c = out.charCodeAt(pos); if (c >= 48 && c <= 57) seen++; pos++; }
+    try { el.setSelectionRange(pos, pos); } catch (_) {}
+  }
 
   function paintRates(){
     $("vEur").textContent = fr(rates.eur, 2);
@@ -136,7 +153,7 @@
     var bk = rates.banki;
     if (bk && bk.eurBuyBest) {
       $("vBanki").textContent = fr(bk.eurBuyBest, 2) + " ₽";
-      $("vBankiBank").textContent = "выгодный" + (bk.eurBuyBestBank ? " · " + bk.eurBuyBestBank : "");
+      $("vBankiBank").textContent = "";
     } else {
       $("vBanki").textContent = "н/д";
       $("vBankiBank").textContent = "banki.ru недоступен";
@@ -206,7 +223,7 @@
     paintRates(); comp();
   }
 
-  document.addEventListener("input", function(e){ if (e.target.id === "prihod" || e.target.id === "partner" || e.target.id === "mustEur") comp(); });
+  document.addEventListener("input", function(e){ if (e.target.id === "prihod" || e.target.id === "partner" || e.target.id === "mustEur") { fmtNum(e.target); comp(); } });
   [].forEach.call(document.querySelectorAll("#curBtns button"), function(b){ b.addEventListener("click", function(){ setCur(b.getAttribute("data-cur")); }); });
   $("btnRefresh").addEventListener("click", async function(){ var b = $("btnRefresh"); b.textContent = "Обновляем…"; b.disabled = true; histLoaded = false; await loadRates(true); b.textContent = "Обновить курсы с ЦБ и banki.ru"; b.disabled = false; });
   $("btnHist").addEventListener("click", async function(){
