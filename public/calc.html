@@ -110,8 +110,10 @@
     <div class="acts">
       <button type="button" id="btnRefresh">Обновить курсы с ЦБ и banki.ru</button>
       <button type="button" id="btnHist">История обновлений</button>
+      <button type="button" id="btnMismatch">История расхождений при оплате в руб.</button>
     </div>
     <div id="histPanel" style="display:none;margin-top:10px;"></div>
+    <div id="mismatchPanel" style="display:none;margin-top:10px;"></div>
   </div>
   <div class="ft">VOYO · Visa Services Center</div>
 </div>
@@ -121,6 +123,7 @@
   var cur = "rub";
   var histLoaded = false;
   var needfillTimer = null; // подсветка «Клиент должен был в евро» красным через 2с
+  var mismatchTimer = null, lastMismatchSig = ""; // фиксация расхождений (недобор в рублях)
   function $(id){ return document.getElementById(id); }
   function r2(x){ return Math.round(x * 100) / 100; }
   function fr(v, dg){ if (v == null || isNaN(v)) return "—"; var k = Math.pow(10, dg); return (Math.round(v * k) / k).toLocaleString("ru-RU"); }
@@ -193,16 +196,30 @@
     }
 
     // Проверка «не добрали с клиента»: приход в рублях должен быть ≥ (Клиент должен был в евро × выгодный курс покупки евро banki.ru).
+    var under = false;
     if (rub && bk && bk.eurBuyBest && mustEur > 0) {
       var needRub = mustEur * bk.eurBuyBest;
       if (prihod < needRub - 0.5) {
+        under = true;
         var diff = needRub - prihod;
         budgetCard.classList.add("bad");
         warn.style.display = "block";
         warn.textContent = "Не добрали с клиента (разница между «Клиент должен был в евро» и «Приход в рублях»): "
           + ru0(diff) + " ₽. Нужно ≥ " + ru0(needRub) + " ₽ (" + ru2(mustEur) + " € × " + ru2(bk.eurBuyBest) + " ₽, выгодный курс покупки евро banki.ru).";
+        scheduleMismatchLog(prihod, mustEur, bk.eurBuyBest);
       }
     }
+    if (!under && mismatchTimer) { clearTimeout(mismatchTimer); mismatchTimer = null; } // расхождение исправлено до фиксации
+  }
+  // Фиксируем расхождение с задержкой 2.5с (когда сотрудник перестал печатать) + дедуп по значениям.
+  function scheduleMismatchLog(prihod, mustEur, rate){
+    var sig = prihod + "|" + mustEur + "|" + rate;
+    if (sig === lastMismatchSig) return;
+    if (mismatchTimer) clearTimeout(mismatchTimer);
+    mismatchTimer = setTimeout(function(){
+      lastMismatchSig = sig;
+      fetch("/api/calc-mismatch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prihod: prihod, mustEur: mustEur, rate: rate }) }).catch(function(){});
+    }, 2500);
   }
   function setCur(c){
     cur = c;
@@ -241,6 +258,22 @@
       html += '</tbody></table></div></div>';
       p.innerHTML = html; histLoaded = true;
     } catch (e) { p.innerHTML = '<div class="muted" style="color:#b0263a;">Не удалось загрузить историю.</div>'; }
+  });
+  $("btnMismatch").addEventListener("click", async function(){
+    var p = $("mismatchPanel");
+    if (p.style.display !== "none") { p.style.display = "none"; return; }
+    p.style.display = "block";
+    p.innerHTML = '<div class="muted">Загружаем расхождения…</div>';
+    try {
+      var r = await fetch("/api/calc-mismatch").then(function(x){ return x.json(); });
+      var hist = (r && r.history) || [];
+      if (!hist.length) { p.innerHTML = '<div class="muted">Расхождений пока не зафиксировано.</div>'; return; }
+      var head = 'Расхождения при оплате в рублях — недобор с клиента (всего: ' + (r.total || hist.length) + ')';
+      var html = '<div class="card" style="padding:0;overflow:hidden;"><div style="padding:10px 14px;font-weight:700;border-bottom:1px solid #f0eef5;">' + head + '</div><div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table><thead><tr><th>Дата</th><th>Время</th><th style="text-align:right;">Клиент должен был, €</th><th style="text-align:right;">Курс €, banki.ru</th><th style="text-align:right;">Должно быть ≥, ₽</th><th style="text-align:right;">Приход, ₽</th><th style="text-align:right;">Недобор, ₽</th></tr></thead><tbody>';
+      hist.forEach(function(e, i){ html += '<tr style="' + (i ? "border-top:1px solid #f0eef5;" : "") + '"><td>' + e.date + '</td><td style="color:#6b7280;">' + e.time + '</td><td style="text-align:right;">' + ru2(e.mustEur) + '</td><td style="text-align:right;">' + ru2(e.rate) + ' ₽</td><td style="text-align:right;">' + ru0(e.needRub) + ' ₽</td><td style="text-align:right;">' + ru0(e.prihod) + ' ₽</td><td style="text-align:right;font-weight:700;color:#b0263a;">' + ru0(e.diff) + ' ₽</td></tr>'; });
+      html += '</tbody></table></div></div>';
+      p.innerHTML = html;
+    } catch (e) { p.innerHTML = '<div class="muted" style="color:#b0263a;">Не удалось загрузить расхождения.</div>'; }
   });
 
   // Копирование значения зелёной области по клику (для переноса в amoCRM / таблицы).

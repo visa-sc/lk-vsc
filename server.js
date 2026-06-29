@@ -3776,6 +3776,35 @@ app.get("/api/calc-rates-history", async (req, res) => {
     return res.json({ success: true, history: hist });
   } catch (e) { return res.json({ success: false, history: [], error: e && e.message }); }
 });
+// ── Накопительный лог расхождений «не добрали при оплате в рублях» ──
+// Фиксируем КАЖДЫЙ случай, когда (Клиент должен был в евро × выгодный курс banki.ru) > Сумма прихода (₽).
+const CALC_MISMATCH_FILE = path.join(__dirname, ".calcMismatchLog.json");
+function readMismatchLog() { try { return JSON.parse(fs.readFileSync(CALC_MISMATCH_FILE, "utf8")) || []; } catch (_) { return []; } }
+app.post("/api/calc-mismatch", (req, res) => {
+  const b = req.body || {};
+  const prihod = parseFloat(b.prihod), mustEur = parseFloat(b.mustEur), rate = parseFloat(b.rate);
+  if (![prihod, mustEur, rate].every((x) => isFinite(x) && x > 0) || prihod > 1e12 || mustEur > 1e9 || rate > 1e6) {
+    return res.status(400).json({ success: false, message: "bad input" });
+  }
+  const needRub = Math.round(mustEur * rate * 100) / 100;
+  const diff = Math.round((needRub - prihod) * 100) / 100;
+  if (diff <= 0.5) return res.json({ success: true, skipped: "not-under" }); // не недобор — не пишем
+  const now = Date.now(), p = mskParts(now);
+  let log = readMismatchLog();
+  // Дедуп: те же приход/евро/курс за последние 10 минут не дублируем (фронт долбит comp() на каждый ввод).
+  if (log.some((e) => e.prihod === prihod && e.mustEur === mustEur && e.rate === rate && (now - e.ts) < 10 * 60 * 1000)) {
+    return res.json({ success: true, skipped: "dup" });
+  }
+  log.push({ ts: now, date: p.date, time: p.time, prihod, mustEur, rate, needRub, diff });
+  if (log.length > 2000) log = log.slice(-2000);
+  try { fs.writeFileSync(CALC_MISMATCH_FILE, JSON.stringify(log)); } catch (e) { console.error("calc-mismatch write:", e && e.message); }
+  return res.json({ success: true });
+});
+app.get("/api/calc-mismatch", (req, res) => {
+  const all = readMismatchLog();
+  const history = all.slice().sort((a, b) => b.ts - a.ts).slice(0, 1000); // новые сверху, максимум 1000 в выдаче
+  return res.json({ success: true, history, total: all.length });
+});
 app.get("/calc", (req, res) => {
   res.set("Cache-Control", "no-store");
   res.sendFile(path.join(__dirname, "public", "calc.html"));

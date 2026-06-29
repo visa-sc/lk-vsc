@@ -2858,8 +2858,10 @@
           '</div>' +
           '<div id="calcWarn" style="display:none;margin-top:14px;background:#fdecec;border:1px solid #f3b6b6;border-radius:14px;padding:13px 15px;font-size:13px;color:#b0263a;line-height:1.5;font-weight:600;"></div>' +
           '<div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;"><button type="button" id="calcRefresh" class="vc-btn vc-btn-primary">Обновить курсы с ЦБ и banki.ru</button>' +
-          '<button type="button" id="calcHist" class="vc-btn">История обновлений</button></div>' +
-          '<div id="calcHistPanel" style="display:none;margin-top:10px;"></div>';
+          '<button type="button" id="calcHist" class="vc-btn">История обновлений</button>' +
+          '<button type="button" id="calcMismatch" class="vc-btn">История расхождений при оплате в руб.</button></div>' +
+          '<div id="calcHistPanel" style="display:none;margin-top:10px;"></div>' +
+          '<div id="calcMismatchPanel" style="display:none;margin-top:10px;"></div>';
         const $ = (id) => box.querySelector("#" + id);
         // Копирование значения зелёной области по клику (для переноса в amoCRM / таблицы).
         box.querySelectorAll(".vsc-out").forEach((card) => {
@@ -2895,6 +2897,7 @@
         const ru2 = (v) => (v == null || isNaN(v)) ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU");
         const b7El = $("calcB7"), prihodEl = $("calcPrihod"), partnerEl = $("calcPartner"), mustEurEl = $("calcMustEur");
         let needfillTimer = null; // подсветка «Клиент должен был в евро» красным через 2с
+        let mismatchTimer = null, lastMismatchSig = ""; // фиксация расхождений (недобор в рублях)
         function paintBanki() {
           const bk = vscCalcRates && vscCalcRates.banki;
           const bv = $("calcBankiVal"), bb = $("calcBankiBank");
@@ -2938,14 +2941,28 @@
           }
 
           // Проверка «не добрали с клиента»: приход в рублях должен быть ≥ (Клиент должен был в евро × выгодный курс покупки евро banki.ru).
+          let under = false;
           if (rub && bk && bk.eurBuyBest && mustEur > 0) {
             const needRub = mustEur * bk.eurBuyBest;
             if (prihod < needRub - 0.5) {
+              under = true;
               const diff = needRub - prihod;
               if (budgetCard) budgetCard.classList.add("bad");
               if (warn) { warn.style.display = "block"; warn.textContent = "Не добрали с клиента (разница между «Клиент должен был в евро» и «Приход в рублях»): " + ru0(diff) + " ₽. Нужно ≥ " + ru0(needRub) + " ₽ (" + ru2(mustEur) + " € × " + ru2(bk.eurBuyBest) + " ₽, выгодный курс покупки евро banki.ru)."; }
+              scheduleMismatchLog(prihod, mustEur, bk.eurBuyBest);
             }
           }
+          if (!under && mismatchTimer) { clearTimeout(mismatchTimer); mismatchTimer = null; } // расхождение исправлено до фиксации
+        }
+        // Фиксируем расхождение с задержкой 2.5с (когда перестали печатать) + дедуп по значениям.
+        function scheduleMismatchLog(prihod, mustEur, rate) {
+          const sig = prihod + "|" + mustEur + "|" + rate;
+          if (sig === lastMismatchSig) return;
+          if (mismatchTimer) clearTimeout(mismatchTimer);
+          mismatchTimer = setTimeout(() => {
+            lastMismatchSig = sig;
+            fetch("/api/calc-mismatch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prihod, mustEur, rate }) }).catch(() => {});
+          }, 2500);
         }
         [prihodEl, partnerEl, mustEurEl].forEach((el) => el && el.addEventListener("input", () => { fmtNum(el); comp(); }));
         if (b7El) {
@@ -2968,6 +2985,22 @@
             html += '</tbody></table></div></div>';
             p.innerHTML = html; calcHistLoaded = true;
           } catch (e) { p.innerHTML = '<div class="vc-muted" style="color:#c0392b;">Не удалось загрузить историю.</div>'; }
+        });
+        $("calcMismatch").addEventListener("click", async function () {
+          const p = $("calcMismatchPanel");
+          if (p.style.display !== "none") { p.style.display = "none"; return; }
+          p.style.display = "block";
+          p.innerHTML = '<div class="vc-muted">Загружаем расхождения…</div>';
+          try {
+            const r = await fetch("/api/calc-mismatch").then((x) => x.json());
+            const hist = (r && r.history) || [];
+            if (!hist.length) { p.innerHTML = '<div class="vc-muted">Расхождений пока не зафиксировано.</div>'; return; }
+            const head = 'Расхождения при оплате в рублях — недобор с клиента (всего: ' + (r.total || hist.length) + ')';
+            let html = '<div class="vc-hist"><div class="vc-hist-h">' + head + '</div><div class="vc-hist-scroll"><table><thead><tr><th>Дата</th><th>Время</th><th style="text-align:right;">Клиент должен был, €</th><th style="text-align:right;">Курс €, banki.ru</th><th style="text-align:right;">Должно быть ≥, ₽</th><th style="text-align:right;">Приход, ₽</th><th style="text-align:right;">Недобор, ₽</th></tr></thead><tbody>';
+            hist.forEach((e, i) => { html += '<tr style="' + (i ? "border-top:1px solid rgba(0,0,0,.05);" : "") + '"><td>' + escapeHtml(e.date) + '</td><td style="color:#8a8a8e;">' + escapeHtml(e.time) + '</td><td style="text-align:right;">' + ru2(e.mustEur) + '</td><td style="text-align:right;">' + ru2(e.rate) + ' ₽</td><td style="text-align:right;">' + ru0(e.needRub) + ' ₽</td><td style="text-align:right;">' + ru0(e.prihod) + ' ₽</td><td style="text-align:right;font-weight:700;color:#b0263a;">' + ru0(e.diff) + ' ₽</td></tr>'; });
+            html += '</tbody></table></div></div>';
+            p.innerHTML = html;
+          } catch (e) { p.innerHTML = '<div class="vc-muted" style="color:#c0392b;">Не удалось загрузить расхождения.</div>'; }
         });
         function toggleRubFields() {
           const rub = (vscCalcState.cur === "rub");
