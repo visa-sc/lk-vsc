@@ -2810,6 +2810,9 @@
             "#vscContent .vc-out.bad{background:linear-gradient(180deg,#fdecec,#fbe0e0)!important;border-color:#f0a9a9!important;}" +
             "#vscContent .vc-out.bad .vc-out-t,#vscContent .vc-out.bad .vc-out-v{color:#b0263a!important;}" +
             "#vscContent .vc-out.bad::after{color:#d05a5a!important;}" +
+            "#vscContent .vc-field.needfill{background:linear-gradient(180deg,#fdecec,#fbe0e0);border-color:#f0a9a9;}" +
+            "#vscContent .vc-field.needfill .vc-flabel{color:#b0263a;}" +
+            "#vscContent .vc-field.needfill .vc-finput{border-color:#e0a0a0;box-shadow:0 0 0 4px rgba(208,38,58,.12);}" +
             "#vscContent .vc-out::after{content:'\\29C9';position:absolute;top:13px;right:15px;font-size:13px;color:#34c759;opacity:.5;transition:opacity .15s ease;}" +
             "#vscContent .vc-out:hover::after{opacity:1;}" +
             "#vscContent .vc-btn{padding:11px 20px;font-size:13.5px;font-weight:600;border-radius:980px;cursor:pointer;background:#f0f0f3;color:#0071e3;border:none;font-family:inherit;letter-spacing:-.01em;transition:background .15s ease,transform .1s ease;}" +
@@ -2839,16 +2842,16 @@
             '<div class="vc-tile"><div class="vc-tlabel">Курс евро к рублю</div><div id="calcEurVal" class="vc-tval">' + fr(d.eur, 2) + '</div></div>' +
             '<div class="vc-tile"><div class="vc-tlabel">Курс usdt / доллар к рублю</div><div id="calcUsdVal" class="vc-tval">' + fr(d.usd, 2) + '</div></div>' +
             '<div class="vc-tile"><div class="vc-tlabel">USDT к евро (расчёт)</div><div id="calcB6" class="vc-tval">' + fr(b6, 2) + '</div></div>' +
+            '<div class="vc-tile" id="calcBankiTile" style="display:none;"><div class="vc-tlabel">Курс покупки евро · banki.ru<span id="calcBankiBank" style="display:block;font-weight:600;color:#8a8a8e;"></span></div><div id="calcBankiVal" class="vc-tval">—</div></div>' +
             (vscCalcIsAdmin
               ? ('<div class="vc-tile vc-tile-ed"><div class="vc-tlabel vc-tlabel-ed">✎ Курс usdt для расхода (ваш)</div><input id="calcB7" type="number" step="0.01" value="' + b7v + '" class="vc-input"></div>')
               : ('<div class="vc-tile"><div class="vc-tlabel">Курс usdt для расхода 🔒</div><div class="vc-tval">' + fr(b7v, 2) + '</div></div>')) +
-            '<div class="vc-tile" id="calcBankiTile" style="display:none;"><div class="vc-tlabel">Курс покупки евро · banki.ru (средн.)</div><div id="calcBankiVal" class="vc-tval">—</div><div id="calcBankiBest" style="font-size:10px;color:#8a8a8e;font-weight:600;margin-top:2px;line-height:1.2;"></div></div>' +
           '</div>' +
           '<div class="vc-seg">' + curBtn("eur", "Приход в евро") + curBtn("rub", "Приход в рублях") + curBtn("usdt", "Приход в USDT") + '</div>' +
           '<div class="vc-grid vc-grid-in">' +
             '<div class="vc-field"><div class="vc-flabel" id="calcPrihodLbl">✎ Сумма прихода</div><input id="calcPrihod" type="number" step="0.01" placeholder="0" class="vc-finput"></div>' +
+            '<div class="vc-field" id="calcMustEurBox" style="display:none;"><div class="vc-flabel">✎ Клиент должен был в евро</div><input id="calcMustEur" type="number" step="0.01" placeholder="0" class="vc-finput"></div>' +
             '<div class="vc-field"><div class="vc-flabel">✎ Должны партнёру (в USDT)</div><input id="calcPartner" type="number" step="0.01" placeholder="0" class="vc-finput"></div>' +
-            '<div class="vc-field" id="calcMustEurBox" style="display:none;"><div class="vc-flabel">✎ Клиент должен был заплатить в евро</div><input id="calcMustEur" type="number" step="0.01" placeholder="0" class="vc-finput"></div>' +
           '</div>' +
           '<div class="vc-grid vc-grid-out">' +
             outCard("outSeif", "Учёт сейфа (срм-факт), ₽") + outCard("outUsl", "В amo «Услуги АКК», ₽") + outCard("outBudget", "В amo «Бюджет», ₽") + outCard("outPartner", 'Оплата партнёру (<span id="outPartnerUnit">€</span>)') +
@@ -2874,13 +2877,14 @@
         const ru0 = (v) => (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU");
         const ru2 = (v) => (v == null || isNaN(v)) ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU");
         const b7El = $("calcB7"), prihodEl = $("calcPrihod"), partnerEl = $("calcPartner"), mustEurEl = $("calcMustEur");
+        let needfillTimer = null; // подсветка «Клиент должен был в евро» красным через 2с
         function paintBanki() {
           const bk = vscCalcRates && vscCalcRates.banki;
-          const bv = $("calcBankiVal"), bb = $("calcBankiBest");
+          const bv = $("calcBankiVal"), bb = $("calcBankiBank");
           if (!bv) return;
-          if (bk && bk.eurBuyAvg) {
-            bv.textContent = fr(bk.eurBuyAvg, 2) + " ₽";
-            bb.textContent = bk.eurBuyBest ? ("выгоднее: " + fr(bk.eurBuyBest, 2) + " ₽" + (bk.eurBuyBestBank ? " · " + bk.eurBuyBestBank : "")) : "";
+          if (bk && bk.eurBuyBest) {
+            bv.textContent = fr(bk.eurBuyBest, 2) + " ₽";
+            bb.textContent = "выгодный" + (bk.eurBuyBestBank ? " · " + bk.eurBuyBestBank : "");
           } else { bv.textContent = "н/д"; bb.textContent = "banki.ru недоступен"; }
         }
         paintBanki();
@@ -2894,20 +2898,35 @@
           else { seif = prihod * usd; uslugi = partner * usd; partnerOut = partner; unit = "$"; }
           $("outSeif").textContent = ru0(seif) + " ₽";
           $("outUsl").textContent = ru0(uslugi) + " ₽";
-          $("outBudget").textContent = ru0(seif - uslugi) + " ₽";
           $("outPartner").textContent = ru2(partnerOut);
           const _upu = $("outPartnerUnit"); if (_upu) _upu.textContent = unit;
-          // Проверка «не добрали с клиента» — только при приходе в рублях, по среднему курсу покупки евро banki.ru.
-          const budgetCard = $("outBudget").closest(".vc-out"), warn = $("calcWarn");
+
+          const budgetCard = $("outBudget").closest(".vc-out"), warn = $("calcWarn"), mustEurBox = $("calcMustEurBox");
           if (budgetCard) budgetCard.classList.remove("bad");
           if (warn) { warn.style.display = "none"; warn.textContent = ""; }
           const bk = vscCalcRates && vscCalcRates.banki, mustEur = mustEurEl ? pf(mustEurEl) : 0;
-          if (cur === "rub" && bk && bk.eurBuyAvg && mustEur > 0) {
-            const needRub = mustEur * bk.eurBuyAvg;
+          const rub = (cur === "rub");
+
+          // В рублях «В amo «Бюджет»» не показываем, пока не заполнено «Клиент должен был в евро».
+          if (rub && mustEur <= 0) {
+            $("outBudget").textContent = "—";
+            if (needfillTimer) { clearTimeout(needfillTimer); needfillTimer = null; }
+            if (prihod > 0 && partner > 0) {
+              needfillTimer = setTimeout(() => { if (vscCalcState.cur === "rub" && (mustEurEl ? pf(mustEurEl) : 0) <= 0 && mustEurBox) mustEurBox.classList.add("needfill"); }, 2000);
+            } else if (mustEurBox) { mustEurBox.classList.remove("needfill"); }
+          } else {
+            if (mustEurBox) mustEurBox.classList.remove("needfill");
+            if (needfillTimer) { clearTimeout(needfillTimer); needfillTimer = null; }
+            $("outBudget").textContent = ru0(seif - uslugi) + " ₽";
+          }
+
+          // Проверка «не добрали с клиента»: приход в рублях должен быть ≥ (Клиент должен был в евро × выгодный курс покупки евро banki.ru).
+          if (rub && bk && bk.eurBuyBest && mustEur > 0) {
+            const needRub = mustEur * bk.eurBuyBest;
             if (prihod < needRub - 0.5) {
               const diff = needRub - prihod;
               if (budgetCard) budgetCard.classList.add("bad");
-              if (warn) { warn.style.display = "block"; warn.textContent = "Не добрали с клиента (разница между «Клиент должен был заплатить в евро» и «Приход в рублях»): " + ru0(diff) + " ₽. Нужно ≥ " + ru0(needRub) + " ₽ (" + ru2(mustEur) + " € × " + ru2(bk.eurBuyAvg) + " ₽, средний курс покупки евро banki.ru)."; }
+              if (warn) { warn.style.display = "block"; warn.textContent = "Не добрали с клиента (разница между «Клиент должен был в евро» и «Приход в рублях»): " + ru0(diff) + " ₽. Нужно ≥ " + ru0(needRub) + " ₽ (" + ru2(mustEur) + " € × " + ru2(bk.eurBuyBest) + " ₽, выгодный курс покупки евро banki.ru)."; }
             }
           }
         }

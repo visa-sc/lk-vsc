@@ -41,6 +41,9 @@
   .val { font-size: 15px; font-weight: 700; color: var(--ink); margin-top: auto; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   input[type=number] { width: 100%; box-sizing: border-box; padding: 9px 12px; font-size: 15px; font-weight: 600; border: 1px solid #d2d2d7; border-radius: 10px; background: #fff; font-family: inherit; color: var(--ink); -webkit-appearance: none; transition: border-color .15s ease, box-shadow .15s ease; }
   input[type=number]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 4px rgba(0,113,227,.15); }
+  .ed.needfill { background: linear-gradient(180deg, #fdecec, #fbe0e0); border-color: #f0a9a9; }
+  .ed.needfill .lbl-ed { color: #b0263a; }
+  .ed.needfill input[type=number] { border-color: #e0a0a0; box-shadow: 0 0 0 4px rgba(208,38,58,.12); }
   .curbtns { display: flex; gap: 4px; background: #ececef; border-radius: 14px; padding: 4px; margin-bottom: 18px; }
   .curbtns button { flex: 1; padding: 9px 12px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 13.5px; border: none; background: transparent; color: var(--ink2); font-family: inherit; letter-spacing: -.01em; transition: background .18s ease, color .18s ease, box-shadow .18s ease; }
   .curbtns button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 1px 1px rgba(0,0,0,.04); font-weight: 680; }
@@ -79,8 +82,8 @@
       <div class="ro"><div class="lbl">Курс евро к рублю</div><div class="val" id="vEur">—</div></div>
       <div class="ro"><div class="lbl">Курс usdt / доллар к рублю</div><div class="val" id="vUsd">—</div></div>
       <div class="ro"><div class="lbl">USDT к евро (расчёт)</div><div class="val" id="vB6">—</div></div>
+      <div class="ro" id="roBanki" style="display:none;"><div class="lbl">Курс покупки евро · banki.ru<span id="vBankiBank" style="display:block;font-weight:600;color:var(--ink3);"></span></div><div class="val" id="vBanki">—</div></div>
       <div class="ro"><div class="lbl">Курс usdt для расхода 🔒</div><div class="val" id="vB7">—</div></div>
-      <div class="ro" id="roBanki" style="display:none;"><div class="lbl">Курс покупки евро · banki.ru (средн.)</div><div class="val" id="vBanki">—</div><div id="vBankiBest" style="font-size:10px;color:var(--ink3);font-weight:600;margin-top:2px;line-height:1.2;"></div></div>
     </div>
 
     <div class="curbtns" id="curBtns">
@@ -91,8 +94,8 @@
 
     <div class="grid g-in">
       <div class="ed"><div class="lbl-ed" id="prihodLbl">✎ Сумма прихода</div><input id="prihod" type="number" step="0.01" placeholder="0" /></div>
+      <div class="ed" id="mustEurBox" style="display:none;"><div class="lbl-ed">✎ Клиент должен был в евро</div><input id="mustEur" type="number" step="0.01" placeholder="0" /></div>
       <div class="ed"><div class="lbl-ed">✎ Должны партнёру (в USDT)</div><input id="partner" type="number" step="0.01" placeholder="0" /></div>
-      <div class="ed" id="mustEurBox" style="display:none;"><div class="lbl-ed">✎ Клиент должен был заплатить в евро</div><input id="mustEur" type="number" step="0.01" placeholder="0" /></div>
     </div>
 
     <div class="grid g-out">
@@ -117,6 +120,7 @@
   var rates = { eur: 0, usd: 0, date: "", usdtExpense: 79.4, banki: null };
   var cur = "rub";
   var histLoaded = false;
+  var needfillTimer = null; // подсветка «Клиент должен был в евро» красным через 2с
   function $(id){ return document.getElementById(id); }
   function r2(x){ return Math.round(x * 100) / 100; }
   function fr(v, dg){ if (v == null || isNaN(v)) return "—"; var k = Math.pow(10, dg); return (Math.round(v * k) / k).toLocaleString("ru-RU"); }
@@ -130,12 +134,12 @@
     $("vB6").textContent = fr(rates.usd ? rates.eur / rates.usd : 0, 2);
     $("vB7").textContent = fr(rates.usdtExpense, 2);
     var bk = rates.banki;
-    if (bk && bk.eurBuyAvg) {
-      $("vBanki").textContent = fr(bk.eurBuyAvg, 2) + " ₽";
-      $("vBankiBest").textContent = bk.eurBuyBest ? ("выгоднее: " + fr(bk.eurBuyBest, 2) + " ₽" + (bk.eurBuyBestBank ? " · " + bk.eurBuyBestBank : "")) : "";
+    if (bk && bk.eurBuyBest) {
+      $("vBanki").textContent = fr(bk.eurBuyBest, 2) + " ₽";
+      $("vBankiBank").textContent = "выгодный" + (bk.eurBuyBestBank ? " · " + bk.eurBuyBestBank : "");
     } else {
       $("vBanki").textContent = "н/д";
-      $("vBankiBest").textContent = "banki.ru недоступен";
+      $("vBankiBank").textContent = "banki.ru недоступен";
     }
   }
   function comp(){
@@ -147,22 +151,39 @@
     else { seif = prihod * usd; uslugi = partner * usd; partnerOut = partner; unit = "$"; }
     $("oSeif").textContent = ru0(seif) + " ₽";
     $("oUsl").textContent = ru0(uslugi) + " ₽";
-    $("oBudget").textContent = ru0(seif - uslugi) + " ₽";
     $("oPartner").textContent = ru2(partnerOut);
     $("oPartnerUnit").textContent = unit;
 
-    // Проверка «не добрали с клиента» — только при приходе в рублях, по среднему курсу покупки евро banki.ru.
-    var budgetCard = $("oBudget").parentNode, warn = $("calcWarn");
+    var budgetCard = $("oBudget").parentNode, warn = $("calcWarn"), mustEurBox = $("mustEurBox");
     budgetCard.classList.remove("bad"); warn.style.display = "none"; warn.textContent = "";
     var bk = rates.banki, mustEur = pf($("mustEur"));
-    if (cur === "rub" && bk && bk.eurBuyAvg && mustEur > 0) {
-      var needRub = mustEur * bk.eurBuyAvg;
+    var rub = (cur === "rub");
+
+    // В рублях «В amo «Бюджет»» не показываем, пока не заполнено «Клиент должен был в евро».
+    if (rub && mustEur <= 0) {
+      $("oBudget").textContent = "—";
+      // Подсветить поле красным через 2с после заполнения «Сумма прихода» и «Должны партнёру».
+      if (needfillTimer) { clearTimeout(needfillTimer); needfillTimer = null; }
+      if (prihod > 0 && partner > 0) {
+        needfillTimer = setTimeout(function(){ if (cur === "rub" && pf($("mustEur")) <= 0) mustEurBox.classList.add("needfill"); }, 2000);
+      } else {
+        mustEurBox.classList.remove("needfill");
+      }
+    } else {
+      mustEurBox.classList.remove("needfill");
+      if (needfillTimer) { clearTimeout(needfillTimer); needfillTimer = null; }
+      $("oBudget").textContent = ru0(seif - uslugi) + " ₽";
+    }
+
+    // Проверка «не добрали с клиента»: приход в рублях должен быть ≥ (Клиент должен был в евро × выгодный курс покупки евро banki.ru).
+    if (rub && bk && bk.eurBuyBest && mustEur > 0) {
+      var needRub = mustEur * bk.eurBuyBest;
       if (prihod < needRub - 0.5) {
         var diff = needRub - prihod;
         budgetCard.classList.add("bad");
         warn.style.display = "block";
-        warn.textContent = "Не добрали с клиента (разница между «Клиент должен был заплатить в евро» и «Приход в рублях»): "
-          + ru0(diff) + " ₽. Нужно ≥ " + ru0(needRub) + " ₽ (" + ru2(mustEur) + " € × " + ru2(bk.eurBuyAvg) + " ₽, средний курс покупки евро banki.ru).";
+        warn.textContent = "Не добрали с клиента (разница между «Клиент должен был в евро» и «Приход в рублях»): "
+          + ru0(diff) + " ₽. Нужно ≥ " + ru0(needRub) + " ₽ (" + ru2(mustEur) + " € × " + ru2(bk.eurBuyBest) + " ₽, выгодный курс покупки евро banki.ru).";
       }
     }
   }
