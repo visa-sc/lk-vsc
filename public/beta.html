@@ -104,6 +104,8 @@
   .esim-list li::before{content:"";position:absolute;left:3px;top:16px;width:13px;height:13px;border-radius:50%;background:var(--accent);}
   .esim-cta{display:block;text-align:center;width:100%;box-sizing:border-box;font-size:15px;padding:14px;border-radius:12px;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;}
   .esim-note{font-size:12px;color:var(--mut);text-align:center;margin-top:10px;line-height:1.5;}
+  /* белая карточка-обёртка вокруг партнёрского виджета (билеты/отели) */
+  .tpcard{display:block;max-width:580px;background:#fff;border-radius:18px;padding:8px;box-shadow:0 10px 30px rgba(15,35,60,.16);overflow:hidden;}
 
   /* ───────── Экскурсии: карточки ───────── */
   .ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
@@ -379,8 +381,11 @@
     var host=document.getElementById(hostId);
     function render(cfg){
       var src=cfg&&cfg[srcKey];
-      if(!src){ host.innerHTML=""; host.appendChild(el('<div class="panel state">Раздел скоро будет доступен — подключается партнёрский поиск Travelpayouts.</div>')); return; }
+      if(!src){ host.className=""; host.innerHTML=""; host.appendChild(el('<div class="panel state">Раздел скоро будет доступен — подключается партнёрский поиск Travelpayouts.</div>')); return; }
       loaded[kind]=true; host.innerHTML="";
+      // Оборачиваем виджет в белую «карточку» (.tpcard) — чтобы партнёрский поиск
+      // выглядел как аккуратный модуль VOYO и в светлой, и в тёмной теме.
+      host.className="tpcard";
       // TP-виджет — это async-скрипт, который рендерит свой поиск на месте вставки.
       var s=document.createElement("script"); s.async=true; s.charset="utf-8"; s.src=src;
       host.appendChild(s);
