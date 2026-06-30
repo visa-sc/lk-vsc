@@ -242,10 +242,11 @@
 
   document.addEventListener("input", function(e){ if (e.target.id === "prihod" || e.target.id === "partner" || e.target.id === "mustEur") { fmtNum(e.target); comp(); } });
   [].forEach.call(document.querySelectorAll("#curBtns button"), function(b){ b.addEventListener("click", function(){ setCur(b.getAttribute("data-cur")); }); });
-  $("btnRefresh").addEventListener("click", async function(){ var b = $("btnRefresh"); b.textContent = "Обновляем…"; b.disabled = true; histLoaded = false; await loadRates(true); b.textContent = "Обновить курсы с ЦБ и banki.ru"; b.disabled = false; });
+  $("btnRefresh").addEventListener("click", async function(){ $("histPanel").style.display = "none"; $("mismatchPanel").style.display = "none"; var b = $("btnRefresh"); b.textContent = "Обновляем…"; b.disabled = true; histLoaded = false; await loadRates(true); b.textContent = "Обновить курсы с ЦБ и banki.ru"; b.disabled = false; });
   $("btnHist").addEventListener("click", async function(){
     var p = $("histPanel");
     if (p.style.display !== "none") { p.style.display = "none"; return; }
+    $("mismatchPanel").style.display = "none"; // только одна панель открыта
     p.style.display = "block";
     if (histLoaded) return;
     p.innerHTML = '<div class="muted">Загружаем историю…</div>';
@@ -262,6 +263,7 @@
   $("btnMismatch").addEventListener("click", async function(){
     var p = $("mismatchPanel");
     if (p.style.display !== "none") { p.style.display = "none"; return; }
+    $("histPanel").style.display = "none"; // только одна панель открыта
     p.style.display = "block";
     p.innerHTML = '<div class="muted">Загружаем расхождения…</div>';
     try {

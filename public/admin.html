@@ -3076,6 +3076,7 @@
         $("calcHist").addEventListener("click", async function () {
           const p = $("calcHistPanel");
           if (p.style.display !== "none") { p.style.display = "none"; return; }
+          $("calcMismatchPanel").style.display = "none"; // только одна панель открыта
           p.style.display = "block";
           if (calcHistLoaded) return;
           p.innerHTML = '<div class="vc-muted">Загружаем историю…</div>';
@@ -3092,6 +3093,7 @@
         $("calcMismatch").addEventListener("click", async function () {
           const p = $("calcMismatchPanel");
           if (p.style.display !== "none") { p.style.display = "none"; return; }
+          $("calcHistPanel").style.display = "none"; // только одна панель открыта
           p.style.display = "block";
           p.innerHTML = '<div class="vc-muted">Загружаем расхождения…</div>';
           try {
@@ -3121,6 +3123,7 @@
         toggleRubFields();
         $("calcPrihodLbl").textContent = "✎ Сумма прихода (" + ({ rub: "₽", eur: "€", usdt: "USDT" })[vscCalcState.cur] + ")";
         $("calcRefresh").addEventListener("click", async function () {
+          $("calcHistPanel").style.display = "none"; $("calcMismatchPanel").style.display = "none"; // закрыть панели при обновлении
           const btn = $("calcRefresh"); btn.textContent = "Обновляем…"; btn.disabled = true; calcHistLoaded = false;
           try { const r = await apiFetch("/admin/api/vsc-rates?fresh=1"); if (r && r.eur != null) { vscCalcRates.eur = r.eur; vscCalcRates.usd = r.usd; vscCalcRates.date = r.date; $("calcEurVal").textContent = fr(r.eur, 2); $("calcUsdVal").textContent = fr(r.usd, 2); $("calcB6").textContent = fr(r.usd ? r.eur / r.usd : 0, 2); } if (r) { vscCalcRates.banki = r.banki || null; paintBanki(); } } catch (_) {}
           btn.textContent = "Обновить курсы с ЦБ и banki.ru"; btn.disabled = false; comp();
