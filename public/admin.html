@@ -721,8 +721,9 @@
     .vsc-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
     .vsc-tile { background: #fff; border: 1px solid #e6e9f0; border-radius: 14px; padding: 14px 16px; }
     .vsc-tile-dayrev { background: #f2faf3; border-color: #d6ecdb; } /* «Выручка за сегодня» — бледно-зелёная плитка */
-    .vsc-dayrev-refresh { margin-top: 9px; font-size: 11.5px; font-weight: 600; color: #2c7a43; background: #e3f3e7; border: 1px solid #c2e3cb; border-radius: 8px; padding: 5px 11px; cursor: pointer; font-family: inherit; }
-    .vsc-dayrev-refresh:hover { background: #d6ecdb; }
+    .vsc-dayrev-sched { white-space: nowrap; } /* расписание обновления — в одну строку */
+    .vsc-dayrev-refresh { margin-top: 9px; font-size: 11.5px; font-weight: 600; color: #fff; background: #3589BD; border: 1px solid #3589BD; border-radius: 8px; padding: 5px 11px; cursor: pointer; font-family: inherit; }
+    .vsc-dayrev-refresh:hover { background: #2c7aa6; border-color: #2c7aa6; }
     .vsc-dayrev-refresh:disabled { opacity: .55; cursor: default; }
     .vsc-tile-l { font-size: 12px; color: #6b7280; font-weight: 600; line-height: 1.3; min-height: 31px; }
     .vsc-tile-v { font-size: 24px; font-weight: 800; color: #161d45; margin-top: 6px; letter-spacing: -.01em; }
@@ -2635,18 +2636,23 @@
           // Запрос идёт тем же САМЫМ НИЗКИМ приоритетом (amoBg «low»), с guard'ом — amoCRM/ЛК не рискуют.
           const dayRevAdmin = currentRole() === "admin";
           const refreshBtn = dayRevAdmin ? '<button type="button" class="vsc-dayrev-refresh" id="dayRevRefresh">↻ Обновить</button>' : '';
+          // Подпись — только расписание обновления, в ОДНУ строку (детали последнего
+          // пересчёта: время + кол-во сделок — в тултипе плитки, по наведению).
+          const dayRevSched = '<div class="vsc-tile-s vsc-dayrev-sched">обновл. 12/15/17/18/19/20 ч</div>';
           if (dr && dr.total != null && dr.dayKey === todayKey) {
             const upd = dr.ts ? new Date(dr.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+            drT.title = "Обновлено: " + upd + " МСК · сделок " + (dr.leads != null ? dr.leads : "—");
             drT.innerHTML = '<div class="vsc-tile-l">Выручка за сегодня (amoCRM)</div>'
               + '<div class="vsc-tile-v">' + vscFmt(dr.total, "money") + '</div>'
-              + '<div class="vsc-tile-s">сегодня · на ' + escapeHtml(upd) + ' МСК · сделок ' + (dr.leads != null ? dr.leads : "—") + ' · обновл. 12/15/17/18/19/20 ч</div>'
+              + dayRevSched
               + refreshBtn;
           } else {
             // Новый день начался, а кэш ещё за прошлый день (или его нет) → показываем 0,
             // чтобы вчерашняя сумма не путала. Реальные данные появятся в 12:00 МСК (и далее).
+            drT.title = "День только начался · первый пересчёт в 12:00 МСК";
             drT.innerHTML = '<div class="vsc-tile-l">Выручка за сегодня (amoCRM)</div>'
               + '<div class="vsc-tile-v">' + vscFmt(0, "money") + '</div>'
-              + '<div class="vsc-tile-s">день только начался · обновится в 12:00 МСК (и далее до 20:00)</div>'
+              + dayRevSched
               + refreshBtn;
           }
           tiles.appendChild(drT);
