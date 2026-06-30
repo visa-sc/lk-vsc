@@ -37,10 +37,10 @@
   .ex .ti{font-size:14.5px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:38px;}
   .ex .meta{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--mut);flex-wrap:wrap;}
   .ex .rate{color:var(--gold);font-weight:700;}
-  .ex .bot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding-top:4px;}
-  .ex .price{font-size:15px;font-weight:800;}
-  .ex .price small{font-size:11px;font-weight:600;color:var(--mut);display:block;line-height:1;}
-  .ex .book{font-size:13px;padding:8px 12px;border-radius:9px;white-space:nowrap;}
+  .ex .bot{display:flex;align-items:baseline;gap:5px;margin-top:auto;padding-top:4px;}
+  .ex .price{font-size:15px;font-weight:800;white-space:nowrap;}
+  .ex .price small{font-size:11px;font-weight:600;color:var(--mut);}
+  .ex .book{display:block;width:100%;box-sizing:border-box;text-align:center;margin-top:9px;font-size:13px;padding:9px 12px;border-radius:9px;white-space:nowrap;}
   .state{text-align:center;color:var(--mut);font-size:14px;padding:40px 10px;line-height:1.6;}
   .state.err{color:var(--accent-d);}
   .more{display:flex;justify-content:center;margin-top:20px;}
@@ -112,12 +112,12 @@
     if(p.rating) meta.push('<span class="rate">★ '+(Math.round(p.rating*10)/10)+'</span>');
     if(p.duration) meta.push('<span>'+escapeHtml(p.duration)+'</span>');
     var price=fmtPrice(p.price,p.currency);
-    var book=p.url?('<a class="book" style="background:var(--accent);color:#fff;text-decoration:none;display:inline-block" href="'+escapeHtml(p.url)+'" target="_blank" rel="noopener nofollow">Забронировать</a>'):'';
+    var book=p.url?('<a class="book" style="background:var(--accent);color:#fff;text-decoration:none" href="'+escapeHtml(p.url)+'" target="_blank" rel="noopener nofollow">Забронировать</a>'):'';
     el.innerHTML='<div class="ph"'+ph+'>'+badge+'</div>'+
       '<div class="bd">'+
         '<div class="ti">'+escapeHtml(p.title)+'</div>'+
         '<div class="meta">'+meta.join("")+'</div>'+
-        '<div class="bot"><div class="price">'+(price?('<small>от</small>'+price):'')+'</div>'+book+'</div>'+
+        '<div class="bot"><div class="price">'+(price?('<small>от</small> '+price):'')+'</div></div>'+book+
       '</div>';
     return el;
   }

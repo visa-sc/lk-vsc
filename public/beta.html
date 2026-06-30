@@ -39,7 +39,8 @@
 
   /* ───────── Нижнее меню (Instagram-style, ужимается при скролле) ───────── */
   nav.bn{
-    position:fixed;left:14px;right:14px;z-index:50;height:var(--nav-h);
+    position:fixed;left:50%;transform:translateX(-50%);z-index:50;height:var(--nav-h);
+    width:min(420px,calc(100% - 28px));
     bottom:calc(14px + env(safe-area-inset-bottom));
     display:flex;align-items:stretch;
     background:var(--nav-bg);border:1px solid var(--nav-line);border-radius:30px;
@@ -61,14 +62,12 @@
                     max-height:16px;opacity:1;overflow:hidden;
                     transition:max-height .26s ease,opacity .2s ease;}
   body.min nav.bn button .lb{max-height:0;opacity:0;}
-  /* активный таб — «парящая» подсветка-чип за иконкой, как в Instagram */
-  nav.bn button::before{content:"";position:absolute;top:50%;left:50%;width:46px;height:32px;
-    transform:translate(-50%,-50%) scale(.6);border-radius:16px;background:var(--accent);opacity:0;
-    transition:opacity .2s ease,transform .25s cubic-bezier(.34,1.4,.5,1);z-index:0;}
-  body.min nav.bn button::before{height:30px;width:42px;}
-  nav.bn button.act::before{opacity:.12;transform:translate(-50%,-50%) scale(1);}
-  nav.bn button.act{color:var(--accent);}
-  nav.bn button.act .ic{transform:translateY(-1px);}
+  /* активный таб — целиком голубая «парящая» плашка на всю ячейку */
+  nav.bn button::before{content:"";position:absolute;top:6px;bottom:6px;left:7px;right:7px;
+    border-radius:21px;background:var(--accent);opacity:0;transform:scale(.86);
+    transition:opacity .2s ease,transform .26s cubic-bezier(.34,1.4,.5,1);z-index:0;}
+  nav.bn button.act::before{opacity:1;transform:scale(1);}
+  nav.bn button.act{color:#fff;}
   nav.bn button:active .ic{transform:scale(.86);}
 
   /* ───────── Общие блоки в нативных вкладках ───────── */
@@ -101,10 +100,10 @@
   .ex .ti{font-size:13.5px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:35px;}
   .ex .meta{display:flex;gap:9px;align-items:center;font-size:12px;color:var(--mut);flex-wrap:wrap;}
   .ex .rate{color:var(--gold);font-weight:700;}
-  .ex .bot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding-top:2px;}
-  .ex .price{font-size:14.5px;font-weight:800;}
-  .ex .price small{font-size:10.5px;font-weight:600;color:var(--mut);display:block;line-height:1;}
-  .ex .book{font-size:12.5px;padding:8px 11px;border-radius:9px;white-space:nowrap;background:var(--accent);color:#fff;text-decoration:none;}
+  .ex .bot{display:flex;align-items:baseline;gap:5px;margin-top:auto;padding-top:2px;}
+  .ex .price{font-size:15px;font-weight:800;white-space:nowrap;}
+  .ex .price small{font-size:10.5px;font-weight:600;color:var(--mut);}
+  .ex .book{display:block;width:100%;box-sizing:border-box;text-align:center;margin-top:9px;font-size:13px;padding:9px 12px;border-radius:9px;background:var(--accent);color:#fff;text-decoration:none;}
   .more{display:flex;justify-content:center;margin-top:18px;}
   .sk{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;animation:pulse 1.2s ease-in-out infinite;}
   .sk .ph{aspect-ratio:4/3;background:var(--surface-2);}
@@ -305,7 +304,8 @@
     var price=fmtPrice(p.price,p.currency);
     var book=p.url?('<a class="book" href="'+escapeHtml(p.url)+'" target="_blank" rel="noopener nofollow">Забронировать</a>'):'';
     el.innerHTML='<div class="ph"'+ph+'>'+badge+'</div><div class="bd"><div class="ti">'+escapeHtml(p.title)+'</div>'+
-      '<div class="meta">'+meta.join("")+'</div><div class="bot"><div class="price">'+(price?('<small>от</small>'+price):'')+'</div>'+book+'</div></div>';
+      '<div class="meta">'+meta.join("")+'</div>'+
+      '<div class="bot"><div class="price">'+(price?('<small>от</small> '+price):'')+'</div></div>'+book+'</div>';
     return el;
   }
   function loadProducts(reset){
