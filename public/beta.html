@@ -35,7 +35,11 @@
   .tab.on{display:block;}
   .scroller{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
             padding:18px 16px calc(var(--nav-h) + 48px);}
-  iframe.frame{position:absolute;inset:0;width:100%;height:100%;border:0;display:block;background:var(--bg);}
+  iframe.frame{position:absolute;inset:0;width:100%;height:100%;border:0;display:block;background:var(--bg);transition:filter .25s ease;}
+  /* «Тёмная» тема для встроенного ЛК (Визы): smart-invert ТОЛЬКО iframe-элемента
+     внутри /app. Сам /cabinet это не затрагивает. Фото/логотипы внутри ЛК
+     контр-инвертируются (инъекцией стиля в iframe) — остаются в нормальном цвете. */
+  iframe.frame.dark{filter:invert(1) hue-rotate(180deg);}
 
   /* ───────── Нижнее меню (Instagram-style, ужимается при скролле) ───────── */
   nav.bn{
@@ -83,16 +87,18 @@
   .panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:14px;transition:background .25s ease,border-color .25s ease;}
   .panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:0 0 10px;font-weight:700;}
   select,input,button{font:inherit;}
-  select{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface);color:var(--ink);min-width:150px;}
+  select{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface);color:var(--ink);min-width:0;max-width:100%;width:100%;}
   select:focus{outline:none;border-color:var(--accent);}
   .state{text-align:center;color:var(--mut);font-size:14px;padding:36px 10px;line-height:1.6;}
   .state.err{color:var(--accent-d);}
 
   /* ───────── Экскурсии: карточки ───────── */
   .ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
-  .fld{display:flex;flex-direction:column;gap:5px;}
+  .fld{display:flex;flex-direction:column;gap:5px;min-width:0;}
+  .fld.full{flex:1 1 100%;}
+  .fld.grow{flex:1 1 150px;}
   .fld label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);font-weight:700;}
-  .btn{cursor:pointer;border:0;border-radius:10px;padding:10px 16px;font-weight:600;background:var(--accent);color:#fff;}
+  .btn{cursor:pointer;border:0;border-radius:10px;padding:10px 16px;font-weight:600;background:var(--accent);color:#fff;flex:0 0 auto;}
   .btn.sec{background:var(--surface-2);color:var(--ink);border:1px solid var(--line);}
   .btn:disabled{opacity:.5;cursor:default;}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:13px;margin-top:4px;}
@@ -168,9 +174,9 @@
         <div class="hsub">Выберите город — покажем туры с ценами и рейтингом. Бронирование — на сайте Sputnik8.</div>
         <div class="panel">
           <div class="ctrls">
-            <div class="fld"><label for="city">Город</label>
+            <div class="fld full"><label for="city">Город или направление</label>
               <select id="city"><option value="">Загружаем города…</option></select></div>
-            <div class="fld"><label for="sort">Сортировка</label>
+            <div class="fld grow"><label for="sort">Сортировка</label>
               <select id="sort"><option value="product_id">Сначала популярные</option><option value="rating">По рейтингу</option></select></div>
             <button class="btn" id="go" disabled>Показать</button>
           </div>
@@ -242,6 +248,23 @@
     var meta=document.querySelector('meta[name="theme-color"]'); if(meta) meta.setAttribute("content", t==="dark"?"#121821":"#ffffff");
     try{ localStorage.setItem("beta_theme", t); }catch(e){}
     document.querySelectorAll("#themeSeg button").forEach(function(b){ b.classList.toggle("on", b.getAttribute("data-theme")===t); });
+    applyVisasTheme(t);
+  }
+  // Тёмная тема для встроенного ЛК (Визы) — изолированно, без правок самого /cabinet.
+  function applyVisasTheme(t){
+    var f=document.getElementById("visasFrame"); if(!f) return;
+    var dark=(t==="dark"); f.classList.toggle("dark", dark);
+    try{
+      var doc=f.contentDocument;
+      if(doc && doc.head){
+        var id="beta-invert-media", st=doc.getElementById(id);
+        if(dark){
+          if(!st){ st=doc.createElement("style"); st.id=id; doc.head.appendChild(st); }
+          // контр-инверсия медиа, чтобы фото/логотипы остались в нормальном цвете
+          st.textContent='img,video,svg,image,canvas,[style*="url("]{filter:invert(1) hue-rotate(180deg)!important}';
+        } else if(st && st.parentNode){ st.parentNode.removeChild(st); }
+      }
+    }catch(e){}
   }
   (function initTheme(){
     var saved=null; try{ saved=localStorage.getItem("beta_theme"); }catch(e){}
@@ -288,6 +311,7 @@
         if(doc && doc.body){ doc.body.style.paddingBottom="104px"; } // чтобы низ ЛК не уходил под «парящее» меню
         if(win){ attachShrink(function(){ return win.pageYOffset||0; }, win); }
       }catch(e){ /* кросс-доменность тут невозможна (тот же origin), но на всякий */ }
+      applyVisasTheme(document.documentElement.getAttribute("data-theme")); // подхватить текущую тему
     });
   }
 
