@@ -45,7 +45,7 @@
   /* ───────── Нижнее меню (Instagram-style, ужимается при скролле) ───────── */
   nav.bn{
     position:fixed;left:50%;transform:translateX(-50%);z-index:50;height:var(--nav-h);
-    width:min(460px,calc(100% - 16px));
+    width:min(480px,calc(100% - 12px));
     bottom:calc(14px + env(safe-area-inset-bottom));
     display:flex;align-items:center;
     background:var(--nav-bg);border:1px solid var(--nav-line);border-radius:34px;
@@ -65,11 +65,11 @@
   /* подсветка — ОДИНАКОВЫЙ овал для каждого раздела (равная ширина ячеек + border-radius 999) */
   nav.bn button .nit{
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-    width:100%;max-width:82px;min-height:46px;
-    padding:6px 6px;border-radius:999px;background:transparent;
+    width:100%;max-width:94px;min-height:50px;
+    padding:7px 8px;border-radius:999px;background:transparent;
     transition:background .2s ease,min-height .28s ease,max-width .28s ease,transform .24s cubic-bezier(.34,1.4,.5,1);
   }
-  body.min nav.bn button .nit{min-height:38px;max-width:62px;}
+  body.min nav.bn button .nit{min-height:40px;max-width:64px;}
   nav.bn button.act .nit{background:var(--accent);}
   nav.bn button.act{color:#fff;}
   nav.bn button:active .nit{transform:scale(.93);}
@@ -275,7 +275,7 @@
     </button>
     <button data-go="tours" aria-label="Экскурсии"><span class="nit">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.6 8.4l-1.7 4.6-4.5 1.8 1.7-4.6z"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>
-      <span class="lb">Экскурсии</span></span>
+      <span class="lb">Туры</span></span>
     </button>
     <button data-go="account" aria-label="Аккаунт"><span class="nit">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.7"/><path d="M4.8 20c.6-3.7 3.7-5.6 7.2-5.6s6.6 1.9 7.2 5.6"/></svg>
