@@ -1466,6 +1466,17 @@ app.get("/beta/api/loyalty", (req, res) => {
   const acc = loyaltyFindAccountByPhone(phone);
   return res.json({ success: true, card: acc ? loyaltyCardForAccount(acc) : loyaltyEmptyCard(phone) });
 });
+// Конфиг партнёрских виджетов Travelpayouts (Авиабилеты/Отели) для вкладок /app.
+// В .env кладём URL async-скрипта виджета из кабинета Travelpayouts (он содержит ваш
+// маркер): TP_FLIGHTS_WIDGET, TP_HOTELS_WIDGET. Пусто → вкладка покажет «подключается».
+// Партнёрская модель как у Sputnik: мы — витрина, бронь/комиссия у партнёра.
+app.get("/beta/api/config", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json({
+    tpFlights: process.env.TP_FLIGHTS_WIDGET || "",
+    tpHotels: process.env.TP_HOTELS_WIDGET || ""
+  });
+});
 
 function scheduleLoyaltyDaily() {
   // 1×/сутки ночью (03:00 МСК) — минимизируем фоновую нагрузку на amoCRM, пока пилот

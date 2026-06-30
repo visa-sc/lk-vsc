@@ -44,7 +44,7 @@
   /* ───────── Нижнее меню (Instagram-style, ужимается при скролле) ───────── */
   nav.bn{
     position:fixed;left:50%;transform:translateX(-50%);z-index:50;height:var(--nav-h);
-    width:min(420px,calc(100% - 28px));
+    width:min(500px,calc(100% - 16px));
     bottom:calc(14px + env(safe-area-inset-bottom));
     display:flex;align-items:stretch;
     background:var(--nav-bg);border:1px solid var(--nav-line);border-radius:30px;
@@ -63,16 +63,16 @@
   /* подсветка живёт на .nit и обнимает только иконку+подпись, без лишнего пространства */
   nav.bn button .nit{
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-    padding:7px 15px;border-radius:18px;background:transparent;
+    padding:7px 11px;border-radius:17px;background:transparent;
     transition:background .2s ease,transform .24s cubic-bezier(.34,1.4,.5,1);
   }
-  body.min nav.bn button .nit{padding:6px 14px;}
+  body.min nav.bn button .nit{padding:6px 10px;}
   nav.bn button.act .nit{background:var(--accent);}
   nav.bn button.act{color:#fff;}
   nav.bn button:active .nit{transform:scale(.93);}
   nav.bn button .ic{width:26px;height:26px;display:block;transition:width .26s ease,height .26s ease;}
   body.min nav.bn button .ic{width:24px;height:24px;}
-  nav.bn button .lb{font-size:11px;font-weight:600;letter-spacing:.01em;
+  nav.bn button .lb{font-size:10.5px;font-weight:600;letter-spacing:0;white-space:nowrap;
                     max-height:16px;opacity:1;overflow:hidden;
                     transition:max-height .26s ease,opacity .2s ease;}
   body.min nav.bn button .lb{max-height:0;opacity:0;}
@@ -165,6 +165,30 @@
     <iframe class="frame" id="visasFrame" title="Визы — личный кабинет" referrerpolicy="no-referrer"></iframe>
   </section>
 
+  <!-- ВКЛАДКА: АВИАБИЛЕТЫ — партнёрский виджет Travelpayouts (Aviasales) -->
+  <section class="tab" id="tab-flights" data-tab="flights">
+    <div class="scroller" id="flightsScroll">
+      <div class="wrap">
+        <div class="brand">VOYO · АВИАБИЛЕТЫ</div>
+        <div class="htitle">Авиабилеты <span class="pill">пилот</span></div>
+        <div class="hsub">Поиск дешёвых авиабилетов: откуда, куда, даты. Бронирование — на сайте партнёра.</div>
+        <div id="tpFlightsHost"><div class="state">Загружаем поиск…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ВКЛАДКА: ОТЕЛИ — партнёрский виджет Travelpayouts (Hotellook) -->
+  <section class="tab" id="tab-hotels" data-tab="hotels">
+    <div class="scroller" id="hotelsScroll">
+      <div class="wrap">
+        <div class="brand">VOYO · ОТЕЛИ</div>
+        <div class="htitle">Отели <span class="pill">пилот</span></div>
+        <div class="hsub">Поиск отелей по лучшей цене: город, даты, гости. Бронирование — на сайте партнёра.</div>
+        <div id="tpHotelsHost"><div class="state">Загружаем поиск…</div></div>
+      </div>
+    </div>
+  </section>
+
   <!-- ВКЛАДКА 2: ЭКСКУРСИИ — каталог Sputnik8 (тема-зависимый, поверх /sputnik/api/*) -->
   <section class="tab" id="tab-tours" data-tab="tours">
     <div class="scroller" id="toursScroll">
@@ -222,6 +246,14 @@
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2.5" width="14" height="19" rx="2.2"/><circle cx="12" cy="9.5" r="2.9"/><path d="M8.5 16.2c.7-1.5 2-2.3 3.5-2.3s2.8.8 3.5 2.3"/><path d="M8.6 19h6.8"/></svg>
       <span class="lb">Визы</span></span>
     </button>
+    <button data-go="flights" aria-label="Авиабилеты"><span class="nit">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.64 10.26l4.83-1.3a2 2 0 1 1 1.04 3.87l-4.83 1.29-2.39 4.31-1.93.52.79-4.6-3.22.86-1.12 1.97-1.45.39-.78-2.9-.78-2.9 1.45-.39 1.84 1.32 3.21-.86-3.23-3.35 1.93-.52z"/></svg>
+      <span class="lb">Билеты</span></span>
+    </button>
+    <button data-go="hotels" aria-label="Отели"><span class="nit">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v12"/><path d="M3 13h16a2 2 0 0 1 2 2v4"/><path d="M3 17h18"/><path d="M7 13v-2.4a1.6 1.6 0 0 1 1.6-1.6h2.8a1.6 1.6 0 0 1 1.6 1.6V13"/></svg>
+      <span class="lb">Отели</span></span>
+    </button>
     <button data-go="tours" aria-label="Экскурсии"><span class="nit">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.6 8.4l-1.7 4.6-4.5 1.8 1.7-4.6z"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>
       <span class="lb">Экскурсии</span></span>
@@ -237,9 +269,9 @@
   "use strict";
   var phone = (new URLSearchParams(location.search).get("phone")||"").trim();
   var navEl = document.getElementById("bn");
-  var tabs = { visas:document.getElementById("tab-visas"), tours:document.getElementById("tab-tours"), account:document.getElementById("tab-account") };
+  var tabs = { visas:document.getElementById("tab-visas"), flights:document.getElementById("tab-flights"), hotels:document.getElementById("tab-hotels"), tours:document.getElementById("tab-tours"), account:document.getElementById("tab-account") };
   var navBtns = Array.prototype.slice.call(navEl.querySelectorAll("button"));
-  var loaded = { visas:false, tours:false, account:false };
+  var loaded = { visas:false, flights:false, hotels:false, tours:false, account:false };
 
   /* ───── Тема ───── */
   function applyTheme(t){
@@ -295,10 +327,32 @@
     navBtns.forEach(function(b){ b.classList.toggle("act", b.getAttribute("data-go")===name); });
     document.body.classList.remove("min");
     if(name==="visas") ensureVisas();
+    if(name==="flights") ensureFlights();
+    if(name==="hotels") ensureHotels();
     if(name==="tours") ensureTours();
     if(name==="account") ensureAccount();
   }
   navBtns.forEach(function(b){ b.addEventListener("click", function(){ activate(b.getAttribute("data-go")); }); });
+
+  /* ───── ВКЛАДКИ «Авиабилеты»/«Отели»: партнёрские виджеты Travelpayouts ───── */
+  var tpConfig=null;
+  function tpEnsure(kind, hostId, srcKey){
+    attachShrinkOnce("tp_"+kind, function(){ return document.getElementById(kind+"Scroll").scrollTop; }, document.getElementById(kind+"Scroll"));
+    if(loaded[kind]) return;
+    var host=document.getElementById(hostId);
+    function render(cfg){
+      var src=cfg&&cfg[srcKey];
+      if(!src){ host.innerHTML=""; host.appendChild(el('<div class="panel state">Раздел скоро будет доступен — подключается партнёрский поиск Travelpayouts.</div>')); return; }
+      loaded[kind]=true; host.innerHTML="";
+      // TP-виджет — это async-скрипт, который рендерит свой поиск на месте вставки.
+      var s=document.createElement("script"); s.async=true; s.charset="utf-8"; s.src=src;
+      host.appendChild(s);
+    }
+    if(tpConfig){ render(tpConfig); return; }
+    fetch("/beta/api/config").then(function(r){return r.json();}).then(function(j){ tpConfig=j; render(j); }).catch(function(){ render(null); });
+  }
+  function ensureFlights(){ tpEnsure("flights","tpFlightsHost","tpFlights"); }
+  function ensureHotels(){ tpEnsure("hotels","tpHotelsHost","tpHotels"); }
 
   /* ───── ВКЛАДКА «Визы»: iframe клиентского ЛК ───── */
   function ensureVisas(){
