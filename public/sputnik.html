@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Экскурсии Sputnik8 · VOYO (пилот)</title>
+<style>
+  :root{
+    --bg:#f4f6fa; --card:#fff; --line:#e7ebf2; --ink:#1d2433; --mut:#8a90a0;
+    --accent:#3589bd; --accent-d:#2c6f96; --gold:#c9972b; --green:#2c7a43;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1080px;margin:0 auto;padding:22px 16px 64px;}
+  .head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  h1{font-size:22px;margin:4px 0 2px;}
+  .brand{font-weight:800;letter-spacing:.06em;color:var(--accent);font-size:13px;}
+  .pill{display:inline-block;font-size:11px;font-weight:700;color:#7a5b12;background:#fff7e6;border:1px solid #ffe2a8;border-radius:999px;padding:3px 9px;vertical-align:middle;margin-left:8px;}
+  .sub{color:var(--mut);font-size:13px;margin:2px 0 18px;line-height:1.5;}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:16px;}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+  .fld{display:flex;flex-direction:column;gap:5px;}
+  .fld label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);font-weight:700;}
+  select,input,button{font:inherit;}
+  select,input[type=text]{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;color:var(--ink);min-width:200px;}
+  select:focus,input:focus{outline:none;border-color:var(--accent);}
+  button{cursor:pointer;border:0;border-radius:10px;padding:10px 16px;font-weight:600;background:var(--accent);color:#fff;}
+  button.sec{background:#eef2f7;color:var(--ink);}
+  button:disabled{opacity:.5;cursor:default;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-top:4px;}
+  .ex{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;transition:box-shadow .15s,transform .15s;}
+  .ex:hover{box-shadow:0 8px 22px rgba(33,90,128,.12);transform:translateY(-2px);}
+  .ex .ph{aspect-ratio:4/3;background:linear-gradient(135deg,#cfe0ee,#9fc3dd);background-size:cover;background-position:center;position:relative;}
+  .ex .badge{position:absolute;left:9px;top:9px;font-size:11px;font-weight:700;color:#fff;background:rgba(20,40,60,.62);backdrop-filter:blur(2px);padding:3px 8px;border-radius:8px;}
+  .ex .bd{padding:11px 13px 13px;display:flex;flex-direction:column;gap:7px;flex:1;}
+  .ex .ti{font-size:14.5px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:38px;}
+  .ex .meta{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--mut);flex-wrap:wrap;}
+  .ex .rate{color:var(--gold);font-weight:700;}
+  .ex .bot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding-top:4px;}
+  .ex .price{font-size:15px;font-weight:800;}
+  .ex .price small{font-size:11px;font-weight:600;color:var(--mut);display:block;line-height:1;}
+  .ex .book{font-size:13px;padding:8px 12px;border-radius:9px;white-space:nowrap;}
+  .state{text-align:center;color:var(--mut);font-size:14px;padding:40px 10px;line-height:1.6;}
+  .state.err{color:var(--accent-d);}
+  .more{display:flex;justify-content:center;margin-top:20px;}
+  .foot{color:var(--mut);font-size:12px;line-height:1.6;margin-top:26px;border-top:1px solid var(--line);padding-top:14px;}
+  .sk{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+  .sk .ph{aspect-ratio:4/3;background:#eef1f6;}
+  .sk .l{height:12px;margin:11px 13px;background:#eef1f6;border-radius:6px;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+  .sk{animation:pulse 1.2s ease-in-out infinite;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div>
+      <div class="brand">VOYO × SPUTNIK8</div>
+      <h1>Экскурсии и активности <span class="pill">пилот</span></h1>
+    </div>
+  </div>
+  <div class="sub">Каталог экскурсий партнёра Sputnik8. Выберите город — покажем туры с ценами и рейтингом. Бронирование происходит на сайте Sputnik8.</div>
+
+  <div class="panel">
+    <div class="controls">
+      <div class="fld">
+        <label for="city">Город</label>
+        <select id="city"><option value="">Загружаем города…</option></select>
+      </div>
+      <div class="fld">
+        <label for="sort">Сортировка</label>
+        <select id="sort">
+          <option value="product_id">Сначала популярные</option>
+          <option value="rating">По рейтингу</option>
+        </select>
+      </div>
+      <button id="go" disabled>Показать</button>
+    </div>
+  </div>
+
+  <div id="grid" class="grid" hidden></div>
+  <div id="state" class="state">Выберите город и нажмите «Показать».</div>
+  <div id="more" class="more" hidden><button id="moreBtn" class="sec">Показать ещё</button></div>
+
+  <div class="foot">
+    Пилотная страница. Не привязана к личному кабинету, опросникам или amoCRM. Данные — из API Sputnik8;
+    цены и доступность актуальны на стороне партнёра. Переход по кнопке «Забронировать» открывает карточку
+    тура на sputnik8.com (с партнёрской атрибуцией VOYO).
+  </div>
+</div>
+
+<script>
+(function(){
+  var citySel=document.getElementById("city"), sortSel=document.getElementById("sort");
+  var goBtn=document.getElementById("go"), grid=document.getElementById("grid"), state=document.getElementById("state");
+  var moreWrap=document.getElementById("more"), moreBtn=document.getElementById("moreBtn");
+  var page=1, loading=false, curCity="", curSort="product_id";
+
+  function escapeHtml(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];});}
+  function fmtPrice(v,cur){ if(v==null||isNaN(v)) return ""; var sym=cur==="eur"?"€":cur==="usd"?"$":"₽"; return Math.round(v).toLocaleString("ru-RU")+" "+sym; }
+  function fmtDuration(d){ if(d==null) return ""; var n=parseInt(d,10); if(isNaN(n)) return escapeHtml(d); if(n<60) return n+" мин"; var h=Math.floor(n/60), m=n%60; return h+" ч"+(m?(" "+m+" мин"):""); }
+  function setState(msg,isErr){ state.hidden=false; state.textContent=msg; state.className="state"+(isErr?" err":""); }
+
+  function skeletons(n){ grid.hidden=false; grid.innerHTML=""; for(var i=0;i<n;i++){ var s=document.createElement("div"); s.className="sk"; s.innerHTML='<div class="ph"></div><div class="l" style="width:80%"></div><div class="l" style="width:55%"></div>'; grid.appendChild(s);} }
+
+  function card(p){
+    var el=document.createElement("div"); el.className="ex";
+    var ph=p.photo?(' style="background-image:url(\''+encodeURI(p.photo).replace(/'/g,"%27")+'\')"'):"";
+    var badge=p.type?('<span class="badge">'+escapeHtml(p.type==="private"?"индивид.":p.type==="shared"?"группа":p.type)+'</span>'):"";
+    var meta=[];
+    if(p.rating) meta.push('<span class="rate">★ '+(Math.round(p.rating*10)/10)+'</span>');
+    var dur=fmtDuration(p.duration); if(dur) meta.push('<span>'+escapeHtml(dur)+'</span>');
+    var price=fmtPrice(p.price,p.currency);
+    var book=p.url?('<a class="book" style="background:var(--accent);color:#fff;text-decoration:none;display:inline-block" href="'+escapeHtml(p.url)+'" target="_blank" rel="noopener nofollow">Забронировать</a>'):'';
+    el.innerHTML='<div class="ph"'+ph+'>'+badge+'</div>'+
+      '<div class="bd">'+
+        '<div class="ti">'+escapeHtml(p.title)+'</div>'+
+        '<div class="meta">'+meta.join("")+'</div>'+
+        '<div class="bot"><div class="price">'+(price?('<small>от</small>'+price):'')+'</div>'+book+'</div>'+
+      '</div>';
+    return el;
+  }
+
+  function loadProducts(reset){
+    if(loading||!curCity) return;
+    loading=true; goBtn.disabled=true; moreBtn.disabled=true;
+    if(reset){ page=1; skeletons(8); state.hidden=true; moreWrap.hidden=true; }
+    var url="/sputnik/api/products?city_id="+encodeURIComponent(curCity)+"&order="+encodeURIComponent(curSort)+"&page="+page+"&limit=24";
+    fetch(url).then(function(r){return r.json();}).then(function(j){
+      loading=false; goBtn.disabled=false; moreBtn.disabled=false;
+      if(j && j.configured===false){ grid.hidden=true; setState("Интеграция ещё не настроена: не задан ключ Sputnik8 (SPUTNIK8_API_KEY / SPUTNIK8_USERNAME в .env сервера).",true); return; }
+      if(j && j.error){ if(reset){grid.hidden=true; setState(j.error,true);} return; }
+      var list=(j&&j.products)||[];
+      if(reset){ grid.innerHTML=""; }
+      if(reset && !list.length){ grid.hidden=true; setState("В этом городе экскурсий не нашлось. Попробуйте другой город."); return; }
+      grid.hidden=false; state.hidden=true;
+      list.forEach(function(p){ grid.appendChild(card(p)); });
+      // Есть ли ещё страница (полная выдача = вероятно есть продолжение).
+      moreWrap.hidden = list.length < 24;
+    }).catch(function(){ loading=false; goBtn.disabled=false; moreBtn.disabled=false; if(reset){grid.hidden=true; setState("Ошибка загрузки. Повторите попытку.",true);} });
+  }
+
+  goBtn.addEventListener("click",function(){ curCity=citySel.value; curSort=sortSel.value; if(!curCity){ setState("Сначала выберите город."); return;} loadProducts(true); });
+  moreBtn.addEventListener("click",function(){ page++; loadProducts(false); });
+
+  // Загрузка городов.
+  fetch("/sputnik/api/cities").then(function(r){return r.json();}).then(function(j){
+    if(j && j.configured===false){ citySel.innerHTML='<option value="">—</option>'; goBtn.disabled=true; setState("Интеграция ещё не настроена: не задан ключ Sputnik8 (SPUTNIK8_API_KEY / SPUTNIK8_USERNAME в .env сервера).",true); return; }
+    if(j && j.error){ citySel.innerHTML='<option value="">—</option>'; setState(j.error,true); return; }
+    var cities=(j&&j.cities)||[];
+    if(!cities.length){ citySel.innerHTML='<option value="">Города не получены</option>'; return; }
+    citySel.innerHTML='<option value="">— выберите город —</option>'+cities.map(function(c){
+      return '<option value="'+c.id+'">'+escapeHtml(c.name)+(c.country?(" · "+escapeHtml(c.country)):"")+'</option>';
+    }).join("");
+    goBtn.disabled=false;
+  }).catch(function(){ citySel.innerHTML='<option value="">Ошибка загрузки городов</option>'; });
+})();
+</script>
+</body>
+</html>

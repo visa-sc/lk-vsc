@@ -1341,6 +1341,73 @@ app.get("/loyalty", (req, res) => { res.set("Cache-Control", "no-store, no-cache
 // не загружается, серверной логики нет). «Помощник с проверкой», не интегрирован.
 app.get("/scanner", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "scanner.html")); });
 
+// ── Пилот «Экскурсии Sputnik8» (standalone, НЕ привязан к ЛК/амоCRM/опросникам) ──
+// Партнёрская интеграция: каталог городов/туров Sputnik8 через их API v1
+// (api.sputnik8.com/v1, авторизация query-параметрами api_key + username). Ключ
+// держим ТОЛЬКО на сервере (.env: SPUTNIK8_API_KEY, SPUTNIK8_USERNAME) — в браузер
+// не отдаём; клиент дёргает наши прокси-эндпоинты. Бронь — переход на product.url
+// (партнёрская ссылка с нашей атрибуцией). Кэшируем (бережём лимиты API).
+const SPUTNIK_API = "https://api.sputnik8.com/v1";
+const SPUTNIK_API_KEY = process.env.SPUTNIK8_API_KEY || "";
+const SPUTNIK_USER = process.env.SPUTNIK8_USERNAME || "";
+const _sputnikCache = new Map(); // key -> { at, data }
+function sputnikConfigured() { return !!(SPUTNIK_API_KEY && SPUTNIK_USER); }
+async function sputnikGet(pathname, params, ttlMs) {
+  const qs = Object.assign({ api_key: SPUTNIK_API_KEY, username: SPUTNIK_USER }, params || {});
+  const ck = pathname + "?" + Object.keys(qs).filter((k) => k !== "api_key" && k !== "username").sort().map((k) => k + "=" + qs[k]).join("&");
+  const now = Date.now();
+  const hit = _sputnikCache.get(ck);
+  if (hit && (now - hit.at) < (ttlMs || 0)) return hit.data;
+  const r = await axios.get(SPUTNIK_API + pathname, { params: qs, timeout: 20000 });
+  _sputnikCache.set(ck, { at: now, data: r.data });
+  if (_sputnikCache.size > 200) { const oldest = Array.from(_sputnikCache.entries()).sort((a, b) => a[1].at - b[1].at)[0]; if (oldest) _sputnikCache.delete(oldest[0]); }
+  return r.data;
+}
+// Страница пилота (ни к ЛК, ни к /vsc не привязана).
+app.get("/sputnik", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "sputnik.html")); });
+// Города для выбора. Кэш 6 ч. Отдаём компактно (id, имя, страна). Формат ответа
+// API заранее не зафиксирован — разбираем толерантно (массив или {cities:[...]}).
+app.get("/sputnik/api/cities", async (req, res) => {
+  if (!sputnikConfigured()) return res.json({ configured: false });
+  try {
+    const data = await sputnikGet("/cities", { lang: "ru" }, 6 * 3600 * 1000);
+    const raw = Array.isArray(data) ? data : (data && (data.cities || data.items)) || [];
+    const list = raw.map((c) => ({ id: c.id, name: c.name || c.title || "", country: (c.country && (c.country.name || c.country.title)) || c.country_name || "" }))
+      .filter((c) => c.id && c.name)
+      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    return res.json({ configured: true, cities: list });
+  } catch (e) { console.error("sputnik cities:", e.message); return res.status(502).json({ configured: true, error: "Не удалось получить города" }); }
+});
+// Экскурсии (туры). Кэш 15 мин на (city/page/order/currency). Поля обрезаем до нужных
+// карточке; product.url — партнёрская ссылка, отдаём как есть (по ней идёт бронь).
+app.get("/sputnik/api/products", async (req, res) => {
+  if (!sputnikConfigured()) return res.json({ configured: false });
+  const p = {
+    lang: "ru", currency: (["rub", "eur", "usd"].indexOf(String(req.query.currency)) >= 0 ? req.query.currency : "rub"),
+    page: Math.max(1, parseInt(req.query.page, 10) || 1),
+    limit: Math.min(48, Math.max(1, parseInt(req.query.limit, 10) || 24)),
+    order: (req.query.order === "rating" ? "rating" : "product_id"), order_type: "desc"
+  };
+  if (req.query.city_id) p.city_id = parseInt(req.query.city_id, 10);
+  if (req.query.country_id) p.country_id = parseInt(req.query.country_id, 10);
+  try {
+    const data = await sputnikGet("/products", p, 15 * 60 * 1000);
+    const arr = Array.isArray(data) ? data : (data && (data.products || data.items)) || [];
+    const photoUrl = (x) => { const ph = x.main_photo || (Array.isArray(x.photos) && x.photos[0]); if (!ph) return ""; return typeof ph === "string" ? ph : (ph.url || ph.big || ph.medium || ph.small || ""); };
+    const out = arr.map((x) => ({
+      id: x.id, title: x.title || "",
+      photo: photoUrl(x),
+      price: (x.base_price != null ? x.base_price : x.netto_price),
+      currency: p.currency,
+      rating: (x.rating != null ? x.rating : null),
+      duration: (x.duration != null ? x.duration : null),
+      type: x.activity_type || x.product_type || "",
+      url: x.url || ""
+    })).filter((x) => x.id);
+    return res.json({ configured: true, page: p.page, products: out, count: out.length });
+  } catch (e) { console.error("sputnik products:", e.message); return res.status(502).json({ configured: true, error: "Не удалось получить экскурсии" }); }
+});
+
 function scheduleLoyaltyDaily() {
   // 1×/сутки ночью (03:00 МСК) — минимизируем фоновую нагрузку на amoCRM, пока пилот
   // лояльности не используется. Ночью клиентского трафика почти нет.
