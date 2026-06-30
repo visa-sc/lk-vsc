@@ -725,6 +725,14 @@
     /* Прирост/спад к пред. периоду — аккуратно под подписью столбца */
     .vsc-bar-d { font-size: 9.5px; font-weight: 700; white-space: nowrap; line-height: 1.2; margin-top: 1px; min-height: 11px; }
     .vsc-bar-d.up { color: #2c7a43; } .vsc-bar-d.down { color: #b0263a; } .vsc-bar-d.flat { color: #b9bec8; }
+    /* «День» — подпись дня недели под датой; выходные (сб-вс) мягким розовым (как в Статистике) */
+    .vsc-bar-wd { font-size: 8.5px; color: #aab0bd; line-height: 1.1; margin-top: 1px; white-space: nowrap; letter-spacing: .2px; }
+    .vsc-bar-x.weekend, .vsc-bar-wd.weekend { color: #cf8696; }
+    /* «Неделя» — компактный режим: уже столбцы, меньше зазор, мельче цифры — динамика по неделям видна без прокрутки (числа не налезают) */
+    .vsc-bars.compact { gap: 4px; }
+    .vsc-bars.compact .vsc-bar-col { flex: 0 0 48px; }
+    .vsc-bars.compact .vsc-bar { width: 26px; }
+    .vsc-bars.compact .vsc-bar-v, .vsc-bars.compact .vsc-bar-x, .vsc-bars.compact .vsc-bar-d { font-size: 8px; }
     /* Отзывы — диверг-график: позитив вверх (зелёный), негатив вниз (красный) */
     .rev-legend { display: flex; gap: 16px; margin-bottom: 10px; font-size: 11.5px; color: #5a626f; }
     .rev-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
@@ -2223,8 +2231,13 @@
             .map((b) => { const k = aggBlocks(b.blocks); k.label = b.label; return { x: b.label, k: k }; });
         }
         // День: ещё и строго ДО сегодня — чтобы показывался вчерашний день, а не сегодня.
+        // Подписываем день недели + флаг выходного (сб/вс) для подсветки на графике.
         const beforeToday = (dateStr) => { const p = String(dateStr || "").split("."); if (p.length !== 3) return true; const d = new Date(+p[2], +p[1] - 1, +p[0]); return d < today; };
-        return (m.days || []).filter((d) => filled(d) && beforeToday(d.date)).map((d) => ({ x: (d.date || "").slice(0, 5), k: d }));
+        const WDV = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"]; // 0=вс … 6=сб (праздники не учитываем — только календарные сб/вс)
+        return (m.days || []).filter((d) => filled(d) && beforeToday(d.date)).map((d) => {
+          const dt = vscParseDMY(d.date); const dow = dt ? dt.getDay() : -1;
+          return { x: (d.date || "").slice(0, 5), k: d, wd: dt ? WDV[dow] : "", weekend: dow === 0 || dow === 6 };
+        });
       }
       function vscNearestPrev(series, key, fromIdx) {
         for (let i = fromIdx - 1; i >= 0; i--) { const v = series[i].k ? series[i].k[key] : null; if (v != null && !isNaN(v)) return v; }
@@ -2240,7 +2253,7 @@
         return null;
       }
       function vscSumDays(days, key) { const v = (days || []).map((d) => (d ? d[key] : null)).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) : null; }
-      function vscBarChart(kpi, series) {
+      function vscBarChart(kpi, series, opts) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
         const h = document.createElement("div"); h.className = "vsc-chart-h"; h.innerHTML = kpi.labelHtml || escapeHtml(kpi.label);
         wrap.appendChild(h);
@@ -2248,14 +2261,14 @@
         const present = vals.filter((v) => v != null);
         if (!present.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных для выбранного периода."; wrap.appendChild(e); return wrap; }
         const maxAbs = Math.max.apply(null, present.map((v) => Math.abs(v))) || 1;
-        const bars = document.createElement("div"); bars.className = "vsc-bars";
+        const bars = document.createElement("div"); bars.className = "vsc-bars" + (opts && opts.compact ? " compact" : "");
         series.forEach((s, i) => {
           const col = document.createElement("div"); col.className = "vsc-bar-col";
           const v = vals[i];
           const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.textContent = v == null ? "" : vscFmt(v, kpi.fmt).replace(" ₽", "");
           const bar = document.createElement("div"); bar.className = "vsc-bar" + (kpi.fmt === "signed" ? (v > 0 ? " pos" : v < 0 ? " neg" : "") : "");
           bar.style.height = v == null ? "2px" : (Math.max(2, Math.round(Math.abs(v) / maxAbs * 120)) + "px");
-          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = s.x;
+          const xl = document.createElement("div"); xl.className = "vsc-bar-x" + (s.weekend ? " weekend" : ""); xl.textContent = s.x;
           // Прирост/спад к предыдущему непустому периоду. Цвет — по «хорошо/плохо»
           // (как в плитках, см. dirCls): для метрик good===-1 (CPL, ДРР, % возвратов,
           // % пропущенных, % мусора) рост — плохо (красный), спад — хорошо (зелёный);
@@ -2273,7 +2286,10 @@
               dl.textContent = (pct > 0 ? "▲ " : "▼ ") + Math.abs(pct) + "%";
             }
           }
-          col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(dl);
+          col.appendChild(vl); col.appendChild(bar); col.appendChild(xl);
+          // «День»: подпись дня недели под датой (выходные — розовым). В прочих разрезах s.wd нет → не рисуем.
+          if (s.wd) { const wd = document.createElement("div"); wd.className = "vsc-bar-wd" + (s.weekend ? " weekend" : ""); wd.textContent = s.wd; col.appendChild(wd); }
+          col.appendChild(dl);
           bars.appendChild(col);
         });
         wrap.appendChild(bars);
@@ -2599,11 +2615,11 @@
         chartsH.textContent = "Динамика — " + ({ year: "по месяцам", month: "по месяцам", week: "по неделям", day: "по дням" })[vscGran];
         vscContent.appendChild(chartsH);
         if (!series.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных за выбранный месяц."; vscContent.appendChild(e); }
-        else kpisForView.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, series)));
+        else kpisForView.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, series, { compact: vscGran === "week" })));
         // График «Конверсия из трафика в лид» — во ВСЕХ разрезах (год/месяц/неделя/день).
         // series уже несёт trafConv в k: день — строка дня; неделя — Total/склейка огрызков;
         // месяц/год — Grand total месяца. Та же логика, что у остальных графиков.
-        if (series.length) vscContent.appendChild(vscBarChart(VSC_TRAFCONV, series));
+        if (series.length) vscContent.appendChild(vscBarChart(VSC_TRAFCONV, series, { compact: vscGran === "week" }));
         // Прибыль и рентабельность по месяцам — графики в «Год» и «Месяц».
         // Скрываем для руководителя с ограничением hideProfit (напр. Андрей Петров).
         if ((vscGran === "month" || vscGran === "year") && !vscHideProfit()) {
