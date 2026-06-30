@@ -53,22 +53,25 @@
   body.min nav.bn{bottom:calc(10px + env(safe-area-inset-bottom));box-shadow:0 6px 18px var(--shadow);}
   nav.bn button{
     flex:1;border:0;background:transparent;cursor:pointer;color:var(--mut);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-    padding:0;font:inherit;position:relative;transition:color .18s ease;
+    display:flex;align-items:center;justify-content:center;
+    padding:0;font:inherit;transition:color .18s ease;
   }
-  nav.bn button .ic{width:26px;height:26px;display:block;z-index:1;transition:width .26s ease,height .26s ease,transform .2s cubic-bezier(.34,1.4,.5,1);}
+  /* подсветка живёт на .nit и обнимает только иконку+подпись, без лишнего пространства */
+  nav.bn button .nit{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    padding:7px 15px;border-radius:18px;background:transparent;
+    transition:background .2s ease,transform .24s cubic-bezier(.34,1.4,.5,1);
+  }
+  body.min nav.bn button .nit{padding:6px 14px;}
+  nav.bn button.act .nit{background:var(--accent);}
+  nav.bn button.act{color:#fff;}
+  nav.bn button:active .nit{transform:scale(.93);}
+  nav.bn button .ic{width:26px;height:26px;display:block;transition:width .26s ease,height .26s ease;}
   body.min nav.bn button .ic{width:24px;height:24px;}
-  nav.bn button .lb{font-size:11px;font-weight:600;letter-spacing:.01em;z-index:1;
+  nav.bn button .lb{font-size:11px;font-weight:600;letter-spacing:.01em;
                     max-height:16px;opacity:1;overflow:hidden;
                     transition:max-height .26s ease,opacity .2s ease;}
   body.min nav.bn button .lb{max-height:0;opacity:0;}
-  /* активный таб — целиком голубая «парящая» плашка на всю ячейку */
-  nav.bn button::before{content:"";position:absolute;top:6px;bottom:6px;left:7px;right:7px;
-    border-radius:21px;background:var(--accent);opacity:0;transform:scale(.86);
-    transition:opacity .2s ease,transform .26s cubic-bezier(.34,1.4,.5,1);z-index:0;}
-  nav.bn button.act::before{opacity:1;transform:scale(1);}
-  nav.bn button.act{color:#fff;}
-  nav.bn button:active .ic{transform:scale(.86);}
 
   /* ───────── Общие блоки в нативных вкладках ───────── */
   .wrap{max-width:560px;margin:0 auto;}
@@ -209,17 +212,17 @@
 
   <!-- НИЖНЕЕ МЕНЮ -->
   <nav class="bn" id="bn">
-    <button data-go="visas" class="act" aria-label="Визы">
+    <button data-go="visas" class="act" aria-label="Визы"><span class="nit">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2.5" width="14" height="19" rx="2.2"/><circle cx="12" cy="9.5" r="2.9"/><path d="M8.5 16.2c.7-1.5 2-2.3 3.5-2.3s2.8.8 3.5 2.3"/><path d="M8.6 19h6.8"/></svg>
-      <span class="lb">Визы</span>
+      <span class="lb">Визы</span></span>
     </button>
-    <button data-go="tours" aria-label="Экскурсии">
+    <button data-go="tours" aria-label="Экскурсии"><span class="nit">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.6 8.4l-1.7 4.6-4.5 1.8 1.7-4.6z"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>
-      <span class="lb">Экскурсии</span>
+      <span class="lb">Экскурсии</span></span>
     </button>
-    <button data-go="account" aria-label="Аккаунт">
+    <button data-go="account" aria-label="Аккаунт"><span class="nit">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.7"/><path d="M4.8 20c.6-3.7 3.7-5.6 7.2-5.6s6.6 1.9 7.2 5.6"/></svg>
-      <span class="lb">Аккаунт</span>
+      <span class="lb">Аккаунт</span></span>
     </button>
   </nav>
 
@@ -309,16 +312,17 @@
     return el;
   }
   function loadProducts(reset){
-    if(loadingT||!curCity) return; loadingT=true; goBtn.disabled=true; moreBtn.disabled=true;
+    if(loadingT) return; loadingT=true; goBtn.disabled=true; moreBtn.disabled=true;
     if(reset){ page=1; skeletons(6); tState.hidden=true; moreWrap.hidden=true; }
-    var url="/sputnik/api/products?city_id="+encodeURIComponent(curCity)+"&order="+encodeURIComponent(curSort)+"&page="+page+"&limit=24";
+    // Без выбранного города — глобальная выдача (по умолчанию самые высокорейтинговые).
+    var url="/sputnik/api/products?order="+encodeURIComponent(curSort)+"&page="+page+"&limit=24"+(curCity?("&city_id="+encodeURIComponent(curCity)):"");
     fetch(url).then(function(r){return r.json();}).then(function(j){
       loadingT=false; goBtn.disabled=false; moreBtn.disabled=false;
       if(j&&j.configured===false){ grid.hidden=true; tSet("Каталог экскурсий ещё подключается. Загляните чуть позже.",true); return; }
       if(j&&j.error){ if(reset){grid.hidden=true; tSet(j.error,true);} return; }
       var list=(j&&j.products)||[];
       if(reset) grid.innerHTML="";
-      if(reset && !list.length){ grid.hidden=true; tSet("В этом городе экскурсий не нашлось. Попробуйте другой."); return; }
+      if(reset && !list.length){ grid.hidden=true; tSet(curCity?"В этом городе экскурсий не нашлось. Попробуйте другой.":"Экскурсий пока не нашлось."); return; }
       grid.hidden=false; tState.hidden=true;
       list.forEach(function(p){ grid.appendChild(card(p)); });
       moreWrap.hidden = list.length<24;
@@ -330,15 +334,18 @@
     goBtn=document.getElementById("go"); grid=document.getElementById("grid"); tState=document.getElementById("tState");
     moreWrap=document.getElementById("more"); moreBtn=document.getElementById("moreBtn");
     attachShrink(function(){ return document.getElementById("toursScroll").scrollTop; }, document.getElementById("toursScroll"));
-    goBtn.addEventListener("click",function(){ curCity=citySel.value; curSort=sortSel.value; if(!curCity){ tSet("Сначала выберите город."); return;} loadProducts(true); });
+    goBtn.addEventListener("click",function(){ curCity=citySel.value; curSort=sortSel.value; loadProducts(true); });
     moreBtn.addEventListener("click",function(){ page++; loadProducts(false); });
     fetch("/sputnik/api/cities").then(function(r){return r.json();}).then(function(j){
       if(j&&j.configured===false){ citySel.innerHTML='<option value="">—</option>'; goBtn.disabled=true; tSet("Каталог экскурсий ещё подключается. Загляните чуть позже.",true); return; }
       if(j&&j.error){ citySel.innerHTML='<option value="">—</option>'; tSet(j.error,true); return; }
       var cities=(j&&j.cities)||[];
       if(!cities.length){ citySel.innerHTML='<option value="">Города не получены</option>'; return; }
-      citySel.innerHTML='<option value="">— выберите город —</option>'+cities.map(function(c){ return '<option value="'+c.id+'">'+escapeHtml(c.name)+(c.country?(" · "+escapeHtml(c.country)):"")+'</option>'; }).join("");
+      citySel.innerHTML='<option value="">— все направления —</option>'+cities.map(function(c){ return '<option value="'+c.id+'">'+escapeHtml(c.name)+(c.country?(" · "+escapeHtml(c.country)):"")+'</option>'; }).join("");
       goBtn.disabled=false;
+      // По умолчанию сразу показываем самые высокорейтинговые (без выбора города),
+      // чтобы вкладка не открывалась пустой. Выбор города/сортировки остаётся.
+      sortSel.value="rating"; curSort="rating"; curCity=""; loadProducts(true);
     }).catch(function(){ citySel.innerHTML='<option value="">Ошибка загрузки городов</option>'; });
   }
 
