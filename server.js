@@ -1408,6 +1408,26 @@ app.get("/sputnik/api/products", async (req, res) => {
   } catch (e) { console.error("sputnik products:", e.message); return res.status(502).json({ configured: true, error: "Не удалось получить экскурсии" }); }
 });
 
+// ── Пилот /beta: единый «суперапп»-кабинет (Визы + Экскурсии + Аккаунт) ──
+// Обособлен: отдельная страница-оболочка (beta.html), которая ВСТРАИВАЕТ уже
+// существующий клиентский ЛК (/cabinet) в iframe (полный функционал, без копий
+// и без правок кода ЛК), плюс свои тему/лояльность/экскурсии поверх готовых API
+// (/sputnik/api/*). Никаких изменений в /cabinet, /admin, /vsc, dev, vsc — на их
+// работу и скорость загрузки не влияет (новый файл грузится только на /beta).
+app.get("/beta", (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.sendFile(path.join(__dirname, "public", "beta.html"));
+});
+// Бонус-карта клиента по телефону для вкладки «Аккаунт» (read-only). Доверие к
+// ?phone= — как у /cabinet (модель Фазы 1; Фаза 2 закроет по сессии). Переиспользует
+// те же хелперы лояльности, что и /api/loyalty/me и операторская карта.
+app.get("/beta/api/loyalty", (req, res) => {
+  const phone = String(req.query.phone || "");
+  if (!phone) return res.status(400).json({ success: false, message: "Нужен телефон" });
+  const acc = loyaltyFindAccountByPhone(phone);
+  return res.json({ success: true, card: acc ? loyaltyCardForAccount(acc) : loyaltyEmptyCard(phone) });
+});
+
 function scheduleLoyaltyDaily() {
   // 1×/сутки ночью (03:00 МСК) — минимизируем фоновую нагрузку на amoCRM, пока пилот
   // лояльности не используется. Ночью клиентского трафика почти нет.
