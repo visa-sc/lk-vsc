@@ -2592,7 +2592,7 @@
         // «День»: плитка «Выручка за сегодня» (amoCRM) — среди основных показателей
         // дашборда (рядом с «Набранные контакты», ATV и пр.). Вся выручка по фильтру
         // 3 воронок, дата выручки = сегодня, ВСЕ ответственные. Считается на сервере
-        // 2×/день (15:00 и 20:00 МСК) низким приоритетом; здесь — готовая сумма из кэша.
+        // 6×/день (12/15/17/18/19/20 МСК) низким приоритетом; здесь — готовая сумма из кэша.
         if (vscGran === "day") {
           const dr = vscData.dayRevenue;
           const drT = document.createElement("div"); drT.className = "vsc-tile vsc-tile-dayrev";
@@ -2601,13 +2601,13 @@
             const upd = dr.ts ? new Date(dr.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
             drT.innerHTML = '<div class="vsc-tile-l">Выручка за сегодня (amoCRM)</div>'
               + '<div class="vsc-tile-v">' + vscFmt(dr.total, "money") + '</div>'
-              + '<div class="vsc-tile-s">сегодня · на ' + escapeHtml(upd) + ' МСК · сделок ' + (dr.leads != null ? dr.leads : "—") + ' · обновл. 15:00 и 20:00</div>';
+              + '<div class="vsc-tile-s">сегодня · на ' + escapeHtml(upd) + ' МСК · сделок ' + (dr.leads != null ? dr.leads : "—") + ' · обновл. 12/15/17/18/19/20 ч</div>';
           } else {
             // Новый день начался, а кэш ещё за прошлый день (или его нет) → показываем 0,
-            // чтобы вчерашняя сумма не путала. Реальные данные появятся в 15:00/20:00 МСК.
+            // чтобы вчерашняя сумма не путала. Реальные данные появятся в 12:00 МСК (и далее).
             drT.innerHTML = '<div class="vsc-tile-l">Выручка за сегодня (amoCRM)</div>'
               + '<div class="vsc-tile-v">' + vscFmt(0, "money") + '</div>'
-              + '<div class="vsc-tile-s">день только начался · обновится в 15:00 и 20:00 МСК</div>';
+              + '<div class="vsc-tile-s">день только начался · обновится в 12:00 МСК (и далее до 20:00)</div>';
           }
           tiles.appendChild(drT);
         }

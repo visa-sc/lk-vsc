@@ -1081,8 +1081,8 @@ if (!loadCityRev()) setTimeout(() => { Promise.resolve(amoBg(() => runCityRevenu
 // (тот же фильтр amoCRM, что прислал Андрей), но СРЕЗ по дате выручки (поле 427242)
 // = СЕГОДНЯ (МСК). Ответственные — ВСЕ (без фильтра по пользователю → новые
 // сотрудники попадают в сумму автоматически, как в «Сделках без задач»). Считаем
-// 2 раза в сутки (15:00 и 20:00 МСК) через ЛИМИТЕР, САМЫМ НИЗКИМ приоритетом
-// (amoBg → «low»): пропускает вперёд клиентский ЛК/вебхуки/всё. Кэш-файл, дашборд
+// 6 раз в сутки (12:00, 15:00, 17:00, 18:00, 19:00, 20:00 МСК) через ЛИМИТЕР, САМЫМ
+// НИЗКИМ приоритетом (amoBg → «low»): пропускает вперёд клиентский ЛК/вебхуки/всё. Кэш-файл, дашборд
 // читает кэш. amoCRM-фильтр по кастом-полям недоступен (HTTP 400) → тянем тот же
 // универсум, что и городская выручка (updated_at ≥ 2026, БЕЗ контактов — для суммы
 // они не нужны), и фильтруем дату выручки В КОДЕ.
@@ -1123,7 +1123,10 @@ async function runDayRevenue(trigger) {
   finally { _dayRevRunning = false; }
 }
 function scheduleDayRevenueTwice() {
-  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000, HOURS = [15, 20];
+  // Часы пересчёта «Выручки за сегодня» (МСК). По просьбе — 12/15/17/18/19/20.
+  // Всё через amoBg (САМЫЙ низкий приоритет «low» — пропускает вперёд клиентский ЛК,
+  // вебхуки и всё прочее), с guard'ом _dayRevRunning (запуски не накладываются).
+  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000, HOURS = [12, 15, 17, 18, 19, 20];
   (function nextRun() {
     const mskNow = Date.now() + MSK_OFFSET;
     const mskMidnight = Math.floor(mskNow / DAY_MS) * DAY_MS;
@@ -1131,7 +1134,7 @@ function scheduleDayRevenueTwice() {
     for (const h of HOURS) { let t = mskMidnight + h * 3600 * 1000; if (t <= mskNow) t += DAY_MS; if (t < target) target = t; }
     setTimeout(() => { Promise.resolve(amoBg(() => runDayRevenue("cron"))).catch(() => {}); nextRun(); }, Math.max(1000, target - mskNow));
   })();
-  console.log("DAY REVENUE: расчёт запланирован на 15:00 и 20:00 МСК");
+  console.log("DAY REVENUE: расчёт запланирован на 12:00, 15:00, 17:00, 18:00, 19:00, 20:00 МСК");
 }
 app.get("/admin/api/vsc/day-revenue", requireVscAccess, (req, res) => { return res.json({ success: true, data: loadDayRev(), log: _dayRevLog.slice(0, 5) }); });
 app.post("/admin/api/vsc/day-revenue/run", requireAdmin, (req, res) => {
@@ -1141,7 +1144,7 @@ app.post("/admin/api/vsc/day-revenue/run", requireAdmin, (req, res) => {
 });
 scheduleDayRevenueTwice();
 // Первичный расчёт через ~150 с после старта, если кэша нет или он за прошлый день
-// (чтобы блок не пустовал после рестарта; далее — крон 15:00/20:00). Старт ПОСЛЕ
+// (чтобы блок не пустовал после рестарта; далее — крон 12/15/17/18/19/20 МСК). Старт ПОСЛЕ
 // городской выручки (120 с), лимитер всё равно сериализует фон.
 (function () { const c = loadDayRev(); if (!c || c.dayKey !== _mskDayKey(Date.now())) setTimeout(() => { Promise.resolve(amoBg(() => runDayRevenue("startup"))).catch(() => {}); }, 150 * 1000); })();
 // В 00:00 МСК обнуляем кэш «Выручки за сегодня» (БЕЗ обращения к amoCRM), чтобы
