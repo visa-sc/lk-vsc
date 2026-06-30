@@ -729,9 +729,9 @@
     .vsc-bar-wd { font-size: 8.5px; color: #aab0bd; line-height: 1.1; margin-top: 1px; white-space: nowrap; letter-spacing: .2px; }
     .vsc-bar-x.weekend, .vsc-bar-wd.weekend { color: #cf8696; }
     /* «Неделя» — компактный режим: уже столбцы, меньше зазор, мельче цифры — динамика по неделям видна без прокрутки (числа не налезают) */
-    .vsc-bars.compact { gap: 4px; }
-    .vsc-bars.compact .vsc-bar-col { flex: 0 0 48px; }
-    .vsc-bars.compact .vsc-bar { width: 26px; }
+    .vsc-bars.compact { gap: 3px; }
+    .vsc-bars.compact .vsc-bar-col { flex: 0 0 var(--vsc-colw, 48px); }
+    .vsc-bars.compact .vsc-bar { width: var(--vsc-barw, 24px); }
     .vsc-bars.compact .vsc-bar-v, .vsc-bars.compact .vsc-bar-x, .vsc-bars.compact .vsc-bar-d { font-size: 8px; }
     .vsc-bars.compact .vsc-bar-wd { font-size: 7.5px; }
     /* Отзывы — диверг-график: позитив вверх (зелёный), негатив вниз (красный) */
@@ -2190,7 +2190,11 @@
             if (!first) return;
             const mon = mondayOf(first), key = mon.getTime();
             let b = buckets.get(key);
-            if (!b) { const sun = new Date(mon.getTime() + 6 * 86400000); b = { mon: mon, label: dm(mon) + "–" + dm(sun), blocks: [] }; buckets.set(key, b); }
+            // Подпись недели — КОРОТКАЯ, по дате начала (понедельник): «02.01». Полный
+            // диапазон «02.01–08.01» уходит в подсказку (title при наведении). Иначе
+            // межмесячная неделя «30.01–05.02» задаёт ширину всем столбцам и компактность
+            // теряется. range — для тултипа.
+            if (!b) { const sun = new Date(mon.getTime() + 6 * 86400000); b = { mon: mon, label: dm(mon), range: dm(mon) + "–" + dm(sun), blocks: [] }; buckets.set(key, b); }
             b.blocks.push(wk);
           }));
           const sumK = ["budget", "processed", "over", "targetDev", "ad", "rev", "retUslugi"];
@@ -2229,7 +2233,7 @@
           return Array.from(buckets.values())
             .filter((b) => b.mon <= today)               // недели, которые уже начались
             .sort((a, b) => a.mon - b.mon)
-            .map((b) => { const k = aggBlocks(b.blocks); k.label = b.label; return { x: b.label, k: k }; });
+            .map((b) => { const k = aggBlocks(b.blocks); k.label = b.label; return { x: b.label, k: k, range: b.range }; });
         }
         // День: ещё и строго ДО сегодня — чтобы показывался вчерашний день, а не сегодня.
         // Подписываем день недели + флаг выходного (сб/вс) для подсветки на графике.
@@ -2262,9 +2266,13 @@
         const present = vals.filter((v) => v != null);
         if (!present.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных для выбранного периода."; wrap.appendChild(e); return wrap; }
         const maxAbs = Math.max.apply(null, present.map((v) => Math.abs(v))) || 1;
-        const bars = document.createElement("div"); bars.className = "vsc-bars" + (opts && opts.compact ? " compact" : "");
+        const _cmp = !!(opts && opts.compact), _lbls = [];
+        const bars = document.createElement("div"); bars.className = "vsc-bars" + (_cmp ? " compact" : "");
         series.forEach((s, i) => {
           const col = document.createElement("div"); col.className = "vsc-bar-col";
+          // Тултип: неделя — полный диапазон (подпись короткая, по понедельнику);
+          // день — полная дата + день недели.
+          col.title = s.range || ((s.k && s.k.date) ? (s.k.date + (s.wd ? " · " + s.wd : "")) : "");
           const v = vals[i];
           const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.textContent = v == null ? "" : vscFmt(v, kpi.fmt).replace(" ₽", "");
           const bar = document.createElement("div"); bar.className = "vsc-bar" + (kpi.fmt === "signed" ? (v > 0 ? " pos" : v < 0 ? " neg" : "") : "");
@@ -2287,12 +2295,25 @@
               dl.textContent = (pct > 0 ? "▲ " : "▼ ") + Math.abs(pct) + "%";
             }
           }
+          if (_cmp) _lbls.push([vl.textContent, s.x || "", dl.textContent]); // для адаптивной ширины колонки
           col.appendChild(vl); col.appendChild(bar); col.appendChild(xl);
           // «День»: подпись дня недели под датой (выходные — розовым). В прочих разрезах s.wd нет → не рисуем.
           if (s.wd) { const wd = document.createElement("div"); wd.className = "vsc-bar-wd" + (s.weekend ? " weekend" : ""); wd.textContent = s.wd; col.appendChild(wd); }
           col.appendChild(dl);
           bars.appendChild(col);
         });
+        // Компакт (неделя/день): ширину колонки подгоняем под САМУЮ длинную подпись
+        // ИМЕННО ЭТОГО графика (значение/дата/дельта), измеряя реально через canvas.
+        // Короткочисленные графики (проценты, CPL) становятся плотнее; нахлёста нет
+        // by design — ширина ≥ самой длинной подписи + отступ.
+        if (_cmp && _lbls.length) {
+          const ctx = (vscBarChart._mc || (vscBarChart._mc = document.createElement("canvas").getContext("2d")));
+          const mF = (t, bold) => { if (!t) return 0; ctx.font = (bold ? "700 " : "") + "8px -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"; return ctx.measureText(t).width; };
+          let mw = 0; _lbls.forEach((L) => { mw = Math.max(mw, mF(L[0], true), mF(L[1], false), mF(L[2], true)); });
+          const colW = Math.max(26, Math.ceil(mw) + 8);
+          bars.style.setProperty("--vsc-colw", colW + "px");
+          bars.style.setProperty("--vsc-barw", Math.min(26, Math.max(12, colW - 8)) + "px");
+        }
         wrap.appendChild(bars);
         return wrap;
       }
