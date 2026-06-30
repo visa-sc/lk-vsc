@@ -34,33 +34,42 @@
   .tab{position:fixed;inset:0;display:none;}
   .tab.on{display:block;}
   .scroller{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
-            padding:18px 16px calc(var(--nav-h) + 28px);}
+            padding:18px 16px calc(var(--nav-h) + 48px);}
   iframe.frame{position:absolute;inset:0;width:100%;height:100%;border:0;display:block;background:var(--bg);}
 
   /* ───────── Нижнее меню (Instagram-style, ужимается при скролле) ───────── */
   nav.bn{
-    position:fixed;left:0;right:0;bottom:0;z-index:50;height:var(--nav-h);
+    position:fixed;left:14px;right:14px;z-index:50;height:var(--nav-h);
+    bottom:calc(14px + env(safe-area-inset-bottom));
     display:flex;align-items:stretch;
-    background:var(--nav-bg);border-top:1px solid var(--nav-line);
-    backdrop-filter:saturate(1.5) blur(14px);-webkit-backdrop-filter:saturate(1.5) blur(14px);
-    padding-bottom:env(safe-area-inset-bottom);
-    transition:height .26s cubic-bezier(.4,0,.2,1),background .25s ease;
+    background:var(--nav-bg);border:1px solid var(--nav-line);border-radius:30px;
+    box-shadow:0 10px 30px var(--shadow),0 2px 8px rgba(0,0,0,.05);
+    backdrop-filter:saturate(1.7) blur(18px);-webkit-backdrop-filter:saturate(1.7) blur(18px);
+    transition:height .28s cubic-bezier(.34,1.2,.5,1),bottom .28s cubic-bezier(.34,1.2,.5,1),border-radius .28s ease,background .25s ease,box-shadow .25s ease;
+    overflow:hidden;
   }
-  body.min{--nav-h:48px;}
+  body.min{--nav-h:54px;}
+  body.min nav.bn{bottom:calc(10px + env(safe-area-inset-bottom));box-shadow:0 6px 18px var(--shadow);}
   nav.bn button{
     flex:1;border:0;background:transparent;cursor:pointer;color:var(--mut);
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-    padding:0;font:inherit;transition:color .18s ease;
+    padding:0;font:inherit;position:relative;transition:color .18s ease;
   }
-  nav.bn button .ic{width:27px;height:27px;display:block;transition:width .26s ease,height .26s ease,transform .18s ease;}
+  nav.bn button .ic{width:26px;height:26px;display:block;z-index:1;transition:width .26s ease,height .26s ease,transform .2s cubic-bezier(.34,1.4,.5,1);}
   body.min nav.bn button .ic{width:24px;height:24px;}
-  nav.bn button .lb{font-size:11px;font-weight:600;letter-spacing:.01em;
+  nav.bn button .lb{font-size:11px;font-weight:600;letter-spacing:.01em;z-index:1;
                     max-height:16px;opacity:1;overflow:hidden;
                     transition:max-height .26s ease,opacity .2s ease;}
   body.min nav.bn button .lb{max-height:0;opacity:0;}
+  /* активный таб — «парящая» подсветка-чип за иконкой, как в Instagram */
+  nav.bn button::before{content:"";position:absolute;top:50%;left:50%;width:46px;height:32px;
+    transform:translate(-50%,-50%) scale(.6);border-radius:16px;background:var(--accent);opacity:0;
+    transition:opacity .2s ease,transform .25s cubic-bezier(.34,1.4,.5,1);z-index:0;}
+  body.min nav.bn button::before{height:30px;width:42px;}
+  nav.bn button.act::before{opacity:.12;transform:translate(-50%,-50%) scale(1);}
   nav.bn button.act{color:var(--accent);}
   nav.bn button.act .ic{transform:translateY(-1px);}
-  nav.bn button:active .ic{transform:scale(.9);}
+  nav.bn button:active .ic{transform:scale(.86);}
 
   /* ───────── Общие блоки в нативных вкладках ───────── */
   .wrap{max-width:560px;margin:0 auto;}
@@ -274,7 +283,7 @@
     f.addEventListener("load", function(){
       try{
         var doc=f.contentDocument, win=f.contentWindow;
-        if(doc && doc.body){ doc.body.style.paddingBottom="76px"; } // чтобы низ ЛК не уходил под меню
+        if(doc && doc.body){ doc.body.style.paddingBottom="104px"; } // чтобы низ ЛК не уходил под «парящее» меню
         if(win){ attachShrink(function(){ return win.pageYOffset||0; }, win); }
       }catch(e){ /* кросс-доменность тут невозможна (тот же origin), но на всякий */ }
     });
@@ -292,7 +301,7 @@
     var ph=p.photo?(' style="background-image:url(\''+encodeURI(p.photo).replace(/'/g,"%27")+'\')"'):"";
     var badge=p.type?('<span class="badge">'+escapeHtml(p.type==="private"?"индивид.":p.type==="shared"?"группа":p.type)+'</span>'):"";
     var meta=[]; if(p.rating) meta.push('<span class="rate">★ '+(Math.round(p.rating*10)/10)+'</span>');
-    var dur=fmtDur(p.duration); if(dur) meta.push('<span>'+escapeHtml(dur)+'</span>');
+    if(p.duration) meta.push('<span>'+escapeHtml(p.duration)+'</span>');
     var price=fmtPrice(p.price,p.currency);
     var book=p.url?('<a class="book" href="'+escapeHtml(p.url)+'" target="_blank" rel="noopener nofollow">Забронировать</a>'):'';
     el.innerHTML='<div class="ph"'+ph+'>'+badge+'</div><div class="bd"><div class="ti">'+escapeHtml(p.title)+'</div>'+

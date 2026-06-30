@@ -1367,17 +1367,40 @@ async function sputnikGet(pathname, params, ttlMs) {
 app.get("/sputnik", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "sputnik.html")); });
 // Города для выбора. Кэш 6 ч. Отдаём компактно (id, имя, страна). Формат ответа
 // API заранее не зафиксирован — разбираем толерантно (массив или {cities:[...]}).
+// Карта country_id → название страны (в /cities приходит только country_id). Кэш 24 ч.
+async function sputnikCountriesMap() {
+  const data = await sputnikGet("/countries", { lang: "ru" }, 24 * 3600 * 1000);
+  const arr = Array.isArray(data) ? data : (data && (data.countries || data.items)) || [];
+  const map = {};
+  arr.forEach((c) => { if (c && c.id != null) map[c.id] = c.name || c.title || ""; });
+  return map;
+}
 app.get("/sputnik/api/cities", async (req, res) => {
   if (!sputnikConfigured()) return res.json({ configured: false });
   try {
     const data = await sputnikGet("/cities", { lang: "ru" }, 6 * 3600 * 1000);
     const raw = Array.isArray(data) ? data : (data && (data.cities || data.items)) || [];
-    const list = raw.map((c) => ({ id: c.id, name: c.name || c.title || "", country: (c.country && (c.country.name || c.country.title)) || c.country_name || "" }))
+    let cmap = {};
+    try { cmap = await sputnikCountriesMap(); } catch (_) {}
+    const list = raw.map((c) => ({
+      id: c.id, name: String(c.name || c.title || "").trim(),
+      // В /cities страна отдаётся только как country_id — подставляем имя из /countries.
+      country: (c.country && (c.country.name || c.country.title)) || c.country_name || cmap[c.country_id] || ""
+    }))
       .filter((c) => c.id && c.name)
       .sort((a, b) => a.name.localeCompare(b.name, "ru"));
     return res.json({ configured: true, cities: list });
   } catch (e) { console.error("sputnik cities:", e.message); return res.status(502).json({ configured: true, error: "Не удалось получить города" }); }
 });
+// "1650.00 ₽" / "1 650 ₽" / 1650 → 1650 (число). Берём первую числовую группу.
+function sputnikParsePrice(v) {
+  if (v == null) return null;
+  if (typeof v === "number") return Math.round(v);
+  const m = String(v).replace(/\s/g, "").match(/[\d]+([.,][\d]+)?/);
+  if (!m) return null;
+  const n = parseFloat(m[0].replace(",", "."));
+  return isNaN(n) ? null : Math.round(n);
+}
 // Экскурсии (туры). Кэш 15 мин на (city/page/order/currency). Поля обрезаем до нужных
 // карточке; product.url — партнёрская ссылка, отдаём как есть (по ней идёт бронь).
 app.get("/sputnik/api/products", async (req, res) => {
@@ -1393,15 +1416,28 @@ app.get("/sputnik/api/products", async (req, res) => {
   try {
     const data = await sputnikGet("/products", p, 15 * 60 * 1000);
     const arr = Array.isArray(data) ? data : (data && (data.products || data.items)) || [];
-    const photoUrl = (x) => { const ph = x.main_photo || (Array.isArray(x.photos) && x.photos[0]); if (!ph) return ""; return typeof ph === "string" ? ph : (ph.url || ph.big || ph.medium || ph.small || ""); };
+    // main_photo — объект {original,big,small,...}; есть и плоские image_big/image_small.
+    const photoUrl = (x) => {
+      const mp = x.main_photo;
+      if (mp && typeof mp === "object") return mp.big || mp.original || mp.medium || mp.small || "";
+      if (typeof mp === "string") return mp;
+      return x.image_big || x.image_small || "";
+    };
     const out = arr.map((x) => ({
       id: x.id, title: x.title || "",
       photo: photoUrl(x),
-      price: (x.base_price != null ? x.base_price : x.netto_price),
+      // Цена приходит строкой "1650.00 ₽". base_price.price — актуальная (со скидкой),
+      // верхнеуровневый price — обычно без скидки; netto_price — нетто-партнёрская.
+      price: sputnikParsePrice(x.base_price && x.base_price.price) ?? sputnikParsePrice(x.price) ?? sputnikParsePrice(x.netto_price),
+      oldPrice: sputnikParsePrice(x.base_price && x.base_price.original_price),
       currency: p.currency,
-      rating: (x.rating != null ? x.rating : null),
-      duration: (x.duration != null ? x.duration : null),
-      type: x.activity_type || x.product_type || "",
+      // Звёздный рейтинг — customers_review_rating (0..5). Поле rating — это
+      // внутренний скоринг популярности (большое число), НЕ звёзды.
+      rating: (x.customers_review_rating != null ? Number(x.customers_review_rating) : null),
+      reviews: (x.reviews != null ? Number(x.reviews) : null),
+      // duration уже отформатировано текстом ("3 часа") — отдаём как есть.
+      duration: (x.duration != null ? String(x.duration) : ""),
+      type: x.product_type || x.activity_type || "",
       url: x.url || ""
     })).filter((x) => x.id);
     return res.json({ configured: true, page: p.page, products: out, count: out.length });

@@ -110,7 +110,7 @@
     var badge=p.type?('<span class="badge">'+escapeHtml(p.type==="private"?"индивид.":p.type==="shared"?"группа":p.type)+'</span>'):"";
     var meta=[];
     if(p.rating) meta.push('<span class="rate">★ '+(Math.round(p.rating*10)/10)+'</span>');
-    var dur=fmtDuration(p.duration); if(dur) meta.push('<span>'+escapeHtml(dur)+'</span>');
+    if(p.duration) meta.push('<span>'+escapeHtml(p.duration)+'</span>');
     var price=fmtPrice(p.price,p.currency);
     var book=p.url?('<a class="book" style="background:var(--accent);color:#fff;text-decoration:none;display:inline-block" href="'+escapeHtml(p.url)+'" target="_blank" rel="noopener nofollow">Забронировать</a>'):'';
     el.innerHTML='<div class="ph"'+ph+'>'+badge+'</div>'+
