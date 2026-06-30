@@ -1474,7 +1474,8 @@ app.get("/beta/api/config", (req, res) => {
   res.set("Cache-Control", "no-store");
   res.json({
     tpFlights: process.env.TP_FLIGHTS_WIDGET || "",
-    tpHotels: process.env.TP_HOTELS_WIDGET || ""
+    tpHotels: process.env.TP_HOTELS_WIDGET || "",
+    tpEsim: process.env.TP_ESIM_WIDGET || ""
   });
 });
 
