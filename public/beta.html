@@ -44,33 +44,35 @@
   /* ───────── Нижнее меню (Instagram-style, ужимается при скролле) ───────── */
   nav.bn{
     position:fixed;left:50%;transform:translateX(-50%);z-index:50;height:var(--nav-h);
-    width:min(500px,calc(100% - 16px));
+    width:min(460px,calc(100% - 16px));
     bottom:calc(14px + env(safe-area-inset-bottom));
-    display:flex;align-items:stretch;
-    background:var(--nav-bg);border:1px solid var(--nav-line);border-radius:30px;
+    display:flex;align-items:center;
+    background:var(--nav-bg);border:1px solid var(--nav-line);border-radius:34px;
     box-shadow:0 10px 30px var(--shadow),0 2px 8px rgba(0,0,0,.05);
     backdrop-filter:saturate(1.7) blur(18px);-webkit-backdrop-filter:saturate(1.7) blur(18px);
-    transition:height .28s cubic-bezier(.34,1.2,.5,1),bottom .28s cubic-bezier(.34,1.2,.5,1),border-radius .28s ease,background .25s ease,box-shadow .25s ease;
+    transition:height .3s cubic-bezier(.34,1.2,.5,1),width .3s cubic-bezier(.34,1.2,.5,1),bottom .3s cubic-bezier(.34,1.2,.5,1),background .25s ease,box-shadow .25s ease;
     overflow:hidden;
   }
-  body.min{--nav-h:54px;}
-  body.min nav.bn{bottom:calc(10px + env(safe-area-inset-bottom));box-shadow:0 6px 18px var(--shadow);}
+  /* при скролле — и тоньше, и УЖЕ */
+  body.min{--nav-h:52px;}
+  body.min nav.bn{width:min(340px,calc(100% - 96px));bottom:calc(10px + env(safe-area-inset-bottom));box-shadow:0 6px 18px var(--shadow);}
   nav.bn button{
     flex:1;border:0;background:transparent;cursor:pointer;color:var(--mut);
     display:flex;align-items:center;justify-content:center;
-    padding:0;font:inherit;transition:color .18s ease;
+    padding:0 3px;font:inherit;transition:color .18s ease;
   }
-  /* подсветка живёт на .nit и обнимает только иконку+подпись, без лишнего пространства */
+  /* подсветка — ОДИНАКОВЫЙ овал для каждого раздела (равная ширина ячеек + border-radius 999) */
   nav.bn button .nit{
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-    padding:7px 11px;border-radius:17px;background:transparent;
-    transition:background .2s ease,transform .24s cubic-bezier(.34,1.4,.5,1);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    width:100%;max-width:82px;min-height:46px;
+    padding:6px 6px;border-radius:999px;background:transparent;
+    transition:background .2s ease,min-height .28s ease,max-width .28s ease,transform .24s cubic-bezier(.34,1.4,.5,1);
   }
-  body.min nav.bn button .nit{padding:6px 10px;}
+  body.min nav.bn button .nit{min-height:38px;max-width:62px;}
   nav.bn button.act .nit{background:var(--accent);}
   nav.bn button.act{color:#fff;}
   nav.bn button:active .nit{transform:scale(.93);}
-  nav.bn button .ic{width:26px;height:26px;display:block;transition:width .26s ease,height .26s ease;}
+  nav.bn button .ic{width:25px;height:25px;display:block;flex:none;transition:width .26s ease,height .26s ease;}
   body.min nav.bn button .ic{width:24px;height:24px;}
   nav.bn button .lb{font-size:10.5px;font-weight:600;letter-spacing:0;white-space:nowrap;
                     max-height:16px;opacity:1;overflow:hidden;
@@ -292,8 +294,14 @@
         var id="beta-invert-media", st=doc.getElementById(id);
         if(dark){
           if(!st){ st=doc.createElement("style"); st.id=id; doc.head.appendChild(st); }
-          // контр-инверсия медиа, чтобы фото/логотипы остались в нормальном цвете
-          st.textContent='img,video,svg,image,canvas,[style*="url("]{filter:invert(1) hue-rotate(180deg)!important}';
+          // Контр-инверсия медиа (фото остаются нормального цвета), НО логотип VOYO
+          // исключаем — пусть инвертируется в белые буквы на тёмном (без белой плашки).
+          // Плюс разные оттенки блокам: канвас → чёрный, карточки → серее + рамка
+          // (значения заданы ДО внешней инверсии; для серых hue-rotate не влияет).
+          st.textContent=
+            'img:not([alt="VOYO"]),video,svg,image,canvas,[style*="url("]{filter:invert(1) hue-rotate(180deg)!important}'+
+            'html,body,.wrap{background:#ffffff!important}'+
+            '.card,.search-box input,.lead-toggle-btn,.modal-box,.modal-btn-no,.obr-chip,.dot{background:#e6e6ec!important;border:1px solid #c4c4cc!important}';
         } else if(st && st.parentNode){ st.parentNode.removeChild(st); }
       }
     }catch(e){}
