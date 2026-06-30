@@ -197,14 +197,15 @@ function serveAdminPanel(res, asVsc) {
   res.set("Pragma", "no-cache");
   res.set("Expires", "0");
   const adminFile = path.join(__dirname, "public", "admin.html");
-  if (asVsc) {
-    try {
-      const html = fs.readFileSync(adminFile, "utf8")
-        .replace("</head>", '<link rel="apple-touch-icon" href="/vsc-logo.png">\n<link rel="apple-touch-icon" sizes="180x180" href="/vsc-logo.png">\n</head>');
-      res.set("Content-Type", "text/html; charset=utf-8");
-      return res.send(html);
-    } catch (e) { /* при сбое — отдаём как есть ниже */ }
-  }
+  // apple-touch-icon (iOS «На экран»): /vsc → лого VSC; /admin,/team → отдельная
+  // «бело-золотая» иконка (отличать от клиентского ЛК). Клиентский ЛК не трогаем.
+  const icon = asVsc ? "/vsc-logo.png" : "/icon-admin.png";
+  try {
+    const html = fs.readFileSync(adminFile, "utf8")
+      .replace("</head>", '<link rel="apple-touch-icon" href="' + icon + '">\n<link rel="apple-touch-icon" sizes="180x180" href="' + icon + '">\n</head>');
+    res.set("Content-Type", "text/html; charset=utf-8");
+    return res.send(html);
+  } catch (e) { /* при сбое — отдаём как есть ниже */ }
   return res.sendFile(adminFile, { etag: false, lastModified: false });
 }
 app.get(["/admin", "/team", "/vsc"], (req, res) => {
@@ -1470,15 +1471,19 @@ app.get("/beta/api/loyalty", (req, res) => {
 // В .env кладём URL async-скрипта виджета из кабинета Travelpayouts (он содержит ваш
 // маркер): TP_FLIGHTS_WIDGET, TP_HOTELS_WIDGET. Пусто → вкладка покажет «подключается».
 // Партнёрская модель как у Sputnik: мы — витрина, бронь/комиссия у партнёра.
+const TPW_FILE = path.join(__dirname, "tpWidgets.json");
+function tpWidgetsFromFile() {
+  try { const o = JSON.parse(fs.readFileSync(TPW_FILE, "utf8")); return (o && typeof o === "object") ? o : {}; } catch (_) { return {}; }
+}
 app.get("/beta/api/config", (req, res) => {
   res.set("Cache-Control", "no-store");
+  const f = tpWidgetsFromFile();
   res.json({
-    tpFlights: process.env.TP_FLIGHTS_WIDGET || "",
-    tpHotels: process.env.TP_HOTELS_WIDGET || "",
-    tpEsim: process.env.TP_ESIM_WIDGET || ""
+    tpFlights: f.flights || process.env.TP_FLIGHTS_WIDGET || "",
+    tpHotels: f.hotels || process.env.TP_HOTELS_WIDGET || "",
+    tpEsim: f.esim || process.env.TP_ESIM_WIDGET || ""
   });
 });
-
 function scheduleLoyaltyDaily() {
   // 1×/сутки ночью (03:00 МСК) — минимизируем фоновую нагрузку на amoCRM, пока пилот
   // лояльности не используется. Ночью клиентского трафика почти нет.
