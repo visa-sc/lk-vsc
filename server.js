@@ -1450,7 +1450,10 @@ app.get("/sputnik/api/products", async (req, res) => {
 // и без правок кода ЛК), плюс свои тему/лояльность/экскурсии поверх готовых API
 // (/sputnik/api/*). Никаких изменений в /cabinet, /admin, /vsc, dev, vsc — на их
 // работу и скорость загрузки не влияет (новый файл грузится только на /beta).
-app.get("/beta", (req, res) => {
+app.get(["/app", "/beta"], (req, res) => {
+  // Короткий публичный алиас /app + историческое /beta — одна и та же оболочка.
+  // Внутренние запросы в beta.html абсолютные (/beta/api/loyalty, /sputnik/api/*,
+  // /cabinet?phone=), поэтому URL страницы роли не играет.
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.sendFile(path.join(__dirname, "public", "beta.html"));
 });
