@@ -47,14 +47,21 @@
       max-width: 420px; width: 100%;
       margin: 0 auto;
       padding: 0 16px;
-      /* Опускаем форму входа к центру экрана (как в клиентском ЛК): занимаем оставшуюся
-         под шапкой-логотипом высоту и центрируем карточку по вертикали. На залогиненный
-         режим не влияет — там #loginBlock скрыт inline-стилем display:none. */
+      /* База (фолбэк без :has): форма по центру под логотипом — занимаем высоту под шапкой
+         и центрируем карточку. На залогиненный режим не влияет (#loginBlock скрыт inline). */
       min-height: calc(100vh - 160px);
       display: flex;
       flex-direction: column;
       justify-content: center;
     }
+    /* Экран входа: опускаем ЛОГОТИП + форму к центру страницы ГРУППОЙ (как в клиентском ЛК).
+       Login-режим = дашборд ещё не показан (#dashBlock без .show); на дашборде (.show) —
+       обычный поток, логотип сверху. Через :has() — браузеры без поддержки получают базовое
+       центрирование формы (логотип остаётся сверху), вёрстка не ломается. Затрагивает все
+       хосты на admin.html: /vsc, /admin, vsc.voyotravel.ru, dev.voyotravel.ru. */
+    body:not(:has(#dashBlock.show)) { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; }
+    body:not(:has(#dashBlock.show)) .brand-bar { margin: 0 auto 14px; }
+    body:not(:has(#dashBlock.show)) .login-wrap { min-height: 0; }
     /* ── Логин-карточка в стиле основного ЛК ── */
     .login-card {
       width: 100%;
@@ -728,7 +735,7 @@
     .vsc-bar-v { font-size: 9.5px; color: #5a626f; white-space: nowrap; font-weight: 600; }
     .vsc-bar { width: 34px; background: #3589BD; border-radius: 5px 5px 0 0; min-height: 2px; transition: height .2s var(--vsc-ease); }
     .vsc-bar.pos { background: #4f9f68; } .vsc-bar.neg { background: #d2685f; }
-    .vsc-bar-x { font-size: 9.5px; color: #9aa0ab; white-space: nowrap; margin-top: 4px; transform: rotate(0deg); }
+    .vsc-bar-x { font-size: 9.5px; color: #9aa0ab; white-space: nowrap; margin-top: 4px; transform: rotate(0deg); line-height: 1.2; text-align: center; }
     /* Прирост/спад к пред. периоду — аккуратно под подписью столбца */
     .vsc-bar-d { font-size: 9.5px; font-weight: 700; white-space: nowrap; line-height: 1.2; margin-top: 1px; min-height: 11px; }
     .vsc-bar-d.up { color: #2c7a43; } .vsc-bar-d.down { color: #b0263a; } .vsc-bar-d.flat { color: #b9bec8; }
@@ -2200,11 +2207,11 @@
             if (!first) return;
             const mon = mondayOf(first), key = mon.getTime();
             let b = buckets.get(key);
-            // Подпись недели — КОРОТКАЯ, по дате начала (понедельник): «02.01». Полный
-            // диапазон «02.01–08.01» уходит в подсказку (title при наведении). Иначе
-            // межмесячная неделя «30.01–05.02» задаёт ширину всем столбцам и компактность
-            // теряется. range — для тултипа.
-            if (!b) { const sun = new Date(mon.getTime() + 6 * 86400000); b = { mon: mon, label: dm(mon), range: dm(mon) + "–" + dm(sun), blocks: [] }; buckets.set(key, b); }
+            // Подпись недели — ОБЕ даты в столбик: начало (понедельник) сверху, конец
+            // (воскресенье) снизу, напр. «22.06 / 28.06». Так понятно, где старт и конец.
+            // Две строки одинаковой ширины «ДД.ММ» → столбец узкий (как от одной даты).
+            // range — полный диапазон строкой (в подсказке title).
+            if (!b) { const sun = new Date(mon.getTime() + 6 * 86400000); b = { mon: mon, label: dm(mon), end: dm(sun), range: dm(mon) + "–" + dm(sun), blocks: [] }; buckets.set(key, b); }
             b.blocks.push(wk);
           }));
           const sumK = ["budget", "processed", "over", "targetDev", "ad", "rev", "retUslugi"];
@@ -2243,7 +2250,7 @@
           return Array.from(buckets.values())
             .filter((b) => b.mon <= today)               // недели, которые уже начались
             .sort((a, b) => a.mon - b.mon)
-            .map((b) => { const k = aggBlocks(b.blocks); k.label = b.label; return { x: b.label, k: k, range: b.range }; });
+            .map((b) => { const k = aggBlocks(b.blocks); k.label = b.label; return { x: b.label, x2: b.end, k: k, range: b.range }; });
         }
         // День: ПОСЛЕДНИЕ 90 заполненных дней по ВСЕМ месяцам (а не только текущий месяц),
         // строго ДО сегодня (показываем вчерашний, не сегодня). Подписываем день недели +
@@ -2292,7 +2299,9 @@
           const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.textContent = v == null ? "" : vscFmt(v, kpi.fmt).replace(" ₽", "");
           const bar = document.createElement("div"); bar.className = "vsc-bar" + (kpi.fmt === "signed" ? (v > 0 ? " pos" : v < 0 ? " neg" : "") : "");
           bar.style.height = v == null ? "2px" : (Math.max(2, Math.round(Math.abs(v) / maxAbs * 120)) + "px");
-          const xl = document.createElement("div"); xl.className = "vsc-bar-x" + (s.weekend ? " weekend" : ""); xl.textContent = s.x;
+          const xl = document.createElement("div"); xl.className = "vsc-bar-x" + (s.weekend ? " weekend" : "");
+          // «Неделя» — две даты в столбик (начало/конец); прочие разрезы — одна подпись.
+          if (s.x2) { xl.innerHTML = escapeHtml(s.x) + "<br>" + escapeHtml(s.x2); } else { xl.textContent = s.x; }
           // Прирост/спад к предыдущему непустому периоду. Цвет — по «хорошо/плохо»
           // (как в плитках, см. dirCls): для метрик good===-1 (CPL, ДРР, % возвратов,
           // % пропущенных, % мусора) рост — плохо (красный), спад — хорошо (зелёный);
