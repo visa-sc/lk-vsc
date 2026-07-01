@@ -47,7 +47,7 @@
   /* ───────── Нижнее меню (Instagram-style, ужимается при скролле) ───────── */
   nav.bn{
     position:fixed;left:50%;transform:translateX(-50%);z-index:50;height:var(--nav-h);
-    width:min(480px,calc(100% - 12px));
+    width:min(410px,calc(100% - 16px));
     bottom:calc(14px + env(safe-area-inset-bottom));
     display:flex;align-items:center;
     background:var(--nav-bg);border:1px solid var(--nav-line);border-radius:34px;
@@ -66,21 +66,17 @@
   }
   /* подсветка — ОДИНАКОВЫЙ овал для каждого раздела (равная ширина ячеек + border-radius 999) */
   nav.bn button .nit{
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-    width:100%;max-width:94px;min-height:50px;
-    padding:7px 8px;border-radius:999px;background:transparent;
-    transition:background .2s ease,min-height .28s ease,max-width .28s ease,transform .24s cubic-bezier(.34,1.4,.5,1);
+    display:flex;align-items:center;justify-content:center;
+    padding:11px 17px;border-radius:999px;background:transparent;
+    transition:background .2s ease,padding .26s ease,transform .24s cubic-bezier(.34,1.4,.5,1);
   }
-  body.min nav.bn button .nit{min-height:40px;max-width:64px;}
+  body.min nav.bn button .nit{padding:9px 14px;}
   nav.bn button.act .nit{background:var(--accent);}
   nav.bn button.act{color:#fff;}
   nav.bn button:active .nit{transform:scale(.93);}
   nav.bn button .ic{width:25px;height:25px;display:block;flex:none;transition:width .26s ease,height .26s ease;}
   body.min nav.bn button .ic{width:24px;height:24px;}
-  nav.bn button .lb{font-size:10.5px;font-weight:600;letter-spacing:0;white-space:nowrap;
-                    max-height:16px;opacity:1;overflow:hidden;
-                    transition:max-height .26s ease,opacity .2s ease;}
-  body.min nav.bn button .lb{max-height:0;opacity:0;}
+  nav.bn button .lb{display:none;} /* пилот: только иконки, без подписей */
 
   /* ───────── Общие блоки в нативных вкладках ───────── */
   .wrap{max-width:560px;margin:0 auto;}
@@ -171,6 +167,48 @@
   .seg button .ic{width:18px;height:18px;}
   .acc-foot{margin-top:18px;text-align:center;}
   .acc-foot a{color:var(--mut);font-size:13px;text-decoration:none;border-bottom:1px solid var(--line);padding-bottom:1px;}
+
+  /* ───────── Чат поддержки (парящая кнопка + панель) ───────── */
+  .chat-fab{position:fixed;right:16px;z-index:60;bottom:calc(var(--nav-h) + 30px + env(safe-area-inset-bottom));
+    width:56px;height:56px;border:0;border-radius:50%;cursor:pointer;
+    background:var(--accent);color:#fff;box-shadow:0 8px 24px rgba(33,90,128,.4);
+    display:flex;align-items:center;justify-content:center;
+    transition:bottom .3s cubic-bezier(.34,1.2,.5,1),transform .2s ease,opacity .2s ease;}
+  .chat-fab:active{transform:scale(.92);}
+  .chat-fab svg{width:27px;height:27px;}
+  .chat-fab.hide{opacity:0;transform:scale(.6);pointer-events:none;}
+  .chat-badge{position:absolute;top:-3px;right:-3px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;
+    background:#e5484d;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg);}
+
+  .chat-scrim{position:fixed;inset:0;z-index:70;background:rgba(10,15,22,.42);opacity:0;pointer-events:none;transition:opacity .25s ease;}
+  .chat-scrim.on{opacity:1;pointer-events:auto;}
+  .chat-panel{position:fixed;z-index:71;right:0;bottom:0;left:0;margin:0 auto;max-width:440px;
+    height:min(82vh,620px);background:var(--surface);border-radius:20px 20px 0 0;
+    box-shadow:0 -10px 40px rgba(10,20,40,.3);display:flex;flex-direction:column;overflow:hidden;
+    transform:translateY(105%);transition:transform .32s cubic-bezier(.34,1.1,.5,1);
+    padding-bottom:env(safe-area-inset-bottom);}
+  .chat-panel.on{transform:translateY(0);}
+  @media(min-width:520px){ .chat-panel{right:16px;left:auto;bottom:16px;border-radius:18px;height:min(70vh,560px);} }
+  .chat-head{display:flex;align-items:center;gap:11px;padding:14px 16px;border-bottom:1px solid var(--line);}
+  .chat-head .av{width:38px;height:38px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
+  .chat-head .av svg{width:20px;height:20px;}
+  .chat-head .ti{flex:1;min-width:0;}
+  .chat-head .ti b{display:block;font-size:15px;}
+  .chat-head .ti span{font-size:12px;color:var(--mut);}
+  .chat-close{border:0;background:transparent;color:var(--mut);font-size:26px;line-height:1;cursor:pointer;padding:2px 6px;}
+  .chat-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 14px 6px;display:flex;flex-direction:column;gap:8px;background:var(--bg);}
+  .chat-day{align-self:center;font-size:11px;color:var(--mut);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px 10px;margin:4px 0;}
+  .bub{max-width:80%;padding:9px 13px;border-radius:16px;font-size:14px;line-height:1.4;word-wrap:break-word;white-space:pre-wrap;position:relative;}
+  .bub .t{display:block;font-size:10.5px;opacity:.6;margin-top:3px;text-align:right;}
+  .bub.me{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:5px;}
+  .bub.them{align-self:flex-start;background:var(--surface);border:1px solid var(--line);color:var(--ink);border-bottom-left-radius:5px;}
+  .chat-empty{margin:auto;text-align:center;color:var(--mut);font-size:13.5px;line-height:1.6;padding:20px;}
+  .chat-input{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid var(--line);background:var(--surface);}
+  .chat-input textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:18px;padding:10px 14px;font:inherit;font-size:14px;background:var(--bg);color:var(--ink);max-height:110px;min-height:22px;line-height:1.35;}
+  .chat-input textarea:focus{outline:none;border-color:var(--accent);}
+  .chat-send{flex:none;width:40px;height:40px;border:0;border-radius:50%;background:var(--accent);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+  .chat-send:disabled{opacity:.45;cursor:default;}
+  .chat-send svg{width:19px;height:19px;}
 </style>
 </head>
 <body>
@@ -294,6 +332,27 @@
       <span class="lb">Аккаунт</span></span>
     </button>
   </nav>
+
+  <!-- ЧАТ ПОДДЕРЖКИ (парящая кнопка + панель). Только на пилоте. -->
+  <button class="chat-fab" id="chatFab" aria-label="Чат с поддержкой">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.3-4A7.5 7.5 0 1 1 20 11.5z"/><path d="M8.5 11.5h7M8.5 8.5h4.5"/></svg>
+    <span class="chat-badge" id="chatBadge" hidden>0</span>
+  </button>
+  <div class="chat-scrim" id="chatScrim"></div>
+  <section class="chat-panel" id="chatPanel" aria-label="Чат поддержки">
+    <div class="chat-head">
+      <div class="av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.3-4A7.5 7.5 0 1 1 20 11.5z"/></svg></div>
+      <div class="ti"><b>Поддержка VOYO</b><span id="chatSub">Обычно отвечаем быстро</span></div>
+      <button class="chat-close" id="chatClose" aria-label="Закрыть">&times;</button>
+    </div>
+    <div class="chat-body" id="chatBody"></div>
+    <form class="chat-input" id="chatForm">
+      <textarea id="chatText" rows="1" placeholder="Напишите сообщение…" maxlength="2000"></textarea>
+      <button type="submit" class="chat-send" id="chatSend" aria-label="Отправить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-6-7-2z"/></svg>
+      </button>
+    </form>
+  </section>
 
 <script>
 (function(){
@@ -538,8 +597,80 @@
   var _shrinkAttached={};
   function attachShrinkOnce(key,getY,target){ if(_shrinkAttached[key]) return; _shrinkAttached[key]=true; attachShrink(getY,target); }
 
+  /* ───── ВКЛАДКА-ЧАТ (парящая кнопка поддержки) ───── */
+  (function chat(){
+    var fab=document.getElementById("chatFab"), badge=document.getElementById("chatBadge");
+    var scrim=document.getElementById("chatScrim"), panel=document.getElementById("chatPanel");
+    var bodyEl=document.getElementById("chatBody"), form=document.getElementById("chatForm");
+    var input=document.getElementById("chatText"), sendBtn=document.getElementById("chatSend");
+    var open=false, histTimer=null, unreadTimer=null, lastCount=-1, sending=false;
+
+    function fmtT(ts){ try{ return new Date(Number(ts)).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
+    function dayLabel(ts){ try{ var d=new Date(Number(ts)); var t=new Date(); var y=new Date(Date.now()-864e5);
+      if(d.toDateString()===t.toDateString()) return "Сегодня";
+      if(d.toDateString()===y.toDateString()) return "Вчера";
+      return d.toLocaleDateString("ru-RU",{day:"2-digit",month:"long"}); }catch(e){ return ""; } }
+
+    function render(msgs){
+      if(!msgs || !msgs.length){ bodyEl.innerHTML='<div class="chat-empty">Здесь можно задать любой вопрос по поездке — виза, билеты, отели, оплата. Менеджер VOYO ответит в этом чате.</div>'; return; }
+      var atBottom = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight < 60;
+      bodyEl.innerHTML=""; var lastDay="";
+      msgs.forEach(function(m){
+        var dl=dayLabel(m.ts); if(dl!==lastDay){ lastDay=dl; bodyEl.appendChild(el('<div class="chat-day">'+esc(dl)+'</div>')); }
+        var b=el('<div class="bub '+(m.from==="user"?"me":"them")+'"></div>');
+        b.appendChild(document.createTextNode(m.text));
+        b.appendChild(el('<span class="t">'+fmtT(m.ts)+'</span>'));
+        bodyEl.appendChild(b);
+      });
+      if(atBottom || open) bodyEl.scrollTop=bodyEl.scrollHeight;
+    }
+    function loadHistory(){
+      if(!phone) return;
+      fetch("/beta/api/chat/history?phone="+encodeURIComponent(phone)).then(function(r){return r.json();}).then(function(j){ if(j&&j.ok) render(j.messages); setBadge(0); }).catch(function(){});
+    }
+    function setBadge(n){ if(n>0){ badge.hidden=false; badge.textContent=n>99?"99+":n; } else { badge.hidden=true; } }
+    function pollUnread(){
+      if(open || !phone) return;
+      fetch("/beta/api/chat/unread?phone="+encodeURIComponent(phone)).then(function(r){return r.json();}).then(function(j){ if(j&&j.ok){ setBadge(j.unread||0); if((j.unread||0)!==lastCount) lastCount=j.unread||0; } }).catch(function(){});
+    }
+    function openChat(){
+      open=true; scrim.classList.add("on"); panel.classList.add("on"); fab.classList.add("hide");
+      if(!phone){ bodyEl.innerHTML='<div class="chat-empty">Откройте кабинет по своей персональной ссылке (с номером телефона), чтобы писать в чат поддержки.</div>'; input.disabled=true; sendBtn.disabled=true; return; }
+      loadHistory();
+      if(histTimer) clearInterval(histTimer);
+      histTimer=setInterval(loadHistory, 4000); // поллинг новых сообщений при открытом чате
+      setTimeout(function(){ input.focus(); }, 300);
+    }
+    function closeChat(){
+      open=false; scrim.classList.remove("on"); panel.classList.remove("on"); fab.classList.remove("hide");
+      if(histTimer){ clearInterval(histTimer); histTimer=null; }
+      pollUnread();
+    }
+    fab.addEventListener("click", openChat);
+    document.getElementById("chatClose").addEventListener("click", closeChat);
+    scrim.addEventListener("click", closeChat);
+
+    // авто-рост textarea
+    input.addEventListener("input", function(){ input.style.height="auto"; input.style.height=Math.min(110,input.scrollHeight)+"px"; });
+    // Enter — отправка, Shift+Enter — перенос
+    input.addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); form.requestSubmit ? form.requestSubmit() : sendMsg(); } });
+
+    function sendMsg(){
+      if(sending || !phone) return;
+      var text=input.value.trim(); if(!text) return;
+      sending=true; sendBtn.disabled=true;
+      input.value=""; input.style.height="auto";
+      fetch("/beta/api/chat/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:phone,text:text})})
+        .then(function(r){return r.json();}).then(function(j){ sending=false; sendBtn.disabled=false; if(j&&j.ok) render(j.messages); else input.value=text; })
+        .catch(function(){ sending=false; sendBtn.disabled=false; input.value=text; });
+    }
+    form.addEventListener("submit", function(e){ e.preventDefault(); sendMsg(); });
+
+    // фоновый бейдж непрочитанных
+    if(phone){ pollUnread(); unreadTimer=setInterval(pollUnread, 20000); }
+  })();
+
   /* ───── Старт ───── */
-  // Сохраняем phone в ссылке выхода (на «/» вход и так по телефону).
   ensureVisas();   // первая вкладка — визы
 })();
 </script>

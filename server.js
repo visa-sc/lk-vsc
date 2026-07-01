@@ -1487,6 +1487,71 @@ app.get("/beta/api/config", (req, res) => {
     tpEsim: f.esim || process.env.TP_ESIM_WIDGET || ""
   });
 });
+// ── Пилотный чат поддержки (ТОЛЬКО на /app; не связан с ЛК/amoCRM/админкой) ──
+// Хранилище — betaChat.json (per-phone), в памяти + дебаунс-сохранение. Клиент
+// (beta.html) пишет/поллит через /beta/api/chat/*, «мы» отвечаем на /beta/support
+// (ключ BETA_CHAT_KEY). Ничего из этого не касается клиентского ЛК.
+const BETA_CHAT_FILE = path.join(__dirname, "betaChat.json");
+let _betaChat = null, _betaChatSaveT = null;
+function betaChatLoad() { if (_betaChat) return _betaChat; try { _betaChat = JSON.parse(fs.readFileSync(BETA_CHAT_FILE, "utf8")); } catch (_) { _betaChat = {}; } return _betaChat; }
+function betaChatSave() { if (_betaChatSaveT) return; _betaChatSaveT = setTimeout(() => { _betaChatSaveT = null; try { fs.writeFileSync(BETA_CHAT_FILE, JSON.stringify(_betaChat)); } catch (e) { console.error("betaChat save:", e.message); } }, 700); }
+function betaChatKey(phone) { return String(phone || "").replace(/\D/g, ""); }
+function betaChatConv(pk, create) { const d = betaChatLoad(); if (!d[pk] && create) d[pk] = { messages: [], lastSeenUser: 0, lastSeenStaff: 0 }; return d[pk]; }
+const BETA_CHAT_WELCOME = "Здравствуйте! Это поддержка VOYO 👋 Напишите ваш вопрос — менеджер ответит здесь.";
+function betaChatMsg(from, text, seq) { return { id: Date.now() + "-" + seq, from, text, ts: Date.now() }; }
+
+app.post("/beta/api/chat/send", (req, res) => {
+  const pk = betaChatKey(req.body && req.body.phone);
+  const text = String((req.body && req.body.text) || "").trim().slice(0, 2000);
+  if (!pk) return res.status(400).json({ ok: false, message: "Нужен телефон" });
+  if (!text) return res.status(400).json({ ok: false, message: "Пустое сообщение" });
+  const conv = betaChatConv(pk, true);
+  if (!conv.messages.length) conv.messages.push({ id: (Date.now() - 1) + "-w", from: "support", text: BETA_CHAT_WELCOME, ts: Date.now() - 1 });
+  conv.messages.push(betaChatMsg("user", text, conv.messages.length));
+  conv.lastSeenUser = Date.now();
+  betaChatSave();
+  return res.json({ ok: true, messages: conv.messages });
+});
+app.get("/beta/api/chat/history", (req, res) => {
+  const pk = betaChatKey(req.query.phone);
+  if (!pk) return res.status(400).json({ ok: false });
+  const conv = betaChatConv(pk, false);
+  if (!conv) return res.json({ ok: true, messages: [] });
+  conv.lastSeenUser = Date.now(); betaChatSave();
+  return res.json({ ok: true, messages: conv.messages });
+});
+app.get("/beta/api/chat/unread", (req, res) => {
+  const pk = betaChatKey(req.query.phone);
+  const conv = pk ? betaChatConv(pk, false) : null;
+  const n = conv ? conv.messages.filter((m) => m.from === "support" && m.ts > (conv.lastSeenUser || 0)).length : 0;
+  return res.json({ ok: true, unread: n });
+});
+// ── сторона «мы» (поддержка), ключ BETA_CHAT_KEY ──
+function betaChatStaffOk(req) { const key = process.env.BETA_CHAT_KEY || ""; return !!key && String((req.query.key || (req.body && req.body.key)) || "") === key; }
+app.get("/beta/api/chat/inbox", (req, res) => {
+  if (!betaChatStaffOk(req)) return res.status(403).json({ ok: false });
+  const d = betaChatLoad();
+  const list = Object.keys(d).map((pk) => { const c = d[pk]; const last = c.messages[c.messages.length - 1] || {}; const unread = c.messages.filter((m) => m.from === "user" && m.ts > (c.lastSeenStaff || 0)).length; return { phone: pk, lastText: String(last.text || "").slice(0, 90), lastTs: last.ts || 0, unread }; }).sort((a, b) => b.lastTs - a.lastTs);
+  return res.json({ ok: true, conversations: list });
+});
+app.get("/beta/api/chat/thread", (req, res) => {
+  if (!betaChatStaffOk(req)) return res.status(403).json({ ok: false });
+  const conv = betaChatConv(betaChatKey(req.query.phone), false);
+  if (conv) { conv.lastSeenStaff = Date.now(); betaChatSave(); }
+  return res.json({ ok: true, messages: conv ? conv.messages : [] });
+});
+app.post("/beta/api/chat/reply", (req, res) => {
+  if (!betaChatStaffOk(req)) return res.status(403).json({ ok: false });
+  const pk = betaChatKey(req.body && req.body.phone);
+  const text = String((req.body && req.body.text) || "").trim().slice(0, 2000);
+  if (!pk || !text) return res.status(400).json({ ok: false });
+  const conv = betaChatConv(pk, true);
+  conv.messages.push(betaChatMsg("support", text, conv.messages.length));
+  conv.lastSeenStaff = Date.now(); betaChatSave();
+  return res.json({ ok: true, messages: conv.messages });
+});
+app.get("/beta/support", (req, res) => { res.set("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "public", "beta-support.html")); });
+
 function scheduleLoyaltyDaily() {
   // 1×/сутки ночью (03:00 МСК) — минимизируем фоновую нагрузку на amoCRM, пока пилот
   // лояльности не используется. Ночью клиентского трафика почти нет.

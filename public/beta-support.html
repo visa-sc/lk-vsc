@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>VOYO · Поддержка (чат)</title>
+<style>
+  :root{--bg:#f4f6fa;--surface:#fff;--line:#e7ebf2;--ink:#1d2433;--mut:#8a90a0;--accent:#3589bd;--red:#e5484d;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;}
+  .top{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;}
+  .top b{font-size:15px;} .top .sp{flex:1;}
+  .top button{border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:7px 12px;font:inherit;font-size:13px;cursor:pointer;color:var(--mut);}
+  .gate{max-width:360px;margin:60px auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px;}
+  .gate h1{font-size:18px;margin:0 0 6px;} .gate p{color:var(--mut);font-size:13px;margin:0 0 14px;}
+  .gate input{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 13px;font:inherit;}
+  .gate button{margin-top:10px;width:100%;border:0;border-radius:10px;padding:11px;font-weight:600;background:var(--accent);color:#fff;cursor:pointer;}
+  .gate .err{color:var(--red);font-size:13px;margin-top:8px;min-height:16px;}
+  .wrap{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 49px);}
+  .list{border-right:1px solid var(--line);overflow-y:auto;background:var(--surface);}
+  .conv{display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;}
+  .conv:hover{background:#f7f9fc;} .conv.sel{background:#eef4fb;}
+  .conv .ava{width:38px;height:38px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex:none;}
+  .conv .c{flex:1;min-width:0;} .conv .c .ph{font-weight:600;font-size:14px;}
+  .conv .c .lt{color:var(--mut);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .conv .meta{text-align:right;flex:none;} .conv .meta .tm{font-size:11px;color:var(--mut);}
+  .conv .meta .un{display:inline-block;min-width:18px;height:18px;line-height:18px;text-align:center;background:var(--red);color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:0 5px;margin-top:3px;}
+  .pane{display:flex;flex-direction:column;min-width:0;background:var(--bg);}
+  .pane .ph{display:none;padding:11px 16px;background:var(--surface);border-bottom:1px solid var(--line);align-items:center;gap:10px;}
+  .pane .ph .bk{display:none;border:0;background:transparent;font-size:20px;cursor:pointer;color:var(--mut);}
+  .pane .ph b{font-size:15px;}
+  .msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;}
+  .empty{margin:auto;color:var(--mut);font-size:14px;}
+  .day{align-self:center;font-size:11px;color:var(--mut);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px 10px;margin:4px 0;}
+  .bub{max-width:70%;padding:9px 13px;border-radius:16px;font-size:14px;line-height:1.4;white-space:pre-wrap;word-wrap:break-word;}
+  .bub .t{display:block;font-size:10.5px;opacity:.6;margin-top:3px;text-align:right;}
+  .bub.user{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:5px;}
+  .bub.support{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:5px;}
+  .reply{display:flex;gap:8px;align-items:flex-end;padding:10px 14px;border-top:1px solid var(--line);background:var(--surface);}
+  .reply textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:16px;padding:10px 14px;font:inherit;font-size:14px;max-height:120px;min-height:22px;line-height:1.35;}
+  .reply textarea:focus{outline:none;border-color:var(--accent);}
+  .reply button{flex:none;border:0;border-radius:10px;padding:10px 16px;font-weight:600;background:var(--accent);color:#fff;cursor:pointer;}
+  @media(max-width:640px){
+    .wrap{grid-template-columns:1fr;}
+    .list{border-right:0;} .pane{display:none;}
+    body.thread .list{display:none;} body.thread .pane{display:flex;}
+    .pane .ph{display:flex;} .pane .ph .bk{display:block;}
+  }
+</style>
+</head>
+<body>
+<div class="top"><b>VOYO · Поддержка</b><span class="sp"></span><span id="who" style="color:var(--mut);font-size:12.5px;"></span><button id="logout" style="display:none;">Выйти</button></div>
+
+<div class="gate" id="gate">
+  <h1>Вход в чат поддержки</h1>
+  <p>Введите ключ доступа (его знает администратор).</p>
+  <input type="password" id="key" placeholder="Ключ доступа" autocomplete="off" />
+  <button id="enter">Войти</button>
+  <div class="err" id="err"></div>
+</div>
+
+<div class="wrap" id="app" style="display:none;">
+  <div class="list" id="list"></div>
+  <div class="pane" id="pane">
+    <div class="ph"><button class="bk" id="back">&larr;</button><b id="paneTitle">—</b></div>
+    <div class="msgs" id="msgs"><div class="empty">Выберите диалог слева.</div></div>
+    <form class="reply" id="replyForm" style="display:none;">
+      <textarea id="replyText" rows="1" placeholder="Ответ клиенту…" maxlength="2000"></textarea>
+      <button type="submit">Отправить</button>
+    </form>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var KEY=null, cur=null, listTimer=null, threadTimer=null;
+  var gate=document.getElementById("gate"), app=document.getElementById("app");
+  var listEl=document.getElementById("list"), msgsEl=document.getElementById("msgs");
+  var replyForm=document.getElementById("replyForm"), replyText=document.getElementById("replyText");
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  function el(h){ var t=document.createElement("template"); t.innerHTML=h.trim(); return t.content.firstChild; }
+  function fmtT(ts){ try{ return new Date(Number(ts)).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
+  function fmtD(ts){ try{ var d=new Date(Number(ts)), t=new Date(), y=new Date(Date.now()-864e5);
+    if(d.toDateString()===t.toDateString()) return "Сегодня"; if(d.toDateString()===y.toDateString()) return "Вчера";
+    return d.toLocaleDateString("ru-RU",{day:"2-digit",month:"long"}); }catch(e){ return ""; } }
+  function phPretty(pk){ var s=String(pk); if(s.length===11&&(s[0]==="7"||s[0]==="8")) return "+7 "+s.slice(1,4)+" "+s.slice(4,7)+"-"+s.slice(7,9)+"-"+s.slice(9); return "+"+s; }
+
+  function loadInbox(){
+    fetch("/beta/api/chat/inbox?key="+encodeURIComponent(KEY)).then(function(r){ if(r.status===403){ logout(); throw 0; } return r.json(); }).then(function(j){
+      if(!j||!j.ok) return; var cs=j.conversations||[];
+      if(!cs.length){ listEl.innerHTML='<div class="empty" style="padding:24px;text-align:center;">Пока нет диалогов.</div>'; return; }
+      listEl.innerHTML="";
+      cs.forEach(function(c){
+        var row=el('<div class="conv'+(c.phone===cur?' sel':'')+'" data-ph="'+esc(c.phone)+'"><div class="ava">'+esc(String(c.phone).slice(-2))+'</div><div class="c"><div class="ph">'+esc(phPretty(c.phone))+'</div><div class="lt">'+esc(c.lastText||"")+'</div></div><div class="meta"><div class="tm">'+fmtT(c.lastTs)+'</div>'+(c.unread?'<div class="un">'+c.unread+'</div>':'')+'</div></div>');
+        row.addEventListener("click", function(){ selectConv(c.phone); });
+        listEl.appendChild(row);
+      });
+    }).catch(function(){});
+  }
+  function renderThread(msgs){
+    if(!msgs || !msgs.length){ msgsEl.innerHTML='<div class="empty">Сообщений пока нет.</div>'; return; }
+    var atBottom = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 60;
+    msgsEl.innerHTML=""; var lastDay="";
+    msgs.forEach(function(m){ var dl=fmtD(m.ts); if(dl!==lastDay){ lastDay=dl; msgsEl.appendChild(el('<div class="day">'+esc(dl)+'</div>')); }
+      var b=el('<div class="bub '+(m.from==="user"?"user":"support")+'"></div>'); b.appendChild(document.createTextNode(m.text)); b.appendChild(el('<span class="t">'+fmtT(m.ts)+'</span>')); msgsEl.appendChild(b); });
+    if(atBottom) msgsEl.scrollTop=msgsEl.scrollHeight;
+  }
+  function loadThread(){
+    if(!cur) return;
+    fetch("/beta/api/chat/thread?key="+encodeURIComponent(KEY)+"&phone="+encodeURIComponent(cur)).then(function(r){return r.json();}).then(function(j){ if(j&&j.ok) renderThread(j.messages); }).catch(function(){});
+  }
+  function selectConv(ph){
+    cur=ph; document.getElementById("paneTitle").textContent=phPretty(ph);
+    replyForm.style.display="flex"; document.body.classList.add("thread");
+    Array.prototype.forEach.call(listEl.querySelectorAll(".conv"), function(n){ n.classList.toggle("sel", n.getAttribute("data-ph")===ph); });
+    loadThread(); loadInbox();
+    if(threadTimer) clearInterval(threadTimer); threadTimer=setInterval(loadThread, 4000);
+    setTimeout(function(){ replyText.focus(); },100);
+  }
+  document.getElementById("back").addEventListener("click", function(){ document.body.classList.remove("thread"); cur=null; if(threadTimer){clearInterval(threadTimer);threadTimer=null;} });
+  replyText.addEventListener("input", function(){ replyText.style.height="auto"; replyText.style.height=Math.min(120,replyText.scrollHeight)+"px"; });
+  replyText.addEventListener("keydown", function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); replyForm.requestSubmit(); } });
+  replyForm.addEventListener("submit", function(e){ e.preventDefault(); var t=replyText.value.trim(); if(!t||!cur) return; replyText.value=""; replyText.style.height="auto";
+    fetch("/beta/api/chat/reply",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:KEY,phone:cur,text:t})}).then(function(r){return r.json();}).then(function(j){ if(j&&j.ok){ renderThread(j.messages); loadInbox(); } else replyText.value=t; }).catch(function(){ replyText.value=t; }); });
+
+  function start(){
+    gate.style.display="none"; app.style.display="grid"; document.getElementById("logout").style.display="";
+    document.getElementById("who").textContent="в сети";
+    loadInbox(); if(listTimer) clearInterval(listTimer); listTimer=setInterval(loadInbox, 5000);
+  }
+  function logout(){ try{ localStorage.removeItem("voyo_chat_key"); }catch(e){} location.reload(); }
+  document.getElementById("logout").addEventListener("click", logout);
+  function tryKey(k){
+    fetch("/beta/api/chat/inbox?key="+encodeURIComponent(k)).then(function(r){ if(r.status===403){ document.getElementById("err").textContent="Неверный ключ."; return; } KEY=k; try{ localStorage.setItem("voyo_chat_key",k); }catch(e){} start(); }).catch(function(){ document.getElementById("err").textContent="Ошибка сети."; });
+  }
+  document.getElementById("enter").addEventListener("click", function(){ var k=document.getElementById("key").value.trim(); if(k) tryKey(k); });
+  document.getElementById("key").addEventListener("keydown", function(e){ if(e.key==="Enter") document.getElementById("enter").click(); });
+  var saved=null; try{ saved=localStorage.getItem("voyo_chat_key"); }catch(e){}
+  if(saved){ KEY=saved; start(); }
+})();
+</script>
+</body>
+</html>
