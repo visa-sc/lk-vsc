@@ -743,6 +743,11 @@
     /* Прирост/спад к пред. периоду — аккуратно под подписью столбца */
     .vsc-bar-d { font-size: 9.5px; font-weight: 700; white-space: nowrap; line-height: 1.2; margin-top: 1px; min-height: 11px; }
     .vsc-bar-d.up { color: #2c7a43; } .vsc-bar-d.down { color: #b0263a; } .vsc-bar-d.flat { color: #b9bec8; }
+    /* «% возвратов» с разбивкой по вине: легенда цветов + стек-сегменты в столбце */
+    .vsc-ret-legend { display: flex; gap: 16px; flex-wrap: wrap; margin: -4px 0 14px; font-size: 12px; color: #5a626f; }
+    .vsc-ret-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .vsc-ret-legend i { width: 13px; height: 13px; border-radius: 3px; display: inline-block; }
+    .vsc-bar-stack { display: flex; flex-direction: column-reverse; overflow: hidden; }
     /* «День» — подпись дня недели под датой; выходные (сб-вс) мягким розовым (как в Статистике) */
     .vsc-bar-wd { font-size: 8.5px; color: #aab0bd; line-height: 1.1; margin-top: 1px; white-space: nowrap; letter-spacing: .2px; }
     .vsc-bar-x.weekend, .vsc-bar-wd.weekend { color: #cf8696; }
@@ -2379,6 +2384,48 @@
       }
       // Диверг-график одной знаковой величины: положительное — зелёным вверх, отрицательное —
       // красным вниз от общей оси. data = [{ x, v }]. (Для «расхождения с фактом НДС».)
+      // Стек-график «% возвратов» по месяцам с разбивкой по вине. Высота столбца ∝ общему
+      // returnsPct (общий % НЕ меняется), внутри — сегменты: наша (оранж) / не наша (жёлтый) /
+      // не определено (серо-синий). Сумма сегментов = returnsPct (сервер так и считает).
+      function vscReturnsStackedChart(series) {
+        const wrap = document.createElement("div"); wrap.className = "vsc-chart";
+        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = "% возвратов (от выручки) — с разбивкой по вине";
+        wrap.appendChild(h);
+        const leg = document.createElement("div"); leg.className = "vsc-ret-legend";
+        leg.innerHTML = '<span><i style="background:#e8843b"></i>Наша вина</span>'
+          + '<span><i style="background:#f4c948"></i>Не наша вина</span>'
+          + '<span><i style="background:#aeb8c9"></i>Не определено</span>';
+        wrap.appendChild(leg);
+        const vals = series.map((s) => (s.k && s.k.returnsPct != null && !isNaN(s.k.returnsPct)) ? s.k.returnsPct : null);
+        const present = vals.filter((v) => v != null);
+        if (!present.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных по возвратам."; wrap.appendChild(e); return wrap; }
+        const maxAbs = Math.max.apply(null, present) || 1;
+        const fmtP = (x) => (Math.round(x * 10) / 10).toLocaleString("ru-RU") + "%";
+        const bars = document.createElement("div"); bars.className = "vsc-bars";
+        series.forEach((s, i) => {
+          const col = document.createElement("div"); col.className = "vsc-bar-col";
+          const v = vals[i]; const k = s.k || {};
+          const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.textContent = v == null ? "" : fmtP(v);
+          const bar = document.createElement("div"); bar.className = "vsc-bar vsc-bar-stack";
+          bar.style.height = v == null ? "2px" : (Math.max(2, Math.round(v / maxAbs * 120)) + "px");
+          if (v != null && v > 0) {
+            let our = k.ourPct, notOur = k.notOurPct, unk = k.unknownPct;
+            if (our == null && notOur == null && unk == null) unk = v; // нет разбивки → вся высота «не определено»
+            [["#e8843b", our, "Наша вина"], ["#f4c948", notOur, "Не наша вина"], ["#aeb8c9", unk, "Не определено"]].forEach((seg) => {
+              const pct = seg[1]; if (pct == null || pct <= 0) return;
+              const d = document.createElement("div");
+              d.style.cssText = "width:100%;height:" + (pct / v * 100) + "%;background:" + seg[0] + ";";
+              d.title = seg[2] + ": " + fmtP(pct);
+              bar.appendChild(d);
+            });
+          }
+          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = s.x;
+          col.appendChild(vl); col.appendChild(bar); col.appendChild(xl);
+          bars.appendChild(col);
+        });
+        wrap.appendChild(bars);
+        return wrap;
+      }
       function vscDivergingBars(title, data, fmt) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
         const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = title; wrap.appendChild(h);
@@ -2636,23 +2683,22 @@
           // Запрос идёт тем же САМЫМ НИЗКИМ приоритетом (amoBg «low»), с guard'ом — amoCRM/ЛК не рискуют.
           const dayRevAdmin = currentRole() === "admin";
           const refreshBtn = dayRevAdmin ? '<button type="button" class="vsc-dayrev-refresh" id="dayRevRefresh">↻ Обновить</button>' : '';
-          // Подпись — только расписание обновления, в ОДНУ строку (детали последнего
-          // пересчёта: время + кол-во сделок — в тултипе плитки, по наведению).
-          const dayRevSched = '<div class="vsc-tile-s vsc-dayrev-sched">обновл. 12/15/17/18/19/20 ч</div>';
+          // Подпись — время ПОСЛЕДНЕГО обновления (компактно, в 1 строку). Расписание
+          // пересчёта — в тултипе плитки (по наведению).
           if (dr && dr.total != null && dr.dayKey === todayKey) {
             const upd = dr.ts ? new Date(dr.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
-            drT.title = "Обновлено: " + upd + " МСК · сделок " + (dr.leads != null ? dr.leads : "—");
+            drT.title = "Пересчёт 12/15/17/18/19/20 МСК · сделок " + (dr.leads != null ? dr.leads : "—");
             drT.innerHTML = '<div class="vsc-tile-l">Выручка за сегодня (amoCRM)</div>'
               + '<div class="vsc-tile-v">' + vscFmt(dr.total, "money") + '</div>'
-              + dayRevSched
+              + '<div class="vsc-tile-s vsc-dayrev-sched">обновлено: ' + escapeHtml(upd) + ' МСК</div>'
               + refreshBtn;
           } else {
             // Новый день начался, а кэш ещё за прошлый день (или его нет) → показываем 0,
             // чтобы вчерашняя сумма не путала. Реальные данные появятся в 12:00 МСК (и далее).
-            drT.title = "День только начался · первый пересчёт в 12:00 МСК";
+            drT.title = "Пересчёт 12/15/17/18/19/20 МСК";
             drT.innerHTML = '<div class="vsc-tile-l">Выручка за сегодня (amoCRM)</div>'
               + '<div class="vsc-tile-v">' + vscFmt(0, "money") + '</div>'
-              + dayRevSched
+              + '<div class="vsc-tile-s vsc-dayrev-sched">ещё не обновлялось сегодня</div>'
               + refreshBtn;
           }
           tiles.appendChild(drT);
@@ -2766,11 +2812,11 @@
         vscContent.appendChild(h4);
         vscContent.appendChild(vscBarChart({ key: "cplExtra", label: "CPL с учётом доп. расходов", fmt: "money", good: -1 }, ctrlSeries));
         vscContent.appendChild(vscBarChart({ key: "drrExtra", label: "ДРР с учётом доп. расходов", fmt: "pct", good: -1 }, ctrlSeries));
-        // Item 11 — % возвратов по месяцам (Услуги / выручка).
-        const retSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: { returnsPct: mm.total ? mm.total.returnsPct : null, retUslugi: mm.total ? mm.total.retUslugi : null } }));
+        // Item 11 — % возвратов по месяцам (Услуги / выручка) + разбивка по вине (наша/не наша/не определено).
+        const retSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: mm.total ? { returnsPct: mm.total.returnsPct, retUslugi: mm.total.retUslugi, ourPct: mm.total.returnsOurPct, notOurPct: mm.total.returnsNotOurPct, unknownPct: mm.total.returnsUnknownPct } : {} }));
         const h5 = document.createElement("div"); h5.className = "ref-sec-h"; h5.style.marginTop = "22px"; h5.textContent = "Возвраты — по месяцам";
         vscContent.appendChild(h5);
-        vscContent.appendChild(vscBarChart({ key: "returnsPct", label: "% возвратов (от выручки)", fmt: "pct", good: -1 }, retSeries));
+        vscContent.appendChild(vscReturnsStackedChart(retSeries));
         // Item 13 — налоги (вынесенный НДС, налог 5%, расхождение с фактом НДС).
         const taxSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: mm.taxes || {} }));
         const h6 = document.createElement("div"); h6.className = "ref-sec-h"; h6.style.marginTop = "22px"; h6.textContent = "Налоги — по месяцам";

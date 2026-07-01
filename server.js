@@ -3494,18 +3494,34 @@ async function vscFetchReviews() {
 // Возвраты по дням месяца: { "DD.MM.YYYY": суммаУслуг }. У вкладок 2026 шапка из двух
 // строк; столбец «Услуги» и «Дата возврата» ищем по имени (позиции плавают).
 function vscReturnsByDay(rows) {
-  let uslCol = -1, dateCol = -1, hdr = -1;
-  for (let i = 0; i < Math.min(rows.length, 6) && uslCol < 0; i++) {
+  let uslCol = -1, dateCol = -1, faultCol = -1, hdr = -1;
+  for (let i = 0; i < Math.min(rows.length, 6) && (uslCol < 0 || dateCol < 0 || faultCol < 0); i++) {
     const r = rows[i] || [];
     for (let c = 0; c < r.length; c++) {
       const n = String(r[c] || "").replace(/\s+/g, " ").trim().toLowerCase();
-      if (n === "услуги") { uslCol = c; hdr = i; }
+      if (n === "услуги") { uslCol = c; if (hdr < 0) hdr = i; }
       if (n.indexOf("дата возврата") >= 0) dateCol = c;
+      if (n === "причина") faultCol = c; // столбец вины: «Наша вина» / «Не наша вина»
     }
   }
-  const out = {};
+  // byDay — суммы «Услуги» по дате возврата (для дней/недель/итога); fault — те же суммы,
+  // разложенные по вине (наша/не наша/неизвестно) по ТЕМ ЖЕ строкам → сумма fault = сумма byDay,
+  // поэтому общий % возвратов не съезжает при разбивке.
+  const out = { byDay: {}, fault: { our: 0, notOur: 0, unknown: 0 } };
   if (uslCol < 0 || dateCol < 0) return out;
-  for (let i = hdr + 1; i < rows.length; i++) { const d = String((rows[i] || [])[dateCol] || "").trim(); if (!vscIsDate(d)) continue; const v = vscNum((rows[i] || [])[uslCol]); if (v == null) continue; out[d] = (out[d] || 0) + v; }
+  for (let i = hdr + 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+    const d = String(row[dateCol] || "").trim();
+    if (!vscIsDate(d)) continue;
+    const v = vscNum(row[uslCol]);
+    if (v == null) continue;
+    out.byDay[d] = (out.byDay[d] || 0) + v;
+    // «Не наша вина» СОДЕРЖИТ «наша вина» — проверяем «не наш» ПЕРВЫМ. Пусто/иное → неизвестно.
+    const fRaw = faultCol >= 0 ? String(row[faultCol] || "").toLowerCase() : "";
+    if (/не\s*наш/.test(fRaw)) out.fault.notOur += v;
+    else if (/наш/.test(fRaw)) out.fault.our += v;
+    else out.fault.unknown += v;
+  }
   return out;
 }
 // Налоги месяца из строки «Итог»: НДС (предполагаемый), расхождение с фактом, налог 5%.
@@ -3546,13 +3562,21 @@ async function vscFetchAll() {
   // Возвраты и налоги (item 11/13): мерджим в месяцы. Возвраты — по дням (для недель),
   // итог по месяцу = сумма всех возвратов месяца. % возвратов = Услуги / выручка (бюджет).
   months.forEach((m) => {
-    const byDay = (extra.ret && extra.ret[m.name]) || {};
+    const rd = (extra.ret && extra.ret[m.name]) || { byDay: {}, fault: null };
+    const byDay = rd.byDay || {};
     (m.days || []).forEach((d) => { d.retUslugi = (byDay[d.date] != null) ? byDay[d.date] : null; });
     (m.weeks || []).forEach((w) => { const v = (w.days || []).map((d) => d.retUslugi).filter((x) => x != null); const s = v.length ? v.reduce((a, b) => a + b, 0) : null; w.retUslugi = s; w.returnsPct = (s != null && w.budget) ? s / w.budget * 100 : null; });
     if (m.total) {
       const keys = Object.keys(byDay);
       m.total.retUslugi = keys.length ? keys.reduce((a, k) => a + byDay[k], 0) : null;
       m.total.returnsPct = (m.total.retUslugi != null && m.total.budget) ? m.total.retUslugi / m.total.budget * 100 : null;
+      // Разбивка % возвратов по вине (в % от бюджета) — сумма трёх = returnsPct (общий % НЕ съезжает).
+      const fa = rd.fault;
+      if (fa && m.total.budget) {
+        m.total.returnsOurPct = fa.our / m.total.budget * 100;
+        m.total.returnsNotOurPct = fa.notOur / m.total.budget * 100;
+        m.total.returnsUnknownPct = fa.unknown / m.total.budget * 100;
+      }
     }
     m.taxes = (extra.tax && extra.tax[m.name]) || null;
   });
