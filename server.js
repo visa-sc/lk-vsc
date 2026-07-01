@@ -4177,6 +4177,17 @@ async function vscForecastModel() {
     const file = "xl/" + t[1].replace("../", "");
     const { labels, cols } = parseSheet(file);
     const model = buildModel(cols);
+    // Заложенный % возвратов в прогнозе прибыли: строка «выручка × %» (в июне 2026 это
+    // строка 20, формула =B37*0.05, т.е. 5% от выручки). По решению — 7,5% вместо 5%.
+    // Меняем ТОЛЬКО этот коэффициент (формулу целиком «B37*0.05» → «B37*0.075») — скейл
+    // от выручки сохраняется, остальная модель НЕ трогается. Матч по полной формуле не
+    // заденет другие строки (напр. строку 7 с «B37*0.05/B8»). Устойчиво к смене месяца.
+    for (const rk in model) {
+      if (model[rk].f && model[rk].f.replace(/\s+/g, "") === "B37*0.05") {
+        model[rk].f = "B37*0.075";
+        console.log("VSC FORECAST: % возвратов в модели (" + c.name + ", строка " + rk + ") 5% → 7,5%");
+      }
+    }
     if (model[38] && model[38].f && model[1] && model[1].f) {
       _vscFcModel = { model, labels, tab: c.name, year: c.year, mi: c.mi };
       _vscFcModelAt = Date.now();
