@@ -2128,6 +2128,66 @@ function isDirectorNotifyWindowMsk(d) {
   if (day === 5) return hour < 15;          // пятница — до 15:00
   return true;                              // Вт/Ср/Чт — весь день
 }
+// Формат времени в МСК (без ICU-зависимостей): «ДД.ММ.ГГГГ ЧЧ:ММ».
+function fmtMsk(ts) {
+  const d = new Date(ts + 3 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear() + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
+}
+// ── Очередь отложенных писем директору (события в тихие часы пт15:00–пн08:00 МСК) ──
+// Раньше вне окна письма ДРОПались. Теперь копим их в файл и досылаем с началом
+// рабочего окна (пн 08:00 МСК), чтобы Андрей ничего не пропустил. Файл — рантайм-
+// состояние (токенов/секретов нет, но привязан к проду) — в .gitignore, не коммитим.
+const NOTIFY_QUEUE_FILE = path.join(__dirname, ".lkNotifyQueue.json");
+function loadNotifyQueue() {
+  try { const a = JSON.parse(fs.readFileSync(NOTIFY_QUEUE_FILE, "utf8")); return Array.isArray(a) ? a : []; }
+  catch (e) { return []; }
+}
+function saveNotifyQueue(q) {
+  try { fs.writeFileSync(NOTIFY_QUEUE_FILE, JSON.stringify(q, null, 2)); }
+  catch (e) { console.error("notify-queue save:", e && e.message); }
+}
+// Отправить директору сейчас (если рабочее окно МСК) либо отложить в очередь.
+function sendOrQueueDirectorMail(m) {
+  if (isDirectorNotifyWindowMsk()) {
+    try {
+      mail.sendMail(m).then((r) => { if (!r.ok) console.error("MAIL director:", r.error); }).catch(() => {});
+    } catch (e) { console.error("MAIL director throw:", e && e.message); }
+    return "sent";
+  }
+  const q = loadNotifyQueue();
+  q.push({ id: "q" + Date.now() + Math.floor(Math.random() * 1000), ts: Date.now(), to: m.to, subject: m.subject, html: m.html });
+  saveNotifyQueue(q);
+  console.log("MAIL director: вне окна (пт15:00–пн08:00 МСК) — отложено в очередь (в очереди " + q.length + ")");
+  return "queued";
+}
+// Досыл отложенных писем с началом рабочего окна. Успешные удаляем, ошибочные оставляем
+// (попробуем на следующем тике). Идёт последовательно, чтобы не долбить SMTP.
+let _flushingNotifyQueue = false;
+async function flushDirectorMailQueue() {
+  if (_flushingNotifyQueue) return;
+  if (!isDirectorNotifyWindowMsk()) return;
+  const q = loadNotifyQueue();
+  if (!q.length) return;
+  _flushingNotifyQueue = true;
+  const remaining = [];
+  for (const m of q) {
+    try {
+      const banner = '<div style="background:#fff7e6;border:1px solid #ffe0a3;border-radius:8px;padding:10px 14px;margin:0 0 14px;font-size:13px;color:#8a6d3b;">' +
+        'Уведомление поступило в нерабочие часы (пт 15:00 – пн 08:00 МСК) и доставлено с началом рабочего окна. Время события: ' + fmtMsk(m.ts) + ' МСК.</div>';
+      const r = await mail.sendMail({ to: m.to, subject: m.subject, html: banner + (m.html || "") });
+      if (!r.ok) { console.error("MAIL flush:", r.error); remaining.push(m); }
+    } catch (e) { console.error("MAIL flush throw:", e && e.message); remaining.push(m); }
+  }
+  saveNotifyQueue(remaining);
+  _flushingNotifyQueue = false;
+  if (q.length !== remaining.length) {
+    console.log("MAIL flush: досланы отложенные письма — отправлено " + (q.length - remaining.length) + ", осталось " + remaining.length);
+  }
+}
+// Проверяем очередь на старте и каждые 5 мин (граница окна пн 08:00 отлавливается в пределах 5 мин).
+setInterval(() => { flushDirectorMailQueue().catch(() => {}); }, 5 * 60 * 1000);
+flushDirectorMailQueue().catch(() => {});
 function emailDoc(inner, accent, footer) {
   accent = accent || "#3589BD";
   footer = footer || 'Служебное письмо для сотрудников VOYO. Отвечать на него не нужно.<br>С уважением, команда VOYO · Visa Services Center';
@@ -2187,6 +2247,23 @@ function correctionCommentDirectorEmailHtml(it, c) {
     '<p style="margin:0 0 8px;"><a href="https://voyotravel.ru/admin" style="display:inline-block;background:#3589BD;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 24px;border-radius:10px;">Открыть «Корректировки ЛК»</a></p>';
   return emailDoc(inner);
 }
+// Письмо АВТОРУ-сотруднику: к его корректировке добавлен комментарий (кем-то другим —
+// напр. Андреем задан уточняющий вопрос). Чтобы сотрудник увидел и ответил.
+function correctionCommentAuthorEmailHtml(name, it, c) {
+  const e = escapeHtml;
+  const inner =
+    '<p style="margin:0 0 14px;">Привет, ' + e(String(name || "").trim().split(/\s+/)[0]) + '!</p>' +
+    '<p style="margin:0 0 16px;"><span style="display:inline-block;background:#eef5fb;color:#2b6f9e;font-weight:600;font-size:13px;padding:5px 12px;border-radius:20px;">💬 Новый комментарий к твоей корректировке</span></p>' +
+    '<p style="margin:0 0 16px;">По твоей корректировке по личному кабинету появился комментарий — возможно, нужен твой ответ.</p>' +
+    '<div style="background:#eef5fb;border-left:4px solid #3589BD;border-radius:8px;padding:14px 16px;margin:0 0 16px;font-size:14px;line-height:1.7;">' +
+      '<div style="color:#6b7280;font-size:12px;margin-bottom:3px;">Корректировка</div>' +
+      '<div style="margin-bottom:12px;">' + e(it.what || "") + '</div>' +
+      '<div style="color:#6b7280;font-size:12px;margin-bottom:3px;">Комментарий (' + e((c && c.author) || "—") + ')</div>' +
+      '<div>' + e((c && c.text) || "") + '</div>' +
+    '</div>' +
+    '<p style="margin:0 0 8px;"><a href="https://dev.voyotravel.ru" style="display:inline-block;background:#3589BD;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:13px 26px;border-radius:10px;">Открыть панель ЛК</a></p>';
+  return emailDoc(inner, "#3589BD", "Это автоматическое уведомление — отвечать на него не нужно.<br>С уважением, команда VOYO · Visa Services Center");
+}
 function passwordResetEmailHtml(name, link) {
   const e = escapeHtml;
   const inner =
@@ -2244,18 +2321,12 @@ app.post("/admin/api/corrections", requireStaff, corrUpload.single("attachment")
     lkCorrections.unshift(item);
     saveCorrections();
     // Письмо директору о новой корректировке (служебное, не блокирует ответ).
-    // Только в рабочее окно МСК (пн 08:00 – пт 15:00); вне окна — тихо пропускаем.
-    if (isDirectorNotifyWindowMsk()) {
-      try {
-        mail.sendMail({
-          to: VOYO_DIRECTOR_EMAIL,
-          subject: "Новая корректировка ЛК — " + (item.author || "—"),
-          html: newCorrectionDirectorEmailHtml(item)
-        }).then((r) => { if (!r.ok) console.error("MAIL new-correction:", r.error); }).catch(() => {});
-      } catch (e) { console.error("MAIL new-correction throw:", e && e.message); }
-    } else {
-      console.log("MAIL new-correction: вне окна доставки директору (пн08:00–пт15:00 МСК) — пропущено");
-    }
+    // В рабочее окно МСК (пн 08:00 – пт 15:00) — сразу; вне окна — в очередь, досыл после пн 08:00.
+    sendOrQueueDirectorMail({
+      to: VOYO_DIRECTOR_EMAIL,
+      subject: "Новая корректировка ЛК — " + (item.author || "—"),
+      html: newCorrectionDirectorEmailHtml(item)
+    });
     return res.json({ success: true, item });
   } catch (e) {
     console.error("create correction error:", e.message);
@@ -2314,20 +2385,35 @@ app.post("/admin/api/corrections/:id/comment", requireStaff, (req, res) => {
     const cAuthor = req.staff.name || corrText(b.author, 120);
     it.comments.push({ ts: Date.now(), author: cAuthor, text });
     saveCorrections();
-    // Комментарий оставил РУКОВОДИТЕЛЬ (не админ) → уведомляем директора по почте,
+    // (1) Комментарий оставил РУКОВОДИТЕЛЬ (не админ) → уведомляем директора по почте,
     // чтобы Андрей видел ответ постановщика (напр. Насти по заявке «в работе») и доделал.
-    // Только в рабочее окно МСК (пн 08:00 – пт 15:00); вне окна — тихо пропускаем.
-    if (req.staff.role === "manager" && !isDirectorNotifyWindowMsk()) {
-      console.log("MAIL correction-comment: вне окна доставки директору (пн08:00–пт15:00 МСК) — пропущено");
-    } else if (req.staff.role === "manager") {
-      try {
-        mail.sendMail({
-          to: VOYO_DIRECTOR_EMAIL,
-          subject: "Ответ по корректировке ЛК — " + (it.author || cAuthor || "—"),
-          html: correctionCommentDirectorEmailHtml(it, { author: cAuthor, text })
-        }).then((r) => { if (!r.ok) console.error("MAIL correction-comment:", r.error); }).catch(() => {});
-      } catch (e) { console.error("MAIL correction-comment throw:", e && e.message); }
+    // В рабочее окно МСК — сразу; вне окна (пт15:00–пн08:00) — в очередь, досыл после пн 08:00.
+    if (req.staff.role === "manager") {
+      sendOrQueueDirectorMail({
+        to: VOYO_DIRECTOR_EMAIL,
+        subject: "Ответ по корректировке ЛК — " + (it.author || cAuthor || "—"),
+        html: correctionCommentDirectorEmailHtml(it, { author: cAuthor, text })
+      });
     }
+    // (2) Уведомляем АВТОРА-сотрудника о комментарии к ЕГО корректировке, если комментатор —
+    // не сам автор (напр. Андрей задал уточняющий вопрос). Только для заявок с createdBy.email.
+    // Автору шлём сразу, без окна тихих часов (окно — это преференция Андрея-директора).
+    try {
+      const cb = it.createdBy;
+      const authorEmail = cb && cb.email ? String(cb.email).toLowerCase() : "";
+      const commenterEmail = (req.staff.email || "").toLowerCase();
+      const commenterIsAuthor = !!authorEmail && (
+        (commenterEmail && commenterEmail === authorEmail) ||
+        String(cAuthor).trim().toLowerCase() === String((cb && cb.name) || "").trim().toLowerCase()
+      );
+      if (authorEmail && !commenterIsAuthor) {
+        mail.sendMail({
+          to: cb.email,
+          subject: "Новый комментарий к твоей корректировке по ЛК",
+          html: correctionCommentAuthorEmailHtml(cb.name, it, { author: cAuthor, text })
+        }).then((r) => { if (!r.ok) console.error("MAIL comment-author:", r.error); }).catch(() => {});
+      }
+    } catch (e) { console.error("MAIL comment-author throw:", e && e.message); }
     return res.json({ success: true, item: it });
   } catch (e) {
     console.error("comment correction error:", e.message);
