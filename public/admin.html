@@ -2411,13 +2411,26 @@
           if (v != null && v > 0) {
             let our = k.ourPct, notOur = k.notOurPct, unk = k.unknownPct;
             if (our == null && notOur == null && unk == null) unk = v; // нет разбивки → вся высота «не определено»
-            [["#e8843b", our, "Наша вина"], ["#f4c948", notOur, "Не наша вина"], ["#aeb8c9", unk, "Не определено"]].forEach((seg) => {
-              const pct = seg[1]; if (pct == null || pct <= 0) return;
+            const barPx = Math.max(2, Math.round(v / maxAbs * 120));
+            // Порядок снизу вверх (column-reverse): «не определено», «не наша», «НАША» — сверху.
+            // В сегмент «Наша вина» вписываем % возвратов по нашей вине — ТОЛЬКО если влезает
+            // по высоте (иначе не пишем, чтобы не обрезать).
+            const addSeg = (color, pct, label, ourText) => {
+              if (pct == null || pct <= 0) return;
               const d = document.createElement("div");
-              d.style.cssText = "width:100%;height:" + (pct / v * 100) + "%;background:" + seg[0] + ";";
-              d.title = seg[2] + ": " + fmtP(pct);
+              d.style.cssText = "width:100%;height:" + (pct / v * 100) + "%;background:" + color + ";display:flex;align-items:center;justify-content:center;overflow:hidden;";
+              d.title = label + ": " + fmtP(pct);
+              if (ourText && (pct / v * barPx) >= 10) {
+                const t = document.createElement("span");
+                t.textContent = fmtP(pct);
+                t.style.cssText = "font-size:8px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;";
+                d.appendChild(t);
+              }
               bar.appendChild(d);
-            });
+            };
+            addSeg("#aeb8c9", unk, "Не определено", false);
+            addSeg("#f4c948", notOur, "Не наша вина", false);
+            addSeg("#e8843b", our, "Наша вина", true);
           }
           const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = s.x;
           col.appendChild(vl); col.appendChild(bar); col.appendChild(xl);
