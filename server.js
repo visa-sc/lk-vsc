@@ -4683,8 +4683,13 @@ async function runBuyoutsCheck(trigger) {
     const ops = await tbFetchOps(acc, fromISO, tillISO);
     tbAggregateMonths(ops, bankMonths);
     const sheetMonths = await buyoutsSheetMonths().catch((e) => { console.error("BUYOUTS sheet:", e.message); return (prev && prev.sheet) || {}; });
-    let frozenDeb = 0, frozenCre = 0;
-    for (const ym in bankMonths) { frozenDeb += bankMonths[ym].deb; frozenCre += bankMonths[ym].cre; }
+    // «Заморожено»: до июня 2026 ВКЛЮЧИТЕЛЬНО — сверенные Андреем итоги его таблички
+    // (принято за истину, 02.07.2026); с июля 2026 — ведём сами по банку (API).
+    // Банковская история до 07.2026 в frozen НЕ входит (там расхождения периметра:
+    // старт учёта май-2023, июльские хвосты и т.п.) — только сид + свежие месяцы.
+    const SEED_DEB = 407009157.73, SEED_CRE = 385814877.58, SEED_UPTO = "2026-06";
+    let frozenDeb = SEED_DEB, frozenCre = SEED_CRE;
+    for (const ym in bankMonths) { if (ym > SEED_UPTO) { frozenDeb += bankMonths[ym].deb; frozenCre += bankMonths[ym].cre; } }
     const result = {
       ts: Date.now(), trigger: trigger || "cron", account: "***" + String(acc).slice(-4),
       fullScanAt: (prev && prev.fullScanAt) || Date.now(),
@@ -4705,19 +4710,21 @@ app.post("/admin/api/vsc/buyouts/run", requireAdmin, (req, res) => {
   setImmediate(() => { Promise.resolve(runBuyoutsCheck("manual")).catch(() => {}); });
   return res.json({ success: true, started: true });
 });
-// 2×/сутки (09:00 и 16:00 МСК) + стартовый прогон при пустом кэше (через 3 мин,
-// чтобы не мешать прогревам дашборда/прогноза/amoCRM-фону).
+// 1×/сутки в 00:10 МСК (по просьбе Андрея «в 00:00» — +10 мин, чтобы день гарантированно
+// сменился и не пересекаться с полуночным сбросом дневной выручки) + стартовый прогон
+// при пустом кэше (через 3 мин, чтобы не мешать прогревам дашборда/прогноза/amoCRM-фону).
+// Нагрузка мизерная: инкремент 3 мес ≈ 5–7 страниц выписки + один xlsx; рисков нет.
 (function scheduleBuyouts() {
   if (!TBANK_TOKEN) { console.log("BUYOUTS: TBANK_API_TOKEN не задан — сверка выключена"); return; }
-  const MSK = 3 * 3600 * 1000, DAY = 86400000, HOURS = [9, 16];
+  const MSK = 3 * 3600 * 1000, DAY = 86400000, AT_MS = 10 * 60 * 1000; // 00:10 МСК
   (function tick() {
     const now = Date.now(), mskMid = Math.floor((now + MSK) / DAY) * DAY;
-    let target = Infinity;
-    for (const h of HOURS) { let t = mskMid + h * 3600 * 1000 - MSK; if (t <= now) t += DAY; if (t < target) target = t; }
+    let target = mskMid + AT_MS - MSK;
+    if (target <= now) target += DAY;
     setTimeout(() => { Promise.resolve(runBuyoutsCheck("cron")).catch(() => {}); tick(); }, Math.max(1000, target - now));
   })();
   if (!loadBuyouts()) setTimeout(() => { Promise.resolve(runBuyoutsCheck("startup")).catch(() => {}); }, 180 * 1000);
-  console.log("BUYOUTS: сверка выкупов запланирована на 09:00 и 16:00 МСК");
+  console.log("BUYOUTS: сверка выкупов запланирована на 00:10 МСК (1×/сутки)");
 })();
 
 // ═════════════════════════════════════════════════════════════════════════
