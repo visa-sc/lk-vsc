@@ -2839,6 +2839,9 @@
         const rasxData = (vscData.months || []).map((mm) => ({ x: short(mm.name), v: mm.taxes ? mm.taxes.rasx : null }));
         vscContent.appendChild(vscDivergingBars("Расхождение с фактом вынесенного НДС (+ запас / − нехватка)", rasxData, "money"));
         // ── Не-графики — опущены ВНИЗ (по просьбе Андрея): «Реклама Я.Директ vs таблица» и «План ОП — проверка» ──
+        // ── «Выкупы — сверка р/с с таблицей» (только админ; руководителям блок не показываем,
+        // эндпоинт requireAdmin — raw fetch, чтобы 401 не выкидывал их на логин) ──
+        if (currentRole() === "admin") vscContent.appendChild(vscBuyoutsBlock());
         const hYd = document.createElement("div"); hYd.className = "ref-sec-h"; hYd.style.marginTop = "22px"; hYd.textContent = "Реклама Я.Директ vs таблица — последний месяц";
         vscContent.appendChild(hYd);
         const yc = vscData.ydSpendCompare;
@@ -2863,6 +2866,81 @@
         }
         vscContent.appendChild(ydBox);
         vscContent.appendChild(vscPlanOpCheck());
+      }
+      // ── «Выкупы — сверка р/с с таблицей» (Ежемесячный контроль, только админ) ──
+      // Банк (T-Bank API, Turkish + OneTwoTrip, только проведённые операции, месяц по
+      // дате авторизации — правила совпадают с ручной сверкой) vs гугл-таблица выкупов
+      // (Авиа + Отель, только «Расчетный счет»). Плюс «заморожено в выкупах» = накоплен-
+      // ный расход − приход по банку за всю историю счёта. Данные — из серверного кэша.
+      let _buyoutsPoll = null;
+      function vscBuyoutsBlock() {
+        const wrap = document.createElement("div");
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.style.marginTop = "22px"; h.textContent = "Выкупы — сверка р/с с таблицей (Turkish + OneTwoTrip)";
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart";
+        box.innerHTML = '<div class="loading-state">Загружаем сверку выкупов…</div>';
+        wrap.appendChild(box);
+        const MON = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+        const ymName = (ym) => { const p = ym.split("-"); return (MON[+p[1] - 1] || ym) + " " + p[0]; };
+        const money = (v) => (v == null ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
+        const money2 = (v) => (v == null ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU", { minimumFractionDigits: 2 }) + " ₽");
+        const load = () => fetch("/admin/api/vsc/buyouts", { headers: { Authorization: "Bearer " + getToken() } }).then((r) => r.json());
+        const render = (j) => {
+          if (!j || !j.success) { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить сверку выкупов.</div>'; return; }
+          if (!j.configured) { box.innerHTML = '<div class="vsc-empty">Интеграция с Т-Банком не настроена (нет TBANK_API_TOKEN на сервере).</div>'; return; }
+          const d = j.data;
+          if (!d || d.error) {
+            box.innerHTML = '<div class="vsc-empty">' + (j.running ? "Идёт первый расчёт (полная история счёта) — может занять пару минут…" : "Первый расчёт ещё не выполнялся.") + '</div>'
+              + (!j.running ? '<div style="margin-top:8px;"><button type="button" id="buyoutsRun" class="vsc-dayrev-refresh" style="margin-top:0;">Посчитать сейчас</button></div>' : "");
+            const b = box.querySelector("#buyoutsRun"); if (b) b.addEventListener("click", runNow);
+            if (j.running) pollUntilFresh(0);
+            return;
+          }
+          // Плитка «заморожено» + помесячная таблица (2026+), банк vs таблица.
+          const bank = d.bank || {}, sheet = d.sheet || {};
+          const yms = Array.from(new Set([].concat(Object.keys(bank), Object.keys(sheet)))).filter((ym) => ym >= "2026-01").sort();
+          const rows = yms.map((ym) => {
+            const b = bank[ym] || {}, s = sheet[ym] || {};
+            const cell = (bv, sv) => {
+              if (bv == null && sv == null) return '<td style="padding:7px 8px;color:#9aa0ab;">—</td>';
+              const delta = (bv || 0) - (sv || 0);
+              const ok = Math.abs(delta) < 1;
+              const dStr = ok ? "✓" : ((delta > 0 ? "+" : "−") + Math.abs(Math.round(delta)).toLocaleString("ru-RU"));
+              return '<td style="padding:7px 8px;white-space:nowrap;">' + money2(bv) + '<br><span style="color:#8a90a0;">табл. ' + money2(sv) + '</span><br><b style="color:' + (ok ? "#2c7a43" : "#b8602a") + ';">' + dStr + '</b></td>';
+            };
+            return '<tr style="border-top:1px solid #f0eef5;vertical-align:top;"><td style="padding:7px 8px;font-weight:600;color:#1d2330;white-space:nowrap;">' + ymName(ym) + '</td>' + cell(b.deb, s.deb) + cell(b.cre, s.cre) + '</tr>';
+          }).join("");
+          const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+          box.innerHTML =
+            '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:stretch;margin-bottom:12px;">'
+            + '<div class="vsc-tile" style="flex:1;min-width:230px;background:#fdf6ec;border-color:#f0dfc0;">'
+            +   '<div class="vsc-tile-l">Заморожено в выкупах (банк, за всё время)</div>'
+            +   '<div class="vsc-tile-v">' + money(d.frozen) + '</div>'
+            +   '<div class="vsc-tile-s">расход ' + money(d.frozenDeb) + ' − приход ' + money(d.frozenCre) + ' · счёт ' + escapeHtml(d.account || "") + '</div>'
+            + '</div></div>'
+            + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
+            + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 8px;">Месяц</th><th style="text-align:left;padding:7px 8px;">Расход: банк / таблица / Δ</th><th style="text-align:left;padding:7px 8px;">Приход: банк / таблица / Δ</th></tr></thead>'
+            + '<tbody>' + rows + '</tbody></table></div>'
+            + '<div style="font-size:11.5px;color:#8a90a0;margin-top:8px;">Банк: только проведённые операции (без холдов), месяц — по дате авторизации; правила совпадают с ручной сверкой. Таблица: вкладки «Авиа»+«Отель», только «Расчетный счет». Обновляется в 09:00 и 16:00 МСК · на ' + escapeHtml(upd) + '. <button type="button" id="buyoutsRun" class="vsc-dayrev-refresh" style="margin-top:8px;">↻ Обновить</button></div>';
+          const b = box.querySelector("#buyoutsRun"); if (b) b.addEventListener("click", runNow);
+        };
+        const pollUntilFresh = (prevTs) => {
+          let tries = 0;
+          if (_buyoutsPoll) clearInterval(_buyoutsPoll);
+          _buyoutsPoll = setInterval(async () => {
+            tries++;
+            try { const j = await load(); const ts = j && j.data && j.data.ts || 0; if ((ts > prevTs && !j.running) || tries > 60) { clearInterval(_buyoutsPoll); _buyoutsPoll = null; render(j); } } catch (_) { if (tries > 60) { clearInterval(_buyoutsPoll); _buyoutsPoll = null; } }
+          }, 4000);
+        };
+        const runNow = async () => {
+          const prevTs = 0;
+          const btn = box.querySelector("#buyoutsRun"); if (btn) { btn.disabled = true; btn.textContent = "Считаем…"; }
+          let before = 0; try { const j0 = await load(); before = (j0.data && j0.data.ts) || 0; } catch (_) {}
+          try { await fetch("/admin/api/vsc/buyouts/run", { method: "POST", headers: { Authorization: "Bearer " + getToken() } }); } catch (_) {}
+          pollUntilFresh(before || prevTs);
+        };
+        load().then(render).catch(() => { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить сверку выкупов.</div>'; });
+        return wrap;
       }
       // Проверка Плана ОП (item 9): план ATV и план итоговой конверсии текущего месяца
       // (строка «ТАРГЕТ» под Grand total) должны быть ВЫШЕ факта прошлого месяца (Grand

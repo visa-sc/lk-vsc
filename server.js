@@ -4522,6 +4522,205 @@ app.get("/admin/api/vsc-forecast", requireAdmin, async (req, res) => {
 })();
 
 // ═════════════════════════════════════════════════════════════════════════
+// «Выкупы — сверка р/с с таблицей» (/vsc «Ежемесячный контроль», ТОЛЬКО админ).
+// Банк: T-Bank Business API (read-only токен в .env TBANK_API_TOKEN, привязан к IP
+// прода) → операции по рублёвому счёту, мерчанты TURKISH AIR / ONETWOTRIP.
+// Правила сверки ПОДОБРАНЫ ПОД РУЧНУЮ СВЕРКУ Андрея (июнь совпал до копейки):
+//   • только operationStatus="Transaction" (холды-авторизации «с часиками» НЕ считаем);
+//   • месяц операции — по authorizationDate (как в интерфейсе банка);
+//   • расход = typeOfOperation Debit, приход = Credit (возвраты, category refundIn).
+// Таблица выкупов (Google, pub xlsx): вкладки «Авиа» и «Отель», только строки
+// «кредитка или рс» = «Расчетный счет»; расход месяца — Σ«сумма снятия» по «дата
+// покупки», приход месяца — Σ«сумма возврата» по «дата поступления возврата».
+// «Заморожено в выкупах» = Σрасход − Σприход по банку за всю историю счёта.
+// Изолировано: amoCRM/ЛК не трогает; T-Bank — не amoCRM, лимитер не нужен (пауза
+// между страницами + retry). Кэш-файл, фронт читает кэш.
+const BUYOUTS_FILE = path.join(__dirname, ".lkBuyouts.json");
+const BUYOUTS_XLSX = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQUg19Ct37FZ7HceoYQdmnBLYS5W3GtWbW9_-Sts3ulAglvKQcwlAs_wQ_u3MQBwqgtXSup5VLdleEv/pub?output=xlsx";
+const BUYOUTS_MERCH_RE = /TURKISH|ONETWOTRIP/i;
+const TBANK_TOKEN = process.env.TBANK_API_TOKEN || "";
+let _buyouts, _buyoutsRunning = false;
+function loadBuyouts() { if (_buyouts !== undefined) return _buyouts; try { _buyouts = JSON.parse(fs.readFileSync(BUYOUTS_FILE, "utf8")); } catch (_) { _buyouts = null; } return _buyouts; }
+function saveBuyouts(d) { _buyouts = d; try { fs.writeFileSync(BUYOUTS_FILE, JSON.stringify(d, null, 2), "utf8"); } catch (e) { console.error("saveBuyouts:", e.message); } }
+async function tbGet(url, attempt) {
+  try {
+    const r = await axios.get(url, { headers: { Authorization: "Bearer " + TBANK_TOKEN }, timeout: 30000, validateStatus: () => true });
+    if (r.status === 200) return r.data;
+    if ((r.status === 429 || r.status >= 500) && (attempt || 0) < 3) { await new Promise((s) => setTimeout(s, 1500 * ((attempt || 0) + 1))); return tbGet(url, (attempt || 0) + 1); }
+    throw new Error("T-Bank HTTP " + r.status);
+  } catch (e) { if (e.message && e.message.indexOf("T-Bank HTTP") === 0) throw e; if ((attempt || 0) < 3) { await new Promise((s) => setTimeout(s, 1500)); return tbGet(url, (attempt || 0) + 1); } throw e; }
+}
+async function tbAccountNumber() {
+  const d = await tbGet("https://business.tbank.ru/openapi/api/v4/bank-accounts");
+  const list = Array.isArray(d) ? d : (d.accounts || []);
+  const env = String(process.env.TBANK_ACCOUNT || "").trim();
+  if (env) { const hit = list.find((a) => String(a.accountNumber || a.number) === env); if (hit) return env; }
+  return (list[0] && (list[0].accountNumber || list[0].number)) || null;
+}
+// Операции по счёту за период, с пагинацией по cursor. Пауза между страницами —
+// бережём API (лимиты банка не публикуются; 250 мс достаточно мягко).
+async function tbFetchOps(acc, fromISO, tillISO) {
+  let cursor = "", out = [];
+  for (let p = 0; p < 200; p++) {
+    const url = "https://business.tbank.ru/openapi/api/v1/statement?accountNumber=" + acc + "&from=" + fromISO + "&till=" + tillISO + (cursor ? "&cursor=" + encodeURIComponent(cursor) : "");
+    const j = await tbGet(url);
+    const ops = j.operations || [];
+    out = out.concat(ops);
+    if (!j.nextCursor || !ops.length) break;
+    cursor = j.nextCursor;
+    await new Promise((s) => setTimeout(s, 250));
+  }
+  return out;
+}
+// Помесячная агрегация банковских операций по правилам сверки (см. шапку блока).
+function tbAggregateMonths(ops, into) {
+  const months = into || {};
+  for (const o of ops) {
+    if (String(o.operationStatus) !== "Transaction") continue;
+    const txt = ((o.description || "") + " " + ((o.merch && o.merch.name) || "") + " " + (o.payPurpose || ""));
+    if (!BUYOUTS_MERCH_RE.test(txt)) continue;
+    const ym = String(o.authorizationDate || o.operationDate || "").slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(ym)) continue;
+    const amt = +o.accountAmount || 0;
+    const m = months[ym] || (months[ym] = { deb: 0, cre: 0 });
+    if (String(o.typeOfOperation).toLowerCase() === "credit") m.cre += amt; else m.deb += amt;
+  }
+  return months;
+}
+// Таблица выкупов: pub xlsx → помесячные {deb, cre} по вкладкам «Авиа» + «Отель»
+// (только строки «Расчетный счет»). Даты в xlsx — сериалы Excel или строки ДД.ММ.ГГГГ.
+function _xlsxSerialToYm(v) {
+  const s = String(v || "").trim();
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return s.slice(6, 10) + "-" + s.slice(3, 5);
+  const n = parseFloat(s);
+  if (!isFinite(n) || n < 20000 || n > 60000) return null; // вменяемый диапазон сериалов (1954–2064)
+  const d = new Date(Math.round((n - 25569) * 86400000));
+  return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
+}
+async function buyoutsSheetMonths() {
+  const r = await axios.get(BUYOUTS_XLSX, { timeout: 45000, responseType: "arraybuffer" });
+  const zip = new AdmZip(Buffer.from(r.data));
+  const read = (n) => { const e = zip.getEntry(n); return e ? e.getData().toString("utf8") : ""; };
+  const ss = [];
+  { const sx = read("xl/sharedStrings.xml"); const re = /<si>([\s\S]*?)<\/si>/g; let m; while ((m = re.exec(sx))) { const t = (m[1].match(/<t[^>]*>([\s\S]*?)<\/t>/g) || []).map((x) => x.replace(/<[^>]+>/g, "")).join(""); ss.push(t); } }
+  const wb = read("xl/workbook.xml"); const rels = read("xl/_rels/workbook.xml.rels");
+  const sheets = [];
+  { const re = /<sheet[^>]*name="([^"]*)"[^>]*r:id="(rId\d+)"/g; let m; while ((m = re.exec(wb))) sheets.push({ name: m[1], rid: m[2] }); }
+  const colIdx = (L) => { let n = 0; for (const ch of L) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; };
+  const months = {};
+  for (const want of ["авиа", "отель"]) {
+    const sh = sheets.find((s) => String(s.name).trim().toLowerCase() === want);
+    if (!sh) continue;
+    const t = new RegExp('Id="' + sh.rid + '"[^>]*Target="([^"]*)"').exec(rels);
+    if (!t) continue;
+    const xml = read("xl/" + t[1].replace("../", ""));
+    const rowsRe = /<row[^>]*r="(\d+)"[^>]*>([\s\S]*?)<\/row>/g; let rm;
+    const parseRow = (body) => { const cells = {}; const cre = /<c\s+r="([A-Z]+)(\d+)"([^>]*)>([\s\S]*?)<\/c>/g; let m; while ((m = cre.exec(body))) { const attrs = m[3], b = m[4]; const vm = /<v>([\s\S]*?)<\/v>/.exec(b); let v = vm ? vm[1] : ""; if (/t="s"/.test(attrs) && v !== "") v = ss[+v]; cells[colIdx(m[1])] = v; } return cells; };
+    // Заголовки ищем по содержимому («кредитка или рс») — строка плавает (Авиа: 3, Отель: 4).
+    let hdrRow = -1, C = null;
+    const allRows = [];
+    while ((rm = rowsRe.exec(xml))) allRows.push([+rm[1], rm[2]]);
+    for (const [rn, body] of allRows) {
+      if (rn > 10 || hdrRow >= 0) break;
+      const c = parseRow(body);
+      for (const k in c) {
+        if (String(c[k]).toLowerCase().indexOf("кредитка или рс") >= 0) {
+          hdrRow = rn;
+          const findCol = (pred) => { for (const j in c) { if (pred(String(c[j]).toLowerCase().trim())) return +j; } return -1; };
+          // Методика выверена по сверенным месяцам Андрея (янв–май Δ=0):
+          //  • расход — по «дата АВТОРИЗАЦИИ транзакции» (не «дата покупки»: банк относит
+          //    операцию к месяцу авторизации, и ручная сверка бьётся именно так);
+          //  • приход — «сумма возврата (стоимость…)» СТРОГО с начала строки (НЕ «будущая
+          //    сумма возврата»!) по месяцу «дата поступления возврата».
+          const authCol = findCol((s) => s.indexOf("дата авторизации") >= 0);
+          C = {
+            rs: +k,
+            buyDate: authCol >= 0 ? authCol : findCol((s) => s.indexOf("дата покупки") >= 0),
+            buySum: findCol((s) => s.indexOf("сумма снятия") >= 0),
+            retDate: findCol((s) => s.indexOf("дата поступления возврата") >= 0),
+            retSum: findCol((s) => s.indexOf("сумма возврата") === 0)
+          };
+          break;
+        }
+      }
+    }
+    if (!C || C.buyDate < 0 || C.buySum < 0) { console.error("BUYOUTS sheet «" + sh.name + "»: не найдены колонки"); continue; }
+    for (const [rn, body] of allRows) {
+      if (rn <= hdrRow) continue;
+      const c = parseRow(body);
+      if (String(c[C.rs] || "").trim().toLowerCase() !== "расчетный счет") continue;
+      const buyYm = _xlsxSerialToYm(c[C.buyDate]);
+      const buySum = parseFloat(c[C.buySum]);
+      if (buyYm && isFinite(buySum) && buySum > 0) { const m = months[buyYm] || (months[buyYm] = { deb: 0, cre: 0 }); m.deb += buySum; }
+      const retYm = C.retDate >= 0 ? _xlsxSerialToYm(c[C.retDate]) : null;
+      const retSum = C.retSum >= 0 ? parseFloat(c[C.retSum]) : NaN;
+      if (retYm && isFinite(retSum) && retSum > 0) { const m = months[retYm] || (months[retYm] = { deb: 0, cre: 0 }); m.cre += retSum; }
+    }
+  }
+  return months;
+}
+async function runBuyoutsCheck(trigger) {
+  if (_buyoutsRunning) return { skipped: true };
+  if (!TBANK_TOKEN) return { error: "TBANK_API_TOKEN не задан" };
+  _buyoutsRunning = true;
+  const t0 = Date.now();
+  try {
+    const acc = await tbAccountNumber();
+    if (!acc) throw new Error("счёт не найден");
+    const prev = loadBuyouts();
+    const bankMonths = (prev && prev.bank) ? Object.assign({}, prev.bank) : {};
+    const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
+    let fromISO;
+    if (prev && prev.fullScanAt) {
+      // Инкремент: переписываем последние 3 месяца (возвраты приходят с лагом).
+      const d = new Date(Date.UTC(nowMsk.getUTCFullYear(), nowMsk.getUTCMonth() - 2, 1));
+      fromISO = d.toISOString().slice(0, 10) + "T00:00:00Z";
+      for (const ym of Object.keys(bankMonths)) { if (ym >= fromISO.slice(0, 7)) delete bankMonths[ym]; }
+    } else {
+      fromISO = "2020-01-01T00:00:00Z"; // первый прогон — вся история счёта (для «заморожено»)
+    }
+    const tillISO = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10) + "T00:00:00Z";
+    const ops = await tbFetchOps(acc, fromISO, tillISO);
+    tbAggregateMonths(ops, bankMonths);
+    const sheetMonths = await buyoutsSheetMonths().catch((e) => { console.error("BUYOUTS sheet:", e.message); return (prev && prev.sheet) || {}; });
+    let frozenDeb = 0, frozenCre = 0;
+    for (const ym in bankMonths) { frozenDeb += bankMonths[ym].deb; frozenCre += bankMonths[ym].cre; }
+    const result = {
+      ts: Date.now(), trigger: trigger || "cron", account: "***" + String(acc).slice(-4),
+      fullScanAt: (prev && prev.fullScanAt) || Date.now(),
+      bank: bankMonths, sheet: sheetMonths,
+      frozen: Math.round((frozenDeb - frozenCre) * 100) / 100,
+      frozenDeb: Math.round(frozenDeb * 100) / 100, frozenCre: Math.round(frozenCre * 100) / 100,
+      opsFetched: ops.length, durationMs: Date.now() - t0
+    };
+    saveBuyouts(result);
+    console.log("BUYOUTS [" + (trigger || "cron") + "]: банк-месяцев " + Object.keys(bankMonths).length + ", заморожено " + result.frozen + " ₽, ops " + ops.length + ", " + result.durationMs + "ms");
+    return result;
+  } catch (e) { console.error("runBuyoutsCheck:", e.message); return { error: e.message }; }
+  finally { _buyoutsRunning = false; }
+}
+app.get("/admin/api/vsc/buyouts", requireAdmin, (req, res) => res.json({ success: true, data: loadBuyouts(), running: _buyoutsRunning, configured: !!TBANK_TOKEN }));
+app.post("/admin/api/vsc/buyouts/run", requireAdmin, (req, res) => {
+  if (_buyoutsRunning) return res.json({ success: true, started: false, running: true });
+  setImmediate(() => { Promise.resolve(runBuyoutsCheck("manual")).catch(() => {}); });
+  return res.json({ success: true, started: true });
+});
+// 2×/сутки (09:00 и 16:00 МСК) + стартовый прогон при пустом кэше (через 3 мин,
+// чтобы не мешать прогревам дашборда/прогноза/amoCRM-фону).
+(function scheduleBuyouts() {
+  if (!TBANK_TOKEN) { console.log("BUYOUTS: TBANK_API_TOKEN не задан — сверка выключена"); return; }
+  const MSK = 3 * 3600 * 1000, DAY = 86400000, HOURS = [9, 16];
+  (function tick() {
+    const now = Date.now(), mskMid = Math.floor((now + MSK) / DAY) * DAY;
+    let target = Infinity;
+    for (const h of HOURS) { let t = mskMid + h * 3600 * 1000 - MSK; if (t <= now) t += DAY; if (t < target) target = t; }
+    setTimeout(() => { Promise.resolve(runBuyoutsCheck("cron")).catch(() => {}); tick(); }, Math.max(1000, target - now));
+  })();
+  if (!loadBuyouts()) setTimeout(() => { Promise.resolve(runBuyoutsCheck("startup")).catch(() => {}); }, 180 * 1000);
+  console.log("BUYOUTS: сверка выкупов запланирована на 09:00 и 16:00 МСК");
+})();
+
+// ═════════════════════════════════════════════════════════════════════════
 // Клиентская сессия (ФАЗА 1). Подписанный токен (HMAC-SHA256) в httpOnly-cookie
 // `voyo_sess`. Выдаётся при ЛЮБОМ успешном входе (SMS / Face ID по номеру /
 // Face ID кнопкой). Stateless → переживает рестарты/деплои (никого не
