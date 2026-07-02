@@ -4424,7 +4424,13 @@ async function vscBuildForecast() {
     const d = (+m[3]) - (+m[1]) + 1;
     return (d >= 1 && d <= 7) ? d : 7;
   };
-  const hasRates = (p) => !!(p && +p.asp && (p.cv != null && +p.cv) && +p.upt);
+  // Ставки периода пригодны как база прогноза, только если они ВМЕНЯЕМЫ: есть ASP/UPT,
+  // CPL > 0 (рекламные расходы внесены) и 0 < CV < 100. Едва начатый период (напр.
+  // 01.07–05.07 при одном заполненном дне) даёт вырожденную строку Total: CPL пуст,
+  // CV = 100% — раньше такие ставки проходили проверку, становились lastActual и
+  // переносились в будущие недели, раздувая прогноз до десятков млн (CV 100% вместо
+  // ~28%). Непригодный период базой не становится — берём последние вменяемые ставки.
+  const hasRates = (p) => !!(p && +p.asp && +p.upt && (+p.cpl > 0) && (p.cv != null && +p.cv > 0 && +p.cv < 100));
   // Объёмно-взвешенное пуллирование ставок двух периодов (стыковая неделя на границе месяцев).
   const poolRates = (a, b) => {
     let ws = 0, asp = 0, cv = 0, upt = 0, cost = 0, leads = 0;
@@ -4446,7 +4452,7 @@ async function vscBuildForecast() {
     const days = wkDays(w.label);
     let basis, basisLabel, carried = false;
     if (idx === 0) { basis = prev.total; basisLabel = "итоги " + prev.name; }
-    else if (startStub && idx === 1 && straddle) { basis = straddle; basisLabel = "стыковая неделя (" + prev.name + " + " + cur.name + ")"; }
+    else if (startStub && idx === 1 && straddle && hasRates(straddle)) { basis = straddle; basisLabel = "стыковая неделя (" + prev.name + " + " + cur.name + ")"; }
     else {
       const pw = allW[idx - 1];
       if (hasRates(pw)) { basis = pw; basisLabel = pw.label; }
