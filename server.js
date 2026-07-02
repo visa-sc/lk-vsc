@@ -4538,6 +4538,30 @@ app.get("/admin/api/vsc-forecast", requireAdmin, async (req, res) => {
 const BUYOUTS_FILE = path.join(__dirname, ".lkBuyouts.json");
 const BUYOUTS_XLSX = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQUg19Ct37FZ7HceoYQdmnBLYS5W3GtWbW9_-Sts3ulAglvKQcwlAs_wQ_u3MQBwqgtXSup5VLdleEv/pub?output=xlsx";
 const BUYOUTS_MERCH_RE = /TURKISH|ONETWOTRIP/i;
+// Сверенная табличка Андрея (скрин 02.07.2026) — ИСТИНА по МАЙ 2026 включительно.
+// С июня 2026 движение ведём сами по банку (июнь перепроверен: банк == его строка
+// до копейки). Если Андрей пересверит месяцы — обновить массив и BUYOUTS_SEED_UPTO.
+const BUYOUTS_SEED_UPTO = "2026-05";
+const BUYOUTS_SEED = [
+  { label: "Май 2023 – Декабрь 2024", deb: 149608178.92, cre: 143530513.17 },
+  { ym: "2025-01", deb: 4311329.66, cre: 2876469.71 },
+  { ym: "2025-02", deb: 8622138.20, cre: 6544661.06 },
+  { ym: "2025-03", deb: 11053837.58, cre: 7912266.95 },
+  { ym: "2025-04", deb: 18972944.88, cre: 13966880.45 },
+  { ym: "2025-05", deb: 10606093.02, cre: 13040715.32 },
+  { ym: "2025-06", deb: 12574327.77, cre: 13163216.25 },
+  { ym: "2025-07", deb: 15913195.24, cre: 14294443.63 },
+  { ym: "2025-08", deb: 17666558.27, cre: 16099311.72 },
+  { ym: "2025-09", deb: 26078054.80, cre: 23042998.56 },
+  { ym: "2025-10", deb: 21845887.13, cre: 23061883.19 },
+  { ym: "2025-11", deb: 19113275.91, cre: 19196285.72 },
+  { ym: "2025-12", deb: 13117723.00, cre: 22555947.28 },
+  { ym: "2026-01", deb: 11344347.41, cre: 10957978.27 },
+  { ym: "2026-02", deb: 8757083.89, cre: 6599607.58 },
+  { ym: "2026-03", deb: 11552421.19, cre: 12731511.55 },
+  { ym: "2026-04", deb: 15056225.68, cre: 9758088.89 },
+  { ym: "2026-05", deb: 10946622.97, cre: 11352790.07 }
+];
 const TBANK_TOKEN = process.env.TBANK_API_TOKEN || "";
 let _buyouts, _buyoutsRunning = false;
 function loadBuyouts() { if (_buyouts !== undefined) return _buyouts; try { _buyouts = JSON.parse(fs.readFileSync(BUYOUTS_FILE, "utf8")); } catch (_) { _buyouts = null; } return _buyouts; }
@@ -4683,17 +4707,18 @@ async function runBuyoutsCheck(trigger) {
     const ops = await tbFetchOps(acc, fromISO, tillISO);
     tbAggregateMonths(ops, bankMonths);
     const sheetMonths = await buyoutsSheetMonths().catch((e) => { console.error("BUYOUTS sheet:", e.message); return (prev && prev.sheet) || {}; });
-    // «Заморожено»: до июня 2026 ВКЛЮЧИТЕЛЬНО — сверенные Андреем итоги его таблички
-    // (принято за истину, 02.07.2026); с июля 2026 — ведём сами по банку (API).
-    // Банковская история до 07.2026 в frozen НЕ входит (там расхождения периметра:
-    // старт учёта май-2023, июльские хвосты и т.п.) — только сид + свежие месяцы.
-    const SEED_DEB = 407009157.73, SEED_CRE = 385814877.58, SEED_UPTO = "2026-06";
-    let frozenDeb = SEED_DEB, frozenCre = SEED_CRE;
-    for (const ym in bankMonths) { if (ym > SEED_UPTO) { frozenDeb += bankMonths[ym].deb; frozenCre += bankMonths[ym].cre; } }
+    // «Заморожено»: по МАЙ 2026 включительно — помесячный сид из сверенной таблички
+    // Андрея (истина); с ИЮНЯ 2026 — по банку (июнь перепроверен: банк == его строка
+    // до копейки). Банковская история до 06.2026 в frozen НЕ входит (расхождения
+    // периметра: его учёт с мая-2023) — только сид + банковские месяцы.
+    let frozenDeb = 0, frozenCre = 0;
+    for (const s of BUYOUTS_SEED) { frozenDeb += s.deb; frozenCre += s.cre; }
+    for (const ym in bankMonths) { if (ym > BUYOUTS_SEED_UPTO) { frozenDeb += bankMonths[ym].deb; frozenCre += bankMonths[ym].cre; } }
     const result = {
       ts: Date.now(), trigger: trigger || "cron", account: "***" + String(acc).slice(-4),
       fullScanAt: (prev && prev.fullScanAt) || Date.now(),
       bank: bankMonths, sheet: sheetMonths,
+      seed: BUYOUTS_SEED, seedUpto: BUYOUTS_SEED_UPTO,
       frozen: Math.round((frozenDeb - frozenCre) * 100) / 100,
       frozenDeb: Math.round(frozenDeb * 100) / 100, frozenCre: Math.round(frozenCre * 100) / 100,
       opsFetched: ops.length, durationMs: Date.now() - t0

@@ -2896,33 +2896,77 @@
             if (j.running) pollUntilFresh(0);
             return;
           }
-          // Плитка «заморожено» + помесячная таблица (2026+), банк vs таблица.
-          const bank = d.bank || {}, sheet = d.sheet || {};
-          const yms = Array.from(new Set([].concat(Object.keys(bank), Object.keys(sheet)))).filter((ym) => ym >= "2026-01").sort();
-          const rows = yms.map((ym) => {
+          // ДВЕ СЕКЦИИ (по просьбе Андрея 02.07):
+          //  1) «Движение денег» — его табличка: сид (сверено, по май 2026) + банк (июнь+);
+          //     видимы текущий+прошлый месяц, остальное — «Показать историю». Тут же «заморожено».
+          //  2) «Сверка с гугл-таблицей» — по месяцам; до июня «✓ сверено вручную», июнь+ живая Δ;
+          //     видимы текущий+прошлый месяц, остальное — «Показать историю».
+          const bank = d.bank || {}, sheet = d.sheet || {}, seed = d.seed || [], seedUpto = d.seedUpto || "2026-05";
+          const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
+          const curYm = nowMsk.getUTCFullYear() + "-" + String(nowMsk.getUTCMonth() + 1).padStart(2, "0");
+          const prevYm = (function () { const dP = new Date(Date.UTC(nowMsk.getUTCFullYear(), nowMsk.getUTCMonth() - 1, 1)); return dP.getUTCFullYear() + "-" + String(dP.getUTCMonth() + 1).padStart(2, "0"); })();
+          const td = (html, extra) => '<td style="padding:7px 8px;white-space:nowrap;' + (extra || "") + '">' + html + '</td>';
+          const badge = (txt, col, bg) => '<span style="font-size:10px;font-weight:700;color:' + col + ';background:' + bg + ';border-radius:6px;padding:2px 6px;">' + txt + '</span>';
+          // ── Секция 1: движение денег (сид + банк) ──
+          const bankYms = Object.keys(bank).filter((ym) => ym > seedUpto).sort();
+          const moveRows = [];
+          seed.forEach((s) => moveRows.push({ name: s.label || ymName(s.ym), ym: s.ym || "", deb: s.deb, cre: s.cre, verified: true }));
+          bankYms.forEach((ym) => moveRows.push({ name: ymName(ym), ym: ym, deb: (bank[ym] || {}).deb || 0, cre: (bank[ym] || {}).cre || 0, verified: false }));
+          const moveHtml = moveRows.map((r) => {
+            const recent = r.ym && r.ym >= prevYm;
+            return '<tr class="' + (recent ? "" : "buyoutsHist1") + '" style="border-top:1px solid #f0eef5;' + (recent ? "" : "display:none;") + '">'
+              + td('<b style="color:#1d2330;">' + escapeHtml(r.name) + '</b> ' + (r.verified ? badge("сверено", "#2c7a43", "#e3f3e7") : badge("банк", "#3a6ea5", "#e8f1f9")))
+              + td(money2(r.deb)) + td(money2(r.cre)) + '</tr>';
+          }).join("");
+          // ── Секция 2: сверка с гугл-таблицей ──
+          const cmpYms = Array.from(new Set([].concat(Object.keys(bank), Object.keys(sheet)))).filter((ym) => ym >= "2026-01").sort();
+          const cmpHtml = cmpYms.map((ym) => {
+            const recent = ym >= prevYm;
+            const trOpen = '<tr class="' + (recent ? "" : "buyoutsHist2") + '" style="border-top:1px solid #f0eef5;vertical-align:top;' + (recent ? "" : "display:none;") + '">';
+            if (ym <= seedUpto) {
+              return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>')
+                + '<td colspan="2" style="padding:7px 8px;color:#2c7a43;font-weight:600;">✓ сверено вручную — всё ок</td></tr>';
+            }
             const b = bank[ym] || {}, s = sheet[ym] || {};
             const cell = (bv, sv) => {
               if (bv == null && sv == null) return '<td style="padding:7px 8px;color:#9aa0ab;">—</td>';
               const delta = (bv || 0) - (sv || 0);
               const ok = Math.abs(delta) < 1;
-              const dStr = ok ? "✓" : ((delta > 0 ? "+" : "−") + Math.abs(Math.round(delta)).toLocaleString("ru-RU"));
-              return '<td style="padding:7px 8px;white-space:nowrap;">' + money2(bv) + '<br><span style="color:#8a90a0;">табл. ' + money2(sv) + '</span><br><b style="color:' + (ok ? "#2c7a43" : "#b8602a") + ';">' + dStr + '</b></td>';
+              const dStr = ok ? "✓ сходится" : ("Δ " + (delta > 0 ? "+" : "−") + Math.abs(Math.round(delta)).toLocaleString("ru-RU") + " ₽");
+              return td(money2(bv) + '<br><span style="color:#8a90a0;">табл. ' + money2(sv) + '</span><br><b style="color:' + (ok ? "#2c7a43" : "#b8602a") + ';">' + dStr + '</b>');
             };
-            return '<tr style="border-top:1px solid #f0eef5;vertical-align:top;"><td style="padding:7px 8px;font-weight:600;color:#1d2330;white-space:nowrap;">' + ymName(ym) + '</td>' + cell(b.deb, s.deb) + cell(b.cre, s.cre) + '</tr>';
+            return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>') + cell(b.deb, s.deb) + cell(b.cre, s.cre) + '</tr>';
           }).join("");
           const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+          const histBtn = (id, n) => (n > 0 ? '<button type="button" id="' + id + '" class="vsc-dayrev-refresh" style="margin-top:8px;background:#eef2f7;color:#3a4356;border-color:#d7dce4;">Показать историю (' + n + ')</button>' : "");
           box.innerHTML =
-            '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:stretch;margin-bottom:12px;">'
+            '<div class="vsc-chart-h" style="margin-bottom:8px;">1 · Движение денег в выкупах (Turkish + OneTwoTrip, р/с)</div>'
+            + '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:stretch;margin-bottom:10px;">'
             + '<div class="vsc-tile" style="flex:1;min-width:230px;background:#fdf6ec;border-color:#f0dfc0;">'
-            +   '<div class="vsc-tile-l">Заморожено в выкупах</div>'
+            +   '<div class="vsc-tile-l">Заморожено в выкупах сейчас</div>'
             +   '<div class="vsc-tile-v">' + money(d.frozen) + '</div>'
-            +   '<div class="vsc-tile-s">расход ' + money(d.frozenDeb) + ' − приход ' + money(d.frozenCre) + ' · по июнь 2026 — сверено вручную, далее банк · счёт ' + escapeHtml(d.account || "") + '</div>'
+            +   '<div class="vsc-tile-s">расход ' + money(d.frozenDeb) + ' − приход ' + money(d.frozenCre) + ' · по май 2026 — сверено, с июня — банк · счёт ' + escapeHtml(d.account || "") + '</div>'
             + '</div></div>'
             + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
-            + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 8px;">Месяц</th><th style="text-align:left;padding:7px 8px;">Расход: банк / таблица / Δ</th><th style="text-align:left;padding:7px 8px;">Приход: банк / таблица / Δ</th></tr></thead>'
-            + '<tbody>' + rows + '</tbody></table></div>'
-            + '<div style="font-size:11.5px;color:#8a90a0;margin-top:8px;">Банк: только проведённые операции (без холдов), месяц — по дате авторизации; правила совпадают с ручной сверкой. Таблица: вкладки «Авиа»+«Отель», только «Расчетный счет». Обновляется в 09:00 и 16:00 МСК · на ' + escapeHtml(upd) + '. <button type="button" id="buyoutsRun" class="vsc-dayrev-refresh" style="margin-top:8px;">↻ Обновить</button></div>';
+            + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 8px;">Период</th><th style="text-align:left;padding:7px 8px;">Расход</th><th style="text-align:left;padding:7px 8px;">Приход</th></tr></thead>'
+            + '<tbody>' + moveHtml + '</tbody></table></div>'
+            + histBtn("buyoutsHistBtn1", moveRows.filter((r) => !(r.ym && r.ym >= prevYm)).length)
+            + '<div class="vsc-chart-h" style="margin:18px 0 8px;">2 · Сверка с гугл-таблицей выкупов (Авиа + Отель, только р/с)</div>'
+            + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
+            + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 8px;">Месяц</th><th style="text-align:left;padding:7px 8px;">Расход: банк / таблица</th><th style="text-align:left;padding:7px 8px;">Приход: банк / таблица</th></tr></thead>'
+            + '<tbody>' + cmpHtml + '</tbody></table></div>'
+            + histBtn("buyoutsHistBtn2", cmpYms.filter((ym) => ym < prevYm).length)
+            + '<div style="font-size:11.5px;color:#8a90a0;margin-top:10px;">Банк: только проведённые операции (без холдов), месяц — по дате авторизации. Таблица: вкладки «Авиа»+«Отель», только «Расчетный счет». Обновляется ежедневно в 00:10 МСК · на ' + escapeHtml(upd) + '. <button type="button" id="buyoutsRun" class="vsc-dayrev-refresh" style="margin-top:8px;">↻ Обновить</button></div>';
           const b = box.querySelector("#buyoutsRun"); if (b) b.addEventListener("click", runNow);
+          [["buyoutsHistBtn1", "buyoutsHist1"], ["buyoutsHistBtn2", "buyoutsHist2"]].forEach(([btnId, cls]) => {
+            const btn = box.querySelector("#" + btnId);
+            if (btn) btn.addEventListener("click", () => {
+              const hidden = box.querySelector("." + cls) && box.querySelector("." + cls).style.display === "none";
+              box.querySelectorAll("." + cls).forEach((tr) => { tr.style.display = hidden ? "" : "none"; });
+              btn.textContent = hidden ? "Скрыть историю" : btn.textContent.replace("Скрыть историю", "Показать историю");
+              if (!hidden) btn.textContent = "Показать историю (" + box.querySelectorAll("." + cls).length + ")";
+            });
+          });
         };
         const pollUntilFresh = (prevTs) => {
           let tries = 0;
