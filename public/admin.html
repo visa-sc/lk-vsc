@@ -2951,6 +2951,17 @@
           box.appendChild(wh);
           d.weeks.forEach((w) => {
             const c = document.createElement("div"); c.className = "vsc-chart";
+            // Будущая неделя, у которой предыдущая ещё не закрыта: прогноз не строим
+            // (цепочка «по итогам предыдущей»), показываем плейсхолдер без чисел.
+            if (w.pending) {
+              c.innerHTML =
+                '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">' +
+                '<div style="font-weight:700;color:#9aa0ab;">' + escapeHtml(w.label) + (w.partial ? ' <span style="font-weight:500;color:#b6bbc6;font-size:12px;">· ' + w.days + ' дн.</span>' : '') + '</div>' +
+                '</div>' +
+                '<div style="margin-top:6px;font-size:13px;color:#9aa0ab;">Прогноз появится по итогам предыдущей недели (' + escapeHtml(shortM(w.basis || "").replace(/^ждёт итогов\s*/, "")) + ' ещё не закрыта).</div>';
+              box.appendChild(c);
+              return;
+            }
             const pp = (w.periodProfit != null ? w.periodProfit : w.profitWeek);
             const wp = (pp || 0) >= 0; const wr = w.rates || {};
             const daysTag = (w.partial ? (' · ' + w.days + ' дн.') : '') + (w.carried ? ' · перенос ставок' : '');

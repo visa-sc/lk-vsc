@@ -4456,7 +4456,16 @@ async function vscBuildForecast() {
     else {
       const pw = allW[idx - 1];
       if (hasRates(pw)) { basis = pw; basisLabel = pw.label; }
-      else { basis = lastActual; basisLabel = (lastActual.label || ("итоги " + prev.name)) + " (перенос)"; carried = true; }
+      else {
+        // Итогов ПРЕДЫДУЩЕЙ недели ещё нет (она будущая/не закрыта) — по логике
+        // «каждая неделя по итогам предыдущей» прогноз этой недели пока НЕ строим
+        // и выдуманные ставки не переносим (раньше «перенос» последних известных
+        // ставок рисовал числа, которых цепочка не подтверждает). Показываем
+        // плейсхолдер — прогноз появится сам, как только предыдущая неделя
+        // закроется в таблице и её Total станет вменяемым.
+        weeks.push({ label: w.label, days: days, partial: days < 7, pending: true, basis: "ждёт итогов " + pw.label });
+        return;
+      }
     }
     const p = proj(basis);
     if (p) {
