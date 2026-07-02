@@ -4597,17 +4597,23 @@ async function tbFetchOps(acc, fromISO, tillISO) {
   return out;
 }
 // Помесячная агрегация банковских операций по правилам сверки (см. шапку блока).
+// Проведённые (Transaction) → deb/cre; ХОЛДЫ (Authorization, «с часиками») копим
+// отдельно в holdDeb/holdCre: в сверку не входят, но объясняют расхождение с
+// гугл-таблицей (сотрудники вносят покупку сразу, а банк проводит её позже).
 function tbAggregateMonths(ops, into) {
   const months = into || {};
   for (const o of ops) {
-    if (String(o.operationStatus) !== "Transaction") continue;
+    const st = String(o.operationStatus);
+    if (st !== "Transaction" && st !== "Authorization") continue;
     const txt = ((o.description || "") + " " + ((o.merch && o.merch.name) || "") + " " + (o.payPurpose || ""));
     if (!BUYOUTS_MERCH_RE.test(txt)) continue;
     const ym = String(o.authorizationDate || o.operationDate || "").slice(0, 7);
     if (!/^\d{4}-\d{2}$/.test(ym)) continue;
     const amt = +o.accountAmount || 0;
-    const m = months[ym] || (months[ym] = { deb: 0, cre: 0 });
-    if (String(o.typeOfOperation).toLowerCase() === "credit") m.cre += amt; else m.deb += amt;
+    const m = months[ym] || (months[ym] = { deb: 0, cre: 0, holdDeb: 0, holdCre: 0 });
+    const isCredit = String(o.typeOfOperation).toLowerCase() === "credit";
+    if (st === "Authorization") { if (isCredit) m.holdCre = (m.holdCre || 0) + amt; else m.holdDeb = (m.holdDeb || 0) + amt; }
+    else { if (isCredit) m.cre += amt; else m.deb += amt; }
   }
   return months;
 }
@@ -4651,15 +4657,14 @@ async function buyoutsSheetMonths() {
         if (String(c[k]).toLowerCase().indexOf("кредитка или рс") >= 0) {
           hdrRow = rn;
           const findCol = (pred) => { for (const j in c) { if (pred(String(c[j]).toLowerCase().trim())) return +j; } return -1; };
-          // Методика выверена по сверенным месяцам Андрея (янв–май Δ=0):
-          //  • расход — по «дата АВТОРИЗАЦИИ транзакции» (не «дата покупки»: банк относит
-          //    операцию к месяцу авторизации, и ручная сверка бьётся именно так);
+          // Методика (по указаниям Андрея, 02.07):
+          //  • расход — Σ «сумма снятия (стоимость)» по месяцу «ДАТА ПОКУПКИ» (его ручная
+          //    методика; история ≤ мая 2026 в UI помечена «сверено вручную» и не пересчитывается);
           //  • приход — «сумма возврата (стоимость…)» СТРОГО с начала строки (НЕ «будущая
           //    сумма возврата»!) по месяцу «дата поступления возврата».
-          const authCol = findCol((s) => s.indexOf("дата авторизации") >= 0);
           C = {
             rs: +k,
-            buyDate: authCol >= 0 ? authCol : findCol((s) => s.indexOf("дата покупки") >= 0),
+            buyDate: findCol((s) => s.indexOf("дата покупки") >= 0),
             buySum: findCol((s) => s.indexOf("сумма снятия") >= 0),
             retDate: findCol((s) => s.indexOf("дата поступления возврата") >= 0),
             retSum: findCol((s) => s.indexOf("сумма возврата") === 0)

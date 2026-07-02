@@ -2259,7 +2259,7 @@
           return Array.from(buckets.values())
             .filter((b) => b.mon <= today)               // недели, которые уже начались
             .sort((a, b) => a.mon - b.mon)
-            .map((b) => { const k = aggBlocks(b.blocks); k.label = b.label; return { x: b.label, x2: b.end, k: k, range: b.range }; });
+            .map((b) => { const k = aggBlocks(b.blocks); k.label = b.label; return { x: b.label, x2: b.end, k: k, range: b.range, monTs: b.mon.getTime() }; });
         }
         // День: ПОСЛЕДНИЕ 90 заполненных дней по ВСЕМ месяцам (а не только текущий месяц),
         // строго ДО сегодня (показываем вчерашний, не сегодня). Подписываем день недели +
@@ -2350,6 +2350,89 @@
           bars.style.setProperty("--vsc-barw", Math.min(26, Math.max(12, colW - 8)) + "px");
         }
         wrap.appendChild(bars);
+        return wrap;
+      }
+      // ── Линейный график для «Неделя»/«День» (по просьбе Андрея, 02.07): компактный,
+      // весь ряд на одном экране (и на телефоне), ось Y — 3 ориентира, ось X — разреженные
+      // подписи без нахлёста; наведение мыши / ведение пальцем — маркер + тултип с точным
+      // периодом и значением (+Δ к пред.). ТОЛЬКО отображение — данные и расчёты те же,
+      // что шли в столбцы (series от vscBuildSeries). Месяц/год остаются столбцами.
+      function vscLineChart(kpi, series) {
+        const wrap = document.createElement("div"); wrap.className = "vsc-chart";
+        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.innerHTML = kpi.labelHtml || escapeHtml(kpi.label);
+        wrap.appendChild(h);
+        const pts = [];
+        series.forEach((s) => { const v = (s.k && s.k[kpi.key] != null && !isNaN(s.k[kpi.key])) ? +s.k[kpi.key] : null; if (v != null) pts.push({ s: s, v: v }); });
+        if (!pts.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных для выбранного периода."; wrap.appendChild(e); return wrap; }
+        const VW = 1000, VH = 160, PT = 12, PB = 148, PL = 8, PR = 8; // виртуальная ширина; высота 1:1 к px
+        let vMin = Math.min.apply(null, pts.map((p) => p.v)), vMax = Math.max.apply(null, pts.map((p) => p.v));
+        if (kpi.fmt !== "signed" && vMin > 0) vMin = Math.min(vMin, vMin * 0.95); // чуть воздуха снизу
+        if (vMax === vMin) { vMax += 1; vMin -= 1; }
+        const X = (i) => PL + (pts.length === 1 ? (VW - PL - PR) / 2 : i * (VW - PL - PR) / (pts.length - 1));
+        const Y = (v) => PT + (1 - (v - vMin) / (vMax - vMin)) * (PB - PT);
+        // компактный формат для оси Y
+        const fmtAxis = (v) => {
+          if (kpi.fmt === "pct") return (Math.round(v * 10) / 10).toLocaleString("ru-RU") + "%";
+          const a = Math.abs(v), sgn = v < 0 ? "−" : "";
+          if (a >= 1e6) return sgn + (Math.round(a / 1e5) / 10).toLocaleString("ru-RU") + " млн";
+          if (a >= 1e4) return sgn + Math.round(a / 1e3).toLocaleString("ru-RU") + " тыс";
+          return sgn + Math.round(a).toLocaleString("ru-RU");
+        };
+        const box = document.createElement("div");
+        box.style.cssText = "position:relative;height:" + VH + "px;touch-action:pan-y;";
+        const gridLine = (y, dash) => '<line x1="0" x2="' + VW + '" y1="' + y + '" y2="' + y + '" stroke="#e9edf3" stroke-width="1"' + (dash ? ' stroke-dasharray="4 4" stroke="#c9cfda"' : "") + ' vector-effect="non-scaling-stroke"/>';
+        let grid = gridLine(PT) + gridLine((PT + PB) / 2) + gridLine(PB);
+        if (vMin < 0 && vMax > 0) grid += gridLine(Y(0), true); // ось нуля для знаковых
+        const linePts = pts.map((p, i) => X(i).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" ");
+        box.innerHTML =
+          '<svg width="100%" height="' + VH + '" viewBox="0 0 ' + VW + ' ' + VH + '" preserveAspectRatio="none" style="display:block;">'
+          + grid
+          + '<polyline points="' + linePts + '" fill="none" stroke="#4a90d9" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'
+          + '</svg>'
+          + '<div style="position:absolute;left:6px;top:2px;font-size:9.5px;color:#9aa0ab;background:rgba(255,255,255,.75);padding:0 3px;border-radius:4px;">' + fmtAxis(vMax) + '</div>'
+          + '<div style="position:absolute;left:6px;top:' + ((PT + PB) / 2 - 7) + 'px;font-size:9.5px;color:#9aa0ab;background:rgba(255,255,255,.75);padding:0 3px;border-radius:4px;">' + fmtAxis((vMax + vMin) / 2) + '</div>'
+          + '<div style="position:absolute;left:6px;top:' + (PB - 6) + 'px;font-size:9.5px;color:#9aa0ab;background:rgba(255,255,255,.75);padding:0 3px;border-radius:4px;">' + fmtAxis(vMin) + '</div>'
+          + '<div class="vsc-line-marker" style="position:absolute;width:9px;height:9px;border-radius:50%;background:#fff;border:2.5px solid #3589BD;display:none;transform:translate(-50%,-50%);pointer-events:none;"></div>'
+          + '<div class="vsc-line-tip" style="position:absolute;display:none;background:#1d2433;color:#fff;font-size:11px;line-height:1.45;padding:6px 9px;border-radius:8px;white-space:nowrap;pointer-events:none;z-index:5;box-shadow:0 4px 14px rgba(20,30,50,.25);"></div>';
+        wrap.appendChild(box);
+        // Ось X: разреженные подписи (≤6), равномерно, без нахлёста.
+        const xAxis = document.createElement("div");
+        xAxis.style.cssText = "display:flex;justify-content:space-between;font-size:9.5px;color:#9aa0ab;margin-top:3px;";
+        const nLbl = Math.min(6, pts.length);
+        const lblIdx = []; for (let j = 0; j < nLbl; j++) lblIdx.push(Math.round(j * (pts.length - 1) / Math.max(1, nLbl - 1)));
+        xAxis.innerHTML = Array.from(new Set(lblIdx)).map((i) => '<span>' + escapeHtml(pts[i].s.x) + '</span>').join("");
+        wrap.appendChild(xAxis);
+        // Интерактив: ближайшая точка по X → маркер + тултип (мышь и палец).
+        const marker = box.querySelector(".vsc-line-marker"), tip = box.querySelector(".vsc-line-tip");
+        const showAt = (clientX) => {
+          const r = box.getBoundingClientRect(); if (!r.width) return;
+          const relVx = (clientX - r.left) / r.width * VW;
+          let best = 0, bd = Infinity;
+          for (let i = 0; i < pts.length; i++) { const d = Math.abs(X(i) - relVx); if (d < bd) { bd = d; best = i; } }
+          const p = pts[best];
+          const px = X(best) / VW * r.width, py = Y(p.v);
+          marker.style.display = "block"; marker.style.left = px + "px"; marker.style.top = py + "px";
+          const label = p.s.range || (p.s.x + (p.s.wd ? " · " + p.s.wd : ""));
+          let dHtml = "";
+          if (best > 0) {
+            const pv = pts[best - 1].v;
+            if (pv !== 0 && pv != null) {
+              const pct = Math.round((p.v - pv) / Math.abs(pv) * 100);
+              if (pct !== 0) { const good = kpi.good === -1 ? (pct < 0) : (pct > 0); dHtml = ' <span style="color:' + (kpi.good === 0 ? "#c8cfdd" : good ? "#7fd39a" : "#f2a1ad") + ';">' + (pct > 0 ? "▲" : "▼") + Math.abs(pct) + "%</span>"; }
+            }
+          }
+          tip.innerHTML = '<span style="color:#aab3c5;">' + escapeHtml(label) + '</span><br><b>' + vscFmt(p.v, kpi.fmt) + '</b>' + dHtml;
+          tip.style.display = "block";
+          const tw = tip.offsetWidth;
+          tip.style.left = Math.max(2, Math.min(r.width - tw - 2, px - tw / 2)) + "px";
+          tip.style.top = (py - tip.offsetHeight - 12 < 0 ? py + 12 : py - tip.offsetHeight - 12) + "px";
+        };
+        const hide = () => { marker.style.display = "none"; tip.style.display = "none"; };
+        box.addEventListener("mousemove", (e) => showAt(e.clientX));
+        box.addEventListener("mouseleave", hide);
+        box.addEventListener("touchstart", (e) => { if (e.touches && e.touches[0]) showAt(e.touches[0].clientX); }, { passive: true });
+        box.addEventListener("touchmove", (e) => { if (e.touches && e.touches[0]) showAt(e.touches[0].clientX); }, { passive: true });
+        box.addEventListener("touchend", hide);
         return wrap;
       }
       // Диверг-график отзывов: для каждого месяца позитив — зелёным столбцом вверх,
@@ -2634,9 +2717,26 @@
           curSub = curM ? curM.name : "";
           if (curM) { const pIdx = vscPrevFilledIdx(vscMonthIdx); cmpRes = vscMonthCompare(curM, pIdx >= 0 ? vscData.months[pIdx] : null).res; }
         } else {
-          curSub = (series[vscCurIdx] || {}).x || "";
-          const _ck = (series[vscCurIdx] || {}).k;
-          if (vscGran === "day" && _ck && _ck.weekday) curSub += " · в сравнении с прошлым " + _ck.weekday;
+          const _cs = series[vscCurIdx] || {};
+          const _ck = _cs.k;
+          if (vscGran === "day") {
+            // Подпись дня: дата → «Вчера» (если показывается вчерашний день), день недели —
+            // в творительном падеже с верным родом («по сравнению с прошлой средой»).
+            // ТОЛЬКО подпись — сами сравнения (−7 дней) не меняются.
+            const WD_INSTR = { "понедельник": "прошлым понедельником", "вторник": "прошлым вторником", "среда": "прошлой средой", "четверг": "прошлым четвергом", "пятница": "прошлой пятницей", "суббота": "прошлой субботой", "воскресенье": "прошлым воскресеньем" };
+            const dDate = _ck && _ck.date ? vscParseDMY(_ck.date) : null;
+            const yest = new Date(); yest.setHours(0, 0, 0, 0); yest.setDate(yest.getDate() - 1);
+            const dayLbl = (dDate && dDate.getTime() === yest.getTime()) ? "Вчера" : (_cs.x || "");
+            const wdKey = _ck && _ck.weekday ? String(_ck.weekday).trim().toLowerCase() : "";
+            curSub = dayLbl + (WD_INSTR[wdKey] ? " · по сравнению с " + WD_INSTR[wdKey] : "");
+          } else {
+            // Подпись недели: «Текущая неделя 29.06–05.07» / «Прошлая неделя …» (если новая
+            // неделя ещё без данных и показывается предыдущая) / «Неделя …» для более старых.
+            const _mondayOf = (d) => { const x = new Date(d.getTime()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); x.setHours(0, 0, 0, 0); return x; };
+            const monNow = _mondayOf(new Date()).getTime();
+            const kind = (_cs.monTs === monNow) ? "Текущая неделя" : ((_cs.monTs === monNow - 7 * 86400000) ? "Прошлая неделя" : "Неделя");
+            curSub = kind + " " + (_cs.range || _cs.x || "");
+          }
         }
         const vscCurM = (vscData.months || [])[vscMonthIdx] || {};
         const vscAllDays = (vscData.months || []).reduce((a, m) => a.concat(m.days || []), []);
@@ -2771,11 +2871,13 @@
         chartsH.textContent = "Динамика — " + ({ year: "по месяцам", month: "по месяцам", week: "по неделям", day: "по дням (последние 90)" })[vscGran];
         vscContent.appendChild(chartsH);
         if (!series.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных за выбранный месяц."; vscContent.appendChild(e); }
-        else kpisForView.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, series, { compact: vscGran === "week" || vscGran === "day" })));
+        // «Неделя»/«День» — компактные ЛИНЕЙНЫЕ графики (весь ряд на экране, тултип по
+        // наведению/пальцу); «Месяц»/«Год» — столбцы, как раньше. Данные series те же.
+        else kpisForView.forEach((kpi) => vscContent.appendChild((vscGran === "week" || vscGran === "day") ? vscLineChart(kpi, series) : vscBarChart(kpi, series)));
         // График «Конверсия из трафика в лид» — во ВСЕХ разрезах (год/месяц/неделя/день).
         // series уже несёт trafConv в k: день — строка дня; неделя — Total/склейка огрызков;
         // месяц/год — Grand total месяца. Та же логика, что у остальных графиков.
-        if (series.length) vscContent.appendChild(vscBarChart(VSC_TRAFCONV, series, { compact: vscGran === "week" || vscGran === "day" }));
+        if (series.length) vscContent.appendChild((vscGran === "week" || vscGran === "day") ? vscLineChart(VSC_TRAFCONV, series) : vscBarChart(VSC_TRAFCONV, series));
         // Прибыль и рентабельность по месяцам — графики в «Год» и «Месяц».
         // Скрываем для руководителя с ограничением hideProfit (напр. Андрей Петров).
         if ((vscGran === "month" || vscGran === "year") && !vscHideProfit()) {
@@ -2912,6 +3014,7 @@
           const moveRows = [];
           seed.forEach((s) => moveRows.push({ name: s.label || ymName(s.ym), ym: s.ym || "", deb: s.deb, cre: s.cre, verified: true }));
           bankYms.forEach((ym) => moveRows.push({ name: ymName(ym), ym: ym, deb: (bank[ym] || {}).deb || 0, cre: (bank[ym] || {}).cre || 0, verified: false }));
+          moveRows.reverse(); // свежий месяц СВЕРХУ (и в истории тоже)
           const moveHtml = moveRows.map((r) => {
             const recent = r.ym && r.ym >= prevYm;
             return '<tr class="' + (recent ? "" : "buyoutsHist1") + '" style="border-top:1px solid #f0eef5;' + (recent ? "" : "display:none;") + '">'
@@ -2919,7 +3022,7 @@
               + td(money2(r.deb)) + td(money2(r.cre)) + '</tr>';
           }).join("");
           // ── Секция 2: сверка с гугл-таблицей ──
-          const cmpYms = Array.from(new Set([].concat(Object.keys(bank), Object.keys(sheet)))).filter((ym) => ym >= "2026-01").sort();
+          const cmpYms = Array.from(new Set([].concat(Object.keys(bank), Object.keys(sheet)))).filter((ym) => ym >= "2026-01").sort().reverse(); // свежий месяц СВЕРХУ
           const cmpHtml = cmpYms.map((ym) => {
             const recent = ym >= prevYm;
             const trOpen = '<tr class="' + (recent ? "" : "buyoutsHist2") + '" style="border-top:1px solid #f0eef5;vertical-align:top;' + (recent ? "" : "display:none;") + '">';
@@ -2928,14 +3031,24 @@
                 + '<td colspan="2" style="padding:7px 8px;color:#2c7a43;font-weight:600;">✓ сверено вручную — всё ок</td></tr>';
             }
             const b = bank[ym] || {}, s = sheet[ym] || {};
-            const cell = (bv, sv) => {
+            // hold — сумма операций «на холде» (авторизованы, банком ещё не проведены).
+            // Если таблица БОЛЬШЕ банка примерно на сумму холдов — поясняем: сотрудники
+            // операции уже внесли, а по р/с они ещё не прошли; сойдётся после проведения.
+            const cell = (bv, sv, hold) => {
               if (bv == null && sv == null) return '<td style="padding:7px 8px;color:#9aa0ab;">—</td>';
               const delta = (bv || 0) - (sv || 0);
               const ok = Math.abs(delta) < 1;
               const dStr = ok ? "✓ сходится" : ("Δ " + (delta > 0 ? "+" : "−") + Math.abs(Math.round(delta)).toLocaleString("ru-RU") + " ₽");
-              return td(money2(bv) + '<br><span style="color:#8a90a0;">табл. ' + money2(sv) + '</span><br><b style="color:' + (ok ? "#2c7a43" : "#b8602a") + ';">' + dStr + '</b>');
+              let holdNote = "";
+              const sheetOver = -delta; // насколько таблица больше банка
+              // Если таблица опережает банк НЕ БОЛЬШЕ, чем сумма холдов месяца — расхождение
+              // объяснимо: операции внесены в таблицу, но банком ещё не проведены («часики»).
+              if (!ok && hold > 0 && sheetOver > 0 && sheetOver <= hold * 1.15) {
+                holdNote = '<br><span style="color:#8a90a0;">Δ укладывается в операции на холде (' + money2(hold) + '): в таблицу внесены, банком ещё не проведены — сойдётся после проведения</span>';
+              }
+              return td(money2(bv) + '<br><span style="color:#8a90a0;">табл. ' + money2(sv) + '</span><br><b style="color:' + (ok ? "#2c7a43" : "#b8602a") + ';">' + dStr + '</b>' + holdNote);
             };
-            return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>') + cell(b.deb, s.deb) + cell(b.cre, s.cre) + '</tr>';
+            return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>') + cell(b.deb, s.deb, b.holdDeb || 0) + cell(b.cre, s.cre, b.holdCre || 0) + '</tr>';
           }).join("");
           const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
           const histBtn = (id, n) => (n > 0 ? '<button type="button" id="' + id + '" class="vsc-dayrev-refresh" style="margin-top:8px;background:#eef2f7;color:#3a4356;border-color:#d7dce4;">Показать историю (' + n + ')</button>' : "");
