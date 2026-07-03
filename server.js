@@ -4502,56 +4502,77 @@ async function vscBuildForecast() {
   const prevWeeksData = (prev.weeks || []).filter(hasRates);
   const straddle = (startStub && prevWeeksData.length)
     ? poolRates(prevWeeksData[prevWeeksData.length - 1], allW[0]) : null;
-  let lastActual = prev.total; // последние известные ФАКТИЧЕСКИЕ ставки (для переноса в будущее)
+  // База прогноза недели должна ЗАКРЫТЬСЯ КАЛЕНДАРНО (по МСК): идущая сейчас неделя даёт
+  // лишь «итоги к дате» — по ним цепочка НЕ строится (ТЗ Андрея 03.07: на 3 июля прогнозируема
+  // только текущая неделя — по итогам июня; неделя 06–12.07 прогнозируется с 6 июля по
+  // закрывшейся стыковой 29.06–05.07, и так далее).
+  const mskNow = new Date(Date.now() + 3 * 3600 * 1000);
+  const mskToday = Date.UTC(mskNow.getUTCFullYear(), mskNow.getUTCMonth(), mskNow.getUTCDate());
+  const curYear = (() => { const mm = /(\d{4})/.exec(String(cur.name || "")); return mm ? +mm[1] : mskNow.getUTCFullYear(); })();
+  const wkClosed = (lbl) => {
+    const m = /(\d{1,2})\.(\d{1,2}).*?(\d{1,2})\.(\d{1,2})/.exec(String(lbl || ""));
+    if (!m) return false;
+    return Date.UTC(curYear, (+m[4]) - 1, +m[3]) < mskToday; // неделя закончилась вчера или раньше
+  };
+  // Подпись стыковой недели «29.06–05.07»: начало хвоста прошлого месяца + конец огрызка текущего.
+  const straddleLbl = (() => {
+    const tail = prevWeeksData.length ? prevWeeksData[prevWeeksData.length - 1] : null;
+    const a = /(\d{1,2}\.\d{1,2})/.exec(String((tail && tail.label) || ""));
+    const b = /(\d{1,2}\.\d{1,2})\s*$/.exec(String((allW[0] && allW[0].label) || ""));
+    return (a && b) ? (a[1] + "–" + b[1]) : String((allW[0] && allW[0].label) || "");
+  })();
   const weeks = [];
+  const pushPending = (w, days, baseLbl, note) => {
+    weeks.push({ label: w.label, days: days, partial: days < 7, pending: true, basis: "ждёт итогов " + baseLbl, pendingNote: note });
+  };
   allW.forEach((w, idx) => {
     const days = wkDays(w.label);
-    let basis, basisLabel, carried = false;
-    if (idx === 0) { basis = prev.total; basisLabel = "итоги " + prev.name; }
-    else if (startStub && idx === 1 && straddle && hasRates(straddle)) { basis = straddle; basisLabel = "стыковая неделя (" + prev.name + " + " + cur.name + ")"; }
-    else {
+    let basis, basisLabel;
+    if (idx === 0) { basis = prev.total; basisLabel = "итоги " + prev.name; } // прошлый месяц закрыт всегда
+    else if (startStub && idx === 1) {
+      // База — «стыковая» неделя (хвост прошлого месяца + стартовый огрызок текущего);
+      // закрывается вместе со стартовым огрызком. Если хвоста прошлого месяца в данных
+      // нет — базой служит сам закрывшийся огрызок.
+      if (!wkClosed(allW[0].label)) { pushPending(w, days, "стыковой недели " + straddleLbl, "она идёт сейчас"); return; }
+      if (straddle && hasRates(straddle)) { basis = straddle; basisLabel = "стыковая неделя " + straddleLbl; }
+      else if (hasRates(allW[0])) { basis = allW[0]; basisLabel = allW[0].label; }
+      else { pushPending(w, days, "стыковой недели " + straddleLbl, "закрыта, итоги ещё не внесены в таблицу"); return; }
+    } else {
       const pw = allW[idx - 1];
+      if (!wkClosed(pw.label)) { pushPending(w, days, pw.label, "она ещё не закончилась"); return; }
       if (hasRates(pw)) { basis = pw; basisLabel = pw.label; }
-      else {
-        // Итогов ПРЕДЫДУЩЕЙ недели ещё нет (она будущая/не закрыта) — по логике
-        // «каждая неделя по итогам предыдущей» прогноз этой недели пока НЕ строим
-        // и выдуманные ставки не переносим (раньше «перенос» последних известных
-        // ставок рисовал числа, которых цепочка не подтверждает). Показываем
-        // плейсхолдер — прогноз появится сам, как только предыдущая неделя
-        // закроется в таблице и её Total станет вменяемым.
-        weeks.push({ label: w.label, days: days, partial: days < 7, pending: true, basis: "ждёт итогов " + pw.label });
-        return;
-      }
+      else { pushPending(w, days, pw.label, "закрыта, итоги ещё не внесены в таблицу"); return; }
     }
     const p = proj(basis);
-    if (p) {
-      const f = days / 7;
-      weeks.push({
-        label: w.label, basis: basisLabel, days: days, partial: days < 7, carried: carried,
-        periodProfit: p.profitWeek * f, periodRevenue: (p.revenue || 0) * days / dim,
-        profitWeek: p.profitWeek, profitMonth: p.profitMonth, revenue: p.revenue,
-        contactsMonth: p.contactsMonth, rates: p.rates
-      });
-    }
-    if (hasRates(w)) lastActual = w; // двигаем «последний факт»
+    if (!p) { pushPending(w, days, basisLabel.replace(/^итоги\s+/, ""), "нет ключевых ставок базы"); return; }
+    const f = days / 7;
+    weeks.push({
+      label: w.label, basis: basisLabel, days: days, partial: days < 7,
+      periodProfit: p.profitWeek * f, periodRevenue: (p.revenue || 0) * days / dim,
+      profitWeek: p.profitWeek, profitMonth: p.profitMonth, revenue: p.revenue,
+      contactsMonth: p.contactsMonth, rates: p.rates
+    });
   });
-  // Headline текущего месяца = проекция по ПУЛЛИРОВАННЫМ (объёмно-взвешенным) ФАКТИЧЕСКИМ
-  // ставкам месяца-к-дате (cur.total). Устойчивее «суммы недель» и не завышается выпуклостью
-  // кривой (это «прибыль при средней ставке», а не «среднее из волатильных недельных прибылей»).
-  // Контакты — реальный ожидаемый таргет (expectedContacts). Недельную детализацию НЕ трогаем.
-  // НО: месяц-к-дате годится как база, только когда в месяце ЗАКРЫЛАСЬ хотя бы одна ПОЛНАЯ
-  // неделя с вменяемыми ставками. Total из первых 2–3 дней проходит hasRates формально
-  // (CPL внесён, 0 < CV < 100), но выборка вырожденная — 03.07 headline прыгнул на ставки
-  // двух дней июля (ASP 22 190 против 14 700 июня — пара дорогих продаж, CV 33% = 1 из 3)
-  // и нарисовал прибыль 4,7 млн при выручке 20,3 млн. До первой закрытой недели месяца
-  // прогнозируем по итогам ПРОШЛОГО месяца — та же дисциплина, что в недельной цепочке.
-  const curMature = allW.some((w) => wkDays(w.label) === 7 && hasRates(w));
-  const useCurRates = curMature && hasRates(cur.total);
-  const poolBasis = useCurRates ? cur.total : prev.total;
-  const month = proj(poolBasis) || proj(prev.total);
+  // Headline месяца = СУММА недельных прогнозов, которые УЖЕ можно построить (ТЗ Андрея
+  // 03.07.2026): в начале месяца это одна неделя (по итогам прошлого месяца), с закрытием
+  // каждой недели добавляется прогноз следующей — цифра дорастает до полного месяца сама.
+  // Никакой экстраполяции месяца по ставкам «к дате»: Total из 2–3 первых дней проходит
+  // hasRates формально, но выборка вырожденная (03.07: ASP 22 190 против 14 700 июня,
+  // CV 33% = 1 из 3) — рисовала фантазийные 4,7 млн прибыли при выручке 20,3 млн.
+  const done = weeks.filter((x) => !x.pending);
+  const wsum = (k) => done.reduce((a, x) => a + (+x[k] || 0), 0);
+  const doneDays = done.reduce((a, x) => a + (x.days || 7), 0);
+  const month = done.length ? {
+    revenue: wsum("periodRevenue"),
+    profitMonth: wsum("periodProfit"),
+    profitWeek: doneDays > 0 ? wsum("periodProfit") / (doneDays / 7) : 0,
+    contactsMonth: expectedContacts
+  } : proj(prev.total);
   return {
-    success: true, tab: fc.tab, monthName: cur.name, basisMonth: prev.name, basisKind: "pooled-month",
-    ratesLabel: useCurRates ? (cur.name + " (к дате)") : prev.name,
+    success: true, tab: fc.tab, monthName: cur.name, basisMonth: prev.name,
+    basisKind: done.length ? "weekly-chain" : "prev-month",
+    ratesLabel: "сумма недельных прогнозов",
+    weeksDone: done.length, weeksTotal: weeks.length,
     persOP, shifts, target, basisContacts: Math.round(target * persOP * shifts), expectedContacts: expectedContacts,
     contactsBasis: "реальный темп месяца + прошлый месяц", fotPct: 22,
     month, baseline: month, weeks

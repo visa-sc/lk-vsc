@@ -3161,7 +3161,8 @@
         head.innerHTML =
           '<div style="font-size:13px;color:#6b7280;font-weight:600;">Прогноз прибыли на ' + escapeHtml(shortM(d.monthName)) + ' · ' + escapeHtml(d.basisKind === "pooled-month" ? "по факт. ставкам месяца (к дате)" : (d.basisKind === "weekly-chain" ? "сумма недельных прогнозов" : ("по итогам " + shortM(d.basisMonth)))) + '</div>' +
           '<div style="font-size:30px;font-weight:800;letter-spacing:-.02em;margin:4px 0 2px;color:' + (pos ? "#2c7a43" : "#b0263a") + ';">' + money(d.month.profitMonth) + '</div>' +
-          '<div style="font-size:12.5px;color:#5a626f;">В пересчёте на неделю: <b>' + money(d.month.profitWeek) + '</b> · прогноз выручки: <b>' + money(d.month.revenue) + '</b></div>';
+          '<div style="font-size:12.5px;color:#5a626f;">В пересчёте на неделю: <b>' + money(d.month.profitWeek) + '</b> · прогноз выручки: <b>' + money(d.month.revenue) + '</b>' +
+          (d.basisKind === "weekly-chain" && d.weeksTotal ? ' · спрогнозировано <b>' + d.weeksDone + ' из ' + d.weeksTotal + '</b> недель' : '') + '</div>';
         box.appendChild(head);
 
         const tiles = document.createElement("div"); tiles.className = "vsc-tiles";
@@ -3180,9 +3181,11 @@
         ass.innerHTML =
           '<div class="vsc-chart-h">Как считается</div>' +
           'Модель и параметры расходов — из вашей таблицы (вкладка «<b>' + escapeHtml(d.tab) + '</b>»), считаются у нас по вашим формулам. ' +
-          '<b>Прогноз на месяц</b> — по пуллированным (объёмно-взвешенным) ФАКТИЧЕСКИМ ставкам месяца-к-дате (' + escapeHtml(shortM(d.ratesLabel || d.monthName)) + '): ASP <b>' + ru(r.asp) + '</b>, CPL <b>' + ru(r.cpl) + '</b>, CV <b>' + (Math.round((r.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((r.upt || 0) * 100) / 100) + '</b>. Это устойчивее «суммы недель» и не завышается за счёт удачных недель. ' +
+          (d.basisKind === "weekly-chain"
+            ? '<b>Прогноз на месяц</b> — сумма недельных прогнозов, которые уже можно построить (<b>' + d.weeksDone + ' из ' + d.weeksTotal + '</b>): каждая неделя прогнозируется по итогам предыдущего ЗАКРЫТОГО периода — первая по итогам ' + escapeHtml(shortM(d.basisMonth)) + ', первая полная по «стыковой» неделе на границе месяцев. Как только очередная неделя закрывается и её итоги появляются в таблице, к сумме добавляется прогноз следующей — цифра дорастает до полного месяца сама, без выдуманных ставок. '
+            : '<b>Прогноз на месяц</b> — по итогам ' + escapeHtml(shortM(d.basisMonth)) + ' (недельных данных текущего месяца ещё нет): ASP <b>' + ru(r.asp) + '</b>, CPL <b>' + ru(r.cpl) + '</b>, CV <b>' + (Math.round((r.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((r.upt || 0) * 100) / 100) + '</b>. ') +
           '<b>Контакт-план ' + ru(d.expectedContacts || d.basisContacts) + '</b>/мес — РЕАЛЬНО ожидаемый набор (темп текущего месяца + динамика прошлого), а не аспирационный план; персонал ОП ' + d.persOP + ', смен ' + d.shifts + '. ФОТ ' + (d.fotPct || 22) + '%. ' +
-          '<b>Недели ниже</b> — отдельная детализация: каждая прогнозируется по итогам предыдущего периода; неполные недели на стыке месяцев пересчитываются /7×дни (все дни рабочие). Сумма недель может не совпадать с прогнозом на месяц — это нормально (разные методы).';
+          '<b>Недели ниже</b> — та же цепочка в детализации; неполные недели на стыке месяцев пересчитываются /7×дни (все дни рабочие).';
         box.appendChild(ass);
 
         if (d.weeks && d.weeks.length) {
@@ -3198,7 +3201,7 @@
                 '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">' +
                 '<div style="font-weight:700;color:#9aa0ab;">' + escapeHtml(w.label) + (w.partial ? ' <span style="font-weight:500;color:#b6bbc6;font-size:12px;">· ' + w.days + ' дн.</span>' : '') + '</div>' +
                 '</div>' +
-                '<div style="margin-top:6px;font-size:13px;color:#9aa0ab;">Прогноз появится по итогам предыдущей недели (' + escapeHtml(shortM(w.basis || "").replace(/^ждёт итогов\s*/, "")) + ' ещё не закрыта).</div>';
+                '<div style="margin-top:6px;font-size:13px;color:#9aa0ab;">Прогноз появится по итогам предыдущего периода: ' + escapeHtml(shortM(w.basis || "").replace(/^ждёт итогов\s*/, "")) + ' — ' + escapeHtml(w.pendingNote || 'ещё не закрыта') + '.</div>';
               box.appendChild(c);
               return;
             }
@@ -3207,7 +3210,7 @@
             const daysTag = (w.partial ? (' · ' + w.days + ' дн.') : '') + (w.carried ? ' · перенос ставок' : '');
             c.innerHTML =
               '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">' +
-              '<div style="font-weight:700;color:#161d45;">' + escapeHtml(w.label) + ' <span style="font-weight:500;color:#8a90a0;font-size:12px;">· по итогам ' + escapeHtml(shortM(w.basis || "")) + daysTag + '</span></div>' +
+              '<div style="font-weight:700;color:#161d45;">' + escapeHtml(w.label) + ' <span style="font-weight:500;color:#8a90a0;font-size:12px;">· по итогам ' + escapeHtml(shortM(w.basis || "").replace(/^итоги\s+/, "")) + daysTag + '</span></div>' +
               '<div style="font-size:11.5px;color:#8a90a0;">ASP ' + ru(wr.asp) + ' · CPL ' + ru(wr.cpl) + ' · CV ' + (Math.round((wr.cv || 0) * 10) / 10) + '% · UPT ' + (Math.round((wr.upt || 0) * 100) / 100) + '</div>' +
               '</div>' +
               '<div style="margin-top:6px;font-size:13px;color:#3a3f4d;">За период' + (w.partial ? (' (' + w.days + ' дн.)') : '') + ': <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(pp) + '</b> · полный месяц по этим ставкам: <b style="color:' + (wp ? "#2c7a43" : "#b0263a") + ';">' + money(w.profitMonth) + '</b></div>';
