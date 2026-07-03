@@ -1694,9 +1694,10 @@
       ];
 
       if (isJp) {
-        // ─── ЯПОНИЯ (карта Насти П., корр. 03.07.2026) ───
-        // Этап 0: ТОЛЬКО внутренний паспорт (загран перенесён на «Первичный сбор»).
-        // Этап 1: обязательные — загран, приглашение+план (цель ≠ Туризм), паспорт
+        // ─── ЯПОНИЯ (карта Насти П., корр. 03.07.2026; решение Андрея 03.07:
+        //   паспорта — как у Шенгена) ───
+        // Этап 0: ОБА паспорта (внутренний + загран), как у Шенгена.
+        // Этап 1: обязательные — приглашение+план (цель ≠ Туризм), паспорт
         //   спонсора, св-во о рождении (<18), авиабилеты (свои), св-во о браке
         //   (в браке + супруг едет); опциональные — справка с работы/учёбы,
         //   ИП-доки (ИНН+ЕГРИП), самозанятость (+налоговые), банковский баланс.
@@ -1706,7 +1707,7 @@
         //   по цели поездки (напр. приглашение при туризме), НЕ запрашиваются.
         // Обязательность задаётся флагами jpRequired/jpOptional/jpForceOptional
         // (читает isFieldOptionalForLead) — этапная карта, не статусная.
-        const jpStage0 = [stage0Blocks[0]]; // только внутренний паспорт
+        const jpStage0 = stage0Blocks.slice(); // оба паспорта, как у Шенгена
         const occ = String(state.jp_occupation || "").trim();
         const jpTripPurpose = String(state.jp_tripPurpose || "").trim();
         const jpMarried = String(state.jp_maritalStatus || "").trim() === "Состою в браке";
@@ -1716,7 +1717,6 @@
 
         function jpConditional(stage2Mode) {
           const list = [];
-          list.push({ field: "mainPassport", label: "Загран. паспорт (в который запрашиваем визу)", jpRequired: true });
           if (jpTripPurpose && jpTripPurpose !== "Туризм") {
             list.push({ field: "invitation", label: "Приглашение", jpRequired: true });
             list.push({ field: "routePlan",  label: "План поездки", jpRequired: true });
@@ -3560,11 +3560,9 @@
 
             applicants.forEach((applicant) => {
               const files = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
-              // Япония (корр. Насти 03.07): на этапе 0 — только внутренний паспорт,
-              // загран уже входит в блоки этапа 1 (не дублируем докачкой).
-              const aIsJp = String(applicant.visaType || "").trim() === "Виза в Японию";
-              const passportBackfill = aIsJp ? stage0PassportBlocks.slice(0, 1) : stage0PassportBlocks;
-              const missingPassports = passportBackfill.filter((b) => !isLabelLoaded(files, b.label));
+              // Обе визы: докачка обоих паспортов этапа 0 (решение Андрея 03.07 —
+              // паспорта у Японии как у Шенгена).
+              const missingPassports = stage0PassportBlocks.filter((b) => !isLabelLoaded(files, b.label));
               const stage1Blocks = buildUploadBlocksConfig(applicant, lead, 1);
               const combined = missingPassports.concat(stage1Blocks);
               if (!combined.length) return;
@@ -3591,10 +3589,13 @@
           } else if (isJp) {
             // Япония (корр. Насти 03.07): на «Подготовке документов» теперь есть
             // ОСНОВНАЯ область — кумулятивный список этапа 2 (все опциональные
-            // этапа 1 стали обязательными, кроме 3-НДФЛ) + докачка внутреннего
-            // паспорта с этапа 0. Подобласть «перед подачей» и свободная зона
-            // сохраняются как раньше.
-            const jpInnerPassportBlock = { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" };
+            // этапа 1 стали обязательными, кроме 3-НДФЛ) + докачка обоих
+            // паспортов с этапа 0 (как у Шенгена, решение Андрея 03.07).
+            // Подобласть «перед подачей» и свободная зона сохраняются как раньше.
+            const jpStage0PassportBlocks = [
+              { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" },
+              { field: "mainPassport",  label: "Загран. паспорт (в который запрашиваем визу)" }
+            ];
             const isLabelLoadedJp = (files, label) => files.some((f) => {
               if (!f.startsWith(label)) return false;
               const next = f.charAt(label.length);
@@ -3606,9 +3607,9 @@
                 if (area) fragment.appendChild(area);
               }
               const files = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
-              const missingInner = isLabelLoadedJp(files, jpInnerPassportBlock.label) ? [] : [jpInnerPassportBlock];
+              const missingPassports = jpStage0PassportBlocks.filter((b) => !isLabelLoadedJp(files, b.label));
               const stage2Blocks = buildUploadBlocksConfig(applicant, lead, 2);
-              const combined = missingInner.concat(stage2Blocks);
+              const combined = missingPassports.concat(stage2Blocks);
               if (combined.length) fragment.appendChild(createDocumentsBlock(applicant, combined, lead));
             });
             fragment.appendChild(createExtraDocBlock(lead));
