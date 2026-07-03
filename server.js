@@ -3488,6 +3488,43 @@ function vscNum(s) {
   return isNaN(v) ? null : v;
 }
 function vscIsDate(s) { return /^\d{2}\.\d{2}\.\d{4}$/.test(String(s || "").trim()); }
+// Гибкая дата: в таблицах встречаются «1.6.2026», «01.6.2026» и т.п. — нормализуем к
+// «ДД.ММ.ГГГГ» (ключи дней KPI-листа именно такие). Не дата → null.
+function vscNormDMY(s) {
+  const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(String(s || "").trim());
+  return m ? (("0" + m[1]).slice(-2) + "." + ("0" + m[2]).slice(-2) + "." + m[3]) : null;
+}
+// Автообнаружение вкладок опубликованной книги (pubhtml → items.push({name, pageUrl&gid})).
+// Возвращает { "Июль 2026": "1604770336", ... }; кэш 6 ч на книгу; сбой → {} (работаем
+// по хардкод-мапе). Так новые помесячные вкладки (август и далее) подхватываются САМИ.
+const _gidDiscCache = {};
+async function vscDiscoverGids(pubBase) {
+  const c = _gidDiscCache[pubBase];
+  if (c && (Date.now() - c.at) < 6 * 3600 * 1000) return c.map;
+  try {
+    const r = await axios.get(pubBase + "html", { timeout: 30000, responseType: "text", transformResponse: [(d) => d] });
+    const map = {};
+    const re = /items\.push\(\{name: "([^"]+)", pageUrl: "[^"]*[?&]gid=(\d+)/g;
+    let m; while ((m = re.exec(String(r.data)))) map[m[1].trim()] = m[2];
+    _gidDiscCache[pubBase] = { at: Date.now(), map };
+    return map;
+  } catch (e) { console.error("vscDiscoverGids:", e.message); return (c && c.map) || {}; }
+}
+// Месячные вкладки «<Месяц> <год>» (год ≥ 2026) из discovery + хардкода, хронологически.
+function vscMonthTabs(discovered, hardcodeMap) {
+  const all = Object.assign({}, hardcodeMap || {});
+  for (const name in (discovered || {})) {
+    const mm = /^([А-Яа-яёЁ]+)\s+(\d{4})$/.exec(name);
+    if (!mm || +mm[2] < 2026) continue;
+    if (VSC_RU_MONTH_IDX_SAFE(mm[1]) == null) continue;
+    all[name] = discovered[name];
+  }
+  return Object.keys(all)
+    .map((name) => { const mm = /^([А-Яа-яёЁ]+)\s+(\d{4})$/.exec(name); return { name, gid: all[name], key: mm ? (+mm[2]) * 12 + VSC_RU_MONTH_IDX_SAFE(mm[1]) : 0 }; })
+    .filter((x) => x.key > 0)
+    .sort((a, b) => a.key - b.key);
+}
+function VSC_RU_MONTH_IDX_SAFE(name) { const i = VSC_RU_MONTH_IDX[String(name || "").toLowerCase()]; return (i == null ? null : i); }
 function vscParseMonth(rows) {
   let hi = -1;
   for (let i = 0; i < Math.min(rows.length, 15); i++) { if (rows[i] && String(rows[i][0]).trim() === "Дата") { hi = i; break; } }
@@ -3660,18 +3697,26 @@ function vscReturnsByDay(rows) {
       if (n === "причина") faultCol = c; // столбец вины: «Наша вина» / «Не наша вина»
     }
   }
-  // byDay — суммы «Услуги» по дате возврата (для дней/недель/итога); fault — те же суммы,
-  // разложенные по вине (наша/не наша/неизвестно) по ТЕМ ЖЕ строкам → сумма fault = сумма byDay,
-  // поэтому общий % возвратов не съезжает при разбивке.
-  const out = { byDay: {}, fault: { our: 0, notOur: 0, unknown: 0 } };
+  // byDay — суммы «Услуги» по дате возврата (для дней/недель); totalAll — Σ ВСЕХ строк
+  // вкладки, включая строки БЕЗ даты возврата (вкладка = месяц, поэтому месячный итог —
+  // именно totalAll; сверено с ручным подсчётом Андрея). fault — по тем же строкам, что
+  // totalAll → сумма fault = totalAll, общий % возвратов не съезжает при разбивке.
+  const out = { byDay: {}, totalAll: 0, fault: { our: 0, notOur: 0, unknown: 0 } };
   if (uslCol < 0 || dateCol < 0) return out;
   for (let i = hdr + 1; i < rows.length; i++) {
     const row = rows[i] || [];
-    const d = String(row[dateCol] || "").trim();
-    if (!vscIsDate(d)) continue;
     const v = vscNum(row[uslCol]);
     if (v == null) continue;
-    out.byDay[d] = (out.byDay[d] || 0) + v;
+    out.totalAll += v;
+    const d = vscNormDMY(row[dateCol]); // гибко: «1.6.2026» → «01.06.2026» (иначе строки терялись)
+    if (d) out.byDay[d] = (out.byDay[d] || 0) + v;
+    else { // строка без даты — в месячный итог и в разбивку по вине входит, в дни — нет
+      const fRaw0 = faultCol >= 0 ? String(row[faultCol] || "").toLowerCase() : "";
+      if (/не\s*наш/.test(fRaw0)) out.fault.notOur += v;
+      else if (/наш/.test(fRaw0)) out.fault.our += v;
+      else out.fault.unknown += v;
+      continue;
+    }
     // «Не наша вина» СОДЕРЖИТ «наша вина» — проверяем «не наш» ПЕРВЫМ. Пусто/иное → неизвестно.
     const fRaw = faultCol >= 0 ? String(row[faultCol] || "").toLowerCase() : "";
     if (/не\s*наш/.test(fRaw)) out.fault.notOur += v;
@@ -3691,19 +3736,27 @@ function vscParseTaxes(rows) {
 // Возвраты (по дням) + налоги (Итог) для всех месяцев 2026 — параллельно, мягко к сбоям.
 async function vscFetchExtra() {
   const ret = {}, tax = {};
-  const oneRet = async (name) => { try { const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + VSC_RETURNS_GID[name] + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] }); ret[name] = vscReturnsByDay(vscParseCsv(r.data)); } catch (e) {} };
-  const oneTax = async (name) => { try { const r = await axios.get(VSC_TAXES_PUB + "?gid=" + VSC_TAXES_GID[name] + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] }); tax[name] = vscParseTaxes(vscParseCsv(r.data)); } catch (e) {} };
-  await Promise.all([].concat(Object.keys(VSC_RETURNS_GID).map(oneRet), Object.keys(VSC_TAXES_GID).map(oneTax)));
+  // Вкладки берём из АВТООБНАРУЖЕНИЯ (pubhtml) + хардкода: новые месяцы (июль, август…)
+  // подхватываются сами, без ручного добавления gid. Discovery сбоит → хардкод.
+  const [retDisc, taxDisc] = await Promise.all([vscDiscoverGids(VSC_RETURNS_PUB), vscDiscoverGids(VSC_TAXES_PUB)]);
+  const retTabs = vscMonthTabs(retDisc, VSC_RETURNS_GID);
+  const taxTabs = vscMonthTabs(taxDisc, VSC_TAXES_GID);
+  const oneRet = async (t) => { try { const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + t.gid + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] }); ret[t.name] = vscReturnsByDay(vscParseCsv(r.data)); } catch (e) {} };
+  const oneTax = async (t) => { try { const r = await axios.get(VSC_TAXES_PUB + "?gid=" + t.gid + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] }); tax[t.name] = vscParseTaxes(vscParseCsv(r.data)); } catch (e) {} };
+  await Promise.all([].concat(retTabs.map(oneRet), taxTabs.map(oneTax)));
   return { ret, tax };
 }
 let _vscCache = null, _vscCacheAt = 0, _vscInflight = null;
 const VSC_TTL_MS = 15 * 60 * 1000;
 async function vscFetchAll() {
   // Листы Google тянем ПАРАЛЛЕЛЬНО (раньше — последовательно, 7 листов = долго).
-  // Promise.all сохраняет порядок VSC_SHEETS; недоступный лист → null → отфильтруем.
-  // Отзывы (отдельная таблица) тянем тем же параллельным заходом.
+  // Promise.all сохраняет порядок; недоступный лист → null → отфильтруем.
+  // Список KPI-листов — автообнаружение (pubhtml) + хардкод VSC_SHEETS: новые месяцы
+  // (август и далее) подхватываются сами. Отзывы — тем же параллельным заходом.
+  const kpiHard = {}; VSC_SHEETS.forEach((s) => { kpiHard[s.name] = s.gid; });
+  const kpiTabs = vscMonthTabs(await vscDiscoverGids(VSC_PUB_BASE), kpiHard);
   const [results, reviews, extra] = await Promise.all([
-    Promise.all(VSC_SHEETS.map(async (sh) => {
+    Promise.all(kpiTabs.map(async (sh) => {
       try {
         const url = VSC_PUB_BASE + "?gid=" + sh.gid + "&single=true&output=csv";
         const r = await axios.get(url, { timeout: 15000, responseType: "text", transformResponse: [(d) => d] });
@@ -3723,8 +3776,11 @@ async function vscFetchAll() {
     (m.days || []).forEach((d) => { d.retUslugi = (byDay[d.date] != null) ? byDay[d.date] : null; });
     (m.weeks || []).forEach((w) => { const v = (w.days || []).map((d) => d.retUslugi).filter((x) => x != null); const s = v.length ? v.reduce((a, b) => a + b, 0) : null; w.retUslugi = s; w.returnsPct = (s != null && w.budget) ? s / w.budget * 100 : null; });
     if (m.total) {
+      // Месячный итог — Σ ВСЕЙ вкладки возвратов (включая строки без даты возврата,
+      // их нельзя разнести по дням, но месяцу они принадлежат — вкладка помесячная).
       const keys = Object.keys(byDay);
-      m.total.retUslugi = keys.length ? keys.reduce((a, k) => a + byDay[k], 0) : null;
+      const sumDays = keys.length ? keys.reduce((a, k) => a + byDay[k], 0) : null;
+      m.total.retUslugi = (rd.totalAll && rd.totalAll > 0) ? rd.totalAll : sumDays;
       m.total.returnsPct = (m.total.retUslugi != null && m.total.budget) ? m.total.retUslugi / m.total.budget * 100 : null;
       // Разбивка % возвратов по вине (в % от бюджета) — сумма трёх = returnsPct (общий % НЕ съезжает).
       const fa = rd.fault;
@@ -4536,7 +4592,7 @@ app.get("/admin/api/vsc-forecast", requireAdmin, async (req, res) => {
 // Изолировано: amoCRM/ЛК не трогает; T-Bank — не amoCRM, лимитер не нужен (пауза
 // между страницами + retry). Кэш-файл, фронт читает кэш.
 const BUYOUTS_FILE = path.join(__dirname, ".lkBuyouts.json");
-const BUYOUTS_XLSX = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQUg19Ct37FZ7HceoYQdmnBLYS5W3GtWbW9_-Sts3ulAglvKQcwlAs_wQ_u3MQBwqgtXSup5VLdleEv/pub?output=xlsx";
+const BUYOUTS_PUB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQUg19Ct37FZ7HceoYQdmnBLYS5W3GtWbW9_-Sts3ulAglvKQcwlAs_wQ_u3MQBwqgtXSup5VLdleEv/pub";
 const BUYOUTS_MERCH_RE = /TURKISH|ONETWOTRIP/i;
 // Сверенная табличка Андрея (скрин 02.07.2026) — ИСТИНА по МАЙ 2026 включительно.
 // С июня 2026 движение ведём сами по банку (июнь перепроверен: банк == его строка
@@ -4621,69 +4677,52 @@ function tbAggregateMonths(ops, into) {
 // (только строки «Расчетный счет»). Даты в xlsx — сериалы Excel или строки ДД.ММ.ГГГГ.
 function _xlsxSerialToYm(v) {
   const s = String(v || "").trim();
-  if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return s.slice(6, 10) + "-" + s.slice(3, 5);
+  // Строковые даты — ГИБКО: «01.06.2026» и «1.6.2026» (в таблице встречаются оба
+  // написания; строгий формат терял строки → сверка занижала сумму таблицы).
+  const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(s);
+  if (m) return m[3] + "-" + ("0" + m[2]).slice(-2);
   const n = parseFloat(s);
   if (!isFinite(n) || n < 20000 || n > 60000) return null; // вменяемый диапазон сериалов (1954–2064)
   const d = new Date(Math.round((n - 25569) * 86400000));
   return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
 }
 async function buyoutsSheetMonths() {
-  const r = await axios.get(BUYOUTS_XLSX, { timeout: 45000, responseType: "arraybuffer" });
-  const zip = new AdmZip(Buffer.from(r.data));
-  const read = (n) => { const e = zip.getEntry(n); return e ? e.getData().toString("utf8") : ""; };
-  const ss = [];
-  { const sx = read("xl/sharedStrings.xml"); const re = /<si>([\s\S]*?)<\/si>/g; let m; while ((m = re.exec(sx))) { const t = (m[1].match(/<t[^>]*>([\s\S]*?)<\/t>/g) || []).map((x) => x.replace(/<[^>]+>/g, "")).join(""); ss.push(t); } }
-  const wb = read("xl/workbook.xml"); const rels = read("xl/_rels/workbook.xml.rels");
-  const sheets = [];
-  { const re = /<sheet[^>]*name="([^"]*)"[^>]*r:id="(rId\d+)"/g; let m; while ((m = re.exec(wb))) sheets.push({ name: m[1], rid: m[2] }); }
-  const colIdx = (L) => { let n = 0; for (const ch of L) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; };
+  // Вкладки «Авиа»/«Отель» тянем CSV (НЕ xlsx!): в xlsx-экспорте у части ячеек-формул
+  // («сумма снятия» в Отеле) НЕТ кэшированного значения → суммы занижались; CSV всегда
+  // отдаёт ВЫЧИСЛЕННЫЕ значения. gid вкладок — автообнаружение (pubhtml).
+  const disc = await vscDiscoverGids(BUYOUTS_PUB);
   const months = {};
   for (const want of ["авиа", "отель"]) {
-    const sh = sheets.find((s) => String(s.name).trim().toLowerCase() === want);
-    if (!sh) continue;
-    const t = new RegExp('Id="' + sh.rid + '"[^>]*Target="([^"]*)"').exec(rels);
-    if (!t) continue;
-    const xml = read("xl/" + t[1].replace("../", ""));
-    const rowsRe = /<row[^>]*r="(\d+)"[^>]*>([\s\S]*?)<\/row>/g; let rm;
-    const parseRow = (body) => { const cells = {}; const cre = /<c\s+r="([A-Z]+)(\d+)"([^>]*)>([\s\S]*?)<\/c>/g; let m; while ((m = cre.exec(body))) { const attrs = m[3], b = m[4]; const vm = /<v>([\s\S]*?)<\/v>/.exec(b); let v = vm ? vm[1] : ""; if (/t="s"/.test(attrs) && v !== "") v = ss[+v]; cells[colIdx(m[1])] = v; } return cells; };
+    const key = Object.keys(disc).find((n) => n.trim().toLowerCase() === want);
+    if (!key) { console.error("BUYOUTS: вкладка «" + want + "» не найдена в pubhtml"); continue; }
+    const r = await axios.get(BUYOUTS_PUB + "?gid=" + disc[key] + "&single=true&output=csv", { timeout: 45000, responseType: "text", transformResponse: [(d) => d], maxContentLength: 50 * 1024 * 1024 });
+    const rows = vscParseCsv(r.data);
     // Заголовки ищем по содержимому («кредитка или рс») — строка плавает (Авиа: 3, Отель: 4).
-    let hdrRow = -1, C = null;
-    const allRows = [];
-    while ((rm = rowsRe.exec(xml))) allRows.push([+rm[1], rm[2]]);
-    for (const [rn, body] of allRows) {
-      if (rn > 10 || hdrRow >= 0) break;
-      const c = parseRow(body);
-      for (const k in c) {
-        if (String(c[k]).toLowerCase().indexOf("кредитка или рс") >= 0) {
-          hdrRow = rn;
-          const findCol = (pred) => { for (const j in c) { if (pred(String(c[j]).toLowerCase().trim())) return +j; } return -1; };
-          // Методика (по указаниям Андрея, 02.07):
-          //  • расход — Σ «сумма снятия (стоимость)» по месяцу «ДАТА ПОКУПКИ» (его ручная
-          //    методика; история ≤ мая 2026 в UI помечена «сверено вручную» и не пересчитывается);
-          //  • приход — «сумма возврата (стоимость…)» СТРОГО с начала строки (НЕ «будущая
-          //    сумма возврата»!) по месяцу «дата поступления возврата».
-          C = {
-            rs: +k,
-            buyDate: findCol((s) => s.indexOf("дата покупки") >= 0),
-            buySum: findCol((s) => s.indexOf("сумма снятия") >= 0),
-            retDate: findCol((s) => s.indexOf("дата поступления возврата") >= 0),
-            retSum: findCol((s) => s.indexOf("сумма возврата") === 0)
-          };
-          break;
-        }
-      }
-    }
-    if (!C || C.buyDate < 0 || C.buySum < 0) { console.error("BUYOUTS sheet «" + sh.name + "»: не найдены колонки"); continue; }
-    for (const [rn, body] of allRows) {
-      if (rn <= hdrRow) continue;
-      const c = parseRow(body);
-      if (String(c[C.rs] || "").trim().toLowerCase() !== "расчетный счет") continue;
-      const buyYm = _xlsxSerialToYm(c[C.buyDate]);
-      const buySum = parseFloat(c[C.buySum]);
-      if (buyYm && isFinite(buySum) && buySum > 0) { const m = months[buyYm] || (months[buyYm] = { deb: 0, cre: 0 }); m.deb += buySum; }
-      const retYm = C.retDate >= 0 ? _xlsxSerialToYm(c[C.retDate]) : null;
-      const retSum = C.retSum >= 0 ? parseFloat(c[C.retSum]) : NaN;
-      if (retYm && isFinite(retSum) && retSum > 0) { const m = months[retYm] || (months[retYm] = { deb: 0, cre: 0 }); m.cre += retSum; }
+    let hdr = -1, H = null;
+    for (let i = 0; i < Math.min(rows.length, 10) && hdr < 0; i++) { const rr = rows[i] || []; for (let c = 0; c < rr.length; c++) { if (String(rr[c] || "").toLowerCase().indexOf("кредитка или рс") >= 0) { hdr = i; H = rr; break; } } }
+    if (hdr < 0) { console.error("BUYOUTS sheet «" + key + "»: не найден заголовок"); continue; }
+    const findCol = (pred) => { for (let j = 0; j < H.length; j++) { if (pred(String(H[j] || "").toLowerCase().trim())) return j; } return -1; };
+    // Методика (по указаниям Андрея, 02.07): расход — Σ «сумма снятия (стоимость)» по
+    // месяцу «ДАТА ПОКУПКИ» (даты гибко: «01.06.2026» и «1.6.2026»); приход — «сумма
+    // возврата (стоимость…)» СТРОГО с начала строки (НЕ «будущая…») по «дата поступления
+    // возврата» (в UI сверяется только расход, приход остаётся в данных).
+    const C = {
+      rs: findCol((s) => s.indexOf("кредитка или рс") >= 0),
+      buyDate: findCol((s) => s.indexOf("дата покупки") >= 0),
+      buySum: findCol((s) => s.indexOf("сумма снятия") >= 0),
+      retDate: findCol((s) => s.indexOf("дата поступления возврата") >= 0),
+      retSum: findCol((s) => s.indexOf("сумма возврата") === 0)
+    };
+    if (C.rs < 0 || C.buyDate < 0 || C.buySum < 0) { console.error("BUYOUTS sheet «" + key + "»: не найдены колонки"); continue; }
+    for (let i = hdr + 1; i < rows.length; i++) {
+      const rr = rows[i] || [];
+      if (String(rr[C.rs] || "").trim().toLowerCase() !== "расчетный счет") continue;
+      const buyYm = _xlsxSerialToYm(rr[C.buyDate]);
+      const buySum = vscNum(rr[C.buySum]);
+      if (buyYm && buySum != null && buySum > 0) { const m = months[buyYm] || (months[buyYm] = { deb: 0, cre: 0 }); m.deb += buySum; }
+      const retYm = C.retDate >= 0 ? _xlsxSerialToYm(rr[C.retDate]) : null;
+      const retSum = C.retSum >= 0 ? vscNum(rr[C.retSum]) : null;
+      if (retYm && retSum != null && retSum > 0) { const m = months[retYm] || (months[retYm] = { deb: 0, cre: 0 }); m.cre += retSum; }
     }
   }
   return months;

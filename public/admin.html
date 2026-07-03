@@ -3022,33 +3022,38 @@
               + td(money2(r.deb)) + td(money2(r.cre)) + '</tr>';
           }).join("");
           // ── Секция 2: сверка с гугл-таблицей ──
+          // Секция 2 — сверяем ТОЛЬКО РАСХОД по р/с (по просьбе Андрея; приход из сверки убран).
+          // «Сошлось» = |Δ| < 100 ₽ (копеечные хвосты — мелочь). Если таблица БОЛЬШЕ банка —
+          // проверяем операции на холде (pending): сотрудники вносят покупку сразу, банк
+          // проводит позже. Холды == расхождению (±100 ₽) → зелёная ✓; нет → красный ❗.
           const cmpYms = Array.from(new Set([].concat(Object.keys(bank), Object.keys(sheet)))).filter((ym) => ym >= "2026-01").sort().reverse(); // свежий месяц СВЕРХУ
           const cmpHtml = cmpYms.map((ym) => {
             const recent = ym >= prevYm;
             const trOpen = '<tr class="' + (recent ? "" : "buyoutsHist2") + '" style="border-top:1px solid #f0eef5;vertical-align:top;' + (recent ? "" : "display:none;") + '">';
             if (ym <= seedUpto) {
               return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>')
-                + '<td colspan="2" style="padding:7px 8px;color:#2c7a43;font-weight:600;">✓ сверено вручную — всё ок</td></tr>';
+                + '<td style="padding:7px 8px;color:#2c7a43;font-weight:600;">✓ сверено вручную — всё ок</td></tr>';
             }
             const b = bank[ym] || {}, s = sheet[ym] || {};
-            // hold — сумма операций «на холде» (авторизованы, банком ещё не проведены).
-            // Если таблица БОЛЬШЕ банка примерно на сумму холдов — поясняем: сотрудники
-            // операции уже внесли, а по р/с они ещё не прошли; сойдётся после проведения.
-            const cell = (bv, sv, hold) => {
-              if (bv == null && sv == null) return '<td style="padding:7px 8px;color:#9aa0ab;">—</td>';
-              const delta = (bv || 0) - (sv || 0);
-              const ok = Math.abs(delta) < 1;
-              const dStr = ok ? "✓ сходится" : ("Δ " + (delta > 0 ? "+" : "−") + Math.abs(Math.round(delta)).toLocaleString("ru-RU") + " ₽");
-              let holdNote = "";
-              const sheetOver = -delta; // насколько таблица больше банка
-              // Если таблица опережает банк НЕ БОЛЬШЕ, чем сумма холдов месяца — расхождение
-              // объяснимо: операции внесены в таблицу, но банком ещё не проведены («часики»).
-              if (!ok && hold > 0 && sheetOver > 0 && sheetOver <= hold * 1.15) {
-                holdNote = '<br><span style="color:#8a90a0;">Δ укладывается в операции на холде (' + money2(hold) + '): в таблицу внесены, банком ещё не проведены — сойдётся после проведения</span>';
-              }
-              return td(money2(bv) + '<br><span style="color:#8a90a0;">табл. ' + money2(sv) + '</span><br><b style="color:' + (ok ? "#2c7a43" : "#b8602a") + ';">' + dStr + '</b>' + holdNote);
-            };
-            return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>') + cell(b.deb, s.deb, b.holdDeb || 0) + cell(b.cre, s.cre, b.holdCre || 0) + '</tr>';
+            const bv = b.deb, sv = s.deb, hold = b.holdDeb || 0;
+            if (bv == null && sv == null) return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>') + '<td style="padding:7px 8px;color:#9aa0ab;">—</td></tr>';
+            const delta = (bv || 0) - (sv || 0);
+            const ok = Math.abs(delta) < 100; // до 100 ₽ — мелочь, считаем сошедшимся
+            const status = ok
+              ? '<b style="color:#2c7a43;">✓ сходится' + (Math.abs(delta) >= 0.01 ? ' <span style="font-weight:400;">(Δ ' + money2(Math.abs(delta)) + ')</span>' : '') + '</b>'
+              : '<b style="color:#b8602a;">Δ ' + (delta > 0 ? "+" : "−") + Math.abs(Math.round(delta)).toLocaleString("ru-RU") + ' ₽</b>';
+            let holdNote = "";
+            const sheetOver = -delta; // насколько таблица больше банка
+            if (!ok && sheetOver > 0) {
+              const match = hold > 0 && Math.abs(sheetOver - hold) < 100;
+              holdNote = '<div style="font-size:11px;color:#8a90a0;margin-top:3px;line-height:1.5;">На холде (pending) за месяц: <b>' + money2(hold) + '</b> '
+                + (match
+                  ? '<span style="color:#2c7a43;font-weight:700;">✓ равно расхождению</span><br>внесены в таблицу, банком ещё не проведены — сойдётся после проведения'
+                  : '<span style="color:#b0263a;font-weight:700;">❗ не равно расхождению</span><br>холды не объясняют Δ полностью — стоит проверить внесённое в таблицу')
+                + '</div>';
+            }
+            return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>')
+              + '<td style="padding:7px 8px;">банк <b>' + money2(bv) + '</b> · табл. <b>' + money2(sv) + '</b><br>' + status + holdNote + '</td></tr>';
           }).join("");
           const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
           const histBtn = (id, n) => (n > 0 ? '<button type="button" id="' + id + '" class="vsc-dayrev-refresh" style="margin-top:8px;background:#eef2f7;color:#3a4356;border-color:#d7dce4;">Показать историю (' + n + ')</button>' : "");
@@ -3064,9 +3069,9 @@
             + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 8px;">Период</th><th style="text-align:left;padding:7px 8px;">Расход</th><th style="text-align:left;padding:7px 8px;">Приход</th></tr></thead>'
             + '<tbody>' + moveHtml + '</tbody></table></div>'
             + histBtn("buyoutsHistBtn1", moveRows.filter((r) => !(r.ym && r.ym >= prevYm)).length)
-            + '<div class="vsc-chart-h" style="margin:18px 0 8px;">2 · Сверка с гугл-таблицей выкупов (Авиа + Отель, только р/с)</div>'
+            + '<div class="vsc-chart-h" style="margin:18px 0 8px;">2 · Сверка расхода по р/с с гугл-таблицей выкупов (Авиа + Отель)</div>'
             + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
-            + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 8px;">Месяц</th><th style="text-align:left;padding:7px 8px;">Расход: банк / таблица</th><th style="text-align:left;padding:7px 8px;">Приход: банк / таблица</th></tr></thead>'
+            + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 8px;">Месяц</th><th style="text-align:left;padding:7px 8px;">Расход по р/с: банк / таблица</th></tr></thead>'
             + '<tbody>' + cmpHtml + '</tbody></table></div>'
             + histBtn("buyoutsHistBtn2", cmpYms.filter((ym) => ym < prevYm).length)
             + '<div style="font-size:11.5px;color:#8a90a0;margin-top:10px;">Банк: только проведённые операции (без холдов), месяц — по дате авторизации. Таблица: вкладки «Авиа»+«Отель», только «Расчетный счет». Обновляется ежедневно в 00:10 МСК · на ' + escapeHtml(upd) + '. <button type="button" id="buyoutsRun" class="vsc-dayrev-refresh" style="margin-top:8px;">↻ Обновить</button></div>';
