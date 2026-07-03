@@ -4487,15 +4487,16 @@ async function vscBuildForecast() {
   // переносились в будущие недели, раздувая прогноз до десятков млн (CV 100% вместо
   // ~28%). Непригодный период базой не становится — берём последние вменяемые ставки.
   const hasRates = (p) => !!(p && +p.asp && +p.upt && (+p.cpl > 0) && (p.cv != null && +p.cv > 0 && +p.cv < 100));
-  // Объёмно-взвешенное пуллирование ставок двух периодов (стыковая неделя на границе месяцев).
-  const poolRates = (a, b) => {
+  // Объёмно-взвешенное пуллирование ставок периодов (стыковая неделя, пул баз для остатка
+  // месяца). budget в результате — суммарный, чтобы пул можно было пуллировать дальше.
+  const poolRates = (...ps) => {
     let ws = 0, asp = 0, cv = 0, upt = 0, cost = 0, leads = 0;
-    for (const p of [a, b]) {
+    for (const p of ps) {
       if (!hasRates(p)) continue; const w = +p.processed || 0; if (w <= 0) continue;
       ws += w; asp += (+p.asp) * w; cv += (+p.cv) * w; upt += (+p.upt) * w;
       const c = +p.budget || 0, cpl = +p.cpl || 0; if (c > 0 && cpl > 0) { cost += c; leads += c / cpl; }
     }
-    return ws > 0 ? { asp: asp / ws, cpl: leads > 0 ? cost / leads : 0, cv: cv / ws, upt: upt / ws, processed: ws } : null;
+    return ws > 0 ? { asp: asp / ws, cpl: leads > 0 ? cost / leads : 0, cv: cv / ws, upt: upt / ws, processed: ws, budget: cost } : null;
   };
   const allW = (cur.weeks || []);
   const startStub = !!(allW.length && wkDays(allW[0].label) < 7); // месяц начинается с неполной недели
@@ -4553,25 +4554,36 @@ async function vscBuildForecast() {
       contactsMonth: p.contactsMonth, rates: p.rates
     });
   });
-  // Headline месяца = СУММА недельных прогнозов, которые УЖЕ можно построить (ТЗ Андрея
-  // 03.07.2026): в начале месяца это одна неделя (по итогам прошлого месяца), с закрытием
-  // каждой недели добавляется прогноз следующей — цифра дорастает до полного месяца сама.
-  // Никакой экстраполяции месяца по ставкам «к дате»: Total из 2–3 первых дней проходит
-  // hasRates формально, но выборка вырожденная (03.07: ASP 22 190 против 14 700 июня,
-  // CV 33% = 1 из 3) — рисовала фантазийные 4,7 млн прибыли при выручке 20,3 млн.
+  // Headline месяца (ТЗ Андрея 03.07, финал): ПОСЧИТАННЫЕ недели (у которых база закрыта)
+  // просто складываем, а ОСТАТОК дней месяца оцениваем по УСРЕДНЁННЫМ (объёмно-взвешенным)
+  // ставкам подтверждённых периодов, участвующих в расчёте недель этого месяца: итоги
+  // прошлого месяца + закрывшиеся недели текущего. С закрытием каждой недели её итоги
+  // попадают и в цепочку, и в пул остатка — оценка сама уточняется реальной динамикой
+  // месяца. Ставки «к дате» идущей недели в пул НЕ входят (вырожденная выборка первых
+  // дней рисовала фантазийные числа — 4,7 млн прибыли при выручке 20,3 млн 03.07).
   const done = weeks.filter((x) => !x.pending);
   const wsum = (k) => done.reduce((a, x) => a + (+x[k] || 0), 0);
   const doneDays = done.reduce((a, x) => a + (x.days || 7), 0);
+  const restDays = Math.max(0, dim - doneDays);
+  const confirmedProfit = wsum("periodProfit"), confirmedRevenue = wsum("periodRevenue");
+  let rest = null;
+  if (done.length && restDays > 0) {
+    const pooled = poolRates(prev.total, ...allW.filter((x) => wkClosed(x.label) && hasRates(x)));
+    const rp = proj(pooled || prev.total);
+    if (rp) rest = { days: restDays, profit: rp.profitWeek * restDays / 7, revenue: (rp.revenue || 0) * restDays / dim, rates: rp.rates };
+  }
+  const covDays = doneDays + (rest ? restDays : 0);
   const month = done.length ? {
-    revenue: wsum("periodRevenue"),
-    profitMonth: wsum("periodProfit"),
-    profitWeek: doneDays > 0 ? wsum("periodProfit") / (doneDays / 7) : 0,
-    contactsMonth: expectedContacts
+    revenue: confirmedRevenue + (rest ? rest.revenue : 0),
+    profitMonth: confirmedProfit + (rest ? rest.profit : 0),
+    profitWeek: covDays > 0 ? (confirmedProfit + (rest ? rest.profit : 0)) / (covDays / 7) : 0,
+    contactsMonth: expectedContacts,
+    confirmedProfit: confirmedProfit, confirmedRevenue: confirmedRevenue, rest: rest
   } : proj(prev.total);
   return {
     success: true, tab: fc.tab, monthName: cur.name, basisMonth: prev.name,
     basisKind: done.length ? "weekly-chain" : "prev-month",
-    ratesLabel: "сумма недельных прогнозов",
+    ratesLabel: "недели + оценка остатка",
     weeksDone: done.length, weeksTotal: weeks.length,
     persOP, shifts, target, basisContacts: Math.round(target * persOP * shifts), expectedContacts: expectedContacts,
     contactsBasis: "реальный темп месяца + прошлый месяц", fotPct: 22,
