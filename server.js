@@ -4539,11 +4539,19 @@ async function vscBuildForecast() {
   // ставкам месяца-к-дате (cur.total). Устойчивее «суммы недель» и не завышается выпуклостью
   // кривой (это «прибыль при средней ставке», а не «среднее из волатильных недельных прибылей»).
   // Контакты — реальный ожидаемый таргет (expectedContacts). Недельную детализацию НЕ трогаем.
-  const poolBasis = hasRates(cur.total) ? cur.total : prev.total;
+  // НО: месяц-к-дате годится как база, только когда в месяце ЗАКРЫЛАСЬ хотя бы одна ПОЛНАЯ
+  // неделя с вменяемыми ставками. Total из первых 2–3 дней проходит hasRates формально
+  // (CPL внесён, 0 < CV < 100), но выборка вырожденная — 03.07 headline прыгнул на ставки
+  // двух дней июля (ASP 22 190 против 14 700 июня — пара дорогих продаж, CV 33% = 1 из 3)
+  // и нарисовал прибыль 4,7 млн при выручке 20,3 млн. До первой закрытой недели месяца
+  // прогнозируем по итогам ПРОШЛОГО месяца — та же дисциплина, что в недельной цепочке.
+  const curMature = allW.some((w) => wkDays(w.label) === 7 && hasRates(w));
+  const useCurRates = curMature && hasRates(cur.total);
+  const poolBasis = useCurRates ? cur.total : prev.total;
   const month = proj(poolBasis) || proj(prev.total);
   return {
     success: true, tab: fc.tab, monthName: cur.name, basisMonth: prev.name, basisKind: "pooled-month",
-    ratesLabel: hasRates(cur.total) ? (cur.name + " (к дате)") : prev.name,
+    ratesLabel: useCurRates ? (cur.name + " (к дате)") : prev.name,
     persOP, shifts, target, basisContacts: Math.round(target * persOP * shifts), expectedContacts: expectedContacts,
     contactsBasis: "реальный темп месяца + прошлый месяц", fotPct: 22,
     month, baseline: month, weeks
