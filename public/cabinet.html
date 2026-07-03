@@ -1644,9 +1644,16 @@
     function isFieldOptionalForLead(field, lead, state, cfg) {
       // Паспорта (этап «Начало оформления») — всегда обязательны.
       if (field === "innerPassport" || field === "mainPassport") return false;
+      // Япония, 3-НДФЛ (корр. Насти 03.07): опциональна ВСЕГДА (в т.ч. на этапе 2).
+      if (cfg && cfg.jpForceOptional) return true;
       // Предохранитель: < 3 календарных дней до подачи → всё обязательно.
       const calLeft = _submissionDaysLeft(lead, false);
       if (calLeft !== null && calLeft < 3) return false;
+      // Япония (корр. Насти 03.07): обязательность задана ЭТАПНОЙ картой, а не
+      // статусной: jpRequired — обязателен (обяз. этапа 1 + весь этап 2),
+      // jpOptional — необязателен (опциональные этапа 1).
+      if (cfg && cfg.jpRequired) return false;
+      if (cfg && cfg.jpOptional) return true;
       const grp = docStatusGroup(lead);
       if (grp === 4) return false; // финальный сбор — обязательны все
       if (grp === 3) {             // оформление обязательно за ≤7 рабочих дней
@@ -1687,43 +1694,77 @@
       ];
 
       if (isJp) {
-        // ─── ЯПОНИЯ ───
-        const stage1Blocks = [];
+        // ─── ЯПОНИЯ (карта Насти П., корр. 03.07.2026) ───
+        // Этап 0: ТОЛЬКО внутренний паспорт (загран перенесён на «Первичный сбор»).
+        // Этап 1: обязательные — загран, приглашение+план (цель ≠ Туризм), паспорт
+        //   спонсора, св-во о рождении (<18), авиабилеты (свои), св-во о браке
+        //   (в браке + супруг едет); опциональные — справка с работы/учёбы,
+        //   ИП-доки (ИНН+ЕГРИП), самозанятость (+налоговые), банковский баланс.
+        // Этап 2 «Подготовка документов»: все опциональные этапа 1 → обязательные
+        //   (кроме 3-НДФЛ — опциональна всегда) + «Документ, подтверждающий
+        //   родство со спонсором» (спонсор-родственник). Документы, не положенные
+        //   по цели поездки (напр. приглашение при туризме), НЕ запрашиваются.
+        // Обязательность задаётся флагами jpRequired/jpOptional/jpForceOptional
+        // (читает isFieldOptionalForLead) — этапная карта, не статусная.
+        const jpStage0 = [stage0Blocks[0]]; // только внутренний паспорт
         const occ = String(state.jp_occupation || "").trim();
         const jpTripPurpose = String(state.jp_tripPurpose || "").trim();
-        if (jpTripPurpose && jpTripPurpose !== "Туризм") {
-          stage1Blocks.push({ field: "invitation", label: "Приглашение" });
-          stage1Blocks.push({ field: "routePlan",  label: "План поездки" });
-        }
-        if (String(state.jp_hasOwnFlights || "").trim() === "Да") {
-          stage1Blocks.push({ field: "ownFlights", label: "Авиабилеты" });
-        }
-        if (String(state.jp_hasSponsor || "").trim() === "Да") {
-          // Для Японии — отдельный label, ведётся в общий field sponsorPassport
-          // только для статистики/whitelist. Здесь явно показываем «Внутр.
-          // паспорт спонсора» без приписки «Спонсорское письмо».
-          stage1Blocks.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора", note: "Потому что вы отметили, что вашу поездку оплачивает третье лицо." });
-        }
-        if (String(state.jp_isUnder18 || "").trim() === "Да") {
-          stage1Blocks.push({ field: "birthCertificate", label: "Свидетельство о рождении" });
-        }
-        if (occ === "Работа по найму") {
-          stage1Blocks.push({ field: "workCert",  label: "Справка с работы" });
-        }
-        if (occ === "Учащийся") {
-          stage1Blocks.push({ field: "studyCert", label: "Справка с учёбы" });
-        }
-        // Этап 2 для Японии — отдельный extra-doc-block (рендерится в
-        // renderStages), а не через blocks. Здесь возвращаем пустой массив.
-        const stage2Blocks = [];
+        const jpMarried = String(state.jp_maritalStatus || "").trim() === "Состою в браке";
+        const jpSpouseTravels = String(state.jp_spouseTravels || "").trim() === "Да";
+        const jpSponsored = String(state.jp_hasSponsor || "").trim() === "Да";
+        const jpSponsorRelative = String(state.jp_sponsorIsRelative || "").trim() === "Да";
 
-        // Все условные блоки этапов 1 и 2 обязательны (требование от
-        // 27.05.2026 — «сделай все области для загрузки обязательными»).
-        stage1Blocks.forEach((b) => { b.requiredOnStage = true; });
-        stage2Blocks.forEach((b) => { b.requiredOnStage = true; });
+        function jpConditional(stage2Mode) {
+          const list = [];
+          list.push({ field: "mainPassport", label: "Загран. паспорт (в который запрашиваем визу)", jpRequired: true });
+          if (jpTripPurpose && jpTripPurpose !== "Туризм") {
+            list.push({ field: "invitation", label: "Приглашение", jpRequired: true });
+            list.push({ field: "routePlan",  label: "План поездки", jpRequired: true });
+          }
+          if (String(state.jp_hasOwnFlights || "").trim() === "Да") {
+            list.push({ field: "ownFlights", label: "Авиабилеты", jpRequired: true });
+          }
+          if (jpSponsored) {
+            // Для Японии — отдельный label, ведётся в общий field sponsorPassport
+            // только для статистики/whitelist (без приписки «Спонсорское письмо»).
+            list.push({ field: "sponsorPassport", label: "Внутр. паспорт спонсора", jpRequired: true, note: "Потому что вы отметили, что вашу поездку оплачивает третье лицо." });
+          }
+          if (String(state.jp_isUnder18 || "").trim() === "Да") {
+            list.push({ field: "birthCertificate", label: "Свидетельство о рождении", jpRequired: true });
+          }
+          if (jpMarried && jpSpouseTravels) {
+            list.push({ field: "marriageCert", label: "Свидетельство о браке", jpRequired: true, note: "Потому что вы отметили, что супруг/супруга едет с вами." });
+          }
+          // Опциональные на этапе 1 → обязательные на этапе 2.
+          const optFlag = stage2Mode ? { jpRequired: true } : { jpOptional: true };
+          function pushOpt(field, label) {
+            const b = { field: field, label: label };
+            Object.keys(optFlag).forEach(function (k) { b[k] = optFlag[k]; });
+            list.push(b);
+          }
+          if (occ === "Работа по найму") pushOpt("workCert",  "Справка с работы");
+          if (occ === "Учащийся")        pushOpt("studyCert", "Справка с учёбы");
+          if (occ === "Индивидуальный предприниматель") {
+            pushOpt("ipInnCert",  "Свидетельство ИНН");
+            pushOpt("ipEgripDoc", "Лист записи ЕГРИП");
+            list.push({ field: "ipNdfl3", label: "Декларация 3-НДФЛ", jpForceOptional: true });
+          }
+          if (occ === "Самозанятый") {
+            pushOpt("selfEmployedDoc",    "Справка о самозанятости");
+            pushOpt("selfEmployedTaxDoc", "Справка о налоговых отчислениях");
+          }
+          pushOpt("bankBalance", "Справка из банка об остатке средств");
+          if (stage2Mode && jpSponsored && jpSponsorRelative) {
+            list.push({ field: "sponsorKinshipDoc", label: "Документ, подтверждающий родство со спонсором", jpRequired: true, note: "Потому что вы отметили, что спонсор является вашим родственником." });
+          }
+          return list;
+        }
+        const stage1Blocks = jpConditional(false);
+        const stage2Blocks = jpConditional(true); // полный набор этапа 2 (кумулятивно)
 
-        if (includeAll) return stage0Blocks.concat(stage1Blocks).concat(stage2Blocks);
-        if (stageIndex === 0) return stage0Blocks.slice();
+        // stage2Blocks уже содержит все поля этапа 1 → для union берём stage0 + stage2.
+        if (includeAll) return jpStage0.concat(stage2Blocks);
+        if (stageIndex === 0) return jpStage0.slice();
         if (stageIndex === 1) return stage1Blocks;
         if (stageIndex === 2) return stage2Blocks;
         return [];
@@ -1780,10 +1821,13 @@
       // «…или учёбы», и работающий студент гарантированно грузил не то). Подписи блоков
       // совпадают с whitelist (workCert / studyCert), чтобы детекция «загружено»
       // корректно матчила имена файлов «<подпись> - ФИО…».
-      const occSch = String(state.occupation || "").trim();
-      if (occSch === "Работа по найму") {
+      // С 03.07 род занятий — множественный выбор («A, B, C»): работающий студент
+      // получает ОБЕ справки (раньше select позволял только одно значение).
+      const occSch = occupationTokens(state);
+      if (occSch.indexOf("Работа по найму") >= 0) {
         stage2Blocks.push({ field: "workCert", label: "Справка с работы" });
-      } else if (occSch === "Учащийся") {
+      }
+      if (occSch.indexOf("Учащийся") >= 0) {
         stage2Blocks.push({ field: "studyCert", label: "Справка с учёбы" });
       }
       // Возврат старого поведения: страховой полис.
@@ -2637,7 +2681,11 @@
       sponsorInnerPassport: ["Внутр. паспорт спонсора или Спонсорское письмо от компании"],
       // «Справка из учебного заведения» (перед подачей) ≡ справка с учёбы (обычный этап);
       // плюс старая объединённая подпись — для файлов, загруженных до правки 26.06.
-      studyCertPre: ["Справка с учёбы", "Справка с работы или учёбы"]
+      studyCertPre: ["Справка с учёбы", "Справка с работы или учёбы"],
+      // Новые раздельные ИП-доки (03.07) ≡ старый объединённый «Документы на ИП…» —
+      // если клиент загрузил его до правки, повторно ИНН/ЕГРИП не просим.
+      ipInnCert:  ["Документы на ИП (лист записи + свидетельство о регистрации)"],
+      ipEgripDoc: ["Документы на ИП (лист записи + свидетельство о регистрации)"]
     };
     function presubFileMatchesLabel(files, label) {
       return files.some(function (f) {
@@ -2663,14 +2711,23 @@
       return docs.every((cfg) => presubDocUploadState(files, cfg).uploaded);
     }
 
+    // Род деятельности: с 03.07 (корр. Насти П.) — ТОЧНОЕ сопоставление вариантов
+    // (никаких подстрок: «Владелец бизнеса или ИП» больше не триггерит ИП по букве «ИП»).
+    // В Шенгене — множественный выбор, хранится строкой «A, B, C»; в Японии — одиночный.
+    // Старое значение «Владелец бизнеса или ИП» (анкеты до 03.07) продолжает считаться ИП.
+    function occupationTokens(state) {
+      return String((state && (state.occupation || state.jp_occupation)) || "")
+        .split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+    }
     function presubMatchOccupation(state) {
-      const occ = String((state && (state.occupation || state.jp_occupation)) || "").toLowerCase();
-      const tokens = occ.split(/[^а-яёa-z0-9]+/i).filter(Boolean);
+      const t = occupationTokens(state);
+      const has = function (v) { return t.indexOf(v) >= 0; };
       return {
-        isIP: tokens.indexOf("ип") >= 0 || occ.indexOf("индивидуальн") >= 0 || occ.indexOf("предприниматель") >= 0,
-        isStudent: occ.indexOf("учащ") >= 0 || occ.indexOf("студент") >= 0,
-        isPensioner: occ.indexOf("пенси") >= 0,
-        isSelfEmployed: occ.indexOf("самозанят") >= 0
+        isIP: has("Индивидуальный предприниматель (ИП)") || has("Индивидуальный предприниматель") || has("Владелец бизнеса или ИП"),
+        isOOO: has("Учредитель ООО"),
+        isStudent: has("Учащийся"),
+        isPensioner: has("Пенсионер"),
+        isSelfEmployed: has("Самозанятый")
       };
     }
 
@@ -2684,10 +2741,21 @@
       const docs = [];
       docs.push({ field: "bankBalance",      label: "Справка из банка об остатке средств", optional: sponsored });
       docs.push({ field: "accountStatement", label: "Выписка (детализация) по счету",       optional: sponsored });
-      if (occ.isIP)          docs.push({ field: "ipDocs",          label: "Документы на ИП (лист записи + свидетельство о регистрации)", optional: false });
+      // ИП / Учредитель ООО / Самозанятый — раздельные документы (корр. Насти П. 03.07):
+      // ИП: свидетельство ИНН + лист записи ЕГРИП (обяз.), 3-НДФЛ — опционально;
+      // учредитель ООО: лист записи ЕГРЮЛ; самозанятый: + справка о налоговых отчислениях.
+      if (occ.isIP) {
+        docs.push({ field: "ipInnCert",  label: "Свидетельство ИНН", optional: false });
+        docs.push({ field: "ipEgripDoc", label: "Лист записи ЕГРИП", optional: false });
+        docs.push({ field: "ipNdfl3",    label: "Декларация 3-НДФЛ", optional: true, note: OPT_NOTE });
+      }
+      if (occ.isOOO)         docs.push({ field: "oooEgrulDoc",     label: "Лист записи ЕГРЮЛ", optional: false });
       if (occ.isStudent)     docs.push({ field: "studyCertPre",    label: "Справка из учебного заведения", optional: false });
       if (occ.isPensioner)   docs.push({ field: "pensionDoc",      label: "Пенсионное удостоверение или справка о пенсии", optional: false });
-      if (occ.isSelfEmployed)docs.push({ field: "selfEmployedDoc", label: "Справка о самозанятости", optional: false });
+      if (occ.isSelfEmployed) {
+        docs.push({ field: "selfEmployedDoc",    label: "Справка о самозанятости", optional: false });
+        docs.push({ field: "selfEmployedTaxDoc", label: "Справка о налоговых отчислениях", optional: false });
+      }
       if (sponsored) {
         docs.push({ field: "sponsorBankBalance",      label: "Справка из банка об остатке средств от спонсора", optional: false });
         docs.push({ field: "sponsorAccountStatement", label: "Выписка (детализация) по счету спонсора", optional: false });
@@ -3492,7 +3560,11 @@
 
             applicants.forEach((applicant) => {
               const files = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
-              const missingPassports = stage0PassportBlocks.filter((b) => !isLabelLoaded(files, b.label));
+              // Япония (корр. Насти 03.07): на этапе 0 — только внутренний паспорт,
+              // загран уже входит в блоки этапа 1 (не дублируем докачкой).
+              const aIsJp = String(applicant.visaType || "").trim() === "Виза в Японию";
+              const passportBackfill = aIsJp ? stage0PassportBlocks.slice(0, 1) : stage0PassportBlocks;
+              const missingPassports = passportBackfill.filter((b) => !isLabelLoaded(files, b.label));
               const stage1Blocks = buildUploadBlocksConfig(applicant, lead, 1);
               const combined = missingPassports.concat(stage1Blocks);
               if (!combined.length) return;
@@ -3517,12 +3589,28 @@
           if (!applicants.length) {
             fragment.appendChild(createNoStateNotice());
           } else if (isJp) {
-            if (presubActive) {
-              applicants.forEach((applicant) => {
+            // Япония (корр. Насти 03.07): на «Подготовке документов» теперь есть
+            // ОСНОВНАЯ область — кумулятивный список этапа 2 (все опциональные
+            // этапа 1 стали обязательными, кроме 3-НДФЛ) + докачка внутреннего
+            // паспорта с этапа 0. Подобласть «перед подачей» и свободная зона
+            // сохраняются как раньше.
+            const jpInnerPassportBlock = { field: "innerPassport", label: "Внутренний паспорт (1-ый разворот, разворот с актуальной пропиской, последний разворот)" };
+            const isLabelLoadedJp = (files, label) => files.some((f) => {
+              if (!f.startsWith(label)) return false;
+              const next = f.charAt(label.length);
+              return next === "." || next === " ";
+            });
+            applicants.forEach((applicant) => {
+              if (presubActive) {
                 const area = createPreSubmissionArea(applicant, lead);
                 if (area) fragment.appendChild(area);
-              });
-            }
+              }
+              const files = Array.isArray(applicant.uploadedFiles) ? applicant.uploadedFiles : [];
+              const missingInner = isLabelLoadedJp(files, jpInnerPassportBlock.label) ? [] : [jpInnerPassportBlock];
+              const stage2Blocks = buildUploadBlocksConfig(applicant, lead, 2);
+              const combined = missingInner.concat(stage2Blocks);
+              if (combined.length) fragment.appendChild(createDocumentsBlock(applicant, combined, lead));
+            });
             fragment.appendChild(createExtraDocBlock(lead));
           } else {
             const stage0PassportBlocks = [
