@@ -243,6 +243,45 @@
   document.addEventListener("input", function(e){ if (e.target.id === "prihod" || e.target.id === "partner" || e.target.id === "mustEur") { fmtNum(e.target); comp(); } });
   [].forEach.call(document.querySelectorAll("#curBtns button"), function(b){ b.addEventListener("click", function(){ setCur(b.getAttribute("data-cur")); }); });
   $("btnRefresh").addEventListener("click", async function(){ var b = $("btnRefresh"); b.textContent = "Обновляем…"; b.disabled = true; histLoaded = false; await loadRates(true); b.textContent = "Обновить курсы с ЦБ и banki.ru"; b.disabled = false; });
+  // График динамики курсов за 30 дней (SVG, без библиотек): евро ЦБ + доллар ЦБ + евро banki.ru.
+  function ratesChartHtml(hist){
+    var rows = hist.slice().reverse(); // хронологически
+    var series = [
+      { key: "eur", name: "Евро ЦБ", color: "#0071e3" },
+      { key: "usd", name: "USDT / доллар ЦБ", color: "#34c759" },
+      { key: "bankiEur", name: "Евро banki.ru (выгодный)", color: "#ff9500" }
+    ];
+    var vals = [];
+    rows.forEach(function(r){ series.forEach(function(s){ var v = r[s.key]; if (v != null && isFinite(v)) vals.push(v); }); });
+    if (rows.length < 2 || vals.length < 2) return "";
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    if (max - min < 1) { max += 0.5; min -= 0.5; }
+    var W = 640, H = 220, L = 46, R = 12, T = 14, B = 26, iw = W - L - R, ih = H - T - B, n = rows.length;
+    var X = function(i){ return L + (n === 1 ? iw / 2 : iw * i / (n - 1)); };
+    var Y = function(v){ return T + ih - (v - min) / (max - min) * ih; };
+    var svg = '';
+    [min, (min + max) / 2, max].forEach(function(v){
+      var yy = Y(v);
+      svg += '<line x1="' + L + '" y1="' + yy + '" x2="' + (W - R) + '" y2="' + yy + '" stroke="rgba(0,0,0,.07)" stroke-width="1"/>';
+      svg += '<text x="' + (L - 6) + '" y="' + (yy + 3.5) + '" text-anchor="end" font-size="10" fill="#8a8a8e">' + fr(v, 1) + '</text>';
+    });
+    [0, Math.floor((n - 1) / 2), n - 1].forEach(function(i, k, arr){
+      if (k > 0 && i === arr[k - 1]) return;
+      svg += '<text x="' + X(i) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="10" fill="#8a8a8e">' + String(rows[i].date).slice(0, 5) + '</text>';
+    });
+    series.forEach(function(s){
+      var d = "", pen = false, pts = "";
+      rows.forEach(function(r, i){
+        var v = r[s.key];
+        if (v == null || !isFinite(v)) { pen = false; return; }
+        d += (pen ? " L" : " M") + X(i).toFixed(1) + " " + Y(v).toFixed(1); pen = true;
+        pts += '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(v).toFixed(1) + '" r="2" fill="' + s.color + '"/>';
+      });
+      if (d) svg += '<path d="' + d.trim() + '" fill="none" stroke="' + s.color + '" stroke-width="1.8" stroke-linejoin="round"/>' + pts;
+    });
+    var legend = series.map(function(s){ return '<span style="white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + s.color + ';vertical-align:-1px;margin-right:5px;"></span>' + s.name + '</span>'; }).join('<span style="margin:0 7px;color:#d2d2d7;">·</span>');
+    return '<div style="padding:12px 14px 14px;border-top:1px solid #f0eef5;"><div style="font-size:12px;color:#6e6e73;font-weight:600;margin-bottom:8px;">Динамика за 30 дней' + '&nbsp;&nbsp;' + legend + '</div><svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" xmlns="http://www.w3.org/2000/svg">' + svg + '</svg></div>';
+  }
   $("btnHist").addEventListener("click", async function(){
     var p = $("histPanel");
     if (p.style.display !== "none") { p.style.display = "none"; return; }
@@ -256,7 +295,7 @@
       if (!hist.length) { p.innerHTML = '<div class="muted">Нет данных по истории.</div>'; histLoaded = true; return; }
       var html = '<div class="card" style="padding:0;overflow:hidden;"><div style="padding:10px 14px;font-weight:700;border-bottom:1px solid #f0eef5;">Курсы за последние 30 дней (ЦБ РФ + banki.ru)</div><div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table><thead><tr><th>Дата</th><th>Актуализация в калькуляторе</th><th style="text-align:right;">Евро ЦБ</th><th style="text-align:right;">USDT / доллар</th><th style="text-align:right;">Евро banki.ru (выгодный)</th></tr></thead><tbody>';
       hist.forEach(function(e, i){ html += '<tr style="' + (i ? "border-top:1px solid #f0eef5;" : "") + '"><td>' + e.date + '</td><td style="color:#6b7280;">' + (e.time ? (e.date + " " + e.time) : "—") + '</td><td style="text-align:right;">' + fr(e.eur, 2) + '</td><td style="text-align:right;">' + fr(e.usd, 2) + '</td><td style="text-align:right;">' + (e.bankiEur != null ? fr(e.bankiEur, 2) + " ₽" : "—") + '</td></tr>'; });
-      html += '</tbody></table></div></div>';
+      html += '</tbody></table></div>' + ratesChartHtml(hist) + '</div>';
       p.innerHTML = html; histLoaded = true;
     } catch (e) { p.innerHTML = '<div class="muted" style="color:#b0263a;">Не удалось загрузить историю.</div>'; }
   });
