@@ -3942,13 +3942,20 @@
       }
     }
 
-    (function bootstrap() {
-      const phoneFromUrl = new URLSearchParams(window.location.search).get("phone") || "";
-      if (!phoneFromUrl.trim()) {
-        window.location.href = "/";
+    (async function bootstrap() {
+      // Фаза 2: телефон берём из подписанной сессии (/api/me), а не из URL ?phone=.
+      // Cookie voyo_sess браузер шлёт сам. Нет валидной сессии → на вход (войти один раз).
+      const phoneFromUrl = (new URLSearchParams(window.location.search).get("phone") || "").trim();
+      let phone = "";
+      try {
+        const r = await fetch("/api/me", { credentials: "same-origin" });
+        if (r.ok) { const d = await r.json(); if (d && d.success && d.phone) phone = String(d.phone); }
+      } catch (_) {}
+      if (!phone) {
+        window.location.href = "/" + (phoneFromUrl ? "?phone=" + encodeURIComponent(phoneFromUrl) : "");
         return;
       }
-      phoneInput.value = phoneFromUrl.trim();
+      phoneInput.value = phone;
       loadLeads();
     })();
 

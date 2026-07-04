@@ -364,9 +364,10 @@ function promoCommentText(percent, code) {
 // (комментарий со скидкой не пишется).
 app.post("/api/leads/new", async (req, res) => {
   try {
-    const phone = sms.normalizePhone((req.body && req.body.phone) || "");
-    if (!phone || phone.length < 11) {
-      return res.status(400).json({ success: false, message: "Некорректный номер телефона" });
+    // Фаза 2: новую сделку создаём для ВЛАДЕЛЬЦА сессии, не по body.phone.
+    const phone = clientPhoneFromSession(req);
+    if (!phone) {
+      return res.status(401).json({ success: false, message: "Сессия истекла — войдите снова" });
     }
     if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
       return res.status(500).json({ success: false, message: "Не настроены переменные amoCRM" });
@@ -2770,6 +2771,13 @@ app.get("/admin/kb/logic", requireStaff, (req, res) => {
 // инфраструктура). Пишем понятно, без воды, но со всеми нюансами + кто просил.
 // ВАЖНО: при любой правке клиентского ЛК — добавлять сюда новую запись сверху.
 const LK_CHANGELOG = [
+  { date: "04.07.2026", title: "Безопасность: доступ к данным ЛК — только по сессии (Фаза 2, ?phone= больше не даёт прав)", by: "Андрей (закрытие дыры авторизации ЛК)", points: [
+    "Раньше данные и документы клиента (сделки, готовые документы, опросники, паспорта) отдавались по номеру из ссылки ?phone= без подтверждения владельца. Теперь телефон берётся ТОЛЬКО из подписанной сессии-cookie voyo_sess (вход по SMS / Face ID). ?phone= в ссылках игнорируется.",
+    "Клиента не разлогинивает: у активных сессия уже есть; кто без неё — войдёт один раз. Открытие опросника в режиме правки (edit) тоже закрыто.",
+    "Сотрудники: «Вход в ЛК клиента» работает как раньше — при открытии выдаётся короткая (2 ч) сессия просмотра.",
+    "Отправка опросника по SMS (share-ссылка) работает без входа получателя — по токену ссылки, как прежде.",
+    "Логика документов/опросников/статусов и внешний вид ЛК не менялись — только источник доверия к номеру."
+  ] },
   { date: "03.07.2026", title: "Япония: паспорта — как у Шенгена (оба на «Начале оформления»)", by: "решение Андрея (уточнение к корректировке Насти П. по Японии)", points: [
     "Загранпаспорт у Японии остаётся на этапе «Начало оформления» вместе с внутренним (в первой версии сегодняшней корректировки он переносился на «Первичный сбор» — фраза Насти «аналогично с Шенгеном» уточнена Андреем как «сделать как у Шенгена»).",
     "Недогруженные паспорта этапа 0 докачиваются на этапах 1–2 — общий механизм, одинаковый для обеих виз.",
@@ -4956,6 +4964,19 @@ app.get("/api/me", (req, res) => {
   const phone = clientPhoneFromSession(req);
   if (!phone) return res.status(401).json({ success: false });
   return res.json({ success: true, phone });
+});
+
+// ФАЗА 2: сотрудник открывает «Вход в ЛК клиента» (iframe в админке). У его браузера нет
+// клиентской сессии на этот номер → cabinet.html (через /api/me) выкинул бы iframe на вход.
+// Здесь сотрудник (requireStaff) получает КОРОТКУЮ (2ч) клиентскую сессию voyo_sess на
+// просматриваемый номер — дальше клиентские эндпоинты работают как для обычного клиента.
+app.post("/admin/api/client-view/impersonate", requireStaff, express.json(), (req, res) => {
+  const phone = normalizePhone((req.body && req.body.phone) || "");
+  if (!phone) return res.status(400).json({ success: false, message: "Не передан телефон" });
+  const token = signClientSession(phone);
+  if (!token) return res.status(500).json({ success: false, message: "Сессии выключены (нет LK_SESSION_SECRET)" });
+  res.cookie("voyo_sess", token, { httpOnly: true, secure: true, sameSite: "lax", maxAge: 2 * 3600 * 1000, path: "/" });
+  return res.json({ success: true });
 });
 
 app.post("/api/auth/verify", smsGate, (req, res) => {
@@ -9628,14 +9649,15 @@ async function generateQuestionnairePdfBuffer(data) {
 
 app.get("/api/leads", async (req, res) => {
   try {
-    const phone = req.query.phone || "";
+    // Фаза 2: телефон — ТОЛЬКО из подписанной сессии (?phone= больше не даёт прав).
+    const phone = clientPhoneFromSession(req);
 
     console.log("HANDLER /api/leads phone =", phone);
 
     if (!phone) {
-      return res.status(400).json({
+      return res.status(401).json({
         success: false,
-        message: "Не передан phone"
+        message: "Сессия истекла — войдите снова"
       });
     }
 
@@ -13199,11 +13221,15 @@ app.post("/team/api/webauthn/register-verify", requireStaff, async (req, res) =>
 
 app.get("/questionnaire-start", async (req, res) => {
   try {
-    const phone = normalizePhone(req.query.phone || "");
+    // Фаза 2: телефон — из сессии. Нет сессии → на вход.
+    const phone = clientPhoneFromSession(req);
     const leadId = String(req.query.leadId || "").trim();
 
-    if (!phone || !leadId) {
-      return res.status(400).send("Не переданы phone или leadId");
+    if (!phone) {
+      return res.redirect("/" + (req.query.phone ? "?phone=" + encodeURIComponent(req.query.phone) : ""));
+    }
+    if (!leadId) {
+      return res.status(400).send("Не передан leadId");
     }
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -13225,7 +13251,7 @@ app.get("/questionnaire", async (req, res) => {
 
     const phone = shareData
       ? normalizePhone(shareData.phone || "")
-      : normalizePhone(req.query.phone || "");
+      : clientPhoneFromSession(req); // Фаза 2: владелец — по сессии, не по ?phone=
     const leadId = shareData
       ? String(shareData.leadId || "").trim()
       : String(req.query.leadId || "").trim();
@@ -13253,8 +13279,12 @@ app.get("/questionnaire", async (req, res) => {
       ? Math.max(1, Math.min(10, parseInt(req.query.selfStep || "1", 10) || 1))
       : 0;
 
-    if (!phone || !leadId) {
-      return res.status(400).send("Не переданы phone или leadId");
+    if (!phone) {
+      // Не владелец (нет сессии) и не share-режим → на вход.
+      return res.redirect("/" + (req.query.phone ? "?phone=" + encodeURIComponent(req.query.phone) : ""));
+    }
+    if (!leadId) {
+      return res.status(400).send("Не передан leadId");
     }
 
     // Первый заявитель без applicantCount — перенаправляем на стартовую страницу выбора визы и количества
@@ -13361,10 +13391,13 @@ app.post(
 
       const phone = isShareMode
         ? normalizePhone(shareData.phone || "")
-        : normalizePhone(req.body.phone || "");
+        : clientPhoneFromSession(req); // Фаза 2: владелец — по сессии, не по body.phone
       const leadId = isShareMode
         ? String(shareData.leadId || "").trim()
         : String(req.body.leadId || "").trim();
+      if (!phone) {
+        return res.status(401).json({ success: false, message: "Сессия истекла — войдите снова" });
+      }
 
       // Case-insensitive выравнивание ФИО к УЖЕ существующему заявителю —
       // pre-applicant'у или нормальному. Сценарий: клиент через модал
@@ -13775,7 +13808,8 @@ app.post(
 
 app.post("/api/questionnaire/share", async (req, res) => {
   try {
-    const phone = normalizePhone(req.body.phone || "");
+    // Фаза 2: share-ссылку рассылает ТОЛЬКО владелец (по сессии).
+    const phone = clientPhoneFromSession(req);
     const leadId = String(req.body.leadId || "").trim();
     const applicantCount = Math.max(1, Math.min(10, parseInt(req.body.applicantCount || "0", 10) || 0));
     const visaType = String(req.body.visaType || "").trim();
@@ -13816,10 +13850,10 @@ app.post("/api/questionnaire/share", async (req, res) => {
 // Идемпотентно: повторный вызов с тем же ФИО возвращает existing.
 app.post("/api/cabinet/pre-applicant", express.json(), async (req, res) => {
   try {
-    const phone = normalizePhone((req.body && req.body.phone) || "");
+    const phone = clientPhoneFromSession(req); // Фаза 2: владелец по сессии
     const leadId = String((req.body && req.body.leadId) || "").trim();
     const fullName = String((req.body && req.body.fullName) || "").trim();
-    if (!phone) return res.status(400).json({ success: false, message: "Не передан phone" });
+    if (!phone) return res.status(401).json({ success: false, message: "Сессия истекла — войдите снова" });
     if (!leadId) return res.status(400).json({ success: false, message: "Не передан leadId" });
     if (!fullName) return res.status(400).json({ success: false, message: "Не передан fullName" });
     if (!YANDEX_DISK_TOKEN) return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
@@ -13835,9 +13869,10 @@ app.post("/api/cabinet/pre-applicant", express.json(), async (req, res) => {
 // Показываем только на этапе ЛК «Ожидание подачи» (3 статуса amoCRM).
 app.get("/api/ready-docs", async (req, res) => {
   try {
-    const phone = req.query.phone || "";
+    const phone = clientPhoneFromSession(req);
     const leadId = req.query.leadId || "";
-    if (!phone || !leadId) return res.status(400).json({ success: false, message: "Не передан phone/leadId" });
+    if (!phone) return res.status(401).json({ success: false, message: "Сессия истекла — войдите снова" });
+    if (!leadId) return res.status(400).json({ success: false, message: "Не передан leadId" });
     if (!YANDEX_DISK_TOKEN) return res.status(500).json({ success: false, message: "Я.Диск не настроен" });
     const acc = await verifyReadyDocsAccess(phone, leadId);
     if (!acc.ok) return res.status(403).json({ success: false, message: "Нет доступа" });
@@ -13857,10 +13892,11 @@ app.get("/api/ready-docs", async (req, res) => {
 
 app.get("/api/ready-docs/file", async (req, res) => {
   try {
-    const phone = req.query.phone || "";
+    const phone = clientPhoneFromSession(req);
     const leadId = req.query.leadId || "";
     const rel = String(req.query.path || "");
-    if (!phone || !leadId || !rel) return res.status(400).send("bad request");
+    if (!phone) return res.status(401).send("login required");
+    if (!leadId || !rel) return res.status(400).send("bad request");
     if (rel.includes("..") || rel.startsWith("/")) return res.status(400).send("bad path");
     const acc = await verifyReadyDocsAccess(phone, leadId);
     if (!acc.ok || !acc.visible) return res.status(403).send("forbidden");
@@ -13882,10 +13918,11 @@ app.get("/api/ready-docs/file", async (req, res) => {
 
 app.get("/api/ready-docs/zip", async (req, res) => {
   try {
-    const phone = req.query.phone || "";
+    const phone = clientPhoneFromSession(req);
     const leadId = req.query.leadId || "";
     const fio = String(req.query.fio || "");
-    if (!phone || !leadId || !fio) return res.status(400).send("bad request");
+    if (!phone) return res.status(401).send("login required");
+    if (!leadId || !fio) return res.status(400).send("bad request");
     if (fio.includes("..") || fio.includes("/") || fio.includes("\\")) return res.status(400).send("bad fio");
     const acc = await verifyReadyDocsAccess(phone, leadId);
     if (!acc.ok || !acc.visible) return res.status(403).send("forbidden");
@@ -13915,11 +13952,11 @@ app.get("/api/ready-docs/zip", async (req, res) => {
 
 app.get("/api/questionnaire-state", async (req, res) => {
   try {
-    const phone = normalizePhone(req.query.phone || "");
+    const phone = clientPhoneFromSession(req);
     const leadId = String(req.query.leadId || "").trim();
 
     if (!phone) {
-      return res.status(400).json({ success: false, message: "Не передан phone" });
+      return res.status(401).json({ success: false, message: "Сессия истекла — войдите снова" });
     }
     if (!leadId) {
       // С 2026-05-21 lead-scoped — leadId обязателен.
@@ -14045,11 +14082,11 @@ app.post(
       if (!req.body) {
         return res.status(400).json({ success: false, message: "Загрузка не завершилась — попробуйте ещё раз" });
       }
-      const phone = normalizePhone(req.body.phone || "");
+      const phone = clientPhoneFromSession(req); // Фаза 2: владелец по сессии
       const file = req.file;
       const leadId = String(req.body.leadId || "").trim();
 
-      if (!phone) return res.status(400).json({ success: false, message: "Телефон не передан" });
+      if (!phone) return res.status(401).json({ success: false, message: "Сессия истекла — войдите снова" });
       if (!file) return res.status(400).json({ success: false, message: "Файл не передан" });
       if (!leadId) return res.status(400).json({ success: false, message: "leadId не передан" });
       if (!YANDEX_DISK_TOKEN) return res.status(500).json({ success: false, message: "Не задан YANDEX_DISK_TOKEN" });
@@ -14120,7 +14157,7 @@ app.post(
       if (!req.body) {
         return res.status(400).json({ success: false, message: "Загрузка не завершилась — попробуйте ещё раз" });
       }
-      const phone = normalizePhone(req.body.phone || "");
+      const phone = clientPhoneFromSession(req); // Фаза 2: владелец по сессии
       const field = String(req.body.field || "").trim();
       const applicantIndex = Math.max(1, Math.min(10, parseInt(req.body.applicantIndex || "1", 10) || 1));
       const file = req.file;
@@ -14129,7 +14166,7 @@ app.post(
       console.log("HANDLER /upload-document phone =", phone, "field =", field, "applicantIndex =", applicantIndex, "leadId =", leadId);
 
       if (!phone) {
-        return res.status(400).json({ success: false, message: "Телефон не передан" });
+        return res.status(401).json({ success: false, message: "Сессия истекла — войдите снова" });
       }
       if (!file) {
         return res.status(400).json({ success: false, message: "Файл не передан" });
@@ -14262,6 +14299,10 @@ app.post(
 // успешной загрузки всех файлов из батча.
 app.post("/api/amo/finish-upload", express.json(), async (req, res) => {
   try {
+    // Фаза 2: финализацию инициирует только вошедший клиент (сессия обязательна).
+    if (!clientPhoneFromSession(req)) {
+      return res.status(401).json({ success: false, message: "Сессия истекла — войдите снова" });
+    }
     const leadId = String((req.body && req.body.leadId) || "").trim();
     const withTask = !!(req.body && req.body.withTask);
     if (!leadId) {
