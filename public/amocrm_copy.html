@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Копия amoCRM — слепок VSC</title>
+<style>
+  :root { --blue:#2e5bff; --bg:#f4f6fa; --card:#fff; --line:#e3e8f0; --txt:#1f2a44; --mut:#7a869a; --green:#22a06b; --red:#d64545; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; background:var(--bg); color:var(--txt); }
+  header { background:#152a5c; color:#fff; padding:10px 18px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; position:sticky; top:0; z-index:50; }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  header .sub { font-size:12px; opacity:.75; }
+  nav { display:flex; gap:4px; flex-wrap:wrap; margin-left:auto; }
+  nav button { background:transparent; border:0; color:#cdd7f3; padding:7px 12px; border-radius:8px; cursor:pointer; font-size:13px; }
+  nav button.act { background:rgba(255,255,255,.16); color:#fff; font-weight:600; }
+  main { padding:16px 18px 60px; max-width:1400px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }
+  .kpi { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .kpi b { display:block; font-size:22px; }
+  .kpi span { color:var(--mut); font-size:12px; }
+  h2 { font-size:16px; margin:18px 0 10px; }
+  h3 { font-size:14px; margin:14px 0 8px; }
+  .muted { color:var(--mut); }
+  .pill { display:inline-block; background:#eef1f8; border-radius:20px; padding:2px 10px; font-size:12px; margin:2px 4px 2px 0; }
+  .kb { display:flex; gap:10px; overflow-x:auto; padding-bottom:10px; }
+  .kb-col { min-width:230px; max-width:230px; background:#eef1f6; border-radius:10px; padding:8px; }
+  .kb-col h4 { font-size:12px; margin:2px 4px 8px; text-transform:uppercase; letter-spacing:.02em; }
+  .kb-col .cnt { font-size:11px; color:var(--mut); font-weight:400; display:block; }
+  .kb-card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:6px; cursor:pointer; }
+  .kb-card:hover { border-color:var(--blue); }
+  .kb-card .nm { font-weight:600; font-size:13px; }
+  .kb-card .pr { color:var(--green); font-size:12px; }
+  .kb-card .rs { color:var(--mut); font-size:11px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--mut); font-weight:600; font-size:12px; }
+  input[type=text] { width:100%; max-width:420px; padding:9px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+  button.btn { background:var(--blue); color:#fff; border:0; border-radius:8px; padding:8px 14px; cursor:pointer; font-size:13px; }
+  button.lnk { background:none; border:0; color:var(--blue); cursor:pointer; padding:0; font-size:inherit; }
+  .modal-bg { position:fixed; inset:0; background:rgba(15,25,50,.45); z-index:100; display:flex; align-items:flex-start; justify-content:center; padding:30px 12px; overflow:auto; }
+  .modal { background:#fff; border-radius:12px; max-width:900px; width:100%; padding:18px 20px; position:relative; }
+  .modal .x { position:absolute; top:10px; right:14px; font-size:20px; cursor:pointer; color:var(--mut); background:none; border:0; }
+  pre { background:#f2f4f9; border-radius:8px; padding:10px; overflow:auto; font-size:12px; max-height:420px; }
+  .note { border-left:3px solid var(--blue); padding:6px 10px; margin:6px 0; background:#f8f9fd; border-radius:0 8px 8px 0; font-size:13px; }
+  .note .h { color:var(--mut); font-size:11px; }
+  .flag { font-size:12px; padding:2px 8px; border-radius:6px; background:#fdeaea; color:var(--red); }
+  .ok { background:#e7f6ef; color:var(--green); }
+  details { margin:6px 0; }
+  summary { cursor:pointer; font-weight:600; }
+  .md h1,.md h2,.md h3 { margin:14px 0 6px; }
+  .md h2 { font-size:15px; } .md h3 { font-size:13.5px; }
+  .md table { font-size:12.5px; }
+  .md code { background:#eef1f8; padding:1px 5px; border-radius:4px; }
+  #login { max-width:560px; margin:60px auto; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:800px){ .two { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Копия amoCRM <span class="sub">слепок аккаунта VSC · только чтение</span></h1>
+  <span class="sub" id="metaLine"></span>
+  <nav id="nav"></nav>
+</header>
+<main id="main"><div class="card">Загрузка…</div></main>
+
+<script>
+(function(){
+  "use strict";
+  var API = "/amocrm_copy/api";
+  var token = null, META = null, PIPES = [], USERS = [], KANBAN = null, CF = null;
+  var TABS = [
+    ["overview","Обзор"],["funnels","Воронки"],["contacts","Контакты"],
+    ["auto","Автоматизации"],["refs","Справочники"],["todo","Доработки"]
+  ];
+  var $ = function(s){ return document.querySelector(s); };
+  var esc = function(s){ return String(s==null?"":s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
+  var fmt = function(n){ return (n==null?"—":Number(n).toLocaleString("ru-RU")); };
+  var dt = function(ts){ return ts ? new Date(ts*1000).toLocaleString("ru-RU") : "—"; };
+
+  function pickToken(){
+    var qs = new URLSearchParams(location.search).get("token");
+    var cands = [qs, localStorage.getItem("voyo_vsc_token"), localStorage.getItem("voyo_team_token"), localStorage.getItem("voyo_admin_token")];
+    for (var i=0;i<cands.length;i++) if (cands[i]) return cands[i];
+    return null;
+  }
+  function req(url){
+    return fetch(url, { headers: { Authorization: "Bearer " + token } }).then(function(r){
+      if (r.status === 401) throw new Error("401");
+      return r;
+    });
+  }
+  function jreq(url){ return req(url).then(function(r){ return r.json(); }); }
+
+  function showLogin(msg){
+    $("#main").innerHTML = '<div class="card" id="login"><h2>Нужен вход руководителя</h2>' +
+      '<p>' + esc(msg || "Страница доступна админу и руководителям с правом «vsc».") + '</p>' +
+      '<p>Откройте <a href="/vsc">/vsc</a>, войдите как обычно, затем вернитесь сюда и обновите страницу.</p></div>';
+  }
+
+  // ---------- Обзор ----------
+  function vOverview(){
+    var c = META.counts || {};
+    var a = META.account || {};
+    var html = '<div class="card"><b>' + esc(a.name || "amoCRM") + '</b> · поддомен ' + esc(a.subdomain || "") +
+      ' · id ' + esc(a.id || "") + '<br><span class="muted">Слепок собран: ' + esc(new Date(META.builtAt).toLocaleString("ru-RU")) + ". Это точная копия данных на момент выгрузки; ничего не меняет в живой amoCRM.</span></div>";
+    html += '<div class="grid">';
+    var items = [["Сделки", c.leads],["Контакты", c.contacts],["Компании", c.companies],["Задачи", c.tasks],
+      ["Примечания (сделки)", c.notes_leads],["Примечания (контакты)", c.notes_contacts],
+      ["Пользователи", c.users],["Воронки", c.pipelines],["Поля сделки", c.cf_leads],["Вебхуки", c.webhooks]];
+    items.forEach(function(it){ html += '<div class="kpi"><b>' + fmt(it[1]) + '</b><span>' + it[0] + '</span></div>'; });
+    html += '</div>';
+    html += '<h2>Воронки</h2><div class="grid">';
+    PIPES.forEach(function(p){
+      var sts = (p._embedded && p._embedded.statuses) || [];
+      var kb = (KANBAN && KANBAN.kanban[p.id]) || {};
+      var total = 0; Object.keys(kb).forEach(function(s){ total += kb[s].count; });
+      html += '<div class="kpi"><b>' + fmt(total) + '</b><span>' + esc(p.name) + ' · этапов: ' + sts.length + '</span></div>';
+    });
+    html += '</div>';
+    $("#main").innerHTML = html;
+  }
+
+  // ---------- Воронки (канбан) ----------
+  var curPipe = null;
+  function vFunnels(){
+    if (!curPipe) curPipe = PIPES[0] && PIPES[0].id;
+    var html = '<div class="card">Воронка: ';
+    PIPES.forEach(function(p){
+      html += '<button class="lnk" style="margin-right:12px;' + (p.id===curPipe?"font-weight:700;":"") + '" onclick="AC.pipe(' + p.id + ')">' + esc(p.name) + '</button>';
+    });
+    html += '</div><div class="kb" id="kb"></div>';
+    $("#main").innerHTML = html;
+    renderKb();
+  }
+  function renderKb(){
+    var p = PIPES.find(function(x){ return x.id===curPipe; });
+    if (!p) return;
+    var sts = (p._embedded && p._embedded.statuses) || [];
+    var kb = (KANBAN && KANBAN.kanban[p.id]) || {};
+    var el = $("#kb"); el.innerHTML = "";
+    sts.forEach(function(s){
+      var k = kb[s.id] || { count:0, sum:0 };
+      var col = document.createElement("div");
+      col.className = "kb-col";
+      col.innerHTML = '<h4 style="border-bottom:3px solid ' + esc(s.color || "#98adc5") + ';padding-bottom:4px;">' + esc(s.name) +
+        '<span class="cnt">' + fmt(k.count) + ' сделок · ' + fmt(k.sum) + ' ₽</span></h4>' +
+        '<div class="cards"></div>' +
+        (k.count ? '<button class="lnk" style="font-size:12px" onclick="AC.more(this,' + p.id + ',' + s.id + ')">Показать сделки</button>' : "");
+      el.appendChild(col);
+    });
+  }
+  function loadPage(btn, pid, sid){
+    var box = btn.parentElement.querySelector(".cards");
+    var page = (parseInt(btn.dataset.page || "0", 10) || 0) + 1;
+    jreq(API + "/leads?pipeline=" + pid + "&status=" + sid + "&page=" + page).then(function(items){
+      if (!Array.isArray(items)) { btn.textContent = "Больше нет"; return; }
+      items.forEach(function(l){
+        var d = document.createElement("div");
+        d.className = "kb-card";
+        d.innerHTML = '<div class="nm">' + esc(l.name || ("Сделка #" + l.id)) + '</div>' +
+          (l.price ? '<div class="pr">' + fmt(l.price) + ' ₽</div>' : "") +
+          '<div class="rs">' + esc(l.resp || "") + " · " + dt(l.created) + '</div>';
+        d.onclick = function(){ openLead(l.id); };
+        box.appendChild(d);
+      });
+      btn.dataset.page = page;
+      btn.textContent = items.length >= 50 ? "Ещё" : "Больше нет";
+    }).catch(function(){ btn.textContent = "Больше нет"; });
+  }
+  function cfBlock(vals, defs){
+    if (!vals || !vals.length) return "";
+    var byId = {}; (defs||[]).forEach(function(f){ byId[f.id]=f.name; });
+    var rows = vals.map(function(f){
+      var v = (f.values||[]).map(function(x){ return x.value && x.value.name ? x.value.name : x.value; }).join(", ");
+      return "<tr><td>" + esc(f.field_name || byId[f.field_id] || f.field_id) + "</td><td>" + esc(v) + "</td></tr>";
+    }).join("");
+    return '<details><summary>Поля (' + vals.length + ')</summary><table>' + rows + '</table></details>';
+  }
+  function notesBlock(notes){
+    if (!notes.length) return '<p class="muted">Примечаний нет</p>';
+    notes.sort(function(a,b){ return (b.created||0)-(a.created||0); });
+    return notes.slice(0,200).map(function(n){
+      var p = n.params || {};
+      var txt = p.text || p.service || (p.link ? p.link : "") || JSON.stringify(p).slice(0,300);
+      return '<div class="note"><div class="h">' + esc(n.type) + " · " + dt(n.created) + " · " + esc(n.by||"") + '</div>' + esc(txt) + '</div>';
+    }).join("");
+  }
+  function openLead(id){
+    jreq(API + "/lead/" + id).then(function(r){
+      if (!r.success) return alert(r.message || "Не найдено");
+      var l = r.lead;
+      var stName = "", pName = "";
+      PIPES.forEach(function(p){ if (p.id===l.pipeline_id){ pName=p.name; ((p._embedded&&p._embedded.statuses)||[]).forEach(function(s){ if (s.id===l.status_id) stName=s.name; }); }});
+      var u = USERS.find(function(x){ return x.id===l.responsible_user_id; });
+      var contacts = ((l._embedded && l._embedded.contacts) || []).map(function(c){
+        return '<button class="lnk" onclick="AC.contact(' + c.id + ')">контакт #' + c.id + '</button>';
+      }).join(" ");
+      var tags = ((l._embedded && l._embedded.tags) || []).map(function(t){ return '<span class="pill">' + esc(t.name) + '</span>'; }).join("");
+      var tasks = (r.tasks||[]).map(function(t){
+        return "<tr><td>" + dt(t.complete_till) + "</td><td>" + esc(t.text||"").slice(0,300) + "</td><td>" + (t.is_completed?'<span class="flag ok">выполнена</span>':'<span class="flag">открыта</span>') + "</td></tr>";
+      }).join("");
+      modal('<h2>' + esc(l.name || ("Сделка #" + l.id)) + '</h2>' +
+        '<p>' + esc(pName) + ' → <b>' + esc(stName) + '</b> · бюджет ' + fmt(l.price) + ' ₽ · отв. ' + esc(u?u.name:l.responsible_user_id) +
+        '<br><span class="muted">создана ' + dt(l.created_at) + " · обновлена " + dt(l.updated_at) + (l.closed_at ? " · закрыта " + dt(l.closed_at) : "") + '</span></p>' +
+        (tags?('<p>'+tags+'</p>'):"") + (contacts?('<p>Контакты: '+contacts+'</p>'):"") +
+        cfBlock(l.custom_fields_values, CF && CF.leads) +
+        (tasks?('<h3>Задачи</h3><table><tr><th>Срок</th><th>Текст</th><th></th></tr>'+tasks+'</table>'):"") +
+        '<h3>Примечания</h3>' + notesBlock(r.notes||[]));
+    }).catch(function(e){ if (String(e.message)==="401") showLogin(); });
+  }
+  function openContact(id){
+    jreq(API + "/contact/" + id).then(function(r){
+      if (!r.success) return alert(r.message || "Не найдено");
+      var c = r.contact;
+      var leads = ((c._embedded && c._embedded.leads) || []).map(function(l){
+        return '<button class="lnk" onclick="AC.lead(' + l.id + ')">сделка #' + l.id + '</button>';
+      }).join(" ");
+      modal('<h2>' + esc(c.name || ("Контакт #" + c.id)) + '</h2>' +
+        '<p class="muted">создан ' + dt(c.created_at) + " · обновлён " + dt(c.updated_at) + '</p>' +
+        (leads?('<p>Сделки: '+leads+'</p>'):"") +
+        cfBlock(c.custom_fields_values, CF && CF.contacts) +
+        '<h3>Примечания</h3>' + notesBlock(r.notes||[]));
+    });
+  }
+
+  // ---------- Контакты ----------
+  function vContacts(){
+    $("#main").innerHTML = '<div class="card"><h2 style="margin-top:0">Поиск по ' + fmt(META.counts.contacts) + ' контактам</h2>' +
+      '<input type="text" id="cq" placeholder="Имя, телефон или email (мин. 3 символа)"> <button class="btn" id="cgo">Найти</button>' +
+      '<div id="cres" style="margin-top:12px"></div></div>';
+    var go = function(){
+      var q = $("#cq").value.trim();
+      $("#cres").innerHTML = '<span class="muted">Ищу…</span>';
+      jreq(API + "/contacts?q=" + encodeURIComponent(q)).then(function(r){
+        var items = r.items || [];
+        if (!items.length) { $("#cres").innerHTML = '<span class="muted">' + esc(r.note || "Ничего не найдено") + '</span>'; return; }
+        $("#cres").innerHTML = '<table><tr><th>Имя</th><th>Телефоны</th><th>Email</th><th></th></tr>' + items.map(function(c){
+          return "<tr><td>" + esc(c.n||"—") + "</td><td>" + esc((c.p||[]).join(", ")) + "</td><td>" + esc((c.e||[]).join(", ")) +
+            '</td><td><button class="lnk" onclick="AC.contact(' + c.id + ')">открыть</button></td></tr>';
+        }).join("") + "</table>" + (items.length>=50?'<p class="muted">Показаны первые 50 — уточните запрос</p>':"");
+      });
+    };
+    $("#cgo").onclick = go;
+    $("#cq").onkeydown = function(e){ if (e.key==="Enter") go(); };
+  }
+
+  // ---------- Автоматизации ----------
+  function mdRender(md){
+    var h = esc(md);
+    h = h.replace(/^### (.*)$/gm, "<h3>$1</h3>").replace(/^## (.*)$/gm, "<h2>$1</h2>").replace(/^# (.*)$/gm, "<h1>$1</h1>");
+    h = h.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+    // таблицы
+    h = h.replace(/((?:^\|.*\|\s*$\n?)+)/gm, function(block){
+      var rows = block.trim().split("\n").filter(function(r){ return !/^\|[\s:|-]+\|$/.test(r); });
+      return "<table>" + rows.map(function(r,i){
+        var cells = r.replace(/^\||\|$/g,"").split("|");
+        return "<tr>" + cells.map(function(c){ return (i===0?"<th>":"<td>") + c.trim() + (i===0?"</th>":"</td>"); }).join("") + "</tr>";
+      }).join("") + "</table>";
+    });
+    h = h.replace(/^- (.*)$/gm, "<li>$1</li>").replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g, "<ul>$1</ul>");
+    return h.replace(/\n{2,}/g, "<br>");
+  }
+  function vAuto(){
+    $("#main").innerHTML = '<div class="card">Загрузка автоматизаций…</div>';
+    Promise.all([
+      req(API + "/automations").then(function(r){ return r.text(); }).catch(function(){ return ""; }),
+      jreq(API + "/salesbots").catch(function(){ return null; }),
+      jreq(API + "/webhooks").catch(function(){ return []; })
+    ]).then(function(res){
+      var md = res[0], bots = res[1], hooks = res[2];
+      var html = '<div class="card"><h2 style="margin-top:0">Опись автоматизаций (снята с живой amoCRM)</h2><div class="md">' + mdRender(md) + '</div></div>';
+      if (bots && bots.length) {
+        html += '<div class="card"><h2 style="margin-top:0">Salesbot — полные сценарии (' + bots.length + ')</h2>';
+        bots.forEach(function(b){
+          var body = ""; try { body = JSON.stringify(JSON.parse(b.text || "null"), null, 2); } catch(e){ body = b.text || ""; }
+          html += '<details><summary>' + esc(b.name) + ' <span class="muted">(id ' + b.id + (b.settings && b.settings.active===false ? ", выключен" : "") + ')</span></summary><pre>' + esc(body) + '</pre></details>';
+        });
+        html += '</div>';
+      }
+      if (hooks && hooks.length) {
+        html += '<div class="card"><h2 style="margin-top:0">Вебхуки (' + hooks.length + ')</h2><table><tr><th>URL</th><th>События</th><th></th></tr>' +
+          hooks.map(function(w){ return "<tr><td>" + esc(w.destination) + "</td><td>" + esc((w.settings||[]).join(", ")) + "</td><td>" + (w.disabled?'<span class="flag">выключен</span>':'<span class="flag ok">активен</span>') + "</td></tr>"; }).join("") + '</table></div>';
+      }
+      html += '<div class="card"><h2 style="margin-top:0">Триггеры цифровой воронки (сырые данные)</h2><p class="muted">Полные машинные настройки триггеров каждой воронки, как их хранит amoCRM:</p>' +
+        PIPES.map(function(p){ return '<button class="lnk" style="display:block;margin:4px 0" onclick="AC.dp(' + p.id + ',\'' + esc(p.name).replace(/'/g,"") + '\')">' + esc(p.name) + ' — открыть JSON триггеров</button>'; }).join("") + '</div>';
+      $("#main").innerHTML = html;
+    });
+  }
+  function openDp(pid, name){
+    jreq(API + "/dp/" + pid).then(function(j){
+      var s = JSON.stringify(j, null, 1);
+      if (s.length > 400000) s = s.slice(0, 400000) + "\n… (обрезано для отображения — полный файл в слепке)";
+      modal('<h2>Цифровая воронка: ' + esc(name) + '</h2><pre>' + esc(s) + '</pre>');
+    });
+  }
+
+  // ---------- Справочники ----------
+  function vRefs(){
+    $("#main").innerHTML = '<div class="card">Загрузка…</div>';
+    Promise.all([jreq(API+"/users"), jreq(API+"/custom_fields"), jreq(API+"/tags"), jreq(API+"/loss_reasons"), jreq(API+"/catalogs"), jreq(API+"/sources")])
+      .then(function(res){
+        var users=res[0], cf=res[1], tags=res[2], lr=res[3], cats=res[4], src=res[5];
+        var html = '<div class="two">';
+        html += '<div class="card"><h2 style="margin-top:0">Пользователи (' + users.length + ')</h2><table><tr><th>Имя</th><th>Email</th><th>Роль/группа</th><th></th></tr>' +
+          users.map(function(u){ return "<tr><td>"+esc(u.name)+"</td><td>"+esc(u.email)+"</td><td>"+esc(u.role||"")+(u.group?(" / "+esc(u.group)):"")+"</td><td>"+(u.is_admin?'<span class="pill">админ</span>':"")+(u.is_active===false?'<span class="flag">неактивен</span>':"")+"</td></tr>"; }).join("") + '</table></div>';
+        var cfTbl = function(title, arr){
+          return '<details><summary>' + title + ' (' + arr.length + ')</summary><table><tr><th>Поле</th><th>Тип</th><th>Значения</th></tr>' +
+            arr.map(function(f){
+              var enums = (f.enums||[]).map(function(e){ return e.value; }).slice(0,25).join(", ");
+              return "<tr><td>"+esc(f.name)+"</td><td>"+esc(f.type)+"</td><td class='muted'>"+esc(enums)+((f.enums||[]).length>25?"…":"")+"</td></tr>";
+            }).join("") + "</table></details>";
+        };
+        html += '<div class="card"><h2 style="margin-top:0">Кастомные поля</h2>' +
+          cfTbl("Сделки", cf.leads||[]) + cfTbl("Контакты", cf.contacts||[]) + cfTbl("Компании", cf.companies||[]) + '</div>';
+        html += '</div><div class="two">';
+        html += '<div class="card"><h2 style="margin-top:0">Теги сделок (' + (tags.leads||[]).length + ')</h2>' + (tags.leads||[]).map(function(t){ return '<span class="pill">'+esc(t.name)+'</span>'; }).join("") + '</div>';
+        html += '<div class="card"><h2 style="margin-top:0">Причины отказа (' + lr.length + ')</h2>' + lr.map(function(x){ return '<span class="pill">'+esc(x.name)+'</span>'; }).join("") +
+          '<h2>Источники (' + src.length + ')</h2>' + src.map(function(x){ return '<span class="pill">'+esc(x.name||x.external_id||x.id)+'</span>'; }).join("") + '</div>';
+        html += '</div>';
+        html += '<div class="card"><h2 style="margin-top:0">Каталоги/списки (' + cats.length + ')</h2>' +
+          cats.map(function(c){ return '<details><summary>' + esc(c.name) + ' (' + (c.elements||[]).length + ' элементов)</summary><pre>' + esc(JSON.stringify((c.elements||[]).slice(0,100), null, 1)) + '</pre></details>'; }).join("") + '</div>';
+        $("#main").innerHTML = html;
+      });
+  }
+
+  // ---------- Доработки ----------
+  function vTodo(){
+    var rows = [
+      ["Данные (сделки, контакты, компании, задачи, примечания, поля, воронки, пользователи)", "ok", "Выгружены полностью в слепок; регулярный автобэкап можно включить по расписанию."],
+      ["Salesbot — сценарии всех ботов", "ok", "Полные машинные сценарии в слепке (вкладка Автоматизации)."],
+      ["Триггеры цифровой воронки", "ok", "Сырые настройки всех 5 воронок в слепке + человекочитаемая опись."],
+      ["Журнал событий (история изменений)", "warn", "Сознательно не выгружался: миллионы записей, риск упереться в лимит API (бан 15.06). Можно догрузить порциями по месяцам отдельным запуском."],
+      ["Файлы-вложения (сканы документов и т.п.)", "warn", "В слепке только ссылки/метаданные из примечаний. Тела файлов — отдельная выгрузка через файловый сервис amoCRM (объём может быть десятки ГБ)."],
+      ["Переписка из чатов (WhatsApp/Telegram/Instagram через Wazzup)", "no", "amoCRM не отдаёт содержимое чатов по API — история живёт у Wazzup/Chatter. Для копии нужен экспорт на стороне Wazzup."],
+      ["Письма (входящие/исходящие почты)", "no", "Почтовый ящик подключён к amoCRM, но письма живут на почтовом сервере (mail.ru). Копия — через IMAP-выгрузку ящиков."],
+      ["Звонки (записи разговоров onlinePBX)", "no", "В примечаниях есть факты звонков и ссылки; сами записи — на стороне onlinePBX."],
+      ["Шаблоны писем (Почтовик «Команда F5»)", "warn", "Названия шаблонов сняты в опись; содержимое шаблонов хранится в виджете F5 — переписать вручную из интерфейса (~20 шт.)."],
+      ["Чек-листы «Команда F5» по странам", "warn", "Условия срабатывания в слепке; содержимое самих чек-листов — в виджете F5, выгружается вручную."],
+      ["Сторонние виджеты (35 интеграций)", "no", "Список зафиксирован. Логика работает на серверах разработчиков (Команда F5, Wazzup, onlinePBX, SMS.RU…) — при переезде каждую интеграцию нужно заменять своей реализацией или новым договором."],
+      ["Права/роли пользователей", "ok", "Роли и базовые права в слепке (users + roles)."],
+      ["Наши интеграции (ЛК VSC, Google Sheets Sync, Staff СПб, Marketcall, СЕО-сайт, Калькулятор)", "ok", "Это наш код — уже в git, работает независимо от amoCRM UI."]
+    ];
+    var steps = [
+      "1. Решить архитектуру своей CRM: self-hosted платформа (например, на нашей базе ЛК) или открытая CRM с импортом.",
+      "2. Импортёр данных из слепка (NDJSON → БД новой CRM): сделки+статусы, контакты с телефонами, связи, задачи, примечания.",
+      "3. Реализовать движок автоматизаций по описи: триггеры этапов (задачи, письма, SMS, смена ответственного) — всё уже формализовано в слепке.",
+      "4. Каналы: телефония (замена onlinePBX-виджета), WhatsApp/Telegram (замена Wazzup — можно через их же API), SMS (SMS.RU уже используем напрямую), почта (SMTP есть).",
+      "5. Переключить наши интеграции (ЛК, калькулятор, Sheets) с amoCRM API на API новой CRM — точки интеграции известны, всё наше.",
+      "6. Параллельный прогон: новая CRM работает рядом с amoCRM на полном бэкапе, сверка, потом переключение."
+    ];
+    var lbl = { ok:'<span class="flag ok">в слепке</span>', warn:'<span class="flag" style="background:#fdf3e0;color:#9a6b00">частично</span>', no:'<span class="flag">вне amoCRM</span>' };
+    $("#main").innerHTML = '<div class="card"><h2 style="margin-top:0">Что уже в копии и что нужно доделать до рабочей CRM</h2>' +
+      '<table><tr><th>Компонент</th><th>Статус</th><th>Комментарий</th></tr>' +
+      rows.map(function(r){ return "<tr><td>"+r[0]+"</td><td>"+lbl[r[1]]+"</td><td class='muted'>"+r[2]+"</td></tr>"; }).join("") + '</table></div>' +
+      '<div class="card"><h2 style="margin-top:0">План до полноценной своей CRM</h2>' + steps.map(function(s){ return "<p>"+s+"</p>"; }).join("") + '</div>';
+  }
+
+  // ---------- каркас ----------
+  function modal(html){
+    var bg = document.createElement("div");
+    bg.className = "modal-bg";
+    bg.innerHTML = '<div class="modal"><button class="x">×</button>' + html + '</div>';
+    bg.onclick = function(e){ if (e.target===bg || e.target.className==="x") document.body.removeChild(bg); };
+    document.body.appendChild(bg);
+  }
+  var views = { overview:vOverview, funnels:vFunnels, contacts:vContacts, auto:vAuto, refs:vRefs, todo:vTodo };
+  function tab(name){
+    document.querySelectorAll("nav button").forEach(function(b){ b.classList.toggle("act", b.dataset.t===name); });
+    (views[name]||vOverview)();
+  }
+  window.AC = {
+    pipe: function(id){ curPipe=id; vFunnels(); },
+    more: loadPage, lead: openLead, contact: openContact, dp: openDp
+  };
+
+  token = pickToken();
+  if (!token) return showLogin();
+  $("#nav").innerHTML = TABS.map(function(t){ return '<button data-t="'+t[0]+'" onclick="void 0">'+t[1]+'</button>'; }).join("");
+  document.querySelectorAll("nav button").forEach(function(b){ b.onclick = function(){ tab(b.dataset.t); }; });
+
+  jreq(API + "/meta").then(function(meta){
+    if (meta && meta.success === false) {
+      $("#main").innerHTML = '<div class="card"><h2>Слепок ещё собирается</h2><p class="muted">' + esc(meta.message||"") + ' Идёт выгрузка данных из amoCRM — загляните позже.</p></div>';
+      return;
+    }
+    META = meta;
+    $("#metaLine").textContent = "слепок от " + new Date(meta.builtAt).toLocaleString("ru-RU");
+    return Promise.all([jreq(API+"/pipelines"), jreq(API+"/kanban"), jreq(API+"/users"), jreq(API+"/custom_fields")]).then(function(r){
+      PIPES = r[0]; KANBAN = r[1]; USERS = r[2]; CF = r[3];
+      tab("overview");
+    });
+  }).catch(function(e){
+    if (String(e.message)==="401") showLogin("Токен не подошёл — войдите в /vsc заново.");
+    else $("#main").innerHTML = '<div class="card">Ошибка загрузки. Обновите страницу.</div>';
+  });
+})();
+</script>
+</body>
+</html>
