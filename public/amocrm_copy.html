@@ -83,7 +83,7 @@
 
   function pickToken(){
     var qs = new URLSearchParams(location.search).get("token");
-    var cands = [qs, localStorage.getItem("voyo_vsc_token"), localStorage.getItem("voyo_team_token"), localStorage.getItem("voyo_admin_token")];
+    var cands = [qs, localStorage.getItem("voyo_crmcopy_token"), localStorage.getItem("voyo_vsc_token"), localStorage.getItem("voyo_team_token"), localStorage.getItem("voyo_admin_token")];
     for (var i=0;i<cands.length;i++) if (cands[i]) return cands[i];
     return null;
   }
@@ -96,9 +96,25 @@
   function jreq(url){ return req(url).then(function(r){ return r.json(); }); }
 
   function showLogin(msg){
-    $("#main").innerHTML = '<div class="card" id="login"><h2>Нужен вход руководителя</h2>' +
-      '<p>' + esc(msg || "Страница доступна админу и руководителям с правом «vsc».") + '</p>' +
-      '<p>Откройте <a href="/vsc">/vsc</a>, войдите как обычно, затем вернитесь сюда и обновите страницу.</p></div>';
+    $("#main").innerHTML = '<div class="card" id="login"><h2>Вход в копию amoCRM</h2>' +
+      (msg ? '<p style="color:var(--red)">' + esc(msg) + '</p>' : "") +
+      '<p><input type="text" id="loginCode" placeholder="Код доступа" autocomplete="off" style="max-width:220px"> ' +
+      '<button class="btn" id="loginGo">Войти</button></p>' +
+      '<p class="muted">Или войдите как руководитель через <a href="/vsc">/vsc</a> и обновите страницу.</p></div>';
+    var go = function(){
+      var code = $("#loginCode").value.trim();
+      if (!code) return;
+      fetch("/amocrm_copy/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ code: code }) })
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          if (j.success && j.token) { localStorage.setItem("voyo_crmcopy_token", j.token); location.reload(); }
+          else showLogin(j.message || "Неверный код");
+        })
+        .catch(function(){ showLogin("Ошибка сети — попробуйте ещё раз"); });
+    };
+    $("#loginGo").onclick = go;
+    $("#loginCode").onkeydown = function(e){ if (e.key==="Enter") go(); };
+    $("#loginCode").focus();
   }
 
   // ---------- Обзор ----------

@@ -101,3 +101,4 @@ betaChat.json
 # Слепок amoCRM для /amocrm_copy — данные клиентов, только прод, в git не попадает
 .amocopy/
 amo-backup/
+.amocopySessions.json

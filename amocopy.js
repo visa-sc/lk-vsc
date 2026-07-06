@@ -3,15 +3,38 @@
  *
  * Полностью обособленный модуль: server.js лишь вызывает setup(app, requireVscAccess).
  * Данные лежат в .amocopy/ (создаёт tools/amoCopyBuild.js из экспорта, в .gitignore).
- * Все API — за requireVscAccess (админ или руководитель с правом "vsc").
+ * Все API — за requireCopyAccess: вход по коду (AMOCRM_COPY_CODE, дефолт 111,
+ * свои сессии в .amocopySessions.json) ИЛИ обычный vsc-вход (админ/руководитель).
  * В amoCRM этот модуль НЕ ходит вообще.
  */
 const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
+const crypto = require("crypto");
 
 const DATA_DIR = process.env.AMOCOPY_DIR || path.join(__dirname, ".amocopy");
 const PAGE_FILE_RE = /^[0-9]{1,12}$/;
+
+// ── Собственный вход по коду (просьба Андрея 06.07.2026: crm.voyotravel.ru по коду 111).
+// Полностью автономно: свои сессии в .amocopySessions.json, admin/manager-сессии не задеты.
+const COPY_CODE = String(process.env.AMOCRM_COPY_CODE || "111");
+const COPY_SESS_FILE = path.join(__dirname, ".amocopySessions.json");
+const COPY_SESS_TTL_MS = 30 * 24 * 3600 * 1000; // 30 дней
+let copySessions = {};
+try { copySessions = JSON.parse(fs.readFileSync(COPY_SESS_FILE, "utf8")) || {}; } catch (_) {}
+function saveCopySessions() {
+  try { fs.writeFileSync(COPY_SESS_FILE, JSON.stringify(copySessions)); } catch (e) { console.error("amocopy sessions:", e.message); }
+}
+// защита от перебора кода: максимум 5 попыток в минуту с IP
+const _loginAttempts = new Map();
+function copyLoginLimited(ip) {
+  const now = Date.now();
+  const a = _loginAttempts.get(ip) || { n: 0, resetAt: now + 60000 };
+  if (now > a.resetAt) { a.n = 0; a.resetAt = now + 60000; }
+  a.n++;
+  _loginAttempts.set(ip, a);
+  return a.n > 5;
+}
 
 function sendJsonFile(res, file) {
   const p = path.join(DATA_DIR, file);
@@ -65,6 +88,29 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
 
   const api = "/amocrm_copy/api";
 
+  // доступ: свой код-токен ИЛИ обычный vsc-вход (админ/руководитель) — что-то одно
+  function requireCopyAccess(req, res, next) {
+    const t = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+    if (t && copySessions[t] && copySessions[t] > Date.now()) return next();
+    return requireVscAccess(req, res, next);
+  }
+
+  // вход по коду
+  app.post(`${api}/login`, (req, res) => {
+    const ip = String(req.headers["x-real-ip"] || req.ip || "");
+    if (copyLoginLimited(ip)) return res.status(429).json({ success: false, message: "Слишком много попыток — подождите минуту" });
+    const code = String((req.body && req.body.code) || "").trim();
+    if (!code) return res.status(400).json({ success: false, message: "Введите код" });
+    if (code !== COPY_CODE) return res.status(403).json({ success: false, message: "Неверный код" });
+    // чистим протухшие сессии заодно
+    const now = Date.now();
+    for (const k of Object.keys(copySessions)) if (copySessions[k] < now) delete copySessions[k];
+    const token = crypto.randomBytes(24).toString("hex");
+    copySessions[token] = now + COPY_SESS_TTL_MS;
+    saveCopySessions();
+    return res.json({ success: true, token });
+  });
+
   // мелкие справочники — файл целиком
   const FILES = {
     meta: "meta.json", pipelines: "pipelines.json", users: "users.json", roles: "roles.json",
@@ -73,18 +119,18 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
     salesbots: "salesbots.json", kanban: "kanban.json", companies: "companies.json"
   };
   Object.keys(FILES).forEach((name) => {
-    app.get(`${api}/${name}`, requireVscAccess, (req, res) => sendJsonFile(res, FILES[name]));
+    app.get(`${api}/${name}`, requireCopyAccess, (req, res) => sendJsonFile(res, FILES[name]));
   });
 
   // настройки цифровой воронки (сырой JSON из amo)
-  app.get(`${api}/dp/:pid`, requireVscAccess, (req, res) => {
+  app.get(`${api}/dp/:pid`, requireCopyAccess, (req, res) => {
     const pid = String(req.params.pid || "");
     if (!PAGE_FILE_RE.test(pid)) return res.status(400).json({ success: false });
     return sendJsonFile(res, `digital_pipeline_${pid}.json`);
   });
 
   // опись автоматизаций (курируемый markdown из репозитория)
-  app.get(`${api}/automations`, requireVscAccess, (req, res) => {
+  app.get(`${api}/automations`, requireCopyAccess, (req, res) => {
     const p = path.join(__dirname, "amocopy-automations.md");
     if (!fs.existsSync(p)) return res.status(404).json({ success: false });
     res.set("Content-Type", "text/markdown; charset=utf-8");
@@ -92,7 +138,7 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
   });
 
   // список сделок этапа, постранично
-  app.get(`${api}/leads`, requireVscAccess, (req, res) => {
+  app.get(`${api}/leads`, requireCopyAccess, (req, res) => {
     const pid = String(req.query.pipeline || ""), sid = String(req.query.status || ""), page = String(req.query.page || "1");
     if (!PAGE_FILE_RE.test(pid) || !PAGE_FILE_RE.test(sid) || !PAGE_FILE_RE.test(page)) {
       return res.status(400).json({ success: false });
@@ -101,7 +147,7 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
   });
 
   // карточка сделки: полные поля + примечания + задачи
-  app.get(`${api}/lead/:id`, requireVscAccess, (req, res) => {
+  app.get(`${api}/lead/:id`, requireCopyAccess, (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (!id || id < 0) return res.status(400).json({ success: false });
     let meta = {};
@@ -119,7 +165,7 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
   });
 
   // карточка контакта
-  app.get(`${api}/contact/:id`, requireVscAccess, (req, res) => {
+  app.get(`${api}/contact/:id`, requireCopyAccess, (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (!id || id < 0) return res.status(400).json({ success: false });
     let meta = {};
@@ -135,7 +181,7 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
   });
 
   // поиск контактов по имени/телефону/email (потоковый скан индекса, топ-50)
-  app.get(`${api}/contacts`, requireVscAccess, (req, res) => {
+  app.get(`${api}/contacts`, requireCopyAccess, (req, res) => {
     const q = String(req.query.q || "").trim().toLowerCase();
     if (q.length < 3) return res.json({ success: true, items: [], note: "Минимум 3 символа" });
     const qDigits = q.replace(/\D/g, "");
