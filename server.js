@@ -3834,6 +3834,82 @@ async function vscFetchExtra() {
 }
 let _vscCache = null, _vscCacheAt = 0, _vscInflight = null;
 const VSC_TTL_MS = 15 * 60 * 1000;
+
+// ── «Заморозка» истории /vsc (по просьбе Андрея, 06.07.2026) ─────────────────
+// Месяц, завершившийся МИНИМУМ полный календарный месяц назад (позапрошлый и старше),
+// фиксируется НАВСЕГДА снимком: дальнейшие правки Google-таблиц/amoCRM И сбои их
+// загрузки на него больше не влияют. Правило: месяц N заморожен, когда текущий месяц
+// (МСК) ≥ N+2 → сейчас Янв–Май; 1 августа замёрзнет Июнь, 1 сентября — Июль, и т.д.
+// Снимок берётся из ПЕРВОГО полного корректного захода после наступления срока; файл
+// .vscFrozen.json — источник правды. Побочный бонус: вмороженные месяцы не «пропадают»
+// при троттлинге Google (их подставляем из снимка, даже если свежий заход их не отдал).
+const VSC_FROZEN_FILE = path.join(__dirname, ".vscFrozen.json");
+let _vscFrozen = null;
+function loadVscFrozen() {
+  if (_vscFrozen) return _vscFrozen;
+  try { _vscFrozen = JSON.parse(fs.readFileSync(VSC_FROZEN_FILE, "utf8")) || {}; } catch (_) { _vscFrozen = {}; }
+  if (!_vscFrozen.months) _vscFrozen.months = {};
+  if (!_vscFrozen.city) _vscFrozen.city = {};
+  return _vscFrozen;
+}
+function saveVscFrozen() {
+  try { fs.writeFileSync(VSC_FROZEN_FILE, JSON.stringify(_vscFrozen || { months: {}, city: {} }, null, 2), "utf8"); }
+  catch (e) { console.error("saveVscFrozen:", e && e.message); }
+}
+// Порог: ключ месяца (год*12+idx) ≤ (текущий_ключ − 2) → заморожен.
+function vscFrozenCutoffKey() {
+  const d = new Date(Date.now() + 3 * 3600 * 1000); // МСК
+  return d.getUTCFullYear() * 12 + d.getUTCMonth() - 2;
+}
+function vscMonthKeyOf(name) {
+  const m = /^([А-Яа-яёЁ]+)\s+(\d{4})$/.exec(String(name || "").trim());
+  if (!m) return null;
+  const idx = VSC_RU_MONTHS.indexOf(m[1].toLowerCase());
+  return idx < 0 ? null : (+m[2]) * 12 + idx;
+}
+// Мутирует массив months: дозревшие корректные месяцы снимаем в снимок; ВСЕ замороженные
+// подставляем из снимка (стабильность + не пропадают при сбое загрузки). Вызывается ДО
+// годового агрегата, чтобы год считался по замороженным значениям.
+function vscApplyFreeze(months) {
+  const fr = loadVscFrozen(), cutoff = vscFrozenCutoffKey();
+  let changed = false;
+  const byName = {}; months.forEach((m) => { byName[m.name] = m; });
+  months.forEach((m) => {                                    // 1) снять снимок дозревших
+    const key = vscMonthKeyOf(m.name);
+    if (key == null || key > cutoff) return;                 // ещё живой месяц — не морозим
+    if (fr.months[m.name]) return;                           // уже заморожен
+    if (!(m.total && m.total.budget > 0)) return;            // пустые/битые данные не морозим
+    fr.months[m.name] = JSON.parse(JSON.stringify(m));       // снимок навсегда
+    changed = true;
+  });
+  Object.keys(fr.months).forEach((name) => {                 // 2) подставить все замороженные
+    if (byName[name]) months[months.indexOf(byName[name])] = fr.months[name];
+    else months.push(fr.months[name]);                       // не отдали свежим — берём снимок
+  });
+  if (changed) saveVscFrozen();
+  months.sort((a, b) => (vscMonthKeyOf(a.name) || 0) - (vscMonthKeyOf(b.name) || 0));
+}
+// Заморозка выручки по городам (ключи — индекс месяца 0..11 для года cr.year): та же
+// логика, чтобы «Выручка по городам» и доли в графике рынка по старым месяцам не плыли.
+function vscFreezeCity(cr) {
+  if (!cr || !cr.months) return cr;
+  const fr = loadVscFrozen(), cutoff = vscFrozenCutoffKey(), yr = cr.year || 2026;
+  let changed = false;
+  const out = Object.assign({}, cr, { months: Object.assign({}, cr.months) });
+  Object.keys(out.months).forEach((idx) => {                 // снять снимок дозревших
+    const key = yr * 12 + (+idx), k = yr + "-" + idx;
+    if (key > cutoff || fr.city[k]) return;
+    fr.city[k] = JSON.parse(JSON.stringify(out.months[idx]));
+    changed = true;
+  });
+  Object.keys(fr.city).forEach((k) => {                      // подставить замороженные
+    const parts = k.split("-"); if (+parts[0] !== yr) return;
+    out.months[parts[1]] = fr.city[k];
+  });
+  if (changed) saveVscFrozen();
+  return out;
+}
+
 async function vscFetchAll() {
   // Листы Google тянем ПАРАЛЛЕЛЬНО (раньше — последовательно, 7 листов = долго).
   // Promise.all сохраняет порядок; недоступный лист → null → отфильтруем.
@@ -3878,6 +3954,9 @@ async function vscFetchAll() {
     }
     m.taxes = (extra.tax && extra.tax[m.name]) || null;
   });
+  // Заморозка истории: подставляем/фиксируем снимки старых месяцев ДО годового агрегата,
+  // чтобы год считался по стабильным значениям и вмороженные месяцы не пропадали.
+  vscApplyFreeze(months);
   // Год: суммируем аддитивные базы из месячных Grand total, ratio — производные/среднее.
   const withTotal = months.filter((m) => m.total);
   const sum = (f) => withTotal.reduce((a, m) => a + (m.total[f] || 0), 0);
@@ -3916,7 +3995,7 @@ async function vscFetchAll() {
   // % возвратов за год = Σ Услуги (возвраты) / Σ выручка (бюджет).
   year.retUslugi = sum("retUslugi");
   year.returnsPct = (year.retUslugi && sumB) ? year.retUslugi / sumB * 100 : null;
-  return { months, year, reviews, cityRevenue: loadCityRev(), updatedAt: new Date().toISOString() };
+  return { months, year, reviews, cityRevenue: vscFreezeCity(loadCityRev()), updatedAt: new Date().toISOString() };
 }
 // ── Расход Я.Директа vs «Рекламные расходы ОБЩИЕ» (таблица) — блок «Ежемесячный
 // контроль». За ПОСЛЕДНИЙ ЗАВЕРШЁННЫЙ месяц: открученные деньги из Я.Директа
