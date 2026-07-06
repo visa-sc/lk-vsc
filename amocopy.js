@@ -18,7 +18,8 @@ function sendJsonFile(res, file) {
   if (!fs.existsSync(p)) return res.status(404).json({ success: false, message: "Слепок ещё не собран (нет " + file + ")" });
   res.set("Content-Type", "application/json; charset=utf-8");
   res.set("Cache-Control", "no-cache");
-  return res.sendFile(p);
+  // dotfiles: каталог .amocopy начинается с точки — без опции sendFile отдаёт 404
+  return res.sendFile(p, { dotfiles: "allow" });
 }
 
 // поиск записи по id в бакете (NDJSON), потоково
