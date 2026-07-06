@@ -183,6 +183,13 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
     });
   });
 
+  // постраничный список контактов (новые сверху, как в amoCRM)
+  app.get(`${api}/contacts_page`, requireCopyAccess, (req, res) => {
+    const page = String(req.query.page || "1");
+    if (!PAGE_FILE_RE.test(page)) return res.status(400).json({ success: false });
+    return sendJsonFile(res, path.join("contacts_pages", `${page}.json`));
+  });
+
   // поиск контактов по имени/телефону/email (потоковый скан индекса, топ-50)
   app.get(`${api}/contacts`, requireCopyAccess, (req, res) => {
     const q = String(req.query.q || "").trim().toLowerCase();

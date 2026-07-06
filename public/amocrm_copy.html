@@ -424,23 +424,52 @@
   }
 
   /* ─── контакты ─── */
+  var cPage=0, cLoading=false, cSearchMode=false;
+  function contactRows(items){
+    return items.map(function(c){
+      return '<tr><td><a data-c="'+c.id+'">'+esc(c.n||"Без имени")+'</a></td><td>'+esc((c.p||[]).join(", "))+'</td><td>'+esc((c.e||[]).join(", "))+'</td><td class="muted">'+(c.created?dShort(c.created):"")+'</td></tr>';
+    }).join("");
+  }
+  function bindContactLinks(){
+    document.querySelectorAll("#cbody [data-c]").forEach(function(a){a.onclick=function(){openContact(parseInt(a.dataset.c,10));};});
+  }
   function vContacts(){
     renderSidebar("contacts");
     setHeader("Контакты",{count:fmt(META.counts.contacts)+" контактов",searchPh:"Поиск и фильтр (имя, телефон, email — Enter)",newBtn:"+ Добавить контакт",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);}});
-    $("#view").innerHTML='<div style="padding:0 0 30px"><table class="amo"><thead><tr><th style="width:34%">Наименование</th><th>Телефон</th><th>Email</th><th style="width:110px"></th></tr></thead><tbody id="cbody"><tr><td colspan="4" class="muted" style="padding:22px">Введите имя, телефон или email в поиск сверху и нажмите Enter — поиск по всем '+fmt(META.counts.contacts)+' контактам слепка.</td></tr></tbody></table></div>';
+    $("#view").innerHTML='<div style="padding:0 0 30px"><table class="amo"><thead><tr><th style="width:32%">Наименование</th><th>Телефон</th><th>Email</th><th style="width:130px">Дата создания</th></tr></thead><tbody id="cbody"></tbody></table><div id="cmore" class="muted" style="padding:14px;text-align:center"></div></div>';
+    cPage=0; cLoading=false; cSearchMode=false;
+    loadContactPage();
+    $("#main").onscroll=function(){
+      if(cSearchMode||cLoading)return;
+      var m=$("#main");
+      if(m.scrollTop+m.clientHeight>m.scrollHeight-600)loadContactPage();
+    };
+  }
+  function loadContactPage(){
+    if(cLoading)return;
+    cLoading=true;
+    var next=cPage+1;
+    $("#cmore").textContent="Загрузка…";
+    jreq(API+"/contacts_page?page="+next).then(function(items){
+      if(!Array.isArray(items)||!items.length){$("#cmore").textContent=cPage?"Это все контакты":"Список пуст";return;}
+      $("#cbody").insertAdjacentHTML("beforeend",contactRows(items));
+      bindContactLinks();
+      cPage=next; cLoading=false;
+      $("#cmore").textContent="";
+    }).catch(function(){$("#cmore").textContent="Список недоступен — используйте поиск сверху";});
   }
   function doContactSearch(q){
     q=String(q||"").trim();
     var tb=$("#cbody");
-    if(q.length<3){tb.innerHTML='<tr><td colspan="4" class="muted" style="padding:22px">Минимум 3 символа</td></tr>';return;}
-    tb.innerHTML='<tr><td colspan="4" class="muted" style="padding:22px">Ищу…</td></tr>';
+    if(!q){cSearchMode=false;tb.innerHTML="";cPage=0;cLoading=false;loadContactPage();return;}
+    if(q.length<3){tb.innerHTML='<tr><td colspan="4" class="muted" style="padding:22px">Минимум 3 символа</td></tr>';$("#cmore").textContent="";cSearchMode=true;return;}
+    cSearchMode=true;
+    tb.innerHTML='<tr><td colspan="4" class="muted" style="padding:22px">Ищу…</td></tr>';$("#cmore").textContent="";
     jreq(API+"/contacts?q="+encodeURIComponent(q)).then(function(r){
       var items=r.items||[];
       if(!items.length){tb.innerHTML='<tr><td colspan="4" class="muted" style="padding:22px">Ничего не найдено</td></tr>';return;}
-      tb.innerHTML=items.map(function(c){
-        return '<tr><td><a data-c="'+c.id+'">'+esc(c.n||"Без имени")+'</a></td><td>'+esc((c.p||[]).join(", "))+'</td><td>'+esc((c.e||[]).join(", "))+'</td><td><a data-c="'+c.id+'">открыть</a></td></tr>';
-      }).join("")+(items.length>=50?'<tr><td colspan="4" class="muted">Показаны первые 50 — уточните запрос</td></tr>':"");
-      tb.querySelectorAll("[data-c]").forEach(function(a){a.onclick=function(){openContact(parseInt(a.dataset.c,10));};});
+      tb.innerHTML=contactRows(items)+(items.length>=50?'<tr><td colspan="4" class="muted">Показаны первые 50 — уточните запрос</td></tr>':"");
+      bindContactLinks();
     });
   }
 
