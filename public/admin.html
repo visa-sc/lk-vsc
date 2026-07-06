@@ -2453,10 +2453,11 @@
         leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#5a626f;margin:2px 0 8px;";
         const legItem = (color, txt) => '<span style="white-space:nowrap;"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + color + ';vertical-align:-1px;margin-right:5px;"></i>' + txt + '</span>';
         leg.innerHTML = legItem(COL_REST, "Остальная РФ") + legItem(COL_MSK, "Рынок МСК") + legItem(COL_SPB, "Рынок СПб")
-          + '<span style="white-space:nowrap;color:#8e44ad;font-weight:600;">Высота столбца — весь рынок РФ (млн ₽); число сверху — наша доля рынка РФ</span>';
+          + '<span style="white-space:nowrap;color:#8e44ad;font-weight:600;">Высота столбца — весь рынок РФ (млн ₽); число сверху — наша доля рынка РФ; числа в сегментах МСК/СПб — наша доля этих рынков</span>';
         wrap.appendChild(leg);
         const money1 = (v) => (Math.round(v * 10) / 10).toLocaleString("ru-RU");
         const fmtS = (v) => (Math.round(v * 100) / 100).toLocaleString("ru-RU") + "%";
+        const fmtS1 = (v) => (Math.round(v * 10) / 10).toLocaleString("ru-RU") + "%"; // компактно для сегментов
         const maxRf = Math.max.apply(null, rows.map((r) => r.rf)) || 1;
         const bars = document.createElement("div"); bars.className = "vsc-bars";
         rows.forEach((row, i) => {
@@ -2475,16 +2476,25 @@
           const barPx = Math.max(2, Math.round(row.rf / maxRf * 120));
           bar.style.height = barPx + "px";
           const rest = Math.max(0, row.rf - row.msk - row.spb);
-          const addSeg = (color, part, label) => {
+          // shareTxt — наша доля рынка города; вписываем в сегмент, только если он достаточно
+          // высок (иначе текст обрезался бы). Полная разбивка всегда в тултипе столбца.
+          const addSeg = (color, part, label, shareTxt) => {
             if (part == null || part <= 0) return;
+            const segPx = part / row.rf * barPx;
             const d = document.createElement("div");
-            d.style.cssText = "width:100%;height:" + (part / row.rf * 100) + "%;background:" + color + ";";
-            d.title = label + ": " + money1(part) + " млн";
+            d.style.cssText = "width:100%;height:" + (part / row.rf * 100) + "%;background:" + color + ";display:flex;align-items:center;justify-content:center;overflow:hidden;";
+            d.title = label + ": " + money1(part) + " млн" + (shareTxt ? " · наша доля " + shareTxt : "");
+            if (shareTxt && segPx >= 12) {
+              const t = document.createElement("span");
+              t.textContent = shareTxt;
+              t.style.cssText = "font-size:8px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.25);";
+              d.appendChild(t);
+            }
             bar.appendChild(d);
           };
-          addSeg(COL_MSK, row.msk, "Рынок МСК");   // column-reverse → снизу
-          addSeg(COL_SPB, row.spb, "Рынок СПб");
-          addSeg(COL_REST, rest, "Остальная РФ");  // → сверху
+          addSeg(COL_MSK, row.msk, "Рынок МСК", row.shareMsk != null ? fmtS1(row.shareMsk) : null);   // column-reverse → снизу
+          addSeg(COL_SPB, row.spb, "Рынок СПб", row.shareSpb != null ? fmtS1(row.shareSpb) : null);
+          addSeg(COL_REST, rest, "Остальная РФ", null);  // → сверху
           const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = row.x;
           // Δ доли к прошлому месяцу с данными (рост доли — хорошо, зелёным).
           let prevShare = null;
@@ -3043,14 +3053,18 @@
         }
         vscContent.appendChild(ydBox);
         vscContent.appendChild(vscPlanOpCheck());
-        // ── Рынок визовых услуг (модель) и наша доля — САМЫЙ НИЗ раздела, ТОЛЬКО админ
-        // (стратегическая инфа). Годовые объёмы — оценка bottom-up июля 2026 (шенген 680 тыс.
-        // подач, Япония, США, Великобритания и пр. × средний чек × доля через агентов):
-        // РФ ~4,5 млрд ₽/год, МСК ~2,1, СПб ~0,6. Помесячно = год/12 × сезонный коэффициент
-        // подач (норм., ср.=1). Месяц попадает на график только ПОСЛЕ календарного окончания
-        // (объём «за прошлый месяц»). Доля РФ = m.total.budget / рынок РФ; по городам —
-        // выручка филиалов (vscData.cityRevenue, ночной расчёт из amoCRM) / рынок города.
-        if (currentRole() === "admin") {
+        // ── Рынок визовых услуг (модель) и наша доля — САМЫЙ НИЗ раздела. Видят: админ И
+        // руководители с доступом к вкладке «Ежемесячный контроль» (myVscRestrict.tabs⊇monthly
+        // — сейчас Петров и Зайцева, по просьбе Андрея). Блок построен на ВЫРУЧКЕ (не прибыли),
+        // которую они и так видят, — hideProfit не затрагивает. Годовые объёмы — оценка
+        // bottom-up июля 2026 (шенген 680 тыс. подач, Япония, США, Великобритания и пр. ×
+        // средний чек × доля через агентов): РФ ~4,5 млрд ₽/год, МСК ~2,1, СПб ~0,6. Помесячно =
+        // год/12 × сезонный коэффициент подач (норм., ср.=1). Месяц попадает на график только
+        // ПОСЛЕ календарного окончания (объём «за прошлый месяц»). Доля РФ = m.total.budget /
+        // рынок РФ; по городам — выручка филиалов (vscData.cityRevenue, ночной расчёт amoCRM).
+        const canSeeMarket = currentRole() === "admin"
+          || (myVscRestrict && Array.isArray(myVscRestrict.tabs) && myVscRestrict.tabs.indexOf("monthly") >= 0);
+        if (canSeeMarket) {
           const MKT = {
             rfYear: 4500, mskYear: 2100, spbYear: 600, // млн ₽/год
             season: [0.75, 0.85, 1.00, 1.10, 1.15, 1.20, 1.15, 1.05, 1.05, 1.00, 0.90, 0.80] // янв..дек, Σ=12
