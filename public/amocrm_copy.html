@@ -4,414 +4,605 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Копия amoCRM — слепок VSC</title>
+<title>Копия amoCRM — VSC</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  :root { --blue:#2e5bff; --bg:#f4f6fa; --card:#fff; --line:#e3e8f0; --txt:#1f2a44; --mut:#7a869a; --green:#22a06b; --red:#d64545; }
+  :root {
+    --sb-bg:#17293e; --sb-ico:#8299b3; --sb-act:#4ba3e3; --sb-txt:#a9bbcf;
+    --blue:#2e80ec; --link:#3a87c8; --txt:#313942; --mut:#92989b;
+    --border:#e4e7ea; --border-soft:#eef1f4; --bg:#fff; --feed-bg:#f4f5f8;
+    --green:#6fc48d; --task-green:#4caf50;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; background:var(--bg); color:var(--txt); }
-  header { background:#152a5c; color:#fff; padding:10px 18px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; position:sticky; top:0; z-index:50; }
-  header h1 { font-size:16px; margin:0; font-weight:600; }
-  header .sub { font-size:12px; opacity:.75; }
-  nav { display:flex; gap:4px; flex-wrap:wrap; margin-left:auto; }
-  nav button { background:transparent; border:0; color:#cdd7f3; padding:7px 12px; border-radius:8px; cursor:pointer; font-size:13px; }
-  nav button.act { background:rgba(255,255,255,.16); color:#fff; font-weight:600; }
-  main { padding:16px 18px 60px; max-width:1400px; margin:0 auto; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:14px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }
-  .kpi { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
-  .kpi b { display:block; font-size:22px; }
-  .kpi span { color:var(--mut); font-size:12px; }
-  h2 { font-size:16px; margin:18px 0 10px; }
+  html,body { height:100%; }
+  body { margin:0; font:15px/1.4 "PT Sans", -apple-system, Arial, sans-serif; color:var(--txt); background:var(--bg); overflow:hidden; }
+  a, .lnk { color:var(--link); text-decoration:none; cursor:pointer; background:none; border:0; font:inherit; padding:0; }
+  a:hover, .lnk:hover { text-decoration:underline; }
+
+  /* ── сайдбар ── */
+  #app { display:flex; height:100vh; }
+  aside { width:66px; background:var(--sb-bg); display:flex; flex-direction:column; align-items:center; flex-shrink:0; z-index:60; }
+  .logo { width:66px; height:64px; background:#2e5f8f; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; letter-spacing:2px; }
+  .nav-i { width:66px; padding:9px 0 8px; display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer; border:0; background:none; }
+  .nav-i svg { width:22px; height:22px; stroke:var(--sb-ico); fill:none; stroke-width:1.6; }
+  .nav-i span { font-size:9.5px; color:var(--sb-txt); }
+  .nav-i.act svg { stroke:var(--sb-act); }
+  .nav-i.act span { color:#fff; }
+  .nav-i:hover svg { stroke:#cfe2f3; }
+
+  /* ── шапка ── */
+  #wrap { flex:1; display:flex; flex-direction:column; min-width:0; }
+  header { height:64px; display:flex; align-items:center; padding:0 16px 0 24px; gap:18px; border-bottom:1px solid transparent; flex-shrink:0; }
+  #secTitle { font-size:17px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; cursor:default; }
+  #secTitle.clickable { cursor:pointer; }
+  #secTitle .caret { font-size:11px; color:var(--mut); margin-left:6px; }
+  .search { flex:1; max-width:560px; display:flex; align-items:center; gap:8px; color:#b6bcc3; }
+  .search svg { width:16px; height:16px; stroke:#b6bcc3; fill:none; stroke-width:2; flex-shrink:0; }
+  .search input { border:0; outline:0; font:inherit; width:100%; color:var(--txt); }
+  .search input::placeholder { color:#b6bcc3; }
+  #hCount { margin-left:auto; white-space:nowrap; color:var(--txt); font-size:14px; }
+  #hCount b { font-size:16px; }
+  .hbtn { border:1px solid var(--border); background:#fff; border-radius:4px; padding:8px 14px; font:inherit; font-size:12.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--txt); cursor:default; }
+  .hbtn.blue { background:var(--blue); border-color:var(--blue); color:#fff; }
+  .hbtn.dots { padding:8px 10px; letter-spacing:2px; }
+
+  main { flex:1; overflow:auto; position:relative; }
+
+  /* ── выпадающий список воронок (как в амо) ── */
+  #pipePanel { position:absolute; top:0; left:0; bottom:0; width:330px; background:#fff; box-shadow:2px 0 18px rgba(20,40,70,.18); z-index:55; padding:0; display:none; flex-direction:column; }
+  #pipePanel h3 { font-size:17px; text-transform:uppercase; font-weight:700; margin:0; padding:22px 24px 14px; }
+  #pipePanel .pp-item { display:block; width:100%; text-align:left; background:none; border:0; border-top:1px solid var(--border-soft); padding:16px 24px; font:inherit; color:var(--txt); cursor:pointer; }
+  #pipePanel .pp-item:hover { background:#f6f9fc; }
+  #pipePanel .pp-item.act { color:var(--blue); font-weight:700; }
+  #pipeShade { position:absolute; inset:0; background:rgba(20,35,60,.25); z-index:54; display:none; }
+
+  /* ── канбан ── */
+  #kb { display:flex; min-height:100%; }
+  .kb-col { min-width:250px; width:250px; border-right:1px solid var(--border-soft); flex-shrink:0; }
+  .kb-head { position:sticky; top:0; background:#fff; padding:12px 10px 8px; text-align:center; z-index:5; }
+  .kb-head .nm { font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .kb-head .ct { font-size:12px; color:var(--mut); margin-top:2px; }
+  .kb-head .bar { height:3px; border-radius:2px; margin-top:8px; background:#dfe3e8; }
+  .kb-cards { padding:8px; }
+  .kb-card { background:#fff; border:1px solid #dfe5eb; border-radius:4px; padding:9px 11px; margin-bottom:7px; cursor:pointer; position:relative; }
+  .kb-card:hover { border-color:#b9cde0; }
+  .kb-card .top { display:flex; justify-content:space-between; gap:6px; font-size:13px; }
+  .kb-card .top .dt { color:var(--mut); font-size:12px; white-space:nowrap; }
+  .kb-card .comp { color:var(--txt); font-size:13px; }
+  .kb-card .ttl { color:var(--link); font-size:14px; margin:2px 0; }
+  .kb-card .tags { margin-top:3px; }
+  .tag { display:inline-block; background:#f2f4f6; border:1px solid #e7eaee; color:#6b7684; border-radius:3px; padding:0 6px; font-size:11.5px; margin:1px 3px 1px 0; }
+  .kb-more { display:block; margin:2px auto 14px; }
+
+  /* ── таблица контактов ── */
+  table.amo { width:100%; border-collapse:collapse; font-size:14px; }
+  table.amo th { text-align:left; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#7c8691; font-weight:700; padding:12px 14px; border-bottom:1px solid var(--border); position:sticky; top:0; background:#fff; }
+  table.amo td { padding:11px 14px; border-bottom:1px solid var(--border-soft); vertical-align:middle; }
+  table.amo tr:hover td { background:#f8fafc; }
+
+  /* ── карточка (сделка/контакт) ── */
+  .dcard-bg { position:fixed; inset:0; z-index:100; display:flex; background:#fff; }
+  .dcard-l { width:430px; flex-shrink:0; border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:auto; }
+  .dl-head { padding:16px 20px 0; }
+  .dl-head .back { color:var(--mut); font-size:20px; margin-right:8px; cursor:pointer; }
+  .dl-head h2 { display:inline; font-size:19px; margin:0; }
+  .dl-sub { margin:8px 0 0; color:var(--mut); font-size:13px; }
+  .dl-stage { padding:14px 20px 0; }
+  .dl-stage .pn { color:var(--mut); font-size:12.5px; }
+  .dl-stage .sn { font-weight:700; margin-top:2px; }
+  .stage-bar { display:flex; gap:2px; margin-top:8px; }
+  .stage-bar i { flex:1; height:4px; border-radius:1px; background:#e6eaee; }
+  .dl-tabs { display:flex; gap:16px; padding:14px 20px 0; border-bottom:1px solid var(--border); font-size:13.5px; }
+  .dl-tabs span { padding-bottom:9px; color:var(--mut); }
+  .dl-tabs span.act { color:var(--txt); font-weight:700; border-bottom:2px solid var(--blue); }
+  .fields { padding:6px 20px 20px; }
+  .frow { display:flex; padding:7px 0; font-size:13.5px; border-bottom:1px dotted transparent; }
+  .frow .fl { width:44%; color:#8b939c; flex-shrink:0; padding-right:8px; }
+  .frow .fv { color:var(--txt); word-break:break-word; }
+  .fgroup { background:#f3f5f7; border-radius:3px; padding:8px 12px; font-size:13px; color:#5d6774; margin:10px 0 4px; }
+  .dl-contact { border-top:1px solid var(--border); padding:14px 20px; display:flex; align-items:center; gap:10px; }
+  .ava { width:36px; height:36px; border-radius:50%; background:#d7dee6; color:#5d6b7c; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
+  .dcard-r { flex:1; background:var(--feed-bg); display:flex; flex-direction:column; min-width:0; }
+  .feed-top { padding:14px 24px; color:#b6bcc3; display:flex; gap:8px; align-items:center; }
+  .feed { flex:1; overflow:auto; padding:0 24px 12px; }
+  .day-sep { text-align:center; margin:14px 0; }
+  .day-sep b { background:#fff; border:1px solid var(--border); border-radius:14px; padding:3px 14px; font-size:12px; color:#7b848d; font-weight:400; }
+  .ev { background:#fff; border:1px solid var(--border); border-radius:4px; padding:10px 14px; margin:8px 0; font-size:13.5px; }
+  .ev .eh { color:var(--mut); font-size:12px; margin-bottom:4px; }
+  .ev.task { border-color:#bfdec7; background:#f6fbf7; }
+  .ev.task.open { border-color:#e8b7b7; background:#fdf8f8; }
+  .ev.call { border-left:3px solid #9ec7ea; }
+  .feed-tabs { display:flex; gap:2px; padding:0 24px; }
+  .feed-tabs span { background:#e9ebef; padding:4px 12px; font-size:12.5px; color:#5d6774; cursor:pointer; border-radius:2px 2px 0 0; }
+  .feed-tabs span.act { background:#fff; font-weight:700; }
+  .feed-note { background:#fff; border:1px solid var(--border); margin:0 24px 18px; padding:14px; font-size:13.5px; color:#b6bcc3; border-radius:0 3px 3px 3px; }
+  .feed-note a { margin-right:4px; }
+
+  /* ── дашборд (рабочий стол) ── */
+  #dash { min-height:100%; background:linear-gradient(135deg,#1d3c66 0%,#2a5d9e 55%,#2d6fbb 100%); padding:26px; }
+  .dash-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:12px; max-width:1250px; margin:0 auto; }
+  .dash-card { background:rgba(13,30,55,.42); border-radius:8px; padding:16px 18px; color:#fff; }
+  .dash-card b { font-size:30px; color:#a8c4f0; font-weight:700; display:block; }
+  .dash-card span { font-size:12.5px; color:#b8c9e2; text-transform:uppercase; letter-spacing:.04em; }
+  .dash-note { max-width:1250px; margin:0 auto 16px; color:#cfdcf0; font-size:13px; }
+
+  /* ── прочие разделы (автоматизации/справочники/доработки) ── */
+  .plain { padding:20px 26px; max-width:1250px; }
+  .pcard { background:#fff; border:1px solid var(--border); border-radius:6px; padding:16px 20px; margin-bottom:14px; }
+  .pcard h2 { font-size:16px; margin:0 0 10px; }
   h3 { font-size:14px; margin:14px 0 8px; }
   .muted { color:var(--mut); }
-  .pill { display:inline-block; background:#eef1f8; border-radius:20px; padding:2px 10px; font-size:12px; margin:2px 4px 2px 0; }
-  .kb { display:flex; gap:10px; overflow-x:auto; padding-bottom:10px; }
-  .kb-col { min-width:230px; max-width:230px; background:#eef1f6; border-radius:10px; padding:8px; }
-  .kb-col h4 { font-size:12px; margin:2px 4px 8px; text-transform:uppercase; letter-spacing:.02em; }
-  .kb-col .cnt { font-size:11px; color:var(--mut); font-weight:400; display:block; }
-  .kb-card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:6px; cursor:pointer; }
-  .kb-card:hover { border-color:var(--blue); }
-  .kb-card .nm { font-weight:600; font-size:13px; }
-  .kb-card .pr { color:var(--green); font-size:12px; }
-  .kb-card .rs { color:var(--mut); font-size:11px; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { color:var(--mut); font-weight:600; font-size:12px; }
-  input[type=text] { width:100%; max-width:420px; padding:9px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
-  button.btn { background:var(--blue); color:#fff; border:0; border-radius:8px; padding:8px 14px; cursor:pointer; font-size:13px; }
-  button.lnk { background:none; border:0; color:var(--blue); cursor:pointer; padding:0; font-size:inherit; }
-  .modal-bg { position:fixed; inset:0; background:rgba(15,25,50,.45); z-index:100; display:flex; align-items:flex-start; justify-content:center; padding:30px 12px; overflow:auto; }
-  .modal { background:#fff; border-radius:12px; max-width:900px; width:100%; padding:18px 20px; position:relative; }
-  .modal .x { position:absolute; top:10px; right:14px; font-size:20px; cursor:pointer; color:var(--mut); background:none; border:0; }
-  pre { background:#f2f4f9; border-radius:8px; padding:10px; overflow:auto; font-size:12px; max-height:420px; }
-  .note { border-left:3px solid var(--blue); padding:6px 10px; margin:6px 0; background:#f8f9fd; border-radius:0 8px 8px 0; font-size:13px; }
-  .note .h { color:var(--mut); font-size:11px; }
-  .flag { font-size:12px; padding:2px 8px; border-radius:6px; background:#fdeaea; color:var(--red); }
-  .ok { background:#e7f6ef; color:var(--green); }
+  pre { background:#f3f5f8; border-radius:4px; padding:10px; overflow:auto; font-size:12px; max-height:420px; }
   details { margin:6px 0; }
-  summary { cursor:pointer; font-weight:600; }
-  .md h1,.md h2,.md h3 { margin:14px 0 6px; }
-  .md h2 { font-size:15px; } .md h3 { font-size:13.5px; }
-  .md table { font-size:12.5px; }
-  .md code { background:#eef1f8; padding:1px 5px; border-radius:4px; }
-  #login { max-width:560px; margin:60px auto; }
-  .two { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-  @media (max-width:800px){ .two { grid-template-columns:1fr; } }
+  summary { cursor:pointer; font-weight:700; font-size:13.5px; }
+  .md table, .plain table { width:100%; border-collapse:collapse; font-size:13px; }
+  .md th,.md td,.plain th,.plain td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border-soft); vertical-align:top; }
+  .md h1 { font-size:18px; } .md h2 { font-size:15px; margin:16px 0 6px; } .md h3 { font-size:13.5px; }
+  .flag { font-size:12px; padding:2px 8px; border-radius:3px; background:#fdecec; color:#c0392b; }
+  .flag.ok { background:#e8f6ee; color:#27865a; }
+  .flag.warn { background:#fdf3e0; color:#9a6b00; }
+  .pill { display:inline-block; background:#f2f4f6; border:1px solid #e7eaee; border-radius:3px; padding:1px 8px; font-size:12px; margin:2px 4px 2px 0; color:#5d6774; }
+  input.ti { padding:9px 12px; border:1px solid var(--border); border-radius:4px; font:inherit; }
+  button.btn { background:var(--blue); color:#fff; border:0; border-radius:4px; padding:9px 16px; cursor:pointer; font:inherit; font-size:13px; }
+
+  /* ── логин ── */
+  #login-screen { position:fixed; inset:0; background:var(--sb-bg); display:flex; align-items:center; justify-content:center; z-index:200; }
+  .login-box { background:#fff; border-radius:10px; padding:34px 38px; width:360px; text-align:center; }
+  .login-box .lg { width:54px; height:54px; border-radius:10px; background:#2e5f8f; color:#fff; font-weight:700; display:flex; align-items:center; justify-content:center; margin:0 auto 14px; letter-spacing:2px; }
+  .login-box h2 { margin:0 0 16px; font-size:18px; }
+  .login-box input { width:100%; text-align:center; font-size:18px; letter-spacing:4px; margin-bottom:12px; }
+  .login-box .err { color:#c0392b; font-size:13px; min-height:18px; margin-bottom:4px; }
 </style>
 </head>
 <body>
-<header>
-  <h1>Копия amoCRM <span class="sub">слепок аккаунта VSC · только чтение</span></h1>
-  <span class="sub" id="metaLine"></span>
-  <nav id="nav"></nav>
-</header>
-<main id="main"><div class="card">Загрузка…</div></main>
+<div id="app" style="display:none">
+  <aside id="sidebar"></aside>
+  <div id="wrap">
+    <header>
+      <span id="secTitle"></span>
+      <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="hSearch" placeholder="Поиск и фильтр"></div>
+      <span id="hCount"></span>
+      <button class="hbtn dots">···</button>
+      <button class="hbtn" id="hCfg">Настроить</button>
+      <button class="hbtn blue" id="hNew">+ Новая сделка</button>
+    </header>
+    <main id="main">
+      <div id="pipeShade"></div>
+      <div id="pipePanel"></div>
+      <div id="view"></div>
+    </main>
+  </div>
+</div>
+<div id="login-screen" style="display:none">
+  <div class="login-box">
+    <div class="lg">V S C</div>
+    <h2>Копия amoCRM</h2>
+    <div class="err" id="loginErr"></div>
+    <input class="ti" type="text" id="loginCode" placeholder="Код доступа" autocomplete="off">
+    <button class="btn" style="width:100%" id="loginGo">Войти</button>
+    <p class="muted" style="font-size:12.5px">Или вход руководителя через <a href="/vsc">/vsc</a></p>
+  </div>
+</div>
 
 <script>
 (function(){
   "use strict";
   var API = "/amocrm_copy/api";
-  var token = null, META = null, PIPES = [], USERS = [], KANBAN = null, CF = null;
-  var TABS = [
-    ["overview","Обзор"],["funnels","Воронки"],["contacts","Контакты"],
-    ["auto","Автоматизации"],["refs","Справочники"],["todo","Доработки"]
-  ];
-  var $ = function(s){ return document.querySelector(s); };
-  var esc = function(s){ return String(s==null?"":s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
-  var fmt = function(n){ return (n==null?"—":Number(n).toLocaleString("ru-RU")); };
-  var dt = function(ts){ return ts ? new Date(ts*1000).toLocaleString("ru-RU") : "—"; };
+  var token=null, META=null, PIPES=[], USERS=[], KANBAN=null, CF=null;
+  var $=function(s){return document.querySelector(s);};
+  var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
+  var fmt=function(n){return (n==null?"—":Number(n).toLocaleString("ru-RU"));};
+  var dt=function(ts){return ts?new Date(ts*1000).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"—";};
+  var dShort=function(ts){return ts?new Date(ts*1000).toLocaleDateString("ru-RU"):"";};
+  var userName=function(id){var u=USERS.find(function(x){return x.id===id;});return u?u.name:(id||"");};
 
-  function pickToken(){
-    var qs = new URLSearchParams(location.search).get("token");
-    var cands = [qs, localStorage.getItem("voyo_crmcopy_token"), localStorage.getItem("voyo_vsc_token"), localStorage.getItem("voyo_team_token"), localStorage.getItem("voyo_admin_token")];
-    for (var i=0;i<cands.length;i++) if (cands[i]) return cands[i];
-    return null;
-  }
-  function req(url){
-    return fetch(url, { headers: { Authorization: "Bearer " + token } }).then(function(r){
-      if (r.status === 401) throw new Error("401");
-      return r;
-    });
-  }
-  function jreq(url){ return req(url).then(function(r){ return r.json(); }); }
+  function req(url){return fetch(url,{headers:{Authorization:"Bearer "+token}}).then(function(r){if(r.status===401)throw new Error("401");return r;});}
+  function jreq(url){return req(url).then(function(r){return r.json();});}
 
-  function showLogin(msg){
-    $("#main").innerHTML = '<div class="card" id="login"><h2>Вход в копию amoCRM</h2>' +
-      (msg ? '<p style="color:var(--red)">' + esc(msg) + '</p>' : "") +
-      '<p><input type="text" id="loginCode" placeholder="Код доступа" autocomplete="off" style="max-width:220px"> ' +
-      '<button class="btn" id="loginGo">Войти</button></p>' +
-      '<p class="muted">Или войдите как руководитель через <a href="/vsc">/vsc</a> и обновите страницу.</p></div>';
-    var go = function(){
-      var code = $("#loginCode").value.trim();
-      if (!code) return;
-      fetch("/amocrm_copy/api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ code: code }) })
-        .then(function(r){ return r.json(); })
-        .then(function(j){
-          if (j.success && j.token) { localStorage.setItem("voyo_crmcopy_token", j.token); location.reload(); }
-          else showLogin(j.message || "Неверный код");
-        })
-        .catch(function(){ showLogin("Ошибка сети — попробуйте ещё раз"); });
-    };
-    $("#loginGo").onclick = go;
-    $("#loginCode").onkeydown = function(e){ if (e.key==="Enter") go(); };
-    $("#loginCode").focus();
+  /* ─── сайдбар ─── */
+  var ICONS = {
+    desk:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+    leads:'<svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 1-9 9"/><path d="M12 7a5 5 0 1 1-5 5"/><circle cx="12" cy="12" r="1.4"/></svg>',
+    contacts:'<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.3c2.4.2 4.1 1.7 4.7 4.2"/></svg>',
+    auto:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2.1 2.1M16.4 16.4l2.1 2.1M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1"/></svg>',
+    refs:'<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>',
+    todo:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.5"/></svg>'
+  };
+  var NAV=[["desk","Рабочий стол","desk"],["leads","Сделки","leads"],["contacts","Контакты","contacts"],["auto","Автоматизации","auto"],["refs","Справочники","refs"],["todo","Доработки","todo"]];
+  function renderSidebar(active){
+    $("#sidebar").innerHTML='<div class="logo">V|S|C</div>'+NAV.map(function(n){
+      return '<button class="nav-i'+(n[0]===active?" act":"")+'" data-v="'+n[0]+'">'+ICONS[n[2]]+'<span>'+n[1]+'</span></button>';
+    }).join("");
+    document.querySelectorAll(".nav-i").forEach(function(b){b.onclick=function(){go(b.dataset.v);};});
   }
 
-  // ---------- Обзор ----------
-  function vOverview(){
-    var c = META.counts || {};
-    var a = META.account || {};
-    var html = '<div class="card"><b>' + esc(a.name || "amoCRM") + '</b> · поддомен ' + esc(a.subdomain || "") +
-      ' · id ' + esc(a.id || "") + '<br><span class="muted">Слепок собран: ' + esc(new Date(META.builtAt).toLocaleString("ru-RU")) + ". Это точная копия данных на момент выгрузки; ничего не меняет в живой amoCRM.</span></div>";
-    html += '<div class="grid">';
-    var items = [["Сделки", c.leads],["Контакты", c.contacts],["Компании", c.companies],["Задачи", c.tasks],
-      ["Примечания (сделки)", c.notes_leads],["Примечания (контакты)", c.notes_contacts],
-      ["Пользователи", c.users],["Воронки", c.pipelines],["Поля сделки", c.cf_leads],["Вебхуки", c.webhooks]];
-    items.forEach(function(it){ html += '<div class="kpi"><b>' + fmt(it[1]) + '</b><span>' + it[0] + '</span></div>'; });
-    html += '</div>';
-    html += '<h2>Воронки</h2><div class="grid">';
+  /* ─── шапка ─── */
+  function setHeader(title, opts){
+    opts=opts||{};
+    var t=$("#secTitle");
+    t.innerHTML=esc(title)+(opts.caret?' <span class="caret">▾</span>':"");
+    t.className=opts.caret?"clickable":"";
+    t.onclick=opts.onTitle||null;
+    $("#hCount").innerHTML=opts.count||"";
+    $("#hSearch").value=""; $("#hSearch").placeholder=opts.searchPh||"Поиск и фильтр";
+    $("#hSearch").onkeydown=opts.onSearch||null;
+    $("#hNew").textContent=opts.newBtn||"+ Новая сделка";
+  }
+  $("#hNew").onclick=function(){alert("Это слепок «только чтение» — создание недоступно.");};
+  $("#hCfg").onclick=function(){alert("Это слепок «только чтение».");};
+
+  /* ─── рабочий стол ─── */
+  function vDesk(){
+    renderSidebar("desk");
+    setHeader("Рабочий стол",{count:""});
+    var c=META.counts||{}, a=META.account||{};
+    var items=[["Сделки",c.leads],["Контакты",c.contacts],["Компании",c.companies],["Задачи",c.tasks],["Примечания (сделки)",c.notes_leads],["Примечания (контакты)",c.notes_contacts],["Пользователи",c.users],["Воронки",c.pipelines],["Поля сделки",c.cf_leads],["Вебхуки",c.webhooks]];
+    var html='<div id="dash"><p class="dash-note">'+esc(a.name||"")+' · '+esc(a.subdomain||"")+' · слепок от '+esc(new Date(META.builtAt).toLocaleString("ru-RU"))+' · точная копия данных amoCRM, только чтение</p><div class="dash-grid">';
+    items.forEach(function(it){html+='<div class="dash-card"><b>'+fmt(it[1])+'</b><span>'+it[0]+'</span></div>';});
+    html+='</div><p class="dash-note" style="margin-top:22px">Воронки</p><div class="dash-grid">';
     PIPES.forEach(function(p){
-      var sts = (p._embedded && p._embedded.statuses) || [];
-      var kb = (KANBAN && KANBAN.kanban[p.id]) || {};
-      var total = 0; Object.keys(kb).forEach(function(s){ total += kb[s].count; });
-      html += '<div class="kpi"><b>' + fmt(total) + '</b><span>' + esc(p.name) + ' · этапов: ' + sts.length + '</span></div>';
+      var kb=(KANBAN&&KANBAN.kanban[p.id])||{}; var total=0; Object.keys(kb).forEach(function(s){total+=kb[s].count;});
+      html+='<div class="dash-card"><b>'+fmt(total)+'</b><span>'+esc(p.name)+'</span></div>';
     });
-    html += '</div>';
-    $("#main").innerHTML = html;
+    html+='</div></div>';
+    $("#view").innerHTML=html;
   }
 
-  // ---------- Воронки (канбан) ----------
-  var curPipe = null;
-  function vFunnels(){
-    if (!curPipe) curPipe = PIPES[0] && PIPES[0].id;
-    var html = '<div class="card">Воронка: ';
-    PIPES.forEach(function(p){
-      html += '<button class="lnk" style="margin-right:12px;' + (p.id===curPipe?"font-weight:700;":"") + '" onclick="AC.pipe(' + p.id + ')">' + esc(p.name) + '</button>';
-    });
-    html += '</div><div class="kb" id="kb"></div>';
-    $("#main").innerHTML = html;
-    renderKb();
-  }
-  function renderKb(){
-    var p = PIPES.find(function(x){ return x.id===curPipe; });
-    if (!p) return;
-    var sts = (p._embedded && p._embedded.statuses) || [];
-    var kb = (KANBAN && KANBAN.kanban[p.id]) || {};
-    var el = $("#kb"); el.innerHTML = "";
+  /* ─── сделки: канбан ─── */
+  var curPipe=null;
+  function pipeTotal(pid){var kb=(KANBAN&&KANBAN.kanban[pid])||{};var c=0,s=0;Object.keys(kb).forEach(function(k){c+=kb[k].count;s+=kb[k].sum;});return {c:c,s:s};}
+  function vLeads(){
+    renderSidebar("leads");
+    if(!curPipe) curPipe=PIPES[0]&&PIPES[0].id;
+    var p=PIPES.find(function(x){return x.id===curPipe;})||PIPES[0];
+    var tot=pipeTotal(p.id);
+    setHeader(p.name,{caret:true,onTitle:togglePipePanel,count:fmt(tot.c)+" сделки: <b>"+fmt(tot.s)+" ₽</b>",newBtn:"+ Новая сделка"});
+    renderPipePanel();
+    var sts=(p._embedded&&p._embedded.statuses)||[];
+    var kb=(KANBAN&&KANBAN.kanban[p.id])||{};
+    var html='<div id="kb">';
     sts.forEach(function(s){
-      var k = kb[s.id] || { count:0, sum:0 };
-      var col = document.createElement("div");
-      col.className = "kb-col";
-      col.innerHTML = '<h4 style="border-bottom:3px solid ' + esc(s.color || "#98adc5") + ';padding-bottom:4px;">' + esc(s.name) +
-        '<span class="cnt">' + fmt(k.count) + ' сделок · ' + fmt(k.sum) + ' ₽</span></h4>' +
-        '<div class="cards"></div>' +
-        (k.count ? '<button class="lnk" style="font-size:12px" onclick="AC.more(this,' + p.id + ',' + s.id + ')">Показать сделки</button>' : "");
-      el.appendChild(col);
+      var k=kb[s.id]||{count:0,sum:0};
+      html+='<div class="kb-col" data-sid="'+s.id+'"><div class="kb-head"><div class="nm" title="'+esc(s.name)+'">'+esc(s.name)+'</div><div class="ct">'+fmt(k.count)+' сделок: '+fmt(k.sum)+' ₽</div><div class="bar" style="background:'+esc(s.color||"#dfe3e8")+'"></div></div><div class="kb-cards"></div>'+(k.count?'<button class="lnk kb-more" data-page="0">Ещё</button>':"")+'</div>';
+    });
+    html+='</div>';
+    $("#view").innerHTML=html;
+    // авто-подгрузка первой страницы каждого этапа
+    document.querySelectorAll(".kb-col").forEach(function(col){
+      var btn=col.querySelector(".kb-more");
+      if(btn){btn.onclick=function(){loadKbPage(col,p.id);};loadKbPage(col,p.id);}
     });
   }
-  function loadPage(btn, pid, sid){
-    var box = btn.parentElement.querySelector(".cards");
-    var page = (parseInt(btn.dataset.page || "0", 10) || 0) + 1;
-    jreq(API + "/leads?pipeline=" + pid + "&status=" + sid + "&page=" + page).then(function(items){
-      if (!Array.isArray(items)) { btn.textContent = "Больше нет"; return; }
+  function loadKbPage(col,pid){
+    var sid=col.dataset.sid, btn=col.querySelector(".kb-more"), box=col.querySelector(".kb-cards");
+    var page=(parseInt(btn.dataset.page||"0",10)||0)+1;
+    btn.textContent="…";
+    jreq(API+"/leads?pipeline="+pid+"&status="+sid+"&page="+page).then(function(items){
+      if(!Array.isArray(items)){btn.style.display="none";return;}
       items.forEach(function(l){
-        var d = document.createElement("div");
-        d.className = "kb-card";
-        d.innerHTML = '<div class="nm">' + esc(l.name || ("Сделка #" + l.id)) + '</div>' +
-          (l.price ? '<div class="pr">' + fmt(l.price) + ' ₽</div>' : "") +
-          '<div class="rs">' + esc(l.resp || "") + " · " + dt(l.created) + '</div>';
-        d.onclick = function(){ openLead(l.id); };
+        var d=document.createElement("div");
+        d.className="kb-card";
+        d.innerHTML='<div class="top"><span>'+esc(l.resp||"")+'</span><span class="dt">'+dShort(l.created)+'</span></div><div class="ttl">'+esc(l.name||("Сделка #"+l.id))+'</div>'+(l.price?'<div style="font-size:13px">'+fmt(l.price)+' ₽</div>':"")+(l.tags&&l.tags.length?('<div class="tags">'+l.tags.slice(0,3).map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join("")+'</div>'):"");
+        d.onclick=function(){openLead(l.id);};
         box.appendChild(d);
       });
-      btn.dataset.page = page;
-      btn.textContent = items.length >= 50 ? "Ещё" : "Больше нет";
-    }).catch(function(){ btn.textContent = "Больше нет"; });
+      btn.dataset.page=page;
+      if(items.length<50){btn.style.display="none";}else{btn.textContent="Ещё";}
+    }).catch(function(){btn.style.display="none";});
   }
-  function cfBlock(vals, defs){
-    if (!vals || !vals.length) return "";
-    var byId = {}; (defs||[]).forEach(function(f){ byId[f.id]=f.name; });
-    var rows = vals.map(function(f){
-      var v = (f.values||[]).map(function(x){ return x.value && x.value.name ? x.value.name : x.value; }).join(", ");
-      return "<tr><td>" + esc(f.field_name || byId[f.field_id] || f.field_id) + "</td><td>" + esc(v) + "</td></tr>";
-    }).join("");
-    return '<details><summary>Поля (' + vals.length + ')</summary><table>' + rows + '</table></details>';
+  function renderPipePanel(){
+    var pp=$("#pipePanel");
+    pp.innerHTML='<h3>Сделки</h3>'+PIPES.map(function(p){
+      return '<button class="pp-item'+(p.id===curPipe?" act":"")+'" data-p="'+p.id+'">'+esc(p.name)+'</button>';
+    }).join("")+'<div style="flex:1"></div><button class="pp-item muted" style="border-top:1px solid var(--border)">Все сделки</button>';
+    pp.querySelectorAll(".pp-item[data-p]").forEach(function(b){
+      b.onclick=function(){curPipe=parseInt(b.dataset.p,10);hidePipePanel();vLeads();};
+    });
   }
-  function notesBlock(notes){
-    if (!notes.length) return '<p class="muted">Примечаний нет</p>';
-    notes.sort(function(a,b){ return (b.created||0)-(a.created||0); });
-    return notes.slice(0,200).map(function(n){
-      var p = n.params || {};
-      var txt = p.text || p.service || (p.link ? p.link : "") || JSON.stringify(p).slice(0,300);
-      return '<div class="note"><div class="h">' + esc(n.type) + " · " + dt(n.created) + " · " + esc(n.by||"") + '</div>' + esc(txt) + '</div>';
+  function togglePipePanel(){var pp=$("#pipePanel");var on=pp.style.display!=="flex";pp.style.display=on?"flex":"none";$("#pipeShade").style.display=on?"block":"none";}
+  function hidePipePanel(){$("#pipePanel").style.display="none";$("#pipeShade").style.display="none";}
+  $("#pipeShade").onclick=hidePipePanel;
+
+  /* ─── карточка сделки ─── */
+  function stageBarHtml(p,sid){
+    var sts=(p&&p._embedded&&p._embedded.statuses)||[];
+    var idx=sts.findIndex(function(s){return s.id===sid;});
+    var cur=sts[idx]||{};
+    return '<div class="stage-bar">'+sts.map(function(s,i){
+      return '<i style="'+(i<=idx?("background:"+esc(cur.color||"#98ceff")):"")+'"></i>';
+    }).join("")+'</div>';
+  }
+  function fieldsHtml(vals,defs){
+    var byId={},typeById={};(defs||[]).forEach(function(f){byId[f.id]=f.name;typeById[f.id]=f.type;});
+    return (vals||[]).map(function(f){
+      var t=f.field_type||typeById[f.field_id]||"";
+      var v=(f.values||[]).map(function(x){
+        var val=x.value&&x.value.name?x.value.name:x.value;
+        if((t==="date"||t==="date_time"||t==="birthday")&&val&&isFinite(val))val=dShort(Number(val));
+        else if(typeof val==="boolean")val=val?"Да":"Нет";
+        return val;
+      }).join(", ");
+      if(v===""||v==null)return "";
+      return '<div class="frow"><div class="fl">'+esc(f.field_name||byId[f.field_id]||f.field_id)+'</div><div class="fv">'+esc(String(v).slice(0,500))+'</div></div>';
     }).join("");
+  }
+  var FEED_FILTERS=[["all","все"],["tasks","задачи"],["notes","примечания"]];
+  function feedHtml(notes,tasks,filter){
+    filter=filter||"all";
+    var evs=[];
+    if(filter!=="tasks")(notes||[]).forEach(function(n){evs.push({ts:n.created||0,kind:"note",n:n});});
+    if(filter!=="notes")(tasks||[]).forEach(function(t){evs.push({ts:t.complete_till||t.created_at||0,kind:"task",t:t});});
+    evs.sort(function(a,b){return b.ts-a.ts;});
+    if(!evs.length)return '<p class="muted" style="padding:16px 4px">Пока пусто</p>';
+    var html="",lastDay="";
+    evs.slice(0,300).forEach(function(e){
+      var day=e.ts?new Date(e.ts*1000).toLocaleDateString("ru-RU"):"";
+      if(day!==lastDay){html+='<div class="day-sep"><b>'+day+'</b></div>';lastDay=day;}
+      if(e.kind==="task"){
+        var t=e.t;
+        html+='<div class="ev task'+(t.is_completed?"":" open")+'"><div class="eh">'+dt(t.complete_till)+" · задача · "+esc(userName(t.responsible_user_id))+(t.is_completed?" · выполнена":" · открыта")+'</div>'+esc(t.text||"")+(t.result&&t.result.text?('<div class="muted" style="margin-top:4px">Результат: '+esc(t.result.text)+'</div>'):"")+'</div>';
+      } else {
+        var n=e.n,p=n.params||{};
+        var txt=p.text||p.service||(p.uniq?("Звонок: "+(p.duration||0)+" сек"):"")||JSON.stringify(p).slice(0,300);
+        var cls=String(n.type||"").indexOf("call")>=0?" call":"";
+        html+='<div class="ev'+cls+'"><div class="eh">'+dt(n.created)+" · "+esc(n.type)+" · "+esc(n.by||"")+'</div>'+esc(String(txt).slice(0,1200))+'</div>';
+      }
+    });
+    return html;
+  }
+  function cardShell(leftHtml,feedRender){
+    var bg=document.createElement("div");
+    bg.className="dcard-bg";
+    bg.innerHTML='<div class="dcard-l">'+leftHtml+'</div><div class="dcard-r"><div class="feed-top"><svg width="16" height="16" viewBox="0 0 24 24" style="stroke:#b6bcc3;fill:none;stroke-width:2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg> Поиск и фильтр</div><div class="feed"></div><div class="feed-tabs"></div><div class="feed-note"><a>Примечание</a>: введите текст</div></div>';
+    document.body.appendChild(bg);
+    bg.querySelector(".back").onclick=function(){document.body.removeChild(bg);};
+    var esch=function(e){if(e.key==="Escape"&&document.body.contains(bg)){document.body.removeChild(bg);document.removeEventListener("keydown",esch);}};
+    document.addEventListener("keydown",esch);
+    var tabs=bg.querySelector(".feed-tabs");
+    tabs.innerHTML=FEED_FILTERS.map(function(f,i){return '<span data-f="'+f[0]+'" class="'+(i===0?"act":"")+'">'+f[1]+'</span>';}).join("");
+    tabs.querySelectorAll("span").forEach(function(s){
+      s.onclick=function(){tabs.querySelectorAll("span").forEach(function(x){x.classList.remove("act");});s.classList.add("act");bg.querySelector(".feed").innerHTML=feedRender(s.dataset.f);};
+    });
+    bg.querySelector(".feed").innerHTML=feedRender("all");
+    return bg;
   }
   function openLead(id){
-    jreq(API + "/lead/" + id).then(function(r){
-      if (!r.success) return alert(r.message || "Не найдено");
-      var l = r.lead;
-      var stName = "", pName = "";
-      PIPES.forEach(function(p){ if (p.id===l.pipeline_id){ pName=p.name; ((p._embedded&&p._embedded.statuses)||[]).forEach(function(s){ if (s.id===l.status_id) stName=s.name; }); }});
-      var u = USERS.find(function(x){ return x.id===l.responsible_user_id; });
-      var contacts = ((l._embedded && l._embedded.contacts) || []).map(function(c){
-        return '<button class="lnk" onclick="AC.contact(' + c.id + ')">контакт #' + c.id + '</button>';
-      }).join(" ");
-      var tags = ((l._embedded && l._embedded.tags) || []).map(function(t){ return '<span class="pill">' + esc(t.name) + '</span>'; }).join("");
-      var tasks = (r.tasks||[]).map(function(t){
-        return "<tr><td>" + dt(t.complete_till) + "</td><td>" + esc(t.text||"").slice(0,300) + "</td><td>" + (t.is_completed?'<span class="flag ok">выполнена</span>':'<span class="flag">открыта</span>') + "</td></tr>";
+    jreq(API+"/lead/"+id).then(function(r){
+      if(!r.success)return alert(r.message||"Не найдено");
+      var l=r.lead;
+      var p=PIPES.find(function(x){return x.id===l.pipeline_id;});
+      var stName="";((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===l.status_id)stName=s.name;});
+      var tags=((l._embedded&&l._embedded.tags)||[]).map(function(t){return '<span class="tag">'+esc(t.name)+'</span>';}).join("");
+      var contacts=((l._embedded&&l._embedded.contacts)||[]).map(function(c){
+        return '<div class="dl-contact" style="cursor:pointer" data-c="'+c.id+'"><div class="ava">К</div><div><div style="color:var(--link)">Контакт #'+c.id+(c.is_main?" (основной)":"")+'</div><div class="muted" style="font-size:12px">открыть карточку</div></div></div>';
       }).join("");
-      modal('<h2>' + esc(l.name || ("Сделка #" + l.id)) + '</h2>' +
-        '<p>' + esc(pName) + ' → <b>' + esc(stName) + '</b> · бюджет ' + fmt(l.price) + ' ₽ · отв. ' + esc(u?u.name:l.responsible_user_id) +
-        '<br><span class="muted">создана ' + dt(l.created_at) + " · обновлена " + dt(l.updated_at) + (l.closed_at ? " · закрыта " + dt(l.closed_at) : "") + '</span></p>' +
-        (tags?('<p>'+tags+'</p>'):"") + (contacts?('<p>Контакты: '+contacts+'</p>'):"") +
-        cfBlock(l.custom_fields_values, CF && CF.leads) +
-        (tasks?('<h3>Задачи</h3><table><tr><th>Срок</th><th>Текст</th><th></th></tr>'+tasks+'</table>'):"") +
-        '<h3>Примечания</h3>' + notesBlock(r.notes||[]));
-    }).catch(function(e){ if (String(e.message)==="401") showLogin(); });
+      var left='<div class="dl-head"><span class="back">‹</span><h2>'+esc(l.name||("Сделка #"+l.id))+'</h2><div class="dl-sub">#'+l.id+' &nbsp;'+tags+'</div></div>'+
+        '<div class="dl-stage"><div class="pn">'+esc(p?p.name:"")+'</div><div class="sn">'+esc(stName)+'</div>'+stageBarHtml(p,l.status_id)+'</div>'+
+        '<div class="dl-tabs"><span class="act">Основное</span><span>Статистика</span></div>'+
+        '<div class="fields">'+
+          '<div class="frow"><div class="fl">Отв-ный</div><div class="fv">'+esc(userName(l.responsible_user_id))+'</div></div>'+
+          '<div class="frow"><div class="fl">Бюджет</div><div class="fv">'+fmt(l.price)+' ₽</div></div>'+
+          '<div class="frow"><div class="fl">Создана</div><div class="fv">'+dt(l.created_at)+'</div></div>'+
+          '<div class="frow"><div class="fl">Изменена</div><div class="fv">'+dt(l.updated_at)+'</div></div>'+
+          (l.closed_at?('<div class="frow"><div class="fl">Закрыта</div><div class="fv">'+dt(l.closed_at)+'</div></div>'):"")+
+          '<div class="fgroup">Основная информация</div>'+
+          fieldsHtml(l.custom_fields_values,CF&&CF.leads)+
+        '</div>'+contacts;
+      var bg=cardShell(left,function(f){return feedHtml(r.notes,r.tasks,f);});
+      bg.querySelectorAll("[data-c]").forEach(function(el){
+        el.onclick=function(){document.body.removeChild(bg);openContact(parseInt(el.dataset.c,10));};
+      });
+    }).catch(function(e){if(String(e.message)==="401")showLogin();});
   }
   function openContact(id){
-    jreq(API + "/contact/" + id).then(function(r){
-      if (!r.success) return alert(r.message || "Не найдено");
-      var c = r.contact;
-      var leads = ((c._embedded && c._embedded.leads) || []).map(function(l){
-        return '<button class="lnk" onclick="AC.lead(' + l.id + ')">сделка #' + l.id + '</button>';
-      }).join(" ");
-      modal('<h2>' + esc(c.name || ("Контакт #" + c.id)) + '</h2>' +
-        '<p class="muted">создан ' + dt(c.created_at) + " · обновлён " + dt(c.updated_at) + '</p>' +
-        (leads?('<p>Сделки: '+leads+'</p>'):"") +
-        cfBlock(c.custom_fields_values, CF && CF.contacts) +
-        '<h3>Примечания</h3>' + notesBlock(r.notes||[]));
-    });
-  }
-
-  // ---------- Контакты ----------
-  function vContacts(){
-    $("#main").innerHTML = '<div class="card"><h2 style="margin-top:0">Поиск по ' + fmt(META.counts.contacts) + ' контактам</h2>' +
-      '<input type="text" id="cq" placeholder="Имя, телефон или email (мин. 3 символа)"> <button class="btn" id="cgo">Найти</button>' +
-      '<div id="cres" style="margin-top:12px"></div></div>';
-    var go = function(){
-      var q = $("#cq").value.trim();
-      $("#cres").innerHTML = '<span class="muted">Ищу…</span>';
-      jreq(API + "/contacts?q=" + encodeURIComponent(q)).then(function(r){
-        var items = r.items || [];
-        if (!items.length) { $("#cres").innerHTML = '<span class="muted">' + esc(r.note || "Ничего не найдено") + '</span>'; return; }
-        $("#cres").innerHTML = '<table><tr><th>Имя</th><th>Телефоны</th><th>Email</th><th></th></tr>' + items.map(function(c){
-          return "<tr><td>" + esc(c.n||"—") + "</td><td>" + esc((c.p||[]).join(", ")) + "</td><td>" + esc((c.e||[]).join(", ")) +
-            '</td><td><button class="lnk" onclick="AC.contact(' + c.id + ')">открыть</button></td></tr>';
-        }).join("") + "</table>" + (items.length>=50?'<p class="muted">Показаны первые 50 — уточните запрос</p>':"");
+    jreq(API+"/contact/"+id).then(function(r){
+      if(!r.success)return alert(r.message||"Не найдено");
+      var c=r.contact;
+      var larr=(r.leads&&r.leads.length)?r.leads:((c._embedded&&c._embedded.leads)||[]);
+      var leads=larr.map(function(l){
+        var p=PIPES.find(function(x){return x.id===l.pid;});
+        var st="";((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===l.sid)st=s.name;});
+        return '<div class="dl-contact" style="cursor:pointer" data-l="'+l.id+'"><div class="ava" style="border-radius:6px">С</div><div><div style="color:var(--link)">'+esc(l.name||("Сделка #"+l.id))+'</div><div class="muted" style="font-size:12px">'+esc(st||"открыть")+(l.price?(" · "+fmt(l.price)+" ₽"):"")+'</div></div></div>';
+      }).join("");
+      if(leads)leads='<div class="fgroup" style="margin:0 20px">Сделки ('+larr.length+')</div>'+leads;
+      var init=(c.name||"К").trim().charAt(0).toUpperCase();
+      var left='<div class="dl-head"><span class="back">‹</span><h2>'+esc(c.name||("Контакт #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div>'+
+        '<div class="dl-tabs" style="margin-top:6px"><span class="act">Основное</span><span>Сделки</span><span>Статистика контакта</span></div>'+
+        '<div class="fields">'+
+          '<div class="frow"><div class="fl">Отв-ный</div><div class="fv">'+esc(userName(c.responsible_user_id))+'</div></div>'+
+          '<div class="frow"><div class="fl">Создан</div><div class="fv">'+dt(c.created_at)+'</div></div>'+
+          '<div class="frow"><div class="fl">Изменён</div><div class="fv">'+dt(c.updated_at)+'</div></div>'+
+          fieldsHtml(c.custom_fields_values,CF&&CF.contacts)+
+        '</div>'+leads;
+      var bg=cardShell(left,function(f){return feedHtml(r.notes,[],f);});
+      var h=bg.querySelector(".ava");if(h)h.textContent=init;
+      bg.querySelectorAll("[data-l]").forEach(function(el){
+        el.onclick=function(){document.body.removeChild(bg);openLead(parseInt(el.dataset.l,10));};
       });
-    };
-    $("#cgo").onclick = go;
-    $("#cq").onkeydown = function(e){ if (e.key==="Enter") go(); };
+    });
   }
 
-  // ---------- Автоматизации ----------
-  function mdRender(md){
-    var h = esc(md);
-    h = h.replace(/^### (.*)$/gm, "<h3>$1</h3>").replace(/^## (.*)$/gm, "<h2>$1</h2>").replace(/^# (.*)$/gm, "<h1>$1</h1>");
-    h = h.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
-    // таблицы
-    h = h.replace(/((?:^\|.*\|\s*$\n?)+)/gm, function(block){
-      var rows = block.trim().split("\n").filter(function(r){ return !/^\|[\s:|-]+\|$/.test(r); });
-      return "<table>" + rows.map(function(r,i){
-        var cells = r.replace(/^\||\|$/g,"").split("|");
-        return "<tr>" + cells.map(function(c){ return (i===0?"<th>":"<td>") + c.trim() + (i===0?"</th>":"</td>"); }).join("") + "</tr>";
-      }).join("") + "</table>";
+  /* ─── контакты ─── */
+  function vContacts(){
+    renderSidebar("contacts");
+    setHeader("Контакты",{count:fmt(META.counts.contacts)+" контактов",searchPh:"Поиск и фильтр (имя, телефон, email — Enter)",newBtn:"+ Добавить контакт",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);}});
+    $("#view").innerHTML='<div style="padding:0 0 30px"><table class="amo"><thead><tr><th style="width:34%">Наименование</th><th>Телефон</th><th>Email</th><th style="width:110px"></th></tr></thead><tbody id="cbody"><tr><td colspan="4" class="muted" style="padding:22px">Введите имя, телефон или email в поиск сверху и нажмите Enter — поиск по всем '+fmt(META.counts.contacts)+' контактам слепка.</td></tr></tbody></table></div>';
+  }
+  function doContactSearch(q){
+    q=String(q||"").trim();
+    var tb=$("#cbody");
+    if(q.length<3){tb.innerHTML='<tr><td colspan="4" class="muted" style="padding:22px">Минимум 3 символа</td></tr>';return;}
+    tb.innerHTML='<tr><td colspan="4" class="muted" style="padding:22px">Ищу…</td></tr>';
+    jreq(API+"/contacts?q="+encodeURIComponent(q)).then(function(r){
+      var items=r.items||[];
+      if(!items.length){tb.innerHTML='<tr><td colspan="4" class="muted" style="padding:22px">Ничего не найдено</td></tr>';return;}
+      tb.innerHTML=items.map(function(c){
+        return '<tr><td><a data-c="'+c.id+'">'+esc(c.n||"Без имени")+'</a></td><td>'+esc((c.p||[]).join(", "))+'</td><td>'+esc((c.e||[]).join(", "))+'</td><td><a data-c="'+c.id+'">открыть</a></td></tr>';
+      }).join("")+(items.length>=50?'<tr><td colspan="4" class="muted">Показаны первые 50 — уточните запрос</td></tr>':"");
+      tb.querySelectorAll("[data-c]").forEach(function(a){a.onclick=function(){openContact(parseInt(a.dataset.c,10));};});
     });
-    h = h.replace(/^- (.*)$/gm, "<li>$1</li>").replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g, "<ul>$1</ul>");
-    return h.replace(/\n{2,}/g, "<br>");
+  }
+
+  /* ─── автоматизации ─── */
+  function mdRender(md){
+    var h=esc(md);
+    h=h.replace(/^### (.*)$/gm,"<h3>$1</h3>").replace(/^## (.*)$/gm,"<h2>$1</h2>").replace(/^# (.*)$/gm,"<h1>$1</h1>");
+    h=h.replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>");
+    h=h.replace(/((?:^\|.*\|\s*$\n?)+)/gm,function(block){
+      var rows=block.trim().split("\n").filter(function(r){return !/^\|[\s:|-]+\|$/.test(r);});
+      return "<table>"+rows.map(function(r,i){
+        var cells=r.replace(/^\||\|$/g,"").split("|");
+        return "<tr>"+cells.map(function(c){return (i===0?"<th>":"<td>")+c.trim()+(i===0?"</th>":"</td>");}).join("")+"</tr>";
+      }).join("")+"</table>";
+    });
+    h=h.replace(/^- (.*)$/gm,"<li>$1</li>").replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g,"<ul>$1</ul>");
+    return h.replace(/\n{2,}/g,"<br>");
   }
   function vAuto(){
-    $("#main").innerHTML = '<div class="card">Загрузка автоматизаций…</div>';
+    renderSidebar("auto");
+    setHeader("Автоматизации",{count:""});
+    $("#view").innerHTML='<div class="plain"><div class="pcard">Загрузка…</div></div>';
     Promise.all([
-      req(API + "/automations").then(function(r){ return r.text(); }).catch(function(){ return ""; }),
-      jreq(API + "/salesbots").catch(function(){ return null; }),
-      jreq(API + "/webhooks").catch(function(){ return []; })
+      req(API+"/automations").then(function(r){return r.text();}).catch(function(){return "";}),
+      jreq(API+"/salesbots").catch(function(){return null;}),
+      jreq(API+"/webhooks").catch(function(){return [];})
     ]).then(function(res){
-      var md = res[0], bots = res[1], hooks = res[2];
-      var html = '<div class="card"><h2 style="margin-top:0">Опись автоматизаций (снята с живой amoCRM)</h2><div class="md">' + mdRender(md) + '</div></div>';
-      if (bots && bots.length) {
-        html += '<div class="card"><h2 style="margin-top:0">Salesbot — полные сценарии (' + bots.length + ')</h2>';
+      var md=res[0],bots=res[1],hooks=res[2];
+      var html='<div class="plain"><div class="pcard"><h2>Опись автоматизаций (снята с живой amoCRM)</h2><div class="md">'+mdRender(md)+'</div></div>';
+      if(bots&&bots.length){
+        html+='<div class="pcard"><h2>Salesbot — полные сценарии ('+bots.length+')</h2>';
         bots.forEach(function(b){
-          var body = ""; try { body = JSON.stringify(JSON.parse(b.text || "null"), null, 2); } catch(e){ body = b.text || ""; }
-          html += '<details><summary>' + esc(b.name) + ' <span class="muted">(id ' + b.id + (b.settings && b.settings.active===false ? ", выключен" : "") + ')</span></summary><pre>' + esc(body) + '</pre></details>';
+          var body="";try{body=JSON.stringify(JSON.parse(b.text||"null"),null,2);}catch(e){body=b.text||"";}
+          html+='<details><summary>'+esc(b.name)+' <span class="muted">(id '+b.id+(b.settings&&b.settings.active===false?", выключен":"")+')</span></summary><pre>'+esc(body)+'</pre></details>';
         });
-        html += '</div>';
+        html+='</div>';
       }
-      if (hooks && hooks.length) {
-        html += '<div class="card"><h2 style="margin-top:0">Вебхуки (' + hooks.length + ')</h2><table><tr><th>URL</th><th>События</th><th></th></tr>' +
-          hooks.map(function(w){ return "<tr><td>" + esc(w.destination) + "</td><td>" + esc((w.settings||[]).join(", ")) + "</td><td>" + (w.disabled?'<span class="flag">выключен</span>':'<span class="flag ok">активен</span>') + "</td></tr>"; }).join("") + '</table></div>';
+      if(hooks&&hooks.length){
+        html+='<div class="pcard"><h2>Вебхуки ('+hooks.length+')</h2><table><tr><th>URL</th><th>События</th><th></th></tr>'+hooks.map(function(w){return "<tr><td>"+esc(w.destination)+"</td><td>"+esc((w.settings||[]).join(", "))+"</td><td>"+(w.disabled?'<span class="flag">выключен</span>':'<span class="flag ok">активен</span>')+"</td></tr>";}).join("")+'</table></div>';
       }
-      html += '<div class="card"><h2 style="margin-top:0">Триггеры цифровой воронки (сырые данные)</h2><p class="muted">Полные машинные настройки триггеров каждой воронки, как их хранит amoCRM:</p>' +
-        PIPES.map(function(p){ return '<button class="lnk" style="display:block;margin:4px 0" onclick="AC.dp(' + p.id + ',\'' + esc(p.name).replace(/'/g,"") + '\')">' + esc(p.name) + ' — открыть JSON триггеров</button>'; }).join("") + '</div>';
-      $("#main").innerHTML = html;
+      html+='<div class="pcard"><h2>Триггеры цифровой воронки (сырые данные)</h2>'+PIPES.map(function(p){return '<div><a data-dp="'+p.id+'">'+esc(p.name)+' — открыть JSON триггеров</a></div>';}).join("")+'</div></div>';
+      $("#view").innerHTML=html;
+      document.querySelectorAll("[data-dp]").forEach(function(a){a.onclick=function(){openDp(parseInt(a.dataset.dp,10));};});
     });
   }
-  function openDp(pid, name){
-    jreq(API + "/dp/" + pid).then(function(j){
-      var s = JSON.stringify(j, null, 1);
-      if (s.length > 400000) s = s.slice(0, 400000) + "\n… (обрезано для отображения — полный файл в слепке)";
-      modal('<h2>Цифровая воронка: ' + esc(name) + '</h2><pre>' + esc(s) + '</pre>');
+  function openDp(pid){
+    var p=PIPES.find(function(x){return x.id===pid;});
+    jreq(API+"/dp/"+pid).then(function(j){
+      var s=JSON.stringify(j,null,1);
+      if(s.length>400000)s=s.slice(0,400000)+"\n… (обрезано — полный файл в слепке)";
+      var bg=document.createElement("div");
+      bg.className="dcard-bg";
+      bg.style.background="rgba(15,25,50,.5)";
+      bg.innerHTML='<div style="margin:26px auto;background:#fff;border-radius:8px;max-width:960px;width:94%;padding:20px 24px;max-height:88vh;overflow:auto"><h2 style="margin:0 0 10px">Цифровая воронка: '+esc(p?p.name:pid)+' <a style="float:right" class="dpx">закрыть</a></h2><pre style="max-height:74vh">'+esc(s)+'</pre></div>';
+      bg.onclick=function(e){if(e.target===bg||e.target.className==="dpx")document.body.removeChild(bg);};
+      document.body.appendChild(bg);
     });
   }
 
-  // ---------- Справочники ----------
+  /* ─── справочники ─── */
   function vRefs(){
-    $("#main").innerHTML = '<div class="card">Загрузка…</div>';
-    Promise.all([jreq(API+"/users"), jreq(API+"/custom_fields"), jreq(API+"/tags"), jreq(API+"/loss_reasons"), jreq(API+"/catalogs"), jreq(API+"/sources")])
-      .then(function(res){
-        var users=res[0], cf=res[1], tags=res[2], lr=res[3], cats=res[4], src=res[5];
-        var html = '<div class="two">';
-        html += '<div class="card"><h2 style="margin-top:0">Пользователи (' + users.length + ')</h2><table><tr><th>Имя</th><th>Email</th><th>Роль/группа</th><th></th></tr>' +
-          users.map(function(u){ return "<tr><td>"+esc(u.name)+"</td><td>"+esc(u.email)+"</td><td>"+esc(u.role||"")+(u.group?(" / "+esc(u.group)):"")+"</td><td>"+(u.is_admin?'<span class="pill">админ</span>':"")+(u.is_active===false?'<span class="flag">неактивен</span>':"")+"</td></tr>"; }).join("") + '</table></div>';
-        var cfTbl = function(title, arr){
-          return '<details><summary>' + title + ' (' + arr.length + ')</summary><table><tr><th>Поле</th><th>Тип</th><th>Значения</th></tr>' +
-            arr.map(function(f){
-              var enums = (f.enums||[]).map(function(e){ return e.value; }).slice(0,25).join(", ");
-              return "<tr><td>"+esc(f.name)+"</td><td>"+esc(f.type)+"</td><td class='muted'>"+esc(enums)+((f.enums||[]).length>25?"…":"")+"</td></tr>";
-            }).join("") + "</table></details>";
-        };
-        html += '<div class="card"><h2 style="margin-top:0">Кастомные поля</h2>' +
-          cfTbl("Сделки", cf.leads||[]) + cfTbl("Контакты", cf.contacts||[]) + cfTbl("Компании", cf.companies||[]) + '</div>';
-        html += '</div><div class="two">';
-        html += '<div class="card"><h2 style="margin-top:0">Теги сделок (' + (tags.leads||[]).length + ')</h2>' + (tags.leads||[]).map(function(t){ return '<span class="pill">'+esc(t.name)+'</span>'; }).join("") + '</div>';
-        html += '<div class="card"><h2 style="margin-top:0">Причины отказа (' + lr.length + ')</h2>' + lr.map(function(x){ return '<span class="pill">'+esc(x.name)+'</span>'; }).join("") +
-          '<h2>Источники (' + src.length + ')</h2>' + src.map(function(x){ return '<span class="pill">'+esc(x.name||x.external_id||x.id)+'</span>'; }).join("") + '</div>';
-        html += '</div>';
-        html += '<div class="card"><h2 style="margin-top:0">Каталоги/списки (' + cats.length + ')</h2>' +
-          cats.map(function(c){ return '<details><summary>' + esc(c.name) + ' (' + (c.elements||[]).length + ' элементов)</summary><pre>' + esc(JSON.stringify((c.elements||[]).slice(0,100), null, 1)) + '</pre></details>'; }).join("") + '</div>';
-        $("#main").innerHTML = html;
-      });
+    renderSidebar("refs");
+    setHeader("Справочники",{count:""});
+    $("#view").innerHTML='<div class="plain"><div class="pcard">Загрузка…</div></div>';
+    Promise.all([jreq(API+"/users"),jreq(API+"/custom_fields"),jreq(API+"/tags"),jreq(API+"/loss_reasons"),jreq(API+"/catalogs"),jreq(API+"/sources")]).then(function(res){
+      var users=res[0],cf=res[1],tags=res[2],lr=res[3],cats=res[4],src=res[5];
+      var cfTbl=function(title,arr){
+        return '<details><summary>'+title+' ('+arr.length+')</summary><table><tr><th>Поле</th><th>Тип</th><th>Значения</th></tr>'+arr.map(function(f){
+          var enums=(f.enums||[]).map(function(e){return e.value;}).slice(0,25).join(", ");
+          return "<tr><td>"+esc(f.name)+"</td><td>"+esc(f.type)+"</td><td class='muted'>"+esc(enums)+((f.enums||[]).length>25?"…":"")+"</td></tr>";
+        }).join("")+"</table></details>";
+      };
+      var html='<div class="plain">';
+      html+='<div class="pcard"><h2>Пользователи ('+users.length+')</h2><table><tr><th>Имя</th><th>Email</th><th>Роль/группа</th><th></th></tr>'+users.map(function(u){return "<tr><td>"+esc(u.name)+"</td><td>"+esc(u.email)+"</td><td>"+esc(u.role||"")+(u.group?(" / "+esc(u.group)):"")+"</td><td>"+(u.is_admin?'<span class="pill">админ</span>':"")+(u.is_active===false?'<span class="flag">неактивен</span>':"")+"</td></tr>";}).join("")+'</table></div>';
+      html+='<div class="pcard"><h2>Кастомные поля</h2>'+cfTbl("Сделки",cf.leads||[])+cfTbl("Контакты",cf.contacts||[])+cfTbl("Компании",cf.companies||[])+'</div>';
+      html+='<div class="pcard"><h2>Теги сделок ('+(tags.leads||[]).length+')</h2>'+(tags.leads||[]).map(function(t){return '<span class="pill">'+esc(t.name)+'</span>';}).join("")+'</div>';
+      html+='<div class="pcard"><h2>Причины отказа ('+lr.length+')</h2>'+lr.map(function(x){return '<span class="pill">'+esc(x.name)+'</span>';}).join("")+'<h3>Источники ('+src.length+')</h3>'+src.map(function(x){return '<span class="pill">'+esc(x.name||x.external_id||x.id)+'</span>';}).join("")+'</div>';
+      html+='<div class="pcard"><h2>Каталоги/списки ('+cats.length+')</h2>'+cats.map(function(c){return '<details><summary>'+esc(c.name)+' ('+(c.elements||[]).length+' элементов)</summary><pre>'+esc(JSON.stringify((c.elements||[]).slice(0,100),null,1))+'</pre></details>';}).join("")+'</div>';
+      html+='</div>';
+      $("#view").innerHTML=html;
+    });
   }
 
-  // ---------- Доработки ----------
+  /* ─── доработки ─── */
   function vTodo(){
-    var rows = [
-      ["Данные (сделки, контакты, компании, задачи, примечания, поля, воронки, пользователи)", "ok", "Выгружены полностью в слепок; регулярный автобэкап можно включить по расписанию."],
-      ["Salesbot — сценарии всех ботов", "ok", "Полные машинные сценарии в слепке (вкладка Автоматизации)."],
-      ["Триггеры цифровой воронки", "ok", "Сырые настройки всех 5 воронок в слепке + человекочитаемая опись."],
-      ["Журнал событий (история изменений)", "warn", "Сознательно не выгружался: миллионы записей, риск упереться в лимит API (бан 15.06). Можно догрузить порциями по месяцам отдельным запуском."],
-      ["Файлы-вложения (сканы документов и т.п.)", "warn", "В слепке только ссылки/метаданные из примечаний. Тела файлов — отдельная выгрузка через файловый сервис amoCRM (объём может быть десятки ГБ)."],
-      ["Переписка из чатов (WhatsApp/Telegram/Instagram через Wazzup)", "no", "amoCRM не отдаёт содержимое чатов по API — история живёт у Wazzup/Chatter. Для копии нужен экспорт на стороне Wazzup."],
-      ["Письма (входящие/исходящие почты)", "no", "Почтовый ящик подключён к amoCRM, но письма живут на почтовом сервере (mail.ru). Копия — через IMAP-выгрузку ящиков."],
-      ["Звонки (записи разговоров onlinePBX)", "no", "В примечаниях есть факты звонков и ссылки; сами записи — на стороне onlinePBX."],
-      ["Шаблоны писем (Почтовик «Команда F5»)", "warn", "Названия шаблонов сняты в опись; содержимое шаблонов хранится в виджете F5 — переписать вручную из интерфейса (~20 шт.)."],
-      ["Чек-листы «Команда F5» по странам", "warn", "Условия срабатывания в слепке; содержимое самих чек-листов — в виджете F5, выгружается вручную."],
-      ["Сторонние виджеты (35 интеграций)", "no", "Список зафиксирован. Логика работает на серверах разработчиков (Команда F5, Wazzup, onlinePBX, SMS.RU…) — при переезде каждую интеграцию нужно заменять своей реализацией или новым договором."],
-      ["Права/роли пользователей", "ok", "Роли и базовые права в слепке (users + roles)."],
-      ["Наши интеграции (ЛК VSC, Google Sheets Sync, Staff СПб, Marketcall, СЕО-сайт, Калькулятор)", "ok", "Это наш код — уже в git, работает независимо от amoCRM UI."]
+    renderSidebar("todo");
+    setHeader("Доработки",{count:""});
+    var rows=[
+      ["Данные (сделки, контакты, компании, задачи, примечания, поля, воронки, пользователи)","ok","Выгружены полностью; регулярный автобэкап можно включить по расписанию."],
+      ["Salesbot — сценарии всех ботов","ok","Полные машинные сценарии в слепке (раздел Автоматизации)."],
+      ["Триггеры цифровой воронки","ok","Сырые настройки всех 5 воронок + человекочитаемая опись."],
+      ["Журнал событий (история изменений)","warn","Не выгружался: миллионы записей, риск лимита API (бан 15.06). Можно догрузить порциями."],
+      ["Примечания компаний","warn","Эндпоинт amoCRM отдаёт 504 (сломан у них); юрлиц мало — можно догрузить поштучно."],
+      ["Файлы-вложения (сканы документов)","warn","В слепке ссылки/метаданные; тела файлов — отдельная выгрузка (десятки ГБ, нужен диск)."],
+      ["Переписка чатов (WhatsApp/Telegram через Wazzup)","no","amoCRM не отдаёт чаты по API — история у Wazzup/Chatter. Нужен экспорт на их стороне."],
+      ["Письма (почта)","no","Письма живут на почтовом сервере — копия через IMAP-выгрузку ящиков."],
+      ["Звонки (записи разговоров onlinePBX)","no","Факты звонков в слепке; записи — на стороне onlinePBX."],
+      ["Шаблоны писем (Почтовик «Команда F5»)","warn","Названия сняты; содержимое — вручную из виджета (~20 шт.)."],
+      ["Чек-листы «Команда F5» по странам","warn","Условия срабатывания в слепке; содержимое — вручную из виджета."],
+      ["Сторонние виджеты (35 интеграций)","no","Логика на серверах разработчиков — при переезде заменять своей реализацией."],
+      ["Наши интеграции (ЛК VSC, Sheets, Staff СПб, Marketcall, СЕО-сайт, Калькулятор)","ok","Наш код — в git, работает независимо."]
     ];
-    var steps = [
-      "1. Решить архитектуру своей CRM: self-hosted платформа (например, на нашей базе ЛК) или открытая CRM с импортом.",
-      "2. Импортёр данных из слепка (NDJSON → БД новой CRM): сделки+статусы, контакты с телефонами, связи, задачи, примечания.",
-      "3. Реализовать движок автоматизаций по описи: триггеры этапов (задачи, письма, SMS, смена ответственного) — всё уже формализовано в слепке.",
-      "4. Каналы: телефония (замена onlinePBX-виджета), WhatsApp/Telegram (замена Wazzup — можно через их же API), SMS (SMS.RU уже используем напрямую), почта (SMTP есть).",
-      "5. Переключить наши интеграции (ЛК, калькулятор, Sheets) с amoCRM API на API новой CRM — точки интеграции известны, всё наше.",
-      "6. Параллельный прогон: новая CRM работает рядом с amoCRM на полном бэкапе, сверка, потом переключение."
+    var steps=[
+      "1. Решить архитектуру своей CRM: self-hosted на нашей базе (как ЛК) или открытая CRM с импортом.",
+      "2. Импортёр данных из слепка (NDJSON → БД новой CRM): сделки+статусы, контакты, связи, задачи, примечания.",
+      "3. Движок автоматизаций по описи: триггеры этапов (задачи, письма, SMS, смена ответственного) — всё формализовано в слепке.",
+      "4. Каналы: телефония (замена onlinePBX), WhatsApp/Telegram (Wazzup API), SMS (SMS.RU уже напрямую), почта (SMTP есть).",
+      "5. Переключить наши интеграции (ЛК, калькулятор, Sheets) на API новой CRM.",
+      "6. Параллельный прогон рядом с amoCRM на полном бэкапе, сверка, переключение."
     ];
-    var lbl = { ok:'<span class="flag ok">в слепке</span>', warn:'<span class="flag" style="background:#fdf3e0;color:#9a6b00">частично</span>', no:'<span class="flag">вне amoCRM</span>' };
-    $("#main").innerHTML = '<div class="card"><h2 style="margin-top:0">Что уже в копии и что нужно доделать до рабочей CRM</h2>' +
-      '<table><tr><th>Компонент</th><th>Статус</th><th>Комментарий</th></tr>' +
-      rows.map(function(r){ return "<tr><td>"+r[0]+"</td><td>"+lbl[r[1]]+"</td><td class='muted'>"+r[2]+"</td></tr>"; }).join("") + '</table></div>' +
-      '<div class="card"><h2 style="margin-top:0">План до полноценной своей CRM</h2>' + steps.map(function(s){ return "<p>"+s+"</p>"; }).join("") + '</div>';
+    var lbl={ok:'<span class="flag ok">в слепке</span>',warn:'<span class="flag warn">частично</span>',no:'<span class="flag">вне amoCRM</span>'};
+    $("#view").innerHTML='<div class="plain"><div class="pcard"><h2>Что уже в копии и что доделать до рабочей CRM</h2><table><tr><th>Компонент</th><th>Статус</th><th>Комментарий</th></tr>'+rows.map(function(r){return "<tr><td>"+r[0]+"</td><td>"+lbl[r[1]]+"</td><td class='muted'>"+r[2]+"</td></tr>";}).join("")+'</table></div><div class="pcard"><h2>План до полноценной своей CRM</h2>'+steps.map(function(s){return "<p>"+s+"</p>";}).join("")+'</div></div>';
   }
 
-  // ---------- каркас ----------
-  function modal(html){
-    var bg = document.createElement("div");
-    bg.className = "modal-bg";
-    bg.innerHTML = '<div class="modal"><button class="x">×</button>' + html + '</div>';
-    bg.onclick = function(e){ if (e.target===bg || e.target.className==="x") document.body.removeChild(bg); };
-    document.body.appendChild(bg);
-  }
-  var views = { overview:vOverview, funnels:vFunnels, contacts:vContacts, auto:vAuto, refs:vRefs, todo:vTodo };
-  function tab(name){
-    document.querySelectorAll("nav button").forEach(function(b){ b.classList.toggle("act", b.dataset.t===name); });
-    (views[name]||vOverview)();
-  }
-  window.AC = {
-    pipe: function(id){ curPipe=id; vFunnels(); },
-    more: loadPage, lead: openLead, contact: openContact, dp: openDp
-  };
+  /* ─── каркас ─── */
+  var views={desk:vDesk,leads:vLeads,contacts:vContacts,auto:vAuto,refs:vRefs,todo:vTodo};
+  function go(name){hidePipePanel();(views[name]||vDesk)();}
 
-  token = pickToken();
-  if (!token) return showLogin();
-  $("#nav").innerHTML = TABS.map(function(t){ return '<button data-t="'+t[0]+'" onclick="void 0">'+t[1]+'</button>'; }).join("");
-  document.querySelectorAll("nav button").forEach(function(b){ b.onclick = function(){ tab(b.dataset.t); }; });
+  /* ─── вход ─── */
+  function pickToken(){
+    var qs=new URLSearchParams(location.search).get("token");
+    var cands=[qs,localStorage.getItem("voyo_crmcopy_token"),localStorage.getItem("voyo_vsc_token"),localStorage.getItem("voyo_team_token"),localStorage.getItem("voyo_admin_token")];
+    for(var i=0;i<cands.length;i++)if(cands[i])return cands[i];
+    return null;
+  }
+  function showLogin(msg){
+    $("#app").style.display="none";
+    $("#login-screen").style.display="flex";
+    $("#loginErr").textContent=msg||"";
+    var go=function(){
+      var code=$("#loginCode").value.trim();
+      if(!code)return;
+      fetch(API+"/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:code})})
+        .then(function(r){return r.json();})
+        .then(function(j){
+          if(j.success&&j.token){localStorage.setItem("voyo_crmcopy_token",j.token);location.reload();}
+          else $("#loginErr").textContent=j.message||"Неверный код";
+        })
+        .catch(function(){$("#loginErr").textContent="Ошибка сети — попробуйте ещё раз";});
+    };
+    $("#loginGo").onclick=go;
+    $("#loginCode").onkeydown=function(e){if(e.key==="Enter")go();};
+    setTimeout(function(){$("#loginCode").focus();},50);
+  }
 
-  jreq(API + "/meta").then(function(meta){
-    if (meta && meta.success === false) {
-      $("#main").innerHTML = '<div class="card"><h2>Слепок ещё собирается</h2><p class="muted">' + esc(meta.message||"") + ' Идёт выгрузка данных из amoCRM — загляните позже.</p></div>';
+  token=pickToken();
+  if(!token)return showLogin();
+  jreq(API+"/meta").then(function(meta){
+    if(meta&&meta.success===false){
+      $("#app").style.display="flex";renderSidebar("desk");setHeader("Копия amoCRM",{});
+      $("#view").innerHTML='<div class="plain"><div class="pcard"><h2>Слепок ещё собирается</h2><p class="muted">'+esc(meta.message||"")+'</p></div></div>';
       return;
     }
-    META = meta;
-    $("#metaLine").textContent = "слепок от " + new Date(meta.builtAt).toLocaleString("ru-RU");
-    return Promise.all([jreq(API+"/pipelines"), jreq(API+"/kanban"), jreq(API+"/users"), jreq(API+"/custom_fields")]).then(function(r){
-      PIPES = r[0]; KANBAN = r[1]; USERS = r[2]; CF = r[3];
-      tab("overview");
+    META=meta;
+    return Promise.all([jreq(API+"/pipelines"),jreq(API+"/kanban"),jreq(API+"/users"),jreq(API+"/custom_fields")]).then(function(r){
+      PIPES=r[0];KANBAN=r[1];USERS=r[2];CF=r[3];
+      $("#app").style.display="flex";
+      go("leads");
     });
   }).catch(function(e){
-    if (String(e.message)==="401") showLogin("Токен не подошёл — войдите в /vsc заново.");
-    else $("#main").innerHTML = '<div class="card">Ошибка загрузки. Обновите страницу.</div>';
+    if(String(e.message)==="401")showLogin("Сессия истекла — введите код ещё раз.");
+    else{$("#app").style.display="flex";$("#view").innerHTML='<div class="plain"><div class="pcard">Ошибка загрузки. Обновите страницу.</div></div>';}
   });
 })();
 </script>

@@ -175,7 +175,10 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
       if (e1) return res.status(500).json({ success: false });
       if (!contact) return res.status(404).json({ success: false, message: "Контакт не найден в слепке" });
       listFromBucket("notes_contacts", id, buckets, "eid", (e2, notes) => {
-        return res.json({ success: true, contact, notes: notes || [] });
+        // сделки контакта — из обратного индекса (tools/amoCopyLinkIndex.js)
+        findInBucket("contact_leads", id, buckets, (e3, link) => {
+          return res.json({ success: true, contact, notes: notes || [], leads: (link && link.leads) || [] });
+        });
       });
     });
   });
