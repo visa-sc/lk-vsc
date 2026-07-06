@@ -2023,9 +2023,11 @@
           + '<button type="button" id="noTaskRun" style="' + _btnPrimary + ((d && d.running) ? "opacity:.6;cursor:default;" : "") + '"' + ((d && d.running) ? " disabled" : "") + '>' + ((d && d.running) ? "Проверяем…" : "Проверить сейчас") + '</button>'
           + '</div>';
         if (noTaskExpanded) {
-          const hist = (d && d.history) || [];
+          // Как у блока Я.Директа — в логах только последние 30 дней (полный журнал живёт на сервере).
+          const noTaskCutoff = Date.now() - 30 * 24 * 3600 * 1000;
+          const hist = ((d && d.history) || []).filter(function (r) { const t = +(r && r.ts); return isFinite(t) && t >= noTaskCutoff; });
           h += '<div style="margin-top:12px;border:1px solid #ece9f2;border-radius:12px;overflow:hidden;">';
-          if (!hist.length) h += '<div style="padding:12px;color:#9096a3;font-size:13px;">Проверок ещё не было.</div>';
+          if (!hist.length) h += '<div style="padding:12px;color:#9096a3;font-size:13px;">За 30 дней проверок не было.</div>';
           hist.forEach(function (r, i) {
             h += '<div style="padding:10px 12px;font-size:13px;' + (i ? "border-top:1px solid #f0eef5;" : "") + '">'
               + '<span style="color:#737988;">' + escapeHtml(formatDateMsk(r.ts)) + '</span> · ' + (r.trigger === "manual" ? "вручную" : "по расписанию")
