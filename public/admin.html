@@ -2438,89 +2438,70 @@
         return wrap;
       }
       // «Рынок визовых услуг и наша доля» (Ежемесячный контроль, только админ).
-      // 3 линии рынка (РФ/МСК/СПб, левая ось, млн ₽) + пунктир нашей доли РФ (правая ось, %).
+      // СТОЛБЦЫ (по просьбе Андрея — так читается лучше, чем 4 линии): высота столбца =
+      // объём рынка РФ за месяц (млн ₽), а сам столбец разбит на сегменты МСК (оранж) +
+      // СПб (зелён) + остальная РФ (голубой) — так одним столбцом видно и весь рынок РФ,
+      // и рынки городов. Число НАД столбцом — наша доля рынка РФ (%) + Δ к прошлому месяцу.
       // rows = [{ x, rf, msk, spb, rev, share, shareMsk, shareSpb }] — рынок в млн ₽, доли в %.
       function vscMarketChart(rows) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
         const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = "Рынок визовых услуг (модель) и наша доля — по месяцам";
         wrap.appendChild(h);
         if (!rows.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет закрытых месяцев для расчёта."; wrap.appendChild(e); return wrap; }
-        const SERIES = [
-          { key: "rf", name: "Рынок РФ", color: "#3589BD" },
-          { key: "msk", name: "Рынок МСК", color: "#e8843b" },
-          { key: "spb", name: "Рынок СПб", color: "#2e7d52" }
-        ];
+        const COL_MSK = "#e8843b", COL_SPB = "#2e7d52", COL_REST = "#a9c7e4", COL_SHARE = "#8e44ad";
         const leg = document.createElement("div");
-        leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#5a626f;margin:2px 0 6px;";
-        leg.innerHTML = SERIES.map((s) => '<span style="white-space:nowrap;"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + s.color + ';vertical-align:-1px;margin-right:5px;"></i>' + s.name + ' (млн ₽)</span>').join("")
-          + '<span style="white-space:nowrap;"><i style="display:inline-block;width:12px;height:0;border-top:2.5px dashed #8e44ad;vertical-align:2px;margin-right:5px;"></i>Наша доля РФ (%, правая ось)</span>';
+        leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#5a626f;margin:2px 0 8px;";
+        const legItem = (color, txt) => '<span style="white-space:nowrap;"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + color + ';vertical-align:-1px;margin-right:5px;"></i>' + txt + '</span>';
+        leg.innerHTML = legItem(COL_REST, "Остальная РФ") + legItem(COL_MSK, "Рынок МСК") + legItem(COL_SPB, "Рынок СПб")
+          + '<span style="white-space:nowrap;color:#8e44ad;font-weight:600;">Высота столбца — весь рынок РФ (млн ₽); число сверху — наша доля рынка РФ</span>';
         wrap.appendChild(leg);
-        const VW = 1000, VH = 190, PT = 12, PB = 172, PL = 8, PR = 8;
-        const mMax = Math.max.apply(null, rows.map((r) => r.rf)) * 1.06; // рынок: от 0 до max РФ
-        const sVals = rows.map((r) => r.share).filter((v) => v != null);
-        const sMax = (sVals.length ? Math.max.apply(null, sVals) : 1) * 1.3 || 1; // доля: от 0
-        const X = (i) => PL + (rows.length === 1 ? (VW - PL - PR) / 2 : i * (VW - PL - PR) / (rows.length - 1));
-        const Ym = (v) => PT + (1 - v / mMax) * (PB - PT);
-        const Ys = (v) => PT + (1 - v / sMax) * (PB - PT);
-        const fmtM = (v) => (v >= 100 ? Math.round(v) : Math.round(v * 10) / 10).toLocaleString("ru-RU") + " млн";
-        const fmtS = (v) => (Math.round(v * 100) / 100).toLocaleString("ru-RU") + "%";
-        const box = document.createElement("div");
-        box.style.cssText = "position:relative;height:" + VH + "px;touch-action:pan-y;";
-        const gridLine = (y) => '<line x1="0" x2="' + VW + '" y1="' + y + '" y2="' + y + '" stroke="#e9edf3" stroke-width="1" vector-effect="non-scaling-stroke"/>';
-        let svg = gridLine(PT) + gridLine((PT + PB) / 2) + gridLine(PB);
-        SERIES.forEach((s) => {
-          const p = rows.map((r, i) => X(i).toFixed(1) + "," + Ym(r[s.key]).toFixed(1)).join(" ");
-          svg += '<polyline points="' + p + '" fill="none" stroke="' + s.color + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>';
-        });
-        // Доля — пунктиром, с разрывами на месяцах без данных.
-        let d = "", pen = false;
-        rows.forEach((r, i) => {
-          if (r.share == null) { pen = false; return; }
-          d += (pen ? " L" : " M") + X(i).toFixed(1) + " " + Ys(r.share).toFixed(1); pen = true;
-        });
-        if (d) svg += '<path d="' + d.trim() + '" fill="none" stroke="#8e44ad" stroke-width="2.5" stroke-dasharray="7 5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>';
-        const yLbl = (top, txt, right) => '<div style="position:absolute;' + (right ? "right" : "left") + ':6px;top:' + top + 'px;font-size:9.5px;color:' + (right ? "#8e44ad" : "#9aa0ab") + ';background:rgba(255,255,255,.75);padding:0 3px;border-radius:4px;">' + txt + '</div>';
-        box.innerHTML =
-          '<svg width="100%" height="' + VH + '" viewBox="0 0 ' + VW + ' ' + VH + '" preserveAspectRatio="none" style="display:block;">' + svg + '</svg>'
-          + yLbl(2, fmtM(mMax)) + yLbl((PT + PB) / 2 - 7, fmtM(mMax / 2)) + yLbl(PB - 6, "0")
-          + yLbl(2, fmtS(sMax), true) + yLbl((PT + PB) / 2 - 7, fmtS(sMax / 2), true) + yLbl(PB - 6, "0%", true)
-          + '<div class="vsc-line-marker" style="position:absolute;width:9px;height:9px;border-radius:50%;background:#fff;border:2.5px solid #3589BD;display:none;transform:translate(-50%,-50%);pointer-events:none;"></div>'
-          + '<div class="vsc-line-tip" style="position:absolute;display:none;background:#1d2433;color:#fff;font-size:11px;line-height:1.5;padding:7px 10px;border-radius:8px;white-space:nowrap;pointer-events:none;z-index:5;box-shadow:0 4px 14px rgba(20,30,50,.25);"></div>';
-        wrap.appendChild(box);
-        const xAxis = document.createElement("div");
-        xAxis.style.cssText = "display:flex;justify-content:space-between;font-size:9.5px;color:#9aa0ab;margin-top:3px;";
-        xAxis.innerHTML = rows.map((r) => '<span>' + escapeHtml(r.x) + '</span>').join("");
-        wrap.appendChild(xAxis);
-        const marker = box.querySelector(".vsc-line-marker"), tip = box.querySelector(".vsc-line-tip");
         const money1 = (v) => (Math.round(v * 10) / 10).toLocaleString("ru-RU");
-        const showAt = (clientX) => {
-          const r = box.getBoundingClientRect(); if (!r.width) return;
-          const relVx = (clientX - r.left) / r.width * VW;
-          let best = 0, bd = Infinity;
-          for (let i = 0; i < rows.length; i++) { const dd = Math.abs(X(i) - relVx); if (dd < bd) { bd = dd; best = i; } }
-          const row = rows[best];
-          const px = X(best) / VW * r.width;
-          marker.style.display = "block"; marker.style.left = px + "px"; marker.style.top = Ym(row.rf) + "px";
-          tip.innerHTML = '<span style="color:#aab3c5;">' + escapeHtml(row.x) + '</span>'
-            + '<br>Рынок: РФ <b>' + money1(row.rf) + '</b> · МСК <b>' + money1(row.msk) + '</b> · СПб <b>' + money1(row.spb) + '</b> млн'
-            + (row.rev != null ? '<br>Наша выручка: <b>' + money1(row.rev) + ' млн</b>' : "")
-            + (row.share != null ? '<br>Доля: РФ <b>' + fmtS(row.share) + '</b>'
-              + (row.shareMsk != null ? ' · МСК <b>' + fmtS(row.shareMsk) + '</b>' : "")
-              + (row.shareSpb != null ? ' · СПб <b>' + fmtS(row.shareSpb) + '</b>' : "") : "");
-          tip.style.display = "block";
-          const tw = tip.offsetWidth;
-          tip.style.left = Math.max(2, Math.min(r.width - tw - 2, px - tw / 2)) + "px";
-          tip.style.top = Math.max(2, Ym(row.rf) - tip.offsetHeight - 12) + "px";
-        };
-        const hide = () => { marker.style.display = "none"; tip.style.display = "none"; };
-        box.addEventListener("mousemove", (e) => showAt(e.clientX));
-        box.addEventListener("mouseleave", hide);
-        box.addEventListener("touchstart", (e) => { if (e.touches && e.touches[0]) showAt(e.touches[0].clientX); }, { passive: true });
-        box.addEventListener("touchmove", (e) => { if (e.touches && e.touches[0]) showAt(e.touches[0].clientX); }, { passive: true });
-        box.addEventListener("touchend", hide);
+        const fmtS = (v) => (Math.round(v * 100) / 100).toLocaleString("ru-RU") + "%";
+        const maxRf = Math.max.apply(null, rows.map((r) => r.rf)) || 1;
+        const bars = document.createElement("div"); bars.className = "vsc-bars";
+        rows.forEach((row, i) => {
+          const col = document.createElement("div"); col.className = "vsc-bar-col";
+          col.title = row.x
+            + "\nРынок РФ: " + money1(row.rf) + " млн (МСК " + money1(row.msk) + " · СПб " + money1(row.spb) + " · остальная РФ " + money1(row.rf - row.msk - row.spb) + ")"
+            + (row.rev != null ? "\nНаша выручка: " + money1(row.rev) + " млн" : "")
+            + (row.share != null ? "\nНаша доля: РФ " + fmtS(row.share)
+                + (row.shareMsk != null ? " · МСК " + fmtS(row.shareMsk) : "")
+                + (row.shareSpb != null ? " · СПб " + fmtS(row.shareSpb) : "") : "");
+          // Число сверху — наша доля рынка РФ (ключевая метрика).
+          const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.color = COL_SHARE; vl.style.fontWeight = "700";
+          vl.textContent = row.share != null ? fmtS(row.share) : "";
+          // Столбец = рынок РФ, стек снизу вверх: МСК, СПб, остальная РФ.
+          const bar = document.createElement("div"); bar.className = "vsc-bar vsc-bar-stack";
+          const barPx = Math.max(2, Math.round(row.rf / maxRf * 120));
+          bar.style.height = barPx + "px";
+          const rest = Math.max(0, row.rf - row.msk - row.spb);
+          const addSeg = (color, part, label) => {
+            if (part == null || part <= 0) return;
+            const d = document.createElement("div");
+            d.style.cssText = "width:100%;height:" + (part / row.rf * 100) + "%;background:" + color + ";";
+            d.title = label + ": " + money1(part) + " млн";
+            bar.appendChild(d);
+          };
+          addSeg(COL_MSK, row.msk, "Рынок МСК");   // column-reverse → снизу
+          addSeg(COL_SPB, row.spb, "Рынок СПб");
+          addSeg(COL_REST, rest, "Остальная РФ");  // → сверху
+          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = row.x;
+          // Δ доли к прошлому месяцу с данными (рост доли — хорошо, зелёным).
+          let prevShare = null;
+          for (let j = i - 1; j >= 0; j--) { if (rows[j].share != null) { prevShare = rows[j].share; break; } }
+          const dl = document.createElement("div"); dl.className = "vsc-bar-d";
+          if (row.share != null && prevShare != null && prevShare !== 0) {
+            const pct = Math.round((row.share - prevShare) / Math.abs(prevShare) * 100);
+            if (pct === 0) { dl.className = "vsc-bar-d flat"; dl.textContent = "0%"; }
+            else { dl.className = "vsc-bar-d " + (pct > 0 ? "up" : "down"); dl.textContent = (pct > 0 ? "▲ " : "▼ ") + Math.abs(pct) + "%"; }
+          }
+          col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(dl);
+          bars.appendChild(col);
+        });
+        wrap.appendChild(bars);
         const note = document.createElement("div");
         note.style.cssText = "margin-top:8px;font-size:11.5px;color:#9096a3;line-height:1.5;";
-        note.textContent = "Рынок — модельная оценка (июль 2026): РФ 4,5 млрд ₽/год, МСК 2,1, СПб 0,6; помесячно — с сезонностью визовых подач. Месяц появляется после его календарного окончания. Доля = наша выручка месяца / модельный рынок (по городам — выручка филиалов из amoCRM).";
+        note.textContent = "Рынок — модельная оценка (июль 2026): РФ 4,5 млрд ₽/год, МСК 2,1, СПб 0,6; помесячно — с сезонностью визовых подач. Месяц появляется после его календарного окончания. Наша доля = выручка месяца / модельный рынок (по городам — выручка филиалов из amoCRM). Наведите на столбец — полная разбивка.";
         wrap.appendChild(note);
         return wrap;
       }
@@ -2998,42 +2979,6 @@
           e.innerHTML = '<div class="vsc-empty">Выручка по городам считается ночью (05:00 МСК) из amoCRM — данные появятся после первого расчёта.</div>';
           vscContent.appendChild(e);
         }
-        // ── Рынок визовых услуг (модель) и наша доля — ТОЛЬКО админ (стратегическая инфа).
-        // Годовые объёмы — оценка bottom-up июля 2026 (шенген 680 тыс. подач, Япония, США,
-        // Великобритания и пр. × средний чек × доля через агентов): РФ ~4,5 млрд ₽/год,
-        // МСК ~2,1, СПб ~0,6. Помесячно = год/12 × сезонный коэффициент подач (норм., ср.=1).
-        // Месяц попадает на график только ПОСЛЕ календарного окончания (объём «за прошлый
-        // месяц»). Доля РФ = m.total.budget / рынок РФ; по городам — выручка филиалов
-        // (vscData.cityRevenue, ночной расчёт из amoCRM) / рынок города.
-        if (currentRole() !== "manager") {
-          const MKT = {
-            rfYear: 4500, mskYear: 2100, spbYear: 600, // млн ₽/год
-            season: [0.75, 0.85, 1.00, 1.10, 1.15, 1.20, 1.15, 1.05, 1.05, 1.00, 0.90, 0.80] // янв..дек, Σ=12
-          };
-          const RU_MI = { "январь": 0, "февраль": 1, "март": 2, "апрель": 3, "май": 4, "июнь": 5, "июль": 6, "август": 7, "сентябрь": 8, "октябрь": 9, "ноябрь": 10, "декабрь": 11 };
-          const now = new Date(), curKey = now.getFullYear() * 12 + now.getMonth();
-          const mktRows = [];
-          (vscData.months || []).forEach((mm) => {
-            const p = /^([А-Яа-яёЁ]+)\s+(\d{4})$/.exec(String(mm.name || "").trim());
-            const mi = p ? RU_MI[p[1].toLowerCase()] : null;
-            if (mi == null) return;
-            if ((+p[2]) * 12 + mi >= curKey) return; // только календарно закрытые месяцы
-            const k = MKT.season[mi];
-            const rf = MKT.rfYear / 12 * k, mskM = MKT.mskYear / 12 * k, spbM = MKT.spbYear / 12 * k;
-            const revM = (mm.total && mm.total.budget) ? mm.total.budget / 1e6 : null; // млн ₽
-            const cr = vscData.cityRevenue && vscData.cityRevenue.months && vscData.cityRevenue.months[String(mi)];
-            mktRows.push({
-              x: String(mm.name || "").replace(/\s*20\d\d/, "").trim(),
-              rf: rf, msk: mskM, spb: spbM, rev: revM,
-              share: revM != null ? revM / rf * 100 : null,
-              shareMsk: (cr && cr.msk != null) ? (cr.msk / 1e6) / mskM * 100 : null,
-              shareSpb: (cr && cr.spb != null) ? (cr.spb / 1e6) / spbM * 100 : null
-            });
-          });
-          const hMkt = document.createElement("div"); hMkt.className = "ref-sec-h"; hMkt.style.marginTop = "22px"; hMkt.textContent = "Рынок и наша доля";
-          vscContent.appendChild(hMkt);
-          vscContent.appendChild(vscMarketChart(mktRows));
-        }
         const h1 = document.createElement("div"); h1.className = "ref-sec-h"; h1.style.marginTop = "22px"; h1.textContent = "Качество звонков и контактов — по месяцам";
         vscContent.appendChild(h1);
         VSC_EXTRA_MONTHLY.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, monthSeries)));
@@ -3098,6 +3043,42 @@
         }
         vscContent.appendChild(ydBox);
         vscContent.appendChild(vscPlanOpCheck());
+        // ── Рынок визовых услуг (модель) и наша доля — САМЫЙ НИЗ раздела, ТОЛЬКО админ
+        // (стратегическая инфа). Годовые объёмы — оценка bottom-up июля 2026 (шенген 680 тыс.
+        // подач, Япония, США, Великобритания и пр. × средний чек × доля через агентов):
+        // РФ ~4,5 млрд ₽/год, МСК ~2,1, СПб ~0,6. Помесячно = год/12 × сезонный коэффициент
+        // подач (норм., ср.=1). Месяц попадает на график только ПОСЛЕ календарного окончания
+        // (объём «за прошлый месяц»). Доля РФ = m.total.budget / рынок РФ; по городам —
+        // выручка филиалов (vscData.cityRevenue, ночной расчёт из amoCRM) / рынок города.
+        if (currentRole() === "admin") {
+          const MKT = {
+            rfYear: 4500, mskYear: 2100, spbYear: 600, // млн ₽/год
+            season: [0.75, 0.85, 1.00, 1.10, 1.15, 1.20, 1.15, 1.05, 1.05, 1.00, 0.90, 0.80] // янв..дек, Σ=12
+          };
+          const RU_MI = { "январь": 0, "февраль": 1, "март": 2, "апрель": 3, "май": 4, "июнь": 5, "июль": 6, "август": 7, "сентябрь": 8, "октябрь": 9, "ноябрь": 10, "декабрь": 11 };
+          const now = new Date(), curKey = now.getFullYear() * 12 + now.getMonth();
+          const mktRows = [];
+          (vscData.months || []).forEach((mm) => {
+            const p = /^([А-Яа-яёЁ]+)\s+(\d{4})$/.exec(String(mm.name || "").trim());
+            const mi = p ? RU_MI[p[1].toLowerCase()] : null;
+            if (mi == null) return;
+            if ((+p[2]) * 12 + mi >= curKey) return; // только календарно закрытые месяцы
+            const k = MKT.season[mi];
+            const rf = MKT.rfYear / 12 * k, mskM = MKT.mskYear / 12 * k, spbM = MKT.spbYear / 12 * k;
+            const revM = (mm.total && mm.total.budget) ? mm.total.budget / 1e6 : null; // млн ₽
+            const cr = vscData.cityRevenue && vscData.cityRevenue.months && vscData.cityRevenue.months[String(mi)];
+            mktRows.push({
+              x: String(mm.name || "").replace(/\s*20\d\d/, "").trim(),
+              rf: rf, msk: mskM, spb: spbM, rev: revM,
+              share: revM != null ? revM / rf * 100 : null,
+              shareMsk: (cr && cr.msk != null) ? (cr.msk / 1e6) / mskM * 100 : null,
+              shareSpb: (cr && cr.spb != null) ? (cr.spb / 1e6) / spbM * 100 : null
+            });
+          });
+          const hMkt = document.createElement("div"); hMkt.className = "ref-sec-h"; hMkt.style.marginTop = "22px"; hMkt.textContent = "Рынок и наша доля";
+          vscContent.appendChild(hMkt);
+          vscContent.appendChild(vscMarketChart(mktRows));
+        }
       }
       // ── «Выкупы — сверка р/с с таблицей» (Ежемесячный контроль, только админ) ──
       // Банк (T-Bank API, Turkish + OneTwoTrip, только проведённые операции, месяц по
