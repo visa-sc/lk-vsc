@@ -2019,7 +2019,7 @@
         const _btnSecondary = _btnBase + "background:#fff;color:#3589BD;border:1px solid #bcdcef;";
         const _btnPrimary = _btnBase + "background:#3589BD;color:#fff;border:1px solid #3589BD;";
         h += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">'
-          + '<button type="button" id="noTaskToggle" style="' + _btnSecondary + '">' + (noTaskExpanded ? "Скрыть логи" : "Показать логи проверок") + '</button>'
+          + '<button type="button" id="noTaskToggle" style="' + _btnSecondary + '">' + (noTaskExpanded ? "Скрыть логи" : "Показать логи") + '</button>'
           + '<button type="button" id="noTaskRun" style="' + _btnPrimary + ((d && d.running) ? "opacity:.6;cursor:default;" : "") + '"' + ((d && d.running) ? " disabled" : "") + '>' + ((d && d.running) ? "Проверяем…" : "Проверить сейчас") + '</button>'
           + '</div>';
         if (noTaskExpanded) {
