@@ -3872,19 +3872,26 @@ function vscMonthKeyOf(name) {
 // годового агрегата, чтобы год считался по замороженным значениям.
 function vscApplyFreeze(months) {
   const fr = loadVscFrozen(), cutoff = vscFrozenCutoffKey();
+  if (!fr.recent) fr.recent = {}; // last-good ЖИВЫХ месяцев (текущий+прошлый) — карго на случай сбоя загрузки
   let changed = false;
   const byName = {}; months.forEach((m) => { byName[m.name] = m; });
-  months.forEach((m) => {                                    // 1) снять снимок дозревших
+  months.forEach((m) => {                                    // 1) снимок дозревших + last-good живых
     const key = vscMonthKeyOf(m.name);
-    if (key == null || key > cutoff) return;                 // ещё живой месяц — не морозим
-    if (fr.months[m.name]) return;                           // уже заморожен
-    if (!(m.total && m.total.budget > 0)) return;            // пустые/битые данные не морозим
-    fr.months[m.name] = JSON.parse(JSON.stringify(m));       // снимок навсегда
-    changed = true;
+    if (key == null) return;
+    if (!(m.total && m.total.budget > 0)) return;            // пустые/битые данные не берём
+    if (key <= cutoff) {                                     // дозрел → снимок НАВСЕГДА
+      if (!fr.months[m.name]) { fr.months[m.name] = JSON.parse(JSON.stringify(m)); changed = true; }
+      if (fr.recent[m.name]) { delete fr.recent[m.name]; changed = true; } // перешёл из live в frozen
+    } else {                                                 // живой → обновляем last-good
+      fr.recent[m.name] = JSON.parse(JSON.stringify(m)); changed = true;
+    }
   });
-  Object.keys(fr.months).forEach((name) => {                 // 2) подставить все замороженные
+  Object.keys(fr.months).forEach((name) => {                 // 2a) подставить все замороженные
     if (byName[name]) months[months.indexOf(byName[name])] = fr.months[name];
     else months.push(fr.months[name]);                       // не отдали свежим — берём снимок
+  });
+  Object.keys(fr.recent).forEach((name) => {                 // 2b) живой пропал из свежего → last-good
+    if (!byName[name] && !fr.months[name]) months.push(fr.recent[name]);
   });
   if (changed) saveVscFrozen();
   months.sort((a, b) => (vscMonthKeyOf(a.name) || 0) - (vscMonthKeyOf(b.name) || 0));
