@@ -2453,7 +2453,7 @@
         leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#5a626f;margin:2px 0 8px;";
         const legItem = (color, txt) => '<span style="white-space:nowrap;"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + color + ';vertical-align:-1px;margin-right:5px;"></i>' + txt + '</span>';
         leg.innerHTML = legItem(COL_REST, "Остальная РФ") + legItem(COL_MSK, "Рынок МСК") + legItem(COL_SPB, "Рынок СПб")
-          + '<span style="white-space:nowrap;color:#8e44ad;font-weight:600;">Высота столбца — весь рынок РФ (млн ₽); число сверху — наша доля рынка РФ; числа в сегментах МСК/СПб — наша доля этих рынков</span>';
+          + '<span style="flex-basis:100%;color:#8e44ad;font-weight:600;">Высота столбца — весь рынок РФ (млн ₽); число сверху — наша доля рынка РФ; числа в сегментах МСК/СПб — наша доля этих рынков</span>';
         wrap.appendChild(leg);
         const money1 = (v) => (Math.round(v * 10) / 10).toLocaleString("ru-RU");
         const fmtS = (v) => (Math.round(v * 100) / 100).toLocaleString("ru-RU") + "%";
