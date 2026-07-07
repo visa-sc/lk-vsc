@@ -5007,6 +5007,102 @@ app.post("/admin/api/vsc/buyouts/run", requireAdmin, (req, res) => {
 })();
 
 // ═════════════════════════════════════════════════════════════════════════
+// Комиссии эквайринга (торговый + интернет) по ООО и ИП — блок «Ежемесячный
+// контроль», ТОЛЬКО админ. Данные из T-Bank Business API (read-only токены):
+//   • ООО «ЭЙ КЕЙ ГРУПП» — TBANK_API_TOKEN (тот же, что у выкупов);
+//   • ИП Панфилова — TBANK_IP_API_TOKEN (отдельный, привязан к IP прода).
+// Правила (выверены по реальным операциям, сходятся со скринами Андрея до копейки):
+//   ТОРГОВЫЙ (терминальный) эквайринг — группируем по бизнес-дате «от ДД.ММ.ГГГГ»:
+//     оборот  = Credit «Зачисление средств по терминалам эквайринга от ДАТА»;
+//     комиссия = Debit  «Комиссия за операции по терминалам эквайринга от ДАТА»;
+//     % = комиссия / оборот.
+//   ИНТЕРНЕТ-эквайринг — по «реестру операций от ДД.ММ.ГГГГ»:
+//     Credit «Перевод средств по договору … по реестру операций от ДАТА. Сумма
+//     комиссии X руб. Y коп.» — приход ЧИСТЫЙ, комиссию берём из текста; оборот =
+//     приход + комиссия (по указанию Андрея), % = комиссия / оборот.
+//   СБП-терминал и «Удержание средств…» в расчёт НЕ входят (по договорённости —
+//   можно добавить). Только operationStatus="Transaction" (холды не берём).
+const ACQ_FILE = path.join(__dirname, ".lkAcquiring.json");
+const TBANK_IP_TOKEN = process.env.TBANK_IP_API_TOKEN || "";
+let _acq, _acqRunning = false;
+function loadAcq() { if (_acq !== undefined) return _acq; try { _acq = JSON.parse(fs.readFileSync(ACQ_FILE, "utf8")); } catch (_) { _acq = null; } return _acq; }
+function saveAcq(d) { _acq = d; try { fs.writeFileSync(ACQ_FILE, JSON.stringify(d, null, 2), "utf8"); } catch (e) { console.error("saveAcq:", e.message); } }
+// GET к T-Bank с ПРОИЗВОЛЬНЫМ токеном (у выкупов свой tbGet на TBANK_TOKEN — не трогаем).
+async function tbGetT(token, url, attempt) {
+  try {
+    const r = await axios.get(url, { headers: { Authorization: "Bearer " + token }, timeout: 30000, validateStatus: () => true });
+    if (r.status === 200) return r.data;
+    if ((r.status === 429 || r.status >= 500) && (attempt || 0) < 3) { await new Promise((s) => setTimeout(s, 1500 * ((attempt || 0) + 1))); return tbGetT(token, url, (attempt || 0) + 1); }
+    throw new Error("T-Bank HTTP " + r.status);
+  } catch (e) { if (e.message && e.message.indexOf("T-Bank HTTP") === 0) throw e; if ((attempt || 0) < 3) { await new Promise((s) => setTimeout(s, 1500)); return tbGetT(token, url, (attempt || 0) + 1); } throw e; }
+}
+async function tbAccRuble(token) {
+  const d = await tbGetT(token, "https://business.tbank.ru/openapi/api/v4/bank-accounts");
+  const list = Array.isArray(d) ? d : (d.accounts || []);
+  const hit = list.find((a) => /рубл/i.test(a.name || "")) || list[0];
+  return hit && (hit.accountNumber || hit.number);
+}
+// Бизнес-дата «от ДД.ММ.ГГГГ» после якорного слова → «ГГГГ-ММ-ДД».
+function acqDateFrom(text, anchor) { const m = new RegExp(anchor + "\\s*от\\s*(\\d{2})\\.(\\d{2})\\.(\\d{4})", "i").exec(text); return m ? m[3] + "-" + m[2] + "-" + m[1] : null; }
+// «Сумма комиссии X руб. Y коп.» → число рублей.
+function acqComm(text) { const m = /сумма комиссии\s*(\d[\d\s]*)\s*руб\.?\s*(\d{1,2})\s*коп/i.exec(text); return m ? parseInt(m[1].replace(/\s/g, ""), 10) + parseInt(m[2], 10) / 100 : null; }
+// Операции ~40 дней по счёту токена → { «ГГГГ-ММ-ДД»: {torgT,torgC,inetG,inetC} }.
+async function acqFetchEntity(token) {
+  const acc = await tbAccRuble(token);
+  if (!acc) throw new Error("рублёвый счёт не найден");
+  const till = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10) + "T00:00:00Z";
+  const from = new Date(Date.now() - 40 * 86400000).toISOString().slice(0, 10) + "T00:00:00Z";
+  let cursor = "", ops = [];
+  for (let p = 0; p < 200; p++) {
+    const j = await tbGetT(token, "https://business.tbank.ru/openapi/api/v1/statement?accountNumber=" + acc + "&from=" + from + "&till=" + till + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
+    ops = ops.concat(j.operations || []);
+    if (!j.nextCursor || !(j.operations || []).length) break;
+    cursor = j.nextCursor; await new Promise((s) => setTimeout(s, 250));
+  }
+  const days = {};
+  const D = (d) => days[d] || (days[d] = { torgT: 0, torgC: 0, inetG: 0, inetC: 0 });
+  for (const o of ops) {
+    if (String(o.operationStatus) !== "Transaction") continue;
+    const p = String(o.payPurpose || o.description || ""), amt = +o.accountAmount || 0;
+    const cr = String(o.typeOfOperation).toLowerCase() === "credit";
+    if (cr && /зачисление средств по терминалам эквайринга/i.test(p)) { const d = acqDateFrom(p, "эквайринга"); if (d) D(d).torgT += amt; }
+    else if (!cr && /комисси\S* за операции по терминалам эквайринга/i.test(p)) { const d = acqDateFrom(p, "эквайринга"); if (d) D(d).torgC += amt; }
+    else if (cr && /перевод средств по договору .* по реестру операций/i.test(p)) { const c = acqComm(p), d = acqDateFrom(p, "операций"); if (c != null && d) { D(d).inetC += c; D(d).inetG += amt + c; } }
+  }
+  return days;
+}
+async function runAcquiring(trigger) {
+  if (_acqRunning) return { skipped: true };
+  _acqRunning = true;
+  const out = { ts: Date.now(), trigger: trigger || "cron", ooo: null, ip: null, oooErr: null, ipErr: null };
+  try {
+    if (TBANK_TOKEN) { try { out.ooo = await acqFetchEntity(TBANK_TOKEN); } catch (e) { out.oooErr = e.message; console.error("ACQ ooo:", e.message); } }
+    if (TBANK_IP_TOKEN) { try { out.ip = await acqFetchEntity(TBANK_IP_TOKEN); } catch (e) { out.ipErr = e.message; console.error("ACQ ip:", e.message); } }
+    saveAcq(out);
+    return out;
+  } finally { _acqRunning = false; }
+}
+app.get("/admin/api/vsc/acquiring", requireAdmin, (req, res) => res.json({ success: true, data: loadAcq(), running: _acqRunning, configured: { ooo: !!TBANK_TOKEN, ip: !!TBANK_IP_TOKEN } }));
+app.post("/admin/api/vsc/acquiring/run", requireAdmin, (req, res) => {
+  if (_acqRunning) return res.json({ success: true, started: false, running: true });
+  setImmediate(() => { Promise.resolve(runAcquiring("manual")).catch(() => {}); });
+  return res.json({ success: true, started: true });
+});
+// 1×/сутки в 00:20 МСК (после выкупов) + стартовый прогон при пустом кэше.
+(function scheduleAcquiring() {
+  if (!TBANK_TOKEN && !TBANK_IP_TOKEN) { console.log("ACQ: токены T-Bank не заданы — эквайринг выключен"); return; }
+  const MSK = 3 * 3600 * 1000, DAY = 86400000, AT_MS = 20 * 60 * 1000; // 00:20 МСК
+  (function tick() {
+    const now = Date.now(), mskMid = Math.floor((now + MSK) / DAY) * DAY;
+    let target = mskMid + AT_MS - MSK;
+    if (target <= now) target += DAY;
+    setTimeout(() => { Promise.resolve(runAcquiring("cron")).catch(() => {}); tick(); }, Math.max(1000, target - now));
+  })();
+  if (!loadAcq()) setTimeout(() => { Promise.resolve(runAcquiring("startup")).catch(() => {}); }, 200 * 1000);
+  console.log("ACQ: комиссии эквайринга запланированы на 00:20 МСК (1×/сутки)");
+})();
+
+// ═════════════════════════════════════════════════════════════════════════
 // Клиентская сессия (ФАЗА 1). Подписанный токен (HMAC-SHA256) в httpOnly-cookie
 // `voyo_sess`. Выдаётся при ЛЮБОМ успешном входе (SMS / Face ID по номеру /
 // Face ID кнопкой). Stateless → переживает рестарты/деплои (никого не
