@@ -24,6 +24,8 @@
     --nav-bg:rgba(18,24,33,.84); --nav-line:#2a3441; --shadow:rgba(0,0,0,.4);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  /* атрибут hidden должен побеждать любые display:flex/grid наших классов */
+  [hidden]{display:none !important;}
   html{background:var(--bg);}
   html,body{margin:0;height:100%;}
   body{
@@ -100,6 +102,21 @@
   .esim-list li::before{content:"";position:absolute;left:3px;top:16px;width:13px;height:13px;border-radius:50%;background:var(--accent);}
   .esim-cta{display:block;text-align:center;width:100%;box-sizing:border-box;font-size:15px;padding:14px;border-radius:12px;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;}
   .esim-note{font-size:12px;color:var(--mut);text-align:center;margin-top:10px;line-height:1.5;}
+  /* визуал банковской карточки (вкладка «Карта») */
+  .bank-card{max-width:400px;aspect-ratio:1.586;border-radius:18px;position:relative;overflow:hidden;
+    background:linear-gradient(128deg,#1b2a4a 0%,#2c6f96 55%,#43a0c8 100%);
+    color:#fff;padding:20px 22px;display:flex;flex-direction:column;justify-content:space-between;
+    box-shadow:0 14px 34px rgba(20,50,90,.35);margin:6px 0 18px;}
+  .bank-card::after{content:"";position:absolute;right:-70px;top:-70px;width:220px;height:220px;background:rgba(255,255,255,.08);border-radius:50%;}
+  .bank-card::before{content:"";position:absolute;left:-50px;bottom:-90px;width:190px;height:190px;background:rgba(255,255,255,.05);border-radius:50%;}
+  .bc-top{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1;}
+  .bc-chip{width:42px;height:31px;border-radius:6px;background:linear-gradient(135deg,#e8c77a,#c9972b);position:relative;}
+  .bc-chip::after{content:"";position:absolute;inset:6px 5px;border:1px solid rgba(90,60,10,.45);border-radius:3px;}
+  .bc-wave{width:26px;height:26px;opacity:.85;transform:rotate(90deg);}
+  .bc-num{font-size:19px;letter-spacing:1px;font-weight:600;font-variant-numeric:tabular-nums;position:relative;z-index:1;text-shadow:0 1px 2px rgba(0,0,0,.25);}
+  .bc-bot{display:flex;justify-content:space-between;align-items:flex-end;position:relative;z-index:1;}
+  .bc-name{font-size:12px;letter-spacing:.14em;font-weight:600;opacity:.9;}
+  .bc-brand{font-size:11px;font-weight:700;opacity:.85;}
   /* белая карточка-обёртка вокруг партнёрского виджета (билеты/отели) */
   .tpcard{display:block;max-width:580px;background:#fff;border-radius:18px;padding:8px;box-shadow:0 10px 30px rgba(15,35,60,.16);overflow:hidden;}
 
@@ -254,6 +271,38 @@
     </div>
   </section>
 
+  <!-- ВКЛАДКА: КАРТА — международная карта (реферальная ссылка КАРТОН; только пилот) -->
+  <section class="tab" id="tab-card" data-tab="card">
+    <div class="scroller" id="cardScroll">
+      <div class="wrap">
+        <div class="brand">VOYO · КАРТА</div>
+        <div class="htitle">Международная карта <span class="pill">пилот</span></div>
+        <div class="hsub">Виртуальная карта для оплат за границей и в зарубежных сервисах — выпускается онлайн за пару минут.</div>
+
+        <div class="bank-card">
+          <div class="bc-top">
+            <div class="bc-chip"></div>
+            <svg class="bc-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8.5 8.5a6 6 0 0 1 0 7"/><path d="M11.5 6a9.5 9.5 0 0 1 0 12"/><path d="M14.5 3.5a13 13 0 0 1 0 17"/></svg>
+          </div>
+          <div class="bc-num">••••&nbsp;&nbsp;••••&nbsp;&nbsp;••••&nbsp;&nbsp;0000</div>
+          <div class="bc-bot">
+            <div class="bc-name">VOYO&nbsp;TRAVELLER</div>
+            <div class="bc-brand">Mastercard&nbsp;·&nbsp;VISA&nbsp;·&nbsp;МИР</div>
+          </div>
+        </div>
+
+        <ul class="esim-list">
+          <li>Работает в 180+ странах: онлайн, офлайн, Apple&nbsp;Pay и Google&nbsp;Pay</li>
+          <li>Пополнение рублями (СБП) или USDT — без зарубежного счёта</li>
+          <li>Оплата зарубежных сервисов, подписок и покупок в поездке</li>
+          <li>Выпуск онлайн за пару минут, управление в Telegram</li>
+        </ul>
+        <a class="esim-cta" href="https://lk.wallet.kartonpay.com?wallet_kartonpay_com=CB6ie3G" target="_blank" rel="noopener nofollow">Оформить карту</a>
+        <div class="esim-note">Откроется онлайн-оформление карты у платёжного сервиса-партнёра.</div>
+      </div>
+    </div>
+  </section>
+
   <!-- ВКЛАДКА 2: ЭКСКУРСИИ — каталог Sputnik8 (тема-зависимый, поверх /sputnik/api/*) -->
   <section class="tab" id="tab-tours" data-tab="tours">
     <div class="scroller" id="toursScroll">
@@ -311,13 +360,18 @@
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2.5" width="14" height="19" rx="2.2"/><circle cx="12" cy="9.5" r="2.9"/><path d="M8.5 16.2c.7-1.5 2-2.3 3.5-2.3s2.8.8 3.5 2.3"/><path d="M8.6 19h6.8"/></svg>
       <span class="lb">Визы</span></span>
     </button>
-    <button data-go="flights" aria-label="Авиабилеты"><span class="nit">
+    <!-- «Билеты» и «Отели» временно скрыты (hidden) — код вкладок сохранён, вернуть = убрать hidden -->
+    <button data-go="flights" aria-label="Авиабилеты" hidden><span class="nit">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.64 10.26l4.83-1.3a2 2 0 1 1 1.04 3.87l-4.83 1.29-2.39 4.31-1.93.52.79-4.6-3.22.86-1.12 1.97-1.45.39-.78-2.9-.78-2.9 1.45-.39 1.84 1.32 3.21-.86-3.23-3.35 1.93-.52z"/></svg>
       <span class="lb">Билеты</span></span>
     </button>
-    <button data-go="hotels" aria-label="Отели"><span class="nit">
+    <button data-go="hotels" aria-label="Отели" hidden><span class="nit">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v12"/><path d="M3 13h16a2 2 0 0 1 2 2v4"/><path d="M3 17h18"/><path d="M7 13v-2.4a1.6 1.6 0 0 1 1.6-1.6h2.8a1.6 1.6 0 0 1 1.6 1.6V13"/></svg>
       <span class="lb">Отели</span></span>
+    </button>
+    <button data-go="card" aria-label="Карта"><span class="nit">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19"/><path d="M6 15h4"/></svg>
+      <span class="lb">Карта</span></span>
     </button>
     <button data-go="esim" aria-label="eSIM"><span class="nit">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h7l5 5v12.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 20.5v-16A1.5 1.5 0 0 1 6 3z"/><rect x="8.5" y="12" width="7" height="6" rx="1.4"/><path d="M12 12v6M8.5 15h7"/></svg>
@@ -359,9 +413,9 @@
   "use strict";
   var phone = (new URLSearchParams(location.search).get("phone")||"").trim();
   var navEl = document.getElementById("bn");
-  var tabs = { visas:document.getElementById("tab-visas"), flights:document.getElementById("tab-flights"), hotels:document.getElementById("tab-hotels"), esim:document.getElementById("tab-esim"), tours:document.getElementById("tab-tours"), account:document.getElementById("tab-account") };
+  var tabs = { visas:document.getElementById("tab-visas"), flights:document.getElementById("tab-flights"), hotels:document.getElementById("tab-hotels"), card:document.getElementById("tab-card"), esim:document.getElementById("tab-esim"), tours:document.getElementById("tab-tours"), account:document.getElementById("tab-account") };
   var navBtns = Array.prototype.slice.call(navEl.querySelectorAll("button"));
-  var loaded = { visas:false, flights:false, hotels:false, esim:false, tours:false, account:false };
+  var loaded = { visas:false, flights:false, hotels:false, card:false, esim:false, tours:false, account:false };
 
   /* ───── Тема ───── */
   function applyTheme(t){
@@ -426,6 +480,7 @@
     if(name==="visas") ensureVisas();
     if(name==="flights") ensureFlights();
     if(name==="hotels") ensureHotels();
+    if(name==="card") ensureCard();
     if(name==="esim") ensureEsim();
     if(name==="tours") ensureTours();
     if(name==="account") ensureAccount();
@@ -454,6 +509,8 @@
   }
   function ensureFlights(){ tpEnsure("flights","tpFlightsHost","tpFlights"); }
   function ensureHotels(){ tpEnsure("hotels","tpHotelsHost","tpHotels"); }
+  // «Карта» — статичный промо-блок с реферальной ссылкой, грузить нечего.
+  function ensureCard(){ attachShrinkOnce("card", function(){ return document.getElementById("cardScroll").scrollTop; }, document.getElementById("cardScroll")); }
   // eSIM — это партнёрская ссылка (у Airalo нет встраиваемого виджета), поэтому
   // вкладка = брендовый промо-блок VOYO + кнопка, открывающая подбор eSIM.
   function ensureEsim(){
