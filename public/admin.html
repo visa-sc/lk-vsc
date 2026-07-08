@@ -1048,6 +1048,34 @@
       outline: none; border-color: var(--sk-accent);
       box-shadow: 0 0 0 3px rgba(0,151,202,.16);
     }
+    /* Значок «i» с пояснением (прячем длинные тексты) — при наведении/тапе показывает поповер */
+    .vsc-info {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 17px; height: 17px; border-radius: 50%; border: 1.4px solid currentColor;
+      color: #a2abbb; font-size: 10.5px; font-weight: 700; font-style: italic;
+      font-family: Georgia, "Times New Roman", serif; line-height: 1;
+      cursor: pointer; vertical-align: middle; margin-left: 8px; position: relative;
+      -webkit-user-select: none; user-select: none; flex: 0 0 auto;
+      transition: color .15s var(--vsc-ease), border-color .15s var(--vsc-ease);
+    }
+    .vsc-info:hover { color: #0097ca; }
+    .vsc-info .vsc-info-pop {
+      display: none; position: absolute; z-index: 60; top: calc(100% + 9px); left: 50%;
+      transform: translateX(-50%); width: min(340px, 78vw);
+      background: #1c2333; color: #e7ecf5; font: 400 12px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      font-style: normal; letter-spacing: 0; text-align: left; text-transform: none;
+      padding: 12px 14px; border-radius: 13px; box-shadow: 0 14px 38px rgba(16,24,40,.38);
+      white-space: normal; cursor: default;
+    }
+    .vsc-info .vsc-info-pop b { color: #fff; font-weight: 700; }
+    .vsc-info .vsc-info-pop::before {
+      content: ""; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+      border: 6px solid transparent; border-bottom-color: #1c2333;
+    }
+    .vsc-info:hover .vsc-info-pop, .vsc-info.open .vsc-info-pop { display: block; }
+    /* у правого края экрана — не вылазим за вьюпорт */
+    .vsc-info.pop-right .vsc-info-pop { left: auto; right: -6px; transform: none; }
+    .vsc-info.pop-right .vsc-info-pop::before { left: auto; right: 12px; transform: none; }
   </style>
 </head>
 <body>
@@ -2242,6 +2270,25 @@
         renderVsc();
       }
       const VSC_MON_NAMES = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+      // Значок «i» с пояснением: наведение (десктоп) или тап (моб.) показывает поповер с html.
+      // Прячем длинные «как считается»/заметки, чтобы интерфейс был чище. Возвращает <span>.
+      function vscInfo(html) {
+        if (!window.__vscInfoBound) { window.__vscInfoBound = true; document.addEventListener("click", function () { document.querySelectorAll(".vsc-info.open").forEach(function (el) { el.classList.remove("open"); }); }); }
+        const w = document.createElement("span"); w.className = "vsc-info"; w.setAttribute("tabindex", "0"); w.setAttribute("role", "button"); w.setAttribute("aria-label", "Пояснение"); w.textContent = "i";
+        const pop = document.createElement("span"); pop.className = "vsc-info-pop"; pop.innerHTML = html; w.appendChild(pop);
+        w.addEventListener("click", function (e) {
+          e.stopPropagation();
+          const wasOpen = w.classList.contains("open");
+          document.querySelectorAll(".vsc-info.open").forEach(function (el) { el.classList.remove("open"); });
+          if (!wasOpen) {
+            // если иконка близко к правому краю — открываем поповер влево, чтоб не вылез
+            const r = w.getBoundingClientRect(); w.classList.toggle("pop-right", (window.innerWidth - r.right) < 180);
+            w.classList.add("open");
+          }
+        });
+        pop.addEventListener("click", function (e) { e.stopPropagation(); });
+        return w;
+      }
       // Поле ввода прибыли за ПРОШЛЫЙ месяц — аккуратной карточкой ВВЕРХУ дашборда
       // (разрезы «Месяц»/«Год»), с 5 ЧИСЛА и пока прибыль не введена. Заменяет прежнюю
       // модалку (по просьбе Андрея 08.07). Только тому, кому прибыль ВИДНА (директор):
@@ -2536,6 +2583,7 @@
       function vscMarketChart(rows) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
         const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = "Рынок визовых услуг (модель) и наша доля — по месяцам";
+        h.appendChild(vscInfo("<b>Как считается</b><br>Рынок — модельная оценка (июль 2026): РФ 4,5 млрд ₽/год, МСК 2,1, СПб 0,6; помесячно — с сезонностью визовых подач. Месяц появляется после его календарного окончания. Наша доля = выручка месяца / модельный рынок (по городам — выручка филиалов из amoCRM). Наведите на столбец — полная разбивка."));
         wrap.appendChild(h);
         if (!rows.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет закрытых месяцев для расчёта."; wrap.appendChild(e); return wrap; }
         const COL_MSK = "#e8843b", COL_SPB = "#2e7d52", COL_REST = "#a9c7e4", COL_SHARE = "#8e44ad";
@@ -2599,10 +2647,6 @@
           bars.appendChild(col);
         });
         wrap.appendChild(bars);
-        const note = document.createElement("div");
-        note.style.cssText = "margin-top:8px;font-size:11.5px;color:#9096a3;line-height:1.5;";
-        note.textContent = "Рынок — модельная оценка (июль 2026): РФ 4,5 млрд ₽/год, МСК 2,1, СПб 0,6; помесячно — с сезонностью визовых подач. Месяц появляется после его календарного окончания. Наша доля = выручка месяца / модельный рынок (по городам — выручка филиалов из amoCRM). Наведите на столбец — полная разбивка.";
-        wrap.appendChild(note);
         return wrap;
       }
       // Компактный график комиссий эквайринга (только админ): 4 линии %-комиссии по дням
@@ -2688,6 +2732,7 @@
         wrap.innerHTML = '<div class="vsc-chart-h">Комиссии эквайринга — % по дням (30 дней)</div><div class="loading-state">Загружаем из банка…</div>';
         const render = (j) => {
           wrap.innerHTML = '<div class="vsc-chart-h">Комиссии эквайринга — % по дням (30 дней)</div>';
+          wrap.querySelector(".vsc-chart-h").appendChild(vscInfo("<b>Как считается</b><br>Торговый: комиссия «по терминалам эквайринга» ÷ оборот. Интернет: комиссия из «реестра операций» ÷ (приход + комиссия). Только проведённые операции; СБП-терминал и удержания не учитываются. Обновляется ежедневно в 00:20 МСК."));
           const data = j && j.data;
           if (!data || (!data.ooo && !data.ip)) {
             const e = document.createElement("div"); e.className = "vsc-empty";
@@ -2705,7 +2750,7 @@
           const upd = (data && data.ts) ? new Date(data.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
           const foot = document.createElement("div");
           foot.style.cssText = "margin-top:10px;font-size:11.5px;color:#9096a3;line-height:1.5;";
-          foot.innerHTML = "Торговый: комиссия «по терминалам эквайринга» / оборот. Интернет: комиссия из «реестра операций» / (приход + комиссия). Только проведённые операции; СБП-терминал и удержания не учитываются. Обновляется ежедневно в 00:20 МСК · на " + escapeHtml(upd) + "."
+          foot.innerHTML = "обновлено: " + escapeHtml(upd) + " МСК"
             + (notes.length ? '<br><span style="color:#b8602a;">' + notes.map(escapeHtml).join("<br>") + '</span>' : "");
           wrap.appendChild(foot);
           const btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Обновить";
@@ -2890,10 +2935,10 @@
         const isMgr = currentRole() === "manager";
         if (!isMgr) {
           const head = document.createElement("div"); head.className = "vsc-head";
-          const t = document.createElement("div"); t.innerHTML = '<h2 style="margin:0;font-size:18px;color:#161d45;">Показатели визового агентства</h2>';
-          const upd = document.createElement("div"); upd.className = "vsc-upd";
-          upd.textContent = "Источник: Google-таблица · обновляется автоматически (кэш ~15 мин)";
-          head.appendChild(t); head.appendChild(upd); vscContent.appendChild(head);
+          const t = document.createElement("div"); t.style.cssText = "display:flex;align-items:center;";
+          t.innerHTML = '<h2 style="margin:0;font-size:18px;color:#161d45;">Показатели визового агентства</h2>';
+          t.appendChild(vscInfo("<b>Источник данных</b><br>Google-таблица агентства. Обновляется автоматически, кэш ~15 минут. Старые месяцы зафиксированы снимком и не меняются."));
+          head.appendChild(t); vscContent.appendChild(head);
         }
 
         // Вкладки /vsc. Руководителям — только «Калькулятор ВНЖ» (+ «Бот VFS» при праве vfsbot); админу — все.
@@ -3387,7 +3432,7 @@
             const bv = b.deb, sv = s.deb, hold = b.holdDeb || 0;
             if (bv == null && sv == null) return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>') + '<td style="padding:7px 8px;color:#9aa0ab;">—</td></tr>';
             const delta = (bv || 0) - (sv || 0);
-            const ok = Math.abs(delta) < 100; // до 100 ₽ — мелочь, считаем сошедшимся
+            const ok = Math.abs(delta) <= 2000; // до 2000 ₽ — мелочь, считаем сошедшимся (зелёным); выше — красным
             const status = ok
               ? '<b style="color:#2c7a43;">✓ сходится' + (Math.abs(delta) >= 0.01 ? ' <span style="font-weight:400;">(Δ ' + money2(Math.abs(delta)) + ')</span>' : '') + '</b>'
               : '<b style="color:#b8602a;">Δ ' + (delta > 0 ? "+" : "−") + Math.abs(Math.round(delta)).toLocaleString("ru-RU") + ' ₽</b>';
@@ -3420,12 +3465,13 @@
             + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 8px;">Период</th><th style="text-align:left;padding:7px 8px;">Расход</th><th style="text-align:left;padding:7px 8px;">Приход</th></tr></thead>'
             + '<tbody>' + moveHtml + '</tbody></table></div>'
             + histBtn("buyoutsHistBtn1", moveRows.filter((r) => !(r.ym && r.ym >= prevYm)).length)
-            + '<div class="vsc-chart-h" style="margin:18px 0 8px;">2 · Сверка расхода по р/с с гугл-таблицей выкупов (Авиа + Отель)</div>'
+            + '<div class="vsc-chart-h" id="buyoutsCmpH" style="margin:18px 0 8px;">2 · Сверка расхода по р/с с гугл-таблицей выкупов (Авиа + Отель)</div>'
             + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
             + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 8px;">Месяц</th><th style="text-align:left;padding:7px 8px;">Расход по р/с: банк / таблица</th></tr></thead>'
             + '<tbody>' + cmpHtml + '</tbody></table></div>'
             + histBtn("buyoutsHistBtn2", cmpYms.filter((ym) => ym < prevYm).length)
-            + '<div style="font-size:11.5px;color:#8a90a0;margin-top:10px;">Банк: только проведённые операции (без холдов), месяц — по дате авторизации. Таблица: вкладки «Авиа»+«Отель», только «Расчетный счет». Обновляется ежедневно в 00:10 МСК · на ' + escapeHtml(upd) + '. <button type="button" id="buyoutsRun" class="vsc-dayrev-refresh" style="margin-top:8px;">↻ Обновить</button></div>';
+            + '<div style="font-size:11.5px;color:#8a90a0;margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">обновлено: ' + escapeHtml(upd) + ' МСК <button type="button" id="buyoutsRun" class="vsc-dayrev-refresh" style="margin-top:0;">↻ Обновить</button></div>';
+          const cmpH = box.querySelector("#buyoutsCmpH"); if (cmpH) cmpH.appendChild(vscInfo("<b>Как считается</b><br>Банк: только проведённые операции (без холдов), месяц — по дате авторизации. Таблица: вкладки «Авиа»+«Отель», только «Расчетный счет», по сумме снятия. Сходится, если Δ ≤ 2000 ₽ (зелёным); выше — красным. Обновляется ежедневно в 00:10 МСК. Старые месяцы зафиксированы снимком (🔒)."));
           const b = box.querySelector("#buyoutsRun"); if (b) b.addEventListener("click", runNow);
           [["buyoutsHistBtn1", "buyoutsHist1"], ["buyoutsHistBtn2", "buyoutsHist2"]].forEach(([btnId, cls]) => {
             const btn = box.querySelector("#" + btnId);
@@ -3529,18 +3575,16 @@
         box.appendChild(tiles);
 
         const r = d.month.rates || {};
-        const ass = document.createElement("div"); ass.className = "vsc-chart"; ass.style.fontSize = "12.5px"; ass.style.color = "#5a626f"; ass.style.lineHeight = "1.6";
-        ass.innerHTML =
-          '<div class="vsc-chart-h">Как считается</div>' +
-          'Модель и параметры расходов — из вашей таблицы (вкладка «<b>' + escapeHtml(d.tab) + '</b>»), считаются у нас по вашим формулам. ' +
+        // «Как считается» — спрятано в значок «i» на подзаголовке headline (по просьбе Андрея).
+        const assHtml =
+          '<b>Как считается</b><br>Модель и параметры расходов — из вашей таблицы (вкладка «<b>' + escapeHtml(d.tab) + '</b>»), считаются у нас по вашим формулам. ' +
           (d.basisKind === "weekly-chain"
             ? '<b>Прогноз на месяц</b> = посчитанные недели + оценка остатка. Недели, у которых база закрыта (<b>' + d.weeksDone + ' из ' + d.weeksTotal + '</b>), складываются как есть: каждая прогнозируется по итогам предыдущего ЗАКРЫТОГО периода — первая по итогам ' + escapeHtml(shortM(d.basisMonth)) + ', первая полная по «стыковой» неделе на границе месяцев. ' +
-              (d.month.rest ? '<b>Остаток месяца (' + d.month.rest.days + ' дн.)</b> оценивается по усреднённым (объёмно-взвешенным) ставкам подтверждённых периодов, участвующих в расчёте' + (d.month.rest.rates ? ': ASP <b>' + ru(d.month.rest.rates.asp) + '</b>, CPL <b>' + ru(d.month.rest.rates.cpl) + '</b>, CV <b>' + (Math.round((d.month.rest.rates.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((d.month.rest.rates.upt || 0) * 100) / 100) + '</b>' : '') + '. С закрытием каждой недели её итоги попадают и в цепочку, и в пул остатка — прогноз сам уточняется реальной динамикой месяца. Ставки идущей (незакрытой) недели в расчёт не входят. '
+              (d.month.rest ? '<b>Остаток месяца (' + d.month.rest.days + ' дн.)</b> оценивается по усреднённым (объёмно-взвешенным) ставкам подтверждённых периодов' + (d.month.rest.rates ? ': ASP <b>' + ru(d.month.rest.rates.asp) + '</b>, CPL <b>' + ru(d.month.rest.rates.cpl) + '</b>, CV <b>' + (Math.round((d.month.rest.rates.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((d.month.rest.rates.upt || 0) * 100) / 100) + '</b>' : '') + '. С закрытием каждой недели её итоги попадают и в цепочку, и в пул остатка — прогноз сам уточняется. Ставки идущей (незакрытой) недели в расчёт не входят. '
                 : 'Все недели месяца посчитаны — оценки остатка нет. ')
             : '<b>Прогноз на месяц</b> — по итогам ' + escapeHtml(shortM(d.basisMonth)) + ' (недельных данных текущего месяца ещё нет): ASP <b>' + ru(r.asp) + '</b>, CPL <b>' + ru(r.cpl) + '</b>, CV <b>' + (Math.round((r.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((r.upt || 0) * 100) / 100) + '</b>. ') +
-          '<b>Контакт-план ' + ru(d.expectedContacts || d.basisContacts) + '</b>/мес — РЕАЛЬНО ожидаемый набор (темп текущего месяца + динамика прошлого), а не аспирационный план; персонал ОП ' + d.persOP + ', смен ' + d.shifts + '. ФОТ ' + (d.fotPct || 22) + '%. ' +
-          '<b>Недели ниже</b> — та же цепочка в детализации; неполные недели на стыке месяцев пересчитываются /7×дни (все дни рабочие).';
-        box.appendChild(ass);
+          '<b>Контакт-план ' + ru(d.expectedContacts || d.basisContacts) + '</b>/мес — реально ожидаемый набор; персонал ОП ' + d.persOP + ', смен ' + d.shifts + '. ФОТ ' + (d.fotPct || 22) + '%. Недели ниже — та же цепочка в детализации.';
+        if (head.firstElementChild) head.firstElementChild.appendChild(vscInfo(assHtml));
 
         if (d.weeks && d.weeks.length) {
           const wh = document.createElement("div"); wh.className = "ref-sec-h"; wh.style.marginTop = "20px";
@@ -3651,10 +3695,8 @@
         const curBtn = (k, t) => '<button type="button" data-cur="' + k + '" class="calc-cur' + (vscCalcState.cur === k ? ' on' : '') + '">' + t + '</button>';
         const outCard = (id, title) => '<div class="vsc-out vc-out" title="Нажмите, чтобы скопировать число"><div class="vsc-out-t vc-out-t">' + title + '</div><div id="' + id + '" class="vc-out-v">—</div></div>';
         box.innerHTML =
-          '<div class="ref-sec-h">Калькулятор ВНЖ</div>' +
-          '<div class="vc-info"><b>Как пользоваться:</b> курсы EUR/USD берутся с ЦБ РФ автоматически. Курс usdt для расхода ставите вы — сохраняется. Выберите валюту прихода, укажите сумму прихода и сколько должны партнёру (в USDT). Значения на зелёном фоне — для занесения в учёт/amo.</div>' +
+          '<div class="ref-sec-h" id="calcH">Калькулятор ВНЖ</div>' +
           '<div class="vc-note">Курсы ЦБ РФ' + (d.date ? " на " + escapeHtml(d.date) : "") + ' · обновляются автоматически</div>' +
-          '<div class="vc-legend"><span class="vc-sw" style="background:#eaf3ff;border:1px solid rgba(0,113,227,.3);"></span>голубым — поля, которые заполняете вы&nbsp;&nbsp;·&nbsp;&nbsp;<span class="vc-sw" style="background:#fbfbfd;border:1px solid rgba(0,0,0,.12);"></span>серым — считается автоматически&nbsp;&nbsp;·&nbsp;&nbsp;<span class="vc-sw" style="background:#e8f8ee;border:1px solid #c4ead0;"></span>зелёным — результат (клик копирует)</div>' +
           '<div class="vc-grid vc-grid-rates">' +
             '<div class="vc-tile"><div class="vc-tlabel">Курс евро к рублю</div><div id="calcEurVal" class="vc-tval">' + fr(d.eur, 2) + '</div></div>' +
             '<div class="vc-tile"><div class="vc-tlabel">Курс usdt / доллар к рублю</div><div id="calcUsdVal" class="vc-tval">' + fr(d.usd, 2) + '</div></div>' +
@@ -3679,6 +3721,8 @@
           '<button type="button" id="calcMismatch" class="vc-btn">История расхождений при оплате в руб.</button></div>' +
           '<div id="calcHistPanel" style="display:none;margin-top:10px;"></div>' +
           '<div id="calcMismatchPanel" style="display:none;margin-top:10px;"></div>';
+        const _calcH = box.querySelector("#calcH");
+        if (_calcH) _calcH.appendChild(vscInfo("<b>Как пользоваться</b><br>Курсы EUR/USD берутся с ЦБ РФ автоматически, курс usdt для расхода ставите вы (сохраняется). Выберите валюту прихода, укажите сумму прихода и сколько должны партнёру (в USDT).<br><br><b>Цвета полей:</b> голубым — заполняете вы; серым — считается автоматически; зелёным — результат для занесения в учёт/amo (клик по нему копирует число)."));
         const $ = (id) => box.querySelector("#" + id);
         // Копирование значения зелёной области по клику (для переноса в amoCRM / таблицы).
         box.querySelectorAll(".vsc-out").forEach((card) => {
