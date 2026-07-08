@@ -950,6 +950,94 @@
       .phone-meta { text-align: left; }
       .stage-titles { font-size: 9px; }
     }
+
+    /* ════════════════════════════════════════════════════════════════════
+       VSC-SKIN — вылизанное оформление ТОЛЬКО для /vsc (класс body.vsc-skin
+       ставится в JS при IS_VSC). Стиль Apple: мягкие тени, крупные скругления,
+       сегментированные табы, спокойная типографика, аккуратный фон. Базовые
+       правила НЕ переопределяются глобально — /admin не затрагивается. Только
+       внешний вид, разметка и логика не меняются.
+       ════════════════════════════════════════════════════════════════════ */
+    body.vsc-skin {
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      background:
+        radial-gradient(1100px 520px at 50% -120px, #e9f3fb 0%, rgba(233,243,251,0) 70%),
+        linear-gradient(180deg, #f7f9fc 0%, #eef1f6 100%);
+      background-attachment: fixed;
+      --sk-accent: #0097ca;
+      --sk-accent2: #00bff0;
+      --sk-ink: #141a2e;
+      --sk-muted: #6a7385;
+      --sk-border: rgba(20,32,64,.07);
+      --sk-radius: 18px;
+      --sk-shadow: 0 1px 2px rgba(16,24,40,.04), 0 14px 34px -18px rgba(16,32,64,.20);
+      --sk-shadow-hi: 0 2px 6px rgba(16,24,40,.06), 0 26px 50px -22px rgba(16,32,64,.30);
+    }
+    /* Карточки — плитки и графики */
+    body.vsc-skin .vsc-tile,
+    body.vsc-skin .vsc-chart {
+      background: #fff;
+      border: 1px solid var(--sk-border);
+      border-radius: var(--sk-radius);
+      box-shadow: var(--sk-shadow);
+    }
+    body.vsc-skin .vsc-tile { transition: transform .28s var(--vsc-ease), box-shadow .28s var(--vsc-ease); }
+    body.vsc-skin .vsc-tile:hover { transform: translateY(-2px); box-shadow: var(--sk-shadow-hi); }
+    body.vsc-skin .vsc-tile-v { color: var(--sk-ink); letter-spacing: -.02em; }
+    body.vsc-skin .vsc-tile-l { color: var(--sk-muted); }
+    body.vsc-skin .vsc-chart-h { color: var(--sk-ink); letter-spacing: -.015em; font-weight: 700; }
+    /* Секционные заголовки — тоньше линия, спокойнее */
+    body.vsc-skin .ref-sec-h {
+      color: var(--sk-ink); font-size: 14.5px; letter-spacing: -.015em;
+      border-bottom: 1px solid var(--sk-border); padding-bottom: 8px; margin: 24px 0 12px;
+    }
+    /* Табы разделов — сегмент-контрол (как в iOS) */
+    body.vsc-skin .vsc-maintabs {
+      background: rgba(120,134,162,.10);
+      border: 1px solid rgba(20,32,64,.05);
+      border-radius: 15px; padding: 5px; gap: 5px;
+    }
+    body.vsc-skin .vsc-maintabs button {
+      border: none; background: transparent; color: #5a6478; font-weight: 600;
+      border-radius: 11px; padding: 9px 17px;
+      transition: color .2s var(--vsc-ease), background .2s var(--vsc-ease), box-shadow .2s var(--vsc-ease);
+    }
+    body.vsc-skin .vsc-maintabs button:hover { color: var(--sk-ink); }
+    body.vsc-skin .vsc-maintabs button.active {
+      background: #fff; color: var(--sk-accent);
+      box-shadow: 0 1px 2px rgba(16,24,40,.05), 0 5px 12px -5px rgba(16,32,64,.22);
+    }
+    /* Гранулярность (Год/Мес/Нед/День) и пилюли refhub */
+    body.vsc-skin .vsc-gran button, body.vsc-skin .refhub-pill {
+      border: 1px solid rgba(20,32,64,.09); background: rgba(255,255,255,.7); color: #4c5568;
+      transition: all .18s var(--vsc-ease);
+    }
+    body.vsc-skin .vsc-gran button:hover, body.vsc-skin .refhub-pill:hover { border-color: rgba(20,32,64,.18); }
+    body.vsc-skin .vsc-gran button.active {
+      background: linear-gradient(135deg, #202a48 0%, #10162e 100%); border-color: transparent; color: #fff;
+      box-shadow: 0 8px 18px -9px rgba(16,22,46,.65);
+    }
+    body.vsc-skin .refhub-nav { background: rgba(120,134,162,.08); border-color: rgba(20,32,64,.05); border-radius: 14px; }
+    body.vsc-skin .refhub-pill.active {
+      background: linear-gradient(135deg, var(--sk-accent2), var(--sk-accent)); border-color: transparent; color: #fff;
+      box-shadow: 0 8px 18px -9px rgba(0,151,202,.6);
+    }
+    body.vsc-skin .vsc-month select {
+      border: 1px solid rgba(20,32,64,.10); border-radius: 10px; background: rgba(255,255,255,.8);
+    }
+    /* Кнопка «Обновить» дневной выручки — акцентный градиент */
+    body.vsc-skin .vsc-dayrev-refresh {
+      background: linear-gradient(135deg, var(--sk-accent2), var(--sk-accent)); border-color: transparent;
+      box-shadow: 0 8px 16px -8px rgba(0,151,202,.55); transition: filter .18s var(--vsc-ease), transform .18s var(--vsc-ease);
+    }
+    body.vsc-skin .vsc-dayrev-refresh:hover { filter: brightness(1.06); transform: translateY(-1px); background: linear-gradient(135deg, var(--sk-accent2), var(--sk-accent)); }
+    /* «Выручка за сегодня» — мягкая мятная плитка */
+    body.vsc-skin .vsc-tile-dayrev { background: linear-gradient(180deg, #f4fbf6 0%, #eef8f1 100%); border-color: rgba(60,150,90,.18); }
+    /* Кнопка «Выйти» и заголовок */
+    body.vsc-skin .dash-title { letter-spacing: -.02em; color: var(--sk-ink); }
+    body.vsc-skin .logout-btn { border-radius: 14px; }
+    body.vsc-skin ::selection { background: rgba(0,151,202,.18); }
   </style>
 </head>
 <body>
@@ -1188,18 +1276,20 @@
       if (IS_VSC) {
         try {
           document.title = "VSC · Дашборд";
+          document.body.classList.add("vsc-skin"); // хук вылизанного оформления только для /vsc
           const _img = document.querySelector(".brand-bar img");
           if (_img) {
-            // Вместо квадратного PNG-лого — текстовая вывеска «V | S | C».
-            // Форма букв как на исходном лого: плотный гротеск (системный
-            // SF Pro, НЕ скруглённый), жирное начертание; без сетевых шрифтов.
-            // Цвет — фирменный голубой лого #0097ca; разделители тем же цветом.
+            // Вывеска «V · S · C» — обновлённая (Apple / «нотки будущего»): плотный
+            // системный гротеск, буквы залиты градиентом фирм. голубой → циан, тонкие
+            // градиентные разделители; без сетевых шрифтов.
             const wm = document.createElement("div");
             wm.setAttribute("aria-label", "VSC");
-            wm.style.cssText = "display:flex;align-items:center;gap:11px;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-weight:800;font-size:46px;line-height:1;letter-spacing:0;color:#0097ca;";
+            wm.style.cssText = "display:flex;align-items:center;gap:14px;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-weight:700;font-size:46px;line-height:1;letter-spacing:0;";
             ["V", "S", "C"].forEach(function (ch, i) {
-              if (i > 0) { const d = document.createElement("span"); d.style.cssText = "width:2px;height:27px;background:#0097ca;opacity:.45;border-radius:2px;"; wm.appendChild(d); }
-              const s = document.createElement("span"); s.textContent = ch; wm.appendChild(s);
+              if (i > 0) { const d = document.createElement("span"); d.style.cssText = "width:2px;height:24px;border-radius:2px;background:linear-gradient(180deg,#00bff0,#0088c2);opacity:.5;"; wm.appendChild(d); }
+              const s = document.createElement("span"); s.textContent = ch;
+              s.style.cssText = "color:#0097ca;background:linear-gradient(135deg,#00c8f2 0%,#0097ca 52%,#123a78 130%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;"; // color — фолбэк, если clip:text не поддержан (буквы не пропадут)
+              wm.appendChild(s);
             });
             _img.replaceWith(wm);
           }
@@ -2164,9 +2254,9 @@
       function vscShowProfitPrompt(monthName) {
         if (document.getElementById("vscProfitModal")) return;
         const ov = document.createElement("div"); ov.id = "vscProfitModal";
-        ov.style.cssText = "position:fixed;inset:0;background:rgba(20,24,40,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;";
+        ov.style.cssText = "position:fixed;inset:0;background:rgba(16,22,42,.42);-webkit-backdrop-filter:blur(6px) saturate(1.2);backdrop-filter:blur(6px) saturate(1.2);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;";
         const card = document.createElement("div");
-        card.style.cssText = "background:#fff;border-radius:16px;max-width:420px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.25);";
+        card.style.cssText = "background:#fff;border-radius:22px;max-width:420px;width:100%;padding:24px;box-shadow:0 1px 2px rgba(16,24,40,.06),0 30px 70px -20px rgba(16,32,64,.45);border:1px solid rgba(255,255,255,.6);";
         card.innerHTML =
           '<div style="font-size:17px;font-weight:800;color:#161d45;margin-bottom:6px;">Прибыль за ' + escapeHtml(monthName) + '</div>' +
           '<div style="font-size:13px;color:#6b7280;margin-bottom:14px;">Введите чистую прибыль за прошлый месяц (₽). На её основе посчитается рентабельность.</div>' +
