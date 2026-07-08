@@ -1069,13 +1069,12 @@
     }
     .vsc-info .vsc-info-pop b { color: #fff; font-weight: 700; }
     .vsc-info .vsc-info-pop::before {
-      content: ""; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+      content: ""; position: absolute; bottom: 100%; left: var(--arrow-left, 50%); transform: translateX(-50%);
       border: 6px solid transparent; border-bottom-color: #1c2333;
     }
+    /* поповер открыт СВЕРХУ иконки (у нижнего края экрана) — стрелка снизу, смотрит вниз */
+    .vsc-info.pop-up .vsc-info-pop::before { bottom: auto; top: 100%; border-bottom-color: transparent; border-top-color: #1c2333; }
     .vsc-info:hover .vsc-info-pop, .vsc-info.open .vsc-info-pop { display: block; }
-    /* у правого края экрана — не вылазим за вьюпорт */
-    .vsc-info.pop-right .vsc-info-pop { left: auto; right: -6px; transform: none; }
-    .vsc-info.pop-right .vsc-info-pop::before { left: auto; right: 12px; transform: none; }
     /* ── Графики и кнопки — «посексуальнее»: градиентные столбцы, мягкие радиусы, воздух ── */
     body.vsc-skin .vsc-chart { padding: 16px 18px; margin-bottom: 14px; }
     body.vsc-skin .vsc-tiles { gap: 14px; }
@@ -2290,20 +2289,33 @@
       const VSC_MON_NAMES = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
       // Значок «i» с пояснением: наведение (десктоп) или тап (моб.) показывает поповер с html.
       // Прячем длинные «как считается»/заметки, чтобы интерфейс был чище. Возвращает <span>.
+      function vscInfoClose(el) { el.classList.remove("open", "pop-up"); const p = el.querySelector(".vsc-info-pop"); if (p) { p.style.position = ""; p.style.left = ""; p.style.right = ""; p.style.top = ""; p.style.bottom = ""; p.style.width = ""; p.style.transform = ""; p.style.removeProperty("--arrow-left"); } }
       function vscInfo(html) {
-        if (!window.__vscInfoBound) { window.__vscInfoBound = true; document.addEventListener("click", function () { document.querySelectorAll(".vsc-info.open").forEach(function (el) { el.classList.remove("open"); }); }); }
+        if (!window.__vscInfoBound) { window.__vscInfoBound = true; const closeAll = function () { document.querySelectorAll(".vsc-info.open").forEach(vscInfoClose); }; document.addEventListener("click", closeAll); window.addEventListener("scroll", closeAll, true); }
         const w = document.createElement("span"); w.className = "vsc-info"; w.setAttribute("tabindex", "0"); w.setAttribute("role", "button"); w.setAttribute("aria-label", "Пояснение"); w.textContent = "i";
         const pop = document.createElement("span"); pop.className = "vsc-info-pop"; pop.innerHTML = html; w.appendChild(pop);
+        // Позиционируем поповер в ВИДИМОЙ области (fixed + зажим по краям экрана) — чтобы на
+        // телефоне не обрезался. Хвостик-стрелка наводится на иконку через --arrow-left.
+        const place = function () {
+          const r = w.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+          const pwMax = Math.min(340, vw - 24);
+          pop.style.position = "fixed"; pop.style.transform = "none"; pop.style.width = pwMax + "px";
+          let left = r.left + r.width / 2 - pwMax / 2;
+          left = Math.max(12, Math.min(left, vw - pwMax - 12));
+          pop.style.left = left + "px"; pop.style.right = "auto";
+          pop.style.top = (r.bottom + 9) + "px"; pop.style.bottom = "auto";
+          const ph = pop.offsetHeight;
+          if (r.bottom + 9 + ph > vh - 12 && r.top - 9 - ph > 12) { pop.style.top = (r.top - 9 - ph) + "px"; w.classList.add("pop-up"); }
+          else { w.classList.remove("pop-up"); }
+          pop.style.setProperty("--arrow-left", Math.max(10, Math.min(pwMax - 10, r.left + r.width / 2 - left)) + "px");
+        };
         w.addEventListener("click", function (e) {
           e.stopPropagation();
           const wasOpen = w.classList.contains("open");
-          document.querySelectorAll(".vsc-info.open").forEach(function (el) { el.classList.remove("open"); });
-          if (!wasOpen) {
-            // если иконка близко к правому краю — открываем поповер влево, чтоб не вылез
-            const r = w.getBoundingClientRect(); w.classList.toggle("pop-right", (window.innerWidth - r.right) < 180);
-            w.classList.add("open");
-          }
+          document.querySelectorAll(".vsc-info.open").forEach(vscInfoClose);
+          if (!wasOpen) { w.classList.add("open"); place(); }
         });
+        w.addEventListener("mouseenter", place);   // десктоп: тоже в видимой области
         pop.addEventListener("click", function (e) { e.stopPropagation(); });
         return w;
       }
@@ -3366,7 +3378,7 @@
         const yc = vscData.ydSpendCompare;
         const ydBox = document.createElement("div"); ydBox.className = "vsc-chart";
         if (yc && (yc.ydWithVat != null || yc.sheetTotal != null)) {
-          const money = (v) => (v == null ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
+          const money = (v) => (v == null ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
           const dAbs = yc.deltaAbs, dPct = yc.deltaPct;
           const dColor = (dAbs == null) ? "#6b7280" : (Math.abs(dPct || 0) <= 2 ? "#2c7a43" : "#b8602a");
           const dStr = (dAbs == null) ? "—" : ((dAbs > 0 ? "+" : dAbs < 0 ? "−" : "") + Math.abs(Math.round(dAbs)).toLocaleString("ru-RU") + " ₽" + (dPct != null ? " (" + (dPct > 0 ? "+" : dPct < 0 ? "−" : "") + Math.abs(dPct) + "%)" : ""));
@@ -3375,9 +3387,9 @@
           ydBox.innerHTML =
             '<div class="vsc-chart-h">Сопоставление рекламных расходов — ' + escapeHtml(yc.monthName || "") + '</div>' +
             '<table style="width:100%;border-collapse:collapse;font-size:13.5px;">' +
-            '<tr><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;color:#33415a;">Я.Директ (откручено, с НДС ' + vatPct + '%)</td><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;text-align:right;font-weight:700;">' + money(yc.ydWithVat) + '</td></tr>' +
-            '<tr><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;color:#33415a;">Таблица «Рекламные расходы ОБЩИЕ» (Grand total)</td><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;text-align:right;font-weight:700;">' + money(yc.sheetTotal) + '</td></tr>' +
-            '<tr><td style="padding:7px 6px;color:#33415a;">Расхождение (Я.Директ − таблица)</td><td style="padding:7px 6px;text-align:right;font-weight:700;color:' + dColor + ';">' + dStr + '</td></tr>' +
+            '<tr><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;color:#33415a;">Я.Директ (откручено, с НДС ' + vatPct + '%)</td><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;text-align:right;font-weight:700;white-space:nowrap;">' + money(yc.ydWithVat) + '</td></tr>' +
+            '<tr><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;color:#33415a;">Таблица «Рекламные расходы ОБЩИЕ» (Grand total)</td><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;text-align:right;font-weight:700;white-space:nowrap;">' + money(yc.sheetTotal) + '</td></tr>' +
+            '<tr><td style="padding:7px 6px;color:#33415a;">Расхождение (Я.Директ − таблица)</td><td style="padding:7px 6px;text-align:right;font-weight:700;white-space:nowrap;color:' + dColor + ';">' + dStr + '</td></tr>' +
             '</table>' +
             '<div style="font-size:11.5px;color:#8a90a0;margin-top:8px;">Открученные деньги из кабинета Я.Директа (Reports API) × НДС ' + vatPct + '%. Обновляется 1-го и 12-го числа в 15:00 МСК · на ' + escapeHtml(upd) + '.</div>';
         } else {
@@ -3441,7 +3453,7 @@
         wrap.appendChild(box);
         const MON = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
         const ymName = (ym) => { const p = ym.split("-"); return (MON[+p[1] - 1] || ym) + " " + p[0]; };
-        const money = (v) => (v == null ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
+        const money = (v) => (v == null ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
         const money2 = (v) => (v == null ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU", { minimumFractionDigits: 2 }) + " ₽");
         const load = () => fetch("/admin/api/vsc/buyouts", { headers: { Authorization: "Bearer " + getToken() } }).then((r) => r.json());
         const render = (j) => {
