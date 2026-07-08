@@ -2531,11 +2531,15 @@
         const h = document.createElement("div"); h.className = "vsc-chart-h"; h.innerHTML = kpi.labelHtml || escapeHtml(kpi.label); wrap.appendChild(h);
         const maxPos = Math.max.apply(null, present.map((v) => Math.max(0, v))) || 0;
         const maxNeg = Math.max.apply(null, present.map((v) => Math.max(0, -v))) || 0;
-        const H = 156, range = (maxPos + maxNeg) || 1;
+        const H = 150, range = (maxPos + maxNeg) || 1;
         let posZone = Math.round(maxPos / range * H); posZone = Math.min(H - 24, Math.max(24, posZone));
         const negZone = H - posZone;
-        const posBarMax = Math.max(10, posZone - 16), negBarMax = Math.max(8, negZone - 14);
+        // Оставляем запас под ПОДПИСЬ над столбцом (≈18px), чтобы верхняя цифра не резалась.
+        const posBarMax = Math.max(10, posZone - 22), negBarMax = Math.max(8, negZone - 15);
         const bars = document.createElement("div"); bars.className = "vsc-bars";
+        // overflow-x:auto у .vsc-bars режет и по вертикали — подписи высоких столбцов
+        // обрезались сверху. Здесь колонок мало (≤12), прокрутка не нужна → overflow visible.
+        bars.style.overflow = "visible"; bars.style.height = "auto"; bars.style.paddingTop = "6px";
         series.forEach((s, i) => {
           const v = vals[i];
           const col = document.createElement("div"); col.className = "vsc-bar-col"; col.title = s.range || "";
