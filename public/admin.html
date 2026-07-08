@@ -2554,9 +2554,11 @@
         // Оставляем запас под ПОДПИСЬ над столбцом (≈18px), чтобы верхняя цифра не резалась.
         const posBarMax = Math.max(10, posZone - 22), negBarMax = Math.max(8, negZone - 15);
         const bars = document.createElement("div"); bars.className = "vsc-bars";
-        // overflow-x:auto у .vsc-bars режет и по вертикали — подписи высоких столбцов
-        // обрезались сверху. Здесь колонок мало (≤12), прокрутка не нужна → overflow visible.
-        bars.style.overflow = "visible"; bars.style.height = "auto"; bars.style.paddingTop = "6px";
+        // Дефолтный .vsc-bars — горизонтальный скролл (overflow-x:auto). Раньше тут стоял
+        // overflow:visible «чтобы не резать подписи», но это ЛОМАЛО скролл — на узком экране
+        // столбцы (Янв–Июл) вылезали за карточку. Подписи значений лежат ВНУТРИ area (H=150),
+        // поэтому скролл вбок их не режет; высоту контейнера берём с запасом под area+подписи.
+        bars.style.height = (H + 42) + "px";
         series.forEach((s, i) => {
           const v = vals[i];
           const col = document.createElement("div"); col.className = "vsc-bar-col"; col.title = s.range || "";
