@@ -73,7 +73,8 @@ async function amoGet(url, params) {
     let r;
     try {
       r = await axios.get(url, {
-        headers: { Authorization: `Bearer ${AMO_ACCESS_TOKEN}` },
+        // X-Requested-With обязателен для /ajax/* эндпоинтов (без него amoCRM отвечает 403)
+        headers: { Authorization: `Bearer ${AMO_ACCESS_TOKEN}`, "X-Requested-With": "XMLHttpRequest" },
         params, timeout: 60000, validateStatus: null
       });
     } catch (e) {
@@ -130,6 +131,53 @@ async function exportList(name, startUrl, params, embKey) {
   st.done = true; st.nextUrl = null; saveState();
   log(`${name}: ГОТОВО — ${st.items} записей (${st.pages} стр.)`);
 }
+
+// Курсорная выгрузка примечаний по updated_at (offset-пагинация amoCRM упирается
+// в стену 504/лимит на глубине ~375k; filter[id][from] на notes работает как exact-match,
+// а filter[updated_at][from] + order[updated_at]=asc — честный курсор без offset'ов).
+// Дедуп на границе секунды: в state хранится список id с updated_at == краю.
+async function exportListCursor(name, url, embKey) {
+  const st = (state[name] = state[name] || {});
+  if (st.done) { log(`${name}: уже выгружено (${st.items}), пропуск`); return; }
+  if (typeof st.lastUpd !== "number") { st.pages = 0; st.items = 0; st.lastUpd = 0; st.edgeIds = []; }
+  const file = path.join(OUT, `${name}.ndjson`);
+  while (true) {
+    const params = { limit: 250, "order[updated_at]": "asc" };
+    if (st.lastUpd > 0) params["filter[updated_at][from]"] = st.lastUpd;
+    const data = await amoGet(url, params);
+    if (data && data.__skip) { st.done = true; st.skipped = data.__skip; saveState(); log(`${name}: недоступно (HTTP ${data.__skip})`); return; }
+    if (!data) break; // 204 — конец
+    const items = (data._embedded && data._embedded[embKey]) || [];
+    if (!items.length) break;
+    const edge = new Set(st.edgeIds || []);
+    const fresh = items.filter((n) => !(n.updated_at === st.lastUpd && edge.has(n.id)));
+    if (!fresh.length) {
+      if (items.length < 250) break;
+      // >250 записей с одним и тем же updated_at и все уже выгружены — сдвигаем край
+      st.lastUpd += 1; st.edgeIds = []; saveState();
+      log(`${name}: ВНИМАНИЕ — край ${st.lastUpd - 1} переполнен (>250 записей/сек), сдвиг +1с`);
+      continue;
+    }
+    fs.appendFileSync(file, fresh.map((x) => JSON.stringify(x)).join("\n") + "\n");
+    st.items += fresh.length;
+    st.pages++;
+    const maxUpd = items[items.length - 1].updated_at;
+    if (maxUpd === st.lastUpd) {
+      st.edgeIds = [...edge, ...fresh.filter((n) => n.updated_at === maxUpd).map((n) => n.id)].slice(-5000);
+    } else {
+      st.lastUpd = maxUpd;
+      st.edgeIds = items.filter((n) => n.updated_at === maxUpd).map((n) => n.id);
+    }
+    saveState();
+    if (st.pages % 25 === 0) log(`${name}: страниц ${st.pages}, записей ${st.items} (до ${new Date(st.lastUpd * 1000).toISOString().slice(0, 10)})...`);
+    if (items.length < 250) break;
+  }
+  st.done = true; saveState();
+  log(`${name}: ГОТОВО — ${st.items} записей (updated_at-курсор, край ${st.lastUpd})`);
+}
+
+// notes_companies НЕ курсором: их мало (offset-стена не грозит), а order[updated_at] на этом эндпоинте даёт 504
+const CURSOR_ENTITIES = new Set(["notes_leads", "notes_contacts"]);
 
 let ENTITIES = [
   ["users",             `${BASE}/api/v4/users`,                    { limit: 250, with: "role,group,uuid" }, "users"],
@@ -201,7 +249,8 @@ async function main() {
   }
 
   for (const [name, url, params, embKey] of ENTITIES) {
-    await exportList(name, url, params, embKey);
+    if (CURSOR_ENTITIES.has(name)) await exportListCursor(name, url, embKey);
+    else await exportList(name, url, params, embKey);
   }
 
   // элементы каталогов (списков) — после выгрузки самих каталогов
