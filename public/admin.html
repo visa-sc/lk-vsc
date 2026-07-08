@@ -3308,8 +3308,10 @@
                   : '<span style="color:#b0263a;font-weight:700;">❗ не равно расхождению</span><br>холды не объясняют Δ полностью — стоит проверить внесённое в таблицу')
                 + '</div>';
             }
+            const frozen = (d.frozenMonths || []).indexOf(ym) >= 0; // месяц зафиксирован снимком (N+2)
+            const frozenNote = frozen ? '<div style="font-size:10.5px;color:#9aa0ab;margin-top:3px;">🔒 зафиксировано — снимок банка и таблицы, дальше не меняется</div>' : "";
             return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>')
-              + '<td style="padding:7px 8px;">банк <b>' + money2(bv) + '</b> · табл. <b>' + money2(sv) + '</b><br>' + status + holdNote + '</td></tr>';
+              + '<td style="padding:7px 8px;">банк <b>' + money2(bv) + '</b> · табл. <b>' + money2(sv) + '</b><br>' + status + holdNote + frozenNote + '</td></tr>';
           }).join("");
           const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
           const histBtn = (id, n) => (n > 0 ? '<button type="button" id="' + id + '" class="vsc-dayrev-refresh" style="margin-top:8px;background:#eef2f7;color:#3a4356;border-color:#d7dce4;">Показать историю (' + n + ')</button>' : "");

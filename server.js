@@ -4949,6 +4949,29 @@ async function buyoutsSheetMonths() {
   }
   return months;
 }
+// «Заморозка» сверки выкупов — та же дисциплина, что у дашборда/контроля: месяц N
+// фиксируется, когда текущий месяц (МСК) ≥ N+2 (сейчас всё по май — сид; 1 авг замёрзнет
+// июнь, 1 сен — июль, …). Замораживаем ТОЛЬКО живые созревшие месяцы (ПОСЛЕ сид-периода):
+// снимок банк+таблица сохраняется в .lkBuyouts.json (snap) и больше не пересчитывается —
+// правки гугл-таблицы и довнесения в банк задним числом эти месяцы не двигают.
+function buyoutsFreezeCutoffKey() { const d = new Date(Date.now() + 3 * 3600 * 1000); return d.getUTCFullYear() * 12 + d.getUTCMonth() - 2; }
+function buyoutsKeyOf(ym) { const m = /^(\d{4})-(\d{2})$/.exec(String(ym || "")); return m ? (+m[1]) * 12 + (+m[2]) - 1 : null; }
+function buyoutsApplyFreeze(bankMonths, sheetMonths, prevSnap) {
+  const snap = prevSnap && prevSnap.bank ? prevSnap : { bank: {}, sheet: {} };
+  if (!snap.bank) snap.bank = {}; if (!snap.sheet) snap.sheet = {};
+  const cutoff = buyoutsFreezeCutoffKey(), seedKey = buyoutsKeyOf(BUYOUTS_SEED_UPTO);
+  // 1) снять снимок созревших живых месяцев (после сид-периода), если ещё не сняты
+  new Set(Object.keys(bankMonths).concat(Object.keys(sheetMonths))).forEach((ym) => {
+    const k = buyoutsKeyOf(ym);
+    if (k == null || k <= seedKey || k > cutoff) return;              // вне окна заморозки
+    if (!snap.bank[ym] && bankMonths[ym] && ((bankMonths[ym].deb || 0) > 0 || (bankMonths[ym].cre || 0) > 0)) snap.bank[ym] = Object.assign({}, bankMonths[ym]);
+    if (!snap.sheet[ym] && sheetMonths[ym] && ((sheetMonths[ym].deb || 0) > 0 || (sheetMonths[ym].cre || 0) > 0)) snap.sheet[ym] = Object.assign({}, sheetMonths[ym]);
+  });
+  // 2) подставить снимки — замороженные месяцы не даём пересчёту сдвинуть
+  Object.keys(snap.bank).forEach((ym) => { bankMonths[ym] = snap.bank[ym]; });
+  Object.keys(snap.sheet).forEach((ym) => { sheetMonths[ym] = snap.sheet[ym]; });
+  return snap;
+}
 async function runBuyoutsCheck(trigger) {
   if (_buyoutsRunning) return { skipped: true };
   if (!TBANK_TOKEN) return { error: "TBANK_API_TOKEN не задан" };
@@ -4973,6 +4996,8 @@ async function runBuyoutsCheck(trigger) {
     const ops = await tbFetchOps(acc, fromISO, tillISO);
     tbAggregateMonths(ops, bankMonths);
     const sheetMonths = await buyoutsSheetMonths().catch((e) => { console.error("BUYOUTS sheet:", e.message); return (prev && prev.sheet) || {}; });
+    // Заморозка созревших месяцев (снимок банк+таблица) — ДО расчёта «заморожено» и сохранения.
+    const snap = buyoutsApplyFreeze(bankMonths, sheetMonths, prev && prev.snap);
     // «Заморожено»: по МАЙ 2026 включительно — помесячный сид из сверенной таблички
     // Андрея (истина); с ИЮНЯ 2026 — по банку (июнь перепроверен: банк == его строка
     // до копейки). Банковская история до 06.2026 в frozen НЕ входит (расхождения
@@ -4983,7 +5008,7 @@ async function runBuyoutsCheck(trigger) {
     const result = {
       ts: Date.now(), trigger: trigger || "cron", account: "***" + String(acc).slice(-4),
       fullScanAt: (prev && prev.fullScanAt) || Date.now(),
-      bank: bankMonths, sheet: sheetMonths,
+      bank: bankMonths, sheet: sheetMonths, snap: snap, frozenMonths: Object.keys(snap.bank).sort(),
       seed: BUYOUTS_SEED, seedUpto: BUYOUTS_SEED_UPTO,
       frozen: Math.round((frozenDeb - frozenCre) * 100) / 100,
       frozenDeb: Math.round(frozenDeb * 100) / 100, frozenCre: Math.round(frozenCre * 100) / 100,
