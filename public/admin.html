@@ -1339,7 +1339,9 @@
             // градиентные разделители; без сетевых шрифтов.
             const wm = document.createElement("div");
             wm.setAttribute("aria-label", "VSC");
-            wm.style.cssText = "display:flex;align-items:center;gap:14px;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-weight:700;font-size:46px;line-height:1;letter-spacing:0;";
+            // ОКРУГЛЫЕ буквы: генерик ui-rounded → SF Pro Rounded на Apple (без сетевых шрифтов),
+            // фолбэк на системный гротеск где округлого нет. Чуть плотнее (800) — мягче и свежее.
+            wm.style.cssText = "display:flex;align-items:center;gap:14px;font-family:ui-rounded,'SF Pro Rounded','Nunito',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-weight:800;font-size:46px;line-height:1;letter-spacing:.01em;";
             ["V", "S", "C"].forEach(function (ch, i) {
               if (i > 0) { const d = document.createElement("span"); d.style.cssText = "width:2px;height:24px;border-radius:2px;background:linear-gradient(180deg,#00bff0,#0088c2);opacity:.5;"; wm.appendChild(d); }
               const s = document.createElement("span"); s.textContent = ch;
