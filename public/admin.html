@@ -1076,6 +1076,24 @@
     /* у правого края экрана — не вылазим за вьюпорт */
     .vsc-info.pop-right .vsc-info-pop { left: auto; right: -6px; transform: none; }
     .vsc-info.pop-right .vsc-info-pop::before { left: auto; right: 12px; transform: none; }
+    /* ── Графики и кнопки — «посексуальнее»: градиентные столбцы, мягкие радиусы, воздух ── */
+    body.vsc-skin .vsc-chart { padding: 16px 18px; margin-bottom: 14px; }
+    body.vsc-skin .vsc-tiles { gap: 14px; }
+    body.vsc-skin .vsc-bar {
+      background: linear-gradient(180deg, #43a9e0 0%, #2585c6 100%);
+      border-radius: 7px 7px 3px 3px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.28);
+      transition: height .3s var(--vsc-ease), filter .18s var(--vsc-ease);
+    }
+    body.vsc-skin .vsc-bar-col:hover .vsc-bar { filter: saturate(1.12) brightness(1.03); }
+    body.vsc-skin .vsc-bar.pos { background: linear-gradient(180deg, #5cb974 0%, #3f9557 100%); }
+    body.vsc-skin .vsc-bar.neg { background: linear-gradient(180deg, #e88585 0%, #d05a5a 100%); }
+    body.vsc-skin .rev-bar-pos { background: linear-gradient(180deg, #5cb974, #3f9557); border-radius: 7px 7px 2px 2px; }
+    body.vsc-skin .rev-bar-neg { background: linear-gradient(180deg, #e88585, #d05a5a); border-radius: 2px 2px 7px 7px; }
+    body.vsc-skin .vsc-bar-v { color: #4a5568; }
+    /* Кнопки истории/вторичные — мягкие «стеклянные» пилюли */
+    body.vsc-skin .vsc-dayrev-refresh { border-radius: 11px; }
+    body.vsc-skin .vsc-month select:focus { outline: none; border-color: var(--sk-accent); box-shadow: 0 0 0 3px rgba(0,151,202,.15); }
   </style>
 </head>
 <body>
@@ -2491,6 +2509,51 @@
         wrap.appendChild(bars);
         return wrap;
       }
+      // Знаковый столбчатый: ПОЛОЖИТЕЛЬНЫЕ вверх, ОТРИЦАТЕЛЬНЫЕ вниз в красную зону от нулевой
+      // линии (для Прибыли/Рентабельности — по просьбе Андрея). Если всё ≥ 0 — обычный vscBarChart.
+      function vscSignedBarChart(kpi, series) {
+        const vals = series.map((s) => (s.k && s.k[kpi.key] != null && !isNaN(s.k[kpi.key])) ? s.k[kpi.key] : null);
+        const present = vals.filter((v) => v != null);
+        if (!present.length || !present.some((v) => v < 0)) return vscBarChart(kpi, series); // нет минусов — как раньше
+        const wrap = document.createElement("div"); wrap.className = "vsc-chart";
+        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.innerHTML = kpi.labelHtml || escapeHtml(kpi.label); wrap.appendChild(h);
+        const maxPos = Math.max.apply(null, present.map((v) => Math.max(0, v))) || 0;
+        const maxNeg = Math.max.apply(null, present.map((v) => Math.max(0, -v))) || 0;
+        const H = 156, range = (maxPos + maxNeg) || 1;
+        let posZone = Math.round(maxPos / range * H); posZone = Math.min(H - 24, Math.max(24, posZone));
+        const negZone = H - posZone;
+        const posBarMax = Math.max(10, posZone - 16), negBarMax = Math.max(8, negZone - 14);
+        const bars = document.createElement("div"); bars.className = "vsc-bars";
+        series.forEach((s, i) => {
+          const v = vals[i];
+          const col = document.createElement("div"); col.className = "vsc-bar-col"; col.title = s.range || "";
+          const area = document.createElement("div"); area.style.cssText = "position:relative;width:100%;height:" + H + "px;";
+          const zero = document.createElement("div"); zero.style.cssText = "position:absolute;left:0;right:0;top:" + posZone + "px;height:1px;background:rgba(20,32,64,.15);"; area.appendChild(zero);
+          if (v != null) {
+            if (v >= 0) {
+              const bh = Math.max(2, Math.round(v / (maxPos || 1) * posBarMax));
+              const b = document.createElement("div"); b.className = "vsc-bar"; b.style.cssText = "position:absolute;left:50%;transform:translateX(-50%);width:34px;bottom:" + negZone + "px;height:" + bh + "px;"; area.appendChild(b);
+              const lb = document.createElement("div"); lb.className = "vsc-bar-v"; lb.style.cssText = "position:absolute;left:0;right:0;text-align:center;bottom:" + (negZone + bh + 2) + "px;"; lb.textContent = vscFmt(v, kpi.fmt).replace(" ₽", ""); area.appendChild(lb);
+            } else {
+              const bh = Math.max(2, Math.round((-v) / (maxNeg || 1) * negBarMax));
+              const b = document.createElement("div"); b.className = "vsc-bar neg"; b.style.cssText = "position:absolute;left:50%;transform:translateX(-50%);width:34px;top:" + posZone + "px;height:" + bh + "px;border-radius:3px 3px 7px 7px;"; area.appendChild(b);
+              const lb = document.createElement("div"); lb.className = "vsc-bar-v"; lb.style.cssText = "position:absolute;left:0;right:0;text-align:center;color:#b0263a;font-weight:700;top:" + (posZone + bh + 3) + "px;"; lb.textContent = vscFmt(v, kpi.fmt).replace(" ₽", ""); area.appendChild(lb);
+            }
+          }
+          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = s.x;
+          let prevV = null; for (let j = i - 1; j >= 0; j--) { if (vals[j] != null) { prevV = vals[j]; break; } }
+          const dl = document.createElement("div"); dl.className = "vsc-bar-d";
+          if (v != null && prevV != null && prevV !== 0) {
+            const pct = Math.round((v - prevV) / Math.abs(prevV) * 100);
+            if (pct === 0) { dl.className = "vsc-bar-d flat"; dl.textContent = "0%"; }
+            else { const goodChange = kpi.good === -1 ? (pct < 0) : (pct > 0); dl.className = "vsc-bar-d " + (goodChange ? "up" : "down"); dl.textContent = (pct > 0 ? "▲ " : "▼ ") + Math.abs(pct) + "%"; }
+          }
+          col.appendChild(area); col.appendChild(xl); col.appendChild(dl);
+          bars.appendChild(col);
+        });
+        wrap.appendChild(bars);
+        return wrap;
+      }
       // ── Линейный график для «Неделя»/«День» (по просьбе Андрея, 02.07): компактный,
       // весь ряд на одном экране (и на телефоне), ось Y — 3 ориентира, ось X — разреженные
       // подписи без нахлёста; наведение мыши / ведение пальцем — маркер + тултип с точным
@@ -3230,8 +3293,8 @@
         // Скрываем для руководителя с ограничением hideProfit (напр. Андрей Петров).
         if ((vscGran === "month" || vscGran === "year") && !vscHideProfit()) {
           const profSeries = (vscData.months || []).map((mm) => ({ x: vscShortMonth(mm.name), k: { profit: vscProfitOf(mm), rent: vscRentPct(mm) } }));
-          vscContent.appendChild(vscBarChart({ key: "profit", label: "Прибыль по месяцам, ₽", fmt: "money", good: 1 }, profSeries));
-          vscContent.appendChild(vscBarChart({ key: "rent", label: "Рентабельность (прибыль / выручка), %", fmt: "pct", good: 1 }, profSeries));
+          vscContent.appendChild(vscSignedBarChart({ key: "profit", label: "Прибыль по месяцам, ₽", fmt: "money", good: 1 }, profSeries));
+          vscContent.appendChild(vscSignedBarChart({ key: "rent", label: "Рентабельность (прибыль / выручка), %", fmt: "pct", good: 1 }, profSeries));
         }
       }
       // Вкладка «Ежемесячный контроль»: качество звонков/контактов + отзывы — всё по
