@@ -4882,6 +4882,11 @@ function tbAggregateMonths(ops, into) {
     if (!BUYOUTS_MERCH_RE.test(txt)) continue;
     const ym = String(o.authorizationDate || o.operationDate || "").slice(0, 7);
     if (!/^\d{4}-\d{2}$/.test(ym)) continue;
+    // ОТКЛОНЁННАЯ авторизация (🚫) НЕ имеет authCode — банк её не проводит и не учитывает.
+    // Раньше такие попадали в holdDeb/holdCre и завышали «холд» (июль 2026: два фантомных
+    // OneTwoTrip по 119 511,07 давали +239 022 и ломали сверку). Считаем ТОЛЬКО одобренные
+    // авторизации (с authCode); проведённые Transaction кодом не проверяем — они уже прошли.
+    if (st === "Authorization" && !o.authCode) continue;
     const amt = +o.accountAmount || 0;
     const m = months[ym] || (months[ym] = { deb: 0, cre: 0, holdDeb: 0, holdCre: 0 });
     const isCredit = String(o.typeOfOperation).toLowerCase() === "credit";
