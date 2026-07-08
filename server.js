@@ -4308,6 +4308,33 @@ async function fetchCbrHistory() {
   _cbrHistCache = hist; _cbrHistAt = now;
   return hist;
 }
+// Производственный календарь РФ (isdayoff.ru): строка на год, «1» = нерабочий день
+// (выходной ИЛИ праздник), «0» = рабочий. Кэш сутки, при недоступности — off:null
+// (фронт тогда подсвечивает только Сб/Вс по дню недели).
+let _dayOffCache = {}; // year -> { data, at }
+async function fetchDayOffYear(year) {
+  const c = _dayOffCache[year], now = Date.now();
+  if (c && (now - c.at) < 24 * 3600 * 1000) return c.data;
+  // arraybuffer: ответ — строка цифр, дефолтный axios распарсил бы её JSON'ом в число
+  const r = await axios.get("https://isdayoff.ru/api/getdata?year=" + year, { timeout: 10000, responseType: "arraybuffer" });
+  const s = Buffer.from(r.data).toString("latin1").trim();
+  if (!/^[01]+$/.test(s) || s.length < 365) throw new Error("isdayoff: неожиданный ответ");
+  _dayOffCache[year] = { data: s, at: now };
+  return s;
+}
+async function addDayOffFlags(hist) {
+  const years = Array.from(new Set(hist.map((h) => parseInt(String(h.date).split(".")[2], 10)).filter(Boolean)));
+  const map = {};
+  for (const y of years) { try { map[y] = await fetchDayOffYear(y); } catch (e) { console.error("isdayoff:", e && e.message); } }
+  hist.forEach((h) => {
+    const p = String(h.date).split(".");
+    const dd = +p[0], mm = +p[1], yy = +p[2], s = map[yy];
+    if (!s) { h.off = null; return; }
+    const idx = Math.round((Date.UTC(yy, mm - 1, dd) - Date.UTC(yy, 0, 1)) / 86400000);
+    h.off = s[idx] === "1";
+  });
+  return hist;
+}
 // Сводная история: дни ЦБ (eur/usd) + наш дневной лог выгодного курса евро banki.ru.
 // Клонируем кэш ЦБ (не мутируем), доливаем дни, которых нет в ЦБ, но есть в логе banki.
 function buildRatesHistory(cbrHist) {
@@ -4321,7 +4348,7 @@ function buildRatesHistory(cbrHist) {
 }
 app.get("/admin/api/vsc-rates-history", requireVscAccess, async (req, res) => {
   try {
-    const hist = buildRatesHistory(await fetchCbrHistory()); // ЦБ + дневной лог banki.ru
+    const hist = await addDayOffFlags(buildRatesHistory(await fetchCbrHistory())); // ЦБ + дневной лог banki.ru + флаг нерабочего дня
     return res.json({ success: true, history: hist });
   } catch (e) { return res.json({ success: false, history: [], error: e && e.message }); }
 });
@@ -4339,7 +4366,7 @@ app.get("/api/calc-rates", async (req, res) => {
 });
 app.get("/api/calc-rates-history", async (req, res) => {
   try {
-    const hist = buildRatesHistory(await fetchCbrHistory()); // ЦБ + дневной лог banki.ru
+    const hist = await addDayOffFlags(buildRatesHistory(await fetchCbrHistory())); // ЦБ + дневной лог banki.ru + флаг нерабочего дня
     return res.json({ success: true, history: hist });
   } catch (e) { return res.json({ success: false, history: [], error: e && e.message }); }
 });

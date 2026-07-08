@@ -3912,6 +3912,15 @@
           b7El.addEventListener("change", async function () { const v = pf(b7El); if (v > 0) { vscCalcRates.usdtExpense = v; try { await fetch("/admin/api/vsc-rates", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ usdtExpense: v }) }); } catch (_) {} } });
         }
         let calcHistLoaded = false;
+        // День недели к дате истории + признак «красного» дня: Сб/Вс всегда; будни — по
+        // производственному календарю (off с сервера); если календарь недоступен (off=null) — только Сб/Вс.
+        const DOW = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+        const dayMeta = (e) => {
+          const p = String(e.date).split(".");
+          const w = new Date(+p[2], +p[1] - 1, +p[0]).getDay();
+          const weekend = (w === 0 || w === 6);
+          return { name: DOW[w], red: (e.off === true) || (e.off == null && weekend) };
+        };
         // График динамики курсов за 30 дней (SVG, без библиотек): евро ЦБ + доллар ЦБ + евро banki.ru.
         function ratesChartHtml(hist) {
           const rows = hist.slice().reverse(); // хронологически
@@ -3963,7 +3972,7 @@
             const hist = (r && r.history) || [];
             if (!hist.length) { p.innerHTML = '<div class="vc-muted">Нет данных по истории.</div>'; calcHistLoaded = true; return; }
             let html = '<div class="vc-hist"><div class="vc-hist-h">Курсы за последние 30 дней (ЦБ РФ + banki.ru)</div><div class="vc-hist-scroll"><table><thead><tr><th>Дата</th><th>Актуализация в калькуляторе</th><th style="text-align:right;">Евро ЦБ</th><th style="text-align:right;">USDT / доллар</th><th style="text-align:right;">Евро banki.ru (выгодный)</th></tr></thead><tbody>';
-            hist.forEach((e, i) => { html += '<tr style="' + (i ? "border-top:1px solid rgba(0,0,0,.05);" : "") + '"><td>' + escapeHtml(e.date) + '</td><td style="color:#8a8a8e;">' + (e.time ? escapeHtml(e.date) + " " + escapeHtml(e.time) : "—") + '</td><td style="text-align:right;">' + fr(e.eur, 2) + '</td><td style="text-align:right;">' + fr(e.usd, 2) + '</td><td style="text-align:right;">' + (e.bankiEur != null ? fr(e.bankiEur, 2) + " ₽" : "—") + '</td></tr>'; });
+            hist.forEach((e, i) => { const m = dayMeta(e); html += '<tr style="' + (i ? "border-top:1px solid rgba(0,0,0,.05);" : "") + '"><td' + (m.red ? ' style="color:#b0263a;font-weight:600;"' : '') + '>' + escapeHtml(e.date) + ', ' + m.name + '</td><td style="color:#8a8a8e;">' + (e.time ? escapeHtml(e.date) + " " + escapeHtml(e.time) : "—") + '</td><td style="text-align:right;">' + fr(e.eur, 2) + '</td><td style="text-align:right;">' + fr(e.usd, 2) + '</td><td style="text-align:right;">' + (e.bankiEur != null ? fr(e.bankiEur, 2) + " ₽" : "—") + '</td></tr>'; });
             html += '</tbody></table></div>' + ratesChartHtml(hist) + '</div>';
             p.innerHTML = html; calcHistLoaded = true;
           } catch (e) { p.innerHTML = '<div class="vc-muted" style="color:#c0392b;">Не удалось загрузить историю.</div>'; }
