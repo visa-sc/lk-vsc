@@ -3013,13 +3013,8 @@
         if (!vscData && currentRole() !== "manager") return;
         vscContent.innerHTML = "";
         const isMgr = currentRole() === "manager";
-        if (!isMgr) {
-          const head = document.createElement("div"); head.className = "vsc-head";
-          const t = document.createElement("div"); t.style.cssText = "display:flex;align-items:center;";
-          t.innerHTML = '<h2 style="margin:0;font-size:18px;color:#161d45;">Показатели визового агентства</h2>';
-          t.appendChild(vscInfo("<b>Источник данных</b><br>Google-таблица агентства. Обновляется автоматически, кэш ~15 минут. Старые месяцы зафиксированы снимком и не меняются."));
-          head.appendChild(t); vscContent.appendChild(head);
-        }
+        // Заголовок «Показатели визового агентства» убран (по просьбе Андрея) — «i» с
+        // источником данных перенесён в конец строки вкладок ниже.
 
         // Вкладки /vsc. Руководителям — только «Калькулятор ВНЖ» (+ «Бот VFS» при праве vfsbot); админу — все.
         // Вкладка «Бот VFS» ВРЕМЕННО скрыта у ВСЕХ, включая админа (просьба Андрея 04.07.2026,
@@ -3044,6 +3039,12 @@
           b.addEventListener("click", () => { vscTab = tb; renderVsc(); });
           maintabs.appendChild(b);
         });
+        if (!isMgr) {
+          // «i» с источником данных — аккуратно в конце строки вкладок (заголовок убран).
+          const info = vscInfo("<b>Источник данных</b><br>Google-таблица агентства. Обновляется автоматически, кэш ~15 минут. Старые месяцы зафиксированы снимком и не меняются.");
+          info.style.alignSelf = "center"; info.style.marginLeft = "4px"; info.style.flex = "0 0 auto";
+          maintabs.appendChild(info);
+        }
         vscContent.appendChild(maintabs);
         // Блок «Сделки без задач» относится к Дашборду — на остальных вкладках прячем.
         // Для руководителя с персональным доступом (myVscRestrict) админские блоки
@@ -3484,7 +3485,7 @@
           const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
           const curYm = nowMsk.getUTCFullYear() + "-" + String(nowMsk.getUTCMonth() + 1).padStart(2, "0");
           const prevYm = (function () { const dP = new Date(Date.UTC(nowMsk.getUTCFullYear(), nowMsk.getUTCMonth() - 1, 1)); return dP.getUTCFullYear() + "-" + String(dP.getUTCMonth() + 1).padStart(2, "0"); })();
-          const td = (html, extra) => '<td style="padding:7px 8px;white-space:nowrap;' + (extra || "") + '">' + html + '</td>';
+          const td = (html, extra) => '<td style="padding:5px 8px;white-space:nowrap;' + (extra || "") + '">' + html + '</td>';
           const badge = (txt, col, bg) => '<span style="font-size:10px;font-weight:700;color:' + col + ';background:' + bg + ';border-radius:6px;padding:2px 6px;">' + txt + '</span>';
           // ── Секция 1: движение денег (сид + банк) ──
           const bankYms = Object.keys(bank).filter((ym) => ym > seedUpto).sort();
@@ -3509,11 +3510,11 @@
             const trOpen = '<tr class="' + (recent ? "" : "buyoutsHist2") + '" style="border-top:1px solid #f0eef5;vertical-align:top;' + (recent ? "" : "display:none;") + '">';
             if (ym <= seedUpto) {
               return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>')
-                + '<td style="padding:7px 8px;color:#2c7a43;font-weight:600;">✓ сверено вручную — всё ок</td></tr>';
+                + '<td style="padding:5px 8px;color:#2c7a43;font-weight:600;">✓ сверено вручную — всё ок</td></tr>';
             }
             const b = bank[ym] || {}, s = sheet[ym] || {};
             const bv = b.deb, sv = s.deb, hold = b.holdDeb || 0;
-            if (bv == null && sv == null) return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>') + '<td style="padding:7px 8px;color:#9aa0ab;">—</td></tr>';
+            if (bv == null && sv == null) return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>') + '<td style="padding:5px 8px;color:#9aa0ab;">—</td></tr>';
             const delta = (bv || 0) - (sv || 0);
             const ok = Math.abs(delta) <= 2000; // до 2000 ₽ — мелочь, считаем сошедшимся (зелёным); выше — красным
             const sheetOver = -delta; // насколько таблица больше банка
@@ -3522,7 +3523,7 @@
             // Аккуратная сетка «в столбик»: метка → значение, без нагромождения в строку.
             const gL = (t) => '<span style="color:#9aa0ab;">' + t + '</span>';
             const gV = (t, color) => '<span style="font-weight:700;color:' + (color || '#1d2330') + ';white-space:nowrap;">' + t + '</span>';
-            let grid = '<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 18px;align-items:baseline;font-size:12.5px;max-width:340px;">';
+            let grid = '<div style="display:grid;grid-template-columns:auto 1fr;gap:2px 14px;align-items:baseline;font-size:12.5px;max-width:300px;">';
             grid += gL('Банк') + gV(money2(bv));
             grid += gL('Таблица') + gV(money2(sv));
             if (ok) {
@@ -3538,27 +3539,28 @@
             }
             grid += '</div>' + frozenNote;
             return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>')
-              + '<td style="padding:7px 8px;">' + grid + '</td></tr>';
+              + '<td style="padding:5px 8px;">' + grid + '</td></tr>';
           }).join("");
           const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
           const histBtn = (id, n) => (n > 0 ? '<button type="button" id="' + id + '" class="vsc-dayrev-refresh" style="margin-top:8px;background:#eef2f7;color:#3a4356;border-color:#d7dce4;">Показать историю (' + n + ')</button>' : "");
+          const thL = 'text-align:left;padding:5px 8px;';
           box.innerHTML =
-            '<div class="vsc-chart-h" style="margin-bottom:8px;">1 · Движение денег в выкупах (Turkish + OneTwoTrip, р/с)</div>'
-            + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;">'
-            + '<div class="vsc-tile" style="flex:0 1 auto;max-width:360px;background:#fdf6ec;border-color:#f0dfc0;">'
-            +   '<div class="vsc-tile-l" id="frozenL">Заморожено в выкупах сейчас</div>'
-            +   '<div class="vsc-tile-v">' + money(d.frozen) + '</div>'
-            + '</div></div>'
+            // Слим-плашка «Заморожено» — одной компактной строкой (label + число), а не крупной карточкой.
+            '<div style="display:inline-flex;align-items:baseline;gap:12px;flex-wrap:wrap;background:#fdf6ec;border:1px solid #f0dfc0;border-radius:14px;padding:9px 16px;margin-bottom:12px;">'
+            +   '<span id="frozenL" style="font-size:12px;color:#95824f;font-weight:600;">Заморожено в выкупах сейчас</span>'
+            +   '<span style="font-size:21px;font-weight:800;color:#1d2330;letter-spacing:-.01em;">' + money(d.frozen) + '</span>'
+            + '</div>'
+            + '<div class="vsc-chart-h" style="margin-bottom:6px;">1 · Движение денег в выкупах (Turkish + OneTwoTrip, р/с)</div>'
             + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
-            + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 8px;">Период</th><th style="text-align:left;padding:7px 8px;">Расход</th><th style="text-align:left;padding:7px 8px;">Приход</th></tr></thead>'
+            + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="' + thL + '">Период</th><th style="' + thL + '">Расход</th><th style="' + thL + '">Приход</th></tr></thead>'
             + '<tbody>' + moveHtml + '</tbody></table></div>'
             + histBtn("buyoutsHistBtn1", moveRows.filter((r) => !(r.ym && r.ym >= prevYm)).length)
-            + '<div class="vsc-chart-h" id="buyoutsCmpH" style="margin:18px 0 8px;">2 · Сверка расхода по р/с с гугл-таблицей выкупов (Авиа + Отель)</div>'
+            + '<div class="vsc-chart-h" id="buyoutsCmpH" style="margin:14px 0 6px;">2 · Сверка расхода по р/с с гугл-таблицей выкупов (Авиа + Отель)</div>'
             + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
-            + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 8px;">Месяц</th><th style="text-align:left;padding:7px 8px;">Расход по р/с: банк / таблица</th></tr></thead>'
+            + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="' + thL + '">Месяц</th><th style="' + thL + '">Расход по р/с: банк / таблица</th></tr></thead>'
             + '<tbody>' + cmpHtml + '</tbody></table></div>'
             + histBtn("buyoutsHistBtn2", cmpYms.filter((ym) => ym < prevYm).length)
-            + '<div style="font-size:11.5px;color:#8a90a0;margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">обновлено: ' + escapeHtml(upd) + ' МСК <button type="button" id="buyoutsRun" class="vsc-dayrev-refresh" style="margin-top:0;">↻ Обновить</button></div>';
+            + '<div style="font-size:11.5px;color:#8a90a0;margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">обновлено: ' + escapeHtml(upd) + ' МСК <button type="button" id="buyoutsRun" class="vsc-dayrev-refresh" style="margin-top:0;">↻ Обновить</button></div>';
           const cmpH = box.querySelector("#buyoutsCmpH"); if (cmpH) cmpH.appendChild(vscInfo("<b>Как считается</b><br>Банк: только проведённые операции (без холдов), месяц — по дате авторизации. Таблица: вкладки «Авиа»+«Отель», только «Расчетный счет», по сумме снятия. Сходится, если Δ ≤ 2000 ₽ (зелёным); выше — красным. Обновляется ежедневно в 00:10 МСК. Старые месяцы зафиксированы снимком (🔒)."));
           const frozenL = box.querySelector("#frozenL"); if (frozenL) frozenL.appendChild(vscInfo("<b>Заморожено в выкупах</b><br>Расход " + money(d.frozenDeb) + " − приход " + money(d.frozenCre) + ". По май 2026 — сверено вручную, с июня — по банку. Счёт " + escapeHtml(d.account || "") + "."));
           const b = box.querySelector("#buyoutsRun"); if (b) b.addEventListener("click", runNow);
