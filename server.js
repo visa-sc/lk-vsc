@@ -5115,25 +5115,25 @@ async function acqFetchEntity(token) {
   const acc = await tbAccRuble(token);
   if (!acc) throw new Error("рублёвый счёт не найден");
   const till = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10) + "T00:00:00Z";
-  const from = new Date(Date.now() - 40 * 86400000).toISOString().slice(0, 10) + "T00:00:00Z";
+  const from = "2026-01-01T00:00:00Z"; // ПОМЕСЯЧНО с начала 2026 (по просьбе Андрея)
   let cursor = "", ops = [];
-  for (let p = 0; p < 200; p++) {
+  for (let p = 0; p < 400; p++) {
     const j = await tbGetT(token, "https://business.tbank.ru/openapi/api/v1/statement?accountNumber=" + acc + "&from=" + from + "&till=" + till + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
     ops = ops.concat(j.operations || []);
     if (!j.nextCursor || !(j.operations || []).length) break;
     cursor = j.nextCursor; await new Promise((s) => setTimeout(s, 250));
   }
-  const days = {};
-  const D = (d) => days[d] || (days[d] = { torgT: 0, torgC: 0, inetG: 0, inetC: 0 });
+  const months = {}; // "YYYY-MM" → {torgT,torgC,inetG,inetC}
+  const M = (ym) => months[ym] || (months[ym] = { torgT: 0, torgC: 0, inetG: 0, inetC: 0 });
   for (const o of ops) {
     if (String(o.operationStatus) !== "Transaction") continue;
     const p = String(o.payPurpose || o.description || ""), amt = +o.accountAmount || 0;
     const cr = String(o.typeOfOperation).toLowerCase() === "credit";
-    if (cr && /зачисление средств по терминалам эквайринга/i.test(p)) { const d = acqDateFrom(p, "эквайринга"); if (d) D(d).torgT += amt; }
-    else if (!cr && /комисси\S* за операции по терминалам эквайринга/i.test(p)) { const d = acqDateFrom(p, "эквайринга"); if (d) D(d).torgC += amt; }
-    else if (cr && /перевод средств по договору .* по реестру операций/i.test(p)) { const c = acqComm(p), d = acqDateFrom(p, "операций"); if (c != null && d) { D(d).inetC += c; D(d).inetG += amt + c; } }
+    if (cr && /зачисление средств по терминалам эквайринга/i.test(p)) { const d = acqDateFrom(p, "эквайринга"); if (d) M(d.slice(0, 7)).torgT += amt; }
+    else if (!cr && /комисси\S* за операции по терминалам эквайринга/i.test(p)) { const d = acqDateFrom(p, "эквайринга"); if (d) M(d.slice(0, 7)).torgC += amt; }
+    else if (cr && /перевод средств по договору .* по реестру операций/i.test(p)) { const c = acqComm(p), d = acqDateFrom(p, "операций"); if (c != null && d) { const m = M(d.slice(0, 7)); m.inetC += c; m.inetG += amt + c; } }
   }
-  return days;
+  return { months };
 }
 async function runAcquiring(trigger) {
   if (_acqRunning) return { skipped: true };

@@ -2664,15 +2664,14 @@
       function vscMarketChart(rows) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
         const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = "Рынок визовых услуг (модель) и наша доля — по месяцам";
-        h.appendChild(vscInfo("<b>Как считается</b><br>Рынок — модельная оценка (июль 2026): РФ 4,5 млрд ₽/год, МСК 2,1, СПб 0,6; помесячно — с сезонностью визовых подач. Месяц появляется после его календарного окончания. Наша доля = выручка месяца / модельный рынок (по городам — выручка филиалов из amoCRM). Наведите на столбец — полная разбивка."));
+        h.appendChild(vscInfo("<b>Как читать</b><br>Высота столбца — весь рынок РФ (млн ₽); число сверху — наша доля рынка РФ; числа в сегментах МСК/СПб — наша доля этих рынков.<br><br><b>Как считается</b><br>Рынок — модельная оценка (июль 2026): РФ 4,5 млрд ₽/год, МСК 2,1, СПб 0,6; помесячно — с сезонностью визовых подач. Месяц появляется после его календарного окончания. Наша доля = выручка месяца / модельный рынок (по городам — выручка филиалов из amoCRM)."));
         wrap.appendChild(h);
         if (!rows.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет закрытых месяцев для расчёта."; wrap.appendChild(e); return wrap; }
         const COL_MSK = "#e8843b", COL_SPB = "#2e7d52", COL_REST = "#a9c7e4", COL_SHARE = "#8e44ad";
         const leg = document.createElement("div");
         leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#5a626f;margin:2px 0 8px;";
         const legItem = (color, txt) => '<span style="white-space:nowrap;"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + color + ';vertical-align:-1px;margin-right:5px;"></i>' + txt + '</span>';
-        leg.innerHTML = legItem(COL_REST, "Остальная РФ") + legItem(COL_MSK, "Рынок МСК") + legItem(COL_SPB, "Рынок СПб")
-          + '<span style="flex-basis:100%;color:#8e44ad;font-weight:600;">Высота столбца — весь рынок РФ (млн ₽); число сверху — наша доля рынка РФ; числа в сегментах МСК/СПб — наша доля этих рынков</span>';
+        leg.innerHTML = legItem(COL_REST, "Остальная РФ") + legItem(COL_MSK, "Рынок МСК") + legItem(COL_SPB, "Рынок СПб");
         wrap.appendChild(leg);
         const money1 = (v) => (Math.round(v * 10) / 10).toLocaleString("ru-RU");
         const fmtS = (v) => (Math.round(v * 100) / 100).toLocaleString("ru-RU") + "%";
@@ -2733,87 +2732,70 @@
       // Компактный график комиссий эквайринга (только админ): 4 линии %-комиссии по дням
       // за 30 дней — ООО торговый/интернет, ИП торговый/интернет. Наведение/палец → тултип
       // со значениями всех линий за день. data = { ooo:{ "ГГГГ-ММ-ДД":{torgT,torgC,inetG,inetC} }, ip:{…} }.
+      // МЕСЯЧНЫЕ столбцы комиссий эквайринга (как «доля рынка»): высота = ОБЩИЙ усреднённый
+      // % комиссии за месяц; 4 сегмента по весу ОБОРОТА; число в сегменте — конкретный %
+      // ЭТОГО эквайринга; число сверху — общий %. data.ooo/.ip = { months:{ "YYYY-MM":{...} } }.
       function vscAcqChart(data) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
-        const SERIES = [
+        const TYPES = [
           { key: "oooTorg", name: "ООО торговый", color: "#3589BD", src: "ooo", kind: "torg" },
           { key: "oooInet", name: "ООО интернет", color: "#8e44ad", src: "ooo", kind: "inet" },
           { key: "ipTorg", name: "ИП торговый", color: "#e8843b", src: "ip", kind: "torg" },
           { key: "ipInet", name: "ИП интернет", color: "#2e7d52", src: "ip", kind: "inet" }
         ];
-        const pctOf = (rec, kind) => { if (!rec) return null; if (kind === "torg") return rec.torgT > 0 ? rec.torgC / rec.torgT * 100 : null; return rec.inetG > 0 ? rec.inetC / rec.inetG * 100 : null; };
-        // последние 30 календарных дней (по бизнес-дате «от ДД.ММ»)
-        const days = [];
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        for (let i = 29; i >= 0; i--) { const d = new Date(today.getTime() - i * 86400000); const k = d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); days.push({ k: k, x: ("0" + d.getDate()).slice(-2) + "." + ("0" + (d.getMonth() + 1)).slice(-2) }); }
-        const avail = SERIES.filter((s) => data && data[s.src]); // ИП без токена — линий нет
-        // значения по дням
-        const vals = {}; avail.forEach((s) => { vals[s.key] = days.map((d) => pctOf(data[s.src][d.k], s.kind)); });
-        const all = []; avail.forEach((s) => vals[s.key].forEach((v) => { if (v != null) all.push(v); }));
-        // 30-дневный агрегат (Σкомис/Σоборот) — в легенду
-        const agg = {}; avail.forEach((s) => { let c = 0, b = 0; days.forEach((d) => { const r = data[s.src][d.k]; if (r) { if (s.kind === "torg") { c += r.torgC || 0; b += r.torgT || 0; } else { c += r.inetC || 0; b += r.inetG || 0; } } }); agg[s.key] = b > 0 ? c / b * 100 : null; });
-        // легенда с агрегатом
-        const leg = document.createElement("div");
-        leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#5a626f;margin:0 0 8px;";
-        leg.innerHTML = avail.map((s) => '<span style="white-space:nowrap;"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + s.color + ';vertical-align:-1px;margin-right:5px;"></i>' + s.name + (agg[s.key] != null ? ' · <b>' + (Math.round(agg[s.key] * 100) / 100).toLocaleString("ru-RU") + '%</b> за 30 дн.' : '') + '</span>').join("");
-        wrap.appendChild(leg);
-        if (!all.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных по эквайрингу за 30 дней."; wrap.appendChild(e); return wrap; }
-        const VW = 1000, VH = 150, PT = 10, PB = 134, PL = 8, PR = 8;
-        let vMax = Math.max.apply(null, all) * 1.1, vMin = Math.min.apply(null, all) * 0.9;
-        if (vMax === vMin) { vMax += 1; vMin = Math.max(0, vMin - 1); }
-        const X = (i) => PL + i * (VW - PL - PR) / (days.length - 1);
-        const Y = (v) => PT + (1 - (v - vMin) / (vMax - vMin)) * (PB - PT);
-        const box = document.createElement("div"); box.style.cssText = "position:relative;height:" + VH + "px;touch-action:pan-y;";
-        const gl = (y) => '<line x1="0" x2="' + VW + '" y1="' + y + '" y2="' + y + '" stroke="#e9edf3" stroke-width="1" vector-effect="non-scaling-stroke"/>';
-        let svg = gl(PT) + gl((PT + PB) / 2) + gl(PB);
-        avail.forEach((s) => {
-          let d = "", pen = false;
-          vals[s.key].forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? " L" : " M") + X(i).toFixed(1) + " " + Y(v).toFixed(1); pen = true; });
-          if (d) svg += '<path d="' + d.trim() + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>';
-        });
-        const yl = (top, txt) => '<div style="position:absolute;left:6px;top:' + top + 'px;font-size:9.5px;color:#9aa0ab;background:rgba(255,255,255,.75);padding:0 3px;border-radius:4px;">' + txt + '</div>';
+        const avail = TYPES.filter((t) => data && data[t.src] && data[t.src].months);
+        const baseOf = (t, ym) => { const r = data[t.src].months[ym]; if (!r) return 0; return t.kind === "torg" ? (r.torgT || 0) : (r.inetG || 0); };
+        const commOf = (t, ym) => { const r = data[t.src].months[ym]; if (!r) return 0; return t.kind === "torg" ? (r.torgC || 0) : (r.inetC || 0); };
+        const set = {}; avail.forEach((t) => Object.keys(data[t.src].months).forEach((ym) => { if (ym >= "2026-01") set[ym] = 1; }));
+        const yms = Object.keys(set).sort();
+        const MONTHS_RU = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
         const fmtP = (v) => (Math.round(v * 100) / 100).toLocaleString("ru-RU") + "%";
-        box.innerHTML = '<svg width="100%" height="' + VH + '" viewBox="0 0 ' + VW + ' ' + VH + '" preserveAspectRatio="none" style="display:block;">' + svg + '</svg>'
-          + yl(2, fmtP(vMax)) + yl((PT + PB) / 2 - 7, fmtP((vMax + vMin) / 2)) + yl(PB - 6, fmtP(vMin))
-          + '<div class="vsc-line-marker" style="position:absolute;width:8px;height:8px;border-radius:50%;background:#fff;border:2px solid #3589BD;display:none;transform:translate(-50%,-50%);pointer-events:none;"></div>'
-          + '<div class="vsc-line-tip" style="position:absolute;display:none;background:#1d2433;color:#fff;font-size:11px;line-height:1.5;padding:7px 10px;border-radius:8px;white-space:nowrap;pointer-events:none;z-index:5;box-shadow:0 4px 14px rgba(20,30,50,.25);"></div>';
-        wrap.appendChild(box);
-        const xAxis = document.createElement("div");
-        xAxis.style.cssText = "display:flex;justify-content:space-between;font-size:9.5px;color:#9aa0ab;margin-top:3px;";
-        const nLbl = 6, idxs = []; for (let j = 0; j < nLbl; j++) idxs.push(Math.round(j * (days.length - 1) / (nLbl - 1)));
-        xAxis.innerHTML = Array.from(new Set(idxs)).map((i) => '<span>' + days[i].x + '</span>').join("");
-        wrap.appendChild(xAxis);
-        const marker = box.querySelector(".vsc-line-marker"), tip = box.querySelector(".vsc-line-tip");
-        const showAt = (clientX) => {
-          const r = box.getBoundingClientRect(); if (!r.width) return;
-          const relVx = (clientX - r.left) / r.width * VW;
-          let best = 0, bd = Infinity;
-          for (let i = 0; i < days.length; i++) { const dd = Math.abs(X(i) - relVx); if (dd < bd) { bd = dd; best = i; } }
-          const px = X(best) / VW * r.width;
-          marker.style.display = "block"; marker.style.left = px + "px"; marker.style.top = PT + "px";
-          let html = '<span style="color:#aab3c5;">' + days[best].x + '</span>';
-          avail.forEach((s) => { const v = vals[s.key][best]; html += '<br><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + s.color + ';margin-right:5px;"></i>' + s.name + ': <b>' + (v != null ? fmtP(v) : "—") + '</b>'; });
-          tip.innerHTML = html; tip.style.display = "block";
-          const tw = tip.offsetWidth;
-          tip.style.left = Math.max(2, Math.min(r.width - tw - 2, px - tw / 2)) + "px";
-          tip.style.top = "2px";
-        };
-        const hide = () => { marker.style.display = "none"; tip.style.display = "none"; };
-        box.addEventListener("mousemove", (e) => showAt(e.clientX));
-        box.addEventListener("mouseleave", hide);
-        box.addEventListener("touchstart", (e) => { if (e.touches && e.touches[0]) showAt(e.touches[0].clientX); }, { passive: true });
-        box.addEventListener("touchmove", (e) => { if (e.touches && e.touches[0]) showAt(e.touches[0].clientX); }, { passive: true });
-        box.addEventListener("touchend", hide);
+        const rows = yms.map((ym) => {
+          let base = 0, comm = 0; const seg = {};
+          avail.forEach((t) => { const b = baseOf(t, ym), c = commOf(t, ym); base += b; comm += c; seg[t.key] = { base: b, pct: b > 0 ? c / b * 100 : null }; });
+          return { ym: ym, x: MONTHS_RU[+ym.slice(5, 7) - 1], overall: base > 0 ? comm / base * 100 : null, base: base, seg: seg };
+        });
+        const leg = document.createElement("div");
+        leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#5a626f;margin:0 0 10px;";
+        leg.innerHTML = avail.map((t) => '<span style="white-space:nowrap;"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + t.color + ';vertical-align:-1px;margin-right:5px;"></i>' + t.name + '</span>').join("");
+        wrap.appendChild(leg);
+        const present = rows.filter((r) => r.overall != null);
+        if (!present.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных по эквайрингу."; wrap.appendChild(e); return wrap; }
+        const maxO = Math.max.apply(null, present.map((r) => r.overall)) || 1;
+        const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.overflow = "visible"; bars.style.height = "auto"; bars.style.paddingTop = "6px";
+        rows.forEach((r) => {
+          const col = document.createElement("div"); col.className = "vsc-bar-col";
+          col.title = r.x + " · общий " + (r.overall != null ? fmtP(r.overall) : "—") + "\n" + avail.map((t) => t.name + ": " + (r.seg[t.key].pct != null ? fmtP(r.seg[t.key].pct) : "—")).join("\n");
+          const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = r.overall != null ? fmtP(r.overall) : "";
+          const bar = document.createElement("div"); bar.className = "vsc-bar vsc-bar-stack";
+          const barPx = r.overall != null ? Math.max(2, Math.round(r.overall / maxO * 120)) : 2;
+          bar.style.height = barPx + "px";
+          if (r.overall != null && r.base > 0) {
+            avail.forEach((t) => { // column-reverse → первый добавленный снизу
+              const s = r.seg[t.key]; if (!s || s.base <= 0) return;
+              const frac = s.base / r.base;
+              const d = document.createElement("div");
+              d.style.cssText = "width:100%;height:" + (frac * 100) + "%;background:" + t.color + ";display:flex;align-items:center;justify-content:center;overflow:hidden;";
+              d.title = t.name + ": " + (s.pct != null ? fmtP(s.pct) : "—");
+              if (s.pct != null && frac * barPx >= 11) { const sp = document.createElement("span"); sp.textContent = fmtP(s.pct); sp.style.cssText = "font-size:8px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.25);"; d.appendChild(sp); }
+              bar.appendChild(d);
+            });
+          }
+          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = r.x;
+          col.appendChild(vl); col.appendChild(bar); col.appendChild(xl);
+          bars.appendChild(col);
+        });
+        wrap.appendChild(bars);
         return wrap;
       }
       // Блок «Комиссии эквайринга» (только админ): raw fetch (не apiFetch — 401 не выкидывает).
       let _acqPoll = null;
       function vscAcquiringBlock() {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
-        wrap.innerHTML = '<div class="vsc-chart-h">Комиссии эквайринга — % по дням (30 дней)</div><div class="loading-state">Загружаем из банка…</div>';
+        wrap.innerHTML = '<div class="vsc-chart-h">Комиссии эквайринга — % по месяцам</div><div class="loading-state">Загружаем из банка…</div>';
         const render = (j) => {
-          wrap.innerHTML = '<div class="vsc-chart-h">Комиссии эквайринга — % по дням (30 дней)</div>';
-          wrap.querySelector(".vsc-chart-h").appendChild(vscInfo("<b>Как считается</b><br>Торговый: комиссия «по терминалам эквайринга» ÷ оборот. Интернет: комиссия из «реестра операций» ÷ (приход + комиссия). Только проведённые операции; СБП-терминал и удержания не учитываются. Обновляется ежедневно в 00:20 МСК."));
+          wrap.innerHTML = '<div class="vsc-chart-h">Комиссии эквайринга — % по месяцам</div>';
+          wrap.querySelector(".vsc-chart-h").appendChild(vscInfo("<b>Как читать</b><br>Высота столбца — ОБЩИЙ усреднённый % комиссии за месяц (он же — число сверху). Сегменты — 4 эквайринга по весу оборота; число в сегменте — конкретный % ЭТОГО эквайринга.<br><br><b>Как считается</b><br>Торговый: комиссия «по терминалам эквайринга» ÷ оборот. Интернет: комиссия из «реестра операций» ÷ (приход + комиссия). Только проведённые операции; СБП-терминал и удержания не учитываются. Помесячно с января 2026. Обновляется ежедневно в 00:20 МСК."));
           const data = j && j.data;
           if (!data || (!data.ooo && !data.ip)) {
             const e = document.createElement("div"); e.className = "vsc-empty";
@@ -2852,7 +2834,7 @@
           wrap.appendChild(btn);
         };
         fetch("/admin/api/vsc/acquiring", { headers: { Authorization: "Bearer " + getToken() } }).then((r) => r.json()).then(render).catch(function () {
-          wrap.innerHTML = '<div class="vsc-chart-h">Комиссии эквайринга — % по дням (30 дней)</div><div class="vsc-empty">Не удалось загрузить.</div>';
+          wrap.innerHTML = '<div class="vsc-chart-h">Комиссии эквайринга — % по месяцам</div><div class="vsc-empty">Не удалось загрузить.</div>';
         });
         return wrap;
       }
@@ -3116,17 +3098,20 @@
           else { for (let i = series.length - 1; i >= 0; i--) { const s = series[i]; if (!s || !s.k || s.k.cpl == null || isNaN(s.k.cpl)) continue; if (inProgress(s)) continue; cand = s; break; } }
           if (cand && cand.k && cand.k.cpl != null && cand.k.cpl > CPL_LIMIT) cplAlert = { x: cand.x, v: cand.k.cpl };
         })();
-        const hasWarn = attn.length || cplAlert;
+        // Месячные отклонения (attn) — ТОЛЬКО в разрезе «Месяц» (по просьбе Андрея: показатель
+        // в своём разделе). CPL-алерт уже адаптивен (день/неделя/месяц) — остаётся во всех.
+        const showAttn = (vscGran === "month") && attn.length;
+        const hasWarn = showAttn || cplAlert;
         const ab = document.createElement("div"); ab.className = "vsc-attn " + (hasWarn ? "warn" : "ok");
         if (hasWarn) {
           let h = "";
-          if (attn.length) {
+          if (showAttn) {
             h += '<div class="vsc-attn-h">⚠️ На что обратить внимание (ухудшилось за последний месяц, к сопоставимому периоду прошлого):</div><ul>';
             attn.forEach((a) => { h += "<li>" + escapeHtml(a.msg) + "</li>"; });
             h += "</ul>";
           }
           if (cplAlert) {
-            h += '<div class="vsc-attn-h"' + (attn.length ? ' style="margin-top:9px;"' : '') + '>⚠️ CPL выше лимита 1100 ₽ (' + granWord + ', ' + escapeHtml(cplAlert.x) + '): <b>' + vscFmt(cplAlert.v, "money") + '</b></div>';
+            h += '<div class="vsc-attn-h"' + (showAttn ? ' style="margin-top:9px;"' : '') + '>⚠️ CPL выше лимита 1100 ₽ (' + granWord + ', ' + escapeHtml(cplAlert.x) + '): <b>' + vscFmt(cplAlert.v, "money") + '</b></div>';
           }
           ab.innerHTML = h;
         } else {
@@ -3319,6 +3304,12 @@
       // месяцам, без плиток-цифр. Не зависит от переключателя гранулярности дашборда.
       function renderVscMonthly() {
         const monthSeries = (vscData.months || []).map((mm) => ({ x: (mm.name || "").replace(" 2026", "").trim(), k: mm.total || {} }));
+        const short = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
+        // ── Возвраты — по месяцам (по просьбе Андрея: САМЫЙ ВЕРХ раздела) ──
+        const retSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: mm.total ? { returnsPct: mm.total.returnsPct, retUslugi: mm.total.retUslugi, ourPct: mm.total.returnsOurPct, notOurPct: mm.total.returnsNotOurPct, unknownPct: mm.total.returnsUnknownPct } : {} }));
+        const h5 = document.createElement("div"); h5.className = "ref-sec-h"; h5.textContent = "Возвраты — по месяцам";
+        vscContent.appendChild(h5);
+        vscContent.appendChild(vscReturnsStackedChart(retSeries));
         // ── Выручка по городам (СПб/МСК) — по месяцам, из amoCRM (ночной расчёт 05:00) ──
         const hCity = document.createElement("div"); hCity.className = "ref-sec-h"; hCity.textContent = "Выручка по городам — по месяцам (2026)";
         vscContent.appendChild(hCity);
@@ -3339,7 +3330,6 @@
         const h2 = document.createElement("div"); h2.className = "ref-sec-h"; h2.style.marginTop = "22px"; h2.textContent = "Отзывы клиентов — по месяцам (2026)";
         vscContent.appendChild(h2);
         const rev = vscData.reviews || [];
-        const short = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
         const msk = rev.map((r) => ({ x: short(r.name), pos: r.mskPos, neg: r.mskNeg }));
         const spb = rev.map((r) => ({ x: short(r.name), pos: r.spbPos, neg: r.spbNeg }));
         vscContent.appendChild(vscReviewsChart("Отзывы — Москва", msk));
@@ -3356,11 +3346,6 @@
         vscContent.appendChild(h4);
         vscContent.appendChild(vscBarChart({ key: "cplExtra", label: "CPL с учётом доп. расходов", fmt: "money", good: -1 }, ctrlSeries));
         vscContent.appendChild(vscBarChart({ key: "drrExtra", label: "ДРР с учётом доп. расходов", fmt: "pct", good: -1 }, ctrlSeries));
-        // Item 11 — % возвратов по месяцам (Услуги / выручка) + разбивка по вине (наша/не наша/не определено).
-        const retSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: mm.total ? { returnsPct: mm.total.returnsPct, retUslugi: mm.total.retUslugi, ourPct: mm.total.returnsOurPct, notOurPct: mm.total.returnsNotOurPct, unknownPct: mm.total.returnsUnknownPct } : {} }));
-        const h5 = document.createElement("div"); h5.className = "ref-sec-h"; h5.style.marginTop = "22px"; h5.textContent = "Возвраты — по месяцам";
-        vscContent.appendChild(h5);
-        vscContent.appendChild(vscReturnsStackedChart(retSeries));
         // Item 13 — налоги (вынесенный НДС, налог 5%, расхождение с фактом НДС).
         const taxSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: mm.taxes || {} }));
         const h6 = document.createElement("div"); h6.className = "ref-sec-h"; h6.style.marginTop = "22px"; h6.textContent = "Налоги — по месяцам";
@@ -3520,12 +3505,10 @@
             let holdNote = "";
             const sheetOver = -delta; // насколько таблица больше банка
             if (!ok && sheetOver > 0) {
-              const match = hold > 0 && Math.abs(sheetOver - hold) < 100;
-              holdNote = '<div style="font-size:11px;color:#8a90a0;margin-top:3px;line-height:1.5;">На холде (pending) за месяц: <b>' + money2(hold) + '</b> '
-                + (match
-                  ? '<span style="color:#2c7a43;font-weight:700;">✓ равно расхождению</span><br>внесены в таблицу, банком ещё не проведены — сойдётся после проведения'
-                  : '<span style="color:#b0263a;font-weight:700;">❗ не равно расхождению</span><br>холды не объясняют Δ полностью — стоит проверить внесённое в таблицу')
-                + '</div>';
+              // Кратко: на холде столько-то, не покрыто холдами (остаток расхождения) — столько-то.
+              // Красным, если остаток критичный (> 2000 ₽); иначе зелёной галочкой.
+              const uncovered = sheetOver - hold, crit = Math.abs(uncovered) > 2000;
+              holdNote = '<div style="font-size:11px;color:#8a90a0;margin-top:3px;">На холде: <b>' + money2(hold) + '</b> · остаётся <b style="color:' + (crit ? '#b0263a' : '#2c7a43') + ';">' + money2(uncovered) + '</b> <span style="color:' + (crit ? '#b0263a' : '#2c7a43') + ';font-weight:700;">' + (crit ? '❗' : '✓') + '</span></div>';
             }
             const frozen = (d.frozenMonths || []).indexOf(ym) >= 0; // месяц зафиксирован снимком (N+2)
             const frozenNote = frozen ? '<div style="font-size:10.5px;color:#9aa0ab;margin-top:3px;">🔒 зафиксировано — снимок банка и таблицы, дальше не меняется</div>' : "";
@@ -3536,11 +3519,10 @@
           const histBtn = (id, n) => (n > 0 ? '<button type="button" id="' + id + '" class="vsc-dayrev-refresh" style="margin-top:8px;background:#eef2f7;color:#3a4356;border-color:#d7dce4;">Показать историю (' + n + ')</button>' : "");
           box.innerHTML =
             '<div class="vsc-chart-h" style="margin-bottom:8px;">1 · Движение денег в выкупах (Turkish + OneTwoTrip, р/с)</div>'
-            + '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:stretch;margin-bottom:10px;">'
-            + '<div class="vsc-tile" style="flex:1;min-width:230px;background:#fdf6ec;border-color:#f0dfc0;">'
-            +   '<div class="vsc-tile-l">Заморожено в выкупах сейчас</div>'
+            + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;">'
+            + '<div class="vsc-tile" style="flex:0 1 auto;max-width:360px;background:#fdf6ec;border-color:#f0dfc0;">'
+            +   '<div class="vsc-tile-l" id="frozenL">Заморожено в выкупах сейчас</div>'
             +   '<div class="vsc-tile-v">' + money(d.frozen) + '</div>'
-            +   '<div class="vsc-tile-s">расход ' + money(d.frozenDeb) + ' − приход ' + money(d.frozenCre) + ' · по май 2026 — сверено, с июня — банк · счёт ' + escapeHtml(d.account || "") + '</div>'
             + '</div></div>'
             + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
             + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 8px;">Период</th><th style="text-align:left;padding:7px 8px;">Расход</th><th style="text-align:left;padding:7px 8px;">Приход</th></tr></thead>'
@@ -3553,6 +3535,7 @@
             + histBtn("buyoutsHistBtn2", cmpYms.filter((ym) => ym < prevYm).length)
             + '<div style="font-size:11.5px;color:#8a90a0;margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">обновлено: ' + escapeHtml(upd) + ' МСК <button type="button" id="buyoutsRun" class="vsc-dayrev-refresh" style="margin-top:0;">↻ Обновить</button></div>';
           const cmpH = box.querySelector("#buyoutsCmpH"); if (cmpH) cmpH.appendChild(vscInfo("<b>Как считается</b><br>Банк: только проведённые операции (без холдов), месяц — по дате авторизации. Таблица: вкладки «Авиа»+«Отель», только «Расчетный счет», по сумме снятия. Сходится, если Δ ≤ 2000 ₽ (зелёным); выше — красным. Обновляется ежедневно в 00:10 МСК. Старые месяцы зафиксированы снимком (🔒)."));
+          const frozenL = box.querySelector("#frozenL"); if (frozenL) frozenL.appendChild(vscInfo("<b>Заморожено в выкупах</b><br>Расход " + money(d.frozenDeb) + " − приход " + money(d.frozenCre) + ". По май 2026 — сверено вручную, с июня — по банку. Счёт " + escapeHtml(d.account || "") + "."));
           const b = box.querySelector("#buyoutsRun"); if (b) b.addEventListener("click", runNow);
           [["buyoutsHistBtn1", "buyoutsHist1"], ["buyoutsHistBtn2", "buyoutsHist2"]].forEach(([btnId, cls]) => {
             const btn = box.querySelector("#" + btnId);
