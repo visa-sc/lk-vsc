@@ -2142,14 +2142,16 @@
         renderVsc();
         vscMaybeAskProfit();
       }
-      // Запрос прибыли за прошлый месяц: в первый понедельник ПОСЛЕ 15 числа (день > 15)
-      // при входе в /vsc, если прибыль за прошлый месяц ещё не введена.
+      // Запрос прибыли за прошлый месяц: с 5 ЧИСЛА месяца (по просьбе Андрея 08.07 —
+      // раньше было «первый понедельник после 15»), при входе в /vsc, если прибыль за
+      // прошлый месяц ещё не введена. Только тому, кому прибыль ВИДНА (директор) — у
+      // руководителей с hideProfit (Петров/Зайцева) окна нет: они её всё равно не сохранят.
       const VSC_MON_NAMES = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
-      function vscFirstMondayAfter15(y, mIdx) { for (let day = 16; day <= 22; day++) { const d = new Date(y, mIdx, day); if (d.getDay() === 1) return d; } return new Date(y, mIdx, 22); }
       function vscMaybeAskProfit() {
         if (!vscData) return;
+        if (vscHideProfit()) return;                 // прибыль скрыта → окно не показываем
         const today = new Date(); today.setHours(0, 0, 0, 0);
-        if (today < vscFirstMondayAfter15(today.getFullYear(), today.getMonth())) return;
+        if (today.getDate() < 5) return;             // окно открывается с 5 числа месяца
         const pm = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
         const py = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
         const prevName = VSC_MON_NAMES[pm] + " " + py;
