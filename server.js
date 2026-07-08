@@ -4164,7 +4164,7 @@ app.get("/admin/api/vsc-dashboard", requireVscDashboard, async (req, res) => {
 app.post("/admin/api/vsc-profit", requireAdmin, (req, res) => {
   const month = String((req.body && req.body.month) || "").trim();
   const profit = parseFloat(req.body && req.body.profit);
-  if (!month || !isFinite(profit) || profit < 0) return res.status(400).json({ success: false, message: "Нужны month и неотрицательный profit" });
+  if (!month || !isFinite(profit)) return res.status(400).json({ success: false, message: "Нужны month и числовой profit (убыток — отрицательным)" });
   const m = vscLoadProfit(); m[month] = profit;
   const ok = vscSaveProfit(m);
   return res.json({ success: ok, profit: m });

@@ -2182,7 +2182,7 @@
         const save = async () => {
           const err = document.getElementById("vscProfitErr");
           const val = parseFloat(String(input.value).replace(/\s/g, "").replace(",", "."));
-          if (!isFinite(val) || val < 0) { err.textContent = "Введите число ≥ 0"; err.style.display = "block"; return; }
+          if (!isFinite(val)) { err.textContent = "Введите число (убыток — со знаком минус)"; err.style.display = "block"; return; }
           const btn = document.getElementById("vscProfitSave"); btn.disabled = true; btn.textContent = "Сохраняем…";
           try {
             const resp = await fetch("/admin/api/vsc-profit", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ month: monthName, profit: val }) });
