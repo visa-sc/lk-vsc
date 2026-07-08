@@ -203,7 +203,7 @@ function serveAdminPanel(res, asVsc) {
   const adminFile = path.join(__dirname, "public", "admin.html");
   // apple-touch-icon (iOS «На экран»): /vsc → лого VSC; /admin,/team → отдельная
   // «бело-золотая» иконка (отличать от клиентского ЛК). Клиентский ЛК не трогаем.
-  const icon = asVsc ? "/vsc-logo.png" : "/icon-admin.png";
+  const icon = asVsc ? "/vsc-icon.png" : "/icon-admin.png"; // /vsc — свежее градиентное лого (vsc-icon.png); клиентский ЛК/admin не трогаем
   try {
     const html = fs.readFileSync(adminFile, "utf8")
       .replace("</head>", '<link rel="apple-touch-icon" href="' + icon + '">\n<link rel="apple-touch-icon" sizes="180x180" href="' + icon + '">\n</head>');
