@@ -1059,22 +1059,25 @@
       transition: color .15s var(--vsc-ease), border-color .15s var(--vsc-ease);
     }
     .vsc-info:hover { color: #0097ca; }
-    .vsc-info .vsc-info-pop {
-      display: none; position: absolute; z-index: 60; top: calc(100% + 9px); left: 50%;
-      transform: translateX(-50%); width: min(340px, 78vw);
+    /* Поповер рендерится ПОРТАЛОМ в <body> (не внутри иконки) — иначе предок с transform
+       (карточки/плитки, .vsc-tile:hover) делается containing-block'ом для position:fixed
+       и попап «съезжает». В body его координаты всегда относительно окна. */
+    .vsc-info-pop {
+      display: none; position: fixed; z-index: 9999; box-sizing: border-box;
+      width: min(340px, 78vw);
       background: #1c2333; color: #e7ecf5; font: 400 12px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
       font-style: normal; letter-spacing: 0; text-align: left; text-transform: none;
       padding: 12px 14px; border-radius: 13px; box-shadow: 0 14px 38px rgba(16,24,40,.38);
       white-space: normal; cursor: default;
     }
-    .vsc-info .vsc-info-pop b { color: #fff; font-weight: 700; }
-    .vsc-info .vsc-info-pop::before {
+    .vsc-info-pop.show { display: block; }
+    .vsc-info-pop b { color: #fff; font-weight: 700; }
+    .vsc-info-pop::before {
       content: ""; position: absolute; bottom: 100%; left: var(--arrow-left, 50%); transform: translateX(-50%);
       border: 6px solid transparent; border-bottom-color: #1c2333;
     }
     /* поповер открыт СВЕРХУ иконки (у нижнего края экрана) — стрелка снизу, смотрит вниз */
-    .vsc-info.pop-up .vsc-info-pop::before { bottom: auto; top: 100%; border-bottom-color: transparent; border-top-color: #1c2333; }
-    .vsc-info:hover .vsc-info-pop, .vsc-info.open .vsc-info-pop { display: block; }
+    .vsc-info-pop.up::before { bottom: auto; top: 100%; border-bottom-color: transparent; border-top-color: #1c2333; }
     /* ── Графики и кнопки — «посексуальнее»: градиентные столбцы, мягкие радиусы, воздух ── */
     body.vsc-skin .vsc-chart { padding: 16px 18px; margin-bottom: 14px; }
     body.vsc-skin .vsc-tiles { gap: 14px; }
@@ -2291,33 +2294,45 @@
       const VSC_MON_NAMES = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
       // Значок «i» с пояснением: наведение (десктоп) или тап (моб.) показывает поповер с html.
       // Прячем длинные «как считается»/заметки, чтобы интерфейс был чище. Возвращает <span>.
-      function vscInfoClose(el) { el.classList.remove("open", "pop-up"); const p = el.querySelector(".vsc-info-pop"); if (p) { p.style.position = ""; p.style.left = ""; p.style.right = ""; p.style.top = ""; p.style.bottom = ""; p.style.width = ""; p.style.transform = ""; p.style.removeProperty("--arrow-left"); } }
+      function vscInfoClose(el) {
+        if (!el) return;
+        el.classList.remove("open");
+        const p = el.__pop; if (!p) return;
+        p.classList.remove("show", "up");
+        if (p.parentNode) p.parentNode.removeChild(p);   // убираем портал из body
+      }
+      function vscInfoCloseAll() { document.querySelectorAll(".vsc-info-pop.show").forEach((p) => vscInfoClose(p.__owner)); }
+      function vscInfoPlace(w) {
+        const pop = w.__pop;
+        if (pop.parentNode !== document.body) document.body.appendChild(pop);   // портал в body
+        pop.classList.add("show");
+        // Позиционируем в ВИДИМОЙ области (fixed относительно окна + зажим по краям) — чтобы
+        // не обрезался и не «съезжал». Хвостик-стрелка наводится на иконку через --arrow-left.
+        const r = w.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+        const pwMax = Math.min(340, vw - 24);
+        pop.style.width = pwMax + "px";
+        let left = r.left + r.width / 2 - pwMax / 2;
+        left = Math.max(12, Math.min(left, vw - pwMax - 12));
+        pop.style.left = left + "px";
+        pop.style.top = (r.bottom + 9) + "px";
+        pop.classList.remove("up");
+        const ph = pop.offsetHeight;
+        if (r.bottom + 9 + ph > vh - 12 && r.top - 9 - ph > 12) { pop.style.top = (r.top - 9 - ph) + "px"; pop.classList.add("up"); }
+        pop.style.setProperty("--arrow-left", Math.max(10, Math.min(pwMax - 10, r.left + r.width / 2 - left)) + "px");
+      }
       function vscInfo(html) {
-        if (!window.__vscInfoBound) { window.__vscInfoBound = true; const closeAll = function () { document.querySelectorAll(".vsc-info.open").forEach(vscInfoClose); }; document.addEventListener("click", closeAll); window.addEventListener("scroll", closeAll, true); }
+        if (!window.__vscInfoBound) { window.__vscInfoBound = true; document.addEventListener("click", vscInfoCloseAll); window.addEventListener("scroll", vscInfoCloseAll, true); window.addEventListener("resize", vscInfoCloseAll); }
         const w = document.createElement("span"); w.className = "vsc-info"; w.setAttribute("tabindex", "0"); w.setAttribute("role", "button"); w.setAttribute("aria-label", "Пояснение"); w.textContent = "i";
-        const pop = document.createElement("span"); pop.className = "vsc-info-pop"; pop.innerHTML = html; w.appendChild(pop);
-        // Позиционируем поповер в ВИДИМОЙ области (fixed + зажим по краям экрана) — чтобы на
-        // телефоне не обрезался. Хвостик-стрелка наводится на иконку через --arrow-left.
-        const place = function () {
-          const r = w.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
-          const pwMax = Math.min(340, vw - 24);
-          pop.style.position = "fixed"; pop.style.transform = "none"; pop.style.width = pwMax + "px";
-          let left = r.left + r.width / 2 - pwMax / 2;
-          left = Math.max(12, Math.min(left, vw - pwMax - 12));
-          pop.style.left = left + "px"; pop.style.right = "auto";
-          pop.style.top = (r.bottom + 9) + "px"; pop.style.bottom = "auto";
-          const ph = pop.offsetHeight;
-          if (r.bottom + 9 + ph > vh - 12 && r.top - 9 - ph > 12) { pop.style.top = (r.top - 9 - ph) + "px"; w.classList.add("pop-up"); }
-          else { w.classList.remove("pop-up"); }
-          pop.style.setProperty("--arrow-left", Math.max(10, Math.min(pwMax - 10, r.left + r.width / 2 - left)) + "px");
-        };
+        const pop = document.createElement("span"); pop.className = "vsc-info-pop"; pop.innerHTML = html;
+        w.__pop = pop; pop.__owner = w;   // портал: pop живёт в body, ссылки друг на друга
         w.addEventListener("click", function (e) {
           e.stopPropagation();
           const wasOpen = w.classList.contains("open");
-          document.querySelectorAll(".vsc-info.open").forEach(vscInfoClose);
-          if (!wasOpen) { w.classList.add("open"); place(); }
+          vscInfoCloseAll();
+          if (!wasOpen) { w.classList.add("open"); vscInfoPlace(w); }
         });
-        w.addEventListener("mouseenter", place);   // десктоп: тоже в видимой области
+        w.addEventListener("mouseenter", function () { if (!w.classList.contains("open")) vscInfoPlace(w); });   // десктоп: hover
+        w.addEventListener("mouseleave", function () { if (!w.classList.contains("open")) vscInfoClose(w); });
         pop.addEventListener("click", function (e) { e.stopPropagation(); });
         return w;
       }
@@ -2762,12 +2777,14 @@
         const present = rows.filter((r) => r.overall != null);
         if (!present.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных по эквайрингу."; wrap.appendChild(e); return wrap; }
         const maxO = Math.max.apply(null, present.map((r) => r.overall)) || 1;
-        const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.overflow = "visible"; bars.style.height = "auto"; bars.style.paddingTop = "6px";
+        // Дефолтный .vsc-bars — скролл вбок (как «доля рынка»); столбцы поуже (46/30 px),
+        // чтобы влезало больше месяцев и на мобиле ничего не «уезжало» за карточку.
+        const bars = document.createElement("div"); bars.className = "vsc-bars";
         rows.forEach((r) => {
-          const col = document.createElement("div"); col.className = "vsc-bar-col";
+          const col = document.createElement("div"); col.className = "vsc-bar-col"; col.style.flex = "0 0 46px";
           col.title = r.x + " · общий " + (r.overall != null ? fmtP(r.overall) : "—") + "\n" + avail.map((t) => t.name + ": " + (r.seg[t.key].pct != null ? fmtP(r.seg[t.key].pct) : "—")).join("\n");
           const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = r.overall != null ? fmtP(r.overall) : "";
-          const bar = document.createElement("div"); bar.className = "vsc-bar vsc-bar-stack";
+          const bar = document.createElement("div"); bar.className = "vsc-bar vsc-bar-stack"; bar.style.width = "30px";
           const barPx = r.overall != null ? Math.max(2, Math.round(r.overall / maxO * 120)) : 2;
           bar.style.height = barPx + "px";
           if (r.overall != null && r.base > 0) {
@@ -3499,21 +3516,29 @@
             if (bv == null && sv == null) return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>') + '<td style="padding:7px 8px;color:#9aa0ab;">—</td></tr>';
             const delta = (bv || 0) - (sv || 0);
             const ok = Math.abs(delta) <= 2000; // до 2000 ₽ — мелочь, считаем сошедшимся (зелёным); выше — красным
-            const status = ok
-              ? '<b style="color:#2c7a43;">✓ сходится' + (Math.abs(delta) >= 0.01 ? ' <span style="font-weight:400;">(Δ ' + money2(Math.abs(delta)) + ')</span>' : '') + '</b>'
-              : '<b style="color:#b8602a;">Δ ' + (delta > 0 ? "+" : "−") + Math.abs(Math.round(delta)).toLocaleString("ru-RU") + ' ₽</b>';
-            let holdNote = "";
             const sheetOver = -delta; // насколько таблица больше банка
-            if (!ok && sheetOver > 0) {
-              // Кратко: на холде столько-то, не покрыто холдами (остаток расхождения) — столько-то.
-              // Красным, если остаток критичный (> 2000 ₽); иначе зелёной галочкой.
-              const uncovered = sheetOver - hold, crit = Math.abs(uncovered) > 2000;
-              holdNote = '<div style="font-size:11px;color:#8a90a0;margin-top:3px;">На холде: <b>' + money2(hold) + '</b> · остаётся <b style="color:' + (crit ? '#b0263a' : '#2c7a43') + ';">' + money2(uncovered) + '</b> <span style="color:' + (crit ? '#b0263a' : '#2c7a43') + ';font-weight:700;">' + (crit ? '❗' : '✓') + '</span></div>';
-            }
             const frozen = (d.frozenMonths || []).indexOf(ym) >= 0; // месяц зафиксирован снимком (N+2)
-            const frozenNote = frozen ? '<div style="font-size:10.5px;color:#9aa0ab;margin-top:3px;">🔒 зафиксировано — снимок банка и таблицы, дальше не меняется</div>' : "";
+            const frozenNote = frozen ? '<div style="font-size:10.5px;color:#9aa0ab;margin-top:6px;">🔒 зафиксировано — снимок банка и таблицы, дальше не меняется</div>' : "";
+            // Аккуратная сетка «в столбик»: метка → значение, без нагромождения в строку.
+            const gL = (t) => '<span style="color:#9aa0ab;">' + t + '</span>';
+            const gV = (t, color) => '<span style="font-weight:700;color:' + (color || '#1d2330') + ';white-space:nowrap;">' + t + '</span>';
+            let grid = '<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 18px;align-items:baseline;font-size:12.5px;max-width:340px;">';
+            grid += gL('Банк') + gV(money2(bv));
+            grid += gL('Таблица') + gV(money2(sv));
+            if (ok) {
+              grid += gL('Δ') + '<span style="color:#2c7a43;font-weight:700;white-space:nowrap;">✓ сходится' + (Math.abs(delta) >= 0.01 ? ' <span style="font-weight:400;color:#6b7280;">(' + money2(Math.abs(delta)) + ')</span>' : '') + '</span>';
+            } else {
+              grid += gL('Δ') + gV((delta > 0 ? "+" : "−") + Math.abs(Math.round(delta)).toLocaleString("ru-RU") + ' ₽', '#b8602a');
+              if (sheetOver > 0) {
+                // не покрыто холдами (остаток расхождения); красным если критично (> 2000 ₽)
+                const uncovered = sheetOver - hold, crit = Math.abs(uncovered) > 2000;
+                grid += gL('На холде') + gV(money2(hold), '#6b7280');
+                grid += gL('Остаётся') + gV(money2(uncovered) + ' ' + (crit ? '❗' : '✓'), crit ? '#b0263a' : '#2c7a43');
+              }
+            }
+            grid += '</div>' + frozenNote;
             return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>')
-              + '<td style="padding:7px 8px;">банк <b>' + money2(bv) + '</b> · табл. <b>' + money2(sv) + '</b><br>' + status + holdNote + frozenNote + '</td></tr>';
+              + '<td style="padding:7px 8px;">' + grid + '</td></tr>';
           }).join("");
           const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
           const histBtn = (id, n) => (n > 0 ? '<button type="button" id="' + id + '" class="vsc-dayrev-refresh" style="margin-top:8px;background:#eef2f7;color:#3a4356;border-color:#d7dce4;">Показать историю (' + n + ')</button>' : "");
