@@ -3102,8 +3102,10 @@
         // в своём разделе). CPL-алерт уже адаптивен (день/неделя/месяц) — остаётся во всех.
         const showAttn = (vscGran === "month") && attn.length;
         const hasWarn = showAttn || cplAlert;
-        const ab = document.createElement("div"); ab.className = "vsc-attn " + (hasWarn ? "warn" : "ok");
+        // Показываем блок ТОЛЬКО когда есть на что обратить внимание. «Показатели в
+        // норме» (зелёную плашку) не выводим — по просьбе Андрея.
         if (hasWarn) {
+          const ab = document.createElement("div"); ab.className = "vsc-attn warn";
           let h = "";
           if (showAttn) {
             h += '<div class="vsc-attn-h">⚠️ На что обратить внимание (ухудшилось за последний месяц, к сопоставимому периоду прошлого):</div><ul>';
@@ -3114,10 +3116,8 @@
             h += '<div class="vsc-attn-h"' + (showAttn ? ' style="margin-top:9px;"' : '') + '>⚠️ CPL выше лимита 1100 ₽ (' + granWord + ', ' + escapeHtml(cplAlert.x) + '): <b>' + vscFmt(cplAlert.v, "money") + '</b></div>';
           }
           ab.innerHTML = h;
-        } else {
-          ab.innerHTML = '<div class="vsc-attn-h">✓ Ухудшений за последний месяц не вижу, CPL в пределах лимита — показатели в норме.</div>';
+          vscContent.appendChild(ab);
         }
-        vscContent.appendChild(ab);
 
         // Значения плиток + изменение «к пред.». Месяц — сравнение за сопоставимое
         // число прошедших дней (текущий неполный месяц не искажается).
