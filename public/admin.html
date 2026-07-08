@@ -1038,6 +1038,16 @@
     body.vsc-skin .dash-title { letter-spacing: -.02em; color: var(--sk-ink); }
     body.vsc-skin .logout-btn { border-radius: 14px; }
     body.vsc-skin ::selection { background: rgba(0,151,202,.18); }
+    /* Карточка ввода прибыли за прошлый месяц — акцентная */
+    body.vsc-skin .vsc-profit-banner {
+      border-color: rgba(0,151,202,.30);
+      background: linear-gradient(180deg, #ffffff 0%, #f3fafe 100%);
+      box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 16px 36px -18px rgba(0,151,202,.38);
+    }
+    body.vsc-skin .vsc-profit-banner #vscProfitField:focus {
+      outline: none; border-color: var(--sk-accent);
+      box-shadow: 0 0 0 3px rgba(0,151,202,.16);
+    }
   </style>
 </head>
 <body>
@@ -2230,59 +2240,47 @@
           return;
         }
         renderVsc();
-        vscMaybeAskProfit();
       }
-      // Запрос прибыли за прошлый месяц: с 5 ЧИСЛА месяца (по просьбе Андрея 08.07 —
-      // раньше было «первый понедельник после 15»), при входе в /vsc, если прибыль за
-      // прошлый месяц ещё не введена. Только тому, кому прибыль ВИДНА (директор) — у
-      // руководителей с hideProfit (Петров/Зайцева) окна нет: они её всё равно не сохранят.
       const VSC_MON_NAMES = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
-      function vscMaybeAskProfit() {
-        if (!vscData) return;
-        if (vscHideProfit()) return;                 // прибыль скрыта → окно не показываем
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        if (today.getDate() < 5) return;             // окно открывается с 5 числа месяца
+      // Поле ввода прибыли за ПРОШЛЫЙ месяц — аккуратной карточкой ВВЕРХУ дашборда
+      // (разрезы «Месяц»/«Год»), с 5 ЧИСЛА и пока прибыль не введена. Заменяет прежнюю
+      // модалку (по просьбе Андрея 08.07). Только тому, кому прибыль ВИДНА (директор):
+      // у руководителей с hideProfit поля нет (и endpoint им 403). После сохранения —
+      // renderVsc(): прибыль уходит в график прибыли и в рентабельность, карточка исчезает.
+      function vscProfitBanner() {
+        if (!vscData || vscHideProfit()) return null;
+        const today = new Date();
+        if (today.getDate() < 5) return null;                      // с 5 числа месяца
         const pm = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
         const py = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
         const prevName = VSC_MON_NAMES[pm] + " " + py;
         const ms = vscData.months || [];
-        if (!ms.some((m) => m.name === prevName && m.total)) return;          // нет такого месяца с данными
-        if (vscData.profit && vscData.profit[prevName] != null) return;        // прибыль уже введена
-        if (sessionStorage.getItem("vscProfitAsked_" + prevName) === "1") return; // отложили в этой сессии
-        vscShowProfitPrompt(prevName);
-      }
-      function vscShowProfitPrompt(monthName) {
-        if (document.getElementById("vscProfitModal")) return;
-        const ov = document.createElement("div"); ov.id = "vscProfitModal";
-        ov.style.cssText = "position:fixed;inset:0;background:rgba(16,22,42,.42);-webkit-backdrop-filter:blur(6px) saturate(1.2);backdrop-filter:blur(6px) saturate(1.2);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;";
-        const card = document.createElement("div");
-        card.style.cssText = "background:#fff;border-radius:22px;max-width:420px;width:100%;padding:24px;box-shadow:0 1px 2px rgba(16,24,40,.06),0 30px 70px -20px rgba(16,32,64,.45);border:1px solid rgba(255,255,255,.6);";
-        card.innerHTML =
-          '<div style="font-size:17px;font-weight:800;color:#161d45;margin-bottom:6px;">Прибыль за ' + escapeHtml(monthName) + '</div>' +
-          '<div style="font-size:13px;color:#6b7280;margin-bottom:14px;">Введите чистую прибыль за прошлый месяц (₽). На её основе посчитается рентабельность.</div>' +
-          '<input id="vscProfitInput" type="number" inputmode="numeric" placeholder="например, 4400000" style="width:100%;padding:11px 13px;font-size:15px;border:1px solid #d4d8e2;border-radius:10px;box-sizing:border-box;" />' +
-          '<div id="vscProfitErr" style="color:#b0263a;font-size:12.5px;margin-top:6px;display:none;"></div>' +
-          '<div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">' +
-          '<button id="vscProfitLater" type="button" style="padding:10px 16px;border-radius:10px;border:1px solid #d4d8e2;background:#fff;color:#5a626f;font-weight:600;cursor:pointer;">Позже</button>' +
-          '<button id="vscProfitSave" type="button" style="padding:10px 18px;border-radius:10px;border:1px solid #3589BD;background:#3589BD;color:#fff;font-weight:700;cursor:pointer;">Сохранить</button>' +
-          '</div>';
-        ov.appendChild(card); document.body.appendChild(ov);
-        const input = document.getElementById("vscProfitInput"); input.focus();
-        document.getElementById("vscProfitLater").addEventListener("click", () => { sessionStorage.setItem("vscProfitAsked_" + monthName, "1"); ov.remove(); });
+        if (!ms.some((m) => m.name === prevName && m.total)) return null;       // нет месяца с данными
+        if (vscData.profit && vscData.profit[prevName] != null) return null;    // уже введена
+        const wrap = document.createElement("div"); wrap.className = "vsc-chart vsc-profit-banner";
+        wrap.innerHTML =
+          '<div class="vsc-chart-h" style="margin-bottom:5px;">Прибыль за ' + escapeHtml(prevName) + '</div>'
+          + '<div style="font-size:12.5px;color:#6b7280;margin-bottom:11px;line-height:1.5;">Введите чистую прибыль за прошлый месяц (₽) — сразу попадёт в график прибыли и в рентабельность. Убыток — со знаком минус.</div>'
+          + '<div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;">'
+          +   '<input id="vscProfitField" type="number" inputmode="numeric" placeholder="например, 4 400 000 или -801 821" style="flex:1;min-width:200px;height:46px;padding:0 15px;font-size:15px;border:1px solid rgba(20,32,64,.14);border-radius:12px;box-sizing:border-box;font-family:inherit;background:#fff;" />'
+          +   '<button id="vscProfitFieldSave" type="button" class="vsc-dayrev-refresh" style="height:46px;padding:0 22px;font-size:14px;margin-top:0;">Сохранить</button>'
+          + '</div>'
+          + '<div id="vscProfitFieldErr" style="color:#b0263a;font-size:12.5px;margin-top:8px;display:none;"></div>';
+        const input = wrap.querySelector("#vscProfitField"), errEl = wrap.querySelector("#vscProfitFieldErr"), btn = wrap.querySelector("#vscProfitFieldSave");
         const save = async () => {
-          const err = document.getElementById("vscProfitErr");
           const val = parseFloat(String(input.value).replace(/\s/g, "").replace(",", "."));
-          if (!isFinite(val)) { err.textContent = "Введите число (убыток — со знаком минус)"; err.style.display = "block"; return; }
-          const btn = document.getElementById("vscProfitSave"); btn.disabled = true; btn.textContent = "Сохраняем…";
+          if (!isFinite(val)) { errEl.textContent = "Введите число (убыток — со знаком минус)"; errEl.style.display = "block"; return; }
+          btn.disabled = true; btn.textContent = "Сохраняем…";
           try {
-            const resp = await fetch("/admin/api/vsc-profit", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ month: monthName, profit: val }) });
+            const resp = await fetch("/admin/api/vsc-profit", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ month: prevName, profit: val }) });
             const j = await resp.json();
-            if (j && j.success) { if (vscData) vscData.profit = j.profit; ov.remove(); renderVsc(); }
-            else { err.textContent = (j && j.message) || "Не удалось сохранить"; err.style.display = "block"; btn.disabled = false; btn.textContent = "Сохранить"; }
-          } catch (e) { err.textContent = "Ошибка сети"; err.style.display = "block"; btn.disabled = false; btn.textContent = "Сохранить"; }
+            if (j && j.success) { if (vscData) vscData.profit = j.profit; renderVsc(); }
+            else { errEl.textContent = (j && j.message) || "Не удалось сохранить"; errEl.style.display = "block"; btn.disabled = false; btn.textContent = "Сохранить"; }
+          } catch (e) { errEl.textContent = "Ошибка сети"; errEl.style.display = "block"; btn.disabled = false; btn.textContent = "Сохранить"; }
         };
-        document.getElementById("vscProfitSave").addEventListener("click", save);
+        btn.addEventListener("click", save);
         input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
+        return wrap;
       }
       function vscBuildSeries() {
         const ms = vscData.months || [];
@@ -3042,6 +3040,9 @@
         }
         const vscCurM = (vscData.months || [])[vscMonthIdx] || {};
         const vscAllDays = (vscData.months || []).reduce((a, m) => a.concat(m.days || []), []);
+
+        // Поле ввода прибыли за прошлый месяц — ВВЕРХУ дашборда (Месяц/Год, с 5 числа).
+        if (vscGran === "month" || vscGran === "year") { const pb = vscProfitBanner(); if (pb) vscContent.appendChild(pb); }
 
         const tiles = document.createElement("div"); tiles.className = "vsc-tiles";
         kpisForView.forEach((kpi) => {
