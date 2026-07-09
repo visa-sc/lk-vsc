@@ -2052,7 +2052,7 @@
         { key: "cv", label: "CV отдела продаж (общая)", fmt: "pct", good: 1 },
         { key: "cpl", label: "CPL (общий)", fmt: "money", good: -1 },
         { key: "drr", label: "ДРР (общая)", fmt: "pct", good: -1 },
-        { key: "over", label: "Недобор / перебор таргета ОП", fmt: "signed", good: -1 },
+        { key: "over", label: "Недобор / перебор таргета ОП", fmt: "signed", good: 1 },
         { key: "targetDev", label: "Отклонение таргета (факт − план, МСК+СПБ)", fmt: "signed", good: 1 },
         { key: "planPct", label: "План ОП (% выполнения)", fmt: "pct", good: 1 },
         { key: "returnsPct", label: "% возвратов (от выручки)", fmt: "pct", good: -1 }
@@ -3207,7 +3207,7 @@
             const d = v - prev; const up = d > 0;
             const dirCls = kpi.good === 0 ? "neu" : ((d * kpi.good > 0) ? "up" : "down");
             const rel = Math.abs(prev) ? Math.round(Math.abs(d) / Math.abs(prev) * 100) : null;
-            delta = '<div class="vsc-tile-d ' + dirCls + '">' + (up ? "▲" : "▼") + " " + vscFmt(Math.abs(d), kpi.fmt).replace(" ₽", "") + (rel != null && kpi.fmt !== "pct" ? " (" + rel + "%)" : "") + " к пред.</div>";
+            delta = '<div class="vsc-tile-d ' + dirCls + '">' + (up ? "▲" : "▼") + " " + vscFmt(Math.abs(d), kpi.fmt).replace(" ₽", "").replace(/^\+/, "") + (rel != null && kpi.fmt !== "pct" ? " (" + rel + "%)" : "") + " к пред.</div>";
           }
           // В блоке ATV компактно показываем ASP и UPT за тот же период (item 1).
           let extra = "";
