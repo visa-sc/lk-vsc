@@ -3764,6 +3764,10 @@
             "#vscContent .vc-out.bad{background:linear-gradient(180deg,#fdecec,#fbe0e0)!important;border-color:#f0a9a9!important;}" +
             "#vscContent .vc-out.bad .vc-out-t,#vscContent .vc-out.bad .vc-out-v{color:#b0263a!important;}" +
             "#vscContent .vc-out.bad::after{color:#d05a5a!important;}" +
+            "#vscContent .vc-out.vc-ref{background:linear-gradient(180deg,#f4f2fe,#ebe6fd);border-color:#d9d1f7;}" +
+            "#vscContent .vc-out.vc-ref .vc-out-t{color:#5b52c9;}" +
+            "#vscContent .vc-out.vc-ref .vc-out-v{color:#5046c8;}" +
+            "#vscContent .vc-out.vc-ref::after{color:#9a8ff0;}" +
             "#vscContent .vc-field.needfill{background:linear-gradient(180deg,#fdecec,#fbe0e0);border-color:#f0a9a9;}" +
             "#vscContent .vc-field.needfill .vc-flabel{color:#b0263a;}" +
             "#vscContent .vc-field.needfill .vc-finput{border-color:#e0a0a0;box-shadow:0 0 0 4px rgba(208,38,58,.12);}" +
@@ -3786,7 +3790,7 @@
         const fr = (v, dg) => (v == null || isNaN(v)) ? "—" : (Math.round(v * Math.pow(10, dg)) / Math.pow(10, dg)).toLocaleString("ru-RU");
         const b6 = d.usd ? d.eur / d.usd : 0;
         const curBtn = (k, t) => '<button type="button" data-cur="' + k + '" class="calc-cur' + (vscCalcState.cur === k ? ' on' : '') + '">' + t + '</button>';
-        const outCard = (id, title) => '<div class="vsc-out vc-out" title="Нажмите, чтобы скопировать число"><div class="vsc-out-t vc-out-t">' + title + '</div><div id="' + id + '" class="vc-out-v">—</div></div>';
+        const outCard = (id, title, extra) => '<div class="vsc-out vc-out' + (extra ? ' ' + extra : '') + '" title="Нажмите, чтобы скопировать число"><div class="vsc-out-t vc-out-t">' + title + '</div><div id="' + id + '" class="vc-out-v">—</div></div>';
         box.innerHTML =
           '<div class="ref-sec-h" id="calcH">Калькулятор ВНЖ</div>' +
           '<div class="vc-note">Курсы ЦБ РФ' + (d.date ? " на " + escapeHtml(d.date) : "") + ' · обновляются автоматически</div>' +
@@ -3806,7 +3810,7 @@
             '<div class="vc-field"><div class="vc-flabel">✎ Должны партнёру (в USDT)</div><input id="calcPartner" type="text" inputmode="decimal" placeholder="0" class="vc-finput"></div>' +
           '</div>' +
           '<div class="vc-grid vc-grid-out">' +
-            outCard("outSeif", "Учёт сейфа (срм-факт), ₽") + outCard("outUsl", "В amo «Услуги АКК», ₽") + outCard("outBudget", "В amo «Бюджет», ₽") + outCard("outPartner", 'Оплата партнёру (<span id="outPartnerUnit">€</span>)') +
+            outCard("outSeif", "Учёт сейфа (срм-факт), ₽") + outCard("outUsl", "В amo «Услуги АКК», ₽") + outCard("outBudget", "В amo «Бюджет», ₽") + outCard("outPartner", 'Оплата партнёру (<span id="outPartnerUnit">€</span>)', "vc-ref") +
           '</div>' +
           '<div id="calcWarn" style="display:none;margin-top:14px;background:#fdecec;border:1px solid #f3b6b6;border-radius:14px;padding:13px 15px;font-size:13px;color:#b0263a;line-height:1.5;font-weight:600;"></div>' +
           '<div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;"><button type="button" id="calcRefresh" class="vc-btn vc-btn-primary">Обновить курсы с ЦБ и banki.ru</button>' +
@@ -3815,7 +3819,7 @@
           '<div id="calcHistPanel" style="display:none;margin-top:10px;"></div>' +
           '<div id="calcMismatchPanel" style="display:none;margin-top:10px;"></div>';
         const _calcH = box.querySelector("#calcH");
-        if (_calcH) _calcH.appendChild(vscInfo("<b>Как пользоваться</b><br>Курсы EUR/USD берутся с ЦБ РФ автоматически, курс usdt для расхода ставите вы (сохраняется). Выберите валюту прихода, укажите сумму прихода и сколько должны партнёру (в USDT).<br><br><b>Цвета полей:</b> голубым — заполняете вы; серым — считается автоматически; зелёным — результат для занесения в учёт/amo (клик по нему копирует число)."));
+        if (_calcH) _calcH.appendChild(vscInfo("<b>Как пользоваться</b><br>Курсы EUR/USD берутся с ЦБ РФ автоматически, курс usdt для расхода ставите вы (сохраняется). Выберите валюту прихода, укажите сумму прихода и сколько должны партнёру (в USDT).<br><br><b>Цвета полей:</b> голубым — заполняете вы; серым — считается автоматически; зелёным — результат для занесения в учёт/amo (клик по нему копирует число); сиреневым — проверочный блок «Оплата партнёру» (эквивалент в € по актуальному курсу)."));
         const $ = (id) => box.querySelector("#" + id);
         // Копирование значения зелёной области по клику (для переноса в amoCRM / таблицы).
         box.querySelectorAll(".vsc-out").forEach((card) => {
@@ -3824,7 +3828,7 @@
             if (!v || !t) return;
             const num = (v.textContent || "").replace(/[^\d.,-]/g, "").replace(/\s/g, "").trim();
             if (!num || num === "—") return;
-            const flash = () => { const orig = t.innerHTML; t.innerHTML = "✓ Скопировано"; card.style.background = "#dff3e6"; setTimeout(() => { t.innerHTML = orig; card.style.background = ""; }, 1000); };
+            const flash = () => { const orig = t.innerHTML; t.innerHTML = "✓ Скопировано"; card.style.background = card.classList.contains("vc-ref") ? "#e6e0fb" : "#dff3e6"; setTimeout(() => { t.innerHTML = orig; card.style.background = ""; }, 1000); };
             if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(num).then(flash).catch(() => {}); }
             else { const ta = document.createElement("textarea"); ta.value = num; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch (_) {} document.body.removeChild(ta); flash(); }
           });
@@ -3866,14 +3870,15 @@
           const r2 = (x) => Math.round(x * 100) / 100; // курсы и USDT→€ считаем по сотым, как в исходной таблице
           const eur = r2(vscCalcRates.eur || 0), usd = r2(vscCalcRates.usd || 0), b7 = (b7El ? pf(b7El) : (vscCalcRates.usdtExpense || 0)), b6c = usd ? r2(eur / usd) : 0;
           const prihod = pf(prihodEl), partner = pf(partnerEl), cur = vscCalcState.cur;
-          let seif = 0, uslugi = 0, partnerOut = 0, unit = "€";
-          if (cur === "eur") { seif = prihod * eur; uslugi = partner * b7; partnerOut = b6c ? partner / b6c : 0; unit = "€"; }
-          else if (cur === "rub") { seif = prihod; uslugi = partner * b7; partnerOut = b6c ? partner / b6c : 0; unit = "€"; }
-          else { seif = prihod * usd; uslugi = partner * usd; partnerOut = partner; unit = "$"; }
+          // Оплата партнёру ВСЕГДА в € по актуальному курсу EUR/USD (USDT≈USD): partner USDT ÷ (eur/usd). Курсы eur/usd — живые с ЦБ.
+          let seif = 0, uslugi = 0, partnerOut = (b6c ? partner / b6c : 0);
+          if (cur === "eur") { seif = prihod * eur; uslugi = partner * b7; }
+          else if (cur === "rub") { seif = prihod; uslugi = partner * b7; }
+          else { seif = prihod * usd; uslugi = partner * usd; }
           $("outSeif").textContent = ru0(seif) + " ₽";
           $("outUsl").textContent = ru0(uslugi) + " ₽";
           $("outPartner").textContent = ru2(partnerOut);
-          const _upu = $("outPartnerUnit"); if (_upu) _upu.textContent = unit;
+          const _upu = $("outPartnerUnit"); if (_upu) _upu.textContent = "€";
 
           const budgetCard = $("outBudget").closest(".vc-out"), warn = $("calcWarn"), mustEurBox = $("calcMustEurBox");
           if (budgetCard) budgetCard.classList.remove("bad");
