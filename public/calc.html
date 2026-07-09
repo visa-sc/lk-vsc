@@ -43,6 +43,11 @@
   .val { font-size: 15px; font-weight: 700; color: var(--ink); margin-top: auto; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .ed input { width: 100%; box-sizing: border-box; padding: 9px 12px; font-size: 15px; font-weight: 600; border: 1px solid #d2d2d7; border-radius: 10px; background: #fff; font-family: inherit; color: var(--ink); -webkit-appearance: none; transition: border-color .15s ease, box-shadow .15s ease; }
   .ed input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 4px rgba(0,113,227,.15); }
+  .inwrap { position: relative; }
+  .inwrap input { padding-right: 40px; }
+  .clr { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%; background: rgba(0,0,0,.07); color: #6e6e73; font-size: 17px; line-height: 1; cursor: pointer; display: none; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease; }
+  .clr:hover { background: rgba(0,0,0,.13); color: var(--ink); }
+  .inwrap.has .clr { display: flex; }
   .ed.needfill { background: linear-gradient(180deg, #fdecec, #fbe0e0); border-color: #f0a9a9; }
   .ed.needfill .lbl-ed { color: #b0263a; }
   .ed.needfill input { border-color: #e0a0a0; box-shadow: 0 0 0 4px rgba(208,38,58,.12); }
@@ -60,6 +65,11 @@
   .out.ref .t { color: #5b52c9; }
   .out.ref .v { color: #5046c8; }
   .out.ref::after { color: #9a8ff0; }
+  /* Учёт сейфа — нейтральный серый: наименее отвлекающий из блоков, справочный. */
+  .out.neutral { background: linear-gradient(180deg, #f7f8fa, #eef0f3); border-color: rgba(0,0,0,.08); }
+  .out.neutral .t { color: #6e6e73; }
+  .out.neutral .v { color: #3a3a3c; }
+  .out.neutral::after { color: #b4b8bf; }
   .out .t { font-size: 12px; color: var(--green-d); font-weight: 600; line-height: 1.35; min-height: 32px; letter-spacing: -.01em; padding-right: 20px; }
   .out .v { font-size: 24px; font-weight: 700; color: #1f8f4d; margin-top: 6px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .out::after { content: "⧉"; position: absolute; top: 13px; right: 15px; font-size: 13px; color: var(--green); opacity: .5; transition: opacity .15s ease; }
@@ -81,7 +91,7 @@
 <div class="wrap">
   <div class="card">
     <h1>Калькулятор ВНЖ</h1>
-    <div class="howto"><b>Как пользоваться:</b> курсы EUR/USD берутся с ЦБ РФ автоматически. Выбери валюту прихода, укажи сумму прихода и сколько должны партнёру (в USDT). Значения на зелёном фоне — для занесения в учёт/amo.</div>
+    <div class="howto"><b>Как пользоваться:</b> курсы EUR/USD берутся с ЦБ РФ автоматически. Выбери валюту прихода, укажи сумму прихода и сколько должны партнёру (USDT). Значения на зелёном фоне — для занесения в учёт/amo.</div>
     <div class="legend"><span class="sw" style="background:#eaf4fe;border:1.5px solid #3d92c9;"></span>голубым — заполняешь ты&nbsp;&nbsp;·&nbsp;&nbsp;<span class="sw" style="background:#f5f6f8;border:1px solid #d7dbe3;"></span>серым — считается авто&nbsp;&nbsp;·&nbsp;&nbsp;<span class="sw" style="background:#e8f8ee;border:1px solid #c4ead0;"></span>зелёным — для amo (клик копирует)&nbsp;&nbsp;·&nbsp;&nbsp;<span class="sw" style="background:#ebe6fd;border:1px solid #d9d1f7;"></span>сиреневым — проверка</div>
     <div id="ratesNote" class="legend" style="margin-bottom:8px;">Загружаем курсы ЦБ РФ…</div>
 
@@ -100,16 +110,16 @@
     </div>
 
     <div class="grid g-in">
-      <div class="ed"><div class="lbl-ed" id="prihodLbl">✎ Сумма прихода</div><input id="prihod" type="text" inputmode="decimal" placeholder="0" /></div>
-      <div class="ed" id="mustEurBox" style="display:none;"><div class="lbl-ed">✎ Клиент должен был в евро</div><input id="mustEur" type="text" inputmode="decimal" placeholder="0" /></div>
-      <div class="ed"><div class="lbl-ed">✎ Должны партнёру (в USDT)</div><input id="partner" type="text" inputmode="decimal" placeholder="0" /></div>
+      <div class="ed"><div class="lbl-ed" id="prihodLbl">✎ Сумма прихода</div><div class="inwrap"><input id="prihod" type="text" inputmode="decimal" placeholder="0" /><button type="button" class="clr" data-clr="prihod" aria-label="Очистить">×</button></div></div>
+      <div class="ed" id="mustEurBox" style="display:none;"><div class="lbl-ed">✎ Клиент должен был в евро</div><div class="inwrap"><input id="mustEur" type="text" inputmode="decimal" placeholder="0" /><button type="button" class="clr" data-clr="mustEur" aria-label="Очистить">×</button></div></div>
+      <div class="ed"><div class="lbl-ed">✎ Должны партнёру (USDT)</div><div class="inwrap"><input id="partner" type="text" inputmode="decimal" placeholder="0" /><button type="button" class="clr" data-clr="partner" aria-label="Очистить">×</button></div></div>
     </div>
 
     <div class="grid g-out">
-      <div class="out"><div class="t">Учёт сейфа (срм-факт), ₽</div><div class="v" id="oSeif">—</div></div>
-      <div class="out"><div class="t">В amo «Услуги АКК», ₽</div><div class="v" id="oUsl">—</div></div>
-      <div class="out"><div class="t">В amo «Бюджет», ₽</div><div class="v" id="oBudget">—</div></div>
-      <div class="out ref"><div class="t">Оплата партнёру (<span id="oPartnerUnit">€</span>)</div><div class="v" id="oPartner">—</div></div>
+      <div class="out"><div class="t">В amo «Услуги АКК» (₽)</div><div class="v" id="oUsl">—</div></div>
+      <div class="out"><div class="t">В amo «Бюджет» (₽)</div><div class="v" id="oBudget">—</div></div>
+      <div class="out ref"><div class="t">Оплата партнёру (<span id="oPartnerUnit">€</span>) — Проверка</div><div class="v" id="oPartner">—</div></div>
+      <div class="out neutral"><div class="t">Учёт сейфа (срм-факт) (₽)</div><div class="v" id="oSeif">—</div></div>
     </div>
 
     <div id="calcWarn" style="display:none;margin-top:14px;background:#fdecec;border:1px solid #f3b6b6;border-radius:14px;padding:13px 15px;font-size:13px;color:#b0263a;line-height:1.5;font-weight:600;"></div>
@@ -248,7 +258,10 @@
     paintRates(); comp();
   }
 
-  document.addEventListener("input", function(e){ if (e.target.id === "prihod" || e.target.id === "partner" || e.target.id === "mustEur") { fmtNum(e.target); comp(); } });
+  // Крестик очистки поля (показывается, когда в поле есть значение).
+  function updClr(el){ var w = el.closest && el.closest(".inwrap"); if (w) w.classList.toggle("has", !!el.value); }
+  document.addEventListener("input", function(e){ if (e.target.id === "prihod" || e.target.id === "partner" || e.target.id === "mustEur") { fmtNum(e.target); updClr(e.target); comp(); } });
+  document.addEventListener("click", function(e){ var b = e.target; if (b.classList && b.classList.contains("clr")) { var el = $(b.getAttribute("data-clr")); if (el) { el.value = ""; updClr(el); comp(); el.focus(); } } });
   [].forEach.call(document.querySelectorAll("#curBtns button"), function(b){ b.addEventListener("click", function(){ setCur(b.getAttribute("data-cur")); }); });
   $("btnRefresh").addEventListener("click", async function(){ var b = $("btnRefresh"); b.textContent = "Обновляем…"; b.disabled = true; histLoaded = false; await loadRates(true); b.textContent = "Обновить курсы с ЦБ и banki.ru"; b.disabled = false; });
   // День недели к дате истории + признак «красного» дня: Сб/Вс всегда; будни — по
@@ -343,7 +356,7 @@
       if (!v || !t) return;
       var num = (v.textContent || "").replace(/[^\d.,-]/g, "").replace(/\s/g, "").trim();
       if (!num || num === "—") return;
-      function flash() { var orig = t.innerHTML; t.innerHTML = "✓ Скопировано"; card.style.background = card.classList.contains("ref") ? "#e6e0fb" : "#dff3e6"; setTimeout(function () { t.innerHTML = orig; card.style.background = ""; }, 1000); }
+      function flash() { var orig = t.innerHTML; t.innerHTML = "✓ Скопировано"; card.style.background = card.classList.contains("ref") ? "#e6e0fb" : card.classList.contains("neutral") ? "#e9ebef" : "#dff3e6"; setTimeout(function () { t.innerHTML = orig; card.style.background = ""; }, 1000); }
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(num).then(flash).catch(function () {});
       } else {

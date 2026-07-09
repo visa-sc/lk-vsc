@@ -3768,6 +3768,15 @@
             "#vscContent .vc-out.vc-ref .vc-out-t{color:#5b52c9;}" +
             "#vscContent .vc-out.vc-ref .vc-out-v{color:#5046c8;}" +
             "#vscContent .vc-out.vc-ref::after{color:#9a8ff0;}" +
+            "#vscContent .vc-out.vc-neutral{background:linear-gradient(180deg,#f7f8fa,#eef0f3);border-color:rgba(0,0,0,.08);}" +
+            "#vscContent .vc-out.vc-neutral .vc-out-t{color:#6e6e73;}" +
+            "#vscContent .vc-out.vc-neutral .vc-out-v{color:#3a3a3c;}" +
+            "#vscContent .vc-out.vc-neutral::after{color:#b4b8bf;}" +
+            "#vscContent .vc-inwrap{position:relative;}" +
+            "#vscContent .vc-inwrap .vc-finput{padding-right:38px;}" +
+            "#vscContent .vc-clr{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;padding:0;border:none;border-radius:50%;background:rgba(0,0,0,.07);color:#6e6e73;font-size:16px;line-height:1;cursor:pointer;display:none;align-items:center;justify-content:center;}" +
+            "#vscContent .vc-clr:hover{background:rgba(0,0,0,.13);color:#1d1d1f;}" +
+            "#vscContent .vc-inwrap.has .vc-clr{display:flex;}" +
             "#vscContent .vc-field.needfill{background:linear-gradient(180deg,#fdecec,#fbe0e0);border-color:#f0a9a9;}" +
             "#vscContent .vc-field.needfill .vc-flabel{color:#b0263a;}" +
             "#vscContent .vc-field.needfill .vc-finput{border-color:#e0a0a0;box-shadow:0 0 0 4px rgba(208,38,58,.12);}" +
@@ -3805,12 +3814,12 @@
           '</div>' +
           '<div class="vc-seg">' + curBtn("eur", "Приход в евро") + curBtn("usdt", "Приход в USDT") + curBtn("rub", "Приход в рублях") + '</div>' +
           '<div class="vc-grid vc-grid-in">' +
-            '<div class="vc-field"><div class="vc-flabel" id="calcPrihodLbl">✎ Сумма прихода</div><input id="calcPrihod" type="text" inputmode="decimal" placeholder="0" class="vc-finput"></div>' +
-            '<div class="vc-field" id="calcMustEurBox" style="display:none;"><div class="vc-flabel">✎ Клиент должен был в евро</div><input id="calcMustEur" type="text" inputmode="decimal" placeholder="0" class="vc-finput"></div>' +
-            '<div class="vc-field"><div class="vc-flabel">✎ Должны партнёру (в USDT)</div><input id="calcPartner" type="text" inputmode="decimal" placeholder="0" class="vc-finput"></div>' +
+            '<div class="vc-field"><div class="vc-flabel" id="calcPrihodLbl">✎ Сумма прихода</div><div class="vc-inwrap"><input id="calcPrihod" type="text" inputmode="decimal" placeholder="0" class="vc-finput"><button type="button" class="vc-clr" data-clr="calcPrihod" aria-label="Очистить">×</button></div></div>' +
+            '<div class="vc-field" id="calcMustEurBox" style="display:none;"><div class="vc-flabel">✎ Клиент должен был в евро</div><div class="vc-inwrap"><input id="calcMustEur" type="text" inputmode="decimal" placeholder="0" class="vc-finput"><button type="button" class="vc-clr" data-clr="calcMustEur" aria-label="Очистить">×</button></div></div>' +
+            '<div class="vc-field"><div class="vc-flabel">✎ Должны партнёру (USDT)</div><div class="vc-inwrap"><input id="calcPartner" type="text" inputmode="decimal" placeholder="0" class="vc-finput"><button type="button" class="vc-clr" data-clr="calcPartner" aria-label="Очистить">×</button></div></div>' +
           '</div>' +
           '<div class="vc-grid vc-grid-out">' +
-            outCard("outSeif", "Учёт сейфа (срм-факт), ₽") + outCard("outUsl", "В amo «Услуги АКК», ₽") + outCard("outBudget", "В amo «Бюджет», ₽") + outCard("outPartner", 'Оплата партнёру (<span id="outPartnerUnit">€</span>)', "vc-ref") +
+            outCard("outUsl", "В amo «Услуги АКК» (₽)") + outCard("outBudget", "В amo «Бюджет» (₽)") + outCard("outPartner", 'Оплата партнёру (<span id="outPartnerUnit">€</span>) — Проверка', "vc-ref") + outCard("outSeif", "Учёт сейфа (срм-факт) (₽)", "vc-neutral") +
           '</div>' +
           '<div id="calcWarn" style="display:none;margin-top:14px;background:#fdecec;border:1px solid #f3b6b6;border-radius:14px;padding:13px 15px;font-size:13px;color:#b0263a;line-height:1.5;font-weight:600;"></div>' +
           '<div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;"><button type="button" id="calcRefresh" class="vc-btn vc-btn-primary">Обновить курсы с ЦБ и banki.ru</button>' +
@@ -3819,7 +3828,7 @@
           '<div id="calcHistPanel" style="display:none;margin-top:10px;"></div>' +
           '<div id="calcMismatchPanel" style="display:none;margin-top:10px;"></div>';
         const _calcH = box.querySelector("#calcH");
-        if (_calcH) _calcH.appendChild(vscInfo("<b>Как пользоваться</b><br>Курсы EUR/USD берутся с ЦБ РФ автоматически, курс usdt для расхода ставите вы (сохраняется). Выберите валюту прихода, укажите сумму прихода и сколько должны партнёру (в USDT).<br><br><b>Цвета полей:</b> голубым — заполняете вы; серым — считается автоматически; зелёным — результат для занесения в учёт/amo (клик по нему копирует число); сиреневым — проверочный блок «Оплата партнёру» (эквивалент в € по актуальному курсу)."));
+        if (_calcH) _calcH.appendChild(vscInfo("<b>Как пользоваться</b><br>Курсы EUR/USD берутся с ЦБ РФ автоматически, курс usdt для расхода ставите вы (сохраняется). Выберите валюту прихода, укажите сумму прихода и сколько должны партнёру (USDT).<br><br><b>Цвета полей:</b> голубым — заполняете вы; серым — считается автоматически; зелёным — результат для занесения в учёт/amo (клик по нему копирует число); сиреневым — проверочный блок «Оплата партнёру» (эквивалент в € по актуальному курсу)."));
         const $ = (id) => box.querySelector("#" + id);
         // Копирование значения зелёной области по клику (для переноса в amoCRM / таблицы).
         box.querySelectorAll(".vsc-out").forEach((card) => {
@@ -3828,7 +3837,7 @@
             if (!v || !t) return;
             const num = (v.textContent || "").replace(/[^\d.,-]/g, "").replace(/\s/g, "").trim();
             if (!num || num === "—") return;
-            const flash = () => { const orig = t.innerHTML; t.innerHTML = "✓ Скопировано"; card.style.background = card.classList.contains("vc-ref") ? "#e6e0fb" : "#dff3e6"; setTimeout(() => { t.innerHTML = orig; card.style.background = ""; }, 1000); };
+            const flash = () => { const orig = t.innerHTML; t.innerHTML = "✓ Скопировано"; card.style.background = card.classList.contains("vc-ref") ? "#e6e0fb" : card.classList.contains("vc-neutral") ? "#e9ebef" : "#dff3e6"; setTimeout(() => { t.innerHTML = orig; card.style.background = ""; }, 1000); };
             if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(num).then(flash).catch(() => {}); }
             else { const ta = document.createElement("textarea"); ta.value = num; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); } catch (_) {} document.body.removeChild(ta); flash(); }
           });
@@ -3923,7 +3932,10 @@
             fetch("/api/calc-mismatch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prihod, mustEur, rate }) }).catch(() => {});
           }, 2500);
         }
-        [prihodEl, partnerEl, mustEurEl].forEach((el) => el && el.addEventListener("input", () => { fmtNum(el); comp(); }));
+        // Крестик очистки поля (показывается, когда в поле есть значение).
+        const updClr = (el) => { const w = el && el.closest && el.closest(".vc-inwrap"); if (w) w.classList.toggle("has", !!el.value); };
+        [prihodEl, partnerEl, mustEurEl].forEach((el) => el && el.addEventListener("input", () => { fmtNum(el); updClr(el); comp(); }));
+        box.addEventListener("click", (e) => { const b = e.target; if (b.classList && b.classList.contains("vc-clr")) { const el = $(b.getAttribute("data-clr")); if (el) { el.value = ""; updClr(el); comp(); el.focus(); } } });
         if (b7El) {
           b7El.addEventListener("input", comp);
           b7El.addEventListener("change", async function () { const v = pf(b7El); if (v > 0) { vscCalcRates.usdtExpense = v; try { await fetch("/admin/api/vsc-rates", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ usdtExpense: v }) }); } catch (_) {} } });
