@@ -116,11 +116,41 @@ async function syncContacts() {
   log(`contacts ГОТОВО: страниц ${pages}, обновлено ${changed}, конфликтов ${conflicts}`);
 }
 
+const upTask = db.prepare(`INSERT INTO tasks(id,entity_type,entity_id,text,task_type,complete_till,is_completed,responsible_user_id,result,created_at)
+  VALUES(@id,@entity_type,@entity_id,@text,@task_type,@complete_till,@is_completed,@responsible_user_id,@result,@created_at)
+  ON CONFLICT(id) DO UPDATE SET text=@text,complete_till=@complete_till,is_completed=@is_completed,responsible_user_id=@responsible_user_id,result=@result`);
+async function syncTasks() {
+  // задачи создаём/обновляем только если у сделки нет локальной правки её задач нет смысла проверять — задачи амо приходят как есть,
+  // локально созданные задачи имеют id>=1e9 и не пересекаются с амо-id
+  let url = `${BASE}/api/v4/tasks`, pages = 0, changed = 0, maxUpd = since;
+  let params = { limit: 250, "order[updated_at]": "asc", "filter[updated_at][from]": since };
+  while (url && pages < MAX_PAGES) {
+    const data = await amoGet(url, params); params = undefined;
+    if (!data) break;
+    const items = (data._embedded && data._embedded.tasks) || [];
+    if (!items.length) break;
+    db.transaction(() => {
+      for (const t of items) {
+        maxUpd = Math.max(maxUpd, t.updated_at || 0);
+        upTask.run({ id: t.id, entity_type: t.entity_type || "leads", entity_id: t.entity_id || 0, text: t.text || "", task_type: t.task_type_id || 0, complete_till: t.complete_till || 0, is_completed: t.is_completed ? 1 : 0, responsible_user_id: t.responsible_user_id || 0, result: JSON.stringify(t.result || null), created_at: t.created_at || 0 });
+        changed++;
+      }
+    })();
+    pages++;
+    url = (data._links && data._links.next && data._links.next.href) || null;
+    if (url) { const u = new URL(url); params = Object.fromEntries(u.searchParams); url = u.origin + u.pathname; }
+    if (pages % 10 === 0) log(`tasks: страниц ${pages}, обновлено ${changed}`);
+  }
+  state.last_tasks = maxUpd; fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
+  log(`tasks ГОТОВО: страниц ${pages}, обновлено ${changed}`);
+}
+
 (async () => {
   if (!AMO_TOKEN || !AMO_SUB) { console.error("нет AMO_ACCESS_TOKEN/AMO_SUBDOMAIN"); process.exit(1); }
   log(`Синк ${ENTITY} из ${BASE} с ${new Date(since * 1000).toISOString()} (1 rps, read-only, max-pages=${MAX_PAGES})`);
   if (ENTITY === "leads") await syncLeads();
   else if (ENTITY === "contacts") await syncContacts();
-  else { console.error("entity: leads|contacts"); process.exit(1); }
+  else if (ENTITY === "tasks") await syncTasks();
+  else { console.error("entity: leads|contacts|tasks"); process.exit(1); }
   db.close();
 })().catch((e) => { log("ОСТАНОВКА: " + e.message); process.exit(2); });
