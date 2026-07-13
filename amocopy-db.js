@@ -179,6 +179,31 @@ module.exports = function mountDbRoutes(app, guard, api) {
     res.json({ success: true, items: items.slice(0, 50).map((l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id, resp: uName[l.responsible_user_id] || "" })) });
   });
 
+  // Покупатели (модуль customers) — постранично
+  let hasCustomers = false;
+  try { hasCustomers = !!D.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='customers'").get(); } catch (_) {}
+  if (hasCustomers) {
+    const qCustPage = D.prepare("SELECT id,name,status_id,responsible_user_id,ltv,purchases_count,average_check,next_price,next_date,created_at FROM customers ORDER BY (ltv>0) DESC, created_at DESC LIMIT 50 OFFSET ?");
+    const qCustCount = D.prepare("SELECT COUNT(*) c FROM customers");
+    const qCustSearch = D.prepare("SELECT id,name,status_id,responsible_user_id,ltv,purchases_count,average_check,next_price,next_date,created_at FROM customers WHERE name LIKE ? ORDER BY created_at DESC LIMIT 50");
+    app.get(`${api}/customers_page`, guard, (req, res) => {
+      const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+      const q = String(req.query.q || "").trim();
+      const rows = q ? qCustSearch.all("%" + q + "%") : qCustPage.all((page - 1) * 50);
+      res.json({ success: true, total: page === 1 && !q ? qCustCount.get().c : null, items: rows.map((c) => ({
+        id: c.id, name: c.name, resp: uName[c.responsible_user_id] || "", ltv: c.ltv, purchases: c.purchases_count,
+        avg: c.average_check, next_price: c.next_price, next_date: c.next_date, created: c.created_at })) });
+    });
+    const qCust = D.prepare("SELECT * FROM customers WHERE id=?");
+    app.get(`${api}/customer/:id`, guard, (req, res) => {
+      const c = qCust.get(parseInt(req.params.id, 10));
+      if (!c) return res.status(404).json({ success: false });
+      res.json({ success: true, customer: { id: c.id, name: c.name, responsible_user_id: c.responsible_user_id,
+        ltv: c.ltv, purchases_count: c.purchases_count, average_check: c.average_check, next_price: c.next_price,
+        next_date: c.next_date, created_at: c.created_at, updated_at: c.updated_at, custom_fields_values: J(c.cf, null) } });
+    });
+  }
+
   // ФИЛЬТР сделок (как в amoCRM: клик по поиску → фильтр). Только по локальной БД копии.
   app.get(`${api}/leads_filter`, guard, (req, res) => {
     const q = req.query || {};
