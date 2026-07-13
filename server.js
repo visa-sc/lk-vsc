@@ -4848,22 +4848,11 @@ app.get("/admin/api/vsc-forecast", requireAdmin, async (req, res) => {
 //   выручка ЯБ½ = Σвыручка − «Я бизнес»/2;  Итого затраты = Σреклама + прочие;
 //   Факт ДРР = |Итого затраты| / выручкаЯБ½;  KPI к оплате = выручка × (ДРР0 − Факт ДРР) / 2.
 const VSC_MKTKPI_FILE = path.join(__dirname, ".vscMktKpi.json");
+const VSC_MKTKPI_SEED = path.join(__dirname, "vscMktKpi.seed.json");
+// Сид — все месяцы 2026 (распарсено из вкладки kpi гугл-таблицы, блоки по месяцам).
 function vscMktKpiSeed() {
-  const ch = (name, rev, spend, deals) => ({ name, rev, spend, deals });
-  const june = {
-    channels: [
-      ch("email", 631212, 15640, 32), ch("instagram", 0, 1000, 0), ch("Я бизнес", 484384, 23700, 25),
-      ch("СПБ Я бизнес", 322837, 9600, 16), ch("Телеграм", 1235127, 146141, 50), ch("2gis", 18381, 0, 1),
-      ch("SEO", 502229, 40395, 20), ch("sms", 447962, 72289, 20), ch("Google", 0, 0, 0),
-      ch("виза-сервис", 0, 0, 0), ch("Я бизнес ЕКБ", 0, 0, 0), ch("MAX", 135230, 0, 8),
-      ch("ВК", 0, 0, 0), ch("Квиз", 13770, 11200, 1)
-    ],
-    prochie: [{ name: "Аналитик", amount: 21137 }, { name: "ФОТ", amount: 105000 }, { name: "ВК/Мах ведение + Ведение ВНЖ ТГ", amount: 28000 }],
-    dop: [{ name: "доп мессенджер сейлбот (итал виза)", amount: 649 }, { name: "доп канал в воззап для тг с сайта", amount: 2000 }, { name: "Продвижение канала МАХ (тест)", amount: 64691 }, { name: "Клодкод", amount: 1817 }, { name: "чатгпт", amount: 1500 }, { name: "Дизайнер", amount: 22837 }]
-  };
-  const mayRev = { "email": 589477, "instagram": 0, "Я бизнес": 633009, "СПБ Я бизнес": 248022, "Телеграм": 1163773, "2gis": 0, "SEO": 471780, "sms": 418496, "Google": 0, "виза-сервис": 0, "Я бизнес ЕКБ": 0, "MAX": 54476, "ВК": 0, "Квиз": 10476 };
-  const may = { channels: june.channels.map((c) => ({ name: c.name, rev: mayRev[c.name] || 0, spend: null, deals: null })), prochie: [], dop: [] };
-  return { params: { fotPerDeal: 822, drrZero: 0.25 }, months: { "2026-05": may, "2026-06": june } };
+  try { return JSON.parse(fs.readFileSync(VSC_MKTKPI_SEED, "utf8")); }
+  catch (e) { return { params: { fotPerDeal: 822, drrZero: 0.25 }, months: {} }; }
 }
 let _vscMkt = null;
 function vscMktKpiLoad() {

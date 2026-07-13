@@ -3697,7 +3697,7 @@
         const thL='text-align:left;padding:7px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;';
         tblChart.innerHTML='<div class="vsc-chart-h" style="margin-bottom:8px;">Каналы — '+escapeHtml(vscMktYmName(_vscMktMonth))+'</div>'
           +'<div style="overflow-x:auto;"><table id="mktTable" style="width:100%;border-collapse:collapse;font-size:13px;min-width:720px;">'
-          +'<thead><tr><th style="'+thL+'">Канал</th><th style="'+th+'">Выручка</th><th style="'+th+'">Реклама</th><th style="'+th+'">Сделки</th><th style="'+th+'">Ср. чек</th><th style="'+th+'">ФОТ</th><th style="'+th+'">ДРР</th><th style="'+th+'">ДРР+ФОТ</th><th></th></tr></thead>'
+          +'<thead><tr><th style="'+thL+'">Канал</th><th style="'+th+'">Выручка</th><th style="'+th+'">Δ выр.</th><th style="'+th+'">Реклама</th><th style="'+th+'">Сделки</th><th style="'+th+'">Ср. чек</th><th style="'+th+'">ФОТ</th><th style="'+th+'">ДРР</th><th style="'+th+'">ДРР+ФОТ</th><th></th></tr></thead>'
           +'<tbody id="mktTbody"></tbody></table></div>'
           +'<button type="button" id="mktAddCh" class="vsc-dayrev-refresh" style="margin-top:10px;background:#eef2f7;color:#3a4356;border-color:#d7dce4;">+ канал</button>';
         box.appendChild(tblChart);
@@ -3722,6 +3722,7 @@
           const tr=document.createElement("tr"); tr.style.borderTop="1px solid #f0eef5";
           tr.innerHTML='<td style="padding:4px 8px;"><input type="text" class="mkt-name" data-i="'+i+'" value="'+escapeHtml(c.name||"")+'" style="width:100%;min-width:120px;box-sizing:border-box;padding:5px 7px;border:1px solid rgba(20,32,64,.10);border-radius:7px;font-size:13px;font-weight:600;font-family:inherit;background:#fff;"></td>'
             +'<td style="padding:4px 6px;width:110px;">'+inp(c.rev,"mkt-rev")+'</td>'
+            +'<td class="mkt-drev" style="padding:5px 8px;text-align:right;white-space:nowrap;font-size:11.5px;"></td>'
             +'<td style="padding:4px 6px;width:100px;">'+inp(c.spend,"mkt-spend")+'</td>'
             +'<td style="padding:4px 6px;width:75px;">'+inp(c.deals,"mkt-deals")+'</td>'
             +'<td class="mkt-avg" style="padding:5px 8px;text-align:right;color:#5a626f;white-space:nowrap;"></td>'
@@ -3763,10 +3764,24 @@
         box.querySelector("#mktFpd").addEventListener("input",(e)=>{ _vscMkt.params.fotPerDeal=vscMktNum(e.target.value)||0; _vscMktDirty=true; vscMktRecalc(); });
         box.querySelector("#mktDrr0").addEventListener("input",(e)=>{ _vscMkt.params.drrZero=(vscMktNum(e.target.value)||0)/100; _vscMktDirty=true; vscMktRecalc(); });
       }
+      // предыдущий (хронологически) существующий месяц
+      function vscMktPrevMonthKey(ym){ const asc=vscMktMonthsSorted().slice().reverse(); const i=asc.indexOf(ym); return i>0?asc[i-1]:null; }
+      // Δ к прошлому месяцу: «▲/▼ N%». goodUp=true → рост зелёный (выручка/KPI), false → рост красный (ДРР).
+      function vscMktDelta(cur,prev,goodUp){
+        if(cur==null||prev==null||!isFinite(cur)||!isFinite(prev)||prev===0) return "";
+        const pct=Math.round((cur-prev)/Math.abs(prev)*100);
+        if(pct===0) return '<span style="color:#b9bec8;font-weight:600;">0%</span>';
+        const good=goodUp?pct>0:pct<0;
+        return '<span style="color:'+(good?"#2c7a43":"#b0263a")+';font-weight:700;white-space:nowrap;">'+(pct>0?"▲":"▼")+" "+Math.abs(pct)+'%</span>';
+      }
       // пересчёт вычисляемых ячеек + сводки (без ре-рендера инпутов)
       function vscMktRecalc(){
         const month=_vscMkt.months[_vscMktMonth]; if(!month)return;
         const { rows, sum } = vscMktCompute(month, _vscMkt.params);
+        // прошлый месяц — для Δ
+        const prevKey=vscMktPrevMonthKey(_vscMktMonth);
+        const prev=prevKey?vscMktCompute(_vscMkt.months[prevKey],_vscMkt.params):null;
+        const prevRev={}; if(prev) prev.rows.forEach((r)=>{ prevRev[r.name]=r.rev; });
         const tb=document.getElementById("mktTbody");
         if(tb) Array.from(tb.children).forEach((tr,i)=>{ const r=rows[i]; if(!r)return;
           tr.querySelector(".mkt-avg").textContent=r.avg==null?"—":vscMktMoney(r.avg);
@@ -3775,21 +3790,28 @@
           d.textContent=vscMktPct(r.drr); df.textContent=vscMktPct(r.drrFot);
           const col=(v)=> v==null?"#9aa0ab":(v<=sum.drr0*100?"#2c7a43":v<=25?"#b8862a":"#b0263a");
           d.style.color=col(r.drr); df.style.color=col(r.drrFot); d.style.fontWeight="600"; df.style.fontWeight="600";
+          const dr=tr.querySelector(".mkt-drev"); if(dr) dr.innerHTML = prev ? vscMktDelta(r.rev, prevRev[r.name]!=null?prevRev[r.name]:null, true) : '<span style="color:#c8cfdd;">—</span>';
         });
         const s=document.getElementById("mktSummary"); if(s){
-          const kpiPos=(sum.kpi||0)>=0;
-          s.innerHTML='<div class="vsc-chart-h" style="margin-bottom:10px;">Итоги — '+escapeHtml(vscMktYmName(_vscMktMonth))+'</div>'
+          const kpiPos=(sum.kpi||0)>=0; const p=prev?prev.sum:null;
+          const dRev = p?vscMktDelta(sum.revTotal,p.revTotal,true):"";
+          const dZat = p?vscMktDelta(sum.zatratyItogo,p.zatratyItogo,false):"";
+          const dDrr = p?vscMktDelta(sum.faktDrr,p.faktDrr,false):"";
+          const dKpi = p?vscMktDelta(sum.kpi,p.kpi,true):"";
+          const dDeals = p?vscMktDelta(sum.dealsTotal,p.dealsTotal,true):"";
+          const prevLbl = prevKey?(" к "+vscMktYmName(prevKey).split(" ")[0].toLowerCase()):"";
+          s.innerHTML='<div class="vsc-chart-h" style="margin-bottom:10px;">Итоги — '+escapeHtml(vscMktYmName(_vscMktMonth))+(prevKey?' <span style="font-weight:500;color:#9aa0ab;font-size:13px;">(Δ'+escapeHtml(prevLbl)+')</span>':'')+'</div>'
             +'<div class="vsc-tiles" style="margin-bottom:0;">'
-            + vscMktTile("Выручка",vscMktMoney(sum.revTotal),"по каналам")
+            + vscMktTile("Выручка",vscMktMoney(sum.revTotal),"по каналам","",dRev)
             + vscMktTile("Выручка (ЯБ ½)",vscMktMoney(sum.revYB),"«Я бизнес» вполовину")
-            + vscMktTile("Реклама + прочие",vscMktMoney(sum.zatratyItogo),"Σ реклама "+vscMktMoney(sum.spendTotal)+" + прочие "+vscMktMoney(sum.prochie))
-            + vscMktTile("Факт ДРР",vscMktPct(sum.faktDrr),"порог "+vscMktPct(sum.drr0*100),(sum.faktDrr!=null&&sum.faktDrr<=sum.drr0*100)?"pos":"neg")
-            + vscMktTile("KPI к оплате",vscMktMoney(sum.kpi),"выручка×(порог−ДРР)/2",kpiPos?"pos":"neg")
-            + vscMktTile("Сделок · ФОТ",Math.round(sum.dealsTotal).toLocaleString("ru-RU")+" · "+vscMktMoney(sum.fotTotal),"ФОТ = сделки×"+((_vscMkt.params&&_vscMkt.params.fotPerDeal)||0))
+            + vscMktTile("Реклама + прочие",vscMktMoney(sum.zatratyItogo),"Σ реклама "+vscMktMoney(sum.spendTotal)+" + прочие "+vscMktMoney(sum.prochie),"",dZat)
+            + vscMktTile("Факт ДРР",vscMktPct(sum.faktDrr),"порог "+vscMktPct(sum.drr0*100),(sum.faktDrr!=null&&sum.faktDrr<=sum.drr0*100)?"pos":"neg",dDrr)
+            + vscMktTile("KPI к оплате",vscMktMoney(sum.kpi),"выручка×(порог−ДРР)/2",kpiPos?"pos":"neg",dKpi)
+            + vscMktTile("Сделок · ФОТ",Math.round(sum.dealsTotal).toLocaleString("ru-RU")+" · "+vscMktMoney(sum.fotTotal),"ФОТ = сделки×"+((_vscMkt.params&&_vscMkt.params.fotPerDeal)||0),"",dDeals)
             +'</div>';
         }
       }
-      function vscMktTile(label,val,sub,cls){ return '<div class="vsc-tile"><div class="vsc-tile-l">'+escapeHtml(label)+'</div><div class="vsc-tile-v'+(cls?" "+cls:"")+'" style="font-size:20px;">'+escapeHtml(val)+'</div>'+(sub?'<div class="vsc-tile-s">'+escapeHtml(sub)+'</div>':'')+'</div>'; }
+      function vscMktTile(label,val,sub,cls,deltaHtml){ return '<div class="vsc-tile"><div class="vsc-tile-l">'+escapeHtml(label)+'</div><div class="vsc-tile-v'+(cls?" "+cls:"")+'" style="font-size:20px;">'+escapeHtml(val)+'</div>'+(deltaHtml?'<div style="font-size:12px;margin-top:2px;">'+deltaHtml+'</div>':'')+(sub?'<div class="vsc-tile-s">'+escapeHtml(sub)+'</div>':'')+'</div>'; }
       // Графики по каналам: выручка канала по всем месяцам (мини-столбцы) — топ по выручке.
       function vscMktRenderCharts(){
         const host=document.getElementById("mktCharts"); if(!host)return; host.innerHTML="";

@@ -1,0 +1,713 @@
+{
+  "params": {
+    "fotPerDeal": 822,
+    "drrZero": 0.25
+  },
+  "months": {
+    "2026-01": {
+      "channels": [
+        {
+          "name": "email",
+          "rev": 698099,
+          "spend": 14200,
+          "deals": 36
+        },
+        {
+          "name": "instagram",
+          "rev": 0,
+          "spend": 1000,
+          "deals": 0
+        },
+        {
+          "name": "Я бизнес",
+          "rev": 610140,
+          "spend": 23700,
+          "deals": 30
+        },
+        {
+          "name": "СПБ Я бизнес",
+          "rev": 116306,
+          "spend": 15000,
+          "deals": 6
+        },
+        {
+          "name": "Телеграм",
+          "rev": 1721092,
+          "spend": 200958,
+          "deals": 82
+        },
+        {
+          "name": "2gis",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "SEO visasc.ru",
+          "rev": 93665,
+          "spend": 395,
+          "deals": 6
+        },
+        {
+          "name": "sms",
+          "rev": 394162,
+          "spend": 77440,
+          "deals": 14
+        },
+        {
+          "name": "Google",
+          "rev": 44000,
+          "spend": null,
+          "deals": 2
+        },
+        {
+          "name": "виза-сервис",
+          "rev": 16890,
+          "spend": 0,
+          "deals": 1
+        },
+        {
+          "name": "Я бизнес ЕКБ",
+          "rev": 15936,
+          "spend": 7500,
+          "deals": 1
+        },
+        {
+          "name": "МТС-маркетолог",
+          "rev": 0,
+          "spend": 4663,
+          "deals": 0
+        },
+        {
+          "name": "Квиз",
+          "rev": 0,
+          "spend": 0,
+          "deals": 0
+        }
+      ],
+      "prochie": [
+        {
+          "name": "Аналитик",
+          "amount": 15000
+        },
+        {
+          "name": "ФОТ",
+          "amount": 105000
+        },
+        {
+          "name": "ВК ведение",
+          "amount": 12000
+        }
+      ],
+      "dop": []
+    },
+    "2026-02": {
+      "channels": [
+        {
+          "name": "email",
+          "rev": 540569,
+          "spend": 14200,
+          "deals": 20
+        },
+        {
+          "name": "instagram",
+          "rev": 0,
+          "spend": 1000,
+          "deals": 0
+        },
+        {
+          "name": "Я бизнес",
+          "rev": 409369,
+          "spend": 23700,
+          "deals": 23
+        },
+        {
+          "name": "СПБ Я бизнес",
+          "rev": 302620,
+          "spend": 9600,
+          "deals": 13
+        },
+        {
+          "name": "Телеграм",
+          "rev": 1873383,
+          "spend": 167391,
+          "deals": 95
+        },
+        {
+          "name": "2gis",
+          "rev": 16890,
+          "spend": null,
+          "deals": 1
+        },
+        {
+          "name": "SEO",
+          "rev": 186686,
+          "spend": 395,
+          "deals": 7
+        },
+        {
+          "name": "sms",
+          "rev": 343779,
+          "spend": 37332,
+          "deals": 11
+        },
+        {
+          "name": "Google",
+          "rev": 24990,
+          "spend": null,
+          "deals": 1
+        },
+        {
+          "name": "виза-сервис",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "Я бизнес ЕКБ",
+          "rev": 9498,
+          "spend": null,
+          "deals": 1
+        },
+        {
+          "name": "МТС-маркетолог",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "Квиз",
+          "rev": 0,
+          "spend": 0,
+          "deals": 0
+        }
+      ],
+      "prochie": [
+        {
+          "name": "Аналитик",
+          "amount": 15000
+        },
+        {
+          "name": "ФОТ",
+          "amount": 105000
+        },
+        {
+          "name": "ВК ведение",
+          "amount": 16000
+        }
+      ],
+      "dop": [
+        {
+          "name": "доп мессендж сейлбот для бота итал виза",
+          "amount": 195
+        },
+        {
+          "name": "доп канал в воззап для тг с сайта",
+          "amount": 2000
+        },
+        {
+          "name": "оплата флексби",
+          "amount": 13230
+        }
+      ]
+    },
+    "2026-03": {
+      "channels": [
+        {
+          "name": "email",
+          "rev": 691765,
+          "spend": 15640,
+          "deals": 32
+        },
+        {
+          "name": "instagram",
+          "rev": 0,
+          "spend": 1000,
+          "deals": 0
+        },
+        {
+          "name": "Я бизнес",
+          "rev": 504670,
+          "spend": 23700,
+          "deals": 19
+        },
+        {
+          "name": "СПБ Я бизнес",
+          "rev": 214876,
+          "spend": 9600,
+          "deals": 9
+        },
+        {
+          "name": "Телеграм",
+          "rev": 1249861,
+          "spend": 193209,
+          "deals": 73
+        },
+        {
+          "name": "2gis",
+          "rev": 0,
+          "spend": null,
+          "deals": 1
+        },
+        {
+          "name": "SEO",
+          "rev": 365644,
+          "spend": 914,
+          "deals": 14
+        },
+        {
+          "name": "sms",
+          "rev": 441084,
+          "spend": 60434,
+          "deals": 19
+        },
+        {
+          "name": "Google",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "виза-сервис",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "Я бизнес ЕКБ",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "МТС-маркетолог",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "Квиз",
+          "rev": 0,
+          "spend": 2400,
+          "deals": 0
+        }
+      ],
+      "prochie": [
+        {
+          "name": "Аналитик",
+          "amount": 15000
+        },
+        {
+          "name": "ФОТ",
+          "amount": 105000
+        },
+        {
+          "name": "ВК ведение",
+          "amount": 12000
+        }
+      ],
+      "dop": [
+        {
+          "name": "доп мессендж сейлбот для бота итал виза",
+          "amount": 649
+        },
+        {
+          "name": "доп канал в воззап для тг с сайта",
+          "amount": 2000
+        }
+      ]
+    },
+    "2026-04": {
+      "channels": [
+        {
+          "name": "email",
+          "rev": 705914,
+          "spend": 15640,
+          "deals": 26
+        },
+        {
+          "name": "instagram",
+          "rev": 51800,
+          "spend": 1000,
+          "deals": 2
+        },
+        {
+          "name": "Я бизнес",
+          "rev": 550183,
+          "spend": 23700,
+          "deals": 26
+        },
+        {
+          "name": "СПБ Я бизнес",
+          "rev": 299100,
+          "spend": 9600,
+          "deals": 16
+        },
+        {
+          "name": "Телеграм",
+          "rev": 1641449,
+          "spend": 205101,
+          "deals": 68
+        },
+        {
+          "name": "2gis",
+          "rev": 16040,
+          "spend": null,
+          "deals": 1
+        },
+        {
+          "name": "SEO",
+          "rev": 383804,
+          "spend": 20395,
+          "deals": 19
+        },
+        {
+          "name": "sms",
+          "rev": 338095,
+          "spend": 58351,
+          "deals": 12
+        },
+        {
+          "name": "Google",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "виза-сервис",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "Я бизнес ЕКБ",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "МТС-маркетолог",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "ВК",
+          "rev": 15068,
+          "spend": null,
+          "deals": 1
+        },
+        {
+          "name": "Квиз",
+          "rev": 21568,
+          "spend": 8000,
+          "deals": 2
+        }
+      ],
+      "prochie": [
+        {
+          "name": "Аналитик",
+          "amount": 15000
+        },
+        {
+          "name": "ФОТ",
+          "amount": 105000
+        },
+        {
+          "name": "ВК/Мах ведение+Ведение ВНЖ ТГ",
+          "amount": 24000
+        }
+      ],
+      "dop": [
+        {
+          "name": "доп мессендж сейлбот для бота итал виза",
+          "amount": 649
+        },
+        {
+          "name": "доп канал в воззап для тг с сайта",
+          "amount": 2000
+        },
+        {
+          "name": "сервис ПФ (тест)",
+          "amount": 23500
+        },
+        {
+          "name": "Продвижение канал ВНЖ ТГ (тест)",
+          "amount": 22689
+        },
+        {
+          "name": "Продвижение канала ВК (тест)",
+          "amount": 36940
+        },
+        {
+          "name": "Продвижение канала МАХ (тест)",
+          "amount": 3566
+        }
+      ]
+    },
+    "2026-05": {
+      "channels": [
+        {
+          "name": "email",
+          "rev": 589477,
+          "spend": 15640,
+          "deals": 27
+        },
+        {
+          "name": "instagram",
+          "rev": 0,
+          "spend": 1000,
+          "deals": 0
+        },
+        {
+          "name": "Я бизнес",
+          "rev": 633009,
+          "spend": 23700,
+          "deals": 32
+        },
+        {
+          "name": "СПБ Я бизнес",
+          "rev": 248022,
+          "spend": 9600,
+          "deals": 13
+        },
+        {
+          "name": "Телеграм",
+          "rev": 1163773,
+          "spend": 140024,
+          "deals": 50
+        },
+        {
+          "name": "2gis",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "SEO",
+          "rev": 471780,
+          "spend": 40395,
+          "deals": 17
+        },
+        {
+          "name": "sms",
+          "rev": 418496,
+          "spend": 51902,
+          "deals": 19
+        },
+        {
+          "name": "Google",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "виза-сервис",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "Я бизнес ЕКБ",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "MAX",
+          "rev": 54476,
+          "spend": null,
+          "deals": 4
+        },
+        {
+          "name": "ВК",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "Квиз",
+          "rev": 10476,
+          "spend": 18400,
+          "deals": 1
+        }
+      ],
+      "prochie": [
+        {
+          "name": "Аналитик",
+          "amount": 15000
+        },
+        {
+          "name": "ФОТ",
+          "amount": 105000
+        },
+        {
+          "name": "ВК/Мах ведение+Ведение ВНЖ ТГ",
+          "amount": 24000
+        }
+      ],
+      "dop": [
+        {
+          "name": "доп мессендж сейлбот для бота итал виза",
+          "amount": 649
+        },
+        {
+          "name": "доп канал в воззап для тг с сайта",
+          "amount": 2000
+        },
+        {
+          "name": "Продвижение канал ВНЖ ТГ (тест)",
+          "amount": 7881
+        },
+        {
+          "name": "Продвижение канала ВК (тест)",
+          "amount": 12292
+        },
+        {
+          "name": "Продвижение канала МАХ (тест), урезал его",
+          "amount": 64691
+        },
+        {
+          "name": "Сервер и домены voyo",
+          "amount": 10544
+        },
+        {
+          "name": "Клодкод",
+          "amount": 1500
+        },
+        {
+          "name": "Дизайнер",
+          "amount": 3045
+        }
+      ]
+    },
+    "2026-06": {
+      "channels": [
+        {
+          "name": "email",
+          "rev": 631212,
+          "spend": 15640,
+          "deals": 32
+        },
+        {
+          "name": "instagram",
+          "rev": 0,
+          "spend": 1000,
+          "deals": 0
+        },
+        {
+          "name": "Я бизнес",
+          "rev": 484384,
+          "spend": 23700,
+          "deals": 25
+        },
+        {
+          "name": "СПБ Я бизнес",
+          "rev": 322837,
+          "spend": 9600,
+          "deals": 16
+        },
+        {
+          "name": "Телеграм",
+          "rev": 1235127,
+          "spend": 146141,
+          "deals": 50
+        },
+        {
+          "name": "2gis",
+          "rev": 18381,
+          "spend": null,
+          "deals": 1
+        },
+        {
+          "name": "SEO",
+          "rev": 502229,
+          "spend": 40395,
+          "deals": 20
+        },
+        {
+          "name": "sms",
+          "rev": 447962,
+          "spend": 72289,
+          "deals": 20
+        },
+        {
+          "name": "Google",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "виза-сервис",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "Я бизнес ЕКБ",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "MAX",
+          "rev": 135230,
+          "spend": null,
+          "deals": 8
+        },
+        {
+          "name": "ВК",
+          "rev": 0,
+          "spend": null,
+          "deals": 0
+        },
+        {
+          "name": "Квиз",
+          "rev": 13770,
+          "spend": 11200,
+          "deals": 1
+        }
+      ],
+      "prochie": [
+        {
+          "name": "Аналитик",
+          "amount": 21137
+        },
+        {
+          "name": "ФОТ",
+          "amount": 105000
+        },
+        {
+          "name": "ВК/Мах ведение+Ведение ВНЖ ТГ",
+          "amount": 36000
+        }
+      ],
+      "dop": [
+        {
+          "name": "доп мессендж сейлбот для бота итал виза",
+          "amount": 649
+        },
+        {
+          "name": "доп канал в воззап для тг с сайта",
+          "amount": 2000
+        },
+        {
+          "name": "Продвижение канала МАХ (тест), урезал его",
+          "amount": 64691
+        },
+        {
+          "name": "Клодкод",
+          "amount": 1817
+        },
+        {
+          "name": "чатгпт",
+          "amount": 1500
+        },
+        {
+          "name": "Дизайнер",
+          "amount": 22837
+        }
+      ]
+    }
+  }
+}
