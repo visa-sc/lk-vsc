@@ -421,7 +421,14 @@
     if(!curPipe) curPipe=PIPES[0]&&PIPES[0].id;
     var p=PIPES.find(function(x){return x.id===curPipe;})||PIPES[0];
     var tot=pipeTotal(p.id);
-    setHeader(p.name,{caret:true,onTitle:togglePipePanel,count:fmt(tot.c)+" сделки: <b>"+fmt(tot.s)+" ₽</b>",newBtn:"+ Новая сделка",onNew:function(){newLead(p);},searchPh:"Поиск сделки (название или #id — Enter)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);}});
+    setHeader(p.name,{caret:true,onTitle:togglePipePanel,count:fmt(tot.c)+" сделки: <b>"+fmt(tot.s)+" ₽</b>",newBtn:"+ Новая сделка",onNew:function(){newLead(p);},searchPh:"Поиск сделки (название или #id — Enter)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);},
+      onCfg:function(){leadViewMode="kanban";if(ME&&(ME.is_admin||(ME.rights&&ME.rights.sections&&ME.rights.sections.settings))){settingsTab="pipelines";go("settings");}else toast("Настройка воронок — в разделе «Настройки» (только админ)");},
+      dotsMenu:function(){return [
+        {label:leadViewMode==="list"?"Показать воронкой":"Показать списком",on:function(){leadViewMode=leadViewMode==="list"?"kanban":"list";vLeads();}},
+        {label:"Экспорт этой воронки в CSV",on:function(){exportLeadsCsv(p);}},
+        "sep",
+        {label:"Настройка воронок и этапов",on:function(){if(ME&&(ME.is_admin||(ME.rights&&ME.rights.sections&&ME.rights.sections.settings))){settingsTab="pipelines";go("settings");}else toast("Только для администратора");}}
+      ];}});
     renderPipePanel();
     if(leadViewMode==="list")return vLeadsList(p);
     var sts=(p._embedded&&p._embedded.statuses)||[];
@@ -874,6 +881,26 @@
     a.download="contacts_"+(document.querySelectorAll("#cbody tr").length)+".csv";
     document.body.appendChild(a);a.click();a.remove();
     toast("Экспортировано строк: "+(rows.length-1));
+  }
+  function csvDownload(rows,fname){
+    if(rows.length<2)return toast("Нет загруженных строк — прокрутите список",true);
+    var csv="﻿"+rows.map(function(r){return r.map(function(v){return '"'+String(v).replace(/"/g,'""')+'"';}).join(";");}).join("\r\n");
+    var a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);a.download=fname;
+    document.body.appendChild(a);a.click();a.remove();toast("Экспортировано строк: "+(rows.length-1));
+  }
+  function exportLeadsCsv(p){
+    var rows;
+    if(leadViewMode==="list"){
+      rows=[["Название","Этап","Бюджет","Ответственный","Изменена"]];
+      document.querySelectorAll("#llbody tr").forEach(function(tr){rows.push([].map.call(tr.children,function(td){return (td.textContent||"").replace(/\s+/g," ").trim();}));});
+    }else{
+      rows=[["Название","Ответственный","Бюджет"]];
+      document.querySelectorAll("#kb .kb-card").forEach(function(c){
+        var nm=(c.querySelector(".ttl")||{}).textContent||"",resp=(c.querySelector(".top span")||{}).textContent||"";
+        rows.push([nm.trim(),resp.trim(),""]);
+      });
+    }
+    csvDownload(rows,"leads_"+(p?p.id:"")+"_"+(rows.length-1)+".csv");
   }
   function vContacts(){
     renderSidebar("contacts");
