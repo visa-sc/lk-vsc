@@ -66,15 +66,22 @@ module.exports = function mountDbRoutes(app, guard, api) {
   });
 
   // раздел «Задачи»: открытые задачи с именем сделки, фильтр по ответственному
-  const qTasksAll = D.prepare(`SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id, l.name lead_name
+  // предстоящие+сегодня (возр.) и недавняя просрочка (убыв.) — с опц. фильтром по ответственному.
+  // resp приводим к целому и подставляем как литерал (не через плейсхолдер), поэтому инъекция исключена.
+  const prep = (base, resp) => D.prepare(base.replace("{RESP}", resp ? "AND t.responsible_user_id=" + (parseInt(resp, 10) || 0) : ""));
+  const qTasksUpSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id, l.name lead_name
     FROM tasks t LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads'
-    WHERE t.is_completed=0 ORDER BY t.complete_till ASC LIMIT 500`);
-  const qTasksBy = D.prepare(`SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id, l.name lead_name
+    WHERE t.is_completed=0 AND t.complete_till>=? {RESP} ORDER BY t.complete_till ASC LIMIT 300`;
+  const qTasksOvSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id, l.name lead_name
     FROM tasks t LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads'
-    WHERE t.is_completed=0 AND t.responsible_user_id=? ORDER BY t.complete_till ASC LIMIT 500`);
+    WHERE t.is_completed=0 AND t.complete_till<? AND t.complete_till>0 {RESP} ORDER BY t.complete_till DESC LIMIT 200`;
   app.get(`${api}/tasks_list`, guard, (req, res) => {
     const resp = parseInt(req.query.responsible, 10) || 0;
-    const rows = resp ? qTasksBy.all(resp) : qTasksAll.all();
+    const now = Math.floor(Date.now() / 1000);
+    const dayStart = now - (now % 86400);
+    const upcoming = prep(qTasksUpSrc, resp).all(dayStart);
+    const overdue = prep(qTasksOvSrc, resp).all(dayStart);
+    const rows = overdue.concat(upcoming); // просрочка (свежая сверху) + предстоящие
     res.json(rows.map((t) => ({
       id: t.id, text: t.text, till: t.complete_till, resp: uName[t.responsible_user_id] || "",
       resp_id: t.responsible_user_id, entity_type: t.entity_type, entity_id: t.entity_id, lead_name: t.lead_name || ""
