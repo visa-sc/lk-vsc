@@ -91,11 +91,17 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
 
   const api = "/amocrm_copy/api";
 
-  // доступ: свой код-токен ИЛИ обычный vsc-вход (админ/руководитель) — что-то одно
+  // модуль учёток сотрудников (подключается ниже при AMOCOPY_USE_DB=1); до этого — заглушка
+  let userAuth = { validate: () => null };
+
+  // доступ: код-токен (супер-админ) ИЛИ учётка сотрудника ИЛИ обычный vsc-вход (админ/руководитель).
+  // Кладём req.crm — {kind, is_admin, role, rights} — для гейтов «Настроек» и ролей.
   function requireCopyAccess(req, res, next) {
     const t = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
-    if (t && copySessions[t] && copySessions[t] > Date.now()) return next();
-    return requireVscAccess(req, res, next);
+    if (t && copySessions[t] && copySessions[t] > Date.now()) { req.crm = { kind: "admin", is_admin: 1 }; return next(); }
+    const u = t && userAuth.validate(t);
+    if (u) { req.crm = u; return next(); }
+    return requireVscAccess(req, res, function () { req.crm = { kind: "admin", is_admin: 1 }; next(); });
   }
 
   // вход по коду
@@ -122,6 +128,9 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
     // слой записи (/edit-api/*) — только вместе с БД
     try { require(path.join(BASE_DIR, "amocopy-edit.js"))(app, requireCopyAccess); }
     catch (e) { console.error("amocopy: слой записи не поднялся:", e.message); }
+    // учётки сотрудников + роли (вход по email/паролю, раздел «Настройки»)
+    try { userAuth = require(path.join(BASE_DIR, "amocopy-auth.js"))(app, requireCopyAccess, api); }
+    catch (e) { console.error("amocopy: auth не поднялся:", e.message); }
   }
 
   // мелкие справочники — файл целиком
