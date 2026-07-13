@@ -1902,6 +1902,16 @@ function requireVscDashboard(req, res, next) {
   if (r && Array.isArray(r.tabs) && (r.tabs.indexOf("dash") >= 0 || r.tabs.indexOf("monthly") >= 0)) { req.staff = s; return next(); }
   return res.status(401).json({ success: false, message: "Нет доступа" });
 }
+// Доступ к «Маркетинг KPI»: админ ИЛИ руководитель, которому персонально открыта
+// вкладка mktkpi через vscRestrict.tabs (сейчас — Андрей Петров).
+function requireVscMktKpi(req, res, next) {
+  const s = getStaffFromReq(req);
+  if (!s) return res.status(401).json({ success: false, message: "Нет доступа" });
+  if (s.role === "admin") { req.staff = s; return next(); }
+  const r = s.vscRestrict;
+  if (r && Array.isArray(r.tabs) && r.tabs.indexOf("mktkpi") >= 0) { req.staff = s; return next(); }
+  return res.status(401).json({ success: false, message: "Нет доступа" });
+}
 // Доступ к «Бот VFS»: админ ИЛИ руководитель с правом «vfsbot» (сейчас — Плинер).
 function requireVscBot(req, res, next) {
   const s = getStaffFromReq(req);
@@ -4863,8 +4873,8 @@ function vscMktKpiLoad() {
   return _vscMkt;
 }
 function vscMktKpiSave(d) { _vscMkt = d; try { fs.writeFileSync(VSC_MKTKPI_FILE, JSON.stringify(d, null, 2), "utf8"); } catch (e) { console.error("vscMktKpi save:", e.message); } }
-app.get("/admin/api/vsc/mktkpi", requireAdmin, (req, res) => { res.json({ success: true, data: vscMktKpiLoad() }); });
-app.post("/admin/api/vsc/mktkpi", requireAdmin, (req, res) => {
+app.get("/admin/api/vsc/mktkpi", requireVscMktKpi, (req, res) => { res.json({ success: true, data: vscMktKpiLoad() }); });
+app.post("/admin/api/vsc/mktkpi", requireVscMktKpi, (req, res) => {
   const d = req.body && req.body.data;
   if (!d || typeof d !== "object" || !d.months || typeof d.months !== "object") return res.status(400).json({ success: false, message: "Нет данных" });
   if (JSON.stringify(d).length > 500000) return res.status(400).json({ success: false, message: "Слишком большой объём" });
