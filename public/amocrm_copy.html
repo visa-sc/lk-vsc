@@ -716,15 +716,27 @@
     Promise.all([
       req(API+"/automations").then(function(r){return r.text();}).catch(function(){return "";}),
       jreq(API+"/salesbots").catch(function(){return null;}),
-      jreq(API+"/webhooks").catch(function(){return [];})
+      jreq(API+"/webhooks").catch(function(){return [];}),
+      jreq("/edit-api/rules").catch(function(){return {rules:[]};})
     ]).then(function(res){
-      var md=res[0],bots=res[1],hooks=res[2];
+      var md=res[0],bots=res[1],hooks=res[2],rules=(res[3]&&res[3].rules)||[];
+      var rulesByPipe={};rules.forEach(function(r){(rulesByPipe[r.pipeline_id]=rulesByPipe[r.pipeline_id]||[]).push(r);});
+      var rulesHtml='';
+      PIPES.forEach(function(p){
+        var rs=rulesByPipe[p.id]||[];if(!rs.length)return;
+        rulesHtml+='<h3>'+esc(p.name)+' ('+rs.length+')</h3><table><tr><th>Этап</th><th>Действие</th><th>Текст задачи</th></tr>';
+        rs.forEach(function(r){
+          var st="";((p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===r.status_id)st=s.name;});
+          rulesHtml+='<tr><td>'+esc(st)+'</td><td>'+(r.action==="create_task"?"создать задачу":r.action==="set_responsible"?"сменить ответственного":esc(r.action))+'</td><td class="muted">'+esc((r.text||"").slice(0,120))+'</td></tr>';
+        });
+        rulesHtml+='</table>';
+      });
       var html='<div class="plain">'+
-        '<div class="pcard" style="border-left:4px solid #2e80ec"><h2 style="margin-top:0">Движок автоматизаций — v1</h2>'+
-        '<p class="muted">Механизм работает: при переходе сделки на этап применяются правила из конфига (создать задачу / сменить ответственного). '+
-        'Точный конфиг триггеров amoCRM по API не отдаётся (закрыт в виджетах), поэтому правила переносятся из описи ниже <b>с подтверждением</b> — чтобы копия была 1-в-1, без выдуманного. '+
-        'Внешние действия (письма, SMS, боты, чек-листы) пока заглушки — подключим на этапе интеграций.</p></div>'+
-        '<div class="pcard"><h2>Опись автоматизаций (снята с живой amoCRM)</h2><div class="md">'+mdRender(md)+'</div></div>';
+        '<div class="pcard" style="border-left:4px solid #2f8b57"><h2 style="margin-top:0">Движок автоматизаций — АКТИВЕН ('+rules.length+' правил)</h2>'+
+        '<p class="muted">При переходе сделки на этап автоматически создаётся задача (как в amoCRM). Правила восстановлены из амо (текст задач дословно), '+
+        'включены <b>только безусловные</b> триггеры «Создать задачу» — условные (по полям) и внешние действия (письма/SMS/боты/чек-листы «Команда F5») пока не активны, они в описи ниже. '+
+        'Требуется финальная сверка с Андреем.</p>'+(rulesHtml?('<div class="md">'+rulesHtml+'</div>'):"")+'</div>'+
+        '<div class="pcard"><h2>Полная опись автоматизаций (снята с живой amoCRM)</h2><div class="md">'+mdRender(md)+'</div></div>';
       if(bots&&bots.length){
         html+='<div class="pcard"><h2>Salesbot — полные сценарии ('+bots.length+')</h2>';
         bots.forEach(function(b){

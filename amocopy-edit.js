@@ -63,14 +63,16 @@ module.exports = function mountEditRoutes(app, guard) {
   const E = "/edit-api";
 
   // применение правил автоматизаций при входе сделки на этап
-  function applyStageRules(req, leadId, pid, sid) {
+  function applyStageRules(req, leadId, pid, sid, leadResp) {
     const rules = loadRules().filter((r) => r.pipeline_id === pid && r.status_id === sid);
     const applied = [];
     for (const r of rules) {
       if (r.action === "create_task") {
         const tid = nextId();
+        // авто-задача — на текущего ответственного сделки (как в amoCRM), если правило не задаёт иного
+        const taskResp = r.responsible_user_id || leadResp || 0;
         db.prepare(`INSERT INTO tasks(id,entity_type,entity_id,text,task_type,complete_till,is_completed,responsible_user_id,result,created_at)
-          VALUES(?,?,?,?,?,?,0,?,?,?)`).run(tid, "leads", leadId, r.text || "", r.task_type || 0, nowSec() + 86400, 0, "null", nowSec());
+          VALUES(?,?,?,?,?,?,0,?,?,?)`).run(tid, "leads", leadId, r.text || "", r.task_type || 0, nowSec() + 86400, taskResp, "null", nowSec());
         audit(req, "leads", leadId, "auto_task", { rule: r.text, task_id: tid });
         applied.push("задача: " + (r.text || "").slice(0, 40));
       } else if (r.action === "set_responsible" && r.responsible_user_id) {
@@ -81,6 +83,11 @@ module.exports = function mountEditRoutes(app, guard) {
     }
     return applied;
   }
+
+  // просмотр активных правил автоматизаций
+  app.get(`${E}/rules`, guard, (req, res) => {
+    res.json({ success: true, rules: loadRules() });
+  });
 
   // ── перемещение сделки по этапам (drag-n-drop) ──
   app.post(`${E}/lead/:id/stage`, guard, (req, res) => {
@@ -95,7 +102,7 @@ module.exports = function mountEditRoutes(app, guard) {
     db.prepare("UPDATE leads SET pipeline_id=?, status_id=?, updated_at=? WHERE id=?").run(pid, sid, nowSec(), id);
     audit(req, "leads", id, "stage", { from: { pipeline_id: fromP, status_id: fromS }, to: { pipeline_id: pid, status_id: sid, name: st.name } });
     // движок автоматизаций v1: применяем правила входа на этап
-    const applied = applyStageRules(req, id, pid, sid);
+    const applied = applyStageRules(req, id, pid, sid, lead.responsible_user_id);
     res.json({ success: true, status_id: sid, pipeline_id: pid, status_name: st.name, automations: applied });
   });
 
