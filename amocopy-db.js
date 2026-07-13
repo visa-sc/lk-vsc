@@ -172,6 +172,53 @@ module.exports = function mountDbRoutes(app, guard, api) {
     res.json({ success: true, items: items.slice(0, 50).map((l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id, resp: uName[l.responsible_user_id] || "" })) });
   });
 
+  // ФИЛЬТР сделок (как в amoCRM: клик по поиску → фильтр). Только по локальной БД копии.
+  app.get(`${api}/leads_filter`, guard, (req, res) => {
+    const q = req.query || {};
+    const where = [], args = [];
+    const intq = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
+    let v;
+    if ((v = intq(q.pipeline)) !== null) { where.push("pipeline_id=?"); args.push(v); }
+    if ((v = intq(q.status)) !== null) { where.push("status_id=?"); args.push(v); }
+    if ((v = intq(q.responsible)) !== null) { where.push("responsible_user_id=?"); args.push(v); }
+    if ((v = intq(q.price_min)) !== null) { where.push("price>=?"); args.push(v); }
+    if ((v = intq(q.price_max)) !== null) { where.push("price<=?"); args.push(v); }
+    if ((v = intq(q.date_from)) !== null) { where.push("created_at>=?"); args.push(v); }
+    if ((v = intq(q.date_to)) !== null) { where.push("created_at<=?"); args.push(v); }
+    if (q.tag && String(q.tag).trim()) { where.push("tags LIKE ?"); args.push("%" + String(q.tag).trim() + "%"); }
+    if (q.q && String(q.q).trim()) { where.push("name LIKE ?"); args.push("%" + String(q.q).trim() + "%"); }
+    const page = Math.max(1, intq(q.page) || 1);
+    const sql = "SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at FROM leads" +
+      (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY updated_at DESC LIMIT 50 OFFSET ?";
+    try {
+      const rows = D.prepare(sql).all(...args, (page - 1) * 50);
+      let total = null;
+      if (page === 1) { total = D.prepare("SELECT COUNT(*) c FROM leads" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args).c; }
+      res.json({ success: true, total, items: rows.map((l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id, resp: uName[l.responsible_user_id] || "", created: l.created_at, updated: l.updated_at })) });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+
+  // ФИЛЬТР контактов (клик по поиску → фильтр). Только по локальной БД копии.
+  app.get(`${api}/contacts_filter`, guard, (req, res) => {
+    const q = req.query || {};
+    const where = [], args = [];
+    const intq = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
+    let v;
+    if ((v = intq(q.responsible)) !== null) { where.push("responsible_user_id=?"); args.push(v); }
+    if ((v = intq(q.date_from)) !== null) { where.push("created_at>=?"); args.push(v); }
+    if ((v = intq(q.date_to)) !== null) { where.push("created_at<=?"); args.push(v); }
+    if (q.q && String(q.q).trim()) { where.push("(name LIKE ? OR phones LIKE ? OR emails LIKE ?)"); const s = "%" + String(q.q).trim() + "%"; args.push(s, s, s); }
+    const page = Math.max(1, intq(q.page) || 1);
+    const sql = "SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id FROM contacts" +
+      (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY created_at DESC LIMIT 50 OFFSET ?";
+    try {
+      const rows = D.prepare(sql).all(...args, (page - 1) * 50);
+      let total = null;
+      if (page === 1) { total = D.prepare("SELECT COUNT(*) c FROM contacts" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args).c; }
+      res.json({ success: true, total, items: rows.map((c) => ({ id: c.id, n: c.name, p: J(c.phones, []), e: J(c.emails, []), created: c.created_at, updated: c.updated_at, resp: uName[c.responsible_user_id] || "" })) });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+
   // карточка сделки (поля/задачи из БД, примечания из bucket)
   app.get(`${api}/lead/:id`, guard, (req, res) => {
     const id = parseInt(req.params.id, 10);

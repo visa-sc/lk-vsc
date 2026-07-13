@@ -206,6 +206,17 @@
   .role-card h3 { margin:0 0 10px; font-size:15px; display:flex; align-items:center; gap:8px; }
   .badge-adm { background:#eaf3ff; color:#2b6cb0; font-size:11px; padding:2px 7px; border-radius:20px; }
   .swatch { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:6px; vertical-align:middle; }
+  /* ── фильтр (как в amoCRM: клик по поиску) ── */
+  .filter-panel { position:fixed; z-index:140; background:#fff; border:1px solid var(--border); border-radius:10px; box-shadow:0 10px 34px rgba(20,40,70,.20); padding:16px 18px; width:520px; max-width:94vw; }
+  .filter-panel h4 { margin:0 0 12px; font-size:14px; color:#33404d; }
+  .fgrid { display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
+  .ffield { display:flex; flex-direction:column; gap:4px; }
+  .ffield label { font-size:11.5px; color:#8a949e; text-transform:uppercase; font-weight:600; }
+  .ffield input, .ffield select { padding:7px 9px; border:1px solid var(--border); border-radius:7px; font-size:13.5px; width:100%; }
+  .frange { display:flex; gap:6px; align-items:center; }
+  .frange input { width:100%; }
+  .filter-acts { display:flex; gap:8px; margin-top:14px; }
+  .filter-acts .btn.ghost { background:#eef2f6; color:#33404d; }
 </style>
 </head>
 <body>
@@ -251,7 +262,8 @@
 (function(){
   "use strict";
   var API = "/amocrm_copy/api";
-  var token=null, META=null, PIPES=[], USERS=[], KANBAN=null, CF=null, ME=null;
+  var token=null, META=null, PIPES=[], USERS=[], KANBAN=null, CF=null, ME=null, curFilter=null;
+  var FSTATE={leads:{},contacts:{}};
   var $=function(s){return document.querySelector(s);};
   var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
   var fmt=function(n){return (n==null?"—":Number(n).toLocaleString("ru-RU"));};
@@ -312,6 +324,8 @@
     $("#hCount").innerHTML=opts.count||"";
     $("#hSearch").value=""; $("#hSearch").placeholder=opts.searchPh||"Поиск и фильтр";
     $("#hSearch").onkeydown=opts.onSearch||null;
+    curFilter=opts.filter||null;
+    $("#hSearch").onclick=curFilter?function(){openFilterPanel();}:null;
     $("#hNew").textContent=opts.newBtn||"+ Новая сделка";
     $("#hNew").style.display=opts.onNew?"":"none";
     $("#hNew").onclick=opts.onNew||null;
@@ -333,6 +347,72 @@
     var rows=menu.querySelectorAll("div:not(.sep)"),k=0;
     items.forEach(function(it){if(it==="sep")return;var row=rows[k++];if(it.on)row.onclick=function(){menu.remove();it.on();};});
     setTimeout(function(){document.addEventListener("click",function cl(ev){if(!menu.contains(ev.target)){menu.remove();document.removeEventListener("click",cl);}});},0);
+  }
+  // ─── ФИЛЬТР (как в amoCRM: клик по строке поиска → панель фильтра) ───
+  function userOptsHtml(sel){return '<option value="">— любой —</option>'+USERS.map(function(u){return '<option value="'+u.id+'"'+(String(u.id)===String(sel)?" selected":"")+'>'+esc(u.name)+'</option>';}).join("");}
+  function closeFilterPanel(){var p=document.getElementById("filterPanel");if(p)p.remove();}
+  function openFilterPanel(){
+    if(!curFilter)return;
+    if(document.getElementById("filterPanel"))return;
+    var anchor=$("#hSearch"),r=anchor.getBoundingClientRect();
+    var st=FSTATE[curFilter.kind]||{};
+    var p=document.createElement("div");p.className="filter-panel";p.id="filterPanel";
+    var fields='';
+    fields+='<div class="ffield"><label>Ответственный</label><select data-f="responsible">'+userOptsHtml(st.responsible)+'</select></div>';
+    if(curFilter.kind==="leads"){
+      var sts=(curFilter.statuses||[]);
+      fields+='<div class="ffield"><label>Этап</label><select data-f="status"><option value="">— любой —</option>'+sts.map(function(s){return '<option value="'+s.id+'"'+(String(s.id)===String(st.status)?" selected":"")+'>'+esc(s.name)+'</option>';}).join("")+'</select></div>';
+      fields+='<div class="ffield"><label>Бюджет, ₽</label><div class="frange"><input type="number" data-f="price_min" placeholder="от" value="'+(st.price_min||"")+'"><span>–</span><input type="number" data-f="price_max" placeholder="до" value="'+(st.price_max||"")+'"></div></div>';
+      fields+='<div class="ffield"><label>Тег содержит</label><input type="text" data-f="tag" placeholder="напр. MSK" value="'+esc(st.tag||"")+'"></div>';
+    }
+    fields+='<div class="ffield"><label>Создано с</label><input type="date" data-f="date_from" value="'+(st.date_from||"")+'"></div>';
+    fields+='<div class="ffield"><label>Создано по</label><input type="date" data-f="date_to" value="'+(st.date_to||"")+'"></div>';
+    p.innerHTML='<h4>Фильтр '+(curFilter.kind==="leads"?"сделок":"контактов")+'</h4><div class="fgrid">'+fields+'</div>'+
+      '<div class="filter-acts"><button class="btn" id="fApply">Применить</button><button class="btn ghost" id="fReset">Сбросить</button><button class="btn ghost" id="fClose" style="margin-left:auto">Закрыть</button></div>';
+    document.body.appendChild(p);
+    p.style.top=(r.bottom+8)+"px";
+    p.style.left=Math.max(10,Math.min(r.left,window.innerWidth-p.offsetWidth-10))+"px";
+    p.addEventListener("click",function(e){e.stopPropagation();});
+    var collect=function(){var vals={};p.querySelectorAll("[data-f]").forEach(function(el){var v=el.value.trim();if(v){if(el.type==="date")v=Math.floor(new Date(v+"T00:00:00").getTime()/1000);vals[el.dataset.f]=v;}});return vals;};
+    // сохраняем «сырые» значения для повторного открытия
+    var collectRaw=function(){var raw={};p.querySelectorAll("[data-f]").forEach(function(el){if(el.value.trim())raw[el.dataset.f]=el.value.trim();});return raw;};
+    $("#fApply").onclick=function(){FSTATE[curFilter.kind]=collectRaw();var vals=collect();closeFilterPanel();if(curFilter.kind==="leads")runLeadsFilter(vals);else runContactsFilter(vals);};
+    $("#fReset").onclick=function(){FSTATE[curFilter.kind]={};closeFilterPanel();if(curFilter.kind==="leads")vLeads();else vContacts();};
+    $("#fClose").onclick=closeFilterPanel;
+    setTimeout(function(){document.addEventListener("click",function cl(ev){if(!document.getElementById("filterPanel"))return document.removeEventListener("click",cl);if(!p.contains(ev.target)&&ev.target!==anchor){closeFilterPanel();document.removeEventListener("click",cl);}});},0);
+  }
+  function filterQS(vals){return Object.keys(vals).map(function(k){return k+"="+encodeURIComponent(vals[k]);}).join("&");}
+  function runLeadsFilter(vals){
+    var p=PIPES.find(function(x){return x.id===curPipe;})||PIPES[0];
+    if(p&&!("pipeline" in vals))vals.pipeline=p.id;
+    var stName={};((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){stName[s.id]=s.name;});
+    setHeader("Фильтр сделок",{count:"",searchPh:"Поиск сделки (название или #id — Enter)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);},filter:curFilter});
+    $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
+    jreq(API+"/leads_filter?"+filterQS(vals)).then(function(r){
+      var items=(r&&r.items)||[];
+      var head='<div class="plain" style="max-width:none"><div style="padding:6px 0 12px"><b>Найдено: '+fmt(r.total||items.length)+'</b> <a data-reset style="margin-left:12px">← к воронке</a></div>';
+      if(!items.length){$("#view").innerHTML=head+'<p class="muted">Ничего не найдено.</p></div>';bindReset();return;}
+      var html=head+'<table class="amo"><thead><tr><th style="width:34%">Название</th><th>Этап</th><th>Бюджет</th><th>Ответственный</th><th>Создана</th></tr></thead><tbody>';
+      html+=items.map(function(l){return '<tr><td><a data-l="'+l.id+'">'+esc(l.name||("#"+l.id))+'</a></td><td class="muted">'+esc(stName[l.sid]||"")+'</td><td>'+fmt(l.price)+' ₽</td><td class="muted">'+esc(l.resp||"")+'</td><td class="muted">'+(l.created?dShort(l.created):"")+'</td></tr>';}).join("");
+      html+='</tbody></table></div>';
+      $("#view").innerHTML=html;
+      $("#view").querySelectorAll("[data-l]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.l,10));};});
+      bindReset();
+    });
+    function bindReset(){var a=$("#view").querySelector("[data-reset]");if(a)a.onclick=function(){FSTATE.leads={};vLeads();};}
+  }
+  function runContactsFilter(vals){
+    setHeader("Фильтр контактов",{count:"",searchPh:"Поиск (имя, телефон, email — Enter)",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},filter:curFilter});
+    $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
+    jreq(API+"/contacts_filter?"+filterQS(vals)).then(function(r){
+      var items=(r&&r.items)||[];
+      var head='<div class="plain" style="max-width:none"><div style="padding:6px 0 12px"><b>Найдено: '+fmt(r.total||items.length)+'</b> <a data-reset style="margin-left:12px">← к контактам</a></div>';
+      if(!items.length){$("#view").innerHTML=head+'<p class="muted">Ничего не найдено.</p></div>';bindReset();return;}
+      var cols=contactActiveCols();
+      var html=head+'<table class="amo"><thead>'+contactHeadHtml()+'</thead><tbody id="cbody">'+contactRows(items)+'</tbody></table></div>';
+      $("#view").innerHTML=html;bindContactLinks();bindReset();
+    });
+    function bindReset(){var a=$("#view").querySelector("[data-reset]");if(a)a.onclick=function(){FSTATE.contacts={};vContacts();};}
   }
 
   /* ─── рабочий стол (живые KPI из БД) ─── */
@@ -421,7 +501,8 @@
     if(!curPipe) curPipe=PIPES[0]&&PIPES[0].id;
     var p=PIPES.find(function(x){return x.id===curPipe;})||PIPES[0];
     var tot=pipeTotal(p.id);
-    setHeader(p.name,{caret:true,onTitle:togglePipePanel,count:fmt(tot.c)+" сделки: <b>"+fmt(tot.s)+" ₽</b>",newBtn:"+ Новая сделка",onNew:function(){newLead(p);},searchPh:"Поиск сделки (название или #id — Enter)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);},
+    setHeader(p.name,{caret:true,onTitle:togglePipePanel,count:fmt(tot.c)+" сделки: <b>"+fmt(tot.s)+" ₽</b>",newBtn:"+ Новая сделка",onNew:function(){newLead(p);},searchPh:"Поиск сделки (название, #id, или клик — фильтр)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);},
+      filter:{kind:"leads",statuses:(p._embedded&&p._embedded.statuses)||[]},
       onCfg:function(){leadViewMode="kanban";if(ME&&(ME.is_admin||(ME.rights&&ME.rights.sections&&ME.rights.sections.settings))){settingsTab="pipelines";go("settings");}else toast("Настройка воронок — в разделе «Настройки» (только админ)");},
       dotsMenu:function(){return [
         {label:leadViewMode==="list"?"Показать воронкой":"Показать списком",on:function(){leadViewMode=leadViewMode==="list"?"kanban":"list";vLeads();}},
@@ -904,7 +985,7 @@
   }
   function vContacts(){
     renderSidebar("contacts");
-    setHeader("Контакты",{count:fmt(META.counts.contacts)+" контактов",searchPh:"Поиск и фильтр (имя, телефон, email — Enter)",newBtn:"+ Добавить контакт",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},onNew:newContact,onCfg:openColSettings,dotsMenu:function(){return [
+    setHeader("Контакты",{count:fmt(META.counts.contacts)+" контактов",searchPh:"Поиск (имя, телефон, email — Enter) или клик — фильтр",newBtn:"+ Добавить контакт",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},onNew:newContact,onCfg:openColSettings,filter:{kind:"contacts"},dotsMenu:function(){return [
       {label:"Настроить колонки",on:openColSettings},
       {label:"Экспорт списка в CSV",on:exportContactsCsv},
       "sep",
