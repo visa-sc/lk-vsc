@@ -124,6 +124,15 @@ module.exports = function mountDbRoutes(app, guard, api) {
     res.json({ success: true, company: { id: c.id, name: c.name, created_at: c.created_at, updated_at: c.updated_at, custom_fields_values: J(c.cf, null) } });
   });
 
+  // режим списка: все сделки воронки постранично (для табличного вида)
+  const qLeadsAll = D.prepare("SELECT id,name,price,status_id,responsible_user_id,created_at,updated_at FROM leads WHERE pipeline_id=? ORDER BY updated_at DESC LIMIT 50 OFFSET ?");
+  app.get(`${api}/leads_all`, guard, (req, res) => {
+    const pid = String(req.query.pipeline || ""), page = String(req.query.page || "1");
+    if (!PAGE_FILE_RE.test(pid) || !PAGE_FILE_RE.test(page)) return res.status(400).json({ success: false });
+    const rows = qLeadsAll.all(+pid, (+page - 1) * 50);
+    res.json(rows.map((l) => ({ id: l.id, name: l.name, price: l.price, sid: l.status_id, resp: uName[l.responsible_user_id] || "", created: l.created_at, updated: l.updated_at })));
+  });
+
   // поиск по сделкам (название/id) — из шапки
   const qLeadsSearch = D.prepare("SELECT id,name,price,status_id,pipeline_id,responsible_user_id FROM leads WHERE name LIKE ? ORDER BY updated_at DESC LIMIT 50");
   app.get(`${api}/leads_search`, guard, (req, res) => {
