@@ -1127,19 +1127,22 @@ async function runDayRevenue(trigger) {
   } catch (e) { console.error("runDayRevenue:", e.message); _dayRevLog.unshift({ ts: Date.now(), trigger, error: e.message }); return { error: e.message }; }
   finally { _dayRevRunning = false; }
 }
-function scheduleDayRevenueTwice() {
-  // Часы пересчёта «Выручки за сегодня» (МСК). По просьбе — 12/15/17/18/19/20.
+function scheduleDayRevenueHourly() {
+  // Пересчёт «Выручки за сегодня» ЕЖЕЧАСНО по МСК (просьба Андрея 13.07):
+  //   пн–пт 10:00–22:00, сб–вс 12:00–20:00 (границы включительно).
   // Всё через amoBg (САМЫЙ низкий приоритет «low» — пропускает вперёд клиентский ЛК,
-  // вебхуки и всё прочее), с guard'ом _dayRevRunning (запуски не накладываются).
-  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000, HOURS = [12, 15, 17, 18, 19, 20];
+  // вебхуки и всё прочее), с guard'ом _dayRevRunning (запуски не накладываются) —
+  // amoCRM не перегружается.
+  const MSK_OFFSET = 3 * 3600 * 1000, HOUR_MS = 3600 * 1000;
+  // На сдвинутой в МСК метке getUTC* дают МСК-стенные часы/день недели (0=вс…6=сб).
+  const rangeFor = (d) => { const dow = d.getUTCDay(); return (dow === 0 || dow === 6) ? { from: 12, to: 20 } : { from: 10, to: 22 }; };
   (function nextRun() {
     const mskNow = Date.now() + MSK_OFFSET;
-    const mskMidnight = Math.floor(mskNow / DAY_MS) * DAY_MS;
-    let target = Infinity;
-    for (const h of HOURS) { let t = mskMidnight + h * 3600 * 1000; if (t <= mskNow) t += DAY_MS; if (t < target) target = t; }
-    setTimeout(() => { Promise.resolve(amoBg(() => runDayRevenue("cron"))).catch(() => {}); nextRun(); }, Math.max(1000, target - mskNow));
+    let t = Math.floor(mskNow / HOUR_MS) * HOUR_MS + HOUR_MS; // следующий «верх часа» по МСК
+    for (let i = 0; i < 24 * 8; i++) { const d = new Date(t); const hh = d.getUTCHours(); const r = rangeFor(d); if (hh >= r.from && hh <= r.to) break; t += HOUR_MS; }
+    setTimeout(() => { Promise.resolve(amoBg(() => runDayRevenue("cron"))).catch(() => {}); nextRun(); }, Math.max(1000, t - mskNow));
   })();
-  console.log("DAY REVENUE: расчёт запланирован на 12:00, 15:00, 17:00, 18:00, 19:00, 20:00 МСК");
+  console.log("DAY REVENUE: ежечасно пн–пт 10:00–22:00, сб–вс 12:00–20:00 МСК (низкий приоритет amoBg)");
 }
 app.get("/admin/api/vsc/day-revenue", requireVscAccess, (req, res) => { return res.json({ success: true, data: loadDayRev(), log: _dayRevLog.slice(0, 5) }); });
 app.post("/admin/api/vsc/day-revenue/run", requireAdmin, (req, res) => {
@@ -1147,7 +1150,7 @@ app.post("/admin/api/vsc/day-revenue/run", requireAdmin, (req, res) => {
   setImmediate(() => { Promise.resolve(amoBg(() => runDayRevenue("manual"))).catch(() => {}); });
   return res.json({ success: true, started: true });
 });
-scheduleDayRevenueTwice();
+scheduleDayRevenueHourly();
 // Первичный расчёт через ~150 с после старта, если кэша нет или он за прошлый день
 // (чтобы блок не пустовал после рестарта; далее — крон 12/15/17/18/19/20 МСК). Старт ПОСЛЕ
 // городской выручки (120 с), лимитер всё равно сериализует фон.
