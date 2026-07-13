@@ -719,7 +719,12 @@
       jreq(API+"/webhooks").catch(function(){return [];})
     ]).then(function(res){
       var md=res[0],bots=res[1],hooks=res[2];
-      var html='<div class="plain"><div class="pcard"><h2>Опись автоматизаций (снята с живой amoCRM)</h2><div class="md">'+mdRender(md)+'</div></div>';
+      var html='<div class="plain">'+
+        '<div class="pcard" style="border-left:4px solid #2e80ec"><h2 style="margin-top:0">Движок автоматизаций — v1</h2>'+
+        '<p class="muted">Механизм работает: при переходе сделки на этап применяются правила из конфига (создать задачу / сменить ответственного). '+
+        'Точный конфиг триггеров amoCRM по API не отдаётся (закрыт в виджетах), поэтому правила переносятся из описи ниже <b>с подтверждением</b> — чтобы копия была 1-в-1, без выдуманного. '+
+        'Внешние действия (письма, SMS, боты, чек-листы) пока заглушки — подключим на этапе интеграций.</p></div>'+
+        '<div class="pcard"><h2>Опись автоматизаций (снята с живой amoCRM)</h2><div class="md">'+mdRender(md)+'</div></div>';
       if(bots&&bots.length){
         html+='<div class="pcard"><h2>Salesbot — полные сценарии ('+bots.length+')</h2>';
         bots.forEach(function(b){
