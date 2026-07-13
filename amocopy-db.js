@@ -52,7 +52,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
   const qLeadTasks = D.prepare("SELECT * FROM tasks WHERE entity_type='leads' AND entity_id=? ORDER BY complete_till DESC");
   const qContact = D.prepare("SELECT * FROM contacts WHERE id=?");
   const qContactLeads = D.prepare("SELECT l.id,l.name,l.price,l.pipeline_id,l.status_id FROM lead_contacts lc JOIN leads l ON l.id=lc.lead_id WHERE lc.contact_id=? LIMIT 200");
-  const qContactsPage = D.prepare("SELECT id,name,phones,emails,created_at FROM contacts ORDER BY created_at DESC LIMIT ? OFFSET ?");
+  const qContactsPage = D.prepare("SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id FROM contacts ORDER BY created_at DESC LIMIT ? OFFSET ?");
   const uName = {}; D.prepare("SELECT id,name FROM users").all().forEach((u) => { uName[u.id] = u.name; });
 
   // счётчики канбана из БД (живые — отражают созданные/перемещённые сделки)
@@ -173,7 +173,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const page = String(req.query.page || "1");
     if (!PAGE_FILE_RE.test(page)) return res.status(400).json({ success: false });
     const rows = qContactsPage.all(PER_PAGE, (+page - 1) * PER_PAGE);
-    res.json(rows.map((c) => ({ id: c.id, n: c.name, p: J(c.phones, []), e: J(c.emails, []), created: c.created_at })));
+    res.json(rows.map((c) => ({ id: c.id, n: c.name, p: J(c.phones, []), e: J(c.emails, []), created: c.created_at, updated: c.updated_at, resp: uName[c.responsible_user_id] || "" })));
   });
 
   // поиск контактов (имя LIKE, или телефон/email по цифрам/подстроке) — топ-50

@@ -261,8 +261,8 @@
     $("#hNew").textContent=opts.newBtn||"+ Новая сделка";
     $("#hNew").style.display=opts.onNew?"":"none";
     $("#hNew").onclick=opts.onNew||null;
+    $("#hCfg").onclick=opts.onCfg||function(){toast("Здесь настройки — доступны в разделах со списками");};
   }
-  $("#hCfg").onclick=function(){toast("Настройки полей — позже");};
 
   /* ─── рабочий стол (живые KPI из БД) ─── */
   function vDesk(){
@@ -729,18 +729,44 @@
 
   /* ─── контакты ─── */
   var cPage=0, cLoading=false, cSearchMode=false;
-  function contactRows(items){
-    return items.map(function(c){
-      return '<tr><td><a data-c="'+c.id+'">'+esc(c.n||"Без имени")+'</a></td><td>'+esc((c.p||[]).join(", "))+'</td><td>'+esc((c.e||[]).join(", "))+'</td><td class="muted">'+(c.created?dShort(c.created):"")+'</td></tr>';
-    }).join("");
+  // настраиваемые колонки списка контактов (как «Настроить» в amoCRM)
+  var CONTACT_COLS=[["n","Наименование",1],["p","Телефон",1],["e","Email",1],["resp","Ответственный",0],["created","Дата создания",1],["updated","Дата изменения",0]];
+  function contactColSel(){try{return JSON.parse(localStorage.getItem("crm_contact_cols"))||null;}catch(e){return null;}}
+  function contactActiveCols(){var sel=contactColSel();return CONTACT_COLS.filter(function(c){return sel?sel.indexOf(c[0])>=0:c[2];});}
+  function contactCell(c,key){
+    if(key==="n")return '<a data-c="'+c.id+'">'+esc(c.n||"Без имени")+'</a>';
+    if(key==="p")return esc((c.p||[]).join(", "));
+    if(key==="e")return esc((c.e||[]).join(", "));
+    if(key==="resp")return '<span class="muted">'+esc(c.resp||"")+'</span>';
+    if(key==="created")return '<span class="muted">'+(c.created?dShort(c.created):"")+'</span>';
+    if(key==="updated")return '<span class="muted">'+(c.updated?dShort(c.updated):"")+'</span>';
+    return "";
   }
+  function contactRows(items){
+    var cols=contactActiveCols();
+    return items.map(function(c){return '<tr>'+cols.map(function(col){return '<td>'+contactCell(c,col[0])+'</td>';}).join("")+'</tr>';}).join("");
+  }
+  function contactHeadHtml(){return '<tr>'+contactActiveCols().map(function(c){return '<th'+(c[0]==="n"?' style="width:30%"':"")+'>'+c[1]+'</th>';}).join("")+'</tr>';}
   function bindContactLinks(){
     document.querySelectorAll("#cbody [data-c]").forEach(function(a){a.onclick=function(){openContact(parseInt(a.dataset.c,10));};});
   }
+  function openColSettings(){
+    var sel=contactColSel()||CONTACT_COLS.filter(function(c){return c[2];}).map(function(c){return c[0];});
+    var bg=document.createElement("div");bg.className="modal-bg";
+    bg.innerHTML='<div class="modal" style="max-width:420px"><button class="x">×</button><h2>Настройка колонок</h2>'+
+      CONTACT_COLS.map(function(c){return '<label style="display:block;padding:6px 0"><input type="checkbox" data-col="'+c[0]+'"'+(sel.indexOf(c[0])>=0?" checked":"")+(c[0]==="n"?" disabled":"")+'> '+c[1]+'</label>';}).join("")+
+      '<div style="margin-top:14px"><button class="btn" id="colSave">Применить</button></div></div>';
+    bg.onclick=function(e){if(e.target===bg||e.target.className==="x")document.body.removeChild(bg);};
+    document.body.appendChild(bg);
+    bg.querySelector("#colSave").onclick=function(){
+      var chosen=["n"];bg.querySelectorAll("[data-col]").forEach(function(cb){if(cb.checked&&cb.dataset.col!=="n")chosen.push(cb.dataset.col);});
+      localStorage.setItem("crm_contact_cols",JSON.stringify(chosen));document.body.removeChild(bg);vContacts();
+    };
+  }
   function vContacts(){
     renderSidebar("contacts");
-    setHeader("Контакты",{count:fmt(META.counts.contacts)+" контактов",searchPh:"Поиск и фильтр (имя, телефон, email — Enter)",newBtn:"+ Добавить контакт",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},onNew:newContact});
-    $("#view").innerHTML='<div style="padding:0 0 30px"><table class="amo"><thead><tr><th style="width:32%">Наименование</th><th>Телефон</th><th>Email</th><th style="width:130px">Дата создания</th></tr></thead><tbody id="cbody"></tbody></table><div id="cmore" class="muted" style="padding:14px;text-align:center"></div></div>';
+    setHeader("Контакты",{count:fmt(META.counts.contacts)+" контактов",searchPh:"Поиск и фильтр (имя, телефон, email — Enter)",newBtn:"+ Добавить контакт",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},onNew:newContact,onCfg:openColSettings});
+    $("#view").innerHTML='<div style="padding:0 0 30px"><table class="amo"><thead>'+contactHeadHtml()+'</thead><tbody id="cbody"></tbody></table><div id="cmore" class="muted" style="padding:14px;text-align:center"></div></div>';
     cPage=0; cLoading=false; cSearchMode=false;
     loadContactPage();
     $("#main").onscroll=function(){
