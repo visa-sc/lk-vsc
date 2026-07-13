@@ -64,6 +64,8 @@
   .kb-head .nm { font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .kb-head .ct { font-size:12px; color:var(--mut); margin-top:2px; }
   .kb-head .bar { height:3px; border-radius:2px; margin-top:8px; background:#dfe3e8; }
+  .deal-chip { display:inline-block; max-width:100%; padding:2px 8px; margin:2px 4px 2px 0; border-radius:3px; font-size:12.5px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; vertical-align:middle; }
+  .deal-chip:hover { filter:brightness(.96); text-decoration:underline; }
   .kb-quick { margin:0 8px; padding:8px 10px; border:1px dashed #c3ccd6; border-radius:4px; color:#7b8794; font-size:13px; text-align:center; cursor:pointer; background:#fafbfc; }
   .kb-quick:hover { border-color:var(--link); color:var(--link); background:#f2f7fd; }
   .kb-quick[data-open] { text-align:left; cursor:default; border-style:solid; }
@@ -946,34 +948,53 @@
   /* ─── контакты ─── */
   var cPage=0, cLoading=false, cSearchMode=false;
   // настраиваемые колонки списка контактов (как «Настроить» в amoCRM)
-  var CONTACT_COLS=[["n","Наименование",1],["p","Телефон",1],["e","Email",1],["resp","Ответственный",0],["created","Дата создания",1],["updated","Дата изменения",0]];
+  // базовые колонки + «Сделки» (цветные чипы) + ВСЕ кастомные поля контакта (из CF.contacts)
+  var CONTACT_BASE=[["n","Наименование",1],["deals","Сделки",1],["p","Телефон",1],["e","Email",1],["resp","Ответственный",0],["created","Дата создания",1],["updated","Дата изменения",0]];
+  function contactAllCols(){
+    var cf=((CF&&CF.contacts)||[]).map(function(f){return ["cf"+f.id,f.name,0,f.type];});
+    return CONTACT_BASE.concat(cf);
+  }
   function contactColSel(){try{return JSON.parse(localStorage.getItem("crm_contact_cols"))||null;}catch(e){return null;}}
-  function contactActiveCols(){var sel=contactColSel();return CONTACT_COLS.filter(function(c){return sel?sel.indexOf(c[0])>=0:c[2];});}
+  function contactActiveCols(){var sel=contactColSel();var all=contactAllCols();return all.filter(function(c){return sel?sel.indexOf(c[0])>=0:c[2];});}
   function contactCell(c,key){
     if(key==="n")return '<a data-c="'+c.id+'">'+esc(c.n||"Без имени")+'</a>';
+    if(key==="deals")return (c.deals||[]).map(function(d){return '<span class="deal-chip" data-dl="'+d.id+'" style="background:'+esc(d.color||"#c1d5e0")+'26;border-left:3px solid '+esc(d.color||"#c1d5e0")+'" title="'+esc(d.st||"")+(d.price?" · "+fmt(d.price)+" ₽":"")+'">'+esc((d.name||("#"+d.id)).slice(0,26))+'</span>';}).join("")||'<span class="muted">—</span>';
     if(key==="p")return esc((c.p||[]).join(", "));
     if(key==="e")return esc((c.e||[]).join(", "));
     if(key==="resp")return '<span class="muted">'+esc(c.resp||"")+'</span>';
     if(key==="created")return '<span class="muted">'+(c.created?dShort(c.created):"")+'</span>';
     if(key==="updated")return '<span class="muted">'+(c.updated?dShort(c.updated):"")+'</span>';
+    if(key.slice(0,2)==="cf"){
+      var fid=parseInt(key.slice(2),10),f=(c.cf||[]).find(function(x){return x.field_id===fid;});
+      if(!f)return "";
+      var val=(f.values||[]).map(function(v){var vv=v.value&&v.value.name?v.value.name:v.value;if((f.field_type==="date"||f.field_type==="date_time"||f.field_type==="birthday")&&vv&&isFinite(vv))vv=dShort(Number(vv));if(typeof vv==="boolean")vv=vv?"Да":"Нет";return vv;}).join(", ");
+      return '<span class="muted">'+esc(String(val).slice(0,80))+'</span>';
+    }
     return "";
   }
   function contactRows(items){
     var cols=contactActiveCols();
     return items.map(function(c){return '<tr>'+cols.map(function(col){return '<td>'+contactCell(c,col[0])+'</td>';}).join("")+'</tr>';}).join("");
   }
-  function contactHeadHtml(){return '<tr>'+contactActiveCols().map(function(c){return '<th'+(c[0]==="n"?' style="width:30%"':"")+'>'+c[1]+'</th>';}).join("")+'</tr>';}
+  function contactHeadHtml(){return '<tr>'+contactActiveCols().map(function(c){return '<th'+(c[0]==="n"?' style="width:24%"':(c[0]==="deals"?' style="width:22%"':""))+'>'+esc(c[1])+'</th>';}).join("")+'</tr>';}
   function bindContactLinks(){
     document.querySelectorAll("#cbody [data-c]").forEach(function(a){a.onclick=function(){openContact(parseInt(a.dataset.c,10));};});
+    document.querySelectorAll("#cbody [data-dl]").forEach(function(a){a.onclick=function(e){e.stopPropagation();openLead(parseInt(a.dataset.dl,10));};});
   }
   function openColSettings(){
-    var sel=contactColSel()||CONTACT_COLS.filter(function(c){return c[2];}).map(function(c){return c[0];});
+    var all=contactAllCols();
+    var sel=contactColSel()||all.filter(function(c){return c[2];}).map(function(c){return c[0];});
+    var base=all.slice(0,CONTACT_BASE.length),custom=all.slice(CONTACT_BASE.length);
+    var lbl=function(c){return '<label style="display:block;padding:5px 0"><input type="checkbox" data-col="'+c[0]+'"'+(sel.indexOf(c[0])>=0?" checked":"")+(c[0]==="n"?" disabled":"")+'> '+esc(c[1])+'</label>';};
     var bg=document.createElement("div");bg.className="modal-bg";
-    bg.innerHTML='<div class="modal" style="max-width:420px"><button class="x">×</button><h2>Настройка колонок</h2>'+
-      CONTACT_COLS.map(function(c){return '<label style="display:block;padding:6px 0"><input type="checkbox" data-col="'+c[0]+'"'+(sel.indexOf(c[0])>=0?" checked":"")+(c[0]==="n"?" disabled":"")+'> '+c[1]+'</label>';}).join("")+
+    bg.innerHTML='<div class="modal" style="max-width:520px"><button class="x">×</button><h2>Настройка колонок</h2>'+
+      '<input type="text" id="colFind" placeholder="Поиск поля…" style="width:100%;padding:7px 10px;margin-bottom:10px;border:1px solid var(--border);border-radius:7px">'+
+      '<div style="font-size:12px;color:#8a949e;text-transform:uppercase;font-weight:600;margin:4px 0">Основные</div>'+base.map(lbl).join("")+
+      '<div style="font-size:12px;color:#8a949e;text-transform:uppercase;font-weight:600;margin:12px 0 4px">Поля контакта ('+custom.length+')</div><div id="cfCols">'+custom.map(lbl).join("")+'</div>'+
       '<div style="margin-top:14px"><button class="btn" id="colSave">Применить</button></div></div>';
     bg.onclick=function(e){if(e.target===bg||e.target.className==="x")document.body.removeChild(bg);};
     document.body.appendChild(bg);
+    bg.querySelector("#colFind").oninput=function(){var q=this.value.toLowerCase();bg.querySelectorAll("#cfCols label").forEach(function(l){l.style.display=l.textContent.toLowerCase().indexOf(q)>=0?"":"none";});};
     bg.querySelector("#colSave").onclick=function(){
       var chosen=["n"];bg.querySelectorAll("[data-col]").forEach(function(cb){if(cb.checked&&cb.dataset.col!=="n")chosen.push(cb.dataset.col);});
       localStorage.setItem("crm_contact_cols",JSON.stringify(chosen));document.body.removeChild(bg);vContacts();

@@ -52,8 +52,50 @@ module.exports = function mountDbRoutes(app, guard, api) {
   const qLeadTasks = D.prepare("SELECT * FROM tasks WHERE entity_type='leads' AND entity_id=? ORDER BY complete_till DESC");
   const qContact = D.prepare("SELECT * FROM contacts WHERE id=?");
   const qContactLeads = D.prepare("SELECT l.id,l.name,l.price,l.pipeline_id,l.status_id FROM lead_contacts lc JOIN leads l ON l.id=lc.lead_id WHERE lc.contact_id=? LIMIT 200");
-  const qContactsPage = D.prepare("SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id FROM contacts ORDER BY created_at DESC LIMIT ? OFFSET ?");
+  const qContactsPage = D.prepare("SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf FROM contacts ORDER BY created_at DESC LIMIT ? OFFSET ?");
+  // единый вид контакта для таблицы: базовые поля + все кастомные (cf) + связанные сделки с цветами
+  function contactOut(rows, withDeals) {
+    const ids = rows.map((c) => c.id);
+    const dmap = withDeals ? dealsByContact(ids) : {};
+    return rows.map((c) => ({
+      id: c.id, n: c.name, p: J(c.phones, []), e: J(c.emails, []), created: c.created_at, updated: c.updated_at,
+      resp: uName[c.responsible_user_id] || "", cf: J(c.cf, []) || [], deals: dmap[c.id] || []
+    }));
+  }
   const uName = {}; D.prepare("SELECT id,name FROM users").all().forEach((u) => { uName[u.id] = u.name; });
+  // карта этапов: status_id -> {name,color,pipeline_id} (для цветных чипов сделок в таблицах)
+  const stMap = {};
+  try { for (const s of D.prepare("SELECT pipeline_id,id,name,color FROM statuses").all()) stMap[s.id] = { name: s.name, color: s.color || "#c1d5e0", pid: s.pipeline_id }; } catch (_) {}
+  // сделки контакта (id, имя, статус, цвет) — для колонки «Сделки» в контактах
+  const qDealsForContacts = D.prepare(`SELECT lc.contact_id cid, l.id, l.name, l.price, l.status_id, l.pipeline_id
+    FROM lead_contacts lc JOIN leads l ON l.id=lc.lead_id WHERE lc.contact_id IN (SELECT value FROM json_each(?)) ORDER BY l.updated_at DESC`);
+  // фильтр по кастомным полям (cf хранится JSON-текстом). Формат параметра: "<fieldId>:<значение>".
+  // Требуем в одной записи и присутствие поля, и присутствие значения — практичный матч без парсинга JSON в SQL.
+  function addCfFilters(cfParam, where, args) {
+    if (!cfParam) return;
+    const list = Array.isArray(cfParam) ? cfParam : [cfParam];
+    for (const raw of list) {
+      const s = String(raw || "");
+      const i = s.indexOf(":");
+      if (i < 0) continue;
+      const fid = parseInt(s.slice(0, i), 10);
+      const val = s.slice(i + 1).trim();
+      if (!Number.isFinite(fid)) continue;
+      where.push("cf LIKE ?"); args.push('%"field_id":' + fid + '%');
+      if (val) { where.push("cf LIKE ?"); args.push('%"value":"%' + val + '%'); }
+    }
+  }
+  function dealsByContact(ids) {
+    const map = {};
+    if (!ids.length) return map;
+    try {
+      for (const r of qDealsForContacts.all(JSON.stringify(ids))) {
+        (map[r.cid] = map[r.cid] || []).push({ id: r.id, name: r.name, price: r.price, sid: r.status_id, pid: r.pipeline_id,
+          st: (stMap[r.status_id] || {}).name || "", color: (stMap[r.status_id] || {}).color || "#c1d5e0" });
+      }
+    } catch (_) {}
+    return map;
+  }
 
   // счётчики канбана из БД (живые — отражают созданные/перемещённые сделки)
   const qKanban = D.prepare("SELECT pipeline_id, status_id, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads GROUP BY pipeline_id, status_id");
@@ -219,6 +261,14 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if ((v = intq(q.date_to)) !== null) { where.push("created_at<=?"); args.push(v); }
     if (q.tag && String(q.tag).trim()) { where.push("tags LIKE ?"); args.push("%" + String(q.tag).trim() + "%"); }
     if (q.q && String(q.q).trim()) { where.push("name LIKE ?"); args.push("%" + String(q.q).trim() + "%"); }
+    // фильтр по кастомным полям самой сделки
+    addCfFilters(q.cf, where, args);
+    // фильтр по полям СВЯЗАННОГО КОНТАКТА: ccf=<fieldId>:<значение> → подзапрос по lead_contacts+contacts
+    if (q.ccf) {
+      const cw = [], ca = [];
+      addCfFilters(q.ccf, cw, ca);
+      if (cw.length) { where.push("id IN (SELECT lc.lead_id FROM lead_contacts lc JOIN contacts c ON c.id=lc.contact_id WHERE " + cw.join(" AND ") + ")"); args.push(...ca); }
+    }
     const page = Math.max(1, intq(q.page) || 1);
     const sql = "SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at FROM leads" +
       (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY updated_at DESC LIMIT 50 OFFSET ?";
@@ -240,14 +290,16 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if ((v = intq(q.date_from)) !== null) { where.push("created_at>=?"); args.push(v); }
     if ((v = intq(q.date_to)) !== null) { where.push("created_at<=?"); args.push(v); }
     if (q.q && String(q.q).trim()) { where.push("(name LIKE ? OR phones LIKE ? OR emails LIKE ?)"); const s = "%" + String(q.q).trim() + "%"; args.push(s, s, s); }
+    // фильтр по любому кастомному полю: cf=<fieldId>:<значение> (можно несколько)
+    addCfFilters(q.cf, where, args);
     const page = Math.max(1, intq(q.page) || 1);
-    const sql = "SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id FROM contacts" +
+    const sql = "SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf FROM contacts" +
       (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY created_at DESC LIMIT 50 OFFSET ?";
     try {
       const rows = D.prepare(sql).all(...args, (page - 1) * 50);
       let total = null;
       if (page === 1) { total = D.prepare("SELECT COUNT(*) c FROM contacts" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args).c; }
-      res.json({ success: true, total, items: rows.map((c) => ({ id: c.id, n: c.name, p: J(c.phones, []), e: J(c.emails, []), created: c.created_at, updated: c.updated_at, resp: uName[c.responsible_user_id] || "" })) });
+      res.json({ success: true, total, items: contactOut(rows, true) });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
 
@@ -289,7 +341,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const page = String(req.query.page || "1");
     if (!PAGE_FILE_RE.test(page)) return res.status(400).json({ success: false });
     const rows = qContactsPage.all(PER_PAGE, (+page - 1) * PER_PAGE);
-    res.json(rows.map((c) => ({ id: c.id, n: c.name, p: J(c.phones, []), e: J(c.emails, []), created: c.created_at, updated: c.updated_at, resp: uName[c.responsible_user_id] || "" })));
+    res.json(contactOut(rows, true));
   });
 
   // поиск контактов (имя LIKE, или телефон/email по цифрам/подстроке) — топ-50
