@@ -96,6 +96,19 @@ module.exports = function mountDbRoutes(app, guard, api) {
     } catch (_) {}
     return map;
   }
+  // ── связи (deal↔contact↔company). Функции устойчивы к отсутствию таблиц связей. ──
+  const has = (t) => { try { return !!D.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t); } catch (_) { return false; } };
+  const HAS_CC = has("contact_companies"), HAS_LC = has("lead_companies");
+  const qNamesByIds = (ids) => { try { return D.prepare("SELECT id,name FROM contacts WHERE id IN (SELECT value FROM json_each(?))").all(JSON.stringify(ids)); } catch (_) { return []; } };
+  const qCoName = D.prepare("SELECT id,name FROM companies WHERE id=?");
+  function companyName(id) { const c = qCoName.get(id); return c ? c.name : ("Компания #" + id); }
+  const qCompaniesForLead = HAS_LC ? D.prepare("SELECT company_id FROM lead_companies WHERE lead_id=?") : null;
+  const qCompaniesForContact = HAS_CC ? D.prepare("SELECT company_id FROM contact_companies WHERE contact_id=?") : null;
+  const qContactsForCompany = HAS_CC ? D.prepare("SELECT c.id,c.name FROM contact_companies cc JOIN contacts c ON c.id=cc.contact_id WHERE cc.company_id=? LIMIT 300") : null;
+  const qLeadsForCompany = HAS_LC ? D.prepare("SELECT l.id,l.name,l.price,l.status_id FROM lead_companies lc JOIN leads l ON l.id=lc.lead_id WHERE lc.company_id=? ORDER BY l.updated_at DESC LIMIT 300") : null;
+  function companiesForLead(id) { return qCompaniesForLead ? qCompaniesForLead.all(id).map((r) => ({ id: r.company_id, name: companyName(r.company_id) })) : []; }
+  function companiesForContact(id) { return qCompaniesForContact ? qCompaniesForContact.all(id).map((r) => ({ id: r.company_id, name: companyName(r.company_id) })) : []; }
+  function dealChip(sid) { return { st: (stMap[sid] || {}).name || "", color: (stMap[sid] || {}).color || "#c1d5e0" }; }
 
   // счётчики канбана из БД (живые — отражают созданные/перемещённые сделки)
   const qKanban = D.prepare("SELECT pipeline_id, status_id, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads GROUP BY pipeline_id, status_id");
@@ -197,8 +210,9 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const id = parseInt(req.params.id, 10);
     const c = qCompany.get(id);
     if (!c) return res.status(404).json({ success: false });
-    // сделки/контакты компании — через lead_contacts не связаны; берём по company cf нет. Отдаём поля.
-    res.json({ success: true, company: { id: c.id, name: c.name, created_at: c.created_at, updated_at: c.updated_at, custom_fields_values: J(c.cf, null) } });
+    const contacts = qContactsForCompany ? qContactsForCompany.all(id).map((x) => ({ id: x.id, name: x.name })) : [];
+    const leads = qLeadsForCompany ? qLeadsForCompany.all(id).map((l) => ({ id: l.id, name: l.name, price: l.price, sid: l.status_id, st: dealChip(l.status_id).st, color: dealChip(l.status_id).color })) : [];
+    res.json({ success: true, company: { id: c.id, name: c.name, created_at: c.created_at, updated_at: c.updated_at, custom_fields_values: J(c.cf, null), _embedded: { contacts, leads } } });
   });
 
   // режим списка: все сделки воронки постранично (для табличного вида)
@@ -313,11 +327,17 @@ module.exports = function mountDbRoutes(app, guard, api) {
       id: t.id, text: t.text, complete_till: t.complete_till, is_completed: !!t.is_completed,
       responsible_user_id: t.responsible_user_id, result: J(t.result, null)
     }));
+    const cids = J(l.contact_ids, []);
+    const nameById = {}; qNamesByIds(cids).forEach((c) => { nameById[c.id] = c.name; });
     const lead = {
       id: l.id, name: l.name, price: l.price, status_id: l.status_id, pipeline_id: l.pipeline_id,
       responsible_user_id: l.responsible_user_id, created_at: l.created_at, updated_at: l.updated_at, closed_at: l.closed_at || null,
       custom_fields_values: J(l.cf, null),
-      _embedded: { tags: J(l.tags, []).map((n) => ({ name: n })), contacts: J(l.contact_ids, []).map((cid, i) => ({ id: cid, is_main: i === 0 })) }
+      _embedded: {
+        tags: J(l.tags, []).map((n) => ({ name: n })),
+        contacts: cids.map((cid, i) => ({ id: cid, name: nameById[cid] || ("Контакт #" + cid), is_main: i === 0 })),
+        companies: companiesForLead(id)
+      }
     };
     notesFromBucket("notes_leads", id, (notes) => res.json({ success: true, lead, notes, tasks }));
   });
@@ -328,10 +348,11 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if (!id) return res.status(400).json({ success: false });
     const c = qContact.get(id);
     if (!c) return res.status(404).json({ success: false, message: "Контакт не найден" });
-    const leads = qContactLeads.all(id).map((l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id }));
+    const leads = qContactLeads.all(id).map((l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id, st: dealChip(l.status_id).st, color: dealChip(l.status_id).color }));
     const contact = {
       id: c.id, name: c.name, responsible_user_id: c.responsible_user_id, created_at: c.created_at, updated_at: c.updated_at,
-      custom_fields_values: J(c.cf, null)
+      custom_fields_values: J(c.cf, null),
+      _embedded: { companies: companiesForContact(id) }
     };
     notesFromBucket("notes_contacts", id, (notes) => res.json({ success: true, contact, notes, leads }));
   });

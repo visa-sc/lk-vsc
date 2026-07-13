@@ -846,7 +846,10 @@
       var stName="";((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===l.status_id)stName=s.name;});
       var tags=((l._embedded&&l._embedded.tags)||[]).map(function(t){return '<span class="tag">'+esc(t.name)+'</span>';}).join("");
       var contacts=((l._embedded&&l._embedded.contacts)||[]).map(function(c){
-        return '<div class="dl-contact" style="cursor:pointer" data-c="'+c.id+'"><div class="ava">К</div><div><div style="color:var(--link)">Контакт #'+c.id+(c.is_main?" (основной)":"")+'</div><div class="muted" style="font-size:12px">открыть карточку</div></div></div>';
+        return '<div class="dl-contact" style="cursor:pointer" data-c="'+c.id+'"><div class="ava">'+esc((c.name||"К").slice(0,1))+'</div><div><div style="color:var(--link)">'+esc(c.name||("Контакт #"+c.id))+(c.is_main?' <span class="muted" style="font-size:11px">(основной)</span>':"")+'</div><div class="muted" style="font-size:12px">открыть карточку контакта</div></div></div>';
+      }).join("");
+      var companies=((l._embedded&&l._embedded.companies)||[]).map(function(co){
+        return '<div class="dl-contact" style="cursor:pointer" data-co="'+co.id+'"><div class="ava" style="border-radius:6px">🏢</div><div><div style="color:var(--link)">'+esc(co.name||("Компания #"+co.id))+'</div><div class="muted" style="font-size:12px">открыть карточку компании</div></div></div>';
       }).join("");
       var reload=function(){document.body.removeChild(bg);openLead(id);};
       var tagNames=((l._embedded&&l._embedded.tags)||[]).map(function(t){return t.name;});
@@ -861,11 +864,14 @@
           (l.closed_at?('<div class="frow"><div class="fl">Закрыта</div><div class="fv">'+dt(l.closed_at)+'</div></div>'):"")+
           '<div class="fgroup">Основная информация</div>'+
           fieldsHtml(l.custom_fields_values,CF&&CF.leads,"leads")+
-        '</div>'+contacts;
+        '</div>'+(contacts?'<div class="fgroup" style="margin-top:6px">Контакты</div>'+contacts:"")+(companies?'<div class="fgroup" style="margin-top:6px">Компания</div>'+companies:"");
       var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,localNotes),r.tasks,f,bg);},{type:"leads",id:id,withTasks:true,reload:reload});
       bg.__reload=reload;
       bg.querySelectorAll("[data-c]").forEach(function(el){
         el.onclick=function(){document.body.removeChild(bg);openContact(parseInt(el.dataset.c,10));};
+      });
+      bg.querySelectorAll("[data-co]").forEach(function(el){
+        el.onclick=function(){document.body.removeChild(bg);openCompany(parseInt(el.dataset.co,10));};
       });
       bindEditable(bg,"name",function(){return l.name;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{name:v});},reload,"text");
       bindEditable(bg,"price",function(){return l.price;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{price:v});},reload,"number");
@@ -912,11 +918,15 @@
       var c=r.contact;
       var larr=(r.leads&&r.leads.length)?r.leads:((c._embedded&&c._embedded.leads)||[]);
       var leads=larr.map(function(l){
-        var p=PIPES.find(function(x){return x.id===l.pid;});
-        var st="";((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===l.sid)st=s.name;});
-        return '<div class="dl-contact" style="cursor:pointer" data-l="'+l.id+'"><div class="ava" style="border-radius:6px">С</div><div><div style="color:var(--link)">'+esc(l.name||("Сделка #"+l.id))+'</div><div class="muted" style="font-size:12px">'+esc(st||"открыть")+(l.price?(" · "+fmt(l.price)+" ₽"):"")+'</div></div></div>';
+        var st=l.st;if(!st){var p=PIPES.find(function(x){return x.id===l.pid;});((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===l.sid)st=s.name;});}
+        var col=l.color||"#c1d5e0";
+        return '<div class="dl-contact" style="cursor:pointer;border-left:4px solid '+esc(col)+'" data-l="'+l.id+'"><div class="ava" style="border-radius:6px;background:'+esc(col)+'22;color:#33404d">С</div><div><div style="color:var(--link)">'+esc(l.name||("Сделка #"+l.id))+'</div><div class="muted" style="font-size:12px">'+esc(st||"открыть")+(l.price?(" · "+fmt(l.price)+" ₽"):"")+'</div></div></div>';
       }).join("");
       if(leads)leads='<div class="fgroup" style="margin:0 20px">Сделки ('+larr.length+')</div>'+leads;
+      var companies=((c._embedded&&c._embedded.companies)||[]).map(function(co){
+        return '<div class="dl-contact" style="cursor:pointer" data-co="'+co.id+'"><div class="ava" style="border-radius:6px">🏢</div><div><div style="color:var(--link)">'+esc(co.name||("Компания #"+co.id))+'</div><div class="muted" style="font-size:12px">открыть карточку компании</div></div></div>';
+      }).join("");
+      if(companies)companies='<div class="fgroup" style="margin:0 20px">Компания</div>'+companies;
       var init=(c.name||"К").trim().charAt(0).toUpperCase();
       var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить контакт">🗑</button><h2 class="editable" data-edit="cname">'+esc(c.name||("Контакт #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div>'+
         '<div class="dl-tabs" style="margin-top:6px"><span class="act">Основное</span><span>Сделки</span><span>Статистика контакта</span></div>'+
@@ -925,13 +935,16 @@
           '<div class="frow"><div class="fl">Создан</div><div class="fv">'+dt(c.created_at)+'</div></div>'+
           '<div class="frow"><div class="fl">Изменён</div><div class="fv">'+dt(c.updated_at)+'</div></div>'+
           fieldsHtml(c.custom_fields_values,CF&&CF.contacts,"contacts")+
-        '</div>'+leads;
+        '</div>'+companies+leads;
       var reload=function(){document.body.removeChild(bg);openContact(id);};
       var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,(r.notes_new||[])),[],f,bg);},{type:"contacts",id:id,withTasks:false,reload:reload});
       bg.__reload=reload;
-      var h=bg.querySelector(".ava");if(h)h.textContent=init;
+      var h=bg.querySelector(".dl-head .ava");if(h)h.textContent=init;
       bg.querySelectorAll("[data-l]").forEach(function(el){
         el.onclick=function(){document.body.removeChild(bg);openLead(parseInt(el.dataset.l,10));};
+      });
+      bg.querySelectorAll("[data-co]").forEach(function(el){
+        el.onclick=function(){document.body.removeChild(bg);openCompany(parseInt(el.dataset.co,10));};
       });
       bindEditable(bg,"cname",function(){return c.name;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{name:v});},reload,"text");
       bindEditable(bg,"cresp",function(){return c.responsible_user_id;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{responsible_user_id:v});},reload,"user");
@@ -972,13 +985,19 @@
   function openCompany(id){
     jreq(API+"/company/"+id).then(function(r){
       if(!r.success)return alert("Не найдено");
-      var c=r.company;
+      var c=r.company,emb=c._embedded||{};
+      var conts=(emb.contacts||[]).map(function(x){return '<div class="dl-contact" style="cursor:pointer" data-c="'+x.id+'"><div class="ava">'+esc((x.name||"К").slice(0,1))+'</div><div><div style="color:var(--link)">'+esc(x.name||("Контакт #"+x.id))+'</div><div class="muted" style="font-size:12px">открыть контакт</div></div></div>';}).join("");
+      if(conts)conts='<div class="fgroup" style="margin:0 20px">Контакты ('+(emb.contacts||[]).length+')</div>'+conts;
+      var deals=(emb.leads||[]).map(function(l){var col=l.color||"#c1d5e0";return '<div class="dl-contact" style="cursor:pointer;border-left:4px solid '+esc(col)+'" data-l="'+l.id+'"><div class="ava" style="border-radius:6px;background:'+esc(col)+'22;color:#33404d">С</div><div><div style="color:var(--link)">'+esc(l.name||("Сделка #"+l.id))+'</div><div class="muted" style="font-size:12px">'+esc(l.st||"")+(l.price?(" · "+fmt(l.price)+" ₽"):"")+'</div></div></div>';}).join("");
+      if(deals)deals='<div class="fgroup" style="margin:0 20px">Сделки ('+(emb.leads||[]).length+')</div>'+deals;
       var left='<div class="dl-head"><span class="back">‹</span><h2 class="editable" data-edit="coname">'+esc(c.name||("Компания #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div>'+
         '<div class="dl-tabs" style="margin-top:6px"><span class="act">Основное</span></div>'+
         '<div class="fields"><div class="frow"><div class="fl">Создана</div><div class="fv">'+dt(c.created_at)+'</div></div>'+
         '<div class="frow"><div class="fl">Изменена</div><div class="fv">'+dt(c.updated_at)+'</div></div>'+
-        fieldsHtml(c.custom_fields_values,CF&&CF.companies,"")+'</div>';
-      var bg=cardShell(left,function(){return '<p class="muted" style="padding:16px 4px">Лента компании</p>';},null);
+        fieldsHtml(c.custom_fields_values,CF&&CF.companies,"")+'</div>'+conts+deals;
+      var bg=cardShell(left,function(){return '<p class="muted" style="padding:16px 4px">Лента компании не выгружалась.</p>';},null);
+      bg.querySelectorAll("[data-c]").forEach(function(el){el.onclick=function(){document.body.removeChild(bg);openContact(parseInt(el.dataset.c,10));};});
+      bg.querySelectorAll("[data-l]").forEach(function(el){el.onclick=function(){document.body.removeChild(bg);openLead(parseInt(el.dataset.l,10));};});
     });
   }
 
