@@ -9,11 +9,17 @@
  * Только чтение живой amoCRM тут ни при чём — модуль работает исключительно с локальной БД.
  * Доступ — тот же guard (код 111).
  */
+const fs = require("fs");
 const path = require("path");
 const Database = require(process.env.SQLITE_MODULE || "better-sqlite3");
 
 const DB_PATH = process.env.AMOCOPY_DB || "/var/www/voyo/.amocopy-db/crm.db";
+const RULES_PATH = process.env.AMOCOPY_RULES || path.join(path.dirname(DB_PATH), "rules.json");
 const LOCAL_ID_BASE = 1000000000;
+
+// правила автоматизаций (v1): при входе на этап — создать задачу / сменить ответственного.
+// Пока список из rules.json (заполняется из описи с подтверждением). Внешние действия (письма/SMS) — заглушки-логи.
+function loadRules() { try { return JSON.parse(fs.readFileSync(RULES_PATH, "utf8")).rules || []; } catch (_) { return []; } }
 
 function nowSec() { return Math.floor(Date.now() / 1000); }
 
@@ -56,6 +62,26 @@ module.exports = function mountEditRoutes(app, guard) {
 
   const E = "/edit-api";
 
+  // применение правил автоматизаций при входе сделки на этап
+  function applyStageRules(req, leadId, pid, sid) {
+    const rules = loadRules().filter((r) => r.pipeline_id === pid && r.status_id === sid);
+    const applied = [];
+    for (const r of rules) {
+      if (r.action === "create_task") {
+        const tid = nextId();
+        db.prepare(`INSERT INTO tasks(id,entity_type,entity_id,text,task_type,complete_till,is_completed,responsible_user_id,result,created_at)
+          VALUES(?,?,?,?,?,?,0,?,?,?)`).run(tid, "leads", leadId, r.text || "", r.task_type || 0, nowSec() + 86400, 0, "null", nowSec());
+        audit(req, "leads", leadId, "auto_task", { rule: r.text, task_id: tid });
+        applied.push("задача: " + (r.text || "").slice(0, 40));
+      } else if (r.action === "set_responsible" && r.responsible_user_id) {
+        db.prepare("UPDATE leads SET responsible_user_id=? WHERE id=?").run(r.responsible_user_id, leadId);
+        audit(req, "leads", leadId, "auto_responsible", { rule: r.responsible_user_id });
+        applied.push("ответственный сменён");
+      }
+    }
+    return applied;
+  }
+
   // ── перемещение сделки по этапам (drag-n-drop) ──
   app.post(`${E}/lead/:id/stage`, guard, (req, res) => {
     const id = parseInt(req.params.id, 10);
@@ -68,7 +94,9 @@ module.exports = function mountEditRoutes(app, guard) {
     const fromP = lead.pipeline_id, fromS = lead.status_id;
     db.prepare("UPDATE leads SET pipeline_id=?, status_id=?, updated_at=? WHERE id=?").run(pid, sid, nowSec(), id);
     audit(req, "leads", id, "stage", { from: { pipeline_id: fromP, status_id: fromS }, to: { pipeline_id: pid, status_id: sid, name: st.name } });
-    res.json({ success: true, status_id: sid, pipeline_id: pid, status_name: st.name });
+    // движок автоматизаций v1: применяем правила входа на этап
+    const applied = applyStageRules(req, id, pid, sid);
+    res.json({ success: true, status_id: sid, pipeline_id: pid, status_name: st.name, automations: applied });
   });
 
   // ── правка полей сделки (name, price, ответственный) ──

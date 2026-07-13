@@ -231,9 +231,10 @@
     contacts:'<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.3c2.4.2 4.1 1.7 4.7 4.2"/></svg>',
     auto:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2.1 2.1M16.4 16.4l2.1 2.1M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1"/></svg>',
     refs:'<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>',
-    todo:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.5"/></svg>'
+    todo:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.5"/></svg>',
+    tasks:'<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M8 12l2 2 4-4"/></svg>'
   };
-  var NAV=[["desk","Рабочий стол","desk"],["leads","Сделки","leads"],["contacts","Контакты","contacts"],["auto","Автоматизации","auto"],["refs","Справочники","refs"],["todo","Доработки","todo"]];
+  var NAV=[["desk","Рабочий стол","desk"],["leads","Сделки","leads"],["contacts","Контакты","contacts"],["tasks","Задачи","tasks"],["auto","Автоматизации","auto"],["refs","Справочники","refs"],["todo","Доработки","todo"]];
   function renderSidebar(active){
     $("#sidebar").innerHTML='<div class="logo">V|S|C</div>'+NAV.map(function(n){
       return '<button class="nav-i'+(n[0]===active?" act":"")+'" data-v="'+n[0]+'">'+ICONS[n[2]]+'<span>'+n[1]+'</span></button>';
@@ -257,21 +258,61 @@
   }
   $("#hCfg").onclick=function(){toast("Настройки полей — позже");};
 
-  /* ─── рабочий стол ─── */
+  /* ─── рабочий стол (живые KPI из БД) ─── */
   function vDesk(){
     renderSidebar("desk");
     setHeader("Рабочий стол",{count:""});
-    var c=META.counts||{}, a=META.account||{};
-    var items=[["Сделки",c.leads],["Контакты",c.contacts],["Компании",c.companies],["Задачи",c.tasks],["Примечания (сделки)",c.notes_leads],["Примечания (контакты)",c.notes_contacts],["Пользователи",c.users],["Воронки",c.pipelines],["Поля сделки",c.cf_leads],["Вебхуки",c.webhooks]];
-    var html='<div id="dash"><p class="dash-note">'+esc(a.name||"")+' · '+esc(a.subdomain||"")+' · слепок от '+esc(new Date(META.builtAt).toLocaleString("ru-RU"))+' · точная копия данных amoCRM, только чтение</p><div class="dash-grid">';
-    items.forEach(function(it){html+='<div class="dash-card"><b>'+fmt(it[1])+'</b><span>'+it[0]+'</span></div>';});
-    html+='</div><p class="dash-note" style="margin-top:22px">Воронки</p><div class="dash-grid">';
-    PIPES.forEach(function(p){
-      var kb=(KANBAN&&KANBAN.kanban[p.id])||{}; var total=0; Object.keys(kb).forEach(function(s){total+=kb[s].count;});
-      html+='<div class="dash-card"><b>'+fmt(total)+'</b><span>'+esc(p.name)+'</span></div>';
+    $("#view").innerHTML='<div id="dash"><p class="dash-note">Загрузка…</p></div>';
+    jreq(API+"/dashboard").then(function(d){
+      var a=META.account||{};
+      var top=[["Новых сделок сегодня",d.newLeadsToday],["Открытых задач",d.openTasks],["Просроченных задач",d.overdue]];
+      var html='<div id="dash"><p class="dash-note">'+esc(a.name||"")+' · '+esc(a.subdomain||"")+' · рабочая копия (данные в своей БД) · слепок от '+esc(new Date(META.builtAt).toLocaleDateString("ru-RU"))+'</p><div class="dash-grid">';
+      top.forEach(function(it){html+='<div class="dash-card"><b>'+fmt(it[1])+'</b><span>'+it[0]+'</span></div>';});
+      html+='</div><p class="dash-note" style="margin-top:22px">Сделки по воронкам</p><div class="dash-grid">';
+      PIPES.forEach(function(p){html+='<div class="dash-card"><b>'+fmt((d.byPipe&&d.byPipe[p.id])||0)+'</b><span>'+esc(p.name)+'</span></div>';});
+      html+='</div><p class="dash-note" style="margin-top:22px">Сделок на менеджера (топ-12)</p><div class="dash-grid">';
+      (d.byManager||[]).forEach(function(m){html+='<div class="dash-card"><b>'+fmt(m.count)+'</b><span>'+esc(m.name)+'</span></div>';});
+      html+='</div></div>';
+      $("#view").innerHTML=html;
     });
-    html+='</div></div>';
-    $("#view").innerHTML=html;
+  }
+  /* ─── раздел «Задачи» ─── */
+  function vTasks(){
+    renderSidebar("tasks");
+    var respSel='<select id="taskResp" class="ci" style="max-width:240px;display:inline-block;margin-left:10px"><option value="0">Все сотрудники</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select>';
+    setHeader("Задачи",{count:respSel});
+    setTimeout(function(){var s=$("#taskResp");if(s)s.onchange=function(){loadTasks(s.value);};},0);
+    $("#view").innerHTML='<div class="plain" style="max-width:1000px"><div id="tasksBox">Загрузка…</div></div>';
+    loadTasks(0);
+  }
+  function loadTasks(resp){
+    jreq(API+"/tasks_list"+(resp&&resp!=="0"?("?responsible="+resp):"")).then(function(items){
+      var now=Date.now()/1000, dayEnd=now-(now%86400)+86400;
+      var groups={overdue:[],today:[],tomorrow:[],later:[]};
+      items.forEach(function(t){
+        if(t.till&&t.till<now)groups.overdue.push(t);
+        else if(t.till&&t.till<dayEnd)groups.today.push(t);
+        else if(t.till&&t.till<dayEnd+86400)groups.tomorrow.push(t);
+        else groups.later.push(t);
+      });
+      var titles={overdue:"Просроченные",today:"Сегодня",tomorrow:"Завтра",later:"Позже"};
+      var colors={overdue:"#d64545",today:"#2f8b57",tomorrow:"#2e80ec",later:"#92989b"};
+      var html="";
+      ["overdue","today","tomorrow","later"].forEach(function(g){
+        if(!groups[g].length)return;
+        html+='<h3 style="color:'+colors[g]+'">'+titles[g]+' ('+groups[g].length+')</h3><table class="amo"><tbody>';
+        groups[g].forEach(function(t){
+          html+='<tr><td style="width:130px" class="muted">'+dt(t.till)+'</td><td>'+esc(t.text||"")+'</td><td style="width:180px"><a data-lead="'+t.entity_id+'">'+esc((t.lead_name||"сделка #"+t.entity_id).slice(0,30))+'</a></td><td class="muted" style="width:150px">'+esc(t.resp||"")+'</td><td style="width:90px"><a class="tdone" data-t="'+t.id+'">выполнить</a></td></tr>';
+        });
+        html+='</tbody></table>';
+      });
+      $("#tasksBox").innerHTML=html||'<p class="muted">Открытых задач нет</p>';
+      $("#tasksBox").querySelectorAll("[data-lead]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.lead,10));};});
+      $("#tasksBox").querySelectorAll(".tdone").forEach(function(a){a.onclick=function(){
+        var res=prompt("Результат задачи (необязательно):","");
+        ereq("POST","/edit-api/task/"+a.dataset.t+"/complete",{result:res||""}).then(function(r){if(r&&r.success){toast("Задача выполнена");loadTasks($("#taskResp")?$("#taskResp").value:0);}else toast("Не удалось",true);});
+      };});
+    });
   }
 
   /* ─── сделки: канбан ─── */
@@ -302,7 +343,7 @@
     if(!curPipe) curPipe=PIPES[0]&&PIPES[0].id;
     var p=PIPES.find(function(x){return x.id===curPipe;})||PIPES[0];
     var tot=pipeTotal(p.id);
-    setHeader(p.name,{caret:true,onTitle:togglePipePanel,count:fmt(tot.c)+" сделки: <b>"+fmt(tot.s)+" ₽</b>",newBtn:"+ Новая сделка",onNew:function(){newLead(p);}});
+    setHeader(p.name,{caret:true,onTitle:togglePipePanel,count:fmt(tot.c)+" сделки: <b>"+fmt(tot.s)+" ₽</b>",newBtn:"+ Новая сделка",onNew:function(){newLead(p);},searchPh:"Поиск сделки (название или #id — Enter)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);}});
     renderPipePanel();
     var sts=(p._embedded&&p._embedded.statuses)||[];
     var kb=(KANBAN&&KANBAN.kanban[p.id])||{};
@@ -343,6 +384,24 @@
       btn.dataset.page=page;
       if(items.length<50){btn.style.display="none";}else{btn.textContent="Ещё";}
     }).catch(function(){btn.style.display="none";});
+  }
+  function searchLeads(q){
+    q=String(q||"").trim();
+    if(!q){vLeads();return;}
+    setHeader("Поиск: "+q,{count:"",newBtn:"",searchPh:"Поиск сделки (название или #id — Enter)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);}});
+    $("#view").innerHTML='<div class="plain"><p class="muted">Ищу…</p></div>';
+    jreq(API+"/leads_search?q="+encodeURIComponent(q)).then(function(r){
+      var items=(r&&r.items)||[];
+      if(!items.length){$("#view").innerHTML='<div class="plain"><p class="muted">Сделки не найдены. <a onclick="">← назад к воронке</a></p></div>';$("#view").querySelector("a").onclick=vLeads;return;}
+      var html='<div class="plain"><table class="amo"><thead><tr><th>Сделка</th><th>Воронка / этап</th><th>Бюджет</th><th>Ответственный</th></tr></thead><tbody>';
+      items.forEach(function(l){
+        var p=PIPES.find(function(x){return x.id===l.pid;});var st="";((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===l.sid)st=s.name;});
+        html+='<tr><td><a data-l="'+l.id+'">'+esc(l.name||("#"+l.id))+'</a></td><td class="muted">'+esc(p?p.name:"")+' · '+esc(st)+'</td><td>'+fmt(l.price)+' ₽</td><td class="muted">'+esc(l.resp||"")+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+      $("#view").innerHTML=html;
+      $("#view").querySelectorAll("[data-l]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.l,10));};});
+    });
   }
   function newLead(p){
     var sts=(p._embedded&&p._embedded.statuses)||[];
@@ -747,7 +806,7 @@
   }
 
   /* ─── каркас ─── */
-  var views={desk:vDesk,leads:vLeads,contacts:vContacts,auto:vAuto,refs:vRefs,todo:vTodo};
+  var views={desk:vDesk,leads:vLeads,contacts:vContacts,tasks:vTasks,auto:vAuto,refs:vRefs,todo:vTodo};
   function go(name){hidePipePanel();(views[name]||vDesk)();}
 
   /* ─── вход ─── */

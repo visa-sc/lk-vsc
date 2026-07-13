@@ -65,6 +65,36 @@ module.exports = function mountDbRoutes(app, guard, api) {
     res.json({ kanban: kb, pages: {} });
   });
 
+  // раздел «Задачи»: открытые задачи с именем сделки, фильтр по ответственному
+  const qTasksAll = D.prepare(`SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id, l.name lead_name
+    FROM tasks t LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads'
+    WHERE t.is_completed=0 ORDER BY t.complete_till ASC LIMIT 500`);
+  const qTasksBy = D.prepare(`SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id, l.name lead_name
+    FROM tasks t LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads'
+    WHERE t.is_completed=0 AND t.responsible_user_id=? ORDER BY t.complete_till ASC LIMIT 500`);
+  app.get(`${api}/tasks_list`, guard, (req, res) => {
+    const resp = parseInt(req.query.responsible, 10) || 0;
+    const rows = resp ? qTasksBy.all(resp) : qTasksAll.all();
+    res.json(rows.map((t) => ({
+      id: t.id, text: t.text, till: t.complete_till, resp: uName[t.responsible_user_id] || "",
+      resp_id: t.responsible_user_id, entity_type: t.entity_type, entity_id: t.entity_id, lead_name: t.lead_name || ""
+    })));
+  });
+
+  // KPI рабочего стола из БД (живые)
+  app.get(`${api}/dashboard`, guard, (req, res) => {
+    const now = Math.floor(Date.now() / 1000);
+    const dayStart = now - (now % 86400);
+    const byPipe = {};
+    for (const r of qKanban.all()) { byPipe[r.pipeline_id] = (byPipe[r.pipeline_id] || 0) + r.c; }
+    const openTasks = D.prepare("SELECT COUNT(*) c FROM tasks WHERE is_completed=0").get().c;
+    const overdue = D.prepare("SELECT COUNT(*) c FROM tasks WHERE is_completed=0 AND complete_till<? AND complete_till>0").get(now).c;
+    const newLeadsToday = D.prepare("SELECT COUNT(*) c FROM leads WHERE created_at>=?").get(dayStart).c;
+    const byManager = D.prepare(`SELECT responsible_user_id r, COUNT(*) c FROM leads GROUP BY responsible_user_id ORDER BY c DESC LIMIT 12`).all()
+      .map((x) => ({ name: uName[x.r] || "—", count: x.c }));
+    res.json({ byPipe, openTasks, overdue, newLeadsToday, byManager });
+  });
+
   // список сделок этапа (как файловый, но из БД)
   app.get(`${api}/leads`, guard, (req, res) => {
     const pid = String(req.query.pipeline || ""), sid = String(req.query.status || ""), page = String(req.query.page || "1");
@@ -74,6 +104,17 @@ module.exports = function mountDbRoutes(app, guard, api) {
       id: l.id, name: l.name, price: l.price, resp: uName[l.responsible_user_id] || "",
       created: l.created_at, updated: l.updated_at, tags: J(l.tags, [])
     })));
+  });
+
+  // поиск по сделкам (название/id) — из шапки
+  const qLeadsSearch = D.prepare("SELECT id,name,price,status_id,pipeline_id,responsible_user_id FROM leads WHERE name LIKE ? ORDER BY updated_at DESC LIMIT 50");
+  app.get(`${api}/leads_search`, guard, (req, res) => {
+    const q = String(req.query.q || "").trim();
+    if (q.length < 2) return res.json({ success: true, items: [] });
+    let items = [];
+    if (/^\d+$/.test(q)) { const l = qLead.get(+q); if (l) items.push(l); }
+    for (const l of qLeadsSearch.all("%" + q + "%")) { if (!items.find((x) => x.id === l.id)) items.push(l); }
+    res.json({ success: true, items: items.slice(0, 50).map((l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id, resp: uName[l.responsible_user_id] || "" })) });
   });
 
   // карточка сделки (поля/задачи из БД, примечания из bucket)

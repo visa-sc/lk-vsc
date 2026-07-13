@@ -4405,11 +4405,21 @@ app.post("/api/calc-mismatch", (req, res) => {
   if (diff <= 0.5) return res.json({ success: true, skipped: "not-under" }); // не недобор — не пишем
   const now = Date.now(), p = mskParts(now);
   let log = readMismatchLog();
-  // Дедуп: одинаковые суммы (клиент-должен € + приход ₽) за ОДИН календарный день не дублируем.
-  // Иная дата с теми же суммами — допустимо. Курс в ключ не входит (авто, может дрожать в течение дня).
-  if (log.some((e) => e.date === p.date && e.prihod === prihod && e.mustEur === mustEur)) {
-    return res.json({ success: true, skipped: "dup" });
-  }
+  const SIX_H = 6 * 3600 * 1000;
+  // Дедуп:
+  //  (1) те же суммы (приход ₽ + клиент-должен €) за ОДИН календарный день;
+  //  (2) в пределах 6 часов — тот же рублёвый приход ИЛИ его ошибочный вариант «без одного нуля» (×10),
+  //      независимо от евро (сотрудник переввёл ту же операцию, в т.ч. опечатался в нуле).
+  // Иная дата / вне 6ч с другими суммами — допустимо. Курс в ключ не входит (авто).
+  const dup = log.some((e) => {
+    if (e.date === p.date && e.prihod === prihod && e.mustEur === mustEur) return true;
+    if ((now - e.ts) < SIX_H) {
+      if (e.prihod === prihod) return true;
+      if (Math.abs(e.prihod - prihod * 10) < 0.5 || Math.abs(prihod - e.prihod * 10) < 0.5) return true;
+    }
+    return false;
+  });
+  if (dup) return res.json({ success: true, skipped: "dup" });
   log.push({ ts: now, date: p.date, time: p.time, prihod, mustEur, rate, needRub, diff });
   if (log.length > 2000) log = log.slice(-2000);
   try { fs.writeFileSync(CALC_MISMATCH_FILE, JSON.stringify(log)); } catch (e) { console.error("calc-mismatch write:", e && e.message); }
