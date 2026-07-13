@@ -108,3 +108,6 @@ betaChat.json
 .amocopy/
 amo-backup/
 .amocopySessions.json
+
+# Маркетинг-KPI по каналам — рантайм-хранилище (сид в коде)
+.vscMktKpi.json

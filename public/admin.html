@@ -3022,7 +3022,7 @@
         // Вкладка «Бот VFS» ВРЕМЕННО скрыта у ВСЕХ, включая админа (просьба Андрея 04.07.2026,
         // бот на паузе). Вернуть: VSC_BOT_HIDDEN = false — права vfsbot и код вкладки не тронуты.
         const VSC_BOT_HIDDEN = true;
-        let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
+        let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["mktkpi", "Маркетинг KPI"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
         if (VSC_BOT_HIDDEN) TABS = TABS.filter(([tb]) => tb !== "bot");
         if (isMgr) {
           if (myVscRestrict && Array.isArray(myVscRestrict.tabs)) {
@@ -3056,6 +3056,7 @@
         if (vscYdStopsBlock) vscYdStopsBlock.style.display = (vscTab === "dash" && !vscRestricted) ? "" : "none";
         if (vscTab === "monthly") { renderVscMonthly(); return; }
         if (vscTab === "forecast") { renderVscForecast(); return; }
+        if (vscTab === "mktkpi") { renderVscMktKpi(); return; }
         if (vscTab === "calc") { renderVscCalc(); return; }
         if (vscTab === "bot") { renderVscBot(); return; }
 
@@ -3621,6 +3622,238 @@
         tbl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 10px;">Месяц</th><th style="text-align:left;padding:7px 10px;">План ATV vs факт пред.</th><th style="text-align:left;padding:7px 10px;">План конверсии vs факт пред.</th></tr></thead><tbody>' + rowsHtml.join("") + '</tbody></table>';
         wrap.appendChild(tbl);
         return wrap;
+      }
+      // ── Вкладка «Маркетинг KPI» (только админ) ──────────────────────────────────────
+      // Дружелюбная замена «задротской» вкладки kpi в гугл-таблице: помесячно, ввод
+      // значений в UI, живой пересчёт по формулам листа + графики по каналам. Хранилище —
+      // на сервере (/admin/api/vsc/mktkpi). Формулы сверены с листом до рубля.
+      let _vscMkt = null, _vscMktMonth = null, _vscMktDirty = false;
+      const VSC_MON_FULL = ["январь","февраль","март","апрель","май","июнь","июль","август","сентябрь","октябрь","ноябрь","декабрь"];
+      function vscMktYmName(ym){ const p=String(ym).split("-"); return (VSC_MON_FULL[+p[1]-1]||"?")[0].toUpperCase()+(VSC_MON_FULL[+p[1]-1]||"").slice(1)+" "+p[0]; }
+      function vscMktNum(x){ if(x==null||x==="")return null; const n=parseFloat(String(x).replace(/[\s ]/g,"").replace(",",".")); return isNaN(n)?null:n; }
+      function vscMktMoney(v){ return (v==null||isNaN(v))?"—":Math.round(v).toLocaleString("ru-RU")+" ₽"; }
+      function vscMktPct(v){ return (v==null||isNaN(v))?"—":(Math.round(v*10)/10).toLocaleString("ru-RU")+"%"; }
+      const VSC_MKT_YB = "я бизнес"; // «Я бизнес» (без СПБ/ЕКБ) считается в выручке ЯБ½ вполовину
+      function vscMktIsYB(name){ const n=String(name||"").toLowerCase().trim(); return n==="я бизнес"||n==="ябизнес"; }
+      // Полный пересчёт месяца по формулам листа. Возвращает {rows:[{...calc}], sum:{...}}.
+      function vscMktCompute(month, params){
+        const fpd = (params&&+params.fotPerDeal)||0, drr0=(params&&+params.drrZero)||0.25;
+        const rows = (month.channels||[]).map((c)=>{
+          const rev=vscMktNum(c.rev)||0, spend=Math.abs(vscMktNum(c.spend)||0), deals=vscMktNum(c.deals)||0;
+          const fot = deals*fpd;
+          return { name:c.name, rev, spend, deals, fot,
+            avg: deals>0?rev/deals:null,
+            drr: rev>0?spend/rev*100:null,
+            drrFot: rev>0?(spend+fot)/rev*100:null };
+        });
+        const revTotal = rows.reduce((a,r)=>a+r.rev,0);
+        const revYB = rows.reduce((a,r)=>a+(vscMktIsYB(r.name)?r.rev/2:r.rev),0);
+        const spendTotal = rows.reduce((a,r)=>a+r.spend,0);
+        const fotTotal = rows.reduce((a,r)=>a+r.fot,0);
+        const dealsTotal = rows.reduce((a,r)=>a+r.deals,0);
+        const prochie = (month.prochie||[]).reduce((a,p)=>a+Math.abs(vscMktNum(p.amount)||0),0);
+        const dop = (month.dop||[]).reduce((a,p)=>a+Math.abs(vscMktNum(p.amount)||0),0);
+        const zatratyItogo = spendTotal + prochie;         // Итого затраты = реклама + прочие (как в листе, D804)
+        const faktDrr = revYB>0 ? zatratyItogo/revYB*100 : null;   // Факт ДРР = |Итого затраты| / выручкаЯБ½
+        const kpi = (revTotal && faktDrr!=null) ? revTotal*(drr0 - faktDrr/100)/2 : null;  // KPI к оплате
+        return { rows, sum:{ revTotal, revYB, spendTotal, fotTotal, dealsTotal, prochie, dop, zatratyItogo, faktDrr, kpi, drr0 } };
+      }
+      async function renderVscMktKpi(){
+        const wrapH = document.createElement("div"); wrapH.className="ref-sec-h"; wrapH.textContent="Маркетинг KPI по каналам";
+        vscContent.appendChild(wrapH);
+        const box = document.createElement("div"); vscContent.appendChild(box);
+        if (_vscMkt) { vscMktPaint(box); }
+        else {
+          box.innerHTML = '<div class="loading-state">Загружаем маркетинг-KPI…</div>';
+          try { const j = await apiFetch("/admin/api/vsc/mktkpi"); _vscMkt = (j&&j.data)||{params:{fotPerDeal:822,drrZero:0.25},months:{}}; }
+          catch(e){ box.innerHTML='<div class="vsc-empty">Не удалось загрузить: '+escapeHtml(e.message)+'</div>'; return; }
+          if (vscTab!=="mktkpi") return;
+          vscMktPaint(box);
+        }
+      }
+      function vscMktMonthsSorted(){ return Object.keys((_vscMkt&&_vscMkt.months)||{}).sort().reverse(); }
+      function vscMktPaint(box){
+        box.innerHTML="";
+        const months = vscMktMonthsSorted();
+        if (!_vscMktMonth || months.indexOf(_vscMktMonth)<0) _vscMktMonth = months[0] || null;
+        // ── Переключатель месяцев + «добавить месяц» ──
+        const bar = document.createElement("div"); bar.style.cssText="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;";
+        months.forEach((ym)=>{ const b=document.createElement("button"); b.type="button"; b.textContent=vscMktYmName(ym);
+          b.style.cssText="border:1px solid "+(ym===_vscMktMonth?"#0097ca":"#cfd8e3")+";background:"+(ym===_vscMktMonth?"#0097ca":"#fff")+";color:"+(ym===_vscMktMonth?"#fff":"#33415a")+";border-radius:10px;padding:8px 15px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
+          b.addEventListener("click",()=>{ if(_vscMktDirty && !confirm("Есть несохранённые изменения. Переключить месяц без сохранения?"))return; _vscMktMonth=ym; _vscMktDirty=false; vscMktPaint(box); });
+          bar.appendChild(b); });
+        const addB=document.createElement("button"); addB.type="button"; addB.textContent="+ месяц";
+        addB.style.cssText="border:1px dashed #b7c0cd;background:#f6f8fb;color:#4a5568;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;";
+        addB.addEventListener("click",()=>vscMktAddMonth(box));
+        bar.appendChild(addB);
+        box.appendChild(bar);
+        if (!_vscMktMonth){ const e=document.createElement("div"); e.className="vsc-empty"; e.textContent="Нет месяцев — нажмите «+ месяц»."; box.appendChild(e); return; }
+        const month=_vscMkt.months[_vscMktMonth];
+        // ── Сводка (живая) ──
+        const summary=document.createElement("div"); summary.className="vsc-chart"; summary.id="mktSummary"; box.appendChild(summary);
+        // ── Таблица каналов ──
+        const tblChart=document.createElement("div"); tblChart.className="vsc-chart";
+        const th='text-align:right;padding:7px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;white-space:nowrap;';
+        const thL='text-align:left;padding:7px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;';
+        tblChart.innerHTML='<div class="vsc-chart-h" style="margin-bottom:8px;">Каналы — '+escapeHtml(vscMktYmName(_vscMktMonth))+'</div>'
+          +'<div style="overflow-x:auto;"><table id="mktTable" style="width:100%;border-collapse:collapse;font-size:13px;min-width:720px;">'
+          +'<thead><tr><th style="'+thL+'">Канал</th><th style="'+th+'">Выручка</th><th style="'+th+'">Реклама</th><th style="'+th+'">Сделки</th><th style="'+th+'">Ср. чек</th><th style="'+th+'">ФОТ</th><th style="'+th+'">ДРР</th><th style="'+th+'">ДРР+ФОТ</th><th></th></tr></thead>'
+          +'<tbody id="mktTbody"></tbody></table></div>'
+          +'<button type="button" id="mktAddCh" class="vsc-dayrev-refresh" style="margin-top:10px;background:#eef2f7;color:#3a4356;border-color:#d7dce4;">+ канал</button>';
+        box.appendChild(tblChart);
+        // ── Прочие / Доп расходы + параметры ──
+        const extra=document.createElement("div"); extra.className="vsc-chart"; extra.id="mktExtra"; box.appendChild(extra);
+        // ── Графики по каналам ──
+        const charts=document.createElement("div"); charts.id="mktCharts"; box.appendChild(charts);
+        // ── Кнопки ──
+        const foot=document.createElement("div"); foot.style.cssText="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px;";
+        const saveB=document.createElement("button"); saveB.type="button"; saveB.id="mktSave"; saveB.textContent="Сохранить";
+        saveB.style.cssText="background:linear-gradient(135deg,#25b0e6,#0097ca);color:#fff;border:none;border-radius:10px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;";
+        saveB.addEventListener("click",()=>vscMktSaveNow(saveB));
+        const st=document.createElement("span"); st.id="mktStatus"; st.style.cssText="font-size:12.5px;color:#8a90a0;";
+        foot.appendChild(saveB); foot.appendChild(st); box.appendChild(foot);
+        vscMktRenderTable(); vscMktRenderExtra(); vscMktRecalc(); vscMktRenderCharts();
+      }
+      // тело таблицы каналов + инпуты
+      function vscMktRenderTable(){
+        const month=_vscMkt.months[_vscMktMonth]; const tb=document.getElementById("mktTbody"); if(!tb)return; tb.innerHTML="";
+        const inp=(val,cls)=>'<input type="text" inputmode="numeric" class="'+cls+'" value="'+(val==null?"":val)+'" style="width:100%;box-sizing:border-box;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:13px;font-family:inherit;background:#fff;">';
+        (month.channels||[]).forEach((c,i)=>{
+          const tr=document.createElement("tr"); tr.style.borderTop="1px solid #f0eef5";
+          tr.innerHTML='<td style="padding:4px 8px;"><input type="text" class="mkt-name" data-i="'+i+'" value="'+escapeHtml(c.name||"")+'" style="width:100%;min-width:120px;box-sizing:border-box;padding:5px 7px;border:1px solid rgba(20,32,64,.10);border-radius:7px;font-size:13px;font-weight:600;font-family:inherit;background:#fff;"></td>'
+            +'<td style="padding:4px 6px;width:110px;">'+inp(c.rev,"mkt-rev")+'</td>'
+            +'<td style="padding:4px 6px;width:100px;">'+inp(c.spend,"mkt-spend")+'</td>'
+            +'<td style="padding:4px 6px;width:75px;">'+inp(c.deals,"mkt-deals")+'</td>'
+            +'<td class="mkt-avg" style="padding:5px 8px;text-align:right;color:#5a626f;white-space:nowrap;"></td>'
+            +'<td class="mkt-fot" style="padding:5px 8px;text-align:right;color:#5a626f;white-space:nowrap;"></td>'
+            +'<td class="mkt-drr" style="padding:5px 8px;text-align:right;white-space:nowrap;"></td>'
+            +'<td class="mkt-drrf" style="padding:5px 8px;text-align:right;white-space:nowrap;"></td>'
+            +'<td style="padding:4px 6px;text-align:center;"><button type="button" class="mkt-del" data-i="'+i+'" title="Удалить" style="border:none;background:transparent;color:#c2c8d2;font-size:16px;cursor:pointer;line-height:1;">✕</button></td>';
+          tb.appendChild(tr);
+          const write=()=>{ c.rev=vscMktNum(tr.querySelector(".mkt-rev").value); c.spend=vscMktNum(tr.querySelector(".mkt-spend").value); c.deals=vscMktNum(tr.querySelector(".mkt-deals").value); _vscMktDirty=true; vscMktRecalc(); };
+          tr.querySelectorAll(".mkt-rev,.mkt-spend,.mkt-deals").forEach((el)=>el.addEventListener("input",write));
+          tr.querySelector(".mkt-name").addEventListener("input",(e)=>{ c.name=e.target.value; _vscMktDirty=true; vscMktRecalc(); });
+          tr.querySelector(".mkt-del").addEventListener("click",()=>{ month.channels.splice(i,1); _vscMktDirty=true; vscMktRenderTable(); vscMktRecalc(); vscMktRenderCharts(); });
+        });
+        const addBtn=document.getElementById("mktAddCh"); if(addBtn) addBtn.onclick=()=>{ month.channels.push({name:"Новый канал",rev:null,spend:null,deals:null}); _vscMktDirty=true; vscMktRenderTable(); vscMktRecalc(); };
+      }
+      // прочие/доп расходы + параметры
+      function vscMktRenderExtra(){
+        const month=_vscMkt.months[_vscMktMonth]; const box=document.getElementById("mktExtra"); if(!box)return;
+        const listHtml=(title,key)=>{ const items=month[key]||(month[key]=[]);
+          return '<div style="flex:1 1 260px;min-width:240px;"><div class="vsc-chart-h" style="font-size:14px;margin-bottom:6px;">'+title+'</div><div class="mkt-'+key+'-list"></div>'
+            +'<button type="button" class="mkt-add-'+key+' vsc-dayrev-refresh" style="margin-top:6px;background:#eef2f7;color:#3a4356;border-color:#d7dce4;padding:6px 12px;font-size:12.5px;">+ строка</button></div>'; };
+        box.innerHTML='<div style="display:flex;gap:22px;flex-wrap:wrap;">'+listHtml("Прочие расходы","prochie")+listHtml("Доп. расходы","dop")
+          +'<div style="flex:0 0 auto;min-width:200px;"><div class="vsc-chart-h" style="font-size:14px;margin-bottom:6px;">Параметры</div>'
+          +'<label style="display:block;font-size:12.5px;color:#6b7280;margin-bottom:8px;">ФОТ на сделку, ₽<br><input type="text" id="mktFpd" value="'+((_vscMkt.params&&_vscMkt.params.fotPerDeal)||0)+'" style="width:120px;margin-top:3px;padding:6px 9px;border:1px solid rgba(20,32,64,.14);border-radius:8px;font-size:13px;font-family:inherit;"></label>'
+          +'<label style="display:block;font-size:12.5px;color:#6b7280;">ДРР 0-й окупаемости, %<br><input type="text" id="mktDrr0" value="'+(Math.round(((_vscMkt.params&&_vscMkt.params.drrZero)||0.25)*1000)/10)+'" style="width:120px;margin-top:3px;padding:6px 9px;border:1px solid rgba(20,32,64,.14);border-radius:8px;font-size:13px;font-family:inherit;"></label></div>'
+          +'</div>';
+        const renderList=(key)=>{ const host=box.querySelector(".mkt-"+key+"-list"); host.innerHTML=""; (month[key]||[]).forEach((it,i)=>{
+            const row=document.createElement("div"); row.style.cssText="display:flex;gap:6px;margin-bottom:5px;align-items:center;";
+            row.innerHTML='<input type="text" value="'+escapeHtml(it.name||"")+'" class="mkt-'+key+'-n" style="flex:1;min-width:0;padding:5px 8px;border:1px solid rgba(20,32,64,.12);border-radius:7px;font-size:12.5px;font-family:inherit;">'
+              +'<input type="text" inputmode="numeric" value="'+(it.amount==null?"":it.amount)+'" class="mkt-'+key+'-a" style="width:92px;text-align:right;padding:5px 8px;border:1px solid rgba(20,32,64,.12);border-radius:7px;font-size:12.5px;font-family:inherit;">'
+              +'<button type="button" class="mkt-'+key+'-d" style="border:none;background:transparent;color:#c2c8d2;font-size:15px;cursor:pointer;">✕</button>';
+            host.appendChild(row);
+            row.querySelector(".mkt-"+key+"-n").addEventListener("input",(e)=>{ it.name=e.target.value; _vscMktDirty=true; });
+            row.querySelector(".mkt-"+key+"-a").addEventListener("input",(e)=>{ it.amount=vscMktNum(e.target.value); _vscMktDirty=true; vscMktRecalc(); });
+            row.querySelector(".mkt-"+key+"-d").addEventListener("click",()=>{ month[key].splice(i,1); _vscMktDirty=true; renderList(key); vscMktRecalc(); });
+          }); };
+        ["prochie","dop"].forEach((key)=>{ renderList(key);
+          box.querySelector(".mkt-add-"+key).addEventListener("click",()=>{ month[key].push({name:"",amount:null}); _vscMktDirty=true; renderList(key); }); });
+        box.querySelector("#mktFpd").addEventListener("input",(e)=>{ _vscMkt.params.fotPerDeal=vscMktNum(e.target.value)||0; _vscMktDirty=true; vscMktRecalc(); });
+        box.querySelector("#mktDrr0").addEventListener("input",(e)=>{ _vscMkt.params.drrZero=(vscMktNum(e.target.value)||0)/100; _vscMktDirty=true; vscMktRecalc(); });
+      }
+      // пересчёт вычисляемых ячеек + сводки (без ре-рендера инпутов)
+      function vscMktRecalc(){
+        const month=_vscMkt.months[_vscMktMonth]; if(!month)return;
+        const { rows, sum } = vscMktCompute(month, _vscMkt.params);
+        const tb=document.getElementById("mktTbody");
+        if(tb) Array.from(tb.children).forEach((tr,i)=>{ const r=rows[i]; if(!r)return;
+          tr.querySelector(".mkt-avg").textContent=r.avg==null?"—":vscMktMoney(r.avg);
+          tr.querySelector(".mkt-fot").textContent=r.fot?("−"+vscMktMoney(r.fot)):"—";
+          const d=tr.querySelector(".mkt-drr"), df=tr.querySelector(".mkt-drrf");
+          d.textContent=vscMktPct(r.drr); df.textContent=vscMktPct(r.drrFot);
+          const col=(v)=> v==null?"#9aa0ab":(v<=sum.drr0*100?"#2c7a43":v<=25?"#b8862a":"#b0263a");
+          d.style.color=col(r.drr); df.style.color=col(r.drrFot); d.style.fontWeight="600"; df.style.fontWeight="600";
+        });
+        const s=document.getElementById("mktSummary"); if(s){
+          const kpiPos=(sum.kpi||0)>=0;
+          s.innerHTML='<div class="vsc-chart-h" style="margin-bottom:10px;">Итоги — '+escapeHtml(vscMktYmName(_vscMktMonth))+'</div>'
+            +'<div class="vsc-tiles" style="margin-bottom:0;">'
+            + vscMktTile("Выручка",vscMktMoney(sum.revTotal),"по каналам")
+            + vscMktTile("Выручка (ЯБ ½)",vscMktMoney(sum.revYB),"«Я бизнес» вполовину")
+            + vscMktTile("Реклама + прочие",vscMktMoney(sum.zatratyItogo),"Σ реклама "+vscMktMoney(sum.spendTotal)+" + прочие "+vscMktMoney(sum.prochie))
+            + vscMktTile("Факт ДРР",vscMktPct(sum.faktDrr),"порог "+vscMktPct(sum.drr0*100),(sum.faktDrr!=null&&sum.faktDrr<=sum.drr0*100)?"pos":"neg")
+            + vscMktTile("KPI к оплате",vscMktMoney(sum.kpi),"выручка×(порог−ДРР)/2",kpiPos?"pos":"neg")
+            + vscMktTile("Сделок · ФОТ",Math.round(sum.dealsTotal).toLocaleString("ru-RU")+" · "+vscMktMoney(sum.fotTotal),"ФОТ = сделки×"+((_vscMkt.params&&_vscMkt.params.fotPerDeal)||0))
+            +'</div>';
+        }
+      }
+      function vscMktTile(label,val,sub,cls){ return '<div class="vsc-tile"><div class="vsc-tile-l">'+escapeHtml(label)+'</div><div class="vsc-tile-v'+(cls?" "+cls:"")+'" style="font-size:20px;">'+escapeHtml(val)+'</div>'+(sub?'<div class="vsc-tile-s">'+escapeHtml(sub)+'</div>':'')+'</div>'; }
+      // Графики по каналам: выручка канала по всем месяцам (мини-столбцы) — топ по выручке.
+      function vscMktRenderCharts(){
+        const host=document.getElementById("mktCharts"); if(!host)return; host.innerHTML="";
+        const months=vscMktMonthsSorted().slice().reverse(); // хронологически
+        if(months.length<1)return;
+        // собираем: канал → [{ym, rev}] по всем месяцам
+        const names=[]; (_vscMkt.months[_vscMktMonth].channels||[]).forEach((c)=>{ if(c.name&&names.indexOf(c.name)<0)names.push(c.name); });
+        const revOf=(ym,name)=>{ const m=_vscMkt.months[ym]; if(!m)return null; const c=(m.channels||[]).find((x)=>x.name===name); return c?(vscMktNum(c.rev)||0):null; };
+        // текущий месяц — выручка по каналам (bar), топ-каналы
+        const cur=vscMktCompute(_vscMkt.months[_vscMktMonth],_vscMkt.params);
+        const curRows=cur.rows.filter((r)=>r.rev>0).sort((a,b)=>b.rev-a.rev);
+        const h=document.createElement("div"); h.className="ref-sec-h"; h.style.marginTop="18px"; h.textContent="Графики по каналам"; host.appendChild(h);
+        // 1) выручка по каналам за выбранный месяц
+        const c1=document.createElement("div"); c1.className="vsc-chart";
+        c1.innerHTML='<div class="vsc-chart-h" style="margin-bottom:10px;">Выручка по каналам — '+escapeHtml(vscMktYmName(_vscMktMonth))+'</div>';
+        const maxRev=Math.max.apply(null,curRows.map((r)=>r.rev))||1;
+        const bars=document.createElement("div"); bars.className="vsc-bars"; bars.style.height="200px";
+        curRows.forEach((r)=>{ const col=document.createElement("div"); col.className="vsc-bar-col"; col.style.flex="0 0 62px"; col.title=r.name+": "+vscMktMoney(r.rev);
+          const vl=document.createElement("div"); vl.className="vsc-bar-v"; vl.textContent=Math.round(r.rev/1000)+"к";
+          const bar=document.createElement("div"); bar.className="vsc-bar"; bar.style.height=Math.max(2,Math.round(r.rev/maxRev*140))+"px";
+          const xl=document.createElement("div"); xl.className="vsc-bar-x"; xl.textContent=r.name;
+          col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); bars.appendChild(col); });
+        c1.appendChild(bars); host.appendChild(c1);
+        // 2) динамика по месяцам для топ-6 каналов (мини-графики)
+        if(months.length>=2){
+          const top=curRows.slice(0,6).map((r)=>r.name);
+          const grid=document.createElement("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:4px;";
+          top.forEach((name)=>{
+            const series=months.map((ym)=>({x:vscMktYmName(ym).split(" ")[0].slice(0,3),v:revOf(ym,name)})).filter((p)=>p.v!=null);
+            if(series.length<1)return;
+            const card=document.createElement("div"); card.className="vsc-chart"; card.style.marginBottom="0";
+            card.innerHTML='<div style="font-weight:700;font-size:13.5px;color:#1d2330;margin-bottom:8px;">'+escapeHtml(name)+'</div>';
+            const mx=Math.max.apply(null,series.map((p)=>p.v))||1;
+            const bb=document.createElement("div"); bb.className="vsc-bars"; bb.style.height="120px";
+            series.forEach((p)=>{ const cc=document.createElement("div"); cc.className="vsc-bar-col"; cc.style.flex="0 0 46px"; cc.title=vscMktMoney(p.v);
+              const vv=document.createElement("div"); vv.className="vsc-bar-v"; vv.style.fontSize="8px"; vv.textContent=Math.round(p.v/1000)+"к";
+              const bar=document.createElement("div"); bar.className="vsc-bar"; bar.style.width="26px"; bar.style.height=Math.max(2,Math.round(p.v/mx*72))+"px";
+              const xx=document.createElement("div"); xx.className="vsc-bar-x"; xx.textContent=p.x;
+              cc.appendChild(vv); cc.appendChild(bar); cc.appendChild(xx); bb.appendChild(cc); });
+            card.appendChild(bb); grid.appendChild(card);
+          });
+          host.appendChild(grid);
+        }
+      }
+      function vscMktAddMonth(box){
+        const months=vscMktMonthsSorted(); let base=months[0];
+        // предложить следующий месяц после самого свежего
+        let def="";
+        if(base){ const p=base.split("-"); let y=+p[0],m=+p[1]+1; if(m>12){m=1;y++;} def=y+"-"+String(m).padStart(2,"0"); }
+        const ym=prompt("Новый месяц в формате ГГГГ-ММ (напр. "+(def||"2026-07")+"):", def||"");
+        if(!ym||!/^\d{4}-\d{2}$/.test(ym.trim())){ if(ym!==null)alert("Формат: ГГГГ-ММ"); return; }
+        const key=ym.trim();
+        if(_vscMkt.months[key]){ alert("Такой месяц уже есть."); return; }
+        const src=base?_vscMkt.months[base]:null;
+        _vscMkt.months[key]={ channels:(src?src.channels:[]).map((c)=>({name:c.name,rev:null,spend:null,deals:null})), prochie:[], dop:[] };
+        _vscMktMonth=key; _vscMktDirty=true; vscMktPaint(box);
+      }
+      async function vscMktSaveNow(btn){
+        const st=document.getElementById("mktStatus"); btn.disabled=true; const old=btn.textContent; btn.textContent="Сохраняем…";
+        try{ const r=await fetch("/admin/api/vsc/mktkpi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+getToken()},body:JSON.stringify({data:_vscMkt})});
+          const j=await r.json(); if(j&&j.success){ _vscMktDirty=false; if(st){st.textContent="✓ сохранено"; st.style.color="#2c7a43";} vscMktRenderCharts(); }
+          else { if(st){st.textContent=(j&&j.message)||"Ошибка сохранения"; st.style.color="#b0263a";} }
+        }catch(e){ if(st){st.textContent="Ошибка сети"; st.style.color="#b0263a";} }
+        btn.disabled=false; btn.textContent=old;
       }
       // Вкладка «Прогноз прибыли»: считается на сервере по формулам твоей таблицы
       // (вкладка <Месяц> года) + наши KPI. Блок на месяц + блоки по неделям.
