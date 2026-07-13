@@ -220,6 +220,14 @@
   .ffield input, .ffield select { padding:7px 9px; border:1px solid var(--border); border-radius:7px; font-size:13.5px; width:100%; }
   .frange { display:flex; gap:6px; align-items:center; }
   .frange input { width:100%; }
+  .cf-sec { margin-top:14px; border-top:1px solid var(--border); padding-top:10px; }
+  .cf-sec-h { font-size:11.5px; color:#8a949e; text-transform:uppercase; font-weight:600; margin-bottom:8px; }
+  .cf-row { display:flex; gap:6px; margin-bottom:6px; align-items:center; }
+  .cf-row .cf-field { flex:1.2; min-width:0; padding:6px 8px; border:1px solid var(--border); border-radius:7px; font-size:13px; }
+  .cf-row .cf-val { flex:1; min-width:0; padding:6px 8px; border:1px solid var(--border); border-radius:7px; font-size:13px; }
+  .cf-row .cf-del { border:none; background:#eef2f6; color:#8a949e; width:28px; height:28px; border-radius:6px; cursor:pointer; font-size:16px; flex-shrink:0; }
+  .cf-row .cf-del:hover { background:#f5d5d5; color:#c0392b; }
+  .cf-add { border:none; background:none; color:var(--link); font-size:13px; cursor:pointer; padding:2px 0; }
   .filter-acts { display:flex; gap:8px; margin-top:14px; }
   .filter-acts .btn.ghost { background:#eef2f6; color:#33404d; }
 </style>
@@ -358,15 +366,23 @@
   // ─── ФИЛЬТР (как в amoCRM: клик по строке поиска → панель фильтра) ───
   function userOptsHtml(sel){return '<option value="">— любой —</option>'+USERS.map(function(u){return '<option value="'+u.id+'"'+(String(u.id)===String(sel)?" selected":"")+'>'+esc(u.name)+'</option>';}).join("");}
   function closeFilterPanel(){var p=document.getElementById("filterPanel");if(p)p.remove();}
+  // строка фильтра по кастомному полю: [поле][значение][×]
+  function cfFilterRow(defs,sec,fid,val){
+    return '<div class="cf-row" data-sec="'+sec+'"><select class="cf-field"><option value="">— поле —</option>'+
+      defs.map(function(f){return '<option value="'+f.id+'"'+(String(f.id)===String(fid)?" selected":"")+'>'+esc(f.name)+'</option>';}).join("")+
+      '</select><input class="cf-val" placeholder="значение" value="'+esc(val||"")+'"><button class="cf-del" title="убрать">×</button></div>';
+  }
   function openFilterPanel(){
     if(!curFilter)return;
     if(document.getElementById("filterPanel"))return;
     var anchor=$("#hSearch"),r=anchor.getBoundingClientRect();
     var st=FSTATE[curFilter.kind]||{};
+    var isLeads=curFilter.kind==="leads";
+    var leadDefs=(CF&&CF.leads)||[], contDefs=(CF&&CF.contacts)||[];
     var p=document.createElement("div");p.className="filter-panel";p.id="filterPanel";
     var fields='';
     fields+='<div class="ffield"><label>Ответственный</label><select data-f="responsible">'+userOptsHtml(st.responsible)+'</select></div>';
-    if(curFilter.kind==="leads"){
+    if(isLeads){
       var sts=(curFilter.statuses||[]);
       fields+='<div class="ffield"><label>Этап</label><select data-f="status"><option value="">— любой —</option>'+sts.map(function(s){return '<option value="'+s.id+'"'+(String(s.id)===String(st.status)?" selected":"")+'>'+esc(s.name)+'</option>';}).join("")+'</select></div>';
       fields+='<div class="ffield"><label>Бюджет, ₽</label><div class="frange"><input type="number" data-f="price_min" placeholder="от" value="'+(st.price_min||"")+'"><span>–</span><input type="number" data-f="price_max" placeholder="до" value="'+(st.price_max||"")+'"></div></div>';
@@ -374,21 +390,42 @@
     }
     fields+='<div class="ffield"><label>Создано с</label><input type="date" data-f="date_from" value="'+(st.date_from||"")+'"></div>';
     fields+='<div class="ffield"><label>Создано по</label><input type="date" data-f="date_to" value="'+(st.date_to||"")+'"></div>';
-    p.innerHTML='<h4>Фильтр '+(curFilter.kind==="leads"?"сделок":"контактов")+'</h4><div class="fgrid">'+fields+'</div>'+
+    // секции фильтра по любым полям
+    var ownDefs=isLeads?leadDefs:contDefs;
+    var cfRowsHtml=(st._cf&&st._cf.length?st._cf:[["",""]]).map(function(x){return cfFilterRow(ownDefs,"cf",x[0],x[1]);}).join("");
+    var ccfSection=isLeads?('<div class="cf-sec"><div class="cf-sec-h">Поля связанного контакта</div><div id="ccfRows">'+
+      ((st._ccf&&st._ccf.length?st._ccf:[["",""]]).map(function(x){return cfFilterRow(contDefs,"ccf",x[0],x[1]);}).join(""))+
+      '</div><button class="cf-add" data-add="ccf">+ ещё поле контакта</button></div>'):"";
+    p.innerHTML='<h4>Фильтр '+(isLeads?"сделок":"контактов")+'</h4><div class="fgrid">'+fields+'</div>'+
+      '<div class="cf-sec"><div class="cf-sec-h">Поля '+(isLeads?"сделки":"контакта")+' (любое поле)</div><div id="cfRows">'+cfRowsHtml+'</div><button class="cf-add" data-add="cf">+ ещё поле</button></div>'+
+      ccfSection+
       '<div class="filter-acts"><button class="btn" id="fApply">Применить</button><button class="btn ghost" id="fReset">Сбросить</button><button class="btn ghost" id="fClose" style="margin-left:auto">Закрыть</button></div>';
     document.body.appendChild(p);
     p.style.top=(r.bottom+8)+"px";
     p.style.left=Math.max(10,Math.min(r.left,window.innerWidth-p.offsetWidth-10))+"px";
     p.addEventListener("click",function(e){e.stopPropagation();});
-    var collect=function(){var vals={};p.querySelectorAll("[data-f]").forEach(function(el){var v=el.value.trim();if(v){if(el.type==="date")v=Math.floor(new Date(v+"T00:00:00").getTime()/1000);vals[el.dataset.f]=v;}});return vals;};
-    // сохраняем «сырые» значения для повторного открытия
-    var collectRaw=function(){var raw={};p.querySelectorAll("[data-f]").forEach(function(el){if(el.value.trim())raw[el.dataset.f]=el.value.trim();});return raw;};
-    $("#fApply").onclick=function(){FSTATE[curFilter.kind]=collectRaw();var vals=collect();closeFilterPanel();if(curFilter.kind==="leads")runLeadsFilter(vals);else runContactsFilter(vals);};
-    $("#fReset").onclick=function(){FSTATE[curFilter.kind]={};closeFilterPanel();if(curFilter.kind==="leads")vLeads();else vContacts();};
+    // добавление/удаление строк полей
+    p.querySelectorAll(".cf-add").forEach(function(btn){btn.onclick=function(){
+      var sec=btn.dataset.add,box=p.querySelector(sec==="cf"?"#cfRows":"#ccfRows");
+      var tmp=document.createElement("div");tmp.innerHTML=cfFilterRow(sec==="cf"?ownDefs:contDefs,sec,"","");box.appendChild(tmp.firstChild);bindDel();
+    };});
+    function bindDel(){p.querySelectorAll(".cf-del").forEach(function(b){b.onclick=function(){var row=b.closest(".cf-row");if(row.parentNode.children.length>1)row.remove();else{row.querySelector(".cf-field").value="";row.querySelector(".cf-val").value="";}};});}
+    bindDel();
+    var collectCf=function(sec){var out=[];p.querySelectorAll('.cf-row[data-sec="'+sec+'"]').forEach(function(row){var fid=row.querySelector(".cf-field").value,val=row.querySelector(".cf-val").value.trim();if(fid&&val)out.push([fid,val]);});return out;};
+    var collect=function(){var vals={};p.querySelectorAll("[data-f]").forEach(function(el){var v=el.value.trim();if(v){if(el.type==="date")v=Math.floor(new Date(v+"T00:00:00").getTime()/1000);vals[el.dataset.f]=v;}});vals._cf=collectCf("cf");if(isLeads)vals._ccf=collectCf("ccf");return vals;};
+    var collectRaw=function(){var raw={};p.querySelectorAll("[data-f]").forEach(function(el){if(el.value.trim())raw[el.dataset.f]=el.value.trim();});raw._cf=collectCf("cf");if(isLeads)raw._ccf=collectCf("ccf");return raw;};
+    $("#fApply").onclick=function(){FSTATE[curFilter.kind]=collectRaw();var vals=collect();closeFilterPanel();if(isLeads)runLeadsFilter(vals);else runContactsFilter(vals);};
+    $("#fReset").onclick=function(){FSTATE[curFilter.kind]={};closeFilterPanel();if(isLeads)vLeads();else vContacts();};
     $("#fClose").onclick=closeFilterPanel;
     setTimeout(function(){document.addEventListener("click",function cl(ev){if(!document.getElementById("filterPanel"))return document.removeEventListener("click",cl);if(!p.contains(ev.target)&&ev.target!==anchor){closeFilterPanel();document.removeEventListener("click",cl);}});},0);
   }
-  function filterQS(vals){return Object.keys(vals).map(function(k){return k+"="+encodeURIComponent(vals[k]);}).join("&");}
+  function filterQS(vals){
+    var parts=[];
+    Object.keys(vals).forEach(function(k){if(k==="_cf"||k==="_ccf")return;parts.push(k+"="+encodeURIComponent(vals[k]));});
+    (vals._cf||[]).forEach(function(x){parts.push("cf="+encodeURIComponent(x[0]+":"+x[1]));});
+    (vals._ccf||[]).forEach(function(x){parts.push("ccf="+encodeURIComponent(x[0]+":"+x[1]));});
+    return parts.join("&");
+  }
   function runLeadsFilter(vals){
     var p=PIPES.find(function(x){return x.id===curPipe;})||PIPES[0];
     if(p&&!("pipeline" in vals))vals.pipeline=p.id;
