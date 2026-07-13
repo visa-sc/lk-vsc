@@ -64,6 +64,9 @@
   .kb-head .nm { font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .kb-head .ct { font-size:12px; color:var(--mut); margin-top:2px; }
   .kb-head .bar { height:3px; border-radius:2px; margin-top:8px; background:#dfe3e8; }
+  .kb-quick { margin:0 8px; padding:8px 10px; border:1px dashed #c3ccd6; border-radius:4px; color:#7b8794; font-size:13px; text-align:center; cursor:pointer; background:#fafbfc; }
+  .kb-quick:hover { border-color:var(--link); color:var(--link); background:#f2f7fd; }
+  .kb-quick[data-open] { text-align:left; cursor:default; border-style:solid; }
   .kb-cards { padding:8px; }
   .kb-card { background:#fff; border:1px solid #dfe5eb; border-radius:4px; padding:9px 11px; margin-bottom:7px; cursor:pointer; position:relative; }
   .kb-card:hover { border-color:#b9cde0; }
@@ -297,10 +300,11 @@
     tasks:'<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M8 12l2 2 4-4"/></svg>',
     companies:'<svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="1"/><path d="M9 7V4h6v3M9 11h2M13 11h2M9 15h2M13 15h2"/></svg>',
     analytics:'<svg viewBox="0 0 24 24"><path d="M4 20V4M4 20h16"/><rect x="7" y="12" width="3" height="5"/><rect x="12" y="8" width="3" height="9"/><rect x="17" y="5" width="3" height="12"/></svg>',
+    lists:'<svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.3"/><circle cx="3.5" cy="12" r="1.3"/><circle cx="3.5" cy="18" r="1.3"/></svg>',
     settings:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>'
   };
   // [ключ, подпись, иконка, право-секции(если нужно ограничение)]
-  var NAV=[["desk","Рабочий стол","desk"],["leads","Сделки","leads","leads"],["contacts","Контакты","contacts","contacts"],["companies","Компании","companies","companies"],["tasks","Задачи","tasks","tasks"],["analytics","Аналитика","analytics","analytics"],["auto","Автоматизации","auto"],["refs","Справочники","refs"],["todo","Доработки","todo"],["settings","Настройки","settings","settings"]];
+  var NAV=[["desk","Рабочий стол","desk"],["leads","Сделки","leads","leads"],["contacts","Контакты","contacts","contacts"],["companies","Компании","companies","companies"],["tasks","Задачи","tasks","tasks"],["lists","Списки","lists"],["analytics","Аналитика","analytics","analytics"],["auto","Автоматизации","auto"],["refs","Справочники","refs"],["todo","Доработки","todo"],["settings","Настройки","settings","settings"]];
   function navAllowed(n){
     if(!n[3])return true;                 // без ограничения — видно всем
     if(!ME)return true;                    // до загрузки прав — не прячем
@@ -517,7 +521,7 @@
     var html=leadToggleHtml()+'<div id="kb">';
     sts.forEach(function(s){
       var k=kb[s.id]||{count:0,sum:0};
-      html+='<div class="kb-col" data-sid="'+s.id+'"><div class="kb-head"><div class="nm" title="'+esc(s.name)+'">'+esc(s.name)+'</div><div class="ct">'+fmt(k.count)+' сделок: '+fmt(k.sum)+' ₽</div><div class="bar" style="background:'+esc(s.color||"#dfe3e8")+'"></div></div><div class="kb-cards"></div>'+(k.count?'<button class="lnk kb-more" data-page="0">Ещё</button>':"")+'</div>';
+      html+='<div class="kb-col" data-sid="'+s.id+'"><div class="kb-head"><div class="nm" title="'+esc(s.name)+'">'+esc(s.name)+'</div><div class="ct">'+fmt(k.count)+' сделок: '+fmt(k.sum)+' ₽</div><div class="bar" style="background:'+esc(s.color||"#dfe3e8")+'"></div></div><div class="kb-quick" data-qs="'+s.id+'">+ Быстрое добавление</div><div class="kb-cards"></div>'+(k.count?'<button class="lnk kb-more" data-page="0">Ещё</button>':"")+'</div>';
     });
     html+='</div>';
     $("#view").innerHTML=html;
@@ -529,7 +533,32 @@
       col.addEventListener("dragover",function(e){e.preventDefault();e.dataTransfer.dropEffect="move";col.style.background="#eef5fc";});
       col.addEventListener("dragleave",function(){col.style.background="";});
       col.addEventListener("drop",function(e){e.preventDefault();col.style.background="";dropLeadToStage(col);});
+      var q=col.querySelector(".kb-quick");
+      if(q)q.onclick=function(){quickAddLead(col,p,parseInt(q.dataset.qs,10));};
     });
+  }
+  // быстрое добавление сделки прямо в колонке (как в amoCRM)
+  function quickAddLead(col,p,sid){
+    var q=col.querySelector(".kb-quick");if(!q||q.dataset.open)return;q.dataset.open="1";
+    q.innerHTML='<input class="ci qi" placeholder="Название сделки…" style="width:100%;margin-bottom:6px"><div style="display:flex;gap:6px"><button class="btn qsave" style="padding:5px 12px">Добавить</button><button class="btn ghost qcancel" style="padding:5px 12px">×</button></div>';
+    var inp=q.querySelector(".qi");inp.focus();
+    var reset=function(){delete q.dataset.open;q.textContent="+ Быстрое добавление";};
+    var save=function(){
+      var name=inp.value.trim();if(!name){reset();return;}
+      ereq("POST","/edit-api/lead",{name:name,pipeline_id:p.id,status_id:sid}).then(function(r){
+        if(r&&r.success){toast("Сделка создана");
+          var box=col.querySelector(".kb-cards");
+          var d=document.createElement("div");d.className="kb-card";d.dataset.lead=r.id;
+          d.innerHTML='<div class="top"><span></span><span class="dt">сейчас</span></div><div class="ttl">'+esc(name)+'</div>';
+          d.onclick=function(){openLead(r.id);};
+          box.insertBefore(d,box.firstChild);recountCol(col,1);reset();
+        } else {toast((r&&r.message)||"Не удалось",true);reset();}
+      });
+    };
+    q.querySelector(".qsave").onclick=function(e){e.stopPropagation();save();};
+    q.querySelector(".qcancel").onclick=function(e){e.stopPropagation();reset();};
+    inp.onkeydown=function(e){e.stopPropagation();if(e.key==="Enter")save();if(e.key==="Escape")reset();};
+    inp.onclick=function(e){e.stopPropagation();};
   }
   function leadToggleHtml(){
     return '<div class="lead-toggle"><button data-m="kanban" class="'+(leadViewMode==="kanban"?"act":"")+'">▦ Воронка</button><button data-m="list" class="'+(leadViewMode==="list"?"act":"")+'">☰ Список</button></div>';
@@ -1290,7 +1319,39 @@
     }).catch(function(){$("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Ошибка загрузки аналитики.</p></div></div>';});
   }
 
-  var views={desk:vDesk,leads:vLeads,contacts:vContacts,companies:vCompanies,tasks:vTasks,analytics:vAnalytics,auto:vAuto,refs:vRefs,todo:vTodo,settings:vSettings};
+  /* ─── СПИСКИ (каталоги amoCRM: услуги, юр.лица, счета) ─── */
+  function catalogElVal(el,fname){
+    var f=(el.custom_fields_values||[]).find(function(x){return x.field_name===fname;});
+    if(!f)return "";
+    return (f.values||[]).map(function(v){return v.value&&v.value.name?v.value.name:v.value;}).join(", ");
+  }
+  function vLists(){
+    renderSidebar("lists");
+    setHeader("Списки",{count:""});
+    $("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Загрузка…</p></div></div>';
+    jreq(API+"/catalogs").then(function(cats){
+      if(!Array.isArray(cats)||!cats.length)return $("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Списков нет.</p></div></div>';
+      var typeName={products:"Товары/услуги",suppliers:"Юр. лица",invoices:"Счета и покупки",contacts:"Контакты",customers:"Покупатели"};
+      var html='<div class="plain">';
+      cats.forEach(function(c){
+        var els=c.elements||[];
+        // собираем до 4 наиболее частых доп-полей для колонок
+        var freq={};els.forEach(function(e){(e.custom_fields_values||[]).forEach(function(f){freq[f.field_name]=(freq[f.field_name]||0)+1;});});
+        var cols=Object.keys(freq).sort(function(a,b){return freq[b]-freq[a];}).slice(0,4);
+        html+='<div class="pcard"><h2>'+esc(c.name)+' <span class="muted" style="font-weight:400;font-size:13px">— '+els.length+' элементов'+(typeName[c.type]?" · "+typeName[c.type]:"")+'</span></h2>';
+        if(!els.length){html+='<p class="muted">Пусто.</p></div>';return;}
+        html+='<table class="set"><tr><th>Наименование</th>'+cols.map(function(x){return '<th>'+esc(x)+'</th>';}).join("")+'</tr>';
+        html+=els.slice(0,300).map(function(e){
+          return '<tr><td>'+esc(e.name||"—")+'</td>'+cols.map(function(x){return '<td class="muted">'+esc(catalogElVal(e,x))+'</td>';}).join("")+'</tr>';
+        }).join("");
+        html+='</table>'+(els.length>300?'<p class="muted" style="margin-top:8px">Показаны первые 300 из '+els.length+'</p>':"")+'</div>';
+      });
+      html+='</div>';
+      $("#view").innerHTML=html;
+    }).catch(function(){$("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Ошибка загрузки списков.</p></div></div>';});
+  }
+
+  var views={desk:vDesk,leads:vLeads,contacts:vContacts,companies:vCompanies,tasks:vTasks,lists:vLists,analytics:vAnalytics,auto:vAuto,refs:vRefs,todo:vTodo,settings:vSettings};
   var curView="leads";
   function go(name){curView=name;hidePipePanel();(views[name]||vDesk)();}
 
