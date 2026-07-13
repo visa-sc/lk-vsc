@@ -119,6 +119,9 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
   if (process.env.AMOCOPY_USE_DB === "1") {
     try { require(path.join(BASE_DIR, "amocopy-db.js"))(app, requireCopyAccess, api); }
     catch (e) { console.error("amocopy: DB-чтение не поднялось, остаюсь на файлах:", e.message); }
+    // слой записи (/edit-api/*) — только вместе с БД
+    try { require(path.join(BASE_DIR, "amocopy-edit.js"))(app, requireCopyAccess); }
+    catch (e) { console.error("amocopy: слой записи не поднялся:", e.message); }
   }
 
   // мелкие справочники — файл целиком
