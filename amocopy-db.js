@@ -55,6 +55,16 @@ module.exports = function mountDbRoutes(app, guard, api) {
   const qContactsPage = D.prepare("SELECT id,name,phones,emails,created_at FROM contacts ORDER BY created_at DESC LIMIT ? OFFSET ?");
   const uName = {}; D.prepare("SELECT id,name FROM users").all().forEach((u) => { uName[u.id] = u.name; });
 
+  // счётчики канбана из БД (живые — отражают созданные/перемещённые сделки)
+  const qKanban = D.prepare("SELECT pipeline_id, status_id, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads GROUP BY pipeline_id, status_id");
+  app.get(`${api}/kanban`, guard, (req, res) => {
+    const kb = {};
+    for (const r of qKanban.all()) {
+      (kb[r.pipeline_id] = kb[r.pipeline_id] || {})[r.status_id] = { count: r.c, sum: r.s };
+    }
+    res.json({ kanban: kb, pages: {} });
+  });
+
   // список сделок этапа (как файловый, но из БД)
   app.get(`${api}/leads`, guard, (req, res) => {
     const pid = String(req.query.pipeline || ""), sid = String(req.query.status || ""), page = String(req.query.page || "1");
