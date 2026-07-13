@@ -111,3 +111,6 @@ amo-backup/
 
 # Маркетинг-KPI по каналам — рантайм-хранилище (сид в коде)
 .vscMktKpi.json
+crm-svc/node_modules/
+crm-svc/.amocopySessions.json
+.amocopy-db/

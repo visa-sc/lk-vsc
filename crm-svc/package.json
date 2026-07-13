@@ -1,0 +1,9 @@
+{
+  "name": "amocopy-svc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Изолированный сервис crm.voyotravel.ru (копия amoCRM). Отдельный процесс/порт — не связан с основным продом.",
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "dependencies": { "express": "^4.21.2" }
+}

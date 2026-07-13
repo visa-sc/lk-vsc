@@ -12,13 +12,16 @@ const path = require("path");
 const readline = require("readline");
 const crypto = require("crypto");
 
+// Пути настраиваются через env — чтобы модуль работал и в основном процессе (server.js),
+// и в отдельном изолированном сервисе crm-svc (свой каталог), без дублирования логики.
+const BASE_DIR = process.env.AMOCOPY_BASE || __dirname;
 const DATA_DIR = process.env.AMOCOPY_DIR || path.join(__dirname, ".amocopy");
 const PAGE_FILE_RE = /^[0-9]{1,12}$/;
 
 // ── Собственный вход по коду (просьба Андрея 06.07.2026: crm.voyotravel.ru по коду 111).
 // Полностью автономно: свои сессии в .amocopySessions.json, admin/manager-сессии не задеты.
 const COPY_CODE = String(process.env.AMOCRM_COPY_CODE || "111");
-const COPY_SESS_FILE = path.join(__dirname, ".amocopySessions.json");
+const COPY_SESS_FILE = process.env.AMOCOPY_SESS_FILE || path.join(__dirname, ".amocopySessions.json");
 const COPY_SESS_TTL_MS = 30 * 24 * 3600 * 1000; // 30 дней
 let copySessions = {};
 try { copySessions = JSON.parse(fs.readFileSync(COPY_SESS_FILE, "utf8")) || {}; } catch (_) {}
@@ -79,7 +82,7 @@ function listFromBucket(dir, id, buckets, field, cb) {
 }
 
 module.exports = function setupAmoCopy(app, requireVscAccess) {
-  const htmlFile = path.join(__dirname, "public", "amocrm_copy.html");
+  const htmlFile = path.join(BASE_DIR, "public", "amocrm_copy.html");
 
   app.get("/amocrm_copy", (req, res) => {
     res.set("Cache-Control", "no-cache");
@@ -131,7 +134,7 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
 
   // опись автоматизаций (курируемый markdown из репозитория)
   app.get(`${api}/automations`, requireCopyAccess, (req, res) => {
-    const p = path.join(__dirname, "amocopy-automations.md");
+    const p = path.join(BASE_DIR, "amocopy-automations.md");
     if (!fs.existsSync(p)) return res.status(404).json({ success: false });
     res.set("Content-Type", "text/markdown; charset=utf-8");
     return res.sendFile(p);
