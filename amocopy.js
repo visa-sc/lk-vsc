@@ -114,6 +114,13 @@ module.exports = function setupAmoCopy(app, requireVscAccess) {
     return res.json({ success: true, token });
   });
 
+  // DB-чтение (только в изолированном сервисе: AMOCOPY_USE_DB=1). Регистрируется ПЕРВЫМ —
+  // выигрывает приоритет над файловыми маршрутами ниже. Прод (без флага/без sqlite) — на файлах.
+  if (process.env.AMOCOPY_USE_DB === "1") {
+    try { require(path.join(BASE_DIR, "amocopy-db.js"))(app, requireCopyAccess, api); }
+    catch (e) { console.error("amocopy: DB-чтение не поднялось, остаюсь на файлах:", e.message); }
+  }
+
   // мелкие справочники — файл целиком
   const FILES = {
     meta: "meta.json", pipelines: "pipelines.json", users: "users.json", roles: "roles.json",
