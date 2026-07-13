@@ -3228,7 +3228,7 @@
         // «День»: плитка «Выручка за сегодня» (amoCRM) — среди основных показателей
         // дашборда (рядом с «Набранные контакты», ATV и пр.). Вся выручка по фильтру
         // 3 воронок, дата выручки = сегодня, ВСЕ ответственные. Считается на сервере
-        // 6×/день (12/15/17/18/19/20 МСК) низким приоритетом; здесь — готовая сумма из кэша.
+        // ежечасно (пн–пт 10–22, сб–вс 12–20 МСК) низким приоритетом; здесь — готовая сумма из кэша.
         if (vscGran === "day") {
           const dr = vscData.dayRevenue;
           const drT = document.createElement("div"); drT.className = "vsc-tile vsc-tile-dayrev";
@@ -3241,20 +3241,22 @@
           // пересчёта — в тултипе плитки (по наведению).
           if (dr && dr.total != null && dr.dayKey === todayKey) {
             const upd = dr.ts ? new Date(dr.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
-            drT.title = "Пересчёт 12/15/17/18/19/20 МСК · сделок " + (dr.leads != null ? dr.leads : "—");
+            drT.title = "сделок " + (dr.leads != null ? dr.leads : "—");
             drT.innerHTML = '<div class="vsc-tile-l">Выручка за сегодня (amoCRM)</div>'
               + '<div class="vsc-tile-v">' + vscFmt(dr.total, "money") + '</div>'
               + '<div class="vsc-tile-s vsc-dayrev-sched">обновлено: ' + escapeHtml(upd) + ' МСК</div>'
               + refreshBtn;
           } else {
             // Новый день начался, а кэш ещё за прошлый день (или его нет) → показываем 0,
-            // чтобы вчерашняя сумма не путала. Реальные данные появятся в 12:00 МСК (и далее).
-            drT.title = "Пересчёт 12/15/17/18/19/20 МСК";
+            // чтобы вчерашняя сумма не путала. Реальные данные появятся в первый час окна (и далее).
+            drT.title = "";
             drT.innerHTML = '<div class="vsc-tile-l">Выручка за сегодня (amoCRM)</div>'
               + '<div class="vsc-tile-v">' + vscFmt(0, "money") + '</div>'
               + '<div class="vsc-tile-s vsc-dayrev-sched">ещё не обновлялось сегодня</div>'
               + refreshBtn;
           }
+          // «i» с расписанием автообновления (по просьбе Андрея вместо старого тултипа с часами).
+          (function () { const lbl = drT.querySelector(".vsc-tile-l"); if (lbl) lbl.appendChild(vscInfo("<b>Автообновление</b><br>Ежечасно: <b>пн–пт 10:00–22:00</b>, <b>сб–вс 12:00–20:00</b> МСК.<br><br>Считается в фоне с самым низким приоритетом — amoCRM не перегружается. Кнопка «Обновить» — пересчитать вручную.")); })();
           tiles.appendChild(drT);
           if (dayRevAdmin) { const rb = drT.querySelector("#dayRevRefresh"); if (rb) rb.addEventListener("click", function () { vscDayRevRefresh(rb); }); }
         }
