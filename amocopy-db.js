@@ -112,6 +112,17 @@ module.exports = function mountDbRoutes(app, guard, api) {
     res.json({ success: true, funnels, byUser });
   });
 
+  // кастомные поля из cf_defs (единый источник правды — актуализируется amoCopySyncFields.js)
+  app.get(`${api}/custom_fields`, guard, (req, res) => {
+    const rows = D.prepare("SELECT entity,id,name,type,code,enums,sort FROM cf_defs WHERE entity IN ('leads','contacts','companies') ORDER BY entity, sort").all();
+    const out = { leads: [], contacts: [], companies: [] };
+    for (const r of rows) {
+      if (!out[r.entity]) continue;
+      out[r.entity].push({ id: r.id, name: r.name, type: r.type, code: r.code || null, enums: J(r.enums, []) });
+    }
+    res.json(out);
+  });
+
   // список сделок этапа (как файловый, но из БД)
   app.get(`${api}/leads`, guard, (req, res) => {
     const pid = String(req.query.pipeline || ""), sid = String(req.query.status || ""), page = String(req.query.page || "1");
