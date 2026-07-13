@@ -173,6 +173,18 @@
   .login-box h2 { margin:0 0 16px; font-size:18px; }
   .login-box input { width:100%; text-align:center; font-size:18px; letter-spacing:4px; margin-bottom:12px; }
   .login-box .err { color:#c0392b; font-size:13px; min-height:18px; margin-bottom:4px; }
+
+  /* ── универсальное модальное окно ── */
+  .modal-bg { position:fixed; inset:0; z-index:150; background:rgba(20,35,60,.34); display:flex; align-items:flex-start; justify-content:center; padding-top:8vh; }
+  .modal { background:#fff; border-radius:10px; padding:22px 26px; width:440px; max-width:92vw; max-height:82vh; overflow:auto; box-shadow:0 12px 40px rgba(20,40,70,.28); position:relative; }
+  .modal h2 { margin:0 0 14px; font-size:17px; }
+  .modal .x { position:absolute; top:12px; right:14px; border:none; background:none; font-size:22px; line-height:1; cursor:pointer; color:#8a949e; }
+  .modal .x:hover { color:#333; }
+  /* контекстное меню (кнопка «···») */
+  .ctxmenu { position:fixed; z-index:160; background:#fff; border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 26px rgba(20,40,70,.22); padding:6px 0; min-width:210px; }
+  .ctxmenu div { padding:9px 16px; font-size:14px; cursor:pointer; white-space:nowrap; }
+  .ctxmenu div:hover { background:#f0f4f8; }
+  .ctxmenu .sep { height:1px; background:var(--border); padding:0; margin:5px 0; cursor:default; }
 </style>
 </head>
 <body>
@@ -183,7 +195,7 @@
       <span id="secTitle"></span>
       <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="hSearch" placeholder="Поиск и фильтр"></div>
       <span id="hCount"></span>
-      <button class="hbtn dots">···</button>
+      <button class="hbtn dots" id="hDots" title="Ещё">···</button>
       <button class="hbtn" id="hCfg">Настроить</button>
       <button class="hbtn blue" id="hNew">+ Новая сделка</button>
     </header>
@@ -265,6 +277,23 @@
     $("#hNew").style.display=opts.onNew?"":"none";
     $("#hNew").onclick=opts.onNew||null;
     $("#hCfg").onclick=opts.onCfg||function(){toast("Здесь настройки — доступны в разделах со списками");};
+    $("#hCfg").style.display=opts.onCfg===false?"none":"";
+    var dots=$("#hDots");
+    dots.style.display=opts.dotsMenu?"":"none";
+    dots.onclick=opts.dotsMenu?function(e){openCtxMenu(e.currentTarget,opts.dotsMenu());}:null;
+  }
+  // контекстное меню у кнопки: items = [{label, on} | "sep"]
+  function openCtxMenu(anchor,items){
+    document.querySelectorAll(".ctxmenu").forEach(function(m){m.remove();});
+    var r=anchor.getBoundingClientRect();
+    var menu=document.createElement("div");menu.className="ctxmenu";
+    menu.innerHTML=items.map(function(it){return it==="sep"?'<div class="sep"></div>':'<div>'+esc(it.label)+'</div>';}).join("");
+    document.body.appendChild(menu);
+    menu.style.top=(r.bottom+6)+"px";
+    menu.style.left=Math.max(8,r.right-menu.offsetWidth)+"px";
+    var rows=menu.querySelectorAll("div:not(.sep)"),k=0;
+    items.forEach(function(it){if(it==="sep")return;var row=rows[k++];if(it.on)row.onclick=function(){menu.remove();it.on();};});
+    setTimeout(function(){document.addEventListener("click",function cl(ev){if(!menu.contains(ev.target)){menu.remove();document.removeEventListener("click",cl);}});},0);
   }
 
   /* ─── рабочий стол (живые KPI из БД) ─── */
@@ -793,9 +822,28 @@
       localStorage.setItem("crm_contact_cols",JSON.stringify(chosen));document.body.removeChild(bg);vContacts();
     };
   }
+  function exportContactsCsv(){
+    var cols=contactActiveCols();
+    var rows=[cols.map(function(c){return c[1];})];
+    document.querySelectorAll("#cbody tr").forEach(function(tr){
+      rows.push([].map.call(tr.children,function(td){return (td.textContent||"").replace(/\s+/g," ").trim();}));
+    });
+    if(rows.length<2)return toast("Нет загруженных строк — прокрутите список",true);
+    var csv="﻿"+rows.map(function(r){return r.map(function(v){return '"'+String(v).replace(/"/g,'""')+'"';}).join(";");}).join("\r\n");
+    var a=document.createElement("a");
+    a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);
+    a.download="contacts_"+(document.querySelectorAll("#cbody tr").length)+".csv";
+    document.body.appendChild(a);a.click();a.remove();
+    toast("Экспортировано строк: "+(rows.length-1));
+  }
   function vContacts(){
     renderSidebar("contacts");
-    setHeader("Контакты",{count:fmt(META.counts.contacts)+" контактов",searchPh:"Поиск и фильтр (имя, телефон, email — Enter)",newBtn:"+ Добавить контакт",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},onNew:newContact,onCfg:openColSettings});
+    setHeader("Контакты",{count:fmt(META.counts.contacts)+" контактов",searchPh:"Поиск и фильтр (имя, телефон, email — Enter)",newBtn:"+ Добавить контакт",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},onNew:newContact,onCfg:openColSettings,dotsMenu:function(){return [
+      {label:"Настроить колонки",on:openColSettings},
+      {label:"Экспорт списка в CSV",on:exportContactsCsv},
+      "sep",
+      {label:"Сбросить фильтр/поиск",on:vContacts}
+    ];}});
     $("#view").innerHTML='<div style="padding:0 0 30px"><table class="amo"><thead>'+contactHeadHtml()+'</thead><tbody id="cbody"></tbody></table><div id="cmore" class="muted" style="padding:14px;text-align:center"></div></div>';
     cPage=0; cLoading=false; cSearchMode=false;
     loadContactPage();
