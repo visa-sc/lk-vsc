@@ -123,6 +123,67 @@ module.exports = function mountEditRoutes(app, guard) {
     res.json({ success: true, updated: Object.keys(changes) });
   });
 
+  // ── правка кастомного поля сделки/контакта ──
+  function updateCf(entity, id, fieldId, fieldName, value) {
+    const getter = entity === "leads" ? getLead : getContact;
+    const row = getter.get(id);
+    if (!row) return { ok: false, code: 404 };
+    let cf = []; try { cf = JSON.parse(row.cf) || []; } catch (_) { cf = []; }
+    if (!Array.isArray(cf)) cf = [];
+    const vArr = (value === "" || value == null) ? [] : [{ value: value }];
+    const ix = cf.findIndex((f) => f.field_id === fieldId);
+    if (ix >= 0) { if (!vArr.length) cf.splice(ix, 1); else cf[ix].values = vArr; }
+    else if (vArr.length) cf.push({ field_id: fieldId, field_name: fieldName || String(fieldId), values: vArr });
+    db.prepare(`UPDATE ${entity} SET cf=?, updated_at=? WHERE id=?`).run(JSON.stringify(cf), nowSec(), id);
+    return { ok: true };
+  }
+  app.patch(`${E}/lead/:id/cf`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10), fid = parseInt(req.body.field_id, 10);
+    if (!id || !fid) return res.status(400).json({ success: false });
+    const r = updateCf("leads", id, fid, req.body.field_name, req.body.value);
+    if (!r.ok) return res.status(r.code || 500).json({ success: false });
+    audit(req, "leads", id, "edit_cf", { field_id: fid, field: req.body.field_name, value: req.body.value });
+    res.json({ success: true });
+  });
+  app.patch(`${E}/contact/:id/cf`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10), fid = parseInt(req.body.field_id, 10);
+    if (!id || !fid) return res.status(400).json({ success: false });
+    const r = updateCf("contacts", id, fid, req.body.field_name, req.body.value);
+    if (!r.ok) return res.status(r.code || 500).json({ success: false });
+    audit(req, "contacts", id, "edit_cf", { field_id: fid, field: req.body.field_name, value: req.body.value });
+    res.json({ success: true });
+  });
+
+  // ── теги сделки (добавить/удалить) ──
+  app.patch(`${E}/lead/:id/tags`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const lead = getLead.get(id);
+    if (!lead) return res.status(404).json({ success: false });
+    if (!Array.isArray(req.body.tags)) return res.status(400).json({ success: false });
+    const tags = req.body.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 30);
+    db.prepare("UPDATE leads SET tags=?, updated_at=? WHERE id=?").run(JSON.stringify(tags), nowSec(), id);
+    audit(req, "leads", id, "edit_tags", { tags });
+    res.json({ success: true, tags });
+  });
+
+  // ── удаление сделки/контакта (мягкое: только локальные и по подтверждению) ──
+  app.post(`${E}/lead/:id/delete`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!getLead.get(id)) return res.status(404).json({ success: false });
+    db.prepare("DELETE FROM leads WHERE id=?").run(id);
+    db.prepare("DELETE FROM lead_contacts WHERE lead_id=?").run(id);
+    audit(req, "leads", id, "delete", {});
+    res.json({ success: true });
+  });
+  app.post(`${E}/contact/:id/delete`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!getContact.get(id)) return res.status(404).json({ success: false });
+    db.prepare("DELETE FROM contacts WHERE id=?").run(id);
+    db.prepare("DELETE FROM lead_contacts WHERE contact_id=?").run(id);
+    audit(req, "contacts", id, "delete", {});
+    res.json({ success: true });
+  });
+
   // ── создание сделки ──
   app.post(`${E}/lead`, guard, (req, res) => {
     const pid = parseInt(req.body.pipeline_id, 10), sid = parseInt(req.body.status_id, 10);
@@ -162,6 +223,7 @@ module.exports = function mountEditRoutes(app, guard) {
     if (typeof req.body.name === "string") { upd.name = req.body.name.slice(0, 300); changes.name = [c.name, upd.name]; }
     if (Array.isArray(req.body.phones)) { upd.phones = JSON.stringify(req.body.phones.map(String).filter(Boolean)); changes.phones = JSON.parse(upd.phones); }
     if (Array.isArray(req.body.emails)) { upd.emails = JSON.stringify(req.body.emails.map(String).filter(Boolean)); changes.emails = JSON.parse(upd.emails); }
+    if (req.body.responsible_user_id != null) { upd.responsible_user_id = parseInt(req.body.responsible_user_id, 10) || 0; changes.responsible = [uName[c.responsible_user_id], uName[upd.responsible_user_id]]; }
     if (!Object.keys(upd).length) return res.status(400).json({ success: false });
     upd.updated_at = nowSec();
     const set = Object.keys(upd).map((k) => `${k}=@${k}`).join(", ");

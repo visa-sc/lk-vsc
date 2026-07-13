@@ -106,6 +106,24 @@ module.exports = function mountDbRoutes(app, guard, api) {
     })));
   });
 
+  // компании: список + карточка
+  const qCompaniesPage = D.prepare("SELECT id,name,created_at,updated_at FROM companies ORDER BY updated_at DESC LIMIT ? OFFSET ?");
+  const qCompaniesCount = D.prepare("SELECT COUNT(*) c FROM companies");
+  const qCompany = D.prepare("SELECT * FROM companies WHERE id=?");
+  app.get(`${api}/companies_page`, guard, (req, res) => {
+    const page = String(req.query.page || "1");
+    if (!PAGE_FILE_RE.test(page)) return res.status(400).json({ success: false });
+    const rows = qCompaniesPage.all(50, (+page - 1) * 50);
+    res.json({ total: qCompaniesCount.get().c, items: rows.map((c) => ({ id: c.id, name: c.name, created: c.created_at })) });
+  });
+  app.get(`${api}/company/:id`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const c = qCompany.get(id);
+    if (!c) return res.status(404).json({ success: false });
+    // сделки/контакты компании — через lead_contacts не связаны; берём по company cf нет. Отдаём поля.
+    res.json({ success: true, company: { id: c.id, name: c.name, created_at: c.created_at, updated_at: c.updated_at, custom_fields_values: J(c.cf, null) } });
+  });
+
   // поиск по сделкам (название/id) — из шапки
   const qLeadsSearch = D.prepare("SELECT id,name,price,status_id,pipeline_id,responsible_user_id FROM leads WHERE name LIKE ? ORDER BY updated_at DESC LIMIT 50");
   app.get(`${api}/leads_search`, guard, (req, res) => {

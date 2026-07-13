@@ -130,6 +130,11 @@
   .cbody { display:flex; gap:8px; align-items:flex-start; }
   .cbody textarea.ci { resize:vertical; }
   .task-done { color:var(--blue); cursor:pointer; }
+  .dl-del { position:absolute; top:14px; right:16px; background:none; border:0; font-size:16px; cursor:pointer; opacity:.5; }
+  .dl-del:hover { opacity:1; }
+  .dl-head { position:relative; }
+  .tags-edit { cursor:pointer; border-bottom:1px dashed transparent; }
+  .tags-edit:hover { border-bottom-color:#b9cde0; }
 
   /* ── дашборд (рабочий стол) ── */
   #dash { min-height:100%; background:linear-gradient(135deg,#1d3c66 0%,#2a5d9e 55%,#2d6fbb 100%); padding:26px; }
@@ -232,9 +237,10 @@
     auto:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2.1 2.1M16.4 16.4l2.1 2.1M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1"/></svg>',
     refs:'<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>',
     todo:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.5"/></svg>',
-    tasks:'<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M8 12l2 2 4-4"/></svg>'
+    tasks:'<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M8 12l2 2 4-4"/></svg>',
+    companies:'<svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="1"/><path d="M9 7V4h6v3M9 11h2M13 11h2M9 15h2M13 15h2"/></svg>'
   };
-  var NAV=[["desk","Рабочий стол","desk"],["leads","Сделки","leads"],["contacts","Контакты","contacts"],["tasks","Задачи","tasks"],["auto","Автоматизации","auto"],["refs","Справочники","refs"],["todo","Доработки","todo"]];
+  var NAV=[["desk","Рабочий стол","desk"],["leads","Сделки","leads"],["contacts","Контакты","contacts"],["companies","Компании","companies"],["tasks","Задачи","tasks"],["auto","Автоматизации","auto"],["refs","Справочники","refs"],["todo","Доработки","todo"]];
   function renderSidebar(active){
     $("#sidebar").innerHTML='<div class="logo">V|S|C</div>'+NAV.map(function(n){
       return '<button class="nav-i'+(n[0]===active?" act":"")+'" data-v="'+n[0]+'">'+ICONS[n[2]]+'<span>'+n[1]+'</span></button>';
@@ -434,19 +440,47 @@
       return '<i style="'+(i<=idx?("background:"+esc(cur.color||"#98ceff")):"")+'"></i>';
     }).join("")+'</div>';
   }
-  function fieldsHtml(vals,defs){
+  function cfDisplay(f,t){
+    return (f.values||[]).map(function(x){
+      var val=x.value&&x.value.name?x.value.name:x.value;
+      if((t==="date"||t==="date_time"||t==="birthday")&&val&&isFinite(val))val=dShort(Number(val));
+      else if(typeof val==="boolean")val=val?"Да":"Нет";
+      return val;
+    }).join(", ");
+  }
+  // редактируемые кастомные поля. entity: "leads"|"contacts". Показываем заполненные (клик→правка).
+  function fieldsHtml(vals,defs,entity){
     var byId={},typeById={};(defs||[]).forEach(function(f){byId[f.id]=f.name;typeById[f.id]=f.type;});
     return (vals||[]).map(function(f){
       var t=f.field_type||typeById[f.field_id]||"";
-      var v=(f.values||[]).map(function(x){
-        var val=x.value&&x.value.name?x.value.name:x.value;
-        if((t==="date"||t==="date_time"||t==="birthday")&&val&&isFinite(val))val=dShort(Number(val));
-        else if(typeof val==="boolean")val=val?"Да":"Нет";
-        return val;
-      }).join(", ");
+      var v=cfDisplay(f,t);
       if(v===""||v==null)return "";
-      return '<div class="frow"><div class="fl">'+esc(f.field_name||byId[f.field_id]||f.field_id)+'</div><div class="fv">'+esc(String(v).slice(0,500))+'</div></div>';
+      return '<div class="frow"><div class="fl">'+esc(f.field_name||byId[f.field_id]||f.field_id)+'</div><div class="fv'+(entity?" cf-edit":"")+'" data-fid="'+f.field_id+'" data-ftype="'+esc(t)+'" data-fname="'+esc(f.field_name||byId[f.field_id]||"")+'">'+esc(String(v).slice(0,500))+'</div></div>';
     }).join("");
+  }
+  function cfEnums(defs,fid){var d=(defs||[]).find(function(x){return x.id===fid;});return (d&&d.enums)||[];}
+  // клик по кастомному полю → инпут/селект, сохранение через /edit-api/{entity}/:id/cf
+  function bindCfFields(bg,entity,id,defs,reload){
+    bg.querySelectorAll(".cf-edit").forEach(function(el){
+      el.title="Нажмите, чтобы изменить";
+      el.onclick=function(){
+        if(el.dataset.editing)return;el.dataset.editing="1";
+        var fid=parseInt(el.dataset.fid,10),ftype=el.dataset.ftype,cur=el.textContent.trim(),input;
+        var enums=cfEnums(defs,fid);
+        if(enums.length&&(ftype==="select"||ftype==="radiobutton"||ftype==="multiselect")){
+          input=document.createElement("select");input.innerHTML='<option value="">—</option>'+enums.map(function(e){var v=e.value||e;return '<option'+(v===cur?" selected":"")+'>'+esc(v)+'</option>';}).join("");
+        }else if(ftype==="date"||ftype==="birthday"||ftype==="date_time"){input=document.createElement("input");input.type="date";}
+        else if(ftype==="numeric"){input=document.createElement("input");input.type="number";input.value=cur;}
+        else{input=document.createElement("input");input.type="text";input.value=cur;}
+        input.className="ci";input.style.maxWidth="260px";el.innerHTML="";el.appendChild(input);input.focus();
+        var done=false;
+        var save=function(){if(done)return;done=true;
+          ereq("PATCH","/edit-api/"+entity+"/"+id+"/cf",{field_id:fid,field_name:el.dataset.fname,value:input.value}).then(function(r){if(r&&r.success){toast("Сохранено");reload();}else{toast("Не удалось",true);reload();}});
+        };
+        input.addEventListener("blur",save);
+        input.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();input.blur();}if(e.key==="Escape"){done=true;reload();}});
+      };
+    });
   }
   var FEED_FILTERS=[["all","все"],["tasks","задачи"],["notes","примечания"]];
   function feedHtml(notes,tasks,filter,bg){
@@ -560,7 +594,8 @@
         return '<div class="dl-contact" style="cursor:pointer" data-c="'+c.id+'"><div class="ava">К</div><div><div style="color:var(--link)">Контакт #'+c.id+(c.is_main?" (основной)":"")+'</div><div class="muted" style="font-size:12px">открыть карточку</div></div></div>';
       }).join("");
       var reload=function(){document.body.removeChild(bg);openLead(id);};
-      var left='<div class="dl-head"><span class="back">‹</span><h2 class="editable" data-edit="name">'+esc(l.name||("Сделка #"+l.id))+'</h2><div class="dl-sub">#'+l.id+' &nbsp;'+tags+'</div></div>'+
+      var tagNames=((l._embedded&&l._embedded.tags)||[]).map(function(t){return t.name;});
+      var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить сделку">🗑</button><h2 class="editable" data-edit="name">'+esc(l.name||("Сделка #"+l.id))+'</h2><div class="dl-sub">#'+l.id+' &nbsp;<span class="tags-edit" title="Изменить теги">'+(tags||'<span class="muted">+ теги</span>')+'</span></div></div>'+
         '<div class="dl-stage"><div class="pn">'+esc(p?p.name:"")+'</div><div class="sn">'+esc(stName)+'</div>'+stageBarHtml(p,l.status_id)+'</div>'+
         '<div class="dl-tabs"><span class="act">Основное</span><span>Статистика</span></div>'+
         '<div class="fields">'+
@@ -570,17 +605,28 @@
           '<div class="frow"><div class="fl">Изменена</div><div class="fv">'+dt(l.updated_at)+'</div></div>'+
           (l.closed_at?('<div class="frow"><div class="fl">Закрыта</div><div class="fv">'+dt(l.closed_at)+'</div></div>'):"")+
           '<div class="fgroup">Основная информация</div>'+
-          fieldsHtml(l.custom_fields_values,CF&&CF.leads)+
+          fieldsHtml(l.custom_fields_values,CF&&CF.leads,"leads")+
         '</div>'+contacts;
       var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,localNotes),r.tasks,f,bg);},{type:"leads",id:id,withTasks:true,reload:reload});
       bg.__reload=reload;
       bg.querySelectorAll("[data-c]").forEach(function(el){
         el.onclick=function(){document.body.removeChild(bg);openContact(parseInt(el.dataset.c,10));};
       });
-      // редактирование полей: клик → инпут
       bindEditable(bg,"name",function(){return l.name;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{name:v});},reload,"text");
       bindEditable(bg,"price",function(){return l.price;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{price:v});},reload,"number");
       bindEditable(bg,"resp",function(){return l.responsible_user_id;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{responsible_user_id:v});},reload,"user");
+      bindCfFields(bg,"leads",id,CF&&CF.leads,reload);
+      // теги
+      bg.querySelector(".tags-edit").onclick=function(){
+        var nt=prompt("Теги через запятую:",tagNames.join(", "));
+        if(nt===null)return;
+        ereq("PATCH","/edit-api/lead/"+id+"/tags",{tags:nt.split(",").map(function(x){return x.trim();}).filter(Boolean)}).then(function(r){if(r&&r.success){toast("Теги сохранены");reload();}else toast("Не удалось",true);});
+      };
+      // удаление
+      bg.querySelector(".dl-del").onclick=function(){
+        if(!confirm("Удалить сделку «"+(l.name||id)+"» из копии? (в живой amoCRM не затрагивается)"))return;
+        ereq("POST","/edit-api/lead/"+id+"/delete").then(function(r){if(r&&r.success){toast("Сделка удалена");document.body.removeChild(bg);if(views[curView])views[curView]();}else toast("Не удалось",true);});
+      };
     }).catch(function(e){if(String(e.message)==="401")showLogin();});
   }
   // клик по .editable → поле ввода/селект; сохранение через saveFn, потом reload
@@ -617,13 +663,13 @@
       }).join("");
       if(leads)leads='<div class="fgroup" style="margin:0 20px">Сделки ('+larr.length+')</div>'+leads;
       var init=(c.name||"К").trim().charAt(0).toUpperCase();
-      var left='<div class="dl-head"><span class="back">‹</span><h2 class="editable" data-edit="cname">'+esc(c.name||("Контакт #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div>'+
+      var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить контакт">🗑</button><h2 class="editable" data-edit="cname">'+esc(c.name||("Контакт #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div>'+
         '<div class="dl-tabs" style="margin-top:6px"><span class="act">Основное</span><span>Сделки</span><span>Статистика контакта</span></div>'+
         '<div class="fields">'+
-          '<div class="frow"><div class="fl">Отв-ный</div><div class="fv">'+esc(userName(c.responsible_user_id))+'</div></div>'+
+          '<div class="frow"><div class="fl">Отв-ный</div><div class="fv editable" data-edit="cresp">'+esc(userName(c.responsible_user_id))+'</div></div>'+
           '<div class="frow"><div class="fl">Создан</div><div class="fv">'+dt(c.created_at)+'</div></div>'+
           '<div class="frow"><div class="fl">Изменён</div><div class="fv">'+dt(c.updated_at)+'</div></div>'+
-          fieldsHtml(c.custom_fields_values,CF&&CF.contacts)+
+          fieldsHtml(c.custom_fields_values,CF&&CF.contacts,"contacts")+
         '</div>'+leads;
       var reload=function(){document.body.removeChild(bg);openContact(id);};
       var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,(r.notes_new||[])),[],f,bg);},{type:"contacts",id:id,withTasks:false,reload:reload});
@@ -633,6 +679,12 @@
         el.onclick=function(){document.body.removeChild(bg);openLead(parseInt(el.dataset.l,10));};
       });
       bindEditable(bg,"cname",function(){return c.name;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{name:v});},reload,"text");
+      bindEditable(bg,"cresp",function(){return c.responsible_user_id;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{responsible_user_id:v});},reload,"user");
+      bindCfFields(bg,"contacts",id,CF&&CF.contacts,reload);
+      bg.querySelector(".dl-del").onclick=function(){
+        if(!confirm("Удалить контакт «"+(c.name||id)+"» из копии?"))return;
+        ereq("POST","/edit-api/contact/"+id+"/delete").then(function(rr){if(rr&&rr.success){toast("Контакт удалён");document.body.removeChild(bg);if(views[curView])views[curView]();}else toast("Не удалось",true);});
+      };
     });
   }
   function newContact(){
@@ -641,6 +693,37 @@
     var phone=prompt("Телефон (необязательно):","");
     ereq("POST","/edit-api/contact",{name:name||"Новый контакт",phones:phone?[phone]:[]}).then(function(r){
       if(r&&r.success){toast("Контакт создан");openContact(r.id);}else toast("Не удалось",true);
+    });
+  }
+  /* ─── Компании ─── */
+  var coPage=0,coLoading=false;
+  function vCompanies(){
+    renderSidebar("companies");
+    $("#view").innerHTML='<div style="padding:0 0 30px"><table class="amo"><thead><tr><th style="width:45%">Название</th><th>Дата создания</th></tr></thead><tbody id="cobody"></tbody></table><div id="comore" class="muted" style="padding:14px;text-align:center"></div></div>';
+    coPage=0;coLoading=false;loadCompanies();
+    $("#main").onscroll=function(){if(coLoading)return;var m=$("#main");if(m.scrollTop+m.clientHeight>m.scrollHeight-600)loadCompanies();};
+  }
+  function loadCompanies(){
+    if(coLoading)return;coLoading=true;var next=coPage+1;$("#comore").textContent="Загрузка…";
+    jreq(API+"/companies_page?page="+next).then(function(r){
+      var items=(r&&r.items)||[];
+      if(next===1)setHeader("Компании",{count:fmt(r.total)+" компаний"});
+      if(!items.length){$("#comore").textContent=coPage?"Это все компании":"Компаний нет";return;}
+      $("#cobody").insertAdjacentHTML("beforeend",items.map(function(c){return '<tr><td><a data-co="'+c.id+'">'+esc(c.name||"Без названия")+'</a></td><td class="muted">'+(c.created?dShort(c.created):"")+'</td></tr>';}).join(""));
+      $("#cobody").querySelectorAll("[data-co]").forEach(function(a){a.onclick=function(){openCompany(parseInt(a.dataset.co,10));};});
+      coPage=next;coLoading=false;$("#comore").textContent="";
+    }).catch(function(){$("#comore").textContent="Недоступно";});
+  }
+  function openCompany(id){
+    jreq(API+"/company/"+id).then(function(r){
+      if(!r.success)return alert("Не найдено");
+      var c=r.company;
+      var left='<div class="dl-head"><span class="back">‹</span><h2 class="editable" data-edit="coname">'+esc(c.name||("Компания #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div>'+
+        '<div class="dl-tabs" style="margin-top:6px"><span class="act">Основное</span></div>'+
+        '<div class="fields"><div class="frow"><div class="fl">Создана</div><div class="fv">'+dt(c.created_at)+'</div></div>'+
+        '<div class="frow"><div class="fl">Изменена</div><div class="fv">'+dt(c.updated_at)+'</div></div>'+
+        fieldsHtml(c.custom_fields_values,CF&&CF.companies,"")+'</div>';
+      var bg=cardShell(left,function(){return '<p class="muted" style="padding:16px 4px">Лента компании</p>';},null);
     });
   }
 
@@ -823,8 +906,9 @@
   }
 
   /* ─── каркас ─── */
-  var views={desk:vDesk,leads:vLeads,contacts:vContacts,tasks:vTasks,auto:vAuto,refs:vRefs,todo:vTodo};
-  function go(name){hidePipePanel();(views[name]||vDesk)();}
+  var views={desk:vDesk,leads:vLeads,contacts:vContacts,companies:vCompanies,tasks:vTasks,auto:vAuto,refs:vRefs,todo:vTodo};
+  var curView="leads";
+  function go(name){curView=name;hidePipePanel();(views[name]||vDesk)();}
 
   /* ─── вход ─── */
   function pickToken(){
