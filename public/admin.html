@@ -3924,7 +3924,7 @@
         }
         // Фиксируем расхождение с задержкой 2.5с (когда перестали печатать) + дедуп по значениям.
         function scheduleMismatchLog(prihod, mustEur, rate) {
-          const sig = prihod + "|" + mustEur + "|" + rate;
+          const sig = prihod + "|" + mustEur; // курс в ключ не входит — дедуп по суммам
           if (sig === lastMismatchSig) return;
           if (mismatchTimer) clearTimeout(mismatchTimer);
           mismatchTimer = setTimeout(() => {

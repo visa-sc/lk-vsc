@@ -4392,8 +4392,9 @@ app.post("/api/calc-mismatch", (req, res) => {
   if (diff <= 0.5) return res.json({ success: true, skipped: "not-under" }); // не недобор — не пишем
   const now = Date.now(), p = mskParts(now);
   let log = readMismatchLog();
-  // Дедуп: те же приход/евро/курс за последние 10 минут не дублируем (фронт долбит comp() на каждый ввод).
-  if (log.some((e) => e.prihod === prihod && e.mustEur === mustEur && e.rate === rate && (now - e.ts) < 10 * 60 * 1000)) {
+  // Дедуп: одинаковые суммы (клиент-должен € + приход ₽) за ОДИН календарный день не дублируем.
+  // Иная дата с теми же суммами — допустимо. Курс в ключ не входит (авто, может дрожать в течение дня).
+  if (log.some((e) => e.date === p.date && e.prihod === prihod && e.mustEur === mustEur)) {
     return res.json({ success: true, skipped: "dup" });
   }
   log.push({ ts: now, date: p.date, time: p.time, prihod, mustEur, rate, needRub, diff });
