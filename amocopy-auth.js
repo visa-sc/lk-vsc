@@ -241,6 +241,14 @@ module.exports = function setupAuth(app, requireAdminOrUser, api, opts) {
     roles[name] = { rights: managerRights(), is_admin: 0 }; saveRoles();
     return res.json({ success: true });
   });
+  app.delete(`${api}/auth/role/:name`, requireSettingsAdmin, (req, res) => {
+    const name = String(req.params.name || "").trim();
+    if (!roles[name]) return res.status(404).json({ success: false, message: "Нет такой роли" });
+    const used = Object.values(accounts).filter((a) => a.role === name).length;
+    if (used) return res.status(400).json({ success: false, message: "Роль занята: " + used + " польз. — сначала переназначьте" });
+    delete roles[name]; saveRoles();
+    return res.json({ success: true });
+  });
 
   console.log("AMOCOPY-AUTH: вход сотрудников + роли подключены");
   return { validate, rightsFor, fullRights };

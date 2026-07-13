@@ -173,6 +173,11 @@
   .login-box h2 { margin:0 0 16px; font-size:18px; }
   .login-box input { width:100%; text-align:center; font-size:18px; letter-spacing:4px; margin-bottom:12px; }
   .login-box .err { color:#c0392b; font-size:13px; min-height:18px; margin-bottom:4px; }
+  .ltabs { display:flex; gap:4px; margin:0 0 14px; border-bottom:1px solid #e6ebf0; }
+  .ltab { flex:1; padding:8px 0; font-size:13.5px; cursor:pointer; color:#6b7581; border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .ltab.act { color:#2e5f8f; border-bottom-color:#2e5f8f; font-weight:600; }
+  .login-box .ti { text-align:left; font-size:15px; letter-spacing:0; }
+  #loginCode { text-align:center; font-size:18px; letter-spacing:4px; }
 
   /* ── универсальное модальное окно ── */
   .modal-bg { position:fixed; inset:0; z-index:150; background:rgba(20,35,60,.34); display:flex; align-items:flex-start; justify-content:center; padding-top:8vh; }
@@ -185,6 +190,22 @@
   .ctxmenu div { padding:9px 16px; font-size:14px; cursor:pointer; white-space:nowrap; }
   .ctxmenu div:hover { background:#f0f4f8; }
   .ctxmenu .sep { height:1px; background:var(--border); padding:0; margin:5px 0; cursor:default; }
+  /* ── настройки ── */
+  .stabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin:-4px -4px 16px; padding:0 4px; flex-wrap:wrap; }
+  .stab { padding:9px 16px; font-size:14px; cursor:pointer; color:#6b7581; border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .stab.act { color:var(--link); border-bottom-color:var(--link); font-weight:600; }
+  .stab:hover { color:var(--link); }
+  table.set { width:100%; border-collapse:collapse; font-size:13.5px; }
+  table.set th { text-align:left; padding:8px 10px; color:#8a949e; font-weight:600; font-size:12px; text-transform:uppercase; border-bottom:1px solid var(--border); }
+  table.set td { padding:8px 10px; border-bottom:1px solid #eef2f6; vertical-align:middle; }
+  table.set tr:hover td { background:#f7fafc; }
+  .set select, .set input[type=text] { padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:13px; }
+  .rperm { display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
+  .rperm label { font-size:13px; display:inline-flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap; }
+  .role-card { border:1px solid var(--border); border-radius:9px; padding:14px 16px; margin-bottom:12px; }
+  .role-card h3 { margin:0 0 10px; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .badge-adm { background:#eaf3ff; color:#2b6cb0; font-size:11px; padding:2px 7px; border-radius:20px; }
+  .swatch { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:6px; vertical-align:middle; }
 </style>
 </head>
 <body>
@@ -210,9 +231,18 @@
   <div class="login-box">
     <div class="lg">V S C</div>
     <h2>Копия amoCRM</h2>
+    <div class="ltabs"><span class="ltab act" data-l="user">Сотрудник</span><span class="ltab" data-l="code">По коду</span></div>
     <div class="err" id="loginErr"></div>
-    <input class="ti" type="text" id="loginCode" placeholder="Код доступа" autocomplete="off">
-    <button class="btn" style="width:100%" id="loginGo">Войти</button>
+    <div id="lg-user">
+      <input class="ti" type="email" id="loginEmail" placeholder="Рабочий email" autocomplete="username">
+      <input class="ti" type="password" id="loginPass" placeholder="Пароль" autocomplete="current-password">
+      <div id="setHint" class="muted" style="display:none;font-size:12.5px;margin:-6px 0 10px">Первый вход — придумайте пароль (мин. 6 символов).</div>
+      <button class="btn" style="width:100%" id="loginUserGo">Войти</button>
+    </div>
+    <div id="lg-code" style="display:none">
+      <input class="ti" type="text" id="loginCode" placeholder="Код доступа" autocomplete="off">
+      <button class="btn" style="width:100%" id="loginGo">Войти</button>
+    </div>
     <p class="muted" style="font-size:12.5px">Или вход руководителя через <a href="/vsc">/vsc</a></p>
   </div>
 </div>
@@ -221,7 +251,7 @@
 (function(){
   "use strict";
   var API = "/amocrm_copy/api";
-  var token=null, META=null, PIPES=[], USERS=[], KANBAN=null, CF=null;
+  var token=null, META=null, PIPES=[], USERS=[], KANBAN=null, CF=null, ME=null;
   var $=function(s){return document.querySelector(s);};
   var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
   var fmt=function(n){return (n==null?"—":Number(n).toLocaleString("ru-RU"));};
@@ -253,11 +283,20 @@
     refs:'<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>',
     todo:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.5"/></svg>',
     tasks:'<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M8 12l2 2 4-4"/></svg>',
-    companies:'<svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="1"/><path d="M9 7V4h6v3M9 11h2M13 11h2M9 15h2M13 15h2"/></svg>'
+    companies:'<svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="1"/><path d="M9 7V4h6v3M9 11h2M13 11h2M9 15h2M13 15h2"/></svg>',
+    analytics:'<svg viewBox="0 0 24 24"><path d="M4 20V4M4 20h16"/><rect x="7" y="12" width="3" height="5"/><rect x="12" y="8" width="3" height="9"/><rect x="17" y="5" width="3" height="12"/></svg>',
+    settings:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>'
   };
-  var NAV=[["desk","Рабочий стол","desk"],["leads","Сделки","leads"],["contacts","Контакты","contacts"],["companies","Компании","companies"],["tasks","Задачи","tasks"],["auto","Автоматизации","auto"],["refs","Справочники","refs"],["todo","Доработки","todo"]];
+  // [ключ, подпись, иконка, право-секции(если нужно ограничение)]
+  var NAV=[["desk","Рабочий стол","desk"],["leads","Сделки","leads","leads"],["contacts","Контакты","contacts","contacts"],["companies","Компании","companies","companies"],["tasks","Задачи","tasks","tasks"],["analytics","Аналитика","analytics","analytics"],["auto","Автоматизации","auto"],["refs","Справочники","refs"],["todo","Доработки","todo"],["settings","Настройки","settings","settings"]];
+  function navAllowed(n){
+    if(!n[3])return true;                 // без ограничения — видно всем
+    if(!ME)return true;                    // до загрузки прав — не прячем
+    if(ME.is_admin)return true;
+    return !!(ME.rights&&ME.rights.sections&&ME.rights.sections[n[3]]);
+  }
   function renderSidebar(active){
-    $("#sidebar").innerHTML='<div class="logo">V|S|C</div>'+NAV.map(function(n){
+    $("#sidebar").innerHTML='<div class="logo">V|S|C</div>'+NAV.filter(navAllowed).map(function(n){
       return '<button class="nav-i'+(n[0]===active?" act":"")+'" data-v="'+n[0]+'">'+ICONS[n[2]]+'<span>'+n[1]+'</span></button>';
     }).join("");
     document.querySelectorAll(".nav-i").forEach(function(b){b.onclick=function(){go(b.dataset.v);};});
@@ -1010,7 +1049,140 @@
   }
 
   /* ─── каркас ─── */
-  var views={desk:vDesk,leads:vLeads,contacts:vContacts,companies:vCompanies,tasks:vTasks,auto:vAuto,refs:vRefs,todo:vTodo};
+  /* ─── НАСТРОЙКИ (пользователи · роли · поля · воронки) ─── */
+  var settingsTab="users";
+  var SECT=[["leads","Сделки"],["contacts","Контакты"],["companies","Компании"],["tasks","Задачи"],["analytics","Аналитика"],["settings","Настройки"]];
+  function vSettings(){
+    renderSidebar("settings");
+    setHeader("Настройки",{count:""});
+    if(ME&&!ME.is_admin&&!(ME.rights&&ME.rights.sections&&ME.rights.sections.settings)){
+      $("#view").innerHTML='<div class="plain"><div class="pcard"><h2>Недостаточно прав</h2><p class="muted">Раздел «Настройки» доступен только администраторам.</p></div></div>';return;
+    }
+    var tabs=[["users","Пользователи"],["roles","Роли и права"],["fields","Поля"],["pipelines","Воронки и этапы"]];
+    $("#view").innerHTML='<div class="plain"><div class="pcard"><div class="stabs">'+tabs.map(function(t){return '<span class="stab'+(t[0]===settingsTab?" act":"")+'" data-t="'+t[0]+'">'+t[1]+'</span>';}).join("")+'</div><div id="sbody"><p class="muted">Загрузка…</p></div></div></div>';
+    document.querySelectorAll(".stab").forEach(function(s){s.onclick=function(){settingsTab=s.dataset.t;vSettings();};});
+    if(settingsTab==="users")settingsUsers();
+    else if(settingsTab==="roles")settingsRoles();
+    else if(settingsTab==="fields")settingsFields();
+    else settingsPipelines();
+  }
+  function settingsUsers(){
+    jreq(API+"/auth/users").then(function(r){
+      if(!r||!r.success)return $("#sbody").innerHTML='<p class="muted">'+esc((r&&r.message)||"Нет доступа")+'</p>';
+      var roles=r.roles||[];
+      var html='<p class="muted" style="margin:0 0 12px">Учётки заведены на реальные email из amoCRM ('+r.users.length+'). Пароль пользователь задаёт при первом входе. Роль и активность меняются здесь.</p>';
+      html+='<table class="set"><tr><th>Имя</th><th>Email</th><th>Роль</th><th>Пароль</th><th>Вход</th><th>Активна</th><th></th></tr>';
+      html+=r.users.map(function(u){
+        var opts=roles.map(function(rn){return '<option'+(rn===u.role?" selected":"")+'>'+esc(rn)+'</option>';}).join("");
+        return '<tr data-em="'+esc(u.email)+'">'+
+          '<td>'+esc(u.name)+(u.is_admin?' <span class="badge-adm">админ</span>':"")+'</td>'+
+          '<td class="muted">'+esc(u.email)+'</td>'+
+          '<td><select class="u-role">'+opts+'</select></td>'+
+          '<td>'+(u.has_pass?'<span style="color:#2f8b57">задан</span>':'<span class="muted">не задан</span>')+'</td>'+
+          '<td class="muted">'+(u.last_login?dShort(Math.floor(u.last_login/1000)):"—")+'</td>'+
+          '<td><input type="checkbox" class="u-active"'+(u.active?" checked":"")+'></td>'+
+          '<td><button class="btn ghost u-reset">Сбросить пароль</button></td>'+
+        '</tr>';
+      }).join("")+'</table>';
+      $("#sbody").innerHTML=html;
+      document.querySelectorAll("#sbody tr[data-em]").forEach(function(tr){
+        var em=tr.dataset.em;
+        tr.querySelector(".u-role").onchange=function(){ereq("PATCH",API+"/auth/user/"+encodeURIComponent(em),{role:this.value}).then(function(x){toast(x&&x.success?"Роль обновлена":"Не удалось",!(x&&x.success));});};
+        tr.querySelector(".u-active").onchange=function(){var a=this.checked;ereq("PATCH",API+"/auth/user/"+encodeURIComponent(em),{active:a?1:0}).then(function(x){toast(x&&x.success?(a?"Включена":"Отключена"):"Не удалось",!(x&&x.success));});};
+        tr.querySelector(".u-reset").onclick=function(){if(!confirm("Сбросить пароль для "+em+"? При следующем входе пользователь задаст новый."))return;ereq("POST",API+"/auth/user/"+encodeURIComponent(em)+"/reset").then(function(x){toast(x&&x.success?"Пароль сброшен":"Не удалось",!(x&&x.success));if(x&&x.success)settingsUsers();});};
+      });
+    });
+  }
+  function permRow(rights){
+    var s=rights.sections||{};
+    var secs=SECT.map(function(x){return '<label><input type="checkbox" data-sec="'+x[0]+'"'+(s[x[0]]?" checked":"")+'> '+x[1]+'</label>';}).join("");
+    var acts='<label><input type="checkbox" data-act="edit"'+(rights.edit?" checked":"")+'> Редактирование</label>'+
+             '<label><input type="checkbox" data-act="del"'+(rights.del?" checked":"")+'> Удаление</label>'+
+             '<label><input type="checkbox" data-act="exp"'+(rights.exp?" checked":"")+'> Экспорт</label>';
+    return '<div style="margin:8px 0"><div class="muted" style="font-size:12px;margin-bottom:5px">Доступ к разделам</div><div class="rperm">'+secs+'</div></div>'+
+           '<div style="margin:8px 0"><div class="muted" style="font-size:12px;margin-bottom:5px">Действия</div><div class="rperm">'+acts+'</div></div>';
+  }
+  function settingsRoles(){
+    jreq(API+"/auth/roles").then(function(r){
+      if(!r||!r.success)return $("#sbody").innerHTML='<p class="muted">'+esc((r&&r.message)||"Нет доступа")+'</p>';
+      var html='<p class="muted" style="margin:0 0 12px">Роли и права. Определяют, какие разделы видит сотрудник и что может делать. Права применяются при входе по email.</p>';
+      html+=r.roles.map(function(ro){
+        return '<div class="role-card" data-role="'+esc(ro.name)+'"><h3>'+esc(ro.name)+(ro.is_admin?' <span class="badge-adm">админ</span>':"")+' <span class="muted" style="font-weight:400;font-size:12px">— '+ro.users+' польз.</span></h3>'+
+          '<label style="font-size:13px;display:block;margin-bottom:4px"><input type="checkbox" class="r-admin"'+(ro.is_admin?" checked":"")+'> Полный доступ (администратор)</label>'+
+          permRow(ro.rights||{})+
+          '<button class="btn r-save" style="margin-top:8px">Сохранить</button>'+
+          (ro.users===0?'<button class="btn ghost r-del" style="margin:8px 0 0 8px">Удалить</button>':"")+'</div>';
+      }).join("");
+      html+='<div style="margin-top:10px"><input type="text" id="newRole" placeholder="Название новой роли" style="padding:7px 10px"><button class="btn ghost" id="addRole" style="margin-left:8px">+ Добавить роль</button></div>';
+      $("#sbody").innerHTML=html;
+      document.querySelectorAll(".role-card").forEach(function(card){
+        card.querySelector(".r-save").onclick=function(){
+          var rights={sections:{},edit:false,del:false,exp:false};
+          card.querySelectorAll("[data-sec]").forEach(function(cb){rights.sections[cb.dataset.sec]=cb.checked;});
+          card.querySelectorAll("[data-act]").forEach(function(cb){rights[cb.dataset.act]=cb.checked;});
+          var isAdmin=card.querySelector(".r-admin").checked;
+          ereq("PATCH",API+"/auth/role/"+encodeURIComponent(card.dataset.role),{rights:rights,is_admin:isAdmin?1:0}).then(function(x){toast(x&&x.success?"Роль сохранена":"Не удалось",!(x&&x.success));});
+        };
+        var delBtn=card.querySelector(".r-del");
+        if(delBtn)delBtn.onclick=function(){if(!confirm("Удалить роль «"+card.dataset.role+"»?"))return;ereq("DELETE",API+"/auth/role/"+encodeURIComponent(card.dataset.role)).then(function(x){if(x&&x.success){toast("Роль удалена");settingsRoles();}else toast((x&&x.message)||"Не удалось",true);});};
+      });
+      $("#addRole").onclick=function(){var n=($("#newRole").value||"").trim();if(!n)return;ereq("POST",API+"/auth/role",{name:n}).then(function(x){if(x&&x.success){toast("Роль добавлена");settingsRoles();}else toast((x&&x.message)||"Не удалось",true);});};
+    });
+  }
+  function settingsFields(){
+    var block=function(title,arr){
+      arr=arr||[];
+      return '<details open style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:600;padding:6px 0">'+title+' ('+arr.length+')</summary>'+
+        '<table class="set"><tr><th>Поле</th><th>Тип</th><th>Код</th><th>Значений</th></tr>'+arr.map(function(f){
+          return '<tr><td>'+esc(f.name)+'</td><td class="muted">'+esc(f.type)+'</td><td class="muted">'+esc(f.code||"")+'</td><td class="muted">'+((f.enums||[]).length||"")+'</td></tr>';
+        }).join("")+'</table></details>';
+    };
+    var cf=CF||{};
+    $("#sbody").innerHTML='<p class="muted" style="margin:0 0 12px">Кастомные поля — точная копия из amoCRM. Значения полей хранятся в карточках; здесь — их описания.</p>'+
+      block("Поля сделок",cf.leads)+block("Поля контактов",cf.contacts)+block("Поля компаний",cf.companies);
+  }
+  function settingsPipelines(){
+    var html='<p class="muted" style="margin:0 0 12px">Воронки и этапы — как в amoCRM ('+PIPES.length+' воронок).</p>';
+    PIPES.forEach(function(p){
+      var sts=((p._embedded&&p._embedded.statuses)||[]).slice().sort(function(a,b){return (a.sort||0)-(b.sort||0);});
+      html+='<div class="role-card"><h3>'+esc(p.name)+(p.is_main?' <span class="badge-adm">основная</span>':"")+' <span class="muted" style="font-weight:400;font-size:12px">— '+sts.length+' этапов</span></h3>';
+      html+='<table class="set" style="max-width:520px"><tr><th>#</th><th>Этап</th><th>Тип</th></tr>'+sts.map(function(s,i){
+        var col=s.color||"#c1d5e0";
+        var typ=s.type===1?"успех":(s.type===142?"успех":(s.type===143?"отказ":""));
+        return '<tr><td class="muted">'+(i+1)+'</td><td><span class="swatch" style="background:'+esc(col)+'"></span>'+esc(s.name)+'</td><td class="muted">'+typ+'</td></tr>';
+      }).join("")+'</table></div>';
+    });
+    $("#sbody").innerHTML=html;
+  }
+
+  /* ─── АНАЛИТИКА (сводные отчёты из БД) ─── */
+  function vAnalytics(){
+    renderSidebar("analytics");
+    setHeader("Аналитика",{count:""});
+    $("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Загрузка…</p></div></div>';
+    jreq(API+"/analytics").then(function(r){
+      if(!r||!r.success)return $("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">'+esc((r&&r.message)||"Нет данных")+'</p></div></div>';
+      var html='<div class="plain">';
+      // Воронка продаж по этапам основной воронки
+      (r.funnels||[]).forEach(function(f){
+        var max=Math.max.apply(null,f.stages.map(function(s){return s.count;}).concat([1]));
+        html+='<div class="pcard"><h2>Воронка: '+esc(f.name)+'</h2><table class="set"><tr><th>Этап</th><th>Сделок</th><th>Сумма</th><th style="width:34%">Доля</th></tr>'+
+          f.stages.map(function(s){
+            var w=Math.round(s.count/max*100);
+            return '<tr><td><span class="swatch" style="background:'+esc(s.color||"#c1d5e0")+'"></span>'+esc(s.name)+'</td><td>'+fmt(s.count)+'</td><td class="muted">'+fmt(s.sum)+' ₽</td><td><div style="background:#e8eef4;border-radius:4px;height:14px"><div style="width:'+w+'%;background:var(--link);height:14px;border-radius:4px"></div></div></td></tr>';
+          }).join("")+'</table></div>';
+      });
+      // По ответственным
+      if(r.byUser&&r.byUser.length){
+        html+='<div class="pcard"><h2>По ответственным (открытые сделки)</h2><table class="set"><tr><th>Сотрудник</th><th>Сделок</th><th>Сумма</th></tr>'+
+          r.byUser.map(function(u){return '<tr><td>'+esc(u.name)+'</td><td>'+fmt(u.count)+'</td><td class="muted">'+fmt(u.sum)+' ₽</td></tr>';}).join("")+'</table></div>';
+      }
+      html+='</div>';
+      $("#view").innerHTML=html;
+    }).catch(function(){$("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Ошибка загрузки аналитики.</p></div></div>';});
+  }
+
+  var views={desk:vDesk,leads:vLeads,contacts:vContacts,companies:vCompanies,tasks:vTasks,analytics:vAnalytics,auto:vAuto,refs:vRefs,todo:vTodo,settings:vSettings};
   var curView="leads";
   function go(name){curView=name;hidePipePanel();(views[name]||vDesk)();}
 
@@ -1025,7 +1197,17 @@
     $("#app").style.display="none";
     $("#login-screen").style.display="flex";
     $("#loginErr").textContent=msg||"";
-    var go=function(){
+    // переключение вкладок вход-по-коду / вход-сотрудника
+    document.querySelectorAll(".ltab").forEach(function(t){t.onclick=function(){
+      document.querySelectorAll(".ltab").forEach(function(x){x.classList.toggle("act",x===t);});
+      var user=t.dataset.l==="user";
+      $("#lg-user").style.display=user?"":"none";
+      $("#lg-code").style.display=user?"none":"";
+      $("#loginErr").textContent="";
+      setTimeout(function(){$(user?"#loginEmail":"#loginCode").focus();},30);
+    };});
+    // вход по коду (супер-админ)
+    var goCode=function(){
       var code=$("#loginCode").value.trim();
       if(!code)return;
       fetch(API+"/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:code})})
@@ -1036,9 +1218,25 @@
         })
         .catch(function(){$("#loginErr").textContent="Ошибка сети — попробуйте ещё раз";});
     };
-    $("#loginGo").onclick=go;
-    $("#loginCode").onkeydown=function(e){if(e.key==="Enter")go();};
-    setTimeout(function(){$("#loginCode").focus();},50);
+    // вход сотрудника: email + пароль (пароль ставится при первом входе)
+    var goUser=function(){
+      var email=$("#loginEmail").value.trim(),pass=$("#loginPass").value;
+      if(!email)return;
+      fetch(API+"/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email,password:pass})})
+        .then(function(r){return r.json();})
+        .then(function(j){
+          if(j.success&&j.token){localStorage.setItem("voyo_crmcopy_token",j.token);location.reload();return;}
+          if(j.success&&j.needSet){$("#setHint").style.display="block";$("#loginErr").textContent="";$("#loginPass").focus();return;}
+          $("#loginErr").textContent=j.message||"Не удалось войти";
+        })
+        .catch(function(){$("#loginErr").textContent="Ошибка сети — попробуйте ещё раз";});
+    };
+    $("#loginGo").onclick=goCode;
+    $("#loginCode").onkeydown=function(e){if(e.key==="Enter")goCode();};
+    $("#loginUserGo").onclick=goUser;
+    $("#loginEmail").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();$("#loginPass").focus();}};
+    $("#loginPass").onkeydown=function(e){if(e.key==="Enter")goUser();};
+    setTimeout(function(){$("#loginEmail").focus();},50);
   }
 
   token=pickToken();
@@ -1050,8 +1248,9 @@
       return;
     }
     META=meta;
-    return Promise.all([jreq(API+"/pipelines"),jreq(API+"/kanban"),jreq(API+"/users"),jreq(API+"/custom_fields")]).then(function(r){
+    return Promise.all([jreq(API+"/pipelines"),jreq(API+"/kanban"),jreq(API+"/users"),jreq(API+"/custom_fields"),jreq(API+"/auth/me").catch(function(){return null;})]).then(function(r){
       PIPES=r[0];KANBAN=r[1];USERS=r[2];CF=r[3];
+      ME=(r[4]&&r[4].me)||{is_admin:1,rights:null};
       $("#app").style.display="flex";
       go("leads");
     });
