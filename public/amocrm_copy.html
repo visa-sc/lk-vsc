@@ -1116,6 +1116,39 @@
     });
   }
   var FEED_FILTERS=[["all","все"],["tasks","задачи"],["notes","примечания"]];
+  // событие ленты из примечания amo — человеческие подписи типов, как в оригинале
+  function durFmt(sec){sec=parseInt(sec,10)||0;var m=Math.floor(sec/60),s=sec%60;return m+":"+(s<10?"0":"")+s;}
+  function phoneFmt(p){p=String(p||"").replace(/[^0-9+]/g,"");return p?(p[0]==="+"?p:"+"+p):"";}
+  function noteEvHtml(n){
+    var p=n.params||{},t=String(n.type||"");
+    var by=(typeof n.by==="number")?userName(n.by):(n.by||"");
+    var label,body,cls="";
+    if(t==="call_in"||t==="call_out"){
+      cls=" call";
+      label=(t==="call_in"?"Входящий звонок":"Исходящий звонок")+(p.duration?(" · "+durFmt(p.duration)):"")+(p.phone?(" · "+phoneFmt(p.phone)):"");
+      body=(p.call_result?esc(p.call_result)+" ":"")+(p.link?'<a href="'+esc(p.link)+'" target="_blank" rel="noopener">▶ запись звонка</a>':"");
+    }else if(t==="sms_out"||t==="sms_in"){
+      label=t==="sms_out"?"SMS исходящее":"SMS входящее";
+      body=esc(String(p.text||"").slice(0,1200));
+    }else if(t==="amomail_message"){
+      label="Письмо"+(p.income?" (входящее)":" (исходящее)");
+      var fromTo=[(p.from&&p.from.email)||"",(p.to&&p.to.email)||""].filter(Boolean).join(" → ");
+      body="<b>"+esc(p.subject||"без темы")+"</b>"+(fromTo?'<div class="muted" style="font-size:12px;margin-top:2px">'+esc(fromTo)+"</div>":"");
+    }else if(t==="attachment"){
+      label="Файл";
+      body="📎 "+esc(p.original_name||p.text||"вложение");
+    }else if(t==="service_message"){
+      label=esc(p.service||"Сервис");
+      body=esc(String(p.text||"").slice(0,1200));
+    }else if(t==="lead_auto_created"){
+      label="Система";
+      body="Сделка создана автоматически";
+    }else{ // common и прочее
+      label=n.__local?"примечание (копия)":"Примечание";
+      body=esc(String(p.text||p.service||JSON.stringify(p)).slice(0,1200));
+    }
+    return '<div class="ev'+cls+(n.__local?'" style="border-left:3px solid #6fc48d':"")+'"><div class="eh">'+dt(n.created)+" · "+label+(by?" · "+esc(String(by)):"")+'</div>'+body+'</div>';
+  }
   function feedHtml(notes,tasks,filter,bg){
     filter=filter||"all";
     var evs=[];
@@ -1131,10 +1164,7 @@
         var t=e.t;
         html+='<div class="ev task'+(t.is_completed?"":" open")+'"><div class="eh">'+dt(t.complete_till)+" · задача · "+esc(userName(t.responsible_user_id))+(t.is_completed?" · выполнена":" · открыта")+(!t.is_completed&&t.id?' · <a class="task-done" data-tid="'+t.id+'">выполнить</a>':"")+'</div>'+esc(t.text||"")+(t.result&&t.result.text?('<div class="muted" style="margin-top:4px">Результат: '+esc(t.result.text)+'</div>'):"")+'</div>';
       } else {
-        var n=e.n,p=n.params||{};
-        var txt=p.text||p.service||(p.uniq?("Звонок: "+(p.duration||0)+" сек"):"")||JSON.stringify(p).slice(0,300);
-        var cls=String(n.type||"").indexOf("call")>=0?" call":"";
-        html+='<div class="ev'+cls+(n.__local?'" style="border-left:3px solid #6fc48d':"")+'"><div class="eh">'+dt(n.created)+" · "+(n.__local?"примечание (копия)":esc(n.type))+" · "+esc(n.by||"")+'</div>'+esc(String(txt).slice(0,1200))+'</div>';
+        html+=noteEvHtml(e.n);
       }
     });
     // навесим обработчики «выполнить» после вставки в DOM
