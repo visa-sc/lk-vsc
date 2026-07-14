@@ -160,12 +160,18 @@ module.exports = function mountDbRoutes(app, guard, api) {
 
   // живые счётчики сущностей (в UI вместо статичных из слепка)
   app.get(`${api}/counts`, guard, (req, res) => {
-    const one = (sql) => { try { return D.prepare(sql).get().c; } catch (_) { return null; } };
+    const one = (sql, ...a) => { try { return D.prepare(sql).get(...a).c; } catch (_) { return null; } };
+    const now = Math.floor(Date.now() / 1000);
+    const dayEnd = now - (now % 86400) + 86400;
+    // бейдж «Задачи» как в amo = просроченные + на сегодня (незавершённые)
+    const tasksDue = one("SELECT COUNT(*) c FROM tasks WHERE is_completed=0 AND complete_till>0 AND complete_till<?", dayEnd);
+    const tasksOpen = one("SELECT COUNT(*) c FROM tasks WHERE is_completed=0");
     res.json({ success: true,
       leads: one("SELECT COUNT(*) c FROM leads"),
       contacts: one("SELECT COUNT(*) c FROM contacts"),
       companies: one("SELECT COUNT(*) c FROM companies"),
-      customers: one("SELECT COUNT(*) c FROM customers") });
+      customers: one("SELECT COUNT(*) c FROM customers"),
+      tasksDue: tasksDue, tasksOpen: tasksOpen });
   });
 
   // типы задач (для селектора при постановке задачи) — если таблица есть
