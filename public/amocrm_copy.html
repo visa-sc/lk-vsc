@@ -64,6 +64,9 @@
   .kb-head .nm { font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .kb-head .ct { font-size:12px; color:var(--mut); margin-top:2px; }
   .kb-head .bar { height:3px; border-radius:2px; margin-top:8px; background:#dfe3e8; }
+  .col-resize { position:absolute; top:0; right:-4px; width:8px; height:100%; cursor:col-resize; z-index:2; user-select:none; }
+  .col-resize:hover { background:linear-gradient(90deg,transparent 3px,#9fc3e8 3px,#9fc3e8 5px,transparent 5px); }
+  table.amo th { position:relative; }
   .deal-chip { display:inline-block; max-width:100%; padding:2px 8px; margin:2px 4px 2px 0; border-radius:3px; font-size:12.5px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; vertical-align:middle; }
   .deal-chip:hover { filter:brightness(.96); text-decoration:underline; }
   .kb-quick { margin:0 8px; padding:8px 10px; border:1px dashed #c3ccd6; border-radius:4px; color:#7b8794; font-size:13px; text-align:center; cursor:pointer; background:#fafbfc; }
@@ -450,7 +453,7 @@
       html+='</tbody></table></div>';
       $("#view").innerHTML=html;
       $("#view").querySelectorAll("[data-l]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.l,10));};});
-      bindReset();
+      bindReset();makeTableResizable($("#view table.amo"),"crm_lead_colw");
     });
     function bindReset(){var a=$("#view").querySelector("[data-reset]");if(a)a.onclick=function(){FSTATE.leads={};vLeads();};}
   }
@@ -463,7 +466,7 @@
       if(!items.length){$("#view").innerHTML=head+'<p class="muted">Ничего не найдено.</p></div>';bindReset();return;}
       var cols=contactActiveCols();
       var html=head+'<table class="amo"><thead>'+contactHeadHtml()+'</thead><tbody id="cbody">'+contactRows(items)+'</tbody></table></div>';
-      $("#view").innerHTML=html;bindContactLinks();bindReset();
+      $("#view").innerHTML=html;bindContactLinks();bindReset();makeTableResizable($("#view table.amo"),"crm_contact_colw");
     });
     function bindReset(){var a=$("#view").querySelector("[data-reset]");if(a)a.onclick=function(){FSTATE.contacts={};vContacts();};}
   }
@@ -619,6 +622,7 @@
   function vLeadsList(p){
     var sts=(p._embedded&&p._embedded.statuses)||[];var stName={};sts.forEach(function(s){stName[s.id]=s.name;});
     $("#view").innerHTML=leadToggleHtml()+'<div class="plain" style="max-width:none;padding-top:0"><table class="amo"><thead><tr><th style="width:34%">Название</th><th>Этап</th><th>Бюджет</th><th>Ответственный</th><th style="width:120px">Изменена</th></tr></thead><tbody id="llbody"></tbody></table><div id="llmore" class="muted" style="padding:14px;text-align:center"></div></div>';
+    makeTableResizable($("#view table.amo"),"crm_lead_colw");
     bindLeadToggle();
     llPage=0;llLoading=false;
     var load=function(){
@@ -1051,6 +1055,24 @@
     var cf=((CF&&CF.contacts)||[]).map(function(f){return ["cf"+f.id,f.name,0,f.type];});
     return CONTACT_BASE.concat(cf);
   }
+  // регулируемая ширина колонок таблицы (перетаскивание границы заголовка), с запоминанием
+  function makeTableResizable(table,key){
+    if(!table)return;
+    var ths=table.querySelectorAll("thead th");
+    var saved={};try{saved=JSON.parse(localStorage.getItem(key))||{};}catch(e){}
+    ths.forEach(function(th,i){
+      if(saved[i])th.style.width=saved[i]+"px";
+      if(th.querySelector(".col-resize"))return;
+      var h=document.createElement("span");h.className="col-resize";th.appendChild(h);
+      h.addEventListener("mousedown",function(e){
+        e.preventDefault();e.stopPropagation();
+        var startX=e.pageX,startW=th.offsetWidth;
+        function mv(ev){th.style.width=Math.max(48,startW+(ev.pageX-startX))+"px";}
+        function up(){document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);saved[i]=th.offsetWidth;try{localStorage.setItem(key,JSON.stringify(saved));}catch(_){}}
+        document.addEventListener("mousemove",mv);document.addEventListener("mouseup",up);
+      });
+    });
+  }
   function contactColSel(){try{return JSON.parse(localStorage.getItem("crm_contact_cols"))||null;}catch(e){return null;}}
   function contactActiveCols(){var sel=contactColSel();var all=contactAllCols();return all.filter(function(c){return sel?sel.indexOf(c[0])>=0:c[2];});}
   function contactCell(c,key){
@@ -1059,8 +1081,8 @@
     if(key==="p")return esc((c.p||[]).join(", "));
     if(key==="e")return esc((c.e||[]).join(", "));
     if(key==="resp")return '<span class="muted">'+esc(c.resp||"")+'</span>';
-    if(key==="created")return '<span class="muted">'+(c.created?dShort(c.created):"")+'</span>';
-    if(key==="updated")return '<span class="muted">'+(c.updated?dShort(c.updated):"")+'</span>';
+    if(key==="created")return '<span class="muted">'+(c.created?dt(c.created):"")+'</span>';
+    if(key==="updated")return '<span class="muted">'+(c.updated?dt(c.updated):"")+'</span>';
     if(key.slice(0,2)==="cf"){
       var fid=parseInt(key.slice(2),10),f=(c.cf||[]).find(function(x){return x.field_id===fid;});
       if(!f)return "";
@@ -1140,6 +1162,7 @@
       {label:"Сбросить фильтр/поиск",on:vContacts}
     ];}});
     $("#view").innerHTML='<div style="padding:0 0 30px"><table class="amo"><thead>'+contactHeadHtml()+'</thead><tbody id="cbody"></tbody></table><div id="cmore" class="muted" style="padding:14px;text-align:center"></div></div>';
+    makeTableResizable($("#view table.amo"),"crm_contact_colw");
     cPage=0; cLoading=false; cSearchMode=false;
     loadContactPage();
     $("#main").onscroll=function(){
