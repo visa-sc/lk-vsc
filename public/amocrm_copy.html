@@ -1044,6 +1044,8 @@
   function cfEnums(defs,fid){var d=(defs||[]).find(function(x){return x.id===fid;});return (d&&d.enums)||[];}
   // клик по кастомному полю → инпут/селект, сохранение через /edit-api/{entity}/:id/cf
   function bindCfFields(bg,entity,id,defs,reload){
+    // маршруты записи в единственном числе (/edit-api/lead|contact|company/:id/cf)
+    var ent1=({leads:"lead",contacts:"contact",companies:"company"})[entity]||entity;
     bg.querySelectorAll(".cf-edit").forEach(function(el){
       el.title="Нажмите, чтобы изменить";
       el.onclick=function(){
@@ -1058,7 +1060,7 @@
         input.className="ci";input.style.maxWidth="260px";el.innerHTML="";el.appendChild(input);input.focus();
         var done=false;
         var save=function(){if(done)return;done=true;
-          ereq("PATCH","/edit-api/"+entity+"/"+id+"/cf",{field_id:fid,field_name:el.dataset.fname,value:input.value}).then(function(r){if(r&&r.success){toast("Сохранено");reload();}else{toast("Не удалось",true);reload();}});
+          ereq("PATCH","/edit-api/"+ent1+"/"+id+"/cf",{field_id:fid,field_name:el.dataset.fname,value:input.value}).then(function(r){if(r&&r.success){toast("Сохранено");reload();}else{toast("Не удалось",true);reload();}});
         };
         input.addEventListener("blur",save);
         input.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();input.blur();}if(e.key==="Escape"){done=true;reload();}});
@@ -1358,6 +1360,8 @@
         ])+'</div>';
       var reload=function(){openCompany(id);};
       var bg=cardShell(left,function(f){return feedHtml(mergeNotes([],notesNew),tasks,f,bg);},{type:"companies",id:id,withTasks:true,reload:reload});
+      bindEditable(bg,"coname",function(){return c.name;},function(v){return ereq("PATCH","/edit-api/company/"+id,{name:v});},reload,"text");
+      bindCfFields(bg,"companies",id,CF&&CF.companies,reload);
       bindFieldGroups(bg);bindCardTabs(bg);
       bg.querySelectorAll("[data-c]").forEach(function(el){el.onclick=function(){document.body.removeChild(bg);openContact(parseInt(el.dataset.c,10));};});
       bg.querySelectorAll("[data-l]").forEach(function(el){el.onclick=function(){document.body.removeChild(bg);openLead(parseInt(el.dataset.l,10));};});

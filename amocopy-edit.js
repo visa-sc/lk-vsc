@@ -58,6 +58,7 @@ module.exports = function mountEditRoutes(app, guard) {
 
   const getLead = db.prepare("SELECT * FROM leads WHERE id=?");
   const getContact = db.prepare("SELECT * FROM contacts WHERE id=?");
+  const getCompany = db.prepare("SELECT * FROM companies WHERE id=?");
   const getStatus = db.prepare("SELECT name FROM statuses WHERE pipeline_id=? AND id=?");
   const uName = {}; db.prepare("SELECT id,name FROM users").all().forEach((u) => { uName[u.id] = u.name; });
 
@@ -126,7 +127,7 @@ module.exports = function mountEditRoutes(app, guard) {
 
   // ── правка кастомного поля сделки/контакта ──
   function updateCf(entity, id, fieldId, fieldName, value) {
-    const getter = entity === "leads" ? getLead : getContact;
+    const getter = entity === "leads" ? getLead : (entity === "companies" ? getCompany : getContact);
     const row = getter.get(id);
     if (!row) return { ok: false, code: 404 };
     let cf = []; try { cf = JSON.parse(row.cf) || []; } catch (_) { cf = []; }
@@ -152,6 +153,25 @@ module.exports = function mountEditRoutes(app, guard) {
     const r = updateCf("contacts", id, fid, req.body.field_name, req.body.value);
     if (!r.ok) return res.status(r.code || 500).json({ success: false });
     audit(req, "contacts", id, "edit_cf", { field_id: fid, field: req.body.field_name, value: req.body.value });
+    res.json({ success: true });
+  });
+  // ── правка компании (название) + её кастомных полей (паритет с контактом) ──
+  app.patch(`${E}/company/:id`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const c = getCompany.get(id);
+    if (!c) return res.status(404).json({ success: false });
+    if (typeof req.body.name !== "string" || !req.body.name.trim()) return res.status(400).json({ success: false, message: "нужно название" });
+    const name = req.body.name.slice(0, 500);
+    db.prepare("UPDATE companies SET name=?, updated_at=? WHERE id=?").run(name, nowSec(), id);
+    audit(req, "companies", id, "edit", { name: [c.name, name] });
+    res.json({ success: true });
+  });
+  app.patch(`${E}/company/:id/cf`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10), fid = parseInt(req.body.field_id, 10);
+    if (!id || !fid) return res.status(400).json({ success: false });
+    const r = updateCf("companies", id, fid, req.body.field_name, req.body.value);
+    if (!r.ok) return res.status(r.code || 500).json({ success: false });
+    audit(req, "companies", id, "edit_cf", { field_id: fid, field: req.body.field_name, value: req.body.value });
     res.json({ success: true });
   });
 
