@@ -209,6 +209,35 @@
   .dash-card b { font-size:30px; color:#a8c4f0; font-weight:700; display:block; }
   .dash-card span { font-size:12.5px; color:#b8c9e2; text-transform:uppercase; letter-spacing:.04em; }
   .dash-note { max-width:1250px; margin:0 auto 16px; color:#cfdcf0; font-size:13px; }
+  /* ── рабочий стол как в amo: заголовок, пилюли периода, воронка, виджеты ── */
+  .desk-title { text-align:center; color:#fff; font-size:34px; font-weight:700; letter-spacing:.02em; padding:30px 0 22px; }
+  .desk-bar { max-width:1250px; margin:0 auto 22px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .desk-pills { display:inline-flex; background:rgba(255,255,255,.14); border-radius:22px; padding:3px; }
+  .desk-pills button { border:0; background:none; color:#dbe7f7; font:inherit; font-size:13px; padding:7px 16px; border-radius:20px; cursor:pointer; white-space:nowrap; }
+  .desk-pills button.act { background:#fff; color:#1d3c66; font-weight:700; }
+  .desk-cfg { margin-left:auto; border:0; background:rgba(255,255,255,.14); color:#fff; font:inherit; font-size:13px; padding:8px 16px; border-radius:20px; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
+  .desk-cfg:hover { background:rgba(255,255,255,.24); }
+  /* воронка-виджет */
+  .funnel-w { max-width:1250px; margin:0 auto 22px; background:rgba(13,30,55,.42); border-radius:10px; padding:18px 20px; }
+  .funnel-w .fw-h { color:#cfe0f5; font-size:12.5px; text-transform:uppercase; letter-spacing:.05em; margin-bottom:14px; display:flex; justify-content:space-between; }
+  .funnel-row { display:flex; gap:8px; align-items:flex-end; overflow-x:auto; padding-bottom:4px; }
+  .funnel-stage { min-width:120px; flex:1; }
+  .funnel-stage .fs-bar { height:8px; border-radius:3px; margin-bottom:8px; }
+  .funnel-stage .fs-c { color:#fff; font-size:26px; font-weight:700; }
+  .funnel-stage .fs-n { color:#aec4e2; font-size:11px; text-transform:uppercase; letter-spacing:.03em; margin-top:3px; line-height:1.25; }
+  .funnel-stage .fs-s { color:#8fb0d8; font-size:12px; margin-top:3px; }
+  /* виджеты-статистика (тёмные карточки) */
+  .w-grid { max-width:1250px; margin:0 auto; display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
+  .w-card { position:relative; background:#12233f; border:1px solid rgba(255,255,255,.06); border-radius:10px; padding:16px 18px 18px; color:#fff; min-height:132px; }
+  .w-card .w-name { font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#9fb6d6; font-weight:700; margin-bottom:14px; padding-right:18px; line-height:1.3; }
+  .w-card .w-count { font-size:34px; font-weight:700; color:#8ea6f7; line-height:1; }
+  .w-card .w-sum { font-size:14px; color:#cdd8ea; margin-top:8px; }
+  .w-card .w-delta { position:absolute; bottom:14px; left:18px; font-size:12px; color:#5fbf8f; }
+  .w-card .w-del { position:absolute; top:10px; right:11px; color:#5b6f8c; cursor:pointer; font-size:15px; line-height:1; opacity:0; }
+  .w-card:hover .w-del { opacity:1; }
+  .w-card .w-del:hover { color:#e5484d; }
+  .w-add { display:flex; align-items:center; justify-content:center; border:1.5px dashed rgba(255,255,255,.22); border-radius:10px; color:#cfe0f5; font-size:14px; cursor:pointer; min-height:132px; background:rgba(255,255,255,.03); }
+  .w-add:hover { border-color:rgba(255,255,255,.5); background:rgba(255,255,255,.07); }
 
   /* ── прочие разделы (автоматизации/справочники/доработки) ── */
   .plain { padding:20px 26px; max-width:1250px; }
@@ -246,8 +275,12 @@
   .modal-bg { position:fixed; inset:0; z-index:150; background:rgba(20,35,60,.34); display:flex; align-items:flex-start; justify-content:center; padding-top:8vh; }
   .modal { background:#fff; border-radius:10px; padding:22px 26px; width:440px; max-width:92vw; max-height:82vh; overflow:auto; box-shadow:0 12px 40px rgba(20,40,70,.28); position:relative; }
   .modal h2 { margin:0 0 14px; font-size:17px; }
+  .modal h3 { margin:0 0 14px; font-size:16px; }
+  .modal .mlbl { display:block; font-size:12px; color:#7c8691; text-transform:uppercase; letter-spacing:.03em; margin:14px 0 5px; }
   .modal .x { position:absolute; top:12px; right:14px; border:none; background:none; font-size:22px; line-height:1; cursor:pointer; color:#8a949e; }
   .modal .x:hover { color:#333; }
+  .btn.ghost { background:#eef2f6; color:var(--txt); }
+  .btn.ghost:hover { background:#e2e8ef; }
   /* контекстное меню (кнопка «···») */
   .ctxmenu { position:fixed; z-index:160; background:#fff; border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 26px rgba(20,40,70,.22); padding:6px 0; min-width:210px; }
   .ctxmenu div { padding:9px 16px; font-size:14px; cursor:pointer; white-space:nowrap; }
@@ -579,23 +612,102 @@
     function bindReset(){var a=$("#view").querySelector("[data-reset]");if(a)a.onclick=function(){FSTATE.contacts={};vContacts();};}
   }
 
-  /* ─── рабочий стол (живые KPI из БД) ─── */
+  /* ─── РАБОЧИЙ СТОЛ как в amo: заголовок, период, воронка, виджеты-статистика ─── */
+  var deskPeriod="today", deskPipe=null;
+  var DESK_PERIODS=[["today","Сегодня"],["yesterday","Вчера"],["week","Неделя"],["month","Месяц"],["all","Всё время"]];
+  function deskWidgetsKey(){return "crm_desk_widgets_"+((META&&META.account&&META.account.subdomain)||"x");}
+  function loadDeskWidgets(){
+    try{var v=JSON.parse(localStorage.getItem(deskWidgetsKey()));if(Array.isArray(v))return v;}catch(_){}
+    // виджеты по умолчанию (как амошные счётчики сделок)
+    return [
+      {id:"w1",name:"Новые сделки",metric:"count",field:"created"},
+      {id:"w2",name:"Успешно реализовано",metric:"count",won:1,field:"closed"},
+      {id:"w3",name:"Выручка (успешные)",metric:"sum",won:1,field:"closed"},
+      {id:"w4",name:"Сделок в работе (все)",metric:"count",field:"none"}
+    ];
+  }
+  function saveDeskWidgets(ws){try{localStorage.setItem(deskWidgetsKey(),JSON.stringify(ws));}catch(_){}}
+  function widgetQS(w){
+    var p=[];
+    if(w.pipeline)p.push("pipeline="+w.pipeline);
+    if(w.status)p.push("status="+w.status);
+    if(w.won)p.push("won=1");
+    if(w.lost)p.push("lost=1");
+    // поле «none» — без даты (все сделки фильтра, напр. «в работе»)
+    if(w.field&&w.field!=="none"){p.push("field="+w.field);p.push("period="+deskPeriod);}
+    return p.join("&");
+  }
   function vDesk(){
     renderSidebar("desk");
-    setHeader("Рабочий стол",{count:""});
-    $("#view").innerHTML='<div id="dash"><p class="dash-note">Загрузка…</p></div>';
-    jreq(API+"/dashboard").then(function(d){
-      var a=META.account||{};
-      var top=[["Новых сделок сегодня",d.newLeadsToday],["Открытых задач",d.openTasks],["Просроченных задач",d.overdue]];
-      var html='<div id="dash"><p class="dash-note">'+esc(a.name||"")+' · '+esc(a.subdomain||"")+' · рабочая копия (данные в своей БД) · слепок от '+esc(new Date(META.builtAt).toLocaleDateString("ru-RU"))+'</p><div class="dash-grid">';
-      top.forEach(function(it){html+='<div class="dash-card"><b>'+fmt(it[1])+'</b><span>'+it[0]+'</span></div>';});
-      html+='</div><p class="dash-note" style="margin-top:22px">Сделки по воронкам</p><div class="dash-grid">';
-      PIPES.forEach(function(p){html+='<div class="dash-card"><b>'+fmt((d.byPipe&&d.byPipe[p.id])||0)+'</b><span>'+esc(p.name)+'</span></div>';});
-      html+='</div><p class="dash-note" style="margin-top:22px">Сделок на менеджера (топ-12)</p><div class="dash-grid">';
-      (d.byManager||[]).forEach(function(m){html+='<div class="dash-card"><b>'+fmt(m.count)+'</b><span>'+esc(m.name)+'</span></div>';});
+    setHeader("Рабочий стол",{count:"",onCfg:false});
+    var a=META.account||{};
+    if(deskPipe==null){var mp=PIPES.find(function(p){return p.is_main;});deskPipe=mp?mp.id:(PIPES[0]&&PIPES[0].id);}
+    var html='<div id="dash"><div class="desk-title">'+esc(a.name||"Рабочий стол")+'</div>';
+    html+='<div class="desk-bar"><div class="desk-pills">'+DESK_PERIODS.map(function(x){return '<button data-per="'+x[0]+'"'+(x[0]===deskPeriod?" class=\"act\"":"")+'>'+x[1]+'</button>';}).join("")+'</div>';
+    html+='<button class="desk-cfg" id="deskCfg">＋ Настроить</button></div>';
+    html+='<div id="funnelW"></div><div class="w-grid" id="wGrid"></div></div>';
+    $("#view").innerHTML=html;
+    $("#view").querySelectorAll(".desk-pills [data-per]").forEach(function(b){b.onclick=function(){deskPeriod=b.dataset.per;vDesk();};});
+    $("#deskCfg").onclick=openWidgetEditor;
+    renderFunnelWidget();
+    renderDeskWidgets();
+  }
+  function renderFunnelWidget(){
+    jreq(API+"/analytics").then(function(r){
+      var funnels=(r&&r.funnels)||[];
+      var f=funnels.find(function(x){var p=PIPES.find(function(pp){return pp.id===deskPipe;});return p&&x.name===p.name;})||funnels[0];
+      if(!f){$("#funnelW").innerHTML="";return;}
+      var maxc=Math.max.apply(null,f.stages.map(function(s){return s.count;}).concat([1]));
+      var pipeSel='<select id="funnelPipe" style="background:rgba(255,255,255,.12);color:#fff;border:0;border-radius:6px;padding:4px 8px;font:inherit;font-size:12px">'+
+        funnels.map(function(x){return '<option'+(x.name===f.name?" selected":"")+'>'+esc(x.name)+'</option>';}).join("")+'</select>';
+      var html='<div class="funnel-w"><div class="fw-h"><span>Воронка · '+esc(f.name)+'</span><span>всего '+fmt(f.total)+'</span></div><div class="funnel-row">';
+      f.stages.forEach(function(s){
+        var h=Math.max(4,Math.round(8+ (s.count/maxc)*4));
+        html+='<div class="funnel-stage"><div class="fs-bar" style="background:'+esc(s.color||"#4b78b0")+';height:'+h+'px"></div><div class="fs-c">'+fmt(s.count)+'</div><div class="fs-n">'+esc(s.name)+'</div><div class="fs-s">'+(s.sum?fmt(s.sum)+" ₽":"")+'</div></div>';
+      });
       html+='</div></div>';
-      $("#view").innerHTML=html;
+      $("#funnelW").innerHTML=html;
+    }).catch(function(){$("#funnelW").innerHTML="";});
+  }
+  function renderDeskWidgets(){
+    var ws=loadDeskWidgets();
+    var grid=$("#wGrid");
+    grid.innerHTML=ws.map(function(w){
+      return '<div class="w-card" data-wid="'+w.id+'"><span class="w-del" title="Убрать">×</span><div class="w-name">'+esc(w.name)+'</div><div class="w-count" data-c>…</div>'+(w.metric==="sum"?'':'<div class="w-sum" data-s></div>')+'</div>';
+    }).join("")+'<div class="w-add" id="wAdd">＋ Добавить виджет</div>';
+    $("#wAdd").onclick=openWidgetEditor;
+    grid.querySelectorAll(".w-del").forEach(function(x){x.onclick=function(e){e.stopPropagation();var id=x.closest("[data-wid]").dataset.wid;saveDeskWidgets(loadDeskWidgets().filter(function(w){return w.id!==id;}));renderDeskWidgets();};});
+    // тянем статистику по каждому виджету последовательно щадя API нашей же БД
+    ws.forEach(function(w){
+      jreq(API+"/widget_stat?"+widgetQS(w)).then(function(r){
+        var card=grid.querySelector('[data-wid="'+w.id+'"]');if(!card)return;
+        if(w.metric==="sum"){card.querySelector("[data-c]").textContent=fmt(r.sum||0)+" ₽";card.querySelector("[data-c]").style.fontSize="27px";}
+        else{card.querySelector("[data-c]").textContent=fmt(r.count||0);var sEl=card.querySelector("[data-s]");if(sEl)sEl.textContent=(r.sum?fmt(r.sum)+" ₽":"");}
+      }).catch(function(){});
     });
+  }
+  // редактор виджета (логика добавления виджетов, как «Настроить» в amo)
+  function openWidgetEditor(){
+    var bg=document.createElement("div");bg.className="modal-bg";
+    var pipeOpts='<option value="">— все воронки —</option>'+PIPES.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join("");
+    bg.innerHTML='<div class="modal" style="max-width:440px"><span class="x">×</span><h3>Новый виджет рабочего стола</h3>'+
+      '<label class="mlbl">Название</label><input id="wN" class="ci" placeholder="напр. Выручка за месяц">'+
+      '<label class="mlbl">Показатель</label><select id="wM" class="ci"><option value="count">Количество сделок</option><option value="sum">Сумма бюджета, ₽</option></select>'+
+      '<label class="mlbl">Воронка</label><select id="wP" class="ci">'+pipeOpts+'</select>'+
+      '<label class="mlbl">Отбор</label><select id="wF" class="ci"><option value="all">Все сделки воронки</option><option value="won">Только успешные</option><option value="lost">Только проигранные</option></select>'+
+      '<label class="mlbl">Считать по дате</label><select id="wD" class="ci"><option value="none">Без учёта периода (текущее состояние)</option><option value="created">Дата создания</option><option value="closed">Дата закрытия</option><option value="updated">Дата изменения</option></select>'+
+      '<p class="muted" style="font-size:12px;margin:10px 0 0">Если выбрана дата — виджет считается за период, выбранный пилюлями сверху (Сегодня/Неделя/Месяц…).</p>'+
+      '<div style="margin-top:16px;display:flex;gap:8px"><button class="btn" id="wSave">Добавить</button><button class="btn ghost x2">Отмена</button></div></div>';
+    document.body.appendChild(bg);
+    function close(){document.body.removeChild(bg);}
+    bg.onclick=function(e){if(e.target===bg||e.target.className==="x"||e.target.className==="btn ghost x2")close();};
+    bg.querySelector("#wSave").onclick=function(){
+      var name=bg.querySelector("#wN").value.trim();if(!name)return toast("Введите название",true);
+      var w={id:"w"+Date.now(),name:name,metric:bg.querySelector("#wM").value,field:bg.querySelector("#wD").value};
+      var pv=bg.querySelector("#wP").value;if(pv)w.pipeline=pv;
+      var fv=bg.querySelector("#wF").value;if(fv==="won")w.won=1;else if(fv==="lost")w.lost=1;
+      var ws=loadDeskWidgets();ws.push(w);saveDeskWidgets(ws);close();renderDeskWidgets();toast("Виджет добавлен");
+    };
   }
   /* ─── раздел «Задачи» ─── */
   function vTasks(){

@@ -197,6 +197,30 @@ module.exports = function mountDbRoutes(app, guard, api) {
     res.json({ success: true, funnels, byUser });
   });
 
+  // статистика виджета рабочего стола: фильтр по сделкам → кол-во + сумма (как в amo)
+  app.get(`${api}/widget_stat`, guard, (req, res) => {
+    const q = req.query, where = [], args = [];
+    if (/^\d+$/.test(String(q.pipeline || ""))) { where.push("pipeline_id=?"); args.push(+q.pipeline); }
+    const sts = String(q.status || "").split(",").filter((x) => /^\d+$/.test(x));
+    if (sts.length) { where.push("status_id IN (" + sts.map(() => "?").join(",") + ")"); sts.forEach((s) => args.push(+s)); }
+    if (String(q.won) === "1") where.push("status_id=142");
+    if (String(q.lost) === "1") where.push("status_id=143");
+    if (/^\d+$/.test(String(q.resp || ""))) { where.push("responsible_user_id=?"); args.push(+q.resp); }
+    const now = Math.floor(Date.now() / 1000), day = now - (now % 86400);
+    const field = ({ created: "created_at", closed: "closed_at", updated: "updated_at" })[q.field] || "created_at";
+    let from = null, to = null;
+    if (q.period === "today") { from = day; to = day + 86400; }
+    else if (q.period === "yesterday") { from = day - 86400; to = day; }
+    else if (q.period === "week") { from = day - 6 * 86400; to = day + 86400; }
+    else if (q.period === "month") { const d = new Date(now * 1000); from = Math.floor(new Date(d.getFullYear(), d.getMonth(), 1).getTime() / 1000); to = now + 1; }
+    if (from != null) { where.push("(" + field + ">=? AND " + field + "<?)"); args.push(from, to); }
+    const w = where.length ? (" WHERE " + where.join(" AND ")) : "";
+    try {
+      const row = D.prepare("SELECT COUNT(*) c, COALESCE(SUM(price),0) s FROM leads" + w).get(...args);
+      res.json({ success: true, count: row.c, sum: row.s });
+    } catch (e) { res.json({ success: false, count: 0, sum: 0 }); }
+  });
+
   // кастомные поля из cf_defs (единый источник правды — актуализируется amoCopySyncFields.js)
   app.get(`${api}/custom_fields`, guard, (req, res) => {
     const hasEditable = (() => { try { return !!D.prepare("SELECT editable FROM cf_defs LIMIT 1").get() || true; } catch (_) { return false; } })();
