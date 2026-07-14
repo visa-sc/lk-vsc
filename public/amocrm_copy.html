@@ -150,6 +150,8 @@
   .fields { padding:6px 20px 20px; }
   .frow { display:flex; padding:7px 0; font-size:13.5px; border-bottom:1px dotted transparent; }
   .frow .fl { width:44%; color:#8b939c; flex-shrink:0; padding-right:8px; }
+  .cf-act { margin-left:8px; text-decoration:none; font-size:13px; flex-shrink:0; opacity:.75; }
+  .cf-act:hover { opacity:1; text-decoration:none; }
   .frow .fv { color:var(--txt); word-break:break-word; }
   .fgroup { background:#f3f5f7; border-radius:3px; padding:8px 12px; font-size:13px; color:#5d6774; margin:10px 0 4px; }
   /* сворачиваемые группы полей (как в amoCRM) */
@@ -979,13 +981,22 @@
   }
   // редактируемые кастомные поля. entity: "leads"|"contacts". Показываем заполненные (клик→правка).
   // одна строка поля. editable=false → поле только для чтения (как нередактируемые поля amo)
+  // телефон/почта → кликабельные tel:/mailto: (как в amo). Ссылка — сосед .fv, не мешает правке.
+  function fieldActionHtml(name,t,f){
+    var raw=(f.values&&f.values[0]&&(f.values[0].value&&f.values[0].value.name?f.values[0].value.name:f.values[0].value));
+    raw=raw==null?"":String(raw);
+    if((/phone/i.test(t)||/тел|моб|phone|whats|факс|fax/i.test(name))&&raw){var tel=raw.replace(/[^0-9+]/g,"");if(tel.length>=5)return '<a class="cf-act" href="tel:'+esc(tel)+'" title="Позвонить">📞</a>';}
+    if((/email/i.test(t)||/mail|почт/i.test(name))&&raw.indexOf("@")>=0)return '<a class="cf-act" href="mailto:'+esc(raw)+'" title="Написать письмо">✉️</a>';
+    return "";
+  }
   function cfRowHtml(f,t,byId,entity,editById){
     var v=cfDisplay(f,t);
     if(v===""||v==null)return "";
     var name=f.field_name||byId[f.field_id]||f.field_id;
     var ro=editById&&editById[f.field_id]===false; // нередактируемое поле
     var canEdit=entity&&!ro;
-    return '<div class="frow"><div class="fl">'+esc(name)+(ro?' <span class="ro-lock" title="только для чтения">🔒</span>':"")+'</div><div class="fv'+(canEdit?" cf-edit":"")+'" data-fid="'+f.field_id+'" data-ftype="'+esc(t)+'" data-fname="'+esc(f.field_name||byId[f.field_id]||"")+'">'+esc(String(v).slice(0,500))+'</div></div>';
+    var act=fieldActionHtml(name,t,f);
+    return '<div class="frow"><div class="fl">'+esc(name)+(ro?' <span class="ro-lock" title="только для чтения">🔒</span>':"")+'</div><div class="fv'+(canEdit?" cf-edit":"")+'" data-fid="'+f.field_id+'" data-ftype="'+esc(t)+'" data-fname="'+esc(f.field_name||byId[f.field_id]||"")+'">'+esc(String(v).slice(0,500))+'</div>'+act+'</div>';
   }
   // пустое редактируемое поле (как в amoCRM — можно заполнить). Пустые нередактируемые не показываем.
   function cfEmptyRowHtml(def,entity,editById){
