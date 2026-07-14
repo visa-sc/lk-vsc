@@ -158,6 +158,16 @@ module.exports = function mountDbRoutes(app, guard, api) {
     res.json({ byPipe, openTasks, overdue, newLeadsToday, byManager });
   });
 
+  // живые счётчики сущностей (в UI вместо статичных из слепка)
+  app.get(`${api}/counts`, guard, (req, res) => {
+    const one = (sql) => { try { return D.prepare(sql).get().c; } catch (_) { return null; } };
+    res.json({ success: true,
+      leads: one("SELECT COUNT(*) c FROM leads"),
+      contacts: one("SELECT COUNT(*) c FROM contacts"),
+      companies: one("SELECT COUNT(*) c FROM companies"),
+      customers: one("SELECT COUNT(*) c FROM customers") });
+  });
+
   // типы задач (для селектора при постановке задачи) — если таблица есть
   app.get(`${api}/task_types`, guard, (req, res) => {
     try { res.json({ success: true, types: D.prepare("SELECT id,name,icon_id FROM task_types ORDER BY name").all() }); }

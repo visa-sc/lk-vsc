@@ -1735,10 +1735,13 @@
       return;
     }
     META=meta;
-    return Promise.all([jreq(API+"/pipelines"),jreq(API+"/kanban"),jreq(API+"/users"),jreq(API+"/custom_fields"),jreq(API+"/auth/me").catch(function(){return null;}),jreq(API+"/task_types").catch(function(){return null;})]).then(function(r){
+    return Promise.all([jreq(API+"/pipelines"),jreq(API+"/kanban"),jreq(API+"/users"),jreq(API+"/custom_fields"),jreq(API+"/auth/me").catch(function(){return null;}),jreq(API+"/task_types").catch(function(){return null;}),jreq(API+"/counts").catch(function(){return null;})]).then(function(r){
       PIPES=r[0];KANBAN=r[1];USERS=r[2];CF=r[3];
       ME=(r[4]&&r[4].me)||{is_admin:1,rights:null};
       TASK_TYPES=(r[5]&&r[5].types)||[];
+      // живые счётчики из БД вместо статичных из слепка (копия синкается — цифры актуальные)
+      META.counts=META.counts||{};
+      if(r[6]&&r[6].success){if(r[6].contacts!=null)META.counts.contacts=r[6].contacts;if(r[6].leads!=null)META.counts.leads=r[6].leads;if(r[6].companies!=null)META.counts.companies=r[6].companies;}
       $("#app").style.display="flex";
       go("leads");
     });
