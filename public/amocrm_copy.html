@@ -118,6 +118,9 @@
   .fgrp-body { display:none; padding:2px 20px 8px; }
   .fgrp.open .fgrp-body { display:block; }
   .ro-lock { font-size:11px; opacity:.5; }
+  .frow-empty .fl { color:#aab3bc; }
+  .cf-empty .muted { font-size:12.5px; }
+  .cf-empty:hover .muted { color:var(--link); }
   .dl-contact { border-top:1px solid var(--border); padding:14px 20px; display:flex; align-items:center; gap:10px; }
   .ava { width:36px; height:36px; border-radius:50%; background:#d7dee6; color:#5d6b7c; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
   .dcard-r { flex:1; background:var(--feed-bg); display:flex; flex-direction:column; min-width:0; }
@@ -726,6 +729,13 @@
     var canEdit=entity&&!ro;
     return '<div class="frow"><div class="fl">'+esc(name)+(ro?' <span class="ro-lock" title="только для чтения">🔒</span>':"")+'</div><div class="fv'+(canEdit?" cf-edit":"")+'" data-fid="'+f.field_id+'" data-ftype="'+esc(t)+'" data-fname="'+esc(f.field_name||byId[f.field_id]||"")+'">'+esc(String(v).slice(0,500))+'</div></div>';
   }
+  // пустое редактируемое поле (как в amoCRM — можно заполнить). Пустые нередактируемые не показываем.
+  function cfEmptyRowHtml(def,entity,editById){
+    if(!entity||!def)return "";
+    if(editById&&editById[def.id]===false)return "";
+    if(isSeparator(def.name))return "";
+    return '<div class="frow frow-empty"><div class="fl">'+esc(def.name)+'</div><div class="fv cf-edit cf-empty" data-fid="'+def.id+'" data-ftype="'+esc(def.type)+'" data-fname="'+esc(def.name)+'"><span class="muted">+ добавить</span></div></div>';
+  }
   function fieldsHtml(vals,defs,entity){
     var byId={},typeById={};(defs||[]).forEach(function(f){byId[f.id]=f.name;typeById[f.id]=f.type;});
     return (vals||[]).map(function(f){var t=f.field_type||typeById[f.field_id]||"";return cfRowHtml(f,t,byId,entity);}).join("");
@@ -741,15 +751,24 @@
     return groups;
   }
   function fieldsGroupedHtml(vals,defs,entity){
-    var byId={},typeById={},editById={};(defs||[]).forEach(function(f){byId[f.id]=f.name;typeById[f.id]=f.type;if(f.editable===false)editById[f.id]=false;});
+    var byId={},typeById={},editById={},defById={};(defs||[]).forEach(function(f){byId[f.id]=f.name;typeById[f.id]=f.type;defById[f.id]=f;if(f.editable===false)editById[f.id]=false;});
     var valById={};(vals||[]).forEach(function(v){valById[v.field_id]=v;});
     var groups=fieldGroups(defs),html="";
     groups.forEach(function(g){
+      if(g.name===null){
+        // верхние поля (до первого разделителя) — только заполненные, всегда видны
+        var top="";g.ids.forEach(function(fid){var f=valById[fid];if(!f)return;var t=f.field_type||typeById[fid]||"";top+=cfRowHtml(f,t,byId,entity,editById);});
+        html+=top;return;
+      }
+      // именованная группа — ВСЕ поля: заполненные + пустые редактируемые (как в amoCRM)
       var rows="";
-      g.ids.forEach(function(fid){var f=valById[fid];if(!f)return;var t=f.field_type||typeById[fid]||"";rows+=cfRowHtml(f,t,byId,entity,editById);});
-      if(!rows)return;
-      if(g.name===null){html+=rows;}
-      else html+='<div class="fgrp"><div class="fgrp-h">'+esc(g.name)+'<span class="fgrp-caret">▸</span></div><div class="fgrp-body">'+rows+'</div></div>';
+      g.ids.forEach(function(fid){
+        var f=valById[fid];
+        if(f){var t=f.field_type||typeById[fid]||"";var r=cfRowHtml(f,t,byId,entity,editById);if(r){rows+=r;return;}}
+        rows+=cfEmptyRowHtml(defById[fid],entity,editById);
+      });
+      if(!rows)return; // группа без единого показываемого поля — не рисуем
+      html+='<div class="fgrp"><div class="fgrp-h">'+esc(g.name)+'<span class="fgrp-caret">▸</span></div><div class="fgrp-body">'+rows+'</div></div>';
     });
     return html;
   }
@@ -761,7 +780,7 @@
       el.title="Нажмите, чтобы изменить";
       el.onclick=function(){
         if(el.dataset.editing)return;el.dataset.editing="1";
-        var fid=parseInt(el.dataset.fid,10),ftype=el.dataset.ftype,cur=el.textContent.trim(),input;
+        var fid=parseInt(el.dataset.fid,10),ftype=el.dataset.ftype,cur=el.classList.contains("cf-empty")?"":el.textContent.trim(),input;
         var enums=cfEnums(defs,fid);
         if(enums.length&&(ftype==="select"||ftype==="radiobutton"||ftype==="multiselect")){
           input=document.createElement("select");input.innerHTML='<option value="">—</option>'+enums.map(function(e){var v=e.value||e;return '<option'+(v===cur?" selected":"")+'>'+esc(v)+'</option>';}).join("");
