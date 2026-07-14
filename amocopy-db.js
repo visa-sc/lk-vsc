@@ -207,6 +207,17 @@ module.exports = function mountDbRoutes(app, guard, api) {
     res.json({ success: true, funnels, byUser });
   });
 
+  // кэш тяжёлых счётчиков виджетов (cf-LIKE по 291k сделок ~9с) — TTL 60с
+  const WCACHE = new Map();
+  const wcached = (key, ttlMs, fn) => {
+    const hit = WCACHE.get(key);
+    if (hit && Date.now() - hit.t < ttlMs) return hit.v;
+    const v = fn();
+    WCACHE.set(key, { t: Date.now(), v });
+    if (WCACHE.size > 500) { const k0 = WCACHE.keys().next().value; WCACHE.delete(k0); }
+    return v;
+  };
+
   // статистика виджета рабочего стола: фильтр по сделкам → кол-во + сумма (как в amo)
   app.get(`${api}/widget_stat`, guard, (req, res) => {
     const q = req.query, where = [], args = [];
@@ -349,9 +360,10 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const sql = "SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at FROM leads" +
       (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY updated_at DESC LIMIT 50 OFFSET ?";
     try {
-      // count_only=1 — для виджетов рабочего стола по сохранённому фильтру (кол-во + сумма)
+      // count_only=1 — для виджетов рабочего стола по сохранённому фильтру (кол-во + сумма), с TTL-кэшем
       if (String(q.count_only) === "1") {
-        const t = D.prepare("SELECT COUNT(*) c, COALESCE(SUM(price),0) s FROM leads" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args);
+        const key = "lf:" + where.join("|") + ":" + args.join(",");
+        const t = wcached(key, 60000, () => D.prepare("SELECT COUNT(*) c, COALESCE(SUM(price),0) s FROM leads" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args));
         return res.json({ success: true, total: t.c, sum: t.s, items: [] });
       }
       const rows = D.prepare(sql).all(...args, (page - 1) * 50);
@@ -378,7 +390,8 @@ module.exports = function mountDbRoutes(app, guard, api) {
       (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY created_at DESC LIMIT 50 OFFSET ?";
     try {
       if (String(q.count_only) === "1") {
-        const t = D.prepare("SELECT COUNT(*) c FROM contacts" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args);
+        const key = "cf:" + where.join("|") + ":" + args.join(",");
+        const t = wcached(key, 60000, () => D.prepare("SELECT COUNT(*) c FROM contacts" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args));
         return res.json({ success: true, total: t.c, items: [] });
       }
       const rows = D.prepare(sql).all(...args, (page - 1) * 50);

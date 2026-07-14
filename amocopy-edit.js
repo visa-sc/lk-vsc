@@ -43,6 +43,12 @@ module.exports = function mountEditRoutes(app, guard) {
       id INTEGER PRIMARY KEY, entity_type TEXT, entity_id INTEGER, text TEXT, created_by TEXT, created_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS ix_notes_new ON notes_new(entity_type,entity_id,created_at);
+    /* индексы сортировок длинных списков (имя контакта было 3.5с без индекса) */
+    CREATE INDEX IF NOT EXISTS ix_contacts_name ON contacts(name);
+    CREATE INDEX IF NOT EXISTS ix_contacts_created ON contacts(created_at);
+    CREATE INDEX IF NOT EXISTS ix_leads_pipe_name ON leads(pipeline_id,name);
+    CREATE INDEX IF NOT EXISTS ix_leads_pipe_price ON leads(pipeline_id,price);
+    CREATE INDEX IF NOT EXISTS ix_leads_pipe_created ON leads(pipeline_id,created_at);
   `);
   const seqRow = db.prepare("SELECT val FROM local_seq WHERE name='id'").get();
   if (!seqRow) db.prepare("INSERT INTO local_seq(name,val) VALUES('id',?)").run(LOCAL_ID_BASE);
