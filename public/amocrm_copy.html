@@ -609,7 +609,9 @@
     var stName={};((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){stName[s.id]=s.name;});
     setHeader("Фильтр сделок",{count:"",searchPh:"Поиск сделки (название или #id — Enter)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);},filter:curFilter});
     $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
+    var ep=VIEW_EPOCH;
     jreq(API+"/leads_filter?"+filterQS(vals)).then(function(r){
+      if(ep!==VIEW_EPOCH)return;
       var items=(r&&r.items)||[];
       var head='<div class="plain" style="max-width:none"><div style="padding:6px 0 12px"><b>Найдено: '+fmt(r.total||items.length)+'</b> <a data-reset style="margin-left:12px">← к воронке</a></div>';
       if(!items.length){$("#view").innerHTML=head+'<p class="muted">Ничего не найдено.</p></div>';bindReset();return;}
@@ -625,7 +627,9 @@
   function runContactsFilter(vals){
     setHeader("Фильтр контактов",{count:"",searchPh:"Поиск (имя, телефон, email — Enter)",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},filter:curFilter});
     $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
+    var ep=VIEW_EPOCH;
     jreq(API+"/contacts_filter?"+filterQS(vals)).then(function(r){
+      if(ep!==VIEW_EPOCH)return;
       var items=(r&&r.items)||[];
       var head='<div class="plain" style="max-width:none"><div style="padding:6px 0 12px"><b>Найдено: '+fmt(r.total||items.length)+'</b> <a data-reset style="margin-left:12px">← к контактам</a></div>';
       if(!items.length){$("#view").innerHTML=head+'<p class="muted">Ничего не найдено.</p></div>';bindReset();return;}
@@ -1857,7 +1861,9 @@
     renderSidebar("analytics");
     setHeader("Аналитика",{count:""});
     $("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Загрузка…</p></div></div>';
+    var ep=VIEW_EPOCH;
     jreq(API+"/analytics").then(function(r){
+      if(ep!==VIEW_EPOCH)return; // раздел уже сменили — не перерисовываем чужой вид
       if(!r||!r.success)return $("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">'+esc((r&&r.message)||"Нет данных")+'</p></div></div>';
       var html='<div class="plain">';
       // Воронка продаж по этапам основной воронки
@@ -1908,10 +1914,12 @@
     if(LIST_CATALOGS){return openListTab(listsTab);}
     setHeader("Списки",{count:""});
     $("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Загрузка…</p></div></div>';
+    var ep=VIEW_EPOCH;
     jreq(API+"/catalogs").then(function(cats){
       LIST_CATALOGS=Array.isArray(cats)?cats:[];
+      if(ep!==VIEW_EPOCH)return;
       openListTab(listsTab||"contacts");
-    }).catch(function(){LIST_CATALOGS=[];openListTab("contacts");});
+    }).catch(function(){LIST_CATALOGS=[];if(ep===VIEW_EPOCH)openListTab("contacts");});
   }
   function vCatalog(id){
     renderSidebar("lists");
@@ -1981,7 +1989,9 @@
 
   var views={desk:vDesk,leads:vLeads,contacts:vContacts,companies:vCompanies,customers:vCustomers,tasks:vTasks,lists:vLists,analytics:vAnalytics,auto:vAuto,refs:vRefs,todo:vTodo,settings:vSettings,imbox:vImbox,fdoc:vFdoc,mail:vMail,wazzup:vWazzup,market:vMarket};
   var curView="leads";
-  function go(name){curView=name;hidePipePanel();(views[name]||vDesk)();}
+  // эпоха вида: медленный ответ прошлого раздела не должен перерисовать текущий (гонка)
+  var VIEW_EPOCH=0;
+  function go(name){curView=name;VIEW_EPOCH++;hidePipePanel();(views[name]||vDesk)();}
 
   /* ─── вход ─── */
   function pickToken(){
