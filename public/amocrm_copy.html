@@ -1453,12 +1453,22 @@
     var n=bulkCount(),bar=document.getElementById("bulkBar");
     if(!n){if(bar)bar.remove();return;}
     if(!bar){bar=document.createElement("div");bar.id="bulkBar";bar.className="bulk-bar";document.body.appendChild(bar);}
-    bar.innerHTML='<b>Выбрано: '+n+'</b><select id="bulkResp"><option value="">Сменить ответственного…</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select><button class="btn ghost" id="bulkApplyResp">Назначить</button><button class="btn ghost" id="bulkTag">+ Тег</button><button class="btn ghost" id="bulkDelete">Удалить</button><button class="btn ghost" id="bulkClearBtn">Снять</button>';
+    bar.innerHTML='<b>Выбрано: '+n+'</b><select id="bulkResp"><option value="">Сменить ответственного…</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select><button class="btn ghost" id="bulkApplyResp">Назначить</button><button class="btn ghost" id="bulkTag">+ Тег</button><button class="btn ghost" id="bulkMerge">Объединить</button><button class="btn ghost" id="bulkDelete">Удалить</button><button class="btn ghost" id="bulkClearBtn">Снять</button>';
     bar.querySelector("#bulkClearBtn").onclick=bulkClear;
     bar.querySelector("#bulkApplyResp").onclick=function(){var r=bar.querySelector("#bulkResp").value;if(!r)return;bulkApply("resp",r);};
     bar.querySelector("#bulkTag").onclick=function(){var t=prompt("Тег для добавления выбранным сделкам:");if(t)bulkApply("tag",t.trim());};
     bar.querySelector("#bulkDelete").onclick=function(){if(!confirm("Удалить выбранные ("+n+") из копии?"))return;bulkApply("delete");};
     bar.querySelector("#bulkTag").style.display=BULK.kind==="leads"?"":"none";
+    // «Объединить» — слияние выбранных контактов (как в amo); основной — самый ранний
+    var mrg=bar.querySelector("#bulkMerge");
+    mrg.style.display=(BULK.kind==="contacts"&&n>=2)?"":"none";
+    mrg.onclick=function(){
+      if(!confirm("Объединить выбранные контакты ("+n+")? Основным станет самый ранний; телефоны, почты, поля, сделки и задачи дублей перейдут к нему, дубли удалятся."))return;
+      ereq("POST","/edit-api/contacts/merge",{ids:Object.keys(BULK.ids)}).then(function(r){
+        if(r&&r.success){toast("Объединено: "+r.merged+" → контакт #"+r.target_id);bulkClear();if(views[curView])views[curView]();}
+        else toast((r&&r.message)||"Не удалось объединить",true);
+      });
+    };
   }
   function bulkApply(action,val){
     var ids=Object.keys(BULK.ids),entity=BULK.kind==="leads"?"lead":"contact",done=0,total=ids.length;

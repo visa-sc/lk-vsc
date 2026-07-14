@@ -255,6 +255,60 @@ module.exports = function mountEditRoutes(app, guard) {
     res.json({ success: true });
   });
 
+  // ── слияние контактов (как «Объединить» в amo): дубли вливаются в основной ──
+  app.post(`${E}/contacts/merge`, guard, (req, res) => {
+    const ids = Array.isArray(req.body.ids) ? req.body.ids.map((x) => parseInt(x, 10)).filter(Boolean) : [];
+    if (ids.length < 2) return res.status(400).json({ success: false, message: "нужно минимум 2 контакта" });
+    const rows = ids.map((id) => getContact.get(id)).filter(Boolean);
+    if (rows.length < 2) return res.status(404).json({ success: false, message: "контакты не найдены" });
+    // основной — самый ранний (наименьший id, обычно самый старый в amo)
+    rows.sort((a, b) => a.id - b.id);
+    const target = rows[0], dupes = rows.slice(1);
+    const JJ = (s, d) => { try { const v = JSON.parse(s); return v == null ? d : v; } catch (_) { return d; } };
+    const tx = db.transaction(() => {
+      // объединяем телефоны/почты/поля (недостающие у основного берём из дублей)
+      let phones = JJ(target.phones, []), emails = JJ(target.emails, []), cf = JJ(target.cf, []);
+      if (!Array.isArray(cf)) cf = [];
+      const cfIds = new Set(cf.map((f) => f.field_id));
+      for (const d of dupes) {
+        for (const p of JJ(d.phones, [])) if (phones.indexOf(p) < 0) phones.push(p);
+        for (const e of JJ(d.emails, [])) if (emails.indexOf(e) < 0) emails.push(e);
+        for (const f of JJ(d.cf, []) || []) if (f && f.field_id && !cfIds.has(f.field_id)) { cf.push(f); cfIds.add(f.field_id); }
+      }
+      db.prepare("UPDATE contacts SET phones=?, emails=?, cf=?, updated_at=? WHERE id=?")
+        .run(JSON.stringify(phones), JSON.stringify(emails), JSON.stringify(cf), nowSec(), target.id);
+      for (const d of dupes) {
+        // перевязка сделок (lead_contacts + JSON contact_ids в самих сделках)
+        const leadRows = db.prepare("SELECT lead_id FROM lead_contacts WHERE contact_id=?").all(d.id);
+        for (const lr of leadRows) {
+          const has = db.prepare("SELECT 1 x FROM lead_contacts WHERE lead_id=? AND contact_id=?").get(lr.lead_id, target.id);
+          if (has) db.prepare("DELETE FROM lead_contacts WHERE lead_id=? AND contact_id=?").run(lr.lead_id, d.id);
+          else db.prepare("UPDATE lead_contacts SET contact_id=? WHERE lead_id=? AND contact_id=?").run(target.id, lr.lead_id, d.id);
+          const lead = db.prepare("SELECT contact_ids FROM leads WHERE id=?").get(lr.lead_id);
+          if (lead) {
+            let cids = JJ(lead.contact_ids, []);
+            cids = cids.map((x) => (x === d.id ? target.id : x)).filter((x, i, a) => a.indexOf(x) === i);
+            db.prepare("UPDATE leads SET contact_ids=? WHERE id=?").run(JSON.stringify(cids), lr.lead_id);
+          }
+        }
+        // перевязка компаний
+        const coRows = db.prepare("SELECT company_id FROM contact_companies WHERE contact_id=?").all(d.id);
+        for (const cr of coRows) {
+          const has = db.prepare("SELECT 1 x FROM contact_companies WHERE contact_id=? AND company_id=?").get(target.id, cr.company_id);
+          if (has) db.prepare("DELETE FROM contact_companies WHERE contact_id=? AND company_id=?").run(d.id, cr.company_id);
+          else db.prepare("UPDATE contact_companies SET contact_id=? WHERE contact_id=? AND company_id=?").run(target.id, d.id, cr.company_id);
+        }
+        // задачи и локальные примечания дубля → основному
+        db.prepare("UPDATE tasks SET entity_id=? WHERE entity_type='contacts' AND entity_id=?").run(target.id, d.id);
+        db.prepare("UPDATE notes_new SET entity_id=? WHERE entity_type='contacts' AND entity_id=?").run(target.id, d.id);
+        db.prepare("DELETE FROM contacts WHERE id=?").run(d.id);
+      }
+    });
+    try { tx(); } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
+    audit(req, "contacts", target.id, "merge", { merged: dupes.map((d) => ({ id: d.id, name: d.name })) });
+    res.json({ success: true, target_id: target.id, merged: dupes.length });
+  });
+
   // допустимые типы сущностей для примечаний/задач/истории (как в amo)
   const ENT3 = (v) => (v === "contacts" || v === "companies" ? v : "leads");
   // ── создание задачи ──
