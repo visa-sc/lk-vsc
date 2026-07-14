@@ -815,6 +815,16 @@
     return html;
   }
   function bindFieldGroups(bg){bg.querySelectorAll(".fgrp-h").forEach(function(h){h.onclick=function(){h.parentNode.classList.toggle("open");};});}
+  function tnow(){return Math.floor(Date.now()/1000);}
+  function cardStatsHtml(rows){return (rows||[]).filter(Boolean).map(function(x){return '<div class="frow"><div class="fl">'+esc(x[0])+'</div><div class="fv">'+esc(String(x[1]))+'</div></div>';}).join("");}
+  // вкладки карточки (Основное/Статистика/...) — переключают панели [data-panel]
+  function bindCardTabs(bg){
+    var tabs=bg.querySelectorAll(".dl-tabs span[data-t]");
+    tabs.forEach(function(s){s.onclick=function(){
+      tabs.forEach(function(x){x.classList.toggle("act",x===s);});
+      bg.querySelectorAll("[data-panel]").forEach(function(pn){pn.style.display=pn.dataset.panel===s.dataset.t?"":"none";});
+    };});
+  }
   function cfEnums(defs,fid){var d=(defs||[]).find(function(x){return x.id===fid;});return (d&&d.enums)||[];}
   // клик по кастомному полю → инпут/селект, сохранение через /edit-api/{entity}/:id/cf
   function bindCfFields(bg,entity,id,defs,reload){
@@ -961,15 +971,24 @@
       var tagNames=((l._embedded&&l._embedded.tags)||[]).map(function(t){return t.name;});
       var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить сделку">🗑</button><h2 class="editable" data-edit="name">'+esc(l.name||("Сделка #"+l.id))+'</h2><div class="dl-sub">#'+l.id+' &nbsp;<span class="tags-edit" title="Изменить теги">'+(tags||'<span class="muted">+ теги</span>')+'</span></div></div>'+
         '<div class="dl-stage"><div class="pn">'+esc(p?p.name:"")+'</div><div class="sn">'+esc(stName)+'</div>'+stageBarHtml(p,l.status_id)+'</div>'+
-        '<div class="dl-tabs"><span class="act">Основное</span><span>Статистика</span></div>'+
-        '<div class="fields">'+
+        '<div class="dl-tabs"><span class="act" data-t="main">Основное</span><span data-t="stats">Статистика</span></div>'+
+        '<div data-panel="main"><div class="fields">'+
           '<div class="frow"><div class="fl">Отв-ный</div><div class="fv editable" data-edit="resp">'+esc(userName(l.responsible_user_id))+'</div></div>'+
           '<div class="frow"><div class="fl">Бюджет</div><div class="fv editable" data-edit="price">'+fmt(l.price)+' ₽</div></div>'+
           '<div class="frow"><div class="fl">Создана</div><div class="fv">'+dt(l.created_at)+'</div></div>'+
           '<div class="frow"><div class="fl">Изменена</div><div class="fv">'+dt(l.updated_at)+'</div></div>'+
           (l.closed_at?('<div class="frow"><div class="fl">Закрыта</div><div class="fv">'+dt(l.closed_at)+'</div></div>'):"")+
           fieldsGroupedHtml(l.custom_fields_values,CF&&CF.leads,"leads")+
-        '</div>'+(contacts?'<div class="fgroup" style="margin-top:6px">Контакты</div>'+contacts:"")+(companies?'<div class="fgroup" style="margin-top:6px">Компания</div>'+companies:"");
+        '</div>'+(contacts?'<div class="fgroup" style="margin-top:6px">Контакты</div>'+contacts:"")+(companies?'<div class="fgroup" style="margin-top:6px">Компания</div>'+companies:"")+'</div>'+
+        '<div data-panel="stats" class="fields" style="display:none">'+cardStatsHtml([
+          ["Создана",dt(l.created_at)],["Дней в системе",Math.max(0,Math.floor((tnow()-(l.created_at||tnow()))/86400))],
+          ["Изменена",dt(l.updated_at)],(l.closed_at?["Закрыта",dt(l.closed_at)]:null),
+          ["Бюджет",fmt(l.price)+" ₽"],["Задач всего",(r.tasks||[]).length],
+          ["Открытых задач",(r.tasks||[]).filter(function(t){return !t.is_completed;}).length],
+          ["Примечаний",((r.notes||[]).length)+((localNotes||[]).length)],
+          ["Контактов",((l._embedded&&l._embedded.contacts)||[]).length],
+          ["Компаний",((l._embedded&&l._embedded.companies)||[]).length]
+        ])+'</div>';
       var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,localNotes),r.tasks,f,bg);},{type:"leads",id:id,withTasks:true,reload:reload});
       bg.__reload=reload;
       bg.querySelectorAll("[data-c]").forEach(function(el){
@@ -982,7 +1001,7 @@
       bindEditable(bg,"price",function(){return l.price;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{price:v});},reload,"number");
       bindEditable(bg,"resp",function(){return l.responsible_user_id;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{responsible_user_id:v});},reload,"user");
       bindCfFields(bg,"leads",id,CF&&CF.leads,reload);
-      bindFieldGroups(bg);
+      bindFieldGroups(bg);bindCardTabs(bg);
       // теги
       bg.querySelector(".tags-edit").onclick=function(){
         var nt=prompt("Теги через запятую:",tagNames.join(", "));
@@ -1035,13 +1054,20 @@
       if(companies)companies='<div class="fgroup" style="margin:0 20px">Компания</div>'+companies;
       var init=(c.name||"К").trim().charAt(0).toUpperCase();
       var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить контакт">🗑</button><h2 class="editable" data-edit="cname">'+esc(c.name||("Контакт #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div>'+
-        '<div class="dl-tabs" style="margin-top:6px"><span class="act">Основное</span><span>Сделки</span><span>Статистика контакта</span></div>'+
-        '<div class="fields">'+
+        '<div class="dl-tabs" style="margin-top:6px"><span class="act" data-t="main">Основное</span><span data-t="deals">Сделки</span><span data-t="stats">Статистика</span></div>'+
+        '<div data-panel="main"><div class="fields">'+
           '<div class="frow"><div class="fl">Отв-ный</div><div class="fv editable" data-edit="cresp">'+esc(userName(c.responsible_user_id))+'</div></div>'+
           '<div class="frow"><div class="fl">Создан</div><div class="fv">'+dt(c.created_at)+'</div></div>'+
           '<div class="frow"><div class="fl">Изменён</div><div class="fv">'+dt(c.updated_at)+'</div></div>'+
           fieldsGroupedHtml(c.custom_fields_values,CF&&CF.contacts,"contacts")+
-        '</div>'+companies+leads;
+        '</div>'+companies+'</div>'+
+        '<div data-panel="deals" style="display:none">'+(leads||'<p class="muted" style="padding:16px 20px">Сделок нет</p>')+'</div>'+
+        '<div data-panel="stats" class="fields" style="display:none">'+cardStatsHtml([
+          ["Создан",dt(c.created_at)],["Дней в системе",Math.max(0,Math.floor((tnow()-(c.created_at||tnow()))/86400))],
+          ["Изменён",dt(c.updated_at)],["Сделок",larr.length],
+          ["Компаний",((c._embedded&&c._embedded.companies)||[]).length],
+          ["Примечаний",((r.notes||[]).length)+((r.notes_new||[]).length)]
+        ])+'</div>';
       var reload=function(){openContact(id);}; // не рушим карточку до успешной загрузки
       var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,(r.notes_new||[])),[],f,bg);},{type:"contacts",id:id,withTasks:false,reload:reload});
       bg.__reload=reload;
@@ -1055,7 +1081,7 @@
       bindEditable(bg,"cname",function(){return c.name;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{name:v});},reload,"text");
       bindEditable(bg,"cresp",function(){return c.responsible_user_id;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{responsible_user_id:v});},reload,"user");
       bindCfFields(bg,"contacts",id,CF&&CF.contacts,reload);
-      bindFieldGroups(bg);
+      bindFieldGroups(bg);bindCardTabs(bg);
       bg.querySelector(".dl-del").onclick=function(){
         if(!confirm("Удалить контакт «"+(c.name||id)+"» из копии?"))return;
         ereq("POST","/edit-api/contact/"+id+"/delete").then(function(rr){if(rr&&rr.success){toast("Контакт удалён");document.body.removeChild(bg);if(views[curView])views[curView]();}else toast("Не удалось",true);});
