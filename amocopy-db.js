@@ -316,7 +316,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     app.get(`${api}/customer/:id`, guard, (req, res) => {
       const c = qCust.get(parseInt(req.params.id, 10));
       if (!c) return res.status(404).json({ success: false });
-      res.json({ success: true, customer: { id: c.id, name: c.name, responsible_user_id: c.responsible_user_id,
+      res.json({ success: true, tasks: tasksOut("customers", c.id), customer: { id: c.id, name: c.name, responsible_user_id: c.responsible_user_id,
         ltv: c.ltv, purchases_count: c.purchases_count, average_check: c.average_check, next_price: c.next_price,
         next_date: c.next_date, created_at: c.created_at, updated_at: c.updated_at, custom_fields_values: J(c.cf, null) } });
     });

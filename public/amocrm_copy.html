@@ -2008,12 +2008,14 @@
     }).catch(function(){$("#cumore").textContent="Недоступно";custLoading=false;});
   }
   function openCustomer(id){
-    jreq(API+"/customer/"+id).then(function(r){
+    Promise.all([jreq(API+"/customer/"+id),jreq("/edit-api/notes_new?entity_type=customers&entity_id="+id).catch(function(){return{items:[]};})]).then(function(rr){
+      var r=rr[0];
       if(!r||!r.success)return toast("Не найдено",true);
-      var c=r.customer;
+      var c=r.customer,notesNew=(rr[1]&&rr[1].items)||[],tasks=r.tasks||[];
       var rows=[["Ответственный",userName(c.responsible_user_id)],["LTV",c.ltv?fmt(c.ltv)+" ₽":"—"],["Покупок",c.purchases_count||"—"],["Средний чек",c.average_check?fmt(c.average_check)+" ₽":"—"],["След. платёж",c.next_price?fmt(c.next_price)+" ₽":"—"],["Дата платежа",c.next_date?dShort(c.next_date):"—"],["Создан",c.created_at?dt(c.created_at):"—"]];
       var left='<div class="dl-head"><span class="back">‹</span><h2>'+esc(c.name||("Покупатель #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div><div class="fields">'+rows.map(function(x){return '<div class="frow"><div class="fl">'+x[0]+'</div><div class="fv">'+esc(String(x[1]))+'</div></div>';}).join("")+fieldsHtml(c.custom_fields_values,null,"")+'</div>';
-      var bg=cardShell(left,function(){return '<p class="muted" style="padding:16px 4px">Лента покупателя не выгружалась.</p>';},null);
+      var reload=function(){openCustomer(id);};
+      var bg=cardShell(left,function(f){return feedHtml(mergeNotes([],notesNew),tasks,f,bg);},{type:"customers",id:id,withTasks:true,reload:reload});
     });
   }
 

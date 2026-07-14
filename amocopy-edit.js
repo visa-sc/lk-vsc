@@ -310,7 +310,7 @@ module.exports = function mountEditRoutes(app, guard) {
   });
 
   // допустимые типы сущностей для примечаний/задач/истории (как в amo)
-  const ENT3 = (v) => (v === "contacts" || v === "companies" ? v : "leads");
+  const ENT3 = (v) => (v === "contacts" || v === "companies" || v === "customers" ? v : "leads");
   // ── создание задачи ──
   app.post(`${E}/task`, guard, (req, res) => {
     const entity_type = ENT3(req.body.entity_type);
