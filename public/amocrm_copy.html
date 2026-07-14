@@ -1156,7 +1156,10 @@
     var cols=contactActiveCols();
     return items.map(function(c){return '<tr>'+cols.map(function(col){return '<td>'+contactCell(c,col[0])+'</td>';}).join("")+'</tr>';}).join("");
   }
-  function contactHeadHtml(){return '<tr>'+contactActiveCols().map(function(c){return '<th'+(c[0]==="n"?' style="width:24%"':(c[0]==="deals"?' style="width:22%"':""))+'>'+esc(c[1])+'</th>';}).join("")+'</tr>';}
+  var CONTACT_SORTABLE={n:1,created:1,updated:1};
+  var contactSort={by:"created",dir:"desc"};
+  function contactHeadHtml(){return '<tr>'+contactActiveCols().map(function(c){var arrow=(contactSort.by===c[0])?(contactSort.dir==="asc"?" ▲":" ▼"):"";return '<th'+(c[0]==="n"?' style="width:24%"':(c[0]==="deals"?' style="width:22%"':""))+(CONTACT_SORTABLE[c[0]]?' class="sortable" data-sort="'+c[0]+'"':"")+'>'+esc(c[1])+arrow+'</th>';}).join("")+'</tr>';}
+  function bindContactSort(){document.querySelectorAll("#view thead th.sortable").forEach(function(th){th.onclick=function(){var by=th.dataset.sort;if(contactSort.by===by)contactSort.dir=contactSort.dir==="asc"?"desc":"asc";else{contactSort.by=by;contactSort.dir="desc";}vContacts();};});}
   function bindContactLinks(){
     document.querySelectorAll("#cbody [data-c]").forEach(function(a){a.onclick=function(){openContact(parseInt(a.dataset.c,10));};});
     document.querySelectorAll("#cbody [data-dl]").forEach(function(a){a.onclick=function(e){e.stopPropagation();openLead(parseInt(a.dataset.dl,10));};});
@@ -1224,6 +1227,7 @@
     ];}});
     $("#view").innerHTML='<div style="padding:0 0 30px"><table class="amo"><thead>'+contactHeadHtml()+'</thead><tbody id="cbody"></tbody></table><div id="cmore" class="muted" style="padding:14px;text-align:center"></div></div>';
     makeTableResizable($("#view table.amo"),"crm_contact_colw");
+    bindContactSort();
     cPage=0; cLoading=false; cSearchMode=false;
     loadContactPage();
     $("#main").onscroll=function(){
@@ -1237,7 +1241,7 @@
     cLoading=true;
     var next=cPage+1;
     $("#cmore").textContent="Загрузка…";
-    jreq(API+"/contacts_page?page="+next).then(function(items){
+    jreq(API+"/contacts_page?page="+next+"&sort="+contactSort.by+"&dir="+contactSort.dir).then(function(items){
       if(!Array.isArray(items)||!items.length){$("#cmore").textContent=cPage?"Это все контакты":"Список пуст";return;}
       $("#cbody").insertAdjacentHTML("beforeend",contactRows(items));
       bindContactLinks();

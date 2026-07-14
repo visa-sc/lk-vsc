@@ -367,7 +367,10 @@ module.exports = function mountDbRoutes(app, guard, api) {
   app.get(`${api}/contacts_page`, guard, (req, res) => {
     const page = String(req.query.page || "1");
     if (!PAGE_FILE_RE.test(page)) return res.status(400).json({ success: false });
-    const rows = qContactsPage.all(PER_PAGE, (+page - 1) * PER_PAGE);
+    const CSORT = { created: "created_at", updated: "updated_at", n: "name" };
+    const sortCol = CSORT[req.query.sort] || "created_at";
+    const dir = String(req.query.dir).toLowerCase() === "asc" ? "ASC" : "DESC";
+    const rows = D.prepare("SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf FROM contacts ORDER BY " + sortCol + " " + dir + " LIMIT ? OFFSET ?").all(PER_PAGE, (+page - 1) * PER_PAGE);
     res.json(contactOut(rows, true));
   });
 
