@@ -158,6 +158,12 @@ module.exports = function mountDbRoutes(app, guard, api) {
     res.json({ byPipe, openTasks, overdue, newLeadsToday, byManager });
   });
 
+  // типы задач (для селектора при постановке задачи) — если таблица есть
+  app.get(`${api}/task_types`, guard, (req, res) => {
+    try { res.json({ success: true, types: D.prepare("SELECT id,name,icon_id FROM task_types ORDER BY name").all() }); }
+    catch (_) { res.json({ success: true, types: [{ id: 1, name: "Связаться" }, { id: 2, name: "Встреча" }] }); }
+  });
+
   // аналитика: воронки по этапам (кол-во+сумма) + по ответственным
   app.get(`${api}/analytics`, guard, (req, res) => {
     const statuses = D.prepare("SELECT pipeline_id,id,name,sort,color,type FROM statuses").all();

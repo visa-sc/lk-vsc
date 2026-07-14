@@ -292,7 +292,7 @@
 (function(){
   "use strict";
   var API = "/amocrm_copy/api";
-  var token=null, META=null, PIPES=[], USERS=[], KANBAN=null, CF=null, ME=null, curFilter=null;
+  var token=null, META=null, PIPES=[], USERS=[], KANBAN=null, CF=null, ME=null, curFilter=null, TASK_TYPES=[];
   var FSTATE={leads:{},contacts:{}};
   var $=function(s){return document.querySelector(s);};
   var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
@@ -901,7 +901,7 @@
       comp.innerHTML=
         '<div class="cbtns"><span class="ctab act" data-c="note">Примечание</span>'+(ent.withTasks?'<span class="ctab" data-c="task">Задача</span>':"")+'</div>'+
         '<div class="cbody cnote"><textarea class="ci" rows="2" placeholder="Введите текст примечания…"></textarea><button class="btn csave">Добавить</button></div>'+
-        (ent.withTasks?'<div class="cbody ctask" style="display:none"><input class="ci ctask-text" placeholder="Текст задачи…"><input class="ci ctask-date" type="date" style="max-width:160px"><button class="btn ctask-save">Поставить</button></div>':"");
+        (ent.withTasks?'<div class="cbody ctask" style="display:none"><input class="ci ctask-text" placeholder="Текст задачи…"><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><select class="ci ctask-type" style="max-width:190px">'+(TASK_TYPES.length?TASK_TYPES:[{id:1,name:"Связаться"}]).map(function(t){return '<option value="'+t.id+'"'+(t.id===1?" selected":"")+'>'+esc(t.name)+'</option>';}).join("")+'</select><input class="ci ctask-date" type="date" style="max-width:160px"><button class="btn ctask-save">Поставить</button></div></div>':"");
       comp.querySelectorAll(".ctab").forEach(function(tb){tb.onclick=function(){
         comp.querySelectorAll(".ctab").forEach(function(x){x.classList.toggle("act",x===tb);});
         comp.querySelector(".cnote").style.display=tb.dataset.c==="note"?"":"none";
@@ -917,7 +917,8 @@
         comp.querySelector(".ctask-save").onclick=function(){
           var t=comp.querySelector(".ctask-text").value.trim(); if(!t)return;
           var dv=comp.querySelector(".ctask-date").value; var till=dv?Math.floor(new Date(dv+"T18:00:00").getTime()/1000):0;
-          ereq("POST","/edit-api/task",{entity_type:ent.type,entity_id:ent.id,text:t,complete_till:till}).then(function(r){
+          var tsel=comp.querySelector(".ctask-type"); var ttype=tsel?parseInt(tsel.value,10)||0:0;
+          ereq("POST","/edit-api/task",{entity_type:ent.type,entity_id:ent.id,text:t,complete_till:till,task_type:ttype}).then(function(r){
             if(r&&r.success){toast("Задача поставлена");if(ent.reload)ent.reload();}else toast("Не удалось",true);
           });
         };
@@ -1658,9 +1659,10 @@
       return;
     }
     META=meta;
-    return Promise.all([jreq(API+"/pipelines"),jreq(API+"/kanban"),jreq(API+"/users"),jreq(API+"/custom_fields"),jreq(API+"/auth/me").catch(function(){return null;})]).then(function(r){
+    return Promise.all([jreq(API+"/pipelines"),jreq(API+"/kanban"),jreq(API+"/users"),jreq(API+"/custom_fields"),jreq(API+"/auth/me").catch(function(){return null;}),jreq(API+"/task_types").catch(function(){return null;})]).then(function(r){
       PIPES=r[0];KANBAN=r[1];USERS=r[2];CF=r[3];
       ME=(r[4]&&r[4].me)||{is_admin:1,rights:null};
+      TASK_TYPES=(r[5]&&r[5].types)||[];
       $("#app").style.display="flex";
       go("leads");
     });
