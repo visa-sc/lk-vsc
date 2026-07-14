@@ -161,7 +161,9 @@ module.exports = function mountEditRoutes(app, guard) {
     const lead = getLead.get(id);
     if (!lead) return res.status(404).json({ success: false });
     if (!Array.isArray(req.body.tags)) return res.status(400).json({ success: false });
-    const tags = req.body.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 30);
+    let tags = req.body.tags.map((t) => String(t).trim()).filter(Boolean);
+    if (req.body.append) { let cur = []; try { cur = JSON.parse(lead.tags) || []; } catch (_) {} tags = cur.concat(tags.filter((t) => cur.indexOf(t) < 0)); }
+    tags = tags.slice(0, 30);
     db.prepare("UPDATE leads SET tags=?, updated_at=? WHERE id=?").run(JSON.stringify(tags), nowSec(), id);
     audit(req, "leads", id, "edit_tags", { tags });
     res.json({ success: true, tags });

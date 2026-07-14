@@ -69,6 +69,12 @@
   table.amo th { position:relative; }
   table.amo th.sortable { cursor:pointer; user-select:none; }
   table.amo th.sortable:hover { color:var(--link); }
+  .bulk-th, .bulk-cb { width:34px; text-align:center; }
+  .bulk-bar { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:150; background:#2e3a48; color:#fff; border-radius:10px; padding:10px 16px; display:flex; gap:10px; align-items:center; box-shadow:0 8px 26px rgba(20,40,70,.32); font-size:13.5px; }
+  .bulk-bar select { padding:5px 8px; border-radius:6px; border:none; font-size:13px; max-width:200px; }
+  .bulk-bar .btn { padding:5px 12px; }
+  .bulk-bar .btn.ghost { background:rgba(255,255,255,.15); color:#fff; }
+  .bulk-bar .btn.ghost:hover { background:rgba(255,255,255,.28); }
   .deal-chip { display:inline-block; max-width:100%; padding:2px 8px; margin:2px 4px 2px 0; border-radius:3px; font-size:12.5px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; vertical-align:middle; }
   .deal-chip:hover { filter:brightness(.96); text-decoration:underline; }
   .kb-quick { margin:0 8px; padding:8px 10px; border:1px dashed #c3ccd6; border-radius:4px; color:#7b8794; font-size:13px; text-align:center; cursor:pointer; background:#fafbfc; }
@@ -641,7 +647,7 @@
     return "";
   }
   function leadHeadHtml(){
-    return '<tr>'+leadListActiveCols().map(function(c){
+    return '<tr>'+bulkTh()+leadListActiveCols().map(function(c){
       var arrow=(leadSort.by===c[0])?(leadSort.dir==="asc"?" ▲":" ▼"):"";
       return '<th'+(c[0]==="name"?' style="width:28%"':"")+(LEAD_SORTABLE[c[0]]?' class="sortable" data-sort="'+c[0]+'"':"")+'>'+esc(c[1])+arrow+'</th>';
     }).join("")+'</tr>';
@@ -674,8 +680,9 @@
       if(llLoading)return;llLoading=true;var next=llPage+1;$("#llmore").textContent="Загрузка…";
       jreq(API+"/leads_all?pipeline="+p.id+"&page="+next+"&sort="+leadSort.by+"&dir="+leadSort.dir).then(function(items){
         if(!Array.isArray(items)||!items.length){$("#llmore").textContent=llPage?"Это все сделки":"Сделок нет";llLoading=false;return;}
-        $("#llbody").insertAdjacentHTML("beforeend",items.map(function(l){return '<tr>'+cols.map(function(c){return '<td>'+leadCell(l,c[0],stName)+'</td>';}).join("")+'</tr>';}).join(""));
+        $("#llbody").insertAdjacentHTML("beforeend",items.map(function(l){return '<tr>'+bulkCbTd(l.id)+cols.map(function(c){return '<td>'+leadCell(l,c[0],stName)+'</td>';}).join("")+'</tr>';}).join(""));
         $("#llbody").querySelectorAll("[data-l]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.l,10));};});
+        bindBulkCheckboxes($("#view"),"leads");
         llPage=next;llLoading=false;$("#llmore").textContent="";
       }).catch(function(){$("#llmore").textContent="Недоступно";llLoading=false;});
     };
@@ -1161,6 +1168,42 @@
       });
     });
   }
+  // ── мультивыбор + массовые действия в списках (как в amoCRM) ──
+  var BULK={kind:null,ids:{}};
+  function bulkCount(){return Object.keys(BULK.ids).length;}
+  function bulkToggle(kind,id,on){if(BULK.kind!==kind){BULK.kind=kind;BULK.ids={};}if(on)BULK.ids[id]=1;else delete BULK.ids[id];renderBulkBar();}
+  function bulkClear(){BULK.ids={};document.querySelectorAll(".bulk-cb input:checked,#bulkAll").forEach(function(c){c.checked=false;});renderBulkBar();}
+  function bindBulkCheckboxes(container,kind){
+    container.querySelectorAll(".bulk-cb input").forEach(function(cb){cb.onclick=function(e){e.stopPropagation();bulkToggle(kind,parseInt(cb.dataset.bid,10),cb.checked);};});
+    var all=container.querySelector("#bulkAll");
+    if(all)all.onclick=function(){container.querySelectorAll(".bulk-cb input").forEach(function(cb){cb.checked=all.checked;bulkToggle(kind,parseInt(cb.dataset.bid,10),all.checked);});};
+  }
+  function renderBulkBar(){
+    var n=bulkCount(),bar=document.getElementById("bulkBar");
+    if(!n){if(bar)bar.remove();return;}
+    if(!bar){bar=document.createElement("div");bar.id="bulkBar";bar.className="bulk-bar";document.body.appendChild(bar);}
+    bar.innerHTML='<b>Выбрано: '+n+'</b><select id="bulkResp"><option value="">Сменить ответственного…</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select><button class="btn ghost" id="bulkApplyResp">Назначить</button><button class="btn ghost" id="bulkTag">+ Тег</button><button class="btn ghost" id="bulkDelete">Удалить</button><button class="btn ghost" id="bulkClearBtn">Снять</button>';
+    bar.querySelector("#bulkClearBtn").onclick=bulkClear;
+    bar.querySelector("#bulkApplyResp").onclick=function(){var r=bar.querySelector("#bulkResp").value;if(!r)return;bulkApply("resp",r);};
+    bar.querySelector("#bulkTag").onclick=function(){var t=prompt("Тег для добавления выбранным сделкам:");if(t)bulkApply("tag",t.trim());};
+    bar.querySelector("#bulkDelete").onclick=function(){if(!confirm("Удалить выбранные ("+n+") из копии?"))return;bulkApply("delete");};
+    bar.querySelector("#bulkTag").style.display=BULK.kind==="leads"?"":"none";
+  }
+  function bulkApply(action,val){
+    var ids=Object.keys(BULK.ids),entity=BULK.kind==="leads"?"lead":"contact",done=0,total=ids.length;
+    if(!total)return;
+    toast("Применяю к "+total+"…");
+    ids.forEach(function(id){
+      var pr;
+      if(action==="resp")pr=ereq("PATCH","/edit-api/"+entity+"/"+id,{responsible_user_id:val});
+      else if(action==="delete")pr=ereq("POST","/edit-api/"+entity+"/"+id+"/delete");
+      else if(action==="tag")pr=ereq("PATCH","/edit-api/lead/"+id+"/tags",{tags:val.split(",").map(function(x){return x.trim();}).filter(Boolean),append:true});
+      else pr=Promise.resolve();
+      pr.then(function(){done++;if(done===total){toast("Готово: "+done);var k=BULK.kind;bulkClear();if(views[curView])views[curView]();}});
+    });
+  }
+  function bulkTh(){return '<th class="bulk-th"><input type="checkbox" id="bulkAll" title="Выбрать все на странице"></th>';}
+  function bulkCbTd(id){return '<td class="bulk-cb"><input type="checkbox" data-bid="'+id+'"'+(BULK.ids[id]?" checked":"")+'></td>';}
   function contactColSel(){try{return JSON.parse(localStorage.getItem("crm_contact_cols"))||null;}catch(e){return null;}}
   function contactActiveCols(){var sel=contactColSel();var all=contactAllCols();return all.filter(function(c){return sel?sel.indexOf(c[0])>=0:c[2];});}
   function contactCell(c,key){
@@ -1181,15 +1224,16 @@
   }
   function contactRows(items){
     var cols=contactActiveCols();
-    return items.map(function(c){return '<tr>'+cols.map(function(col){return '<td>'+contactCell(c,col[0])+'</td>';}).join("")+'</tr>';}).join("");
+    return items.map(function(c){return '<tr>'+bulkCbTd(c.id)+cols.map(function(col){return '<td>'+contactCell(c,col[0])+'</td>';}).join("")+'</tr>';}).join("");
   }
   var CONTACT_SORTABLE={n:1,created:1,updated:1};
   var contactSort={by:"created",dir:"desc"};
-  function contactHeadHtml(){return '<tr>'+contactActiveCols().map(function(c){var arrow=(contactSort.by===c[0])?(contactSort.dir==="asc"?" ▲":" ▼"):"";return '<th'+(c[0]==="n"?' style="width:24%"':(c[0]==="deals"?' style="width:22%"':""))+(CONTACT_SORTABLE[c[0]]?' class="sortable" data-sort="'+c[0]+'"':"")+'>'+esc(c[1])+arrow+'</th>';}).join("")+'</tr>';}
+  function contactHeadHtml(){return '<tr>'+bulkTh()+contactActiveCols().map(function(c){var arrow=(contactSort.by===c[0])?(contactSort.dir==="asc"?" ▲":" ▼"):"";return '<th'+(c[0]==="n"?' style="width:24%"':(c[0]==="deals"?' style="width:22%"':""))+(CONTACT_SORTABLE[c[0]]?' class="sortable" data-sort="'+c[0]+'"':"")+'>'+esc(c[1])+arrow+'</th>';}).join("")+'</tr>';}
   function bindContactSort(){document.querySelectorAll("#view thead th.sortable").forEach(function(th){th.onclick=function(){var by=th.dataset.sort;if(contactSort.by===by)contactSort.dir=contactSort.dir==="asc"?"desc":"asc";else{contactSort.by=by;contactSort.dir="desc";}vContacts();};});}
   function bindContactLinks(){
     document.querySelectorAll("#cbody [data-c]").forEach(function(a){a.onclick=function(){openContact(parseInt(a.dataset.c,10));};});
     document.querySelectorAll("#cbody [data-dl]").forEach(function(a){a.onclick=function(e){e.stopPropagation();openLead(parseInt(a.dataset.dl,10));};});
+    var v=$("#view");if(v)bindBulkCheckboxes(v,"contacts");
   }
   function openColSettings(){
     var all=contactAllCols();
