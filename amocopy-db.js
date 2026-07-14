@@ -169,12 +169,19 @@ module.exports = function mountDbRoutes(app, guard, api) {
     // бейдж «Задачи» как в amo = просроченные + на сегодня (незавершённые)
     const tasksDue = one("SELECT COUNT(*) c FROM tasks WHERE is_completed=0 AND complete_till>0 AND complete_till<?", dayEnd);
     const tasksOpen = one("SELECT COUNT(*) c FROM tasks WHERE is_completed=0");
-    res.json({ success: true,
+    const out = { success: true,
       leads: one("SELECT COUNT(*) c FROM leads"),
       contacts: one("SELECT COUNT(*) c FROM contacts"),
       companies: one("SELECT COUNT(*) c FROM companies"),
       customers: one("SELECT COUNT(*) c FROM customers"),
-      tasksDue: tasksDue, tasksOpen: tasksOpen });
+      tasksDue: tasksDue, tasksOpen: tasksOpen };
+    // бейджи внешних разделов (imbox/mail/wazzup/market) — зеркало amo из .amocopy-db/badges.json
+    // (внешние сервисы не подключены; файл правится вручную/будущей интеграцией)
+    try {
+      const b = JSON.parse(fs.readFileSync(path.join(path.dirname(process.env.AMOCOPY_DB || "/var/www/voyo/.amocopy-db/crm.db"), "badges.json"), "utf8"));
+      for (const k of ["imbox", "mail", "wazzup", "market", "notifications"]) if (b[k] != null) out[k] = b[k];
+    } catch (_) {}
+    res.json(out);
   });
 
   // типы задач (для селектора при постановке задачи) — если таблица есть
@@ -342,6 +349,11 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const sql = "SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at FROM leads" +
       (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY updated_at DESC LIMIT 50 OFFSET ?";
     try {
+      // count_only=1 — для виджетов рабочего стола по сохранённому фильтру (кол-во + сумма)
+      if (String(q.count_only) === "1") {
+        const t = D.prepare("SELECT COUNT(*) c, COALESCE(SUM(price),0) s FROM leads" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args);
+        return res.json({ success: true, total: t.c, sum: t.s, items: [] });
+      }
       const rows = D.prepare(sql).all(...args, (page - 1) * 50);
       let total = null;
       if (page === 1) { total = D.prepare("SELECT COUNT(*) c FROM leads" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args).c; }
@@ -365,6 +377,10 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const sql = "SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf FROM contacts" +
       (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY created_at DESC LIMIT 50 OFFSET ?";
     try {
+      if (String(q.count_only) === "1") {
+        const t = D.prepare("SELECT COUNT(*) c FROM contacts" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args);
+        return res.json({ success: true, total: t.c, items: [] });
+      }
       const rows = D.prepare(sql).all(...args, (page - 1) * 50);
       let total = null;
       if (page === 1) { total = D.prepare("SELECT COUNT(*) c FROM contacts" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args).c; }

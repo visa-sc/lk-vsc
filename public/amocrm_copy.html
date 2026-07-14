@@ -16,14 +16,16 @@
   }
   * { box-sizing:border-box; }
   html,body { height:100%; }
-  body { margin:0; font:15px/1.4 "PT Sans", -apple-system, Arial, sans-serif; color:var(--txt); background:var(--bg); overflow:hidden; }
+  body { margin:0; font:15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PT Sans", Arial, sans-serif; color:var(--txt); background:var(--bg); overflow:hidden; -webkit-font-smoothing:antialiased; }
   a, .lnk { color:var(--link); text-decoration:none; cursor:pointer; background:none; border:0; font:inherit; padding:0; }
   a:hover, .lnk:hover { text-decoration:underline; }
 
   /* ── сайдбар (как в amo: лого сверху, скролл-меню, колокольчик снизу) ── */
   #app { display:flex; height:100vh; }
   aside { width:66px; background:linear-gradient(180deg,#1b3350 0%,#17293e 60%,#14243a 100%); display:flex; flex-direction:column; align-items:center; flex-shrink:0; z-index:60; }
-  .logo { width:66px; height:64px; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px; letter-spacing:5px; cursor:pointer; flex-shrink:0; background:linear-gradient(135deg,#2e6fb0,#2e5f8f); text-indent:5px; }
+  /* лого = amo: плоская синяя плитка, белые V|S|C с тонкими разделителями */
+  .logo { width:66px; height:64px; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; cursor:pointer; flex-shrink:0; background:#2e5f8f; }
+  .logo i { display:inline-block; width:1px; height:15px; background:rgba(255,255,255,.55); margin:0 5px; }
   .logo:hover { filter:brightness(1.08); }
   .nav-scroll { flex:1; width:66px; overflow-y:auto; overflow-x:hidden; scrollbar-width:none; }
   .nav-scroll::-webkit-scrollbar { width:0; height:0; }
@@ -70,14 +72,18 @@
   #secTitle { font-size:17px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; cursor:default; }
   #secTitle.clickable { cursor:pointer; }
   #secTitle .caret { font-size:11px; color:var(--mut); margin-left:6px; }
-  .search { flex:1; max-width:560px; display:flex; align-items:center; gap:8px; color:#b6bcc3; }
+  .search { flex:1; max-width:560px; display:flex; align-items:center; gap:8px; color:#b6bcc3; background:#f4f5f7; border-radius:10px; padding:9px 14px; transition:background .15s, box-shadow .15s; }
+  .search:focus-within { background:#fff; box-shadow:0 0 0 1.5px #bcd4f0, 0 2px 10px rgba(30,60,100,.06); }
   .search svg { width:16px; height:16px; stroke:#b6bcc3; fill:none; stroke-width:2; flex-shrink:0; }
   .search input { border:0; outline:0; font:inherit; width:100%; color:var(--txt); }
   .search input::placeholder { color:#b6bcc3; }
   #hCount { margin-left:auto; white-space:nowrap; color:var(--txt); font-size:14px; }
   #hCount b { font-size:16px; }
-  .hbtn { border:1px solid var(--border); background:#fff; border-radius:4px; padding:8px 14px; font:inherit; font-size:12.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--txt); cursor:default; }
+  .hbtn { border:1px solid var(--border); background:#fff; border-radius:9px; padding:8px 15px; font:inherit; font-size:12.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--txt); cursor:pointer; transition:background .15s, box-shadow .15s, transform .1s; }
+  .hbtn:hover { background:#f7f9fb; box-shadow:0 1px 6px rgba(30,60,100,.08); }
+  .hbtn:active { transform:scale(.985); }
   .hbtn.blue { background:var(--blue); border-color:var(--blue); color:#fff; }
+  .hbtn.blue:hover { background:#2a74d6; }
   .hbtn.dots { padding:8px 10px; letter-spacing:2px; }
 
   main { flex:1; overflow:auto; position:relative; }
@@ -110,12 +116,12 @@
   .bulk-bar .btn.ghost:hover { background:rgba(255,255,255,.28); }
   .deal-chip { display:inline-block; max-width:100%; padding:2px 8px; margin:2px 4px 2px 0; border-radius:3px; font-size:12.5px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; vertical-align:middle; }
   .deal-chip:hover { filter:brightness(.96); text-decoration:underline; }
-  .kb-quick { margin:0 8px; padding:8px 10px; border:1px dashed #c3ccd6; border-radius:4px; color:#7b8794; font-size:13px; text-align:center; cursor:pointer; background:#fafbfc; }
+  .kb-quick { margin:0 8px; padding:8px 10px; border:1.5px dashed #c9d3de; border-radius:9px; color:#7b8794; font-size:13px; text-align:center; cursor:pointer; background:#fafbfc; }
   .kb-quick:hover { border-color:var(--link); color:var(--link); background:#f2f7fd; }
   .kb-quick[data-open] { text-align:left; cursor:default; border-style:solid; }
   .kb-cards { padding:8px; }
-  .kb-card { background:#fff; border:1px solid #dfe5eb; border-radius:4px; padding:9px 11px; margin-bottom:7px; cursor:pointer; position:relative; }
-  .kb-card:hover { border-color:#b9cde0; }
+  .kb-card { background:#fff; border:1px solid #e3e9f0; border-radius:10px; padding:10px 13px; margin-bottom:8px; cursor:pointer; position:relative; box-shadow:0 1px 2px rgba(25,50,85,.04); transition:box-shadow .15s, border-color .15s, transform .12s; }
+  .kb-card:hover { border-color:#bed3e8; box-shadow:0 4px 14px rgba(25,50,85,.10); transform:translateY(-1px); }
   .kb-card .top { display:flex; justify-content:space-between; gap:6px; font-size:13px; }
   .kb-card .top .dt { color:var(--mut); font-size:12px; white-space:nowrap; }
   .kb-card .comp { color:var(--txt); font-size:13px; }
@@ -187,7 +193,8 @@
   .editable { cursor:pointer; border-bottom:1px dashed transparent; }
   .editable:hover { border-bottom-color:#b9cde0; background:#f6f9fc; }
   h2.editable:hover { background:#f6f9fc; }
-  .ci { padding:7px 10px; border:1px solid var(--border); border-radius:4px; font:inherit; font-size:13.5px; width:100%; }
+  .ci { padding:8px 11px; border:1px solid var(--border); border-radius:9px; font:inherit; font-size:13.5px; width:100%; transition:border-color .15s, box-shadow .15s; }
+  .ci:focus { outline:none; border-color:#9cc1ec; box-shadow:0 0 0 3px rgba(46,128,236,.12); }
   .composer { border-top:1px solid var(--border); background:#fff; padding:10px 24px 16px; }
   .cbtns { display:flex; gap:14px; margin-bottom:8px; }
   .ctab { font-size:13px; color:var(--mut); cursor:pointer; padding-bottom:3px; }
@@ -243,7 +250,7 @@
 
   /* ── прочие разделы (автоматизации/справочники/доработки) ── */
   .plain { padding:20px 26px; max-width:1250px; }
-  .pcard { background:#fff; border:1px solid var(--border); border-radius:6px; padding:16px 20px; margin-bottom:14px; }
+  .pcard { background:#fff; border:1px solid #e8ecf1; border-radius:14px; padding:20px 24px; margin-bottom:16px; box-shadow:0 1px 3px rgba(25,50,85,.04); }
   .pcard h2 { font-size:16px; margin:0 0 10px; }
   h3 { font-size:14px; margin:14px 0 8px; }
   .muted { color:var(--mut); }
@@ -258,7 +265,9 @@
   .flag.warn { background:#fdf3e0; color:#9a6b00; }
   .pill { display:inline-block; background:#f2f4f6; border:1px solid #e7eaee; border-radius:3px; padding:1px 8px; font-size:12px; margin:2px 4px 2px 0; color:#5d6774; }
   input.ti { padding:9px 12px; border:1px solid var(--border); border-radius:4px; font:inherit; }
-  button.btn { background:var(--blue); color:#fff; border:0; border-radius:4px; padding:9px 16px; cursor:pointer; font:inherit; font-size:13px; }
+  button.btn { background:var(--blue); color:#fff; border:0; border-radius:9px; padding:9px 17px; cursor:pointer; font:inherit; font-size:13px; transition:background .15s, transform .1s, box-shadow .15s; }
+  button.btn:hover { background:#2a74d6; box-shadow:0 2px 8px rgba(46,128,236,.25); }
+  button.btn:active { transform:scale(.985); }
 
   /* ── логин ── */
   #login-screen { position:fixed; inset:0; background:var(--sb-bg); display:flex; align-items:center; justify-content:center; z-index:200; }
@@ -275,7 +284,7 @@
 
   /* ── универсальное модальное окно ── */
   .modal-bg { position:fixed; inset:0; z-index:150; background:rgba(20,35,60,.34); display:flex; align-items:flex-start; justify-content:center; padding-top:8vh; }
-  .modal { background:#fff; border-radius:10px; padding:22px 26px; width:440px; max-width:92vw; max-height:82vh; overflow:auto; box-shadow:0 12px 40px rgba(20,40,70,.28); position:relative; }
+  .modal { background:#fff; border-radius:16px; padding:24px 28px; width:440px; max-width:92vw; max-height:82vh; overflow:auto; box-shadow:0 20px 60px rgba(20,40,70,.24), 0 4px 14px rgba(20,40,70,.10); position:relative; }
   .modal h2 { margin:0 0 14px; font-size:17px; }
   .modal h3 { margin:0 0 14px; font-size:16px; }
   .modal .mlbl { display:block; font-size:12px; color:#7c8691; text-transform:uppercase; letter-spacing:.03em; margin:14px 0 5px; }
@@ -284,7 +293,8 @@
   .btn.ghost { background:#eef2f6; color:var(--txt); }
   .btn.ghost:hover { background:#e2e8ef; }
   /* контекстное меню (кнопка «···») */
-  .ctxmenu { position:fixed; z-index:160; background:#fff; border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 26px rgba(20,40,70,.22); padding:6px 0; min-width:210px; }
+  .ctxmenu { position:fixed; z-index:160; background:#fff; border:1px solid #e8ecf1; border-radius:12px; box-shadow:0 12px 36px rgba(20,40,70,.18), 0 2px 8px rgba(20,40,70,.08); padding:6px; min-width:210px; }
+  .ctxmenu div:not(.sep) { border-radius:8px; }
   .ctxmenu div { padding:9px 16px; font-size:14px; cursor:pointer; white-space:nowrap; }
   .ctxmenu div:hover { background:#f0f4f8; }
   .ctxmenu .sep { height:1px; background:var(--border); padding:0; margin:5px 0; cursor:default; }
@@ -305,7 +315,7 @@
   .badge-adm { background:#eaf3ff; color:#2b6cb0; font-size:11px; padding:2px 7px; border-radius:20px; }
   .swatch { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:6px; vertical-align:middle; }
   /* ── фильтр (как в amoCRM: клик по поиску) ── */
-  .filter-panel { position:fixed; z-index:140; background:#fff; border:1px solid var(--border); border-radius:10px; box-shadow:0 10px 34px rgba(20,40,70,.20); padding:16px 18px; width:520px; max-width:94vw; }
+  .filter-panel { position:fixed; z-index:140; background:#fff; border:1px solid #e8ecf1; border-radius:16px; box-shadow:0 18px 50px rgba(20,40,70,.20), 0 4px 12px rgba(20,40,70,.08); padding:18px 20px; width:520px; max-width:94vw; }
   .filter-panel h4 { margin:0 0 12px; font-size:14px; color:#33404d; }
   .fgrid { display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
   .ffield { display:flex; flex-direction:column; gap:4px; }
@@ -459,7 +469,7 @@
       if(n[0]==="_sep")return '<div class="nav-sep"></div>';
       return '<button class="nav-i'+(n[0]===active?" act":"")+'" data-v="'+n[0]+'">'+ICONS[n[2]]+badgeHtml(navBadge(n[4]))+'<span>'+n[1]+'</span></button>';
     }).join("");
-    $("#sidebar").innerHTML='<div class="logo" id="navLogo" title="На рабочий стол">V S C</div>'+
+    $("#sidebar").innerHTML='<div class="logo" id="navLogo" title="На рабочий стол">V<i></i>S<i></i>C</div>'+
       '<div class="nav-scroll">'+items+'</div>'+
       '<div class="sb-bell" id="navBell" title="Уведомления">'+ICONS.bell+(bell?'<span class="nav-badge">'+badgeFmt(bell)+'</span>':"")+'</div>';
     var logo=$("#navLogo");if(logo)logo.onclick=function(){document.querySelectorAll(".dcard-bg").forEach(function(x){x.remove();});go("desk");};
@@ -554,7 +564,7 @@
     p.innerHTML='<h4>Фильтр '+(isLeads?"сделок":"контактов")+'</h4><div class="fgrid">'+fields+'</div>'+
       '<div class="cf-sec"><div class="cf-sec-h">Поля '+(isLeads?"сделки":"контакта")+' (любое поле)</div><div id="cfRows">'+cfRowsHtml+'</div><button class="cf-add" data-add="cf">+ ещё поле</button></div>'+
       ccfSection+
-      '<div class="filter-acts"><button class="btn" id="fApply">Применить</button><button class="btn ghost" id="fReset">Сбросить</button><button class="btn ghost" id="fClose" style="margin-left:auto">Закрыть</button></div>';
+      '<div class="filter-acts"><button class="btn" id="fApply">Применить</button><button class="btn ghost" id="fReset">Сбросить</button><button class="btn ghost" id="fWidget" title="Сохранить этот фильтр виджетом на рабочий стол (как в amo)">★ В виджет</button><button class="btn ghost" id="fClose" style="margin-left:auto">Закрыть</button></div>';
     document.body.appendChild(p);
     p.style.top=(r.bottom+8)+"px";
     p.style.left=Math.max(10,Math.min(r.left,window.innerWidth-p.offsetWidth-10))+"px";
@@ -571,6 +581,18 @@
     var collectRaw=function(){var raw={};p.querySelectorAll("[data-f]").forEach(function(el){if(el.value.trim())raw[el.dataset.f]=el.value.trim();});raw._cf=collectCf("cf");if(isLeads)raw._ccf=collectCf("ccf");return raw;};
     $("#fApply").onclick=function(){FSTATE[curFilter.kind]=collectRaw();var vals=collect();closeFilterPanel();if(isLeads)runLeadsFilter(vals);else runContactsFilter(vals);};
     $("#fReset").onclick=function(){FSTATE[curFilter.kind]={};closeFilterPanel();if(isLeads)vLeads();else vContacts();};
+    // «★ В виджет» — сохранить текущий фильтр виджетом на рабочий стол (как в amo)
+    $("#fWidget").onclick=function(){
+      var vals=collect();
+      if(isLeads&&!("pipeline" in vals)){var pp=PIPES.find(function(x){return x.id===curPipe;});if(pp)vals.pipeline=pp.id;}
+      var qs=filterQS(vals);
+      var name=prompt("Название виджета на рабочем столе:",isLeads?"Мой фильтр сделок":"Мой фильтр контактов");
+      if(!name)return;
+      var ws=loadDeskWidgets();
+      ws.push({id:"w"+Date.now(),name:name.trim(),kind:"filter",entity:isLeads?"leads":"contacts",qs:qs});
+      saveDeskWidgets(ws);
+      toast("Виджет «"+name.trim()+"» добавлен на рабочий стол");
+    };
     $("#fClose").onclick=closeFilterPanel;
     setTimeout(function(){document.addEventListener("click",function cl(ev){if(!document.getElementById("filterPanel"))return document.removeEventListener("click",cl);if(!p.contains(ev.target)&&ev.target!==anchor){closeFilterPanel();document.removeEventListener("click",cl);}});},0);
   }
@@ -679,9 +701,17 @@
     }).join("")+'<div class="w-add" id="wAdd">＋ Добавить виджет</div>';
     $("#wAdd").onclick=openWidgetEditor;
     grid.querySelectorAll(".w-del").forEach(function(x){x.onclick=function(e){e.stopPropagation();var id=x.closest("[data-wid]").dataset.wid;saveDeskWidgets(loadDeskWidgets().filter(function(w){return w.id!==id;}));renderDeskWidgets();};});
-    // тянем статистику по каждому виджету последовательно щадя API нашей же БД
+    // тянем статистику по каждому виджету (всё из своей локальной БД)
     ws.forEach(function(w){
-      jreq(API+"/widget_stat?"+widgetQS(w)).then(function(r){
+      var pr;
+      if(w.kind==="filter"){
+        // виджет по сохранённому фильтру (как в amo): считаем через фильтр-эндпоинт
+        var ep=w.entity==="contacts"?"/contacts_filter?":"/leads_filter?";
+        pr=jreq(API+ep+(w.qs?w.qs+"&":"")+"count_only=1").then(function(r){return {count:r.total||0,sum:r.sum||0};});
+      }else{
+        pr=jreq(API+"/widget_stat?"+widgetQS(w));
+      }
+      pr.then(function(r){
         var card=grid.querySelector('[data-wid="'+w.id+'"]');if(!card)return;
         if(w.metric==="sum"){card.querySelector("[data-c]").textContent=fmt(r.sum||0)+" ₽";card.querySelector("[data-c]").style.fontSize="27px";}
         else{card.querySelector("[data-c]").textContent=fmt(r.count||0);var sEl=card.querySelector("[data-s]");if(sEl)sEl.textContent=(r.sum?fmt(r.sum)+" ₽":"");}
@@ -1336,7 +1366,7 @@
   var coPage=0,coLoading=false;
   function vCompanies(){
     renderSidebar("lists");
-    setHeader("Списки",{count:""});
+    setHeader("Компании",{caret:true,onTitle:openListsMenu,count:""});
     $("#view").innerHTML=listTabsHtml("companies")+'<div style="padding:0 0 30px"><table class="amo"><thead><tr><th style="width:45%">Название</th><th>Дата создания</th></tr></thead><tbody id="cobody"></tbody></table><div id="comore" class="muted" style="padding:14px;text-align:center"></div></div>';
     bindListTabs();
     coPage=0;coLoading=false;loadCompanies();
@@ -1346,7 +1376,7 @@
     if(coLoading)return;coLoading=true;var next=coPage+1;$("#comore").textContent="Загрузка…";
     jreq(API+"/companies_page?page="+next).then(function(r){
       var items=(r&&r.items)||[];
-      if(next===1)setHeader("Компании",{count:fmt(r.total)+" компаний"});
+      if(next===1)setHeader("Компании",{caret:true,onTitle:openListsMenu,count:fmt(r.total)+" компаний"});
       if(!items.length){$("#comore").textContent=coPage?"Это все компании":"Компаний нет";return;}
       $("#cobody").insertAdjacentHTML("beforeend",items.map(function(c){return '<tr><td><a data-co="'+c.id+'">'+esc(c.name||"Без названия")+'</a></td><td class="muted">'+(c.created?dShort(c.created):"")+'</td></tr>';}).join(""));
       $("#cobody").querySelectorAll("[data-co]").forEach(function(a){a.onclick=function(){openCompany(parseInt(a.dataset.co,10));};});
@@ -1531,7 +1561,7 @@
   }
   function vContacts(){
     renderSidebar("lists");
-    setHeader("Списки",{count:fmt(META.counts.contacts)+" контактов",searchPh:"Поиск (имя, телефон, email — Enter) или клик — фильтр",newBtn:"+ Добавить контакт",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},onNew:newContact,onCfg:openColSettings,filter:{kind:"contacts"},dotsMenu:function(){return [
+    setHeader("Контакты",{caret:true,onTitle:openListsMenu,count:fmt(META.counts.contacts)+" контактов",searchPh:"Поиск (имя, телефон, email — Enter) или клик — фильтр",newBtn:"+ Добавить контакт",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},onNew:newContact,onCfg:openColSettings,filter:{kind:"contacts"},dotsMenu:function(){return [
       {label:"Настроить колонки",on:openColSettings},
       {label:"Экспорт списка в CSV",on:exportContactsCsv},
       "sep",
@@ -1845,18 +1875,19 @@
     if(!f)return "";
     return (f.values||[]).map(function(v){return v.value&&v.value.name?v.value.name:v.value;}).join(", ");
   }
-  // ─── СПИСКИ = как в amo: единый раздел с вкладками Контакты/Компании/каталоги ───
+  // ─── СПИСКИ = как в amo: меню в заголовке «Контакты ▾» (Контакты/Компании/каталоги), дефолт — Контакты ───
   var LIST_CATALOGS=null, listsTab="contacts";
-  function listTabsHtml(active){
-    listsTab=active;
-    var tabs=[["contacts","Контакты"],["companies","Компании"]];
-    (LIST_CATALOGS||[]).forEach(function(c){tabs.push(["cat:"+c.id,c.name]);});
-    return '<div class="lists-tabs">'+tabs.map(function(t){
-      return '<button class="lt'+(t[0]===active?" act":"")+'" data-lt="'+t[0]+'">'+esc(t[1])+'</button>';
-    }).join("")+'</div>';
+  function listsMenuItems(){
+    var items=[{label:"Контакты",on:function(){openListTab("contacts");}},{label:"Компании",on:function(){openListTab("companies");}}];
+    (LIST_CATALOGS||[]).forEach(function(c){items.push({label:c.name,on:function(){openListTab("cat:"+c.id);}});});
+    return items;
   }
-  function bindListTabs(){document.querySelectorAll(".lists-tabs .lt").forEach(function(b){b.onclick=function(){openListTab(b.dataset.lt);};});}
+  function openListsMenu(){openCtxMenu($("#secTitle"),listsMenuItems());}
+  // вкладок больше нет — меню в заголовке (1:1 с amo); функции оставлены пустыми для совместимости
+  function listTabsHtml(active){listsTab=active;return "";}
+  function bindListTabs(){}
   function openListTab(t){
+    listsTab=t;
     if(t==="contacts")return vContacts();
     if(t==="companies")return vCompanies();
     if(t.indexOf("cat:")===0)return vCatalog(parseInt(t.slice(4),10));
@@ -1874,8 +1905,8 @@
   }
   function vCatalog(id){
     renderSidebar("lists");
-    setHeader("Списки",{count:""});
     var c=(LIST_CATALOGS||[]).find(function(x){return x.id===id;});
+    setHeader(c?c.name:"Списки",{caret:true,onTitle:openListsMenu,count:c?fmt((c.elements||[]).length)+" элементов":""});
     if(!c){$("#view").innerHTML=listTabsHtml("cat:"+id)+'<div class="plain"><div class="pcard"><p class="muted">Каталог не найден.</p></div></div>';bindListTabs();return;}
     var typeName={products:"Товары/услуги",suppliers:"Юр. лица",invoices:"Счета и покупки",contacts:"Контакты",customers:"Покупатели"};
     var els=c.elements||[];
@@ -2010,7 +2041,7 @@
       TASK_TYPES=(r[5]&&r[5].types)||[];
       // живые счётчики из БД вместо статичных из слепка (копия синкается — цифры актуальные)
       META.counts=META.counts||{};
-      if(r[6]&&r[6].success){if(r[6].contacts!=null)META.counts.contacts=r[6].contacts;if(r[6].leads!=null)META.counts.leads=r[6].leads;if(r[6].companies!=null)META.counts.companies=r[6].companies;if(r[6].tasksDue!=null)META.counts.tasksDue=r[6].tasksDue;if(r[6].tasksOpen!=null)META.counts.tasksOpen=r[6].tasksOpen;}
+      if(r[6]&&r[6].success){["contacts","leads","companies","tasksDue","tasksOpen","imbox","mail","wazzup","market","notifications"].forEach(function(k){if(r[6][k]!=null)META.counts[k]=r[6][k];});}
       $("#app").style.display="flex";
       go("leads");
     });
