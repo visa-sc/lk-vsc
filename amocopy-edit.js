@@ -235,9 +235,11 @@ module.exports = function mountEditRoutes(app, guard) {
     res.json({ success: true });
   });
 
+  // допустимые типы сущностей для примечаний/задач/истории (как в amo)
+  const ENT3 = (v) => (v === "contacts" || v === "companies" ? v : "leads");
   // ── создание задачи ──
   app.post(`${E}/task`, guard, (req, res) => {
-    const entity_type = req.body.entity_type === "contacts" ? "contacts" : "leads";
+    const entity_type = ENT3(req.body.entity_type);
     const entity_id = parseInt(req.body.entity_id, 10);
     if (!entity_id) return res.status(400).json({ success: false, message: "нужен entity_id" });
     const id = nextId(), now = nowSec();
@@ -273,7 +275,7 @@ module.exports = function mountEditRoutes(app, guard) {
 
   // ── добавление примечания ──
   app.post(`${E}/note`, guard, (req, res) => {
-    const entity_type = req.body.entity_type === "contacts" ? "contacts" : "leads";
+    const entity_type = ENT3(req.body.entity_type);
     const entity_id = parseInt(req.body.entity_id, 10);
     const text = String(req.body.text || "").trim();
     if (!entity_id || !text) return res.status(400).json({ success: false, message: "нужны entity_id и text" });
@@ -285,7 +287,7 @@ module.exports = function mountEditRoutes(app, guard) {
 
   // ── история изменений сущности ──
   app.get(`${E}/history`, guard, (req, res) => {
-    const et = req.query.entity_type === "contacts" ? "contacts" : "leads";
+    const et = ENT3(req.query.entity_type);
     const eid = parseInt(req.query.entity_id, 10);
     if (!eid) return res.status(400).json({ success: false });
     const rows = db.prepare("SELECT ts,action,detail FROM changelog WHERE entity_type=? AND entity_id=? ORDER BY ts DESC LIMIT 200").all(et, eid);
@@ -294,7 +296,7 @@ module.exports = function mountEditRoutes(app, guard) {
 
   // локальные примечания (добавленные в копии) — чтобы карточка их показывала
   app.get(`${E}/notes_new`, guard, (req, res) => {
-    const et = req.query.entity_type === "contacts" ? "contacts" : "leads";
+    const et = ENT3(req.query.entity_type);
     const eid = parseInt(req.query.entity_id, 10);
     if (!eid) return res.status(400).json({ success: false });
     const rows = db.prepare("SELECT id,text,created_by,created_at FROM notes_new WHERE entity_type=? AND entity_id=? ORDER BY created_at DESC").all(et, eid);

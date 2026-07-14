@@ -1289,7 +1289,7 @@
           ["Примечаний",((r.notes||[]).length)+((r.notes_new||[]).length)]
         ])+'</div>';
       var reload=function(){openContact(id);}; // не рушим карточку до успешной загрузки
-      var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,(r.notes_new||[])),[],f,bg);},{type:"contacts",id:id,withTasks:false,reload:reload});
+      var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,(r.notes_new||[])),(r.tasks||[]),f,bg);},{type:"contacts",id:id,withTasks:true,reload:reload});
       bg.__reload=reload;
       var h=bg.querySelector(".dl-head .ava");if(h)h.textContent=init;
       bg.querySelectorAll("[data-l]").forEach(function(el){
@@ -1338,19 +1338,27 @@
     }).catch(function(){$("#comore").textContent="Недоступно";});
   }
   function openCompany(id){
-    jreq(API+"/company/"+id).then(function(r){
+    Promise.all([jreq(API+"/company/"+id),jreq("/edit-api/notes_new?entity_type=companies&entity_id="+id).catch(function(){return{items:[]};})]).then(function(rr){
+      var r=rr[0];
       if(!r.success){toast("Не удалось загрузить компанию",true);return;}
-      var c=r.company,emb=c._embedded||{};
+      var c=r.company,emb=c._embedded||{},notesNew=(rr[1]&&rr[1].items)||[],tasks=r.tasks||[];
       var conts=(emb.contacts||[]).map(function(x){return '<div class="dl-contact" style="cursor:pointer" data-c="'+x.id+'"><div class="ava">'+esc((x.name||"К").slice(0,1))+'</div><div><div style="color:var(--link)">'+esc(x.name||("Контакт #"+x.id))+'</div><div class="muted" style="font-size:12px">открыть контакт</div></div></div>';}).join("");
       if(conts)conts='<div class="fgroup" style="margin:0 20px">Контакты ('+(emb.contacts||[]).length+')</div>'+conts;
       var deals=(emb.leads||[]).map(function(l){var col=l.color||"#c1d5e0";return '<div class="dl-contact" style="cursor:pointer;border-left:4px solid '+esc(col)+'" data-l="'+l.id+'"><div class="ava" style="border-radius:6px;background:'+esc(col)+'22;color:#33404d">С</div><div><div style="color:var(--link)">'+esc(l.name||("Сделка #"+l.id))+'</div><div class="muted" style="font-size:12px">'+esc(l.st||"")+(l.price?(" · "+fmt(l.price)+" ₽"):"")+'</div></div></div>';}).join("");
       if(deals)deals='<div class="fgroup" style="margin:0 20px">Сделки ('+(emb.leads||[]).length+')</div>'+deals;
       var left='<div class="dl-head"><span class="back">‹</span><h2 class="editable" data-edit="coname">'+esc(c.name||("Компания #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div>'+
-        '<div class="dl-tabs" style="margin-top:6px"><span class="act">Основное</span></div>'+
-        '<div class="fields"><div class="frow"><div class="fl">Создана</div><div class="fv">'+dt(c.created_at)+'</div></div>'+
+        '<div class="dl-tabs" style="margin-top:6px"><span class="act" data-t="main">Основное</span><span data-t="stats">Статистика</span></div>'+
+        '<div data-panel="main"><div class="fields"><div class="frow"><div class="fl">Создана</div><div class="fv">'+dt(c.created_at)+'</div></div>'+
         '<div class="frow"><div class="fl">Изменена</div><div class="fv">'+dt(c.updated_at)+'</div></div>'+
-        fieldsHtml(c.custom_fields_values,CF&&CF.companies,"")+'</div>'+conts+deals;
-      var bg=cardShell(left,function(){return '<p class="muted" style="padding:16px 4px">Лента компании не выгружалась.</p>';},null);
+        fieldsGroupedHtml(c.custom_fields_values,CF&&CF.companies,"companies")+'</div>'+conts+deals+'</div>'+
+        '<div data-panel="stats" class="fields" style="display:none">'+cardStatsHtml([
+          ["Создана",dt(c.created_at)],["Дней в системе",Math.max(0,Math.floor((tnow()-(c.created_at||tnow()))/86400))],
+          ["Изменена",dt(c.updated_at)],["Контактов",(emb.contacts||[]).length],
+          ["Сделок",(emb.leads||[]).length],["Задач",tasks.length],["Примечаний",notesNew.length]
+        ])+'</div>';
+      var reload=function(){openCompany(id);};
+      var bg=cardShell(left,function(f){return feedHtml(mergeNotes([],notesNew),tasks,f,bg);},{type:"companies",id:id,withTasks:true,reload:reload});
+      bindFieldGroups(bg);bindCardTabs(bg);
       bg.querySelectorAll("[data-c]").forEach(function(el){el.onclick=function(){document.body.removeChild(bg);openContact(parseInt(el.dataset.c,10));};});
       bg.querySelectorAll("[data-l]").forEach(function(el){el.onclick=function(){document.body.removeChild(bg);openLead(parseInt(el.dataset.l,10));};});
     });
