@@ -27,8 +27,9 @@ async function amo(url, params) {
   }
   throw new Error("исчерпаны попытки " + url);
 }
-const up = db.prepare(`INSERT INTO cf_defs(entity,id,name,type,code,enums,sort) VALUES(@entity,@id,@name,@type,@code,@enums,@sort)
-  ON CONFLICT(entity,id) DO UPDATE SET name=excluded.name,type=excluded.type,code=excluded.code,enums=excluded.enums,sort=excluded.sort`);
+try { db.exec("ALTER TABLE cf_defs ADD COLUMN editable INTEGER DEFAULT 1"); } catch (_) {} // редактируемость (0 = только чтение)
+const up = db.prepare(`INSERT INTO cf_defs(entity,id,name,type,code,enums,sort,editable) VALUES(@entity,@id,@name,@type,@code,@enums,@sort,@editable)
+  ON CONFLICT(entity,id) DO UPDATE SET name=excluded.name,type=excluded.type,code=excluded.code,enums=excluded.enums,sort=excluded.sort,editable=excluded.editable`);
 (async () => {
   for (const ent of ["leads", "contacts", "companies"]) {
     let page = 1, n = 0;
@@ -36,8 +37,10 @@ const up = db.prepare(`INSERT INTO cf_defs(entity,id,name,type,code,enums,sort) 
       const d = await amo(`/api/v4/${ent}/custom_fields`, { limit: 250, page });
       const items = (d && d._embedded && d._embedded.custom_fields) || [];
       for (const f of items) {
+        // нередактируемое в UI: is_api_only, вычисляемые (formula) и трекинговые
+        const editable = (f.is_api_only || f.type === "formula" || f.type === "tracking_data") ? 0 : 1;
         up.run({ entity: ent, id: f.id, name: f.name || "", type: f.type || "", code: f.code || null,
-          enums: JSON.stringify((f.enums || []).map((e) => ({ id: e.id, value: e.value, sort: e.sort }))), sort: f.sort || 0 });
+          enums: JSON.stringify((f.enums || []).map((e) => ({ id: e.id, value: e.value, sort: e.sort }))), sort: f.sort || 0, editable });
         n++;
       }
       if (items.length < 250) break;

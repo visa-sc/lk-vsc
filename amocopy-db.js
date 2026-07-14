@@ -177,11 +177,13 @@ module.exports = function mountDbRoutes(app, guard, api) {
 
   // кастомные поля из cf_defs (единый источник правды — актуализируется amoCopySyncFields.js)
   app.get(`${api}/custom_fields`, guard, (req, res) => {
-    const rows = D.prepare("SELECT entity,id,name,type,code,enums,sort FROM cf_defs WHERE entity IN ('leads','contacts','companies') ORDER BY entity, sort").all();
+    const hasEditable = (() => { try { return !!D.prepare("SELECT editable FROM cf_defs LIMIT 1").get() || true; } catch (_) { return false; } })();
+    const cols = hasEditable ? "entity,id,name,type,code,enums,sort,editable" : "entity,id,name,type,code,enums,sort";
+    const rows = D.prepare("SELECT " + cols + " FROM cf_defs WHERE entity IN ('leads','contacts','companies') ORDER BY entity, sort").all();
     const out = { leads: [], contacts: [], companies: [] };
     for (const r of rows) {
       if (!out[r.entity]) continue;
-      out[r.entity].push({ id: r.id, name: r.name, type: r.type, code: r.code || null, enums: J(r.enums, []) });
+      out[r.entity].push({ id: r.id, name: r.name, type: r.type, code: r.code || null, enums: J(r.enums, []), editable: r.editable === 0 ? false : true });
     }
     res.json(out);
   });
