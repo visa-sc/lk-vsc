@@ -87,7 +87,7 @@
   table.amo tr:hover td { background:#f8fafc; }
 
   /* ── карточка (сделка/контакт) ── */
-  .dcard-bg { position:fixed; inset:0; z-index:100; display:flex; background:#fff; }
+  .dcard-bg { position:fixed; top:0; right:0; bottom:0; left:66px; z-index:100; display:flex; background:#fff; }
   .dcard-l { width:430px; flex-shrink:0; border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:auto; }
   .dl-head { padding:16px 20px 0; }
   .dl-head .back { color:var(--mut); font-size:20px; margin-right:8px; cursor:pointer; }
@@ -326,7 +326,7 @@
     $("#sidebar").innerHTML='<div class="logo">V|S|C</div>'+NAV.filter(navAllowed).map(function(n){
       return '<button class="nav-i'+(n[0]===active?" act":"")+'" data-v="'+n[0]+'">'+ICONS[n[2]]+'<span>'+n[1]+'</span></button>';
     }).join("");
-    document.querySelectorAll(".nav-i").forEach(function(b){b.onclick=function(){go(b.dataset.v);};});
+    document.querySelectorAll(".nav-i").forEach(function(b){b.onclick=function(){document.querySelectorAll(".dcard-bg").forEach(function(x){x.remove();});go(b.dataset.v);};});
   }
 
   /* ─── шапка ─── */
@@ -771,6 +771,9 @@
   }
   // ent = {type:"leads"|"contacts", id, withTasks:bool, reload:fn} — для композеров записи
   function cardShell(leftHtml,feedRender,ent){
+    // атомарная замена: убираем прежние карточки только сейчас (после успешной загрузки данных),
+    // поэтому reload больше не выкидывает пользователя при кратком сбое запроса
+    document.querySelectorAll(".dcard-bg").forEach(function(x){x.remove();});
     var bg=document.createElement("div");
     bg.className="dcard-bg";
     var filters=(ent&&ent.withTasks)?FEED_FILTERS.concat([["history","история"]]):FEED_FILTERS.filter(function(f){return f[0]!=="tasks";}).concat([["history","история"]]);
@@ -839,7 +842,7 @@
   }
   function openLead(id){
     Promise.all([jreq(API+"/lead/"+id),jreq("/edit-api/notes_new?entity_type=leads&entity_id="+id).catch(function(){return{items:[]};})]).then(function(rr){
-      var r=rr[0]; if(!r.success)return alert(r.message||"Не найдено");
+      var r=rr[0]; if(!r.success){toast(r.message||"Не удалось загрузить — попробуйте ещё раз",true);return;}
       var localNotes=(rr[1]&&rr[1].items)||[];
       var l=r.lead;
       var p=PIPES.find(function(x){return x.id===l.pipeline_id;});
@@ -851,7 +854,7 @@
       var companies=((l._embedded&&l._embedded.companies)||[]).map(function(co){
         return '<div class="dl-contact" style="cursor:pointer" data-co="'+co.id+'"><div class="ava" style="border-radius:6px">🏢</div><div><div style="color:var(--link)">'+esc(co.name||("Компания #"+co.id))+'</div><div class="muted" style="font-size:12px">открыть карточку компании</div></div></div>';
       }).join("");
-      var reload=function(){document.body.removeChild(bg);openLead(id);};
+      var reload=function(){openLead(id);}; // не рушим карточку до успешной загрузки (см. removeChild в .then)
       var tagNames=((l._embedded&&l._embedded.tags)||[]).map(function(t){return t.name;});
       var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить сделку">🗑</button><h2 class="editable" data-edit="name">'+esc(l.name||("Сделка #"+l.id))+'</h2><div class="dl-sub">#'+l.id+' &nbsp;<span class="tags-edit" title="Изменить теги">'+(tags||'<span class="muted">+ теги</span>')+'</span></div></div>'+
         '<div class="dl-stage"><div class="pn">'+esc(p?p.name:"")+'</div><div class="sn">'+esc(stName)+'</div>'+stageBarHtml(p,l.status_id)+'</div>'+
@@ -913,7 +916,7 @@
   }
   function openContact(id){
     Promise.all([jreq(API+"/contact/"+id),jreq("/edit-api/notes_new?entity_type=contacts&entity_id="+id).catch(function(){return{items:[]};})]).then(function(rr){
-      var r=rr[0]; if(!r.success)return alert(r.message||"Не найдено");
+      var r=rr[0]; if(!r.success){toast(r.message||"Не удалось загрузить — попробуйте ещё раз",true);return;}
       r.notes_new=(rr[1]&&rr[1].items)||[];
       var c=r.contact;
       var larr=(r.leads&&r.leads.length)?r.leads:((c._embedded&&c._embedded.leads)||[]);
@@ -936,7 +939,7 @@
           '<div class="frow"><div class="fl">Изменён</div><div class="fv">'+dt(c.updated_at)+'</div></div>'+
           fieldsHtml(c.custom_fields_values,CF&&CF.contacts,"contacts")+
         '</div>'+companies+leads;
-      var reload=function(){document.body.removeChild(bg);openContact(id);};
+      var reload=function(){openContact(id);}; // не рушим карточку до успешной загрузки
       var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,(r.notes_new||[])),[],f,bg);},{type:"contacts",id:id,withTasks:false,reload:reload});
       bg.__reload=reload;
       var h=bg.querySelector(".dl-head .ava");if(h)h.textContent=init;
@@ -984,7 +987,7 @@
   }
   function openCompany(id){
     jreq(API+"/company/"+id).then(function(r){
-      if(!r.success)return alert("Не найдено");
+      if(!r.success){toast("Не удалось загрузить компанию",true);return;}
       var c=r.company,emb=c._embedded||{};
       var conts=(emb.contacts||[]).map(function(x){return '<div class="dl-contact" style="cursor:pointer" data-c="'+x.id+'"><div class="ava">'+esc((x.name||"К").slice(0,1))+'</div><div><div style="color:var(--link)">'+esc(x.name||("Контакт #"+x.id))+'</div><div class="muted" style="font-size:12px">открыть контакт</div></div></div>';}).join("");
       if(conts)conts='<div class="fgroup" style="margin:0 20px">Контакты ('+(emb.contacts||[]).length+')</div>'+conts;

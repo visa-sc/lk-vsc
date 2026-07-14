@@ -25,6 +25,7 @@ function open() {
   if (db) return db;
   db = new Database(DB_PATH, { readonly: true, fileMustExist: true });
   db.pragma("query_only = true");
+  db.pragma("busy_timeout = 8000"); // ждать снятия блокировки при параллельной записи, а не падать SQLITE_BUSY
   try { BUCKETS = JSON.parse(fs.readFileSync(path.join(DATA_DIR, "meta.json"), "utf8")).buckets || 500; } catch (_) {}
   return db;
 }

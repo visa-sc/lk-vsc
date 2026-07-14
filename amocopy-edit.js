@@ -29,6 +29,7 @@ module.exports = function mountEditRoutes(app, guard) {
     db = new Database(DB_PATH, { fileMustExist: true });
     db.pragma("journal_mode = WAL");
     db.pragma("synchronous = NORMAL");
+    db.pragma("busy_timeout = 8000"); // не падать при параллельном чтении
   } catch (e) { console.error("amocopy-edit: БД для записи недоступна:", e.message); return false; }
 
   db.exec(`
