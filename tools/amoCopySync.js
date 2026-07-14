@@ -36,7 +36,9 @@ const since = parseInt(arg("since", ""), 10) || state["last_" + ENTITY] || SNAPS
 const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
 db.exec("CREATE TABLE IF NOT EXISTS sync_conflicts (entity_type TEXT, entity_id INTEGER, ts INTEGER, note TEXT)");
-const hasLocalEdit = db.prepare("SELECT 1 FROM changelog WHERE entity_type=? AND entity_id=? LIMIT 1");
+// конфликтом считаем только правки САМОЙ сущности (поля/этап/теги/слияние).
+// Задачи и примечания живут в своих таблицах — амо-версия сущности их не трогает, синк не блокируем.
+const hasLocalEdit = db.prepare("SELECT 1 FROM changelog WHERE entity_type=? AND entity_id=? AND action IN ('edit','edit_cf','stage','tags','merge') LIMIT 1");
 
 let _last = 0;
 async function amoGet(url, params) {
