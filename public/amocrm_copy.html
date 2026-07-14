@@ -67,6 +67,8 @@
   .col-resize { position:absolute; top:0; right:-4px; width:8px; height:100%; cursor:col-resize; z-index:2; user-select:none; }
   .col-resize:hover { background:linear-gradient(90deg,transparent 3px,#9fc3e8 3px,#9fc3e8 5px,transparent 5px); }
   table.amo th { position:relative; }
+  table.amo th.sortable { cursor:pointer; user-select:none; }
+  table.amo th.sortable:hover { color:var(--link); }
   .deal-chip { display:inline-block; max-width:100%; padding:2px 8px; margin:2px 4px 2px 0; border-radius:3px; font-size:12.5px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; vertical-align:middle; }
   .deal-chip:hover { filter:brightness(.96); text-decoration:underline; }
   .kb-quick { margin:0 8px; padding:8px 10px; border:1px dashed #c3ccd6; border-radius:4px; color:#7b8794; font-size:13px; text-align:center; cursor:pointer; background:#fafbfc; }
@@ -562,12 +564,11 @@
     var tot=pipeTotal(p.id);
     setHeader(p.name,{caret:true,onTitle:togglePipePanel,count:fmt(tot.c)+" сделки: <b>"+fmt(tot.s)+" ₽</b>",newBtn:"+ Новая сделка",onNew:function(){newLead(p);},searchPh:"Поиск сделки (название, #id, или клик — фильтр)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);},
       filter:{kind:"leads",statuses:(p._embedded&&p._embedded.statuses)||[]},
-      onCfg:function(){leadViewMode="kanban";if(ME&&(ME.is_admin||(ME.rights&&ME.rights.sections&&ME.rights.sections.settings))){settingsTab="pipelines";go("settings");}else toast("Настройка воронок — в разделе «Настройки» (только админ)");},
+      onCfg:function(){if(leadViewMode==="list"){openLeadColSettings();return;}if(ME&&(ME.is_admin||(ME.rights&&ME.rights.sections&&ME.rights.sections.settings))){settingsTab="pipelines";go("settings");}else toast("Настройка воронок — в разделе «Настройки» (только админ)");},
       dotsMenu:function(){return [
         {label:leadViewMode==="list"?"Показать воронкой":"Показать списком",on:function(){leadViewMode=leadViewMode==="list"?"kanban":"list";vLeads();}},
-        {label:"Экспорт этой воронки в CSV",on:function(){exportLeadsCsv(p);}},
-        "sep",
-        {label:"Настройка воронок и этапов",on:function(){if(ME&&(ME.is_admin||(ME.rights&&ME.rights.sections&&ME.rights.sections.settings))){settingsTab="pipelines";go("settings");}else toast("Только для администратора");}}
+        (leadViewMode==="list"?{label:"Настроить колонки",on:openLeadColSettings}:{label:"Настройка воронок и этапов",on:function(){if(ME&&(ME.is_admin||(ME.rights&&ME.rights.sections&&ME.rights.sections.settings))){settingsTab="pipelines";go("settings");}else toast("Только для администратора");}}),
+        {label:"Экспорт этой воронки в CSV",on:function(){exportLeadsCsv(p);}}
       ];}});
     renderPipePanel();
     if(leadViewMode==="list")return vLeadsList(p);
@@ -622,20 +623,61 @@
     document.querySelectorAll(".lead-toggle button").forEach(function(b){b.onclick=function(){if(leadViewMode!==b.dataset.m){leadViewMode=b.dataset.m;vLeads();}};});
   }
   var llPage=0,llLoading=false;
+  // настраиваемые колонки списка сделок (как в amoCRM): базовые + любые поля сделки
+  var LEAD_LIST_BASE=[["name","Название",1],["sid","Этап",1],["price","Бюджет",1],["resp","Ответственный",1],["created","Дата создания",0],["updated","Дата изменения",1]];
+  var LEAD_SORTABLE={name:1,sid:1,price:1,created:1,updated:1};
+  var leadSort={by:"updated",dir:"desc"};
+  function leadListAllCols(){var cf=((CF&&CF.leads)||[]).filter(function(f){return !isSeparator(f.name);}).map(function(f){return ["cf"+f.id,f.name,0];});return LEAD_LIST_BASE.concat(cf);}
+  function leadListSel(){try{return JSON.parse(localStorage.getItem("crm_lead_cols"))||null;}catch(e){return null;}}
+  function leadListActiveCols(){var sel=leadListSel();var all=leadListAllCols();return all.filter(function(c){return sel?sel.indexOf(c[0])>=0:c[2];});}
+  function leadCell(l,key,stName){
+    if(key==="name")return '<a data-l="'+l.id+'">'+esc(l.name||("#"+l.id))+'</a>';
+    if(key==="sid"){var col=(function(){var s=null;return s;})();return '<span class="muted">'+esc(stName[l.sid]||"")+'</span>';}
+    if(key==="price")return fmt(l.price)+' ₽';
+    if(key==="resp")return '<span class="muted">'+esc(l.resp||"")+'</span>';
+    if(key==="created")return '<span class="muted">'+(l.created?dt(l.created):"")+'</span>';
+    if(key==="updated")return '<span class="muted">'+(l.updated?dt(l.updated):"")+'</span>';
+    if(key.slice(0,2)==="cf"){var fid=parseInt(key.slice(2),10),f=(l.cf||[]).find(function(x){return x.field_id===fid;});if(!f)return "";var v=(f.values||[]).map(function(x){var vv=x.value&&x.value.name?x.value.name:x.value;if(typeof vv==="boolean")vv=vv?"Да":"Нет";return vv;}).join(", ");return '<span class="muted">'+esc(String(v).slice(0,70))+'</span>';}
+    return "";
+  }
+  function leadHeadHtml(){
+    return '<tr>'+leadListActiveCols().map(function(c){
+      var arrow=(leadSort.by===c[0])?(leadSort.dir==="asc"?" ▲":" ▼"):"";
+      return '<th'+(c[0]==="name"?' style="width:28%"':"")+(LEAD_SORTABLE[c[0]]?' class="sortable" data-sort="'+c[0]+'"':"")+'>'+esc(c[1])+arrow+'</th>';
+    }).join("")+'</tr>';
+  }
+  function openLeadColSettings(){
+    var all=leadListAllCols();
+    var sel=leadListSel()||all.filter(function(c){return c[2];}).map(function(c){return c[0];});
+    var base=all.slice(0,LEAD_LIST_BASE.length),custom=all.slice(LEAD_LIST_BASE.length);
+    var lbl=function(c){return '<label style="display:block;padding:5px 0"><input type="checkbox" data-col="'+c[0]+'"'+(sel.indexOf(c[0])>=0?" checked":"")+(c[0]==="name"?" disabled":"")+'> '+esc(c[1])+'</label>';};
+    var bg=document.createElement("div");bg.className="modal-bg";
+    bg.innerHTML='<div class="modal" style="max-width:520px"><button class="x">×</button><h2>Колонки списка сделок</h2>'+
+      '<input type="text" id="colFind" placeholder="Поиск поля…" style="width:100%;padding:7px 10px;margin-bottom:10px;border:1px solid var(--border);border-radius:7px">'+
+      '<div style="font-size:12px;color:#8a949e;text-transform:uppercase;font-weight:600;margin:4px 0">Основные</div>'+base.map(lbl).join("")+
+      '<div style="font-size:12px;color:#8a949e;text-transform:uppercase;font-weight:600;margin:12px 0 4px">Поля сделки ('+custom.length+')</div><div id="cfCols">'+custom.map(lbl).join("")+'</div>'+
+      '<div style="margin-top:14px"><button class="btn" id="colSave">Применить</button></div></div>';
+    bg.onclick=function(e){if(e.target===bg||e.target.className==="x")document.body.removeChild(bg);};
+    document.body.appendChild(bg);
+    bg.querySelector("#colFind").oninput=function(){var q=this.value.toLowerCase();bg.querySelectorAll("#cfCols label").forEach(function(l){l.style.display=l.textContent.toLowerCase().indexOf(q)>=0?"":"none";});};
+    bg.querySelector("#colSave").onclick=function(){var chosen=["name"];bg.querySelectorAll("[data-col]").forEach(function(cb){if(cb.checked&&cb.dataset.col!=="name")chosen.push(cb.dataset.col);});localStorage.setItem("crm_lead_cols",JSON.stringify(chosen));document.body.removeChild(bg);vLeads();};
+  }
   function vLeadsList(p){
     var sts=(p._embedded&&p._embedded.statuses)||[];var stName={};sts.forEach(function(s){stName[s.id]=s.name;});
-    $("#view").innerHTML=leadToggleHtml()+'<div class="plain" style="max-width:none;padding-top:0"><table class="amo"><thead><tr><th style="width:34%">Название</th><th>Этап</th><th>Бюджет</th><th>Ответственный</th><th style="width:120px">Изменена</th></tr></thead><tbody id="llbody"></tbody></table><div id="llmore" class="muted" style="padding:14px;text-align:center"></div></div>';
+    var cols=leadListActiveCols();
+    $("#view").innerHTML=leadToggleHtml()+'<div class="plain" style="max-width:none;padding-top:0"><table class="amo"><thead>'+leadHeadHtml()+'</thead><tbody id="llbody"></tbody></table><div id="llmore" class="muted" style="padding:14px;text-align:center"></div></div>';
     makeTableResizable($("#view table.amo"),"crm_lead_colw");
     bindLeadToggle();
+    $("#view").querySelectorAll("th.sortable").forEach(function(th){th.onclick=function(){var by=th.dataset.sort;if(leadSort.by===by)leadSort.dir=leadSort.dir==="asc"?"desc":"asc";else{leadSort.by=by;leadSort.dir="desc";}vLeads();};});
     llPage=0;llLoading=false;
     var load=function(){
       if(llLoading)return;llLoading=true;var next=llPage+1;$("#llmore").textContent="Загрузка…";
-      jreq(API+"/leads_all?pipeline="+p.id+"&page="+next).then(function(items){
-        if(!Array.isArray(items)||!items.length){$("#llmore").textContent=llPage?"Это все сделки":"Сделок нет";return;}
-        $("#llbody").insertAdjacentHTML("beforeend",items.map(function(l){return '<tr><td><a data-l="'+l.id+'">'+esc(l.name||("#"+l.id))+'</a></td><td class="muted">'+esc(stName[l.sid]||"")+'</td><td>'+fmt(l.price)+' ₽</td><td class="muted">'+esc(l.resp||"")+'</td><td class="muted">'+(l.updated?dShort(l.updated):"")+'</td></tr>';}).join(""));
+      jreq(API+"/leads_all?pipeline="+p.id+"&page="+next+"&sort="+leadSort.by+"&dir="+leadSort.dir).then(function(items){
+        if(!Array.isArray(items)||!items.length){$("#llmore").textContent=llPage?"Это все сделки":"Сделок нет";llLoading=false;return;}
+        $("#llbody").insertAdjacentHTML("beforeend",items.map(function(l){return '<tr>'+cols.map(function(c){return '<td>'+leadCell(l,c[0],stName)+'</td>';}).join("")+'</tr>';}).join(""));
         $("#llbody").querySelectorAll("[data-l]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.l,10));};});
         llPage=next;llLoading=false;$("#llmore").textContent="";
-      }).catch(function(){$("#llmore").textContent="Недоступно";});
+      }).catch(function(){$("#llmore").textContent="Недоступно";llLoading=false;});
     };
     load();
     $("#main").onscroll=function(){if(llLoading)return;var m=$("#main");if(m.scrollTop+m.clientHeight>m.scrollHeight-600)load();};

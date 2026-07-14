@@ -219,12 +219,15 @@ module.exports = function mountDbRoutes(app, guard, api) {
   });
 
   // режим списка: все сделки воронки постранично (для табличного вида)
-  const qLeadsAll = D.prepare("SELECT id,name,price,status_id,responsible_user_id,created_at,updated_at FROM leads WHERE pipeline_id=? ORDER BY updated_at DESC LIMIT 50 OFFSET ?");
+  // сортировка списка сделок по разрешённым колонкам (клик по заголовку)
+  const LEAD_SORTS = { updated: "updated_at", created: "created_at", price: "price", name: "name", sid: "status_id" };
   app.get(`${api}/leads_all`, guard, (req, res) => {
     const pid = String(req.query.pipeline || ""), page = String(req.query.page || "1");
     if (!PAGE_FILE_RE.test(pid) || !PAGE_FILE_RE.test(page)) return res.status(400).json({ success: false });
-    const rows = qLeadsAll.all(+pid, (+page - 1) * 50);
-    res.json(rows.map((l) => ({ id: l.id, name: l.name, price: l.price, sid: l.status_id, resp: uName[l.responsible_user_id] || "", created: l.created_at, updated: l.updated_at })));
+    const sortCol = LEAD_SORTS[req.query.sort] || "updated_at";
+    const dir = String(req.query.dir).toLowerCase() === "asc" ? "ASC" : "DESC";
+    const rows = D.prepare("SELECT id,name,price,status_id,responsible_user_id,created_at,updated_at,cf FROM leads WHERE pipeline_id=? ORDER BY " + sortCol + " " + dir + " LIMIT 50 OFFSET ?").all(+pid, (+page - 1) * 50);
+    res.json(rows.map((l) => ({ id: l.id, name: l.name, price: l.price, sid: l.status_id, resp: uName[l.responsible_user_id] || "", created: l.created_at, updated: l.updated_at, cf: J(l.cf, []) || [] })));
   });
 
   // поиск по сделкам (название/id) — из шапки
