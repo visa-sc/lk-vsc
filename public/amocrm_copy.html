@@ -106,6 +106,15 @@
   .frow .fl { width:44%; color:#8b939c; flex-shrink:0; padding-right:8px; }
   .frow .fv { color:var(--txt); word-break:break-word; }
   .fgroup { background:#f3f5f7; border-radius:3px; padding:8px 12px; font-size:13px; color:#5d6774; margin:10px 0 4px; }
+  /* сворачиваемые группы полей (как в amoCRM) */
+  .fgrp { margin:4px -20px 0; border-top:1px solid var(--border); }
+  .fgrp-h { padding:11px 20px; font-weight:600; font-size:13px; color:#3a4652; background:#f5f8fa; cursor:pointer; display:flex; justify-content:space-between; align-items:center; user-select:none; }
+  .fgrp-h:hover { background:#eaf1f7; }
+  .fgrp-caret { color:#9aa4ae; transition:transform .15s; font-size:12px; }
+  .fgrp.open .fgrp-caret { transform:rotate(90deg); }
+  .fgrp-body { display:none; padding:2px 20px 8px; }
+  .fgrp.open .fgrp-body { display:block; }
+  .ro-lock { font-size:11px; opacity:.5; }
   .dl-contact { border-top:1px solid var(--border); padding:14px 20px; display:flex; align-items:center; gap:10px; }
   .ava { width:36px; height:36px; border-radius:50%; background:#d7dee6; color:#5d6b7c; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
   .dcard-r { flex:1; background:var(--feed-bg); display:flex; flex-direction:column; min-width:0; }
@@ -704,15 +713,43 @@
     }).join(", ");
   }
   // редактируемые кастомные поля. entity: "leads"|"contacts". Показываем заполненные (клик→правка).
+  // одна строка поля. editable=false → поле только для чтения (как нередактируемые поля amo)
+  function cfRowHtml(f,t,byId,entity,editById){
+    var v=cfDisplay(f,t);
+    if(v===""||v==null)return "";
+    var name=f.field_name||byId[f.field_id]||f.field_id;
+    var ro=editById&&editById[f.field_id]===false; // нередактируемое поле
+    var canEdit=entity&&!ro;
+    return '<div class="frow"><div class="fl">'+esc(name)+(ro?' <span class="ro-lock" title="только для чтения">🔒</span>':"")+'</div><div class="fv'+(canEdit?" cf-edit":"")+'" data-fid="'+f.field_id+'" data-ftype="'+esc(t)+'" data-fname="'+esc(f.field_name||byId[f.field_id]||"")+'">'+esc(String(v).slice(0,500))+'</div></div>';
+  }
   function fieldsHtml(vals,defs,entity){
     var byId={},typeById={};(defs||[]).forEach(function(f){byId[f.id]=f.name;typeById[f.id]=f.type;});
-    return (vals||[]).map(function(f){
-      var t=f.field_type||typeById[f.field_id]||"";
-      var v=cfDisplay(f,t);
-      if(v===""||v==null)return "";
-      return '<div class="frow"><div class="fl">'+esc(f.field_name||byId[f.field_id]||f.field_id)+'</div><div class="fv'+(entity?" cf-edit":"")+'" data-fid="'+f.field_id+'" data-ftype="'+esc(t)+'" data-fname="'+esc(f.field_name||byId[f.field_id]||"")+'">'+esc(String(v).slice(0,500))+'</div></div>';
-    }).join("");
+    return (vals||[]).map(function(f){var t=f.field_type||typeById[f.field_id]||"";return cfRowHtml(f,t,byId,entity);}).join("");
   }
+  // группы полей = поля-разделители «---Название---» в порядке сортировки (ровно как в amoCRM)
+  function isSeparator(name){return /^\s*[-–—]{2,}.+[-–—]{2,}\s*$/.test(name||"");}
+  function fieldGroups(defs){
+    var groups=[{name:null,ids:[]}];
+    (defs||[]).forEach(function(f){
+      if(isSeparator(f.name)){groups.push({name:String(f.name).replace(/^[-–—\s]+|[-–—\s]+$/g,"").trim(),ids:[]});}
+      else groups[groups.length-1].ids.push(f.id);
+    });
+    return groups;
+  }
+  function fieldsGroupedHtml(vals,defs,entity){
+    var byId={},typeById={},editById={};(defs||[]).forEach(function(f){byId[f.id]=f.name;typeById[f.id]=f.type;if(f.editable===false)editById[f.id]=false;});
+    var valById={};(vals||[]).forEach(function(v){valById[v.field_id]=v;});
+    var groups=fieldGroups(defs),html="";
+    groups.forEach(function(g){
+      var rows="";
+      g.ids.forEach(function(fid){var f=valById[fid];if(!f)return;var t=f.field_type||typeById[fid]||"";rows+=cfRowHtml(f,t,byId,entity,editById);});
+      if(!rows)return;
+      if(g.name===null){html+=rows;}
+      else html+='<div class="fgrp"><div class="fgrp-h">'+esc(g.name)+'<span class="fgrp-caret">▸</span></div><div class="fgrp-body">'+rows+'</div></div>';
+    });
+    return html;
+  }
+  function bindFieldGroups(bg){bg.querySelectorAll(".fgrp-h").forEach(function(h){h.onclick=function(){h.parentNode.classList.toggle("open");};});}
   function cfEnums(defs,fid){var d=(defs||[]).find(function(x){return x.id===fid;});return (d&&d.enums)||[];}
   // клик по кастомному полю → инпут/селект, сохранение через /edit-api/{entity}/:id/cf
   function bindCfFields(bg,entity,id,defs,reload){
@@ -865,8 +902,7 @@
           '<div class="frow"><div class="fl">Создана</div><div class="fv">'+dt(l.created_at)+'</div></div>'+
           '<div class="frow"><div class="fl">Изменена</div><div class="fv">'+dt(l.updated_at)+'</div></div>'+
           (l.closed_at?('<div class="frow"><div class="fl">Закрыта</div><div class="fv">'+dt(l.closed_at)+'</div></div>'):"")+
-          '<div class="fgroup">Основная информация</div>'+
-          fieldsHtml(l.custom_fields_values,CF&&CF.leads,"leads")+
+          fieldsGroupedHtml(l.custom_fields_values,CF&&CF.leads,"leads")+
         '</div>'+(contacts?'<div class="fgroup" style="margin-top:6px">Контакты</div>'+contacts:"")+(companies?'<div class="fgroup" style="margin-top:6px">Компания</div>'+companies:"");
       var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,localNotes),r.tasks,f,bg);},{type:"leads",id:id,withTasks:true,reload:reload});
       bg.__reload=reload;
@@ -880,6 +916,7 @@
       bindEditable(bg,"price",function(){return l.price;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{price:v});},reload,"number");
       bindEditable(bg,"resp",function(){return l.responsible_user_id;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{responsible_user_id:v});},reload,"user");
       bindCfFields(bg,"leads",id,CF&&CF.leads,reload);
+      bindFieldGroups(bg);
       // теги
       bg.querySelector(".tags-edit").onclick=function(){
         var nt=prompt("Теги через запятую:",tagNames.join(", "));
@@ -937,7 +974,7 @@
           '<div class="frow"><div class="fl">Отв-ный</div><div class="fv editable" data-edit="cresp">'+esc(userName(c.responsible_user_id))+'</div></div>'+
           '<div class="frow"><div class="fl">Создан</div><div class="fv">'+dt(c.created_at)+'</div></div>'+
           '<div class="frow"><div class="fl">Изменён</div><div class="fv">'+dt(c.updated_at)+'</div></div>'+
-          fieldsHtml(c.custom_fields_values,CF&&CF.contacts,"contacts")+
+          fieldsGroupedHtml(c.custom_fields_values,CF&&CF.contacts,"contacts")+
         '</div>'+companies+leads;
       var reload=function(){openContact(id);}; // не рушим карточку до успешной загрузки
       var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,(r.notes_new||[])),[],f,bg);},{type:"contacts",id:id,withTasks:false,reload:reload});
@@ -952,6 +989,7 @@
       bindEditable(bg,"cname",function(){return c.name;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{name:v});},reload,"text");
       bindEditable(bg,"cresp",function(){return c.responsible_user_id;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{responsible_user_id:v});},reload,"user");
       bindCfFields(bg,"contacts",id,CF&&CF.contacts,reload);
+      bindFieldGroups(bg);
       bg.querySelector(".dl-del").onclick=function(){
         if(!confirm("Удалить контакт «"+(c.name||id)+"» из копии?"))return;
         ereq("POST","/edit-api/contact/"+id+"/delete").then(function(rr){if(rr&&rr.success){toast("Контакт удалён");document.body.removeChild(bg);if(views[curView])views[curView]();}else toast("Не удалось",true);});
