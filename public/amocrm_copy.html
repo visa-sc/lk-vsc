@@ -1012,6 +1012,9 @@
     var byId={},typeById={},editById={},defById={};(defs||[]).forEach(function(f){byId[f.id]=f.name;typeById[f.id]=f.type;defById[f.id]=f;if(f.editable===false)editById[f.id]=false;});
     var valById={};(vals||[]).forEach(function(v){valById[v.field_id]=v;});
     var groups=fieldGroups(defs),html="";
+    // если разделителей-групп нет (напр. у компаний) — верхние поля показываем как группу «Основное»
+    // (с пустыми редактируемыми «+ добавить»), а не только заполненные
+    if(entity&&groups.length===1&&groups[0].name===null&&groups[0].ids.length)groups[0].name="Основное";
     groups.forEach(function(g){
       if(g.name===null){
         // верхние поля (до первого разделителя) — только заполненные, всегда видны
