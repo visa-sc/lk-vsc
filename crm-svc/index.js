@@ -34,6 +34,17 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(BASE, "public", "amocrm_copy.html"));
 });
 
+// SPA-пути как в amo: F5/прямая ссылка на /leads/detail/123, /contacts/list/... и т.п.
+// отдают приложение (роутинг делает фронт по location.pathname). Regex-роуты Express
+// здесь падают (PathError) — поэтому middleware с ручной проверкой пути.
+app.use((req, res, next) => {
+  if (req.method === "GET" && /^\/(leads|contacts|companies|customers|todo|dashboard|stats|settings|mail|imbox|fdoc|wazzup|market|auto|refs|devnotes|catalogs)(\/|$)/.test(req.path)) {
+    res.set("Cache-Control", "no-cache");
+    return res.sendFile(path.join(BASE, "public", "amocrm_copy.html"));
+  }
+  next();
+});
+
 // на этом сервисе доступ только по коду — vsc-fallback отклоняем
 function noVscAccess(req, res) {
   return res.status(401).json({ success: false, message: "Нужен вход по коду" });

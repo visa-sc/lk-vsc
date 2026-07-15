@@ -1359,8 +1359,8 @@
     bg.querySelectorAll(".wrow").forEach(function(w){w.onclick=function(){toast("Виджет «"+w.dataset.w+"» подключим вместе с интеграцией");};});
     var wa=bg.querySelector(".wadd");if(wa)wa.onclick=function(){toast("Каталог виджетов — в разделе amoМаркет");};
     document.body.appendChild(bg);
-    bg.querySelector(".back").onclick=function(){document.body.removeChild(bg);};
-    var esch=function(e){if(e.key==="Escape"&&document.body.contains(bg)){document.body.removeChild(bg);document.removeEventListener("keydown",esch);}};
+    bg.querySelector(".back").onclick=function(){document.body.removeChild(bg);pushUrl(sectionPath(curView));};
+    var esch=function(e){if(e.key==="Escape"&&document.body.contains(bg)){document.body.removeChild(bg);document.removeEventListener("keydown",esch);pushUrl(sectionPath(curView));}};
     document.addEventListener("keydown",esch);
     var feed=bg.querySelector(".feed");
     var tabs=bg.querySelector(".feed-tabs");
@@ -1426,6 +1426,7 @@
       var r=rr[0]; if(!r.success){toast(r.message||"Не удалось загрузить — попробуйте ещё раз",true);return;}
       var localNotes=(rr[1]&&rr[1].items)||[];
       var l=r.lead;
+      pushUrl("/leads/detail/"+id);
       var p=PIPES.find(function(x){return x.id===l.pipeline_id;});
       var stName="";((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===l.status_id)stName=s.name;});
       var tags=((l._embedded&&l._embedded.tags)||[]).map(function(t){return '<span class="tag">'+esc(t.name)+'</span>';}).join("");
@@ -1613,6 +1614,7 @@
       var r=rr[0]; if(!r.success){toast(r.message||"Не удалось загрузить — попробуйте ещё раз",true);return;}
       r.notes_new=(rr[1]&&rr[1].items)||[];
       var c=r.contact;
+      pushUrl("/contacts/detail/"+id);
       var larr=(r.leads&&r.leads.length)?r.leads:((c._embedded&&c._embedded.leads)||[]);
       var leads=larr.map(function(l){
         var st=l.st;if(!st){var p=PIPES.find(function(x){return x.id===l.pid;});((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===l.sid)st=s.name;});}
@@ -1694,6 +1696,7 @@
     Promise.all([jreq(API+"/company/"+id),jreq("/edit-api/notes_new?entity_type=companies&entity_id="+id).catch(function(){return{items:[]};})]).then(function(rr){
       var r=rr[0];
       if(!r.success){toast("Не удалось загрузить компанию",true);return;}
+      pushUrl("/companies/detail/"+id);
       var c=r.company,emb=c._embedded||{},notesNew=(rr[1]&&rr[1].items)||[],tasks=r.tasks||[];
       var conts=(emb.contacts||[]).map(function(x){return '<div class="dl-contact" style="cursor:pointer" data-c="'+x.id+'"><div class="ava">'+esc((x.name||"К").slice(0,1))+'</div><div><div style="color:var(--link)">'+esc(x.name||("Контакт #"+x.id))+'</div><div class="muted" style="font-size:12px">открыть контакт</div></div></div>';}).join("");
       if(conts)conts='<div class="fgroup" style="margin:0 20px">Контакты ('+(emb.contacts||[]).length+')</div>'+conts;
@@ -2208,9 +2211,9 @@
   function bindListTabs(){}
   function openListTab(t){
     listsTab=t;
-    if(t==="contacts")return vContacts();
-    if(t==="companies")return vCompanies();
-    if(t.indexOf("cat:")===0)return vCatalog(parseInt(t.slice(4),10));
+    if(t==="contacts"){pushUrl("/contacts/list/contacts/");return vContacts();}
+    if(t==="companies"){pushUrl("/contacts/list/companies/");return vCompanies();}
+    if(t.indexOf("cat:")===0){pushUrl("/catalogs/"+t.slice(4)+"/");return vCatalog(parseInt(t.slice(4),10));}
   }
   // клик по «Списки» в сайдбаре ВСЕГДА открывает Контакты (просьба Андрея);
   // внутри раздела переключение через меню заголовка (openListTab) сохраняет выбор
@@ -2286,6 +2289,7 @@
     Promise.all([jreq(API+"/customer/"+id),jreq("/edit-api/notes_new?entity_type=customers&entity_id="+id).catch(function(){return{items:[]};})]).then(function(rr){
       var r=rr[0];
       if(!r||!r.success)return toast("Не найдено",true);
+      pushUrl("/customers/detail/"+id);
       var c=r.customer,notesNew=(rr[1]&&rr[1].items)||[],tasks=r.tasks||[];
       var rows=[["Ответственный",userName(c.responsible_user_id)],["LTV",c.ltv?fmt(c.ltv)+" ₽":"—"],["Покупок",c.purchases_count||"—"],["Средний чек",c.average_check?fmt(c.average_check)+" ₽":"—"],["След. платёж",c.next_price?fmt(c.next_price)+" ₽":"—"],["Дата платежа",c.next_date?dShort(c.next_date):"—"],["Создан",c.created_at?dt(c.created_at):"—"]];
       var left='<div class="dl-head"><span class="back">‹</span><h2>'+esc(c.name||("Покупатель #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div><div class="fields">'+rows.map(function(x){return '<div class="frow"><div class="fl">'+x[0]+'</div><div class="fv">'+esc(String(x[1]))+'</div></div>';}).join("")+fieldsHtml(c.custom_fields_values,null,"")+'</div>';
@@ -2298,7 +2302,48 @@
   var curView="leads";
   // эпоха вида: медленный ответ прошлого раздела не должен перерисовать текущий (гонка)
   var VIEW_EPOCH=0;
-  function go(name){curView=name;VIEW_EPOCH++;hidePipePanel();(views[name]||vDesk)();}
+  function go(name){curView=name;VIEW_EPOCH++;hidePipePanel();(views[name]||vDesk)();pushUrl(sectionPath(name));}
+  // ── URL-роутинг как в amo: путь отражает раздел/карточку, back/forward и F5 работают ──
+  var SUPPRESS_PUSH=false;
+  function pushUrl(p){if(SUPPRESS_PUSH||!p)return;try{if(location.pathname!==p)history.pushState({},"",p);}catch(_){}}
+  function sectionPath(name){
+    var m={desk:"/dashboard/",leads:"/leads/pipeline/"+(curPipe||""),tasks:"/todo/",customers:"/customers/",analytics:"/stats/",settings:"/settings/",mail:"/mail/",imbox:"/imbox/",fdoc:"/fdoc/",wazzup:"/wazzup/",market:"/market/",auto:"/auto/",refs:"/refs/",todo:"/devnotes/",companies:"/contacts/list/companies/",contacts:"/contacts/list/contacts/",lists:"/contacts/list/contacts/"};
+    return m[name]||"/";
+  }
+  // разбор пути (при загрузке и back/forward). isBoot — открыть раздел-подложку перед карточкой.
+  function routePath(p,isBoot){
+    SUPPRESS_PUSH=true;
+    try{
+      var m;
+      if(m=p.match(/^\/leads\/detail\/(\d+)/)){if(isBoot)go("leads");openLead(+m[1]);}
+      else if(m=p.match(/^\/contacts\/detail\/(\d+)/)){if(isBoot)go("lists");openContact(+m[1]);}
+      else if(m=p.match(/^\/companies\/detail\/(\d+)/)){if(isBoot)go("lists");openCompany(+m[1]);}
+      else if(m=p.match(/^\/customers\/detail\/(\d+)/)){if(isBoot)go("customers");openCustomer(+m[1]);}
+      else if(/^\/contacts\/list\/companies/.test(p)){curView="lists";VIEW_EPOCH++;hidePipePanel();listsTab="companies";LIST_CATALOGS?vCompanies():vLists();}
+      else if(/^\/contacts/.test(p)){curView="lists";VIEW_EPOCH++;hidePipePanel();LIST_CATALOGS?vContacts():vLists();}
+      else if(m=p.match(/^\/leads\/pipeline\/(\d+)/)){curPipe=+m[1];go("leads");}
+      else if(/^\/leads/.test(p))go("leads");
+      else if(/^\/dashboard/.test(p))go("desk");
+      else if(/^\/todo/.test(p))go("tasks");
+      else if(/^\/customers/.test(p))go("customers");
+      else if(/^\/stats/.test(p))go("analytics");
+      else if(/^\/settings/.test(p))go("settings");
+      else if(/^\/mail/.test(p))go("mail");
+      else if(/^\/imbox/.test(p))go("imbox");
+      else if(/^\/fdoc/.test(p))go("fdoc");
+      else if(/^\/wazzup/.test(p))go("wazzup");
+      else if(/^\/market/.test(p))go("market");
+      else if(/^\/auto/.test(p))go("auto");
+      else if(/^\/refs/.test(p))go("refs");
+      else if(/^\/devnotes/.test(p))go("todo");
+      else return false;
+    } finally { SUPPRESS_PUSH=false; }
+    return true;
+  }
+  window.addEventListener("popstate",function(){
+    document.querySelectorAll(".dcard-bg").forEach(function(x){x.remove();});
+    routePath(location.pathname,true);
+  });
 
   /* ─── вход ─── */
   function pickToken(){
@@ -2370,7 +2415,7 @@
       META.counts=META.counts||{};
       if(r[6]&&r[6].success){["contacts","leads","companies","tasksDue","tasksOpen","imbox","mail","wazzup","market","notifications"].forEach(function(k){if(r[6][k]!=null)META.counts[k]=r[6][k];});}
       $("#app").style.display="flex";
-      go("leads");
+      if(!routePath(location.pathname,true))go("leads");
     });
   }).catch(function(e){
     if(String(e.message)==="401")showLogin("Сессия истекла — введите код ещё раз.");
