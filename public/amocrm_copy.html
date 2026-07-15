@@ -45,6 +45,10 @@
   .sb-bell svg { width:23px; height:23px; stroke:var(--sb-ico); fill:none; stroke-width:1.6; }
   .sb-bell:hover svg { stroke:#cfe2f3; }
   .sb-bell .nav-badge { top:8px; right:12px; }
+  /* сохранённые фильтры (пресеты) */
+  .fsaved { display:flex; gap:6px; margin:0 0 12px; }
+  .fsaved select { flex:1; padding:7px 10px; border:1px solid var(--border); border-radius:9px; font:inherit; font-size:13px; }
+  .fsaved .btn { padding:6px 10px; font-size:12px; white-space:nowrap; }
   /* чеклист мультисписка (редактор поля, как в amo) */
   .cf-multibox { background:#fff; border:1px solid #e4e9f0; border-radius:12px; padding:10px 12px; box-shadow:0 8px 26px rgba(20,40,70,.14); max-height:260px; overflow:auto; }
   .cf-multibox .cfm-item { display:block; padding:5px 2px; font-size:13.5px; cursor:pointer; }
@@ -538,6 +542,9 @@
   // ─── ФИЛЬТР (как в amoCRM: клик по строке поиска → панель фильтра) ───
   function userOptsHtml(sel){return '<option value="">— любой —</option>'+USERS.map(function(u){return '<option value="'+u.id+'"'+(String(u.id)===String(sel)?" selected":"")+'>'+esc(u.name)+'</option>';}).join("");}
   function closeFilterPanel(){var p=document.getElementById("filterPanel");if(p)p.remove();}
+  // сохранённые фильтры (именованные пресеты, как в amo)
+  function loadSavedFilters(kind){try{var v=JSON.parse(localStorage.getItem("crm_saved_filters_"+kind));return Array.isArray(v)?v:[];}catch(_){return [];}}
+  function saveSavedFilters(kind,arr){try{localStorage.setItem("crm_saved_filters_"+kind,JSON.stringify(arr));}catch(_){}}
   // значение фильтра по ТИПУ поля (как в amo): списочные → выбор варианта, чекбокс → Да/Нет, иначе текст
   function cfFilterVal(def,val){
     if(def&&def.enums&&def.enums.length&&(def.type==="select"||def.type==="multiselect"||def.type==="radiobutton")){
@@ -579,7 +586,9 @@
     var ccfSection=isLeads?('<div class="cf-sec"><div class="cf-sec-h">Поля связанного контакта</div><div id="ccfRows">'+
       ((st._ccf&&st._ccf.length?st._ccf:[["",""]]).map(function(x){return cfFilterRow(contDefs,"ccf",x[0],x[1]);}).join(""))+
       '</div><button class="cf-add" data-add="ccf">+ ещё поле контакта</button></div>'):"";
-    p.innerHTML='<h4>Фильтр '+(isLeads?"сделок":"контактов")+'</h4><div class="fgrid">'+fields+'</div>'+
+    var saved=loadSavedFilters(curFilter.kind);
+    var savedRow='<div class="fsaved"><select id="fSavedSel"><option value="">— сохранённые фильтры —</option>'+saved.map(function(s,i){return '<option value="'+i+'">'+esc(s.name)+'</option>';}).join("")+'</select><button class="btn ghost" id="fSaveBtn" title="Сохранить текущий фильтр под именем">💾 Сохранить</button><button class="btn ghost" id="fDelSaved" title="Удалить выбранный пресет">🗑</button></div>';
+    p.innerHTML='<h4>Фильтр '+(isLeads?"сделок":"контактов")+'</h4>'+savedRow+'<div class="fgrid">'+fields+'</div>'+
       '<div class="cf-sec"><div class="cf-sec-h">Поля '+(isLeads?"сделки":"контакта")+' (любое поле)</div><div id="cfRows">'+cfRowsHtml+'</div><button class="cf-add" data-add="cf">+ ещё поле</button></div>'+
       ccfSection+
       '<div class="filter-acts"><button class="btn" id="fApply">Применить</button><button class="btn ghost" id="fReset">Сбросить</button><button class="btn ghost" id="fWidget" title="Сохранить этот фильтр виджетом на рабочий стол (как в amo)">★ В виджет</button><button class="btn ghost" id="fClose" style="margin-left:auto">Закрыть</button></div>';
@@ -608,6 +617,30 @@
     var collectCf=function(sec){var out=[];p.querySelectorAll('.cf-row[data-sec="'+sec+'"]').forEach(function(row){var fid=row.querySelector(".cf-field").value,val=row.querySelector(".cf-val").value.trim();if(fid&&val)out.push([fid,val]);});return out;};
     var collect=function(){var vals={};p.querySelectorAll("[data-f]").forEach(function(el){var v=el.value.trim();if(v){if(el.type==="date")v=Math.floor(new Date(v+"T00:00:00").getTime()/1000);vals[el.dataset.f]=v;}});vals._cf=collectCf("cf");if(isLeads)vals._ccf=collectCf("ccf");return vals;};
     var collectRaw=function(){var raw={};p.querySelectorAll("[data-f]").forEach(function(el){if(el.value.trim())raw[el.dataset.f]=el.value.trim();});raw._cf=collectCf("cf");if(isLeads)raw._ccf=collectCf("ccf");return raw;};
+    // сохранённые пресеты фильтра (как в amo)
+    $("#fSaveBtn").onclick=function(){
+      var name=prompt("Название сохранённого фильтра:","");if(!name)return;
+      var arr=loadSavedFilters(curFilter.kind);
+      arr.push({name:name.trim(),raw:collectRaw()});
+      saveSavedFilters(curFilter.kind,arr);
+      toast("Фильтр «"+name.trim()+"» сохранён");
+      closeFilterPanel();openFilterPanel();
+    };
+    $("#fSavedSel").onchange=function(){
+      var i=parseInt(this.value,10);if(!isFinite(i))return;
+      var arr=loadSavedFilters(curFilter.kind);if(!arr[i])return;
+      FSTATE[curFilter.kind]=arr[i].raw||{};
+      closeFilterPanel();openFilterPanel();
+      setTimeout(function(){var b=document.getElementById("fApply");if(b)b.click();},60);
+    };
+    $("#fDelSaved").onclick=function(){
+      var sel=$("#fSavedSel"),i=parseInt(sel.value,10);
+      if(!isFinite(i))return toast("Выберите пресет в списке",true);
+      var arr=loadSavedFilters(curFilter.kind);
+      if(!confirm("Удалить пресет «"+(arr[i]&&arr[i].name)+"»?"))return;
+      arr.splice(i,1);saveSavedFilters(curFilter.kind,arr);
+      closeFilterPanel();openFilterPanel();
+    };
     $("#fApply").onclick=function(){FSTATE[curFilter.kind]=collectRaw();var vals=collect();closeFilterPanel();if(isLeads)runLeadsFilter(vals);else runContactsFilter(vals);};
     $("#fReset").onclick=function(){FSTATE[curFilter.kind]={};closeFilterPanel();if(isLeads)vLeads();else vContacts();};
     // «★ В виджет» — сохранить текущий фильтр виджетом на рабочий стол (как в amo)
