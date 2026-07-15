@@ -25,7 +25,7 @@
   /* цвета сайдбара сняты со скриншота реальной amo: плоский тёмный графит-синий, без градиента */
   aside { width:66px; background:#141c28; display:flex; flex-direction:column; align-items:center; flex-shrink:0; z-index:60; }
   /* лого = amo: приглушённая стальная плитка (цвет со скрина amo), белые V|S|C с разделителями */
-  .logo { width:66px; height:64px; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; cursor:pointer; flex-shrink:0; background:#3b5878; }
+  .logo { width:66px; height:64px; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; cursor:pointer; flex-shrink:0; background:#3589BD; }
   .logo i { display:inline-block; width:1px; height:15px; background:rgba(255,255,255,.5); margin:0 5px; }
   .logo:hover { filter:brightness(1.08); }
   .nav-scroll { flex:1; width:66px; overflow-y:auto; overflow-x:hidden; scrollbar-width:none; }
@@ -45,6 +45,52 @@
   .sb-bell svg { width:23px; height:23px; stroke:var(--sb-ico); fill:none; stroke-width:1.6; }
   .sb-bell:hover svg { stroke:#cfe2f3; }
   .sb-bell .nav-badge { top:8px; right:12px; }
+  /* ── карточка сделки как в amo: тёмная шапка ── */
+  .dl-dark { background:#2e3d4e; padding:14px 20px 14px; position:relative; }
+  .dl-dark .back { color:#9fb0c0; }
+  .dl-dark h2 { color:#fff; }
+  .dl-dark .dl-sub { color:#8fa1b3; }
+  .dl-dark .tag { background:rgba(255,255,255,.14); border-color:transparent; color:#e2ebf3; }
+  .dl-dark .editable:hover { outline-color:rgba(255,255,255,.3); }
+  .dl-dots { position:absolute; top:14px; right:16px; color:#9fb0c0; cursor:pointer; letter-spacing:2px; font-weight:700; font-size:16px; padding:2px 6px; }
+  .dl-dots:hover { color:#fff; }
+  .stagew { margin-top:12px; cursor:pointer; }
+  .stagew .pn { color:#8fa1b3; font-size:12.5px; }
+  .stagew .sn { color:#fff; font-weight:700; display:flex; align-items:center; gap:7px; }
+  .stagew .sn .caret2 { font-size:10px; color:#8fa1b3; }
+  .stgbar { display:flex; gap:2px; margin-top:9px; }
+  .stgbar i { flex:1; height:4px; border-radius:1px; background:rgba(255,255,255,.22); }
+  /* дропдаун этапов всех воронок (клик по этапу в шапке) */
+  .stage-dd { position:fixed; z-index:170; background:#fff; border-radius:12px; box-shadow:0 16px 48px rgba(20,40,70,.32); width:360px; max-height:72vh; overflow:auto; padding:6px 0; }
+  .stage-dd .sd-p { padding:11px 16px 9px; font-weight:700; color:#5d6774; cursor:pointer; border-top:1px solid #eef1f4; font-size:13.5px; }
+  .stage-dd .sd-p:first-child { border-top:0; }
+  .stage-dd .sd-p:hover { color:var(--blue); }
+  .stage-dd .sd-s { padding:9px 16px; cursor:pointer; font-size:13.5px; margin:1px 6px; border-radius:6px; }
+  .stage-dd .sd-s:hover { filter:brightness(.94); }
+  .stage-dd .sd-s.cur { font-weight:700; }
+  /* пустые поля в стиле amo: серый лейбл + «...»/«Выбрать» */
+  .fv-empty { color:#b6bfc9; }
+  .frow-empty .fl { color:#aab4bf; }
+  /* подразделитель внутри группы (--X--) */
+  .fsub { display:flex; align-items:center; gap:8px; color:#6b7581; font-weight:700; font-size:12.5px; margin:12px 0 4px; }
+  .fsub:before, .fsub:after { content:""; height:1px; background:#e4e9ef; flex:1; }
+  /* мини-карточка контакта внизу карточки сделки (как amo) */
+  .cmini { margin:8px 20px 0; padding:14px 0 6px; border-top:1px solid var(--border-soft); }
+  .cmini .cm-head { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+  .cmini .ava2 { width:38px; height:38px; border-radius:50%; background:#dfe9f2; color:#41566b; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; flex-shrink:0; }
+  .cmini .cm-name { color:var(--link); cursor:pointer; font-weight:700; }
+  .cmini .frow { padding:4px 0; }
+  .add-ent { display:flex; align-items:center; gap:12px; margin:0 20px; padding:10px 0; cursor:pointer; color:var(--link); }
+  .add-ent .plus { width:36px; height:36px; border-radius:50%; border:1.5px solid #c9d6e2; display:flex; align-items:center; justify-content:center; font-size:20px; color:#8aa2b8; flex-shrink:0; }
+  .add-ent:hover .plus { border-color:var(--blue); color:var(--blue); }
+  /* правая панель «Виджеты» (как amo) */
+  .dcard-w { width:248px; flex-shrink:0; border-left:1px solid var(--border); background:#fbfcfd; display:flex; flex-direction:column; overflow:auto; }
+  .dcard-w h5 { margin:0; padding:16px 16px 10px; font-size:15px; }
+  .wrow { display:flex; align-items:center; gap:9px; padding:11px 14px; border-top:1px solid #eef1f4; font-size:13px; color:#4a5663; cursor:pointer; }
+  .wrow:hover { background:#f2f6fa; }
+  .wrow .wico { width:22px; height:22px; border-radius:5px; display:flex; align-items:center; justify-content:center; font-size:11px; color:#fff; flex-shrink:0; font-weight:700; }
+  .wadd { padding:12px 16px; color:var(--link); cursor:pointer; font-size:13px; }
+  @media (max-width:1200px){ .dcard-w{ display:none; } }
   /* отвязка контакта в карточке сделки */
   .lc-unlink { color:#a7b3c0; cursor:pointer; padding:0 6px; font-size:14px; opacity:0; align-self:center; }
   .dl-contact:hover .lc-unlink { opacity:1; }
@@ -1098,24 +1144,37 @@
     var act=fieldActionHtml(name,t,f);
     return '<div class="frow"><div class="fl">'+esc(name)+(ro?' <span class="ro-lock" title="только для чтения">🔒</span>':"")+'</div><div class="fv'+(canEdit?" cf-edit":"")+'" data-fid="'+f.field_id+'" data-ftype="'+esc(t)+'" data-fname="'+esc(f.field_name||byId[f.field_id]||"")+'">'+esc(String(v).slice(0,500))+'</div>'+act+'</div>';
   }
-  // пустое редактируемое поле (как в amoCRM — можно заполнить). Пустые нередактируемые не показываем.
+  // пустое поле в стиле amo: серый лейбл + «...» (текст/дата) или «Выбрать ▾» (списки); клик — заполнить.
+  // Пустые нередактируемые показываем тоже (amo показывает все поля блока), но без клика.
   function cfEmptyRowHtml(def,entity,editById){
     if(!entity||!def)return "";
-    if(editById&&editById[def.id]===false)return "";
     if(isSeparator(def.name))return "";
-    return '<div class="frow frow-empty"><div class="fl">'+esc(def.name)+'</div><div class="fv cf-edit cf-empty" data-fid="'+def.id+'" data-ftype="'+esc(def.type)+'" data-fname="'+esc(def.name)+'"><span class="muted">+ добавить</span></div></div>';
+    var ro=editById&&editById[def.id]===false;
+    var isSel=(def.type==="select"||def.type==="multiselect"||def.type==="radiobutton")&&def.enums&&def.enums.length;
+    var ph=isSel?'Выбрать <span style="font-size:10px">▾</span>':(def.type==="date"||def.type==="birthday"||def.type==="date_time"?'<span style="font-size:13px">📅</span>':"...");
+    return '<div class="frow frow-empty"><div class="fl">'+esc(def.name)+(ro?' <span class="ro-lock" title="только для чтения">🔒</span>':"")+'</div><div class="fv fv-empty'+(ro?"":" cf-edit cf-empty")+'" data-fid="'+def.id+'" data-ftype="'+esc(def.type)+'" data-fname="'+esc(def.name)+'">'+ph+'</div></div>';
   }
   function fieldsHtml(vals,defs,entity){
     var byId={},typeById={};(defs||[]).forEach(function(f){byId[f.id]=f.name;typeById[f.id]=f.type;});
     return (vals||[]).map(function(f){var t=f.field_type||typeById[f.field_id]||"";return cfRowHtml(f,t,byId,entity);}).join("");
   }
-  // группы полей = поля-разделители «---Название---» в порядке сортировки (ровно как в amoCRM)
-  function isSeparator(name){return /^\s*[-–—]{2,}.+[-–—]{2,}\s*$/.test(name||"");}
+  // разделители amo: «---X---» (3 дефиса) = свёртываемый блок, «--X--» (2 дефиса) = подпись-линия внутри блока
+  function sepKind(name){
+    var n=String(name||"").trim();
+    if(/^[-–—]{3,}.+[-–—]{3,}$/.test(n))return "group";
+    if(/^[-–—]{2}[^-–—].*[^-–—][-–—]{2}$/.test(n))return "sub";
+    return null;
+  }
+  function isSeparator(name){return !!sepKind(name);}
+  function sepLabel(name){return String(name).replace(/^[-–—\s]+|[-–—\s]+$/g,"").trim();}
   function fieldGroups(defs){
-    var groups=[{name:null,ids:[]}];
+    // элементы группы: {id} поле или {sub:"подпись"} подразделитель
+    var groups=[{name:null,items:[]}];
     (defs||[]).forEach(function(f){
-      if(isSeparator(f.name)){groups.push({name:String(f.name).replace(/^[-–—\s]+|[-–—\s]+$/g,"").trim(),ids:[]});}
-      else groups[groups.length-1].ids.push(f.id);
+      var k=sepKind(f.name);
+      if(k==="group"){groups.push({name:sepLabel(f.name),items:[]});}
+      else if(k==="sub"){groups[groups.length-1].items.push({sub:sepLabel(f.name)});}
+      else groups[groups.length-1].items.push({id:f.id});
     });
     return groups;
   }
@@ -1123,23 +1182,20 @@
     var byId={},typeById={},editById={},defById={};(defs||[]).forEach(function(f){byId[f.id]=f.name;typeById[f.id]=f.type;defById[f.id]=f;if(f.editable===false)editById[f.id]=false;});
     var valById={};(vals||[]).forEach(function(v){valById[v.field_id]=v;});
     var groups=fieldGroups(defs),html="";
-    // если разделителей-групп нет (напр. у компаний) — верхние поля показываем как группу «Основное»
-    // (с пустыми редактируемыми «+ добавить»), а не только заполненные
-    if(entity&&groups.length===1&&groups[0].name===null&&groups[0].ids.length)groups[0].name="Основное";
+    if(entity&&groups.length===1&&groups[0].name===null&&groups[0].items.length)groups[0].name="Основное";
+    var rowOf=function(it){
+      if(it.sub)return '<div class="fsub">'+esc(it.sub)+'</div>';
+      var fid=it.id,f=valById[fid];
+      if(f){var t=f.field_type||typeById[fid]||"";var r=cfRowHtml(f,t,byId,entity,editById);if(r)return r;}
+      return cfEmptyRowHtml(defById[fid],entity,editById);
+    };
     groups.forEach(function(g){
       if(g.name===null){
-        // верхние поля (до первого разделителя) — только заполненные, всегда видны
-        var top="";g.ids.forEach(function(fid){var f=valById[fid];if(!f)return;var t=f.field_type||typeById[fid]||"";top+=cfRowHtml(f,t,byId,entity,editById);});
-        html+=top;return;
+        // верхние поля (до первого блока) — ВСЕ, включая пустые серым (как в amo)
+        html+=g.items.map(rowOf).join("");return;
       }
-      // именованная группа — ВСЕ поля: заполненные + пустые редактируемые (как в amoCRM)
-      var rows="";
-      g.ids.forEach(function(fid){
-        var f=valById[fid];
-        if(f){var t=f.field_type||typeById[fid]||"";var r=cfRowHtml(f,t,byId,entity,editById);if(r){rows+=r;return;}}
-        rows+=cfEmptyRowHtml(defById[fid],entity,editById);
-      });
-      if(!rows)return; // группа без единого показываемого поля — не рисуем
+      var rows=g.items.map(rowOf).join("");
+      if(!rows)return;
       html+='<div class="fgrp"><div class="fgrp-h">'+esc(g.name)+'<span class="fgrp-caret">▸</span></div><div class="fgrp-body">'+rows+'</div></div>';
     });
     return html;
@@ -1215,7 +1271,7 @@
       };
     });
   }
-  var FEED_FILTERS=[["all","все"],["tasks","задачи"],["notes","примечания"]];
+  var FEED_FILTERS=[["all","все"],["tasks","задачи"],["notes","примечания"],["mail","письма"],["calls","звонки"],["chats","чаты"]];
   // событие ленты из примечания amo — человеческие подписи типов, как в оригинале
   function durFmt(sec){sec=parseInt(sec,10)||0;var m=Math.floor(sec/60),s=sec%60;return m+":"+(s<10?"0":"")+s;}
   function phoneFmt(p){p=String(p||"").replace(/[^0-9+]/g,"");return p?(p[0]==="+"?p:"+"+p):"";}
@@ -1251,9 +1307,17 @@
   }
   function feedHtml(notes,tasks,filter,bg){
     filter=filter||"all";
+    if(filter==="chats")return '<p class="muted" style="padding:16px 4px">Чаты (WhatsApp/Telegram) появятся после подключения Wazzup/imBox.</p>';
+    var noteOk=function(n){
+      var t=String(n.type||"");
+      if(filter==="mail")return t==="amomail_message";
+      if(filter==="calls")return t==="call_in"||t==="call_out";
+      if(filter==="notes")return t!=="amomail_message"&&t!=="call_in"&&t!=="call_out";
+      return true; // all
+    };
     var evs=[];
-    if(filter!=="tasks"&&filter!=="history")(notes||[]).forEach(function(n){evs.push({ts:n.created||0,kind:"note",n:n});});
-    if(filter!=="notes"&&filter!=="history")(tasks||[]).forEach(function(t){evs.push({ts:t.complete_till||t.created_at||0,kind:"task",t:t});});
+    if(filter!=="tasks"&&filter!=="history")(notes||[]).forEach(function(n){if(noteOk(n))evs.push({ts:n.created||0,kind:"note",n:n});});
+    if((filter==="all"||filter==="tasks"))(tasks||[]).forEach(function(t){evs.push({ts:t.complete_till||t.created_at||0,kind:"task",t:t});});
     evs.sort(function(a,b){return b.ts-a.ts;});
     if(!evs.length)return '<p class="muted" style="padding:16px 4px">Пока пусто</p>';
     var html="",lastDay="";
@@ -1285,7 +1349,15 @@
     var bg=document.createElement("div");
     bg.className="dcard-bg";
     var filters=(ent&&ent.withTasks)?FEED_FILTERS.concat([["history","история"]]):FEED_FILTERS.filter(function(f){return f[0]!=="tasks";}).concat([["history","история"]]);
-    bg.innerHTML='<div class="dcard-l">'+leftHtml+'</div><div class="dcard-r"><div class="feed-top"><svg width="16" height="16" viewBox="0 0 24 24" style="stroke:#b6bcc3;fill:none;stroke-width:2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg> Поиск и фильтр</div><div class="feed"></div><div class="feed-tabs"></div><div class="composer"></div></div>';
+    // правая панель «Виджеты» (как amo) — только у сделок
+    var widgetsCol="";
+    if(ent&&ent.type==="leads"){
+      var W=[["Почтовик","#f5b942"],["SMS.RU","#3b6fb5"],["Триггеры","#41c49a"],["Wazzup","#5fbf6e"],["CHATTER","#37c2b2"],["Яндекс Диск","#1a53c4"],["Калькулятор VSC","#3589BD"]];
+      widgetsCol='<div class="dcard-w"><h5>Виджеты</h5>'+W.map(function(w){return '<div class="wrow" data-w="'+esc(w[0])+'"><span class="wico" style="background:'+w[1]+'">'+esc(w[0].charAt(0))+'</span>'+esc(w[0])+'<span style="margin-left:auto;color:#a7b3c0">▾</span></div>';}).join("")+'<div class="wadd">Добавить виджеты</div></div>';
+    }
+    bg.innerHTML='<div class="dcard-l">'+leftHtml+'</div><div class="dcard-r"><div class="feed-top"><svg width="16" height="16" viewBox="0 0 24 24" style="stroke:#b6bcc3;fill:none;stroke-width:2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg> Поиск и фильтр</div><div class="feed"></div><div class="feed-tabs"></div><div class="composer"></div></div>'+widgetsCol;
+    bg.querySelectorAll(".wrow").forEach(function(w){w.onclick=function(){toast("Виджет «"+w.dataset.w+"» подключим вместе с интеграцией");};});
+    var wa=bg.querySelector(".wadd");if(wa)wa.onclick=function(){toast("Каталог виджетов — в разделе amoМаркет");};
     document.body.appendChild(bg);
     bg.querySelector(".back").onclick=function(){document.body.removeChild(bg);};
     var esch=function(e){if(e.key==="Escape"&&document.body.contains(bg)){document.body.removeChild(bg);document.removeEventListener("keydown",esch);}};
@@ -1357,27 +1429,42 @@
       var p=PIPES.find(function(x){return x.id===l.pipeline_id;});
       var stName="";((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===l.status_id)stName=s.name;});
       var tags=((l._embedded&&l._embedded.tags)||[]).map(function(t){return '<span class="tag">'+esc(t.name)+'</span>';}).join("");
+      // мини-карточки контактов с инлайн-полями (как в amo внизу сделки)
       var contacts=((l._embedded&&l._embedded.contacts)||[]).map(function(c){
-        return '<div class="dl-contact" style="cursor:pointer" data-c="'+c.id+'"><div class="ava">'+esc((c.name||"К").slice(0,1))+'</div><div style="flex:1"><div style="color:var(--link)">'+esc(c.name||("Контакт #"+c.id))+(c.is_main?' <span class="muted" style="font-size:11px">(основной)</span>':"")+'</div><div class="muted" style="font-size:12px">открыть карточку контакта</div></div><span class="lc-unlink" data-un="'+c.id+'" title="Отвязать контакт от сделки">✕</span></div>';
+        var rows="";
+        (c.phones||[]).slice(0,2).forEach(function(pn){rows+='<div class="frow"><div class="fl">Раб. тел.</div><div class="fv"><a href="tel:'+esc(String(pn).replace(/[^0-9+]/g,""))+'">'+esc(pn)+'</a></div></div>';});
+        (c.emails||[]).slice(0,1).forEach(function(em){rows+='<div class="frow"><div class="fl">Email</div><div class="fv"><a href="mailto:'+esc(em)+'">'+esc(em)+'</a></div></div>';});
+        var extra=0;(c.cf||[]).forEach(function(f){
+          if(extra>=3)return;var t=f.field_type||"";
+          if(/PHONE|EMAIL/.test(f.field_code||""))return;
+          var v=cfDisplay(f,t);if(v==null||v==="")return;
+          rows+='<div class="frow"><div class="fl">'+esc(f.field_name||f.field_id)+'</div><div class="fv">'+esc(String(v).slice(0,80))+'</div></div>';extra++;
+        });
+        var comp=((l._embedded&&l._embedded.companies)||[])[0];
+        rows='<div class="frow"><div class="fl">Компания</div><div class="fv'+(comp?"":" fv-empty")+'">'+(comp?esc(comp.name||""):"...")+'</div></div>'+rows;
+        return '<div class="cmini"><div class="cm-head"><div class="ava2">'+esc((c.name||"К").trim().charAt(0).toUpperCase())+'</div><div style="flex:1"><span class="cm-name" data-c="'+c.id+'">'+esc(c.name||("Контакт #"+c.id))+'</span>'+(c.is_main?' <span class="muted" style="font-size:11px">(основной)</span>':"")+'</div><span class="lc-unlink" data-un="'+c.id+'" title="Отвязать контакт от сделки">✕</span></div>'+rows+'<a class="muted" style="font-size:12.5px" data-c="'+c.id+'">ещё — открыть карточку контакта</a></div>';
       }).join("");
-      // «＋ Привязать контакт» — как в amo (поиск по имени/телефону → выбор из результатов)
-      contacts+='<div class="dl-contact lc-add" style="cursor:pointer" title="Привязать существующий контакт"><div class="ava" style="background:#eef4fb;color:var(--blue)">＋</div><div><div style="color:var(--link)">Привязать контакт</div><div class="muted" style="font-size:12px">поиск по имени или телефону</div></div></div>';
+      // «＋ Добавить контакт» и «＋ Добавить компанию» — круглые плюсы, как в amo
+      contacts+='<div class="add-ent lc-add" title="Привязать существующий контакт"><span class="plus">+</span><div><div>Добавить контакт</div><div class="muted" style="font-size:12px">поиск по имени или телефону</div></div></div>';
+      contacts+='<div class="add-ent co-add" title="Привязать компанию"><span class="plus">+</span><div><div>Добавить компанию</div><div class="muted" style="font-size:12px">поиск по названию</div></div></div>';
       var companies=((l._embedded&&l._embedded.companies)||[]).map(function(co){
         return '<div class="dl-contact" style="cursor:pointer" data-co="'+co.id+'"><div class="ava" style="border-radius:6px">🏢</div><div><div style="color:var(--link)">'+esc(co.name||("Компания #"+co.id))+'</div><div class="muted" style="font-size:12px">открыть карточку компании</div></div></div>';
       }).join("");
       var reload=function(){openLead(id);}; // не рушим карточку до успешной загрузки (см. removeChild в .then)
       var tagNames=((l._embedded&&l._embedded.tags)||[]).map(function(t){return t.name;});
-      var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить сделку">🗑</button><h2 class="editable" data-edit="name">'+esc(l.name||("Сделка #"+l.id))+'</h2><div class="dl-sub">#'+l.id+' &nbsp;<span class="tags-edit" title="Изменить теги">'+(tags||'<span class="muted">+ теги</span>')+'</span></div></div>'+
-        '<div class="dl-stage"><div class="pn">'+esc(p?p.name:"")+'</div><div class="sn">'+esc(stName)+'</div>'+stageBarHtml(p,l.status_id)+'</div>'+
-        '<div class="dl-tabs"><span class="act" data-t="main">Основное</span><span data-t="stats">Статистика</span></div>'+
+      // тёмная шапка (как amo): ‹ Название ···, #id+теги, «Воронка / Этап ▾» + тонкий прогресс-бар
+      var stIdx=0,stList=((p&&p._embedded&&p._embedded.statuses)||[]);stList.forEach(function(s,i){if(s.id===l.status_id)stIdx=i;});
+      var stColor="#c1d5e0";stList.forEach(function(s){if(s.id===l.status_id)stColor=s.color||stColor;});
+      var barSegs=stList.map(function(s,i){return '<i style="'+(i<=stIdx?("background:"+esc(stColor)):"")+'"></i>';}).join("");
+      var left='<div class="dl-head dl-dark"><span class="back">‹</span><span class="dl-dots" title="Меню">···</span><button class="dl-del" style="display:none">🗑</button><h2 class="editable" data-edit="name">'+esc(l.name||("Сделка #"+l.id))+'</h2><div class="dl-sub">#'+l.id+' &nbsp;<span class="tags-edit" title="Изменить теги">'+(tags||'<span class="muted">+ теги</span>')+'</span></div>'+
+        '<div class="stagew" id="stageW" title="Сменить этап или воронку"><div class="pn">'+esc(p?p.name:"")+'</div><div class="sn">'+esc(stName)+' <span class="caret2">▾</span></div><div class="stgbar">'+barSegs+'</div></div></div>'+
+        '<div class="dl-tabs"><span class="act" data-t="main">Основное</span><span data-t="other">Другие сделки</span><span data-t="stats">Статистика</span></div>'+
         '<div data-panel="main"><div class="fields">'+
           '<div class="frow"><div class="fl">Отв-ный</div><div class="fv editable" data-edit="resp">'+esc(userName(l.responsible_user_id))+'</div></div>'+
           '<div class="frow"><div class="fl">Бюджет</div><div class="fv editable" data-edit="price">'+fmt(l.price)+' ₽</div></div>'+
-          '<div class="frow"><div class="fl">Создана</div><div class="fv">'+dt(l.created_at)+'</div></div>'+
-          '<div class="frow"><div class="fl">Изменена</div><div class="fv">'+dt(l.updated_at)+'</div></div>'+
-          (l.closed_at?('<div class="frow"><div class="fl">Закрыта</div><div class="fv">'+dt(l.closed_at)+'</div></div>'):"")+
           fieldsGroupedHtml(l.custom_fields_values,CF&&CF.leads,"leads")+
         '</div><div class="fgroup" style="margin-top:6px">Контакты</div>'+contacts+(companies?'<div class="fgroup" style="margin-top:6px">Компания</div>'+companies:"")+'</div>'+
+        '<div data-panel="other" style="display:none">'+((r.other_leads&&r.other_leads.length)?r.other_leads.map(function(ol){var col=ol.color||"#c1d5e0";return '<div class="dl-contact" style="cursor:pointer;border-left:4px solid '+esc(col)+'" data-l2="'+ol.id+'"><div class="ava" style="border-radius:6px;background:'+esc(col)+'22;color:#33404d">С</div><div><div style="color:var(--link)">'+esc(ol.name||("#"+ol.id))+'</div><div class="muted" style="font-size:12px">'+esc(ol.st||"")+(ol.price?(" · "+fmt(ol.price)+" ₽"):"")+'</div></div></div>';}).join(""):'<p class="muted" style="padding:16px 20px">Других сделок у контактов нет</p>')+'</div>'+
         '<div data-panel="stats" class="fields" style="display:none">'+cardStatsHtml([
           ["Создана",dt(l.created_at)],["Дней в системе",Math.max(0,Math.floor((tnow()-(l.created_at||tnow()))/86400))],
           ["Изменена",dt(l.updated_at)],(l.closed_at?["Закрыта",dt(l.closed_at)]:null),
@@ -1425,10 +1512,68 @@
       bindEditable(bg,"resp",function(){return l.responsible_user_id;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{responsible_user_id:v});},reload,"user");
       bindCfFields(bg,"leads",id,CF&&CF.leads,reload);
       bindFieldGroups(bg);bindCardTabs(bg);
-      bg.querySelectorAll(".dl-stage .stage-bar i[data-st]").forEach(function(seg){seg.onclick=function(){
-        var sid2=parseInt(seg.dataset.st,10);if(sid2===l.status_id)return;
-        ereq("POST","/edit-api/lead/"+id+"/stage",{pipeline_id:l.pipeline_id,status_id:sid2}).then(function(rr){if(rr&&rr.success){toast("Этап изменён");reload();}else toast((rr&&rr.message)||"Не удалось",true);});
-      };});
+      // дропдаун этапов ВСЕХ воронок (клик по этапу в шапке) — перенос между воронками, как в amo
+      var sw=bg.querySelector("#stageW");
+      if(sw)sw.onclick=function(){
+        document.querySelectorAll(".stage-dd").forEach(function(x){x.remove();});
+        var dd=document.createElement("div");dd.className="stage-dd";
+        var html="";
+        var renderPipe=function(pp,open){
+          html+='<div class="sd-p" data-pp="'+pp.id+'">'+esc(pp.name)+'</div>';
+          if(open)((pp._embedded&&pp._embedded.statuses)||[]).forEach(function(s){
+            html+='<div class="sd-s'+(s.id===l.status_id&&pp.id===l.pipeline_id?" cur":"")+'" data-pid="'+pp.id+'" data-sid="'+s.id+'" style="background:'+esc(s.color||"#eef1f4")+'">'+(s.id===l.status_id&&pp.id===l.pipeline_id?"✓ ":"")+esc(s.name)+'</div>';
+          });
+        };
+        renderPipe(p,true);
+        PIPES.filter(function(x){return x.id!==l.pipeline_id;}).forEach(function(x){renderPipe(x,false);});
+        dd.innerHTML=html;
+        document.body.appendChild(dd);
+        var r2=sw.getBoundingClientRect();
+        dd.style.top=Math.min(r2.bottom+6,window.innerHeight-dd.offsetHeight-10)+"px";dd.style.left=(r2.left)+"px";
+        dd.querySelectorAll(".sd-s").forEach(function(el){el.onclick=function(){
+          var pid2=parseInt(el.dataset.pid,10),sid2=parseInt(el.dataset.sid,10);
+          dd.remove();
+          if(pid2===l.pipeline_id&&sid2===l.status_id)return;
+          ereq("POST","/edit-api/lead/"+id+"/stage",{pipeline_id:pid2,status_id:sid2}).then(function(rr){if(rr&&rr.success){toast(pid2!==l.pipeline_id?"Сделка перенесена в другую воронку":"Этап изменён");reload();}else toast((rr&&rr.message)||"Не удалось",true);});
+        };});
+        // клик по названию другой воронки — раскрыть её этапы
+        dd.querySelectorAll(".sd-p").forEach(function(ph){ph.onclick=function(){
+          var pid2=parseInt(ph.dataset.pp,10);if(pid2===l.pipeline_id)return;
+          var pp=PIPES.find(function(x){return x.id===pid2;});if(!pp)return;
+          if(ph.dataset.open)return;ph.dataset.open="1";
+          var frag="";((pp._embedded&&pp._embedded.statuses)||[]).forEach(function(s){frag+='<div class="sd-s" data-pid="'+pp.id+'" data-sid="'+s.id+'" style="background:'+esc(s.color||"#eef1f4")+'">'+esc(s.name)+'</div>';});
+          ph.insertAdjacentHTML("afterend",frag);
+          dd.querySelectorAll(".sd-s").forEach(function(el){if(el.onclick)return;el.onclick=function(){
+            var pid3=parseInt(el.dataset.pid,10),sid3=parseInt(el.dataset.sid,10);dd.remove();
+            ereq("POST","/edit-api/lead/"+id+"/stage",{pipeline_id:pid3,status_id:sid3}).then(function(rr){if(rr&&rr.success){toast("Сделка перенесена");reload();}else toast((rr&&rr.message)||"Не удалось",true);});
+          };});
+        };});
+        setTimeout(function(){document.addEventListener("click",function cl(ev){if(!dd.contains(ev.target)&&!sw.contains(ev.target)){dd.remove();document.removeEventListener("click",cl);}});},0);
+      };
+      // «···» меню шапки (как в amo)
+      var dots=bg.querySelector(".dl-dots");
+      if(dots)dots.onclick=function(e){
+        openCtxMenu(dots,[
+          {label:"Копировать ссылку на сделку",on:function(){try{navigator.clipboard.writeText(location.origin+"/leads/detail/"+id);toast("Ссылка скопирована");}catch(_){toast("Не удалось",true);}}},
+          "sep",
+          {label:"Удалить сделку",on:function(){var del=bg.querySelector(".dl-del");if(del)del.click();}}
+        ]);
+      };
+      // привязать компанию («Добавить компанию»)
+      var coAdd=bg.querySelector(".co-add");
+      if(coAdd)coAdd.onclick=function(){
+        var q=prompt("Название компании (мин. 2 символа):","");
+        if(!q||q.trim().length<2)return;
+        jreq(API+"/companies_page?page=1&q="+encodeURIComponent(q.trim())).then(function(r2){
+          var items=(r2&&r2.items)||[];
+          if(!items.length)return toast("Не найдено",true);
+          openCtxMenu(coAdd,items.slice(0,8).map(function(c){return {label:c.name||("#"+c.id),on:function(){
+            ereq("POST","/edit-api/lead/"+id+"/link_company",{company_id:c.id}).then(function(rr){if(rr&&rr.success){toast("Компания привязана");reload();}else toast((rr&&rr.message)||"Не удалось",true);});
+          }};}));
+        });
+      };
+      // другие сделки контактов — открыть
+      bg.querySelectorAll("[data-l2]").forEach(function(el){el.onclick=function(){openLead(parseInt(el.dataset.l2,10));};});
       // теги
       bg.querySelector(".tags-edit").onclick=function(){
         var nt=prompt("Теги через запятую:",tagNames.join(", "));

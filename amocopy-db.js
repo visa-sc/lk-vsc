@@ -249,14 +249,25 @@ module.exports = function mountDbRoutes(app, guard, api) {
   // кастомные поля из cf_defs (единый источник правды — актуализируется amoCopySyncFields.js)
   app.get(`${api}/custom_fields`, guard, (req, res) => {
     const hasEditable = (() => { try { return !!D.prepare("SELECT editable FROM cf_defs LIMIT 1").get() || true; } catch (_) { return false; } })();
-    const cols = hasEditable ? "entity,id,name,type,code,enums,sort,editable" : "entity,id,name,type,code,enums,sort";
+    const hasGroup = (() => { try { D.prepare("SELECT group_id FROM cf_defs LIMIT 1").get(); return true; } catch (_) { return false; } })();
+    const cols = "entity,id,name,type,code,enums,sort" + (hasEditable ? ",editable" : "") + (hasGroup ? ",group_id" : "");
     const rows = D.prepare("SELECT " + cols + " FROM cf_defs WHERE entity IN ('leads','contacts','companies') ORDER BY entity, sort").all();
     const out = { leads: [], contacts: [], companies: [] };
     for (const r of rows) {
       if (!out[r.entity]) continue;
-      out[r.entity].push({ id: r.id, name: r.name, type: r.type, code: r.code || null, enums: J(r.enums, []), editable: r.editable === 0 ? false : true });
+      out[r.entity].push({ id: r.id, name: r.name, type: r.type, code: r.code || null, enums: J(r.enums, []), editable: r.editable === 0 ? false : true, group_id: r.group_id || null });
     }
     res.json(out);
+  });
+
+  // группы полей amo (= табы карточки: Основное/Другие сделки/Услуги/Касса/Счета/Статистика/из API/...)
+  app.get(`${api}/cf_groups`, guard, (req, res) => {
+    try {
+      const rows = D.prepare("SELECT entity,id,name,sort FROM cf_groups ORDER BY entity,sort").all();
+      const out = { leads: [], contacts: [], companies: [] };
+      for (const r of rows) if (out[r.entity]) out[r.entity].push({ id: r.id, name: r.name, sort: r.sort });
+      res.json({ success: true, groups: out });
+    } catch (_) { res.json({ success: true, groups: { leads: [], contacts: [], companies: [] } }); }
   });
 
   // список сделок этапа (как файловый, но из БД)
@@ -423,18 +434,33 @@ module.exports = function mountDbRoutes(app, guard, api) {
       responsible_user_id: t.responsible_user_id, result: J(t.result, null)
     }));
     const cids = J(l.contact_ids, []);
-    const nameById = {}; qNamesByIds(cids).forEach((c) => { nameById[c.id] = c.name; });
+    // мини-карточка контакта (как в amo): телефоны/почты/поля контакта прямо в сделке
+    const contactById = {};
+    for (const cid of cids) { const c = qContact.get(cid); if (c) contactById[cid] = c; }
+    // «Другие сделки» этих контактов (таб карточки amo)
+    let otherLeads = [];
+    if (cids.length) {
+      try {
+        const ph = cids.map(() => "?").join(",");
+        otherLeads = D.prepare(`SELECT DISTINCT l.id,l.name,l.price,l.status_id FROM lead_contacts lc JOIN leads l ON l.id=lc.lead_id WHERE lc.contact_id IN (${ph}) AND l.id!=? ORDER BY l.updated_at DESC LIMIT 30`).all(...cids, id)
+          .map((x) => ({ id: x.id, name: x.name, price: x.price, st: dealChip(x.status_id).st, color: dealChip(x.status_id).color }));
+      } catch (_) {}
+    }
     const lead = {
       id: l.id, name: l.name, price: l.price, status_id: l.status_id, pipeline_id: l.pipeline_id,
       responsible_user_id: l.responsible_user_id, created_at: l.created_at, updated_at: l.updated_at, closed_at: l.closed_at || null,
       custom_fields_values: J(l.cf, null),
       _embedded: {
         tags: J(l.tags, []).map((n) => ({ name: n })),
-        contacts: cids.map((cid, i) => ({ id: cid, name: nameById[cid] || ("Контакт #" + cid), is_main: i === 0 })),
+        contacts: cids.map((cid, i) => {
+          const c = contactById[cid];
+          return { id: cid, name: (c && c.name) || ("Контакт #" + cid), is_main: i === 0,
+            phones: c ? J(c.phones, []) : [], emails: c ? J(c.emails, []) : [], cf: c ? J(c.cf, []) : [] };
+        }),
         companies: companiesForLead(id)
       }
     };
-    notesFromBucket("notes_leads", id, (notes) => res.json({ success: true, lead, notes, tasks }));
+    notesFromBucket("notes_leads", id, (notes) => res.json({ success: true, lead, notes, tasks, other_leads: otherLeads }));
   });
 
   // карточка контакта (поля из БД, сделки из lead_contacts, примечания из bucket)

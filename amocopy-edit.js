@@ -286,6 +286,20 @@ module.exports = function mountEditRoutes(app, guard) {
     res.json({ success: true });
   });
 
+  // ── привязка/отвязка КОМПАНИИ к сделке (как «Добавить компанию» в amo) ──
+  app.post(`${E}/lead/:id/link_company`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10), coid = parseInt(req.body.company_id, 10);
+    if (!id || !coid) return res.status(400).json({ success: false });
+    if (!getLead.get(id)) return res.status(404).json({ success: false, message: "сделка не найдена" });
+    const co = getCompany.get(coid);
+    if (!co) return res.status(404).json({ success: false, message: "компания не найдена" });
+    db.exec("CREATE TABLE IF NOT EXISTS lead_companies (lead_id INTEGER, company_id INTEGER)");
+    if (req.body.unlink === true) db.prepare("DELETE FROM lead_companies WHERE lead_id=? AND company_id=?").run(id, coid);
+    else { db.prepare("DELETE FROM lead_companies WHERE lead_id=? AND company_id=?").run(id, coid); db.prepare("INSERT INTO lead_companies(lead_id,company_id) VALUES(?,?)").run(id, coid); }
+    audit(req, "leads", id, req.body.unlink === true ? "unlink_company" : "link_company", { company_id: coid, company: co.name });
+    res.json({ success: true });
+  });
+
   // ── слияние контактов (как «Объединить» в amo): дубли вливаются в основной ──
   app.post(`${E}/contacts/merge`, guard, (req, res) => {
     const ids = Array.isArray(req.body.ids) ? req.body.ids.map((x) => parseInt(x, 10)).filter(Boolean) : [];
