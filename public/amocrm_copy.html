@@ -72,8 +72,13 @@
   .fv-empty { color:#b6bfc9; }
   .frow-empty .fl { color:#aab4bf; }
   /* подразделитель внутри группы (--X--) */
-  .fsub { display:flex; align-items:center; gap:8px; color:#6b7581; font-weight:700; font-size:12.5px; margin:12px 0 4px; }
+  .fsub { display:flex; align-items:center; gap:8px; color:#6b7581; font-weight:700; font-size:12.5px; margin:12px 0 4px; cursor:pointer; }
   .fsub:before, .fsub:after { content:""; height:1px; background:#e4e9ef; flex:1; }
+  .fsub:hover { color:var(--blue); }
+  .fsub .fsub-caret { font-size:10px; color:#a7b0ba; transition:transform .15s; }
+  .fsub2 .fsub-body { display:none; }
+  .fsub2.open .fsub-body { display:block; }
+  .fsub2.open .fsub-caret { transform:rotate(90deg); }
   /* мини-карточка контакта внизу карточки сделки (как amo) */
   .cmini { margin:8px 20px 0; padding:14px 0 6px; border-top:1px solid var(--border-soft); }
   .cmini .cm-head { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
@@ -1168,13 +1173,13 @@
   function isSeparator(name){return !!sepKind(name);}
   function sepLabel(name){return String(name).replace(/^[-–—\s]+|[-–—\s]+$/g,"").trim();}
   function fieldGroups(defs){
-    // элементы группы: {id} поле или {sub:"подпись"} подразделитель
-    var groups=[{name:null,items:[]}];
+    // элементы: {id} поле | {sub, items:[{id}...]} — сворачиваемый подраздел (--X--), свёрнут по умолчанию
+    var groups=[{name:null,items:[]}],curSub=null;
     (defs||[]).forEach(function(f){
       var k=sepKind(f.name);
-      if(k==="group"){groups.push({name:sepLabel(f.name),items:[]});}
-      else if(k==="sub"){groups[groups.length-1].items.push({sub:sepLabel(f.name)});}
-      else groups[groups.length-1].items.push({id:f.id});
+      if(k==="group"){groups.push({name:sepLabel(f.name),items:[]});curSub=null;}
+      else if(k==="sub"){curSub={sub:sepLabel(f.name),items:[]};groups[groups.length-1].items.push(curSub);}
+      else (curSub?curSub.items:groups[groups.length-1].items).push({id:f.id});
     });
     return groups;
   }
@@ -1182,11 +1187,17 @@
     var byId={},typeById={},editById={},defById={};(defs||[]).forEach(function(f){byId[f.id]=f.name;typeById[f.id]=f.type;defById[f.id]=f;if(f.editable===false)editById[f.id]=false;});
     var valById={};(vals||[]).forEach(function(v){valById[v.field_id]=v;});
     var groups=fieldGroups(defs),html="";
-    var rowOf=function(it){
-      if(it.sub)return '<div class="fsub">'+esc(it.sub)+'</div>';
-      var fid=it.id,f=valById[fid];
+    var fieldRow=function(fid){
+      var f=valById[fid];
       if(f){var t=f.field_type||typeById[fid]||"";var r=cfRowHtml(f,t,byId,entity,editById);if(r)return r;}
       return cfEmptyRowHtml(defById[fid],entity,editById);
+    };
+    var rowOf=function(it){
+      if(it.sub){
+        var inner=(it.items||[]).map(function(x){return fieldRow(x.id);}).join("");
+        return '<div class="fsub2"><div class="fsub fsub-h">'+esc(it.sub)+' <span class="fsub-caret">▸</span></div><div class="fsub-body">'+inner+'</div></div>';
+      }
+      return fieldRow(it.id);
     };
     groups.forEach(function(g){
       if(g.name===null){
@@ -1199,7 +1210,10 @@
     });
     return html;
   }
-  function bindFieldGroups(bg){bg.querySelectorAll(".fgrp-h").forEach(function(h){h.onclick=function(){h.parentNode.classList.toggle("open");};});}
+  function bindFieldGroups(bg){
+    bg.querySelectorAll(".fgrp-h").forEach(function(h){h.onclick=function(){h.parentNode.classList.toggle("open");};});
+    bg.querySelectorAll(".fsub-h").forEach(function(h){h.onclick=function(){h.parentNode.classList.toggle("open");};});
+  }
   function tnow(){return Math.floor(Date.now()/1000);}
   function cardStatsHtml(rows){return (rows||[]).filter(Boolean).map(function(x){return '<div class="frow"><div class="fl">'+esc(x[0])+'</div><div class="fv">'+esc(String(x[1]))+'</div></div>';}).join("");}
   // вкладки карточки (Основное/Статистика/...) — переключают панели [data-panel]
