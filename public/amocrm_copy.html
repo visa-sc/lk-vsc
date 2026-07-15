@@ -2035,17 +2035,18 @@
     if(t==="companies")return vCompanies();
     if(t.indexOf("cat:")===0)return vCatalog(parseInt(t.slice(4),10));
   }
-  // раздел загружается — сначала подтягиваем каталоги (для вкладок), затем открываем активную
+  // клик по «Списки» в сайдбаре ВСЕГДА открывает Контакты (просьба Андрея);
+  // внутри раздела переключение через меню заголовка (openListTab) сохраняет выбор
   function vLists(){
     renderSidebar("lists");
-    if(LIST_CATALOGS){return openListTab(listsTab);}
+    if(LIST_CATALOGS){return openListTab("contacts");}
     setHeader("Списки",{count:""});
     $("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Загрузка…</p></div></div>';
     var ep=VIEW_EPOCH;
     jreq(API+"/catalogs").then(function(cats){
       LIST_CATALOGS=Array.isArray(cats)?cats:[];
       if(ep!==VIEW_EPOCH)return;
-      openListTab(listsTab||"contacts");
+      openListTab("contacts");
     }).catch(function(){LIST_CATALOGS=[];if(ep===VIEW_EPOCH)openListTab("contacts");});
   }
   function vCatalog(id){
