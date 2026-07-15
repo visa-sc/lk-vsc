@@ -175,12 +175,16 @@ module.exports = function mountDbRoutes(app, guard, api) {
       companies: one("SELECT COUNT(*) c FROM companies"),
       customers: one("SELECT COUNT(*) c FROM customers"),
       tasksDue: tasksDue, tasksOpen: tasksOpen };
-    // бейджи внешних разделов (imbox/mail/wazzup/market) — зеркало amo из .amocopy-db/badges.json
-    // (внешние сервисы не подключены; файл правится вручную/будущей интеграцией)
+    // Бейджи отражают ТОЛЬКО реальную ситуацию в копии (требование Андрея 15.07).
+    // Внешние разделы (imbox/mail/wazzup/market) не подключены → бейджей нет.
+    // badges.json остаётся опциональным механизмом для БУДУЩИХ живых интеграций
+    // (реальные счётчики непрочитанного будут писаться туда самими интеграциями).
     try {
       const b = JSON.parse(fs.readFileSync(path.join(path.dirname(process.env.AMOCOPY_DB || "/var/www/voyo/.amocopy-db/crm.db"), "badges.json"), "utf8"));
-      for (const k of ["imbox", "mail", "wazzup", "market", "notifications"]) if (b[k] != null) out[k] = b[k];
+      if (b && b.live === true) for (const k of ["imbox", "mail", "wazzup", "market"]) if (b[k] != null) out[k] = b[k];
     } catch (_) {}
+    // колокольчик = реальные уведомления копии (задачи, требующие внимания)
+    out.notifications = tasksDue || 0;
     res.json(out);
   });
 

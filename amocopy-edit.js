@@ -138,7 +138,10 @@ module.exports = function mountEditRoutes(app, guard) {
     if (!row) return { ok: false, code: 404 };
     let cf = []; try { cf = JSON.parse(row.cf) || []; } catch (_) { cf = []; }
     if (!Array.isArray(cf)) cf = [];
-    const vArr = (value === "" || value == null) ? [] : [{ value: value }];
+    // multiselect (amo хранит массив values), boolean у чекбоксов, timestamp у дат — как в amo
+    let vArr;
+    if (Array.isArray(value)) vArr = value.filter((v) => v !== "" && v != null).map((v) => ({ value: v }));
+    else vArr = (value === "" || value == null) ? [] : [{ value: value }];
     const ix = cf.findIndex((f) => f.field_id === fieldId);
     if (ix >= 0) { if (!vArr.length) cf.splice(ix, 1); else cf[ix].values = vArr; }
     else if (vArr.length) cf.push({ field_id: fieldId, field_name: fieldName || String(fieldId), values: vArr });
