@@ -45,6 +45,10 @@
   .sb-bell svg { width:23px; height:23px; stroke:var(--sb-ico); fill:none; stroke-width:1.6; }
   .sb-bell:hover svg { stroke:#cfe2f3; }
   .sb-bell .nav-badge { top:8px; right:12px; }
+  /* отвязка контакта в карточке сделки */
+  .lc-unlink { color:#a7b3c0; cursor:pointer; padding:0 6px; font-size:14px; opacity:0; align-self:center; }
+  .dl-contact:hover .lc-unlink { opacity:1; }
+  .lc-unlink:hover { color:#e5484d; }
   /* сохранённые фильтры (пресеты) */
   .fsaved { display:flex; gap:6px; margin:0 0 12px; }
   .fsaved select { flex:1; padding:7px 10px; border:1px solid var(--border); border-radius:9px; font:inherit; font-size:13px; }
@@ -1354,8 +1358,10 @@
       var stName="";((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===l.status_id)stName=s.name;});
       var tags=((l._embedded&&l._embedded.tags)||[]).map(function(t){return '<span class="tag">'+esc(t.name)+'</span>';}).join("");
       var contacts=((l._embedded&&l._embedded.contacts)||[]).map(function(c){
-        return '<div class="dl-contact" style="cursor:pointer" data-c="'+c.id+'"><div class="ava">'+esc((c.name||"К").slice(0,1))+'</div><div><div style="color:var(--link)">'+esc(c.name||("Контакт #"+c.id))+(c.is_main?' <span class="muted" style="font-size:11px">(основной)</span>':"")+'</div><div class="muted" style="font-size:12px">открыть карточку контакта</div></div></div>';
+        return '<div class="dl-contact" style="cursor:pointer" data-c="'+c.id+'"><div class="ava">'+esc((c.name||"К").slice(0,1))+'</div><div style="flex:1"><div style="color:var(--link)">'+esc(c.name||("Контакт #"+c.id))+(c.is_main?' <span class="muted" style="font-size:11px">(основной)</span>':"")+'</div><div class="muted" style="font-size:12px">открыть карточку контакта</div></div><span class="lc-unlink" data-un="'+c.id+'" title="Отвязать контакт от сделки">✕</span></div>';
       }).join("");
+      // «＋ Привязать контакт» — как в amo (поиск по имени/телефону → выбор из результатов)
+      contacts+='<div class="dl-contact lc-add" style="cursor:pointer" title="Привязать существующий контакт"><div class="ava" style="background:#eef4fb;color:var(--blue)">＋</div><div><div style="color:var(--link)">Привязать контакт</div><div class="muted" style="font-size:12px">поиск по имени или телефону</div></div></div>';
       var companies=((l._embedded&&l._embedded.companies)||[]).map(function(co){
         return '<div class="dl-contact" style="cursor:pointer" data-co="'+co.id+'"><div class="ava" style="border-radius:6px">🏢</div><div><div style="color:var(--link)">'+esc(co.name||("Компания #"+co.id))+'</div><div class="muted" style="font-size:12px">открыть карточку компании</div></div></div>';
       }).join("");
@@ -1371,7 +1377,7 @@
           '<div class="frow"><div class="fl">Изменена</div><div class="fv">'+dt(l.updated_at)+'</div></div>'+
           (l.closed_at?('<div class="frow"><div class="fl">Закрыта</div><div class="fv">'+dt(l.closed_at)+'</div></div>'):"")+
           fieldsGroupedHtml(l.custom_fields_values,CF&&CF.leads,"leads")+
-        '</div>'+(contacts?'<div class="fgroup" style="margin-top:6px">Контакты</div>'+contacts:"")+(companies?'<div class="fgroup" style="margin-top:6px">Компания</div>'+companies:"")+'</div>'+
+        '</div><div class="fgroup" style="margin-top:6px">Контакты</div>'+contacts+(companies?'<div class="fgroup" style="margin-top:6px">Компания</div>'+companies:"")+'</div>'+
         '<div data-panel="stats" class="fields" style="display:none">'+cardStatsHtml([
           ["Создана",dt(l.created_at)],["Дней в системе",Math.max(0,Math.floor((tnow()-(l.created_at||tnow()))/86400))],
           ["Изменена",dt(l.updated_at)],(l.closed_at?["Закрыта",dt(l.closed_at)]:null),
@@ -1389,6 +1395,31 @@
       bg.querySelectorAll("[data-co]").forEach(function(el){
         el.onclick=function(){document.body.removeChild(bg);openCompany(parseInt(el.dataset.co,10));};
       });
+      // отвязать контакт от сделки (✕)
+      bg.querySelectorAll(".lc-unlink").forEach(function(x){x.onclick=function(e){
+        e.stopPropagation();
+        if(!confirm("Отвязать контакт от сделки?"))return;
+        ereq("POST","/edit-api/lead/"+id+"/link_contact",{contact_id:parseInt(x.dataset.un,10),unlink:true}).then(function(rr){
+          if(rr&&rr.success){toast("Контакт отвязан");reload();}else toast((rr&&rr.message)||"Не удалось",true);
+        });
+      };});
+      // привязать контакт (поиск → выбор из результатов)
+      var addRow=bg.querySelector(".lc-add");
+      if(addRow)addRow.onclick=function(){
+        var q=prompt("Имя или телефон контакта (мин. 3 символа):","");
+        if(!q||q.trim().length<3)return;
+        jreq(API+"/contacts?q="+encodeURIComponent(q.trim())).then(function(r){
+          var items=(r&&r.items)||[];
+          if(!items.length)return toast("Не найдено",true);
+          openCtxMenu(addRow,items.slice(0,8).map(function(c){
+            return {label:(c.n||("#"+c.id))+((c.p&&c.p[0])?" · "+c.p[0]:""),on:function(){
+              ereq("POST","/edit-api/lead/"+id+"/link_contact",{contact_id:c.id}).then(function(rr){
+                if(rr&&rr.success){toast("Контакт привязан");reload();}else toast((rr&&rr.message)||"Не удалось",true);
+              });
+            }};
+          }));
+        });
+      };
       bindEditable(bg,"name",function(){return l.name;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{name:v});},reload,"text");
       bindEditable(bg,"price",function(){return l.price;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{price:v});},reload,"number");
       bindEditable(bg,"resp",function(){return l.responsible_user_id;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{responsible_user_id:v});},reload,"user");

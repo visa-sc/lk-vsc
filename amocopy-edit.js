@@ -264,6 +264,28 @@ module.exports = function mountEditRoutes(app, guard) {
     res.json({ success: true });
   });
 
+  // ── привязка/отвязка контакта к сделке (как в amo) ──
+  app.post(`${E}/lead/:id/link_contact`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10), cid = parseInt(req.body.contact_id, 10);
+    if (!id || !cid) return res.status(400).json({ success: false });
+    const lead = getLead.get(id);
+    if (!lead) return res.status(404).json({ success: false, message: "сделка не найдена" });
+    const c = getContact.get(cid);
+    if (!c) return res.status(404).json({ success: false, message: "контакт не найден" });
+    const unlink = req.body.unlink === true;
+    let cids = []; try { cids = JSON.parse(lead.contact_ids) || []; } catch (_) {}
+    if (unlink) {
+      db.prepare("DELETE FROM lead_contacts WHERE lead_id=? AND contact_id=?").run(id, cid);
+      cids = cids.filter((x) => x !== cid);
+    } else {
+      db.prepare("INSERT OR IGNORE INTO lead_contacts(lead_id,contact_id) VALUES(?,?)").run(id, cid);
+      if (cids.indexOf(cid) < 0) cids.push(cid);
+    }
+    db.prepare("UPDATE leads SET contact_ids=?, updated_at=? WHERE id=?").run(JSON.stringify(cids), nowSec(), id);
+    audit(req, "leads", id, unlink ? "unlink_contact" : "link_contact", { contact_id: cid, contact: c.name });
+    res.json({ success: true });
+  });
+
   // ── слияние контактов (как «Объединить» в amo): дубли вливаются в основной ──
   app.post(`${E}/contacts/merge`, guard, (req, res) => {
     const ids = Array.isArray(req.body.ids) ? req.body.ids.map((x) => parseInt(x, 10)).filter(Boolean) : [];
