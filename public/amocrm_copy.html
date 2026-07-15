@@ -1472,14 +1472,15 @@
       var barSegs=stList.map(function(s,i){return '<i style="'+(i<=stIdx?("background:"+esc(stColor)):"")+'"></i>';}).join("");
       var left='<div class="dl-head dl-dark"><span class="back">‹</span><span class="dl-dots" title="Меню">···</span><button class="dl-del" style="display:none">🗑</button><h2 class="editable" data-edit="name">'+esc(l.name||("Сделка #"+l.id))+'</h2><div class="dl-sub">#'+l.id+' &nbsp;<span class="tags-edit" title="Изменить теги">'+(tags||'<span class="muted">+ теги</span>')+'</span></div>'+
         '<div class="stagew" id="stageW" title="Сменить этап или воронку"><div class="pn">'+esc(p?p.name:"")+'</div><div class="sn">'+esc(stName)+' <span class="caret2">▾</span></div><div class="stgbar">'+barSegs+'</div></div></div>'+
-        '<div class="dl-tabs"><span class="act" data-t="main">Основное</span><span data-t="other">Другие сделки</span><span data-t="stats">Статистика</span></div>'+
+        '<div class="dl-tabs"><span class="act" data-t="main">Основное</span><span data-t="other">Другие сделки</span><span data-t="stats">Статистика</span><span data-t="api">из API</span></div>'+
         '<div data-panel="main"><div class="fields">'+
           '<div class="frow"><div class="fl">Отв-ный</div><div class="fv editable" data-edit="resp">'+esc(userName(l.responsible_user_id))+'</div></div>'+
           '<div class="frow"><div class="fl">Бюджет</div><div class="fv editable" data-edit="price">'+fmt(l.price)+' ₽</div></div>'+
           fieldsGroupedHtml(l.custom_fields_values,CF&&CF.leads,"leads")+
         '</div><div class="fgroup" style="margin-top:6px">Контакты</div>'+contacts+(companies?'<div class="fgroup" style="margin-top:6px">Компания</div>'+companies:"")+'</div>'+
         '<div data-panel="other" style="display:none">'+((r.other_leads&&r.other_leads.length)?r.other_leads.map(function(ol){var col=ol.color||"#c1d5e0";return '<div class="dl-contact" style="cursor:pointer;border-left:4px solid '+esc(col)+'" data-l2="'+ol.id+'"><div class="ava" style="border-radius:6px;background:'+esc(col)+'22;color:#33404d">С</div><div><div style="color:var(--link)">'+esc(ol.name||("#"+ol.id))+'</div><div class="muted" style="font-size:12px">'+esc(ol.st||"")+(ol.price?(" · "+fmt(ol.price)+" ₽"):"")+'</div></div></div>';}).join(""):'<p class="muted" style="padding:16px 20px">Других сделок у контактов нет</p>')+'</div>'+
-        '<div data-panel="stats" class="fields" style="display:none">'+cardStatsHtml([
+        '<div data-panel="api" class="fields" style="display:none">'+fieldsGroupedHtml(l.custom_fields_values,((CF&&CF.leads)||[]).filter(function(f){return f.group_id&&f.group_id!=="statistic";}),"leads")+'</div>'+
+        '<div data-panel="stats" class="fields" style="display:none">'+fieldsGroupedHtml(l.custom_fields_values,((CF&&CF.leads)||[]).filter(function(f){return f.group_id==="statistic";}),"leads")+cardStatsHtml([
           ["Создана",dt(l.created_at)],["Дней в системе",Math.max(0,Math.floor((tnow()-(l.created_at||tnow()))/86400))],
           ["Изменена",dt(l.updated_at)],(l.closed_at?["Закрыта",dt(l.closed_at)]:null),
           ["Бюджет",fmt(l.price)+" ₽"],["Задач всего",(r.tasks||[]).length],
