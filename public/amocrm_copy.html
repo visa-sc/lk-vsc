@@ -1494,19 +1494,20 @@
   }
   /* ─── Компании ─── */
   var coPage=0,coLoading=false;
+  var coSearch="";
   function vCompanies(){
     renderSidebar("lists");
-    setHeader("Компании",{caret:true,onTitle:openListsMenu,count:""});
+    setHeader("Компании",{caret:true,onTitle:openListsMenu,count:"",searchPh:"Поиск компании (название — Enter)",onSearch:function(e){if(e.key==="Enter"){coSearch=e.target.value.trim();$("#cobody").innerHTML="";coPage=0;coLoading=false;loadCompanies();}}});
     $("#view").innerHTML=listTabsHtml("companies")+'<div style="padding:0 0 30px"><table class="amo"><thead><tr><th style="width:45%">Название</th><th>Дата создания</th></tr></thead><tbody id="cobody"></tbody></table><div id="comore" class="muted" style="padding:14px;text-align:center"></div></div>';
     bindListTabs();
-    coPage=0;coLoading=false;loadCompanies();
+    coSearch="";coPage=0;coLoading=false;loadCompanies();
     $("#main").onscroll=function(){if(coLoading)return;var m=$("#main");if(m.scrollTop+m.clientHeight>m.scrollHeight-600)loadCompanies();};
   }
   function loadCompanies(){
     if(coLoading)return;coLoading=true;var next=coPage+1;$("#comore").textContent="Загрузка…";
-    jreq(API+"/companies_page?page="+next).then(function(r){
+    jreq(API+"/companies_page?page="+next+(coSearch?"&q="+encodeURIComponent(coSearch):"")).then(function(r){
       var items=(r&&r.items)||[];
-      if(next===1)setHeader("Компании",{caret:true,onTitle:openListsMenu,count:fmt(r.total)+" компаний"});
+      if(next===1){if(coSearch)$("#hCount").innerHTML=fmt(r.total)+" найдено";else setHeader("Компании",{caret:true,onTitle:openListsMenu,count:fmt(r.total)+" компаний",searchPh:"Поиск компании (название — Enter)",onSearch:function(e){if(e.key==="Enter"){coSearch=e.target.value.trim();$("#cobody").innerHTML="";coPage=0;coLoading=false;loadCompanies();}}});}
       if(!items.length){$("#comore").textContent=coPage?"Это все компании":"Компаний нет";return;}
       $("#cobody").insertAdjacentHTML("beforeend",items.map(function(c){return '<tr><td><a data-co="'+c.id+'">'+esc(c.name||"Без названия")+'</a></td><td class="muted">'+(c.created?dShort(c.created):"")+'</td></tr>';}).join(""));
       $("#cobody").querySelectorAll("[data-co]").forEach(function(a){a.onclick=function(){openCompany(parseInt(a.dataset.co,10));};});

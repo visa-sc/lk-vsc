@@ -277,6 +277,13 @@ module.exports = function mountDbRoutes(app, guard, api) {
   app.get(`${api}/companies_page`, guard, (req, res) => {
     const page = String(req.query.page || "1");
     if (!PAGE_FILE_RE.test(page)) return res.status(400).json({ success: false });
+    const q = String(req.query.q || "").trim();
+    if (q) { // поиск компаний по названию (как в amo)
+      const like = "%" + q + "%";
+      const rows = D.prepare("SELECT id,name,created_at FROM companies WHERE name LIKE ? ORDER BY updated_at DESC LIMIT 50 OFFSET ?").all(like, (+page - 1) * 50);
+      const total = D.prepare("SELECT COUNT(*) c FROM companies WHERE name LIKE ?").get(like).c;
+      return res.json({ total, items: rows.map((c) => ({ id: c.id, name: c.name, created: c.created_at })) });
+    }
     const rows = qCompaniesPage.all(50, (+page - 1) * 50);
     res.json({ total: qCompaniesCount.get().c, items: rows.map((c) => ({ id: c.id, name: c.name, created: c.created_at })) });
   });
