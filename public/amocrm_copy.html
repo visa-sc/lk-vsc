@@ -538,11 +538,22 @@
   // ─── ФИЛЬТР (как в amoCRM: клик по строке поиска → панель фильтра) ───
   function userOptsHtml(sel){return '<option value="">— любой —</option>'+USERS.map(function(u){return '<option value="'+u.id+'"'+(String(u.id)===String(sel)?" selected":"")+'>'+esc(u.name)+'</option>';}).join("");}
   function closeFilterPanel(){var p=document.getElementById("filterPanel");if(p)p.remove();}
+  // значение фильтра по ТИПУ поля (как в amo): списочные → выбор варианта, чекбокс → Да/Нет, иначе текст
+  function cfFilterVal(def,val){
+    if(def&&def.enums&&def.enums.length&&(def.type==="select"||def.type==="multiselect"||def.type==="radiobutton")){
+      return '<select class="cf-val"><option value="">— значение —</option>'+def.enums.map(function(e){var v=String(e.value||e);return '<option'+(v===val?" selected":"")+'>'+esc(v)+'</option>';}).join("")+'</select>';
+    }
+    if(def&&def.type==="checkbox"){
+      return '<select class="cf-val"><option value="">—</option><option value="true"'+(val==="true"?" selected":"")+'>Да</option><option value="false"'+(val==="false"?" selected":"")+'>Нет</option></select>';
+    }
+    return '<input class="cf-val" placeholder="значение" value="'+esc(val||"")+'">';
+  }
   // строка фильтра по кастомному полю: [поле][значение][×]
   function cfFilterRow(defs,sec,fid,val){
+    var def=(defs||[]).find(function(f){return String(f.id)===String(fid);});
     return '<div class="cf-row" data-sec="'+sec+'"><select class="cf-field"><option value="">— поле —</option>'+
       defs.map(function(f){return '<option value="'+f.id+'"'+(String(f.id)===String(fid)?" selected":"")+'>'+esc(f.name)+'</option>';}).join("")+
-      '</select><input class="cf-val" placeholder="значение" value="'+esc(val||"")+'"><button class="cf-del" title="убрать">×</button></div>';
+      '</select>'+cfFilterVal(def,val)+'<button class="cf-del" title="убрать">×</button></div>';
   }
   function openFilterPanel(){
     if(!curFilter)return;
@@ -581,7 +592,18 @@
       var sec=btn.dataset.add,box=p.querySelector(sec==="cf"?"#cfRows":"#ccfRows");
       var tmp=document.createElement("div");tmp.innerHTML=cfFilterRow(sec==="cf"?ownDefs:contDefs,sec,"","");box.appendChild(tmp.firstChild);bindDel();
     };});
-    function bindDel(){p.querySelectorAll(".cf-del").forEach(function(b){b.onclick=function(){var row=b.closest(".cf-row");if(row.parentNode.children.length>1)row.remove();else{row.querySelector(".cf-field").value="";row.querySelector(".cf-val").value="";}};});}
+    function bindDel(){
+      p.querySelectorAll(".cf-del").forEach(function(b){b.onclick=function(){var row=b.closest(".cf-row");if(row.parentNode.children.length>1)row.remove();else{row.querySelector(".cf-field").value="";row.querySelector(".cf-val").value="";}};});
+      // смена поля → контрол значения под его тип (список вариантов / Да-Нет / текст)
+      p.querySelectorAll(".cf-field").forEach(function(sel){sel.onchange=function(){
+        var row=sel.closest(".cf-row");
+        var defsHere=row.dataset.sec==="ccf"?contDefs:ownDefs;
+        var def=defsHere.find(function(f){return String(f.id)===sel.value;});
+        var old=row.querySelector(".cf-val");
+        var tmp=document.createElement("div");tmp.innerHTML=cfFilterVal(def,"");
+        row.replaceChild(tmp.firstChild,old);
+      };});
+    }
     bindDel();
     var collectCf=function(sec){var out=[];p.querySelectorAll('.cf-row[data-sec="'+sec+'"]').forEach(function(row){var fid=row.querySelector(".cf-field").value,val=row.querySelector(".cf-val").value.trim();if(fid&&val)out.push([fid,val]);});return out;};
     var collect=function(){var vals={};p.querySelectorAll("[data-f]").forEach(function(el){var v=el.value.trim();if(v){if(el.type==="date")v=Math.floor(new Date(v+"T00:00:00").getTime()/1000);vals[el.dataset.f]=v;}});vals._cf=collectCf("cf");if(isLeads)vals._ccf=collectCf("ccf");return vals;};
