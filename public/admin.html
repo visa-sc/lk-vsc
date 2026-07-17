@@ -3497,19 +3497,19 @@
         const COL = { sch: "#3589BD", usa: "#e8843b", uk: "#8e44ad", ret: "#d2685f", wait: "#d3d8e0" };
         const leg = document.createElement("div"); leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:#5a626f;margin:0 0 12px;";
         const li = (c, t) => '<span style="white-space:nowrap;"><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:' + c + ';vertical-align:-1px;margin-right:5px;"></i>' + t + '</span>';
-        leg.innerHTML = li(COL.sch, "Записано — Шенген") + li(COL.usa, "Записано — США") + li(COL.uk, "Записано — Великобритания") + li(COL.ret, "Возврат") + li(COL.wait, "Ожидает записи");
+        leg.innerHTML = li(COL.sch, "🇪🇺 Записано — Шенген") + li(COL.usa, "🇺🇸 Записано — США") + li(COL.uk, "🇬🇧 Записано — Великобритания") + li(COL.ret, "Возврат") + li(COL.wait, "Ожидает записи");
         box.appendChild(leg);
         const MAXPX = 150;
         // Каждый месяц — своя светлая «карточка» + увеличенный зазор: месяцы визуально
         // разделены явно. Контейнер — стандартный .vsc-bars (overflow-x:auto) → на телефоне
         // при нехватке ширины прокручивается вбок, как остальные графики.
-        const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "222px"; bars.style.gap = "12px";
+        const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "240px"; bars.style.gap = "12px";
         yms.forEach(function (ym) {
           const mo = d.months[ym];
           const col = document.createElement("div"); col.className = "vsc-bar-col";
           col.style.cssText = "flex:0 0 102px;background:#f6f8fb;border:1px solid #edf0f5;border-radius:12px;padding:8px 6px 6px;box-sizing:border-box;";
           const pair = document.createElement("div"); pair.style.cssText = "display:flex;gap:5px;align-items:flex-end;justify-content:center;";
-          [["sch", "Шенген"], ["usa", "США"], ["uk", "Великобритания"]].forEach(function (p) {
+          [["sch", "Шенген", "🇪🇺"], ["usa", "США", "🇺🇸"], ["uk", "Великобритания", "🇬🇧"]].forEach(function (p) {
             const key = p[0], nameRu = p[1], g = mo[key] || { den: 0 };
             const mini = document.createElement("div"); mini.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:flex-end;";
             const vl = document.createElement("div"); vl.style.cssText = "font-size:9px;font-weight:700;color:" + COL[key] + ";line-height:1.2;margin-bottom:2px;white-space:nowrap;";
@@ -3532,7 +3532,9 @@
                 bar.appendChild(el);
               });
             }
-            mini.appendChild(vl); mini.appendChild(bar); pair.appendChild(mini);
+            // Флаг группы внизу колонки — график считывается без легенды.
+            const fl = document.createElement("div"); fl.style.cssText = "font-size:11px;line-height:1;margin-top:3px;"; fl.textContent = p[2];
+            mini.appendChild(vl); mini.appendChild(bar); mini.appendChild(fl); pair.appendChild(mini);
           });
           const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = MON3[+ym.slice(5, 7) - 1];
           col.appendChild(pair); col.appendChild(xl);
