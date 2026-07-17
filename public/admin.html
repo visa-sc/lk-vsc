@@ -3492,7 +3492,8 @@
       // Вид Кати: пара 100%-колонок Шенген|США на месяц, категории записано/возврат/ожидает.
       function vscSchengenRenderSplit(box, d) {
         const yms = Object.keys(d.months).sort();
-        const MON3 = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+        // Полные названия месяцев — как на графике «% возвратов» (просьба Андрея).
+        const MON3 = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
         const COL = { sch: "#3589BD", usa: "#e8843b", ret: "#d2685f", wait: "#d3d8e0" };
         const leg = document.createElement("div"); leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:#5a626f;margin:0 0 12px;";
         const li = (c, t) => '<span style="white-space:nowrap;"><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:' + c + ';vertical-align:-1px;margin-right:5px;"></i>' + t + '</span>';
