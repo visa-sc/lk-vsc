@@ -1668,7 +1668,8 @@
           '<div class="frow"><div class="fl">Изменён</div><div class="fv">'+dt(c.updated_at)+'</div></div>'+
           fieldsGroupedHtml(c.custom_fields_values,CF&&CF.contacts,"contacts")+
         '</div>'+companies+'</div>'+
-        '<div data-panel="deals" style="display:none">'+(leads||'<p class="muted" style="padding:16px 20px">Сделок нет</p>')+'</div>'+
+        '<div data-panel="deals" style="display:none">'+(leads||'<p class="muted" style="padding:16px 20px">Сделок нет</p>')+
+          '<div class="add-ent nd-add" title="Создать сделку с этим контактом"><span class="plus">+</span><div><div>Создать сделку</div><div class="muted" style="font-size:12px">в основной воронке, контакт привяжется</div></div></div></div>'+
         '<div data-panel="stats" class="fields" style="display:none">'+cardStatsHtml([
           ["Создан",dt(c.created_at)],["Дней в системе",Math.max(0,Math.floor((tnow()-(c.created_at||tnow()))/86400))],
           ["Изменён",dt(c.updated_at)],["Сделок",larr.length],
@@ -1688,6 +1689,21 @@
       bindEditable(bg,"cname",function(){return c.name;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{name:v});},reload,"text");
       bindEditable(bg,"cresp",function(){return c.responsible_user_id;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{responsible_user_id:v});},reload,"user");
       bindCfFields(bg,"contacts",id,CF&&CF.contacts,reload);
+      // «＋ Создать сделку» из карточки контакта (как в amo)
+      var ndAdd=bg.querySelector(".nd-add");
+      if(ndAdd)ndAdd.onclick=function(){
+        var nm=prompt("Название новой сделки:",(c.name?c.name+" — новая сделка":"Новая сделка"));
+        if(!nm)return;
+        var mp=PIPES.find(function(x){return x.is_main;})||PIPES[0];
+        var st0=((mp._embedded&&mp._embedded.statuses)||[]).find(function(s){return s.id!==142&&s.id!==143;});
+        ereq("POST","/edit-api/lead",{name:nm.trim(),pipeline_id:mp.id,status_id:st0.id}).then(function(lr){
+          if(!lr||!lr.success)return toast("Не удалось создать",true);
+          ereq("POST","/edit-api/lead/"+lr.id+"/link_contact",{contact_id:id}).then(function(rr){
+            if(rr&&rr.success){toast("Сделка создана");document.querySelectorAll(".dcard-bg").forEach(function(x){x.remove();});openLead(lr.id);}
+            else toast("Сделка создана, но не привязана",true);
+          });
+        });
+      };
       bindFieldGroups(bg);bindCardTabs(bg);
       bg.querySelector(".dl-del").onclick=function(){
         if(!confirm("Удалить контакт «"+(c.name||id)+"» из копии?"))return;
