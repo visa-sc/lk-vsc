@@ -49,6 +49,7 @@ module.exports = function mountEditRoutes(app, guard) {
     CREATE INDEX IF NOT EXISTS ix_leads_pipe_name ON leads(pipeline_id,name);
     CREATE INDEX IF NOT EXISTS ix_leads_pipe_price ON leads(pipeline_id,price);
     CREATE INDEX IF NOT EXISTS ix_leads_pipe_created ON leads(pipeline_id,created_at);
+    CREATE INDEX IF NOT EXISTS ix_lc_lead ON lead_contacts(lead_id);
   `);
   const seqRow = db.prepare("SELECT val FROM local_seq WHERE name='id'").get();
   if (!seqRow) db.prepare("INSERT INTO local_seq(name,val) VALUES('id',?)").run(LOCAL_ID_BASE);
