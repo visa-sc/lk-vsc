@@ -49,6 +49,8 @@ module.exports = function mountDbRoutes(app, guard, api) {
   try { D = open(); } catch (e) { console.error("amocopy-db: БД недоступна, работаю на файлах:", e.message); return false; }
 
   const qLeadsPage = D.prepare("SELECT id,name,price,responsible_user_id,created_at,updated_at,tags FROM leads WHERE pipeline_id=? AND status_id=? ORDER BY updated_at DESC LIMIT ? OFFSET ?");
+  // мин. срок ОТКРЫТОЙ задачи сделки — для индикатора «Нет задач/Просрочено/Сегодня» на карточке канбана (как в amo)
+  const qLeadTaskMin = D.prepare("SELECT MIN(complete_till) m FROM tasks WHERE entity_type='leads' AND entity_id=? AND is_completed=0");
   const qLead = D.prepare("SELECT * FROM leads WHERE id=?");
   const qLeadTasks = D.prepare("SELECT * FROM tasks WHERE entity_type='leads' AND entity_id=? ORDER BY complete_till DESC");
   // задачи любой сущности (для карточек контакта/компании) — как в amo
@@ -277,7 +279,8 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const rows = qLeadsPage.all(+pid, +sid, PER_PAGE, (+page - 1) * PER_PAGE);
     res.json(rows.map((l) => ({
       id: l.id, name: l.name, price: l.price, resp: uName[l.responsible_user_id] || "",
-      created: l.created_at, updated: l.updated_at, tags: J(l.tags, [])
+      created: l.created_at, updated: l.updated_at, tags: J(l.tags, []),
+      task_till: (qLeadTaskMin.get(l.id) || {}).m || 0
     })));
   });
 

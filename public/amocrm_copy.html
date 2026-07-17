@@ -210,6 +210,12 @@
   .kb-card .comp { color:var(--txt); font-size:13px; }
   .kb-card .ttl { color:var(--link); font-size:14px; margin:2px 0; }
   .kb-card .tags { margin-top:3px; }
+  /* индикатор задач на карточке канбана (как в amo) */
+  .kb-task { font-size:12px; margin-top:5px; }
+  .kb-task::before { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; vertical-align:1px; background:currentColor; }
+  .kb-task.none, .kb-task.over { color:#e05252; }
+  .kb-task.today { color:#2fa96b; }
+  .kb-task.fut { color:#98a2ad; }
   .tag { display:inline-block; background:#f2f4f6; border:1px solid #e7eaee; color:#6b7684; border-radius:3px; padding:0 6px; font-size:11.5px; margin:1px 3px 1px 0; }
   .kb-more { display:block; margin:2px auto 14px; }
 
@@ -1070,7 +1076,7 @@
         if(r&&r.success){toast("Сделка создана");
           var box=col.querySelector(".kb-cards");
           var d=document.createElement("div");d.className="kb-card";d.dataset.lead=r.id;
-          d.innerHTML='<div class="top"><span></span><span class="dt">сейчас</span></div><div class="ttl">'+esc(name)+'</div>';
+          d.innerHTML='<div class="top"><span></span><span class="dt">сейчас</span></div><div class="ttl">'+esc(name)+'</div>'+leadTaskBadge(0);
           d.onclick=function(){openLead(r.id);};
           box.insertBefore(d,box.firstChild);recountCol(col,1);reset();
         } else {toast((r&&r.message)||"Не удалось",true);reset();}
@@ -1148,6 +1154,14 @@
     load();
     $("#main").onscroll=function(){if(llLoading)return;var m=$("#main");if(m.scrollTop+m.clientHeight>m.scrollHeight-600)load();};
   }
+  // индикатор задач на карточке канбана (как в amo): нет открытых задач / просрочено / сегодня / дата
+  function leadTaskBadge(till){
+    if(!till)return '<div class="kb-task none">Нет задач</div>';
+    var d=new Date(till*1000),now=new Date();
+    if(d.toDateString()===now.toDateString())return '<div class="kb-task today">Сегодня</div>';
+    if(d<now)return '<div class="kb-task over">Просрочено</div>';
+    return '<div class="kb-task fut">'+dShort(till)+'</div>';
+  }
   function loadKbPage(col,pid){
     var sid=col.dataset.sid, btn=col.querySelector(".kb-more"), box=col.querySelector(".kb-cards");
     var page=(parseInt(btn.dataset.page||"0",10)||0)+1;
@@ -1160,7 +1174,7 @@
         d.draggable=true;
         d.dataset.lead=l.id;
         d.dataset.price=l.price||0;
-        d.innerHTML='<div class="top"><span>'+esc(l.resp||"")+'</span><span class="dt">'+dShort(l.created)+'</span></div><div class="ttl">'+esc(l.name||("Сделка #"+l.id))+'</div>'+(l.price?'<div style="font-size:13px">'+fmt(l.price)+' ₽</div>':"")+(l.tags&&l.tags.length?('<div class="tags">'+l.tags.slice(0,3).map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join("")+'</div>'):"");
+        d.innerHTML='<div class="top"><span>'+esc(l.resp||"")+'</span><span class="dt">'+dShort(l.created)+'</span></div><div class="ttl">'+esc(l.name||("Сделка #"+l.id))+'</div>'+(l.price?'<div style="font-size:13px">'+fmt(l.price)+' ₽</div>':"")+(l.tags&&l.tags.length?('<div class="tags">'+l.tags.slice(0,3).map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join("")+'</div>'):"")+leadTaskBadge(l.task_till);
         var moved=false;
         d.addEventListener("dragstart",function(e){moved=true;DRAG={id:l.id,el:d,fromCol:col};e.dataTransfer.effectAllowed="move";d.style.opacity="0.4";});
         d.addEventListener("dragend",function(){d.style.opacity="";setTimeout(function(){moved=false;},50);});
