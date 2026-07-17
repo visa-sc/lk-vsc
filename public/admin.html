@@ -2894,7 +2894,7 @@
       // не определено (серо-синий). Сумма сегментов = returnsPct (сервер так и считает).
       function vscReturnsStackedChart(series) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
-        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = "% возвратов (от выручки) — с разбивкой по вине";
+        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = "% возвратов (от выручки за услуги)";
         wrap.appendChild(h);
         const leg = document.createElement("div"); leg.className = "vsc-ret-legend";
         leg.innerHTML = '<span><i style="background:#e8843b"></i>Наша вина</span>'
@@ -3339,6 +3339,8 @@
         const h5 = document.createElement("div"); h5.className = "ref-sec-h"; h5.textContent = "Возвраты — по месяцам";
         vscContent.appendChild(h5);
         vscContent.appendChild(vscReturnsStackedChart(retSeries));
+        // ── % записанных сделок (Шенген/США) — сразу под возвратами (по просьбе Андрея) ──
+        vscContent.appendChild(vscSchengenBlock());
         // ── Выручка по городам (СПб/МСК) — по месяцам, из amoCRM (ночной расчёт 05:00) ──
         const hCity = document.createElement("div"); hCity.className = "ref-sec-h"; hCity.textContent = "Выручка по городам — по месяцам (2026)";
         vscContent.appendChild(hCity);
@@ -3457,8 +3459,6 @@
           vscContent.appendChild(hMkt);
           vscContent.appendChild(vscMarketChart(mktRows));
         }
-        // % шенген-сделок, дошедших до целевых статусов (по дате оплаты) — внизу раздела.
-        vscContent.appendChild(vscSchengenBlock());
       }
       // Блок «% записанных сделок — Шенген и США» — из локальной копии amoCRM (по дате
       // оплаты), живой (без заморозки). Сгруппированный график: 2 столбца на месяц.
