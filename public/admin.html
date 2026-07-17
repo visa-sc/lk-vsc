@@ -3499,11 +3499,15 @@
         leg.innerHTML = li(COL.sch, "Записано — Шенген") + li(COL.usa, "Записано — США") + li(COL.ret, "Возврат") + li(COL.wait, "Ожидает записи");
         box.appendChild(leg);
         const MAXPX = 150;
-        const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "205px";
+        // Каждый месяц — своя светлая «карточка» + увеличенный зазор: месяцы визуально
+        // разделены явно. Контейнер — стандартный .vsc-bars (overflow-x:auto) → на телефоне
+        // при нехватке ширины прокручивается вбок, как остальные графики.
+        const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "222px"; bars.style.gap = "12px";
         yms.forEach(function (ym) {
           const mo = d.months[ym];
-          const col = document.createElement("div"); col.className = "vsc-bar-col"; col.style.flex = "0 0 66px";
-          const pair = document.createElement("div"); pair.style.cssText = "display:flex;gap:4px;align-items:flex-end;justify-content:center;";
+          const col = document.createElement("div"); col.className = "vsc-bar-col";
+          col.style.cssText = "flex:0 0 78px;background:#f6f8fb;border:1px solid #edf0f5;border-radius:12px;padding:8px 6px 6px;box-sizing:border-box;";
+          const pair = document.createElement("div"); pair.style.cssText = "display:flex;gap:5px;align-items:flex-end;justify-content:center;";
           [["sch", "Шенген"], ["usa", "США"]].forEach(function (p) {
             const key = p[0], nameRu = p[1], g = mo[key] || { den: 0 };
             const mini = document.createElement("div"); mini.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:flex-end;";
@@ -3529,7 +3533,7 @@
             }
             mini.appendChild(vl); mini.appendChild(bar); pair.appendChild(mini);
           });
-          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = MON3[+ym.slice(5, 7) - 1];
+          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = MON3[+ym.slice(5, 7) - 1];
           col.appendChild(pair); col.appendChild(xl);
           bars.appendChild(col);
         });
