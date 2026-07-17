@@ -200,6 +200,19 @@ module.exports = function mountDbRoutes(app, guard, api) {
   });
 
   // аналитика: воронки по этапам (кол-во+сумма) + по ответственным
+  // отчёт «Звонки» (как в amo Аналитика→Звонки): агрегат из calls_agg.json (bucket-примечания слепка, пересчёт tools-скриптом)
+  app.get(`${api}/calls_report`, guard, (req, res) => {
+    try {
+      const agg = JSON.parse(fs.readFileSync(path.join(path.dirname(DB_PATH), "calls_agg.json"), "utf8"));
+      const rows = Object.keys(agg).map((k) => {
+        const a = agg[k];
+        const name = /^\d+$/.test(k) ? (uName[+k] || ("id " + k)) : k;
+        return { name, in_c: a.in_c, out_c: a.out_c, in_d: a.in_d, out_d: a.out_d, total: a.in_c + a.out_c, dur: a.in_d + a.out_d };
+      }).filter((r2) => r2.total >= 5).sort((a, b) => b.total - a.total);
+      res.json({ success: true, rows });
+    } catch (e) { res.json({ success: false, message: "агрегат не построен: " + e.message }); }
+  });
+
   app.get(`${api}/analytics`, guard, (req, res) => {
     const statuses = D.prepare("SELECT pipeline_id,id,name,sort,color,type FROM statuses").all();
     const pipes = D.prepare("SELECT id,name,is_main,sort FROM pipelines ORDER BY sort").all();
