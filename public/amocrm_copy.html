@@ -915,16 +915,29 @@
       if(r&&r.success){
         col.querySelector(".kb-cards").appendChild(d.el); // визуально переносим карточку
         toast("Сделка перенесена → "+(r.status_name||""));
-        recountCol(d.fromCol,-1); recountCol(col,+1);
+        var price=parseInt((d.el&&d.el.dataset.price)||"0",10)||0;
+        recountCol(d.fromCol,-1,-price); recountCol(col,+1,price);
       } else toast((r&&r.message)||"Не удалось перенести",true);
       DRAG=null;
     }).catch(function(){toast("Ошибка сети",true);DRAG=null;});
   }
-  function recountCol(col,delta){
+  // живой пересчёт колонки после dnd/быстрого добавления: счётчик + сумма + шапка-итог воронки
+  function recountCol(col,delta,priceDelta){
     if(!col)return;
-    var ct=col.querySelector(".kb-head .ct"); if(!ct)return;
-    var m=ct.textContent.match(/([\d\s]+)\s*сделок/); var n=m?parseInt(m[1].replace(/\s/g,""),10):0;
-    ct.textContent=(n+delta)+" сделок"+(ct.textContent.indexOf(":")>=0?ct.textContent.slice(ct.textContent.indexOf(":")):"");
+    var sid=parseInt(col.dataset.sid,10);
+    var kbp=KANBAN&&KANBAN.kanban&&KANBAN.kanban[curPipe];
+    if(kbp&&sid){
+      var k=kbp[sid]||(kbp[sid]={count:0,sum:0});
+      k.count=Math.max(0,(k.count||0)+delta);
+      k.sum=Math.max(0,(k.sum||0)+(priceDelta||0));
+      var ct=col.querySelector(".kb-head .ct");
+      if(ct)ct.textContent=fmt(k.count)+" сделок: "+fmt(k.sum)+" ₽";
+      if(document.getElementById("kb")){var tot=pipeTotal(curPipe);$("#hCount").innerHTML=fmt(tot.c)+" сделки: <b>"+fmt(tot.s)+" ₽</b>";}
+    }else{
+      var ct2=col.querySelector(".kb-head .ct"); if(!ct2)return;
+      var m=ct2.textContent.match(/([\d\s]+)\s*сделок/); var n=m?parseInt(m[1].replace(/\s/g,""),10):0;
+      ct2.textContent=(n+delta)+" сделок"+(ct2.textContent.indexOf(":")>=0?ct2.textContent.slice(ct2.textContent.indexOf(":")):"");
+    }
   }
   function pipeTotal(pid){var kb=(KANBAN&&KANBAN.kanban[pid])||{};var c=0,s=0;Object.keys(kb).forEach(function(k){c+=kb[k].count;s+=kb[k].sum;});return {c:c,s:s};}
   var leadViewMode="kanban";
@@ -1065,6 +1078,7 @@
         d.className="kb-card";
         d.draggable=true;
         d.dataset.lead=l.id;
+        d.dataset.price=l.price||0;
         d.innerHTML='<div class="top"><span>'+esc(l.resp||"")+'</span><span class="dt">'+dShort(l.created)+'</span></div><div class="ttl">'+esc(l.name||("Сделка #"+l.id))+'</div>'+(l.price?'<div style="font-size:13px">'+fmt(l.price)+' ₽</div>':"")+(l.tags&&l.tags.length?('<div class="tags">'+l.tags.slice(0,3).map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join("")+'</div>'):"");
         var moved=false;
         d.addEventListener("dragstart",function(e){moved=true;DRAG={id:l.id,el:d,fromCol:col};e.dataTransfer.effectAllowed="move";d.style.opacity="0.4";});
