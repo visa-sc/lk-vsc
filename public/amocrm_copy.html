@@ -310,7 +310,24 @@
   .lead-toggle button.act { background:var(--blue); border-color:var(--blue); color:#fff; }
 
   /* ── дашборд (рабочий стол) ── */
-  #dash { min-height:100%; background:linear-gradient(135deg,#1d3c66 0%,#2a5d9e 55%,#2d6fbb 100%); padding:26px; }
+  #dash { min-height:100%; background:linear-gradient(160deg,#274f7f 0%,#3a7cb0 50%,#5fb0d8 100%); padding:26px; }
+  /* воронка-полоса на рабочем столе (как в amo): воронки слева · +новые · этапы с большими цифрами */
+  .fwa { max-width:1250px; margin:0 auto 22px; background:rgba(13,30,55,.30); border-radius:12px; padding:16px 18px; display:flex; gap:18px; align-items:stretch; color:#fff; }
+  .fwa-pipes { flex-shrink:0; display:flex; flex-direction:column; gap:6px; justify-content:center; max-width:180px; }
+  .fwa-p { font-size:12.5px; color:#cfe0f5; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:2px 8px; border-radius:6px; }
+  .fwa-p.act { color:#fff; font-weight:700; background:rgba(255,255,255,.12); }
+  .fwa-new { flex-shrink:0; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:0 16px; border-left:1px solid rgba(255,255,255,.15); border-right:1px solid rgba(255,255,255,.15); }
+  .fwa-plus { font-size:34px; font-weight:700; line-height:1; }
+  .fwa-nl { font-size:11px; letter-spacing:.08em; color:#cfe0f5; margin-top:4px; }
+  .fwa-lost { font-size:11.5px; color:#b9cde6; margin-top:14px; }
+  .fwa-sts { display:flex; gap:14px; overflow-x:auto; flex:1; padding-bottom:4px; scrollbar-width:thin; }
+  .fwa-st { min-width:150px; flex-shrink:0; }
+  .fwa-sn { font-size:11px; text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#e7f0fa; }
+  .fwa-su { font-size:11px; color:#b9cde6; margin:2px 0 4px; }
+  .fwa-line { height:3px; border-radius:2px; margin-bottom:8px; }
+  .fwa-box { border:1px solid rgba(255,255,255,.35); border-radius:8px; padding:10px 8px 8px; text-align:center; }
+  .fwa-big { font-size:30px; font-weight:700; line-height:1; }
+  .fwa-rub { font-size:11.5px; color:#cfe0f5; margin-top:4px; border-top:1px solid rgba(255,255,255,.25); padding-top:5px; }
   .dash-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:12px; max-width:1250px; margin:0 auto; }
   .dash-card { background:rgba(13,30,55,.42); border-radius:8px; padding:16px 18px; color:#fff; }
   .dash-card b { font-size:30px; color:#a8c4f0; font-weight:700; display:block; }
@@ -894,21 +911,26 @@
     renderDeskWidgets();
   }
   function renderFunnelWidget(){
-    jreq(API+"/analytics").then(function(r){
-      var funnels=(r&&r.funnels)||[];
-      var f=funnels.find(function(x){var p=PIPES.find(function(pp){return pp.id===deskPipe;});return p&&x.name===p.name;})||funnels[0];
+    // амо-полоса: список воронок · «+N НОВЫЕ» (создано за период) · этапы с большими цифрами (текущее состояние)
+    var ep=VIEW_EPOCH;
+    Promise.all([
+      jreq(API+"/analytics"),
+      jreq(API+"/widget_stat?pipeline="+deskPipe+"&field=created&period="+deskPeriod).catch(function(){return null;}),
+      jreq(API+"/widget_stat?pipeline="+deskPipe+"&lost=1&field=closed&period="+deskPeriod).catch(function(){return null;})
+    ]).then(function(rr){
+      if(ep!==VIEW_EPOCH||!$("#funnelW"))return;
+      var funnels=(rr[0]&&rr[0].funnels)||[],nw=rr[1]||{},lost=rr[2]||{};
+      var p=PIPES.find(function(pp){return pp.id===deskPipe;});
+      var f=funnels.find(function(x){return p&&x.name===p.name;})||funnels[0];
       if(!f){$("#funnelW").innerHTML="";return;}
-      var maxc=Math.max.apply(null,f.stages.map(function(s){return s.count;}).concat([1]));
-      var pipeSel='<select id="funnelPipe" style="background:rgba(255,255,255,.12);color:#fff;border:0;border-radius:6px;padding:4px 8px;font:inherit;font-size:12px">'+
-        funnels.map(function(x){return '<option'+(x.name===f.name?" selected":"")+'>'+esc(x.name)+'</option>';}).join("")+'</select>';
-      var html='<div class="funnel-w"><div class="fw-h"><span>Воронка · '+esc(f.name)+'</span><span>всего '+fmt(f.total)+'</span></div><div class="funnel-row">';
-      f.stages.forEach(function(s){
-        var h=Math.max(4,Math.round(8+ (s.count/maxc)*4));
-        html+='<div class="funnel-stage"><div class="fs-bar" style="background:'+esc(s.color||"#4b78b0")+';height:'+h+'px"></div><div class="fs-c">'+fmt(s.count)+'</div><div class="fs-n">'+esc(s.name)+'</div><div class="fs-s">'+(s.sum?fmt(s.sum)+" ₽":"")+'</div></div>';
-      });
-      html+='</div></div>';
-      $("#funnelW").innerHTML=html;
-    }).catch(function(){$("#funnelW").innerHTML="";});
+      var pipesCol='<div class="fwa-pipes">'+PIPES.map(function(pp){return '<div class="fwa-p'+(pp.id===deskPipe?" act":"")+'" data-pid="'+pp.id+'" title="'+esc(pp.name)+'">'+esc(pp.name)+'</div>';}).join("")+'</div>';
+      var newCol='<div class="fwa-new"><div class="fwa-plus">+'+fmt(nw.count||0)+'</div><div class="fwa-nl">НОВЫЕ</div><div class="fwa-lost">Потерянные: '+fmt(lost.count||0)+'</div></div>';
+      var stCells=f.stages.map(function(s){
+        return '<div class="fwa-st"><div class="fwa-sn" title="'+esc(s.name)+'">'+esc(s.name)+'</div><div class="fwa-su">'+fmt(s.count)+' сделок, '+fmt(s.sum)+' ₽</div><div class="fwa-line" style="background:'+esc(s.color||"#7fb3e0")+'"></div><div class="fwa-box"><div class="fwa-big">'+fmt(s.count)+'</div><div class="fwa-rub">'+fmt(s.sum)+' ₽</div></div></div>';
+      }).join("");
+      $("#funnelW").innerHTML='<div class="fwa">'+pipesCol+newCol+'<div class="fwa-sts">'+stCells+'</div></div>';
+      $("#funnelW").querySelectorAll(".fwa-p").forEach(function(x){x.onclick=function(){deskPipe=parseInt(x.dataset.pid,10);renderFunnelWidget();};});
+    }).catch(function(){var w=$("#funnelW");if(w)w.innerHTML="";});
   }
   function renderDeskWidgets(){
     var ws=loadDeskWidgets();
