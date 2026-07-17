@@ -3465,7 +3465,7 @@
       function vscSchengenBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
         const SECT = "% записанных сделок — Шенген и США";
-        const info = "<b>Что показывает секция</b><br>Из сделок, ОПЛАЧЕННЫХ в конкретном месяце, — какая доля дошла до «продвинутых» статусов (реальная запись/подача/паспорт/реализация).<br><br><b>Как читать столбец</b><br>Высота столбца и число сверху — ОБЩИЙ % записанных (Шенген + США вместе). Сегменты — Шенген/США по весу числа сделок; число в сегменте — конкретный % ЭТОЙ группы. Наведение — точные цифры «дошло из скольких».<br><br><b>Группы стран</b> (по полю «Страна оформления/услуга»):<br>• Шенген — зона Шенгена + Болгария, Кипр, Румыния, Хорватия («Италия» = Альмавива и VMS); Ирландия/Британия НЕ входят;<br>• США — США / США Астана / США Варшава.<br><br><b>Целевые статусы:</b><br>• Отдел по работе с Клиентами: на рассмотрении в консульстве, документы готовы к личной подаче, передано клиенту, поданы лично, паспорт готов, успешно реализовано;<br>• Отдел Оформления: запись сделана, электронное рассмотрение, оформлен выкуп, пакет документов готов.<br><br>Разрез — по <b>дате оплаты</b>. Живой (НЕ заморожен): оплаченную в июле сделку записали позже → июльский % подрастёт. Источник — локальная копия amoCRM (без нагрузки на CRM), пересчёт каждые 3 часа.";
+        const info = "<b>Что показывает секция</b><br>Из сделок, ОПЛАЧЕННЫХ в конкретном месяце, — какая доля дошла до «продвинутых» статусов (реальная запись/подача/паспорт/реализация).<br><br><b>Как читать столбец</b><br>Высота столбца и число сверху — ОБЩИЙ % записанных (Шенген + США вместе). Сегменты — Шенген/США по весу числа сделок; в синем сегменте — % Шенгена, оранжевое число ПОД колонкой — % США (его сегмент узкий, внутри цифра не помещается). Наведение — точные цифры «дошло из скольких».<br><br><b>Группы стран</b> (по полю «Страна оформления/услуга»):<br>• Шенген — зона Шенгена + Болгария, Кипр, Румыния, Хорватия («Италия» = Альмавива и VMS); Ирландия/Британия НЕ входят;<br>• США — США / США Астана / США Варшава.<br><br><b>Целевые статусы:</b><br>• Отдел по работе с Клиентами: на рассмотрении в консульстве, документы готовы к личной подаче, передано клиенту, поданы лично, паспорт готов, успешно реализовано;<br>• Отдел Оформления: запись сделана, электронное рассмотрение, оформлен выкуп, пакет документов готов.<br><br>Разрез — по <b>дате оплаты</b>. Живой (НЕ заморожен): оплаченную в июле сделку записали позже → июльский % подрастёт. Источник — локальная копия amoCRM (без нагрузки на CRM), пересчёт раз в сутки в 00:00 МСК.";
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = SECT; h.appendChild(vscInfo(info));
         wrap.appendChild(h);
         const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем…</div>';
@@ -3506,12 +3506,17 @@
                 const seg = document.createElement("div");
                 seg.style.cssText = "width:100%;height:" + (frac * 100) + "%;background:" + COL[key] + ";display:flex;align-items:center;justify-content:center;overflow:hidden;";
                 seg.title = (key === "sch" ? "Шенген" : "США") + ": " + g.num + " из " + g.den + " = " + g.pct + "%";
-                if (g.pct != null && frac * barPx >= 11) { const sp = document.createElement("span"); sp.textContent = g.pct + "%"; sp.style.cssText = "font-size:8px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.25);"; seg.appendChild(sp); }
+                // Внутри сегмента цифру рисуем только шенгену (он крупный). % США — ВСЕГДА
+                // под колонкой оранжевым (сегмент США узкий, внутри цифра не помещается).
+                if (key === "sch" && g.pct != null && frac * barPx >= 11) { const sp = document.createElement("span"); sp.textContent = g.pct + "%"; sp.style.cssText = "font-size:8px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.25);"; seg.appendChild(sp); }
                 bar.appendChild(seg);
               });
             }
             const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = MON3[+ym.slice(5, 7) - 1];
-            col.appendChild(vl); col.appendChild(bar); col.appendChild(xl);
+            const ul = document.createElement("div"); ul.style.cssText = "font-size:8.5px;font-weight:700;color:" + COL.usa + ";line-height:1.2;margin-top:1px;white-space:nowrap;";
+            ul.textContent = usa.den ? (usa.pct + "%") : "—";
+            ul.title = "США: " + usa.num + " из " + usa.den + (usa.den ? " = " + usa.pct + "%" : " (нет сделок)");
+            col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(ul);
             bars.appendChild(col);
           });
           box.appendChild(bars);
