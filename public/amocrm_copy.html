@@ -45,6 +45,23 @@
   .sb-bell svg { width:23px; height:23px; stroke:var(--sb-ico); fill:none; stroke-width:1.6; }
   .sb-bell:hover svg { stroke:#cfe2f3; }
   .sb-bell .nav-badge { top:8px; right:12px; }
+  /* профиль юзера внизу сайдбара (как в amo) */
+  .sb-user { width:66px; padding:4px 0 14px; display:flex; justify-content:center; cursor:pointer; flex-shrink:0; }
+  .sb-user .av { width:32px; height:32px; border-radius:50%; background:#3b5878; color:#e8eef5; font-size:12px; font-weight:600; display:flex; align-items:center; justify-content:center; letter-spacing:.5px; }
+  .sb-user:hover .av { background:#46688f; }
+  .profile-pop { position:fixed; left:74px; bottom:12px; z-index:300; background:#fff; border:1px solid var(--border); border-radius:12px; box-shadow:0 8px 30px rgba(20,40,70,.18); min-width:230px; padding:6px 0; font-size:13.5px; }
+  .profile-pop .ph { padding:8px 14px 10px; border-bottom:1px solid #eef1f4; }
+  .profile-pop .ph b { display:block; font-size:14px; }
+  .profile-pop .ph span { color:var(--mut); font-size:12px; }
+  .profile-pop .pi { padding:9px 14px; cursor:pointer; }
+  .profile-pop .pi:hover { background:#f2f6fa; }
+  /* глобальный поиск сверху (выпадашка результатов) */
+  .gs-box { position:fixed; z-index:320; background:#fff; border:1px solid var(--border); border-radius:12px; box-shadow:0 10px 34px rgba(20,40,70,.16); max-height:62vh; overflow:auto; display:none; }
+  .gs-box .gs-h { padding:8px 14px 4px; font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:var(--mut); }
+  .gs-box .gs-row { padding:8px 14px; cursor:pointer; font-size:13.5px; display:flex; gap:8px; align-items:baseline; justify-content:space-between; }
+  .gs-box .gs-row:hover { background:#f2f6fa; }
+  .gs-box .gs-sub { color:var(--mut); font-size:12px; white-space:nowrap; }
+  .gs-box .gs-empty { padding:12px 14px; color:var(--mut); font-size:13px; }
   /* ── карточка сделки как в amo: тёмная шапка ── */
   .dl-dark { background:#2e3d4e; padding:14px 20px 14px; position:relative; }
   .dl-dark .back { color:#9fb0c0; }
@@ -540,10 +557,74 @@
     }).join("");
     $("#sidebar").innerHTML='<div class="logo" id="navLogo" title="На рабочий стол">V<i></i>S<i></i>C</div>'+
       '<div class="nav-scroll">'+items+'</div>'+
-      '<div class="sb-bell" id="navBell" title="Уведомления">'+ICONS.bell+(bell?'<span class="nav-badge">'+badgeFmt(bell)+'</span>':"")+'</div>';
+      '<div class="sb-bell" id="navBell" title="Уведомления">'+ICONS.bell+(bell?'<span class="nav-badge">'+badgeFmt(bell)+'</span>':"")+'</div>'+
+      '<div class="sb-user" id="navUser" title="Профиль"><span class="av">'+esc(meInitials())+'</span></div>';
     var logo=$("#navLogo");if(logo)logo.onclick=function(){document.querySelectorAll(".dcard-bg").forEach(function(x){x.remove();});go("desk");};
     var bl=$("#navBell");if(bl)bl.onclick=function(e){openNotifPanel(e.currentTarget);};
+    var us=$("#navUser");if(us)us.onclick=function(e){e.stopPropagation();openProfilePop();};
     document.querySelectorAll(".nav-i").forEach(function(b){b.onclick=function(){document.querySelectorAll(".dcard-bg").forEach(function(x){x.remove();});go(b.dataset.v);};});
+  }
+  // Профиль юзера внизу сайдбара (как в amo): имя/email/роль + выход
+  function meInitials(){
+    var n=((ME&&ME.name)||"Администратор").trim().split(/\s+/);
+    return (((n[0]||"")[0]||"A")+((n[1]||"")[0]||"")).toUpperCase();
+  }
+  function openProfilePop(){
+    var old=document.getElementById("profilePop");if(old){old.remove();return;}
+    var d=document.createElement("div");d.className="profile-pop";d.id="profilePop";
+    var role=ME&&ME.kind==="admin"?"Супер-админ (вход по коду)":(ME&&(ME.role||(ME.is_admin?"Администратор":"Сотрудник")))||"";
+    d.innerHTML='<div class="ph"><b>'+esc((ME&&ME.name)||"Администратор")+'</b><span>'+esc([(ME&&ME.email)||"",role].filter(Boolean).join(" · "))+'</span></div>'+
+      '<div class="pi" data-a="settings">Пользователи и права</div>'+
+      '<div class="pi" data-a="logout" style="color:#c0392b">Выйти</div>';
+    document.body.appendChild(d);
+    d.querySelector('[data-a="logout"]').onclick=doLogout;
+    d.querySelector('[data-a="settings"]').onclick=function(){d.remove();if(ME&&(ME.is_admin||ME.kind==="admin"))go("settings");else toast("Настройки доступны администратору");};
+    setTimeout(function(){document.addEventListener("click",function cl(ev){if(!d.contains(ev.target)){d.remove();document.removeEventListener("click",cl);}});},0);
+  }
+  function doLogout(){
+    var fin=function(){try{localStorage.removeItem("voyo_crmcopy_token");}catch(_){}location.href="/";};
+    fetch(API+"/auth/logout",{method:"POST",headers:{"Authorization":"Bearer "+token}}).then(fin,fin);
+  }
+  // Глобальный поиск сверху (как в amo): 3+ символа → сделки/контакты/компании, всё из локальной БД
+  var GS_T=null,GS_SEQ=0;
+  function bindGlobalSearch(){
+    var inp=$("#hSearch");if(!inp||inp.__gs)return;inp.__gs=1;
+    var box=document.createElement("div");box.className="gs-box";box.id="gsBox";document.body.appendChild(box);
+    var hide=function(){box.style.display="none";};
+    inp.addEventListener("input",function(){
+      var q=inp.value.trim();
+      clearTimeout(GS_T);
+      if(q.length<3){hide();return;}
+      GS_T=setTimeout(function(){runGlobalSearch(q,inp,box);},350);
+    });
+    inp.addEventListener("keydown",function(e){if(e.key==="Escape")hide();});
+    document.addEventListener("click",function(ev){if(ev.target!==inp&&!box.contains(ev.target))hide();});
+  }
+  function runGlobalSearch(q,inp,box){
+    var seq=++GS_SEQ;
+    Promise.all([
+      jreq(API+"/leads_search?q="+encodeURIComponent(q)).catch(function(){return null;}),
+      jreq(API+"/contacts?q="+encodeURIComponent(q)).catch(function(){return null;}),
+      jreq(API+"/companies_page?q="+encodeURIComponent(q)).catch(function(){return null;})
+    ]).then(function(r){
+      if(seq!==GS_SEQ||inp.value.trim()!==q)return;
+      var L=(r[0]&&r[0].items)||[],C=(r[1]&&r[1].items)||[],K=(r[2]&&r[2].items)||[];
+      var stName=function(l){var p=PIPES.find(function(x){return x.id===l.pid;});var s="";((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(x){if(x.id===l.sid)s=x.name;});return s;};
+      var h="";
+      if(L.length)h+='<div class="gs-h">Сделки</div>'+L.slice(0,5).map(function(l){return '<div class="gs-row" data-t="lead" data-id="'+l.id+'"><span>'+esc(l.name||("#"+l.id))+'</span><span class="gs-sub">'+esc(stName(l))+(l.price?" · "+fmt(l.price)+" ₽":"")+'</span></div>';}).join("");
+      if(C.length)h+='<div class="gs-h">Контакты</div>'+C.slice(0,5).map(function(c){return '<div class="gs-row" data-t="contact" data-id="'+c.id+'"><span>'+esc(c.n||c.name||"")+'</span><span class="gs-sub">'+esc((c.p&&c.p[0])||(c.e&&c.e[0])||"")+'</span></div>';}).join("");
+      if(K.length)h+='<div class="gs-h">Компании</div>'+K.slice(0,5).map(function(c){return '<div class="gs-row" data-t="company" data-id="'+c.id+'"><span>'+esc(c.name||"")+'</span></div>';}).join("");
+      if(!h)h='<div class="gs-empty">Ничего не найдено по «'+esc(q)+'»</div>';
+      box.innerHTML=h;
+      var rct=inp.getBoundingClientRect();
+      box.style.left=rct.left+"px";box.style.top=(rct.bottom+6)+"px";box.style.minWidth=Math.max(320,rct.width)+"px";
+      box.style.display="block";
+      box.querySelectorAll(".gs-row").forEach(function(row){row.onclick=function(){
+        box.style.display="none";inp.value="";
+        var id=parseInt(row.dataset.id,10);
+        if(row.dataset.t==="lead")openLead(id);else if(row.dataset.t==="contact")openContact(id);else openCompany(id);
+      };});
+    });
   }
   // Панель уведомлений (колокольчик внизу, как в amo)
   function openNotifPanel(anchor){
@@ -2519,6 +2600,7 @@
       META.counts=META.counts||{};
       if(r[6]&&r[6].success){["contacts","leads","companies","tasksDue","tasksOpen","imbox","mail","wazzup","market","notifications"].forEach(function(k){if(r[6][k]!=null)META.counts[k]=r[6][k];});}
       $("#app").style.display="flex";
+      bindGlobalSearch();
       if(!routePath(location.pathname,true))go("leads");
     });
   }).catch(function(e){
