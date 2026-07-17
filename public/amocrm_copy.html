@@ -930,6 +930,28 @@
       }).catch(function(){});
     });
   }
+  // редактор задачи одним окном (как в amo): текст + тип + срок
+  function openTaskEditor(t,onSaved){
+    var bg=document.createElement("div");bg.className="modal-bg";
+    var typeOpts=(TASK_TYPES.length?TASK_TYPES:[{id:1,name:"Связаться"}]).map(function(x){return '<option value="'+x.id+'"'+(x.id===t.task_type?" selected":"")+'>'+esc(x.name)+'</option>';}).join("");
+    var dval="";
+    if(t.till){var d0=new Date(t.till*1000);dval=d0.getFullYear()+"-"+("0"+(d0.getMonth()+1)).slice(-2)+"-"+("0"+d0.getDate()).slice(-2);}
+    bg.innerHTML='<div class="modal" style="max-width:440px"><span class="x">×</span><h3>Редактировать задачу</h3>'+
+      '<label class="mlbl">Текст</label><textarea id="teT" class="ci" rows="3">'+esc(t.text||"")+'</textarea>'+
+      '<label class="mlbl">Тип</label><select id="teY" class="ci">'+typeOpts+'</select>'+
+      '<label class="mlbl">Срок</label><input id="teD" type="date" class="ci" value="'+dval+'">'+
+      '<div style="margin-top:16px;display:flex;gap:8px"><button class="btn" id="teSave">Сохранить</button><button class="btn ghost x2">Отмена</button></div></div>';
+    document.body.appendChild(bg);
+    function close(){document.body.removeChild(bg);}
+    bg.onclick=function(e){if(e.target===bg||e.target.className==="x"||e.target.className==="btn ghost x2")close();};
+    bg.querySelector("#teSave").onclick=function(){
+      var text=bg.querySelector("#teT").value.trim();if(!text)return toast("Введите текст",true);
+      var body={text:text,task_type:parseInt(bg.querySelector("#teY").value,10)||0};
+      var dv=bg.querySelector("#teD").value;
+      if(dv)body.complete_till=Math.floor(new Date(dv+"T18:00:00").getTime()/1000);
+      ereq("PATCH","/edit-api/task/"+t.id,body).then(function(r){if(r&&r.success){toast("Задача сохранена");close();if(onSaved)onSaved();}else toast("Не удалось",true);});
+    };
+  }
   // редактор виджета (логика добавления виджетов, как «Настроить» в amo)
   function openWidgetEditor(){
     var bg=document.createElement("div");bg.className="modal-bg";
@@ -986,7 +1008,7 @@
         if(!groups[g].length)return;
         html+='<h3 style="color:'+colors[g]+'">'+titles[g]+' ('+groups[g].length+')</h3><table class="amo"><tbody>';
         groups[g].forEach(function(t){
-          html+='<tr><td style="width:130px" class="muted">'+dt(t.till)+'</td><td style="width:130px" class="muted">'+esc(typeName[t.task_type]||"")+'</td><td>'+esc(t.text||"")+'</td><td style="width:180px"><a data-lead="'+t.entity_id+'">'+esc((t.lead_name||"сделка #"+t.entity_id).slice(0,30))+'</a></td><td class="muted" style="width:150px">'+esc(t.resp||"")+'</td><td style="width:150px"><a class="tdone" data-t="'+t.id+'">выполнить</a> · <a class="tmove" data-t="'+t.id+'">перенести</a></td></tr>';
+          html+='<tr><td style="width:130px" class="muted">'+dt(t.till)+'</td><td style="width:130px" class="muted">'+esc(typeName[t.task_type]||"")+'</td><td>'+esc(t.text||"")+'</td><td style="width:180px"><a data-lead="'+t.entity_id+'">'+esc((t.lead_name||"сделка #"+t.entity_id).slice(0,30))+'</a></td><td class="muted" style="width:150px">'+esc(t.resp||"")+'</td><td style="width:190px"><a class="tdone" data-t="'+t.id+'">выполнить</a> · <a class="tmove" data-t="'+t.id+'">перенести</a> · <a class="tedit" data-t="'+t.id+'" data-text="'+esc(t.text||"")+'" data-till="'+(t.till||0)+'" data-type="'+(t.task_type||0)+'">изменить</a></td></tr>';
         });
         html+='</tbody></table>';
       });
@@ -997,6 +1019,9 @@
         var res=prompt("Результат задачи (необязательно):","");
         if(res===null)return;
         ereq("POST","/edit-api/task/"+a.dataset.t+"/complete",{result:res||""}).then(function(r){if(r&&r.success){toast("Задача выполнена");rerun();}else toast("Не удалось",true);});
+      };});
+      $("#tasksBox").querySelectorAll(".tedit").forEach(function(a){a.onclick=function(){
+        openTaskEditor({id:a.dataset.t,text:a.dataset.text||"",task_type:parseInt(a.dataset.type,10)||0,till:parseInt(a.dataset.till,10)||0},rerun);
       };});
       $("#tasksBox").querySelectorAll(".tmove").forEach(function(a){a.onclick=function(){
         var v=prompt("Новый срок (ДД.ММ.ГГГГ):",new Date(Date.now()+86400000).toLocaleDateString("ru-RU"));
@@ -1480,7 +1505,7 @@
       flushSys();
       if(e.kind==="task"){
         var t=e.t;
-        html+='<div class="ev task'+(t.is_completed?"":" open")+'"><div class="eh">'+dt(t.complete_till)+" · задача · "+esc(userName(t.responsible_user_id))+(t.is_completed?" · выполнена":" · открыта")+(!t.is_completed&&t.id?' · <a class="task-done" data-tid="'+t.id+'">выполнить</a> · <a class="task-move" data-tid="'+t.id+'">перенести</a> · <a class="task-edit" data-tid="'+t.id+'" data-text="'+esc(t.text||"")+'">изменить</a>':"")+'</div>'+esc(t.text||"")+(t.result&&t.result.text?('<div class="muted" style="margin-top:4px">Результат: '+esc(t.result.text)+'</div>'):"")+'</div>';
+        html+='<div class="ev task'+(t.is_completed?"":" open")+'"><div class="eh">'+dt(t.complete_till)+" · задача · "+esc(userName(t.responsible_user_id))+(t.is_completed?" · выполнена":" · открыта")+(!t.is_completed&&t.id?' · <a class="task-done" data-tid="'+t.id+'">выполнить</a> · <a class="task-move" data-tid="'+t.id+'">перенести</a> · <a class="task-edit" data-tid="'+t.id+'" data-text="'+esc(t.text||"")+'" data-till="'+(t.complete_till||0)+'" data-type="'+(t.task_type||0)+'">изменить</a>':"")+'</div>'+esc(t.text||"")+(t.result&&t.result.text?('<div class="muted" style="margin-top:4px">Результат: '+esc(t.result.text)+'</div>'):"")+'</div>';
       } else {
         html+=noteEvHtml(e.n);
       }
@@ -1530,9 +1555,7 @@
         var till=Math.floor(new Date(+m[3],+m[2]-1,+m[1],18,0,0).getTime()/1000);
         ereq("PATCH","/edit-api/task/"+a.dataset.tid,{complete_till:till}).then(function(r){if(r&&r.success){toast("Срок перенесён");reload();}else toast("Не удалось",true);});
       }else if(a.classList.contains("task-edit")){
-        var tt=prompt("Текст задачи:",a.dataset.text||"");
-        if(tt==null||!tt.trim())return;
-        ereq("PATCH","/edit-api/task/"+a.dataset.tid,{text:tt.trim()}).then(function(r){if(r&&r.success){toast("Задача изменена");reload();}else toast("Не удалось",true);});
+        openTaskEditor({id:a.dataset.tid,text:a.dataset.text||"",task_type:parseInt(a.dataset.type,10)||0,till:parseInt(a.dataset.till,10)||0},reload);
       }else if(a.classList.contains("note-edit")){
         var nt=prompt("Текст примечания:",a.dataset.text||"");
         if(nt==null||!nt.trim())return;
