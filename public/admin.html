@@ -3460,28 +3460,51 @@
         // % шенген-сделок, дошедших до целевых статусов (по дате оплаты) — внизу раздела.
         vscContent.appendChild(vscSchengenBlock());
       }
-      // Блок «Шенген: % дошедших до целевых статусов» — из локальной копии amoCRM (по дате
-      // оплаты), живой (без заморозки). vscBarChart даёт Δ к пред. месяцу + скролл.
+      // Блок «Дошли до целевых статусов — Шенген и США» — из локальной копии amoCRM (по дате
+      // оплаты), живой (без заморозки). Сгруппированный график: 2 столбца на месяц.
       function vscSchengenBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
-        const TITLE = "Шенген + США: % дошедших до целевых статусов (по месяцам)";
-        const box = document.createElement("div"); box.className = "vsc-chart";
-        box.innerHTML = '<div class="vsc-chart-h">' + TITLE + '</div><div class="loading-state">Загружаем…</div>';
+        const SECT = "Дошли до целевых статусов — Шенген и США";
+        const info = "<b>Что показывает секция</b><br>Из сделок, ОПЛАЧЕННЫХ в конкретном месяце, — какая доля дошла до «продвинутых» статусов (реальная запись/подача/паспорт/реализация). Разбито на 2 столбца: отдельно <b>Шенген</b>, отдельно <b>США</b>.<br><br><b>Группы стран</b> (по полю «Страна оформления/услуга»):<br>• Шенген — зона Шенгена + Болгария, Кипр, Румыния, Хорватия («Италия» = Альмавива и VMS); Ирландия/Британия НЕ входят;<br>• США — США / США Астана / США Варшава.<br><br><b>Целевые статусы:</b><br>• Отдел по работе с Клиентами: на рассмотрении в консульстве, документы готовы к личной подаче, передано клиенту, поданы лично, паспорт готов, успешно реализовано;<br>• Отдел Оформления: запись сделана, электронное рассмотрение, оформлен выкуп, пакет документов готов.<br><br>Разрез — по <b>дате оплаты</b>. Живой (НЕ заморожен): оплаченную в июле сделку записали позже → июльский % подрастёт. Источник — локальная копия amoCRM (без нагрузки на CRM), пересчёт каждые 3 часа.";
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = SECT; h.appendChild(vscInfo(info));
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем…</div>';
         wrap.appendChild(box);
-        const info = "<b>Как считается</b><br>Из сделок, у которых «Страна оформления/услуга» относится к шенгенской зоне (Италия, Испания, Франция, … + Болгария, Кипр, Румыния, Хорватия) <b>или США</b>, и которые <b>ОПЛАЧЕНЫ в этом месяце</b> — доля тех, кто дошёл до целевых статусов:<br>• Отдел по работе с Клиентами: на рассмотрении в консульстве, документы готовы к личной подаче, передано клиенту, поданы лично, паспорт готов, успешно реализовано;<br>• Отдел Оформления: запись сделана, электронное рассмотрение, оформлен выкуп, пакет документов готов.<br><br>Разрез — по <b>дате оплаты</b>. Живой (НЕ заморожен): оплаченную в июле сделку записали позже — июльский % подрастёт. Источник — локальная копия amoCRM (без нагрузки на CRM), пересчёт каждые 3 часа.";
         apiFetch("/admin/api/vsc/schengen").then(function (j) {
           const d = j && j.data;
-          if (!d || !d.months || !Object.keys(d.months).length) { box.innerHTML = '<div class="vsc-chart-h">' + TITLE + '</div><div class="vsc-empty">Пока нет данных — идёт первый расчёт, обновите через минуту.</div>'; return; }
+          if (!d || !d.months || !Object.keys(d.months).length) { box.innerHTML = '<div class="vsc-empty">Пока нет данных — идёт первый расчёт, обновите через минуту.</div>'; return; }
           const yms = Object.keys(d.months).sort();
           const MON3 = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
-          const series = yms.map(function (ym) { const mo = d.months[ym]; return { x: MON3[+ym.slice(5, 7) - 1], k: { sch: mo.pct }, range: ym + " · " + mo.num + " из " + mo.den + " дошли (" + mo.pct + "%)" }; });
-          const chart = vscBarChart({ key: "sch", label: TITLE, fmt: "pct", good: 1 }, series);
-          const hh = chart.querySelector(".vsc-chart-h"); if (hh) hh.appendChild(vscInfo(info));
+          const COL = { sch: "#3589BD", usa: "#e8843b" };
+          box.innerHTML = "";
+          // легенда
+          const leg = document.createElement("div"); leg.style.cssText = "display:flex;gap:16px;font-size:12px;color:#5a626f;margin:0 0 12px;";
+          leg.innerHTML = '<span style="white-space:nowrap;"><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:' + COL.sch + ';vertical-align:-1px;margin-right:6px;"></i>Шенген</span>'
+            + '<span style="white-space:nowrap;"><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:' + COL.usa + ';vertical-align:-1px;margin-right:6px;"></i>США</span>';
+          box.appendChild(leg);
+          const MAXPX = 150;
+          const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "200px";
+          yms.forEach(function (ym) {
+            const mo = d.months[ym];
+            const col = document.createElement("div"); col.className = "vsc-bar-col"; col.style.flex = "0 0 74px";
+            const grp = document.createElement("div"); grp.style.cssText = "display:flex;gap:6px;align-items:flex-end;justify-content:center;height:100%;width:100%;";
+            [["sch", "Шенген"], ["usa", "США"]].forEach(function (pair) {
+              const key = pair[0], nameRu = pair[1], g = mo[key] || { den: 0, num: 0, pct: null };
+              const mini = document.createElement("div"); mini.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:flex-end;";
+              const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontSize = "9px"; vl.textContent = (g.den ? (g.pct + "%") : "—");
+              const bar = document.createElement("div"); bar.style.cssText = "width:24px;border-radius:4px 4px 0 0;background:" + COL[key] + ";"; bar.style.height = (g.den ? Math.max(2, Math.round(g.pct / 100 * MAXPX)) : 2) + "px";
+              bar.title = nameRu + " · " + ym + ": " + g.num + " из " + g.den + (g.den ? " = " + g.pct + "%" : " (нет сделок)");
+              mini.appendChild(vl); mini.appendChild(bar); grp.appendChild(mini);
+            });
+            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = MON3[+ym.slice(5, 7) - 1];
+            col.appendChild(grp); col.appendChild(xl);
+            bars.appendChild(col);
+          });
+          box.appendChild(bars);
           const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
-          const foot = document.createElement("div"); foot.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:8px;"; foot.textContent = "обновлено: " + upd + " МСК · источник: локальная копия amoCRM (по дате оплаты)";
-          chart.appendChild(foot);
-          box.replaceWith(chart);
-        }).catch(function () { box.innerHTML = '<div class="vsc-chart-h">' + TITLE + '</div><div class="vsc-empty">Не удалось загрузить.</div>'; });
+          const foot = document.createElement("div"); foot.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:10px;"; foot.textContent = "обновлено: " + upd + " МСК · источник: локальная копия amoCRM (по дате оплаты)";
+          box.appendChild(foot);
+        }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить.</div>'; });
         return wrap;
       }
       // ── «Выкупы — сверка р/с с таблицей» (Ежемесячный контроль, только админ) ──
