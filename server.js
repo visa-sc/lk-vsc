@@ -4884,38 +4884,85 @@ app.post("/admin/api/vsc/mktkpi", requireVscMktKpi, (req, res) => {
   res.json({ success: true });
 });
 
-// ═══ % шенген-сделок на «продвинутых» статусах (Ежемесячный контроль) ═══════════════════
-// По ДАТЕ ОПЛАТЫ (поле 427242), из локальной копии crm.db — БЕЗ обращений к amoCRM API.
-// Считает ОТДЕЛЬНЫЙ процесс (tools/vscSchengenCompute.js; better-sqlite3 в основной процесс
-// не тянем), результат — в .vscSchengen.json. Всё живое, без заморозки: если оплаченную в
-// июле сделку «запишут» в сентябре, июльский % подрастёт при следующем расчёте.
+// ═══ «% записанных сделок» — Шенген/США (Ежемесячный контроль) ═══════════════════════════
+// Источник — ЖИВАЯ amoCRM (по просьбе Андрея 13.07; раньше была локальная копия). Бережно:
+// раз в сутки в 00:00 МСК, весь прогон под amoBg (САМЫЙ НИЗКИЙ приоритет лимитера —
+// пропускает вперёд клиентский ЛК, вебхуки и всё остальное), страницы качаем ПОСЛЕДОВАТЕЛЬНО
+// (память не раздуваем, лишней частоты нет), guard от наложений. ~180 страниц × 250 сделок.
+// Метрика: по ДАТЕ ОПЛАТЫ (427242) — из оплаченных в месяце сделок со страной (427240)
+// Шенген/США доля на целевых статусах. Живая, без заморозки: записали позже → % подрастёт.
 const VSC_SCHENGEN_FILE = path.join(__dirname, ".vscSchengen.json");
+const SCHENGEN_KW = ["Австрия", "Бельгия", "Чехия", "Дания", "Эстония", "Финляндия", "Франция", "Германия", "Греция", "Венгрия", "Исландия", "Италия", "Латвия", "Литва", "Люксембург", "Мальта", "Нидерланды", "Норвегия", "Польша", "Португалия", "Словакия", "Словения", "Испания", "Швеция", "Швейцария", "Лихтенштейн", "Румыния", "Хорватия", "Болгария", "Кипр"];
+const SCHENGEN_USA_KW = ["США"];
+const SCHENGEN_TARGET = new Set([
+  "1309524:21256455", "1309524:21256203", "1309524:70957793", "1309524:70957929", "1309524:21256458", "1309524:142", // ОРК
+  "1312578:26918115", "1312578:21256668", "1312578:61251437", "1312578:142" // ОО
+]);
+const SCHENGEN_YEAR = 2026;
 function loadSchengen() { try { return JSON.parse(fs.readFileSync(VSC_SCHENGEN_FILE, "utf8")); } catch (_) { return null; } }
 let _schengenRunning = false;
-function runSchengenCompute() {
-  if (_schengenRunning) return;
+async function runSchengenLive(trigger) {
+  if (_schengenRunning) return { skipped: true };
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
   _schengenRunning = true;
+  const t0 = Date.now();
   try {
-    // nice -n 19 — самый низкий приоритет ОС: расчёт не конкурирует ни с сервером, ни с чем-либо ещё.
-    const child = require("child_process").spawn("nice", ["-n", "19", process.execPath, path.join(__dirname, "tools", "vscSchengenCompute.js")], { env: Object.assign({}, process.env, { VSC_SCHENGEN_FILE }), stdio: "ignore" });
-    child.on("exit", () => { _schengenRunning = false; });
-    child.on("error", (e) => { _schengenRunning = false; console.error("schengen spawn:", e && e.message); });
-  } catch (e) { _schengenRunning = false; console.error("schengen spawn:", e && e.message); }
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const hit = (kw, name) => { const s = String(name || ""); return kw.some((k) => s.includes(k)); };
+    const agg = {}; let scanned = 0;
+    // Постранично и ПОСЛЕДОВАТЕЛЬНО (не parallel): раз в сутки спешить некуда, лимитер
+    // и так отдаёт низкий приоритет, а память держим ровной (страницу обработали — забыли).
+    for (let page = 1; page < 400; page++) {
+      const data = await amoGet(`${baseUrl}/api/v4/leads`, {
+        limit: 250, page,
+        "filter[updated_at][from]": String(Math.floor(Date.UTC(SCHENGEN_YEAR, 0, 1, 0, 0, 0) / 1000) - 3 * 3600)
+      });
+      const leads = (data && data._embedded && data._embedded.leads) || [];
+      if (!leads.length) break;
+      scanned += leads.length;
+      for (const l of leads) {
+        const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); // 427242 «Дата оплаты», месяц по МСК
+        if (!ym || ym.y !== SCHENGEN_YEAR) continue;
+        const country = _cityCfVal(l, 427240); if (!country) continue;
+        const isSch = hit(SCHENGEN_KW, country), isUsa = hit(SCHENGEN_USA_KW, country);
+        if (!isSch && !isUsa) continue;
+        const adv = SCHENGEN_TARGET.has(l.pipeline_id + ":" + l.status_id);
+        const a = agg[ym.m] || (agg[ym.m] = { schDen: 0, schNum: 0, usaDen: 0, usaNum: 0 });
+        if (isSch) { a.schDen++; if (adv) a.schNum++; }
+        if (isUsa) { a.usaDen++; if (adv) a.usaNum++; }
+      }
+      if (leads.length < 250) break;
+    }
+    const grp = (den, num) => ({ den, num, pct: den ? Math.round(num / den * 1000) / 10 : null });
+    const months = {};
+    for (let m = 0; m < 12; m++) {
+      const a = agg[m]; if (!a || (!a.schDen && !a.usaDen)) continue;
+      months[SCHENGEN_YEAR + "-" + String(m + 1).padStart(2, "0")] = { sch: grp(a.schDen, a.schNum), usa: grp(a.usaDen, a.usaNum) };
+    }
+    const out = { ts: Date.now(), year: SCHENGEN_YEAR, scanned, months };
+    fs.writeFileSync(VSC_SCHENGEN_FILE, JSON.stringify(out, null, 2), "utf8");
+    console.log(`VSC SCHENGEN [${trigger || "cron"}]: месяцев ${Object.keys(months).length}, просмотрено ${scanned}, ${Date.now() - t0}ms`);
+    return out;
+  } catch (e) { console.error("runSchengenLive:", e && e.message); return { error: e && e.message }; }
+  finally { _schengenRunning = false; }
 }
 app.get("/admin/api/vsc/schengen", requireVscDashboard, (req, res) => { res.json({ success: true, data: loadSchengen() }); });
-app.post("/admin/api/vsc/schengen/run", requireAdmin, (req, res) => { runSchengenCompute(); res.json({ success: true, started: true }); });
-// Расписание (по просьбе Андрея): раз в сутки в 00:00 МСК. amoCRM НЕ трогаем вообще —
-// расчёт читает локальную копию crm.db (отдельный процесс с самым низким приоритетом ОС).
-// После рестарта — разовый прогон только если файла ещё нет (чтобы блок не пустовал).
-setTimeout(() => { if (!loadSchengen()) runSchengenCompute(); }, 90 * 1000);
+app.post("/admin/api/vsc/schengen/run", requireAdmin, (req, res) => {
+  if (_schengenRunning) return res.json({ success: true, started: false, running: true });
+  setImmediate(() => { Promise.resolve(amoBg(() => runSchengenLive("manual"))).catch(() => {}); });
+  res.json({ success: true, started: true });
+});
+// Расписание: раз в сутки в 00:00 МСК (по просьбе Андрея), низким приоритетом amoBg.
+// После рестарта — разовый прогон только если файла ещё нет (не дёргаем amo зря).
+setTimeout(() => { if (!loadSchengen()) Promise.resolve(amoBg(() => runSchengenLive("startup"))).catch(() => {}); }, 180 * 1000);
 (function scheduleSchengenMidnight() {
   const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000;
   (function nextRun() {
     const mskNow = Date.now() + MSK_OFFSET;
     const target = (Math.floor(mskNow / DAY_MS) + 1) * DAY_MS; // следующая полночь МСК
-    setTimeout(() => { runSchengenCompute(); nextRun(); }, Math.max(1000, target - mskNow));
+    setTimeout(() => { Promise.resolve(amoBg(() => runSchengenLive("cron"))).catch(() => {}); nextRun(); }, Math.max(1000, target - mskNow));
   })();
-  console.log("VSC SCHENGEN: пересчёт запланирован ежедневно в 00:00 МСК (локальная копия, amo API не используется)");
+  console.log("VSC SCHENGEN: раз в сутки 00:00 МСК из живой amoCRM (самый низкий приоритет amoBg)");
 })();
 
 // ═════════════════════════════════════════════════════════════════════════
