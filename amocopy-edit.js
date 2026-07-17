@@ -70,6 +70,20 @@ module.exports = function mountEditRoutes(app, guard) {
 
   const E = "/edit-api";
 
+  // серверный гейт прав ролей (аудит 18.07: раньше /edit-api проверял только аутентификацию —
+  // любой сотрудник мог удалять сделки). Удаление/слияние — is_admin или право del; прочие правки — право edit.
+  app.use(E, (req, res, next) => {
+    if (req.method === "GET") return next();
+    guard(req, res, () => {
+      const c = req.crm || {};
+      if (c.is_admin || c.kind === "admin") return next();
+      const r = c.rights || {};
+      const isDel = /\/delete$|\/merge$/.test(req.path);
+      if (isDel ? r.del : r.edit) return next();
+      return res.status(403).json({ success: false, message: isDel ? "Нет права удаления — обратитесь к администратору" : "Нет права редактирования" });
+    });
+  });
+
   // применение правил автоматизаций при входе сделки на этап
   function applyStageRules(req, leadId, pid, sid, leadResp) {
     const rules = loadRules().filter((r) => r.pipeline_id === pid && r.status_id === sid);
