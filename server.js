@@ -4894,6 +4894,7 @@ app.post("/admin/api/vsc/mktkpi", requireVscMktKpi, (req, res) => {
 const VSC_SCHENGEN_FILE = path.join(__dirname, ".vscSchengen.json");
 const SCHENGEN_KW = ["Австрия", "Бельгия", "Чехия", "Дания", "Эстония", "Финляндия", "Франция", "Германия", "Греция", "Венгрия", "Исландия", "Италия", "Латвия", "Литва", "Люксембург", "Мальта", "Нидерланды", "Норвегия", "Польша", "Португалия", "Словакия", "Словения", "Испания", "Швеция", "Швейцария", "Лихтенштейн", "Румыния", "Хорватия", "Болгария", "Кипр"];
 const SCHENGEN_USA_KW = ["США"];
+const SCHENGEN_UK_KW = ["Великобритания", "Англия"]; // ловит «Великобритания», «Великобритания с ТХ» и т.п.
 const SCHENGEN_TARGET = new Set([
   "1309524:21256455", "1309524:21256203", "1309524:70957793", "1309524:70957929", "1309524:21256458", "1309524:142", // ОРК
   "1312578:26918115", "1312578:21256668", "1312578:61251437", "1312578:142" // ОО
@@ -4912,7 +4913,7 @@ async function runSchengenLive(trigger) {
   const t0 = Date.now();
   try {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
-    const hit = (kw, name) => { const s = String(name || ""); return kw.some((k) => s.includes(k)); };
+    const hit = (kw, name) => { const s = String(name || "").toLowerCase(); return kw.some((k) => s.includes(k.toLowerCase())); };
     const agg = {}; let scanned = 0;
     // Постранично и ПОСЛЕДОВАТЕЛЬНО (не parallel): раз в сутки спешить некуда, лимитер
     // и так отдаёт низкий приоритет, а память держим ровной (страницу обработали — забыли).
@@ -4928,13 +4929,14 @@ async function runSchengenLive(trigger) {
         const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); // 427242 «Дата оплаты», месяц по МСК
         if (!ym || ym.y !== SCHENGEN_YEAR) continue;
         const country = _cityCfVal(l, 427240); if (!country) continue;
-        const isSch = hit(SCHENGEN_KW, country), isUsa = hit(SCHENGEN_USA_KW, country);
-        if (!isSch && !isUsa) continue;
+        const isSch = hit(SCHENGEN_KW, country), isUsa = hit(SCHENGEN_USA_KW, country), isUk = hit(SCHENGEN_UK_KW, country);
+        if (!isSch && !isUsa && !isUk) continue;
         const key = l.pipeline_id + ":" + l.status_id;
         const adv = SCHENGEN_TARGET.has(key), ret = SCHENGEN_RETURN.has(key);
-        const a = agg[ym.m] || (agg[ym.m] = { schDen: 0, schNum: 0, schRet: 0, usaDen: 0, usaNum: 0, usaRet: 0 });
+        const a = agg[ym.m] || (agg[ym.m] = { schDen: 0, schNum: 0, schRet: 0, usaDen: 0, usaNum: 0, usaRet: 0, ukDen: 0, ukNum: 0, ukRet: 0 });
         if (isSch) { a.schDen++; if (adv) a.schNum++; else if (ret) a.schRet++; }
         if (isUsa) { a.usaDen++; if (adv) a.usaNum++; else if (ret) a.usaRet++; }
+        if (isUk) { a.ukDen++; if (adv) a.ukNum++; else if (ret) a.ukRet++; }
       }
       if (leads.length < 250) break;
     }
@@ -4945,8 +4947,8 @@ async function runSchengenLive(trigger) {
     };
     const months = {};
     for (let m = 0; m < 12; m++) {
-      const a = agg[m]; if (!a || (!a.schDen && !a.usaDen)) continue;
-      months[SCHENGEN_YEAR + "-" + String(m + 1).padStart(2, "0")] = { sch: grp(a.schDen, a.schNum, a.schRet), usa: grp(a.usaDen, a.usaNum, a.usaRet) };
+      const a = agg[m]; if (!a || (!a.schDen && !a.usaDen && !a.ukDen)) continue;
+      months[SCHENGEN_YEAR + "-" + String(m + 1).padStart(2, "0")] = { sch: grp(a.schDen, a.schNum, a.schRet), usa: grp(a.usaDen, a.usaNum, a.usaRet), uk: grp(a.ukDen, a.ukNum, a.ukRet) };
     }
     const out = { ts: Date.now(), year: SCHENGEN_YEAR, scanned, months };
     fs.writeFileSync(VSC_SCHENGEN_FILE, JSON.stringify(out, null, 2), "utf8");
