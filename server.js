@@ -4884,6 +4884,28 @@ app.post("/admin/api/vsc/mktkpi", requireVscMktKpi, (req, res) => {
   res.json({ success: true });
 });
 
+// ═══ % шенген-сделок на «продвинутых» статусах (Ежемесячный контроль) ═══════════════════
+// По ДАТЕ ОПЛАТЫ (поле 427242), из локальной копии crm.db — БЕЗ обращений к amoCRM API.
+// Считает ОТДЕЛЬНЫЙ процесс (tools/vscSchengenCompute.js; better-sqlite3 в основной процесс
+// не тянем), результат — в .vscSchengen.json. Всё живое, без заморозки: если оплаченную в
+// июле сделку «запишут» в сентябре, июльский % подрастёт при следующем расчёте.
+const VSC_SCHENGEN_FILE = path.join(__dirname, ".vscSchengen.json");
+function loadSchengen() { try { return JSON.parse(fs.readFileSync(VSC_SCHENGEN_FILE, "utf8")); } catch (_) { return null; } }
+let _schengenRunning = false;
+function runSchengenCompute() {
+  if (_schengenRunning) return;
+  _schengenRunning = true;
+  try {
+    const child = require("child_process").spawn(process.execPath, [path.join(__dirname, "tools", "vscSchengenCompute.js")], { env: Object.assign({}, process.env, { VSC_SCHENGEN_FILE }), stdio: "ignore" });
+    child.on("exit", () => { _schengenRunning = false; });
+    child.on("error", (e) => { _schengenRunning = false; console.error("schengen spawn:", e && e.message); });
+  } catch (e) { _schengenRunning = false; console.error("schengen spawn:", e && e.message); }
+}
+app.get("/admin/api/vsc/schengen", requireVscDashboard, (req, res) => { res.json({ success: true, data: loadSchengen() }); });
+app.post("/admin/api/vsc/schengen/run", requireAdmin, (req, res) => { runSchengenCompute(); res.json({ success: true, started: true }); });
+setTimeout(runSchengenCompute, 90 * 1000);           // прогрев после старта (локальная БД, amo не трогаем)
+setInterval(runSchengenCompute, 3 * 3600 * 1000);    // актуализация каждые 3 часа
+
 // ═════════════════════════════════════════════════════════════════════════
 // «Выкупы — сверка р/с с таблицей» (/vsc «Ежемесячный контроль», ТОЛЬКО админ).
 // Банк: T-Bank Business API (read-only токен в .env TBANK_API_TOKEN, привязан к IP

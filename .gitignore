@@ -114,3 +114,6 @@ amo-backup/
 crm-svc/node_modules/
 crm-svc/.amocopySessions.json
 .amocopy-db/
+
+# % шенген-сделок на целевых статусах — рантайм-расчёт из локальной копии
+.vscSchengen.json
