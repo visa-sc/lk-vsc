@@ -247,6 +247,9 @@
   .day-sep b { background:#fff; border:1px solid var(--border); border-radius:14px; padding:3px 14px; font-size:12px; color:#7b848d; font-weight:400; }
   .ev { background:#fff; border:1px solid var(--border); border-radius:4px; padding:10px 14px; margin:8px 0; font-size:13.5px; }
   .ev .eh { color:var(--mut); font-size:12px; margin-bottom:4px; }
+  .ev-grp-h { cursor:pointer; padding:6px 4px; color:#8a94a0; font-size:12px; }
+  .ev-grp-h .grp-tgl { color:var(--link); margin-left:4px; }
+  .ev-grp-b { border-left:2px solid #e3e7ec; margin-left:4px; padding-left:8px; }
   .ev.task { border-color:#bfdec7; background:#f6fbf7; }
   .ev.task.open { border-color:#e8b7b7; background:#fdf8f8; }
   .ev.call { border-left:3px solid #9ec7ea; }
@@ -1333,10 +1336,20 @@
     if((filter==="all"||filter==="tasks"))(tasks||[]).forEach(function(t){evs.push({ts:t.complete_till||t.created_at||0,kind:"task",t:t});});
     evs.sort(function(a,b){return b.ts-a.ts;});
     if(!evs.length)return '<p class="muted" style="padding:16px 4px">Пока пусто</p>';
-    var html="",lastDay="";
+    var html="",lastDay="",sysBuf=[];
+    // системные события (как в amo) сворачиваются пачкой «N событий — Развернуть»
+    var isSysNote=function(e){if(e.kind!=="note")return false;var t=String(e.n.type||"");return t==="service_message"||t==="lead_auto_created";};
+    var flushSys=function(){
+      if(!sysBuf.length)return;
+      if(sysBuf.length>=3)html+='<div class="ev-grp"><div class="ev-grp-h">⚙ Системные события: '+sysBuf.length+' <a class="grp-tgl">Развернуть</a></div><div class="ev-grp-b" style="display:none">'+sysBuf.map(noteEvHtml).join("")+'</div></div>';
+      else sysBuf.forEach(function(n){html+=noteEvHtml(n);});
+      sysBuf=[];
+    };
     evs.slice(0,300).forEach(function(e){
       var day=e.ts?new Date(e.ts*1000).toLocaleDateString("ru-RU"):"";
-      if(day!==lastDay){html+='<div class="day-sep"><b>'+day+'</b></div>';lastDay=day;}
+      if(day!==lastDay){flushSys();html+='<div class="day-sep"><b>'+day+'</b></div>';lastDay=day;}
+      if(isSysNote(e)){sysBuf.push(e.n);return;}
+      flushSys();
       if(e.kind==="task"){
         var t=e.t;
         html+='<div class="ev task'+(t.is_completed?"":" open")+'"><div class="eh">'+dt(t.complete_till)+" · задача · "+esc(userName(t.responsible_user_id))+(t.is_completed?" · выполнена":" · открыта")+(!t.is_completed&&t.id?' · <a class="task-done" data-tid="'+t.id+'">выполнить</a>':"")+'</div>'+esc(t.text||"")+(t.result&&t.result.text?('<div class="muted" style="margin-top:4px">Результат: '+esc(t.result.text)+'</div>'):"")+'</div>';
@@ -1344,6 +1357,7 @@
         html+=noteEvHtml(e.n);
       }
     });
+    flushSys();
     // навесим обработчики «выполнить» после вставки в DOM
     setTimeout(function(){
       if(!bg)return;
@@ -1376,6 +1390,16 @@
     var esch=function(e){if(e.key==="Escape"&&document.body.contains(bg)){document.body.removeChild(bg);document.removeEventListener("keydown",esch);pushUrl(sectionPath(curView));}};
     document.addEventListener("keydown",esch);
     var feed=bg.querySelector(".feed");
+    // тогл свёрнутых пачек системных событий (делегирование — работает и в ленте, и в истории)
+    feed.addEventListener("click",function(e){
+      var h=e.target&&e.target.closest?e.target.closest(".ev-grp-h"):null;
+      if(!h)return;
+      var b=h.nextElementSibling,a=h.querySelector(".grp-tgl");
+      if(!b||!b.classList.contains("ev-grp-b"))return;
+      var open=b.style.display!=="none";
+      b.style.display=open?"none":"";
+      if(a)a.textContent=open?"Развернуть":"Свернуть";
+    });
     var tabs=bg.querySelector(".feed-tabs");
     tabs.innerHTML=filters.map(function(f,i){return '<span data-f="'+f[0]+'" class="'+(i===0?"act":"")+'">'+f[1]+'</span>';}).join("");
     function render(f){
@@ -1418,15 +1442,32 @@
     return bg;
   }
   function historyHtml(items){
-    if(!items.length)return '<p class="muted" style="padding:12px 4px">История пуста</p>';
-    var A={create:"создана",stage:"смена этапа",edit:"правка полей",task_create:"поставлена задача",task_complete:"задача выполнена",task_reschedule:"перенос задачи",note_add:"добавлено примечание",edit_contact:"правка"};
-    return items.map(function(e){
+    if(!items.length)return '<p class="muted" style="padding:12px 4px">История пуста (изменения ведутся с момента создания копии — журнал событий amo в слепок не выгружался)</p>';
+    var A={create:"создана",stage:"смена этапа",edit:"правка полей",edit_cf:"изменение поля",edit_tags:"изменение тегов",task_create:"поставлена задача",task_complete:"задача выполнена",task_reschedule:"перенос задачи",note_add:"добавлено примечание",edit_contact:"правка",link_contact:"привязан контакт",unlink_contact:"отвязан контакт",link_company:"привязана компания",unlink_company:"отвязана компания",merge:"объединение контактов",auto_task:"авто-задача",auto_responsible:"авто-ответственный",delete:"удаление"};
+    var row=function(e){
       var d=e.detail||{},extra="";
       if(e.action==="stage"&&d.to)extra=" → "+esc(d.to.name||"");
       else if(e.action==="edit"&&d.name)extra=': "'+esc(d.name[0])+'" → "'+esc(d.name[1])+'"';
       else if(e.action==="edit"&&d.price)extra=": бюджет "+fmt(d.price[0])+" → "+fmt(d.price[1]);
+      else if(e.action==="edit_cf")extra=": "+esc(d.field||("поле "+(d.field_id||"")))+" → "+esc(String(Array.isArray(d.value)?d.value.join(", "):(d.value==null||d.value===""?"—":d.value)).slice(0,80));
+      else if((e.action==="link_contact"||e.action==="unlink_contact")&&d.contact)extra=": "+esc(d.contact);
+      else if((e.action==="link_company"||e.action==="unlink_company")&&d.company)extra=": "+esc(d.company);
       return '<div class="ev"><div class="eh">'+dt(e.ts)+'</div>'+(A[e.action]||e.action)+extra+'</div>';
-    }).join("");
+    };
+    // серии правок полей сворачиваются «Изменение поля: N событий — Развернуть» (как в amo)
+    var html="",buf=[];
+    var flush=function(){
+      if(!buf.length)return;
+      if(buf.length>=3)html+='<div class="ev-grp"><div class="ev-grp-h">Изменение поля: '+buf.length+' событий <a class="grp-tgl">Развернуть</a></div><div class="ev-grp-b" style="display:none">'+buf.map(row).join("")+'</div></div>';
+      else buf.forEach(function(e){html+=row(e);});
+      buf=[];
+    };
+    items.forEach(function(e){
+      if(e.action==="edit_cf"||e.action==="edit"){buf.push(e);return;}
+      flush();html+=row(e);
+    });
+    flush();
+    return html;
   }
   function userOptions(sel){return '<option value="0">— не назначен —</option>'+USERS.map(function(u){return '<option value="'+u.id+'"'+(u.id===sel?" selected":"")+'>'+esc(u.name)+'</option>';}).join("");}
   function mergeNotes(hist,local){
