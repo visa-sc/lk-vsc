@@ -4896,15 +4896,27 @@ function runSchengenCompute() {
   if (_schengenRunning) return;
   _schengenRunning = true;
   try {
-    const child = require("child_process").spawn(process.execPath, [path.join(__dirname, "tools", "vscSchengenCompute.js")], { env: Object.assign({}, process.env, { VSC_SCHENGEN_FILE }), stdio: "ignore" });
+    // nice -n 19 — самый низкий приоритет ОС: расчёт не конкурирует ни с сервером, ни с чем-либо ещё.
+    const child = require("child_process").spawn("nice", ["-n", "19", process.execPath, path.join(__dirname, "tools", "vscSchengenCompute.js")], { env: Object.assign({}, process.env, { VSC_SCHENGEN_FILE }), stdio: "ignore" });
     child.on("exit", () => { _schengenRunning = false; });
     child.on("error", (e) => { _schengenRunning = false; console.error("schengen spawn:", e && e.message); });
   } catch (e) { _schengenRunning = false; console.error("schengen spawn:", e && e.message); }
 }
 app.get("/admin/api/vsc/schengen", requireVscDashboard, (req, res) => { res.json({ success: true, data: loadSchengen() }); });
 app.post("/admin/api/vsc/schengen/run", requireAdmin, (req, res) => { runSchengenCompute(); res.json({ success: true, started: true }); });
-setTimeout(runSchengenCompute, 90 * 1000);           // прогрев после старта (локальная БД, amo не трогаем)
-setInterval(runSchengenCompute, 3 * 3600 * 1000);    // актуализация каждые 3 часа
+// Расписание (по просьбе Андрея): раз в сутки в 00:00 МСК. amoCRM НЕ трогаем вообще —
+// расчёт читает локальную копию crm.db (отдельный процесс с самым низким приоритетом ОС).
+// После рестарта — разовый прогон только если файла ещё нет (чтобы блок не пустовал).
+setTimeout(() => { if (!loadSchengen()) runSchengenCompute(); }, 90 * 1000);
+(function scheduleSchengenMidnight() {
+  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000;
+  (function nextRun() {
+    const mskNow = Date.now() + MSK_OFFSET;
+    const target = (Math.floor(mskNow / DAY_MS) + 1) * DAY_MS; // следующая полночь МСК
+    setTimeout(() => { runSchengenCompute(); nextRun(); }, Math.max(1000, target - mskNow));
+  })();
+  console.log("VSC SCHENGEN: пересчёт запланирован ежедневно в 00:00 МСК (локальная копия, amo API не используется)");
+})();
 
 // ═════════════════════════════════════════════════════════════════════════
 // «Выкупы — сверка р/с с таблицей» (/vsc «Ежемесячный контроль», ТОЛЬКО админ).
