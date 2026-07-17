@@ -3504,10 +3504,10 @@
         // разделены явно. Контейнер — стандартный .vsc-bars (overflow-x:auto) → на телефоне
         // при нехватке ширины прокручивается вбок, как остальные графики.
         const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "240px"; bars.style.gap = "12px";
-        yms.forEach(function (ym) {
-          const mo = d.months[ym];
+        // Карточка периода (месяц или год): 3 колонки Шенген|США|Великобритания с флагами.
+        const makeCard = function (mo, labelText, periodTxt, accent) {
           const col = document.createElement("div"); col.className = "vsc-bar-col";
-          col.style.cssText = "flex:0 0 102px;background:#f6f8fb;border:1px solid #edf0f5;border-radius:12px;padding:8px 6px 6px;box-sizing:border-box;";
+          col.style.cssText = "flex:0 0 102px;background:" + (accent ? "#eef5fb" : "#f6f8fb") + ";border:1px solid " + (accent ? "#d3e3f2" : "#edf0f5") + ";border-radius:12px;padding:8px 6px 6px;box-sizing:border-box;" + (accent ? "margin-left:14px;" : "");
           const pair = document.createElement("div"); pair.style.cssText = "display:flex;gap:5px;align-items:flex-end;justify-content:center;";
           [["sch", "Шенген", "🇪🇺"], ["usa", "США", "🇺🇸"], ["uk", "Великобритания", "🇬🇧"]].forEach(function (p) {
             const key = p[0], nameRu = p[1], g = mo[key] || { den: 0 };
@@ -3518,7 +3518,7 @@
             bar.style.height = (g.den ? MAXPX : 2) + "px"; bar.style.borderRadius = "4px 4px 0 0";
             const retPct = g.retPct != null ? g.retPct : (g.den ? Math.round(((g.ret || 0)) / g.den * 1000) / 10 : 0);
             const waitPct = g.waitPct != null ? g.waitPct : (g.den ? Math.max(0, Math.round((g.den - (g.num || 0) - (g.ret || 0)) / g.den * 1000) / 10) : 0);
-            mini.title = nameRu + " · " + ym + ": всего " + g.den
+            mini.title = nameRu + " · " + periodTxt + ": всего " + g.den
               + "\nзаписано " + (g.num || 0) + " (" + (g.pct != null ? g.pct : 0) + "%)"
               + "\nвозврат " + (g.ret || 0) + " (" + retPct + "%)"
               + "\nожидает записи " + Math.max(0, g.den - (g.num || 0) - (g.ret || 0)) + " (" + waitPct + "%)";
@@ -3536,10 +3536,20 @@
             const fl = document.createElement("div"); fl.style.cssText = "font-size:11px;line-height:1;margin-top:3px;"; fl.textContent = p[2];
             mini.appendChild(vl); mini.appendChild(bar); mini.appendChild(fl); pair.appendChild(mini);
           });
-          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = MON3[+ym.slice(5, 7) - 1];
+          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = accent ? "#2c5a86" : "#5a626f"; xl.textContent = labelText;
           col.appendChild(pair); col.appendChild(xl);
-          bars.appendChild(col);
+          return col;
+        };
+        yms.forEach(function (ym) { bars.appendChild(makeCard(d.months[ym], MON3[+ym.slice(5, 7) - 1], ym, false)); });
+        // Общегодовая карточка — в конце, с отступом и акцентной подложкой.
+        const tot = {};
+        ["sch", "usa", "uk"].forEach(function (k) {
+          let den = 0, num = 0, ret = 0;
+          yms.forEach(function (ym) { const g = d.months[ym][k]; if (g) { den += g.den || 0; num += g.num || 0; ret += g.ret || 0; } });
+          const wait = Math.max(0, den - num - ret), P = function (x) { return den ? Math.round(x / den * 1000) / 10 : null; };
+          tot[k] = { den: den, num: num, ret: ret, wait: wait, pct: P(num), retPct: P(ret), waitPct: P(wait) };
         });
+        bars.appendChild(makeCard(tot, (d.year || 2026) + " год", "весь " + (d.year || 2026), true));
         box.appendChild(bars);
       }
       // Прежний вид (откат: VSC_SCHENGEN_VIEW = "combined"): один столбец = общий %.
