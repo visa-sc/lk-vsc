@@ -3460,12 +3460,20 @@
           vscContent.appendChild(vscMarketChart(mktRows));
         }
       }
-      // Блок «% записанных сделок — Шенген и США» — из локальной копии amoCRM (по дате
-      // оплаты), живой (без заморозки). Сгруппированный график: 2 столбца на месяц.
+      // Блок «% записанных сделок — Шенген и США» — из живой amoCRM (по дате оплаты),
+      // живой (без заморозки). Два вида (переключение флагом — лёгкий откат):
+      //  "split"    — идея Кати (17.07): на месяц ДВЕ 100%-колонки (Шенген | США), каждая
+      //               делится на «записано» (цвет группы) / «возврат» (красный) / «ожидает
+      //               записи» (серый); % записанных — над колонкой цветом группы.
+      //  "combined" — прежний вид: один столбец, высота = общий %, сегменты по весу групп.
+      const VSC_SCHENGEN_VIEW = "split";
       function vscSchengenBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
         const SECT = "% записанных сделок — Шенген и США";
-        const info = "<b>Что показывает секция</b><br>Из сделок, ОПЛАЧЕННЫХ в конкретном месяце, — какая доля дошла до «продвинутых» статусов (реальная запись/подача/паспорт/реализация).<br><br><b>Как читать столбец</b><br>Высота столбца и число сверху — ОБЩИЙ % записанных (Шенген + США вместе). Сегменты — Шенген/США по весу числа сделок; в синем сегменте — % Шенгена, оранжевое число ПОД колонкой — % США (его сегмент узкий, внутри цифра не помещается). Наведение — точные цифры «дошло из скольких».<br><br><b>Группы стран</b> (по полю «Страна оформления/услуга»):<br>• Шенген — зона Шенгена + Болгария, Кипр, Румыния, Хорватия («Италия» = Альмавива и VMS); Ирландия/Британия НЕ входят;<br>• США — США / США Астана / США Варшава.<br><br><b>Целевые статусы:</b><br>• Отдел по работе с Клиентами: на рассмотрении в консульстве, документы готовы к личной подаче, передано клиенту, поданы лично, паспорт готов, успешно реализовано;<br>• Отдел Оформления: запись сделана, электронное рассмотрение, оформлен выкуп, пакет документов готов.<br><br>Разрез — по <b>дате оплаты</b>. Живой (НЕ заморожен): оплаченную в июле сделку записали позже → июльский % подрастёт. Источник — amoCRM (фоново, самым низким приоритетом — CRM не перегружается), пересчёт раз в сутки в 00:00 МСК.";
+        const infoCommon = "<b>Группы стран</b> (по полю «Страна оформления/услуга»):<br>• Шенген — зона Шенгена + Болгария, Кипр, Румыния, Хорватия («Италия» = Альмавива и VMS); Ирландия/Британия НЕ входят;<br>• США — США / США Астана / США Варшава.<br><br><b>Статусы «записано»:</b><br>• Отдел по работе с Клиентами: на рассмотрении в консульстве, документы готовы к личной подаче, передано клиенту, поданы лично, паспорт готов, успешно реализовано;<br>• Отдел Оформления: запись сделана, электронное рассмотрение, оформлен выкуп, пакет документов готов.<br><br>Разрез — по <b>дате оплаты</b>. Живой (НЕ заморожен): оплаченную в июле сделку записали позже → июльский % подрастёт. Источник — amoCRM (фоново, самым низким приоритетом — CRM не перегружается), пересчёт раз в сутки в 00:00 МСК.";
+        const info = VSC_SCHENGEN_VIEW === "split"
+          ? "<b>Что показывает секция</b><br>Каждая оплаченная в месяце сделка попадает в одну из 3 категорий по ТЕКУЩЕМУ статусу: <b>записано</b> (реальная запись/подача/паспорт/реализация), <b>возврат</b> (статусы «Возврат» и «Ожидает решения о возврате») или <b>ожидает записи</b> (весь остальной остаток: сбор документов, ожидание записи, пауза и т.п.).<br><br><b>Как читать</b><br>На месяц две колонки: слева <b>Шенген</b>, справа <b>США</b>. Каждая колонка = 100% сделок своей группы; снизу вверх — записано (цвет группы), возврат (красный), ожидает записи (серый). Число над колонкой — % записанных (цветом группы). Наведение — точные числа по каждой категории.<br><br>" + infoCommon
+          : "<b>Что показывает секция</b><br>Из сделок, ОПЛАЧЕННЫХ в конкретном месяце, — какая доля дошла до «продвинутых» статусов.<br><br><b>Как читать столбец</b><br>Высота столбца и число сверху — ОБЩИЙ % записанных (Шенген + США вместе). Сегменты — Шенген/США по весу числа сделок; в синем сегменте — % Шенгена, оранжевое число под колонкой — % США.<br><br>" + infoCommon;
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = SECT; h.appendChild(vscInfo(info));
         wrap.appendChild(h);
         const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем…</div>';
@@ -3473,58 +3481,102 @@
         apiFetch("/admin/api/vsc/schengen").then(function (j) {
           const d = j && j.data;
           if (!d || !d.months || !Object.keys(d.months).length) { box.innerHTML = '<div class="vsc-empty">Пока нет данных — идёт первый расчёт, обновите через минуту.</div>'; return; }
-          const yms = Object.keys(d.months).sort();
-          const MON3 = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
-          const COL = { sch: "#3589BD", usa: "#e8843b" };
           box.innerHTML = "";
-          // легенда
-          const leg = document.createElement("div"); leg.style.cssText = "display:flex;gap:16px;font-size:12px;color:#5a626f;margin:0 0 12px;";
-          leg.innerHTML = '<span style="white-space:nowrap;"><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:' + COL.sch + ';vertical-align:-1px;margin-right:6px;"></i>Шенген</span>'
-            + '<span style="white-space:nowrap;"><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:' + COL.usa + ';vertical-align:-1px;margin-right:6px;"></i>США</span>';
-          box.appendChild(leg);
-          // Как «Комиссии эквайринга»: высота столбца = ОБЩИЙ % (шенген+США, число сверху),
-          // сегменты — по ВЕСУ числа сделок группы; число в сегменте — конкретный % ГРУППЫ.
-          const MAXPX = 150;
-          const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "210px";
-          yms.forEach(function (ym) {
-            const mo = d.months[ym];
-            const sch = mo.sch || { den: 0, num: 0, pct: null }, usa = mo.usa || { den: 0, num: 0, pct: null };
-            const den = sch.den + usa.den, num = sch.num + usa.num;
-            const total = den ? Math.round(num / den * 1000) / 10 : null;   // общий %
-            const col = document.createElement("div"); col.className = "vsc-bar-col"; col.style.flex = "0 0 56px";
-            col.title = ym + " · общий " + (total != null ? total + "%" : "—") + " (" + num + " из " + den + ")"
-              + "\nШенген: " + sch.num + "/" + sch.den + (sch.den ? " = " + sch.pct + "%" : "")
-              + "\nСША: " + usa.num + "/" + usa.den + (usa.den ? " = " + usa.pct + "%" : "");
-            const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = total != null ? total + "%" : "—";
-            const bar = document.createElement("div"); bar.className = "vsc-bar vsc-bar-stack"; bar.style.width = "32px";
-            const barPx = total != null ? Math.max(2, Math.round(total / 100 * MAXPX)) : 2;
-            bar.style.height = barPx + "px";
-            if (den > 0) {
-              [["sch", sch], ["usa", usa]].forEach(function (pair) {   // column-reverse → первый снизу
-                const key = pair[0], g = pair[1]; if (!g.den) return;
-                const frac = g.den / den;
-                const seg = document.createElement("div");
-                seg.style.cssText = "width:100%;height:" + (frac * 100) + "%;background:" + COL[key] + ";display:flex;align-items:center;justify-content:center;overflow:hidden;";
-                seg.title = (key === "sch" ? "Шенген" : "США") + ": " + g.num + " из " + g.den + " = " + g.pct + "%";
-                // Внутри сегмента цифру рисуем только шенгену (он крупный). % США — ВСЕГДА
-                // под колонкой оранжевым (сегмент США узкий, внутри цифра не помещается).
-                if (key === "sch" && g.pct != null && frac * barPx >= 11) { const sp = document.createElement("span"); sp.textContent = g.pct + "%"; sp.style.cssText = "font-size:8px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.25);"; seg.appendChild(sp); }
-                bar.appendChild(seg);
-              });
-            }
-            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = MON3[+ym.slice(5, 7) - 1];
-            const ul = document.createElement("div"); ul.style.cssText = "font-size:8.5px;font-weight:700;color:" + COL.usa + ";line-height:1.2;margin-top:1px;white-space:nowrap;";
-            ul.textContent = usa.den ? (usa.pct + "%") : "—";
-            ul.title = "США: " + usa.num + " из " + usa.den + (usa.den ? " = " + usa.pct + "%" : " (нет сделок)");
-            col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(ul);
-            bars.appendChild(col);
-          });
-          box.appendChild(bars);
+          if (VSC_SCHENGEN_VIEW === "split") vscSchengenRenderSplit(box, d); else vscSchengenRenderCombined(box, d);
           const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
           const foot = document.createElement("div"); foot.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:10px;"; foot.textContent = "обновлено: " + upd + " МСК · источник: amoCRM (по дате оплаты), раз в сутки в 00:00";
           box.appendChild(foot);
         }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить.</div>'; });
         return wrap;
+      }
+      // Вид Кати: пара 100%-колонок Шенген|США на месяц, категории записано/возврат/ожидает.
+      function vscSchengenRenderSplit(box, d) {
+        const yms = Object.keys(d.months).sort();
+        const MON3 = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+        const COL = { sch: "#3589BD", usa: "#e8843b", ret: "#d2685f", wait: "#d3d8e0" };
+        const leg = document.createElement("div"); leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:#5a626f;margin:0 0 12px;";
+        const li = (c, t) => '<span style="white-space:nowrap;"><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:' + c + ';vertical-align:-1px;margin-right:5px;"></i>' + t + '</span>';
+        leg.innerHTML = li(COL.sch, "Записано — Шенген") + li(COL.usa, "Записано — США") + li(COL.ret, "Возврат") + li(COL.wait, "Ожидает записи");
+        box.appendChild(leg);
+        const MAXPX = 150;
+        const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "205px";
+        yms.forEach(function (ym) {
+          const mo = d.months[ym];
+          const col = document.createElement("div"); col.className = "vsc-bar-col"; col.style.flex = "0 0 66px";
+          const pair = document.createElement("div"); pair.style.cssText = "display:flex;gap:4px;align-items:flex-end;justify-content:center;";
+          [["sch", "Шенген"], ["usa", "США"]].forEach(function (p) {
+            const key = p[0], nameRu = p[1], g = mo[key] || { den: 0 };
+            const mini = document.createElement("div"); mini.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:flex-end;";
+            const vl = document.createElement("div"); vl.style.cssText = "font-size:9px;font-weight:700;color:" + COL[key] + ";line-height:1.2;margin-bottom:2px;white-space:nowrap;";
+            vl.textContent = g.den ? ((g.pct != null ? g.pct : 0) + "%") : "—";
+            const bar = document.createElement("div"); bar.className = "vsc-bar vsc-bar-stack"; bar.style.width = "22px"; bar.style.background = "transparent";
+            bar.style.height = (g.den ? MAXPX : 2) + "px"; bar.style.borderRadius = "4px 4px 0 0";
+            const retPct = g.retPct != null ? g.retPct : (g.den ? Math.round(((g.ret || 0)) / g.den * 1000) / 10 : 0);
+            const waitPct = g.waitPct != null ? g.waitPct : (g.den ? Math.max(0, Math.round((g.den - (g.num || 0) - (g.ret || 0)) / g.den * 1000) / 10) : 0);
+            mini.title = nameRu + " · " + ym + ": всего " + g.den
+              + "\nзаписано " + (g.num || 0) + " (" + (g.pct != null ? g.pct : 0) + "%)"
+              + "\nвозврат " + (g.ret || 0) + " (" + retPct + "%)"
+              + "\nожидает записи " + Math.max(0, g.den - (g.num || 0) - (g.ret || 0)) + " (" + waitPct + "%)";
+            if (g.den) {
+              // column-reverse → первый добавленный снизу: записано → возврат → ожидает.
+              [[g.pct, COL[key], "#fff"], [retPct, COL.ret, "#fff"], [waitPct, COL.wait, "#5a626f"]].forEach(function (seg) {
+                const pct = seg[0] || 0; if (pct <= 0) return;
+                const el = document.createElement("div");
+                el.style.cssText = "width:100%;height:" + pct + "%;background:" + seg[1] + ";display:flex;align-items:center;justify-content:center;overflow:hidden;";
+                if (pct / 100 * MAXPX >= 11) { const sp = document.createElement("span"); sp.textContent = Math.round(pct) + "%"; sp.style.cssText = "font-size:7.5px;font-weight:700;color:" + seg[2] + ";line-height:1;white-space:nowrap;" + (seg[2] === "#fff" ? "text-shadow:0 1px 1px rgba(0,0,0,.25);" : ""); el.appendChild(sp); }
+                bar.appendChild(el);
+              });
+            }
+            mini.appendChild(vl); mini.appendChild(bar); pair.appendChild(mini);
+          });
+          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = MON3[+ym.slice(5, 7) - 1];
+          col.appendChild(pair); col.appendChild(xl);
+          bars.appendChild(col);
+        });
+        box.appendChild(bars);
+      }
+      // Прежний вид (откат: VSC_SCHENGEN_VIEW = "combined"): один столбец = общий %.
+      function vscSchengenRenderCombined(box, d) {
+        const yms = Object.keys(d.months).sort();
+        const MON3 = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+        const COL = { sch: "#3589BD", usa: "#e8843b" };
+        const leg = document.createElement("div"); leg.style.cssText = "display:flex;gap:16px;font-size:12px;color:#5a626f;margin:0 0 12px;";
+        leg.innerHTML = '<span style="white-space:nowrap;"><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:' + COL.sch + ';vertical-align:-1px;margin-right:6px;"></i>Шенген</span>'
+          + '<span style="white-space:nowrap;"><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:' + COL.usa + ';vertical-align:-1px;margin-right:6px;"></i>США</span>';
+        box.appendChild(leg);
+        const MAXPX = 150;
+        const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "210px";
+        yms.forEach(function (ym) {
+          const mo = d.months[ym];
+          const sch = mo.sch || { den: 0, num: 0, pct: null }, usa = mo.usa || { den: 0, num: 0, pct: null };
+          const den = sch.den + usa.den, num = sch.num + usa.num;
+          const total = den ? Math.round(num / den * 1000) / 10 : null;
+          const col = document.createElement("div"); col.className = "vsc-bar-col"; col.style.flex = "0 0 56px";
+          col.title = ym + " · общий " + (total != null ? total + "%" : "—") + " (" + num + " из " + den + ")"
+            + "\nШенген: " + sch.num + "/" + sch.den + (sch.den ? " = " + sch.pct + "%" : "")
+            + "\nСША: " + usa.num + "/" + usa.den + (usa.den ? " = " + usa.pct + "%" : "");
+          const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = total != null ? total + "%" : "—";
+          const bar = document.createElement("div"); bar.className = "vsc-bar vsc-bar-stack"; bar.style.width = "32px";
+          const barPx = total != null ? Math.max(2, Math.round(total / 100 * MAXPX)) : 2;
+          bar.style.height = barPx + "px";
+          if (den > 0) {
+            [["sch", sch], ["usa", usa]].forEach(function (pairG) {
+              const key = pairG[0], g = pairG[1]; if (!g.den) return;
+              const frac = g.den / den;
+              const seg = document.createElement("div");
+              seg.style.cssText = "width:100%;height:" + (frac * 100) + "%;background:" + COL[key] + ";display:flex;align-items:center;justify-content:center;overflow:hidden;";
+              seg.title = (key === "sch" ? "Шенген" : "США") + ": " + g.num + " из " + g.den + " = " + g.pct + "%";
+              if (key === "sch" && g.pct != null && frac * barPx >= 11) { const sp = document.createElement("span"); sp.textContent = g.pct + "%"; sp.style.cssText = "font-size:8px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.25);"; seg.appendChild(sp); }
+              bar.appendChild(seg);
+            });
+          }
+          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = MON3[+ym.slice(5, 7) - 1];
+          const ul = document.createElement("div"); ul.style.cssText = "font-size:8.5px;font-weight:700;color:" + COL.usa + ";line-height:1.2;margin-top:1px;white-space:nowrap;";
+          ul.textContent = usa.den ? (usa.pct + "%") : "—";
+          col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(ul);
+          bars.appendChild(col);
+        });
+        box.appendChild(bars);
       }
       // ── «Выкупы — сверка р/с с таблицей» (Ежемесячный контроль, только админ) ──
       // Банк (T-Bank API, Turkish + OneTwoTrip, только проведённые операции, месяц по

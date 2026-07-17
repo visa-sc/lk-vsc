@@ -4898,6 +4898,10 @@ const SCHENGEN_TARGET = new Set([
   "1309524:21256455", "1309524:21256203", "1309524:70957793", "1309524:70957929", "1309524:21256458", "1309524:142", // ОРК
   "1312578:26918115", "1312578:21256668", "1312578:61251437", "1312578:142" // ОО
 ]);
+// «Возврат» (идея Кати, 17.07): ОРК «Возврат» + ОО «ОЖИДАЕТ РЕШЕНИЯ О ВОЗВРАТЕ».
+// Проверено по факту: оплаченные сделки в «Закрыто и не реализовано» НЕ сидят (0 шт) —
+// возвратные остаются в этих двух статусах. «Ожидает записи» = den − записано − возврат.
+const SCHENGEN_RETURN = new Set(["1309524:21256761", "1312578:43200834"]);
 const SCHENGEN_YEAR = 2026;
 function loadSchengen() { try { return JSON.parse(fs.readFileSync(VSC_SCHENGEN_FILE, "utf8")); } catch (_) { return null; } }
 let _schengenRunning = false;
@@ -4926,18 +4930,23 @@ async function runSchengenLive(trigger) {
         const country = _cityCfVal(l, 427240); if (!country) continue;
         const isSch = hit(SCHENGEN_KW, country), isUsa = hit(SCHENGEN_USA_KW, country);
         if (!isSch && !isUsa) continue;
-        const adv = SCHENGEN_TARGET.has(l.pipeline_id + ":" + l.status_id);
-        const a = agg[ym.m] || (agg[ym.m] = { schDen: 0, schNum: 0, usaDen: 0, usaNum: 0 });
-        if (isSch) { a.schDen++; if (adv) a.schNum++; }
-        if (isUsa) { a.usaDen++; if (adv) a.usaNum++; }
+        const key = l.pipeline_id + ":" + l.status_id;
+        const adv = SCHENGEN_TARGET.has(key), ret = SCHENGEN_RETURN.has(key);
+        const a = agg[ym.m] || (agg[ym.m] = { schDen: 0, schNum: 0, schRet: 0, usaDen: 0, usaNum: 0, usaRet: 0 });
+        if (isSch) { a.schDen++; if (adv) a.schNum++; else if (ret) a.schRet++; }
+        if (isUsa) { a.usaDen++; if (adv) a.usaNum++; else if (ret) a.usaRet++; }
       }
       if (leads.length < 250) break;
     }
-    const grp = (den, num) => ({ den, num, pct: den ? Math.round(num / den * 1000) / 10 : null });
+    // den/num/pct — как раньше (старый фронт не ломается); ret/retPct/waitPct — категории Кати.
+    const grp = (den, num, ret) => {
+      const wait = Math.max(0, den - num - ret), P = (x) => (den ? Math.round(x / den * 1000) / 10 : null);
+      return { den, num, ret, wait, pct: P(num), retPct: P(ret), waitPct: P(wait) };
+    };
     const months = {};
     for (let m = 0; m < 12; m++) {
       const a = agg[m]; if (!a || (!a.schDen && !a.usaDen)) continue;
-      months[SCHENGEN_YEAR + "-" + String(m + 1).padStart(2, "0")] = { sch: grp(a.schDen, a.schNum), usa: grp(a.usaDen, a.usaNum) };
+      months[SCHENGEN_YEAR + "-" + String(m + 1).padStart(2, "0")] = { sch: grp(a.schDen, a.schNum, a.schRet), usa: grp(a.usaDen, a.usaNum, a.usaRet) };
     }
     const out = { ts: Date.now(), year: SCHENGEN_YEAR, scanned, months };
     fs.writeFileSync(VSC_SCHENGEN_FILE, JSON.stringify(out, null, 2), "utf8");
