@@ -62,6 +62,7 @@
   .gs-box .gs-row:hover { background:#f2f6fa; }
   .gs-box .gs-sub { color:var(--mut); font-size:12px; white-space:nowrap; }
   .gs-box .gs-empty { padding:12px 14px; color:var(--mut); font-size:13px; }
+  .composer .qd { font-size:12px; color:var(--link); cursor:pointer; align-self:center; white-space:nowrap; }
   /* ── карточка сделки как в amo: тёмная шапка ── */
   .dl-dark { background:#2e3d4e; padding:14px 20px 14px; position:relative; }
   .dl-dark .back { color:#9fb0c0; }
@@ -955,14 +956,21 @@
   /* ─── раздел «Задачи» ─── */
   function vTasks(){
     renderSidebar("tasks");
-    var respSel='<select id="taskResp" class="ci" style="max-width:240px;display:inline-block;margin-left:10px"><option value="0">Все сотрудники</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select>';
+    var respSel='<select id="taskResp" class="ci" style="max-width:220px;display:inline-block;margin-left:10px"><option value="0">Все сотрудники</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select>'+
+      '<select id="taskType" class="ci" style="max-width:180px;display:inline-block;margin-left:8px"><option value="0">Все типы</option>'+TASK_TYPES.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join("")+'</select>';
     setHeader("Задачи",{count:respSel});
-    setTimeout(function(){var s=$("#taskResp");if(s)s.onchange=function(){loadTasks(s.value);};},0);
+    setTimeout(function(){
+      var s=$("#taskResp"),ty=$("#taskType");
+      var rerun=function(){loadTasks(s?s.value:0,ty?ty.value:0);};
+      if(s)s.onchange=rerun; if(ty)ty.onchange=rerun;
+    },0);
     $("#view").innerHTML='<div class="plain" style="max-width:1000px"><div id="tasksBox">Загрузка…</div></div>';
-    loadTasks(0);
+    loadTasks(0,0);
   }
-  function loadTasks(resp){
+  function loadTasks(resp,ttype){
     jreq(API+"/tasks_list"+(resp&&resp!=="0"?("?responsible="+resp):"")).then(function(items){
+      var typeName={};TASK_TYPES.forEach(function(t){typeName[t.id]=t.name;});
+      if(ttype&&ttype!=="0")items=items.filter(function(t){return String(t.task_type)===String(ttype);});
       var now=Date.now()/1000, dayEnd=now-(now%86400)+86400;
       var groups={overdue:[],today:[],tomorrow:[],later:[]};
       items.forEach(function(t){
@@ -978,15 +986,25 @@
         if(!groups[g].length)return;
         html+='<h3 style="color:'+colors[g]+'">'+titles[g]+' ('+groups[g].length+')</h3><table class="amo"><tbody>';
         groups[g].forEach(function(t){
-          html+='<tr><td style="width:130px" class="muted">'+dt(t.till)+'</td><td>'+esc(t.text||"")+'</td><td style="width:180px"><a data-lead="'+t.entity_id+'">'+esc((t.lead_name||"сделка #"+t.entity_id).slice(0,30))+'</a></td><td class="muted" style="width:150px">'+esc(t.resp||"")+'</td><td style="width:90px"><a class="tdone" data-t="'+t.id+'">выполнить</a></td></tr>';
+          html+='<tr><td style="width:130px" class="muted">'+dt(t.till)+'</td><td style="width:130px" class="muted">'+esc(typeName[t.task_type]||"")+'</td><td>'+esc(t.text||"")+'</td><td style="width:180px"><a data-lead="'+t.entity_id+'">'+esc((t.lead_name||"сделка #"+t.entity_id).slice(0,30))+'</a></td><td class="muted" style="width:150px">'+esc(t.resp||"")+'</td><td style="width:150px"><a class="tdone" data-t="'+t.id+'">выполнить</a> · <a class="tmove" data-t="'+t.id+'">перенести</a></td></tr>';
         });
         html+='</tbody></table>';
       });
+      var rerun=function(){loadTasks($("#taskResp")?$("#taskResp").value:0,$("#taskType")?$("#taskType").value:0);};
       $("#tasksBox").innerHTML=html||'<p class="muted">Открытых задач нет</p>';
       $("#tasksBox").querySelectorAll("[data-lead]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.lead,10));};});
       $("#tasksBox").querySelectorAll(".tdone").forEach(function(a){a.onclick=function(){
         var res=prompt("Результат задачи (необязательно):","");
-        ereq("POST","/edit-api/task/"+a.dataset.t+"/complete",{result:res||""}).then(function(r){if(r&&r.success){toast("Задача выполнена");loadTasks($("#taskResp")?$("#taskResp").value:0);}else toast("Не удалось",true);});
+        if(res===null)return;
+        ereq("POST","/edit-api/task/"+a.dataset.t+"/complete",{result:res||""}).then(function(r){if(r&&r.success){toast("Задача выполнена");rerun();}else toast("Не удалось",true);});
+      };});
+      $("#tasksBox").querySelectorAll(".tmove").forEach(function(a){a.onclick=function(){
+        var v=prompt("Новый срок (ДД.ММ.ГГГГ):",new Date(Date.now()+86400000).toLocaleDateString("ru-RU"));
+        if(!v)return;
+        var m=v.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+        if(!m){toast("Формат: ДД.ММ.ГГГГ",true);return;}
+        var till=Math.floor(new Date(+m[3],+m[2]-1,+m[1],18,0,0).getTime()/1000);
+        ereq("PATCH","/edit-api/task/"+a.dataset.t,{complete_till:till}).then(function(r){if(r&&r.success){toast("Срок перенесён");rerun();}else toast("Не удалось",true);});
       };});
     });
   }
@@ -1546,7 +1564,7 @@
       comp.innerHTML=
         '<div class="cbtns"><span class="ctab act" data-c="note">Примечание</span>'+(ent.withTasks?'<span class="ctab" data-c="task">Задача</span>':"")+'</div>'+
         '<div class="cbody cnote"><textarea class="ci" rows="2" placeholder="Введите текст примечания…"></textarea><button class="btn csave">Добавить</button></div>'+
-        (ent.withTasks?'<div class="cbody ctask" style="display:none"><input class="ci ctask-text" placeholder="Текст задачи…"><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><select class="ci ctask-type" style="max-width:190px">'+(TASK_TYPES.length?TASK_TYPES:[{id:1,name:"Связаться"}]).map(function(t){return '<option value="'+t.id+'"'+(t.id===1?" selected":"")+'>'+esc(t.name)+'</option>';}).join("")+'</select><input class="ci ctask-date" type="date" style="max-width:160px"><button class="btn ctask-save">Поставить</button></div></div>':"");
+        (ent.withTasks?'<div class="cbody ctask" style="display:none"><input class="ci ctask-text" placeholder="Текст задачи…"><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><select class="ci ctask-type" style="max-width:190px">'+(TASK_TYPES.length?TASK_TYPES:[{id:1,name:"Связаться"}]).map(function(t){return '<option value="'+t.id+'"'+(t.id===1?" selected":"")+'>'+esc(t.name)+'</option>';}).join("")+'</select><input class="ci ctask-date" type="date" style="max-width:160px"><span class="qd" data-d="0">Сегодня</span><span class="qd" data-d="1">Завтра</span><button class="btn ctask-save">Поставить</button></div></div>':"");
       comp.querySelectorAll(".ctab").forEach(function(tb){tb.onclick=function(){
         comp.querySelectorAll(".ctab").forEach(function(x){x.classList.toggle("act",x===tb);});
         comp.querySelector(".cnote").style.display=tb.dataset.c==="note"?"":"none";
@@ -1559,6 +1577,13 @@
         });
       };
       if(ent.withTasks){
+        // быстрые пресеты срока (как в amo): Сегодня/Завтра
+        comp.querySelectorAll(".qd").forEach(function(c){c.onclick=function(){
+          var d=new Date(Date.now()+parseInt(c.dataset.d,10)*86400000);
+          var mm=("0"+(d.getMonth()+1)).slice(-2),dd=("0"+d.getDate()).slice(-2);
+          comp.querySelector(".ctask-date").value=d.getFullYear()+"-"+mm+"-"+dd;
+          comp.querySelectorAll(".qd").forEach(function(x){x.style.fontWeight=x===c?"600":"";});
+        };});
         comp.querySelector(".ctask-save").onclick=function(){
           var t=comp.querySelector(".ctask-text").value.trim(); if(!t)return;
           var dv=comp.querySelector(".ctask-date").value; var till=dv?Math.floor(new Date(dv+"T18:00:00").getTime()/1000):0;

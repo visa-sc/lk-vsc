@@ -130,10 +130,10 @@ module.exports = function mountDbRoutes(app, guard, api) {
   // предстоящие+сегодня (возр.) и недавняя просрочка (убыв.) — с опц. фильтром по ответственному.
   // resp приводим к целому и подставляем как литерал (не через плейсхолдер), поэтому инъекция исключена.
   const prep = (base, resp) => D.prepare(base.replace("{RESP}", resp ? "AND t.responsible_user_id=" + (parseInt(resp, 10) || 0) : ""));
-  const qTasksUpSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id, l.name lead_name
+  const qTasksUpSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id,t.task_type, l.name lead_name
     FROM tasks t LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads'
     WHERE t.is_completed=0 AND t.complete_till>=? {RESP} ORDER BY t.complete_till ASC LIMIT 300`;
-  const qTasksOvSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id, l.name lead_name
+  const qTasksOvSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id,t.task_type, l.name lead_name
     FROM tasks t LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads'
     WHERE t.is_completed=0 AND t.complete_till<? AND t.complete_till>0 {RESP} ORDER BY t.complete_till DESC LIMIT 200`;
   app.get(`${api}/tasks_list`, guard, (req, res) => {
@@ -145,7 +145,8 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const rows = overdue.concat(upcoming); // просрочка (свежая сверху) + предстоящие
     res.json(rows.map((t) => ({
       id: t.id, text: t.text, till: t.complete_till, resp: uName[t.responsible_user_id] || "",
-      resp_id: t.responsible_user_id, entity_type: t.entity_type, entity_id: t.entity_id, lead_name: t.lead_name || ""
+      resp_id: t.responsible_user_id, entity_type: t.entity_type, entity_id: t.entity_id, lead_name: t.lead_name || "",
+      task_type: t.task_type
     })));
   });
 
