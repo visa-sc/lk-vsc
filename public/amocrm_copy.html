@@ -1480,7 +1480,7 @@
       flushSys();
       if(e.kind==="task"){
         var t=e.t;
-        html+='<div class="ev task'+(t.is_completed?"":" open")+'"><div class="eh">'+dt(t.complete_till)+" · задача · "+esc(userName(t.responsible_user_id))+(t.is_completed?" · выполнена":" · открыта")+(!t.is_completed&&t.id?' · <a class="task-done" data-tid="'+t.id+'">выполнить</a> · <a class="task-move" data-tid="'+t.id+'">перенести</a>':"")+'</div>'+esc(t.text||"")+(t.result&&t.result.text?('<div class="muted" style="margin-top:4px">Результат: '+esc(t.result.text)+'</div>'):"")+'</div>';
+        html+='<div class="ev task'+(t.is_completed?"":" open")+'"><div class="eh">'+dt(t.complete_till)+" · задача · "+esc(userName(t.responsible_user_id))+(t.is_completed?" · выполнена":" · открыта")+(!t.is_completed&&t.id?' · <a class="task-done" data-tid="'+t.id+'">выполнить</a> · <a class="task-move" data-tid="'+t.id+'">перенести</a> · <a class="task-edit" data-tid="'+t.id+'" data-text="'+esc(t.text||"")+'">изменить</a>':"")+'</div>'+esc(t.text||"")+(t.result&&t.result.text?('<div class="muted" style="margin-top:4px">Результат: '+esc(t.result.text)+'</div>'):"")+'</div>';
       } else {
         html+=noteEvHtml(e.n);
       }
@@ -1515,7 +1515,7 @@
     var feed=bg.querySelector(".feed");
     // действия ленты — делегирование (живёт при любых перерисовках ленты)
     feed.addEventListener("click",function(e){
-      var a=e.target&&e.target.closest?e.target.closest(".task-done,.task-move,.note-edit,.note-del"):null;
+      var a=e.target&&e.target.closest?e.target.closest(".task-done,.task-move,.task-edit,.note-edit,.note-del"):null;
       if(!a)return;
       var reload=function(){var fn=bg.__reload;if(fn)fn();};
       if(a.classList.contains("task-done")){
@@ -1529,6 +1529,10 @@
         if(!m){toast("Формат: ДД.ММ.ГГГГ",true);return;}
         var till=Math.floor(new Date(+m[3],+m[2]-1,+m[1],18,0,0).getTime()/1000);
         ereq("PATCH","/edit-api/task/"+a.dataset.tid,{complete_till:till}).then(function(r){if(r&&r.success){toast("Срок перенесён");reload();}else toast("Не удалось",true);});
+      }else if(a.classList.contains("task-edit")){
+        var tt=prompt("Текст задачи:",a.dataset.text||"");
+        if(tt==null||!tt.trim())return;
+        ereq("PATCH","/edit-api/task/"+a.dataset.tid,{text:tt.trim()}).then(function(r){if(r&&r.success){toast("Задача изменена");reload();}else toast("Не удалось",true);});
       }else if(a.classList.contains("note-edit")){
         var nt=prompt("Текст примечания:",a.dataset.text||"");
         if(nt==null||!nt.trim())return;
@@ -1598,7 +1602,7 @@
   }
   function historyHtml(items){
     if(!items.length)return '<p class="muted" style="padding:12px 4px">История пуста (изменения ведутся с момента создания копии — журнал событий amo в слепок не выгружался)</p>';
-    var A={create:"создана",stage:"смена этапа",edit:"правка полей",edit_cf:"изменение поля",edit_tags:"изменение тегов",task_create:"поставлена задача",task_complete:"задача выполнена",task_reschedule:"перенос задачи",note_add:"добавлено примечание",note_edit:"изменено примечание",note_delete:"удалено примечание",edit_contact:"правка",link_contact:"привязан контакт",unlink_contact:"отвязан контакт",link_company:"привязана компания",unlink_company:"отвязана компания",merge:"объединение контактов",auto_task:"авто-задача",auto_responsible:"авто-ответственный",delete:"удаление"};
+    var A={create:"создана",stage:"смена этапа",edit:"правка полей",edit_cf:"изменение поля",edit_tags:"изменение тегов",task_create:"поставлена задача",task_complete:"задача выполнена",task_reschedule:"перенос задачи",task_edit:"изменена задача",note_add:"добавлено примечание",note_edit:"изменено примечание",note_delete:"удалено примечание",edit_contact:"правка",link_contact:"привязан контакт",unlink_contact:"отвязан контакт",link_company:"привязана компания",unlink_company:"отвязана компания",merge:"объединение контактов",auto_task:"авто-задача",auto_responsible:"авто-ответственный",delete:"удаление"};
     var row=function(e){
       var d=e.detail||{},extra="";
       if(e.action==="stage"&&d.to)extra=" → "+esc(d.to.name||"");

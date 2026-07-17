@@ -204,6 +204,9 @@ module.exports = function mountEditRoutes(app, guard) {
     if (!getLead.get(id)) return res.status(404).json({ success: false });
     db.prepare("DELETE FROM leads WHERE id=?").run(id);
     db.prepare("DELETE FROM lead_contacts WHERE lead_id=?").run(id);
+    // каскад как в amo: задачи и локальные примечания сделки уходят вместе с ней
+    db.prepare("DELETE FROM tasks WHERE entity_type='leads' AND entity_id=?").run(id);
+    db.prepare("DELETE FROM notes_new WHERE entity_type='leads' AND entity_id=?").run(id);
     audit(req, "leads", id, "delete", {});
     res.json({ success: true });
   });
@@ -395,10 +398,16 @@ module.exports = function mountEditRoutes(app, guard) {
     const id = parseInt(req.params.id, 10);
     const t = db.prepare("SELECT * FROM tasks WHERE id=?").get(id);
     if (!t) return res.status(404).json({ success: false });
-    const till = parseInt(req.body.complete_till, 10);
-    if (!till) return res.status(400).json({ success: false });
-    db.prepare("UPDATE tasks SET complete_till=? WHERE id=?").run(till, id);
-    audit(req, t.entity_type, t.entity_id, "task_reschedule", { task_id: id, complete_till: till });
+    // правка срока и/или текста/типа (как в amo при редактировании задачи)
+    const till = parseInt(req.body.complete_till, 10) || 0;
+    const text = req.body.text != null ? String(req.body.text).trim().slice(0, 2000) : null;
+    const ttype = req.body.task_type != null ? parseInt(req.body.task_type, 10) || 0 : null;
+    if (!till && text === null && ttype === null) return res.status(400).json({ success: false });
+    if (till) db.prepare("UPDATE tasks SET complete_till=? WHERE id=?").run(till, id);
+    if (text !== null && text) db.prepare("UPDATE tasks SET text=? WHERE id=?").run(text, id);
+    if (ttype !== null && ttype) db.prepare("UPDATE tasks SET task_type=? WHERE id=?").run(ttype, id);
+    if (till) audit(req, t.entity_type, t.entity_id, "task_reschedule", { task_id: id, complete_till: till });
+    if ((text !== null && text) || (ttype !== null && ttype)) audit(req, t.entity_type, t.entity_id, "task_edit", { task_id: id, text: text || undefined, task_type: ttype || undefined });
     res.json({ success: true });
   });
 
