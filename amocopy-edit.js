@@ -414,6 +414,26 @@ module.exports = function mountEditRoutes(app, guard) {
     res.json({ success: true, id, created_at: now });
   });
 
+  // ── правка/удаление СВОЕГО примечания (только локальные notes_new; примечания слепка amo не трогаем) ──
+  app.patch(`${E}/note/:id`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const n = db.prepare("SELECT * FROM notes_new WHERE id=?").get(id);
+    if (!n) return res.status(404).json({ success: false });
+    const text = String(req.body.text || "").trim();
+    if (!text) return res.status(400).json({ success: false, message: "нужен text" });
+    db.prepare("UPDATE notes_new SET text=? WHERE id=?").run(text.slice(0, 4000), id);
+    audit(req, n.entity_type, n.entity_id, "note_edit", { note_id: id });
+    res.json({ success: true });
+  });
+  app.post(`${E}/note/:id/delete`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const n = db.prepare("SELECT * FROM notes_new WHERE id=?").get(id);
+    if (!n) return res.status(404).json({ success: false });
+    db.prepare("DELETE FROM notes_new WHERE id=?").run(id);
+    audit(req, n.entity_type, n.entity_id, "note_delete", { note_id: id });
+    res.json({ success: true });
+  });
+
   // ── история изменений сущности ──
   app.get(`${E}/history`, guard, (req, res) => {
     const et = ENT3(req.query.entity_type);
