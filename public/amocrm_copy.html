@@ -1004,15 +1004,19 @@
     };
   }
   /* ─── раздел «Задачи» ─── */
+  var taskRange="all"; // День/Неделя/Месяц/Все — как в amo
   function vTasks(){
     renderSidebar("tasks");
-    var respSel='<select id="taskResp" class="ci" style="max-width:220px;display:inline-block;margin-left:10px"><option value="0">Все сотрудники</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select>'+
+    var ranges=[["day","День"],["week","Неделя"],["month","Месяц"],["all","Все"]];
+    var respSel='<span style="display:inline-flex;gap:2px;margin-left:10px;background:#eef2f6;border-radius:16px;padding:2px">'+ranges.map(function(x){return '<button data-tr="'+x[0]+'" class="lnk" style="border:0;cursor:pointer;font:inherit;font-size:12.5px;padding:4px 12px;border-radius:14px;'+(taskRange===x[0]?"background:#fff;font-weight:700;color:#1d3c66":"background:none;color:#556")+'">'+x[1]+'</button>';}).join("")+'</span>'+
+      '<select id="taskResp" class="ci" style="max-width:220px;display:inline-block;margin-left:10px"><option value="0">Все сотрудники</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select>'+
       '<select id="taskType" class="ci" style="max-width:180px;display:inline-block;margin-left:8px"><option value="0">Все типы</option>'+TASK_TYPES.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join("")+'</select>';
     setHeader("Задачи",{count:respSel});
     setTimeout(function(){
       var s=$("#taskResp"),ty=$("#taskType");
       var rerun=function(){loadTasks(s?s.value:0,ty?ty.value:0);};
       if(s)s.onchange=rerun; if(ty)ty.onchange=rerun;
+      document.querySelectorAll("[data-tr]").forEach(function(b){b.onclick=function(){taskRange=b.dataset.tr;vTasks();};});
     },0);
     $("#view").innerHTML='<div class="plain" style="max-width:1000px"><div id="tasksBox">Загрузка…</div></div>';
     loadTasks(0,0);
@@ -1021,6 +1025,11 @@
     jreq(API+"/tasks_list"+(resp&&resp!=="0"?("?responsible="+resp):"")).then(function(items){
       var typeName={};TASK_TYPES.forEach(function(t){typeName[t.id]=t.name;});
       if(ttype&&ttype!=="0")items=items.filter(function(t){return String(t.task_type)===String(ttype);});
+      if(taskRange!=="all"){
+        var now2=Date.now()/1000, dayEnd2=now2-(now2%86400)+86400;
+        var horizon=taskRange==="day"?dayEnd2:taskRange==="week"?dayEnd2+6*86400:dayEnd2+29*86400;
+        items=items.filter(function(t){return t.till&&t.till<horizon;});
+      }
       var now=Date.now()/1000, dayEnd=now-(now%86400)+86400;
       var groups={overdue:[],today:[],tomorrow:[],later:[]};
       items.forEach(function(t){
