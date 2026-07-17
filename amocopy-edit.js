@@ -246,6 +246,16 @@ module.exports = function mountEditRoutes(app, guard) {
     res.json({ success: true, id });
   });
 
+  // ── создание компании (для «＋ Добавить компанию» из карточки, как в amo) ──
+  app.post(`${E}/company`, guard, (req, res) => {
+    const name = String(req.body.name || "").trim();
+    if (!name) return res.status(400).json({ success: false, message: "нужно название" });
+    const id = nextId(), now = nowSec();
+    db.prepare("INSERT INTO companies(id,name,created_at,updated_at,cf) VALUES(?,?,?,?,?)").run(id, name.slice(0, 500), now, now, "null");
+    audit(req, "companies", id, "create", { name });
+    res.json({ success: true, id });
+  });
+
   // ── правка контакта ──
   app.patch(`${E}/contact/:id`, guard, (req, res) => {
     const id = parseInt(req.params.id, 10);

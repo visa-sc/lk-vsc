@@ -1512,14 +1512,24 @@
         if(!q||q.trim().length<3)return;
         jreq(API+"/contacts?q="+encodeURIComponent(q.trim())).then(function(r){
           var items=(r&&r.items)||[];
-          if(!items.length)return toast("Не найдено",true);
-          openCtxMenu(addRow,items.slice(0,8).map(function(c){
+          var menu=items.slice(0,8).map(function(c){
             return {label:(c.n||("#"+c.id))+((c.p&&c.p[0])?" · "+c.p[0]:""),on:function(){
               ereq("POST","/edit-api/lead/"+id+"/link_contact",{contact_id:c.id}).then(function(rr){
                 if(rr&&rr.success){toast("Контакт привязан");reload();}else toast((rr&&rr.message)||"Не удалось",true);
               });
             }};
-          }));
+          });
+          // как в amo: можно создать НОВОГО контакта прямо отсюда
+          if(menu.length)menu.push("sep");
+          menu.push({label:"＋ Создать контакта «"+q.trim().slice(0,25)+"»",on:function(){
+            ereq("POST","/edit-api/contact",{name:q.trim()}).then(function(cr){
+              if(!cr||!cr.success)return toast("Не удалось создать",true);
+              ereq("POST","/edit-api/lead/"+id+"/link_contact",{contact_id:cr.id}).then(function(rr){
+                if(rr&&rr.success){toast("Контакт создан и привязан");reload();}else toast("Не удалось привязать",true);
+              });
+            });
+          }});
+          openCtxMenu(addRow,menu);
         });
       };
       bindEditable(bg,"name",function(){return l.name;},function(v){return ereq("PATCH","/edit-api/lead/"+id,{name:v});},reload,"text");
@@ -1581,10 +1591,19 @@
         if(!q||q.trim().length<2)return;
         jreq(API+"/companies_page?page=1&q="+encodeURIComponent(q.trim())).then(function(r2){
           var items=(r2&&r2.items)||[];
-          if(!items.length)return toast("Не найдено",true);
-          openCtxMenu(coAdd,items.slice(0,8).map(function(c){return {label:c.name||("#"+c.id),on:function(){
+          var menu=items.slice(0,8).map(function(c){return {label:c.name||("#"+c.id),on:function(){
             ereq("POST","/edit-api/lead/"+id+"/link_company",{company_id:c.id}).then(function(rr){if(rr&&rr.success){toast("Компания привязана");reload();}else toast((rr&&rr.message)||"Не удалось",true);});
-          }};}));
+          }};});
+          if(menu.length)menu.push("sep");
+          menu.push({label:"＋ Создать компанию «"+q.trim().slice(0,25)+"»",on:function(){
+            ereq("POST","/edit-api/company",{name:q.trim()}).then(function(cr){
+              if(!cr||!cr.success)return toast("Не удалось создать",true);
+              ereq("POST","/edit-api/lead/"+id+"/link_company",{company_id:cr.id}).then(function(rr){
+                if(rr&&rr.success){toast("Компания создана и привязана");reload();}else toast("Не удалось привязать",true);
+              });
+            });
+          }});
+          openCtxMenu(coAdd,menu);
         });
       };
       // другие сделки контактов — открыть
