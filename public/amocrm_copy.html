@@ -276,6 +276,7 @@
   .day-sep b { background:#fff; border:1px solid var(--border); border-radius:14px; padding:3px 14px; font-size:12px; color:#7b848d; font-weight:400; }
   .ev { background:#fff; border:1px solid var(--border); border-radius:4px; padding:10px 14px; margin:8px 0; font-size:13.5px; }
   .ev .eh { color:var(--mut); font-size:12px; margin-bottom:4px; }
+  .ev.note-y { background:#fffbea; border-color:#eddf9e; }
   .ev-grp-h { cursor:pointer; padding:6px 4px; color:#8a94a0; font-size:12px; }
   .ev-grp-h .grp-tgl { color:var(--link); margin-left:4px; }
   .ev-grp-b { border-left:2px solid #e3e7ec; margin-left:4px; padding-left:8px; }
@@ -1497,6 +1498,7 @@
     }else{ // common и прочее
       label=n.__local?"примечание (копия)":"Примечание";
       body=esc(String(p.text||p.service||JSON.stringify(p)).slice(0,1200));
+      cls+=" note-y"; // примечания в жёлтой рамке, как в amo
     }
     var acts=(n.__local&&n.id)?' · <a class="note-edit" data-nid="'+n.id+'" data-text="'+esc(String(p.text||""))+'">изменить</a> · <a class="note-del" data-nid="'+n.id+'">удалить</a>':"";
     return '<div class="ev'+cls+(n.__local?'" style="border-left:3px solid #6fc48d':"")+'"><div class="eh">'+dt(n.created)+" · "+label+(by?" · "+esc(String(by)):"")+acts+'</div>'+body+'</div>';
