@@ -464,7 +464,17 @@ module.exports = function mountEditRoutes(app, guard) {
     const eid = parseInt(req.query.entity_id, 10);
     if (!eid) return res.status(400).json({ success: false });
     const rows = db.prepare("SELECT ts,action,detail FROM changelog WHERE entity_type=? AND entity_id=? ORDER BY ts DESC LIMIT 200").all(et, eid);
-    res.json({ success: true, items: rows.map((r) => ({ ts: r.ts, action: r.action, detail: JSON.parse(r.detail || "{}") })) });
+    // + живые события amo (amo_events копятся синком с 19.07.2026) — история реальных сделок, не только правок копии
+    let amoEv = [];
+    try {
+      const et1 = ({ leads: "lead", contacts: "contact", companies: "company" })[et] || et;
+      amoEv = db.prepare("SELECT type,created_by,created_at,value_before vb,value_after va FROM amo_events WHERE entity_type=? AND entity_id=? ORDER BY created_at DESC LIMIT 200").all(et1, eid)
+        .map((r) => { let b = null, a = null; try { b = JSON.parse(r.vb); } catch (_) {} try { a = JSON.parse(r.va); } catch (_) {}
+          return { ts: r.created_at, action: "amo:" + r.type, detail: { before: b, after: a, by: r.created_by } }; });
+    } catch (_) { /* таблицы может не быть до первого синка events */ }
+    const items = rows.map((r) => ({ ts: r.ts, action: r.action, detail: JSON.parse(r.detail || "{}") })).concat(amoEv)
+      .sort((x, y) => (y.ts || 0) - (x.ts || 0)).slice(0, 200);
+    res.json({ success: true, items });
   });
 
   // локальные примечания (добавленные в копии) — чтобы карточка их показывала

@@ -1851,7 +1851,7 @@
     return bg;
   }
   function historyHtml(items){
-    if(!items.length)return '<p class="muted" style="padding:12px 4px">История пуста (изменения ведутся с момента создания копии — журнал событий amo в слепок не выгружался)</p>';
+    if(!items.length)return '<p class="muted" style="padding:12px 4px">История пуста. Правки копии видны сразу; живые события amo копятся с 19.07.2026 — прошлое amo в слепок не выгружалось.</p>';
     var A={create:"создана",stage:"смена этапа",edit:"правка полей",edit_cf:"изменение поля",edit_tags:"изменение тегов",task_create:"поставлена задача",task_complete:"задача выполнена",task_reschedule:"перенос задачи",task_edit:"изменена задача",note_add:"добавлено примечание",note_edit:"изменено примечание",note_delete:"удалено примечание",edit_contact:"правка",link_contact:"привязан контакт",unlink_contact:"отвязан контакт",link_company:"привязана компания",unlink_company:"отвязана компания",merge:"объединение контактов",auto_task:"авто-задача",auto_responsible:"авто-ответственный",delete:"удаление"};
     // цветная плашка этапа (для «Новый этап: A → B», как в amo)
     var stChip=function(pid,sid,fallback){
@@ -1860,8 +1860,22 @@
       var nm=(s&&s.name)||fallback||("этап "+sid),col=(s&&s.color)||"#e3e7ec";
       return '<span class="gs-st" style="background:'+esc(col)+'88;margin-left:0">'+esc(nm)+'</span>';
     };
+    // живые события amo (amo_events, копятся с 19.07.2026)
+    var AMO_EV={lead_status_changed:"Новый этап",sale_field_changed:"Изменение бюджета",name_field_changed:"Изменение названия",custom_field_value_changed:"Изменение поля",entity_responsible_changed:"Смена ответственного",entity_tag_added:"Теги добавлены",entity_tag_deleted:"Теги удалены",task_added:"Новая задача",task_completed:"Задача выполнена",task_deadline_changed:"Перенос задачи",task_text_changed:"Изменена задача",incoming_chat_message:"Входящее сообщение (чат)",outgoing_chat_message:"Исходящее сообщение (чат)",common_note_added:"Примечание",service_note_added:"Служебное примечание",entity_linked:"Привязка",entity_unlinked:"Отвязка",entity_merged:"Объединение",lead_added:"Сделка создана",contact_added:"Контакт создан"};
+    var cfNameById=function(fid){var all=[].concat((CF&&CF.leads)||[],(CF&&CF.contacts)||[],(CF&&CF.companies)||[]);var f=all.find(function(x){return x.id===fid;});return f&&f.name;};
     var row=function(e){
       var d=e.detail||{},extra="";
+      if(e.action&&String(e.action).indexOf("amo:")===0){
+        var t=String(e.action).slice(4),af=(d.after&&d.after[0])||{},bf=(d.before&&d.before[0])||{},ex="";
+        var mCf=t.match(/^custom_field_(\d+)?_?value_changed$/);
+        if(t==="lead_status_changed"){var a1=af.lead_status||{},b1=bf.lead_status||{};ex=": "+(b1.id?stChip(b1.pipeline_id,b1.id)+' → ':"")+stChip(a1.pipeline_id,a1.id);}
+        else if(mCf){var cv=af.custom_field_value||{};var fid2=cv.field_id||(mCf[1]?parseInt(mCf[1],10):0);t="custom_field_value_changed";ex=": "+esc(cv.field_name||cfNameById(fid2)||("поле "+(fid2||"")))+" → "+esc(String(cv.text==null||cv.text===""?"—":cv.text).slice(0,80));}
+        else if(t==="sale_field_changed")ex=": "+fmt((bf.sale!=null?bf.sale:0))+" → "+fmt((af.sale!=null?af.sale:0))+" ₽";
+        else if(t==="name_field_changed")ex=': "'+esc(bf.name||"")+'" → "'+esc(af.name||"")+'"';
+        else if(t==="entity_responsible_changed")ex=": "+esc(userName(((af.responsible_user||{}).id)||0)||"");
+        var by=d.by?(" · "+esc(userName(d.by)||d.by)):"";
+        return '<div class="ev"><div class="eh">'+dt(e.ts)+by+' · amo</div>'+esc(AMO_EV[t]||t)+ex+'</div>';
+      }
       if(e.action==="stage"&&d.to)extra=": "+(d.from&&d.from.status_id?stChip(d.from.pipeline_id,d.from.status_id)+' → ':"")+stChip(d.to.pipeline_id,d.to.status_id,d.to.name);
       else if(e.action==="edit"&&d.name)extra=': "'+esc(d.name[0])+'" → "'+esc(d.name[1])+'"';
       else if(e.action==="edit"&&d.price)extra=": бюджет "+fmt(d.price[0])+" → "+fmt(d.price[1]);
