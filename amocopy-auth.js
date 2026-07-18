@@ -118,7 +118,7 @@ module.exports = function setupAuth(app, requireAdminOrUser, api, opts) {
     const acc = accounts[s.email];
     if (!acc || !acc.active) return null;
     const rf = rightsFor(s.email);
-    return { kind: "user", email: s.email, name: acc.name, role: acc.role, is_admin: rf.is_admin, rights: rf.rights };
+    return { kind: "user", email: s.email, name: acc.name, role: acc.role, is_admin: rf.is_admin, rights: rf.rights, user_id: acc.user_id || 0 };
   }
 
   function newSession(email) {
@@ -158,7 +158,7 @@ module.exports = function setupAuth(app, requireAdminOrUser, api, opts) {
   // текущий пользователь (по любому токену доступа)
   app.get(`${api}/auth/me`, requireAdminOrUser, (req, res) => {
     const c = req.crm || {};
-    return res.json({ success: true, me: { kind: c.kind || "admin", email: c.email || null, name: c.name || "Администратор", role: c.role || null, is_admin: c.is_admin ? 1 : 0, rights: c.rights || fullRights() } });
+    return res.json({ success: true, me: { kind: c.kind || "admin", email: c.email || null, name: c.name || "Администратор", role: c.role || null, is_admin: c.is_admin ? 1 : 0, rights: c.rights || fullRights(), user_id: c.user_id || 0 } });
   });
 
   // выход

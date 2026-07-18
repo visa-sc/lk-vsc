@@ -874,7 +874,7 @@
   }
 
   /* ─── РАБОЧИЙ СТОЛ как в amo: заголовок, период, воронка, виджеты-статистика ─── */
-  var deskPeriod="today", deskPipe=null;
+  var deskPeriod="today", deskPipe=null, deskMine=false; // Мои = срез по ответственному (сотрудники, как в amo)
   var DESK_PERIODS=[["today","Сегодня"],["yesterday","Вчера"],["week","Неделя"],["month","Месяц"],["all","Всё время"]];
   function deskWidgetsKey(){return "crm_desk_widgets_"+((META&&META.account&&META.account.subdomain)||"x");}
   function loadDeskWidgets(){
@@ -894,6 +894,7 @@
     if(w.status)p.push("status="+w.status);
     if(w.won)p.push("won=1");
     if(w.lost)p.push("lost=1");
+    if(deskMine&&ME&&ME.user_id)p.push("resp="+ME.user_id);
     // поле «none» — без даты (все сделки фильтра, напр. «в работе»)
     if(w.field&&w.field!=="none"){p.push("field="+w.field);p.push("period="+deskPeriod);}
     return p.join("&");
@@ -905,10 +906,12 @@
     if(deskPipe==null){var mp=PIPES.find(function(p){return p.is_main;});deskPipe=mp?mp.id:(PIPES[0]&&PIPES[0].id);}
     var html='<div id="dash"><div class="desk-title">'+esc(a.name||"Рабочий стол")+'</div>';
     html+='<div class="desk-bar"><div class="desk-pills">'+DESK_PERIODS.map(function(x){return '<button data-per="'+x[0]+'"'+(x[0]===deskPeriod?" class=\"act\"":"")+'>'+x[1]+'</button>';}).join("")+'</div>';
+    if(ME&&ME.user_id)html+='<div class="desk-pills"><button data-mine="0"'+(!deskMine?' class="act"':"")+'>Все</button><button data-mine="1"'+(deskMine?' class="act"':"")+'>Мои</button></div>';
     html+='<button class="desk-cfg" id="deskCfg">＋ Настроить</button></div>';
     html+='<div id="funnelW"></div><div class="w-grid" id="wGrid"></div></div>';
     $("#view").innerHTML=html;
     $("#view").querySelectorAll(".desk-pills [data-per]").forEach(function(b){b.onclick=function(){deskPeriod=b.dataset.per;vDesk();};});
+    $("#view").querySelectorAll(".desk-pills [data-mine]").forEach(function(b){b.onclick=function(){deskMine=b.dataset.mine==="1";vDesk();};});
     $("#deskCfg").onclick=openWidgetEditor;
     renderFunnelWidget();
     renderDeskWidgets();
@@ -918,8 +921,8 @@
     var ep=VIEW_EPOCH;
     Promise.all([
       jreq(API+"/analytics"),
-      jreq(API+"/widget_stat?pipeline="+deskPipe+"&field=created&period="+deskPeriod).catch(function(){return null;}),
-      jreq(API+"/widget_stat?pipeline="+deskPipe+"&lost=1&field=closed&period="+deskPeriod).catch(function(){return null;})
+      jreq(API+"/widget_stat?pipeline="+deskPipe+"&field=created&period="+deskPeriod+(deskMine&&ME&&ME.user_id?"&resp="+ME.user_id:"")).catch(function(){return null;}),
+      jreq(API+"/widget_stat?pipeline="+deskPipe+"&lost=1&field=closed&period="+deskPeriod+(deskMine&&ME&&ME.user_id?"&resp="+ME.user_id:"")).catch(function(){return null;})
     ]).then(function(rr){
       if(ep!==VIEW_EPOCH||!$("#funnelW"))return;
       var funnels=(rr[0]&&rr[0].funnels)||[],nw=rr[1]||{},lost=rr[2]||{};
@@ -960,7 +963,7 @@
       }).catch(function(){});
       // зелёная дельта «+N за сегодня» (как в amo): тот же срез виджета, дата = поле виджета (или created), период = сегодня
       if(w.kind!=="filter"){
-        var dq=[(w.pipeline?"pipeline="+w.pipeline:""),(w.status?"status="+w.status:""),(w.won?"won=1":""),(w.lost?"lost=1":""),(w.resp?"resp="+w.resp:""),"field="+((w.field&&w.field!=="none")?w.field:"created"),"period=today"].filter(Boolean).join("&");
+        var dq=[(w.pipeline?"pipeline="+w.pipeline:""),(w.status?"status="+w.status:""),(w.won?"won=1":""),(w.lost?"lost=1":""),(w.resp?"resp="+w.resp:(deskMine&&ME&&ME.user_id?"resp="+ME.user_id:"")),"field="+((w.field&&w.field!=="none")?w.field:"created"),"period=today"].filter(Boolean).join("&");
         jreq(API+"/widget_stat?"+dq).then(function(r2){
           var card=grid.querySelector('[data-wid="'+w.id+'"]');if(!card)return;
           var dEl=card.querySelector("[data-d]");if(!dEl)return;
