@@ -152,6 +152,34 @@ async function syncTasks() {
 const upCompany = db.prepare(`INSERT INTO companies(id,name,created_at,updated_at,cf)
   VALUES(@id,@name,@created_at,@updated_at,@cf)
   ON CONFLICT(id) DO UPDATE SET name=@name,updated_at=@updated_at,cf=@cf`);
+// покупатели (программа лояльности): amo=6938 vs копия=6864 на 19.07 — были разовым экспортом, теперь в синке
+const upCustomer = db.prepare(`INSERT INTO customers(id,name,status_id,responsible_user_id,next_price,next_date,ltv,purchases_count,average_check,created_at,updated_at,cf)
+  VALUES(@id,@name,@status_id,@responsible_user_id,@next_price,@next_date,@ltv,@purchases_count,@average_check,@created_at,@updated_at,@cf)
+  ON CONFLICT(id) DO UPDATE SET name=@name,status_id=@status_id,responsible_user_id=@responsible_user_id,next_price=@next_price,next_date=@next_date,ltv=@ltv,purchases_count=@purchases_count,average_check=@average_check,updated_at=@updated_at,cf=@cf`);
+async function syncCustomers() {
+  let url = `${BASE}/api/v4/customers`, pages = 0, changed = 0, maxUpd = since;
+  let params = { limit: 250, "order[updated_at]": "asc", "filter[updated_at][from]": since };
+  while (url && pages < MAX_PAGES) {
+    const data = await amoGet(url, params); params = undefined;
+    if (!data) break;
+    const items = (data._embedded && data._embedded.customers) || [];
+    if (!items.length) break;
+    db.transaction(() => {
+      for (const c of items) {
+        maxUpd = Math.max(maxUpd, c.updated_at || 0);
+        upCustomer.run({ id: c.id, name: c.name || "", status_id: c.status_id || 0, responsible_user_id: c.responsible_user_id || 0,
+          next_price: c.next_price || 0, next_date: c.next_date || 0, ltv: c.ltv || 0, purchases_count: c.purchases_count || 0,
+          average_check: c.average_check || 0, created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c) });
+        changed++;
+      }
+    })();
+    pages++;
+    url = (data._links && data._links.next && data._links.next.href) || null;
+    if (url) { const u = new URL(url); params = Object.fromEntries(u.searchParams); url = u.origin + u.pathname; }
+  }
+  state.last_customers = maxUpd; fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
+  log(`customers ГОТОВО: страниц ${pages}, обновлено ${changed}`);
+}
 async function syncCompanies() {
   let url = `${BASE}/api/v4/companies`, pages = 0, changed = 0, conflicts = 0, maxUpd = since;
   let params = { limit: 250, "order[updated_at]": "asc", "filter[updated_at][from]": since };
@@ -183,6 +211,7 @@ async function syncCompanies() {
   else if (ENTITY === "contacts") await syncContacts();
   else if (ENTITY === "tasks") await syncTasks();
   else if (ENTITY === "companies") await syncCompanies();
-  else { console.error("entity: leads|contacts|tasks|companies"); process.exit(1); }
+  else if (ENTITY === "customers") await syncCustomers();
+  else { console.error("entity: leads|contacts|tasks|companies|customers"); process.exit(1); }
   db.close();
 })().catch((e) => { log("ОСТАНОВКА: " + e.message); process.exit(2); });
