@@ -468,7 +468,12 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const intq = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
     let v;
     if ((v = intq(q.pipeline)) !== null) { where.push("pipeline_id=?"); args.push(v); }
-    if ((v = intq(q.status)) !== null) { where.push("status_id=?"); args.push(v); }
+    // этап: одиночный id или CSV нескольких (мультиселект «Активные статусы», как в amo)
+    if (q.status) {
+      const sts = String(q.status).split(",").map((x) => parseInt(x, 10)).filter(Number.isFinite);
+      if (sts.length === 1) { where.push("status_id=?"); args.push(sts[0]); }
+      else if (sts.length > 1) { where.push("status_id IN (" + sts.map(() => "?").join(",") + ")"); args.push(...sts); }
+    }
     if ((v = intq(q.responsible)) !== null) { where.push("responsible_user_id=?"); args.push(v); }
     if ((v = intq(q.price_min)) !== null) { where.push("price>=?"); args.push(v); }
     if ((v = intq(q.price_max)) !== null) { where.push("price<=?"); args.push(v); }

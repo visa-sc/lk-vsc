@@ -765,7 +765,11 @@
     fields+='<div class="ffield"><label>Ответственный</label><select data-f="responsible">'+userOptsHtml(st.responsible)+'</select></div>';
     if(isLeads){
       var sts=(curFilter.statuses||[]);
-      fields+='<div class="ffield"><label>Этап</label><select data-f="status"><option value="">— любой —</option>'+sts.map(function(s){return '<option value="'+s.id+'"'+(String(s.id)===String(st.status)?" selected":"")+'>'+esc(s.name)+'</option>';}).join("")+'</select></div>';
+      var selSt=String(st.status||"").split(",").filter(Boolean);
+      fields+='<div class="ffield"><label>Этапы (мультивыбор)</label><input type="hidden" data-f="status" value="'+esc(st.status||"")+'">'+
+        '<div class="fst-box" style="max-height:120px;overflow:auto;border:1px solid #dfe5ec;border-radius:8px;padding:6px 8px">'+
+        sts.map(function(s){return '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;padding:2px 0;cursor:pointer"><input type="checkbox" class="fst-cb" value="'+s.id+'"'+(selSt.indexOf(String(s.id))>=0?" checked":"")+'><span class="swatch" style="background:'+esc(s.color||"#c1d5e0")+'"></span>'+esc(s.name)+'</label>';}).join("")+
+        '</div></div>';
       fields+='<div class="ffield"><label>Бюджет, ₽</label><div class="frange"><input type="number" data-f="price_min" placeholder="от" value="'+(st.price_min||"")+'"><span>–</span><input type="number" data-f="price_max" placeholder="до" value="'+(st.price_max||"")+'"></div></div>';
       fields+='<div class="ffield"><label>Тег содержит</label><input type="text" data-f="tag" placeholder="напр. MSK" value="'+esc(st.tag||"")+'"></div>';
       fields+='<div class="ffield" id="fTagsCloud" style="display:none"><label>Популярные теги</label><div class="ftags" style="display:flex;flex-wrap:wrap;gap:4px;max-height:110px;overflow:auto"></div></div>';
@@ -840,6 +844,11 @@
       if(b.dataset.fp==="my"){raw.responsible=String(ME.user_id);vals.responsible=ME.user_id;}
       else{raw.preset=(st.preset===b.dataset.fp)?"":b.dataset.fp;if(raw.preset)vals.preset=raw.preset;}
       FSTATE[curFilter.kind]=raw;closeFilterPanel();runLeadsFilter(vals);
+    };});
+    // мультиселект этапов: чекбоксы → CSV в скрытое поле data-f="status"
+    p.querySelectorAll(".fst-cb").forEach(function(cb){cb.onchange=function(){
+      var ids=Array.prototype.filter.call(p.querySelectorAll(".fst-cb"),function(x){return x.checked;}).map(function(x){return x.value;});
+      p.querySelector('[data-f="status"]').value=ids.join(",");
     };});
     // популярные теги со счётчиками (как правая колонка панели amo): клик = фильтр по тегу сразу
     if(isLeads)jreq(API+"/tags_report").then(function(r){
