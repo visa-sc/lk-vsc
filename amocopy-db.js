@@ -575,7 +575,21 @@ module.exports = function mountDbRoutes(app, guard, api) {
       custom_fields_values: J(c.cf, null), tags: J(c.tags, []),
       _embedded: { companies: companiesForContact(id) }
     };
-    notesFromBucket("notes_contacts", id, (notes) => res.json({ success: true, contact, notes, leads, tasks: tasksOut("contacts", id) }));
+    // лента контакта агрегирует события связанных СДЕЛОК (как в amo): примечания+задачи первых 5 сделок с меткой __lead
+    notesFromBucket("notes_contacts", id, (ownNotes) => {
+      const top = leads.slice(0, 5);
+      const allNotes = ownNotes.slice(), tasks = tasksOut("contacts", id);
+      const finish = () => res.json({ success: true, contact, notes: allNotes, leads, tasks });
+      const next = (i) => {
+        if (i >= top.length) return finish();
+        notesFromBucket("notes_leads", top[i].id, (ns) => {
+          ns.forEach((n) => { n.__lead = { id: top[i].id, name: top[i].name }; allNotes.push(n); });
+          tasksOut("leads", top[i].id).forEach((t) => { t.__lead = { id: top[i].id, name: top[i].name }; tasks.push(t); });
+          next(i + 1);
+        });
+      };
+      next(0);
+    });
   });
 
   // постраничный список контактов (новые сверху)
