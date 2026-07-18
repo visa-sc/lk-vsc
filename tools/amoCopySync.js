@@ -180,6 +180,38 @@ async function syncCustomers() {
   state.last_customers = maxUpd; fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
   log(`customers ГОТОВО: страниц ${pages}, обновлено ${changed}`);
 }
+// ЖИВОЙ ЖУРНАЛ СОБЫТИЙ amo (api/v4/events): копим ИНКРЕМЕНТАЛЬНО с момента включения (19.07.2026);
+// историю не тянем (миллионы событий). Дедуп по string-id (ULID). Смены этапов/полей/чат-маркеры —
+// фундамент для «дней на этапе» и честной истории реальных сделок в копии.
+db.exec("CREATE TABLE IF NOT EXISTS amo_events (id TEXT PRIMARY KEY, type TEXT, entity_type TEXT, entity_id INTEGER, created_by INTEGER, created_at INTEGER, value_before TEXT, value_after TEXT)");
+db.exec("CREATE INDEX IF NOT EXISTS ix_amoev_ent ON amo_events(entity_type, entity_id, created_at)");
+const upEvent = db.prepare(`INSERT OR IGNORE INTO amo_events(id,type,entity_type,entity_id,created_by,created_at,value_before,value_after)
+  VALUES(@id,@type,@entity_type,@entity_id,@created_by,@created_at,@value_before,@value_after)`);
+async function syncEvents() {
+  const evSince = state.last_events || (Math.floor(Date.now() / 1000) - 3600); // старт = час назад, не история
+  let url = `${BASE}/api/v4/events`, pages = 0, added = 0, maxTs = evSince;
+  let params = { limit: 100, "filter[created_at][from]": evSince - 60 }; // перекрытие 60с, дедуп по PK
+  while (url && pages < MAX_PAGES) {
+    const data = await amoGet(url, params); params = undefined;
+    if (!data) break;
+    const items = (data._embedded && data._embedded.events) || [];
+    if (!items.length) break;
+    db.transaction(() => {
+      for (const e of items) {
+        maxTs = Math.max(maxTs, e.created_at || 0);
+        const r = upEvent.run({ id: String(e.id), type: e.type || "", entity_type: e.entity_type || "", entity_id: e.entity_id || 0,
+          created_by: e.created_by || 0, created_at: e.created_at || 0,
+          value_before: JSON.stringify(e.value_before || null), value_after: JSON.stringify(e.value_after || null) });
+        if (r.changes) added++;
+      }
+    })();
+    pages++;
+    url = (data._links && data._links.next && data._links.next.href) || null;
+    if (url) { const u = new URL(url); params = Object.fromEntries(u.searchParams); url = u.origin + u.pathname; }
+  }
+  state.last_events = maxTs; fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
+  log(`events ГОТОВО: страниц ${pages}, новых ${added}`);
+}
 async function syncCompanies() {
   let url = `${BASE}/api/v4/companies`, pages = 0, changed = 0, conflicts = 0, maxUpd = since;
   let params = { limit: 250, "order[updated_at]": "asc", "filter[updated_at][from]": since };
@@ -212,6 +244,7 @@ async function syncCompanies() {
   else if (ENTITY === "tasks") await syncTasks();
   else if (ENTITY === "companies") await syncCompanies();
   else if (ENTITY === "customers") await syncCustomers();
-  else { console.error("entity: leads|contacts|tasks|companies|customers"); process.exit(1); }
+  else if (ENTITY === "events") await syncEvents();
+  else { console.error("entity: leads|contacts|tasks|companies|customers|events"); process.exit(1); }
   db.close();
 })().catch((e) => { log("ОСТАНОВКА: " + e.message); process.exit(2); });
