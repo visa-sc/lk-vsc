@@ -2500,10 +2500,11 @@
   function vAnalytics(){
     renderSidebar("analytics");
     setHeader("Аналитика",{count:""});
-    var tabs='<div style="display:flex;gap:6px;margin:0 0 14px;flex-wrap:wrap"><button class="btn'+(anTab==="funnels"?"":" ghost")+'" data-at="funnels">Анализ продаж</button><button class="btn'+(anTab==="summary"?"":" ghost")+'" data-at="summary">Сводный отчёт</button><button class="btn'+(anTab==="staff"?"":" ghost")+'" data-at="staff">По сотрудникам</button><button class="btn'+(anTab==="calls"?"":" ghost")+'" data-at="calls">Звонки</button></div>';
+    var tabs='<div style="display:flex;gap:6px;margin:0 0 14px;flex-wrap:wrap"><button class="btn'+(anTab==="funnels"?"":" ghost")+'" data-at="funnels">Анализ продаж</button><button class="btn'+(anTab==="summary"?"":" ghost")+'" data-at="summary">Сводный отчёт</button><button class="btn'+(anTab==="staff"?"":" ghost")+'" data-at="staff">По сотрудникам</button><button class="btn'+(anTab==="calls"?"":" ghost")+'" data-at="calls">Звонки</button><button class="btn'+(anTab==="events"?"":" ghost")+'" data-at="events">Список событий</button></div>';
     if(anTab==="calls"){renderCallsReport(tabs);return;}
     if(anTab==="summary"){renderSummaryReport(tabs);return;}
     if(anTab==="staff"){renderStaffReport(tabs);return;}
+    if(anTab==="events"){renderEventsList(tabs);return;}
     $("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Загрузка…</p></div></div>';
     var ep=VIEW_EPOCH;
     jreq(API+"/analytics").then(function(r){
@@ -2531,6 +2532,31 @@
   }
   function bindAnTabs(){
     $("#view").querySelectorAll("[data-at]").forEach(function(b){b.onclick=function(){anTab=b.dataset.at;vAnalytics();};});
+  }
+  // «Список событий» (как в amo): журнал действий, совершённых в КОПИИ (события amo в слепок не выгружались)
+  var EV_RU={create:"Создание",stage:"Изменение этапа",edit:"Правка полей",edit_cf:"Изменение поля",edit_tags:"Изменение тегов",task_create:"Новая задача",task_complete:"Завершение задачи",task_reschedule:"Перенос задачи",task_edit:"Изменение задачи",note_add:"Новое примечание",note_edit:"Изменение примечания",note_delete:"Удаление примечания",link_contact:"Привязан контакт",unlink_contact:"Отвязан контакт",link_company:"Привязана компания",unlink_company:"Отвязана компания",merge:"Объединение",auto_task:"Авто-задача",auto_responsible:"Авто-ответственный",delete:"Удаление",edit_contact:"Правка"};
+  var ENT_RU={leads:"Сделка",contacts:"Контакт",companies:"Компания",customers:"Покупатель"};
+  function renderEventsList(tabs){
+    $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">Загрузка…</p></div></div>';
+    bindAnTabs();
+    var ep=VIEW_EPOCH;
+    jreq(API+"/events_list").then(function(r){
+      if(ep!==VIEW_EPOCH||anTab!=="events")return;
+      if(!r||!r.success)return $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">'+esc((r&&r.message)||"Нет данных")+'</p></div></div>';
+      var items=r.items||[];
+      var rows=items.map(function(e){
+        var extra="";
+        if(e.action==="edit_cf"&&e.detail&&e.detail.field)extra=": "+e.detail.field;
+        else if(e.action==="stage"&&e.detail&&e.detail.to)extra=" → "+(e.detail.to.name||"");
+        return '<tr><td class="muted" style="width:140px">'+dt(e.ts)+'</td><td style="width:160px">'+esc(e.actor||"")+'</td><td style="width:110px">'+esc(ENT_RU[e.et]||e.et)+'</td><td><a data-ev="'+esc(e.et)+':'+e.eid+'">'+esc(e.name||("#"+e.eid))+'</a></td><td>'+esc((EV_RU[e.action]||e.action)+extra)+'</td></tr>';
+      }).join("");
+      $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><h2 style="margin-top:0">Список событий</h2><p class="muted" style="font-size:12px;margin:4px 0 12px">Действия, совершённые в копии ('+fmt(items.length)+' последних). Журнал событий amo в слепок не выгружался.</p><table class="set"><tr><th>Дата</th><th>Автор</th><th>Объект</th><th>Название</th><th>Событие</th></tr>'+rows+'</table></div></div>';
+      bindAnTabs();
+      $("#view").querySelectorAll("[data-ev]").forEach(function(a){a.onclick=function(){
+        var p=a.dataset.ev.split(":"),id=parseInt(p[1],10);
+        if(p[0]==="leads")openLead(id);else if(p[0]==="contacts")openContact(id);else if(p[0]==="companies")openCompany(id);else if(p[0]==="customers")openCustomer(id);
+      };});
+    }).catch(function(){$("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">Ошибка загрузки.</p></div></div>';});
   }
   // «Отчёт по сотрудникам» (как в amo): за период — создано/успешно/задачи/примечания
   var staffPeriod="week";

@@ -201,6 +201,23 @@ module.exports = function mountDbRoutes(app, guard, api) {
   });
 
   // аналитика: воронки по этапам (кол-во+сумма) + по ответственным
+  // «Список событий» (как в amo Аналитика→Список событий): журнал changelog КОПИИ (события amo в слепок не выгружались)
+  app.get(`${api}/events_list`, guard, (req, res) => {
+    try {
+      const rows = D.prepare("SELECT ts, actor, entity_type, entity_id, action, detail FROM changelog ORDER BY ts DESC, id DESC LIMIT 300").all();
+      const nameOf = (et, id) => {
+        try {
+          if (et === "leads") { const r = D.prepare("SELECT name FROM leads WHERE id=?").get(id); return r && r.name; }
+          if (et === "contacts") { const r = D.prepare("SELECT name FROM contacts WHERE id=?").get(id); return r && r.name; }
+          if (et === "companies") { const r = D.prepare("SELECT name FROM companies WHERE id=?").get(id); return r && r.name; }
+          if (et === "customers") { const r = D.prepare("SELECT name FROM customers WHERE id=?").get(id); return r && r.name; }
+        } catch (_) {}
+        return null;
+      };
+      res.json({ success: true, items: rows.map((r) => ({ ts: r.ts, actor: r.actor, et: r.entity_type, eid: r.entity_id, action: r.action, detail: J(r.detail, {}), name: nameOf(r.entity_type, r.entity_id) })) });
+    } catch (e) { res.json({ success: false, message: e.message }); }
+  });
+
   // «Отчёт по сотрудникам» (как в amo): за период — создано сделок (N+₽), успешные (N+₽), задач в работе, примечаний в копии
   app.get(`${api}/staff_report`, guard, (req, res) => {
     try {
