@@ -1032,25 +1032,29 @@
     };
   }
   /* ─── раздел «Задачи» ─── */
-  var taskRange="all"; // День/Неделя/Месяц/Все — как в amo
+  var taskRange="all", taskShowDone=false; // День/Неделя/Месяц/Все + флаг выполненных — как в amo
   function vTasks(){
     renderSidebar("tasks");
     var ranges=[["day","День"],["week","Неделя"],["month","Месяц"],["all","Все"]];
     var respSel='<span style="display:inline-flex;gap:2px;margin-left:10px;background:#eef2f6;border-radius:16px;padding:2px">'+ranges.map(function(x){return '<button data-tr="'+x[0]+'" class="lnk" style="border:0;cursor:pointer;font:inherit;font-size:12.5px;padding:4px 12px;border-radius:14px;'+(taskRange===x[0]?"background:#fff;font-weight:700;color:#1d3c66":"background:none;color:#556")+'">'+x[1]+'</button>';}).join("")+'</span>'+
       '<select id="taskResp" class="ci" style="max-width:220px;display:inline-block;margin-left:10px"><option value="0">Все сотрудники</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select>'+
-      '<select id="taskType" class="ci" style="max-width:180px;display:inline-block;margin-left:8px"><option value="0">Все типы</option>'+TASK_TYPES.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join("")+'</select>';
+      '<select id="taskType" class="ci" style="max-width:180px;display:inline-block;margin-left:8px"><option value="0">Все типы</option>'+TASK_TYPES.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join("")+'</select>'+
+      '<label style="margin-left:10px;font-size:12.5px;color:#556;white-space:nowrap;cursor:pointer"><input type="checkbox" id="taskDone"'+(taskShowDone?" checked":"")+' style="vertical-align:-2px"> выполненные</label>';
     setHeader("Задачи",{count:respSel});
     setTimeout(function(){
-      var s=$("#taskResp"),ty=$("#taskType");
+      var s=$("#taskResp"),ty=$("#taskType"),dn=$("#taskDone");
       var rerun=function(){loadTasks(s?s.value:0,ty?ty.value:0);};
       if(s)s.onchange=rerun; if(ty)ty.onchange=rerun;
+      if(dn)dn.onchange=function(){taskShowDone=dn.checked;rerun();};
       document.querySelectorAll("[data-tr]").forEach(function(b){b.onclick=function(){taskRange=b.dataset.tr;vTasks();};});
     },0);
     $("#view").innerHTML='<div class="plain" style="max-width:1000px"><div id="tasksBox">Загрузка…</div></div>';
     loadTasks(0,0);
   }
   function loadTasks(resp,ttype){
-    jreq(API+"/tasks_list"+(resp&&resp!=="0"?("?responsible="+resp):"")).then(function(items){
+    var doneP=taskShowDone?jreq(API+"/tasks_list?done=1"+(resp&&resp!=="0"?("&responsible="+resp):"")).catch(function(){return[];}):Promise.resolve([]);
+    Promise.all([jreq(API+"/tasks_list"+(resp&&resp!=="0"?("?responsible="+resp):"")),doneP]).then(function(rr){
+      var items=rr[0],doneItems=rr[1]||[];
       var typeName={};TASK_TYPES.forEach(function(t){typeName[t.id]=t.name;});
       if(ttype&&ttype!=="0")items=items.filter(function(t){return String(t.task_type)===String(ttype);});
       if(taskRange!=="all"){
@@ -1077,6 +1081,12 @@
         });
         html+='</tbody></table>';
       });
+      if(taskShowDone&&doneItems.length){
+        if(ttype&&ttype!=="0")doneItems=doneItems.filter(function(t){return String(t.task_type)===String(ttype);});
+        html+='<h3 style="color:#8a94a0">Выполненные за 30 дней ('+doneItems.length+')</h3><table class="amo"><tbody>'+doneItems.map(function(t){
+          return '<tr style="opacity:.78"><td style="width:130px" class="muted">'+dt(t.till)+'</td><td style="width:130px" class="muted">'+esc(typeName[t.task_type]||"")+'</td><td style="text-decoration:line-through">'+esc(t.text||"")+'</td><td style="width:180px"><a data-lead="'+t.entity_id+'">'+esc((t.lead_name||"сделка #"+t.entity_id).slice(0,30))+'</a></td><td class="muted" style="width:150px">'+esc(t.resp||"")+'</td><td style="width:190px;color:#2f8b57">'+esc(t.result||"")+'</td></tr>';
+        }).join("")+'</tbody></table>';
+      }
       var rerun=function(){loadTasks($("#taskResp")?$("#taskResp").value:0,$("#taskType")?$("#taskType").value:0);};
       $("#tasksBox").innerHTML=html||'<p class="muted">Открытых задач нет</p>';
       $("#tasksBox").querySelectorAll("[data-lead]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.lead,10));};});

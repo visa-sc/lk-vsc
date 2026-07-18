@@ -142,10 +142,22 @@ module.exports = function mountDbRoutes(app, guard, api) {
   const qTasksOvSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id,t.task_type, l.name lead_name
     FROM tasks t LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads'
     WHERE t.is_completed=0 AND t.complete_till<? AND t.complete_till>0 {RESP} ORDER BY t.complete_till DESC LIMIT 200`;
+  // выполненные за 30 дней — для флага «показывать выполненные» (колонка Результат, как в amo)
+  const qTasksDoneSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id,t.task_type,t.is_completed,t.result, l.name lead_name
+    FROM tasks t LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads'
+    WHERE t.is_completed=1 AND t.complete_till>=? {RESP} ORDER BY t.complete_till DESC LIMIT 300`;
   app.get(`${api}/tasks_list`, guard, (req, res) => {
     const resp = parseInt(req.query.responsible, 10) || 0;
     const now = Math.floor(Date.now() / 1000);
     const dayStart = now - (now % 86400);
+    if (String(req.query.done) === "1") {
+      const rows = prep(qTasksDoneSrc, resp).all(dayStart - 30 * 86400);
+      return res.json(rows.map((t) => ({
+        id: t.id, text: t.text, till: t.complete_till, resp: uName[t.responsible_user_id] || "",
+        resp_id: t.responsible_user_id, entity_type: t.entity_type, entity_id: t.entity_id, lead_name: t.lead_name || "",
+        task_type: t.task_type, done: 1, result: (J(t.result, {}) || {}).text || ""
+      })));
+    }
     const upcoming = prep(qTasksUpSrc, resp).all(dayStart);
     const overdue = prep(qTasksOvSrc, resp).all(dayStart);
     const rows = overdue.concat(upcoming); // просрочка (свежая сверху) + предстоящие
