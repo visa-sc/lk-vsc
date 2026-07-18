@@ -48,6 +48,9 @@ module.exports = function mountDbRoutes(app, guard, api) {
   let D;
   try { D = open(); } catch (e) { console.error("amocopy-db: БД недоступна, работаю на файлах:", e.message); return false; }
 
+  // кириллица в LIKE: SQLite lower() понижает только ASCII — «Иванова» не находил «ИВАНОВА».
+  // Регистрируем JS-функцию lc() (toLowerCase знает кириллицу) для всех поисков по имени.
+  try { D.function("lc", { deterministic: true }, (s) => (s == null ? null : String(s).toLowerCase())); } catch (_) {}
   const qLeadsPage = D.prepare("SELECT id,name,price,responsible_user_id,created_at,updated_at,tags FROM leads WHERE pipeline_id=? AND status_id=? ORDER BY updated_at DESC LIMIT ? OFFSET ?");
   // мин. срок ОТКРЫТОЙ задачи сделки — для индикатора «Нет задач/Просрочено/Сегодня» на карточке канбана (как в amo)
   const qLeadTaskMin = D.prepare("SELECT MIN(complete_till) m FROM tasks WHERE entity_type='leads' AND entity_id=? AND is_completed=0");
@@ -364,8 +367,8 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const q = String(req.query.q || "").trim();
     if (q) { // поиск компаний по названию (как в amo)
       const like = "%" + q + "%";
-      const rows = D.prepare("SELECT id,name,created_at FROM companies WHERE name LIKE ? ORDER BY updated_at DESC LIMIT 50 OFFSET ?").all(like, (+page - 1) * 50);
-      const total = D.prepare("SELECT COUNT(*) c FROM companies WHERE name LIKE ?").get(like).c;
+      const rows = D.prepare("SELECT id,name,created_at FROM companies WHERE lc(name) LIKE lc(?) ORDER BY updated_at DESC LIMIT 50 OFFSET ?").all(like, (+page - 1) * 50);
+      const total = D.prepare("SELECT COUNT(*) c FROM companies WHERE lc(name) LIKE lc(?)").get(like).c;
       return res.json({ total, items: rows.map((c) => ({ id: c.id, name: c.name, created: c.created_at })) });
     }
     const rows = qCompaniesPage.all(50, (+page - 1) * 50);
@@ -405,7 +408,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
   });
 
   // поиск по сделкам (название/id) — из шапки
-  const qLeadsSearch = D.prepare("SELECT id,name,price,status_id,pipeline_id,responsible_user_id FROM leads WHERE name LIKE ? ORDER BY updated_at DESC LIMIT 50");
+  const qLeadsSearch = D.prepare("SELECT id,name,price,status_id,pipeline_id,responsible_user_id FROM leads WHERE lc(name) LIKE lc(?) ORDER BY updated_at DESC LIMIT 50");
   app.get(`${api}/leads_search`, guard, (req, res) => {
     const q = String(req.query.q || "").trim();
     if (q.length < 2) return res.json({ success: true, items: [] });
@@ -421,7 +424,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
   if (hasCustomers) {
     const qCustPage = D.prepare("SELECT id,name,status_id,responsible_user_id,ltv,purchases_count,average_check,next_price,next_date,created_at FROM customers ORDER BY (ltv>0) DESC, created_at DESC LIMIT 50 OFFSET ?");
     const qCustCount = D.prepare("SELECT COUNT(*) c FROM customers");
-    const qCustSearch = D.prepare("SELECT id,name,status_id,responsible_user_id,ltv,purchases_count,average_check,next_price,next_date,created_at FROM customers WHERE name LIKE ? ORDER BY created_at DESC LIMIT 50");
+    const qCustSearch = D.prepare("SELECT id,name,status_id,responsible_user_id,ltv,purchases_count,average_check,next_price,next_date,created_at FROM customers WHERE lc(name) LIKE lc(?) ORDER BY created_at DESC LIMIT 50");
     app.get(`${api}/customers_page`, guard, (req, res) => {
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
       const q = String(req.query.q || "").trim();
@@ -454,7 +457,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if ((v = intq(q.date_from)) !== null) { where.push("created_at>=?"); args.push(v); }
     if ((v = intq(q.date_to)) !== null) { where.push("created_at<=?"); args.push(v); }
     if (q.tag && String(q.tag).trim()) { where.push("tags LIKE ?"); args.push("%" + String(q.tag).trim() + "%"); }
-    if (q.q && String(q.q).trim()) { where.push("name LIKE ?"); args.push("%" + String(q.q).trim() + "%"); }
+    if (q.q && String(q.q).trim()) { where.push("lc(name) LIKE lc(?)"); args.push("%" + String(q.q).trim() + "%"); }
     // фильтр по кастомным полям самой сделки
     addCfFilters(q.cf, where, args);
     // фильтр по полям СВЯЗАННОГО КОНТАКТА: ccf=<fieldId>:<значение> → подзапрос по lead_contacts+contacts
@@ -489,7 +492,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if ((v = intq(q.responsible)) !== null) { where.push("responsible_user_id=?"); args.push(v); }
     if ((v = intq(q.date_from)) !== null) { where.push("created_at>=?"); args.push(v); }
     if ((v = intq(q.date_to)) !== null) { where.push("created_at<=?"); args.push(v); }
-    if (q.q && String(q.q).trim()) { where.push("(name LIKE ? OR phones LIKE ? OR emails LIKE ?)"); const s = "%" + String(q.q).trim() + "%"; args.push(s, s, s); }
+    if (q.q && String(q.q).trim()) { where.push("(lc(name) LIKE lc(?) OR phones LIKE ? OR emails LIKE ?)"); const s = "%" + String(q.q).trim() + "%"; args.push(s, s, s); }
     // фильтр по любому кастомному полю: cf=<fieldId>:<значение> (можно несколько)
     addCfFilters(q.cf, where, args);
     const page = Math.max(1, intq(q.page) || 1);
@@ -575,7 +578,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
   });
 
   // поиск контактов (имя LIKE, или телефон/email по цифрам/подстроке) — топ-50
-  const qSearchName = D.prepare("SELECT id,name,phones,emails,created_at FROM contacts WHERE name LIKE ? ORDER BY created_at DESC LIMIT 50");
+  const qSearchName = D.prepare("SELECT id,name,phones,emails,created_at FROM contacts WHERE lc(name) LIKE lc(?) ORDER BY created_at DESC LIMIT 50");
   app.get(`${api}/contacts`, guard, (req, res) => {
     const q = String(req.query.q || "").trim();
     if (q.length < 3) return res.json({ success: true, items: [], note: "Минимум 3 символа" });

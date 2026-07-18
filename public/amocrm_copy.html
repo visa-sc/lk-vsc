@@ -61,6 +61,8 @@
   .gs-box .gs-row { padding:8px 14px; cursor:pointer; font-size:13.5px; display:flex; gap:8px; align-items:baseline; justify-content:space-between; }
   .gs-box .gs-row:hover { background:#f2f6fa; }
   .gs-box .gs-sub { color:var(--mut); font-size:12px; white-space:nowrap; }
+  .gs-box .gs-st { font-size:11px; padding:1px 7px; border-radius:4px; margin-left:6px; color:#3b4650; white-space:nowrap; }
+  .gs-box .gs-more { border-top:1px solid #eef1f4; }
   .gs-box .gs-empty { padding:12px 14px; color:var(--mut); font-size:13px; }
   .composer .qd { font-size:12px; color:var(--link); cursor:pointer; align-self:center; white-space:nowrap; }
   /* ── карточка сделки как в amo: тёмная шапка ── */
@@ -637,24 +639,35 @@
     Promise.all([
       jreq(API+"/leads_search?q="+encodeURIComponent(q)).catch(function(){return null;}),
       jreq(API+"/contacts?q="+encodeURIComponent(q)).catch(function(){return null;}),
-      jreq(API+"/companies_page?q="+encodeURIComponent(q)).catch(function(){return null;})
+      jreq(API+"/companies_page?q="+encodeURIComponent(q)).catch(function(){return null;}),
+      jreq(API+"/customers_page?q="+encodeURIComponent(q)).catch(function(){return null;})
     ]).then(function(r){
       if(seq!==GS_SEQ||inp.value.trim()!==q)return;
-      var L=(r[0]&&r[0].items)||[],C=(r[1]&&r[1].items)||[],K=(r[2]&&r[2].items)||[];
-      var stName=function(l){var p=PIPES.find(function(x){return x.id===l.pid;});var s="";((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(x){if(x.id===l.sid)s=x.name;});return s;};
+      var L=(r[0]&&r[0].items)||[],C=(r[1]&&r[1].items)||[],K=(r[2]&&r[2].items)||[],U=(r[3]&&r[3].items)||[];
+      var cnt=function(a){return a.length>=50?"50+":a.length;};
+      var stOf=function(l){var p=PIPES.find(function(x){return x.id===l.pid;});var s=null;((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(x){if(x.id===l.sid)s=x;});return s||{};};
       var h="";
-      if(L.length)h+='<div class="gs-h">Сделки</div>'+L.slice(0,5).map(function(l){return '<div class="gs-row" data-t="lead" data-id="'+l.id+'"><span>'+esc(l.name||("#"+l.id))+'</span><span class="gs-sub">'+esc(stName(l))+(l.price?" · "+fmt(l.price)+" ₽":"")+'</span></div>';}).join("");
-      if(C.length)h+='<div class="gs-h">Контакты</div>'+C.slice(0,5).map(function(c){return '<div class="gs-row" data-t="contact" data-id="'+c.id+'"><span>'+esc(c.n||c.name||"")+'</span><span class="gs-sub">'+esc((c.p&&c.p[0])||(c.e&&c.e[0])||"")+'</span></div>';}).join("");
-      if(K.length)h+='<div class="gs-h">Компании</div>'+K.slice(0,5).map(function(c){return '<div class="gs-row" data-t="company" data-id="'+c.id+'"><span>'+esc(c.name||"")+'</span></div>';}).join("");
+      if(L.length){
+        h+='<div class="gs-h">Сделки ('+cnt(L)+')</div>'+L.slice(0,5).map(function(l){
+          var st=stOf(l);
+          return '<div class="gs-row" data-t="lead" data-id="'+l.id+'"><span>'+esc(l.name||("#"+l.id))+(st.name?' <span class="gs-st" style="background:'+esc(st.color||"#e3e7ec")+'55">'+esc(st.name)+'</span>':"")+'</span><span class="gs-sub">'+esc(l.resp||"")+(l.price?" · "+fmt(l.price)+" ₽":"")+'</span></div>';
+        }).join("");
+        if(L.length>5)h+='<div class="gs-row gs-more" data-t="allleads"><span style="color:var(--link)">Показать все ('+cnt(L)+')</span></div>';
+      }
+      if(C.length)h+='<div class="gs-h">Контакты ('+cnt(C)+')</div>'+C.slice(0,5).map(function(c){return '<div class="gs-row" data-t="contact" data-id="'+c.id+'"><span>'+esc(c.n||c.name||"")+'</span><span class="gs-sub">'+esc((c.p&&c.p[0])||(c.e&&c.e[0])||"")+'</span></div>';}).join("");
+      if(K.length)h+='<div class="gs-h">Компании ('+cnt(K)+')</div>'+K.slice(0,5).map(function(c){return '<div class="gs-row" data-t="company" data-id="'+c.id+'"><span>'+esc(c.name||"")+'</span></div>';}).join("");
+      if(U.length)h+='<div class="gs-h">Покупатели ('+cnt(U)+')</div>'+U.slice(0,5).map(function(c){return '<div class="gs-row" data-t="customer" data-id="'+c.id+'"><span>'+esc(c.name||"")+'</span><span class="gs-sub">'+esc(c.resp||"")+'</span></div>';}).join("");
       if(!h)h='<div class="gs-empty">Ничего не найдено по «'+esc(q)+'»</div>';
       box.innerHTML=h;
       var rct=inp.getBoundingClientRect();
       box.style.left=rct.left+"px";box.style.top=(rct.bottom+6)+"px";box.style.minWidth=Math.max(320,rct.width)+"px";
       box.style.display="block";
       box.querySelectorAll(".gs-row").forEach(function(row){row.onclick=function(){
-        box.style.display="none";inp.value="";
+        box.style.display="none";
+        if(row.dataset.t==="allleads"){go("leads");setTimeout(function(){searchLeads(q);},300);inp.value=q;return;}
+        inp.value="";
         var id=parseInt(row.dataset.id,10);
-        if(row.dataset.t==="lead")openLead(id);else if(row.dataset.t==="contact")openContact(id);else openCompany(id);
+        if(row.dataset.t==="lead")openLead(id);else if(row.dataset.t==="contact")openContact(id);else if(row.dataset.t==="customer")openCustomer(id);else openCompany(id);
       };});
     });
   }
