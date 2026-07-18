@@ -272,7 +272,10 @@ module.exports = function mountDbRoutes(app, guard, api) {
       const row = (u) => rows[u] || (rows[u] = { name: uName[u] || ("id " + u), created: 0, createdSum: 0, won: 0, wonSum: 0, openTasks: 0, notes: 0 });
       D.prepare("SELECT responsible_user_id u, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads WHERE created_at>=? GROUP BY u").all(from).forEach((r) => { const x = row(r.u); x.created = r.c; x.createdSum = r.s; });
       D.prepare("SELECT responsible_user_id u, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads WHERE status_id=142 AND closed_at>=? GROUP BY u").all(from).forEach((r) => { const x = row(r.u); x.won = r.c; x.wonSum = r.s; });
-      D.prepare("SELECT responsible_user_id u, COUNT(*) c FROM tasks WHERE is_completed=0 GROUP BY u").all().forEach((r) => { if (rows[r.u] || r.c > 5) row(r.u).openTasks = r.c; });
+      // «задач в работе» в amo = СОЗДАНО задач за период (сверено 19.07: Маслова 563 vs amo 555)
+      D.prepare("SELECT responsible_user_id u, COUNT(*) c FROM tasks WHERE created_at>=? GROUP BY u").all(from).forEach((r) => { if (rows[r.u] || r.c > 5) row(r.u).openTasks = r.c; });
+      // «добавлено примечаний» = живые amo_notes за период (создатель), + примечания копии ниже
+      try { D.prepare("SELECT created_by u, COUNT(*) c FROM amo_notes WHERE created_at>=? AND created_by>0 AND note_type='common' GROUP BY created_by").all(from).forEach((r) => { if (rows[r.u]) rows[r.u].notes += r.c; }); } catch (_) {}
       try { D.prepare("SELECT created_by u, COUNT(*) c FROM notes_new WHERE created_at>=? GROUP BY u").all(from).forEach((r) => { row(r.u).notes = r.c; }); } catch (_) {}
       const out = Object.values(rows).filter((x) => x.name && !/^id /.test(x.name)).sort((a, b) => (b.created + b.won) - (a.created + a.won));
       res.json({ success: true, rows: out });
