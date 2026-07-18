@@ -75,6 +75,18 @@ module.exports = function mountDbRoutes(app, guard, api) {
     }));
   }
   const uName = {}; D.prepare("SELECT id,name FROM users").all().forEach((u) => { uName[u.id] = u.name; });
+  // примечания карточек = bucket-слепок 06.07 + ЖИВЫЕ amo_notes (синк с 19.07); дедуп по id, свежая версия побеждает
+  const notesMerged = (dir, id, cb) => notesFromBucket(dir, id, (ns) => {
+    let live = [];
+    try {
+      const et = dir === "notes_leads" ? "leads" : "contacts";
+      live = D.prepare("SELECT id, entity_id, note_type, params, created_by, created_at FROM amo_notes WHERE entity_type=? AND entity_id=?").all(et, id)
+        .map((n) => ({ id: n.id, eid: n.entity_id, type: n.note_type, created: n.created_at, by: uName[n.created_by] || (n.created_by || ""), params: J(n.params, {}) }));
+    } catch (_) { /* amo_notes появляется после первого синка notes */ }
+    if (!live.length) return cb(ns);
+    const liveIds = new Set(live.map((n) => n.id));
+    cb(ns.filter((n) => !liveIds.has(n.id)).concat(live).sort((a, b) => (a.created || 0) - (b.created || 0)));
+  });
   // карта этапов: status_id -> {name,color,pipeline_id} (для цветных чипов сделок в таблицах)
   const stMap = {};
   try { for (const s of D.prepare("SELECT pipeline_id,id,name,color FROM statuses").all()) stMap[s.id] = { name: s.name, color: s.color || "#c1d5e0", pid: s.pipeline_id }; } catch (_) {}
@@ -422,7 +434,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const finish = () => res.json({ success: true, tasks, notes: allNotes, company: { id: c.id, name: c.name, created_at: c.created_at, updated_at: c.updated_at, custom_fields_values: J(c.cf, null), _embedded: { contacts, leads } } });
     const next = (i) => {
       if (i >= top.length) return finish();
-      notesFromBucket("notes_leads", top[i].id, (ns) => {
+      notesMerged("notes_leads", top[i].id, (ns) => {
         ns.forEach((n) => { n.__lead = { id: top[i].id, name: top[i].name }; allNotes.push(n); });
         tasksOut("leads", top[i].id).forEach((t) => { t.__lead = { id: top[i].id, name: top[i].name }; tasks.push(t); });
         next(i + 1);
@@ -599,7 +611,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     // «на текущем этапе с …» — из живых событий amo (есть только у сделок, менявших этап после 19.07.2026)
     let stageSince = null;
     try { const r0 = D.prepare("SELECT created_at FROM amo_events WHERE entity_type='lead' AND entity_id=? AND type='lead_status_changed' ORDER BY created_at DESC LIMIT 1").get(id); stageSince = r0 ? r0.created_at : null; } catch (_) {}
-    notesFromBucket("notes_leads", id, (notes) => res.json({ success: true, lead, notes, tasks, other_leads: otherLeads, stage_since: stageSince }));
+    notesMerged("notes_leads", id, (notes) => res.json({ success: true, lead, notes, tasks, other_leads: otherLeads, stage_since: stageSince }));
   });
 
   // карточка контакта (поля из БД, сделки из lead_contacts, примечания из bucket)
@@ -615,13 +627,13 @@ module.exports = function mountDbRoutes(app, guard, api) {
       _embedded: { companies: companiesForContact(id) }
     };
     // лента контакта агрегирует события связанных СДЕЛОК (как в amo): примечания+задачи первых 5 сделок с меткой __lead
-    notesFromBucket("notes_contacts", id, (ownNotes) => {
+    notesMerged("notes_contacts", id, (ownNotes) => {
       const top = leads.slice(0, 5);
       const allNotes = ownNotes.slice(), tasks = tasksOut("contacts", id);
       const finish = () => res.json({ success: true, contact, notes: allNotes, leads, tasks });
       const next = (i) => {
         if (i >= top.length) return finish();
-        notesFromBucket("notes_leads", top[i].id, (ns) => {
+        notesMerged("notes_leads", top[i].id, (ns) => {
           ns.forEach((n) => { n.__lead = { id: top[i].id, name: top[i].name }; allNotes.push(n); });
           tasksOut("leads", top[i].id).forEach((t) => { t.__lead = { id: top[i].id, name: top[i].name }; tasks.push(t); });
           next(i + 1);

@@ -180,6 +180,42 @@ async function syncCustomers() {
   state.last_customers = maxUpd; fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
   log(`customers ГОТОВО: страниц ${pages}, обновлено ${changed}`);
 }
+// ПРИМЕЧАНИЯ (леды+контакты): найдено 19.07 — bucket-слепок 06.07 «заморожен», новые звонки/смс/комментарии
+// в копию не прилетали. Инкремент по updated_at в таблицу amo_notes; карточки мержат bucket+amo_notes (дедуп по id).
+db.exec("CREATE TABLE IF NOT EXISTS amo_notes (id INTEGER PRIMARY KEY, entity_type TEXT, entity_id INTEGER, note_type TEXT, params TEXT, created_by INTEGER, created_at INTEGER, updated_at INTEGER)");
+db.exec("CREATE INDEX IF NOT EXISTS ix_amonotes_ent ON amo_notes(entity_type, entity_id, created_at)");
+const upNote = db.prepare(`INSERT INTO amo_notes(id,entity_type,entity_id,note_type,params,created_by,created_at,updated_at)
+  VALUES(@id,@entity_type,@entity_id,@note_type,@params,@created_by,@created_at,@updated_at)
+  ON CONFLICT(id) DO UPDATE SET note_type=@note_type,params=@params,updated_at=@updated_at`);
+async function syncNotes() {
+  for (const et of ["leads", "contacts"]) {
+    const key = "last_notes_" + et;
+    const nSince = state[key] || SNAPSHOT_TS;
+    let url = `${BASE}/api/v4/${et}/notes`, pages = 0, changed = 0, maxUpd = nSince;
+    let params = { limit: 250, "order[updated_at]": "asc", "filter[updated_at][from]": nSince };
+    while (url && pages < MAX_PAGES) {
+      const data = await amoGet(url, params); params = undefined;
+      if (!data) break;
+      const items = (data._embedded && data._embedded.notes) || [];
+      if (!items.length) break;
+      db.transaction(() => {
+        for (const n of items) {
+          maxUpd = Math.max(maxUpd, n.updated_at || 0);
+          upNote.run({ id: n.id, entity_type: et, entity_id: n.entity_id || 0, note_type: n.note_type || "",
+            params: JSON.stringify(n.params || null), created_by: n.created_by || 0,
+            created_at: n.created_at || 0, updated_at: n.updated_at || 0 });
+          changed++;
+        }
+      })();
+      pages++;
+      url = (data._links && data._links.next && data._links.next.href) || null;
+      if (url) { const u = new URL(url); params = Object.fromEntries(u.searchParams); url = u.origin + u.pathname; }
+      if (pages % 50 === 0) { state[key] = maxUpd; fs.writeFileSync(STATE, JSON.stringify(state, null, 2)); log(`notes ${et}: стр.${pages}, ${changed} шт…`); }
+    }
+    state[key] = maxUpd; fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
+    log(`notes ${et} ГОТОВО: страниц ${pages}, обновлено ${changed}`);
+  }
+}
 // ЖИВОЙ ЖУРНАЛ СОБЫТИЙ amo (api/v4/events): копим ИНКРЕМЕНТАЛЬНО с момента включения (19.07.2026);
 // историю не тянем (миллионы событий). Дедуп по string-id (ULID). Смены этапов/полей/чат-маркеры —
 // фундамент для «дней на этапе» и честной истории реальных сделок в копии.
@@ -245,6 +281,7 @@ async function syncCompanies() {
   else if (ENTITY === "companies") await syncCompanies();
   else if (ENTITY === "customers") await syncCustomers();
   else if (ENTITY === "events") await syncEvents();
-  else { console.error("entity: leads|contacts|tasks|companies|customers|events"); process.exit(1); }
+  else if (ENTITY === "notes") await syncNotes();
+  else { console.error("entity: leads|contacts|tasks|companies|customers|events|notes"); process.exit(1); }
   db.close();
 })().catch((e) => { log("ОСТАНОВКА: " + e.message); process.exit(2); });
