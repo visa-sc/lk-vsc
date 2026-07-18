@@ -357,6 +357,8 @@
   .w-card .w-name { font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#9fb6d6; font-weight:700; margin-bottom:14px; padding-right:18px; line-height:1.3; }
   .w-card .w-count { font-size:34px; font-weight:700; color:#8ea6f7; line-height:1; }
   .w-card .w-sum { font-size:14px; color:#cdd8ea; margin-top:8px; }
+  .w-card .w-delta { margin-top:12px; padding-top:9px; border-top:1px solid rgba(255,255,255,.16); font-size:12px; color:#aebdd0; min-height:14px; }
+  .w-card .w-plus { color:#5ecb87; font-size:16px; font-weight:700; display:block; }
   .w-card .w-delta { position:absolute; bottom:14px; left:18px; font-size:12px; color:#5fbf8f; }
   .w-card .w-del { position:absolute; top:10px; right:11px; color:#5b6f8c; cursor:pointer; font-size:15px; line-height:1; opacity:0; }
   .w-card:hover .w-del { opacity:1; }
@@ -937,7 +939,7 @@
     var ws=loadDeskWidgets();
     var grid=$("#wGrid");
     grid.innerHTML=ws.map(function(w){
-      return '<div class="w-card" data-wid="'+w.id+'"><span class="w-del" title="Убрать">×</span><div class="w-name">'+esc(w.name)+'</div><div class="w-count" data-c>…</div>'+(w.metric==="sum"?'':'<div class="w-sum" data-s></div>')+'</div>';
+      return '<div class="w-card" data-wid="'+w.id+'"><span class="w-del" title="Убрать">×</span><div class="w-name">'+esc(w.name)+'</div><div class="w-count" data-c>…</div>'+(w.metric==="sum"?'':'<div class="w-sum" data-s></div>')+'<div class="w-delta" data-d></div></div>';
     }).join("")+'<div class="w-add" id="wAdd">＋ Добавить виджет</div>';
     $("#wAdd").onclick=openWidgetEditor;
     grid.querySelectorAll(".w-del").forEach(function(x){x.onclick=function(e){e.stopPropagation();var id=x.closest("[data-wid]").dataset.wid;saveDeskWidgets(loadDeskWidgets().filter(function(w){return w.id!==id;}));renderDeskWidgets();};});
@@ -956,6 +958,16 @@
         if(w.metric==="sum"){card.querySelector("[data-c]").textContent=fmt(r.sum||0)+" ₽";card.querySelector("[data-c]").style.fontSize="27px";}
         else{card.querySelector("[data-c]").textContent=fmt(r.count||0);var sEl=card.querySelector("[data-s]");if(sEl)sEl.textContent=(r.sum?fmt(r.sum)+" ₽":"");}
       }).catch(function(){});
+      // зелёная дельта «+N за сегодня» (как в amo): тот же срез виджета, дата = поле виджета (или created), период = сегодня
+      if(w.kind!=="filter"){
+        var dq=[(w.pipeline?"pipeline="+w.pipeline:""),(w.status?"status="+w.status:""),(w.won?"won=1":""),(w.lost?"lost=1":""),(w.resp?"resp="+w.resp:""),"field="+((w.field&&w.field!=="none")?w.field:"created"),"period=today"].filter(Boolean).join("&");
+        jreq(API+"/widget_stat?"+dq).then(function(r2){
+          var card=grid.querySelector('[data-wid="'+w.id+'"]');if(!card)return;
+          var dEl=card.querySelector("[data-d]");if(!dEl)return;
+          var n=(w.metric==="sum")?(r2.sum||0):(r2.count||0);
+          dEl.innerHTML=n?('<span class="w-plus">+'+fmt(n)+(w.metric==="sum"?" ₽":"")+'</span> за сегодня'):'<span style="opacity:.55">0 за сегодня</span>';
+        }).catch(function(){});
+      }
     });
   }
   // редактор задачи одним окном (как в amo): текст + тип + срок
