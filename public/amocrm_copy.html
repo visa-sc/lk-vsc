@@ -1861,7 +1861,7 @@
       return '<span class="gs-st" style="background:'+esc(col)+'88;margin-left:0">'+esc(nm)+'</span>';
     };
     // живые события amo (amo_events, копятся с 19.07.2026)
-    var AMO_EV={lead_status_changed:"Новый этап",sale_field_changed:"Изменение бюджета",name_field_changed:"Изменение названия",custom_field_value_changed:"Изменение поля",entity_responsible_changed:"Смена ответственного",entity_tag_added:"Теги добавлены",entity_tag_deleted:"Теги удалены",task_added:"Новая задача",task_completed:"Задача выполнена",task_deadline_changed:"Перенос задачи",task_text_changed:"Изменена задача",incoming_chat_message:"Входящее сообщение (чат)",outgoing_chat_message:"Исходящее сообщение (чат)",common_note_added:"Примечание",service_note_added:"Служебное примечание",entity_linked:"Привязка",entity_unlinked:"Отвязка",entity_merged:"Объединение",lead_added:"Сделка создана",contact_added:"Контакт создан"};
+    var AMO_EV=AMO_EV_G;
     var cfNameById=function(fid){var all=[].concat((CF&&CF.leads)||[],(CF&&CF.contacts)||[],(CF&&CF.companies)||[]);var f=all.find(function(x){return x.id===fid;});return f&&f.name;};
     var row=function(e){
       var d=e.detail||{},extra="";
@@ -2791,6 +2791,9 @@
   }
   // «Список событий» (как в amo): журнал действий, совершённых в КОПИИ (события amo в слепок не выгружались)
   var EV_RU={create:"Создание",stage:"Изменение этапа",edit:"Правка полей",edit_cf:"Изменение поля",edit_tags:"Изменение тегов",task_create:"Новая задача",task_complete:"Завершение задачи",task_reschedule:"Перенос задачи",task_edit:"Изменение задачи",note_add:"Новое примечание",note_edit:"Изменение примечания",note_delete:"Удаление примечания",link_contact:"Привязан контакт",unlink_contact:"Отвязан контакт",link_company:"Привязана компания",unlink_company:"Отвязана компания",merge:"Объединение",auto_task:"Авто-задача",auto_responsible:"Авто-ответственный",delete:"Удаление",edit_contact:"Правка"};
+  // подписи живых событий amo (amo_events)
+  var AMO_EV_G={lead_status_changed:"Новый этап",sale_field_changed:"Изменение бюджета",name_field_changed:"Изменение названия",custom_field_value_changed:"Изменение поля",entity_responsible_changed:"Смена ответственного",entity_tag_added:"Теги добавлены",entity_tag_deleted:"Теги удалены",task_added:"Новая задача",task_completed:"Задача выполнена",task_deadline_changed:"Перенос задачи",task_text_changed:"Изменена задача",incoming_chat_message:"Входящее сообщение (чат)",outgoing_chat_message:"Исходящее сообщение (чат)",common_note_added:"Примечание",service_note_added:"Служебное примечание",entity_linked:"Привязка",entity_unlinked:"Отвязка",entity_merged:"Объединение",lead_added:"Сделка создана",contact_added:"Контакт создан",lead_deleted:"Сделка удалена",contact_deleted:"Контакт удалён"};
+  function amoEvShort(action){var t=String(action).slice(4);if(/^custom_field_\d*_?value_changed$/.test(t))t="custom_field_value_changed";return "amo · "+(AMO_EV_G[t]||t);}
   var ENT_RU={leads:"Сделка",contacts:"Контакт",companies:"Компания",customers:"Покупатель"};
   function renderEventsList(tabs){
     $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">Загрузка…</p></div></div>';
@@ -2804,7 +2807,8 @@
         var extra="";
         if(e.action==="edit_cf"&&e.detail&&e.detail.field)extra=": "+e.detail.field;
         else if(e.action==="stage"&&e.detail&&e.detail.to)extra=" → "+(e.detail.to.name||"");
-        return '<tr><td class="muted" style="width:140px">'+dt(e.ts)+'</td><td style="width:160px">'+esc(e.actor||"")+'</td><td style="width:110px">'+esc(ENT_RU[e.et]||e.et)+'</td><td><a data-ev="'+esc(e.et)+':'+e.eid+'">'+esc(e.name||("#"+e.eid))+'</a></td><td>'+esc((EV_RU[e.action]||e.action)+extra)+'</td></tr>';
+        var lbl=String(e.action).indexOf("amo:")===0?amoEvShort(e.action):(EV_RU[e.action]||e.action);
+        return '<tr><td class="muted" style="width:140px">'+dt(e.ts)+'</td><td style="width:160px">'+esc(e.actor||"")+'</td><td style="width:110px">'+esc(ENT_RU[e.et]||e.et)+'</td><td><a data-ev="'+esc(e.et)+':'+e.eid+'">'+esc(e.name||("#"+e.eid))+'</a></td><td>'+esc(lbl+extra)+'</td></tr>';
       }).join("");
       $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><h2 style="margin-top:0">Список событий</h2><p class="muted" style="font-size:12px;margin:4px 0 12px">Действия, совершённые в копии ('+fmt(items.length)+' последних). Журнал событий amo в слепок не выгружался.</p><table class="set"><tr><th>Дата</th><th>Автор</th><th>Объект</th><th>Название</th><th>Событие</th></tr>'+rows+'</table></div></div>';
       bindAnTabs();
