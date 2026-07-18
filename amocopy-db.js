@@ -377,7 +377,19 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if (!c) return res.status(404).json({ success: false });
     const contacts = qContactsForCompany ? qContactsForCompany.all(id).map((x) => ({ id: x.id, name: x.name })) : [];
     const leads = qLeadsForCompany ? qLeadsForCompany.all(id).map((l) => ({ id: l.id, name: l.name, price: l.price, sid: l.status_id, st: dealChip(l.status_id).st, color: dealChip(l.status_id).color })) : [];
-    res.json({ success: true, tasks: tasksOut("companies", id), company: { id: c.id, name: c.name, created_at: c.created_at, updated_at: c.updated_at, custom_fields_values: J(c.cf, null), _embedded: { contacts, leads } } });
+    // лента компании агрегирует события СВЯЗАННЫХ СДЕЛОК (как в amo): примечания+задачи первых 5 сделок с меткой __lead
+    const top = leads.slice(0, 5);
+    const allNotes = [], tasks = tasksOut("companies", id);
+    const finish = () => res.json({ success: true, tasks, notes: allNotes, company: { id: c.id, name: c.name, created_at: c.created_at, updated_at: c.updated_at, custom_fields_values: J(c.cf, null), _embedded: { contacts, leads } } });
+    const next = (i) => {
+      if (i >= top.length) return finish();
+      notesFromBucket("notes_leads", top[i].id, (ns) => {
+        ns.forEach((n) => { n.__lead = { id: top[i].id, name: top[i].name }; allNotes.push(n); });
+        tasksOut("leads", top[i].id).forEach((t) => { t.__lead = { id: top[i].id, name: top[i].name }; tasks.push(t); });
+        next(i + 1);
+      });
+    };
+    next(0);
   });
 
   // режим списка: все сделки воронки постранично (для табличного вида)

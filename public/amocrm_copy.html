@@ -1536,7 +1536,8 @@
       cls+=" note-y"; // примечания в жёлтой рамке, как в amo
     }
     var acts=(n.__local&&n.id)?' · <a class="note-edit" data-nid="'+n.id+'" data-text="'+esc(String(p.text||""))+'">изменить</a> · <a class="note-del" data-nid="'+n.id+'">удалить</a>':"";
-    return '<div class="ev'+cls+(n.__local?'" style="border-left:3px solid #6fc48d':"")+'"><div class="eh">'+dt(n.created)+" · "+label+(by?" · "+esc(String(by)):"")+acts+'</div>'+body+'</div>';
+    var leadRef=n.__lead?' · <a class="ev-lead" data-l="'+n.__lead.id+'" title="перейти в сделку">'+esc((n.__lead.name||("#"+n.__lead.id)).slice(0,30))+'</a>':"";
+    return '<div class="ev'+cls+(n.__local?'" style="border-left:3px solid #6fc48d':"")+'"><div class="eh">'+dt(n.created)+" · "+label+(by?" · "+esc(String(by)):"")+leadRef+acts+'</div>'+body+'</div>';
   }
   function feedHtml(notes,tasks,filter,bg){
     filter=filter||"all";
@@ -1569,7 +1570,7 @@
       flushSys();
       if(e.kind==="task"){
         var t=e.t;
-        html+='<div class="ev task'+(t.is_completed?"":" open")+'"><div class="eh">'+dt(t.complete_till)+" · задача · "+esc(userName(t.responsible_user_id))+(t.is_completed?" · выполнена":" · открыта")+(!t.is_completed&&t.id?' · <a class="task-done" data-tid="'+t.id+'">выполнить</a> · <a class="task-move" data-tid="'+t.id+'">перенести</a> · <a class="task-edit" data-tid="'+t.id+'" data-text="'+esc(t.text||"")+'" data-till="'+(t.complete_till||0)+'" data-type="'+(t.task_type||0)+'">изменить</a>':"")+'</div>'+esc(t.text||"")+(t.result&&t.result.text?('<div class="muted" style="margin-top:4px">Результат: '+esc(t.result.text)+'</div>'):"")+'</div>';
+        html+='<div class="ev task'+(t.is_completed?"":" open")+'"><div class="eh">'+dt(t.complete_till)+" · задача · "+esc(userName(t.responsible_user_id))+(t.is_completed?" · выполнена":" · открыта")+(!t.is_completed&&t.id?' · <a class="task-done" data-tid="'+t.id+'">выполнить</a> · <a class="task-move" data-tid="'+t.id+'">перенести</a> · <a class="task-edit" data-tid="'+t.id+'" data-text="'+esc(t.text||"")+'" data-till="'+(t.complete_till||0)+'" data-type="'+(t.task_type||0)+'">изменить</a>':"")+(t.__lead?' · <a class="ev-lead" data-l="'+t.__lead.id+'" title="перейти в сделку">'+esc((t.__lead.name||("#"+t.__lead.id)).slice(0,30))+'</a>':"")+'</div>'+esc(t.text||"")+(t.result&&t.result.text?('<div class="muted" style="margin-top:4px">Результат: '+esc(t.result.text)+'</div>'):"")+'</div>';
       } else {
         html+=noteEvHtml(e.n);
       }
@@ -1616,8 +1617,9 @@
     var feed=bg.querySelector(".feed");
     // действия ленты — делегирование (живёт при любых перерисовках ленты)
     feed.addEventListener("click",function(e){
-      var a=e.target&&e.target.closest?e.target.closest(".task-done,.task-move,.task-edit,.note-edit,.note-del"):null;
+      var a=e.target&&e.target.closest?e.target.closest(".task-done,.task-move,.task-edit,.note-edit,.note-del,.ev-lead"):null;
       if(!a)return;
+      if(a.classList.contains("ev-lead")){openLead(parseInt(a.dataset.l,10));return;}
       var reload=function(){var fn=bg.__reload;if(fn)fn();};
       if(a.classList.contains("task-done")){
         var res=prompt("Результат задачи (необязательно):","");
@@ -2061,7 +2063,7 @@
           ["Сделок",(emb.leads||[]).length],["Задач",tasks.length],["Примечаний",notesNew.length]
         ])+'</div>';
       var reload=function(){openCompany(id);};
-      var bg=cardShell(left,function(f){return feedHtml(mergeNotes([],notesNew),tasks,f,bg);},{type:"companies",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(tasks)});
+      var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes||[],notesNew),tasks,f,bg);},{type:"companies",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(tasks)});
       bindEditable(bg,"coname",function(){return c.name;},function(v){return ereq("PATCH","/edit-api/company/"+id,{name:v});},reload,"text");
       bindCfFields(bg,"companies",id,CF&&CF.companies,reload);
       bindFieldGroups(bg);bindCardTabs(bg);
