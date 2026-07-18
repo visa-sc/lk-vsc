@@ -187,8 +187,11 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const one = (sql, ...a) => { try { return D.prepare(sql).get(...a).c; } catch (_) { return null; } };
     const now = Math.floor(Date.now() / 1000);
     const dayEnd = now - (now % 86400) + 86400;
-    // бейдж «Задачи» как в amo = просроченные + на сегодня (незавершённые)
-    const tasksDue = one("SELECT COUNT(*) c FROM tasks WHERE is_completed=0 AND complete_till>0 AND complete_till<?", dayEnd);
+    // бейдж «Задачи» как в amo = просроченные + на сегодня (незавершённые) ТЕКУЩЕГО юзера (me=id);
+    // суперадмин по коду (без user_id) видит общий счёт. me — целое как литерал, инъекция исключена.
+    const me = /^\d+$/.test(String(req.query.me || "")) ? +req.query.me : 0;
+    const meW = me ? (" AND responsible_user_id=" + me) : "";
+    const tasksDue = one("SELECT COUNT(*) c FROM tasks WHERE is_completed=0 AND complete_till>0 AND complete_till<?" + meW, dayEnd);
     const tasksOpen = one("SELECT COUNT(*) c FROM tasks WHERE is_completed=0");
     const out = { success: true,
       leads: one("SELECT COUNT(*) c FROM leads"),

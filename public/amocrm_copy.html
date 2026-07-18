@@ -623,7 +623,9 @@
     if(ME.is_admin)return true;
     return !!(ME.rights&&ME.rights.sections&&ME.rights.sections[n[3]]);
   }
+  var LAST_NAV=null;
   function renderSidebar(active){
+    LAST_NAV=active;
     var bell=(META&&META.counts&&META.counts.notifications)||0;
     var items=NAV.filter(navAllowed).map(function(n){
       if(n[0]==="_sep")return '<div class="nav-sep"></div>';
@@ -3091,6 +3093,8 @@
       // живые счётчики из БД вместо статичных из слепка (копия синкается — цифры актуальные)
       META.counts=META.counts||{};
       if(r[6]&&r[6].success){["contacts","leads","companies","tasksDue","tasksOpen","imbox","mail","wazzup","market","notifications"].forEach(function(k){if(r[6][k]!=null)META.counts[k]=r[6][k];});}
+      // бейдж «Задачи» = МОИ задачи (как в amo): для email-логина пере-читаем счётчик со срезом по user_id
+      if(ME&&ME.user_id){jreq(API+"/counts?me="+ME.user_id).then(function(c){if(c&&c.success){["tasksDue","notifications"].forEach(function(k){if(c[k]!=null)META.counts[k]=c[k];});if(LAST_NAV)renderSidebar(LAST_NAV);}}).catch(function(){});}
       $("#app").style.display="flex";
       bindGlobalSearch();
       if(!routePath(location.pathname,true))go("leads");
