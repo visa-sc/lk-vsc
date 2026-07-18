@@ -2500,9 +2500,10 @@
   function vAnalytics(){
     renderSidebar("analytics");
     setHeader("Аналитика",{count:""});
-    var tabs='<div style="display:flex;gap:6px;margin:0 0 14px"><button class="btn'+(anTab==="funnels"?"":" ghost")+'" data-at="funnels">Анализ продаж</button><button class="btn'+(anTab==="summary"?"":" ghost")+'" data-at="summary">Сводный отчёт</button><button class="btn'+(anTab==="calls"?"":" ghost")+'" data-at="calls">Звонки</button></div>';
+    var tabs='<div style="display:flex;gap:6px;margin:0 0 14px;flex-wrap:wrap"><button class="btn'+(anTab==="funnels"?"":" ghost")+'" data-at="funnels">Анализ продаж</button><button class="btn'+(anTab==="summary"?"":" ghost")+'" data-at="summary">Сводный отчёт</button><button class="btn'+(anTab==="staff"?"":" ghost")+'" data-at="staff">По сотрудникам</button><button class="btn'+(anTab==="calls"?"":" ghost")+'" data-at="calls">Звонки</button></div>';
     if(anTab==="calls"){renderCallsReport(tabs);return;}
     if(anTab==="summary"){renderSummaryReport(tabs);return;}
+    if(anTab==="staff"){renderStaffReport(tabs);return;}
     $("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Загрузка…</p></div></div>';
     var ep=VIEW_EPOCH;
     jreq(API+"/analytics").then(function(r){
@@ -2530,6 +2531,26 @@
   }
   function bindAnTabs(){
     $("#view").querySelectorAll("[data-at]").forEach(function(b){b.onclick=function(){anTab=b.dataset.at;vAnalytics();};});
+  }
+  // «Отчёт по сотрудникам» (как в amo): за период — создано/успешно/задачи/примечания
+  var staffPeriod="week";
+  function renderStaffReport(tabs){
+    $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">Загрузка…</p></div></div>';
+    bindAnTabs();
+    var ep=VIEW_EPOCH;
+    jreq(API+"/staff_report?period="+staffPeriod).then(function(r){
+      if(ep!==VIEW_EPOCH||anTab!=="staff")return;
+      if(!r||!r.success)return $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">'+esc((r&&r.message)||"Нет данных")+'</p></div></div>';
+      var pills=[["today","Сегодня"],["week","Неделя"],["month","Месяц"]].map(function(x){return '<button data-sp="'+x[0]+'" class="lnk" style="border:0;cursor:pointer;font:inherit;font-size:12.5px;padding:5px 14px;border-radius:14px;'+(staffPeriod===x[0]?"background:#fff;font-weight:700;color:#1d3c66;box-shadow:0 1px 3px rgba(0,0,0,.12)":"background:none;color:#556")+'">'+x[1]+'</button>';}).join("");
+      var rows=(r.rows||[]).map(function(x){
+        return '<tr><td>'+esc(x.name)+'</td><td>'+(x.created?fmt(x.created)+' <span class="muted">('+fmt(x.createdSum)+' ₽)</span>':'—')+'</td><td>'+(x.won?fmt(x.won)+' <span class="muted">('+fmt(x.wonSum)+' ₽)</span>':'—')+'</td><td>'+(x.notes||'—')+'</td><td>'+(x.openTasks?fmt(x.openTasks):'—')+'</td></tr>';
+      }).join("");
+      $("#view").innerHTML='<div class="plain">'+tabs+
+        '<div class="pcard"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0">Отчёт по сотрудникам</h2><span style="display:inline-flex;gap:2px;background:#eef2f6;border-radius:16px;padding:2px">'+pills+'</span></div>'+
+        '<table class="set"><tr><th>Сотрудник</th><th>Создано сделок</th><th>Успешно реализовано</th><th>Примечаний (в копии)</th><th>Задач в работе</th></tr>'+rows+'</table></div></div>';
+      bindAnTabs();
+      $("#view").querySelectorAll("[data-sp]").forEach(function(b){b.onclick=function(){staffPeriod=b.dataset.sp;renderStaffReport(tabs);};});
+    }).catch(function(){$("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">Ошибка загрузки.</p></div></div>';});
   }
   // «Сводный отчёт» (как в amo): график создано/закрыто по неделям + всего сделок + этапы + менеджеры
   function renderSummaryReport(tabs){

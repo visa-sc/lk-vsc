@@ -201,6 +201,22 @@ module.exports = function mountDbRoutes(app, guard, api) {
   });
 
   // аналитика: воронки по этапам (кол-во+сумма) + по ответственным
+  // «Отчёт по сотрудникам» (как в amo): за период — создано сделок (N+₽), успешные (N+₽), задач в работе, примечаний в копии
+  app.get(`${api}/staff_report`, guard, (req, res) => {
+    try {
+      const now = Math.floor(Date.now() / 1000), day = now - (now % 86400);
+      const from = ({ today: day, week: day - 6 * 86400, month: day - 29 * 86400 })[req.query.period] || (day - 6 * 86400);
+      const rows = {};
+      const row = (u) => rows[u] || (rows[u] = { name: uName[u] || ("id " + u), created: 0, createdSum: 0, won: 0, wonSum: 0, openTasks: 0, notes: 0 });
+      D.prepare("SELECT responsible_user_id u, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads WHERE created_at>=? GROUP BY u").all(from).forEach((r) => { const x = row(r.u); x.created = r.c; x.createdSum = r.s; });
+      D.prepare("SELECT responsible_user_id u, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads WHERE status_id=142 AND closed_at>=? GROUP BY u").all(from).forEach((r) => { const x = row(r.u); x.won = r.c; x.wonSum = r.s; });
+      D.prepare("SELECT responsible_user_id u, COUNT(*) c FROM tasks WHERE is_completed=0 GROUP BY u").all().forEach((r) => { if (rows[r.u] || r.c > 5) row(r.u).openTasks = r.c; });
+      try { D.prepare("SELECT created_by u, COUNT(*) c FROM notes_new WHERE created_at>=? GROUP BY u").all(from).forEach((r) => { row(r.u).notes = r.c; }); } catch (_) {}
+      const out = Object.values(rows).filter((x) => x.name && !/^id /.test(x.name)).sort((a, b) => (b.created + b.won) - (a.created + a.won));
+      res.json({ success: true, rows: out });
+    } catch (e) { res.json({ success: false, message: e.message }); }
+  });
+
   // «Сводный отчёт» (как в amo Аналитика→Сводный): график по неделям + кольцо + этапы + менеджеры. Кэш 120с.
   let summaryCache = null, summaryTs = 0;
   app.get(`${api}/summary_report`, guard, (req, res) => {
