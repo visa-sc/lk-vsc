@@ -148,12 +148,41 @@ async function syncTasks() {
   log(`tasks ГОТОВО: страниц ${pages}, обновлено ${changed}`);
 }
 
+// компании (дыра найдена 18.07: слепок 1448, в amo уже 1460 — синка компаний не было вовсе)
+const upCompany = db.prepare(`INSERT INTO companies(id,name,created_at,updated_at,cf)
+  VALUES(@id,@name,@created_at,@updated_at,@cf)
+  ON CONFLICT(id) DO UPDATE SET name=@name,updated_at=@updated_at,cf=@cf`);
+async function syncCompanies() {
+  let url = `${BASE}/api/v4/companies`, pages = 0, changed = 0, conflicts = 0, maxUpd = since;
+  let params = { limit: 250, "order[updated_at]": "asc", "filter[updated_at][from]": since };
+  while (url && pages < MAX_PAGES) {
+    const data = await amoGet(url, params); params = undefined;
+    if (!data) break;
+    const items = (data._embedded && data._embedded.companies) || [];
+    if (!items.length) break;
+    db.transaction(() => {
+      for (const c of items) {
+        maxUpd = Math.max(maxUpd, c.updated_at || 0);
+        if (hasLocalEdit.get("companies", c.id)) { conflicts++; continue; }
+        upCompany.run({ id: c.id, name: c.name || "", created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c) });
+        changed++;
+      }
+    })();
+    pages++;
+    url = (data._links && data._links.next && data._links.next.href) || null;
+    if (url) { const u = new URL(url); params = Object.fromEntries(u.searchParams); url = u.origin + u.pathname; }
+  }
+  state.last_companies = maxUpd; fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
+  log(`companies ГОТОВО: страниц ${pages}, обновлено ${changed}, конфликтов ${conflicts}`);
+}
+
 (async () => {
   if (!AMO_TOKEN || !AMO_SUB) { console.error("нет AMO_ACCESS_TOKEN/AMO_SUBDOMAIN"); process.exit(1); }
   log(`Синк ${ENTITY} из ${BASE} с ${new Date(since * 1000).toISOString()} (1 rps, read-only, max-pages=${MAX_PAGES})`);
   if (ENTITY === "leads") await syncLeads();
   else if (ENTITY === "contacts") await syncContacts();
   else if (ENTITY === "tasks") await syncTasks();
-  else { console.error("entity: leads|contacts|tasks"); process.exit(1); }
+  else if (ENTITY === "companies") await syncCompanies();
+  else { console.error("entity: leads|contacts|tasks|companies"); process.exit(1); }
   db.close();
 })().catch((e) => { log("ОСТАНОВКА: " + e.message); process.exit(2); });
