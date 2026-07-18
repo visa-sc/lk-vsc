@@ -755,6 +755,13 @@
     var leadDefs=(CF&&CF.leads)||[], contDefs=(CF&&CF.contacts)||[];
     var p=document.createElement("div");p.className="filter-panel";p.id="filterPanel";
     var fields='';
+    // быстрые системные пресеты (левая колонка панели amo)
+    if(isLeads){
+      var PRESETS=[["open","Открытые"],["won","Успешно завершённые"],["lost","Нереализованные"],["notasks","🟡 Без задач"],["overdue","🔴 С просроченными"]];
+      fields+='<div class="fpresets" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">'+PRESETS.map(function(x){
+        return '<button class="lnk fp-btn" data-fp="'+x[0]+'" style="border:1px solid '+(st.preset===x[0]?"var(--link)":"#dfe5ec")+';border-radius:14px;padding:5px 12px;font:inherit;font-size:12.5px;cursor:pointer;background:'+(st.preset===x[0]?"#eaf3fc":"#fff")+';color:#334">'+x[1]+'</button>';
+      }).join("")+(ME&&ME.user_id?'<button class="lnk fp-btn" data-fp="my" style="border:1px solid #dfe5ec;border-radius:14px;padding:5px 12px;font:inherit;font-size:12.5px;cursor:pointer;background:#fff;color:#334">Только мои</button>':"")+'</div>';
+    }
     fields+='<div class="ffield"><label>Ответственный</label><select data-f="responsible">'+userOptsHtml(st.responsible)+'</select></div>';
     if(isLeads){
       var sts=(curFilter.statuses||[]);
@@ -826,6 +833,13 @@
       closeFilterPanel();openFilterPanel();
     };
     $("#fApply").onclick=function(){FSTATE[curFilter.kind]=collectRaw();var vals=collect();closeFilterPanel();if(isLeads)runLeadsFilter(vals);else runContactsFilter(vals);};
+    // быстрые пресеты: клик применяет сразу (повторный клик по активному — снимает)
+    p.querySelectorAll(".fp-btn").forEach(function(b){b.onclick=function(){
+      var raw=collectRaw(),vals=collect();
+      if(b.dataset.fp==="my"){raw.responsible=String(ME.user_id);vals.responsible=ME.user_id;}
+      else{raw.preset=(st.preset===b.dataset.fp)?"":b.dataset.fp;if(raw.preset)vals.preset=raw.preset;}
+      FSTATE[curFilter.kind]=raw;closeFilterPanel();runLeadsFilter(vals);
+    };});
     $("#fReset").onclick=function(){FSTATE[curFilter.kind]={};closeFilterPanel();if(isLeads)vLeads();else vContacts();};
     // «★ В виджет» — сохранить текущий фильтр виджетом на рабочий стол (как в amo)
     $("#fWidget").onclick=function(){

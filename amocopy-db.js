@@ -470,6 +470,13 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if ((v = intq(q.date_to)) !== null) { where.push("created_at<=?"); args.push(v); }
     if (q.tag && String(q.tag).trim()) { where.push("tags LIKE ?"); args.push("%" + String(q.tag).trim() + "%"); }
     if (q.q && String(q.q).trim()) { where.push("lc(name) LIKE lc(?)"); args.push("%" + String(q.q).trim() + "%"); }
+    // быстрые системные пресеты (как левая колонка панели фильтра amo)
+    const nowP = Math.floor(Date.now() / 1000);
+    if (q.preset === "open") where.push("status_id NOT IN (142,143)");
+    else if (q.preset === "won") where.push("status_id=142");
+    else if (q.preset === "lost") where.push("status_id=143");
+    else if (q.preset === "notasks") where.push("status_id NOT IN (142,143) AND NOT EXISTS(SELECT 1 FROM tasks t WHERE t.entity_type='leads' AND t.entity_id=leads.id AND t.is_completed=0)");
+    else if (q.preset === "overdue") { where.push("status_id NOT IN (142,143) AND EXISTS(SELECT 1 FROM tasks t WHERE t.entity_type='leads' AND t.entity_id=leads.id AND t.is_completed=0 AND t.complete_till<?)"); args.push(nowP); }
     // фильтр по кастомным полям самой сделки
     addCfFilters(q.cf, where, args);
     // фильтр по полям СВЯЗАННОГО КОНТАКТА: ccf=<fieldId>:<значение> → подзапрос по lead_contacts+contacts
