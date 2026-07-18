@@ -177,7 +177,8 @@ async function syncCustomers() {
     url = (data._links && data._links.next && data._links.next.href) || null;
     if (url) { const u = new URL(url); params = Object.fromEntries(u.searchParams); url = u.origin + u.pathname; }
   }
-  state.last_customers = maxUpd; fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
+  // +1: у покупателей updated_at массово одинаковый (пересчёт лояльности) — фильтр >= зацикливал полную перекачку 28 стр. каждый круг
+  state.last_customers = maxUpd + (changed ? 1 : 0); fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
   log(`customers ГОТОВО: страниц ${pages}, обновлено ${changed}`);
 }
 // ПРИМЕЧАНИЯ (леды+контакты): найдено 19.07 — bucket-слепок 06.07 «заморожен», новые звонки/смс/комментарии
