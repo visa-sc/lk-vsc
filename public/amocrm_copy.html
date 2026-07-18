@@ -2491,13 +2491,35 @@
     if(ME&&!ME.is_admin&&!(ME.rights&&ME.rights.sections&&ME.rights.sections.settings)){
       $("#view").innerHTML='<div class="plain"><div class="pcard"><h2>Недостаточно прав</h2><p class="muted">Раздел «Настройки» доступен только администраторам.</p></div></div>';return;
     }
-    var tabs=[["users","Пользователи"],["roles","Роли и права"],["fields","Поля"],["pipelines","Воронки и этапы"]];
+    var tabs=[["general","Общие настройки"],["users","Пользователи"],["roles","Роли и права"],["fields","Поля"],["pipelines","Воронки и этапы"]];
     $("#view").innerHTML='<div class="plain"><div class="pcard"><div class="stabs">'+tabs.map(function(t){return '<span class="stab'+(t[0]===settingsTab?" act":"")+'" data-t="'+t[0]+'">'+t[1]+'</span>';}).join("")+'</div><div id="sbody"><p class="muted">Загрузка…</p></div></div></div>';
     document.querySelectorAll(".stab").forEach(function(s){s.onclick=function(){settingsTab=s.dataset.t;vSettings();};});
-    if(settingsTab==="users")settingsUsers();
+    if(settingsTab==="general")settingsGeneral();
+    else if(settingsTab==="users")settingsUsers();
     else if(settingsTab==="roles")settingsRoles();
     else if(settingsTab==="fields")settingsFields();
     else settingsPipelines();
+  }
+  // «Общие настройки» как в amo (сверено с живым /settings/): параметры аккаунта + модули + виджеты
+  function settingsGeneral(){
+    var a=(META&&META.account)||{};
+    var row=function(k,v){return '<tr><td style="width:260px;color:#7b848d">'+k+'</td><td>'+v+'</td></tr>';};
+    var W=[["Триггеры","движок автоматизаций копии активен (23 правила)"],["Касса","поля скопированы; формулы — этап интеграций"],["Калькулятор VSC","подключим на этапе интеграций"],["Яндекс.Диск","подключим на этапе интеграций"],["Chatter","подключим на этапе интеграций"],["Чек-листы","закрытый виджет F5 — по поведению"],["Антидубль","аналог: «Объединить» в контактах"],["amoAI / Finder / Tracker","внешние сервисы amo — не копируются"]];
+    $("#sbody").innerHTML='<h3 style="margin:6px 0 10px">Основные настройки</h3><table class="set">'+
+      row("Название аккаунта",esc(a.name||"VSC"))+
+      row("Адрес копии","crm.voyotravel.ru")+
+      row("Часовой пояс","(GMT +03:00) Москва")+
+      row("Страна","Россия")+
+      row("Формат даты","31.12.2026 · 24 часа")+
+      row("Валюта","Российский рубль")+
+      row("Порядок имён контактов","Имя, Фамилия")+
+      '</table><p class="muted" style="font-size:12px">Параметры зеркалят настройки amo-аккаунта; в копии они применяются повсеместно и правки не требуют.</p>'+
+      '<h3 style="margin:18px 0 10px">Модули</h3><table class="set">'+
+      row("Периодические покупки","включены (раздел «Покупатели», 6 864 записи)")+
+      row("Счета/покупки","выключены (как в amo)")+
+      '</table><h3 style="margin:18px 0 10px">Виджеты (как в amo)</h3><table class="set">'+
+      W.map(function(x){return row(esc(x[0]),'<span class="muted">'+esc(x[1])+'</span>');}).join("")+
+      '</table>';
   }
   function settingsUsers(){
     jreq(API+"/auth/users").then(function(r){
