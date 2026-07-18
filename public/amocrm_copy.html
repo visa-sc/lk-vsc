@@ -2500,8 +2500,9 @@
   function vAnalytics(){
     renderSidebar("analytics");
     setHeader("Аналитика",{count:""});
-    var tabs='<div style="display:flex;gap:6px;margin:0 0 14px"><button class="btn'+(anTab==="funnels"?"":" ghost")+'" data-at="funnels">Анализ продаж</button><button class="btn'+(anTab==="calls"?"":" ghost")+'" data-at="calls">Звонки</button></div>';
+    var tabs='<div style="display:flex;gap:6px;margin:0 0 14px"><button class="btn'+(anTab==="funnels"?"":" ghost")+'" data-at="funnels">Анализ продаж</button><button class="btn'+(anTab==="summary"?"":" ghost")+'" data-at="summary">Сводный отчёт</button><button class="btn'+(anTab==="calls"?"":" ghost")+'" data-at="calls">Звонки</button></div>';
     if(anTab==="calls"){renderCallsReport(tabs);return;}
+    if(anTab==="summary"){renderSummaryReport(tabs);return;}
     $("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Загрузка…</p></div></div>';
     var ep=VIEW_EPOCH;
     jreq(API+"/analytics").then(function(r){
@@ -2529,6 +2530,37 @@
   }
   function bindAnTabs(){
     $("#view").querySelectorAll("[data-at]").forEach(function(b){b.onclick=function(){anTab=b.dataset.at;vAnalytics();};});
+  }
+  // «Сводный отчёт» (как в amo): график создано/закрыто по неделям + всего сделок + этапы + менеджеры
+  function renderSummaryReport(tabs){
+    $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">Загрузка…</p></div></div>';
+    bindAnTabs();
+    var ep=VIEW_EPOCH;
+    jreq(API+"/summary_report").then(function(r){
+      if(ep!==VIEW_EPOCH||anTab!=="summary")return;
+      if(!r||!r.success)return $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">'+esc((r&&r.message)||"Нет данных")+'</p></div></div>';
+      // график по неделям (SVG): синяя — создано, зелёная — закрыто
+      var ws=r.weeks||[],W=980,H=220,PAD=30;
+      var maxV=Math.max.apply(null,ws.map(function(x){return Math.max(x.created,x.closed);}).concat([1]));
+      var px=function(i){return PAD+i*(W-2*PAD)/Math.max(ws.length-1,1);};
+      var py=function(v){return H-18-(v/maxV)*(H-40);};
+      var line=function(key){return ws.map(function(x,i){return (i?"L":"M")+px(i).toFixed(1)+" "+py(x[key]).toFixed(1);}).join(" ");};
+      var dots=function(key,col){return ws.map(function(x,i){return '<circle cx="'+px(i).toFixed(1)+'" cy="'+py(x[key]).toFixed(1)+'" r="2.6" fill="'+col+'"><title>'+esc(x.w)+': '+fmt(x[key])+'</title></circle>';}).join("");};
+      var chart='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:1050px">'+
+        '<text x="'+PAD+'" y="14" font-size="11" fill="#8a94a0">'+fmt(maxV)+'</text>'+
+        '<path d="'+line("created")+'" fill="none" stroke="#3f83c9" stroke-width="2"/>'+dots("created","#3f83c9")+
+        '<path d="'+line("closed")+'" fill="none" stroke="#63a04d" stroke-width="2"/>'+dots("closed","#63a04d")+
+        '</svg><div class="muted" style="font-size:12px;margin-top:2px"><span style="color:#3f83c9">●</span> создано · <span style="color:#63a04d">●</span> закрыто · по неделям</div>';
+      var col=function(title,items){
+        return '<div style="flex:1;min-width:280px"><h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#8a94a0;margin:0 0 10px">'+title+'</h3>'+
+          items.map(function(x){return '<div style="display:flex;gap:10px;align-items:baseline;margin:8px 0"><b style="font-size:20px;min-width:52px;text-align:right">'+x.pct+'%</b><div style="border-left:3px solid '+esc(x.color||"#c9d3de")+';padding-left:8px"><div style="font-size:13.5px">'+esc(x.name)+'</div><div class="muted" style="font-size:12px">'+fmt(x.c)+' сделок, '+fmt(x.s)+' ₽</div></div></div>';}).join("")+'</div>';
+      };
+      var center='<div style="flex:0 0 240px;text-align:center;align-self:center"><div style="font-size:40px;font-weight:700">'+fmt(r.total)+'</div><div class="muted">Всего сделок</div><div class="muted" style="margin-top:4px">'+fmt(r.sum)+' ₽</div></div>';
+      $("#view").innerHTML='<div class="plain">'+tabs+
+        '<div class="pcard"><h2>Сделки</h2>'+chart+'</div>'+
+        '<div class="pcard"><div style="display:flex;gap:24px;flex-wrap:wrap">'+col("Этапы продаж",r.stages||[])+center+col("Сделки по менеджеру",r.mgrs||[])+'</div></div></div>';
+      bindAnTabs();
+    }).catch(function(){$("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">Ошибка загрузки.</p></div></div>';});
   }
   // отчёт «Звонки» (как в amo): вх/исх по менеджерам, переключатель количество/длительность
   var callsMode="count";

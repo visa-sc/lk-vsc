@@ -201,6 +201,25 @@ module.exports = function mountDbRoutes(app, guard, api) {
   });
 
   // аналитика: воронки по этапам (кол-во+сумма) + по ответственным
+  // «Сводный отчёт» (как в amo Аналитика→Сводный): график по неделям + кольцо + этапы + менеджеры. Кэш 120с.
+  let summaryCache = null, summaryTs = 0;
+  app.get(`${api}/summary_report`, guard, (req, res) => {
+    try {
+      if (summaryCache && Date.now() - summaryTs < 120000) return res.json(summaryCache);
+      const weeks = D.prepare("SELECT strftime('%Y-%W', datetime(created_at,'unixepoch')) w, COUNT(*) c FROM leads WHERE created_at>0 GROUP BY w ORDER BY w DESC LIMIT 56").all().reverse();
+      const closedW = {};
+      D.prepare("SELECT strftime('%Y-%W', datetime(closed_at,'unixepoch')) w, COUNT(*) c FROM leads WHERE closed_at>0 GROUP BY w ORDER BY w DESC LIMIT 56").all().forEach((r) => { closedW[r.w] = r.c; });
+      const total = D.prepare("SELECT COUNT(*) c, COALESCE(SUM(price),0) s FROM leads").get();
+      const stages = D.prepare("SELECT status_id, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads GROUP BY status_id ORDER BY c DESC LIMIT 8").all()
+        .map((r) => ({ name: (stMap[r.status_id] || {}).name || ("этап " + r.status_id), color: (stMap[r.status_id] || {}).color || "#c1d5e0", c: r.c, s: r.s, pct: Math.round(r.c / total.c * 100) }));
+      const mgrs = D.prepare("SELECT responsible_user_id u, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads GROUP BY u ORDER BY c DESC LIMIT 8").all()
+        .map((r) => ({ name: uName[r.u] || ("id " + r.u), c: r.c, s: r.s, pct: Math.round(r.c / total.c * 100) }));
+      summaryCache = { success: true, weeks: weeks.map((r) => ({ w: r.w, created: r.c, closed: closedW[r.w] || 0 })), total: total.c, sum: total.s, stages, mgrs };
+      summaryTs = Date.now();
+      res.json(summaryCache);
+    } catch (e) { res.json({ success: false, message: e.message }); }
+  });
+
   // отчёт «Звонки» (как в amo Аналитика→Звонки): агрегат из calls_agg.json (bucket-примечания слепка, пересчёт tools-скриптом)
   app.get(`${api}/calls_report`, guard, (req, res) => {
     try {
