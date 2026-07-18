@@ -8,7 +8,9 @@
  * Безопасность: строго 1 rps; НЕ трогаем локальные сущности id>=1e9; не трогаем сделки,
  * обновлённые последние 2 часа (даём инкрементальному синку шанс подхватить перенос);
  * закрытые (142/143) не сверяем — их обновления синк видит штатно.
- * Запуск: node tools/amoCopyReconcile.js [pipeline_id | all]
+ * Запуск: node tools/amoCopyReconcile.js [pipeline_id | all | leads | contacts]
+ *   all (дефолт, cron) = сделки всех воронок + КОНТАКТЫ (найдено 19.07: копия 247089 vs amo 247059 —
+ *   удалённые/слитые в amo контакты тоже навсегда зависали в копии; ~989 стр. по 250, тот же 1 rps)
  */
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
@@ -35,10 +37,38 @@ async function get(url, params) {
   return r.data;
 }
 
+// контакты: полная сверка id (удалённые и слитые в amo → каскадное удаление из копии)
+async function reconcileContacts(cutoff) {
+  const amoIds = new Set();
+  let url = `${BASE}/api/v4/contacts`;
+  let params = { limit: 250 };
+  let pages = 0;
+  while (url && pages < 1300) {
+    const d = await get(url, params); params = undefined;
+    if (!d) { console.log(`контакты: обрыв на стр.${pages} — пропускаю удаление (неполный список)`); return 0; }
+    ((d._embedded || {}).contacts || []).forEach((c) => amoIds.add(c.id));
+    url = (d._links && d._links.next && d._links.next.href) || null;
+    pages++;
+  }
+  const local = db.prepare("SELECT id FROM contacts WHERE id<? AND updated_at<?").all(LOCAL_ID_BASE, cutoff);
+  const ghosts = local.filter((c) => !amoIds.has(c.id));
+  console.log(`контакты: amo=${amoIds.size} (стр.${pages}), локально=${local.length}, призраков=${ghosts.length}`);
+  if (!ghosts.length) return 0;
+  if (amoIds.size === 0 || amoIds.size < local.length / 2) { console.log("  amo вернул подозрительно мало — пропускаю удаление"); return 0; }
+  const delC = db.prepare("DELETE FROM contacts WHERE id=?");
+  const delLC = db.prepare("DELETE FROM lead_contacts WHERE contact_id=?");
+  const delCC = db.prepare("DELETE FROM contact_companies WHERE contact_id=?");
+  const delT = db.prepare("DELETE FROM tasks WHERE entity_type='contacts' AND entity_id=?");
+  const delN = db.prepare("DELETE FROM notes_new WHERE entity_type='contacts' AND entity_id=?");
+  const tx = db.transaction(() => { for (const g of ghosts) { delC.run(g.id); delLC.run(g.id); delCC.run(g.id); delT.run(g.id); delN.run(g.id); } });
+  tx();
+  return ghosts.length;
+}
+
 (async () => {
-  const pipes = arg === "all"
+  const pipes = (arg === "all" || arg === "leads")
     ? db.prepare("SELECT DISTINCT pipeline_id p FROM leads WHERE status_id NOT IN (142,143) AND id<?").all(LOCAL_ID_BASE).map((x) => x.p)
-    : [parseInt(arg, 10)];
+    : (arg === "contacts" ? [] : [parseInt(arg, 10)]);
   const cutoff = Math.floor(Date.now() / 1000) - 7200; // не трогаем свежеобновлённые
   let totalGhosts = 0;
   for (const pid of pipes) {
@@ -68,5 +98,6 @@ async function get(url, params) {
     tx();
     totalGhosts += ghosts.length;
   }
+  if (arg === "all" || arg === "contacts") totalGhosts += await reconcileContacts(cutoff);
   console.log(`ИТОГО: удалено призраков ${totalGhosts}, запросов к amo ${reqs}`);
 })().catch((e) => { console.error("ОШИБКА:", e.message); process.exit(1); });
