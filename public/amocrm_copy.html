@@ -1955,6 +1955,7 @@
         '<div data-panel="stats" class="fields" style="display:none">'+fieldsGroupedHtml(l.custom_fields_values,((CF&&CF.leads)||[]).filter(function(f){return f.group_id==="statistic";}),"leads")+cardStatsHtml([
           ["Создана",dt(l.created_at)],["Дней в системе",Math.max(0,Math.floor((tnow()-(l.created_at||tnow()))/86400))],
           ["Изменена",dt(l.updated_at)],(l.closed_at?["Закрыта",dt(l.closed_at)]:null),
+          (r.stage_since?["На текущем этапе с",dt(r.stage_since)+" ("+Math.max(0,Math.floor((tnow()-r.stage_since)/86400))+" дн)"]:null),
           ["Бюджет",fmt(l.price)+" ₽"],["Задач всего",(r.tasks||[]).length],
           ["Открытых задач",(r.tasks||[]).filter(function(t){return !t.is_completed;}).length],
           ["Примечаний",((r.notes||[]).length)+((localNotes||[]).length)],

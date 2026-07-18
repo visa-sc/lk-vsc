@@ -596,7 +596,10 @@ module.exports = function mountDbRoutes(app, guard, api) {
         companies: companiesForLead(id)
       }
     };
-    notesFromBucket("notes_leads", id, (notes) => res.json({ success: true, lead, notes, tasks, other_leads: otherLeads }));
+    // «на текущем этапе с …» — из живых событий amo (есть только у сделок, менявших этап после 19.07.2026)
+    let stageSince = null;
+    try { const r0 = D.prepare("SELECT created_at FROM amo_events WHERE entity_type='lead' AND entity_id=? AND type='lead_status_changed' ORDER BY created_at DESC LIMIT 1").get(id); stageSince = r0 ? r0.created_at : null; } catch (_) {}
+    notesFromBucket("notes_leads", id, (notes) => res.json({ success: true, lead, notes, tasks, other_leads: otherLeads, stage_since: stageSince }));
   });
 
   // карточка контакта (поля из БД, сделки из lead_contacts, примечания из bucket)
