@@ -1928,7 +1928,7 @@
       }).join("");
       if(companies)companies='<div class="fgroup" style="margin:0 20px">Компания</div>'+companies;
       var init=(c.name||"К").trim().charAt(0).toUpperCase();
-      var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить контакт">🗑</button><h2 class="editable" data-edit="cname">'+esc(c.name||("Контакт #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div>'+
+      var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить контакт">🗑</button><h2 class="editable" data-edit="cname">'+esc(c.name||("Контакт #"+c.id))+'</h2><div class="dl-sub">#'+c.id+((c.tags&&c.tags.length)?' '+c.tags.map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join(""):"")+'</div></div>'+
         '<div class="dl-tabs" style="margin-top:6px"><span class="act" data-t="main">Основное</span><span data-t="deals">Сделки</span><span data-t="stats">Статистика</span></div>'+
         '<div data-panel="main"><div class="fields">'+
           '<div class="frow"><div class="fl">Отв-ный</div><div class="fv editable" data-edit="cresp">'+esc(userName(c.responsible_user_id))+'</div></div>'+
@@ -2116,7 +2116,7 @@
   function contactColSel(){try{return JSON.parse(localStorage.getItem("crm_contact_cols"))||null;}catch(e){return null;}}
   function contactActiveCols(){var sel=contactColSel();var all=contactAllCols();return all.filter(function(c){return sel?sel.indexOf(c[0])>=0:c[2];});}
   function contactCell(c,key){
-    if(key==="n")return '<a data-c="'+c.id+'">'+esc(c.n||"Без имени")+'</a>';
+    if(key==="n")return '<a data-c="'+c.id+'">'+esc(c.n||"Без имени")+'</a>'+((c.tags&&c.tags.length)?' '+c.tags.slice(0,3).map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join(""):"");
     if(key==="deals")return (c.deals||[]).map(function(d){return '<span class="deal-chip" data-dl="'+d.id+'" style="background:'+esc(d.color||"#c1d5e0")+'26;border-left:3px solid '+esc(d.color||"#c1d5e0")+'" title="'+esc(d.st||"")+(d.price?" · "+fmt(d.price)+" ₽":"")+'">'+esc((d.name||("#"+d.id)).slice(0,26))+'</span>';}).join("")||'<span class="muted">—</span>';
     if(key==="p")return esc((c.p||[]).join(", "));
     if(key==="e")return esc((c.e||[]).join(", "));

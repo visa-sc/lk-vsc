@@ -61,9 +61,10 @@ const emailsOf = (c) => { const r = []; (c.custom_fields_values || []).forEach((
 const upLead = db.prepare(`INSERT INTO leads(id,name,price,status_id,pipeline_id,responsible_user_id,created_at,updated_at,closed_at,cf,tags,contact_ids)
   VALUES(@id,@name,@price,@status_id,@pipeline_id,@responsible_user_id,@created_at,@updated_at,@closed_at,@cf,@tags,@contact_ids)
   ON CONFLICT(id) DO UPDATE SET name=@name,price=@price,status_id=@status_id,pipeline_id=@pipeline_id,responsible_user_id=@responsible_user_id,updated_at=@updated_at,closed_at=@closed_at,cf=@cf,tags=@tags,contact_ids=@contact_ids`);
-const upContact = db.prepare(`INSERT INTO contacts(id,name,responsible_user_id,created_at,updated_at,cf,phones,emails)
-  VALUES(@id,@name,@responsible_user_id,@created_at,@updated_at,@cf,@phones,@emails)
-  ON CONFLICT(id) DO UPDATE SET name=@name,responsible_user_id=@responsible_user_id,updated_at=@updated_at,cf=@cf,phones=@phones,emails=@emails`);
+try { db.exec("ALTER TABLE contacts ADD COLUMN tags TEXT"); } catch (_) { /* уже есть */ }
+const upContact = db.prepare(`INSERT INTO contacts(id,name,responsible_user_id,created_at,updated_at,cf,phones,emails,tags)
+  VALUES(@id,@name,@responsible_user_id,@created_at,@updated_at,@cf,@phones,@emails,@tags)
+  ON CONFLICT(id) DO UPDATE SET name=@name,responsible_user_id=@responsible_user_id,updated_at=@updated_at,cf=@cf,phones=@phones,emails=@emails,tags=@tags`);
 
 async function syncLeads() {
   let url = `${BASE}/api/v4/leads`, pages = 0, changed = 0, conflicts = 0, maxUpd = since;
@@ -105,7 +106,7 @@ async function syncContacts() {
       for (const c of items) {
         maxUpd = Math.max(maxUpd, c.updated_at || 0);
         if (hasLocalEdit.get("contacts", c.id)) { conflicts++; continue; }
-        upContact.run({ id: c.id, name: c.name || "", responsible_user_id: c.responsible_user_id || 0, created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c), phones: phonesOf(c), emails: emailsOf(c) });
+        upContact.run({ id: c.id, name: c.name || "", responsible_user_id: c.responsible_user_id || 0, created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c), phones: phonesOf(c), emails: emailsOf(c), tags: JSON.stringify(((c._embedded && c._embedded.tags) || []).map((t) => t.name)) });
         changed++;
       }
     })();

@@ -60,14 +60,15 @@ module.exports = function mountDbRoutes(app, guard, api) {
   const tasksOut = (et, id) => { try { return qTasksByEnt.all(et, id).map((t) => ({ id: t.id, text: t.text, task_type: t.task_type, complete_till: t.complete_till, is_completed: t.is_completed, responsible_user_id: t.responsible_user_id, result: J(t.result, null), created_at: t.created_at })); } catch (_) { return []; } };
   const qContact = D.prepare("SELECT * FROM contacts WHERE id=?");
   const qContactLeads = D.prepare("SELECT l.id,l.name,l.price,l.pipeline_id,l.status_id FROM lead_contacts lc JOIN leads l ON l.id=lc.lead_id WHERE lc.contact_id=? LIMIT 200");
-  const qContactsPage = D.prepare("SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf FROM contacts ORDER BY created_at DESC LIMIT ? OFFSET ?");
+  const qContactsPage = D.prepare("SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf,tags FROM contacts ORDER BY created_at DESC LIMIT ? OFFSET ?");
   // единый вид контакта для таблицы: базовые поля + все кастомные (cf) + связанные сделки с цветами
   function contactOut(rows, withDeals) {
     const ids = rows.map((c) => c.id);
     const dmap = withDeals ? dealsByContact(ids) : {};
     return rows.map((c) => ({
       id: c.id, n: c.name, p: J(c.phones, []), e: J(c.emails, []), created: c.created_at, updated: c.updated_at,
-      resp: uName[c.responsible_user_id] || "", cf: J(c.cf, []) || [], deals: dmap[c.id] || []
+      resp: uName[c.responsible_user_id] || "", cf: J(c.cf, []) || [], deals: dmap[c.id] || [],
+      tags: J(c.tags, [])
     }));
   }
   const uName = {}; D.prepare("SELECT id,name FROM users").all().forEach((u) => { uName[u.id] = u.name; });
@@ -428,7 +429,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     // фильтр по любому кастомному полю: cf=<fieldId>:<значение> (можно несколько)
     addCfFilters(q.cf, where, args);
     const page = Math.max(1, intq(q.page) || 1);
-    const sql = "SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf FROM contacts" +
+    const sql = "SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf,tags FROM contacts" +
       (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY created_at DESC LIMIT 50 OFFSET ?";
     try {
       if (String(q.count_only) === "1") {
@@ -492,7 +493,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const leads = qContactLeads.all(id).map((l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id, st: dealChip(l.status_id).st, color: dealChip(l.status_id).color }));
     const contact = {
       id: c.id, name: c.name, responsible_user_id: c.responsible_user_id, created_at: c.created_at, updated_at: c.updated_at,
-      custom_fields_values: J(c.cf, null),
+      custom_fields_values: J(c.cf, null), tags: J(c.tags, []),
       _embedded: { companies: companiesForContact(id) }
     };
     notesFromBucket("notes_contacts", id, (notes) => res.json({ success: true, contact, notes, leads, tasks: tasksOut("contacts", id) }));
@@ -505,7 +506,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const CSORT = { created: "created_at", updated: "updated_at", n: "name" };
     const sortCol = CSORT[req.query.sort] || "created_at";
     const dir = String(req.query.dir).toLowerCase() === "asc" ? "ASC" : "DESC";
-    const rows = D.prepare("SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf FROM contacts ORDER BY " + sortCol + " " + dir + " LIMIT ? OFFSET ?").all(PER_PAGE, (+page - 1) * PER_PAGE);
+    const rows = D.prepare("SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf,tags FROM contacts ORDER BY " + sortCol + " " + dir + " LIMIT ? OFFSET ?").all(PER_PAGE, (+page - 1) * PER_PAGE);
     res.json(contactOut(rows, true));
   });
 
