@@ -1331,7 +1331,18 @@
   }
   function cfDisplay(f,t){
     return (f.values||[]).map(function(x){
-      var val=x.value&&x.value.name?x.value.name:x.value;
+      var raw=x.value;
+      // составное «Юр. лицо» (legal_entity): название + реквизиты, как в amo
+      if(raw&&typeof raw==="object"&&(raw.vat_id||raw.kpp||raw.address||t==="legal_entity")){
+        var parts=[raw.name||""];
+        if(raw.vat_id)parts.push("ИНН "+raw.vat_id);
+        if(raw.kpp)parts.push("КПП "+raw.kpp);
+        if(raw.tax_registration_reason_code&&raw.tax_registration_reason_code!==raw.kpp)parts.push("ОГРН "+raw.tax_registration_reason_code);
+        if(raw.bank_code)parts.push("БИК "+raw.bank_code);
+        if(raw.address)parts.push("Адрес: "+raw.address);
+        return parts.filter(Boolean).join(" · ");
+      }
+      var val=raw&&raw.name?raw.name:raw;
       if((t==="date"||t==="date_time"||t==="birthday")&&val&&isFinite(val))val=dShort(Number(val));
       else if(typeof val==="boolean")val=val?"Да":"Нет";
       return val;
@@ -1568,6 +1579,11 @@
     // т.к. на первом рендере замыкание bg ещё undefined и точечная навеска сюда не доставала (давний баг)
     return html;
   }
+  // открытые задачи сущности → плашки над композером (сортировка по сроку, до 4)
+  function pinTasksOf(tasks){
+    return (tasks||[]).filter(function(t){return !t.is_completed;}).sort(function(a,b){return (a.complete_till||0)-(b.complete_till||0);}).slice(0,4)
+      .map(function(t){return {till:t.complete_till,resp:t.responsible_user_id,text:t.text,typeName:(TASK_TYPES.find(function(x){return x.id===t.task_type;})||{}).name};});
+  }
   // ent = {type:"leads"|"contacts", id, withTasks:bool, reload:fn} — для композеров записи
   function cardShell(leftHtml,feedRender,ent){
     // атомарная замена: убираем прежние карточки только сейчас (после успешной загрузки данных),
@@ -1590,10 +1606,12 @@
     var esch=function(e){if(e.key==="Escape"&&document.body.contains(bg)){document.body.removeChild(bg);document.removeEventListener("keydown",esch);pushUrl(sectionPath(curView));}};
     document.addEventListener("keydown",esch);
     if(ent&&ent.reload)bg.__reload=ent.reload; // reload ленты после действий (задачи/примечания) — у всех карточек
-    // ближайшая открытая задача — закреплённой плашкой над композером (как в amo)
-    if(ent&&ent.pinTask){
-      var pt=ent.pinTask;
-      bg.querySelector(".pin-slot").innerHTML='<div class="pin-task"><span class="pt-clock">🕓</span><span>'+dt(pt.till)+' для '+esc(userName(pt.resp))+': <b>'+esc(pt.typeName||"Задача")+'</b>'+(pt.text?' — '+esc(pt.text):"")+'</span></div>';
+    // открытые задачи — закреплёнными плашками над композером (как в amo; до 4)
+    var pins=(ent&&(ent.pinTasks||(ent.pinTask?[ent.pinTask]:[])))||[];
+    if(pins.length){
+      bg.querySelector(".pin-slot").innerHTML=pins.slice(0,4).map(function(pt){
+        return '<div class="pin-task"><span class="pt-clock">🕓</span><span>'+dt(pt.till)+' для '+esc(userName(pt.resp))+': <b>'+esc(pt.typeName||"Задача")+'</b>'+(pt.text?' — '+esc(pt.text):"")+'</span></div>';
+      }).join("");
     }
     var feed=bg.querySelector(".feed");
     // действия ленты — делегирование (живёт при любых перерисовках ленты)
@@ -1770,9 +1788,7 @@
           ["Контактов",((l._embedded&&l._embedded.contacts)||[]).length],
           ["Компаний",((l._embedded&&l._embedded.companies)||[]).length]
         ])+'</div>';
-      var openT=(r.tasks||[]).filter(function(t){return !t.is_completed;}).sort(function(a,b){return (a.complete_till||0)-(b.complete_till||0);})[0];
-      var pinTask=openT?{till:openT.complete_till,resp:openT.responsible_user_id,text:openT.text,typeName:(TASK_TYPES.find(function(x){return x.id===openT.task_type;})||{}).name}:null;
-      var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,localNotes),r.tasks,f,bg);},{type:"leads",id:id,withTasks:true,reload:reload,pinTask:pinTask});
+      var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,localNotes),r.tasks,f,bg);},{type:"leads",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(r.tasks)});
       bg.__reload=reload;
       bg.querySelectorAll("[data-c]").forEach(function(el){
         el.onclick=function(){document.body.removeChild(bg);openContact(parseInt(el.dataset.c,10));};
@@ -1960,7 +1976,7 @@
           ["Примечаний",((r.notes||[]).length)+((r.notes_new||[]).length)]
         ])+'</div>';
       var reload=function(){openContact(id);}; // не рушим карточку до успешной загрузки
-      var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,(r.notes_new||[])),(r.tasks||[]),f,bg);},{type:"contacts",id:id,withTasks:true,reload:reload});
+      var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,(r.notes_new||[])),(r.tasks||[]),f,bg);},{type:"contacts",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(r.tasks)});
       bg.__reload=reload;
       var h=bg.querySelector(".dl-head .ava");if(h)h.textContent=init;
       bg.querySelectorAll("[data-l]").forEach(function(el){
@@ -2045,7 +2061,7 @@
           ["Сделок",(emb.leads||[]).length],["Задач",tasks.length],["Примечаний",notesNew.length]
         ])+'</div>';
       var reload=function(){openCompany(id);};
-      var bg=cardShell(left,function(f){return feedHtml(mergeNotes([],notesNew),tasks,f,bg);},{type:"companies",id:id,withTasks:true,reload:reload});
+      var bg=cardShell(left,function(f){return feedHtml(mergeNotes([],notesNew),tasks,f,bg);},{type:"companies",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(tasks)});
       bindEditable(bg,"coname",function(){return c.name;},function(v){return ereq("PATCH","/edit-api/company/"+id,{name:v});},reload,"text");
       bindCfFields(bg,"companies",id,CF&&CF.companies,reload);
       bindFieldGroups(bg);bindCardTabs(bg);
@@ -2141,7 +2157,22 @@
     if(key.slice(0,2)==="cf"){
       var fid=parseInt(key.slice(2),10),f=(c.cf||[]).find(function(x){return x.field_id===fid;});
       if(!f)return "";
-      var val=(f.values||[]).map(function(v){var vv=v.value&&v.value.name?v.value.name:v.value;if((f.field_type==="date"||f.field_type==="date_time"||f.field_type==="birthday")&&vv&&isFinite(vv))vv=dShort(Number(vv));if(typeof vv==="boolean")vv=vv?"Да":"Нет";return vv;}).join(", ");
+      var val=(f.values||[]).map(function(v){
+        var vv=v.value;
+        // составное «Юр. лицо» (legal_entity, как в amo): название + реквизиты построчно
+        if(vv&&typeof vv==="object"&&(vv.vat_id||vv.tax_registration_reason_code||vv.kpp||vv.address)){
+          var parts=[vv.name||""];
+          if(vv.vat_id)parts.push("ИНН "+vv.vat_id);
+          if(vv.kpp||vv.tax_registration_reason_code)parts.push("КПП "+(vv.kpp||vv.tax_registration_reason_code));
+          if(vv.bank_code)parts.push("БИК "+vv.bank_code);
+          if(vv.address)parts.push("Адрес "+vv.address);
+          return parts.filter(Boolean).join(" · ");
+        }
+        vv=vv&&vv.name?vv.name:vv;
+        if((f.field_type==="date"||f.field_type==="date_time"||f.field_type==="birthday")&&vv&&isFinite(vv))vv=dShort(Number(vv));
+        if(typeof vv==="boolean")vv=vv?"Да":"Нет";
+        return vv;
+      }).join(", ");
       return '<span class="muted">'+esc(String(val).slice(0,80))+'</span>';
     }
     return "";
@@ -2743,7 +2774,7 @@
       var rows=[["Ответственный",userName(c.responsible_user_id)],["LTV",c.ltv?fmt(c.ltv)+" ₽":"—"],["Покупок",c.purchases_count||"—"],["Средний чек",c.average_check?fmt(c.average_check)+" ₽":"—"],["След. платёж",c.next_price?fmt(c.next_price)+" ₽":"—"],["Дата платежа",c.next_date?dShort(c.next_date):"—"],["Создан",c.created_at?dt(c.created_at):"—"]];
       var left='<div class="dl-head"><span class="back">‹</span><h2>'+esc(c.name||("Покупатель #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div><div class="fields">'+rows.map(function(x){return '<div class="frow"><div class="fl">'+x[0]+'</div><div class="fv">'+esc(String(x[1]))+'</div></div>';}).join("")+fieldsHtml(c.custom_fields_values,null,"")+'</div>';
       var reload=function(){openCustomer(id);};
-      var bg=cardShell(left,function(f){return feedHtml(mergeNotes([],notesNew),tasks,f,bg);},{type:"customers",id:id,withTasks:true,reload:reload});
+      var bg=cardShell(left,function(f){return feedHtml(mergeNotes([],notesNew),tasks,f,bg);},{type:"customers",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(tasks)});
     });
   }
 
