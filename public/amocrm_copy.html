@@ -1572,6 +1572,17 @@
   }
   function tnow(){return Math.floor(Date.now()/1000);}
   function cardStatsHtml(rows){return (rows||[]).filter(Boolean).map(function(x){return '<div class="frow"><div class="fl">'+esc(x[0])+'</div><div class="fv">'+esc(String(x[1]))+'</div></div>';}).join("");}
+  // вкладка «Файлы» карточки (как в amo): вложения из примечаний слепка (файлы лежат в amo-Диске)
+  function filesTabHtml(notes){
+    var files=(notes||[]).filter(function(n){return n.params&&(n.params.file_uuid||n.params.is_drive_attachment);});
+    if(!files.length)return '<p class="muted" style="padding:16px 20px">Файлов нет</p>';
+    var ico=function(nm){var e=String(nm).split(".").pop().toLowerCase();if(e==="pdf")return "📄";if(e==="jpg"||e==="jpeg"||e==="png"||e==="arw")return "🖼";if(e==="rar"||e==="zip"||e==="7z")return "🗜";return "📎";};
+    return '<div style="padding:8px 20px 16px">'+files.sort(function(a,b){return (b.created||0)-(a.created||0);}).map(function(n){
+      var nm=n.params.original_name||n.params.file_name||n.params.text||"файл";
+      var by=n.by;if(/^\d+$/.test(String(by||"")))by=userName(+by)||by;
+      return '<div class="dl-contact" style="padding:10px 0;border-top:0;border-bottom:1px solid var(--border-soft)"><div class="ava" style="border-radius:8px;font-size:16px">'+ico(nm)+'</div><div style="min-width:0"><div style="word-break:break-all">'+esc(nm)+'</div><div class="muted" style="font-size:12px">'+dt(n.created)+(by?" · "+esc(by):"")+'</div></div></div>';
+    }).join("")+'<p class="muted" style="font-size:12px;margin-top:10px">Файлы физически лежат в amo-Диске; перенос на свой сервер — этап переезда.</p></div>';
+  }
   // вкладки карточки (Основное/Статистика/...) — переключают панели [data-panel]
   function bindCardTabs(bg){
     var tabs=bg.querySelectorAll(".dl-tabs span[data-t]");
@@ -1918,13 +1929,14 @@
       var barSegs=stList.map(function(s,i){return '<i style="'+(i<=stIdx?("background:"+esc(stColor)):"")+'"></i>';}).join("");
       var left='<div class="dl-head dl-dark"><span class="back">‹</span><span class="dl-dots" title="Меню">···</span><button class="dl-del" style="display:none">🗑</button><h2 class="editable" data-edit="name">'+esc(l.name||("Сделка #"+l.id))+'</h2><div class="dl-sub">#'+l.id+' &nbsp;<span class="tags-edit" title="Изменить теги">'+(tags||'<span class="muted">+ теги</span>')+'</span></div>'+
         '<div class="stagew" id="stageW" title="Сменить этап или воронку"><div class="pn">'+esc(p?p.name:"")+'</div><div class="sn">'+esc(stName)+' <span class="caret2">▾</span></div><div class="stgbar">'+barSegs+'</div></div></div>'+
-        '<div class="dl-tabs"><span class="act" data-t="main">Основное</span><span data-t="other">Другие сделки</span><span data-t="stats">Статистика</span><span data-t="api">из API</span></div>'+
+        '<div class="dl-tabs"><span class="act" data-t="main">Основное</span><span data-t="other">Другие сделки</span><span data-t="stats">Статистика</span><span data-t="files">Файлы</span><span data-t="api">из API</span></div>'+
         '<div data-panel="main"><div class="fields">'+
           '<div class="frow"><div class="fl">Отв-ный</div><div class="fv editable" data-edit="resp">'+esc(userName(l.responsible_user_id))+'</div></div>'+
           '<div class="frow"><div class="fl">Бюджет</div><div class="fv editable" data-edit="price">'+fmt(l.price)+' ₽</div></div>'+
           fieldsGroupedHtml(l.custom_fields_values,CF&&CF.leads,"leads")+
         '</div><div class="fgroup" style="margin-top:6px">Контакты</div>'+contacts+(companies?'<div class="fgroup" style="margin-top:6px">Компания</div>'+companies:"")+'</div>'+
         '<div data-panel="other" style="display:none">'+((r.other_leads&&r.other_leads.length)?r.other_leads.map(function(ol){var col=ol.color||"#c1d5e0";return '<div class="dl-contact" style="cursor:pointer;border-left:4px solid '+esc(col)+'" data-l2="'+ol.id+'"><div class="ava" style="border-radius:6px;background:'+esc(col)+'22;color:#33404d">С</div><div><div style="color:var(--link)">'+esc(ol.name||("#"+ol.id))+'</div><div class="muted" style="font-size:12px">'+esc(ol.st||"")+(ol.price?(" · "+fmt(ol.price)+" ₽"):"")+'</div></div></div>';}).join(""):'<p class="muted" style="padding:16px 20px">Других сделок у контактов нет</p>')+'</div>'+
+        '<div data-panel="files" style="display:none">'+filesTabHtml(r.notes)+'</div>'+
         '<div data-panel="api" class="fields" style="display:none">'+fieldsGroupedHtml(l.custom_fields_values,((CF&&CF.leads)||[]).filter(function(f){return f.group_id&&f.group_id!=="statistic";}),"leads")+'</div>'+
         '<div data-panel="stats" class="fields" style="display:none">'+fieldsGroupedHtml(l.custom_fields_values,((CF&&CF.leads)||[]).filter(function(f){return f.group_id==="statistic";}),"leads")+cardStatsHtml([
           ["Создана",dt(l.created_at)],["Дней в системе",Math.max(0,Math.floor((tnow()-(l.created_at||tnow()))/86400))],
