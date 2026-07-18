@@ -768,6 +768,7 @@
       fields+='<div class="ffield"><label>Этап</label><select data-f="status"><option value="">— любой —</option>'+sts.map(function(s){return '<option value="'+s.id+'"'+(String(s.id)===String(st.status)?" selected":"")+'>'+esc(s.name)+'</option>';}).join("")+'</select></div>';
       fields+='<div class="ffield"><label>Бюджет, ₽</label><div class="frange"><input type="number" data-f="price_min" placeholder="от" value="'+(st.price_min||"")+'"><span>–</span><input type="number" data-f="price_max" placeholder="до" value="'+(st.price_max||"")+'"></div></div>';
       fields+='<div class="ffield"><label>Тег содержит</label><input type="text" data-f="tag" placeholder="напр. MSK" value="'+esc(st.tag||"")+'"></div>';
+      fields+='<div class="ffield" id="fTagsCloud" style="display:none"><label>Популярные теги</label><div class="ftags" style="display:flex;flex-wrap:wrap;gap:4px;max-height:110px;overflow:auto"></div></div>';
     }
     fields+='<div class="ffield"><label>Создано с</label><input type="date" data-f="date_from" value="'+(st.date_from||"")+'"></div>';
     fields+='<div class="ffield"><label>Создано по</label><input type="date" data-f="date_to" value="'+(st.date_to||"")+'"></div>';
@@ -840,6 +841,19 @@
       else{raw.preset=(st.preset===b.dataset.fp)?"":b.dataset.fp;if(raw.preset)vals.preset=raw.preset;}
       FSTATE[curFilter.kind]=raw;closeFilterPanel();runLeadsFilter(vals);
     };});
+    // популярные теги со счётчиками (как правая колонка панели amo): клик = фильтр по тегу сразу
+    if(isLeads)jreq(API+"/tags_report").then(function(r){
+      var wrap=document.getElementById("fTagsCloud");if(!wrap||!r||!r.success||!(r.tags||[]).length)return;
+      wrap.style.display="";
+      wrap.querySelector(".ftags").innerHTML=r.tags.slice(0,30).map(function(t){
+        return '<span class="tag" data-ftag="'+esc(t.v)+'" style="cursor:pointer" title="фильтр по тегу">'+esc(t.v)+' <span style="opacity:.6">'+fmt(t.c)+'</span></span>';
+      }).join("");
+      wrap.querySelectorAll("[data-ftag]").forEach(function(x){x.onclick=function(){
+        var raw=collectRaw(),vals=collect();
+        raw.tag=x.dataset.ftag;vals.tag=x.dataset.ftag;
+        FSTATE[curFilter.kind]=raw;closeFilterPanel();runLeadsFilter(vals);
+      };});
+    }).catch(function(){});
     $("#fReset").onclick=function(){FSTATE[curFilter.kind]={};closeFilterPanel();if(isLeads)vLeads();else vContacts();};
     // «★ В виджет» — сохранить текущий фильтр виджетом на рабочий стол (как в amo)
     $("#fWidget").onclick=function(){

@@ -216,6 +216,12 @@ module.exports = function mountDbRoutes(app, guard, api) {
   });
 
   // аналитика: воронки по этапам (кол-во+сумма) + по ответственным
+  // теги сделок со счётчиками (правая колонка панели фильтра amo) — из tags_agg.json (пересчёт cron-скриптом)
+  app.get(`${api}/tags_report`, guard, (req, res) => {
+    try { res.json({ success: true, tags: JSON.parse(fs.readFileSync(path.join(path.dirname(DB_PATH), "tags_agg.json"), "utf8")) }); }
+    catch (e) { res.json({ success: false, tags: [] }); }
+  });
+
   // «Список событий» (как в amo Аналитика→Список событий): журнал changelog КОПИИ (события amo в слепок не выгружались)
   app.get(`${api}/events_list`, guard, (req, res) => {
     try {
