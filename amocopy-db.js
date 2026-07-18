@@ -290,14 +290,19 @@ module.exports = function mountDbRoutes(app, guard, api) {
   app.get(`${api}/analytics`, guard, (req, res) => {
     const statuses = D.prepare("SELECT pipeline_id,id,name,sort,color,type FROM statuses").all();
     const pipes = D.prepare("SELECT id,name,is_main,sort FROM pipelines ORDER BY sort").all();
+    // resp=CSV id-шников — срез «Мои/сотрудник/отдел» как на дашборде amo
+    const rids = String(req.query.resp || "").split(",").filter((x) => /^\d+$/.test(x)).map(Number);
     const kmap = {};
-    for (const r of qKanban.all()) { (kmap[r.pipeline_id] = kmap[r.pipeline_id] || {})[r.status_id] = { c: r.c, s: r.s }; }
+    const krows = rids.length
+      ? D.prepare("SELECT pipeline_id, status_id, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads WHERE responsible_user_id IN (" + rids.map(() => "?").join(",") + ") GROUP BY pipeline_id, status_id").all(...rids)
+      : qKanban.all();
+    for (const r of krows) { (kmap[r.pipeline_id] = kmap[r.pipeline_id] || {})[r.status_id] = { c: r.c, s: r.s }; }
     const funnels = pipes.map((p) => {
       const sts = statuses.filter((s) => s.pipeline_id === p.id).sort((a, b) => (a.sort || 0) - (b.sort || 0));
       const stages = sts.map((s) => { const d = (kmap[p.id] || {})[s.id] || { c: 0, s: 0 }; return { name: s.name, color: s.color, count: d.c, sum: d.s }; });
       const total = stages.reduce((a, b) => a + b.count, 0);
       return { name: p.name, is_main: p.is_main, total, stages };
-    }).filter((f) => f.total > 0);
+    }).filter((f) => rids.length ? true : f.total > 0); // при срезе по отв. воронку с нулями не прячем — иначе пропадёт выбранная
     const byUser = D.prepare("SELECT responsible_user_id r, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads GROUP BY responsible_user_id ORDER BY c DESC LIMIT 15").all()
       .map((x) => ({ name: uName[x.r] || ("ID " + x.r), count: x.c, sum: x.s }));
     res.json({ success: true, funnels, byUser });
@@ -322,7 +327,8 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if (sts.length) { where.push("status_id IN (" + sts.map(() => "?").join(",") + ")"); sts.forEach((s) => args.push(+s)); }
     if (String(q.won) === "1") where.push("status_id=142");
     if (String(q.lost) === "1") where.push("status_id=143");
-    if (/^\d+$/.test(String(q.resp || ""))) { where.push("responsible_user_id=?"); args.push(+q.resp); }
+    const rids = String(q.resp || "").split(",").filter((x) => /^\d+$/.test(x));
+    if (rids.length) { where.push("responsible_user_id IN (" + rids.map(() => "?").join(",") + ")"); rids.forEach((r) => args.push(+r)); }
     const now = Math.floor(Date.now() / 1000), day = now - (now % 86400);
     const field = ({ created: "created_at", closed: "closed_at", updated: "updated_at" })[q.field] || "created_at";
     let from = null, to = null;

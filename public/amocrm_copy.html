@@ -453,6 +453,17 @@
   .cf-add { border:none; background:none; color:var(--link); font-size:13px; cursor:pointer; padding:2px 0; }
   .filter-acts { display:flex; gap:8px; margin-top:14px; }
   .filter-acts .btn.ghost { background:#eef2f6; color:#33404d; }
+  /* дропдаун выбора сотрудника/отдела на рабочем столе (как «Мои ⌄» в amo) */
+  .dsel-pop { position:fixed; z-index:310; width:300px; background:#fff; border:1px solid var(--border); border-radius:12px; box-shadow:0 14px 44px rgba(20,40,70,.22); padding:10px; }
+  .dsel-pop .ds-q { margin-bottom:6px; }
+  .dsel-pop .ds-list { max-height:52vh; overflow:auto; }
+  .dsel-pop .ds-grp { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 8px 5px; font-size:11px; font-weight:700; letter-spacing:.04em; color:#5d6774; cursor:pointer; border-top:1px solid var(--border-soft); margin-top:4px; }
+  .dsel-pop .ds-grp:first-child { border-top:0; margin-top:0; }
+  .dsel-pop .ds-grp:hover { color:var(--blue); }
+  .dsel-pop .ds-all { font-size:10px; font-weight:700; background:#e8f0fb; color:#3a6db4; border-radius:4px; padding:1px 6px; white-space:nowrap; }
+  .dsel-pop .ds-row { padding:7px 8px; font-size:13.5px; border-radius:6px; cursor:pointer; }
+  .dsel-pop .ds-row:hover { background:#f2f6fa; }
+  .dsel-pop .ds-my { font-weight:700; }
   /* ── мобильная вёрстка (телефон): карточка стеком, шапка свайпом; в конце CSS, чтобы выигрывать каскад ── */
   @media (max-width:700px){
     header { gap:10px; padding:0 10px; overflow-x:auto; scrollbar-width:none; }
@@ -952,7 +963,10 @@
   }
 
   /* ─── РАБОЧИЙ СТОЛ как в amo: заголовок, период, воронка, виджеты-статистика ─── */
-  var deskPeriod="today", deskPipe=null, deskMine=false; // Мои = срез по ответственному (сотрудники, как в amo)
+  var deskPeriod="today", deskPipe=null;
+  // срез по ответственному как в amo: null = Все; {ids:[...],label:"Имя"} = сотрудник или весь отдел (дропдаун «Мои ⌄»)
+  var deskSel=null;
+  function deskRespQS(){return (deskSel&&deskSel.ids&&deskSel.ids.length)?"resp="+deskSel.ids.join(","):"";}
   var DESK_PERIODS=[["today","Сегодня"],["yesterday","Вчера"],["week","Неделя"],["month","Месяц"],["all","Всё время"]];
   function deskWidgetsKey(){return "crm_desk_widgets_"+((META&&META.account&&META.account.subdomain)||"x");}
   function loadDeskWidgets(){
@@ -972,10 +986,42 @@
     if(w.status)p.push("status="+w.status);
     if(w.won)p.push("won=1");
     if(w.lost)p.push("lost=1");
-    if(deskMine&&ME&&ME.user_id)p.push("resp="+ME.user_id);
+    var rq=deskRespQS();if(rq)p.push(rq);
     // поле «none» — без даты (все сделки фильтра, напр. «в работе»)
     if(w.field&&w.field!=="none"){p.push("field="+w.field);p.push("period="+deskPeriod);}
     return p.join("&");
+  }
+  // дропдаун «Мои ⌄» как в amo: поиск + «весь отдел» по группам + сотрудники
+  function openDeskSelPop(anchor){
+    var old=document.querySelector(".dsel-pop");if(old){old.remove();return;}
+    var r=anchor.getBoundingClientRect();
+    var pop=document.createElement("div");pop.className="dsel-pop";
+    pop.style.left=Math.max(8,Math.min(r.left,innerWidth-320))+"px";pop.style.top=(r.bottom+6)+"px";
+    var groups={};
+    USERS.filter(function(u){return u.is_active!==false;}).forEach(function(u){var g=u.group||"Без отдела";(groups[g]=groups[g]||[]).push(u);});
+    function rowsHtml(q){
+      q=(q||"").toLowerCase();
+      var html="";
+      if(ME&&ME.user_id&&(!q||"мои".indexOf(q)>=0))html+='<div class="ds-row ds-my" data-ids="'+ME.user_id+'" data-label="Мои">Мои</div>';
+      Object.keys(groups).sort().forEach(function(g){
+        var us=groups[g].filter(function(u){return !q||u.name.toLowerCase().indexOf(q)>=0||g.toLowerCase().indexOf(q)>=0;});
+        if(!us.length)return;
+        var ids=groups[g].map(function(u){return u.id;}).join(",");
+        html+='<div class="ds-grp" data-ids="'+ids+'" data-label="'+esc(g)+'">'+esc(g).toUpperCase()+'<span class="ds-all">весь отдел</span></div>';
+        html+=us.map(function(u){return '<div class="ds-row" data-ids="'+u.id+'" data-label="'+esc(u.name)+'">'+esc(u.name)+'</div>';}).join("");
+      });
+      return html||'<div class="ds-row" style="cursor:default;color:var(--mut)">Не найдено</div>';
+    }
+    pop.innerHTML='<input class="ci ds-q" placeholder="Поиск сотрудника или отдела"><div class="ds-list">'+rowsHtml("")+'</div>';
+    document.body.appendChild(pop);
+    var inp=pop.querySelector(".ds-q");inp.focus();
+    inp.oninput=function(){pop.querySelector(".ds-list").innerHTML=rowsHtml(inp.value.trim());};
+    pop.onclick=function(e){
+      var t=e.target.closest("[data-ids]");if(!t)return;
+      deskSel={ids:t.dataset.ids.split(",").map(Number),label:t.dataset.label};
+      pop.remove();vDesk();
+    };
+    setTimeout(function(){document.addEventListener("click",function h(e){if(!pop.contains(e.target)&&e.target!==anchor){pop.remove();document.removeEventListener("click",h);}});},0);
   }
   function vDesk(){
     renderSidebar("desk");
@@ -984,12 +1030,13 @@
     if(deskPipe==null){var mp=PIPES.find(function(p){return p.is_main;});deskPipe=mp?mp.id:(PIPES[0]&&PIPES[0].id);}
     var html='<div id="dash"><div class="desk-title">'+esc(a.name||"Рабочий стол")+'</div>';
     html+='<div class="desk-bar"><div class="desk-pills">'+DESK_PERIODS.map(function(x){return '<button data-per="'+x[0]+'"'+(x[0]===deskPeriod?" class=\"act\"":"")+'>'+x[1]+'</button>';}).join("")+'</div>';
-    if(ME&&ME.user_id)html+='<div class="desk-pills"><button data-mine="0"'+(!deskMine?' class="act"':"")+'>Все</button><button data-mine="1"'+(deskMine?' class="act"':"")+'>Мои</button></div>';
+    html+='<div class="desk-pills"><button data-selall'+(!deskSel?' class="act"':"")+'>Все</button><button data-selpick'+(deskSel?' class="act"':"")+'>'+esc(deskSel?deskSel.label:"Мои")+' <span style="font-size:10px">⌄</span></button></div>';
     html+='<button class="desk-cfg" id="deskCfg">＋ Настроить</button></div>';
     html+='<div id="funnelW"></div><div class="w-grid" id="wGrid"></div></div>';
     $("#view").innerHTML=html;
     $("#view").querySelectorAll(".desk-pills [data-per]").forEach(function(b){b.onclick=function(){deskPeriod=b.dataset.per;vDesk();};});
-    $("#view").querySelectorAll(".desk-pills [data-mine]").forEach(function(b){b.onclick=function(){deskMine=b.dataset.mine==="1";vDesk();};});
+    var selAll=$("#view").querySelector("[data-selall]");if(selAll)selAll.onclick=function(){deskSel=null;vDesk();};
+    var selPick=$("#view").querySelector("[data-selpick]");if(selPick)selPick.onclick=function(){openDeskSelPop(selPick);};
     $("#deskCfg").onclick=openWidgetEditor;
     renderFunnelWidget();
     renderDeskWidgets();
@@ -998,9 +1045,9 @@
     // амо-полоса: список воронок · «+N НОВЫЕ» (создано за период) · этапы с большими цифрами (текущее состояние)
     var ep=VIEW_EPOCH;
     Promise.all([
-      jreq(API+"/analytics"),
-      jreq(API+"/widget_stat?pipeline="+deskPipe+"&field=created&period="+deskPeriod+(deskMine&&ME&&ME.user_id?"&resp="+ME.user_id:"")).catch(function(){return null;}),
-      jreq(API+"/widget_stat?pipeline="+deskPipe+"&lost=1&field=closed&period="+deskPeriod+(deskMine&&ME&&ME.user_id?"&resp="+ME.user_id:"")).catch(function(){return null;})
+      jreq(API+"/analytics"+(deskRespQS()?"?"+deskRespQS():"")),
+      jreq(API+"/widget_stat?pipeline="+deskPipe+"&field=created&period="+deskPeriod+(deskRespQS()?"&"+deskRespQS():"")).catch(function(){return null;}),
+      jreq(API+"/widget_stat?pipeline="+deskPipe+"&lost=1&field=closed&period="+deskPeriod+(deskRespQS()?"&"+deskRespQS():"")).catch(function(){return null;})
     ]).then(function(rr){
       if(ep!==VIEW_EPOCH||!$("#funnelW"))return;
       var funnels=(rr[0]&&rr[0].funnels)||[],nw=rr[1]||{},lost=rr[2]||{};
@@ -1041,7 +1088,7 @@
       }).catch(function(){});
       // зелёная дельта «+N за сегодня» (как в amo): тот же срез виджета, дата = поле виджета (или created), период = сегодня
       if(w.kind!=="filter"){
-        var dq=[(w.pipeline?"pipeline="+w.pipeline:""),(w.status?"status="+w.status:""),(w.won?"won=1":""),(w.lost?"lost=1":""),(w.resp?"resp="+w.resp:(deskMine&&ME&&ME.user_id?"resp="+ME.user_id:"")),"field="+((w.field&&w.field!=="none")?w.field:"created"),"period=today"].filter(Boolean).join("&");
+        var dq=[(w.pipeline?"pipeline="+w.pipeline:""),(w.status?"status="+w.status:""),(w.won?"won=1":""),(w.lost?"lost=1":""),(w.resp?"resp="+w.resp:deskRespQS()),"field="+((w.field&&w.field!=="none")?w.field:"created"),"period=today"].filter(Boolean).join("&");
         jreq(API+"/widget_stat?"+dq).then(function(r2){
           var card=grid.querySelector('[data-wid="'+w.id+'"]');if(!card)return;
           var dEl=card.querySelector("[data-d]");if(!dEl)return;
@@ -2526,13 +2573,14 @@
     if(ME&&!ME.is_admin&&!(ME.rights&&ME.rights.sections&&ME.rights.sections.settings)){
       $("#view").innerHTML='<div class="plain"><div class="pcard"><h2>Недостаточно прав</h2><p class="muted">Раздел «Настройки» доступен только администраторам.</p></div></div>';return;
     }
-    var tabs=[["general","Общие настройки"],["users","Пользователи"],["roles","Роли и права"],["fields","Поля"],["pipelines","Воронки и этапы"]];
+    var tabs=[["general","Общие настройки"],["users","Пользователи"],["roles","Роли и права"],["fields","Поля"],["pipelines","Воронки и этапы"],["chats","Чаты и мессенджеры"]];
     $("#view").innerHTML='<div class="plain"><div class="pcard"><div class="stabs">'+tabs.map(function(t){return '<span class="stab'+(t[0]===settingsTab?" act":"")+'" data-t="'+t[0]+'">'+t[1]+'</span>';}).join("")+'</div><div id="sbody"><p class="muted">Загрузка…</p></div></div></div>';
     document.querySelectorAll(".stab").forEach(function(s){s.onclick=function(){settingsTab=s.dataset.t;vSettings();};});
     if(settingsTab==="general")settingsGeneral();
     else if(settingsTab==="users")settingsUsers();
     else if(settingsTab==="roles")settingsRoles();
     else if(settingsTab==="fields")settingsFields();
+    else if(settingsTab==="chats")settingsChats();
     else settingsPipelines();
   }
   // «Общие настройки» как в amo (сверено с живым /settings/): параметры аккаунта + модули + виджеты
@@ -2554,6 +2602,35 @@
       row("Счета/покупки","выключены (как в amo)")+
       '</table><h3 style="margin:18px 0 10px">Виджеты (как в amo)</h3><table class="set">'+
       W.map(function(x){return row(esc(x[0]),'<span class="muted">'+esc(x[1])+'</span>');}).join("")+
+      '</table>';
+  }
+  // «Чаты и мессенджеры» — снимок Salesbot-ботов живого amo (сверено 18.07.2026); живая логика ботов = этап интеграций
+  function settingsChats(){
+    var BOTS=[
+      ["Отправка шаблона «статус»","",100,22492,51],
+      ["Как читать визу","Беседа начата",100,19530,0],
+      ["Ваша виза кончается за 7 дней","",50,8254,0],
+      ["Ваша виза кончается за 14 дней","",50,8144,0],
+      ["Ваша виза кончается завтра","",50,7469,0],
+      ["Оповещение личка в офисе","",99,4228,2],
+      ["Статус сделки","",144,3298,0],
+      ["Касание после Подумаю 3+","",100,1852,6],
+      ["Бот для NPS","Беседа закрыта",60,1348,0],
+      ["Оповещение личка электронная","",100,1107,0],
+      ["Приветствие инстаграм","Беседа начата",100,588,0],
+      ["Активных заявок не найдено","",121,357,0],
+      ["СПБ","",14,66,0],["МСК","",22,51,0],["Инст Паспорт","",0,0,0],["1","Создание в этапе",0,0,11]
+    ];
+    $("#sbody").innerHTML='<h3 style="margin:6px 0 4px">Список ботов (Salesbot)</h3>'+
+      '<p class="muted" style="margin:0 0 12px;font-size:12.5px">Снимок из живого amo: сценарии продолжают работать там. Воспроизведение логики (SMS/Wazzup/письма) — этап интеграций, после переезда.</p>'+
+      '<table class="set"><tr><th style="text-align:left;padding:6px 10px">Название</th><th style="text-align:left;padding:6px 10px">Триггер</th><th style="text-align:right;padding:6px 10px">Конверсия</th><th style="text-align:right;padding:6px 10px">Всего запусков</th><th style="text-align:right;padding:6px 10px">Активных</th></tr>'+
+      BOTS.map(function(b){return '<tr><td style="padding:6px 10px;color:var(--link)">'+esc(b[0])+'</td><td style="padding:6px 10px">'+(b[1]?'<span class="tag">'+esc(b[1])+'</span>':"")+'</td><td style="padding:6px 10px;text-align:right">'+b[2]+'%</td><td style="padding:6px 10px;text-align:right">'+fmt(b[3])+'</td><td style="padding:6px 10px;text-align:right">'+(b[4]||"")+'</td></tr>';}).join("")+
+      '</table>'+
+      '<h3 style="margin:18px 0 4px">Прочее (как в amo)</h3><table class="set">'+
+      '<tr><td style="width:260px;color:#7b848d">Меню imBox + центр нотификаций</td><td>включено</td></tr>'+
+      '<tr><td style="color:#7b848d">Шаблоны ответов</td><td><span class="muted">нет (как в amo)</span></td></tr>'+
+      '<tr><td style="color:#7b848d">Онлайн чаты</td><td><span class="muted">нет (как в amo)</span></td></tr>'+
+      '<tr><td style="color:#7b848d">Сокращать ссылки</td><td>включено (Avito, Wazzup: Telegram/WhatsApp/MAX/WABA/ВКонтакте)</td></tr>'+
       '</table>';
   }
   function settingsUsers(){
