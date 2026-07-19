@@ -2134,7 +2134,7 @@
       if(companies)companies='<div class="fgroup" style="margin:0 20px">Компания</div>'+companies;
       var init=(c.name||"К").trim().charAt(0).toUpperCase();
       var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить контакт">🗑</button><h2 class="editable" data-edit="cname">'+esc(c.name||("Контакт #"+c.id))+'</h2><div class="dl-sub">#'+c.id+((c.tags&&c.tags.length)?' '+c.tags.map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join(""):"")+'</div></div>'+
-        '<div class="dl-tabs" style="margin-top:6px"><span class="act" data-t="main">Основное</span><span data-t="deals">Сделки</span><span data-t="stats">Статистика</span></div>'+
+        '<div class="dl-tabs" style="margin-top:6px"><span class="act" data-t="main">Основное</span><span data-t="deals">Сделки</span><span data-t="stats">Статистика</span><span data-t="files">Файлы</span></div>'+
         '<div data-panel="main"><div class="fields">'+
           '<div class="frow"><div class="fl">Отв-ный</div><div class="fv editable" data-edit="cresp">'+esc(userName(c.responsible_user_id))+'</div></div>'+
           '<div class="frow"><div class="fl">Создан</div><div class="fv">'+dt(c.created_at)+'</div></div>'+
@@ -2148,7 +2148,8 @@
           ["Изменён",dt(c.updated_at)],["Сделок",larr.length],
           ["Компаний",((c._embedded&&c._embedded.companies)||[]).length],
           ["Примечаний",((r.notes||[]).length)+((r.notes_new||[]).length)]
-        ])+'</div>';
+        ])+'</div>'+
+        '<div data-panel="files" style="display:none">'+filesTabHtml(r.notes)+'</div>';
       var reload=function(){openContact(id);}; // не рушим карточку до успешной загрузки
       var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,(r.notes_new||[])),(r.tasks||[]),f,bg);},{type:"contacts",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(r.tasks)});
       bg.__reload=reload;
@@ -2830,11 +2831,11 @@
       if(!r||!r.success)return $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">'+esc((r&&r.message)||"Нет данных")+'</p></div></div>';
       var pills=[["today","Сегодня"],["week","Неделя"],["month","Месяц"]].map(function(x){return '<button data-sp="'+x[0]+'" class="lnk" style="border:0;cursor:pointer;font:inherit;font-size:12.5px;padding:5px 14px;border-radius:14px;'+(staffPeriod===x[0]?"background:#fff;font-weight:700;color:#1d3c66;box-shadow:0 1px 3px rgba(0,0,0,.12)":"background:none;color:#556")+'">'+x[1]+'</button>';}).join("");
       var rows=(r.rows||[]).map(function(x){
-        return '<tr><td>'+esc(x.name)+'</td><td>'+(x.created?fmt(x.created)+' <span class="muted">('+fmt(x.createdSum)+' ₽)</span>':'—')+'</td><td>'+(x.won?fmt(x.won)+' <span class="muted">('+fmt(x.wonSum)+' ₽)</span>':'—')+'</td><td>'+(x.notes||'—')+'</td><td>'+(x.openTasks?fmt(x.openTasks):'—')+'</td></tr>';
+        return '<tr><td>'+esc(x.name)+'</td><td>'+(x.created?fmt(x.created)+' <span class="muted">('+fmt(x.createdSum)+' ₽)</span>':'—')+'</td><td>'+(x.notes||'—')+'</td><td>'+(x.openTasks?fmt(x.openTasks):'—')+'</td><td>'+(x.won?fmt(x.won)+' <span class="muted">('+fmt(x.wonSum)+' ₽)</span>':'—')+'</td></tr>';
       }).join("");
       $("#view").innerHTML='<div class="plain">'+tabs+
         '<div class="pcard"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0">Отчёт по сотрудникам</h2><span style="display:inline-flex;gap:2px;background:#eef2f6;border-radius:16px;padding:2px">'+pills+'</span></div>'+
-        '<table class="set"><tr><th>Сотрудник</th><th>Создано сделок</th><th>Успешно реализовано</th><th>Примечаний (в копии)</th><th>Задач в работе</th></tr>'+rows+'</table></div></div>';
+        '<table class="set"><tr><th>Сотрудник</th><th>Создано сделок</th><th>Добавлено примечаний</th><th>Задач в работе</th><th>Успешно реализовано</th></tr>'+rows+'</table></div></div>';
       bindAnTabs();
       $("#view").querySelectorAll("[data-sp]").forEach(function(b){b.onclick=function(){staffPeriod=b.dataset.sp;renderStaffReport(tabs);};});
     }).catch(function(){$("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">Ошибка загрузки.</p></div></div>';});
