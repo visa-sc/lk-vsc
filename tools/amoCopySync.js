@@ -152,7 +152,9 @@ async function syncTasks() {
 const upCompany = db.prepare(`INSERT INTO companies(id,name,created_at,updated_at,cf)
   VALUES(@id,@name,@created_at,@updated_at,@cf)
   ON CONFLICT(id) DO UPDATE SET name=@name,updated_at=@updated_at,cf=@cf`);
-// покупатели (программа лояльности): amo=6938 vs копия=6864 на 19.07 — были разовым экспортом, теперь в синке
+// покупатели (программа лояльности): amo=6938 vs копия=6864 на 19.07 — были разовым экспортом, теперь в синке.
+// ВАЖНО: amo API customers ИГНОРИРУЕТ filter[updated_at] (проверено: since+1 сек — всё равно отдаёт всех) —
+// каждый прогон = полные ~28 страниц, поэтому customers НЕ в */45-круге, а отдельным кроном 04:00/16:00 МСК.
 const upCustomer = db.prepare(`INSERT INTO customers(id,name,status_id,responsible_user_id,next_price,next_date,ltv,purchases_count,average_check,created_at,updated_at,cf)
   VALUES(@id,@name,@status_id,@responsible_user_id,@next_price,@next_date,@ltv,@purchases_count,@average_check,@created_at,@updated_at,@cf)
   ON CONFLICT(id) DO UPDATE SET name=@name,status_id=@status_id,responsible_user_id=@responsible_user_id,next_price=@next_price,next_date=@next_date,ltv=@ltv,purchases_count=@purchases_count,average_check=@average_check,updated_at=@updated_at,cf=@cf`);
