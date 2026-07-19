@@ -323,6 +323,30 @@ module.exports = function mountDbRoutes(app, guard, api) {
     } catch (e) { res.json({ success: false, message: "агрегат не построен: " + e.message }); }
   });
 
+  // «Перешли в этап» как в amo Анализ продаж — из живых amo_events lead_status_changed (журнал с 19.07.2026)
+  app.get(`${api}/stage_flow`, guard, (req, res) => {
+    try {
+      const hours = Math.min(720, parseInt(req.query.hours, 10) || 24);
+      const from = Math.floor(Date.now() / 1000) - hours * 3600;
+      const byStage = {};
+      let total = 0;
+      const rows = D.prepare("SELECT entity_id, value_after FROM amo_events WHERE type='lead_status_changed' AND created_at>=?").all(from);
+      const qPrice = D.prepare("SELECT price FROM leads WHERE id=?");
+      for (const r of rows) {
+        let st = null;
+        try { st = (JSON.parse(r.value_after)[0] || {}).lead_status; } catch (_) {}
+        if (!st || !st.id) continue;
+        const key = st.pipeline_id + ":" + st.id;
+        const x = byStage[key] = byStage[key] || { pid: st.pipeline_id, sid: st.id, count: 0, sum: 0 };
+        x.count++; total++;
+        try { const l = qPrice.get(r.entity_id); if (l) x.sum += l.price || 0; } catch (_) {}
+      }
+      const items = Object.values(byStage).map((x) => ({ ...x, name: (stMap[x.sid] || {}).name || ("этап " + x.sid), color: (stMap[x.sid] || {}).color || "#c1d5e0" }))
+        .sort((a, b) => b.count - a.count);
+      res.json({ success: true, total, items, since_note: "журнал событий копится с 19.07.2026" });
+    } catch (e) { res.json({ success: false, message: e.message }); }
+  });
+
   app.get(`${api}/analytics`, guard, (req, res) => {
     const statuses = D.prepare("SELECT pipeline_id,id,name,sort,color,type FROM statuses").all();
     const pipes = D.prepare("SELECT id,name,is_main,sort FROM pipelines ORDER BY sort").all();
