@@ -305,6 +305,15 @@ module.exports = function mountDbRoutes(app, guard, api) {
   app.get(`${api}/calls_report`, guard, (req, res) => {
     try {
       const agg = JSON.parse(fs.readFileSync(path.join(path.dirname(DB_PATH), "calls_agg.json"), "utf8"));
+      // + живые звонки из amo_notes (синк с 19.07; берём созданные после слепка 06.07 — до него всё в calls_agg)
+      try {
+        const SNAP = 1783296000; // 06.07.2026 UTC
+        D.prepare("SELECT created_by u, note_type t, COUNT(*) c, COALESCE(SUM(json_extract(params,'$.duration')),0) d FROM amo_notes WHERE note_type IN ('call_in','call_out') AND created_at>=? GROUP BY created_by, note_type").all(SNAP)
+          .forEach((r) => {
+            const a = agg[r.u] = agg[r.u] || { in_c: 0, out_c: 0, in_d: 0, out_d: 0 };
+            if (r.t === "call_in") { a.in_c += r.c; a.in_d += r.d; } else { a.out_c += r.c; a.out_d += r.d; }
+          });
+      } catch (_) { /* amo_notes может ещё не существовать */ }
       const rows = Object.keys(agg).map((k) => {
         const a = agg[k];
         const name = /^\d+$/.test(k) ? (uName[+k] || ("id " + k)) : k;
