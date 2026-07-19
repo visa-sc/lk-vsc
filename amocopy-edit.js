@@ -50,6 +50,12 @@ module.exports = function mountEditRoutes(app, guard) {
     CREATE INDEX IF NOT EXISTS ix_leads_pipe_price ON leads(pipeline_id,price);
     CREATE INDEX IF NOT EXISTS ix_leads_pipe_created ON leads(pipeline_id,created_at);
     CREATE INDEX IF NOT EXISTS ix_lc_lead ON lead_contacts(lead_id);
+    /* перф-бенч 20.07: раздел Задачи 5.3с (холодный кэш+full-scan 1.37M), staff_report 2.5с
+       (планировщик выбирал SCAN ix_tasks_resp вместо диапазона по created_at — нужен covering + ANALYZE) */
+    CREATE INDEX IF NOT EXISTS ix_tasks_open ON tasks(is_completed, complete_till);
+    CREATE INDEX IF NOT EXISTS ix_tasks_created_resp ON tasks(created_at, responsible_user_id);
+    CREATE INDEX IF NOT EXISTS ix_leads_created ON leads(created_at);
+    ANALYZE tasks;
   `);
   const seqRow = db.prepare("SELECT val FROM local_seq WHERE name='id'").get();
   if (!seqRow) db.prepare("INSERT INTO local_seq(name,val) VALUES('id',?)").run(LOCAL_ID_BASE);
