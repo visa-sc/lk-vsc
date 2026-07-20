@@ -451,7 +451,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
   app.get(`${api}/widget_stat2`, guard, (req, res) => {
     try {
       const spec = JSON.parse(String(req.query.spec || "{}"));
-      const key = "ws2:" + req.query.spec;
+      const key = "ws2:" + JSON.stringify(spec); // нормализованный ключ: любая сериализация клиента → один кэш
       // TTL 10 мин + прогрев кроном каждые 8 мин (amoCopyWarmWidgets) → дашборд всегда мгновенный
       const out = wcached(key, 600000, () => {
         const where = [], args = [];
