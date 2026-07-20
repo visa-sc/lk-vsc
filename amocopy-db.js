@@ -348,10 +348,18 @@ module.exports = function mountDbRoutes(app, guard, api) {
   });
 
   app.get(`${api}/analytics`, guard, (req, res) => {
+    // без среза по отв. ответ одинаков для всех — кэш 60с (запрос ~1.3с: kanban-агрегат + byUser по 292k)
+    const respQ = String(req.query.resp || "");
+    if (!respQ) {
+      const cached = wcached("analytics_all", 60000, () => buildAnalytics([]));
+      return res.json(cached);
+    }
+    return res.json(buildAnalytics(respQ.split(",").filter((x) => /^\d+$/.test(x)).map(Number)));
+  });
+  function buildAnalytics(rids) {
     const statuses = D.prepare("SELECT pipeline_id,id,name,sort,color,type FROM statuses").all();
     const pipes = D.prepare("SELECT id,name,is_main,sort FROM pipelines ORDER BY sort").all();
     // resp=CSV id-шников — срез «Мои/сотрудник/отдел» как на дашборде amo
-    const rids = String(req.query.resp || "").split(",").filter((x) => /^\d+$/.test(x)).map(Number);
     const kmap = {};
     const krows = rids.length
       ? D.prepare("SELECT pipeline_id, status_id, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads WHERE responsible_user_id IN (" + rids.map(() => "?").join(",") + ") GROUP BY pipeline_id, status_id").all(...rids)
@@ -365,8 +373,8 @@ module.exports = function mountDbRoutes(app, guard, api) {
     }).filter((f) => rids.length ? true : f.total > 0); // при срезе по отв. воронку с нулями не прячем — иначе пропадёт выбранная
     const byUser = D.prepare("SELECT responsible_user_id r, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads GROUP BY responsible_user_id ORDER BY c DESC LIMIT 15").all()
       .map((x) => ({ name: uName[x.r] || ("ID " + x.r), count: x.c, sum: x.s }));
-    res.json({ success: true, funnels, byUser });
-  });
+    return { success: true, funnels, byUser };
+  }
 
   // кэш тяжёлых счётчиков виджетов (cf-LIKE по 291k сделок ~9с) — TTL 60с
   const WCACHE = new Map();
