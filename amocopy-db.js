@@ -412,6 +412,118 @@ module.exports = function mountDbRoutes(app, guard, api) {
     } catch (e) { res.json({ success: false, count: 0, sum: 0 }); }
   });
 
+  // ── счётчик амо-виджетов рабочего стола (widget_stat2) ──
+  // spec (urlencoded JSON) повторяет фильтры живых amo-виджетов Андрея (сняты из SSR-конфига дашборда 20.07.2026):
+  //   pipe: {pid:[sid,...]} (OR по парам), created_preset: yesterday|today (по created_at, границы дня МСК),
+  //   cf: {fid: [enum_id|"empty"] | {preset:"yesterday"} | {from:"ДД.ММ.ГГГГ",to:"ДД.ММ.ГГГГ"}} — поля СДЕЛКИ,
+  //   ccf: {fid:[...]} — поля ОСНОВНОГО контакта, no_tasks: true, contact_no_tasks: true.
+  const qLeadFirstContact = D.prepare("SELECT c.id, c.cf FROM lead_contacts lc JOIN contacts c ON c.id=lc.contact_id WHERE lc.lead_id=? LIMIT 1");
+  const qHasOpenTask = D.prepare("SELECT 1 FROM tasks WHERE entity_type=? AND entity_id=? AND is_completed=0 LIMIT 1");
+  const mskDay = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return Math.floor(d.getTime() / 1000); };
+  const parseDMY = (s) => { const m = String(s).match(/(\d{2})\.(\d{2})\.(\d{4})/); return m ? Math.floor(new Date(+m[3], +m[2] - 1, +m[1]).getTime() / 1000) : null; };
+  // точечная вырезка values поля из cf-строки БЕЗ полного JSON.parse (cf бывает в сотни полей; парс 50k строк = 15с)
+  const cfVals = (cfStr, fid) => {
+    if (!cfStr) return [];
+    const i = cfStr.indexOf('"field_id":' + fid + ",");
+    if (i < 0) return [];
+    const j = cfStr.indexOf('"values":[', i);
+    if (j < 0) return [];
+    const k = cfStr.indexOf("]", j);
+    try { return JSON.parse(cfStr.slice(j + 9, k + 1)) || []; } catch (_) { return []; }
+  };
+  const cfMatch = (cfStr, fid, cond) => {
+    const vals = cfVals(cfStr, fid);
+    if (Array.isArray(cond)) {
+      const wantEmpty = cond.includes("empty");
+      if (!vals.length || vals[0].value === "" || vals[0].value == null) return wantEmpty;
+      const ids = cond.filter((c) => c !== "empty").map(Number);
+      return vals.some((v) => ids.includes(+v.enum_id));
+    }
+    // условие-дата
+    if (!vals.length || !vals[0].value) return false;
+    const ts = +vals[0].value;
+    let from = null, to = null;
+    if (cond.preset === "yesterday") { const d0 = mskDay(); from = d0 - 86400; to = d0; }
+    else if (cond.preset === "today") { from = mskDay(); to = from + 86400; }
+    else { if (cond.from) from = parseDMY(cond.from); if (cond.to) to = parseDMY(cond.to) + 86400; }
+    return (from == null || ts >= from) && (to == null || ts < to);
+  };
+  app.get(`${api}/widget_stat2`, guard, (req, res) => {
+    try {
+      const spec = JSON.parse(String(req.query.spec || "{}"));
+      const key = "ws2:" + req.query.spec;
+      const out = wcached(key, 60000, () => {
+        const where = [], args = [];
+        const pipePairs = Object.entries(spec.pipe || {});
+        if (pipePairs.length) {
+          where.push("(" + pipePairs.map(([pid, sids]) => "(pipeline_id=" + (+pid) + " AND status_id IN (" + sids.map(() => "?").join(",") + "))").join(" OR ") + ")");
+          pipePairs.forEach(([, sids]) => sids.forEach((s) => args.push(+s)));
+        }
+        if (spec.created_preset) {
+          const d0 = mskDay();
+          const from = spec.created_preset === "yesterday" ? d0 - 86400 : d0;
+          const to = spec.created_preset === "yesterday" ? d0 : d0 + 86400;
+          where.push("created_at>=? AND created_at<?"); args.push(from, to);
+        }
+        // «Дата оплаты» (427242) материализована в leads.pay_ts (заполняет синк + разовый backfill):
+        // date-условие уходит в SQL-индекс, cf-мегабайты не читаем (было 16-22с на виджет из-за I/O)
+        const cfRest = {};
+        for (const [fid, cond] of Object.entries(spec.cf || {})) {
+          if (+fid === 427242 && !Array.isArray(cond)) {
+            let from = null, to = null;
+            if (cond.preset === "yesterday") { const d0 = mskDay(); from = d0 - 86400; to = d0; }
+            else if (cond.preset === "today") { from = mskDay(); to = from + 86400; }
+            else { if (cond.from) from = parseDMY(cond.from); if (cond.to) to = parseDMY(cond.to) + 86400; }
+            if (from != null) { where.push("pay_ts>=?"); args.push(from); }
+            if (to != null) { where.push("pay_ts<?"); args.push(to); }
+            continue;
+          }
+          cfRest[fid] = cond;
+          if (!Array.isArray(cond) || !cond.includes("empty")) { where.push("cf LIKE ?"); args.push('%"field_id":' + (+fid) + '%'); }
+        }
+        const cfJs = Object.keys(cfRest).length ? cfRest : null;
+        const rows = D.prepare("SELECT id, price, cf, contact_ids FROM leads" + (where.length ? " WHERE " + where.join(" AND ") : "")).all(...args);
+        let count = 0, sum = 0;
+        const ccfEntries = Object.entries(spec.ccf || {});
+        const qContactCf = D.prepare("SELECT id, cf FROM contacts WHERE id=?");
+        for (const r of rows) {
+          if (cfJs) { let ok = true; for (const [fid, cond] of Object.entries(cfJs)) if (!cfMatch(r.cf, fid, cond)) { ok = false; break; } if (!ok) continue; }
+          if (spec.no_tasks && qHasOpenTask.get("leads", r.id)) continue;
+          if (ccfEntries.length || spec.contact_no_tasks) {
+            // ГЛАВНЫЙ контакт = первый в contact_ids (порядок из amo API, is_main первым; сверено 20.07)
+            let mainId = null; try { mainId = (JSON.parse(r.contact_ids) || [])[0] || null; } catch (_) {}
+            const c = mainId ? qContactCf.get(mainId) : null;
+            if (ccfEntries.length) {
+              if (!c) continue;
+              let ok = true; for (const [fid, cond] of ccfEntries) if (!cfMatch(c.cf, fid, cond)) { ok = false; break; }
+              if (!ok) continue;
+            }
+            if (spec.contact_no_tasks && c && qHasOpenTask.get("contacts", c.id)) continue;
+          }
+          count++; sum += r.price || 0;
+        }
+        return { success: true, count, sum };
+      });
+      res.json(out);
+    } catch (e) { res.json({ success: false, message: e.message }); }
+  });
+
+  // ── серверное хранение виджетов рабочего стола (per-учётка; localStorage не переживает смену браузера) ──
+  const DESKW_FILE = path.join(path.dirname(DB_PATH), "desk-widgets.json");
+  const readDeskW = () => { try { return JSON.parse(fs.readFileSync(DESKW_FILE, "utf8")); } catch (_) { return {}; } };
+  app.get(`${api}/desk_widgets`, guard, (req, res) => {
+    const all = readDeskW();
+    res.json({ success: true, widgets: all[String(req.query.owner || "admin")] || null });
+  });
+  app.post(`${api}/desk_widgets`, guard, (req, res) => {
+    try {
+      const all = readDeskW();
+      all[String(req.query.owner || "admin")] = (req.body && req.body.widgets) || [];
+      fs.writeFileSync(DESKW_FILE, JSON.stringify(all, null, 1));
+      res.json({ success: true });
+    } catch (e) { res.json({ success: false, message: e.message }); }
+  });
+
   // кастомные поля из cf_defs (единый источник правды — актуализируется amoCopySyncFields.js)
   app.get(`${api}/custom_fields`, guard, (req, res) => {
     const hasEditable = (() => { try { return !!D.prepare("SELECT editable FROM cf_defs LIMIT 1").get() || true; } catch (_) { return false; } })();

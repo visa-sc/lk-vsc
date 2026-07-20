@@ -58,9 +58,13 @@ const cfExtract = (o) => JSON.stringify(o.custom_fields_values || null);
 const phonesOf = (c) => { const r = []; (c.custom_fields_values || []).forEach((f) => { if (f.field_code === "PHONE") (f.values || []).forEach((v) => r.push(String(v.value))); }); return JSON.stringify(r); };
 const emailsOf = (c) => { const r = []; (c.custom_fields_values || []).forEach((f) => { if (f.field_code === "EMAIL") (f.values || []).forEach((v) => r.push(String(v.value))); }); return JSON.stringify(r); };
 
-const upLead = db.prepare(`INSERT INTO leads(id,name,price,status_id,pipeline_id,responsible_user_id,created_at,updated_at,closed_at,cf,tags,contact_ids)
-  VALUES(@id,@name,@price,@status_id,@pipeline_id,@responsible_user_id,@created_at,@updated_at,@closed_at,@cf,@tags,@contact_ids)
-  ON CONFLICT(id) DO UPDATE SET name=@name,price=@price,status_id=@status_id,pipeline_id=@pipeline_id,responsible_user_id=@responsible_user_id,updated_at=@updated_at,closed_at=@closed_at,cf=@cf,tags=@tags,contact_ids=@contact_ids`);
+// pay_ts = материализованная «Дата оплаты» (поле 427242) — для мгновенных виджетов выручки (widget_stat2)
+try { db.exec("ALTER TABLE leads ADD COLUMN pay_ts INTEGER"); } catch (_) { /* уже есть */ }
+try { db.exec("CREATE INDEX IF NOT EXISTS ix_leads_pay ON leads(pay_ts)"); } catch (_) {}
+const payTsOf = (l) => { const f = (l.custom_fields_values || []).find((x) => x.field_id === 427242); const v = f && f.values && f.values[0] && f.values[0].value; return v ? +v : null; };
+const upLead = db.prepare(`INSERT INTO leads(id,name,price,status_id,pipeline_id,responsible_user_id,created_at,updated_at,closed_at,cf,tags,contact_ids,pay_ts)
+  VALUES(@id,@name,@price,@status_id,@pipeline_id,@responsible_user_id,@created_at,@updated_at,@closed_at,@cf,@tags,@contact_ids,@pay_ts)
+  ON CONFLICT(id) DO UPDATE SET name=@name,price=@price,status_id=@status_id,pipeline_id=@pipeline_id,responsible_user_id=@responsible_user_id,updated_at=@updated_at,closed_at=@closed_at,cf=@cf,tags=@tags,contact_ids=@contact_ids,pay_ts=@pay_ts`);
 try { db.exec("ALTER TABLE contacts ADD COLUMN tags TEXT"); } catch (_) { /* уже есть */ }
 const upContact = db.prepare(`INSERT INTO contacts(id,name,responsible_user_id,created_at,updated_at,cf,phones,emails,tags)
   VALUES(@id,@name,@responsible_user_id,@created_at,@updated_at,@cf,@phones,@emails,@tags)
@@ -79,7 +83,7 @@ async function syncLeads() {
         maxUpd = Math.max(maxUpd, l.updated_at || 0);
         if (hasLocalEdit.get("leads", l.id)) { db.prepare("INSERT INTO sync_conflicts VALUES('leads',?,?,?)").run(l.id, Math.floor(Date.now() / 1000), "локальная правка — амо-версия не применена"); conflicts++; continue; }
         const cids = ((l._embedded && l._embedded.contacts) || []).map((c) => c.id);
-        upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids) });
+        upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids), pay_ts: payTsOf(l) });
         cids.forEach((cid) => db.prepare("INSERT OR IGNORE INTO lead_contacts(lead_id,contact_id) VALUES(?,?)").run(l.id, cid));
         changed++;
       }

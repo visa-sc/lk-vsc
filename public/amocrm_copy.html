@@ -972,7 +972,18 @@
   function deskRespQS(){return (deskSel&&deskSel.ids&&deskSel.ids.length)?"resp="+deskSel.ids.join(","):"";}
   var DESK_PERIODS=[["today","Сегодня"],["yesterday","Вчера"],["week","Неделя"],["month","Месяц"],["all","Всё время"]];
   function deskWidgetsKey(){return "crm_desk_widgets_"+((META&&META.account&&META.account.subdomain)||"x");}
+  // виджеты живут НА СЕРВЕРЕ per-учётка (desk-widgets.json) — переживают смену браузера; localStorage = фолбэк/миграция
+  var DESK_W=null;
+  function deskOwner(){return (ME&&ME.email)||"admin";}
+  function ensureDeskWidgets(cb){
+    if(Array.isArray(DESK_W))return cb();
+    jreq(API+"/desk_widgets?owner="+encodeURIComponent(deskOwner())).then(function(r){
+      if(r&&r.success&&Array.isArray(r.widgets))DESK_W=r.widgets;
+      cb();
+    }).catch(function(){cb();});
+  }
   function loadDeskWidgets(){
+    if(Array.isArray(DESK_W))return DESK_W;
     try{var v=JSON.parse(localStorage.getItem(deskWidgetsKey()));if(Array.isArray(v))return v;}catch(_){}
     // виджеты по умолчанию (как амошные счётчики сделок)
     return [
@@ -982,7 +993,11 @@
       {id:"w4",name:"Сделок в работе (все)",metric:"count",field:"none"}
     ];
   }
-  function saveDeskWidgets(ws){try{localStorage.setItem(deskWidgetsKey(),JSON.stringify(ws));}catch(_){}}
+  function saveDeskWidgets(ws){
+    DESK_W=ws;
+    try{localStorage.setItem(deskWidgetsKey(),JSON.stringify(ws));}catch(_){}
+    try{fetch(API+"/desk_widgets?owner="+encodeURIComponent(deskOwner()),{method:"POST",headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({widgets:ws})});}catch(_){}
+  }
   function widgetQS(w){
     var p=[];
     if(w.pipeline)p.push("pipeline="+w.pipeline);
@@ -1067,6 +1082,8 @@
     }).catch(function(){var w=$("#funnelW");if(w)w.innerHTML="";});
   }
   function renderDeskWidgets(){
+    // первый заход — тянем серверный набор виджетов учётки, потом рендерим
+    if(!Array.isArray(DESK_W)){var ep0=VIEW_EPOCH;return ensureDeskWidgets(function(){if(ep0===VIEW_EPOCH&&$("#wGrid"))renderDeskWidgets();});}
     var ws=loadDeskWidgets();
     var grid=$("#wGrid");
     grid.innerHTML=ws.map(function(w){
@@ -1081,6 +1098,9 @@
         // виджет по сохранённому фильтру (как в amo): считаем через фильтр-эндпоинт
         var ep=w.entity==="contacts"?"/contacts_filter?":"/leads_filter?";
         pr=jreq(API+ep+(w.qs?w.qs+"&":"")+"count_only=1").then(function(r){return {count:r.total||0,sum:r.sum||0};});
+      }else if(w.kind==="amo"){
+        // точная копия амо-виджета: spec повторяет фильтр живого amo (widget_stat2)
+        pr=jreq(API+"/widget_stat2?spec="+encodeURIComponent(JSON.stringify(w.spec||{})));
       }else{
         pr=jreq(API+"/widget_stat?"+widgetQS(w));
       }
@@ -1090,7 +1110,7 @@
         else{card.querySelector("[data-c]").textContent=fmt(r.count||0);var sEl=card.querySelector("[data-s]");if(sEl)sEl.textContent=(r.sum?fmt(r.sum)+" ₽":"");}
       }).catch(function(){});
       // зелёная дельта «+N за сегодня» (как в amo): тот же срез виджета, дата = поле виджета (или created), период = сегодня
-      if(w.kind!=="filter"){
+      if(w.kind!=="filter"&&w.kind!=="amo"){
         var dq=[(w.pipeline?"pipeline="+w.pipeline:""),(w.status?"status="+w.status:""),(w.won?"won=1":""),(w.lost?"lost=1":""),(w.resp?"resp="+w.resp:deskRespQS()),"field="+((w.field&&w.field!=="none")?w.field:"created"),"period=today"].filter(Boolean).join("&");
         jreq(API+"/widget_stat?"+dq).then(function(r2){
           var card=grid.querySelector('[data-wid="'+w.id+'"]');if(!card)return;
