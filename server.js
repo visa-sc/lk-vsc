@@ -3840,6 +3840,13 @@ function vscParseTaxes(rows) {
   return { nds: di >= 0 ? vscNum(rows[itog][di]) : null, rasx: dj >= 0 ? vscNum(rows[itog][dj]) : null, tax5: dk >= 0 ? vscNum(rows[itog][dk]) : null };
 }
 // Возвраты (по дням) + налоги (Итог) для всех месяцев 2026 — параллельно, мягко к сбоям.
+// «Последнее удачное» (фикс 20.07, Андрей ловил «исчезнувший июнь»): живые месяцы
+// (текущий+прошлый) НЕ покрыты заморозкой, и разовый сбой загрузки вкладки гугла ронял
+// месяц в null — 15-минутный кэш раздавал всем пустую колонку. Теперь: удачная загрузка
+// месяца обновляет .vscExtraLastGood.json, неудачная — подменяется прошлым удачным.
+const VSC_EXTRA_LASTGOOD_FILE = path.join(__dirname, ".vscExtraLastGood.json");
+let _vscExtraLG = null;
+function vscExtraLGLoad() { if (_vscExtraLG) return _vscExtraLG; try { _vscExtraLG = JSON.parse(fs.readFileSync(VSC_EXTRA_LASTGOOD_FILE, "utf8")) || {}; } catch (_) { _vscExtraLG = {}; } if (!_vscExtraLG.ret) _vscExtraLG.ret = {}; if (!_vscExtraLG.tax) _vscExtraLG.tax = {}; return _vscExtraLG; }
 async function vscFetchExtra() {
   const ret = {}, tax = {};
   // Вкладки берём из АВТООБНАРУЖЕНИЯ (pubhtml) + хардкода: новые месяцы (июль, август…)
@@ -3850,6 +3857,13 @@ async function vscFetchExtra() {
   const oneRet = async (t) => { try { const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + t.gid + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] }); ret[t.name] = vscReturnsByDay(vscParseCsv(r.data)); } catch (e) {} };
   const oneTax = async (t) => { try { const r = await axios.get(VSC_TAXES_PUB + "?gid=" + t.gid + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] }); tax[t.name] = vscParseTaxes(vscParseCsv(r.data)); } catch (e) {} };
   await Promise.all([].concat(retTabs.map(oneRet), taxTabs.map(oneTax)));
+  // Слой «последнего удачного»: свежие месяцы → в last-good; пропавшие → из last-good.
+  const lg = vscExtraLGLoad();
+  Object.keys(ret).forEach((k) => { lg.ret[k] = ret[k]; });
+  Object.keys(tax).forEach((k) => { if (tax[k] != null) lg.tax[k] = tax[k]; });
+  Object.keys(lg.ret).forEach((k) => { if (!(k in ret)) { ret[k] = lg.ret[k]; console.log("VSC EXTRA: возвраты «" + k + "» не загрузились — взял последнее удачное"); } });
+  Object.keys(lg.tax).forEach((k) => { if (!(k in tax) || tax[k] == null) tax[k] = lg.tax[k]; });
+  try { fs.writeFileSync(VSC_EXTRA_LASTGOOD_FILE, JSON.stringify(lg), "utf8"); } catch (_) {}
   return { ret, tax };
 }
 let _vscCache = null, _vscCacheAt = 0, _vscInflight = null;
