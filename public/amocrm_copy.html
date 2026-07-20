@@ -1101,6 +1101,21 @@
       }else if(w.kind==="amo"){
         // точная копия амо-виджета: spec повторяет фильтр живого amo (widget_stat2)
         pr=jreq(API+"/widget_stat2?spec="+encodeURIComponent(JSON.stringify(w.spec||{})));
+        // дельта «+N за сегодня» как у amo-тайлов: тот же фильтр, период = сегодня
+        (function(){
+          var s2=JSON.parse(JSON.stringify(w.spec||{}));
+          if(s2.created_preset==="yesterday")s2.created_preset="today";
+          else if(s2.cf&&s2.cf["427242"]&&s2.cf["427242"].preset==="yesterday")s2.cf["427242"]={preset:"today"};
+          else if(s2.cf&&s2.cf["427242"]&&s2.cf["427242"].from)s2.cf["427242"]={preset:"today"};
+          else if(s2.no_tasks)s2.created_preset="today";
+          else return;
+          jreq(API+"/widget_stat2?spec="+encodeURIComponent(JSON.stringify(s2))).then(function(r2){
+            var card=grid.querySelector('[data-wid="'+w.id+'"]');if(!card)return;
+            var dEl=card.querySelector("[data-d]");if(!dEl)return;
+            var n=r2.count||0;
+            dEl.innerHTML=n?('<span class="w-plus">+'+fmt(n)+'</span> за сегодня'):'<span style="opacity:.55">0 за сегодня</span>';
+          }).catch(function(){});
+        })();
       }else{
         pr=jreq(API+"/widget_stat?"+widgetQS(w));
       }
