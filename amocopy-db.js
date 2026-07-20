@@ -452,7 +452,8 @@ module.exports = function mountDbRoutes(app, guard, api) {
     try {
       const spec = JSON.parse(String(req.query.spec || "{}"));
       const key = "ws2:" + req.query.spec;
-      const out = wcached(key, 60000, () => {
+      // TTL 10 мин + прогрев кроном каждые 8 мин (amoCopyWarmWidgets) → дашборд всегда мгновенный
+      const out = wcached(key, 600000, () => {
         const where = [], args = [];
         const pipePairs = Object.entries(spec.pipe || {});
         if (pipePairs.length) {
