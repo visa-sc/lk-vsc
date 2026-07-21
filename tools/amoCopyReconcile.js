@@ -29,12 +29,19 @@ const arg = process.argv[2] || "all";
 
 let last = 0, reqs = 0;
 async function get(url, params) {
-  const wait = last + 1100 - Date.now(); if (wait > 0) await sleep(wait); last = Date.now(); reqs++;
-  const r = await axios.get(url, { params, headers: { Authorization: "Bearer " + TOK }, validateStatus: null, timeout: 30000 });
-  if (r.status === 429 || r.status === 403) { console.log("СТОП: HTTP " + r.status + " — лимит, выходим"); process.exit(2); }
-  if (r.status === 204) return { _embedded: { leads: [] } };
-  if (r.status !== 200) { console.log("HTTP", r.status, url); return null; }
-  return r.data;
+  // сетевые обрывы (socket hang up/ECONNRESET) НЕ должны валить весь прогон — 3 ретрая с паузой
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const wait = last + 1100 - Date.now(); if (wait > 0) await sleep(wait); last = Date.now(); reqs++;
+    let r;
+    try {
+      r = await axios.get(url, { params, headers: { Authorization: "Bearer " + TOK }, validateStatus: null, timeout: 30000 });
+    } catch (e) { console.log(`сеть (${e.message}) — повтор ${attempt}/3`); await sleep(5000 * attempt); continue; }
+    if (r.status === 429 || r.status === 403) { console.log("СТОП: HTTP " + r.status + " — лимит, выходим"); process.exit(2); }
+    if (r.status === 204) return { _embedded: { leads: [] } };
+    if (r.status !== 200) { console.log("HTTP", r.status, url); return null; }
+    return r.data;
+  }
+  return null; // обрыв после ретраев — вызывающий код трактует как «неполный список» и пропускает удаление
 }
 
 // «отставшие»: amo.updated_at НОВЕЕ копии, но watermark-синк их уже никогда не увидит
@@ -106,8 +113,8 @@ async function reconcileContacts(cutoff) {
     tx();
     totalGhosts += ghosts.length;
   }
-  if (arg === "all" || arg === "contacts") totalGhosts += await reconcileContacts(cutoff);
-  // перекачка отставших ТЕМ ЖЕ кодом синка (upsert с pay_ts/контактами); watermark не трогается
+  // перекачка отставших ТЕМ ЖЕ кодом синка (upsert с pay_ts/контактами); watermark не трогается.
+  // leads перекачиваем СРАЗУ после воронок — падение контактной фазы не должно терять сделочный результат
   const { spawnSync } = require("child_process");
   const fs = require("fs");
   const refetch = (entity, ids) => {
@@ -119,6 +126,10 @@ async function reconcileContacts(cutoff) {
     if (r.status !== 0) console.log(`перекачка ${entity} завершилась с кодом ${r.status}`);
   };
   refetch("leads", staleLeads);
-  refetch("contacts", staleContacts);
+  if (arg === "all" || arg === "contacts") {
+    try { totalGhosts += await reconcileContacts(cutoff); }
+    catch (e) { console.log("контакты: фаза упала (" + e.message + ") — сделочный результат сохранён"); }
+    refetch("contacts", staleContacts);
+  }
   console.log(`ИТОГО: удалено призраков ${totalGhosts}, отставших leads=${staleLeads.length}/contacts=${staleContacts.length}, запросов к amo ${reqs}`);
 })().catch((e) => { console.error("ОШИБКА:", e.message); process.exit(1); });
