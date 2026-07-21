@@ -1133,12 +1133,17 @@
     };
     if(isLeads){
       var stName=stNameAll();
-      setHeader("Фильтр: "+entry.name,{count:"",searchPh:"Поиск сделки (название или #id — Enter)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);},filter:curFilter});
+      // ШТАТНАЯ шапка раздела Сделки (как требовал Андрей 21.07): полный функционал фильтрации —
+      // клик по поиску открывает панель (системные пресеты, ★-фильтры, «★ В виджет»), поиск, новая сделка
+      if(!curPipe)curPipe=PIPES[0]&&PIPES[0].id;
+      var pcur=PIPES.find(function(x){return x.id===curPipe;})||PIPES[0];
+      setHeader("Сделки",{count:"",searchPh:"Поиск сделки (название, #id, или клик — фильтр)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);},newBtn:"+ Новая сделка",onNew:function(){newLead(pcur);},filter:{kind:"leads",statuses:(pcur&&pcur._embedded&&pcur._embedded.statuses)||[]}});
       $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
       var ep=VIEW_EPOCH;
       jreq(API+"/leads_spec?spec="+encodeURIComponent(JSON.stringify(spec))).then(function(r){
         if(ep!==VIEW_EPOCH)return;
         var items=(r&&r.items)||[];
+        var hc=$("#hCount");if(hc)hc.innerHTML=fmt(r.total||0)+" сделок: <b>"+fmt(r.sum||0)+" ₽</b>";
         var head=headHtml(r.total,r.sum);
         if(!items.length){$("#view").innerHTML=head+'<p class="muted">Ничего не найдено.</p></div>';bindHead();return;}
         var html=head+'<table class="amo"><thead><tr><th style="width:34%">Название</th><th>Этап</th><th>Бюджет</th><th>Ответственный</th><th>Создана</th></tr></thead><tbody>';
@@ -1149,12 +1154,14 @@
         bindHead();makeTableResizable($("#view table.amo"),"crm_lead_colw");
       });
     }else{
-      setHeader("Фильтр: "+entry.name,{count:"",searchPh:"Поиск (имя, телефон, email — Enter)",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},filter:curFilter});
+      // ШТАТНАЯ шапка раздела Контакты: панель фильтра, настройка колонок, добавление — как в vContacts
+      setHeader("Контакты",{count:"",searchPh:"Поиск (имя, телефон, email — Enter) или клик — фильтр",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},newBtn:"+ Добавить контакт",onNew:newContact,onCfg:openColSettings,filter:{kind:"contacts"}});
       $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
       var ep2=VIEW_EPOCH;
       jreq(API+"/contacts_spec?spec="+encodeURIComponent(JSON.stringify(spec))).then(function(r){
         if(ep2!==VIEW_EPOCH)return;
         var items=(r&&r.items)||[];
+        var hc2=$("#hCount");if(hc2)hc2.innerHTML=fmt(r.total||0)+" контактов";
         var head=headHtml(r.total,0);
         if(!items.length){$("#view").innerHTML=head+'<p class="muted">Ничего не найдено.</p></div>';bindHead();return;}
         var html=head+'<table class="amo"><thead>'+contactHeadHtml()+'</thead><tbody id="cbody">'+contactRows(items)+'</tbody></table></div>';
