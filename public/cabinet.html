@@ -996,10 +996,11 @@
     body.lk-skin {
       -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
-      background:
-        radial-gradient(1100px 520px at 50% -120px, #e8f2fa 0%, rgba(232,242,250,0) 70%),
-        linear-gradient(180deg, #f7f9fc 0%, #eef1f6 100%);
-      background-attachment: fixed;
+      /* Плоский фон-fallback; сам градиент — на фикс-слое ::before ниже.
+         Так mix-blend-mode: multiply у логотипа (белый PNG) продолжает
+         «растворять» белую подложку: с background-attachment: fixed на body
+         Chrome рисует фон отдельным слоем и blend с ним не работает. */
+      background: #f2f5f9;
       --lk-accent: #3589BD;
       --lk-ink: #171c29;
       --lk-muted: #6a7385;
@@ -1008,6 +1009,17 @@
       --lk-shadow-hi: 0 2px 6px rgba(16,24,40,.06), 0 26px 50px -22px rgba(16,32,64,.30);
     }
     body.lk-skin ::selection { background: rgba(53,137,189,.18); }
+    /* Градиентный фон — фиксированным слоем под контентом (blend-friendly) */
+    body.lk-skin::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(1100px 520px at 50% -120px, #e8f2fa 0%, rgba(232,242,250,0) 70%),
+        linear-gradient(180deg, #f7f9fc 0%, #eef1f6 100%);
+    }
     /* Обёртка страницы — легче и чище */
     body.lk-skin .wrap {
       background: rgba(252,252,254,.86);
