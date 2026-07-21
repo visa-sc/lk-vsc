@@ -3649,16 +3649,19 @@
       }
       // ── Вкладка «Статистика по сотрудникам» (админ; руководителю — по vscRestrict.tabs∋staff) ──
       // Данные — из тех же ночных съёмов amoCRM (сделки 00:00, касания 00:30): доп. нагрузки нет.
-      let _vscStaffMonth = null;
+      let _vscStaffMonth = null, _vscStaffSort = { key: "rev", dir: -1 }, _vscStaffCache = null;
       async function renderVscStaff() {
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Статистика по сотрудникам";
         h.appendChild(vscInfo("<b>Откуда данные</b><br>Ночные фоновые съёмы amoCRM (сделки — 00:00, скорость касания — 00:30 МСК) самым низким приоритетом — CRM не нагружается.<br><br><b>Методика</b><br>• Сделки/выручка/ATV — оплаченные сделки (по полю «Дата оплаты»), по ТЕКУЩЕМУ ответственному сделки.<br>• «Записано» — % сделок сотрудника на продвинутых статусах (запись/подача/паспорт/реализовано).<br>• Возвраты — сделки в статусах «Возврат»/«Ожидает решения о возврате».<br>• Касание — медиана времени от создания лида до первого исходящего звонка/сообщения (по ответственному лида).<br><br>Важно: ответственный — ТЕКУЩИЙ (сделки передаются между отделами, история смен ответственного недоступна)."));
         vscContent.appendChild(h);
         const box = document.createElement("div"); vscContent.appendChild(box);
         box.innerHTML = '<div class="loading-state">Загружаем…</div>';
-        let j;
-        try { j = await apiFetch("/admin/api/vsc/staffstats"); }
-        catch (e) { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить: ' + escapeHtml(e.message) + '</div>'; return; }
+        // Кэш на сессию вкладки: сортировка/переключение месяцев не дёргают сервер повторно.
+        let j = _vscStaffCache;
+        if (!j) {
+          try { j = await apiFetch("/admin/api/vsc/staffstats"); _vscStaffCache = j; }
+          catch (e) { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить: ' + escapeHtml(e.message) + '</div>'; return; }
+        }
         if (vscTab !== "staff") return;
         const d = j && j.data;
         if (!d || !d.months || !Object.keys(d.months).length) { box.innerHTML = '<div class="vsc-empty">Данных пока нет — они появятся после ближайшего ночного пересчёта (или запусти «Обновить» ниже).</div>' + (currentRole() === "admin" ? '<button type="button" id="staffRunBtn" class="vsc-dayrev-refresh">↻ Обновить сейчас</button>' : ""); vscStaffBindRun(box); return; }
@@ -3689,13 +3692,32 @@
             ret: s.ret, retPct: s.deals ? Math.round(s.ret / s.deals * 1000) / 10 : null,
             tN: t ? t.n : 0, tMed: t ? t.medMin : null, tP15: t && t.n ? t.p15 : null
           };
-        }).filter(function (r) { return r.deals > 0 || r.tN > 0; }).sort(function (a, b) { return (b.rev - a.rev) || (b.tN - a.tN); });
+        }).filter(function (r) { return r.deals > 0 || r.tN > 0; });
+        // Сортировка по любому столбцу (клик по заголовку; повторный клик — обратный порядок).
+        const SORT_COLS = [
+          { key: "name", label: "Сотрудник", left: true },
+          { key: "deals", label: "Сделок" }, { key: "rev", label: "Выручка" }, { key: "atv", label: "ATV" },
+          { key: "bookedPct", label: "Записано" }, { key: "retPct", label: "Возвраты" },
+          { key: "tMed", label: "Касание (мед.)" }, { key: "tP15", label: "≤15 мин" }, { key: "tN", label: "Лидов" }
+        ];
+        const sk = _vscStaffSort.key, sd = _vscStaffSort.dir; // dir: -1 = по убыванию, 1 = по возрастанию
+        rows.sort(function (a, b) {
+          if (sk === "name") return String(a.name).localeCompare(String(b.name), "ru") * sd;
+          const av = a[sk], bv = b[sk];
+          if (av == null && bv == null) return b.rev - a.rev;
+          if (av == null) return 1;    // пустые — всегда в конец
+          if (bv == null) return -1;
+          if (av === bv) return b.rev - a.rev;
+          return av < bv ? -sd : sd;
+        });
         const card = document.createElement("div"); card.className = "vsc-chart";
-        const th = 'text-align:right;padding:7px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;white-space:nowrap;';
+        const thBase = 'padding:7px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;white-space:nowrap;cursor:pointer;-webkit-user-select:none;user-select:none;';
         let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:760px;">'
-          + '<thead><tr><th style="text-align:left;padding:7px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">Сотрудник</th>'
-          + '<th style="' + th + '">Сделок</th><th style="' + th + '">Выручка</th><th style="' + th + '">ATV</th><th style="' + th + '">Записано</th><th style="' + th + '">Возвраты</th>'
-          + '<th style="' + th + '">Касание (мед.)</th><th style="' + th + '">≤15 мин</th><th style="' + th + '">Лидов</th></tr></thead><tbody>';
+          + '<thead><tr>' + SORT_COLS.map(function (c) {
+            const active = c.key === sk;
+            return '<th class="staff-th" data-key="' + c.key + '" style="' + thBase + 'text-align:' + (c.left ? "left" : "right") + ';' + (active ? 'color:#0097ca;' : '') + '">'
+              + escapeHtml(c.label) + (active ? (sd === -1 ? ' ▼' : ' ▲') : '') + '</th>';
+          }).join("") + '</tr></thead><tbody>';
         rows.forEach(function (r) {
           const retCol = (r.retPct || 0) > 15 ? "#b0263a" : (r.retPct || 0) > 8 ? "#b8862a" : "#5a626f";
           const tCol = r.tMed == null ? "#9aa0ab" : r.tMed <= 15 ? "#2c7a43" : r.tMed <= 60 ? "#b8862a" : "#b0263a";
@@ -3717,6 +3739,16 @@
           + (currentRole() === "admin" ? ' <button type="button" id="staffRunBtn" class="vsc-dayrev-refresh" style="margin-top:0;">↻ Обновить</button>' : '') + '</div>';
         card.innerHTML = html;
         box.appendChild(card);
+        // Клик по заголовку: тот же столбец — смена направления; новый — по убыванию
+        // (имя — по алфавиту). Данные из кэша, повторных запросов к серверу нет.
+        card.querySelectorAll(".staff-th").forEach(function (el) {
+          el.addEventListener("click", function () {
+            const k = el.getAttribute("data-key");
+            if (_vscStaffSort.key === k) _vscStaffSort.dir = -_vscStaffSort.dir;
+            else _vscStaffSort = { key: k, dir: k === "name" ? 1 : -1 };
+            renderVsc();
+          });
+        });
         vscStaffBindRun(box);
       }
       function vscStaffBindRun(box) {
@@ -3726,7 +3758,7 @@
           Promise.all([
             fetch("/admin/api/vsc/schengen/run", { method: "POST", headers: { Authorization: "Bearer " + getToken() } }).catch(function () {}),
             fetch("/admin/api/vsc/firsttouch/run", { method: "POST", headers: { Authorization: "Bearer " + getToken() } }).catch(function () {})
-          ]).then(function () { b.textContent = "Считается (несколько минут) — обнови вкладку позже"; });
+          ]).then(function () { _vscStaffCache = null; b.textContent = "Считается (несколько минут) — обнови вкладку позже"; });
         });
       }
       // ── «Выкупы — сверка р/с с таблицей» (Ежемесячный контроль, только админ) ──
