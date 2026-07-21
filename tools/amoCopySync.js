@@ -98,6 +98,56 @@ async function syncLeads() {
   log(`leads ГОТОВО: страниц ${pages}, обновлено ${changed}, конфликтов ${conflicts}`);
 }
 
+// перекачка КОНКРЕТНЫХ сделок по id (для reconcile: «отставшие» — изменённые в amo в окне гонки
+// первичного экспорта 04-06.07 или иначе пропущенные watermark-синком). Watermark НЕ трогаем.
+async function syncLeadsByIds(ids) {
+  let changed = 0, conflicts = 0;
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    const params = { limit: 250, with: "contacts" };
+    chunk.forEach((id, n) => { params[`filter[id][${n}]`] = id; });
+    const data = await amoGet(`${BASE}/api/v4/leads`, params);
+    const items = (data && data._embedded && data._embedded.leads) || [];
+    db.transaction(() => {
+      for (const l of items) {
+        if (hasLocalEdit.get("leads", l.id)) { conflicts++; continue; }
+        const cids = ((l._embedded && l._embedded.contacts) || []).map((c) => c.id);
+        upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids), pay_ts: payTsOf(l) });
+        cids.forEach((cid) => db.prepare("INSERT OR IGNORE INTO lead_contacts(lead_id,contact_id) VALUES(?,?)").run(l.id, cid));
+        changed++;
+      }
+    })();
+  }
+  log(`leads по id ГОТОВО: запрошено ${ids.length}, обновлено ${changed}, конфликтов ${conflicts}`);
+}
+async function syncContactsByIds(ids) {
+  let changed = 0, conflicts = 0;
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    const params = { limit: 250 };
+    chunk.forEach((id, n) => { params[`filter[id][${n}]`] = id; });
+    const data = await amoGet(`${BASE}/api/v4/contacts`, params);
+    const items = (data && data._embedded && data._embedded.contacts) || [];
+    db.transaction(() => {
+      for (const c of items) {
+        if (hasLocalEdit.get("contacts", c.id)) { conflicts++; continue; }
+        upContact.run({ id: c.id, name: c.name || "", responsible_user_id: c.responsible_user_id || 0, created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c), phones: phonesOf(c), emails: emailsOf(c), tags: JSON.stringify(((c._embedded && c._embedded.tags) || []).map((t) => t.name)) });
+        changed++;
+      }
+    })();
+  }
+  log(`contacts по id ГОТОВО: запрошено ${ids.length}, обновлено ${changed}, конфликтов ${conflicts}`);
+}
+// список id из --ids: CSV или @/путь/к/файлу (JSON-массив или CSV)
+function idsFromArg() {
+  const raw = arg("ids", "");
+  if (!raw) return null;
+  let s = raw;
+  if (s.startsWith("@")) s = fs.readFileSync(s.slice(1), "utf8");
+  try { const j = JSON.parse(s); if (Array.isArray(j)) return j.map(Number).filter(Number.isFinite); } catch (_) {}
+  return s.split(/[\s,]+/).map(Number).filter(Number.isFinite);
+}
+
 async function syncContacts() {
   let url = `${BASE}/api/v4/contacts`, pages = 0, changed = 0, conflicts = 0, maxUpd = since;
   let params = { limit: 250, "order[updated_at]": "asc", "filter[updated_at][from]": since };
@@ -281,6 +331,14 @@ async function syncCompanies() {
 
 (async () => {
   if (!AMO_TOKEN || !AMO_SUB) { console.error("нет AMO_ACCESS_TOKEN/AMO_SUBDOMAIN"); process.exit(1); }
+  const byIds = idsFromArg();
+  if (byIds && byIds.length) {
+    log(`Точечная перекачка ${ENTITY} по ${byIds.length} id (1 rps, read-only)`);
+    if (ENTITY === "leads") await syncLeadsByIds(byIds);
+    else if (ENTITY === "contacts") await syncContactsByIds(byIds);
+    else { console.error("--ids поддержан для leads|contacts"); process.exit(1); }
+    db.close(); return;
+  }
   log(`Синк ${ENTITY} из ${BASE} с ${new Date(since * 1000).toISOString()} (1 rps, read-only, max-pages=${MAX_PAGES})`);
   if (ENTITY === "leads") await syncLeads();
   else if (ENTITY === "contacts") await syncContacts();

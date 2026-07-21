@@ -37,22 +37,29 @@ async function get(url, params) {
   return r.data;
 }
 
+// «отставшие»: amo.updated_at НОВЕЕ копии, но watermark-синк их уже никогда не увидит
+// (класс дыры найден 21.07: гонка первичного экспорта — сделка выкачана утром 04-05.07,
+// изменена в amo днём 05.07, синк стартовал с 06.07 → изменение потеряно навсегда).
+// Кравл reconcile и так отдаёт updated_at каждой записи — сравниваем и перекачиваем точечно.
+const staleLeads = [], staleContacts = [];
+
 // контакты: полная сверка id (удалённые и слитые в amo → каскадное удаление из копии)
 async function reconcileContacts(cutoff) {
-  const amoIds = new Set();
+  const amoIds = new Set(), amoUpd = new Map();
   let url = `${BASE}/api/v4/contacts`;
   let params = { limit: 250 };
   let pages = 0;
   while (url && pages < 1300) {
     const d = await get(url, params); params = undefined;
     if (!d) { console.log(`контакты: обрыв на стр.${pages} — пропускаю удаление (неполный список)`); return 0; }
-    ((d._embedded || {}).contacts || []).forEach((c) => amoIds.add(c.id));
+    ((d._embedded || {}).contacts || []).forEach((c) => { amoIds.add(c.id); amoUpd.set(c.id, c.updated_at || 0); });
     url = (d._links && d._links.next && d._links.next.href) || null;
     pages++;
   }
-  const local = db.prepare("SELECT id FROM contacts WHERE id<? AND updated_at<?").all(LOCAL_ID_BASE, cutoff);
+  const local = db.prepare("SELECT id,updated_at FROM contacts WHERE id<? AND updated_at<?").all(LOCAL_ID_BASE, cutoff);
   const ghosts = local.filter((c) => !amoIds.has(c.id));
-  console.log(`контакты: amo=${amoIds.size} (стр.${pages}), локально=${local.length}, призраков=${ghosts.length}`);
+  for (const c of local) { const au = amoUpd.get(c.id); if (au && au > c.updated_at && au < cutoff) staleContacts.push(c.id); }
+  console.log(`контакты: amo=${amoIds.size} (стр.${pages}), локально=${local.length}, призраков=${ghosts.length}, отставших=${staleContacts.length}`);
   if (!ghosts.length) return 0;
   if (amoIds.size === 0 || amoIds.size < local.length / 2) { console.log("  amo вернул подозрительно мало — пропускаю удаление"); return 0; }
   const delC = db.prepare("DELETE FROM contacts WHERE id=?");
@@ -72,21 +79,22 @@ async function reconcileContacts(cutoff) {
   const cutoff = Math.floor(Date.now() / 1000) - 7200; // не трогаем свежеобновлённые
   let totalGhosts = 0;
   for (const pid of pipes) {
-    const amoIds = new Set();
+    const amoIds = new Set(), amoUpd = new Map();
     let url = `${BASE}/api/v4/leads`;
     let params = { limit: 250, "filter[pipeline_id]": pid };
     let pages = 0, broke = false;
     while (url && pages < 1200) {
       const d = await get(url, params); params = undefined;
       if (!d) { broke = true; break; }
-      ((d._embedded || {}).leads || []).forEach((l) => amoIds.add(l.id));
+      ((d._embedded || {}).leads || []).forEach((l) => { amoIds.add(l.id); amoUpd.set(l.id, l.updated_at || 0); });
       url = (d._links && d._links.next && d._links.next.href) || null;
       pages++;
     }
     if (broke) { console.log(`воронка ${pid}: обрыв на стр.${pages} — пропускаю удаление (неполный список)`); continue; }
     // ВАЖНО: filter[pipeline_id] отдаёт и закрытые — значит сверять можно все локальные этой воронки
-    const local = db.prepare("SELECT id FROM leads WHERE pipeline_id=? AND id<? AND updated_at<?").all(pid, LOCAL_ID_BASE, cutoff);
+    const local = db.prepare("SELECT id,updated_at FROM leads WHERE pipeline_id=? AND id<? AND updated_at<?").all(pid, LOCAL_ID_BASE, cutoff);
     const ghosts = local.filter((l) => !amoIds.has(l.id));
+    for (const l of local) { const au = amoUpd.get(l.id); if (au && au > l.updated_at && au < cutoff) staleLeads.push(l.id); }
     console.log(`воронка ${pid}: amo=${amoIds.size} (стр.${pages}), локально=${local.length}, призраков=${ghosts.length}`);
     if (!ghosts.length) continue;
     if (amoIds.size === 0) { console.log("  amo вернул 0 — подозрительно, пропускаю удаление"); continue; }
@@ -99,5 +107,18 @@ async function reconcileContacts(cutoff) {
     totalGhosts += ghosts.length;
   }
   if (arg === "all" || arg === "contacts") totalGhosts += await reconcileContacts(cutoff);
-  console.log(`ИТОГО: удалено призраков ${totalGhosts}, запросов к amo ${reqs}`);
+  // перекачка отставших ТЕМ ЖЕ кодом синка (upsert с pay_ts/контактами); watermark не трогается
+  const { spawnSync } = require("child_process");
+  const fs = require("fs");
+  const refetch = (entity, ids) => {
+    if (!ids.length) return;
+    const f = "/tmp/amocopy-stale-" + entity + ".json";
+    fs.writeFileSync(f, JSON.stringify(ids));
+    console.log(`перекачиваю отставших ${entity}: ${ids.length}`);
+    const r = spawnSync(process.execPath, [path.join(__dirname, "amoCopySync.js"), "--entity", entity, "--ids", "@" + f], { stdio: "inherit" });
+    if (r.status !== 0) console.log(`перекачка ${entity} завершилась с кодом ${r.status}`);
+  };
+  refetch("leads", staleLeads);
+  refetch("contacts", staleContacts);
+  console.log(`ИТОГО: удалено призраков ${totalGhosts}, отставших leads=${staleLeads.length}/contacts=${staleContacts.length}, запросов к amo ${reqs}`);
 })().catch((e) => { console.error("ОШИБКА:", e.message); process.exit(1); });
