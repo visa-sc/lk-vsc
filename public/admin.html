@@ -3625,95 +3625,103 @@
         const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;";
         qs.forEach(function (q) {
           const on = q === _vscTaxQ;
-          const b = document.createElement("button"); b.type = "button"; b.textContent = q.replace("2026-", "") + " · " + (VSC_TAXQ_MON[q.split("-")[1]] || []).map(function (m) { return m.slice(0, 3); }).join("–") + " " + q.slice(0, 4);
+          const b = document.createElement("button"); b.type = "button"; b.textContent = q.replace("2026-", "") + " \u00b7 " + (VSC_TAXQ_MON[q.split("-")[1]] || []).map(function (m) { return m.slice(0, 3); }).join("\u2013") + " " + q.slice(0, 4);
           b.style.cssText = "border:1px solid " + (on ? "#0097ca" : "#cfd8e3") + ";background:" + (on ? "#0097ca" : "#fff") + ";color:" + (on ? "#fff" : "#33415a") + ";border-radius:10px;padding:8px 15px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;";
           b.addEventListener("click", function () { _vscTaxQ = q; renderVsc(); });
           bar.appendChild(b);
         });
-        const addQ = document.createElement("button"); addQ.type = "button"; addQ.textContent = "+ квартал";
+        const addQ = document.createElement("button"); addQ.type = "button"; addQ.textContent = "+ \u043a\u0432\u0430\u0440\u0442\u0430\u043b";
         addQ.style.cssText = "border:1px dashed #b7c0cd;background:#f6f8fb;color:#4a5568;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;";
         addQ.addEventListener("click", function () {
-          const last = qs[qs.length - 1]; const [y, qn] = last.split("-Q"); let ny = +y, nq = +qn + 1; if (nq > 4) { nq = 1; ny++; }
+          const last = qs[qs.length - 1]; const parts = last.split("-Q"); let ny = +parts[0], nq = +parts[1] + 1; if (nq > 4) { nq = 1; ny++; }
           const key = ny + "-Q" + nq;
-          _vscTaxData.quarters[key] = { rev: { alta: [null, null, null], kom: [null, null, null], pan: [null, null, null], akg: [null, null, null] }, cash: null, vatOut: null, buh: {} };
+          _vscTaxData.quarters[key] = { buh: {} };
           _vscTaxQ = key; vscTaxSave(null, true).then(function () { renderVsc(); });
         });
         bar.appendChild(addQ);
         box.appendChild(bar);
-        const Q = _vscTaxData.quarters[_vscTaxQ];
-        const mons = VSC_TAXQ_MON[_vscTaxQ.split("-")[1]] || [];
-        const num = function (x) { if (x == null || x === "") return null; const n = parseFloat(String(x).replace(/[\s ]/g, "").replace(",", ".")); return isNaN(n) ? null : n; };
-        const money0 = function (v) { return (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽"; };
-        // ── Ввод: выручки по месяцам + нал/НДС ──
+        const Q = _vscTaxData.quarters[_vscTaxQ]; Q.buh = Q.buh || {};
+        const year = _vscTaxQ.split("-")[0], qn = +_vscTaxQ.split("-Q")[1];
+        const mons = VSC_TAXQ_MON["Q" + qn] || [];
+        const monthYm = function (mi) { return year + "-" + String((qn - 1) * 3 + mi + 1).padStart(2, "0"); };
+        const num = function (x) { if (x == null || x === "") return null; const n = parseFloat(String(x).replace(/[\s\u00a0]/g, "").replace(",", ".")); return isNaN(n) ? null : n; };
+        const money0 = function (v) { return (v == null || isNaN(v)) ? "\u2014" : Math.round(v).toLocaleString("ru-RU") + " \u20bd"; };
+        const A = AUTO || { rev: { alta: [], kom: [], pan: [], akg: [] }, cash: null, vatOut: null, missing: ["\u0430\u0432\u0442\u043e\u0442\u044f\u0433 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d"] };
+        const retTot = Object.values((RET && RET.byEnt) || {}).reduce(function (a, v) { return a + (v || 0); }, 0);
+        // \u2500\u2500 \u0410\u0432\u0442\u043e-\u0434\u0430\u043d\u043d\u044b\u0435 (read-only) \u2500\u2500
         const inCard = document.createElement("div"); inCard.className = "vsc-chart";
-        const inp = function (val, cls, ph) { return '<input type="text" inputmode="numeric" class="' + cls + '" value="' + (val == null ? "" : val) + '"' + (ph ? ' placeholder="' + ph + '"' : '') + ' style="width:100%;box-sizing:border-box;text-align:right;padding:6px 8px;border:1px solid rgba(20,32,64,.14);border-radius:8px;font-size:13px;font-family:inherit;background:#fff;">'; };
-        let ih = '<div class="vsc-chart-h" style="margin-bottom:8px;">Выручка по юрлицам — ' + escapeHtml(mons.join(", ")) + '</div>'
-          + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:560px;"><thead><tr><th style="text-align:left;padding:6px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">Юрлицо</th>';
+        let ih = '<div class="vsc-chart-h" style="margin-bottom:8px;">\u0414\u0430\u043d\u043d\u044b\u0435 \u0438\u0437 \u0441\u0440\u043c-\u0444\u0430\u043a\u0442 \u0438 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432\u043e\u0437\u0432\u0440\u0430\u0442\u043e\u0432 (\u0430\u0432\u0442\u043e\u043c\u0430\u0442\u043e\u043c)</div>'
+          + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px;"><thead><tr><th style="text-align:left;padding:6px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">\u042e\u0440\u043b\u0438\u0446\u043e</th>';
         mons.forEach(function (m) { ih += '<th style="text-align:right;padding:6px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">' + m + '</th>'; });
-        ih += '<th style="text-align:right;padding:6px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">Σ квартал</th></tr></thead><tbody>';
+        ih += '<th style="text-align:right;padding:6px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">\u03a3 \u043a\u0432\u0430\u0440\u0442\u0430\u043b</th></tr></thead><tbody>';
         ENT.forEach(function (e) {
+          const arr = (A.rev && A.rev[e.key]) || [];
+          const s = arr.reduce(function (a, v) { return a + (v || 0); }, 0);
           ih += '<tr style="border-top:1px solid #f0eef5;"><td style="padding:5px 8px;font-weight:600;white-space:nowrap;">' + escapeHtml(e.name) + '</td>';
-          for (let mi = 0; mi < 3; mi++) ih += '<td style="padding:4px 6px;width:120px;">' + inp((Q.rev[e.key] || [])[mi], "tax-rev-" + e.key + "-" + mi) + '</td>';
-          ih += '<td class="tax-sum-' + e.key + '" style="padding:5px 8px;text-align:right;font-weight:700;white-space:nowrap;"></td></tr>';
+          for (let mi = 0; mi < 3; mi++) ih += '<td style="padding:5px 8px;text-align:right;white-space:nowrap;">' + (arr[mi] != null ? money0(arr[mi]) : "\u2014") + '</td>';
+          ih += '<td style="padding:5px 8px;text-align:right;font-weight:700;white-space:nowrap;">' + money0(s) + '</td></tr>';
         });
         ih += '</tbody></table></div>'
-          + '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;align-items:flex-end;">'
-          + '<label style="font-size:12.5px;color:#6b7280;">Нал без чека за кв (вкл. ВНЖ), ₽<br><div style="width:180px;margin-top:3px;">' + inp(Q.cash, "tax-cash") + '</div></label>'
-          + '<label style="font-size:12.5px;color:#6b7280;">Вынесенный НДС за кв, ₽<br><div style="width:180px;margin-top:3px;">' + inp(Q.vatOut, "tax-vatout") + '</div></label>'
-          + (AUTO ? '<button type="button" id="taxPull" class="vsc-dayrev-refresh" style="margin-top:0;background:#eef2f7;color:#3a4356;border-color:#d7dce4;">↻ Подтянуть из срм-факт</button>' : '')
-          + '<div style="font-size:12px;color:#6b7280;">Возвраты (авто, услуги+НДС): <b class="tax-ret-total"></b>' + (RET.missing && RET.missing.length ? ' <span style="color:#b8602a;">⚠ не загрузились: ' + escapeHtml(RET.missing.join(", ")) + '</span>' : '') + (AUTO && AUTO.missing && AUTO.missing.length ? ' <span style="color:#b8602a;">⚠ срм-факт: нет ' + escapeHtml(AUTO.missing.join(", ")) + '</span>' : '') + '<br><span class="tax-ret-detail" style="color:#9aa0ab;font-size:11.5px;"></span></div>'
-          + '</div>';
+          + '<div style="display:flex;gap:22px;flex-wrap:wrap;margin-top:12px;font-size:12.5px;color:#5a626f;">'
+          + '<div>\u041d\u0430\u043b \u0431\u0435\u0437 \u0447\u0435\u043a\u0430 \u0437\u0430 \u043a\u0432: <b>' + money0(A.cash) + '</b></div>'
+          + '<div>\u0412\u044b\u043d\u0435\u0441\u0435\u043d\u043d\u044b\u0439 \u041d\u0414\u0421 \u0437\u0430 \u043a\u0432: <b>' + money0(A.vatOut) + '</b></div>'
+          + '<div>\u0412\u043e\u0437\u0432\u0440\u0430\u0442\u044b (\u0443\u0441\u043b\u0443\u0433\u0438+\u041d\u0414\u0421) \u0437\u0430 \u043a\u0432: <b>' + money0(retTot) + '</b></div>'
+          + '</div>'
+          + '<div style="font-size:11.5px;color:#9aa0ab;margin-top:6px;">\u0412\u043e\u0437\u0432\u0440\u0430\u0442\u044b \u043f\u043e \u044e\u0440\u043b\u0438\u0446\u0430\u043c (\u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u043e): ' + ENT.map(function (e) { return escapeHtml(e.name) + " " + money0((RET.byEnt || {})[e.key] || 0); }).join(" \u00b7 ") + ((RET.byEnt || {}).other ? " \u00b7 \u043d\u0435 \u043f\u0440\u0438\u0432\u044f\u0437\u0430\u043d\u043e " + money0(RET.byEnt.other) : "") + '</div>'
+          + ((A.missing && A.missing.length) || (RET.missing && RET.missing.length) ? '<div style="font-size:12px;color:#b8602a;margin-top:6px;">\u26a0 \u043d\u0435 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u043b\u043e\u0441\u044c: ' + escapeHtml(((A.missing || []).concat(RET.missing || [])).join(", ")) + ' \u2014 \u0446\u0438\u0444\u0440\u044b \u043d\u0435\u043f\u043e\u043b\u043d\u044b\u0435</div>' : '');
         inCard.innerHTML = ih;
         box.appendChild(inCard);
-        // ── Итоговая таблица ──
+        // \u2500\u2500 \u0420\u0430\u0441\u0447\u0451\u0442 \u0438 \u0441\u0432\u0435\u0440\u043a\u0430 \u2500\u2500
         const outCard = document.createElement("div"); outCard.className = "vsc-chart";
-        outCard.innerHTML = '<div class="vsc-chart-h" style="margin-bottom:8px;">Расчёт и сверка с бухгалтером</div><div class="tax-out"></div>'
-          + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;"><button type="button" id="taxSave" class="vsc-dayrev-refresh" style="margin-top:0;">Сохранить</button><span id="taxStatus" style="font-size:12.5px;color:#8a90a0;"></span></div>';
+        outCard.innerHTML = '<div class="vsc-chart-h" style="margin-bottom:8px;">\u0420\u0430\u0441\u0447\u0451\u0442 \u0438 \u0441\u0432\u0435\u0440\u043a\u0430 \u0441 \u0431\u0443\u0445\u0433\u0430\u043b\u0442\u0435\u0440\u043e\u043c</div><div class="tax-out"></div>'
+          + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;"><button type="button" id="taxSave" class="vsc-dayrev-refresh" style="margin-top:0;">\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0446\u0438\u0444\u0440\u044b \u0431\u0443\u0445\u0433\u0430\u043b\u0442\u0435\u0440\u0430</button><span id="taxStatus" style="font-size:12.5px;color:#8a90a0;"></span></div>';
         box.appendChild(outCard);
         const recalc = function () {
-          // собрать ввод
-          ENT.forEach(function (e) { Q.rev[e.key] = [0, 1, 2].map(function (mi) { return num(box.querySelector(".tax-rev-" + e.key + "-" + mi).value); }); });
-          Q.cash = num(box.querySelector(".tax-cash").value); Q.vatOut = num(box.querySelector(".tax-vatout").value);
-          const sums = {}; let tot = 0;
-          ENT.forEach(function (e) { const s = (Q.rev[e.key] || []).reduce(function (a, v) { return a + (v || 0); }, 0); sums[e.key] = s; tot += s; const el = box.querySelector(".tax-sum-" + e.key); if (el) el.textContent = money0(s); });
-          const retTot = ENT.reduce(function (a, e) { return a + (RET.byEnt[e.key] || 0); }, 0) + (RET.byEnt.other || 0);
-          const rt = box.querySelector(".tax-ret-total"); if (rt) rt.textContent = money0(retTot);
-          const rd = box.querySelector(".tax-ret-detail"); if (rd) rd.textContent = ENT.map(function (e) { return e.name + " " + money0(RET.byEnt[e.key] || 0); }).join(" · ") + (RET.byEnt.other ? " · не привязано " + money0(RET.byEnt.other) : "");
-          // таблица результатов
+          const deduct = (retTot + (A.cash || 0)) / 4;
           const th = 'text-align:right;padding:6px 8px;color:#6b7280;font-size:10.5px;text-transform:uppercase;white-space:nowrap;';
           let oh = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:900px;"><thead><tr>'
-            + '<th style="text-align:left;padding:6px 8px;color:#6b7280;font-size:10.5px;text-transform:uppercase;">Юрлицо</th>'
-            + '<th style="' + th + '">Выручка</th><th style="' + th + '">Вычет (возвр+нал)/4</th><th style="' + th + '">База</th>'
-            + '<th style="' + th + '">Налог наш</th><th style="' + th + '">Налог бух</th><th style="' + th + '">Δ налог</th>'
-            + '<th style="' + th + '">НДС наш</th><th style="' + th + '">НДС бух</th><th style="' + th + '">Δ НДС</th><th style="' + th + '">Доход бух</th></tr></thead><tbody>';
-          // Формулы «2 кв.xlsx»: вычет = (возвраты общие + нал)/4 каждому; НДС у всех 4:
-          // база НДС = выручка с месяца vatFrom (Альта/Ком — без 1-го месяца) + вынесенный НДС/4.
-          const deduct = (retTot + (Q.cash || 0)) / 4;
+            + '<th style="text-align:left;padding:6px 8px;color:#6b7280;font-size:10.5px;text-transform:uppercase;">\u042e\u0440\u043b\u0438\u0446\u043e</th>'
+            + '<th style="' + th + '">\u0412\u044b\u0440\u0443\u0447\u043a\u0430</th><th style="' + th + '">\u0412\u044b\u0447\u0435\u0442 (\u0432\u043e\u0437\u0432\u0440+\u043d\u0430\u043b)/4</th><th style="' + th + '">\u0411\u0430\u0437\u0430</th>'
+            + '<th style="' + th + '">\u041d\u0430\u043b\u043e\u0433 \u043d\u0430\u0448</th><th style="' + th + '">\u041d\u0430\u043b\u043e\u0433 \u0431\u0443\u0445</th><th style="' + th + '">\u0394 \u043d\u0430\u043b\u043e\u0433</th>'
+            + '<th style="' + th + '">\u041d\u0414\u0421 \u043d\u0430\u0448</th><th style="' + th + '">\u041d\u0414\u0421 \u0431\u0443\u0445</th><th style="' + th + '">\u0394 \u041d\u0414\u0421</th><th style="' + th + '">\u0414\u043e\u0445\u043e\u0434 \u0431\u0443\u0445</th></tr></thead><tbody>';
+          let sumDTax = 0, sumDVat = 0, haveB = false;
           ENT.forEach(function (e) {
-            const R = sums[e.key];
+            const arr = (A.rev && A.rev[e.key]) || [];
+            const R = arr.reduce(function (a, v) { return a + (v || 0); }, 0);
             const base = R - deduct;
             const tax = base * e.rate;
-            const vatRev = (Q.rev[e.key] || []).slice(e.vatFrom || 0).reduce(function (a, v) { return a + (v || 0); }, 0);
-            const vat = (vatRev + (Q.vatOut || 0) / 4) * 0.05;
-            const b = (Q.buh && Q.buh[e.key]) || {};
+            let vatRev = 0; for (let mi = 0; mi < 3; mi++) { if (monthYm(mi) >= e.vatStart) vatRev += arr[mi] || 0; }
+            const vat = (vatRev + (A.vatOut || 0) / 4) * 0.05;
+            const b = Q.buh[e.key] || {};
             const dTax = (b.tax != null) ? tax - b.tax : null;
             const dVat = (b.vat != null) ? vat - b.vat : null;
+            if (dTax != null) { sumDTax += dTax; haveB = true; }
+            if (dVat != null) { sumDVat += dVat; haveB = true; }
             const dCol = function (d, scale) { if (d == null) return "#9aa0ab"; return Math.abs(d) > scale ? "#b0263a" : "#2c7a43"; };
+            const inpB = function (kind, val) { return '<input type="text" inputmode="numeric" class="tax-buh-' + kind + '-' + e.key + '" value="' + (val == null ? "" : val) + '" style="width:100%;box-sizing:border-box;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:12.5px;font-family:inherit;">'; };
             oh += '<tr style="border-top:1px solid #f0eef5;">'
-              + '<td style="padding:5px 8px;font-weight:600;white-space:nowrap;">' + escapeHtml(e.name) + ' <span style="color:#9aa0ab;font-weight:400;">' + (e.rate * 100) + '%' + (e.vat ? "+НДС" : "") + '</span></td>'
+              + '<td style="padding:5px 8px;font-weight:600;white-space:nowrap;">' + escapeHtml(e.name) + ' <span style="color:#9aa0ab;font-weight:400;">' + (e.rate * 100) + '%</span></td>'
               + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;">' + money0(R) + '</td>'
-              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;color:#b8602a;">−' + money0(deduct) + '</td>'
+              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;color:#b8602a;">\u2212' + money0(deduct) + '</td>'
               + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:600;">' + money0(base) + '</td>'
               + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:700;">' + money0(tax) + '</td>'
-              + '<td style="padding:4px 6px;width:110px;">' + '<input type="text" inputmode="numeric" class="tax-buh-tax-' + e.key + '" value="' + (b.tax == null ? "" : b.tax) + '" style="width:100%;box-sizing:border-box;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:12.5px;font-family:inherit;">' + '</td>'
-              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:700;color:' + dCol(dTax, 30000) + ';">' + (dTax == null ? "—" : (dTax > 0 ? "+" : "−") + money0(Math.abs(dTax))) + '</td>'
+              + '<td style="padding:4px 6px;width:105px;">' + inpB("tax", b.tax) + '</td>'
+              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:700;color:' + dCol(dTax, 30000) + ';">' + (dTax == null ? "\u2014" : (dTax >= 0 ? "+" : "\u2212") + money0(Math.abs(dTax))) + '</td>'
               + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:700;">' + money0(vat) + '</td>'
-              + '<td style="padding:4px 6px;width:110px;">' + '<input type="text" inputmode="numeric" class="tax-buh-vat-' + e.key + '" value="' + (b.vat == null ? "" : b.vat) + '" style="width:100%;box-sizing:border-box;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:12.5px;font-family:inherit;">' + '</td>'
-              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:700;color:' + dCol(dVat, 30000) + ';">' + (dVat == null ? "—" : (dVat > 0 ? "+" : "−") + money0(Math.abs(dVat))) + '</td>'
-              + '<td style="padding:4px 6px;width:110px;">' + '<input type="text" inputmode="numeric" class="tax-buh-inc-' + e.key + '" value="' + (b.income == null ? "" : b.income) + '" style="width:100%;box-sizing:border-box;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:12.5px;font-family:inherit;">' + '</td>'
+              + '<td style="padding:4px 6px;width:105px;">' + inpB("vat", b.vat) + '</td>'
+              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:700;color:' + dCol(dVat, 30000) + ';">' + (dVat == null ? "\u2014" : (dVat >= 0 ? "+" : "\u2212") + money0(Math.abs(dVat))) + '</td>'
+              + '<td style="padding:4px 6px;width:105px;">' + inpB("inc", b.income) + '</td>'
               + '</tr>';
           });
           oh += '</tbody></table></div>';
+          if (haveB) {
+            const total = sumDTax + sumDVat;
+            const fmtD = function (d) { return (d >= 0 ? "+" : "\u2212") + money0(Math.abs(d)); };
+            const col = Math.abs(total) > 50000 ? "#b0263a" : "#2c7a43";
+            oh += '<div style="margin-top:12px;padding:12px 16px;background:#f6f8fb;border:1px solid #edf0f5;border-radius:12px;font-size:13.5px;">'
+              + '\u0418\u0442\u043e\u0433\u043e \u0440\u0430\u0441\u0445\u043e\u0436\u0434\u0435\u043d\u0438\u0435 (\u043d\u0430\u0448 \u2212 \u0431\u0443\u0445): \u043d\u0430\u043b\u043e\u0433 <b>' + fmtD(sumDTax) + '</b> \u00b7 \u041d\u0414\u0421 <b>' + fmtD(sumDVat) + '</b> \u00b7 \u0432\u0441\u0435\u0433\u043e <b style="color:' + col + ';">' + fmtD(total) + '</b>'
+              + '<div style="font-size:12px;color:#6b7280;margin-top:4px;">' + (total < 0 ? "\u0431\u0443\u0445\u0433\u0430\u043b\u0442\u0435\u0440 \u043d\u0430\u0441\u0447\u0438\u0442\u0430\u043b\u0430 \u0411\u041e\u041b\u042c\u0428\u0415 \u043d\u0430\u0448\u0435\u0439 \u043e\u0446\u0435\u043d\u043a\u0438 \u043d\u0430 " + money0(Math.abs(total)) : "\u043d\u0430\u0448\u0430 \u043e\u0446\u0435\u043d\u043a\u0430 \u0432\u044b\u0448\u0435 \u0431\u0443\u0445\u0433\u0430\u043b\u0442\u0435\u0440\u0441\u043a\u043e\u0439 \u043d\u0430 " + money0(Math.abs(total))) + '</div></div>';
+          }
           const out = box.querySelector(".tax-out"); if (out) { out.innerHTML = oh; bindBuh(); }
         };
         let bindBuh = function () {
@@ -3721,7 +3729,7 @@
             ["tax", "vat", "inc"].forEach(function (kind) {
               const el = box.querySelector(".tax-buh-" + kind + "-" + e.key); if (!el) return;
               el.addEventListener("change", function () {
-                Q.buh = Q.buh || {}; Q.buh[e.key] = Q.buh[e.key] || {};
+                Q.buh[e.key] = Q.buh[e.key] || {};
                 const field = kind === "inc" ? "income" : kind;
                 Q.buh[e.key][field] = num(el.value);
                 recalc();
@@ -3729,21 +3737,7 @@
             });
           });
         };
-        box.querySelectorAll('input[class^="tax-rev-"], .tax-cash, .tax-vatout').forEach(function (el) { el.addEventListener("input", recalc); });
         const sb = box.querySelector("#taxSave"); if (sb) sb.addEventListener("click", function () { vscTaxSave(box, false); });
-        // «Подтянуть из срм-факт»: перезаписывает выручки/нал/НДС автозначениями (сохранить — кнопкой).
-        const pb = box.querySelector("#taxPull");
-        if (pb && AUTO) pb.addEventListener("click", function () {
-          ENT.forEach(function (e) {
-            for (let mi = 0; mi < 3; mi++) {
-              const v = (AUTO.rev[e.key] || [])[mi];
-              if (v != null) { const el = box.querySelector(".tax-rev-" + e.key + "-" + mi); if (el) el.value = v; }
-            }
-          });
-          if (AUTO.cash != null) box.querySelector(".tax-cash").value = Math.round(AUTO.cash * 100) / 100;
-          if (AUTO.vatOut != null) box.querySelector(".tax-vatout").value = Math.round(AUTO.vatOut * 100) / 100;
-          recalc();
-        });
         recalc();
       }
       async function vscTaxSave(box, silent) {
