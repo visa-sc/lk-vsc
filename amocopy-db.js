@@ -158,6 +158,18 @@ module.exports = function mountDbRoutes(app, guard, api) {
   const qTasksDoneSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id,t.task_type,t.is_completed,t.result, l.name lead_name
     FROM tasks t LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads'
     WHERE t.is_completed=1 AND t.complete_till>=? {RESP} ORDER BY t.complete_till DESC LIMIT 300`;
+  // полный счётчик задач для шапки раздела (как amo «6401 задача»): список отдаётся с LIMIT, счёт — честный
+  app.get(`${api}/tasks_count`, guard, (req, res) => {
+    const resp = parseInt(req.query.responsible, 10) || 0;
+    const now = Math.floor(Date.now() / 1000);
+    const dayStart = now - (now % 86400);
+    try {
+      const W = resp ? " AND responsible_user_id=" + resp : "";
+      const open = D.prepare("SELECT COUNT(*) c FROM tasks WHERE is_completed=0" + W).get().c;
+      const done30 = D.prepare("SELECT COUNT(*) c FROM tasks WHERE is_completed=1 AND complete_till>=?" + W).get(dayStart - 30 * 86400).c;
+      res.json({ success: true, open, done30 });
+    } catch (e) { res.json({ success: false, open: 0, done30: 0 }); }
+  });
   app.get(`${api}/tasks_list`, guard, (req, res) => {
     const resp = parseInt(req.query.responsible, 10) || 0;
     const now = Math.floor(Date.now() / 1000);

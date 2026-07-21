@@ -1412,7 +1412,7 @@
     };
   }
   /* ─── раздел «Задачи» ─── */
-  var taskRange="all", taskShowDone=false; // День/Неделя/Месяц/Все + флаг выполненных — как в amo
+  var taskRange="all", taskShowDone=false, taskSortDir="desc"; // День/Неделя/Месяц/Все + выполненные + сорт по дате (▼ как в amo)
   function vTasks(){
     renderSidebar("tasks");
     var ranges=[["day","День"],["week","Неделя"],["month","Месяц"],["all","Все"]];
@@ -1433,8 +1433,9 @@
   }
   function loadTasks(resp,ttype){
     var doneP=taskShowDone?jreq(API+"/tasks_list?done=1"+(resp&&resp!=="0"?("&responsible="+resp):"")).catch(function(){return[];}):Promise.resolve([]);
-    Promise.all([jreq(API+"/tasks_list"+(resp&&resp!=="0"?("?responsible="+resp):"")),doneP]).then(function(rr){
-      var items=rr[0],doneItems=rr[1]||[];
+    var cntP=jreq(API+"/tasks_count"+(resp&&resp!=="0"?("?responsible="+resp):"")).catch(function(){return null;});
+    Promise.all([jreq(API+"/tasks_list"+(resp&&resp!=="0"?("?responsible="+resp):"")),doneP,cntP]).then(function(rr){
+      var items=rr[0],doneItems=rr[1]||[],cnt=rr[2];
       var typeName={};TASK_TYPES.forEach(function(t){typeName[t.id]=t.name;});
       if(ttype&&ttype!=="0")items=items.filter(function(t){return String(t.task_type)===String(ttype);});
       if(taskRange!=="all"){
@@ -1442,33 +1443,30 @@
         var horizon=taskRange==="day"?dayEnd2:taskRange==="week"?dayEnd2+6*86400:dayEnd2+29*86400;
         items=items.filter(function(t){return t.till&&t.till<horizon;});
       }
-      var now=Date.now()/1000, dayEnd=now-(now%86400)+86400;
-      var groups={overdue:[],today:[],tomorrow:[],later:[]};
-      items.forEach(function(t){
-        if(t.till&&t.till<now)groups.overdue.push(t);
-        else if(t.till&&t.till<dayEnd)groups.today.push(t);
-        else if(t.till&&t.till<dayEnd+86400)groups.tomorrow.push(t);
-        else groups.later.push(t);
-      });
-      var titles={overdue:"Просроченные",today:"Сегодня",tomorrow:"Завтра",later:"Позже"};
-      var colors={overdue:"#d64545",today:"#2f8b57",tomorrow:"#2e80ec",later:"#92989b"};
-      var html="";
-      ["overdue","today","tomorrow","later"].forEach(function(g){
-        if(!groups[g].length)return;
-        html+='<h3 style="color:'+colors[g]+'">'+titles[g]+' ('+groups[g].length+')</h3><table class="amo"><tbody>';
-        groups[g].forEach(function(t){
-          html+='<tr><td style="width:130px" class="muted">'+dt(t.till)+'</td><td style="width:130px" class="muted">'+esc(typeName[t.task_type]||"")+'</td><td>'+esc(t.text||"")+'</td><td style="width:180px"><a data-lead="'+t.entity_id+'">'+esc((t.lead_name||"сделка #"+t.entity_id).slice(0,30))+'</a></td><td class="muted" style="width:150px">'+esc(t.resp||"")+'</td><td style="width:190px"><a class="tdone" data-t="'+t.id+'">выполнить</a> · <a class="tmove" data-t="'+t.id+'">перенести</a> · <a class="tedit" data-t="'+t.id+'" data-text="'+esc(t.text||"")+'" data-till="'+(t.till||0)+'" data-type="'+(t.task_type||0)+'">изменить</a></td></tr>';
-        });
-        html+='</tbody></table>';
-      });
+      // как в amo: единая таблица (Дата | Ответственный | Объект | Тип | Текст | Результат),
+      // компактные строки (текст в одну строку), счётчик «N задач», сорт по дате кликом,
+      // просроченные даты красным. Секции Просроченные/Сегодня заменены на amo-вид (21.07).
+      var now=Date.now()/1000;
       if(taskShowDone&&doneItems.length){
         if(ttype&&ttype!=="0")doneItems=doneItems.filter(function(t){return String(t.task_type)===String(ttype);});
-        html+='<h3 style="color:#8a94a0">Выполненные за 30 дней ('+doneItems.length+')</h3><table class="amo"><tbody>'+doneItems.map(function(t){
-          return '<tr style="opacity:.78"><td style="width:130px" class="muted">'+dt(t.till)+'</td><td style="width:130px" class="muted">'+esc(typeName[t.task_type]||"")+'</td><td style="text-decoration:line-through">'+esc(t.text||"")+'</td><td style="width:180px"><a data-lead="'+t.entity_id+'">'+esc((t.lead_name||"сделка #"+t.entity_id).slice(0,30))+'</a></td><td class="muted" style="width:150px">'+esc(t.resp||"")+'</td><td style="width:190px;color:#2f8b57">'+esc(t.result||"")+'</td></tr>';
-        }).join("")+'</tbody></table>';
+        doneItems.forEach(function(t){t.done=1;});
+        items=items.concat(doneItems);
       }
+      items.sort(function(a,b){return taskSortDir==="asc"?(a.till||0)-(b.till||0):(b.till||0)-(a.till||0);});
+      var one=function(s,n){s=String(s||"");return '<span style="display:inline-block;max-width:'+n+'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom" title="'+esc(s)+'">'+esc(s)+'</span>';};
+      // честный счётчик как в amo («6401 задача»): список лимитирован сервером, счёт — полный COUNT
+      var filtered=(ttype&&ttype!=="0")||taskRange!=="all";
+      var total=(!filtered&&cnt&&cnt.success)?(cnt.open+(taskShowDone?cnt.done30:0)):items.length;
+      var html='<div style="padding:2px 0 10px"><b>'+fmt(total)+'</b> '+(total%10===1&&total%100!==11?"задача":"задач")+(items.length<total?' <span class="muted" style="font-size:12px">(показаны ближайшие '+fmt(items.length)+')</span>':'')+'</div>';
+      html+='<table class="amo"><thead><tr><th style="width:150px;cursor:pointer" id="thTill">Дата исполнения '+(taskSortDir==="asc"?"▲":"▼")+'</th><th style="width:150px">Ответственный</th><th style="width:200px">Объект</th><th style="width:150px">Тип задачи</th><th>Текст задачи</th><th style="width:170px">Результат</th><th style="width:170px"></th></tr></thead><tbody>';
+      items.forEach(function(t){
+        var overdue=!t.done&&t.till&&t.till<now;
+        html+='<tr'+(t.done?' style="opacity:.72"':'')+'><td style="white-space:nowrap;color:'+(overdue?"#d64545":"#7b848d")+'">'+dt(t.till)+'</td><td class="muted">'+one(t.resp,130)+'</td><td><a data-lead="'+t.entity_id+'">'+one(t.lead_name||("сделка #"+t.entity_id),180)+'</a></td><td class="muted">'+one(typeName[t.task_type]||"",130)+'</td><td'+(t.done?' style="text-decoration:line-through"':'')+'>'+one(t.text,420)+'</td><td style="color:#2f8b57">'+one(t.result||"",150)+'</td><td style="white-space:nowrap">'+(t.done?"":'<a class="tdone" data-t="'+t.id+'">выполнить</a> · <a class="tmove" data-t="'+t.id+'">перенести</a> · <a class="tedit" data-t="'+t.id+'" data-text="'+esc(t.text||"")+'" data-till="'+(t.till||0)+'" data-type="'+(t.task_type||0)+'">изменить</a>')+'</td></tr>';
+      });
+      html+='</tbody></table>';
       var rerun=function(){loadTasks($("#taskResp")?$("#taskResp").value:0,$("#taskType")?$("#taskType").value:0);};
       $("#tasksBox").innerHTML=html||'<p class="muted">Открытых задач нет</p>';
+      var th=$("#thTill");if(th)th.onclick=function(){taskSortDir=taskSortDir==="asc"?"desc":"asc";rerun();};
       $("#tasksBox").querySelectorAll("[data-lead]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.lead,10));};});
       $("#tasksBox").querySelectorAll(".tdone").forEach(function(a){a.onclick=function(){
         var res=prompt("Результат задачи (необязательно):","");
