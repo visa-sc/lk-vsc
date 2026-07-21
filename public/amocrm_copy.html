@@ -3143,9 +3143,12 @@
       var rows=(r.rows||[]).map(function(x){
         return '<tr><td>'+esc(x.name)+'</td><td>'+(x.created?fmt(x.created)+' <span class="muted">('+fmt(x.createdSum)+' ₽)</span>':'—')+'</td><td>'+(x.notes||'—')+'</td><td>'+(x.openTasks?fmt(x.openTasks):'—')+'</td><td>'+(x.won?fmt(x.won)+' <span class="muted">('+fmt(x.wonSum)+' ₽)</span>':'—')+'</td></tr>';
       }).join("");
+      // заголовок с диапазоном периода как в amo («Отчёт по всем сотрудникам 20 июл. 2026 — 26 июл. 2026»)
+      var fmtD=function(ts){return ts?new Date(ts*1000).toLocaleDateString("ru-RU",{day:"numeric",month:"short",year:"numeric"}):"";};
+      var rangeStr=(r.from&&r.to)?(' <span class="muted" style="font-weight:400;font-size:13px">'+fmtD(r.from)+" — "+fmtD(r.to-86400)+'</span>'):'';
       $("#view").innerHTML='<div class="plain">'+tabs+
-        '<div class="pcard"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0">Отчёт по сотрудникам</h2><span style="display:inline-flex;gap:2px;background:#eef2f6;border-radius:16px;padding:2px">'+pills+'</span></div>'+
-        '<table class="set"><tr><th>Сотрудник</th><th>Создано сделок</th><th>Добавлено примечаний</th><th>Задач в работе</th><th>Успешно реализовано</th></tr>'+rows+'</table></div></div>';
+        '<div class="pcard"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><h2 style="margin:0">Отчёт по всем сотрудникам'+rangeStr+'</h2><span style="display:inline-flex;gap:2px;background:#eef2f6;border-radius:16px;padding:2px">'+pills+'</span></div>'+
+        '<table class="set"><tr><th>Сотрудник</th><th>Создано сделок</th><th>Добавлено примечаний</th><th>Задач в работе</th><th>Сумма покупок</th></tr>'+rows+'</table></div></div>';
       bindAnTabs();
       $("#view").querySelectorAll("[data-sp]").forEach(function(b){b.onclick=function(){staffPeriod=b.dataset.sp;renderStaffReport(tabs);};});
     }).catch(function(){$("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">Ошибка загрузки.</p></div></div>';});

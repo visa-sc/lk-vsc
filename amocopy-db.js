@@ -278,19 +278,26 @@ module.exports = function mountDbRoutes(app, guard, api) {
   // «Отчёт по сотрудникам» (как в amo): за период — создано сделок (N+₽), успешные (N+₽), задач в работе, примечаний в копии
   app.get(`${api}/staff_report`, guard, (req, res) => {
     try {
-      const now = Math.floor(Date.now() / 1000), day = now - (now % 86400);
-      const from = ({ today: day, week: day - 6 * 86400, month: day - 29 * 86400 })[req.query.period] || (day - 6 * 86400);
+      // границы как в amo: полночь МСК (не UTC!), week = КАЛЕНДАРНАЯ неделя с пн, month = с 1-го числа
+      const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+      const day = Math.floor(d0.getTime() / 1000);
+      const wkStart = day - ((d0.getDay() + 6) % 7) * 86400;
+      const moStart = Math.floor(new Date(d0.getFullYear(), d0.getMonth(), 1).getTime() / 1000);
+      const from = ({ today: day, week: wkStart, month: moStart })[req.query.period] || wkStart;
+      const to = ({ today: day + 86400, week: wkStart + 7 * 86400, month: Math.floor(new Date(d0.getFullYear(), d0.getMonth() + 1, 1).getTime() / 1000) })[req.query.period] || (wkStart + 7 * 86400);
       const rows = {};
       const row = (u) => rows[u] || (rows[u] = { name: uName[u] || ("id " + u), created: 0, createdSum: 0, won: 0, wonSum: 0, openTasks: 0, notes: 0 });
       D.prepare("SELECT responsible_user_id u, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads WHERE created_at>=? GROUP BY u").all(from).forEach((r) => { const x = row(r.u); x.created = r.c; x.createdSum = r.s; });
       D.prepare("SELECT responsible_user_id u, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads WHERE status_id=142 AND closed_at>=? GROUP BY u").all(from).forEach((r) => { const x = row(r.u); x.won = r.c; x.wonSum = r.s; });
-      // «задач в работе» в amo = СОЗДАНО задач за период (сверено 19.07: Маслова 563 vs amo 555)
-      D.prepare("SELECT responsible_user_id u, COUNT(*) c FROM tasks WHERE created_at>=? GROUP BY u").all(from).forEach((r) => { if (rows[r.u] || r.c > 5) row(r.u).openTasks = r.c; });
+      // «задач в работе» в amo = задачи со СРОКОМ ИСПОЛНЕНИЯ в периоде, любой статус
+      // (пересверено 22.07 по календарной неделе: Маслова 297 = amo 297 В НОЛЬ; прежняя гипотеза
+      // «создано за период» давала систематический недосчёт)
+      D.prepare("SELECT responsible_user_id u, COUNT(*) c FROM tasks WHERE complete_till>=? AND complete_till<? GROUP BY u").all(from, to).forEach((r) => { if (rows[r.u] || r.c > 5) row(r.u).openTasks = r.c; });
       // «добавлено примечаний» = живые amo_notes за период (создатель), + примечания копии ниже
       try { D.prepare("SELECT created_by u, COUNT(*) c FROM amo_notes WHERE created_at>=? AND created_by>0 AND note_type='common' GROUP BY created_by").all(from).forEach((r) => { if (rows[r.u]) rows[r.u].notes += r.c; }); } catch (_) {}
       try { D.prepare("SELECT created_by u, COUNT(*) c FROM notes_new WHERE created_at>=? GROUP BY u").all(from).forEach((r) => { row(r.u).notes = r.c; }); } catch (_) {}
       const out = Object.values(rows).filter((x) => x.name && !/^id /.test(x.name)).sort((a, b) => (b.created + b.won) - (a.created + a.won));
-      res.json({ success: true, rows: out });
+      res.json({ success: true, rows: out, from, to });
     } catch (e) { res.json({ success: false, message: e.message }); }
   });
 
