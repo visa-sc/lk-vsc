@@ -4983,13 +4983,16 @@ async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
     try {
       const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] });
       const R = vscParseCsv(r.data);
-      const hdr = R[1] || []; let jUr = -1, jUsl = -1;
-      hdr.forEach((cc, j) => { const n = String(cc || "").toLowerCase().trim(); if (n === "юр лицо") jUr = j; if (n === "услуги") jUsl = j; });
+      // Методика Андрея (сверено с «2 кв.xlsx» до рубля): возврат = «Услуги» + «НДС».
+      const hdr = R[1] || []; let jUr = -1, jUsl = -1, jNds = -1;
+      hdr.forEach((cc, j) => { const n = String(cc || "").toLowerCase().trim(); if (n === "юр лицо") jUr = j; if (n === "услуги") jUsl = j; if (n === "ндс") jNds = j; });
       if (jUr < 0 || jUsl < 0) { missing.push(name); continue; }
       for (let i = 2; i < R.length; i++) {
-        const row = R[i] || []; const ur = String(row[jUr] || "").toLowerCase(); const v = vscNum(row[jUsl]);
-        if (!ur || !v) continue;
-        if (ur.includes("альта")) byEnt.alta += v;
+        const row = R[i] || []; const ur = String(row[jUr] || "").toLowerCase();
+        const v = (vscNum(row[jUsl]) || 0) + (jNds >= 0 ? (vscNum(row[jNds]) || 0) : 0);
+        if (!v) continue;
+        if (!ur) byEnt.other += v; // пустое юрлицо — в «не привязано» (в общий вычет входит)
+        else if (ur.includes("альта")) byEnt.alta += v;
         else if (ur.includes("комисар") || ur.includes("комиссар")) byEnt.kom += v;
         else if (ur.includes("панфилов")) byEnt.pan += v;
         else if (ur.includes("эй кей") || ur.includes("эйкей")) byEnt.akg += v;
