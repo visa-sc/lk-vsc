@@ -1,5 +1,5 @@
 [
-  { "email": "ekaterina.z@visa-sc.ru", "name": "Екатерина Зайцева", "perms": ["stages", "vsc"], "vscRestrict": { "tabs": ["dash", "monthly"], "hideProfit": true } },
+  { "email": "ekaterina.z@visa-sc.ru", "name": "Екатерина Зайцева", "perms": ["stages", "vsc"], "vscRestrict": { "tabs": ["dash", "monthly", "staff"], "hideProfit": true } },
   { "email": "margarita.k@visa-sc.ru", "name": "Маргарита Кузнецова", "perms": ["vsc"] },
   { "email": "kristina.r@visa-sc.ru", "name": "Кристина Рагоза", "perms": ["vsc"] },
   { "email": "ksenia.m@visa-sc.ru", "name": "Ксения Маслова", "perms": ["vsc"] },
