@@ -2539,10 +2539,17 @@
   // настраиваемые колонки списка контактов (как «Настроить» в amoCRM)
   // базовые колонки + «Сделки» (цветные чипы) + ВСЕ кастомные поля контакта (из CF.contacts)
   // порядок столбцов = amo: Имя · Дата создания · Сделки · Ответственный · далее
-  var CONTACT_BASE=[["n","Наименование",1],["created","Дата создания",1],["deals","Сделки",1],["resp","Ответственный",1],["p","Телефон",1],["e","Email",1],["updated","Дата изменения",0]];
+  // дефолтный набор/порядок = колонки Андрея в живом amo (21.07): Наименование | Телефон |
+  // Источник (571754) | Region (577714) | Дата создания. Остальные — через «Настроить» (флаг 0).
+  var CONTACT_BASE=[["n","Наименование",1],["p","Телефон",1],["deals","Сделки",0],["resp","Ответственный",0],["e","Email",0],["updated","Дата изменения",0]];
+  var CONTACT_DEF_CF=[571754,577714]; // Источник, Region — дефолтные cf-колонки, в ЭТОМ порядке (как в amo)
   function contactAllCols(){
-    var cf=((CF&&CF.contacts)||[]).map(function(f){return ["cf"+f.id,f.name,0,f.type];});
-    return CONTACT_BASE.concat(cf);
+    var cf=((CF&&CF.contacts)||[]).map(function(f){return ["cf"+f.id,f.name,CONTACT_DEF_CF.indexOf(f.id)>=0?1:0,f.type];});
+    cf.sort(function(a,b){
+      var ia=CONTACT_DEF_CF.indexOf(parseInt(a[0].slice(2),10)),ib=CONTACT_DEF_CF.indexOf(parseInt(b[0].slice(2),10));
+      if(ia>=0&&ib>=0)return ia-ib; if(ia>=0)return -1; if(ib>=0)return 1; return 0;
+    });
+    return CONTACT_BASE.concat(cf).concat([["created","Дата создания",1]]);
   }
   // регулируемая ширина колонок таблицы (перетаскивание границы заголовка), с запоминанием
   function makeTableResizable(table,key){
@@ -2613,7 +2620,7 @@
   function contactCell(c,key){
     if(key==="n")return '<a data-c="'+c.id+'">'+esc(c.n||"Без имени")+'</a>'+((c.tags&&c.tags.length)?' '+c.tags.slice(0,3).map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join(""):"");
     if(key==="deals")return (c.deals||[]).map(function(d){return '<span class="deal-chip" data-dl="'+d.id+'" style="background:'+esc(d.color||"#c1d5e0")+'26;border-left:3px solid '+esc(d.color||"#c1d5e0")+'" title="'+esc(d.st||"")+(d.price?" · "+fmt(d.price)+" ₽":"")+'">'+esc((d.name||("#"+d.id)).slice(0,26))+'</span>';}).join("")||'<span class="muted">—</span>';
-    if(key==="p")return esc((c.p||[]).join(", "));
+    if(key==="p")return (c.p||[]).map(function(ph){return '<a href="tel:'+esc(String(ph).replace(/[^0-9+]/g,""))+'" onclick="event.stopPropagation()">'+esc(ph)+'</a>';}).join(" ");
     if(key==="e")return esc((c.e||[]).join(", "));
     if(key==="resp")return '<span class="muted">'+esc(c.resp||"")+'</span>';
     if(key==="created")return '<span class="muted">'+(c.created?dt(c.created):"")+'</span>';
