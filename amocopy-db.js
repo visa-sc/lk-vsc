@@ -303,8 +303,12 @@ module.exports = function mountDbRoutes(app, guard, api) {
       const closedW = {};
       D.prepare("SELECT strftime('%Y-%W', datetime(closed_at,'unixepoch')) w, COUNT(*) c FROM leads WHERE closed_at>0 GROUP BY w ORDER BY w DESC LIMIT 56").all().forEach((r) => { closedW[r.w] = r.c; });
       const total = D.prepare("SELECT COUNT(*) c, COALESCE(SUM(price),0) s FROM leads").get();
-      const stages = D.prepare("SELECT status_id, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads GROUP BY status_id ORDER BY c DESC LIMIT 8").all()
-        .map((r) => ({ name: (stMap[r.status_id] || {}).name || ("этап " + r.status_id), color: (stMap[r.status_id] || {}).color || "#c1d5e0", c: r.c, s: r.s, pct: Math.round(r.c / total.c * 100) }));
+      // как в amo: донат по ПАРАМ (воронка, этап) — 142/143 разных воронок НЕ сливаются
+      // (сверено с живым amo 21.07: «Закрыто и не реализовано» = только 138231-143 = 192 839/3 833 102 в ноль)
+      const pairName = {};
+      D.prepare("SELECT pipeline_id,id,name,color FROM statuses").all().forEach((s) => { pairName[s.pipeline_id + ":" + s.id] = { name: s.name, color: s.color }; });
+      const stages = D.prepare("SELECT pipeline_id p, status_id, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads GROUP BY pipeline_id, status_id ORDER BY c DESC LIMIT 8").all()
+        .map((r) => { const pn = pairName[r.p + ":" + r.status_id] || {}; return { name: pn.name || ("этап " + r.status_id), color: pn.color || "#c1d5e0", c: r.c, s: r.s, pct: Math.round(r.c / total.c * 100) }; });
       const mgrs = D.prepare("SELECT responsible_user_id u, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads GROUP BY u ORDER BY c DESC LIMIT 8").all()
         .map((r) => ({ name: uName[r.u] || ("id " + r.u), c: r.c, s: r.s, pct: Math.round(r.c / total.c * 100) }));
       summaryCache = { success: true, weeks: weeks.map((r) => ({ w: r.w, created: r.c, closed: closedW[r.w] || 0 })), total: total.c, sum: total.s, stages, mgrs };
