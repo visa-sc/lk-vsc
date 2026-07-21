@@ -1393,7 +1393,8 @@
       ct2.textContent=(n+delta)+" сделок"+(ct2.textContent.indexOf(":")>=0?ct2.textContent.slice(ct2.textContent.indexOf(":")):"");
     }
   }
-  function pipeTotal(pid){var kb=(KANBAN&&KANBAN.kanban[pid])||{};var c=0,s=0;Object.keys(kb).forEach(function(k){c+=kb[k].count;s+=kb[k].sum;});return {c:c,s:s};}
+  // итог шапки воронки = только АКТИВНЫЕ этапы (как в amo: 142/143 не в счёте канбана)
+  function pipeTotal(pid){var kb=(KANBAN&&KANBAN.kanban[pid])||{};var c=0,s=0;Object.keys(kb).forEach(function(k){if(+k===142||+k===143)return;c+=kb[k].count;s+=kb[k].sum;});return {c:c,s:s};}
   var leadViewMode="kanban";
   function vLeads(){
     renderSidebar("leads");
@@ -1410,12 +1411,19 @@
       ];}});
     renderPipePanel();
     if(leadViewMode==="list")return vLeadsList(p);
-    var sts=(p._embedded&&p._embedded.statuses)||[];
     var kb=(KANBAN&&KANBAN.kanban[p.id])||{};
+    // как в amo: канбан = только АКТИВНЫЕ этапы. Закрытые 142/143 не колонки (сверено с живым amo
+    // 21.07: у amo 23 колонки до «Часть оплаты по ВНЖ»); пустое «Неразобранное» тоже скрыто.
+    var sts=((p._embedded&&p._embedded.statuses)||[]).filter(function(s){
+      if(s.id===142||s.id===143)return false;
+      if(!(s.type===1||/неразобран/i.test(s.name||"")))return true;
+      return ((kb[s.id]||{}).count||0)>0;
+    });
     var html=leadToggleHtml()+'<div id="kb">';
-    sts.forEach(function(s){
+    sts.forEach(function(s,si){
       var k=kb[s.id]||{count:0,sum:0};
-      html+='<div class="kb-col" data-sid="'+s.id+'"><div class="kb-head"><div class="nm" title="'+esc(s.name)+'">'+esc(s.name)+'</div><div class="ct">'+fmt(k.count)+' сделок: '+fmt(k.sum)+' ₽</div><div class="bar" style="background:'+esc(s.color||"#dfe3e8")+'"></div></div><div class="kb-quick" data-qs="'+s.id+'">+ Быстрое добавление</div><div class="kb-cards"></div>'+(k.count?'<button class="lnk kb-more" data-page="0">Ещё</button>':"")+'</div>';
+      // «+ Быстрое добавление» — только в первой колонке (как в amo)
+      html+='<div class="kb-col" data-sid="'+s.id+'"><div class="kb-head"><div class="nm" title="'+esc(s.name)+'">'+esc(s.name)+'</div><div class="ct">'+fmt(k.count)+' сделок: '+fmt(k.sum)+' ₽</div><div class="bar" style="background:'+esc(s.color||"#dfe3e8")+'"></div></div>'+(si===0?'<div class="kb-quick" data-qs="'+s.id+'">+ Быстрое добавление</div>':"")+'<div class="kb-cards"></div>'+(k.count?'<button class="lnk kb-more" data-page="0">Ещё</button>':"")+'</div>';
     });
     html+='</div>';
     $("#view").innerHTML=html;
