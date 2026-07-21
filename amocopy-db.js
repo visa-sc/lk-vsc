@@ -397,7 +397,9 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if (String(q.lost) === "1") where.push("status_id=143");
     const rids = String(q.resp || "").split(",").filter((x) => /^\d+$/.test(x));
     if (rids.length) { where.push("responsible_user_id IN (" + rids.map(() => "?").join(",") + ")"); rids.forEach((r) => args.push(+r)); }
-    const now = Math.floor(Date.now() / 1000), day = now - (now % 86400);
+    // БАГ-ФИКС 21.07: полночь считалась по UTC (now%86400 = 03:00 МСК) — «сегодня» терял ночные
+    // сделки 00:00-03:00 и все дельты «+N за сегодня» были смещены; теперь граница дня МСК (как amo)
+    const now = Math.floor(Date.now() / 1000), day = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return Math.floor(d.getTime() / 1000); })();
     const field = ({ created: "created_at", closed: "closed_at", updated: "updated_at" })[q.field] || "created_at";
     let from = null, to = null;
     if (q.period === "today") { from = day; to = day + 86400; }
@@ -432,11 +434,11 @@ module.exports = function mountDbRoutes(app, guard, api) {
     switch (p) {
       case "today": case "current_day": return { from: d0, to: d0 + DAY };
       case "yesterday": case "previous_day": return { from: d0 - DAY, to: d0 };
-      case "this_week": case "current_week": return { from: wkStart, to: wkStart + 7 * DAY };
+      case "week": case "this_week": case "current_week": return { from: wkStart, to: wkStart + 7 * DAY };
       case "previous_week": case "last_week": return { from: wkStart - 7 * DAY, to: wkStart };
-      case "this_month": case "current_month": return { from: monthStart(Y, M), to: monthStart(Y, M + 1) };
+      case "month": case "this_month": case "current_month": return { from: monthStart(Y, M), to: monthStart(Y, M + 1) };
       case "previous_month": case "last_month": return { from: monthStart(Y, M - 1), to: monthStart(Y, M) };
-      case "this_year": case "current_year": return { from: monthStart(Y, 0), to: monthStart(Y + 1, 0) };
+      case "year": case "this_year": case "current_year": return { from: monthStart(Y, 0), to: monthStart(Y + 1, 0) };
       case "previous_year": case "last_year": return { from: monthStart(Y - 1, 0), to: monthStart(Y, 0) };
       default: return null;
     }
@@ -541,9 +543,14 @@ module.exports = function mountDbRoutes(app, guard, api) {
       where.push("(" + pipePairs.map(([pid, sids]) => "(pipeline_id=" + (+pid) + " AND status_id IN (" + sids.map(() => "?").join(",") + "))").join(" OR ") + ")");
       pipePairs.forEach(([, sids]) => sids.forEach((s) => args.push(+s)));
     }
+    if (spec.pipeline) { where.push("pipeline_id=?"); args.push(+spec.pipeline); } // одиночная воронка (клики виджетов)
     if (Array.isArray(spec.status) && spec.status.length) {
       where.push("status_id IN (" + spec.status.map(() => "?").join(",") + ")"); spec.status.forEach((s) => args.push(+s));
     }
+    if (Array.isArray(spec.resp) && spec.resp.length) { // срез по ответственным (дропдаун «Мои» рабочего стола)
+      where.push("responsible_user_id IN (" + spec.resp.map(() => "?").join(",") + ")"); spec.resp.forEach((r) => args.push(+r));
+    }
+    if (spec.created_preset) spec.created = spec.created || { preset: spec.created_preset }; // словарь amo-виджетов (widget_stat2)
     if (spec.created) {
       const c = spec.created; let from = null, to = null; const r = c.preset ? presetRange(c.preset) : null;
       if (r) { from = r.from; to = r.to; } else { if (c.from) from = parseDMY(c.from); if (c.to) to = parseDMY(c.to) + 86400; }
