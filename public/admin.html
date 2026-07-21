@@ -3607,7 +3607,7 @@
       const VSC_TAXQ_MON = { Q1: ["Январь", "Февраль", "Март"], Q2: ["Апрель", "Май", "Июнь"], Q3: ["Июль", "Август", "Сентябрь"], Q4: ["Октябрь", "Ноябрь", "Декабрь"] };
       async function renderVscTaxes() {
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Налоги — сверка по юрлицам";
-        h.appendChild(vscInfo("<b>Как считается (методика из твоей таблички + ТЗ 20.07)</b><br>• Выручка юрлица за квартал — сумма введённых месяцев.<br>• Возвраты — АВТОМАТОМ из гугл-таблицы возвратов, только колонка «Услуги», по колонке «Юр лицо» (строка «не привязано» в юрлица не входит).<br>• Нал без чека — общей суммой, вычитается ПРОПОРЦИОНАЛЬНО долям выручки юрлиц.<br>• База = выручка − возвраты − доля нала.<br>• Налог: Альта 1,5% от базы · ИП Комисаренко 3% · ИП Панфилова 3% · Эй Кей Групп 1,5%.<br>• НДС 5% — только Панфилова и Эй Кей: (выручка + вынесенный НДС/2) × 5% (как в твоём xlsx, без вычета возвратов).<br>• «От бухгалтера» — ввод; Δ = наш − бухгалтера. Красным — |Δ| заметная.<br><br>Данные хранятся у нас (.vscTaxesLegal), сид — из твоего xlsx и скрина бухгалтера."));
+        h.appendChild(vscInfo("<b>Как считается (формулы твоего файла «2 кв.xlsx»)</b><br>• Выручки юрлиц, нал без чека и вынесенный НДС — автотягом из срм-факт (строка «Итог» месячных вкладок; кнопка «Подтянуть»), можно править руками.<br>• Возвраты — автоматом из таблицы возвратов (колонка «Услуги»), общая сумма участвует в вычете; разбивка по юрлицам — справочно.<br>• Вычет каждому юрлицу = (возвраты + нал без чека) / 4 — поровну, как в твоём файле.<br>• База = выручка квартала − вычет; Налог: Альта 1,5% · Комисаренко 3% · Панфилова 3% · ЭйКей 1,5%.<br>• НДС 5% у всех: база = выручка (у Альты/Комисаренко — без первого месяца квартала, как в твоём файле) + вынесенный НДС/4.<br>• «От бухгалтера» — ввод; Δ = наш − бухгалтера.<br><br>Хранилище .vscTaxesLegal; сид — твои xlsx и скрин бухгалтера."));
         vscContent.appendChild(h);
         const box = document.createElement("div"); vscContent.appendChild(box);
         box.innerHTML = '<div class="loading-state">Загружаем…</div>';
@@ -3616,9 +3616,9 @@
         catch (e) { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить: ' + escapeHtml(e.message) + '</div>'; return; }
         if (vscTab !== "taxes") return;
         _vscTaxData = j.data;
-        vscTaxPaint(box, j.entities, (j.returns || { byEnt: {}, missing: [] }));
+        vscTaxPaint(box, j.entities, (j.returns || { byEnt: {}, missing: [] }), (j.auto || null));
       }
-      function vscTaxPaint(box, ENT, RET) {
+      function vscTaxPaint(box, ENT, RET, AUTO) {
         box.innerHTML = "";
         const qs = Object.keys((_vscTaxData && _vscTaxData.quarters) || {}).sort();
         if (qs.indexOf(_vscTaxQ) < 0) _vscTaxQ = qs[qs.length - 1];
@@ -3660,7 +3660,8 @@
           + '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;align-items:flex-end;">'
           + '<label style="font-size:12.5px;color:#6b7280;">Нал без чека за кв (вкл. ВНЖ), ₽<br><div style="width:180px;margin-top:3px;">' + inp(Q.cash, "tax-cash") + '</div></label>'
           + '<label style="font-size:12.5px;color:#6b7280;">Вынесенный НДС за кв, ₽<br><div style="width:180px;margin-top:3px;">' + inp(Q.vatOut, "tax-vatout") + '</div></label>'
-          + '<div style="font-size:12px;color:#6b7280;">Возвраты (авто, услуги): <b class="tax-ret-total"></b>' + (RET.missing && RET.missing.length ? ' <span style="color:#b8602a;">⚠ не загрузились: ' + escapeHtml(RET.missing.join(", ")) + '</span>' : '') + '<br><span class="tax-ret-detail" style="color:#9aa0ab;font-size:11.5px;"></span></div>'
+          + (AUTO ? '<button type="button" id="taxPull" class="vsc-dayrev-refresh" style="margin-top:0;background:#eef2f7;color:#3a4356;border-color:#d7dce4;">↻ Подтянуть из срм-факт</button>' : '')
+          + '<div style="font-size:12px;color:#6b7280;">Возвраты (авто, услуги): <b class="tax-ret-total"></b>' + (RET.missing && RET.missing.length ? ' <span style="color:#b8602a;">⚠ не загрузились: ' + escapeHtml(RET.missing.join(", ")) + '</span>' : '') + (AUTO && AUTO.missing && AUTO.missing.length ? ' <span style="color:#b8602a;">⚠ срм-факт: нет ' + escapeHtml(AUTO.missing.join(", ")) + '</span>' : '') + '<br><span class="tax-ret-detail" style="color:#9aa0ab;font-size:11.5px;"></span></div>'
           + '</div>';
         inCard.innerHTML = ih;
         box.appendChild(inCard);
@@ -3682,14 +3683,18 @@
           const th = 'text-align:right;padding:6px 8px;color:#6b7280;font-size:10.5px;text-transform:uppercase;white-space:nowrap;';
           let oh = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:900px;"><thead><tr>'
             + '<th style="text-align:left;padding:6px 8px;color:#6b7280;font-size:10.5px;text-transform:uppercase;">Юрлицо</th>'
-            + '<th style="' + th + '">Выручка</th><th style="' + th + '">Возвраты</th><th style="' + th + '">Нал (доля)</th><th style="' + th + '">База</th>'
+            + '<th style="' + th + '">Выручка</th><th style="' + th + '">Вычет (возвр+нал)/4</th><th style="' + th + '">База</th>'
             + '<th style="' + th + '">Налог наш</th><th style="' + th + '">Налог бух</th><th style="' + th + '">Δ налог</th>'
             + '<th style="' + th + '">НДС наш</th><th style="' + th + '">НДС бух</th><th style="' + th + '">Δ НДС</th><th style="' + th + '">Доход бух</th></tr></thead><tbody>';
+          // Формулы «2 кв.xlsx»: вычет = (возвраты общие + нал)/4 каждому; НДС у всех 4:
+          // база НДС = выручка с месяца vatFrom (Альта/Ком — без 1-го месяца) + вынесенный НДС/4.
+          const deduct = (retTot + (Q.cash || 0)) / 4;
           ENT.forEach(function (e) {
-            const R = sums[e.key], ret = RET.byEnt[e.key] || 0, share = tot ? R / tot : 0, cashPart = (Q.cash || 0) * share;
-            const base = R - ret - cashPart;
+            const R = sums[e.key];
+            const base = R - deduct;
             const tax = base * e.rate;
-            const vat = e.vat ? (R + (Q.vatOut || 0) / 2) * 0.05 : 0;
+            const vatRev = (Q.rev[e.key] || []).slice(e.vatFrom || 0).reduce(function (a, v) { return a + (v || 0); }, 0);
+            const vat = (vatRev + (Q.vatOut || 0) / 4) * 0.05;
             const b = (Q.buh && Q.buh[e.key]) || {};
             const dTax = (b.tax != null) ? tax - b.tax : null;
             const dVat = (b.vat != null) ? vat - b.vat : null;
@@ -3697,8 +3702,7 @@
             oh += '<tr style="border-top:1px solid #f0eef5;">'
               + '<td style="padding:5px 8px;font-weight:600;white-space:nowrap;">' + escapeHtml(e.name) + ' <span style="color:#9aa0ab;font-weight:400;">' + (e.rate * 100) + '%' + (e.vat ? "+НДС" : "") + '</span></td>'
               + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;">' + money0(R) + '</td>'
-              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;color:#b8602a;">−' + money0(ret) + '</td>'
-              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;color:#b8602a;">−' + money0(cashPart) + '</td>'
+              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;color:#b8602a;">−' + money0(deduct) + '</td>'
               + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:600;">' + money0(base) + '</td>'
               + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:700;">' + money0(tax) + '</td>'
               + '<td style="padding:4px 6px;width:110px;">' + '<input type="text" inputmode="numeric" class="tax-buh-tax-' + e.key + '" value="' + (b.tax == null ? "" : b.tax) + '" style="width:100%;box-sizing:border-box;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:12.5px;font-family:inherit;">' + '</td>'
@@ -3727,6 +3731,19 @@
         };
         box.querySelectorAll('input[class^="tax-rev-"], .tax-cash, .tax-vatout').forEach(function (el) { el.addEventListener("input", recalc); });
         const sb = box.querySelector("#taxSave"); if (sb) sb.addEventListener("click", function () { vscTaxSave(box, false); });
+        // «Подтянуть из срм-факт»: перезаписывает выручки/нал/НДС автозначениями (сохранить — кнопкой).
+        const pb = box.querySelector("#taxPull");
+        if (pb && AUTO) pb.addEventListener("click", function () {
+          ENT.forEach(function (e) {
+            for (let mi = 0; mi < 3; mi++) {
+              const v = (AUTO.rev[e.key] || [])[mi];
+              if (v != null) { const el = box.querySelector(".tax-rev-" + e.key + "-" + mi); if (el) el.value = v; }
+            }
+          });
+          if (AUTO.cash != null) box.querySelector(".tax-cash").value = Math.round(AUTO.cash * 100) / 100;
+          if (AUTO.vatOut != null) box.querySelector(".tax-vatout").value = Math.round(AUTO.vatOut * 100) / 100;
+          recalc();
+        });
         recalc();
       }
       async function vscTaxSave(box, silent) {

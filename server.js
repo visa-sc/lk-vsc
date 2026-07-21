@@ -4929,11 +4929,13 @@ app.post("/admin/api/vsc/mktkpi", requireVscMktKpi, (req, res) => {
 // Формулы — из xlsx Андрея; распределение возвратов/нала обновлено по его ТЗ 20.07:
 // возвраты — напрямую по юрлицу, нал без чека — пропорционально долям выручки.
 const VSC_TAXLEG_FILE = path.join(__dirname, ".vscTaxesLegal.json");
+// vatFrom — с какого месяца квартала (0-индекс) юрлицо в НДС-базе (формулы Q2-xlsx Андрея:
+// Альта/Комисаренко — со 2-го месяца, Панфилова/ЭйКей — весь квартал).
 const TAXLEG_ENTITIES = [
-  { key: "alta", name: "Альта Профит", rate: 0.015, vat: false },
-  { key: "kom", name: "ИП Комисаренко", rate: 0.03, vat: false },
-  { key: "pan", name: "ИП Панфилова", rate: 0.03, vat: true },
-  { key: "akg", name: "Эй Кей Групп", rate: 0.015, vat: true }
+  { key: "alta", name: "Альта Профит", rate: 0.015, vat: true, vatFrom: 1 },
+  { key: "kom", name: "ИП Комисаренко", rate: 0.03, vat: true, vatFrom: 1 },
+  { key: "pan", name: "ИП Панфилова", rate: 0.03, vat: true, vatFrom: 0 },
+  { key: "akg", name: "Эй Кей Групп", rate: 0.015, vat: true, vatFrom: 0 }
 ];
 function vscTaxLegSeed() {
   return {
@@ -4944,8 +4946,8 @@ function vscTaxLegSeed() {
         buh: { alta: { tax: 199122, vat: 0 }, kom: { tax: 664668, vat: 0 }, pan: { tax: 0, vat: 73962 }, akg: { tax: 0, vat: 53690 } }
       },
       "2026-Q2": {
-        rev: { alta: [10569531, null, null], kom: [5041525, null, null], pan: [0, null, null], akg: [33800, null, null] },
-        cash: null, vatOut: null,
+        rev: { alta: [10569531, 277787, 0], kom: [5041525, 125761, 26388], pan: [0, 6829713, 5523265], akg: [33800, 5472470, 6325815] },
+        cash: 3020120, vatOut: 1244599.09,
         buh: {
           alta: { tax: 374393, vat: 25337, income: 11045043, expense: 8549094 },
           kom: { tax: 150197, vat: 11358, income: 4987500 },
@@ -4999,12 +5001,61 @@ async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
   _taxLegRetCache[qkey] = { at: Date.now(), data };
   return data;
 }
+// Автотяг из «срм-факт» (VSC_TAXES_PUB, месячные вкладки, строка «Итог»):
+//  • выручки 4 юрлиц — зона «ВЫГРУЗКА ИЗ CRM» (колонки по именам юрлиц в шапке);
+//  • нал без чека — Σ колонок с «без чека» (МСК+СПБ);
+//  • вынесенный НДС — колонка «предполагаемый размер НДС» (как в vscParseTaxes).
+// Сверено с xlsx Андрея: апрель 10 569 531/5 041 525/0/33 800, нал 714 480, НДС 15 539,14 ✓.
+let _taxLegAutoCache = {};
+async function vscTaxLegAuto(qkey) {
+  const c = _taxLegAutoCache[qkey];
+  if (c && Date.now() - c.at < 15 * 60 * 1000) return c.data;
+  const [year, q] = qkey.split("-");
+  const disc = await vscDiscoverGids(VSC_TAXES_PUB).catch(() => null);
+  const tabs = vscMonthTabs(disc, VSC_TAXES_GID);
+  const rev = { alta: [null, null, null], kom: [null, null, null], pan: [null, null, null], akg: [null, null, null] };
+  const cash = [null, null, null], vat = [null, null, null]; const missing = [];
+  const monsQ = TAXLEG_QMONTHS[q] || [];
+  for (let mi = 0; mi < monsQ.length; mi++) {
+    const name = monsQ[mi] + " " + year;
+    const tab = tabs.find((t) => t.name === name);
+    if (!tab) { missing.push(name); continue; }
+    try {
+      const r = await axios.get(VSC_TAXES_PUB + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
+      const R = vscParseCsv(r.data);
+      const itog = R.find((row) => String((row || [])[0] || "").trim().toLowerCase() === "итог");
+      if (!itog) { missing.push(name); continue; }
+      const hdr = (j) => [0, 1, 2, 3].map((i) => String(((R[i] || [])[j]) || "").replace(/\s+/g, " ").toLowerCase()).join(" / ");
+      // зона «выгрузка из crm» → в ней колонки юрлиц
+      let zone = -1; (R[0] || []).forEach((v, j) => { if (String(v || "").toLowerCase().includes("выгрузка из crm")) zone = j; });
+      if (zone < 0) { missing.push(name); continue; }
+      for (let j = zone; j < zone + 20; j++) {
+        const h = hdr(j);
+        if (h.includes("альта") && rev.alta[mi] == null) rev.alta[mi] = vscNum(itog[j]);
+        else if ((h.includes("комисаренко") || h.includes("комиссаренко")) && rev.kom[mi] == null) rev.kom[mi] = vscNum(itog[j]);
+        else if (h.includes("панфилова") && rev.pan[mi] == null) rev.pan[mi] = vscNum(itog[j]);
+        else if (h.includes("эй кей") && rev.akg[mi] == null) rev.akg[mi] = vscNum(itog[j]);
+      }
+      // нал без чека (обе колонки, до зоны эквайринга)
+      let cashSum = 0, cashFound = false;
+      for (let j = 0; j < Math.min(42, itog.length); j++) { const h = hdr(j); if (h.includes("без чека") && h.includes("наличные")) { cashSum += vscNum(itog[j]) || 0; cashFound = true; } }
+      if (cashFound) cash[mi] = cashSum;
+      // предполагаемый НДС
+      for (let j = 0; j < itog.length; j++) { const h = hdr(j); if (h.includes("предполагаемый") && h.includes("ндс")) { vat[mi] = vscNum(itog[j]); break; } }
+    } catch (e) { missing.push(name); }
+  }
+  const sum = (a) => a.some((v) => v != null) ? a.reduce((x, v) => x + (v || 0), 0) : null;
+  const data = { rev, cashMonths: cash, vatMonths: vat, cash: sum(cash), vatOut: sum(vat), missing };
+  _taxLegAutoCache[qkey] = { at: Date.now(), data };
+  return data;
+}
 app.get("/admin/api/vsc/taxes-legal", requireAdmin, async (req, res) => {
   const d = vscTaxLegLoad();
   const q = String(req.query.q || "2026-Q2");
-  let returns = null;
+  let returns = null, auto = null;
   try { returns = await vscTaxLegReturns(q); } catch (e) {}
-  res.json({ success: true, data: d, entities: TAXLEG_ENTITIES, returns: returns, q });
+  try { auto = await vscTaxLegAuto(q); } catch (e) {}
+  res.json({ success: true, data: d, entities: TAXLEG_ENTITIES, returns: returns, auto: auto, q });
 });
 app.post("/admin/api/vsc/taxes-legal", requireAdmin, (req, res) => {
   const d = req.body && req.body.data;
