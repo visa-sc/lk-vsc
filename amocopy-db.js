@@ -421,6 +421,26 @@ module.exports = function mountDbRoutes(app, guard, api) {
   const qHasOpenTask = D.prepare("SELECT 1 FROM tasks WHERE entity_type=? AND entity_id=? AND is_completed=0 LIMIT 1");
   const mskDay = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return Math.floor(d.getTime() / 1000); };
   const parseDMY = (s) => { const m = String(s).match(/(\d{2})\.(\d{2})\.(\d{4})/); return m ? Math.floor(new Date(+m[3], +m[2] - 1, +m[1]).getTime() / 1000) : null; };
+  // диапазон [from,to) по имени пресета даты (границы дня/недели/месяца МСК). Понимает и наш вокабуляр (today/yesterday),
+  // и амошный (current_day/previous_month/…) — сохранённые фильтры amo используют именно его. to — эксклюзивно.
+  const presetRange = (preset) => {
+    const d0 = mskDay(), DAY = 86400, p = String(preset || "").toLowerCase();
+    const monthStart = (y, m) => Math.floor(new Date(y, m, 1).getTime() / 1000);
+    const now = new Date(); const Y = now.getFullYear(), M = now.getMonth();
+    // начало недели (пн) по МСК
+    const dow = (new Date(d0 * 1000).getDay() + 6) % 7; const wkStart = d0 - dow * DAY;
+    switch (p) {
+      case "today": case "current_day": return { from: d0, to: d0 + DAY };
+      case "yesterday": case "previous_day": return { from: d0 - DAY, to: d0 };
+      case "this_week": case "current_week": return { from: wkStart, to: wkStart + 7 * DAY };
+      case "previous_week": case "last_week": return { from: wkStart - 7 * DAY, to: wkStart };
+      case "this_month": case "current_month": return { from: monthStart(Y, M), to: monthStart(Y, M + 1) };
+      case "previous_month": case "last_month": return { from: monthStart(Y, M - 1), to: monthStart(Y, M) };
+      case "this_year": case "current_year": return { from: monthStart(Y, 0), to: monthStart(Y + 1, 0) };
+      case "previous_year": case "last_year": return { from: monthStart(Y - 1, 0), to: monthStart(Y, 0) };
+      default: return null;
+    }
+  };
   // точечная вырезка values поля из cf-строки БЕЗ полного JSON.parse (cf бывает в сотни полей; парс 50k строк = 15с)
   const cfVals = (cfStr, fid) => {
     if (!cfStr) return [];
@@ -443,8 +463,8 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if (!vals.length || !vals[0].value) return false;
     const ts = +vals[0].value;
     let from = null, to = null;
-    if (cond.preset === "yesterday") { const d0 = mskDay(); from = d0 - 86400; to = d0; }
-    else if (cond.preset === "today") { from = mskDay(); to = from + 86400; }
+    const r = cond.preset ? presetRange(cond.preset) : null;
+    if (r) { from = r.from; to = r.to; }
     else { if (cond.from) from = parseDMY(cond.from); if (cond.to) to = parseDMY(cond.to) + 86400; }
     return (from == null || ts >= from) && (to == null || ts < to);
   };
@@ -472,8 +492,8 @@ module.exports = function mountDbRoutes(app, guard, api) {
         for (const [fid, cond] of Object.entries(spec.cf || {})) {
           if (+fid === 427242 && !Array.isArray(cond)) {
             let from = null, to = null;
-            if (cond.preset === "yesterday") { const d0 = mskDay(); from = d0 - 86400; to = d0; }
-            else if (cond.preset === "today") { from = mskDay(); to = from + 86400; }
+            const r = cond.preset ? presetRange(cond.preset) : null;
+            if (r) { from = r.from; to = r.to; }
             else { if (cond.from) from = parseDMY(cond.from); if (cond.to) to = parseDMY(cond.to) + 86400; }
             if (from != null) { where.push("pay_ts>=?"); args.push(from); }
             if (to != null) { where.push("pay_ts<?"); args.push(to); }
@@ -509,6 +529,109 @@ module.exports = function mountDbRoutes(app, guard, api) {
     } catch (e) { res.json({ success: false, message: e.message }); }
   });
 
+  // ── движок СОХРАНЁННЫХ ФИЛЬТРОВ (superset widget_stat2): тот же spec, но применяется к СПИСКУ, а не только к счётчику ──
+  // Сняты 1:1 из живых amo (сохранённые фильтры воронок + «Все сделки» + Контакты, 21.07.2026).
+  // spec: {pipe:{pid:[sid]} — OR по парам; status:[sid] — плоский мультиэтап; created:{preset|from|to} — по created_at;
+  //        cf:{fid: [enum|"empty"] | {preset|from|to}} — 427242 через pay_ts, прочие пост-фильтром; ccf:{fid:...} — гл.контакт;
+  //        no_tasks, contact_no_tasks; tags:[имя]}. Пресеты дат — presetRange (amo-вокабуляр current_day/previous_month тоже).
+  const buildLeadSpec = (spec) => {
+    const where = [], args = [];
+    const pipePairs = Object.entries(spec.pipe || {});
+    if (pipePairs.length) {
+      where.push("(" + pipePairs.map(([pid, sids]) => "(pipeline_id=" + (+pid) + " AND status_id IN (" + sids.map(() => "?").join(",") + "))").join(" OR ") + ")");
+      pipePairs.forEach(([, sids]) => sids.forEach((s) => args.push(+s)));
+    }
+    if (Array.isArray(spec.status) && spec.status.length) {
+      where.push("status_id IN (" + spec.status.map(() => "?").join(",") + ")"); spec.status.forEach((s) => args.push(+s));
+    }
+    if (spec.created) {
+      const c = spec.created; let from = null, to = null; const r = c.preset ? presetRange(c.preset) : null;
+      if (r) { from = r.from; to = r.to; } else { if (c.from) from = parseDMY(c.from); if (c.to) to = parseDMY(c.to) + 86400; }
+      if (from != null) { where.push("created_at>=?"); args.push(from); }
+      if (to != null) { where.push("created_at<?"); args.push(to); }
+    }
+    if (Array.isArray(spec.tags) && spec.tags.length) {
+      for (const t of spec.tags) { where.push("tags LIKE ?"); args.push('%"' + String(t) + '"%'); }
+    }
+    const cfRest = {};
+    for (const [fid, cond] of Object.entries(spec.cf || {})) {
+      if (+fid === 427242 && !Array.isArray(cond)) {
+        let from = null, to = null; const r = cond.preset ? presetRange(cond.preset) : null;
+        if (r) { from = r.from; to = r.to; } else { if (cond.from) from = parseDMY(cond.from); if (cond.to) to = parseDMY(cond.to) + 86400; }
+        if (from != null) { where.push("pay_ts>=?"); args.push(from); }
+        if (to != null) { where.push("pay_ts<?"); args.push(to); }
+        continue;
+      }
+      cfRest[fid] = cond;
+      if (!Array.isArray(cond) || !cond.includes("empty")) { where.push("cf LIKE ?"); args.push('%"field_id":' + (+fid) + '%'); }
+    }
+    const cfJs = Object.keys(cfRest).length ? cfRest : null;
+    const ccfEntries = Object.entries(spec.ccf || {});
+    return { where, args, cfJs, ccfEntries, needPost: !!(cfJs || ccfEntries.length || spec.no_tasks || spec.contact_no_tasks) };
+  };
+  const qSpecContactCf = D.prepare("SELECT id, cf FROM contacts WHERE id=?");
+  const leadRowOk = (spec, r, cfJs, ccfEntries) => {
+    if (cfJs) { for (const [fid, cond] of Object.entries(cfJs)) if (!cfMatch(r.cf, fid, cond)) return false; }
+    if (spec.no_tasks && qHasOpenTask.get("leads", r.id)) return false;
+    if (ccfEntries.length || spec.contact_no_tasks) {
+      let mainId = null; try { mainId = (JSON.parse(r.contact_ids) || [])[0] || null; } catch (_) {}
+      const c = mainId ? qSpecContactCf.get(mainId) : null;
+      if (ccfEntries.length) { if (!c) return false; for (const [fid, cond] of ccfEntries) if (!cfMatch(c.cf, fid, cond)) return false; }
+      if (spec.contact_no_tasks && c && qHasOpenTask.get("contacts", c.id)) return false;
+    }
+    return true;
+  };
+  app.get(`${api}/leads_spec`, guard, (req, res) => {
+    try {
+      const spec = JSON.parse(String(req.query.spec || "{}"));
+      const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+      const { where, args, cfJs, ccfEntries, needPost } = buildLeadSpec(spec);
+      const W = where.length ? " WHERE " + where.join(" AND ") : "";
+      const outRow = (l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id, resp: uName[l.responsible_user_id] || "", created: l.created_at, updated: l.updated_at });
+      if (!needPost) {
+        const t = D.prepare("SELECT COUNT(*) c, COALESCE(SUM(price),0) s FROM leads" + W).get(...args);
+        const rows = D.prepare("SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at FROM leads" + W + " ORDER BY updated_at DESC LIMIT 50 OFFSET ?").all(...args, (page - 1) * 50);
+        return res.json({ success: true, total: t.c, sum: t.s, items: rows.map(outRow) });
+      }
+      const rows = D.prepare("SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at,cf,contact_ids FROM leads" + W + " ORDER BY updated_at DESC").all(...args);
+      const matched = []; let sum = 0;
+      for (const r of rows) { if (!leadRowOk(spec, r, cfJs, ccfEntries)) continue; matched.push(r); sum += r.price || 0; }
+      res.json({ success: true, total: matched.length, sum, items: matched.slice((page - 1) * 50, page * 50).map(outRow) });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+  // Контакты по spec: pipe = контакты, у чьих СДЕЛОК этап входит в набор; created — по дате создания контакта; cf — поля контакта.
+  app.get(`${api}/contacts_spec`, guard, (req, res) => {
+    try {
+      const spec = JSON.parse(String(req.query.spec || "{}"));
+      const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+      const where = [], args = [];
+      const pipePairs = Object.entries(spec.pipe || {});
+      if (pipePairs.length) {
+        const cond = "(" + pipePairs.map(([pid, sids]) => "(l.pipeline_id=" + (+pid) + " AND l.status_id IN (" + sids.map(() => "?").join(",") + "))").join(" OR ") + ")";
+        where.push("id IN (SELECT lc.contact_id FROM lead_contacts lc JOIN leads l ON l.id=lc.lead_id WHERE " + cond + ")");
+        pipePairs.forEach(([, sids]) => sids.forEach((s) => args.push(+s)));
+      }
+      if (spec.created) {
+        const c = spec.created; let from = null, to = null; const r = c.preset ? presetRange(c.preset) : null;
+        if (r) { from = r.from; to = r.to; } else { if (c.from) from = parseDMY(c.from); if (c.to) to = parseDMY(c.to) + 86400; }
+        if (from != null) { where.push("created_at>=?"); args.push(from); }
+        if (to != null) { where.push("created_at<?"); args.push(to); }
+      }
+      const cfJs = {};
+      for (const [fid, cond] of Object.entries(spec.cf || {})) { cfJs[fid] = cond; if (!Array.isArray(cond) || !cond.includes("empty")) { where.push("cf LIKE ?"); args.push('%"field_id":' + (+fid) + '%'); } }
+      const needPost = Object.keys(cfJs).length > 0;
+      const W = where.length ? " WHERE " + where.join(" AND ") : "";
+      if (!needPost) {
+        const total = D.prepare("SELECT COUNT(*) c FROM contacts" + W).get(...args).c;
+        const rows = D.prepare("SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf,tags FROM contacts" + W + " ORDER BY created_at DESC LIMIT 50 OFFSET ?").all(...args, (page - 1) * 50);
+        return res.json({ success: true, total, items: contactOut(rows, true) });
+      }
+      const rows = D.prepare("SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf,tags FROM contacts" + W + " ORDER BY created_at DESC").all(...args);
+      const matched = rows.filter((r) => { for (const [fid, cond] of Object.entries(cfJs)) if (!cfMatch(r.cf, fid, cond)) return false; return true; });
+      res.json({ success: true, total: matched.length, items: contactOut(matched.slice((page - 1) * 50, page * 50), true) });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+
   // ── серверное хранение виджетов рабочего стола (per-учётка; localStorage не переживает смену браузера) ──
   const DESKW_FILE = path.join(path.dirname(DB_PATH), "desk-widgets.json");
   const readDeskW = () => { try { return JSON.parse(fs.readFileSync(DESKW_FILE, "utf8")); } catch (_) { return {}; } };
@@ -521,6 +644,24 @@ module.exports = function mountDbRoutes(app, guard, api) {
       const all = readDeskW();
       all[String(req.query.owner || "admin")] = (req.body && req.body.widgets) || [];
       fs.writeFileSync(DESKW_FILE, JSON.stringify(all, null, 1));
+      res.json({ success: true });
+    } catch (e) { res.json({ success: false, message: e.message }); }
+  });
+
+  // ── СОХРАНЁННЫЕ ФИЛЬТРЫ (per-учётка): сняты 1:1 из живых amo (воронки + «Все сделки» + Контакты). ──
+  // Формат saved-filters.json: {owner:{leads:[{id,name,scope:"all"|pipeId,spec}], contacts:[{id,name,spec}]}}
+  // Читаются фронтом в панели фильтра; клик применяет spec через /leads_spec|/contacts_spec.
+  const SAVEDF_FILE = path.join(path.dirname(DB_PATH), "saved-filters.json");
+  const readSavedF = () => { try { return JSON.parse(fs.readFileSync(SAVEDF_FILE, "utf8")); } catch (_) { return {}; } };
+  app.get(`${api}/saved_filters`, guard, (req, res) => {
+    const all = readSavedF();
+    res.json({ success: true, filters: all[String(req.query.owner || "admin")] || { leads: [], contacts: [] } });
+  });
+  app.post(`${api}/saved_filters`, guard, (req, res) => {
+    try {
+      const all = readSavedF();
+      all[String(req.query.owner || "admin")] = (req.body && req.body.filters) || { leads: [], contacts: [] };
+      fs.writeFileSync(SAVEDF_FILE, JSON.stringify(all, null, 1));
       res.json({ success: true });
     } catch (e) { res.json({ success: false, message: e.message }); }
   });
