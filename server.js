@@ -4703,7 +4703,15 @@ async function vscBuildForecast() {
   const wkEndDay = (lbl) => { const mm = /(\d{1,2})\.(\d{1,2}).*?(\d{1,2})\.(\d{1,2})/.exec(String(lbl || "")); return mm ? (+mm[3]) : 0; };
   const calMonthDays = monthCalDays(cur);
   const dataWeeks = (cur.weeks || []).filter((w) => (w.processed || 0) > 0 || (w.budget || 0) > 0);
-  const elapsedDays = dataWeeks.length ? wkEndDay(dataWeeks[dataWeeks.length - 1].label) : 0;
+  // «Прошло дней» = ПОСЛЕДНИЙ ДЕНЬ С ДАННЫМИ, а не конец последней недели с данными.
+  // Фикс 20.07 («эффект понедельника»): в первый день новой недели старая формула брала
+  // конец ЕЁ label (напр. 26-е при реальных 20 днях) → темп месяца делился на лишние 6 дней,
+  // контакт-план падал на ~19% и все недельные карточки прогноза разом «краснели».
+  let elapsedDays = 0;
+  (cur.weeks || []).forEach((w) => (w.days || []).forEach((dd) => {
+    if ((dd.processed || 0) > 0 || (dd.budget || 0) > 0) { const dn = parseInt(String(dd.date || ""), 10); if (dn > elapsedDays) elapsedDays = dn; }
+  }));
+  if (!elapsedDays && dataWeeks.length) elapsedDays = wkEndDay(dataWeeks[dataWeeks.length - 1].label); // запасной вариант
   const observedContacts = (cur.total && +cur.total.processed) || 0;
   const prevContacts = (prev.total && +prev.total.processed) || 0;
   let expectedContacts;
