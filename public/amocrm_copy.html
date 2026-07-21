@@ -1830,7 +1830,7 @@
     var leadRef=n.__lead?' · <a class="ev-lead" data-l="'+n.__lead.id+'" title="перейти в сделку">'+esc((n.__lead.name||("#"+n.__lead.id)).slice(0,30))+'</a>':"";
     return '<div class="ev'+cls+(n.__local?'" style="border-left:3px solid #6fc48d':"")+'"><div class="eh">'+dt(n.created)+" · "+label+(by?" · "+esc(String(by)):"")+leadRef+acts+'</div>'+body+'</div>';
   }
-  function feedHtml(notes,tasks,filter,bg){
+  function feedHtml(notes,tasks,filter,bg,hist){
     filter=filter||"all";
     if(filter==="chats")return '<p class="muted" style="padding:16px 4px">Чаты (WhatsApp/Telegram) появятся после подключения Wazzup/imBox.</p>';
     var noteOk=function(n){
@@ -1843,7 +1843,15 @@
     var evs=[];
     if(filter!=="tasks"&&filter!=="history")(notes||[]).forEach(function(n){if(noteOk(n))evs.push({ts:n.created||0,kind:"note",n:n});});
     if((filter==="all"||filter==="tasks"))(tasks||[]).forEach(function(t){evs.push({ts:t.complete_till||t.created_at||0,kind:"task",t:t});});
-    evs.sort(function(a,b){return b.ts-a.ts;});
+    // «все» включает и события истории (изменения полей/этапов/тегов, живые amo_events) — как в amo.
+    // Звонковые события amo скипаем: тот же звонок уже в ленте записью с ▶ (иначе дубль)
+    if(filter==="all")(hist||[]).forEach(function(h){
+      if(h.action==="amo:incoming_call"||h.action==="amo:outgoing_call")return;
+      evs.push({ts:h.ts||0,kind:"hist",h:h});
+    });
+    // порядок как в amo: хронология сверху вниз (свежее и будущие задачи — ВНИЗУ, у композера)
+    evs.sort(function(a,b){return a.ts-b.ts;});
+    evs=evs.slice(-300);
     if(!evs.length)return '<p class="muted" style="padding:16px 4px">Пока пусто</p>';
     var html="",lastDay="",sysBuf=[];
     // системные события (как в amo) сворачиваются пачкой «N событий — Развернуть»
@@ -1854,11 +1862,12 @@
       else sysBuf.forEach(function(n){html+=noteEvHtml(n);});
       sysBuf=[];
     };
-    evs.slice(0,300).forEach(function(e){
+    evs.forEach(function(e){
       var day=e.ts?new Date(e.ts*1000).toLocaleDateString("ru-RU"):"";
       if(day!==lastDay){flushSys();html+='<div class="day-sep"><b>'+day+'</b></div>';lastDay=day;}
       if(isSysNote(e)){sysBuf.push(e.n);return;}
       flushSys();
+      if(e.kind==="hist"){html+=histRowHtml(e.h);return;}
       if(e.kind==="task"){
         var t=e.t;
         html+='<div class="ev task'+(t.is_completed?"":" open")+'"><div class="eh">'+dt(t.complete_till)+" · задача · "+esc(userName(t.responsible_user_id))+(t.is_completed?" · выполнена":" · открыта")+(!t.is_completed&&t.id?' · <a class="task-done" data-tid="'+t.id+'">выполнить</a> · <a class="task-move" data-tid="'+t.id+'">перенести</a> · <a class="task-edit" data-tid="'+t.id+'" data-text="'+esc(t.text||"")+'" data-till="'+(t.complete_till||0)+'" data-type="'+(t.task_type||0)+'">изменить</a>':"")+(t.__lead?' · <a class="ev-lead" data-l="'+t.__lead.id+'" title="перейти в сделку">'+esc((t.__lead.name||("#"+t.__lead.id)).slice(0,30))+'</a>':"")+'</div>'+esc(t.text||"")+(t.result&&t.result.text?('<div class="muted" style="margin-top:4px">Результат: '+esc(t.result.text)+'</div>'):"")+'</div>';
@@ -1948,8 +1957,17 @@
     tabs.innerHTML=filters.map(function(f,i){return '<span data-f="'+f[0]+'" class="'+(i===0?"act":"")+'">'+f[1]+'</span>';}).join("");
     function render(f){
       tabs.querySelectorAll("span").forEach(function(x){x.classList.toggle("act",x.dataset.f===f);});
+      var toBottom=function(){feed.scrollTop=feed.scrollHeight;}; // как в amo: свежее внизу, лента открыта на низе
       if(f==="history"&&ent){feed.innerHTML='<p class="muted" style="padding:12px 4px">Загрузка…</p>';jreq("/edit-api/history?entity_type="+ent.type+"&entity_id="+ent.id).then(function(r){feed.innerHTML=historyHtml((r&&r.items)||[]);});}
-      else feed.innerHTML=feedRender(f);
+      else if(f==="all"&&ent){
+        // «все» = задачи+примечания сразу, затем домердживаем события истории (как в amo — единая лента)
+        feed.innerHTML=feedRender(f); toBottom();
+        jreq("/edit-api/history?entity_type="+ent.type+"&entity_id="+ent.id).then(function(r){
+          var items=(r&&r.items)||[];
+          if(items.length&&document.body.contains(feed)){feed.innerHTML=feedRender(f,items);toBottom();}
+        }).catch(function(){});
+      }
+      else {feed.innerHTML=feedRender(f);toBottom();}
     }
     tabs.querySelectorAll("span").forEach(function(s){s.onclick=function(){render(s.dataset.f);};});
     render("all");
@@ -1992,51 +2010,51 @@
     }
     return bg;
   }
+  var HIST_ACT={create:"создана",stage:"смена этапа",edit:"правка полей",edit_cf:"изменение поля",edit_tags:"изменение тегов",task_create:"поставлена задача",task_complete:"задача выполнена",task_reschedule:"перенос задачи",task_edit:"изменена задача",note_add:"добавлено примечание",note_edit:"изменено примечание",note_delete:"удалено примечание",edit_contact:"правка",link_contact:"привязан контакт",unlink_contact:"отвязан контакт",link_company:"привязана компания",unlink_company:"отвязана компания",merge:"объединение контактов",auto_task:"авто-задача",auto_responsible:"авто-ответственный",delete:"удаление"};
+  // цветная плашка этапа (для «Новый этап: A → B», как в amo)
+  function histStChip(pid,sid,fallback){
+    var p=PIPES.find(function(x){return x.id===pid;}),s=null;
+    ((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(x){if(x.id===sid)s=x;});
+    var nm=(s&&s.name)||fallback||("этап "+sid),col=(s&&s.color)||"#e3e7ec";
+    return '<span class="gs-st" style="background:'+esc(col)+'88;margin-left:0">'+esc(nm)+'</span>';
+  }
+  function histCfName(fid){var all=[].concat((CF&&CF.leads)||[],(CF&&CF.contacts)||[],(CF&&CF.companies)||[]);var f=all.find(function(x){return x.id===fid;});return f&&f.name;}
+  // рендер ОДНОГО события истории (changelog копии + живые amo_events) — используется и табом
+  // «история», и общей лентой «все» (паритет с amo: у них события в общей ленте карточки)
+  function histRowHtml(e){
+    var d=e.detail||{},extra="";
+    if(e.action&&String(e.action).indexOf("amo:")===0){
+      var t=String(e.action).slice(4),af=(d.after&&d.after[0])||{},bf=(d.before&&d.before[0])||{},ex="";
+      var mCf=t.match(/^custom_field_(\d+)?_?value_changed$/);
+      if(t==="lead_status_changed"){var a1=af.lead_status||{},b1=bf.lead_status||{};ex=": "+(b1.id?histStChip(b1.pipeline_id,b1.id)+' → ':"")+histStChip(a1.pipeline_id,a1.id);}
+      else if(mCf){var cv=af.custom_field_value||{};var fid2=cv.field_id||(mCf[1]?parseInt(mCf[1],10):0);t="custom_field_value_changed";ex=": "+esc(cv.field_name||histCfName(fid2)||("поле "+(fid2||"")))+" → "+esc(String(cv.text==null||cv.text===""?"—":cv.text).slice(0,80));}
+      else if(t==="sale_field_changed")ex=": "+fmt((bf.sale!=null?bf.sale:0))+" → "+fmt((af.sale!=null?af.sale:0))+" ₽";
+      else if(t==="name_field_changed")ex=': "'+esc(bf.name||"")+'" → "'+esc(af.name||"")+'"';
+      else if(t==="entity_responsible_changed")ex=": "+esc(userName(((af.responsible_user||{}).id)||0)||"");
+      var by=d.by?(" · "+esc(userName(d.by)||d.by)):"";
+      return '<div class="ev"><div class="eh">'+dt(e.ts)+by+' · amo</div>'+esc(AMO_EV_G[t]||t)+ex+'</div>';
+    }
+    if(e.action==="stage"&&d.to)extra=": "+(d.from&&d.from.status_id?histStChip(d.from.pipeline_id,d.from.status_id)+' → ':"")+histStChip(d.to.pipeline_id,d.to.status_id,d.to.name);
+    else if(e.action==="edit"&&d.name)extra=': "'+esc(d.name[0])+'" → "'+esc(d.name[1])+'"';
+    else if(e.action==="edit"&&d.price)extra=": бюджет "+fmt(d.price[0])+" → "+fmt(d.price[1]);
+    else if(e.action==="edit_cf")extra=": "+esc(d.field||("поле "+(d.field_id||"")))+" → "+esc(String(Array.isArray(d.value)?d.value.join(", "):(d.value==null||d.value===""?"—":d.value)).slice(0,80));
+    else if((e.action==="link_contact"||e.action==="unlink_contact")&&d.contact)extra=": "+esc(d.contact);
+    else if((e.action==="link_company"||e.action==="unlink_company")&&d.company)extra=": "+esc(d.company);
+    return '<div class="ev"><div class="eh">'+dt(e.ts)+'</div>'+(HIST_ACT[e.action]||e.action)+extra+'</div>';
+  }
   function historyHtml(items){
     if(!items.length)return '<p class="muted" style="padding:12px 4px">История пуста. Правки копии видны сразу; живые события amo копятся с 19.07.2026 — прошлое amo в слепок не выгружалось.</p>';
-    var A={create:"создана",stage:"смена этапа",edit:"правка полей",edit_cf:"изменение поля",edit_tags:"изменение тегов",task_create:"поставлена задача",task_complete:"задача выполнена",task_reschedule:"перенос задачи",task_edit:"изменена задача",note_add:"добавлено примечание",note_edit:"изменено примечание",note_delete:"удалено примечание",edit_contact:"правка",link_contact:"привязан контакт",unlink_contact:"отвязан контакт",link_company:"привязана компания",unlink_company:"отвязана компания",merge:"объединение контактов",auto_task:"авто-задача",auto_responsible:"авто-ответственный",delete:"удаление"};
-    // цветная плашка этапа (для «Новый этап: A → B», как в amo)
-    var stChip=function(pid,sid,fallback){
-      var p=PIPES.find(function(x){return x.id===pid;}),s=null;
-      ((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(x){if(x.id===sid)s=x;});
-      var nm=(s&&s.name)||fallback||("этап "+sid),col=(s&&s.color)||"#e3e7ec";
-      return '<span class="gs-st" style="background:'+esc(col)+'88;margin-left:0">'+esc(nm)+'</span>';
-    };
-    // живые события amo (amo_events, копятся с 19.07.2026)
-    var AMO_EV=AMO_EV_G;
-    var cfNameById=function(fid){var all=[].concat((CF&&CF.leads)||[],(CF&&CF.contacts)||[],(CF&&CF.companies)||[]);var f=all.find(function(x){return x.id===fid;});return f&&f.name;};
-    var row=function(e){
-      var d=e.detail||{},extra="";
-      if(e.action&&String(e.action).indexOf("amo:")===0){
-        var t=String(e.action).slice(4),af=(d.after&&d.after[0])||{},bf=(d.before&&d.before[0])||{},ex="";
-        var mCf=t.match(/^custom_field_(\d+)?_?value_changed$/);
-        if(t==="lead_status_changed"){var a1=af.lead_status||{},b1=bf.lead_status||{};ex=": "+(b1.id?stChip(b1.pipeline_id,b1.id)+' → ':"")+stChip(a1.pipeline_id,a1.id);}
-        else if(mCf){var cv=af.custom_field_value||{};var fid2=cv.field_id||(mCf[1]?parseInt(mCf[1],10):0);t="custom_field_value_changed";ex=": "+esc(cv.field_name||cfNameById(fid2)||("поле "+(fid2||"")))+" → "+esc(String(cv.text==null||cv.text===""?"—":cv.text).slice(0,80));}
-        else if(t==="sale_field_changed")ex=": "+fmt((bf.sale!=null?bf.sale:0))+" → "+fmt((af.sale!=null?af.sale:0))+" ₽";
-        else if(t==="name_field_changed")ex=': "'+esc(bf.name||"")+'" → "'+esc(af.name||"")+'"';
-        else if(t==="entity_responsible_changed")ex=": "+esc(userName(((af.responsible_user||{}).id)||0)||"");
-        var by=d.by?(" · "+esc(userName(d.by)||d.by)):"";
-        return '<div class="ev"><div class="eh">'+dt(e.ts)+by+' · amo</div>'+esc(AMO_EV[t]||t)+ex+'</div>';
-      }
-      if(e.action==="stage"&&d.to)extra=": "+(d.from&&d.from.status_id?stChip(d.from.pipeline_id,d.from.status_id)+' → ':"")+stChip(d.to.pipeline_id,d.to.status_id,d.to.name);
-      else if(e.action==="edit"&&d.name)extra=': "'+esc(d.name[0])+'" → "'+esc(d.name[1])+'"';
-      else if(e.action==="edit"&&d.price)extra=": бюджет "+fmt(d.price[0])+" → "+fmt(d.price[1]);
-      else if(e.action==="edit_cf")extra=": "+esc(d.field||("поле "+(d.field_id||"")))+" → "+esc(String(Array.isArray(d.value)?d.value.join(", "):(d.value==null||d.value===""?"—":d.value)).slice(0,80));
-      else if((e.action==="link_contact"||e.action==="unlink_contact")&&d.contact)extra=": "+esc(d.contact);
-      else if((e.action==="link_company"||e.action==="unlink_company")&&d.company)extra=": "+esc(d.company);
-      return '<div class="ev"><div class="eh">'+dt(e.ts)+'</div>'+(A[e.action]||e.action)+extra+'</div>';
-    };
     // серии правок полей сворачиваются «Изменение поля: N событий — Развернуть» (как в amo)
     var html="",buf=[];
     var flush=function(){
       if(!buf.length)return;
-      if(buf.length>=3)html+='<div class="ev-grp"><div class="ev-grp-h">Изменение поля: '+buf.length+' событий <a class="grp-tgl">Развернуть</a></div><div class="ev-grp-b" style="display:none">'+buf.map(row).join("")+'</div></div>';
-      else buf.forEach(function(e){html+=row(e);});
+      if(buf.length>=3)html+='<div class="ev-grp"><div class="ev-grp-h">Изменение поля: '+buf.length+' событий <a class="grp-tgl">Развернуть</a></div><div class="ev-grp-b" style="display:none">'+buf.map(histRowHtml).join("")+'</div></div>';
+      else buf.forEach(function(e){html+=histRowHtml(e);});
       buf=[];
     };
     items.forEach(function(e){
       if(e.action==="edit_cf"||e.action==="edit"){buf.push(e);return;}
-      flush();html+=row(e);
+      flush();html+=histRowHtml(e);
     });
     flush();
     return html;
@@ -2104,7 +2122,7 @@
           ["Контактов",((l._embedded&&l._embedded.contacts)||[]).length],
           ["Компаний",((l._embedded&&l._embedded.companies)||[]).length]
         ])+'</div>';
-      var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,localNotes),r.tasks,f,bg);},{type:"leads",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(r.tasks)});
+      var bg=cardShell(left,function(f,hist){return feedHtml(mergeNotes(r.notes,localNotes),r.tasks,f,bg,hist);},{type:"leads",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(r.tasks)});
       bg.__reload=reload;
       bg.querySelectorAll("[data-c]").forEach(function(el){
         el.onclick=function(){document.body.removeChild(bg);openContact(parseInt(el.dataset.c,10));};
@@ -2293,7 +2311,7 @@
         ])+'</div>'+
         '<div data-panel="files" style="display:none">'+filesTabHtml(r.notes)+'</div>';
       var reload=function(){openContact(id);}; // не рушим карточку до успешной загрузки
-      var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes,(r.notes_new||[])),(r.tasks||[]),f,bg);},{type:"contacts",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(r.tasks)});
+      var bg=cardShell(left,function(f,hist){return feedHtml(mergeNotes(r.notes,(r.notes_new||[])),(r.tasks||[]),f,bg,hist);},{type:"contacts",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(r.tasks)});
       bg.__reload=reload;
       var h=bg.querySelector(".dl-head .ava");if(h)h.textContent=init;
       bg.querySelectorAll("[data-l]").forEach(function(el){
@@ -2378,7 +2396,7 @@
           ["Сделок",(emb.leads||[]).length],["Задач",tasks.length],["Примечаний",notesNew.length]
         ])+'</div>';
       var reload=function(){openCompany(id);};
-      var bg=cardShell(left,function(f){return feedHtml(mergeNotes(r.notes||[],notesNew),tasks,f,bg);},{type:"companies",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(tasks)});
+      var bg=cardShell(left,function(f,hist){return feedHtml(mergeNotes(r.notes||[],notesNew),tasks,f,bg,hist);},{type:"companies",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(tasks)});
       bindEditable(bg,"coname",function(){return c.name;},function(v){return ereq("PATCH","/edit-api/company/"+id,{name:v});},reload,"text");
       bindCfFields(bg,"companies",id,CF&&CF.companies,reload);
       bindFieldGroups(bg);bindCardTabs(bg);
@@ -3154,7 +3172,7 @@
       var rows=[["Ответственный",userName(c.responsible_user_id)],["LTV",c.ltv?fmt(c.ltv)+" ₽":"—"],["Покупок",c.purchases_count||"—"],["Средний чек",c.average_check?fmt(c.average_check)+" ₽":"—"],["След. платёж",c.next_price?fmt(c.next_price)+" ₽":"—"],["Дата платежа",c.next_date?dShort(c.next_date):"—"],["Создан",c.created_at?dt(c.created_at):"—"]];
       var left='<div class="dl-head"><span class="back">‹</span><h2>'+esc(c.name||("Покупатель #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div><div class="fields">'+rows.map(function(x){return '<div class="frow"><div class="fl">'+x[0]+'</div><div class="fv">'+esc(String(x[1]))+'</div></div>';}).join("")+fieldsHtml(c.custom_fields_values,null,"")+'</div>';
       var reload=function(){openCustomer(id);};
-      var bg=cardShell(left,function(f){return feedHtml(mergeNotes([],notesNew),tasks,f,bg);},{type:"customers",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(tasks)});
+      var bg=cardShell(left,function(f,hist){return feedHtml(mergeNotes([],notesNew),tasks,f,bg,hist);},{type:"customers",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(tasks)});
     });
   }
 
