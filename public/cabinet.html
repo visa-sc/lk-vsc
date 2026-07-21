@@ -985,9 +985,121 @@
         margin-left: 0;
       }
     }
+    /* ════════════════════════════════════════════════════════════════════
+       LK-SKIN — «воздушное» оформление клиентского ЛК в стиле Apple
+       (как /vsc: мягкие двойные тени, крупные скругления, спокойная
+       типографика, градиентный фон). ТОЛЬКО надстройка над классом
+       body.lk-skin: разметка, размеры и логика не меняются — правится
+       исключительно внешний вид (цвет/фон/тень/радиус/hover).
+       Акцент — фирменный клиентский #3589BD.
+       ════════════════════════════════════════════════════════════════════ */
+    body.lk-skin {
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      background:
+        radial-gradient(1100px 520px at 50% -120px, #e8f2fa 0%, rgba(232,242,250,0) 70%),
+        linear-gradient(180deg, #f7f9fc 0%, #eef1f6 100%);
+      background-attachment: fixed;
+      --lk-accent: #3589BD;
+      --lk-ink: #171c29;
+      --lk-muted: #6a7385;
+      --lk-border: rgba(23,32,60,.08);
+      --lk-shadow: 0 1px 2px rgba(16,24,40,.04), 0 14px 34px -18px rgba(16,32,64,.20);
+      --lk-shadow-hi: 0 2px 6px rgba(16,24,40,.06), 0 26px 50px -22px rgba(16,32,64,.30);
+    }
+    body.lk-skin ::selection { background: rgba(53,137,189,.18); }
+    /* Обёртка страницы — легче и чище */
+    body.lk-skin .wrap {
+      background: rgba(252,252,254,.86);
+      border: 1px solid var(--lk-border);
+      box-shadow: 0 1px 2px rgba(16,24,40,.03), 0 24px 60px -30px rgba(16,32,64,.25);
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      body.lk-skin .wrap { -webkit-backdrop-filter: saturate(1.3) blur(14px); backdrop-filter: saturate(1.3) blur(14px); }
+    }
+    /* Типографика — спокойные заголовки */
+    body.lk-skin h1 { color: var(--lk-ink); letter-spacing: -.02em; }
+    body.lk-skin .card h2 { color: var(--lk-ink); letter-spacing: -.015em; }
+    body.lk-skin .badge { background: rgba(53,137,189,.10); color: #2f6f9c; }
+    /* Карточки — тонкая граница + мягкая двойная тень */
+    body.lk-skin .card {
+      border-color: var(--lk-border);
+      box-shadow: var(--lk-shadow);
+    }
+    /* Основные (синие) кнопки — деликатный градиент + hover-подъём */
+    body.lk-skin .search-box button,
+    body.lk-skin .modal-btn-yes,
+    body.lk-skin .lead-toggle-btn.lead-new-btn-primary {
+      background: linear-gradient(135deg, #4aa3d8 0%, #3589BD 100%);
+      border-color: transparent;
+      box-shadow: 0 8px 18px -8px rgba(53,137,189,.55);
+      transition: filter .18s var(--vsc-ease), transform .18s var(--vsc-ease), box-shadow .18s var(--vsc-ease);
+    }
+    body.lk-skin .search-box button:hover:not(:disabled),
+    body.lk-skin .modal-btn-yes:hover:not(:disabled),
+    body.lk-skin .lead-toggle-btn.lead-new-btn-primary:hover:not(:disabled) {
+      background: linear-gradient(135deg, #4aa3d8 0%, #3589BD 100%);
+      filter: brightness(1.06);
+      transform: translateY(-1px);
+    }
+    /* Тёмная кнопка «Загрузить» — как активный сегмент /vsc */
+    body.lk-skin .upload-btn {
+      background: linear-gradient(135deg, #202a48 0%, #10162e 100%);
+      box-shadow: 0 8px 18px -9px rgba(16,22,46,.6);
+      transition: filter .18s var(--vsc-ease), transform .18s var(--vsc-ease);
+    }
+    body.lk-skin .upload-btn:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
+    /* Зелёная кнопка опросника — мягкий градиент */
+    body.lk-skin .questionnaire-btn {
+      background: linear-gradient(135deg, #58ad72 0%, #478f5e 100%);
+      box-shadow: 0 8px 18px -9px rgba(79,159,104,.55);
+      transition: filter .18s var(--vsc-ease), transform .18s var(--vsc-ease);
+    }
+    body.lk-skin .questionnaire-btn:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+    /* Вторичные кнопки — полупрозрачное «стекло» */
+    body.lk-skin .file-attach-btn,
+    body.lk-skin .lead-toggle-btn:not(.lead-new-btn-primary),
+    body.lk-skin .back-to-login-btn,
+    body.lk-skin .modal-btn-no,
+    body.lk-skin .docs-correct-btn {
+      background: rgba(255,255,255,.75);
+    }
+    body.lk-skin .file-attach-btn:hover:not(:disabled),
+    body.lk-skin .lead-toggle-btn:not(.lead-new-btn-primary):hover:not(:disabled),
+    body.lk-skin .back-to-login-btn:hover,
+    body.lk-skin .modal-btn-no:hover:not(:disabled) {
+      background: #f0f7fc;
+    }
+    /* Поле поиска — фокус-кольцо в один тон с акцентом */
+    body.lk-skin .search-box input { border-color: rgba(23,32,60,.12); transition: border-color .2s var(--vsc-ease), box-shadow .2s var(--vsc-ease); }
+    body.lk-skin .search-box input:focus { border-color: var(--lk-accent); box-shadow: 0 0 0 3px rgba(53,137,189,.15); }
+    /* Плитки обращений — hover-подъём как у /vsc-тайлов */
+    body.lk-skin .lead-item {
+      border-color: var(--lk-border);
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(16,24,40,.03);
+      transition: border-color .25s var(--vsc-ease), background .25s var(--vsc-ease),
+                  transform .2s var(--vsc-ease), box-shadow .2s var(--vsc-ease);
+    }
+    body.lk-skin .lead-item:hover { transform: translateY(-1px); box-shadow: var(--lk-shadow); border-color: rgba(23,32,60,.14); background: #fff; }
+    body.lk-skin .lead-item.active { border-color: #73b489; background: #eef8f1; }
+    /* Сообщения — границы прозрачнее (мягче) */
+    body.lk-skin .message.error { border-color: rgba(217,122,138,.35); }
+    body.lk-skin .message.success { border-color: rgba(79,159,104,.35); }
+    body.lk-skin .message.info { border-color: rgba(53,137,189,.28); }
+    /* Модалки — глубже тень, мягче подложка */
+    body.lk-skin .modal-backdrop { background: rgba(20,26,42,.38); }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      body.lk-skin .modal-backdrop { -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); }
+      body.lk-skin .obr-backdrop { -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); }
+    }
+    body.lk-skin .modal-box { border: 1px solid var(--lk-border); box-shadow: 0 24px 80px rgba(16,24,40,.28); }
+    /* Превью файлов и строки документов — скругления и мягкие рамки */
+    body.lk-skin .file-preview-tile { border-color: var(--lk-border); }
+    body.lk-skin .file-list-row { border-color: rgba(23,32,60,.06); }
   </style>
 </head>
-<body>
+<body class="lk-skin">
   <div class="brand-bar">
     <img src="/logo.png" alt="VOYO" width="600" height="300" fetchpriority="high" onload="this.classList.add('is-loaded')" onerror="this.classList.add('is-loaded')" />
     <noscript><style>.brand-bar img{opacity:1;transform:none;}</style></noscript>
