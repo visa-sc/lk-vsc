@@ -4922,6 +4922,99 @@ app.post("/admin/api/vsc/mktkpi", requireVscMktKpi, (req, res) => {
   res.json({ success: true });
 });
 
+// ═══ «Налоги» — сверка по юрлицам (вкладка /vsc, ТОЛЬКО админ) ═══════════════════════════
+// Перенос таблички Андрея (налоги.xlsx, 20.07): помесячная выручка 4 юрлиц по кварталам,
+// нал без чека и вынесенный НДС за квартал (ввод), возвраты — АВТОМАТОМ из гугл-таблицы
+// возвратов ПО ЮРЛИЦАМ (колонки «Юр лицо» + «Услуги»), сравнение с цифрами бухгалтера.
+// Формулы — из xlsx Андрея; распределение возвратов/нала обновлено по его ТЗ 20.07:
+// возвраты — напрямую по юрлицу, нал без чека — пропорционально долям выручки.
+const VSC_TAXLEG_FILE = path.join(__dirname, ".vscTaxesLegal.json");
+const TAXLEG_ENTITIES = [
+  { key: "alta", name: "Альта Профит", rate: 0.015, vat: false },
+  { key: "kom", name: "ИП Комисаренко", rate: 0.03, vat: false },
+  { key: "pan", name: "ИП Панфилова", rate: 0.03, vat: true },
+  { key: "akg", name: "Эй Кей Групп", rate: 0.015, vat: true }
+];
+function vscTaxLegSeed() {
+  return {
+    quarters: {
+      "2026-Q1": {
+        rev: { alta: [3315380, 7413272, 9080373], kom: [5914855, 5866418, 5374515], pan: [1413940, 9762, 2857], akg: [1004794, 38562, 79961] },
+        cash: 2182490, vatOut: 129476,
+        buh: { alta: { tax: 199122, vat: 0 }, kom: { tax: 664668, vat: 0 }, pan: { tax: 0, vat: 73962 }, akg: { tax: 0, vat: 53690 } }
+      },
+      "2026-Q2": {
+        rev: { alta: [10569531, null, null], kom: [5041525, null, null], pan: [0, null, null], akg: [33800, null, null] },
+        cash: null, vatOut: null,
+        buh: {
+          alta: { tax: 374393, vat: 25337, income: 11045043, expense: 8549094 },
+          kom: { tax: 150197, vat: 11358, income: 4987500 },
+          pan: { tax: 370590, vat: 617650, income: 12352978 },
+          akg: { tax: 30313, vat: 591604, income: 11832085, expense: 11630000 }
+        }
+      }
+    }
+  };
+}
+let _taxLeg = null;
+function vscTaxLegLoad() {
+  if (_taxLeg) return _taxLeg;
+  try { _taxLeg = JSON.parse(fs.readFileSync(VSC_TAXLEG_FILE, "utf8")); }
+  catch (_) { _taxLeg = vscTaxLegSeed(); try { fs.writeFileSync(VSC_TAXLEG_FILE, JSON.stringify(_taxLeg, null, 2), "utf8"); } catch (__) {} }
+  return _taxLeg;
+}
+// Возвраты по юрлицам за квартал — из месячных вкладок таблицы возвратов (колонки по имени:
+// «Юр лицо», «Услуги»). Кэш 15 мин; при сбое месяца — отметка missing.
+const TAXLEG_QMONTHS = { Q1: ["Январь", "Февраль", "Март"], Q2: ["Апрель", "Май", "Июнь"], Q3: ["Июль", "Август", "Сентябрь"], Q4: ["Октябрь", "Ноябрь", "Декабрь"] };
+let _taxLegRetCache = {};
+async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
+  const c = _taxLegRetCache[qkey];
+  if (c && Date.now() - c.at < 15 * 60 * 1000) return c.data;
+  const [year, q] = qkey.split("-");
+  const disc = await vscDiscoverGids(VSC_RETURNS_PUB).catch(() => null);
+  const tabs = vscMonthTabs(disc, VSC_RETURNS_GID);
+  const byEnt = { alta: 0, kom: 0, pan: 0, akg: 0, other: 0 }; const missing = [];
+  for (const mon of TAXLEG_QMONTHS[q] || []) {
+    const name = mon + " " + year;
+    const tab = tabs.find((t) => t.name === name);
+    if (!tab) { missing.push(name); continue; }
+    try {
+      const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] });
+      const R = vscParseCsv(r.data);
+      const hdr = R[1] || []; let jUr = -1, jUsl = -1;
+      hdr.forEach((cc, j) => { const n = String(cc || "").toLowerCase().trim(); if (n === "юр лицо") jUr = j; if (n === "услуги") jUsl = j; });
+      if (jUr < 0 || jUsl < 0) { missing.push(name); continue; }
+      for (let i = 2; i < R.length; i++) {
+        const row = R[i] || []; const ur = String(row[jUr] || "").toLowerCase(); const v = vscNum(row[jUsl]);
+        if (!ur || !v) continue;
+        if (ur.includes("альта")) byEnt.alta += v;
+        else if (ur.includes("комисар") || ur.includes("комиссар")) byEnt.kom += v;
+        else if (ur.includes("панфилов")) byEnt.pan += v;
+        else if (ur.includes("эй кей") || ur.includes("эйкей")) byEnt.akg += v;
+        else byEnt.other += v;
+      }
+    } catch (e) { missing.push(name); }
+  }
+  const data = { byEnt, missing };
+  _taxLegRetCache[qkey] = { at: Date.now(), data };
+  return data;
+}
+app.get("/admin/api/vsc/taxes-legal", requireAdmin, async (req, res) => {
+  const d = vscTaxLegLoad();
+  const q = String(req.query.q || "2026-Q2");
+  let returns = null;
+  try { returns = await vscTaxLegReturns(q); } catch (e) {}
+  res.json({ success: true, data: d, entities: TAXLEG_ENTITIES, returns: returns, q });
+});
+app.post("/admin/api/vsc/taxes-legal", requireAdmin, (req, res) => {
+  const d = req.body && req.body.data;
+  if (!d || typeof d !== "object" || !d.quarters) return res.status(400).json({ success: false, message: "Нет данных" });
+  if (JSON.stringify(d).length > 300000) return res.status(400).json({ success: false, message: "Слишком большой объём" });
+  _taxLeg = d;
+  try { fs.writeFileSync(VSC_TAXLEG_FILE, JSON.stringify(d, null, 2), "utf8"); } catch (e) { return res.status(500).json({ success: false, message: "Не сохранилось" }); }
+  res.json({ success: true });
+});
+
 // ═══ «% записанных сделок» — Шенген/США (Ежемесячный контроль) ═══════════════════════════
 // Источник — ЖИВАЯ amoCRM (по просьбе Андрея 13.07; раньше была локальная копия). Бережно:
 // раз в сутки в 00:00 МСК, весь прогон под amoBg (САМЫЙ НИЗКИЙ приоритет лимитера —

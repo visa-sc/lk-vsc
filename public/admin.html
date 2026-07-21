@@ -3025,7 +3025,7 @@
         // «Маркетинг KPI» временно скрыт у АДМИНА (просьба Андрея 13.07) — Петрову (vscRestrict) остаётся.
         // Вернуть админу: VSC_MKTKPI_HIDE_ADMIN = false.
         const VSC_MKTKPI_HIDE_ADMIN = true;
-        let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["mktkpi", "Маркетинг KPI"], ["staff", "Статистика по сотрудникам"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
+        let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["mktkpi", "Маркетинг KPI"], ["staff", "Статистика по сотрудникам"], ["taxes", "Налоги"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
         if (VSC_BOT_HIDDEN) TABS = TABS.filter(([tb]) => tb !== "bot");
         if (isMgr) {
           if (myVscRestrict && Array.isArray(myVscRestrict.tabs)) {
@@ -3064,6 +3064,7 @@
         if (vscTab === "forecast") { renderVscForecast(); return; }
         if (vscTab === "mktkpi") { renderVscMktKpi(); return; }
         if (vscTab === "staff") { renderVscStaff(); return; }
+        if (vscTab === "taxes") { renderVscTaxes(); return; }
         if (vscTab === "calc") { renderVscCalc(); return; }
         if (vscTab === "bot") { renderVscBot(); return; }
 
@@ -3597,6 +3598,144 @@
           bars.appendChild(col);
         });
         box.appendChild(bars);
+      }
+      // ── Вкладка «Налоги» (ТОЛЬКО админ) — сверка налогов по юрлицам ──────────────────
+      // Перенос таблички Андрея (налоги.xlsx): выручки 4 юрлиц по месяцам квартала (ввод),
+      // нал без чека и вынесенный НДС (ввод), возвраты за услуги — АВТО по юрлицам из
+      // гугл-таблицы возвратов, наши налоги по формулам Андрея vs цифры бухгалтера.
+      let _vscTaxQ = "2026-Q2", _vscTaxData = null;
+      const VSC_TAXQ_MON = { Q1: ["Январь", "Февраль", "Март"], Q2: ["Апрель", "Май", "Июнь"], Q3: ["Июль", "Август", "Сентябрь"], Q4: ["Октябрь", "Ноябрь", "Декабрь"] };
+      async function renderVscTaxes() {
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Налоги — сверка по юрлицам";
+        h.appendChild(vscInfo("<b>Как считается (методика из твоей таблички + ТЗ 20.07)</b><br>• Выручка юрлица за квартал — сумма введённых месяцев.<br>• Возвраты — АВТОМАТОМ из гугл-таблицы возвратов, только колонка «Услуги», по колонке «Юр лицо» (строка «не привязано» в юрлица не входит).<br>• Нал без чека — общей суммой, вычитается ПРОПОРЦИОНАЛЬНО долям выручки юрлиц.<br>• База = выручка − возвраты − доля нала.<br>• Налог: Альта 1,5% от базы · ИП Комисаренко 3% · ИП Панфилова 3% · Эй Кей Групп 1,5%.<br>• НДС 5% — только Панфилова и Эй Кей: (выручка + вынесенный НДС/2) × 5% (как в твоём xlsx, без вычета возвратов).<br>• «От бухгалтера» — ввод; Δ = наш − бухгалтера. Красным — |Δ| заметная.<br><br>Данные хранятся у нас (.vscTaxesLegal), сид — из твоего xlsx и скрина бухгалтера."));
+        vscContent.appendChild(h);
+        const box = document.createElement("div"); vscContent.appendChild(box);
+        box.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        let j;
+        try { j = await apiFetch("/admin/api/vsc/taxes-legal?q=" + encodeURIComponent(_vscTaxQ)); }
+        catch (e) { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить: ' + escapeHtml(e.message) + '</div>'; return; }
+        if (vscTab !== "taxes") return;
+        _vscTaxData = j.data;
+        vscTaxPaint(box, j.entities, (j.returns || { byEnt: {}, missing: [] }));
+      }
+      function vscTaxPaint(box, ENT, RET) {
+        box.innerHTML = "";
+        const qs = Object.keys((_vscTaxData && _vscTaxData.quarters) || {}).sort();
+        if (qs.indexOf(_vscTaxQ) < 0) _vscTaxQ = qs[qs.length - 1];
+        const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;";
+        qs.forEach(function (q) {
+          const on = q === _vscTaxQ;
+          const b = document.createElement("button"); b.type = "button"; b.textContent = q.replace("2026-", "") + " · " + (VSC_TAXQ_MON[q.split("-")[1]] || []).map(function (m) { return m.slice(0, 3); }).join("–") + " " + q.slice(0, 4);
+          b.style.cssText = "border:1px solid " + (on ? "#0097ca" : "#cfd8e3") + ";background:" + (on ? "#0097ca" : "#fff") + ";color:" + (on ? "#fff" : "#33415a") + ";border-radius:10px;padding:8px 15px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;";
+          b.addEventListener("click", function () { _vscTaxQ = q; renderVsc(); });
+          bar.appendChild(b);
+        });
+        const addQ = document.createElement("button"); addQ.type = "button"; addQ.textContent = "+ квартал";
+        addQ.style.cssText = "border:1px dashed #b7c0cd;background:#f6f8fb;color:#4a5568;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;";
+        addQ.addEventListener("click", function () {
+          const last = qs[qs.length - 1]; const [y, qn] = last.split("-Q"); let ny = +y, nq = +qn + 1; if (nq > 4) { nq = 1; ny++; }
+          const key = ny + "-Q" + nq;
+          _vscTaxData.quarters[key] = { rev: { alta: [null, null, null], kom: [null, null, null], pan: [null, null, null], akg: [null, null, null] }, cash: null, vatOut: null, buh: {} };
+          _vscTaxQ = key; vscTaxSave(null, true).then(function () { renderVsc(); });
+        });
+        bar.appendChild(addQ);
+        box.appendChild(bar);
+        const Q = _vscTaxData.quarters[_vscTaxQ];
+        const mons = VSC_TAXQ_MON[_vscTaxQ.split("-")[1]] || [];
+        const num = function (x) { if (x == null || x === "") return null; const n = parseFloat(String(x).replace(/[\s ]/g, "").replace(",", ".")); return isNaN(n) ? null : n; };
+        const money0 = function (v) { return (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽"; };
+        // ── Ввод: выручки по месяцам + нал/НДС ──
+        const inCard = document.createElement("div"); inCard.className = "vsc-chart";
+        const inp = function (val, cls, ph) { return '<input type="text" inputmode="numeric" class="' + cls + '" value="' + (val == null ? "" : val) + '"' + (ph ? ' placeholder="' + ph + '"' : '') + ' style="width:100%;box-sizing:border-box;text-align:right;padding:6px 8px;border:1px solid rgba(20,32,64,.14);border-radius:8px;font-size:13px;font-family:inherit;background:#fff;">'; };
+        let ih = '<div class="vsc-chart-h" style="margin-bottom:8px;">Выручка по юрлицам — ' + escapeHtml(mons.join(", ")) + '</div>'
+          + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:560px;"><thead><tr><th style="text-align:left;padding:6px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">Юрлицо</th>';
+        mons.forEach(function (m) { ih += '<th style="text-align:right;padding:6px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">' + m + '</th>'; });
+        ih += '<th style="text-align:right;padding:6px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">Σ квартал</th></tr></thead><tbody>';
+        ENT.forEach(function (e) {
+          ih += '<tr style="border-top:1px solid #f0eef5;"><td style="padding:5px 8px;font-weight:600;white-space:nowrap;">' + escapeHtml(e.name) + '</td>';
+          for (let mi = 0; mi < 3; mi++) ih += '<td style="padding:4px 6px;width:120px;">' + inp((Q.rev[e.key] || [])[mi], "tax-rev-" + e.key + "-" + mi) + '</td>';
+          ih += '<td class="tax-sum-' + e.key + '" style="padding:5px 8px;text-align:right;font-weight:700;white-space:nowrap;"></td></tr>';
+        });
+        ih += '</tbody></table></div>'
+          + '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;align-items:flex-end;">'
+          + '<label style="font-size:12.5px;color:#6b7280;">Нал без чека за кв (вкл. ВНЖ), ₽<br><div style="width:180px;margin-top:3px;">' + inp(Q.cash, "tax-cash") + '</div></label>'
+          + '<label style="font-size:12.5px;color:#6b7280;">Вынесенный НДС за кв, ₽<br><div style="width:180px;margin-top:3px;">' + inp(Q.vatOut, "tax-vatout") + '</div></label>'
+          + '<div style="font-size:12px;color:#6b7280;">Возвраты (авто, услуги): <b class="tax-ret-total"></b>' + (RET.missing && RET.missing.length ? ' <span style="color:#b8602a;">⚠ не загрузились: ' + escapeHtml(RET.missing.join(", ")) + '</span>' : '') + '<br><span class="tax-ret-detail" style="color:#9aa0ab;font-size:11.5px;"></span></div>'
+          + '</div>';
+        inCard.innerHTML = ih;
+        box.appendChild(inCard);
+        // ── Итоговая таблица ──
+        const outCard = document.createElement("div"); outCard.className = "vsc-chart";
+        outCard.innerHTML = '<div class="vsc-chart-h" style="margin-bottom:8px;">Расчёт и сверка с бухгалтером</div><div class="tax-out"></div>'
+          + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;"><button type="button" id="taxSave" class="vsc-dayrev-refresh" style="margin-top:0;">Сохранить</button><span id="taxStatus" style="font-size:12.5px;color:#8a90a0;"></span></div>';
+        box.appendChild(outCard);
+        const recalc = function () {
+          // собрать ввод
+          ENT.forEach(function (e) { Q.rev[e.key] = [0, 1, 2].map(function (mi) { return num(box.querySelector(".tax-rev-" + e.key + "-" + mi).value); }); });
+          Q.cash = num(box.querySelector(".tax-cash").value); Q.vatOut = num(box.querySelector(".tax-vatout").value);
+          const sums = {}; let tot = 0;
+          ENT.forEach(function (e) { const s = (Q.rev[e.key] || []).reduce(function (a, v) { return a + (v || 0); }, 0); sums[e.key] = s; tot += s; const el = box.querySelector(".tax-sum-" + e.key); if (el) el.textContent = money0(s); });
+          const retTot = ENT.reduce(function (a, e) { return a + (RET.byEnt[e.key] || 0); }, 0) + (RET.byEnt.other || 0);
+          const rt = box.querySelector(".tax-ret-total"); if (rt) rt.textContent = money0(retTot);
+          const rd = box.querySelector(".tax-ret-detail"); if (rd) rd.textContent = ENT.map(function (e) { return e.name + " " + money0(RET.byEnt[e.key] || 0); }).join(" · ") + (RET.byEnt.other ? " · не привязано " + money0(RET.byEnt.other) : "");
+          // таблица результатов
+          const th = 'text-align:right;padding:6px 8px;color:#6b7280;font-size:10.5px;text-transform:uppercase;white-space:nowrap;';
+          let oh = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:900px;"><thead><tr>'
+            + '<th style="text-align:left;padding:6px 8px;color:#6b7280;font-size:10.5px;text-transform:uppercase;">Юрлицо</th>'
+            + '<th style="' + th + '">Выручка</th><th style="' + th + '">Возвраты</th><th style="' + th + '">Нал (доля)</th><th style="' + th + '">База</th>'
+            + '<th style="' + th + '">Налог наш</th><th style="' + th + '">Налог бух</th><th style="' + th + '">Δ налог</th>'
+            + '<th style="' + th + '">НДС наш</th><th style="' + th + '">НДС бух</th><th style="' + th + '">Δ НДС</th><th style="' + th + '">Доход бух</th></tr></thead><tbody>';
+          ENT.forEach(function (e) {
+            const R = sums[e.key], ret = RET.byEnt[e.key] || 0, share = tot ? R / tot : 0, cashPart = (Q.cash || 0) * share;
+            const base = R - ret - cashPart;
+            const tax = base * e.rate;
+            const vat = e.vat ? (R + (Q.vatOut || 0) / 2) * 0.05 : 0;
+            const b = (Q.buh && Q.buh[e.key]) || {};
+            const dTax = (b.tax != null) ? tax - b.tax : null;
+            const dVat = (b.vat != null) ? vat - b.vat : null;
+            const dCol = function (d, scale) { if (d == null) return "#9aa0ab"; return Math.abs(d) > scale ? "#b0263a" : "#2c7a43"; };
+            oh += '<tr style="border-top:1px solid #f0eef5;">'
+              + '<td style="padding:5px 8px;font-weight:600;white-space:nowrap;">' + escapeHtml(e.name) + ' <span style="color:#9aa0ab;font-weight:400;">' + (e.rate * 100) + '%' + (e.vat ? "+НДС" : "") + '</span></td>'
+              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;">' + money0(R) + '</td>'
+              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;color:#b8602a;">−' + money0(ret) + '</td>'
+              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;color:#b8602a;">−' + money0(cashPart) + '</td>'
+              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:600;">' + money0(base) + '</td>'
+              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:700;">' + money0(tax) + '</td>'
+              + '<td style="padding:4px 6px;width:110px;">' + '<input type="text" inputmode="numeric" class="tax-buh-tax-' + e.key + '" value="' + (b.tax == null ? "" : b.tax) + '" style="width:100%;box-sizing:border-box;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:12.5px;font-family:inherit;">' + '</td>'
+              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:700;color:' + dCol(dTax, 30000) + ';">' + (dTax == null ? "—" : (dTax > 0 ? "+" : "−") + money0(Math.abs(dTax))) + '</td>'
+              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:700;">' + money0(vat) + '</td>'
+              + '<td style="padding:4px 6px;width:110px;">' + '<input type="text" inputmode="numeric" class="tax-buh-vat-' + e.key + '" value="' + (b.vat == null ? "" : b.vat) + '" style="width:100%;box-sizing:border-box;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:12.5px;font-family:inherit;">' + '</td>'
+              + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:700;color:' + dCol(dVat, 30000) + ';">' + (dVat == null ? "—" : (dVat > 0 ? "+" : "−") + money0(Math.abs(dVat))) + '</td>'
+              + '<td style="padding:4px 6px;width:110px;">' + '<input type="text" inputmode="numeric" class="tax-buh-inc-' + e.key + '" value="' + (b.income == null ? "" : b.income) + '" style="width:100%;box-sizing:border-box;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:12.5px;font-family:inherit;">' + '</td>'
+              + '</tr>';
+          });
+          oh += '</tbody></table></div>';
+          const out = box.querySelector(".tax-out"); if (out) { out.innerHTML = oh; bindBuh(); }
+        };
+        let bindBuh = function () {
+          ENT.forEach(function (e) {
+            ["tax", "vat", "inc"].forEach(function (kind) {
+              const el = box.querySelector(".tax-buh-" + kind + "-" + e.key); if (!el) return;
+              el.addEventListener("change", function () {
+                Q.buh = Q.buh || {}; Q.buh[e.key] = Q.buh[e.key] || {};
+                const field = kind === "inc" ? "income" : kind;
+                Q.buh[e.key][field] = num(el.value);
+                recalc();
+              });
+            });
+          });
+        };
+        box.querySelectorAll('input[class^="tax-rev-"], .tax-cash, .tax-vatout').forEach(function (el) { el.addEventListener("input", recalc); });
+        const sb = box.querySelector("#taxSave"); if (sb) sb.addEventListener("click", function () { vscTaxSave(box, false); });
+        recalc();
+      }
+      async function vscTaxSave(box, silent) {
+        try {
+          const r = await fetch("/admin/api/vsc/taxes-legal", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ data: _vscTaxData }) });
+          const j = await r.json();
+          if (!silent && box) { const st = box.querySelector("#taxStatus"); if (st) { st.textContent = j && j.success ? "✓ сохранено" : "ошибка сохранения"; st.style.color = j && j.success ? "#2c7a43" : "#b0263a"; } }
+          return j;
+        } catch (e) { if (!silent && box) { const st = box.querySelector("#taxStatus"); if (st) { st.textContent = "ошибка сети"; st.style.color = "#b0263a"; } } }
       }
       // ── Блок «Скорость первого касания лида» (Ежемесячный контроль, 3-й сверху) ──
       // Из живой amoCRM (ночной съём 00:30, низкий приоритет). Медиана времени от создания

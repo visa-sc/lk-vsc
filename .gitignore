@@ -124,3 +124,6 @@ crm-svc/.amocopySessions.json
 # Скорость первого касания + статистика по сотрудникам — рантайм-кэши из живой amoCRM
 .vscFirstTouch.json
 .vscStaffStats.json
+
+# Налоги по юрлицам — рантайм-хранилище (сид в коде)
+.vscTaxesLegal.json
