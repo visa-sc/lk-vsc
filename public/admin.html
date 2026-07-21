@@ -3025,7 +3025,7 @@
         // «Маркетинг KPI» временно скрыт у АДМИНА (просьба Андрея 13.07) — Петрову (vscRestrict) остаётся.
         // Вернуть админу: VSC_MKTKPI_HIDE_ADMIN = false.
         const VSC_MKTKPI_HIDE_ADMIN = true;
-        let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["mktkpi", "Маркетинг KPI"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
+        let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["mktkpi", "Маркетинг KPI"], ["staff", "Статистика по сотрудникам"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
         if (VSC_BOT_HIDDEN) TABS = TABS.filter(([tb]) => tb !== "bot");
         if (isMgr) {
           if (myVscRestrict && Array.isArray(myVscRestrict.tabs)) {
@@ -3063,6 +3063,7 @@
         if (vscTab === "monthly") { renderVscMonthly(); return; }
         if (vscTab === "forecast") { renderVscForecast(); return; }
         if (vscTab === "mktkpi") { renderVscMktKpi(); return; }
+        if (vscTab === "staff") { renderVscStaff(); return; }
         if (vscTab === "calc") { renderVscCalc(); return; }
         if (vscTab === "bot") { renderVscBot(); return; }
 
@@ -3341,6 +3342,8 @@
         vscContent.appendChild(vscReturnsStackedChart(retSeries));
         // ── % записанных сделок (Шенген/США) — сразу под возвратами (по просьбе Андрея) ──
         vscContent.appendChild(vscSchengenBlock());
+        // ── Скорость первого касания лида — третьим сверху (по просьбе Андрея 20.07) ──
+        vscContent.appendChild(vscFirstTouchBlock());
         // ── Выручка по городам (СПб/МСК) — по месяцам, из amoCRM (ночной расчёт 05:00) ──
         const hCity = document.createElement("div"); hCity.className = "ref-sec-h"; hCity.textContent = "Выручка по городам — по месяцам (2026)";
         vscContent.appendChild(hCity);
@@ -3594,6 +3597,137 @@
           bars.appendChild(col);
         });
         box.appendChild(bars);
+      }
+      // ── Блок «Скорость первого касания лида» (Ежемесячный контроль, 3-й сверху) ──
+      // Из живой amoCRM (ночной съём 00:30, низкий приоритет). Медиана времени от создания
+      // лида до первого действия менеджера (исходящий звонок / сообщение в мессенджер).
+      function vscFtFmtMin(v) {
+        if (v == null || isNaN(v)) return "—";
+        if (v < 60) return (Math.round(v * 10) / 10) + " мин";
+        const h = Math.floor(v / 60), mm = Math.round(v % 60);
+        return h + "ч " + (mm < 10 ? "0" : "") + mm + "м";
+      }
+      function vscFirstTouchBlock() {
+        const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
+        const SECT = "Скорость первого касания лида";
+        const info = "<b>Что показывает</b><br>Для лидов, созданных в месяце, — время от создания до ПЕРВОГО действия менеджера: исходящий звонок или сообщение в мессенджере (автосообщения ботов не считаются). Столбец — медиана; под месяцем — % лидов, которых коснулись за ≤15 минут.<br><br><b>Исключения (по ТЗ)</b><br>• Лид создан входящим звонком и разговор состоялся (≥15 сек) — НЕ учитывается (касание уже было).<br>• Входящий был, но разговор НЕ состоялся (<15 сек) — учитывается: сколько ждал перезвона/сообщения (отдельно видно в тултипе как «перезвон после неудачного входящего»).<br>• Лиды младше 48 часов без касания пока не судим.<br><br>Источник — amoCRM (фоново, самым низким приоритетом), пересчёт раз в сутки в 00:30 МСК.";
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = SECT; h.appendChild(vscInfo(info));
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        wrap.appendChild(box);
+        apiFetch("/admin/api/vsc/firsttouch").then(function (j) {
+          const d = j && j.data;
+          if (!d || !d.months || !Object.keys(d.months).length) { box.innerHTML = '<div class="vsc-empty">Данных пока нет — идёт первый съём истории из amoCRM (займёт до часа, низким приоритетом).</div>'; return; }
+          const yms = Object.keys(d.months).sort();
+          const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+          box.innerHTML = "";
+          const present = yms.map(function (ym) { return d.months[ym].medMin; }).filter(function (v) { return v != null; });
+          const maxV = Math.max.apply(null, present.concat([1]));
+          const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "215px";
+          yms.forEach(function (ym) {
+            const mo = d.months[ym];
+            const col = document.createElement("div"); col.className = "vsc-bar-col"; col.style.flex = "0 0 74px";
+            col.title = ym + " · лидов учтено " + mo.n + " (коснулись " + mo.touched + ", без касания " + mo.noTouch + ")"
+              + "\nмедиана касания: " + vscFtFmtMin(mo.medMin)
+              + "\n≤15 минут: " + (mo.p15 != null ? mo.p15 + "%" : "—")
+              + "\nперезвон после неудачного входящего: " + (mo.recallN || 0) + " шт" + (mo.recallMedMin != null ? ", медиана " + vscFtFmtMin(mo.recallMedMin) : "");
+            const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = vscFtFmtMin(mo.medMin);
+            const bar = document.createElement("div"); bar.className = "vsc-bar"; bar.style.width = "32px";
+            bar.style.height = (mo.medMin != null ? Math.max(2, Math.round(mo.medMin / maxV * 130)) : 2) + "px";
+            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = MONF[+ym.slice(5, 7) - 1];
+            const pl = document.createElement("div"); pl.style.cssText = "font-size:8.5px;font-weight:700;color:" + ((mo.p15 || 0) >= 70 ? "#2c7a43" : (mo.p15 || 0) >= 50 ? "#b8862a" : "#b0263a") + ";line-height:1.2;margin-top:1px;white-space:nowrap;";
+            pl.textContent = mo.p15 != null ? ("≤15м: " + mo.p15 + "%") : "";
+            col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(pl);
+            bars.appendChild(col);
+          });
+          box.appendChild(bars);
+          const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+          const foot = document.createElement("div"); foot.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:10px;"; foot.textContent = "обновлено: " + upd + " МСК · источник: amoCRM (звонки + мессенджеры), раз в сутки в 00:30";
+          box.appendChild(foot);
+        }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить.</div>'; });
+        return wrap;
+      }
+      // ── Вкладка «Статистика по сотрудникам» (админ; руководителю — по vscRestrict.tabs∋staff) ──
+      // Данные — из тех же ночных съёмов amoCRM (сделки 00:00, касания 00:30): доп. нагрузки нет.
+      let _vscStaffMonth = null;
+      async function renderVscStaff() {
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Статистика по сотрудникам";
+        h.appendChild(vscInfo("<b>Откуда данные</b><br>Ночные фоновые съёмы amoCRM (сделки — 00:00, скорость касания — 00:30 МСК) самым низким приоритетом — CRM не нагружается.<br><br><b>Методика</b><br>• Сделки/выручка/ATV — оплаченные сделки (по полю «Дата оплаты»), по ТЕКУЩЕМУ ответственному сделки.<br>• «Записано» — % сделок сотрудника на продвинутых статусах (запись/подача/паспорт/реализовано).<br>• Возвраты — сделки в статусах «Возврат»/«Ожидает решения о возврате».<br>• Касание — медиана времени от создания лида до первого исходящего звонка/сообщения (по ответственному лида).<br><br>Важно: ответственный — ТЕКУЩИЙ (сделки передаются между отделами, история смен ответственного недоступна)."));
+        vscContent.appendChild(h);
+        const box = document.createElement("div"); vscContent.appendChild(box);
+        box.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        let j;
+        try { j = await apiFetch("/admin/api/vsc/staffstats"); }
+        catch (e) { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить: ' + escapeHtml(e.message) + '</div>'; return; }
+        if (vscTab !== "staff") return;
+        const d = j && j.data;
+        if (!d || !d.months || !Object.keys(d.months).length) { box.innerHTML = '<div class="vsc-empty">Данных пока нет — они появятся после ближайшего ночного пересчёта (или запусти «Обновить» ниже).</div>' + (currentRole() === "admin" ? '<button type="button" id="staffRunBtn" class="vsc-dayrev-refresh">↻ Обновить сейчас</button>' : ""); vscStaffBindRun(box); return; }
+        const touch = (j && j.touch) || {};
+        const months = Object.keys(d.months).sort().reverse();
+        if (!_vscStaffMonth || months.indexOf(_vscStaffMonth) < 0) _vscStaffMonth = months[0];
+        box.innerHTML = "";
+        const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+        const ymName = function (ym) { return MONF[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4); };
+        const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;";
+        months.forEach(function (ym) {
+          const b = document.createElement("button"); b.type = "button"; b.textContent = ymName(ym);
+          b.style.cssText = "border:1px solid " + (ym === _vscStaffMonth ? "#0097ca" : "#cfd8e3") + ";background:" + (ym === _vscStaffMonth ? "#0097ca" : "#fff") + ";color:" + (ym === _vscStaffMonth ? "#fff" : "#33415a") + ";border-radius:10px;padding:8px 15px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
+          b.addEventListener("click", function () { _vscStaffMonth = ym; renderVsc(); });
+          bar.appendChild(b);
+        });
+        box.appendChild(bar);
+        const sm = d.months[_vscStaffMonth] || {};
+        const tm = (touch[_vscStaffMonth] && touch[_vscStaffMonth].byMgr) || {};
+        const ids = {}; Object.keys(sm).forEach(function (id) { ids[id] = 1; }); Object.keys(tm).forEach(function (id) { ids[id] = 1; });
+        const money0 = function (v) { return (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽"; };
+        const rows = Object.keys(ids).map(function (id) {
+          const s = sm[id] || { deals: 0, rev: 0, booked: 0, ret: 0 }, t = tm[id] || null;
+          return {
+            id: id, name: (d.users && d.users[id]) || ("id " + id),
+            deals: s.deals, rev: s.rev, atv: s.deals ? s.rev / s.deals : null,
+            bookedPct: s.deals ? Math.round(s.booked / s.deals * 1000) / 10 : null,
+            ret: s.ret, retPct: s.deals ? Math.round(s.ret / s.deals * 1000) / 10 : null,
+            tN: t ? t.n : 0, tMed: t ? t.medMin : null, tP15: t && t.n ? t.p15 : null
+          };
+        }).filter(function (r) { return r.deals > 0 || r.tN > 0; }).sort(function (a, b) { return (b.rev - a.rev) || (b.tN - a.tN); });
+        const card = document.createElement("div"); card.className = "vsc-chart";
+        const th = 'text-align:right;padding:7px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;white-space:nowrap;';
+        let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:760px;">'
+          + '<thead><tr><th style="text-align:left;padding:7px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">Сотрудник</th>'
+          + '<th style="' + th + '">Сделок</th><th style="' + th + '">Выручка</th><th style="' + th + '">ATV</th><th style="' + th + '">Записано</th><th style="' + th + '">Возвраты</th>'
+          + '<th style="' + th + '">Касание (мед.)</th><th style="' + th + '">≤15 мин</th><th style="' + th + '">Лидов</th></tr></thead><tbody>';
+        rows.forEach(function (r) {
+          const retCol = (r.retPct || 0) > 15 ? "#b0263a" : (r.retPct || 0) > 8 ? "#b8862a" : "#5a626f";
+          const tCol = r.tMed == null ? "#9aa0ab" : r.tMed <= 15 ? "#2c7a43" : r.tMed <= 60 ? "#b8862a" : "#b0263a";
+          html += '<tr style="border-top:1px solid #f0eef5;">'
+            + '<td style="padding:6px 8px;font-weight:600;color:#1d2330;white-space:nowrap;">' + escapeHtml(r.name) + '</td>'
+            + '<td style="padding:6px 8px;text-align:right;">' + (r.deals || "—") + '</td>'
+            + '<td style="padding:6px 8px;text-align:right;white-space:nowrap;font-weight:600;">' + (r.deals ? money0(r.rev) : "—") + '</td>'
+            + '<td style="padding:6px 8px;text-align:right;white-space:nowrap;">' + (r.atv != null ? money0(r.atv) : "—") + '</td>'
+            + '<td style="padding:6px 8px;text-align:right;color:#2c7a43;font-weight:600;">' + (r.bookedPct != null ? r.bookedPct + "%" : "—") + '</td>'
+            + '<td style="padding:6px 8px;text-align:right;color:' + retCol + ';font-weight:600;white-space:nowrap;">' + (r.deals ? (r.ret + " · " + r.retPct + "%") : "—") + '</td>'
+            + '<td style="padding:6px 8px;text-align:right;color:' + tCol + ';font-weight:700;white-space:nowrap;">' + vscFtFmtMin(r.tMed) + '</td>'
+            + '<td style="padding:6px 8px;text-align:right;">' + (r.tP15 != null ? r.tP15 + "%" : "—") + '</td>'
+            + '<td style="padding:6px 8px;text-align:right;color:#8a90a0;">' + (r.tN || "—") + '</td>'
+            + '</tr>';
+        });
+        html += '</tbody></table></div>';
+        const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+        html += '<div style="font-size:11.5px;color:#9096a3;margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">обновлено: ' + escapeHtml(upd) + ' МСК · сделки по дате оплаты, ответственный — текущий'
+          + (currentRole() === "admin" ? ' <button type="button" id="staffRunBtn" class="vsc-dayrev-refresh" style="margin-top:0;">↻ Обновить</button>' : '') + '</div>';
+        card.innerHTML = html;
+        box.appendChild(card);
+        vscStaffBindRun(box);
+      }
+      function vscStaffBindRun(box) {
+        const b = box.querySelector("#staffRunBtn"); if (!b) return;
+        b.addEventListener("click", function () {
+          b.disabled = true; b.textContent = "Запущено…";
+          Promise.all([
+            fetch("/admin/api/vsc/schengen/run", { method: "POST", headers: { Authorization: "Bearer " + getToken() } }).catch(function () {}),
+            fetch("/admin/api/vsc/firsttouch/run", { method: "POST", headers: { Authorization: "Bearer " + getToken() } }).catch(function () {})
+          ]).then(function () { b.textContent = "Считается (несколько минут) — обнови вкладку позже"; });
+        });
       }
       // ── «Выкупы — сверка р/с с таблицей» (Ежемесячный контроль, только админ) ──
       // Банк (T-Bank API, Turkish + OneTwoTrip, только проведённые операции, месяц по

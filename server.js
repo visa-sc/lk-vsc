@@ -4953,6 +4953,9 @@ async function runSchengenLive(trigger) {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
     const hit = (kw, name) => { const s = String(name || "").toLowerCase(); return kw.some((k) => s.includes(k.toLowerCase())); };
     const agg = {}; let scanned = 0;
+    // «Статистика по сотрудникам» — из ЭТОГО ЖЕ съёма (ноль доп. нагрузки на amo):
+    // по ВСЕМ оплаченным сделкам (до фильтра стран), по ТЕКУЩЕМУ ответственному.
+    const stf = {};
     // Постранично и ПОСЛЕДОВАТЕЛЬНО (не parallel): раз в сутки спешить некуда, лимитер
     // и так отдаёт низкий приоритет, а память держим ровной (страницу обработали — забыли).
     for (let page = 1; page < 400; page++) {
@@ -4966,11 +4969,17 @@ async function runSchengenLive(trigger) {
       for (const l of leads) {
         const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); // 427242 «Дата оплаты», месяц по МСК
         if (!ym || ym.y !== SCHENGEN_YEAR) continue;
+        const key = l.pipeline_id + ":" + l.status_id;
+        const adv = SCHENGEN_TARGET.has(key), ret = SCHENGEN_RETURN.has(key);
+        // сотрудники — по всем оплаченным сделкам года
+        const resp = l.responsible_user_id || 0;
+        const sm = stf[ym.m] || (stf[ym.m] = {});
+        const sr = sm[resp] || (sm[resp] = { deals: 0, rev: 0, booked: 0, ret: 0 });
+        sr.deals++; sr.rev += Number(l.price) || 0; if (adv) sr.booked++; else if (ret) sr.ret++;
+        // шенген/США/UK — как раньше
         const country = _cityCfVal(l, 427240); if (!country) continue;
         const isSch = hit(SCHENGEN_KW, country), isUsa = hit(SCHENGEN_USA_KW, country), isUk = hit(SCHENGEN_UK_KW, country);
         if (!isSch && !isUsa && !isUk) continue;
-        const key = l.pipeline_id + ":" + l.status_id;
-        const adv = SCHENGEN_TARGET.has(key), ret = SCHENGEN_RETURN.has(key);
         const a = agg[ym.m] || (agg[ym.m] = { schDen: 0, schNum: 0, schRet: 0, usaDen: 0, usaNum: 0, usaRet: 0, ukDen: 0, ukNum: 0, ukRet: 0 });
         if (isSch) { a.schDen++; if (adv) a.schNum++; else if (ret) a.schRet++; }
         if (isUsa) { a.usaDen++; if (adv) a.usaNum++; else if (ret) a.usaRet++; }
@@ -4978,6 +4987,12 @@ async function runSchengenLive(trigger) {
       }
       if (leads.length < 250) break;
     }
+    // Имена сотрудников — 1 запрос (единственная добавка к нагрузке)
+    let users = {};
+    try {
+      const ud = await amoGet(`${baseUrl}/api/v4/users`, { limit: 250 });
+      ((ud && ud._embedded && ud._embedded.users) || []).forEach((u) => { users[u.id] = u.name || ("id" + u.id); });
+    } catch (e) { const old = loadStaffStats(); if (old && old.users) users = old.users; }
     // den/num/pct — как раньше (старый фронт не ломается); ret/retPct/waitPct — категории Кати.
     const grp = (den, num, ret) => {
       const wait = Math.max(0, den - num - ret), P = (x) => (den ? Math.round(x / den * 1000) / 10 : null);
@@ -4990,11 +5005,30 @@ async function runSchengenLive(trigger) {
     }
     const out = { ts: Date.now(), year: SCHENGEN_YEAR, scanned, months };
     fs.writeFileSync(VSC_SCHENGEN_FILE, JSON.stringify(out, null, 2), "utf8");
-    console.log(`VSC SCHENGEN [${trigger || "cron"}]: месяцев ${Object.keys(months).length}, просмотрено ${scanned}, ${Date.now() - t0}ms`);
+    // Статистика по сотрудникам → отдельный файл (месяцы по дате оплаты, текущий ответственный)
+    const stfMonths = {};
+    for (let m = 0; m < 12; m++) { if (stf[m]) stfMonths[SCHENGEN_YEAR + "-" + String(m + 1).padStart(2, "0")] = stf[m]; }
+    fs.writeFileSync(VSC_STAFF_FILE, JSON.stringify({ ts: Date.now(), year: SCHENGEN_YEAR, users, months: stfMonths }, null, 2), "utf8");
+    console.log(`VSC SCHENGEN [${trigger || "cron"}]: месяцев ${Object.keys(months).length}, просмотрено ${scanned}, ${Date.now() - t0}ms (+staff)`);
     return out;
   } catch (e) { console.error("runSchengenLive:", e && e.message); return { error: e && e.message }; }
   finally { _schengenRunning = false; }
 }
+const VSC_STAFF_FILE = path.join(__dirname, ".vscStaffStats.json");
+function loadStaffStats() { try { return JSON.parse(fs.readFileSync(VSC_STAFF_FILE, "utf8")); } catch (_) { return null; } }
+// Доступ к «Статистике по сотрудникам»: админ ИЛИ руководитель с "staff" в vscRestrict.tabs.
+function requireVscStaff(req, res, next) {
+  const s = getStaffFromReq(req);
+  if (!s) return res.status(401).json({ success: false, message: "Нет доступа" });
+  if (s.role === "admin") { req.staff = s; return next(); }
+  const r = s.vscRestrict;
+  if (r && Array.isArray(r.tabs) && r.tabs.indexOf("staff") >= 0) { req.staff = s; return next(); }
+  return res.status(401).json({ success: false, message: "Нет доступа" });
+}
+app.get("/admin/api/vsc/staffstats", requireVscStaff, (req, res) => {
+  const st = loadStaffStats(), ft = loadFirstTouch();
+  res.json({ success: true, data: st, touch: ft && ft.months ? ft.months : null });
+});
 app.get("/admin/api/vsc/schengen", requireVscDashboard, (req, res) => { res.json({ success: true, data: loadSchengen() }); });
 app.post("/admin/api/vsc/schengen/run", requireAdmin, (req, res) => {
   if (_schengenRunning) return res.json({ success: true, started: false, running: true });
@@ -5012,6 +5046,139 @@ setTimeout(() => { if (!loadSchengen()) Promise.resolve(amoBg(() => runSchengenL
     setTimeout(() => { Promise.resolve(amoBg(() => runSchengenLive("cron"))).catch(() => {}); nextRun(); }, Math.max(1000, target - mskNow));
   })();
   console.log("VSC SCHENGEN: раз в сутки 00:00 МСК из живой amoCRM (самый низкий приоритет amoBg)");
+})();
+
+// ═══ «Скорость первого касания лида» (Ежемесячный контроль, по месяцам) ══════════════════
+// ТЗ Андрея 20.07: из ЖИВОЙ amoCRM. Для лидов, созданных в 2026: время от создания до
+// ПЕРВОГО действия менеджера (исходящий звонок ИЛИ сообщение в мессенджер от человека).
+//  • Лид создан входящим звонком и разговор СОСТОЯЛСЯ (длительность ≥ 15с) → ИСКЛЮЧЁН.
+//  • Входящий при создании был, но разговор НЕ состоялся (< 15с) → учитывается, плюс идёт
+//    в отдельную метрику «перезвон после неудачного входящего».
+// Источники: /leads (created_at), /leads/notes (call_in/call_out + params.duration),
+// /events (outgoing_chat_message, created_by≠0 — авто-боты не считаются касанием).
+// Раз в сутки 00:30 МСК, ВЕСЬ прогон под amoBg (низший приоритет); инкремент: живое окно
+// 75 дней, более старые месяцы берутся из прошлого файла (первое касание — историческое,
+// оно не меняется). Результат → .vscFirstTouch.json.
+const VSC_FTOUCH_FILE = path.join(__dirname, ".vscFirstTouch.json");
+const FTOUCH_YEAR = 2026, FTOUCH_TALK_SEC = 15, FTOUCH_INCALL_WIN = [-600, 300], FTOUCH_WINDOW_DAYS = 75;
+function loadFirstTouch() { try { return JSON.parse(fs.readFileSync(VSC_FTOUCH_FILE, "utf8")); } catch (_) { return null; } }
+let _ftouchRunning = false;
+async function runFirstTouch(trigger) {
+  if (_ftouchRunning) return { skipped: true };
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
+  _ftouchRunning = true;
+  const t0run = Date.now();
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const prev = loadFirstTouch();
+    const yearFrom = Math.floor(Date.UTC(FTOUCH_YEAR, 0, 1) / 1000) - 3 * 3600;
+    const winFrom = Math.floor(Date.now() / 1000) - FTOUCH_WINDOW_DAYS * 86400;
+    const from = prev && prev.months ? Math.max(yearFrom, winFrom) : yearFrom; // первый прогон — вся история года
+    // 1) Лиды окна: id → { t0, ym }
+    const leads = {};
+    for (let page = 1; page < 500; page++) {
+      const data = await amoGet(`${baseUrl}/api/v4/leads`, { limit: 250, page, "filter[created_at][from]": String(from) });
+      const list = (data && data._embedded && data._embedded.leads) || [];
+      if (!list.length) break;
+      for (const l of list) {
+        const d = new Date(l.created_at * 1000 + 3 * 3600 * 1000);
+        if (d.getUTCFullYear() !== FTOUCH_YEAR) continue;
+        leads[l.id] = { t0: l.created_at, m: d.getUTCMonth(), resp: l.responsible_user_id || 0, inT: null, inDur: null, out: null };
+      }
+      if (list.length < 250) break;
+    }
+    // 2) Звонки (ноты call_in/call_out): earliest in / earliest out per lead
+    for (let page = 1; page < 700; page++) {
+      const data = await amoGet(`${baseUrl}/api/v4/leads/notes`, { limit: 250, page, "filter[note_type][0]": "call_in", "filter[note_type][1]": "call_out", "filter[updated_at][from]": String(from) });
+      const list = (data && data._embedded && data._embedded.notes) || [];
+      if (!list.length) break;
+      for (const n of list) {
+        const L = leads[n.entity_id]; if (!L) continue;
+        const t = n.created_at, dur = (n.params && +n.params.duration) || 0;
+        if (n.note_type === "call_in") { if (L.inT == null || t < L.inT) { L.inT = t; L.inDur = dur; } }
+        else if (t >= L.t0 && (L.out == null || t < L.out)) L.out = t;
+      }
+      if (list.length < 250) break;
+      if (page % 100 === 0) console.log("VSC FTOUCH: notes страница " + page + "…");
+    }
+    // 3) Исходящие сообщения мессенджеров (события; created_by=0 — боты/рассылки, пропуск)
+    try {
+      for (let page = 1; page < 900; page++) {
+        const data = await amoGet(`${baseUrl}/api/v4/events`, { limit: 100, page, "filter[type]": "outgoing_chat_message", "filter[entity]": "lead", "filter[created_at][from]": String(from) });
+        const list = (data && data._embedded && data._embedded.events) || [];
+        if (!list.length) break;
+        for (const e of list) {
+          const L = leads[e.entity_id]; if (!L || !e.created_by) continue;
+          const t = e.created_at;
+          if (t >= L.t0 && (L.out == null || t < L.out)) L.out = t;
+        }
+        if (list.length < 100) break;
+        if (page % 100 === 0) console.log("VSC FTOUCH: events страница " + page + "…");
+      }
+    } catch (e) { console.error("VSC FTOUCH: events недоступны (" + (e && e.message) + ") — считаю только по звонкам"); }
+    // 4) Расчёт помесячно
+    const agg = {};
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const id in leads) {
+      const L = leads[id];
+      let start = L.t0, isRecall = false;
+      const inAtCreate = L.inT != null && (L.inT - L.t0) >= FTOUCH_INCALL_WIN[0] && (L.inT - L.t0) <= FTOUCH_INCALL_WIN[1];
+      if (inAtCreate) {
+        if ((L.inDur || 0) >= FTOUCH_TALK_SEC) continue;      // разговор состоялся → лид исключён
+        isRecall = true;                                       // неудачный входящий → ждём перезвона
+      }
+      if (L.out == null && (nowSec - L.t0) < 48 * 3600) continue; // свежий, ещё в работе — не судим
+      const a = agg[L.m] || (agg[L.m] = { n: 0, touched: 0, mins: [], fast15: 0, recallN: 0, recallMins: [], byMgr: {} });
+      const bm = a.byMgr[L.resp] || (a.byMgr[L.resp] = { n: 0, touched: 0, mins: [], fast15: 0 });
+      a.n++; bm.n++;
+      if (L.out != null) {
+        const min = Math.max(0, (L.out - start) / 60);
+        a.touched++; a.mins.push(min); bm.touched++; bm.mins.push(min);
+        if (min <= 15) { a.fast15++; bm.fast15++; }
+        if (isRecall) { a.recallN++; a.recallMins.push(min); }
+      } else if (isRecall) a.recallN++;
+    }
+    const median = (arr) => { if (!arr.length) return null; const s = arr.slice().sort((x, y) => x - y); const mid = Math.floor(s.length / 2); return Math.round((s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2) * 10) / 10; };
+    const months = {};
+    for (let m = 0; m < 12; m++) {
+      const a = agg[m]; if (!a || !a.n) continue;
+      const byMgr = {};
+      for (const id in a.byMgr) { const b = a.byMgr[id]; if (!b.n) continue; byMgr[id] = { n: b.n, touched: b.touched, medMin: median(b.mins), p15: Math.round(b.fast15 / b.n * 1000) / 10 }; }
+      months[FTOUCH_YEAR + "-" + String(m + 1).padStart(2, "0")] = {
+        n: a.n, touched: a.touched, medMin: median(a.mins),
+        p15: Math.round(a.fast15 / a.n * 1000) / 10,
+        noTouch: a.n - a.touched,
+        recallN: a.recallN, recallMedMin: median(a.recallMins),
+        byMgr
+      };
+    }
+    // 5) Старые месяцы (вне окна) — из прошлого файла как есть (история не меняется)
+    if (prev && prev.months) {
+      const fromYm = (() => { const d = new Date(from * 1000 + 3 * 3600 * 1000); return d.getUTCFullYear() * 100 + (d.getUTCMonth() + 1); })();
+      for (const ym in prev.months) { const v = +ym.replace("-", ""); if (v < fromYm && !months[ym]) months[ym] = prev.months[ym]; }
+    }
+    const out = { ts: Date.now(), year: FTOUCH_YEAR, months };
+    fs.writeFileSync(VSC_FTOUCH_FILE, JSON.stringify(out, null, 2), "utf8");
+    console.log(`VSC FTOUCH [${trigger || "cron"}]: месяцев ${Object.keys(months).length}, лидов ${Object.keys(leads).length}, ${Date.now() - t0run}ms`);
+    return out;
+  } catch (e) { console.error("runFirstTouch:", e && e.message); return { error: e && e.message }; }
+  finally { _ftouchRunning = false; }
+}
+app.get("/admin/api/vsc/firsttouch", requireVscDashboard, (req, res) => { res.json({ success: true, data: loadFirstTouch() }); });
+app.post("/admin/api/vsc/firsttouch/run", requireAdmin, (req, res) => {
+  if (_ftouchRunning) return res.json({ success: true, started: false, running: true });
+  setImmediate(() => { Promise.resolve(amoBg(() => runFirstTouch("manual"))).catch(() => {}); });
+  res.json({ success: true, started: true });
+});
+setTimeout(() => { if (!loadFirstTouch()) Promise.resolve(amoBg(() => runFirstTouch("startup"))).catch(() => {}); }, 300 * 1000);
+(function scheduleFirstTouch() {
+  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000, AT = 30 * 60 * 1000; // 00:30 МСК
+  (function nextRun() {
+    const mskNow = Date.now() + MSK_OFFSET;
+    let target = Math.floor(mskNow / DAY_MS) * DAY_MS + AT; if (target <= mskNow) target += DAY_MS;
+    setTimeout(() => { Promise.resolve(amoBg(() => runFirstTouch("cron"))).catch(() => {}); nextRun(); }, Math.max(1000, target - mskNow));
+  })();
+  console.log("VSC FTOUCH: раз в сутки 00:30 МСК из живой amoCRM (самый низкий приоритет amoBg)");
 })();
 
 // ═════════════════════════════════════════════════════════════════════════

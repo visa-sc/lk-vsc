@@ -120,3 +120,7 @@ crm-svc/.amocopySessions.json
 
 # Последнее удачное значение возвратов/налогов живых месяцев (fallback при сбое гугла)
 .vscExtraLastGood.json
+
+# Скорость первого касания + статистика по сотрудникам — рантайм-кэши из живой amoCRM
+.vscFirstTouch.json
+.vscStaffStats.json
