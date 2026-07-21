@@ -3667,20 +3667,42 @@
         if (!d || !d.months || !Object.keys(d.months).length) { box.innerHTML = '<div class="vsc-empty">Данных пока нет — они появятся после ближайшего ночного пересчёта (или запусти «Обновить» ниже).</div>' + (currentRole() === "admin" ? '<button type="button" id="staffRunBtn" class="vsc-dayrev-refresh">↻ Обновить сейчас</button>' : ""); vscStaffBindRun(box); return; }
         const touch = (j && j.touch) || {};
         const months = Object.keys(d.months).sort().reverse();
-        if (!_vscStaffMonth || months.indexOf(_vscStaffMonth) < 0) _vscStaffMonth = months[0];
+        if (!_vscStaffMonth || (_vscStaffMonth !== "Y" && months.indexOf(_vscStaffMonth) < 0)) _vscStaffMonth = months[0];
+        const isYear = _vscStaffMonth === "Y";
         box.innerHTML = "";
         const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
         const ymName = function (ym) { return MONF[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4); };
         const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;";
-        months.forEach(function (ym) {
-          const b = document.createElement("button"); b.type = "button"; b.textContent = ymName(ym);
-          b.style.cssText = "border:1px solid " + (ym === _vscStaffMonth ? "#0097ca" : "#cfd8e3") + ";background:" + (ym === _vscStaffMonth ? "#0097ca" : "#fff") + ";color:" + (ym === _vscStaffMonth ? "#fff" : "#33415a") + ";border-radius:10px;padding:8px 15px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
-          b.addEventListener("click", function () { _vscStaffMonth = ym; renderVsc(); });
-          bar.appendChild(b);
-        });
+        const mkBtn = function (key, label) {
+          const on = key === _vscStaffMonth;
+          const b = document.createElement("button"); b.type = "button"; b.textContent = label;
+          b.style.cssText = "border:1px solid " + (on ? "#0097ca" : "#cfd8e3") + ";background:" + (on ? "#0097ca" : "#fff") + ";color:" + (on ? "#fff" : "#33415a") + ";border-radius:10px;padding:8px 15px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
+          b.addEventListener("click", function () { _vscStaffMonth = key; renderVsc(); });
+          return b;
+        };
+        // «2026 год» — агрегат по всем месяцам файла: новые месяцы (август+) накапливаются сами.
+        bar.appendChild(mkBtn("Y", (d.year || 2026) + " год"));
+        months.forEach(function (ym) { bar.appendChild(mkBtn(ym, ymName(ym))); });
         box.appendChild(bar);
-        const sm = d.months[_vscStaffMonth] || {};
-        const tm = (touch[_vscStaffMonth] && touch[_vscStaffMonth].byMgr) || {};
+        let sm, tm;
+        if (isYear) {
+          sm = {}; tm = {};
+          months.forEach(function (ym) {
+            const m = d.months[ym] || {};
+            for (const id in m) { const s = sm[id] || (sm[id] = { deals: 0, rev: 0, booked: 0, ret: 0 }); const x = m[id]; s.deals += x.deals || 0; s.rev += x.rev || 0; s.booked += x.booked || 0; s.ret += x.ret || 0; }
+            const t = (touch[ym] && touch[ym].byMgr) || {};
+            for (const id in t) {
+              const g = tm[id] || (tm[id] = { n: 0, touched: 0, _wm: 0, _w15: 0 }); const x = t[id];
+              g.n += x.n || 0; g.touched += x.touched || 0;
+              if (x.medMin != null && x.touched) g._wm += x.medMin * x.touched;   // медиана года — взвешенная оценка
+              if (x.p15 != null && x.n) g._w15 += x.p15 * x.n;
+            }
+          });
+          for (const id in tm) { const g = tm[id]; g.medMin = g.touched ? Math.round(g._wm / g.touched * 10) / 10 : null; g.p15 = g.n ? Math.round(g._w15 / g.n * 10) / 10 : null; }
+        } else {
+          sm = d.months[_vscStaffMonth] || {};
+          tm = (touch[_vscStaffMonth] && touch[_vscStaffMonth].byMgr) || {};
+        }
         const ids = {}; Object.keys(sm).forEach(function (id) { ids[id] = 1; }); Object.keys(tm).forEach(function (id) { ids[id] = 1; });
         const money0 = function (v) { return (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽"; };
         const rows = Object.keys(ids).map(function (id) {
@@ -3736,6 +3758,7 @@
         html += '</tbody></table></div>';
         const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
         html += '<div style="font-size:11.5px;color:#9096a3;margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">обновлено: ' + escapeHtml(upd) + ' МСК · сделки по дате оплаты, ответственный — текущий'
+          + (isYear ? ' · весь ' + (d.year || 2026) + ' год, новые месяцы добавляются сюда автоматически; медиана касания за год — взвешенная оценка по месяцам' : '')
           + (currentRole() === "admin" ? ' <button type="button" id="staffRunBtn" class="vsc-dayrev-refresh" style="margin-top:0;">↻ Обновить</button>' : '') + '</div>';
         card.innerHTML = html;
         box.appendChild(card);
