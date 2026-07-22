@@ -449,29 +449,83 @@ module.exports = function mountDbRoutes(app, guard, api) {
   //   pipe: {pid:[sid,...]} (OR по парам), created_preset: yesterday|today (по created_at, границы дня МСК),
   //   cf: {fid: [enum_id|"empty"] | {preset:"yesterday"} | {from:"ДД.ММ.ГГГГ",to:"ДД.ММ.ГГГГ"}} — поля СДЕЛКИ,
   //   ccf: {fid:[...]} — поля ОСНОВНОГО контакта, no_tasks: true, contact_no_tasks: true.
-  const qLeadFirstContact = D.prepare("SELECT c.id, c.cf FROM lead_contacts lc JOIN contacts c ON c.id=lc.contact_id WHERE lc.lead_id=? LIMIT 1");
-  const qHasOpenTask = D.prepare("SELECT 1 FROM tasks WHERE entity_type=? AND entity_id=? AND is_completed=0 LIMIT 1");
   // «Без задач» в amo считается НЕ по таблице задач, а по денормализованному полю сущности
   // closest_task_at (найдено 23.07): у контактов, которые amo отсеивал, оно заполнено, хотя все
   // задачи давно закрыты — amo не обнуляет его при выполнении. Разделение оказалось идеальным
   // (отсеянные — поле не пусто, оставленные — null), поэтому воспроизводим ИМЕННО поле.
-  // Пока колонка не наполнена бэкфиллом — работаем по старому правилу (открытые задачи),
-  // иначе «нет задач» стало бы истиной для всех.
-  const qHasAnyTask = D.prepare("SELECT 1 FROM tasks WHERE entity_type=? AND entity_id=? LIMIT 1");
+  // Пока колонка не наполнена бэкфиллом — работаем по старому правилу (открытые задачи в tasks),
+  // иначе «нет задач» стало бы истиной для всех. Проверка «занятости» — пакетная (busy*Set ниже).
   const ctaReady = (t) => { try { return D.prepare(`SELECT 1 x FROM ${t} WHERE closest_task_at IS NOT NULL LIMIT 1`).get() ? 1 : 0; } catch (_) { return 0; } };
   const CTA_LEADS = ctaReady("leads"), CTA_CONTACTS = ctaReady("contacts");
-  const qLeadCta = CTA_LEADS ? D.prepare("SELECT closest_task_at c FROM leads WHERE id=?") : null;
-  const qContactCta = CTA_CONTACTS ? D.prepare("SELECT closest_task_at c FROM contacts WHERE id=?") : null;
-  // true = «задача есть» в смысле amo
-  const leadBusy = (id) => (CTA_LEADS ? !!(qLeadCta.get(id) || {}).c : !!qHasOpenTask.get("leads", id));
-  const contactBusy = (id) => (CTA_CONTACTS ? !!(qContactCta.get(id) || {}).c : !!qHasOpenTask.get("contacts", id));
   console.log(`amocopy-db: «без задач» по closest_task_at — сделки: ${CTA_LEADS ? "да" : "нет (по открытым задачам)"}, контакты: ${CTA_CONTACTS ? "да" : "нет (по открытым задачам)"}`);
-  // главный контакт берём по флагу is_main (заполняется синком с 22.07); до него порядок из
-  // contact_ids был лишь догадкой — при нескольких контактах она врала
+  // главный контакт берём по флагу is_main (заполняется синком с 22.07)
   const HAS_IS_MAIN = (() => { try { return D.prepare("PRAGMA table_info(lead_contacts)").all().some((c) => c.name === "is_main"); } catch (_) { return false; } })();
-  const qLeadMainContact = HAS_IS_MAIN
-    ? D.prepare("SELECT c.id, c.cf FROM lead_contacts lc JOIN contacts c ON c.id=lc.contact_id WHERE lc.lead_id=? ORDER BY lc.is_main DESC LIMIT 1")
-    : qLeadFirstContact;
+  // ПАКЕТНАЯ подготовка условий по главному контакту для НАБОРА сделок. По одной сделке брать
+  // главного join'ом + отдельным запросом «занят ли контакт» = O(N) запросов (было 19с на 44k
+  // сделок фильтра «без задач»). Здесь — 2-3 запроса на весь набор через json_each.
+  function mainContactMap(leadIds) {
+    const map = new Map();
+    if (!leadIds.length) return map;
+    try {
+      const j = JSON.stringify(leadIds);
+      const rows = HAS_IS_MAIN
+        ? D.prepare("SELECT lc.lead_id l, lc.contact_id c, lc.is_main m FROM lead_contacts lc WHERE lc.lead_id IN (SELECT value FROM json_each(?))").all(j)
+        : D.prepare("SELECT lc.lead_id l, lc.contact_id c, 0 m FROM lead_contacts lc WHERE lc.lead_id IN (SELECT value FROM json_each(?))").all(j);
+      // главный = is_main=1, иначе первый попавшийся (устойчиво к отсутствию флага)
+      for (const r of rows) { const cur = map.get(r.l); if (!cur || (r.m && !cur.m)) map.set(r.l, { id: r.c, m: r.m }); }
+    } catch (_) {}
+    return map;
+  }
+  // Set занятых контактов среди заданных id (одним запросом): closest_task_at или открытая задача
+  function busyContactSet(contactIds) {
+    const set = new Set();
+    if (!contactIds.length) return set;
+    const j = JSON.stringify(contactIds);
+    try {
+      if (CTA_CONTACTS) for (const r of D.prepare("SELECT id FROM contacts WHERE id IN (SELECT value FROM json_each(?)) AND closest_task_at IS NOT NULL").all(j)) set.add(r.id);
+      else for (const r of D.prepare("SELECT DISTINCT entity_id id FROM tasks WHERE entity_type='contacts' AND is_completed=0 AND entity_id IN (SELECT value FROM json_each(?))").all(j)) set.add(r.id);
+    } catch (_) {}
+    return set;
+  }
+  // Set занятых СДЕЛОК среди заданных id (одним запросом)
+  function busyLeadSet(leadIds) {
+    const set = new Set();
+    if (!leadIds.length) return set;
+    const j = JSON.stringify(leadIds);
+    try {
+      if (CTA_LEADS) for (const r of D.prepare("SELECT id FROM leads WHERE id IN (SELECT value FROM json_each(?)) AND closest_task_at IS NOT NULL").all(j)) set.add(r.id);
+      else for (const r of D.prepare("SELECT DISTINCT entity_id id FROM tasks WHERE entity_type='leads' AND is_completed=0 AND entity_id IN (SELECT value FROM json_each(?))").all(j)) set.add(r.id);
+    } catch (_) {}
+    return set;
+  }
+  // пакетный пост-фильтр набора сделок по no_tasks/contact_no_tasks/ccf: 2-4 запроса вместо O(N).
+  // rows должны нести {id, cf}. cb(row, mainContactCfOrNull) на прошедших фильтр.
+  function postFilterLeads(rows, spec, cfJs, ccfEntries, cb) {
+    // 1) cf самой сделки + no_tasks (пакетно)
+    let cur = rows;
+    if (cfJs) cur = cur.filter((r) => { for (const [fid, cond] of Object.entries(cfJs)) if (!cfMatch(r.cf, fid, cond)) return false; return true; });
+    if (spec.no_tasks) { const busy = busyLeadSet(cur.map((r) => r.id)); cur = cur.filter((r) => !busy.has(r.id)); }
+    // 2) условия по главному контакту
+    if (!ccfEntries.length && !spec.contact_no_tasks) { for (const r of cur) cb(r, null); return; }
+    const mains = mainContactMap(cur.map((r) => r.id));
+    const mainIds = [...new Set([...mains.values()].map((v) => v.id))];
+    const cfById = new Map();
+    if (ccfEntries.length && mainIds.length) {
+      try { for (const c of D.prepare("SELECT id, cf FROM contacts WHERE id IN (SELECT value FROM json_each(?))").all(JSON.stringify(mainIds))) cfById.set(c.id, c.cf); } catch (_) {}
+    }
+    const busyC = spec.contact_no_tasks ? busyContactSet(mainIds) : new Set();
+    for (const r of cur) {
+      const m = mains.get(r.id) || null;
+      if (ccfEntries.length) {
+        if (!m) continue;
+        const ccf = cfById.get(m.id);
+        let ok = true; for (const [fid, cond] of ccfEntries) if (!cfMatch(ccf, fid, cond)) { ok = false; break; }
+        if (!ok) continue;
+      }
+      if (spec.contact_no_tasks && m && busyC.has(m.id)) continue;
+      cb(r, m ? { id: m.id, cf: cfById.get(m.id) } : null);
+    }
+  }
   const mskDay = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return Math.floor(d.getTime() / 1000); };
   // Границы дат сохранённых фильтров/виджетов amo несут ВРЕМЯ («01.07.2026 10:41» — момент, когда
   // фильтр создавали). Раньше время терялось, и виджет «Выручка СПБ Июль 1» давал 70 сделок против
@@ -602,24 +656,11 @@ module.exports = function mountDbRoutes(app, guard, api) {
           if (!Array.isArray(cond) || !cond.includes("empty")) { where.push("cf LIKE ?"); args.push('%"field_id":' + (+fid) + '%'); }
         }
         const cfJs = Object.keys(cfRest).length ? cfRest : null;
-        const rows = D.prepare("SELECT id, price, cf, contact_ids FROM leads" + (where.length ? " WHERE " + where.join(" AND ") : "")).all(...args);
+        // cf читаем только при cf-условии (иначе мегабайты JSON зря); «без задач» его не требует
+        const rows = D.prepare("SELECT id, price" + (cfJs ? ", cf" : "") + " FROM leads" + (where.length ? " WHERE " + where.join(" AND ") : "")).all(...args);
         let count = 0, sum = 0;
         const ccfEntries = Object.entries(spec.ccf || {});
-        const qContactCf = D.prepare("SELECT id, cf FROM contacts WHERE id=?");
-        for (const r of rows) {
-          if (cfJs) { let ok = true; for (const [fid, cond] of Object.entries(cfJs)) if (!cfMatch(r.cf, fid, cond)) { ok = false; break; } if (!ok) continue; }
-          if (spec.no_tasks && leadBusy(r.id)) continue;
-          if (ccfEntries.length || spec.contact_no_tasks) {
-            const c = qLeadMainContact.get(r.id) || null;
-            if (ccfEntries.length) {
-              if (!c) continue;
-              let ok = true; for (const [fid, cond] of ccfEntries) if (!cfMatch(c.cf, fid, cond)) { ok = false; break; }
-              if (!ok) continue;
-            }
-            if (spec.contact_no_tasks && c && contactBusy(c.id)) continue;
-          }
-          count++; sum += r.price || 0;
-        }
+        postFilterLeads(rows, spec, cfJs, ccfEntries, (r) => { count++; sum += r.price || 0; });
         return { success: true, count, sum };
       });
       res.json(out);
@@ -671,17 +712,6 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const ccfEntries = Object.entries(spec.ccf || {});
     return { where, args, cfJs, ccfEntries, needPost: !!(cfJs || ccfEntries.length || spec.no_tasks || spec.contact_no_tasks) };
   };
-  const qSpecContactCf = D.prepare("SELECT id, cf FROM contacts WHERE id=?");
-  const leadRowOk = (spec, r, cfJs, ccfEntries) => {
-    if (cfJs) { for (const [fid, cond] of Object.entries(cfJs)) if (!cfMatch(r.cf, fid, cond)) return false; }
-    if (spec.no_tasks && leadBusy(r.id)) return false;
-    if (ccfEntries.length || spec.contact_no_tasks) {
-      const c = qLeadMainContact.get(r.id) || null;
-      if (ccfEntries.length) { if (!c) return false; for (const [fid, cond] of ccfEntries) if (!cfMatch(c.cf, fid, cond)) return false; }
-      if (spec.contact_no_tasks && c && contactBusy(c.id)) return false;
-    }
-    return true;
-  };
   app.get(`${api}/leads_spec`, guard, (req, res) => {
     try {
       const spec = JSON.parse(String(req.query.spec || "{}"));
@@ -694,10 +724,21 @@ module.exports = function mountDbRoutes(app, guard, api) {
         const rows = D.prepare("SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at,cf FROM leads" + W + " ORDER BY updated_at DESC LIMIT 50 OFFSET ?").all(...args, (page - 1) * 50);
         return res.json({ success: true, total: t.c, sum: t.s, items: rows.map(outRow) });
       }
-      const rows = D.prepare("SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at,cf,contact_ids FROM leads" + W + " ORDER BY updated_at DESC").all(...args);
+      // Фильтруем на ЛЁГКИХ строках: cf (тяжёлый JSON, мегабайты на 44k строк) читаем только когда
+      // есть cf-условие; для «без задач» он не нужен. Полные строки — лишь для видимой страницы.
+      const liteCols = "id,price" + (cfJs ? ",cf" : "");
+      const rows = D.prepare("SELECT " + liteCols + " FROM leads" + W + " ORDER BY updated_at DESC").all(...args);
+      // порядок (updated_at DESC) сохраняется: postFilterLeads не переставляет, cb идёт по cur ⊆ rows
       const matched = []; let sum = 0;
-      for (const r of rows) { if (!leadRowOk(spec, r, cfJs, ccfEntries)) continue; matched.push(r); sum += r.price || 0; }
-      res.json({ success: true, total: matched.length, sum, items: matched.slice((page - 1) * 50, page * 50).map(outRow) });
+      postFilterLeads(rows, spec, cfJs, ccfEntries, (r) => { matched.push(r.id); sum += r.price || 0; });
+      const pageIds = matched.slice((page - 1) * 50, page * 50);
+      let items = [];
+      if (pageIds.length) {
+        const byId = new Map();
+        for (const l of D.prepare("SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at,cf FROM leads WHERE id IN (SELECT value FROM json_each(?))").all(JSON.stringify(pageIds))) byId.set(l.id, l);
+        items = pageIds.map((id) => byId.get(id)).filter(Boolean).map(outRow); // порядок страницы сохранён
+      }
+      res.json({ success: true, total: matched.length, sum, items });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
   // Контакты по spec: pipe = контакты, у чьих СДЕЛОК этап входит в набор; created — по дате создания контакта; cf — поля контакта.
