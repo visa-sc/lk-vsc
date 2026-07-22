@@ -4967,14 +4967,29 @@ function vscTaxLegLoad() {
 // Возвраты по юрлицам за квартал — из месячных вкладок таблицы возвратов (колонки по имени:
 // «Юр лицо», «Услуги»). Кэш 15 мин; при сбое месяца — отметка missing.
 const TAXLEG_QMONTHS = { Q1: ["Январь", "Февраль", "Март"], Q2: ["Апрель", "Май", "Июнь"], Q3: ["Июль", "Август", "Сентябрь"], Q4: ["Октябрь", "Ноябрь", "Декабрь"] };
+// «Последнее удачное» для налогового автотяга (фикс 22.07, Андрей ловил «июнь не
+// выгрузился»): разовый сбой загрузки гугл-вкладки попадал в 15-минутный кэш и
+// показывал «не загрузилось: Июнь». Сбой = ошибка СУЩЕСТВУЮЩЕЙ вкладки; отсутствие
+// будущих месяцев квартала сбоем не считается. Хранение — в .vscExtraLastGood.json.
+function vscTaxLegLG(kind, qkey, data, failed) {
+  const lg = vscExtraLGLoad();
+  lg[kind] = lg[kind] || {};
+  if (!failed.length) {
+    lg[kind][qkey] = data;
+    try { fs.writeFileSync(VSC_EXTRA_LASTGOOD_FILE, JSON.stringify(lg), "utf8"); } catch (_) {}
+    return data;
+  }
+  if (lg[kind][qkey]) { console.log("VSC TAXLEG: " + kind + " " + qkey + " — сбой (" + failed.join(", ") + "), взял последнее удачное"); return lg[kind][qkey]; }
+  return data;
+}
 let _taxLegRetCache = {};
 async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
   const c = _taxLegRetCache[qkey];
-  if (c && Date.now() - c.at < 15 * 60 * 1000) return c.data;
+  if (c && Date.now() - c.at < (c.ttl || 15 * 60 * 1000)) return c.data;
   const [year, q] = qkey.split("-");
   const disc = await vscDiscoverGids(VSC_RETURNS_PUB).catch(() => null);
   const tabs = vscMonthTabs(disc, VSC_RETURNS_GID);
-  const byEnt = { alta: 0, kom: 0, pan: 0, akg: 0, other: 0 }; const missing = [];
+  const byEnt = { alta: 0, kom: 0, pan: 0, akg: 0, other: 0 }; const missing = [], failed = [];
   for (const mon of TAXLEG_QMONTHS[q] || []) {
     const name = mon + " " + year;
     const tab = tabs.find((t) => t.name === name);
@@ -4985,7 +5000,7 @@ async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
       // Методика Андрея (сверено с «2 кв.xlsx» до рубля): возврат = «Услуги» + «НДС».
       const hdr = R[1] || []; let jUr = -1, jUsl = -1, jNds = -1;
       hdr.forEach((cc, j) => { const n = String(cc || "").toLowerCase().trim(); if (n === "юр лицо") jUr = j; if (n === "услуги") jUsl = j; if (n === "ндс") jNds = j; });
-      if (jUr < 0 || jUsl < 0) { missing.push(name); continue; }
+      if (jUr < 0 || jUsl < 0) { failed.push(name); continue; }
       for (let i = 2; i < R.length; i++) {
         const row = R[i] || []; const ur = String(row[jUr] || "").toLowerCase();
         const v = (vscNum(row[jUsl]) || 0) + (jNds >= 0 ? (vscNum(row[jNds]) || 0) : 0);
@@ -4997,10 +5012,11 @@ async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
         else if (ur.includes("эй кей") || ur.includes("эйкей")) byEnt.akg += v;
         else byEnt.other += v;
       }
-    } catch (e) { missing.push(name); }
+    } catch (e) { failed.push(name); }
   }
-  const data = { byEnt, missing };
-  _taxLegRetCache[qkey] = { at: Date.now(), data };
+  const data = vscTaxLegLG("taxLegRet", qkey, { byEnt, missing: missing.concat(failed) }, failed);
+  // при сбое кэшируем ненадолго — быстрый повтор вместо «не загрузилось» на 15 минут
+  _taxLegRetCache[qkey] = { at: Date.now(), ttl: failed.length ? 2 * 60 * 1000 : 15 * 60 * 1000, data };
   return data;
 }
 // Автотяг из «срм-факт» (VSC_TAXES_PUB, месячные вкладки, строка «Итог»):
@@ -5011,12 +5027,12 @@ async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
 let _taxLegAutoCache = {};
 async function vscTaxLegAuto(qkey) {
   const c = _taxLegAutoCache[qkey];
-  if (c && Date.now() - c.at < 15 * 60 * 1000) return c.data;
+  if (c && Date.now() - c.at < (c.ttl || 15 * 60 * 1000)) return c.data;
   const [year, q] = qkey.split("-");
   const disc = await vscDiscoverGids(VSC_TAXES_PUB).catch(() => null);
   const tabs = vscMonthTabs(disc, VSC_TAXES_GID);
   const rev = { alta: [null, null, null], kom: [null, null, null], pan: [null, null, null], akg: [null, null, null] };
-  const cash = [null, null, null], vat = [null, null, null]; const missing = [];
+  const cash = [null, null, null], vat = [null, null, null]; const missing = [], failed = [];
   const monsQ = TAXLEG_QMONTHS[q] || [];
   for (let mi = 0; mi < monsQ.length; mi++) {
     const name = monsQ[mi] + " " + year;
@@ -5026,11 +5042,11 @@ async function vscTaxLegAuto(qkey) {
       const r = await axios.get(VSC_TAXES_PUB + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
       const R = vscParseCsv(r.data);
       const itog = R.find((row) => String((row || [])[0] || "").trim().toLowerCase() === "итог");
-      if (!itog) { missing.push(name); continue; }
+      if (!itog) { failed.push(name); continue; }
       const hdr = (j) => [0, 1, 2, 3].map((i) => String(((R[i] || [])[j]) || "").replace(/\s+/g, " ").toLowerCase()).join(" / ");
       // зона «выгрузка из crm» → в ней колонки юрлиц
       let zone = -1; (R[0] || []).forEach((v, j) => { if (String(v || "").toLowerCase().includes("выгрузка из crm")) zone = j; });
-      if (zone < 0) { missing.push(name); continue; }
+      if (zone < 0) { failed.push(name); continue; }
       for (let j = zone; j < zone + 20; j++) {
         const h = hdr(j);
         if (h.includes("альта") && rev.alta[mi] == null) rev.alta[mi] = vscNum(itog[j]);
@@ -5044,11 +5060,12 @@ async function vscTaxLegAuto(qkey) {
       if (cashFound) cash[mi] = cashSum;
       // предполагаемый НДС
       for (let j = 0; j < itog.length; j++) { const h = hdr(j); if (h.includes("предполагаемый") && h.includes("ндс")) { vat[mi] = vscNum(itog[j]); break; } }
-    } catch (e) { missing.push(name); }
+    } catch (e) { failed.push(name); }
   }
   const sum = (a) => a.some((v) => v != null) ? a.reduce((x, v) => x + (v || 0), 0) : null;
-  const data = { rev, cashMonths: cash, vatMonths: vat, cash: sum(cash), vatOut: sum(vat), missing };
-  _taxLegAutoCache[qkey] = { at: Date.now(), data };
+  const data = vscTaxLegLG("taxLegAuto", qkey, { rev, cashMonths: cash, vatMonths: vat, cash: sum(cash), vatOut: sum(vat), missing: missing.concat(failed) }, failed);
+  // при сбое кэшируем ненадолго — быстрый повтор вместо «не загрузилось» на 15 минут
+  _taxLegAutoCache[qkey] = { at: Date.now(), ttl: failed.length ? 2 * 60 * 1000 : 15 * 60 * 1000, data };
   return data;
 }
 app.get("/admin/api/vsc/taxes-legal", requireAdmin, async (req, res) => {
