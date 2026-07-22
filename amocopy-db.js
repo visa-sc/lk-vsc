@@ -162,7 +162,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
   app.get(`${api}/tasks_count`, guard, (req, res) => {
     const resp = parseInt(req.query.responsible, 10) || 0;
     const now = Math.floor(Date.now() / 1000);
-    const dayStart = now - (now % 86400);
+    const dayStart = mskDay(); // граница дня МСК (был UTC-сдвиг 03:00)
     try {
       const W = resp ? " AND responsible_user_id=" + resp : "";
       const open = D.prepare("SELECT COUNT(*) c FROM tasks WHERE is_completed=0" + W).get().c;
@@ -173,7 +173,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
   app.get(`${api}/tasks_list`, guard, (req, res) => {
     const resp = parseInt(req.query.responsible, 10) || 0;
     const now = Math.floor(Date.now() / 1000);
-    const dayStart = now - (now % 86400);
+    const dayStart = mskDay(); // граница дня МСК (был UTC-сдвиг 03:00)
     if (String(req.query.done) === "1") {
       const rows = prep(qTasksDoneSrc, resp).all(dayStart - 30 * 86400);
       return res.json(rows.map((t) => ({
@@ -195,7 +195,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
   // KPI рабочего стола из БД (живые)
   app.get(`${api}/dashboard`, guard, (req, res) => {
     const now = Math.floor(Date.now() / 1000);
-    const dayStart = now - (now % 86400);
+    const dayStart = mskDay(); // граница дня МСК (был UTC-сдвиг 03:00)
     const byPipe = {};
     for (const r of qKanban.all()) { byPipe[r.pipeline_id] = (byPipe[r.pipeline_id] || 0) + r.c; }
     const openTasks = D.prepare("SELECT COUNT(*) c FROM tasks WHERE is_completed=0").get().c;
@@ -210,7 +210,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
   app.get(`${api}/counts`, guard, (req, res) => {
     const one = (sql, ...a) => { try { return D.prepare(sql).get(...a).c; } catch (_) { return null; } };
     const now = Math.floor(Date.now() / 1000);
-    const dayEnd = now - (now % 86400) + 86400;
+    const dayEnd = mskDay() + 86400; // граница дня МСК (был UTC-сдвиг 03:00)
     // бейдж «Задачи» как в amo = просроченные + на сегодня (незавершённые) ТЕКУЩЕГО юзера (me=id);
     // суперадмин по коду (без user_id) видит общий счёт. me — целое как литерал, инъекция исключена.
     const me = /^\d+$/.test(String(req.query.me || "")) ? +req.query.me : 0;

@@ -1446,7 +1446,7 @@
       var typeName={};TASK_TYPES.forEach(function(t){typeName[t.id]=t.name;});
       if(ttype&&ttype!=="0")items=items.filter(function(t){return String(t.task_type)===String(ttype);});
       if(taskRange!=="all"){
-        var now2=Date.now()/1000, dayEnd2=now2-(now2%86400)+86400;
+        var d0f=new Date();d0f.setHours(0,0,0,0);var dayEnd2=Math.floor(d0f.getTime()/1000)+86400; // граница дня МСК (был UTC-сдвиг)
         var horizon=taskRange==="day"?dayEnd2:taskRange==="week"?dayEnd2+6*86400:dayEnd2+29*86400;
         items=items.filter(function(t){return t.till&&t.till<horizon;});
       }
