@@ -547,6 +547,8 @@
   var $=function(s){return document.querySelector(s);};
   var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
   var fmt=function(n){return (n==null?"—":Number(n).toLocaleString("ru-RU"));};
+  // русское склонение счётчиков в шапках («1462 компании», как в amo)
+  var plural=function(n,one,few,many){n=Math.abs(Number(n)||0)%100;var d=n%10;if(n>10&&n<20)return many;if(d>1&&d<5)return few;if(d===1)return one;return many;};
   var dt=function(ts){return ts?new Date(ts*1000).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"—";};
   var dShort=function(ts){return ts?new Date(ts*1000).toLocaleDateString("ru-RU"):"";};
   var userName=function(id){var u=USERS.find(function(x){return x.id===id;});return u?u.name:(id||"");};
@@ -2608,24 +2610,110 @@
   /* ─── Компании ─── */
   var coPage=0,coLoading=false;
   var coSearch="";
+  // колонки списка компаний = живой amo (22.07): Наименование | Телефон | Источник (контакт) |
+  // Region (контакт) | Дата создания | Сделки | Ответственный | Дата изменения.
+  // «(контакт)» — поля СВЯЗАННОГО контакта (571754/577714), сервер отдаёт готовыми csrc/creg.
+  // Остальные поля компании (Email, Web, Адрес, Юр. лицо, LTV…) — через «Настроить».
+  var COMPANY_BASE=[["n","Наименование",1],["p","Телефон",1],["csrc","Источник (контакт)",1],["creg","Region (контакт)",1],["created","Дата создания",1],["deals","Сделки",1],["resp","Ответственный",1],["updated","Дата изменения",1]];
+  var CO_PHONE_FID=241342; // «Телефон» уже отдельной колонкой — из списка cf убираем, чтобы не дублировать
+  function companyAllCols(){
+    var cf=((CF&&CF.companies)||[]).filter(function(f){return f.id!==CO_PHONE_FID;}).map(function(f){return ["cf"+f.id,f.name,0,f.type];});
+    return COMPANY_BASE.concat(cf);
+  }
+  function companyColSel(){try{return JSON.parse(localStorage.getItem("crm_company_cols"))||null;}catch(e){return null;}}
+  function companyActiveCols(){var sel=companyColSel();var all=companyAllCols();return all.filter(function(c){return sel?sel.indexOf(c[0])>=0:c[2];});}
+  function companyCell(c,key){
+    if(key==="n")return '<a data-co="'+c.id+'">'+esc(c.name||"Без названия")+'</a>';
+    if(key==="p")return c.p?'<a href="tel:'+esc(String(c.p).replace(/[^0-9+]/g,""))+'" onclick="event.stopPropagation()">'+esc(c.p)+'</a>':"";
+    if(key==="csrc"||key==="creg")return '<span class="muted">'+esc(c[key]||"")+'</span>';
+    if(key==="deals")return (c.deals||[]).map(function(d){return '<span class="deal-chip" data-dl="'+d.id+'" style="background:'+esc(d.color||"#c1d5e0")+'26;border-left:3px solid '+esc(d.color||"#c1d5e0")+'" title="'+esc(d.st||"")+(d.price?" · "+fmt(d.price)+" ₽":"")+'">'+esc((d.name||("#"+d.id)).slice(0,26))+'</span>';}).join("")||'<span class="muted">—</span>';
+    if(key==="resp")return '<span class="muted">'+esc(c.resp||"")+'</span>';
+    if(key==="created")return '<span class="muted">'+(c.created?dt(c.created):"")+'</span>';
+    if(key==="updated")return '<span class="muted">'+(c.updated?dt(c.updated):"")+'</span>';
+    if(key.slice(0,2)==="cf"){
+      var fid=parseInt(key.slice(2),10),f=(c.cf||[]).find(function(x){return x.field_id===fid;});
+      if(!f)return "";
+      var val=(f.values||[]).map(function(v){
+        var vv=v.value;
+        if(vv&&typeof vv==="object"&&(vv.vat_id||vv.tax_registration_reason_code||vv.kpp||vv.address)){
+          var parts=[vv.name||""];
+          if(vv.vat_id)parts.push("ИНН "+vv.vat_id);
+          if(vv.kpp||vv.tax_registration_reason_code)parts.push("КПП "+(vv.kpp||vv.tax_registration_reason_code));
+          if(vv.bank_code)parts.push("БИК "+vv.bank_code);
+          if(vv.address)parts.push("Адрес "+vv.address);
+          return parts.filter(Boolean).join(" · ");
+        }
+        vv=vv&&vv.name?vv.name:vv;
+        if((f.field_type==="date"||f.field_type==="date_time"||f.field_type==="birthday")&&vv&&isFinite(vv))vv=dShort(Number(vv));
+        if(typeof vv==="boolean")vv=vv?"Да":"Нет";
+        return vv;
+      }).join(", ");
+      return '<span class="muted">'+esc(String(val).slice(0,80))+'</span>';
+    }
+    return "";
+  }
+  var COMPANY_SORTABLE={n:1,created:1,updated:1};
+  var companySort={by:"created",dir:"desc"};
+  function companyHeadHtml(){return '<tr>'+bulkTh()+companyActiveCols().map(function(c){var arrow=(companySort.by===c[0])?(companySort.dir==="asc"?" ▲":" ▼"):"";return '<th'+(c[0]==="n"?' style="width:26%"':(c[0]==="deals"?' style="width:20%"':""))+(COMPANY_SORTABLE[c[0]]?' class="sortable" data-sort="'+c[0]+'"':"")+'>'+esc(c[1])+arrow+'</th>';}).join("")+'</tr>';}
+  function companyRows(items){
+    var cols=companyActiveCols();
+    return items.map(function(c){return '<tr>'+bulkCbTd(c.id)+cols.map(function(col){return '<td>'+companyCell(c,col[0])+'</td>';}).join("")+'</tr>';}).join("");
+  }
+  function coHeaderOpts(count){
+    return {caret:true,onTitle:openListsMenu,count:count,searchPh:"Поиск компании (название — Enter)",newBtn:"+ Добавить компанию",
+      onSearch:function(e){if(e.key==="Enter"){coSearch=e.target.value.trim();$("#cobody").innerHTML="";coPage=0;coLoading=false;loadCompanies();}},
+      onNew:newCompany,onCfg:openCoColSettings,
+      dotsMenu:function(){return [{label:"Настроить колонки",on:openCoColSettings},"sep",{label:"Сбросить поиск",on:vCompanies}];}};
+  }
   function vCompanies(){
     renderSidebar("lists");
-    setHeader("Компании",{caret:true,onTitle:openListsMenu,count:"",searchPh:"Поиск компании (название — Enter)",onSearch:function(e){if(e.key==="Enter"){coSearch=e.target.value.trim();$("#cobody").innerHTML="";coPage=0;coLoading=false;loadCompanies();}}});
-    $("#view").innerHTML=listTabsHtml("companies")+'<div style="padding:0 0 30px"><table class="amo"><thead><tr><th style="width:45%">Название</th><th>Дата создания</th></tr></thead><tbody id="cobody"></tbody></table><div id="comore" class="muted" style="padding:14px;text-align:center"></div></div>';
+    setHeader("Компании",coHeaderOpts(""));
+    $("#view").innerHTML=listTabsHtml("companies")+'<div style="padding:0 0 30px"><table class="amo"><thead>'+companyHeadHtml()+'</thead><tbody id="cobody"></tbody></table><div id="comore" class="muted" style="padding:14px;text-align:center"></div></div>';
     bindListTabs();
+    makeTableResizable($("#view table.amo"),"crm_company_colw");
+    bindCompanySort();
     coSearch="";coPage=0;coLoading=false;loadCompanies();
     $("#main").onscroll=function(){if(coLoading)return;var m=$("#main");if(m.scrollTop+m.clientHeight>m.scrollHeight-600)loadCompanies();};
   }
+  function bindCompanySort(){document.querySelectorAll("#view thead th.sortable").forEach(function(th){th.onclick=function(){var by=th.dataset.sort;if(companySort.by===by)companySort.dir=companySort.dir==="asc"?"desc":"asc";else{companySort.by=by;companySort.dir="desc";}vCompanies();};});}
   function loadCompanies(){
     if(coLoading)return;coLoading=true;var next=coPage+1;$("#comore").textContent="Загрузка…";
-    jreq(API+"/companies_page?page="+next+(coSearch?"&q="+encodeURIComponent(coSearch):"")).then(function(r){
+    jreq(API+"/companies_page?page="+next+"&sort="+companySort.by+"&dir="+companySort.dir+(coSearch?"&q="+encodeURIComponent(coSearch):"")).then(function(r){
       var items=(r&&r.items)||[];
-      if(next===1){if(coSearch)$("#hCount").innerHTML=fmt(r.total)+" найдено";else setHeader("Компании",{caret:true,onTitle:openListsMenu,count:fmt(r.total)+" компаний",searchPh:"Поиск компании (название — Enter)",onSearch:function(e){if(e.key==="Enter"){coSearch=e.target.value.trim();$("#cobody").innerHTML="";coPage=0;coLoading=false;loadCompanies();}}});}
+      if(next===1){if(coSearch)$("#hCount").innerHTML=fmt(r.total)+" найдено";else setHeader("Компании",coHeaderOpts(fmt(r.total)+" "+plural(r.total,"компания","компании","компаний")));}
       if(!items.length){$("#comore").textContent=coPage?"Это все компании":"Компаний нет";return;}
-      $("#cobody").insertAdjacentHTML("beforeend",items.map(function(c){return '<tr><td><a data-co="'+c.id+'">'+esc(c.name||"Без названия")+'</a></td><td class="muted">'+(c.created?dShort(c.created):"")+'</td></tr>';}).join(""));
+      $("#cobody").insertAdjacentHTML("beforeend",companyRows(items));
       $("#cobody").querySelectorAll("[data-co]").forEach(function(a){a.onclick=function(){openCompany(parseInt(a.dataset.co,10));};});
+      $("#cobody").querySelectorAll("[data-dl]").forEach(function(a){a.onclick=function(e){e.stopPropagation();openLead(parseInt(a.dataset.dl,10));};});
+      var v=$("#view");if(v)bindBulkCheckboxes(v,"companies");
       coPage=next;coLoading=false;$("#comore").textContent="";
     }).catch(function(){$("#comore").textContent="Недоступно";});
+  }
+  function newCompany(){
+    var name=prompt("Название компании:","");
+    if(!name||!name.trim())return;
+    ereq("POST","/edit-api/company",{name:name.trim()}).then(function(r){
+      if(r&&r.success){toast("Компания создана");openCompany(r.id);}else toast("Не удалось",true);
+    });
+  }
+  function openCoColSettings(){
+    var all=companyAllCols();
+    var sel=companyColSel()||all.filter(function(c){return c[2];}).map(function(c){return c[0];});
+    var base=all.slice(0,COMPANY_BASE.length),custom=all.slice(COMPANY_BASE.length);
+    var lbl=function(c){return '<label style="display:block;padding:5px 0"><input type="checkbox" data-col="'+c[0]+'"'+(sel.indexOf(c[0])>=0?" checked":"")+(c[0]==="n"?" disabled":"")+'> '+esc(c[1])+'</label>';};
+    var bg=document.createElement("div");bg.className="modal-bg";
+    bg.innerHTML='<div class="modal" style="max-width:520px"><button class="x">×</button><h2>Настройка колонок</h2>'+
+      '<div style="font-size:12px;color:#8a949e;text-transform:uppercase;font-weight:600;margin:4px 0">Основные</div>'+base.map(lbl).join("")+
+      '<div style="font-size:12px;color:#8a949e;text-transform:uppercase;font-weight:600;margin:12px 0 4px">Поля компании ('+custom.length+')</div>'+custom.map(lbl).join("")+
+      '<div style="margin-top:14px"><button class="btn" id="coColSave">Применить</button></div></div>';
+    bg.onclick=function(e){if(e.target===bg||e.target.className==="x")document.body.removeChild(bg);};
+    document.body.appendChild(bg);
+    bg.querySelector("#coColSave").onclick=function(){
+      var picked=[].slice.call(bg.querySelectorAll("input[data-col]")).filter(function(i){return i.checked;}).map(function(i){return i.dataset.col;});
+      if(picked.indexOf("n")<0)picked.unshift("n");
+      try{localStorage.setItem("crm_company_cols",JSON.stringify(picked));}catch(e){}
+      document.body.removeChild(bg);vCompanies();
+    };
   }
   function openCompany(id){
     Promise.all([jreq(API+"/company/"+id),jreq("/edit-api/notes_new?entity_type=companies&entity_id="+id).catch(function(){return{items:[]};})]).then(function(rr){

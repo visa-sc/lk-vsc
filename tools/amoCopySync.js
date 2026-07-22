@@ -62,6 +62,16 @@ const emailsOf = (c) => { const r = []; (c.custom_fields_values || []).forEach((
 try { db.exec("ALTER TABLE leads ADD COLUMN pay_ts INTEGER"); } catch (_) { /* уже есть */ }
 try { db.exec("CREATE INDEX IF NOT EXISTS ix_leads_pay ON leads(pay_ts)"); } catch (_) {}
 const payTsOf = (l) => { const f = (l.custom_fields_values || []).find((x) => x.field_id === 427242); const v = f && f.values && f.values[0] && f.values[0].value; return v ? +v : null; };
+// is_main — ГЛАВНЫЙ контакт сделки (добавлено 22.07). Признака не было вовсе, а amo фильтрует
+// «контакт без задач» именно по главному контакту (найдено паритетным обходом фильтра 12593682:
+// копия 12 096 против amo 12 022 в воронке 1309524 — разница ровно на неглавных контактах).
+try { db.exec("ALTER TABLE lead_contacts ADD COLUMN is_main INTEGER DEFAULT 0"); } catch (_) { /* уже есть */ }
+const linkContacts = (leadId, contacts) => {
+  for (const c of contacts) {
+    db.prepare("INSERT OR IGNORE INTO lead_contacts(lead_id,contact_id,is_main) VALUES(?,?,?)").run(leadId, c.id, c.is_main ? 1 : 0);
+    db.prepare("UPDATE lead_contacts SET is_main=? WHERE lead_id=? AND contact_id=?").run(c.is_main ? 1 : 0, leadId, c.id);
+  }
+};
 const upLead = db.prepare(`INSERT INTO leads(id,name,price,status_id,pipeline_id,responsible_user_id,created_at,updated_at,closed_at,cf,tags,contact_ids,pay_ts)
   VALUES(@id,@name,@price,@status_id,@pipeline_id,@responsible_user_id,@created_at,@updated_at,@closed_at,@cf,@tags,@contact_ids,@pay_ts)
   ON CONFLICT(id) DO UPDATE SET name=@name,price=@price,status_id=@status_id,pipeline_id=@pipeline_id,responsible_user_id=@responsible_user_id,updated_at=@updated_at,closed_at=@closed_at,cf=@cf,tags=@tags,contact_ids=@contact_ids,pay_ts=@pay_ts`);
@@ -84,7 +94,7 @@ async function syncLeads() {
         if (hasLocalEdit.get("leads", l.id)) { db.prepare("INSERT INTO sync_conflicts VALUES('leads',?,?,?)").run(l.id, Math.floor(Date.now() / 1000), "локальная правка — амо-версия не применена"); conflicts++; continue; }
         const cids = ((l._embedded && l._embedded.contacts) || []).map((c) => c.id);
         upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids), pay_ts: payTsOf(l) });
-        cids.forEach((cid) => db.prepare("INSERT OR IGNORE INTO lead_contacts(lead_id,contact_id) VALUES(?,?)").run(l.id, cid));
+        linkContacts(l.id, (l._embedded && l._embedded.contacts) || []);
         changed++;
       }
     });
@@ -113,7 +123,7 @@ async function syncLeadsByIds(ids) {
         if (hasLocalEdit.get("leads", l.id)) { conflicts++; continue; }
         const cids = ((l._embedded && l._embedded.contacts) || []).map((c) => c.id);
         upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids), pay_ts: payTsOf(l) });
-        cids.forEach((cid) => db.prepare("INSERT OR IGNORE INTO lead_contacts(lead_id,contact_id) VALUES(?,?)").run(l.id, cid));
+        linkContacts(l.id, (l._embedded && l._embedded.contacts) || []);
         changed++;
       }
     })();
@@ -203,9 +213,11 @@ async function syncTasks() {
 }
 
 // компании (дыра найдена 18.07: слепок 1448, в amo уже 1460 — синка компаний не было вовсе)
-const upCompany = db.prepare(`INSERT INTO companies(id,name,created_at,updated_at,cf)
-  VALUES(@id,@name,@created_at,@updated_at,@cf)
-  ON CONFLICT(id) DO UPDATE SET name=@name,updated_at=@updated_at,cf=@cf`);
+// responsible_user_id добавлен 22.07 (колонка «Ответственный» есть в списке компаний amo, в копии её нечем было заполнить)
+try { db.exec("ALTER TABLE companies ADD COLUMN responsible_user_id INTEGER DEFAULT 0"); } catch (_) { /* уже есть */ }
+const upCompany = db.prepare(`INSERT INTO companies(id,name,created_at,updated_at,cf,responsible_user_id)
+  VALUES(@id,@name,@created_at,@updated_at,@cf,@responsible_user_id)
+  ON CONFLICT(id) DO UPDATE SET name=@name,updated_at=@updated_at,cf=@cf,responsible_user_id=@responsible_user_id`);
 // покупатели (программа лояльности): amo=6938 vs копия=6864 на 19.07 — были разовым экспортом, теперь в синке.
 // ВАЖНО: amo API customers ИГНОРИРУЕТ filter[updated_at] (проверено: since+1 сек — всё равно отдаёт всех) —
 // каждый прогон = полные ~28 страниц, поэтому customers НЕ в */45-круге, а отдельным кроном 04:00/16:00 МСК.
@@ -317,7 +329,7 @@ async function syncCompanies() {
       for (const c of items) {
         maxUpd = Math.max(maxUpd, c.updated_at || 0);
         if (hasLocalEdit.get("companies", c.id)) { conflicts++; continue; }
-        upCompany.run({ id: c.id, name: c.name || "", created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c) });
+        upCompany.run({ id: c.id, name: c.name || "", created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c), responsible_user_id: c.responsible_user_id || 0 });
         changed++;
       }
     })();

@@ -8,7 +8,7 @@
  * Безопасность: строго 1 rps; НЕ трогаем локальные сущности id>=1e9; не трогаем сделки,
  * обновлённые последние 2 часа (даём инкрементальному синку шанс подхватить перенос);
  * закрытые (142/143) не сверяем — их обновления синк видит штатно.
- * Запуск: node tools/amoCopyReconcile.js [pipeline_id | all | leads | contacts]
+ * Запуск: node tools/amoCopyReconcile.js [pipeline_id | all | leads | contacts | tasks]
  *   all (дефолт, cron) = сделки всех воронок + КОНТАКТЫ (найдено 19.07: копия 247089 vs amo 247059 —
  *   удалённые/слитые в amo контакты тоже навсегда зависали в копии; ~989 стр. по 250, тот же 1 rps)
  */
@@ -42,6 +42,19 @@ async function get(url, params) {
     return r.data;
   }
   return null; // обрыв после ретраев — вызывающий код трактует как «неполный список» и пропускает удаление
+}
+
+// точечный запрос с ЯВНЫМ статусом: нужен там, где 404 («удалено в amo») нельзя путать с обрывом сети
+async function getStatus(url) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const wait = last + 1100 - Date.now(); if (wait > 0) await sleep(wait); last = Date.now(); reqs++;
+    try {
+      const r = await axios.get(url, { headers: { Authorization: "Bearer " + TOK }, validateStatus: null, timeout: 30000 });
+      if (r.status === 429 || r.status === 403) { console.log("СТОП: HTTP " + r.status + " — лимит, выходим"); process.exit(2); }
+      return { status: r.status, data: r.data };
+    } catch (e) { await sleep(5000 * attempt); }
+  }
+  return { status: 0, data: null };
 }
 
 // «отставшие»: amo.updated_at НОВЕЕ копии, но watermark-синк их уже никогда не увидит
@@ -79,10 +92,57 @@ async function reconcileContacts(cutoff) {
   return ghosts.length;
 }
 
+// ЗАДАЧИ (фаза добавлена 22.07). Класс дыры найден паритетным обходом: фильтр «Сделки/контакты без
+// задач» в копии давал 42 172 против 42 080 в amo. Диагностика активных задач показала ДВЕ дыры:
+//   • 181 активная задача (upd. март) ОТСУТСТВУЕТ в копии — первичный экспорт их не забрал, а
+//     watermark-синк (filter[updated_at][from]) их уже никогда не увидит: они старше точки старта;
+//   • 28 задач в копии числятся активными, хотя в amo уже завершены/удалены — «призраки» задач
+//     (тот же класс, что чинился для сделок/контактов, но задачи в сверку не входили вовсе).
+// Обе дыры искажали «без задач» в обе стороны. Стоимость фазы ~30 запросов при 1 rps.
+async function reconcileTasks() {
+  const upTask = db.prepare(`INSERT INTO tasks(id,entity_type,entity_id,text,task_type,complete_till,is_completed,responsible_user_id,result,created_at)
+    VALUES(@id,@entity_type,@entity_id,@text,@task_type,@complete_till,@is_completed,@responsible_user_id,@result,@created_at)
+    ON CONFLICT(id) DO UPDATE SET text=@text,complete_till=@complete_till,is_completed=@is_completed,responsible_user_id=@responsible_user_id,result=@result`);
+  const row = (t) => ({ id: t.id, entity_type: t.entity_type || "leads", entity_id: t.entity_id || 0, text: t.text || "",
+    task_type: t.task_type_id || 0, complete_till: t.complete_till || 0, is_completed: t.is_completed ? 1 : 0,
+    responsible_user_id: t.responsible_user_id || 0, result: JSON.stringify(t.result || null), created_at: t.created_at || 0 });
+  const amo = new Map();
+  let url = `${BASE}/api/v4/tasks`, params = { limit: 250, "filter[is_completed]": 0 }, pages = 0;
+  while (url && pages < 80) {
+    const d = await get(url, params); params = undefined;
+    if (!d) { console.log(`задачи: обрыв на стр.${pages} — пропускаю фазу (неполный список)`); return; }
+    ((d._embedded || {}).tasks || []).forEach((t) => amo.set(t.id, t));
+    url = (d._links && d._links.next && d._links.next.href) || null;
+    if (url) { const u = new URL(url); params = Object.fromEntries(u.searchParams); url = u.origin + u.pathname; }
+    pages++;
+  }
+  if (!amo.size) { console.log("задачи: amo вернул 0 активных — подозрительно, пропускаю фазу"); return; }
+  const local = db.prepare("SELECT id FROM tasks WHERE is_completed=0 AND id<?").all(LOCAL_ID_BASE);
+  const locIds = new Set(local.map((t) => t.id));
+  const missing = [...amo.values()].filter((t) => !locIds.has(t.id));
+  const suspect = local.filter((t) => !amo.has(t.id)).map((t) => t.id);
+  db.transaction(() => { for (const t of missing) upTask.run(row(t)); })();
+  console.log(`задачи: amo активных=${amo.size} (стр.${pages}), копия активных=${local.length}, добавлено отсутствовавших=${missing.length}, к проверке=${suspect.length}`);
+  // «подозрительные» проверяем поштучно. Ответы amo (проверено 22.07 на живых id):
+  //   200 + is_completed=true → задача просто завершена, у нас отстал статус → upsert;
+  //   204 (именно 204, не 404 — так amo отвечает на несуществующую сущность) → удалена в amo → удаляем;
+  // ВАЖНО: по сетевому обрыву (status 0) НЕ удаляем — иначе можно снести живую задачу.
+  let closed = 0, deleted = 0, skipped = 0;
+  for (const id of suspect.slice(0, 200)) {
+    const r = await getStatus(`${BASE}/api/v4/tasks/${id}`);
+    if (r.status === 200 && r.data && r.data.id) { upTask.run(row(r.data)); closed++; }
+    else if (r.status === 204 || r.status === 404) { db.prepare("DELETE FROM tasks WHERE id=?").run(id); deleted++; }
+    else skipped++;
+  }
+  if (skipped) console.log(`  не проверено (сетевые ошибки): ${skipped} — без изменений, дочистит следующий прогон`);
+  if (suspect.length > 200) console.log(`  ВНИМАНИЕ: проверено 200 из ${suspect.length} — остальные дочистит следующий прогон`);
+  console.log(`задачи: завершено по amo=${closed}, удалено призраков=${deleted}`);
+}
+
 (async () => {
   const pipes = (arg === "all" || arg === "leads")
     ? db.prepare("SELECT DISTINCT pipeline_id p FROM leads WHERE status_id NOT IN (142,143) AND id<?").all(LOCAL_ID_BASE).map((x) => x.p)
-    : (arg === "contacts" ? [] : [parseInt(arg, 10)]);
+    : (arg === "contacts" || arg === "tasks" ? [] : [parseInt(arg, 10)]);
   const cutoff = Math.floor(Date.now() / 1000) - 7200; // не трогаем свежеобновлённые
   let totalGhosts = 0;
   for (const pid of pipes) {
@@ -130,6 +190,10 @@ async function reconcileContacts(cutoff) {
     try { totalGhosts += await reconcileContacts(cutoff); }
     catch (e) { console.log("контакты: фаза упала (" + e.message + ") — сделочный результат сохранён"); }
     refetch("contacts", staleContacts);
+  }
+  if (arg === "all" || arg === "tasks") {
+    try { await reconcileTasks(); }
+    catch (e) { console.log("задачи: фаза упала (" + e.message + ") — остальной результат сохранён"); }
   }
   console.log(`ИТОГО: удалено призраков ${totalGhosts}, отставших leads=${staleLeads.length}/contacts=${staleContacts.length}, запросов к amo ${reqs}`);
 })().catch((e) => { console.error("ОШИБКА:", e.message); process.exit(1); });

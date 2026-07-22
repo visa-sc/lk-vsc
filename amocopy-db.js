@@ -93,6 +93,13 @@ module.exports = function mountDbRoutes(app, guard, api) {
   // сделки контакта (id, имя, статус, цвет) — для колонки «Сделки» в контактах
   const qDealsForContacts = D.prepare(`SELECT lc.contact_id cid, l.id, l.name, l.price, l.status_id, l.pipeline_id
     FROM lead_contacts lc JOIN leads l ON l.id=lc.lead_id WHERE lc.contact_id IN (SELECT value FROM json_each(?)) ORDER BY l.updated_at DESC`);
+  // плоское значение кастомного поля из cf-массива (для колонок списков)
+  const cfPlain = (arr, fid) => {
+    const f = (arr || []).find((x) => x.field_id === fid);
+    if (!f) return "";
+    return (f.values || []).map((v) => { let vv = v && v.value; if (vv && typeof vv === "object" && vv.name) vv = vv.name; return vv; })
+      .filter((v) => v !== "" && v != null).join(", ");
+  };
   // фильтр по кастомным полям (cf хранится JSON-текстом). Формат параметра: "<fieldId>:<значение>".
   // Требуем в одной записи и присутствие поля, и присутствие значения — практичный матч без парсинга JSON в SQL.
   function addCfFilters(cfParam, where, args) {
@@ -444,6 +451,17 @@ module.exports = function mountDbRoutes(app, guard, api) {
   //   ccf: {fid:[...]} — поля ОСНОВНОГО контакта, no_tasks: true, contact_no_tasks: true.
   const qLeadFirstContact = D.prepare("SELECT c.id, c.cf FROM lead_contacts lc JOIN contacts c ON c.id=lc.contact_id WHERE lc.lead_id=? LIMIT 1");
   const qHasOpenTask = D.prepare("SELECT 1 FROM tasks WHERE entity_type=? AND entity_id=? AND is_completed=0 LIMIT 1");
+  // «Контакт без задач» в amo = у ГЛАВНОГО контакта НЕТ ЗАДАЧ ВООБЩЕ (включая выполненные) —
+  // выяснено паритетным обходом 22.07: amo снимал 85 сделок «Доплаты», из них у 74 главный контакт
+  // имел только ЗАКРЫТЫЕ задачи (2018-2025 гг.). Для самой сделки условие другое — только открытые
+  // (сверено в ноль: 18 = 18). Сделки без контакта amo НЕ отсеивает — оставляем их.
+  const qHasAnyTask = D.prepare("SELECT 1 FROM tasks WHERE entity_type=? AND entity_id=? LIMIT 1");
+  // главный контакт берём по флагу is_main (заполняется синком с 22.07); до него порядок из
+  // contact_ids был лишь догадкой — при нескольких контактах она врала
+  const HAS_IS_MAIN = (() => { try { return D.prepare("PRAGMA table_info(lead_contacts)").all().some((c) => c.name === "is_main"); } catch (_) { return false; } })();
+  const qLeadMainContact = HAS_IS_MAIN
+    ? D.prepare("SELECT c.id, c.cf FROM lead_contacts lc JOIN contacts c ON c.id=lc.contact_id WHERE lc.lead_id=? ORDER BY lc.is_main DESC LIMIT 1")
+    : qLeadFirstContact;
   const mskDay = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return Math.floor(d.getTime() / 1000); };
   const parseDMY = (s) => { const m = String(s).match(/(\d{2})\.(\d{2})\.(\d{4})/); return m ? Math.floor(new Date(+m[3], +m[2] - 1, +m[1]).getTime() / 1000) : null; };
   // диапазон [from,to) по имени пресета даты (границы дня/недели/месяца МСК). Понимает и наш вокабуляр (today/yesterday),
@@ -536,15 +554,13 @@ module.exports = function mountDbRoutes(app, guard, api) {
           if (cfJs) { let ok = true; for (const [fid, cond] of Object.entries(cfJs)) if (!cfMatch(r.cf, fid, cond)) { ok = false; break; } if (!ok) continue; }
           if (spec.no_tasks && qHasOpenTask.get("leads", r.id)) continue;
           if (ccfEntries.length || spec.contact_no_tasks) {
-            // ГЛАВНЫЙ контакт = первый в contact_ids (порядок из amo API, is_main первым; сверено 20.07)
-            let mainId = null; try { mainId = (JSON.parse(r.contact_ids) || [])[0] || null; } catch (_) {}
-            const c = mainId ? qContactCf.get(mainId) : null;
+            const c = qLeadMainContact.get(r.id) || null;
             if (ccfEntries.length) {
               if (!c) continue;
               let ok = true; for (const [fid, cond] of ccfEntries) if (!cfMatch(c.cf, fid, cond)) { ok = false; break; }
               if (!ok) continue;
             }
-            if (spec.contact_no_tasks && c && qHasOpenTask.get("contacts", c.id)) continue;
+            if (spec.contact_no_tasks && c && qHasAnyTask.get("contacts", c.id)) continue;
           }
           count++; sum += r.price || 0;
         }
@@ -604,10 +620,9 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if (cfJs) { for (const [fid, cond] of Object.entries(cfJs)) if (!cfMatch(r.cf, fid, cond)) return false; }
     if (spec.no_tasks && qHasOpenTask.get("leads", r.id)) return false;
     if (ccfEntries.length || spec.contact_no_tasks) {
-      let mainId = null; try { mainId = (JSON.parse(r.contact_ids) || [])[0] || null; } catch (_) {}
-      const c = mainId ? qSpecContactCf.get(mainId) : null;
+      const c = qLeadMainContact.get(r.id) || null;
       if (ccfEntries.length) { if (!c) return false; for (const [fid, cond] of ccfEntries) if (!cfMatch(c.cf, fid, cond)) return false; }
-      if (spec.contact_no_tasks && c && qHasOpenTask.get("contacts", c.id)) return false;
+      if (spec.contact_no_tasks && c && qHasAnyTask.get("contacts", c.id)) return false;
     }
     return true;
   };
@@ -734,21 +749,63 @@ module.exports = function mountDbRoutes(app, guard, api) {
   });
 
   // компании: список + карточка
-  const qCompaniesPage = D.prepare("SELECT id,name,created_at,updated_at FROM companies ORDER BY updated_at DESC LIMIT ? OFFSET ?");
   const qCompaniesCount = D.prepare("SELECT COUNT(*) c FROM companies");
   const qCompany = D.prepare("SELECT * FROM companies WHERE id=?");
+  // сделки компании — для колонки «Сделки» списка (как в amo)
+  const qDealsForCompanies = HAS_LC ? D.prepare(`SELECT lc.company_id cid, l.id, l.name, l.price, l.status_id, l.pipeline_id
+    FROM lead_companies lc JOIN leads l ON l.id=lc.lead_id WHERE lc.company_id IN (SELECT value FROM json_each(?)) ORDER BY l.updated_at DESC`) : null;
+  // cf связанных контактов — колонки «Источник (контакт)» / «Region (контакт)» списка компаний в amo
+  const qContactCfForCompanies = HAS_CC ? D.prepare(`SELECT cc.company_id cid, c.cf FROM contact_companies cc
+    JOIN contacts c ON c.id=cc.contact_id WHERE cc.company_id IN (SELECT value FROM json_each(?))`) : null;
+  const CO_PHONE_FID = 241342; // «Телефон» компании
+  const CO_SRC_FID = 571754, CO_REG_FID = 577714; // «Источник» / «Region» контакта
+  const COMPANY_HAS_RESP = (() => { try { return D.prepare("PRAGMA table_info(companies)").all().some((c) => c.name === "responsible_user_id"); } catch (_) { return false; } })();
+  function companyOut(rows) {
+    const ids = rows.map((c) => c.id);
+    const dmap = {}, cmap = {};
+    if (ids.length && qDealsForCompanies) {
+      try {
+        for (const r of qDealsForCompanies.all(JSON.stringify(ids))) {
+          (dmap[r.cid] = dmap[r.cid] || []).push({ id: r.id, name: r.name, price: r.price, sid: r.status_id, pid: r.pipeline_id,
+            st: (stMap[r.status_id] || {}).name || "", color: (stMap[r.status_id] || {}).color || "#c1d5e0" });
+        }
+      } catch (_) {}
+    }
+    if (ids.length && qContactCfForCompanies) {
+      try {
+        for (const r of qContactCfForCompanies.all(JSON.stringify(ids))) {
+          const cf = J(r.cf, []) || [], t = (cmap[r.cid] = cmap[r.cid] || { src: [], reg: [] });
+          const s = cfPlain(cf, CO_SRC_FID), g = cfPlain(cf, CO_REG_FID);
+          if (s && t.src.indexOf(s) < 0) t.src.push(s);
+          if (g && t.reg.indexOf(g) < 0) t.reg.push(g);
+        }
+      } catch (_) {}
+    }
+    return rows.map((c) => {
+      const cf = J(c.cf, []) || [], t = cmap[c.id] || { src: [], reg: [] };
+      return { id: c.id, name: c.name, created: c.created_at, updated: c.updated_at,
+        resp: (COMPANY_HAS_RESP && uName[c.responsible_user_id]) || "",
+        p: cfPlain(cf, CO_PHONE_FID), csrc: t.src.join(", "), creg: t.reg.join(", "),
+        deals: dmap[c.id] || [], cf };
+    });
+  }
   app.get(`${api}/companies_page`, guard, (req, res) => {
     const page = String(req.query.page || "1");
     if (!PAGE_FILE_RE.test(page)) return res.status(400).json({ success: false });
+    // сортировка по колонке (клик по заголовку), дефолт — дата создания DESC, как в amo
+    const CO_SORT = { created: "created_at", updated: "updated_at", n: "name" };
+    const sortCol = CO_SORT[req.query.sort] || "created_at";
+    const dir = String(req.query.dir).toLowerCase() === "asc" ? "ASC" : "DESC";
+    const cols = "id,name,created_at,updated_at,cf" + (COMPANY_HAS_RESP ? ",responsible_user_id" : "");
     const q = String(req.query.q || "").trim();
     if (q) { // поиск компаний по названию (как в amo)
       const like = "%" + q + "%";
-      const rows = D.prepare("SELECT id,name,created_at FROM companies WHERE lc(name) LIKE lc(?) ORDER BY updated_at DESC LIMIT 50 OFFSET ?").all(like, (+page - 1) * 50);
+      const rows = D.prepare("SELECT " + cols + " FROM companies WHERE lc(name) LIKE lc(?) ORDER BY " + sortCol + " " + dir + " LIMIT 50 OFFSET ?").all(like, (+page - 1) * 50);
       const total = D.prepare("SELECT COUNT(*) c FROM companies WHERE lc(name) LIKE lc(?)").get(like).c;
-      return res.json({ total, items: rows.map((c) => ({ id: c.id, name: c.name, created: c.created_at })) });
+      return res.json({ total, items: companyOut(rows) });
     }
-    const rows = qCompaniesPage.all(50, (+page - 1) * 50);
-    res.json({ total: qCompaniesCount.get().c, items: rows.map((c) => ({ id: c.id, name: c.name, created: c.created_at })) });
+    const rows = D.prepare("SELECT " + cols + " FROM companies ORDER BY " + sortCol + " " + dir + " LIMIT 50 OFFSET ?").all((+page - 1) * 50);
+    res.json({ total: qCompaniesCount.get().c, items: companyOut(rows) });
   });
   app.get(`${api}/company/:id`, guard, (req, res) => {
     const id = parseInt(req.params.id, 10);
