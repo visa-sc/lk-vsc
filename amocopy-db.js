@@ -473,7 +473,16 @@ module.exports = function mountDbRoutes(app, guard, api) {
     ? D.prepare("SELECT c.id, c.cf FROM lead_contacts lc JOIN contacts c ON c.id=lc.contact_id WHERE lc.lead_id=? ORDER BY lc.is_main DESC LIMIT 1")
     : qLeadFirstContact;
   const mskDay = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return Math.floor(d.getTime() / 1000); };
-  const parseDMY = (s) => { const m = String(s).match(/(\d{2})\.(\d{2})\.(\d{4})/); return m ? Math.floor(new Date(+m[3], +m[2] - 1, +m[1]).getTime() / 1000) : null; };
+  // Границы дат сохранённых фильтров/виджетов amo несут ВРЕМЯ («01.07.2026 10:41» — момент, когда
+  // фильтр создавали). Раньше время терялось, и виджет «Выручка СПБ Июль 1» давал 70 сделок против
+  // 66 в amo: лишними были 4 оплаты за 01.07 (00:00 МСК), которые граница 10:41 отсекает.
+  const parseDMY = (s) => {
+    const m = String(s).match(/(\d{2})\.(\d{2})\.(\d{4})(?:\D+(\d{1,2}):(\d{2}))?/);
+    return m ? Math.floor(new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)).getTime() / 1000) : null;
+  };
+  const dmyHasTime = (s) => /\d{2}\.\d{2}\.\d{4}\D+\d{1,2}:\d{2}/.test(String(s));
+  // верхняя граница эксклюзивна: без времени — конец суток, со временем — ровно указанный момент
+  const parseDMYTo = (s) => { const t = parseDMY(s); return t == null ? null : (dmyHasTime(s) ? t : t + 86400); };
   // диапазон [from,to) по имени пресета даты (границы дня/недели/месяца МСК). Понимает и наш вокабуляр (today/yesterday),
   // и амошный (current_day/previous_month/…) — сохранённые фильтры amo используют именно его. to — эксклюзивно.
   const presetRange = (preset) => {
@@ -518,7 +527,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     let from = null, to = null;
     const r = cond.preset ? presetRange(cond.preset) : null;
     if (r) { from = r.from; to = r.to; }
-    else { if (cond.from) from = parseDMY(cond.from); if (cond.to) to = parseDMY(cond.to) + 86400; }
+    else { if (cond.from) from = parseDMY(cond.from); if (cond.to) to = parseDMYTo(cond.to); }
     return (from == null || ts >= from) && (to == null || ts < to);
   };
   // общий сборщик условий по КОНТАКТАМ (используют /contacts_spec и контактные виджеты)
@@ -533,7 +542,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const c = spec.created || (spec.created_preset ? { preset: spec.created_preset } : null);
     if (c) {
       let from = null, to = null; const r = c.preset ? presetRange(c.preset) : null;
-      if (r) { from = r.from; to = r.to; } else { if (c.from) from = parseDMY(c.from); if (c.to) to = parseDMY(c.to) + 86400; }
+      if (r) { from = r.from; to = r.to; } else { if (c.from) from = parseDMY(c.from); if (c.to) to = parseDMYTo(c.to); }
       if (from != null) { where.push("created_at>=?"); args.push(from); }
       if (to != null) { where.push("created_at<?"); args.push(to); }
     }
@@ -584,7 +593,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
             let from = null, to = null;
             const r = cond.preset ? presetRange(cond.preset) : null;
             if (r) { from = r.from; to = r.to; }
-            else { if (cond.from) from = parseDMY(cond.from); if (cond.to) to = parseDMY(cond.to) + 86400; }
+            else { if (cond.from) from = parseDMY(cond.from); if (cond.to) to = parseDMYTo(cond.to); }
             if (from != null) { where.push("pay_ts>=?"); args.push(from); }
             if (to != null) { where.push("pay_ts<?"); args.push(to); }
             continue;
@@ -639,7 +648,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if (spec.created_preset) spec.created = spec.created || { preset: spec.created_preset }; // словарь amo-виджетов (widget_stat2)
     if (spec.created) {
       const c = spec.created; let from = null, to = null; const r = c.preset ? presetRange(c.preset) : null;
-      if (r) { from = r.from; to = r.to; } else { if (c.from) from = parseDMY(c.from); if (c.to) to = parseDMY(c.to) + 86400; }
+      if (r) { from = r.from; to = r.to; } else { if (c.from) from = parseDMY(c.from); if (c.to) to = parseDMYTo(c.to); }
       if (from != null) { where.push("created_at>=?"); args.push(from); }
       if (to != null) { where.push("created_at<?"); args.push(to); }
     }
@@ -650,7 +659,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     for (const [fid, cond] of Object.entries(spec.cf || {})) {
       if (+fid === 427242 && !Array.isArray(cond)) {
         let from = null, to = null; const r = cond.preset ? presetRange(cond.preset) : null;
-        if (r) { from = r.from; to = r.to; } else { if (cond.from) from = parseDMY(cond.from); if (cond.to) to = parseDMY(cond.to) + 86400; }
+        if (r) { from = r.from; to = r.to; } else { if (cond.from) from = parseDMY(cond.from); if (cond.to) to = parseDMYTo(cond.to); }
         if (from != null) { where.push("pay_ts>=?"); args.push(from); }
         if (to != null) { where.push("pay_ts<?"); args.push(to); }
         continue;
