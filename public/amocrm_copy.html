@@ -1399,9 +1399,12 @@
   function navSection(sec){curView=sec;VIEW_EPOCH++;hidePipePanel();renderSidebar(sec);try{pushUrl(sectionPath(sec));}catch(_){}}
   // клик по виджету — как в amo: открыть соответствующий раздел с ЕГО фильтром
   function openWidgetFilter(w){
-    if(w.kind==="amo"){ var sec0=w.entity==="contacts"?"contacts":"leads"; navSection(sec0); applySpecFilter({name:w.name,spec:w.spec||{}},sec0); return; }
+    // сущность виджета может быть записана и на самом виджете, и внутри спека (так её ставит
+    // перенос «Таргет …» — в amo это контактные виджеты)
+    var wEnt=w.entity||(w.spec&&w.spec.entity)||"leads";
+    if(w.kind==="amo"){ var sec0=wEnt==="contacts"?"contacts":"leads"; navSection(sec0); applySpecFilter({name:w.name,spec:w.spec||{}},sec0); return; }
     if(w.kind==="filter"){
-      var sec=w.entity==="contacts"?"contacts":"leads";
+      var sec=wEnt==="contacts"?"contacts":"leads";
       navSection(sec);
       // штатная шапка раздела (панель фильтра/поиск/создание) — как и у spec-виджетов
       if(sec==="leads"){
