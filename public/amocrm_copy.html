@@ -951,41 +951,119 @@
     (vals._ccf||[]).forEach(function(x){parts.push("ccf="+encodeURIComponent(x[0]+":"+x[1]));});
     return parts.join("&");
   }
+  // ── ЕДИНОЕ amo-оформление применённого фильтра для ВСЕХ путей (spec-виджеты, filter-виджеты,
+  // панель): чипы в строке поиска (2+«+N»), счётчик в тулбаре с × и ховер-плашкой «Создать виджет» ──
+  function filterChipsBarG(chips,expanded){ // chips=[{label,title?,onX,onClick?}]
+    var old=document.getElementById("specChipsBar");if(old)old.remove();
+    var wrap=document.querySelector(".search");
+    if(!chips.length||!wrap)return;
+    var bar=document.createElement("span");bar.id="specChipsBar";
+    bar.style.cssText="display:inline-flex;gap:4px;align-items:center;flex:0 1 auto;max-width:60%;overflow:hidden;margin-right:6px";
+    var mk=function(c){
+      var el=document.createElement("span");
+      el.style.cssText="display:inline-flex;align-items:center;gap:5px;background:#e2ecfa;border:1px solid #c8dcf5;border-radius:6px;padding:3px 8px;font-size:12px;color:#2a5885;white-space:nowrap;"+(c.onClick?"cursor:pointer;":"");
+      if(c.title)el.title=c.title;
+      el.innerHTML=esc(c.label)+' <a style="color:#7f9cbf;font-weight:700;cursor:pointer" title="Убрать условие">×</a>';
+      el.querySelector("a").onclick=function(e){e.stopPropagation();c.onX();};
+      if(c.onClick)el.onclick=function(){c.onClick();};
+      return el;
+    };
+    var maxShow=expanded?chips.length:2;
+    chips.slice(0,maxShow).forEach(function(c){bar.appendChild(mk(c));});
+    if(chips.length>maxShow){
+      var more=document.createElement("span");
+      more.textContent="+"+(chips.length-maxShow);
+      more.title="Показать все условия";
+      more.style.cssText="background:#e2ecfa;border:1px solid #c8dcf5;border-radius:6px;padding:3px 8px;font-size:12px;color:#2a5885;cursor:pointer";
+      more.onclick=function(e){e.stopPropagation();filterChipsBarG(chips,true);};
+      bar.appendChild(more);
+    }
+    wrap.insertBefore(bar,wrap.querySelector("input"));
+  }
+  function filterCountBarG(isLeads,total,sum,onReset,onSave){
+    var hc=$("#hCount");if(!hc)return;
+    hc.style.position="relative";
+    hc.innerHTML=fmt(total||0)+(isLeads?" сделок: <b>"+fmt(sum||0)+" ₽</b>":" контактов")+
+      ' <a id="specReset" title="Сбросить фильтр" style="color:#4c8bf5;font-weight:700;cursor:pointer;margin-left:4px">×</a>'+
+      '<div id="specSaveTip" style="display:none;position:absolute;top:100%;right:0;margin-top:6px;background:#fff;border:1px solid #dfe5ec;border-radius:8px;box-shadow:0 6px 20px rgba(20,40,70,.15);padding:8px 12px;white-space:nowrap;z-index:60"><a style="cursor:pointer;font-size:12.5px;color:#2a5885;text-decoration:underline">💾 Создать виджет на раб. стол</a></div>';
+    var rs=hc.querySelector("#specReset");if(rs)rs.onclick=onReset;
+    var tip=hc.querySelector("#specSaveTip"),hideT=null;
+    var show=function(){if(hideT)clearTimeout(hideT);tip.style.display="";};
+    var hide=function(){hideT=setTimeout(function(){tip.style.display="none";},350);};
+    hc.onmouseenter=show;hc.onmouseleave=hide;tip.onmouseenter=show;tip.onmouseleave=hide;
+    tip.querySelector("a").onclick=function(){tip.style.display="none";onSave();};
+  }
+  // qs-строка сохранённого filter-виджета → vals (для редактируемых чипов)
+  function parseQsToVals(qs){
+    var vals={},p=new URLSearchParams(qs||"");
+    p.forEach(function(v,k){
+      if(k==="cf"){var i=v.indexOf(":");(vals._cf=vals._cf||[]).push([v.slice(0,i),v.slice(i+1)]);}
+      else if(k==="ccf"){var j=v.indexOf(":");(vals._ccf=vals._ccf||[]).push([v.slice(0,j),v.slice(j+1)]);}
+      else if(k!=="count_only")vals[k]=v;
+    });
+    return vals;
+  }
+  // чипы из vals панельного фильтра: × удаляет условие и повторяет запрос
+  function valsChips(vals,rerunFn){
+    var ch=[];
+    var without=function(){var keys=Array.prototype.slice.call(arguments);var v2=JSON.parse(JSON.stringify(vals));keys.forEach(function(k){delete v2[k];});return v2;};
+    if(vals.pipeline){var pp=PIPES.find(function(x){return String(x.id)===String(vals.pipeline);});ch.push({label:"Воронка: "+((pp&&pp.name)||vals.pipeline),onX:function(){rerunFn(without("pipeline"));}});}
+    if(vals.status){var n=String(vals.status).split(",").filter(Boolean).length;ch.push({label:"Этапов: "+n,onX:function(){rerunFn(without("status"));}});}
+    if(vals.preset){var P={open:"Открытые",won:"Успешно завершённые",lost:"Нереализованные",notasks:"Без задач",overdue:"С просроченными",my:"Только мои"};ch.push({label:P[vals.preset]||vals.preset,onX:function(){rerunFn(without("preset"));}});}
+    if(vals.price_min||vals.price_max)ch.push({label:"Бюджет: "+(vals.price_min||"…")+"–"+(vals.price_max||"…")+" ₽",onX:function(){rerunFn(without("price_min","price_max"));}});
+    if(vals.tag)ch.push({label:"Тег: "+vals.tag,onX:function(){rerunFn(without("tag"));}});
+    if(vals.date_from||vals.date_to)ch.push({label:"Создано: "+(vals.date_from||"…")+" – "+(vals.date_to||"…"),onX:function(){rerunFn(without("date_from","date_to"));}});
+    if(vals.responsible&&String(vals.responsible)!=="0")ch.push({label:"Отв.: "+(userName(+vals.responsible)||vals.responsible),onX:function(){rerunFn(without("responsible"));}});
+    (vals._cf||[]).forEach(function(x,i){if(!x[0])return;ch.push({label:cfNameOf(x[0])+(x[1]?": "+String(x[1]).slice(0,30):""),onX:function(){var v2=JSON.parse(JSON.stringify(vals));v2._cf.splice(i,1);rerunFn(v2);}});});
+    (vals._ccf||[]).forEach(function(x,i){if(!x[0])return;ch.push({label:"Контакт · "+cfNameOf(x[0])+(x[1]?": "+String(x[1]).slice(0,30):""),onX:function(){var v2=JSON.parse(JSON.stringify(vals));v2._ccf.splice(i,1);rerunFn(v2);}});});
+    return ch;
+  }
+  function saveValsWidget(vals,isLeads){
+    var name=prompt("Название виджета на рабочем столе:",isLeads?"Мой фильтр сделок":"Мой фильтр контактов");
+    if(!name)return;
+    var ws=loadDeskWidgets();
+    ws.push({id:"w"+Date.now(),name:name.trim(),kind:"filter",entity:isLeads?"leads":"contacts",qs:filterQS(vals)});
+    saveDeskWidgets(ws);
+    toast("Виджет «"+name.trim()+"» добавлен на рабочий стол");
+  }
   function runLeadsFilter(vals,qsReady){
+    if(qsReady)vals=parseQsToVals(qsReady); // qs-виджеты редактируемы как и все
     var p=PIPES.find(function(x){return x.id===curPipe;})||PIPES[0];
-    if(!qsReady&&p&&!("pipeline" in vals))vals.pipeline=p.id;
-    var stName={};(PIPES||[]).forEach(function(pp){((pp._embedded&&pp._embedded.statuses)||[]).forEach(function(s){stName[s.id]=s.name;});});
-    setHeader("Фильтр сделок",{count:"",searchPh:"Поиск сделки (название или #id — Enter)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);},filter:curFilter});
+    if(p&&!("pipeline" in vals)&&!qsReady)vals.pipeline=p.id;
+    var stName=stNameAll();
+    filterChipsBarG(valsChips(vals,function(v2){runLeadsFilter(v2);}));
     $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
     var ep=VIEW_EPOCH;
-    jreq(API+"/leads_filter?"+(qsReady||filterQS(vals))).then(function(r){
+    jreq(API+"/leads_filter?"+filterQS(vals)).then(function(r){
       if(ep!==VIEW_EPOCH)return;
       var items=(r&&r.items)||[];
-      var head='<div class="plain" style="max-width:none"><div style="padding:6px 0 12px"><b>Найдено: '+fmt(r.total||items.length)+'</b> <a data-reset style="margin-left:12px">← к воронке</a></div>';
-      if(!items.length){$("#view").innerHTML=head+'<p class="muted">Ничего не найдено.</p></div>';bindReset();return;}
-      var html=head+'<table class="amo"><thead><tr><th style="width:34%">Название</th><th>Этап</th><th>Бюджет</th><th>Ответственный</th><th>Создана</th></tr></thead><tbody>';
-      html+=items.map(function(l){return '<tr><td><a data-l="'+l.id+'">'+esc(l.name||("#"+l.id))+'</a></td><td class="muted">'+esc(stName[l.sid]||"")+'</td><td>'+fmt(l.price)+' ₽</td><td class="muted">'+esc(l.resp||"")+'</td><td class="muted">'+(l.created?dShort(l.created):"")+'</td></tr>';}).join("");
+      filterCountBarG(true,r.total||items.length,r.sum,function(){FSTATE.leads={};vLeads();},function(){saveValsWidget(vals,true);});
+      if(!items.length){$("#view").innerHTML='<div class="plain" style="max-width:none"><p class="muted" style="padding:14px 0">Ничего не найдено.</p></div>';return;}
+      var cols=leadListActiveCols();
+      var thead='<tr>'+bulkTh()+cols.map(function(c){return '<th'+(c[0]==="name"?' style="width:28%"':"")+'>'+esc(c[1])+'</th>';}).join("")+'</tr>';
+      var html='<div class="plain" style="max-width:none;padding-top:6px"><table class="amo"><thead>'+thead+'</thead><tbody>';
+      html+=items.map(function(l){return '<tr>'+bulkCbTd(l.id)+cols.map(function(c){return '<td>'+leadCell(l,c[0],stName)+'</td>';}).join("")+'</tr>';}).join("");
       html+='</tbody></table></div>';
       $("#view").innerHTML=html;
       $("#view").querySelectorAll("[data-l]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.l,10));};});
-      bindReset();makeTableResizable($("#view table.amo"),"crm_lead_colw");
+      bindBulkCheckboxes($("#view"),"leads");
+      makeTableResizable($("#view table.amo"),"crm_lead_colw");
     });
-    function bindReset(){var a=$("#view").querySelector("[data-reset]");if(a)a.onclick=function(){FSTATE.leads={};vLeads();};}
   }
   function runContactsFilter(vals,qsReady){
-    setHeader("Фильтр контактов",{count:"",searchPh:"Поиск (имя, телефон, email — Enter)",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},filter:curFilter});
+    if(qsReady)vals=parseQsToVals(qsReady);
+    filterChipsBarG(valsChips(vals,function(v2){runContactsFilter(v2);}));
     $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
     var ep=VIEW_EPOCH;
-    jreq(API+"/contacts_filter?"+(qsReady||filterQS(vals))).then(function(r){
+    jreq(API+"/contacts_filter?"+filterQS(vals)).then(function(r){
       if(ep!==VIEW_EPOCH)return;
       var items=(r&&r.items)||[];
-      var head='<div class="plain" style="max-width:none"><div style="padding:6px 0 12px"><b>Найдено: '+fmt(r.total||items.length)+'</b> <a data-reset style="margin-left:12px">← к контактам</a></div>';
-      if(!items.length){$("#view").innerHTML=head+'<p class="muted">Ничего не найдено.</p></div>';bindReset();return;}
-      var cols=contactActiveCols();
-      var html=head+'<table class="amo"><thead>'+contactHeadHtml()+'</thead><tbody id="cbody">'+contactRows(items)+'</tbody></table></div>';
-      $("#view").innerHTML=html;bindContactLinks();bindReset();makeTableResizable($("#view table.amo"),"crm_contact_colw");
+      filterCountBarG(false,r.total||items.length,0,function(){FSTATE.contacts={};vContacts();},function(){saveValsWidget(vals,false);});
+      if(!items.length){$("#view").innerHTML='<div class="plain" style="max-width:none"><p class="muted" style="padding:14px 0">Ничего не найдено.</p></div>';return;}
+      var html='<div class="plain" style="max-width:none;padding-top:6px"><table class="amo"><thead>'+contactHeadHtml()+'</thead><tbody id="cbody">'+contactRows(items)+'</tbody></table></div>';
+      $("#view").innerHTML=html;bindContactLinks();bindBulkCheckboxes($("#view"),"contacts");
+      makeTableResizable($("#view table.amo"),"crm_contact_colw");
     });
-    function bindReset(){var a=$("#view").querySelector("[data-reset]");if(a)a.onclick=function(){FSTATE.contacts={};vContacts();};}
   }
 
   /* ─── СОХРАНЁННЫЕ ФИЛЬТРЫ ИЗ amo (spec-движок): сняты 1:1, применяются через /leads_spec|/contacts_spec ─── */
@@ -1323,7 +1401,16 @@
     if(w.kind==="filter"){
       var sec=w.entity==="contacts"?"contacts":"leads";
       navSection(sec);
-      if(sec==="leads")runLeadsFilter({},w.qs||"");else runContactsFilter({},w.qs||"");
+      // штатная шапка раздела (панель фильтра/поиск/создание) — как и у spec-виджетов
+      if(sec==="leads"){
+        if(!curPipe)curPipe=PIPES[0]&&PIPES[0].id;
+        var pf=PIPES.find(function(x){return x.id===curPipe;})||PIPES[0];
+        setHeader("Все сделки",{count:"",searchPh:"Поиск и фильтр",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);},newBtn:"+ Новая сделка",onNew:function(){newLead(pf);},onCfg:openLeadColSettings,filter:{kind:"leads",statuses:(pf&&pf._embedded&&pf._embedded.statuses)||[]}});
+        runLeadsFilter({},w.qs||"");
+      }else{
+        setHeader("Контакты",{count:"",searchPh:"Поиск и фильтр",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},newBtn:"+ Добавить контакт",onNew:newContact,onCfg:openColSettings,filter:{kind:"contacts"}});
+        runContactsFilter({},w.qs||"");
+      }
       return;
     }
     // дефолтный виджет (конструктор): переводим его параметры в spec того же движка

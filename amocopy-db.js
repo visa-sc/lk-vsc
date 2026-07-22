@@ -856,7 +856,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
       if (cw.length) { where.push("id IN (SELECT lc.lead_id FROM lead_contacts lc JOIN contacts c ON c.id=lc.contact_id WHERE " + cw.join(" AND ") + ")"); args.push(...ca); }
     }
     const page = Math.max(1, intq(q.page) || 1);
-    const sql = "SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at FROM leads" +
+    const sql = "SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at,cf FROM leads" +
       (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY updated_at DESC LIMIT 50 OFFSET ?";
     try {
       // count_only=1 — для виджетов рабочего стола по сохранённому фильтру (кол-во + сумма), с TTL-кэшем
@@ -866,9 +866,9 @@ module.exports = function mountDbRoutes(app, guard, api) {
         return res.json({ success: true, total: t.c, sum: t.s, items: [] });
       }
       const rows = D.prepare(sql).all(...args, (page - 1) * 50);
-      let total = null;
-      if (page === 1) { total = D.prepare("SELECT COUNT(*) c FROM leads" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args).c; }
-      res.json({ success: true, total, items: rows.map((l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id, resp: uName[l.responsible_user_id] || "", created: l.created_at, updated: l.updated_at })) });
+      let total = null, sum = null;
+      if (page === 1) { const t = D.prepare("SELECT COUNT(*) c, COALESCE(SUM(price),0) s FROM leads" + (where.length ? " WHERE " + where.join(" AND ") : "")).get(...args); total = t.c; sum = t.s; }
+      res.json({ success: true, total, sum, items: rows.map((l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id, resp: uName[l.responsible_user_id] || "", created: l.created_at, updated: l.updated_at, cf: J(l.cf, []) || [] })) });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
 
