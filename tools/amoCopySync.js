@@ -72,13 +72,20 @@ const linkContacts = (leadId, contacts) => {
     db.prepare("UPDATE lead_contacts SET is_main=? WHERE lead_id=? AND contact_id=?").run(c.is_main ? 1 : 0, leadId, c.id);
   }
 };
-const upLead = db.prepare(`INSERT INTO leads(id,name,price,status_id,pipeline_id,responsible_user_id,created_at,updated_at,closed_at,cf,tags,contact_ids,pay_ts)
-  VALUES(@id,@name,@price,@status_id,@pipeline_id,@responsible_user_id,@created_at,@updated_at,@closed_at,@cf,@tags,@contact_ids,@pay_ts)
-  ON CONFLICT(id) DO UPDATE SET name=@name,price=@price,status_id=@status_id,pipeline_id=@pipeline_id,responsible_user_id=@responsible_user_id,updated_at=@updated_at,closed_at=@closed_at,cf=@cf,tags=@tags,contact_ids=@contact_ids,pay_ts=@pay_ts`);
+try { db.exec("ALTER TABLE leads ADD COLUMN closest_task_at INTEGER"); } catch (_) { /* уже есть */ }
+const upLead = db.prepare(`INSERT INTO leads(id,name,price,status_id,pipeline_id,responsible_user_id,created_at,updated_at,closed_at,cf,tags,contact_ids,pay_ts,closest_task_at)
+  VALUES(@id,@name,@price,@status_id,@pipeline_id,@responsible_user_id,@created_at,@updated_at,@closed_at,@cf,@tags,@contact_ids,@pay_ts,@closest_task_at)
+  ON CONFLICT(id) DO UPDATE SET name=@name,price=@price,status_id=@status_id,pipeline_id=@pipeline_id,responsible_user_id=@responsible_user_id,updated_at=@updated_at,closed_at=@closed_at,cf=@cf,tags=@tags,contact_ids=@contact_ids,pay_ts=@pay_ts,closest_task_at=@closest_task_at`);
 try { db.exec("ALTER TABLE contacts ADD COLUMN tags TEXT"); } catch (_) { /* уже есть */ }
-const upContact = db.prepare(`INSERT INTO contacts(id,name,responsible_user_id,created_at,updated_at,cf,phones,emails,tags)
-  VALUES(@id,@name,@responsible_user_id,@created_at,@updated_at,@cf,@phones,@emails,@tags)
-  ON CONFLICT(id) DO UPDATE SET name=@name,responsible_user_id=@responsible_user_id,updated_at=@updated_at,cf=@cf,phones=@phones,emails=@emails,tags=@tags`);
+// closest_task_at — ДЕНОРМАЛИЗОВАННОЕ поле amo, по нему (и только по нему) работает фильтр
+// «без задач». Важно: amo НЕ обнуляет его при выполнении задачи, поэтому «нет задач» в amo ≠
+// «нет открытых задач» в данных (найдено 23.07: контакты с 31 закрытой задачей и непустым
+// closest_task_at amo считает «с задачей»). Воспроизводим поле как есть, а не пересчитываем.
+try { db.exec("ALTER TABLE contacts ADD COLUMN closest_task_at INTEGER"); } catch (_) { /* уже есть */ }
+try { db.exec("ALTER TABLE leads ADD COLUMN closest_task_at INTEGER"); } catch (_) { /* уже есть */ }
+const upContact = db.prepare(`INSERT INTO contacts(id,name,responsible_user_id,created_at,updated_at,cf,phones,emails,tags,closest_task_at)
+  VALUES(@id,@name,@responsible_user_id,@created_at,@updated_at,@cf,@phones,@emails,@tags,@closest_task_at)
+  ON CONFLICT(id) DO UPDATE SET name=@name,responsible_user_id=@responsible_user_id,updated_at=@updated_at,cf=@cf,phones=@phones,emails=@emails,tags=@tags,closest_task_at=@closest_task_at`);
 
 async function syncLeads() {
   let url = `${BASE}/api/v4/leads`, pages = 0, changed = 0, conflicts = 0, maxUpd = since;
@@ -93,7 +100,7 @@ async function syncLeads() {
         maxUpd = Math.max(maxUpd, l.updated_at || 0);
         if (hasLocalEdit.get("leads", l.id)) { db.prepare("INSERT INTO sync_conflicts VALUES('leads',?,?,?)").run(l.id, Math.floor(Date.now() / 1000), "локальная правка — амо-версия не применена"); conflicts++; continue; }
         const cids = ((l._embedded && l._embedded.contacts) || []).map((c) => c.id);
-        upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids), pay_ts: payTsOf(l) });
+        upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids), pay_ts: payTsOf(l), closest_task_at: l.closest_task_at || null });
         linkContacts(l.id, (l._embedded && l._embedded.contacts) || []);
         changed++;
       }
@@ -122,7 +129,7 @@ async function syncLeadsByIds(ids) {
       for (const l of items) {
         if (hasLocalEdit.get("leads", l.id)) { conflicts++; continue; }
         const cids = ((l._embedded && l._embedded.contacts) || []).map((c) => c.id);
-        upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids), pay_ts: payTsOf(l) });
+        upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids), pay_ts: payTsOf(l), closest_task_at: l.closest_task_at || null });
         linkContacts(l.id, (l._embedded && l._embedded.contacts) || []);
         changed++;
       }
@@ -141,7 +148,7 @@ async function syncContactsByIds(ids) {
     db.transaction(() => {
       for (const c of items) {
         if (hasLocalEdit.get("contacts", c.id)) { conflicts++; continue; }
-        upContact.run({ id: c.id, name: c.name || "", responsible_user_id: c.responsible_user_id || 0, created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c), phones: phonesOf(c), emails: emailsOf(c), tags: JSON.stringify(((c._embedded && c._embedded.tags) || []).map((t) => t.name)) });
+        upContact.run({ id: c.id, name: c.name || "", responsible_user_id: c.responsible_user_id || 0, created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c), phones: phonesOf(c), emails: emailsOf(c), tags: JSON.stringify(((c._embedded && c._embedded.tags) || []).map((t) => t.name)), closest_task_at: c.closest_task_at || null });
         changed++;
       }
     })();
@@ -170,7 +177,7 @@ async function syncContacts() {
       for (const c of items) {
         maxUpd = Math.max(maxUpd, c.updated_at || 0);
         if (hasLocalEdit.get("contacts", c.id)) { conflicts++; continue; }
-        upContact.run({ id: c.id, name: c.name || "", responsible_user_id: c.responsible_user_id || 0, created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c), phones: phonesOf(c), emails: emailsOf(c), tags: JSON.stringify(((c._embedded && c._embedded.tags) || []).map((t) => t.name)) });
+        upContact.run({ id: c.id, name: c.name || "", responsible_user_id: c.responsible_user_id || 0, created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c), phones: phonesOf(c), emails: emailsOf(c), tags: JSON.stringify(((c._embedded && c._embedded.tags) || []).map((t) => t.name)), closest_task_at: c.closest_task_at || null });
         changed++;
       }
     })();

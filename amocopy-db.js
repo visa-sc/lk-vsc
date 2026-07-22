@@ -451,11 +451,21 @@ module.exports = function mountDbRoutes(app, guard, api) {
   //   ccf: {fid:[...]} — поля ОСНОВНОГО контакта, no_tasks: true, contact_no_tasks: true.
   const qLeadFirstContact = D.prepare("SELECT c.id, c.cf FROM lead_contacts lc JOIN contacts c ON c.id=lc.contact_id WHERE lc.lead_id=? LIMIT 1");
   const qHasOpenTask = D.prepare("SELECT 1 FROM tasks WHERE entity_type=? AND entity_id=? AND is_completed=0 LIMIT 1");
-  // «Контакт без задач» в amo = у ГЛАВНОГО контакта НЕТ ЗАДАЧ ВООБЩЕ (включая выполненные) —
-  // выяснено паритетным обходом 22.07: amo снимал 85 сделок «Доплаты», из них у 74 главный контакт
-  // имел только ЗАКРЫТЫЕ задачи (2018-2025 гг.). Для самой сделки условие другое — только открытые
-  // (сверено в ноль: 18 = 18). Сделки без контакта amo НЕ отсеивает — оставляем их.
+  // «Без задач» в amo считается НЕ по таблице задач, а по денормализованному полю сущности
+  // closest_task_at (найдено 23.07): у контактов, которые amo отсеивал, оно заполнено, хотя все
+  // задачи давно закрыты — amo не обнуляет его при выполнении. Разделение оказалось идеальным
+  // (отсеянные — поле не пусто, оставленные — null), поэтому воспроизводим ИМЕННО поле.
+  // Пока колонка не наполнена бэкфиллом — работаем по старому правилу (открытые задачи),
+  // иначе «нет задач» стало бы истиной для всех.
   const qHasAnyTask = D.prepare("SELECT 1 FROM tasks WHERE entity_type=? AND entity_id=? LIMIT 1");
+  const ctaReady = (t) => { try { return D.prepare(`SELECT 1 x FROM ${t} WHERE closest_task_at IS NOT NULL LIMIT 1`).get() ? 1 : 0; } catch (_) { return 0; } };
+  const CTA_LEADS = ctaReady("leads"), CTA_CONTACTS = ctaReady("contacts");
+  const qLeadCta = CTA_LEADS ? D.prepare("SELECT closest_task_at c FROM leads WHERE id=?") : null;
+  const qContactCta = CTA_CONTACTS ? D.prepare("SELECT closest_task_at c FROM contacts WHERE id=?") : null;
+  // true = «задача есть» в смысле amo
+  const leadBusy = (id) => (CTA_LEADS ? !!(qLeadCta.get(id) || {}).c : !!qHasOpenTask.get("leads", id));
+  const contactBusy = (id) => (CTA_CONTACTS ? !!(qContactCta.get(id) || {}).c : !!qHasOpenTask.get("contacts", id));
+  console.log(`amocopy-db: «без задач» по closest_task_at — сделки: ${CTA_LEADS ? "да" : "нет (по открытым задачам)"}, контакты: ${CTA_CONTACTS ? "да" : "нет (по открытым задачам)"}`);
   // главный контакт берём по флагу is_main (заполняется синком с 22.07); до него порядок из
   // contact_ids был лишь догадкой — при нескольких контактах она врала
   const HAS_IS_MAIN = (() => { try { return D.prepare("PRAGMA table_info(lead_contacts)").all().some((c) => c.name === "is_main"); } catch (_) { return false; } })();
@@ -552,7 +562,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
         const qContactCf = D.prepare("SELECT id, cf FROM contacts WHERE id=?");
         for (const r of rows) {
           if (cfJs) { let ok = true; for (const [fid, cond] of Object.entries(cfJs)) if (!cfMatch(r.cf, fid, cond)) { ok = false; break; } if (!ok) continue; }
-          if (spec.no_tasks && qHasOpenTask.get("leads", r.id)) continue;
+          if (spec.no_tasks && leadBusy(r.id)) continue;
           if (ccfEntries.length || spec.contact_no_tasks) {
             const c = qLeadMainContact.get(r.id) || null;
             if (ccfEntries.length) {
@@ -560,7 +570,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
               let ok = true; for (const [fid, cond] of ccfEntries) if (!cfMatch(c.cf, fid, cond)) { ok = false; break; }
               if (!ok) continue;
             }
-            if (spec.contact_no_tasks && c && qHasAnyTask.get("contacts", c.id)) continue;
+            if (spec.contact_no_tasks && c && contactBusy(c.id)) continue;
           }
           count++; sum += r.price || 0;
         }
@@ -618,11 +628,11 @@ module.exports = function mountDbRoutes(app, guard, api) {
   const qSpecContactCf = D.prepare("SELECT id, cf FROM contacts WHERE id=?");
   const leadRowOk = (spec, r, cfJs, ccfEntries) => {
     if (cfJs) { for (const [fid, cond] of Object.entries(cfJs)) if (!cfMatch(r.cf, fid, cond)) return false; }
-    if (spec.no_tasks && qHasOpenTask.get("leads", r.id)) return false;
+    if (spec.no_tasks && leadBusy(r.id)) return false;
     if (ccfEntries.length || spec.contact_no_tasks) {
       const c = qLeadMainContact.get(r.id) || null;
       if (ccfEntries.length) { if (!c) return false; for (const [fid, cond] of ccfEntries) if (!cfMatch(c.cf, fid, cond)) return false; }
-      if (spec.contact_no_tasks && c && qHasAnyTask.get("contacts", c.id)) return false;
+      if (spec.contact_no_tasks && c && contactBusy(c.id)) return false;
     }
     return true;
   };

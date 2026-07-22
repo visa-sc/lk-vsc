@@ -63,6 +63,18 @@ async function getStatus(url) {
 // Кравл reconcile и так отдаёт updated_at каждой записи — сравниваем и перекачиваем точечно.
 const staleLeads = [], staleContacts = [];
 
+// closest_task_at — поле, по которому amo считает «есть задача» (см. amocopy-db.js). Кравл
+// reconcile и так тянет ВСЕ сделки и ВСЕ контакты, поэтому поддерживаем поле бесплатно, без
+// единого лишнего запроса. Ставим значение как есть, включая обнуление.
+try { db.exec("ALTER TABLE leads ADD COLUMN closest_task_at INTEGER"); } catch (_) {}
+try { db.exec("ALTER TABLE contacts ADD COLUMN closest_task_at INTEGER"); } catch (_) {}
+const setCtaLead = db.prepare("UPDATE leads SET closest_task_at=? WHERE id=?");
+const setCtaContact = db.prepare("UPDATE contacts SET closest_task_at=? WHERE id=?");
+const applyCta = (table, items) => {
+  const st = table === "leads" ? setCtaLead : setCtaContact;
+  db.transaction(() => { for (const [id, v] of items) st.run(v || null, id); })();
+};
+
 // контакты: полная сверка id (удалённые и слитые в amo → каскадное удаление из копии)
 async function reconcileContacts(cutoff) {
   const amoIds = new Set(), amoUpd = new Map();
@@ -72,7 +84,9 @@ async function reconcileContacts(cutoff) {
   while (url && pages < 1300) {
     const d = await get(url, params); params = undefined;
     if (!d) { console.log(`контакты: обрыв на стр.${pages} — пропускаю удаление (неполный список)`); return 0; }
-    ((d._embedded || {}).contacts || []).forEach((c) => { amoIds.add(c.id); amoUpd.set(c.id, c.updated_at || 0); });
+    const page = ((d._embedded || {}).contacts || []);
+    page.forEach((c) => { amoIds.add(c.id); amoUpd.set(c.id, c.updated_at || 0); });
+    applyCta("contacts", page.map((c) => [c.id, c.closest_task_at]));
     url = (d._links && d._links.next && d._links.next.href) || null;
     pages++;
   }
@@ -153,7 +167,9 @@ async function reconcileTasks() {
     while (url && pages < 1200) {
       const d = await get(url, params); params = undefined;
       if (!d) { broke = true; break; }
-      ((d._embedded || {}).leads || []).forEach((l) => { amoIds.add(l.id); amoUpd.set(l.id, l.updated_at || 0); });
+      const page = ((d._embedded || {}).leads || []);
+      page.forEach((l) => { amoIds.add(l.id); amoUpd.set(l.id, l.updated_at || 0); });
+      applyCta("leads", page.map((l) => [l.id, l.closest_task_at]));
       url = (d._links && d._links.next && d._links.next.href) || null;
       pages++;
     }
