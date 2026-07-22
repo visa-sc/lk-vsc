@@ -267,8 +267,8 @@ module.exports = function mountDbRoutes(app, guard, api) {
       let live = [];
       try {
         const ET3 = { lead: "leads", contact: "contacts", company: "companies", customer: "customers" };
-        live = D.prepare("SELECT type,entity_type,entity_id,created_by,created_at,value_after va FROM amo_events ORDER BY created_at DESC LIMIT 300").all()
-          .map((r) => { const et = ET3[r.entity_type] || r.entity_type; return { ts: r.created_at, actor: uName[r.created_by] || (r.created_by ? ("id " + r.created_by) : "Робот/интеграция"), et, eid: r.entity_id, action: "amo:" + r.type, detail: { after: J(r.va, null) }, name: nameOf(et, r.entity_id) }; });
+        live = D.prepare("SELECT type,entity_type,entity_id,created_by,created_at,value_before vb,value_after va FROM amo_events ORDER BY created_at DESC LIMIT 300").all()
+          .map((r) => { const et = ET3[r.entity_type] || r.entity_type; return { ts: r.created_at, actor: uName[r.created_by] || (r.created_by ? ("id " + r.created_by) : "Робот/интеграция"), et, eid: r.entity_id, action: "amo:" + r.type, detail: { before: J(r.vb, null), after: J(r.va, null) }, name: nameOf(et, r.entity_id) }; });
       } catch (_) { /* до первого синка events таблицы нет */ }
       const items = local.concat(live).sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 300);
       res.json({ success: true, items });

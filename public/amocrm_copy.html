@@ -3231,14 +3231,40 @@
       if(ep!==VIEW_EPOCH||anTab!=="events")return;
       if(!r||!r.success)return $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">'+esc((r&&r.message)||"Нет данных")+'</p></div></div>';
       var items=r.items||[];
+      // «Значение до / после» как в amo: вытаскиваем человекочитаемые значения из события
+      var evVal=function(side){ // side = массив detail.before|after из amo_events, либо detail changelog
+        if(!side||!side.length)return "";
+        var o=side[0]||{};
+        if(o.lead_status)return o.lead_status.name||("этап "+o.lead_status.id);
+        if(o.custom_field_value)return String(o.custom_field_value.text==null?"—":o.custom_field_value.text).slice(0,50);
+        if(o.sale!=null)return fmt(o.sale)+" ₽";
+        if(o.name!=null)return String(o.name).slice(0,50);
+        if(o.responsible_user)return userName(o.responsible_user.id)||("id "+o.responsible_user.id);
+        if(o.tag)return o.tag.name||"";
+        if(o.task)return String(o.task.text||"").slice(0,50);
+        if(o.note)return String((o.note.params&&o.note.params.text)||"").slice(0,50);
+        if(o.link&&o.link.entity)return (ENT_RU[o.link.entity.type+"s"]||o.link.entity.type)+" #"+o.link.entity.id;
+        return "";
+      };
+      var chVal=function(e,idx){ // changelog-детали: name/price/value «до→после»
+        var d=e.detail||{};
+        if(d.name&&d.name.length===2)return String(d.name[idx]||"").slice(0,50);
+        if(d.price&&d.price.length===2)return fmt(d.price[idx])+" ₽";
+        if(idx===1&&d.value!=null)return String(Array.isArray(d.value)?d.value.join(", "):d.value).slice(0,50);
+        if(idx===1&&d.to&&d.to.name)return d.to.name;
+        if(idx===0&&d.from&&d.from.status_id)return d.from.name||"";
+        return "";
+      };
       var rows=items.map(function(e){
-        var extra="";
+        var extra="",isAmo=String(e.action).indexOf("amo:")===0;
         if(e.action==="edit_cf"&&e.detail&&e.detail.field)extra=": "+e.detail.field;
-        else if(e.action==="stage"&&e.detail&&e.detail.to)extra=" → "+(e.detail.to.name||"");
-        var lbl=String(e.action).indexOf("amo:")===0?amoEvShort(e.action):(EV_RU[e.action]||e.action);
-        return '<tr><td class="muted" style="width:140px">'+dt(e.ts)+'</td><td style="width:160px">'+esc(e.actor||"")+'</td><td style="width:110px">'+esc(ENT_RU[e.et]||e.et)+'</td><td><a data-ev="'+esc(e.et)+':'+e.eid+'">'+esc(e.name||("#"+e.eid))+'</a></td><td>'+esc(lbl+extra)+'</td></tr>';
+        else if(isAmo&&e.detail&&e.detail.after&&e.detail.after[0]&&e.detail.after[0].custom_field_value)extra=": "+(e.detail.after[0].custom_field_value.field_name||"");
+        var lbl=isAmo?amoEvShort(e.action):(EV_RU[e.action]||e.action);
+        var before=isAmo?evVal(e.detail&&e.detail.before):chVal(e,0);
+        var after=isAmo?evVal(e.detail&&e.detail.after):chVal(e,1);
+        return '<tr><td class="muted" style="width:130px">'+dt(e.ts)+'</td><td style="width:150px">'+esc(e.actor||"")+'</td><td style="width:100px">'+esc(ENT_RU[e.et]||e.et)+'</td><td><a data-ev="'+esc(e.et)+':'+e.eid+'">'+esc(e.name||("#"+e.eid))+'</a></td><td>'+esc(lbl+extra)+'</td><td class="muted" style="width:15%">'+esc(before)+'</td><td style="width:15%">'+esc(after)+'</td></tr>';
       }).join("");
-      $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><h2 style="margin-top:0">Список событий</h2><p class="muted" style="font-size:12px;margin:4px 0 12px">Действия, совершённые в копии ('+fmt(items.length)+' последних). Журнал событий amo в слепок не выгружался.</p><table class="set"><tr><th>Дата</th><th>Автор</th><th>Объект</th><th>Название</th><th>Событие</th></tr>'+rows+'</table></div></div>';
+      $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><h2 style="margin-top:0">Список событий</h2><p class="muted" style="font-size:12px;margin:4px 0 12px">Правки копии + живой журнал amo (события копятся с 19.07.2026; '+fmt(items.length)+' последних).</p><table class="set"><tr><th>Дата</th><th>Автор</th><th>Объект</th><th>Название</th><th>Событие</th><th>Значение до</th><th>Значение после</th></tr>'+rows+'</table></div></div>';
       bindAnTabs();
       $("#view").querySelectorAll("[data-ev]").forEach(function(a){a.onclick=function(){
         var p=a.dataset.ev.split(":"),id=parseInt(p[1],10);
