@@ -3607,7 +3607,7 @@
       const VSC_TAXQ_MON = { Q1: ["Январь", "Февраль", "Март"], Q2: ["Апрель", "Май", "Июнь"], Q3: ["Июль", "Август", "Сентябрь"], Q4: ["Октябрь", "Ноябрь", "Декабрь"] };
       async function renderVscTaxes() {
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Налоги — сверка по юрлицам";
-        h.appendChild(vscInfo("<b>Как считается (формулы твоего файла «налоги.xlsx», ред. 22.07)</b><br>• Выручки юрлиц, нал без чека и вынесенный НДС — автотягом из срм-факт (строка «Итог», колонки юрлиц и «предполагаемый НДС»); возвраты — из таблицы возвратов («Услуги»+«НДС»). Данные живые: если таблицы правили задним числом, цифры тут точнее файла.<br>• «Нал сверх срм-факт» (ВНЖ и пр.) — ручное поле, прибавляется к налу из таблицы.<br>• <b>1 кв 2026</b>: вычет (возвраты+нал)/2 — только Альте и Комисаренко; НДС платят только Панфилова и ЭйКей: (выручка кв − вычет + вынесенный НДС/2) × 5%.<br>• <b>Со 2 кв</b>: вычет (возвраты+нал)/4 — всем; НДС у всех: (выручка с начала НДС (у Альты/Комисаренко — с мая) − вычет + вынесенный НДС/4) × 5%.<br>• Налог = (выручка кв − вычет) × ставка: Альта 1,5% · Комисаренко 3% · Панфилова 3% · ЭйКей 1,5%.<br>• «От бухгалтера» — ввод; Δ = наш − бух; внизу — сумма расхождений квартала.<br><br>Кэш прогревается фоном каждые 12 минут — вкладка открывается сразу."));
+        h.appendChild(vscInfo("<b>Как считается (формулы твоего файла «1-2 кв.xlsx», ред. 22.07)</b><br>• Выручки юрлиц, нал без чека и вынесенный НДС — автотягом из срм-факт (строка «Итог», колонки юрлиц и «предполагаемый НДС»); возвраты — из таблицы возвратов («Услуги»+«НДС»). Данные живые: если таблицы правили задним числом, цифры тут точнее файла.<br>• «Нал сверх срм-факт» (ВНЖ и пр.) — ручное поле, прибавляется к налу из таблицы.<br>• Возвраты и нал переводятся в <b>доли от суммарной выручки квартала</b> всех 4 юрлиц и вычитаются из базы каждого пропорционально его выручке (доли считаются точно, без округления как в файле).<br>• Налог = (выручка − вычет) × ставка: Альта 1,5% · Комисаренко 3% · Панфилова 3% · ЭйКей 1,5%.<br>• НДС 5% платят юрлица, у которых НДС уже начался (Альта/Комисаренко — с мая 2026): база = выручка НДС-месяцев минус те же доли + вынесенный НДС, поделённый на число НДС-плательщиков квартала (1 кв — на 2, со 2 кв — на 4).<br>• «От бухгалтера» — ввод; Δ = наш − бух; внизу — сумма расхождений квартала.<br><br>Кэш прогревается фоном каждые 12 минут — вкладка открывается сразу."));
         vscContent.appendChild(h);
         const box = document.createElement("div"); vscContent.appendChild(box);
         box.innerHTML = '<div class="loading-state">Загружаем…</div>';
@@ -3679,35 +3679,40 @@
           + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;"><button type="button" id="taxSave" class="vsc-dayrev-refresh" style="margin-top:0;">\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0432\u0432\u0435\u0434\u0451\u043d\u043d\u043e\u0435</button><span id="taxStatus" style="font-size:12.5px;color:#8a90a0;"></span></div>';
         box.appendChild(outCard);
         const recalc = function () {
-          // Схемы — точно из файла Андрея «налоги.xlsx» (ред. 22.07):
-          //  • 2026-Q1: вычет (возвраты+нал)/2 ТОЛЬКО Альте и Комисаренко; НДС платят
-          //    только Панфилова/ЭйКей: (Σкв − вычет + вынесенныйНДС/2) × 5%.
-          //  • Q2 и дальше: вычет (возвраты+нал)/4 всем; НДС у всех:
-          //    (Σ с начала НДС − вычет + вынесенныйНДС/4) × 5% (Альта/Ком — с мая).
+          // Схема — файл Андрея «1-2 кв.xlsx» (ред. 22.07): возвраты и нал переводятся
+          // в ДОЛИ от суммарной выручки квартала всех 4 юрлиц и вычитаются из базы
+          // каждого пропорционально его выручке (вкладка считает доли точно, без
+          // округления до 4 знаков как в файле). НДС платят юрлица, у которых vatStart
+          // уже наступил в квартале (Q1 — только Пан/ЭКГ, со 2 кв — все 4); база НДС =
+          // выручка месяцев ≥ vatStart минус те же доли; вынесенный НДС делится
+          // поровну на число НДС-плательщиков квартала.
           const cashTotal = (A.cash || 0) + (num(Q.cashExtra) || 0);
-          const isQ1 = _vscTaxQ === "2026-Q1";
-          const deduct = (retTot + cashTotal) / (isQ1 ? 2 : 4);
+          const sumRevAll = ENT.reduce(function (a, e) { return a + (((A.rev && A.rev[e.key]) || []).reduce(function (x, v) { return x + (v || 0); }, 0)); }, 0);
+          const pctRet = sumRevAll ? retTot / sumRevAll : 0;
+          const pctCash = sumRevAll ? cashTotal / sumRevAll : 0;
+          const pct = pctRet + pctCash;
+          const lastYm = monthYm(2);
+          const vatPayers = ENT.filter(function (e) { return e.vatStart <= lastYm; }).length || 1;
+          const fmtPct = function (p) { return (Math.round(p * 10000) / 100).toLocaleString("ru-RU") + "%"; };
           const ctEl = box.querySelector("#taxCashTotal"); if (ctEl) ctEl.textContent = money0(cashTotal);
           const th = 'text-align:right;padding:6px 8px;color:#6b7280;font-size:10.5px;text-transform:uppercase;white-space:nowrap;';
-          let oh = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:900px;"><thead><tr>'
+          let oh = '<div style="font-size:12px;color:#6b7280;margin-bottom:8px;">Доли от Σ выручки квартала (' + money0(sumRevAll) + '): возвраты <b>' + fmtPct(pctRet) + '</b> · нал <b>' + fmtPct(pctCash) + '</b> — вычет каждому юрлицу пропорционально его выручке</div>'
+            + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:900px;"><thead><tr>'
             + '<th style="text-align:left;padding:6px 8px;color:#6b7280;font-size:10.5px;text-transform:uppercase;">\u042e\u0440\u043b\u0438\u0446\u043e</th>'
-            + '<th style="' + th + '">\u0412\u044b\u0440\u0443\u0447\u043a\u0430</th><th style="' + th + '">\u0412\u044b\u0447\u0435\u0442 (\u0432\u043e\u0437\u0432\u0440+\u043d\u0430\u043b)/' + (isQ1 ? 2 : 4) + '</th><th style="' + th + '">\u0411\u0430\u0437\u0430</th>'
+            + '<th style="' + th + '">\u0412\u044b\u0440\u0443\u0447\u043a\u0430</th><th style="' + th + '">\u0412\u044b\u0447\u0435\u0442 ' + fmtPct(pct) + '</th><th style="' + th + '">\u0411\u0430\u0437\u0430</th>'
             + '<th style="' + th + '">\u041d\u0430\u043b\u043e\u0433 \u043d\u0430\u0448</th><th style="' + th + '">\u041d\u0430\u043b\u043e\u0433 \u0431\u0443\u0445</th><th style="' + th + '">\u0394 \u043d\u0430\u043b\u043e\u0433</th>'
             + '<th style="' + th + '">\u041d\u0414\u0421 \u043d\u0430\u0448</th><th style="' + th + '">\u041d\u0414\u0421 \u0431\u0443\u0445</th><th style="' + th + '">\u0394 \u041d\u0414\u0421</th><th style="' + th + '">\u0414\u043e\u0445\u043e\u0434 \u0431\u0443\u0445</th></tr></thead><tbody>';
           let sumDTax = 0, sumDVat = 0, haveB = false;
           ENT.forEach(function (e) {
             const arr = (A.rev && A.rev[e.key]) || [];
             const R = arr.reduce(function (a, v) { return a + (v || 0); }, 0);
-            const noDed1 = isQ1 && (e.key === "pan" || e.key === "akg"); // Q1: у Пан/ЭКГ налог без вычета
-            const taxDeduct = noDed1 ? 0 : deduct;
+            const taxDeduct = R * pct; // вычет пропорционально выручке юрлица
             const base = R - taxDeduct;
             const tax = base * e.rate;
-            let vat;
-            if (isQ1) {
-              vat = (e.key === "pan" || e.key === "akg") ? (R - deduct + (A.vatOut || 0) / 2) * 0.05 : 0;
-            } else {
+            let vat = 0;
+            if (e.vatStart <= lastYm) {
               let vatRev = 0; for (let mi = 0; mi < 3; mi++) { if (monthYm(mi) >= e.vatStart) vatRev += arr[mi] || 0; }
-              vat = (vatRev - deduct + (A.vatOut || 0) / 4) * 0.05;
+              vat = (vatRev * (1 - pct) + (A.vatOut || 0) / vatPayers) * 0.05;
             }
             const b = Q.buh[e.key] || {};
             const dTax = (b.tax != null) ? tax - b.tax : null;
