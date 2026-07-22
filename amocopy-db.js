@@ -521,12 +521,49 @@ module.exports = function mountDbRoutes(app, guard, api) {
     else { if (cond.from) from = parseDMY(cond.from); if (cond.to) to = parseDMY(cond.to) + 86400; }
     return (from == null || ts >= from) && (to == null || ts < to);
   };
+  // общий сборщик условий по КОНТАКТАМ (используют /contacts_spec и контактные виджеты)
+  function contactSpecWhere(spec) {
+    const where = [], args = [];
+    const pipePairs = Object.entries(spec.pipe || {});
+    if (pipePairs.length) {
+      const cond = "(" + pipePairs.map(([pid, sids]) => "(l.pipeline_id=" + (+pid) + " AND l.status_id IN (" + sids.map(() => "?").join(",") + "))").join(" OR ") + ")";
+      where.push("id IN (SELECT lc.contact_id FROM lead_contacts lc JOIN leads l ON l.id=lc.lead_id WHERE " + cond + ")");
+      pipePairs.forEach(([, sids]) => sids.forEach((s) => args.push(+s)));
+    }
+    const c = spec.created || (spec.created_preset ? { preset: spec.created_preset } : null);
+    if (c) {
+      let from = null, to = null; const r = c.preset ? presetRange(c.preset) : null;
+      if (r) { from = r.from; to = r.to; } else { if (c.from) from = parseDMY(c.from); if (c.to) to = parseDMY(c.to) + 86400; }
+      if (from != null) { where.push("created_at>=?"); args.push(from); }
+      if (to != null) { where.push("created_at<?"); args.push(to); }
+    }
+    const cfJs = {};
+    // ccf в контактном виджете = поля самого контакта (в сделочном это поля его главного контакта)
+    for (const [fid, cond] of Object.entries(Object.assign({}, spec.cf || {}, spec.ccf || {}))) {
+      cfJs[fid] = cond;
+      if (!Array.isArray(cond) || !cond.includes("empty")) { where.push("cf LIKE ?"); args.push('%"field_id":' + (+fid) + '%'); }
+    }
+    return { where, args, cfJs, needPost: Object.keys(cfJs).length > 0 };
+  }
+  function contactSpecCount(spec) {
+    const { where, args, cfJs, needPost } = contactSpecWhere(spec);
+    const W = where.length ? " WHERE " + where.join(" AND ") : "";
+    if (!needPost) return { success: true, count: D.prepare("SELECT COUNT(*) c FROM contacts" + W).get(...args).c, sum: 0 };
+    const rows = D.prepare("SELECT id,cf FROM contacts" + W).all(...args);
+    let count = 0;
+    for (const r of rows) { let ok = true; for (const [fid, cond] of Object.entries(cfJs)) if (!cfMatch(r.cf, fid, cond)) { ok = false; break; } if (ok) count++; }
+    return { success: true, count, sum: 0 };
+  }
   app.get(`${api}/widget_stat2`, guard, (req, res) => {
     try {
       const spec = JSON.parse(String(req.query.spec || "{}"));
       const key = "ws2:" + JSON.stringify(spec); // нормализованный ключ: любая сериализация клиента → один кэш
       // TTL 10 мин + прогрев кроном каждые 8 мин (amoCopyWarmWidgets) → дашборд всегда мгновенный
       const out = wcached(key, 600000, () => {
+        // виджеты, которые в amo считают КОНТАКТЫ, а не сделки (найдено 23.07: клик по «Таргет
+        // вчера» в amo открывает раздел Контакты — 79 контактов, а копия считала сделки и давала 128).
+        // Условия те же: сделка контакта в наборе воронок/этапов, дата создания КОНТАКТА, его cf.
+        if (spec.entity === "contacts") return contactSpecCount(spec);
         const where = [], args = [];
         const pipePairs = Object.entries(spec.pipe || {});
         if (pipePairs.length) {
@@ -659,22 +696,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     try {
       const spec = JSON.parse(String(req.query.spec || "{}"));
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-      const where = [], args = [];
-      const pipePairs = Object.entries(spec.pipe || {});
-      if (pipePairs.length) {
-        const cond = "(" + pipePairs.map(([pid, sids]) => "(l.pipeline_id=" + (+pid) + " AND l.status_id IN (" + sids.map(() => "?").join(",") + "))").join(" OR ") + ")";
-        where.push("id IN (SELECT lc.contact_id FROM lead_contacts lc JOIN leads l ON l.id=lc.lead_id WHERE " + cond + ")");
-        pipePairs.forEach(([, sids]) => sids.forEach((s) => args.push(+s)));
-      }
-      if (spec.created) {
-        const c = spec.created; let from = null, to = null; const r = c.preset ? presetRange(c.preset) : null;
-        if (r) { from = r.from; to = r.to; } else { if (c.from) from = parseDMY(c.from); if (c.to) to = parseDMY(c.to) + 86400; }
-        if (from != null) { where.push("created_at>=?"); args.push(from); }
-        if (to != null) { where.push("created_at<?"); args.push(to); }
-      }
-      const cfJs = {};
-      for (const [fid, cond] of Object.entries(spec.cf || {})) { cfJs[fid] = cond; if (!Array.isArray(cond) || !cond.includes("empty")) { where.push("cf LIKE ?"); args.push('%"field_id":' + (+fid) + '%'); } }
-      const needPost = Object.keys(cfJs).length > 0;
+      const { where, args, cfJs, needPost } = contactSpecWhere(spec);
       const W = where.length ? " WHERE " + where.join(" AND ") : "";
       if (!needPost) {
         const total = D.prepare("SELECT COUNT(*) c FROM contacts" + W).get(...args).c;
