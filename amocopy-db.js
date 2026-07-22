@@ -617,10 +617,10 @@ module.exports = function mountDbRoutes(app, guard, api) {
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
       const { where, args, cfJs, ccfEntries, needPost } = buildLeadSpec(spec);
       const W = where.length ? " WHERE " + where.join(" AND ") : "";
-      const outRow = (l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id, resp: uName[l.responsible_user_id] || "", created: l.created_at, updated: l.updated_at });
+      const outRow = (l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id, resp: uName[l.responsible_user_id] || "", created: l.created_at, updated: l.updated_at, cf: J(l.cf, []) || [] }); // cf — для штатных настраиваемых колонок списка
       if (!needPost) {
         const t = D.prepare("SELECT COUNT(*) c, COALESCE(SUM(price),0) s FROM leads" + W).get(...args);
-        const rows = D.prepare("SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at FROM leads" + W + " ORDER BY updated_at DESC LIMIT 50 OFFSET ?").all(...args, (page - 1) * 50);
+        const rows = D.prepare("SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at,cf FROM leads" + W + " ORDER BY updated_at DESC LIMIT 50 OFFSET ?").all(...args, (page - 1) * 50);
         return res.json({ success: true, total: t.c, sum: t.s, items: rows.map(outRow) });
       }
       const rows = D.prepare("SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at,cf,contact_ids FROM leads" + W + " ORDER BY updated_at DESC").all(...args);

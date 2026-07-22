@@ -743,6 +743,7 @@
     t.className=opts.caret?"clickable":"";
     t.onclick=opts.onTitle||null;
     $("#hCount").innerHTML=opts.count||"";
+    var scb=document.getElementById("specChipsBar");if(scb)scb.remove(); // чипы фильтра не протекают в другие разделы
     $("#hSearch").value=""; $("#hSearch").placeholder=opts.searchPh||"Поиск и фильтр";
     $("#hSearch").onkeydown=opts.onSearch||null;
     curFilter=opts.filter||null;
@@ -1100,72 +1101,100 @@
     closeFilterPanel();
     var isLeads=kind==="leads";
     var rerun=function(newSpec){applySpecFilter({name:entry.name,spec:newSpec,legacy:entry.legacy,note:entry.note},kind);};
-    // строка условий-чипов (как amo над списком): × удаляет условие, клик по датам/этапам — редактирует
-    var chipsHtml=function(){
+    // ── оформление как в amo (скрины Андрея 22.07): чипы условий ЖИВУТ В СТРОКЕ ПОИСКА
+    // (первые 2 + «+N» разворачивается), счётчик в тулбаре с «×» и ховер-плашкой
+    // «Создать виджет на раб. стол», таблица — ШТАТНЫЕ настраиваемые колонки раздела ──
+    var saveWidget=function(){
+      var name=prompt("Название виджета на рабочем столе:",entry.name||"Мой фильтр");
+      if(!name)return;
+      var ws=loadDeskWidgets();
+      ws.push({id:"w"+Date.now(),name:name.trim(),kind:"amo",entity:isLeads?"leads":"contacts",spec:JSON.parse(JSON.stringify(spec))});
+      saveDeskWidgets(ws);
+      toast("Виджет «"+name.trim()+"» добавлен на рабочий стол");
+    };
+    var renderChipsBar=function(expanded){
+      var old=document.getElementById("specChipsBar");if(old)old.remove();
       var ch=specChips(spec);
-      return ch.map(function(c){
-        return '<span class="fsp-chip" data-key="'+esc(c.key)+'"'+(c.edit?' data-edit="'+esc(c.edit)+'" title="Изменить условие"':'')+' style="display:inline-flex;align-items:center;gap:6px;background:#eef2f7;border:1px solid #dfe5ec;border-radius:15px;padding:4px 10px;font-size:12.5px;color:#33404d;'+(c.edit?'cursor:pointer;':'')+'margin:0 6px 6px 0">'+esc(c.label)+'<a class="fsp-x" data-key="'+esc(c.key)+'" title="Убрать условие" style="color:#8195a8;font-weight:700;cursor:pointer">×</a></span>';
-      }).join("");
-    };
-    var bindHead=function(total){
-      var v=$("#view");
-      v.querySelectorAll(".fsp-x").forEach(function(x){x.onclick=function(e){e.stopPropagation();rerun(specRemove(spec,x.dataset.key));};});
-      v.querySelectorAll(".fsp-chip[data-edit]").forEach(function(c){c.onclick=function(){
-        var ed=c.dataset.edit;
-        if(ed==="pipe")editSpecPipe(spec,rerun);
-        else if(ed.indexOf("date:")===0)editSpecDate(spec,ed.slice(5),rerun);
-      };});
-      var rs=v.querySelector("[data-spreset]");if(rs)rs.onclick=function(){if(isLeads){FSTATE.leads={};vLeads();}else{FSTATE.contacts={};vContacts();}};
-      var wb=v.querySelector("[data-swidget]");if(wb)wb.onclick=function(){
-        var name=prompt("Название виджета на рабочем столе:",entry.name||"Мой фильтр");
-        if(!name)return;
-        var ws=loadDeskWidgets();
-        ws.push({id:"w"+Date.now(),name:name.trim(),kind:"amo",entity:isLeads?"leads":"contacts",spec:JSON.parse(JSON.stringify(spec))});
-        saveDeskWidgets(ws);
-        toast("Виджет «"+name.trim()+"» добавлен на рабочий стол");
+      var wrap=document.querySelector(".search");
+      if(!ch.length||!wrap)return;
+      var bar=document.createElement("span");bar.id="specChipsBar";
+      bar.style.cssText="display:inline-flex;gap:4px;align-items:center;flex:0 1 auto;max-width:60%;overflow:hidden;margin-right:6px";
+      var mk=function(c){
+        var el=document.createElement("span");
+        el.style.cssText="display:inline-flex;align-items:center;gap:5px;background:#e2ecfa;border:1px solid #c8dcf5;border-radius:6px;padding:3px 8px;font-size:12px;color:#2a5885;white-space:nowrap;"+(c.edit?"cursor:pointer;":"");
+        if(c.edit)el.title="Изменить условие";
+        el.innerHTML=esc(c.label)+' <a style="color:#7f9cbf;font-weight:700;cursor:pointer" title="Убрать условие">×</a>';
+        el.querySelector("a").onclick=function(e){e.stopPropagation();rerun(specRemove(spec,c.key));};
+        if(c.edit)el.onclick=function(){
+          if(c.edit==="pipe")editSpecPipe(spec,rerun);
+          else if(c.edit.indexOf("date:")===0)editSpecDate(spec,c.edit.slice(5),rerun);
+        };
+        return el;
       };
+      var maxShow=expanded?ch.length:2;
+      ch.slice(0,maxShow).forEach(function(c){bar.appendChild(mk(c));});
+      if(ch.length>maxShow){
+        var more=document.createElement("span");
+        more.textContent="+"+(ch.length-maxShow);
+        more.title="Показать все условия";
+        more.style.cssText="background:#e2ecfa;border:1px solid #c8dcf5;border-radius:6px;padding:3px 8px;font-size:12px;color:#2a5885;cursor:pointer";
+        more.onclick=function(e){e.stopPropagation();renderChipsBar(true);};
+        bar.appendChild(more);
+      }
+      wrap.insertBefore(bar,wrap.querySelector("input"));
     };
-    var headHtml=function(total,sum){
-      var note=entry.legacy?' <span class="muted" style="font-size:12px">(легаси: старые даты)</span>':(entry.note?' <span class="muted" style="font-size:12px" title="'+esc(entry.note)+'">⚠</span>':'');
-      return '<div class="plain" style="max-width:none"><div style="padding:6px 0 4px;display:flex;align-items:center;flex-wrap:wrap;gap:2px 0"><b style="margin-right:10px">★ '+esc(entry.name)+'</b>'+chipsHtml()+'</div>'+
-        '<div style="padding:2px 0 12px;display:flex;align-items:center;gap:14px;flex-wrap:wrap"><span><b>'+fmt(total||0)+'</b> '+(isLeads?"сделок":"контактов")+(sum?(': <b>'+fmt(sum)+' ₽</b>'):'')+' <a data-spreset title="Сбросить фильтр" style="color:#4c8bf5;font-weight:700;cursor:pointer;margin-left:4px">×</a></span>'+
-        '<a data-swidget style="cursor:pointer;font-size:12.5px">💾 Создать виджет на раб. стол</a>'+note+'</div>';
+    var renderCount=function(total,sum){
+      var hc=$("#hCount");if(!hc)return;
+      hc.style.position="relative";
+      hc.innerHTML=fmt(total||0)+(isLeads?" сделок: <b>"+fmt(sum||0)+" ₽</b>":" контактов")+
+        ' <a id="specReset" title="Сбросить фильтр" style="color:#4c8bf5;font-weight:700;cursor:pointer;margin-left:4px">×</a>'+
+        '<div id="specSaveTip" style="display:none;position:absolute;top:100%;right:0;margin-top:6px;background:#fff;border:1px solid #dfe5ec;border-radius:8px;box-shadow:0 6px 20px rgba(20,40,70,.15);padding:8px 12px;white-space:nowrap;z-index:60"><a style="cursor:pointer;font-size:12.5px;color:#2a5885;text-decoration:underline">💾 Создать виджет на раб. стол</a></div>';
+      var rs=hc.querySelector("#specReset");if(rs)rs.onclick=function(){if(isLeads){FSTATE.leads={};vLeads();}else{FSTATE.contacts={};vContacts();}};
+      // ховер-плашка «Создать виджет» под счётчиком — как в amo
+      var tip=hc.querySelector("#specSaveTip"),hideT=null;
+      var show=function(){if(hideT)clearTimeout(hideT);tip.style.display="";};
+      var hide=function(){hideT=setTimeout(function(){tip.style.display="none";},350);};
+      hc.onmouseenter=show;hc.onmouseleave=hide;
+      tip.onmouseenter=show;tip.onmouseleave=hide;
+      tip.querySelector("a").onclick=function(){tip.style.display="none";saveWidget();};
     };
     if(isLeads){
       var stName=stNameAll();
-      // ШТАТНАЯ шапка раздела Сделки (как требовал Андрей 21.07): полный функционал фильтрации —
-      // клик по поиску открывает панель (системные пресеты, ★-фильтры, «★ В виджет»), поиск, новая сделка
       if(!curPipe)curPipe=PIPES[0]&&PIPES[0].id;
       var pcur=PIPES.find(function(x){return x.id===curPipe;})||PIPES[0];
-      setHeader("Сделки",{count:"",searchPh:"Поиск сделки (название, #id, или клик — фильтр)",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);},newBtn:"+ Новая сделка",onNew:function(){newLead(pcur);},filter:{kind:"leads",statuses:(pcur&&pcur._embedded&&pcur._embedded.statuses)||[]}});
+      setHeader("Все сделки",{count:"",searchPh:"Поиск и фильтр",onSearch:function(e){if(e.key==="Enter")searchLeads(e.target.value);},newBtn:"+ Новая сделка",onNew:function(){newLead(pcur);},onCfg:openLeadColSettings,filter:{kind:"leads",statuses:(pcur&&pcur._embedded&&pcur._embedded.statuses)||[]}});
+      renderChipsBar();
       $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
       var ep=VIEW_EPOCH;
       jreq(API+"/leads_spec?spec="+encodeURIComponent(JSON.stringify(spec))).then(function(r){
         if(ep!==VIEW_EPOCH)return;
         var items=(r&&r.items)||[];
-        var hc=$("#hCount");if(hc)hc.innerHTML=fmt(r.total||0)+" сделок: <b>"+fmt(r.sum||0)+" ₽</b>";
-        var head=headHtml(r.total,r.sum);
-        if(!items.length){$("#view").innerHTML=head+'<p class="muted">Ничего не найдено.</p></div>';bindHead();return;}
-        var html=head+'<table class="amo"><thead><tr><th style="width:34%">Название</th><th>Этап</th><th>Бюджет</th><th>Ответственный</th><th>Создана</th></tr></thead><tbody>';
-        html+=items.map(function(l){return '<tr><td><a data-l="'+l.id+'">'+esc(l.name||("#"+l.id))+'</a></td><td class="muted">'+esc(stName[l.sid]||"")+'</td><td>'+fmt(l.price)+' ₽</td><td class="muted">'+esc(l.resp||"")+'</td><td class="muted">'+(l.created?dShort(l.created):"")+'</td></tr>';}).join("");
+        renderCount(r.total,r.sum);
+        if(!items.length){$("#view").innerHTML='<div class="plain" style="max-width:none"><p class="muted" style="padding:14px 0">Ничего не найдено.</p></div>';return;}
+        // штатная таблица списка сделок: те же настраиваемые колонки (Вид заявки/Тип сделки/… через «Настроить»)
+        var cols=leadListActiveCols();
+        var thead='<tr>'+bulkTh()+cols.map(function(c){return '<th'+(c[0]==="name"?' style="width:28%"':"")+'>'+esc(c[1])+'</th>';}).join("")+'</tr>';
+        var html='<div class="plain" style="max-width:none;padding-top:6px"><table class="amo"><thead>'+thead+'</thead><tbody>';
+        html+=items.map(function(l){return '<tr>'+bulkCbTd(l.id)+cols.map(function(c){return '<td>'+leadCell(l,c[0],stName)+'</td>';}).join("")+'</tr>';}).join("");
         html+='</tbody></table></div>';
         $("#view").innerHTML=html;
         $("#view").querySelectorAll("[data-l]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.l,10));};});
-        bindHead();makeTableResizable($("#view table.amo"),"crm_lead_colw");
+        bindBulkCheckboxes($("#view"),"leads");
+        makeTableResizable($("#view table.amo"),"crm_lead_colw");
       });
     }else{
-      // ШТАТНАЯ шапка раздела Контакты: панель фильтра, настройка колонок, добавление — как в vContacts
-      setHeader("Контакты",{count:"",searchPh:"Поиск (имя, телефон, email — Enter) или клик — фильтр",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},newBtn:"+ Добавить контакт",onNew:newContact,onCfg:openColSettings,filter:{kind:"contacts"}});
+      setHeader("Контакты",{count:"",searchPh:"Поиск и фильтр",onSearch:function(e){if(e.key==="Enter")doContactSearch(e.target.value);},newBtn:"+ Добавить контакт",onNew:newContact,onCfg:openColSettings,filter:{kind:"contacts"}});
+      renderChipsBar();
       $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
       var ep2=VIEW_EPOCH;
       jreq(API+"/contacts_spec?spec="+encodeURIComponent(JSON.stringify(spec))).then(function(r){
         if(ep2!==VIEW_EPOCH)return;
         var items=(r&&r.items)||[];
-        var hc2=$("#hCount");if(hc2)hc2.innerHTML=fmt(r.total||0)+" контактов";
-        var head=headHtml(r.total,0);
-        if(!items.length){$("#view").innerHTML=head+'<p class="muted">Ничего не найдено.</p></div>';bindHead();return;}
-        var html=head+'<table class="amo"><thead>'+contactHeadHtml()+'</thead><tbody id="cbody">'+contactRows(items)+'</tbody></table></div>';
-        $("#view").innerHTML=html;bindContactLinks();bindHead();makeTableResizable($("#view table.amo"),"crm_contact_colw");
+        renderCount(r.total,0);
+        if(!items.length){$("#view").innerHTML='<div class="plain" style="max-width:none"><p class="muted" style="padding:14px 0">Ничего не найдено.</p></div>';return;}
+        var html='<div class="plain" style="max-width:none;padding-top:6px"><table class="amo"><thead>'+contactHeadHtml()+'</thead><tbody id="cbody">'+contactRows(items)+'</tbody></table></div>';
+        $("#view").innerHTML=html;bindContactLinks();bindBulkCheckboxes($("#view"),"contacts");
+        makeTableResizable($("#view table.amo"),"crm_contact_colw");
       });
     }
   }
