@@ -798,14 +798,15 @@ module.exports = function mountDbRoutes(app, guard, api) {
   let hasCustomers = false;
   try { hasCustomers = !!D.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='customers'").get(); } catch (_) {}
   if (hasCustomers) {
-    const qCustPage = D.prepare("SELECT id,name,status_id,responsible_user_id,ltv,purchases_count,average_check,next_price,next_date,created_at FROM customers ORDER BY (ltv>0) DESC, created_at DESC LIMIT 50 OFFSET ?");
-    const qCustCount = D.prepare("SELECT COUNT(*) c FROM customers");
+    const qCustPage = D.prepare("SELECT id,name,status_id,responsible_user_id,ltv,purchases_count,average_check,next_price,next_date,created_at FROM customers ORDER BY created_at DESC LIMIT 50 OFFSET ?"); // порядок как в amo: свежие сверху
+    const qCustCount = D.prepare("SELECT COUNT(*) c, COALESCE(SUM(ltv),0) s FROM customers");
     const qCustSearch = D.prepare("SELECT id,name,status_id,responsible_user_id,ltv,purchases_count,average_check,next_price,next_date,created_at FROM customers WHERE lc(name) LIKE lc(?) ORDER BY created_at DESC LIMIT 50");
     app.get(`${api}/customers_page`, guard, (req, res) => {
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
       const q = String(req.query.q || "").trim();
       const rows = q ? qCustSearch.all("%" + q + "%") : qCustPage.all((page - 1) * 50);
-      res.json({ success: true, total: page === 1 && !q ? qCustCount.get().c : null, items: rows.map((c) => ({
+      const cc = page === 1 && !q ? qCustCount.get() : null;
+      res.json({ success: true, total: cc ? cc.c : null, totalSum: cc ? cc.s : null, items: rows.map((c) => ({
         id: c.id, name: c.name, resp: uName[c.responsible_user_id] || "", ltv: c.ltv, purchases: c.purchases_count,
         avg: c.average_check, next_price: c.next_price, next_date: c.next_date, created: c.created_at })) });
     });

@@ -3288,12 +3288,12 @@
   /* ─── ПОКУПАТЕЛИ (модуль customers) ─── */
   var custPage=0,custLoading=false,custSearch="";
   function custRow(c){
-    return '<tr><td><a data-cu="'+c.id+'">'+esc(c.name||"Без имени")+'</a></td><td class="muted">'+esc(c.resp||"")+'</td><td>'+(c.ltv?fmt(c.ltv)+" ₽":"—")+'</td><td>'+(c.purchases||"—")+'</td><td>'+(c.avg?fmt(c.avg)+" ₽":"—")+'</td><td class="muted">'+(c.next_date?dShort(c.next_date):"")+'</td></tr>';
+    return '<tr><td><a data-cu="'+c.id+'">'+esc(c.name||"Без имени")+'</a></td><td>'+(c.purchases||"—")+'</td><td>'+(c.avg?fmt(c.avg)+" ₽":"—")+'</td><td>'+(c.ltv?fmt(c.ltv)+" ₽":"—")+'</td><td class="muted">'+esc(c.resp||"")+'</td><td class="muted">'+(c.next_date?dShort(c.next_date):"")+'</td></tr>';
   }
   function vCustomers(){
     renderSidebar("customers");
     setHeader("Покупатели",{count:"",searchPh:"Поиск покупателя (имя — Enter)",onSearch:function(e){if(e.key==="Enter"){custSearch=e.target.value.trim();vCustomers();}}});
-    $("#view").innerHTML='<div class="plain" style="max-width:none"><table class="amo"><thead><tr><th style="width:30%">Наименование</th><th>Ответственный</th><th>LTV</th><th>Покупок</th><th>Средний чек</th><th>След. платёж</th></tr></thead><tbody id="cubody"></tbody></table><div id="cumore" class="muted" style="padding:14px;text-align:center"></div></div>';
+    $("#view").innerHTML='<div class="plain" style="max-width:none"><table class="amo"><thead><tr><th style="width:30%">Наименование</th><th>Кол-во покупок</th><th>Средний чек, ₽</th><th>Сумма покупок, ₽</th><th>Ответственный</th><th>След. платёж</th></tr></thead><tbody id="cubody"></tbody></table><div id="cumore" class="muted" style="padding:14px;text-align:center"></div></div>';
     custPage=0;custLoading=false;
     loadCustPage();
     $("#main").onscroll=function(){if(custLoading||custSearch)return;var m=$("#main");if(m.scrollTop+m.clientHeight>m.scrollHeight-600)loadCustPage();};
@@ -3302,7 +3302,7 @@
     if(custLoading)return;custLoading=true;var next=custPage+1;$("#cumore").textContent="Загрузка…";
     jreq(API+"/customers_page?page="+next+(custSearch?"&q="+encodeURIComponent(custSearch):"")).then(function(r){
       var items=(r&&r.items)||[];
-      if(custPage===0&&r&&r.total!=null)$("#hCount").innerHTML=fmt(r.total)+" покупателей";
+      if(custPage===0&&r&&r.total!=null)$("#hCount").innerHTML=fmt(r.total)+" покупателей: <b>Сумма "+fmt(r.totalSum||0)+" ₽</b>"; // как в amo
       if(!items.length){$("#cumore").textContent=custPage?"Это все покупатели":"Ничего не найдено";custLoading=false;return;}
       $("#cubody").insertAdjacentHTML("beforeend",items.map(custRow).join(""));
       $("#cubody").querySelectorAll("[data-cu]").forEach(function(a){if(!a.dataset.b){a.dataset.b=1;a.onclick=function(){openCustomer(parseInt(a.dataset.cu,10));};}});
