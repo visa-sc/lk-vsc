@@ -4944,6 +4944,7 @@ function vscTaxLegSeed() {
   return {
     quarters: {
       "2026-Q1": {
+        cashExtra: 1700000, // нал сверх срм-факт (ВНЖ и пр.) — слагаемые 300000+1400000 из файла Андрея
         buh: { alta: { tax: 199122, vat: 0 }, kom: { tax: 664668, vat: 0 }, pan: { tax: 0, vat: 73962 }, akg: { tax: 0, vat: 53690 } }
       },
       "2026-Q2": {
@@ -5068,6 +5069,25 @@ async function vscTaxLegAuto(qkey) {
   _taxLegAutoCache[qkey] = { at: Date.now(), ttl: failed.length ? 2 * 60 * 1000 : 15 * 60 * 1000, data };
   return data;
 }
+// Прогрев кэша вкладки «Налоги» (просьба Андрея 22.07 «чтобы быстрее грузилось»):
+// каждые 12 минут (TTL кэша 15) фоном тянем автотяг+возвраты всех кварталов 2026
+// до текущего + заведённые вручную — вкладка открывается из тёплого кэша сразу.
+// Только гугл-таблицы (последовательно, мягко), amoCRM не участвует.
+function vscTaxLegWarm() {
+  const msk = new Date(Date.now() + 3 * 3600 * 1000);
+  const qs = [];
+  for (let q = 1; q <= Math.floor(msk.getUTCMonth() / 3) + 1; q++) qs.push(msk.getUTCFullYear() + "-Q" + q);
+  try { Object.keys(vscTaxLegLoad().quarters || {}).forEach((k) => { if (qs.indexOf(k) < 0) qs.push(k); }); } catch (_) {}
+  (async () => {
+    for (const k of qs) {
+      try { await vscTaxLegAuto(k); } catch (_) {}
+      try { await vscTaxLegReturns(k); } catch (_) {}
+    }
+  })();
+}
+setTimeout(vscTaxLegWarm, 20 * 1000);
+setInterval(vscTaxLegWarm, 12 * 60 * 1000);
+console.log("VSC TAXLEG: прогрев кэша налогов каждые 12 минут (гугл-таблицы, фоном)");
 app.get("/admin/api/vsc/taxes-legal", requireAdmin, async (req, res) => {
   const d = vscTaxLegLoad();
   const q = String(req.query.q || "2026-Q2");
