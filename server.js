@@ -3581,7 +3581,7 @@ const VSC_REVIEWS_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWz9BW
 // Тянем нужные вкладки по gid (публикация в вебе). Колонки/строки внутри ищем по смыслу.
 const VSC_RETURNS_PUB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRZXCCyCQMDzaSgbuBTf7Uqn9_93uLpEZR7RBEhk_oFEYS67-QjaBv8pnjWtFa4zc8YOkQcgihH2Up-/pub";
 const VSC_TAXES_PUB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRwsrbTIn1uoxuP8lKh2MFM7dpxtHKbF7zU8Jz1_9BXjgxpruguaf9B5QYCXGPNoiTzfNWWxG-DxqAD/pub";
-const VSC_RETURNS_GID = { "Январь 2026": "1436150116", "Февраль 2026": "2074430542", "Март 2026": "198350610", "Апрель 2026": "1458511972", "Май 2026": "1992585040", "Июнь 2026": "1100248812" };
+const VSC_RETURNS_GID = { "Январь 2026": "1436150116", "Февраль 2026": "2074430542", "Март 2026": "198350610", "Апрель 2026": "1458511972", "Май 2026": "1992585040", "Июнь 2026": "1100248812", "Июль 2026": "1604770336" };
 const VSC_TAXES_GID = { "Январь 2026": "9809588", "Февраль 2026": "1136035263", "Март 2026": "2018995646", "Апрель 2026": "437724355", "Май 2026": "2024110337", "Июнь 2026": "1935139822" };
 // Парсер CSV (учитывает кавычки, экранирование "" и переводы строк внутри ячеек).
 function vscParseCsv(text) {
@@ -3809,16 +3809,28 @@ async function vscFetchReviews() {
 // Возвраты по дням месяца: { "DD.MM.YYYY": суммаУслуг }. У вкладок 2026 шапка из двух
 // строк; столбец «Услуги» и «Дата возврата» ищем по имени (позиции плавают).
 function vscReturnsByDay(rows) {
-  let uslCol = -1, dateCol = -1, faultCol = -1, hdr = -1;
-  for (let i = 0; i < Math.min(rows.length, 6) && (uslCol < 0 || dateCol < 0 || faultCol < 0); i++) {
+  let uslCol = -1, dateCol = -1, faultCol = -1, catCol = -1, hdr = -1;
+  for (let i = 0; i < Math.min(rows.length, 6) && (uslCol < 0 || dateCol < 0 || faultCol < 0 || catCol < 0); i++) {
     const r = rows[i] || [];
     for (let c = 0; c < r.length; c++) {
       const n = String(r[c] || "").replace(/\s+/g, " ").trim().toLowerCase();
       if (n === "услуги") { uslCol = c; if (hdr < 0) hdr = i; }
       if (n.indexOf("дата возврата") >= 0) dateCol = c;
-      if (n === "причина") faultCol = c; // столбец вины: «Наша вина» / «Не наша вина»
+      if (n === "причина") faultCol = c;   // до июля 2026 вина писалась тут
+      if (n === "категория") catCol = c;   // с июля 2026 «Наша/Не наша вина» переехала сюда, «Причина» стала детальной
     }
   }
+  // Вина строки: сначала «Категория» (новая схема), затем «Причина» (старая). «Не наша
+  // вина» СОДЕРЖИТ «наша вина» — проверяем «не наш» ПЕРВЫМ. Ни там ни там → неизвестно.
+  const faultOf = (row) => {
+    for (const c of [catCol, faultCol]) {
+      if (c < 0) continue;
+      const t = String(row[c] || "").toLowerCase();
+      if (/не\s*наш/.test(t)) return "notOur";
+      if (/наш/.test(t)) return "our";
+    }
+    return "unknown";
+  };
   // byDay — суммы «Услуги» по дате возврата (для дней/недель); totalAll — Σ ВСЕХ строк
   // вкладки, включая строки БЕЗ даты возврата (вкладка = месяц, поэтому месячный итог —
   // именно totalAll; сверено с ручным подсчётом Андрея). fault — по тем же строкам, что
@@ -3832,18 +3844,7 @@ function vscReturnsByDay(rows) {
     out.totalAll += v;
     const d = vscNormDMY(row[dateCol]); // гибко: «1.6.2026» → «01.06.2026» (иначе строки терялись)
     if (d) out.byDay[d] = (out.byDay[d] || 0) + v;
-    else { // строка без даты — в месячный итог и в разбивку по вине входит, в дни — нет
-      const fRaw0 = faultCol >= 0 ? String(row[faultCol] || "").toLowerCase() : "";
-      if (/не\s*наш/.test(fRaw0)) out.fault.notOur += v;
-      else if (/наш/.test(fRaw0)) out.fault.our += v;
-      else out.fault.unknown += v;
-      continue;
-    }
-    // «Не наша вина» СОДЕРЖИТ «наша вина» — проверяем «не наш» ПЕРВЫМ. Пусто/иное → неизвестно.
-    const fRaw = faultCol >= 0 ? String(row[faultCol] || "").toLowerCase() : "";
-    if (/не\s*наш/.test(fRaw)) out.fault.notOur += v;
-    else if (/наш/.test(fRaw)) out.fault.our += v;
-    else out.fault.unknown += v;
+    out.fault[faultOf(row)] += v; // строки без даты — в итог и вину входят, в дни — нет
   }
   return out;
 }
