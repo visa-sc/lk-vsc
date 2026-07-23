@@ -226,9 +226,10 @@ async function syncTasks() {
 // компании (дыра найдена 18.07: слепок 1448, в amo уже 1460 — синка компаний не было вовсе)
 // responsible_user_id добавлен 22.07 (колонка «Ответственный» есть в списке компаний amo, в копии её нечем было заполнить)
 try { db.exec("ALTER TABLE companies ADD COLUMN responsible_user_id INTEGER DEFAULT 0"); } catch (_) { /* уже есть */ }
-const upCompany = db.prepare(`INSERT INTO companies(id,name,created_at,updated_at,cf,responsible_user_id)
-  VALUES(@id,@name,@created_at,@updated_at,@cf,@responsible_user_id)
-  ON CONFLICT(id) DO UPDATE SET name=@name,updated_at=@updated_at,cf=@cf,responsible_user_id=@responsible_user_id`);
+try { db.exec("ALTER TABLE companies ADD COLUMN tags TEXT"); } catch (_) { /* уже есть */ }
+const upCompany = db.prepare(`INSERT INTO companies(id,name,created_at,updated_at,cf,responsible_user_id,tags)
+  VALUES(@id,@name,@created_at,@updated_at,@cf,@responsible_user_id,@tags)
+  ON CONFLICT(id) DO UPDATE SET name=@name,updated_at=@updated_at,cf=@cf,responsible_user_id=@responsible_user_id,tags=@tags`);
 // покупатели (программа лояльности): amo=6938 vs копия=6864 на 19.07 — были разовым экспортом, теперь в синке.
 // ВАЖНО: amo API customers ИГНОРИРУЕТ filter[updated_at] (проверено: since+1 сек — всё равно отдаёт всех) —
 // каждый прогон = полные ~28 страниц, поэтому customers НЕ в */45-круге, а отдельным кроном 04:00/16:00 МСК.
@@ -340,7 +341,7 @@ async function syncCompanies() {
       for (const c of items) {
         maxUpd = Math.max(maxUpd, c.updated_at || 0);
         if (hasLocalEdit.get("companies", c.id)) { conflicts++; continue; }
-        upCompany.run({ id: c.id, name: c.name || "", created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c), responsible_user_id: c.responsible_user_id || 0 });
+        upCompany.run({ id: c.id, name: c.name || "", created_at: c.created_at || 0, updated_at: c.updated_at || 0, cf: cfExtract(c), responsible_user_id: c.responsible_user_id || 0, tags: JSON.stringify(((c._embedded && c._embedded.tags) || []).map((t) => t.name)) });
         changed++;
       }
     })();

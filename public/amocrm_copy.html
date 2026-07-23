@@ -2813,7 +2813,7 @@
       }).join("");
       if(companies)companies='<div class="fgroup" style="margin:0 20px">Компания</div>'+companies;
       var init=(c.name||"К").trim().charAt(0).toUpperCase();
-      var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить контакт">🗑</button><h2 class="editable" data-edit="cname">'+esc(c.name||("Контакт #"+c.id))+'</h2><div class="dl-sub">#'+c.id+((c.tags&&c.tags.length)?' '+c.tags.map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join(""):"")+'</div></div>'+
+      var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить контакт">🗑</button><h2 class="editable" data-edit="cname">'+esc(c.name||("Контакт #"+c.id))+'</h2><div class="dl-sub">#'+c.id+' &nbsp;<span class="tags-edit" title="Изменить теги">'+((c.tags&&c.tags.length)?c.tags.map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join(""):'<span class="muted">+ теги</span>')+'</span></div></div>'+
         '<div class="dl-tabs" style="margin-top:6px"><span class="act" data-t="main">Основное</span><span data-t="deals">Сделки</span><span data-t="stats">Статистика</span><span data-t="files">Файлы</span></div>'+
         '<div data-panel="main"><div class="fields">'+
           '<div class="frow"><div class="fl">Отв-ный</div><div class="fv editable" data-edit="cresp">'+esc(userName(c.responsible_user_id))+'</div></div>'+
@@ -2842,6 +2842,8 @@
       });
       bindEditable(bg,"cname",function(){return c.name;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{name:v});},reload,"text");
       bindEditable(bg,"cresp",function(){return c.responsible_user_id;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{responsible_user_id:v});},reload,"user");
+      var ctags=(c.tags||[]);
+      var cte=bg.querySelector(".tags-edit");if(cte)cte.onclick=function(){var nt=prompt("Теги через запятую:",ctags.join(", "));if(nt===null)return;ereq("PATCH","/edit-api/contact/"+id+"/tags",{tags:nt.split(",").map(function(x){return x.trim();}).filter(Boolean)}).then(function(r){if(r&&r.success){toast("Теги сохранены");reload();}else toast("Не удалось",true);});};
       bindCfFields(bg,"contacts",id,CF&&CF.contacts,reload);
       // «＋ Создать сделку» из карточки контакта (как в amo)
       var ndAdd=bg.querySelector(".nd-add");
@@ -2991,7 +2993,7 @@
       if(conts)conts='<div class="fgroup" style="margin:0 20px">Контакты ('+(emb.contacts||[]).length+')</div>'+conts;
       var deals=(emb.leads||[]).map(function(l){var col=l.color||"#c1d5e0";return '<div class="dl-contact" style="cursor:pointer;border-left:4px solid '+esc(col)+'" data-l="'+l.id+'"><div class="ava" style="border-radius:6px;background:'+esc(col)+'22;color:#33404d">С</div><div><div style="color:var(--link)">'+esc(l.name||("Сделка #"+l.id))+'</div><div class="muted" style="font-size:12px">'+esc(l.st||"")+(l.price?(" · "+fmt(l.price)+" ₽"):"")+'</div></div></div>';}).join("");
       if(deals)deals='<div class="fgroup" style="margin:0 20px">Сделки ('+(emb.leads||[]).length+')</div>'+deals;
-      var left='<div class="dl-head"><span class="back">‹</span><h2 class="editable" data-edit="coname">'+esc(c.name||("Компания #"+c.id))+'</h2><div class="dl-sub">#'+c.id+'</div></div>'+
+      var left='<div class="dl-head"><span class="back">‹</span><h2 class="editable" data-edit="coname">'+esc(c.name||("Компания #"+c.id))+'</h2><div class="dl-sub">#'+c.id+' &nbsp;<span class="tags-edit" title="Изменить теги">'+((c.tags&&c.tags.length)?c.tags.map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join(""):'<span class="muted">+ теги</span>')+'</span></div></div>'+
         '<div class="dl-tabs" style="margin-top:6px"><span class="act" data-t="main">Основное</span><span data-t="stats">Статистика</span></div>'+
         '<div data-panel="main"><div class="fields"><div class="frow"><div class="fl">Создана</div><div class="fv">'+dt(c.created_at)+'</div></div>'+
         '<div class="frow"><div class="fl">Изменена</div><div class="fv">'+dt(c.updated_at)+'</div></div>'+
@@ -3004,6 +3006,8 @@
       var reload=function(){openCompany(id);};
       var bg=cardShell(left,function(f,hist){return feedHtml(mergeNotes(r.notes||[],notesNew),tasks,f,bg,hist);},{type:"companies",id:id,withTasks:true,reload:reload,pinTasks:pinTasksOf(tasks)});
       bindEditable(bg,"coname",function(){return c.name;},function(v){return ereq("PATCH","/edit-api/company/"+id,{name:v});},reload,"text");
+      var cotags=(c.tags||[]);
+      var cote=bg.querySelector(".tags-edit");if(cote)cote.onclick=function(){var nt=prompt("Теги через запятую:",cotags.join(", "));if(nt===null)return;ereq("PATCH","/edit-api/company/"+id+"/tags",{tags:nt.split(",").map(function(x){return x.trim();}).filter(Boolean)}).then(function(r){if(r&&r.success){toast("Теги сохранены");reload();}else toast("Не удалось",true);});};
       bindCfFields(bg,"companies",id,CF&&CF.companies,reload);
       bindFieldGroups(bg);bindCardTabs(bg);
       bg.querySelectorAll("[data-c]").forEach(function(el){el.onclick=function(){document.body.removeChild(bg);openContact(parseInt(el.dataset.c,10));};});

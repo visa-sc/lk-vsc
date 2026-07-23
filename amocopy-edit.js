@@ -223,6 +223,25 @@ module.exports = function mountEditRoutes(app, guard) {
     res.json({ success: true, tags });
   });
 
+  // теги контакта/компании — как в amo (у сделок уже есть выше)
+  try { db.exec("ALTER TABLE companies ADD COLUMN tags TEXT"); } catch (_) {}
+  function tagsEndpoint(kind, table, getter) {
+    app.patch(`${E}/${kind}/:id/tags`, guard, (req, res) => {
+      const id = parseInt(req.params.id, 10);
+      const row = getter.get(id);
+      if (!row) return res.status(404).json({ success: false });
+      if (!Array.isArray(req.body.tags)) return res.status(400).json({ success: false });
+      let tags = req.body.tags.map((t) => String(t).trim()).filter(Boolean);
+      if (req.body.append) { let cur = []; try { cur = JSON.parse(row.tags) || []; } catch (_) {} tags = cur.concat(tags.filter((t) => cur.indexOf(t) < 0)); }
+      tags = tags.slice(0, 30);
+      db.prepare("UPDATE " + table + " SET tags=?, updated_at=? WHERE id=?").run(JSON.stringify(tags), nowSec(), id);
+      audit(req, table, id, "edit_tags", { tags });
+      res.json({ success: true, tags });
+    });
+  }
+  tagsEndpoint("contact", "contacts", getContact);
+  tagsEndpoint("company", "companies", getCompany);
+
   // ── удаление сделки/контакта (мягкое: только локальные и по подтверждению) ──
   app.post(`${E}/lead/:id/delete`, guard, (req, res) => {
     const id = parseInt(req.params.id, 10);

@@ -940,7 +940,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     // лента компании агрегирует события СВЯЗАННЫХ СДЕЛОК (как в amo): примечания+задачи первых 5 сделок с меткой __lead
     const top = leads.slice(0, 5);
     const allNotes = [], tasks = tasksOut("companies", id);
-    const finish = () => res.json({ success: true, tasks, notes: allNotes, company: { id: c.id, name: c.name, created_at: c.created_at, updated_at: c.updated_at, custom_fields_values: J(c.cf, null), _embedded: { contacts, leads } } });
+    const finish = () => res.json({ success: true, tasks, notes: allNotes, company: { id: c.id, name: c.name, created_at: c.created_at, updated_at: c.updated_at, tags: J(c.tags, []), custom_fields_values: J(c.cf, null), _embedded: { contacts, leads } } });
     const next = (i) => {
       if (i >= top.length) return finish();
       notesMerged("notes_leads", top[i].id, (ns) => {
