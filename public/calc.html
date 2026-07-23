@@ -28,6 +28,14 @@
   @media (min-width: 760px) { .wrap { padding-top: 104px; } }
   .card { background: #fff; border: 1px solid var(--line); border-radius: 24px; padding: 28px; box-shadow: var(--sh-lg); }
   h1 { font-size: 30px; font-weight: 700; letter-spacing: -.022em; margin: 0 0 16px; }
+  /* «i» с пояснением у заголовка (как на /vsc): весь вводный текст спрятан сюда. */
+  .info { display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 50%; border: 1.4px solid currentColor; color: #a9adb4; font-size: 12.5px; font-weight: 700; font-style: italic; font-family: Georgia, "Times New Roman", serif; line-height: 1; cursor: pointer; vertical-align: middle; margin-left: 11px; position: relative; top: -3px; -webkit-user-select: none; user-select: none; transition: color .15s ease, border-color .15s ease; }
+  .info:hover { color: var(--blue); }
+  .info-pop { display: none; position: fixed; z-index: 9999; box-sizing: border-box; width: min(360px, 82vw); background: #1c2333; color: #e7ecf5; font: 400 13px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 14px 16px; border-radius: 14px; box-shadow: 0 14px 38px rgba(16,24,40,.38); text-align: left; white-space: normal; cursor: default; }
+  .info-pop.show { display: block; }
+  .info-pop b { color: #fff; font-weight: 700; }
+  .info-pop::before { content: ""; position: absolute; bottom: 100%; left: var(--arrow-left, 50%); transform: translateX(-50%); border: 6px solid transparent; border-bottom-color: #1c2333; }
+  .info-pop.up::before { bottom: auto; top: 100%; border-bottom-color: transparent; border-top-color: #1c2333; }
   .howto { font-size: 13px; color: var(--ink2); line-height: 1.5; margin-bottom: 16px; background: #f6f7f9; border: 1px solid var(--line); border-radius: 14px; padding: 13px 15px; }
   .howto b { color: var(--ink); font-weight: 600; }
   .legend { font-size: 12px; color: var(--ink3); margin: 0 0 10px 2px; line-height: 1.7; }
@@ -90,9 +98,7 @@
 <body>
 <div class="wrap">
   <div class="card">
-    <h1>Калькулятор ВНЖ</h1>
-    <div class="howto"><b>Как пользоваться:</b> курсы EUR/USD берутся с ЦБ РФ автоматически. Выбери валюту прихода, укажи сумму прихода и сколько должны партнёру (USDT). Значения на зелёном фоне — для занесения в учёт/amo.</div>
-    <div class="legend"><span class="sw" style="background:#eaf4fe;border:1.5px solid #3d92c9;"></span>голубым — заполняешь ты&nbsp;&nbsp;·&nbsp;&nbsp;<span class="sw" style="background:#f5f6f8;border:1px solid #d7dbe3;"></span>серым — считается авто&nbsp;&nbsp;·&nbsp;&nbsp;<span class="sw" style="background:#e8f8ee;border:1px solid #c4ead0;"></span>зелёным — для amo (клик копирует)&nbsp;&nbsp;·&nbsp;&nbsp;<span class="sw" style="background:#ebe6fd;border:1px solid #d9d1f7;"></span>сиреневым — проверка</div>
+    <h1>Калькулятор ВНЖ<span class="info" id="calcInfo" tabindex="0" role="button" aria-label="Пояснение">i</span></h1>
     <div id="ratesNote" class="legend" style="margin-bottom:8px;">Загружаем курсы ЦБ РФ…</div>
 
     <div class="grid g-rates">
@@ -364,6 +370,42 @@
       }
     });
   });
+
+  // «i» у заголовка: весь вводный текст + легенда цветов — в поповере (портал в body).
+  (function(){
+    var w = $("calcInfo"); if (!w) return;
+    function sw(c){ return '<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:' + c + ';vertical-align:-1px;margin-right:8px;"></span>'; }
+    var pop = document.createElement("span");
+    pop.className = "info-pop";
+    pop.innerHTML =
+      '<b>Как пользоваться</b><br>Курсы EUR/USD берутся с ЦБ РФ автоматически. Выбери валюту прихода, укажи сумму прихода и сколько должны партнёру (USDT). Значения на зелёном фоне — для занесения в учёт/amo.'
+      + '<br><br><b>Цвета блоков</b><br>'
+      + sw('#4a9fe0') + 'голубым — заполняешь ты<br>'
+      + sw('#c2c7cf') + 'серым — считается авто<br>'
+      + sw('#34c759') + 'зелёным — для amo (клик копирует)<br>'
+      + sw('#9a8ff0') + 'сиреневым — проверка';
+    function place(){
+      if (pop.parentNode !== document.body) document.body.appendChild(pop);
+      pop.classList.add("show");
+      var r = w.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight, pw = Math.min(360, vw - 24);
+      pop.style.width = pw + "px";
+      var left = Math.max(12, Math.min(r.left + r.width/2 - pw/2, vw - pw - 12));
+      pop.style.left = left + "px";
+      pop.style.top = (r.bottom + 9) + "px";
+      pop.classList.remove("up");
+      var ph = pop.offsetHeight;
+      if (r.bottom + 9 + ph > vh - 12 && r.top - 9 - ph > 12) { pop.style.top = (r.top - 9 - ph) + "px"; pop.classList.add("up"); }
+      pop.style.setProperty("--arrow-left", Math.max(10, Math.min(pw - 10, r.left + r.width/2 - left)) + "px");
+    }
+    function close(){ w.classList.remove("open"); pop.classList.remove("show", "up"); if (pop.parentNode) pop.parentNode.removeChild(pop); }
+    w.addEventListener("click", function(e){ e.stopPropagation(); var was = w.classList.contains("open"); close(); if (!was){ w.classList.add("open"); place(); } });
+    w.addEventListener("mouseenter", function(){ if (!w.classList.contains("open")) place(); });
+    w.addEventListener("mouseleave", function(){ if (!w.classList.contains("open")) close(); });
+    pop.addEventListener("click", function(e){ e.stopPropagation(); });
+    document.addEventListener("click", close);
+    window.addEventListener("scroll", function(){ if (pop.classList.contains("show")) close(); }, true);
+    window.addEventListener("resize", function(){ if (pop.classList.contains("show")) close(); });
+  })();
 
   setCur("eur");
   loadRates();
