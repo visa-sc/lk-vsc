@@ -185,6 +185,13 @@
   /* ── канбан ── */
   #kb { display:flex; min-height:100%; }
   .kb-col { min-width:250px; width:250px; border-right:1px solid var(--border-soft); flex-shrink:0; }
+  /* зоны закрытия сделки при перетаскивании (как в amo) */
+  #closeZones { position:fixed; left:0; right:0; bottom:0; height:66px; display:none; z-index:130; }
+  #closeZones.on { display:flex; }
+  #closeZones .cz { flex:1; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:600; color:#fff; opacity:.92; transition:opacity .12s, filter .12s; }
+  #closeZones .cz.won { background:#8bc34a; }
+  #closeZones .cz.lost { background:#f36c6c; }
+  #closeZones .cz.hot { filter:brightness(1.08); opacity:1; box-shadow:inset 0 0 0 3px rgba(255,255,255,.6); }
   .kb-head { position:sticky; top:0; background:#fff; padding:12px 10px 8px; text-align:center; z-index:5; }
   .kb-head .nm { font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .kb-head .ct { font-size:12px; color:var(--mut); margin-top:2px; }
@@ -1838,6 +1845,41 @@
       DRAG=null;
     }).catch(function(){toast("Ошибка сети",true);DRAG=null;});
   }
+  // зоны закрытия сделки при перетаскивании (как в amo): «Успешно реализовано» / «Закрыто и не реализовано»
+  function ensureCloseZones(){
+    var z=document.getElementById("closeZones");if(z)return z;
+    z=document.createElement("div");z.id="closeZones";
+    // подписи из текущей воронки (у разных воронок 142 назван по-своему: «Пакет документов готов» и т.п.)
+    z.innerHTML='<div class="cz won" data-sid="142"><span></span></div><div class="cz lost" data-sid="143"><span></span></div>';
+    document.body.appendChild(z);
+    z.querySelectorAll(".cz").forEach(function(cz){
+      cz.addEventListener("dragover",function(e){e.preventDefault();e.dataTransfer.dropEffect="move";cz.classList.add("hot");});
+      cz.addEventListener("dragleave",function(){cz.classList.remove("hot");});
+      cz.addEventListener("drop",function(e){e.preventDefault();cz.classList.remove("hot");dropLeadToClose(parseInt(cz.dataset.sid,10));});
+    });
+    return z;
+  }
+  function showCloseZones(){
+    var z=ensureCloseZones(),p=PIPES.find(function(x){return x.id===curPipe;});
+    var sts=(p&&p._embedded&&p._embedded.statuses)||[];
+    var nm=function(id,def){var s=sts.find(function(x){return x.id===id;});return (s&&s.name)||def;};
+    z.querySelector(".cz.won span").textContent=nm(142,"Успешно реализовано");
+    z.querySelector(".cz.lost span").textContent=nm(143,"Закрыто и не реализовано");
+    z.classList.add("on");
+  }
+  function hideCloseZones(){var z=document.getElementById("closeZones");if(z)z.classList.remove("on");}
+  function dropLeadToClose(sid){
+    if(!DRAG)return;var d=DRAG;
+    ereq("POST","/edit-api/lead/"+d.id+"/stage",{pipeline_id:curPipe,status_id:sid}).then(function(r){
+      if(r&&r.success){
+        if(d.el&&d.el.parentNode)d.el.parentNode.removeChild(d.el); // закрытые не колонки — убираем из канбана
+        var price=parseInt((d.el&&d.el.dataset.price)||"0",10)||0;
+        recountCol(d.fromCol,-1,-price);
+        toast("Сделка закрыта → "+(r.status_name||(sid===142?"Успешно":"Не реализовано")));
+      } else toast((r&&r.message)||"Не удалось",true);
+      DRAG=null;hideCloseZones();
+    }).catch(function(){toast("Ошибка сети",true);DRAG=null;hideCloseZones();});
+  }
   // живой пересчёт колонки после dnd/быстрого добавления: счётчик + сумма + шапка-итог воронки
   function recountCol(col,delta,priceDelta){
     if(!col)return;
@@ -2018,8 +2060,8 @@
         d.dataset.price=l.price||0;
         d.innerHTML='<div class="top"><span class="cn">'+esc(l.contact||l.resp||"")+'</span><span class="dt">'+dShort(l.created)+'</span></div>'+(l.contact&&l.resp?'<div class="rsp">'+esc(l.resp)+'</div>':"")+'<div class="ttl">'+esc(l.name||("Сделка #"+l.id))+'</div>'+(l.price?'<div style="font-size:13px">'+fmt(l.price)+' ₽</div>':"")+(l.tags&&l.tags.length?('<div class="tags">'+l.tags.slice(0,3).map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join("")+'</div>'):"")+leadTaskBadge(l.task_till);
         var moved=false;
-        d.addEventListener("dragstart",function(e){moved=true;DRAG={id:l.id,el:d,fromCol:col};e.dataTransfer.effectAllowed="move";d.style.opacity="0.4";});
-        d.addEventListener("dragend",function(){d.style.opacity="";setTimeout(function(){moved=false;},50);});
+        d.addEventListener("dragstart",function(e){moved=true;DRAG={id:l.id,el:d,fromCol:col};e.dataTransfer.effectAllowed="move";d.style.opacity="0.4";showCloseZones();});
+        d.addEventListener("dragend",function(){d.style.opacity="";hideCloseZones();setTimeout(function(){moved=false;},50);});
         d.onclick=function(){if(!moved)openLead(l.id);};
         box.appendChild(d);
       });
