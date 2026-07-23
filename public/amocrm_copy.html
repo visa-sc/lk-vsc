@@ -3904,6 +3904,7 @@
       else if(m=p.match(/^\/customers\/detail\/(\d+)/)){if(isBoot)go("customers");openCustomer(+m[1]);}
       else if(/^\/contacts\/list\/companies/.test(p)){curView="lists";VIEW_EPOCH++;hidePipePanel();listsTab="companies";LIST_CATALOGS?vCompanies():vLists();}
       else if(/^\/contacts/.test(p)){curView="lists";VIEW_EPOCH++;hidePipePanel();LIST_CATALOGS?vContacts():vLists();}
+      else if(m=p.match(/^\/catalogs\/(\d+)/)){curView="lists";VIEW_EPOCH++;hidePipePanel();renderSidebar("lists");var cid=+m[1];if(LIST_CATALOGS)vCatalog(cid);else jreq(API+"/catalogs").then(function(cats){LIST_CATALOGS=Array.isArray(cats)?cats:[];vCatalog(cid);}).catch(function(){LIST_CATALOGS=[];vCatalog(cid);});}
       else if(m=p.match(/^\/leads\/pipeline\/(\d+)/)){curPipe=+m[1];go("leads");}
       else if(/^\/leads/.test(p))go("leads");
       else if(/^\/dashboard/.test(p))go("desk");
