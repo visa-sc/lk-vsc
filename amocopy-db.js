@@ -1130,6 +1130,10 @@ module.exports = function mountDbRoutes(app, guard, api) {
         companies: companiesForLead(id)
       }
     };
+    // причина отказа (при закрытии как «не реализовано» 143), как в amo
+    if (l.status_id === 143 && l.loss_reason_id) {
+      try { const lr = D.prepare("SELECT name FROM loss_reasons WHERE id=?").get(l.loss_reason_id); lead.loss_reason_id = l.loss_reason_id; lead.loss_reason = lr ? lr.name : null; } catch (_) {}
+    }
     // «на текущем этапе с …» — из живых событий amo (есть только у сделок, менявших этап после 19.07.2026)
     let stageSince = null;
     try { const r0 = D.prepare("SELECT created_at FROM amo_events WHERE entity_type='lead' AND entity_id=? AND type='lead_status_changed' ORDER BY created_at DESC LIMIT 1").get(id); stageSince = r0 ? r0.created_at : null; } catch (_) {}

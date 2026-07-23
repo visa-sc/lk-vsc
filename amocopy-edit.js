@@ -128,8 +128,12 @@ module.exports = function mountEditRoutes(app, guard) {
     const st = getStatus.get(pid, sid);
     if (!st) return res.status(400).json({ success: false, message: "нет такого этапа" });
     const fromP = lead.pipeline_id, fromS = lead.status_id;
-    db.prepare("UPDATE leads SET pipeline_id=?, status_id=?, updated_at=? WHERE id=?").run(pid, sid, nowSec(), id);
-    audit(req, "leads", id, "stage", { from: { pipeline_id: fromP, status_id: fromS }, to: { pipeline_id: pid, status_id: sid, name: st.name } });
+    // причина отказа при закрытии как «не реализовано» (143), как в amo; при выходе из 143 — сбрасываем
+    let lr = parseInt(req.body.loss_reason_id, 10) || 0;
+    if (sid !== 143) lr = 0;
+    try { db.prepare("UPDATE leads SET pipeline_id=?, status_id=?, loss_reason_id=?, updated_at=? WHERE id=?").run(pid, sid, lr, nowSec(), id); }
+    catch (_) { db.prepare("UPDATE leads SET pipeline_id=?, status_id=?, updated_at=? WHERE id=?").run(pid, sid, nowSec(), id); }
+    audit(req, "leads", id, "stage", { from: { pipeline_id: fromP, status_id: fromS }, to: { pipeline_id: pid, status_id: sid, name: st.name, loss_reason_id: lr } });
     // движок автоматизаций v1: применяем правила входа на этап
     const applied = applyStageRules(req, id, pid, sid, lead.responsible_user_id);
     res.json({ success: true, status_id: sid, pipeline_id: pid, status_name: st.name, automations: applied });

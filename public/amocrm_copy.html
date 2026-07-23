@@ -896,6 +896,10 @@
     var lab=sel.length?sel.map(function(id){return userName(+id)||id;}).join(", "):"— любой —";
     return '<div class="ffield"><label>'+label+'</label><input type="hidden" data-f="'+dataF+'" value="'+esc(val||"")+'"><div class="amo-field'+(sel.length?" on":"")+'" data-userfield="'+dataF+'"><span'+(sel.length?"":' class="af-ph"')+'>'+esc(lab)+'</span>'+(sel.length?'<span class="af-x">×</span>':"")+'</div></div>';
   }
+  // причины отказа (кэш) + пикер при закрытии сделки как «не реализовано» (143), как в amo
+  var LOSS_REASONS=null;
+  function withLossReasons(cb){if(LOSS_REASONS)return cb(LOSS_REASONS);jreq(API+"/loss_reasons").then(function(r){LOSS_REASONS=(r&&r.items)||[];cb(LOSS_REASONS);}).catch(function(){cb(LOSS_REASONS=[]);});}
+  function pickLossReason(anchor,cb){withLossReasons(function(items){var menu=[{label:"— без причины —",on:function(){cb(0);}}];if(items.length)menu.push("sep");items.forEach(function(x){menu.push({label:x.name,on:function(){cb(x.id);}});});openCtxMenu(anchor,menu);});}
   // hex → rgba (для цветных полос этапов, как в amo)
   function hexA(hex,a){hex=String(hex||"").replace("#","");if(hex.length===3)hex=hex.split("").map(function(c){return c+c;}).join("");var n=parseInt(hex,16);if(isNaN(n))return "rgba(0,0,0,.05)";return "rgba("+((n>>16)&255)+","+((n>>8)&255)+","+(n&255)+","+a+")";}
   // попап множественного выбора. opts.collapsible=воронки сворачиваемыми группами с чекбоксом
@@ -1870,15 +1874,18 @@
   function hideCloseZones(){var z=document.getElementById("closeZones");if(z)z.classList.remove("on");}
   function dropLeadToClose(sid){
     if(!DRAG)return;var d=DRAG;
-    ereq("POST","/edit-api/lead/"+d.id+"/stage",{pipeline_id:curPipe,status_id:sid}).then(function(r){
-      if(r&&r.success){
-        if(d.el&&d.el.parentNode)d.el.parentNode.removeChild(d.el); // закрытые не колонки — убираем из канбана
-        var price=parseInt((d.el&&d.el.dataset.price)||"0",10)||0;
-        recountCol(d.fromCol,-1,-price);
-        toast("Сделка закрыта → "+(r.status_name||(sid===142?"Успешно":"Не реализовано")));
-      } else toast((r&&r.message)||"Не удалось",true);
-      DRAG=null;hideCloseZones();
-    }).catch(function(){toast("Ошибка сети",true);DRAG=null;hideCloseZones();});
+    var go=function(lr){
+      ereq("POST","/edit-api/lead/"+d.id+"/stage",{pipeline_id:curPipe,status_id:sid,loss_reason_id:lr||0}).then(function(r){
+        if(r&&r.success){
+          if(d.el&&d.el.parentNode)d.el.parentNode.removeChild(d.el); // закрытые не колонки — убираем из канбана
+          var price=parseInt((d.el&&d.el.dataset.price)||"0",10)||0;
+          recountCol(d.fromCol,-1,-price);
+          toast("Сделка закрыта → "+(r.status_name||(sid===142?"Успешно":"Не реализовано")));
+        } else toast((r&&r.message)||"Не удалось",true);
+        DRAG=null;hideCloseZones();
+      }).catch(function(){toast("Ошибка сети",true);DRAG=null;hideCloseZones();});
+    };
+    if(sid===143)pickLossReason(d.el||document.body,go);else go(0); // причина отказа при проигрыше, как в amo
   }
   // живой пересчёт колонки после dnd/быстрого добавления: счётчик + сумма + шапка-итог воронки
   function recountCol(col,delta,priceDelta){
@@ -2611,7 +2618,7 @@
       var stColor="#c1d5e0";stList.forEach(function(s){if(s.id===l.status_id)stColor=s.color||stColor;});
       var barSegs=stList.map(function(s,i){return '<i style="'+(i<=stIdx?("background:"+esc(stColor)):"")+'"></i>';}).join("");
       var left='<div class="dl-head dl-dark"><span class="back">‹</span><span class="dl-dots" title="Меню">···</span><button class="dl-del" style="display:none">🗑</button><h2 class="editable" data-edit="name">'+esc(l.name||("Сделка #"+l.id))+'</h2><div class="dl-sub">#'+l.id+' &nbsp;<span class="tags-edit" title="Изменить теги">'+(tags||'<span class="muted">+ теги</span>')+'</span></div>'+
-        '<div class="stagew" id="stageW" title="Сменить этап или воронку"><div class="pn">'+esc(p?p.name:"")+'</div><div class="sn">'+esc(stName)+' <span class="caret2">▾</span></div><div class="stgbar">'+barSegs+'</div></div></div>'+
+        '<div class="stagew" id="stageW" title="Сменить этап или воронку"><div class="pn">'+esc(p?p.name:"")+'</div><div class="sn">'+esc(stName)+' <span class="caret2">▾</span></div>'+(l.loss_reason?'<div class="pn" style="color:#ff9a9a;margin-top:2px">Причина отказа: '+esc(l.loss_reason)+'</div>':"")+'<div class="stgbar">'+barSegs+'</div></div></div>'+
         '<div class="dl-tabs"><span class="act" data-t="main">Основное</span><span data-t="other">Другие сделки</span><span data-t="stats">Статистика</span><span data-t="files">Файлы</span><span data-t="api">из API</span></div>'+
         '<div data-panel="main"><div class="fields">'+
           '<div class="frow"><div class="fl">Отв-ный</div><div class="fv editable" data-edit="resp">'+esc(userName(l.responsible_user_id))+'</div></div>'+
@@ -2701,7 +2708,8 @@
           var pid2=parseInt(el.dataset.pid,10),sid2=parseInt(el.dataset.sid,10);
           dd.remove();
           if(pid2===l.pipeline_id&&sid2===l.status_id)return;
-          ereq("POST","/edit-api/lead/"+id+"/stage",{pipeline_id:pid2,status_id:sid2}).then(function(rr){if(rr&&rr.success){toast(pid2!==l.pipeline_id?"Сделка перенесена в другую воронку":"Этап изменён");reload();}else toast((rr&&rr.message)||"Не удалось",true);});
+          var go=function(lr){ereq("POST","/edit-api/lead/"+id+"/stage",{pipeline_id:pid2,status_id:sid2,loss_reason_id:lr||0}).then(function(rr){if(rr&&rr.success){toast(sid2===143?"Сделка закрыта — не реализовано":(pid2!==l.pipeline_id?"Сделка перенесена в другую воронку":"Этап изменён"));reload();}else toast((rr&&rr.message)||"Не удалось",true);});};
+          if(sid2===143)pickLossReason(sw,go);else go(0); // причина отказа при проигрыше, как в amo
         };});
         // клик по названию другой воронки — раскрыть её этапы
         dd.querySelectorAll(".sd-p").forEach(function(ph){ph.onclick=function(){
@@ -2712,7 +2720,8 @@
           ph.insertAdjacentHTML("afterend",frag);
           dd.querySelectorAll(".sd-s").forEach(function(el){if(el.onclick)return;el.onclick=function(){
             var pid3=parseInt(el.dataset.pid,10),sid3=parseInt(el.dataset.sid,10);dd.remove();
-            ereq("POST","/edit-api/lead/"+id+"/stage",{pipeline_id:pid3,status_id:sid3}).then(function(rr){if(rr&&rr.success){toast("Сделка перенесена");reload();}else toast((rr&&rr.message)||"Не удалось",true);});
+            var go=function(lr){ereq("POST","/edit-api/lead/"+id+"/stage",{pipeline_id:pid3,status_id:sid3,loss_reason_id:lr||0}).then(function(rr){if(rr&&rr.success){toast(sid3===143?"Сделка закрыта — не реализовано":"Сделка перенесена");reload();}else toast((rr&&rr.message)||"Не удалось",true);});};
+            if(sid3===143)pickLossReason(sw,go);else go(0);
           };});
         };});
         setTimeout(function(){document.addEventListener("click",function cl(ev){if(!dd.contains(ev.target)&&!sw.contains(ev.target)){dd.remove();document.removeEventListener("click",cl);}});},0);
