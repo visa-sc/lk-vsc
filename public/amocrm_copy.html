@@ -3064,9 +3064,11 @@
     var n=bulkCount(),bar=document.getElementById("bulkBar");
     if(!n){if(bar)bar.remove();return;}
     if(!bar){bar=document.createElement("div");bar.id="bulkBar";bar.className="bulk-bar";document.body.appendChild(bar);}
-    bar.innerHTML='<b>Выбрано: '+n+'</b><select id="bulkResp"><option value="">Сменить ответственного…</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select><button class="btn ghost" id="bulkApplyResp">Назначить</button><button class="btn ghost" id="bulkTag">+ Тег</button><button class="btn ghost" id="bulkMerge">Объединить</button><button class="btn ghost" id="bulkDelete">Удалить</button><button class="btn ghost" id="bulkClearBtn">Снять</button>';
+    bar.innerHTML='<b>Выбрано: '+n+'</b><select id="bulkResp"><option value="">Сменить ответственного…</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select><button class="btn ghost" id="bulkApplyResp">Назначить</button><button class="btn ghost" id="bulkTask">+ Задача</button><button class="btn ghost" id="bulkTag">+ Тег</button><button class="btn ghost" id="bulkMerge">Объединить</button><button class="btn ghost" id="bulkExport">Экспорт</button><button class="btn ghost" id="bulkDelete">Удалить</button><button class="btn ghost" id="bulkClearBtn">Снять</button>';
     bar.querySelector("#bulkClearBtn").onclick=bulkClear;
     bar.querySelector("#bulkApplyResp").onclick=function(){var r=bar.querySelector("#bulkResp").value;if(!r)return;bulkApply("resp",r);};
+    bar.querySelector("#bulkExport").onclick=function(){bulkExport();};
+    bar.querySelector("#bulkTask").onclick=function(){var text=prompt("Текст задачи для выбранных ("+n+"), срок — завтра 12:00:","Связаться с клиентом");if(!text)return;var d=new Date();d.setDate(d.getDate()+1);d.setHours(12,0,0,0);bulkApply("task",{text:text.trim(),till:Math.floor(d.getTime()/1000)});};
     bar.querySelector("#bulkTag").onclick=function(){var t=prompt("Тег для добавления выбранным сделкам:");if(t)bulkApply("tag",t.trim());};
     bar.querySelector("#bulkDelete").onclick=function(){if(!confirm("Удалить выбранные ("+n+") из копии?"))return;bulkApply("delete");};
     bar.querySelector("#bulkTag").style.display=BULK.kind==="leads"?"":"none";
@@ -3090,10 +3092,26 @@
       if(action==="resp")pr=ereq("PATCH","/edit-api/"+entity+"/"+id,{responsible_user_id:val});
       else if(action==="delete")pr=ereq("POST","/edit-api/"+entity+"/"+id+"/delete");
       else if(action==="tag")pr=ereq("PATCH","/edit-api/lead/"+id+"/tags",{tags:val.split(",").map(function(x){return x.trim();}).filter(Boolean),append:true});
+      else if(action==="task")pr=ereq("POST","/edit-api/task",{entity_type:BULK.kind,entity_id:parseInt(id,10),text:val.text,complete_till:val.till,task_type:0});
       else pr=Promise.resolve();
       pr.then(function(){done++;if(done===total){toast("Готово: "+done);var k=BULK.kind;bulkClear();if(views[curView])views[curView]();}});
     });
   }
+  // экспорт выбранных строк в CSV (видимые колонки текущей таблицы), как «Экспорт» в amo
+  function bulkExport(){
+    var table=document.querySelector("table.amo");if(!table)return toast("Нет таблицы для экспорта",true);
+    var heads=[].slice.call(table.querySelectorAll("thead th")).slice(1).map(function(th){return th.textContent.trim();});
+    var lines=[heads.map(csvCell).join(";")],cnt=0;
+    table.querySelectorAll("tbody tr").forEach(function(tr){
+      var cb=tr.querySelector(".bulk-cb input");if(!cb||!BULK.ids[cb.dataset.bid])return;
+      lines.push([].slice.call(tr.querySelectorAll("td")).slice(1).map(function(td){return csvCell(td.textContent.trim().replace(/\s+/g," "));}).join(";"));cnt++;
+    });
+    if(!cnt)return toast("Нет выбранных строк на странице",true);
+    var blob=new Blob(["﻿"+lines.join("\r\n")],{type:"text/csv;charset=utf-8"});
+    var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=BULK.kind+"_export_"+cnt+".csv";document.body.appendChild(a);a.click();a.remove();
+    toast("Экспортировано строк: "+cnt);
+  }
+  function csvCell(s){return '"'+String(s==null?"":s).replace(/"/g,'""')+'"';}
   function bulkTh(){return '<th class="bulk-th"><input type="checkbox" id="bulkAll" title="Выбрать все на странице"></th>';}
   function bulkCbTd(id){return '<td class="bulk-cb"><input type="checkbox" data-bid="'+id+'"'+(BULK.ids[id]?" checked":"")+'></td>';}
   function contactColSel(){try{return JSON.parse(localStorage.getItem("crm_contact_cols"))||null;}catch(e){return null;}}
