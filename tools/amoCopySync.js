@@ -73,9 +73,13 @@ const linkContacts = (leadId, contacts) => {
   }
 };
 try { db.exec("ALTER TABLE leads ADD COLUMN closest_task_at INTEGER"); } catch (_) { /* уже есть */ }
-const upLead = db.prepare(`INSERT INTO leads(id,name,price,status_id,pipeline_id,responsible_user_id,created_at,updated_at,closed_at,cf,tags,contact_ids,pay_ts,closest_task_at)
-  VALUES(@id,@name,@price,@status_id,@pipeline_id,@responsible_user_id,@created_at,@updated_at,@closed_at,@cf,@tags,@contact_ids,@pay_ts,@closest_task_at)
-  ON CONFLICT(id) DO UPDATE SET name=@name,price=@price,status_id=@status_id,pipeline_id=@pipeline_id,responsible_user_id=@responsible_user_id,updated_at=@updated_at,closed_at=@closed_at,cf=@cf,tags=@tags,contact_ids=@contact_ids,pay_ts=@pay_ts,closest_task_at=@closest_task_at`);
+// поля фильтра amo (добавлены 23.07): кем создана/изменена + причина отказа (loss_reason_id)
+try { db.exec("ALTER TABLE leads ADD COLUMN created_by INTEGER DEFAULT 0"); } catch (_) {}
+try { db.exec("ALTER TABLE leads ADD COLUMN updated_by INTEGER DEFAULT 0"); } catch (_) {}
+try { db.exec("ALTER TABLE leads ADD COLUMN loss_reason_id INTEGER DEFAULT 0"); } catch (_) {}
+const upLead = db.prepare(`INSERT INTO leads(id,name,price,status_id,pipeline_id,responsible_user_id,created_at,updated_at,closed_at,cf,tags,contact_ids,pay_ts,closest_task_at,created_by,updated_by,loss_reason_id)
+  VALUES(@id,@name,@price,@status_id,@pipeline_id,@responsible_user_id,@created_at,@updated_at,@closed_at,@cf,@tags,@contact_ids,@pay_ts,@closest_task_at,@created_by,@updated_by,@loss_reason_id)
+  ON CONFLICT(id) DO UPDATE SET name=@name,price=@price,status_id=@status_id,pipeline_id=@pipeline_id,responsible_user_id=@responsible_user_id,updated_at=@updated_at,closed_at=@closed_at,cf=@cf,tags=@tags,contact_ids=@contact_ids,pay_ts=@pay_ts,closest_task_at=@closest_task_at,created_by=@created_by,updated_by=@updated_by,loss_reason_id=@loss_reason_id`);
 try { db.exec("ALTER TABLE contacts ADD COLUMN tags TEXT"); } catch (_) { /* уже есть */ }
 // closest_task_at — ДЕНОРМАЛИЗОВАННОЕ поле amo, по нему (и только по нему) работает фильтр
 // «без задач». Важно: amo НЕ обнуляет его при выполнении задачи, поэтому «нет задач» в amo ≠
@@ -100,7 +104,7 @@ async function syncLeads() {
         maxUpd = Math.max(maxUpd, l.updated_at || 0);
         if (hasLocalEdit.get("leads", l.id)) { db.prepare("INSERT INTO sync_conflicts VALUES('leads',?,?,?)").run(l.id, Math.floor(Date.now() / 1000), "локальная правка — амо-версия не применена"); conflicts++; continue; }
         const cids = ((l._embedded && l._embedded.contacts) || []).map((c) => c.id);
-        upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids), pay_ts: payTsOf(l), closest_task_at: l.closest_task_at || null });
+        upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids), pay_ts: payTsOf(l), closest_task_at: l.closest_task_at || null, created_by: l.created_by || 0, updated_by: l.updated_by || 0, loss_reason_id: l.loss_reason_id || 0 });
         linkContacts(l.id, (l._embedded && l._embedded.contacts) || []);
         changed++;
       }
@@ -129,7 +133,7 @@ async function syncLeadsByIds(ids) {
       for (const l of items) {
         if (hasLocalEdit.get("leads", l.id)) { conflicts++; continue; }
         const cids = ((l._embedded && l._embedded.contacts) || []).map((c) => c.id);
-        upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids), pay_ts: payTsOf(l), closest_task_at: l.closest_task_at || null });
+        upLead.run({ id: l.id, name: l.name || "", price: l.price || 0, status_id: l.status_id, pipeline_id: l.pipeline_id, responsible_user_id: l.responsible_user_id || 0, created_at: l.created_at || 0, updated_at: l.updated_at || 0, closed_at: l.closed_at || 0, cf: cfExtract(l), tags: JSON.stringify(((l._embedded && l._embedded.tags) || []).map((t) => t.name)), contact_ids: JSON.stringify(cids), pay_ts: payTsOf(l), closest_task_at: l.closest_task_at || null, created_by: l.created_by || 0, updated_by: l.updated_by || 0, loss_reason_id: l.loss_reason_id || 0 });
         linkContacts(l.id, (l._embedded && l._embedded.contacts) || []);
         changed++;
       }

@@ -134,13 +134,15 @@ module.exports = function mountDbRoutes(app, guard, api) {
       try { const c = relCfClause(s.param, s.self, s.link, s.rel, s.table); if (c) { where.push(c.clause); args.push(...c.args); } } catch (_) {}
     }
   }
-  // ответственный: одиночный id или CSV нескольких (мультивыбор, как в amo)
-  function respWhere(v, where, args) {
+  // CSV-фильтр по числовой колонке (id или несколько через запятую, как мультивыбор amo)
+  function csvWhere(col, v, where, args) {
     if (!v) return;
     const ids = String(v).split(",").map((x) => parseInt(x, 10)).filter(Number.isFinite);
-    if (ids.length === 1) { where.push("responsible_user_id=?"); args.push(ids[0]); }
-    else if (ids.length > 1) { where.push("responsible_user_id IN (" + ids.map(() => "?").join(",") + ")"); args.push(...ids); }
+    if (ids.length === 1) { where.push(col + "=?"); args.push(ids[0]); }
+    else if (ids.length > 1) { where.push(col + " IN (" + ids.map(() => "?").join(",") + ")"); args.push(...ids); }
   }
+  // ответственный: одиночный id или CSV нескольких (мультивыбор, как в amo)
+  function respWhere(v, where, args) { csvWhere("responsible_user_id", v, where, args); }
   function dealsByContact(ids) {
     const map = {};
     if (!ids.length) return map;
@@ -842,6 +844,12 @@ module.exports = function mountDbRoutes(app, guard, api) {
     } catch (_) { res.json({ success: true, groups: { leads: [], contacts: [], companies: [] } }); }
   });
 
+  // справочник «Причины отказа» (для фильтра сделок, как в amo)
+  app.get(`${api}/loss_reasons`, guard, (req, res) => {
+    try { res.json({ success: true, items: D.prepare("SELECT id,name FROM loss_reasons ORDER BY sort,name").all() }); }
+    catch (_) { res.json({ success: true, items: [] }); }
+  });
+
   // список сделок этапа (как файловый, но из БД)
   app.get(`${api}/leads`, guard, (req, res) => {
     const pid = String(req.query.pipeline || ""), sid = String(req.query.status || ""), page = String(req.query.page || "1");
@@ -1024,6 +1032,10 @@ module.exports = function mountDbRoutes(app, guard, api) {
     // умолчанию (сверено 23.07: Анна Шафранская amo 5560 = копия активных 5560, а со всеми 25315).
     // Явный выбор этапа (в т.ч. 142/143) или пресет won/lost показывает закрытые.
     if (!q.status && !q.preset) where.push("status_id NOT IN (142,143)");
+    // системные поля amo: кем создана/изменена (мультивыбор), причина отказа
+    csvWhere("created_by", q.created_by, where, args);
+    csvWhere("updated_by", q.updated_by, where, args);
+    csvWhere("loss_reason_id", q.loss_reason, where, args);
     // фильтр по кастомным полям самой сделки
     addCfFilters(q.cf, where, args);
     // кросс-сущностные поля (как в amo): ccf=поля связанного КОНТАКТА, cco=поля связанной КОМПАНИИ

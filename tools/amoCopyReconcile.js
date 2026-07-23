@@ -74,6 +74,12 @@ const applyCta = (table, items) => {
   const st = table === "leads" ? setCtaLead : setCtaContact;
   db.transaction(() => { for (const [id, v] of items) st.run(v || null, id); })();
 };
+// дозаливка полей фильтра amo (кем создана/изменена, причина отказа) из того же обхода — бесплатно
+try { db.exec("ALTER TABLE leads ADD COLUMN created_by INTEGER DEFAULT 0"); } catch (_) {}
+try { db.exec("ALTER TABLE leads ADD COLUMN updated_by INTEGER DEFAULT 0"); } catch (_) {}
+try { db.exec("ALTER TABLE leads ADD COLUMN loss_reason_id INTEGER DEFAULT 0"); } catch (_) {}
+const setLeadMeta = db.prepare("UPDATE leads SET created_by=?,updated_by=?,loss_reason_id=? WHERE id=?");
+const applyLeadMeta = (page) => { db.transaction(() => { for (const l of page) setLeadMeta.run(l.created_by || 0, l.updated_by || 0, l.loss_reason_id || 0, l.id); })(); };
 
 // ВОССТАНОВЛЕНИЕ СВЯЗЕЙ сделка↔контакт из того же обхода (дыра «отставшие связи», найдена 23.07:
 // привязка контакта к сделке НЕ всегда бампает updated_at сделки → watermark-синк её не
@@ -202,6 +208,7 @@ async function reconcileTasks() {
       const page = ((d._embedded || {}).leads || []);
       page.forEach((l) => { amoIds.add(l.id); amoUpd.set(l.id, l.updated_at || 0); });
       applyCta("leads", page.map((l) => [l.id, l.closest_task_at]));
+      applyLeadMeta(page); // created_by/updated_by/loss_reason_id — из того же обхода
       rebuildLinks(page); // доведение lead_contacts (та же выкачка, 0 доп. запросов)
       url = (d._links && d._links.next && d._links.next.href) || null;
       pages++;
