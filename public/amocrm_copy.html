@@ -3260,7 +3260,8 @@
       html+='<div class="role-card"><h3>'+esc(p.name)+(p.is_main?' <span class="badge-adm">основная</span>':"")+' <span class="muted" style="font-weight:400;font-size:12px">— '+sts.length+' этапов</span></h3>';
       html+='<table class="set" style="max-width:520px"><tr><th>#</th><th>Этап</th><th>Тип</th></tr>'+sts.map(function(s,i){
         var col=s.color||"#c1d5e0";
-        var typ=s.type===1?"успех":(s.type===142?"успех":(s.type===143?"отказ":""));
+        // тип этапа по семантике amo: успех/отказ — по ID статуса (142/143), «Неразобранное» — по type=1
+        var typ=s.id===142?"успех":(s.id===143?"отказ":(s.type===1?"неразобранное":""));
         return '<tr><td class="muted">'+(i+1)+'</td><td><span class="swatch" style="background:'+esc(col)+'"></span>'+esc(s.name)+'</td><td class="muted">'+typ+'</td></tr>';
       }).join("")+'</table></div>';
     });
