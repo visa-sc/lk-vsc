@@ -493,6 +493,14 @@
   .ms-pop .ms-grp { font-size:10.5px; color:#aab4bf; text-transform:uppercase; letter-spacing:.4px; margin:8px 4px 3px; }
   .ms-pop label { display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:6px; font-size:13px; cursor:pointer; }
   .ms-pop label:hover { background:#f2f6fb; }
+  /* сворачивание этапов по воронкам, как в amo */
+  .ms-pop .ms-grp-h { display:flex; align-items:center; gap:8px; padding:8px 6px; cursor:pointer; border-radius:6px; }
+  .ms-pop .ms-grp-h:hover { background:#f2f6fb; }
+  .ms-pop .ms-grp-h .grp-nm { flex:1; text-transform:uppercase; letter-spacing:.3px; font-size:11px; font-weight:700; color:#5a6b7b; }
+  .ms-pop .ms-grp-h .grp-arw { color:#98a4b0; font-size:11px; }
+  .ms-pop .ms-grp-body { padding:2px 0 6px; }
+  .ms-pop label.ms-stage { padding:7px 9px; border-radius:5px; margin:2px 0; font-size:13px; color:#2a3642; }
+  .ms-pop label.ms-stage:hover { filter:brightness(.97); }
   .fgrid { display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
   .ffield { display:flex; flex-direction:column; gap:4px; }
   .ffield label { font-size:11.5px; color:#8a949e; text-transform:uppercase; font-weight:600; }
@@ -875,27 +883,55 @@
   }
   // попап множественного выбора (этапы/ответственные) — как компактные поля-селекторы amo
   function closeMsPopup(){var p=document.getElementById("msPop");if(p)p.remove();}
-  function openMsPopup(anchor,groups,selected,onChange){
-    closeMsPopup();
+  // hex → rgba (для цветных полос этапов, как в amo)
+  function hexA(hex,a){hex=String(hex||"").replace("#","");if(hex.length===3)hex=hex.split("").map(function(c){return c+c;}).join("");var n=parseInt(hex,16);if(isNaN(n))return "rgba(0,0,0,.05)";return "rgba("+((n>>16)&255)+","+((n>>8)&255)+","+(n&255)+","+a+")";}
+  // попап множественного выбора. opts.collapsible=воронки сворачиваемыми группами с чекбоксом
+  // «выбрать все» и цветными этапами (как выбор этапов в amo); иначе — плоский список (ответственные).
+  function openMsPopup(anchor,groups,selected,onChange,opts){
+    opts=opts||{};closeMsPopup();
     var pop=document.createElement("div");pop.className="ms-pop";pop.id="msPop";
     var total=0;groups.forEach(function(g){total+=g.items.length;});
-    var html=(total>8?'<input class="ms-search" placeholder="Поиск…">':"");
-    groups.forEach(function(g){
-      if(g.title)html+='<div class="ms-grp">'+esc(g.title)+'</div>';
-      g.items.forEach(function(it){
-        html+='<label data-lbl="'+esc(String(it.label||"").toLowerCase())+'"><input type="checkbox" value="'+esc(it.id)+'"'+(selected.has(String(it.id))?" checked":"")+'>'+(it.color?'<span class="swatch" style="background:'+esc(it.color)+'"></span>':"")+'<span>'+esc(it.label)+'</span></label>';
+    var html="";
+    if(opts.collapsible){
+      groups.forEach(function(g,gi){
+        var allSel=g.items.length&&g.items.every(function(it){return selected.has(String(it.id));});
+        var expanded=(opts.expand==null?gi===0:opts.expand===gi);
+        html+='<div class="ms-grp2" data-gi="'+gi+'">'+
+          '<div class="ms-grp-h"><input type="checkbox" class="grp-cb"'+(allSel?" checked":"")+'><span class="grp-nm">'+esc(g.title)+'</span><span class="grp-arw">'+(expanded?"▾":"▸")+'</span></div>'+
+          '<div class="ms-grp-body"'+(expanded?"":' style="display:none"')+'>'+
+          g.items.map(function(it){return '<label class="ms-stage" data-lbl="'+esc(String(it.label||"").toLowerCase())+'" style="background:'+hexA(it.color,.26)+'"><input type="checkbox" value="'+esc(it.id)+'"'+(selected.has(String(it.id))?" checked":"")+'><span>'+esc(it.label)+'</span></label>';}).join("")+
+          '</div></div>';
       });
-    });
+    }else{
+      html=(total>8?'<input class="ms-search" placeholder="Поиск…">':"");
+      groups.forEach(function(g){
+        if(g.title)html+='<div class="ms-grp">'+esc(g.title)+'</div>';
+        g.items.forEach(function(it){html+='<label data-lbl="'+esc(String(it.label||"").toLowerCase())+'"><input type="checkbox" value="'+esc(it.id)+'"'+(selected.has(String(it.id))?" checked":"")+'>'+(it.color?'<span class="swatch" style="background:'+esc(it.color)+'"></span>':"")+'<span>'+esc(it.label)+'</span></label>';});
+      });
+    }
     pop.innerHTML=html;
     document.body.appendChild(pop);
     var r=anchor.getBoundingClientRect();
     pop.style.top=(r.bottom+4)+"px";pop.style.left=Math.max(8,Math.min(r.left,window.innerWidth-pop.offsetWidth-8))+"px";
     pop.addEventListener("click",function(e){e.stopPropagation();});
-    pop.querySelectorAll("input[type=checkbox]").forEach(function(cb){cb.onchange=function(){
-      if(cb.checked)selected.add(String(cb.value));else selected.delete(String(cb.value));
-      onChange(Array.from(selected));
-    };});
-    var s=pop.querySelector(".ms-search");if(s){s.oninput=function(){var q=this.value.toLowerCase();pop.querySelectorAll("label").forEach(function(l){l.style.display=l.dataset.lbl.indexOf(q)>=0?"":"none";});};s.focus();}
+    // индивидуальные чекбоксы этапов/пользователей (кроме групповых «выбрать все»)
+    pop.querySelectorAll("input[type=checkbox]").forEach(function(cb){
+      if(cb.classList.contains("grp-cb"))return;
+      cb.onchange=function(){
+        if(cb.checked)selected.add(String(cb.value));else selected.delete(String(cb.value));
+        if(opts.collapsible)syncGrp(cb.closest(".ms-grp2"));
+        onChange(Array.from(selected));
+      };
+    });
+    // сворачивание/разворачивание воронки + «выбрать все» по воронке
+    function syncGrp(grp){if(!grp)return;var cbs=grp.querySelectorAll(".ms-grp-body input[type=checkbox]"),g=grp.querySelector(".grp-cb");var on=0;cbs.forEach(function(c){if(c.checked)on++;});g.checked=on===cbs.length&&cbs.length>0;g.indeterminate=on>0&&on<cbs.length;}
+    pop.querySelectorAll(".ms-grp2").forEach(function(grp){
+      var head=grp.querySelector(".ms-grp-h"),body=grp.querySelector(".ms-grp-body"),arw=grp.querySelector(".grp-arw"),gcb=grp.querySelector(".grp-cb");
+      head.onclick=function(e){if(e.target===gcb)return;var hid=body.style.display==="none";body.style.display=hid?"":"none";arw.textContent=hid?"▾":"▸";};
+      gcb.onchange=function(){grp.querySelectorAll(".ms-grp-body input[type=checkbox]").forEach(function(c){c.checked=gcb.checked;if(gcb.checked)selected.add(String(c.value));else selected.delete(String(c.value));});gcb.indeterminate=false;onChange(Array.from(selected));};
+      syncGrp(grp);
+    });
+    var s=pop.querySelector(".ms-search");if(s){s.oninput=function(){var q=this.value.toLowerCase();pop.querySelectorAll("label[data-lbl]").forEach(function(l){l.style.display=l.dataset.lbl.indexOf(q)>=0?"":"none";});};s.focus();}
     setTimeout(function(){document.addEventListener("click",function cl(ev){if(!document.getElementById("msPop"))return document.removeEventListener("click",cl);if(!pop.contains(ev.target)&&ev.target!==anchor&&!anchor.contains(ev.target)){closeMsPopup();document.removeEventListener("click",cl);}});},0);
   }
   function openFilterPanel(){
@@ -1017,7 +1053,7 @@
       var stRefresh=function(){var n=stSel.size;stHidden.value=Array.from(stSel).join(",");var lbl=p.querySelector("#stageLbl");if(lbl){lbl.textContent=n?(n+" "+plural(n,"этап","этапа","этапов")):"Все этапы";lbl.className=n?"":"af-ph";}stageField.classList.toggle("on",!!n);var cl=p.querySelector("#stageClear");if(n&&!cl){var x=document.createElement("span");x.className="af-x";x.id="stageClear";x.textContent="×";stageField.appendChild(x);bindStageClear();}else if(!n&&cl)cl.remove();};
       function bindStageClear(){var cl=p.querySelector("#stageClear");if(cl)cl.onclick=function(e){e.stopPropagation();stSel.clear();closeMsPopup();stRefresh();};}
       bindStageClear();
-      stageField.onclick=function(e){if(e.target.id==="stageClear")return;if(document.getElementById("msPop"))return closeMsPopup();openMsPopup(stageField,stGroups,stSel,function(){stRefresh();});};
+      stageField.onclick=function(e){if(e.target.id==="stageClear")return;if(document.getElementById("msPop"))return closeMsPopup();openMsPopup(stageField,stGroups,stSel,function(){stRefresh();},{collapsible:true});};
     }
     // компактное поле «Ответственный» → попап-мультивыбор пользователей (как amo)
     var respField=p.querySelector("#respField");
