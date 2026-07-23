@@ -441,6 +441,28 @@
   /* ── фильтр (как в amoCRM: клик по поиску) ── */
   .filter-panel { position:fixed; z-index:140; background:#fff; border:1px solid #e8ecf1; border-radius:16px; box-shadow:0 18px 50px rgba(20,40,70,.20), 0 4px 12px rgba(20,40,70,.08); padding:18px 20px; width:520px; max-width:94vw; }
   .filter-panel h4 { margin:0 0 12px; font-size:14px; color:#33404d; }
+  /* 3-колоночная панель фильтра как в amo: слева сохранённые, центр свойства, справа теги */
+  .filter-panel.fp3 { width:940px; padding:0; overflow:hidden; }
+  .fp3-cols { display:grid; grid-template-columns:236px 1fr 264px; max-height:78vh; }
+  .fp3-col { padding:16px 16px 18px; overflow:auto; }
+  .fp3-col + .fp3-col { border-left:1px solid #eef1f5; }
+  .fp3-col h5 { margin:0 0 12px; font-size:11.5px; color:#8a949e; text-transform:uppercase; letter-spacing:.5px; font-weight:700; }
+  .fp3-saved-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:9px; cursor:pointer; font-size:13.5px; color:#33404d; }
+  .fp3-saved-item:hover { background:#f2f6fb; }
+  .fp3-saved-item.on { background:#eaf3fc; color:#1a73c7; }
+  .fp3-saved-item .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fp3-saved-item .dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  .fp3-saved-item .pen { opacity:0; color:#98a4b0; font-size:13px; flex-shrink:0; }
+  .fp3-saved-item:hover .pen { opacity:.8; }
+  .fp3-saved-sep { height:1px; background:#eef1f5; margin:8px 2px; }
+  .fp3-saved-grp { font-size:10.5px; color:#aab4bf; text-transform:uppercase; letter-spacing:.4px; margin:10px 2px 4px; }
+  .fp3-savebar { display:flex; gap:6px; margin-bottom:10px; }
+  .fp3-savebar .btn { flex:1; padding:7px 8px; font-size:12.5px; }
+  .fp3-tags .ftag { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:7px; cursor:pointer; font-size:13px; }
+  .fp3-tags .ftag:hover { background:#f2f6fb; }
+  .fp3-tags .ftag .tn { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#33404d; }
+  .fp3-tags .ftag .tc { color:#98a4b0; font-size:12px; }
+  .fp3-tsearch { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font:inherit; font-size:13px; margin-bottom:8px; }
   .fgrid { display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
   .ffield { display:flex; flex-direction:column; gap:4px; }
   .ffield label { font-size:11.5px; color:#8a949e; text-transform:uppercase; font-weight:600; }
@@ -490,6 +512,9 @@
     .fwa-sts { flex-basis:100%; }
     #dash { padding:14px; }
     .filter-panel { padding:14px; left:8px !important; right:8px; width:auto; }
+    .filter-panel.fp3 { padding:0; width:auto; }
+    .filter-panel.fp3 .fp3-cols { grid-template-columns:1fr; max-height:82vh; }
+    .filter-panel.fp3 .fp3-col + .fp3-col { border-left:none; border-top:1px solid #eef1f5; }
     .lists-tabs { padding:8px 8px 0; }
     .gs-box { left:8px !important; right:8px; width:auto !important; }
     .desk-title { font-size:24px; padding:16px 0 14px; }
@@ -803,62 +828,69 @@
     var isLeads=curFilter.kind==="leads";
     var leadDefs=(CF&&CF.leads)||[], contDefs=(CF&&CF.contacts)||[];
     var p=document.createElement("div");p.className="filter-panel";p.id="filterPanel";
-    var fields='';
-    // быстрые системные пресеты (левая колонка панели amo)
-    if(isLeads){
-      var PRESETS=[["open","Открытые"],["won","Успешно завершённые"],["lost","Нереализованные"],["notasks","🟡 Без задач"],["overdue","🔴 С просроченными"]];
-      fields+='<div class="fpresets" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">'+PRESETS.map(function(x){
-        return '<button class="lnk fp-btn" data-fp="'+x[0]+'" style="border:1px solid '+(st.preset===x[0]?"var(--link)":"#dfe5ec")+';border-radius:14px;padding:5px 12px;font:inherit;font-size:12.5px;cursor:pointer;background:'+(st.preset===x[0]?"#eaf3fc":"#fff")+';color:#334">'+x[1]+'</button>';
-      }).join("")+(ME&&ME.user_id?'<button class="lnk fp-btn" data-fp="my" style="border:1px solid #dfe5ec;border-radius:14px;padding:5px 12px;font:inherit;font-size:12.5px;cursor:pointer;background:#fff;color:#334">Только мои</button>':"")+'</div>';
-    }
-    fields+='<div class="ffield"><label>Ответственный</label><select data-f="responsible">'+userOptsHtml(st.responsible)+'</select></div>';
+    var ownDefs=isLeads?leadDefs:contDefs;
+    // ── СРЕДНЯЯ КОЛОНКА amo «Свойства сделок» ──
+    var mid='<div class="ffield"><label>Ответственный</label><select data-f="responsible">'+userOptsHtml(st.responsible)+'</select></div>';
     if(isLeads){
       var sts=(curFilter.statuses||[]);
       var selSt=String(st.status||"").split(",").filter(Boolean);
-      fields+='<div class="ffield"><label>Этапы (мультивыбор)</label><input type="hidden" data-f="status" value="'+esc(st.status||"")+'">'+
-        '<div class="fst-box" style="max-height:120px;overflow:auto;border:1px solid #dfe5ec;border-radius:8px;padding:6px 8px">'+
+      mid+='<div class="ffield"><label>Этапы (мультивыбор)</label><input type="hidden" data-f="status" value="'+esc(st.status||"")+'">'+
+        '<div class="fst-box" style="max-height:150px;overflow:auto;border:1px solid #dfe5ec;border-radius:8px;padding:6px 8px">'+
         sts.map(function(s){return '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;padding:2px 0;cursor:pointer"><input type="checkbox" class="fst-cb" value="'+s.id+'"'+(selSt.indexOf(String(s.id))>=0?" checked":"")+'><span class="swatch" style="background:'+esc(s.color||"#c1d5e0")+'"></span>'+esc(s.name)+'</label>';}).join("")+
         '</div></div>';
-      fields+='<div class="ffield"><label>Бюджет, ₽</label><div class="frange"><input type="number" data-f="price_min" placeholder="от" value="'+(st.price_min||"")+'"><span>–</span><input type="number" data-f="price_max" placeholder="до" value="'+(st.price_max||"")+'"></div></div>';
-      fields+='<div class="ffield"><label>Тег содержит</label><input type="text" data-f="tag" placeholder="напр. MSK" value="'+esc(st.tag||"")+'"></div>';
-      fields+='<div class="ffield" id="fTagsCloud" style="display:none"><label>Популярные теги</label><div class="ftags" style="display:flex;flex-wrap:wrap;gap:4px;max-height:110px;overflow:auto"></div></div>';
+      mid+='<div class="ffield"><label>Бюджет, ₽</label><div class="frange"><input type="number" data-f="price_min" placeholder="от" value="'+(st.price_min||"")+'"><span>–</span><input type="number" data-f="price_max" placeholder="до" value="'+(st.price_max||"")+'"></div></div>';
+      mid+='<div class="ffield"><label>Тег содержит</label><input type="text" data-f="tag" placeholder="напр. MSK" value="'+esc(st.tag||"")+'"></div>';
     }
-    fields+='<div class="ffield"><label>Создано с</label><input type="date" data-f="date_from" value="'+(st.date_from||"")+'"></div>';
-    fields+='<div class="ffield"><label>Создано по</label><input type="date" data-f="date_to" value="'+(st.date_to||"")+'"></div>';
-    // секции фильтра по любым полям
-    var ownDefs=isLeads?leadDefs:contDefs;
+    mid+='<div class="frange" style="gap:12px;align-items:stretch"><div class="ffield" style="flex:1"><label>Создано с</label><input type="date" data-f="date_from" value="'+(st.date_from||"")+'"></div><div class="ffield" style="flex:1"><label>Создано по</label><input type="date" data-f="date_to" value="'+(st.date_to||"")+'"></div></div>';
     var cfRowsHtml=(st._cf&&st._cf.length?st._cf:[["",""]]).map(function(x){return cfFilterRow(ownDefs,"cf",x[0],x[1]);}).join("");
-    var ccfSection=isLeads?('<div class="cf-sec"><div class="cf-sec-h">Поля связанного контакта</div><div id="ccfRows">'+
+    mid+='<div class="cf-sec"><div class="cf-sec-h">Поля '+(isLeads?"сделки":"контакта")+' (любое поле)</div><div id="cfRows">'+cfRowsHtml+'</div><button class="cf-add" data-add="cf">+ ещё поле</button></div>';
+    if(isLeads)mid+='<div class="cf-sec"><div class="cf-sec-h">Поля связанного контакта</div><div id="ccfRows">'+
       ((st._ccf&&st._ccf.length?st._ccf:[["",""]]).map(function(x){return cfFilterRow(contDefs,"ccf",x[0],x[1]);}).join(""))+
-      '</div><button class="cf-add" data-add="ccf">+ ещё поле контакта</button></div>'):"";
-    var saved=loadSavedFilters(curFilter.kind);
-    var savedRow='<div class="fsaved"><select id="fSavedSel"><option value="">— сохранённые фильтры —</option>'+saved.map(function(s,i){return '<option value="'+i+'">'+esc(s.name)+'</option>';}).join("")+'</select><button class="btn ghost" id="fSaveBtn" title="Сохранить текущий фильтр под именем">💾 Сохранить</button><button class="btn ghost" id="fDelSaved" title="Удалить выбранный пресет">🗑</button></div>';
-    p.innerHTML='<h4>Фильтр '+(isLeads?"сделок":"контактов")+'</h4>'+savedRow+'<div id="fAmoSaved" style="margin:0 0 12px"></div><div class="fgrid">'+fields+'</div>'+
-      '<div class="cf-sec"><div class="cf-sec-h">Поля '+(isLeads?"сделки":"контакта")+' (любое поле)</div><div id="cfRows">'+cfRowsHtml+'</div><button class="cf-add" data-add="cf">+ ещё поле</button></div>'+
-      ccfSection+
-      '<div class="filter-acts"><button class="btn" id="fApply">Применить</button><button class="btn ghost" id="fReset">Сбросить</button><button class="btn ghost" id="fWidget" title="Сохранить этот фильтр виджетом на рабочий стол (как в amo)">★ В виджет</button><button class="btn ghost" id="fClose" style="margin-left:auto">Закрыть</button></div>';
+      '</div><button class="cf-add" data-add="ccf">+ ещё поле контакта</button></div>';
+    mid+='<div class="filter-acts"><button class="btn" id="fApply">Применить</button><button class="btn ghost" id="fReset">Сбросить</button><button class="btn ghost" id="fWidget" title="Сохранить этот фильтр виджетом на рабочий стол (как в amo)">★ В виджет</button></div>';
+    // ── ЛЕВАЯ КОЛОНКА amo: сохранённые фильтры списком + системные пресеты снизу ──
+    var presetItems=isLeads?[["open","Открытые сделки"],["my","Только мои сделки"],["won","Успешно завершённые"],["lost","Нереализованные сделки"],["notasks","Сделки без задач","#f2c94c"],["overdue","Сделки с просроченными","#eb5757"]]:[];
+    var presetHtml=presetItems.filter(function(x){return x[0]!=="my"||(ME&&ME.user_id);}).map(function(x){
+      return '<div class="fp3-saved-item'+(st.preset===x[0]?' on':'')+'" data-fp="'+x[0]+'">'+(x[2]?'<span class="dot" style="background:'+x[2]+'"></span>':'')+'<span class="nm">'+x[1]+'</span></div>';
+    }).join("");
+    var left='<div class="fp3-savebar"><button class="btn ghost" id="fSaveBtn" title="Сохранить текущий фильтр">💾 Сохранить</button></div><div id="fpSavedCustom"></div>'+(presetHtml?'<div class="fp3-saved-sep"></div>'+presetHtml:'');
+    // ── ПРАВАЯ КОЛОНКА amo: теги со счётчиками ──
+    var right=isLeads?'<input type="text" class="fp3-tsearch" id="fpTagSearch" placeholder="Найти тег"><div id="fpTags"><div class="muted" style="font-size:12px;padding:4px 2px">загрузка…</div></div>':'<div class="muted" style="font-size:12.5px">Теги — только для сделок</div>';
+    p.className='filter-panel fp3';
+    p.innerHTML='<div class="fp3-cols">'+
+      '<div class="fp3-col"><h5>Сохранённые</h5>'+left+'</div>'+
+      '<div class="fp3-col"><h5>Свойства '+(isLeads?"сделок":"контактов")+'</h5>'+mid+'</div>'+
+      '<div class="fp3-col fp3-tags"><h5>Теги</h5>'+right+'</div>'+
+      '</div>';
     document.body.appendChild(p);
     p.style.top=(r.bottom+8)+"px";
     p.style.left=Math.max(10,Math.min(r.left,window.innerWidth-p.offsetWidth-10))+"px";
     p.addEventListener("click",function(e){e.stopPropagation();});
-    // ── сохранённые фильтры ИЗ amo (spec-движок) — чипы по группам, клик применяет 1:1 ──
-    ensureSavedFilters(function(){
-      var box=p.querySelector("#fAmoSaved");if(!box||!SAVEDF)return;
-      var chip=function(f,kind){return '<button class="lnk fsv-chip" title="Сохранённый фильтр amo — применить" style="border:1px solid #d9c8a0;border-radius:14px;padding:5px 12px;font:inherit;font-size:12.5px;cursor:pointer;background:#fbf7ec;color:#5a4a20;margin:0 4px 4px 0">★ '+esc(f.name)+(f.legacy?' <span style="opacity:.5">·старый</span>':'')+'</button>';};
-      var groups=[];
-      if(isLeads){
+    // ── левая колонка: сохранённые фильтры списком (amo-spec + локальные), как в amo ──
+    function renderSavedList(){
+      var box=p.querySelector("#fpSavedCustom");if(!box)return;
+      var html='',flat=[];
+      var item=function(name,i,delLi,legacy){return '<div class="fp3-saved-item" data-sv="'+i+'"><span class="nm">'+esc(name)+(legacy?' <span style="opacity:.5">·старый</span>':'')+'</span>'+(delLi!=null?'<span class="pen" data-del="'+delLi+'" title="Удалить">🗑</span>':'')+'</div>';};
+      if(isLeads&&SAVEDF){
         var mine=(SAVEDF.leads||[]).filter(function(f){return String(f.scope)===String(curPipe);});
         var allf=(SAVEDF.leads||[]).filter(function(f){return f.scope==="all";});
-        if(mine.length)groups.push(['Этой воронки',mine]);
-        if(allf.length)groups.push(['Все сделки',allf]);
-      }else{
-        if((SAVEDF.contacts||[]).length)groups.push(['Контакты',SAVEDF.contacts]);
+        if(mine.length){html+='<div class="fp3-saved-grp">Этой воронки</div>';mine.forEach(function(f){var i=flat.push({t:"spec",f:f})-1;html+=item(f.name,i,null,f.legacy);});}
+        if(allf.length){html+='<div class="fp3-saved-grp">Все сделки</div>';allf.forEach(function(f){var i=flat.push({t:"spec",f:f})-1;html+=item(f.name,i,null,f.legacy);});}
+      }else if(!isLeads&&SAVEDF){
+        (SAVEDF.contacts||[]).forEach(function(f){var i=flat.push({t:"spec",f:f})-1;html+=item(f.name,i,null,f.legacy);});
       }
-      if(!groups.length)return;
-      box.innerHTML=groups.map(function(g){return '<div style="font-size:11px;color:#94a3b0;text-transform:uppercase;letter-spacing:.4px;margin:4px 0 4px">'+g[0]+' <span style="opacity:.7">('+g[1].length+')</span></div><div style="display:flex;flex-wrap:wrap">'+g[1].map(function(f){return chip(f);}).join("")+'</div>';}).join("");
-      var flat=[].concat.apply([],groups.map(function(g){return g[1];}));
-      box.querySelectorAll(".fsv-chip").forEach(function(btn,i){btn.onclick=function(){applySpecFilter(flat[i],isLeads?"leads":"contacts");};});
-    });
+      var local=loadSavedFilters(curFilter.kind);
+      if(local.length){html+='<div class="fp3-saved-grp">Мои</div>';local.forEach(function(s,li){var i=flat.push({t:"local",raw:s.raw})-1;html+=item(s.name,i,li);});}
+      box.innerHTML=html||'<div class="muted" style="font-size:12px;padding:4px 2px">пока нет</div>';
+      box.querySelectorAll(".fp3-saved-item").forEach(function(el){el.onclick=function(ev){
+        if(ev.target.dataset.del!==undefined){ev.stopPropagation();var li=+ev.target.dataset.del;var arr=loadSavedFilters(curFilter.kind);if(!confirm("Удалить «"+(arr[li]&&arr[li].name)+"»?"))return;arr.splice(li,1);saveSavedFilters(curFilter.kind,arr);renderSavedList();return;}
+        var it=flat[+el.dataset.sv];if(!it)return;
+        if(it.t==="spec")applySpecFilter(it.f,isLeads?"leads":"contacts");
+        else{FSTATE[curFilter.kind]=it.raw||{};closeFilterPanel();openFilterPanel();setTimeout(function(){var b=document.getElementById("fApply");if(b)b.click();},60);}
+      };});
+    }
+    renderSavedList();
+    ensureSavedFilters(function(){renderSavedList();});
     // добавление/удаление строк полей
     p.querySelectorAll(".cf-add").forEach(function(btn){btn.onclick=function(){
       var sec=btn.dataset.add,box=p.querySelector(sec==="cf"?"#cfRows":"#ccfRows");
@@ -880,33 +912,18 @@
     var collectCf=function(sec){var out=[];p.querySelectorAll('.cf-row[data-sec="'+sec+'"]').forEach(function(row){var fid=row.querySelector(".cf-field").value,val=row.querySelector(".cf-val").value.trim();if(fid&&val)out.push([fid,val]);});return out;};
     var collect=function(){var vals={};p.querySelectorAll("[data-f]").forEach(function(el){var v=el.value.trim();if(v){if(el.type==="date")v=Math.floor(new Date(v+"T00:00:00").getTime()/1000);vals[el.dataset.f]=v;}});vals._cf=collectCf("cf");if(isLeads)vals._ccf=collectCf("ccf");return vals;};
     var collectRaw=function(){var raw={};p.querySelectorAll("[data-f]").forEach(function(el){if(el.value.trim())raw[el.dataset.f]=el.value.trim();});raw._cf=collectCf("cf");if(isLeads)raw._ccf=collectCf("ccf");return raw;};
-    // сохранённые пресеты фильтра (как в amo)
+    // сохранить текущий фильтр под именем (💾) — обновляем список слева без переоткрытия
     $("#fSaveBtn").onclick=function(){
       var name=prompt("Название сохранённого фильтра:","");if(!name)return;
       var arr=loadSavedFilters(curFilter.kind);
       arr.push({name:name.trim(),raw:collectRaw()});
       saveSavedFilters(curFilter.kind,arr);
       toast("Фильтр «"+name.trim()+"» сохранён");
-      closeFilterPanel();openFilterPanel();
-    };
-    $("#fSavedSel").onchange=function(){
-      var i=parseInt(this.value,10);if(!isFinite(i))return;
-      var arr=loadSavedFilters(curFilter.kind);if(!arr[i])return;
-      FSTATE[curFilter.kind]=arr[i].raw||{};
-      closeFilterPanel();openFilterPanel();
-      setTimeout(function(){var b=document.getElementById("fApply");if(b)b.click();},60);
-    };
-    $("#fDelSaved").onclick=function(){
-      var sel=$("#fSavedSel"),i=parseInt(sel.value,10);
-      if(!isFinite(i))return toast("Выберите пресет в списке",true);
-      var arr=loadSavedFilters(curFilter.kind);
-      if(!confirm("Удалить пресет «"+(arr[i]&&arr[i].name)+"»?"))return;
-      arr.splice(i,1);saveSavedFilters(curFilter.kind,arr);
-      closeFilterPanel();openFilterPanel();
+      renderSavedList();
     };
     $("#fApply").onclick=function(){FSTATE[curFilter.kind]=collectRaw();var vals=collect();closeFilterPanel();if(isLeads)runLeadsFilter(vals);else runContactsFilter(vals);};
-    // быстрые пресеты: клик применяет сразу (повторный клик по активному — снимает)
-    p.querySelectorAll(".fp-btn").forEach(function(b){b.onclick=function(){
+    // системные пресеты слева: клик применяет сразу (повторный по активному — снимает)
+    p.querySelectorAll(".fp3-saved-item[data-fp]").forEach(function(b){b.onclick=function(){
       var raw=collectRaw(),vals=collect();
       if(b.dataset.fp==="my"){raw.responsible=String(ME.user_id);vals.responsible=ME.user_id;}
       else{raw.preset=(st.preset===b.dataset.fp)?"":b.dataset.fp;if(raw.preset)vals.preset=raw.preset;}
@@ -917,19 +934,21 @@
       var ids=Array.prototype.filter.call(p.querySelectorAll(".fst-cb"),function(x){return x.checked;}).map(function(x){return x.value;});
       p.querySelector('[data-f="status"]').value=ids.join(",");
     };});
-    // популярные теги со счётчиками (как правая колонка панели amo): клик = фильтр по тегу сразу
+    // правая колонка «Теги» со счётчиками (как в amo): поиск + клик = фильтр по тегу
     if(isLeads)jreq(API+"/tags_report").then(function(r){
-      var wrap=document.getElementById("fTagsCloud");if(!wrap||!r||!r.success||!(r.tags||[]).length)return;
-      wrap.style.display="";
-      wrap.querySelector(".ftags").innerHTML=r.tags.slice(0,30).map(function(t){
-        return '<span class="tag" data-ftag="'+esc(t.v)+'" style="cursor:pointer" title="фильтр по тегу">'+esc(t.v)+' <span style="opacity:.6">'+fmt(t.c)+'</span></span>';
-      }).join("");
-      wrap.querySelectorAll("[data-ftag]").forEach(function(x){x.onclick=function(){
-        var raw=collectRaw(),vals=collect();
-        raw.tag=x.dataset.ftag;vals.tag=x.dataset.ftag;
-        FSTATE[curFilter.kind]=raw;closeFilterPanel();runLeadsFilter(vals);
-      };});
-    }).catch(function(){});
+      var wrap=document.getElementById("fpTags");if(!wrap)return;
+      if(!r||!r.success||!(r.tags||[]).length){wrap.innerHTML='<div class="muted" style="font-size:12px;padding:4px 2px">нет тегов</div>';return;}
+      var render=function(q){
+        var list=r.tags.filter(function(t){return !q||String(t.v).toLowerCase().indexOf(q)>=0;}).slice(0,60);
+        wrap.innerHTML=list.map(function(t){return '<div class="ftag" data-ftag="'+esc(t.v)+'"><span class="tn">'+esc(t.v)+'</span><span class="tc">'+fmt(t.c)+'</span></div>';}).join("")||'<div class="muted" style="font-size:12px;padding:4px 2px">ничего не найдено</div>';
+        wrap.querySelectorAll("[data-ftag]").forEach(function(x){x.onclick=function(){
+          var raw=collectRaw(),vals=collect();raw.tag=x.dataset.ftag;vals.tag=x.dataset.ftag;
+          FSTATE[curFilter.kind]=raw;closeFilterPanel();runLeadsFilter(vals);
+        };});
+      };
+      render("");
+      var ts=document.getElementById("fpTagSearch");if(ts)ts.oninput=function(){render(this.value.trim().toLowerCase());};
+    }).catch(function(){var wrap=document.getElementById("fpTags");if(wrap)wrap.innerHTML='<div class="muted" style="font-size:12px;padding:4px 2px">недоступно</div>';});
     $("#fReset").onclick=function(){FSTATE[curFilter.kind]={};closeFilterPanel();if(isLeads)vLeads();else vContacts();};
     // «★ В виджет» — сохранить текущий фильтр виджетом на рабочий стол (как в amo)
     $("#fWidget").onclick=function(){
@@ -943,7 +962,7 @@
       saveDeskWidgets(ws);
       toast("Виджет «"+name.trim()+"» добавлен на рабочий стол");
     };
-    $("#fClose").onclick=closeFilterPanel;
+    // закрытие — клик вне панели (кнопка «Закрыть» убрана, как в amo)
     setTimeout(function(){document.addEventListener("click",function cl(ev){if(!document.getElementById("filterPanel"))return document.removeEventListener("click",cl);if(!p.contains(ev.target)&&ev.target!==anchor){closeFilterPanel();document.removeEventListener("click",cl);}});},0);
   }
   function filterQS(vals){
