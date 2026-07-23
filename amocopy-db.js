@@ -1044,8 +1044,12 @@ module.exports = function mountDbRoutes(app, guard, api) {
       { param: q.cco, self: "lead_id", link: "lead_companies", rel: "company_id", table: "companies" }
     ], where, args);
     const page = Math.max(1, intq(q.page) || 1);
+    // сортировка кликом по заголовку столбца, как в amo (белый список колонок)
+    const SORT_COL = { name: "name", sid: "status_id", price: "price", created: "created_at", updated: "updated_at" };
+    const orderCol = SORT_COL[q.sort] || "updated_at";
+    const orderDir = String(q.dir).toLowerCase() === "asc" ? "ASC" : "DESC";
     const sql = "SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at,cf FROM leads" +
-      (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY updated_at DESC LIMIT 50 OFFSET ?";
+      (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY " + orderCol + " " + orderDir + " LIMIT 50 OFFSET ?";
     try {
       // count_only=1 — для виджетов рабочего стола по сохранённому фильтру (кол-во + сумма), с TTL-кэшем
       if (String(q.count_only) === "1") {

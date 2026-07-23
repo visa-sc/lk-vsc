@@ -1235,17 +1235,19 @@
     filterChipsBarG(valsChips(vals,function(v2){runLeadsFilter(v2);}));
     $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
     var ep=VIEW_EPOCH;
-    jreq(API+"/leads_filter?"+filterQS(vals)).then(function(r){
+    jreq(API+"/leads_filter?"+filterQS(vals)+"&sort="+leadSort.by+"&dir="+leadSort.dir).then(function(r){
       if(ep!==VIEW_EPOCH)return;
       var items=(r&&r.items)||[];
       filterCountBarG(true,r.total||items.length,r.sum,function(){FSTATE.leads={};vLeads();},function(){saveValsWidget(vals,true);});
       if(!items.length){$("#view").innerHTML='<div class="plain" style="max-width:none"><p class="muted" style="padding:14px 0">Ничего не найдено.</p></div>';return;}
       var cols=leadListActiveCols();
-      var thead='<tr>'+bulkTh()+cols.map(function(c){return '<th'+(c[0]==="name"?' style="width:28%"':"")+'>'+esc(c[1])+'</th>';}).join("")+'</tr>';
+      // сортируемые заголовки со стрелками ▲▼ (как в amo и в обычном списке сделок)
+      var thead='<tr>'+bulkTh()+cols.map(function(c){var arrow=(leadSort.by===c[0])?(leadSort.dir==="asc"?" ▲":" ▼"):"";return '<th'+(c[0]==="name"?' style="width:28%"':"")+(LEAD_SORTABLE[c[0]]?' class="sortable" data-sort="'+c[0]+'"':"")+'>'+esc(c[1])+arrow+'</th>';}).join("")+'</tr>';
       var html='<div class="plain" style="max-width:none;padding-top:6px"><table class="amo"><thead>'+thead+'</thead><tbody>';
       html+=items.map(function(l){return '<tr>'+bulkCbTd(l.id)+cols.map(function(c){return '<td>'+leadCell(l,c[0],stName)+'</td>';}).join("")+'</tr>';}).join("");
       html+='</tbody></table></div>';
       $("#view").innerHTML=html;
+      $("#view").querySelectorAll("th.sortable").forEach(function(th){th.onclick=function(){var by=th.dataset.sort;if(leadSort.by===by)leadSort.dir=leadSort.dir==="asc"?"desc":"asc";else{leadSort.by=by;leadSort.dir="desc";}runLeadsFilter(vals);};});
       $("#view").querySelectorAll("[data-l]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.l,10));};});
       bindBulkCheckboxes($("#view"),"leads");
       makeTableResizable($("#view table.amo"),"crm_lead_colw");
