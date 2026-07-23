@@ -2871,9 +2871,19 @@
     var name=prompt("Имя нового контакта:","Новый контакт");
     if(name===null)return;
     var phone=prompt("Телефон (необязательно):","");
-    ereq("POST","/edit-api/contact",{name:name||"Новый контакт",phones:phone?[phone]:[]}).then(function(r){
-      if(r&&r.success){toast("Контакт создан");openContact(r.id);}else toast("Не удалось",true);
-    });
+    var create=function(){
+      ereq("POST","/edit-api/contact",{name:name||"Новый контакт",phones:phone?[phone]:[]}).then(function(r){
+        if(r&&r.success){toast("Контакт создан");openContact(r.id);}else toast("Не удалось",true);
+      });
+    };
+    // предупреждение о дубле по телефону (как в amo)
+    var digits=(phone||"").replace(/[^0-9]/g,"");
+    if(digits.length<6)return create();
+    jreq(API+"/contacts?q="+encodeURIComponent(digits)).then(function(r){
+      var dups=((r&&r.items)||[]).filter(function(c){return (c.p||[]).some(function(p){var d=String(p).replace(/[^0-9]/g,"");return d&&(d.indexOf(digits)>=0||digits.indexOf(d)>=0);});});
+      if(dups.length&&confirm("Возможный дубль по телефону:\n"+dups.slice(0,3).map(function(c){return "• "+(c.n||("#"+c.id))+((c.p&&c.p[0])?" ("+c.p[0]+")":"");}).join("\n")+"\n\nОК — открыть существующий; Отмена — всё равно создать новый."))return openContact(dups[0].id);
+      create();
+    }).catch(create);
   }
   /* ─── Компании ─── */
   var coPage=0,coLoading=false;
