@@ -3026,6 +3026,9 @@
         // «Маркетинг KPI» временно скрыт у АДМИНА (просьба Андрея 13.07) — Петрову (vscRestrict) остаётся.
         // Вернуть админу: VSC_MKTKPI_HIDE_ADMIN = false.
         const VSC_MKTKPI_HIDE_ADMIN = true;
+        // «Статистика по сотрудникам» временно скрыта у админа (просьба Андрея 22.07);
+        // у Зайцевой убрана из vscRestrict.tabs в lkManagers.seed.json. Вернуть: флаг false + seed.
+        const VSC_STAFF_HIDE_ADMIN = true;
         let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["mktkpi", "Маркетинг KPI"], ["staff", "Статистика по сотрудникам"], ["taxes", "Налоги"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
         if (VSC_BOT_HIDDEN) TABS = TABS.filter(([tb]) => tb !== "bot");
         if (isMgr) {
@@ -3036,9 +3039,10 @@
             // Обычный руководитель — только калькулятор (+ бот при праве vfsbot). Без изменений.
             TABS = TABS.filter(([tb]) => tb === "calc" || (tb === "bot" && Array.isArray(managerPerms) && managerPerms.indexOf("vfsbot") >= 0));
           }
-        } else if (VSC_MKTKPI_HIDE_ADMIN) {
-          // «Маркетинг KPI» скрыт у АДМИНА (по просьбе Андрея) — у Петрова остаётся через vscRestrict.
-          TABS = TABS.filter(([tb]) => tb !== "mktkpi");
+        } else {
+          // Временные скрытия у АДМИНА (по просьбе Андрея) — доступы через vscRestrict не трогаем.
+          if (VSC_MKTKPI_HIDE_ADMIN) TABS = TABS.filter(([tb]) => tb !== "mktkpi");
+          if (VSC_STAFF_HIDE_ADMIN) TABS = TABS.filter(([tb]) => tb !== "staff");
         }
         // Текущая вкладка могла скрыться (в т.ч. «Бот VFS» у админа) — уходим на первую доступную.
         if (!TABS.some(([tb]) => tb === vscTab)) vscTab = (TABS[0] && TABS[0][0]) || "calc";
