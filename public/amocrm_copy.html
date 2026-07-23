@@ -2101,7 +2101,10 @@
     var firstOpen=sts.find(function(s){return s.type!==1&&s.id!==142&&s.id!==143;})||sts[0];
     var name=prompt("Название новой сделки:","Новая сделка");
     if(name===null)return;
-    ereq("POST","/edit-api/lead",{name:name||"Новая сделка",pipeline_id:p.id,status_id:firstOpen.id}).then(function(r){
+    var budget=prompt("Бюджет, ₽ (необязательно):","");
+    if(budget===null)return;
+    var price=parseInt(String(budget).replace(/[^0-9]/g,""),10)||0;
+    ereq("POST","/edit-api/lead",{name:name||"Новая сделка",pipeline_id:p.id,status_id:firstOpen.id,price:price}).then(function(r){
       if(r&&r.success){toast("Сделка создана");openLead(r.id);}else toast((r&&r.message)||"Не удалось",true);
     });
   }
