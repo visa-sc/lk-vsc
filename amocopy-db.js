@@ -182,15 +182,17 @@ module.exports = function mountDbRoutes(app, guard, api) {
   // предстоящие+сегодня (возр.) и недавняя просрочка (убыв.) — с опц. фильтром по ответственному.
   // resp приводим к целому и подставляем как литерал (не через плейсхолдер), поэтому инъекция исключена.
   const prep = (base, resp) => D.prepare(base.replace("{RESP}", resp ? "AND t.responsible_user_id=" + (parseInt(resp, 10) || 0) : ""));
-  const qTasksUpSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id,t.task_type, l.name lead_name
-    FROM tasks t LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads'
+  // объект задачи может быть сделкой ИЛИ контактом (задачи контактов есть, 213) — берём имя из обеих
+  const OBJ_JOIN = "LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads' LEFT JOIN contacts c ON c.id=t.entity_id AND t.entity_type='contacts'";
+  const qTasksUpSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id,t.task_type, COALESCE(l.name,c.name) lead_name
+    FROM tasks t ${OBJ_JOIN}
     WHERE t.is_completed=0 AND t.complete_till>=? {RESP} ORDER BY t.complete_till ASC LIMIT 300`;
-  const qTasksOvSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id,t.task_type, l.name lead_name
-    FROM tasks t LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads'
+  const qTasksOvSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id,t.task_type, COALESCE(l.name,c.name) lead_name
+    FROM tasks t ${OBJ_JOIN}
     WHERE t.is_completed=0 AND t.complete_till<? AND t.complete_till>0 {RESP} ORDER BY t.complete_till DESC LIMIT 200`;
   // выполненные за 30 дней — для флага «показывать выполненные» (колонка Результат, как в amo)
-  const qTasksDoneSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id,t.task_type,t.is_completed,t.result, l.name lead_name
-    FROM tasks t LEFT JOIN leads l ON l.id=t.entity_id AND t.entity_type='leads'
+  const qTasksDoneSrc = `SELECT t.id,t.text,t.complete_till,t.responsible_user_id,t.entity_type,t.entity_id,t.task_type,t.is_completed,t.result, COALESCE(l.name,c.name) lead_name
+    FROM tasks t ${OBJ_JOIN}
     WHERE t.is_completed=1 AND t.complete_till>=? {RESP} ORDER BY t.complete_till DESC LIMIT 300`;
   // полный счётчик задач для шапки раздела (как amo «6401 задача»): список отдаётся с LIMIT, счёт — честный
   app.get(`${api}/tasks_count`, guard, (req, res) => {

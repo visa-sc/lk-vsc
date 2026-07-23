@@ -1808,13 +1808,13 @@
       html+='<table class="amo"><thead><tr><th style="width:150px;cursor:pointer" id="thTill">Дата исполнения '+(taskSortDir==="asc"?"▲":"▼")+'</th><th style="width:150px">Ответственный</th><th style="width:200px">Объект</th><th style="width:150px">Тип задачи</th><th>Текст задачи</th><th style="width:170px">Результат</th><th style="width:170px"></th></tr></thead><tbody>';
       items.forEach(function(t){
         var overdue=!t.done&&t.till&&t.till<now;
-        html+='<tr'+(t.done?' style="opacity:.72"':'')+'><td style="white-space:nowrap;color:'+(overdue?"#d64545":"#7b848d")+'">'+dt(t.till)+'</td><td class="muted">'+one(t.resp,130)+'</td><td><a data-lead="'+t.entity_id+'">'+one(t.lead_name||("сделка #"+t.entity_id),180)+'</a></td><td class="muted">'+one(typeName[t.task_type]||"",130)+'</td><td'+(t.done?' style="text-decoration:line-through"':'')+'>'+one(t.text,420)+'</td><td style="color:#2f8b57">'+one(t.result||"",150)+'</td><td style="white-space:nowrap">'+(t.done?"":'<a class="tdone" data-t="'+t.id+'">выполнить</a> · <a class="tmove" data-t="'+t.id+'">перенести</a> · <a class="tedit" data-t="'+t.id+'" data-text="'+esc(t.text||"")+'" data-till="'+(t.till||0)+'" data-type="'+(t.task_type||0)+'">изменить</a>')+'</td></tr>';
+        html+='<tr'+(t.done?' style="opacity:.72"':'')+'><td style="white-space:nowrap;color:'+(overdue?"#d64545":"#7b848d")+'">'+dt(t.till)+'</td><td class="muted">'+one(t.resp,130)+'</td><td><a data-obj="'+t.entity_id+'" data-etype="'+(t.entity_type||"leads")+'">'+one(t.lead_name||((t.entity_type==="contacts"?"контакт #":"сделка #")+t.entity_id),180)+'</a></td><td class="muted">'+one(typeName[t.task_type]||"",130)+'</td><td'+(t.done?' style="text-decoration:line-through"':'')+'>'+one(t.text,420)+'</td><td style="color:#2f8b57">'+one(t.result||"",150)+'</td><td style="white-space:nowrap">'+(t.done?"":'<a class="tdone" data-t="'+t.id+'">выполнить</a> · <a class="tmove" data-t="'+t.id+'">перенести</a> · <a class="tedit" data-t="'+t.id+'" data-text="'+esc(t.text||"")+'" data-till="'+(t.till||0)+'" data-type="'+(t.task_type||0)+'">изменить</a>')+'</td></tr>';
       });
       html+='</tbody></table>';
       var rerun=function(){loadTasks($("#taskResp")?$("#taskResp").value:0,$("#taskType")?$("#taskType").value:0);};
       $("#tasksBox").innerHTML=html||'<p class="muted">Открытых задач нет</p>';
       var th=$("#thTill");if(th)th.onclick=function(){taskSortDir=taskSortDir==="asc"?"desc":"asc";rerun();};
-      $("#tasksBox").querySelectorAll("[data-lead]").forEach(function(a){a.onclick=function(){openLead(parseInt(a.dataset.lead,10));};});
+      $("#tasksBox").querySelectorAll("[data-obj]").forEach(function(a){a.onclick=function(){if(a.dataset.etype==="contacts")openContact(parseInt(a.dataset.obj,10));else openLead(parseInt(a.dataset.obj,10));};});
       $("#tasksBox").querySelectorAll(".tdone").forEach(function(a){a.onclick=function(){
         var res=prompt("Результат задачи (необязательно):","");
         if(res===null)return;
