@@ -2811,7 +2811,7 @@
       var companies=((c._embedded&&c._embedded.companies)||[]).map(function(co){
         return '<div class="dl-contact" style="cursor:pointer" data-co="'+co.id+'"><div class="ava" style="border-radius:6px">🏢</div><div><div style="color:var(--link)">'+esc(co.name||("Компания #"+co.id))+'</div><div class="muted" style="font-size:12px">открыть карточку компании</div></div></div>';
       }).join("");
-      if(companies)companies='<div class="fgroup" style="margin:0 20px">Компания</div>'+companies;
+      companies=(companies?'<div class="fgroup" style="margin:0 20px">Компания</div>'+companies:'')+'<div class="add-ent cco-add" title="Привязать компанию"><span class="plus">+</span><div><div>Добавить компанию</div><div class="muted" style="font-size:12px">поиск по названию</div></div></div>';
       var init=(c.name||"К").trim().charAt(0).toUpperCase();
       var left='<div class="dl-head"><span class="back">‹</span><button class="dl-del" title="Удалить контакт">🗑</button><h2 class="editable" data-edit="cname">'+esc(c.name||("Контакт #"+c.id))+'</h2><div class="dl-sub">#'+c.id+' &nbsp;<span class="tags-edit" title="Изменить теги">'+((c.tags&&c.tags.length)?c.tags.map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join(""):'<span class="muted">+ теги</span>')+'</span></div></div>'+
         '<div class="dl-tabs" style="margin-top:6px"><span class="act" data-t="main">Основное</span><span data-t="deals">Сделки</span><span data-t="stats">Статистика</span><span data-t="files">Файлы</span></div>'+
@@ -2844,6 +2844,26 @@
       bindEditable(bg,"cresp",function(){return c.responsible_user_id;},function(v){return ereq("PATCH","/edit-api/contact/"+id,{responsible_user_id:v});},reload,"user");
       var ctags=(c.tags||[]);
       var cte=bg.querySelector(".tags-edit");if(cte)cte.onclick=function(){var nt=prompt("Теги через запятую:",ctags.join(", "));if(nt===null)return;ereq("PATCH","/edit-api/contact/"+id+"/tags",{tags:nt.split(",").map(function(x){return x.trim();}).filter(Boolean)}).then(function(r){if(r&&r.success){toast("Теги сохранены");reload();}else toast("Не удалось",true);});};
+      // привязать компанию к контакту (как в amo)
+      var ccoAdd=bg.querySelector(".cco-add");
+      if(ccoAdd)ccoAdd.onclick=function(){
+        var q=prompt("Название компании (мин. 2 символа):","");
+        if(!q||q.trim().length<2)return;
+        jreq(API+"/companies_page?page=1&q="+encodeURIComponent(q.trim())).then(function(r2){
+          var items=(r2&&r2.items)||[];
+          var menu=items.slice(0,8).map(function(co){return {label:co.name||("#"+co.id),on:function(){
+            ereq("POST","/edit-api/contact/"+id+"/link_company",{company_id:co.id}).then(function(rr){if(rr&&rr.success){toast("Компания привязана");reload();}else toast((rr&&rr.message)||"Не удалось",true);});
+          }};});
+          if(menu.length)menu.push("sep");
+          menu.push({label:"＋ Создать компанию «"+q.trim().slice(0,25)+"»",on:function(){
+            ereq("POST","/edit-api/company",{name:q.trim()}).then(function(cr){
+              if(!cr||!cr.success)return toast("Не удалось создать",true);
+              ereq("POST","/edit-api/contact/"+id+"/link_company",{company_id:cr.id}).then(function(rr){if(rr&&rr.success){toast("Компания создана и привязана");reload();}else toast("Не удалось привязать",true);});
+            });
+          }});
+          openCtxMenu(ccoAdd,menu);
+        });
+      };
       bindCfFields(bg,"contacts",id,CF&&CF.contacts,reload);
       // «＋ Создать сделку» из карточки контакта (как в amo)
       var ndAdd=bg.querySelector(".nd-add");

@@ -371,6 +371,20 @@ module.exports = function mountEditRoutes(app, guard) {
     res.json({ success: true });
   });
 
+  // привязка компании к КОНТАКТУ (как в amo: у контакта — компания). Таблица contact_companies уже есть.
+  app.post(`${E}/contact/:id/link_company`, guard, (req, res) => {
+    const id = parseInt(req.params.id, 10), coid = parseInt(req.body.company_id, 10);
+    if (!id || !coid) return res.status(400).json({ success: false });
+    if (!getContact.get(id)) return res.status(404).json({ success: false, message: "контакт не найден" });
+    const co = getCompany.get(coid);
+    if (!co) return res.status(404).json({ success: false, message: "компания не найдена" });
+    db.exec("CREATE TABLE IF NOT EXISTS contact_companies (contact_id INTEGER, company_id INTEGER)");
+    if (req.body.unlink === true) db.prepare("DELETE FROM contact_companies WHERE contact_id=? AND company_id=?").run(id, coid);
+    else { db.prepare("DELETE FROM contact_companies WHERE contact_id=? AND company_id=?").run(id, coid); db.prepare("INSERT INTO contact_companies(contact_id,company_id) VALUES(?,?)").run(id, coid); }
+    audit(req, "contacts", id, req.body.unlink === true ? "unlink_company" : "link_company", { company_id: coid, company: co.name });
+    res.json({ success: true });
+  });
+
   // ── слияние контактов (как «Объединить» в amo): дубли вливаются в основной ──
   app.post(`${E}/contacts/merge`, guard, (req, res) => {
     const ids = Array.isArray(req.body.ids) ? req.body.ids.map((x) => parseInt(x, 10)).filter(Boolean) : [];
