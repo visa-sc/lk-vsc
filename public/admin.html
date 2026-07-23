@@ -2044,6 +2044,7 @@
 
       // ── Раздел «VSC · дашборд» (показатели визового агентства из Google-таблицы) ──
       let vscData = null, vscGran = "day", vscMonthIdx = 0, vscTab = "dash";
+      let _vscTabsScroll = 0; // позиция промотки меню вкладок — переживает перерисовку (айфон)
       // good: +1 — чем больше тем лучше; −1 — чем меньше тем лучше; 0 — нейтрально (без оценки тренда).
       const VSC_KPIS = [
         { key: "budget", label: "Выручка (сумма в бюджете)", fmt: "money", good: 1 },
@@ -3042,6 +3043,9 @@
         // Текущая вкладка могла скрыться (в т.ч. «Бот VFS» у админа) — уходим на первую доступную.
         if (!TABS.some(([tb]) => tb === vscTab)) vscTab = (TABS[0] && TABS[0][0]) || "calc";
         const maintabs = document.createElement("div"); maintabs.className = "vsc-maintabs";
+        // Запоминаем промотку меню: на телефоне после выбора вкладки меню пересоздаётся,
+        // и без этого скролл прыгал в начало (жалоба Андрея 22.07).
+        maintabs.addEventListener("scroll", () => { _vscTabsScroll = maintabs.scrollLeft; }, { passive: true });
         TABS.forEach(([tb, lbl]) => {
           const b = document.createElement("button"); b.type = "button"; b.textContent = lbl; if (tb === vscTab) b.className = "active";
           b.addEventListener("click", () => { vscTab = tb; renderVsc(); });
@@ -3054,6 +3058,8 @@
           maintabs.appendChild(info);
         }
         vscContent.appendChild(maintabs);
+        // Восстанавливаем промотку сразу и после раскладки (iOS Safari любит опаздывать).
+        if (_vscTabsScroll) { maintabs.scrollLeft = _vscTabsScroll; requestAnimationFrame(() => { maintabs.scrollLeft = _vscTabsScroll; }); }
         // Блок «Сделки без задач» относится к Дашборду — на остальных вкладках прячем.
         // Для руководителя с персональным доступом (myVscRestrict) админские блоки
         // «Сделки без задач» и «Остановки Я.Директа» не показываем (их API — requireAdmin).
