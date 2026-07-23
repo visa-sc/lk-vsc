@@ -116,6 +116,24 @@ module.exports = function mountDbRoutes(app, guard, api) {
       if (val) { where.push("cf LIKE ?"); args.push('%"value":"%' + val + '%'); }
     }
   }
+  // КРОСС-СУЩНОСТНЫЙ фильтр по полям связанной сущности (как в amo: «Свойства связанных
+  // контактов/компаний/сделок»). Возвращает clause «id IN (SELECT selfCol FROM link JOIN R…)».
+  // cf в подзапросе квалифицируем алиасом r, чтобы не конфликтовать с cf внешней таблицы.
+  function relCfClause(cfParam, selfCol, link, relCol, relTable) {
+    if (!cfParam) return null;
+    const cw = [], ca = [];
+    addCfFilters(cfParam, cw, ca);
+    if (!cw.length) return null;
+    const w = cw.map((c) => c.replace(/\bcf LIKE/g, "r.cf LIKE"));
+    return { clause: "id IN (SELECT " + link + "." + selfCol + " FROM " + link + " JOIN " + relTable + " r ON r.id=" + link + "." + relCol + " WHERE " + w.join(" AND ") + ")", args: ca };
+  }
+  // применить набор кросс-сущностных фильтров к where/args (тихо пропускает отсутствующие таблицы связей)
+  function applyRelCf(specs, where, args) {
+    for (const s of specs) {
+      if (!s.param) continue;
+      try { const c = relCfClause(s.param, s.self, s.link, s.rel, s.table); if (c) { where.push(c.clause); args.push(...c.args); } } catch (_) {}
+    }
+  }
   function dealsByContact(ids) {
     const map = {};
     if (!ids.length) return map;
@@ -880,14 +898,23 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const dir = String(req.query.dir).toLowerCase() === "asc" ? "ASC" : "DESC";
     const cols = "id,name,created_at,updated_at,cf" + (COMPANY_HAS_RESP ? ",responsible_user_id" : "");
     const q = String(req.query.q || "").trim();
-    if (q) { // поиск компаний по названию (как в amo)
-      const like = "%" + q + "%";
-      const rows = D.prepare("SELECT " + cols + " FROM companies WHERE lc(name) LIKE lc(?) ORDER BY " + sortCol + " " + dir + " LIMIT 50 OFFSET ?").all(like, (+page - 1) * 50);
-      const total = D.prepare("SELECT COUNT(*) c FROM companies WHERE lc(name) LIKE lc(?)").get(like).c;
-      return res.json({ total, items: companyOut(rows) });
-    }
-    const rows = D.prepare("SELECT " + cols + " FROM companies ORDER BY " + sortCol + " " + dir + " LIMIT 50 OFFSET ?").all((+page - 1) * 50);
-    res.json({ total: qCompaniesCount.get().c, items: companyOut(rows) });
+    // фильтр компаний (как в amo): по названию, по полям самой компании (cf) и кросс-сущностно
+    // (cld=поля связанной СДЕЛКИ, ccf=поля связанного КОНТАКТА), ответственный, дата создания
+    const where = [], args = [], intq = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
+    if (q) { where.push("lc(name) LIKE lc(?)"); args.push("%" + q + "%"); }
+    let vv;
+    if (COMPANY_HAS_RESP && (vv = intq(req.query.responsible)) !== null) { where.push("responsible_user_id=?"); args.push(vv); }
+    if ((vv = intq(req.query.date_from)) !== null) { where.push("created_at>=?"); args.push(vv); }
+    if ((vv = intq(req.query.date_to)) !== null) { where.push("created_at<=?"); args.push(vv); }
+    addCfFilters(req.query.cf, where, args);
+    applyRelCf([
+      { param: req.query.cld, self: "company_id", link: "lead_companies", rel: "lead_id", table: "leads" },
+      { param: req.query.ccf, self: "company_id", link: "contact_companies", rel: "contact_id", table: "contacts" }
+    ], where, args);
+    const wsql = where.length ? " WHERE " + where.join(" AND ") : "";
+    const rows = D.prepare("SELECT " + cols + " FROM companies" + wsql + " ORDER BY " + sortCol + " " + dir + " LIMIT 50 OFFSET ?").all(...args, (+page - 1) * 50);
+    const total = where.length ? D.prepare("SELECT COUNT(*) c FROM companies" + wsql).get(...args).c : qCompaniesCount.get().c;
+    res.json({ total, items: companyOut(rows) });
   });
   app.get(`${api}/company/:id`, guard, (req, res) => {
     const id = parseInt(req.params.id, 10);
@@ -988,12 +1015,11 @@ module.exports = function mountDbRoutes(app, guard, api) {
     else if (q.preset === "overdue") { where.push("status_id NOT IN (142,143) AND EXISTS(SELECT 1 FROM tasks t WHERE t.entity_type='leads' AND t.entity_id=leads.id AND t.is_completed=0 AND t.complete_till<?)"); args.push(nowP); }
     // фильтр по кастомным полям самой сделки
     addCfFilters(q.cf, where, args);
-    // фильтр по полям СВЯЗАННОГО КОНТАКТА: ccf=<fieldId>:<значение> → подзапрос по lead_contacts+contacts
-    if (q.ccf) {
-      const cw = [], ca = [];
-      addCfFilters(q.ccf, cw, ca);
-      if (cw.length) { where.push("id IN (SELECT lc.lead_id FROM lead_contacts lc JOIN contacts c ON c.id=lc.contact_id WHERE " + cw.join(" AND ") + ")"); args.push(...ca); }
-    }
+    // кросс-сущностные поля (как в amo): ccf=поля связанного КОНТАКТА, cco=поля связанной КОМПАНИИ
+    applyRelCf([
+      { param: q.ccf, self: "lead_id", link: "lead_contacts", rel: "contact_id", table: "contacts" },
+      { param: q.cco, self: "lead_id", link: "lead_companies", rel: "company_id", table: "companies" }
+    ], where, args);
     const page = Math.max(1, intq(q.page) || 1);
     const sql = "SELECT id,name,price,pipeline_id,status_id,responsible_user_id,created_at,updated_at,cf FROM leads" +
       (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY updated_at DESC LIMIT 50 OFFSET ?";
@@ -1021,8 +1047,13 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if ((v = intq(q.date_from)) !== null) { where.push("created_at>=?"); args.push(v); }
     if ((v = intq(q.date_to)) !== null) { where.push("created_at<=?"); args.push(v); }
     if (q.q && String(q.q).trim()) { where.push("(lc(name) LIKE lc(?) OR phones LIKE ? OR emails LIKE ?)"); const s = "%" + String(q.q).trim() + "%"; args.push(s, s, s); }
-    // фильтр по любому кастомному полю: cf=<fieldId>:<значение> (можно несколько)
+    // фильтр по любому кастомному полю самого контакта: cf=<fieldId>:<значение> (можно несколько)
     addCfFilters(q.cf, where, args);
+    // кросс-сущностные (как в amo): cld=поля связанной СДЕЛКИ, cco=поля связанной КОМПАНИИ
+    applyRelCf([
+      { param: q.cld, self: "contact_id", link: "lead_contacts", rel: "lead_id", table: "leads" },
+      { param: q.cco, self: "contact_id", link: "contact_companies", rel: "company_id", table: "companies" }
+    ], where, args);
     const page = Math.max(1, intq(q.page) || 1);
     const sql = "SELECT id,name,phones,emails,created_at,updated_at,responsible_user_id,cf,tags FROM contacts" +
       (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY created_at DESC LIMIT 50 OFFSET ?";
