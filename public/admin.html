@@ -5704,6 +5704,19 @@
         rejected:    { label: "Отклонено",        cls: "cs-rej" }
       };
       const CORR_AREAS = ["Опросник (Шенген)","Опросник (Япония)","Загрузка документов","Этапы / статусы ЛК","Готовые документы","Авторизация / вход","Админка","Лендинги","Другое"];
+      // Авторы для формы (поле видит только админ): все, у кого есть доступ к панели
+      // (lkManagers.seed.json); отделы — по группам пользователей amoCRM.
+      const CORR_AUTHORS = [
+        "ОО (Анастасия Плинер)",
+        "ОП (Ксения Маслова)",
+        "ОП (Анна Шафранская)",
+        "ОП (Рустам Бурханов)",
+        "ОРК (Маргарита Кузнецова)",
+        "ОРК (Кристина Рагоза)",
+        "Маркетинг (Андрей Петров)",
+        "Управляющий директор (Екатерина Зайцева)",
+        "Директор (Андрей Комисаренко)"
+      ];
       let correctionsData = null;
       let corrFormOpen = false;
       let corrDoneExpanded = false;
@@ -5860,7 +5873,11 @@
         const f = document.createElement("div");
         f.className = "corr-form";
         const authorRow = currentRole() === "admin"
-          ? '<div class="corr-f-row"><label>Автор / отдел</label><input class="corr-i" data-k="author" placeholder="Напр.: ОО (Плинер)"></div>'
+          ? '<div class="corr-f-row"><label>Автор / отдел</label><select class="corr-i" data-k="author">' +
+            '<option value="">— выберите автора —</option>' +
+            CORR_AUTHORS.map((a) => '<option>' + escapeHtml(a) + '</option>').join('') +
+            '<option value="__other">Другое (ввести вручную)…</option></select>' +
+            '<input class="corr-i corr-author-other" data-k="authorOther" placeholder="Напр.: ОО (Плинер)" style="display:none;margin-top:6px;"></div>'
           : '';
         f.innerHTML =
           authorRow +
@@ -5881,12 +5898,22 @@
         } catch (_) {}
         const saveDraft = () => { try { const o = {}; corrFields().forEach((el) => { if (el.value) o[el.dataset.k] = el.value; }); localStorage.setItem(DRAFT_KEY, JSON.stringify(o)); } catch (_) {} };
         corrFields().forEach((el) => { el.addEventListener("input", saveDraft); el.addEventListener("change", saveDraft); });
+        // «Другое…» в выборе автора → показать свободный ввод (в т.ч. после восстановления черновика).
+        const authorSel = f.querySelector('select[data-k="author"]');
+        const authorOther = f.querySelector('.corr-author-other');
+        if (authorSel && authorOther) {
+          const syncAuthorOther = () => { authorOther.style.display = authorSel.value === "__other" ? "" : "none"; };
+          authorSel.addEventListener("change", syncAuthorOther);
+          syncAuthorOther();
+        }
         const err = document.createElement("div"); err.className = "corr-form-err"; err.style.display = "none";
         const submit = document.createElement("button");
         submit.type = "button"; submit.className = "corr-submit"; submit.textContent = "Отправить заявку";
         submit.addEventListener("click", async () => {
           const body = {};
           f.querySelectorAll(".corr-i").forEach((el) => { body[el.dataset.k] = el.value; });
+          if (body.author === "__other") body.author = String(body.authorOther || "").trim();
+          delete body.authorOther;
           if (!String(body.what || "").trim()) { err.textContent = "Заполните поле «Что нужно / что не так»."; err.style.display = "block"; return; }
           const fileEl = f.querySelector(".corr-file");
           const file = fileEl && fileEl.files && fileEl.files[0];
