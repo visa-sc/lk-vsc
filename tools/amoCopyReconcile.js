@@ -61,7 +61,7 @@ async function getStatus(url) {
 // (класс дыры найден 21.07: гонка первичного экспорта — сделка выкачана утром 04-05.07,
 // изменена в amo днём 05.07, синк стартовал с 06.07 → изменение потеряно навсегда).
 // Кравл reconcile и так отдаёт updated_at каждой записи — сравниваем и перекачиваем точечно.
-const staleLeads = [], staleContacts = [];
+const staleLeads = [], staleContacts = [], missingLeads = [];
 
 // closest_task_at — поле, по которому amo считает «есть задача» (см. amocopy-db.js). Кравл
 // reconcile и так тянет ВСЕ сделки и ВСЕ контакты, поэтому поддерживаем поле бесплатно, без
@@ -74,6 +74,38 @@ const applyCta = (table, items) => {
   const st = table === "leads" ? setCtaLead : setCtaContact;
   db.transaction(() => { for (const [id, v] of items) st.run(v || null, id); })();
 };
+
+// ВОССТАНОВЛЕНИЕ СВЯЗЕЙ сделка↔контакт из того же обхода (дыра «отставшие связи», найдена 23.07:
+// привязка контакта к сделке НЕ всегда бампает updated_at сделки → watermark-синк её не
+// перекачивает → lead_contacts навсегда теряет строку; 4 из 8 «контактов без сделок» в копии
+// имели сделку в amo). Обход reconcile и так тянет все активные сделки — добавляем with=contacts
+// и доводим связи: чего нет — вставляем, is_main выравниваем, ЛИШНИЕ (отвязанные в amo) удаляем.
+try { db.exec("ALTER TABLE lead_contacts ADD COLUMN is_main INTEGER DEFAULT 0"); } catch (_) {}
+const lcInsert = db.prepare("INSERT OR IGNORE INTO lead_contacts(lead_id,contact_id,is_main) VALUES(?,?,?)");
+const lcSetMain = db.prepare("UPDATE lead_contacts SET is_main=? WHERE lead_id=? AND contact_id=?");
+const lcLocal = db.prepare("SELECT contact_id c FROM lead_contacts WHERE lead_id=?");
+const lcDel = db.prepare("DELETE FROM lead_contacts WHERE lead_id=? AND contact_id=?");
+const qContactExists = db.prepare("SELECT 1 x FROM contacts WHERE id=?");
+let linksAdded = 0, linksRemoved = 0;
+function rebuildLinks(page) {
+  db.transaction(() => {
+    for (const l of page) {
+      const amoC = ((l._embedded || {}).contacts || []);
+      if (!amoC.length && !((l._embedded || {}).contacts)) continue; // поле не пришло — не трогаем
+      const amoIds = new Set(amoC.map((c) => c.id));
+      for (const c of amoC) {
+        // не создаём связь на контакт, которого ещё нет в копии (его подтянет контактный синк)
+        if (!qContactExists.get(c.id)) continue;
+        const r = lcInsert.run(l.id, c.id, c.is_main ? 1 : 0); if (r.changes) linksAdded++;
+        lcSetMain.run(c.is_main ? 1 : 0, l.id, c.id);
+      }
+      // удаляем локальные связи, которых в amo больше нет (контакт отвязан от сделки).
+      // ТОЛЬКО при непустом наборе от amo: пустой ответ (редкая квирка with=contacts) не должен
+      // сносить все связи сделки — риск потери данных важнее редкого неучтённого отвяза.
+      if (amoC.length) for (const row of lcLocal.all(l.id)) { if (!amoIds.has(row.c)) { lcDel.run(l.id, row.c); linksRemoved++; } }
+    }
+  })();
+}
 
 // контакты: полная сверка id (удалённые и слитые в amo → каскадное удаление из копии)
 async function reconcileContacts(cutoff) {
@@ -162,7 +194,7 @@ async function reconcileTasks() {
   for (const pid of pipes) {
     const amoIds = new Set(), amoUpd = new Map();
     let url = `${BASE}/api/v4/leads`;
-    let params = { limit: 250, "filter[pipeline_id]": pid };
+    let params = { limit: 250, "filter[pipeline_id]": pid, with: "contacts" };
     let pages = 0, broke = false;
     while (url && pages < 1200) {
       const d = await get(url, params); params = undefined;
@@ -170,6 +202,7 @@ async function reconcileTasks() {
       const page = ((d._embedded || {}).leads || []);
       page.forEach((l) => { amoIds.add(l.id); amoUpd.set(l.id, l.updated_at || 0); });
       applyCta("leads", page.map((l) => [l.id, l.closest_task_at]));
+      rebuildLinks(page); // доведение lead_contacts (та же выкачка, 0 доп. запросов)
       url = (d._links && d._links.next && d._links.next.href) || null;
       pages++;
     }
@@ -178,6 +211,18 @@ async function reconcileTasks() {
     const local = db.prepare("SELECT id,updated_at FROM leads WHERE pipeline_id=? AND id<? AND updated_at<?").all(pid, LOCAL_ID_BASE, cutoff);
     const ghosts = local.filter((l) => !amoIds.has(l.id));
     for (const l of local) { const au = amoUpd.get(l.id); if (au && au > l.updated_at && au < cutoff) staleLeads.push(l.id); }
+    // ПРОПУЩЕННЫЕ СДЕЛКИ (зеркало призраков, найдено 23.07): есть в amo, но в копию не попали
+    // (первичный слепок 06.07 их не забрал + обновление до/мимо watermark → невидимы навсегда).
+    // Список id воронки из amo у нас уже есть — сравниваем со ВСЕМИ локальными id (без cutoff) и
+    // докачиваем недостающие тем же syncLeadsByIds. Требует полноты списка — только если не broke.
+    if (amoIds.size) {
+      const localAll = new Set(db.prepare("SELECT id FROM leads WHERE pipeline_id=? AND id<?").all(pid, LOCAL_ID_BASE).map((x) => x.id));
+      // сделка могла сменить воронку — исключаем те, что есть в копии в ЛЮБОЙ воронке
+      const hasAnywhere = db.prepare("SELECT 1 x FROM leads WHERE id=?");
+      let miss = 0;
+      for (const id of amoIds) { if (!localAll.has(id) && !hasAnywhere.get(id)) { missingLeads.push(id); miss++; } }
+      if (miss) console.log(`  воронка ${pid}: пропущенных сделок (есть в amo, нет в копии): ${miss}`);
+    }
     console.log(`воронка ${pid}: amo=${amoIds.size} (стр.${pages}), локально=${local.length}, призраков=${ghosts.length}`);
     if (!ghosts.length) continue;
     if (amoIds.size === 0) { console.log("  amo вернул 0 — подозрительно, пропускаю удаление"); continue; }
@@ -201,7 +246,10 @@ async function reconcileTasks() {
     const r = spawnSync(process.execPath, [path.join(__dirname, "amoCopySync.js"), "--entity", entity, "--ids", "@" + f], { stdio: "inherit" });
     if (r.status !== 0) console.log(`перекачка ${entity} завершилась с кодом ${r.status}`);
   };
-  refetch("leads", staleLeads);
+  // отставшие И пропущенные сделки — одной перекачкой (дедуп); syncLeadsByIds добавит недостающие
+  const leadsToFetch = [...new Set([...staleLeads, ...missingLeads])];
+  if (missingLeads.length) console.log(`пропущенных сделок к докачке: ${missingLeads.length}`);
+  refetch("leads", leadsToFetch);
   if (arg === "all" || arg === "contacts") {
     try { totalGhosts += await reconcileContacts(cutoff); }
     catch (e) { console.log("контакты: фаза упала (" + e.message + ") — сделочный результат сохранён"); }
@@ -211,5 +259,5 @@ async function reconcileTasks() {
     try { await reconcileTasks(); }
     catch (e) { console.log("задачи: фаза упала (" + e.message + ") — остальной результат сохранён"); }
   }
-  console.log(`ИТОГО: удалено призраков ${totalGhosts}, отставших leads=${staleLeads.length}/contacts=${staleContacts.length}, запросов к amo ${reqs}`);
+  console.log(`ИТОГО: удалено призраков ${totalGhosts}, отставших leads=${staleLeads.length}/contacts=${staleContacts.length}, пропущенных сделок ${missingLeads.length}, связей +${linksAdded}/-${linksRemoved}, запросов к amo ${reqs}`);
 })().catch((e) => { console.error("ОШИБКА:", e.message); process.exit(1); });
