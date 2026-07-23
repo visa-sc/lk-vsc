@@ -1650,8 +1650,10 @@
       ct2.textContent=(n+delta)+" сделок"+(ct2.textContent.indexOf(":")>=0?ct2.textContent.slice(ct2.textContent.indexOf(":")):"");
     }
   }
-  // итог шапки воронки = только АКТИВНЫЕ этапы (как в amo: 142/143 не в счёте канбана)
-  function pipeTotal(pid){var kb=(KANBAN&&KANBAN.kanban[pid])||{};var c=0,s=0;Object.keys(kb).forEach(function(k){if(+k===142||+k===143)return;c+=kb[k].count;s+=kb[k].sum;});return {c:c,s:s};}
+  // итог шапки воронки = только ВИДИМЫЕ этапы (как в amo: 142/143 закрытые и type=1 «Неразобранное»
+  // не в счёте канбана — входящие лиды у amo в отдельном инбоксе, в итог воронки не входят)
+  function pipeUnsorted(pid){var p=(PIPES||[]).find(function(x){return x.id===pid;});var set={};(((p&&p._embedded&&p._embedded.statuses)||[])).forEach(function(s){if(s.type===1||/неразобран/i.test(s.name||""))set[s.id]=1;});return set;}
+  function pipeTotal(pid){var kb=(KANBAN&&KANBAN.kanban[pid])||{};var uns=pipeUnsorted(pid);var c=0,s=0;Object.keys(kb).forEach(function(k){if(+k===142||+k===143||uns[k])return;c+=kb[k].count;s+=kb[k].sum;});return {c:c,s:s};}
   var leadViewMode="kanban";
   function vLeads(){
     renderSidebar("leads");
@@ -1670,11 +1672,13 @@
     if(leadViewMode==="list")return vLeadsList(p);
     var kb=(KANBAN&&KANBAN.kanban[p.id])||{};
     // как в amo: канбан = только АКТИВНЫЕ этапы. Закрытые 142/143 не колонки (сверено с живым amo
-    // 21.07: у amo 23 колонки до «Часть оплаты по ВНЖ»); пустое «Неразобранное» тоже скрыто.
+    // 21.07: 23 колонки). «Неразобранное» (type=1, входящие лиды) amo НЕ показывает в канбане
+    // ВОВСЕ — у него отдельный инбокс «Входящие»; скрываем всегда, даже если в этапе есть сделки
+    // (сверено 23.07: докачка пропущенных сделок вернула лиды в этот этап, amo их в канбане не рисует).
     var sts=((p._embedded&&p._embedded.statuses)||[]).filter(function(s){
       if(s.id===142||s.id===143)return false;
-      if(!(s.type===1||/неразобран/i.test(s.name||"")))return true;
-      return ((kb[s.id]||{}).count||0)>0;
+      if(s.type===1||/неразобран/i.test(s.name||""))return false;
+      return true;
     });
     var html=leadToggleHtml()+'<div id="kb">';
     sts.forEach(function(s,si){
