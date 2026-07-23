@@ -443,8 +443,8 @@
   .filter-panel h4 { margin:0 0 12px; font-size:14px; color:#33404d; }
   /* 3-колоночная панель фильтра как в amo: слева сохранённые, центр свойства, справа теги */
   .filter-panel.fp3 { width:940px; padding:0; overflow:hidden; }
-  .fp3-cols { display:grid; grid-template-columns:236px 1fr 264px; max-height:78vh; }
-  .fp3-col { padding:16px 16px 18px; overflow:auto; }
+  .fp3-cols { display:grid; grid-template-columns:236px 1fr 264px; max-height:78vh; align-items:start; }
+  .fp3-col { padding:16px 16px 18px; overflow-y:auto; min-height:0; max-height:78vh; }
   .fp3-col + .fp3-col { border-left:1px solid #eef1f5; }
   .fp3-col h5 { margin:0 0 12px; font-size:11.5px; color:#8a949e; text-transform:uppercase; letter-spacing:.5px; font-weight:700; }
   .fp3-saved-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:9px; cursor:pointer; font-size:13.5px; color:#33404d; }
@@ -867,7 +867,9 @@
     // ── СРЕДНЯЯ КОЛОНКА amo «Свойства сделок» ──
     var mid='<div class="ffield"><label>Ответственный</label><select data-f="responsible">'+userOptsHtml(st.responsible)+'</select></div>';
     if(isLeads){
-      var sts=(curFilter.statuses||[]);
+      // этапы: из текущей воронки, а если их нет (вид «Все сделки» по нескольким воронкам) —
+      // собираем со ВСЕХ воронок (с названием и цветом), дедуп по id+имя, как в amo
+      var sts=(curFilter.statuses&&curFilter.statuses.length)?curFilter.statuses:(function(){var out=[],seen={};(PIPES||[]).forEach(function(pp){((pp._embedded&&pp._embedded.statuses)||[]).forEach(function(s){var k=s.id+":"+s.name;if(seen[k])return;seen[k]=1;out.push(s);});});return out;})();
       var selSt=String(st.status||"").split(",").filter(Boolean);
       mid+='<div class="ffield"><label>Этапы (мультивыбор)</label><input type="hidden" data-f="status" value="'+esc(st.status||"")+'">'+
         '<div class="fst-box" style="max-height:150px;overflow:auto;border:1px solid #dfe5ec;border-radius:8px;padding:6px 8px">'+
