@@ -1020,6 +1020,10 @@ module.exports = function mountDbRoutes(app, guard, api) {
     else if (q.preset === "lost") where.push("status_id=143");
     else if (q.preset === "notasks") where.push("status_id NOT IN (142,143) AND NOT EXISTS(SELECT 1 FROM tasks t WHERE t.entity_type='leads' AND t.entity_id=leads.id AND t.is_completed=0)");
     else if (q.preset === "overdue") { where.push("status_id NOT IN (142,143) AND EXISTS(SELECT 1 FROM tasks t WHERE t.entity_type='leads' AND t.entity_id=leads.id AND t.is_completed=0 AND t.complete_till<?)"); args.push(nowP); }
+    // КАК В AMO: если этапы явно НЕ выбраны и нет пресета — закрытые сделки (142/143) скрыты по
+    // умолчанию (сверено 23.07: Анна Шафранская amo 5560 = копия активных 5560, а со всеми 25315).
+    // Явный выбор этапа (в т.ч. 142/143) или пресет won/lost показывает закрытые.
+    if (!q.status && !q.preset) where.push("status_id NOT IN (142,143)");
     // фильтр по кастомным полям самой сделки
     addCfFilters(q.cf, where, args);
     // кросс-сущностные поля (как в amo): ccf=поля связанного КОНТАКТА, cco=поля связанной КОМПАНИИ
