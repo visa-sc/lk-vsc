@@ -475,6 +475,24 @@
   .cfx-sec-h .cfx-cnt { color:#aab4bf; font-weight:600; }
   .cfx-sec-h .cfx-arw { margin-left:auto; color:#98a4b0; }
   .cfx-sec .cfx-list { margin-top:8px; }
+  /* поля amo-стиля: компактное поле-селектор (воронки/этапы), мультивыбор, теги-пилюли */
+  .amo-field { width:100%; padding:9px 11px; border:1px solid #dfe5ec; border-radius:8px; font-size:13.5px; background:#fff; cursor:pointer; display:flex; align-items:center; gap:8px; color:#33404d; }
+  .amo-field.on { border-color:#a5c7ee; box-shadow:0 0 0 2px rgba(76,139,245,.12); }
+  .amo-field .af-x { margin-left:auto; color:#98a4b0; font-size:16px; line-height:1; }
+  .amo-field .af-ph { color:#9aa6b2; }
+  .amo-ms { border:1px solid #dfe5ec; border-radius:8px; padding:7px; display:flex; flex-wrap:wrap; gap:6px; min-height:40px; align-content:flex-start; max-height:180px; overflow:auto; background:#fff; }
+  .amo-ms .ms-chip { display:inline-flex; align-items:center; gap:5px; background:#eef3f8; border:1px solid #dbe4ee; border-radius:6px; padding:3px 7px; font-size:12.5px; color:#33404d; }
+  .amo-ms .ms-chip .x { cursor:pointer; color:#8a97a5; font-size:13px; }
+  .amo-ms .ms-add { border:none; background:none; color:#4c8bf5; cursor:pointer; font-size:12.5px; padding:3px 4px; }
+  .fp3-tags .ftag .tn { display:inline-block; border:1px solid #dfe5ec; border-radius:6px; padding:3px 9px; background:#fbfcfe; color:#33404d; font-size:12.5px; flex:0 1 auto; }
+  .fp3-tags .ftag { gap:10px; }
+  .fp3-tags h5 .tag-manage { float:right; font-size:11px; color:#4c8bf5; cursor:pointer; text-transform:none; letter-spacing:0; font-weight:600; }
+  /* попап множественного выбора (этапы/ответственные), как в amo */
+  .ms-pop { position:fixed; z-index:160; background:#fff; border:1px solid #dfe5ec; border-radius:10px; box-shadow:0 14px 40px rgba(20,40,70,.18); padding:8px; width:320px; max-height:60vh; overflow:auto; }
+  .ms-pop .ms-search { width:100%; padding:7px 9px; border:1px solid var(--border); border-radius:7px; font-size:13px; margin-bottom:6px; }
+  .ms-pop .ms-grp { font-size:10.5px; color:#aab4bf; text-transform:uppercase; letter-spacing:.4px; margin:8px 4px 3px; }
+  .ms-pop label { display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:6px; font-size:13px; cursor:pointer; }
+  .ms-pop label:hover { background:#f2f6fb; }
   .fgrid { display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
   .ffield { display:flex; flex-direction:column; gap:4px; }
   .ffield label { font-size:11.5px; color:#8a949e; text-transform:uppercase; font-weight:600; }
@@ -855,6 +873,31 @@
       defs.map(function(f){return '<option value="'+f.id+'"'+(String(f.id)===String(fid)?" selected":"")+'>'+esc(f.name)+'</option>';}).join("")+
       '</select>'+cfFilterVal(def,val)+'<button class="cf-del" title="убрать">×</button></div>';
   }
+  // попап множественного выбора (этапы/ответственные) — как компактные поля-селекторы amo
+  function closeMsPopup(){var p=document.getElementById("msPop");if(p)p.remove();}
+  function openMsPopup(anchor,groups,selected,onChange){
+    closeMsPopup();
+    var pop=document.createElement("div");pop.className="ms-pop";pop.id="msPop";
+    var total=0;groups.forEach(function(g){total+=g.items.length;});
+    var html=(total>8?'<input class="ms-search" placeholder="Поиск…">':"");
+    groups.forEach(function(g){
+      if(g.title)html+='<div class="ms-grp">'+esc(g.title)+'</div>';
+      g.items.forEach(function(it){
+        html+='<label data-lbl="'+esc(String(it.label||"").toLowerCase())+'"><input type="checkbox" value="'+esc(it.id)+'"'+(selected.has(String(it.id))?" checked":"")+'>'+(it.color?'<span class="swatch" style="background:'+esc(it.color)+'"></span>':"")+'<span>'+esc(it.label)+'</span></label>';
+      });
+    });
+    pop.innerHTML=html;
+    document.body.appendChild(pop);
+    var r=anchor.getBoundingClientRect();
+    pop.style.top=(r.bottom+4)+"px";pop.style.left=Math.max(8,Math.min(r.left,window.innerWidth-pop.offsetWidth-8))+"px";
+    pop.addEventListener("click",function(e){e.stopPropagation();});
+    pop.querySelectorAll("input[type=checkbox]").forEach(function(cb){cb.onchange=function(){
+      if(cb.checked)selected.add(String(cb.value));else selected.delete(String(cb.value));
+      onChange(Array.from(selected));
+    };});
+    var s=pop.querySelector(".ms-search");if(s){s.oninput=function(){var q=this.value.toLowerCase();pop.querySelectorAll("label").forEach(function(l){l.style.display=l.dataset.lbl.indexOf(q)>=0?"":"none";});};s.focus();}
+    setTimeout(function(){document.addEventListener("click",function cl(ev){if(!document.getElementById("msPop"))return document.removeEventListener("click",cl);if(!pop.contains(ev.target)&&ev.target!==anchor&&!anchor.contains(ev.target)){closeMsPopup();document.removeEventListener("click",cl);}});},0);
+  }
   function openFilterPanel(){
     if(!curFilter)return;
     if(document.getElementById("filterPanel"))return;
@@ -865,20 +908,24 @@
     var p=document.createElement("div");p.className="filter-panel";p.id="filterPanel";
     var ownDefs=curFilter.kind==="leads"?leadDefs:(curFilter.kind==="companies"?((CF&&CF.companies)||[]):contDefs);
     // ── СРЕДНЯЯ КОЛОНКА amo «Свойства сделок» ──
-    var mid='<div class="ffield"><label>Ответственный</label><select data-f="responsible">'+userOptsHtml(st.responsible)+'</select></div>';
+    // порядок и контролы как в amo: Название → Создано → Воронки/этапы (компактное поле) →
+    // Ответственный (мультивыбор) → Бюджет → Тег
+    var mid='<div class="ffield"><label>Название</label><input type="text" data-f="q" placeholder="'+(isLeads?"название сделки":(curFilter.kind==="companies"?"название компании":"имя контакта"))+'" value="'+esc(st.q||"")+'"></div>';
+    mid+='<div class="ffield"><label>Создано</label><div class="frange" style="gap:8px"><input type="date" data-f="date_from" value="'+(st.date_from||"")+'"><span>–</span><input type="date" data-f="date_to" value="'+(st.date_to||"")+'"></div></div>';
+    // этапы: из текущей воронки, а если их нет (вид «Все сделки») — со ВСЕХ воронок; компактное поле + попап
+    var sts=(curFilter.statuses&&curFilter.statuses.length)?curFilter.statuses:(function(){var out=[],seen={};(PIPES||[]).forEach(function(pp){((pp._embedded&&pp._embedded.statuses)||[]).forEach(function(s){var k=s.id+":"+s.name;if(seen[k])return;seen[k]=1;out.push(s);});});return out;})();
     if(isLeads){
-      // этапы: из текущей воронки, а если их нет (вид «Все сделки» по нескольким воронкам) —
-      // собираем со ВСЕХ воронок (с названием и цветом), дедуп по id+имя, как в amo
-      var sts=(curFilter.statuses&&curFilter.statuses.length)?curFilter.statuses:(function(){var out=[],seen={};(PIPES||[]).forEach(function(pp){((pp._embedded&&pp._embedded.statuses)||[]).forEach(function(s){var k=s.id+":"+s.name;if(seen[k])return;seen[k]=1;out.push(s);});});return out;})();
       var selSt=String(st.status||"").split(",").filter(Boolean);
-      mid+='<div class="ffield"><label>Этапы (мультивыбор)</label><input type="hidden" data-f="status" value="'+esc(st.status||"")+'">'+
-        '<div class="fst-box" style="max-height:150px;overflow:auto;border:1px solid #dfe5ec;border-radius:8px;padding:6px 8px">'+
-        sts.map(function(s){return '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;padding:2px 0;cursor:pointer"><input type="checkbox" class="fst-cb" value="'+s.id+'"'+(selSt.indexOf(String(s.id))>=0?" checked":"")+'><span class="swatch" style="background:'+esc(s.color||"#c1d5e0")+'"></span>'+esc(s.name)+'</label>';}).join("")+
-        '</div></div>';
+      var stLabel=selSt.length?(selSt.length+" "+plural(selSt.length,"этап","этапа","этапов")):"Все этапы";
+      mid+='<div class="ffield"><label>Воронки и этапы</label><input type="hidden" data-f="status" value="'+esc(st.status||"")+'"><div class="amo-field'+(selSt.length?" on":"")+'" id="stageField"><span'+(selSt.length?"":' class="af-ph"')+' id="stageLbl">'+stLabel+'</span>'+(selSt.length?'<span class="af-x" id="stageClear">×</span>':"")+'</div></div>';
+    }
+    var selResp=String(st.responsible||"").split(",").filter(Boolean);
+    var respLabel=selResp.length?selResp.map(function(id){return userName(+id)||id;}).join(", "):"— любой —";
+    mid+='<div class="ffield"><label>Ответственный</label><input type="hidden" data-f="responsible" value="'+esc(st.responsible||"")+'"><div class="amo-field'+(selResp.length?" on":"")+'" id="respField"><span'+(selResp.length?"":' class="af-ph"')+' id="respLbl">'+esc(respLabel)+'</span>'+(selResp.length?'<span class="af-x" id="respClear">×</span>':"")+'</div></div>';
+    if(isLeads){
       mid+='<div class="ffield"><label>Бюджет, ₽</label><div class="frange"><input type="number" data-f="price_min" placeholder="от" value="'+(st.price_min||"")+'"><span>–</span><input type="number" data-f="price_max" placeholder="до" value="'+(st.price_max||"")+'"></div></div>';
       mid+='<div class="ffield"><label>Тег содержит</label><input type="text" data-f="tag" placeholder="напр. MSK" value="'+esc(st.tag||"")+'"></div>';
     }
-    mid+='<div class="frange" style="gap:12px;align-items:stretch"><div class="ffield" style="flex:1"><label>Создано с</label><input type="date" data-f="date_from" value="'+(st.date_from||"")+'"></div><div class="ffield" style="flex:1"><label>Создано по</label><input type="date" data-f="date_to" value="'+(st.date_to||"")+'"></div></div>';
     // ── ПОЛЯ сущности (все, типизированно как в amo) + кросс-сущностные разделы ──
     var compDefs=(CF&&CF.companies)||[];
     var mapOf=function(arr){var m={};(arr||[]).forEach(function(x){if(x&&x[0])m[x[0]]=x[1];});return m;};
@@ -903,7 +950,7 @@
     p.innerHTML='<div class="fp3-cols">'+
       '<div class="fp3-col"><h5>Сохранённые</h5>'+left+'</div>'+
       '<div class="fp3-col"><h5>Свойства '+(isLeads?"сделок":"контактов")+'</h5>'+mid+'</div>'+
-      '<div class="fp3-col fp3-tags"><h5>Теги</h5>'+right+'</div>'+
+      '<div class="fp3-col fp3-tags"><h5>Теги'+(isLeads?'<span class="tag-manage" id="tagManage">Управление</span>':"")+'</h5>'+right+'</div>'+
       '</div>';
     document.body.appendChild(p);
     p.style.top=(r.bottom+8)+"px";
@@ -961,11 +1008,28 @@
       else{raw.preset=(st.preset===b.dataset.fp)?"":b.dataset.fp;if(raw.preset)vals.preset=raw.preset;}
       FSTATE[curFilter.kind]=raw;closeFilterPanel();runLeadsFilter(vals);
     };});
-    // мультиселект этапов: чекбоксы → CSV в скрытое поле data-f="status"
-    p.querySelectorAll(".fst-cb").forEach(function(cb){cb.onchange=function(){
-      var ids=Array.prototype.filter.call(p.querySelectorAll(".fst-cb"),function(x){return x.checked;}).map(function(x){return x.value;});
-      p.querySelector('[data-f="status"]').value=ids.join(",");
-    };});
+    // компактное поле «Воронки и этапы» → попап с чекбоксами, сгруппированными по воронкам (как amo)
+    var stageField=p.querySelector("#stageField");
+    if(stageField){
+      var stHidden=p.querySelector('[data-f="status"]');
+      var stSel=new Set(String(stHidden.value||"").split(",").filter(Boolean));
+      var stGroups=(function(){var gs=[],any=false;(PIPES||[]).forEach(function(pp){var items=((pp._embedded&&pp._embedded.statuses)||[]).map(function(s){return {id:s.id,label:s.name,color:s.color||"#c1d5e0"};});if(items.length){gs.push({title:pp.name,items:items});any=true;}});if(!any)gs=[{title:"",items:sts.map(function(s){return {id:s.id,label:s.name,color:s.color||"#c1d5e0"};})}];return gs;})();
+      var stRefresh=function(){var n=stSel.size;stHidden.value=Array.from(stSel).join(",");var lbl=p.querySelector("#stageLbl");if(lbl){lbl.textContent=n?(n+" "+plural(n,"этап","этапа","этапов")):"Все этапы";lbl.className=n?"":"af-ph";}stageField.classList.toggle("on",!!n);var cl=p.querySelector("#stageClear");if(n&&!cl){var x=document.createElement("span");x.className="af-x";x.id="stageClear";x.textContent="×";stageField.appendChild(x);bindStageClear();}else if(!n&&cl)cl.remove();};
+      function bindStageClear(){var cl=p.querySelector("#stageClear");if(cl)cl.onclick=function(e){e.stopPropagation();stSel.clear();closeMsPopup();stRefresh();};}
+      bindStageClear();
+      stageField.onclick=function(e){if(e.target.id==="stageClear")return;if(document.getElementById("msPop"))return closeMsPopup();openMsPopup(stageField,stGroups,stSel,function(){stRefresh();});};
+    }
+    // компактное поле «Ответственный» → попап-мультивыбор пользователей (как amo)
+    var respField=p.querySelector("#respField");
+    if(respField){
+      var rHidden=p.querySelector('[data-f="responsible"]');
+      var rSel=new Set(String(rHidden.value||"").split(",").filter(Boolean));
+      var rItems=(USERS||[]).map(function(u){return {id:u.id,label:u.name};});
+      var rRefresh=function(){rHidden.value=Array.from(rSel).join(",");var lbl=p.querySelector("#respLbl");var names=Array.from(rSel).map(function(id){return userName(+id)||id;});if(lbl){lbl.textContent=names.length?names.join(", "):"— любой —";lbl.className=names.length?"":"af-ph";}respField.classList.toggle("on",!!rSel.size);var cl=p.querySelector("#respClear");if(rSel.size&&!cl){var x=document.createElement("span");x.className="af-x";x.id="respClear";x.textContent="×";respField.appendChild(x);bindRespClear();}else if(!rSel.size&&cl)cl.remove();};
+      function bindRespClear(){var cl=p.querySelector("#respClear");if(cl)cl.onclick=function(e){e.stopPropagation();rSel.clear();closeMsPopup();rRefresh();};}
+      bindRespClear();
+      respField.onclick=function(e){if(e.target.id==="respClear")return;if(document.getElementById("msPop"))return closeMsPopup();openMsPopup(respField,[{title:"",items:rItems}],rSel,function(){rRefresh();});};
+    }
     // правая колонка «Теги» со счётчиками (как в amo): поиск + клик = фильтр по тегу
     if(isLeads)jreq(API+"/tags_report").then(function(r){
       var wrap=document.getElementById("fpTags");if(!wrap)return;
@@ -1070,7 +1134,8 @@
     if(vals.price_min||vals.price_max)ch.push({label:"Бюджет: "+(vals.price_min||"…")+"–"+(vals.price_max||"…")+" ₽",onX:function(){rerunFn(without("price_min","price_max"));}});
     if(vals.tag)ch.push({label:"Тег: "+vals.tag,onX:function(){rerunFn(without("tag"));}});
     if(vals.date_from||vals.date_to)ch.push({label:"Создано: "+(vals.date_from||"…")+" – "+(vals.date_to||"…"),onX:function(){rerunFn(without("date_from","date_to"));}});
-    if(vals.responsible&&String(vals.responsible)!=="0")ch.push({label:"Отв.: "+(userName(+vals.responsible)||vals.responsible),onX:function(){rerunFn(without("responsible"));}});
+    if(vals.q)ch.push({label:"Название: "+String(vals.q).slice(0,24),onX:function(){rerunFn(without("q"));}});
+    if(vals.responsible&&String(vals.responsible)!=="0"){var rids=String(vals.responsible).split(",").filter(Boolean);ch.push({label:"Отв.: "+rids.map(function(id){return userName(+id)||id;}).join(", ").slice(0,40),onX:function(){rerunFn(without("responsible"));}});}
     (vals._cf||[]).forEach(function(x,i){if(!x[0])return;ch.push({label:cfNameOf(x[0])+(x[1]?": "+String(x[1]).slice(0,30):""),onX:function(){var v2=JSON.parse(JSON.stringify(vals));v2._cf.splice(i,1);rerunFn(v2);}});});
     (vals._ccf||[]).forEach(function(x,i){if(!x[0])return;ch.push({label:"Контакт · "+cfNameOf(x[0])+(x[1]?": "+String(x[1]).slice(0,30):""),onX:function(){var v2=JSON.parse(JSON.stringify(vals));v2._ccf.splice(i,1);rerunFn(v2);}});});
     (vals._cco||[]).forEach(function(x,i){if(!x[0])return;ch.push({label:"Компания · "+cfNameOf(x[0])+(x[1]?": "+String(x[1]).slice(0,30):""),onX:function(){var v2=JSON.parse(JSON.stringify(vals));v2._cco.splice(i,1);rerunFn(v2);}});});

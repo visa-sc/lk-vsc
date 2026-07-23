@@ -134,6 +134,13 @@ module.exports = function mountDbRoutes(app, guard, api) {
       try { const c = relCfClause(s.param, s.self, s.link, s.rel, s.table); if (c) { where.push(c.clause); args.push(...c.args); } } catch (_) {}
     }
   }
+  // ответственный: одиночный id или CSV нескольких (мультивыбор, как в amo)
+  function respWhere(v, where, args) {
+    if (!v) return;
+    const ids = String(v).split(",").map((x) => parseInt(x, 10)).filter(Number.isFinite);
+    if (ids.length === 1) { where.push("responsible_user_id=?"); args.push(ids[0]); }
+    else if (ids.length > 1) { where.push("responsible_user_id IN (" + ids.map(() => "?").join(",") + ")"); args.push(...ids); }
+  }
   function dealsByContact(ids) {
     const map = {};
     if (!ids.length) return map;
@@ -903,7 +910,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const where = [], args = [], intq = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
     if (q) { where.push("lc(name) LIKE lc(?)"); args.push("%" + q + "%"); }
     let vv;
-    if (COMPANY_HAS_RESP && (vv = intq(req.query.responsible)) !== null) { where.push("responsible_user_id=?"); args.push(vv); }
+    if (COMPANY_HAS_RESP) respWhere(req.query.responsible, where, args);
     if ((vv = intq(req.query.date_from)) !== null) { where.push("created_at>=?"); args.push(vv); }
     if ((vv = intq(req.query.date_to)) !== null) { where.push("created_at<=?"); args.push(vv); }
     addCfFilters(req.query.cf, where, args);
@@ -999,7 +1006,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
       if (sts.length === 1) { where.push("status_id=?"); args.push(sts[0]); }
       else if (sts.length > 1) { where.push("status_id IN (" + sts.map(() => "?").join(",") + ")"); args.push(...sts); }
     }
-    if ((v = intq(q.responsible)) !== null) { where.push("responsible_user_id=?"); args.push(v); }
+    respWhere(q.responsible, where, args);
     if ((v = intq(q.price_min)) !== null) { where.push("price>=?"); args.push(v); }
     if ((v = intq(q.price_max)) !== null) { where.push("price<=?"); args.push(v); }
     if ((v = intq(q.date_from)) !== null) { where.push("created_at>=?"); args.push(v); }
@@ -1043,7 +1050,7 @@ module.exports = function mountDbRoutes(app, guard, api) {
     const where = [], args = [];
     const intq = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
     let v;
-    if ((v = intq(q.responsible)) !== null) { where.push("responsible_user_id=?"); args.push(v); }
+    respWhere(q.responsible, where, args);
     if ((v = intq(q.date_from)) !== null) { where.push("created_at>=?"); args.push(v); }
     if ((v = intq(q.date_to)) !== null) { where.push("created_at<=?"); args.push(v); }
     if (q.q && String(q.q).trim()) { where.push("(lc(name) LIKE lc(?) OR phones LIKE ? OR emails LIKE ?)"); const s = "%" + String(q.q).trim() + "%"; args.push(s, s, s); }
