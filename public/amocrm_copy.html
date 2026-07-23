@@ -3536,10 +3536,11 @@
   function vAnalytics(){
     renderSidebar("analytics");
     setHeader("Аналитика",{count:""});
-    var tabs='<div style="display:flex;gap:6px;margin:0 0 14px;flex-wrap:wrap"><button class="btn'+(anTab==="funnels"?"":" ghost")+'" data-at="funnels">Анализ продаж</button><button class="btn'+(anTab==="summary"?"":" ghost")+'" data-at="summary">Сводный отчёт</button><button class="btn'+(anTab==="staff"?"":" ghost")+'" data-at="staff">По сотрудникам</button><button class="btn'+(anTab==="calls"?"":" ghost")+'" data-at="calls">Звонки</button><button class="btn'+(anTab==="events"?"":" ghost")+'" data-at="events">Список событий</button></div>';
+    var tabs='<div style="display:flex;gap:6px;margin:0 0 14px;flex-wrap:wrap"><button class="btn'+(anTab==="funnels"?"":" ghost")+'" data-at="funnels">Анализ продаж</button><button class="btn'+(anTab==="summary"?"":" ghost")+'" data-at="summary">Сводный отчёт</button><button class="btn'+(anTab==="staff"?"":" ghost")+'" data-at="staff">По сотрудникам</button><button class="btn'+(anTab==="goals"?"":" ghost")+'" data-at="goals">Цели</button><button class="btn'+(anTab==="calls"?"":" ghost")+'" data-at="calls">Звонки</button><button class="btn'+(anTab==="events"?"":" ghost")+'" data-at="events">Список событий</button></div>';
     if(anTab==="calls"){renderCallsReport(tabs);return;}
     if(anTab==="summary"){renderSummaryReport(tabs);return;}
     if(anTab==="staff"){renderStaffReport(tabs);return;}
+    if(anTab==="goals"){renderGoals(tabs);return;}
     if(anTab==="events"){renderEventsList(tabs);return;}
     $("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Загрузка…</p></div></div>';
     var ep=VIEW_EPOCH;
@@ -3633,6 +3634,35 @@
   }
   // «Отчёт по сотрудникам» (как в amo): за период — создано/успешно/задачи/примечания
   var staffPeriod="week";
+  // «Цели» (как в amo Аналитика→Цели): план продаж на менеджера + факт выигранных за месяц
+  function renderGoals(tabs){
+    $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">Загрузка…</p></div></div>';
+    bindAnTabs();
+    var ep=VIEW_EPOCH;
+    jreq(API+"/goals").then(function(r){
+      if(ep!==VIEW_EPOCH||anTab!=="goals")return;
+      if(!r||!r.success)return $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">'+esc((r&&r.message)||"Нет данных")+'</p></div></div>';
+      var byId={};(r.items||[]).forEach(function(it){byId[it.id]=it;});
+      // все менеджеры (план можно задать любому), с планом/фактом — сверху
+      var list=(USERS||[]).map(function(u){var it=byId[u.id]||{};return {id:u.id,name:u.name,fact:it.fact||0,won:it.won||0,target:it.target||0};});
+      list.sort(function(a,b){return (b.fact+b.target)-(a.fact+a.target);});
+      var rows=list.map(function(it){
+        var pct=it.target>0?Math.min(100,Math.round(it.fact/it.target*100)):0;
+        var col=pct>=100?"#8bc34a":(pct>=50?"#f0b429":"#e0673f");
+        return '<tr><td>'+esc(it.name)+'</td>'+
+          '<td class="goal-target" data-uid="'+it.id+'" data-nm="'+esc(it.name)+'" data-cur="'+it.target+'" style="cursor:pointer" title="Клик — изменить план">'+(it.target?fmt(it.target)+' ₽':'<span class="muted">— задать —</span>')+'</td>'+
+          '<td>'+fmt(it.fact)+' ₽ <span class="muted">('+it.won+')</span></td>'+
+          '<td style="width:32%">'+(it.target>0?'<div style="background:#eef1f4;border-radius:8px;height:16px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+col+'"></div></div><div class="muted" style="font-size:11px">'+pct+'%</div>':'<span class="muted">нет плана</span>')+'</td></tr>';
+      }).join("");
+      $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><h2 style="margin-top:0">Цели · '+esc(r.month||"")+'</h2><p class="muted" style="font-size:12px;margin:4px 0 12px">План продаж на менеджера (клик по плану — изменить) против факта выигранных сделок за месяц.</p><table class="set"><tr><th>Сотрудник</th><th>План</th><th>Факт (выиграно)</th><th>Прогресс</th></tr>'+rows+'</table></div></div>';
+      bindAnTabs();
+      $("#view").querySelectorAll(".goal-target").forEach(function(td){td.onclick=function(){
+        var v=prompt("План продаж (₽) для «"+td.dataset.nm+"» на месяц:",td.dataset.cur||"");
+        if(v===null)return;
+        ereq("POST","/edit-api/goals",{user_id:td.dataset.uid,target:String(v).replace(/[^0-9.]/g,"")}).then(function(rr){if(rr&&rr.success){toast("План сохранён");renderGoals(tabs);}else toast((rr&&rr.message)||"Не удалось",true);});
+      };});
+    }).catch(function(){$("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">Ошибка загрузки</p></div></div>';});
+  }
   function renderStaffReport(tabs){
     $("#view").innerHTML='<div class="plain">'+tabs+'<div class="pcard"><p class="muted">Загрузка…</p></div></div>';
     bindAnTabs();

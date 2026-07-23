@@ -242,6 +242,20 @@ module.exports = function mountEditRoutes(app, guard) {
   tagsEndpoint("contact", "contacts", getContact);
   tagsEndpoint("company", "companies", getCompany);
 
+  // ── план продаж на менеджера (Аналитика→Цели), хранится в goals.json ──
+  const GOALS_FILE = path.join(path.dirname(DB_PATH), "goals.json");
+  app.post(`${E}/goals`, guard, (req, res) => {
+    const uid = parseInt(req.body.user_id, 10);
+    const target = Math.max(0, Math.round(parseFloat(req.body.target) || 0));
+    if (!uid) return res.status(400).json({ success: false, message: "нужен user_id" });
+    let targets = {};
+    try { targets = JSON.parse(fs.readFileSync(GOALS_FILE, "utf8")) || {}; } catch (_) {}
+    if (target > 0) targets[uid] = target; else delete targets[uid];
+    try { fs.writeFileSync(GOALS_FILE, JSON.stringify(targets)); } catch (e) { return res.json({ success: false, message: e.message }); }
+    audit(req, "goals", uid, "edit", { target });
+    res.json({ success: true, target });
+  });
+
   // ── удаление сделки/контакта (мягкое: только локальные и по подтверждению) ──
   app.post(`${E}/lead/:id/delete`, guard, (req, res) => {
     const id = parseInt(req.params.id, 10);

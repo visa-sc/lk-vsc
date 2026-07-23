@@ -358,6 +358,21 @@ module.exports = function mountDbRoutes(app, guard, api) {
     } catch (e) { res.json({ success: false, message: e.message }); }
   });
 
+  // отчёт «Цели» (как в amo Аналитика→Цели): план продаж на менеджера + факт выигранных за месяц
+  const GOALS_FILE = path.join(path.dirname(DB_PATH), "goals.json");
+  app.get(`${api}/goals`, guard, (req, res) => {
+    try {
+      let targets = {};
+      try { targets = JSON.parse(fs.readFileSync(GOALS_FILE, "utf8")) || {}; } catch (_) {}
+      const now = new Date();
+      const monthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
+      const rows = D.prepare("SELECT responsible_user_id u, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads WHERE status_id=142 AND closed_at>=? GROUP BY u ORDER BY s DESC").all(monthStart);
+      const items = rows.map((r) => ({ id: r.u, name: uName[r.u] || ("id " + r.u), won: r.c, fact: r.s, target: targets[r.u] || 0 }));
+      Object.keys(targets).forEach((uid) => { if (targets[uid] && !items.find((x) => String(x.id) === String(uid))) items.push({ id: +uid, name: uName[uid] || ("id " + uid), won: 0, fact: 0, target: targets[uid] || 0 }); });
+      res.json({ success: true, month: now.toLocaleDateString("ru-RU", { month: "long", year: "numeric" }), items });
+    } catch (e) { res.json({ success: false, message: e.message }); }
+  });
+
   // отчёт «Звонки» (как в amo Аналитика→Звонки): агрегат из calls_agg.json (bucket-примечания слепка, пересчёт tools-скриптом)
   app.get(`${api}/calls_report`, guard, (req, res) => {
     try {
