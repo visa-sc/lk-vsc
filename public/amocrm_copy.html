@@ -3427,6 +3427,65 @@
     h=h.replace(/^- (.*)$/gm,"<li>$1</li>").replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g,"<ul>$1</ul>");
     return h.replace(/\n{2,}/g,"<br>");
   }
+  // ── редактор правил движка автоматизаций (создать/править/удалить) ──
+  var AUTORULES=[];
+  var TRIGGER_NAMES={stage:"Вход на этап",field_change:"Изменение поля",tag_added:"Изменение тегов",lead_created:"Создание сделки"};
+  var ACTION_NAMES={create_task:"Создать задачу",set_responsible:"Сменить ответственного",add_tag:"Добавить тег",edit_field:"Изменить поле"};
+  var COND_OPS=[["eq","="],["ne","≠"],["gt",">"],["lt","<"],["contains","содержит"],["empty","пусто"],["not_empty","не пусто"],["has","есть тег"],["not_has","нет тега"]];
+  function leadCfOpts(sel){return '<option value="responsible"'+(sel==="responsible"?" selected":"")+'>Ответственный</option><option value="price"'+(sel==="price"?" selected":"")+'>Бюджет</option><option value="tag"'+(sel==="tag"?" selected":"")+'>Тег</option>'+((CF&&CF.leads)||[]).map(function(f){return '<option value="cf'+f.id+'"'+(sel==="cf"+f.id?" selected":"")+'>'+esc(f.name)+'</option>';}).join("");}
+  function saveAutoRules(cb){ereq("POST","/edit-api/rules",{rules:AUTORULES}).then(function(r){if(r&&r.success){toast("Правила сохранены");AUTORULES=r.rules||AUTORULES;if(cb)cb();}else toast((r&&r.message)||"Не удалось",true);});}
+  function openRuleEditor(idx){
+    var r=idx>=0?JSON.parse(JSON.stringify(AUTORULES[idx])):{trigger:"stage",action:"create_task",conditions:[],enabled:true};
+    var bg=document.createElement("div");bg.className="modal-bg";
+    var pipeOpts=PIPES.map(function(p){return '<option value="'+p.id+'"'+(r.pipeline_id===p.id?" selected":"")+'>'+esc(p.name)+'</option>';}).join("");
+    bg.innerHTML='<div class="modal" style="max-width:560px;max-height:88vh;overflow:auto"><span class="x">×</span><h3>'+(idx>=0?"Правило":"Новое правило")+'</h3>'+
+      '<label class="mlbl">Триггер</label><select id="reTrig" class="ci">'+Object.keys(TRIGGER_NAMES).map(function(k){return '<option value="'+k+'"'+((r.trigger||"stage")===k?" selected":"")+'>'+TRIGGER_NAMES[k]+'</option>';}).join("")+'</select>'+
+      '<div id="reStage"><label class="mlbl">Воронка</label><select id="rePipe" class="ci">'+pipeOpts+'</select><label class="mlbl">Этап</label><select id="reStatus" class="ci"></select></div>'+
+      '<div id="reField" style="display:none"><label class="mlbl">Поле</label><select id="reFieldSel" class="ci">'+leadCfOpts(r.field)+'</select></div>'+
+      '<label class="mlbl">Условия (все должны выполняться)</label><div id="reConds"></div><button class="btn ghost" id="reAddCond" style="font-size:12px;padding:3px 10px">+ условие</button>'+
+      '<label class="mlbl">Действие</label><select id="reAct" class="ci">'+Object.keys(ACTION_NAMES).map(function(k){return '<option value="'+k+'"'+(r.action===k?" selected":"")+'>'+ACTION_NAMES[k]+'</option>';}).join("")+'</select>'+
+      '<div id="reActParams"></div>'+
+      '<label style="display:block;margin-top:10px;font-size:13px;cursor:pointer"><input type="checkbox" id="reEnabled"'+(r.enabled!==false?" checked":"")+'> включено</label>'+
+      '<div style="margin-top:16px;display:flex;gap:8px"><button class="btn" id="reSave">Сохранить</button>'+(idx>=0?'<button class="btn ghost" id="reDel" style="color:#c0392b">Удалить</button>':"")+'<button class="btn ghost x2">Отмена</button></div></div>';
+    document.body.appendChild(bg);
+    function close(){document.body.removeChild(bg);}
+    bg.onclick=function(e){if(e.target===bg||e.target.className==="x"||e.target.className==="btn ghost x2")close();};
+    var stSel=bg.querySelector("#reStatus"),pipeSel=bg.querySelector("#rePipe");
+    function fillStages(){var p=PIPES.find(function(x){return x.id===parseInt(pipeSel.value,10);});stSel.innerHTML=((p&&p._embedded&&p._embedded.statuses)||[]).map(function(s){return '<option value="'+s.id+'"'+(r.status_id===s.id?" selected":"")+'>'+esc(s.name)+'</option>';}).join("");}
+    fillStages();pipeSel.onchange=fillStages;
+    // условия
+    function condRow(c){c=c||{field:"responsible",op:"eq",value:""};var d=document.createElement("div");d.className="re-cond";d.style.cssText="display:flex;gap:5px;margin:4px 0";
+      d.innerHTML='<select class="ci c-f" style="flex:1">'+leadCfOpts(c.field)+'</select><select class="ci c-op" style="width:110px">'+COND_OPS.map(function(o){return '<option value="'+o[0]+'"'+(c.op===o[0]?" selected":"")+'>'+o[1]+'</option>';}).join("")+'</select><input class="ci c-v" style="width:120px" value="'+esc(c.value==null?"":c.value)+'" placeholder="значение"><span class="c-del" style="cursor:pointer;color:#c0392b;align-self:center">✕</span>';
+      d.querySelector(".c-del").onclick=function(){d.remove();};return d;}
+    var condsBox=bg.querySelector("#reConds");(r.conditions||[]).forEach(function(c){condsBox.appendChild(condRow(c));});
+    bg.querySelector("#reAddCond").onclick=function(){condsBox.appendChild(condRow());};
+    // параметры действия
+    var actSel=bg.querySelector("#reAct"),actP=bg.querySelector("#reActParams");
+    function renderActParams(){var a=actSel.value;
+      if(a==="create_task")actP.innerHTML='<label class="mlbl">Текст задачи</label><textarea id="apText" class="ci" rows="2">'+esc(r.text||"")+'</textarea><label class="mlbl">Через сколько дней срок</label><input id="apDue" type="number" class="ci" value="'+(r.due_days||1)+'">';
+      else if(a==="set_responsible")actP.innerHTML='<label class="mlbl">Ответственный</label><select id="apResp" class="ci">'+USERS.map(function(u){return '<option value="'+u.id+'"'+(r.responsible_user_id===u.id?" selected":"")+'>'+esc(u.name)+'</option>';}).join("")+'</select>';
+      else if(a==="add_tag")actP.innerHTML='<label class="mlbl">Тег</label><input id="apTag" class="ci" value="'+esc(r.tag||"")+'">';
+      else if(a==="edit_field")actP.innerHTML='<label class="mlbl">Поле</label><select id="apFid" class="ci">'+((CF&&CF.leads)||[]).map(function(f){return '<option value="'+f.id+'" data-nm="'+esc(f.name)+'"'+(String(r.field_id)===String(f.id)?" selected":"")+'>'+esc(f.name)+'</option>';}).join("")+'</select><label class="mlbl">Значение</label><input id="apVal" class="ci" value="'+esc(r.value||"")+'">';
+    }
+    renderActParams();actSel.onchange=renderActParams;
+    // триггер → показ полей
+    var trig=bg.querySelector("#reTrig");
+    function syncTrig(){var t=trig.value;bg.querySelector("#reStage").style.display=t==="stage"?"":"none";bg.querySelector("#reField").style.display=t==="field_change"?"":"none";}
+    syncTrig();trig.onchange=syncTrig;
+    bg.querySelector("#reSave").onclick=function(){
+      var out={trigger:trig.value,action:actSel.value,enabled:bg.querySelector("#reEnabled").checked};
+      if(out.trigger==="stage"){out.pipeline_id=parseInt(pipeSel.value,10);out.status_id=parseInt(stSel.value,10);}
+      if(out.trigger==="field_change")out.field=bg.querySelector("#reFieldSel").value;
+      out.conditions=[].map.call(condsBox.querySelectorAll(".re-cond"),function(d){return {field:d.querySelector(".c-f").value,op:d.querySelector(".c-op").value,value:d.querySelector(".c-v").value};});
+      if(out.action==="create_task"){out.text=bg.querySelector("#apText").value;out.due_days=parseInt(bg.querySelector("#apDue").value,10)||1;}
+      else if(out.action==="set_responsible")out.responsible_user_id=parseInt(bg.querySelector("#apResp").value,10)||0;
+      else if(out.action==="add_tag")out.tag=bg.querySelector("#apTag").value.trim();
+      else if(out.action==="edit_field"){var fs=bg.querySelector("#apFid");out.field_id=parseInt(fs.value,10);out.field_name=fs.selectedOptions[0].dataset.nm;out.value=bg.querySelector("#apVal").value;}
+      if(idx>=0)AUTORULES[idx]=out;else AUTORULES.push(out);
+      saveAutoRules(function(){close();vAuto();});
+    };
+    var del=bg.querySelector("#reDel");if(del)del.onclick=function(){if(!confirm("Удалить правило?"))return;AUTORULES.splice(idx,1);saveAutoRules(function(){close();vAuto();});};
+  }
   function vAuto(){
     renderSidebar("auto");
     setHeader("Автоматизации",{count:""});
@@ -3438,22 +3497,15 @@
       jreq("/edit-api/rules").catch(function(){return {rules:[]};})
     ]).then(function(res){
       var md=res[0],bots=res[1],hooks=res[2],rules=(res[3]&&res[3].rules)||[];
-      var rulesByPipe={};rules.forEach(function(r){(rulesByPipe[r.pipeline_id]=rulesByPipe[r.pipeline_id]||[]).push(r);});
-      var rulesHtml='';
-      PIPES.forEach(function(p){
-        var rs=rulesByPipe[p.id]||[];if(!rs.length)return;
-        rulesHtml+='<h3>'+esc(p.name)+' ('+rs.length+')</h3><table><tr><th>Этап</th><th>Действие</th><th>Текст задачи</th></tr>';
-        rs.forEach(function(r){
-          var st="";((p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===r.status_id)st=s.name;});
-          rulesHtml+='<tr><td>'+esc(st)+'</td><td>'+(r.action==="create_task"?"создать задачу":r.action==="set_responsible"?"сменить ответственного":esc(r.action))+'</td><td class="muted">'+esc((r.text||"").slice(0,120))+'</td></tr>';
-        });
-        rulesHtml+='</table>';
-      });
+      AUTORULES=rules;
+      var stName=function(pid,sid){var p=PIPES.find(function(x){return x.id===pid;});var n="";((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===sid)n=s.name;});return n;};
+      var actDesc=function(r){if(r.action==="create_task")return "создать задачу: "+esc((r.text||"").slice(0,50));if(r.action==="set_responsible")return "сменить ответственного → "+esc(userName(r.responsible_user_id));if(r.action==="add_tag")return "добавить тег «"+esc(r.tag)+"»";if(r.action==="edit_field")return "изменить поле → "+esc(r.value);return esc(r.action);};
+      var trigDesc=function(r){var t=r.trigger||"stage";if(t==="stage")return "этап «"+esc(stName(r.pipeline_id,r.status_id))+"»";return TRIGGER_NAMES[t]||t;};
+      var rowsHtml=rules.map(function(r,i){return '<tr'+(r.enabled===false?' style="opacity:.5"':'')+'><td>'+trigDesc(r)+(r.conditions&&r.conditions.length?' <span class="muted" style="font-size:11px">+'+r.conditions.length+' усл.</span>':"")+'</td><td>'+actDesc(r)+'</td><td style="white-space:nowrap"><a class="rule-edit" data-i="'+i+'">править</a></td></tr>';}).join("");
       var html='<div class="plain">'+
-        '<div class="pcard" style="border-left:4px solid #2f8b57"><h2 style="margin-top:0">Движок автоматизаций — АКТИВЕН ('+rules.length+' правил)</h2>'+
-        '<p class="muted">При переходе сделки на этап автоматически создаётся задача (как в amoCRM). Правила восстановлены из амо (текст задач дословно), '+
-        'включены <b>только безусловные</b> триггеры «Создать задачу» — условные (по полям) и внешние действия (письма/SMS/боты/чек-листы «Команда F5») пока не активны, они в описи ниже. '+
-        'Требуется финальная сверка с Андреем.</p>'+(rulesHtml?('<div class="md">'+rulesHtml+'</div>'):"")+'</div>'+
+        '<div class="pcard" style="border-left:4px solid #2f8b57"><h2 style="margin-top:0">Движок автоматизаций — АКТИВЕН ('+rules.length+' правил) <button class="btn" id="ruleAdd" style="float:right;font-size:13px;padding:5px 12px">+ Правило</button></h2>'+
+        '<p class="muted" style="font-size:12.5px">Триггеры: вход на этап / изменение поля / изменение тегов / создание сделки. Условия (по полям/тегам) и действия (задача, ответственный, тег, поле) — редактируются. Внешние действия (письма/SMS/боты) — этап интеграций.</p>'+
+        '<table class="set"><tr><th>Триггер</th><th>Действие</th><th></th></tr>'+rowsHtml+'</table></div>'+
         '<div class="pcard"><h2>Полная опись автоматизаций (снята с живой amoCRM)</h2><div class="md">'+mdRender(md)+'</div></div>';
       if(bots&&bots.length){
         html+='<div class="pcard"><h2>Salesbot — полные сценарии ('+bots.length+')</h2>';
@@ -3469,6 +3521,8 @@
       html+='<div class="pcard"><h2>Триггеры цифровой воронки (сырые данные)</h2>'+PIPES.map(function(p){return '<div><a data-dp="'+p.id+'">'+esc(p.name)+' — открыть JSON триггеров</a></div>';}).join("")+'</div></div>';
       $("#view").innerHTML=html;
       document.querySelectorAll("[data-dp]").forEach(function(a){a.onclick=function(){openDp(parseInt(a.dataset.dp,10));};});
+      var ra=$("#ruleAdd");if(ra)ra.onclick=function(){openRuleEditor(-1);};
+      document.querySelectorAll(".rule-edit").forEach(function(a){a.onclick=function(){openRuleEditor(parseInt(a.dataset.i,10));};});
     });
   }
   function openDp(pid){
