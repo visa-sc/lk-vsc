@@ -653,6 +653,8 @@
     document.body.appendChild(el);
     setTimeout(function(){el.style.transition="opacity .4s";el.style.opacity="0";setTimeout(function(){el.remove();},400);},1800);
   }
+  // уведомление о сработавших автоматизациях (как «бот сделал…» в amo)
+  function autoToast(rr){var a=rr&&rr.automations;if(a&&a.length)setTimeout(function(){toast("⚙ Автоматизация: "+a.join("; ").slice(0,80));},700);}
 
   /* ─── сайдбар ─── */
   var ICONS = {
@@ -1950,7 +1952,7 @@
     ereq("POST","/edit-api/lead/"+d.id+"/stage",{pipeline_id:curPipe,status_id:sid}).then(function(r){
       if(r&&r.success){
         col.querySelector(".kb-cards").appendChild(d.el); // визуально переносим карточку
-        toast("Сделка перенесена → "+(r.status_name||""));
+        toast("Сделка перенесена → "+(r.status_name||""));autoToast(r);
         var price=parseInt((d.el&&d.el.dataset.price)||"0",10)||0;
         recountCol(d.fromCol,-1,-price); recountCol(col,+1,price);
       } else toast((r&&r.message)||"Не удалось перенести",true);
@@ -2378,7 +2380,7 @@
         var fid=parseInt(el.dataset.fid,10),ftype=el.dataset.ftype,cur=el.classList.contains("cf-empty")?"":el.textContent.trim(),input;
         var enums=cfEnums(defs,fid);
         var sendVal=function(v){
-          ereq("PATCH","/edit-api/"+ent1+"/"+id+"/cf",{field_id:fid,field_name:el.dataset.fname,value:v}).then(function(r){if(r&&r.success){toast("Сохранено");reload();}else{toast("Не удалось",true);reload();}});
+          ereq("PATCH","/edit-api/"+ent1+"/"+id+"/cf",{field_id:fid,field_name:el.dataset.fname,value:v}).then(function(r){if(r&&r.success){toast("Сохранено");autoToast(r);reload();}else{toast("Не удалось",true);reload();}});
         };
         // МУЛЬТИСПИСОК → чеклист с галками (как в amo)
         if(ftype==="multiselect"&&enums.length){
@@ -2830,7 +2832,7 @@
           var pid2=parseInt(el.dataset.pid,10),sid2=parseInt(el.dataset.sid,10);
           dd.remove();
           if(pid2===l.pipeline_id&&sid2===l.status_id)return;
-          var go=function(lr){ereq("POST","/edit-api/lead/"+id+"/stage",{pipeline_id:pid2,status_id:sid2,loss_reason_id:lr||0}).then(function(rr){if(rr&&rr.success){toast(sid2===143?"Сделка закрыта — не реализовано":(pid2!==l.pipeline_id?"Сделка перенесена в другую воронку":"Этап изменён"));reload();}else toast((rr&&rr.message)||"Не удалось",true);});};
+          var go=function(lr){ereq("POST","/edit-api/lead/"+id+"/stage",{pipeline_id:pid2,status_id:sid2,loss_reason_id:lr||0}).then(function(rr){if(rr&&rr.success){toast(sid2===143?"Сделка закрыта — не реализовано":(pid2!==l.pipeline_id?"Сделка перенесена в другую воронку":"Этап изменён"));autoToast(rr);reload();}else toast((rr&&rr.message)||"Не удалось",true);});};
           if(sid2===143)pickLossReason(sw,go);else go(0); // причина отказа при проигрыше, как в amo
         };});
         // клик по названию другой воронки — раскрыть её этапы
@@ -2842,7 +2844,7 @@
           ph.insertAdjacentHTML("afterend",frag);
           dd.querySelectorAll(".sd-s").forEach(function(el){if(el.onclick)return;el.onclick=function(){
             var pid3=parseInt(el.dataset.pid,10),sid3=parseInt(el.dataset.sid,10);dd.remove();
-            var go=function(lr){ereq("POST","/edit-api/lead/"+id+"/stage",{pipeline_id:pid3,status_id:sid3,loss_reason_id:lr||0}).then(function(rr){if(rr&&rr.success){toast(sid3===143?"Сделка закрыта — не реализовано":"Сделка перенесена");reload();}else toast((rr&&rr.message)||"Не удалось",true);});};
+            var go=function(lr){ereq("POST","/edit-api/lead/"+id+"/stage",{pipeline_id:pid3,status_id:sid3,loss_reason_id:lr||0}).then(function(rr){if(rr&&rr.success){toast(sid3===143?"Сделка закрыта — не реализовано":"Сделка перенесена");autoToast(rr);reload();}else toast((rr&&rr.message)||"Не удалось",true);});};
             if(sid3===143)pickLossReason(sw,go);else go(0);
           };});
         };});
