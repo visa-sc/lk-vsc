@@ -1227,10 +1227,46 @@
     saveDeskWidgets(ws);
     toast("Виджет «"+name.trim()+"» добавлен на рабочий стол");
   }
+  // ФИЛЬТР В РЕЖИМЕ ВОРОНКИ (как amo): колонки канбана с отфильтрованными счётчиками+карточками
+  function renderFilteredKanban(vals){
+    var p=PIPES.find(function(x){return x.id===+vals.pipeline;})||PIPES.find(function(x){return x.id===curPipe;})||PIPES[0];
+    var fq=filterQS(vals);
+    filterChipsBarG(valsChips(vals,function(v2){runLeadsFilter(v2);}));
+    $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
+    var ep=VIEW_EPOCH;
+    jreq(API+"/leads_kanban?"+fq).then(function(r){
+      if(ep!==VIEW_EPOCH)return;
+      var byStatus=(r&&r.byStatus)||{};
+      var sts=((p._embedded&&p._embedded.statuses)||[]).filter(function(s){
+        if(s.id===142||s.id===143)return false;
+        if(s.type===1||/неразобран/i.test(s.name||""))return false;
+        return true;
+      });
+      var totC=0,totS=0,html=leadToggleHtml()+'<div id="kb">';
+      sts.forEach(function(s){
+        var k=byStatus[s.id]||{count:0,sum:0};totC+=k.count;totS+=k.sum;
+        html+='<div class="kb-col" data-sid="'+s.id+'"><div class="kb-head"><div class="nm" title="'+esc(s.name)+'">'+esc(s.name)+'</div><div class="ct">'+fmt(k.count)+' сделок: '+fmt(k.sum)+' ₽</div><div class="bar" style="background:'+esc(s.color||"#dfe3e8")+'"></div></div><div class="kb-cards"></div>'+(k.count?'<button class="lnk kb-more" data-page="0">Ещё</button>':"")+'</div>';
+      });
+      html+='</div>';
+      $("#view").innerHTML=html;
+      filterCountBarG(true,totC,totS,function(){FSTATE.leads={};vLeads();},function(){saveValsWidget(vals,true);});
+      // переключатель Воронка/Список сохраняет фильтр
+      $("#view").querySelectorAll(".lead-toggle button").forEach(function(b){b.onclick=function(){leadViewMode=b.dataset.m;runLeadsFilter(vals);};});
+      document.querySelectorAll(".kb-col").forEach(function(col){
+        var btn=col.querySelector(".kb-more");
+        if(btn){btn.onclick=function(){loadKbPage(col,p.id,fq);};loadKbPage(col,p.id,fq);}
+        col.addEventListener("dragover",function(e){e.preventDefault();e.dataTransfer.dropEffect="move";col.style.background="#eef5fc";});
+        col.addEventListener("dragleave",function(){col.style.background="";});
+        col.addEventListener("drop",function(e){e.preventDefault();col.style.background="";dropLeadToStage(col);});
+      });
+    }).catch(function(){if(ep===VIEW_EPOCH)$("#view").innerHTML='<div class="plain"><div class="pcard"><p class="muted">Ошибка фильтрации канбана</p></div></div>';});
+  }
   function runLeadsFilter(vals,qsReady){
     if(qsReady)vals=parseQsToVals(qsReady); // qs-виджеты редактируемы как и все
     var p=PIPES.find(function(x){return x.id===curPipe;})||PIPES[0];
     if(p&&!("pipeline" in vals)&&!qsReady)vals.pipeline=p.id;
+    // как в amo: фильтр в режиме воронки оставляет канбан (колонки фильтруются), а не плоский список
+    if(leadViewMode==="kanban"&&vals.pipeline)return renderFilteredKanban(vals);
     var stName=stNameAll();
     filterChipsBarG(valsChips(vals,function(v2){runLeadsFilter(v2);}));
     $("#view").innerHTML='<div class="plain"><p class="muted">Фильтрую…</p></div>';
@@ -2055,11 +2091,13 @@
     if(d<now)return '<div class="kb-task over">Просрочено</div>';
     return '<div class="kb-task fut">'+dShort(till)+'</div>';
   }
-  function loadKbPage(col,pid){
+  function loadKbPage(col,pid,fq){
     var sid=col.dataset.sid, btn=col.querySelector(".kb-more"), box=col.querySelector(".kb-cards");
     var page=(parseInt(btn.dataset.page||"0",10)||0)+1;
     btn.textContent="…";
-    jreq(API+"/leads?pipeline="+pid+"&status="+sid+"&page="+page).then(function(items){
+    // fq — строка фильтра (режим воронки с фильтром): карточки через /leads_cards с тем же фильтром
+    var url=fq?(API+"/leads_cards?status="+sid+"&page="+page+"&"+fq):(API+"/leads?pipeline="+pid+"&status="+sid+"&page="+page);
+    jreq(url).then(function(items){
       if(!Array.isArray(items)){btn.style.display="none";return;}
       items.forEach(function(l){
         var d=document.createElement("div");

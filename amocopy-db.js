@@ -880,6 +880,27 @@ module.exports = function mountDbRoutes(app, guard, api) {
     })));
   });
 
+  // карточки колонки канбана С ФИЛЬТРОМ (та же форма, что /leads) — для фильтра в режиме воронки.
+  // buildLeadWhere объявляется ниже (var-hoisting функции), к моменту запроса уже определён.
+  app.get(`${api}/leads_cards`, guard, (req, res) => {
+    try {
+      const q = req.query || {};
+      const sid = parseInt(q.status, 10);
+      if (!sid) return res.status(400).json({ success: false, message: "нужен status" });
+      const { where, args } = buildLeadWhere(q, { skipStatus: true });
+      where.push("status_id=?"); args.push(sid);
+      const page = Math.max(1, parseInt(q.page, 10) || 1);
+      const rows = D.prepare("SELECT id,name,price,responsible_user_id,created_at,updated_at,tags FROM leads WHERE " +
+        where.join(" AND ") + " ORDER BY updated_at DESC LIMIT ? OFFSET ?").all(...args, PER_PAGE, (page - 1) * PER_PAGE);
+      res.json(rows.map((l) => ({
+        id: l.id, name: l.name, price: l.price, resp: uName[l.responsible_user_id] || "",
+        created: l.created_at, updated: l.updated_at, tags: J(l.tags, []),
+        task_till: (qLeadTaskMin.get(l.id) || {}).m || 0,
+        contact: (qLeadContactName.get(l.id) || {}).name || ""
+      })));
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+
   // компании: список + карточка
   const qCompaniesCount = D.prepare("SELECT COUNT(*) c FROM companies");
   const qCompany = D.prepare("SELECT * FROM companies WHERE id=?");
@@ -1018,15 +1039,16 @@ module.exports = function mountDbRoutes(app, guard, api) {
     });
   }
 
-  // ФИЛЬТР сделок (как в amoCRM: клик по поиску → фильтр). Только по локальной БД копии.
-  app.get(`${api}/leads_filter`, guard, (req, res) => {
-    const q = req.query || {};
+  // Построение WHERE фильтра сделок — общее для /leads_filter (список) и /leads_kanban (воронка).
+  // opts.skipStatus=true — НЕ добавляем условия по этапу и закрытым (для канбана: колонки=этапы,
+  // группируем по status_id; статусные пресеты open/won/lost не применяем, задачные — да).
+  function buildLeadWhere(q, opts) {
+    opts = opts || {};
     const where = [], args = [];
     const intq = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
     let v;
     if ((v = intq(q.pipeline)) !== null) { where.push("pipeline_id=?"); args.push(v); }
-    // этап: одиночный id или CSV нескольких (мультиселект «Активные статусы», как в amo)
-    if (q.status) {
+    if (!opts.skipStatus && q.status) {
       const sts = String(q.status).split(",").map((x) => parseInt(x, 10)).filter(Number.isFinite);
       if (sts.length === 1) { where.push("status_id=?"); args.push(sts[0]); }
       else if (sts.length > 1) { where.push("status_id IN (" + sts.map(() => "?").join(",") + ")"); args.push(...sts); }
@@ -1038,28 +1060,52 @@ module.exports = function mountDbRoutes(app, guard, api) {
     if ((v = intq(q.date_to)) !== null) { where.push("created_at<=?"); args.push(v); }
     if (q.tag && String(q.tag).trim()) { where.push("tags LIKE ?"); args.push("%" + String(q.tag).trim() + "%"); }
     if (q.q && String(q.q).trim()) { where.push("lc(name) LIKE lc(?)"); args.push("%" + String(q.q).trim() + "%"); }
-    // быстрые системные пресеты (как левая колонка панели фильтра amo)
     const nowP = Math.floor(Date.now() / 1000);
-    if (q.preset === "open") where.push("status_id NOT IN (142,143)");
-    else if (q.preset === "won") where.push("status_id=142");
-    else if (q.preset === "lost") where.push("status_id=143");
-    else if (q.preset === "notasks") where.push("status_id NOT IN (142,143) AND NOT EXISTS(SELECT 1 FROM tasks t WHERE t.entity_type='leads' AND t.entity_id=leads.id AND t.is_completed=0)");
-    else if (q.preset === "overdue") { where.push("status_id NOT IN (142,143) AND EXISTS(SELECT 1 FROM tasks t WHERE t.entity_type='leads' AND t.entity_id=leads.id AND t.is_completed=0 AND t.complete_till<?)"); args.push(nowP); }
-    // КАК В AMO: если этапы явно НЕ выбраны и нет пресета — закрытые сделки (142/143) скрыты по
-    // умолчанию (сверено 23.07: Анна Шафранская amo 5560 = копия активных 5560, а со всеми 25315).
-    // Явный выбор этапа (в т.ч. 142/143) или пресет won/lost показывает закрытые.
-    if (!q.status && !q.preset) where.push("status_id NOT IN (142,143)");
-    // системные поля amo: кем создана/изменена (мультивыбор), причина отказа
+    const taskPreset = () => {
+      if (q.preset === "notasks") where.push("NOT EXISTS(SELECT 1 FROM tasks t WHERE t.entity_type='leads' AND t.entity_id=leads.id AND t.is_completed=0)");
+      else if (q.preset === "overdue") { where.push("EXISTS(SELECT 1 FROM tasks t WHERE t.entity_type='leads' AND t.entity_id=leads.id AND t.is_completed=0 AND t.complete_till<?)"); args.push(nowP); }
+    };
+    if (opts.skipStatus) {
+      // канбан: без статусных условий; задачные пресеты применяем к активным (не закрытым) колонкам
+      taskPreset();
+    } else {
+      if (q.preset === "open") where.push("status_id NOT IN (142,143)");
+      else if (q.preset === "won") where.push("status_id=142");
+      else if (q.preset === "lost") where.push("status_id=143");
+      else if (q.preset === "notasks") { where.push("status_id NOT IN (142,143)"); taskPreset(); }
+      else if (q.preset === "overdue") { where.push("status_id NOT IN (142,143)"); taskPreset(); }
+      // КАК В AMO: этапы явно не выбраны и нет пресета — закрытые (142/143) скрыты по умолчанию.
+      if (!q.status && !q.preset) where.push("status_id NOT IN (142,143)");
+    }
     csvWhere("created_by", q.created_by, where, args);
     csvWhere("updated_by", q.updated_by, where, args);
     csvWhere("loss_reason_id", q.loss_reason, where, args);
-    // фильтр по кастомным полям самой сделки
     addCfFilters(q.cf, where, args);
-    // кросс-сущностные поля (как в amo): ccf=поля связанного КОНТАКТА, cco=поля связанной КОМПАНИИ
     applyRelCf([
       { param: q.ccf, self: "lead_id", link: "lead_contacts", rel: "contact_id", table: "contacts" },
       { param: q.cco, self: "lead_id", link: "lead_companies", rel: "company_id", table: "companies" }
     ], where, args);
+    return { where, args };
+  }
+
+  // счётчики по этапам для ФИЛЬТРА В РЕЖИМЕ ВОРОНКИ (как amo: колонки канбана показывают
+  // отфильтрованные count/sum, карточки грузятся через /leads_filter?status=X&<фильтр>).
+  app.get(`${api}/leads_kanban`, guard, (req, res) => {
+    try {
+      const { where, args } = buildLeadWhere(req.query || {}, { skipStatus: true });
+      const rows = D.prepare("SELECT status_id, COUNT(*) c, COALESCE(SUM(price),0) s FROM leads" +
+        (where.length ? " WHERE " + where.join(" AND ") : "") + " GROUP BY status_id").all(...args);
+      const byStatus = {};
+      rows.forEach((r) => { byStatus[r.status_id] = { count: r.c, sum: r.s }; });
+      res.json({ success: true, byStatus });
+    } catch (e) { res.json({ success: false, message: e.message }); }
+  });
+
+  // ФИЛЬТР сделок (как в amoCRM: клик по поиску → фильтр). Только по локальной БД копии.
+  app.get(`${api}/leads_filter`, guard, (req, res) => {
+    const q = req.query || {};
+    const intq = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
+    const { where, args } = buildLeadWhere(q);
     const page = Math.max(1, intq(q.page) || 1);
     // сортировка кликом по заголовку столбца, как в amo (белый список колонок)
     const SORT_COL = { name: "name", sid: "status_id", price: "price", created: "created_at", updated: "updated_at" };
