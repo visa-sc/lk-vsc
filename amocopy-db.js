@@ -1004,12 +1004,24 @@ module.exports = function mountDbRoutes(app, guard, api) {
 
   // поиск по сделкам (название/id) — из шапки
   const qLeadsSearch = D.prepare("SELECT id,name,price,status_id,pipeline_id,responsible_user_id FROM leads WHERE lc(name) LIKE lc(?) ORDER BY updated_at DESC LIMIT 50");
+  // поиск сделок в лидах по контакту (имя/телефон) — как в amo ищут телефон клиента → его сделки
+  const qLeadsByContacts = D.prepare("SELECT DISTINCT l.id,l.name,l.price,l.status_id,l.pipeline_id,l.responsible_user_id FROM lead_contacts lc JOIN leads l ON l.id=lc.lead_id WHERE lc.contact_id IN (SELECT value FROM json_each(?)) ORDER BY l.updated_at DESC LIMIT 50");
   app.get(`${api}/leads_search`, guard, (req, res) => {
     const q = String(req.query.q || "").trim();
     if (q.length < 2) return res.json({ success: true, items: [] });
     let items = [];
-    if (/^\d+$/.test(q)) { const l = qLead.get(+q); if (l) items.push(l); }
+    // #id сделки (точное) — только для достаточно длинных чисел, чтобы не путать с телефоном
+    if (/^\d{5,}$/.test(q)) { const l = qLead.get(+q); if (l) items.push(l); }
+    // по названию сделки
     for (const l of qLeadsSearch.all("%" + q + "%")) { if (!items.find((x) => x.id === l.id)) items.push(l); }
+    // по КОНТАКТУ (телефон/имя) → его сделки, как в amo
+    try {
+      const digits = q.replace(/[^0-9]/g, "");
+      const cids = new Set();
+      if (digits.length >= 5) D.prepare("SELECT id FROM contacts WHERE phones LIKE ? LIMIT 40").all("%" + digits + "%").forEach((r) => cids.add(r.id));
+      if (!/^\d+$/.test(q)) D.prepare("SELECT id FROM contacts WHERE lc(name) LIKE lc(?) LIMIT 40").all("%" + q + "%").forEach((r) => cids.add(r.id));
+      if (cids.size) for (const l of qLeadsByContacts.all(JSON.stringify([...cids]))) { if (!items.find((x) => x.id === l.id)) items.push(l); }
+    } catch (_) {}
     res.json({ success: true, items: items.slice(0, 50).map((l) => ({ id: l.id, name: l.name, price: l.price, pid: l.pipeline_id, sid: l.status_id, resp: uName[l.responsible_user_id] || "" })) });
   });
 
