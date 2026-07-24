@@ -2201,7 +2201,9 @@
     var v=cfDisplay(f,t);
     if(v===""||v==null)return "";
     var name=f.field_name||byId[f.field_id]||f.field_id;
-    var ro=editById&&editById[f.field_id]===false; // нередактируемое поле
+    // legal_entity (Юр. лицо) — составное поле (ИНН/КПП/адрес/банк); плоский текст-редактор его затрёт,
+    // отдельного редактора как в amo нет → показываем только для чтения (правка в amoCRM)
+    var ro=(editById&&editById[f.field_id]===false)||t==="legal_entity";
     var canEdit=entity&&!ro;
     var act=fieldActionHtml(name,t,f);
     return '<div class="frow"><div class="fl">'+esc(name)+(ro?' <span class="ro-lock" title="только для чтения">🔒</span>':"")+'</div><div class="fv'+(canEdit?" cf-edit":"")+'" data-fid="'+f.field_id+'" data-ftype="'+esc(t)+'" data-fname="'+esc(f.field_name||byId[f.field_id]||"")+'">'+esc(String(v).slice(0,500))+'</div>'+act+'</div>';
@@ -2300,7 +2302,9 @@
     bg.querySelectorAll(".cf-edit").forEach(function(el){
       el.title="Нажмите, чтобы изменить";
       el.onclick=function(){
-        if(el.dataset.editing)return;el.dataset.editing="1";
+        if(el.dataset.editing)return;
+        if(el.dataset.ftype==="legal_entity"){toast("«Юр. лицо» — составное поле, правится в amoCRM",true);return;}
+        el.dataset.editing="1";
         var fid=parseInt(el.dataset.fid,10),ftype=el.dataset.ftype,cur=el.classList.contains("cf-empty")?"":el.textContent.trim(),input;
         var enums=cfEnums(defs,fid);
         var sendVal=function(v){
