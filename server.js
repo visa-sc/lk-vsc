@@ -4955,10 +4955,12 @@ function vscTaxLegSeed() {
         buh: { alta: { tax: 199122, vat: 0 }, kom: { tax: 664668, vat: 0 }, pan: { tax: 0, vat: 73962 }, akg: { tax: 0, vat: 53690 } }
       },
       "2026-Q2": {
+        // Скорректированные цифры бухгалтера 22.07 (учла возвраты в доходах Альты/Кома;
+        // НДС Панфиловой пересчитан по расчётной ставке 5/105)
         buh: {
-          alta: { tax: 374393, vat: 25337, income: 11045043, expense: 8549094 },
-          kom: { tax: 150197, vat: 11358, income: 4987500 },
-          pan: { tax: 370590, vat: 617650, income: 12352978 },
+          alta: { tax: 164030, vat: 25337, income: 9540961, expense: 8447428 },
+          kom: { tax: 130088, vat: 11358, income: 4366262 },
+          pan: { tax: 370590, vat: 588237, income: 12352978 },
           akg: { tax: 30313, vat: 591604, income: 11832085, expense: 11630000 }
         }
       }
