@@ -3429,8 +3429,8 @@
   }
   // ── редактор правил движка автоматизаций (создать/править/удалить) ──
   var AUTORULES=[];
-  var TRIGGER_NAMES={stage:"Вход на этап",field_change:"Изменение поля",tag_added:"Изменение тегов",lead_created:"Создание сделки"};
-  var ACTION_NAMES={create_task:"Создать задачу",set_responsible:"Сменить ответственного",add_tag:"Добавить тег",edit_field:"Изменить поле"};
+  var TRIGGER_NAMES={stage:"Вход на этап",field_change:"Изменение поля",tag_added:"Изменение тегов",lead_created:"Создание сделки",task_completed:"Выполнение задачи"};
+  var ACTION_NAMES={create_task:"Создать задачу",set_responsible:"Сменить ответственного",add_tag:"Добавить тег",edit_field:"Изменить поле",add_note:"Добавить примечание",move_stage:"Перевести на этап"};
   var COND_OPS=[["eq","="],["ne","≠"],["gt",">"],["lt","<"],["contains","содержит"],["empty","пусто"],["not_empty","не пусто"],["has","есть тег"],["not_has","нет тега"]];
   function leadCfOpts(sel){return '<option value="responsible"'+(sel==="responsible"?" selected":"")+'>Ответственный</option><option value="price"'+(sel==="price"?" selected":"")+'>Бюджет</option><option value="tag"'+(sel==="tag"?" selected":"")+'>Тег</option>'+((CF&&CF.leads)||[]).map(function(f){return '<option value="cf'+f.id+'"'+(sel==="cf"+f.id?" selected":"")+'>'+esc(f.name)+'</option>';}).join("");}
   function saveAutoRules(cb){ereq("POST","/edit-api/rules",{rules:AUTORULES}).then(function(r){if(r&&r.success){toast("Правила сохранены");AUTORULES=r.rules||AUTORULES;if(cb)cb();}else toast((r&&r.message)||"Не удалось",true);});}
@@ -3466,6 +3466,10 @@
       else if(a==="set_responsible")actP.innerHTML='<label class="mlbl">Ответственный</label><select id="apResp" class="ci">'+USERS.map(function(u){return '<option value="'+u.id+'"'+(r.responsible_user_id===u.id?" selected":"")+'>'+esc(u.name)+'</option>';}).join("")+'</select>';
       else if(a==="add_tag")actP.innerHTML='<label class="mlbl">Тег</label><input id="apTag" class="ci" value="'+esc(r.tag||"")+'">';
       else if(a==="edit_field")actP.innerHTML='<label class="mlbl">Поле</label><select id="apFid" class="ci">'+((CF&&CF.leads)||[]).map(function(f){return '<option value="'+f.id+'" data-nm="'+esc(f.name)+'"'+(String(r.field_id)===String(f.id)?" selected":"")+'>'+esc(f.name)+'</option>';}).join("")+'</select><label class="mlbl">Значение</label><input id="apVal" class="ci" value="'+esc(r.value||"")+'">';
+      else if(a==="add_note")actP.innerHTML='<label class="mlbl">Текст примечания</label><textarea id="apNote" class="ci" rows="2">'+esc(r.text||"")+'</textarea>';
+      else if(a==="move_stage"){var mp=PIPES.find(function(x){return x.id===(r.to_pipeline_id||PIPES[0].id);})||PIPES[0];
+        actP.innerHTML='<label class="mlbl">Воронка назначения</label><select id="apMPipe" class="ci">'+PIPES.map(function(p){return '<option value="'+p.id+'"'+(r.to_pipeline_id===p.id?" selected":"")+'>'+esc(p.name)+'</option>';}).join("")+'</select><label class="mlbl">Этап назначения</label><select id="apMStatus" class="ci"></select>';
+        var fillM=function(){var p=PIPES.find(function(x){return x.id===parseInt(actP.querySelector("#apMPipe").value,10);});actP.querySelector("#apMStatus").innerHTML=((p&&p._embedded&&p._embedded.statuses)||[]).map(function(s){return '<option value="'+s.id+'"'+(r.to_status_id===s.id?" selected":"")+'>'+esc(s.name)+'</option>';}).join("");};fillM();actP.querySelector("#apMPipe").onchange=fillM;}
     }
     renderActParams();actSel.onchange=renderActParams;
     // триггер → показ полей
@@ -3481,6 +3485,8 @@
       else if(out.action==="set_responsible")out.responsible_user_id=parseInt(bg.querySelector("#apResp").value,10)||0;
       else if(out.action==="add_tag")out.tag=bg.querySelector("#apTag").value.trim();
       else if(out.action==="edit_field"){var fs=bg.querySelector("#apFid");out.field_id=parseInt(fs.value,10);out.field_name=fs.selectedOptions[0].dataset.nm;out.value=bg.querySelector("#apVal").value;}
+      else if(out.action==="add_note")out.text=bg.querySelector("#apNote").value;
+      else if(out.action==="move_stage"){out.to_pipeline_id=parseInt(bg.querySelector("#apMPipe").value,10);out.to_status_id=parseInt(bg.querySelector("#apMStatus").value,10);}
       if(idx>=0)AUTORULES[idx]=out;else AUTORULES.push(out);
       saveAutoRules(function(){close();vAuto();});
     };
@@ -3499,7 +3505,7 @@
       var md=res[0],bots=res[1],hooks=res[2],rules=(res[3]&&res[3].rules)||[];
       AUTORULES=rules;
       var stName=function(pid,sid){var p=PIPES.find(function(x){return x.id===pid;});var n="";((p&&p._embedded&&p._embedded.statuses)||[]).forEach(function(s){if(s.id===sid)n=s.name;});return n;};
-      var actDesc=function(r){if(r.action==="create_task")return "создать задачу: "+esc((r.text||"").slice(0,50));if(r.action==="set_responsible")return "сменить ответственного → "+esc(userName(r.responsible_user_id));if(r.action==="add_tag")return "добавить тег «"+esc(r.tag)+"»";if(r.action==="edit_field")return "изменить поле → "+esc(r.value);return esc(r.action);};
+      var actDesc=function(r){if(r.action==="create_task")return "создать задачу: "+esc((r.text||"").slice(0,50));if(r.action==="set_responsible")return "сменить ответственного → "+esc(userName(r.responsible_user_id));if(r.action==="add_tag")return "добавить тег «"+esc(r.tag)+"»";if(r.action==="edit_field")return "изменить поле → "+esc(r.value);if(r.action==="add_note")return "примечание: "+esc((r.text||"").slice(0,50));if(r.action==="move_stage")return "перевести на этап «"+esc(stName(r.to_pipeline_id,r.to_status_id))+"»";return esc(r.action);};
       var trigDesc=function(r){var t=r.trigger||"stage";if(t==="stage")return "этап «"+esc(stName(r.pipeline_id,r.status_id))+"»";return TRIGGER_NAMES[t]||t;};
       var rowsHtml=rules.map(function(r,i){return '<tr'+(r.enabled===false?' style="opacity:.5"':'')+'><td>'+trigDesc(r)+(r.conditions&&r.conditions.length?' <span class="muted" style="font-size:11px">+'+r.conditions.length+' усл.</span>':"")+'</td><td>'+actDesc(r)+'</td><td style="white-space:nowrap"><a class="rule-edit" data-i="'+i+'">править</a></td></tr>';}).join("");
       var html='<div class="plain">'+

@@ -159,6 +159,17 @@ module.exports = function mountEditRoutes(app, guard) {
       updateCf("leads", leadId, parseInt(rule.field_id, 10), rule.field_name, rule.value);
       audit(req, "leads", leadId, "auto_field", { field_id: rule.field_id, value: rule.value });
       applied.push("поле изменено");
+    } else if (rule.action === "add_note" && rule.text) {
+      db.prepare("INSERT INTO notes_new(id,entity_type,entity_id,text,created_by,created_at) VALUES(?,?,?,?,?,?)").run(nextId(), "leads", leadId, String(rule.text).slice(0, 4000), "автоматизация", nowSec());
+      audit(req, "leads", leadId, "auto_note", { text: (rule.text || "").slice(0, 60) });
+      applied.push("примечание");
+    } else if (rule.action === "move_stage" && rule.to_status_id) {
+      const tp = parseInt(rule.to_pipeline_id, 10) || lead.pipeline_id, ts = parseInt(rule.to_status_id, 10);
+      if (ts !== lead.status_id || tp !== lead.pipeline_id) {
+        db.prepare("UPDATE leads SET pipeline_id=?, status_id=?, updated_at=? WHERE id=?").run(tp, ts, nowSec(), leadId);
+        audit(req, "leads", leadId, "auto_stage", { to_pipeline_id: tp, to_status_id: ts });
+        applied.push("этап изменён");
+      }
     }
     return applied;
   }
@@ -570,7 +581,10 @@ module.exports = function mountEditRoutes(app, guard) {
     const result = req.body.result ? { text: String(req.body.result).slice(0, 1000) } : null;
     db.prepare("UPDATE tasks SET is_completed=1, result=? WHERE id=?").run(JSON.stringify(result), id);
     audit(req, t.entity_type, t.entity_id, "task_complete", { task_id: id, result: result && result.text });
-    res.json({ success: true });
+    // триггер автоматизаций «при выполнении задачи» (если задача на сделке)
+    let autoTC = [];
+    if (t.entity_type === "leads") autoTC = runRules(req, "task_completed", t.entity_id, { task_type: t.task_type });
+    res.json({ success: true, automations: autoTC });
   });
 
   // ── правка срока задачи ──
