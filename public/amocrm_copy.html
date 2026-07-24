@@ -2665,7 +2665,7 @@
       var t=String(e.action).slice(4),af=(d.after&&d.after[0])||{},bf=(d.before&&d.before[0])||{},ex="";
       var mCf=t.match(/^custom_field_(\d+)?_?value_changed$/);
       if(t==="lead_status_changed"){var a1=af.lead_status||{},b1=bf.lead_status||{};ex=": "+(b1.id?histStChip(b1.pipeline_id,b1.id)+' → ':"")+histStChip(a1.pipeline_id,a1.id);}
-      else if(mCf){var cv=af.custom_field_value||{};var fid2=cv.field_id||(mCf[1]?parseInt(mCf[1],10):0);t="custom_field_value_changed";ex=": "+esc(cv.field_name||histCfName(fid2)||("поле "+(fid2||"")))+" → "+esc(String(cv.text==null||cv.text===""?"—":cv.text).slice(0,80));}
+      else if(mCf){var cv=af.custom_field_value||{},cvb=bf.custom_field_value||{};var fid2=cv.field_id||cvb.field_id||(mCf[1]?parseInt(mCf[1],10):0);t="custom_field_value_changed";var fnm=esc(cv.field_name||cvb.field_name||histCfName(fid2)||("поле "+(fid2||"")));var nv=esc(String(cv.text==null||cv.text===""?"—":cv.text).slice(0,80));var ov=(cvb.text==null||cvb.text==="")?"":esc(String(cvb.text).slice(0,60));ex=": "+fnm+" — "+(ov?ov+" → ":"")+nv;}
       else if(t==="sale_field_changed")ex=": "+fmt((bf.sale!=null?bf.sale:0))+" → "+fmt((af.sale!=null?af.sale:0))+" ₽";
       else if(t==="name_field_changed")ex=': "'+esc(bf.name||"")+'" → "'+esc(af.name||"")+'"';
       else if(t==="entity_responsible_changed")ex=": "+esc(userName(((af.responsible_user||{}).id)||0)||"");
