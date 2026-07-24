@@ -92,30 +92,102 @@ module.exports = function mountEditRoutes(app, guard) {
   });
 
   // применение правил автоматизаций при входе сделки на этап
-  function applyStageRules(req, leadId, pid, sid, leadResp) {
-    const rules = loadRules().filter((r) => r.pipeline_id === pid && r.status_id === sid);
-    const applied = [];
-    for (const r of rules) {
-      if (r.action === "create_task") {
-        const tid = nextId();
-        // авто-задача — на текущего ответственного сделки (как в amoCRM), если правило не задаёт иного
-        const taskResp = r.responsible_user_id || leadResp || 0;
-        db.prepare(`INSERT INTO tasks(id,entity_type,entity_id,text,task_type,complete_till,is_completed,responsible_user_id,result,created_at)
-          VALUES(?,?,?,?,?,?,0,?,?,?)`).run(tid, "leads", leadId, r.text || "", r.task_type || 0, nowSec() + 86400, taskResp, "null", nowSec());
-        audit(req, "leads", leadId, "auto_task", { rule: r.text, task_id: tid });
-        applied.push("задача: " + (r.text || "").slice(0, 40));
-      } else if (r.action === "set_responsible" && r.responsible_user_id) {
-        db.prepare("UPDATE leads SET responsible_user_id=? WHERE id=?").run(r.responsible_user_id, leadId);
-        audit(req, "leads", leadId, "auto_responsible", { rule: r.responsible_user_id });
-        applied.push("ответственный сменён");
+  // ── ДВИЖОК АВТОМАТИЗАЦИЙ (v2): триггеры + условия + действия ──
+  // Правило: { trigger:"stage"|"field_change"|"tag_added"|"lead_created", pipeline_id, status_id,
+  //   field (для field_change), conditions:[{field,op,value}], action, ...параметры действия, enabled }
+  // Обратная совместимость: правило без trigger = "stage"; без conditions = безусловное.
+  function saveRules(rules) {
+    fs.writeFileSync(RULES_PATH, JSON.stringify({ generatedNote: "Правила движка автоматизаций crm (v2: триггеры+условия+действия).", rules }, null, 2));
+  }
+  // значение поля сделки для условий
+  function leadFieldValue(lead, field) {
+    if (field === "responsible") return lead.responsible_user_id;
+    if (field === "price") return lead.price;
+    if (field === "status") return lead.status_id;
+    if (field === "pipeline") return lead.pipeline_id;
+    if (field === "tag") { try { return JSON.parse(lead.tags) || []; } catch (_) { return []; } }
+    if (/^cf\d+$/.test(field)) {
+      const fid = parseInt(field.slice(2), 10);
+      let cf = []; try { cf = JSON.parse(lead.cf) || []; } catch (_) {}
+      const f = cf.find((x) => x.field_id === fid);
+      return f && f.values && f.values[0] ? f.values[0].value : "";
+    }
+    return "";
+  }
+  function evalCondition(lead, c) {
+    const lv = leadFieldValue(lead, c.field), op = c.op || "eq", val = c.value;
+    if (c.field === "tag") { const tags = (lv || []).map(String); return op === "not_has" ? !tags.includes(String(val)) : tags.includes(String(val)); }
+    if (op === "eq") return String(lv) === String(val);
+    if (op === "ne") return String(lv) !== String(val);
+    if (op === "gt") return Number(lv) > Number(val);
+    if (op === "lt") return Number(lv) < Number(val);
+    if (op === "contains") return String(lv || "").toLowerCase().indexOf(String(val).toLowerCase()) >= 0;
+    if (op === "empty") return !lv || (Array.isArray(lv) && !lv.length);
+    if (op === "not_empty") return !!lv && (!Array.isArray(lv) || lv.length > 0);
+    return false;
+  }
+  function ruleMatches(rule, trigger, lead, ctx) {
+    if ((rule.trigger || "stage") !== trigger) return false;
+    if (rule.enabled === false) return false;
+    if (trigger === "stage" && (rule.pipeline_id !== lead.pipeline_id || rule.status_id !== lead.status_id)) return false;
+    if (trigger === "field_change" && rule.field && ctx.field && rule.field !== ctx.field) return false;
+    for (const c of (rule.conditions || [])) if (!evalCondition(lead, c)) return false;
+    return true;
+  }
+  function applyAction(req, rule, lead) {
+    const leadId = lead.id, applied = [];
+    if (rule.action === "create_task") {
+      const tid = nextId();
+      const taskResp = rule.responsible_user_id || lead.responsible_user_id || 0;
+      db.prepare(`INSERT INTO tasks(id,entity_type,entity_id,text,task_type,complete_till,is_completed,responsible_user_id,result,created_at)
+        VALUES(?,?,?,?,?,?,0,?,?,?)`).run(tid, "leads", leadId, rule.text || "", rule.task_type || 0, nowSec() + (rule.due_days ? rule.due_days * 86400 : 86400), taskResp, "null", nowSec());
+      audit(req, "leads", leadId, "auto_task", { rule: rule.text, task_id: tid });
+      applied.push("задача: " + (rule.text || "").slice(0, 40));
+    } else if (rule.action === "set_responsible" && rule.responsible_user_id) {
+      db.prepare("UPDATE leads SET responsible_user_id=?, updated_at=? WHERE id=?").run(rule.responsible_user_id, nowSec(), leadId);
+      audit(req, "leads", leadId, "auto_responsible", { rule: rule.responsible_user_id });
+      applied.push("ответственный сменён");
+    } else if (rule.action === "add_tag" && rule.tag) {
+      let tags = []; try { tags = JSON.parse(lead.tags) || []; } catch (_) {}
+      if (tags.indexOf(rule.tag) < 0) {
+        tags.push(rule.tag);
+        db.prepare("UPDATE leads SET tags=?, updated_at=? WHERE id=?").run(JSON.stringify(tags), nowSec(), leadId);
+        audit(req, "leads", leadId, "auto_tag", { tag: rule.tag });
+        applied.push("тег: " + rule.tag);
       }
+    } else if (rule.action === "edit_field" && rule.field_id) {
+      updateCf("leads", leadId, parseInt(rule.field_id, 10), rule.field_name, rule.value);
+      audit(req, "leads", leadId, "auto_field", { field_id: rule.field_id, value: rule.value });
+      applied.push("поле изменено");
     }
     return applied;
   }
+  // прогон правил по триггеру; повторный fetch между действиями (последующие условия видят изменения)
+  const runningRules = new Set(); // защита от рекурсии (edit_field → field_change → …)
+  function runRules(req, trigger, leadId, ctx) {
+    if (runningRules.has(leadId)) return [];
+    runningRules.add(leadId);
+    try {
+      const applied = [];
+      for (const rule of loadRules()) {
+        const lead = getLead.get(leadId); if (!lead) break;
+        if (ruleMatches(rule, trigger, lead, ctx || {})) applied.push(...applyAction(req, rule, lead));
+      }
+      return applied;
+    } finally { runningRules.delete(leadId); }
+  }
+  // обратная совместимость: вызов из /stage
+  function applyStageRules(req, leadId) { return runRules(req, "stage", leadId, {}); }
 
   // просмотр активных правил автоматизаций
   app.get(`${E}/rules`, guard, (req, res) => {
     res.json({ success: true, rules: loadRules() });
+  });
+  // сохранение правил (весь набор) — из UI раздела Автоматизации
+  app.post(`${E}/rules`, guard, (req, res) => {
+    if (!Array.isArray(req.body.rules)) return res.status(400).json({ success: false, message: "нужен массив rules" });
+    try { saveRules(req.body.rules); audit(req, "rules", 0, "edit", { count: req.body.rules.length }); res.json({ success: true, rules: loadRules() }); }
+    catch (e) { res.json({ success: false, message: e.message }); }
   });
 
   // ── перемещение сделки по этапам (drag-n-drop) ──
@@ -135,7 +207,7 @@ module.exports = function mountEditRoutes(app, guard) {
     catch (_) { db.prepare("UPDATE leads SET pipeline_id=?, status_id=?, updated_at=? WHERE id=?").run(pid, sid, nowSec(), id); }
     audit(req, "leads", id, "stage", { from: { pipeline_id: fromP, status_id: fromS }, to: { pipeline_id: pid, status_id: sid, name: st.name, loss_reason_id: lr } });
     // движок автоматизаций v1: применяем правила входа на этап
-    const applied = applyStageRules(req, id, pid, sid, lead.responsible_user_id);
+    const applied = applyStageRules(req, id);
     res.json({ success: true, status_id: sid, pipeline_id: pid, status_name: st.name, automations: applied });
   });
 
@@ -190,7 +262,8 @@ module.exports = function mountEditRoutes(app, guard) {
     const r = updateCf("leads", id, fid, req.body.field_name, req.body.value);
     if (!r.ok) return res.status(r.code || 500).json({ success: false });
     audit(req, "leads", id, "edit_cf", { field_id: fid, field: req.body.field_name, value: req.body.value });
-    res.json({ success: true });
+    const auto = runRules(req, "field_change", id, { field: "cf" + fid });
+    res.json({ success: true, automations: auto });
   });
   app.patch(`${E}/contact/:id/cf`, guard, (req, res) => {
     const id = parseInt(req.params.id, 10), fid = parseInt(req.body.field_id, 10);
@@ -231,7 +304,8 @@ module.exports = function mountEditRoutes(app, guard) {
     tags = tags.slice(0, 30);
     db.prepare("UPDATE leads SET tags=?, updated_at=? WHERE id=?").run(JSON.stringify(tags), nowSec(), id);
     audit(req, "leads", id, "edit_tags", { tags });
-    res.json({ success: true, tags });
+    const autoT = runRules(req, "tag_added", id, {});
+    res.json({ success: true, tags, automations: autoT });
   });
 
   // теги контакта/компании — как в amo (у сделок уже есть выше)
@@ -304,7 +378,9 @@ module.exports = function mountEditRoutes(app, guard) {
       VALUES(@id,@name,@price,@status_id,@pipeline_id,@responsible_user_id,@created_at,@updated_at,@closed_at,@cf,@tags,@contact_ids)`).run(rec);
     JSON.parse(rec.contact_ids).forEach((cid) => db.prepare("INSERT OR IGNORE INTO lead_contacts(lead_id,contact_id) VALUES(?,?)").run(id, cid));
     audit(req, "leads", id, "create", { name: rec.name, pipeline_id: pid, status_id: sid });
-    res.json({ success: true, id });
+    // триггеры: создание сделки + вход на стартовый этап
+    const autoC = runRules(req, "lead_created", id, {}).concat(runRules(req, "stage", id, {}));
+    res.json({ success: true, id, automations: autoC });
   });
 
   // ── копирование сделки (как «Копировать» в amo): дубль полей/тегов/контактов ──
