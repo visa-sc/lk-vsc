@@ -296,6 +296,27 @@ module.exports = function mountEditRoutes(app, guard) {
     res.json({ success: true, id });
   });
 
+  // ── копирование сделки (как «Копировать» в amo): дубль полей/тегов/контактов ──
+  app.post(`${E}/lead/:id/duplicate`, guard, (req, res) => {
+    const src = getLead.get(parseInt(req.params.id, 10));
+    if (!src) return res.status(404).json({ success: false });
+    const id = nextId(), now = nowSec();
+    let cids = []; try { cids = JSON.parse(src.contact_ids) || []; } catch (_) {}
+    const rec = {
+      id, name: (String(src.name || "Сделка") + " (копия)").slice(0, 500), price: src.price || 0,
+      status_id: src.status_id, pipeline_id: src.pipeline_id, responsible_user_id: src.responsible_user_id || 0,
+      created_at: now, updated_at: now, closed_at: 0, cf: src.cf || "null", tags: src.tags || "[]",
+      contact_ids: JSON.stringify(cids)
+    };
+    db.prepare(`INSERT INTO leads(id,name,price,status_id,pipeline_id,responsible_user_id,created_at,updated_at,closed_at,cf,tags,contact_ids)
+      VALUES(@id,@name,@price,@status_id,@pipeline_id,@responsible_user_id,@created_at,@updated_at,@closed_at,@cf,@tags,@contact_ids)`).run(rec);
+    cids.forEach((cid) => db.prepare("INSERT OR IGNORE INTO lead_contacts(lead_id,contact_id) VALUES(?,?)").run(id, cid));
+    // копируем и привязку компаний
+    try { db.prepare("SELECT company_id FROM lead_companies WHERE lead_id=?").all(src.id).forEach((r) => db.prepare("INSERT INTO lead_companies(lead_id,company_id) VALUES(?,?)").run(id, r.company_id)); } catch (_) {}
+    audit(req, "leads", id, "create", { name: rec.name, duplicated_from: src.id });
+    res.json({ success: true, id });
+  });
+
   // ── создание контакта ──
   app.post(`${E}/contact`, guard, (req, res) => {
     const id = nextId(), now = nowSec();

@@ -2774,6 +2774,7 @@
       if(dots)dots.onclick=function(e){
         openCtxMenu(dots,[
           {label:"Копировать ссылку на сделку",on:function(){try{navigator.clipboard.writeText(location.origin+"/leads/detail/"+id);toast("Ссылка скопирована");}catch(_){toast("Не удалось",true);}}},
+          {label:"Копировать сделку",on:function(){ereq("POST","/edit-api/lead/"+id+"/duplicate").then(function(r){if(r&&r.success){toast("Сделка скопирована");openLead(r.id);}else toast((r&&r.message)||"Не удалось",true);});}},
           "sep",
           {label:"Удалить сделку",on:function(){var del=bg.querySelector(".dl-del");if(del)del.click();}}
         ]);
