@@ -2335,6 +2335,10 @@
           kind="datetime";input=document.createElement("input");input.type="datetime-local";
           var m2=cur.match(/^(\d{2})\.(\d{2})\.(\d{4})/);if(m2)input.value=m2[3]+"-"+m2[2]+"-"+m2[1]+"T12:00";
         }else if(ftype==="numeric"){input=document.createElement("input");input.type="number";input.value=cur;}
+        else if(ftype==="multitext"){
+          // ТЕЛЕФОН/ПОЧТА (несколько значений) — редактируем через запятую, сохраняем массивом (как amo)
+          kind="multi";input=document.createElement("input");input.type="text";input.value=cur;input.placeholder="значения через запятую";
+        }
         else if(ftype==="textarea"){input=document.createElement("textarea");input.rows=3;input.value=cur;input.style.width="100%";}
         else{input=document.createElement("input");input.type="text";input.value=cur;}
         input.className="ci";if(ftype!=="textarea")input.style.maxWidth="260px";
@@ -2345,6 +2349,7 @@
           if(kind==="bool")v=v===""?"":(v==="Да");
           else if(kind==="date")v=v?Math.floor(new Date(v+"T00:00:00").getTime()/1000):"";
           else if(kind==="datetime")v=v?Math.floor(new Date(v).getTime()/1000):"";
+          else if(kind==="multi")v=String(v).split(/[,\n;]+/).map(function(x){return x.trim();}).filter(Boolean); // массив значений
           sendVal(v);
         };
         input.addEventListener("blur",save);

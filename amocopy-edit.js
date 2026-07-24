@@ -171,6 +171,17 @@ module.exports = function mountEditRoutes(app, guard) {
     if (ix >= 0) { if (!vArr.length) cf.splice(ix, 1); else cf[ix].values = vArr; }
     else if (vArr.length) cf.push({ field_id: fieldId, field_name: fieldName || String(fieldId), values: vArr });
     db.prepare(`UPDATE ${entity} SET cf=?, updated_at=? WHERE id=?`).run(JSON.stringify(cf), nowSec(), id);
+    // синхронизируем колонку phones/emails контакта при правке PHONE/EMAIL — иначе список разойдётся с картой
+    if (entity === "contacts") {
+      try {
+        const def = db.prepare("SELECT code FROM cf_defs WHERE entity='contacts' AND id=?").get(fieldId);
+        const code = def && def.code;
+        if (code === "PHONE" || code === "EMAIL") {
+          const vals = (Array.isArray(value) ? value : (value === "" || value == null ? [] : [value])).map(String).filter(Boolean);
+          db.prepare("UPDATE contacts SET " + (code === "PHONE" ? "phones" : "emails") + "=? WHERE id=?").run(JSON.stringify(vals), id);
+        }
+      } catch (_) {}
+    }
     return { ok: true };
   }
   app.patch(`${E}/lead/:id/cf`, guard, (req, res) => {
