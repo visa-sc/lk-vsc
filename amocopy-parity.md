@@ -233,6 +233,19 @@
     ОСТАЛОСЬ (не критично): десктоп-виджеты копии в localStorage per-browser vs серверные в amo
     (заведена фоновая задача task_9450de8f на перенос).
 
+41. Движок автоматизаций УГЛУБЛЁН до v2 (24.07): был только безусловный create_task/set_responsible
+    на входе в этап. Стало:
+    - Триггеры: stage + field_change (правка cf) + tag_added + lead_created (в /stage, /cf, /tags, POST /lead).
+    - Условия: conditions[{field,op,value}] по responsible/price/status/pipeline/tag/cf<id>,
+      операторы eq/ne/gt/lt/contains/empty/not_empty/has/not_has.
+    - Действия: create_task(+due_days)/set_responsible/add_tag/edit_field(updateCf).
+    - runRules: защита от рекурсии (runningRules), повторный getLead между правилами.
+    - UI (раздел Автоматизации): список правил + openRuleEditor (создать/править/удалить,
+      конструктор условий, параметры действий). POST /edit-api/rules сохраняет набор.
+    Обратная совместимость: 23 старых правила без trigger = stage-безусловные. Проверено end-to-end
+    (tag_added+условие→add_tag на реальном лиде; CRUD в UI 23↔24). Внешние действия (письма/SMS/
+    боты) — по-прежнему этап интеграций.
+
 ## Открытые наблюдения
 - Настройки/Пользователи: в amo права ГРАНУЛЯРНЫЕ — отдельные колонки «Сделки/Покупатели |
   Контакты | Компании | Задачи | Этапы» со степенью доступа (свои / своей группы / все) на
