@@ -1755,11 +1755,13 @@
     var typeOpts=(TASK_TYPES.length?TASK_TYPES:[{id:1,name:"Связаться"}]).map(function(x){return '<option value="'+x.id+'"'+(x.id===t.task_type?" selected":"")+'>'+esc(x.name)+'</option>';}).join("");
     var dval="";
     if(t.till){var d0=new Date(t.till*1000);dval=d0.getFullYear()+"-"+("0"+(d0.getMonth()+1)).slice(-2)+"-"+("0"+d0.getDate()).slice(-2);}
-    bg.innerHTML='<div class="modal" style="max-width:440px"><span class="x">×</span><h3>Редактировать задачу</h3>'+
+    var isNew=!t.id;
+    bg.innerHTML='<div class="modal" style="max-width:440px"><span class="x">×</span><h3>'+(isNew?"Новая задача":"Редактировать задачу")+'</h3>'+
+      (isNew&&t.obj_name?'<div class="muted" style="font-size:12.5px;margin-bottom:8px">К объекту: '+esc(t.obj_name)+'</div>':"")+
       '<label class="mlbl">Текст</label><textarea id="teT" class="ci" rows="3">'+esc(t.text||"")+'</textarea>'+
       '<label class="mlbl">Тип</label><select id="teY" class="ci">'+typeOpts+'</select>'+
       '<label class="mlbl">Срок</label><input id="teD" type="date" class="ci" value="'+dval+'">'+
-      '<div style="margin-top:16px;display:flex;gap:8px"><button class="btn" id="teSave">Сохранить</button><button class="btn ghost x2">Отмена</button></div></div>';
+      '<div style="margin-top:16px;display:flex;gap:8px"><button class="btn" id="teSave">'+(isNew?"Создать":"Сохранить")+'</button><button class="btn ghost x2">Отмена</button></div></div>';
     document.body.appendChild(bg);
     function close(){document.body.removeChild(bg);}
     bg.onclick=function(e){if(e.target===bg||e.target.className==="x"||e.target.className==="btn ghost x2")close();};
@@ -1767,9 +1769,25 @@
       var text=bg.querySelector("#teT").value.trim();if(!text)return toast("Введите текст",true);
       var body={text:text,task_type:parseInt(bg.querySelector("#teY").value,10)||0};
       var dv=bg.querySelector("#teD").value;
-      if(dv)body.complete_till=Math.floor(new Date(dv+"T18:00:00").getTime()/1000);
-      ereq("PATCH","/edit-api/task/"+t.id,body).then(function(r){if(r&&r.success){toast("Задача сохранена");close();if(onSaved)onSaved();}else toast("Не удалось",true);});
+      body.complete_till=dv?Math.floor(new Date(dv+"T18:00:00").getTime()/1000):(Math.floor(Date.now()/1000)+86400);
+      if(isNew){
+        body.entity_type=t.entity_type;body.entity_id=t.entity_id;
+        ereq("POST","/edit-api/task",body).then(function(r){if(r&&r.success){toast("Задача создана");close();if(onSaved)onSaved();}else toast((r&&r.message)||"Не удалось",true);});
+      }else ereq("PATCH","/edit-api/task/"+t.id,body).then(function(r){if(r&&r.success){toast("Задача сохранена");close();if(onSaved)onSaved();}else toast("Не удалось",true);});
     };
+  }
+  // «+ Добавить задачу» из раздела Задачи (как в amo): выбрать сделку → создать задачу
+  function newTaskFlow(){
+    var q=prompt("Сделка для задачи — название, #id или телефон клиента:","");
+    if(!q||q.trim().length<2)return;
+    jreq(API+"/leads_search?q="+encodeURIComponent(q.trim())).then(function(r){
+      var items=(r&&r.items)||[];
+      if(!items.length)return toast("Сделки не найдены",true);
+      var menu=items.slice(0,8).map(function(l){return {label:(l.name||("#"+l.id))+(l.resp?" · "+l.resp:""),on:function(){
+        openTaskEditor({entity_type:"leads",entity_id:l.id,obj_name:l.name||("#"+l.id),text:"",task_type:(TASK_TYPES[0]&&TASK_TYPES[0].id)||0,till:0},function(){loadTasks(0,0);});
+      }};});
+      openCtxMenu($("#hNew")||document.body,menu);
+    });
   }
   // редактор виджета (логика добавления виджетов, как «Настроить» в amo)
   function openWidgetEditor(){
@@ -1803,7 +1821,7 @@
       '<select id="taskResp" class="ci" style="max-width:220px;display:inline-block;margin-left:10px"><option value="0">Все сотрудники</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select>'+
       '<select id="taskType" class="ci" style="max-width:180px;display:inline-block;margin-left:8px"><option value="0">Все типы</option>'+TASK_TYPES.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join("")+'</select>'+
       '<label style="margin-left:10px;font-size:12.5px;color:#556;white-space:nowrap;cursor:pointer"><input type="checkbox" id="taskDone"'+(taskShowDone?" checked":"")+' style="vertical-align:-2px"> выполненные</label>';
-    setHeader("Задачи",{count:respSel});
+    setHeader("Задачи",{count:respSel,newBtn:"+ Добавить задачу",onNew:newTaskFlow});
     setTimeout(function(){
       var s=$("#taskResp"),ty=$("#taskType"),dn=$("#taskDone");
       var rerun=function(){loadTasks(s?s.value:0,ty?ty.value:0);};
