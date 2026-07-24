@@ -184,6 +184,22 @@
 
   /* ── канбан ── */
   #kb { display:flex; min-height:100%; }
+  /* календарный вид задач (как в amo) */
+  .tcal-top { display:flex; align-items:center; gap:10px; margin:2px 0 12px; }
+  .tcal-top b { font-size:15px; min-width:150px; text-align:center; }
+  .tcal-h { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; margin-bottom:2px; }
+  .tcal-h div { font-size:11.5px; font-weight:700; color:#8a95a1; text-transform:uppercase; padding:4px 6px; }
+  .tcal-b { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
+  .tcal-cell { min-height:96px; background:#fafbfc; border:1px solid var(--border-soft); border-radius:6px; padding:4px 5px; overflow:hidden; }
+  .tcal-cell.empty { background:transparent; border:0; }
+  .tcal-cell.today { background:#eef5ff; border-color:#b9d4f5; }
+  .tcal-d { font-size:12px; color:#8a95a1; font-weight:700; margin-bottom:3px; }
+  .tcal-cell.today .tcal-d { color:var(--blue); }
+  .tcal-task { font-size:11.5px; background:#e7f0fb; color:#2a5885; border-radius:4px; padding:2px 5px; margin-bottom:2px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tcal-task:hover { filter:brightness(.96); }
+  .tcal-task.over { background:#fde5e5; color:#c0392b; }
+  .tcal-task.done { opacity:.55; text-decoration:line-through; }
+  .tcal-more { font-size:11px; color:#8a95a1; padding:1px 5px; }
   .kb-col { min-width:250px; width:250px; border-right:1px solid var(--border-soft); flex-shrink:0; }
   /* зоны закрытия сделки при перетаскивании (как в amo) */
   #closeZones { position:fixed; left:0; right:0; bottom:0; height:66px; display:none; z-index:130; }
@@ -1814,23 +1830,59 @@
   }
   /* ─── раздел «Задачи» ─── */
   var taskRange="all", taskShowDone=false, taskSortDir="desc"; // День/Неделя/Месяц/Все + выполненные + сорт по дате (▼ как в amo)
+  var taskViewMode="list", taskCalRef=null; // список/календарь (как в amo), taskCalRef — 1-е число видимого месяца
   function vTasks(){
     renderSidebar("tasks");
     var ranges=[["day","День"],["week","Неделя"],["month","Месяц"],["all","Все"]];
-    var respSel='<span style="display:inline-flex;gap:2px;margin-left:10px;background:#eef2f6;border-radius:16px;padding:2px">'+ranges.map(function(x){return '<button data-tr="'+x[0]+'" class="lnk" style="border:0;cursor:pointer;font:inherit;font-size:12.5px;padding:4px 12px;border-radius:14px;'+(taskRange===x[0]?"background:#fff;font-weight:700;color:#1d3c66":"background:none;color:#556")+'">'+x[1]+'</button>';}).join("")+'</span>'+
-      '<select id="taskResp" class="ci" style="max-width:220px;display:inline-block;margin-left:10px"><option value="0">Все сотрудники</option>'+USERS.map(function(u){return '<option value="'+u.id+'">'+esc(u.name)+'</option>';}).join("")+'</select>'+
+    var toggle='<span style="display:inline-flex;gap:2px;background:#eef2f6;border-radius:16px;padding:2px;margin-right:8px">'+[["list","☰ Список"],["cal","📅 Календарь"]].map(function(x){return '<button data-tvm="'+x[0]+'" class="lnk" style="border:0;cursor:pointer;font:inherit;font-size:12.5px;padding:4px 12px;border-radius:14px;'+((taskViewMode==="cal"?"cal":"list")===x[0]?"background:#fff;font-weight:700;color:#1d3c66":"background:none;color:#556")+'">'+x[1]+'</button>';}).join("")+'</span>';
+    var respSel=toggle+(taskViewMode==="list"?'<span style="display:inline-flex;gap:2px;margin-left:0;background:#eef2f6;border-radius:16px;padding:2px">'+ranges.map(function(x){return '<button data-tr="'+x[0]+'" class="lnk" style="border:0;cursor:pointer;font:inherit;font-size:12.5px;padding:4px 12px;border-radius:14px;'+(taskRange===x[0]?"background:#fff;font-weight:700;color:#1d3c66":"background:none;color:#556")+'">'+x[1]+'</button>';}).join("")+'</span>':"")+
+      '<select id="taskResp" class="ci" style="max-width:220px;display:inline-block;margin-left:10px"><option value="0">Все сотрудники</option>'+USERS.map(function(u){return '<option value="'+u.id+'"'+(String(taskCalResp||0)===String(u.id)?" selected":"")+'>'+esc(u.name)+'</option>';}).join("")+'</select>'+
       '<select id="taskType" class="ci" style="max-width:180px;display:inline-block;margin-left:8px"><option value="0">Все типы</option>'+TASK_TYPES.map(function(t){return '<option value="'+t.id+'">'+esc(t.name)+'</option>';}).join("")+'</select>'+
-      '<label style="margin-left:10px;font-size:12.5px;color:#556;white-space:nowrap;cursor:pointer"><input type="checkbox" id="taskDone"'+(taskShowDone?" checked":"")+' style="vertical-align:-2px"> выполненные</label>';
+      (taskViewMode==="list"?'<label style="margin-left:10px;font-size:12.5px;color:#556;white-space:nowrap;cursor:pointer"><input type="checkbox" id="taskDone"'+(taskShowDone?" checked":"")+' style="vertical-align:-2px"> выполненные</label>':"");
     setHeader("Задачи",{count:respSel,newBtn:"+ Добавить задачу",onNew:newTaskFlow});
     setTimeout(function(){
       var s=$("#taskResp"),ty=$("#taskType"),dn=$("#taskDone");
-      var rerun=function(){loadTasks(s?s.value:0,ty?ty.value:0);};
+      var rerun=function(){taskCalResp=s?parseInt(s.value,10)||0:0;if(taskViewMode==="cal")renderTasksCalendar();else loadTasks(s?s.value:0,ty?ty.value:0);};
       if(s)s.onchange=rerun; if(ty)ty.onchange=rerun;
       if(dn)dn.onchange=function(){taskShowDone=dn.checked;rerun();};
       document.querySelectorAll("[data-tr]").forEach(function(b){b.onclick=function(){taskRange=b.dataset.tr;vTasks();};});
+      document.querySelectorAll("[data-tvm]").forEach(function(b){b.onclick=function(){taskViewMode=b.dataset.tvm==="cal"?"cal":"list";vTasks();};});
     },0);
+    if(taskViewMode==="cal"){$("#view").innerHTML='<div class="plain" style="max-width:1100px"><div id="tasksBox">Загрузка…</div></div>';renderTasksCalendar();return;}
     $("#view").innerHTML='<div class="plain" style="max-width:1000px"><div id="tasksBox">Загрузка…</div></div>';
     loadTasks(0,0);
+  }
+  var taskCalResp=0;
+  // календарный вид задач (как в amo: переключатель список/календарь) — месячная сетка
+  function renderTasksCalendar(){
+    var typeName={};TASK_TYPES.forEach(function(t){typeName[t.id]=t.name;});
+    var ref=taskCalRef?new Date(taskCalRef):new Date();ref.setDate(1);ref.setHours(0,0,0,0);taskCalRef=ref.getTime();
+    var mNames=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+    jreq(API+"/tasks_list"+(taskCalResp?("?responsible="+taskCalResp):"")).then(function(items){
+      items=items||[];
+      var byDay={};
+      items.forEach(function(t){if(!t.till)return;var d=new Date(t.till*1000);var k=d.getFullYear()+"-"+d.getMonth()+"-"+d.getDate();(byDay[k]=byDay[k]||[]).push(t);});
+      var first=new Date(ref),startDow=(first.getDay()+6)%7; // Пн=0
+      var daysInMonth=new Date(ref.getFullYear(),ref.getMonth()+1,0).getDate();
+      var todayK=(function(){var n=new Date();return n.getFullYear()+"-"+n.getMonth()+"-"+n.getDate();})();
+      var now=Date.now()/1000;
+      var html='<div class="tcal-top"><button class="btn ghost" id="tcalPrev">‹</button><b>'+mNames[ref.getMonth()]+" "+ref.getFullYear()+'</b><button class="btn ghost" id="tcalNext">›</button><button class="btn ghost" id="tcalToday">Сегодня</button></div>';
+      html+='<div class="tcal"><div class="tcal-h">'+["Пн","Вт","Ср","Чт","Пт","Сб","Вс"].map(function(d){return '<div>'+d+'</div>';}).join("")+'</div><div class="tcal-b">';
+      for(var i=0;i<startDow;i++)html+='<div class="tcal-cell empty"></div>';
+      for(var day=1;day<=daysInMonth;day++){
+        var k=ref.getFullYear()+"-"+ref.getMonth()+"-"+day;
+        var list=(byDay[k]||[]).sort(function(a,b){return (a.till||0)-(b.till||0);});
+        html+='<div class="tcal-cell'+(k===todayK?" today":"")+'"><div class="tcal-d">'+day+'</div>'+
+          list.slice(0,5).map(function(t){var over=!t.done&&t.till&&t.till<now;return '<div class="tcal-task'+(over?" over":"")+(t.done?" done":"")+'" data-obj="'+t.entity_id+'" data-etype="'+(t.entity_type||"leads")+'" title="'+esc(t.text||"")+'">'+esc((t.lead_name||t.text||"").slice(0,22))+'</div>';}).join("")+
+          (list.length>5?'<div class="tcal-more">+'+(list.length-5)+'</div>':"")+'</div>';
+      }
+      html+='</div></div>';
+      $("#tasksBox").innerHTML=html;
+      $("#tcalPrev").onclick=function(){var d=new Date(taskCalRef);d.setMonth(d.getMonth()-1);taskCalRef=d.getTime();renderTasksCalendar();};
+      $("#tcalNext").onclick=function(){var d=new Date(taskCalRef);d.setMonth(d.getMonth()+1);taskCalRef=d.getTime();renderTasksCalendar();};
+      $("#tcalToday").onclick=function(){taskCalRef=null;renderTasksCalendar();};
+      $("#tasksBox").querySelectorAll(".tcal-task[data-obj]").forEach(function(el){el.onclick=function(){if(el.dataset.etype==="contacts")openContact(parseInt(el.dataset.obj,10));else openLead(parseInt(el.dataset.obj,10));};});
+    }).catch(function(){$("#tasksBox").innerHTML='<p class="muted">Ошибка загрузки задач</p>';});
   }
   function loadTasks(resp,ttype){
     var doneP=taskShowDone?jreq(API+"/tasks_list?done=1"+(resp&&resp!=="0"?("&responsible="+resp):"")).catch(function(){return[];}):Promise.resolve([]);
