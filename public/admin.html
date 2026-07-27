@@ -2067,7 +2067,13 @@
       // разрезах (год/месяц/неделя/день) — БЕЗ плитки периода; годовое значение
       // показываем плиткой только в «Год»/«Месяц». Данные текут через тот же
       // pick()/Total/Grand total/склейку недель, что и CV/CPL — логика идентична.
-      const VSC_TRAFCONV = { key: "trafConv", label: "Конверсия из трафика в лид (paid traf conv общая)", fmt: "pct", good: 1 };
+      const VSC_TRAFCONV = { key: "trafConv", label: "Конверсия из трафика в лид (paid traf conv)", fmt: "pct", good: 1,
+        // 3 кривые на одном графике (просьба Андрея 22.07): общая + МСК + СПБ.
+        lines: [
+          { key: "trafConv", label: "общая", color: "#4a90d9" },
+          { key: "trafConvMsk", label: "МСК", color: "#e8843b" },
+          { key: "trafConvSpb", label: "СПБ", color: "#8e44ad" }
+        ] };
       // Прибыль по месяцам приходит с сервера (vscData.profit, ключ — ПОЛНОЕ имя месяца);
       // директор вводит её раз в месяц через /vsc. Рентабельность = прибыль / выручка (бюджет).
       const vscShortMonth = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
@@ -2439,6 +2445,13 @@
             // leads / (trafConv/100); k.trafConv = Σleads / Σtraffic. (L уже = Σleads.)
             const Tr = sumImp(blocks, (b) => { const Lb = impL(b); return b.trafConv ? Lb / (b.trafConv / 100) : 0; });
             k.trafConv = Tr ? L / Tr * 100 : null;
+            // МСК/СПБ-конверсии при склейке — среднее, взвешенное по трафику блока
+            // (городских лидов/трафика в таблице нет — точнее не восстановить).
+            ["trafConvMsk", "trafConvSpb"].forEach((ck) => {
+              let num = 0, den = 0;
+              blocks.forEach((b) => { if (b[ck] == null) return; const Lb = impL(b); const trB = b.trafConv ? Lb / (b.trafConv / 100) : 0; if (!trB) return; num += trB * b[ck]; den += trB; });
+              k[ck] = den ? num / den : null;
+            });
             k.returnsPct = (k.retUslugi != null && B) ? k.retUslugi / B * 100 : null;
             k.planPct = null; // план ОП — месячная величина, в неделях не показываем
             return k;
@@ -2493,6 +2506,9 @@
           col.title = s.range || ((s.k && s.k.date) ? (s.k.date + (s.wd ? " · " + s.wd : "")) : "");
           const v = vals[i];
           const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.textContent = v == null ? "" : vscFmt(v, kpi.fmt).replace(" ₽", "");
+          // opts.sub — мелкая доп.строка под значением (напр. «М 14% · С 12%» у конверсии)
+          let subEl = null;
+          if (opts && opts.sub) { const sh = opts.sub(s); if (sh) { subEl = document.createElement("div"); subEl.style.cssText = "font-size:8px;line-height:1.2;white-space:nowrap;"; subEl.innerHTML = sh; } }
           const bar = document.createElement("div"); bar.className = "vsc-bar" + (kpi.fmt === "signed" ? (v > 0 ? " pos" : v < 0 ? " neg" : "") : "");
           bar.style.height = v == null ? "2px" : (Math.max(2, Math.round(Math.abs(v) / maxAbs * 120)) + "px");
           const xl = document.createElement("div"); xl.className = "vsc-bar-x" + (s.weekend ? " weekend" : "");
@@ -2516,7 +2532,7 @@
             }
           }
           if (_cmp) _lbls.push([vl.textContent, s.x || "", dl.textContent]); // для адаптивной ширины колонки
-          col.appendChild(vl); col.appendChild(bar); col.appendChild(xl);
+          col.appendChild(vl); if (subEl) col.appendChild(subEl); col.appendChild(bar); col.appendChild(xl);
           // «День»: подпись дня недели под датой (выходные — розовым). В прочих разрезах s.wd нет → не рисуем.
           if (s.wd) { const wd = document.createElement("div"); wd.className = "vsc-bar-wd" + (s.weekend ? " weekend" : ""); wd.textContent = s.wd; col.appendChild(wd); }
           col.appendChild(dl);
@@ -2599,11 +2615,21 @@
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
         const h = document.createElement("div"); h.className = "vsc-chart-h"; h.innerHTML = kpi.labelHtml || escapeHtml(kpi.label);
         wrap.appendChild(h);
+        // Мультирежим (kpi.lines): несколько кривых на одном графике (сейчас — конверсия
+        // трафик→лид: общая + МСК + СПБ). Без kpi.lines — прежний одиночный график.
+        const lineDefs = kpi.lines || [{ key: kpi.key, color: "#4a90d9" }];
+        const valOf = (s, key) => (s.k && s.k[key] != null && !isNaN(s.k[key])) ? +s.k[key] : null;
+        if (kpi.lines) {
+          const leg = document.createElement("div"); leg.className = "vsc-ret-legend";
+          leg.innerHTML = lineDefs.map((ld) => '<span><i style="background:' + ld.color + '"></i>' + escapeHtml(ld.label || "") + '</span>').join("");
+          wrap.appendChild(leg);
+        }
         const pts = [];
-        series.forEach((s) => { const v = (s.k && s.k[kpi.key] != null && !isNaN(s.k[kpi.key])) ? +s.k[kpi.key] : null; if (v != null) pts.push({ s: s, v: v }); });
+        series.forEach((s) => { const v = valOf(s, kpi.key); if (v != null || lineDefs.some((ld) => valOf(s, ld.key) != null)) pts.push({ s: s, v: v }); });
         if (!pts.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных для выбранного периода."; wrap.appendChild(e); return wrap; }
         const VW = 1000, VH = 160, PT = 12, PB = 148, PL = 8, PR = 8; // виртуальная ширина; высота 1:1 к px
-        let vMin = Math.min.apply(null, pts.map((p) => p.v)), vMax = Math.max.apply(null, pts.map((p) => p.v));
+        const allVals = []; pts.forEach((p) => lineDefs.forEach((ld) => { const v = valOf(p.s, ld.key); if (v != null) allVals.push(v); }));
+        let vMin = Math.min.apply(null, allVals), vMax = Math.max.apply(null, allVals);
         if (kpi.fmt !== "signed" && vMin > 0) vMin = Math.min(vMin, vMin * 0.95); // чуть воздуха снизу
         if (vMax === vMin) { vMax += 1; vMin -= 1; }
         const X = (i) => PL + (pts.length === 1 ? (VW - PL - PR) / 2 : i * (VW - PL - PR) / (pts.length - 1));
@@ -2621,11 +2647,14 @@
         const gridLine = (y, dash) => '<line x1="0" x2="' + VW + '" y1="' + y + '" y2="' + y + '" stroke="#e9edf3" stroke-width="1"' + (dash ? ' stroke-dasharray="4 4" stroke="#c9cfda"' : "") + ' vector-effect="non-scaling-stroke"/>';
         let grid = gridLine(PT) + gridLine((PT + PB) / 2) + gridLine(PB);
         if (vMin < 0 && vMax > 0) grid += gridLine(Y(0), true); // ось нуля для знаковых
-        const linePts = pts.map((p, i) => X(i).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" ");
+        const polySvg = lineDefs.map((ld, li) => {
+          const lp = pts.map((p, i) => { const v = valOf(p.s, ld.key); return v == null ? null : X(i).toFixed(1) + "," + Y(v).toFixed(1); }).filter(Boolean).join(" ");
+          return lp ? '<polyline points="' + lp + '" fill="none" stroke="' + (ld.color || "#4a90d9") + '" stroke-width="' + (li === 0 ? 2.5 : 2) + '" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>' : "";
+        }).join("");
         box.innerHTML =
           '<svg width="100%" height="' + VH + '" viewBox="0 0 ' + VW + ' ' + VH + '" preserveAspectRatio="none" style="display:block;">'
           + grid
-          + '<polyline points="' + linePts + '" fill="none" stroke="#4a90d9" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'
+          + polySvg
           + '</svg>'
           + '<div style="position:absolute;left:6px;top:2px;font-size:9.5px;color:#9aa0ab;background:rgba(255,255,255,.75);padding:0 3px;border-radius:4px;">' + fmtAxis(vMax) + '</div>'
           + '<div style="position:absolute;left:6px;top:' + ((PT + PB) / 2 - 7) + 'px;font-size:9.5px;color:#9aa0ab;background:rgba(255,255,255,.75);padding:0 3px;border-radius:4px;">' + fmtAxis((vMax + vMin) / 2) + '</div>'
@@ -2648,18 +2677,22 @@
           let best = 0, bd = Infinity;
           for (let i = 0; i < pts.length; i++) { const d = Math.abs(X(i) - relVx); if (d < bd) { bd = d; best = i; } }
           const p = pts[best];
-          const px = X(best) / VW * r.width, py = Y(p.v);
-          marker.style.display = "block"; marker.style.left = px + "px"; marker.style.top = py + "px";
+          const mv = p.v != null ? p.v : lineDefs.map((ld) => valOf(p.s, ld.key)).find((v) => v != null);
+          const px = X(best) / VW * r.width, py = Y(mv != null ? mv : vMin);
+          marker.style.display = mv != null ? "block" : "none"; marker.style.left = px + "px"; marker.style.top = py + "px";
           const label = p.s.range || (p.s.x + (p.s.wd ? " · " + p.s.wd : ""));
           let dHtml = "";
-          if (best > 0) {
+          if (best > 0 && p.v != null) {
             const pv = pts[best - 1].v;
             if (pv !== 0 && pv != null) {
               const pct = Math.round((p.v - pv) / Math.abs(pv) * 100);
               if (pct !== 0) { const good = kpi.good === -1 ? (pct < 0) : (pct > 0); dHtml = ' <span style="color:' + (kpi.good === 0 ? "#c8cfdd" : good ? "#7fd39a" : "#f2a1ad") + ';">' + (pct > 0 ? "▲" : "▼") + Math.abs(pct) + "%</span>"; }
             }
           }
-          tip.innerHTML = '<span style="color:#aab3c5;">' + escapeHtml(label) + '</span><br><b>' + vscFmt(p.v, kpi.fmt) + '</b>' + dHtml;
+          const body = kpi.lines
+            ? lineDefs.map((ld, li) => '<span style="color:' + ld.color + ';">●</span> ' + escapeHtml(ld.label || "") + ': <b>' + vscFmt(valOf(p.s, ld.key), kpi.fmt) + '</b>' + (li === 0 ? dHtml : "")).join("<br>")
+            : '<b>' + vscFmt(p.v, kpi.fmt) + '</b>' + dHtml;
+          tip.innerHTML = '<span style="color:#aab3c5;">' + escapeHtml(label) + '</span><br>' + body;
           tip.style.display = "block";
           const tw = tip.offsetWidth;
           tip.style.left = Math.max(2, Math.min(r.width - tw - 2, px - tw / 2)) + "px";
@@ -3330,9 +3363,17 @@
         // наведению/пальцу); «Месяц»/«Год» — столбцы, как раньше. Данные series те же.
         else kpisForView.forEach((kpi) => vscContent.appendChild((vscGran === "week" || vscGran === "day") ? vscLineChart(kpi, series) : vscBarChart(kpi, series)));
         // График «Конверсия из трафика в лид» — во ВСЕХ разрезах (год/месяц/неделя/день).
-        // series уже несёт trafConv в k: день — строка дня; неделя — Total/склейка огрызков;
-        // месяц/год — Grand total месяца. Та же логика, что у остальных графиков.
-        if (series.length) vscContent.appendChild((vscGran === "week" || vscGran === "day") ? vscLineChart(VSC_TRAFCONV, series) : vscBarChart(VSC_TRAFCONV, series));
+        // series уже несёт trafConv (+ trafConvMsk/Spb) в k: день — строка дня; неделя —
+        // Total/склейка огрызков; месяц/год — Grand total месяца. День/неделя — 3 кривые
+        // (общая+МСК+СПБ, kpi.lines); месяц/год — столбики общей + мелкая строка «М · С».
+        if (series.length) vscContent.appendChild((vscGran === "week" || vscGran === "day")
+          ? vscLineChart(VSC_TRAFCONV, series)
+          : vscBarChart(VSC_TRAFCONV, series, { sub: (s) => {
+              const m = s.k ? s.k.trafConvMsk : null, sp = s.k ? s.k.trafConvSpb : null;
+              if (m == null && sp == null) return "";
+              const f = (v) => v == null ? "—" : (Math.round(v * 10) / 10).toLocaleString("ru-RU") + "%";
+              return '<span style="color:#e8843b;">М ' + f(m) + '</span> <span style="color:#8e44ad;">С ' + f(sp) + '</span>';
+            } }));
         // Прибыль и рентабельность по месяцам — графики в «Год» и «Месяц».
         // Скрываем для руководителя с ограничением hideProfit (напр. Андрей Петров).
         if ((vscGran === "month" || vscGran === "year") && !vscHideProfit()) {

@@ -3687,7 +3687,11 @@ function vscParseMonth(rows) {
     // «paid traf conv ОБЩАЯ» — конверсия из платного трафика в лид. Колонка плавает
     // по месяцам (80 в мае/июне, 94 в январе) — берём ПО ИМЕНИ, именно «ОБЩАЯ»
     // (не МСК/СПБ/региональные, у тех нет слова «общая»). Значение — процент.
-    trafConv: colF("paid traf conv", "общая")
+    trafConv: colF("paid traf conv", "общая"),
+    // Городские разбивки той же метрики (просьба Андрея 22.07): «paid traf conv МСК»
+    // и «paid traf conv СПБ» («Остальное» не берём). Тоже по имени — колонки плавают.
+    trafConvMsk: colF("paid traf conv", "мск"),
+    trafConvSpb: colF("paid traf conv", "спб")
   };
   // «Набранные контакты» = сумма «Контакты, полученные до/после конца рабочего
   // дня» по всем городам (МСК/СПБ/ЕКБ/Остальные) МИНУС «Контакты с тегом
@@ -3716,6 +3720,8 @@ function vscParseMonth(rows) {
     missedPct: C.missedPct >= 0 ? vscNum(r[C.missedPct]) : null,
     junkPct: C.junkPct >= 0 ? vscNum(r[C.junkPct]) : null,
     trafConv: C.trafConv >= 0 ? vscNum(r[C.trafConv]) : null, // конверсия трафик→лид (%) — день/неделя(Total)/месяц(Grand total)
+    trafConvMsk: C.trafConvMsk >= 0 ? vscNum(r[C.trafConvMsk]) : null,
+    trafConvSpb: C.trafConvSpb >= 0 ? vscNum(r[C.trafConvSpb]) : null,
     planPct: null // план ОП — месячная величина из сводного блока (см. ниже), не из дневной строки
   });
   const days = [], weeks = []; let blockStart = null, blockEnd = null, blockDays = [], total = null;
@@ -3942,6 +3948,21 @@ function vscApplyFreeze(months) {
     } else {                                                 // живой → обновляем last-good
       fr.recent[m.name] = JSON.parse(JSON.stringify(m)); changed = true;
     }
+  });
+  // Дозаливка НОВЫХ полей в старые снимки (поля появились ПОСЛЕ заморозки месяца —
+  // сейчас paid traf conv МСК/СПБ, 22.07): если у снимка поля нет, а свежий парс его
+  // отдал — дописываем в снимок один раз. Существующие значения снимка НЕ трогаем,
+  // семантика заморозки сохраняется.
+  const graftKeys = ["trafConvMsk", "trafConvSpb"];
+  const graftObj = (dst, src) => { if (!dst || !src) return; graftKeys.forEach((k) => { if (dst[k] == null && src[k] != null) { dst[k] = src[k]; changed = true; } }); };
+  Object.keys(fr.months).forEach((name) => {
+    const live = byName[name], snap = fr.months[name];
+    if (!live || !snap) return;
+    graftObj(snap.total, live.total);
+    const liveDays = {}; (live.days || []).forEach((d) => { liveDays[d.date] = d; });
+    (snap.days || []).forEach((d) => graftObj(d, liveDays[d.date]));
+    const liveWeeks = {}; (live.weeks || []).forEach((w) => { liveWeeks[w.label] = w; });
+    (snap.weeks || []).forEach((w) => graftObj(w, liveWeeks[w.label]));
   });
   Object.keys(fr.months).forEach((name) => {                 // 2a) подставить все замороженные
     if (byName[name]) months[months.indexOf(byName[name])] = fr.months[name];
