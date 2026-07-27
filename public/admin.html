@@ -2902,7 +2902,7 @@
         const bars = document.createElement("div"); bars.className = "vsc-bars";
         series.forEach((s, i) => {
           const col = document.createElement("div"); col.className = "vsc-bar-col";
-          col.style.flex = "0 0 " + (defs.length * 25 + 8) + "px";
+          col.style.flex = "0 0 " + (defs.length * 35 + 8) + "px";
           col.title = s.x + "\n" + allDefs.map((d) => (d.label || "") + ": " + (valOf(s, d.key) != null ? fmtP(valOf(s, d.key)) : "—")).join("\n");
           const grp = document.createElement("div");
           grp.style.cssText = "display:flex;align-items:flex-end;gap:3px;";
@@ -2910,12 +2910,12 @@
             const v = valOf(s, d.key);
             const b = document.createElement("div");
             const px = v != null ? Math.max(2, Math.round(v / maxO * 120)) : 2;
-            b.style.cssText = "width:22px;height:" + px + "px;background:" + (v != null ? d.color : "#e3e8ef") + ";border-radius:5px 5px 0 0;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;";
+            b.style.cssText = "width:32px;height:" + px + "px;background:" + (v != null ? d.color : "#e3e8ef") + ";border-radius:5px 5px 0 0;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;";
             b.title = (d.label || "") + ": " + (v != null ? fmtP(v) : "—");
-            if (v != null && px >= 34) {
+            if (v != null && px >= 16) {
               const t = document.createElement("span");
               t.textContent = fmtP(v);
-              t.style.cssText = "writing-mode:vertical-rl;transform:rotate(180deg);font-size:8.5px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;padding:4px 0 3px;text-shadow:0 1px 1px rgba(0,0,0,.25);";
+              t.style.cssText = "font-size:8.5px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;padding-bottom:4px;text-shadow:0 1px 1px rgba(0,0,0,.25);";
               b.appendChild(t);
             }
             grp.appendChild(b);
