@@ -2617,16 +2617,37 @@
         wrap.appendChild(h);
         // Мультирежим (kpi.lines): несколько кривых на одном графике (сейчас — конверсия
         // трафик→лид: общая + МСК + СПБ). Без kpi.lines — прежний одиночный график.
-        const lineDefs = kpi.lines || [{ key: kpi.key, color: "#4a90d9" }];
+        // Легенда КЛИКАБЕЛЬНА: тап по кривой скрывает/показывает её (любые комбинации);
+        // масштаб осей пересчитывается по видимым кривым; состояние живёт в
+        // vscLineChart._hidden[kpi.key] и переживает перерисовки (день↔неделя).
+        const allDefs = kpi.lines || [{ key: kpi.key, color: "#4a90d9" }];
+        const hid = kpi.lines ? ((vscLineChart._hidden = vscLineChart._hidden || {})[kpi.key] = (vscLineChart._hidden[kpi.key] || {})) : {};
+        const lineDefs = allDefs.filter((ld) => !hid[ld.key]);
         const valOf = (s, key) => (s.k && s.k[key] != null && !isNaN(s.k[key])) ? +s.k[key] : null;
         if (kpi.lines) {
           const leg = document.createElement("div"); leg.className = "vsc-ret-legend";
-          leg.innerHTML = lineDefs.map((ld) => '<span><i style="background:' + ld.color + '"></i>' + escapeHtml(ld.label || "") + '</span>').join("");
+          allDefs.forEach((ld) => {
+            const chip = document.createElement("span");
+            chip.style.cursor = "pointer"; chip.style.userSelect = "none";
+            if (hid[ld.key]) { chip.style.opacity = ".35"; chip.style.textDecoration = "line-through"; }
+            chip.innerHTML = '<i style="background:' + ld.color + '"></i>' + escapeHtml(ld.label || "");
+            chip.title = hid[ld.key] ? "Показать кривую" : "Скрыть кривую";
+            chip.addEventListener("click", () => {
+              if (hid[ld.key]) delete hid[ld.key]; else hid[ld.key] = true;
+              const nw = vscLineChart(kpi, series);
+              if (wrap.parentNode) wrap.parentNode.replaceChild(nw, wrap);
+            });
+            leg.appendChild(chip);
+          });
           wrap.appendChild(leg);
         }
         const pts = [];
-        series.forEach((s) => { const v = valOf(s, kpi.key); if (v != null || lineDefs.some((ld) => valOf(s, ld.key) != null)) pts.push({ s: s, v: v }); });
-        if (!pts.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных для выбранного периода."; wrap.appendChild(e); return wrap; }
+        series.forEach((s) => { const v = valOf(s, kpi.key); if (lineDefs.some((ld) => valOf(s, ld.key) != null)) pts.push({ s: s, v: v }); });
+        if (!pts.length) {
+          const e = document.createElement("div"); e.className = "vsc-empty";
+          e.textContent = (kpi.lines && !lineDefs.length) ? "Все кривые скрыты — включи нужные в легенде выше." : "Нет данных для выбранного периода.";
+          wrap.appendChild(e); return wrap;
+        }
         const VW = 1000, VH = 160, PT = 12, PB = 148, PL = 8, PR = 8; // виртуальная ширина; высота 1:1 к px
         const allVals = []; pts.forEach((p) => lineDefs.forEach((ld) => { const v = valOf(p.s, ld.key); if (v != null) allVals.push(v); }));
         let vMin = Math.min.apply(null, allVals), vMax = Math.max.apply(null, allVals);
@@ -2677,12 +2698,13 @@
           let best = 0, bd = Infinity;
           for (let i = 0; i < pts.length; i++) { const d = Math.abs(X(i) - relVx); if (d < bd) { bd = d; best = i; } }
           const p = pts[best];
-          const mv = p.v != null ? p.v : lineDefs.map((ld) => valOf(p.s, ld.key)).find((v) => v != null);
+          const mainVisible = lineDefs.some((ld) => ld.key === kpi.key);
+          const mv = (mainVisible && p.v != null) ? p.v : lineDefs.map((ld) => valOf(p.s, ld.key)).find((v) => v != null);
           const px = X(best) / VW * r.width, py = Y(mv != null ? mv : vMin);
           marker.style.display = mv != null ? "block" : "none"; marker.style.left = px + "px"; marker.style.top = py + "px";
           const label = p.s.range || (p.s.x + (p.s.wd ? " · " + p.s.wd : ""));
           let dHtml = "";
-          if (best > 0 && p.v != null) {
+          if (best > 0 && p.v != null && mainVisible) {
             const pv = pts[best - 1].v;
             if (pv !== 0 && pv != null) {
               const pct = Math.round((p.v - pv) / Math.abs(pv) * 100);
@@ -2690,7 +2712,7 @@
             }
           }
           const body = kpi.lines
-            ? lineDefs.map((ld, li) => '<span style="color:' + ld.color + ';">●</span> ' + escapeHtml(ld.label || "") + ': <b>' + vscFmt(valOf(p.s, ld.key), kpi.fmt) + '</b>' + (li === 0 ? dHtml : "")).join("<br>")
+            ? lineDefs.map((ld) => '<span style="color:' + ld.color + ';">●</span> ' + escapeHtml(ld.label || "") + ': <b>' + vscFmt(valOf(p.s, ld.key), kpi.fmt) + '</b>' + (ld.key === kpi.key ? dHtml : "")).join("<br>")
             : '<b>' + vscFmt(p.v, kpi.fmt) + '</b>' + dHtml;
           tip.innerHTML = '<span style="color:#aab3c5;">' + escapeHtml(label) + '</span><br>' + body;
           tip.style.display = "block";
@@ -2836,6 +2858,58 @@
           }
           const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = r.x;
           col.appendChild(vl); col.appendChild(bar); col.appendChild(xl);
+          bars.appendChild(col);
+        });
+        wrap.appendChild(bars);
+        return wrap;
+      }
+      // «Конверсия из трафика в лид» в разрезах МЕСЯЦ/ГОД — в формате эквайринговых
+      // столбцов (просьба Андрея 22.07): высота = ОБЩАЯ конверсия (число сверху),
+      // внутри 2 равных сегмента с цифрами МСК (оранжевый) и СПБ (фиолетовый), легенда
+      // сверху, дельта общей к пред. месяцу — под подписью (как у обычных столбиков).
+      function vscTrafConvBars(kpi, series) {
+        const wrap = document.createElement("div"); wrap.className = "vsc-chart";
+        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = kpi.label;
+        wrap.appendChild(h);
+        const SEGS = [{ key: "trafConvMsk", name: "МСК", color: "#e8843b" }, { key: "trafConvSpb", name: "СПБ", color: "#8e44ad" }];
+        const leg = document.createElement("div");
+        leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#5a626f;margin:0 0 10px;";
+        leg.innerHTML = SEGS.map((t) => '<span style="white-space:nowrap;"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + t.color + ';vertical-align:-1px;margin-right:5px;"></i>' + t.name + '</span>').join("");
+        wrap.appendChild(leg);
+        const fmtP = (v) => (Math.round(v * 10) / 10).toLocaleString("ru-RU") + "%";
+        const vals = series.map((s) => (s.k && s.k[kpi.key] != null && !isNaN(s.k[kpi.key])) ? +s.k[kpi.key] : null);
+        const present = vals.filter((v) => v != null);
+        if (!present.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных для выбранного периода."; wrap.appendChild(e); return wrap; }
+        const maxO = Math.max.apply(null, present) || 1;
+        const bars = document.createElement("div"); bars.className = "vsc-bars";
+        series.forEach((s, i) => {
+          const v = vals[i];
+          const col = document.createElement("div"); col.className = "vsc-bar-col"; col.style.flex = "0 0 52px";
+          col.title = s.x + " · общая " + (v != null ? fmtP(v) : "—") + "\n" + SEGS.map((t) => t.name + ": " + (s.k && s.k[t.key] != null ? fmtP(s.k[t.key]) : "—")).join("\n");
+          const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = v != null ? fmtP(v) : "";
+          const bar = document.createElement("div"); bar.className = "vsc-bar vsc-bar-stack";
+          const barPx = v != null ? Math.max(2, Math.round(v / maxO * 120)) : 2;
+          bar.style.height = barPx + "px";
+          if (v != null) {
+            SEGS.forEach((t) => { // column-reverse → МСК (первый) снизу, СПБ сверху
+              const sv = s.k ? s.k[t.key] : null;
+              const d = document.createElement("div");
+              d.style.cssText = "width:100%;height:50%;background:" + t.color + ";display:flex;align-items:center;justify-content:center;overflow:hidden;";
+              d.title = t.name + ": " + (sv != null ? fmtP(sv) : "—");
+              if (sv != null && barPx / 2 >= 11) { const sp = document.createElement("span"); sp.textContent = fmtP(sv); sp.style.cssText = "font-size:8px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.25);"; d.appendChild(sp); }
+              bar.appendChild(d);
+            });
+          }
+          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = s.x;
+          // дельта общей к предыдущему непустому месяцу — как у обычных столбиков
+          let prevV = null; for (let j = i - 1; j >= 0; j--) { if (vals[j] != null) { prevV = vals[j]; break; } }
+          const dl = document.createElement("div"); dl.className = "vsc-bar-d";
+          if (v != null && prevV != null && prevV !== 0) {
+            const pct = Math.round((v - prevV) / Math.abs(prevV) * 100);
+            if (pct === 0) { dl.className = "vsc-bar-d flat"; dl.textContent = "0%"; }
+            else { dl.className = "vsc-bar-d " + ((kpi.good === -1 ? pct < 0 : pct > 0) ? "up" : "down"); dl.textContent = (pct > 0 ? "▲ " : "▼ ") + Math.abs(pct) + "%"; }
+          }
+          col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(dl);
           bars.appendChild(col);
         });
         wrap.appendChild(bars);
@@ -3365,15 +3439,11 @@
         // График «Конверсия из трафика в лид» — во ВСЕХ разрезах (год/месяц/неделя/день).
         // series уже несёт trafConv (+ trafConvMsk/Spb) в k: день — строка дня; неделя —
         // Total/склейка огрызков; месяц/год — Grand total месяца. День/неделя — 3 кривые
-        // (общая+МСК+СПБ, kpi.lines); месяц/год — столбики общей + мелкая строка «М · С».
+        // (общая+МСК+СПБ, kpi.lines, отключаемые в легенде); месяц/год — столбики в
+        // формате эквайринга: высота = общая, сегменты МСК/СПБ с цифрами внутри.
         if (series.length) vscContent.appendChild((vscGran === "week" || vscGran === "day")
           ? vscLineChart(VSC_TRAFCONV, series)
-          : vscBarChart(VSC_TRAFCONV, series, { sub: (s) => {
-              const m = s.k ? s.k.trafConvMsk : null, sp = s.k ? s.k.trafConvSpb : null;
-              if (m == null && sp == null) return "";
-              const f = (v) => v == null ? "—" : (Math.round(v * 10) / 10).toLocaleString("ru-RU") + "%";
-              return '<span style="color:#e8843b;">М ' + f(m) + '</span> <span style="color:#8e44ad;">С ' + f(sp) + '</span>';
-            } }));
+          : vscTrafConvBars(VSC_TRAFCONV, series));
         // Прибыль и рентабельность по месяцам — графики в «Год» и «Месяц».
         // Скрываем для руководителя с ограничением hideProfit (напр. Андрей Петров).
         if ((vscGran === "month" || vscGran === "year") && !vscHideProfit()) {
