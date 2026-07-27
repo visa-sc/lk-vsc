@@ -2863,53 +2863,75 @@
         wrap.appendChild(bars);
         return wrap;
       }
-      // «Конверсия из трафика в лид» в разрезах МЕСЯЦ/ГОД — в формате эквайринговых
-      // столбцов (просьба Андрея 22.07): высота = ОБЩАЯ конверсия (число сверху),
-      // внутри 2 равных сегмента с цифрами МСК (оранжевый) и СПБ (фиолетовый), легенда
-      // сверху, дельта общей к пред. месяцу — под подписью (как у обычных столбиков).
+      // «Конверсия из трафика в лид» в разрезах МЕСЯЦ/ГОД: 3 ОБОСОБЛЕННЫХ столбика на
+      // месяц — общая (синий), МСК (оранжевый), СПБ (фиолетовый); общая ≠ МСК+СПБ (есть
+      // ещё «Остальное»), поэтому именно отдельные столбики. Легенда кликабельна, как на
+      // дне/неделе: любой столбик скрыть/показать; состояние ОБЩЕЕ с линейным графиком
+      // (vscLineChart._hidden[kpi.key]) — выбор переживает переключение разрезов.
+      // Значения — вертикально внутри столбиков; дельта к пред. месяцу — по общей.
       function vscTrafConvBars(kpi, series) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
         const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = kpi.label;
         wrap.appendChild(h);
-        const SEGS = [{ key: "trafConvMsk", name: "МСК", color: "#e8843b" }, { key: "trafConvSpb", name: "СПБ", color: "#8e44ad" }];
+        const allDefs = kpi.lines || [];
+        const hid = (vscLineChart._hidden = vscLineChart._hidden || {})[kpi.key] = (vscLineChart._hidden[kpi.key] || {});
+        const defs = allDefs.filter((d) => !hid[d.key]);
         const leg = document.createElement("div");
         leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#5a626f;margin:0 0 10px;";
-        leg.innerHTML = SEGS.map((t) => '<span style="white-space:nowrap;"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + t.color + ';vertical-align:-1px;margin-right:5px;"></i>' + t.name + '</span>').join("");
+        allDefs.forEach((d) => {
+          const chip = document.createElement("span");
+          chip.style.cssText = "white-space:nowrap;cursor:pointer;user-select:none;" + (hid[d.key] ? "opacity:.35;text-decoration:line-through;" : "");
+          chip.innerHTML = '<i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + d.color + ';vertical-align:-1px;margin-right:5px;"></i>' + escapeHtml(d.label || "");
+          chip.title = hid[d.key] ? "Показать столбик" : "Скрыть столбик";
+          chip.addEventListener("click", () => {
+            if (hid[d.key]) delete hid[d.key]; else hid[d.key] = true;
+            if (wrap.parentNode) wrap.parentNode.replaceChild(vscTrafConvBars(kpi, series), wrap);
+          });
+          leg.appendChild(chip);
+        });
         wrap.appendChild(leg);
         const fmtP = (v) => (Math.round(v * 10) / 10).toLocaleString("ru-RU") + "%";
-        const vals = series.map((s) => (s.k && s.k[kpi.key] != null && !isNaN(s.k[kpi.key])) ? +s.k[kpi.key] : null);
-        const present = vals.filter((v) => v != null);
-        if (!present.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных для выбранного периода."; wrap.appendChild(e); return wrap; }
-        const maxO = Math.max.apply(null, present) || 1;
+        const valOf = (s, key) => (s.k && s.k[key] != null && !isNaN(s.k[key])) ? +s.k[key] : null;
+        if (!defs.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Все столбики скрыты — включи нужные в легенде выше."; wrap.appendChild(e); return wrap; }
+        const allVals = [];
+        series.forEach((s) => defs.forEach((d) => { const v = valOf(s, d.key); if (v != null) allVals.push(v); }));
+        if (!allVals.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных для выбранного периода."; wrap.appendChild(e); return wrap; }
+        const maxO = Math.max.apply(null, allVals) || 1;
+        const mainVals = series.map((s) => valOf(s, kpi.key));
+        const mainVisible = defs.some((d) => d.key === kpi.key);
         const bars = document.createElement("div"); bars.className = "vsc-bars";
         series.forEach((s, i) => {
-          const v = vals[i];
-          const col = document.createElement("div"); col.className = "vsc-bar-col"; col.style.flex = "0 0 52px";
-          col.title = s.x + " · общая " + (v != null ? fmtP(v) : "—") + "\n" + SEGS.map((t) => t.name + ": " + (s.k && s.k[t.key] != null ? fmtP(s.k[t.key]) : "—")).join("\n");
-          const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = v != null ? fmtP(v) : "";
-          const bar = document.createElement("div"); bar.className = "vsc-bar vsc-bar-stack";
-          const barPx = v != null ? Math.max(2, Math.round(v / maxO * 120)) : 2;
-          bar.style.height = barPx + "px";
-          if (v != null) {
-            SEGS.forEach((t) => { // column-reverse → МСК (первый) снизу, СПБ сверху
-              const sv = s.k ? s.k[t.key] : null;
-              const d = document.createElement("div");
-              d.style.cssText = "width:100%;height:50%;background:" + t.color + ";display:flex;align-items:center;justify-content:center;overflow:hidden;";
-              d.title = t.name + ": " + (sv != null ? fmtP(sv) : "—");
-              if (sv != null && barPx / 2 >= 11) { const sp = document.createElement("span"); sp.textContent = fmtP(sv); sp.style.cssText = "font-size:8px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.25);"; d.appendChild(sp); }
-              bar.appendChild(d);
-            });
-          }
+          const col = document.createElement("div"); col.className = "vsc-bar-col";
+          col.style.flex = "0 0 " + (defs.length * 25 + 8) + "px";
+          col.title = s.x + "\n" + allDefs.map((d) => (d.label || "") + ": " + (valOf(s, d.key) != null ? fmtP(valOf(s, d.key)) : "—")).join("\n");
+          const grp = document.createElement("div");
+          grp.style.cssText = "display:flex;align-items:flex-end;gap:3px;";
+          defs.forEach((d) => {
+            const v = valOf(s, d.key);
+            const b = document.createElement("div");
+            const px = v != null ? Math.max(2, Math.round(v / maxO * 120)) : 2;
+            b.style.cssText = "width:22px;height:" + px + "px;background:" + (v != null ? d.color : "#e3e8ef") + ";border-radius:5px 5px 0 0;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;";
+            b.title = (d.label || "") + ": " + (v != null ? fmtP(v) : "—");
+            if (v != null && px >= 34) {
+              const t = document.createElement("span");
+              t.textContent = fmtP(v);
+              t.style.cssText = "writing-mode:vertical-rl;transform:rotate(180deg);font-size:8.5px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;padding:4px 0 3px;text-shadow:0 1px 1px rgba(0,0,0,.25);";
+              b.appendChild(t);
+            }
+            grp.appendChild(b);
+          });
           const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = s.x;
-          // дельта общей к предыдущему непустому месяцу — как у обычных столбиков
-          let prevV = null; for (let j = i - 1; j >= 0; j--) { if (vals[j] != null) { prevV = vals[j]; break; } }
           const dl = document.createElement("div"); dl.className = "vsc-bar-d";
-          if (v != null && prevV != null && prevV !== 0) {
-            const pct = Math.round((v - prevV) / Math.abs(prevV) * 100);
-            if (pct === 0) { dl.className = "vsc-bar-d flat"; dl.textContent = "0%"; }
-            else { dl.className = "vsc-bar-d " + ((kpi.good === -1 ? pct < 0 : pct > 0) ? "up" : "down"); dl.textContent = (pct > 0 ? "▲ " : "▼ ") + Math.abs(pct) + "%"; }
+          if (mainVisible) {
+            const v = mainVals[i]; let prevV = null;
+            for (let j = i - 1; j >= 0; j--) { if (mainVals[j] != null) { prevV = mainVals[j]; break; } }
+            if (v != null && prevV != null && prevV !== 0) {
+              const pct = Math.round((v - prevV) / Math.abs(prevV) * 100);
+              if (pct === 0) { dl.className = "vsc-bar-d flat"; dl.textContent = "0%"; }
+              else { dl.className = "vsc-bar-d " + ((kpi.good === -1 ? pct < 0 : pct > 0) ? "up" : "down"); dl.textContent = (pct > 0 ? "▲ " : "▼ ") + Math.abs(pct) + "%"; }
+            }
           }
-          col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(dl);
+          col.appendChild(grp); col.appendChild(xl); col.appendChild(dl);
           bars.appendChild(col);
         });
         wrap.appendChild(bars);
