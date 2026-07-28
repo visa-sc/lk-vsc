@@ -3862,7 +3862,9 @@
             const dVat = (b.vat != null) ? vat - b.vat : null;
             if (dTax != null) { sumDTax += dTax; haveB = true; }
             if (dVat != null) { sumDVat += dVat; haveB = true; }
-            const dCol = function (d, scale) { if (d == null) return "#9aa0ab"; return Math.abs(d) > scale ? "#b0263a" : "#2c7a43"; };
+            // «+» (наша оценка выше бухгалтерской — запас) — всегда зелёным; «−» —
+            // красным только при существенном расхождении (просьба Андрея 22.07).
+            const dCol = function (d, scale) { if (d == null) return "#9aa0ab"; return (d < 0 && Math.abs(d) > scale) ? "#b0263a" : "#2c7a43"; };
             const inpB = function (kind, val) { return '<input type="text" inputmode="numeric" class="tax-buh-' + kind + '-' + e.key + '" value="' + (val == null ? "" : val) + '" style="width:100%;box-sizing:border-box;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:12.5px;font-family:inherit;">'; };
             oh += '<tr style="border-top:1px solid #f0eef5;">'
               + '<td style="padding:5px 8px;font-weight:600;white-space:nowrap;">' + escapeHtml(e.name) + ' <span style="color:#9aa0ab;font-weight:400;">' + (e.rate * 100) + '%</span></td>'
@@ -3882,7 +3884,7 @@
           if (haveB) {
             const total = sumDTax + sumDVat;
             const fmtD = function (d) { return (d >= 0 ? "+" : "\u2212") + money0(Math.abs(d)); };
-            const col = Math.abs(total) > 50000 ? "#b0263a" : "#2c7a43";
+            const col = (total < 0 && Math.abs(total) > 50000) ? "#b0263a" : "#2c7a43"; // «+» всегда зелёным
             oh += '<div style="margin-top:12px;padding:12px 16px;background:#f6f8fb;border:1px solid #edf0f5;border-radius:12px;font-size:13.5px;">'
               + '\u0418\u0442\u043e\u0433\u043e \u0440\u0430\u0441\u0445\u043e\u0436\u0434\u0435\u043d\u0438\u0435 (\u043d\u0430\u0448 \u2212 \u0431\u0443\u0445): \u043d\u0430\u043b\u043e\u0433 <b>' + fmtD(sumDTax) + '</b> \u00b7 \u041d\u0414\u0421 <b>' + fmtD(sumDVat) + '</b> \u00b7 \u0432\u0441\u0435\u0433\u043e <b style="color:' + col + ';">' + fmtD(total) + '</b>'
               + '<div style="font-size:12px;color:#6b7280;margin-top:4px;">' + (total < 0 ? "\u0431\u0443\u0445\u0433\u0430\u043b\u0442\u0435\u0440 \u043d\u0430\u0441\u0447\u0438\u0442\u0430\u043b\u0430 \u0411\u041e\u041b\u042c\u0428\u0415 \u043d\u0430\u0448\u0435\u0439 \u043e\u0446\u0435\u043d\u043a\u0438 \u043d\u0430 " + money0(Math.abs(total)) : "\u043d\u0430\u0448\u0430 \u043e\u0446\u0435\u043d\u043a\u0430 \u0432\u044b\u0448\u0435 \u0431\u0443\u0445\u0433\u0430\u043b\u0442\u0435\u0440\u0441\u043a\u043e\u0439 \u043d\u0430 " + money0(Math.abs(total))) + '</div></div>';
