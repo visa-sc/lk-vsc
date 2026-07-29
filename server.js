@@ -3764,9 +3764,23 @@ function vscParseMonth(rows) {
   // ── «Ежемесячный контроль»: помесячные сводные показатели из нижнего блока листа.
   // Колонки/строки плавают по месяцам — берём по смыслу (заголовок / ячейка над значением).
   let ctrl = null;
-  if (total) {
+  {
     let gtIdx = -1;
     for (let i = hi + 1; i < rows.length; i++) { if (String((rows[i] || [])[0] || "").trim().toLowerCase() === "grand total") { gtIdx = i; break; } }
+    // Фолбэк (август 2026, «то появлялся, то исчезал»): в свежесозданном листе подпись
+    // «Grand total» в колонке A бывает не проставлена, хотя строка и план «ТАРГЕТ» под
+    // ней уже есть. Тогда якорь — первая содержательная строка с ПУСТОЙ колонкой A
+    // после ПОСЛЕДНЕГО недельного «Total» (структура листа всегда такая: … Total →
+    // пустая → Grand total → ТАРГЕТ → % выполнения).
+    if (gtIdx < 0) {
+      let lastTotal = -1;
+      for (let i = hi + 1; i < rows.length; i++) { if (String((rows[i] || [])[0] || "").trim().toLowerCase() === "total") lastTotal = i; }
+      for (let i = lastTotal + 1; i < rows.length && lastTotal >= 0; i++) {
+        const r = rows[i] || [];
+        if (String(r[0] || "").trim()) break; // пошли другие блоки листа — стоп
+        if (r.some((v) => String(v || "").trim() !== "")) { gtIdx = i; break; }
+      }
+    }
     const gtRow = gtIdx >= 0 ? (rows[gtIdx] || []) : [];
     const planRow = gtIdx >= 0 ? (rows[gtIdx + 1] || []) : [];   // строка «ТАРГЕТ» (план) под Grand total
     // Item 9 — план ОП: план ATV / итоговой конверсии текущего месяца (в тех же колонках,
@@ -3785,11 +3799,22 @@ function vscParseMonth(rows) {
       for (let i = 0; i < rows.length; i++) { const r = rows[i] || []; for (let c = 0; c < r.length; c++) { if (String(r[c] || "").replace(/\s+/g, " ").trim().toLowerCase().indexOf(N) >= 0) return vscNum((rows[i + 1] || [])[c]); } }
       return null;
     };
-    ctrl = {
-      planATV: planATV, planCV: planCV, actualATV: total.atv, actualCV: total.cv,
+    // Адреса ячеек листа (для подписи «откуда взяли» в блоке «План ОП — проверка»):
+    // CSV-строка i (0-based) = строка листа i+1; колонка index → буква (A, B, … AA…).
+    const colLetter = (ci) => { let s = "", n = ci + 1; while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); } return s; };
+    const planSrc = gtIdx >= 0 ? {
+      planRowNum: gtIdx + 2, factRowNum: gtIdx + 1,
+      atvCol: C.atv >= 0 ? colLetter(C.atv) : null,
+      cvCol: C.cv >= 0 ? colLetter(C.cv) : null,
+      gtLabeled: String((rows[gtIdx] || [])[0] || "").trim() !== "" // подписан ли «Grand total» в колонке A
+    } : null;
+    if (total || planATV != null || planCV != null) ctrl = {
+      planATV: planATV, planCV: planCV,
+      actualATV: total ? total.atv : null, actualCV: total ? total.cv : null,
       repeatPct: repeatPct,
       cplExtra: belowOf("cpl с учетом доп расходов"),
-      drrExtra: belowOf("дрр с учетом доп расходов")
+      drrExtra: belowOf("дрр с учетом доп расходов"),
+      planSrc: planSrc
     };
   }
   return { days, weeks, total, ctrl };
@@ -3941,8 +3966,13 @@ function vscApplyFreeze(months) {
   months.forEach((m) => {                                    // 1) снимок дозревших + last-good живых
     const key = vscMonthKeyOf(m.name);
     if (key == null) return;
-    if (!(m.total && m.total.budget > 0)) return;            // пустые/битые данные не берём
-    if (key <= cutoff) {                                     // дозрел → снимок НАВСЕГДА
+    // «Содержательный» месяц: есть выручка ИЛИ хотя бы план ОП (будущий месяц вроде
+    // августа: дни пустые, но строка «ТАРГЕТ» уже заполнена — терять его нельзя,
+    // иначе при разовом сбое загрузки вкладки он «исчезает» из проверки плана).
+    const hasPlan = m.ctrl && (m.ctrl.planATV != null || m.ctrl.planCV != null);
+    if (!((m.total && m.total.budget > 0) || hasPlan)) return; // пустые/битые данные не берём
+    if (key <= cutoff) {                                     // дозрел → снимок НАВСЕГДА (только с выручкой)
+      if (!(m.total && m.total.budget > 0)) return;
       if (!fr.months[m.name]) { fr.months[m.name] = JSON.parse(JSON.stringify(m)); changed = true; }
       if (fr.recent[m.name]) { delete fr.recent[m.name]; changed = true; } // перешёл из live в frozen
     } else {                                                 // живой → обновляем last-good

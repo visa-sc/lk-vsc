@@ -4262,18 +4262,34 @@
           const ok = plan > fact, col = ok ? "#2c7a43" : "#b0263a";
           return '<td style="padding:7px 10px;color:' + col + ';font-weight:600;white-space:nowrap;">' + (ok ? "✓ " : "✗ ") + vscFmt(plan, fmt) + ' <span style="color:#9aa0ab;font-weight:400;">vs ' + vscFmt(fact, fmt) + '</span></td>';
         };
-        const rowsHtml = [];
+        const rowsHtml = [], notes = [];
         for (let i = 0; i < ms.length; i++) {
           const c = ms[i] && ms[i].ctrl; if (!c || (c.planATV == null && c.planCV == null)) continue;
-          let prevC = null;
-          for (let j = i - 1; j >= 0; j--) { const pc = ms[j] && ms[j].ctrl; if (pc && (pc.actualATV != null || pc.actualCV != null)) { prevC = pc; break; } }
+          let prevC = null, prevName = "";
+          for (let j = i - 1; j >= 0; j--) { const pc = ms[j] && ms[j].ctrl; if (pc && (pc.actualATV != null || pc.actualCV != null)) { prevC = pc; prevName = ms[j].name; break; } }
           if (!prevC) continue;
           rowsHtml.push('<tr style="border-top:1px solid #f0eef5;"><td style="padding:7px 10px;font-weight:600;color:#1d2330;">' + escapeHtml(shortN(ms[i].name)) + '</td>' + cell(c.planATV, prevC.actualATV, "money") + cell(c.planCV, prevC.actualCV, "pct") + '</tr>');
+          // Подпись «какие ячейки листа взяли» (просьба Андрея 22.07) — для месяцев,
+          // где сервер вернул координаты (живые месяцы; в старых снимках их нет).
+          if (c.planSrc) {
+            const s = c.planSrc, ps = prevC.planSrc;
+            let t = shortN(ms[i].name) + ": план — лист «" + ms[i].name + "», ячейки " +
+              (s.atvCol ? s.atvCol + s.planRowNum + " (ATV)" : "") + (s.atvCol && s.cvCol ? " и " : "") + (s.cvCol ? s.cvCol + s.planRowNum + " (конверсия)" : "") +
+              " — строка «ТАРГЕТ» под Grand total" + (s.gtLabeled ? "" : " (подпись «Grand total» в колонке A листа отсутствует — нашли строку по структуре)");
+            t += "; факт для сравнения — Grand total листа «" + prevName + "»" + (ps ? " (" + (ps.atvCol ? ps.atvCol + ps.factRowNum : "") + (ps.atvCol && ps.cvCol ? ", " : "") + (ps.cvCol ? ps.cvCol + ps.factRowNum : "") + ")" : "") + ".";
+            notes.push(t);
+          }
         }
         if (!rowsHtml.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Недостаточно данных для проверки."; wrap.appendChild(e); return wrap; }
         const tbl = document.createElement("div"); tbl.style.overflowX = "auto";
         tbl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 10px;">Месяц</th><th style="text-align:left;padding:7px 10px;">План ATV vs факт пред.</th><th style="text-align:left;padding:7px 10px;">План конверсии vs факт пред.</th></tr></thead><tbody>' + rowsHtml.join("") + '</tbody></table>';
         wrap.appendChild(tbl);
+        if (notes.length) {
+          const nb = document.createElement("div");
+          nb.style.cssText = "font-size:11px;color:#9aa0ab;margin-top:8px;line-height:1.5;";
+          nb.innerHTML = "<b>Откуда берём:</b><br>" + notes.slice(-2).map(escapeHtml).join("<br>");
+          wrap.appendChild(nb);
+        }
         return wrap;
       }
       // ── Вкладка «Маркетинг KPI» (только админ) ──────────────────────────────────────
