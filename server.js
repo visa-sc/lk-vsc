@@ -3740,6 +3740,20 @@ function vscParseMonth(rows) {
       total = pick(r);
     }
   }
+  // Подстраховка (просьба Андрея 22.07): если подпись «Grand total» в колонке A
+  // не проставлена (бывает в свежесозданных листах) — итог месяца берём из строки
+  // ПО СТРУКТУРЕ: первая содержательная строка с пустой колонкой A сразу после
+  // ПОСЛЕДНЕГО недельного «Total» (…Total → пустая → Grand total → ТАРГЕТ → %).
+  // От этой строки зависят total месяца, плитки, YD-сверка и «Ежемесячный контроль».
+  if (!total) {
+    let lastTotal = -1;
+    for (let i = hi + 1; i < rows.length; i++) { if (String((rows[i] || [])[0] || "").trim().toLowerCase() === "total") lastTotal = i; }
+    for (let i = lastTotal + 1; i < rows.length && lastTotal >= 0; i++) {
+      const r = rows[i] || [];
+      if (String(r[0] || "").trim()) break; // начались другие блоки листа — стоп
+      if (r.some((v) => String(v || "").trim() !== "")) { total = pick(r); break; }
+    }
+  }
   // Накопительные за месяц (недобор/перебор, отклонение таргета, обработанные)
   // считаем суммой по ФАКТИЧЕСКИ заполненным дням — Grand total у незавершённого
   // месяца включает пустые будущие дни и искажает накопленный эффект.
@@ -4165,6 +4179,16 @@ function extractSheetAdTotal(rows) {
   if (col < 0) return null;
   for (let i = 0; i < rows.length; i++) {
     if ((rows[i] || []).some((c) => /^\s*grand total\s*$/i.test(String(c || "")))) return vscNum(rows[i][col]);
+  }
+  // Подстраховка (просьба Андрея 22.07): подпись «Grand total» может отсутствовать —
+  // берём строку ПО СТРУКТУРЕ (первая содержательная с пустой колонкой A после
+  // ПОСЛЕДНЕГО недельного «Total»), как в основном парсе месяца.
+  let lastTotal = -1;
+  for (let i = 0; i < rows.length; i++) { if (String((rows[i] || [])[0] || "").trim().toLowerCase() === "total") lastTotal = i; }
+  for (let i = lastTotal + 1; i < rows.length && lastTotal >= 0; i++) {
+    const r = rows[i] || [];
+    if (String(r[0] || "").trim()) break;
+    if (r.some((v) => String(v || "").trim() !== "")) return vscNum(r[col]);
   }
   return null;
 }

@@ -3559,8 +3559,9 @@
             '<tr><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;color:#33415a;">Я.Директ (откручено, с НДС ' + vatPct + '%)</td><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;text-align:right;font-weight:700;white-space:nowrap;">' + money(yc.ydWithVat) + '</td></tr>' +
             '<tr><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;color:#33415a;">Таблица «Рекламные расходы ОБЩИЕ» (Grand total)</td><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;text-align:right;font-weight:700;white-space:nowrap;">' + money(yc.sheetTotal) + '</td></tr>' +
             '<tr><td style="padding:7px 6px;color:#33415a;">Расхождение (Я.Директ − таблица)</td><td style="padding:7px 6px;text-align:right;font-weight:700;white-space:nowrap;color:' + dColor + ';">' + dStr + '</td></tr>' +
-            '</table>' +
-            '<div style="font-size:11.5px;color:#8a90a0;margin-top:8px;">Открученные деньги из кабинета Я.Директа (Reports API) × НДС ' + vatPct + '%. Обновляется 1-го и 12-го числа в 15:00 МСК · на ' + escapeHtml(upd) + '.</div>';
+            '</table>';
+          // Пояснение — под «i» в заголовке блока (просьба Андрея 22.07)
+          hYd.appendChild(vscInfo("<b>Откуда данные</b><br>Открученные деньги из кабинета Я.Директа (Reports API) × НДС " + vatPct + "%. Таблица — «Рекламные расходы ОБЩИЕ», строка Grand total (при отсутствии подписи строка находится по структуре листа).<br><br>Обновляется 1-го и 12-го числа в 15:00 МСК · данные на " + escapeHtml(upd) + "."));
         } else {
           ydBox.innerHTML = '<div class="vsc-empty">Сопоставление расхода Я.Директа считается 1-го и 12-го числа (15:00 МСК) — данные появятся после первого расчёта.</div>';
         }
@@ -4284,12 +4285,8 @@
         const tbl = document.createElement("div"); tbl.style.overflowX = "auto";
         tbl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 10px;">Месяц</th><th style="text-align:left;padding:7px 10px;">План ATV vs факт пред.</th><th style="text-align:left;padding:7px 10px;">План конверсии vs факт пред.</th></tr></thead><tbody>' + rowsHtml.join("") + '</tbody></table>';
         wrap.appendChild(tbl);
-        if (notes.length) {
-          const nb = document.createElement("div");
-          nb.style.cssText = "font-size:11px;color:#9aa0ab;margin-top:8px;line-height:1.5;";
-          nb.innerHTML = "<b>Откуда берём:</b><br>" + notes.slice(-2).map(escapeHtml).join("<br>");
-          wrap.appendChild(nb);
-        }
+        // «Откуда берём» — под «i» в заголовке (просьба Андрея 22.07, не мозолит глаза)
+        if (notes.length) h.appendChild(vscInfo("<b>Откуда берём</b><br>" + notes.slice(-2).map(escapeHtml).join("<br><br>")));
         return wrap;
       }
       // ── Вкладка «Маркетинг KPI» (только админ) ──────────────────────────────────────
