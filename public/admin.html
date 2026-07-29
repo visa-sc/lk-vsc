@@ -1096,6 +1096,88 @@
     /* Кнопки истории/вторичные — мягкие «стеклянные» пилюли */
     body.vsc-skin .vsc-dayrev-refresh { border-radius: 11px; }
     body.vsc-skin .vsc-month select:focus { outline: none; border-color: var(--sk-accent); box-shadow: 0 0 0 3px rgba(0,151,202,.15); }
+
+    /* ════════════════════════════════════════════════════════════════════
+       ADM-SKIN — «воздушное» оформление /admin и /team (класс body.adm-skin
+       ставится в JS для всех вывесок, КРОМЕ /vsc — там свой vsc-skin).
+       ТОЛЬКО внешний вид (цвета/радиусы/тени/фон); разметку, display/position
+       и логику не трогаем. Фон-градиент — через body::before, НЕ через
+       background-attachment: fixed (ломает mix-blend-mode логотипа в Chrome).
+       ════════════════════════════════════════════════════════════════════ */
+    body.adm-skin {
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      background: #f2f5f9;
+      --as-ink: #141a2e;
+      --as-border: rgba(20, 32, 64, .07);
+      --as-shadow: 0 1px 2px rgba(16,24,40,.04), 0 14px 34px -18px rgba(16,32,64,.20);
+      --as-shadow-hi: 0 2px 6px rgba(16,24,40,.06), 0 26px 50px -22px rgba(16,32,64,.30);
+    }
+    body.adm-skin::before {
+      content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+      background:
+        radial-gradient(1100px 520px at 50% -120px, #e8f2fa 0%, rgba(232,242,250,0) 70%),
+        linear-gradient(180deg, #f7f9fc 0%, #eef1f6 100%);
+    }
+    body.adm-skin ::selection { background: rgba(53,137,189,.18); }
+    body.adm-skin .dash-title { color: var(--as-ink); letter-spacing: -.02em; }
+    /* Карточки: панели разделов, обособленные блоки, логин */
+    body.adm-skin .panel,
+    body.adm-skin .paid-conv,
+    body.adm-skin .auth-chart,
+    body.adm-skin .login-card {
+      border: 1px solid var(--as-border);
+      border-radius: 22px;
+      box-shadow: var(--as-shadow);
+    }
+    body.adm-skin .auth-chart { border-radius: 20px; }
+    /* Группы вкладок — «стеклянные» карточки; кнопки — мягкие пилюли */
+    body.adm-skin .tab-group {
+      background: rgba(255,255,255,.66);
+      border: 1px solid var(--as-border);
+      border-radius: 18px;
+      box-shadow: 0 1px 2px rgba(16,24,40,.03), 0 10px 24px -18px rgba(16,32,64,.18);
+    }
+    body.adm-skin .tab-btn {
+      border: 1px solid rgba(20,32,64,.09);
+      background: rgba(255,255,255,.85);
+      color: #4c5568;
+      transition: color .18s var(--vsc-ease), background .18s var(--vsc-ease),
+                  border-color .18s var(--vsc-ease), box-shadow .18s var(--vsc-ease);
+    }
+    body.adm-skin .tab-btn:hover { border-color: rgba(20,32,64,.18); background: #fff; color: var(--as-ink); }
+    body.adm-skin .tab-btn.active {
+      background: linear-gradient(135deg, #3f96c9 0%, #2b6f96 100%);
+      border-color: transparent; color: #fff;
+      box-shadow: 0 8px 18px -9px rgba(43,111,150,.65);
+    }
+    /* Мобила: группы вкладок остаются «без коробок», как в базовой вёрстке */
+    @media (max-width: 720px) {
+      body.adm-skin .tab-group { background: transparent; border: none; box-shadow: none; border-radius: 0; }
+    }
+    body.adm-skin .stats-header { border-bottom-color: rgba(20,32,64,.08); }
+    body.adm-skin .hero-conv { border-radius: 20px; box-shadow: 0 16px 36px -18px rgba(53,137,189,.55); }
+    body.adm-skin .funnel-step { border-radius: 16px; }
+    body.adm-skin .paid-conv-cell { border-radius: 14px; }
+    /* Карточки внутри разделов — лёгкая тень; плитки БЗ — живой hover */
+    body.adm-skin .corr-card,
+    body.adm-skin .kb-tile,
+    body.adm-skin .ref-row,
+    body.adm-skin .tst-docbox,
+    body.adm-skin .tst-sees,
+    body.adm-skin .tst-internal,
+    body.adm-skin .tst-ctrls { box-shadow: 0 1px 2px rgba(16,24,40,.03); }
+    body.adm-skin .kb-tile { transition: transform .22s var(--vsc-ease), box-shadow .22s var(--vsc-ease); }
+    body.adm-skin .kb-tile:hover { transform: translateY(-2px); box-shadow: var(--as-shadow-hi); }
+    body.adm-skin .corr-add-btn {
+      background: linear-gradient(135deg, #3f96c9 0%, #2b6f96 100%);
+      border-radius: 13px;
+      box-shadow: 0 10px 20px -10px rgba(43,111,150,.6);
+      transition: filter .18s var(--vsc-ease);
+    }
+    body.adm-skin .corr-add-btn:hover { background: linear-gradient(135deg, #3f96c9 0%, #2b6f96 100%); filter: brightness(1.06); }
+    body.adm-skin .toggle-phones { border-radius: 13px; }
+    body.adm-skin .logout-btn { border-radius: 14px; }
   </style>
 </head>
 <body>
@@ -1357,6 +1439,10 @@
           // apple-touch-icon для /vsc вставляется на сервере прямо в <head>
           // (см. роут /vsc) — iOS читает иконку из HTML, не из JS.
         } catch (_) {}
+      } else {
+        // «Воздушный» скин /admin и /team (dev.) — как на /vsc; сам /vsc не трогаем
+        // (у него собственный vsc-skin). Только оформление, логика не меняется.
+        try { document.body.classList.add("adm-skin"); } catch (_) {}
       }
       // Кэш «на этом устройстве кнопка Face ID должна быть видна» — выставляется
       // после успешной аутентификации/регистрации passkey, чтобы при следующих
@@ -1530,7 +1616,11 @@
           { t: "Как работает клиентский ЛК", d: "Поведение по этапам, от чего зависит (фильтр по этапам).", u: "/admin/kb/logic" },
           { t: "История изменений клиентского ЛК", d: "Лента реализованных корректировок.", u: "/admin/kb/changelog" }
         ];
-        kbContent.innerHTML = '<p class="kb-intro">Открываются в новой вкладке. Информация всегда актуальная — генерируется из текущего кода ЛК, обновлять вручную не нужно.</p>';
+        kbContent.innerHTML = "";
+        const kbIntro = document.createElement("p"); kbIntro.className = "kb-intro";
+        kbIntro.textContent = "Справочные страницы — открываются в новой вкладке.";
+        kbIntro.appendChild(vscInfo("Информация всегда актуальная — страницы генерируются из текущего кода ЛК, обновлять вручную ничего не нужно."));
+        kbContent.appendChild(kbIntro);
         const grid = document.createElement("div"); grid.className = "kb-grid";
         links.forEach((l) => {
           const a = document.createElement("a");
@@ -1823,14 +1913,13 @@
         const spec = testerSpec, dir = spec.directions[docsreqDir];
         docsreqContent.innerHTML = "";
         const intro = document.createElement("p"); intro.className = "ref-intro";
-        intro.innerHTML = "Полный список документов по направлению: когда каждый запрашивается (этап, ответы опросника, дни до подачи) и обязательность. Напротив каждого — кнопка «Корректировка»: если что-то неверно, заявка с полным контекстом сразу уйдёт в «Корректировки ЛК». Данные — из той же логики, что и Тестировщик ЛК."
-          + "<br><b>Обязательность документов оформления (этапы 1–2) — по статусу сделки и «Дате записи на подачу» (логика Насти, июнь 2026):</b>"
-          + "<ul class='ref-ul'>"
+        intro.textContent = "Полный список документов по направлению: этап, условия и обязательность. Напротив каждого — кнопка «Корректировка».";
+        intro.appendChild(vscInfo("<b>Как устроен раздел</b><br>Когда каждый документ запрашивается (этап, ответы опросника, дни до подачи) и обязательность. Кнопка «Корректировка» отправляет заявку с полным контекстом в «Корректировки ЛК». Данные — из той же логики, что и Тестировщик ЛК.<br><br><b>Обязательность документов оформления (этапы 1–2) — по статусу сделки и «Дате записи на подачу» (логика Насти, июнь 2026):</b><ul style='margin:6px 0 0;padding-left:16px;'>"
           + "<li>ранние статусы — открыты, но НЕобязательны;</li>"
           + "<li>«Запись сделана / Электронное рассмотрение / Оформлен выкуп» — за ≤7 рабочих дней обязательно становится только <b>ядро оформления</b> (справка с работы/учёбы, паспорт спонсора, своё проживание, авиабилеты, 2-й загран, билеты в 3-ю страну, свид-во о рождении);</li>"
           + "<li>остальные условные документы — обязательны только в финальных статусах или при &lt;3 кал. дней;</li>"
           + "<li>финальные статусы («Исправить / Пакет готов / Принято после ОО / Ожидает передачи / Готовы к личной подаче») — обязательно всё; предохранитель &lt;3 кал. дней — всё; паспорта (этап 0) — всегда.</li>"
-          + "</ul>";
+          + "</ul>"));
         docsreqContent.appendChild(intro);
         docsreqContent.appendChild(refDirButtons(docsreqDir, (k) => { docsreqDir = k; renderDocsReq(); }));
         if (Array.isArray(dir.docRecs) && dir.docRecs.length) {
@@ -1840,8 +1929,8 @@
           const docs = dir.docsByStage[String(s)] || [];
           const h = document.createElement("div"); h.className = "ref-sec-h";
           h.textContent = "Этап " + s + " — «" + spec.stages[s] + "»";
+          if (s === 2 && dir.stage2Note) h.appendChild(vscInfo(escapeHtml(dir.stage2Note)));
           docsreqContent.appendChild(h);
-          if (s === 2 && dir.stage2Note) { const n = document.createElement("div"); n.className = "ref-note"; n.textContent = dir.stage2Note; docsreqContent.appendChild(n); }
           if (!docs.length) { const e = document.createElement("div"); e.className = "tst-empty"; e.textContent = "Нет стандартных документов на этом этапе."; docsreqContent.appendChild(e); }
           docs.forEach((doc) => {
             const mand = (s === 0)
@@ -1861,10 +1950,8 @@
         }
         const ph = document.createElement("div"); ph.className = "ref-sec-h";
         ph.textContent = "Подобласть «Документы для проверки перед подачей» (этап 2)";
+        ph.appendChild(vscInfo("<b>Когда появляется</b><br>За 7 дней до «Даты записи на подачу» (поле сделки в amoCRM). Если дата не заполнена — подобласть не показывается.<br><br>Обязательные выделены красным, необязательные — синим. Пока обязательные не загружены, точка этапа в ЛК — жёлтая."));
         docsreqContent.appendChild(ph);
-        const pn = document.createElement("div"); pn.className = "ref-note";
-        pn.textContent = "Появляется за 7 дней до «Даты записи на подачу» (поле сделки в amoCRM). Если дата не заполнена — подобласть не показывается. Обязательные выделены красным, необязательные — синим. Пока обязательные не загружены, точка этапа в ЛК — жёлтая.";
-        docsreqContent.appendChild(pn);
         (dir.presub || []).forEach((doc) => {
           let badge, mandTxt;
           if (doc.opt === true) { badge = docBadge("opt", "необязателен"); mandTxt = "необязательный (с пометкой «уточните у менеджера»)"; }
@@ -1893,7 +1980,8 @@
         const spec = testerSpec, dir = spec.directions[qlogicDir];
         qlogicContent.innerHTML = "";
         const intro = document.createElement("p"); intro.className = "ref-intro";
-        intro.textContent = "Все вопросы опросника по направлению: обязательность ответа, когда вопрос показывается (в т.ч. вопросы, открывающиеся после других ответов) и что влечёт каждый ответ — какие документы и на каком этапе запросятся. Кнопка «Корректировка» — отправить замечание сразу в «Корректировки ЛК».";
+        intro.textContent = "Все вопросы опросника по направлению и что влечёт каждый ответ.";
+        intro.appendChild(vscInfo("<b>Как устроен раздел</b><br>По каждому вопросу: обязательность ответа, когда вопрос показывается (в т.ч. вопросы, открывающиеся после других ответов) и что влечёт каждый ответ — какие документы и на каком этапе запросятся.<br><br>Кнопка «Корректировка» — отправить замечание сразу в «Корректировки ЛК» с полным контекстом вопроса."));
         qlogicContent.appendChild(intro);
         qlogicContent.appendChild(refDirButtons(qlogicDir, (k) => { qlogicDir = k; renderQLogic(); }));
         if (Array.isArray(dir.qrecs) && dir.qrecs.length) {
@@ -1922,7 +2010,8 @@
         if (!testerSpec || !actionsContent) return;
         actionsContent.innerHTML = "";
         const intro = document.createElement("p"); intro.className = "ref-intro";
-        intro.textContent = "Все действия, которые ЛК инициирует во внешних системах (amoCRM, Яндекс.Диск, sms.ru) и значимые внутренние — сгруппированы по сервису; внутри группы — в порядке, в котором действия происходят по ходу пути клиента. Кнопка «Скорректировать» — отправить замечание сразу в «Корректировки ЛК».";
+        intro.textContent = "Действия ЛК во внешних системах (amoCRM, Я.Диск, sms.ru) и внутренние — по ходу пути клиента.";
+        intro.appendChild(vscInfo("<b>Как устроен раздел</b><br>Все действия, которые ЛК инициирует во внешних системах (amoCRM, Яндекс.Диск, sms.ru) и значимые внутренние — сгруппированы по сервису; внутри группы — в порядке, в котором действия происходят по ходу пути клиента.<br><br>Кнопка «Скорректировать» — отправить замечание сразу в «Корректировки ЛК»."));
         actionsContent.appendChild(intro);
         if (Array.isArray(testerSpec.actionRecs) && testerSpec.actionRecs.length) {
           actionsContent.appendChild(recBlock("Действия", testerSpec.actionRecs, () => "Раздел: Действия\nБлок: Рекомендации"));
@@ -1962,7 +2051,8 @@
         if (!testerSpec || !uploadsContent) return;
         uploadsContent.innerHTML = "";
         const intro = document.createElement("p"); intro.className = "ref-intro";
-        intro.textContent = "Все области загрузки документов клиентского ЛК: на каком этапе и при каких условиях появляются, что в составе, когда плашка меняет цвет с красной на зелёную, когда область можно закрыть полностью, и нюансы. Кнопка «Скорректировать» — замечание сразу в «Корректировки ЛК» с контекстом области. Данные — из той же актуальной логики ЛК.";
+        intro.textContent = "Все области загрузки документов ЛК: когда появляются, состав и цвет плашки.";
+        intro.appendChild(vscInfo("<b>Как устроен раздел</b><br>По каждой области: на каком этапе и при каких условиях появляется, что в составе, когда плашка меняет цвет с красной на зелёную, когда область можно закрыть полностью, и нюансы.<br><br>Кнопка «Скорректировать» — замечание сразу в «Корректировки ЛК» с контекстом области. Данные — из той же актуальной логики ЛК."));
         uploadsContent.appendChild(intro);
         if (Array.isArray(testerSpec.uploadRecs) && testerSpec.uploadRecs.length) {
           uploadsContent.appendChild(recBlock("Области загрузки", testerSpec.uploadRecs, () => "Раздел: Области загрузки\nБлок: Рекомендации"));
@@ -1995,13 +2085,15 @@
         const spec = testerSpec;
         screensContent.innerHTML = "";
         const intro = document.createElement("p"); intro.className = "ref-intro";
-        intro.innerHTML = "Что видит клиент на каждом из 8 этапов ЛК, как при этом окрашена точка этапа, и какие валидации/сообщения об ошибках он встречает. Кнопка «Скорректировать» — замечание сразу в «Корректировки ЛК». Данные — из актуальной логики ЛК.<br>Экран <b>входа и идентификации</b> (вход по SMS / Face ID; для незнакомого номера — вопрос про обращение в Telegram / WhatsApp / Instagram и привязка к контакту) описан в разделе «Действия» и в «Инструкции по админке».";
+        intro.textContent = "Экраны клиента на каждом из 8 этапов, цвет точки этапа и валидации.";
+        intro.appendChild(vscInfo("<b>Как устроен раздел</b><br>Что видит клиент на каждом из 8 этапов ЛК, как при этом окрашена точка этапа, и какие валидации/сообщения об ошибках он встречает. Кнопка «Скорректировать» — замечание сразу в «Корректировки ЛК». Данные — из актуальной логики ЛК.<br><br>Экран <b>входа и идентификации</b> (вход по SMS / Face ID; для незнакомого номера — вопрос про обращение в Telegram / WhatsApp / Instagram и привязка к контакту) описан в разделе «Действия» и в «Инструкции по админке»."));
         screensContent.appendChild(intro);
         if (Array.isArray(spec.screensRecs) && spec.screensRecs.length) {
           screensContent.appendChild(recBlock("Экраны клиента", spec.screensRecs, () => "Раздел: Экраны клиента\nБлок: Рекомендации"));
         }
-        if (spec.dotRule) { const n = document.createElement("div"); n.className = "ref-note"; n.textContent = spec.dotRule; screensContent.appendChild(n); }
-        const h1 = document.createElement("div"); h1.className = "ref-sec-h"; h1.textContent = "Экраны по этапам"; screensContent.appendChild(h1);
+        const h1 = document.createElement("div"); h1.className = "ref-sec-h"; h1.textContent = "Экраны по этапам";
+        if (spec.dotRule) h1.appendChild(vscInfo("<b>Правило цвета точки этапа</b><br>" + escapeHtml(spec.dotRule)));
+        screensContent.appendChild(h1);
         (spec.screens || []).forEach((s) => {
           const cond = refField("Что видит клиент", s.sees) + refField("Цвет точки этапа", s.dot);
           const ctx = "Раздел: Экраны клиента\nЭтап: " + s.title + "\n" + ctxField("Что видит клиент", s.sees) + "\n" + ctxField("Цвет точки", s.dot);
@@ -2030,7 +2122,8 @@
         const spec = testerSpec;
         applicantsContent.innerHTML = "";
         const intro = document.createElement("p"); intro.className = "ref-intro";
-        intro.textContent = "Как устроена работа с несколькими заявителями в одной сделке: пакеты, добавление и правка заявителей, предварительные заявители (паспорта до опросника) и их слияние, папки и проверка дублей ФИО. Кнопка «Скорректировать» — замечание сразу в «Корректировки ЛК».";
+        intro.textContent = "Несколько заявителей в одной сделке: пакеты, пред-заявители, слияние, дубли.";
+        intro.appendChild(vscInfo("<b>Как устроен раздел</b><br>Как устроена работа с несколькими заявителями в одной сделке: пакеты, добавление и правка заявителей, предварительные заявители (паспорта до опросника) и их слияние, папки и проверка дублей ФИО.<br><br>Кнопка «Скорректировать» — замечание сразу в «Корректировки ЛК»."));
         applicantsContent.appendChild(intro);
         if (Array.isArray(spec.applicantsRecs) && spec.applicantsRecs.length) {
           applicantsContent.appendChild(recBlock("Заявители", spec.applicantsRecs, () => "Раздел: Заявители\nБлок: Рекомендации"));
@@ -5231,7 +5324,8 @@
         const spec = testerSpec, dir = spec.directions[testerDir];
         testerContent.innerHTML = "";
         const intro = document.createElement("p"); intro.className = "tst-intro";
-        intro.textContent = "Выберите направление, этап и параметры клиента — ниже сразу появится, что увидит клиент: какие документы обязательны (красным) и необязательны (синим), когда они появляются, плюс внутренняя логика (что незаметно клиенту). Данные тянутся из актуальной логики ЛК.";
+        intro.textContent = "Выберите направление, этап и параметры клиента — ниже сразу видно, что увидит клиент.";
+        intro.appendChild(vscInfo("<b>Как пользоваться</b><br>Выберите направление, этап и параметры клиента — ниже сразу появится, что увидит клиент: какие документы обязательны (красным) и необязательны (синим), когда они появляются, плюс внутренняя логика (что незаметно клиенту).<br><br>Данные тянутся из актуальной логики ЛК — раздел не может «отстать» от кода."));
         testerContent.appendChild(intro);
         if (Array.isArray(spec.contentious) && spec.contentious.length) {
           testerContent.appendChild(recBlock("Тестировщик ЛК", spec.contentious, () => testerContextText("Блок «Рекомендации»")));
@@ -6311,6 +6405,7 @@
         const title = document.createElement("div");
         title.className = "auth-chart-title";
         title.textContent = "Новые авторизации в ЛК";
+        title.appendChild(vscInfo("<b>Режимы</b><br>«По неделям» — все календарные недели (пн–вс) с начала отслеживания. «Последние 30 дней» — скользящее окно по дням: выходные подсвечены розовым, оранжевый столбец — сегодня.<br><br>Столбец — число новых авторизаций в ЛК за день/неделю."));
         card.appendChild(title);
 
         // Переключатель: по неделям (вся история) / последние 30 дней (по дням).
@@ -6337,8 +6432,8 @@
         const sub = document.createElement("div");
         sub.className = "auth-chart-sub";
         sub.textContent = days.length
-          ? ("Скользящее окно последних 30 дней · " + isoToRu(days[0].date) + " — " + isoToRu(days[days.length - 1].date))
-          : "Скользящее окно последних 30 дней";
+          ? (isoToRu(days[0].date) + " — " + isoToRu(days[days.length - 1].date))
+          : "Последние 30 дней";
         card.appendChild(sub);
 
         if (!days.length) {
@@ -6399,7 +6494,7 @@
         const sub = document.createElement("div");
         sub.className = "auth-chart-sub";
         sub.textContent = weeks.length
-          ? ("Все недели 2026 (пн–вс), с начала отслеживания · " + isoToRu(weeks[0].weekStart) + " — " + isoToRu(weeks[weeks.length - 1].weekEnd))
+          ? (isoToRu(weeks[0].weekStart) + " — " + isoToRu(weeks[weeks.length - 1].weekEnd))
           : "Все недели 2026 (пн–вс), с начала отслеживания";
         card.appendChild(sub);
 
@@ -6509,14 +6604,8 @@
         title.textContent = "Конверсия авторизаций по оплаченным сделкам";
 
         const startDate = (paidConv && paidConv.startDate) || "22.05.2026";
-        const sub = document.createElement("div");
-        sub.className = "paid-conv-sub";
-        sub.innerHTML =
-          'Сделки в amoCRM с «Дата оплаты» от <strong>' + escapeHtml(startDate) + '</strong> ' +
-          'и подходящим значением «Страна оформления/услуга» (32 страны Шенгена + Япония). ' +
-          'Конверсия = % сделок, у которых телефон контакта авторизовался в ЛК.';
+        title.appendChild(vscInfo("<b>Как считается</b><br>Сделки в amoCRM с «Дата оплаты» от <b>" + escapeHtml(startDate) + "</b> и подходящим значением «Страна оформления/услуга» (32 страны Шенгена + Япония).<br><br>Конверсия = % сделок, у которых телефон контакта авторизовался в ЛК."));
         box.appendChild(title);
-        box.appendChild(sub);
 
         if (paidConv && paidConv.error) {
           const err = document.createElement("div");
@@ -6776,10 +6865,10 @@
 
         const summary = document.createElement("div");
         summary.style.cssText = "background:#faf9fc;border:1px solid #ece9f2;border-radius:14px;padding:14px 18px;margin-bottom:16px;font-size:13.5px;color:#3a3f4d;line-height:1.55;";
-        let sHtml = '<div style="font-size:14px;color:#1d2330;margin-bottom:6px;"><strong>Учтено регистраций: ' + (totals.tracked || 0) + '</strong>'
+        summary.innerHTML = '<div style="font-size:14px;color:#1d2330;"><strong>Учтено регистраций: ' + (totals.tracked || 0) + '</strong>'
           + (totals.noLead ? ' · без активной сделки: ' + totals.noLead : '') + '</div>';
-        sHtml += '<div style="color:#9096a3;margin-top:6px;">Учёт ведётся с <b>' + escapeHtml(data.startDate || "") + '</b>. Данные фиксируются строго <b>в момент первого входа клиента в ЛК</b> и далее не меняются — даже если статус/ответственный в amoCRM потом изменятся. По регистрациям до этой даты исторических данных нет (восстановить статус «на момент входа» нельзя), поэтому они здесь не показываются. «Ответственный» — поле «Ответственный»/«Кто принял клиента», иначе ответственный по сделке.</div>';
-        summary.innerHTML = sHtml;
+        const sHead = summary.firstElementChild;
+        if (sHead) sHead.appendChild(vscInfo('<b>Как ведётся учёт</b><br>Учёт с <b>' + escapeHtml(data.startDate || "") + '</b>. Данные фиксируются строго <b>в момент первого входа клиента в ЛК</b> и далее не меняются — даже если статус/ответственный в amoCRM потом изменятся.<br><br>По регистрациям до этой даты исторических данных нет (восстановить статус «на момент входа» нельзя), поэтому они здесь не показываются. «Ответственный» — поле «Ответственный»/«Кто принял клиента», иначе ответственный по сделке.'));
         wrap.appendChild(summary);
 
         const grid = document.createElement("div");
