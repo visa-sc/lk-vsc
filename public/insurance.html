@@ -56,6 +56,11 @@
   .risk .rsub { display: block; font-size: 11.5px; color: var(--ink3); font-weight: 500; margin-top: 1px; }
   .risk .rprice { margin-left: auto; font-size: 14px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .risk .rprice.tbd { color: #c47f2e; font-weight: 600; font-size: 12px; }
+  .subseg { margin: 2px 2px 2px; padding: 8px 10px; background: #f6f7f9; border: 1px solid #ececef; border-radius: 12px; }
+  .subcap { font-size: 11px; color: var(--ink3); font-weight: 600; margin: 0 2px 7px; letter-spacing: -.01em; }
+  .seg-sub { background: #ececef; }
+  .seg-sub button .op { font-weight: 600; color: var(--ink3); font-size: 12px; }
+  .seg-sub button.on .op { color: var(--green-d); }
 
   .receipt { margin-top: 22px; border-top: 1px dashed #e2e2e7; padding-top: 16px; }
   .rline { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 14px; }
@@ -153,20 +158,24 @@
       d60: { adult: 5400, kid: 10800, senior: 10800 }
     }
   };
-  // Доп. риски. НС и ГО — зависят от продолжительности (не от возраста). Отмена — фикс (ни от чего).
-  // ⚠ Значения пока не заведены (нет в тарифах) — как только пришлют, вписать сюда числа.
+  // Доп. риски (лист «НС и ГО» + «Отмена поездки»). Прибавляются к базовому полису.
+  // НС и ГО — зависят только от продолжительности; Отмена — выбор страховой суммы (не от срока/возраста).
   var RISKS = [
-    { key: "ns",     name: "Несчастный случай (НС)",        sub: "зависит от продолжительности", by: "dur",
-      tariff: { d15: null, d30: null, d45: null, d60: null } },
-    { key: "go",     name: "Гражданская ответственность (ГО)", sub: "зависит от продолжительности", by: "dur",
-      tariff: { d15: null, d30: null, d45: null, d60: null } },
-    { key: "cancel", name: "Отмена поездки",                sub: "фиксированная стоимость", by: "flat",
-      tariff: null }
+    { key: "ns", name: "Несчастный случай (НС)", sub: "покрытие 1 000 € · по сроку поездки", by: "dur",
+      tariff: { d15: 100, d30: 200, d45: 300, d60: 400 } },
+    { key: "go", name: "Гражданская ответственность (ГО)", sub: "покрытие 10 000 € · по сроку поездки", by: "dur",
+      tariff: { d15: 150, d30: 250, d45: 350, d60: 450 } },
+    { key: "cancel", name: "Отмена поездки", sub: "на выбор страховая сумма", by: "opt",
+      options: [ { k: "s150", label: "150 €", price: 2100 }, { k: "s200", label: "200 €", price: 2850 } ] }
   ];
 
-  var st = { age: "adult", dur: "d15", act: "standard", ns: false, go: false, cancel: false };
+  var st = { age: "adult", dur: "d15", act: "standard", ns: false, go: false, cancel: false, cancelSum: "s150" };
 
-  function riskPrice(r){ return r.by === "flat" ? r.tariff : (r.tariff ? r.tariff[st.dur] : null); }
+  function cancelOpt(r){ return r.options.filter(function(x){ return x.k === st.cancelSum; })[0] || r.options[0]; }
+  function riskPrice(r){
+    if (r.by === "opt") { var o = cancelOpt(r); return o ? o.price : null; }
+    return r.by === "flat" ? r.tariff : (r.tariff ? r.tariff[st.dur] : null);
+  }
 
   // ── Отрисовка сегментов и чекбоксов ──
   function buildSeg(host, items, stKey){
@@ -196,6 +205,23 @@
         priceHtml;
       row.querySelector("input").addEventListener("change", function(e){ st[r.key] = e.target.checked; buildRisks(); compute(); });
       host.appendChild(row);
+      // Подвыбор страховой суммы (для «Отмена поездки») — показывается, когда риск включён.
+      if (r.by === "opt" && on) {
+        var subw = document.createElement("div");
+        subw.className = "subseg";
+        subw.innerHTML = '<div class="subcap">Страховая сумма по отмене поездки</div>';
+        var seg = document.createElement("div"); seg.className = "seg seg-sub";
+        r.options.forEach(function(o){
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = (st.cancelSum === o.k ? "on" : "");
+          b.innerHTML = o.label + ' <span class="op">· ' + ru0(o.price) + ' ₽</span>';
+          b.addEventListener("click", function(){ st.cancelSum = o.k; buildRisks(); compute(); });
+          seg.appendChild(b);
+        });
+        subw.appendChild(seg);
+        host.appendChild(subw);
+      }
     });
   }
 
@@ -206,9 +232,10 @@
     var total = base, anyTbd = false, tbdNames = [];
     RISKS.forEach(function(r){
       if (!st[r.key]) return;
-      var p = riskPrice(r);
-      if (p == null) { anyTbd = true; tbdNames.push(r.name); rows.push({ t: r.name, v: null, tbd: true }); }
-      else { total += p; rows.push({ t: r.name, v: p, tbd: false }); }
+      var p = riskPrice(r), label = r.name;
+      if (r.by === "opt") { var o = cancelOpt(r); if (o) label += " (" + o.label + ")"; }
+      if (p == null) { anyTbd = true; tbdNames.push(r.name); rows.push({ t: label, v: null, tbd: true }); }
+      else { total += p; rows.push({ t: label, v: p, tbd: false }); }
     });
     var rc = $("receipt"); rc.innerHTML = "";
     rows.forEach(function(x){
@@ -245,7 +272,7 @@
       + '<br><br><b>Логика тарифов АБСОЛЮТ</b><br>'
       + '• Цена базового полиса зависит от возраста и продолжительности.<br>'
       + '• «Активный отдых» и «Спорт» — это целая (другая) стоимость полиса вместо стандартной.<br>'
-      + '• НС и ГО зависят только от продолжительности, «Отмена поездки» — фиксированная. От возраста эти три риска не зависят.';
+      + '• НС (покрытие 1 000 €) и ГО (покрытие 10 000 €) зависят только от продолжительности; «Отмена поездки» — на выбор страховая сумма 150 € или 200 €. От возраста эти три риска не зависят.';
     function place(){
       if (pop.parentNode !== document.body) document.body.appendChild(pop);
       pop.classList.add("show");
