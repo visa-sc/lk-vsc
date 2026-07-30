@@ -3748,7 +3748,7 @@
         // Карточка периода (месяц или год): 3 колонки Шенген|США|Великобритания с флагами.
         const makeCard = function (mo, labelText, periodTxt, accent) {
           const col = document.createElement("div"); col.className = "vsc-bar-col";
-          col.style.cssText = "flex:0 0 102px;background:" + (accent ? "#eef5fb" : "#f6f8fb") + ";border:1px solid " + (accent ? "#d3e3f2" : "#edf0f5") + ";border-radius:12px;padding:8px 6px 6px;box-sizing:border-box;" + (accent ? "margin-left:14px;" : "");
+          col.style.cssText = "flex:0 0 102px;background:" + (accent ? "#eef5fb" : "#f6f8fb") + ";border:1px solid " + (accent ? "#d3e3f2" : "#edf0f5") + ";border-radius:12px;padding:8px 6px 6px;box-sizing:border-box;" + (accent ? "margin-right:14px;" : "");
           const pair = document.createElement("div"); pair.style.cssText = "display:flex;gap:5px;align-items:flex-end;justify-content:center;";
           [["sch", "Шенген", "🇪🇺"], ["usa", "США", "🇺🇸"], ["uk", "Великобритания", "🇬🇧"]].forEach(function (p) {
             const key = p[0], nameRu = p[1], g = mo[key] || { den: 0 };
@@ -3781,8 +3781,8 @@
           col.appendChild(pair); col.appendChild(xl);
           return col;
         };
-        yms.forEach(function (ym) { bars.appendChild(makeCard(d.months[ym], MON3[+ym.slice(5, 7) - 1], ym, false)); });
-        // Общегодовая карточка — в конце, с отступом и акцентной подложкой.
+        // Общегодовая карточка — В НАЧАЛЕ (просьба Андрея 30.07), с отступом и
+        // акцентной подложкой; за ней — месяцы по порядку.
         const tot = {};
         ["sch", "usa", "uk"].forEach(function (k) {
           let den = 0, num = 0, ret = 0;
@@ -3791,6 +3791,7 @@
           tot[k] = { den: den, num: num, ret: ret, wait: wait, pct: P(num), retPct: P(ret), waitPct: P(wait) };
         });
         bars.appendChild(makeCard(tot, (d.year || 2026) + " год", "весь " + (d.year || 2026), true));
+        yms.forEach(function (ym) { bars.appendChild(makeCard(d.months[ym], MON3[+ym.slice(5, 7) - 1], ym, false)); });
         box.appendChild(bars);
       }
       // Прежний вид (откат: VSC_SCHENGEN_VIEW = "combined"): один столбец = общий %.
