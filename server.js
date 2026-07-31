@@ -4553,12 +4553,9 @@ app.get("/calc", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "calc.html"));
 });
 
-// ── ПУБЛИЧНЫЙ калькулятор страхования АБСОЛЮТ (voyotravel.ru/insurance) ──
-// Статичный расчёт по тарифам (данные — внутри insurance.html), сервер только отдаёт страницу.
-app.get("/insurance", (req, res) => {
-  res.set("Cache-Control", "no-store");
-  res.sendFile(path.join(__dirname, "public", "insurance.html"));
-});
+// ── Калькулятор страхования АБСОЛЮТ объединён с /calc (переключатель на странице).
+// Старая ссылка /insurance (ушла Насте в письмах) продолжает работать через редирект.
+app.get("/insurance", (req, res) => res.redirect(302, "/calc#insurance"));
 
 // ── /amocrm_copy — страница-слепок amoCRM (обособленный модуль amocopy.js).
 // Данные — из полного экспорта (.amocopy/, только прод), API — за requireVscAccess.
