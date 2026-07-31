@@ -109,6 +109,11 @@
   .seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 4px; background: #ececef; border-radius: 14px; padding: 4px; }
   .seg button { min-width: 0; padding: 9px 10px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 13.5px; border: none; background: transparent; color: var(--ink2); font-family: inherit; letter-spacing: -.01em; transition: background .18s ease, color .18s ease, box-shadow .18s ease; }
   .seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 1px 1px rgba(0,0,0,.04); font-weight: 680; }
+  /* На узких экранах 4 срока не влезают в строку: фиксируем 3 колонки, а «46–60 дней» — по центру второй строки. */
+  @media (max-width: 480px) {
+    #segDur { grid-template-columns: repeat(3, 1fr); }
+    #segDur button:nth-child(4) { grid-column: 2; }
+  }
   .risks { display: grid; gap: 8px; }
   .risk { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #e6e6ea; border-radius: 14px; background: #fafafc; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
   .risk:hover { border-color: #d0d0d6; }
