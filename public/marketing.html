@@ -203,6 +203,9 @@
         <button class="add-btn" data-sec="done">+ Запись в архив</button>
       </div>
     </div>
+    <div style="text-align:center;margin-top:26px;">
+      <button id="logoutBtn" type="button" style="border:1px solid #cfd8e3;background:#fff;color:#6b7280;border-radius:10px;padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Выйти</button>
+    </div>
   </div>
 </div>
 <div id="saveStat">Сохранено</div>
@@ -634,6 +637,11 @@
     $("#modal").style.display = "none"; save(); render();
   });
 
+  // Выход: чистим токен (Face ID-флаги не трогаем — passkey остаётся для быстрого входа).
+  $("#logoutBtn").addEventListener("click", function () {
+    token = null; try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
+    showLogin();
+  });
   // Как /vsc: без сессии — форма + авто-Face ID (если passkey есть на устройстве).
   if (token) load(); else { showLogin(); if (!mgrMode) tryAutoBioOnLoad(); }
 })();
