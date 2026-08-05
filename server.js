@@ -1371,7 +1371,9 @@ function requireMktPlan(req, res, next) {
   if (s && (s.role === "admin" || (s.vscRestrict && Array.isArray(s.vscRestrict.tabs) && s.vscRestrict.tabs.indexOf("marketing") >= 0))) { req.staff = s; return next(); }
   return res.status(401).json({ success: false, message: "Нет доступа" });
 }
-app.get("/admin/api/vsc/marketing-plan", requireMktPlan, (req, res) => res.json({ success: true, data: loadMktPlan() }));
+// role в ответе: клиент /marketing различает админа и руководителя (у руководителя
+// смена статуса не отправляет задачу в архив, а вешает шильдик «на проверке»).
+app.get("/admin/api/vsc/marketing-plan", requireMktPlan, (req, res) => res.json({ success: true, data: loadMktPlan(), role: (req.staff && req.staff.role) || "admin" }));
 app.post("/admin/api/vsc/marketing-plan", requireMktPlan, (req, res) => {
   const d = req.body && req.body.data;
   if (!d || !Array.isArray(d.tasks) || !Array.isArray(d.channels)) return res.status(400).json({ success: false, message: "bad data" });
