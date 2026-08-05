@@ -1389,6 +1389,28 @@ app.post("/admin/api/vsc/marketing-plan", requireMktPlan, (req, res) => {
   try { fs.writeFileSync(VSC_MKTPLAN_FILE, JSON.stringify(_mktPlan, null, 2), "utf8"); } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
   return res.json({ success: true });
 });
+// ── /planerka — планёрка с управляющей (перенос списка из заметки календаря, 05.08.2026) ──
+// Standalone-страница по образцу /marketing. Доступ СТРОГО админ (список содержит
+// деликатные темы — ФОТ и пр.), никаких vscRestrict-гейтов. Хранилище: .vscPlanerka.json
+// { themes: [..], tasks: [{id, section: open|done, theme, text, prio, status: done|partial|drop,
+//   resolution, createdAt, updatedAt}] }.
+app.get("/planerka", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "planerka.html")); });
+const VSC_PLANERKA_FILE = path.join(__dirname, ".vscPlanerka.json");
+let _planerka = null;
+function loadPlanerka() {
+  if (_planerka) return _planerka;
+  try { _planerka = JSON.parse(fs.readFileSync(VSC_PLANERKA_FILE, "utf8")); } catch (_) { _planerka = { themes: [], tasks: [] }; }
+  return _planerka;
+}
+app.get("/admin/api/vsc/planerka", requireAdmin, (req, res) => res.json({ success: true, data: loadPlanerka() }));
+app.post("/admin/api/vsc/planerka", requireAdmin, (req, res) => {
+  const d = req.body && req.body.data;
+  if (!d || !Array.isArray(d.tasks) || !Array.isArray(d.themes)) return res.status(400).json({ success: false, message: "bad data" });
+  if (JSON.stringify(d).length > 2_000_000) return res.status(413).json({ success: false, message: "too big" });
+  _planerka = { themes: d.themes.map(String).slice(0, 100), tasks: d.tasks.slice(0, 5000) };
+  try { fs.writeFileSync(VSC_PLANERKA_FILE, JSON.stringify(_planerka, null, 2), "utf8"); } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
+  return res.json({ success: true });
+});
 // Пилот сканера паспорта /scanner (MRZ + OCR ПОЛНОСТЬЮ в браузере — на сервер фото
 // не загружается, серверной логики нет). «Помощник с проверкой», не интегрирован.
 app.get("/scanner", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "scanner.html")); });

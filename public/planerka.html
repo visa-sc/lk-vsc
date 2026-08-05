@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VSC планёрка</title>
+<link rel="apple-touch-icon" href="/planerka-logo.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/planerka-logo.png">
+<link rel="icon" type="image/png" href="/planerka-logo.png">
+<style>
+  /* Стиль — в духе /vsc (Apple-скин), по образцу /marketing: мягкий градиентный фон,
+     белые карточки, крупные скругления, системный шрифт. Никаких сетевых шрифтов. */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1d2433; background: #f4f6fa; min-height: 100vh;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1;
+    background:
+      radial-gradient(1100px 520px at 12% -8%, rgba(0, 190, 240, .14), transparent 60%),
+      radial-gradient(900px 480px at 105% 12%, rgba(18, 58, 120, .10), transparent 55%),
+      linear-gradient(180deg, #f7f9fc 0%, #eef2f8 100%);
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 18px 16px 60px; }
+  .brand { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 6px 0 18px; }
+  .vsc-wm { display: flex; align-items: center; gap: 11px; font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; font-weight: 800; font-size: 34px; line-height: 1; }
+  .vsc-wm i { width: 2px; height: 19px; border-radius: 2px; background: linear-gradient(180deg, #00bff0, #0088c2); opacity: .5; }
+  .vsc-wm b { font-weight: 800; color: #0097ca; background: linear-gradient(135deg, #00c8f2 0%, #0097ca 52%, #123a78 130%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .card { background: rgba(255, 255, 255, .92); border: 1px solid rgba(20, 32, 64, .07); border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(20, 32, 64, .06); }
+  /* ── Вход — ТОЧНО как на /vsc и /marketing (login-card из admin.html) ── */
+  body.login-mode { display: flex; flex-direction: column; justify-content: center; min-height: 100vh; }
+  body.login-mode .wrap { padding-bottom: 18px; }
+  body.login-mode .brand { justify-content: center; margin-bottom: 14px; }
+  #login {
+    width: 100%; max-width: 420px; margin: 0 auto;
+    background: #fff; border: 1px solid #ece7f2; border-radius: 22px; padding: 22px;
+    box-shadow: 0 10px 30px rgba(34, 36, 52, .05); text-align: center;
+  }
+  #login .sub2 { margin: 0 0 18px; font-size: 13px; font-weight: 400; color: #9096a3; }
+  .login-form-inner { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+  .login-input {
+    width: 100%; height: 52px; border: 1px solid #ebe6f1; border-radius: 14px; padding: 0 16px;
+    font-size: 16px; font-weight: 400; outline: none; font-family: inherit; color: #1f2532;
+    background: #fff; text-align: center; box-sizing: border-box;
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  .login-input[type="password"]:not(:placeholder-shown) { letter-spacing: .18em; font-size: 22px; }
+  .login-input::placeholder { color: #9a9faa; letter-spacing: normal; font-weight: 400; }
+  .login-input:focus { border-color: #3589BD; box-shadow: 0 0 0 3px rgba(53, 137, 189, .15); }
+  .login-btn {
+    width: 100%; height: 44px; border: 1.5px solid #3589BD; border-radius: 12px; background: #fff;
+    color: #3589BD; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+    transition: background .2s ease;
+  }
+  .login-btn:hover { background: #f0f7fc; }
+  #loginErr { color: #b0263a; font-size: 13.5px; min-height: 18px; margin-top: 10px; }
+  .bio-btn {
+    width: 100%; height: 48px; margin: 10px 0 0; border: 1.5px solid #3589BD; background: #fff;
+    color: #3589BD; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer;
+    font-family: inherit; display: none; align-items: center; justify-content: center; gap: 8px;
+    transition: background .2s ease;
+  }
+  .bio-btn.show { display: flex; }
+  .bio-btn:hover:not(:disabled) { background: #f0f7fc; }
+  .bio-btn:disabled { opacity: .6; cursor: progress; }
+  .bio-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+  .bio-offer { display: none; margin-top: 14px; padding: 16px; background: #f0f7fc; border: 1px solid #d3e7f4; border-radius: 14px; text-align: left; }
+  .bio-offer.show { display: block; }
+  .bio-offer h3 { margin: 0 0 6px; font-size: 15px; color: #2f6e95; }
+  .bio-offer p { margin: 0 0 12px; font-size: 13px; color: #4a5260; line-height: 1.4; }
+  .bio-offer-actions { display: flex; gap: 10px; }
+  .bio-offer-actions button { flex: 1; height: 38px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .bio-skip { border: 1.5px solid #d3d2da; background: #fff; color: #4a5260; }
+  .bio-enable { border: 0; background: #3589BD; color: #fff; }
+  .bio-offer-actions button:disabled { opacity: .6; cursor: progress; }
+  /* Фильтры тем — одна скролл-строка */
+  .chan-bar { display: flex; gap: 8px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 0 14px; padding-bottom: 5px; }
+  .chan-bar::-webkit-scrollbar { height: 5px; }
+  .chan-bar::-webkit-scrollbar-thumb { background: #d3d8e0; border-radius: 3px; }
+  .chan-pill { flex: 0 0 auto; border: 1px solid #cfd8e3; background: #fff; color: #33415a; border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; user-select: none; }
+  .chan-pill.active { color: #fff; border-color: transparent; }
+  .sec-h { display: flex; align-items: baseline; gap: 10px; margin: 2px 2px 12px; }
+  .sec-h b { font-size: 16.5px; color: #1d2330; }
+  .task {
+    border: 1px solid #edf0f5; border-left: 5px solid #c9cfda; border-radius: 12px;
+    padding: 10px 12px; margin-bottom: 10px; background: #fff; position: relative;
+  }
+  .task.done    { border-left-color: #3f9e63; background: #f2faf5; }
+  .task.partial { border-left-color: #e3b53a; background: #fdf9ec; }
+  .task.drop    { border-left-color: #9aa0ab; background: #f5f6f8; }
+  .task.prio    { border-left-color: #d2685f; }
+  .task.prio .txt::before { content: "❗️ "; }
+  .task .txt { font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; padding-right: 24px; }
+  .task .meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .task .tag { font-size: 11px; font-weight: 700; color: #fff; border-radius: 999px; padding: 3px 10px; }
+  .st-btn { border: 1px solid rgba(20, 32, 64, .12); background: #fff; border-radius: 999px; font-size: 11.5px; font-weight: 700; padding: 3px 10px; cursor: pointer; font-family: inherit; }
+  .st-btn.done { color: #2c7a43; } .st-btn.partial { color: #a8820a; } .st-btn.drop { color: #6b7280; }
+  .cnt-badge { display: inline-block; min-width: 22px; text-align: center; background: #eef2f8; color: #33415a; border-radius: 999px; font-size: 12px; font-weight: 700; padding: 2px 8px; }
+  .cnt-badge.blue { background: #0097ca; color: #fff; }
+  .sec-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+  .card.sec-open { background: linear-gradient(180deg, #f5fafd 0%, #eef6fb 100%); border-color: #cfe4f2; box-shadow: 0 10px 30px rgba(0, 130, 190, .08); }
+  .card.sec-open .task { border-color: #e2edf5; }
+  .grp-h { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; color: #5a626f; margin: 14px 2px 8px; }
+  .grp-h:first-child { margin-top: 2px; }
+  .grp-h i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+  .grp-h .n { color: #9aa0ab; font-weight: 600; }
+  .st-grp-h { font-size: 13px; font-weight: 800; margin: 18px 2px 10px; }
+  .st-grp-h.done { color: #2c7a43; } .st-grp-h.partial { color: #a8820a; } .st-grp-h.drop { color: #6b7280; } .st-grp-h.none { color: #5a626f; }
+  .st-pick { display: flex; gap: 4px; }
+  .st-pick button { border: 1px solid rgba(20, 32, 64, .12); background: #fff; border-radius: 999px; font-size: 10.5px; font-weight: 700; padding: 3px 8px; cursor: pointer; font-family: inherit; }
+  .st-pick .p-done { color: #2c7a43; } .st-pick .p-partial { color: #a8820a; } .st-pick .p-drop { color: #6b7280; }
+  .st-pick button:hover { background: #f0f4f9; }
+  .task .date { font-size: 10.5px; color: #9aa0ab; white-space: nowrap; }
+  .task .resol { font-size: 12px; color: #5a626f; background: rgba(63, 158, 99, .08); border-radius: 8px; padding: 5px 8px; margin-top: 7px; line-height: 1.4; }
+  .task .resol b { color: #2c7a43; font-weight: 700; }
+  .a-resol { border: 1px solid rgba(20, 32, 64, .12); background: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; color: #2c7a43; padding: 3px 9px; cursor: pointer; font-family: inherit; }
+  .a-prio { border: 1px solid rgba(20, 32, 64, .12); background: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; color: #b0263a; padding: 3px 9px; cursor: pointer; font-family: inherit; opacity: .55; }
+  .a-prio.on { opacity: 1; background: #fdf1f0; border-color: #eecfcb; }
+  .task .acts { display: flex; gap: 4px; margin-left: auto; }
+  .task .acts button { border: 0; background: transparent; color: #9aa0ab; font-size: 14px; cursor: pointer; padding: 3px 5px; border-radius: 7px; font-family: inherit; }
+  .task .acts button:hover { background: #eef2f8; color: #33415a; }
+  .a-back2 { border: 1px solid rgba(20, 32, 64, .12); background: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; color: #6b7280; padding: 3px 9px; cursor: pointer; font-family: inherit; }
+  .add-btn { width: 100%; border: 1px dashed #b7c0cd; background: #f8fafc; color: #4a5568; border-radius: 12px; padding: 11px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; margin-top: 2px; }
+  .empty { color: #9aa0ab; font-size: 13.5px; padding: 10px 4px; }
+  #saveStat { position: fixed; right: 14px; bottom: 12px; font-size: 12px; color: #8a90a0; background: rgba(255,255,255,.9); padding: 5px 11px; border-radius: 999px; border: 1px solid rgba(20,32,64,.08); opacity: 0; transition: opacity .25s; }
+  #modal { position: fixed; inset: 0; background: rgba(20, 28, 46, .45); display: none; align-items: flex-start; justify-content: center; padding: 10vh 14px 0; z-index: 50; }
+  #modal .m { background: #fff; border-radius: 16px; padding: 18px; width: 100%; max-width: 520px; }
+  #modal h3 { margin: 0 0 12px; font-size: 16px; }
+  #modal textarea { width: 100%; min-height: 90px; font-family: inherit; font-size: 14.5px; padding: 10px 12px; border: 1px solid rgba(20, 32, 64, .14); border-radius: 10px; resize: vertical; }
+  #modal .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+  #modal select, #modal input[type=text] { font-family: inherit; font-size: 14px; padding: 9px 10px; border: 1px solid rgba(20, 32, 64, .14); border-radius: 10px; }
+  #modal .btns { display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; }
+  #modal .btns button { font-family: inherit; font-size: 14px; font-weight: 700; border-radius: 10px; padding: 10px 18px; cursor: pointer; border: 1px solid #cfd8e3; background: #fff; color: #33415a; }
+  #modal .btns .pri { background: #0097ca; color: #fff; border-color: #0097ca; }
+  .chk-row { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: #33415a; user-select: none; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand" style="flex-direction:column;align-items:center;gap:7px;">
+    <div class="vsc-wm"><b>V</b><i></i><b>S</b><i></i><b>C</b></div>
+    <div class="sub" style="padding:0;font-size:11.5px;font-weight:600;color:#8a90a0;letter-spacing:.48em;text-transform:lowercase;margin-right:-.48em;">planerka</div>
+  </div>
+
+  <div id="login" style="display:none;">
+    <div class="sub2">Введите код доступа</div>
+    <form id="codeForm" class="login-form-inner">
+      <input id="code" class="login-input" type="password" inputmode="numeric" autocomplete="off" placeholder="Код доступа">
+      <button type="submit" class="login-btn">Войти</button>
+    </form>
+    <button type="button" id="bioLoginBtn" class="bio-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 11a3 3 0 0 0-3 3v1m6-1v3a3 3 0 0 1-6 0M6 11a6 6 0 0 1 12 0v3m-9 4a3 3 0 0 0 6 0M5 8a8 8 0 0 1 14 0M5 14v1a8 8 0 0 0 .35 2.34" />
+      </svg>
+      Войти по Face ID / отпечатку
+    </button>
+    <div id="loginErr"></div>
+    <div id="bioOffer" class="bio-offer">
+      <h3>Входить по Face ID?</h3>
+      <p>Включите вход по Face ID / отпечатку — не нужно будет каждый раз вводить код на этом устройстве.</p>
+      <div class="bio-offer-actions">
+        <button type="button" id="bioSkipBtn" class="bio-skip">Не сейчас</button>
+        <button type="button" id="bioEnableBtn" class="bio-enable">Включить</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="app" style="display:none;">
+    <div class="chan-bar" id="themeBar"></div>
+    <div class="card sec-open">
+      <div class="sec-h" id="openHdr" style="cursor:pointer;user-select:none;"><b><span class="sec-dot" style="background:#0097ca;"></span><span id="openArrow">▾</span> Открытые вопросы</b><span class="cnt-badge blue" id="cnt-open"></span></div>
+      <div id="openBody">
+        <div id="list-open"></div>
+        <button class="add-btn" data-sec="open">+ Вопрос на планёрку</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <div class="sec-h" id="doneHdr" style="cursor:pointer;user-select:none;margin-bottom:0;">
+        <b><span id="doneArrow">▸</span> Решено / архив</b><span class="cnt-badge" id="cnt-done"></span>
+      </div>
+      <div id="doneBody" style="display:none;margin-top:12px;">
+        <div id="list-done"></div>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:26px;">
+      <button id="logoutBtn" type="button" style="border:1px solid #cfd8e3;background:#fff;color:#6b7280;border-radius:10px;padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Выйти</button>
+    </div>
+  </div>
+</div>
+<div id="saveStat">Сохранено</div>
+
+<div id="modal">
+  <div class="m">
+    <h3 id="mTitle">Новый вопрос</h3>
+    <textarea id="mText" placeholder="Текст вопроса / задачи…"></textarea>
+    <textarea id="mResol" placeholder="Итог / что решили (заполняется на планёрке)" style="min-height:56px;margin-top:8px;"></textarea>
+    <div class="row">
+      <label style="font-size:13px;color:#5a626f;">Тема:</label>
+      <select id="mTheme"></select>
+      <input id="mThemeNew" type="text" placeholder="или новая тема" style="flex:1;min-width:140px;">
+    </div>
+    <div class="row">
+      <label class="chk-row"><input id="mPrio" type="checkbox"> ❗️ Приоритет</label>
+      <span style="flex:1;"></span>
+      <label style="font-size:13px;color:#5a626f;">Секция:</label>
+      <select id="mSec">
+        <option value="open">Открытые вопросы</option>
+        <option value="done">Решено / архив</option>
+      </select>
+    </div>
+    <div class="btns">
+      <button id="mCancel">Отмена</button>
+      <button id="mSave" class="pri">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var TOKEN_KEY = "voyo_plk_token";
+  var token = null; try { token = localStorage.getItem(TOKEN_KEY); } catch (_) {}
+  var state = { themes: [], tasks: [] };
+  var themeFilter = null; // null = все темы
+  var TH_COLORS = ["#0097ca", "#e8843b", "#8e44ad", "#2e7d52", "#c2185b", "#5c6bc0", "#00838f", "#8d6e63", "#7cb342", "#f4511e", "#3949ab", "#d81b60", "#00897b", "#6d4c41", "#546e7a"];
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var thColor = function (name) { var i = state.themes.indexOf(name); return TH_COLORS[(i < 0 ? state.themes.length : i) % TH_COLORS.length]; };
+  var $ = function (s) { return document.querySelector(s); };
+
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ "Content-Type": "application/json" }, token ? { Authorization: "Bearer " + token } : {});
+    return fetch(path, opts).then(function (r) {
+      if (r.status === 401) { showLogin(); throw new Error("auth"); }
+      return r.json();
+    });
+  }
+  function showLogin() {
+    $("#login").style.display = ""; $("#app").style.display = "none"; document.body.classList.add("login-mode");
+    if (getBioShowCache()) applyBioBtnVisibility(true);
+  }
+  function showApp() { $("#login").style.display = "none"; $("#app").style.display = ""; document.body.classList.remove("login-mode"); }
+
+  // ── Face ID / Touch ID — 1в1 с /vsc и /marketing (те же admin-эндпоинты и ТЕ ЖЕ
+  // ключи localStorage — passkey, заведённый на /vsc, работает здесь сразу). ──
+  var BIO_SHOW_CACHE_KEY = "voyo_admin_bio_show", LOCAL_PASSKEY_KEY = "voyo_admin_local_passkey";
+  var BIO_FAST_FAIL_MS = 2000;
+  function getBioShowCache() { try { return localStorage.getItem(BIO_SHOW_CACHE_KEY) === "1"; } catch (_) { return false; } }
+  function setBioShowCache(v) { try { if (v) localStorage.setItem(BIO_SHOW_CACHE_KEY, "1"); else localStorage.removeItem(BIO_SHOW_CACHE_KEY); } catch (_) {} }
+  function hasLocalPasskeyFlag() { try { return localStorage.getItem(LOCAL_PASSKEY_KEY) === "1"; } catch (_) { return false; } }
+  function setLocalPasskeyFlag() { try { localStorage.setItem(LOCAL_PASSKEY_KEY, "1"); } catch (_) {} }
+  function clearLocalPasskeyFlag() { try { localStorage.removeItem(LOCAL_PASSKEY_KEY); } catch (_) {} }
+  function applyBioBtnVisibility(show) { $("#bioLoginBtn").classList.toggle("show", !!show); }
+  function b64uToBytes(s) {
+    var pad = (s + "=".repeat((4 - (s.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+    var bin = atob(pad); var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function bytesToB64u(buf) {
+    var arr = buf instanceof Uint8Array ? buf : new Uint8Array(buf); var bin = "";
+    for (var i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+  function isPlatformAuthAvailable() {
+    if (!window.PublicKeyCredential || typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== "function") return Promise.resolve(false);
+    return PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(function (x) { return !!x; }, function () { return false; });
+  }
+  function adminHasCredentials() {
+    return fetch("/admin/api/webauthn/has-credentials", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) return { hasCreds: false, known: false }; return r.json().then(function (d) { return { hasCreds: !!(d && d.hasCredentials), known: true }; }); })
+      .catch(function () { return { hasCreds: false, known: false }; });
+  }
+  function maybeShowBioLoginBtn() {
+    return Promise.all([isPlatformAuthAvailable(), adminHasCredentials()]).then(function (res) {
+      var platformOk = res[0], credsRes = res[1];
+      var localOk = hasLocalPasskeyFlag() || true; // passkey может быть синхронизирован iCloud
+      var eligible = platformOk && credsRes.hasCreds && localOk;
+      if (credsRes.known) { applyBioBtnVisibility(eligible); setBioShowCache(eligible); if (!credsRes.hasCreds) clearLocalPasskeyFlag(); }
+      else if (eligible) applyBioBtnVisibility(true);
+      return eligible;
+    });
+  }
+  function tryAdminBioLogin() {
+    return fetch("/admin/api/webauthn/auth-options", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(function (optsR) {
+        if (!optsR.ok) return false;
+        return optsR.json().then(function (opts) {
+          var publicKey = Object.assign({}, opts, {
+            challenge: b64uToBytes(opts.challenge),
+            allowCredentials: (opts.allowCredentials || []).map(function (c) { return Object.assign({}, c, { id: b64uToBytes(c.id) }); })
+          });
+          return navigator.credentials.get({ publicKey: publicKey }).then(function (assertion) {
+            return fetch("/admin/api/webauthn/auth-verify", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ assertionResponse: {
+                id: assertion.id, rawId: bytesToB64u(assertion.rawId), type: assertion.type,
+                response: {
+                  clientDataJSON: bytesToB64u(assertion.response.clientDataJSON),
+                  authenticatorData: bytesToB64u(assertion.response.authenticatorData),
+                  signature: bytesToB64u(assertion.response.signature),
+                  userHandle: assertion.response.userHandle ? bytesToB64u(assertion.response.userHandle) : null
+                },
+                clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {}
+              } })
+            }).then(function (verifyR) {
+              return verifyR.json().catch(function () { return {}; }).then(function (data) {
+                if (verifyR.ok && data.success && data.token) {
+                  token = data.token; try { localStorage.setItem(TOKEN_KEY, token); } catch (_) {}
+                  setBioShowCache(true); setLocalPasskeyFlag();
+                  return true;
+                }
+                return false;
+              });
+            });
+          });
+        });
+      })
+      .catch(function (err) { console.warn("bio login failed/cancelled:", err); return false; });
+  }
+  function tryAdminBioRegister() {
+    if (!token) return Promise.resolve(false);
+    return fetch("/admin/api/webauthn/register-options", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: "{}" })
+      .then(function (optsR) {
+        if (!optsR.ok) return false;
+        return optsR.json().then(function (opts) {
+          var publicKey = Object.assign({}, opts, {
+            challenge: b64uToBytes(opts.challenge),
+            user: Object.assign({}, opts.user, { id: b64uToBytes(opts.user.id) }),
+            excludeCredentials: (opts.excludeCredentials || []).map(function (c) { return Object.assign({}, c, { id: b64uToBytes(c.id) }); })
+          });
+          return navigator.credentials.create({ publicKey: publicKey }).then(function (att) {
+            return fetch("/admin/api/webauthn/register-verify", {
+              method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+              body: JSON.stringify({ attestationResponse: {
+                id: att.id, rawId: bytesToB64u(att.rawId), type: att.type,
+                response: { clientDataJSON: bytesToB64u(att.response.clientDataJSON), attestationObject: bytesToB64u(att.response.attestationObject) },
+                clientExtensionResults: att.getClientExtensionResults ? att.getClientExtensionResults() : {}
+              } })
+            }).then(function (verifyR) {
+              return verifyR.json().catch(function () { return {}; }).then(function (data) {
+                var ok = !!(verifyR.ok && data.success);
+                if (ok) { setBioShowCache(true); setLocalPasskeyFlag(); }
+                return ok;
+              });
+            });
+          });
+        });
+      })
+      .catch(function (err) { console.warn("bio register failed/cancelled:", err); return false; });
+  }
+  function tryAutoBioOnLoad() {
+    maybeShowBioLoginBtn().then(function (eligible) {
+      if (!eligible) return;
+      setTimeout(function () { tryAdminBioLogin().then(function (ok) { if (ok) load(); }); }, 120);
+    });
+  }
+  $("#bioLoginBtn").addEventListener("click", function () {
+    var btn = $("#bioLoginBtn"); btn.disabled = true;
+    var t0 = Date.now();
+    tryAdminBioLogin().then(function (ok) {
+      btn.disabled = false;
+      if (ok) { load(); return; }
+      if (Date.now() - t0 < BIO_FAST_FAIL_MS) { clearLocalPasskeyFlag(); setBioShowCache(false); applyBioBtnVisibility(false); }
+      $("#loginErr").textContent = "Не удалось войти по биометрии. Попробуйте код.";
+    });
+  });
+  $("#bioSkipBtn").addEventListener("click", function () { $("#bioOffer").classList.remove("show"); load(); });
+  $("#bioEnableBtn").addEventListener("click", function () {
+    $("#bioEnableBtn").disabled = true; $("#bioSkipBtn").disabled = true;
+    tryAdminBioRegister().then(function (ok) {
+      $("#bioEnableBtn").disabled = false; $("#bioSkipBtn").disabled = false;
+      if (!ok) alert("Не удалось подключить Face ID на этом устройстве. Можно продолжить со входом по коду.");
+      $("#bioOffer").classList.remove("show");
+      load();
+    });
+  });
+  $("#codeForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    fetch("/admin/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("#code").value.trim() }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!(j && j.token)) { $("#loginErr").textContent = (j && j.message) || "Не удалось войти"; return; }
+        token = j.token; try { localStorage.setItem(TOKEN_KEY, token); } catch (_) {}
+        Promise.all([isPlatformAuthAvailable(), adminHasCredentials()]).then(function (res) {
+          if (res[0] && res[1].known && !res[1].hasCreds) { $("#bioOffer").classList.add("show"); return; }
+          load();
+        });
+      })
+      .catch(function () { $("#loginErr").textContent = "Ошибка сети"; });
+  });
+
+  var saveTimer = null;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      api("/admin/api/vsc/planerka", { method: "POST", body: JSON.stringify({ data: state }) })
+        .then(function (j) { var el = $("#saveStat"); el.textContent = j && j.success ? "Сохранено ✓" : "Ошибка сохранения"; el.style.opacity = "1"; setTimeout(function () { el.style.opacity = "0"; }, 1500); })
+        .catch(function () {});
+    }, 400);
+  }
+
+  function load() {
+    api("/admin/api/vsc/planerka").then(function (j) {
+      state = (j && j.data) || { themes: [], tasks: [] };
+      state.themes = state.themes || []; state.tasks = state.tasks || [];
+      showApp(); render();
+    }).catch(function () {});
+  }
+
+  // Статусы решений: done «Решено», partial «Частично», drop «Не делаем».
+  var ST = { done: "Решено", partial: "Частично", drop: "Не делаем" };
+  var nextSt = { "": "done", done: "partial", partial: "drop", drop: "" };
+  var fmtDate = function (ts) {
+    if (!ts) return "";
+    var d = new Date(ts);
+    var p = function (n) { return (n < 10 ? "0" : "") + n; };
+    return p(d.getDate()) + "." + p(d.getMonth() + 1) + "." + String(d.getFullYear()).slice(2);
+  };
+  // «Открытые вопросы» сворачиваются; архив свёрнут по умолчанию
+  function collapsible(hdrId, arrowId, bodyId, storeKey, defOpen) {
+    var open = defOpen;
+    try { var v = localStorage.getItem(storeKey); if (v !== null) open = v !== "0"; } catch (_) {}
+    var apply = function () {
+      $("#" + arrowId).textContent = open ? "▾" : "▸";
+      $("#" + bodyId).style.display = open ? "" : "none";
+    };
+    $("#" + hdrId).addEventListener("click", function () {
+      open = !open;
+      try { localStorage.setItem(storeKey, open ? "1" : "0"); } catch (_) {}
+      apply(); render();
+    });
+    apply();
+    return function () { return open; };
+  }
+  var openIsOpen = collapsible("openHdr", "openArrow", "openBody", "voyo_plk_open_open", true);
+  var doneIsOpen = collapsible("doneHdr", "doneArrow", "doneBody", "voyo_plk_done_open", false);
+  // Свёрнутые группы тем/статусов: { "open|ФОТ": 1, "done|done": 1, ... }
+  var grpClosed = {};
+  try { grpClosed = JSON.parse(localStorage.getItem("voyo_plk_grp_closed") || "{}") || {}; } catch (_) {}
+  function saveGrpClosed() { try { localStorage.setItem("voyo_plk_grp_closed", JSON.stringify(grpClosed)); } catch (_) {} }
+
+  // Карточка вопроса.
+  //  • Открытые: ❗️-тогл, 3 кнопки «Решено/Частично/Не делаем» → архив (итог
+  //    дописывается через ✎ или «+ итог» в архиве).
+  //  • Архив: пилюля-цикл статуса, «+ итог», «↩ вернуть» в открытые.
+  function taskCard(t, sec) {
+    var d = document.createElement("div");
+    d.className = "task " + (t.status || "") + (t.prio && sec === "open" ? " prio" : "");
+    var stHtml;
+    if (sec === "done") {
+      stHtml = '<button class="st-btn ' + (t.status || "") + '" title="Сменить статус">' + (ST[t.status] || "Без статуса") + '</button>'
+        + (t.resolution ? "" : '<button class="a-resol" title="Записать итог">+ итог</button>')
+        + '<button class="a-back2" title="Вернуть в открытые вопросы">↩ вернуть</button>';
+    } else {
+      stHtml = '<div class="st-pick">'
+        + '<button class="p-done">Решено</button>'
+        + '<button class="p-partial">Частично</button>'
+        + '<button class="p-drop">Не делаем</button>'
+        + '</div>'
+        + '<button class="a-prio' + (t.prio ? " on" : "") + '" title="Приоритет">❗️</button>';
+    }
+    d.innerHTML = '<div class="txt">' + esc(t.text) + '</div>'
+      + (t.resolution ? '<div class="resol"><b>Итог:</b> ' + esc(t.resolution) + '</div>' : "")
+      + '<div class="meta">'
+      + (t.theme && (themeFilter || sec === "done") ? '<span class="tag" style="background:' + thColor(t.theme) + ';">' + esc(t.theme) + '</span>' : "")
+      + stHtml
+      + (t.createdAt ? '<span class="date" title="Дата постановки">' + fmtDate(t.createdAt) + '</span>' : "")
+      + '<div class="acts">'
+      + '<button class="a-edit" title="Редактировать">✎</button>'
+      + '<button class="a-del" title="Удалить">✕</button>'
+      + '</div></div>';
+    var stBtn = d.querySelector(".st-btn");
+    if (stBtn) stBtn.addEventListener("click", function () { t.status = nextSt[t.status || ""] || ""; if (!t.status) delete t.status; t.updatedAt = Date.now(); save(); render(); });
+    var pick = d.querySelector(".st-pick");
+    if (pick) {
+      var setSt = function (st) { t.status = st; t.section = "done"; t.updatedAt = Date.now(); save(); render(); };
+      pick.querySelector(".p-done").addEventListener("click", function () { setSt("done"); });
+      pick.querySelector(".p-partial").addEventListener("click", function () { setSt("partial"); });
+      pick.querySelector(".p-drop").addEventListener("click", function () { setSt("drop"); });
+    }
+    var prioBtn = d.querySelector(".a-prio");
+    if (prioBtn) prioBtn.addEventListener("click", function () { t.prio = !t.prio; if (!t.prio) delete t.prio; t.updatedAt = Date.now(); save(); render(); });
+    var resolBtn = d.querySelector(".a-resol");
+    if (resolBtn) resolBtn.addEventListener("click", function () { openModal(t, sec, true); });
+    var back = d.querySelector(".a-back2");
+    if (back) back.addEventListener("click", function () { t.section = "open"; delete t.status; t.updatedAt = Date.now(); save(); render(); });
+    d.querySelector(".a-edit").addEventListener("click", function () { openModal(t, sec); });
+    d.querySelector(".a-del").addEventListener("click", function () {
+      if (!confirm("Удалить вопрос?\n\n«" + t.text.slice(0, 80) + "»")) return;
+      state.tasks = state.tasks.filter(function (x) { return x !== t; }); save(); render();
+    });
+    return d;
+  }
+
+  function render() {
+    // темы: собрать из themes + фактических задач (на случай рассинхрона)
+    state.tasks.forEach(function (t) { if (t.theme && state.themes.indexOf(t.theme) < 0) state.themes.push(t.theme); });
+    var mk = function (label, val) {
+      var b = document.createElement("button"); b.className = "chan-pill" + ((themeFilter === val) ? " active" : ""); b.textContent = label;
+      if (themeFilter === val && val) b.style.background = thColor(val);
+      if (themeFilter === val && !val) b.style.background = "#33415a";
+      b.addEventListener("click", function () { themeFilter = (themeFilter === val) ? null : val; render(); });
+      return b;
+    };
+    var bar = $("#themeBar"); bar.innerHTML = "";
+    bar.appendChild(mk("Все темы", null));
+    state.themes.forEach(function (c) { bar.appendChild(mk(c, c)); });
+
+    // приоритетные ❗️ — первыми (стабильная сортировка внутри исходного порядка)
+    var prioFirst = function (list) {
+      return list.filter(function (t) { return t.prio; }).concat(list.filter(function (t) { return !t.prio; }));
+    };
+    ["open", "done"].forEach(function (sec) {
+      var box = $("#list-" + sec); box.innerHTML = "";
+      var list = state.tasks.filter(function (t) { return (t.section || "open") === sec && (!themeFilter || t.theme === themeFilter); });
+      var cnt = $("#cnt-" + sec); if (cnt) cnt.textContent = String(list.length);
+      if (sec === "open" && !openIsOpen()) return;
+      if (sec === "done" && !doneIsOpen()) return;
+      if (!list.length) { box.innerHTML = '<div class="empty">Пока пусто' + (themeFilter ? " по этой теме" : "") + '.</div>'; return; }
+      var mkGroup = function (label, cls, color, sub, key) {
+        var closed = !!grpClosed[key];
+        var h = document.createElement("div");
+        if (cls) { h.className = "st-grp-h " + cls; h.textContent = (closed ? "▸ " : "▾ ") + label + " · " + sub.length; }
+        else {
+          h.className = "grp-h";
+          h.innerHTML = '<i style="background:' + color + ';"></i><span class="n">' + (closed ? "▸" : "▾") + '</span> ' + esc(label) + ' <span class="n">' + sub.length + '</span>';
+        }
+        h.style.cursor = "pointer"; h.style.userSelect = "none";
+        h.addEventListener("click", function () { if (grpClosed[key]) delete grpClosed[key]; else grpClosed[key] = 1; saveGrpClosed(); render(); });
+        box.appendChild(h);
+        if (!closed) sub.forEach(function (t) { box.appendChild(taskCard(t, sec)); });
+      };
+      if (sec === "done") {
+        // Архив — группировка по статусу решения, группы сворачиваются
+        [["done", "Решено"], ["partial", "Частично"], ["drop", "Не делаем"], ["", "Без статуса"]].forEach(function (g) {
+          var sub = list.filter(function (t) { return (t.status || "") === g[0]; });
+          if (sub.length) mkGroup(g[1], g[0] || "none", null, sub, "done|" + (g[0] || "none"));
+        });
+        return;
+      }
+      // Открытые — при выбранной теме просто список (❗️ первыми), иначе группы по темам
+      if (themeFilter) { prioFirst(list).forEach(function (t) { box.appendChild(taskCard(t, sec)); }); return; }
+      state.themes.forEach(function (c) {
+        var sub = list.filter(function (t) { return t.theme === c; });
+        if (sub.length) mkGroup(c, null, thColor(c), prioFirst(sub), sec + "|" + c);
+      });
+      var noTheme = list.filter(function (t) { return !t.theme; });
+      if (noTheme.length) mkGroup("Без темы", null, "#c9cfda", prioFirst(noTheme), sec + "|__none");
+    });
+  }
+
+  // ── Модалка добавить/редактировать (resolFocus — сразу к полю «итог») ──
+  var mTask = null, mSecDef = "open";
+  function openModal(task, sec, resolFocus) {
+    mTask = task || null; mSecDef = sec || "open";
+    $("#mTitle").textContent = task ? (resolFocus ? "Итог по вопросу" : "Редактировать") : "Новый вопрос";
+    $("#mText").value = task ? task.text : "";
+    $("#mResol").value = task ? (task.resolution || "") : "";
+    $("#mPrio").checked = !!(task && task.prio);
+    var sel = $("#mTheme"); sel.innerHTML = '<option value="">— без темы —</option>';
+    state.themes.forEach(function (c) { var o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o); });
+    sel.value = task && task.theme ? task.theme : (themeFilter || "");
+    $("#mSec").value = task ? (task.section || "open") : mSecDef;
+    $("#mThemeNew").value = "";
+    $("#modal").style.display = "flex";
+    setTimeout(function () { $(resolFocus ? "#mResol" : "#mText").focus(); }, 50);
+  }
+  document.querySelectorAll(".add-btn").forEach(function (b) { b.addEventListener("click", function () { openModal(null, b.getAttribute("data-sec")); }); });
+  $("#mCancel").addEventListener("click", function () { $("#modal").style.display = "none"; });
+  $("#modal").addEventListener("click", function (e) { if (e.target === $("#modal")) $("#modal").style.display = "none"; });
+  $("#mSave").addEventListener("click", function () {
+    var text = $("#mText").value.trim(); if (!text) { $("#mText").focus(); return; }
+    var resol = $("#mResol").value.trim();
+    var theme = $("#mThemeNew").value.trim() || $("#mTheme").value || "";
+    var secSel = $("#mSec").value || mSecDef;
+    var prio = $("#mPrio").checked;
+    if (theme && state.themes.indexOf(theme) < 0) state.themes.push(theme);
+    if (mTask) {
+      mTask.text = text; mTask.theme = theme || undefined; mTask.section = secSel;
+      if (resol) mTask.resolution = resol; else delete mTask.resolution;
+      if (prio) mTask.prio = true; else delete mTask.prio;
+      mTask.updatedAt = Date.now();
+    } else {
+      state.tasks.unshift({ id: "p" + Date.now() + Math.floor(Math.random() * 1000), section: secSel, theme: theme || undefined, text: text, prio: prio || undefined, resolution: resol || undefined, createdAt: Date.now() });
+    }
+    $("#modal").style.display = "none"; save(); render();
+  });
+
+  // Выход: чистим токен (Face ID-флаги не трогаем — passkey остаётся для быстрого входа).
+  $("#logoutBtn").addEventListener("click", function () {
+    token = null; try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
+    showLogin();
+  });
+  if (token) load(); else { showLogin(); tryAutoBioOnLoad(); }
+})();
+</script>
+</body>
+</html>
