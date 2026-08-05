@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VSC marketing</title>
+<link rel="apple-touch-icon" href="/mkt-logo.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/mkt-logo.png">
+<link rel="icon" type="image/png" href="/mkt-logo.png">
 <style>
   /* Стиль — в духе /vsc (Apple-скин): мягкий градиентный фон, белые карточки,
      крупные скругления, системный шрифт. Никаких сетевых шрифтов. */
@@ -113,6 +116,9 @@
   .grp-h:first-child { margin-top: 2px; }
   .grp-h i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
   .grp-h .n { color: #9aa0ab; font-weight: 600; }
+  .grp-toggle { margin-left: auto; border: 1px solid rgba(20, 32, 64, .12); background: #fff; border-radius: 999px; font-size: 10.5px; font-weight: 700; color: #5a7a96; padding: 3px 9px; cursor: pointer; font-family: inherit; flex-shrink: 0; }
+  .grp-toggle:hover { background: #f0f4f9; }
+  #chanAction button { border: 1px solid rgba(20, 32, 64, .12); background: #fff; border-radius: 999px; font-size: 11.5px; font-weight: 700; color: #5a7a96; padding: 4px 11px; cursor: pointer; font-family: inherit; }
   .st-grp-h { font-size: 13px; font-weight: 800; margin: 18px 2px 10px; }
   .st-grp-h.done { color: #2c7a43; } .st-grp-h.partial { color: #a8820a; } .st-grp-h.todo { color: #b0263a; } .st-grp-h.none { color: #5a626f; }
   .paused-bar { display: flex; gap: 8px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; align-items: center; margin: 0 0 16px; padding-bottom: 5px; }
@@ -174,7 +180,6 @@
       </svg>
       Войти по Face ID / отпечатку
     </button>
-    <button type="button" id="loginSwitch" class="login-switch">Вход для руководителя (e-mail)</button>
     <div id="loginErr"></div>
     <div id="bioOffer" class="bio-offer">
       <h3>Входить по Face ID?</h3>
@@ -189,11 +194,14 @@
   <div id="app" style="display:none;">
     <div class="chan-bar" id="chanBar"></div>
     <div class="paused-bar" id="pausedBar" style="display:none;"><span class="lbl">⏸ На паузе:</span></div>
+    <div id="chanAction" style="display:none;font-size:12.5px;color:#5a626f;margin:-6px 0 14px;"></div>
     <div class="cols">
       <div class="card sec-work">
-        <div class="sec-h"><b><span class="sec-dot" style="background:#0097ca;"></span>В работе</b><span class="cnt-badge blue" id="cnt-petrov"></span></div>
-        <div id="list-petrov"></div>
-        <button class="add-btn" data-sec="petrov">+ Задача</button>
+        <div class="sec-h" id="workHdr" style="cursor:pointer;user-select:none;"><b><span class="sec-dot" style="background:#0097ca;"></span><span id="workArrow">▾</span> В работе</b><span class="cnt-badge blue" id="cnt-petrov"></span></div>
+        <div id="workBody">
+          <div id="list-petrov"></div>
+          <button class="add-btn" data-sec="petrov">+ Задача</button>
+        </div>
       </div>
       <div class="card sec-backlog">
         <div class="sec-h" id="backlogHdr" style="cursor:pointer;user-select:none;"><b><span class="sec-dot" style="background:#9aa0ab;"></span><span id="backlogArrow">▾</span> Backlog</b><span class="cnt-badge" id="cnt-backlog"></span></div>
@@ -269,17 +277,17 @@
   }
   function showApp() { $("#login").style.display = "none"; $("#app").style.display = ""; document.body.classList.remove("login-mode"); }
 
-  // Две формы, как на /vsc: код доступа (по умолчанию) и e-mail+пароль руководителя
-  // (тот же аккаунт, что для vsc-дашборда — сейчас Петров). Переключатель под формой.
+  // ЛОГИКА ВХОДА КАК НА /vsc: на основном домене — ТОЛЬКО код + Face ID (никаких
+  // переключателей). Руководители (Петров) входят по e-mail на staff-хосте
+  // vsc.voyotravel.ru/marketing (как их вход на vsc-дашборд) или по /marketing?staff=1.
   var mgrMode = false;
-  try { mgrMode = localStorage.getItem("voyo_mkt_lastmode") === "mgr"; } catch (_) {}
+  try { mgrMode = location.hostname === "vsc.voyotravel.ru" || /[?&]staff=1/.test(location.search); } catch (_) {}
   function applyMode() {
     $("#codeForm").style.display = mgrMode ? "none" : "";
     $("#mgrForm").style.display = mgrMode ? "" : "none";
+    if (mgrMode) $("#bioLoginBtn").style.display = "none";
     $("#loginSub").textContent = mgrMode ? "Вход для руководителя" : "Введите код доступа";
-    $("#loginSwitch").textContent = mgrMode ? "Вход по коду доступа" : "Вход для руководителя (e-mail)";
   }
-  $("#loginSwitch").addEventListener("click", function () { mgrMode = !mgrMode; try { localStorage.setItem("voyo_mkt_lastmode", mgrMode ? "mgr" : "code"); } catch (_) {} applyMode(); });
   applyMode();
   function handleAuth(req) {
     req.then(function (r) { return r.json(); })
@@ -485,19 +493,27 @@
     $("#doneBody").style.display = doneOpen ? "" : "none";
     render();
   });
-  // Backlog сворачивается (по умолчанию развёрнут; выбор запоминается на устройстве)
-  var backlogOpen = true;
-  try { backlogOpen = localStorage.getItem("voyo_mkt_backlog_open") !== "0"; } catch (_) {}
-  function applyBacklogOpen() {
-    $("#backlogArrow").textContent = backlogOpen ? "▾" : "▸";
-    $("#backlogBody").style.display = backlogOpen ? "" : "none";
+  // «В работе» и Backlog сворачиваются (по умолчанию развёрнуты; выбор запоминается)
+  function collapsible(hdrId, arrowId, bodyId, storeKey) {
+    var open = true;
+    try { open = localStorage.getItem(storeKey) !== "0"; } catch (_) {}
+    var apply = function () {
+      $("#" + arrowId).textContent = open ? "▾" : "▸";
+      $("#" + bodyId).style.display = open ? "" : "none";
+    };
+    $("#" + hdrId).addEventListener("click", function () {
+      open = !open;
+      try { localStorage.setItem(storeKey, open ? "1" : "0"); } catch (_) {}
+      apply();
+    });
+    apply();
   }
-  $("#backlogHdr").addEventListener("click", function () {
-    backlogOpen = !backlogOpen;
-    try { localStorage.setItem("voyo_mkt_backlog_open", backlogOpen ? "1" : "0"); } catch (_) {}
-    applyBacklogOpen();
-  });
-  applyBacklogOpen();
+  collapsible("workHdr", "workArrow", "workBody", "voyo_mkt_work_open");
+  collapsible("backlogHdr", "backlogArrow", "backlogBody", "voyo_mkt_backlog_open");
+  // Свёрнутые группы каналов внутри секций: { "petrov|SEO": 1, ... }
+  var grpClosed = {};
+  try { grpClosed = JSON.parse(localStorage.getItem("voyo_mkt_grp_closed") || "{}") || {}; } catch (_) {}
+  function saveGrpClosed() { try { localStorage.setItem("voyo_mkt_grp_closed", JSON.stringify(grpClosed)); } catch (_) {} }
   // Статусы: null → todo → partial → done → null (клик по пилюле статуса)
   var ST = { done: "Сделано", partial: "Частично", todo: "Не сделано" };
   var nextSt = { "": "todo", todo: "partial", partial: "done", done: "" };
@@ -603,25 +619,50 @@
         });
         return;
       }
-      // Рабочие секции — явная разбивка по каналам (заголовок-группа на канал);
-      // при выбранном фильтре канала — просто список.
+      // Рабочие секции — явная разбивка по каналам: заголовок-группа на канал,
+      // группы СВОРАЧИВАЮТСЯ (клик по заголовку, состояние запоминается) и имеют
+      // переключатель «⏸ на паузу» / «▶ в работу» (перекидывает канал между строками
+      // фильтров, хранится в state.paused на сервере).
+      // При выбранном фильтре канала — просто список.
       if (chanFilter) { list.forEach(function (t) { box.appendChild(taskCard(t, sec)); }); return; }
-      var groups = chanOrder.filter(function (c) { return list.some(function (t) { return t.channel === c; }); });
-      groups.forEach(function (c) {
-        var h = document.createElement("div"); h.className = "grp-h";
-        var sub = list.filter(function (t) { return t.channel === c; });
-        h.innerHTML = '<i style="background:' + chColor(c) + ';"></i>' + esc(c) + (paused.indexOf(c) >= 0 ? ' <span class="n">· на паузе</span>' : "") + ' <span class="n">' + sub.length + '</span>';
+      var mkGroup = function (label, color, sub, key, chan) {
+        var closed = !!grpClosed[key];
+        var h = document.createElement("div"); h.className = "grp-h"; h.style.cursor = "pointer";
+        var onPause = chan && paused.indexOf(chan) >= 0;
+        h.innerHTML = '<i style="background:' + color + ';"></i><span class="n">' + (closed ? "▸" : "▾") + '</span> ' + esc(label)
+          + (onPause ? ' <span class="n">· на паузе</span>' : "")
+          + ' <span class="n">' + sub.length + '</span>'
+          + (chan ? '<button class="grp-toggle" title="' + (onPause ? "Вернуть канал в работу" : "Поставить канал на паузу") + '">' + (onPause ? "▶ в работу" : "⏸ на паузу") + '</button>' : "");
+        var tg = h.querySelector(".grp-toggle");
+        if (tg) tg.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var p = pausedList(); var i = p.indexOf(chan);
+          if (i >= 0) p.splice(i, 1); else p.push(chan);
+          save(); render();
+        });
+        h.addEventListener("click", function () { if (grpClosed[key]) delete grpClosed[key]; else grpClosed[key] = 1; saveGrpClosed(); render(); });
         box.appendChild(h);
-        sub.forEach(function (t) { box.appendChild(taskCard(t, sec)); });
+        if (!closed) sub.forEach(function (t) { box.appendChild(taskCard(t, sec)); });
+      };
+      chanOrder.forEach(function (c) {
+        var sub = list.filter(function (t) { return t.channel === c; });
+        if (sub.length) mkGroup(c, chColor(c), sub, sec + "|" + c, c);
       });
       var noChan = list.filter(function (t) { return !t.channel; });
-      if (noChan.length) {
-        var h0 = document.createElement("div"); h0.className = "grp-h";
-        h0.innerHTML = '<i style="background:#c9cfda;"></i>Без канала <span class="n">' + noChan.length + '</span>';
-        box.appendChild(h0);
-        noChan.forEach(function (t) { box.appendChild(taskCard(t, sec)); });
-      }
+      if (noChan.length) mkGroup("Без канала", "#c9cfda", noChan, sec + "|__none", null);
     });
+    // Строка-действие при выбранном канале: пауза/в работу доступна и из фильтра
+    var act = $("#chanAction");
+    if (chanFilter) {
+      var onP = paused.indexOf(chanFilter) >= 0;
+      act.style.display = "";
+      act.innerHTML = 'Канал «' + esc(chanFilter) + '» ' + (onP ? "на паузе" : "в работе") + ' · <button>' + (onP ? "▶ Вернуть в работу" : "⏸ Поставить на паузу") + '</button>';
+      act.querySelector("button").addEventListener("click", function () {
+        var p = pausedList(); var i = p.indexOf(chanFilter);
+        if (i >= 0) p.splice(i, 1); else p.push(chanFilter);
+        save(); render();
+      });
+    } else { act.style.display = "none"; act.innerHTML = ""; }
   }
 
   // ── Модалка добавить/редактировать ──

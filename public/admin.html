@@ -3251,7 +3251,7 @@
         // «Статистика по сотрудникам» временно скрыта у админа (просьба Андрея 22.07);
         // у Зайцевой убрана из vscRestrict.tabs в lkManagers.seed.json. Вернуть: флаг false + seed.
         const VSC_STAFF_HIDE_ADMIN = true;
-        let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["mktkpi", "Маркетинг KPI"], ["staff", "Статистика по сотрудникам"], ["taxes", "Налоги"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
+        let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["mktkpi", "Маркетинг KPI"], ["staff", "Статистика по сотрудникам"], ["mktplan", "Маркетинг"], ["taxes", "Налоги"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
         if (VSC_BOT_HIDDEN) TABS = TABS.filter(([tb]) => tb !== "bot");
         if (isMgr) {
           if (myVscRestrict && Array.isArray(myVscRestrict.tabs)) {
@@ -3296,6 +3296,7 @@
         if (vscTab === "forecast") { renderVscForecast(); return; }
         if (vscTab === "mktkpi") { renderVscMktKpi(); return; }
         if (vscTab === "staff") { renderVscStaff(); return; }
+        if (vscTab === "mktplan") { renderVscMktPlan(); return; }
         if (vscTab === "taxes") { renderVscTaxes(); return; }
         if (vscTab === "calc") { renderVscCalc(); return; }
         if (vscTab === "bot") { renderVscBot(); return; }
@@ -3837,6 +3838,29 @@
           bars.appendChild(col);
         });
         box.appendChild(bars);
+      }
+      // ── Вкладка «Маркетинг» (админ): страница VSC marketing (/marketing) во фрейме ──
+      // Отдельная standalone-страница со своим входом (код/Face ID) — фрейм показывает
+      // её как есть; localStorage общий (same-origin), так что после первого входа на
+      // /marketing фрейм открывается уже залогиненным.
+      function renderVscMktPlan() {
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Маркетинг";
+        h.appendChild(vscInfo("<b>Что это</b><br>Планирование маркетинговых задач (страница VSC marketing, /marketing): секции «В работе» и «Backlog», каналы (активные и на паузе), статусы, архив «Сделано».<br><br>Вход у страницы свой (код или Face ID) — фрейм запомнит его после первого раза. Кнопка «Открыть отдельно» — та же страница в новой вкладке."));
+        vscContent.appendChild(h);
+        const bar = document.createElement("div"); bar.style.cssText = "margin:0 0 10px;";
+        const a = document.createElement("a");
+        a.href = "/marketing"; a.target = "_blank"; a.rel = "noopener";
+        a.textContent = "Открыть отдельно ↗";
+        a.style.cssText = "display:inline-block;border:1px solid #cfd8e3;background:#fff;color:#33415a;border-radius:10px;padding:8px 15px;font-size:13px;font-weight:700;text-decoration:none;";
+        bar.appendChild(a);
+        vscContent.appendChild(bar);
+        const wrap = document.createElement("div");
+        wrap.style.cssText = "border:1px solid #e3e8ef;border-radius:14px;overflow:hidden;background:#fff;";
+        const ifr = document.createElement("iframe");
+        ifr.src = "/marketing";
+        ifr.style.cssText = "width:100%;height:calc(100vh - 230px);min-height:560px;border:0;display:block;";
+        wrap.appendChild(ifr);
+        vscContent.appendChild(wrap);
       }
       // ── Вкладка «Налоги» (ТОЛЬКО админ) — сверка налогов по юрлицам ──────────────────
       // Перенос таблички Андрея (налоги.xlsx): выручки 4 юрлиц по месяцам квартала (ввод),
