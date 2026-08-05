@@ -1154,10 +1154,17 @@ app.post("/admin/api/vsc/day-revenue/run", requireAdmin, (req, res) => {
   return res.json({ success: true, started: true });
 });
 scheduleDayRevenueHourly();
-// Первичный расчёт через ~150 с после старта, если кэша нет или он за прошлый день
-// (чтобы блок не пустовал после рестарта; далее — крон 12/15/17/18/19/20 МСК). Старт ПОСЛЕ
-// городской выручки (120 с), лимитер всё равно сериализует фон.
-(function () { const c = loadDayRev(); if (!c || c.dayKey !== _mskDayKey(Date.now())) setTimeout(() => { Promise.resolve(amoBg(() => runDayRevenue("startup"))).catch(() => {}); }, 150 * 1000); })();
+// Первичный расчёт через ~150 с после старта, если кэша нет / он за прошлый день /
+// он старше 61 минуты В РАБОЧИЕ ЧАСЫ (рестарт сервера в момент часового тика убивал
+// таймер, и обновление пропускалось до следующего часа — Андрей поймал 05.08 в 19:00).
+// Старт ПОСЛЕ городской выручки (120 с), лимитер всё равно сериализует фон.
+(function () {
+  const c = loadDayRev();
+  const mskH = new Date(Date.now() + 3 * 3600 * 1000).getUTCHours();
+  const inWork = mskH >= 10 && mskH < 22;
+  const stale = c && c.ts && (Date.now() - c.ts > 61 * 60 * 1000);
+  if (!c || c.dayKey !== _mskDayKey(Date.now()) || (stale && inWork)) setTimeout(() => { Promise.resolve(amoBg(() => runDayRevenue("startup"))).catch(() => {}); }, 150 * 1000);
+})();
 // В 00:00 МСК обнуляем кэш «Выручки за сегодня» (БЕЗ обращения к amoCRM), чтобы
 // плитка не показывала вчерашнюю сумму до первого дневного пересчёта (15:00 МСК).
 function scheduleDayRevenueMidnightReset() {
