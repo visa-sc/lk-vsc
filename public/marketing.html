@@ -102,6 +102,13 @@
   .st-btn { border: 1px solid rgba(20, 32, 64, .12); background: #fff; border-radius: 999px; font-size: 11.5px; font-weight: 700; padding: 3px 10px; cursor: pointer; font-family: inherit; }
   .st-btn.done { color: #2c7a43; } .st-btn.partial { color: #a8820a; } .st-btn.todo { color: #b0263a; }
   .cnt-badge { display: inline-block; min-width: 22px; text-align: center; background: #eef2f8; color: #33415a; border-radius: 999px; font-size: 12px; font-weight: 700; padding: 2px 8px; }
+  .cnt-badge.blue { background: #0097ca; color: #fff; }
+  .sec-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+  /* «В работе» — акцентная (голубая), Backlog — приглушённая серая, сворачиваемая */
+  .card.sec-work { background: linear-gradient(180deg, #f5fafd 0%, #eef6fb 100%); border-color: #cfe4f2; box-shadow: 0 10px 30px rgba(0, 130, 190, .08); }
+  .card.sec-work .task { border-color: #e2edf5; }
+  .card.sec-backlog { background: #f6f7f9; border-color: #e6e9ee; }
+  .card.sec-backlog .task { background: #fdfdfe; }
   .grp-h { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; color: #5a626f; margin: 14px 2px 8px; text-transform: none; }
   .grp-h:first-child { margin-top: 2px; }
   .grp-h i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
@@ -183,15 +190,17 @@
     <div class="chan-bar" id="chanBar"></div>
     <div class="paused-bar" id="pausedBar" style="display:none;"><span class="lbl">⏸ На паузе:</span></div>
     <div class="cols">
-      <div class="card">
-        <div class="sec-h"><b>В работе</b><span class="cnt-badge" id="cnt-petrov"></span></div>
+      <div class="card sec-work">
+        <div class="sec-h"><b><span class="sec-dot" style="background:#0097ca;"></span>В работе</b><span class="cnt-badge blue" id="cnt-petrov"></span></div>
         <div id="list-petrov"></div>
         <button class="add-btn" data-sec="petrov">+ Задача</button>
       </div>
-      <div class="card">
-        <div class="sec-h"><b>Backlog</b><span class="cnt-badge" id="cnt-backlog"></span></div>
-        <div id="list-backlog"></div>
-        <button class="add-btn" data-sec="backlog">+ Задача</button>
+      <div class="card sec-backlog">
+        <div class="sec-h" id="backlogHdr" style="cursor:pointer;user-select:none;"><b><span class="sec-dot" style="background:#9aa0ab;"></span><span id="backlogArrow">▾</span> Backlog</b><span class="cnt-badge" id="cnt-backlog"></span></div>
+        <div id="backlogBody">
+          <div id="list-backlog"></div>
+          <button class="add-btn" data-sec="backlog">+ Задача</button>
+        </div>
       </div>
     </div>
     <div class="card" style="margin-top:16px;">
@@ -476,6 +485,19 @@
     $("#doneBody").style.display = doneOpen ? "" : "none";
     render();
   });
+  // Backlog сворачивается (по умолчанию развёрнут; выбор запоминается на устройстве)
+  var backlogOpen = true;
+  try { backlogOpen = localStorage.getItem("voyo_mkt_backlog_open") !== "0"; } catch (_) {}
+  function applyBacklogOpen() {
+    $("#backlogArrow").textContent = backlogOpen ? "▾" : "▸";
+    $("#backlogBody").style.display = backlogOpen ? "" : "none";
+  }
+  $("#backlogHdr").addEventListener("click", function () {
+    backlogOpen = !backlogOpen;
+    try { localStorage.setItem("voyo_mkt_backlog_open", backlogOpen ? "1" : "0"); } catch (_) {}
+    applyBacklogOpen();
+  });
+  applyBacklogOpen();
   // Статусы: null → todo → partial → done → null (клик по пилюле статуса)
   var ST = { done: "Сделано", partial: "Частично", todo: "Не сделано" };
   var nextSt = { "": "todo", todo: "partial", partial: "done", done: "" };
