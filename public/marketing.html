@@ -55,6 +55,26 @@
   .login-btn:hover { background: #f0f7fc; }
   .login-switch { margin-top: 14px; background: none; border: none; color: #3589BD; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
   #loginErr { color: #b0263a; font-size: 13.5px; min-height: 18px; margin-top: 10px; }
+  /* Face ID — кнопка и оффер, 1в1 с /vsc */
+  .bio-btn {
+    width: 100%; height: 48px; margin: 10px 0 0; border: 1.5px solid #3589BD; background: #fff;
+    color: #3589BD; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer;
+    font-family: inherit; display: none; align-items: center; justify-content: center; gap: 8px;
+    transition: background .2s ease;
+  }
+  .bio-btn.show { display: flex; }
+  .bio-btn:hover:not(:disabled) { background: #f0f7fc; }
+  .bio-btn:disabled { opacity: .6; cursor: progress; }
+  .bio-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+  .bio-offer { display: none; margin-top: 14px; padding: 16px; background: #f0f7fc; border: 1px solid #d3e7f4; border-radius: 14px; text-align: left; }
+  .bio-offer.show { display: block; }
+  .bio-offer h3 { margin: 0 0 6px; font-size: 15px; color: #2f6e95; }
+  .bio-offer p { margin: 0 0 12px; font-size: 13px; color: #4a5260; line-height: 1.4; }
+  .bio-offer-actions { display: flex; gap: 10px; }
+  .bio-offer-actions button { flex: 1; height: 38px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .bio-skip { border: 1.5px solid #d3d2da; background: #fff; color: #4a5260; }
+  .bio-enable { border: 0; background: #3589BD; color: #fff; }
+  .bio-offer-actions button:disabled { opacity: .6; cursor: progress; }
   /* Фильтры каналов */
   .chan-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
   @media (max-width: 860px) { .chan-bar { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; } .chan-pill { flex: 0 0 auto; } }
@@ -98,9 +118,9 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="brand">
+  <div class="brand" style="flex-direction:column;align-items:center;gap:7px;">
     <div class="vsc-wm"><b>V</b><i></i><b>S</b><i></i><b>C</b></div>
-    <div class="sub">marketing</div>
+    <div class="sub" style="padding:0;font-size:11.5px;font-weight:600;color:#8a90a0;letter-spacing:.48em;text-transform:lowercase;margin-right:-.48em;">marketing</div>
   </div>
 
   <div id="login" style="display:none;">
@@ -114,8 +134,22 @@
       <input id="pass" class="login-input" type="password" autocomplete="current-password" placeholder="Пароль">
       <button type="submit" class="login-btn">Войти</button>
     </form>
+    <button type="button" id="bioLoginBtn" class="bio-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 11a3 3 0 0 0-3 3v1m6-1v3a3 3 0 0 1-6 0M6 11a6 6 0 0 1 12 0v3m-9 4a3 3 0 0 0 6 0M5 8a8 8 0 0 1 14 0M5 14v1a8 8 0 0 0 .35 2.34" />
+      </svg>
+      Войти по Face ID / отпечатку
+    </button>
     <button type="button" id="loginSwitch" class="login-switch">Вход для руководителя (e-mail)</button>
     <div id="loginErr"></div>
+    <div id="bioOffer" class="bio-offer">
+      <h3>Входить по Face ID?</h3>
+      <p>Включите вход по Face ID / отпечатку — не нужно будет каждый раз вводить пароль или код на этом устройстве.</p>
+      <div class="bio-offer-actions">
+        <button type="button" id="bioSkipBtn" class="bio-skip">Не сейчас</button>
+        <button type="button" id="bioEnableBtn" class="bio-enable">Включить</button>
+      </div>
+    </div>
   </div>
 
   <div id="app" style="display:none;">
@@ -195,7 +229,11 @@
       return r.json();
     });
   }
-  function showLogin() { $("#login").style.display = ""; $("#app").style.display = "none"; document.body.classList.add("login-mode"); }
+  function showLogin() {
+    $("#login").style.display = ""; $("#app").style.display = "none"; document.body.classList.add("login-mode");
+    // Оптимистично показываем Face ID из кэша сразу (как /vsc) — без «моргания».
+    if (getBioShowCache()) applyBioBtnVisibility(true);
+  }
   function showApp() { $("#login").style.display = "none"; $("#app").style.display = ""; document.body.classList.remove("login-mode"); }
 
   // Две формы, как на /vsc: код доступа (по умолчанию) и e-mail+пароль руководителя
@@ -218,9 +256,155 @@
       })
       .catch(function () { $("#loginErr").textContent = "Ошибка сети"; });
   }
+  // ── Face ID / Touch ID — логика 1в1 с /vsc (те же admin-эндпоинты и ТЕ ЖЕ ключи
+  // localStorage, поэтому passkey, заведённый на /vsc, работает здесь сразу). ──
+  var BIO_SHOW_CACHE_KEY = "voyo_admin_bio_show", LOCAL_PASSKEY_KEY = "voyo_admin_local_passkey";
+  var BIO_FAST_FAIL_MS = 2000;
+  function getBioShowCache() { try { return localStorage.getItem(BIO_SHOW_CACHE_KEY) === "1"; } catch (_) { return false; } }
+  function setBioShowCache(v) { try { if (v) localStorage.setItem(BIO_SHOW_CACHE_KEY, "1"); else localStorage.removeItem(BIO_SHOW_CACHE_KEY); } catch (_) {} }
+  function hasLocalPasskeyFlag() { try { return localStorage.getItem(LOCAL_PASSKEY_KEY) === "1"; } catch (_) { return false; } }
+  function setLocalPasskeyFlag() { try { localStorage.setItem(LOCAL_PASSKEY_KEY, "1"); } catch (_) {} }
+  function clearLocalPasskeyFlag() { try { localStorage.removeItem(LOCAL_PASSKEY_KEY); } catch (_) {} }
+  function applyBioBtnVisibility(show) { $("#bioLoginBtn").classList.toggle("show", !!show); }
+  function b64uToBytes(s) {
+    var pad = (s + "=".repeat((4 - (s.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+    var bin = atob(pad); var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function bytesToB64u(buf) {
+    var arr = buf instanceof Uint8Array ? buf : new Uint8Array(buf); var bin = "";
+    for (var i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+  function isPlatformAuthAvailable() {
+    if (!window.PublicKeyCredential || typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== "function") return Promise.resolve(false);
+    return PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(function (x) { return !!x; }, function () { return false; });
+  }
+  function adminHasCredentials() {
+    return fetch("/admin/api/webauthn/has-credentials", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) return { hasCreds: false, known: false }; return r.json().then(function (d) { return { hasCreds: !!(d && d.hasCredentials), known: true }; }); })
+      .catch(function () { return { hasCreds: false, known: false }; });
+  }
+  function maybeShowBioLoginBtn() {
+    return Promise.all([isPlatformAuthAvailable(), adminHasCredentials()]).then(function (res) {
+      var platformOk = res[0], credsRes = res[1];
+      var localOk = hasLocalPasskeyFlag() || true; // как на /vsc: passkey может быть синхронизирован iCloud
+      var eligible = platformOk && credsRes.hasCreds && localOk;
+      if (credsRes.known) { applyBioBtnVisibility(eligible); setBioShowCache(eligible); if (!credsRes.hasCreds) clearLocalPasskeyFlag(); }
+      else if (eligible) applyBioBtnVisibility(true);
+      return eligible;
+    });
+  }
+  function tryAdminBioLogin() {
+    return fetch("/admin/api/webauthn/auth-options", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(function (optsR) {
+        if (!optsR.ok) return false;
+        return optsR.json().then(function (opts) {
+          var publicKey = Object.assign({}, opts, {
+            challenge: b64uToBytes(opts.challenge),
+            allowCredentials: (opts.allowCredentials || []).map(function (c) { return Object.assign({}, c, { id: b64uToBytes(c.id) }); })
+          });
+          return navigator.credentials.get({ publicKey: publicKey }).then(function (assertion) {
+            return fetch("/admin/api/webauthn/auth-verify", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ assertionResponse: {
+                id: assertion.id, rawId: bytesToB64u(assertion.rawId), type: assertion.type,
+                response: {
+                  clientDataJSON: bytesToB64u(assertion.response.clientDataJSON),
+                  authenticatorData: bytesToB64u(assertion.response.authenticatorData),
+                  signature: bytesToB64u(assertion.response.signature),
+                  userHandle: assertion.response.userHandle ? bytesToB64u(assertion.response.userHandle) : null
+                },
+                clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {}
+              } })
+            }).then(function (verifyR) {
+              return verifyR.json().catch(function () { return {}; }).then(function (data) {
+                if (verifyR.ok && data.success && data.token) {
+                  token = data.token; try { localStorage.setItem(TOKEN_KEY, token); } catch (_) {}
+                  setBioShowCache(true); setLocalPasskeyFlag();
+                  return true;
+                }
+                return false;
+              });
+            });
+          });
+        });
+      })
+      .catch(function (err) { console.warn("bio login failed/cancelled:", err); return false; });
+  }
+  function tryAdminBioRegister() {
+    if (!token) return Promise.resolve(false);
+    return fetch("/admin/api/webauthn/register-options", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: "{}" })
+      .then(function (optsR) {
+        if (!optsR.ok) return false;
+        return optsR.json().then(function (opts) {
+          var publicKey = Object.assign({}, opts, {
+            challenge: b64uToBytes(opts.challenge),
+            user: Object.assign({}, opts.user, { id: b64uToBytes(opts.user.id) }),
+            excludeCredentials: (opts.excludeCredentials || []).map(function (c) { return Object.assign({}, c, { id: b64uToBytes(c.id) }); })
+          });
+          return navigator.credentials.create({ publicKey: publicKey }).then(function (att) {
+            return fetch("/admin/api/webauthn/register-verify", {
+              method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+              body: JSON.stringify({ attestationResponse: {
+                id: att.id, rawId: bytesToB64u(att.rawId), type: att.type,
+                response: { clientDataJSON: bytesToB64u(att.response.clientDataJSON), attestationObject: bytesToB64u(att.response.attestationObject) },
+                clientExtensionResults: att.getClientExtensionResults ? att.getClientExtensionResults() : {}
+              } })
+            }).then(function (verifyR) {
+              return verifyR.json().catch(function () { return {}; }).then(function (data) {
+                var ok = !!(verifyR.ok && data.success);
+                if (ok) { setBioShowCache(true); setLocalPasskeyFlag(); }
+                return ok;
+              });
+            });
+          });
+        });
+      })
+      .catch(function (err) { console.warn("bio register failed/cancelled:", err); return false; });
+  }
+  function tryAutoBioOnLoad() {
+    maybeShowBioLoginBtn().then(function (eligible) {
+      if (!eligible) return;
+      setTimeout(function () { tryAdminBioLogin().then(function (ok) { if (ok) load(); }); }, 120);
+    });
+  }
+  $("#bioLoginBtn").addEventListener("click", function () {
+    var btn = $("#bioLoginBtn"); btn.disabled = true;
+    var t0 = Date.now();
+    tryAdminBioLogin().then(function (ok) {
+      btn.disabled = false;
+      if (ok) { load(); return; }
+      // Быстрый отказ по клику (есть user-gesture) = passkey'я локально нет — прячем кнопку.
+      if (Date.now() - t0 < BIO_FAST_FAIL_MS) { clearLocalPasskeyFlag(); setBioShowCache(false); applyBioBtnVisibility(false); }
+      $("#loginErr").textContent = "Не удалось войти по биометрии. Попробуйте код.";
+    });
+  });
+  $("#bioSkipBtn").addEventListener("click", function () { $("#bioOffer").classList.remove("show"); load(); });
+  $("#bioEnableBtn").addEventListener("click", function () {
+    $("#bioEnableBtn").disabled = true; $("#bioSkipBtn").disabled = true;
+    tryAdminBioRegister().then(function (ok) {
+      $("#bioEnableBtn").disabled = false; $("#bioSkipBtn").disabled = false;
+      if (!ok) alert("Не удалось подключить Face ID на этом устройстве (возможно, оно не поддерживает биометрию или запрос отменён). Можно продолжить со входом по коду.");
+      $("#bioOffer").classList.remove("show");
+      load();
+    });
+  });
   $("#codeForm").addEventListener("submit", function (e) {
     e.preventDefault();
-    handleAuth(fetch("/admin/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("#code").value.trim() }) }));
+    fetch("/admin/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("#code").value.trim() }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!(j && j.token)) { $("#loginErr").textContent = (j && j.message) || "Не удалось войти"; return; }
+        token = j.token; try { localStorage.setItem(TOKEN_KEY, token); } catch (_) {}
+        // Как на /vsc: предлагаем Face ID только если устройство умеет И passkey'ев на сервере ещё нет.
+        Promise.all([isPlatformAuthAvailable(), adminHasCredentials()]).then(function (res) {
+          if (res[0] && res[1].known && !res[1].hasCreds) { $("#bioOffer").classList.add("show"); return; }
+          load();
+        });
+      })
+      .catch(function () { $("#loginErr").textContent = "Ошибка сети"; });
   });
   $("#mgrForm").addEventListener("submit", function (e) {
     e.preventDefault();
@@ -337,7 +521,8 @@
     $("#modal").style.display = "none"; save(); render();
   });
 
-  if (token) load(); else showLogin();
+  // Как /vsc: без сессии — форма + авто-Face ID (если passkey есть на устройстве).
+  if (token) load(); else { showLogin(); if (!mgrMode) tryAutoBioOnLoad(); }
 })();
 </script>
 </body>
