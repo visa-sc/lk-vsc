@@ -23,7 +23,10 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+// Лимит поднят со 100kb (дефолт) до 4mb: /marketing шлёт весь план одним JSON
+// (~300KB на 1000+ задач). На безопасность не влияет — маршруты сами валидируют
+// и ограничивают размер данных, а тела >4mb по-прежнему режутся.
+app.use(express.json({ limit: "4mb" }));
 app.use(express.urlencoded({ extended: true }));
 // Поддомены-удобства: vsc.voyotravel.ru → интерфейс /vsc, dev.voyotravel.ru → /team.
 // Корень поддомена отдаёт ту же admin.html (с нужной вывеской); /vsc и /team на
