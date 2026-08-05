@@ -620,9 +620,9 @@
         return;
       }
       // Рабочие секции — явная разбивка по каналам: заголовок-группа на канал,
-      // группы СВОРАЧИВАЮТСЯ (клик по заголовку, состояние запоминается) и имеют
-      // переключатель «⏸ на паузу» / «▶ в работу» (перекидывает канал между строками
-      // фильтров, хранится в state.paused на сервере).
+      // группы СВОРАЧИВАЮТСЯ (клик по заголовку, состояние запоминается).
+      // Пауза/возврат канала — ТОЛЬКО при открытом конкретном канале (строка-действие
+      // под фильтрами), в «Все каналы» кнопки нет (просьба Андрея 05.08).
       // При выбранном фильтре канала — просто список.
       if (chanFilter) { list.forEach(function (t) { box.appendChild(taskCard(t, sec)); }); return; }
       var mkGroup = function (label, color, sub, key, chan) {
@@ -631,15 +631,7 @@
         var onPause = chan && paused.indexOf(chan) >= 0;
         h.innerHTML = '<i style="background:' + color + ';"></i><span class="n">' + (closed ? "▸" : "▾") + '</span> ' + esc(label)
           + (onPause ? ' <span class="n">· на паузе</span>' : "")
-          + ' <span class="n">' + sub.length + '</span>'
-          + (chan ? '<button class="grp-toggle" title="' + (onPause ? "Вернуть канал в работу" : "Поставить канал на паузу") + '">' + (onPause ? "▶ в работу" : "⏸ на паузу") + '</button>' : "");
-        var tg = h.querySelector(".grp-toggle");
-        if (tg) tg.addEventListener("click", function (e) {
-          e.stopPropagation();
-          var p = pausedList(); var i = p.indexOf(chan);
-          if (i >= 0) p.splice(i, 1); else p.push(chan);
-          save(); render();
-        });
+          + ' <span class="n">' + sub.length + '</span>';
         h.addEventListener("click", function () { if (grpClosed[key]) delete grpClosed[key]; else grpClosed[key] = 1; saveGrpClosed(); render(); });
         box.appendChild(h);
         if (!closed) sub.forEach(function (t) { box.appendChild(taskCard(t, sec)); });
