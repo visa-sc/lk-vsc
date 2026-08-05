@@ -1349,6 +1349,28 @@ app.get("/api/loyalty/me", (req, res) => {
 });
 // Отдельная страница /loyalty (ЛК не трогаем; карту встроим в кабинет позже).
 app.get("/loyalty", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "loyalty.html")); });
+// ── /marketing — «Маркетинг-план» (перенос гугл-таблички Андрея, 05.08.2026) ─────
+// Standalone-страница в vsc-стиле (admin.html не трогаем). Вход по админ-коду
+// (тот же /admin/api/login), API — только админ. Хранилище: .vscMarketingPlan.json
+// { channels: [..], tasks: [{id, section: petrov|backlog, channel, text,
+//   status: done|partial|todo|нет, createdAt, updatedAt}] }.
+app.get("/marketing", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "marketing.html")); });
+const VSC_MKTPLAN_FILE = path.join(__dirname, ".vscMarketingPlan.json");
+let _mktPlan = null;
+function loadMktPlan() {
+  if (_mktPlan) return _mktPlan;
+  try { _mktPlan = JSON.parse(fs.readFileSync(VSC_MKTPLAN_FILE, "utf8")); } catch (_) { _mktPlan = { channels: [], tasks: [] }; }
+  return _mktPlan;
+}
+app.get("/admin/api/vsc/marketing-plan", requireAdmin, (req, res) => res.json({ success: true, data: loadMktPlan() }));
+app.post("/admin/api/vsc/marketing-plan", requireAdmin, (req, res) => {
+  const d = req.body && req.body.data;
+  if (!d || !Array.isArray(d.tasks) || !Array.isArray(d.channels)) return res.status(400).json({ success: false, message: "bad data" });
+  if (JSON.stringify(d).length > 2_000_000) return res.status(413).json({ success: false, message: "too big" });
+  _mktPlan = { channels: d.channels.map(String).slice(0, 200), tasks: d.tasks.slice(0, 5000) };
+  try { fs.writeFileSync(VSC_MKTPLAN_FILE, JSON.stringify(_mktPlan, null, 2), "utf8"); } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
+  return res.json({ success: true });
+});
 // Пилот сканера паспорта /scanner (MRZ + OCR ПОЛНОСТЬЮ в браузере — на сервер фото
 // не загружается, серверной логики нет). «Помощник с проверкой», не интегрирован.
 app.get("/scanner", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "scanner.html")); });
