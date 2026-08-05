@@ -1362,8 +1362,14 @@ function loadMktPlan() {
   try { _mktPlan = JSON.parse(fs.readFileSync(VSC_MKTPLAN_FILE, "utf8")); } catch (_) { _mktPlan = { channels: [], tasks: [] }; }
   return _mktPlan;
 }
-app.get("/admin/api/vsc/marketing-plan", requireAdmin, (req, res) => res.json({ success: true, data: loadMktPlan() }));
-app.post("/admin/api/vsc/marketing-plan", requireAdmin, (req, res) => {
+// Доступ: админ ИЛИ руководитель с "marketing" в vscRestrict.tabs (сейчас — Петров).
+function requireMktPlan(req, res, next) {
+  const s = getStaffFromReq(req);
+  if (s && (s.role === "admin" || (s.vscRestrict && Array.isArray(s.vscRestrict.tabs) && s.vscRestrict.tabs.indexOf("marketing") >= 0))) { req.staff = s; return next(); }
+  return res.status(401).json({ success: false, message: "Нет доступа" });
+}
+app.get("/admin/api/vsc/marketing-plan", requireMktPlan, (req, res) => res.json({ success: true, data: loadMktPlan() }));
+app.post("/admin/api/vsc/marketing-plan", requireMktPlan, (req, res) => {
   const d = req.body && req.body.data;
   if (!d || !Array.isArray(d.tasks) || !Array.isArray(d.channels)) return res.status(400).json({ success: false, message: "bad data" });
   if (JSON.stringify(d).length > 2_000_000) return res.status(413).json({ success: false, message: "too big" });

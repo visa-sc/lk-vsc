@@ -81,7 +81,10 @@
 
   <div id="login" class="card" style="display:none;">
     <div style="font-size:17px;font-weight:700;">Вход</div>
-    <input id="code" type="password" inputmode="numeric" placeholder="Код доступа" autocomplete="current-password">
+    <input id="email" type="email" placeholder="Рабочий e-mail" autocomplete="username" style="margin-bottom:0;">
+    <input id="pass" type="password" placeholder="Пароль" autocomplete="current-password" style="margin-top:8px;">
+    <div style="font-size:12px;color:#9aa0ab;margin:2px 0 6px;">— или —</div>
+    <input id="code" type="password" inputmode="numeric" placeholder="Код доступа (для админа)" autocomplete="off" style="margin-top:0;">
     <button id="loginBtn">Войти</button>
     <div id="loginErr"></div>
   </div>
@@ -144,13 +147,18 @@
   function showApp() { $("#login").style.display = "none"; $("#app").style.display = ""; }
 
   $("#loginBtn").addEventListener("click", doLogin);
-  $("#code").addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); });
+  ["code", "pass", "email"].forEach(function (id) { $("#" + id).addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); }); });
+  // Вход: e-mail+пароль руководителя (тот же аккаунт, что для /vsc — сейчас Петров)
+  // ИЛИ админ-код. Токены разные, API принимает оба (requireMktPlan).
   function doLogin() {
-    fetch("/admin/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("#code").value.trim() }) })
-      .then(function (r) { return r.json(); })
+    var email = $("#email").value.trim(), pass = $("#pass").value, code = $("#code").value.trim();
+    var req = email
+      ? fetch("/admin/api/manager-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email, password: pass }) })
+      : fetch("/admin/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: code }) });
+    req.then(function (r) { return r.json(); })
       .then(function (j) {
         if (j && j.token) { token = j.token; try { localStorage.setItem(TOKEN_KEY, token); } catch (_) {} load(); }
-        else $("#loginErr").textContent = (j && j.message) || "Неверный код";
+        else $("#loginErr").textContent = (j && j.message) || "Неверные данные входа";
       })
       .catch(function () { $("#loginErr").textContent = "Ошибка сети"; });
   }
