@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>VSC · Маркетинг-план</title>
+<title>VSC marketing</title>
 <style>
   /* Стиль — в духе /vsc (Apple-скин): мягкий градиентный фон, белые карточки,
      крупные скругления, системный шрифт. Никаких сетевых шрифтов. */
@@ -27,11 +27,34 @@
   .vsc-wm b { font-weight: 800; color: #0097ca; background: linear-gradient(135deg, #00c8f2 0%, #0097ca 52%, #123a78 130%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
   .brand .sub { font-size: 15px; font-weight: 700; color: #33415a; padding-top: 6px; }
   .card { background: rgba(255, 255, 255, .92); border: 1px solid rgba(20, 32, 64, .07); border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(20, 32, 64, .06); }
-  /* Вход */
-  #login { max-width: 420px; margin: 12vh auto 0; text-align: center; }
-  #login input { width: 100%; padding: 13px 14px; font-size: 17px; border: 1px solid rgba(20, 32, 64, .14); border-radius: 12px; text-align: center; font-family: inherit; margin: 14px 0 12px; }
-  #login button { width: 100%; padding: 13px; font-size: 16px; font-weight: 700; color: #fff; background: #0097ca; border: 0; border-radius: 12px; cursor: pointer; font-family: inherit; }
-  #loginErr { color: #b0263a; font-size: 13.5px; min-height: 18px; margin-top: 8px; }
+  /* ── Вход — ТОЧНО как на /vsc (login-card из admin.html) ── */
+  body.login-mode { display: flex; flex-direction: column; justify-content: center; min-height: 100vh; }
+  body.login-mode .wrap { padding-bottom: 18px; }
+  body.login-mode .brand { justify-content: center; margin-bottom: 14px; }
+  #login {
+    width: 100%; max-width: 420px; margin: 0 auto;
+    background: #fff; border: 1px solid #ece7f2; border-radius: 22px; padding: 22px;
+    box-shadow: 0 10px 30px rgba(34, 36, 52, .05); text-align: center;
+  }
+  #login .sub2 { margin: 0 0 18px; font-size: 13px; font-weight: 400; color: #9096a3; }
+  .login-form-inner { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+  .login-input {
+    width: 100%; height: 52px; border: 1px solid #ebe6f1; border-radius: 14px; padding: 0 16px;
+    font-size: 16px; font-weight: 400; outline: none; font-family: inherit; color: #1f2532;
+    background: #fff; text-align: center; box-sizing: border-box;
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  .login-input[type="password"]:not(:placeholder-shown) { letter-spacing: .18em; font-size: 22px; }
+  .login-input::placeholder { color: #9a9faa; letter-spacing: normal; font-weight: 400; }
+  .login-input:focus { border-color: #3589BD; box-shadow: 0 0 0 3px rgba(53, 137, 189, .15); }
+  .login-btn {
+    width: 100%; height: 44px; border: 1.5px solid #3589BD; border-radius: 12px; background: #fff;
+    color: #3589BD; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+    transition: background .2s ease;
+  }
+  .login-btn:hover { background: #f0f7fc; }
+  .login-switch { margin-top: 14px; background: none; border: none; color: #3589BD; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  #loginErr { color: #b0263a; font-size: 13.5px; min-height: 18px; margin-top: 10px; }
   /* Фильтры каналов */
   .chan-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
   @media (max-width: 860px) { .chan-bar { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; } .chan-pill { flex: 0 0 auto; } }
@@ -77,16 +100,21 @@
 <div class="wrap">
   <div class="brand">
     <div class="vsc-wm"><b>V</b><i></i><b>S</b><i></i><b>C</b></div>
-    <div class="sub">Маркетинг-план</div>
+    <div class="sub">marketing</div>
   </div>
 
-  <div id="login" class="card" style="display:none;">
-    <div style="font-size:17px;font-weight:700;">Вход</div>
-    <input id="email" type="email" placeholder="Рабочий e-mail" autocomplete="username" style="margin-bottom:0;">
-    <input id="pass" type="password" placeholder="Пароль" autocomplete="current-password" style="margin-top:8px;">
-    <div style="font-size:12px;color:#9aa0ab;margin:2px 0 6px;">— или —</div>
-    <input id="code" type="password" inputmode="numeric" placeholder="Код доступа (для админа)" autocomplete="off" style="margin-top:0;">
-    <button id="loginBtn">Войти</button>
+  <div id="login" style="display:none;">
+    <div class="sub2" id="loginSub">Введите код доступа</div>
+    <form id="codeForm" class="login-form-inner">
+      <input id="code" class="login-input" type="password" inputmode="numeric" autocomplete="off" placeholder="Код доступа">
+      <button type="submit" class="login-btn">Войти</button>
+    </form>
+    <form id="mgrForm" class="login-form-inner" style="display:none;">
+      <input id="email" class="login-input" type="email" autocomplete="username" placeholder="Рабочий e-mail">
+      <input id="pass" class="login-input" type="password" autocomplete="current-password" placeholder="Пароль">
+      <button type="submit" class="login-btn">Войти</button>
+    </form>
+    <button type="button" id="loginSwitch" class="login-switch">Вход для руководителя (e-mail)</button>
     <div id="loginErr"></div>
   </div>
 
@@ -167,18 +195,22 @@
       return r.json();
     });
   }
-  function showLogin() { $("#login").style.display = ""; $("#app").style.display = "none"; }
-  function showApp() { $("#login").style.display = "none"; $("#app").style.display = ""; }
+  function showLogin() { $("#login").style.display = ""; $("#app").style.display = "none"; document.body.classList.add("login-mode"); }
+  function showApp() { $("#login").style.display = "none"; $("#app").style.display = ""; document.body.classList.remove("login-mode"); }
 
-  $("#loginBtn").addEventListener("click", doLogin);
-  ["code", "pass", "email"].forEach(function (id) { $("#" + id).addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); }); });
-  // Вход: e-mail+пароль руководителя (тот же аккаунт, что для /vsc — сейчас Петров)
-  // ИЛИ админ-код. Токены разные, API принимает оба (requireMktPlan).
-  function doLogin() {
-    var email = $("#email").value.trim(), pass = $("#pass").value, code = $("#code").value.trim();
-    var req = email
-      ? fetch("/admin/api/manager-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email, password: pass }) })
-      : fetch("/admin/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: code }) });
+  // Две формы, как на /vsc: код доступа (по умолчанию) и e-mail+пароль руководителя
+  // (тот же аккаунт, что для vsc-дашборда — сейчас Петров). Переключатель под формой.
+  var mgrMode = false;
+  try { mgrMode = localStorage.getItem("voyo_mkt_lastmode") === "mgr"; } catch (_) {}
+  function applyMode() {
+    $("#codeForm").style.display = mgrMode ? "none" : "";
+    $("#mgrForm").style.display = mgrMode ? "" : "none";
+    $("#loginSub").textContent = mgrMode ? "Вход для руководителя" : "Введите код доступа";
+    $("#loginSwitch").textContent = mgrMode ? "Вход по коду доступа" : "Вход для руководителя (e-mail)";
+  }
+  $("#loginSwitch").addEventListener("click", function () { mgrMode = !mgrMode; try { localStorage.setItem("voyo_mkt_lastmode", mgrMode ? "mgr" : "code"); } catch (_) {} applyMode(); });
+  applyMode();
+  function handleAuth(req) {
     req.then(function (r) { return r.json(); })
       .then(function (j) {
         if (j && j.token) { token = j.token; try { localStorage.setItem(TOKEN_KEY, token); } catch (_) {} load(); }
@@ -186,6 +218,14 @@
       })
       .catch(function () { $("#loginErr").textContent = "Ошибка сети"; });
   }
+  $("#codeForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    handleAuth(fetch("/admin/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("#code").value.trim() }) }));
+  });
+  $("#mgrForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    handleAuth(fetch("/admin/api/manager-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: $("#email").value.trim(), password: $("#pass").value }) }));
+  });
 
   var saveTimer = null;
   function save() {
