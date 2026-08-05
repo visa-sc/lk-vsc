@@ -112,6 +112,10 @@
   .card.sec-work .task { border-color: #e2edf5; }
   .card.sec-backlog { background: #f6f7f9; border-color: #e6e9ee; }
   .card.sec-backlog .task { background: #fdfdfe; }
+  .card.sec-review { background: #fdf9ef; border-color: #f0dfa8; }
+  .cnt-badge.amber { background: #e3a838; color: #fff; }
+  .card.dragover { outline: 2px dashed #3589BD; outline-offset: -2px; background: #f0f7fc; }
+  .task[draggable="true"] { cursor: grab; }
   .grp-h { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; color: #5a626f; margin: 14px 2px 8px; text-transform: none; }
   .grp-h:first-child { margin-top: 2px; }
   .grp-h i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
@@ -202,6 +206,10 @@
           <div id="list-petrov"></div>
           <button class="add-btn" data-sec="petrov">+ Задача</button>
         </div>
+      </div>
+      <div class="card sec-review" id="reviewCard" style="display:none;">
+        <div class="sec-h"><b><span class="sec-dot" style="background:#e3a838;"></span>На проверке</b><span class="cnt-badge amber" id="cnt-review"></span></div>
+        <div id="list-review"></div>
       </div>
       <div class="card sec-backlog">
         <div class="sec-h" id="backlogHdr" style="cursor:pointer;user-select:none;"><b><span class="sec-dot" style="background:#9aa0ab;"></span><span id="backlogArrow">▾</span> Backlog</b><span class="cnt-badge" id="cnt-backlog"></span></div>
@@ -467,14 +475,16 @@
       state = (j && j.data) || { channels: [], tasks: [] };
       state.channels = state.channels || []; state.tasks = state.tasks || [];
       myRole = (j && j.role) || "admin";
+      // миграция: задачи со старым шильдиком review в рабочих секциях → секция «На проверке»
+      state.tasks.forEach(function (t) { if (t.review && t.section !== "done" && t.section !== "review") t.section = "review"; });
       showApp(); render();
     }).catch(function () {});
   }
 
-  // Секции: «В работе» (petrov), «Backlog» (backlog) + сворачиваемый архив «Сделано».
-  // Секции mine/ideas убраны по просьбе Андрея 05.08 (были пустые).
-  var SECTIONS = ["petrov", "backlog", "done"];
-  var SEC_NAMES = { petrov: "В работе", backlog: "Backlog", done: "Сделано / архив" };
+  // Секции: «В работе» (petrov) → «На проверке» (review) → «Backlog» + архив «Сделано».
+  // Поток: Backlog → В работе → На проверке → (распределяет ТОЛЬКО админ) → архив.
+  var SECTIONS = ["petrov", "review", "backlog", "done"];
+  var SEC_NAMES = { petrov: "В работе", review: "На проверке", backlog: "Backlog", done: "Сделано / архив" };
   // Каналы «на паузе» — серые столбцы исходной таблицы; выносятся в отдельную строку
   // фильтров и не мешаются в основной разбивке. Дефолт — как в файле; хранится в
   // state.paused (канал можно вернуть в актив, убрав из списка через данные).
@@ -518,58 +528,72 @@
   var ST = { done: "Сделано", partial: "Частично", todo: "Не сделано" };
   var nextSt = { "": "todo", todo: "partial", partial: "done", done: "" };
 
-  // Карточка задачи. В рабочих секциях статус СТАВИТСЯ выбором из трёх кнопок —
-  // и задача сразу уезжает в архив с этим статусом. В архиве — пилюля-цикл.
+  // Карточка задачи. Поток: Backlog → В работе → На проверке → архив.
+  //  • Backlog: «→ в работу» (кнопка или перетаскивание).
+  //  • В работе: админ — 3 кнопки статуса (сразу в архив) и «→ на проверку»;
+  //    Петров — 3 кнопки статуса кладут задачу в «На проверке» с предложением.
+  //  • На проверке: распределяет ТОЛЬКО админ (3 кнопки → архив, «↩ в работу»);
+  //    Петров может лишь изменить своё предложение или вернуть задачу в работу.
+  //  • Архив: пилюля-цикл статуса и «↩ в Backlog».
   function taskCard(t, sec) {
     var d = document.createElement("div"); d.className = "task " + (t.status || "");
-    var stHtml = sec === "done"
-      ? '<button class="st-btn ' + (t.status || "") + '" title="Сменить статус">' + (ST[t.status] || "Без статуса") + '</button>'
-      : '<div class="st-pick">'
-        + '<button class="p-done" title="Отметить сделанной — уедет в архив">Сделано</button>'
-        + '<button class="p-partial" title="Частично сделана — уедет в архив">Частично</button>'
-        + '<button class="p-todo" title="Не сделана — уедет в архив">Не сделано</button>'
-        + '</div>';
-    // Шильдик «на проверке»: Петров пометил статус — ждёт распределения Андреем.
-    var reviewHtml = "";
-    if (t.review && sec !== "done") {
-      reviewHtml = '<span class="review-badge" title="Петров отметил статус — ждёт вашего решения">на проверке: ' + (ST[t.review.status] || "?") + '</span>'
-        + (myRole === "admin"
-          ? '<button class="a-approve" title="Подтвердить — задача уйдёт в архив с этим статусом">✓ подтвердить</button><button class="a-reject" title="Снять с проверки (вернуть без статуса)">✗ снять</button>'
-          : '<button class="a-unreview" title="Убрать свою отметку">убрать</button>');
+    var pickHtml = '<div class="st-pick">'
+      + '<button class="p-done">Сделано</button>'
+      + '<button class="p-partial">Частично</button>'
+      + '<button class="p-todo">Не сделано</button>'
+      + '</div>';
+    var stHtml, badge = "";
+    if (sec === "done") {
+      stHtml = '<button class="st-btn ' + (t.status || "") + '" title="Сменить статус">' + (ST[t.status] || "Без статуса") + '</button>';
+    } else if (sec === "review") {
+      badge = '<span class="review-badge">' + (t.review && t.review.status ? "предложено: " + ST[t.review.status] : "ждёт проверки") + '</span>';
+      stHtml = pickHtml; // админ — распределение в архив; Петров — смена своего предложения
+    } else {
+      stHtml = pickHtml;
     }
+    var moveHtml = "";
+    if (sec === "backlog") moveHtml = '<button class="a-tosec" data-to="petrov" title="Перенести в «В работе»">→ в работу</button>';
+    if (sec === "petrov") moveHtml = '<button class="a-tosec" data-to="review" title="Перенести в «На проверке»">→ на проверку</button>';
+    if (sec === "review") moveHtml = '<button class="a-tosec" data-to="petrov" title="Вернуть в «В работе»">↩ в работу</button>';
     d.innerHTML = '<div class="txt">' + esc(t.text) + '</div>'
       + (t.profit ? '<div class="profit"><b>₽ Прибыль:</b> ' + esc(t.profit) + '</div>' : "")
       + '<div class="meta">'
-      + (t.channel && (chanFilter || sec === "done") ? '<span class="tag" style="background:' + chColor(t.channel) + ';">' + esc(t.channel) + '</span>' : "")
-      + (reviewHtml || stHtml)
+      + (t.channel && (chanFilter || sec === "done" || sec === "review") ? '<span class="tag" style="background:' + chColor(t.channel) + ';">' + esc(t.channel) + '</span>' : "")
+      + badge + stHtml + moveHtml
       + (t.createdAt ? '<span class="date" title="Дата и время постановки">' + fmtDate(t.createdAt) + '</span>' : "")
       + '<div class="acts">'
       + (sec === "done" ? '<button class="a-back" title="Вернуть в Backlog">↩</button>' : "")
       + '<button class="a-edit" title="Редактировать">✎</button>'
       + '<button class="a-del" title="Удалить">✕</button>'
       + '</div></div>';
-    if (t.review && sec !== "done") d.classList.add("on-review");
+    if (sec === "review") d.classList.add("on-review");
     var stBtn = d.querySelector(".st-btn");
     if (stBtn) stBtn.addEventListener("click", function () { t.status = nextSt[t.status || ""] || ""; if (!t.status) delete t.status; t.updatedAt = Date.now(); save(); render(); });
     var pick = d.querySelector(".st-pick");
     if (pick) {
-      // Админ: статус → сразу в архив. Петров (manager): статус → шильдик «на проверке»,
-      // задача остаётся на месте до решения Андрея.
       var setSt = function (st) {
-        if (myRole === "manager") { t.review = { status: st, at: Date.now() }; }
-        else { t.status = st; t.section = "done"; delete t.review; }
+        if (sec === "review") {
+          // Распределение из «На проверке» в архив — ТОЛЬКО админ (просьба Андрея 05.08).
+          if (myRole === "admin") { t.status = st; t.section = "done"; delete t.review; }
+          else { t.review = { status: st, at: Date.now() }; } // Петров меняет предложение
+        } else {
+          if (myRole === "manager") { t.section = "review"; t.review = { status: st, at: Date.now() }; }
+          else { t.status = st; t.section = "done"; delete t.review; }
+        }
         t.updatedAt = Date.now(); save(); render();
       };
       pick.querySelector(".p-done").addEventListener("click", function () { setSt("done"); });
       pick.querySelector(".p-partial").addEventListener("click", function () { setSt("partial"); });
       pick.querySelector(".p-todo").addEventListener("click", function () { setSt("todo"); });
     }
-    var appr = d.querySelector(".a-approve");
-    if (appr) appr.addEventListener("click", function () { t.status = t.review.status; delete t.review; t.section = "done"; t.updatedAt = Date.now(); save(); render(); });
-    var rej = d.querySelector(".a-reject");
-    if (rej) rej.addEventListener("click", function () { delete t.review; t.updatedAt = Date.now(); save(); render(); });
-    var unrev = d.querySelector(".a-unreview");
-    if (unrev) unrev.addEventListener("click", function () { delete t.review; t.updatedAt = Date.now(); save(); render(); });
+    var mv = d.querySelector(".a-tosec");
+    if (mv) mv.addEventListener("click", function () {
+      var to = mv.getAttribute("data-to");
+      t.section = to;
+      if (to === "review") { if (!t.review) t.review = { status: null, at: Date.now() }; }
+      else delete t.review;
+      t.updatedAt = Date.now(); save(); render();
+    });
     var back = d.querySelector(".a-back");
     if (back) back.addEventListener("click", function () { t.section = "backlog"; delete t.status; t.updatedAt = Date.now(); save(); render(); });
     d.querySelector(".a-edit").addEventListener("click", function () { openModal(t, sec); });
@@ -577,8 +601,40 @@
       if (!confirm("Удалить задачу?\n\n«" + t.text.slice(0, 80) + "»")) return;
       state.tasks = state.tasks.filter(function (x) { return x !== t; }); save(); render();
     });
+    // Перетаскивание (десктоп): Backlog → В работе → На проверке
+    if (sec === "backlog" || sec === "petrov") {
+      d.draggable = true;
+      d.addEventListener("dragstart", function (e) {
+        _dragTask = t;
+        // цель «На проверке» может быть скрыта (пустая) — показываем на время переноса
+        if (t.section === "petrov") $("#reviewCard").style.display = "";
+        try { e.dataTransfer.setData("text/plain", t.id); e.dataTransfer.effectAllowed = "move"; } catch (_) {}
+      });
+      d.addEventListener("dragend", function () { _dragTask = null; render(); });
+    }
     return d;
   }
+  // Drop-зоны: перетащить можно ТОЛЬКО Backlog→«В работе» и «В работе»→«На проверке».
+  var _dragTask = null;
+  var DND_ALLOWED = { backlog: { petrov: 1 }, petrov: { review: 1 } };
+  function makeDropZone(el, targetSec) {
+    if (!el) return;
+    el.addEventListener("dragover", function (e) {
+      if (_dragTask && DND_ALLOWED[_dragTask.section] && DND_ALLOWED[_dragTask.section][targetSec]) { e.preventDefault(); el.classList.add("dragover"); }
+    });
+    el.addEventListener("dragleave", function () { el.classList.remove("dragover"); });
+    el.addEventListener("drop", function (e) {
+      el.classList.remove("dragover");
+      var t = _dragTask; _dragTask = null;
+      if (!t || !(DND_ALLOWED[t.section] && DND_ALLOWED[t.section][targetSec])) return;
+      e.preventDefault();
+      t.section = targetSec;
+      if (targetSec === "review" && !t.review) t.review = { status: null, at: Date.now() };
+      t.updatedAt = Date.now(); save(); render();
+    });
+  }
+  makeDropZone(document.querySelector(".card.sec-work"), "petrov");
+  makeDropZone(document.getElementById("reviewCard"), "review");
   function render() {
     // каналы: собрать из channels + фактических задач (на случай рассинхрона)
     state.tasks.forEach(function (t) { if (t.channel && state.channels.indexOf(t.channel) < 0) state.channels.push(t.channel); });
@@ -605,6 +661,8 @@
       var box = $("#list-" + sec); box.innerHTML = "";
       var list = state.tasks.filter(function (t) { return t.section === sec && (!chanFilter || t.channel === chanFilter); });
       var cnt = $("#cnt-" + sec); if (cnt) cnt.textContent = String(list.length);
+      // карта «На проверке» видна только когда в ней есть задачи (или тащат карточку)
+      if (sec === "review") $("#reviewCard").style.display = list.length ? "" : "none";
       if (sec === "done" && !doneOpen) return; // архив рендерим только развёрнутым (там ~1000 карточек)
       if (!list.length) { box.innerHTML = '<div class="empty">Пока пусто' + (chanFilter ? " по этому каналу" : "") + '.</div>'; return; }
       if (sec === "done") {
@@ -669,7 +727,8 @@
     state.channels.forEach(function (c) { var o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o); });
     sel.value = task && task.channel ? task.channel : (chanFilter || "");
     var ssel = $("#mSec"); ssel.innerHTML = "";
-    SECTIONS.forEach(function (s) { var o = document.createElement("option"); o.value = s; o.textContent = SEC_NAMES[s]; ssel.appendChild(o); });
+    // Петрову (manager) архив в выборе секций не показываем — распределение только у админа
+    SECTIONS.forEach(function (s) { if (s === "done" && myRole !== "admin") return; var o = document.createElement("option"); o.value = s; o.textContent = SEC_NAMES[s]; ssel.appendChild(o); });
     ssel.value = task ? task.section : sec;
     $("#mChanNew").value = "";
     $("#modal").style.display = "flex";
