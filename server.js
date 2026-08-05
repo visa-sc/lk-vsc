@@ -1500,15 +1500,149 @@ app.get(["/app", "/beta"], (req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.sendFile(path.join(__dirname, "public", "beta.html"));
 });
-// Бонус-карта клиента по телефону для вкладки «Аккаунт» (read-only). Доверие к
-// ?phone= — как у /cabinet (модель Фазы 1; Фаза 2 закроет по сессии). Переиспользует
-// те же хелперы лояльности, что и /api/loyalty/me и операторская карта.
+// ══════════════════════════════════════════════════════════════════════════
+// БЕТА-ЛОЯЛЬНОСТЬ — самостоятельная система ТОЛЬКО для /app. НЕ связана с /loyalty.
+// amoCRM только ЧИТАЕМ через лимитер (amoBg/amoGet) — записей в amo нет → сломать
+// нельзя. Клиентский ЛК не трогаем. Хранилища — свои JSON (в git не коммитим):
+//   betaLoyalty.json  — кэшбэк/статусы из успешных сделок amoCRM (пересчёт 1×/сутки)
+//   betaReferrals.json — реф-коды, привязки «кто-кого пригласил», журнал бонусов
+// Логика: 5% кэшбэк баллами + статусы по сумме + двусторонний реферал (другу 1500,
+// пригласившему 2000 — начисляем ТОЛЬКО когда друг реально оформил сделку в amoCRM).
+// ══════════════════════════════════════════════════════════════════════════
+const BLOY_FILE = path.join(__dirname, "betaLoyalty.json");
+const BREF_FILE = path.join(__dirname, "betaReferrals.json");
+const BLOY_RATE = 0.05;                 // 5% кэшбэка баллами (1 балл = 1 ₽)
+const BLOY_REDEEM_SHARE = 0.30;         // баллами до 30% следующей услуги (показываем)
+const BLOY_START_DAY = "2026-06-26";    // с какого дня (МСК) засчитываем сделки
+const BLOY_REF_INVITER = 2000;          // баллы пригласившему за оформившегося друга
+const BLOY_REF_FRIEND = 1500;           // приветственные баллы другу
+const BLOY_TIERS = [
+  { key: "base", name: "Базовый", min: 0, perk: "Кэшбэк 5% баллами с каждой поездки" },
+  { key: "silver", name: "Серебряный", min: 100000, perk: "Кэшбэк 5% + приоритетная поддержка" },
+  { key: "gold", name: "Золотой", min: 300000, perk: "Кэшбэк 5% + персональный менеджер" },
+  { key: "platinum", name: "Платиновый", min: 700000, perk: "Кэшбэк 5% + premium-сервис и бонус ко дню рождения" }
+];
+function bloyTierFor(spend) { let t = BLOY_TIERS[0], next = null; for (let i = 0; i < BLOY_TIERS.length; i++) { if (spend >= BLOY_TIERS[i].min) t = BLOY_TIERS[i]; else { next = BLOY_TIERS[i]; break; } } return { tier: t, next: next }; }
+let _bloy, _bref, _brefSaveT;
+function bloyLoad() { if (_bloy !== undefined) return _bloy; try { _bloy = JSON.parse(fs.readFileSync(BLOY_FILE, "utf8")); } catch (_) { _bloy = null; } return _bloy; }
+function bloySave(d) { _bloy = d; try { fs.writeFileSync(BLOY_FILE, JSON.stringify(d)); } catch (e) { console.error("bloySave:", e.message); } }
+function brefLoad() { if (!_bref) { try { _bref = JSON.parse(fs.readFileSync(BREF_FILE, "utf8")); } catch (_) { _bref = {}; } _bref.codes = _bref.codes || {}; _bref.byCode = _bref.byCode || {}; _bref.referredBy = _bref.referredBy || {}; _bref.ledger = _bref.ledger || {}; } return _bref; }
+function brefSave() { if (_brefSaveT) return; _brefSaveT = setTimeout(() => { _brefSaveT = null; try { fs.writeFileSync(BREF_FILE, JSON.stringify(_bref)); } catch (e) { console.error("brefSave:", e.message); } }, 500); }
+function bloyPk(p) { return normalizePhone(p) || ""; }
+function bloyMask(pk) { const s = String(pk); return s.length >= 4 ? ("•••" + s.slice(-4)) : s; }
+function bloyCodeFor(pk) {
+  const b = brefLoad(); if (b.codes[pk]) return b.codes[pk];
+  let h = 0; for (let i = 0; i < pk.length; i++) h = (h * 31 + pk.charCodeAt(i)) >>> 0;
+  const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let code = "", n = h;
+  for (let i = 0; i < 6; i++) { code += A[n % A.length]; n = Math.floor(n / A.length); }
+  let g = 1; while (b.byCode[code] && b.byCode[code] !== pk) { code = code.slice(0, 6) + A[(h + g) % A.length]; g++; }
+  b.codes[pk] = code; b.byCode[code] = pk; brefSave(); return code;
+}
+function brefLedger(pk) { return brefLoad().ledger[pk] || []; }
+function bloyAccountByPhone(pk) { const d = bloyLoad(); if (!d || !d.accounts) return null; for (const cid of Object.keys(d.accounts)) { const a = d.accounts[cid]; if ((a.phones || []).some((p) => p === pk || p.endsWith(pk) || pk.endsWith(p))) return a; } return null; }
+
+// Пересчёт из amoCRM (через лимитер). Идемпотентно. Читает только успешные сделки.
+async function runBetaLoyalty(trigger) {
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
+  const t0 = Date.now();
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    const params = { with: "contacts" };
+    CITY_REV_STATUSES.forEach((s, i) => { params[`filter[statuses][${i}][pipeline_id]`] = String(s.pipeline_id); params[`filter[statuses][${i}][status_id]`] = String(s.status_id); });
+    params["filter[updated_at][from]"] = String(Math.floor(Date.UTC(2026, 0, 1, 0, 0, 0) / 1000) - 3 * 3600);
+    const leads = await amoGetAllPagesParallel(`${baseUrl}/api/v4/leads`, params, 4);
+    const mainCid = (l) => { const cs = (l._embedded && l._embedded.contacts) || []; const m = cs.find((c) => c.is_main) || cs[0]; return m ? m.id : null; };
+    const qual = [];
+    for (const l of (leads || [])) { const v = _cityCfVal(l, CITY_CF_DATE); if (v == null || v === "" || isNaN(Number(v))) continue; const day = _mskDayKey(Number(v) * 1000); if (day < BLOY_START_DAY) continue; qual.push({ l, ts: Number(v) * 1000, day }); }
+    const cids = [...new Set(qual.map((q) => mainCid(q.l)).filter(Boolean))];
+    const cmap = {};
+    for (let i = 0; i < cids.length; i += 250) { const batch = cids.slice(i, i + 250); const cp = { limit: 250 }; batch.forEach((id, k) => { cp[`filter[id][${k}]`] = String(id); }); const data = await amoGet(`${baseUrl}/api/v4/contacts`, cp); const list = (data && data._embedded && data._embedded.contacts) || []; list.forEach((c) => { cmap[c.id] = { name: c.name || "", phones: extractPhonesFromContact(c) }; }); }
+    const accounts = {}; let totalEarned = 0;
+    for (const q of qual) { const l = q.l; const price = Number(l.price) || 0; if (price <= 0) continue; const points = Math.round(price * BLOY_RATE); const cid = mainCid(l); const info = cid ? cmap[cid] : null; if (!cid || !info || !info.phones.length) continue; const acc = accounts[cid] || (accounts[cid] = { contactId: cid, name: info.name, phones: info.phones, earned: 0, spend: 0, deals: [] }); acc.earned += points; acc.spend += price; acc.deals.push({ id: l.id, name: l.name || "", price, points, ts: q.ts, day: q.day }); totalEarned += points; }
+    Object.values(accounts).forEach((a) => a.deals.sort((x, y) => y.ts - x.ts));
+    bloySave({ ts: Date.now(), rate: BLOY_RATE, start: BLOY_START_DAY, accountsCount: Object.keys(accounts).length, totalEarned, scanned: (leads || []).length, qualified: qual.length, durationMs: Date.now() - t0, accounts });
+    // реферальные начисления: другу+пригласившему, ТОЛЬКО когда друг реально оформился
+    const hasDeal = (pk) => { for (const cid of Object.keys(accounts)) { if ((accounts[cid].phones || []).some((p) => p === pk || p.endsWith(pk) || pk.endsWith(p))) return true; } return false; };
+    const b = brefLoad(); let credited = 0;
+    Object.keys(b.referredBy).forEach((friendPk) => {
+      const r = b.referredBy[friendPk]; if (!r || r.status !== "pending") return;
+      if (hasDeal(friendPk)) {
+        const now = Date.now();
+        (b.ledger[r.refPhone] = b.ledger[r.refPhone] || []).push({ ts: now, type: "referral", points: BLOY_REF_INVITER, note: "Друг оформился (" + bloyMask(friendPk) + ")" });
+        (b.ledger[friendPk] = b.ledger[friendPk] || []).push({ ts: now, type: "welcome", points: BLOY_REF_FRIEND, note: "Приветственные баллы по приглашению" });
+        r.status = "qualified"; r.qualifiedTs = now; credited++;
+      }
+    });
+    if (credited) brefSave();
+    console.log(`BETA-LOYALTY [${trigger || "cron"}]: аккаунтов ${Object.keys(accounts).length}, начислено ${totalEarned}, рефералов+${credited}, ${Date.now() - t0}ms`);
+    return { ok: true, accounts: Object.keys(accounts).length, credited };
+  } catch (e) { console.error("runBetaLoyalty:", e.message); return { error: e.message }; }
+}
+
+// Карта клиента (форма как ждёт renderLoyaltyCard в beta.html) + реферальный блок.
+function bloyBuildCard(phone) {
+  const pk = bloyPk(phone);
+  const acc = bloyAccountByPhone(pk);
+  const dealsEarned = acc ? acc.earned : 0, spend = acc ? acc.spend : 0;
+  const led = brefLedger(pk);
+  const ledSum = led.reduce((a, e) => a + (Number(e.points) || 0), 0);
+  const balance = Math.max(0, dealsEarned + ledSum);
+  const { tier, next } = bloyTierFor(spend);
+  const hist = []
+    .concat(acc ? acc.deals.map((d) => ({ ts: d.ts, type: "earn", points: d.points, note: d.name || ("Сделка #" + d.id) })) : [])
+    .concat(led.map((e) => ({ ts: e.ts, type: (e.type === "welcome" || e.type === "referral" ? "earn" : e.type), points: e.points, note: e.note })))
+    .sort((a, c) => c.ts - a.ts);
+  const card = {
+    contactId: acc ? acc.contactId : null, name: acc ? acc.name : "", phones: [pk], balance,
+    earnedTotal: dealsEarned + led.filter((e) => e.points > 0).reduce((a, e) => a + e.points, 0),
+    redeemedTotal: -led.filter((e) => e.type === "redeem").reduce((a, e) => a + (Number(e.points) || 0), 0),
+    spend, tier: tier.key, tierName: tier.name, nextTier: next ? next.name : null, toNextSpend: next ? Math.max(0, next.min - spend) : 0,
+    rate: BLOY_RATE, redeemMaxShare: BLOY_REDEEM_SHARE, pointsTtlDays: 0, history: hist
+  };
+  const b = brefLoad();
+  const code = pk ? bloyCodeFor(pk) : "";
+  const invited = Object.keys(b.referredBy).filter((fp) => b.referredBy[fp].refPhone === pk).map((fp) => ({ phone: bloyMask(fp), status: b.referredBy[fp].status }));
+  const referral = {
+    code, invited, invitedCount: invited.length, qualifiedCount: invited.filter((i) => i.status === "qualified").length,
+    earnedPoints: led.filter((e) => e.type === "referral").reduce((a, e) => a + e.points, 0),
+    rewardInviter: BLOY_REF_INVITER, rewardFriend: BLOY_REF_FRIEND
+  };
+  return { card, referral };
+}
+
+// Карта + реферальный блок (для вкладки «Аккаунт» /app). Доверие к ?phone= (как /cabinet).
 app.get("/beta/api/loyalty", (req, res) => {
   const phone = String(req.query.phone || "");
   if (!phone) return res.status(400).json({ success: false, message: "Нужен телефон" });
-  const acc = loyaltyFindAccountByPhone(phone);
-  return res.json({ success: true, card: acc ? loyaltyCardForAccount(acc) : loyaltyEmptyCard(phone) });
+  const r = bloyBuildCard(phone);
+  return res.json({ success: true, card: r.card, referral: r.referral });
 });
+// Друг пришёл по ссылке ?ref=CODE — привязываем (pending), если это новый человек.
+app.post("/beta/api/loyalty/refclaim", (req, res) => {
+  const pk = bloyPk(req.body && req.body.phone);
+  const code = String((req.body && req.body.ref) || "").toUpperCase().trim();
+  if (!pk || !code) return res.status(400).json({ ok: false });
+  const b = brefLoad(); const inviterPk = b.byCode[code];
+  if (!inviterPk || inviterPk === pk) return res.json({ ok: false, reason: "self_or_unknown" });
+  if (b.referredBy[pk]) return res.json({ ok: true, already: true });
+  if (bloyAccountByPhone(pk)) return res.json({ ok: false, reason: "existing_client" }); // уже клиент — не реферал
+  b.referredBy[pk] = { refPhone: inviterPk, code, ts: Date.now(), status: "pending" }; brefSave();
+  return res.json({ ok: true });
+});
+// Ручной пересчёт (для теста/по кнопке у сотрудника), ключ BETA_CHAT_KEY. Через лимитер.
+app.post("/beta/api/loyalty/run", (req, res) => {
+  const key = process.env.BETA_CHAT_KEY || "";
+  if (!key || String((req.query.key || (req.body && req.body.key)) || "") !== key) return res.status(403).json({ ok: false });
+  setImmediate(() => { Promise.resolve(amoBg(() => runBetaLoyalty("manual"))).catch(() => {}); });
+  return res.json({ ok: true, started: true });
+});
+// Плановый пересчёт 1×/сутки 04:00 МСК (low-priority через лимитер, отдельно от /loyalty).
+function scheduleBetaLoyaltyDaily() {
+  const MSK = 3 * 3600 * 1000, DAY = 86400000, HOUR = 4;
+  (function next() { const now = Date.now() + MSK; const mid = Math.floor(now / DAY) * DAY; let target = mid + HOUR * 3600 * 1000; if (target <= now) target += DAY; setTimeout(() => { Promise.resolve(amoBg(() => runBetaLoyalty("cron"))).catch(() => {}); next(); }, Math.max(1000, target - now)); })();
+  console.log("BETA-LOYALTY: пересчёт запланирован 1×/сутки 04:00 МСК (low-priority)");
+}
+scheduleBetaLoyaltyDaily();
 // Конфиг партнёрских виджетов Travelpayouts (Авиабилеты/Отели) для вкладок /app.
 // В .env кладём URL async-скрипта виджета из кабинета Travelpayouts (он содержит ваш
 // маркер): TP_FLIGHTS_WIDGET, TP_HOTELS_WIDGET. Пусто → вкладка покажет «подключается».

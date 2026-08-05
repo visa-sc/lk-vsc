@@ -103,6 +103,16 @@
   .esim-cta{display:block;text-align:center;width:100%;box-sizing:border-box;font-size:15px;padding:14px;border-radius:12px;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;}
   .esim-note{font-size:12px;color:var(--mut);text-align:center;margin-top:10px;line-height:1.5;}
   .card-login{display:block;text-align:center;width:100%;box-sizing:border-box;margin-top:10px;font-size:15px;padding:12px;border-radius:12px;background:transparent;color:var(--accent);border:1.5px solid var(--accent);text-decoration:none;font-weight:600;}
+  /* реферальный блок (вкладка «Аккаунт») */
+  .ref-desc{font-size:13.5px;line-height:1.5;}
+  .ref-link{margin-top:10px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--mut);word-break:break-all;}
+  .ref-share{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .ref-share .btn{flex:1 1 auto;text-align:center;text-decoration:none;font-size:13.5px;padding:10px 12px;}
+  .ref-stats{margin-top:12px;font-size:13px;color:var(--mut);}
+  .ref-stats b{color:var(--ink);}
+  .ref-list{margin-top:6px;}
+  .ref-it{display:flex;justify-content:space-between;font-size:13px;padding:7px 0;border-top:1px solid var(--line);}
+  .ref-it .ok{color:var(--green);font-weight:600;} .ref-it .pend{color:var(--mut);}
   /* визуал банковской карточки (вкладка «Карта») */
   .bank-card{max-width:400px;aspect-ratio:1.586;border-radius:18px;position:relative;overflow:hidden;
     background:linear-gradient(128deg,#1b2a4a 0%,#2c6f96 55%,#43a0c8 100%);
@@ -414,6 +424,10 @@
 (function(){
   "use strict";
   var phone = (new URLSearchParams(location.search).get("phone")||"").trim();
+  // Захват реферала: друг пришёл по ?ref=CODE — запоминаем и, когда есть телефон, привязываем.
+  var refCode = (new URLSearchParams(location.search).get("ref")||"").trim();
+  try{ if(refCode) localStorage.setItem("voyo_ref", refCode); else refCode=localStorage.getItem("voyo_ref")||""; }catch(e){}
+  if(phone && refCode){ fetch("/beta/api/loyalty/refclaim",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:phone,ref:refCode})}).then(function(r){return r.json();}).then(function(){ try{ localStorage.removeItem("voyo_ref"); }catch(e){} }).catch(function(){}); }
   var navEl = document.getElementById("bn");
   var tabs = { visas:document.getElementById("tab-visas"), flights:document.getElementById("tab-flights"), hotels:document.getElementById("tab-hotels"), card:document.getElementById("tab-card"), esim:document.getElementById("tab-esim"), tours:document.getElementById("tab-tours"), account:document.getElementById("tab-account") };
   var navBtns = Array.prototype.slice.call(navEl.querySelectorAll("button"));
@@ -651,7 +665,29 @@
       host.innerHTML="";
       if(!j||!j.success||!j.card){ host.appendChild(el('<div class="panel state err">Не удалось загрузить бонусную карту.</div>')); return; }
       host.appendChild(renderLoyaltyCard(j.card));
+      if(j.referral) host.appendChild(renderReferral(j.referral));
     }).catch(function(){ host.innerHTML=""; host.appendChild(el('<div class="panel state err">Не удалось загрузить бонусную карту.</div>')); });
+  }
+  function renderReferral(ref){
+    var link=location.origin+"/app?ref="+encodeURIComponent(ref.code);
+    var shareText="Оформляю визы и поездки через VOYO. По моей ссылке тебе "+ref.rewardFriend+" бонусов на первую услугу: ";
+    var wa="https://wa.me/?text="+encodeURIComponent(shareText+link);
+    var tg="https://t.me/share/url?url="+encodeURIComponent(link)+"&text="+encodeURIComponent(shareText);
+    var wrap=el('<div class="panel ref" style="margin-top:16px;"></div>');
+    wrap.innerHTML=
+      '<h2>Приглашай друзей</h2>'+
+      '<div class="ref-desc">Другу — <b>'+ref.rewardFriend+' баллов</b> на первую услугу. Вам — <b>'+ref.rewardInviter+' баллов</b>, когда друг оформится.</div>'+
+      '<div class="ref-link" id="refLink">'+esc(link)+'</div>'+
+      '<div class="ref-share">'+
+        '<a class="btn" href="'+esc(wa)+'" target="_blank" rel="noopener">WhatsApp</a>'+
+        '<a class="btn sec" href="'+esc(tg)+'" target="_blank" rel="noopener">Telegram</a>'+
+        '<button class="btn sec" id="refCopy" type="button">Скопировать</button>'+
+      '</div>'+
+      '<div class="ref-stats">Приглашено: <b>'+ref.invitedCount+'</b> · Оформились: <b>'+ref.qualifiedCount+'</b> · Получено: <b>'+ref.earnedPoints+'</b> баллов</div>'+
+      (ref.invited && ref.invited.length ? ('<div class="ref-list">'+ref.invited.map(function(i){ return '<div class="ref-it"><span>'+esc(i.phone)+'</span><span class="'+(i.status==="qualified"?"ok":"pend")+'">'+(i.status==="qualified"?"оформился":"ждём оформления")+'</span></div>'; }).join("")+'</div>') : '');
+    var cp=wrap.querySelector("#refCopy");
+    if(cp) cp.addEventListener("click", function(){ try{ navigator.clipboard.writeText(link); cp.textContent="Скопировано ✓"; setTimeout(function(){ cp.textContent="Скопировать"; },1500); }catch(e){} });
+    return wrap;
   }
   var _shrinkAttached={};
   function attachShrinkOnce(key,getY,target){ if(_shrinkAttached[key]) return; _shrinkAttached[key]=true; attachShrink(getY,target); }

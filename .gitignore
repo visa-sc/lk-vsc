@@ -128,3 +128,5 @@ crm-svc/.amocopySessions.json
 # Налоги по юрлицам — рантайм-хранилище (сид в коде)
 .vscTaxesLegal.json
 .vscMarketingPlan.json
+betaLoyalty.json
+betaReferrals.json
