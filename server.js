@@ -1645,6 +1645,33 @@ app.post("/beta/api/loyalty/run", (req, res) => {
   setImmediate(() => { Promise.resolve(amoBg(() => runBetaLoyalty("manual"))).catch(() => {}); });
   return res.json({ ok: true, started: true });
 });
+// Открытая сводка для страницы обкатки /loyalty (решение Андрея 05.08: пока без
+// входа, смотрит любой по ссылке). Телефоны в списке маскируем; полные — только
+// с ?key=BETA_CHAT_KEY (тогда строки кликабельны для быстрого просмотра карт).
+app.get("/loyalty/api/summary", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const full = !!(process.env.BETA_CHAT_KEY && String(req.query.key || "") === process.env.BETA_CHAT_KEY);
+  const d = bloyLoad(); const b = brefLoad();
+  const refStats = { invited: 0, pending: 0, qualified: 0 };
+  Object.values(b.referredBy || {}).forEach((r) => { refStats.invited++; if (r && r.status === "qualified") refStats.qualified++; else refStats.pending++; });
+  const accounts = [];
+  if (d && d.accounts) {
+    Object.values(d.accounts).forEach((a) => {
+      const pk = bloyPk((a.phones || [])[0] || "");
+      const ledSum = brefLedger(pk).reduce((s, e) => s + (Number(e.points) || 0), 0);
+      const { tier } = bloyTierFor(a.spend || 0);
+      accounts.push({ name: a.name || "", phone: full ? pk : bloyMask(pk), phoneFull: full ? pk : "", balance: Math.max(0, (a.earned || 0) + ledSum), spend: a.spend || 0, deals: (a.deals || []).length, tierName: tier.name });
+    });
+    accounts.sort((x, y) => y.balance - x.balance);
+  }
+  res.json({
+    success: true, full,
+    data: d ? { ts: d.ts, accountsCount: d.accountsCount, totalEarned: d.totalEarned, scanned: d.scanned, qualified: d.qualified } : null,
+    refStats,
+    config: { rate: BLOY_RATE, redeemShare: BLOY_REDEEM_SHARE, start: BLOY_START_DAY, refInviter: BLOY_REF_INVITER, refFriend: BLOY_REF_FRIEND, tiers: BLOY_TIERS },
+    accounts: accounts.slice(0, 200)
+  });
+});
 // Плановый пересчёт 1×/сутки 04:00 МСК (low-priority через лимитер, отдельно от /loyalty).
 function scheduleBetaLoyaltyDaily() {
   const MSK = 3 * 3600 * 1000, DAY = 86400000, HOUR = 4;

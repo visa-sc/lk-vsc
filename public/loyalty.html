@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
-<title>Бонусная программа VOYO</title>
+<title>Лояльность VOYO — обкатка</title>
 <style>
   :root{
     --bg:#f4f6fa; --card:#ffffff; --line:#e7ebf2; --ink:#1d2433; --mut:#8a90a0;
@@ -15,12 +15,12 @@
   body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;}
   .wrap{max-width:560px;margin:0 auto;padding:20px 16px 56px;}
   h1{font-size:21px;margin:6px 0 2px;}
-  .sub{color:var(--mut);font-size:13px;margin-bottom:18px;}
+  .sub{color:var(--mut);font-size:13px;margin-bottom:18px;line-height:1.5;}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:16px;}
   .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:0 0 10px;font-weight:700;}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   input,button{font:inherit;}
-  input[type=text],input[type=tel],input[type=number]{flex:1;min-width:120px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;color:var(--ink);}
+  input[type=text],input[type=tel]{flex:1;min-width:120px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;color:var(--ink);}
   input:focus{outline:none;border-color:var(--accent);}
   button{cursor:pointer;border:0;border-radius:10px;padding:10px 14px;font-weight:600;background:var(--accent);color:#fff;}
   button.sec{background:#eef2f7;color:var(--ink);}
@@ -29,15 +29,19 @@
   .chip{background:#f3f6fa;border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-size:12px;color:var(--mut);}
   .chip b{display:block;color:var(--ink);font-size:15px;font-weight:700;margin-top:1px;}
   .note{font-size:12.5px;color:var(--mut);line-height:1.5;}
-  .warn{background:#fff7e6;border:1px solid #ffe2a8;color:#7a5b12;border-radius:10px;padding:10px 12px;font-size:13px;}
+  .ok{color:var(--green);font-size:13px;margin-top:6px;}
   .err{color:var(--red);font-size:13px;margin-top:6px;}
+  .mech{font-size:13.5px;line-height:1.6;}
+  .mech b{color:var(--accent-d);}
+  .mech .step{display:flex;gap:10px;margin-bottom:9px;}
+  .mech .n{flex:none;width:22px;height:22px;border-radius:50%;background:#eaf3f9;color:var(--accent-d);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px;}
 
-  /* ───────── КЛИЕНТСКАЯ БОНУС-КАРТА (портативный блок для встраивания в ЛК) ───────── */
+  /* бонус-карта клиента (визуал 1в1 как в /app) */
   .lc{background:linear-gradient(135deg,#2c6f96 0%,#3589bd 55%,#43a0c8 100%);color:#fff;border-radius:18px;padding:20px 20px 18px;box-shadow:0 10px 26px rgba(33,90,128,.28);position:relative;overflow:hidden;}
   .lc::after{content:"";position:absolute;right:-50px;top:-50px;width:170px;height:170px;background:rgba(255,255,255,.10);border-radius:50%;}
   .lc-top{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1;}
   .lc-brand{font-weight:700;letter-spacing:.06em;font-size:13px;opacity:.9;}
-  .lc-tier{font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.18);backdrop-filter:blur(2px);}
+  .lc-tier{font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.18);}
   .lc-bal{font-size:40px;font-weight:800;line-height:1.05;margin:14px 0 2px;position:relative;z-index:1;}
   .lc-bal small{font-size:16px;font-weight:600;opacity:.85;margin-left:6px;}
   .lc-eq{font-size:13px;opacity:.9;position:relative;z-index:1;}
@@ -46,13 +50,11 @@
   .lc-prog .bar{height:7px;background:rgba(255,255,255,.25);border-radius:99px;overflow:hidden;}
   .lc-prog .bar i{display:block;height:100%;background:#fff;border-radius:99px;}
   .lc-prog .cap{font-size:11.5px;opacity:.9;margin-top:6px;}
-
   .lc-how{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
   .lc-how .b{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 12px;}
   .lc-how .b .t{font-size:12px;color:var(--mut);margin-bottom:3px;}
   .lc-how .b .v{font-size:13.5px;font-weight:600;line-height:1.35;}
   .lc-rules{font-size:12px;color:var(--mut);line-height:1.55;margin-top:10px;}
-
   .hist{margin-top:14px;}
   .hist .h{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);font-weight:700;margin-bottom:8px;}
   .hist .it{display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line);}
@@ -63,7 +65,20 @@
   .hist .it .p.plus{color:var(--green);}
   .hist .it .p.minus{color:var(--red);}
   .empty{color:var(--mut);font-size:13px;padding:8px 0;}
-  .demo-badge{display:inline-block;background:#fff3cd;color:#7a5b12;border:1px solid #ffe2a8;border-radius:8px;font-size:11px;padding:3px 8px;margin-bottom:10px;}
+
+  /* реферальный блок */
+  .refbox{background:#f6fafd;border:1px dashed #bcd7e8;border-radius:12px;padding:12px 14px;margin-top:14px;}
+  .refbox .t{font-size:13px;font-weight:700;color:var(--accent-d);margin-bottom:6px;}
+  .reflink{display:flex;gap:8px;margin-top:8px;}
+  .reflink input{flex:1;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12.5px;background:#fff;color:var(--ink);}
+  .refstat{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .inv{margin-top:10px;font-size:13px;}
+  .inv .it{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);}
+  .inv .it:last-child{border-bottom:0;}
+  .badge{font-size:11px;font-weight:700;border-radius:999px;padding:3px 9px;}
+  .badge.pending{background:#fff3cd;color:#7a5b12;}
+  .badge.qualified{background:#e2f4e8;color:var(--green);}
+
   table.acc{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;}
   table.acc th,table.acc td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);}
   table.acc th{color:var(--mut);font-weight:600;font-size:11.5px;text-transform:uppercase;}
@@ -73,42 +88,60 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Бонусная программа VOYO</h1>
-  <div class="sub">Кэшбэк баллами с каждой поездки · 1 балл = 1 ₽ · старт 26.06.2026</div>
+  <h1>Лояльность VOYO — обкатка</h1>
+  <div class="sub">Новая система (та, что в приложении <a href="/app" style="color:var(--accent)">/app</a>): кэшбэк 5% баллами · статусы · двусторонний реферал · всё считается из amoCRM автоматически. Страница открыта по ссылке для проверки командой.</div>
 
-  <!-- Операторская панель (для команды; в клиентский ЛК не переносится) -->
-  <div class="panel" id="opPanel">
-    <h2>Предпросмотр карты клиента</h2>
+  <!-- Механика -->
+  <div class="panel">
+    <h2>Как работает механика</h2>
+    <div class="mech" id="mech">
+      <div class="step"><div class="n">1</div><div><b>Кэшбэк:</b> клиент оплатил услугу → ему автоматически падает <b>5% баллами</b> (1 балл = 1 ₽). Считаем по успешным сделкам amoCRM с датой выручки от <span id="cfgStart">26.06.2026</span>.</div></div>
+      <div class="step"><div class="n">2</div><div><b>Статусы:</b> по сумме покупок — Базовый → Серебряный (100 000 ₽) → Золотой (300 000 ₽) → Платиновый (700 000 ₽).</div></div>
+      <div class="step"><div class="n">3</div><div><b>Реферал:</b> у каждого клиента свой код и ссылка <b>/app?ref=КОД</b>. Друг открыл её и указал телефон → привязка «pending». Когда друг <b>реально оформил сделку</b> (видим в amoCRM) → другу <b id="cfgFriend">1500</b>, пригласившему <b id="cfgInviter">2000</b> баллов, статус «qualified». Само-приглашения, повторы и уже существующие клиенты отсекаются.</div></div>
+      <div class="step"><div class="n">4</div><div><b>Пересчёт:</b> ежедневно в 04:00 МСК (через лимитер amoCRM, не мешает работе) + кнопка ручного пересчёта ниже. Трата баллов (до 30% услуги) — пока витринно, списание сделаем следующим шагом.</div></div>
+    </div>
+  </div>
+
+  <!-- Карта по номеру -->
+  <div class="panel">
+    <h2>Карта клиента по номеру</h2>
     <div class="row">
       <input type="tel" id="phone" placeholder="Телефон клиента, напр. +7 999 123-45-67" />
-      <button id="showBtn">Показать карту</button>
+      <button id="showBtn">Показать</button>
     </div>
     <div class="err" id="opErr"></div>
+    <div class="note" style="margin-top:6px;">Если по номеру нет сделок — покажем пустую карту с реф-кодом (так выглядит новичок, пришедший по приглашению).</div>
+  </div>
+
+  <div id="cardHost"></div>
+  <div id="refHost"></div>
+
+  <!-- Тест реферальной привязки -->
+  <div class="panel">
+    <h2>Тест реферальной привязки</h2>
+    <div class="note" style="margin-bottom:8px;">Имитация «друг пришёл по ссылке»: введите телефон «друга» и реф-код пригласившего (код виден в карте выше). То же самое происходит автоматически, когда друг открывает /app?ref=КОД.</div>
+    <div class="row">
+      <input type="tel" id="refPhone" placeholder="Телефон друга" />
+      <input type="text" id="refCode" placeholder="Реф-код, напр. A7K2MX" style="max-width:150px;text-transform:uppercase;" />
+      <button id="refBtn">Привязать</button>
+    </div>
+    <div id="refRes"></div>
+  </div>
+
+  <!-- Сводка -->
+  <div class="panel">
+    <h2>Сводка по программе</h2>
     <div class="chips" id="ovChips"></div>
-    <div class="row" id="adminRow" style="margin-top:12px;display:none;">
-      <button class="sec" id="runBtn">Пересчитать баллы из amoCRM</button>
+    <div class="row" style="margin-top:12px;">
+      <button class="sec" id="runBtn">Пересчитать из amoCRM</button>
       <span class="note" id="runNote"></span>
     </div>
   </div>
 
-  <!-- ХОСТ для клиентской бонус-карты -->
-  <div id="cardHost"></div>
-
-  <!-- Ручная корректировка (только команда) -->
-  <div class="panel" id="adjPanel" style="display:none;">
-    <h2>Ручная корректировка баллов</h2>
-    <div class="row">
-      <input type="number" id="adjPoints" placeholder="Баллы: +начислить / −списать" />
-      <input type="text" id="adjNote" placeholder="Причина (видно в истории)" />
-      <button id="adjBtn">Применить</button>
-    </div>
-    <div class="note" style="margin-top:6px;">Списание — со знаком минус. Начисления от выручки считаются автоматически; здесь — только ручные правки.</div>
-    <div class="err" id="adjErr"></div>
-  </div>
-
-  <!-- Таблица аккаунтов (сводка для команды) -->
+  <!-- Топ счетов -->
   <div class="panel" id="accPanel" style="display:none;">
-    <h2>Счета клиентов (по балансу)</h2>
+    <h2>Счета клиентов (топ по баллам)</h2>
+    <div class="note" id="accNote" style="margin-bottom:4px;"></div>
     <div id="accTable"></div>
   </div>
 </div>
@@ -116,25 +149,30 @@
 <script>
 (function(){
   "use strict";
+  var KEY = new URLSearchParams(location.search).get("key") || "";
   var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
   function plural(n,a){ n=Math.abs(Number(n)||0)%100; var n1=n%10; if(n>10&&n<20)return a[2]; if(n1>1&&n1<5)return a[1]; if(n1===1)return a[0]; return a[2]; }
   function pts(n){ return RU(n)+" "+plural(n,["балл","балла","баллов"]); }
   function fmtDate(ts){ try{ var d=new Date(Number(ts)); return d.toLocaleDateString("ru-RU",{day:"2-digit",month:"short",year:"numeric"}); }catch(e){ return ""; } }
   function el(html){ var t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstChild; }
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  async function api(url,opts){
+    var r = await fetch(url, Object.assign({headers:{"Content-Type":"application/json"}}, opts||{}));
+    var j = null; try{ j = await r.json(); }catch(e){}
+    return {ok:r.ok, status:r.status, j:j};
+  }
 
-  // ════════ ПОРТАТИВНЫЙ РЕНДЕР КЛИЕНТСКОЙ КАРТЫ ════════
-  // Принимает объект card (формат /api/loyalty/me и /admin/api/loyalty/card).
-  // Именно ЭТУ функцию + связанные стили .lc* переносим в кабинет ЛК.
-  window.renderLoyaltyCard = function(card){
+  var host = document.getElementById("cardHost");
+  var refHost = document.getElementById("refHost");
+  var opErr = document.getElementById("opErr");
+
+  function renderCard(card){
     card = card || {};
     var balance = Number(card.balance)||0;
     var rate = Math.round((Number(card.rate)||0.05)*100);
-    var ttl = Number(card.pointsTtlDays)||0;
     var redeemShare = Math.round((Number(card.redeemMaxShare)||0)*100);
     var tierColors = {base:"var(--t-base)",silver:"var(--t-silver)",gold:"var(--t-gold)",platinum:"var(--t-platinum)"};
     var tc = tierColors[card.tier]||"var(--t-base)";
-
     var progHtml = "";
     if(card.nextTier && card.toNextSpend>0){
       var goalSpend = (Number(card.spend)||0)+(Number(card.toNextSpend)||0);
@@ -144,134 +182,67 @@
     } else if(!card.nextTier){
       progHtml = '<div class="lc-prog"><div class="cap">Максимальный статус — спасибо, что с нами ✦</div></div>';
     }
-
     var nameLine = card.name ? '<div class="lc-name">'+esc(card.name)+'</div>' : "";
-
-    var cardEl = el(
-      '<div class="lc">'+
-        '<div class="lc-top">'+
-          '<div class="lc-brand">VOYO · БОНУСЫ</div>'+
-          '<div class="lc-tier" style="background:'+tc+'">'+esc(card.tierName||"Базовый")+'</div>'+
-        '</div>'+
-        '<div class="lc-bal">'+RU(balance)+'<small>'+plural(balance,["балл","балла","баллов"])+'</small></div>'+
-        '<div class="lc-eq">= '+RU(balance)+' ₽ к оплате поездок</div>'+
-        nameLine+
-        progHtml+
-      '</div>'
-    );
-
-    var how = el(
+    var frag = document.createDocumentFragment();
+    frag.appendChild(el(
+      '<div class="lc"><div class="lc-top"><div class="lc-brand">VOYO · БОНУСЫ</div>'+
+      '<div class="lc-tier" style="background:'+tc+'">'+esc(card.tierName||"Базовый")+'</div></div>'+
+      '<div class="lc-bal">'+RU(balance)+'<small>'+plural(balance,["балл","балла","баллов"])+'</small></div>'+
+      '<div class="lc-eq">= '+RU(balance)+' ₽ к оплате поездок</div>'+nameLine+progHtml+'</div>'
+    ));
+    frag.appendChild(el(
       '<div class="lc-how">'+
-        '<div class="b"><div class="t">Как копить</div><div class="v">'+rate+'% баллами от суммы каждой оплаченной поездки</div></div>'+
-        '<div class="b"><div class="t">Как тратить</div><div class="v">1 балл = 1 ₽, до '+redeemShare+'% стоимости следующей поездки</div></div>'+
-      '</div>'
-    );
-    var rules = el('<div class="lc-rules">Баллы начисляются после оплаты. '+(ttl>0?('Действуют '+ttl+' дн. с последней активности. '):'Срок действия не ограничен. ')+'Накопленным можно частично оплатить следующую заявку.</div>');
-
-    // История
+      '<div class="b"><div class="t">Как копить</div><div class="v">'+rate+'% баллами от суммы каждой оплаченной поездки</div></div>'+
+      '<div class="b"><div class="t">Как тратить</div><div class="v">1 балл = 1 ₽, до '+redeemShare+'% стоимости следующей поездки</div></div></div>'
+    ));
+    frag.appendChild(el('<div class="lc-rules">Баллы начисляются после оплаты. Срок действия не ограничен. Накопленным можно частично оплатить следующую заявку.</div>'));
     var hist = el('<div class="hist"><div class="h">История</div></div>');
     var list = (card.history||[]);
-    if(!list.length){
-      hist.appendChild(el('<div class="empty">Пока операций нет. Первая поездка — и сюда упадут баллы.</div>'));
-    } else {
-      list.slice(0,50).forEach(function(h){
-        var plus = (Number(h.points)||0) >= 0;
-        var label = h.type==="earn" ? "Начисление" : h.type==="redeem" ? "Списание" : "Корректировка";
-        var note = h.note ? (" · "+esc(h.note)) : "";
-        hist.appendChild(el(
-          '<div class="it"><div><div class="l">'+label+note+'</div><div class="d">'+fmtDate(h.ts)+'</div></div>'+
-          '<div class="p '+(plus?"plus":"minus")+'">'+(plus?"+":"−")+RU(Math.abs(h.points))+'</div></div>'
-        ));
+    if(!list.length){ hist.appendChild(el('<div class="empty">Операций нет. Первая оплаченная услуга — и сюда упадут баллы.</div>')); }
+    else list.slice(0,50).forEach(function(h){
+      var plus = (Number(h.points)||0) >= 0;
+      var label = h.type==="earn" ? "Начисление" : h.type==="redeem" ? "Списание" : "Корректировка";
+      var note = h.note ? (" · "+esc(h.note)) : "";
+      hist.appendChild(el('<div class="it"><div><div class="l">'+label+note+'</div><div class="d">'+fmtDate(h.ts)+'</div></div>'+
+        '<div class="p '+(plus?"plus":"minus")+'">'+(plus?"+":"−")+RU(Math.abs(h.points))+'</div></div>'));
+    });
+    frag.appendChild(hist);
+    host.innerHTML=""; host.appendChild(frag);
+  }
+
+  function renderReferral(ref){
+    if(!ref){ refHost.innerHTML=""; return; }
+    var link = location.origin + "/app?ref=" + (ref.code||"");
+    var box = el('<div class="panel"><h2>Реферальный блок клиента</h2></div>');
+    var inner = el('<div class="refbox"><div class="t">Приглашай друзей — получай баллы</div>'+
+      '<div class="note">Друг получит <b>'+RU(ref.rewardFriend||1500)+'</b> баллов на первую услугу, вы — <b>'+RU(ref.rewardInviter||2000)+'</b>, когда друг оформится.</div>'+
+      '<div class="reflink"><input readonly id="refLinkInp" value="'+esc(link)+'"><button class="sec" id="copyRef">Копир.</button></div>'+
+      '<div class="refstat">'+
+        '<div class="chip">Реф-код<b>'+esc(ref.code||"—")+'</b></div>'+
+        '<div class="chip">Приглашено<b>'+RU(ref.invitedCount||0)+'</b></div>'+
+        '<div class="chip">Оформилось<b>'+RU(ref.qualifiedCount||0)+'</b></div>'+
+        '<div class="chip">Заработано за рефералов<b>'+pts(ref.earnedPoints||0)+'</b></div>'+
+      '</div></div>');
+    box.appendChild(inner);
+    if((ref.invited||[]).length){
+      var inv = el('<div class="inv"></div>');
+      inv.appendChild(el('<div class="note" style="margin-bottom:4px;">Приглашённые:</div>'));
+      ref.invited.forEach(function(i){
+        inv.appendChild(el('<div class="it"><span>'+esc(i.phone)+'</span><span class="badge '+(i.status==="qualified"?"qualified":"pending")+'">'+(i.status==="qualified"?"оформился":"ждём сделку")+'</span></div>'));
       });
+      box.appendChild(inv);
     }
-
-    var frag = document.createDocumentFragment();
-    frag.appendChild(cardEl); frag.appendChild(how); frag.appendChild(rules); frag.appendChild(hist);
-    return frag;
-  };
-
-  // ════════ Операторская обвязка (только для /loyalty, не для ЛК) ════════
-  var host = document.getElementById("cardHost");
-  var ovChips = document.getElementById("ovChips");
-  var opErr = document.getElementById("opErr");
-  var adminRow = document.getElementById("adminRow");
-  var adjPanel = document.getElementById("adjPanel");
-  var accPanel = document.getElementById("accPanel");
-  var isAdmin = false, lastPhone = "";
-
-  function showCard(card){ host.innerHTML=""; host.appendChild(window.renderLoyaltyCard(card)); }
-
-  function demoCard(){
-    return { name:"Пример Клиентовна", phones:["79991234567"], balance:7350, earnedTotal:8200, redeemedTotal:850, spend:164000,
-      tier:"silver", tierName:"Серебряный", nextTier:"Золотой", toNextSpend:136000, rate:0.05, redeemMaxShare:0.30, pointsTtlDays:0,
-      history:[
-        {ts:Date.now()-2*864e5,type:"earn",points:6200,note:"Виза Франция, тур"},
-        {ts:Date.now()-2*864e5,type:"redeem",points:-850,note:"Оплата страховки"},
-        {ts:Date.now()-40*864e5,type:"earn",points:2000,note:"Виза Италия"}
-      ] };
-  }
-
-  async function api(url,opts){
-    var r = await fetch(url, Object.assign({headers:{"Content-Type":"application/json"}}, opts||{}));
-    var j = null; try{ j = await r.json(); }catch(e){}
-    return {ok:r.ok, status:r.status, j:j};
-  }
-
-  function renderOverview(d){
-    ovChips.innerHTML="";
-    if(!d){ ovChips.appendChild(el('<div class="chip">Данных пока нет<b>запустите пересчёт</b></div>')); return; }
-    var chips = [
-      ["Счетов", RU(d.accountsCount||0)],
-      ["Начислено всего", pts(d.totalEarned||0)],
-      ["«Долг» по баллам", RU(d.liability||0)+" ₽"],
-      ["Сделок зачтено", RU(d.qualified||0)],
-      ["Без привязки", (d.unmatchedCount||0)+" ("+RU(d.unmatchedPoints||0)+" б.)"],
-      ["Обновлено", d.ts?fmtDate(d.ts):"—"]
-    ];
-    chips.forEach(function(c){ ovChips.appendChild(el('<div class="chip">'+c[0]+'<b>'+c[1]+'</b></div>')); });
-  }
-
-  function renderAccounts(accounts){
-    if(!accounts || !accounts.length){ accPanel.style.display="none"; return; }
-    accPanel.style.display="block";
-    var rows = accounts.slice(0,100).map(function(a){
-      var ph = (a.phones&&a.phones[0])||"";
-      return '<tr><td><span class="lnk" data-ph="'+esc(ph)+'">'+esc(a.name||"—")+'</span><div class="d" style="font-size:11px;color:var(--mut)">'+esc(ph)+'</div></td>'+
-             '<td>'+esc(a.tierName||"")+'</td><td class="r">'+RU(a.balance)+'</td><td class="r">'+RU(a.spend)+' ₽</td></tr>';
-    }).join("");
-    document.getElementById("accTable").innerHTML =
-      '<table class="acc"><thead><tr><th>Клиент</th><th>Статус</th><th class="r">Баллы</th><th class="r">Покупки</th></tr></thead><tbody>'+rows+'</tbody></table>';
-    document.querySelectorAll("#accTable .lnk").forEach(function(n){ n.addEventListener("click",function(){ var p=n.getAttribute("data-ph"); document.getElementById("phone").value=p; loadCard(p); window.scrollTo({top:0,behavior:"smooth"}); }); });
-  }
-
-  async function loadOverview(){
-    var res = await api("/admin/api/loyalty/overview");
-    if(res.status===401){
-      // Не авторизован — показываем демо-карту и подсказку.
-      document.getElementById("opPanel").insertBefore(el('<div class="warn">Чтобы увидеть реальные данные — войдите в <b>/vsc</b> в этом же браузере и обновите страницу. Ниже — пример того, как карта выглядит у клиента.</div>'), document.getElementById("opPanel").firstChild.nextSibling);
-      host.appendChild(el('<div class="demo-badge">Демо-карта (пример)</div>'));
-      showCard(demoCard());
-      return;
-    }
-    if(!res.ok || !res.j || !res.j.success){ opErr.textContent="Не удалось загрузить сводку."; return; }
-    renderOverview(res.j.data);
-    renderAccounts(res.j.accounts||[]);
-    // admin-возможности: пробуем включить (run/adjust доступны только админу;
-    // если кнопка вернёт 403 — просто покажем сообщение в момент клика).
-    adminRow.style.display="flex";
-    isAdmin = true; // показываем кнопки всем с доступом VSC; сервер сам проверит роль
-    var lg = (res.j.log&&res.j.log[0]);
-    document.getElementById("runNote").textContent = lg ? ("посл.: "+fmtDate(lg.ts)+(lg.error?(" · ошибка: "+lg.error):(" · "+RU(lg.earned||0)+" б."))) : "";
+    refHost.innerHTML=""; refHost.appendChild(box);
+    var cp = document.getElementById("copyRef");
+    if(cp) cp.addEventListener("click",function(){ var i=document.getElementById("refLinkInp"); i.select(); try{ navigator.clipboard.writeText(i.value); cp.textContent="✓"; setTimeout(function(){cp.textContent="Копир.";},1500); }catch(e){ document.execCommand("copy"); } });
   }
 
   async function loadCard(phone){
     opErr.textContent="";
-    var res = await api("/admin/api/loyalty/card?phone="+encodeURIComponent(phone));
-    if(res.status===401){ opErr.textContent="Нет доступа — войдите в /vsc."; return; }
+    var res = await api("/beta/api/loyalty?phone="+encodeURIComponent(phone));
     if(!res.ok || !res.j || !res.j.success){ opErr.textContent=(res.j&&res.j.message)||"Ошибка."; return; }
-    lastPhone = phone;
-    showCard(res.j.card);
-    adjPanel.style.display = "block";
+    renderCard(res.j.card);
+    renderReferral(res.j.referral);
   }
 
   document.getElementById("showBtn").addEventListener("click",function(){
@@ -279,30 +250,78 @@
   });
   document.getElementById("phone").addEventListener("keydown",function(e){ if(e.key==="Enter") document.getElementById("showBtn").click(); });
 
-  document.getElementById("runBtn").addEventListener("click",async function(){
-    var b=document.getElementById("runBtn"); b.disabled=true; b.textContent="Запускаю…";
-    var res = await api("/admin/api/loyalty/run",{method:"POST",body:"{}"});
-    if(res.status===403){ document.getElementById("runNote").textContent="Пересчёт может запускать только админ."; }
-    else if(res.j&&res.j.started){ document.getElementById("runNote").textContent="Пересчёт запущен (фон). Обновите через ~1–2 мин."; }
-    else if(res.j&&res.j.running){ document.getElementById("runNote").textContent="Пересчёт уже идёт…"; }
-    setTimeout(function(){ b.disabled=false; b.textContent="Пересчитать баллы из amoCRM"; }, 4000);
+  // тест реф-привязки
+  document.getElementById("refBtn").addEventListener("click", async function(){
+    var out = document.getElementById("refRes"); out.innerHTML="";
+    var p = document.getElementById("refPhone").value.trim();
+    var c = document.getElementById("refCode").value.trim().toUpperCase();
+    if(!p || !c){ out.appendChild(el('<div class="err">Нужны и телефон, и код.</div>')); return; }
+    var res = await api("/beta/api/loyalty/refclaim",{method:"POST",body:JSON.stringify({phone:p,ref:c})});
+    var j = res.j||{};
+    if(j.ok && j.already) out.appendChild(el('<div class="ok">Этот телефон уже привязан к пригласившему (повторная привязка не создаётся).</div>'));
+    else if(j.ok) out.appendChild(el('<div class="ok">Привязано (pending). Баллы начислятся автоматически, когда по этому телефону появится оплаченная сделка в amoCRM.</div>'));
+    else if(j.reason==="self_or_unknown") out.appendChild(el('<div class="err">Отказ: код не существует или это само-приглашение.</div>'));
+    else if(j.reason==="existing_client") out.appendChild(el('<div class="err">Отказ: этот телефон уже наш клиент со сделками — рефералом быть не может.</div>'));
+    else out.appendChild(el('<div class="err">Ошибка привязки.</div>'));
   });
 
-  document.getElementById("adjBtn").addEventListener("click",async function(){
-    var err=document.getElementById("adjErr"); err.textContent="";
-    if(!lastPhone){ err.textContent="Сначала покажите карту клиента."; return; }
-    var points=parseInt(document.getElementById("adjPoints").value,10);
-    var note=document.getElementById("adjNote").value.trim();
-    if(!points){ err.textContent="Укажите ненулевое число баллов."; return; }
-    var res = await api("/admin/api/loyalty/adjust",{method:"POST",body:JSON.stringify({phone:lastPhone,points:points,note:note})});
-    if(res.status===403){ err.textContent="Корректировки доступны только админу."; return; }
-    if(!res.ok || !res.j || !res.j.success){ err.textContent=(res.j&&res.j.message)||"Ошибка."; return; }
-    document.getElementById("adjPoints").value=""; document.getElementById("adjNote").value="";
-    showCard(res.j.card);
-    loadOverview();
+  // сводка + топ счетов
+  function renderOverview(j){
+    var ov = document.getElementById("ovChips"); ov.innerHTML="";
+    var d = j.data;
+    if(!d){ ov.appendChild(el('<div class="chip">Данных пока нет<b>запустите пересчёт</b></div>')); return; }
+    var rs = j.refStats||{};
+    [["Счетов с баллами", RU(d.accountsCount||0)],
+     ["Начислено кэшбэка", pts(d.totalEarned||0)],
+     ["Сделок зачтено", RU(d.qualified||0)+" из "+RU(d.scanned||0)],
+     ["Рефералов: привязано", RU(rs.invited||0)],
+     ["Рефералов: оформилось", RU(rs.qualified||0)],
+     ["Обновлено", d.ts?fmtDate(d.ts):"—"]
+    ].forEach(function(c){ ov.appendChild(el('<div class="chip">'+c[0]+'<b>'+c[1]+'</b></div>')); });
+    if(j.config){
+      document.getElementById("cfgStart").textContent = (j.config.start||"").split("-").reverse().join(".");
+      document.getElementById("cfgFriend").textContent = RU(j.config.refFriend);
+      document.getElementById("cfgInviter").textContent = RU(j.config.refInviter);
+    }
+  }
+  function renderAccounts(j){
+    var accounts = j.accounts||[];
+    var panel = document.getElementById("accPanel");
+    if(!accounts.length){ panel.style.display="none"; return; }
+    panel.style.display="block";
+    document.getElementById("accNote").textContent = j.full
+      ? "Полные номера (открыто по ключу) — клик по клиенту откроет его карту."
+      : "Номера замаскированы. Чтобы видеть полные и открывать карты кликом — добавьте к адресу ?key=КЛЮЧ (ключ у Андрея).";
+    var rows = accounts.slice(0,100).map(function(a){
+      var nm = j.full ? '<span class="lnk" data-ph="'+esc(a.phoneFull)+'">'+esc(a.name||"—")+'</span>' : esc(a.name||"—");
+      return '<tr><td>'+nm+'<div style="font-size:11px;color:var(--mut)">'+esc(a.phone)+'</div></td>'+
+             '<td>'+esc(a.tierName||"")+'</td><td class="r">'+RU(a.balance)+'</td><td class="r">'+RU(a.spend)+' ₽</td></tr>';
+    }).join("");
+    document.getElementById("accTable").innerHTML =
+      '<table class="acc"><thead><tr><th>Клиент</th><th>Статус</th><th class="r">Баллы</th><th class="r">Покупки</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    document.querySelectorAll("#accTable .lnk").forEach(function(n){ n.addEventListener("click",function(){ var p=n.getAttribute("data-ph"); document.getElementById("phone").value=p; loadCard(p); window.scrollTo({top:0,behavior:"smooth"}); }); });
+  }
+  async function loadSummary(){
+    var res = await api("/loyalty/api/summary"+(KEY?("?key="+encodeURIComponent(KEY)):""));
+    if(!res.ok || !res.j || !res.j.success) return;
+    renderOverview(res.j);
+    renderAccounts(res.j);
+  }
+
+  document.getElementById("runBtn").addEventListener("click", async function(){
+    var b=this, note=document.getElementById("runNote");
+    var k = KEY || prompt("Ключ пересчёта (BETA_CHAT_KEY):") || "";
+    if(!k){ note.textContent="Без ключа пересчёт не запустить."; return; }
+    b.disabled=true; b.textContent="Запускаю…";
+    var res = await api("/beta/api/loyalty/run?key="+encodeURIComponent(k),{method:"POST",body:"{}"});
+    if(res.status===403) note.textContent="Неверный ключ.";
+    else if(res.j&&res.j.started){ note.textContent="Пересчёт запущен в фоне (лимитер amoCRM) — обновите страницу через ~1–2 мин."; if(!KEY) KEY=k; }
+    setTimeout(function(){ b.disabled=false; b.textContent="Пересчитать из amoCRM"; }, 4000);
   });
 
-  loadOverview();
+  loadSummary();
+  var qsPhone = new URLSearchParams(location.search).get("phone");
+  if(qsPhone){ document.getElementById("phone").value=qsPhone; loadCard(qsPhone); }
 })();
 </script>
 </body>
