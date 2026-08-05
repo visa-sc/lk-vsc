@@ -666,14 +666,19 @@
       if (sec === "done" && !doneOpen) return; // архив рендерим только развёрнутым (там ~1000 карточек)
       if (!list.length) { box.innerHTML = '<div class="empty">Пока пусто' + (chanFilter ? " по этому каналу" : "") + '.</div>'; return; }
       if (sec === "done") {
-        // Архив — группировка по статусу: сделано / частично / не сделано / без статуса
+        // Архив — группировка по статусу: сделано / частично / не сделано / без статуса.
+        // Каждая группа СВОРАЧИВАЕТСЯ кликом по заголовку (состояние запоминается).
         [["done", "Сделано"], ["partial", "Частично сделано"], ["todo", "Не сделано"], ["", "Без статуса"]].forEach(function (g) {
           var sub = list.filter(function (t) { return (t.status || "") === g[0]; });
           if (!sub.length) return;
+          var key = "done|" + (g[0] || "none");
+          var closed = !!grpClosed[key];
           var h = document.createElement("div"); h.className = "st-grp-h " + (g[0] || "none");
-          h.textContent = g[1] + " · " + sub.length;
+          h.style.cursor = "pointer"; h.style.userSelect = "none";
+          h.textContent = (closed ? "▸ " : "▾ ") + g[1] + " · " + sub.length;
+          h.addEventListener("click", function () { if (grpClosed[key]) delete grpClosed[key]; else grpClosed[key] = 1; saveGrpClosed(); render(); });
           box.appendChild(h);
-          sub.forEach(function (t) { box.appendChild(taskCard(t, sec)); });
+          if (!closed) sub.forEach(function (t) { box.appendChild(taskCard(t, sec)); });
         });
         return;
       }
