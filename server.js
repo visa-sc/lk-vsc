@@ -5819,12 +5819,16 @@ async function buyoutsSheetMonths() {
       buyDate: findCol((s) => s.indexOf("дата покупки") >= 0),
       buySum: findCol((s) => s.indexOf("сумма снятия") >= 0),
       retDate: findCol((s) => s.indexOf("дата поступления возврата") >= 0),
-      retSum: findCol((s) => s.indexOf("сумма возврата") === 0)
+      retSum: findCol((s) => s.indexOf("сумма возврата") === 0),
+      authDate: findCol((s) => s.indexOf("дата авторизации") >= 0)
     };
     if (C.rs < 0 || C.buyDate < 0 || C.buySum < 0) { console.error("BUYOUTS sheet «" + key + "»: не найдены колонки"); continue; }
     for (let i = hdr + 1; i < rows.length; i++) {
       const rr = rows[i] || [];
       if (String(rr[C.rs] || "").trim().toLowerCase() !== "расчетный счет") continue;
+      // Пометка Насти «не авторизовано» в колонке «дата авторизации» = банк транзакцию
+      // не провёл, в выписке её нет — из сверки строку исключаем (просьба Андрея 06.08).
+      if (C.authDate >= 0 && String(rr[C.authDate] || "").toLowerCase().indexOf("не авторизован") >= 0) continue;
       const buyYm = _xlsxSerialToYm(rr[C.buyDate]);
       const buySum = vscNum(rr[C.buySum]);
       if (buyYm && buySum != null && buySum > 0) { const m = months[buyYm] || (months[buyYm] = { deb: 0, cre: 0 }); m.deb += buySum; }
@@ -5973,11 +5977,16 @@ function acqComm(text) { const m = /сумма комиссии\s*(\d[\d\s]*)\s*
 async function acqFetchEntity(token) {
   const acc = await tbAccRuble(token);
   if (!acc) throw new Error("рублёвый счёт не найден");
-  const till = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10) + "T00:00:00Z";
-  const from = "2026-01-01T00:00:00Z"; // ПОМЕСЯЧНО с начала 2026 (по просьбе Андрея)
+  // ПОМЕСЯЧНО с начала 2026 (по просьбе Андрея). Конец периода у statement — параметр
+  // «to» (НЕ «till»: неизвестный параметр банк молча игнорирует и отдаёт from→сегодня;
+  // проверено 06.08.2026). Нам и нужен весь период, поэтому to = сегодня+2 дня.
+  // «Пустые» февраль–апрель в данных — это НЕ баг выгрузки: эквайринга на счетах
+  // Т-Банка в те месяцы почти не было (и карточного, и СБП; появился с мая).
+  const from = "2026-01-01T00:00:00Z";
+  const to = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10) + "T00:00:00Z";
   let cursor = "", ops = [];
   for (let p = 0; p < 400; p++) {
-    const j = await tbGetT(token, "https://business.tbank.ru/openapi/api/v1/statement?accountNumber=" + acc + "&from=" + from + "&till=" + till + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
+    const j = await tbGetT(token, "https://business.tbank.ru/openapi/api/v1/statement?accountNumber=" + acc + "&from=" + from + "&to=" + to + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
     ops = ops.concat(j.operations || []);
     if (!j.nextCursor || !(j.operations || []).length) break;
     cursor = j.nextCursor; await new Promise((s) => setTimeout(s, 250));

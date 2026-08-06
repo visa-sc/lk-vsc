@@ -4263,6 +4263,15 @@
           const prevYm = (function () { const dP = new Date(Date.UTC(nowMsk.getUTCFullYear(), nowMsk.getUTCMonth() - 1, 1)); return dP.getUTCFullYear() + "-" + String(dP.getUTCMonth() + 1).padStart(2, "0"); })();
           const td = (html, extra) => '<td style="padding:5px 8px;white-space:nowrap;' + (extra || "") + '">' + html + '</td>';
           const badge = (txt, col, bg) => '<span style="font-size:10px;font-weight:700;color:' + col + ';background:' + bg + ';border-radius:6px;padding:2px 6px;">' + txt + '</span>';
+          // Прошлый месяц держим на виду, только пока сверка по нему НЕ сошлась
+          // (договорённость с Андреем 06.08); сошёлся — уезжает в историю.
+          const prevOk = (function () {
+            if (prevYm <= (d.seedUpto || "2026-05")) return true;
+            const b = (d.bank || {})[prevYm], s = (d.sheet || {})[prevYm];
+            if (!b && !s) return false;
+            return Math.abs(((b || {}).deb || 0) - (((s || {}).deb) || 0)) <= 2000;
+          })();
+          const isRecent = (ym) => ym >= curYm || (ym === prevYm && !prevOk);
           // ── Секция 1: движение денег (сид + банк) ──
           const bankYms = Object.keys(bank).filter((ym) => ym > seedUpto).sort();
           const moveRows = [];
@@ -4270,7 +4279,7 @@
           bankYms.forEach((ym) => moveRows.push({ name: ymName(ym), ym: ym, deb: (bank[ym] || {}).deb || 0, cre: (bank[ym] || {}).cre || 0, verified: false }));
           moveRows.reverse(); // свежий месяц СВЕРХУ (и в истории тоже)
           const moveHtml = moveRows.map((r) => {
-            const recent = r.ym && r.ym >= prevYm;
+            const recent = r.ym && isRecent(r.ym);
             return '<tr class="' + (recent ? "" : "buyoutsHist1") + '" style="border-top:1px solid #f0eef5;' + (recent ? "" : "display:none;") + '">'
               + td('<b style="color:#1d2330;">' + escapeHtml(r.name) + '</b> ' + (r.verified ? badge("сверено", "#2c7a43", "#e3f3e7") : badge("банк", "#3a6ea5", "#e8f1f9")))
               + td(money2(r.deb)) + td(money2(r.cre)) + '</tr>';
@@ -4282,7 +4291,7 @@
           // проводит позже. Холды == расхождению (±100 ₽) → зелёная ✓; нет → красный ❗.
           const cmpYms = Array.from(new Set([].concat(Object.keys(bank), Object.keys(sheet)))).filter((ym) => ym >= "2026-01").sort().reverse(); // свежий месяц СВЕРХУ
           const cmpHtml = cmpYms.map((ym) => {
-            const recent = ym >= prevYm;
+            const recent = isRecent(ym);
             const trOpen = '<tr class="' + (recent ? "" : "buyoutsHist2") + '" style="border-top:1px solid #f0eef5;vertical-align:top;' + (recent ? "" : "display:none;") + '">';
             if (ym <= seedUpto) {
               return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>')
@@ -4330,12 +4339,12 @@
             + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
             + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="' + thL + '">Период</th><th style="' + thL + '">Расход</th><th style="' + thL + '">Приход</th></tr></thead>'
             + '<tbody>' + moveHtml + '</tbody></table></div>'
-            + histBtn("buyoutsHistBtn1", moveRows.filter((r) => !(r.ym && r.ym >= prevYm)).length)
+            + histBtn("buyoutsHistBtn1", moveRows.filter((r) => !(r.ym && isRecent(r.ym))).length)
             + '<div class="vsc-chart-h" id="buyoutsCmpH" style="margin:14px 0 6px;">2 · Сверка расхода по р/с с гугл-таблицей выкупов (Авиа + Отель)</div>'
             + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
             + '<thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="' + thL + '">Месяц</th><th style="' + thL + '">Расход по р/с: банк / таблица</th></tr></thead>'
             + '<tbody>' + cmpHtml + '</tbody></table></div>'
-            + histBtn("buyoutsHistBtn2", cmpYms.filter((ym) => ym < prevYm).length)
+            + histBtn("buyoutsHistBtn2", cmpYms.filter((ym) => !isRecent(ym)).length)
             + '<div style="font-size:11.5px;color:#8a90a0;margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">обновлено: ' + escapeHtml(upd) + ' МСК <button type="button" id="buyoutsRun" class="vsc-dayrev-refresh" style="margin-top:0;">↻ Обновить</button></div>';
           const cmpH = box.querySelector("#buyoutsCmpH"); if (cmpH) cmpH.appendChild(vscInfo("<b>Как считается</b><br>Банк: только проведённые операции (без холдов), месяц — по дате авторизации. Таблица: вкладки «Авиа»+«Отель», только «Расчетный счет», по сумме снятия. Сходится, если Δ ≤ 2000 ₽ (зелёным); выше — красным. Обновляется ежедневно в 00:10 МСК. Старые месяцы зафиксированы снимком (🔒)."));
           const frozenL = box.querySelector("#frozenL"); if (frozenL) frozenL.appendChild(vscInfo("<b>Заморожено в выкупах</b><br>Расход " + money(d.frozenDeb) + " − приход " + money(d.frozenCre) + ". По май 2026 — сверено вручную, с июня — по банку. Счёт " + escapeHtml(d.account || "") + "."));
