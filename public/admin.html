@@ -4388,7 +4388,7 @@
           let prevC = null, prevName = "";
           for (let j = i - 1; j >= 0; j--) { const pc = ms[j] && ms[j].ctrl; if (pc && (pc.actualATV != null || pc.actualCV != null)) { prevC = pc; prevName = ms[j].name; break; } }
           if (!prevC) continue;
-          rowsHtml.push('<tr style="border-top:1px solid #f0eef5;"><td style="padding:7px 10px;font-weight:600;color:#1d2330;">' + escapeHtml(shortN(ms[i].name)) + '</td>' + cell(c.planATV, prevC.actualATV, "money") + cell(c.planCV, prevC.actualCV, "pct") + '</tr>');
+          rowsHtml.push('<tr class="planop-row" style="border-top:1px solid #f0eef5;"><td style="padding:7px 10px;font-weight:600;color:#1d2330;">' + escapeHtml(shortN(ms[i].name)) + '</td>' + cell(c.planATV, prevC.actualATV, "money") + cell(c.planCV, prevC.actualCV, "pct") + '</tr>');
           // Подпись «какие ячейки листа взяли» (просьба Андрея 22.07) — для месяцев,
           // где сервер вернул координаты (живые месяцы; в старых снимках их нет).
           if (c.planSrc) {
@@ -4401,9 +4401,24 @@
           }
         }
         if (!rowsHtml.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Недостаточно данных для проверки."; wrap.appendChild(e); return wrap; }
+        // По умолчанию показываем только актуальный (последний) месяц, прошлые — под
+        // кнопкой «история» (просьба Андрея 06.08).
+        const histRows = rowsHtml.slice(0, -1), curRow = rowsHtml[rowsHtml.length - 1];
         const tbl = document.createElement("div"); tbl.style.overflowX = "auto";
-        tbl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 10px;">Месяц</th><th style="text-align:left;padding:7px 10px;">План ATV vs факт пред.</th><th style="text-align:left;padding:7px 10px;">План конверсии vs факт пред.</th></tr></thead><tbody>' + rowsHtml.join("") + '</tbody></table>';
+        tbl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="color:#6b7280;font-size:11px;text-transform:uppercase;"><th style="text-align:left;padding:7px 10px;">Месяц</th><th style="text-align:left;padding:7px 10px;">План ATV vs факт пред.</th><th style="text-align:left;padding:7px 10px;">План конверсии vs факт пред.</th></tr></thead><tbody>' + histRows.map((r) => r.replace('class="planop-row"', 'class="planop-row planop-hist"').replace('style="border-top:1px solid #f0eef5;"', 'style="border-top:1px solid #f0eef5;display:none;"')).join("") + curRow + '</tbody></table>';
         wrap.appendChild(tbl);
+        if (histRows.length) {
+          const histBtn = document.createElement("button");
+          histBtn.type = "button";
+          histBtn.textContent = "История · " + histRows.length + " мес.";
+          histBtn.style.cssText = "margin-top:10px;padding:6px 14px;border:1px solid #e2e0ea;border-radius:9px;background:#fff;color:#6b7280;font-size:12px;cursor:pointer;";
+          histBtn.onclick = () => {
+            const hidden = tbl.querySelector(".planop-hist").style.display === "none";
+            tbl.querySelectorAll(".planop-hist").forEach((tr) => { tr.style.display = hidden ? "" : "none"; });
+            histBtn.textContent = hidden ? "Скрыть историю" : ("История · " + histRows.length + " мес.");
+          };
+          wrap.appendChild(histBtn);
+        }
         // «Откуда берём» — под «i» в заголовке (просьба Андрея 22.07, не мозолит глаза)
         if (notes.length) h.appendChild(vscInfo("<b>Откуда берём</b><br>" + notes.slice(-2).map(escapeHtml).join("<br><br>")));
         return wrap;
