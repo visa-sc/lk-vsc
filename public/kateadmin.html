@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>VSC · Рабочее место</title>
+  <link rel="apple-touch-icon" href="/vsc-icon.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/vsc-icon.png" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+      background: #f4f6fb;
+      color: #1d2330;
+      display: flex; flex-direction: column;
+    }
+    body::before {
+      content: ""; position: fixed; inset: 0; z-index: -1;
+      background: linear-gradient(160deg, #eef4fd 0%, #f6f4fb 45%, #f2f7f4 100%);
+    }
+    /* ── Шапка ── */
+    .top {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      padding: 10px 16px calc(10px + env(safe-area-inset-top) * 0) 16px;
+      background: rgba(255,255,255,.82); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(20,32,64,.08);
+      position: sticky; top: 0; z-index: 20;
+    }
+    .brand { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; }
+    .brand b { font-size: 17px; letter-spacing: .28em; color: #2477de; font-weight: 800; }
+    .brand span { font-size: 12px; color: #8a90a0; letter-spacing: .06em; }
+    .tabs { display: flex; gap: 7px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; flex: 1; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab {
+      flex: 0 0 auto; border: 1px solid rgba(20,32,64,.12); background: #fff; color: #3a4356;
+      font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 999px; cursor: pointer;
+      font-family: inherit; transition: all .15s;
+    }
+    .tab.on { background: #2477de; border-color: #2477de; color: #fff; box-shadow: 0 3px 10px rgba(36,119,222,.25); }
+    .who { font-size: 12px; color: #8a90a0; white-space: nowrap; }
+    .out {
+      border: 1px solid rgba(20,32,64,.12); background: #fff; color: #6b7280; font-size: 12px;
+      padding: 7px 13px; border-radius: 999px; cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .preview-note {
+      background: #fdf6ec; border-bottom: 1px solid #f0dfc0; color: #95824f;
+      font-size: 12px; font-weight: 600; text-align: center; padding: 6px 14px;
+    }
+    /* ── Контент ── */
+    .frames { flex: 1; position: relative; min-height: 0; }
+    .frames iframe {
+      position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent;
+      display: none;
+    }
+    .frames iframe.on { display: block; }
+    /* ── Вход ── */
+    .gate {
+      position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(160deg, #eef4fd 0%, #f6f4fb 45%, #f2f7f4 100%); padding: 20px;
+    }
+    .card {
+      width: 100%; max-width: 400px; background: rgba(255,255,255,.9); backdrop-filter: blur(16px);
+      border: 1px solid rgba(20,32,64,.08); border-radius: 22px; padding: 34px 30px;
+      box-shadow: 0 18px 50px rgba(20,32,64,.10);
+    }
+    .card .logo { text-align: center; margin-bottom: 6px; }
+    .card .logo b { font-size: 24px; letter-spacing: .3em; color: #2477de; font-weight: 800; }
+    .card .sub { text-align: center; font-size: 13px; color: #8a90a0; margin-bottom: 24px; }
+    .card label { display: block; font-size: 12px; font-weight: 600; color: #6b7280; margin: 13px 0 5px; }
+    .card input {
+      width: 100%; height: 48px; padding: 0 15px; font-size: 15px; font-family: inherit;
+      border: 1px solid rgba(20,32,64,.14); border-radius: 12px; background: #fff; outline: none;
+    }
+    .card input:focus { border-color: #2477de; box-shadow: 0 0 0 3px rgba(36,119,222,.12); }
+    .card button {
+      width: 100%; height: 48px; margin-top: 20px; border: 0; border-radius: 12px; cursor: pointer;
+      background: #2477de; color: #fff; font-size: 15px; font-weight: 700; font-family: inherit;
+    }
+    .card button:disabled { opacity: .6; }
+    .err { color: #b0263a; font-size: 13px; margin-top: 12px; text-align: center; display: none; }
+    .load { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center; background: rgba(244,246,251,.7); font-size: 14px; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <div id="gate" class="gate">
+    <div class="card">
+      <div class="logo"><b>V S C</b></div>
+      <div class="sub" id="gateSub">Рабочее место</div>
+      <div id="fStaff">
+        <label>E-mail</label>
+        <input id="fEmail" type="email" autocomplete="username" placeholder="name@visa-sc.ru" />
+        <label>Пароль</label>
+        <input id="fPass" type="password" autocomplete="current-password" placeholder="Пароль" />
+      </div>
+      <div id="fCode" style="display:none;">
+        <label>Код доступа</label>
+        <input id="fCodeInp" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Код" />
+      </div>
+      <button id="fGo" type="button">Войти</button>
+      <div id="fErr" class="err"></div>
+    </div>
+  </div>
+
+  <div id="previewNote" class="preview-note" style="display:none;">Превью для директора: так рабочее место видит Екатерина Зайцева (её права, её ограничения)</div>
+  <div class="top" id="topBar" style="display:none;">
+    <div class="brand"><b>V S C</b><span id="brandSub">рабочее место</span></div>
+    <div class="tabs" id="tabs"></div>
+    <span class="who" id="who"></span>
+    <button class="out" id="btnOut" type="button">Выйти</button>
+  </div>
+  <div class="frames" id="frames" style="display:none;"></div>
+  <div class="load" id="load">Загружаем…</div>
+
+  <script>
+    (function () {
+      "use strict";
+      // Превью-режим (/kateadminexpample): вход по коду директора, дальше — сессия
+      // с правами Екатерины (создаётся сервером), т.е. вид 1-в-1 как у неё.
+      var IS_PREVIEW = /^\/kateadminexa?m?pample\/?$/.test(location.pathname) || /kateadminex/.test(location.pathname);
+      // Токен staff-сессии кладём под своим ключом И под ключами admin.html
+      // (voyo_vsc_token для /vsc, voyo_team_token для /team) — iframe'ы same-origin
+      // подхватывают его и не показывают собственный вход.
+      var MY_KEY = "voyo_kate_token";
+      var SHARE_KEYS = ["voyo_kate_token", "voyo_vsc_token", "voyo_team_token"];
+      var TAB_KEY = "voyo_kate_tab";
+      var TABS = [
+        { id: "vsc", label: "VSC · Дашборд", src: "/vsc" },
+        { id: "team", label: "Команда", src: "/team" },
+        { id: "calc", label: "Калькулятор", src: "/calc" }
+      ];
+      var $ = function (id) { return document.getElementById(id); };
+      var token = "";
+      try { token = localStorage.getItem(MY_KEY) || ""; } catch (_) {}
+
+      if (IS_PREVIEW) {
+        $("fStaff").style.display = "none";
+        $("fCode").style.display = "";
+        $("gateSub").textContent = "Превью рабочего места Екатерины — вход по коду";
+      }
+
+      function showErr(m) { var e = $("fErr"); e.textContent = m || "Ошибка"; e.style.display = "block"; }
+      function setTokens(t) {
+        SHARE_KEYS.forEach(function (k) { try { localStorage.setItem(k, t || ""); } catch (_) {} });
+      }
+      function clearTokens() {
+        SHARE_KEYS.concat([TAB_KEY]).forEach(function (k) { try { localStorage.removeItem(k); } catch (_) {} });
+      }
+
+      function api(path, body, tok) {
+        return fetch(path, {
+          method: body ? "POST" : "GET",
+          headers: Object.assign({ "Content-Type": "application/json" }, tok ? { Authorization: "Bearer " + tok } : {}),
+          body: body ? JSON.stringify(body) : undefined
+        }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); });
+      }
+
+      // ── Приложение (после входа) ──
+      function boot(name) {
+        $("gate").style.display = "none";
+        $("topBar").style.display = "";
+        $("frames").style.display = "";
+        if (IS_PREVIEW) $("previewNote").style.display = "";
+        $("who").textContent = name || "";
+        var tabsEl = $("tabs"), framesEl = $("frames");
+        var cur = "";
+        try { cur = localStorage.getItem(TAB_KEY) || ""; } catch (_) {}
+        if (!TABS.some(function (t) { return t.id === cur; })) cur = TABS[0].id;
+        TABS.forEach(function (t) {
+          var b = document.createElement("button");
+          b.type = "button"; b.className = "tab"; b.textContent = t.label; b.dataset.id = t.id;
+          b.addEventListener("click", function () { activate(t.id); });
+          tabsEl.appendChild(b);
+        });
+        function activate(id) {
+          try { localStorage.setItem(TAB_KEY, id); } catch (_) {}
+          Array.prototype.forEach.call(tabsEl.children, function (b) { b.classList.toggle("on", b.dataset.id === id); });
+          TABS.forEach(function (t) {
+            var f = document.getElementById("fr_" + t.id);
+            if (t.id === id && !f) {
+              f = document.createElement("iframe");
+              f.id = "fr_" + t.id; f.src = t.src; f.setAttribute("title", t.label);
+              framesEl.appendChild(f);
+            }
+            if (f) f.classList.toggle("on", t.id === id);
+          });
+        }
+        activate(cur);
+        $("btnOut").addEventListener("click", function () {
+          api("/admin/api/manager-logout", {}, token).catch(function () {});
+          clearTokens();
+          location.reload();
+        });
+      }
+
+      // ── Вход ──
+      function doLogin() {
+        var btn = $("fGo");
+        btn.disabled = true; btn.textContent = "Входим…"; $("fErr").style.display = "none";
+        var p;
+        if (IS_PREVIEW) {
+          p = api("/admin/api/kate-preview-login", { code: ($("fCodeInp").value || "").trim() });
+        } else {
+          p = api("/admin/api/manager-login", { email: ($("fEmail").value || "").trim(), password: $("fPass").value || "" });
+        }
+        p.then(function (r) {
+          if (r.j && r.j.success && r.j.token) {
+            token = r.j.token;
+            setTokens(token);
+            boot(r.j.name || "");
+          } else {
+            showErr((r.j && r.j.message) || "Не удалось войти");
+            btn.disabled = false; btn.textContent = "Войти";
+          }
+        }).catch(function () {
+          showErr("Ошибка сети — попробуйте ещё раз");
+          btn.disabled = false; btn.textContent = "Войти";
+        });
+      }
+      $("fGo").addEventListener("click", doLogin);
+      ["fEmail", "fPass", "fCodeInp"].forEach(function (id) {
+        $(id).addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); });
+      });
+
+      // ── Автовход по живой сессии ──
+      if (token) {
+        $("load").style.display = "flex";
+        api("/admin/api/whoami", null, token).then(function (r) {
+          $("load").style.display = "none";
+          if (r.j && r.j.success && r.j.role === "manager") { setTokens(token); boot(r.j.name || ""); }
+          else { clearTokens(); token = ""; }
+        }).catch(function () { $("load").style.display = "none"; });
+      }
+    })();
+  </script>
+</body>
+</html>

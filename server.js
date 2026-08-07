@@ -14,6 +14,7 @@ const iconv = require("iconv-lite");
 const sms = require("./sms");
 const mail = require("./mail");
 const esign = require("./esign"); // ПЭП-подпись (аналог fdoc) — отдельный модуль, монтируется ниже
+const translateMod = require("./translate"); // Переводы документов с ИИ-проверкой (/translate) — отдельный модуль, монтируется ниже
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,7 +37,8 @@ app.get("/", (req, res, next) => {
   const h = String(req.hostname || "").toLowerCase();
   if (h === "vsc.voyotravel.ru") return serveAdminPanel(res, true);
   if (h === "dev.voyotravel.ru") return serveAdminPanel(res, false);
-  if (h === "admin.voyotravel.ru") return serveAdminPanel(res, false); // админка ЛК (как /admin), 07.08.2026
+  // admin.voyotravel.ru обслуживает ОТДЕЛЬНЫЙ сервис kateadmin (:3002, nginx ведёт
+  // мимо нас) — рабочее место Зайцевой, обособленное от основного приложения (07.08.2026).
   if (h === "crm.voyotravel.ru") { // копия amoCRM — crm.voyotravel.ru (та же страница, что /amocrm_copy)
     res.set("Cache-Control", "no-cache");
     return res.sendFile(path.join(__dirname, "public", "amocrm_copy.html"));
@@ -1805,6 +1807,12 @@ if (!loadLoyalty()) setTimeout(() => { Promise.resolve(amoBg(() => runLoyaltyAcc
 // НЕ интегрировано в клиентский ЛК и не меняет вход/авторизацию (требование Андрея).
 esign.mount(app, { requireVscAccess, requireAdmin });
 
+// ── Переводы документов с ИИ (/translate, проект Зайцевой) — отдельный модуль.
+// Доступ: админ или руководитель с "translate" в vscRestrict.tabs (Зайцева).
+// Клиентский ЛК и amoCRM не затрагивает; бот Я.Мессенджера стартует только при
+// заданном YM_BOT_TOKEN (тихий режим — в чат ничего не пишет).
+translateMod.mount(app, { getStaffFromReq });
+
 // ═════════════════════════════════════════════════════════════════════════
 // Остановки рекламных кампаний Яндекс.Директа (item 2). API v5 НЕ отдаёт ленту
 // «история остановок» — поэтому периодически опрашиваем campaigns.get (только
@@ -2190,6 +2198,28 @@ app.post("/admin/api/manager-login", (req, res) => {
 app.post("/admin/api/manager-logout", requireStaff, (req, res) => {
   if (req.staff && req.staff.token) { managerSessions.delete(req.staff.token); saveManagerSessions(); }
   return res.json({ success: true });
+});
+
+// ── Превью рабочего места Екатерины для директора (07.08.2026) ──
+// /kateadminexpample: вход по админ-коду, после чего создаётся ОБЫЧНАЯ staff-сессия
+// Екатерины — директор видит её рабочее место 1-в-1 (её права, её ограничения:
+// без прибыли/рентабельности, без ввода прибыли, курс юсдт только для чтения).
+app.get(["/kateadminexpample", "/kateadminexample"], (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.sendFile(path.join(__dirname, "public", "kateadmin.html"));
+});
+app.post("/admin/api/kate-preview-login", (req, res) => {
+  const ip = getClientIp(req);
+  const limit = checkAdminLoginRateLimit(ip);
+  if (!limit.ok) return res.status(429).json({ success: false, message: limit.message });
+  const provided = String((req.body && req.body.code) || "").trim();
+  if (!provided) return res.status(400).json({ success: false, message: "Введите код доступа" });
+  if (provided !== ADMIN_CODE) { recordAdminLoginFail(ip); return res.status(403).json({ success: false, message: "Неверный код" }); }
+  const email = "ekaterina.z@visa-sc.ru";
+  const acc = (loadManagers() || {})[email];
+  if (!acc) return res.status(500).json({ success: false, message: "Аккаунт Екатерины не найден" });
+  const token = createManagerSession(email, acc.name);
+  return res.json({ success: true, token, role: "manager", name: acc.name, perms: acc.perms || [], vscRestrict: acc.vscRestrict || null });
 });
 
 // ── Восстановление пароля руководителя (/team, dev., vsc) ──

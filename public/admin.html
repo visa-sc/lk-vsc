@@ -1411,7 +1411,14 @@
       // Вход по e-mail+паролю — ТОЛЬКО для персонала: /team, dev.voyotravel.ru и поддомен vsc.voyotravel.ru.
       // Путь /vsc (админ-дашборд Андрея) и /admin остаются ТОЛЬКО на коде доступа — форму входа там НЕ трогаем.
       const IS_VSC_HOST = _host === "vsc.voyotravel.ru";
-      const IS_STAFF_LOGIN = IS_TEAM || IS_VSC_HOST;
+      // Рабочее место admin.voyotravel.ru (kateadmin.html) грузит /vsc и /team в iframe
+      // и кладёт staff-токен в voyo_kate_token + voyo_vsc_token/voyo_team_token. В этом
+      // embed-режиме ведём себя как staff-хост: восстановление сессии по токену, без
+      // формы кода и админского Face ID. Детект точный: same-origin iframe + маркер
+      // voyo_kate_token (он появляется ТОЛЬКО после входа через оболочку).
+      let IS_EMBED_WORKPLACE = false;
+      try { IS_EMBED_WORKPLACE = window.self !== window.top && !!localStorage.getItem("voyo_kate_token"); } catch (_) {}
+      const IS_STAFF_LOGIN = IS_TEAM || IS_VSC_HOST || IS_EMBED_WORKPLACE;
       const TOKEN_KEY = IS_TEAM ? "voyo_team_token" : (IS_VSC ? "voyo_vsc_token" : "voyo_admin_token");
       if (IS_VSC) {
         try {
