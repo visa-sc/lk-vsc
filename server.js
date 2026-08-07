@@ -1813,6 +1813,39 @@ esign.mount(app, { requireVscAccess, requireAdmin });
 // заданном YM_BOT_TOKEN (тихий режим — в чат ничего не пишет).
 translateMod.mount(app, { getStaffFromReq });
 
+// ── DISK WATCH: контроль свободного места на диске сервера (просьба Андрея 08.08).
+// Каждые 6 часов; если свободно меньше DISK_ALERT_GB (дефолт 1 ГБ) — письмо
+// директору с noreply (не чаще 1 раза в сутки, маркер .diskAlert.json).
+const DISK_ALERT_GB = Number(process.env.DISK_ALERT_GB || 1);
+const DISK_ALERT_STATE = path.join(__dirname, ".diskAlert.json");
+async function checkDiskSpace() {
+  try {
+    const st = fs.statfsSync("/");
+    const freeGb = (st.bavail * st.bsize) / (1024 ** 3);
+    const totalGb = (st.blocks * st.bsize) / (1024 ** 3);
+    if (freeGb > DISK_ALERT_GB) return;
+    let last = 0;
+    try { last = JSON.parse(fs.readFileSync(DISK_ALERT_STATE, "utf8")).lastAt || 0; } catch (_) {}
+    if (Date.now() - last < 24 * 3600 * 1000) return;
+    const r = await mail.sendMail({
+      to: "director@visa-sc.ru",
+      subject: `⚠️ VOYO сервер: заканчивается место на диске (${freeGb.toFixed(2)} ГБ свободно)`,
+      html: `<p>На сервере ЛК (89.108.88.59) осталось <b>${freeGb.toFixed(2)} ГБ</b> из ${totalGb.toFixed(0)} ГБ.</p>
+<p>Что можно сделать:</p>
+<ul>
+<li>расширить диск VPS в панели хостинга (reg.ru) — самый простой путь;</li>
+<li>или попросить Клода почистить сервер (старые логи, ненужные заказы переводов).</li>
+</ul>
+<p>Письмо приходит не чаще 1 раза в сутки, пока свободно меньше ${DISK_ALERT_GB} ГБ.</p>`,
+    });
+    if (r && r.ok) fs.writeFileSync(DISK_ALERT_STATE, JSON.stringify({ lastAt: Date.now(), freeGb: +freeGb.toFixed(2) }), "utf8");
+    else console.error("DISK WATCH mail:", (r && r.error) || "unknown");
+  } catch (e) { console.error("DISK WATCH:", e.message); }
+}
+setInterval(checkDiskSpace, 6 * 3600 * 1000);
+setTimeout(checkDiskSpace, 90 * 1000);
+console.log("DISK WATCH: проверка места каждые 6 ч, порог " + DISK_ALERT_GB + " ГБ → письмо директору");
+
 // ═════════════════════════════════════════════════════════════════════════
 // Остановки рекламных кампаний Яндекс.Директа (item 2). API v5 НЕ отдаёт ленту
 // «история остановок» — поэтому периодически опрашиваем campaigns.get (только
