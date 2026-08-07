@@ -98,8 +98,19 @@ const SRC_EXT = [".pdf", ".jpg", ".jpeg", ".png", ".webp", ".gif", ".docx", ".tx
 function srcSupported(name) { return SRC_EXT.indexOf(path.extname(String(name || "")).toLowerCase()) >= 0; }
 
 // Контент-блоки Claude из исходников заказа (PDF → document, фото → image,
-// DOCX/TXT → извлечённый текст).
-async function srcBlocks(order) {
+// DOCX/TXT → извлечённый текст). Последний блок помечаем cache_control: с этого
+// места префикс (system + документ) кэшируется, и все следующие проходы по
+// тому же заказу читают его по 10% цены вместо полной.
+// cache = true ставим только на проходах «переводчика» (перевод → авто-исправление
+// → корректировки): у них одинаковый префикс, поэтому повторные проходы читают
+// документ по 10% цены. У проверки и сравнения своя JSON-схема — их префикс всё
+// равно другой, там кэш только удорожил бы первый запрос на 25%.
+async function srcBlocks(order, cache) {
+  const blocks = await srcBlocksRaw(order);
+  if (cache && blocks.length) blocks[blocks.length - 1] = Object.assign({}, blocks[blocks.length - 1], { cache_control: { type: "ephemeral" } });
+  return blocks;
+}
+async function srcBlocksRaw(order) {
   const blocks = [];
   for (const f of order.src) {
     const buf = readFileBuf(f.file);
@@ -146,6 +157,27 @@ function client() {
   return _client;
 }
 function model() { return process.env.TRANSLATE_MODEL || "claude-opus-5"; }
+// Модель и «усердие» проверяющих проходов настраиваются отдельно: перевод —
+// работа механическая (структура + точность цифр), проверка и сравнение —
+// придирчивая, там экономить опаснее.
+function modelCheck() { return process.env.TRANSLATE_MODEL_CHECK || model(); }
+// Мелкие служебные вызовы (вывод правил из корректировок) — на дешёвой модели.
+function modelSmall() { return process.env.TRANSLATE_MODEL_SMALL || "claude-haiku-4-5"; }
+function effortMain() { return process.env.TRANSLATE_EFFORT || "medium"; }
+function effortCheck() { return process.env.TRANSLATE_EFFORT_CHECK || "high"; }
+
+// Общая «шапка» системного промпта одинакова во всех проходах — это условие
+// работы кэша Anthropic: совпадающий префикс (system + документ) во втором и
+// последующих запросах считается по 10% цены. Конкретная роль задаётся уже в
+// сообщении пользователя.
+const SYS_COMMON = [
+  "Ты работаешь с официальными документами для визового агентства (справки о движении средств, выписки, свидетельства, паспорта и т.п.).",
+  "В одном режиме ты профессиональный переводчик, в другом — придирчивый редактор-контролёр, в третьем — эксперт по качеству переводов. Конкретная задача всегда сформулирована в сообщении пользователя, следуй ей буквально.",
+  "Общие требования ко всем режимам:",
+  "- ВСЕ числа, суммы, даты, номера счетов и документов переносятся АБСОЛЮТНО точно, ничего не округляется и не пропускается; формат дат сохраняется как в оригинале.",
+  "- Печати, штампы, подписи, логотипы обозначаются пометами в квадратных скобках: [Signature], [Round seal: ...], [Stamp: ...], [Logo]; неразборчивое — [illegible].",
+  "- Ничего не добавляется от себя и не комментируется сверх задачи.",
+].join("\n");
 
 async function runClaude(params) {
   const c = client();
@@ -170,7 +202,7 @@ function parseJsonLoose(text) {
 // Вызов с JSON-схемой; если провайдер не понял output_config — повтор без него.
 async function runClaudeJson(params, schema) {
   try {
-    const r = await runClaude(Object.assign({}, params, { output_config: { format: { type: "json_schema", schema } } }));
+    const r = await runClaude(Object.assign({}, params, { output_config: Object.assign({}, params.output_config, { format: { type: "json_schema", schema } }) }));
     const j = parseJsonLoose(r.text);
     if (j) return { json: j, usage: r.usage };
   } catch (e) {
@@ -261,44 +293,44 @@ function docxDlName(order) {
 // ── Проверка вторым проходом ──────────────────────────────────────────────
 async function runCheck(order, html) {
   const p = order.params || {};
-  const checkSys = "Ты — придирчивый редактор-контролёр переводов официальных документов. Тебе дан оригинал документа и перевод. Найди ВСЕ расхождения: неверные/пропущенные цифры, суммы, даты, номера, ошибки транслитерации ФИО, пропущенные строки/страницы, смысловые ошибки. Мелкие стилистические замечания помечай как info. Отвечай строго JSON по схеме: {verdict: ok|warnings|errors, summary: краткий итог по-русски, issues: [{severity: critical|warning|info, where, original, translated, note}]}. Если всё точно — verdict ok и пустой issues.";
-  const chk = await runClaudeJson({
-    model: model(), max_tokens: 16000,
-    system: checkSys,
-    messages: [{ role: "user", content: [...(await srcBlocks(order)), { type: "text", text: "Вот перевод, который нужно проверить против оригинала выше:\n\n" + html + (p.translit ? "\n\nЗаявленная транслитерация ФИО: " + p.translit : "") }] }],
+  const task = [
+    "РЕЖИМ: редактор-контролёр. Выше — оригинал документа, ниже — перевод. Найди ВСЕ расхождения: неверные/пропущенные цифры, суммы, даты, номера, ошибки транслитерации ФИО, пропущенные строки/страницы, смысловые ошибки. Мелкие стилистические замечания помечай как info.",
+    "Отвечай строго JSON по схеме: {verdict: ok|warnings|errors, summary: краткий итог по-русски, issues: [{severity: critical|warning|info, where, original, translated, note}]}. Если всё точно — verdict ok и пустой issues.",
+    p.translit ? "Заявленная транслитерация ФИО: " + p.translit : "",
+    "Перевод на проверку:\n\n" + html,
+  ].filter(Boolean).join("\n\n");
+  return runClaudeJson({
+    model: modelCheck(), max_tokens: 16000,
+    system: SYS_COMMON,
+    output_config: { effort: effortCheck() },
+    messages: [{ role: "user", content: [...(await srcBlocks(order)), { type: "text", text: task }] }],
   }, CHECK_SCHEMA);
-  return chk;
 }
 
 // ── Пайплайн перевода (+ авто-исправление по критичным замечаниям) ────────
 async function pipelineTranslate(order) {
   order.status = "translating"; order.error = null; save();
   const p = order.params || {};
-  const sys = [
-    "Ты — профессиональный переводчик официальных документов для визового агентства (справки о движении средств, выписки, свидетельства, паспорта и т.п.).",
-    "Переводишь с русского на " + langName(p.targetLang) + " язык по стандартам сертифицированного перевода для подачи на визу:",
+  // Инструкции переводчика живут в сообщении пользователя (после документа), а
+  // не в system — так system остаётся одинаковым во всех проходах и кэш работает.
+  const transTask = [
+    "РЕЖИМ: переводчик. Переведи приложенный выше документ полностью, страница за страницей, с русского на " + langName(p.targetLang) + " язык по стандартам сертифицированного перевода для подачи на визу.",
     "- Сохраняй структуру документа максимально близко к оригиналу: таблицы — таблицами (<table>), шапки, реквизиты, порядок строк.",
-    "- ВСЕ числа, суммы, даты, номера счетов/документов переноси АБСОЛЮТНО точно, ничего не округляй и не пропускай. Формат дат сохраняй как в оригинале.",
-    "- Печати, штампы, подписи, логотипы оформляй пометами в квадратных скобках: [Signature], [Round seal: ...], [Stamp: ...], [Logo].",
-    "- Неразборчивый текст помечай [illegible].",
-    "- Ничего не добавляй от себя и не комментируй.",
     "Формат ответа: ТОЛЬКО HTML-фрагмент без markdown и без ```-ограждений.",
-    "Каждая страница оригинала — отдельный <section class=\"page\"> (после каждой секции перевод продолжается со следующей страницы).",
+    "Каждая страница оригинала — отдельный <section class=\"page\">.",
     "В начале первой страницы добавь строку-заголовок вида: <p class=\"tr-note\"><i>Translation from Russian into English</i></p> (язык подставь по факту).",
     "Используй простой HTML: h3/p/table/tr/td/b/i, таблицам добавляй border=\"1\" cellspacing=\"0\" cellpadding=\"4\".",
-  ].join("\n") + lessonsPromptBlock();
-  const userText = [
-    "Переведи приложенный документ полностью, страница за страницей.",
     p.translit ? "Транслитерация ФИО клиента (использовать именно её): " + p.translit : "",
     p.country ? "Направление подачи (страна): " + p.country : "",
     p.note ? "Комментарий к заказу: " + p.note : "",
     order.chat && order.chat.text ? "Исходное сообщение заказа из рабочего чата (контекст): " + order.chat.text : "",
-  ].filter(Boolean).join("\n");
+  ].filter(Boolean).join("\n") + lessonsPromptBlock();
 
   const r = await runClaude({
     model: model(), max_tokens: 60000,
-    system: sys,
-    messages: [{ role: "user", content: [...(await srcBlocks(order)), { type: "text", text: userText }] }],
+    system: SYS_COMMON,
+    output_config: { effort: effortMain() },
+    messages: [{ role: "user", content: [...(await srcBlocks(order, true)), { type: "text", text: transTask }] }],
   });
   let html = stripFences(r.text);
   await buildOutputs(order, html);
@@ -316,8 +348,9 @@ async function pipelineTranslate(order) {
     order.status = "revising"; save();
     const rev = await runClaude({
       model: model(), max_tokens: 60000,
-      system: sys + "\n\nСейчас ты ИСПРАВЛЯЕШЬ свой предыдущий перевод по замечаниям контролёра. Верни ПОЛНЫЙ исправленный HTML-перевод целиком (не только исправленные места), тем же форматом.",
-      messages: [{ role: "user", content: [...(await srcBlocks(order)), { type: "text", text: "Текущий перевод:\n\n" + html + "\n\nЗамечания контролёра (исправь все критичные и по возможности остальные):\n" + JSON.stringify(order.check.issues, null, 1) }] }],
+      system: SYS_COMMON,
+      output_config: { effort: effortMain() },
+      messages: [{ role: "user", content: [...(await srcBlocks(order, true)), { type: "text", text: transTask + "\n\nСейчас ты ИСПРАВЛЯЕШЬ свой предыдущий перевод по замечаниям контролёра. Верни ПОЛНЫЙ исправленный HTML-перевод целиком (не только исправленные места), тем же форматом.\n\nТекущий перевод:\n\n" + html + "\n\nЗамечания контролёра (исправь все критичные и по возможности остальные):\n" + JSON.stringify(order.check.issues, null, 1) }] }],
     });
     html = stripFences(rev.text);
     await buildOutputs(order, html);
@@ -337,11 +370,14 @@ async function pipelineCorrect(order, instruction, author) {
   const p = order.params || {};
   const html = currentHtml(order);
   if (!html) throw new Error("нет готового перевода для правки");
-  const sys = "Ты — профессиональный переводчик официальных документов. Тебе дан оригинал, текущий перевод (HTML) и корректировка от заказчика. Внеси правку и верни ПОЛНЫЙ исправленный HTML-перевод целиком, тем же форматом (<section class=\"page\">, таблицы <table>), без markdown и ```-ограждений. Ничего не ломай в местах, которых правка не касается." + lessonsPromptBlock();
+  const task = "РЕЖИМ: переводчик, правка. Выше — оригинал, ниже — текущий перевод (HTML) и корректировка от заказчика. Внеси правку и верни ПОЛНЫЙ исправленный HTML-перевод целиком, тем же форматом (<section class=\"page\">, таблицы <table>), без markdown и ```-ограждений. Ничего не ломай в местах, которых правка не касается."
+    + lessonsPromptBlock()
+    + "\n\nТекущий перевод:\n\n" + html + "\n\nКорректировка заказчика (выполни её):\n" + instruction + (p.translit ? "\n\nТранслитерация ФИО: " + p.translit : "");
   const r = await runClaude({
     model: model(), max_tokens: 60000,
-    system: sys,
-    messages: [{ role: "user", content: [...(await srcBlocks(order)), { type: "text", text: "Текущий перевод:\n\n" + html + "\n\nКорректировка заказчика (выполни её):\n" + instruction + (p.translit ? "\n\nТранслитерация ФИО: " + p.translit : "") }] }],
+    system: SYS_COMMON,
+    output_config: { effort: effortMain() },
+    messages: [{ role: "user", content: [...(await srcBlocks(order, true)), { type: "text", text: task }] }],
   });
   await buildOutputs(order, stripFences(r.text));
   order.corrections = order.corrections || [];
@@ -352,7 +388,7 @@ async function pipelineCorrect(order, instruction, author) {
   try {
     const existing = lessons().map((l) => l.text);
     const les = await runClaudeJson({
-      model: model(), max_tokens: 4000,
+      model: modelSmall(), max_tokens: 4000,
       system: "Ты ведёшь базу правил для переводчика документов. Из корректировки заказчика сформулируй 0–3 ОБЩИХ правила на будущее (по-русски, коротко, применимо к любым документам). Разовые правки конкретного документа (опечатка, конкретная сумма) правилом НЕ являются — тогда верни пустой список. Не дублируй существующие правила. Отвечай строго JSON: {lessons: [\"правило\", ...]}.",
       messages: [{ role: "user", content: "Корректировка заказчика: " + instruction + "\n\nСуществующие правила:\n" + (existing.join("\n") || "(пусто)") }],
     }, LESSONS_SCHEMA);
@@ -386,11 +422,13 @@ async function pipelineCompare(order) {
   }
   const aiHtml = currentHtml(order);
 
-  const sys = "Ты — эксперт по качеству переводов официальных документов. Сравни два перевода одного документа: перевод ИИ и перевод человека-переводчика. Оригинал тоже приложен. Определи все содержательные расхождения (цифры, даты, ФИО, пропуски, смысл) и заметные стилистические. Оцени, есть ли у человека то, чего не хватает у ИИ, и наоборот. Отвечай строго JSON: {verdict: match|minor|major, summary: развёрнутый вывод по-русски (какой перевод точнее и почему), differences: [{kind: number|date|name|omission|meaning|style|format|other, severity: critical|warning|info, ai, human, note}]}.";
+  const task = "РЕЖИМ: эксперт по качеству переводов. Выше — оригинал документа. Сравни два его перевода: перевод ИИ и перевод человека-переводчика. Определи все содержательные расхождения (цифры, даты, ФИО, пропуски, смысл) и заметные стилистические. Оцени, есть ли у человека то, чего не хватает у ИИ, и наоборот. Отвечай строго JSON: {verdict: match|minor|major, summary: развёрнутый вывод по-русски (какой перевод точнее и почему), differences: [{kind: number|date|name|omission|meaning|style|format|other, severity: critical|warning|info, ai, human, note}]}."
+    + "\n\nПеревод ИИ (HTML):\n\n" + aiHtml + "\n\n---\n\n" + humanNote;
   const cmp = await runClaudeJson({
-    model: model(), max_tokens: 16000,
-    system: sys,
-    messages: [{ role: "user", content: [...(await srcBlocks(order)), ...content, { type: "text", text: "Перевод ИИ (HTML):\n\n" + aiHtml + "\n\n---\n\n" + humanNote }] }],
+    model: modelCheck(), max_tokens: 16000,
+    system: SYS_COMMON,
+    output_config: { effort: effortCheck() },
+    messages: [{ role: "user", content: [...(await srcBlocks(order)), ...content, { type: "text", text: task }] }],
   }, COMPARE_SCHEMA);
   order.compare = cmp.json || { verdict: "minor", summary: "Не удалось разобрать отчёт сравнения", differences: [] };
   order.usage = order.usage || {};
@@ -407,7 +445,7 @@ async function learnFromCompare(order) {
   if (!meaningful.length) return [];
   const existing = lessons().map((l) => l.text);
   const les = await runClaudeJson({
-    model: model(), max_tokens: 4000,
+    model: modelSmall(), max_tokens: 4000,
     system: "Ты ведёшь базу правил для переводчика официальных документов. Тебе дан разбор расхождений между переводом ИИ и переводом профессионального переводчика (эталон — человек). Сформулируй 0–5 ОБЩИХ правил на будущее (по-русски, коротко, применимо к любым документам этого типа), чтобы ИИ больше не повторял свои ошибки. Разовые особенности конкретного документа правилами НЕ являются. Не дублируй существующие правила. Если поучиться нечему — верни пустой список. Отвечай строго JSON: {lessons: [\"правило\", ...]}.",
     messages: [{ role: "user", content: "Расхождения:\n" + JSON.stringify(meaningful, null, 1) + "\n\nОбщий вывод: " + ((order.compare && order.compare.summary) || "") + "\n\nСуществующие правила:\n" + (existing.join("\n") || "(пусто)") }],
   }, LESSONS_SCHEMA);
