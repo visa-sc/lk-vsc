@@ -116,6 +116,18 @@
   @keyframes sp { to { transform: rotate(360deg); } }
   .chat-id { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; background: #eef0f4; border-radius: 6px; padding: 2px 7px; }
   .empty { color: #9aa0ab; font-size: 13.5px; padding: 8px 4px; }
+  /* Вкладки */
+  .tabs { display: flex; gap: 8px; margin: 0 0 14px; }
+  .tab {
+    border: 1px solid #cfd8e3; background: #fff; color: #33415a; border-radius: 999px;
+    padding: 9px 18px; font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  .tab.active { background: #0097ca; border-color: #0097ca; color: #fff; }
+  .pick-btn {
+    border: 1px solid #0097ca; background: #fff; color: #0097ca; border-radius: 999px;
+    padding: 6px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  .pick-btn:hover { background: #f0f7fc; }
   .filelist { grid-column: 1 / -1; font-size: 12.5px; color: #33506b; }
   .filelist span { display: inline-block; background: #eef4fa; border-radius: 8px; padding: 3px 9px; margin: 2px 4px 2px 0; }
 </style>
@@ -147,7 +159,40 @@
       Ключ создаётся на console.anthropic.com (или через прокси-провайдера — тогда ещё <code>ANTHROPIC_BASE_URL</code>).
     </div>
 
-    <div class="card">
+    <div class="tabs">
+      <button type="button" class="tab active" data-tab="new">Новый перевод</button>
+      <button type="button" class="tab" data-tab="review">Проверка прошлых переводов</button>
+    </div>
+
+    <div class="card" id="tab-review" style="display:none;">
+      <div class="sec-h"><b>Проверка прошлых переводов</b><span>обучение на архиве готовых работ</span></div>
+      <div class="banner info" style="margin-bottom:14px;">
+        Загрузите старые заказы: <b>оригинал документа</b> и <b>перевод, который сделал переводчик</b>. ИИ переведёт документ сам, сравнит с человеческим переводом, покажет все расхождения — и <b>выучит правила</b>, чтобы не повторять свои ошибки в будущих переводах.<br>
+        Можно загрузить <b>ZIP-архив</b> целиком — пары найду по именам файлов (например «справка_оригинал.pdf» и «справка_перевод.docx») или по папкам «Оригиналы» / «Переводы». RAR распакуйте у себя и загрузите ZIP.
+      </div>
+      <form id="reviewForm" class="frm">
+        <div class="drop" id="revDropPair" style="grid-column:1/-1;">
+          <b>Пара файлов</b><br>
+          <span style="font-size:12.5px;color:#5a626f;">Оригинал: <span id="revOrigName" style="color:#0097ca;">не выбран</span> · Перевод человека: <span id="revHumanName" style="color:#0097ca;">не выбран</span></span><br>
+          <span style="display:inline-flex;gap:8px;margin-top:8px;">
+            <button type="button" class="pick-btn" id="revPickOrig">Выбрать оригинал</button>
+            <button type="button" class="pick-btn" id="revPickHuman">Выбрать перевод</button>
+          </span>
+          <input id="revOrig" type="file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp" style="display:none;">
+          <input id="revHuman" type="file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp" style="display:none;">
+        </div>
+        <div class="drop" id="revDropZip" style="grid-column:1/-1;">Или перетащите <b>ZIP-архив</b> со старыми заказами<br><span style="font-size:12px;color:#8a90a0;" id="revZipName">до 50 пар за раз</span>
+          <input id="revZip" type="file" accept=".zip" style="display:none;">
+        </div>
+        <div class="full" style="display:flex;align-items:center;gap:12px;">
+          <button type="submit" class="pri-btn" id="revSubmit">Проверить и научиться</button>
+          <span id="revErr" style="color:#b0263a;font-size:13px;"></span>
+          <span id="revOk" style="color:#2c7a43;font-size:13px;"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="card" id="tab-new">
       <div class="sec-h"><b>Новый заказ на перевод</b><span>PDF или фото документа</span></div>
       <form id="orderForm" class="frm">
         <div class="drop" id="drop">Перетащите файл сюда или <b>выберите</b><br><span style="font-size:12px;color:#8a90a0;">PDF / DOCX / TXT или несколько фото · до 20 МБ</span>
@@ -289,6 +334,58 @@
       .catch(function (e2) { $("#submitBtn").disabled = false; if (e2.message !== "auth") $("#formErr").textContent = "Ошибка сети"; });
   });
 
+  // ── Вкладки ──
+  Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (t) {
+    t.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (x) { x.classList.toggle("active", x === t); });
+      var which = t.getAttribute("data-tab");
+      $("#tab-new").style.display = which === "new" ? "" : "none";
+      $("#tab-review").style.display = which === "review" ? "" : "none";
+    });
+  });
+
+  // ── Проверка прошлых переводов ──
+  var revOrigFile = null, revHumanFile = null, revZipFile = null;
+  function revRender() {
+    $("#revOrigName").textContent = revOrigFile ? revOrigFile.name : "не выбран";
+    $("#revHumanName").textContent = revHumanFile ? revHumanFile.name : "не выбран";
+    $("#revZipName").textContent = revZipFile ? revZipFile.name + " · " + Math.round(revZipFile.size / 1024) + " КБ" : "до 50 пар за раз";
+  }
+  $("#revPickOrig").addEventListener("click", function (e) { e.stopPropagation(); $("#revOrig").click(); });
+  $("#revPickHuman").addEventListener("click", function (e) { e.stopPropagation(); $("#revHuman").click(); });
+  $("#revOrig").addEventListener("change", function () { revOrigFile = this.files[0] || null; revRender(); });
+  $("#revHuman").addEventListener("change", function () { revHumanFile = this.files[0] || null; revRender(); });
+  $("#revDropZip").addEventListener("click", function () { $("#revZip").click(); });
+  $("#revZip").addEventListener("change", function () { revZipFile = this.files[0] || null; revRender(); });
+  ["dragover", "dragleave", "drop"].forEach(function (ev) {
+    $("#revDropZip").addEventListener(ev, function (e) {
+      e.preventDefault();
+      this.classList.toggle("over", ev === "dragover");
+      if (ev === "drop") { revZipFile = e.dataTransfer.files[0] || null; revRender(); }
+    });
+  });
+  $("#reviewForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    $("#revErr").textContent = ""; $("#revOk").textContent = "";
+    var fd = new FormData();
+    if (revZipFile) fd.append("archive", revZipFile);
+    else if (revOrigFile && revHumanFile) { fd.append("original", revOrigFile); fd.append("human", revHumanFile); }
+    else { $("#revErr").textContent = "Выберите пару файлов или ZIP-архив"; return; }
+    $("#revSubmit").disabled = true;
+    api("/translate/api/review", { method: "POST", body: fd })
+      .then(function (j) {
+        $("#revSubmit").disabled = false;
+        if (!j.success) { $("#revErr").textContent = j.message || "Ошибка"; return; }
+        var msg = "Взял в работу: " + j.created + " " + (j.created === 1 ? "пару" : "пар") + ". Результаты появятся в списке ниже.";
+        if (j.unpaired && j.unpaired.length) msg += " Без пары осталось: " + j.unpaired.length + " файл(ов).";
+        $("#revOk").textContent = msg;
+        revOrigFile = revHumanFile = revZipFile = null; revRender();
+        $("#revOrig").value = ""; $("#revHuman").value = ""; $("#revZip").value = "";
+        load();
+      })
+      .catch(function (e2) { $("#revSubmit").disabled = false; if (e2.message !== "auth") $("#revErr").textContent = "Ошибка сети"; });
+  });
+
   // ── Заказы ──
   var STATUS = {
     "new": ["gray", "новый"], queued: ["gray", "в очереди"],
@@ -323,6 +420,8 @@
     h += pill(st[0], st[1], o.status === "translating" || o.status === "checking");
     if (o.kind === "chat") h += pill("gray", "тихий чат");
     if (o.kind === "bot") h += pill("blue", "бот-чат");
+    if (o.kind === "review") h += pill("amber", "разбор прошлого");
+    if (o.learned && o.learned.length) h += pill("green", "выучено правил: " + o.learned.length);
     if (o.checkVerdict && VERDICT[o.checkVerdict]) h += pill(VERDICT[o.checkVerdict][0], VERDICT[o.checkVerdict][1] + (o.checkRevised ? " · авто-исправлен" : ""));
     if (o.correctStatus === "processing") h += pill("blue", "правка…", true);
     if (o.correctionsCnt) h += pill("gray", "правок: " + o.correctionsCnt);

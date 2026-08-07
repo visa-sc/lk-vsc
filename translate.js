@@ -135,8 +135,11 @@ function client() {
     // прод — в РФ. TRANSLATE_PROXY = любой не-РФ http(s)/socks-прокси вида
     // http://user:pass@host:port — весь трафик к API пойдёт через него.
     if (process.env.TRANSLATE_PROXY) {
-      const { ProxyAgent } = require("undici");
-      opts.fetchOptions = { dispatcher: new ProxyAgent(process.env.TRANSLATE_PROXY) };
+      // ВАЖНО: fetch берём тоже из undici — ProxyAgent из npm-пакета несовместим
+      // со встроенным fetch Node 20 (webidl.util.markAsUncloneable is not a function).
+      const undici = require("undici");
+      opts.fetch = undici.fetch;
+      opts.fetchOptions = { dispatcher: new undici.ProxyAgent(process.env.TRANSLATE_PROXY) };
     }
     _client = new Anthropic(opts);
   }
@@ -395,6 +398,26 @@ async function pipelineCompare(order) {
   order.compareStatus = "done"; save();
 }
 
+// ── Обучение на архиве прошлых переводов ─────────────────────────────────
+// Из отчёта сравнения «ИИ vs человек» вытаскиваем общие правила: там, где
+// человек прав, а ИИ ошибся, — это и есть материал для обучения.
+async function learnFromCompare(order) {
+  const diffs = (order.compare && order.compare.differences) || [];
+  const meaningful = diffs.filter((d) => d.severity === "critical" || d.severity === "warning");
+  if (!meaningful.length) return [];
+  const existing = lessons().map((l) => l.text);
+  const les = await runClaudeJson({
+    model: model(), max_tokens: 4000,
+    system: "Ты ведёшь базу правил для переводчика официальных документов. Тебе дан разбор расхождений между переводом ИИ и переводом профессионального переводчика (эталон — человек). Сформулируй 0–5 ОБЩИХ правил на будущее (по-русски, коротко, применимо к любым документам этого типа), чтобы ИИ больше не повторял свои ошибки. Разовые особенности конкретного документа правилами НЕ являются. Не дублируй существующие правила. Если поучиться нечему — верни пустой список. Отвечай строго JSON: {lessons: [\"правило\", ...]}.",
+    messages: [{ role: "user", content: "Расхождения:\n" + JSON.stringify(meaningful, null, 1) + "\n\nОбщий вывод: " + ((order.compare && order.compare.summary) || "") + "\n\nСуществующие правила:\n" + (existing.join("\n") || "(пусто)") }],
+  }, LESSONS_SCHEMA);
+  const newOnes = ((les.json && les.json.lessons) || []).map((t) => String(t).trim()).filter((t) => t && !existing.some((e) => e.toLowerCase() === t.toLowerCase()));
+  for (const t of newOnes) lessons().push({ id: newId(), createdAt: Date.now(), text: t.slice(0, 500), source: "review:" + order.id });
+  order.learned = newOnes;
+  save();
+  return newOnes;
+}
+
 // Последовательная очередь: тяжёлые вызовы не гоняем параллельно.
 let _chain = Promise.resolve();
 function enqueue(label, fn) {
@@ -414,12 +437,34 @@ function queueTranslate(order) {
     }
   });
 }
-function queueCompare(order) {
+function queueCompare(order, learn) {
   enqueue("compare " + order.id, async () => {
     const o = findOrder(order.id);
     if (!o) return;
-    try { await pipelineCompare(o); }
+    try {
+      await pipelineCompare(o);
+      if (learn || o.kind === "review") { try { await learnFromCompare(o); } catch (e) { console.warn("learnFromCompare:", e.message); } }
+    }
     catch (e) { o.compareStatus = "error"; o.compareError = String((e && e.message) || e); save(); }
+  });
+}
+// Разбор архива прошлых переводов: перевести оригинал заново, сравнить с
+// человеческим, выучить правила. Один заказ = одна пара файлов.
+function queueReview(order) {
+  order.status = "queued"; order.error = null; save();
+  enqueue("review " + order.id, async () => {
+    const o = findOrder(order.id);
+    if (!o) return;
+    try {
+      await pipelineTranslate(o);
+      await pipelineCompare(o);
+      try { await learnFromCompare(o); } catch (e) { console.warn("learnFromCompare:", e.message); }
+    } catch (e) {
+      o.status = o.status === "done" ? o.status : "error";
+      if (o.status === "error") o.error = String((e && e.message) || e);
+      else { o.compareStatus = "error"; o.compareError = String((e && e.message) || e); }
+      save();
+    }
   });
 }
 function queueCorrect(order, instruction, author) {
@@ -668,6 +713,7 @@ function orderView(o, full) {
     compareError: o.compareError || null,
     correctStatus: o.correctStatus || null,
     correctionsCnt: (o.corrections || []).length,
+    learned: o.learned || null,
     chat: o.chat ? { from: o.chat.from, text: o.chat.text } : null,
   };
   if (full) { v.check = o.check || null; v.compare = o.compare || null; v.corrections = o.corrections || []; v.usage = o.usage || null; }
@@ -762,6 +808,97 @@ function mount(app, deps) {
       save();
       queueTranslate(order);
       return res.json({ success: true, id: order.id });
+    } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
+  });
+
+  // ── «Проверка прошлых переводов»: пары «оригинал + перевод человека» ──
+  // Принимаем либо два файла (original/human), либо архив ZIP со всем скопом.
+  // В архиве пары ищем по имени: одинаковая основа имени, либо папки
+  // «оригинал/original/source/скан» ↔ «перевод/translation/готовое», либо
+  // суффиксы _ru/_en, «-перевод», «-translated».
+  const REVIEW_SRC = SRC_EXT;
+  function normBase(name) {
+    return String(name).toLowerCase()
+      .replace(/\.[^.]+$/, "")
+      .replace(/[_\-\s]*(перевод\w*|translation|translated|translate|итог\w*|готов\w*|final|eng?|en|ru|rus|orig\w*|оригинал\w*|скан|scan|source|src)[_\-\s]*/g, " ")
+      .replace(/[^a-zа-я0-9]+/gi, " ").trim();
+  }
+  function looksTranslated(p) { return /(перевод|translat|_en\b|-en\b|\ben\b|eng|final|готов|итог)/i.test(p); }
+  function looksOriginal(p) { return /(оригинал|origin|source|src|скан|scan|_ru\b|-ru\b|\bru\b|rus)/i.test(p); }
+  function pairArchiveEntries(entries) {
+    // entries: [{path, name, buf}]
+    const pairs = [], used = new Set();
+    const key = (e) => normBase(e.name) || normBase(path.dirname(e.path));
+    const groups = new Map();
+    entries.forEach((e, i) => {
+      const k = key(e);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(i);
+    });
+    for (const [, idxs] of groups) {
+      if (idxs.length < 2) continue;
+      const orig = idxs.find((i) => looksOriginal(entries[i].path) || !looksTranslated(entries[i].path));
+      const tr = idxs.find((i) => i !== orig && (looksTranslated(entries[i].path) || true));
+      if (orig != null && tr != null && orig !== tr && !used.has(orig) && !used.has(tr)) {
+        used.add(orig); used.add(tr);
+        pairs.push({ original: entries[orig], human: entries[tr] });
+      }
+    }
+    // Резерв: если пар не нашли, а файлов ровно 2 — считаем их парой.
+    if (!pairs.length && entries.length === 2) pairs.push({ original: entries[0], human: entries[1] });
+    const unpaired = entries.filter((_, i) => !used.has(i)).map((e) => e.path);
+    return { pairs, unpaired: pairs.length ? unpaired : entries.map((e) => e.path) };
+  }
+  function makeReviewOrder(origBuf, origName, humanBuf, humanName, meta) {
+    const order = {
+      id: newId(), kind: "review", createdAt: Date.now(), status: "new",
+      params: { translit: (meta && meta.translit) || "", country: (meta && meta.country) || "", targetLang: (meta && meta.targetLang) || "en", note: (meta && meta.note) || "" },
+      src: [], files: {},
+    };
+    order.src.push({ file: saveFile(order.id, "src-0", origBuf, origName, ""), name: origName });
+    order.files.human = saveFile(order.id, "human", humanBuf, humanName, "");
+    order.humanName = humanName;
+    const st = store();
+    st.orders.unshift(order);
+    if (st.orders.length > MAX_ORDERS) st.orders.length = MAX_ORDERS;
+    return order;
+  }
+
+  app.post("/translate/api/review", requireTranslate, up.fields([{ name: "original", maxCount: 1 }, { name: "human", maxCount: 1 }, { name: "archive", maxCount: 1 }]), (req, res) => {
+    try {
+      if (!aiConfigured()) return res.status(400).json({ success: false, message: "ИИ не настроен (ANTHROPIC_API_KEY)" });
+      const f = req.files || {};
+      const nameOf = (x) => Buffer.from(x.originalname, "latin1").toString("utf8");
+      const meta = req.body || {};
+      const created = [];
+
+      if (f.archive && f.archive[0]) {
+        const a = f.archive[0];
+        const aname = nameOf(a);
+        if (!/\.zip$/i.test(aname)) return res.status(400).json({ success: false, message: "Архив поддерживается только ZIP. RAR/7z распакуйте у себя и загрузите ZIP или файлы по отдельности." });
+        const AdmZip = require("adm-zip");
+        let entries;
+        try { entries = new AdmZip(a.buffer).getEntries(); } catch (e) { return res.status(400).json({ success: false, message: "Не смог открыть архив: " + e.message }); }
+        const files = entries
+          .filter((e) => !e.isDirectory && !/(^|\/)(__MACOSX|\.)/i.test(e.entryName))
+          .map((e) => ({ path: e.entryName, name: path.basename(e.entryName), buf: e.getData() }))
+          .filter((e) => srcSupported(e.name) && e.buf.length > 0 && e.buf.length <= 25 * 1024 * 1024);
+        if (!files.length) return res.status(400).json({ success: false, message: "В архиве не нашёл подходящих файлов (PDF, DOCX, TXT, JPG/PNG)" });
+        const { pairs, unpaired } = pairArchiveEntries(files);
+        if (!pairs.length) return res.status(400).json({ success: false, message: "Не смог разобрать, где оригиналы, а где переводы. Назовите файлы одинаково с пометкой (например «справка_оригинал.pdf» и «справка_перевод.docx») или загрузите пары по одной." });
+        for (const p of pairs.slice(0, 50)) created.push(makeReviewOrder(p.original.buf, p.original.name, p.human.buf, p.human.name, meta));
+        save();
+        created.forEach(queueReview);
+        return res.json({ success: true, created: created.length, unpaired });
+      }
+
+      if (!f.original || !f.original[0] || !f.human || !f.human[0]) return res.status(400).json({ success: false, message: "Нужны оба файла: оригинал и перевод человека (или ZIP-архив)" });
+      const o = f.original[0], h = f.human[0];
+      if (!srcSupported(nameOf(o))) return res.status(400).json({ success: false, message: "Формат оригинала не поддерживается (нужен PDF, DOCX, TXT или фото)" });
+      const order = makeReviewOrder(o.buffer, nameOf(o), h.buffer, nameOf(h), meta);
+      save();
+      queueReview(order);
+      return res.json({ success: true, created: 1, id: order.id });
     } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
   });
 
