@@ -98,7 +98,9 @@
         <input id="fCodeInp" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Код" />
       </div>
       <button id="fGo" type="button">Войти</button>
+      <button id="fForgot" type="button" style="width:100%;margin-top:10px;background:none;border:0;color:#8a90a0;font-size:12.5px;cursor:pointer;font-family:inherit;text-decoration:underline;">Забыли пароль?</button>
       <div id="fErr" class="err"></div>
+      <div id="fMsg" class="err" style="color:#2c7a43;"></div>
     </div>
   </div>
 
@@ -136,8 +138,18 @@
       if (IS_PREVIEW) {
         $("fStaff").style.display = "none";
         $("fCode").style.display = "";
+        $("fForgot").style.display = "none";
         $("gateSub").textContent = "Превью рабочего места Екатерины — вход по коду";
       }
+      $("fForgot").addEventListener("click", function () {
+        var email = ($("fEmail").value || "").trim();
+        var msg = $("fMsg");
+        if (!email) { showErr("Введите e-mail в поле выше и нажмите «Забыли пароль?» ещё раз"); return; }
+        $("fErr").style.display = "none";
+        fetch("/admin/api/manager-reset-request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email }) })
+          .then(function () { msg.textContent = "Если e-mail верный — письмо со ссылкой для смены пароля уже в пути."; msg.style.display = "block"; })
+          .catch(function () { showErr("Ошибка сети — попробуйте ещё раз"); });
+      });
 
       function showErr(m) { var e = $("fErr"); e.textContent = m || "Ошибка"; e.style.display = "block"; }
       function setTokens(t) {
