@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VSC переводы</title>
+<link rel="apple-touch-icon" href="/vsc-logo.png">
+<link rel="icon" type="image/png" href="/vsc-logo.png">
+<style>
+  /* Стиль — в духе /vsc и /marketing (Apple-скин): градиентный фон, белые карточки. */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1d2433; background: #f4f6fa; min-height: 100vh;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1;
+    background:
+      radial-gradient(1100px 520px at 12% -8%, rgba(0, 190, 240, .14), transparent 60%),
+      radial-gradient(900px 480px at 105% 12%, rgba(18, 58, 120, .10), transparent 55%),
+      linear-gradient(180deg, #f7f9fc 0%, #eef2f8 100%);
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 18px 16px 60px; }
+  .brand { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 6px 0 18px; }
+  .vsc-wm { display: flex; align-items: center; gap: 11px; font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; font-weight: 800; font-size: 34px; line-height: 1; }
+  .vsc-wm i { width: 2px; height: 19px; border-radius: 2px; background: linear-gradient(180deg, #00bff0, #0088c2); opacity: .5; }
+  .vsc-wm b { font-weight: 800; color: #0097ca; background: linear-gradient(135deg, #00c8f2 0%, #0097ca 52%, #123a78 130%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .card { background: rgba(255, 255, 255, .92); border: 1px solid rgba(20, 32, 64, .07); border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(20, 32, 64, .06); margin-bottom: 16px; }
+  /* Вход — как на /vsc и /marketing */
+  body.login-mode { display: flex; flex-direction: column; justify-content: center; min-height: 100vh; }
+  body.login-mode .wrap { padding-bottom: 18px; }
+  body.login-mode .brand { justify-content: center; margin-bottom: 14px; }
+  #login {
+    width: 100%; max-width: 420px; margin: 0 auto;
+    background: #fff; border: 1px solid #ece7f2; border-radius: 22px; padding: 22px;
+    box-shadow: 0 10px 30px rgba(34, 36, 52, .05); text-align: center;
+  }
+  #login .sub2 { margin: 0 0 18px; font-size: 13px; font-weight: 400; color: #9096a3; }
+  .login-form-inner { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+  .login-input {
+    width: 100%; height: 52px; border: 1px solid #ebe6f1; border-radius: 14px; padding: 0 16px;
+    font-size: 16px; outline: none; font-family: inherit; color: #1f2532; background: #fff; text-align: center;
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  .login-input[type="password"]:not(:placeholder-shown) { letter-spacing: .18em; font-size: 22px; }
+  .login-input::placeholder { color: #9a9faa; letter-spacing: normal; }
+  .login-input:focus { border-color: #3589BD; box-shadow: 0 0 0 3px rgba(53, 137, 189, .15); }
+  .login-btn {
+    width: 100%; height: 44px; border: 1.5px solid #3589BD; border-radius: 12px; background: #fff;
+    color: #3589BD; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  .login-btn:hover { background: #f0f7fc; }
+  #loginErr { color: #b0263a; font-size: 13.5px; min-height: 18px; margin-top: 10px; }
+  .sec-h { display: flex; align-items: baseline; gap: 10px; margin: 2px 2px 12px; }
+  .sec-h b { font-size: 16.5px; color: #1d2330; }
+  .sec-h span { font-size: 12.5px; color: #8a90a0; }
+  /* Форма заказа */
+  .frm { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 700px) { .frm { grid-template-columns: 1fr; } }
+  .frm label { display: block; font-size: 12px; font-weight: 700; color: #5a626f; margin: 0 0 4px 2px; }
+  .frm input[type=text], .frm select, .frm textarea {
+    width: 100%; font-family: inherit; font-size: 14px; padding: 10px 12px;
+    border: 1px solid rgba(20, 32, 64, .14); border-radius: 10px; background: #fff; color: #1d2433;
+  }
+  .frm textarea { resize: vertical; min-height: 44px; }
+  .frm .full { grid-column: 1 / -1; }
+  .drop {
+    grid-column: 1 / -1; border: 2px dashed #b7c0cd; border-radius: 14px; background: #f8fafc;
+    padding: 18px; text-align: center; color: #4a5568; font-size: 14px; cursor: pointer;
+  }
+  .drop.over { border-color: #3589BD; background: #f0f7fc; }
+  .drop b { color: #2f6e95; }
+  .pri-btn {
+    border: 0; background: #0097ca; color: #fff; border-radius: 12px; padding: 12px 24px;
+    font-size: 14.5px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  .pri-btn:disabled { opacity: .55; cursor: default; }
+  .banner { border-radius: 14px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; margin-bottom: 16px; }
+  .banner.warn { background: #fdf6e3; border: 1px solid #f0dfa8; color: #7a5b00; }
+  .banner.info { background: #f0f7fc; border: 1px solid #d3e7f4; color: #2f6e95; }
+  .banner code { background: rgba(0,0,0,.05); border-radius: 5px; padding: 1px 6px; font-size: 12.5px; }
+  /* Заказы */
+  .ord { border: 1px solid #edf0f5; border-left: 5px solid #c9cfda; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; background: #fff; }
+  .ord.done { border-left-color: #3f9e63; }
+  .ord.err { border-left-color: #d2685f; background: #fdf5f4; }
+  .ord.run { border-left-color: #0097ca; }
+  .ord-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ord-name { font-size: 14.5px; font-weight: 700; color: #1d2330; word-break: break-word; }
+  .pill { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+  .pill.gray { background: #eef0f4; color: #5a626f; }
+  .pill.blue { background: #e3f3fb; color: #0f7fae; }
+  .pill.green { background: #e7f6ec; color: #2c7a43; }
+  .pill.red { background: #fbe9e7; color: #b0263a; }
+  .pill.amber { background: #fdf2d4; color: #8a5a00; }
+  .ord-meta { font-size: 12.5px; color: #6b7280; margin-top: 5px; line-height: 1.5; }
+  .ord-err { font-size: 13px; color: #b0263a; margin-top: 7px; }
+  .ord-acts { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
+  .ord-acts button, .ord-acts a {
+    border: 1px solid rgba(20, 32, 64, .14); background: #fff; border-radius: 999px; font-size: 12px;
+    font-weight: 700; color: #33506b; padding: 6px 13px; cursor: pointer; font-family: inherit;
+    text-decoration: none; display: inline-block;
+  }
+  .ord-acts button:hover, .ord-acts a:hover { background: #f0f4f9; }
+  .ord-acts .danger { color: #b0263a; }
+  .ord-acts .accent { border-color: #0097ca; color: #0097ca; }
+  .rep { margin-top: 10px; border: 1px solid #e3e8ef; border-radius: 12px; padding: 11px 13px; background: #fafbfd; font-size: 13px; }
+  .rep h4 { margin: 0 0 6px; font-size: 13px; color: #33415a; }
+  .rep .sum { margin: 0 0 8px; line-height: 1.5; color: #3a4356; white-space: pre-wrap; }
+  .iss { border-left: 3px solid #c9cfda; padding: 4px 9px; margin: 5px 0; line-height: 1.45; }
+  .iss.critical { border-left-color: #d2685f; background: #fdf1f0; }
+  .iss.warning { border-left-color: #e3b53a; background: #fdf9ec; }
+  .iss.info { border-left-color: #9fb2c9; background: #f6f8fb; }
+  .iss .k { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #7a8494; margin-right: 6px; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #9ed4ea; border-top-color: #0097ca; border-radius: 50%; animation: sp 1s linear infinite; vertical-align: -2px; margin-right: 4px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .chat-id { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; background: #eef0f4; border-radius: 6px; padding: 2px 7px; }
+  .empty { color: #9aa0ab; font-size: 13.5px; padding: 8px 4px; }
+  .filelist { grid-column: 1 / -1; font-size: 12.5px; color: #33506b; }
+  .filelist span { display: inline-block; background: #eef4fa; border-radius: 8px; padding: 3px 9px; margin: 2px 4px 2px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand" style="flex-direction:column;align-items:center;gap:7px;">
+    <div class="vsc-wm"><b>V</b><i></i><b>S</b><i></i><b>C</b></div>
+    <div class="sub" style="padding:0;font-size:11.5px;font-weight:600;color:#8a90a0;letter-spacing:.48em;text-transform:lowercase;margin-right:-.48em;">переводы</div>
+  </div>
+
+  <div id="login" style="display:none;">
+    <div class="sub2" id="loginSub">Введите код доступа</div>
+    <form id="codeForm" class="login-form-inner">
+      <input id="code" class="login-input" type="password" inputmode="numeric" autocomplete="off" placeholder="Код доступа">
+      <button type="submit" class="login-btn">Войти</button>
+    </form>
+    <form id="mgrForm" class="login-form-inner" style="display:none;">
+      <input id="email" class="login-input" type="email" autocomplete="username" placeholder="Рабочий e-mail">
+      <input id="pass" class="login-input" type="password" autocomplete="current-password" placeholder="Пароль">
+      <button type="submit" class="login-btn">Войти</button>
+    </form>
+    <div id="loginErr"></div>
+  </div>
+
+  <div id="app" style="display:none;">
+    <div id="aiBanner" class="banner warn" style="display:none;">
+      ⚠️ <b>ИИ не подключён.</b> На сервере не задан <code>ANTHROPIC_API_KEY</code> — заказы не будут переводиться.
+      Ключ создаётся на console.anthropic.com (или через прокси-провайдера — тогда ещё <code>ANTHROPIC_BASE_URL</code>).
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>Новый заказ на перевод</b><span>PDF или фото документа</span></div>
+      <form id="orderForm" class="frm">
+        <div class="drop" id="drop">Перетащите файл сюда или <b>выберите</b><br><span style="font-size:12px;color:#8a90a0;">один PDF или несколько фото · до 20 МБ</span>
+          <input id="files" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple style="display:none;">
+        </div>
+        <div class="filelist" id="filelist"></div>
+        <div>
+          <label>Транслитерация ФИО</label>
+          <input type="text" id="translit" placeholder="KOSTENKO MARINA" autocomplete="off">
+        </div>
+        <div>
+          <label>Страна / направление</label>
+          <input type="text" id="country" placeholder="Австралия" autocomplete="off">
+        </div>
+        <div>
+          <label>Язык перевода</label>
+          <select id="targetLang">
+            <option value="en" selected>Английский</option>
+            <option value="other">Другой (в комментарии)</option>
+          </select>
+        </div>
+        <div>
+          <label>Комментарий</label>
+          <input type="text" id="note" placeholder="справка о движении средств, первая и три последние страницы">
+        </div>
+        <div class="full" style="display:flex;align-items:center;gap:12px;">
+          <button type="submit" class="pri-btn" id="submitBtn">Перевести</button>
+          <span id="formErr" style="color:#b0263a;font-size:13px;"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>Заказы</b><span id="ordersCnt"></span></div>
+      <div id="orders"></div>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>Бот в чате переводов</b><span>Шаг 2 — обучение на реальных заказах</span></div>
+      <div id="botInfo"></div>
+    </div>
+
+    <div style="text-align:center;margin-top:16px;">
+      <button id="logoutBtn" type="button" style="border:1px solid #cfd8e3;background:#fff;color:#6b7280;border-radius:10px;padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Выйти</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var TOKEN_KEY = "voyo_translate_token";
+  var token = null; try { token = localStorage.getItem(TOKEN_KEY); } catch (_) {}
+  var state = null;
+  var openReports = {};  // id -> true (раскрыт отчёт)
+  var fullCache = {};    // id -> полный заказ (check/compare)
+  var pollTimer = null;
+  var $ = function (s) { return document.querySelector(s); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign(opts.headers || {}, token ? { Authorization: "Bearer " + token } : {});
+    if (!(opts.body instanceof FormData) && opts.method && opts.method !== "GET") opts.headers["Content-Type"] = opts.headers["Content-Type"] || "application/json";
+    return fetch(path, opts).then(function (r) {
+      if (r.status === 401) { showLogin(); throw new Error("auth"); }
+      return r.json();
+    });
+  }
+  function showLogin() { $("#login").style.display = ""; $("#app").style.display = "none"; document.body.classList.add("login-mode"); }
+  function showApp() { $("#login").style.display = "none"; $("#app").style.display = ""; document.body.classList.remove("login-mode"); }
+
+  // Вход как на /marketing: код на основном домене, e-mail для руководителей
+  // на staff-хосте или по ?staff=1.
+  var mgrMode = false;
+  try { mgrMode = location.hostname === "vsc.voyotravel.ru" || /[?&]staff=1/.test(location.search); } catch (_) {}
+  $("#codeForm").style.display = mgrMode ? "none" : "";
+  $("#mgrForm").style.display = mgrMode ? "" : "none";
+  $("#loginSub").textContent = mgrMode ? "Вход для руководителя" : "Введите код доступа";
+
+  function handleAuth(req) {
+    req.then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.token) { token = j.token; try { localStorage.setItem(TOKEN_KEY, token); } catch (_) {} load(); }
+        else $("#loginErr").textContent = (j && j.message) || "Неверные данные входа";
+      })
+      .catch(function () { $("#loginErr").textContent = "Ошибка сети"; });
+  }
+  $("#codeForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    handleAuth(fetch("/admin/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("#code").value.trim() }) }));
+  });
+  $("#mgrForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    handleAuth(fetch("/admin/api/manager-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: $("#email").value.trim(), password: $("#pass").value }) }));
+  });
+  $("#logoutBtn").addEventListener("click", function () {
+    try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
+    token = null; showLogin();
+  });
+
+  // ── Форма ──
+  var picked = [];
+  function renderPicked() {
+    $("#filelist").innerHTML = picked.map(function (f) { return "<span>" + esc(f.name) + " · " + Math.round(f.size / 1024) + " КБ</span>"; }).join("");
+  }
+  $("#drop").addEventListener("click", function () { $("#files").click(); });
+  $("#files").addEventListener("change", function () { picked = Array.prototype.slice.call(this.files); renderPicked(); });
+  ["dragover", "dragleave", "drop"].forEach(function (ev) {
+    $("#drop").addEventListener(ev, function (e) {
+      e.preventDefault();
+      this.classList.toggle("over", ev === "dragover");
+      if (ev === "drop") { picked = Array.prototype.slice.call(e.dataTransfer.files); renderPicked(); }
+    });
+  });
+  $("#orderForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    $("#formErr").textContent = "";
+    if (!picked.length) { $("#formErr").textContent = "Прикрепите файл"; return; }
+    var fd = new FormData();
+    picked.forEach(function (f) { fd.append("files", f); });
+    fd.append("translit", $("#translit").value.trim());
+    fd.append("country", $("#country").value.trim());
+    fd.append("targetLang", $("#targetLang").value);
+    fd.append("note", $("#note").value.trim());
+    $("#submitBtn").disabled = true;
+    api("/translate/api/order", { method: "POST", body: fd })
+      .then(function (j) {
+        $("#submitBtn").disabled = false;
+        if (!j.success) { $("#formErr").textContent = j.message || "Ошибка"; return; }
+        picked = []; renderPicked(); $("#files").value = ""; $("#note").value = ""; $("#translit").value = "";
+        load();
+      })
+      .catch(function (e2) { $("#submitBtn").disabled = false; if (e2.message !== "auth") $("#formErr").textContent = "Ошибка сети"; });
+  });
+
+  // ── Заказы ──
+  var STATUS = {
+    "new": ["gray", "новый"], queued: ["gray", "в очереди"],
+    translating: ["blue", "переводит ИИ…"], checking: ["blue", "проверка ИИ…"],
+    done: ["green", "готово"], error: ["red", "ошибка"]
+  };
+  var VERDICT = { ok: ["green", "проверка: ок"], warnings: ["amber", "проверка: замечания"], errors: ["red", "проверка: ошибки!"] };
+  var CMP = { match: ["green", "≈ совпадает с человеком"], minor: ["amber", "мелкие расхождения"], major: ["red", "серьёзные расхождения"] };
+
+  function pill(cls, txt, spin) { return "<span class=\"pill " + cls + "\">" + (spin ? "<span class=\"spin\"></span>" : "") + esc(txt) + "</span>"; }
+
+  function renderIssues(list, mapAiHuman) {
+    return (list || []).map(function (i) {
+      var body = "";
+      if (mapAiHuman) {
+        if (i.ai) body += "<div><b>ИИ:</b> " + esc(i.ai) + "</div>";
+        if (i.human) body += "<div><b>Человек:</b> " + esc(i.human) + "</div>";
+      } else {
+        if (i.original) body += "<div><b>Оригинал:</b> " + esc(i.original) + "</div>";
+        if (i.translated) body += "<div><b>Перевод:</b> " + esc(i.translated) + "</div>";
+      }
+      return "<div class=\"iss " + esc(i.severity || "info") + "\"><span class=\"k\">" + esc(i.kind || i.where || i.severity || "") + "</span>" + esc(i.note || "") + body + "</div>";
+    }).join("") || "<div class=\"empty\">Расхождений не найдено</div>";
+  }
+
+  function renderOrder(o) {
+    var st = STATUS[o.status] || ["gray", o.status];
+    var cls = o.status === "done" ? "done" : (o.status === "error" ? "err" : (o.status === "translating" || o.status === "checking" || o.status === "queued" ? "run" : ""));
+    var h = "<div class=\"ord " + cls + "\" data-id=\"" + o.id + "\">";
+    h += "<div class=\"ord-top\"><span class=\"ord-name\">" + esc((o.srcNames || []).join(", ") || "—") + "</span>";
+    h += pill(st[0], st[1], o.status === "translating" || o.status === "checking");
+    if (o.kind === "chat") h += pill("blue", "из чата");
+    if (o.checkVerdict && VERDICT[o.checkVerdict]) h += pill(VERDICT[o.checkVerdict][0], VERDICT[o.checkVerdict][1]);
+    if (o.compareStatus === "processing") h += pill("blue", "сравнение…", true);
+    else if (o.compareVerdict && CMP[o.compareVerdict]) h += pill(CMP[o.compareVerdict][0], CMP[o.compareVerdict][1]);
+    h += "</div>";
+    var meta = [];
+    if (o.params && o.params.translit) meta.push("Транслитерация: <b>" + esc(o.params.translit) + "</b>");
+    if (o.params && o.params.country) meta.push("Страна: " + esc(o.params.country));
+    if (o.params && o.params.note) meta.push(esc(o.params.note));
+    if (o.chat && o.chat.from) meta.push("Из чата, от: " + esc(o.chat.from));
+    if (o.humanName) meta.push("Перевод человека: " + esc(o.humanName));
+    meta.push(new Date(o.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }));
+    h += "<div class=\"ord-meta\">" + meta.join(" · ") + "</div>";
+    if (o.error) h += "<div class=\"ord-err\">" + esc(o.error) + "</div>";
+    if (o.docxError) h += "<div class=\"ord-err\">" + esc(o.docxError) + "</div>";
+    if (o.compareError) h += "<div class=\"ord-err\">Сравнение: " + esc(o.compareError) + "</div>";
+    h += "<div class=\"ord-acts\">";
+    if (o.hasDocx) h += "<a class=\"accent\" href=\"/translate/api/order/" + o.id + "/file/docx?token=\" data-dl=\"docx\">⬇︎ DOCX</a>";
+    if (o.hasHtml) h += "<a href=\"/translate/api/order/" + o.id + "/file/html?token=\" data-dl=\"html\" target=\"_blank\">Просмотр</a>";
+    if (o.checkVerdict) h += "<button data-act=\"report\">" + (openReports[o.id] ? "Скрыть отчёт" : "Отчёт проверки") + "</button>";
+    if (o.status === "done") h += "<button data-act=\"human\">" + (o.humanName ? "Заменить перевод человека" : "+ Перевод человека") + "</button>";
+    if (o.status === "error" || o.status === "done") h += "<button data-act=\"retry\">Повторить ИИ</button>";
+    h += "<button class=\"danger\" data-act=\"del\">Удалить</button>";
+    h += "</div>";
+    if (openReports[o.id]) {
+      var f = fullCache[o.id];
+      if (!f) h += "<div class=\"rep\"><span class=\"spin\"></span> Загрузка отчёта…</div>";
+      else {
+        if (f.check) {
+          h += "<div class=\"rep\"><h4>Проверка ИИ-контролёром</h4><p class=\"sum\">" + esc(f.check.summary || "") + "</p>" + renderIssues(f.check.issues, false) + "</div>";
+        }
+        if (f.compare) {
+          h += "<div class=\"rep\"><h4>Сравнение: ИИ vs человек</h4><p class=\"sum\">" + esc(f.compare.summary || "") + "</p>" + renderIssues(f.compare.differences, true) + "</div>";
+        }
+      }
+    }
+    h += "</div>";
+    return h;
+  }
+
+  function renderOrders() {
+    var list = (state && state.orders) || [];
+    $("#ordersCnt").textContent = list.length ? list.length + " шт." : "";
+    $("#orders").innerHTML = list.length ? list.map(renderOrder).join("") : "<div class=\"empty\">Заказов пока нет — создайте первый выше.</div>";
+    // Токен в ссылки скачивания: Bearer-заголовок в <a href> не передаётся,
+    // а getStaffFromReq на сервере принимает и ?token=.
+    Array.prototype.forEach.call(document.querySelectorAll("#orders a[data-dl]"), function (a) {
+      a.href = a.href.replace(/token=$/, "token=" + encodeURIComponent(token || ""));
+    });
+  }
+
+  function renderBot() {
+    var el = $("#botInfo");
+    if (!state) { el.innerHTML = ""; return; }
+    var h = "";
+    if (!state.botConfigured) {
+      h += "<div class=\"banner info\" style=\"margin-bottom:0;\">Бот ещё не подключён. Как подключить: админ Яндекс 360 → Мессенджер → Боты → «Создать бота», токен → в <code>.env</code> на сервере как <code>YM_BOT_TOKEN</code>, перезапустить. После этого Катя добавляет бота в чат переводов — заказы начнут появляться здесь автоматически, бот в чат ничего не пишет.</div>";
+    } else {
+      h += "<div style=\"font-size:13.5px;color:#3a4356;line-height:1.55;\">Бот активен" + (state.botChatPinned ? ", закреплён за чатом <span class=\"chat-id\">" + esc(state.botChatPinned) + "</span>" : ", слушает все групповые чаты, куда его добавили") + ". В чат он ничего не пишет.</div>";
+      var chats = Object.keys(state.botChats || {});
+      if (chats.length) {
+        h += "<div style=\"margin-top:10px;font-size:12.5px;color:#5a626f;\"><b>Замеченные чаты</b> (для <code>YM_TRANSLATE_CHAT_ID</code>):</div>";
+        chats.forEach(function (id) {
+          var c = state.botChats[id];
+          h += "<div style=\"margin-top:5px;font-size:12.5px;\"><span class=\"chat-id\">" + esc(id) + "</span> · " + esc(c.type || "") + (c.lastFrom ? " · посл.: " + esc(c.lastFrom) : "") + "</div>";
+        });
+      } else {
+        h += "<div class=\"empty\">Пока не видел ни одного сообщения — добавьте бота в чат.</div>";
+      }
+    }
+    el.innerHTML = h;
+  }
+
+  $("#orders").addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    var card = e.target.closest(".ord");
+    var id = card && card.getAttribute("data-id");
+    if (!id) return;
+    var act = btn.getAttribute("data-act");
+    if (act === "report") {
+      openReports[id] = !openReports[id];
+      if (openReports[id] && !fullCache[id]) {
+        api("/translate/api/order/" + id).then(function (j) { if (j.success) { fullCache[id] = j.order; renderOrders(); } });
+      }
+      renderOrders();
+    } else if (act === "retry") {
+      if (!confirm("Перезапустить перевод этого заказа ИИ заново?")) return;
+      delete fullCache[id];
+      api("/translate/api/order/" + id + "/retry", { method: "POST" }).then(load);
+    } else if (act === "del") {
+      if (!confirm("Удалить заказ вместе с файлами?")) return;
+      api("/translate/api/order/" + id, { method: "DELETE" }).then(load);
+    } else if (act === "human") {
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".docx,.pdf,.jpg,.jpeg,.png,.webp,.txt";
+      inp.addEventListener("change", function () {
+        if (!inp.files.length) return;
+        var fd = new FormData(); fd.append("file", inp.files[0]);
+        delete fullCache[id];
+        api("/translate/api/order/" + id + "/human", { method: "POST", body: fd }).then(load);
+      });
+      inp.click();
+    }
+  });
+
+  function anyActive() {
+    return !!(state && state.orders && state.orders.some(function (o) {
+      return o.status === "queued" || o.status === "translating" || o.status === "checking" || o.status === "new" || o.compareStatus === "processing";
+    }));
+  }
+  function schedulePoll() {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = setTimeout(load, anyActive() ? 4000 : 30000);
+  }
+
+  function load() {
+    api("/translate/api/state")
+      .then(function (j) {
+        if (!j.success) return;
+        state = j;
+        showApp();
+        $("#aiBanner").style.display = j.aiConfigured ? "none" : "";
+        // обновляем полные отчёты раскрытых заказов, если статус изменился
+        Object.keys(openReports).forEach(function (id) {
+          if (openReports[id]) {
+            var o = (j.orders || []).find(function (x) { return x.id === id; });
+            var f = fullCache[id];
+            if (o && f && (o.status !== f.status || o.compareStatus !== f.compareStatus)) delete fullCache[id];
+            if (o && !fullCache[id]) api("/translate/api/order/" + id).then(function (jj) { if (jj.success) { fullCache[id] = jj.order; renderOrders(); } });
+          }
+        });
+        renderOrders();
+        renderBot();
+        schedulePoll();
+      })
+      .catch(function (e) { if (e.message !== "auth") schedulePoll(); });
+  }
+
+  if (token) load(); else showLogin();
+})();
+</script>
+</body>
+</html>

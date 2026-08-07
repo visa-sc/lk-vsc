@@ -131,3 +131,6 @@ crm-svc/.amocopySessions.json
 betaLoyalty.json
 betaReferrals.json
 .vscPlanerka.json
+
+# Переводы документов (/translate) — заказы + файлы клиентов (ПДн), НЕ коммитить
+.translate/
