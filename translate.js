@@ -825,29 +825,53 @@ function mount(app, deps) {
   }
   function looksTranslated(p) { return /(перевод|translat|_en\b|-en\b|\ben\b|eng|final|готов|итог)/i.test(p); }
   function looksOriginal(p) { return /(оригинал|origin|source|src|скан|scan|_ru\b|-ru\b|\bru\b|rus)/i.test(p); }
+  // Стыковка файлов архива в пары «оригинал ↔ перевод». Несколько стратегий,
+  // от самой надёжной к запасной; каждый файл участвует только в одной паре.
   function pairArchiveEntries(entries) {
-    // entries: [{path, name, buf}]
     const pairs = [], used = new Set();
-    const key = (e) => normBase(e.name) || normBase(path.dirname(e.path));
-    const groups = new Map();
-    entries.forEach((e, i) => {
-      const k = key(e);
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push(i);
-    });
-    for (const [, idxs] of groups) {
-      if (idxs.length < 2) continue;
-      const orig = idxs.find((i) => looksOriginal(entries[i].path) || !looksTranslated(entries[i].path));
-      const tr = idxs.find((i) => i !== orig && (looksTranslated(entries[i].path) || true));
-      if (orig != null && tr != null && orig !== tr && !used.has(orig) && !used.has(tr)) {
-        used.add(orig); used.add(tr);
-        pairs.push({ original: entries[orig], human: entries[tr] });
+    const free = () => entries.map((_, i) => i).filter((i) => !used.has(i));
+    // Кто из двоих оригинал: сначала по явным подсказкам в пути, затем по типу
+    // (перевод обычно DOCX/TXT, оригинал — скан PDF/фото).
+    const isDoc = (e) => /\.(docx?|txt)$/i.test(e.name);
+    function takePair(a, b) {
+      const A = entries[a], B = entries[b];
+      let orig = a, tr = b;
+      if (looksTranslated(A.path) && !looksTranslated(B.path)) { orig = b; tr = a; }
+      else if (looksOriginal(B.path) && !looksOriginal(A.path)) { orig = b; tr = a; }
+      else if (isDoc(A) && !isDoc(B)) { orig = b; tr = a; }
+      used.add(orig); used.add(tr);
+      pairs.push({ original: entries[orig], human: entries[tr] });
+    }
+    function groupAndPair(keyFn) {
+      const groups = new Map();
+      for (const i of free()) {
+        const k = keyFn(entries[i]);
+        if (!k) continue;
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(i);
+      }
+      for (const [, idxs] of groups) {
+        const avail = idxs.filter((i) => !used.has(i));
+        if (avail.length === 2) takePair(avail[0], avail[1]);
+        else if (avail.length > 2) {
+          // Больше двух файлов с одним ключом: разбиваем на оригиналы/переводы
+          // и стыкуем попарно по порядку.
+          const tr = avail.filter((i) => looksTranslated(entries[i].path) || isDoc(entries[i]));
+          const or = avail.filter((i) => tr.indexOf(i) < 0);
+          for (let k = 0; k < Math.min(or.length, tr.length); k++) takePair(or[k], tr[k]);
+        }
       }
     }
-    // Резерв: если пар не нашли, а файлов ровно 2 — считаем их парой.
-    if (!pairs.length && entries.length === 2) pairs.push({ original: entries[0], human: entries[1] });
+    // 1) Одинаковое имя файла (обычно папки «Оригиналы» и «Переводы»).
+    groupAndPair((e) => e.name.toLowerCase());
+    // 2) Имя без служебных слов: «справка_оригинал.pdf» ↔ «справка_перевод.docx».
+    groupAndPair((e) => normBase(e.name));
+    // 3) Общая папка на заказ: «Костенко/скан.pdf» + «Костенко/перевод.docx».
+    groupAndPair((e) => (path.dirname(e.path) === "." ? "" : path.dirname(e.path).toLowerCase()));
+    // 4) Запасной вариант: в архиве ровно два файла — это пара.
+    if (!pairs.length && entries.length === 2) takePair(0, 1);
     const unpaired = entries.filter((_, i) => !used.has(i)).map((e) => e.path);
-    return { pairs, unpaired: pairs.length ? unpaired : entries.map((e) => e.path) };
+    return { pairs, unpaired };
   }
   function makeReviewOrder(origBuf, origName, humanBuf, humanName, meta) {
     const order = {
@@ -889,7 +913,10 @@ function mount(app, deps) {
         for (const p of pairs.slice(0, 50)) created.push(makeReviewOrder(p.original.buf, p.original.name, p.human.buf, p.human.name, meta));
         save();
         created.forEach(queueReview);
-        return res.json({ success: true, created: created.length, unpaired });
+        return res.json({
+          success: true, created: created.length, unpaired,
+          pairs: pairs.slice(0, 50).map((p) => ({ original: p.original.path, human: p.human.path })),
+        });
       }
 
       if (!f.original || !f.original[0] || !f.human || !f.human[0]) return res.status(400).json({ success: false, message: "Нужны оба файла: оригинал и перевод человека (или ZIP-архив)" });

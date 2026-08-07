@@ -189,6 +189,7 @@
           <span id="revErr" style="color:#b0263a;font-size:13px;"></span>
           <span id="revOk" style="color:#2c7a43;font-size:13px;"></span>
         </div>
+        <div class="full" id="revPairs"></div>
       </form>
     </div>
 
@@ -376,9 +377,17 @@
       .then(function (j) {
         $("#revSubmit").disabled = false;
         if (!j.success) { $("#revErr").textContent = j.message || "Ошибка"; return; }
-        var msg = "Взял в работу: " + j.created + " " + (j.created === 1 ? "пару" : "пар") + ". Результаты появятся в списке ниже.";
-        if (j.unpaired && j.unpaired.length) msg += " Без пары осталось: " + j.unpaired.length + " файл(ов).";
-        $("#revOk").textContent = msg;
+        $("#revOk").textContent = "Взял в работу: " + j.created + " " + (j.created === 1 ? "пару" : "пар") + ". Результаты появятся в списке ниже.";
+        if (j.pairs && j.pairs.length) {
+          var ph = "<div class=\"rep\" style=\"margin-top:12px;\"><h4>Что с чем состыковал</h4>" +
+            j.pairs.map(function (p) { return "<div class=\"iss info\"><b>Оригинал:</b> " + esc(p.original) + "<br><b>Перевод:</b> " + esc(p.human) + "</div>"; }).join("");
+          if (j.unpaired && j.unpaired.length) {
+            ph += "<div style=\"margin-top:10px;font-size:12.5px;color:#8a5a00;\"><b>Без пары остались</b> (переименуйте одинаково или загрузите парой вручную):<br>" + j.unpaired.map(esc).join("<br>") + "</div>";
+          }
+          $("#revPairs").innerHTML = ph + "</div>";
+        } else if (j.unpaired && j.unpaired.length) {
+          $("#revPairs").innerHTML = "<div class=\"rep\" style=\"margin-top:12px;\"><h4>Без пары остались</h4>" + j.unpaired.map(esc).join("<br>") + "</div>";
+        }
         revOrigFile = revHumanFile = revZipFile = null; revRender();
         $("#revOrig").value = ""; $("#revHuman").value = ""; $("#revZip").value = "";
         load();
