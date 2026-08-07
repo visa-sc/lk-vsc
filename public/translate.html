@@ -194,11 +194,6 @@
       </form>
     </div>
 
-    <div class="card">
-      <div class="sec-h"><b>Бот в Яндекс Мессенджере</b><span>активный + тихий режимы</span></div>
-      <div id="botInfo"></div>
-    </div>
-
     <div style="text-align:center;margin-top:16px;">
       <button id="logoutBtn" type="button" style="border:1px solid #cfd8e3;background:#fff;color:#6b7280;border-radius:10px;padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Выйти</button>
     </div>
@@ -247,7 +242,8 @@
   }
   $("#codeForm").addEventListener("submit", function (e) {
     e.preventDefault();
-    handleAuth(fetch("/admin/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("#code").value.trim() }) }));
+    // Свой код доступа /translate (не админский) — сессию выдаёт translate-модуль.
+    handleAuth(fetch("/translate/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("#code").value.trim() }) }));
   });
   $("#mgrForm").addEventListener("submit", function (e) {
     e.preventDefault();
@@ -390,28 +386,6 @@
     }).join("");
   }
 
-  function renderBot() {
-    var el = $("#botInfo");
-    if (!state) { el.innerHTML = ""; return; }
-    var h = "";
-    if (!state.botConfigured) {
-      h += "<div class=\"banner info\" style=\"margin-bottom:0;\">Бот ещё не подключён. Как подключить: <b>админ вашей организации Яндекс 360</b> → Мессенджер → Боты → «Создать бота», токен → в <code>.env</code> на сервере как <code>YM_BOT_TOKEN</code>, перезапустить.<br><br>Дальше бот работает в двух режимах:<br>• <b>Активный</b> (любой чат, куда его добавили, и личка): кинули документ — бот переводит, сам себя перепроверяет и присылает DOCX ответом в ветку. Правки — ответом «исправь: …», бот учится на них. Команда «правила» — показать выученное.<br>• <b>Тихий</b> (чаты из <code>YM_TRANSLATE_CHAT_ID</code> — чат переводчиц): только читает и копит заказы для сравнения, наружу не пишет. ⚠️ Занести id чата переводчиц в этот список ДО добавления туда бота.</div>";
-    } else {
-      h += "<div style=\"font-size:13.5px;color:#3a4356;line-height:1.55;\">Бот активен. Тихие чаты: " + ((state.quietChats && state.quietChats.length) ? state.quietChats.map(function (c) { return "<span class=\"chat-id\">" + esc(c) + "</span>"; }).join(", ") : "<i>не заданы — во всех чатах отвечает</i>") + ".<br>Команды в чате: документ → перевод с перепроверкой; ответ в ветке «исправь: …» → правка + обучение; «правила» → список выученного.</div>";
-      var chats = Object.keys(state.botChats || {});
-      if (chats.length) {
-        h += "<div style=\"margin-top:10px;font-size:12.5px;color:#5a626f;\"><b>Замеченные чаты</b> (id для <code>YM_TRANSLATE_CHAT_ID</code>):</div>";
-        chats.forEach(function (id) {
-          var c = state.botChats[id];
-          h += "<div style=\"margin-top:5px;font-size:12.5px;\"><span class=\"chat-id\">" + esc(id) + "</span> · " + esc(c.type || "") + (c.lastFrom ? " · посл.: " + esc(c.lastFrom) : "") + "</div>";
-        });
-      } else {
-        h += "<div class=\"empty\">Пока не видел ни одного сообщения — добавьте бота в чат или напишите ему в личку.</div>";
-      }
-    }
-    el.innerHTML = h;
-  }
-
   $("#lessons").addEventListener("click", function (e) {
     var btn = e.target.closest("button[data-act=dellesson]");
     if (!btn) return;
@@ -493,7 +467,6 @@
         });
         renderOrders();
         renderLessons();
-        renderBot();
         schedulePoll();
       })
       .catch(function (e) { if (e.message !== "auth") schedulePoll(); });

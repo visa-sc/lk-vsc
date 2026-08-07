@@ -677,8 +677,39 @@ function orderView(o, full) {
 // ── Монтирование ──────────────────────────────────────────────────────────
 function mount(app, deps) {
   const getStaffFromReq = deps.getStaffFromReq;
-  // Доступ: админ ИЛИ руководитель с "translate" в vscRestrict.tabs (Зайцева).
+
+  // Свой код входа для сотрудников (по просьбе Андрея 08.08) + токен-сессии,
+  // переживающие рестарт (в orders.json). Админ-код и вход Зайцевой тоже работают.
+  const TRANSLATE_CODE = process.env.TRANSLATE_CODE || "3451";
+  const TOKEN_TTL = 30 * 24 * 3600 * 1000;
+  function authTokens() { const st = store(); if (!st.auth) st.auth = {}; return st.auth; }
+  function tokenFromReq(req) {
+    const h = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+    return h || String(req.query.token || "").trim();
+  }
+  const loginFails = new Map(); // ip -> [ts]
+  app.post("/translate/api/login", (req, res) => {
+    const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+    const hist = (loginFails.get(ip) || []).filter((t) => Date.now() - t < 24 * 3600 * 1000);
+    if (hist.length >= 20) return res.status(429).json({ success: false, message: "Слишком много попыток, попробуйте завтра" });
+    const code = String((req.body && req.body.code) || "").trim();
+    if (code !== TRANSLATE_CODE) {
+      hist.push(Date.now()); loginFails.set(ip, hist);
+      return res.status(401).json({ success: false, message: "Неверный код" });
+    }
+    const tok = crypto.randomBytes(24).toString("hex");
+    const at = authTokens();
+    at[tok] = { at: Date.now() };
+    for (const k of Object.keys(at)) if (Date.now() - (at[k].at || 0) > TOKEN_TTL) delete at[k];
+    save();
+    return res.json({ success: true, token: tok });
+  });
+
+  // Доступ: код /translate ИЛИ админ ИЛИ руководитель с "translate" в vscRestrict.tabs (Зайцева).
   function requireTranslate(req, res, next) {
+    const tok = tokenFromReq(req);
+    const rec = tok && authTokens()[tok];
+    if (rec && Date.now() - (rec.at || 0) <= TOKEN_TTL) { req.staff = { role: "translate", name: "сотрудник (код)" }; return next(); }
     const s = getStaffFromReq(req);
     if (s && (s.role === "admin" || (s.vscRestrict && Array.isArray(s.vscRestrict.tabs) && s.vscRestrict.tabs.indexOf("translate") >= 0))) { req.staff = s; return next(); }
     return res.status(401).json({ success: false, message: "Нет доступа" });
