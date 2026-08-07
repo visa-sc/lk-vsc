@@ -126,11 +126,19 @@ function client() {
   if (!aiConfigured()) return null;
   if (!_client) {
     const { Anthropic } = require("@anthropic-ai/sdk");
-    _client = new Anthropic({
+    const opts = {
       apiKey: process.env.ANTHROPIC_API_KEY,
       baseURL: process.env.ANTHROPIC_BASE_URL || undefined,
       timeout: 15 * 60 * 1000, maxRetries: 2,
-    });
+    };
+    // Anthropic не обслуживает запросы с российских IP (403 Request not allowed),
+    // прод — в РФ. TRANSLATE_PROXY = любой не-РФ http(s)/socks-прокси вида
+    // http://user:pass@host:port — весь трафик к API пойдёт через него.
+    if (process.env.TRANSLATE_PROXY) {
+      const { ProxyAgent } = require("undici");
+      opts.fetchOptions = { dispatcher: new ProxyAgent(process.env.TRANSLATE_PROXY) };
+    }
+    _client = new Anthropic(opts);
   }
   return _client;
 }
