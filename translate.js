@@ -1,24 +1,31 @@
-// ── Переводы документов для визового агентства (проект Зайцевой, 07.08.2026) ──
+// ── Переводы документов для визового агентства (проект Зайцевой, 07–08.08.2026) ──
 // Отдельный модуль, монтируется из server.js: страница /translate + API + бот
-// Яндекс Мессенджера (тихий режим). НЕ касается клиентского ЛК и amoCRM.
+// Яндекс Мессенджера. НЕ касается клиентского ЛК и amoCRM.
 //
-// Пайплайн заказа: файлы (PDF/фото) → Claude (перевод с сохранением структуры,
-// HTML) → DOCX (html-to-docx) → второй проход Claude «агент-проверщик» (сверка
-// цифр/дат/ФИО, JSON-отчёт). Отдельно: загрузка перевода человека → третий
-// проход «сравнение ИИ vs человек» (для этапа обучения по плану Кати).
+// Пайплайн заказа: файлы (PDF/фото/DOCX/TXT) → Claude (перевод с сохранением
+// структуры, HTML) → DOCX (html-to-docx) → «агент-проверщик» (сверка цифр/дат/
+// ФИО, JSON-отчёт) → при критичных замечаниях авто-исправление и повторная
+// проверка. Отдельно: перевод человека → «сравнение ИИ vs человек» (обучение).
 //
-// Бот (Шаг 2 плана): если задан YM_BOT_TOKEN — long-polling getUpdates Bot API
-// Яндекс Мессенджера. Бот ТОЛЬКО ЧИТАЕТ чат переводов (наружу ничего не пишет):
-// файл в корне чата = заказ девочек → фоновый перевод ИИ; файл ответом в ветке
-// (thread) того же заказа = результат переводчика → автосравнение. Все
-// увиденные чаты копятся в состоянии — их id видно на странице (для
-// YM_TRANSLATE_CHAT_ID).
+// Бот (YM_BOT_TOKEN, long-polling getUpdates) работает в ДВУХ режимах:
+//  • АКТИВНЫЙ (все чаты по умолчанию): кинули документ → «Принял, перевожу…» →
+//    перевод+проверка(+автоисправление) → DOCX и итог проверки ответом в ветку.
+//    Корректировки: ответ в ветке «исправь: …» → бот правит перевод, шлёт новую
+//    версию И извлекает из правки общие правила на будущее (самообучение,
+//    .translate/orders.json → lessons). Команда «правила» — показать выученное.
+//  • ТИХИЙ (чаты из YM_TRANSLATE_CHAT_ID, через запятую — чат переводчиц):
+//    только читает: файл в корне = заказ → фоновый перевод для сравнения; файл
+//    в ветке = перевод человека → автосравнение. Наружу НЕ пишет (по плану
+//    Кати никто не должен знать про ИИ).
+// ВАЖНО: чат переводчиц ОБЯЗАТЕЛЬНО занести в YM_TRANSLATE_CHAT_ID до
+// добавления туда бота — иначе он там ответит.
 //
 // env: ANTHROPIC_API_KEY (обязателен для ИИ), ANTHROPIC_BASE_URL (опц., для
 // прокси-провайдеров с рублёвой оплатой), TRANSLATE_MODEL (дефолт claude-opus-5),
-// YM_BOT_TOKEN (опц.), YM_TRANSLATE_CHAT_ID (опц. — ограничить одним чатом).
+// YM_BOT_TOKEN (опц.), YM_TRANSLATE_CHAT_ID (опц., «тихие» чаты через запятую).
 //
-// Хранилище: .translate/orders.json + .translate/files/* (gitignore, ПДн клиентов).
+// Хранилище: .translate/orders.json (+lessons внутри) + .translate/files/*
+// (gitignore, ПДн клиентов).
 
 const fs = require("fs");
 const path = require("path");
@@ -32,6 +39,7 @@ const STORE_FILE = path.join(DIR, "orders.json");
 
 const MAX_ORDERS = 500;
 const MAX_TOTAL_SRC = 20 * 1024 * 1024; // base64 раздувает ×1.33, лимит API — 32MB на запрос
+const MAX_LESSONS_IN_PROMPT = 40;
 
 function ensureDirs() {
   try { fs.mkdirSync(FILES_DIR, { recursive: true }); } catch (_) {}
@@ -41,8 +49,9 @@ let _store = null;
 function store() {
   if (_store) return _store;
   try { _store = JSON.parse(fs.readFileSync(STORE_FILE, "utf8")); } catch (_) { _store = null; }
-  if (!_store || !Array.isArray(_store.orders)) _store = { orders: [], bot: { offset: 0, chats: {} } };
+  if (!_store || !Array.isArray(_store.orders)) _store = { orders: [], bot: { offset: 0, chats: {} }, lessons: [] };
   if (!_store.bot) _store.bot = { offset: 0, chats: {} };
+  if (!Array.isArray(_store.lessons)) _store.lessons = [];
   return _store;
 }
 function save() {
@@ -53,6 +62,14 @@ function save() {
 function newId() { return crypto.randomBytes(6).toString("hex"); }
 function findOrder(id) { return store().orders.find((o) => o.id === id) || null; }
 
+// ── «Уроки» — правила, выученные на корректировках человека ───────────────
+function lessons() { return store().lessons; }
+function lessonsPromptBlock() {
+  const act = lessons().slice(-MAX_LESSONS_IN_PROMPT);
+  if (!act.length) return "";
+  return "\n\nНакопленные правила из прошлых корректировок заказчика — соблюдай их ОБЯЗАТЕЛЬНО:\n" + act.map((l) => "- " + l.text).join("\n");
+}
+
 // ── Файлы ─────────────────────────────────────────────────────────────────
 function extOf(name, mime) {
   const e = path.extname(String(name || "")).toLowerCase();
@@ -61,6 +78,7 @@ function extOf(name, mime) {
   if (/png/.test(mime)) return ".png";
   if (/webp/.test(mime)) return ".webp";
   if (/gif/.test(mime)) return ".gif";
+  if (/wordprocessingml/.test(mime)) return ".docx";
   return ".jpg";
 }
 function saveFile(orderId, tag, buf, name, mime) {
@@ -73,19 +91,29 @@ function readFileBuf(fn) { return fs.readFileSync(path.join(FILES_DIR, fn)); }
 
 function mimeByExt(fn) {
   const e = path.extname(fn).toLowerCase();
-  return { ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".html": "text/html; charset=utf-8" }[e] || "application/octet-stream";
+  return { ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".doc": "application/msword", ".txt": "text/plain; charset=utf-8", ".html": "text/html; charset=utf-8" }[e] || "application/octet-stream";
 }
+// Что умеем переводить как исходник.
+const SRC_EXT = [".pdf", ".jpg", ".jpeg", ".png", ".webp", ".gif", ".docx", ".txt"];
+function srcSupported(name) { return SRC_EXT.indexOf(path.extname(String(name || "")).toLowerCase()) >= 0; }
 
-// Контент-блоки Claude из исходников заказа (PDF → document, фото → image).
-function srcBlocks(order) {
+// Контент-блоки Claude из исходников заказа (PDF → document, фото → image,
+// DOCX/TXT → извлечённый текст).
+async function srcBlocks(order) {
   const blocks = [];
   for (const f of order.src) {
     const buf = readFileBuf(f.file);
     const mime = mimeByExt(f.file);
     if (mime === "application/pdf") {
       blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: buf.toString("base64") } });
-    } else if (/^image\//.test(mime)) {
-      blocks.push({ type: "image", source: { type: "base64", media_type: mime, data: buf.toString("base64") } });
+    } else if (/^image\/(jpeg|png|webp|gif)/.test(mime)) {
+      blocks.push({ type: "image", source: { type: "base64", media_type: mime.split(";")[0], data: buf.toString("base64") } });
+    } else if (/wordprocessingml/.test(mime)) {
+      const mammoth = require("mammoth");
+      const res = await mammoth.extractRawText({ buffer: buf });
+      blocks.push({ type: "text", text: "Документ «" + f.name + "» (текст извлечён из DOCX; структуру таблиц восстанови по смыслу):\n\n" + res.value });
+    } else if (/^text\//.test(mime)) {
+      blocks.push({ type: "text", text: "Документ «" + f.name + "»:\n\n" + buf.toString("utf8") });
     }
   }
   return blocks;
@@ -143,6 +171,7 @@ async function runClaudeJson(params, schema) {
 }
 
 function langName(code) { return code === "en" ? "английский" : (code || "английский"); }
+function stripFences(t) { return String(t || "").trim().replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, ""); }
 
 const CHECK_SCHEMA = {
   type: "object", additionalProperties: false,
@@ -190,7 +219,47 @@ const COMPARE_SCHEMA = {
   },
 };
 
-// ── Пайплайн перевода ─────────────────────────────────────────────────────
+const LESSONS_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["lessons"],
+  properties: { lessons: { type: "array", items: { type: "string" } } },
+};
+
+// ── Сборка результата (HTML + DOCX) ──────────────────────────────────────
+async function buildOutputs(order, html) {
+  const fullHtml = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Перевод</title><style>body{font-family:'Times New Roman',serif;max-width:820px;margin:24px auto;padding:0 16px;color:#111}table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #444;padding:4px 6px;font-size:13px}section.page{page-break-after:always;margin-bottom:36px;border-bottom:1px dashed #bbb;padding-bottom:24px}.tr-note{color:#333}</style></head><body>" + html + "</body></html>";
+  order.files = order.files || {};
+  order.files.html = saveFile(order.id, "result", Buffer.from(fullHtml, "utf8"), "result.html", "text/html");
+  order.docxError = null;
+  try {
+    const HTMLtoDOCX = require("html-to-docx");
+    const docxBuf = await HTMLtoDOCX(fullHtml, null, { table: { row: { cantSplit: true } }, font: "Times New Roman", fontSize: 24 });
+    order.files.docx = saveFile(order.id, "result", Buffer.from(docxBuf), "result.docx", "");
+  } catch (e) {
+    console.error("translate docx:", e.message);
+    order.docxError = "DOCX не собрался: " + e.message;
+  }
+}
+function currentHtml(order) {
+  try { return readFileBuf(order.files.html).toString("utf8").replace(/^[\s\S]*?<body>/, "").replace(/<\/body>[\s\S]*$/, ""); } catch (_) { return ""; }
+}
+function docxDlName(order) {
+  return "Перевод " + (((order.src[0] && order.src[0].name) || order.id).replace(/\.[^.]+$/, "")) + ".docx";
+}
+
+// ── Проверка вторым проходом ──────────────────────────────────────────────
+async function runCheck(order, html) {
+  const p = order.params || {};
+  const checkSys = "Ты — придирчивый редактор-контролёр переводов официальных документов. Тебе дан оригинал документа и перевод. Найди ВСЕ расхождения: неверные/пропущенные цифры, суммы, даты, номера, ошибки транслитерации ФИО, пропущенные строки/страницы, смысловые ошибки. Мелкие стилистические замечания помечай как info. Отвечай строго JSON по схеме: {verdict: ok|warnings|errors, summary: краткий итог по-русски, issues: [{severity: critical|warning|info, where, original, translated, note}]}. Если всё точно — verdict ok и пустой issues.";
+  const chk = await runClaudeJson({
+    model: model(), max_tokens: 16000,
+    system: checkSys,
+    messages: [{ role: "user", content: [...(await srcBlocks(order)), { type: "text", text: "Вот перевод, который нужно проверить против оригинала выше:\n\n" + html + (p.translit ? "\n\nЗаявленная транслитерация ФИО: " + p.translit : "") }] }],
+  }, CHECK_SCHEMA);
+  return chk;
+}
+
+// ── Пайплайн перевода (+ авто-исправление по критичным замечаниям) ────────
 async function pipelineTranslate(order) {
   order.status = "translating"; order.error = null; save();
   const p = order.params || {};
@@ -206,7 +275,7 @@ async function pipelineTranslate(order) {
     "Каждая страница оригинала — отдельный <section class=\"page\"> (после каждой секции перевод продолжается со следующей страницы).",
     "В начале первой страницы добавь строку-заголовок вида: <p class=\"tr-note\"><i>Translation from Russian into English</i></p> (язык подставь по факту).",
     "Используй простой HTML: h3/p/table/tr/td/b/i, таблицам добавляй border=\"1\" cellspacing=\"0\" cellpadding=\"4\".",
-  ].join("\n");
+  ].join("\n") + lessonsPromptBlock();
   const userText = [
     "Переведи приложенный документ полностью, страница за страницей.",
     p.translit ? "Транслитерация ФИО клиента (использовать именно её): " + p.translit : "",
@@ -218,37 +287,69 @@ async function pipelineTranslate(order) {
   const r = await runClaude({
     model: model(), max_tokens: 60000,
     system: sys,
-    messages: [{ role: "user", content: [...srcBlocks(order), { type: "text", text: userText }] }],
+    messages: [{ role: "user", content: [...(await srcBlocks(order)), { type: "text", text: userText }] }],
   });
-  let html = r.text.trim().replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "");
-  order.resultHtmlRaw = null;
-  const fullHtml = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Перевод</title><style>body{font-family:'Times New Roman',serif;max-width:820px;margin:24px auto;padding:0 16px;color:#111}table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #444;padding:4px 6px;font-size:13px}section.page{page-break-after:always;margin-bottom:36px;border-bottom:1px dashed #bbb;padding-bottom:24px}.tr-note{color:#333}</style></head><body>" + html + "</body></html>";
-  order.files = order.files || {};
-  order.files.html = saveFile(order.id, "result", Buffer.from(fullHtml, "utf8"), "result.html", "text/html");
-
-  // DOCX
-  try {
-    const HTMLtoDOCX = require("html-to-docx");
-    const docxBuf = await HTMLtoDOCX(fullHtml, null, { table: { row: { cantSplit: true } }, font: "Times New Roman", fontSize: 24 });
-    order.files.docx = saveFile(order.id, "result", Buffer.from(docxBuf), "result.docx", "");
-  } catch (e) {
-    console.error("translate docx:", e.message);
-    order.docxError = "DOCX не собрался: " + e.message;
-  }
+  let html = stripFences(r.text);
+  await buildOutputs(order, html);
   order.usage = order.usage || {};
   order.usage.translate = r.usage;
   order.status = "checking"; save();
 
-  // Проверка вторым проходом
-  const checkSys = "Ты — придирчивый редактор-контролёр переводов официальных документов. Тебе дан оригинал документа и перевод. Найди ВСЕ расхождения: неверные/пропущенные цифры, суммы, даты, номера, ошибки транслитерации ФИО, пропущенные строки/страницы, смысловые ошибки. Мелкие стилистические замечания помечай как info. Отвечай строго JSON по схеме: {verdict: ok|warnings|errors, summary: краткий итог по-русски, issues: [{severity: critical|warning|info, where, original, translated, note}]}. Если всё точно — verdict ok и пустой issues.";
-  const chk = await runClaudeJson({
-    model: model(), max_tokens: 16000,
-    system: checkSys,
-    messages: [{ role: "user", content: [...srcBlocks(order), { type: "text", text: "Вот перевод, который нужно проверить против оригинала выше:\n\n" + html + (p.translit ? "\n\nЗаявленная транслитерация ФИО: " + p.translit : "") }] }],
-  }, CHECK_SCHEMA);
+  let chk = await runCheck(order, html);
   order.check = chk.json || { verdict: "warnings", summary: "Не удалось разобрать отчёт проверки", issues: [] };
   order.usage.check = chk.usage;
+
+  // Авто-исправление: если проверка нашла критичные ошибки — правим и проверяем ещё раз.
+  const critical = (order.check.issues || []).filter((i) => i.severity === "critical");
+  if (critical.length) {
+    order.status = "revising"; save();
+    const rev = await runClaude({
+      model: model(), max_tokens: 60000,
+      system: sys + "\n\nСейчас ты ИСПРАВЛЯЕШЬ свой предыдущий перевод по замечаниям контролёра. Верни ПОЛНЫЙ исправленный HTML-перевод целиком (не только исправленные места), тем же форматом.",
+      messages: [{ role: "user", content: [...(await srcBlocks(order)), { type: "text", text: "Текущий перевод:\n\n" + html + "\n\nЗамечания контролёра (исправь все критичные и по возможности остальные):\n" + JSON.stringify(order.check.issues, null, 1) }] }],
+    });
+    html = stripFences(rev.text);
+    await buildOutputs(order, html);
+    order.usage.revise = rev.usage;
+    order.status = "checking"; save();
+    chk = await runCheck(order, html);
+    order.check = chk.json || order.check;
+    order.check.revised = true;
+    order.usage.check2 = chk.usage;
+  }
   order.status = "done"; order.doneAt = Date.now(); save();
+}
+
+// ── Корректировка по команде человека («исправь: …») ─────────────────────
+async function pipelineCorrect(order, instruction, author) {
+  order.correctStatus = "processing"; save();
+  const p = order.params || {};
+  const html = currentHtml(order);
+  if (!html) throw new Error("нет готового перевода для правки");
+  const sys = "Ты — профессиональный переводчик официальных документов. Тебе дан оригинал, текущий перевод (HTML) и корректировка от заказчика. Внеси правку и верни ПОЛНЫЙ исправленный HTML-перевод целиком, тем же форматом (<section class=\"page\">, таблицы <table>), без markdown и ```-ограждений. Ничего не ломай в местах, которых правка не касается." + lessonsPromptBlock();
+  const r = await runClaude({
+    model: model(), max_tokens: 60000,
+    system: sys,
+    messages: [{ role: "user", content: [...(await srcBlocks(order)), { type: "text", text: "Текущий перевод:\n\n" + html + "\n\nКорректировка заказчика (выполни её):\n" + instruction + (p.translit ? "\n\nТранслитерация ФИО: " + p.translit : "") }] }],
+  });
+  await buildOutputs(order, stripFences(r.text));
+  order.corrections = order.corrections || [];
+  order.corrections.push({ at: Date.now(), by: author || "", text: String(instruction).slice(0, 2000) });
+  order.correctStatus = "done"; save();
+
+  // Самообучение: извлекаем из правки общие правила на будущее (best-effort).
+  try {
+    const existing = lessons().map((l) => l.text);
+    const les = await runClaudeJson({
+      model: model(), max_tokens: 4000,
+      system: "Ты ведёшь базу правил для переводчика документов. Из корректировки заказчика сформулируй 0–3 ОБЩИХ правила на будущее (по-русски, коротко, применимо к любым документам). Разовые правки конкретного документа (опечатка, конкретная сумма) правилом НЕ являются — тогда верни пустой список. Не дублируй существующие правила. Отвечай строго JSON: {lessons: [\"правило\", ...]}.",
+      messages: [{ role: "user", content: "Корректировка заказчика: " + instruction + "\n\nСуществующие правила:\n" + (existing.join("\n") || "(пусто)") }],
+    }, LESSONS_SCHEMA);
+    const newOnes = ((les.json && les.json.lessons) || []).map((t) => String(t).trim()).filter((t) => t && !existing.some((e) => e.toLowerCase() === t.toLowerCase()));
+    for (const t of newOnes) lessons().push({ id: newId(), createdAt: Date.now(), text: t.slice(0, 500), source: order.id });
+    if (newOnes.length) save();
+    return newOnes;
+  } catch (e) { console.warn("translate lessons:", e.message); return []; }
 }
 
 // ── Сравнение с переводом человека ────────────────────────────────────────
@@ -267,20 +368,18 @@ async function pipelineCompare(order) {
     content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: readFileBuf(humanFn).toString("base64") } });
     humanNote = "Перевод человека приложен файлом (PDF выше, последний документ).";
   } else if (/^image\//.test(mime)) {
-    content.push({ type: "image", source: { type: "base64", media_type: mime, data: readFileBuf(humanFn).toString("base64") } });
+    content.push({ type: "image", source: { type: "base64", media_type: mime.split(";")[0], data: readFileBuf(humanFn).toString("base64") } });
     humanNote = "Перевод человека приложен изображением (последнее фото).";
   } else {
     humanNote = "Перевод человека (текст):\n\n" + readFileBuf(humanFn).toString("utf8");
   }
-  let aiHtml = "";
-  try { aiHtml = readFileBuf(order.files.html).toString("utf8"); } catch (_) {}
-  aiHtml = aiHtml.replace(/^[\s\S]*?<body>/, "").replace(/<\/body>[\s\S]*$/, "");
+  const aiHtml = currentHtml(order);
 
   const sys = "Ты — эксперт по качеству переводов официальных документов. Сравни два перевода одного документа: перевод ИИ и перевод человека-переводчика. Оригинал тоже приложен. Определи все содержательные расхождения (цифры, даты, ФИО, пропуски, смысл) и заметные стилистические. Оцени, есть ли у человека то, чего не хватает у ИИ, и наоборот. Отвечай строго JSON: {verdict: match|minor|major, summary: развёрнутый вывод по-русски (какой перевод точнее и почему), differences: [{kind: number|date|name|omission|meaning|style|format|other, severity: critical|warning|info, ai, human, note}]}.";
   const cmp = await runClaudeJson({
     model: model(), max_tokens: 16000,
     system: sys,
-    messages: [{ role: "user", content: [...srcBlocks(order), ...content, { type: "text", text: "Перевод ИИ (HTML):\n\n" + aiHtml + "\n\n---\n\n" + humanNote }] }],
+    messages: [{ role: "user", content: [...(await srcBlocks(order)), ...content, { type: "text", text: "Перевод ИИ (HTML):\n\n" + aiHtml + "\n\n---\n\n" + humanNote }] }],
   }, COMPARE_SCHEMA);
   order.compare = cmp.json || { verdict: "minor", summary: "Не удалось разобрать отчёт сравнения", differences: [] };
   order.usage = order.usage || {};
@@ -298,8 +397,13 @@ function queueTranslate(order) {
   enqueue("translate " + order.id, async () => {
     const o = findOrder(order.id);
     if (!o) return;
-    try { await pipelineTranslate(o); }
-    catch (e) { o.status = "error"; o.error = String((e && e.message) || e); save(); }
+    try {
+      await pipelineTranslate(o);
+      if (o.kind === "bot") await botDeliver(o).catch((e) => console.error("botDeliver:", e.message));
+    } catch (e) {
+      o.status = "error"; o.error = String((e && e.message) || e); save();
+      if (o.kind === "bot") await botSay(o, "⚠️ Не получилось перевести: " + o.error).catch(() => {});
+    }
   });
 }
 function queueCompare(order) {
@@ -310,15 +414,73 @@ function queueCompare(order) {
     catch (e) { o.compareStatus = "error"; o.compareError = String((e && e.message) || e); save(); }
   });
 }
+function queueCorrect(order, instruction, author) {
+  enqueue("correct " + order.id, async () => {
+    const o = findOrder(order.id);
+    if (!o) return;
+    try {
+      const newRules = await pipelineCorrect(o, instruction, author);
+      if (o.kind === "bot") {
+        if (o.files && o.files.docx) await ymSendFile(o.chat.chatId, readFileBuf(o.files.docx), docxDlName(o), o.chat.messageId).catch((e) => console.error("send fix docx:", e.message));
+        let t = "✅ Поправил, новая версия выше.";
+        if (newRules && newRules.length) t += "\nЗапомнил на будущее:\n" + newRules.map((x) => "• " + x).join("\n");
+        await botSay(o, t).catch(() => {});
+      }
+    } catch (e) {
+      o.correctStatus = "error"; save();
+      if (o.kind === "bot") await botSay(o, "⚠️ Не получилось поправить: " + String((e && e.message) || e)).catch(() => {});
+    }
+  });
+}
 
-// ── Бот Яндекс Мессенджера (тихий режим — только читаем) ──────────────────
+// ── Бот Яндекс Мессенджера ────────────────────────────────────────────────
 const YM_API = "https://botapi.messenger.yandex.net/bot/v1";
 function botConfigured() { return !!process.env.YM_BOT_TOKEN; }
 function ymHeaders() { return { Authorization: "OAuth " + process.env.YM_BOT_TOKEN }; }
+function quietChatIds() { return String(process.env.YM_TRANSLATE_CHAT_ID || "").split(",").map((s) => s.trim()).filter(Boolean); }
 
 async function ymGetFile(fileId) {
-  const r = await axios.post(YM_API + "/messages/getFile/", { file_id: fileId }, { headers: ymHeaders(), responseType: "arraybuffer", timeout: 60000, maxContentLength: 50 * 1024 * 1024 });
+  const r = await axios.post(YM_API + "/messages/getFile/", { file_id: fileId }, { headers: ymHeaders(), responseType: "arraybuffer", timeout: 120000, maxContentLength: 60 * 1024 * 1024 });
   return Buffer.from(r.data);
+}
+async function ymSendText(chatId, text, threadId) {
+  const body = { chat_id: chatId, text: String(text).slice(0, 3800) };
+  if (threadId) body.thread_id = Number(threadId) || threadId;
+  const r = await axios.post(YM_API + "/messages/sendText/", body, { headers: ymHeaders(), timeout: 30000 });
+  if (!r.data || r.data.ok !== true) throw new Error("sendText не ок: " + JSON.stringify(r.data || {}).slice(0, 200));
+  return r.data;
+}
+async function ymSendFile(chatId, buf, filename, threadId) {
+  const fd = new FormData();
+  fd.append("chat_id", chatId);
+  if (threadId) fd.append("thread_id", String(threadId));
+  fd.append("document", new Blob([buf]), filename);
+  const r = await fetch(YM_API + "/messages/sendFile/", { method: "POST", headers: ymHeaders(), body: fd });
+  const j = await r.json().catch(() => null);
+  if (!j || j.ok !== true) throw new Error("sendFile не ок: " + (j ? JSON.stringify(j).slice(0, 200) : "HTTP " + r.status));
+  return j;
+}
+// Ответ в ветку заказа (для активного режима).
+async function botSay(order, text) {
+  if (!order.chat || !order.chat.chatId) return;
+  await ymSendText(order.chat.chatId, text, order.chat.messageId);
+}
+
+// Итог активного заказа: DOCX + сводка проверки в ветку.
+async function botDeliver(o) {
+  if (!o.chat || !o.chat.chatId) return;
+  if (o.files && o.files.docx) await ymSendFile(o.chat.chatId, readFileBuf(o.files.docx), docxDlName(o), o.chat.messageId);
+  const c = o.check || {};
+  let txt = "✅ Перевод готов" + (c.revised ? " (при самопроверке нашёл замечания и уже исправил их)" : "") + ".\n";
+  if (c.verdict === "ok") txt += "Контрольная проверка: расхождений с оригиналом не найдено.";
+  else {
+    txt += "Контрольная проверка: " + (c.summary || "есть замечания") + "";
+    const top = (c.issues || []).filter((i) => i.severity !== "info").slice(0, 5);
+    if (top.length) txt += "\n" + top.map((i) => "• " + (i.note || i.where || "")).join("\n");
+  }
+  if (o.docxError) txt += "\n⚠️ " + o.docxError;
+  txt += "\n\nПоправить: ответьте в этой ветке «исправь: …». Команда «правила» — что я уже выучил.";
+  await ymSendText(o.chat.chatId, txt, o.chat.messageId);
 }
 
 // Файл из update: форматы у Bot API не зафиксированы публично — разбираем
@@ -336,7 +498,33 @@ function ymExtractFiles(u) {
   return out;
 }
 
+const CORRECT_RE = /^\s*[\/!]?\s*(исправ|поправ|правк|подправ|измени|замени|убери|удали|добавь|переделай|fix|correct)/i;
+const RULES_RE = /^\s*\/?\s*(правила|rules)\s*$/i;
+
 let _ymLoggedSample = 0;
+
+// Заказ из сообщения с файлами (общее для обоих режимов).
+async function ymCreateOrder(u, files, kind) {
+  const chat = u.chat || {};
+  const order = {
+    id: newId(), kind, createdAt: Date.now(), status: "new",
+    params: { translit: "", country: "", targetLang: "en", note: "" },
+    src: [], files: {},
+    chat: { chatId: String(chat.id || ""), messageId: u.message_id ? String(u.message_id) : "", threadId: u.thread_id ? String(u.thread_id) : "", from: (u.from && (u.from.display_name || u.from.login)) || "", text: String(u.text || "").slice(0, 3000) },
+  };
+  const tm = order.chat.text.match(/транслитерац\w*\s*[:—-]\s*([A-ZА-Я][A-Za-zА-Яа-яЁё .-]+)/i);
+  if (tm) order.params.translit = tm[1].trim();
+  for (let i = 0; i < files.length && i < 10; i++) {
+    const buf = await ymGetFile(files[i].id);
+    order.src.push({ file: saveFile(order.id, "src-" + i, buf, files[i].name, ""), name: files[i].name });
+  }
+  const st = store();
+  st.orders.unshift(order);
+  if (st.orders.length > MAX_ORDERS) st.orders.length = MAX_ORDERS;
+  save();
+  return order;
+}
+
 async function ymHandleUpdate(u) {
   const st = store();
   const chat = u.chat || {};
@@ -344,70 +532,100 @@ async function ymHandleUpdate(u) {
   if (chatId) {
     st.bot.chats[chatId] = { type: chat.type || "", lastAt: Date.now(), lastFrom: (u.from && (u.from.display_name || u.from.login)) || "" };
   }
-  const onlyChat = process.env.YM_TRANSLATE_CHAT_ID || "";
   if (u.from && u.from.robot) return;
-  if (onlyChat && chatId !== onlyChat) return;
-  if (!onlyChat && chat.type !== "group") return; // без пина слушаем только группы
-
   const files = ymExtractFiles(u);
+  if (files.length && _ymLoggedSample < 3) { _ymLoggedSample++; console.log("ymbot update с файлом (образец):", JSON.stringify(u).slice(0, 1500)); }
   const threadId = u.thread_id ? String(u.thread_id) : "";
-  const msgId = u.message_id ? String(u.message_id) : "";
+  const quiet = quietChatIds().indexOf(chatId) >= 0;
 
-  if (!files.length) {
-    // Текст в ветке существующего заказа — дописываем контекст.
+  // ── ТИХИЙ режим (чат переводчиц): только читаем, для обучения ──
+  if (quiet) {
+    if (!files.length) {
+      if (threadId) {
+        const o = st.orders.find((x) => x.chat && x.chat.messageId === threadId);
+        if (o && u.text) { o.chat.thread = (o.chat.thread || []); o.chat.thread.push({ from: (u.from && (u.from.display_name || u.from.login)) || "", text: String(u.text).slice(0, 2000) }); save(); }
+      }
+      return;
+    }
     if (threadId) {
       const o = st.orders.find((x) => x.chat && x.chat.messageId === threadId);
-      if (o && u.text) { o.chat.thread = (o.chat.thread || []); o.chat.thread.push({ from: (u.from && (u.from.display_name || u.from.login)) || "", text: String(u.text).slice(0, 2000) }); save(); }
+      if (o) {
+        try {
+          const buf = await ymGetFile(files[0].id);
+          o.files = o.files || {};
+          o.files.human = saveFile(o.id, "human", buf, files[0].name, "");
+          o.humanName = files[0].name;
+          save();
+          if (o.status === "done") queueCompare(o);
+          else { o.pendingCompare = true; save(); }
+        } catch (e) { console.error("ymbot human file:", e.message); }
+        return;
+      }
+    }
+    try {
+      const order = await ymCreateOrder(u, files, "chat");
+      if (aiConfigured()) queueTranslate(order);
+      else { order.status = "error"; order.error = "ANTHROPIC_API_KEY не настроен"; save(); }
+    } catch (e) { console.error("ymbot quiet order:", e.message); }
+    return;
+  }
+
+  // ── АКТИВНЫЙ режим (все остальные чаты): переводим и отвечаем ──
+  if (!files.length) {
+    const text = String(u.text || "").trim();
+    if (!text) return;
+    // Команда «правила»
+    if (RULES_RE.test(text)) {
+      const ls = lessons();
+      const msg = ls.length ? "Мои выученные правила (" + ls.length + "):\n" + ls.slice(-30).map((l, i) => (i + 1) + ". " + l.text).join("\n") : "Пока ни одного правила не выучил — поправьте мой перевод командой «исправь: …», и я запомню.";
+      await ymSendText(chatId, msg, u.thread_id ? threadId : undefined).catch((e) => console.error("rules reply:", e.message));
+      return;
+    }
+    // Корректировка в ветке заказа
+    if (threadId) {
+      const o = st.orders.find((x) => x.kind === "bot" && x.chat && x.chat.messageId === threadId);
+      if (o && CORRECT_RE.test(text)) {
+        if (o.status !== "done") { await botSay(o, "Ещё перевожу — как закончу, пришлю, и тогда поправлю.").catch(() => {}); return; }
+        const instruction = text.replace(/^\s*[\/!]?\s*(исправь|поправь|исправить|поправить|правка|fix|correct)\s*[:,—-]?\s*/i, "") || text;
+        const author = (u.from && (u.from.display_name || u.from.login)) || "";
+        await botSay(o, "Принял, вношу правку…").catch(() => {});
+        queueCorrect(o, instruction, author);
+      }
+      return;
     }
     return;
   }
-  if (_ymLoggedSample < 3) { _ymLoggedSample++; console.log("ymbot update с файлом (образец):", JSON.stringify(u).slice(0, 1500)); }
 
-  // Файл ответом в ветке заказа = перевод человека → сравнение.
-  if (threadId) {
-    const o = st.orders.find((x) => x.chat && x.chat.messageId === threadId);
-    if (o) {
-      try {
-        const buf = await ymGetFile(files[0].id);
-        o.files = o.files || {};
-        o.files.human = saveFile(o.id, "human", buf, files[0].name, "");
-        o.humanName = files[0].name;
-        save();
-        if (o.status === "done") queueCompare(o);
-        else o.pendingCompare = true, save();
-      } catch (e) { console.error("ymbot human file:", e.message); }
+  // Файлы в активном режиме → новый заказ с ответом в чат.
+  const supported = files.filter((f) => srcSupported(f.name));
+  const rootThread = threadId || (u.message_id ? String(u.message_id) : "");
+  if (!supported.length) {
+    await ymSendText(chatId, "Этот формат не потяну 😕 Пришлите PDF, DOCX, TXT или фото (JPG/PNG). Старый .doc пересохраните в PDF или DOCX.", rootThread).catch(() => {});
+    return;
+  }
+  try {
+    const order = await ymCreateOrder(u, supported, "bot");
+    if (!threadId && u.message_id) order.chat.messageId = String(u.message_id); // ветка = исходное сообщение
+    else order.chat.messageId = threadId; // файл кинули в ветку — отвечаем туда же
+    save();
+    if (!aiConfigured()) {
+      order.status = "error"; order.error = "ANTHROPIC_API_KEY не настроен"; save();
+      await botSay(order, "⚠️ ИИ ещё не подключён (нет ключа) — передайте администратору.").catch(() => {});
       return;
     }
+    await botSay(order, "Принял, перевожу и проверяю… Обычно это занимает несколько минут, результат пришлю сюда.").catch(() => {});
+    queueTranslate(order);
+  } catch (e) {
+    console.error("ymbot active order:", e.message);
+    await ymSendText(chatId, "⚠️ Не смог скачать файл: " + e.message, rootThread).catch(() => {});
   }
-
-  // Файл(ы) в корне чата = новый заказ на перевод.
-  try {
-    const order = {
-      id: newId(), kind: "chat", createdAt: Date.now(), status: "new",
-      params: { translit: "", country: "", targetLang: "en", note: "" },
-      src: [], files: {},
-      chat: { chatId, messageId: msgId, threadId, from: (u.from && (u.from.display_name || u.from.login)) || "", text: String(u.text || "").slice(0, 3000) },
-    };
-    // Транслитерация из текста сообщения («транслитерация: KOSTENKO MARINA»)
-    const tm = order.chat.text.match(/транслитерац\w*\s*[:—-]\s*([A-ZА-Я][A-Za-zА-Яа-яЁё .-]+)/i);
-    if (tm) order.params.translit = tm[1].trim();
-    for (let i = 0; i < files.length && i < 10; i++) {
-      const buf = await ymGetFile(files[i].id);
-      order.src.push({ file: saveFile(order.id, "src-" + i, buf, files[i].name, ""), name: files[i].name });
-    }
-    st.orders.unshift(order);
-    if (st.orders.length > MAX_ORDERS) st.orders.length = MAX_ORDERS;
-    save();
-    if (aiConfigured()) queueTranslate(order);
-    else { order.status = "error"; order.error = "ANTHROPIC_API_KEY не настроен"; save(); }
-  } catch (e) { console.error("ymbot new order:", e.message); }
 }
 
 let _ymStarted = false;
 function ymStartPolling() {
   if (_ymStarted || !botConfigured()) return;
   _ymStarted = true;
-  console.log("translate: бот Яндекс Мессенджера запущен (polling)");
+  console.log("translate: бот Яндекс Мессенджера запущен (polling); тихие чаты:", quietChatIds().join(", ") || "(нет)");
   const tick = async () => {
     try {
       const st = store();
@@ -436,12 +654,15 @@ function orderView(o, full) {
     hasDocx: !!(o.files && o.files.docx), hasHtml: !!(o.files && o.files.html),
     docxError: o.docxError || null,
     checkVerdict: (o.check && o.check.verdict) || null,
+    checkRevised: !!(o.check && o.check.revised),
     humanName: o.humanName || null,
     compareStatus: o.compareStatus || null, compareVerdict: (o.compare && o.compare.verdict) || null,
     compareError: o.compareError || null,
+    correctStatus: o.correctStatus || null,
+    correctionsCnt: (o.corrections || []).length,
     chat: o.chat ? { from: o.chat.from, text: o.chat.text } : null,
   };
-  if (full) { v.check = o.check || null; v.compare = o.compare || null; v.usage = o.usage || null; }
+  if (full) { v.check = o.check || null; v.compare = o.compare || null; v.corrections = o.corrections || []; v.usage = o.usage || null; }
   return v;
 }
 
@@ -463,8 +684,9 @@ function mount(app, deps) {
     res.json({
       success: true,
       aiConfigured: aiConfigured(), model: model(),
-      botConfigured: botConfigured(), botChatPinned: process.env.YM_TRANSLATE_CHAT_ID || null,
+      botConfigured: botConfigured(), quietChats: quietChatIds(),
       botChats: st.bot.chats || {},
+      lessons: lessons().slice().reverse(),
       orders: st.orders.map((o) => orderView(o, false)),
     });
   });
@@ -473,11 +695,14 @@ function mount(app, deps) {
     try {
       if (!aiConfigured()) return res.status(400).json({ success: false, message: "ИИ не настроен: добавьте ANTHROPIC_API_KEY в .env на сервере и перезапустите" });
       const files = req.files || [];
-      if (!files.length) return res.status(400).json({ success: false, message: "Прикрепите файл (PDF или фото)" });
+      if (!files.length) return res.status(400).json({ success: false, message: "Прикрепите файл (PDF, DOCX или фото)" });
       const total = files.reduce((s, f) => s + f.size, 0);
       if (total > MAX_TOTAL_SRC) return res.status(413).json({ success: false, message: "Слишком большие файлы (лимит 20 МБ на заказ) — разбейте на части" });
-      const pdfCount = files.filter((f) => /pdf/.test(f.mimetype)).length;
-      if (pdfCount > 1 || (pdfCount === 1 && files.length > 1)) return res.status(400).json({ success: false, message: "Либо один PDF, либо несколько фото — не смешивайте" });
+      const named = files.map((f) => ({ f, name: Buffer.from(f.originalname, "latin1").toString("utf8") })); // multer отдаёт имя в latin1
+      const bad = named.find((x) => !srcSupported(x.name));
+      if (bad) return res.status(400).json({ success: false, message: "Формат «" + bad.name + "» не поддерживается. Можно: PDF, DOCX, TXT, JPG/PNG/WEBP. Старый .doc пересохраните в PDF/DOCX." });
+      const docCount = named.filter((x) => !/\.(jpe?g|png|webp|gif)$/i.test(x.name)).length;
+      if (docCount > 1 || (docCount === 1 && files.length > 1)) return res.status(400).json({ success: false, message: "Либо один документ (PDF/DOCX/TXT), либо несколько фото — не смешивайте" });
       const b = req.body || {};
       const order = {
         id: newId(), kind: "manual", createdAt: Date.now(), status: "new",
@@ -489,9 +714,8 @@ function mount(app, deps) {
         },
         src: [], files: {},
       };
-      files.forEach((f, i) => {
-        const name = Buffer.from(f.originalname, "latin1").toString("utf8"); // multer отдаёт имя в latin1
-        order.src.push({ file: saveFile(order.id, "src-" + i, f.buffer, name, f.mimetype), name });
+      named.forEach((x, i) => {
+        order.src.push({ file: saveFile(order.id, "src-" + i, x.f.buffer, x.name, x.f.mimetype), name: x.name });
       });
       const st = store();
       st.orders.unshift(order);
@@ -519,9 +743,20 @@ function mount(app, deps) {
       o.humanName = name;
       save();
       if (o.status === "done") queueCompare(o);
-      else o.pendingCompare = true, save();
+      else { o.pendingCompare = true; save(); }
       return res.json({ success: true });
     } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
+  });
+
+  // Корректировка со страницы (тот же механизм, что «исправь:» в чате).
+  app.post("/translate/api/order/:id/correct", requireTranslate, (req, res) => {
+    const o = findOrder(req.params.id);
+    if (!o) return res.status(404).json({ success: false, message: "Не найден" });
+    if (o.status !== "done") return res.status(400).json({ success: false, message: "Заказ ещё не готов" });
+    const instruction = String((req.body && req.body.text) || "").trim();
+    if (!instruction) return res.status(400).json({ success: false, message: "Пустая корректировка" });
+    queueCorrect(o, instruction, (req.staff && (req.staff.name || req.staff.email)) || "страница");
+    return res.json({ success: true });
   });
 
   app.post("/translate/api/order/:id/retry", requireTranslate, (req, res) => {
@@ -544,12 +779,29 @@ function mount(app, deps) {
     return res.json({ success: true });
   });
 
+  // Правила бота: добавить своё / удалить.
+  app.post("/translate/api/lesson", requireTranslate, (req, res) => {
+    const text = String((req.body && req.body.text) || "").trim().slice(0, 500);
+    if (!text) return res.status(400).json({ success: false, message: "Пустое правило" });
+    lessons().push({ id: newId(), createdAt: Date.now(), text, source: "manual" });
+    save();
+    return res.json({ success: true });
+  });
+  app.delete("/translate/api/lesson/:id", requireTranslate, (req, res) => {
+    const ls = lessons();
+    const i = ls.findIndex((l) => l.id === req.params.id);
+    if (i < 0) return res.status(404).json({ success: false, message: "Не найдено" });
+    ls.splice(i, 1);
+    save();
+    return res.json({ success: true });
+  });
+
   app.get("/translate/api/order/:id/file/:which", requireTranslate, (req, res) => {
     const o = findOrder(req.params.id);
     if (!o) return res.status(404).send("Не найден");
     const which = req.params.which;
     let fn = null, dlName = null;
-    if (which === "docx") { fn = o.files && o.files.docx; dlName = "Перевод " + ((o.src[0] && o.src[0].name) || o.id).replace(/\.[^.]+$/, "") + ".docx"; }
+    if (which === "docx") { fn = o.files && o.files.docx; dlName = docxDlName(o); }
     else if (which === "html") { fn = o.files && o.files.html; }
     else if (which === "human") { fn = o.files && o.files.human; dlName = o.humanName || "human"; }
     else if (/^src(\d+)$/.test(which)) { const i = Number(which.slice(3)); fn = o.src[i] && o.src[i].file; dlName = o.src[i] && o.src[i].name; }

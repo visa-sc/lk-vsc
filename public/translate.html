@@ -150,8 +150,8 @@
     <div class="card">
       <div class="sec-h"><b>Новый заказ на перевод</b><span>PDF или фото документа</span></div>
       <form id="orderForm" class="frm">
-        <div class="drop" id="drop">Перетащите файл сюда или <b>выберите</b><br><span style="font-size:12px;color:#8a90a0;">один PDF или несколько фото · до 20 МБ</span>
-          <input id="files" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple style="display:none;">
+        <div class="drop" id="drop">Перетащите файл сюда или <b>выберите</b><br><span style="font-size:12px;color:#8a90a0;">PDF / DOCX / TXT или несколько фото · до 20 МБ</span>
+          <input id="files" type="file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp" multiple style="display:none;">
         </div>
         <div class="filelist" id="filelist"></div>
         <div>
@@ -186,7 +186,16 @@
     </div>
 
     <div class="card">
-      <div class="sec-h"><b>Бот в чате переводов</b><span>Шаг 2 — обучение на реальных заказах</span></div>
+      <div class="sec-h"><b>Память бота</b><span>правила, выученные на корректировках</span></div>
+      <div id="lessons"></div>
+      <form id="lessonForm" style="display:flex;gap:8px;margin-top:10px;">
+        <input type="text" id="lessonText" placeholder="Добавить правило вручную (напр.: даты всегда в формате DD.MM.YYYY)" style="flex:1;font-family:inherit;font-size:13.5px;padding:9px 12px;border:1px solid rgba(20,32,64,.14);border-radius:10px;">
+        <button type="submit" class="pri-btn" style="padding:9px 16px;font-size:13px;">Добавить</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>Бот в Яндекс Мессенджере</b><span>активный + тихий режимы</span></div>
       <div id="botInfo"></div>
     </div>
 
@@ -288,6 +297,7 @@
   var STATUS = {
     "new": ["gray", "новый"], queued: ["gray", "в очереди"],
     translating: ["blue", "переводит ИИ…"], checking: ["blue", "проверка ИИ…"],
+    revising: ["blue", "исправляет по проверке…"],
     done: ["green", "готово"], error: ["red", "ошибка"]
   };
   var VERDICT = { ok: ["green", "проверка: ок"], warnings: ["amber", "проверка: замечания"], errors: ["red", "проверка: ошибки!"] };
@@ -315,8 +325,11 @@
     var h = "<div class=\"ord " + cls + "\" data-id=\"" + o.id + "\">";
     h += "<div class=\"ord-top\"><span class=\"ord-name\">" + esc((o.srcNames || []).join(", ") || "—") + "</span>";
     h += pill(st[0], st[1], o.status === "translating" || o.status === "checking");
-    if (o.kind === "chat") h += pill("blue", "из чата");
-    if (o.checkVerdict && VERDICT[o.checkVerdict]) h += pill(VERDICT[o.checkVerdict][0], VERDICT[o.checkVerdict][1]);
+    if (o.kind === "chat") h += pill("gray", "тихий чат");
+    if (o.kind === "bot") h += pill("blue", "бот-чат");
+    if (o.checkVerdict && VERDICT[o.checkVerdict]) h += pill(VERDICT[o.checkVerdict][0], VERDICT[o.checkVerdict][1] + (o.checkRevised ? " · авто-исправлен" : ""));
+    if (o.correctStatus === "processing") h += pill("blue", "правка…", true);
+    if (o.correctionsCnt) h += pill("gray", "правок: " + o.correctionsCnt);
     if (o.compareStatus === "processing") h += pill("blue", "сравнение…", true);
     else if (o.compareVerdict && CMP[o.compareVerdict]) h += pill(CMP[o.compareVerdict][0], CMP[o.compareVerdict][1]);
     h += "</div>";
@@ -335,6 +348,7 @@
     if (o.hasDocx) h += "<a class=\"accent\" href=\"/translate/api/order/" + o.id + "/file/docx?token=\" data-dl=\"docx\">⬇︎ DOCX</a>";
     if (o.hasHtml) h += "<a href=\"/translate/api/order/" + o.id + "/file/html?token=\" data-dl=\"html\" target=\"_blank\">Просмотр</a>";
     if (o.checkVerdict) h += "<button data-act=\"report\">" + (openReports[o.id] ? "Скрыть отчёт" : "Отчёт проверки") + "</button>";
+    if (o.status === "done") h += "<button data-act=\"correct\">Корректировать</button>";
     if (o.status === "done") h += "<button data-act=\"human\">" + (o.humanName ? "Заменить перевод человека" : "+ Перевод человека") + "</button>";
     if (o.status === "error" || o.status === "done") h += "<button data-act=\"retry\">Повторить ИИ</button>";
     h += "<button class=\"danger\" data-act=\"del\">Удалить</button>";
@@ -366,27 +380,52 @@
     });
   }
 
+  function renderLessons() {
+    var el = $("#lessons");
+    if (!state) { el.innerHTML = ""; return; }
+    var ls = state.lessons || [];
+    if (!ls.length) { el.innerHTML = "<div class=\"empty\">Пока пусто. Правила появляются сами из корректировок («исправь: …» в чате или кнопка «Корректировать») — бот больше не повторит эти ошибки.</div>"; return; }
+    el.innerHTML = ls.map(function (l) {
+      return "<div class=\"iss info\" style=\"display:flex;align-items:flex-start;gap:8px;\" data-lid=\"" + esc(l.id) + "\"><div style=\"flex:1;\">" + esc(l.text) + "<div style=\"font-size:10.5px;color:#9aa0ab;margin-top:2px;\">" + new Date(l.createdAt).toLocaleDateString("ru-RU") + (l.source === "manual" ? " · вручную" : " · из корректировки") + "</div></div><button data-act=\"dellesson\" style=\"border:0;background:transparent;color:#9aa0ab;font-size:14px;cursor:pointer;padding:0 4px;\">✕</button></div>";
+    }).join("");
+  }
+
   function renderBot() {
     var el = $("#botInfo");
     if (!state) { el.innerHTML = ""; return; }
     var h = "";
     if (!state.botConfigured) {
-      h += "<div class=\"banner info\" style=\"margin-bottom:0;\">Бот ещё не подключён. Как подключить: админ Яндекс 360 → Мессенджер → Боты → «Создать бота», токен → в <code>.env</code> на сервере как <code>YM_BOT_TOKEN</code>, перезапустить. После этого Катя добавляет бота в чат переводов — заказы начнут появляться здесь автоматически, бот в чат ничего не пишет.</div>";
+      h += "<div class=\"banner info\" style=\"margin-bottom:0;\">Бот ещё не подключён. Как подключить: <b>админ вашей организации Яндекс 360</b> → Мессенджер → Боты → «Создать бота», токен → в <code>.env</code> на сервере как <code>YM_BOT_TOKEN</code>, перезапустить.<br><br>Дальше бот работает в двух режимах:<br>• <b>Активный</b> (любой чат, куда его добавили, и личка): кинули документ — бот переводит, сам себя перепроверяет и присылает DOCX ответом в ветку. Правки — ответом «исправь: …», бот учится на них. Команда «правила» — показать выученное.<br>• <b>Тихий</b> (чаты из <code>YM_TRANSLATE_CHAT_ID</code> — чат переводчиц): только читает и копит заказы для сравнения, наружу не пишет. ⚠️ Занести id чата переводчиц в этот список ДО добавления туда бота.</div>";
     } else {
-      h += "<div style=\"font-size:13.5px;color:#3a4356;line-height:1.55;\">Бот активен" + (state.botChatPinned ? ", закреплён за чатом <span class=\"chat-id\">" + esc(state.botChatPinned) + "</span>" : ", слушает все групповые чаты, куда его добавили") + ". В чат он ничего не пишет.</div>";
+      h += "<div style=\"font-size:13.5px;color:#3a4356;line-height:1.55;\">Бот активен. Тихие чаты: " + ((state.quietChats && state.quietChats.length) ? state.quietChats.map(function (c) { return "<span class=\"chat-id\">" + esc(c) + "</span>"; }).join(", ") : "<i>не заданы — во всех чатах отвечает</i>") + ".<br>Команды в чате: документ → перевод с перепроверкой; ответ в ветке «исправь: …» → правка + обучение; «правила» → список выученного.</div>";
       var chats = Object.keys(state.botChats || {});
       if (chats.length) {
-        h += "<div style=\"margin-top:10px;font-size:12.5px;color:#5a626f;\"><b>Замеченные чаты</b> (для <code>YM_TRANSLATE_CHAT_ID</code>):</div>";
+        h += "<div style=\"margin-top:10px;font-size:12.5px;color:#5a626f;\"><b>Замеченные чаты</b> (id для <code>YM_TRANSLATE_CHAT_ID</code>):</div>";
         chats.forEach(function (id) {
           var c = state.botChats[id];
           h += "<div style=\"margin-top:5px;font-size:12.5px;\"><span class=\"chat-id\">" + esc(id) + "</span> · " + esc(c.type || "") + (c.lastFrom ? " · посл.: " + esc(c.lastFrom) : "") + "</div>";
         });
       } else {
-        h += "<div class=\"empty\">Пока не видел ни одного сообщения — добавьте бота в чат.</div>";
+        h += "<div class=\"empty\">Пока не видел ни одного сообщения — добавьте бота в чат или напишите ему в личку.</div>";
       }
     }
     el.innerHTML = h;
   }
+
+  $("#lessons").addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-act=dellesson]");
+    if (!btn) return;
+    var row = e.target.closest("[data-lid]");
+    var lid = row && row.getAttribute("data-lid");
+    if (!lid || !confirm("Удалить правило из памяти бота?")) return;
+    api("/translate/api/lesson/" + lid, { method: "DELETE" }).then(load);
+  });
+  $("#lessonForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var t = $("#lessonText").value.trim();
+    if (!t) return;
+    api("/translate/api/lesson", { method: "POST", body: JSON.stringify({ text: t }) }).then(function () { $("#lessonText").value = ""; load(); });
+  });
 
   $("#orders").addEventListener("click", function (e) {
     var btn = e.target.closest("button[data-act]");
@@ -408,6 +447,11 @@
     } else if (act === "del") {
       if (!confirm("Удалить заказ вместе с файлами?")) return;
       api("/translate/api/order/" + id, { method: "DELETE" }).then(load);
+    } else if (act === "correct") {
+      var instr = prompt("Что поправить в переводе? (бот заодно выучит общее правило, если оно тут есть)");
+      if (!instr || !instr.trim()) return;
+      delete fullCache[id];
+      api("/translate/api/order/" + id + "/correct", { method: "POST", body: JSON.stringify({ text: instr.trim() }) }).then(load);
     } else if (act === "human") {
       var inp = document.createElement("input");
       inp.type = "file"; inp.accept = ".docx,.pdf,.jpg,.jpeg,.png,.webp,.txt";
@@ -423,7 +467,7 @@
 
   function anyActive() {
     return !!(state && state.orders && state.orders.some(function (o) {
-      return o.status === "queued" || o.status === "translating" || o.status === "checking" || o.status === "new" || o.compareStatus === "processing";
+      return o.status === "queued" || o.status === "translating" || o.status === "checking" || o.status === "revising" || o.status === "new" || o.compareStatus === "processing" || o.correctStatus === "processing";
     }));
   }
   function schedulePoll() {
@@ -443,11 +487,12 @@
           if (openReports[id]) {
             var o = (j.orders || []).find(function (x) { return x.id === id; });
             var f = fullCache[id];
-            if (o && f && (o.status !== f.status || o.compareStatus !== f.compareStatus)) delete fullCache[id];
+            if (o && f && (o.status !== f.status || o.compareStatus !== f.compareStatus || o.correctStatus !== f.correctStatus || o.correctionsCnt !== (f.corrections || []).length)) delete fullCache[id];
             if (o && !fullCache[id]) api("/translate/api/order/" + id).then(function (jj) { if (jj.success) { fullCache[id] = jj.order; renderOrders(); } });
           }
         });
         renderOrders();
+        renderLessons();
         renderBot();
         schedulePoll();
       })
