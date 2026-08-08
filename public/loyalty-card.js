@@ -51,11 +51,14 @@
   /* ── карта: премиальный «металл» — фактура, голограмма, чип, параллакс ── */
   + '.vl-stage{perspective:1200px;}'
   + '.vl-card{position:relative;overflow:hidden;border-radius:26px;padding:24px 26px 24px;color:#fff;isolation:isolate;'
-  + 'min-height:238px;display:flex;flex-direction:column;'   /* пропорции близки к карточной, но высоту задаёт содержимое — иначе overflow:hidden срежет текст */
+  + 'min-height:216px;display:flex;flex-direction:column;'   /* высоту задаёт содержимое — иначе overflow:hidden срежет текст */
   + 'background:linear-gradient(145deg,var(--c1) 0%,var(--c2) 52%,var(--c3) 100%);'
   + 'box-shadow:0 26px 54px -22px var(--cglow),0 2px 8px rgba(16,24,40,.12),'
-  + 'inset 0 1px 0 rgba(255,255,255,.34),inset 0 0 0 1px rgba(255,255,255,.13),inset 0 -1px 0 rgba(0,0,0,.18);'
-  + 'transform-style:preserve-3d;will-change:transform;cursor:default;'
+  + 'inset 0 1px 0 rgba(255,255,255,.30),inset 0 0 0 1px rgba(255,255,255,.12),inset 0 -1px 0 rgba(0,0,0,.16);'
+  // БЕЗ transform-style:preserve-3d — он отключает обрезку по overflow, и при наклоне
+  // из-под скруглений вылезали «уголки» блика/голограммы. Глубина сделана параллаксом
+  // слоёв (2D-сдвиг), поэтому 3D-контекст детям не нужен.
+  + 'will-change:transform;cursor:default;'
   + 'transition:transform .8s cubic-bezier(.22,1.15,.36,1),box-shadow .45s ease;}'
   + '.vl-card.live{transition:transform .06s linear,box-shadow .45s ease;'
   + 'box-shadow:0 40px 70px -24px var(--cglow),0 3px 12px rgba(16,24,40,.14),'
@@ -67,59 +70,57 @@
   + 'background:radial-gradient(circle at 35% 35%,rgba(255,255,255,.20),rgba(255,255,255,0) 62%);z-index:0;}'
   + '.vl-card::before{content:"";position:absolute;left:-70px;bottom:-150px;width:260px;height:260px;border-radius:50%;'
   + 'background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.09),rgba(255,255,255,0) 65%);z-index:0;}'
+  /* Все световые слои живут в отдельном контейнере со своим скруглением и обрезкой —
+     так блик и голограмма гарантированно не вылезают «уголками» при наклоне. */
+  + '.vl-fx{position:absolute;inset:0;z-index:1;pointer-events:none;border-radius:inherit;overflow:hidden;'
+  + '-webkit-mask-image:-webkit-radial-gradient(#fff,#000);}'   /* Safari: заставляет реально обрезать по радиусу */
   /* фактура: тонкие «гильошные» линии + едва заметное зерно */
-  + '.vl-tex{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:.5;'
+  + '.vl-tex{position:absolute;inset:0;pointer-events:none;opacity:.42;'
   + 'background:repeating-linear-gradient(115deg,rgba(255,255,255,.055) 0 1px,rgba(255,255,255,0) 1px 7px),'
   + 'repeating-linear-gradient(65deg,rgba(0,0,0,.05) 0 1px,rgba(0,0,0,0) 1px 9px);}'
   /* голограмма: перелив, который смещается вместе с наклоном */
-  + '.vl-holo{position:absolute;inset:-25%;z-index:2;pointer-events:none;opacity:0;mix-blend-mode:soft-light;'
+  + '.vl-holo{position:absolute;inset:-25%;pointer-events:none;opacity:0;mix-blend-mode:soft-light;'
   + 'transition:opacity .5s ease;transform:translate(calc(var(--px,0px) * 2.2),calc(var(--py,0px) * 2.2));'
+  // Перелив намеренно бледный и малонасыщенный: на soft-light насыщенные стопы
+  // перекрашивали золото в розовое. Нужен намёк на голограмму, а не радуга.
   + 'background:conic-gradient(from 210deg at var(--gx,50%) var(--gy,40%),'
-  + '#ff6ec4 0deg,#7873f5 60deg,#4ade80 130deg,#fbbf24 200deg,#f472b6 270deg,#60a5fa 330deg,#ff6ec4 360deg);}'
-  + '.vl-card.live .vl-holo{opacity:.4;}'   /* перелив заметен, но не «съедает» цвет статуса */
+  + 'rgba(255,205,230,.55) 0deg,rgba(190,200,255,.5) 70deg,rgba(190,240,220,.45) 140deg,'
+  + 'rgba(255,240,200,.5) 210deg,rgba(230,205,255,.5) 280deg,rgba(255,205,230,.55) 360deg);}'
+  + '.vl-card.live .vl-holo{opacity:.2;}'
   /* блик, который бежит за курсором */
-  + '.vl-glare{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;transition:opacity .45s ease;'
+  + '.vl-glare{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .45s ease;'
   + 'background:radial-gradient(400px circle at var(--gx,50%) var(--gy,0%),rgba(255,255,255,.34),rgba(255,255,255,0) 55%);}'
   + '.vl-card.live .vl-glare{opacity:1;}'
   /* один проход «блеска» при появлении карты */
-  + '.vl-sheen{position:absolute;inset:-40%;z-index:2;pointer-events:none;'
+  + '.vl-sheen{position:absolute;inset:-40%;pointer-events:none;'
   + 'background:linear-gradient(72deg,rgba(255,255,255,0) 42%,rgba(255,255,255,.30) 50%,rgba(255,255,255,0) 58%);'
   + 'transform:translateX(-90%);animation:vlsheen 1.6s .5s cubic-bezier(.4,0,.2,1) 1 both;}'
   + '@keyframes vlsheen{to{transform:translateX(90%)}}'
   /* слои карты двигаются с разной скоростью — эффект глубины */
-  + '.vl-card .vl-c-top,.vl-card .vl-mid,.vl-card .vl-foot,.vl-card .vl-chiprow,.vl-holo{'
+  + '.vl-card .vl-c-top,.vl-card .vl-mid,.vl-card .vl-foot,.vl-card .vl-prog,.vl-holo{'
   + 'transition:transform .75s cubic-bezier(.22,1.15,.36,1);}'
   + '.vl-card.live .vl-c-top,.vl-card.live .vl-mid,.vl-card.live .vl-foot,'
-  + '.vl-card.live .vl-chiprow,.vl-card.live .vl-holo{transition:transform .06s linear;}'
-  + '.vl-card .vl-c-top{transform:translate(calc(var(--px,0px) * -.25),calc(var(--py,0px) * -.25));}'
-  + '.vl-card .vl-chiprow{transform:translate(calc(var(--px,0px) * -.5),calc(var(--py,0px) * -.5));}'
-  + '.vl-card .vl-mid{transform:translate(calc(var(--px,0px) * -.85),calc(var(--py,0px) * -.85));}'
-  + '.vl-card .vl-foot{transform:translate(calc(var(--px,0px) * -.45),calc(var(--py,0px) * -.45));}'
+  + '.vl-card.live .vl-prog,.vl-card.live .vl-holo{transition:transform .06s linear;}'
+  + '.vl-card .vl-c-top{transform:translate(calc(var(--px,0px) * -.22),calc(var(--py,0px) * -.22));}'
+  + '.vl-card .vl-mid{transform:translate(calc(var(--px,0px) * -.8),calc(var(--py,0px) * -.8));}'
+  + '.vl-card .vl-foot{transform:translate(calc(var(--px,0px) * -.5),calc(var(--py,0px) * -.5));}'
+  + '.vl-card .vl-prog{transform:translate(calc(var(--px,0px) * -.35),calc(var(--py,0px) * -.35));}'
   + '.vl-c-top{display:flex;justify-content:space-between;align-items:center;gap:10px;}'
-  + '.vl-brand{font-weight:600;font-size:11px;letter-spacing:.26em;opacity:.82;'
-  + 'text-shadow:0 1px 0 rgba(255,255,255,.16),0 1px 6px rgba(0,0,0,.18);}'
-  + '.vl-tier{display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;letter-spacing:.06em;'
+  + '.vl-brand{font-weight:500;font-size:10.5px;letter-spacing:.2em;opacity:.76;'
+  + 'text-shadow:0 1px 0 rgba(255,255,255,.12),0 1px 6px rgba(0,0,0,.16);}'
+  + '.vl-tier{display:inline-flex;align-items:center;gap:2px;font-size:10.5px;font-weight:600;letter-spacing:.05em;'
   + 'text-transform:uppercase;padding:6px 13px;border-radius:999px;background:rgba(255,255,255,.16);'
   + 'border:1px solid rgba(255,255,255,.24);box-shadow:0 1px 0 rgba(255,255,255,.2) inset;'
   + 'backdrop-filter:saturate(170%) blur(10px);-webkit-backdrop-filter:saturate(170%) blur(10px);white-space:nowrap;}'
-  /* чип и бесконтактная метка — рисуем, чтобы карта читалась как карта */
-  + '.vl-chiprow{display:flex;align-items:center;gap:12px;margin-top:18px;}'
-  + '.vl-chip{width:42px;height:32px;border-radius:7px;position:relative;flex:none;'
-  + 'background:linear-gradient(145deg,#f4e2a8 0%,#d9b96a 38%,#f7edc4 62%,#c8a457 100%);'
-  + 'box-shadow:0 1px 2px rgba(0,0,0,.28),inset 0 0 0 .5px rgba(255,255,255,.5);}'
-  + '.vl-chip::before{content:"";position:absolute;inset:5px 8px;border-radius:2px;'
-  + 'border:.5px solid rgba(120,90,20,.55);border-left:0;border-right:0;}'
-  + '.vl-chip::after{content:"";position:absolute;left:50%;top:3px;bottom:3px;width:.5px;background:rgba(120,90,20,.55);}'
-  + '.vl-wave{width:17px;height:17px;opacity:.62;flex:none;}'
-  + '.vl-mid{margin-top:auto;}'
-  + '.vl-bal{font-size:46px;font-weight:700;letter-spacing:-.04em;line-height:1;margin:14px 0 6px;'
-  + 'font-variant-numeric:tabular-nums;text-shadow:0 1px 0 rgba(255,255,255,.18),0 4px 24px rgba(0,0,0,.22);}'
-  + '.vl-bal small{font-size:14px;font-weight:500;opacity:.7;margin-left:10px;letter-spacing:0;text-shadow:none;}'
-  + '.vl-eq{font-size:13px;opacity:.8;font-weight:400;}'
-  + '.vl-foot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:16px;}'
-  + '.vl-name{font-size:11.5px;opacity:.72;letter-spacing:.14em;text-transform:uppercase;'
+  + '.vl-mid{margin-top:auto;padding-top:22px;}'
+  + '.vl-bal{font-size:44px;font-weight:600;letter-spacing:-.035em;line-height:1;margin:0 0 6px;'
+  + 'font-variant-numeric:tabular-nums;text-shadow:0 1px 0 rgba(255,255,255,.14),0 4px 22px rgba(0,0,0,.20);}'
+  + '.vl-bal small{font-size:13.5px;font-weight:400;opacity:.66;margin-left:9px;letter-spacing:0;text-shadow:none;}'
+  + '.vl-eq{font-size:12.5px;opacity:.74;font-weight:400;letter-spacing:.005em;}'
+  + '.vl-foot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:18px;}'
+  + '.vl-name{font-size:10.5px;opacity:.66;letter-spacing:.11em;text-transform:uppercase;font-weight:500;'
   + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
-  + '.vl-num{font-size:11.5px;opacity:.6;letter-spacing:.18em;font-variant-numeric:tabular-nums;white-space:nowrap;}'
+  + '.vl-num{font-size:10.5px;opacity:.5;letter-spacing:.09em;font-variant-numeric:tabular-nums;white-space:nowrap;}'
   + '.vl-prog{margin-top:14px;}'
   + '.vl-prog .vl-bar{height:5px;border-radius:99px;background:rgba(0,0,0,.15);overflow:hidden;}'
   + '.vl-prog .vl-bar i{display:block;height:100%;border-radius:99px;width:0;background:rgba(255,255,255,.92);'
@@ -165,9 +166,9 @@
   /* ── реферал ── */
   + '.vl-code{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;'
   + 'background:var(--vl-soft);border-radius:15px;padding:13px 16px;}'
-  + '.vl-code .lb{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--vl-mut);font-weight:600;}'
-  + '.vl-code .cd{font-size:22px;font-weight:700;letter-spacing:.16em;color:var(--vl-accent-d);'
-  + 'font-variant-numeric:tabular-nums;margin-top:2px;}'
+  + '.vl-code .lb{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--vl-mut);font-weight:600;}'
+  + '.vl-code .cd{font-size:19px;font-weight:600;letter-spacing:.04em;color:var(--vl-accent-d);'
+  + 'font-variant-numeric:tabular-nums;margin-top:3px;}'
   + '.vl-share{display:flex;gap:9px;margin-top:10px;}'
   + '.vl-share .vl-btn{flex:1;}'
   + '.vl-rstat{font-size:12px;color:var(--vl-mut);margin-top:12px;text-align:center;}'
@@ -407,16 +408,13 @@
     }
     var pk = String((card.phones || [])[0] || "");
     var last4 = pk.length >= 4 ? pk.slice(-4) : "";
-    var wave = '<svg class="vl-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">'
-      + '<path d="M8.5 6.5a8 8 0 0 1 0 11"/><path d="M12.5 4a12 12 0 0 1 0 16"/><path d="M4.5 9a4 4 0 0 1 0 6"/></svg>';
     var stage = el('<div class="vl-stage"></div>');
     var node = el(
       '<div class="vl-card" style="--c1:' + sk.c1 + ';--c2:' + sk.c2 + ';--c3:' + sk.c3 + ';--cglow:' + sk.glow + '">'
-      + '<div class="vl-tex"></div><div class="vl-holo"></div><div class="vl-glare"></div>'
-      + (calm() ? "" : '<div class="vl-sheen"></div>')
+      + '<div class="vl-fx"><div class="vl-tex"></div><div class="vl-holo"></div><div class="vl-glare"></div>'
+      + (calm() ? "" : '<div class="vl-sheen"></div>') + "</div>"
       + '<div class="vl-c-top"><div class="vl-brand">VOYO · БОНУСЫ</div>'
       + '<div class="vl-tier">' + esc(card.tierName || "Базовый") + (rate ? " · " + rate + "%" : "") + "</div></div>"
-      + '<div class="vl-chiprow"><div class="vl-chip"></div>' + wave + "</div>"
       + '<div class="vl-mid"><div class="vl-bal">0<small>' + plural(bal, ["балл", "балла", "баллов"]) + "</small></div>"
       + '<div class="vl-eq">Это ' + RU(bal) + " ₽ скидки на следующую услугу</div></div>"
       + '<div class="vl-foot"><div class="vl-name">' + esc(card.name || "Ваша карта") + "</div>"
