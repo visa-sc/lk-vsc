@@ -15,6 +15,7 @@ const sms = require("./sms");
 const mail = require("./mail");
 const esign = require("./esign"); // ПЭП-подпись (аналог fdoc) — отдельный модуль, монтируется ниже
 const translateMod = require("./translate"); // Переводы документов с ИИ-проверкой (/translate) — отдельный модуль, монтируется ниже
+const skepkovMod = require("./skepkov");     // Склад и производство (/skepkov) — отдельный модуль, монтируется ниже
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1937,6 +1938,12 @@ esign.mount(app, { requireVscAccess, requireAdmin });
 // Клиентский ЛК и amoCRM не затрагивает; бот Я.Мессенджера стартует только при
 // заданном YM_BOT_TOKEN (тихий режим — в чат ничего не пишет).
 translateMod.mount(app, { getStaffFromReq });
+
+// ── /skepkov — склад и производство (мебель, WB+Ozon). Отдельный модуль, к ЛК
+// VOYO/amoCRM/vsc отношения не имеет. Источник — выгрузка Google-таблицы
+// «Остатки на складе» (.xlsx разбираем сами через adm-zip). Доступ: открытая
+// ссылка (решение Андрея 08.08.2026) — чтобы закрыть, передать requireAccess.
+skepkovMod.mount(app, {});
 
 // ── DISK WATCH: контроль свободного места на диске сервера (просьба Андрея 08.08).
 // Каждые 6 часов; если свободно меньше DISK_ALERT_GB (дефолт 1 ГБ) — письмо
