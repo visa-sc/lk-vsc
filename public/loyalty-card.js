@@ -58,12 +58,14 @@
   // БЕЗ transform-style:preserve-3d — он отключает обрезку по overflow, и при наклоне
   // из-под скруглений вылезали «уголки» блика/голограммы. Глубина сделана параллаксом
   // слоёв (2D-сдвиг), поэтому 3D-контекст детям не нужен.
-  + 'will-change:transform;cursor:default;'
-  + 'transition:transform .8s cubic-bezier(.22,1.15,.36,1),box-shadow .45s ease;}'
-  + '.vl-card.live{transition:transform .06s linear,box-shadow .45s ease;'
-  + 'box-shadow:0 40px 70px -24px var(--cglow),0 3px 12px rgba(16,24,40,.14),'
-  + 'inset 0 1px 0 rgba(255,255,255,.45),inset 0 0 0 1px rgba(255,255,255,.20),inset 0 -1px 0 rgba(0,0,0,.20);}'
-  + '.vl-card.press{transform:scale(.982)!important;transition:transform .2s ease;}'
+  // Трансформацию НЕ анимируем через CSS: её каждый кадр плавно доводит JS
+  // (интерполяция с затуханием). Иначе движение дёргается и текст «съезжает».
+  + 'will-change:transform;cursor:default;backface-visibility:hidden;'
+  + 'transition:box-shadow .5s ease;}'
+  /* тень отъезжает в сторону, противоположную наклону — карта будто приподнята */
+  + '.vl-card.live{box-shadow:calc(var(--px,0px) * -1.8) calc(40px - var(--py,0px) * 1.4) 72px -24px var(--cglow),'
+  + '0 3px 12px rgba(16,24,40,.14),inset 0 1px 0 rgba(255,255,255,.42),'
+  + 'inset 0 0 0 1px rgba(255,255,255,.18),inset 0 -1px 0 rgba(0,0,0,.18);}'
   + '.vl-card>*{position:relative;z-index:3;}'
   /* мягкие световые пятна */
   + '.vl-card::after{content:"";position:absolute;right:-90px;top:-130px;width:300px;height:300px;border-radius:50%;'
@@ -80,7 +82,7 @@
   + 'repeating-linear-gradient(65deg,rgba(0,0,0,.05) 0 1px,rgba(0,0,0,0) 1px 9px);}'
   /* голограмма: перелив, который смещается вместе с наклоном */
   + '.vl-holo{position:absolute;inset:-25%;pointer-events:none;opacity:0;mix-blend-mode:soft-light;'
-  + 'transition:opacity .5s ease;transform:translate(calc(var(--px,0px) * 2.2),calc(var(--py,0px) * 2.2));'
+  + 'transition:opacity .5s ease;transform:translate3d(calc(var(--px,0px) * 5),calc(var(--py,0px) * 5),0);'
   // Перелив намеренно бледный и малонасыщенный: на soft-light насыщенные стопы
   // перекрашивали золото в розовое. Нужен намёк на голограмму, а не радуга.
   + 'background:conic-gradient(from 210deg at var(--gx,50%) var(--gy,40%),'
@@ -97,14 +99,12 @@
   + 'transform:translateX(-90%);animation:vlsheen 1.6s .5s cubic-bezier(.4,0,.2,1) 1 both;}'
   + '@keyframes vlsheen{to{transform:translateX(90%)}}'
   /* слои карты двигаются с разной скоростью — эффект глубины */
-  + '.vl-card .vl-c-top,.vl-card .vl-mid,.vl-card .vl-foot,.vl-card .vl-prog,.vl-holo{'
-  + 'transition:transform .75s cubic-bezier(.22,1.15,.36,1);}'
-  + '.vl-card.live .vl-c-top,.vl-card.live .vl-mid,.vl-card.live .vl-foot,'
-  + '.vl-card.live .vl-prog,.vl-card.live .vl-holo{transition:transform .06s linear;}'
-  + '.vl-card .vl-c-top{transform:translate(calc(var(--px,0px) * -.22),calc(var(--py,0px) * -.22));}'
-  + '.vl-card .vl-mid{transform:translate(calc(var(--px,0px) * -.8),calc(var(--py,0px) * -.8));}'
-  + '.vl-card .vl-foot{transform:translate(calc(var(--px,0px) * -.5),calc(var(--py,0px) * -.5));}'
-  + '.vl-card .vl-prog{transform:translate(calc(var(--px,0px) * -.35),calc(var(--py,0px) * -.35));}'
+  // Параллакс намеренно ЕДВА заметный и без CSS-переходов (значения уже сглажены
+  // в JS): крупный сдвиг читался не как глубина, а как «съезжающие» буквы.
+  + '.vl-card .vl-c-top{transform:translate3d(calc(var(--px,0px) * -.14),calc(var(--py,0px) * -.14),0);}'
+  + '.vl-card .vl-mid{transform:translate3d(calc(var(--px,0px) * -.3),calc(var(--py,0px) * -.3),0);}'
+  + '.vl-card .vl-foot{transform:translate3d(calc(var(--px,0px) * -.2),calc(var(--py,0px) * -.2),0);}'
+  + '.vl-card .vl-prog{transform:translate3d(calc(var(--px,0px) * -.2),calc(var(--py,0px) * -.2),0);}'
   + '.vl-c-top{display:flex;justify-content:space-between;align-items:center;gap:10px;}'
   + '.vl-brand{font-weight:500;font-size:10.5px;letter-spacing:.2em;opacity:.76;'
   + 'text-shadow:0 1px 0 rgba(255,255,255,.12),0 1px 6px rgba(0,0,0,.16);}'
@@ -349,44 +349,59 @@
       + "<br><br>Баллы приходят обоим автоматически после оформления заявки друга. Количество приглашений не ограничено.";
   }
 
-  /* ── «живая» карта: наклон за курсором/пальцем + блик + нажатие ── */
+  /* ── «живая» карта ──────────────────────────────────────────────────────
+     Ни одно значение не применяется к DOM напрямую из события: цель ставит
+     указатель, а каждый кадр текущее состояние ДОГОНЯЕТ цель с затуханием
+     (критически задемпфированная интерполяция). Отсюда мягкий разгон, плавный
+     возврат и отсутствие рывков — из-за них буквы и казались «съезжающими».  */
   function attachTilt(node) {
     if (calm()) return;
-    var MAX = 9, SHIFT = 12, raf = 0, tx = 0, ty = 0;
-    function apply() {
-      raf = 0;
-      // Небольшой подъём (translateZ) + наклон: карта будто отрывается от страницы.
-      node.style.transform = "translateZ(14px) rotateX(" + ty.toFixed(2) + "deg) rotateY(" + tx.toFixed(2) + "deg)";
+    var MAX = 8, SHIFT = 5;                 // градусы наклона и максимальный сдвиг слоёв
+    var tgt = { rx: 0, ry: 0, gx: 50, gy: 0, s: 1, lift: 0 };
+    var cur = { rx: 0, ry: 0, gx: 50, gy: 0, s: 1, lift: 0 };
+    var raf = 0, live = false;
+
+    function frame() {
+      var k = live ? .12 : .085;            // возврат чуть медленнее — читается как инерция
+      var moving = false;
+      for (var p in tgt) {
+        var dl = tgt[p] - cur[p];
+        if (Math.abs(dl) > 0.0015) { cur[p] += dl * k; moving = true; } else cur[p] = tgt[p];
+      }
+      node.style.transform = "translate3d(0,-" + cur.lift.toFixed(2) + "px,0) scale(" + cur.s.toFixed(4) + ")"
+        + " rotateX(" + cur.rx.toFixed(3) + "deg) rotateY(" + cur.ry.toFixed(3) + "deg)";
+      node.style.setProperty("--px", (cur.ry / MAX * SHIFT).toFixed(2) + "px");
+      node.style.setProperty("--py", (-cur.rx / MAX * SHIFT).toFixed(2) + "px");
+      node.style.setProperty("--gx", cur.gx.toFixed(2) + "%");
+      node.style.setProperty("--gy", cur.gy.toFixed(2) + "%");
+      raf = (moving || live) ? requestAnimationFrame(frame) : 0;
     }
-    function move(e) {
+    function run() { if (!raf) raf = requestAnimationFrame(frame); }
+
+    function aim(e) {
       var r = node.getBoundingClientRect();
-      var px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
-      px = Math.max(0, Math.min(1, px)); py = Math.max(0, Math.min(1, py));
-      tx = (px - .5) * 2 * MAX; ty = (.5 - py) * 2 * MAX;
-      node.style.setProperty("--gx", (px * 100).toFixed(1) + "%");
-      node.style.setProperty("--gy", (py * 100).toFixed(1) + "%");
-      // Слои карты сдвигаются на разную величину — параллакс (без translateZ,
-      // чтобы overflow:hidden честно резал блики в Safari).
-      node.style.setProperty("--px", ((px - .5) * 2 * SHIFT).toFixed(1) + "px");
-      node.style.setProperty("--py", ((py - .5) * 2 * SHIFT).toFixed(1) + "px");
-      node.classList.add("live");
-      if (!raf) raf = requestAnimationFrame(apply);
+      var px = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      var py = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+      tgt.ry = (px - .5) * 2 * MAX; tgt.rx = (.5 - py) * 2 * MAX;
+      tgt.gx = px * 100; tgt.gy = py * 100;
+      tgt.lift = 6; tgt.s = 1.012;          // лёгкий подъём и «вдох» — карта тянется к пальцу
+      if (!live) { live = true; node.classList.add("live"); }
+      run();
     }
     function rest() {
-      if (raf) { cancelAnimationFrame(raf); raf = 0; }
-      node.classList.remove("live", "press");
-      node.style.transform = "";
-      node.style.setProperty("--gx", "50%"); node.style.setProperty("--gy", "0%");
-      node.style.setProperty("--px", "0px"); node.style.setProperty("--py", "0px");
+      live = false;
+      node.classList.remove("live");
+      tgt.rx = tgt.ry = 0; tgt.gx = 50; tgt.gy = 0; tgt.s = 1; tgt.lift = 0;
+      run();
     }
     node.__rest = rest;
-    node.addEventListener("pointermove", move);
+    node.addEventListener("pointermove", aim);
     node.addEventListener("pointerleave", rest);
     node.addEventListener("pointercancel", rest);
-    node.addEventListener("pointerdown", function (e) { if (e.pointerType !== "mouse") move(e); node.classList.add("press"); });
-    node.addEventListener("pointerup", function () { node.classList.remove("press"); });
-    // Палец: ведём карту за касанием, отпустили — плавно возвращается.
-    node.addEventListener("touchmove", function (e) { if (e.touches && e.touches[0]) move(e.touches[0]); }, { passive: true });
+    node.addEventListener("pointerdown", function (e) { aim(e); tgt.s = .988; tgt.lift = 2; run(); });
+    node.addEventListener("pointerup", function (e) { aim(e); });
+    // Палец: карта идёт за касанием, отпустили — мягко возвращается.
+    node.addEventListener("touchmove", function (e) { if (e.touches && e.touches[0]) aim(e.touches[0]); }, { passive: true });
     node.addEventListener("touchend", rest);
   }
 
