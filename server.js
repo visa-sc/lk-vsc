@@ -1540,23 +1540,29 @@ app.get(["/app", "/beta"], (req, res) => {
 // нельзя. Клиентский ЛК не трогаем. Хранилища — свои JSON (в git не коммитим):
 //   betaLoyalty.json  — кэшбэк/статусы из успешных сделок amoCRM (пересчёт 1×/сутки)
 //   betaReferrals.json — реф-коды, привязки «кто-кого пригласил», журнал бонусов
-// Логика: 5% кэшбэк баллами + статусы по сумме + двусторонний реферал (другу 1500,
-// пригласившему 2000 — начисляем ТОЛЬКО когда друг реально оформил сделку в amoCRM).
+// Логика: прогрессивный кэшбэк баллами по статусу (Silver 5% от 50к бюджета, Gold 7%
+// от 150к, Platinum 10% от 300к) + двусторонний реферал (по 2000 обоим
+// — начисляем ТОЛЬКО когда друг реально оформил сделку в amoCRM; бюджет 4000 ₽/сделка).
+// Баллы тратятся на любые услуги агентства: визы, ВНЖ, страховки, банковские карты и пр.
 // ══════════════════════════════════════════════════════════════════════════
 const BLOY_FILE = path.join(__dirname, "betaLoyalty.json");
 const BREF_FILE = path.join(__dirname, "betaReferrals.json");
-const BLOY_RATE = 0.05;                 // 5% кэшбэка баллами (1 балл = 1 ₽)
+const BLOY_RATE = 0.05;                 // витринная «стартовая» ставка (реальная — по статусу, см. BLOY_TIERS)
 const BLOY_REDEEM_SHARE = 0.30;         // баллами до 30% следующей услуги (показываем)
 const BLOY_START_DAY = "2026-06-26";    // с какого дня (МСК) засчитываем сделки
 const BLOY_REF_INVITER = 2000;          // баллы пригласившему за оформившегося друга
-const BLOY_REF_FRIEND = 1500;           // приветственные баллы другу
+const BLOY_REF_FRIEND = 2000;           // приветственные баллы другу (бюджет лояльности 4000 ₽/сделка)
+// Статусы и ПРОГРЕССИВНАЯ ставка кэшбэка (решение Андрея 08.08): чем больше бюджет
+// клиента у нас, тем выше процент. Ставка берётся по статусу, ДОСТИГНУТОМУ к моменту
+// сделки (прошлое не переписываем), бюджет = сумма оплаченных услуг.
 const BLOY_TIERS = [
-  { key: "base", name: "Базовый", min: 0, perk: "Кэшбэк 5% баллами с каждой поездки" },
-  { key: "silver", name: "Серебряный", min: 100000, perk: "Кэшбэк 5% + приоритетная поддержка" },
-  { key: "gold", name: "Золотой", min: 300000, perk: "Кэшбэк 5% + персональный менеджер" },
-  { key: "platinum", name: "Платиновый", min: 700000, perk: "Кэшбэк 5% + premium-сервис и бонус ко дню рождения" }
+  { key: "base", name: "Базовый", min: 0, rate: 0, perk: "Копим бюджет: с 50 000 ₽ включается кэшбэк 5% баллами" },
+  { key: "silver", name: "Silver", min: 50000, rate: 0.05, perk: "Кэшбэк 5% баллами с каждой услуги агентства" },
+  { key: "gold", name: "Gold", min: 150000, rate: 0.07, perk: "Кэшбэк 7% баллами и приоритетная поддержка" },
+  { key: "platinum", name: "Platinum", min: 300000, rate: 0.10, perk: "Кэшбэк 10% баллами, персональный менеджер и бонус ко дню рождения" }
 ];
 function bloyTierFor(spend) { let t = BLOY_TIERS[0], next = null; for (let i = 0; i < BLOY_TIERS.length; i++) { if (spend >= BLOY_TIERS[i].min) t = BLOY_TIERS[i]; else { next = BLOY_TIERS[i]; break; } } return { tier: t, next: next }; }
+function bloyRateFor(spend) { return bloyTierFor(spend).tier.rate; }
 let _bloy, _bref, _brefSaveT;
 function bloyLoad() { if (_bloy !== undefined) return _bloy; try { _bloy = JSON.parse(fs.readFileSync(BLOY_FILE, "utf8")); } catch (_) { _bloy = null; } return _bloy; }
 function bloySave(d) { _bloy = d; try { fs.writeFileSync(BLOY_FILE, JSON.stringify(d)); } catch (e) { console.error("bloySave:", e.message); } }
@@ -1573,7 +1579,27 @@ function bloyCodeFor(pk) {
   b.codes[pk] = code; b.byCode[code] = pk; brefSave(); return code;
 }
 function brefLedger(pk) { return brefLoad().ledger[pk] || []; }
-function bloyAccountByPhone(pk) { const d = bloyLoad(); if (!d || !d.accounts) return null; for (const cid of Object.keys(d.accounts)) { const a = d.accounts[cid]; if ((a.phones || []).some((p) => p === pk || p.endsWith(pk) || pk.endsWith(p))) return a; } return null; }
+const BLOY_REDEEM_MIN = 500;            // минимум к списанию за раз, баллов
+// Заявки на списание живут в том же betaReferrals.json (он и так журнал начислений).
+function brefRedeems() { const b = brefLoad(); if (!b.redeems) b.redeems = {}; return b.redeems; }
+function bloyBalanceOf(pk) {
+  const acc = bloyAccountByPhone(pk);
+  const ledSum = brefLedger(pk).reduce((a, e) => a + (Number(e.points) || 0), 0);
+  return Math.max(0, (acc ? acc.earned : 0) + ledSum);
+}
+function bloyActiveRedeem(pk) { const r = brefRedeems(); const list = Object.values(r).filter((x) => x.pk === pk && x.status === "new"); return list.sort((a, c) => c.ts - a.ts)[0] || null; }
+// Сравнение телефонов. ВАЖНО: раньше здесь было «один заканчивается другим», и
+// мусорные контакты с телефоном "0"/"7" в amoCRM цеплялись к ЛЮБОМУ номеру с той
+// же последней цифрой — клиенту показывалось чужое имя, а при ненулевом балансе
+// утекли бы и чужие баллы. Теперь: короткие номера сравниваем строго, длинные —
+// по последним 10 цифрам (это снимает разницу 8/+7/без кода страны).
+function bloyPhoneEq(a, b) {
+  const x = String(a || "").replace(/\D/g, ""), y = String(b || "").replace(/\D/g, "");
+  if (!x || !y) return false;
+  if (x.length < 10 || y.length < 10) return x === y;
+  return x.slice(-10) === y.slice(-10);
+}
+function bloyAccountByPhone(pk) { const d = bloyLoad(); if (!d || !d.accounts) return null; for (const cid of Object.keys(d.accounts)) { const a = d.accounts[cid]; if ((a.phones || []).some((p) => bloyPhoneEq(p, pk))) return a; } return null; }
 
 // Пересчёт из amoCRM (через лимитер). Идемпотентно. Читает только успешные сделки.
 async function runBetaLoyalty(trigger) {
@@ -1591,12 +1617,35 @@ async function runBetaLoyalty(trigger) {
     const cids = [...new Set(qual.map((q) => mainCid(q.l)).filter(Boolean))];
     const cmap = {};
     for (let i = 0; i < cids.length; i += 250) { const batch = cids.slice(i, i + 250); const cp = { limit: 250 }; batch.forEach((id, k) => { cp[`filter[id][${k}]`] = String(id); }); const data = await amoGet(`${baseUrl}/api/v4/contacts`, cp); const list = (data && data._embedded && data._embedded.contacts) || []; list.forEach((c) => { cmap[c.id] = { name: c.name || "", phones: extractPhonesFromContact(c) }; }); }
+    // Сначала собираем сделки по контактам (без баллов) …
     const accounts = {}; let totalEarned = 0;
-    for (const q of qual) { const l = q.l; const price = Number(l.price) || 0; if (price <= 0) continue; const points = Math.round(price * BLOY_RATE); const cid = mainCid(l); const info = cid ? cmap[cid] : null; if (!cid || !info || !info.phones.length) continue; const acc = accounts[cid] || (accounts[cid] = { contactId: cid, name: info.name, phones: info.phones, earned: 0, spend: 0, deals: [] }); acc.earned += points; acc.spend += price; acc.deals.push({ id: l.id, name: l.name || "", price, points, ts: q.ts, day: q.day }); totalEarned += points; }
-    Object.values(accounts).forEach((a) => a.deals.sort((x, y) => y.ts - x.ts));
-    bloySave({ ts: Date.now(), rate: BLOY_RATE, start: BLOY_START_DAY, accountsCount: Object.keys(accounts).length, totalEarned, scanned: (leads || []).length, qualified: qual.length, durationMs: Date.now() - t0, accounts });
+    for (const q of qual) {
+      const l = q.l; const price = Number(l.price) || 0; if (price <= 0) continue;
+      const cid = mainCid(l); const info = cid ? cmap[cid] : null;
+      if (!cid || !info || !info.phones.length) continue;
+      const acc = accounts[cid] || (accounts[cid] = { contactId: cid, name: info.name, phones: info.phones, earned: 0, spend: 0, deals: [] });
+      acc.deals.push({ id: l.id, name: l.name || "", price, points: 0, rate: 0, ts: q.ts, day: q.day });
+    }
+    // … затем начисляем ПРОГРЕССИВНО: идём по сделкам клиента от старых к новым и на
+    // каждой берём ставку статуса по бюджету С УЧЁТОМ этой покупки. Именно так читается
+    // правило «5% от 50 000 ₽ в бюджете»: клиент, купивший сразу на 50 000 ₽, получает
+    // 5% уже с неё, а не ноль (иначе крупная первая сделка осталась бы без кэшбэка).
+    // Прошлые начисления при росте статуса не переписываются.
+    Object.values(accounts).forEach((a) => {
+      a.deals.sort((x, y) => x.ts - y.ts);
+      let spend = 0;
+      a.deals.forEach((dl) => {
+        spend += dl.price;
+        const rate = bloyRateFor(spend);
+        dl.rate = rate; dl.points = Math.round(dl.price * rate);
+        a.earned += dl.points; totalEarned += dl.points;
+      });
+      a.spend = spend;
+      a.deals.sort((x, y) => y.ts - x.ts);
+    });
+    bloySave({ ts: Date.now(), rate: BLOY_RATE, tiers: BLOY_TIERS, start: BLOY_START_DAY, accountsCount: Object.keys(accounts).length, totalEarned, scanned: (leads || []).length, qualified: qual.length, durationMs: Date.now() - t0, accounts });
     // реферальные начисления: другу+пригласившему, ТОЛЬКО когда друг реально оформился
-    const hasDeal = (pk) => { for (const cid of Object.keys(accounts)) { if ((accounts[cid].phones || []).some((p) => p === pk || p.endsWith(pk) || pk.endsWith(p))) return true; } return false; };
+    const hasDeal = (pk) => { for (const cid of Object.keys(accounts)) { if ((accounts[cid].phones || []).some((p) => bloyPhoneEq(p, pk))) return true; } return false; };
     const b = brefLoad(); let credited = 0;
     Object.keys(b.referredBy).forEach((friendPk) => {
       const r = b.referredBy[friendPk]; if (!r || r.status !== "pending") return;
@@ -1623,7 +1672,7 @@ function bloyBuildCard(phone) {
   const balance = Math.max(0, dealsEarned + ledSum);
   const { tier, next } = bloyTierFor(spend);
   const hist = []
-    .concat(acc ? acc.deals.map((d) => ({ ts: d.ts, type: "earn", points: d.points, note: d.name || ("Сделка #" + d.id) })) : [])
+    .concat(acc ? acc.deals.map((d) => ({ ts: d.ts, type: "earn", points: d.points, rate: d.rate || 0, note: d.name || ("Сделка #" + d.id) })) : [])
     .concat(led.map((e) => ({ ts: e.ts, type: (e.type === "welcome" || e.type === "referral" ? "earn" : e.type), points: e.points, note: e.note })))
     .sort((a, c) => c.ts - a.ts);
   const card = {
@@ -1631,7 +1680,15 @@ function bloyBuildCard(phone) {
     earnedTotal: dealsEarned + led.filter((e) => e.points > 0).reduce((a, e) => a + e.points, 0),
     redeemedTotal: -led.filter((e) => e.type === "redeem").reduce((a, e) => a + (Number(e.points) || 0), 0),
     spend, tier: tier.key, tierName: tier.name, nextTier: next ? next.name : null, toNextSpend: next ? Math.max(0, next.min - spend) : 0,
-    rate: BLOY_RATE, redeemMaxShare: BLOY_REDEEM_SHARE, pointsTtlDays: 0, history: hist
+    // rate — ставка кэшбэка ТЕКУЩЕГО статуса (именно её видит клиент как «мой процент»),
+    // nextRate — какой станет после следующей ступени.
+    rate: tier.rate, nextRate: next ? next.rate : null,
+    redeemMaxShare: BLOY_REDEEM_SHARE, redeemMin: BLOY_REDEEM_MIN, pointsTtlDays: 0, history: hist,
+    // Активная заявка клиента на списание (если есть) — карта показывает её статус.
+    redeemRequest: (() => { const r = pk ? bloyActiveRedeem(pk) : null; return r ? { id: r.id, points: r.points, ts: r.ts, comment: r.comment || "" } : null; })(),
+    // Лестница статусов целиком — клиентская витрина рисует все ступени с привилегиями
+    // и подсвечивает текущую (нужно и в /loyalty, и при вшивании карты в ЛК).
+    tiers: BLOY_TIERS.map((t) => ({ key: t.key, name: t.name, min: t.min, rate: t.rate, perk: t.perk, reached: spend >= t.min, current: t.key === tier.key }))
   };
   const b = brefLoad();
   const code = pk ? bloyCodeFor(pk) : "";
@@ -1663,6 +1720,72 @@ app.post("/beta/api/loyalty/refclaim", (req, res) => {
   b.referredBy[pk] = { refPhone: inviterPk, code, ts: Date.now(), status: "pending" }; brefSave();
   return res.json({ ok: true });
 });
+// ── СПИСАНИЕ БАЛЛОВ (redeem) ──────────────────────────────────────────────
+// Клиент из карты оформляет заявку → менеджер подтверждает в консоли /loyalty
+// (по ключу) → в журнал ledger падает запись type:"redeem" с ОТРИЦАТЕЛЬНЫМИ
+// баллами, баланс уменьшается сразу. Списание живёт только у нас: в amoCRM
+// ничего не пишем, сумму к оплате менеджер уменьшает руками при оформлении.
+app.post("/beta/api/loyalty/redeem", (req, res) => {
+  const pk = bloyPk(req.body && req.body.phone);
+  const points = Math.floor(Number((req.body && req.body.points) || 0));
+  const comment = String((req.body && req.body.comment) || "").slice(0, 300);
+  if (!pk) return res.status(400).json({ ok: false, reason: "no_phone" });
+  const active = bloyActiveRedeem(pk);
+  if (active) return res.json({ ok: true, already: true, request: { id: active.id, points: active.points, ts: active.ts } });
+  const balance = bloyBalanceOf(pk);
+  if (!(points >= BLOY_REDEEM_MIN)) return res.json({ ok: false, reason: "too_small", min: BLOY_REDEEM_MIN });
+  if (points > balance) return res.json({ ok: false, reason: "not_enough", balance });
+  const id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  brefRedeems()[id] = { id, pk, points, comment, ts: Date.now(), status: "new" };
+  brefSave();
+  console.log(`BETA-LOYALTY redeem-request: ${bloyMask(pk)} — ${points} б.`);
+  return res.json({ ok: true, request: { id, points, ts: Date.now() } });
+});
+// Клиент передумал — отменить свою заявку (только свою и только необработанную).
+app.post("/beta/api/loyalty/redeem/cancel", (req, res) => {
+  const pk = bloyPk(req.body && req.body.phone);
+  const id = String((req.body && req.body.id) || "");
+  const r = brefRedeems()[id];
+  if (!pk || !r || r.pk !== pk) return res.status(404).json({ ok: false });
+  if (r.status !== "new") return res.json({ ok: false, reason: "already_decided", status: r.status });
+  r.status = "canceled"; r.decidedTs = Date.now(); brefSave();
+  return res.json({ ok: true });
+});
+// Список заявок для консоли (только по ключу — там видны полные номера).
+app.get("/loyalty/api/redeems", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const key = process.env.BETA_CHAT_KEY || "";
+  if (!key || String(req.query.key || "") !== key) return res.status(403).json({ success: false });
+  const list = Object.values(brefRedeems()).sort((a, b) => b.ts - a.ts).slice(0, 100)
+    .map((r) => Object.assign({}, r, { balance: bloyBalanceOf(r.pk), name: (bloyAccountByPhone(r.pk) || {}).name || "" }));
+  return res.json({ success: true, requests: list });
+});
+// Решение менеджера: approve — списываем (запись в ledger), decline — отказ с причиной.
+app.post("/loyalty/api/redeem/decide", (req, res) => {
+  const key = process.env.BETA_CHAT_KEY || "";
+  if (!key || String((req.query.key || (req.body && req.body.key)) || "") !== key) return res.status(403).json({ ok: false });
+  const id = String((req.body && req.body.id) || "");
+  const action = String((req.body && req.body.action) || "");
+  const r = brefRedeems()[id];
+  if (!r) return res.status(404).json({ ok: false });
+  if (r.status !== "new") return res.json({ ok: false, reason: "already_decided", status: r.status });  // идемпотентно
+  if (action === "decline") {
+    r.status = "declined"; r.reason = String((req.body && req.body.reason) || "").slice(0, 300); r.decidedTs = Date.now();
+    brefSave(); return res.json({ ok: true, status: r.status });
+  }
+  if (action !== "approve") return res.status(400).json({ ok: false });
+  // Списываем ровно столько, сколько подтвердил менеджер (может уменьшить сумму).
+  const points = Math.floor(Number((req.body && req.body.points) || r.points));
+  const balance = bloyBalanceOf(r.pk);
+  if (!(points > 0)) return res.status(400).json({ ok: false, reason: "bad_points" });
+  if (points > balance) return res.json({ ok: false, reason: "not_enough", balance });
+  const b = brefLoad();
+  (b.ledger[r.pk] = b.ledger[r.pk] || []).push({ ts: Date.now(), type: "redeem", points: -points, note: "Оплата баллами" + (r.comment ? " · " + r.comment : "") });
+  r.status = "done"; r.points = points; r.decidedTs = Date.now(); brefSave();
+  console.log(`BETA-LOYALTY redeem-approved: ${bloyMask(r.pk)} — ${points} б., остаток ${balance - points}`);
+  return res.json({ ok: true, status: "done", points, balance: balance - points });
+});
+
 // Ручной пересчёт (для теста/по кнопке у сотрудника), ключ BETA_CHAT_KEY. Через лимитер.
 app.post("/beta/api/loyalty/run", (req, res) => {
   const key = process.env.BETA_CHAT_KEY || "";
@@ -1680,8 +1803,10 @@ app.get("/loyalty/api/summary", (req, res) => {
   const refStats = { invited: 0, pending: 0, qualified: 0 };
   Object.values(b.referredBy || {}).forEach((r) => { refStats.invited++; if (r && r.status === "qualified") refStats.qualified++; else refStats.pending++; });
   const accounts = [];
+  let dealsCounted = 0, sumSpend = 0;   // сделки, реально попавшие в баллы (цена>0 + есть контакт с телефоном)
   if (d && d.accounts) {
     Object.values(d.accounts).forEach((a) => {
+      dealsCounted += (a.deals || []).length; sumSpend += (a.spend || 0);
       const pk = bloyPk((a.phones || [])[0] || "");
       const ledSum = brefLedger(pk).reduce((s, e) => s + (Number(e.points) || 0), 0);
       const { tier } = bloyTierFor(a.spend || 0);
@@ -1691,7 +1816,7 @@ app.get("/loyalty/api/summary", (req, res) => {
   }
   res.json({
     success: true, full,
-    data: d ? { ts: d.ts, accountsCount: d.accountsCount, totalEarned: d.totalEarned, scanned: d.scanned, qualified: d.qualified } : null,
+    data: d ? { ts: d.ts, accountsCount: d.accountsCount, totalEarned: d.totalEarned, scanned: d.scanned, qualified: d.qualified, dealsCounted, sumSpend } : null,
     refStats,
     config: { rate: BLOY_RATE, redeemShare: BLOY_REDEEM_SHARE, start: BLOY_START_DAY, refInviter: BLOY_REF_INVITER, refFriend: BLOY_REF_FRIEND, tiers: BLOY_TIERS },
     accounts: accounts.slice(0, 200)
