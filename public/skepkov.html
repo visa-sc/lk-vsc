@@ -52,7 +52,8 @@
   .card h3 .hint { font-size: 12px; font-weight: 500; color: #948a80; }
 
   /* ── плитки KPI ── */
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 11px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; }
+  @media (max-width: 1000px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
   .kpi { background: #fff; border: 1px solid rgba(60,45,30,.08); border-radius: 14px; padding: 13px 14px; }
   .kpi .l { font-size: 11.5px; font-weight: 600; color: #948a80; text-transform: uppercase; letter-spacing: .03em; }
   .kpi .v { font-size: 25px; font-weight: 750; margin-top: 5px; letter-spacing: -.02em; }
@@ -122,6 +123,21 @@
   @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
   .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: #7c736a; margin-top: 8px; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+  /* ── графики ── */
+  .chart { width: 100%; height: auto; display: block; }  /* пропорции не растягиваем */
+  .chart .hit { cursor: default; }
+  .chart-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: #5a5148; margin: -2px 0 8px; }
+  .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .chart-legend i { width: 10px; height: 10px; border-radius: 3px; }
+  #chartTip {
+    position: fixed; z-index: 70; pointer-events: none; opacity: 0;
+    background: #2c2721; color: #fff; padding: 7px 11px; border-radius: 9px;
+    font-size: 12px; line-height: 1.45; white-space: pre; transition: opacity .12s;
+    box-shadow: 0 6px 20px rgba(30,22,14,.22);
+  }
+  #chartTip.on { opacity: .97; }
+  #chartTip b { font-weight: 700; }
   .note-in { width: 100%; border: 1px solid #eee7dd; border-radius: 9px; padding: 6px 9px; font-size: 12.5px; font-family: inherit; }
   .foot { margin-top: 22px; text-align: center; font-size: 12px; color: #a89c90; }
 </style>
@@ -166,11 +182,11 @@
       </div>
       <div class="two" style="margin-top:14px;">
         <div class="card">
-          <h3>Отгрузки по дням <span class="hint" id="shipChartHint"></span></h3>
+          <h3>Отгрузки и производство по дням <span class="hint" id="shipChartHint"></span></h3>
           <div id="shipChart"></div>
         </div>
         <div class="card">
-          <h3>Выручка по дням <span class="hint">все 4 магазина</span></h3>
+          <h3>Выручка по дням <span class="hint">все 4 магазина, последние 30 дней</span></h3>
           <div id="revChart"></div>
         </div>
       </div>
@@ -293,6 +309,7 @@
   </div>
 </div>
 <div id="toast"></div>
+<div id="chartTip"></div>
 
 <script>
 (function () {
@@ -323,6 +340,7 @@
       D = j.data;
       if (D.empty) { $("empty").style.display = ""; $("app").style.display = "none"; $("topMeta").textContent = ""; return; }
       prep(); $("empty").style.display = "none"; $("app").style.display = ""; renderAll();
+      if (location.hash.length > 1) showTab(location.hash.slice(1));
     }).catch(function (e) { toast(e.message || "Не загрузилось", true); });
   }
 
@@ -416,16 +434,15 @@
 
     // графики
     var days = D.days.filter(function (d) { return d <= D.lastDay; });
-    var shipByDay = days.map(function (d) {
-      return { x: dmy(d), y: D.skus.reduce(function (a, k) { return a + (k.ship[d] || 0); }, 0) };
-    });
-    var prodByDay = days.map(function (d) {
-      return D.skus.reduce(function (a, k) { return a + (k.prod[d] || 0); }, 0);
-    });
-    $("shipChartHint").textContent = "серым — произведено";
-    $("shipChart").innerHTML = barChart(shipByDay, prodByDay);
-    var st = (D.stats || []).slice(-30).map(function (x) { return { x: dmy(x.d), y: x.revenue }; });
-    $("revChart").innerHTML = barChart(st, null, function (v) { return fmt(v / 1000) + "к"; });
+    $("shipChartHint").textContent = "текущий месяц, штуки";
+    $("shipChart").innerHTML = columnChart(days.map(dmy), [
+      { label: "Отгружено", color: C1, values: days.map(function (d) { return D.skus.reduce(function (a, k) { return a + (k.ship[d] || 0); }, 0); }) },
+      { label: "Произведено", color: C2, values: days.map(function (d) { return D.skus.reduce(function (a, k) { return a + (k.prod[d] || 0); }, 0); }) }
+    ]);
+    var st = (D.stats || []).slice(-30);
+    $("revChart").innerHTML = columnChart(st.map(function (x) { return dmy(x.d); }),
+      [{ label: "Выручка", color: C2, values: st.map(function (x) { return x.revenue; }) }],
+      { fmtV: function (v) { return v >= 1000 ? fmt(v / 1000) + " к" : fmt(v); } });
   }
   function statePill(x) {
     if (x.stock <= 0) return '<span class="pill p-red">нет на складе</span>';
@@ -435,28 +452,85 @@
     return '<span class="pill p-green">норма</span>';
   }
 
-  // простой столбчатый график в SVG (вторая серия — фоном)
-  function barChart(data, second, fmtV) {
-    if (!data.length) return '<div class="muted" style="padding:18px;">Нет данных</div>';
-    var W = 100, H = 150, pad = 18;
-    var max = Math.max.apply(null, data.map(function (d) { return d.y; }).concat(second || [0]));
-    if (!max) max = 1;
-    var n = data.length, bw = (100 - 4) / n;
-    var bars = data.map(function (d, i) {
-      var h = (d.y / max) * (H - pad - 14), x = 2 + i * bw, y = H - 14 - h;
-      var s2 = second ? (second[i] / max) * (H - pad - 14) : 0;
-      var g = second ? '<rect x="' + (x + bw * .12).toFixed(2) + '" y="' + (H - 14 - s2).toFixed(2) + '" width="' + (bw * .76).toFixed(2) + '" height="' + s2.toFixed(2) + '" fill="#ded5c8" rx="1"></rect>' : "";
-      return g + '<rect x="' + (x + bw * .22).toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + (bw * .56).toFixed(2) + '" height="' + Math.max(h, .6).toFixed(2) + '" fill="#b8792f" rx="1"><title>' + esc(d.x) + ": " + fmt(d.y) + "</title></rect>";
-    }).join("");
-    var labs = data.map(function (d, i) {
-      if (n > 16 && i % Math.ceil(n / 12) !== 0) return "";
-      return '<text x="' + (2 + i * bw + bw / 2).toFixed(2) + '" y="' + (H - 4) + '" font-size="4.6" fill="#a89c90" text-anchor="middle">' + esc(d.x) + "</text>";
-    }).join("");
-    var mx = (fmtV ? fmtV(max) : fmt(max));
-    return '<svg viewBox="0 0 ' + W + " " + H + '" style="width:100%;height:190px;display:block;" preserveAspectRatio="none">'
-      + '<line x1="0" y1="' + (H - 14) + '" x2="100" y2="' + (H - 14) + '" stroke="#eee7dd" stroke-width=".5"></line>'
-      + bars + labs
-      + '<text x="1" y="8" font-size="5" fill="#a89c90">макс ' + esc(mx) + "</text></svg>";
+  // ── Графики ─────────────────────────────────────────────────────────────
+  // Сгруппированные столбцы в SVG. Пропорции НЕ растягиваем (viewBox + height:auto),
+  // иначе подписи расплющивает. Цвета — проверенная пара (CVD ΔE 24.7):
+  // оранжевый = отгружено (основная история), синий = произведено.
+  var C1 = "#eb6834", C2 = "#2a78d6", INK = "#5a5148", MUTED = "#a0968b", GRID = "#efe9e0";
+  // столбик со скруглённой шапкой и прямым основанием
+  function barPath(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h);
+    var b = y + h;
+    return "M" + x + "," + b + "V" + (y + r) + "Q" + x + "," + y + " " + (x + r) + "," + y
+      + "H" + (x + w - r) + "Q" + (x + w) + "," + y + " " + (x + w) + "," + (y + r) + "V" + b + "Z";
+  }
+  // Шаг оси подбираем так, чтобы все 5 делений были круглыми числами
+  // (иначе получается «250 / 188 / 125 / 63» вместо «250 / 200 / 150 / 100»).
+  var DIV = 5;
+  function niceStep(v) {
+    if (v <= 0) return 1;
+    var p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
+  }
+  // labels: ['01.08',…]; series: [{label, color, values:[…]}]; opts.fmtV — формат подписей оси
+  function columnChart(labels, series, opts) {
+    opts = opts || {};
+    if (!labels.length) return '<div class="muted" style="padding:22px 4px;">Нет данных</div>';
+    var W = 760, H = 232, PL = 50, PR = 10, PT = 20, PB = 30;
+    var pw = W - PL - PR, ph = H - PT - PB;
+    var fv = opts.fmtV || fmt;
+    var all = series.reduce(function (a, s) { return a.concat(s.values); }, []);
+    var step = niceStep(Math.max.apply(null, all.concat([1])) / DIV), max = step * DIV;
+    var band = pw / labels.length;
+    var GAP = 2;                                   // разделитель цветом поверхности
+    var bw = Math.min(24, Math.max(3, (band * .62 - GAP * (series.length - 1)) / series.length));
+    var groupW = bw * series.length + GAP * (series.length - 1);
+    var y0 = PT + ph;
+    var s = "";
+    // сетка + ось значений
+    for (var g = 0; g <= DIV; g++) {
+      var gy = PT + ph - (ph * g / DIV);
+      s += '<line x1="' + PL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - PR) + '" y2="' + gy.toFixed(1) + '" stroke="' + GRID + '" stroke-width="1"></line>'
+        + '<text x="' + (PL - 8) + '" y="' + (gy + 3.5).toFixed(1) + '" font-size="10" fill="' + MUTED + '" text-anchor="end" style="font-variant-numeric:tabular-nums;">' + esc(fv(step * g)) + "</text>";
+    }
+    // столбцы. Прямой подписью помечаем ТОЛЬКО общий максимум — числа над каждым
+    // столбцом никто не читает; остальное берут ось и подсказка при наведении.
+    var top = { v: -1, i: 0, si: 0 };
+    series.forEach(function (ser, si) {
+      ser.values.forEach(function (v, i) { if (v > top.v) top = { v: v, i: i, si: si }; });
+    });
+    labels.forEach(function (lab, i) {
+      var gx = PL + band * i + (band - groupW) / 2;
+      series.forEach(function (ser, si) {
+        var v = ser.values[i] || 0, h = (v / max) * ph;
+        if (h <= 0) return;
+        var x = gx + si * (bw + GAP), y = y0 - h;
+        s += '<path d="' + barPath(+x.toFixed(1), +y.toFixed(1), +bw.toFixed(1), +h.toFixed(1), 4) + '" fill="' + ser.color + '"></path>';
+        if (i === top.i && si === top.si && v > 0) {
+          s += '<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (y - 7).toFixed(1) + '" font-size="10.5" font-weight="700" fill="' + INK + '" text-anchor="middle" style="font-variant-numeric:tabular-nums;">' + esc(fv(v)) + "</text>";
+        }
+      });
+    });
+    // базовая линия
+    s += '<line x1="' + PL + '" y1="' + y0 + '" x2="' + (W - PR) + '" y2="' + y0 + '" stroke="#e0d6c9" stroke-width="1"></line>';
+    // подписи дат — прореживаем так, чтобы не наезжали
+    var step = Math.max(1, Math.ceil(labels.length / Math.floor(pw / 46)));
+    labels.forEach(function (lab, i) {
+      if (i % step !== 0 && i !== labels.length - 1) return;
+      if (i !== labels.length - 1 && (labels.length - 1 - i) < step * .6) return;
+      s += '<text x="' + (PL + band * i + band / 2).toFixed(1) + '" y="' + (y0 + 16) + '" font-size="10" fill="' + MUTED + '" text-anchor="middle">' + esc(lab) + "</text>";
+    });
+    // прозрачные полосы под ховер — цель шире самого столбца
+    labels.forEach(function (lab, i) {
+      var tip = lab + "\n" + series.map(function (ser) { return ser.label + ": " + fv(ser.values[i] || 0); }).join("\n");
+      s += '<rect class="hit" x="' + (PL + band * i).toFixed(1) + '" y="' + PT + '" width="' + band.toFixed(1) + '" height="' + ph + '" fill="transparent" data-tip="' + esc(tip) + '"></rect>';
+    });
+    var legend = series.length > 1
+      ? '<div class="chart-legend">' + series.map(function (ser) {
+        return '<span><i style="background:' + ser.color + ';"></i>' + esc(ser.label) + "</span>";
+      }).join("") + "</div>"
+      : "";
+    return legend + '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" role="img">' + s + "</svg>";
   }
 
   // ══════════ ОСТАТКИ ══════════
@@ -613,7 +687,10 @@
     var h = (D.history || []).slice();
     var cur = { key: D.monthKey, produced: D.skus.reduce(function (a, k) { return a + k.produced; }, 0), shipped: D.skus.reduce(function (a, k) { return a + k.shipped; }, 0), items: D.skus.length, sheet: D.monthSheet, partial: true };
     h.push(cur);
-    $("histChart").innerHTML = barChart(h.map(function (x) { return { x: monLabel(x.key), y: x.shipped }; }), h.map(function (x) { return x.produced; }));
+    $("histChart").innerHTML = columnChart(h.map(function (x) { return monLabel(x.key); }), [
+      { label: "Отгружено", color: C1, values: h.map(function (x) { return x.shipped; }) },
+      { label: "Произведено", color: C2, values: h.map(function (x) { return x.produced; }) }
+    ]);
     $("histTbl").innerHTML = "<thead><tr><th class=\"no-sort\">Месяц</th><th class=\"no-sort\">Лист</th><th class=\"no-sort\">Позиций</th><th class=\"no-sort\">Произведено</th><th class=\"no-sort\">Отгружено</th><th class=\"no-sort\">Разница</th></tr></thead><tbody>"
       + h.map(function (x) {
         return "<tr><td>" + monLabel(x.key) + (x.partial ? ' <span class="pill p-grey">идёт</span>' : "") + '</td><td class="muted" style="text-align:left;">' + esc(x.sheet) + "</td>"
@@ -724,12 +801,35 @@
     if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) doImport(e.dataTransfer.files[0]);
   });
 
-  $("tabs").addEventListener("click", function (e) {
-    var b = e.target.closest(".tab"); if (!b) return;
-    tab = b.dataset.t;
-    [].forEach.call(document.querySelectorAll(".tab"), function (x) { x.classList.toggle("on", x === b); });
-    [].forEach.call(document.querySelectorAll(".sec"), function (x) { x.classList.toggle("on", x.id === "sec-" + tab); });
+  // ховер по графикам: подсветка полосы + подсказка
+  document.addEventListener("mousemove", function (e) {
+    var hit = e.target.closest ? e.target.closest(".chart .hit") : null;
+    var tip = $("chartTip");
+    if (!hit) { tip.classList.remove("on"); if (window._hh) { window._hh.setAttribute("fill", "transparent"); window._hh = null; } return; }
+    if (window._hh !== hit) {
+      if (window._hh) window._hh.setAttribute("fill", "transparent");
+      hit.setAttribute("fill", "rgba(90,81,72,.055)");
+      window._hh = hit;
+    }
+    var t = hit.getAttribute("data-tip").split("\n");
+    tip.innerHTML = "<b>" + esc(t[0]) + "</b>" + (t.length > 1 ? "\n" + esc(t.slice(1).join("\n")) : "");
+    tip.classList.add("on");
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.min(window.innerWidth - w - 10, Math.max(8, e.clientX - w / 2)) + "px";
+    tip.style.top = Math.max(8, e.clientY - h - 12) + "px";
   });
+
+  function showTab(t) {
+    if (!document.getElementById("sec-" + t)) return;
+    tab = t;
+    [].forEach.call(document.querySelectorAll(".tab"), function (x) { x.classList.toggle("on", x.dataset.t === t); });
+    [].forEach.call(document.querySelectorAll(".sec"), function (x) { x.classList.toggle("on", x.id === "sec-" + t); });
+    if (location.hash.slice(1) !== t) history.replaceState(null, "", "#" + t);
+  }
+  $("tabs").addEventListener("click", function (e) {
+    var b = e.target.closest(".tab"); if (b) showTab(b.dataset.t);
+  });
+  window.addEventListener("hashchange", function () { showTab(location.hash.slice(1)); });
 
   // остатки
   $("stockFilter").addEventListener("click", function (e) {

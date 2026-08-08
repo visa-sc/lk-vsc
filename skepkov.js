@@ -330,10 +330,17 @@ function parseHistory(wb, currentSheet) {
       if (h.indexOf("итого отгружено") === 0) cShip = c;
     }
     if (cProd == null && cShip == null) continue;
-    let prod = 0, ship = 0, items = 0;
+    // Ниже таблицы позиций в старых листах лежат заметки и черновые расчёты
+    // («Старые детали…», «Царги нужно 341*2=682» и т.п.) — в них попадаются
+    // огромные числа. Считаем только сплошной блок позиций сверху и отбрасываем
+    // строки-итоги/заметки, иначе месяц улетает в космос (Июнь 25 давал 47 674).
+    let prod = 0, ship = 0, items = 0, blanks = 0;
     for (let r = 3; r < rows.length; r++) {
       const row = rows[r] || [];
-      if (!norm(row[1])) continue;
+      const nm = norm(row[1]);
+      if (!nm) { if (++blanks >= 3) break; continue; }
+      blanks = 0;
+      if (/итого|всего|старые детали|нужно|по данн|^\s*$/i.test(nm)) continue;
       items++;
       if (cProd) prod += num(row[cProd]);
       if (cShip) ship += Math.abs(num(row[cShip]));
