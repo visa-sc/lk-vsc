@@ -8,20 +8,23 @@
        <div id="bonus"></div>
        <script>VoyoLoyalty.mount(document.getElementById("bonus"), {phone: PHONE, askPhone: false});</script>
 
-   Экран намеренно КОРОТКИЙ: клиент видит карту, три плитки, оплату баллами,
-   приглашение друзей и историю. Все объяснения спрятаны под иконки «i»
-   (поповер порталом в body — как в админке), чтобы не растягивать страницу.
+   Оформление — как в ЛК (lk-skin): воздух, крупные скругления, мягкие двойные
+   тени, спокойная типографика, акцент #3589BD. Экран намеренно КОРОТКИЙ:
+   карта → строка фактов → оплата баллами → приглашение → история. Все
+   объяснения спрятаны под иконки «i» (поповер порталом в body, как в админке).
 
-   Данные — из открытого API /beta/api/loyalty?phone= (карта + реферальный блок),
-   списание — /beta/api/loyalty/redeem.
+   Карта живая: следит за курсором/пальцем (наклон + блик), «дышит» бликом при
+   появлении, приминается при нажатии. Всё уважает prefers-reduced-motion.
+
+   Данные — из открытого API /beta/api/loyalty?phone=, списание — /redeem.
 
    opts:
      phone     — телефон клиента (в ЛК приходит из сессии)
      askPhone  — true (по умолчанию): если номера нет, виджет спросит его сам
                  и запомнит в localStorage. В ЛК передаём false — формы не будет.
      api       — базовый путь API (по умолчанию "/beta/api/loyalty")
-     refBase   — на что ведёт реферальная ссылка (по умолчанию origin + "/app?ref=")
-     compact   — true: только карта, плитки и списание (без реферала и истории)
+     refBase   — реферальная ссылка (по умолчанию origin + "/app?ref=")
+     compact   — true: только карта, факты и списание
    Возвращает контроллер: { reload(phone), el, phone }.
    ══════════════════════════════════════════════════════════════════════════ */
 (function (w, d) {
@@ -29,152 +32,215 @@
   if (w.VoyoLoyalty) return;
 
   var CSS = ''
-  + '.vl-root{--vl-accent:#3589BD;--vl-accent-d:#2b6d97;--vl-ink:#141926;--vl-mut:#737d8f;'
-  + '--vl-line:rgba(23,32,60,.08);--vl-bg:#fff;--vl-soft:#f5f7fb;--vl-green:#2f8a52;--vl-red:#b0263a;'
-  + '--vl-sh:0 1px 2px rgba(16,24,40,.04),0 12px 30px -16px rgba(16,32,64,.22);color:var(--vl-ink);'
+  + '.vl-root{--vl-accent:#3589BD;--vl-accent-d:#2b6d97;--vl-ink:#141926;--vl-mut:#7b8494;'
+  + '--vl-hair:rgba(23,32,60,.07);--vl-bg:rgba(255,255,255,.86);--vl-soft:#f3f6fa;'
+  + '--vl-green:#2f8a52;--vl-red:#b0263a;'
+  + '--vl-sh:0 1px 2px rgba(16,24,40,.03),0 18px 40px -26px rgba(16,32,64,.28);color:var(--vl-ink);'
   + 'font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;'
-  + '-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;line-height:1.45;}'
+  + '-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;line-height:1.5;}'
   + '.vl-root *{box-sizing:border-box;}'
-  + '.vl-root section{margin-top:12px;}'
-  + '@keyframes vlup{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}'
-  + '.vl-root>*{animation:vlup .5s cubic-bezier(.22,.61,.36,1) both;}'
-  + '.vl-root>*:nth-child(2){animation-delay:.05s}.vl-root>*:nth-child(3){animation-delay:.1s}'
-  + '.vl-root>*:nth-child(4){animation-delay:.15s}.vl-root>*:nth-child(5){animation-delay:.2s}'
+  + '.vl-root section{margin-top:26px;}'
+  + '.vl-cap{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--vl-mut);'
+  + 'font-weight:600;margin:0 0 10px 4px;display:flex;align-items:center;}'
+  + '@keyframes vlup{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}'
+  + '.vl-root>*{animation:vlup .55s cubic-bezier(.22,.61,.36,1) both;}'
+  + '.vl-root>*:nth-child(2){animation-delay:.06s}.vl-root>*:nth-child(3){animation-delay:.12s}'
+  + '.vl-root>*:nth-child(4){animation-delay:.18s}.vl-root>*:nth-child(5){animation-delay:.24s}'
+  + '.vl-root>*:nth-child(6){animation-delay:.3s}'
 
-  /* ── карта: цвет и блики зависят от статуса ── */
-  + '.vl-card{position:relative;overflow:hidden;border-radius:24px;padding:24px 24px 22px;color:#fff;isolation:isolate;'
+  /* ── карта: премиальный «металл» — фактура, голограмма, чип, параллакс ── */
+  + '.vl-stage{perspective:1200px;}'
+  + '.vl-card{position:relative;overflow:hidden;border-radius:26px;padding:24px 26px 24px;color:#fff;isolation:isolate;'
+  + 'min-height:238px;display:flex;flex-direction:column;'   /* пропорции близки к карточной, но высоту задаёт содержимое — иначе overflow:hidden срежет текст */
   + 'background:linear-gradient(145deg,var(--c1) 0%,var(--c2) 52%,var(--c3) 100%);'
-  + 'box-shadow:0 18px 40px -18px var(--cglow),0 2px 6px rgba(16,24,40,.10),inset 0 0 0 1px rgba(255,255,255,.13);}'
-  + '.vl-card::after{content:"";position:absolute;right:-90px;top:-120px;width:290px;height:290px;border-radius:50%;'
-  + 'background:radial-gradient(circle at 35% 35%,rgba(255,255,255,.22),rgba(255,255,255,0) 62%);z-index:-1;}'
-  + '.vl-card::before{content:"";position:absolute;left:-70px;bottom:-140px;width:250px;height:250px;border-radius:50%;'
-  + 'background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.11),rgba(255,255,255,0) 65%);z-index:-1;}'
+  + 'box-shadow:0 26px 54px -22px var(--cglow),0 2px 8px rgba(16,24,40,.12),'
+  + 'inset 0 1px 0 rgba(255,255,255,.34),inset 0 0 0 1px rgba(255,255,255,.13),inset 0 -1px 0 rgba(0,0,0,.18);'
+  + 'transform-style:preserve-3d;will-change:transform;cursor:default;'
+  + 'transition:transform .8s cubic-bezier(.22,1.15,.36,1),box-shadow .45s ease;}'
+  + '.vl-card.live{transition:transform .06s linear,box-shadow .45s ease;'
+  + 'box-shadow:0 40px 70px -24px var(--cglow),0 3px 12px rgba(16,24,40,.14),'
+  + 'inset 0 1px 0 rgba(255,255,255,.45),inset 0 0 0 1px rgba(255,255,255,.20),inset 0 -1px 0 rgba(0,0,0,.20);}'
+  + '.vl-card.press{transform:scale(.982)!important;transition:transform .2s ease;}'
+  + '.vl-card>*{position:relative;z-index:3;}'
+  /* мягкие световые пятна */
+  + '.vl-card::after{content:"";position:absolute;right:-90px;top:-130px;width:300px;height:300px;border-radius:50%;'
+  + 'background:radial-gradient(circle at 35% 35%,rgba(255,255,255,.20),rgba(255,255,255,0) 62%);z-index:0;}'
+  + '.vl-card::before{content:"";position:absolute;left:-70px;bottom:-150px;width:260px;height:260px;border-radius:50%;'
+  + 'background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.09),rgba(255,255,255,0) 65%);z-index:0;}'
+  /* фактура: тонкие «гильошные» линии + едва заметное зерно */
+  + '.vl-tex{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:.5;'
+  + 'background:repeating-linear-gradient(115deg,rgba(255,255,255,.055) 0 1px,rgba(255,255,255,0) 1px 7px),'
+  + 'repeating-linear-gradient(65deg,rgba(0,0,0,.05) 0 1px,rgba(0,0,0,0) 1px 9px);}'
+  /* голограмма: перелив, который смещается вместе с наклоном */
+  + '.vl-holo{position:absolute;inset:-25%;z-index:2;pointer-events:none;opacity:0;mix-blend-mode:soft-light;'
+  + 'transition:opacity .5s ease;transform:translate(calc(var(--px,0px) * 2.2),calc(var(--py,0px) * 2.2));'
+  + 'background:conic-gradient(from 210deg at var(--gx,50%) var(--gy,40%),'
+  + '#ff6ec4 0deg,#7873f5 60deg,#4ade80 130deg,#fbbf24 200deg,#f472b6 270deg,#60a5fa 330deg,#ff6ec4 360deg);}'
+  + '.vl-card.live .vl-holo{opacity:.4;}'   /* перелив заметен, но не «съедает» цвет статуса */
+  /* блик, который бежит за курсором */
+  + '.vl-glare{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;transition:opacity .45s ease;'
+  + 'background:radial-gradient(400px circle at var(--gx,50%) var(--gy,0%),rgba(255,255,255,.34),rgba(255,255,255,0) 55%);}'
+  + '.vl-card.live .vl-glare{opacity:1;}'
+  /* один проход «блеска» при появлении карты */
+  + '.vl-sheen{position:absolute;inset:-40%;z-index:2;pointer-events:none;'
+  + 'background:linear-gradient(72deg,rgba(255,255,255,0) 42%,rgba(255,255,255,.30) 50%,rgba(255,255,255,0) 58%);'
+  + 'transform:translateX(-90%);animation:vlsheen 1.6s .5s cubic-bezier(.4,0,.2,1) 1 both;}'
+  + '@keyframes vlsheen{to{transform:translateX(90%)}}'
+  /* слои карты двигаются с разной скоростью — эффект глубины */
+  + '.vl-card .vl-c-top,.vl-card .vl-mid,.vl-card .vl-foot,.vl-card .vl-chiprow,.vl-holo{'
+  + 'transition:transform .75s cubic-bezier(.22,1.15,.36,1);}'
+  + '.vl-card.live .vl-c-top,.vl-card.live .vl-mid,.vl-card.live .vl-foot,'
+  + '.vl-card.live .vl-chiprow,.vl-card.live .vl-holo{transition:transform .06s linear;}'
+  + '.vl-card .vl-c-top{transform:translate(calc(var(--px,0px) * -.25),calc(var(--py,0px) * -.25));}'
+  + '.vl-card .vl-chiprow{transform:translate(calc(var(--px,0px) * -.5),calc(var(--py,0px) * -.5));}'
+  + '.vl-card .vl-mid{transform:translate(calc(var(--px,0px) * -.85),calc(var(--py,0px) * -.85));}'
+  + '.vl-card .vl-foot{transform:translate(calc(var(--px,0px) * -.45),calc(var(--py,0px) * -.45));}'
   + '.vl-c-top{display:flex;justify-content:space-between;align-items:center;gap:10px;}'
-  + '.vl-brand{font-weight:700;font-size:11.5px;letter-spacing:.20em;opacity:.85;}'
-  + '.vl-tier{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;letter-spacing:.03em;'
-  + 'padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.20);border:1px solid rgba(255,255,255,.22);'
-  + 'backdrop-filter:saturate(160%) blur(8px);-webkit-backdrop-filter:saturate(160%) blur(8px);white-space:nowrap;}'
-  + '.vl-bal{font-size:52px;font-weight:800;letter-spacing:-.035em;line-height:1;margin:20px 0 6px;'
-  + 'font-variant-numeric:tabular-nums;text-shadow:0 2px 18px rgba(0,0,0,.16);}'
-  + '.vl-bal small{font-size:15px;font-weight:600;opacity:.8;margin-left:9px;letter-spacing:0;}'
-  + '.vl-eq{font-size:13.5px;opacity:.88;font-weight:500;}'
-  + '.vl-name{font-size:12.5px;opacity:.72;margin-top:16px;letter-spacing:.02em;}'
-  + '.vl-prog{margin-top:16px;}'
-  + '.vl-prog .vl-bar{height:6px;border-radius:99px;background:rgba(0,0,0,.16);overflow:hidden;'
-  + 'box-shadow:inset 0 1px 2px rgba(0,0,0,.14);}'
-  + '.vl-prog .vl-bar i{display:block;height:100%;border-radius:99px;width:0;'
-  + 'background:linear-gradient(90deg,rgba(255,255,255,.75),#fff);box-shadow:0 0 12px rgba(255,255,255,.55);'
-  + 'transition:width 1s cubic-bezier(.22,.61,.36,1);}'
-  + '.vl-prog .vl-cap{font-size:12px;opacity:.9;margin-top:9px;}'
+  + '.vl-brand{font-weight:600;font-size:11px;letter-spacing:.26em;opacity:.82;'
+  + 'text-shadow:0 1px 0 rgba(255,255,255,.16),0 1px 6px rgba(0,0,0,.18);}'
+  + '.vl-tier{display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;letter-spacing:.06em;'
+  + 'text-transform:uppercase;padding:6px 13px;border-radius:999px;background:rgba(255,255,255,.16);'
+  + 'border:1px solid rgba(255,255,255,.24);box-shadow:0 1px 0 rgba(255,255,255,.2) inset;'
+  + 'backdrop-filter:saturate(170%) blur(10px);-webkit-backdrop-filter:saturate(170%) blur(10px);white-space:nowrap;}'
+  /* чип и бесконтактная метка — рисуем, чтобы карта читалась как карта */
+  + '.vl-chiprow{display:flex;align-items:center;gap:12px;margin-top:18px;}'
+  + '.vl-chip{width:42px;height:32px;border-radius:7px;position:relative;flex:none;'
+  + 'background:linear-gradient(145deg,#f4e2a8 0%,#d9b96a 38%,#f7edc4 62%,#c8a457 100%);'
+  + 'box-shadow:0 1px 2px rgba(0,0,0,.28),inset 0 0 0 .5px rgba(255,255,255,.5);}'
+  + '.vl-chip::before{content:"";position:absolute;inset:5px 8px;border-radius:2px;'
+  + 'border:.5px solid rgba(120,90,20,.55);border-left:0;border-right:0;}'
+  + '.vl-chip::after{content:"";position:absolute;left:50%;top:3px;bottom:3px;width:.5px;background:rgba(120,90,20,.55);}'
+  + '.vl-wave{width:17px;height:17px;opacity:.62;flex:none;}'
+  + '.vl-mid{margin-top:auto;}'
+  + '.vl-bal{font-size:46px;font-weight:700;letter-spacing:-.04em;line-height:1;margin:14px 0 6px;'
+  + 'font-variant-numeric:tabular-nums;text-shadow:0 1px 0 rgba(255,255,255,.18),0 4px 24px rgba(0,0,0,.22);}'
+  + '.vl-bal small{font-size:14px;font-weight:500;opacity:.7;margin-left:10px;letter-spacing:0;text-shadow:none;}'
+  + '.vl-eq{font-size:13px;opacity:.8;font-weight:400;}'
+  + '.vl-foot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:16px;}'
+  + '.vl-name{font-size:11.5px;opacity:.72;letter-spacing:.14em;text-transform:uppercase;'
+  + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
+  + '.vl-num{font-size:11.5px;opacity:.6;letter-spacing:.18em;font-variant-numeric:tabular-nums;white-space:nowrap;}'
+  + '.vl-prog{margin-top:14px;}'
+  + '.vl-prog .vl-bar{height:5px;border-radius:99px;background:rgba(0,0,0,.15);overflow:hidden;}'
+  + '.vl-prog .vl-bar i{display:block;height:100%;border-radius:99px;width:0;background:rgba(255,255,255,.92);'
+  + 'box-shadow:0 0 14px rgba(255,255,255,.5);transition:width 1.1s cubic-bezier(.22,.61,.36,1);}'
+  + '.vl-prog .vl-note{font-size:12px;opacity:.82;margin-top:10px;}'
 
-  /* ── три плитки-факта ── */
-  + '.vl-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}'
-  + '.vl-tile{background:var(--vl-bg);border:1px solid var(--vl-line);border-radius:16px;padding:12px 12px 11px;'
-  + 'box-shadow:var(--vl-sh);transition:transform .18s ease,box-shadow .18s ease;}'
-  + '.vl-tile:hover{transform:translateY(-2px);box-shadow:0 2px 6px rgba(16,24,40,.05),0 18px 34px -18px rgba(16,32,64,.30);}'
-  + '.vl-tile .t{display:flex;align-items:center;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;'
-  + 'color:var(--vl-mut);font-weight:700;margin-bottom:6px;}'
-  + '.vl-tile .v{font-size:19px;font-weight:800;letter-spacing:-.02em;line-height:1.1;}'
-  + '.vl-tile .v span{font-size:12px;font-weight:600;color:var(--vl-mut);letter-spacing:0;}'
-  + '@media(max-width:380px){.vl-tiles{grid-template-columns:1fr 1fr;}.vl-tile:last-child{grid-column:span 2;}}'
+  /* ── строка фактов: одна лёгкая панель, разделители-волоски ── */
+  + '.vl-facts{display:grid;grid-template-columns:repeat(3,1fr);background:var(--vl-bg);border-radius:20px;'
+  + 'box-shadow:var(--vl-sh);backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%);}'
+  + '.vl-fact{padding:16px 14px;text-align:center;position:relative;}'
+  + '.vl-fact+.vl-fact::before{content:"";position:absolute;left:0;top:22%;bottom:22%;width:1px;background:var(--vl-hair);}'
+  + '.vl-fact .k{display:flex;align-items:center;justify-content:center;font-size:10.5px;text-transform:uppercase;'
+  + 'letter-spacing:.07em;color:var(--vl-mut);font-weight:600;margin-bottom:5px;}'
+  + '.vl-fact .v{font-size:20px;font-weight:700;letter-spacing:-.025em;line-height:1.15;white-space:nowrap;}'
+  + '.vl-fact .v span{font-size:12.5px;font-weight:500;color:var(--vl-mut);letter-spacing:0;}'
+  + '@media(max-width:420px){.vl-fact .v{font-size:17px}.vl-fact{padding:15px 6px}}'
+  + '@media(max-width:340px){.vl-fact .v{font-size:15px}}'
 
-  /* ── списание баллов ── */
-  + '.vl-spend{background:var(--vl-bg);border:1px solid var(--vl-line);border-radius:18px;padding:15px 16px;box-shadow:var(--vl-sh);}'
-  + '.vl-spend .sh{display:flex;align-items:center;font-size:14px;font-weight:700;letter-spacing:-.01em;}'
-  + '.vl-spend .sd{font-size:12.5px;color:var(--vl-mut);margin-top:3px;}'
-  + '.vl-spend .sf{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center;}'
-  + '.vl-spend input{flex:1;min-width:110px;border:1px solid var(--vl-line);border-radius:12px;padding:11px 13px;'
-  + 'font:inherit;font-size:15px;font-weight:600;background:var(--vl-soft);color:var(--vl-ink);}'
-  + '.vl-spend input:focus{outline:none;background:#fff;border-color:var(--vl-accent);box-shadow:0 0 0 3px rgba(53,137,189,.14);}'
-  + '.vl-spend .er{color:var(--vl-red);font-size:12.5px;margin-top:8px;}'
-  + '.vl-pend{background:linear-gradient(150deg,#fffaf0,#fdf4e0);border:1px solid rgba(201,151,43,.28);'
-  + 'border-radius:18px;padding:15px 16px;box-shadow:var(--vl-sh);}'
-  + '.vl-pend .ph{font-size:14px;font-weight:700;margin-bottom:3px;}'
-  + '.vl-pend .pd{font-size:12.5px;color:#6b5a2e;line-height:1.5;}'
+  /* ── лёгкие панели ── */
+  + '.vl-panel{background:var(--vl-bg);border-radius:20px;padding:18px 20px;box-shadow:var(--vl-sh);'
+  + 'backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%);}'
+  + '.vl-panel .ph{display:flex;align-items:center;font-size:15px;font-weight:600;letter-spacing:-.015em;}'
+  + '.vl-panel .pd{font-size:13px;color:var(--vl-mut);margin-top:4px;}'
+  + '.vl-form{display:flex;gap:9px;margin-top:14px;align-items:center;}'
+  + '.vl-form input{flex:1;min-width:100px;border:0;border-radius:13px;padding:12px 14px;font:inherit;font-size:15px;'
+  + 'font-weight:600;background:var(--vl-soft);color:var(--vl-ink);box-shadow:inset 0 0 0 1px var(--vl-hair);}'
+  + '.vl-form input:focus{outline:none;background:#fff;box-shadow:inset 0 0 0 1px var(--vl-accent),0 0 0 4px rgba(53,137,189,.13);}'
+  + '.vl-err{color:var(--vl-red);font-size:12.5px;margin-top:9px;}'
+  + '.vl-wait{background:linear-gradient(150deg,rgba(255,250,240,.92),rgba(253,244,224,.92));'
+  + 'box-shadow:var(--vl-sh),inset 0 0 0 1px rgba(201,151,43,.20);}'
+  + '.vl-wait .pd{color:#6f5d31;}'
+
+  + '.vl-btn{cursor:pointer;border:0;border-radius:13px;padding:12px 18px;font:inherit;font-size:13.5px;'
+  + 'font-weight:600;text-decoration:none;display:inline-block;text-align:center;white-space:nowrap;'
+  + 'background:linear-gradient(140deg,#4aa3d8,#3589BD);color:#fff;box-shadow:0 12px 22px -13px rgba(53,137,189,.95);'
+  + 'transition:transform .16s ease,filter .16s ease,box-shadow .16s ease;}'
+  + '.vl-btn:hover{filter:brightness(1.05);transform:translateY(-1px);box-shadow:0 16px 26px -14px rgba(53,137,189,.95);}'
+  + '.vl-btn:active{transform:translateY(0) scale(.985);}'
+  + '.vl-btn:disabled{opacity:.55;cursor:default;transform:none;}'
+  + '.vl-btn.sec{background:rgba(53,137,189,.08);color:var(--vl-accent-d);box-shadow:none;}'
+  + '.vl-btn.sec:hover{background:rgba(53,137,189,.13);filter:none;}'
 
   /* ── реферал ── */
-  + '.vl-ref{border-radius:18px;padding:16px;background:linear-gradient(150deg,#f4f9fd,#e9f3fa);'
-  + 'border:1px solid rgba(53,137,189,.18);}'
-  + '.vl-ref .rh{display:flex;align-items:center;font-size:14px;font-weight:700;letter-spacing:-.01em;margin-bottom:11px;}'
-  + '.vl-code{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;'
-  + 'border:1px dashed rgba(53,137,189,.42);border-radius:14px;padding:11px 14px;}'
-  + '.vl-code .lb{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--vl-mut);font-weight:700;}'
-  + '.vl-code .cd{font-size:21px;font-weight:800;letter-spacing:.15em;color:var(--vl-accent-d);font-variant-numeric:tabular-nums;}'
-  + '.vl-share{display:flex;gap:8px;margin-top:10px;}'
-  + '.vl-btn{flex:1 1 auto;text-align:center;cursor:pointer;border:0;border-radius:12px;padding:11px 14px;'
-  + 'font:inherit;font-size:13.5px;font-weight:600;text-decoration:none;display:inline-block;'
-  + 'background:linear-gradient(140deg,#4aa3d8,#3589BD);color:#fff;box-shadow:0 10px 20px -11px rgba(53,137,189,.85);'
-  + 'transition:transform .16s ease,filter .16s ease;}'
-  + '.vl-btn:hover{filter:brightness(1.06);transform:translateY(-1px);}'
-  + '.vl-btn:active{transform:translateY(0);}'
-  + '.vl-btn.sec{background:#fff;color:var(--vl-accent-d);border:1px solid rgba(53,137,189,.26);box-shadow:none;}'
-  + '.vl-rstat{font-size:12px;color:var(--vl-mut);margin-top:10px;}'
-  + '.vl-rstat b{color:var(--vl-ink);}'
+  + '.vl-code{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;'
+  + 'background:var(--vl-soft);border-radius:15px;padding:13px 16px;}'
+  + '.vl-code .lb{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--vl-mut);font-weight:600;}'
+  + '.vl-code .cd{font-size:22px;font-weight:700;letter-spacing:.16em;color:var(--vl-accent-d);'
+  + 'font-variant-numeric:tabular-nums;margin-top:2px;}'
+  + '.vl-share{display:flex;gap:9px;margin-top:10px;}'
+  + '.vl-share .vl-btn{flex:1;}'
+  + '.vl-rstat{font-size:12px;color:var(--vl-mut);margin-top:12px;text-align:center;}'
+  + '.vl-rstat b{color:var(--vl-ink);font-weight:600;}'
 
-  /* ── история ── */
-  + '.vl-hist{background:var(--vl-bg);border:1px solid var(--vl-line);border-radius:18px;padding:2px 16px;box-shadow:var(--vl-sh);}'
-  + '.vl-op{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--vl-line);}'
+  /* ── история: список без рамок ── */
+  + '.vl-hist{background:var(--vl-bg);border-radius:20px;padding:4px 20px;box-shadow:var(--vl-sh);'
+  + 'backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%);}'
+  + '.vl-op{display:flex;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid var(--vl-hair);}'
   + '.vl-op:last-child{border-bottom:0;}'
-  + '.vl-op .oi{flex:none;width:32px;height:32px;border-radius:11px;display:flex;align-items:center;justify-content:center;'
-  + 'background:linear-gradient(140deg,#eaf3fa,#dcecf7);color:var(--vl-accent-d);}'
+  + '.vl-op .oi{flex:none;width:34px;height:34px;border-radius:12px;display:flex;align-items:center;justify-content:center;'
+  + 'background:rgba(53,137,189,.09);color:var(--vl-accent-d);}'
   + '.vl-op .oi svg{width:16px;height:16px;display:block;}'
   + '.vl-op .ol{flex:1;min-width:0;}'
-  + '.vl-op .ol .t{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
-  + '.vl-op .ol .s{font-size:11.5px;color:var(--vl-mut);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
-  + '.vl-op .op{font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;}'
+  + '.vl-op .ol .t{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
+  + '.vl-op .ol .s{font-size:11.5px;color:var(--vl-mut);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
+  + '.vl-op .op{font-size:15px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums;}'
   + '.vl-op .op.plus{color:var(--vl-green);}.vl-op .op.minus{color:var(--vl-red);}'
-  + '.vl-more{width:100%;margin:0 0 10px;background:none;border:0;color:var(--vl-accent-d);font:inherit;font-size:13px;'
-  + 'font-weight:600;cursor:pointer;padding:9px;border-radius:10px;}'
-  + '.vl-more:hover{background:var(--vl-soft);}'
-  + '.vl-empty{padding:16px 0;text-align:center;color:var(--vl-mut);font-size:13px;}'
-  + '.vl-hh{display:flex;align-items:center;font-size:11px;text-transform:uppercase;letter-spacing:.06em;'
-  + 'color:var(--vl-mut);font-weight:700;margin:16px 0 8px 2px;}'
+  + '.vl-more{width:100%;margin:2px 0 12px;background:none;border:0;color:var(--vl-accent-d);font:inherit;'
+  + 'font-size:13px;font-weight:500;cursor:pointer;padding:10px;border-radius:12px;}'
+  + '.vl-more:hover{background:rgba(53,137,189,.07);}'
+  + '.vl-empty{padding:20px 0;text-align:center;color:var(--vl-mut);font-size:13px;}'
 
-  /* ── иконка «i» + поповер (портал в body) ── */
-  + '.vl-i{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;'
-  + 'border:1.3px solid currentColor;color:#a7b0bf;font-size:10px;font-weight:700;font-style:italic;'
+  /* ── «i» + поповер (портал в body) ── */
+  + '.vl-i{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;'
+  + 'border:1.2px solid currentColor;color:#adb5c2;font-size:9.5px;font-weight:700;font-style:italic;'
   + 'font-family:Georgia,"Times New Roman",serif;line-height:1;cursor:pointer;vertical-align:middle;margin-left:7px;'
-  + '-webkit-user-select:none;user-select:none;flex:0 0 auto;transition:color .15s ease,transform .15s ease;}'
-  + '.vl-i:hover,.vl-i.open{color:var(--vl-accent);transform:scale(1.08);}'
-  + '.vl-card .vl-i{color:rgba(255,255,255,.72);}.vl-card .vl-i:hover,.vl-card .vl-i.open{color:#fff;}'
+  + '-webkit-user-select:none;user-select:none;flex:0 0 auto;transition:color .18s ease,transform .18s ease;}'
+  + '.vl-i:hover,.vl-i.open{color:var(--vl-accent);transform:scale(1.12);}'
+  + '.vl-card .vl-i{color:rgba(255,255,255,.6);margin-left:8px;}'
+  + '.vl-card .vl-i:hover,.vl-card .vl-i.open{color:#fff;}'
   + '.vl-pop{display:none;position:fixed;z-index:99998;box-sizing:border-box;width:min(330px,80vw);'
-  + 'max-height:60vh;overflow:auto;-webkit-overflow-scrolling:touch;background:#171d2b;color:#e7ecf5;'
-  + 'font:400 12.5px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-style:normal;'
-  + 'letter-spacing:0;text-align:left;text-transform:none;padding:13px 15px;border-radius:14px;'
-  + 'box-shadow:0 18px 44px rgba(16,24,40,.42);white-space:normal;cursor:default;}'
-  + '.vl-pop.show{display:block;}'
-  + '.vl-pop b{color:#fff;font-weight:700;}'
-  + '.vl-pop .r{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.10);}'
+  + 'max-height:60vh;overflow:auto;-webkit-overflow-scrolling:touch;background:rgba(22,27,38,.97);color:#e9edf5;'
+  + 'font:400 12.5px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-style:normal;'
+  + 'letter-spacing:0;text-align:left;text-transform:none;padding:14px 16px;border-radius:16px;'
+  + 'box-shadow:0 24px 50px rgba(16,24,40,.40);white-space:normal;cursor:default;'
+  + 'backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);}'
+  + '.vl-pop.show{display:block;animation:vlup .22s ease both;}'
+  + '.vl-pop b{color:#fff;font-weight:600;}'
+  + '.vl-pop .r{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.09);}'
   + '.vl-pop .r:last-child{border-bottom:0;}'
   + '.vl-pop .r.now{color:#8fd0f5;}'
-  + '.vl-pop .r i{font-style:normal;opacity:.72;font-size:11.5px;}'
+  + '.vl-pop .r i{font-style:normal;opacity:.68;font-size:11.5px;}'
   + '.vl-pop::before{content:"";position:absolute;bottom:100%;left:var(--arrow-left,50%);transform:translateX(-50%);'
-  + 'border:6px solid transparent;border-bottom-color:#171d2b;}'
-  + '.vl-pop.up::before{bottom:auto;top:100%;border-bottom-color:transparent;border-top-color:#171d2b;}'
+  + 'border:6px solid transparent;border-bottom-color:rgba(22,27,38,.97);}'
+  + '.vl-pop.up::before{bottom:auto;top:100%;border-bottom-color:transparent;border-top-color:rgba(22,27,38,.97);}'
 
-  /* ── ввод номера (только бета: в ЛК номер из сессии) ── */
-  + '.vl-gate{background:var(--vl-bg);border:1px solid var(--vl-line);border-radius:22px;padding:24px 20px;'
-  + 'box-shadow:var(--vl-sh);text-align:center;}'
-  + '.vl-gate .gh{font-size:16px;font-weight:700;letter-spacing:-.015em;margin-bottom:5px;}'
-  + '.vl-gate .gd{font-size:13px;color:var(--vl-mut);line-height:1.5;margin-bottom:15px;}'
-  + '.vl-gate .gf{display:flex;gap:8px;flex-wrap:wrap;}'
-  + '.vl-gate input{flex:1;min-width:150px;border:1px solid var(--vl-line);border-radius:12px;padding:12px 13px;'
-  + 'font:inherit;font-size:15px;background:var(--vl-soft);color:var(--vl-ink);text-align:center;}'
-  + '.vl-gate input:focus{outline:none;background:#fff;border-color:var(--vl-accent);box-shadow:0 0 0 3px rgba(53,137,189,.14);}'
-  + '.vl-who{text-align:center;font-size:11.5px;color:var(--vl-mut);margin-top:16px;}'
+  /* ── ввод номера (только бета) ── */
+  + '.vl-gate{background:var(--vl-bg);border-radius:24px;padding:30px 24px;box-shadow:var(--vl-sh);text-align:center;'
+  + 'backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%);}'
+  + '.vl-gate .gh{font-size:17px;font-weight:600;letter-spacing:-.02em;margin-bottom:6px;}'
+  + '.vl-gate .gd{font-size:13.5px;color:var(--vl-mut);line-height:1.55;margin-bottom:18px;}'
+  + '.vl-gate .gf{display:flex;gap:9px;flex-wrap:wrap;}'
+  + '.vl-gate input{flex:1;min-width:150px;border:0;border-radius:13px;padding:13px;font:inherit;font-size:15px;'
+  + 'background:var(--vl-soft);color:var(--vl-ink);text-align:center;box-shadow:inset 0 0 0 1px var(--vl-hair);}'
+  + '.vl-gate input:focus{outline:none;background:#fff;box-shadow:inset 0 0 0 1px var(--vl-accent),0 0 0 4px rgba(53,137,189,.13);}'
+  + '.vl-who{text-align:center;font-size:11.5px;color:var(--vl-mut);margin-top:24px;}'
   + '.vl-lnk{background:none;border:0;padding:0;font:inherit;font-size:inherit;color:var(--vl-accent-d);'
-  + 'cursor:pointer;text-decoration:underline;}'
+  + 'cursor:pointer;text-decoration:underline;text-underline-offset:2px;}'
 
   /* ── состояния ── */
-  + '.vl-state{background:var(--vl-bg);border:1px solid var(--vl-line);border-radius:20px;padding:26px 20px;'
-  + 'text-align:center;color:var(--vl-mut);font-size:13.5px;box-shadow:var(--vl-sh);}'
-  + '.vl-skel{border-radius:24px;height:210px;background:linear-gradient(100deg,#eaeff6 30%,#f7fafd 50%,#eaeff6 70%);'
+  + '.vl-state{background:var(--vl-bg);border-radius:22px;padding:30px 22px;text-align:center;color:var(--vl-mut);'
+  + 'font-size:13.5px;box-shadow:var(--vl-sh);}'
+  + '.vl-skel{border-radius:26px;height:226px;background:linear-gradient(100deg,#e9eef5 30%,#f7fafd 50%,#e9eef5 70%);'
   + 'background-size:220% 100%;animation:vlsk 1.3s linear infinite;}'
   + '@keyframes vlsk{0%{background-position:120% 0}100%{background-position:-40% 0}}'
-  + '.vl-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(10px);'
-  + 'background:rgba(20,25,38,.95);color:#fff;font-size:13px;padding:12px 20px;border-radius:12px;z-index:99999;'
-  + 'opacity:0;transition:all .25s ease;pointer-events:none;box-shadow:0 14px 34px rgba(16,24,40,.35);}'
-  + '.vl-toast.on{opacity:1;transform:translateX(-50%) translateY(0);}';
+  + '.vl-toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(10px);'
+  + 'background:rgba(20,25,38,.94);color:#fff;font-size:13px;padding:13px 22px;border-radius:14px;z-index:99999;'
+  + 'opacity:0;transition:all .28s ease;pointer-events:none;box-shadow:0 18px 40px rgba(16,24,40,.35);'
+  + 'backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}'
+  + '.vl-toast.on{opacity:1;transform:translateX(-50%) translateY(0);}'
+  + '@media(prefers-reduced-motion:reduce){.vl-root>*,.vl-sheen,.vl-pop.show{animation:none!important}'
+  + '.vl-card{transition:none!important}}';
 
   function injectCss() {
     if (d.getElementById("vl-style")) return;
@@ -188,28 +254,29 @@
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function fmtDate(ts) { try { return new Date(Number(ts)).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" }); } catch (e) { return ""; } }
   function el(html) { var t = d.createElement("template"); t.innerHTML = String(html).trim(); return t.content.firstChild; }
+  function calm() { try { return w.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; } }
   function toast(msg) {
     var t = el('<div class="vl-toast">' + esc(msg) + "</div>"); d.body.appendChild(t);
     requestAnimationFrame(function () { t.classList.add("on"); });
-    setTimeout(function () { t.classList.remove("on"); setTimeout(function () { t.remove(); }, 300); }, 2000);
+    setTimeout(function () { t.classList.remove("on"); setTimeout(function () { t.remove(); }, 320); }, 2000);
   }
   var ICO = {
-    pay: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></svg>',
-    gift: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M12 9v12M3 13h18"/><path d="M12 9S10.5 4 8 4a2.5 2.5 0 0 0 0 5zM12 9s1.5-5 4-5a2.5 2.5 0 0 1 0 5z"/></svg>',
-    plane: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5l19-8-8 19-2.5-8.5z"/></svg>'
+    pay: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></svg>',
+    gift: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M12 9v12M3 13h18"/><path d="M12 9S10.5 4 8 4a2.5 2.5 0 0 0 0 5zM12 9s1.5-5 4-5a2.5 2.5 0 0 1 0 5z"/></svg>',
+    plane: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5l19-8-8 19-2.5-8.5z"/></svg>'
   };
-  // Палитра карты по статусу: серебро — сталь, золото — тёплая бронза, платина — глубокий фиолет.
+  // Палитра карты по статусу: графит → сталь → тёплая бронза → глубокий фиолет.
   var SKIN = {
-    base:     { c1: "#3b4a5f", c2: "#4c6076", c3: "#63798f", glow: "rgba(48,64,84,.55)" },
-    silver:   { c1: "#5a6b7d", c2: "#7d8fa1", c3: "#a3b3c2", glow: "rgba(90,107,125,.55)" },
-    gold:     { c1: "#8a6114", c2: "#b98a22", c3: "#dcb14a", glow: "rgba(150,105,25,.55)" },
-    platinum: { c1: "#332a63", c2: "#4a3f8f", c3: "#7565cf", glow: "rgba(58,48,110,.6)" }
+    base:     { c1: "#3d4b60", c2: "#4e6278", c3: "#657b91", glow: "rgba(48,64,84,.5)" },
+    silver:   { c1: "#5b6c7e", c2: "#7e90a2", c3: "#a5b5c4", glow: "rgba(90,107,125,.5)" },
+    gold:     { c1: "#8a6114", c2: "#b98a22", c3: "#ddb34c", glow: "rgba(150,105,25,.5)" },
+    platinum: { c1: "#332a63", c2: "#4a3f8f", c3: "#7565cf", glow: "rgba(58,48,110,.55)" }
   };
 
-  /* ── «i»: поповер порталом в body (иначе предки с transform ломают fixed) ── */
-  function popClose(w) {
-    if (!w) return; w.classList.remove("open");
-    var p = w.__pop; if (!p) return;
+  /* ── «i»: поповер порталом в body (предки с transform ломают fixed) ── */
+  function popClose(w2) {
+    if (!w2) return; w2.classList.remove("open");
+    var p = w2.__pop; if (!p) return;
     p.classList.remove("show", "up"); if (p.parentNode) p.parentNode.removeChild(p);
   }
   function popCloseAll() { [].forEach.call(d.querySelectorAll(".vl-pop.show"), function (p) { popClose(p.__owner); }); }
@@ -238,6 +305,9 @@
     wd.addEventListener("click", function (e) {
       e.stopPropagation(); e.preventDefault();
       var was = wd.classList.contains("open"); popCloseAll();
+      // Карту возвращаем в покой: иначе поповер «уедет» вместе с наклоном.
+      var card = wd.closest ? wd.closest(".vl-card") : null;
+      if (card && card.__rest) card.__rest();
       if (!was) { wd.classList.add("open"); popPlace(wd); }
     });
     pop.addEventListener("click", function (e) { e.stopPropagation(); });
@@ -252,8 +322,8 @@
         + "<b>" + Math.round((t.rate || 0) * 100) + "%</b></div>";
     }).join("");
     return "<b>Статусы и процент кэшбэка</b><br>Процент зависит от суммы оплаченных вами услуг — "
-      + "чем больше, тем выше. Статус остаётся с вами навсегда.<div style='margin-top:8px'>" + rows + "</div>"
-      + "<div style='margin-top:8px;opacity:.75'>Ставка берётся по статусу на момент покупки; ранее начисленные баллы не пересчитываются.</div>";
+      + "чем больше, тем выше. Статус остаётся с вами навсегда.<div style='margin-top:9px'>" + rows + "</div>"
+      + "<div style='margin-top:9px;opacity:.72'>Ставка берётся по статусу на момент покупки; ранее начисленные баллы не пересчитываются.</div>";
   }
   function txtEarn(card) {
     var rate = Math.round((Number(card.rate) || 0) * 100);
@@ -278,6 +348,47 @@
       + "<br><br>Баллы приходят обоим автоматически после оформления заявки друга. Количество приглашений не ограничено.";
   }
 
+  /* ── «живая» карта: наклон за курсором/пальцем + блик + нажатие ── */
+  function attachTilt(node) {
+    if (calm()) return;
+    var MAX = 9, SHIFT = 12, raf = 0, tx = 0, ty = 0;
+    function apply() {
+      raf = 0;
+      // Небольшой подъём (translateZ) + наклон: карта будто отрывается от страницы.
+      node.style.transform = "translateZ(14px) rotateX(" + ty.toFixed(2) + "deg) rotateY(" + tx.toFixed(2) + "deg)";
+    }
+    function move(e) {
+      var r = node.getBoundingClientRect();
+      var px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+      px = Math.max(0, Math.min(1, px)); py = Math.max(0, Math.min(1, py));
+      tx = (px - .5) * 2 * MAX; ty = (.5 - py) * 2 * MAX;
+      node.style.setProperty("--gx", (px * 100).toFixed(1) + "%");
+      node.style.setProperty("--gy", (py * 100).toFixed(1) + "%");
+      // Слои карты сдвигаются на разную величину — параллакс (без translateZ,
+      // чтобы overflow:hidden честно резал блики в Safari).
+      node.style.setProperty("--px", ((px - .5) * 2 * SHIFT).toFixed(1) + "px");
+      node.style.setProperty("--py", ((py - .5) * 2 * SHIFT).toFixed(1) + "px");
+      node.classList.add("live");
+      if (!raf) raf = requestAnimationFrame(apply);
+    }
+    function rest() {
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      node.classList.remove("live", "press");
+      node.style.transform = "";
+      node.style.setProperty("--gx", "50%"); node.style.setProperty("--gy", "0%");
+      node.style.setProperty("--px", "0px"); node.style.setProperty("--py", "0px");
+    }
+    node.__rest = rest;
+    node.addEventListener("pointermove", move);
+    node.addEventListener("pointerleave", rest);
+    node.addEventListener("pointercancel", rest);
+    node.addEventListener("pointerdown", function (e) { if (e.pointerType !== "mouse") move(e); node.classList.add("press"); });
+    node.addEventListener("pointerup", function () { node.classList.remove("press"); });
+    // Палец: ведём карту за касанием, отпустили — плавно возвращается.
+    node.addEventListener("touchmove", function (e) { if (e.touches && e.touches[0]) move(e.touches[0]); }, { passive: true });
+    node.addEventListener("touchend", rest);
+  }
+
   /* ══ блоки ══ */
 
   function vCard(card) {
@@ -289,57 +400,69 @@
       var goal = (Number(card.spend) || 0) + (Number(card.toNextSpend) || 0);
       var pct = goal > 0 ? Math.max(3, Math.min(100, Math.round((Number(card.spend) || 0) / goal * 100))) : 0;
       prog = '<div class="vl-prog"><div class="vl-bar"><i data-w="' + pct + '"></i></div>'
-           + '<div class="vl-cap">До статуса ' + esc(card.nextTier) + " — ещё " + RU(card.toNextSpend) + " ₽"
+           + '<div class="vl-note">До статуса ' + esc(card.nextTier) + " — ещё " + RU(card.toNextSpend) + " ₽"
            + (card.nextRate ? ", кэшбэк станет " + Math.round(card.nextRate * 100) + "%" : "") + "</div></div>";
     } else if (!card.nextTier) {
-      prog = '<div class="vl-prog"><div class="vl-cap">Максимальный статус — ваш кэшбэк ' + rate + "% ✦</div></div>";
+      prog = '<div class="vl-prog"><div class="vl-note">Максимальный статус — ваш кэшбэк ' + rate + "% ✦</div></div>";
     }
+    var pk = String((card.phones || [])[0] || "");
+    var last4 = pk.length >= 4 ? pk.slice(-4) : "";
+    var wave = '<svg class="vl-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">'
+      + '<path d="M8.5 6.5a8 8 0 0 1 0 11"/><path d="M12.5 4a12 12 0 0 1 0 16"/><path d="M4.5 9a4 4 0 0 1 0 6"/></svg>';
+    var stage = el('<div class="vl-stage"></div>');
     var node = el(
       '<div class="vl-card" style="--c1:' + sk.c1 + ';--c2:' + sk.c2 + ';--c3:' + sk.c3 + ';--cglow:' + sk.glow + '">'
+      + '<div class="vl-tex"></div><div class="vl-holo"></div><div class="vl-glare"></div>'
+      + (calm() ? "" : '<div class="vl-sheen"></div>')
       + '<div class="vl-c-top"><div class="vl-brand">VOYO · БОНУСЫ</div>'
       + '<div class="vl-tier">' + esc(card.tierName || "Базовый") + (rate ? " · " + rate + "%" : "") + "</div></div>"
-      + '<div class="vl-bal" data-to="' + bal + '">0<small>' + plural(bal, ["балл", "балла", "баллов"]) + "</small></div>"
-      + '<div class="vl-eq">Это ' + RU(bal) + " ₽ скидки на следующую услугу</div>"
-      + (card.name ? '<div class="vl-name">' + esc(card.name) + "</div>" : "")
+      + '<div class="vl-chiprow"><div class="vl-chip"></div>' + wave + "</div>"
+      + '<div class="vl-mid"><div class="vl-bal">0<small>' + plural(bal, ["балл", "балла", "баллов"]) + "</small></div>"
+      + '<div class="vl-eq">Это ' + RU(bal) + " ₽ скидки на следующую услугу</div></div>"
+      + '<div class="vl-foot"><div class="vl-name">' + esc(card.name || "Ваша карта") + "</div>"
+      + (last4 ? '<div class="vl-num">•••• ' + esc(last4) + "</div>" : "") + "</div>"
       + prog + "</div>"
     );
     node.querySelector(".vl-tier").appendChild(vInfo(txtTiers(card)));
     var bar = node.querySelector(".vl-bar i");
     if (bar) requestAnimationFrame(function () { bar.style.width = bar.getAttribute("data-w") + "%"; });
-    // Мягкий счётчик баланса — цифры «набегают» при появлении карты.
+    // Баланс «набегает» — ощущение, что карта оживает.
     var balEl = node.querySelector(".vl-bal"), small = balEl.querySelector("small").outerHTML;
-    requestAnimationFrame(function (t0) {
+    if (calm()) balEl.innerHTML = RU(bal) + small;
+    else requestAnimationFrame(function (t0) {
       (function step(t) {
-        var k = Math.min(1, (t - t0) / 800), e = 1 - Math.pow(1 - k, 3);
+        var k = Math.min(1, (t - t0) / 900), e = 1 - Math.pow(1 - k, 3);
         balEl.innerHTML = RU(bal * e) + small;
         if (k < 1) requestAnimationFrame(step);
       })(t0);
     });
-    return node;
+    attachTilt(node);
+    stage.appendChild(node);
+    return stage;
   }
 
-  function vTiles(card) {
+  function vFacts(card) {
     var rate = Math.round((Number(card.rate) || 0) * 100);
     var share = Math.round((Number(card.redeemMaxShare) || .3) * 100);
-    var s = el('<section class="vl-tiles">'
-      + '<div class="vl-tile"><div class="t">Кэшбэк</div><div class="v">' + (rate > 0 ? rate + "%" : "<span>с Silver</span>") + "</div></div>"
-      + '<div class="vl-tile"><div class="t">Оплата баллами</div><div class="v">до ' + share + "%</div></div>"
-      + '<div class="vl-tile"><div class="t">Бюджет</div><div class="v">' + RU(card.spend || 0) + " <span>₽</span></div></div></section>");
-    var t = s.querySelectorAll(".vl-tile .t");
-    t[0].appendChild(vInfo(txtEarn(card)));
-    t[1].appendChild(vInfo(txtSpend(card)));
-    t[2].appendChild(vInfo("<b>Ваш бюджет в агентстве</b><br>Сумма оплаченных вами услуг с 26.06.2026 — по ней считается статус и процент кэшбэка."));
+    var s = el('<section class="vl-facts">'
+      + '<div class="vl-fact"><div class="k">Кэшбэк</div><div class="v">' + (rate > 0 ? rate + "%" : "<span>с Silver</span>") + "</div></div>"
+      + '<div class="vl-fact"><div class="k">Баллами</div><div class="v">до ' + share + "%</div></div>"
+      + '<div class="vl-fact"><div class="k">Бюджет</div><div class="v">' + RU(card.spend || 0) + " <span>₽</span></div></div></section>");
+    var k = s.querySelectorAll(".vl-fact .k");
+    k[0].appendChild(vInfo(txtEarn(card)));
+    k[1].appendChild(vInfo(txtSpend(card)));
+    k[2].appendChild(vInfo("<b>Ваш бюджет в агентстве</b><br>Сумма оплаченных вами услуг с 26.06.2026 — по ней считается статус и процент кэшбэка."));
     return s;
   }
 
-  /* Списание баллов: заявка клиента → подтверждение менеджера → баллы уходят из баланса. */
+  /* Списание: заявка клиента → подтверждение менеджера → баллы уходят из баланса. */
   function vSpend(card, phone, api, onChanged) {
     var bal = Number(card.balance) || 0, min = Number(card.redeemMin) || 500;
     var s = d.createElement("section");
 
     if (card.redeemRequest) {
       var rq = card.redeemRequest;
-      var p = el('<div class="vl-pend"><div class="ph">Заявка принята</div>'
+      var p = el('<div class="vl-panel vl-wait"><div class="ph">Заявка принята</div>'
         + '<div class="pd">Спишем <b>' + RU(rq.points) + "</b> " + plural(rq.points, ["балл", "балла", "баллов"])
         + " при оформлении ближайшей услуги — менеджер свяжется с вами."
         + ' <button class="vl-lnk" type="button" data-act="cancel">Отменить</button></div></div>');
@@ -355,18 +478,18 @@
     }
 
     if (bal < min) {
-      var box0 = el('<div class="vl-spend"><div class="sh">Оплата баллами</div>'
-        + '<div class="sd">Списывать можно от ' + RU(min) + " баллов — у вас " + RU(bal) + ".</div></div>");
-      box0.querySelector(".sh").appendChild(vInfo(txtSpend(card)));
+      var box0 = el('<div class="vl-panel"><div class="ph">Оплата баллами</div>'
+        + '<div class="pd">Списывать можно от ' + RU(min) + " баллов — у вас " + RU(bal) + ".</div></div>");
+      box0.querySelector(".ph").appendChild(vInfo(txtSpend(card)));
       s.appendChild(box0); return s;
     }
 
-    var box = el('<div class="vl-spend"><div class="sh">Оплатить баллами</div>'
-      + '<div class="sd">Сколько баллов списать со следующей услуги?</div>'
-      + '<div class="sf"><input type="number" inputmode="numeric" min="' + min + '" max="' + bal + '" value="' + bal + '" data-f="pts">'
-      + '<button class="vl-btn" type="button" data-act="send" style="flex:0 0 auto">Списать баллы</button></div>'
-      + '<div class="er" data-f="err" style="display:none"></div></div>');
-    box.querySelector(".sh").appendChild(vInfo(txtSpend(card)));
+    var box = el('<div class="vl-panel"><div class="ph">Оплатить баллами</div>'
+      + '<div class="pd">Сколько баллов списать со следующей услуги?</div>'
+      + '<div class="vl-form"><input type="number" inputmode="numeric" min="' + min + '" max="' + bal + '" value="' + bal + '" data-f="pts">'
+      + '<button class="vl-btn" type="button" data-act="send">Списать</button></div>'
+      + '<div class="vl-err" data-f="err" style="display:none"></div></div>');
+    box.querySelector(".ph").appendChild(vInfo(txtSpend(card)));
     var inp = box.querySelector('[data-f="pts"]'), err = box.querySelector('[data-f="err"]');
     box.querySelector('[data-act="send"]').addEventListener("click", function () {
       var n = Math.floor(Number(inp.value) || 0), btn = this;
@@ -379,12 +502,12 @@
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (j && j.ok) { toast("Заявка отправлена — менеджер свяжется"); onChanged(); return; }
-          btn.disabled = false; btn.textContent = "Списать баллы";
+          btn.disabled = false; btn.textContent = "Списать";
           err.textContent = j && j.reason === "not_enough" ? "Баллов не хватает — обновите страницу." : "Не удалось отправить заявку.";
           err.style.display = "block";
         })
         .catch(function () {
-          btn.disabled = false; btn.textContent = "Списать баллы";
+          btn.disabled = false; btn.textContent = "Списать";
           err.textContent = "Не удалось отправить заявку."; err.style.display = "block";
         });
     });
@@ -398,17 +521,18 @@
     var txt = "Оформляю визы и поездки через VOYO. По моей ссылке тебе " + RU(ref.rewardFriend || 2000) + " бонусов на первую услугу: ";
     var wa = "https://wa.me/?text=" + encodeURIComponent(txt + link);
     var tg = "https://t.me/share/url?url=" + encodeURIComponent(link) + "&text=" + encodeURIComponent(txt);
-    var s = el('<section><div class="vl-ref">'
-      + '<div class="rh">Приглашайте друзей — по ' + RU(ref.rewardInviter || 2000) + " баллов</div>"
+    var s = el('<section><div class="vl-panel">'
+      + '<div class="ph">Приглашайте друзей</div>'
+      + '<div class="pd">По ' + RU(ref.rewardInviter || 2000) + " баллов вам и другу за первую услугу.</div>"
       + '<div class="vl-code"><div><div class="lb">Ваш код</div><div class="cd">' + esc(ref.code) + "</div></div>"
-      + '<button class="vl-btn sec" style="flex:0 0 auto" data-act="copy">Скопировать</button></div>'
+      + '<button class="vl-btn sec" data-act="copy">Скопировать</button></div>'
       + '<div class="vl-share">'
       + '<a class="vl-btn" href="' + esc(wa) + '" target="_blank" rel="noopener">WhatsApp</a>'
       + '<a class="vl-btn sec" href="' + esc(tg) + '" target="_blank" rel="noopener">Telegram</a></div>'
-      + (ref.invitedCount ? '<div class="vl-rstat">Приглашено: <b>' + RU(ref.invitedCount) + "</b> · оформились: <b>"
-          + RU(ref.qualifiedCount || 0) + "</b> · получено: <b>" + RU(ref.earnedPoints || 0) + "</b> баллов</div>" : "")
+      + (ref.invitedCount ? '<div class="vl-rstat">Приглашено <b>' + RU(ref.invitedCount) + "</b> · оформились <b>"
+          + RU(ref.qualifiedCount || 0) + "</b> · получено <b>" + RU(ref.earnedPoints || 0) + "</b> баллов</div>" : "")
       + "</div></section>");
-    s.querySelector(".rh").appendChild(vInfo(txtRef(ref)));
+    s.querySelector(".ph").appendChild(vInfo(txtRef(ref)));
     s.querySelector('[data-act="copy"]').addEventListener("click", function () {
       try {
         if (navigator.clipboard) navigator.clipboard.writeText(link);
@@ -421,7 +545,7 @@
 
   function vHist(card) {
     var list = (card.history || []).slice();
-    var s = el('<section><div class="vl-hh">История</div><div class="vl-hist"></div></section>');
+    var s = el('<section><div class="vl-cap">История</div><div class="vl-hist"></div></section>');
     var box = s.querySelector(".vl-hist");
     if (!list.length) {
       box.appendChild(el('<div class="vl-empty">После первой оплаченной услуги здесь появятся баллы.</div>'));
@@ -468,7 +592,7 @@
     function render(card, ref) {
       popCloseAll(); root.innerHTML = "";
       root.appendChild(vCard(card));
-      root.appendChild(vTiles(card));
+      root.appendChild(vFacts(card));
       root.appendChild(vSpend(card, phone, api, function () { load(phone); }));
       if (!opts.compact) {
         var r = vRef(ref, refBase); if (r) root.appendChild(r);
@@ -486,7 +610,7 @@
       var g = el('<div class="vl-gate"><div class="gh">Ваша бонусная карта</div>'
         + '<div class="gd">Баллы привязаны к номеру телефона — укажите его, чтобы увидеть баланс и статус.</div>'
         + '<div class="gf"><input type="tel" placeholder="+7 999 123-45-67" data-f="ph">'
-        + '<button class="vl-btn" type="button" style="flex:0 0 auto">Показать</button></div></div>');
+        + '<button class="vl-btn" type="button">Показать</button></div></div>');
       var inp = g.querySelector('[data-f="ph"]');
       function go() { var v = inp.value.trim(); if (!v) { inp.focus(); return; } lsSet(v); phone = v; load(v); }
       g.querySelector("button").addEventListener("click", go);
@@ -521,5 +645,5 @@
     return ctl;
   }
 
-  w.VoyoLoyalty = { mount: mount, version: 3 };
+  w.VoyoLoyalty = { mount: mount, version: 4 };
 })(window, document);
