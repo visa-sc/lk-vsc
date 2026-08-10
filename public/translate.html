@@ -469,7 +469,9 @@
         "<div class=\"brk\"><h4>Сверка с переводчиками</h4>" + bars(j.reviewVerdicts) + "</div></div>";
       h += "</div>";
       h += "<div class=\"brk\"><h4>Больше всего страниц</h4>" + bars(j.topClients.map(function (c) { return { name: c.name, count: c.pages }; }), " стр.") + "</div>";
-      h += "<div class=\"rep\" style=\"margin-top:16px;\"><h4>Расход на ИИ</h4><p class=\"sum\">Всего потрачено ≈ <b>" + t.costRub + " ₽</b>, в среднем <b>" + t.costPerOrderRub + " ₽</b> за заказ. Модель: " + esc(j.model) + ". Оценка по текущим тарифам, курс 80 ₽/$.</p></div>";
+      h += "<div class=\"rep\" style=\"margin-top:16px;\"><h4>Расход на ИИ</h4><p class=\"sum\">Всего по заказам ≈ <b>" + t.costRub + " ₽</b>: <b>" + t.costPerPageRub + " ₽</b> за страницу, <b>" + t.costPerOrderRub + " ₽</b> за заказ. Сейчас работаем на модели " + esc(j.model) + ", курс 80 ₽/$."
+        + (t.costApproxOrders ? "<br><span style=\"color:#8a5a00;\">У " + t.costApproxOrders + " ранних заказов расход посчитан приблизительно (журнал вызовов вёлся не с самого начала), и сюда не входят технические прогоны при настройке — фактическое списание в кабинете Anthropic будет выше.</span>" : "")
+        + "</p></div>";
       $("#dashBody").innerHTML = h;
     }).catch(function () { $("#dashBody").innerHTML = "<div class=\"empty\">Не удалось загрузить статистику</div>"; });
   }

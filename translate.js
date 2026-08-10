@@ -353,13 +353,12 @@ async function pipelineTranslate(order) {
   });
   let html = stripFences(r.text);
   await buildOutputs(order, html);
-  order.usage = order.usage || {};
-  order.usage.translate = r.usage;
+  trackUsage(order, "translate", model(), r.usage);
   order.status = "checking"; save();
 
   let chk = await runCheck(order, html);
   order.check = chk.json || { verdict: "warnings", summary: "Не удалось разобрать отчёт проверки", issues: [] };
-  order.usage.check = chk.usage;
+  trackUsage(order, "check", modelCheck(), chk.usage);
 
   // Авто-исправление: если проверка нашла критичные ошибки — правим и проверяем ещё раз.
   const critical = (order.check.issues || []).filter((i) => i.severity === "critical");
@@ -373,15 +372,32 @@ async function pipelineTranslate(order) {
     });
     html = stripFences(rev.text);
     await buildOutputs(order, html);
-    order.usage.revise = rev.usage;
+    trackUsage(order, "revise", model(), rev.usage);
     order.status = "checking"; save();
     chk = await runCheck(order, html);
     order.check = chk.json || order.check;
     order.check.revised = true;
-    order.usage.check2 = chk.usage;
+    trackUsage(order, "check2", modelCheck(), chk.usage);
   }
   order.status = "done"; order.doneAt = Date.now(); save();
   try { await enrichMeta(order, html); } catch (e) { console.warn("enrichMeta:", e.message); }
+}
+
+// ── Учёт расхода ──────────────────────────────────────────────────────────
+// order.usage хранит ПОСЛЕДНИЙ проход каждого типа (для отладки), а order.spend —
+// НАКОПИТЕЛЬНЫЙ журнал всех вызовов с моделью каждого: только так расход виден
+// честно, если заказ переводили повторно или модель по дороге меняли.
+function trackUsage(order, phase, modelId, usage) {
+  if (!usage) return;
+  order.usage = order.usage || {};
+  order.usage[phase] = usage;
+  order.spend = order.spend || [];
+  order.spend.push({
+    at: Date.now(), phase, model: modelId,
+    in: usage.input_tokens || 0, out: usage.output_tokens || 0,
+    cw: usage.cache_creation_input_tokens || 0, cr: usage.cache_read_input_tokens || 0,
+  });
+  if (order.spend.length > 200) order.spend.splice(0, order.spend.length - 200);
 }
 
 // ── Мета для аналитики: тип документа и число страниц ────────────────────
@@ -407,6 +423,7 @@ async function enrichMeta(order, html) {
       system: "Ты классифицируешь официальные документы по типу. Отвечай строго JSON: {doc_type: \"<один из списка>\"}.",
       messages: [{ role: "user", content: "Определи тип документа по началу его перевода и имени файла.\nИмя файла: " + ((order.src[0] && order.src[0].name) || "") + "\nНачало перевода:\n\n" + String(html).replace(/<[^>]+>/g, " ").slice(0, 1200) + "\n\nДопустимые значения: " + DOC_TYPES.join(" | ") }],
     }, DOCTYPE_SCHEMA);
+    trackUsage(order, "doctype", modelSmall(), r.usage);
     const t = r.json && r.json.doc_type;
     order.meta.docType = DOC_TYPES.indexOf(t) >= 0 ? t : "Иное";
   } catch (e) {
@@ -447,6 +464,7 @@ async function pipelineCorrect(order, instruction, author) {
     output_config: { effort: effortMain() },
     messages: [{ role: "user", content: [...(await srcBlocks(order, true)), { type: "text", text: task }] }],
   });
+  trackUsage(order, "correct", model(), r.usage);
   await buildOutputs(order, stripFences(r.text));
   order.corrections = order.corrections || [];
   order.corrections.push({ at: Date.now(), by: author || "", text: String(instruction).slice(0, 2000) });
@@ -460,6 +478,7 @@ async function pipelineCorrect(order, instruction, author) {
       system: "Ты ведёшь базу правил для переводчика документов. Из корректировки заказчика сформулируй 0–3 ОБЩИХ правила на будущее (по-русски, коротко, применимо к любым документам). Разовые правки конкретного документа (опечатка, конкретная сумма) правилом НЕ являются — тогда верни пустой список. Не дублируй существующие правила. Отвечай строго JSON: {lessons: [\"правило\", ...]}.",
       messages: [{ role: "user", content: "Корректировка заказчика: " + instruction + "\n\nСуществующие правила:\n" + (existing.join("\n") || "(пусто)") }],
     }, LESSONS_SCHEMA);
+    trackUsage(order, "lessons", modelSmall(), les.usage);
     const newOnes = ((les.json && les.json.lessons) || []).map((t) => String(t).trim()).filter((t) => t && !existing.some((e) => e.toLowerCase() === t.toLowerCase()));
     for (const t of newOnes) lessons().push({ id: newId(), createdAt: Date.now(), text: t.slice(0, 500), source: order.id });
     if (newOnes.length) save();
@@ -499,8 +518,7 @@ async function pipelineCompare(order) {
     messages: [{ role: "user", content: [...(await srcBlocks(order)), ...content, { type: "text", text: task }] }],
   }, COMPARE_SCHEMA);
   order.compare = cmp.json || { verdict: "minor", summary: "Не удалось разобрать отчёт сравнения", differences: [] };
-  order.usage = order.usage || {};
-  order.usage.compare = cmp.usage;
+  trackUsage(order, "compare", modelCheck(), cmp.usage);
   order.compareStatus = "done"; save();
 }
 
@@ -517,6 +535,7 @@ async function learnFromCompare(order) {
     system: "Ты ведёшь базу правил для переводчика официальных документов. Тебе дан разбор расхождений между переводом ИИ и переводом профессионального переводчика (эталон — человек). Сформулируй 0–5 ОБЩИХ правил на будущее (по-русски, коротко, применимо к любым документам этого типа), чтобы ИИ больше не повторял свои ошибки. Разовые особенности конкретного документа правилами НЕ являются. Не дублируй существующие правила. Если поучиться нечему — верни пустой список. Отвечай строго JSON: {lessons: [\"правило\", ...]}.",
     messages: [{ role: "user", content: "Расхождения:\n" + JSON.stringify(meaningful, null, 1) + "\n\nОбщий вывод: " + ((order.compare && order.compare.summary) || "") + "\n\nСуществующие правила:\n" + (existing.join("\n") || "(пусто)") }],
   }, LESSONS_SCHEMA);
+  trackUsage(order, "lessons", modelSmall(), les.usage);
   const newOnes = ((les.json && les.json.lessons) || []).map((t) => String(t).trim()).filter((t) => t && !existing.some((e) => e.toLowerCase() === t.toLowerCase()));
   for (const t of newOnes) lessons().push({ id: newId(), createdAt: Date.now(), text: t.slice(0, 500), source: "review:" + order.id });
   order.learned = newOnes;
@@ -889,15 +908,25 @@ function mount(app, deps) {
   const PRICES = { // $ за 1M токенов: [вход, выход]
     "claude-opus-5": [5, 25], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5],
   };
+  // Считаем по накопительному журналу spend (все проходы, каждый по своей
+  // модели). Для заказов, сделанных до появления журнала, — прикидка по
+  // последнему проходу и текущей модели, такие помечаем отдельно.
   function orderCost(o) {
-    const rate = PRICES[model()] || PRICES["claude-sonnet-5"];
     let usd = 0;
+    if (Array.isArray(o.spend) && o.spend.length) {
+      for (const e of o.spend) {
+        const rate = PRICES[e.model] || PRICES["claude-sonnet-5"];
+        usd += ((e.in || 0) + (e.cr || 0) * 0.1 + (e.cw || 0) * 1.25) * rate[0] / 1e6 + (e.out || 0) * rate[1] / 1e6;
+      }
+      return { usd, exact: true };
+    }
+    const rate = PRICES[model()] || PRICES["claude-sonnet-5"];
     for (const v of Object.values(o.usage || {})) {
       if (!v) continue;
       usd += ((v.input_tokens || 0) + (v.cache_read_input_tokens || 0) * 0.1 + (v.cache_creation_input_tokens || 0) * 1.25) * rate[0] / 1e6
         + (v.output_tokens || 0) * rate[1] / 1e6;
     }
-    return usd;
+    return { usd, exact: false };
   }
   app.get("/translate/api/stats", requireTranslate, (req, res) => {
     const st = store();
@@ -931,7 +960,9 @@ function mount(app, deps) {
       rec.orders++; rec.pages += (o.meta && o.meta.pages) || 1;
       months.set(k, rec);
     });
-    const usd = all.reduce((s, o) => s + orderCost(o), 0);
+    const costs = all.map(orderCost);
+    const usd = costs.reduce((s, c) => s + c.usd, 0);
+    const approxOrders = costs.filter((c) => !c.exact).length;
     res.json({
       success: true, model: model(),
       totals: {
@@ -948,6 +979,8 @@ function mount(app, deps) {
         avgSec: durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0,
         costRub: Math.round(usd * 80),
         costPerOrderRub: all.length ? +(usd * 80 / all.length).toFixed(1) : 0,
+        costPerPageRub: pagesTotal ? +(usd * 80 / pagesTotal).toFixed(1) : 0,
+        costApproxOrders: approxOrders,
       },
       byCountry: tally(done, (o) => (o.params && o.params.country || "").trim()),
       byType: tally(done, (o) => (o.meta && o.meta.docType) || ""),
