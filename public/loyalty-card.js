@@ -9,14 +9,17 @@
        <script>VoyoLoyalty.mount(document.getElementById("bonus"), {phone: PHONE, askPhone: false});</script>
 
    Оформление — как в ЛК (lk-skin): воздух, крупные скругления, мягкие двойные
-   тени, спокойная типографика, акцент #3589BD. Экран намеренно КОРОТКИЙ:
-   карта → строка фактов → оплата баллами → приглашение → история. Все
-   объяснения спрятаны под иконки «i» (поповер порталом в body, как в админке).
+   тени, спокойная типографика, акцент #3589BD. Экран намеренно КОРОТКИЙ —
+   всего три блока: карта → приглашение друзей → кнопка «Показать историю».
+   Вся «теория» (статусы, ставки, курс балла, как потратить) живёт ТОЛЬКО в
+   поповере «i» у названия статуса — поповер рисуется порталом в body.
 
-   Карта живая: следит за курсором/пальцем (наклон + блик), «дышит» бликом при
-   появлении, приминается при нажатии. Всё уважает prefers-reduced-motion.
+   На карте: баланс, статус со ставкой и шкала достижения по всей лестнице
+   (потрачено → верхний статус, с засечками ступеней). Карта живая: следит за
+   курсором/пальцем (наклон + блик + голограмма), приминается при нажатии;
+   всё уважает prefers-reduced-motion.
 
-   Данные — из открытого API /beta/api/loyalty?phone=, списание — /redeem.
+   Данные — /beta/api/loyalty?phone= (или /cabinet/api/loyalty в session-режиме).
 
    opts:
      phone     — телефон клиента (в ЛК приходит из сессии)
@@ -116,28 +119,31 @@
   + '.vl-bal{font-size:44px;font-weight:600;letter-spacing:-.035em;line-height:1;margin:0 0 6px;'
   + 'font-variant-numeric:tabular-nums;text-shadow:0 1px 0 rgba(255,255,255,.14),0 4px 22px rgba(0,0,0,.20);}'
   + '.vl-bal small{font-size:13.5px;font-weight:400;opacity:.66;margin-left:9px;letter-spacing:0;text-shadow:none;}'
-  + '.vl-eq{font-size:12.5px;opacity:.74;font-weight:400;letter-spacing:.005em;}'
   + '.vl-foot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:18px;}'
   + '.vl-name{font-size:10.5px;opacity:.66;letter-spacing:.11em;text-transform:uppercase;font-weight:500;'
   + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
-  + '.vl-num{font-size:10.5px;opacity:.5;letter-spacing:.09em;font-variant-numeric:tabular-nums;white-space:nowrap;}'
   + '.vl-prog{margin-top:14px;}'
+  /* шкала достижения по всей лестнице статусов: потрачено → верхний статус */
+  + '.vl-scale{display:flex;justify-content:space-between;align-items:baseline;gap:10px;'
+  + 'font-size:11px;opacity:.72;margin-bottom:8px;letter-spacing:.01em;}'
+  + '.vl-scale b{font-weight:600;opacity:1;}'
+  + '.vl-bar{position:relative;}'
+  + '.vl-tick{position:absolute;top:-2px;bottom:-2px;width:1px;background:rgba(255,255,255,.22);}'
+  + '.vl-tick.on{background:rgba(255,255,255,.5);}'
   + '.vl-prog .vl-bar{height:5px;border-radius:99px;background:rgba(0,0,0,.15);overflow:hidden;}'
   + '.vl-prog .vl-bar i{display:block;height:100%;border-radius:99px;width:0;background:rgba(255,255,255,.92);'
   + 'box-shadow:0 0 14px rgba(255,255,255,.5);transition:width 1.1s cubic-bezier(.22,.61,.36,1);}'
   + '.vl-prog .vl-note{font-size:12px;opacity:.82;margin-top:10px;}'
 
-  /* ── строка фактов: одна лёгкая панель, разделители-волоски ── */
-  + '.vl-facts{display:grid;grid-template-columns:repeat(3,1fr);background:var(--vl-bg);border-radius:20px;'
-  + 'box-shadow:var(--vl-sh);backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%);}'
-  + '.vl-fact{padding:16px 14px;text-align:center;position:relative;}'
-  + '.vl-fact+.vl-fact::before{content:"";position:absolute;left:0;top:22%;bottom:22%;width:1px;background:var(--vl-hair);}'
-  + '.vl-fact .k{display:flex;align-items:center;justify-content:center;font-size:10.5px;text-transform:uppercase;'
-  + 'letter-spacing:.07em;color:var(--vl-mut);font-weight:600;margin-bottom:5px;}'
-  + '.vl-fact .v{font-size:20px;font-weight:700;letter-spacing:-.025em;line-height:1.15;white-space:nowrap;}'
-  + '.vl-fact .v span{font-size:12.5px;font-weight:500;color:var(--vl-mut);letter-spacing:0;}'
-  + '@media(max-width:420px){.vl-fact .v{font-size:17px}.vl-fact{padding:15px 6px}}'
-  + '@media(max-width:340px){.vl-fact .v{font-size:15px}}'
+  /* ── кнопка «Показать историю» ── */
+  + '.vl-toggle{width:100%;background:var(--vl-bg);border:0;border-radius:16px;padding:14px;font:inherit;'
+  + 'font-size:13.5px;font-weight:600;color:var(--vl-accent-d);cursor:pointer;box-shadow:var(--vl-sh);'
+  + 'transition:background .18s ease,transform .16s ease;'
+  + 'backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%);}'
+  + '.vl-toggle:hover{background:#fff;}'
+  + '.vl-toggle:active{transform:scale(.99);}'
+  + '.vl-hist[hidden]{display:none;}'
+  + '.vl-hist{margin-top:10px;}'
 
   /* ── лёгкие панели ── */
   + '.vl-panel{background:var(--vl-bg);border-radius:20px;padding:18px 20px;box-shadow:var(--vl-sh);'
@@ -266,12 +272,16 @@
     gift: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M12 9v12M3 13h18"/><path d="M12 9S10.5 4 8 4a2.5 2.5 0 0 0 0 5zM12 9s1.5-5 4-5a2.5 2.5 0 0 1 0 5z"/></svg>',
     plane: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5l19-8-8 19-2.5-8.5z"/></svg>'
   };
-  // Палитра карты по статусу: графит → сталь → тёплая бронза → глубокий фиолет.
+  // Палитра карты по статусу — семь ступеней, каждая заметно «дороже» предыдущей:
+  // графит → сталь → бронза → холодная платина → тёмный титан → чёрный → индиго.
   var SKIN = {
     base:     { c1: "#3d4b60", c2: "#4e6278", c3: "#657b91", glow: "rgba(48,64,84,.5)" },
     silver:   { c1: "#5b6c7e", c2: "#7e90a2", c3: "#a5b5c4", glow: "rgba(90,107,125,.5)" },
     gold:     { c1: "#8a6114", c2: "#b98a22", c3: "#ddb34c", glow: "rgba(150,105,25,.5)" },
-    platinum: { c1: "#332a63", c2: "#4a3f8f", c3: "#7565cf", glow: "rgba(58,48,110,.55)" }
+    platinum: { c1: "#3f5f70", c2: "#62889c", c3: "#9dc0cf", glow: "rgba(63,95,112,.5)" },
+    titanium: { c1: "#26383f", c2: "#3f5a62", c3: "#6d8f95", glow: "rgba(30,50,58,.55)" },
+    black:    { c1: "#14161b", c2: "#24272f", c3: "#41464f", glow: "rgba(10,12,16,.6)" },
+    infinite: { c1: "#2b2170", c2: "#4a3f8f", c3: "#7565cf", glow: "rgba(45,35,100,.6)" }
   };
 
   /* ── «i»: поповер порталом в body (предки с transform ломают fixed) ── */
@@ -316,15 +326,23 @@
   }
 
   /* ── тексты поповеров (единственное место, где живут объяснения) ── */
+  // Единственное место, где живёт вся «теория» программы: статусы, ставки,
+  // курс балла и правила списания. На экране этого текста нет — только «i».
   function txtTiers(card) {
     var rows = (card.tiers || []).map(function (t) {
       return '<div class="r' + (t.current ? " now" : "") + '"><span>' + esc(t.name)
         + (t.current ? " · ваш статус" : "") + '<br><i>' + (t.min > 0 ? "от " + RU(t.min) + " ₽ покупок" : "старт программы") + "</i></span>"
         + "<b>" + Math.round((t.rate || 0) * 100) + "%</b></div>";
     }).join("");
-    return "<b>Статусы и процент кэшбэка</b><br>Процент зависит от суммы оплаченных вами услуг — "
+    var share = Math.round((Number(card.redeemMaxShare) || .3) * 100);
+    var min = RU(card.redeemMin || 500);
+    return "<b>Статусы и кэшбэк</b><br>Процент зависит от суммы оплаченных вами услуг — "
       + "чем больше, тем выше. Статус остаётся с вами навсегда.<div style='margin-top:9px'>" + rows + "</div>"
-      + "<div style='margin-top:9px;opacity:.72'>Ставка берётся по статусу на момент покупки; ранее начисленные баллы не пересчитываются.</div>";
+      + "<div style='margin-top:9px;opacity:.72'>Ставка берётся по статусу на момент покупки; ранее начисленные баллы не пересчитываются.</div>"
+      + "<div style='margin-top:12px'><b>Как потратить баллы</b><br>1 балл = 1 ₽. Баллами можно оплатить "
+      + "до <b>" + share + "%</b> стоимости любой услуги: визы, ВНЖ, страховки, банковской карты, тура. "
+      + "Списываем от " + min + " баллов — скажите менеджеру при оформлении, и он уменьшит сумму к оплате."
+      + "<br><br>Баллы начисляются автоматически после оплаты, обычно в течение суток, и не сгорают.</div>";
   }
   function txtEarn(card) {
     var rate = Math.round((Number(card.rate) || 0) * 100);
@@ -411,18 +429,24 @@
     var bal = Number(card.balance) || 0;
     var sk = SKIN[card.tier] || SKIN.base;
     var rate = Math.round((Number(card.rate) || 0) * 100);
-    var prog = "";
-    if (card.nextTier && card.toNextSpend > 0) {
-      var goal = (Number(card.spend) || 0) + (Number(card.toNextSpend) || 0);
-      var pct = goal > 0 ? Math.max(3, Math.min(100, Math.round((Number(card.spend) || 0) / goal * 100))) : 0;
-      prog = '<div class="vl-prog"><div class="vl-bar"><i data-w="' + pct + '"></i></div>'
-           + '<div class="vl-note">До статуса ' + esc(card.nextTier) + " — ещё " + RU(card.toNextSpend) + " ₽"
-           + (card.nextRate ? ", кэшбэк станет " + Math.round(card.nextRate * 100) + "%" : "") + "</div></div>";
-    } else if (!card.nextTier) {
-      prog = '<div class="vl-prog"><div class="vl-note">Максимальный статус — ваш кэшбэк ' + rate + "% ✦</div></div>";
-    }
-    var pk = String((card.phones || [])[0] || "");
-    var last4 = pk.length >= 4 ? pk.slice(-4) : "";
+    // Шкала достижения по ВСЕЙ лестнице (0 → верхний статус), а не до ближайшей
+    // ступени: клиент видит, где он на пути целиком, и сколько всего потратил.
+    var tiers = card.tiers || [];
+    var top = tiers.length ? (tiers[tiers.length - 1].min || 0) : 0;
+    var spend = Number(card.spend) || 0;
+    var pct = top > 0 ? Math.max(1.5, Math.min(100, spend / top * 100)) : 0;
+    var ticks = top > 0 ? tiers.filter(function (t) { return t.min > 0; }).map(function (t) {
+      return '<span class="vl-tick' + (spend >= t.min ? " on" : "") + '" style="left:' + (t.min / top * 100).toFixed(2) + '%"></span>';
+    }).join("") : "";
+    var prog = '<div class="vl-prog">'
+      + '<div class="vl-scale"><span>Потрачено <b>' + RU(spend) + ' ₽</b></span><span>' + RU(top) + " ₽</span></div>"
+      + '<div class="vl-bar"><i data-w="' + pct.toFixed(2) + '"></i>' + ticks + "</div>"
+      + '<div class="vl-note">'
+      + (card.nextTier && card.toNextSpend > 0
+          ? "До статуса " + esc(card.nextTier) + " — ещё " + RU(card.toNextSpend) + " ₽"
+            + (card.nextRate ? ", кэшбэк станет " + Math.round(card.nextRate * 100) + "%" : "")
+          : "Максимальный статус — ваш кэшбэк " + rate + "% ✦")
+      + "</div></div>";
     var stage = el('<div class="vl-stage"></div>');
     var node = el(
       '<div class="vl-card" style="--c1:' + sk.c1 + ';--c2:' + sk.c2 + ';--c3:' + sk.c3 + ';--cglow:' + sk.glow + '">'
@@ -430,10 +454,8 @@
       + (calm() ? "" : '<div class="vl-sheen"></div>') + "</div>"
       + '<div class="vl-c-top"><div class="vl-brand">VOYO · БОНУСЫ</div>'
       + '<div class="vl-tier">' + esc(card.tierName || "Базовый") + (rate ? " · " + rate + "%" : "") + "</div></div>"
-      + '<div class="vl-mid"><div class="vl-bal">0<small>' + plural(bal, ["балл", "балла", "баллов"]) + "</small></div>"
-      + '<div class="vl-eq">Это ' + RU(bal) + " ₽ скидки на следующую услугу</div></div>"
-      + '<div class="vl-foot"><div class="vl-name">' + esc(card.name || "Ваша карта") + "</div>"
-      + (last4 ? '<div class="vl-num">•••• ' + esc(last4) + "</div>" : "") + "</div>"
+      + '<div class="vl-mid"><div class="vl-bal">0<small>' + plural(bal, ["балл", "балла", "баллов"]) + "</small></div></div>"
+      + '<div class="vl-foot"><div class="vl-name">' + esc(card.name || "Ваша карта") + "</div></div>"
       + prog + "</div>"
     );
     node.querySelector(".vl-tier").appendChild(vInfo(txtTiers(card)));
@@ -454,73 +476,23 @@
     return stage;
   }
 
-  function vFacts(card) {
-    var rate = Math.round((Number(card.rate) || 0) * 100);
-    var share = Math.round((Number(card.redeemMaxShare) || .3) * 100);
-    var s = el('<section class="vl-facts">'
-      + '<div class="vl-fact"><div class="k">Кэшбэк</div><div class="v">' + (rate > 0 ? rate + "%" : "<span>с Silver</span>") + "</div></div>"
-      + '<div class="vl-fact"><div class="k">Баллами</div><div class="v">до ' + share + "%</div></div>"
-      + '<div class="vl-fact"><div class="k">Бюджет</div><div class="v">' + RU(card.spend || 0) + " <span>₽</span></div></div></section>");
-    var k = s.querySelectorAll(".vl-fact .k");
-    k[0].appendChild(vInfo(txtEarn(card)));
-    k[1].appendChild(vInfo(txtSpend(card)));
-    k[2].appendChild(vInfo("<b>Ваш бюджет в агентстве</b><br>Сумма оплаченных вами услуг с 26.06.2026 — по ней считается статус и процент кэшбэка."));
-    return s;
-  }
-
-  /* Списание: заявка клиента → подтверждение менеджера → баллы уходят из баланса. */
-  function vSpend(card, post, onChanged) {
-    var bal = Number(card.balance) || 0, min = Number(card.redeemMin) || 500;
-    var s = d.createElement("section");
-
-    if (card.redeemRequest) {
-      var rq = card.redeemRequest;
-      var p = el('<div class="vl-panel vl-wait"><div class="ph">Заявка принята</div>'
-        + '<div class="pd">Спишем <b>' + RU(rq.points) + "</b> " + plural(rq.points, ["балл", "балла", "баллов"])
-        + " при оформлении ближайшей услуги — менеджер свяжется с вами."
-        + ' <button class="vl-lnk" type="button" data-act="cancel">Отменить</button></div></div>');
-      p.querySelector('[data-act="cancel"]').addEventListener("click", function () {
-        post("/redeem/cancel", { id: rq.id })
-          .then(function (j) { if (j && j.ok) { toast("Заявка отменена"); onChanged(); } else toast("Заявку уже обработали"); })
-          .catch(function () { toast("Не удалось отменить"); });
-      });
-      s.appendChild(p);
-      return s;
-    }
-
-    if (bal < min) {
-      var box0 = el('<div class="vl-panel"><div class="ph">Оплата баллами</div>'
-        + '<div class="pd">Списывать можно от ' + RU(min) + " баллов — у вас " + RU(bal) + ".</div></div>");
-      box0.querySelector(".ph").appendChild(vInfo(txtSpend(card)));
-      s.appendChild(box0); return s;
-    }
-
-    var box = el('<div class="vl-panel"><div class="ph">Оплатить баллами</div>'
-      + '<div class="pd">Сколько баллов списать со следующей услуги?</div>'
-      + '<div class="vl-form"><input type="number" inputmode="numeric" min="' + min + '" max="' + bal + '" value="' + bal + '" data-f="pts">'
-      + '<button class="vl-btn" type="button" data-act="send">Списать</button></div>'
-      + '<div class="vl-err" data-f="err" style="display:none"></div></div>');
-    box.querySelector(".ph").appendChild(vInfo(txtSpend(card)));
-    var inp = box.querySelector('[data-f="pts"]'), err = box.querySelector('[data-f="err"]');
-    box.querySelector('[data-act="send"]').addEventListener("click", function () {
-      var n = Math.floor(Number(inp.value) || 0), btn = this;
-      err.style.display = "none";
-      if (n < min) { err.textContent = "Минимум к списанию — " + RU(min) + " баллов."; err.style.display = "block"; return; }
-      if (n > bal) { err.textContent = "У вас всего " + RU(bal) + " баллов."; err.style.display = "block"; return; }
-      btn.disabled = true; btn.textContent = "Отправляем…";
-      post("/redeem", { points: n })
-        .then(function (j) {
-          if (j && j.ok) { toast("Заявка отправлена — менеджер свяжется"); onChanged(); return; }
-          btn.disabled = false; btn.textContent = "Списать";
-          err.textContent = j && j.reason === "not_enough" ? "Баллов не хватает — обновите страницу." : "Не удалось отправить заявку.";
-          err.style.display = "block";
-        })
-        .catch(function () {
-          btn.disabled = false; btn.textContent = "Списать";
-          err.textContent = "Не удалось отправить заявку."; err.style.display = "block";
-        });
+  /* Активная заявка на списание. Формы списания в ЛК нет (по решению Андрея
+     10.08): как тратить баллы — написано в «i» у статуса, списывает менеджер при
+     оформлении. Но если заявка уже создана, клиент должен видеть её статус. */
+  function vPending(card, post, onChanged) {
+    var rq = card.redeemRequest;
+    if (!rq) return null;
+    var s = d.createElement('section');
+    var p = el('<div class="vl-panel vl-wait"><div class="ph">Заявка на списание принята</div>'
+      + '<div class="pd">Спишем <b>' + RU(rq.points) + '</b> ' + plural(rq.points, ['балл', 'балла', 'баллов'])
+      + ' при оформлении ближайшей услуги — менеджер свяжется с вами.'
+      + ' <button class="vl-lnk" type="button" data-act="cancel">Отменить</button></div></div>');
+    p.querySelector('[data-act="cancel"]').addEventListener('click', function () {
+      post('/redeem/cancel', { id: rq.id })
+        .then(function (j) { if (j && j.ok) { toast('Заявка отменена'); onChanged(); } else toast('Заявку уже обработали'); })
+        .catch(function () { toast('Не удалось отменить'); });
     });
-    s.appendChild(box);
+    s.appendChild(p);
     return s;
   }
 
@@ -552,15 +524,19 @@
     return s;
   }
 
+  // История скрыта за кнопкой: экран остаётся коротким, но всё под рукой.
   function vHist(card) {
     var list = (card.history || []).slice();
-    var s = el('<section><div class="vl-cap">История</div><div class="vl-hist"></div></section>');
-    var box = s.querySelector(".vl-hist");
-    if (!list.length) {
-      box.appendChild(el('<div class="vl-empty">После первой оплаченной услуги здесь появятся баллы.</div>'));
-      return s;
-    }
-    var shown = 3;
+    if (!list.length) return null;
+    var s = el('<section><button class="vl-toggle" type="button">Показать историю</button>'
+      + '<div class="vl-hist" hidden></div></section>');
+    var box = s.querySelector(".vl-hist"), btn = s.querySelector(".vl-toggle");
+    btn.addEventListener("click", function () {
+      var open = !box.hasAttribute("hidden");
+      if (open) { box.setAttribute("hidden", ""); btn.textContent = "Показать историю"; }
+      else { box.removeAttribute("hidden"); btn.textContent = "Скрыть историю"; draw(); }
+    });
+    var shown = 5;
     function draw() {
       box.innerHTML = "";
       list.slice(0, shown).forEach(function (h) {
@@ -574,12 +550,11 @@
           + '<div class="op ' + (p ? "plus" : "minus") + '">' + (p ? "+" : "−") + RU(Math.abs(h.points)) + "</div></div>"));
       });
       if (list.length > shown) {
-        var b = el('<button class="vl-more" type="button">Показать всю историю (' + RU(list.length - shown) + ")</button>");
+        var b = el('<button class="vl-more" type="button">Ещё ' + RU(list.length - shown) + "</button>");
         b.addEventListener("click", function () { shown = list.length; draw(); });
         box.appendChild(b);
       }
     }
-    draw();
     return s;
   }
 
@@ -614,11 +589,11 @@
     function render(card, ref) {
       popCloseAll(); root.innerHTML = "";
       root.appendChild(vCard(card));
-      root.appendChild(vFacts(card));
-      root.appendChild(vSpend(card, post, function () { load(phone); }));
+      var pend = vPending(card, post, function () { load(phone); });
+      if (pend) root.appendChild(pend);
       if (!opts.compact) {
         var r = vRef(ref, refBase); if (r) root.appendChild(r);
-        root.appendChild(vHist(card));
+        var h = vHist(card); if (h) root.appendChild(h);
       }
       if (askPhone) {
         var who = el('<div class="vl-who">Баллы для ' + esc(phone) + ' · <button class="vl-lnk" type="button">сменить номер</button></div>');
