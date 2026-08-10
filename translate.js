@@ -60,7 +60,26 @@ function save() {
 }
 
 function newId() { return crypto.randomBytes(6).toString("hex"); }
-function findOrder(id) { return store().orders.find((o) => o.id === id) || null; }
+function findOrder(id) { return store().orders.find((o) => o.id === id || o.num === id) || null; }
+
+// ── Человеческий номер заказа (просьба Зайцевой 08.08) ────────────────────
+// Вид VT-0001: короткий, читается вслух, вписывается в amoCRM — по нему менеджер
+// находит перевод, а Катя сшивает заказы со сверками. Сквозной счётчик в store.
+function nextNum() {
+  const st = store();
+  st.seq = (st.seq || 0) + 1;
+  return "VT-" + String(st.seq).padStart(4, "0");
+}
+// Разовая простановка номеров заказам, созданным до введения нумерации:
+// от самых старых к новым, чтобы порядок номеров совпадал с хронологией.
+function backfillNums() {
+  const st = store();
+  const without = st.orders.filter((o) => !o.num);
+  if (!without.length) return;
+  without.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).forEach((o) => { o.num = nextNum(); });
+  save();
+  console.log("translate: проставлены номера заказам:", without.length);
+}
 
 // ── «Уроки» — правила, выученные на корректировках человека ───────────────
 function lessons() { return store().lessons; }
@@ -362,6 +381,55 @@ async function pipelineTranslate(order) {
     order.usage.check2 = chk.usage;
   }
   order.status = "done"; order.doneAt = Date.now(); save();
+  try { await enrichMeta(order, html); } catch (e) { console.warn("enrichMeta:", e.message); }
+}
+
+// ── Мета для аналитики: тип документа и число страниц ────────────────────
+// Тип определяем дешёвой моделью по началу перевода (≈0,05 ₽), страницы —
+// по числу секций в HTML. Заполняется один раз, при первом переводе заказа.
+const DOC_TYPES = [
+  "Справка о движении средств", "Банковская выписка", "Справка с работы", "Справка из банка о счёте",
+  "Свидетельство о рождении", "Свидетельство о браке", "Свидетельство о разводе", "Паспорт",
+  "Диплом или аттестат", "Согласие на выезд ребёнка", "Документы на недвижимость",
+  "Справка из налоговой", "Пенсионное удостоверение", "Справка из учебного заведения", "Иное",
+];
+const DOCTYPE_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["doc_type"],
+  properties: { doc_type: { type: "string", enum: DOC_TYPES } },
+};
+async function enrichMeta(order, html) {
+  const pages = (String(html).match(/<section class="page"/g) || []).length || (order.src || []).length || 1;
+  order.meta = Object.assign({}, order.meta, { pages });
+  if (order.meta.docType) { save(); return; }
+  try {
+    const r = await runClaudeJson({
+      model: modelSmall(), max_tokens: 300,
+      system: "Ты классифицируешь официальные документы по типу. Отвечай строго JSON: {doc_type: \"<один из списка>\"}.",
+      messages: [{ role: "user", content: "Определи тип документа по началу его перевода и имени файла.\nИмя файла: " + ((order.src[0] && order.src[0].name) || "") + "\nНачало перевода:\n\n" + String(html).replace(/<[^>]+>/g, " ").slice(0, 1200) + "\n\nДопустимые значения: " + DOC_TYPES.join(" | ") }],
+    }, DOCTYPE_SCHEMA);
+    const t = r.json && r.json.doc_type;
+    order.meta.docType = DOC_TYPES.indexOf(t) >= 0 ? t : "Иное";
+  } catch (e) {
+    console.warn("translate docType:", e.message);
+    order.meta.docType = "Иное";
+  }
+  save();
+}
+
+// Дозаполнение меты у заказов, переведённых до появления аналитики: страницы
+// считаем из сохранённого HTML бесплатно, тип — дешёвой моделью, по одному
+// заказу в очереди, чтобы не мешать живым переводам.
+function backfillMeta() {
+  const need = store().orders.filter((o) => o.status === "done" && o.files && o.files.html && !(o.meta && o.meta.docType));
+  if (!need.length) return;
+  console.log("translate: дозаполняю аналитику по заказам:", need.length);
+  need.forEach((o) => {
+    enqueue("meta " + o.id, async () => {
+      const cur = findOrder(o.id);
+      if (!cur || (cur.meta && cur.meta.docType)) return;
+      try { await enrichMeta(cur, currentHtml(cur)); } catch (e) { console.warn("backfillMeta:", e.message); }
+    });
+  });
 }
 
 // ── Корректировка по команде человека («исправь: …») ─────────────────────
@@ -598,7 +666,7 @@ let _ymLoggedSample = 0;
 async function ymCreateOrder(u, files, kind) {
   const chat = u.chat || {};
   const order = {
-    id: newId(), kind, createdAt: Date.now(), status: "new",
+    id: newId(), num: nextNum(), kind, createdAt: Date.now(), status: "new",
     params: { translit: "", country: "", targetLang: "en", note: "" },
     src: [], files: {},
     chat: { chatId: String(chat.id || ""), messageId: u.message_id ? String(u.message_id) : "", threadId: u.thread_id ? String(u.thread_id) : "", from: (u.from && (u.from.display_name || u.from.login)) || "", text: String(u.text || "").slice(0, 3000) },
@@ -739,7 +807,8 @@ function ymStartPolling() {
 // ── Публичное представление заказа ────────────────────────────────────────
 function orderView(o, full) {
   const v = {
-    id: o.id, kind: o.kind, createdAt: o.createdAt, doneAt: o.doneAt || null,
+    id: o.id, num: o.num || null, meta: o.meta || null,
+    kind: o.kind, createdAt: o.createdAt, doneAt: o.doneAt || null,
     status: o.status, error: o.error || null,
     params: o.params, srcNames: (o.src || []).map((f) => f.name),
     hasDocx: !!(o.files && o.files.docx), hasHtml: !!(o.files && o.files.html),
@@ -814,6 +883,82 @@ function mount(app, deps) {
     });
   });
 
+  // ── Аналитика (черновая вкладка «Дашборд», запрос Зайцевой 08.08) ──
+  // Считаем на лету из orders.json: заказов мало (до 500), отдельного хранилища
+  // не заводим. Цены моделей — для прикидки расхода, курс 80 ₽/$.
+  const PRICES = { // $ за 1M токенов: [вход, выход]
+    "claude-opus-5": [5, 25], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5],
+  };
+  function orderCost(o) {
+    const rate = PRICES[model()] || PRICES["claude-sonnet-5"];
+    let usd = 0;
+    for (const v of Object.values(o.usage || {})) {
+      if (!v) continue;
+      usd += ((v.input_tokens || 0) + (v.cache_read_input_tokens || 0) * 0.1 + (v.cache_creation_input_tokens || 0) * 1.25) * rate[0] / 1e6
+        + (v.output_tokens || 0) * rate[1] / 1e6;
+    }
+    return usd;
+  }
+  app.get("/translate/api/stats", requireTranslate, (req, res) => {
+    const st = store();
+    const all = st.orders;
+    const done = all.filter((o) => o.status === "done");
+    const tally = (arr, keyFn) => {
+      const m = new Map();
+      arr.forEach((o) => { const k = keyFn(o) || "—"; m.set(k, (m.get(k) || 0) + 1); });
+      return Array.from(m, ([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+    };
+    // Среднее число страниц на одну фамилию: заказы группируем по транслитерации
+    // (если её не указали — по первому файлу, чтобы не слипались разные клиенты).
+    const byClient = new Map();
+    done.forEach((o) => {
+      const k = ((o.params && o.params.translit) || "").trim().toUpperCase() || ("файл:" + ((o.src[0] && o.src[0].name) || o.id));
+      const rec = byClient.get(k) || { orders: 0, pages: 0 };
+      rec.orders++; rec.pages += (o.meta && o.meta.pages) || 1;
+      byClient.set(k, rec);
+    });
+    const clients = Array.from(byClient, ([name, r]) => ({ name, orders: r.orders, pages: r.pages }));
+    const pagesTotal = done.reduce((s, o) => s + ((o.meta && o.meta.pages) || 1), 0);
+    const withIssues = done.filter((o) => o.check && o.check.verdict && o.check.verdict !== "ok").length;
+    const revised = done.filter((o) => o.check && o.check.revised).length;
+    const corrections = all.reduce((s, o) => s + ((o.corrections || []).length), 0);
+    const durations = done.filter((o) => o.doneAt && o.createdAt).map((o) => (o.doneAt - o.createdAt) / 1000);
+    const months = new Map();
+    done.forEach((o) => {
+      const d = new Date(o.createdAt);
+      const k = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+      const rec = months.get(k) || { orders: 0, pages: 0 };
+      rec.orders++; rec.pages += (o.meta && o.meta.pages) || 1;
+      months.set(k, rec);
+    });
+    const usd = all.reduce((s, o) => s + orderCost(o), 0);
+    res.json({
+      success: true, model: model(),
+      totals: {
+        orders: all.length, done: done.length,
+        inWork: all.filter((o) => ["new", "queued", "translating", "checking", "revising"].indexOf(o.status) >= 0).length,
+        errors: all.filter((o) => o.status === "error").length,
+        pages: pagesTotal,
+        clients: clients.length,
+        avgPagesPerOrder: done.length ? +(pagesTotal / done.length).toFixed(1) : 0,
+        avgPagesPerClient: clients.length ? +(pagesTotal / clients.length).toFixed(1) : 0,
+        lessons: lessons().length,
+        corrections,
+        withIssues, revised,
+        avgSec: durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0,
+        costRub: Math.round(usd * 80),
+        costPerOrderRub: all.length ? +(usd * 80 / all.length).toFixed(1) : 0,
+      },
+      byCountry: tally(done, (o) => (o.params && o.params.country || "").trim()),
+      byType: tally(done, (o) => (o.meta && o.meta.docType) || ""),
+      byLang: tally(done, (o) => langName((o.params && o.params.targetLang) || "en")),
+      bySource: tally(all, (o) => ({ manual: "Страница", bot: "Бот в чате", chat: "Тихий чат", review: "Сверка прошлых" }[o.kind] || o.kind)),
+      byMonth: Array.from(months, ([name, r]) => ({ name, orders: r.orders, pages: r.pages })).sort((a, b) => a.name.localeCompare(b.name)),
+      topClients: clients.sort((a, b) => b.pages - a.pages).slice(0, 10),
+      reviewVerdicts: tally(all.filter((o) => o.compare), (o) => ({ match: "совпадает с человеком", minor: "мелкие расхождения", major: "серьёзные расхождения" }[o.compare.verdict] || o.compare.verdict)),
+    });
+  });
+
   app.post("/translate/api/order", requireTranslate, up.array("files", 10), (req, res) => {
     try {
       if (!aiConfigured()) return res.status(400).json({ success: false, message: "ИИ не настроен: добавьте ANTHROPIC_API_KEY в .env на сервере и перезапустите" });
@@ -828,7 +973,7 @@ function mount(app, deps) {
       if (docCount > 1 || (docCount === 1 && files.length > 1)) return res.status(400).json({ success: false, message: "Либо один документ (PDF/DOCX/TXT), либо несколько фото — не смешивайте" });
       const b = req.body || {};
       const order = {
-        id: newId(), kind: "manual", createdAt: Date.now(), status: "new",
+        id: newId(), num: nextNum(), kind: "manual", createdAt: Date.now(), status: "new",
         params: {
           translit: String(b.translit || "").slice(0, 200),
           country: String(b.country || "").slice(0, 100),
@@ -913,7 +1058,7 @@ function mount(app, deps) {
   }
   function makeReviewOrder(origBuf, origName, humanBuf, humanName, meta) {
     const order = {
-      id: newId(), kind: "review", createdAt: Date.now(), status: "new",
+      id: newId(), num: nextNum(), kind: "review", createdAt: Date.now(), status: "new",
       params: { translit: (meta && meta.translit) || "", country: (meta && meta.country) || "", targetLang: (meta && meta.targetLang) || "en", note: (meta && meta.note) || "" },
       src: [], files: {},
     };
@@ -1061,6 +1206,8 @@ function mount(app, deps) {
     }
   }, 15000);
 
+  backfillNums();
+  backfillMeta();
   ymStartPolling();
 }
 

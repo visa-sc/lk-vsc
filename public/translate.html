@@ -130,6 +130,24 @@
   .pick-btn:hover { background: #f0f7fc; }
   .filelist { grid-column: 1 / -1; font-size: 12.5px; color: #33506b; }
   .filelist span { display: inline-block; background: #eef4fa; border-radius: 8px; padding: 3px 9px; margin: 2px 4px 2px 0; }
+  /* Черновые вкладки: реестр и дашборд */
+  table.reg { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table.reg th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em; color: #8a90a0; font-weight: 700; padding: 6px 10px; border-bottom: 1px solid #e3e8ef; white-space: nowrap; }
+  table.reg td { padding: 8px 10px; border-bottom: 1px solid #f1f4f8; vertical-align: top; }
+  table.reg tr:hover td { background: #fafbfd; }
+  table.reg .num { font-family: ui-monospace, Menlo, monospace; font-weight: 700; color: #0f7fae; white-space: nowrap; }
+  table.reg a { color: #0097ca; text-decoration: none; font-weight: 700; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+  .tile { border: 1px solid #e3e8ef; border-radius: 12px; padding: 12px 14px; background: #fafbfd; }
+  .tile b { display: block; font-size: 24px; font-weight: 800; color: #1d2330; line-height: 1.2; }
+  .tile span { font-size: 12px; color: #6b7280; }
+  .brk { margin-top: 16px; }
+  .brk h4 { margin: 0 0 8px; font-size: 13.5px; color: #33415a; }
+  .bar { display: flex; align-items: center; gap: 9px; margin: 4px 0; font-size: 13px; }
+  .bar i { display: block; height: 9px; border-radius: 5px; background: linear-gradient(90deg, #00c8f2, #0097ca); flex-shrink: 0; }
+  .bar u { text-decoration: none; color: #6b7280; font-size: 12px; }
+  .brk-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 700px) { .brk-cols { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -162,6 +180,32 @@
     <div class="tabs">
       <button type="button" class="tab active" data-tab="new">Новый перевод</button>
       <button type="button" class="tab" data-tab="review">Проверка прошлых переводов</button>
+      <button type="button" class="tab" data-tab="registry">Реестр заказов</button>
+      <button type="button" class="tab" data-tab="dash">Дашборд</button>
+    </div>
+
+    <!-- ЧЕРНОВЫЕ вкладки по запросу Зайцевой (08.08). Рабочие «Новый перевод» и
+         «Проверка прошлых» не трогаем — на них сейчас тестируют сотрудники. -->
+    <div class="card" id="tab-registry" style="display:none;">
+      <div class="sec-h"><b>Реестр заказов</b><span>черновик — состав колонок ещё уточняем</span></div>
+      <div class="banner info" style="margin-bottom:12px;">
+        У каждого заказа свой номер вида <b>VT-0001</b> — его можно вписывать в amoCRM, чтобы менеджеры находили перевод, а сверки сшивались с заказами.
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <input type="text" id="regSearch" placeholder="Поиск: номер, фамилия, файл, страна…" style="flex:1;min-width:220px;font-family:inherit;font-size:13.5px;padding:9px 12px;border:1px solid rgba(20,32,64,.14);border-radius:10px;">
+        <select id="regStatus" style="font-family:inherit;font-size:13.5px;padding:9px 12px;border:1px solid rgba(20,32,64,.14);border-radius:10px;">
+          <option value="">Все статусы</option>
+          <option value="done">Готово</option>
+          <option value="work">В работе</option>
+          <option value="error">Ошибка</option>
+        </select>
+      </div>
+      <div style="overflow-x:auto;"><table class="reg" id="regTable"></table></div>
+    </div>
+
+    <div class="card" id="tab-dash" style="display:none;">
+      <div class="sec-h"><b>Дашборд</b><span>черновик — набор показателей ещё уточняем</span></div>
+      <div id="dashBody"></div>
     </div>
 
     <div class="card" id="tab-review" style="display:none;">
@@ -226,12 +270,12 @@
       </form>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-orders">
       <div class="sec-h"><b>Заказы</b><span id="ordersCnt"></span></div>
       <div id="orders"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-lessons">
       <div class="sec-h"><b>Память бота</b><span>правила, выученные на корректировках</span></div>
       <div id="lessons"></div>
       <form id="lessonForm" style="display:flex;gap:8px;margin-top:10px;">
@@ -342,8 +386,93 @@
       var which = t.getAttribute("data-tab");
       $("#tab-new").style.display = which === "new" ? "" : "none";
       $("#tab-review").style.display = which === "review" ? "" : "none";
+      $("#tab-registry").style.display = which === "registry" ? "" : "none";
+      $("#tab-dash").style.display = which === "dash" ? "" : "none";
+      // Список заказов и «Память бота» относятся к рабочим вкладкам — на
+      // черновых (реестр/дашборд) их прячем, чтобы не дублировать данные.
+      var workTabs = which === "new" || which === "review";
+      $("#card-orders").style.display = workTabs ? "" : "none";
+      $("#card-lessons").style.display = workTabs ? "" : "none";
+      if (which === "registry") renderRegistry();
+      if (which === "dash") loadStats();
     });
   });
+
+  // ── Черновая вкладка «Реестр заказов» ──
+  var REG_STATUS = { done: "готово", error: "ошибка", "new": "новый", queued: "в очереди", translating: "перевод", checking: "проверка", revising: "исправление" };
+  function renderRegistry() {
+    var q = ($("#regSearch").value || "").trim().toLowerCase();
+    var f = $("#regStatus").value;
+    var list = ((state && state.orders) || []).filter(function (o) {
+      if (f === "done" && o.status !== "done") return false;
+      if (f === "error" && o.status !== "error") return false;
+      if (f === "work" && ["new", "queued", "translating", "checking", "revising"].indexOf(o.status) < 0) return false;
+      if (!q) return true;
+      var hay = [o.num, (o.srcNames || []).join(" "), o.params && o.params.translit, o.params && o.params.country, o.meta && o.meta.docType].join(" ").toLowerCase();
+      return hay.indexOf(q) >= 0;
+    });
+    var h = "<tr><th>Номер</th><th>Дата</th><th>Клиент</th><th>Документ</th><th>Тип</th><th>Стр.</th><th>Страна</th><th>Статус</th><th>Проверка</th><th>Файл</th></tr>";
+    h += list.map(function (o) {
+      var chk = o.checkVerdict ? ({ ok: "без замечаний", warnings: "замечания", errors: "ошибки" }[o.checkVerdict] || o.checkVerdict) : "—";
+      return "<tr>" +
+        "<td class=\"num\">" + esc(o.num || "—") + "</td>" +
+        "<td>" + new Date(o.createdAt).toLocaleDateString("ru-RU") + "</td>" +
+        "<td>" + esc((o.params && o.params.translit) || "—") + "</td>" +
+        "<td>" + esc((o.srcNames || []).join(", ") || "—") + "</td>" +
+        "<td>" + esc((o.meta && o.meta.docType) || "—") + "</td>" +
+        "<td>" + ((o.meta && o.meta.pages) || "—") + "</td>" +
+        "<td>" + esc((o.params && o.params.country) || "—") + "</td>" +
+        "<td>" + esc(REG_STATUS[o.status] || o.status) + (o.correctionsCnt ? " · правок: " + o.correctionsCnt : "") + "</td>" +
+        "<td>" + esc(chk) + "</td>" +
+        "<td>" + (o.hasDocx ? "<a href=\"/translate/api/order/" + o.id + "/file/docx?token=" + encodeURIComponent(token || "") + "\">DOCX</a>" : "—") + "</td>" +
+        "</tr>";
+    }).join("");
+    $("#regTable").innerHTML = h + (list.length ? "" : "<tr><td colspan=\"10\" style=\"color:#9aa0ab;padding:14px 10px;\">Ничего не найдено</td></tr>");
+  }
+  $("#regSearch").addEventListener("input", renderRegistry);
+  $("#regStatus").addEventListener("change", renderRegistry);
+
+  // ── Черновая вкладка «Дашборд» ──
+  function bars(list, unit) {
+    if (!list || !list.length) return "<div class=\"empty\">Пока нет данных</div>";
+    var max = Math.max.apply(null, list.map(function (x) { return x.count || x.pages || 0; }));
+    return list.map(function (x) {
+      var v = x.count != null ? x.count : x.pages;
+      return "<div class=\"bar\"><span style=\"min-width:150px;\">" + esc(x.name) + "</span><i style=\"width:" + Math.max(6, Math.round(v / max * 180)) + "px;\"></i><u>" + v + (unit || "") + "</u></div>";
+    }).join("");
+  }
+  function loadStats() {
+    $("#dashBody").innerHTML = "<div class=\"empty\"><span class=\"spin\"></span> Считаю…</div>";
+    api("/translate/api/stats").then(function (j) {
+      if (!j.success) return;
+      var t = j.totals;
+      var h = "<div class=\"tiles\">" +
+        "<div class=\"tile\"><b>" + t.done + "</b><span>переводов готово</span></div>" +
+        "<div class=\"tile\"><b>" + t.pages + "</b><span>страниц переведено</span></div>" +
+        "<div class=\"tile\"><b>" + t.clients + "</b><span>клиентов (по фамилиям)</span></div>" +
+        "<div class=\"tile\"><b>" + t.avgPagesPerClient + "</b><span>страниц на одну фамилию</span></div>" +
+        "<div class=\"tile\"><b>" + t.avgPagesPerOrder + "</b><span>страниц на заказ</span></div>" +
+        "<div class=\"tile\"><b>" + t.lessons + "</b><span>выученных правил</span></div>" +
+        "<div class=\"tile\"><b>" + t.withIssues + "</b><span>с замечаниями проверки</span></div>" +
+        "<div class=\"tile\"><b>" + t.revised + "</b><span>ИИ исправил себя сам</span></div>" +
+        "<div class=\"tile\"><b>" + t.corrections + "</b><span>правок от сотрудников</span></div>" +
+        "<div class=\"tile\"><b>" + (t.avgSec ? Math.round(t.avgSec / 6) / 10 + " мин" : "—") + "</b><span>среднее время перевода</span></div>" +
+        "<div class=\"tile\"><b>" + t.inWork + "</b><span>в работе сейчас</span></div>" +
+        "<div class=\"tile\"><b>" + t.errors + "</b><span>ошибок</span></div>" +
+        "</div>";
+      h += "<div class=\"brk-cols\">";
+      h += "<div><div class=\"brk\"><h4>По странам</h4>" + bars(j.byCountry) + "</div>" +
+        "<div class=\"brk\"><h4>По типам документов</h4>" + bars(j.byType) + "</div>" +
+        "<div class=\"brk\"><h4>По языкам перевода</h4>" + bars(j.byLang) + "</div></div>";
+      h += "<div><div class=\"brk\"><h4>Откуда пришли заказы</h4>" + bars(j.bySource) + "</div>" +
+        "<div class=\"brk\"><h4>По месяцам</h4>" + bars(j.byMonth.map(function (m) { return { name: m.name, count: m.orders }; })) + "</div>" +
+        "<div class=\"brk\"><h4>Сверка с переводчиками</h4>" + bars(j.reviewVerdicts) + "</div></div>";
+      h += "</div>";
+      h += "<div class=\"brk\"><h4>Больше всего страниц</h4>" + bars(j.topClients.map(function (c) { return { name: c.name, count: c.pages }; }), " стр.") + "</div>";
+      h += "<div class=\"rep\" style=\"margin-top:16px;\"><h4>Расход на ИИ</h4><p class=\"sum\">Всего потрачено ≈ <b>" + t.costRub + " ₽</b>, в среднем <b>" + t.costPerOrderRub + " ₽</b> за заказ. Модель: " + esc(j.model) + ". Оценка по текущим тарифам, курс 80 ₽/$.</p></div>";
+      $("#dashBody").innerHTML = h;
+    }).catch(function () { $("#dashBody").innerHTML = "<div class=\"empty\">Не удалось загрузить статистику</div>"; });
+  }
 
   // ── Проверка прошлых переводов ──
   var revOrigFile = null, revHumanFile = null, revZipFile = null;
@@ -575,6 +704,7 @@
         });
         renderOrders();
         renderLessons();
+        if ($("#tab-registry").style.display !== "none") renderRegistry();
         schedulePoll();
       })
       .catch(function (e) { if (e.message !== "auth") schedulePoll(); });
