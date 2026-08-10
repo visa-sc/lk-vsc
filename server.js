@@ -5241,6 +5241,28 @@ app.get("/api/calc-mismatch", (req, res) => {
   const history = all.slice().sort((a, b) => b.ts - a.ts).slice(0, 1000); // новые сверху, максимум 1000 в выдаче
   return res.json({ success: true, history, total: all.length });
 });
+// ── Счётчик использований калькулятора страхования ──
+// Клиент шлёт пинг, когда вкладка «Страхование» открыта и сделано ≥2 кликов в калькуляторе
+// (см. calc.html). Анонимно: только дата/время МСК + флаг «с телефона». GET — сводка.
+const INS_USAGE_FILE = path.join(__dirname, ".insUsageLog.json");
+app.post("/api/ins-usage", (req, res) => {
+  let log = [];
+  try { log = JSON.parse(fs.readFileSync(INS_USAGE_FILE, "utf8")) || []; } catch (_) {}
+  const p = mskParts(Date.now());
+  const mob = /mobile|iphone|android/i.test(String(req.headers["user-agent"] || ""));
+  log.push({ ts: Date.now(), date: p.date, time: p.time, mob });
+  if (log.length > 5000) log = log.slice(-5000);
+  try { fs.writeFileSync(INS_USAGE_FILE, JSON.stringify(log)); } catch (e) { console.error("ins-usage write:", e && e.message); }
+  return res.json({ success: true });
+});
+app.get("/api/ins-usage", (req, res) => {
+  let log = [];
+  try { log = JSON.parse(fs.readFileSync(INS_USAGE_FILE, "utf8")) || []; } catch (_) {}
+  const byDay = {};
+  log.forEach((e) => { byDay[e.date] = (byDay[e.date] || 0) + 1; });
+  return res.json({ success: true, total: log.length, byDay, last: log.slice(-20).reverse() });
+});
+
 app.get("/calc", (req, res) => {
   res.set("Cache-Control", "no-store");
   res.sendFile(path.join(__dirname, "public", "calc.html"));

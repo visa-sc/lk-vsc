@@ -721,6 +721,20 @@
     buildSeg($("segAct"), ACTS, "act");
     buildRisks();
     compute();
+
+    // Счётчик реального использования страхового калькулятора: вкладка «Страхование»
+    // открыта И сделано ≥2 кликов по его элементам (сегменты/риски/итог). Один пинг
+    // за загрузку страницы, анонимно (на сервере только дата/время).
+    var usageClicks = 0, usageSent = false;
+    $("cardIns").addEventListener("click", function(e){
+      if (usageSent) return;
+      if (!e.target.closest("button, .risk, .total")) return; // клики по пустому месту не считаем
+      usageClicks++;
+      if (usageClicks >= 2 && $("cardIns").style.display !== "none") {
+        usageSent = true;
+        fetch("/api/ins-usage", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(function(){});
+      }
+    });
   })();
 
   // ── Переключатель «Калькулятор ВНЖ / Страхование» ──
