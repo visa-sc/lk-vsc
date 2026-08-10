@@ -193,11 +193,15 @@
   + '.vl-invite{position:relative;overflow:hidden;background:linear-gradient(160deg,rgba(255,255,255,.94),rgba(238,246,252,.94));}'
   + '.vl-invite::after{content:"";position:absolute;right:-70px;top:-90px;width:200px;height:200px;border-radius:50%;'
   + 'background:radial-gradient(circle,rgba(53,137,189,.12),rgba(53,137,189,0) 70%);pointer-events:none;}'
-  + '.vl-gain{display:flex;align-items:baseline;gap:9px;margin-bottom:6px;position:relative;}'
-  + '.vl-gain-sum{font-size:30px;font-weight:700;letter-spacing:-.03em;line-height:1;'
+  /* Сумма выгоды — главный акцент блока: крупнее промокода и по центру,
+     подпись с «i» идёт хвостом справа от неё. */
+  + '.vl-gain{display:flex;align-items:baseline;justify-content:center;gap:10px;'
+  + 'flex-wrap:wrap;margin-bottom:10px;position:relative;text-align:center;}'
+  + '.vl-gain-sum{font-size:42px;font-weight:800;letter-spacing:-.035em;line-height:1;'
   + 'background:linear-gradient(135deg,#4aa3d8,#2b6d97);-webkit-background-clip:text;background-clip:text;'
   + '-webkit-text-fill-color:transparent;}'
   + '.vl-gain-txt{font-size:12.5px;color:var(--vl-mut);font-weight:500;}'
+  + '@media(max-width:360px){.vl-gain-sum{font-size:36px;}}'
   + '.vl-invite .ph{font-size:14.5px;position:relative;}'
   + '.vl-invite-txt{position:relative;font-size:13px;line-height:1.55;}'
   /* Промокод — одна кликабельная плашка: тап в любое место копирует код.
@@ -575,7 +579,7 @@
       + '<span class="vl-gain-txt">за каждого друга</span></div>'
       + '<div class="pd vl-invite-txt">Приглашайте друзей и получайте <b>' + RU(pair) + " ₽</b> баллами на двоих: <b>"
       + RU(ref.rewardInviter || 2000) + " ₽</b> — вам и <b>" + RU(ref.rewardFriend || 2000)
-      + " ₽</b> — другу! Вознаграждение поступит на ваш счёт сразу после оплаты."
+      + " ₽</b> — другу!<br>Вознаграждение поступит на ваш счёт сразу после оплаты."
       + "<br>Приглашайте неограниченное количество друзей.</div>"
       + '<button type="button" class="vl-code" data-act="copy" title="Нажмите, чтобы скопировать промокод">'
       + '<span class="lb">Ваш промокод</span><span class="cd">' + esc(ref.code) + "</span></button>"
