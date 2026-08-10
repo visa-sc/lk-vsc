@@ -692,6 +692,14 @@
     .loy-pending { background: #fff3cd; color: #7a5b12; }
     .loy-qualified { background: #e2f4e8; color: #2c7a43; }
     .loy-reversed { background: #fbe3e6; color: #b0263a; }
+    .loy-dash { display: flex; gap: 8px; flex-wrap: wrap; }
+    .loy-dcard { flex: 1 1 130px; text-align: left; background: #f6f8fc; border: 1px solid #e7ebf2; border-radius: 12px;
+      padding: 10px 12px; cursor: pointer; font-family: inherit; transition: background .16s, border-color .16s, transform .16s; }
+    .loy-dcard span { display: block; font-size: 11.5px; color: #6b7280; line-height: 1.35; }
+    .loy-dcard b { display: block; font-size: 20px; color: #161d45; font-weight: 700; margin-top: 3px; }
+    .loy-dcard:hover { background: #eef4fb; border-color: #bcdcef; transform: translateY(-1px); }
+    .loy-dcard.on { background: #e8f2fa; border-color: #3589BD; }
+    .loy-drill:not(:empty) { margin-top: 12px; border-top: 1px solid #ece9f1; padding-top: 10px; }
     .ref-row-title { font-size: 14px; font-weight: 700; color: #161d45; }
     .ref-row-body { grid-column: 1 / -1; font-size: 13px; color: #4b5262; line-height: 1.55; }
     .ref-row-body p { margin: 0 0 7px; }
@@ -1282,10 +1290,10 @@
       <div class="tab-group" data-group="tools">
         <div class="tab-group-label">Инструменты · доступно сотрудникам</div>
         <div class="tab-group-btns">
+          <button type="button" class="tab-btn" data-tab="clientview">Вход в ЛК Клиента</button>
           <button type="button" class="tab-btn" data-tab="corrections">Корректировки ЛК</button>
           <button type="button" class="tab-btn" data-tab="tester">Тестировщик ЛК</button>
           <button type="button" class="tab-btn" data-tab="clientlogs">Логи ЛК</button>
-          <button type="button" class="tab-btn" data-tab="clientview">Вход в ЛК Клиента</button>
           <button type="button" class="tab-btn" data-tab="loyalty">Лояльность</button>
         </div>
       </div>
@@ -5905,6 +5913,20 @@
       const RU_ = (n) => (Math.round(Number(n) || 0)).toLocaleString("ru-RU");
       function loyDate(ts) { try { return new Date(Number(ts)).toLocaleDateString("ru-RU", { day: "2-digit", month: "short", year: "numeric" }); } catch (_) { return "—"; } }
       const LOY_BIND_STATUS = { pending: "ждём оплату", qualified: "начислено", reversed: "аннулировано (возврат)" };
+      function loyDashCard(label, value, key) {
+        return '<button type="button" class="loy-dcard" data-k="' + escapeHtml(key) + '">'
+          + "<span>" + escapeHtml(label) + "</span><b>" + RU_(value) + "</b></button>";
+      }
+      // Рекомендации по программе — как в остальных справочниках: «Применить»
+      // отправляет заявку в «Корректировки ЛК», после чего пункт уходит в скрытые.
+      const LOYALTY_RECS = [
+        "Клиент не узнаёт о начислении: сообщение в WhatsApp/Telegram «вам начислено N баллов» после каждой оплаченной услуги резко поднимает возвраты — сейчас баллы можно увидеть только зайдя в ЛК.",
+        "Баллы бессрочные. Мягкое правило «сгорают через 12 месяцев без покупок» стимулирует вернуться; жёсткие сроки ставить не нужно.",
+        "Нет бонуса ко дню рождения, хотя дата рождения уже собирается в опроснике — готовый повод для касания.",
+        "Нет разовых акций: «оформите ВНЖ до конца месяца — +5 000 баллов» работает лучше, чем постоянное повышение ставки.",
+        "Семейный счёт: заявители из одной сделки часто родственники — возможность объединять баллы семьи увеличит средний чек.",
+        "Списание баллов клиент не может инициировать сам — только через менеджера. Кнопка «Списать баллы» в ЛК (заявка → подтверждение менеджером) уже реализована на сервере, её можно вернуть в кабинет."
+      ];
       const LOY_REDEEM_STATUS = { "new": "новая", done: "списано", declined: "отказ", canceled: "отменена клиентом" };
 
       async function loadLoyaltyAdmin() {
@@ -5931,6 +5953,24 @@
           + '<div class="chip-stat"><span>Обновлено</span><b>' + (st ? loyDate(st.ts) : "—") + "</b></div>"
           + "</div>";
         h += '<div class="loy-lad">' + escapeHtml(tiers) + "</div>";
+
+        // ── Мини-дашборд: приглашения и распределение по статусам ──
+        const rs = d.refStats || {}, ts_ = d.tierStats || [];
+        h += '<div class="loy-box"><div class="loy-h">Приглашения по реферальным ссылкам</div>'
+          + '<div class="loy-dash">'
+          + loyDashCard("Всего приглашено", rs.invited || 0, "ref-all")
+          + loyDashCard("Оплатили — баллы начислены", rs.qualified || 0, "ref-q")
+          + loyDashCard("Ждём оплату", rs.pending || 0, "ref-p")
+          + loyDashCard("Аннулировано (возврат)", rs.reversed || 0, "ref-r")
+          + "</div>"
+          + '<div class="loy-drill" id="loyRefDrill"></div></div>';
+
+        const inProgram = ts_.reduce((s, t) => s + t.count, 0);
+        h += '<div class="loy-box"><div class="loy-h">Клиенты по статусам лояльности' + (inProgram ? " · " + inProgram : "") + "</div>"
+          + '<div class="loy-note">Участники программы — клиенты с успешно завершёнными сделками начиная с 11.08.2026. Нажмите на статус, чтобы увидеть список и телефоны для поиска в amoCRM.</div>'
+          + '<div class="loy-dash">'
+          + ts_.map((t) => loyDashCard(t.name + " · " + Math.round((t.rate || 0) * 100) + "%", t.count, "tier-" + t.key)).join("")
+          + "</div><div class=\"loy-drill\" id=\"loyTierDrill\"></div></div>";
 
         // Форма: промокод + телефон приглашённого
         h += '<div class="loy-box"><div class="loy-h">Начислить по промокоду</div>'
@@ -5968,6 +6008,38 @@
         h += "</div>";
 
         loyaltyContent.innerHTML = h;
+
+        // Разворачивание списков мини-дашборда: клик по плитке — таблица с телефонами.
+        const drillTier = document.getElementById("loyTierDrill");
+        const drillRef = document.getElementById("loyRefDrill");
+        loyaltyContent.querySelectorAll(".loy-dcard").forEach((c) => c.addEventListener("click", () => {
+          const key = c.dataset.k;
+          const isTier = key.indexOf("tier-") === 0;
+          const host = isTier ? drillTier : drillRef;
+          const already = host.dataset.open === key;
+          loyaltyContent.querySelectorAll(".loy-dcard").forEach((x) => x.classList.remove("on"));
+          if (already) { host.innerHTML = ""; host.dataset.open = ""; return; }
+          c.classList.add("on"); host.dataset.open = key;
+          if (isTier) {
+            const t = (d.tierStats || []).find((x) => "tier-" + x.key === key);
+            const cl = (t && t.clients) || [];
+            host.innerHTML = !cl.length ? '<div class="loy-note">В этом статусе пока никого.</div>'
+              : '<table class="loy-tbl"><thead><tr><th>Клиент</th><th>Телефон</th><th>Оплачено</th><th>Баллы</th></tr></thead><tbody>'
+                + cl.map((x) => "<tr><td>" + escapeHtml(x.name || "—") + "</td><td>" + escapeHtml(x.phone)
+                  + "</td><td>" + RU_(x.spend) + " ₽</td><td><b>" + RU_(x.balance) + "</b></td></tr>").join("")
+                + "</tbody></table>";
+          } else {
+            const map = { "ref-all": null, "ref-q": "qualified", "ref-p": "pending", "ref-r": "reversed" };
+            const want = map[key];
+            const list = (d.binds || []).filter((b) => want === null || b.status === want);
+            host.innerHTML = !list.length ? '<div class="loy-note">Пусто.</div>'
+              : '<table class="loy-tbl"><thead><tr><th>Приглашённый</th><th>Пригласил</th><th>Промокод</th><th>Статус</th></tr></thead><tbody>'
+                + list.map((b) => "<tr><td>" + escapeHtml(b.friend) + "</td><td>" + escapeHtml(b.inviter)
+                  + "</td><td>" + escapeHtml(b.code || "—") + "</td><td><span class=\"loy-badge loy-" + escapeHtml(b.status) + "\">"
+                  + escapeHtml(LOY_BIND_STATUS[b.status] || b.status) + "</span></td></tr>").join("")
+                + "</tbody></table>";
+          }
+        }));
 
         const pb = document.getElementById("loyPromoBtn");
         if (pb) pb.addEventListener("click", async () => {
@@ -6012,6 +6084,7 @@
         intro.textContent = "Бонусная программа VOYO: как считаются баллы, за что начисляются и как тратятся. Раздел описывает то, что реально работает в коде.";
         intro.appendChild(vscInfo("<b>Как устроен раздел</b><br>Полная механика программы: старт, какие сделки считаются, лестница статусов, приглашения, списание, где это видит клиент и что доступно сотрудникам. Кнопка «Скорректировать» у каждого блока — замечание сразу в «Корректировки ЛК»."));
         loyaltyLogicContent.appendChild(intro);
+        loyaltyLogicContent.appendChild(recBlock("Лояльность", LOYALTY_RECS, () => "Раздел: Лояльность\nБлок: Рекомендации"));
 
         const ladderRows = tiers.map((t) => "<tr><td>" + escapeHtml(t.name) + "</td><td>" + RU_(t.min) + " ₽</td><td><b>"
           + Math.round((t.rate || 0) * 100) + "%</b></td><td>" + escapeHtml(t.perk || "") + "</td></tr>").join("");

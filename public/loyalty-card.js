@@ -73,6 +73,19 @@
   + '0 3px 12px rgba(16,24,40,.14),inset 0 1px 0 rgba(255,255,255,.42),'
   + 'inset 0 0 0 1px rgba(255,255,255,.18),inset 0 -1px 0 rgba(0,0,0,.18);}'
   + '.vl-card>*{position:relative;z-index:3;}'
+  /* Широкий экран: прогресс переезжает ВНУТРЬ карты (её высоты хватает), поэтому
+     карта чуть вытянутее — иначе в середине зияла бы пустота. Тёмные варианты
+     тех же элементов шкалы. На мобиле всё наоборот: карта чистая, прогресс ниже. */
+  + '@media(min-width:640px){.vl-card{aspect-ratio:1.75/1;max-height:340px;}}'
+  + '.vl-card .vl-prog-in{margin-top:18px;}'
+  + '.vl-card .vl-scale{color:rgba(255,255,255,.7);}'
+  + '.vl-card .vl-scale b{color:#fff;}'
+  + '.vl-card .vl-bar{background:rgba(0,0,0,.18);}'
+  + '.vl-card .vl-bar i{background:rgba(255,255,255,.94);box-shadow:0 0 14px rgba(255,255,255,.45);}'
+  + '.vl-card .vl-tick{background:rgba(255,255,255,.24);}'
+  + '.vl-card .vl-tick.on{background:rgba(255,255,255,.6);}'
+  + '.vl-card .vl-note{color:rgba(255,255,255,.8);}'
+  + '.vl-card .vl-note b{color:#fff;}'
   /* мягкие световые пятна */
   + '.vl-card::after{content:"";position:absolute;right:-90px;top:-130px;width:300px;height:300px;border-radius:50%;'
   + 'background:radial-gradient(circle at 35% 35%,rgba(255,255,255,.20),rgba(255,255,255,0) 62%);z-index:0;}'
@@ -186,11 +199,25 @@
   + '-webkit-text-fill-color:transparent;}'
   + '.vl-gain-txt{font-size:12.5px;color:var(--vl-mut);font-weight:500;}'
   + '.vl-invite .ph{font-size:14.5px;position:relative;}'
-  + '.vl-code{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;'
-  + 'background:var(--vl-soft);border-radius:15px;padding:13px 16px;}'
-  + '.vl-code .lb{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--vl-mut);font-weight:600;}'
-  + '.vl-code .cd{font-size:19px;font-weight:600;letter-spacing:.04em;color:var(--vl-accent-d);'
-  + 'font-variant-numeric:tabular-nums;margin-top:3px;}'
+  + '.vl-invite-txt{position:relative;font-size:13px;line-height:1.55;}'
+  /* Промокод — одна кликабельная плашка: тап в любое место копирует код.
+     Иконка копирования в углу и подтверждение прямо в подписи (как в /calc). */
+  + '.vl-code{position:relative;display:block;width:100%;margin-top:14px;cursor:pointer;text-align:center;'
+  + 'font-family:inherit;padding:14px 16px 15px;border-radius:16px;'
+  + 'background:linear-gradient(180deg,rgba(238,246,252,.95),rgba(226,240,250,.95));'
+  + 'border:1px solid rgba(53,137,189,.28);box-shadow:0 1px 2px rgba(16,24,40,.03);'
+  + 'transition:transform .16s ease,box-shadow .16s ease,background .3s ease,border-color .3s ease;}'
+  + '.vl-code:hover{transform:translateY(-1px);box-shadow:0 10px 22px -14px rgba(53,137,189,.8);}'
+  + '.vl-code:active{transform:translateY(0) scale(.995);}'
+  + '.vl-code::after{content:"⧉";position:absolute;top:11px;right:13px;font-size:13px;'
+  + 'color:var(--vl-accent);opacity:.5;transition:opacity .15s ease;}'
+  + '.vl-code:hover::after{opacity:.9;}'
+  + '.vl-code .lb{display:block;font-size:11.5px;color:var(--vl-mut);font-weight:500;letter-spacing:.01em;}'
+  + '.vl-code .cd{display:block;font-size:26px;font-weight:700;letter-spacing:.08em;color:var(--vl-accent-d);'
+  + 'font-variant-numeric:tabular-nums;margin-top:5px;line-height:1.1;}'
+  + '.vl-code.done{background:linear-gradient(180deg,#e8f7ee,#dff3e6);border-color:rgba(47,138,82,.35);}'
+  + '.vl-code.done .lb{color:var(--vl-green);font-weight:600;}'
+  + '.vl-code.done::after{opacity:0;}'
   + '.vl-share{display:flex;gap:9px;margin-top:10px;}'
   + '.vl-share .vl-btn{flex:1;}'
   + '.vl-rstat{font-size:12px;color:var(--vl-mut);margin-top:12px;text-align:center;}'
@@ -278,6 +305,9 @@
   function fmtDate(ts) { try { return new Date(Number(ts)).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" }); } catch (e) { return ""; } }
   function el(html) { var t = d.createElement("template"); t.innerHTML = String(html).trim(); return t.content.firstChild; }
   function calm() { try { return w.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; } }
+  // Широкий экран — по ширине КОНТЕЙНЕРА виджета не судим: в ЛК он живёт в шторке,
+  // поэтому ориентируемся на само окно (тот же порог, что в CSS-медиазапросе).
+  function isWide() { try { return w.matchMedia("(min-width: 640px)").matches; } catch (e) { return true; } }
   function toast(msg) {
     var t = el('<div class="vl-toast">' + esc(msg) + "</div>"); d.body.appendChild(t);
     requestAnimationFrame(function () { t.classList.add("on"); });
@@ -441,7 +471,7 @@
 
   /* ══ блоки ══ */
 
-  function vCard(card) {
+  function vCard(card, withProgress) {
     var bal = Number(card.balance) || 0;
     var sk = SKIN[card.tier] || SKIN.base;
     var rate = Math.round((Number(card.rate) || 0) * 100);
@@ -453,9 +483,11 @@
       + '<div class="vl-c-top"><div class="vl-brand">VOYO · БОНУСЫ</div>'
       + '<div class="vl-tier">' + esc(card.tierName || "Базовый") + (rate ? " · " + rate + "%" : "") + "</div></div>"
       + '<div class="vl-mid"><div class="vl-bal">0<small>' + plural(bal, ["балл", "балла", "баллов"]) + "</small></div></div>"
-      + '<div class="vl-foot"><div class="vl-name">' + esc(card.name || "Ваша карта") + "</div></div></div>"
+      + '<div class="vl-foot"><div class="vl-name">' + esc(card.name || "Ваша карта") + "</div></div>"
+      + (withProgress ? '<div class="vl-prog-in">' + progInner(card) + "</div>" : "") + "</div>"
     );
     node.querySelector(".vl-tier").appendChild(vInfo(txtTiers(card)));
+    if (withProgress) animBar(node);
     // Баланс «набегает» — ощущение, что карта оживает.
     var balEl = node.querySelector(".vl-bal"), small = balEl.querySelector("small").outerHTML;
     if (calm()) balEl.innerHTML = RU(bal) + small;
@@ -474,10 +506,12 @@
   /* Прогресс по лестнице статусов — отдельной панелью под картой (на самой карте
      держим пропорции пластика, поэтому всё лишнее живёт ниже). Шкала идёт по ВСЕЙ
      лестнице (0 → верхний статус) с засечками на порогах: видно весь путь. */
-  function vProgress(card) {
+  // Разметка шкалы — одна на оба места (внутри карты на десктопе / панелью под
+  // картой на мобиле); отличается только оформление, оно задано CSS по родителю.
+  function progInner(card) {
     var tiers = card.tiers || [];
     var top = tiers.length ? (tiers[tiers.length - 1].min || 0) : 0;
-    if (!top) return null;
+    if (!top) return "";
     var spend = Number(card.spend) || 0;
     var rate = Math.round((Number(card.rate) || 0) * 100);
     var pct = Math.max(1.5, Math.min(100, spend / top * 100));
@@ -488,12 +522,19 @@
       ? "До статуса <b>" + esc(card.nextTier) + "</b> — ещё " + RU(card.toNextSpend) + " ₽"
         + (card.nextRate ? ", кэшбэк станет " + Math.round(card.nextRate * 100) + "%" : "")
       : "Максимальный статус — ваш кэшбэк <b>" + rate + "%</b> ✦";
-    var s = el('<section><div class="vl-progress">'
-      + '<div class="vl-scale"><span>Потрачено <b>' + RU(spend) + ' ₽</b></span><span>' + RU(top) + " ₽</span></div>"
+    return '<div class="vl-scale"><span>Потрачено <b>' + RU(spend) + ' ₽</b></span><span>' + RU(top) + " ₽</span></div>"
       + '<div class="vl-bar"><i data-w="' + pct.toFixed(2) + '"></i>' + ticks + "</div>"
-      + '<div class="vl-note">' + note + "</div></div></section>");
-    var bar = s.querySelector(".vl-bar i");
-    requestAnimationFrame(function () { bar.style.width = bar.getAttribute("data-w") + "%"; });
+      + '<div class="vl-note">' + note + "</div>";
+  }
+  function animBar(root) {
+    var bar = root.querySelector(".vl-bar i");
+    if (bar) requestAnimationFrame(function () { bar.style.width = bar.getAttribute("data-w") + "%"; });
+  }
+  function vProgress(card) {
+    var inner = progInner(card);
+    if (!inner) return null;
+    var s = el('<section><div class="vl-progress">' + inner + "</div></section>");
+    animBar(s);
     return s;
   }
 
@@ -520,31 +561,54 @@
   function vRef(ref, refBase) {
     if (!ref || !ref.code) return null;
     var link = refBase + encodeURIComponent(ref.code);
-    var txt = "Оформляю визы и поездки через VOYO. По моей ссылке тебе " + RU(ref.rewardFriend || 2000) + " бонусов на первую услугу: ";
-    var wa = "https://wa.me/?text=" + encodeURIComponent(txt + link);
-    var tg = "https://t.me/share/url?url=" + encodeURIComponent(link) + "&text=" + encodeURIComponent(txt);
+    var txt = "Оформляю визы и поездки через VOYO. По моей ссылке тебе " + RU(ref.rewardFriend || 2000) + " бонусов на первую услугу:";
+    var msg = txt + "\n" + link;   // сначала текст, ссылка последней строкой
+    var wa = "https://wa.me/?text=" + encodeURIComponent(msg);
+    // Telegram при url+text всегда ставит ССЫЛКУ ПЕРВОЙ. Поэтому отдаём одним
+    // параметром url всё сообщение целиком — тогда порядок остаётся наш,
+    // а ссылку Telegram всё равно распознаёт и делает кликабельной.
+    var tg = "https://t.me/share/url?url=" + encodeURIComponent(msg);
     var pair = (ref.rewardInviter || 2000) + (ref.rewardFriend || 2000);
     var s = el('<section><div class="vl-panel vl-invite">'
       + '<div class="vl-gain"><span class="vl-gain-sum">' + RU(pair) + " ₽</span>"
-      + '<span class="vl-gain-txt">за одного друга</span></div>'
-      + '<div class="ph">Делитесь промокодом — зарабатывайте вместе</div>'
-      + '<div class="pd">Друг оформляет первую услугу по вашему коду: <b>' + RU(ref.rewardFriend || 2000)
-      + " ₽</b> баллами ему и <b>" + RU(ref.rewardInviter || 2000) + " ₽</b> баллами вам. Друзей можно приглашать сколько угодно.</div>"
-      + '<div class="vl-code"><div><div class="lb">Ваш промокод</div><div class="cd">' + esc(ref.code) + "</div></div>"
-      + '<button class="vl-btn sec" data-act="copy">Скопировать</button></div>'
+      + '<span class="vl-gain-txt">за каждого друга</span></div>'
+      + '<div class="pd vl-invite-txt">Приглашайте друзей и получайте <b>' + RU(pair) + " ₽</b> баллами на двоих: <b>"
+      + RU(ref.rewardInviter || 2000) + " ₽</b> — вам и <b>" + RU(ref.rewardFriend || 2000)
+      + " ₽</b> — другу! Вознаграждение поступит на ваш счёт сразу после оплаты."
+      + "<br>Приглашайте неограниченное количество друзей.</div>"
+      + '<button type="button" class="vl-code" data-act="copy" title="Нажмите, чтобы скопировать промокод">'
+      + '<span class="lb">Ваш промокод</span><span class="cd">' + esc(ref.code) + "</span></button>"
       + '<div class="vl-share">'
       + '<a class="vl-btn" href="' + esc(wa) + '" target="_blank" rel="noopener">WhatsApp</a>'
       + '<a class="vl-btn sec" href="' + esc(tg) + '" target="_blank" rel="noopener">Telegram</a></div>'
       + (ref.invitedCount ? '<div class="vl-rstat">Приглашено <b>' + RU(ref.invitedCount) + "</b> · оформились <b>"
           + RU(ref.qualifiedCount || 0) + "</b> · получено <b>" + RU(ref.earnedPoints || 0) + "</b> баллов</div>" : "")
       + "</div></section>");
-    s.querySelector(".ph").appendChild(vInfo(txtRef(ref)));
-    s.querySelector('[data-act="copy"]').addEventListener("click", function () {
+    s.querySelector(".vl-gain").appendChild(vInfo(txtRef(ref)));   // «i» — у суммы выгоды
+    // Клик по всей области промокода копирует САМ КОД (им делятся голосом и в чатах),
+    // а плашка на секунду подтверждает действие — как зелёные блоки в калькуляторе.
+    var codeBox = s.querySelector('[data-act="copy"]');
+    codeBox.addEventListener("click", function () {
+      function flash() {
+        codeBox.classList.add("done");
+        var lb = codeBox.querySelector(".lb"), was = lb.textContent;
+        lb.textContent = "✓ Промокод скопирован";
+        setTimeout(function () { codeBox.classList.remove("done"); lb.textContent = was; }, 1400);
+      }
+      // Clipboard API может отказать (нет жеста/прав) — тогда молча уходим на
+      // execCommand, но подтверждение показываем в любом случае.
+      function legacy() {
+        try {
+          var i = d.createElement("textarea"); i.value = ref.code;
+          i.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+          d.body.appendChild(i); i.select(); d.execCommand("copy"); i.remove();
+        } catch (_) {}
+        flash();
+      }
       try {
-        if (navigator.clipboard) navigator.clipboard.writeText(link);
-        else { var i = d.createElement("input"); i.value = link; d.body.appendChild(i); i.select(); d.execCommand("copy"); i.remove(); }
-        toast("Ссылка скопирована");
-      } catch (e) { toast(link); }
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ref.code).then(flash, legacy);
+        else legacy();
+      } catch (e) { legacy(); }
     });
     return s;
   }
@@ -603,14 +667,23 @@
     injectCss();
     opts = opts || {};
     var api = opts.api || "/beta/api/loyalty";
-    var refBase = opts.refBase || (w.location.origin + "/app?ref=");
+    // По умолчанию ведём друга на ГЛАВНУЮ (вход/регистрация в ЛК) — там промокод
+    // подхватится автоматически. /app?ref= остаётся для пилотного суперприложения.
+    var refBase = opts.refBase || (w.location.origin + "/?ref=");
     // session: true — телефон берётся сервером из подписанной cookie-сессии.
     // Тогда ?phone= не добавляем и в теле POST его не шлём (режим клиентского ЛК).
     var session = !!opts.session;
     var askPhone = !session && opts.askPhone !== false;
     var root = el('<div class="vl-root"></div>');
     var phone = session ? "-" : (opts.phone || (askPhone ? lsGet() : ""));
+    var last = null, lastWide = null, rsT = 0;
     target.innerHTML = ""; target.appendChild(root);
+    // Перерисовываем только когда экран реально перешёл границу мобильный/десктоп.
+    w.addEventListener("resize", function () {
+      if (!last) return;
+      clearTimeout(rsT);
+      rsT = setTimeout(function () { if (last && isWide() !== lastWide) render(last.card, last.ref); }, 180);
+    });
 
     // Единая точка исходящих POST: в сессионном режиме телефон не передаём —
     // сервер берёт его из cookie voyo_sess (клиентский ЛК, Фаза 2 авторизации).
@@ -624,8 +697,12 @@
 
     function render(card, ref) {
       popCloseAll(); root.innerHTML = "";
-      root.appendChild(vCard(card));
-      var pg = vProgress(card); if (pg) root.appendChild(pg);
+      last = { card: card, ref: ref };
+      // Широкий экран — вся информация на карте (высоты хватает). Узкий — карта
+      // остаётся «пластиком», а прогресс уходит панелью под неё.
+      var wide = isWide(); lastWide = wide;
+      root.appendChild(vCard(card, wide));
+      if (!wide) { var pg = vProgress(card); if (pg) root.appendChild(pg); }
       var pend = vPending(card, post, function () { load(phone); });
       if (pend) root.appendChild(pend);
       if (!opts.compact) {

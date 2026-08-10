@@ -1906,7 +1906,24 @@ app.get("/admin/api/loyalty/beta", requireVscAccess, (req, res) => {
   }).sort((x, y) => y.ts - x.ts).slice(0, 200);
   const redeems = Object.values(brefRedeems()).sort((a, c) => c.ts - a.ts).slice(0, 100)
     .map((r) => Object.assign({}, r, { balance: bloyBalanceOf(r.pk), name: (bloyAccountByPhone(r.pk) || {}).name || "" }));
+  // Мини-дашборд: сколько клиентов на каждой ступени + их номера (чтобы найти в amoCRM).
+  // Считаем только участников программы — тех, у кого есть успешные сделки с 11.08.
+  const tierStats = BLOY_TIERS.map((t) => ({ key: t.key, name: t.name, min: t.min, rate: t.rate, count: 0, clients: [] }));
+  if (d && d.accounts) {
+    Object.values(d.accounts).forEach((a) => {
+      const pk = bloyPk((a.phones || [])[0] || "");
+      const ledSum = brefLedger(pk).reduce((s, e) => s + (Number(e.points) || 0), 0);
+      const { tier } = bloyTierFor(a.spend || 0);
+      const row = tierStats.find((x) => x.key === tier.key); if (!row) return;
+      row.count++;
+      row.clients.push({ phone: pk, name: a.name || "", spend: a.spend || 0, balance: Math.max(0, (a.earned || 0) + ledSum) });
+    });
+    tierStats.forEach((t) => t.clients.sort((x, y) => y.spend - x.spend));
+  }
+  const refStats = { invited: binds.length, qualified: 0, pending: 0, reversed: 0 };
+  binds.forEach((b2) => { if (b2.status === "qualified") refStats.qualified++; else if (b2.status === "reversed") refStats.reversed++; else refStats.pending++; });
   return res.json({
+    tierStats, refStats,
     success: true,
     config: { start: BLOY_START_DAY, tiers: BLOY_TIERS, redeemShare: BLOY_REDEEM_SHARE, redeemMin: BLOY_REDEEM_MIN, refInviter: BLOY_REF_INVITER, refFriend: BLOY_REF_FRIEND },
     data: d ? { ts: d.ts, accountsCount: d.accountsCount, totalEarned: d.totalEarned, scanned: d.scanned, qualified: d.qualified, paidScanned: d.paidScanned } : null,
