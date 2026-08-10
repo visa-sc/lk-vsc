@@ -469,7 +469,7 @@
   }
 
   /* Списание: заявка клиента → подтверждение менеджера → баллы уходят из баланса. */
-  function vSpend(card, phone, api, onChanged) {
+  function vSpend(card, post, onChanged) {
     var bal = Number(card.balance) || 0, min = Number(card.redeemMin) || 500;
     var s = d.createElement("section");
 
@@ -480,9 +480,7 @@
         + " при оформлении ближайшей услуги — менеджер свяжется с вами."
         + ' <button class="vl-lnk" type="button" data-act="cancel">Отменить</button></div></div>');
       p.querySelector('[data-act="cancel"]').addEventListener("click", function () {
-        fetch(api + "/redeem/cancel", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: phone, id: rq.id }) })
-          .then(function (r) { return r.json(); })
+        post("/redeem/cancel", { id: rq.id })
           .then(function (j) { if (j && j.ok) { toast("Заявка отменена"); onChanged(); } else toast("Заявку уже обработали"); })
           .catch(function () { toast("Не удалось отменить"); });
       });
@@ -510,9 +508,7 @@
       if (n < min) { err.textContent = "Минимум к списанию — " + RU(min) + " баллов."; err.style.display = "block"; return; }
       if (n > bal) { err.textContent = "У вас всего " + RU(bal) + " баллов."; err.style.display = "block"; return; }
       btn.disabled = true; btn.textContent = "Отправляем…";
-      fetch(api + "/redeem", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: phone, points: n }) })
-        .then(function (r) { return r.json(); })
+      post("/redeem", { points: n })
         .then(function (j) {
           if (j && j.ok) { toast("Заявка отправлена — менеджер свяжется"); onChanged(); return; }
           btn.disabled = false; btn.textContent = "Списать";
@@ -597,16 +593,29 @@
     opts = opts || {};
     var api = opts.api || "/beta/api/loyalty";
     var refBase = opts.refBase || (w.location.origin + "/app?ref=");
-    var askPhone = opts.askPhone !== false;
+    // session: true — телефон берётся сервером из подписанной cookie-сессии.
+    // Тогда ?phone= не добавляем и в теле POST его не шлём (режим клиентского ЛК).
+    var session = !!opts.session;
+    var askPhone = !session && opts.askPhone !== false;
     var root = el('<div class="vl-root"></div>');
-    var phone = opts.phone || (askPhone ? lsGet() : "");
+    var phone = session ? "-" : (opts.phone || (askPhone ? lsGet() : ""));
     target.innerHTML = ""; target.appendChild(root);
+
+    // Единая точка исходящих POST: в сессионном режиме телефон не передаём —
+    // сервер берёт его из cookie voyo_sess (клиентский ЛК, Фаза 2 авторизации).
+    function post(path, body) {
+      if (!session) body = Object.assign({ phone: phone }, body);
+      return fetch(api + path, {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+      }).then(function (r) { return r.json(); });
+    }
 
     function render(card, ref) {
       popCloseAll(); root.innerHTML = "";
       root.appendChild(vCard(card));
       root.appendChild(vFacts(card));
-      root.appendChild(vSpend(card, phone, api, function () { load(phone); }));
+      root.appendChild(vSpend(card, post, function () { load(phone); }));
       if (!opts.compact) {
         var r = vRef(ref, refBase); if (r) root.appendChild(r);
         root.appendChild(vHist(card));
@@ -639,7 +648,7 @@
         return Promise.resolve(null);
       }
       root.innerHTML = '<div class="vl-skel"></div>';
-      return fetch(api + "?phone=" + encodeURIComponent(phone))
+      return fetch(session ? api : (api + "?phone=" + encodeURIComponent(phone)), { credentials: "same-origin" })
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (!j || !j.success || !j.card) throw new Error("bad");

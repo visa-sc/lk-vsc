@@ -4072,15 +4072,18 @@
       // Cookie voyo_sess браузер шлёт сам. Нет валидной сессии → на вход (войти один раз).
       const phoneFromUrl = (new URLSearchParams(window.location.search).get("phone") || "").trim();
       let phone = "";
+      let loyaltyOn = false;   // БОНУСЫ: рубильник приходит из /api/me (LK_LOYALTY в .env)
       try {
         const r = await fetch("/api/me", { credentials: "same-origin" });
-        if (r.ok) { const d = await r.json(); if (d && d.success && d.phone) phone = String(d.phone); }
+        if (r.ok) { const d = await r.json(); if (d && d.success && d.phone) { phone = String(d.phone); loyaltyOn = !!d.loyalty; } }
       } catch (_) {}
       if (!phone) {
         window.location.href = "/" + (phoneFromUrl ? "?phone=" + encodeURIComponent(phoneFromUrl) : "");
         return;
       }
       phoneInput.value = phone;
+      // БОНУСЫ: кнопка-человечек снизу справа. Виджет грузится лениво, по клику.
+      if (loyaltyOn && window.__lkLoyaltyInit) { try { window.__lkLoyaltyInit(); } catch (_) {} }
       loadLeads();
     })();
 
@@ -4104,5 +4107,130 @@
       } catch (_) {}
     });
   </script>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       БОНУСЫ (лояльность) — САМОСТОЯТЕЛЬНЫЙ БЛОК, добавлен 10.08.2026.
+       Ничего в ЛК не переопределяет: свои классы .lkl-*, свой z-index, свой
+       скрипт. Виджет /loyalty-card.js грузится ЛЕНИВО — только когда клиент
+       сам открыл раздел, поэтому на скорость загрузки ЛК не влияет.
+       Данные — /cabinet/api/loyalty (телефон из сессии voyo_sess).
+
+       ЧТОБЫ ОТКАТИТЬ: либо LK_LOYALTY=0 в .env + pm2 restart (кнопка исчезнет
+       сама, код трогать не нужно), либо удалить этот блок целиком и снять две
+       строки инициализации в bootstrap (помечены «БОНУСЫ»).
+       ════════════════════════════════════════════════════════════════════ -->
+  <style id="lkl-style">
+    .lkl-fab {
+      position: fixed; right: 18px; bottom: 18px; z-index: 900;
+      width: 56px; height: 56px; border-radius: 50%; border: 1px solid rgba(23,32,60,.08);
+      background: #fff; color: #3589BD; cursor: pointer; display: none;
+      align-items: center; justify-content: center; padding: 0;
+      box-shadow: 0 2px 6px rgba(16,24,40,.06), 0 18px 34px -16px rgba(16,32,64,.38);
+      transition: transform .18s ease, box-shadow .18s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .lkl-fab.show { display: flex; }
+    .lkl-fab:hover { transform: translateY(-2px); box-shadow: 0 2px 8px rgba(16,24,40,.08), 0 24px 42px -18px rgba(16,32,64,.45); }
+    .lkl-fab:active { transform: translateY(0) scale(.96); }
+    .lkl-fab svg { width: 26px; height: 26px; display: block; }
+    .lkl-fab .lkl-dot {
+      position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; border-radius: 50%;
+      background: linear-gradient(140deg,#4aa3d8,#3589BD); box-shadow: 0 0 0 2px #fff;
+    }
+    .lkl-scrim {
+      position: fixed; inset: 0; z-index: 1190; background: rgba(20,24,40,.45);
+      opacity: 0; pointer-events: none; transition: opacity .28s ease;
+      -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+    }
+    .lkl-scrim.open { opacity: 1; pointer-events: auto; }
+    .lkl-sheet {
+      position: fixed; z-index: 1200; left: 0; right: 0; bottom: 0;
+      max-height: 92vh; display: flex; flex-direction: column;
+      background: #f4f7fb; border-radius: 22px 22px 0 0;
+      box-shadow: 0 -8px 40px rgba(16,24,40,.28);
+      transform: translateY(102%); transition: transform .38s cubic-bezier(.22,.9,.3,1);
+    }
+    .lkl-sheet.open { transform: none; }
+    @media (min-width: 760px) {
+      .lkl-sheet { left: 50%; right: auto; width: 520px; margin-left: -260px; border-radius: 22px 22px 0 0; }
+    }
+    .lkl-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 16px 20px 12px; flex: none;
+    }
+    .lkl-head h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.02em; color: #141926; }
+    .lkl-x {
+      width: 32px; height: 32px; border-radius: 50%; border: 0; cursor: pointer; flex: none;
+      background: rgba(23,32,60,.06); color: #6a7385; font-size: 15px; line-height: 1;
+    }
+    .lkl-x:hover { background: rgba(23,32,60,.10); }
+    .lkl-grip { width: 38px; height: 4px; border-radius: 99px; background: rgba(23,32,60,.14); margin: 8px auto 0; }
+    .lkl-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px 18px 26px; }
+    .lkl-load { text-align: center; color: #7b8494; font-size: 13.5px; padding: 40px 0; }
+  </style>
+
+  <button type="button" id="lklFab" class="lkl-fab" aria-label="Бонусная программа">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.9-3.7 3.9-5.6 7.5-5.6s6.6 1.9 7.5 5.6"/>
+    </svg>
+    <span class="lkl-dot" aria-hidden="true"></span>
+  </button>
+  <div id="lklScrim" class="lkl-scrim"></div>
+  <div id="lklSheet" class="lkl-sheet" role="dialog" aria-modal="true" aria-labelledby="lklTitle">
+    <div class="lkl-grip" aria-hidden="true"></div>
+    <div class="lkl-head">
+      <h2 id="lklTitle">Бонусная программа</h2>
+      <button type="button" class="lkl-x" id="lklClose" aria-label="Закрыть">✕</button>
+    </div>
+    <div class="lkl-body" id="lklBody"><div class="lkl-load">Загружаем бонусную карту…</div></div>
+  </div>
+
+  <script>
+    // Инициализируется из bootstrap только при валидной сессии и loyalty:true.
+    window.__lkLoyaltyInit = function () {
+      var fab = document.getElementById("lklFab");
+      var scrim = document.getElementById("lklScrim");
+      var sheet = document.getElementById("lklSheet");
+      var body = document.getElementById("lklBody");
+      if (!fab || fab.dataset.on) return;
+      fab.dataset.on = "1";
+      fab.classList.add("show");
+      var mounted = false, loading = false;
+
+      function mountWidget() {
+        if (mounted || loading) return;
+        if (window.VoyoLoyalty) { doMount(); return; }
+        loading = true;
+        var s = document.createElement("script");
+        s.src = "/loyalty-card.js";
+        s.onload = function () { loading = false; doMount(); };
+        s.onerror = function () {
+          loading = false;
+          body.innerHTML = '<div class="lkl-load">Не удалось загрузить бонусную карту. Обновите страницу.</div>';
+        };
+        document.body.appendChild(s);
+      }
+      function doMount() {
+        if (mounted) return;
+        mounted = true;
+        // session:true — телефон сервер берёт из cookie-сессии, в запросах его нет.
+        window.VoyoLoyalty.mount(body, { session: true, api: "/cabinet/api/loyalty" });
+      }
+      function open() {
+        scrim.classList.add("open"); sheet.classList.add("open");
+        document.body.style.overflow = "hidden";
+        mountWidget();
+      }
+      function close() {
+        scrim.classList.remove("open"); sheet.classList.remove("open");
+        document.body.style.overflow = "";
+      }
+      fab.addEventListener("click", open);
+      scrim.addEventListener("click", close);
+      document.getElementById("lklClose").addEventListener("click", close);
+      document.addEventListener("keydown", function (e) { if (e.key === "Escape" && sheet.classList.contains("open")) close(); });
+    };
+  </script>
+  <!-- ══════════════════ /БОНУСЫ ══════════════════ -->
 </body>
 </html>
