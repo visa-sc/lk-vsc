@@ -920,7 +920,10 @@ function mount(app, deps) {
       }
       return { usd, exact: true };
     }
-    const rate = PRICES[model()] || PRICES["claude-sonnet-5"];
+    // Заказы без журнала — это всё, что переведено до 08.08.2026, а тогда
+    // сервис работал на Opus 5. Считаем их по его тарифу, иначе расход
+    // занижается почти вдвое.
+    const rate = PRICES["claude-opus-5"];
     for (const v of Object.values(o.usage || {})) {
       if (!v) continue;
       usd += ((v.input_tokens || 0) + (v.cache_read_input_tokens || 0) * 0.1 + (v.cache_creation_input_tokens || 0) * 1.25) * rate[0] / 1e6
