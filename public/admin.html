@@ -692,6 +692,9 @@
     .loy-pending { background: #fff3cd; color: #7a5b12; }
     .loy-qualified { background: #e2f4e8; color: #2c7a43; }
     .loy-reversed { background: #fbe3e6; color: #b0263a; }
+    .loy-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+    @media (max-width: 900px) { .loy-cols { grid-template-columns: 1fr; } }
+    .loy-cols .loy-box { margin-bottom: 0; }
     .loy-dash { display: flex; gap: 8px; flex-wrap: wrap; }
     .loy-dcard { flex: 1 1 130px; text-align: left; background: #f6f8fc; border: 1px solid #e7ebf2; border-radius: 12px;
       padding: 10px 12px; cursor: pointer; font-family: inherit; transition: background .16s, border-color .16s, transform .16s; }
@@ -5946,6 +5949,33 @@
         let h = "";
         h += '<div class="ref-intro">Бонусная программа: кэшбэк баллами за успешно завершённые сделки и приглашения друзей. '
           + "Старт — " + escapeHtml((cfg.start || "").split("-").reverse().join(".")) + ". Полная логика — во вкладке «Лояльность» в «Логике и справочниках».</div>";
+        // ── Рабочие формы: начисление по промокоду и прямое списание — вверху ──
+        h += '<div class="loy-cols">';
+        h += '<div class="loy-box"><div class="loy-h">Начислить по промокоду</div>'
+          + '<div class="loy-note">Клиент пришёл по промокоду друга. Если он уже оплатил — начислим сразу обоим по '
+          + RU_(cfg.refFriend || 2000) + " баллов, если ещё нет — начислим автоматически после оплаты.</div>"
+          + '<div class="loy-form">'
+          + '<input type="text" id="loyPromoCode" placeholder="Промокод, напр. U8X9BY" maxlength="12" />'
+          + '<input type="tel" id="loyPromoPhone" placeholder="Телефон клиента" />'
+          + '<button type="button" id="loyPromoBtn" class="qc-send">Начислить</button>'
+          + '</div><div id="loyPromoRes" class="loy-res"></div></div>';
+
+        h += '<div class="loy-box"><div class="loy-h">Списать баллы</div>'
+          + '<div class="loy-note">Клиент платит баллами за услугу. Списываем не больше '
+          + Math.round((cfg.redeemShare || .3) * 100) + "% стоимости, минимум " + RU_(cfg.redeemMin || 500)
+          + " баллов. Операция сразу появится в истории клиента.</div>"
+          + '<div class="loy-form">'
+          + '<input type="tel" id="loyDebPhone" placeholder="Телефон клиента" />'
+          + '<input type="number" id="loyDebPoints" placeholder="Сколько баллов" min="1" />'
+          + '</div>'
+          + '<div class="loy-form" style="margin-top:8px">'
+          + '<input type="text" id="loyDebComment" placeholder="За что (например: виза Испания)" maxlength="120" />'
+          + '<button type="button" id="loyDebBtn" class="qc-send">Списать</button>'
+          + '</div>'
+          + '<div id="loyDebInfo" class="loy-note" style="margin:8px 0 0"></div>'
+          + '<div id="loyDebRes" class="loy-res"></div></div>';
+        h += "</div>";
+
         h += '<div class="chips-row">'
           + '<div class="chip-stat"><span>Счетов с баллами</span><b>' + RU_(st ? st.accountsCount : 0) + "</b></div>"
           + '<div class="chip-stat"><span>Начислено баллов</span><b>' + RU_(st ? st.totalEarned : 0) + "</b></div>"
@@ -5971,16 +6001,6 @@
           + '<div class="loy-dash">'
           + ts_.map((t) => loyDashCard(t.name + " · " + Math.round((t.rate || 0) * 100) + "%", t.count, "tier-" + t.key)).join("")
           + "</div><div class=\"loy-drill\" id=\"loyTierDrill\"></div></div>";
-
-        // Форма: промокод + телефон приглашённого
-        h += '<div class="loy-box"><div class="loy-h">Начислить по промокоду</div>'
-          + '<div class="loy-note">Клиент пришёл по промокоду друга. Введите промокод и телефон клиента: '
-          + "если он уже оплатил — начислим сразу обоим по " + RU_(cfg.refFriend || 2000) + " баллов, если ещё нет — начислим автоматически после оплаты.</div>"
-          + '<div class="loy-form">'
-          + '<input type="text" id="loyPromoCode" placeholder="Промокод, напр. U8X9BY" maxlength="12" />'
-          + '<input type="tel" id="loyPromoPhone" placeholder="Телефон клиента" />'
-          + '<button type="button" id="loyPromoBtn" class="qc-send">Начислить</button>'
-          + '</div><div id="loyPromoRes" class="loy-res"></div></div>';
 
         // Заявки на списание
         const reds = (d.redeems || []).filter((r) => r.status === "new");
@@ -6060,6 +6080,45 @@
           } catch (e) { res.classList.add("err"); res.textContent = e.message || "Ошибка"; }
           pb.disabled = false; pb.textContent = "Начислить";
         });
+        // ── Прямое списание баллов ──
+        const dPhone = document.getElementById("loyDebPhone");
+        const dPoints = document.getElementById("loyDebPoints");
+        const dInfo = document.getElementById("loyDebInfo");
+        const dBtn = document.getElementById("loyDebBtn");
+        let dClient = null;
+        async function loadDebClient() {
+          const p = (dPhone.value || "").trim();
+          dClient = null; dInfo.textContent = "";
+          if (!p) return;
+          try {
+            const c = await apiFetch("/admin/api/loyalty/beta/client?phone=" + encodeURIComponent(p));
+            dClient = c;
+            dInfo.innerHTML = (c.name ? "<b>" + escapeHtml(c.name) + "</b> · " : "") + "статус " + escapeHtml(c.tierName)
+              + " · оплачено " + RU_(c.spend) + " ₽ · <b>баланс " + RU_(c.balance) + " баллов</b>";
+          } catch (e) { dInfo.textContent = "Не удалось получить данные клиента."; }
+        }
+        if (dPhone) dPhone.addEventListener("blur", loadDebClient);
+        if (dBtn) dBtn.addEventListener("click", async () => {
+          const res = document.getElementById("loyDebRes");
+          res.className = "loy-res"; res.textContent = "";
+          const phone = (dPhone.value || "").trim();
+          const points = Math.floor(Number(dPoints.value) || 0);
+          const comment = (document.getElementById("loyDebComment").value || "").trim();
+          if (!phone || !points) { res.classList.add("err"); res.textContent = "Нужны телефон и количество баллов."; return; }
+          if (dClient && points > dClient.balance) { res.classList.add("err"); res.textContent = "У клиента только " + RU_(dClient.balance) + " баллов."; return; }
+          if (!confirm("Списать " + RU_(points) + " баллов у " + phone + "?")) return;
+          dBtn.disabled = true; dBtn.textContent = "Списываем…";
+          try {
+            const r = await apiSend("/admin/api/loyalty/beta/debit", { phone, points, comment });
+            res.classList.add(r.success ? "ok" : "err");
+            res.textContent = r.success
+              ? "Списано " + RU_(r.points) + " баллов. Остаток: " + RU_(r.balance) + "."
+              : (r.message || "Не удалось списать.");
+            if (r.success) { dPoints.value = ""; document.getElementById("loyDebComment").value = ""; loadDebClient(); }
+          } catch (e) { res.classList.add("err"); res.textContent = e.message || "Ошибка"; }
+          dBtn.disabled = false; dBtn.textContent = "Списать";
+        });
+
         loyaltyContent.querySelectorAll(".loy-ok").forEach((b) => b.addEventListener("click", async () => {
           b.disabled = true;
           try { await apiSend("/admin/api/loyalty/beta/redeem", { id: b.dataset.id, action: "approve" }); loadLoyaltyAdmin(); }

@@ -1950,6 +1950,37 @@ app.post("/admin/api/loyalty/beta/promo", requireVscAccess, (req, res) => {
   }
   return res.json({ success: true, credited: false, message: "Промокод зафиксирован. Баллы начислим обоим, как только клиент оплатит." });
 });
+// Карточка клиента для форм админки: баланс и статус по телефону (без amoCRM —
+// из локального снимка, поэтому мгновенно и без нагрузки на CRM).
+app.get("/admin/api/loyalty/beta/client", requireVscAccess, (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const pk = bloyPk(req.query.phone || "");
+  if (!pk) return res.status(400).json({ success: false, message: "Нужен телефон" });
+  const acc = bloyAccountByPhone(pk);
+  const spend = acc ? acc.spend : 0;
+  const { tier } = bloyTierFor(spend);
+  return res.json({ success: true, phone: pk, name: (acc && acc.name) || "", balance: bloyBalanceOf(pk),
+    spend, tierName: tier.name, rate: tier.rate, redeemMin: BLOY_REDEEM_MIN, redeemShare: BLOY_REDEEM_SHARE });
+});
+// Прямое списание баллов менеджером (клиент назвал баллы при оформлении услуги).
+// Пишем в тот же журнал, что и подтверждённые заявки, — клиент видит операцию
+// в своей истории. В amoCRM ничего не уходит: сумму к оплате менеджер меняет сам.
+app.post("/admin/api/loyalty/beta/debit", requireVscAccess, (req, res) => {
+  const pk = bloyPk(req.body && req.body.phone);
+  const points = Math.floor(Number((req.body && req.body.points) || 0));
+  const comment = String((req.body && req.body.comment) || "").slice(0, 200);
+  if (!pk) return res.status(400).json({ success: false, message: "Нужен телефон" });
+  if (!(points > 0)) return res.status(400).json({ success: false, message: "Укажите количество баллов" });
+  const balance = bloyBalanceOf(pk);
+  if (points > balance) return res.json({ success: false, message: "У клиента только " + balance + " баллов" });
+  const who = String((req.staff && (req.staff.email || req.staff.name)) || "менеджер");
+  const b = brefLoad();
+  (b.ledger[pk] = b.ledger[pk] || []).push({ ts: Date.now(), type: "redeem", points: -points,
+    note: "Оплата баллами" + (comment ? " · " + comment : ""), by: who });
+  brefSave();
+  console.log(`BETA-LOYALTY debit (админка, ${who}): ${bloyMask(pk)} — ${points} б., остаток ${balance - points}`);
+  return res.json({ success: true, points, balance: balance - points });
+});
 // Решение по заявке на списание из админки (то же, что кнопкой в /loyalty).
 app.post("/admin/api/loyalty/beta/redeem", requireVscAccess, (req, res) => {
   const id = String((req.body && req.body.id) || "");

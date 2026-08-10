@@ -195,12 +195,13 @@
   + 'background:radial-gradient(circle,rgba(53,137,189,.12),rgba(53,137,189,0) 70%);pointer-events:none;}'
   /* Сумма выгоды — главный акцент блока: крупнее промокода и по центру,
      подпись с «i» идёт хвостом справа от неё. */
-  + '.vl-gain{display:flex;align-items:baseline;justify-content:center;gap:10px;'
-  + 'flex-wrap:wrap;margin-bottom:10px;position:relative;text-align:center;}'
-  + '.vl-gain-sum{font-size:42px;font-weight:800;letter-spacing:-.035em;line-height:1;'
+  + '.vl-gain{display:block;margin-bottom:12px;position:relative;text-align:center;}'
+  + '.vl-gain-sum{display:block;font-size:42px;font-weight:800;letter-spacing:-.035em;line-height:1.05;'
   + 'background:linear-gradient(135deg,#4aa3d8,#2b6d97);-webkit-background-clip:text;background-clip:text;'
   + '-webkit-text-fill-color:transparent;}'
-  + '.vl-gain-txt{font-size:12.5px;color:var(--vl-mut);font-weight:500;}'
+  + '.vl-gain-txt{display:inline-flex;align-items:center;font-size:12.5px;color:var(--vl-mut);'
+  + 'font-weight:500;margin-top:4px;}'
+  + '.vl-gain .vl-i{margin-left:6px;}'
   + '@media(max-width:360px){.vl-gain-sum{font-size:36px;}}'
   + '.vl-invite .ph{font-size:14.5px;position:relative;}'
   + '.vl-invite-txt{position:relative;font-size:13px;line-height:1.55;}'
@@ -225,6 +226,11 @@
   + '.vl-share{display:flex;gap:9px;margin-top:10px;flex-wrap:wrap;}'
   /* Подписи длинные — разрешаем перенос, чтобы на узком экране не вылезали за край */
   + '.vl-share .vl-btn{flex:1 1 44%;white-space:normal;font-size:13px;padding:11px 12px;line-height:1.3;}'
+  /* Вторая кнопка на голубой подложке блока сливалась — делаем её белой с
+     чёткой границей: контраст есть, а иерархия (WhatsApp главный) сохраняется. */
+  + '.vl-share .vl-btn.sec{background:#fff;color:var(--vl-accent-d);'
+  + 'box-shadow:0 0 0 1px rgba(23,32,60,.10),0 6px 14px -10px rgba(16,32,64,.45);}'
+  + '.vl-share .vl-btn.sec:hover{background:#fff;box-shadow:0 0 0 1px rgba(53,137,189,.35),0 10px 20px -12px rgba(16,32,64,.5);}'
   + '.vl-rstat{font-size:12px;color:var(--vl-mut);margin-top:12px;text-align:center;}'
   + '.vl-rstat b{color:var(--vl-ink);font-weight:600;}'
 
@@ -485,7 +491,7 @@
       '<div class="vl-card" style="--c1:' + sk.c1 + ';--c2:' + sk.c2 + ';--c3:' + sk.c3 + ';--cglow:' + sk.glow + '">'
       + '<div class="vl-fx"><div class="vl-tex"></div><div class="vl-holo"></div><div class="vl-glare"></div>'
       + (calm() ? "" : '<div class="vl-sheen"></div>') + "</div>"
-      + '<div class="vl-c-top"><div class="vl-brand">VOYO · БОНУСЫ</div>'
+      + '<div class="vl-c-top"><div class="vl-brand">VOYO x VSC</div>'
       + '<div class="vl-tier">' + esc(card.tierName || "Базовый") + (rate ? " · " + rate + "%" : "") + "</div></div>"
       + '<div class="vl-mid"><div class="vl-bal">0<small>' + plural(bal, ["балл", "балла", "баллов"]) + "</small></div></div>"
       + '<div class="vl-foot"><div class="vl-name">' + esc(card.name || "Ваша карта") + "</div></div>"
@@ -577,8 +583,8 @@
     var s = el('<section><div class="vl-panel vl-invite">'
       + '<div class="vl-gain"><span class="vl-gain-sum">' + RU(pair) + " ₽</span>"
       + '<span class="vl-gain-txt">за каждого друга</span></div>'
-      + '<div class="pd vl-invite-txt">Приглашайте друзей и получайте <b>' + RU(pair) + " ₽</b> баллами на двоих: <b>"
-      + RU(ref.rewardInviter || 2000) + " ₽</b> — вам и <b>" + RU(ref.rewardFriend || 2000)
+      + '<div class="pd vl-invite-txt">Приглашайте друзей и получайте <b>' + RU(pair) + " ₽</b> баллами на двоих."
+      + "<br><b>" + RU(ref.rewardInviter || 2000) + " ₽</b> — вам и <b>" + RU(ref.rewardFriend || 2000)
       + " ₽</b> — другу!<br>Вознаграждение поступит на ваш счёт сразу после оплаты."
       + "<br>Приглашайте неограниченное количество друзей.</div>"
       + '<button type="button" class="vl-code" data-act="copy" title="Нажмите, чтобы скопировать промокод">'
