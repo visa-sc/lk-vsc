@@ -218,8 +218,10 @@
   + 'color:var(--vl-accent);opacity:.5;transition:opacity .15s ease;}'
   + '.vl-code:hover::after{opacity:.9;}'
   + '.vl-code .lb{display:block;font-size:11.5px;color:var(--vl-mut);font-weight:500;letter-spacing:.01em;}'
-  + '.vl-code .cd{display:block;font-size:26px;font-weight:700;letter-spacing:.08em;color:var(--vl-accent-d);'
-  + 'font-variant-numeric:tabular-nums;margin-top:5px;line-height:1.1;}'
+  /* Промокод набран лёгким начертанием с широкой разрядкой — читается как код,
+     а не как заголовок; жирный на такой ширине выглядел грубо. */
+  + '.vl-code .cd{display:block;font-size:26px;font-weight:400;letter-spacing:.22em;color:var(--vl-accent-d);'
+  + 'font-variant-numeric:tabular-nums;margin-top:6px;line-height:1.15;text-indent:.22em;}'
   + '.vl-code.done{background:linear-gradient(180deg,#e8f7ee,#dff3e6);border-color:rgba(47,138,82,.35);}'
   + '.vl-code.done .lb{color:var(--vl-green);font-weight:600;}'
   + '.vl-code.done::after{opacity:0;}'
@@ -583,9 +585,9 @@
     var s = el('<section><div class="vl-panel vl-invite">'
       + '<div class="vl-gain"><span class="vl-gain-sum">' + RU(pair) + " ₽</span>"
       + '<span class="vl-gain-txt">за каждого друга</span></div>'
-      + '<div class="pd vl-invite-txt">Приглашайте друзей и получайте <b>' + RU(pair) + " ₽</b> баллами на двоих."
+      + '<div class="pd vl-invite-txt">Приглашайте друзей и получайте <b>' + RU(pair) + " ₽</b> баллами на двоих:"
       + "<br><b>" + RU(ref.rewardInviter || 2000) + " ₽</b> — вам и <b>" + RU(ref.rewardFriend || 2000)
-      + " ₽</b> — другу!<br>Вознаграждение поступит на ваш счёт сразу после оплаты."
+      + " ₽</b> — другу!<br>Вознаграждение поступит на счёт сразу после оплаты."
       + "<br>Приглашайте неограниченное количество друзей.</div>"
       + '<button type="button" class="vl-code" data-act="copy" title="Нажмите, чтобы скопировать промокод">'
       + '<span class="lb">Ваш промокод</span><span class="cd">' + esc(ref.code) + "</span></button>"
