@@ -819,8 +819,33 @@
       });
     });
 
-    promoApplyBtn.addEventListener("click", () => {
+    // Промокод бывает двух видов: маркетинговый (список зашит здесь) и РЕФЕРАЛЬНЫЙ
+    // код друга из бонусной программы — он генерится на лету, поэтому если кода нет
+    // в локальном списке, спрашиваем сервер, прежде чем сказать «неверный».
+    async function isReferralPromo(code) {
+      try {
+        const r = await fetch("/api/promo/check", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: code })
+        });
+        const d = await r.json();
+        return !!(d && d.ok && d.kind === "referral");
+      } catch (_) { return false; }
+    }
+
+    promoApplyBtn.addEventListener("click", async () => {
       const code = promoInput.value.trim().toUpperCase();
+      const referral = VALID_PROMO_CODES.has(code) ? false : await isReferralPromo(code);
+      if (referral) {
+        promoResult.classList.remove("err");
+        promoResult.classList.add("show", "ok");
+        promoResult.textContent = "Промокод друга принят — бонусы начислим после первой оплаченной услуги.";
+        promoInput.classList.remove("input-error");
+        promoApplyBtn.style.display = "none";
+        isPromoApplied = true;
+        lastAppliedPromoCode = code;
+        return;
+      }
       if (VALID_PROMO_CODES.has(code)) {
         // Валидный — оставляем только зелёный текст, кнопку «Применить промокод» скрываем
         promoResult.classList.remove("err");

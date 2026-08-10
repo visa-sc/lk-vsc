@@ -669,6 +669,35 @@
     /* Справочники: Запрос документов / Опросники / Действия */
     .ref-intro { font-size: 13px; color: #6b7280; margin: 0 0 12px; line-height: 1.5; }
     .ref-note { background: #fff8ec; border: 1px solid #f0d9a8; border-radius: 10px; padding: 9px 12px; font-size: 12.5px; color: #5c4a2a; margin: 0 0 12px; line-height: 1.45; }
+    /* ── Бонусная программа: инструмент и справочник логики ── */
+    .chips-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .chip-stat { background: #f6f8fc; border: 1px solid #e7ebf2; border-radius: 11px; padding: 8px 12px; font-size: 11.5px; color: #6b7280; }
+    .chip-stat b { display: block; color: #161d45; font-size: 16px; font-weight: 700; margin-top: 2px; }
+    .loy-lad { font-size: 12.5px; color: #6b7280; background: #f6f8fc; border-radius: 10px; padding: 9px 12px; margin-bottom: 16px; line-height: 1.5; }
+    .loy-box { border: 1px solid #ece9f1; border-radius: 12px; background: #fff; padding: 14px 16px; margin-bottom: 14px; }
+    .loy-h { font-size: 14px; font-weight: 700; color: #161d45; margin-bottom: 8px; }
+    .loy-note { font-size: 12.5px; color: #6b7280; line-height: 1.5; margin-bottom: 10px; }
+    .loy-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .loy-form input { flex: 1; min-width: 160px; padding: 10px 12px; border: 1px solid #e2dded; border-radius: 10px; font-size: 14px; font-family: inherit; }
+    .loy-form input:focus { outline: none; border-color: #3589BD; }
+    .loy-res { font-size: 13px; margin-top: 9px; line-height: 1.45; }
+    .loy-res.ok { color: #1f7a3f; } .loy-res.err { color: #c4314b; }
+    .loy-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .loy-tbl th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #8b93a5; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid #ece9f1; }
+    .loy-tbl td { padding: 9px 8px; border-bottom: 1px solid #f2f4f8; vertical-align: top; }
+    .loy-tbl tr:last-child td { border-bottom: 0; }
+    .loy-sub { font-size: 11px; color: #9096a3; margin-top: 2px; }
+    .loy-act { white-space: nowrap; display: flex; gap: 6px; }
+    .loy-badge { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+    .loy-pending { background: #fff3cd; color: #7a5b12; }
+    .loy-qualified { background: #e2f4e8; color: #2c7a43; }
+    .loy-reversed { background: #fbe3e6; color: #b0263a; }
+    .ref-row-title { font-size: 14px; font-weight: 700; color: #161d45; }
+    .ref-row-body { grid-column: 1 / -1; font-size: 13px; color: #4b5262; line-height: 1.55; }
+    .ref-row-body p { margin: 0 0 7px; }
+    .ref-row-body p:last-child { margin-bottom: 0; }
+    .ref-row-body .loy-tbl { margin-top: 4px; }
+    #loyaltyLogicContent .ref-row { display: block; }
     .ref-sec-h { font-weight: 700; color: #161d45; font-size: 14px; margin: 16px 0 8px; padding-bottom: 5px; border-bottom: 2px solid #e6e9f0; }
     .ref-row { display: grid; grid-template-columns: minmax(170px, 1.1fr) 2fr 140px 118px; gap: 10px; align-items: start; border: 1px solid #ece9f1; border-radius: 10px; background: #fff; padding: 9px 12px; margin-bottom: 7px; }
     .ref-row > .qc-btn { justify-self: end; }
@@ -1257,6 +1286,7 @@
           <button type="button" class="tab-btn" data-tab="tester">Тестировщик ЛК</button>
           <button type="button" class="tab-btn" data-tab="clientlogs">Логи ЛК</button>
           <button type="button" class="tab-btn" data-tab="clientview">Вход в ЛК Клиента</button>
+          <button type="button" class="tab-btn" data-tab="loyalty">Лояльность</button>
         </div>
       </div>
       <div class="tab-group" data-group="logic">
@@ -1268,6 +1298,7 @@
           <button type="button" class="tab-btn" data-tab="uploads">Области загрузки</button>
           <button type="button" class="tab-btn" data-tab="screens">Экраны клиента</button>
           <button type="button" class="tab-btn" data-tab="applicants">Заявители</button>
+          <button type="button" class="tab-btn" data-tab="loyaltylogic">Лояльность</button>
           <button type="button" class="tab-btn" data-tab="kb">База знаний ЛК</button>
         </div>
       </div>
@@ -1378,6 +1409,19 @@
 
     <div id="panelApplicants" class="panel">
       <div id="applicantsContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
+    <!-- Бонусная программа: инструмент (промокоды, списания) и справочник логики -->
+    <div id="panelLoyalty" class="panel">
+      <div id="loyaltyContent">
+        <div class="loading-state">Загружаем…</div>
+      </div>
+    </div>
+
+    <div id="panelLoyaltyLogic" class="panel">
+      <div id="loyaltyLogicContent">
         <div class="loading-state">Загружаем…</div>
       </div>
     </div>
@@ -1504,6 +1548,10 @@
       const screensContent = document.getElementById("screensContent");
       const panelApplicants = document.getElementById("panelApplicants");
       const applicantsContent = document.getElementById("applicantsContent");
+      const panelLoyalty = document.getElementById("panelLoyalty");
+      const loyaltyContent = document.getElementById("loyaltyContent");
+      const panelLoyaltyLogic = document.getElementById("panelLoyaltyLogic");
+      const loyaltyLogicContent = document.getElementById("loyaltyLogicContent");
       const panelVsc = document.getElementById("panelVsc");
       const vscContent = document.getElementById("vscContent");
       const vscNoTaskBlock = document.getElementById("vscNoTaskBlock");
@@ -1576,7 +1624,7 @@
         const canStages = mgr && Array.isArray(managerPerms) && managerPerms.indexOf("stages") >= 0;
         tabBtns.forEach((b) => {
           const t = b.dataset.tab;
-          const allowed = mgr ? ((t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads" || t === "screens" || t === "applicants") || (t === "clientlogs") || (t === "clientview") || (canStages && (t === "stages" || t === "authstatus"))) : true;
+          const allowed = mgr ? ((t === "corrections" || t === "kb" || t === "tester" || t === "docsreq" || t === "qlogic" || t === "actions" || t === "uploads" || t === "screens" || t === "applicants" || t === "loyalty" || t === "loyaltylogic") || (t === "clientlogs") || (t === "clientview") || (canStages && (t === "stages" || t === "authstatus"))) : true;
           b.style.display = allowed ? "" : "none";
         });
         // Группу «Статистика и данные» показываем только тем, у кого есть доступ к
@@ -5850,6 +5898,173 @@
       }
       applyPaidConvVisibility();
 
+      // ══ БОНУСНАЯ ПРОГРАММА ══════════════════════════════════════════════
+      // Инструмент: зафиксировать промокод за приглашённым клиентом и обработать
+      // заявки на списание. Начисления за друга идут автоматически при оплате;
+      // здесь — ручной путь, когда клиент назвал промокод менеджеру.
+      const RU_ = (n) => (Math.round(Number(n) || 0)).toLocaleString("ru-RU");
+      function loyDate(ts) { try { return new Date(Number(ts)).toLocaleDateString("ru-RU", { day: "2-digit", month: "short", year: "numeric" }); } catch (_) { return "—"; } }
+      const LOY_BIND_STATUS = { pending: "ждём оплату", qualified: "начислено", reversed: "аннулировано (возврат)" };
+      const LOY_REDEEM_STATUS = { "new": "новая", done: "списано", declined: "отказ", canceled: "отменена клиентом" };
+
+      async function loadLoyaltyAdmin() {
+        if (!loyaltyContent) return;
+        loyaltyContent.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        try {
+          const d = await apiFetch("/admin/api/loyalty/beta");
+          renderLoyaltyAdmin(d);
+        } catch (e) {
+          loyaltyContent.innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + "</div>";
+        }
+      }
+
+      function renderLoyaltyAdmin(d) {
+        const cfg = d.config || {}, st = d.data;
+        const tiers = (cfg.tiers || []).map((t) => t.name + " " + Math.round((t.rate || 0) * 100) + "% от " + RU_(t.min) + " ₽").join(" · ");
+        let h = "";
+        h += '<div class="ref-intro">Бонусная программа: кэшбэк баллами за успешно завершённые сделки и приглашения друзей. '
+          + "Старт — " + escapeHtml((cfg.start || "").split("-").reverse().join(".")) + ". Полная логика — во вкладке «Лояльность» в «Логике и справочниках».</div>";
+        h += '<div class="chips-row">'
+          + '<div class="chip-stat"><span>Счетов с баллами</span><b>' + RU_(st ? st.accountsCount : 0) + "</b></div>"
+          + '<div class="chip-stat"><span>Начислено баллов</span><b>' + RU_(st ? st.totalEarned : 0) + "</b></div>"
+          + '<div class="chip-stat"><span>Успешных сделок в программе</span><b>' + RU_(st ? st.scanned : 0) + "</b></div>"
+          + '<div class="chip-stat"><span>Обновлено</span><b>' + (st ? loyDate(st.ts) : "—") + "</b></div>"
+          + "</div>";
+        h += '<div class="loy-lad">' + escapeHtml(tiers) + "</div>";
+
+        // Форма: промокод + телефон приглашённого
+        h += '<div class="loy-box"><div class="loy-h">Начислить по промокоду</div>'
+          + '<div class="loy-note">Клиент пришёл по промокоду друга. Введите промокод и телефон клиента: '
+          + "если он уже оплатил — начислим сразу обоим по " + RU_(cfg.refFriend || 2000) + " баллов, если ещё нет — начислим автоматически после оплаты.</div>"
+          + '<div class="loy-form">'
+          + '<input type="text" id="loyPromoCode" placeholder="Промокод, напр. U8X9BY" maxlength="12" />'
+          + '<input type="tel" id="loyPromoPhone" placeholder="Телефон клиента" />'
+          + '<button type="button" id="loyPromoBtn" class="qc-send">Начислить</button>'
+          + '</div><div id="loyPromoRes" class="loy-res"></div></div>';
+
+        // Заявки на списание
+        const reds = (d.redeems || []).filter((r) => r.status === "new");
+        h += '<div class="loy-box"><div class="loy-h">Заявки на списание баллов' + (reds.length ? " · " + reds.length : "") + "</div>";
+        if (!reds.length) h += '<div class="loy-note">Новых заявок нет.</div>';
+        else h += '<table class="loy-tbl"><thead><tr><th>Клиент</th><th>Баллов</th><th>Баланс</th><th>Дата</th><th></th></tr></thead><tbody>'
+          + reds.map((r) => '<tr><td>' + escapeHtml(r.name || "—") + '<div class="loy-sub">' + escapeHtml(r.pk) + "</div></td>"
+            + "<td><b>" + RU_(r.points) + "</b></td><td>" + RU_(r.balance) + "</td><td>" + loyDate(r.ts) + "</td>"
+            + '<td class="loy-act"><button type="button" class="qc-send loy-ok" data-id="' + escapeHtml(r.id) + '">Подтвердить</button>'
+            + '<button type="button" class="qc-cancel loy-no" data-id="' + escapeHtml(r.id) + '">Отклонить</button></td></tr>').join("")
+          + "</tbody></table>";
+        h += "</div>";
+
+        // История промокодов
+        const binds = d.binds || [];
+        h += '<div class="loy-box"><div class="loy-h">Приглашения по промокодам</div>';
+        if (!binds.length) h += '<div class="loy-note">Пока никто не приходил по промокоду.</div>';
+        else h += '<table class="loy-tbl"><thead><tr><th>Приглашённый</th><th>Промокод</th><th>Пригласил</th><th>Статус</th><th>Дата</th></tr></thead><tbody>'
+          + binds.map((b) => "<tr><td>" + escapeHtml(b.friend) + "</td><td><b>" + escapeHtml(b.code || "—") + "</b>"
+            + (b.by ? '<div class="loy-sub">внёс ' + escapeHtml(b.by) + "</div>" : "") + "</td>"
+            + "<td>" + escapeHtml(b.inviter) + "</td>"
+            + '<td><span class="loy-badge loy-' + escapeHtml(b.status) + '">' + escapeHtml(LOY_BIND_STATUS[b.status] || b.status) + "</span></td>"
+            + "<td>" + loyDate(b.ts) + "</td></tr>").join("")
+          + "</tbody></table>";
+        h += "</div>";
+
+        loyaltyContent.innerHTML = h;
+
+        const pb = document.getElementById("loyPromoBtn");
+        if (pb) pb.addEventListener("click", async () => {
+          const code = (document.getElementById("loyPromoCode").value || "").trim().toUpperCase();
+          const phone = (document.getElementById("loyPromoPhone").value || "").trim();
+          const res = document.getElementById("loyPromoRes");
+          res.className = "loy-res"; res.textContent = "";
+          if (!code || !phone) { res.classList.add("err"); res.textContent = "Нужны промокод и телефон."; return; }
+          pb.disabled = true; pb.textContent = "Отправляем…";
+          try {
+            const r = await apiSend("/admin/api/loyalty/beta/promo", { code, phone });
+            res.classList.add(r.success ? "ok" : "err");
+            res.textContent = r.success
+              ? (r.credited ? "Начислено: клиенту " + RU_(r.points) + " и пригласившему " + RU_(r.inviterPoints) + " баллов."
+                            : (r.message || "Промокод зафиксирован."))
+              : (r.message || "Не удалось.");
+            if (r.success) loadLoyaltyAdmin();
+          } catch (e) { res.classList.add("err"); res.textContent = e.message || "Ошибка"; }
+          pb.disabled = false; pb.textContent = "Начислить";
+        });
+        loyaltyContent.querySelectorAll(".loy-ok").forEach((b) => b.addEventListener("click", async () => {
+          b.disabled = true;
+          try { await apiSend("/admin/api/loyalty/beta/redeem", { id: b.dataset.id, action: "approve" }); loadLoyaltyAdmin(); }
+          catch (e) { b.disabled = false; alert(e.message || "Ошибка"); }
+        }));
+        loyaltyContent.querySelectorAll(".loy-no").forEach((b) => b.addEventListener("click", async () => {
+          const reason = prompt("Причина отказа (для истории):") || "";
+          b.disabled = true;
+          try { await apiSend("/admin/api/loyalty/beta/redeem", { id: b.dataset.id, action: "decline", reason }); loadLoyaltyAdmin(); }
+          catch (e) { b.disabled = false; alert(e.message || "Ошибка"); }
+        }));
+      }
+
+      // Справочник: вся логика программы. Сухо, по делу, с кнопками «Скорректировать».
+      async function renderLoyaltyLogic() {
+        if (!loyaltyLogicContent) return;
+        let cfg = null;
+        try { cfg = (await apiFetch("/admin/api/loyalty/beta")).config; } catch (_) {}
+        const tiers = (cfg && cfg.tiers) || [];
+        loyaltyLogicContent.innerHTML = "";
+        const intro = document.createElement("div"); intro.className = "ref-intro";
+        intro.textContent = "Бонусная программа VOYO: как считаются баллы, за что начисляются и как тратятся. Раздел описывает то, что реально работает в коде.";
+        intro.appendChild(vscInfo("<b>Как устроен раздел</b><br>Полная механика программы: старт, какие сделки считаются, лестница статусов, приглашения, списание, где это видит клиент и что доступно сотрудникам. Кнопка «Скорректировать» у каждого блока — замечание сразу в «Корректировки ЛК»."));
+        loyaltyLogicContent.appendChild(intro);
+
+        const ladderRows = tiers.map((t) => "<tr><td>" + escapeHtml(t.name) + "</td><td>" + RU_(t.min) + " ₽</td><td><b>"
+          + Math.round((t.rate || 0) * 100) + "%</b></td><td>" + escapeHtml(t.perk || "") + "</td></tr>").join("");
+
+        const blocks = [
+          ["Старт и охват", [
+            "Программа действует с <b>11.08.2026</b>. Считаются только сделки с датой оплаты (поле amoCRM 427242) от 00:00 МСК 11.08.2026 — не по дате создания сделки.",
+            "Сумма для расчёта — <b>поле «Бюджет» сделки</b> в amoCRM. Никакие другие поля не используются.",
+            "Баллы привязаны к номеру телефона основного контакта сделки. Сравнение номеров — по последним 10 цифрам; контакты с мусорным телефоном («0») не сопоставляются ни с кем."
+          ]],
+          ["Кэшбэк за услуги", [
+            "Начисляется <b>только за успешно завершённые сделки</b> — финальный успешный статус воронки: «Успешно реализовано (для ВНЖ)» (Отдел Продаж), «Успешно реализовано» (Отдел по работе с Клиентами), «Пакет документов готов» (Отдел Оформления).",
+            "Если сделка ушла в <b>«Возврат»</b> или закрыта неуспешно — баллы за неё аннулируются при ближайшем пересчёте (пересчёт полный, а не накопительный).",
+            "Ставка берётся по статусу, достигнутому на момент этой покупки: сделки клиента идут от старых к новым, бюджет накапливается, и каждая сделка получает ставку своей ступени. Ранее начисленное при росте статуса не пересчитывается."
+          ]],
+          ["Статусы и ставки", ["<table class=\"loy-tbl\"><thead><tr><th>Статус</th><th>Бюджет от</th><th>Кэшбэк</th><th>Привилегия</th></tr></thead><tbody>" + ladderRows + "</tbody></table>"]],
+          ["Приглашения друзей", [
+            "Два пути: клиент <b>вводит промокод друга при регистрации</b> в ЛК, либо сотрудник фиксирует промокод вручную во вкладке «Лояльность» в «Инструментах».",
+            "Начисление происходит <b>в момент, когда приглашённый оплатил</b> (попал в платёжные статусы amoCRM), а не при регистрации: приглашённому " + RU_((cfg && cfg.refFriend) || 2000) + " баллов, пригласившему " + RU_((cfg && cfg.refInviter) || 2000) + ".",
+            "Если сделка приглашённого ушла в возврат — начисленные за него баллы <b>сторнируются у обоих</b> (в истории появляется запись «Аннулировано»). Если он оплатит снова, начисление повторится.",
+            "Отсекаются: собственный промокод, повторная привязка, несуществующий код. Количество приглашений не ограничено."
+          ]],
+          ["Списание баллов", [
+            "1 балл = 1 ₽. Баллами можно оплатить до " + Math.round(((cfg && cfg.redeemShare) || 0.3) * 100) + "% стоимости услуги, минимум к списанию — " + RU_((cfg && cfg.redeemMin) || 500) + " баллов.",
+            "Формы списания в клиентском ЛК нет: клиент читает правила в «i», а списывает <b>менеджер</b> — подтверждает заявку во вкладке «Лояльность» или в консоли /loyalty. После подтверждения баллы уходят из баланса, в истории клиента появляется «Оплата баллами».",
+            "В amoCRM ничего не пишется — сумму к оплате менеджер уменьшает вручную при оформлении."
+          ]],
+          ["Что видит клиент", [
+            "В ЛК — кнопка-человечек в правом нижнем углу, открывает шторку «Бонусная программа»: карта (баланс, статус со ставкой), прогресс по лестнице, приглашение друзей с промокодом и кнопка «Показать историю».",
+            "В истории отражаются <b>все</b> движения: кэшбэк за услуги, бонусы за друзей, приветственные баллы, списания и аннулирования.",
+            "Все пояснения спрятаны под иконку «i» у названия статуса — экран остаётся коротким."
+          ]],
+          ["Техника", [
+            "Пересчёт из amoCRM — <b>1 раз в сутки в 04:00 МСК</b> и по кнопке в /loyalty. amoCRM только читаем, строго через лимитер (низкий приоритет, 4 запроса/сек) — на работу CRM не влияет.",
+            "Хранилища: betaLoyalty.json (снимок начислений из amoCRM, пересобирается целиком) и betaReferrals.json (промокоды, привязки, журнал начислений и списаний — единственный источник ручных операций).",
+            "Рубильник: LK_LOYALTY=0 в .env выключает раздел в клиентском ЛК без правки кода."
+          ]]
+        ];
+
+        blocks.forEach(([title, items]) => {
+          const box = document.createElement("div"); box.className = "ref-row";
+          const head = document.createElement("div"); head.className = "tst-box-head";
+          const t = document.createElement("div"); t.className = "ref-row-title"; t.textContent = title;
+          head.appendChild(t);
+          head.appendChild(corrQuickButton("Лояльность", () => "Раздел: Лояльность\nБлок: " + title, box));
+          box.appendChild(head);
+          const ul = document.createElement("div"); ul.className = "ref-row-body";
+          ul.innerHTML = items.map((x) => "<p>" + x + "</p>").join("");
+          box.appendChild(ul);
+          loyaltyLogicContent.appendChild(box);
+        });
+      }
+
       // Табы
       tabBtns.forEach((b) => {
         b.addEventListener("click", () => {
@@ -5872,9 +6087,15 @@
           panelUploads.classList.toggle("show", which === "uploads");
           panelScreens.classList.toggle("show", which === "screens");
           panelApplicants.classList.toggle("show", which === "applicants");
+          if (panelLoyalty) panelLoyalty.classList.toggle("show", which === "loyalty");
+          if (panelLoyaltyLogic) panelLoyaltyLogic.classList.toggle("show", which === "loyaltylogic");
           panelVsc.classList.toggle("show", which === "vsc");
           applyPaidConvVisibility();
-          if (which === "authstatus") {
+          if (which === "loyalty") {
+            loadLoyaltyAdmin();
+          } else if (which === "loyaltylogic") {
+            renderLoyaltyLogic();
+          } else if (which === "authstatus") {
             loadAuthStatus();
             startPolling();
           } else if (which === "clientlogs") {

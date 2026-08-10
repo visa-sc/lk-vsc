@@ -54,7 +54,10 @@
   /* ── карта: премиальный «металл» — фактура, голограмма, чип, параллакс ── */
   + '.vl-stage{perspective:1200px;}'
   + '.vl-card{position:relative;overflow:hidden;border-radius:26px;padding:24px 26px 24px;color:#fff;isolation:isolate;'
-  + 'min-height:216px;display:flex;flex-direction:column;'   /* высоту задаёт содержимое — иначе overflow:hidden срежет текст */
+  // Пропорции настоящей пластиковой карты (85,6 × 54 мм) на любой ширине — и в
+  // узкой шторке ЛК тоже. Всё, что в эти пропорции не влезает (прогресс, история),
+  // живёт отдельными блоками ПОД картой.
+  + 'aspect-ratio:1.586/1;min-height:168px;max-height:250px;display:flex;flex-direction:column;justify-content:space-between;'
   + 'background:linear-gradient(145deg,var(--c1) 0%,var(--c2) 52%,var(--c3) 100%);'
   + 'box-shadow:0 26px 54px -22px var(--cglow),0 2px 8px rgba(16,24,40,.12),'
   + 'inset 0 1px 0 rgba(255,255,255,.30),inset 0 0 0 1px rgba(255,255,255,.12),inset 0 -1px 0 rgba(0,0,0,.16);'
@@ -115,25 +118,29 @@
   + 'text-transform:uppercase;padding:6px 13px;border-radius:999px;background:rgba(255,255,255,.16);'
   + 'border:1px solid rgba(255,255,255,.24);box-shadow:0 1px 0 rgba(255,255,255,.2) inset;'
   + 'backdrop-filter:saturate(170%) blur(10px);-webkit-backdrop-filter:saturate(170%) blur(10px);white-space:nowrap;}'
-  + '.vl-mid{margin-top:auto;padding-top:22px;}'
-  + '.vl-bal{font-size:44px;font-weight:600;letter-spacing:-.035em;line-height:1;margin:0 0 6px;'
+  + '.vl-mid{margin-top:auto;}'
+  + '.vl-bal{font-size:clamp(30px,11vw,44px);font-weight:600;letter-spacing:-.035em;line-height:1;margin:0 0 4px;'
   + 'font-variant-numeric:tabular-nums;text-shadow:0 1px 0 rgba(255,255,255,.14),0 4px 22px rgba(0,0,0,.20);}'
   + '.vl-bal small{font-size:13.5px;font-weight:400;opacity:.66;margin-left:9px;letter-spacing:0;text-shadow:none;}'
   + '.vl-foot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:18px;}'
   + '.vl-name{font-size:10.5px;opacity:.66;letter-spacing:.11em;text-transform:uppercase;font-weight:500;'
   + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
-  + '.vl-prog{margin-top:14px;}'
-  /* шкала достижения по всей лестнице статусов: потрачено → верхний статус */
+  /* ── прогресс статуса: отдельная светлая панель ПОД картой ── 
+     На карте ему места нет (там пропорции пластика), а внизу он читается лучше. */
+  + '.vl-progress{background:var(--vl-bg);border-radius:20px;padding:16px 18px;box-shadow:var(--vl-sh);'
+  + 'backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%);}'
   + '.vl-scale{display:flex;justify-content:space-between;align-items:baseline;gap:10px;'
-  + 'font-size:11px;opacity:.72;margin-bottom:8px;letter-spacing:.01em;}'
-  + '.vl-scale b{font-weight:600;opacity:1;}'
-  + '.vl-bar{position:relative;}'
-  + '.vl-tick{position:absolute;top:-2px;bottom:-2px;width:1px;background:rgba(255,255,255,.22);}'
-  + '.vl-tick.on{background:rgba(255,255,255,.5);}'
-  + '.vl-prog .vl-bar{height:5px;border-radius:99px;background:rgba(0,0,0,.15);overflow:hidden;}'
-  + '.vl-prog .vl-bar i{display:block;height:100%;border-radius:99px;width:0;background:rgba(255,255,255,.92);'
-  + 'box-shadow:0 0 14px rgba(255,255,255,.5);transition:width 1.1s cubic-bezier(.22,.61,.36,1);}'
-  + '.vl-prog .vl-note{font-size:12px;opacity:.82;margin-top:10px;}'
+  + 'font-size:11.5px;color:var(--vl-mut);margin-bottom:9px;letter-spacing:.01em;}'
+  + '.vl-scale b{font-weight:600;color:var(--vl-ink);}'
+  + '.vl-bar{position:relative;height:6px;border-radius:99px;background:rgba(23,32,60,.08);}'
+  + '.vl-bar i{display:block;height:100%;border-radius:99px;width:0;position:relative;z-index:2;'
+  + 'background:linear-gradient(90deg,#5cb0e0,#3589BD);box-shadow:0 1px 8px rgba(53,137,189,.45);'
+  + 'transition:width 1.1s cubic-bezier(.22,.61,.36,1);}'
+  + '.vl-tick{position:absolute;top:0;bottom:0;width:2px;border-radius:2px;z-index:1;'
+  + 'background:rgba(23,32,60,.14);transform:translateX(-1px);}'
+  + '.vl-tick.on{background:rgba(255,255,255,.75);}'
+  + '.vl-note{font-size:12.5px;color:var(--vl-mut);margin-top:10px;line-height:1.45;}'
+  + '.vl-note b{color:var(--vl-ink);font-weight:600;}'
 
   /* ── кнопка «Показать историю» ── */
   + '.vl-toggle{width:100%;background:var(--vl-bg);border:0;border-radius:16px;padding:14px;font:inherit;'
@@ -169,7 +176,16 @@
   + '.vl-btn.sec{background:rgba(53,137,189,.08);color:var(--vl-accent-d);box-shadow:none;}'
   + '.vl-btn.sec:hover{background:rgba(53,137,189,.13);filter:none;}'
 
-  /* ── реферал ── */
+  /* ── реферал: выгода вынесена крупным числом наверх блока ── */
+  + '.vl-invite{position:relative;overflow:hidden;background:linear-gradient(160deg,rgba(255,255,255,.94),rgba(238,246,252,.94));}'
+  + '.vl-invite::after{content:"";position:absolute;right:-70px;top:-90px;width:200px;height:200px;border-radius:50%;'
+  + 'background:radial-gradient(circle,rgba(53,137,189,.12),rgba(53,137,189,0) 70%);pointer-events:none;}'
+  + '.vl-gain{display:flex;align-items:baseline;gap:9px;margin-bottom:6px;position:relative;}'
+  + '.vl-gain-sum{font-size:30px;font-weight:700;letter-spacing:-.03em;line-height:1;'
+  + 'background:linear-gradient(135deg,#4aa3d8,#2b6d97);-webkit-background-clip:text;background-clip:text;'
+  + '-webkit-text-fill-color:transparent;}'
+  + '.vl-gain-txt{font-size:12.5px;color:var(--vl-mut);font-weight:500;}'
+  + '.vl-invite .ph{font-size:14.5px;position:relative;}'
   + '.vl-code{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;'
   + 'background:var(--vl-soft);border-radius:15px;padding:13px 16px;}'
   + '.vl-code .lb{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--vl-mut);font-weight:600;}'
@@ -429,24 +445,6 @@
     var bal = Number(card.balance) || 0;
     var sk = SKIN[card.tier] || SKIN.base;
     var rate = Math.round((Number(card.rate) || 0) * 100);
-    // Шкала достижения по ВСЕЙ лестнице (0 → верхний статус), а не до ближайшей
-    // ступени: клиент видит, где он на пути целиком, и сколько всего потратил.
-    var tiers = card.tiers || [];
-    var top = tiers.length ? (tiers[tiers.length - 1].min || 0) : 0;
-    var spend = Number(card.spend) || 0;
-    var pct = top > 0 ? Math.max(1.5, Math.min(100, spend / top * 100)) : 0;
-    var ticks = top > 0 ? tiers.filter(function (t) { return t.min > 0; }).map(function (t) {
-      return '<span class="vl-tick' + (spend >= t.min ? " on" : "") + '" style="left:' + (t.min / top * 100).toFixed(2) + '%"></span>';
-    }).join("") : "";
-    var prog = '<div class="vl-prog">'
-      + '<div class="vl-scale"><span>Потрачено <b>' + RU(spend) + ' ₽</b></span><span>' + RU(top) + " ₽</span></div>"
-      + '<div class="vl-bar"><i data-w="' + pct.toFixed(2) + '"></i>' + ticks + "</div>"
-      + '<div class="vl-note">'
-      + (card.nextTier && card.toNextSpend > 0
-          ? "До статуса " + esc(card.nextTier) + " — ещё " + RU(card.toNextSpend) + " ₽"
-            + (card.nextRate ? ", кэшбэк станет " + Math.round(card.nextRate * 100) + "%" : "")
-          : "Максимальный статус — ваш кэшбэк " + rate + "% ✦")
-      + "</div></div>";
     var stage = el('<div class="vl-stage"></div>');
     var node = el(
       '<div class="vl-card" style="--c1:' + sk.c1 + ';--c2:' + sk.c2 + ';--c3:' + sk.c3 + ';--cglow:' + sk.glow + '">'
@@ -455,12 +453,9 @@
       + '<div class="vl-c-top"><div class="vl-brand">VOYO · БОНУСЫ</div>'
       + '<div class="vl-tier">' + esc(card.tierName || "Базовый") + (rate ? " · " + rate + "%" : "") + "</div></div>"
       + '<div class="vl-mid"><div class="vl-bal">0<small>' + plural(bal, ["балл", "балла", "баллов"]) + "</small></div></div>"
-      + '<div class="vl-foot"><div class="vl-name">' + esc(card.name || "Ваша карта") + "</div></div>"
-      + prog + "</div>"
+      + '<div class="vl-foot"><div class="vl-name">' + esc(card.name || "Ваша карта") + "</div></div></div>"
     );
     node.querySelector(".vl-tier").appendChild(vInfo(txtTiers(card)));
-    var bar = node.querySelector(".vl-bar i");
-    if (bar) requestAnimationFrame(function () { bar.style.width = bar.getAttribute("data-w") + "%"; });
     // Баланс «набегает» — ощущение, что карта оживает.
     var balEl = node.querySelector(".vl-bal"), small = balEl.querySelector("small").outerHTML;
     if (calm()) balEl.innerHTML = RU(bal) + small;
@@ -474,6 +469,32 @@
     attachTilt(node);
     stage.appendChild(node);
     return stage;
+  }
+
+  /* Прогресс по лестнице статусов — отдельной панелью под картой (на самой карте
+     держим пропорции пластика, поэтому всё лишнее живёт ниже). Шкала идёт по ВСЕЙ
+     лестнице (0 → верхний статус) с засечками на порогах: видно весь путь. */
+  function vProgress(card) {
+    var tiers = card.tiers || [];
+    var top = tiers.length ? (tiers[tiers.length - 1].min || 0) : 0;
+    if (!top) return null;
+    var spend = Number(card.spend) || 0;
+    var rate = Math.round((Number(card.rate) || 0) * 100);
+    var pct = Math.max(1.5, Math.min(100, spend / top * 100));
+    var ticks = tiers.filter(function (t) { return t.min > 0 && t.min < top; }).map(function (t) {
+      return '<span class="vl-tick' + (spend >= t.min ? " on" : "") + '" style="left:' + (t.min / top * 100).toFixed(2) + '%"></span>';
+    }).join("");
+    var note = card.nextTier && card.toNextSpend > 0
+      ? "До статуса <b>" + esc(card.nextTier) + "</b> — ещё " + RU(card.toNextSpend) + " ₽"
+        + (card.nextRate ? ", кэшбэк станет " + Math.round(card.nextRate * 100) + "%" : "")
+      : "Максимальный статус — ваш кэшбэк <b>" + rate + "%</b> ✦";
+    var s = el('<section><div class="vl-progress">'
+      + '<div class="vl-scale"><span>Потрачено <b>' + RU(spend) + ' ₽</b></span><span>' + RU(top) + " ₽</span></div>"
+      + '<div class="vl-bar"><i data-w="' + pct.toFixed(2) + '"></i>' + ticks + "</div>"
+      + '<div class="vl-note">' + note + "</div></div></section>");
+    var bar = s.querySelector(".vl-bar i");
+    requestAnimationFrame(function () { bar.style.width = bar.getAttribute("data-w") + "%"; });
+    return s;
   }
 
   /* Активная заявка на списание. Формы списания в ЛК нет (по решению Андрея
@@ -502,10 +523,14 @@
     var txt = "Оформляю визы и поездки через VOYO. По моей ссылке тебе " + RU(ref.rewardFriend || 2000) + " бонусов на первую услугу: ";
     var wa = "https://wa.me/?text=" + encodeURIComponent(txt + link);
     var tg = "https://t.me/share/url?url=" + encodeURIComponent(link) + "&text=" + encodeURIComponent(txt);
-    var s = el('<section><div class="vl-panel">'
-      + '<div class="ph">Приглашайте друзей</div>'
-      + '<div class="pd">По ' + RU(ref.rewardInviter || 2000) + " баллов вам и другу за первую услугу.</div>"
-      + '<div class="vl-code"><div><div class="lb">Ваш код</div><div class="cd">' + esc(ref.code) + "</div></div>"
+    var pair = (ref.rewardInviter || 2000) + (ref.rewardFriend || 2000);
+    var s = el('<section><div class="vl-panel vl-invite">'
+      + '<div class="vl-gain"><span class="vl-gain-sum">' + RU(pair) + " ₽</span>"
+      + '<span class="vl-gain-txt">за одного друга</span></div>'
+      + '<div class="ph">Делитесь промокодом — зарабатывайте вместе</div>'
+      + '<div class="pd">Друг оформляет первую услугу по вашему коду: <b>' + RU(ref.rewardFriend || 2000)
+      + " ₽</b> баллами ему и <b>" + RU(ref.rewardInviter || 2000) + " ₽</b> баллами вам. Друзей можно приглашать сколько угодно.</div>"
+      + '<div class="vl-code"><div><div class="lb">Ваш промокод</div><div class="cd">' + esc(ref.code) + "</div></div>"
       + '<button class="vl-btn sec" data-act="copy">Скопировать</button></div>'
       + '<div class="vl-share">'
       + '<a class="vl-btn" href="' + esc(wa) + '" target="_blank" rel="noopener">WhatsApp</a>'
@@ -527,10 +552,21 @@
   // История скрыта за кнопкой: экран остаётся коротким, но всё под рукой.
   function vHist(card) {
     var list = (card.history || []).slice();
-    if (!list.length) return null;
     var s = el('<section><button class="vl-toggle" type="button">Показать историю</button>'
       + '<div class="vl-hist" hidden></div></section>');
     var box = s.querySelector(".vl-hist"), btn = s.querySelector(".vl-toggle");
+    if (!list.length) {
+      // Пустую историю тоже показываем: клиент должен понимать, что раздел есть.
+      btn.addEventListener("click", function () {
+        var open = !box.hasAttribute("hidden");
+        if (open) { box.setAttribute("hidden", ""); btn.textContent = "Показать историю"; }
+        else {
+          box.removeAttribute("hidden"); btn.textContent = "Скрыть историю";
+          box.innerHTML = '<div class="vl-empty">Пока пусто. Здесь появятся все начисления и списания баллов.</div>';
+        }
+      });
+      return s;
+    }
     btn.addEventListener("click", function () {
       var open = !box.hasAttribute("hidden");
       if (open) { box.setAttribute("hidden", ""); btn.textContent = "Показать историю"; }
@@ -589,6 +625,7 @@
     function render(card, ref) {
       popCloseAll(); root.innerHTML = "";
       root.appendChild(vCard(card));
+      var pg = vProgress(card); if (pg) root.appendChild(pg);
       var pend = vPending(card, post, function () { load(phone); });
       if (pend) root.appendChild(pend);
       if (!opts.compact) {
