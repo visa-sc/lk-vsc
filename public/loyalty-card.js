@@ -218,8 +218,9 @@
   + '.vl-code.done{background:linear-gradient(180deg,#e8f7ee,#dff3e6);border-color:rgba(47,138,82,.35);}'
   + '.vl-code.done .lb{color:var(--vl-green);font-weight:600;}'
   + '.vl-code.done::after{opacity:0;}'
-  + '.vl-share{display:flex;gap:9px;margin-top:10px;}'
-  + '.vl-share .vl-btn{flex:1;}'
+  + '.vl-share{display:flex;gap:9px;margin-top:10px;flex-wrap:wrap;}'
+  /* Подписи длинные — разрешаем перенос, чтобы на узком экране не вылезали за край */
+  + '.vl-share .vl-btn{flex:1 1 44%;white-space:normal;font-size:13px;padding:11px 12px;line-height:1.3;}'
   + '.vl-rstat{font-size:12px;color:var(--vl-mut);margin-top:12px;text-align:center;}'
   + '.vl-rstat b{color:var(--vl-ink);font-weight:600;}'
 
@@ -579,8 +580,8 @@
       + '<button type="button" class="vl-code" data-act="copy" title="Нажмите, чтобы скопировать промокод">'
       + '<span class="lb">Ваш промокод</span><span class="cd">' + esc(ref.code) + "</span></button>"
       + '<div class="vl-share">'
-      + '<a class="vl-btn" href="' + esc(wa) + '" target="_blank" rel="noopener">WhatsApp</a>'
-      + '<a class="vl-btn sec" href="' + esc(tg) + '" target="_blank" rel="noopener">Telegram</a></div>'
+      + '<a class="vl-btn" href="' + esc(wa) + '" target="_blank" rel="noopener">Отправить в WhatsApp</a>'
+      + '<a class="vl-btn sec" href="' + esc(tg) + '" target="_blank" rel="noopener">Отправить в Telegram</a></div>'
       + (ref.invitedCount ? '<div class="vl-rstat">Приглашено <b>' + RU(ref.invitedCount) + "</b> · оформились <b>"
           + RU(ref.qualifiedCount || 0) + "</b> · получено <b>" + RU(ref.earnedPoints || 0) + "</b> баллов</div>" : "")
       + "</div></section>");
