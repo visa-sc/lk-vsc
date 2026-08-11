@@ -4138,8 +4138,12 @@
       bottom: calc(20px + env(safe-area-inset-bottom));
       width: min(320px, calc(100% - 24px)); height: 60px; display: none;
       align-items: center; padding: 0 6px;
-      background: rgba(255,255,255,.82); border: 1px solid rgba(23,32,60,.08); border-radius: 34px;
-      box-shadow: 0 10px 30px -10px rgba(16,32,64,.35), 0 2px 8px rgba(16,24,40,.06);
+      /* Не белое пятно на белом фоне: мягкий уход из белого в голубой, голубоватая
+         рамка и подсвеченная тень — меню читается как отдельный элемент. */
+      background: linear-gradient(180deg, rgba(255,255,255,.95) 0%, rgba(223,238,249,.95) 100%);
+      border: 1px solid rgba(53,137,189,.22); border-radius: 34px;
+      box-shadow: 0 14px 34px -12px rgba(31,86,124,.38), 0 2px 8px rgba(16,24,40,.06),
+                  inset 0 1px 0 rgba(255,255,255,.9);
       backdrop-filter: saturate(1.7) blur(18px); -webkit-backdrop-filter: saturate(1.7) blur(18px);
       transition: height .3s cubic-bezier(.34,1.2,.5,1), width .3s cubic-bezier(.34,1.2,.5,1),
                   bottom .3s cubic-bezier(.34,1.2,.5,1), box-shadow .25s ease;
@@ -4215,18 +4219,18 @@
        программе сетка ЛК остаётся ровно такой, какой была.
        Мобильный: одна колонка, карточка уходит ПОД рабочую область — перед
        блоком «Нужна помощь?». */
+    /* Левая колонка собирается в отдельный контейнер (его создаёт наш скрипт):
+       «Ваши обращения» + оффер идут стопкой, поэтому оффер всегда вплотную под
+       обращениями. Через строки грида это не решалось: высокий «Статус обращения»
+       всё равно растягивал строку и оффер уезжал к низу колонки. */
+    .lkl-col { display: flex; flex-direction: column; gap: 16px; align-self: start; }
     @media (min-width: 761px) {
       /* Колонка фиксированная (320px), поэтому кегль задаём числом — так строка
          гарантированно помещается целиком, без многоточия. */
       .lkl-offer-txt { font-size: 12.5px; }
-      /* Первая строка — ровно по высоте «Ваших обращений» (min-content), поэтому
-         оффер во второй строке прижимается к ним вплотную; «Статус обращения»
-         занимает обе строки и растёт как раньше. */
-      .grid.lkl-grid { grid-template-rows: min-content auto; }
-      .grid.lkl-grid > .card:last-child { grid-column: 2; grid-row: 1 / span 2; }
-      .grid.lkl-grid > .lkl-offer { grid-column: 1; grid-row: 2; align-self: start; }
     }
-    @media (max-width: 760px) { .lkl-offer { order: 5; } }
+    /* Мобильный: колонка (в ней виден только оффер) уходит под рабочую область */
+    @media (max-width: 760px) { .lkl-col { order: 5; } }
   </style>
 
   <nav class="lkl-nav" id="lklNav" aria-label="Разделы кабинета">
@@ -4260,9 +4264,18 @@
       document.body.classList.add("lkl-has-nav");
       if (offer) {
         offer.classList.add("show");
-        // Класс включает наши правила раскладки сетки — только когда оффер реально показан.
-        var grid = offer.parentElement;
-        if (grid && grid.classList.contains("grid")) grid.classList.add("lkl-grid");
+        // Собираем левую колонку: «Ваши обращения» + оффер в одном контейнере.
+        // Разметку ЛК не правим — контейнер создаём здесь и переносим в него оба
+        // блока. Так оффер всегда идёт сразу под обращениями, а высокий «Статус»
+        // на его положение не влияет.
+        var grid = offer.parentElement, obr = document.getElementById("obrCard");
+        if (grid && grid.classList.contains("grid") && obr && !grid.querySelector(".lkl-col")) {
+          var col = document.createElement("div");
+          col.className = "lkl-col";
+          grid.insertBefore(col, obr);
+          col.appendChild(obr);
+          col.appendChild(offer);
+        }
       }
       var mounted = false, loading = false;
 
