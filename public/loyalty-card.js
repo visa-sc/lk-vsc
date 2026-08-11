@@ -40,7 +40,8 @@
   + '--vl-green:#2f8a52;--vl-red:#b0263a;'
   + '--vl-sh:0 1px 2px rgba(16,24,40,.03),0 18px 40px -26px rgba(16,32,64,.28);color:var(--vl-ink);'
   + 'font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;'
-  + '-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;line-height:1.5;}'
+  + '-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;line-height:1.5;'
+  + 'max-width:560px;margin-left:auto;margin-right:auto;}'
   + '.vl-root *{box-sizing:border-box;}'
   + '.vl-root section{margin-top:26px;}'
   + '.vl-cap{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--vl-mut);'
@@ -57,7 +58,7 @@
   // Пропорции настоящей пластиковой карты (85,6 × 54 мм) на любой ширине — и в
   // узкой шторке ЛК тоже. Всё, что в эти пропорции не влезает (прогресс, история),
   // живёт отдельными блоками ПОД картой.
-  + 'aspect-ratio:1.586/1;min-height:168px;max-height:250px;display:flex;flex-direction:column;justify-content:space-between;'
+  + 'width:100%;aspect-ratio:1.586/1;min-height:168px;display:flex;flex-direction:column;justify-content:space-between;'
   + 'background:linear-gradient(145deg,var(--c1) 0%,var(--c2) 52%,var(--c3) 100%);'
   + 'box-shadow:0 26px 54px -22px var(--cglow),0 2px 8px rgba(16,24,40,.12),'
   + 'inset 0 1px 0 rgba(255,255,255,.30),inset 0 0 0 1px rgba(255,255,255,.12),inset 0 -1px 0 rgba(0,0,0,.16);'
@@ -76,7 +77,7 @@
   /* Широкий экран: прогресс переезжает ВНУТРЬ карты (её высоты хватает), поэтому
      карта чуть вытянутее — иначе в середине зияла бы пустота. Тёмные варианты
      тех же элементов шкалы. На мобиле всё наоборот: карта чистая, прогресс ниже. */
-  + '@media(min-width:640px){.vl-card{aspect-ratio:1.75/1;max-height:340px;}}'
+  + '@media(min-width:640px){.vl-card{aspect-ratio:1.75/1;}}'
   + '.vl-card .vl-prog-in{margin-top:18px;}'
   + '.vl-card .vl-scale{color:rgba(255,255,255,.7);}'
   + '.vl-card .vl-scale b{color:#fff;}'
