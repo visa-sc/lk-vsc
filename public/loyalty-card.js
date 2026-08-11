@@ -214,10 +214,15 @@
   + 'transition:transform .16s ease,box-shadow .16s ease,background .3s ease,border-color .3s ease;}'
   + '.vl-code:hover{transform:translateY(-1px);box-shadow:0 10px 22px -14px rgba(53,137,189,.8);}'
   + '.vl-code:active{transform:translateY(0) scale(.995);}'
-  + '.vl-code::after{content:"⧉";position:absolute;top:11px;right:13px;font-size:13px;'
+  /* Иконка копирования — у НИЖНЕГО края: сверху она отъедала место у длинной
+     подписи, из-за чего та обрезалась многоточием. */
+  + '.vl-code::after{content:"⧉";position:absolute;bottom:12px;right:13px;font-size:13px;'
   + 'color:var(--vl-accent);opacity:.5;transition:opacity .15s ease;}'
   + '.vl-code:hover::after{opacity:.9;}'
-  + '.vl-code .lb{display:block;font-size:11.5px;color:var(--vl-mut);font-weight:500;letter-spacing:.01em;}'
+  /* Подпись длинная — держим её в ОДНУ строку на любой ширине: не переносим и
+     плавно уменьшаем кегль вместе с шириной экрана. */
+  + '.vl-code .lb{display:block;font-size:clamp(7.6px,2.35vw,11px);color:var(--vl-mut);font-weight:500;'
+  + 'letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 10px;}'
   /* Промокод набран лёгким начертанием с широкой разрядкой — читается как код,
      а не как заголовок; жирный на такой ширине выглядел грубо. */
   + '.vl-code .cd{display:block;font-size:26px;font-weight:400;letter-spacing:.22em;color:var(--vl-accent-d);'
@@ -590,7 +595,8 @@
       + " ₽</b> — другу!<br>Вознаграждение поступит на счёт сразу после оплаты."
       + "<br>Приглашайте неограниченное количество друзей.</div>"
       + '<button type="button" class="vl-code" data-act="copy" title="Нажмите, чтобы скопировать промокод">'
-      + '<span class="lb">Ваш промокод</span><span class="cd">' + esc(ref.code) + "</span></button>"
+      + '<span class="lb">Нажмите, чтобы скопировать ссылку с промокодом</span>'
+      + '<span class="cd">' + esc(ref.code) + "</span></button>"
       + '<div class="vl-share">'
       + '<a class="vl-btn" href="' + esc(wa) + '" target="_blank" rel="noopener">Отправить в WhatsApp</a>'
       + '<a class="vl-btn sec" href="' + esc(tg) + '" target="_blank" rel="noopener">Отправить в Telegram</a></div>'
@@ -598,28 +604,28 @@
           + RU(ref.qualifiedCount || 0) + "</b> · получено <b>" + RU(ref.earnedPoints || 0) + "</b> баллов</div>" : "")
       + "</div></section>");
     s.querySelector(".vl-gain").appendChild(vInfo(txtRef(ref)));   // «i» — у суммы выгоды
-    // Клик по всей области промокода копирует САМ КОД (им делятся голосом и в чатах),
-    // а плашка на секунду подтверждает действие — как зелёные блоки в калькуляторе.
+    // Клик по всей области копирует ГОТОВУЮ ССЫЛКУ с промокодом — её сразу можно
+    // отправить другу; плашка на секунду подтверждает действие (как в /calc).
     var codeBox = s.querySelector('[data-act="copy"]');
     codeBox.addEventListener("click", function () {
       function flash() {
         codeBox.classList.add("done");
         var lb = codeBox.querySelector(".lb"), was = lb.textContent;
-        lb.textContent = "✓ Промокод скопирован";
-        setTimeout(function () { codeBox.classList.remove("done"); lb.textContent = was; }, 1400);
+        lb.textContent = "✓ Ссылка с промокодом скопирована";
+        setTimeout(function () { codeBox.classList.remove("done"); lb.textContent = was; }, 1600);
       }
       // Clipboard API может отказать (нет жеста/прав) — тогда молча уходим на
       // execCommand, но подтверждение показываем в любом случае.
       function legacy() {
         try {
-          var i = d.createElement("textarea"); i.value = ref.code;
+          var i = d.createElement("textarea"); i.value = link;
           i.style.cssText = "position:fixed;opacity:0;top:0;left:0";
           d.body.appendChild(i); i.select(); d.execCommand("copy"); i.remove();
         } catch (_) {}
         flash();
       }
       try {
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ref.code).then(flash, legacy);
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(flash, legacy);
         else legacy();
       } catch (e) { legacy(); }
     });
