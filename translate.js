@@ -931,6 +931,48 @@ function mount(app, deps) {
     }
     return { usd, exact: false };
   }
+  // ── Разовый сторож баланса Anthropic (просьба Андрея 11.08) ──────────────
+  // Обычному API-ключу баланс в Anthropic не виден, поэтому считаем сами:
+  // старт $20 (пополнение 10.08.2026), минус расход по журналам spend всех
+  // заказов с этого момента. Остаток ≤ $5 → ОДНО письмо директору (маркер
+  // alertedAt). После следующего пополнения новую сумму задаёт Клод — сказать
+  // ему «пополнил на X», он сбросит счётчик.
+  {
+    const st0 = store();
+    if (!st0.balance) { st0.balance = { usd: 20, since: Date.parse("2026-08-10T00:00:00+03:00"), thresholdUsd: 5, alertedAt: null }; save(); }
+  }
+  function spendSinceUsd(ts) {
+    let usd = 0;
+    for (const o of store().orders) {
+      for (const e of (o.spend || [])) {
+        if ((e.at || 0) < ts) continue;
+        const rate = PRICES[e.model] || PRICES["claude-sonnet-5"];
+        usd += ((e.in || 0) + (e.cr || 0) * 0.1 + (e.cw || 0) * 1.25) * rate[0] / 1e6 + (e.out || 0) * rate[1] / 1e6;
+      }
+    }
+    return usd;
+  }
+  async function checkAiBalance() {
+    try {
+      const b = store().balance;
+      if (!b || b.alertedAt) return;
+      const left = b.usd - spendSinceUsd(b.since);
+      if (left > b.thresholdUsd) return;
+      const mailMod = require("./mail");
+      const r = await mailMod.sendMail({
+        to: "director@visa-sc.ru",
+        subject: "⚠️ Переводы: на балансе Anthropic осталось ≈ $" + left.toFixed(2),
+        html: "<p>По расчёту сервиса переводов, от пополнения $" + b.usd + " осталось <b>≈ $" + left.toFixed(2) + "</b> (порог предупреждения — $" + b.thresholdUsd + ").</p>"
+          + "<p>Пополнить: console.anthropic.com → Billing → Add funds. Точный остаток — там же на главной (Organization credits).</p>"
+          + "<p>Это разовое письмо. После пополнения скажите Клоду новую сумму — он перезапустит счётчик. Цифра оценочная (считается по журналу вызовов сервиса), фактический остаток в кабинете может немного отличаться.</p>",
+      });
+      if (r && r.ok) { b.alertedAt = Date.now(); b.lastLeftUsd = +left.toFixed(2); save(); console.log("translate: письмо о низком балансе отправлено, остаток ≈ $" + left.toFixed(2)); }
+      else console.error("translate balance mail:", (r && r.error) || "unknown");
+    } catch (e) { console.error("translate balance watch:", e.message); }
+  }
+  setInterval(checkAiBalance, 30 * 60 * 1000);
+  setTimeout(checkAiBalance, 90 * 1000);
+
   app.get("/translate/api/stats", requireTranslate, (req, res) => {
     const st = store();
     const all = st.orders;
