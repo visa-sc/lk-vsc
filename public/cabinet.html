@@ -1142,9 +1142,8 @@
            (вторая строка первой колонки), на мобиле уходит под рабочую область
            перед блоком «Нужна помощь?» (order:5). Показывается только когда
            бонусная программа включена. -->
-      <div class="lkl-offer" id="lklOffer">
-        <div class="lkl-offer-sum">4 000 ₽</div>
-        <div class="lkl-offer-txt">Пригласите друга и получите 4 000 ₽!</div>
+      <div class="card lkl-offer" id="lklOffer">
+        <div class="lkl-offer-txt">Пригласите друга и получите&nbsp;4&nbsp;000&nbsp;₽!</div>
         <button type="button" class="lkl-offer-btn">Подробнее</button>
       </div>
 
@@ -4142,8 +4141,19 @@
       background: rgba(255,255,255,.82); border: 1px solid rgba(23,32,60,.08); border-radius: 34px;
       box-shadow: 0 10px 30px -10px rgba(16,32,64,.35), 0 2px 8px rgba(16,24,40,.06);
       backdrop-filter: saturate(1.7) blur(18px); -webkit-backdrop-filter: saturate(1.7) blur(18px);
+      transition: height .3s cubic-bezier(.34,1.2,.5,1), width .3s cubic-bezier(.34,1.2,.5,1),
+                  bottom .3s cubic-bezier(.34,1.2,.5,1), box-shadow .25s ease;
     }
     .lkl-nav.show { display: flex; }
+    /* При скролле меню ужимается до иконок — не закрывает содержимое */
+    .lkl-nav.min {
+      height: 50px; width: min(150px, calc(100% - 96px));
+      bottom: calc(10px + env(safe-area-inset-bottom));
+      box-shadow: 0 6px 18px -8px rgba(16,32,64,.32);
+    }
+    .lkl-nav.min .lb { display: none; }
+    .lkl-nav.min .nit { padding: 8px 13px; }
+    .lkl-nav.min svg { width: 21px; height: 21px; }
     .lkl-nav button {
       flex: 1; border: 0; background: transparent; cursor: pointer; color: #7b8494;
       display: flex; align-items: center; justify-content: center; padding: 0 3px;
@@ -4172,24 +4182,14 @@
     .lkl-page h2 { margin: 0 0 18px; font-size: 20px; font-weight: 600; letter-spacing: -.02em; color: #141926; }
     .lkl-load { text-align: center; color: #7b8494; font-size: 13.5px; padding: 40px 0; }
 
-    /* ── карточка-оффер в кабинете ── */
-    .lkl-offer {
-      display: none; position: relative; overflow: hidden; text-align: center;
-      background: linear-gradient(160deg, rgba(255,255,255,.95), rgba(233,244,251,.95));
-      border: 1px solid rgba(53,137,189,.20); border-radius: 16px; padding: 18px 16px 16px;
-      box-shadow: 0 1px 2px rgba(16,24,40,.03), 0 16px 34px -24px rgba(16,32,64,.35);
-    }
+    /* ── карточка-оффер в кабинете ──
+       Оформление берём у обычной карточки ЛК (class="card"): тот же белый фон,
+       рамка и скругление, что у «Ваших обращений». Своего фона не рисуем. */
+    .lkl-offer { display: none; }
     .lkl-offer.show { display: block; }
-    .lkl-offer::after {
-      content: ""; position: absolute; right: -60px; top: -70px; width: 170px; height: 170px; border-radius: 50%;
-      background: radial-gradient(circle, rgba(53,137,189,.12), rgba(53,137,189,0) 70%); pointer-events: none;
+    .lkl-offer-txt {
+      font-size: 16px; font-weight: 700; color: #1d2330; line-height: 1.4; margin: 0 0 12px;
     }
-    .lkl-offer-sum {
-      position: relative; font-size: 30px; font-weight: 800; letter-spacing: -.03em; line-height: 1.05;
-      background: linear-gradient(135deg,#4aa3d8,#2b6d97); -webkit-background-clip: text; background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .lkl-offer-txt { position: relative; font-size: 13.5px; color: #4b5262; line-height: 1.45; margin: 6px 0 14px; }
     .lkl-offer-btn {
       position: relative; width: 100%; border: 0; border-radius: 12px; padding: 11px 16px; cursor: pointer;
       font: inherit; font-size: 14px; font-weight: 600; color: #fff;
@@ -4198,18 +4198,24 @@
     }
     .lkl-offer-btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
     .lkl-offer-btn:active { transform: translateY(0) scale(.99); }
-    /* Десктоп: явно ставим карточку в ПЕРВУЮ колонку под «Ваши обращения».
-       Без явного места автопоток кладёт её во вторую колонку и разрывает
-       «Статус обращения». Мобильный: одна колонка, карточка уходит ПОД рабочую
-       область — перед блоком «Нужна помощь?». */
-    @media (min-width: 761px) { .lkl-offer { grid-column: 1; grid-row: 2; } }
+    /* Десктоп: карточка — во ВТОРОЙ строке первой колонки, вплотную под «Ваши
+       обращения». Чтобы она не уезжала под высокий «Статус обращения», сам
+       статус растягиваем на обе строки. Правила включаются только вместе с
+       классом .lkl-grid (его ставит наш скрипт), поэтому при выключенной
+       программе сетка ЛК остаётся ровно такой, какой была.
+       Мобильный: одна колонка, карточка уходит ПОД рабочую область — перед
+       блоком «Нужна помощь?». */
+    @media (min-width: 761px) {
+      .grid.lkl-grid > .card:last-child { grid-column: 2; grid-row: 1 / span 2; }
+      .grid.lkl-grid > .lkl-offer { grid-column: 1; grid-row: 2; align-self: start; }
+    }
     @media (max-width: 760px) { .lkl-offer { order: 5; } }
   </style>
 
   <nav class="lkl-nav" id="lklNav" aria-label="Разделы кабинета">
     <button type="button" data-go="visas" class="act"><span class="nit">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2.5" width="14" height="19" rx="2.2"/><circle cx="12" cy="9.5" r="2.9"/><path d="M8.5 16.2c.7-1.5 2-2.3 3.5-2.3s2.8.8 3.5 2.3"/><path d="M8.6 19h6.8"/></svg>
-      <span class="lb">Визы</span></span>
+      <span class="lb">Обращения</span></span>
     </button>
     <button type="button" data-go="loyalty"><span class="nit">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19"/><path d="M6 15h4"/></svg>
@@ -4235,7 +4241,12 @@
       nav.dataset.on = "1";
       nav.classList.add("show");
       document.body.classList.add("lkl-has-nav");
-      if (offer) offer.classList.add("show");
+      if (offer) {
+        offer.classList.add("show");
+        // Класс включает наши правила раскладки сетки — только когда оффер реально показан.
+        var grid = offer.parentElement;
+        if (grid && grid.classList.contains("grid")) grid.classList.add("lkl-grid");
+      }
       var mounted = false, loading = false;
 
       function mountWidget() {
@@ -4268,6 +4279,19 @@
         b.addEventListener("click", function () { go(b.dataset.go); });
       });
       if (offer) offer.querySelector(".lkl-offer-btn").addEventListener("click", function () { go("loyalty"); });
+
+      // Скролл — меню ужимается до иконок. Следим и за окном (кабинет), и за
+      // экраном бонусов: при открытом разделе прокручивается именно он.
+      // Без requestAnimationFrame: переключение класса дешёвое, а rAF в фоновых
+      // вкладках не выполняется — меню осталось бы «широким» после скролла.
+      function watch() {
+        var y = page.classList.contains("open") ? page.scrollTop : (window.scrollY || document.documentElement.scrollTop || 0);
+        var min = y > 24;
+        if (min !== nav.classList.contains("min")) nav.classList.toggle("min", min);
+      }
+      window.addEventListener("scroll", watch, { passive: true });
+      page.addEventListener("scroll", watch, { passive: true });
+      watch();
       document.addEventListener("keydown", function (e) { if (e.key === "Escape" && page.classList.contains("open")) go("visas"); });
     };
   </script>
