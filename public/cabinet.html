@@ -4135,7 +4135,7 @@
     /* ── нижнее меню ── */
     .lkl-nav {
       position: fixed; left: 50%; transform: translateX(-50%); z-index: 1200;
-      bottom: calc(14px + env(safe-area-inset-bottom));
+      bottom: calc(20px + env(safe-area-inset-bottom));
       width: min(320px, calc(100% - 24px)); height: 60px; display: none;
       align-items: center; padding: 0 6px;
       background: rgba(255,255,255,.82); border: 1px solid rgba(23,32,60,.08); border-radius: 34px;
@@ -4146,9 +4146,10 @@
     }
     .lkl-nav.show { display: flex; }
     /* При скролле меню ужимается до иконок — не закрывает содержимое */
+    /* При сжатии меняем только размер — высоту над краем НЕ трогаем, иначе меню
+       «ныряет» вниз и выглядит прилипшим к нижней границе экрана. */
     .lkl-nav.min {
       height: 50px; width: min(150px, calc(100% - 96px));
-      bottom: calc(10px + env(safe-area-inset-bottom));
       box-shadow: 0 6px 18px -8px rgba(16,32,64,.32);
     }
     .lkl-nav.min .lb { display: none; }
@@ -4186,9 +4187,18 @@
        Оформление берём у обычной карточки ЛК (class="card"): тот же белый фон,
        рамка и скругление, что у «Ваших обращений». Своего фона не рисуем. */
     .lkl-offer { display: none; }
-    .lkl-offer.show { display: block; }
+    /* Фон — как был: из белого мягко уходит в голубой, чтобы карточка читалась
+       как акцент, но оставалась в стиле кабинета. */
+    .lkl-offer.show {
+      display: block;
+      background: linear-gradient(160deg, #ffffff 0%, #eaf3fa 100%);
+      border-color: rgba(53,137,189,.20);
+    }
+    /* Строка должна помещаться В ОДНУ строку и в узкой колонке 320px, и на мобиле */
     .lkl-offer-txt {
-      font-size: 16px; font-weight: 700; color: #1d2330; line-height: 1.4; margin: 0 0 12px;
+      font-size: clamp(12.5px, 3.5vw, 14.5px); font-weight: 700; color: #1d2330;
+      line-height: 1.35; margin: 0 0 12px; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; text-align: center;
     }
     .lkl-offer-btn {
       position: relative; width: 100%; border: 0; border-radius: 12px; padding: 11px 16px; cursor: pointer;
@@ -4206,6 +4216,13 @@
        Мобильный: одна колонка, карточка уходит ПОД рабочую область — перед
        блоком «Нужна помощь?». */
     @media (min-width: 761px) {
+      /* Колонка фиксированная (320px), поэтому кегль задаём числом — так строка
+         гарантированно помещается целиком, без многоточия. */
+      .lkl-offer-txt { font-size: 12.5px; }
+      /* Первая строка — ровно по высоте «Ваших обращений» (min-content), поэтому
+         оффер во второй строке прижимается к ним вплотную; «Статус обращения»
+         занимает обе строки и растёт как раньше. */
+      .grid.lkl-grid { grid-template-rows: min-content auto; }
       .grid.lkl-grid > .card:last-child { grid-column: 2; grid-row: 1 / span 2; }
       .grid.lkl-grid > .lkl-offer { grid-column: 1; grid-row: 2; align-self: start; }
     }
