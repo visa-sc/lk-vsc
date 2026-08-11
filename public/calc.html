@@ -738,8 +738,9 @@
   })();
 
   // ── Переключатель «Калькулятор ВНЖ / Страхование» ──
-  // Режим запоминается (localStorage) и доступен по прямой ссылке /calc#insurance
-  // (туда редиректит бывшая страница /insurance).
+  // ВСЕГДА открывается ВНЖ (решение Андрея 11.08, режим НЕ запоминается).
+  // Единственное исключение — явный заход по прямой ссылке /calc#insurance
+  // (туда редиректит бывшая страница /insurance, ссылка ушла Насте в письмах).
   (function(){
     var sw = $("modeSwitch");
     function setMode(m){
@@ -749,16 +750,11 @@
       $("cardVnz").style.display = ins ? "none" : "";
       $("cardIns").style.display = ins ? "" : "none";
       document.title = ins ? "Калькулятор страхования — VOYO" : "Калькулятор ВНЖ — VOYO";
-      try { localStorage.setItem("voyoCalcMode", m); } catch (_) {}
-      try { history.replaceState(null, "", location.pathname + (ins ? "#insurance" : "")); } catch (_) {}
     }
     [].forEach.call(sw.querySelectorAll("button"), function(b){
       b.addEventListener("click", function(){ setMode(b.getAttribute("data-mode")); });
     });
-    var m = "vnz";
-    if (/insurance|strah/i.test(location.hash)) m = "ins";
-    else { try { if (localStorage.getItem("voyoCalcMode") === "ins") m = "ins"; } catch (_) {} }
-    setMode(m);
+    setMode(/insurance|strah/i.test(location.hash) ? "ins" : "vnz");
   })();
 </script>
 </body>
