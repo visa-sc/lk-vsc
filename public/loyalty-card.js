@@ -540,7 +540,7 @@
       ? "До статуса <b>" + esc(card.nextTier) + "</b> — ещё " + RU(card.toNextSpend) + " ₽"
         + (card.nextRate ? ", кэшбэк станет " + Math.round(card.nextRate * 100) + "%" : "")
       : "Максимальный статус — ваш кэшбэк <b>" + rate + "%</b> ✦";
-    return '<div class="vl-scale"><span>Потрачено <b>' + RU(spend) + ' ₽</b></span><span>' + RU(top) + " ₽</span></div>"
+    return '<div class="vl-scale"><span>Заказано на <b>' + RU(spend) + ' ₽</b></span><span>' + RU(top) + " ₽</span></div>"
       + '<div class="vl-bar"><i data-w="' + pct.toFixed(2) + '"></i>' + ticks + "</div>"
       + '<div class="vl-note">' + note + "</div>";
   }
