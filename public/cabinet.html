@@ -1138,6 +1138,16 @@
         <div id="leadList" class="lead-list"></div>
       </div>
 
+      <!-- БОНУСЫ: оффер-карточка. На десктопе встаёт слева под «Ваши обращения»
+           (вторая строка первой колонки), на мобиле уходит под рабочую область
+           перед блоком «Нужна помощь?» (order:5). Показывается только когда
+           бонусная программа включена. -->
+      <div class="lkl-offer" id="lklOffer">
+        <div class="lkl-offer-sum">4 000 ₽</div>
+        <div class="lkl-offer-txt">Пригласите друга и получите 4 000 ₽!</div>
+        <button type="button" class="lkl-offer-btn">Подробнее</button>
+      </div>
+
       <div class="card">
         <div class="status-top">
           <div>
@@ -4115,81 +4125,117 @@
        сам открыл раздел, поэтому на скорость загрузки ЛК не влияет.
        Данные — /cabinet/api/loyalty (телефон из сессии voyo_sess).
 
-       ЧТОБЫ ОТКАТИТЬ: либо LK_LOYALTY=0 в .env + pm2 restart (кнопка исчезнет
-       сама, код трогать не нужно), либо удалить этот блок целиком и снять две
-       строки инициализации в bootstrap (помечены «БОНУСЫ»).
+       Навигация как в /app: нижнее меню-«пилюля» с двумя разделами —
+       «Визы» (сам кабинет) и «Бонусы» (экран программы поверх кабинета).
+
+       ЧТОБЫ ОТКАТИТЬ: либо LK_LOYALTY=0 в .env + pm2 restart (меню и офер
+       исчезнут сами, код трогать не нужно), либо удалить этот блок целиком,
+       карточку-оффер в .grid и две строки в bootstrap (помечены «БОНУСЫ»).
        ════════════════════════════════════════════════════════════════════ -->
   <style id="lkl-style">
-    .lkl-fab {
-      position: fixed; right: 18px; bottom: 18px; z-index: 900;
-      width: 56px; height: 56px; border-radius: 50%; border: 1px solid rgba(23,32,60,.08);
-      background: #fff; color: #3589BD; cursor: pointer; display: none;
-      align-items: center; justify-content: center; padding: 0;
-      box-shadow: 0 2px 6px rgba(16,24,40,.06), 0 18px 34px -16px rgba(16,32,64,.38);
-      transition: transform .18s ease, box-shadow .18s ease;
-      -webkit-tap-highlight-color: transparent;
+    /* ── нижнее меню ── */
+    .lkl-nav {
+      position: fixed; left: 50%; transform: translateX(-50%); z-index: 1200;
+      bottom: calc(14px + env(safe-area-inset-bottom));
+      width: min(320px, calc(100% - 24px)); height: 60px; display: none;
+      align-items: center; padding: 0 6px;
+      background: rgba(255,255,255,.82); border: 1px solid rgba(23,32,60,.08); border-radius: 34px;
+      box-shadow: 0 10px 30px -10px rgba(16,32,64,.35), 0 2px 8px rgba(16,24,40,.06);
+      backdrop-filter: saturate(1.7) blur(18px); -webkit-backdrop-filter: saturate(1.7) blur(18px);
     }
-    .lkl-fab.show { display: flex; }
-    .lkl-fab:hover { transform: translateY(-2px); box-shadow: 0 2px 8px rgba(16,24,40,.08), 0 24px 42px -18px rgba(16,32,64,.45); }
-    .lkl-fab:active { transform: translateY(0) scale(.96); }
-    .lkl-fab svg { width: 26px; height: 26px; display: block; }
-    .lkl-scrim {
-      position: fixed; inset: 0; z-index: 1190; background: rgba(20,24,40,.45);
+    .lkl-nav.show { display: flex; }
+    .lkl-nav button {
+      flex: 1; border: 0; background: transparent; cursor: pointer; color: #7b8494;
+      display: flex; align-items: center; justify-content: center; padding: 0 3px;
+      font: inherit; transition: color .18s ease; -webkit-tap-highlight-color: transparent;
+    }
+    .lkl-nav .nit {
+      display: flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 999px;
+      background: transparent; transition: background .2s ease, transform .24s cubic-bezier(.34,1.4,.5,1);
+    }
+    .lkl-nav button.act { color: #fff; }
+    .lkl-nav button.act .nit { background: linear-gradient(140deg,#4aa3d8,#3589BD); }
+    .lkl-nav button:active .nit { transform: scale(.94); }
+    .lkl-nav svg { width: 22px; height: 22px; display: block; flex: none; }
+    .lkl-nav .lb { font-size: 13px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
+    body.lkl-has-nav { padding-bottom: 96px; }
+
+    /* ── экран бонусной программы поверх кабинета ── */
+    .lkl-page {
+      position: fixed; inset: 0; z-index: 1150; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      background: linear-gradient(180deg, #f7f9fc 0%, #eef1f6 100%);
       opacity: 0; pointer-events: none; transition: opacity .28s ease;
-      -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+      padding: 0 0 120px;
     }
-    .lkl-scrim.open { opacity: 1; pointer-events: auto; }
-    .lkl-sheet {
-      position: fixed; z-index: 1200; left: 0; right: 0; bottom: 0;
-      max-height: 92vh; display: flex; flex-direction: column;
-      background: #f4f7fb; border-radius: 22px 22px 0 0;
-      box-shadow: 0 -8px 40px rgba(16,24,40,.28);
-      transform: translateY(102%); transition: transform .38s cubic-bezier(.22,.9,.3,1);
-    }
-    .lkl-sheet.open { transform: none; }
-    @media (min-width: 760px) {
-      .lkl-sheet { left: 50%; right: auto; width: 520px; margin-left: -260px; border-radius: 22px 22px 0 0; }
-    }
-    .lkl-head {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      padding: 16px 20px 12px; flex: none;
-    }
-    .lkl-head h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.02em; color: #141926; }
-    .lkl-x {
-      width: 32px; height: 32px; border-radius: 50%; border: 0; cursor: pointer; flex: none;
-      background: rgba(23,32,60,.06); color: #6a7385; font-size: 15px; line-height: 1;
-    }
-    .lkl-x:hover { background: rgba(23,32,60,.10); }
-    .lkl-grip { width: 38px; height: 4px; border-radius: 99px; background: rgba(23,32,60,.14); margin: 8px auto 0; }
-    .lkl-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px 18px 26px; }
+    .lkl-page.open { opacity: 1; pointer-events: auto; }
+    .lkl-page-in { max-width: 520px; margin: 0 auto; padding: 26px 18px 0; }
+    .lkl-page h2 { margin: 0 0 18px; font-size: 20px; font-weight: 600; letter-spacing: -.02em; color: #141926; }
     .lkl-load { text-align: center; color: #7b8494; font-size: 13.5px; padding: 40px 0; }
+
+    /* ── карточка-оффер в кабинете ── */
+    .lkl-offer {
+      display: none; position: relative; overflow: hidden; text-align: center;
+      background: linear-gradient(160deg, rgba(255,255,255,.95), rgba(233,244,251,.95));
+      border: 1px solid rgba(53,137,189,.20); border-radius: 16px; padding: 18px 16px 16px;
+      box-shadow: 0 1px 2px rgba(16,24,40,.03), 0 16px 34px -24px rgba(16,32,64,.35);
+    }
+    .lkl-offer.show { display: block; }
+    .lkl-offer::after {
+      content: ""; position: absolute; right: -60px; top: -70px; width: 170px; height: 170px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(53,137,189,.12), rgba(53,137,189,0) 70%); pointer-events: none;
+    }
+    .lkl-offer-sum {
+      position: relative; font-size: 30px; font-weight: 800; letter-spacing: -.03em; line-height: 1.05;
+      background: linear-gradient(135deg,#4aa3d8,#2b6d97); -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .lkl-offer-txt { position: relative; font-size: 13.5px; color: #4b5262; line-height: 1.45; margin: 6px 0 14px; }
+    .lkl-offer-btn {
+      position: relative; width: 100%; border: 0; border-radius: 12px; padding: 11px 16px; cursor: pointer;
+      font: inherit; font-size: 14px; font-weight: 600; color: #fff;
+      background: linear-gradient(140deg,#4aa3d8,#3589BD); box-shadow: 0 10px 20px -12px rgba(53,137,189,.95);
+      transition: transform .16s ease, filter .16s ease;
+    }
+    .lkl-offer-btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
+    .lkl-offer-btn:active { transform: translateY(0) scale(.99); }
+    /* Десктоп: явно ставим карточку в ПЕРВУЮ колонку под «Ваши обращения».
+       Без явного места автопоток кладёт её во вторую колонку и разрывает
+       «Статус обращения». Мобильный: одна колонка, карточка уходит ПОД рабочую
+       область — перед блоком «Нужна помощь?». */
+    @media (min-width: 761px) { .lkl-offer { grid-column: 1; grid-row: 2; } }
+    @media (max-width: 760px) { .lkl-offer { order: 5; } }
   </style>
 
-  <button type="button" id="lklFab" class="lkl-fab" aria-label="Бонусная программа">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.9-3.7 3.9-5.6 7.5-5.6s6.6 1.9 7.5 5.6"/>
-    </svg>
-  </button>
-  <div id="lklScrim" class="lkl-scrim"></div>
-  <div id="lklSheet" class="lkl-sheet" role="dialog" aria-modal="true" aria-labelledby="lklTitle">
-    <div class="lkl-grip" aria-hidden="true"></div>
-    <div class="lkl-head">
-      <h2 id="lklTitle">Бонусная программа</h2>
-      <button type="button" class="lkl-x" id="lklClose" aria-label="Закрыть">✕</button>
+  <nav class="lkl-nav" id="lklNav" aria-label="Разделы кабинета">
+    <button type="button" data-go="visas" class="act"><span class="nit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2.5" width="14" height="19" rx="2.2"/><circle cx="12" cy="9.5" r="2.9"/><path d="M8.5 16.2c.7-1.5 2-2.3 3.5-2.3s2.8.8 3.5 2.3"/><path d="M8.6 19h6.8"/></svg>
+      <span class="lb">Визы</span></span>
+    </button>
+    <button type="button" data-go="loyalty"><span class="nit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19"/><path d="M6 15h4"/></svg>
+      <span class="lb">Бонусы</span></span>
+    </button>
+  </nav>
+
+  <div class="lkl-page" id="lklPage">
+    <div class="lkl-page-in">
+      <h2>Бонусная программа</h2>
+      <div id="lklBody"><div class="lkl-load">Загружаем бонусную карту…</div></div>
     </div>
-    <div class="lkl-body" id="lklBody"><div class="lkl-load">Загружаем бонусную карту…</div></div>
   </div>
 
   <script>
     // Инициализируется из bootstrap только при валидной сессии и loyalty:true.
     window.__lkLoyaltyInit = function () {
-      var fab = document.getElementById("lklFab");
-      var scrim = document.getElementById("lklScrim");
-      var sheet = document.getElementById("lklSheet");
+      var nav = document.getElementById("lklNav");
+      var page = document.getElementById("lklPage");
       var body = document.getElementById("lklBody");
-      if (!fab || fab.dataset.on) return;
-      fab.dataset.on = "1";
-      fab.classList.add("show");
+      var offer = document.getElementById("lklOffer");
+      if (!nav || nav.dataset.on) return;
+      nav.dataset.on = "1";
+      nav.classList.add("show");
+      document.body.classList.add("lkl-has-nav");
+      if (offer) offer.classList.add("show");
       var mounted = false, loading = false;
 
       function mountWidget() {
@@ -4211,19 +4257,18 @@
         // session:true — телефон сервер берёт из cookie-сессии, в запросах его нет.
         window.VoyoLoyalty.mount(body, { session: true, api: "/cabinet/api/loyalty" });
       }
-      function open() {
-        scrim.classList.add("open"); sheet.classList.add("open");
-        document.body.style.overflow = "hidden";
-        mountWidget();
+      function go(which) {
+        var loyalty = which === "loyalty";
+        nav.querySelectorAll("button").forEach(function (b) { b.classList.toggle("act", b.dataset.go === which); });
+        page.classList.toggle("open", loyalty);
+        document.body.style.overflow = loyalty ? "hidden" : "";
+        if (loyalty) { page.scrollTop = 0; mountWidget(); }
       }
-      function close() {
-        scrim.classList.remove("open"); sheet.classList.remove("open");
-        document.body.style.overflow = "";
-      }
-      fab.addEventListener("click", open);
-      scrim.addEventListener("click", close);
-      document.getElementById("lklClose").addEventListener("click", close);
-      document.addEventListener("keydown", function (e) { if (e.key === "Escape" && sheet.classList.contains("open")) close(); });
+      nav.querySelectorAll("button").forEach(function (b) {
+        b.addEventListener("click", function () { go(b.dataset.go); });
+      });
+      if (offer) offer.querySelector(".lkl-offer-btn").addEventListener("click", function () { go("loyalty"); });
+      document.addEventListener("keydown", function (e) { if (e.key === "Escape" && page.classList.contains("open")) go("visas"); });
     };
   </script>
   <!-- ══════════════════ /БОНУСЫ ══════════════════ -->
