@@ -2228,10 +2228,12 @@
       // pick()/Total/Grand total/склейку недель, что и CV/CPL — логика идентична.
       const VSC_TRAFCONV = { key: "trafConv", label: "Конверсия из трафика в лид (paid traf conv)", fmt: "pct", good: 1,
         // 3 кривые на одном графике (просьба Андрея 22.07): общая + МСК + СПБ.
+        // По умолчанию видна ТОЛЬКО общая (просьба Андрея 11.08) — МСК/СПБ включаются
+        // кликом по легенде (off: true = скрыта при первой отрисовке).
         lines: [
           { key: "trafConv", label: "общая", color: "#4a90d9" },
-          { key: "trafConvMsk", label: "МСК", color: "#e8843b" },
-          { key: "trafConvSpb", label: "СПБ", color: "#8e44ad" }
+          { key: "trafConvMsk", label: "МСК", color: "#e8843b", off: true },
+          { key: "trafConvSpb", label: "СПБ", color: "#8e44ad", off: true }
         ] };
       // Прибыль по месяцам приходит с сервера (vscData.profit, ключ — ПОЛНОЕ имя месяца);
       // директор вводит её раз в месяц через /vsc. Рентабельность = прибыль / выручка (бюджет).
@@ -2780,7 +2782,9 @@
         // масштаб осей пересчитывается по видимым кривым; состояние живёт в
         // vscLineChart._hidden[kpi.key] и переживает перерисовки (день↔неделя).
         const allDefs = kpi.lines || [{ key: kpi.key, color: "#4a90d9" }];
-        const hid = kpi.lines ? ((vscLineChart._hidden = vscLineChart._hidden || {})[kpi.key] = (vscLineChart._hidden[kpi.key] || {})) : {};
+        // Первая отрисовка: скрыты кривые с off:true (у конверсии трафик→лид — МСК/СПБ);
+        // дальше состояние живёт до перезагрузки страницы, как выбрал пользователь.
+        const hid = kpi.lines ? ((vscLineChart._hidden = vscLineChart._hidden || {})[kpi.key] = (vscLineChart._hidden[kpi.key] || (function () { const init = {}; kpi.lines.forEach((ld) => { if (ld.off) init[ld.key] = true; }); return init; })())) : {};
         const lineDefs = allDefs.filter((ld) => !hid[ld.key]);
         const valOf = (s, key) => (s.k && s.k[key] != null && !isNaN(s.k[key])) ? +s.k[key] : null;
         if (kpi.lines) {
