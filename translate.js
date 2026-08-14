@@ -942,13 +942,13 @@ function mount(app, deps) {
     if (!st0.balance) { st0.balance = { usd: 20, since: Date.parse("2026-08-10T00:00:00+03:00"), thresholdUsd: 5, alertedAt: null }; save(); }
   }
   function spendSinceUsd(ts) {
+    const st = store();
     let usd = 0;
-    for (const o of store().orders) {
-      for (const e of (o.spend || [])) {
-        if ((e.at || 0) < ts) continue;
-        const rate = PRICES[e.model] || PRICES["claude-sonnet-5"];
-        usd += ((e.in || 0) + (e.cr || 0) * 0.1 + (e.cw || 0) * 1.25) * rate[0] / 1e6 + (e.out || 0) * rate[1] / 1e6;
-      }
+    const entries = [...st.orders.flatMap((o) => o.spend || []), ...(st.spendArchive || [])];
+    for (const e of entries) {
+      if ((e.at || 0) < ts) continue;
+      const rate = PRICES[e.model] || PRICES["claude-sonnet-5"];
+      usd += ((e.in || 0) + (e.cr || 0) * 0.1 + (e.cw || 0) * 1.25) * rate[0] / 1e6 + (e.out || 0) * rate[1] / 1e6;
     }
     return usd;
   }
@@ -1238,6 +1238,13 @@ function mount(app, deps) {
     const o = st.orders[i];
     const all = [...(o.src || []).map((f) => f.file), o.files && o.files.html, o.files && o.files.docx, o.files && o.files.human].filter(Boolean);
     for (const fn of all) { try { fs.unlinkSync(path.join(FILES_DIR, fn)); } catch (_) {} }
+    // Журнал расхода удалённого заказа сохраняем отдельно — иначе удаление
+    // «возвращает» деньги в оценку остатка баланса и статистику.
+    if (Array.isArray(o.spend) && o.spend.length) {
+      st.spendArchive = st.spendArchive || [];
+      st.spendArchive.push(...o.spend);
+      if (st.spendArchive.length > 5000) st.spendArchive.splice(0, st.spendArchive.length - 5000);
+    }
     st.orders.splice(i, 1);
     save();
     return res.json({ success: true });
