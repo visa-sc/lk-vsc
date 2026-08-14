@@ -358,6 +358,12 @@
       if (ev === "drop") { picked = Array.prototype.slice.call(e.dataTransfer.files); renderPicked(); }
     });
   });
+  // Запоминаем страну и язык между заказами (серия документов одного клиента).
+  try {
+    var sf = JSON.parse(localStorage.getItem("voyo_tr_form") || "{}");
+    if (sf.country) $("#country").value = sf.country;
+    if (sf.targetLang) $("#targetLang").value = sf.targetLang;
+  } catch (_) {}
   $("#orderForm").addEventListener("submit", function (e) {
     e.preventDefault();
     $("#formErr").textContent = "";
@@ -374,6 +380,7 @@
         $("#submitBtn").disabled = false;
         if (!j.success) { $("#formErr").textContent = j.message || "Ошибка"; return; }
         picked = []; renderPicked(); $("#files").value = ""; $("#note").value = ""; $("#translit").value = "";
+        try { localStorage.setItem("voyo_tr_form", JSON.stringify({ country: $("#country").value.trim(), targetLang: $("#targetLang").value })); } catch (_) {}
         load();
       })
       .catch(function (e2) { $("#submitBtn").disabled = false; if (e2.message !== "auth") $("#formErr").textContent = "Ошибка сети"; });
@@ -554,6 +561,7 @@
 
   function renderOrder(o) {
     var st = STATUS[o.status] || ["gray", o.status];
+    if (o.status === "translating" && o.progress) st = [st[0], "переводит ИИ… часть " + o.progress];
     var cls = o.status === "done" ? "done" : (o.status === "error" ? "err" : (o.status === "translating" || o.status === "checking" || o.status === "queued" ? "run" : ""));
     var h = "<div class=\"ord " + cls + "\" data-id=\"" + o.id + "\">";
     h += "<div class=\"ord-top\"><span class=\"ord-name\">" + esc((o.srcNames || []).join(", ") || "—") + "</span>";
@@ -574,6 +582,7 @@
     if (o.params && o.params.note) meta.push(esc(o.params.note));
     if (o.chat && o.chat.from) meta.push("Из чата, от: " + esc(o.chat.from));
     if (o.humanName) meta.push("Перевод человека: " + esc(o.humanName));
+    if (o.filesPurged) meta.push("файлы удалены по сроку хранения");
     meta.push(new Date(o.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }));
     h += "<div class=\"ord-meta\">" + meta.join(" · ") + "</div>";
     if (o.error) h += "<div class=\"ord-err\">" + esc(o.error) + "</div>";
@@ -582,6 +591,7 @@
     h += "<div class=\"ord-acts\">";
     if (o.hasDocx) h += "<a class=\"accent\" href=\"/translate/api/order/" + o.id + "/file/docx?token=\" data-dl=\"docx\">⬇︎ DOCX</a>";
     if (o.hasHtml) h += "<a href=\"/translate/api/order/" + o.id + "/file/html?token=\" data-dl=\"html\" target=\"_blank\">Просмотр</a>";
+    if (o.hasHtml) h += "<a href=\"/translate/api/order/" + o.id + "/file/html?print=1&token=\" data-dl=\"pdf\" target=\"_blank\">PDF (печать)</a>";
     if (o.checkVerdict) h += "<button data-act=\"report\">" + (openReports[o.id] ? "Скрыть отчёт" : "Отчёт проверки") + "</button>";
     if (o.status === "done") h += "<button data-act=\"correct\">Корректировать</button>";
     if (o.status === "done") h += "<button data-act=\"human\">" + (o.humanName ? "Заменить перевод человека" : "+ Перевод человека") + "</button>";

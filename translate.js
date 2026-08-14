@@ -38,7 +38,7 @@ const FILES_DIR = path.join(DIR, "files");
 const STORE_FILE = path.join(DIR, "orders.json");
 
 const MAX_ORDERS = 500;
-const MAX_TOTAL_SRC = 20 * 1024 * 1024; // base64 раздувает ×1.33, лимит API — 32MB на запрос
+const MAX_TOTAL_SRC = 45 * 1024 * 1024; // крупные PDF режем на части сами (ensureChunks)
 const MAX_LESSONS_IN_PROMPT = 40;
 
 function ensureDirs() {
@@ -124,14 +124,14 @@ function srcSupported(name) { return SRC_EXT.indexOf(path.extname(String(name ||
 // → корректировки): у них одинаковый префикс, поэтому повторные проходы читают
 // документ по 10% цены. У проверки и сравнения своя JSON-схема — их префикс всё
 // равно другой, там кэш только удорожил бы первый запрос на 25%.
-async function srcBlocks(order, cache) {
-  const blocks = await srcBlocksRaw(order);
+async function srcBlocks(order, cache, files) {
+  const blocks = await srcBlocksRaw(order, files);
   if (cache && blocks.length) blocks[blocks.length - 1] = Object.assign({}, blocks[blocks.length - 1], { cache_control: { type: "ephemeral" } });
   return blocks;
 }
-async function srcBlocksRaw(order) {
+async function srcBlocksRaw(order, files) {
   const blocks = [];
-  for (const f of order.src) {
+  for (const f of (files || order.src)) {
     const buf = readFileBuf(f.file);
     const mime = mimeByExt(f.file);
     if (mime === "application/pdf") {
@@ -149,18 +149,84 @@ async function srcBlocksRaw(order) {
   return blocks;
 }
 
+// ── Большие документы: нарезка и пакеты ──────────────────────────────────
+// Лимит API — 32 МБ на запрос, base64 раздувает файл в 1,33 раза. Держим бюджет
+// одного запроса 19 МБ исходных байт; что больше — режем PDF по страницам
+// (pdf-lib) и переводим частями, склеивая HTML.
+const REQ_BUDGET = Number(process.env.TRANSLATE_REQ_BUDGET || 19 * 1024 * 1024);
+function totalSrcSize(order) {
+  try { return (order.src || []).reduce((s, f) => s + fs.statSync(path.join(FILES_DIR, f.file)).size, 0); } catch (_) { return 0; }
+}
+// Крупный PDF → несколько src-файлов по страницам, каждый в бюджете запроса.
+async function ensureChunks(order) {
+  const out = [];
+  let changed = false;
+  for (const f of order.src) {
+    let size = 0;
+    try { size = fs.statSync(path.join(FILES_DIR, f.file)).size; } catch (_) { out.push(f); continue; }
+    if (!/\.pdf$/i.test(f.file) || size <= REQ_BUDGET) { out.push(f); continue; }
+    const { PDFDocument } = require("pdf-lib");
+    const srcDoc = await PDFDocument.load(readFileBuf(f.file), { ignoreEncryption: true });
+    const n = srcDoc.getPageCount();
+    // Запас 20%: страницы неравномерные, лучше больше частей, чем упавший запрос.
+    const parts = Math.max(2, Math.ceil(size / (REQ_BUDGET * 0.8)));
+    const per = Math.max(1, Math.ceil(n / parts));
+    for (let i = 0, part = 0; i < n; i += per, part++) {
+      const nd = await PDFDocument.create();
+      const pages = await nd.copyPages(srcDoc, Array.from({ length: Math.min(per, n - i) }, (_, k) => i + k));
+      pages.forEach((pg) => nd.addPage(pg));
+      const buf = Buffer.from(await nd.save());
+      const fn = saveFile(order.id, "part" + out.length + "-" + part, buf, "part.pdf", "");
+      out.push({ file: fn, name: f.name + " (стр. " + (i + 1) + "–" + Math.min(i + per, n) + ")" });
+    }
+    changed = true;
+    console.log("translate: PDF «" + f.name + "» (" + Math.round(size / 1e6) + " МБ, " + n + " стр.) нарезан на части:", parts);
+  }
+  if (changed) { order.srcOriginal = order.src; order.src = out; save(); }
+}
+// Разбивка списка исходников на пакеты «по одному запросу».
+function srcBatches(order) {
+  const batches = [[]];
+  let cur = 0;
+  for (const f of order.src) {
+    let size = 0;
+    try { size = fs.statSync(path.join(FILES_DIR, f.file)).size; } catch (_) {}
+    if (cur > 0 && cur + size > REQ_BUDGET) { batches.push([]); cur = 0; }
+    batches[batches.length - 1].push(f);
+    cur += size;
+  }
+  return batches.filter((b) => b.length);
+}
+
 // ── Claude ────────────────────────────────────────────────────────────────
 function aiConfigured() { return !!process.env.ANTHROPIC_API_KEY; }
-let _client = null;
+// Канал до Anthropic: основной ретранслятор (ANTHROPIC_BASE_URL) и запасной
+// (ANTHROPIC_BASE_URL_BACKUP, опц.). Переключение хранится в orders.json —
+// переживает рестарт; назад на основной возвращает часовой сторож канала.
+function channelState() {
+  const st = store();
+  if (!st.channel) st.channel = { useBackup: false, fails: 0, alertedAt: null };
+  return st.channel;
+}
+function baseUrls() {
+  return { prim: process.env.ANTHROPIC_BASE_URL || "", back: process.env.ANTHROPIC_BASE_URL_BACKUP || "" };
+}
+function activeBase() {
+  const { prim, back } = baseUrls();
+  return (channelState().useBackup && back) ? back : prim;
+}
+let _client = null, _clientBase = null;
 function client() {
   if (!aiConfigured()) return null;
-  if (!_client) {
+  const base = activeBase() || undefined;
+  if (!_client || _clientBase !== base) {
     const { Anthropic } = require("@anthropic-ai/sdk");
     const opts = {
       apiKey: process.env.ANTHROPIC_API_KEY,
-      baseURL: process.env.ANTHROPIC_BASE_URL || undefined,
+      baseURL: base,
       timeout: 15 * 60 * 1000, maxRetries: 2,
     };
+    _clientBase = base;
     // Anthropic не обслуживает запросы с российских IP (403 Request not allowed),
     // прод — в РФ. TRANSLATE_PROXY = любой не-РФ http(s)/socks-прокси вида
     // http://user:pass@host:port — весь трафик к API пойдёт через него.
@@ -198,7 +264,25 @@ const SYS_COMMON = [
   "- Ничего не добавляется от себя и не комментируется сверх задачи.",
 ].join("\n");
 
+// Сетевая ли ошибка (обрыв канала/блокировка), а не ответ API.
+function isNetworkError(e) {
+  return !(e && e.status) && /fetch failed|network|ECONN|ETIMEDOUT|EAI_AGAIN|handshake|socket|terminated|aborted|Connection error/i.test(String((e && e.message) || e));
+}
 async function runClaude(params) {
+  try { return await runClaudeOnce(params); }
+  catch (e) {
+    // Основной канал оборвался, а запасной настроен — переключаемся и повторяем.
+    const { back } = baseUrls();
+    const ch = channelState();
+    if (isNetworkError(e) && back && !ch.useBackup) {
+      console.warn("translate: основной канал не отвечает (" + e.message + ") — переключаюсь на запасной");
+      ch.useBackup = true; save();
+      return runClaudeOnce(params);
+    }
+    throw e;
+  }
+}
+async function runClaudeOnce(params) {
   const c = client();
   if (!c) throw new Error("ИИ не настроен: добавьте ANTHROPIC_API_KEY в .env на сервере");
   const stream = c.messages.stream(params);
@@ -313,7 +397,7 @@ async function buildOutputs(order, html) {
   const landscape = detectLandscape(html);
   html = fitHtmlForDocx(html, landscape);
   order.landscape = landscape;
-  const fullHtml = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Перевод</title><style>body{font-family:'Times New Roman',serif;max-width:" + (landscape ? 1160 : 820) + "px;margin:24px auto;padding:0 16px;color:#111}table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #444;padding:4px 6px;font-size:13px}section.page{page-break-after:always;margin-bottom:36px;border-bottom:1px dashed #bbb;padding-bottom:24px}.tr-note{color:#333}</style></head><body>" + html + "</body></html>";
+  const fullHtml = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Перевод</title><style>body{font-family:'Times New Roman',serif;max-width:" + (landscape ? 1160 : 820) + "px;margin:24px auto;padding:0 16px;color:#111}table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #444;padding:4px 6px;font-size:13px}section.page{page-break-after:always;margin-bottom:36px;border-bottom:1px dashed #bbb;padding-bottom:24px}.tr-note{color:#333}@page{size:A4 " + (landscape ? "landscape" : "portrait") + ";margin:12mm}@media print{body{max-width:none;margin:0}section.page{border-bottom:0;margin-bottom:0;padding-bottom:0}}</style><script>if(/[?&]print=1/.test(location.search)){window.addEventListener(\"load\",function(){setTimeout(function(){window.print()},400)})}</script></head><body>" + html + "</body></html>";
   order.files = order.files || {};
   order.files.html = saveFile(order.id, "result", Buffer.from(fullHtml, "utf8"), "result.html", "text/html");
   order.docxError = null;
@@ -337,7 +421,7 @@ function docxDlName(order) {
 }
 
 // ── Проверка вторым проходом ──────────────────────────────────────────────
-async function runCheck(order, html) {
+async function runCheck(order, html, files) {
   const p = order.params || {};
   const task = [
     "РЕЖИМ: редактор-контролёр. Выше — оригинал документа, ниже — перевод. Найди ВСЕ расхождения: неверные/пропущенные цифры, суммы, даты, номера, ошибки транслитерации ФИО, пропущенные строки/страницы, смысловые ошибки. Мелкие стилистические замечания помечай как info.",
@@ -349,7 +433,7 @@ async function runCheck(order, html) {
     model: modelCheck(), max_tokens: 16000,
     system: SYS_COMMON,
     output_config: { effort: effortCheck() },
-    messages: [{ role: "user", content: [...(await srcBlocks(order)), { type: "text", text: task }] }],
+    messages: [{ role: "user", content: [...(await srcBlocks(order, false, files)), { type: "text", text: task }] }],
   }, CHECK_SCHEMA);
 }
 
@@ -372,6 +456,44 @@ async function pipelineTranslate(order) {
     p.note ? "Комментарий к заказу: " + p.note : "",
     order.chat && order.chat.text ? "Исходное сообщение заказа из рабочего чата (контекст): " + order.chat.text : "",
   ].filter(Boolean).join("\n") + lessonsPromptBlock();
+
+  // Большой документ → нарезаем PDF и переводим пакетами по одному запросу.
+  await ensureChunks(order);
+  const batches = srcBatches(order);
+
+  if (batches.length > 1) {
+    let htmlAll = "";
+    const verdicts = [], summaries = [], issuesAll = [];
+    order.chunks = batches.length;
+    for (let bi = 0; bi < batches.length; bi++) {
+      order.status = "translating"; order.progress = (bi + 1) + "/" + batches.length; save();
+      const partTask = transTask + "\n\nВАЖНО: это ЧАСТЬ " + (bi + 1) + " из " + batches.length + " большого документа (приложена только эта часть)." + (bi ? " Заголовок Translation from… НЕ добавляй — он был в части 1. Продолжай структуру со следующей страницы." : "");
+      const r = await runClaude({
+        model: model(), max_tokens: 60000,
+        system: SYS_COMMON,
+        output_config: { effort: effortMain() },
+        messages: [{ role: "user", content: [...(await srcBlocks(order, true, batches[bi])), { type: "text", text: partTask }] }],
+      });
+      const partHtml = stripFences(r.text);
+      trackUsage(order, "translate" + (bi || ""), model(), r.usage);
+      order.status = "checking"; save();
+      const chk = await runCheck(order, partHtml, batches[bi]);
+      trackUsage(order, "check" + (bi || ""), modelCheck(), chk.usage);
+      if (chk.json) { verdicts.push(chk.json.verdict); if (chk.json.summary) summaries.push("Часть " + (bi + 1) + ": " + chk.json.summary); issuesAll.push(...(chk.json.issues || [])); }
+      htmlAll += "\n" + partHtml;
+    }
+    order.progress = null;
+    order.check = {
+      verdict: verdicts.indexOf("errors") >= 0 ? "errors" : (verdicts.indexOf("warnings") >= 0 ? "warnings" : "ok"),
+      summary: summaries.join(" "),
+      issues: issuesAll,
+    };
+    // Авто-исправление в пакетном режиме пропускаем: замечания видны в отчёте.
+    await buildOutputs(order, htmlAll.trim());
+    order.status = "done"; order.doneAt = Date.now(); save();
+    try { await enrichMeta(order, htmlAll); } catch (e) { console.warn("enrichMeta:", e.message); }
+    return;
+  }
 
   const r = await runClaude({
     model: model(), max_tokens: 60000,
@@ -442,7 +564,7 @@ const DOCTYPE_SCHEMA = {
   properties: { doc_type: { type: "string", enum: DOC_TYPES } },
 };
 async function enrichMeta(order, html) {
-  const pages = (String(html).match(/<section class="page"/g) || []).length || (order.src || []).length || 1;
+  const pages = (String(html).match(/<section class="page[^"]*"/g) || []).length || (order.src || []).length || 1;
   order.meta = Object.assign({}, order.meta, { pages });
   if (order.meta.docType) { save(); return; }
   try {
@@ -483,14 +605,15 @@ async function pipelineCorrect(order, instruction, author) {
   const p = order.params || {};
   const html = currentHtml(order);
   if (!html) throw new Error("нет готового перевода для правки");
-  const task = "РЕЖИМ: переводчик, правка. Выше — оригинал, ниже — текущий перевод (HTML) и корректировка от заказчика. Внеси правку и верни ПОЛНЫЙ исправленный HTML-перевод целиком, тем же форматом (<section class=\"page\">, таблицы <table>), без markdown и ```-ограждений. Ничего не ломай в местах, которых правка не касается."
+  const withSrc = totalSrcSize(order) <= REQ_BUDGET;
+  const task = "РЕЖИМ: переводчик, правка. " + (withSrc ? "Выше — оригинал, ниже" : "Оригинал не приложен (слишком большой) — работай по тексту перевода. Ниже") + " — текущий перевод (HTML) и корректировка от заказчика. Внеси правку и верни ПОЛНЫЙ исправленный HTML-перевод целиком, тем же форматом (<section class=\"page\">, таблицы <table>), без markdown и ```-ограждений. Ничего не ломай в местах, которых правка не касается."
     + lessonsPromptBlock()
     + "\n\nТекущий перевод:\n\n" + html + "\n\nКорректировка заказчика (выполни её):\n" + instruction + (p.translit ? "\n\nТранслитерация ФИО: " + p.translit : "");
   const r = await runClaude({
     model: model(), max_tokens: 60000,
     system: SYS_COMMON,
     output_config: { effort: effortMain() },
-    messages: [{ role: "user", content: [...(await srcBlocks(order, true)), { type: "text", text: task }] }],
+    messages: [{ role: "user", content: [...(withSrc ? await srcBlocks(order, true) : []), { type: "text", text: task }] }],
   });
   trackUsage(order, "correct", model(), r.usage);
   await buildOutputs(order, stripFences(r.text));
@@ -543,7 +666,7 @@ async function pipelineCompare(order) {
     model: modelCheck(), max_tokens: 16000,
     system: SYS_COMMON,
     output_config: { effort: effortCheck() },
-    messages: [{ role: "user", content: [...(await srcBlocks(order)), ...content, { type: "text", text: task }] }],
+    messages: [{ role: "user", content: [...(totalSrcSize(order) <= REQ_BUDGET ? await srcBlocks(order) : []), ...content, { type: "text", text: task }] }],
   }, COMPARE_SCHEMA);
   order.compare = cmp.json || { verdict: "minor", summary: "Не удалось разобрать отчёт сравнения", differences: [] };
   trackUsage(order, "compare", modelCheck(), cmp.usage);
@@ -571,10 +694,33 @@ async function learnFromCompare(order) {
   return newOnes;
 }
 
-// Последовательная очередь: тяжёлые вызовы не гоняем параллельно.
-let _chain = Promise.resolve();
+// Пул обработки: до TRANSLATE_CONCURRENCY заказов одновременно (дефолт 2) —
+// чтобы второй сотрудник не ждал чужую очередь. Внутри одного заказа операции
+// по-прежнему строго последовательны (перевод → сравнение → правка не дерутся
+// за одни файлы) — на это отдельная цепочка per-order.
+const CONCURRENCY = Math.max(1, Number(process.env.TRANSLATE_CONCURRENCY || 2));
+const _qTasks = [];
+let _qRunning = 0;
+function _pump() {
+  while (_qRunning < CONCURRENCY && _qTasks.length) {
+    const t = _qTasks.shift();
+    _qRunning++;
+    Promise.resolve().then(t.fn)
+      .catch((e) => { console.error("translate queue [" + t.label + "]:", e && e.message); })
+      .finally(() => { _qRunning--; _pump(); });
+  }
+}
+const _orderChains = new Map();
 function enqueue(label, fn) {
-  _chain = _chain.then(fn).catch((e) => { console.error("translate queue [" + label + "]:", e && e.message); });
+  // Ключ сериализации — id заказа из подписи задачи ("translate abc123" и т.п.).
+  const key = String(label).split(" ")[1] || label;
+  const prev = _orderChains.get(key) || Promise.resolve();
+  const next = prev.then(() => new Promise((resolve) => {
+    _qTasks.push({ label, fn: async () => { try { await fn(); } finally { resolve(); } } });
+    _pump();
+  }));
+  _orderChains.set(key, next.catch(() => {}));
+  if (_orderChains.size > 1000) { const first = _orderChains.keys().next().value; _orderChains.delete(first); }
 }
 function queueTranslate(order) {
   order.status = "queued"; order.error = null; save();
@@ -860,6 +1006,7 @@ function orderView(o, full) {
     params: o.params, srcNames: (o.src || []).map((f) => f.name),
     hasDocx: !!(o.files && o.files.docx), hasHtml: !!(o.files && o.files.html),
     docxError: o.docxError || null,
+    filesPurged: !!o.filesPurged, progress: o.progress || null,
     checkVerdict: (o.check && o.check.verdict) || null,
     checkRevised: !!(o.check && o.check.revised),
     humanName: o.humanName || null,
@@ -914,7 +1061,7 @@ function mount(app, deps) {
     if (s && (s.role === "admin" || (s.vscRestrict && Array.isArray(s.vscRestrict.tabs) && s.vscRestrict.tabs.indexOf("translate") >= 0))) { req.staff = s; return next(); }
     return res.status(401).json({ success: false, message: "Нет доступа" });
   }
-  const up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 10 } });
+  const up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 45 * 1024 * 1024, files: 10 } });
 
   app.get("/translate", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "translate.html")); });
 
@@ -1001,6 +1148,73 @@ function mount(app, deps) {
   setInterval(checkAiBalance, 30 * 60 * 1000);
   setTimeout(checkAiBalance, 90 * 1000);
 
+  // ── Сторож канала до Anthropic (просьба Андрея 12.08) ─────────────────────
+  // Раз в час пробуем основной ретранслятор. Любой HTTP-ответ = канал жив
+  // (даже 4xx — это уже ответ Anthropic); TLS-обрыв/таймаут = канал упал
+  // (так выглядела блокировка Cloudflare). Два подряд провала → письмо
+  // директору (раз в сутки) и, если задан запасной, переключение на него.
+  // Когда основной оживает — тихо возвращаемся.
+  async function probeBase(base) {
+    try {
+      const r = await fetch(base + "/v1/models", {
+        headers: { "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01" },
+        signal: AbortSignal.timeout(20000),
+      });
+      return r.status > 0;
+    } catch (_) { return false; }
+  }
+  async function checkChannel() {
+    try {
+      if (!aiConfigured()) return;
+      const { prim, back } = baseUrls();
+      if (!prim) return;
+      const ch = channelState();
+      if (await probeBase(prim)) {
+        if (ch.useBackup) console.log("translate: основной канал ожил — возвращаюсь с запасного");
+        if (ch.useBackup || ch.fails) { ch.useBackup = false; ch.fails = 0; save(); }
+        return;
+      }
+      ch.fails = (ch.fails || 0) + 1;
+      if (ch.fails < 2) { save(); return; }
+      if (back && !ch.useBackup) { ch.useBackup = true; console.warn("translate: основной канал упал — переключил на запасной"); }
+      if (!ch.alertedAt || Date.now() - ch.alertedAt > 24 * 3600 * 1000) {
+        const mailMod = require("./mail");
+        const r = await mailMod.sendMail({
+          to: "director@visa-sc.ru",
+          subject: back ? "Переводы: основной канал до Anthropic упал — работаем через запасной" : "⚠️ Переводы ВСТАЛИ: канал до Anthropic недоступен",
+          html: back
+            ? "<p>Ретранслятор на deno.net перестал отвечать (похоже на блокировку домена). Сервис автоматически переключился на запасной канал и продолжает работать.</p><p>Ничего срочного, но стоит сказать Клоду — он проверит, что случилось.</p>"
+            : "<p>Ретранслятор на deno.net перестал отвечать (похоже на блокировку домена), запасной канал не настроен — переводы сейчас не работают.</p><p>Скажите Клоду «канал упал» — он поднимет запасной на другой площадке за несколько минут (нужен один деплой на vercel.com по готовому файлу).</p>",
+        }).catch(() => null);
+        if (r && r.ok) ch.alertedAt = Date.now();
+      }
+      save();
+    } catch (e) { console.error("translate channel watch:", e.message); }
+  }
+  setInterval(checkChannel, 60 * 60 * 1000);
+  setTimeout(checkChannel, 3 * 60 * 1000);
+
+  // ── Автоочистка файлов старых заказов (место на диске + гигиена ПДн) ──────
+  // Через TRANSLATE_KEEP_DAYS (дефолт 60) сканы клиентов и готовые файлы
+  // удаляются; сам заказ, отчёты, статистика и расход остаются.
+  const KEEP_DAYS = Math.max(7, Number(process.env.TRANSLATE_KEEP_DAYS || 60));
+  function purgeOldFiles() {
+    try {
+      const cutoff = Date.now() - KEEP_DAYS * 24 * 3600 * 1000;
+      let n = 0;
+      for (const o of store().orders) {
+        if (o.filesPurged || (o.createdAt || 0) > cutoff) continue;
+        if (["new", "queued", "translating", "checking", "revising"].indexOf(o.status) >= 0 || o.compareStatus === "processing" || o.correctStatus === "processing") continue;
+        const all = [...(o.src || []).map((f) => f.file), ...((o.srcOriginal || []).map((f) => f.file)), o.files && o.files.html, o.files && o.files.docx, o.files && o.files.human].filter(Boolean);
+        for (const fn of all) { try { fs.unlinkSync(path.join(FILES_DIR, fn)); } catch (_) {} }
+        o.filesPurged = true; o.files = {}; n++;
+      }
+      if (n) { save(); console.log("translate: очищены файлы заказов старше " + KEEP_DAYS + " дн.:", n); }
+    } catch (e) { console.error("translate purge:", e.message); }
+  }
+  setInterval(purgeOldFiles, 12 * 3600 * 1000);
+  setTimeout(purgeOldFiles, 5 * 60 * 1000);
+
   app.get("/translate/api/stats", requireTranslate, (req, res) => {
     const st = store();
     const all = st.orders;
@@ -1071,7 +1285,7 @@ function mount(app, deps) {
       const files = req.files || [];
       if (!files.length) return res.status(400).json({ success: false, message: "Прикрепите файл (PDF, DOCX или фото)" });
       const total = files.reduce((s, f) => s + f.size, 0);
-      if (total > MAX_TOTAL_SRC) return res.status(413).json({ success: false, message: "Слишком большие файлы (лимит 20 МБ на заказ) — разбейте на части" });
+      if (total > MAX_TOTAL_SRC) return res.status(413).json({ success: false, message: "Слишком большие файлы (лимит 45 МБ на заказ)" });
       const named = files.map((f) => ({ f, name: Buffer.from(f.originalname, "latin1").toString("utf8") })); // multer отдаёт имя в latin1
       const bad = named.find((x) => !srcSupported(x.name));
       if (bad) return res.status(400).json({ success: false, message: "Формат «" + bad.name + "» не поддерживается. Можно: PDF, DOCX, TXT, JPG/PNG/WEBP. Старый .doc пересохраните в PDF/DOCX." });
