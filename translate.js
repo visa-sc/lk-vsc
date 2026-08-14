@@ -288,14 +288,41 @@ const LESSONS_SCHEMA = {
 };
 
 // ── Сборка результата (HTML + DOCX) ──────────────────────────────────────
+// Альбомная ли работа: модель помечает горизонтальные страницы оригинала
+// классом <section class="page landscape">. Ориентация DOCX одна на документ
+// (библиотека не умеет смешанные секции) — берём по большинству страниц.
+function detectLandscape(html) {
+  const secs = String(html).match(/<section\b[^>]*class="[^"]*page[^"]*"[^>]*>/gi) || [];
+  if (!secs.length) return false;
+  const land = secs.filter((s) => /landscape/i.test(s)).length;
+  return land > 0 && land * 2 >= secs.length;
+}
+
+// Доводка HTML модели под html-to-docx: процентные ширины колонок библиотека
+// не переваривает (падает с Invalid XML name: @w), пиксельные — переводит в
+// корректные w:tcW. Модель пишет пропорции в процентах, мы пересчитываем их в
+// пиксели от печатной ширины страницы. Идемпотентно: пиксели остаются как есть.
+function fitHtmlForDocx(html, landscape) {
+  const pageW = landscape ? 870 : 620; // px печатной области A4 при наших полях
+  return String(html)
+    .replace(/width\s*:\s*([0-9.]+)\s*%/gi, (m, p) => "width:" + Math.max(20, Math.round(pageW * parseFloat(p) / 100)) + "px")
+    .replace(/\s+width\s*=\s*"[0-9.]+%"/gi, ""); // %-атрибуты роняют конвертер — убираем
+}
+
 async function buildOutputs(order, html) {
-  const fullHtml = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Перевод</title><style>body{font-family:'Times New Roman',serif;max-width:820px;margin:24px auto;padding:0 16px;color:#111}table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #444;padding:4px 6px;font-size:13px}section.page{page-break-after:always;margin-bottom:36px;border-bottom:1px dashed #bbb;padding-bottom:24px}.tr-note{color:#333}</style></head><body>" + html + "</body></html>";
+  const landscape = detectLandscape(html);
+  html = fitHtmlForDocx(html, landscape);
+  order.landscape = landscape;
+  const fullHtml = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Перевод</title><style>body{font-family:'Times New Roman',serif;max-width:" + (landscape ? 1160 : 820) + "px;margin:24px auto;padding:0 16px;color:#111}table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #444;padding:4px 6px;font-size:13px}section.page{page-break-after:always;margin-bottom:36px;border-bottom:1px dashed #bbb;padding-bottom:24px}.tr-note{color:#333}</style></head><body>" + html + "</body></html>";
   order.files = order.files || {};
   order.files.html = saveFile(order.id, "result", Buffer.from(fullHtml, "utf8"), "result.html", "text/html");
   order.docxError = null;
   try {
     const HTMLtoDOCX = require("html-to-docx");
-    const docxBuf = await HTMLtoDOCX(fullHtml, null, { table: { row: { cantSplit: true } }, font: "Times New Roman", fontSize: 24 });
+    const docxBuf = await HTMLtoDOCX(fullHtml, null, {
+      orientation: landscape ? "landscape" : "portrait",
+      table: { row: { cantSplit: true } }, font: "Times New Roman", fontSize: 24,
+    });
     order.files.docx = saveFile(order.id, "result", Buffer.from(docxBuf), "result.docx", "");
   } catch (e) {
     console.error("translate docx:", e.message);
@@ -336,9 +363,10 @@ async function pipelineTranslate(order) {
     "РЕЖИМ: переводчик. Переведи приложенный выше документ полностью, страница за страницей, с русского на " + langName(p.targetLang) + " язык по стандартам сертифицированного перевода для подачи на визу.",
     "- Сохраняй структуру документа максимально близко к оригиналу: таблицы — таблицами (<table>), шапки, реквизиты, порядок строк.",
     "Формат ответа: ТОЛЬКО HTML-фрагмент без markdown и без ```-ограждений.",
-    "Каждая страница оригинала — отдельный <section class=\"page\">.",
+    "Каждая страница оригинала — отдельный <section class=\"page\">; если страница оригинала АЛЬБОМНАЯ (горизонтальная) — помечай её <section class=\"page landscape\">.",
     "В начале первой страницы добавь строку-заголовок вида: <p class=\"tr-note\"><i>Translation from Russian into English</i></p> (язык подставь по факту).",
     "Используй простой HTML: h3/p/table/tr/td/b/i, таблицам добавляй border=\"1\" cellspacing=\"0\" cellpadding=\"4\".",
+    "Колонкам таблиц задавай ширины ПРОПОРЦИОНАЛЬНО оригиналу — в процентах, через style у ячеек ПЕРВОЙ строки: <td style=\"width:15%\">…; сумма по строке ≈ 100%. Узкие колонки (даты, суммы) не делай шире, чем в оригинале.",
     p.translit ? "Транслитерация ФИО клиента (использовать именно её): " + p.translit : "",
     p.country ? "Направление подачи (страна): " + p.country : "",
     p.note ? "Комментарий к заказу: " + p.note : "",
