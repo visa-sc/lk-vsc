@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VSC переводы</title>
+<link rel="apple-touch-icon" href="/vsc-logo.png">
+<link rel="icon" type="image/png" href="/vsc-logo.png">
+<style>
+  /* /translate_v2 — редизайн в духе клиентского ЛК и /vsc: воздух, мягкие
+     карточки, сегмент-контрол вместо кнопок-вкладок. Функционал и API — те же,
+     что на /translate (двумя страницами пользуются параллельно, данные общие). */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1c2130; background: #f5f7fb; min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1;
+    background:
+      radial-gradient(1100px 520px at 12% -8%, rgba(0, 190, 240, .12), transparent 60%),
+      radial-gradient(900px 480px at 105% 12%, rgba(18, 58, 120, .08), transparent 55%),
+      linear-gradient(180deg, #f8fafd 0%, #eef2f9 100%);
+  }
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 26px 18px 70px; }
+  .brand { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 4px 0 22px; }
+  .vsc-wm { display: flex; align-items: center; gap: 11px; font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; font-weight: 800; font-size: 32px; line-height: 1; }
+  .vsc-wm i { width: 2px; height: 18px; border-radius: 2px; background: linear-gradient(180deg, #00bff0, #0088c2); opacity: .5; }
+  .vsc-wm b { background: linear-gradient(135deg, #00c8f2 0%, #0097ca 52%, #123a78 130%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .brand .sub { font-size: 11px; font-weight: 600; color: #98a0b0; letter-spacing: .5em; text-transform: lowercase; margin-right: -.5em; }
+
+  .card {
+    background: rgba(255, 255, 255, .86); border: 1px solid rgba(24, 36, 66, .06);
+    border-radius: 22px; padding: 22px; margin-bottom: 18px;
+    box-shadow: 0 14px 44px rgba(24, 36, 66, .06);
+  }
+  /* Вход */
+  body.login-mode { display: flex; flex-direction: column; justify-content: center; min-height: 100vh; }
+  body.login-mode .wrap { padding-bottom: 18px; }
+  #login { width: 100%; max-width: 400px; margin: 0 auto; background: rgba(255,255,255,.92); border: 1px solid rgba(24,36,66,.06); border-radius: 26px; padding: 26px; box-shadow: 0 18px 50px rgba(24,36,66,.08); text-align: center; }
+  #login .sub2 { margin: 0 0 18px; font-size: 13px; color: #98a0b0; }
+  .login-form-inner { display: flex; flex-direction: column; gap: 10px; }
+  .login-input { width: 100%; height: 52px; border: 1px solid #e8e9f0; border-radius: 15px; padding: 0 16px; font-size: 16px; outline: none; font-family: inherit; color: #1c2130; background: #fafbfe; text-align: center; transition: border-color .2s, box-shadow .2s, background .2s; }
+  .login-input[type="password"]:not(:placeholder-shown) { letter-spacing: .18em; font-size: 22px; }
+  .login-input::placeholder { color: #a2a8b6; letter-spacing: normal; }
+  .login-input:focus { border-color: #35a3d4; background: #fff; box-shadow: 0 0 0 4px rgba(0, 151, 202, .1); }
+  .login-btn { width: 100%; height: 46px; border: 0; border-radius: 13px; background: #0097ca; color: #fff; font-size: 14.5px; font-weight: 600; cursor: pointer; font-family: inherit; transition: filter .15s; }
+  .login-btn:hover { filter: brightness(1.06); }
+  #loginErr { color: #c2334a; font-size: 13.5px; min-height: 18px; margin-top: 10px; }
+
+  /* Сегмент-контрол вкладок */
+  .seg { display: flex; gap: 4px; background: rgba(21, 32, 60, .055); border-radius: 15px; padding: 4px; margin: 0 0 18px; overflow-x: auto; }
+  .seg button {
+    flex: 1 0 auto; border: 0; background: transparent; color: #55607a; border-radius: 11px;
+    padding: 10px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit;
+    white-space: nowrap; transition: color .15s;
+  }
+  .seg button.active { background: #fff; color: #101728; box-shadow: 0 3px 10px rgba(24, 36, 66, .1); }
+
+  .sec-h { display: flex; align-items: baseline; gap: 10px; margin: 0 2px 16px; }
+  .sec-h b { font-size: 17px; font-weight: 700; letter-spacing: -.01em; color: #101728; }
+  .sec-h span { font-size: 12.5px; color: #98a0b0; }
+
+  /* Сворачиваемые карточки */
+  .card.coll { padding: 0; overflow: hidden; }
+  .card-h {
+    display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent;
+    padding: 18px 22px; cursor: pointer; font-family: inherit; text-align: left;
+  }
+  .card-h b { font-size: 17px; font-weight: 700; letter-spacing: -.01em; color: #101728; }
+  .card-h .cnt { font-size: 12px; font-weight: 700; color: #47708e; background: rgba(0, 151, 202, .1); border-radius: 999px; padding: 3px 10px; }
+  .card-h .hint { font-size: 12.5px; color: #98a0b0; font-weight: 400; }
+  .card-h .chev { margin-left: auto; color: #a6adbd; font-size: 13px; transition: transform .2s; }
+  .card.open .card-h .chev { transform: rotate(90deg); }
+  .card-b { display: none; padding: 0 22px 22px; }
+  .card.open .card-b { display: block; }
+
+  /* Форма */
+  .frm { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 700px) { .frm { grid-template-columns: 1fr; } }
+  .fld label { display: block; font-size: 12px; font-weight: 600; color: #6a7488; margin: 0 0 6px 2px; }
+  .fld input[type=text], .fld select {
+    width: 100%; height: 46px; font-family: inherit; font-size: 14.5px; padding: 0 14px;
+    border: 1px solid #e8e9f0; border-radius: 13px; background: #fafbfe; color: #1c2130;
+    transition: border-color .2s, box-shadow .2s, background .2s; outline: none;
+    -webkit-appearance: none; appearance: none;
+  }
+  .fld select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a0b4' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 15px center; padding-right: 34px; }
+  .fld input:focus, .fld select:focus { border-color: #35a3d4; background: #fff; box-shadow: 0 0 0 4px rgba(0, 151, 202, .1); }
+  .full { grid-column: 1 / -1; }
+  .drop {
+    grid-column: 1 / -1; border: 1.5px dashed #c4cddb; border-radius: 16px; background: #fafbfe;
+    padding: 26px 18px; text-align: center; color: #55607a; font-size: 14px; cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  .drop:hover, .drop.over { border-color: #35a3d4; background: #f2f9fd; }
+  .drop b { color: #0b7fb0; }
+  .drop .mut { font-size: 12px; color: #98a0b0; }
+  .pri-btn {
+    border: 0; background: #0097ca; color: #fff; border-radius: 13px; padding: 13px 26px;
+    font-size: 14.5px; font-weight: 600; cursor: pointer; font-family: inherit; transition: filter .15s;
+  }
+  .pri-btn:hover { filter: brightness(1.06); }
+  .pri-btn:disabled { opacity: .5; cursor: default; }
+  .banner { border-radius: 15px; padding: 13px 16px; font-size: 13.5px; line-height: 1.55; margin-bottom: 16px; }
+  .banner.warn { background: #fdf7e8; border: 1px solid #f2e3b3; color: #7a5b00; }
+  .banner.info { background: #f0f7fc; border: 1px solid #dcebf5; color: #33648a; }
+  .banner code { background: rgba(0,0,0,.05); border-radius: 5px; padding: 1px 6px; font-size: 12.5px; }
+
+  /* Заказы */
+  .ord { border: 1px solid #eef0f5; border-radius: 16px; padding: 14px 16px; margin-bottom: 10px; background: #fff; transition: box-shadow .15s; }
+  .ord:hover { box-shadow: 0 6px 20px rgba(24, 36, 66, .05); }
+  .ord-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: #c3cad6; }
+  .ord.done .dot { background: #34a460; }
+  .ord.err .dot { background: #d2685f; }
+  .ord.run .dot { background: #0097ca; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .ord-name { font-size: 14.5px; font-weight: 600; color: #101728; word-break: break-word; }
+  .pill { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 3.5px 10px; white-space: nowrap; }
+  .pill.gray { background: #f0f2f6; color: #5a636f; }
+  .pill.blue { background: #e7f4fb; color: #0e7fae; }
+  .pill.green { background: #e8f6ee; color: #257a45; }
+  .pill.red { background: #fbeae8; color: #b0263a; }
+  .pill.amber { background: #fcf3d9; color: #8a5f00; }
+  .ord-meta { font-size: 12.5px; color: #78818f; margin: 6px 0 0 16px; line-height: 1.55; }
+  .ord-err { font-size: 13px; color: #b0263a; margin: 7px 0 0 16px; }
+  .ord-acts { display: flex; gap: 6px; flex-wrap: wrap; margin: 11px 0 0 16px; }
+  .ord-acts button, .ord-acts a {
+    border: 0; background: #f2f4f8; border-radius: 999px; font-size: 12px;
+    font-weight: 600; color: #3c4c66; padding: 7px 14px; cursor: pointer; font-family: inherit;
+    text-decoration: none; display: inline-block; transition: background .15s;
+  }
+  .ord-acts button:hover, .ord-acts a:hover { background: #e8ecf3; }
+  .ord-acts .danger { color: #b0263a; }
+  .ord-acts .accent { background: #0097ca; color: #fff; }
+  .ord-acts .accent:hover { background: #0a89b5; }
+  .rep { margin: 12px 0 0 16px; border: 1px solid #edf0f5; border-radius: 14px; padding: 12px 14px; background: #fafbfd; font-size: 13px; }
+  .rep h4 { margin: 0 0 6px; font-size: 13px; color: #33415a; }
+  .rep .sum { margin: 0 0 8px; line-height: 1.55; color: #3a4356; white-space: pre-wrap; }
+  .iss { border-left: 3px solid #c9cfda; border-radius: 4px; padding: 5px 10px; margin: 6px 0; line-height: 1.5; }
+  .iss.critical { border-left-color: #d2685f; background: #fdf1f0; }
+  .iss.warning { border-left-color: #e3b53a; background: #fdf9ec; }
+  .iss.info { border-left-color: #a9bbd1; background: #f6f8fb; }
+  .iss .k { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #7a8494; margin-right: 6px; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #9ed4ea; border-top-color: #0097ca; border-radius: 50%; animation: sp 1s linear infinite; vertical-align: -2px; margin-right: 4px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .empty { color: #9aa0ab; font-size: 13.5px; padding: 8px 4px; }
+  .pick-btn { border: 1px solid rgba(0,151,202,.4); background: #fff; color: #0b7fb0; border-radius: 999px; padding: 7px 15px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .pick-btn:hover { background: #f2f9fd; }
+  .filelist { grid-column: 1 / -1; font-size: 12.5px; color: #3c4c66; }
+  .filelist span { display: inline-block; background: #eef4fa; border-radius: 9px; padding: 4px 10px; margin: 2px 5px 2px 0; }
+
+  /* Реестр */
+  table.reg { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table.reg th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    color: #98a0b0; font-weight: 600; padding: 8px 10px; border-bottom: 1px solid #edf0f5;
+    white-space: nowrap; cursor: pointer; user-select: none;
+  }
+  table.reg th:hover { color: #55607a; }
+  table.reg th .arr { font-size: 9px; margin-left: 3px; color: #0097ca; }
+  table.reg td { padding: 10px; border-bottom: 1px solid #f4f6fa; vertical-align: top; }
+  table.reg tr:hover td { background: #fafbfd; }
+  table.reg .num { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 600; color: #0e7fae; white-space: nowrap; font-size: 12px; }
+  table.reg a { color: #0097ca; text-decoration: none; font-weight: 600; }
+  .reg-controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .reg-controls input, .reg-controls select {
+    font-family: inherit; font-size: 13.5px; height: 42px; padding: 0 14px;
+    border: 1px solid #e8e9f0; border-radius: 12px; background: #fafbfe; color: #1c2130; outline: none;
+  }
+  .reg-controls input { flex: 1; min-width: 220px; }
+  .reg-controls input:focus, .reg-controls select:focus { border-color: #35a3d4; background: #fff; box-shadow: 0 0 0 4px rgba(0,151,202,.1); }
+
+  /* Дашборд */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 22px; }
+  .tile { border: 1px solid #eef0f5; border-radius: 16px; padding: 14px 16px; background: #fff; }
+  .tile b { display: block; font-size: 26px; font-weight: 700; letter-spacing: -.02em; color: #101728; line-height: 1.25; font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
+  .tile span { font-size: 11.5px; color: #78818f; }
+  .brk { margin-top: 18px; }
+  .brk h4 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #98a0b0; font-weight: 600; }
+  .bar { display: grid; grid-template-columns: 170px 1fr 44px; align-items: center; gap: 10px; margin: 7px 0; font-size: 12.5px; }
+  .bar em { font-style: normal; color: #3c4c66; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar .tr { background: #eef1f6; border-radius: 4px; height: 7px; overflow: hidden; }
+  .bar .tr i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #35c3ea, #0097ca); }
+  .bar u { text-decoration: none; color: #78818f; font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  .brk-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 44px; }
+  @media (max-width: 700px) { .brk-cols { grid-template-columns: 1fr; } }
+  .more-row { font-size: 11.5px; color: #98a0b0; margin: 5px 0 0 2px; }
+
+  .ghost-btn { border: 1px solid #dfe3ec; background: #fff; color: #6a7488; border-radius: 12px; padding: 10px 24px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .ghost-btn:hover { background: #f6f8fb; }
+  .lesson-add { display: flex; gap: 8px; margin-top: 12px; }
+  .lesson-add input { flex: 1; height: 42px; font-family: inherit; font-size: 13.5px; padding: 0 14px; border: 1px solid #e8e9f0; border-radius: 12px; background: #fafbfe; outline: none; }
+  .lesson-add input:focus { border-color: #35a3d4; background: #fff; box-shadow: 0 0 0 4px rgba(0,151,202,.1); }
+  .err-t { color: #c2334a; font-size: 13px; }
+  .ok-t { color: #257a45; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <div class="vsc-wm"><b>V</b><i></i><b>S</b><i></i><b>C</b></div>
+    <div class="sub">переводы</div>
+  </div>
+
+  <div id="login" style="display:none;">
+    <div class="sub2" id="loginSub">Введите код доступа</div>
+    <form id="codeForm" class="login-form-inner">
+      <input id="code" class="login-input" type="password" inputmode="numeric" autocomplete="off" placeholder="Код доступа">
+      <button type="submit" class="login-btn">Войти</button>
+    </form>
+    <form id="mgrForm" class="login-form-inner" style="display:none;">
+      <input id="email" class="login-input" type="email" autocomplete="username" placeholder="Рабочий e-mail">
+      <input id="pass" class="login-input" type="password" autocomplete="current-password" placeholder="Пароль">
+      <button type="submit" class="login-btn">Войти</button>
+    </form>
+    <div id="loginErr"></div>
+  </div>
+
+  <div id="app" style="display:none;">
+    <div id="aiBanner" class="banner warn" style="display:none;">
+      ⚠️ <b>ИИ не подключён.</b> На сервере не задан <code>ANTHROPIC_API_KEY</code> — заказы не будут переводиться.
+    </div>
+
+    <div class="seg" role="tablist">
+      <button type="button" class="active" data-tab="new">Новый перевод</button>
+      <button type="button" data-tab="review">Проверка прошлых</button>
+      <button type="button" data-tab="registry">Реестр</button>
+      <button type="button" data-tab="dash">Дашборд</button>
+    </div>
+
+    <div class="card" id="tab-registry" style="display:none;">
+      <div class="sec-h"><b>Реестр заказов</b><span>номер вида VT-0001 можно вписывать в amoCRM</span></div>
+      <div class="reg-controls">
+        <input type="text" id="regSearch" placeholder="Поиск: номер, фамилия, файл, страна…">
+        <select id="regStatus">
+          <option value="">Все статусы</option>
+          <option value="done">Готово</option>
+          <option value="work">В работе</option>
+          <option value="error">Ошибка</option>
+        </select>
+      </div>
+      <div style="overflow-x:auto;"><table class="reg" id="regTable"></table></div>
+    </div>
+
+    <div class="card" id="tab-dash" style="display:none;">
+      <div class="sec-h"><b>Дашборд</b></div>
+      <div id="dashBody"></div>
+    </div>
+
+    <div class="card" id="tab-review" style="display:none;">
+      <div class="sec-h"><b>Проверка прошлых переводов</b><span>обучение на архиве готовых работ</span></div>
+      <div class="banner info">
+        Загрузите <b>оригинал</b> и <b>перевод переводчика</b> — ИИ переведёт сам, сравнит и выучит правила. Можно ZIP-архивом: пары найдутся по именам файлов или папкам «Оригиналы» / «Переводы».
+      </div>
+      <form id="reviewForm" class="frm">
+        <div class="drop" id="revDropPair" style="grid-column:1/-1;">
+          <b>Пара файлов</b><br>
+          <span style="font-size:12.5px;color:#55607a;">Оригинал: <span id="revOrigName" style="color:#0b7fb0;">не выбран</span> · Перевод человека: <span id="revHumanName" style="color:#0b7fb0;">не выбран</span></span><br>
+          <span style="display:inline-flex;gap:8px;margin-top:10px;">
+            <button type="button" class="pick-btn" id="revPickOrig">Выбрать оригинал</button>
+            <button type="button" class="pick-btn" id="revPickHuman">Выбрать перевод</button>
+          </span>
+          <input id="revOrig" type="file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp" style="display:none;">
+          <input id="revHuman" type="file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp" style="display:none;">
+        </div>
+        <div class="drop" id="revDropZip" style="grid-column:1/-1;">Или перетащите <b>ZIP-архив</b> со старыми заказами<br><span class="mut" id="revZipName">до 50 пар за раз</span>
+          <input id="revZip" type="file" accept=".zip" style="display:none;">
+        </div>
+        <div class="full" style="display:flex;align-items:center;gap:12px;">
+          <button type="submit" class="pri-btn" id="revSubmit">Проверить и научиться</button>
+          <span id="revErr" class="err-t"></span>
+          <span id="revOk" class="ok-t"></span>
+        </div>
+        <div class="full" id="revPairs"></div>
+      </form>
+    </div>
+
+    <div class="card" id="tab-new">
+      <div class="sec-h"><b>Новый заказ на перевод</b><span>PDF, DOCX, TXT или фото · до 45 МБ</span></div>
+      <form id="orderForm" class="frm">
+        <div class="drop" id="drop">Перетащите файл сюда или <b>выберите</b><br><span class="mut">один документ или несколько фото</span>
+          <input id="files" type="file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp" multiple style="display:none;">
+        </div>
+        <div class="filelist" id="filelist"></div>
+        <div class="fld">
+          <label>Транслитерация ФИО</label>
+          <input type="text" id="translit" placeholder="KOSTENKO MARINA" autocomplete="off">
+        </div>
+        <div class="fld">
+          <label>Страна / направление</label>
+          <input type="text" id="country" placeholder="Австралия" autocomplete="off">
+        </div>
+        <div class="fld">
+          <label>Язык перевода</label>
+          <select id="targetLang">
+            <option value="en" selected>Английский</option>
+            <option value="албанский">Албанский</option>
+            <option value="балийский">Балийский</option>
+            <option value="болгарский">Болгарский</option>
+            <option value="боснийский">Боснийский</option>
+            <option value="венгерский">Венгерский</option>
+            <option value="голландский">Голландский</option>
+            <option value="греческий">Греческий</option>
+            <option value="датский">Датский</option>
+            <option value="ирландский">Ирландский</option>
+            <option value="исландский">Исландский</option>
+            <option value="испанский">Испанский</option>
+            <option value="итальянский">Итальянский</option>
+            <option value="каталанский">Каталанский</option>
+            <option value="латышский">Латышский</option>
+            <option value="литовский">Литовский</option>
+            <option value="люксембургский">Люксембургский</option>
+            <option value="македонский">Македонский</option>
+            <option value="мальтийский">Мальтийский</option>
+            <option value="немецкий">Немецкий</option>
+            <option value="норвежский">Норвежский</option>
+            <option value="польский">Польский</option>
+            <option value="португальский">Португальский</option>
+            <option value="румынский">Румынский</option>
+            <option value="сербский">Сербский</option>
+            <option value="словацкий">Словацкий</option>
+            <option value="словенский">Словенский</option>
+            <option value="тайский">Тайский</option>
+            <option value="турецкий">Турецкий</option>
+            <option value="украинский">Украинский</option>
+            <option value="финский">Финский</option>
+            <option value="французский">Французский</option>
+            <option value="хорватский">Хорватский</option>
+            <option value="черногорский">Черногорский</option>
+            <option value="чешский">Чешский</option>
+            <option value="шведский">Шведский</option>
+            <option value="эстонский">Эстонский</option>
+            <option value="японский">Японский</option>
+            <option value="other">Другой (укажите в комментарии)</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label>Комментарий</label>
+          <input type="text" id="note" placeholder="например: первая и три последние страницы">
+        </div>
+        <div class="full" style="display:flex;align-items:center;gap:12px;">
+          <button type="submit" class="pri-btn" id="submitBtn">Перевести</button>
+          <span id="formErr" class="err-t"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="card coll" id="card-orders">
+      <button type="button" class="card-h" data-coll="orders">
+        <b>Заказы</b><span class="cnt" id="ordersCnt">0</span><span class="hint" id="ordersHint"></span>
+        <span class="chev">▶</span>
+      </button>
+      <div class="card-b"><div id="orders"></div></div>
+    </div>
+
+    <div class="card coll" id="card-lessons">
+      <button type="button" class="card-h" data-coll="lessons">
+        <b>Память бота</b><span class="cnt" id="lessonsCnt">0</span><span class="hint">правила из корректировок</span>
+        <span class="chev">▶</span>
+      </button>
+      <div class="card-b">
+        <div id="lessons"></div>
+        <form id="lessonForm" class="lesson-add">
+          <input type="text" id="lessonText" placeholder="Добавить правило вручную (напр.: даты всегда в формате DD.MM.YYYY)">
+          <button type="submit" class="pri-btn" style="padding:10px 18px;font-size:13px;">Добавить</button>
+        </form>
+      </div>
+    </div>
+
+    <div style="text-align:center;margin-top:18px;">
+      <button id="logoutBtn" type="button" class="ghost-btn">Выйти</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var TOKEN_KEY = "voyo_translate_token"; // общий с /translate — сессия одна
+  var token = null; try { token = localStorage.getItem(TOKEN_KEY); } catch (_) {}
+  var state = null;
+  var openReports = {};
+  var fullCache = {};
+  var pollTimer = null;
+  var $ = function (s) { return document.querySelector(s); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign(opts.headers || {}, token ? { Authorization: "Bearer " + token } : {});
+    if (!(opts.body instanceof FormData) && opts.method && opts.method !== "GET") opts.headers["Content-Type"] = opts.headers["Content-Type"] || "application/json";
+    return fetch(path, opts).then(function (r) {
+      if (r.status === 401) { showLogin(); throw new Error("auth"); }
+      return r.json();
+    });
+  }
+  function showLogin() { $("#login").style.display = ""; $("#app").style.display = "none"; document.body.classList.add("login-mode"); }
+  function showApp() { $("#login").style.display = "none"; $("#app").style.display = ""; document.body.classList.remove("login-mode"); }
+
+  var mgrMode = false;
+  try { mgrMode = location.hostname === "vsc.voyotravel.ru" || /[?&]staff=1/.test(location.search); } catch (_) {}
+  $("#codeForm").style.display = mgrMode ? "none" : "";
+  $("#mgrForm").style.display = mgrMode ? "" : "none";
+  $("#loginSub").textContent = mgrMode ? "Вход для руководителя" : "Введите код доступа";
+
+  function handleAuth(req) {
+    req.then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.token) { token = j.token; try { localStorage.setItem(TOKEN_KEY, token); } catch (_) {} load(); }
+        else $("#loginErr").textContent = (j && j.message) || "Неверные данные входа";
+      })
+      .catch(function () { $("#loginErr").textContent = "Ошибка сети"; });
+  }
+  $("#codeForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    handleAuth(fetch("/translate/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("#code").value.trim() }) }));
+  });
+  $("#mgrForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    handleAuth(fetch("/admin/api/manager-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: $("#email").value.trim(), password: $("#pass").value }) }));
+  });
+  $("#logoutBtn").addEventListener("click", function () {
+    try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
+    token = null; showLogin();
+  });
+
+  // ── Сворачиваемые карточки: по умолчанию свёрнуты, состояние запоминается ──
+  var collState = {};
+  try { collState = JSON.parse(localStorage.getItem("voyo_tr2_coll") || "{}"); } catch (_) {}
+  function applyColl() {
+    ["orders", "lessons"].forEach(function (name) {
+      var card = $("#card-" + name);
+      if (card) card.classList.toggle("open", !!collState[name]);
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".card-h[data-coll]"), function (h) {
+    h.addEventListener("click", function () {
+      var name = h.getAttribute("data-coll");
+      collState[name] = !collState[name];
+      try { localStorage.setItem("voyo_tr2_coll", JSON.stringify(collState)); } catch (_) {}
+      applyColl();
+    });
+  });
+  applyColl();
+
+  // ── Форма ──
+  var picked = [];
+  function renderPicked() {
+    $("#filelist").innerHTML = picked.map(function (f) { return "<span>" + esc(f.name) + " · " + Math.round(f.size / 1024) + " КБ</span>"; }).join("");
+  }
+  $("#drop").addEventListener("click", function () { $("#files").click(); });
+  $("#files").addEventListener("change", function () { picked = Array.prototype.slice.call(this.files); renderPicked(); });
+  ["dragover", "dragleave", "drop"].forEach(function (ev) {
+    $("#drop").addEventListener(ev, function (e) {
+      e.preventDefault();
+      this.classList.toggle("over", ev === "dragover");
+      if (ev === "drop") { picked = Array.prototype.slice.call(e.dataTransfer.files); renderPicked(); }
+    });
+  });
+  try {
+    var sf = JSON.parse(localStorage.getItem("voyo_tr_form") || "{}");
+    if (sf.country) $("#country").value = sf.country;
+    if (sf.targetLang) $("#targetLang").value = sf.targetLang;
+  } catch (_) {}
+  $("#orderForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    $("#formErr").textContent = "";
+    if (!picked.length) { $("#formErr").textContent = "Прикрепите файл"; return; }
+    var fd = new FormData();
+    picked.forEach(function (f) { fd.append("files", f); });
+    fd.append("translit", $("#translit").value.trim());
+    fd.append("country", $("#country").value.trim());
+    fd.append("targetLang", $("#targetLang").value);
+    fd.append("note", $("#note").value.trim());
+    $("#submitBtn").disabled = true;
+    api("/translate/api/order", { method: "POST", body: fd })
+      .then(function (j) {
+        $("#submitBtn").disabled = false;
+        if (!j.success) { $("#formErr").textContent = j.message || "Ошибка"; return; }
+        picked = []; renderPicked(); $("#files").value = ""; $("#note").value = ""; $("#translit").value = "";
+        try { localStorage.setItem("voyo_tr_form", JSON.stringify({ country: $("#country").value.trim(), targetLang: $("#targetLang").value })); } catch (_) {}
+        collState.orders = true; try { localStorage.setItem("voyo_tr2_coll", JSON.stringify(collState)); } catch (_) {} applyColl();
+        load();
+      })
+      .catch(function (e2) { $("#submitBtn").disabled = false; if (e2.message !== "auth") $("#formErr").textContent = "Ошибка сети"; });
+  });
+
+  // ── Вкладки ──
+  Array.prototype.forEach.call(document.querySelectorAll(".seg button"), function (t) {
+    t.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".seg button"), function (x) { x.classList.toggle("active", x === t); });
+      var which = t.getAttribute("data-tab");
+      $("#tab-new").style.display = which === "new" ? "" : "none";
+      $("#tab-review").style.display = which === "review" ? "" : "none";
+      $("#tab-registry").style.display = which === "registry" ? "" : "none";
+      $("#tab-dash").style.display = which === "dash" ? "" : "none";
+      var workTabs = which === "new" || which === "review";
+      $("#card-orders").style.display = workTabs ? "" : "none";
+      $("#card-lessons").style.display = workTabs ? "" : "none";
+      if (which === "registry") renderRegistry();
+      if (which === "dash") loadStats();
+    });
+  });
+
+  // ── Реестр: поиск, фильтр, сортировка по любому столбцу ──
+  var REG_STATUS = { done: "готово", error: "ошибка", "new": "новый", queued: "в очереди", translating: "перевод", checking: "проверка", revising: "исправление" };
+  var REG_COLS = [
+    { key: "num", label: "Номер" },
+    { key: "date", label: "Дата" },
+    { key: "client", label: "Клиент" },
+    { key: "doc", label: "Документ" },
+    { key: "type", label: "Тип" },
+    { key: "pages", label: "Стр." },
+    { key: "country", label: "Страна" },
+    { key: "status", label: "Статус" },
+    { key: "check", label: "Проверка" },
+    { key: "file", label: "Файл", nosort: true },
+  ];
+  var regSort = { key: "date", dir: -1 };
+  try { regSort = JSON.parse(localStorage.getItem("voyo_tr2_sort") || "") || regSort; } catch (_) {}
+  function regVal(o, key) {
+    switch (key) {
+      case "num": return o.num || "";
+      case "date": return o.createdAt || 0;
+      case "client": return (o.params && o.params.translit) || "";
+      case "doc": return (o.srcNames || []).join(", ");
+      case "type": return (o.meta && o.meta.docType) || "";
+      case "pages": return (o.meta && o.meta.pages) || 0;
+      case "country": return (o.params && o.params.country) || "";
+      case "status": return REG_STATUS[o.status] || o.status || "";
+      case "check": return o.checkVerdict || "";
+      default: return "";
+    }
+  }
+  function renderRegistry() {
+    var q = ($("#regSearch").value || "").trim().toLowerCase();
+    var f = $("#regStatus").value;
+    var list = ((state && state.orders) || []).filter(function (o) {
+      if (f === "done" && o.status !== "done") return false;
+      if (f === "error" && o.status !== "error") return false;
+      if (f === "work" && ["new", "queued", "translating", "checking", "revising"].indexOf(o.status) < 0) return false;
+      if (!q) return true;
+      var hay = [o.num, (o.srcNames || []).join(" "), o.params && o.params.translit, o.params && o.params.country, o.meta && o.meta.docType].join(" ").toLowerCase();
+      return hay.indexOf(q) >= 0;
+    });
+    list.sort(function (a, b) {
+      var va = regVal(a, regSort.key), vb = regVal(b, regSort.key);
+      if (typeof va === "string") { va = va.toLowerCase(); vb = String(vb).toLowerCase(); }
+      return (va < vb ? -1 : va > vb ? 1 : 0) * regSort.dir;
+    });
+    var h = "<tr>" + REG_COLS.map(function (c) {
+      var arr = regSort.key === c.key ? "<span class=\"arr\">" + (regSort.dir > 0 ? "▲" : "▼") + "</span>" : "";
+      return "<th data-key=\"" + c.key + "\"" + (c.nosort ? " data-nosort=\"1\"" : "") + ">" + c.label + arr + "</th>";
+    }).join("") + "</tr>";
+    h += list.map(function (o) {
+      var chk = o.checkVerdict ? ({ ok: "без замечаний", warnings: "замечания", errors: "ошибки" }[o.checkVerdict] || o.checkVerdict) : "—";
+      return "<tr>" +
+        "<td class=\"num\">" + esc(o.num || "—") + "</td>" +
+        "<td style=\"white-space:nowrap;\">" + new Date(o.createdAt).toLocaleDateString("ru-RU") + "</td>" +
+        "<td>" + esc((o.params && o.params.translit) || "—") + "</td>" +
+        "<td style=\"max-width:260px;\">" + esc((o.srcNames || []).join(", ") || "—") + "</td>" +
+        "<td>" + esc((o.meta && o.meta.docType) || "—") + "</td>" +
+        "<td>" + ((o.meta && o.meta.pages) || "—") + "</td>" +
+        "<td>" + esc((o.params && o.params.country) || "—") + "</td>" +
+        "<td>" + esc(REG_STATUS[o.status] || o.status) + (o.correctionsCnt ? " · правок: " + o.correctionsCnt : "") + "</td>" +
+        "<td>" + esc(chk) + "</td>" +
+        "<td>" + (o.hasDocx ? "<a href=\"/translate/api/order/" + o.id + "/file/docx?token=" + encodeURIComponent(token || "") + "\">DOCX</a>" : "—") + "</td>" +
+        "</tr>";
+    }).join("");
+    $("#regTable").innerHTML = h + (list.length ? "" : "<tr><td colspan=\"10\" style=\"color:#9aa0ab;padding:14px 10px;\">Ничего не найдено</td></tr>");
+    Array.prototype.forEach.call(document.querySelectorAll("#regTable th"), function (th) {
+      if (th.getAttribute("data-nosort")) return;
+      th.addEventListener("click", function () {
+        var k = th.getAttribute("data-key");
+        if (regSort.key === k) regSort.dir = -regSort.dir; else regSort = { key: k, dir: k === "date" || k === "pages" ? -1 : 1 };
+        try { localStorage.setItem("voyo_tr2_sort", JSON.stringify(regSort)); } catch (_) {}
+        renderRegistry();
+      });
+    });
+  }
+  $("#regSearch").addEventListener("input", renderRegistry);
+  $("#regStatus").addEventListener("change", renderRegistry);
+
+  // ── Дашборд ──
+  var MONTHS_RU = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+  function prettyName(n) {
+    n = String(n == null ? "" : n);
+    var m = n.match(/^(\d{4})-(\d{2})$/);
+    if (m) return MONTHS_RU[+m[2] - 1] + " " + m[1];
+    return n.charAt(0).toUpperCase() + n.slice(1);
+  }
+  function bars(list, unit, cap) {
+    if (!list || !list.length) return "<div class=\"empty\">Пока нет данных</div>";
+    cap = cap || 6;
+    var shown = list.slice(0, cap);
+    var max = Math.max.apply(null, shown.map(function (x) { return x.count || x.pages || 0; }));
+    var h = shown.map(function (x) {
+      var v = x.count != null ? x.count : x.pages;
+      var nm = prettyName(x.name);
+      return "<div class=\"bar\"><em title=\"" + esc(nm) + "\">" + esc(nm) + "</em><span class=\"tr\"><i style=\"width:" + Math.max(4, Math.round(v / max * 100)) + "%;\"></i></span><u>" + v + (unit || "") + "</u></div>";
+    }).join("");
+    if (list.length > cap) h += "<div class=\"more-row\">и ещё " + (list.length - cap) + "…</div>";
+    return h;
+  }
+  function loadStats() {
+    $("#dashBody").innerHTML = "<div class=\"empty\"><span class=\"spin\"></span> Считаю…</div>";
+    api("/translate/api/stats").then(function (j) {
+      if (!j.success) return;
+      var t = j.totals;
+      var h = "<div class=\"tiles\">" +
+        "<div class=\"tile\"><b>" + t.done + "</b><span>переводов готово</span></div>" +
+        "<div class=\"tile\"><b>" + t.pages + "</b><span>страниц</span></div>" +
+        "<div class=\"tile\"><b>" + t.clients + "</b><span>клиентов</span></div>" +
+        "<div class=\"tile\"><b>" + t.avgPagesPerClient + "</b><span>страниц на фамилию</span></div>" +
+        "<div class=\"tile\"><b>" + t.lessons + "</b><span>выученных правил</span></div>" +
+        "<div class=\"tile\"><b>" + (t.avgSec ? Math.round(t.avgSec / 6) / 10 + " мин" : "—") + "</b><span>среднее время</span></div>" +
+        (t.inWork ? "<div class=\"tile\"><b>" + t.inWork + "</b><span>в работе сейчас</span></div>" : "") +
+        (t.errors ? "<div class=\"tile\"><b>" + t.errors + "</b><span>ошибок</span></div>" : "") +
+        "</div>";
+      h += "<div class=\"brk-cols\">";
+      h += "<div><div class=\"brk\"><h4>По странам</h4>" + bars(j.byCountry) + "</div>" +
+        "<div class=\"brk\"><h4>По типам документов</h4>" + bars(j.byType) + "</div></div>";
+      h += "<div><div class=\"brk\"><h4>Откуда пришли заказы</h4>" + bars(j.bySource) + "</div>" +
+        "<div class=\"brk\"><h4>Сверка с переводчиками</h4>" + bars(j.reviewVerdicts) + "</div>" +
+        "<div class=\"brk\"><h4>По месяцам</h4>" + bars((j.byMonth || []).map(function (m) { return { name: m.name, count: m.orders }; })) + "</div></div>";
+      h += "</div>";
+      h += "<div class=\"brk\"><h4>Больше всего страниц</h4>" + bars((j.topClients || []).map(function (c) { return { name: c.name, count: c.pages }; }), " стр.", 5) + "</div>";
+      $("#dashBody").innerHTML = h;
+    }).catch(function () { $("#dashBody").innerHTML = "<div class=\"empty\">Не удалось загрузить статистику</div>"; });
+  }
+
+  // ── Проверка прошлых переводов ──
+  var revOrigFile = null, revHumanFile = null, revZipFile = null;
+  function revRender() {
+    $("#revOrigName").textContent = revOrigFile ? revOrigFile.name : "не выбран";
+    $("#revHumanName").textContent = revHumanFile ? revHumanFile.name : "не выбран";
+    $("#revZipName").textContent = revZipFile ? revZipFile.name + " · " + Math.round(revZipFile.size / 1024) + " КБ" : "до 50 пар за раз";
+  }
+  $("#revPickOrig").addEventListener("click", function (e) { e.stopPropagation(); $("#revOrig").click(); });
+  $("#revPickHuman").addEventListener("click", function (e) { e.stopPropagation(); $("#revHuman").click(); });
+  $("#revOrig").addEventListener("change", function () { revOrigFile = this.files[0] || null; revRender(); });
+  $("#revHuman").addEventListener("change", function () { revHumanFile = this.files[0] || null; revRender(); });
+  $("#revDropZip").addEventListener("click", function () { $("#revZip").click(); });
+  $("#revZip").addEventListener("change", function () { revZipFile = this.files[0] || null; revRender(); });
+  ["dragover", "dragleave", "drop"].forEach(function (ev) {
+    $("#revDropZip").addEventListener(ev, function (e) {
+      e.preventDefault();
+      this.classList.toggle("over", ev === "dragover");
+      if (ev === "drop") { revZipFile = e.dataTransfer.files[0] || null; revRender(); }
+    });
+  });
+  $("#reviewForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    $("#revErr").textContent = ""; $("#revOk").textContent = "";
+    var fd = new FormData();
+    if (revZipFile) fd.append("archive", revZipFile);
+    else if (revOrigFile && revHumanFile) { fd.append("original", revOrigFile); fd.append("human", revHumanFile); }
+    else { $("#revErr").textContent = "Выберите пару файлов или ZIP-архив"; return; }
+    $("#revSubmit").disabled = true;
+    api("/translate/api/review", { method: "POST", body: fd })
+      .then(function (j) {
+        $("#revSubmit").disabled = false;
+        if (!j.success) { $("#revErr").textContent = j.message || "Ошибка"; return; }
+        $("#revOk").textContent = "Взял в работу: " + j.created + " " + (j.created === 1 ? "пару" : "пар") + ".";
+        if (j.pairs && j.pairs.length) {
+          var ph = "<div class=\"rep\" style=\"margin:12px 0 0;\"><h4>Что с чем состыковал</h4>" +
+            j.pairs.map(function (p) { return "<div class=\"iss info\"><b>Оригинал:</b> " + esc(p.original) + "<br><b>Перевод:</b> " + esc(p.human) + "</div>"; }).join("");
+          if (j.unpaired && j.unpaired.length) {
+            ph += "<div style=\"margin-top:10px;font-size:12.5px;color:#8a5f00;\"><b>Без пары остались:</b><br>" + j.unpaired.map(esc).join("<br>") + "</div>";
+          }
+          $("#revPairs").innerHTML = ph + "</div>";
+        } else if (j.unpaired && j.unpaired.length) {
+          $("#revPairs").innerHTML = "<div class=\"rep\" style=\"margin:12px 0 0;\"><h4>Без пары остались</h4>" + j.unpaired.map(esc).join("<br>") + "</div>";
+        }
+        revOrigFile = revHumanFile = revZipFile = null; revRender();
+        $("#revOrig").value = ""; $("#revHuman").value = ""; $("#revZip").value = "";
+        collState.orders = true; try { localStorage.setItem("voyo_tr2_coll", JSON.stringify(collState)); } catch (_) {} applyColl();
+        load();
+      })
+      .catch(function (e2) { $("#revSubmit").disabled = false; if (e2.message !== "auth") $("#revErr").textContent = "Ошибка сети"; });
+  });
+
+  // ── Заказы ──
+  var STATUS = {
+    "new": ["gray", "новый"], queued: ["gray", "в очереди"],
+    translating: ["blue", "переводит ИИ…"], checking: ["blue", "проверка ИИ…"],
+    revising: ["blue", "исправляет по проверке…"],
+    done: ["green", "готово"], error: ["red", "ошибка"]
+  };
+  var VERDICT = { ok: ["green", "проверка: ок"], warnings: ["amber", "проверка: замечания"], errors: ["red", "проверка: ошибки!"] };
+  var CMP = { match: ["green", "≈ совпадает с человеком"], minor: ["amber", "мелкие расхождения"], major: ["red", "серьёзные расхождения"] };
+
+  function pill(cls, txt, spin) { return "<span class=\"pill " + cls + "\">" + (spin ? "<span class=\"spin\"></span>" : "") + esc(txt) + "</span>"; }
+
+  function renderIssues(list, mapAiHuman) {
+    return (list || []).map(function (i) {
+      var body = "";
+      if (mapAiHuman) {
+        if (i.ai) body += "<div><b>ИИ:</b> " + esc(i.ai) + "</div>";
+        if (i.human) body += "<div><b>Человек:</b> " + esc(i.human) + "</div>";
+      } else {
+        if (i.original) body += "<div><b>Оригинал:</b> " + esc(i.original) + "</div>";
+        if (i.translated) body += "<div><b>Перевод:</b> " + esc(i.translated) + "</div>";
+      }
+      return "<div class=\"iss " + esc(i.severity || "info") + "\"><span class=\"k\">" + esc(i.kind || i.where || i.severity || "") + "</span>" + esc(i.note || "") + body + "</div>";
+    }).join("") || "<div class=\"empty\">Расхождений не найдено</div>";
+  }
+
+  function renderOrder(o) {
+    var st = STATUS[o.status] || ["gray", o.status];
+    if (o.status === "translating" && o.progress) st = [st[0], "переводит ИИ… часть " + o.progress];
+    var cls = o.status === "done" ? "done" : (o.status === "error" ? "err" : (["queued", "translating", "checking", "revising", "new"].indexOf(o.status) >= 0 ? "run" : ""));
+    var h = "<div class=\"ord " + cls + "\" data-id=\"" + o.id + "\">";
+    h += "<div class=\"ord-top\"><span class=\"dot\"></span><span class=\"ord-name\">" + esc(o.num ? o.num + " · " : "") + esc((o.srcNames || []).join(", ") || "—") + "</span>";
+    h += pill(st[0], st[1], ["translating", "checking", "revising"].indexOf(o.status) >= 0);
+    if (o.kind === "chat") h += pill("gray", "тихий чат");
+    if (o.kind === "bot") h += pill("blue", "бот-чат");
+    if (o.kind === "review") h += pill("amber", "разбор прошлого");
+    if (o.learned && o.learned.length) h += pill("green", "выучено правил: " + o.learned.length);
+    if (o.checkVerdict && VERDICT[o.checkVerdict]) h += pill(VERDICT[o.checkVerdict][0], VERDICT[o.checkVerdict][1] + (o.checkRevised ? " · авто-исправлен" : ""));
+    if (o.correctStatus === "processing") h += pill("blue", "правка…", true);
+    if (o.correctionsCnt) h += pill("gray", "правок: " + o.correctionsCnt);
+    if (o.compareStatus === "processing") h += pill("blue", "сравнение…", true);
+    else if (o.compareVerdict && CMP[o.compareVerdict]) h += pill(CMP[o.compareVerdict][0], CMP[o.compareVerdict][1]);
+    h += "</div>";
+    var meta = [];
+    if (o.params && o.params.translit) meta.push("<b>" + esc(o.params.translit) + "</b>");
+    if (o.params && o.params.country) meta.push(esc(o.params.country));
+    if (o.meta && o.meta.docType) meta.push(esc(o.meta.docType));
+    if (o.meta && o.meta.pages) meta.push(o.meta.pages + " стр.");
+    if (o.params && o.params.note) meta.push(esc(o.params.note));
+    if (o.chat && o.chat.from) meta.push("из чата, от: " + esc(o.chat.from));
+    if (o.humanName) meta.push("перевод человека: " + esc(o.humanName));
+    if (o.filesPurged) meta.push("файлы удалены по сроку хранения");
+    meta.push(new Date(o.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }));
+    h += "<div class=\"ord-meta\">" + meta.join(" · ") + "</div>";
+    if (o.error) h += "<div class=\"ord-err\">" + esc(o.error) + "</div>";
+    if (o.docxError) h += "<div class=\"ord-err\">" + esc(o.docxError) + "</div>";
+    if (o.compareError) h += "<div class=\"ord-err\">Сравнение: " + esc(o.compareError) + "</div>";
+    h += "<div class=\"ord-acts\">";
+    if (o.hasDocx) h += "<a class=\"accent\" href=\"/translate/api/order/" + o.id + "/file/docx?token=\" data-dl=\"docx\">⬇ DOCX</a>";
+    if (o.hasHtml) h += "<a href=\"/translate/api/order/" + o.id + "/file/html?token=\" data-dl=\"html\" target=\"_blank\">Просмотр</a>";
+    if (o.hasHtml) h += "<a href=\"/translate/api/order/" + o.id + "/file/html?print=1&token=\" data-dl=\"pdf\" target=\"_blank\">PDF</a>";
+    if (o.checkVerdict) h += "<button data-act=\"report\">" + (openReports[o.id] ? "Скрыть отчёт" : "Отчёт проверки") + "</button>";
+    if (o.status === "done") h += "<button data-act=\"correct\">Корректировать</button>";
+    if (o.status === "done") h += "<button data-act=\"human\">" + (o.humanName ? "Заменить перевод человека" : "+ Перевод человека") + "</button>";
+    if (o.status === "error" || o.status === "done") h += "<button data-act=\"retry\">Повторить ИИ</button>";
+    h += "<button class=\"danger\" data-act=\"del\">Удалить</button>";
+    h += "</div>";
+    if (openReports[o.id]) {
+      var f = fullCache[o.id];
+      if (!f) h += "<div class=\"rep\"><span class=\"spin\"></span> Загрузка отчёта…</div>";
+      else {
+        if (f.check) h += "<div class=\"rep\"><h4>Проверка ИИ-контролёром</h4><p class=\"sum\">" + esc(f.check.summary || "") + "</p>" + renderIssues(f.check.issues, false) + "</div>";
+        if (f.compare) h += "<div class=\"rep\"><h4>Сравнение: ИИ vs человек</h4><p class=\"sum\">" + esc(f.compare.summary || "") + "</p>" + renderIssues(f.compare.differences, true) + "</div>";
+      }
+    }
+    h += "</div>";
+    return h;
+  }
+
+  function renderOrders() {
+    var list = (state && state.orders) || [];
+    $("#ordersCnt").textContent = list.length;
+    var active = list.filter(function (o) { return ["new", "queued", "translating", "checking", "revising"].indexOf(o.status) >= 0 || o.compareStatus === "processing" || o.correctStatus === "processing"; }).length;
+    $("#ordersHint").textContent = active ? "в работе: " + active : "";
+    $("#orders").innerHTML = list.length ? list.map(renderOrder).join("") : "<div class=\"empty\">Заказов пока нет — создайте первый выше.</div>";
+    Array.prototype.forEach.call(document.querySelectorAll("#orders a[data-dl]"), function (a) {
+      a.href = a.href.replace(/token=$/, "token=" + encodeURIComponent(token || ""));
+    });
+  }
+
+  function renderLessons() {
+    var el = $("#lessons");
+    if (!state) { el.innerHTML = ""; return; }
+    var ls = state.lessons || [];
+    $("#lessonsCnt").textContent = ls.length;
+    if (!ls.length) { el.innerHTML = "<div class=\"empty\">Пока пусто. Правила появляются сами из корректировок — бот больше не повторит эти ошибки.</div>"; return; }
+    el.innerHTML = ls.map(function (l) {
+      return "<div class=\"iss info\" style=\"display:flex;align-items:flex-start;gap:8px;\" data-lid=\"" + esc(l.id) + "\"><div style=\"flex:1;\">" + esc(l.text) + "<div style=\"font-size:10.5px;color:#9aa0ab;margin-top:2px;\">" + new Date(l.createdAt).toLocaleDateString("ru-RU") + (l.source === "manual" ? " · вручную" : " · из корректировки") + "</div></div><button data-act=\"dellesson\" style=\"border:0;background:transparent;color:#a6adbd;font-size:14px;cursor:pointer;padding:0 4px;\">✕</button></div>";
+    }).join("");
+  }
+
+  $("#lessons").addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-act=dellesson]");
+    if (!btn) return;
+    var row = e.target.closest("[data-lid]");
+    var lid = row && row.getAttribute("data-lid");
+    if (!lid || !confirm("Удалить правило из памяти бота?")) return;
+    api("/translate/api/lesson/" + lid, { method: "DELETE" }).then(load);
+  });
+  $("#lessonForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var t = $("#lessonText").value.trim();
+    if (!t) return;
+    api("/translate/api/lesson", { method: "POST", body: JSON.stringify({ text: t }) }).then(function () { $("#lessonText").value = ""; load(); });
+  });
+
+  $("#orders").addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    var card = e.target.closest(".ord");
+    var id = card && card.getAttribute("data-id");
+    if (!id) return;
+    var act = btn.getAttribute("data-act");
+    if (act === "report") {
+      openReports[id] = !openReports[id];
+      if (openReports[id] && !fullCache[id]) {
+        api("/translate/api/order/" + id).then(function (j) { if (j.success) { fullCache[id] = j.order; renderOrders(); } });
+      }
+      renderOrders();
+    } else if (act === "retry") {
+      if (!confirm("Перезапустить перевод этого заказа ИИ заново?")) return;
+      delete fullCache[id];
+      api("/translate/api/order/" + id + "/retry", { method: "POST" }).then(load);
+    } else if (act === "del") {
+      if (!confirm("Удалить заказ вместе с файлами?")) return;
+      api("/translate/api/order/" + id, { method: "DELETE" }).then(load);
+    } else if (act === "correct") {
+      var instr = prompt("Что поправить в переводе? (бот заодно выучит общее правило, если оно тут есть)");
+      if (!instr || !instr.trim()) return;
+      delete fullCache[id];
+      api("/translate/api/order/" + id + "/correct", { method: "POST", body: JSON.stringify({ text: instr.trim() }) }).then(load);
+    } else if (act === "human") {
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".docx,.pdf,.jpg,.jpeg,.png,.webp,.txt";
+      inp.addEventListener("change", function () {
+        if (!inp.files.length) return;
+        var fd = new FormData(); fd.append("file", inp.files[0]);
+        delete fullCache[id];
+        api("/translate/api/order/" + id + "/human", { method: "POST", body: fd }).then(load);
+      });
+      inp.click();
+    }
+  });
+
+  function anyActive() {
+    return !!(state && state.orders && state.orders.some(function (o) {
+      return ["queued", "translating", "checking", "revising", "new"].indexOf(o.status) >= 0 || o.compareStatus === "processing" || o.correctStatus === "processing";
+    }));
+  }
+  function schedulePoll() {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = setTimeout(load, anyActive() ? 4000 : 30000);
+  }
+
+  function load() {
+    api("/translate/api/state")
+      .then(function (j) {
+        if (!j.success) return;
+        state = j;
+        showApp();
+        $("#aiBanner").style.display = j.aiConfigured ? "none" : "";
+        Object.keys(openReports).forEach(function (id) {
+          if (openReports[id]) {
+            var o = (j.orders || []).find(function (x) { return x.id === id; });
+            var f = fullCache[id];
+            if (o && f && (o.status !== f.status || o.compareStatus !== f.compareStatus || o.correctStatus !== f.correctStatus || o.correctionsCnt !== (f.corrections || []).length)) delete fullCache[id];
+            if (o && !fullCache[id]) api("/translate/api/order/" + id).then(function (jj) { if (jj.success) { fullCache[id] = jj.order; renderOrders(); } });
+          }
+        });
+        renderOrders();
+        renderLessons();
+        if ($("#tab-registry").style.display !== "none") renderRegistry();
+        schedulePoll();
+      })
+      .catch(function (e) { if (e.message !== "auth") schedulePoll(); });
+  }
+
+  if (token) load(); else showLogin();
+})();
+</script>
+</body>
+</html>

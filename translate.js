@@ -316,7 +316,7 @@ async function runClaudeJson(params, schema) {
   return { json: parseJsonLoose(r2.text), usage: r2.usage };
 }
 
-function langName(code) { return code === "en" ? "английский" : (code || "английский"); }
+function langName(code) { if (code === "en" || !code) return "английский"; if (code === "other") return "язык, указанный в комментарии заказа"; return code; }
 function stripFences(t) { return String(t || "").trim().replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, ""); }
 
 const CHECK_SCHEMA = {
@@ -694,6 +694,10 @@ async function learnFromCompare(order) {
   return newOnes;
 }
 
+// Мостик к списанию /translate_pay: сама функция объявляется в mount (ей нужны
+// тарифы и пользователи), а вызывается из очереди после успешного перевода.
+const payChargeOrderRef = { fn: null };
+
 // Пул обработки: до TRANSLATE_CONCURRENCY заказов одновременно (дефолт 2) —
 // чтобы второй сотрудник не ждал чужую очередь. Внутри одного заказа операции
 // по-прежнему строго последовательны (перевод → сравнение → правка не дерутся
@@ -730,6 +734,7 @@ function queueTranslate(order) {
     try {
       await pipelineTranslate(o);
       if (o.kind === "bot") await botDeliver(o).catch((e) => console.error("botDeliver:", e.message));
+      if (o.kind === "pay" && payChargeOrderRef.fn) { try { payChargeOrderRef.fn(o); } catch (e) { console.error("payCharge:", e.message); } }
     } catch (e) {
       o.status = "error"; o.error = String((e && e.message) || e); save();
       if (o.kind === "bot") await botSay(o, "⚠️ Не получилось перевести: " + o.error).catch(() => {});
@@ -1064,6 +1069,9 @@ function mount(app, deps) {
   const up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 45 * 1024 * 1024, files: 10 } });
 
   app.get("/translate", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "translate.html")); });
+  // Редизайн той же страницы (12.08, просьба Андрея): движок, API и данные общие,
+  // отличается только вёрстка. Старую оставляем, пока команда не переедет.
+  app.get("/translate_v2", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "translate2.html")); });
 
   app.get("/translate/api/state", requireTranslate, (req, res) => {
     const st = store();
@@ -1073,7 +1081,7 @@ function mount(app, deps) {
       botConfigured: botConfigured(), quietChats: quietChatIds(),
       botChats: st.bot.chats || {},
       lessons: lessons().slice().reverse(),
-      orders: st.orders.map((o) => orderView(o, false)),
+      orders: st.orders.filter((o) => o.kind !== "pay").map((o) => orderView(o, false)),
     });
   });
 
@@ -1106,6 +1114,205 @@ function mount(app, deps) {
     }
     return { usd, exact: false };
   }
+  // ── /translate_pay — черновой SaaS для внешних клиентов (просьба Андрея 12.08) ──
+  // Личный кабинет: регистрация по email, баланс в рублях, заказы того же
+  // движка (kind: "pay", в общем store — пайплайны/очистка/учёт работают как
+  // есть), списание по факту: страницы × PAY_RATE_RUB. Пополнение — черновик:
+  // заявка + письмо директору, баланс зачисляет Андрей через Клода. Заказы
+  // внешних клиентов в интерфейсе сотрудников не показываются (фильтр kind).
+  const PAY_RATE_RUB = Number(process.env.TRANSLATE_PAY_RATE_RUB || 35);
+  const PAY_BONUS_RUB = Number(process.env.TRANSLATE_PAY_BONUS_RUB || 175);
+  function payUsers() { const st = store(); if (!st.payUsers) st.payUsers = {}; return st.payUsers; }
+  function payTokens() { const st = store(); if (!st.payTokens) st.payTokens = {}; return st.payTokens; }
+  function payHash(pass, salt) { return crypto.scryptSync(String(pass), salt, 32).toString("hex"); }
+  function payUserFromReq(req) {
+    const tok = tokenFromReq(req);
+    const rec = tok && payTokens()[tok];
+    if (!rec || Date.now() - (rec.at || 0) > TOKEN_TTL) return null;
+    return payUsers()[rec.email] || null;
+  }
+  function requirePayUser(req, res, next) {
+    const u = payUserFromReq(req);
+    if (!u) return res.status(401).json({ success: false, message: "Не авторизован" });
+    req.payUser = u;
+    next();
+  }
+  function payOp(u, kind, rub, note, orderId) {
+    u.ops = u.ops || [];
+    u.ops.push({ at: Date.now(), kind, rub, note: note || "", orderId: orderId || null });
+    if (u.ops.length > 300) u.ops.splice(0, u.ops.length - 300);
+  }
+  // Списание по факту перевода (вызывается из queueTranslate после done).
+  function payChargeOrder(o) {
+    if (o.kind !== "pay" || o.payCharged != null || o.status !== "done") return;
+    const u = payUsers()[o.ownerEmail];
+    if (!u) return;
+    const pages = (o.meta && o.meta.pages) || 1;
+    const cost = pages * PAY_RATE_RUB;
+    u.balanceRub = Math.round(((u.balanceRub || 0) - cost) * 100) / 100;
+    payOp(u, "charge", -cost, "Перевод " + (o.num || o.id) + " · " + pages + " стр.", o.id);
+    o.payCharged = cost;
+    save();
+  }
+  payChargeOrderRef.fn = payChargeOrder;
+
+  const PAY_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  app.get("/translate_pay", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "translate_pay.html")); });
+
+  app.post("/translate_pay/api/register", (req, res) => {
+    const b = req.body || {};
+    const email = String(b.email || "").trim().toLowerCase();
+    const pass = String(b.password || "");
+    const name = String(b.name || "").trim().slice(0, 100);
+    if (!PAY_EMAIL_RE.test(email)) return res.status(400).json({ success: false, message: "Укажите корректный e-mail" });
+    if (pass.length < 6) return res.status(400).json({ success: false, message: "Пароль — минимум 6 символов" });
+    const users = payUsers();
+    if (users[email]) return res.status(400).json({ success: false, message: "Такой e-mail уже зарегистрирован — войдите" });
+    const salt = crypto.randomBytes(12).toString("hex");
+    users[email] = { email, name, salt, hash: payHash(pass, salt), balanceRub: PAY_BONUS_RUB, createdAt: Date.now(), ops: [] };
+    payOp(users[email], "bonus", PAY_BONUS_RUB, "Приветственный бонус — попробуйте перевод бесплатно");
+    const tok = crypto.randomBytes(24).toString("hex");
+    payTokens()[tok] = { email, at: Date.now() };
+    save();
+    return res.json({ success: true, token: tok });
+  });
+
+  const payLoginFails = new Map();
+  app.post("/translate_pay/api/login", (req, res) => {
+    const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+    const hist = (payLoginFails.get(ip) || []).filter((t) => Date.now() - t < 24 * 3600 * 1000);
+    if (hist.length >= 30) return res.status(429).json({ success: false, message: "Слишком много попыток, попробуйте позже" });
+    const email = String((req.body && req.body.email) || "").trim().toLowerCase();
+    const pass = String((req.body && req.body.password) || "");
+    // Демо-доступ для Андрея: логин 111 / пароль 111 (создаётся при первом входе).
+    if (email === "111" && pass === "111" && !payUsers()["111"]) {
+      const salt = crypto.randomBytes(12).toString("hex");
+      payUsers()["111"] = { email: "111", name: "Демо", salt, hash: payHash("111", salt), balanceRub: PAY_BONUS_RUB, createdAt: Date.now(), ops: [] };
+      payOp(payUsers()["111"], "bonus", PAY_BONUS_RUB, "Приветственный бонус — попробуйте перевод бесплатно");
+    }
+    const u = payUsers()[email];
+    if (!u || payHash(pass, u.salt) !== u.hash) {
+      hist.push(Date.now()); payLoginFails.set(ip, hist);
+      return res.status(401).json({ success: false, message: "Неверный e-mail или пароль" });
+    }
+    const tok = crypto.randomBytes(24).toString("hex");
+    const pt = payTokens();
+    pt[tok] = { email, at: Date.now() };
+    for (const k of Object.keys(pt)) if (Date.now() - (pt[k].at || 0) > TOKEN_TTL) delete pt[k];
+    save();
+    return res.json({ success: true, token: tok });
+  });
+
+  function payView(o, full) {
+    const v = {
+      id: o.id, num: o.num || null, createdAt: o.createdAt, status: o.status, progress: o.progress || null,
+      error: o.error || null, srcNames: (o.src || []).map((f) => f.name),
+      params: o.params, hasDocx: !!(o.files && o.files.docx), hasHtml: !!(o.files && o.files.html),
+      checkVerdict: (o.check && o.check.verdict) || null, checkRevised: !!(o.check && o.check.revised),
+      correctStatus: o.correctStatus || null, correctionsCnt: (o.corrections || []).length,
+      pages: (o.meta && o.meta.pages) || null, docType: (o.meta && o.meta.docType) || null,
+      chargedRub: o.payCharged != null ? o.payCharged : null, filesPurged: !!o.filesPurged,
+    };
+    if (full) v.check = o.check || null;
+    return v;
+  }
+  function payOrderOf(req) {
+    const o = findOrder(req.params.id);
+    return o && o.kind === "pay" && o.ownerEmail === req.payUser.email ? o : null;
+  }
+
+  app.get("/translate_pay/api/state", requirePayUser, (req, res) => {
+    const u = req.payUser;
+    res.json({
+      success: true, rateRub: PAY_RATE_RUB,
+      user: { email: u.email, name: u.name, balanceRub: u.balanceRub || 0, ops: (u.ops || []).slice(-50).reverse() },
+      orders: store().orders.filter((o) => o.kind === "pay" && o.ownerEmail === u.email).map((o) => payView(o, false)),
+    });
+  });
+
+  app.post("/translate_pay/api/order", requirePayUser, up.array("files", 10), (req, res) => {
+    try {
+      if (!aiConfigured()) return res.status(503).json({ success: false, message: "Сервис временно недоступен, попробуйте позже" });
+      const u = req.payUser;
+      if ((u.balanceRub || 0) < PAY_RATE_RUB) return res.status(402).json({ success: false, message: "Недостаточно средств: минимум " + PAY_RATE_RUB + " ₽ (одна страница). Пополните баланс." });
+      const files = req.files || [];
+      if (!files.length) return res.status(400).json({ success: false, message: "Прикрепите файл (PDF, DOCX или фото)" });
+      const total = files.reduce((s, f) => s + f.size, 0);
+      if (total > MAX_TOTAL_SRC) return res.status(413).json({ success: false, message: "Слишком большие файлы (лимит 45 МБ на заказ)" });
+      const named = files.map((f) => ({ f, name: Buffer.from(f.originalname, "latin1").toString("utf8") }));
+      const bad = named.find((x) => !srcSupported(x.name));
+      if (bad) return res.status(400).json({ success: false, message: "Формат «" + bad.name + "» не поддерживается. Можно: PDF, DOCX, TXT, JPG/PNG/WEBP." });
+      const docCount = named.filter((x) => !/\.(jpe?g|png|webp|gif)$/i.test(x.name)).length;
+      if (docCount > 1 || (docCount === 1 && files.length > 1)) return res.status(400).json({ success: false, message: "Либо один документ (PDF/DOCX/TXT), либо несколько фото — не смешивайте" });
+      const b = req.body || {};
+      const order = {
+        id: newId(), num: nextNum(), kind: "pay", ownerEmail: u.email, createdAt: Date.now(), status: "new",
+        params: {
+          translit: String(b.translit || "").slice(0, 200),
+          country: String(b.country || "").slice(0, 100),
+          targetLang: String(b.targetLang || "en").slice(0, 40),
+          note: String(b.note || "").slice(0, 1000),
+        },
+        src: [], files: {},
+      };
+      named.forEach((x, i) => { order.src.push({ file: saveFile(order.id, "src-" + i, x.f.buffer, x.name, x.f.mimetype), name: x.name }); });
+      const st = store();
+      st.orders.unshift(order);
+      if (st.orders.length > MAX_ORDERS) st.orders.length = MAX_ORDERS;
+      save();
+      queueTranslate(order);
+      return res.json({ success: true, id: order.id });
+    } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
+  });
+
+  app.get("/translate_pay/api/order/:id", requirePayUser, (req, res) => {
+    const o = payOrderOf(req);
+    if (!o) return res.status(404).json({ success: false, message: "Не найден" });
+    return res.json({ success: true, order: payView(o, true) });
+  });
+
+  app.get("/translate_pay/api/order/:id/file/:which", requirePayUser, (req, res) => {
+    const o = payOrderOf(req);
+    if (!o) return res.status(404).send("Не найден");
+    const which = req.params.which;
+    let fn = null, dlName = null;
+    if (which === "docx") { fn = o.files && o.files.docx; dlName = docxDlName(o); }
+    else if (which === "html") { fn = o.files && o.files.html; }
+    if (!fn) return res.status(404).send("Нет файла");
+    let buf;
+    try { buf = readFileBuf(fn); } catch (_) { return res.status(404).send("Файл утерян"); }
+    res.set("Content-Type", mimeByExt(fn));
+    if (dlName) res.set("Content-Disposition", "attachment; filename*=UTF-8''" + encodeURIComponent(dlName));
+    return res.send(buf);
+  });
+
+  app.post("/translate_pay/api/order/:id/correct", requirePayUser, (req, res) => {
+    const o = payOrderOf(req);
+    if (!o) return res.status(404).json({ success: false, message: "Не найден" });
+    if (o.status !== "done") return res.status(400).json({ success: false, message: "Заказ ещё не готов" });
+    if ((o.corrections || []).length >= 3) return res.status(400).json({ success: false, message: "Лимит корректировок по заказу — 3. Напишите нам, если нужно больше." });
+    const instruction = String((req.body && req.body.text) || "").trim();
+    if (!instruction) return res.status(400).json({ success: false, message: "Опишите, что поправить" });
+    queueCorrect(o, instruction, "клиент " + req.payUser.email);
+    return res.json({ success: true });
+  });
+
+  // Заявка на пополнение — черновик: письмо директору, зачисление вручную.
+  app.post("/translate_pay/api/topup", requirePayUser, (req, res) => {
+    const rub = Math.round(Number((req.body && req.body.rub) || 0));
+    if (!(rub >= 100 && rub <= 100000)) return res.status(400).json({ success: false, message: "Сумма пополнения — от 100 до 100 000 ₽" });
+    const u = req.payUser;
+    payOp(u, "topup-request", 0, "Заявка на пополнение " + rub + " ₽ (ожидает подтверждения)");
+    save();
+    const mailMod = require("./mail");
+    mailMod.sendMail({
+      to: "director@visa-sc.ru",
+      subject: "Переводы (SaaS): заявка на пополнение " + rub + " ₽",
+      html: "<p>Клиент <b>" + u.email + "</b>" + (u.name ? " (" + u.name + ")" : "") + " хочет пополнить баланс на <b>" + rub + " ₽</b>.</p><p>Текущий баланс: " + (u.balanceRub || 0) + " ₽. Свяжитесь с клиентом, примите оплату и скажите Клоду «зачисли " + rub + " ₽ клиенту " + u.email + "».</p>",
+    }).catch((e) => console.error("pay topup mail:", e.message));
+    return res.json({ success: true, message: "Заявка принята — менеджер свяжется с вами по e-mail для оплаты. Онлайн-оплата картой появится позже." });
+  });
+
   // ── Разовый сторож баланса Anthropic (просьба Андрея 11.08) ──────────────
   // Обычному API-ключу баланс в Anthropic не виден, поэтому считаем сами:
   // старт $20 (пополнение 10.08.2026), минус расход по журналам spend всех
@@ -1217,7 +1424,7 @@ function mount(app, deps) {
 
   app.get("/translate/api/stats", requireTranslate, (req, res) => {
     const st = store();
-    const all = st.orders;
+    const all = st.orders.filter((o) => o.kind !== "pay");
     const done = all.filter((o) => o.status === "done");
     const tally = (arr, keyFn) => {
       const m = new Map();
@@ -1463,6 +1670,18 @@ function mount(app, deps) {
     if (!instruction) return res.status(400).json({ success: false, message: "Пустая корректировка" });
     queueCorrect(o, instruction, (req.staff && (req.staff.name || req.staff.email)) || "страница");
     return res.json({ success: true });
+  });
+
+  app.post("/translate/api/order/:id/rebuild", requireTranslate, async (req, res) => {
+    const o = findOrder(req.params.id);
+    if (!o) return res.status(404).json({ success: false, message: "Не найден" });
+    const html = currentHtml(o);
+    if (!html) return res.status(400).json({ success: false, message: "Нет сохранённого перевода" });
+    try {
+      await buildOutputs(o, html);
+      save();
+      return res.json({ success: true, docx: !!(o.files && o.files.docx), docxError: o.docxError || null });
+    } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
   });
 
   app.post("/translate/api/order/:id/retry", requireTranslate, (req, res) => {

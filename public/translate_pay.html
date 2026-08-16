@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VOYO Translate — перевод документов для визы</title>
+<link rel="icon" type="image/png" href="/logo-voyo.png">
+<style>
+  /* /translate_pay — черновой SaaS: воздушный Apple-стиль в духе клиентского ЛК. */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1c2130; background: #f5f7fb; min-height: 100vh; -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1;
+    background:
+      radial-gradient(1000px 500px at 15% -10%, rgba(0, 190, 240, .13), transparent 60%),
+      radial-gradient(900px 500px at 108% 14%, rgba(18, 58, 120, .09), transparent 55%),
+      linear-gradient(180deg, #f8fafd 0%, #eef2f9 100%);
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 26px 18px 70px; }
+  .topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; }
+  .logo { font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; font-weight: 800; font-size: 21px; letter-spacing: -.02em; }
+  .logo b { background: linear-gradient(135deg, #00c8f2 0%, #0097ca 55%, #123a78 140%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .logo span { color: #55607a; font-weight: 600; }
+  .topbar .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .bal-chip { display: none; align-items: center; gap: 8px; background: #fff; border: 1px solid rgba(24,36,66,.07); border-radius: 999px; padding: 8px 8px 8px 16px; font-size: 13.5px; font-weight: 600; color: #101728; box-shadow: 0 6px 20px rgba(24,36,66,.05); }
+  .bal-chip button { border: 0; background: #0097ca; color: #fff; border-radius: 999px; padding: 7px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .ghost-btn { border: 1px solid #dfe3ec; background: #fff; color: #6a7488; border-radius: 999px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .ghost-btn:hover { background: #f6f8fb; }
+
+  .card { background: rgba(255,255,255,.88); border: 1px solid rgba(24,36,66,.06); border-radius: 22px; padding: 24px; margin-bottom: 18px; box-shadow: 0 14px 44px rgba(24,36,66,.06); }
+
+  /* Лендинг */
+  .hero { text-align: center; padding: 34px 10px 10px; }
+  .hero h1 { font-size: 34px; letter-spacing: -.03em; margin: 0 0 12px; font-weight: 800; color: #0e1524; line-height: 1.15; font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
+  .hero h1 em { font-style: normal; background: linear-gradient(135deg, #00c8f2, #0097ca); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero p { font-size: 16px; color: #55607a; margin: 0 auto 22px; max-width: 560px; line-height: 1.6; }
+  .price-tag { display: inline-flex; align-items: baseline; gap: 8px; background: #fff; border: 1px solid rgba(24,36,66,.07); border-radius: 18px; padding: 14px 26px; box-shadow: 0 10px 30px rgba(24,36,66,.07); margin-bottom: 26px; }
+  .price-tag b { font-size: 34px; font-weight: 800; letter-spacing: -.02em; color: #0e1524; font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
+  .price-tag span { font-size: 14px; color: #78818f; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 10px 0 28px; text-align: left; }
+  @media (max-width: 700px) { .steps { grid-template-columns: 1fr; } }
+  .step { background: #fff; border: 1px solid rgba(24,36,66,.06); border-radius: 18px; padding: 18px; }
+  .step i { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 11px; background: linear-gradient(135deg, #e5f7fd, #d3effa); color: #0b7fb0; font-style: normal; font-weight: 800; font-size: 15px; margin-bottom: 10px; }
+  .step b { display: block; font-size: 14.5px; color: #101728; margin-bottom: 5px; }
+  .step p { margin: 0; font-size: 13px; color: #78818f; line-height: 1.55; }
+  .cta { border: 0; background: #0097ca; color: #fff; border-radius: 14px; padding: 15px 34px; font-size: 15.5px; font-weight: 700; cursor: pointer; font-family: inherit; transition: filter .15s; }
+  .cta:hover { filter: brightness(1.06); }
+  .hero .mut { display: block; margin-top: 12px; font-size: 12.5px; color: #98a0b0; }
+
+  /* Авторизация */
+  #auth { max-width: 400px; margin: 0 auto; }
+  .auth-tabs { display: flex; gap: 4px; background: rgba(21,32,60,.055); border-radius: 13px; padding: 4px; margin-bottom: 16px; }
+  .auth-tabs button { flex: 1; border: 0; background: transparent; color: #55607a; border-radius: 10px; padding: 9px; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .auth-tabs button.active { background: #fff; color: #101728; box-shadow: 0 3px 10px rgba(24,36,66,.1); }
+  .fld { margin-bottom: 10px; }
+  .fld input, .fld select {
+    width: 100%; height: 47px; font-family: inherit; font-size: 15px; padding: 0 15px;
+    border: 1px solid #e8e9f0; border-radius: 13px; background: #fafbfe; color: #1c2130; outline: none;
+    transition: border-color .2s, box-shadow .2s, background .2s; -webkit-appearance: none; appearance: none;
+  }
+  .fld input:focus, .fld select:focus { border-color: #35a3d4; background: #fff; box-shadow: 0 0 0 4px rgba(0,151,202,.1); }
+  .fld label { display: block; font-size: 12px; font-weight: 600; color: #6a7488; margin: 0 0 6px 2px; }
+  .pri-btn { width: 100%; border: 0; background: #0097ca; color: #fff; border-radius: 13px; padding: 14px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; transition: filter .15s; }
+  .pri-btn:hover { filter: brightness(1.06); }
+  .pri-btn:disabled { opacity: .5; cursor: default; }
+  .err-t { color: #c2334a; font-size: 13px; min-height: 17px; margin-top: 8px; text-align: center; }
+  .ok-t { color: #257a45; font-size: 13px; }
+
+  /* Кабинет */
+  .frm { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 700px) { .frm { grid-template-columns: 1fr; } }
+  .full { grid-column: 1 / -1; }
+  .drop { grid-column: 1 / -1; border: 1.5px dashed #c4cddb; border-radius: 16px; background: #fafbfe; padding: 26px 18px; text-align: center; color: #55607a; font-size: 14px; cursor: pointer; transition: border-color .2s, background .2s; }
+  .drop:hover, .drop.over { border-color: #35a3d4; background: #f2f9fd; }
+  .drop b { color: #0b7fb0; }
+  .drop .mut { font-size: 12px; color: #98a0b0; }
+  .filelist { grid-column: 1 / -1; font-size: 12.5px; color: #3c4c66; }
+  .filelist span { display: inline-block; background: #eef4fa; border-radius: 9px; padding: 4px 10px; margin: 2px 5px 2px 0; }
+  .sec-h { display: flex; align-items: baseline; gap: 10px; margin: 0 2px 16px; }
+  .sec-h b { font-size: 17px; font-weight: 700; letter-spacing: -.01em; color: #101728; }
+  .sec-h span { font-size: 12.5px; color: #98a0b0; }
+  .est { font-size: 12.5px; color: #78818f; }
+
+  .ord { border: 1px solid #eef0f5; border-radius: 16px; padding: 14px 16px; margin-bottom: 10px; background: #fff; }
+  .ord-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: #c3cad6; }
+  .ord.done .dot { background: #34a460; }
+  .ord.err .dot { background: #d2685f; }
+  .ord.run .dot { background: #0097ca; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .ord-name { font-size: 14.5px; font-weight: 600; color: #101728; word-break: break-word; }
+  .pill { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 3.5px 10px; white-space: nowrap; }
+  .pill.gray { background: #f0f2f6; color: #5a636f; }
+  .pill.blue { background: #e7f4fb; color: #0e7fae; }
+  .pill.green { background: #e8f6ee; color: #257a45; }
+  .pill.red { background: #fbeae8; color: #b0263a; }
+  .pill.amber { background: #fcf3d9; color: #8a5f00; }
+  .ord-meta { font-size: 12.5px; color: #78818f; margin: 6px 0 0 16px; line-height: 1.55; }
+  .ord-err { font-size: 13px; color: #b0263a; margin: 7px 0 0 16px; }
+  .ord-acts { display: flex; gap: 6px; flex-wrap: wrap; margin: 11px 0 0 16px; }
+  .ord-acts button, .ord-acts a { border: 0; background: #f2f4f8; border-radius: 999px; font-size: 12px; font-weight: 600; color: #3c4c66; padding: 7px 14px; cursor: pointer; font-family: inherit; text-decoration: none; display: inline-block; }
+  .ord-acts button:hover, .ord-acts a:hover { background: #e8ecf3; }
+  .ord-acts .accent { background: #0097ca; color: #fff; }
+  .rep { margin: 12px 0 0 16px; border: 1px solid #edf0f5; border-radius: 14px; padding: 12px 14px; background: #fafbfd; font-size: 13px; }
+  .rep h4 { margin: 0 0 6px; font-size: 13px; color: #33415a; }
+  .rep .sum { margin: 0; line-height: 1.55; color: #3a4356; white-space: pre-wrap; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #9ed4ea; border-top-color: #0097ca; border-radius: 50%; animation: sp 1s linear infinite; vertical-align: -2px; margin-right: 4px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .empty { color: #9aa0ab; font-size: 13.5px; padding: 8px 4px; }
+
+  .ops { font-size: 13px; }
+  .op { display: flex; align-items: baseline; gap: 10px; padding: 8px 2px; border-bottom: 1px solid #f4f6fa; }
+  .op .d { color: #98a0b0; font-size: 11.5px; white-space: nowrap; }
+  .op .n { flex: 1; color: #3c4c66; }
+  .op .r { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .op .r.plus { color: #257a45; }
+  .op .r.minus { color: #b0263a; }
+
+  /* Модалка пополнения */
+  #modal { position: fixed; inset: 0; background: rgba(14, 21, 36, .4); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 40; }
+  #modal .m { background: #fff; border-radius: 22px; padding: 24px; width: 100%; max-width: 400px; box-shadow: 0 24px 70px rgba(14,21,36,.25); }
+  #modal h3 { margin: 0 0 6px; font-size: 18px; letter-spacing: -.01em; }
+  #modal p { margin: 0 0 14px; font-size: 13px; color: #78818f; line-height: 1.55; }
+  #modal .btns { display: flex; gap: 10px; margin-top: 14px; }
+  #modal .btns .pri-btn { flex: 1; }
+  #modal .btns .ghost-btn { flex: 1; border-radius: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="logo"><b>VOYO</b> <span>Translate</span></div>
+    <div class="right">
+      <div class="bal-chip" id="balChip"><span id="balVal">0 ₽</span><button type="button" id="topupBtn">Пополнить</button></div>
+      <button class="ghost-btn" id="authBtn" style="display:none;">Войти</button>
+      <button class="ghost-btn" id="logoutBtn" style="display:none;">Выйти</button>
+    </div>
+  </div>
+
+  <!-- Лендинг -->
+  <div id="landing" style="display:none;">
+    <div class="hero">
+      <h1>Перевод документов для визы —<br><em>за минуты, а не за дни</em></h1>
+      <p>Загрузите справку, выписку или свидетельство — искусственный интеллект переведёт с сохранением таблиц и печатей, перепроверит каждую цифру и отдаст готовый DOCX.</p>
+      <div class="price-tag"><b id="priceHero">35 ₽</b><span>за страницу<br>готово ≈ за 2 минуты</span></div>
+      <div class="steps">
+        <div class="step"><i>1</i><b>Загрузите документ</b><p>PDF, DOCX или фото — до 45 МБ. Укажите написание фамилии как в загранпаспорте.</p></div>
+        <div class="step"><i>2</i><b>ИИ переводит и проверяет</b><p>Перевод по стандартам сертифицированных бюро, затем контрольная сверка всех цифр, дат и ФИО.</p></div>
+        <div class="step"><i>3</i><b>Скачайте результат</b><p>Готовый DOCX и версия для печати в PDF. Не устроило — попросите поправить, это бесплатно.</p></div>
+      </div>
+      <button class="cta" id="ctaBtn">Попробовать бесплатно</button>
+      <span class="mut">Приветственный бонус <b id="bonusHero">175 ₽</b> — хватит на 5 пробных страниц. Без карты.</span>
+    </div>
+  </div>
+
+  <!-- Вход / регистрация -->
+  <div id="auth" style="display:none;">
+    <div class="card">
+      <div class="auth-tabs">
+        <button type="button" class="active" data-auth="reg">Регистрация</button>
+        <button type="button" data-auth="login">Вход</button>
+      </div>
+      <form id="regForm">
+        <div class="fld"><input id="regName" type="text" placeholder="Как к вам обращаться" autocomplete="name"></div>
+        <div class="fld"><input id="regEmail" type="email" placeholder="E-mail" autocomplete="email" required></div>
+        <div class="fld"><input id="regPass" type="password" placeholder="Пароль (от 6 символов)" autocomplete="new-password" required></div>
+        <button type="submit" class="pri-btn">Создать аккаунт</button>
+      </form>
+      <form id="loginForm" style="display:none;">
+        <div class="fld"><input id="logEmail" type="text" inputmode="email" placeholder="E-mail" autocomplete="username" required></div>
+        <div class="fld"><input id="logPass" type="password" placeholder="Пароль" autocomplete="current-password" required></div>
+        <button type="submit" class="pri-btn">Войти</button>
+      </form>
+      <div class="err-t" id="authErr"></div>
+    </div>
+  </div>
+
+  <!-- Кабинет -->
+  <div id="app" style="display:none;">
+    <div class="card">
+      <div class="sec-h"><b>Новый перевод</b><span id="rateNote"></span></div>
+      <form id="orderForm" class="frm">
+        <div class="drop" id="drop">Перетащите документ или <b>выберите файл</b><br><span class="mut">PDF, DOCX, TXT или несколько фото · до 45 МБ</span>
+          <input id="files" type="file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp" multiple style="display:none;">
+        </div>
+        <div class="filelist" id="filelist"></div>
+        <div class="fld">
+          <label>Фамилия и имя латиницей (как в загранпаспорте)</label>
+          <input type="text" id="translit" placeholder="IVANOV IVAN" autocomplete="off">
+        </div>
+        <div class="fld">
+          <label>Страна подачи</label>
+          <input type="text" id="country" placeholder="Великобритания" autocomplete="off">
+        </div>
+        <div class="fld">
+          <label>Язык перевода</label>
+          <select id="targetLang">
+            <option value="en" selected>Английский</option>
+            <option value="other">Другой (укажите в комментарии)</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label>Комментарий (не обязательно)</label>
+          <input type="text" id="note" placeholder="например: нужны только 1-я и последняя страницы">
+        </div>
+        <div class="full" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <button type="submit" class="pri-btn" style="width:auto;padding:13px 28px;" id="submitBtn">Перевести</button>
+          <span class="est" id="estNote"></span>
+          <span class="err-t" style="text-align:left;margin:0;" id="formErr"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>Мои переводы</b><span id="ordersCnt"></span></div>
+      <div id="orders"></div>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>История баланса</b></div>
+      <div class="ops" id="ops"></div>
+    </div>
+  </div>
+</div>
+
+<div id="modal">
+  <div class="m">
+    <h3>Пополнение баланса</h3>
+    <p>Онлайн-оплата картой скоро появится. Пока — оставьте заявку: менеджер свяжется с вами по e-mail и выставит счёт, баланс пополнится после оплаты.</p>
+    <div class="fld"><input id="topupRub" type="number" min="100" max="100000" step="50" placeholder="Сумма, ₽ (от 100)"></div>
+    <div class="err-t" id="topupErr" style="text-align:left;"></div>
+    <div class="btns">
+      <button type="button" class="ghost-btn" id="topupCancel">Отмена</button>
+      <button type="button" class="pri-btn" id="topupSend">Оставить заявку</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var TOKEN_KEY = "voyo_pay_token";
+  var token = null; try { token = localStorage.getItem(TOKEN_KEY); } catch (_) {}
+  var state = null;
+  var openReports = {};
+  var fullCache = {};
+  var pollTimer = null;
+  var $ = function (s) { return document.querySelector(s); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign(opts.headers || {}, token ? { Authorization: "Bearer " + token } : {});
+    if (!(opts.body instanceof FormData) && opts.method && opts.method !== "GET") opts.headers["Content-Type"] = opts.headers["Content-Type"] || "application/json";
+    return fetch(path, opts).then(function (r) {
+      if (r.status === 401) { showLanding(); throw new Error("auth"); }
+      return r.json();
+    });
+  }
+
+  function show(which) {
+    $("#landing").style.display = which === "landing" ? "" : "none";
+    $("#auth").style.display = which === "auth" ? "" : "none";
+    $("#app").style.display = which === "app" ? "" : "none";
+    $("#balChip").style.display = which === "app" ? "flex" : "none";
+    $("#authBtn").style.display = which === "landing" ? "" : "none";
+    $("#logoutBtn").style.display = which === "app" ? "" : "none";
+  }
+  function showLanding() { token = null; try { localStorage.removeItem(TOKEN_KEY); } catch (_) {} show("landing"); }
+
+  $("#ctaBtn").addEventListener("click", function () { show("auth"); });
+  $("#authBtn").addEventListener("click", function () { show("auth"); });
+  $("#logoutBtn").addEventListener("click", showLanding);
+
+  Array.prototype.forEach.call(document.querySelectorAll(".auth-tabs button"), function (t) {
+    t.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".auth-tabs button"), function (x) { x.classList.toggle("active", x === t); });
+      var reg = t.getAttribute("data-auth") === "reg";
+      $("#regForm").style.display = reg ? "" : "none";
+      $("#loginForm").style.display = reg ? "none" : "";
+      $("#authErr").textContent = "";
+    });
+  });
+
+  function handleAuth(path, body) {
+    fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.token) { token = j.token; try { localStorage.setItem(TOKEN_KEY, token); } catch (_) {} load(); }
+        else $("#authErr").textContent = (j && j.message) || "Ошибка";
+      })
+      .catch(function () { $("#authErr").textContent = "Ошибка сети"; });
+  }
+  $("#regForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    handleAuth("/translate_pay/api/register", { name: $("#regName").value.trim(), email: $("#regEmail").value.trim(), password: $("#regPass").value });
+  });
+  $("#loginForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    handleAuth("/translate_pay/api/login", { email: $("#logEmail").value.trim(), password: $("#logPass").value });
+  });
+
+  // ── Форма заказа ──
+  var picked = [];
+  function renderPicked() {
+    $("#filelist").innerHTML = picked.map(function (f) { return "<span>" + esc(f.name) + " · " + Math.round(f.size / 1024) + " КБ</span>"; }).join("");
+  }
+  $("#drop").addEventListener("click", function () { $("#files").click(); });
+  $("#files").addEventListener("change", function () { picked = Array.prototype.slice.call(this.files); renderPicked(); });
+  ["dragover", "dragleave", "drop"].forEach(function (ev) {
+    $("#drop").addEventListener(ev, function (e) {
+      e.preventDefault();
+      this.classList.toggle("over", ev === "dragover");
+      if (ev === "drop") { picked = Array.prototype.slice.call(e.dataTransfer.files); renderPicked(); }
+    });
+  });
+  $("#orderForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    $("#formErr").textContent = "";
+    if (!picked.length) { $("#formErr").textContent = "Прикрепите файл"; return; }
+    var fd = new FormData();
+    picked.forEach(function (f) { fd.append("files", f); });
+    fd.append("translit", $("#translit").value.trim());
+    fd.append("country", $("#country").value.trim());
+    fd.append("targetLang", $("#targetLang").value);
+    fd.append("note", $("#note").value.trim());
+    $("#submitBtn").disabled = true;
+    api("/translate_pay/api/order", { method: "POST", body: fd })
+      .then(function (j) {
+        $("#submitBtn").disabled = false;
+        if (!j.success) { $("#formErr").textContent = j.message || "Ошибка"; return; }
+        picked = []; renderPicked(); $("#files").value = ""; $("#note").value = "";
+        load();
+      })
+      .catch(function (e2) { $("#submitBtn").disabled = false; if (e2.message !== "auth") $("#formErr").textContent = "Ошибка сети"; });
+  });
+
+  // ── Пополнение ──
+  $("#topupBtn").addEventListener("click", function () { $("#topupErr").textContent = ""; $("#modal").style.display = "flex"; });
+  $("#topupCancel").addEventListener("click", function () { $("#modal").style.display = "none"; });
+  $("#topupSend").addEventListener("click", function () {
+    var rub = Number($("#topupRub").value);
+    $("#topupErr").textContent = "";
+    api("/translate_pay/api/topup", { method: "POST", body: JSON.stringify({ rub: rub }) })
+      .then(function (j) {
+        if (!j.success) { $("#topupErr").textContent = j.message || "Ошибка"; return; }
+        $("#modal").style.display = "none";
+        alert(j.message);
+        load();
+      })
+      .catch(function () { $("#topupErr").textContent = "Ошибка сети"; });
+  });
+
+  // ── Заказы ──
+  var STATUS = {
+    "new": ["gray", "принят"], queued: ["gray", "в очереди"],
+    translating: ["blue", "переводим…"], checking: ["blue", "проверяем…"],
+    revising: ["blue", "исправляем…"],
+    done: ["green", "готово"], error: ["red", "ошибка"]
+  };
+  var VERDICT = { ok: ["green", "проверено: всё точно"], warnings: ["amber", "проверено: см. примечания"], errors: ["red", "проверено: есть замечания"] };
+  function pill(cls, txt, spin) { return "<span class=\"pill " + cls + "\">" + (spin ? "<span class=\"spin\"></span>" : "") + esc(txt) + "</span>"; }
+
+  function renderOrder(o) {
+    var st = STATUS[o.status] || ["gray", o.status];
+    if (o.status === "translating" && o.progress) st = [st[0], "переводим… часть " + o.progress];
+    var cls = o.status === "done" ? "done" : (o.status === "error" ? "err" : "run");
+    var h = "<div class=\"ord " + cls + "\" data-id=\"" + o.id + "\">";
+    h += "<div class=\"ord-top\"><span class=\"dot\"></span><span class=\"ord-name\">" + esc((o.srcNames || []).join(", ") || "—") + "</span>";
+    h += pill(st[0], st[1], ["translating", "checking", "revising"].indexOf(o.status) >= 0);
+    if (o.checkVerdict && VERDICT[o.checkVerdict]) h += pill(VERDICT[o.checkVerdict][0], VERDICT[o.checkVerdict][1]);
+    if (o.correctStatus === "processing") h += pill("blue", "правим…", true);
+    h += "</div>";
+    var meta = [];
+    if (o.num) meta.push("№ " + esc(o.num));
+    if (o.pages) meta.push(o.pages + " стр.");
+    if (o.docType) meta.push(esc(o.docType));
+    if (o.chargedRub != null) meta.push("списано " + o.chargedRub + " ₽");
+    if (o.filesPurged) meta.push("файлы удалены по сроку хранения (60 дней)");
+    meta.push(new Date(o.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }));
+    h += "<div class=\"ord-meta\">" + meta.join(" · ") + "</div>";
+    if (o.error) h += "<div class=\"ord-err\">" + esc(o.error) + "</div>";
+    h += "<div class=\"ord-acts\">";
+    if (o.hasDocx) h += "<a class=\"accent\" href=\"/translate_pay/api/order/" + o.id + "/file/docx?token=\" data-dl>⬇ Скачать DOCX</a>";
+    if (o.hasHtml) h += "<a href=\"/translate_pay/api/order/" + o.id + "/file/html?token=\" data-dl target=\"_blank\">Просмотр</a>";
+    if (o.hasHtml) h += "<a href=\"/translate_pay/api/order/" + o.id + "/file/html?print=1&token=\" data-dl target=\"_blank\">PDF</a>";
+    if (o.checkVerdict) h += "<button data-act=\"report\">" + (openReports[o.id] ? "Скрыть отчёт" : "Отчёт проверки") + "</button>";
+    if (o.status === "done") h += "<button data-act=\"correct\">Попросить поправить</button>";
+    h += "</div>";
+    if (openReports[o.id]) {
+      var f = fullCache[o.id];
+      if (!f) h += "<div class=\"rep\"><span class=\"spin\"></span> Загрузка…</div>";
+      else if (f.check) h += "<div class=\"rep\"><h4>Контрольная проверка</h4><p class=\"sum\">" + esc(f.check.summary || "Проверка пройдена.") + "</p></div>";
+    }
+    h += "</div>";
+    return h;
+  }
+
+  function renderApp() {
+    var u = state.user;
+    $("#balVal").textContent = (u.balanceRub || 0) + " ₽";
+    $("#rateNote").textContent = state.rateRub + " ₽ за страницу · списание по факту готового перевода";
+    $("#estNote").textContent = "";
+    var list = state.orders || [];
+    $("#ordersCnt").textContent = list.length ? list.length + " шт." : "";
+    $("#orders").innerHTML = list.length ? list.map(renderOrder).join("") : "<div class=\"empty\">Пока нет переводов — загрузите первый документ выше. На балансе приветственный бонус.</div>";
+    Array.prototype.forEach.call(document.querySelectorAll("#orders a[data-dl]"), function (a) {
+      a.href = a.href.replace(/token=$/, "token=" + encodeURIComponent(token || ""));
+    });
+    $("#ops").innerHTML = (u.ops || []).map(function (op) {
+      var plus = op.rub > 0;
+      return "<div class=\"op\"><span class=\"d\">" + new Date(op.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + "</span><span class=\"n\">" + esc(op.note || op.kind) + "</span><span class=\"r " + (op.rub > 0 ? "plus" : op.rub < 0 ? "minus" : "") + "\">" + (op.rub > 0 ? "+" : "") + (op.rub || "") + (op.rub ? " ₽" : "") + "</span></div>";
+    }).join("") || "<div class=\"empty\">Операций пока нет</div>";
+  }
+
+  $("#orders").addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    var card = e.target.closest(".ord");
+    var id = card && card.getAttribute("data-id");
+    if (!id) return;
+    var act = btn.getAttribute("data-act");
+    if (act === "report") {
+      openReports[id] = !openReports[id];
+      if (openReports[id] && !fullCache[id]) {
+        api("/translate_pay/api/order/" + id).then(function (j) { if (j.success) { fullCache[id] = j.order; renderApp(); } });
+      }
+      renderApp();
+    } else if (act === "correct") {
+      var instr = prompt("Что поправить в переводе? Например: «фамилию пишите как SMIRNOVA», «печать оформите как [Official seal]»");
+      if (!instr || !instr.trim()) return;
+      delete fullCache[id];
+      api("/translate_pay/api/order/" + id + "/correct", { method: "POST", body: JSON.stringify({ text: instr.trim() }) })
+        .then(function (j) { if (!j.success) alert(j.message || "Ошибка"); load(); });
+    }
+  });
+
+  function anyActive() {
+    return !!(state && state.orders && state.orders.some(function (o) {
+      return ["new", "queued", "translating", "checking", "revising"].indexOf(o.status) >= 0 || o.correctStatus === "processing";
+    }));
+  }
+  function schedulePoll() {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = setTimeout(load, anyActive() ? 4000 : 30000);
+  }
+
+  function load() {
+    api("/translate_pay/api/state")
+      .then(function (j) {
+        if (!j.success) return;
+        state = j;
+        $("#priceHero").textContent = j.rateRub + " ₽";
+        show("app");
+        renderApp();
+        schedulePoll();
+      })
+      .catch(function (e) { if (e.message !== "auth") schedulePoll(); });
+  }
+
+  if (token) load(); else show("landing");
+})();
+</script>
+</body>
+</html>
