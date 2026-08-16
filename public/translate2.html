@@ -162,7 +162,7 @@
   }
   table.reg th:hover { color: #55607a; }
   table.reg th .arr { font-size: 9px; margin-left: 3px; color: #0097ca; }
-  table.reg td { padding: 10px; border-bottom: 1px solid #f4f6fa; vertical-align: top; }
+  table.reg td { padding: 10px; border-bottom: 1px solid #f4f6fa; vertical-align: top; overflow-wrap: anywhere; word-break: break-word; }
   table.reg tr:hover td { background: #fafbfd; }
   table.reg .num { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 600; color: #0e7fae; white-space: nowrap; font-size: 12px; }
   table.reg a { color: #0097ca; text-decoration: none; font-weight: 600; }
@@ -254,7 +254,7 @@
     <div class="card" id="tab-review" style="display:none;">
       <div class="sec-h"><b>Проверка прошлых переводов</b><span>обучение на архиве готовых работ</span></div>
       <div class="banner info">
-        Загрузите <b>оригинал</b> и <b>перевод переводчика</b> — ИИ переведёт сам, сравнит и выучит правила. Можно ZIP-архивом: пары найдутся по именам файлов или папкам «Оригиналы» / «Переводы».
+        Загрузите <b>оригинал</b> и <b>перевод переводчика</b> — ИИ переведёт сам, сравнит и выучит правила.<br>Можно ZIP-архивом: пары найдутся по именам файлов или папкам «Оригиналы» / «Переводы».
       </div>
       <form id="reviewForm" class="frm">
         <div class="drop" id="revDropPair" style="grid-column:1/-1;">
