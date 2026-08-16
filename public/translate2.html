@@ -7,9 +7,9 @@
 <link rel="apple-touch-icon" href="/vsc-logo.png">
 <link rel="icon" type="image/png" href="/vsc-logo.png">
 <style>
-  /* /translate_v2 — редизайн в духе клиентского ЛК и /vsc: воздух, мягкие
-     карточки, сегмент-контрол вместо кнопок-вкладок. Функционал и API — те же,
-     что на /translate (двумя страницами пользуются параллельно, данные общие). */
+  /* Основная страница /translate (с 16.08; ранее жила на /translate_v2) —
+     редизайн в духе клиентского ЛК и /vsc: воздух, мягкие карточки,
+     сегмент-контрол. Старая вёрстка — на /translate_old, данные общие. */
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
@@ -380,7 +380,7 @@
 <script>
 (function () {
   "use strict";
-  var TOKEN_KEY = "voyo_translate_token"; // общий с /translate — сессия одна
+  var TOKEN_KEY = "voyo_translate_token"; // общий с /translate_old — сессия одна
   var token = null; try { token = localStorage.getItem(TOKEN_KEY); } catch (_) {}
   var state = null;
   var openReports = {};

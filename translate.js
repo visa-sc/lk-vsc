@@ -1084,10 +1084,11 @@ function mount(app, deps) {
   }
   const up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 45 * 1024 * 1024, files: 10 } });
 
-  app.get("/translate", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "translate.html")); });
-  // Редизайн той же страницы (12.08, просьба Андрея): движок, API и данные общие,
-  // отличается только вёрстка. Старую оставляем, пока команда не переедет.
-  app.get("/translate_v2", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "translate2.html")); });
+  // С 16.08 редизайн (translate2.html) — основная страница /translate; движок, API и данные общие.
+  // Старая вёрстка доступна на /translate_old, /translate_v2 остаётся редиректом со старых ссылок.
+  app.get("/translate", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "translate2.html")); });
+  app.get("/translate_old", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "translate.html")); });
+  app.get("/translate_v2", (req, res) => res.redirect(302, "/translate"));
 
   app.get("/translate/api/state", requireTranslate, (req, res) => {
     const st = store();
