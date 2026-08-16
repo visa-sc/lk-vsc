@@ -1601,8 +1601,9 @@ const BLOY_PAID_STATUSES = CITY_REV_STATUSES.filter(
 const BLOY_REF_INVITER = 2000;          // баллы пригласившему за оформившегося друга
 const BLOY_REF_FRIEND = 2000;           // приветственные баллы другу (бюджет лояльности 4000 ₽/сделка)
 // Статусы и ПРОГРЕССИВНАЯ ставка кэшбэка (решение Андрея 08.08): чем больше бюджет
-// клиента у нас, тем выше процент. Ставка берётся по статусу, ДОСТИГНУТОМУ к моменту
-// сделки (прошлое не переписываем), бюджет = сумма оплаченных услуг.
+// клиента у нас, тем выше процент. Начисление СТУПЕНЧАТОЕ (уточнение 16.08, см.
+// bloyPointsFor): первая платная ступень — на всю сумму, дальше повышенный процент
+// только на часть сверх порога. Прошлое не переписываем, бюджет = сумма оплаченных услуг.
 // Порядок ступеней — по решению Андрея 10.08 (титан дешевле серебра).
 const BLOY_TIERS = [
   { key: "base", name: "Базовый", min: 0, rate: 0, perk: "Копим бюджет: с 20 000 ₽ включается кэшбэк" },
@@ -1615,6 +1616,23 @@ const BLOY_TIERS = [
 ];
 function bloyTierFor(spend) { let t = BLOY_TIERS[0], next = null; for (let i = 0; i < BLOY_TIERS.length; i++) { if (spend >= BLOY_TIERS[i].min) t = BLOY_TIERS[i]; else { next = BLOY_TIERS[i]; break; } } return { tier: t, next: next }; }
 function bloyRateFor(spend) { return bloyTierFor(spend).tier.rate; }
+// Баллы за НАКОПЛЕННЫЙ бюджет (решение Андрея 16.08): первая платная ступень даёт
+// свой процент на ВСЮ сумму (20 952 ₽ → 5% со всей суммы = 1 048 баллов), а каждая
+// следующая — только на часть сверх своего порога, как налоговые ступени.
+// 60 000 ₽ = 5% × 50 000 + 7% × 10 000 = 3 200 баллов, а не 7% со всей суммы.
+const BLOY_PAID_TIERS = BLOY_TIERS.filter((t) => t.rate > 0).sort((a, b) => a.min - b.min);
+function bloyPointsFor(spend) {
+  const s = Number(spend) || 0;
+  if (!BLOY_PAID_TIERS.length || s < BLOY_PAID_TIERS[0].min) return 0;
+  let pts = 0;
+  for (let i = 0; i < BLOY_PAID_TIERS.length; i++) {
+    const from = i === 0 ? 0 : BLOY_PAID_TIERS[i].min;   // первая ступень считается с нуля
+    const nx = BLOY_PAID_TIERS[i + 1];
+    const to = nx ? Math.min(s, nx.min) : s;
+    if (to > from) pts += (to - from) * BLOY_PAID_TIERS[i].rate;
+  }
+  return Math.round(pts);
+}
 let _bloy, _bref, _brefSaveT;
 function bloyLoad() { if (_bloy !== undefined) return _bloy; try { _bloy = JSON.parse(fs.readFileSync(BLOY_FILE, "utf8")); } catch (_) { _bloy = null; } return _bloy; }
 function bloySave(d) { _bloy = d; try { fs.writeFileSync(BLOY_FILE, JSON.stringify(d)); } catch (e) { console.error("bloySave:", e.message); } }
@@ -1715,16 +1733,18 @@ async function runBetaLoyalty(trigger) {
       const acc = accounts[cid] || (accounts[cid] = { contactId: cid, name: info.name, phones: info.phones, earned: 0, spend: 0, deals: [] });
       acc.deals.push({ id: l.id, name: l.name || "", price, points: 0, rate: 0, ts, day: _mskDayKey(ts) });
     }
-    // … затем начисляем ПРОГРЕССИВНО: идём по сделкам клиента от старых к новым и на
-    // каждой берём ставку статуса по бюджету С УЧЁТОМ этой покупки. Так первая же
-    // крупная сделка получает свою ставку, а прошлые начисления не переписываются.
+    // … затем начисляем СТУПЕНЧАТО: идём по сделкам клиента от старых к новым, и
+    // каждая получает прирост баллов за накопленный бюджет — bloyPointsFor(после)
+    // минус bloyPointsFor(до). Повышенный процент действует только на часть суммы
+    // сверх порога, а ранее начисленное не переписывается.
     Object.values(accounts).forEach((a) => {
       a.deals.sort((x, y) => x.ts - y.ts);
       let spend = 0;
       a.deals.forEach((dl) => {
+        const before = bloyPointsFor(spend);
         spend += dl.price;
-        const rate = bloyRateFor(spend);
-        dl.rate = rate; dl.points = Math.round(dl.price * rate);
+        dl.points = Math.max(0, bloyPointsFor(spend) - before);
+        dl.rate = dl.price > 0 ? dl.points / dl.price : 0;   // фактическая ставка этой сделки
         a.earned += dl.points; totalEarned += dl.points;
       });
       a.spend = spend;
@@ -3464,6 +3484,11 @@ app.get("/admin/kb/logic", requireStaff, (req, res) => {
 // инфраструктура). Пишем понятно, без воды, но со всеми нюансами + кто просил.
 // ВАЖНО: при любой правке клиентского ЛК — добавлять сюда новую запись сверху.
 const LK_CHANGELOG = [
+  { date: "16.08.2026", title: "Кэшбэк считается по ступеням, а не одной ставкой на всю сумму", by: "решение Андрея", points: [
+    "Первая платная ступень работает как раньше: перешагнул 20 000 ₽ — 5% начисляются со ВСЕЙ суммы покупок (оплата 20 952 ₽ → 1 048 баллов).",
+    "Каждая следующая ступень действует только на часть суммы сверх своего порога: при 60 000 ₽ это 5% с первых 50 000 ₽ и 7% с оставшихся 10 000 ₽ — 3 200 баллов вместо прежних 4 200.",
+    "Статус клиента по-прежнему определяется общей суммой покупок, ранее начисленные баллы не пересчитываются. Пояснение под «i» в карте и раздел «Лояльность» в справочниках обновлены."
+  ] },
   { date: "11.08.2026", title: "Оффер вплотную под обращениями, меню — с голубым акцентом", by: "замечания Андрея", points: [
     "Левая колонка кабинета собирается в один контейнер: «Ваши обращения» и карточка-оффер идут стопкой, поэтому оффер стоит сразу под обращениями. Через строки грид-сетки это не решалось — высокий «Статус обращения» всё равно растягивал строку и оффер уезжал к низу колонки. Разметка ЛК не менялась: контейнер создаёт скрипт бонусного блока.",
     "Меню перестало сливаться с фоном: мягкий переход из белого в голубой, голубоватая рамка и подсвеченная тень."
