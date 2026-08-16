@@ -390,7 +390,7 @@ function fitHtmlForDocx(html, landscape) {
   const pageW = landscape ? 870 : 620; // px печатной области A4 при наших полях
   return String(html)
     .replace(/width\s*:\s*([0-9.]+)\s*%/gi, (m, p) => "width:" + Math.max(20, Math.round(pageW * parseFloat(p) / 100)) + "px")
-    .replace(/\s+width\s*=\s*"[0-9.]+%"/gi, ""); // %-атрибуты роняют конвертер — убираем
+    .replace(/\s+width\s*=\s*("[0-9.]+%"|'[0-9.]+%'|[0-9.]+%)/gi, ""); // %-атрибуты роняют конвертер — убираем (любые кавычки)
 }
 
 async function buildOutputs(order, html) {
@@ -409,8 +409,24 @@ async function buildOutputs(order, html) {
     });
     order.files.docx = saveFile(order.id, "result", Buffer.from(docxBuf), "result.docx", "");
   } catch (e) {
-    console.error("translate docx:", e.message);
-    order.docxError = "DOCX не собрался: " + e.message;
+    // Последний рубеж: любая незнакомая форма ширин, уронившая конвертер, —
+    // собираем без ширин вообще. DOCX с авто-колонками лучше, чем без файла.
+    try {
+      const HTMLtoDOCX = require("html-to-docx");
+      const bare = fullHtml
+        .replace(/width\s*:\s*[^;"'}]+;?/gi, "")
+        .replace(/\s+width\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+      const docxBuf = await HTMLtoDOCX(bare, null, {
+        orientation: landscape ? "landscape" : "portrait",
+        table: { row: { cantSplit: true } }, font: "Times New Roman", fontSize: 24,
+      });
+      order.files.docx = saveFile(order.id, "result", Buffer.from(docxBuf), "result.docx", "");
+      order.docxError = null;
+      console.warn("translate docx: собрался только после удаления ширин (" + e.message.slice(0, 60) + ")");
+    } catch (e2) {
+      console.error("translate docx:", e2.message);
+      order.docxError = "DOCX не собрался: " + e2.message;
+    }
   }
 }
 function currentHtml(order) {
