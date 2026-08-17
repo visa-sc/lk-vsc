@@ -755,11 +755,6 @@
     .vsc-maintabs button.active { background: #0097ca; color: #fff; border-color: #0097ca; }
     .vsc-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 12px 0 16px; }
     .vsc-gran { display: flex; gap: 6px; flex-wrap: wrap; }
-    /* Галка «Вкл. новогодние праздники» (разрез «Неделя») */
-    .vsc-nyw { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: #5a626f;
-      background: #fff; border: 1px solid #cfd8e3; border-radius: 999px; padding: 6px 13px; cursor: pointer; user-select: none; white-space: nowrap; }
-    .vsc-nyw input { width: 14px; height: 14px; margin: 0; cursor: pointer; accent-color: #2477de; }
-    body.vsc-skin .vsc-nyw { border-color: rgba(20,32,64,.12); box-shadow: 0 1px 2px rgba(16,24,40,.03); }
     .vsc-gran button { border: 1px solid #cfd8e3; background: #fff; color: #33415a; border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
     .vsc-gran button.active { background: #161d45; color: #fff; border-color: #161d45; }
     .vsc-month select { padding: 7px 10px; border: 1px solid #cfd8e3; border-radius: 8px; font-size: 13px; font-family: inherit; background: #fff; }
@@ -2221,9 +2216,6 @@
 
       // ── Раздел «VSC · дашборд» (показатели визового агентства из Google-таблицы) ──
       let vscData = null, vscGran = "day", vscMonthIdx = 0, vscTab = "dash";
-      // Разрез «Неделя»: включать ли недели новогодних каникул (по умолчанию — да).
-      const VSC_NY_KEY = "voyo_vsc_week_ny";
-      let vscInclNY = (function () { try { return localStorage.getItem(VSC_NY_KEY) !== "0"; } catch (_) { return true; } })();
       let _vscTabsScroll = 0; // позиция промотки меню вкладок — переживает перерисовку (айфон)
       // good: +1 — чем больше тем лучше; −1 — чем меньше тем лучше; 0 — нейтрально (без оценки тренда).
       const VSC_KPIS = [
@@ -2653,16 +2645,8 @@
             k.planPct = null; // план ОП — месячная величина, в неделях не показываем
             return k;
           };
-          // Галка снята → прячем недели новогодних каникул: показываем с недели, которая
-          // начинается 12 января (год берём по последней неделе с данными).
-          let nyCut = null;
-          if (!vscInclNY) {
-            const lastMon = Array.from(buckets.values()).reduce((a, b) => (!a || b.mon > a ? b.mon : a), null);
-            if (lastMon) nyCut = new Date(lastMon.getFullYear(), 0, 12).getTime();
-          }
           return Array.from(buckets.values())
             .filter((b) => b.mon <= today)               // недели, которые уже начались
-            .filter((b) => nyCut == null || b.mon.getTime() >= nyCut)
             .sort((a, b) => a.mon - b.mon)
             .map((b) => { const k = aggBlocks(b.blocks); k.label = b.label; return { x: b.label, x2: b.end, k: k, range: b.range, monTs: b.mon.getTime() }; });
         }
@@ -3457,16 +3441,6 @@
           (vscData.months || []).forEach((m, i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = m.name; if (i === vscMonthIdx) o.selected = true; sel.appendChild(o); });
           sel.addEventListener("change", () => { vscMonthIdx = parseInt(sel.value, 10) || 0; renderVsc(); });
           mw.appendChild(sel); ctrls.appendChild(mw);
-        }
-        // «Неделя»: галка новогодних праздников. По умолчанию ВКЛючена (все недели, как
-        // раньше); снятая — прячет недели до 12 января (каникулы занижают начало графика).
-        if (vscGran === "week") {
-          const lab = document.createElement("label"); lab.className = "vsc-nyw";
-          const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = vscInclNY;
-          cb.addEventListener("change", () => { vscInclNY = cb.checked; try { localStorage.setItem(VSC_NY_KEY, cb.checked ? "1" : "0"); } catch (_) {} renderVsc(); });
-          lab.appendChild(cb); lab.appendChild(document.createTextNode("Вкл. новогодние праздники"));
-          lab.title = "Снять галку — недели показываются с 12 января (каникулы не занижают график)";
-          ctrls.appendChild(lab);
         }
         vscContent.appendChild(ctrls);
 
