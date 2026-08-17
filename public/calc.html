@@ -97,6 +97,8 @@
   .modeswitch button .ms-ico { margin-right: 7px; font-size: 15px; vertical-align: -1px; }
   /* «i» с пояснением — прямо на вкладках переключателя (заголовки из карточек убраны). */
   .modeswitch .info { width: 17px; height: 17px; font-size: 11px; margin-left: 7px; top: -1px; }
+  /* Уменьшенная «i» для плиток курсов. */
+  .info-sm { width: 15px; height: 15px; font-size: 10px; margin-left: 5px; top: -1px; border-width: 1.2px; }
 
   /* ── Калькулятор страхования (вторая «вкладка» страницы) ── */
   #cardIns { max-width: 720px; margin: 0 auto; }
@@ -178,7 +180,7 @@
       <div class="ro"><div class="lbl">Курс usdt / доллар к рублю</div><div class="val" id="vUsd">—</div></div>
       <div class="ro"><div class="lbl">USDT к евро (расчёт)</div><div class="val" id="vB6">—</div></div>
       <div class="ro" id="roBanki" style="display:none;"><div class="lbl">Курс покупки евро · banki.ru<span id="vBankiBank" style="display:block;font-weight:600;color:var(--ink3);"></span></div><div class="val" id="vBanki">—</div></div>
-      <div class="ro"><div class="lbl">Курс usdt для расхода 🔒</div><div class="val" id="vB7">—</div></div>
+      <div class="ro"><div class="lbl">Курс usdt для расхода 🔒<span class="info info-sm" id="b7Info" tabindex="0" role="button" aria-label="Пояснение">i</span></div><div class="val" id="vB7">—</div></div>
     </div>
 
     <div class="curbtns" id="curBtns">
@@ -489,6 +491,38 @@
       + sw('#c2c7cf') + 'серым — считается авто<br>'
       + sw('#34c759') + 'зелёным — для amo (клик копирует)<br>'
       + sw('#9a8ff0') + 'сиреневым — проверка';
+    function place(){
+      if (pop.parentNode !== document.body) document.body.appendChild(pop);
+      pop.classList.add("show");
+      var r = w.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight, pw = Math.min(360, vw - 24);
+      pop.style.width = pw + "px";
+      var left = Math.max(12, Math.min(r.left + r.width/2 - pw/2, vw - pw - 12));
+      pop.style.left = left + "px";
+      pop.style.top = (r.bottom + 9) + "px";
+      pop.classList.remove("up");
+      var ph = pop.offsetHeight;
+      if (r.bottom + 9 + ph > vh - 12 && r.top - 9 - ph > 12) { pop.style.top = (r.top - 9 - ph) + "px"; pop.classList.add("up"); }
+      pop.style.setProperty("--arrow-left", Math.max(10, Math.min(pw - 10, r.left + r.width/2 - left)) + "px");
+    }
+    function close(){ w.classList.remove("open"); pop.classList.remove("show", "up"); if (pop.parentNode) pop.parentNode.removeChild(pop); }
+    w.addEventListener("click", function(e){ e.stopPropagation(); var was = w.classList.contains("open"); close(); if (!was){ w.classList.add("open"); place(); } });
+    w.addEventListener("mouseenter", function(){ if (!w.classList.contains("open")) place(); });
+    w.addEventListener("mouseleave", function(){ if (!w.classList.contains("open")) close(); });
+    pop.addEventListener("click", function(e){ e.stopPropagation(); });
+    document.addEventListener("click", close);
+    window.addEventListener("scroll", function(){ if (pop.classList.contains("show")) close(); }, true);
+    window.addEventListener("resize", function(){ if (pop.classList.contains("show")) close(); });
+  })();
+
+  // «i» у плитки «Курс usdt для расхода»: откуда берётся курс (портал в body, как у вкладок).
+  (function(){
+    var w = $("b7Info"); if (!w) return;
+    var pop = document.createElement("span");
+    pop.className = "info-pop";
+    pop.innerHTML =
+      '<b>Курс USDT для расхода</b><br>'
+      + 'Определяется в момент фактической закупки USDT: это курс, по которому монета была реально куплена, а не текущая биржевая котировка. Он действует до следующей закупки, поэтому может отличаться от рыночного.'
+      + '<br><br>При необходимости подтверждение курса закупки можно запросить у Андрея.';
     function place(){
       if (pop.parentNode !== document.body) document.body.appendChild(pop);
       pop.classList.add("show");
