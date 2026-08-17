@@ -2225,6 +2225,9 @@
         { key: "cv", label: "CV отдела продаж (общая)", fmt: "pct", good: 1 },
         { key: "cpl", label: "CPL (общий)", fmt: "money", good: -1 },
         { key: "drr", label: "ДРР (общая)", fmt: "pct", good: -1 },
+        // ДРР с учётом доп. расходов — только «Год»: помесячные значения из «Ежемесячного
+        // контроля» (ctrl.drrExtra), за год — взвешенно по выручке месяца (см. vscDrrExtraYear).
+        { key: "drrExtra", label: "ДРР с учётом доп. расходов", fmt: "pct", good: -1, yearOnly: true },
         { key: "over", label: "Недобор / перебор таргета ОП", fmt: "signed", good: 1 },
         { key: "targetDev", label: "Отклонение таргета (факт − план, МСК+СПБ)", fmt: "signed", good: 1 },
         { key: "planPct", label: "План ОП (% выполнения)", fmt: "pct", good: 1 },
@@ -2250,6 +2253,18 @@
         ] };
       // Прибыль по месяцам приходит с сервера (vscData.profit, ключ — ПОЛНОЕ имя месяца);
       // директор вводит её раз в месяц через /vsc. Рентабельность = прибыль / выручка (бюджет).
+      // ДРР с учётом доп. расходов за ГОД: помесячные значения листа (ctrl.drrExtra, %)
+      // усредняем ВЗВЕШЕННО по выручке месяца — это ровно Σрасходов ÷ Σвыручки, как
+      // считал бы Grand total. Месяцы без значения в расчёт не берём.
+      function vscDrrExtraYear() {
+        let num = 0, den = 0;
+        (vscData && vscData.months || []).forEach((m) => {
+          const p = m && m.ctrl ? m.ctrl.drrExtra : null;
+          const b = m && m.total ? m.total.budget : null;
+          if (p != null && !isNaN(p) && b) { num += p * b; den += b; }
+        });
+        return den ? num / den : null;
+      }
       const vscShortMonth = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
       const vscProfitOf = (m) => (m && vscData && vscData.profit) ? vscData.profit[m.name] : null;
       const vscRentPct = (m) => { const p = vscProfitOf(m); const b = m && m.total ? m.total.budget : null; return (p != null && b) ? p / b * 100 : null; };
@@ -3435,6 +3450,7 @@
         const kpisForView = VSC_KPIS.filter((k) => {
           if ((vscGran === "week" || vscGran === "day") && k.key === "planPct") return false;
           if (k.key === "returnsPct" && vscGran !== "year") return false;
+          if (k.yearOnly && vscGran !== "year") return false;
           return true;
         });
         // Для плиток «Неделя»/«День» берём последний период С ДАННЫМИ: текущий
@@ -3529,7 +3545,7 @@
         const tiles = document.createElement("div"); tiles.className = "vsc-tiles";
         kpisForView.forEach((kpi) => {
           let v = null, prev = null;
-          if (vscGran === "year") { v = vscData.year ? vscData.year[kpi.key] : null; }
+          if (vscGran === "year") { v = (kpi.key === "drrExtra") ? vscDrrExtraYear() : (vscData.year ? vscData.year[kpi.key] : null); }
           else if (vscGran === "month") { if (cmpRes) { v = cmpRes[kpi.key].cur; prev = cmpRes[kpi.key].prev; } }
           else {
             // НЕДЕЛЯ / ДЕНЬ — сравниваем с теми же днями прошлой недели.
@@ -3660,7 +3676,9 @@
         if (!series.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных за выбранный месяц."; vscContent.appendChild(e); }
         // «Неделя»/«День» — компактные ЛИНЕЙНЫЕ графики (весь ряд на экране, тултип по
         // наведению/пальцу); «Месяц»/«Год» — столбцы, как раньше. Данные series те же.
-        else kpisForView.forEach((kpi) => vscContent.appendChild((vscGran === "week" || vscGran === "day") ? vscLineChart(kpi, series) : vscBarChart(kpi, series)));
+        // yearOnly-показатели (ДРР с доп. расходами) — только плитка: помесячный график
+        // для них уже есть в «Ежемесячном контроле», в series этих значений нет.
+        else kpisForView.filter((k) => !k.yearOnly).forEach((kpi) => vscContent.appendChild((vscGran === "week" || vscGran === "day") ? vscLineChart(kpi, series) : vscBarChart(kpi, series)));
         // График «Конверсия из трафика в лид» — во ВСЕХ разрезах (год/месяц/неделя/день).
         // series уже несёт trafConv (+ trafConvMsk/Spb) в k: день — строка дня; неделя —
         // Total/склейка огрызков; месяц/год — Grand total месяца. День/неделя — 3 кривые
