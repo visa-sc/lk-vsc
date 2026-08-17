@@ -216,6 +216,29 @@
   const history = []; // [{role, content}]
   let busy = false;
 
+  // Переписка переживает перезаход: храним историю в localStorage (до 30 дней).
+  const HIST_KEY = 'vsc_chat_hist';
+  const HIST_TTL_MS = 30 * 24 * 3600 * 1000;
+  function persist(){
+    try{ localStorage.setItem(HIST_KEY, JSON.stringify({ t: Date.now(), items: history.slice(-80) })); }catch(e){}
+  }
+  function restore(){
+    try{
+      const raw = localStorage.getItem(HIST_KEY);
+      if(!raw) return false;
+      const data = JSON.parse(raw);
+      if(!data || !Array.isArray(data.items) || !data.items.length) return false;
+      if(Date.now() - (data.t || 0) > HIST_TTL_MS){ localStorage.removeItem(HIST_KEY); return false; }
+      data.items.forEach(m=>{
+        if(m && (m.role==='user'||m.role==='assistant') && typeof m.content==='string'){
+          addBubble(m.role, m.content);
+          history.push({role:m.role, content:m.content});
+        }
+      });
+      return history.length > 0;
+    }catch(e){ return false; }
+  }
+
   const GREETING = "Здравствуйте! 👋 Вы на связи со специалистом визового центра VSC.\n\nЗадайте любой вопрос по визам — сориентирую по вашей ситуации, условиям и срокам и подберу лучший вариант оформления. В какую страну планируете поездку?";
   const QUICK = ["Шенген", "Виза в США", "Помогите подобрать визу", "Какие документы нужны?"];
 
@@ -274,6 +297,7 @@
     renderQuick([]);
     addBubble('user', text);
     history.push({role:'user', content:text});
+    persist();
     showTyping();
     try{
       const r = await fetch('/api/chat_test/message',{
@@ -285,6 +309,7 @@
       const reply = (data && data.reply) || (data && data.message) || 'Извините, не получилось ответить. Оставьте, пожалуйста, телефон или напишите в WhatsApp — менеджер свяжется с вами.';
       addBubble('assistant', reply);
       history.push({role:'assistant', content:reply});
+      persist();
     }catch(e){
       hideTyping();
       addBubble('assistant','Связь прервалась. Попробуйте ещё раз или оставьте телефон — мы перезвоним.');
@@ -300,11 +325,15 @@
   });
   form.addEventListener('submit', e=>{ e.preventDefault(); send(); });
 
-  // Приветствие
-  addBubble('assistant', GREETING);
-  history.push({role:'assistant', content:GREETING});
-  renderQuick(QUICK);
+  // Восстанавливаем прошлую переписку; если её нет — приветствие с подсказками.
+  if(!restore()){
+    addBubble('assistant', GREETING);
+    history.push({role:'assistant', content:GREETING});
+    persist();
+    renderQuick(QUICK);
+  }
   input.focus();
+  scrollDown();
 })();
 </script>
 </body>
