@@ -803,7 +803,7 @@
     /* Отзывы — диверг-график: позитив вверх (зелёный), негатив вниз (красный) */
     .rev-legend { display: flex; gap: 16px; margin-bottom: 10px; font-size: 11.5px; color: #5a626f; }
     .rev-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-    .rev-bars { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
+    .rev-bars { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 6px 0; }
     .rev-bars::-webkit-scrollbar { height: 6px; }
     .rev-bars::-webkit-scrollbar-thumb { background: #d3d8e0; border-radius: 3px; }
     .rev-col { flex: 0 0 60px; display: flex; flex-direction: column; align-items: center; }
@@ -816,6 +816,14 @@
     .rev-v { font-size: 10px; font-weight: 700; line-height: 1; }
     .rev-v.pos { color: #2c7a43; } .rev-v.neg { color: #b0263a; } .rev-v.zero { color: #c3c8d1; }
     .rev-x { font-size: 9.5px; color: #9aa0ab; white-space: nowrap; margin-top: 6px; }
+    /* Годовой итог — первой карточкой, отделён подложкой и зазором (как «2026 год»
+       в блоке «% записанных сделок»). Свой масштаб: высота считается от своего максимума. */
+    /* Вертикального padding НЕТ — иначе ось года не совпадёт с осью месяцев;
+       «воздух» карточке даёт padding-top у .rev-bars. */
+    .rev-col-year { flex: 0 0 78px; background: #eef5fb; border: 1px solid #d3e3f2; border-radius: 12px;
+      padding: 0 6px; box-sizing: border-box; margin-right: 14px; margin-top: -1px; /* −1px: компенсация рамки, чтобы ось года совпала с осью месяцев */ }
+    .rev-col-year .rev-axis { background: #c9dcee; }
+    .rev-x-year { color: #2c5a86; font-weight: 700; font-size: 10.5px; }
     .vsc-empty { color: #9aa0ab; font-size: 13px; padding: 10px 0; }
     .vsc-tile-d { font-size: 12px; font-weight: 700; margin-top: 2px; }
     .vsc-tile-d.up { color: #2c7a43; } .vsc-tile-d.down { color: #b0263a; } .vsc-tile-d.neu { color: #9aa0ab; }
@@ -3152,7 +3160,7 @@
       }
       // Диверг-график отзывов: для каждого месяца позитив — зелёным столбцом вверх,
       // негатив — красным вниз от общей оси. data = [{ x, pos, neg }].
-      function vscReviewsChart(title, data) {
+      function vscReviewsChart(title, data, year) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
         const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = title; wrap.appendChild(h);
         const leg = document.createElement("div"); leg.className = "rev-legend";
@@ -3161,22 +3169,35 @@
         const pts = (data || []).filter((d) => d && (d.pos != null || d.neg != null));
         if (!pts.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных по отзывам."; wrap.appendChild(e); return wrap; }
         const maxAbs = Math.max.apply(null, pts.map((d) => Math.max(d.pos || 0, d.neg || 0))) || 1;
-        const bars = document.createElement("div"); bars.className = "rev-bars";
-        pts.forEach((d) => {
-          const col = document.createElement("div"); col.className = "rev-col";
+        // Колонка графика. scale — по какому максимуму нормируем высоту (у месяцев общий,
+        // у годового итога — свой, поэтому он не «придавливает» месяцы). accent — карточка
+        // с подложкой и отступом (как «2026 год» в блоке % записанных сделок).
+        const mkCol = (d, scale, accent) => {
+          const col = document.createElement("div"); col.className = "rev-col" + (accent ? " rev-col-year" : "");
           const top = document.createElement("div"); top.className = "rev-half top";
           const pv = document.createElement("div"); pv.className = "rev-v " + ((d.pos || 0) > 0 ? "pos" : "zero"); pv.textContent = d.pos == null ? "" : d.pos;
-          const pb = document.createElement("div"); pb.className = "rev-bar-pos"; pb.style.height = Math.max(2, Math.round((d.pos || 0) / maxAbs * 88)) + "px";
+          const pb = document.createElement("div"); pb.className = "rev-bar-pos"; pb.style.height = Math.max(2, Math.round((d.pos || 0) / scale * 88)) + "px";
           top.appendChild(pv); top.appendChild(pb);
           const axis = document.createElement("div"); axis.className = "rev-axis";
           const bot = document.createElement("div"); bot.className = "rev-half bot";
-          const nb = document.createElement("div"); nb.className = "rev-bar-neg"; nb.style.height = Math.max(2, Math.round((d.neg || 0) / maxAbs * 88)) + "px";
+          const nb = document.createElement("div"); nb.className = "rev-bar-neg"; nb.style.height = Math.max(2, Math.round((d.neg || 0) / scale * 88)) + "px";
           const nv = document.createElement("div"); nv.className = "rev-v " + ((d.neg || 0) > 0 ? "neg" : "zero"); nv.textContent = d.neg == null ? "" : d.neg;
           bot.appendChild(nb); bot.appendChild(nv);
-          const xl = document.createElement("div"); xl.className = "rev-x"; xl.textContent = d.x;
+          const xl = document.createElement("div"); xl.className = "rev-x" + (accent ? " rev-x-year" : ""); xl.textContent = d.x;
+          const tot = (d.pos || 0) + (d.neg || 0);
+          col.title = d.x + ": позитивных " + (d.pos || 0) + ", негативных " + (d.neg || 0)
+            + (tot ? " · доля позитивных " + Math.round((d.pos || 0) / tot * 100) + "%" : "");
           col.appendChild(top); col.appendChild(axis); col.appendChild(bot); col.appendChild(xl);
-          bars.appendChild(col);
-        });
+          return col;
+        };
+        const bars = document.createElement("div"); bars.className = "rev-bars";
+        // Годовой итог — ПЕРВОЙ карточкой (как «2026 год» в блоке % записанных сделок):
+        // сумма по всем заполненным месяцам, новые месяцы подхватываются сами.
+        const yPos = pts.reduce((a, d) => a + (d.pos || 0), 0);
+        const yNeg = pts.reduce((a, d) => a + (d.neg || 0), 0);
+        const yearLabel = year || new Date().getFullYear();
+        bars.appendChild(mkCol({ x: yearLabel + " год", pos: yPos, neg: yNeg }, Math.max(yPos, yNeg) || 1, true));
+        pts.forEach((d) => bars.appendChild(mkCol(d, maxAbs, false)));
         wrap.appendChild(bars);
         return wrap;
       }
@@ -3674,8 +3695,9 @@
         const rev = vscData.reviews || [];
         const msk = rev.map((r) => ({ x: short(r.name), pos: r.mskPos, neg: r.mskNeg }));
         const spb = rev.map((r) => ({ x: short(r.name), pos: r.spbPos, neg: r.spbNeg }));
-        vscContent.appendChild(vscReviewsChart("Отзывы — Москва", msk));
-        vscContent.appendChild(vscReviewsChart("Отзывы — Санкт-Петербург", spb));
+        const revYear = (function () { const m = /(20\d\d)/.exec((rev[0] && rev[0].name) || ""); return m ? +m[1] : new Date().getFullYear(); })();
+        vscContent.appendChild(vscReviewsChart("Отзывы — Москва", msk, revYear));
+        vscContent.appendChild(vscReviewsChart("Отзывы — Санкт-Петербург", spb, revYear));
 
         // ── Сделки и реклама по месяцам (из нижнего сводного блока листа) ──
         const ctrlSeries = (vscData.months || []).filter((mm) => mm.ctrl).map((mm) => ({ x: short(mm.name), k: mm.ctrl }));
