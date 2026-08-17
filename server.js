@@ -16,6 +16,7 @@ const mail = require("./mail");
 const esign = require("./esign"); // ПЭП-подпись (аналог fdoc) — отдельный модуль, монтируется ниже
 const translateMod = require("./translate"); // Переводы документов с ИИ-проверкой (/translate) — отдельный модуль, монтируется ниже
 const chatMod = require("./chat"); // Продающий ИИ-чат по визам (/chat_test) — отдельный модуль, монтируется ниже
+const finMod = require("./fin"); // Личные финансы Андрея (/fin) — отдельный модуль, монтируется ниже
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -2227,6 +2228,11 @@ translateMod.mount(app, { getStaffFromReq });
 // Изолирован: клиентский ЛК/amoCRM/переводы не затрагивает; канал до Anthropic
 // переиспользует env переводов (ANTHROPIC_API_KEY/BASE_URL/TRANSLATE_PROXY).
 chatMod.mount(app, { requireAdmin });
+
+// ── Личные финансы Андрея (/fin): ввод расходов с телефона → .fin/store.json →
+// агент на маке Андрея дописывает в «Личные финансы.numbers» (iCloud). Никого,
+// кроме Андрея, не касается; вход по FIN_CODE, агент — по FIN_AGENT_KEY.
+finMod.mount(app, { requireAdmin });
 
 // ── DISK WATCH: контроль свободного места на диске сервера (просьба Андрея 08.08).
 // Каждые 6 часов; если свободно меньше DISK_ALERT_GB (дефолт 1 ГБ) — письмо

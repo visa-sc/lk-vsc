@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Финансы">
+<meta name="theme-color" content="#0b0f14">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Финансы</title>
+<style>
+:root{
+  --bg:#0b0f14; --card:#141b24; --card2:#1a2330; --line:#243044;
+  --tx:#e8eef6; --tx2:#8fa1b8; --tx3:#5c6b80;
+  --pos:#34c759; --ok:#0a84ff; --nope:#ff9f0a; --trash:#ff453a;
+  --acc:#0a84ff;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,sans-serif}
+body{min-height:100vh;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.wrap{max-width:520px;margin:0 auto;padding:12px 14px 40px}
+h1{font-size:20px;font-weight:700;padding:8px 2px 2px}
+.muted{color:var(--tx2);font-size:13px}
+.tiny{color:var(--tx3);font-size:11px}
+/* ── вход ── */
+#login{display:none;flex-direction:column;gap:14px;align-items:center;padding-top:18vh}
+#login input{font-size:28px;text-align:center;letter-spacing:8px;background:var(--card);border:1px solid var(--line);color:var(--tx);border-radius:14px;padding:14px 10px;width:220px;outline:none}
+#login button{font-size:17px;font-weight:600;background:var(--acc);color:#fff;border:0;border-radius:14px;padding:14px 40px}
+.err{color:var(--trash);font-size:14px;min-height:18px}
+/* ── форма ── */
+#main{display:none}
+.amount-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:6px 16px;margin-top:10px}
+.amount-row input{flex:1;background:none;border:0;outline:none;color:var(--tx);font-size:34px;font-weight:700;min-width:0}
+.amount-row .rub{font-size:26px;color:var(--tx3);font-weight:600}
+.name-row{margin-top:10px}
+.name-row input{width:100%;background:var(--card);border:1px solid var(--line);border-radius:14px;color:var(--tx);font-size:17px;padding:13px 14px;outline:none}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:10px 2px 2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;background:var(--card2);border:1px solid var(--line);border-radius:20px;padding:8px 14px;font-size:14px;color:var(--tx);display:flex;gap:6px;align-items:center}
+.chip b{font-weight:600}
+.chip .c-amt{color:var(--tx3);font-size:12px}
+.chip.hot{border-color:#31445f}
+.buckets{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.bk{border:1.5px solid var(--line);background:var(--card);border-radius:14px;padding:11px 6px;text-align:center;font-size:13.5px;font-weight:600;color:var(--tx2)}
+.bk small{display:block;font-weight:400;font-size:10.5px;margin-top:2px;color:var(--tx3)}
+.bk.sel{color:#fff}
+.bk[data-b="pos"].sel{background:rgba(52,199,89,.16);border-color:var(--pos);color:var(--pos)}
+.bk[data-b="ok"].sel{background:rgba(10,132,255,.16);border-color:var(--ok);color:var(--ok)}
+.bk[data-b="nope"].sel{background:rgba(255,159,10,.16);border-color:var(--nope);color:var(--nope)}
+.bk[data-b="trash"].sel{background:rgba(255,69,58,.16);border-color:var(--trash);color:var(--trash)}
+.meta-row{display:flex;gap:8px;margin-top:12px;align-items:center}
+.pill{background:var(--card2);border:1px solid var(--line);border-radius:20px;padding:8px 14px;font-size:13.5px;color:var(--tx2)}
+select.pill{appearance:none;-webkit-appearance:none;outline:none;color:var(--tx);max-width:55%}
+input.pill{outline:none;color:var(--tx)}
+#saveBtn{width:100%;margin-top:14px;background:var(--acc);border:0;border-radius:16px;color:#fff;font-size:18px;font-weight:700;padding:16px}
+#saveBtn:disabled{opacity:.4}
+#saveBtn.flash{background:var(--pos)}
+/* ── сегодня / дни ── */
+.sec{margin-top:22px}
+.sec h2{font-size:15px;color:var(--tx2);font-weight:600;display:flex;justify-content:space-between;align-items:baseline}
+.sec h2 .sum{color:var(--tx);font-size:15px}
+.entry{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px}
+.entry .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.dot.pos{background:var(--pos)}.dot.ok{background:var(--ok)}.dot.nope{background:var(--nope)}.dot.trash{background:var(--trash)}
+.entry .nm{flex:1;min-width:0}
+.entry .nm b{font-size:15px;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.entry .nm span{font-size:11.5px;color:var(--tx3)}
+.entry .amt{font-size:15px;font-weight:700;white-space:nowrap}
+.entry .st{font-size:13px;width:20px;text-align:center;color:var(--tx3)}
+.entry.pending{border-style:dashed}
+.syncline{display:flex;justify-content:space-between;margin-top:10px}
+#daysBtn{background:none;border:0;color:var(--acc);font-size:14px;padding:6px 0}
+#days .entry{opacity:.92}
+#toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(80px);background:var(--card2);border:1px solid var(--line);color:var(--tx);padding:10px 20px;border-radius:20px;font-size:14px;transition:transform .25s;z-index:9}
+#toast.show{transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="login">
+    <h1>Финансы</h1>
+    <input id="code" type="tel" inputmode="numeric" autocomplete="one-time-code" placeholder="Код">
+    <div class="err" id="loginErr"></div>
+    <button onclick="doLogin()">Войти</button>
+  </div>
+
+  <div id="main">
+    <h1>Финансы <span class="tiny" id="syncBadge"></span></h1>
+
+    <div class="amount-row">
+      <input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off">
+      <span class="rub">₽</span>
+    </div>
+
+    <div class="name-row">
+      <input id="name" type="text" placeholder="Что купил" autocomplete="off">
+    </div>
+    <div class="chips" id="chips"></div>
+
+    <div class="buckets" id="buckets">
+      <div class="bk" data-b="pos">Позитивные<small>инвестиции в себя</small></div>
+      <div class="bk sel" data-b="ok">Допустимые<small>обычная жизнь</small></div>
+      <div class="bk" data-b="nope">Можно было не тратить<small>импульсивное</small></div>
+      <div class="bk" data-b="trash">Выброшенные<small>штрафы, потери</small></div>
+    </div>
+
+    <div class="meta-row">
+      <select id="category" class="pill"></select>
+      <input id="date" type="date" class="pill" style="flex:1">
+    </div>
+
+    <button id="saveBtn" onclick="saveEntry()">Записать</button>
+
+    <div class="sec">
+      <h2><span>Сегодня</span><span class="sum" id="todaySum"></span></h2>
+      <div id="todayList"></div>
+      <div class="syncline">
+        <span class="tiny" id="syncInfo"></span>
+        <button id="daysBtn" onclick="toggleDays()">История ›</button>
+      </div>
+    </div>
+    <div class="sec" id="days" style="display:none"></div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+const LS_TOKEN = "finToken";
+let token = localStorage.getItem(LS_TOKEN) || "";
+let FREQ = [], CATS = [], TODAY = "";
+let daysOpen = false;
+
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(n);
+
+async function api(path, opts = {}) {
+  opts.headers = Object.assign({ "Content-Type": "application/json", Authorization: "Bearer " + token }, opts.headers || {});
+  const r = await fetch(path, opts);
+  if (r.status === 401 && !path.endsWith("/login")) { showLogin(); throw new Error("auth"); }
+  return r.json();
+}
+
+function showLogin() { $("login").style.display = "flex"; $("main").style.display = "none"; }
+function showMain() { $("login").style.display = "none"; $("main").style.display = "block"; }
+
+async function doLogin() {
+  $("loginErr").textContent = "";
+  try {
+    const r = await api("/fin/api/login", { method: "POST", body: JSON.stringify({ code: $("code").value.trim() }) });
+    if (!r.success) { $("loginErr").textContent = r.message || "Ошибка"; return; }
+    token = r.token; localStorage.setItem(LS_TOKEN, token);
+    showMain(); await refresh();
+  } catch (e) { $("loginErr").textContent = "Ошибка сети"; }
+}
+$("code").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+
+// ── корзины ──
+let bucket = "ok";
+$("buckets").addEventListener("click", (e) => {
+  const b = e.target.closest(".bk"); if (!b) return;
+  bucket = b.dataset.b;
+  document.querySelectorAll(".bk").forEach((x) => x.classList.toggle("sel", x === b));
+});
+function setBucket(b) {
+  bucket = b;
+  document.querySelectorAll(".bk").forEach((x) => x.classList.toggle("sel", x.dataset.b === b));
+}
+
+// ── частые покупки ──
+function renderChips(filter) {
+  const f = (filter || "").toLowerCase().trim();
+  const list = FREQ.filter((x) => !f || x.name.toLowerCase().includes(f)).slice(0, 20);
+  $("chips").innerHTML = list.map((x, i) =>
+    `<div class="chip${i < 6 && !f ? " hot" : ""}" data-i="${FREQ.indexOf(x)}"><b>${esc(x.name)}</b><span class="c-amt">${fmt(x.amount)}₽</span></div>`
+  ).join("");
+}
+$("chips").addEventListener("click", (e) => {
+  const c = e.target.closest(".chip"); if (!c) return;
+  const x = FREQ[Number(c.dataset.i)]; if (!x) return;
+  $("name").value = x.name;
+  if (!$("amount").value) $("amount").value = String(x.amount);
+  setBucket(x.bucket);
+  if (x.category) $("category").value = x.category;
+  $("amount").focus(); $("amount").select();
+});
+$("name").addEventListener("input", () => {
+  renderChips($("name").value);
+  // автокатегория/корзина по точному совпадению с частым
+  const hit = FREQ.find((x) => x.name.toLowerCase() === $("name").value.toLowerCase().trim());
+  if (hit) { setBucket(hit.bucket); if (hit.category) $("category").value = hit.category; }
+});
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+// ── сохранение ──
+async function saveEntry() {
+  const amount = parseFloat($("amount").value.replace(",", "."));
+  const name = $("name").value.trim();
+  if (!name || !(amount > 0)) { toast("Заполни сумму и название"); return; }
+  $("saveBtn").disabled = true;
+  try {
+    const r = await api("/fin/api/add", { method: "POST", body: JSON.stringify({ name, amount, bucket, category: $("category").value, date: $("date").value }) });
+    if (!r.success) { toast(r.message || "Ошибка"); return; }
+    $("amount").value = ""; $("name").value = ""; setBucket("ok"); $("category").value = ""; renderChips("");
+    $("saveBtn").classList.add("flash"); $("saveBtn").textContent = "Записано ✓";
+    setTimeout(() => { $("saveBtn").classList.remove("flash"); $("saveBtn").textContent = "Записать"; }, 900);
+    await refresh();
+  } catch (e) { if (String(e.message) !== "auth") toast("Ошибка сети"); }
+  finally { $("saveBtn").disabled = false; }
+}
+
+// ── сегодня + синк ──
+function entryRow(e, showDate) {
+  const st = e.synced ? "✓" : "⏳";
+  const stTitle = e.synced ? "в Numbers" : "ждёт синка";
+  return `<div class="entry${e.synced ? "" : " pending"}" data-id="${e.id}" data-synced="${e.synced ? 1 : 0}">
+    <div class="dot ${e.bucket}"></div>
+    <div class="nm"><b>${esc(e.name)}</b><span>${esc(e.category || "")}${showDate ? " · " + e.date : ""}</span></div>
+    <div class="amt">${fmt(e.amount)} ₽</div>
+    <div class="st" title="${stTitle}">${st}</div>
+  </div>`;
+}
+$("todayList").addEventListener("click", async (e) => {
+  const row = e.target.closest(".entry"); if (!row) return;
+  if (row.dataset.synced === "1") { toast("Уже в Numbers — правь там"); return; }
+  if (!confirm("Удалить запись?")) return;
+  const r = await api("/fin/api/delete/" + row.dataset.id, { method: "POST" });
+  if (r.success) { toast("Удалено"); refresh(); } else toast(r.message || "Ошибка");
+});
+
+async function refresh() {
+  const r = await api("/fin/api/state");
+  if (!r.success) return;
+  FREQ = r.frequent || []; TODAY = r.today;
+  if (!CATS.length) {
+    CATS = r.categories || [];
+    // пустое значение = категория подбирается на сервере по названию
+    $("category").innerHTML = `<option value="">Категория · авто</option>` + CATS.map((c) => `<option>${esc(c)}</option>`).join("");
+  }
+  if (!$("date").value || $("date").value === $("date").dataset.auto) {
+    $("date").value = TODAY; $("date").dataset.auto = TODAY;
+  }
+  renderChips($("name").value);
+  const es = r.entries || [];
+  $("todaySum").textContent = es.length ? fmt(es.reduce((s, e) => s + e.amount, 0)) + " ₽" : "";
+  $("todayList").innerHTML = es.length
+    ? es.slice().reverse().map((e) => entryRow(e)).join("")
+    : `<div class="tiny" style="padding:10px 2px">Пока пусто</div>`;
+  const p = r.pendingSync;
+  $("syncBadge").textContent = p ? `⏳ ${p}` : "";
+  $("syncInfo").textContent = p
+    ? `${p} ждёт записи в Numbers`
+    : (r.lastSyncAt ? "Всё в Numbers · синк " + new Date(r.lastSyncAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "");
+}
+
+async function toggleDays() {
+  daysOpen = !daysOpen;
+  $("days").style.display = daysOpen ? "block" : "none";
+  $("daysBtn").textContent = daysOpen ? "Свернуть" : "История ›";
+  if (!daysOpen) return;
+  const r = await api("/fin/api/days");
+  if (!r.success) return;
+  $("days").innerHTML = (r.days || []).filter((d) => d.date !== TODAY).map((d) =>
+    `<h2 style="font-size:14px;color:var(--tx2);margin-top:14px;display:flex;justify-content:space-between"><span>${d.date}</span><span style="color:var(--tx)">${fmt(d.total)} ₽</span></h2>`
+    + d.entries.slice().reverse().map((e) => entryRow(e)).join("")
+  ).join("") || `<div class="tiny">Истории пока нет</div>`;
+}
+
+function toast(t) {
+  const el = $("toast"); el.textContent = t; el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 1800);
+}
+
+// автообновление статуса синка раз в 30с, пока страница открыта
+setInterval(() => { if ($("main").style.display === "block" && !document.hidden) refresh().catch(() => {}); }, 30000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && token) refresh().catch(() => {}); });
+
+(async function init() {
+  if (!token) return showLogin();
+  try { showMain(); await refresh(); } catch (e) {}
+})();
+</script>
+</body>
+</html>
