@@ -147,3 +147,4 @@ betaReferrals.json
 
 # Лиды продающего ИИ-чата /chat_test (персональные контакты — не в git)
 .chatLeads.json
+amo-export/
