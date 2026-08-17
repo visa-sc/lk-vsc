@@ -19,6 +19,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const webauthn = require("@simplewebauthn/server"); // Face ID — та же библиотека, что в ЛК/админке, но свои изолированные ключи
 
 const DIR = path.join(__dirname, ".fin");
 const STORE_FILE = path.join(DIR, "store.json");
@@ -35,11 +36,16 @@ function store() {
   if (!_store || !Array.isArray(_store.entries)) _store = { entries: [], auth: {}, custom: {} };
   if (!_store.auth) _store.auth = {};
   if (!_store.custom) _store.custom = {}; // выученные названия: name → {bucket, category, amount, uses}
+  if (!Array.isArray(_store.passkeys)) _store.passkeys = []; // Face ID: свои ключи, НЕ общие с .passkeys.json ЛК
   return _store;
 }
 function save() {
-  try { fs.mkdirSync(DIR, { recursive: true }); } catch (_) {}
-  try { fs.writeFileSync(STORE_FILE, JSON.stringify(store(), null, 2), "utf8"); } catch (e) { console.error("fin save:", e.message); }
+  // личные данные: папка и файл только для владельца процесса
+  try { fs.mkdirSync(DIR, { recursive: true, mode: 0o700 }); } catch (_) {}
+  try {
+    fs.writeFileSync(STORE_FILE, JSON.stringify(store(), null, 2), { encoding: "utf8", mode: 0o600 });
+    fs.chmodSync(STORE_FILE, 0o600); fs.chmodSync(DIR, 0o700);
+  } catch (e) { console.error("fin save:", e.message); }
 }
 
 let _seed = null;
@@ -71,6 +77,34 @@ function mount(app, deps) {
     const h = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
     return h || String(req.query.token || "").trim();
   }
+  function issueToken(via) {
+    const st = store();
+    const tok = crypto.randomBytes(24).toString("hex");
+    st.auth[tok] = { at: Date.now(), via: via || "code" };
+    for (const k of Object.keys(st.auth)) if (Date.now() - (st.auth[k].at || 0) > TOKEN_TTL) delete st.auth[k];
+    save();
+    return tok;
+  }
+
+  // Сторож: при подборе кода (5+ неверных за сутки суммарно) — письмо директору,
+  // не чаще раза в сутки. Личные финансы — самый чувствительный раздел.
+  let failsToday = { day: "", n: 0, alerted: false };
+  function noteFail(ip) {
+    const day = todayMsk();
+    if (failsToday.day !== day) failsToday = { day, n: 0, alerted: false };
+    failsToday.n++;
+    if (failsToday.n >= 5 && !failsToday.alerted) {
+      failsToday.alerted = true;
+      try {
+        require("./mail").sendMail({
+          to: "director@visa-sc.ru",
+          subject: "⚠️ /fin: попытки подбора кода",
+          html: `За сегодня ${failsToday.n} неверных попыток входа в раздел личных финансов. Последний IP: ${ip}. Если это не вы — смените FIN_CODE в .env на сервере.`,
+        }).catch(() => {});
+      } catch (_) {}
+    }
+  }
+
   const loginFails = new Map(); // ip -> [ts]
   app.post("/fin/api/login", (req, res) => {
     const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
@@ -79,14 +113,106 @@ function mount(app, deps) {
     const code = String((req.body && req.body.code) || "").trim();
     if (code !== FIN_CODE) {
       hist.push(Date.now()); loginFails.set(ip, hist);
+      noteFail(ip);
       return res.status(401).json({ success: false, message: "Неверный код" });
     }
-    const st = store();
-    const tok = crypto.randomBytes(24).toString("hex");
-    st.auth[tok] = { at: Date.now() };
-    for (const k of Object.keys(st.auth)) if (Date.now() - (st.auth[k].at || 0) > TOKEN_TTL) delete st.auth[k];
-    save();
-    res.json({ success: true, token: tok });
+    res.json({ success: true, token: issueToken("code") });
+  });
+
+  // ── Face ID (WebAuthn) — изолированно от паспорт-ключей ЛК/админки. ──
+  // Регистрация ключа — ТОЛЬКО из залогиненной сессии (код знает один Андрей),
+  // вход по ключу — публичный эндпоинт, но пускает только по подписи
+  // зарегистрированного ключа. Хост-зависимые rpID/origin как в ЛК.
+  const FIN_BIO_HOSTS = { "voyotravel.ru": true, "voyovoyo.ru": true };
+  function bioHost(req) {
+    const h = String((req.headers && req.headers.host) || "").toLowerCase().split(":")[0].replace(/^www\./, "");
+    return FIN_BIO_HOSTS[h] ? h : "voyotravel.ru";
+  }
+  const bioChallenges = new Map(); // key -> {challenge, expiresAt}
+  function setBioChallenge(key, challenge) {
+    bioChallenges.set(key, { challenge, expiresAt: Date.now() + 5 * 60 * 1000 });
+    for (const [k, v] of bioChallenges) if (Date.now() > v.expiresAt) bioChallenges.delete(k);
+  }
+  function takeBioChallenge(key) {
+    const c = bioChallenges.get(key);
+    bioChallenges.delete(key);
+    return c && Date.now() <= c.expiresAt ? c.challenge : null;
+  }
+  const b64u = (buf) => Buffer.from(buf).toString("base64url");
+  const fromB64u = (s) => Buffer.from(String(s || ""), "base64url");
+
+  app.post("/fin/api/bio/register-options", requireFin, async (req, res) => {
+    try {
+      const st = store();
+      const options = await webauthn.generateRegistrationOptions({
+        rpName: "VOYO",
+        rpID: bioHost(req),
+        userID: "fin-owner",
+        userName: "fin",
+        userDisplayName: "Личный раздел",
+        attestationType: "none",
+        excludeCredentials: st.passkeys.map((c) => ({ id: fromB64u(c.credentialID), type: "public-key" })),
+        authenticatorSelection: { residentKey: "preferred", userVerification: "preferred" },
+      });
+      setBioChallenge("reg", options.challenge);
+      res.json(options);
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+  app.post("/fin/api/bio/register-verify", requireFin, async (req, res) => {
+    try {
+      const expectedChallenge = takeBioChallenge("reg");
+      if (!expectedChallenge) return res.status(400).json({ success: false, message: "Регистрация просрочена" });
+      const verification = await webauthn.verifyRegistrationResponse({
+        response: req.body && req.body.attestationResponse,
+        expectedChallenge,
+        expectedOrigin: "https://" + bioHost(req),
+        expectedRPID: bioHost(req),
+        requireUserVerification: false,
+      });
+      if (!verification.verified || !verification.registrationInfo) return res.status(400).json({ success: false, message: "Проверка не прошла" });
+      const info = verification.registrationInfo;
+      const st = store();
+      st.passkeys.push({ credentialID: b64u(info.credentialID), publicKey: b64u(info.credentialPublicKey), counter: info.counter || 0, host: bioHost(req), createdAt: Date.now() });
+      save();
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+  app.post("/fin/api/bio/has", (req, res) => {
+    res.json({ success: true, has: store().passkeys.some((c) => c.host === bioHost(req)) });
+  });
+  app.post("/fin/api/bio/auth-options", async (req, res) => {
+    try {
+      const arr = store().passkeys.filter((c) => c.host === bioHost(req));
+      if (!arr.length) return res.status(404).json({ success: false, message: "Face ID не настроен" });
+      const options = await webauthn.generateAuthenticationOptions({
+        rpID: bioHost(req),
+        allowCredentials: arr.map((c) => ({ id: fromB64u(c.credentialID), type: "public-key" })),
+        userVerification: "preferred",
+      });
+      setBioChallenge("auth", options.challenge);
+      res.json(options);
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+  app.post("/fin/api/bio/auth-verify", async (req, res) => {
+    try {
+      const assertionResponse = req.body && req.body.assertionResponse;
+      const expectedChallenge = takeBioChallenge("auth");
+      if (!assertionResponse || !expectedChallenge) return res.status(400).json({ success: false, message: "Сессия просрочена" });
+      const st = store();
+      const cred = st.passkeys.find((c) => c.credentialID === assertionResponse.id);
+      if (!cred) return res.status(404).json({ success: false, message: "Ключ не найден" });
+      const verification = await webauthn.verifyAuthenticationResponse({
+        response: assertionResponse,
+        expectedChallenge,
+        expectedOrigin: "https://" + bioHost(req),
+        expectedRPID: bioHost(req),
+        authenticator: { credentialID: fromB64u(cred.credentialID), credentialPublicKey: fromB64u(cred.publicKey), counter: cred.counter || 0 },
+        requireUserVerification: false,
+      });
+      if (!verification.verified) return res.status(400).json({ success: false, message: "Подпись не прошла" });
+      cred.counter = verification.authenticationInfo.newCounter;
+      res.json({ success: true, token: issueToken("bio") });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
 
   function requireFin(req, res, next) {
@@ -123,7 +249,9 @@ function mount(app, deps) {
     res.json({ success: true, frequent, categories: sd.categories || [], today, entries, pendingSync, lastSyncAt: st.lastSyncAt || null });
   });
 
-  // Добавить расход. body: {name, amount, bucket, category?, date?}
+  // Добавить расход. body: {name, amount, bucket, category?, date?, flag?, comment?}
+  // flag: "" | "yellow" (разобраться) | "red" (вернуть деньги) — цвет ячейки в Numbers;
+  // comment — приписывается к названию через « - » (как Андрей делает руками).
   app.post("/fin/api/add", requireFin, (req, res) => {
     const b = req.body || {};
     const name = String(b.name || "").trim().slice(0, 200);
@@ -134,11 +262,13 @@ function mount(app, deps) {
     let date = String(b.date || "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = todayMsk();
     const category = String(b.category || "").trim() || categorize(name);
+    const flag = ["yellow", "red"].includes(b.flag) ? b.flag : "";
+    const comment = String(b.comment || "").trim().slice(0, 300);
     const st = store();
     const e = {
       id: crypto.randomBytes(8).toString("hex"),
       at: Date.now(),
-      date, name, amount, bucket, category,
+      date, name, amount, bucket, category, flag, comment,
       synced: false,
     };
     st.entries.push(e);
@@ -165,6 +295,8 @@ function mount(app, deps) {
     if (b.amount != null) { const a = Math.round(Number(b.amount) * 100) / 100; if (a > 0) e.amount = a; }
     if (b.bucket != null && BUCKETS.includes(b.bucket)) e.bucket = b.bucket;
     if (b.category != null) e.category = String(b.category).trim() || e.category;
+    if (b.flag != null) e.flag = ["yellow", "red"].includes(b.flag) ? b.flag : "";
+    if (b.comment != null) e.comment = String(b.comment).trim().slice(0, 300);
     if (b.date != null && /^\d{4}-\d{2}-\d{2}$/.test(String(b.date))) e.date = String(b.date);
     save();
     res.json({ success: true, entry: e });

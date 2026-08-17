@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Финансы">
+<meta name="apple-mobile-web-app-title" content="·">
 <meta name="theme-color" content="#0b0f14">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<title>Финансы</title>
+<title>·</title>
 <style>
 :root{
   --bg:#0b0f14; --card:#141b24; --card2:#1a2330; --line:#243044;
@@ -74,19 +74,27 @@ input.pill{outline:none;color:var(--tx)}
 #days .entry{opacity:.92}
 #toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(80px);background:var(--card2);border:1px solid var(--line);color:var(--tx);padding:10px 20px;border-radius:20px;font-size:14px;transition:transform .25s;z-index:9}
 #toast.show{transform:translateX(-50%) translateY(0)}
+.flagbtn{cursor:pointer;user-select:none;white-space:nowrap}
+.flagbtn.on{border-color:var(--nope);color:var(--tx)}
+#flagR.on{border-color:var(--trash)}
+.entry .nm b .cmt{font-weight:400;color:var(--tx2)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div id="login">
-    <h1>Финансы</h1>
+    <div style="font-size:40px">🔒</div>
+    <button id="bioBtn" style="display:none;background:var(--card2);border:1px solid var(--line)" onclick="bioLogin()">Face ID</button>
     <input id="code" type="tel" inputmode="numeric" autocomplete="one-time-code" placeholder="Код">
     <div class="err" id="loginErr"></div>
     <button onclick="doLogin()">Войти</button>
   </div>
 
   <div id="main">
-    <h1>Финансы <span class="tiny" id="syncBadge"></span></h1>
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;min-height:22px">
+      <button id="bioEnroll" style="display:none;background:none;border:1px solid var(--line);border-radius:14px;color:var(--tx2);font-size:12px;padding:5px 12px" onclick="bioRegister()">Включить Face ID</button>
+      <span class="tiny" id="syncBadge"></span>
+    </div>
 
     <div class="amount-row">
       <input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off">
@@ -108,6 +116,12 @@ input.pill{outline:none;color:var(--tx)}
     <div class="meta-row">
       <select id="category" class="pill"></select>
       <input id="date" type="date" class="pill" style="flex:1">
+    </div>
+
+    <div class="meta-row">
+      <div class="pill flagbtn" id="flagY" onclick="toggleFlag('yellow')">🟡 разобраться</div>
+      <div class="pill flagbtn" id="flagR" onclick="toggleFlag('red')">🔴 вернуть</div>
+      <input id="comment" class="pill" style="flex:1;min-width:80px" placeholder="Комментарий" autocomplete="off">
     </div>
 
     <button id="saveBtn" onclick="saveEntry()">Записать</button>
@@ -141,8 +155,61 @@ async function api(path, opts = {}) {
   return r.json();
 }
 
-function showLogin() { $("login").style.display = "flex"; $("main").style.display = "none"; }
-function showMain() { $("login").style.display = "none"; $("main").style.display = "block"; }
+function showLogin() { $("login").style.display = "flex"; $("main").style.display = "none"; updateBioBtn(); }
+function showMain() { $("login").style.display = "none"; $("main").style.display = "block"; $("bioEnroll").style.display = localStorage.getItem("finBio") ? "none" : ""; }
+
+// ── Face ID (WebAuthn) ──
+const b2a = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+const a2b = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+async function updateBioBtn() {
+  try {
+    if (!window.PublicKeyCredential) return;
+    const r = await (await fetch("/fin/api/bio/has", { method: "POST" })).json();
+    $("bioBtn").style.display = r.has ? "" : "none";
+  } catch (e) {}
+}
+async function bioLogin() {
+  try {
+    const opts = await (await fetch("/fin/api/bio/auth-options", { method: "POST" })).json();
+    if (!opts.challenge) return false;
+    opts.challenge = b2a(opts.challenge);
+    (opts.allowCredentials || []).forEach((c) => { c.id = b2a(c.id); });
+    const cred = await navigator.credentials.get({ publicKey: opts });
+    const payload = {
+      id: cred.id, rawId: a2b(cred.rawId), type: cred.type,
+      response: {
+        clientDataJSON: a2b(cred.response.clientDataJSON),
+        authenticatorData: a2b(cred.response.authenticatorData),
+        signature: a2b(cred.response.signature),
+        userHandle: cred.response.userHandle ? a2b(cred.response.userHandle) : null,
+      },
+      clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    };
+    const r = await (await fetch("/fin/api/bio/auth-verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assertionResponse: payload }) })).json();
+    if (!r.success) { $("loginErr").textContent = r.message || "Не получилось"; return false; }
+    token = r.token; localStorage.setItem(LS_TOKEN, token); localStorage.setItem("finBio", "1");
+    showMain(); await refresh();
+    return true;
+  } catch (e) { return false; } // отмена Face ID — просто остаёмся на коде
+}
+async function bioRegister() {
+  try {
+    const opts = await api("/fin/api/bio/register-options", { method: "POST" });
+    if (!opts.challenge) { toast(opts.message || "Ошибка"); return; }
+    opts.challenge = b2a(opts.challenge);
+    opts.user.id = new TextEncoder().encode("fin-owner");
+    (opts.excludeCredentials || []).forEach((c) => { c.id = b2a(c.id); });
+    const cred = await navigator.credentials.create({ publicKey: opts });
+    const payload = {
+      id: cred.id, rawId: a2b(cred.rawId), type: cred.type,
+      response: { clientDataJSON: a2b(cred.response.clientDataJSON), attestationObject: a2b(cred.response.attestationObject) },
+      clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    };
+    const r = await api("/fin/api/bio/register-verify", { method: "POST", body: JSON.stringify({ attestationResponse: payload }) });
+    if (r.success) { localStorage.setItem("finBio", "1"); $("bioEnroll").style.display = "none"; toast("Face ID включён"); }
+    else toast(r.message || "Не получилось");
+  } catch (e) { if (String(e.message) !== "auth") toast("Face ID отменён"); }
+}
 
 async function doLogin() {
   $("loginErr").textContent = "";
@@ -192,6 +259,14 @@ $("name").addEventListener("input", () => {
 });
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
+// ── метки ──
+let flag = "";
+function toggleFlag(f) {
+  flag = flag === f ? "" : f;
+  $("flagY").classList.toggle("on", flag === "yellow");
+  $("flagR").classList.toggle("on", flag === "red");
+}
+
 // ── сохранение ──
 async function saveEntry() {
   const amount = parseFloat($("amount").value.replace(",", "."));
@@ -199,9 +274,9 @@ async function saveEntry() {
   if (!name || !(amount > 0)) { toast("Заполни сумму и название"); return; }
   $("saveBtn").disabled = true;
   try {
-    const r = await api("/fin/api/add", { method: "POST", body: JSON.stringify({ name, amount, bucket, category: $("category").value, date: $("date").value }) });
+    const r = await api("/fin/api/add", { method: "POST", body: JSON.stringify({ name, amount, bucket, category: $("category").value, date: $("date").value, flag, comment: $("comment").value.trim() }) });
     if (!r.success) { toast(r.message || "Ошибка"); return; }
-    $("amount").value = ""; $("name").value = ""; setBucket("ok"); $("category").value = ""; renderChips("");
+    $("amount").value = ""; $("name").value = ""; setBucket("ok"); $("category").value = ""; $("comment").value = ""; toggleFlag(flag); renderChips("");
     $("saveBtn").classList.add("flash"); $("saveBtn").textContent = "Записано ✓";
     setTimeout(() => { $("saveBtn").classList.remove("flash"); $("saveBtn").textContent = "Записать"; }, 900);
     await refresh();
@@ -213,9 +288,11 @@ async function saveEntry() {
 function entryRow(e, showDate) {
   const st = e.synced ? "✓" : "⏳";
   const stTitle = e.synced ? "в Numbers" : "ждёт синка";
+  const fl = e.flag === "yellow" ? "🟡 " : e.flag === "red" ? "🔴 " : "";
+  const nm = esc(e.name) + (e.comment ? ` <span class="cmt">- ${esc(e.comment)}</span>` : "");
   return `<div class="entry${e.synced ? "" : " pending"}" data-id="${e.id}" data-synced="${e.synced ? 1 : 0}">
     <div class="dot ${e.bucket}"></div>
-    <div class="nm"><b>${esc(e.name)}</b><span>${esc(e.category || "")}${showDate ? " · " + e.date : ""}</span></div>
+    <div class="nm"><b>${fl}${nm}</b><span>${esc(e.category || "")}${showDate ? " · " + e.date : ""}</span></div>
     <div class="amt">${fmt(e.amount)} ₽</div>
     <div class="st" title="${stTitle}">${st}</div>
   </div>`;
@@ -276,8 +353,10 @@ setInterval(() => { if ($("main").style.display === "block" && !document.hidden)
 document.addEventListener("visibilitychange", () => { if (!document.hidden && token) refresh().catch(() => {}); });
 
 (async function init() {
-  if (!token) return showLogin();
-  try { showMain(); await refresh(); } catch (e) {}
+  if (token) { try { showMain(); await refresh(); return; } catch (e) { if (String(e.message) !== "auth") return; } }
+  showLogin();
+  // как в админке: сразу пробуем биометрию, БЕЗ предварительных whoami-запросов
+  if (localStorage.getItem("finBio") && window.PublicKeyCredential) bioLogin();
 })();
 </script>
 </body>

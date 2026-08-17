@@ -70,11 +70,15 @@ function asStr(s) { return '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, 
 // Возвращает через return список "ok:<id>" / "skip:<id>:<причина>".
 function buildScript(cfg, entries) {
   const docName = path.basename(cfg.numbersPath);
+  // Цвет фона ячейки «Наименование»: жёлтый = разобраться, красный = вернуть деньги.
+  // AppleScript-цвета в Numbers — RGB 0–65535.
+  const FLAG_RGB = { yellow: "{65535, 60395, 26214}", red: "{65535, 40092, 38293}" };
   const items = entries.map((e) => {
     const [y, m, d] = e.date.split("-").map(Number);
     const sheet = `${MONTHS[m - 1]} ${y}`;
     const col = BUCKET_COL[e.bucket] || 4;
-    return `{eid:${asStr(e.id)}, sheetName:${asStr(sheet)}, dayNum:${d}, rowName:${asStr(e.name)}, colIdx:${col}, amt:${e.amount}, cat:${asStr(e.category || "")}}`;
+    const fullName = e.comment ? `${e.name} - ${e.comment}` : e.name; // комментарий через « - », как в ручных записях
+    return `{eid:${asStr(e.id)}, sheetName:${asStr(sheet)}, dayNum:${d}, rowName:${asStr(fullName)}, colIdx:${col}, amt:${e.amount}, cat:${asStr(e.category || "")}, flagRGB:${FLAG_RGB[e.flag] || "{}"}}`;
   });
   return `
 set entriesList to {${items.join(", ")}}
@@ -104,6 +108,7 @@ tell application id "com.apple.Numbers"
 		set theCol to colIdx of e
 		set theAmt to amt of e
 		set theCat to cat of e
+		set theRGB to flagRGB of e
 		try
 			set sh to sheet theSheet of d
 		on error
@@ -165,6 +170,7 @@ tell application id "com.apple.Numbers"
 				set value of cell 2 of row tgt to theName
 				set value of cell theCol of row tgt to theAmt
 				if theCat is not "" then set value of cell 7 of row tgt to theCat
+				if (count of theRGB) is 3 then set background color of cell 2 of row tgt to theRGB
 			end tell
 			set end of results to "ok:" & theId
 		end if
