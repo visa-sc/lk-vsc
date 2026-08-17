@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VSC — онлайн-консультант по визам</title>
+<link rel="icon" href="/vsc-icon.png">
+<link rel="apple-touch-icon" href="/vsc-icon.png">
+<style>
+  :root{
+    --brand:#0098ce;
+    --brand-2:#0aa9e0;
+    --ink:#1d1d1f;
+    --sub:#6e6e73;
+    --line:rgba(0,0,0,.08);
+    --bubble-in:#f0f2f5;
+    --bg:#f5f7fa;
+    --card:#ffffff;
+    --shadow:0 20px 60px rgba(0,50,80,.12);
+    --radius:22px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(1200px 700px at 15% -10%, rgba(10,169,224,.18), transparent 60%),
+      radial-gradient(900px 600px at 110% 10%, rgba(0,152,206,.14), transparent 55%),
+      var(--bg);
+    -webkit-font-smoothing:antialiased;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    min-height:100dvh;
+    padding:clamp(16px,4vw,40px) 16px;
+  }
+
+  /* Шапка */
+  header{
+    width:100%;
+    max-width:760px;
+    display:flex;
+    align-items:center;
+    gap:14px;
+    margin-bottom:clamp(16px,3vw,26px);
+  }
+  .logo{
+    width:52px;height:52px;border-radius:14px;
+    background:var(--brand);
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 8px 22px rgba(0,152,206,.35);
+    flex:0 0 auto;
+  }
+  .logo svg{width:34px;height:34px;display:block;}
+  .head-text h1{font-size:19px;font-weight:600;margin:0;letter-spacing:-.01em;}
+  .head-text p{font-size:13px;color:var(--sub);margin:2px 0 0;}
+  .status{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:13px;color:var(--sub);}
+  .dot{width:8px;height:8px;border-radius:50%;background:#34c759;box-shadow:0 0 0 4px rgba(52,199,89,.16);}
+
+  /* Карточка чата */
+  .chat{
+    width:100%;
+    max-width:760px;
+    background:var(--card);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    border:1px solid rgba(255,255,255,.6);
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    flex:1 1 auto;
+    min-height:0;
+    max-height:calc(100dvh - 150px);
+  }
+  .messages{
+    flex:1 1 auto;
+    overflow-y:auto;
+    padding:24px clamp(16px,3vw,26px) 10px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    scroll-behavior:smooth;
+  }
+  .row{display:flex;max-width:82%;animation:pop .35s cubic-bezier(.2,.7,.3,1);}
+  @keyframes pop{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+  .row.bot{align-self:flex-start;}
+  .row.me{align-self:flex-end;}
+  .bubble{
+    padding:12px 16px;
+    border-radius:20px;
+    font-size:15.5px;
+    line-height:1.5;
+    white-space:pre-wrap;
+    word-wrap:break-word;
+  }
+  .bot .bubble{background:var(--bubble-in);color:var(--ink);border-bottom-left-radius:7px;}
+  .me .bubble{
+    background:linear-gradient(180deg,var(--brand-2),var(--brand));
+    color:#fff;border-bottom-right-radius:7px;
+    box-shadow:0 8px 20px rgba(0,152,206,.28);
+  }
+  .bubble b,.bubble strong{font-weight:600;}
+  .bubble ul{margin:6px 0 2px;padding-left:20px;}
+  .bubble li{margin:3px 0;}
+  .bubble a{color:inherit;text-decoration:underline;}
+
+  /* Индикатор набора */
+  .typing{display:flex;gap:5px;padding:14px 18px;}
+  .typing span{width:8px;height:8px;border-radius:50%;background:#b8bcc4;animation:blink 1.4s infinite both;}
+  .typing span:nth-child(2){animation-delay:.2s;}
+  .typing span:nth-child(3){animation-delay:.4s;}
+  @keyframes blink{0%,60%,100%{opacity:.25;transform:translateY(0);}30%{opacity:1;transform:translateY(-3px);}}
+
+  /* Быстрые подсказки */
+  .quick{
+    display:flex;gap:8px;flex-wrap:wrap;
+    padding:4px clamp(16px,3vw,26px) 12px;
+  }
+  .quick button{
+    font:inherit;font-size:13.5px;color:var(--brand);
+    background:rgba(0,152,206,.08);
+    border:1px solid rgba(0,152,206,.18);
+    border-radius:999px;padding:8px 14px;cursor:pointer;
+    transition:background .18s,transform .1s;
+  }
+  .quick button:hover{background:rgba(0,152,206,.14);}
+  .quick button:active{transform:scale(.97);}
+
+  /* Поле ввода */
+  .composer{
+    display:flex;align-items:flex-end;gap:10px;
+    padding:12px clamp(14px,3vw,18px) 14px;
+    border-top:1px solid var(--line);
+    background:rgba(255,255,255,.85);
+    backdrop-filter:saturate(180%) blur(10px);
+  }
+  .composer textarea{
+    flex:1 1 auto;resize:none;border:none;outline:none;
+    font:inherit;font-size:15.5px;line-height:1.45;
+    background:var(--bubble-in);
+    border-radius:20px;
+    padding:12px 16px;max-height:120px;color:var(--ink);
+  }
+  .composer textarea::placeholder{color:#9a9ea6;}
+  .send{
+    flex:0 0 auto;width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;
+    background:linear-gradient(180deg,var(--brand-2),var(--brand));
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 8px 18px rgba(0,152,206,.35);
+    transition:transform .12s,opacity .2s;
+  }
+  .send:active{transform:scale(.92);}
+  .send:disabled{opacity:.45;cursor:default;box-shadow:none;}
+  .send svg{width:20px;height:20px;}
+
+  .foot{
+    max-width:760px;width:100%;text-align:center;
+    font-size:12px;color:var(--sub);margin-top:14px;line-height:1.5;
+  }
+  .messages::-webkit-scrollbar{width:8px;}
+  .messages::-webkit-scrollbar-thumb{background:rgba(0,0,0,.12);border-radius:4px;}
+
+  @media (max-width:520px){
+    .row{max-width:90%;}
+    .head-text p{display:none;}
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="logo" aria-label="VSC">
+      <!-- Лого VSC: буквы V | S | C -->
+      <svg viewBox="0 0 120 44" xmlns="http://www.w3.org/2000/svg" fill="none">
+        <text x="4" y="34" font-family="-apple-system,Helvetica,Arial,sans-serif" font-size="34" font-weight="700" fill="#fff">V</text>
+        <rect x="34" y="10" width="2.2" height="24" rx="1" fill="#fff" opacity=".85"/>
+        <text x="44" y="34" font-family="-apple-system,Helvetica,Arial,sans-serif" font-size="34" font-weight="700" fill="#fff">S</text>
+        <rect x="78" y="10" width="2.2" height="24" rx="1" fill="#fff" opacity=".85"/>
+        <text x="88" y="34" font-family="-apple-system,Helvetica,Arial,sans-serif" font-size="34" font-weight="700" fill="#fff">C</text>
+      </svg>
+    </div>
+    <div class="head-text">
+      <h1>Визовый центр VSC</h1>
+      <p>Онлайн-консультант · подбор и оформление виз</p>
+    </div>
+    <div class="status"><span class="dot"></span>на связи</div>
+  </header>
+
+  <main class="chat">
+    <div class="messages" id="messages" aria-live="polite"></div>
+    <div class="quick" id="quick"></div>
+    <form class="composer" id="composer">
+      <textarea id="input" rows="1" placeholder="Ваш вопрос по визе…" autocomplete="off"></textarea>
+      <button class="send" id="send" type="submit" aria-label="Отправить">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 12l16-8-6 16-3-6-7-2z" fill="#fff"/></svg>
+      </button>
+    </form>
+  </main>
+
+  <p class="foot">Отвечает ИИ-ассистент VSC. Задайте любой вопрос по визам — сориентируем по вашей ситуации,<br>условиям и подберём лучший вариант оформления.</p>
+
+<script>
+(function(){
+  const messagesEl = document.getElementById('messages');
+  const quickEl = document.getElementById('quick');
+  const form = document.getElementById('composer');
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('send');
+
+  // Стабильный id сессии (для склейки лида на сервере)
+  let sessionId = localStorage.getItem('vsc_chat_sid');
+  if(!sessionId){ sessionId = 's_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2,8); localStorage.setItem('vsc_chat_sid', sessionId); }
+
+  const history = []; // [{role, content}]
+  let busy = false;
+
+  const GREETING = "Здравствуйте! 👋 Я онлайн-консультант визового центра VSC.\n\nЗадайте любой вопрос по визам — сориентирую по вашей ситуации, условиям и срокам и подберу лучший вариант оформления. В какую страну планируете поездку?";
+  const QUICK = ["Шенген", "Виза в США", "Помогите подобрать визу", "Какие документы нужны?"];
+
+  function escapeHtml(s){ return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+  // Лёгкий markdown: **жирный**, • списки, ссылки
+  function render(text){
+    let h = escapeHtml(text);
+    h = h.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    const lines = h.split('\n');
+    let out = '', inList = false;
+    for(const ln of lines){
+      const m = ln.match(/^\s*[-•]\s+(.*)$/);
+      if(m){ if(!inList){out+='<ul>';inList=true;} out+='<li>'+m[1]+'</li>'; }
+      else { if(inList){out+='</ul>';inList=false;} out += (out && !out.endsWith('>')?'<br>':'') + ln; }
+    }
+    if(inList) out+='</ul>';
+    return out;
+  }
+
+  function addBubble(role, text){
+    const row = document.createElement('div');
+    row.className = 'row ' + (role === 'user' ? 'me' : 'bot');
+    const b = document.createElement('div');
+    b.className = 'bubble';
+    b.innerHTML = role === 'user' ? escapeHtml(text).replace(/\n/g,'<br>') : render(text);
+    row.appendChild(b);
+    messagesEl.appendChild(row);
+    scrollDown();
+    return b;
+  }
+  function scrollDown(){ requestAnimationFrame(()=>{ messagesEl.scrollTop = messagesEl.scrollHeight; }); }
+
+  function showTyping(){
+    const row = document.createElement('div');
+    row.className = 'row bot'; row.id = 'typing';
+    row.innerHTML = '<div class="bubble typing"><span></span><span></span><span></span></div>';
+    messagesEl.appendChild(row); scrollDown();
+  }
+  function hideTyping(){ const t = document.getElementById('typing'); if(t) t.remove(); }
+
+  function renderQuick(items){
+    quickEl.innerHTML = '';
+    (items||[]).forEach(q=>{
+      const b = document.createElement('button');
+      b.type='button'; b.textContent = q;
+      b.onclick = ()=>{ input.value = q; send(); };
+      quickEl.appendChild(b);
+    });
+  }
+
+  async function send(){
+    const text = input.value.trim();
+    if(!text || busy) return;
+    busy = true; sendBtn.disabled = true;
+    input.value = ''; autoGrow();
+    renderQuick([]);
+    addBubble('user', text);
+    history.push({role:'user', content:text});
+    showTyping();
+    try{
+      const r = await fetch('/api/chat_test/message',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ sessionId, messages: history })
+      });
+      const data = await r.json();
+      hideTyping();
+      const reply = (data && data.reply) || (data && data.message) || 'Извините, не получилось ответить. Оставьте, пожалуйста, телефон или напишите в WhatsApp — менеджер свяжется с вами.';
+      addBubble('assistant', reply);
+      history.push({role:'assistant', content:reply});
+    }catch(e){
+      hideTyping();
+      addBubble('assistant','Связь прервалась. Попробуйте ещё раз или оставьте телефон — мы перезвоним.');
+    }finally{
+      busy = false; sendBtn.disabled = false; input.focus();
+    }
+  }
+
+  function autoGrow(){ input.style.height='auto'; input.style.height = Math.min(input.scrollHeight,120)+'px'; }
+  input.addEventListener('input', autoGrow);
+  input.addEventListener('keydown', e=>{
+    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+  });
+  form.addEventListener('submit', e=>{ e.preventDefault(); send(); });
+
+  // Приветствие
+  addBubble('assistant', GREETING);
+  history.push({role:'assistant', content:GREETING});
+  renderQuick(QUICK);
+  input.focus();
+})();
+</script>
+</body>
+</html>

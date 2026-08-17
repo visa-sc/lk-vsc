@@ -144,3 +144,6 @@ betaReferrals.json
 
 # Остатки от снятого /skepkov — локальные данные склада, не коммитить
 .skepkov/
+
+# Лиды продающего ИИ-чата /chat_test (персональные контакты — не в git)
+.chatLeads.json

@@ -15,6 +15,7 @@ const sms = require("./sms");
 const mail = require("./mail");
 const esign = require("./esign"); // ПЭП-подпись (аналог fdoc) — отдельный модуль, монтируется ниже
 const translateMod = require("./translate"); // Переводы документов с ИИ-проверкой (/translate) — отдельный модуль, монтируется ниже
+const chatMod = require("./chat"); // Продающий ИИ-чат по визам (/chat_test) — отдельный модуль, монтируется ниже
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -2220,6 +2221,12 @@ esign.mount(app, { requireVscAccess, requireAdmin });
 // Клиентский ЛК и amoCRM не затрагивает; бот Я.Мессенджера стартует только при
 // заданном YM_BOT_TOKEN (тихий режим — в чат ничего не пишет).
 translateMod.mount(app, { getStaffFromReq });
+
+// ── Продающий ИИ-чат по визам (/chat_test). Отвечает клиентам, берёт контакт
+// (телефон/WhatsApp/Telegram) в .chatLeads.json; выгрузка лидов — только админ.
+// Изолирован: клиентский ЛК/amoCRM/переводы не затрагивает; канал до Anthropic
+// переиспользует env переводов (ANTHROPIC_API_KEY/BASE_URL/TRANSLATE_PROXY).
+chatMod.mount(app, { requireAdmin });
 
 // ── DISK WATCH: контроль свободного места на диске сервера (просьба Андрея 08.08).
 // Каждые 6 часов; если свободно меньше DISK_ALERT_GB (дефолт 1 ГБ) — письмо
