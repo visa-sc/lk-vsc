@@ -826,9 +826,9 @@
       align-self: flex-start; }
     .rev-col-year .rev-axis { background: #c9dcee; }
     .rev-x-year { color: #2c5a86; font-weight: 700; font-size: 10.5px; margin-top: 8px; }
-    /* Доля позитивных/негативных на годовой карточке — приглушённо, рядом с числом. */
-    .rev-share { font-size: 8.5px; font-weight: 600; margin-left: 4px; }
-    .rev-share.pos { color: #74a684; } .rev-share.neg { color: #c99b96; }
+    /* Доля позитивных/негативных на годовой карточке — ВНУТРИ столбика, мелким белым. */
+    .rev-bar-pos, .rev-bar-neg { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .rev-share { font-size: 8px; font-weight: 700; color: #fff; line-height: 1; white-space: nowrap; text-shadow: 0 1px 1px rgba(0,0,0,.25); }
     .vsc-empty { color: #9aa0ab; font-size: 13px; padding: 10px 0; }
     .vsc-tile-d { font-size: 12px; font-weight: 700; margin-top: 2px; }
     .vsc-tile-d.up { color: #2c7a43; } .vsc-tile-d.down { color: #b0263a; } .vsc-tile-d.neu { color: #9aa0ab; }
@@ -3184,16 +3184,18 @@
           const totAll = (d.pos || 0) + (d.neg || 0);
           const shr = (v) => (totAll ? Math.round((v || 0) / totAll * 100) + "%" : "");
           const pv = document.createElement("div"); pv.className = "rev-v " + ((d.pos || 0) > 0 ? "pos" : "zero"); pv.textContent = d.pos == null ? "" : d.pos;
-          // На годовой карточке рядом с числом — доля от всех отзывов года.
-          if (accent && totAll) { const s = document.createElement("span"); s.className = "rev-share pos"; s.textContent = shr(d.pos); pv.appendChild(s); }
-          const pb = document.createElement("div"); pb.className = "rev-bar-pos"; pb.style.height = Math.max(2, Math.round((d.pos || 0) / scale * 88)) + "px";
+          const posPx = Math.max(2, Math.round((d.pos || 0) / scale * 88));
+          const pb = document.createElement("div"); pb.className = "rev-bar-pos"; pb.style.height = posPx + "px";
+          // На годовой карточке доля от всех отзывов года — ВНУТРИ столбика (не расширяет колонку).
+          if (accent && totAll && posPx >= 12) { const s = document.createElement("span"); s.className = "rev-share"; s.textContent = shr(d.pos); pb.appendChild(s); }
           top.appendChild(pv); top.appendChild(pb);
           const axis = document.createElement("div"); axis.className = "rev-axis";
           const bot = document.createElement("div"); bot.className = "rev-half bot";
           if (botH) bot.style.height = botH + "px"; // высота нижней половины — под самый длинный негатив (без пустоты)
-          const nb = document.createElement("div"); nb.className = "rev-bar-neg"; nb.style.height = negPxOf(d, scale) + "px";
+          const negPx = negPxOf(d, scale);
+          const nb = document.createElement("div"); nb.className = "rev-bar-neg"; nb.style.height = negPx + "px";
+          if (accent && totAll && negPx >= 12) { const s = document.createElement("span"); s.className = "rev-share"; s.textContent = shr(d.neg); nb.appendChild(s); }
           const nv = document.createElement("div"); nv.className = "rev-v " + ((d.neg || 0) > 0 ? "neg" : "zero"); nv.textContent = d.neg == null ? "" : d.neg;
-          if (accent && totAll) { const s = document.createElement("span"); s.className = "rev-share neg"; s.textContent = shr(d.neg); nv.appendChild(s); }
           bot.appendChild(nb); bot.appendChild(nv);
           const xl = document.createElement("div"); xl.className = "rev-x" + (accent ? " rev-x-year" : ""); xl.textContent = d.x;
           const tot = (d.pos || 0) + (d.neg || 0);
