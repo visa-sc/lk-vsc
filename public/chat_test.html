@@ -167,6 +167,37 @@
     .row{max-width:90%;}
     .head-text p{display:none;}
   }
+
+  /* Ворота с кодом (обкатка) */
+  .gate{
+    position:fixed;inset:0;z-index:50;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(245,247,250,.72);
+    backdrop-filter:saturate(180%) blur(14px);
+    -webkit-backdrop-filter:saturate(180%) blur(14px);
+  }
+  .gate[hidden]{display:none;}
+  .gate-card{
+    background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
+    border:1px solid rgba(255,255,255,.6);
+    padding:26px 24px;width:min(92vw,340px);text-align:center;
+  }
+  .gate-card h2{font-size:17px;font-weight:600;margin:0 0 6px;}
+  .gate-card p{font-size:13.5px;color:var(--sub);margin:0 0 16px;line-height:1.45;}
+  .gate-card input{
+    width:100%;font:inherit;font-size:17px;text-align:center;letter-spacing:.2em;
+    border:1px solid var(--line);outline:none;background:var(--bubble-in);
+    border-radius:14px;padding:12px 14px;color:var(--ink);
+  }
+  .gate-card input:focus{border-color:rgba(0,152,206,.5);}
+  .gate-card button{
+    margin-top:12px;width:100%;font:inherit;font-size:15.5px;font-weight:600;color:#fff;
+    background:linear-gradient(180deg,var(--brand-2),var(--brand));
+    border:none;border-radius:14px;padding:12px 14px;cursor:pointer;
+    box-shadow:0 8px 18px rgba(0,152,206,.35);transition:transform .12s;
+  }
+  .gate-card button:active{transform:scale(.97);}
+  .gate-err{color:#ff3b30;font-size:13px;min-height:18px;margin-top:8px;}
 </style>
 </head>
 <body>
@@ -201,6 +232,16 @@
 
   <p class="foot">На связи специалист VSC. Задайте любой вопрос по визам — сориентируем по вашей ситуации,<br>условиям и подберём лучший вариант оформления.</p>
 
+  <div class="gate" id="gate" hidden>
+    <form class="gate-card" id="gateForm">
+      <h2>Доступ к консультанту</h2>
+      <p>Страница на обкатке. Введите код доступа.</p>
+      <input id="gateCode" type="password" inputmode="numeric" autocomplete="off" placeholder="Код">
+      <div class="gate-err" id="gateErr"></div>
+      <button type="submit">Войти</button>
+    </form>
+  </div>
+
 <script>
 (function(){
   const messagesEl = document.getElementById('messages');
@@ -208,6 +249,28 @@
   const form = document.getElementById('composer');
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('send');
+
+  // Код доступа на время обкатки (сервер отвергает запросы без него)
+  const CODE_KEY = 'vsc_chat_code';
+  let accessCode = localStorage.getItem(CODE_KEY) || '';
+  const gate = document.getElementById('gate');
+  const gateForm = document.getElementById('gateForm');
+  const gateCode = document.getElementById('gateCode');
+  const gateErr = document.getElementById('gateErr');
+  function showGate(msg){
+    gate.hidden = false; gateErr.textContent = msg || '';
+    setTimeout(()=>gateCode.focus(), 50);
+  }
+  gateForm.addEventListener('submit', e=>{
+    e.preventDefault();
+    const v = gateCode.value.trim();
+    if(!v){ gateErr.textContent = 'Введите код'; return; }
+    accessCode = v;
+    localStorage.setItem(CODE_KEY, v);
+    gate.hidden = true; gateCode.value = '';
+    input.focus();
+  });
+  if(!accessCode) showGate();
 
   // Стабильный id сессии (для склейки лида на сервере)
   let sessionId = localStorage.getItem('vsc_chat_sid');
@@ -302,10 +365,19 @@
     try{
       const r = await fetch('/api/chat_test/message',{
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ sessionId, messages: history })
+        body: JSON.stringify({ sessionId, messages: history, code: accessCode })
       });
       const data = await r.json();
       hideTyping();
+      if(r.status === 401 && data && data.needCode){
+        // неверный/устаревший код — сообщение убираем из истории и просим код заново
+        history.pop(); persist();
+        localStorage.removeItem(CODE_KEY); accessCode = '';
+        input.value = text; autoGrow();
+        showGate('Неверный код');
+        busy = false; sendBtn.disabled = false;
+        return;
+      }
       const reply = (data && data.reply) || (data && data.message) || 'Извините, не получилось ответить. Оставьте, пожалуйста, телефон или напишите в WhatsApp — менеджер свяжется с вами.';
       addBubble('assistant', reply);
       history.push({role:'assistant', content:reply});

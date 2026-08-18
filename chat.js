@@ -17,6 +17,9 @@ const crypto = require("crypto");
 
 const LEADS_FILE = path.join(__dirname, ".chatLeads.json");
 const MODEL = process.env.CHAT_MODEL || "claude-sonnet-5";
+// Код входа на время обкатки — чтобы посторонние не жгли токены. Убрать при запуске в бой:
+// задать CHAT_ACCESS_CODE="" в .env (пустой = без кода) или удалить проверку.
+const ACCESS_CODE = process.env.CHAT_ACCESS_CODE !== undefined ? process.env.CHAT_ACCESS_CODE : "111";
 const MAX_TURNS = 40;          // предохранитель на длину диалога (пар сообщений)
 const MAX_MSG_LEN = 4000;      // предохранитель на длину одного сообщения
 
@@ -186,6 +189,9 @@ function mount(app, deps) {
     try {
       if (!aiConfigured()) return res.status(503).json({ success: false, message: "Консультант временно недоступен. Оставьте телефон — мы перезвоним." });
       const body = req.body || {};
+      if (ACCESS_CODE && String(body.code || "").trim() !== ACCESS_CODE) {
+        return res.status(401).json({ success: false, needCode: true, message: "Нужен код доступа" });
+      }
       let sessionId = String(body.sessionId || "").trim();
       if (!/^[a-zA-Z0-9_-]{6,64}$/.test(sessionId)) sessionId = "s_" + crypto.randomBytes(9).toString("hex");
       const messages = sanitizeMessages(body.messages);
