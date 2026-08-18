@@ -352,14 +352,17 @@ async function refresh() {
 }
 
 // Выгрузка таблицы: .xlsx с раскладкой листа «Личные финансы» (открывается в Numbers).
+// ВАЖНО: target=_blank — в PWA-режиме прямой переход подменяет приложение
+// системным превью файла БЕЗ кнопки закрытия; отдельное окно iOS показывает
+// во встроенном браузере с родной кнопкой «Готово».
 function downloadTable() {
   const t = token || "";
   if (!t) { toast("Сначала войдите"); return; }
   const a = document.createElement("a");
   a.href = "/fin/api/export.xlsx?token=" + encodeURIComponent(t);
+  a.target = "_blank";
   a.rel = "noopener";
   document.body.appendChild(a); a.click(); a.remove();
-  toast("Файл скачивается");
 }
 
 async function toggleDays() {
