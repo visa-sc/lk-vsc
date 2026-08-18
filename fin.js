@@ -3,17 +3,17 @@
 // «Личные финансы.numbers» (iCloud, мак Андрея). Отдельный модуль, монтируется
 // из server.js; клиентский ЛК, amoCRM и остальные разделы НЕ затрагивает.
 //
-// Схема: айфон → /fin (PWA, вход по коду FIN_CODE) → записи в .fin/store.json →
-// агент на маке (tools/fin-numbers-sync.js, LaunchAgent, раз в 2 мин) забирает
-// несинкнутые записи по /fin/api/pull и дописывает их в Numbers через
-// AppleScript, затем подтверждает /fin/api/mark-synced.
+// Схема (с 18.08.2026): айфон → /fin (PWA, вход по коду FIN_CODE) → записи в
+// .fin/store.json → кнопка «Скачать таблицу» отдаёт .xlsx с раскладкой листа
+// «Личные финансы» (Numbers открывает его как есть, строки копируются руками).
+// Агента синка на маке и записи в Numbers через AppleScript БОЛЬШЕ НЕТ — по
+// просьбе Андрея: не грузить систему и не трогать основную таблицу.
 //
 // Корзины — как столбцы таблицы Андрея:
 //   pos   = Позитивные расходы        ok    = Допустимые расходы
 //   nope  = Можно было не тратить     trash = Выброшенные на ветер деньги
 //
 // env: FIN_CODE (код входа с телефона, дефолт 280992 — общий админ-код),
-//      FIN_AGENT_KEY (ключ агента синка; ОБЯЗАТЕЛЕН на проде, без него pull закрыт).
 // Хранилище: .fin/store.json (gitignore — личные данные).
 
 const fs = require("fs");
@@ -68,10 +68,109 @@ function todayMsk() {
   return d.toISOString().slice(0, 10);
 }
 
+// ── Выгрузка таблицы (17.08.2026) ─────────────────────────────────────────────
+// Отдаём .xlsx с той же раскладкой, что в «Личные финансы.numbers» Андрея:
+//   A=день (только в первой строке дня) · B=наименование (+ « - » комментарий)
+//   C=Позитивные · D=Допустимые · E=Можно было не тратить · F=Выброшенные
+//   G=Категория · H=Банк (пусто, заполняется руками)
+// Лист на каждый месяц с записями, имена как у листов Андрея («Август 2026»).
+// Numbers открывает .xlsx двойным кликом — строки копируются в основную таблицу.
+// Своего формата .numbers у нас нет: он закрытый, на сервере его не собрать.
+const AdmZip = require("adm-zip");
+const XL_MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+const BUCKET_COL_XL = { pos: 2, ok: 3, nope: 4, trash: 5 }; // индекс среди 4 колонок сумм (C..F)
+function xmlEsc(s) {
+  return String(s == null ? "" : s).replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" }[c]));
+}
+function colLetter(i) { let s = "", n = i + 1; while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); } return s; }
+// cells: [{v, num?, style?}] — style: 0 обычная, 1 заголовок, 2 деньги, 3 жёлтая, 4 красная
+function xlRow(rowIdx, cells) {
+  const parts = cells.map((c, i) => {
+    if (c == null || c.v === "" || c.v == null) return "";
+    const ref = colLetter(i) + rowIdx;
+    const st = c.style ? ' s="' + c.style + '"' : "";
+    return c.num
+      ? '<c r="' + ref + '"' + st + '><v>' + c.v + '</v></c>'
+      : '<c r="' + ref + '"' + st + ' t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(c.v) + '</t></is></c>';
+  });
+  return '<row r="' + rowIdx + '">' + parts.join("") + '</row>';
+}
+function buildXlsx(entries) {
+  // группировка: месяц → день → записи (порядок ввода сохраняем)
+  const byMonth = new Map();
+  entries.slice().sort((a, b) => (a.date === b.date ? a.at - b.at : (a.date < b.date ? -1 : 1))).forEach((e) => {
+    const ym = String(e.date).slice(0, 7);
+    if (!byMonth.has(ym)) byMonth.set(ym, []);
+    byMonth.get(ym).push(e);
+  });
+  const yms = Array.from(byMonth.keys()).sort();
+  if (!yms.length) yms.push(todayMsk().slice(0, 7));           // пустая выгрузка — один лист текущего месяца
+  const HEAD = ["", "Наименование", "Позитивные расходы", "Допустимые расходы", "Можно было не тратить", "Выброшенные на ветер деньги", "Категория", "Банк"];
+  const sheets = yms.map((ym) => {
+    const list = byMonth.get(ym) || [];
+    const rows = [xlRow(1, HEAD.map((h) => ({ v: h, style: 1 })))];
+    let r = 2, prevDay = null;
+    list.forEach((e) => {
+      const day = +String(e.date).slice(8, 10);
+      const cells = new Array(8).fill(null);
+      if (day !== prevDay) { cells[0] = { v: day, num: true }; prevDay = day; }
+      cells[1] = { v: e.comment ? e.name + " - " + e.comment : e.name, style: e.flag === "yellow" ? 3 : (e.flag === "red" ? 4 : 0) };
+      if (e.amount > 0) cells[BUCKET_COL_XL[e.bucket] != null ? BUCKET_COL_XL[e.bucket] : 3] = { v: e.amount, num: true, style: 2 };
+      cells[6] = { v: e.category || "" };
+      rows.push(xlRow(r++, cells));
+    });
+    const p = ym.split("-");
+    return { name: XL_MONTHS[+p[1] - 1] + " " + p[0], xml: rows.join("") };
+  });
+  const zip = new AdmZip();
+  zip.addFile("[Content_Types].xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+    + '<Default Extension="xml" ContentType="application/xml"/>'
+    + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+    + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+    + sheets.map((s, i) => '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join("")
+    + '</Types>', "utf8"));
+  zip.addFile("_rels/.rels", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+    + '</Relationships>', "utf8"));
+  zip.addFile("xl/workbook.xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+    + sheets.map((s, i) => '<sheet name="' + xmlEsc(s.name) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>').join("")
+    + '</sheets></workbook>', "utf8"));
+  zip.addFile("xl/_rels/workbook.xml.rels", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + sheets.map((s, i) => '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>').join("")
+    + '<Relationship Id="rIdS" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+    + '</Relationships>', "utf8"));
+  zip.addFile("xl/styles.xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+    + '<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFEB9C"/><bgColor indexed="64"/></patternFill></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFC7CE"/><bgColor indexed="64"/></patternFill></fill></fills>'
+    + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+    + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    + '<cellXfs count="5">'
+    + '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+    + '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+    + '<xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+    + '<xf numFmtId="0" fontId="0" fillId="2" borderId="0" xfId="0" applyFill="1"/>'
+    + '<xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1"/>'
+    + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>', "utf8"));
+  sheets.forEach((s, i) => {
+    zip.addFile("xl/worksheets/sheet" + (i + 1) + ".xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+      + '<cols><col min="1" max="1" width="6"/><col min="2" max="2" width="42"/><col min="3" max="6" width="17"/><col min="7" max="8" width="16"/></cols>'
+      + '<sheetData>' + s.xml + '</sheetData></worksheet>', "utf8"));
+  });
+  return zip.toBuffer();
+}
+
 function mount(app, deps) {
   const requireAdmin = deps.requireAdmin;
   const FIN_CODE = process.env.FIN_CODE || "280992";
-  const FIN_AGENT_KEY = process.env.FIN_AGENT_KEY || "";
 
   function tokenFromReq(req) {
     const h = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
@@ -222,11 +321,6 @@ function mount(app, deps) {
     return res.status(401).json({ success: false, message: "Нет доступа" });
   }
   // Агент синка: отдельный ключ, чтобы не хранить пользовательский токен на маке.
-  function requireAgent(req, res, next) {
-    if (!FIN_AGENT_KEY) return res.status(503).json({ success: false, message: "FIN_AGENT_KEY не задан на сервере" });
-    if (String(req.headers["x-fin-agent"] || "") === FIN_AGENT_KEY) return next();
-    return res.status(401).json({ success: false, message: "Нет доступа" });
-  }
 
   app.get("/fin", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -245,8 +339,7 @@ function mount(app, deps) {
     const frequent = custom.concat((sd.frequent || []).filter((f) => !seen.has(f.name.toLowerCase()))).slice(0, 60);
     const today = todayMsk();
     const entries = st.entries.filter((e) => e.date === today && !e.deleted);
-    const pendingSync = st.entries.filter((e) => !e.synced && !e.deleted).length;
-    res.json({ success: true, frequent, categories: sd.categories || [], today, entries, pendingSync, lastSyncAt: st.lastSyncAt || null });
+    res.json({ success: true, frequent, categories: sd.categories || [], today, entries, total: st.entries.filter((e) => !e.deleted).length });
   });
 
   // Добавить расход. body: {name, amount, bucket, category?, date?, flag?, comment?}
@@ -290,13 +383,12 @@ function mount(app, deps) {
     res.json({ success: true, entry: e });
   });
 
-  // Редактирование/удаление — только пока запись не синкнута в Numbers
-  // (после — правьте в Numbers, там источник истины).
+  // Редактирование/удаление — всегда доступны: записи живут здесь, в Numbers они
+  // попадают только копированием из выгрузки (агента синка больше нет, 18.08.2026).
   app.post("/fin/api/edit/:id", requireFin, (req, res) => {
     const st = store();
     const e = st.entries.find((x) => x.id === req.params.id);
     if (!e) return res.status(404).json({ success: false, message: "Не найдено" });
-    if (e.synced) return res.status(409).json({ success: false, message: "Уже в Numbers — правьте там" });
     const b = req.body || {};
     if (b.name != null) { const n = String(b.name).trim().slice(0, 200); if (n) e.name = n; }
     if (b.amount != null) { const a = Math.round(Number(b.amount) * 100) / 100; if (a > 0) e.amount = a; }
@@ -312,7 +404,6 @@ function mount(app, deps) {
     const st = store();
     const e = st.entries.find((x) => x.id === req.params.id);
     if (!e) return res.status(404).json({ success: false, message: "Не найдено" });
-    if (e.synced) return res.status(409).json({ success: false, message: "Уже в Numbers — удаляйте там" });
     e.deleted = true;
     save();
     res.json({ success: true });
@@ -331,19 +422,21 @@ function mount(app, deps) {
     res.json({ success: true, days });
   });
 
-  // ── API агента синка (мак Андрея) ──
-  app.get("/fin/api/pull", requireAgent, (req, res) => {
+  // Выгрузка таблицы: .xlsx с раскладкой листа Андрея (открывается в Numbers).
+  // ?month=YYYY-MM — только один месяц; без параметра — все месяцы с записями.
+  app.get("/fin/api/export.xlsx", requireFin, (req, res) => {
     const st = store();
-    res.json({ success: true, entries: st.entries.filter((e) => !e.synced && !e.deleted) });
-  });
-  app.post("/fin/api/mark-synced", requireAgent, (req, res) => {
-    const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids : [];
-    const st = store();
-    let n = 0;
-    for (const e of st.entries) if (ids.includes(e.id) && !e.synced) { e.synced = true; e.syncedAt = Date.now(); n++; }
-    st.lastSyncAt = Date.now();
-    save();
-    res.json({ success: true, marked: n });
+    const mon = String((req.query && req.query.month) || "").trim();
+    let list = st.entries.filter((e) => !e.deleted);
+    if (/^\d{4}-\d{2}$/.test(mon)) list = list.filter((e) => String(e.date).slice(0, 7) === mon);
+    let buf;
+    try { buf = buildXlsx(list); }
+    catch (e) { console.error("fin xlsx:", e.message); return res.status(500).json({ success: false, message: "Не удалось собрать файл" }); }
+    const fname = "Личные финансы" + (/^\d{4}-\d{2}$/.test(mon) ? " " + mon : "") + ".xlsx";
+    res.set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.set("Content-Disposition", "attachment; filename=\"finances.xlsx\"; filename*=UTF-8''" + encodeURIComponent(fname));
+    res.set("Cache-Control", "no-store");
+    res.send(buf);
   });
 
   // Диагностика для админки (не публично)
@@ -352,8 +445,6 @@ function mount(app, deps) {
     res.json({
       success: true,
       entries: st.entries.filter((e) => !e.deleted).length,
-      pendingSync: st.entries.filter((e) => !e.synced && !e.deleted).length,
-      lastSyncAt: st.lastSyncAt || null,
       customLearned: Object.keys(st.custom).length,
     });
   });

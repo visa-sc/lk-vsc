@@ -102,7 +102,7 @@ input.pill::placeholder{color:var(--faint)}
   <div id="main">
     <div class="toprow">
       <button id="bioEnroll" style="display:none" onclick="bioRegister()">Включить Face ID</button>
-      <span class="tiny" id="syncBadge"></span>
+      <button id="dlBtn" onclick="downloadTable()">Скачать таблицу</button>
     </div>
     <div class="spacer"></div>
 
@@ -137,7 +137,7 @@ input.pill::placeholder{color:var(--faint)}
     <button id="saveBtn" onclick="saveEntry()">Внести</button>
 
     <div class="recline">
-      <span class="tiny" id="syncInfo"></span>
+      <span class="tiny" id="totalInfo"></span>
       <button id="recToggle" onclick="toggleRecords()">Записи ›</button>
     </div>
     <div id="records">
@@ -306,20 +306,16 @@ function toggleRecords() {
   $("recToggle").textContent = recordsOpen ? "Скрыть" : "Записи ›";
 }
 function entryRow(e, showDate) {
-  const st = e.synced ? "✓" : "⏳";
-  const stTitle = e.synced ? "в Numbers" : "ждёт синка";
   const fl = e.flag === "yellow" ? "🟡 " : e.flag === "red" ? "🔴 " : "";
   const nm = esc(e.name) + (e.comment ? ` <span class="cmt">- ${esc(e.comment)}</span>` : "");
-  return `<div class="entry${e.synced ? "" : " pending"}" data-id="${e.id}" data-synced="${e.synced ? 1 : 0}">
+  return `<div class="entry" data-id="${e.id}">
     <div class="dot ${e.bucket}"></div>
     <div class="nm"><b>${fl}${nm}</b><span>${showDate ? e.date : ""}</span></div>
     <div class="amt">${e.amount > 0 ? fmt(e.amount) + " ₽" : ""}</div>
-    <div class="st" title="${stTitle}">${st}</div>
   </div>`;
 }
 $("todayList").addEventListener("click", async (e) => {
   const row = e.target.closest(".entry"); if (!row) return;
-  if (row.dataset.synced === "1") { toast("Уже в Numbers — правь там"); return; }
   if (!confirm("Удалить запись?")) return;
   const r = await api("/fin/api/delete/" + row.dataset.id, { method: "POST" });
   if (r.success) { toast("Удалено"); refresh(); } else toast(r.message || "Ошибка");
@@ -338,11 +334,18 @@ async function refresh() {
   $("todayList").innerHTML = es.length
     ? es.slice().reverse().map((e) => entryRow(e)).join("")
     : `<div class="tiny" style="padding:10px 4px">Пока пусто</div>`;
-  const p = r.pendingSync;
-  $("syncBadge").textContent = p ? `⏳ ${p}` : "";
-  $("syncInfo").textContent = p
-    ? `⏳ ${p} ждёт записи`
-    : (r.lastSyncAt ? "✓ синк " + new Date(r.lastSyncAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "");
+  $("totalInfo").textContent = r.total ? `${r.total} записей всего` : "";
+}
+
+// Выгрузка таблицы: .xlsx с раскладкой листа «Личные финансы» (открывается в Numbers).
+function downloadTable() {
+  const t = token || "";
+  if (!t) { toast("Сначала войдите"); return; }
+  const a = document.createElement("a");
+  a.href = "/fin/api/export.xlsx?token=" + encodeURIComponent(t);
+  a.rel = "noopener";
+  document.body.appendChild(a); a.click(); a.remove();
+  toast("Файл скачивается");
 }
 
 async function toggleDays() {
