@@ -208,6 +208,55 @@ function mount(app, deps) {
     }
   });
 
+  // ── Wazzup: приёмник вебхуков (копим переписку для обучения чата) ────────
+  // ВАЖНО: до нас вебхук Wazzup указывал на Google Apps Script (старый поток
+  // логирования). Мы его НЕ ломаем: всё пришедшее ретранслируем туда же 1:1.
+  // Откат: PATCH https://api.wazzup24.com/v3/webhooks на WAZZUP_RELAY_URL.
+  const WAZZUP_INBOX = path.join(__dirname, ".wazzupInbox.ndjson");
+  const WAZZUP_KEY = process.env.WAZZUP_HOOK_KEY || ""; // секрет в query ?k=
+  const WAZZUP_RELAY = process.env.WAZZUP_RELAY_URL || "";
+  function wazzupRelay(body, attempt) {
+    if (!WAZZUP_RELAY) return;
+    attempt = attempt || 1;
+    const https = require("https");
+    const data = JSON.stringify(body);
+    const post = (urlStr, hops) => {
+      const u = new URL(urlStr);
+      const r = https.request(
+        { host: u.host, path: u.pathname + u.search, method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) }, timeout: 25000 },
+        (resp) => {
+          resp.resume();
+          // Google Script отвечает редиректом — идём за ним, чтобы скрипт реально выполнился
+          if ([301, 302, 303, 307, 308].includes(resp.statusCode) && resp.headers.location && hops < 3) {
+            const next = new URL(resp.headers.location, urlStr).toString();
+            const g = https.get(next, (r2) => r2.resume());
+            g.on("error", () => {});
+            return;
+          }
+          if (resp.statusCode >= 400) retry();
+        }
+      );
+      r.on("error", retry);
+      r.on("timeout", () => { r.destroy(); retry(); });
+      r.end(data);
+    };
+    const retry = () => {
+      if (attempt >= 3) { console.error("wazzup relay: не доставлено в Google Script после 3 попыток"); return; }
+      setTimeout(() => wazzupRelay(body, attempt + 1), attempt * 15000);
+    };
+    try { post(WAZZUP_RELAY, 0); } catch (e) { retry(); }
+  }
+  app.post("/api/wazzup/webhook", (req, res) => {
+    if (WAZZUP_KEY && String(req.query.k || "") !== WAZZUP_KEY) return res.status(403).json({ success: false });
+    res.status(200).json({ ok: true }); // Wazzup ждёт 200 в течение 30с — отвечаем сразу
+    try {
+      const body = req.body || {};
+      if (body && body.test) return; // тестовый пинг Wazzup не пишем и не ретранслируем
+      fs.appendFileSync(WAZZUP_INBOX, JSON.stringify({ t: new Date().toISOString(), b: body }) + "\n");
+      wazzupRelay(body);
+    } catch (e) { console.error("wazzup hook:", e.message); }
+  });
+
   // Выгрузка лидов — только админ (код 280992).
   app.get("/api/chat_test/leads", requireAdmin, (req, res) => {
     const leads = loadLeads();
