@@ -78,6 +78,13 @@ input.pill::placeholder{color:var(--faint)}
 #records{display:none;margin-top:4px}
 .sec h2{font-size:14px;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;padding:0 4px}
 .sec h2 .sum{color:var(--ink)}
+/* свайп влево по записи → кнопка «Удалить» под строкой */
+.swipe{position:relative;margin-top:8px}
+.swipe .del{position:absolute;top:0;right:0;bottom:0;width:88px;border:0;border-radius:14px;background:var(--trash);color:#fff;font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s}
+.swipe.open .del{opacity:1;pointer-events:auto}
+.swipe .entry{margin-top:0;transition:transform .18s;touch-action:pan-y}
+.swipe.open .entry{transform:translateX(-96px)}
+.swipe .entry.drag{transition:none}
 .entry{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 13px;margin-top:8px;box-shadow:var(--shadow)}
 .entry .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
 .dot.pos{background:var(--pos)}.dot.ok{background:var(--ok)}.dot.nope{background:var(--nope)}.dot.trash{background:var(--trash)}
@@ -322,17 +329,51 @@ function plural(n, one, few, many) {
 function entryRow(e, showDate) {
   const fl = e.flag === "yellow" ? "🟡 " : e.flag === "red" ? "🔴 " : "";
   const nm = esc(e.name) + (e.comment ? ` <span class="cmt">- ${esc(e.comment)}</span>` : "");
-  return `<div class="entry" data-id="${e.id}">
-    <div class="dot ${e.bucket}"></div>
-    <div class="nm"><b>${fl}${nm}</b><span>${showDate ? e.date : ""}</span></div>
-    <div class="amt">${e.amount > 0 ? fmt(e.amount) + " ₽" : ""}</div>
+  return `<div class="swipe" data-id="${e.id}">
+    <button class="del">Удалить</button>
+    <div class="entry">
+      <div class="dot ${e.bucket}"></div>
+      <div class="nm"><b>${fl}${nm}</b><span>${showDate ? e.date : ""}</span></div>
+      <div class="amt">${e.amount > 0 ? fmt(e.amount) + " ₽" : ""}</div>
+    </div>
   </div>`;
 }
-$("todayList").addEventListener("click", async (e) => {
-  const row = e.target.closest(".entry"); if (!row) return;
-  if (!confirm("Удалить запись?")) return;
-  const r = await api("/fin/api/delete/" + row.dataset.id, { method: "POST" });
-  if (r.success) { toast("Удалено"); refresh(); } else toast(r.message || "Ошибка");
+
+// ── свайп влево по записи → «Удалить» (сегодня и история) ──
+let swEl = null, swX = 0, swY = 0, swDx = 0, swMode = null;
+function closeSwipes(except) { document.querySelectorAll(".swipe.open").forEach((s) => { if (s !== except) s.classList.remove("open"); }); }
+document.addEventListener("touchstart", (ev) => {
+  const s = ev.target.closest(".swipe");
+  if (!s) { closeSwipes(); return; }
+  swEl = s; swX = ev.touches[0].clientX; swY = ev.touches[0].clientY; swMode = null; swDx = 0;
+}, { passive: true });
+document.addEventListener("touchmove", (ev) => {
+  if (!swEl) return;
+  const dx = ev.touches[0].clientX - swX, dy = ev.touches[0].clientY - swY;
+  if (swMode === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) swMode = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+  if (swMode !== "h") return;
+  closeSwipes(swEl);
+  const base = swEl.classList.contains("open") ? -96 : 0;
+  swDx = Math.min(0, Math.max(-110, base + dx));
+  const en = swEl.querySelector(".entry");
+  en.classList.add("drag");
+  en.style.transform = `translateX(${swDx}px)`;
+}, { passive: true });
+document.addEventListener("touchend", () => {
+  if (!swEl) return;
+  const en = swEl.querySelector(".entry");
+  en.classList.remove("drag"); en.style.transform = "";
+  if (swMode === "h") swEl.classList.toggle("open", swDx < -48);
+  swEl = null; swMode = null; swDx = 0;
+});
+document.addEventListener("click", async (ev) => {
+  const del = ev.target.closest(".swipe .del");
+  if (!del) { if (!ev.target.closest(".swipe")) closeSwipes(); return; }
+  const s = del.closest(".swipe");
+  del.disabled = true;
+  const r = await api("/fin/api/delete/" + s.dataset.id, { method: "POST" });
+  if (r.success) { toast("Удалено"); await refresh(); if (daysOpen) await loadDays(); }
+  else { del.disabled = false; toast(r.message || "Ошибка"); }
 });
 
 async function refresh() {
@@ -365,17 +406,19 @@ function downloadTable() {
   document.body.appendChild(a); a.click(); a.remove();
 }
 
-async function toggleDays() {
-  daysOpen = !daysOpen;
-  $("days").style.display = daysOpen ? "block" : "none";
-  $("daysBtn").textContent = daysOpen ? "Свернуть" : "История ›";
-  if (!daysOpen) return;
+async function loadDays() {
   const r = await api("/fin/api/days");
   if (!r.success) return;
   $("days").innerHTML = (r.days || []).filter((d) => d.date !== TODAY).map((d) =>
     `<h2><span>${d.date}</span><span class="sum">${fmt(d.total)} ₽</span></h2>`
     + d.entries.slice().reverse().map((e) => entryRow(e)).join("")
   ).join("") || `<div class="tiny">Истории пока нет</div>`;
+}
+async function toggleDays() {
+  daysOpen = !daysOpen;
+  $("days").style.display = daysOpen ? "block" : "none";
+  $("daysBtn").textContent = daysOpen ? "Свернуть" : "История ›";
+  if (daysOpen) await loadDays();
 }
 
 function toast(t) {

@@ -452,7 +452,10 @@ function mount(app, deps) {
     catch (e) { console.error("fin xlsx:", e.message); return res.status(500).json({ success: false, message: "Не удалось собрать файл" }); }
     const fname = "Личные финансы" + (/^\d{4}-\d{2}$/.test(mon) ? " " + mon : "") + ".xlsx";
     res.set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.set("Content-Disposition", "attachment; filename=\"finances.xlsx\"; filename*=UTF-8''" + encodeURIComponent(fname));
+    // inline, НЕ attachment: страница открывает файл в отдельном окне (target=_blank),
+    // и встроенный браузер iOS с attachment показывает белый экран; с inline —
+    // предпросмотр таблицы + «Поделиться» → «Open in Numbers».
+    res.set("Content-Disposition", "inline; filename=\"finances.xlsx\"; filename*=UTF-8''" + encodeURIComponent(fname));
     res.set("Cache-Control", "no-store");
     res.send(buf);
   });
