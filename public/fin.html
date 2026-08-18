@@ -42,7 +42,10 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-grad
 .curr{display:flex;gap:6px;margin-bottom:10px}
 .cseg{padding:7px 18px;border-radius:18px;border:1px solid var(--line);background:var(--card);color:var(--muted);font-size:13px;font-weight:600;box-shadow:var(--shadow);cursor:pointer;user-select:none}
 .cseg.on{background:var(--acc);border-color:var(--acc);color:#fff}
-.mathbtn{width:40px;height:40px;border-radius:13px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:20px;font-weight:600;display:none;flex:0 0 auto}
+/* × ÷ — справа в ряду валют, только при USD (подставляются в поле суммы) */
+.mathbtn{width:44px;height:34px;border-radius:17px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:19px;font-weight:600;display:none;flex:0 0 auto;box-shadow:var(--shadow)}
+.curr.usd .mathbtn{display:block}
+.curr .mathbtn:first-of-type{margin-left:auto}
 .amount-row .rub{white-space:nowrap}
 .amount-row .rub.calc{font-size:15px;font-weight:600;color:var(--muted)}
 .amount-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:10px 20px;box-shadow:var(--shadow-hi)}
@@ -123,14 +126,14 @@ input.pill::placeholder{color:var(--faint)}
     </div>
     <div class="spacer"></div>
 
-    <div class="curr">
+    <div class="curr" id="currRow">
       <div class="cseg on" id="curRub" onclick="setCurr(false)">RUB</div>
       <div class="cseg" id="curUsd" onclick="setCurr(true)">USD</div>
+      <button class="mathbtn" id="mulBtn" onmousedown="event.preventDefault()" onclick="insMath('*')">×</button>
+      <button class="mathbtn" id="divBtn" onmousedown="event.preventDefault()" onclick="insMath('/')">÷</button>
     </div>
     <div class="amount-row">
       <input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off">
-      <button class="mathbtn" id="mulBtn" onclick="insMath('*')">×</button>
-      <button class="mathbtn" id="divBtn" onclick="insMath('/')">÷</button>
       <span class="rub" id="rubSign">₽</span>
     </div>
 
@@ -279,7 +282,7 @@ function setCurr(u) {
   usd = u;
   $("curRub").classList.toggle("on", !u);
   $("curUsd").classList.toggle("on", u);
-  $("mulBtn").style.display = $("divBtn").style.display = u ? "" : "none";
+  $("currRow").classList.toggle("usd", u);
   updateRub();
 }
 function insMath(ch) {
