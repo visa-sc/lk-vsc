@@ -38,6 +38,13 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-grad
 #main{display:none}
 .toprow{display:flex;justify-content:flex-end;align-items:center;gap:10px;min-height:26px;padding-top:calc(env(safe-area-inset-top) + 8px)}
 #bioEnroll{background:var(--card);border:1px solid var(--line);border-radius:14px;color:var(--muted);font-size:12px;padding:6px 13px;box-shadow:var(--shadow)}
+/* переключатель валюты; по умолчанию всегда RUB */
+.curr{display:flex;gap:6px;margin-bottom:10px}
+.cseg{padding:7px 18px;border-radius:18px;border:1px solid var(--line);background:var(--card);color:var(--muted);font-size:13px;font-weight:600;box-shadow:var(--shadow);cursor:pointer;user-select:none}
+.cseg.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.mathbtn{width:40px;height:40px;border-radius:13px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:20px;font-weight:600;display:none;flex:0 0 auto}
+.amount-row .rub{white-space:nowrap}
+.amount-row .rub.calc{font-size:15px;font-weight:600;color:var(--muted)}
 .amount-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:10px 20px;box-shadow:var(--shadow-hi)}
 .amount-row input{flex:1;background:none;border:0;outline:none;color:var(--ink);font-size:38px;font-weight:700;min-width:0}
 .amount-row input::placeholder{color:#c3cad6}
@@ -116,9 +123,15 @@ input.pill::placeholder{color:var(--faint)}
     </div>
     <div class="spacer"></div>
 
+    <div class="curr">
+      <div class="cseg on" id="curRub" onclick="setCurr(false)">RUB</div>
+      <div class="cseg" id="curUsd" onclick="setCurr(true)">USD</div>
+    </div>
     <div class="amount-row">
       <input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off">
-      <span class="rub">₽</span>
+      <button class="mathbtn" id="mulBtn" onclick="insMath('*')">×</button>
+      <button class="mathbtn" id="divBtn" onclick="insMath('/')">÷</button>
+      <span class="rub" id="rubSign">₽</span>
     </div>
 
     <div class="name-row">
@@ -260,6 +273,35 @@ function setBucket(b) {
   document.querySelectorAll(".bk").forEach((x) => x.classList.toggle("sel", x.dataset.b === b));
 }
 
+// ── валюта: RUB по умолчанию; USD = выражение «45*79.8», в таблицу — формулой ──
+let usd = false;
+function setCurr(u) {
+  usd = u;
+  $("curRub").classList.toggle("on", !u);
+  $("curUsd").classList.toggle("on", u);
+  $("mulBtn").style.display = $("divBtn").style.display = u ? "" : "none";
+  updateRub();
+}
+function insMath(ch) {
+  const a = $("amount");
+  a.value += ch;
+  a.focus();
+  updateRub();
+}
+function calcExpr(s) {
+  s = String(s || "").replace(/,/g, ".").replace(/\s+/g, "").replace(/×/g, "*").replace(/÷/g, "/");
+  if (!s || !/^[0-9.+\-*/()]+$/.test(s)) return NaN;
+  try { const v = Function('"use strict";return(' + s + ')')(); return isFinite(v) ? v : NaN; } catch (e) { return NaN; }
+}
+function updateRub() {
+  const el = $("rubSign");
+  if (!usd) { el.textContent = "₽"; el.classList.remove("calc"); return; }
+  const v = calcExpr($("amount").value);
+  el.textContent = v > 0 ? "= " + fmt(Math.round(v * 100) / 100) + " ₽" : "";
+  el.classList.add("calc");
+}
+$("amount").addEventListener("input", updateRub);
+
 // ── метки ──
 let flag = "";
 function toggleFlag(f) {
@@ -295,16 +337,19 @@ function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 
 // ── сохранение ──
 async function saveEntry() {
-  const amount = parseFloat($("amount").value.replace(",", "."));
+  const raw = $("amount").value.trim();
+  const amount = usd ? calcExpr(raw) : parseFloat(raw.replace(",", "."));
+  const formula = usd && raw ? raw.replace(/,/g, ".").replace(/\s+/g, "").replace(/×/g, "*").replace(/÷/g, "/") : "";
   const name = $("name").value.trim();
   if (!name) { toast("Заполни название"); return; }
+  if (usd && raw && !(amount > 0)) { toast("Не могу посчитать выражение"); return; }
   // с меткой 🟡/🔴 можно без суммы — уйдёт строкой-заметкой
   if (!(amount > 0) && !flag) { toast("Заполни сумму и название"); return; }
   $("saveBtn").disabled = true;
   try {
-    const r = await api("/fin/api/add", { method: "POST", body: JSON.stringify({ name, amount: amount > 0 ? amount : 0, bucket, category: $("category").value, date: $("date").value, flag, comment: $("comment").value.trim() }) });
+    const r = await api("/fin/api/add", { method: "POST", body: JSON.stringify({ name, amount: amount > 0 ? amount : 0, formula, bucket, category: $("category").value, date: $("date").value, flag, comment: $("comment").value.trim() }) });
     if (!r.success) { toast(r.message || "Ошибка"); return; }
-    $("amount").value = ""; $("name").value = ""; setBucket("ok"); $("category").value = ""; $("comment").value = ""; toggleFlag(flag); renderChips("");
+    $("amount").value = ""; $("name").value = ""; setBucket("ok"); $("category").value = ""; $("comment").value = ""; toggleFlag(flag); setCurr(false); renderChips("");
     $("saveBtn").classList.add("flash"); $("saveBtn").textContent = "Внесено ✓";
     setTimeout(() => { $("saveBtn").classList.remove("flash"); $("saveBtn").textContent = "Внести"; }, 900);
     await refresh();

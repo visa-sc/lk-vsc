@@ -83,12 +83,14 @@ function xmlEsc(s) {
   return String(s == null ? "" : s).replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" }[c]));
 }
 function colLetter(i) { let s = "", n = i + 1; while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); } return s; }
-// cells: [{v, num?, style?}] — style: 0 обычная, 1 заголовок, 2 деньги, 3 жёлтая, 4 красная
+// cells: [{v, num?, style?, f?}] — style: 0 обычная, 1 заголовок, 2 деньги, 3 жёлтая, 4 красная;
+// f — формула («45*79.8», без «=»): валютный ввод попадает в ячейку формулой, v — посчитанный кэш.
 function xlRow(rowIdx, cells, height) {
   const parts = cells.map((c, i) => {
     if (c == null || c.v === "" || c.v == null) return "";
     const ref = colLetter(i) + rowIdx;
     const st = c.style ? ' s="' + c.style + '"' : "";
+    if (c.f) return '<c r="' + ref + '"' + st + '><f>' + xmlEsc(c.f) + '</f><v>' + c.v + '</v></c>';
     return c.num
       ? '<c r="' + ref + '"' + st + '><v>' + c.v + '</v></c>'
       : '<c r="' + ref + '"' + st + ' t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(c.v) + '</t></is></c>';
@@ -121,7 +123,7 @@ function buildXlsx(entries) {
       cells[1] = { v: e.comment ? e.name + " - " + e.comment : e.name, style: e.flag === "yellow" ? 3 : (e.flag === "red" ? 4 : 6) };
       // Колонки сумм — белые: заполняем пустышками, чтобы рамки были у всех четырёх.
       for (let c = 2; c <= 5; c++) cells[c] = { v: " ", style: 0 };
-      if (e.amount > 0) cells[BUCKET_COL_XL[e.bucket] != null ? BUCKET_COL_XL[e.bucket] : 3] = { v: e.amount, num: true, style: 2 };
+      if (e.amount > 0) cells[BUCKET_COL_XL[e.bucket] != null ? BUCKET_COL_XL[e.bucket] : 3] = { v: e.amount, num: true, style: 2, f: e.formula || null };
       cells[6] = { v: e.category || " ", style: 5 };   // Категория — бирюзовая
       cells[7] = { v: " ", style: 5 };                 // Банк — бирюзовая, заполняется руками
       rows.push(xlRow(r++, cells));
@@ -372,6 +374,16 @@ function mount(app, deps) {
     const bucket = BUCKETS.includes(b.bucket) ? b.bucket : "ok";
     const flagEarly = ["yellow", "red"].includes(b.flag);
     if (!name) return res.status(400).json({ success: false, message: "Нет названия" });
+    // Валютный ввод (USD): выражение вида «45*79.8» — уходит в таблицу ФОРМУЛОЙ,
+    // сумма в рублях считается из него (и на клиенте, и здесь — не доверяем клиенту).
+    let formula = String(b.formula || "").trim().slice(0, 120).replace(/,/g, ".").replace(/\s+/g, "");
+    if (formula) {
+      if (!/^[0-9.+\-*/()]+$/.test(formula)) return res.status(400).json({ success: false, message: "В выражении только цифры и + − × ÷" });
+      let val;
+      try { val = Function('"use strict";return(' + formula + ')')(); } catch (_) { val = NaN; }
+      if (!isFinite(val) || !(val > 0)) return res.status(400).json({ success: false, message: "Не могу посчитать выражение" });
+      amount = Math.round(val * 100) / 100;
+    }
     // с меткой 🟡/🔴 сумма не обязательна — строка-заметка (как «вернуть билет…»)
     if (!(amount > 0)) {
       if (!flagEarly) return res.status(400).json({ success: false, message: "Сумма должна быть больше нуля" });
@@ -387,6 +399,7 @@ function mount(app, deps) {
       id: crypto.randomBytes(8).toString("hex"),
       at: Date.now(),
       date, name, amount, bucket, category, flag, comment,
+      formula: formula || "",
       synced: false,
     };
     st.entries.push(e);
