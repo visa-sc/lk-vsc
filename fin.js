@@ -155,7 +155,9 @@ function buildXlsx(entries) {
   // бирюзовые #00FFFF, «Наименование» — серая #BFBFBF, суммы — белые; всё в тонкой рамке.
   zip.addFile("xl/styles.xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-    + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+    // Шрифт снят с «Личные финансы.numbers»: Helvetica 10 (день/шапка — Helvetica-Bold),
+    // иначе скопированные строки в таблице Андрея отличаются от соседних.
+    + '<fonts count="2"><font><sz val="10"/><name val="Helvetica"/></font><font><b/><sz val="10"/><name val="Helvetica"/></font></fonts>'
     // bgColor ДУБЛИРУЕТ fgColor: Excel для solid берёт fgColor, а Numbers при
     // копировании строк читает bgColor — с indexed=64 (системный) он давал ЧЁРНЫЕ ячейки.
     + '<fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
