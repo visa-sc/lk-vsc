@@ -134,7 +134,7 @@ input.pill::placeholder{color:var(--faint)}
     <!-- категория проставляется сама по названию, на экране её нет -->
     <input type="hidden" id="category" value="">
 
-    <button id="saveBtn" onclick="saveEntry()">Записать</button>
+    <button id="saveBtn" onclick="saveEntry()">Внести</button>
 
     <div class="recline">
       <span class="tiny" id="syncInfo"></span>
@@ -284,14 +284,16 @@ function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 async function saveEntry() {
   const amount = parseFloat($("amount").value.replace(",", "."));
   const name = $("name").value.trim();
-  if (!name || !(amount > 0)) { toast("Заполни сумму и название"); return; }
+  if (!name) { toast("Заполни название"); return; }
+  // с меткой 🟡/🔴 можно без суммы — уйдёт строкой-заметкой
+  if (!(amount > 0) && !flag) { toast("Заполни сумму и название"); return; }
   $("saveBtn").disabled = true;
   try {
-    const r = await api("/fin/api/add", { method: "POST", body: JSON.stringify({ name, amount, bucket, category: $("category").value, date: $("date").value, flag, comment: $("comment").value.trim() }) });
+    const r = await api("/fin/api/add", { method: "POST", body: JSON.stringify({ name, amount: amount > 0 ? amount : 0, bucket, category: $("category").value, date: $("date").value, flag, comment: $("comment").value.trim() }) });
     if (!r.success) { toast(r.message || "Ошибка"); return; }
     $("amount").value = ""; $("name").value = ""; setBucket("ok"); $("category").value = ""; $("comment").value = ""; toggleFlag(flag); renderChips("");
-    $("saveBtn").classList.add("flash"); $("saveBtn").textContent = "Записано ✓";
-    setTimeout(() => { $("saveBtn").classList.remove("flash"); $("saveBtn").textContent = "Записать"; }, 900);
+    $("saveBtn").classList.add("flash"); $("saveBtn").textContent = "Внесено ✓";
+    setTimeout(() => { $("saveBtn").classList.remove("flash"); $("saveBtn").textContent = "Внести"; }, 900);
     await refresh();
   } catch (e) { if (String(e.message) !== "auth") toast("Ошибка сети"); }
   finally { $("saveBtn").disabled = false; }
@@ -311,7 +313,7 @@ function entryRow(e, showDate) {
   return `<div class="entry${e.synced ? "" : " pending"}" data-id="${e.id}" data-synced="${e.synced ? 1 : 0}">
     <div class="dot ${e.bucket}"></div>
     <div class="nm"><b>${fl}${nm}</b><span>${showDate ? e.date : ""}</span></div>
-    <div class="amt">${fmt(e.amount)} ₽</div>
+    <div class="amt">${e.amount > 0 ? fmt(e.amount) + " ₽" : ""}</div>
     <div class="st" title="${stTitle}">${st}</div>
   </div>`;
 }

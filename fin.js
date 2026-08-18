@@ -255,10 +255,15 @@ function mount(app, deps) {
   app.post("/fin/api/add", requireFin, (req, res) => {
     const b = req.body || {};
     const name = String(b.name || "").trim().slice(0, 200);
-    const amount = Math.round(Number(b.amount) * 100) / 100;
+    let amount = Math.round(Number(b.amount) * 100) / 100;
     const bucket = BUCKETS.includes(b.bucket) ? b.bucket : "ok";
+    const flagEarly = ["yellow", "red"].includes(b.flag);
     if (!name) return res.status(400).json({ success: false, message: "Нет названия" });
-    if (!(amount > 0)) return res.status(400).json({ success: false, message: "Сумма должна быть больше нуля" });
+    // с меткой 🟡/🔴 сумма не обязательна — строка-заметка (как «вернуть билет…»)
+    if (!(amount > 0)) {
+      if (!flagEarly) return res.status(400).json({ success: false, message: "Сумма должна быть больше нуля" });
+      amount = 0;
+    }
     let date = String(b.date || "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = todayMsk();
     const category = String(b.category || "").trim() || categorize(name);
@@ -273,12 +278,14 @@ function mount(app, deps) {
     };
     st.entries.push(e);
     if (st.entries.length > MAX_ENTRIES) st.entries.splice(0, st.entries.length - MAX_ENTRIES);
-    // самообучение частых покупок
-    const key = name.toLowerCase().replace(/\s+/g, " ");
-    const known = Object.keys(st.custom).find((k) => k.toLowerCase() === key);
-    const rec = known ? st.custom[known] : { uses: 0 };
-    rec.uses++; rec.bucket = bucket; rec.category = category; rec.amount = amount;
-    st.custom[known || name] = rec;
+    // самообучение частых покупок (заметки без суммы не учим)
+    if (amount > 0) {
+      const key = name.toLowerCase().replace(/\s+/g, " ");
+      const known = Object.keys(st.custom).find((k) => k.toLowerCase() === key);
+      const rec = known ? st.custom[known] : { uses: 0 };
+      rec.uses++; rec.bucket = bucket; rec.category = category; rec.amount = amount;
+      st.custom[known || name] = rec;
+    }
     save();
     res.json({ success: true, entry: e });
   });

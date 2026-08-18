@@ -168,7 +168,7 @@ tell application id "com.apple.Numbers"
 					if not hasD then set value of cell 1 of row tgt to theDay
 				end if
 				set value of cell 2 of row tgt to theName
-				set value of cell theCol of row tgt to theAmt
+				if theAmt > 0 then set value of cell theCol of row tgt to theAmt
 				if theCat is not "" then set value of cell 7 of row tgt to theCat
 				if (count of theRGB) is 3 then set background color of cell 2 of row tgt to theRGB
 			end tell
