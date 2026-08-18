@@ -84,7 +84,7 @@ function xmlEsc(s) {
 }
 function colLetter(i) { let s = "", n = i + 1; while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); } return s; }
 // cells: [{v, num?, style?}] — style: 0 обычная, 1 заголовок, 2 деньги, 3 жёлтая, 4 красная
-function xlRow(rowIdx, cells) {
+function xlRow(rowIdx, cells, height) {
   const parts = cells.map((c, i) => {
     if (c == null || c.v === "" || c.v == null) return "";
     const ref = colLetter(i) + rowIdx;
@@ -93,7 +93,8 @@ function xlRow(rowIdx, cells) {
       ? '<c r="' + ref + '"' + st + '><v>' + c.v + '</v></c>'
       : '<c r="' + ref + '"' + st + ' t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(c.v) + '</t></is></c>';
   });
-  return '<row r="' + rowIdx + '">' + parts.join("") + '</row>';
+  const h = height ? ' ht="' + height + '" customHeight="1"' : '';
+  return '<row r="' + rowIdx + '"' + h + '>' + parts.join("") + '</row>';
 }
 function buildXlsx(entries) {
   // группировка: месяц → день → записи (порядок ввода сохраняем)
@@ -108,15 +109,21 @@ function buildXlsx(entries) {
   const HEAD = ["", "Наименование", "Позитивные расходы", "Допустимые расходы", "Можно было не тратить", "Выброшенные на ветер деньги", "Категория", "Банк"];
   const sheets = yms.map((ym) => {
     const list = byMonth.get(ym) || [];
-    const rows = [xlRow(1, HEAD.map((h) => ({ v: h, style: 1 })))];
+    const rows = [xlRow(1, HEAD.map((h) => ({ v: h || " ", style: 1 })), 34)];
     let r = 2, prevDay = null;
     list.forEach((e) => {
       const day = +String(e.date).slice(8, 10);
       const cells = new Array(8).fill(null);
-      if (day !== prevDay) { cells[0] = { v: day, num: true }; prevDay = day; }
-      cells[1] = { v: e.comment ? e.name + " - " + e.comment : e.name, style: e.flag === "yellow" ? 3 : (e.flag === "red" ? 4 : 0) };
+      // Колонка дня: с номером — белая жирная (как у Андрея), без номера — бирюзовая.
+      cells[0] = (day !== prevDay) ? { v: day, num: true, style: 7 } : { v: " ", style: 5 };
+      prevDay = day;
+      // Наименование — серая заливка; метка 🟡/🔴 перебивает её (как цвет ячейки в Numbers).
+      cells[1] = { v: e.comment ? e.name + " - " + e.comment : e.name, style: e.flag === "yellow" ? 3 : (e.flag === "red" ? 4 : 6) };
+      // Колонки сумм — белые: заполняем пустышками, чтобы рамки были у всех четырёх.
+      for (let c = 2; c <= 5; c++) cells[c] = { v: " ", style: 0 };
       if (e.amount > 0) cells[BUCKET_COL_XL[e.bucket] != null ? BUCKET_COL_XL[e.bucket] : 3] = { v: e.amount, num: true, style: 2 };
-      cells[6] = { v: e.category || "" };
+      cells[6] = { v: e.category || " ", style: 5 };   // Категория — бирюзовая
+      cells[7] = { v: " ", style: 5 };                 // Банк — бирюзовая, заполняется руками
       rows.push(xlRow(r++, cells));
     });
     const p = ym.split("-");
@@ -144,20 +151,29 @@ function buildXlsx(entries) {
     + sheets.map((s, i) => '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>').join("")
     + '<Relationship Id="rIdS" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
     + '</Relationships>', "utf8"));
+  // Палитра снята пипеткой с «Личные финансы.numbers»: шапка и правые колонки —
+  // бирюзовые #00FFFF, «Наименование» — серая #BFBFBF, суммы — белые; всё в тонкой рамке.
   zip.addFile("xl/styles.xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
     + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
-    + '<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+    + '<fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
     + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFEB9C"/><bgColor indexed="64"/></patternFill></fill>'
-    + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFC7CE"/><bgColor indexed="64"/></patternFill></fill></fills>'
-    + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFC7CE"/><bgColor indexed="64"/></patternFill></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FF00FFFF"/><bgColor indexed="64"/></patternFill></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FFBFBFBF"/><bgColor indexed="64"/></patternFill></fill></fills>'
+    + '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'
+    + '<border><left style="thin"><color rgb="FFD9D9D9"/></left><right style="thin"><color rgb="FFD9D9D9"/></right>'
+    + '<top style="thin"><color rgb="FFD9D9D9"/></top><bottom style="thin"><color rgb="FFD9D9D9"/></bottom><diagonal/></border></borders>'
     + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-    + '<cellXfs count="5">'
-    + '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
-    + '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
-    + '<xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
-    + '<xf numFmtId="0" fontId="0" fillId="2" borderId="0" xfId="0" applyFill="1"/>'
-    + '<xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1"/>'
+    + '<cellXfs count="8">'
+    + '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>'                                                       // 0 обычная
+    + '<xf numFmtId="0" fontId="1" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment vertical="center" wrapText="1"/></xf>' // 1 шапка
+    + '<xf numFmtId="4" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>'                                  // 2 сумма
+    + '<xf numFmtId="0" fontId="0" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                          // 3 🟡 разобраться
+    + '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                          // 4 🔴 вернуть
+    + '<xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                          // 5 бирюзовая
+    + '<xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                          // 6 «Наименование»
+    + '<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"><alignment horizontal="center"/></xf>'      // 7 день
     + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>', "utf8"));
   sheets.forEach((s, i) => {
     zip.addFile("xl/worksheets/sheet" + (i + 1) + ".xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'

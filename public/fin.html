@@ -69,7 +69,11 @@ input.pill::placeholder{color:var(--faint)}
 #saveBtn:disabled{opacity:.4}
 #saveBtn.flash{background:var(--pos)}
 /* ── записи (спрятаны по умолчанию) ── */
-.recline{display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding:0 4px}
+.recline{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px;padding:0 4px;flex-wrap:wrap}
+.recline-right{display:flex;align-items:center;gap:8px}
+#dlBtn{background:#fff;border:1px solid var(--line);color:var(--muted);font-size:13px;line-height:1;
+  padding:9px 14px;border-radius:999px;white-space:nowrap;cursor:pointer;-webkit-appearance:none;appearance:none}
+#dlBtn:active{background:#f2f4f8}
 #recToggle{background:none;border:0;color:var(--faint);font-size:13px;padding:6px 0}
 #records{display:none;margin-top:4px}
 .sec h2{font-size:14px;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;padding:0 4px}
@@ -102,7 +106,6 @@ input.pill::placeholder{color:var(--faint)}
   <div id="main">
     <div class="toprow">
       <button id="bioEnroll" style="display:none" onclick="bioRegister()">Включить Face ID</button>
-      <button id="dlBtn" onclick="downloadTable()">Скачать таблицу</button>
     </div>
     <div class="spacer"></div>
 
@@ -138,7 +141,10 @@ input.pill::placeholder{color:var(--faint)}
 
     <div class="recline">
       <span class="tiny" id="totalInfo"></span>
-      <button id="recToggle" onclick="toggleRecords()">Записи ›</button>
+      <span class="recline-right">
+        <button id="dlBtn" onclick="downloadTable()">Скачать таблицу</button>
+        <button id="recToggle" onclick="toggleRecords()">Записи ›</button>
+      </span>
     </div>
     <div id="records">
       <div class="sec">
@@ -305,6 +311,14 @@ function toggleRecords() {
   $("records").style.display = recordsOpen ? "block" : "none";
   $("recToggle").textContent = recordsOpen ? "Скрыть" : "Записи ›";
 }
+// 1 запись · 2 записи · 5 записей (11–14 — «записей»)
+function plural(n, one, few, many) {
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b > 1 && b < 5) return few;
+  if (b === 1) return one;
+  return many;
+}
 function entryRow(e, showDate) {
   const fl = e.flag === "yellow" ? "🟡 " : e.flag === "red" ? "🔴 " : "";
   const nm = esc(e.name) + (e.comment ? ` <span class="cmt">- ${esc(e.comment)}</span>` : "");
@@ -334,7 +348,7 @@ async function refresh() {
   $("todayList").innerHTML = es.length
     ? es.slice().reverse().map((e) => entryRow(e)).join("")
     : `<div class="tiny" style="padding:10px 4px">Пока пусто</div>`;
-  $("totalInfo").textContent = r.total ? `${r.total} записей всего` : "";
+  $("totalInfo").textContent = r.total ? `${r.total} ${plural(r.total, "запись", "записи", "записей")} всего` : "";
 }
 
 // Выгрузка таблицы: .xlsx с раскладкой листа «Личные финансы» (открывается в Numbers).
