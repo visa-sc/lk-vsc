@@ -2649,6 +2649,68 @@ app.post("/admin/api/manager-login", (req, res) => {
   return res.json({ success: true, token, role: "manager", name: acc.name, perms: acc.perms || [], vscRestrict: acc.vscRestrict || null });
 });
 
+// ── Портальные доступы admin.voyotravel.ru (19.08.2026) ───────────────────────
+// Екатерина Зайцева ведёт свою площадку admin.voyotravel.ru сама, но вход туда —
+// общий, через аккаунты сотрудников этого приложения. Чтобы не дёргать Андрея из-за
+// каждого нового человека, ей даны эти эндпоинты: посмотреть список, завести
+// сотрудника, сбросить ему пароль, отключить.
+// ЖЁСТКИЕ ГРАНИЦЫ (проверяются здесь, на сервере, а не в её интерфейсе):
+//   • созданные ею аккаунты получают ПУСТЫЕ права (perms: []) — /vsc, /team,
+//     калькулятор и прочие разделы этого приложения им закрыты; они годятся только
+//     для входа в её портал и её же разделов (сверки и т.п.);
+//   • сбрасывать пароль и отключать она может ТОЛЬКО созданных ею (createdBy:"kate"),
+//     чужие аккаунты (Петров, Плинер и др.) ей недоступны;
+//   • права существующим сотрудникам она изменить не может вообще.
+const PORTAL_OWNER_EMAIL = "ekaterina.z@visa-sc.ru";
+function requirePortalOwner(req, res, next) {
+  const s = getStaffFromReq(req);
+  if (!s) return res.status(401).json({ success: false, message: "Не авторизован" });
+  if (s.role === "admin" || String(s.email || "").toLowerCase() === PORTAL_OWNER_EMAIL) { req.staff = s; return next(); }
+  return res.status(403).json({ success: false, message: "Нет доступа" });
+}
+app.get("/admin/api/portal-users", requirePortalOwner, (req, res) => {
+  const mgrs = loadManagers() || {};
+  const users = Object.entries(mgrs).map(([email, m]) => ({
+    email, name: m.name || email,
+    hasPassword: !!m.hash,
+    createdBy: m.createdBy || "seed",
+    lastLoginAt: m.lastLoginAt || "",
+    mine: m.createdBy === "kate"
+  })).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  res.json({ success: true, users });
+});
+app.post("/admin/api/portal-users", requirePortalOwner, (req, res) => {
+  const email = String((req.body && req.body.email) || "").toLowerCase().trim();
+  const name = String((req.body && req.body.name) || "").trim().slice(0, 120);
+  if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) return res.status(400).json({ success: false, message: "Нужен корректный e-mail" });
+  if (!name) return res.status(400).json({ success: false, message: "Нужно имя сотрудника" });
+  const mgrs = loadManagers() || {};
+  if (mgrs[email]) return res.json({ success: true, existed: true, user: { email, name: mgrs[email].name } });
+  mgrs[email] = { name, salt: "", hash: "", createdAt: new Date().toISOString(), lastLoginAt: "", perms: [], vscRestrict: null, createdBy: "kate" };
+  saveManagers();
+  res.json({ success: true, created: true, user: { email, name } });
+});
+app.post("/admin/api/portal-users/reset", requirePortalOwner, (req, res) => {
+  const email = String((req.body && req.body.email) || "").toLowerCase().trim();
+  const mgrs = loadManagers() || {};
+  const m = mgrs[email];
+  if (!m) return res.status(404).json({ success: false, message: "Нет такого сотрудника" });
+  if (req.staff.role !== "admin" && m.createdBy !== "kate") return res.status(403).json({ success: false, message: "Этот аккаунт заводили не вы — обратитесь к Андрею" });
+  m.salt = ""; m.hash = "";
+  saveManagers();
+  res.json({ success: true });
+});
+app.post("/admin/api/portal-users/remove", requirePortalOwner, (req, res) => {
+  const email = String((req.body && req.body.email) || "").toLowerCase().trim();
+  const mgrs = loadManagers() || {};
+  const m = mgrs[email];
+  if (!m) return res.status(404).json({ success: false, message: "Нет такого сотрудника" });
+  if (req.staff.role !== "admin" && m.createdBy !== "kate") return res.status(403).json({ success: false, message: "Этот аккаунт заводили не вы — обратитесь к Андрею" });
+  delete mgrs[email];
+  saveManagers();
+  res.json({ success: true });
+});
+
 app.post("/admin/api/manager-logout", requireStaff, (req, res) => {
   if (req.staff && req.staff.token) { managerSessions.delete(req.staff.token); saveManagerSessions(); }
   return res.json({ success: true });
@@ -2723,7 +2785,9 @@ app.post("/admin/api/manager-has-password", (req, res) => {
 
 // «Кто я» — роль + имя (для фронта). Принимает админский и менеджерский токен.
 app.get("/admin/api/whoami", requireStaff, (req, res) => {
-  return res.json({ success: true, role: req.staff.role, name: req.staff.name, perms: req.staff.perms || [], vscRestrict: req.staff.vscRestrict || null });
+  // email добавлен 19.08.2026: сервис admin.voyotravel.ru различает людей по нему
+  // (доступы к разделам портала); человек и так знает свой e-mail — утечки нет.
+  return res.json({ success: true, role: req.staff.role, name: req.staff.name, email: req.staff.email || "", perms: req.staff.perms || [], vscRestrict: req.staff.vscRestrict || null });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
