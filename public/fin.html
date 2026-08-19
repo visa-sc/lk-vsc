@@ -428,6 +428,9 @@ function toggleRecords() {
   recordsOpen = !recordsOpen;
   $("records").style.display = recordsOpen ? "block" : "none";
   $("recToggle").textContent = recordsOpen ? "Скрыть" : "Записи ›";
+  // открытые записи: интерфейс до упора вверх; «Скрыть» — обратно на исходный уровень
+  $("main").classList.toggle("hist", recordsOpen);
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 // 1 запись · 2 записи · 5 записей (11–14 — «записей»)
 function plural(n, one, few, many) {
@@ -569,9 +572,6 @@ async function toggleDays() {
   daysOpen = !daysOpen;
   $("days").style.display = daysOpen ? "block" : "none";
   $("daysBtn").textContent = daysOpen ? "Свернуть" : "История ›";
-  // открытая история: интерфейс до упора вверх; скрыли — обратно на исходный уровень
-  $("main").classList.toggle("hist", daysOpen);
-  window.scrollTo({ top: 0, behavior: "smooth" });
   if (daysOpen) await loadDays();
 }
 
