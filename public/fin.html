@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="·">
+<meta name="apple-mobile-web-app-title" content="Life Investments">
 <meta name="theme-color" content="#f2f5f9">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<title>·</title>
+<link rel="apple-touch-icon" href="/fin-icon.png">
+<title>Life Investments</title>
 <style>
 /* Светлый «воздушный» скин в духе клиентского ЛК (#3589BD, мягкие тени) */
 :root{
@@ -38,14 +38,10 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-grad
 #main{display:none}
 .toprow{display:flex;justify-content:flex-end;align-items:center;gap:10px;min-height:26px;padding-top:calc(env(safe-area-inset-top) + 8px)}
 #bioEnroll{background:var(--card);border:1px solid var(--line);border-radius:14px;color:var(--muted);font-size:12px;padding:6px 13px;box-shadow:var(--shadow)}
-/* переключатель валюты; по умолчанию всегда RUB */
-.curr{display:flex;gap:6px;margin-bottom:10px}
-.cseg{padding:7px 18px;border-radius:18px;border:1px solid var(--line);background:var(--card);color:var(--muted);font-size:13px;font-weight:600;box-shadow:var(--shadow);cursor:pointer;user-select:none}
-.cseg.on{background:var(--acc);border-color:var(--acc);color:#fff}
-/* × ÷ — справа в ряду валют, только при USD (подставляются в поле суммы) */
-.mathbtn{width:44px;height:34px;border-radius:17px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:19px;font-weight:600;display:none;flex:0 0 auto;box-shadow:var(--shadow)}
-.curr.usd .mathbtn{display:block}
-.curr .mathbtn:first-of-type{margin-left:auto}
+/* операторы − + × ÷ справа над суммой: подставляются в поле, сумма считается выражением */
+.curr{display:flex;gap:7px;margin-bottom:10px;justify-content:flex-end}
+.mathbtn{width:44px;height:34px;border-radius:17px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:19px;font-weight:600;flex:0 0 auto;box-shadow:var(--shadow)}
+.mathbtn:active{background:var(--bg)}
 .amount-row .rub{white-space:nowrap}
 .amount-row .rub.calc{font-size:15px;font-weight:600;color:var(--muted)}
 .amount-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:10px 20px;box-shadow:var(--shadow-hi)}
@@ -127,10 +123,10 @@ input.pill::placeholder{color:var(--faint)}
     <div class="spacer"></div>
 
     <div class="curr" id="currRow">
-      <div class="cseg on" id="curRub" onclick="setCurr(false)">RUB</div>
-      <div class="cseg" id="curUsd" onclick="setCurr(true)">USD</div>
-      <button class="mathbtn" id="mulBtn" onmousedown="event.preventDefault()" onclick="insMath('*')">×</button>
-      <button class="mathbtn" id="divBtn" onmousedown="event.preventDefault()" onclick="insMath('/')">÷</button>
+      <button class="mathbtn" onmousedown="event.preventDefault()" onclick="insMath('-')">−</button>
+      <button class="mathbtn" onmousedown="event.preventDefault()" onclick="insMath('+')">+</button>
+      <button class="mathbtn" onmousedown="event.preventDefault()" onclick="insMath('*')">×</button>
+      <button class="mathbtn" onmousedown="event.preventDefault()" onclick="insMath('/')">÷</button>
     </div>
     <div class="amount-row">
       <input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off">
@@ -276,31 +272,29 @@ function setBucket(b) {
   document.querySelectorAll(".bk").forEach((x) => x.classList.toggle("sel", x.dataset.b === b));
 }
 
-// ── валюта: RUB по умолчанию; USD = выражение «45*79.8», в таблицу — формулой ──
-let usd = false;
-function setCurr(u) {
-  usd = u;
-  $("curRub").classList.toggle("on", !u);
-  $("curUsd").classList.toggle("on", u);
-  $("currRow").classList.toggle("usd", u);
-  updateRub();
-}
+// ── сумма может быть выражением: «45*79.8» (валюта по курсу), «3540/2» (пополам).
+// Такая запись уходит в таблицу ФОРМУЛОЙ, рядом с полем — живой итог в рублях.
 function insMath(ch) {
   const a = $("amount");
   a.value += ch;
   a.focus();
   updateRub();
 }
+function normExpr(s) {
+  return String(s || "").replace(/,/g, ".").replace(/\s+/g, "").replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
+}
 function calcExpr(s) {
-  s = String(s || "").replace(/,/g, ".").replace(/\s+/g, "").replace(/×/g, "*").replace(/÷/g, "/");
+  s = normExpr(s);
   if (!s || !/^[0-9.+\-*/()]+$/.test(s)) return NaN;
   try { const v = Function('"use strict";return(' + s + ')')(); return isFinite(v) ? v : NaN; } catch (e) { return NaN; }
 }
+function isExpr(s) { return /[+\-*/×÷]/.test(normExpr(s).slice(1)); } // минус первым знаком — не выражение
 function updateRub() {
   const el = $("rubSign");
-  if (!usd) { el.textContent = "₽"; el.classList.remove("calc"); return; }
-  const v = calcExpr($("amount").value);
-  el.textContent = v > 0 ? "= " + fmt(Math.round(v * 100) / 100) + " ₽" : "";
+  const raw = $("amount").value;
+  if (!isExpr(raw)) { el.textContent = "₽"; el.classList.remove("calc"); return; }
+  const v = calcExpr(raw);
+  el.textContent = v > 0 ? "= " + fmt(Math.round(v * 100) / 100) + " ₽" : "₽";
   el.classList.add("calc");
 }
 $("amount").addEventListener("input", updateRub);
@@ -338,26 +332,73 @@ $("name").addEventListener("input", () => {
 });
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
+// ── офлайн-очередь: без связи записи копятся в localStorage и уходят сами ──
+function getQueue() { try { return JSON.parse(localStorage.getItem("finQueue") || "[]"); } catch (e) { return []; } }
+function setQueue(q) { localStorage.setItem("finQueue", JSON.stringify(q)); }
+let flushing = false;
+async function flushQueue() {
+  if (flushing || !token) return;
+  const q0 = getQueue();
+  if (!q0.length) return;
+  flushing = true;
+  try {
+    for (const item of q0) {
+      let r;
+      try { r = await api("/fin/api/add", { method: "POST", body: JSON.stringify(item) }); }
+      catch (e) { if (String(e.message) === "auth") return; break; } // нет связи — позже
+      // успех или отказ сервера (в т.ч. дубль) — из очереди убираем
+      setQueue(getQueue().filter((x) => x.cid !== item.cid));
+      if (!r.success) toast("Запись не принята: " + (r.message || ""));
+    }
+    if (!getQueue().length) refresh().catch(() => {});
+  } finally { flushing = false; }
+}
+window.addEventListener("online", () => flushQueue());
+setInterval(() => flushQueue().catch(() => {}), 20000);
+
+function clearForm() {
+  $("amount").value = ""; $("name").value = ""; setBucket("ok"); $("category").value = ""; $("comment").value = ""; toggleFlag(flag); updateRub(); renderChips("");
+  $("saveBtn").classList.add("flash"); $("saveBtn").textContent = "Внесено ✓";
+  setTimeout(() => { $("saveBtn").classList.remove("flash"); $("saveBtn").textContent = "Внести"; }, 900);
+}
+
 // ── сохранение ──
 async function saveEntry() {
   const raw = $("amount").value.trim();
-  const amount = usd ? calcExpr(raw) : parseFloat(raw.replace(",", "."));
-  const formula = usd && raw ? raw.replace(/,/g, ".").replace(/\s+/g, "").replace(/×/g, "*").replace(/÷/g, "/") : "";
+  const expr = isExpr(raw);
+  const amount = expr ? calcExpr(raw) : parseFloat(raw.replace(",", "."));
+  const formula = expr ? normExpr(raw) : "";
   const name = $("name").value.trim();
   if (!name) { toast("Заполни название"); return; }
-  if (usd && raw && !(amount > 0)) { toast("Не могу посчитать выражение"); return; }
+  if (expr && !(amount > 0)) { toast("Не могу посчитать выражение"); return; }
   // с меткой 🟡/🔴 можно без суммы — уйдёт строкой-заметкой
   if (!(amount > 0) && !flag) { toast("Заполни сумму и название"); return; }
+  const payload = {
+    name, amount: amount > 0 ? Math.round(amount * 100) / 100 : 0, formula, bucket,
+    category: $("category").value, date: $("date").value, flag, comment: $("comment").value.trim(),
+    cid: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2)),
+    at: Date.now(),
+  };
   $("saveBtn").disabled = true;
   try {
-    const r = await api("/fin/api/add", { method: "POST", body: JSON.stringify({ name, amount: amount > 0 ? amount : 0, formula, bucket, category: $("category").value, date: $("date").value, flag, comment: $("comment").value.trim() }) });
+    // не даём интерфейсу «тупить»: 6 секунд на попытку, дальше — офлайн-очередь
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    let r;
+    try {
+      r = await api("/fin/api/add", { method: "POST", body: JSON.stringify(payload), signal: ctrl.signal });
+    } finally { clearTimeout(timer); }
     if (!r.success) { toast(r.message || "Ошибка"); return; }
-    $("amount").value = ""; $("name").value = ""; setBucket("ok"); $("category").value = ""; $("comment").value = ""; toggleFlag(flag); setCurr(false); renderChips("");
-    $("saveBtn").classList.add("flash"); $("saveBtn").textContent = "Внесено ✓";
-    setTimeout(() => { $("saveBtn").classList.remove("flash"); $("saveBtn").textContent = "Внести"; }, 900);
+    clearForm();
     await refresh();
-  } catch (e) { if (String(e.message) !== "auth") toast("Ошибка сети"); }
-  finally { $("saveBtn").disabled = false; }
+  } catch (e) {
+    if (String(e.message) === "auth") return;
+    // нет связи: фиксируем локально, уйдёт само при появлении интернета
+    setQueue(getQueue().concat([payload]));
+    clearForm();
+    toast("Нет связи — сохранено, уйдёт само");
+    renderToday(lastState);
+  } finally { $("saveBtn").disabled = false; }
 }
 
 // ── записи ──
@@ -379,7 +420,7 @@ function entryRow(e, showDate) {
   const nm = esc(e.name) + (e.comment ? ` <span class="cmt">- ${esc(e.comment)}</span>` : "");
   return `<div class="swipe" data-id="${e.id}">
     <button class="del">Удалить</button>
-    <div class="entry">
+    <div class="entry${e.pending ? " pending" : ""}">
       <div class="dot ${e.bucket}"></div>
       <div class="nm"><b>${fl}${nm}</b><span>${showDate ? e.date : ""}</span></div>
       <div class="amt">${e.amount > 0 ? fmt(e.amount) + " ₽" : ""}</div>
@@ -418,26 +459,52 @@ document.addEventListener("click", async (ev) => {
   const del = ev.target.closest(".swipe .del");
   if (!del) { if (!ev.target.closest(".swipe")) closeSwipes(); return; }
   const s = del.closest(".swipe");
+  // запись из офлайн-очереди — удаляем локально, на сервере её ещё нет
+  if (s.dataset.id.indexOf("local-") === 0) {
+    setQueue(getQueue().filter((x) => "local-" + x.cid !== s.dataset.id));
+    toast("Удалено"); renderToday(lastState);
+    return;
+  }
   del.disabled = true;
-  const r = await api("/fin/api/delete/" + s.dataset.id, { method: "POST" });
-  if (r.success) { toast("Удалено"); await refresh(); if (daysOpen) await loadDays(); }
-  else { del.disabled = false; toast(r.message || "Ошибка"); }
+  try {
+    const r = await api("/fin/api/delete/" + s.dataset.id, { method: "POST" });
+    if (r.success) { toast("Удалено"); await refresh(); if (daysOpen) await loadDays(); }
+    else { del.disabled = false; toast(r.message || "Ошибка"); }
+  } catch (e) { del.disabled = false; if (String(e.message) !== "auth") toast("Нет связи — удалить можно онлайн"); }
 });
 
+let lastState = null;
+function renderToday(r) {
+  const es = (r && r.entries || []).slice();
+  // офлайн-очередь показываем сразу, пунктиром (ещё не на сервере)
+  const q = getQueue().map((i) => ({ ...i, id: "local-" + i.cid, pending: true }));
+  const all = es.concat(q);
+  $("todaySum").textContent = all.length ? fmt(all.reduce((s, e) => s + (e.amount || 0), 0)) + " ₽" : "";
+  $("todayList").innerHTML = all.length
+    ? all.slice().reverse().map((e) => entryRow(e)).join("")
+    : `<div class="tiny" style="padding:10px 4px">Пока пусто</div>`;
+  const total = (r && r.total || 0) + q.length;
+  $("totalInfo").textContent = total ? `${total} ${plural(total, "запись", "записи", "записей")} всего` : "";
+}
 async function refresh() {
-  const r = await api("/fin/api/state");
-  if (!r.success) return;
+  let r;
+  try {
+    r = await api("/fin/api/state");
+    if (!r.success) return;
+    localStorage.setItem("finCache", JSON.stringify(r));
+  } catch (e) {
+    if (String(e.message) === "auth") throw e;
+    // офлайн: рисуем из кэша + очереди, приложение не тупит
+    try { r = JSON.parse(localStorage.getItem("finCache") || "null"); } catch (_) { r = null; }
+    if (!r) { renderToday(null); return; }
+  }
+  lastState = r;
   FREQ = r.frequent || []; TODAY = r.today;
   if (!$("date").value || $("date").value === $("date").dataset.auto) {
     $("date").value = TODAY; $("date").dataset.auto = TODAY;
   }
   renderChips($("name").value);
-  const es = r.entries || [];
-  $("todaySum").textContent = es.length ? fmt(es.reduce((s, e) => s + e.amount, 0)) + " ₽" : "";
-  $("todayList").innerHTML = es.length
-    ? es.slice().reverse().map((e) => entryRow(e)).join("")
-    : `<div class="tiny" style="padding:10px 4px">Пока пусто</div>`;
-  $("totalInfo").textContent = r.total ? `${r.total} ${plural(r.total, "запись", "записи", "записей")} всего` : "";
+  renderToday(r);
 }
 
 // Выгрузка таблицы: .xlsx с раскладкой листа «Личные финансы» (открывается в Numbers).
@@ -491,8 +558,14 @@ function toast(t) {
 setInterval(() => { if ($("main").style.display === "block" && !document.hidden) refresh().catch(() => {}); }, 30000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && token) refresh().catch(() => {}); });
 
+// офлайн-оболочка: страница и иконка кэшируются, открывается без сети
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/fin-sw.js", { scope: "/fin" }).catch(() => {});
+
 (async function init() {
-  if (token) { try { showMain(); await refresh(); return; } catch (e) { if (String(e.message) !== "auth") return; } }
+  if (token) {
+    try { showMain(); await refresh(); flushQueue().catch(() => {}); return; }
+    catch (e) { if (String(e.message) !== "auth") return; }
+  }
   showLogin();
   // как в админке: сразу пробуем биометрию, БЕЗ предварительных whoami-запросов
   if (localStorage.getItem("finBio") && window.PublicKeyCredential) bioLogin();

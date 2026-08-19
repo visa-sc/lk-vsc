@@ -348,6 +348,16 @@ function mount(app, deps) {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.sendFile(path.join(__dirname, "public", "fin.html"));
   });
+  // Иконка «растущий график» и сервис-воркер офлайн-режима (Life Investments)
+  app.get("/fin-icon.png", (req, res) => {
+    res.set("Cache-Control", "public, max-age=86400");
+    res.sendFile(path.join(__dirname, "public", "fin-icon.png"));
+  });
+  app.get("/fin-sw.js", (req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.type("application/javascript");
+    res.sendFile(path.join(__dirname, "public", "fin-sw.js"));
+  });
 
   // Стартовые данные для страницы: частые покупки (сид + выученные), категории.
   app.get("/fin/api/state", requireFin, (req, res) => {
@@ -395,11 +405,19 @@ function mount(app, deps) {
     const flag = ["yellow", "red"].includes(b.flag) ? b.flag : "";
     const comment = String(b.comment || "").trim().slice(0, 300);
     const st = store();
+    // офлайн-очередь шлёт повторно при обрыве связи — дедупликация по клиентскому cid
+    let cid = String(b.cid || "").trim().slice(0, 64);
+    if (cid && !/^[a-zA-Z0-9-]{6,64}$/.test(cid)) cid = "";
+    if (cid) {
+      const dup = st.entries.find((x) => x.cid === cid);
+      if (dup) return res.json({ success: true, entry: dup, dedup: true });
+    }
     const e = {
       id: crypto.randomBytes(8).toString("hex"),
       at: Date.now(),
       date, name, amount, bucket, category, flag, comment,
       formula: formula || "",
+      cid: cid || "",
       synced: false,
     };
     st.entries.push(e);
