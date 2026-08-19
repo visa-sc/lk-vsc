@@ -25,7 +25,7 @@ body{min-height:100vh}
 body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(180deg,#f7fafd 0%,#f2f5f9 45%,#edf1f7 100%)}
 .wrap{max-width:520px;margin:0 auto;padding:0 18px 48px}
 /* форма опущена ближе к середине экрана (просьба Андрея) */
-#main .spacer{height:max(18vh, calc(env(safe-area-inset-top) + 72px))}
+#main .spacer{height:max(13vh, calc(env(safe-area-inset-top) + 48px))}
 .muted{color:var(--muted);font-size:13px}
 .tiny{color:var(--faint);font-size:12px}
 /* ── вход ── */
@@ -196,12 +196,13 @@ async function api(path, opts = {}) {
 function showLogin() { $("login").style.display = "flex"; $("main").style.display = "none"; updateBioBtn(); }
 function showMain() {
   $("login").style.display = "none"; $("main").style.display = "block";
-  $("bioEnroll").style.display = localStorage.getItem("finBio") ? "none" : "";
-  // ключ Face ID живёт в связке ключей и переживает переустановку иконки:
-  // если на сервере он уже есть — не предлагать «включить», а сразу помнить
+  // кнопка «Включить Face ID» скрыта по умолчанию; показываем ТОЛЬКО когда
+  // сервер подтвердил, что ключа ещё нет (ключ переживает переустановку иконки)
+  $("bioEnroll").style.display = "none";
   if (!localStorage.getItem("finBio") && window.PublicKeyCredential) {
     fetch("/fin/api/bio/has", { method: "POST" }).then((r) => r.json()).then((r) => {
-      if (r.has) { localStorage.setItem("finBio", "1"); $("bioEnroll").style.display = "none"; }
+      if (r.has) localStorage.setItem("finBio", "1");
+      else $("bioEnroll").style.display = "";
     }).catch(() => {});
   }
 }
