@@ -25,8 +25,11 @@ body{min-height:100vh}
 body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(180deg,#f7fafd 0%,#f2f5f9 45%,#edf1f7 100%)}
 .wrap{max-width:520px;margin:0 auto;padding:0 18px 48px}
 /* форма опущена ближе к середине экрана (просьба Андрея) */
-/* форма сознательно опущена пониже — так ближе тянуться пальцем (Андрей, 19.08) */
-#main .spacer{height:max(18vh, calc(env(safe-area-inset-top) + 72px))}
+/* форма сознательно опущена пониже — так ближе тянуться пальцем (Андрей, 19.08);
+   при открытой истории отступ схлопывается — интерфейс уезжает до упора вверх */
+/* height и min-height порознь: max()↔calc() браузер анимировать не умеет */
+#main .spacer{height:18vh;min-height:calc(env(safe-area-inset-top) + 72px);transition:height .28s ease,min-height .28s ease}
+#main.hist .spacer{height:0px;min-height:calc(env(safe-area-inset-top) + 6px)}
 .muted{color:var(--muted);font-size:13px}
 .tiny{color:var(--faint);font-size:12px}
 /* ── вход ── */
@@ -566,6 +569,9 @@ async function toggleDays() {
   daysOpen = !daysOpen;
   $("days").style.display = daysOpen ? "block" : "none";
   $("daysBtn").textContent = daysOpen ? "Свернуть" : "История ›";
+  // открытая история: интерфейс до упора вверх; скрыли — обратно на исходный уровень
+  $("main").classList.toggle("hist", daysOpen);
+  window.scrollTo({ top: 0, behavior: "smooth" });
   if (daysOpen) await loadDays();
 }
 
