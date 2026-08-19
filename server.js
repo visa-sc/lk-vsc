@@ -781,12 +781,18 @@ function createAdminSession() {
 function isAdminTokenValid(token) {
   if (!token || typeof token !== "string") return false;
   const exp = adminSessions.get(token);
-  if (!exp) return false;
-  if (Date.now() > exp) {
-    adminSessions.delete(token);
-    return false;
+  if (exp) {
+    if (Date.now() > exp) { adminSessions.delete(token); return false; }
+    return true;
   }
-  return true;
+  // Личная staff-сессия Андрея (director@) приравнена к админ-коду (19.08.2026):
+  // он входит на admin.voyotravel.ru по e-mail+паролю и должен видеть всё так же,
+  // как при входе кодом. Пароль задаёт только он сам; другим staff это не даёт ничего.
+  try {
+    const m = getManagerSession(token);
+    if (m && String(m.email || "").toLowerCase() === "director@visa-sc.ru") return true;
+  } catch (_) {}
+  return false;
 }
 
 function requireAdmin(req, res, next) {
