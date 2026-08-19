@@ -281,7 +281,12 @@ function mount(app, deps) {
       r.end(data);
     };
     const retry = () => {
-      if (attempt >= 3) { console.error("wazzup relay: не доставлено в Google Script после 3 попыток"); return; }
+      if (attempt >= 3) {
+        console.error("wazzup relay: не доставлено в Google Script после 3 попыток");
+        // копим недоставленное для повторной отправки (ночной цикл дошлёт)
+        try { fs.appendFileSync(path.join(__dirname, ".wazzupRelayFailed.ndjson"), JSON.stringify({ t: new Date().toISOString(), b: body }) + "\n"); } catch (e) {}
+        return;
+      }
       setTimeout(() => wazzupRelay(body, attempt + 1), attempt * 15000);
     };
     try { post(WAZZUP_RELAY, 0); } catch (e) { retry(); }
