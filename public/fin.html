@@ -194,7 +194,17 @@ async function api(path, opts = {}) {
 }
 
 function showLogin() { $("login").style.display = "flex"; $("main").style.display = "none"; updateBioBtn(); }
-function showMain() { $("login").style.display = "none"; $("main").style.display = "block"; $("bioEnroll").style.display = localStorage.getItem("finBio") ? "none" : ""; }
+function showMain() {
+  $("login").style.display = "none"; $("main").style.display = "block";
+  $("bioEnroll").style.display = localStorage.getItem("finBio") ? "none" : "";
+  // ключ Face ID живёт в связке ключей и переживает переустановку иконки:
+  // если на сервере он уже есть — не предлагать «включить», а сразу помнить
+  if (!localStorage.getItem("finBio") && window.PublicKeyCredential) {
+    fetch("/fin/api/bio/has", { method: "POST" }).then((r) => r.json()).then((r) => {
+      if (r.has) { localStorage.setItem("finBio", "1"); $("bioEnroll").style.display = "none"; }
+    }).catch(() => {});
+  }
+}
 
 // ── Face ID (WebAuthn) ──
 const b2a = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
@@ -246,7 +256,14 @@ async function bioRegister() {
     const r = await api("/fin/api/bio/register-verify", { method: "POST", body: JSON.stringify({ attestationResponse: payload }) });
     if (r.success) { localStorage.setItem("finBio", "1"); $("bioEnroll").style.display = "none"; toast("Face ID включён"); }
     else toast(r.message || "Не получилось");
-  } catch (e) { if (String(e.message) !== "auth") toast("Face ID отменён"); }
+  } catch (e) {
+    if (String(e.message) === "auth") return;
+    // ключ уже зарегистрирован на этом устройстве — просто вспоминаем его
+    if (e && e.name === "InvalidStateError") {
+      localStorage.setItem("finBio", "1"); $("bioEnroll").style.display = "none";
+      toast("Face ID уже был включён");
+    } else toast("Face ID отменён");
+  }
 }
 
 async function doLogin() {
