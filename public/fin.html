@@ -25,7 +25,8 @@ body{min-height:100vh}
 body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(180deg,#f7fafd 0%,#f2f5f9 45%,#edf1f7 100%)}
 .wrap{max-width:520px;margin:0 auto;padding:0 18px 48px}
 /* форма опущена ближе к середине экрана (просьба Андрея) */
-#main .spacer{height:max(13vh, calc(env(safe-area-inset-top) + 48px))}
+/* форма сознательно опущена пониже — так ближе тянуться пальцем (Андрей, 19.08) */
+#main .spacer{height:max(18vh, calc(env(safe-area-inset-top) + 72px))}
 .muted{color:var(--muted);font-size:13px}
 .tiny{color:var(--faint);font-size:12px}
 /* ── вход ── */
