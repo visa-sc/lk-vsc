@@ -2661,11 +2661,11 @@ app.post("/admin/api/manager-login", (req, res) => {
 //   • сбрасывать пароль и отключать она может ТОЛЬКО созданных ею (createdBy:"kate"),
 //     чужие аккаунты (Петров, Плинер и др.) ей недоступны;
 //   • права существующим сотрудникам она изменить не может вообще.
-const PORTAL_OWNER_EMAIL = "ekaterina.z@visa-sc.ru";
+const PORTAL_OWNER_EMAILS = ["ekaterina.z@visa-sc.ru", "director@visa-sc.ru"]; // Катя + Андрей
 function requirePortalOwner(req, res, next) {
   const s = getStaffFromReq(req);
   if (!s) return res.status(401).json({ success: false, message: "Не авторизован" });
-  if (s.role === "admin" || String(s.email || "").toLowerCase() === PORTAL_OWNER_EMAIL) { req.staff = s; return next(); }
+  if (s.role === "admin" || PORTAL_OWNER_EMAILS.indexOf(String(s.email || "").toLowerCase()) >= 0) { req.staff = s; return next(); }
   return res.status(403).json({ success: false, message: "Нет доступа" });
 }
 app.get("/admin/api/portal-users", requirePortalOwner, (req, res) => {
