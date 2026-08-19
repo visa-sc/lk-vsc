@@ -445,9 +445,10 @@ app.post("/api/auth/register", async (req, res) => {
     try {
       const pk = bloyPk(phone), b = brefLoad(), inviterPk = b.byCode[promoCodeRaw];
       if (pk && inviterPk && inviterPk !== pk && !b.referredBy[pk]) {
-        b.referredBy[pk] = { refPhone: inviterPk, code: promoCodeRaw, ts: Date.now(), status: "pending", src: "register" };
+        const rNew = (b.referredBy[pk] = { refPhone: inviterPk, code: promoCodeRaw, ts: Date.now(), status: "pending", src: "register" });
         brefSave();
-        console.log(`BETA-LOYALTY: регистрация по промокоду ${promoCodeRaw} — ${bloyMask(pk)}`);
+        bloyCreditWelcome(pk, rNew, "Приветственные баллы за регистрацию по приглашению");
+        console.log(`BETA-LOYALTY: регистрация по промокоду ${promoCodeRaw} — ${bloyMask(pk)}, приветственные ${BLOY_REF_FRIEND}`);
       }
     } catch (_) {}
     return res.json({
@@ -1589,13 +1590,14 @@ const BLOY_REDEEM_SHARE = 0.30;         // баллами до 30% следую�
 const BLOY_START_DAY = "2026-08-11";
 const BLOY_START_TS = Date.UTC(2026, 7, 11, 0, 0, 0) - 3 * 3600 * 1000;   // 00:00 МСК в ms
 // ── Какие статусы amoCRM что значат для программы (сверено со скриншотами Андрея) ──
-// SUCCESS — сделка успешно завершена (финальный успешный статус воронки). ТОЛЬКО по
-// ним начисляется кэшбэк: 138231/142 «Успешно реализовано (для ВНЖ)»,
-// 1309524/142 «Успешно реализовано», 1312578/142 «Пакет документов готов».
+// SUCCESS — сделка успешно завершена. ТОЛЬКО по этим двум статусам начисляется
+// кэшбэк (решение Андрея 19.08): 138231/142 «Успешно реализовано (для ВНЖ)» в
+// Отделе Продаж и 1309524/142 «Успешно реализовано» в Отделе по работе с Клиентами.
+// «Пакет документов готов» (Отдел Оформления) из набора УБРАН — это не завершение
+// сделки, а промежуточный этап, и сделка уходила с него дальше по процессу.
 const BLOY_SUCCESS_STATUSES = [
   { pipeline_id: 138231, status_id: 142 },
-  { pipeline_id: 1309524, status_id: 142 },
-  { pipeline_id: 1312578, status_id: 142 }
+  { pipeline_id: 1309524, status_id: 142 }
 ];
 // REFUND — возврат: сделка выпадает из программы, начисленное по ней аннулируется.
 const BLOY_REFUND_STATUSES = [
@@ -1606,8 +1608,8 @@ const BLOY_REFUND_STATUSES = [
 const BLOY_PAID_STATUSES = CITY_REV_STATUSES.filter(
   (s) => !BLOY_REFUND_STATUSES.some((r) => r.pipeline_id === s.pipeline_id && r.status_id === s.status_id)
 );
-const BLOY_REF_INVITER = 2000;          // баллы пригласившему за оформившегося друга
-const BLOY_REF_FRIEND = 2000;           // приветственные баллы другу (бюджет лояльности 4000 ₽/сделка)
+const BLOY_REF_INVITER = 2000;          // пригласившему — ПОСЛЕ оплаты друга
+const BLOY_REF_FRIEND = 2000;           // другу — СРАЗУ при привязке промокода (решение Андрея 19.08)
 // Статусы и ПРОГРЕССИВНАЯ ставка кэшбэка (решение Андрея 08.08): чем больше бюджет
 // клиента у нас, тем выше процент. Начисление СТУПЕНЧАТОЕ (уточнение 16.08, см.
 // bloyPointsFor): первая платная ступень — на всю сумму, дальше повышенный процент
@@ -1669,10 +1671,31 @@ function bloyActiveRedeem(pk) { const r = brefRedeems(); const list = Object.val
 // Оплатил ли клиент хоть одну сделку в программе — из снимка последнего пересчёта.
 function bloyHasPaid(pk) { const d = bloyLoad(); return ((d && d.paidPhones) || []).some((p) => bloyPhoneEq(p, pk)); }
 // Начисление пары «пригласивший + друг». Идемпотентно по статусу привязки.
+// Приветственные баллы ДРУГУ — сразу в момент привязки промокода (решение Андрея
+// 19.08): чтобы человек увидел баллы на счету и мог сразу ими воспользоваться.
+// Идемпотентно: метка welcomeTs на привязке не даёт начислить дважды.
+// Уже начисляли приветственные? Метка на привязке — быстрый путь; журнал —
+// страховка для привязок, созданных до появления метки (иначе доначислили бы дважды).
+function bloyHasWelcome(friendPk, r) {
+  if (r && r.welcomeTs) return true;
+  const old = brefLedger(friendPk).find((e) => e.type === "welcome" && (Number(e.points) || 0) > 0);
+  if (old) { if (r) r.welcomeTs = old.ts; return true; }
+  return false;
+}
+function bloyCreditWelcome(friendPk, r, note) {
+  if (!r || bloyHasWelcome(friendPk, r)) return false;
+  const b = brefLoad(), now = Date.now();
+  (b.ledger[friendPk] = b.ledger[friendPk] || []).push({ ts: now, type: "welcome", points: BLOY_REF_FRIEND, note: note || "Приветственные баллы по приглашению" });
+  r.welcomeTs = now; brefSave();
+  return true;
+}
+// Баллы ПРИГЛАСИВШЕМУ — только после оплаты друга (сделка в платёжных статусах и
+// заполнен «Бюджет»). Приветственные другу к этому моменту уже начислены; если
+// привязка старая и их нет — доначисляем здесь же.
 function bloyCreditReferral(friendPk, r, note) {
   const b = brefLoad(), now = Date.now();
+  bloyCreditWelcome(friendPk, r);
   (b.ledger[r.refPhone] = b.ledger[r.refPhone] || []).push({ ts: now, type: "referral", points: BLOY_REF_INVITER, note: note || ("Друг оформился (" + bloyMask(friendPk) + ")") });
-  (b.ledger[friendPk] = b.ledger[friendPk] || []).push({ ts: now, type: "welcome", points: BLOY_REF_FRIEND, note: "Приветственные баллы по приглашению" });
   r.status = "qualified"; r.qualifiedTs = now; brefSave();
 }
 // Сравнение телефонов. ВАЖНО: раньше здесь было «один заканчивается другим», и
@@ -1719,6 +1742,10 @@ async function runBetaLoyalty(trigger) {
     const paidSince = (l) => { const t = payTs(l); return t != null && t >= BLOY_START_TS; };
     const successLeads = (await fetchByStatuses(BLOY_SUCCESS_STATUSES)).filter(paidSince);   // кэшбэк
     const paidLeads = (await fetchByStatuses(BLOY_PAID_STATUSES)).filter(paidSince);         // квалификация реферала
+    // Возвраты берём БЕЗ фильтра по дате оплаты: если поле даты на возврате
+    // почистили, сделка всё равно должна выйти из программы.
+    const refundLeads = await fetchByStatuses(BLOY_REFUND_STATUSES);
+    const refundIds = new Set(refundLeads.map((l) => Number(l.id)));
 
     // Телефоны и имена — одним махом по обоим наборам.
     const cids = [...new Set(successLeads.concat(paidLeads).map(mainCid).filter(Boolean))];
@@ -1730,17 +1757,33 @@ async function runBetaLoyalty(trigger) {
       ((data && data._embedded && data._embedded.contacts) || []).forEach((c) => { cmap[c.id] = { name: c.name || "", phones: extractPhonesFromContact(c) }; });
     }
 
+    // Реестр «однажды успешных» сделок (решение Андрея 19.08). Сделка, попавшая в
+    // успешный статус, остаётся в программе НАВСЕГДА — даже если её потом двинули
+    // дальше по процессу и она вышла из успешного статуса. Иначе у клиента исчезали
+    // уже показанные ему баллы. Из реестра сделка уходит ТОЛЬКО при возврате.
+    const registry = Object.assign({}, (bloyLoad() || {}).qualifiedDeals || {});
+    const remember = (l) => {
+      const price = Number(l.price) || 0; if (price <= 0) return;     // бюджет сделки
+      const cid = mainCid(l); const info = cid ? cmap[cid] : null;
+      if (!cid || !info || !info.phones.length) return;
+      const ts = payTs(l) || Number(l.updated_at || l.created_at || 0) * 1000;   // дата оплаты = дата начисления
+      registry[l.id] = { id: l.id, name: l.name || "", price, ts, contactId: cid, contactName: info.name, phones: info.phones };
+    };
+    successLeads.forEach(remember);
+    // Пока сделка видна среди оплаченных — освежаем сумму, телефоны и имя контакта.
+    paidLeads.forEach((l) => { if (registry[l.id]) remember(l); });
+    // Возврат — вычитаем сделку из программы вместе с начисленными за неё баллами.
+    let revokedDeals = 0;
+    Object.keys(registry).forEach((id) => { if (refundIds.has(Number(id))) { delete registry[id]; revokedDeals++; } });
+
     // Счета: сначала собираем сделки по контактам (без баллов) …
     const accounts = {}; let totalEarned = 0, priced = 0;
-    for (const l of successLeads) {
-      const price = Number(l.price) || 0; if (price <= 0) continue;   // бюджет сделки
+    Object.values(registry).forEach((d) => {
       priced++;
-      const cid = mainCid(l); const info = cid ? cmap[cid] : null;
-      if (!cid || !info || !info.phones.length) continue;
-      const ts = payTs(l) || Number(l.updated_at || l.created_at || 0) * 1000;   // дата оплаты = дата начисления
-      const acc = accounts[cid] || (accounts[cid] = { contactId: cid, name: info.name, phones: info.phones, earned: 0, spend: 0, deals: [] });
-      acc.deals.push({ id: l.id, name: l.name || "", price, points: 0, rate: 0, ts, day: _mskDayKey(ts) });
-    }
+      const acc = accounts[d.contactId] || (accounts[d.contactId] = { contactId: d.contactId, name: d.contactName || "", phones: d.phones, earned: 0, spend: 0, deals: [] });
+      if (!acc.name && d.contactName) acc.name = d.contactName;
+      acc.deals.push({ id: d.id, name: d.name || "", price: d.price, points: 0, rate: 0, ts: d.ts, day: _mskDayKey(d.ts) });
+    });
     // … затем начисляем СТУПЕНЧАТО: идём по сделкам клиента от старых к новым, и
     // каждая получает прирост баллов за накопленный бюджет — bloyPointsFor(после)
     // минус bloyPointsFor(до). Повышенный процент действует только на часть суммы
@@ -1770,28 +1813,35 @@ async function runBetaLoyalty(trigger) {
     const hasPaid = (pk) => paidUniq.some((p) => bloyPhoneEq(p, pk));
 
     bloySave({ ts: Date.now(), rate: BLOY_RATE, tiers: BLOY_TIERS, start: BLOY_START_DAY,
-      accountsCount: Object.keys(accounts).length, totalEarned, scanned: successLeads.length,
-      qualified: priced, paidScanned: paidLeads.length, paidPhones: paidUniq,
+      accountsCount: Object.keys(accounts).length, totalEarned, scanned: Object.keys(registry).length,
+      qualified: priced, paidScanned: paidLeads.length, paidPhones: paidUniq, qualifiedDeals: registry,
+      successNow: successLeads.length, refundScanned: refundIds.size,
       durationMs: Date.now() - t0, accounts });
 
-    const b = brefLoad(); let credited = 0, revoked = 0; const now = Date.now();
+    const b = brefLoad(); let credited = 0, revoked = 0, welcomed = 0; const now = Date.now();
     Object.keys(b.referredBy).forEach((friendPk) => {
       const r = b.referredBy[friendPk]; if (!r) return;
       const paid = hasPaid(friendPk);
-      if (paid && r.status !== "qualified") {
-        // Друг оплатил — начисляем обоим (и после сторно можно квалифицироваться заново).
-        (b.ledger[r.refPhone] = b.ledger[r.refPhone] || []).push({ ts: now, type: "referral", points: BLOY_REF_INVITER, note: "Друг оформился (" + bloyMask(friendPk) + ")" });
+      // Привязка есть, а приветственных нет — значит она из времён, когда баллы
+      // давали только после оплаты. Доначисляем другу сразу, без всяких условий.
+      if (!bloyHasWelcome(friendPk, r)) {
         (b.ledger[friendPk] = b.ledger[friendPk] || []).push({ ts: now, type: "welcome", points: BLOY_REF_FRIEND, note: "Приветственные баллы по приглашению" });
+        r.welcomeTs = now; welcomed++;
+      }
+      if (paid && r.status !== "qualified") {
+        // Друг оплатил — начисляем ПРИГЛАСИВШЕМУ (приветственные другу уже у него).
+        (b.ledger[r.refPhone] = b.ledger[r.refPhone] || []).push({ ts: now, type: "referral", points: BLOY_REF_INVITER, note: "Друг оформился (" + bloyMask(friendPk) + ")" });
         r.status = "qualified"; r.qualifiedTs = now; credited++;
       } else if (!paid && r.status === "qualified") {
-        // Оплаты больше нет (возврат/закрытие) — сторнируем ровно то, что начислили.
+        // Оплаты больше нет (возврат) — снимаем только баллы пригласившего.
+        // Приветственные друг оставляет себе: они даны за регистрацию, а не за оплату,
+        // и он мог их уже потратить.
         (b.ledger[r.refPhone] = b.ledger[r.refPhone] || []).push({ ts: now, type: "referral_revoke", points: -BLOY_REF_INVITER, note: "Аннулировано: возврат по сделке друга (" + bloyMask(friendPk) + ")" });
-        (b.ledger[friendPk] = b.ledger[friendPk] || []).push({ ts: now, type: "welcome_revoke", points: -BLOY_REF_FRIEND, note: "Аннулировано: возврат по вашей сделке" });
         r.status = "reversed"; r.reversedTs = now; revoked++;
       }
     });
-    if (credited || revoked) brefSave();
-    console.log(`BETA-LOYALTY [${trigger || "cron"}]: успешных сделок ${successLeads.length}, аккаунтов ${Object.keys(accounts).length}, начислено ${totalEarned}, рефералов +${credited}/-${revoked}, ${Date.now() - t0}ms`);
+    if (credited || revoked || welcomed) brefSave();
+    console.log(`BETA-LOYALTY [${trigger || "cron"}]: в реестре ${Object.keys(registry).length} сделок (сейчас в успешном статусе ${successLeads.length}, снято возвратом ${revokedDeals}), аккаунтов ${Object.keys(accounts).length}, начислено ${totalEarned}, рефералов +${credited}/-${revoked}, приветственных ${welcomed}, ${Date.now() - t0}ms`);
     return { ok: true, accounts: Object.keys(accounts).length, credited, revoked };
   } catch (e) { console.error("runBetaLoyalty:", e.message); return { error: e.message }; }
 }
@@ -1851,8 +1901,9 @@ app.post("/beta/api/loyalty/refclaim", (req, res) => {
   if (!inviterPk || inviterPk === pk) return res.json({ ok: false, reason: "self_or_unknown" });
   if (b.referredBy[pk]) return res.json({ ok: true, already: true });
   if (bloyAccountByPhone(pk)) return res.json({ ok: false, reason: "existing_client" }); // уже клиент — не реферал
-  b.referredBy[pk] = { refPhone: inviterPk, code, ts: Date.now(), status: "pending" }; brefSave();
-  return res.json({ ok: true });
+  const rNew = (b.referredBy[pk] = { refPhone: inviterPk, code, ts: Date.now(), status: "pending" }); brefSave();
+  bloyCreditWelcome(pk, rNew, "Приветственные баллы за регистрацию по приглашению");
+  return res.json({ ok: true, welcome: BLOY_REF_FRIEND });
 });
 // ── СПИСАНИЕ БАЛЛОВ (redeem) ──────────────────────────────────────────────
 // Клиент из карты оформляет заявку → менеджер подтверждает в консоли /loyalty
@@ -1972,11 +2023,15 @@ app.post("/admin/api/loyalty/beta/promo", requireVscAccess, (req, res) => {
   r.refPhone = inviterPk; r.code = code; r.by = String((req.staff && (req.staff.email || req.staff.name)) || "менеджер");
   brefSave();
   // Уже оплатил — начисляем обоим сразу, иначе дождёмся оплаты на ближайшем пересчёте.
+  // Приветственные другу — сразу, независимо от оплаты.
+  const welcomeNow = bloyCreditWelcome(pk, r, "Приветственные баллы по приглашению (промокод внесён вручную)");
   if (bloyHasPaid(pk)) {
     bloyCreditReferral(pk, r, "Друг оформился (" + bloyMask(pk) + ", промокод внесён вручную)");
     return res.json({ success: true, credited: true, points: BLOY_REF_FRIEND, inviterPoints: BLOY_REF_INVITER });
   }
-  return res.json({ success: true, credited: false, message: "Промокод зафиксирован. Баллы начислим обоим, как только клиент оплатит." });
+  return res.json({ success: true, credited: false, welcome: welcomeNow ? BLOY_REF_FRIEND : 0,
+    message: (welcomeNow ? "Клиенту начислено " + BLOY_REF_FRIEND + " приветственных баллов. " : "Промокод зафиксирован. ")
+      + "Баллы пригласившему начислим, как только клиент оплатит." });
 });
 // Карточка клиента для форм админки: баланс и статус по телефону (без amoCRM —
 // из локального снимка, поэтому мгновенно и без нагрузки на CRM).
@@ -3567,6 +3622,16 @@ app.get("/admin/kb/logic", requireStaff, (req, res) => {
 // инфраструктура). Пишем понятно, без воды, но со всеми нюансами + кто просил.
 // ВАЖНО: при любой правке клиентского ЛК — добавлять сюда новую запись сверху.
 const LK_CHANGELOG = [
+  { date: "19.08.2026", title: "Приветственные баллы другу — сразу при регистрации", by: "решение Андрея", points: [
+    "Клиент, пришедший по приглашению, получает 2 000 баллов СРАЗУ в момент привязки промокода — при регистрации по ссылке друга или когда сотрудник внёс промокод в админке. Раньше он ждал собственной оплаты, и баллы, которыми можно было заплатить, приходили уже после оплаты.",
+    "Пригласившему 2 000 баллов по-прежнему начисляются только после того, как приглашённый оплатил: сделка попала в платёжные статусы и заполнено поле «Бюджет».",
+    "При возврате по сделке приглашённого снимаются только баллы пригласившего. Приветственные друг оставляет себе — они даны за регистрацию, а не за оплату, и могли быть уже потрачены."
+  ] },
+  { date: "19.08.2026", title: "Баллы за два статуса и больше не пропадают", by: "решение Андрея", points: [
+    "Кэшбэк начисляется по двум статусам: «Успешно реализовано (для ВНЖ)» (Отдел Продаж) и «Успешно реализовано» (Отдел по работе с Клиентами). «Пакет документов готов» (Отдел Оформления) кэшбэк больше не даёт — это промежуточный этап.",
+    "Сделка, попавшая в успешный статус, остаётся в программе навсегда: баллы за неё сохраняются, даже если сделку потом перевели дальше по процессу. Раньше при таком переводе баллы у клиента молча обнулялись.",
+    "Баллы за сделку снимаются только при её попадании в «Возврат». Оплатит снова и дойдёт до успешного статуса — начислим заново."
+  ] },
   { date: "16.08.2026", title: "Кэшбэк считается по ступеням, а не одной ставкой на всю сумму", by: "решение Андрея", points: [
     "Первая платная ступень работает как раньше: перешагнул 20 000 ₽ — 5% начисляются со ВСЕЙ суммы покупок (оплата 20 952 ₽ → 1 048 баллов).",
     "Каждая следующая ступень действует только на часть суммы сверх своего порога: при 60 000 ₽ это 5% с первых 50 000 ₽ и 7% с оставшихся 10 000 ₽ — 3 200 баллов вместо прежних 4 200.",
@@ -3602,7 +3667,7 @@ const LK_CHANGELOG = [
     "В правом нижнем углу кабинета появилась круглая кнопка с человечком — открывает шторку «Бонусная программа». Видна на всех этапах, существующие блоки ЛК не двигает и ничего в них не меняет. Синяя точка-индикатор на кнопке убрана (10.08) — она ничего не означала и сбивала с толку.",
     "Экран короткий, всего три блока: карта → приглашение друзей → кнопка «Показать историю» (по нажатию разворачивается, кнопка становится «Скрыть историю»). На карте: баланс, статус со ставкой и шкала достижения по всей лестнице — «Потрачено N ₽» из верхнего порога, с засечками ступеней. Вся «теория» (статусы и проценты, 1 балл = 1 ₽, оплата баллами до 30%, минимум списания) спрятана под иконку «i» у названия статуса.",
     "СТАРТ ПРОГРАММЫ — 11.08.2026. Считаются только сделки с ДАТОЙ ОПЛАТЫ (поле amoCRM 427242) от 00:00 МСК 11.08.2026; дата создания сделки роли не играет. Сумма для расчёта — поле «Бюджет» сделки, других источников нет.",
-    "Кэшбэк — ТОЛЬКО за успешно завершённые сделки (финальный успешный статус: «Успешно реализовано (для ВНЖ)», «Успешно реализовано», «Пакет документов готов»). Ушла в «Возврат» или закрыта неуспешно — баллы за неё аннулируются при ближайшем пересчёте (пересчёт полный, а не накопительный).",
+    "Кэшбэк — ТОЛЬКО за успешно завершённые сделки, и только по двум статусам: «Успешно реализовано (для ВНЖ)» (Отдел Продаж) и «Успешно реализовано» (Отдел по работе с Клиентами). Попала в любой из них — баллы начислены и остаются за клиентом, даже если сделку потом двинули дальше по процессу. Снимаются баллы только при попадании сделки в «Возврат».",
     "Лестница: Базовый 0%, Titanium 5% от 20 000 ₽, Silver 7% от 50 000 ₽, Gold 10% от 100 000 ₽, Platinum 12% от 150 000 ₽, Black 15% от 300 000 ₽, Infinite 20% от 500 000 ₽. Ставка берётся по статусу на момент покупки, ранее начисленное не пересчитывается. 1 балл = 1 ₽, баллами можно оплатить до 30% услуги.",
     "Приглашения — два пути: клиент вводит промокод друга ПРИ РЕГИСТРАЦИИ в ЛК (сервер узнаёт реферальные коды наравне с маркетинговыми) либо сотрудник фиксирует промокод вручную во вкладке «Лояльность» в «Инструментах». Баллы (по 2 000 обоим) начисляются в момент, когда приглашённый РЕАЛЬНО ОПЛАТИЛ; если его сделка ушла в возврат — начисления сторнируются у обоих, а при новой оплате начисляются снова.",
     "В истории клиента отражаются все движения: кэшбэк за услуги, бонусы за друзей, приветственные баллы, списания и аннулирования.",
