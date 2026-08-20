@@ -766,7 +766,7 @@
     .vsc-dayrev-refresh:hover { background: #2c7aa6; border-color: #2c7aa6; }
     .vsc-dayrev-refresh:disabled { opacity: .55; cursor: default; }
     .vsc-tile-l { font-size: 12px; color: #6b7280; font-weight: 600; line-height: 1.3; min-height: 31px; }
-    .vsc-tile-v { font-size: 24px; font-weight: 800; color: #161d45; margin-top: 6px; letter-spacing: -.01em; }
+    .vsc-tile-v { font-size: 24px; font-weight: 800; color: #161d45; margin-top: 6px; letter-spacing: -.01em; white-space: nowrap; }
     .vsc-tile-v.pos { color: #2c7a43; } .vsc-tile-v.neg { color: #b0263a; }
     .vsc-tile-s { font-size: 11.5px; color: #9aa0ab; margin-top: 3px; }
     .vsc-tile-extra { font-size: 11.5px; color: #5563d6; font-weight: 600; margin-top: 5px; background: #f1f3ff; border: 1px solid #e0e4ff; border-radius: 8px; padding: 3px 8px; display: inline-block; }
@@ -3355,8 +3355,27 @@
         };
         setTimeout(poll, 2500);
       }
+      // Значение плитки не должно переноситься («100 022 288 ₽» ломал ₽ на 2-ю строку):
+      // после каждой отрисовки ужимаем шрифт слишком длинных значений под ширину плитки.
+      function vscFitTiles() {
+        try {
+          vscContent.querySelectorAll(".vsc-tile-v").forEach((el) => {
+            el.style.fontSize = "";                       // отправная точка — размер из CSS
+            let size = parseFloat(getComputedStyle(el).fontSize) || 24;
+            let guard = 12;
+            while (el.scrollWidth > el.clientWidth + 1 && size > 13 && guard--) {
+              size -= 1;
+              el.style.fontSize = size + "px";
+            }
+          });
+        } catch (_) {}
+      }
       function renderVsc() {
         if (!vscContent) return;
+        // Автофит — после того как текущая отрисовка встанет в DOM (в т.ч. async-плитки).
+        // setTimeout, а не rAF: rAF в фоновой вкладке замораживается и фит не срабатывает.
+        setTimeout(vscFitTiles, 0);
+        setTimeout(vscFitTiles, 250);
         // Руководителю дашборд (vscData) не нужен — он видит только калькулятор/бота.
         // Раньше тут был ранний выход при !vscData → у руководителя вечно висел спиннер «Загружаем…».
         if (!vscData && currentRole() !== "manager") return;
