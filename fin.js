@@ -116,8 +116,8 @@ function buildXlsx(entries) {
     list.forEach((e) => {
       const day = +String(e.date).slice(8, 10);
       const cells = new Array(8).fill(null);
-      // Колонка дня: с номером — белая жирная (как у Андрея), без номера — бирюзовая.
-      cells[0] = (day !== prevDay) ? { v: day, num: true, style: 7 } : { v: " ", style: 5 };
+      // Колонка дня: с номером — белая жирная (как у Андрея), без номера — бирюзовая полоса.
+      cells[0] = (day !== prevDay) ? { v: day, num: true, style: 7 } : { v: " ", style: 8 };
       prevDay = day;
       // Наименование — серая заливка; метка 🟡/🔴 перебивает её (как цвет ячейки в Numbers).
       cells[1] = { v: e.comment ? e.name + " - " + e.comment : e.name, style: e.flag === "yellow" ? 3 : (e.flag === "red" ? 4 : 6) };
@@ -162,24 +162,32 @@ function buildXlsx(entries) {
     + '<fonts count="2"><font><sz val="10"/><name val="Helvetica"/></font><font><b/><sz val="10"/><name val="Helvetica"/></font></fonts>'
     // bgColor ДУБЛИРУЕТ fgColor: Excel для solid берёт fgColor, а Numbers при
     // копировании строк читает bgColor — с indexed=64 (системный) он давал ЧЁРНЫЕ ячейки.
-    + '<fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
-    + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFEB9C"/><bgColor rgb="FFFFEB9C"/></patternFill></fill>'
+    // Палитра ОТКАЛИБРОВАНА под импорт Numbers (19.08.2026): hex подобраны так,
+    // чтобы ПОСЛЕ импорта совпадать с реальной таблицей Андрея до единиц:
+    // 11FFF8 → бирюза шапки/категорий (9468,65535,63216), 7BFFF5 → полоса дней
+    // (28011,65535,62194), FFE061 → его жёлтый (65353,56456,20393). Не «красивые»
+    // sRGB-значения: Numbers конвертирует цвета через профиль при импорте.
+    + '<fills count="8"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFE061"/><bgColor rgb="FFFFE061"/></patternFill></fill>'
     + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFC7CE"/><bgColor rgb="FFFFC7CE"/></patternFill></fill>'
-    + '<fill><patternFill patternType="solid"><fgColor rgb="FF00FFFF"/><bgColor rgb="FF00FFFF"/></patternFill></fill>'
-    + '<fill><patternFill patternType="solid"><fgColor rgb="FFBFBFBF"/><bgColor rgb="FFBFBFBF"/></patternFill></fill></fills>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FF11FFF8"/><bgColor rgb="FF11FFF8"/></patternFill></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FFBFBFBF"/><bgColor rgb="FFBFBFBF"/></patternFill></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FF7BFFF5"/><bgColor rgb="FF7BFFF5"/></patternFill></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/><bgColor rgb="FFFFFFFF"/></patternFill></fill></fills>'
     + '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'
     + '<border><left style="thin"><color rgb="FFD9D9D9"/></left><right style="thin"><color rgb="FFD9D9D9"/></right>'
     + '<top style="thin"><color rgb="FFD9D9D9"/></top><bottom style="thin"><color rgb="FFD9D9D9"/></bottom><diagonal/></border></borders>'
     + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-    + '<cellXfs count="8">'
+    + '<cellXfs count="9">'
     + '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>'                                                       // 0 обычная
     + '<xf numFmtId="0" fontId="1" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment vertical="center" wrapText="1"/></xf>' // 1 шапка
     + '<xf numFmtId="4" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>'                                  // 2 сумма
     + '<xf numFmtId="0" fontId="0" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                          // 3 🟡 разобраться
     + '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                          // 4 🔴 вернуть
-    + '<xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                          // 5 бирюзовая
+    + '<xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                          // 5 бирюза категорий (шапка/G/H)
     + '<xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                          // 6 «Наименование»
-    + '<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"><alignment horizontal="center"/></xf>'      // 7 день
+    + '<xf numFmtId="0" fontId="1" fillId="7" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>' // 7 день (белая, как у Андрея)
+    + '<xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                          // 8 бирюза полосы дней (A без номера)
     + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>', "utf8"));
   sheets.forEach((s, i) => {
     zip.addFile("xl/worksheets/sheet" + (i + 1) + ".xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
