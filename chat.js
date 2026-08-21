@@ -235,6 +235,11 @@ function mount(app, deps) {
       if (ACCESS_CODE && String(body.code || "").trim() !== ACCESS_CODE) {
         return res.status(401).json({ success: false, needCode: true, message: "Нужен код доступа" });
       }
+      // Пауза чата (экономия токенов): создать/удалить файл .chatPaused на проде,
+      // рестарт не нужен. Включена Андреем 21.08.2026 до команды «продолжаем».
+      if (fs.existsSync(path.join(__dirname, ".chatPaused"))) {
+        return res.json({ success: true, reply: "Здравствуйте! Консультант сейчас на техобслуживании. Оставьте, пожалуйста, телефон или WhatsApp/Telegram, менеджер свяжется с вами в ближайшее время.", sessionId: String(body.sessionId || "") });
+      }
       let sessionId = String(body.sessionId || "").trim();
       if (!/^[a-zA-Z0-9_-]{6,64}$/.test(sessionId)) sessionId = "s_" + crypto.randomBytes(9).toString("hex");
       const messages = sanitizeMessages(body.messages);
