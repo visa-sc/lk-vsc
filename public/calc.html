@@ -9,8 +9,9 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/calc-logo.png" />
 <style>
   :root {
-    --bg: #f5f5f7; --ink: #1d1d1f; --ink2: #6e6e73; --ink3: #8a8a8e;
-    --blue: #0071e3; --blue-d: #0058b8; --blue-soft: #eef5ff; --blue-line: rgba(0,113,227,.22);
+    --bg: #f5f7fb; --ink: #1d1d1f; --ink2: #6e6e73; --ink3: #8a8a8e;
+    /* Фирменный цвет площадки (как в «Сверках» и «Переводах» на work.) */
+    --blue: #0093ce; --blue-d: #007fb3; --blue-soft: #eef5ff; --blue-line: rgba(0,147,206,.25);
     --green: #34c759; --green-d: #1f8f4d; --green-soft: #edfaf1; --green-line: #c4ead0;
     --line: rgba(0,0,0,.08);
     --sh-sm: 0 1px 2px rgba(0,0,0,.04);
@@ -20,12 +21,45 @@
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
-  body { margin: 0; color: var(--ink); line-height: 1.47;
-    background: radial-gradient(1100px 480px at 50% -8%, #ffffff 0%, rgba(255,255,255,0) 62%), var(--bg);
+  body { margin: 0; color: var(--ink); line-height: 1.47; background: var(--bg);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Arial, sans-serif;
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  /* Фон площадки — общий со «Сверками» и «Переводами» */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1;
+    background:
+      radial-gradient(1100px 520px at 12% -8%, rgba(0, 190, 240, .12), transparent 60%),
+      radial-gradient(900px 480px at 105% 12%, rgba(18, 58, 120, .08), transparent 55%),
+      linear-gradient(180deg, #f8fafd 0%, #eef2f9 100%);
+  }
+  /* ── Общий знак площадки: логотип VOYO + by VSC, полоса от края до края ── */
+  html { scrollbar-gutter: stable; }
+  .brand {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 14px 0; margin-bottom: 18px;
+    border-bottom: 3px solid #0093ce;
+    width: 100vw; position: relative; left: 50%; margin-left: -50vw;
+  }
+  .brand-row { display: flex; align-items: baseline; gap: 10px; }
+  .brand-logo { height: 20px; width: auto; display: block; }
+  .brand-by { font-size: 13px; font-weight: 600; color: #98a0b0; letter-spacing: .02em; }
+  .vsc-wm {
+    display: inline-flex; align-items: center; gap: 7px; line-height: 1;
+    font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+    font-weight: 800; font-size: 28px;
+  }
+  .vsc-wm b {
+    background: linear-gradient(135deg, #00c8f2 0%, #0097ca 52%, #123a78 130%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .vsc-wm i { width: 2px; height: 16px; border-radius: 2px;
+              background: linear-gradient(180deg, #00bff0, #0088c2); opacity: .5; }
+  .brand-sub {
+    font-size: 11px; font-weight: 600; color: #98a0b0;
+    letter-spacing: .5em; text-transform: lowercase; margin-right: -.5em;
+  }
   /* Отступ сверху = отступу от меню до карточки (28px): переключатель висит ровно между верхом окна и калькулятором. */
-  .wrap { max-width: 900px; margin: 0 auto; padding: 28px 18px 80px; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 10px 18px 80px; }
   .card { background: #fff; border: 1px solid var(--line); border-radius: 24px; padding: 28px; box-shadow: var(--sh-lg); }
   h1 { font-size: 30px; font-weight: 700; letter-spacing: -.022em; margin: 0 0 16px; }
   /* «i» с пояснением у заголовка (как на /vsc): весь вводный текст спрятан сюда. */
@@ -90,13 +124,15 @@
   #btnRefresh:hover { background: var(--blue-d); }
   /* ── Переключатель калькуляторов: ВНЖ / Страхование (пилюля с плавающим бегунком, iOS-стиль) ── */
   .modeswitch { position: relative; display: flex; width: min(440px, 100%); margin: 0 auto 28px; background: rgba(255,255,255,.66); border: 1px solid var(--line); border-radius: 980px; padding: 4px; box-shadow: var(--sh); backdrop-filter: saturate(1.5) blur(12px); -webkit-backdrop-filter: saturate(1.5) blur(12px); }
-  .modeswitch .thumb { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px); background: #fff; border-radius: 980px; box-shadow: 0 2px 9px rgba(0,0,0,.14), 0 1px 2px rgba(0,0,0,.08); transition: transform .3s cubic-bezier(.3,.7,.3,1.08); will-change: transform; }
+  /* Бегунок — фирменным цветом площадки, активная вкладка белым по синему */
+  .modeswitch .thumb { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px); background: #0093ce; border-radius: 980px; box-shadow: 0 2px 9px rgba(0,147,206,.32), 0 1px 2px rgba(0,0,0,.08); transition: transform .3s cubic-bezier(.3,.7,.3,1.08); will-change: transform; }
   .modeswitch.ins .thumb { transform: translateX(100%); }
   .modeswitch button { position: relative; z-index: 1; flex: 1; padding: 11px 12px; border: none; background: transparent; border-radius: 980px; font-family: inherit; font-size: 14px; font-weight: 600; letter-spacing: -.01em; color: var(--ink2); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: color .2s ease; white-space: nowrap; }
-  .modeswitch button.on { color: var(--ink); font-weight: 680; }
+  .modeswitch button.on { color: #fff; font-weight: 680; }
   .modeswitch button .ms-ico { margin-right: 7px; font-size: 15px; vertical-align: -1px; }
   /* «i» с пояснением — прямо на вкладках переключателя (заголовки из карточек убраны). */
   .modeswitch .info { width: 17px; height: 17px; font-size: 11px; margin-left: 7px; top: -1px; }
+  .modeswitch button.on .info { color: rgba(255,255,255,.85); }
   /* Уменьшенная «i» для плиток курсов. */
   .info-sm { width: 15px; height: 15px; font-size: 10px; margin-left: 5px; top: -1px; border-width: 1.2px; }
 
@@ -165,6 +201,15 @@
 </head>
 <body>
 <div class="wrap">
+  <!-- Знак площадки — единый со «Сверками» и «Переводами» на work.voyotravel.ru -->
+  <div class="brand">
+    <div class="brand-row">
+      <img class="brand-logo" alt="VOYO" src="/logo.png" />
+      <span class="brand-by">by</span>
+      <span class="vsc-wm"><b>V</b><i></i><b>S</b><i></i><b>C</b></span>
+    </div>
+    <div class="brand-sub">калькулятор</div>
+  </div>
   <!-- Переключатель между двумя калькуляторами страницы: ВНЖ и Страхование. -->
   <div class="modeswitch" id="modeSwitch" role="tablist" aria-label="Выбор калькулятора">
     <span class="thumb" aria-hidden="true"></span>

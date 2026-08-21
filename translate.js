@@ -647,7 +647,7 @@ async function pipelineCorrect(order, instruction, author) {
     }, LESSONS_SCHEMA);
     trackUsage(order, "lessons", modelSmall(), les.usage);
     const newOnes = ((les.json && les.json.lessons) || []).map((t) => String(t).trim()).filter((t) => t && !existing.some((e) => e.toLowerCase() === t.toLowerCase()));
-    for (const t of newOnes) lessons().push({ id: newId(), createdAt: Date.now(), text: t.slice(0, 500), source: order.id });
+    for (const t of newOnes) lessons().push({ id: newId(), createdAt: Date.now(), text: t.slice(0, 500), source: "correction", sourceRef: order.id });
     if (newOnes.length) save();
     return newOnes;
   } catch (e) { console.warn("translate lessons:", e.message); return []; }
@@ -704,10 +704,163 @@ async function learnFromCompare(order) {
   }, LESSONS_SCHEMA);
   trackUsage(order, "lessons", modelSmall(), les.usage);
   const newOnes = ((les.json && les.json.lessons) || []).map((t) => String(t).trim()).filter((t) => t && !existing.some((e) => e.toLowerCase() === t.toLowerCase()));
-  for (const t of newOnes) lessons().push({ id: newId(), createdAt: Date.now(), text: t.slice(0, 500), source: "review:" + order.id });
+  for (const t of newOnes) lessons().push({ id: newId(), createdAt: Date.now(), text: t.slice(0, 500), source: "review", sourceRef: order.id });
   order.learned = newOnes;
   save();
   return newOnes;
+}
+
+// ── Стоимость заказа в токенах ───────────────────────────────────────────
+// Считаем по накопительному журналу spend (все проходы, каждый по своей
+// модели). Для заказов, сделанных до появления журнала, — прикидка по
+// тарифу Opus 5 (тогда сервис работал на нём). Курс 80 ₽/$.
+const PRICES = { // $ за 1M токенов: [вход, выход]
+  "claude-opus-5": [5, 25], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5],
+};
+const RUB_RATE = Number(process.env.TRANSLATE_USD_RUB || 80);
+function orderCost(o) {
+  let usd = 0;
+  if (Array.isArray(o.spend) && o.spend.length) {
+    for (const e of o.spend) {
+      const rate = PRICES[e.model] || PRICES["claude-sonnet-5"];
+      usd += ((e.in || 0) + (e.cr || 0) * 0.1 + (e.cw || 0) * 1.25) * rate[0] / 1e6 + (e.out || 0) * rate[1] / 1e6;
+    }
+    return { usd, exact: true };
+  }
+  const rate = PRICES["claude-opus-5"];
+  for (const v of Object.values(o.usage || {})) {
+    if (!v) continue;
+    usd += ((v.input_tokens || 0) + (v.cache_read_input_tokens || 0) * 0.1 + (v.cache_creation_input_tokens || 0) * 1.25) * rate[0] / 1e6
+      + (v.output_tokens || 0) * rate[1] / 1e6;
+  }
+  return { usd, exact: false };
+}
+
+// ── Мост к порталу Кати (work.voyotravel.ru, ТЗ Зайцевой 21.08.2026) ──────
+// Её модуль «Переводы» оформляет заказы и считает деньги у себя
+// (/var/www/kateadmin, сервис :3002); наш движок переводит и отчитывается ей:
+//  • доступ к /translate/api/* по портальному staff-токену — право «translate»
+//    берём из её data/portal.json (личные вкладки ∪ отделы);
+//  • заказ целиком: POST /translate/api/order c полем meta (JSON) + files;
+//  • отчёт по группе: POST {портал}/api/sverki/translate/server/report?key=…
+//    (ready/returned/error, cost в рублях, ссылки на файлы);
+//  • расход прогона обучения: POST {портал}/api/sverki/translate/learn-cost.
+// Ключ — её же widgetKey из data/settings.json (читаем с диска, mtime-кэш).
+// Отчёты идут через дисковую очередь portalOutbox с повторами — рестарт её
+// сервиса ничего не теряет. Деньги/копилки/комиссию НЕ трогаем — это её слой.
+const PORTAL_DATA_DIR = process.env.TRANSLATE_PORTAL_DATA || "/var/www/kateadmin/data";
+const PORTAL_URL = process.env.TRANSLATE_PORTAL_URL || "http://127.0.0.1:3002";
+const PORTAL_PUBLIC = process.env.TRANSLATE_PORTAL_PUBLIC || "https://work.voyotravel.ru";
+const _portalCache = new Map(); // файл -> { at, data }
+function portalReadJson(name) {
+  const c = _portalCache.get(name);
+  if (c && Date.now() - c.at < 30000) return c.data;
+  let data = null;
+  try { data = JSON.parse(fs.readFileSync(path.join(PORTAL_DATA_DIR, name + ".json"), "utf8")); } catch (_) {}
+  _portalCache.set(name, { at: Date.now(), data });
+  return data;
+}
+function portalKey() { const s = portalReadJson("settings"); return (s && s.widgetKey) || ""; }
+// Открыт ли юзеру раздел «Переводы» в портале Кати: владелец/совладельцы — всегда,
+// остальным — личные вкладки ∪ вкладки отделов (копия её tabsFor).
+function portalHasTranslate(email) {
+  const p = portalReadJson("portal");
+  if (!p || !email) return false;
+  const e = String(email).toLowerCase().trim();
+  const owners = [String(p.owner || "").toLowerCase()].concat((p.coOwners || []).map((x) => String(x).toLowerCase()));
+  if (owners.indexOf(e) >= 0) return true;
+  const u = (p.users || {})[e];
+  const tabs = new Set((u && Array.isArray(u.tabs)) ? u.tabs : []);
+  for (const d of (p.departments || [])) {
+    if (Array.isArray(d.members) && d.members.indexOf(e) >= 0) (d.tabs || []).forEach((t) => tabs.add(t));
+  }
+  return tabs.has("translate");
+}
+// Очередь исходящих отчётов порталу (переживает рестарт — лежит в orders.json).
+function portalOutbox() { const st = store(); if (!Array.isArray(st.portalOutbox)) st.portalOutbox = []; return st.portalOutbox; }
+function portalSend(pathname, payload) {
+  portalOutbox().push({ at: Date.now(), path: pathname, payload, tries: 0 });
+  save();
+  portalFlush().catch(() => {});
+}
+let _portalFlushing = false;
+async function portalFlush() {
+  if (_portalFlushing) return;
+  _portalFlushing = true;
+  try {
+    const box = portalOutbox();
+    let changed = false;
+    for (let i = 0; i < box.length;) {
+      const it = box[i];
+      try {
+        const key = portalKey();
+        if (!key) throw new Error("не прочитан ключ портала (settings.json)");
+        const r = await axios.post(PORTAL_URL + it.path + "?key=" + encodeURIComponent(key),
+          Object.assign({ key }, it.payload), { timeout: 20000 });
+        if (!r.data || r.data.ok !== true) throw new Error((r.data && r.data.error) || "ответ не ok");
+        console.log("translate→портал:", it.path, JSON.stringify(it.payload).slice(0, 120));
+        box.splice(i, 1); changed = true;
+      } catch (e) {
+        it.tries = (it.tries || 0) + 1;
+        it.lastError = String((e.response && e.response.data && e.response.data.error) || e.message || e).slice(0, 200);
+        it.lastAt = Date.now();
+        // 4xx — постоянная ошибка (например «заказ не найден»): не мучаем вечно.
+        const cap = (e.response && e.response.status && e.response.status < 500) ? 10 : 300;
+        if (it.tries >= cap) { console.error("translate→портал: сдаюсь,", it.path, it.lastError); box.splice(i, 1); }
+        else i++;
+        changed = true;
+      }
+    }
+    if (changed) save();
+  } finally { _portalFlushing = false; }
+}
+function portalGroupOrders(number) { return store().orders.filter((o) => o.portal && o.portal.number === number); }
+// Итоговый отчёт по группе заказов одного номера (ЕЗ7): шлём, когда все файлы
+// группы дошли до терминального статуса. Дедуп по подписи — чтобы ретраи и
+// повторные хуки не спамили её историю статусов.
+const ACTIVE_STATUSES = ["new", "queued", "translating", "checking", "revising"];
+function portalGroupReport(number, opts) {
+  const list = portalGroupOrders(number);
+  if (!list.length) return;
+  const busy = list.some((o) => ACTIVE_STATUSES.indexOf(o.status) >= 0 || o.correctStatus === "processing" || o.portalFixPending);
+  if (busy) return;
+  const errs = list.filter((o) => o.status === "error");
+  const cost = Math.round(list.reduce((s, o) => s + orderCost(o).usd, 0) * RUB_RATE * 100) / 100;
+  const pages = list.reduce((s, o) => s + ((o.meta && o.meta.pages) || 0), 0);
+  const files = [];
+  for (const o of list) {
+    const base = PORTAL_PUBLIC + "/translate/api/dl/" + o.id + "/" + o.dlToken + "/";
+    if (o.files && o.files.docx) files.push({ name: docxDlName(o), url: base + "docx" });
+    else if (o.files && o.files.html) files.push({ name: "Перевод (веб-версия): " + ((o.src[0] && o.src[0].name) || o.id), url: base + "html" });
+  }
+  const payload = {
+    number,
+    status: errs.length ? "error" : ((opts && opts.returned) ? "returned" : "ready"),
+    cost, orderId: "grp-" + number, files,
+  };
+  if (pages) payload.pages = pages;
+  if (errs.length) payload.error = errs.map((o) => o.error).filter(Boolean).join("; ").slice(0, 500);
+  const st = store();
+  st.portalSent = st.portalSent || {};
+  const sig = payload.status + "|" + cost + "|" + files.length;
+  if (st.portalSent[number] === sig) return;
+  st.portalSent[number] = sig;
+  portalSend("/api/sverki/translate/server/report", payload);
+}
+// Расход прогона обучения (номер ОБ7 присваивает её модуль): шлём суммарный
+// расход всех пар прогона, когда все они завершились.
+function portalLearnReport(number) {
+  const list = store().orders.filter((o) => o.portalLearn === number);
+  if (!list.length) return;
+  const busy = list.some((o) => ACTIVE_STATUSES.indexOf(o.status) >= 0 || o.compareStatus === "processing");
+  if (busy) return;
+  const cost = Math.round(list.reduce((s, o) => s + orderCost(o).usd, 0) * RUB_RATE * 100) / 100;
+  if (!cost) return;
+  const st = store();
+  st.portalLearnSent = st.portalLearnSent || {};
+  if (st.portalLearnSent[number] === cost) return;
+  st.portalLearnSent[number] = cost;
+  portalSend("/api/sverki/translate/learn-cost", { number, cost });
 }
 
 // Мостик к списанию /translate_pay: сама функция объявляется в mount (ей нужны
@@ -755,6 +908,7 @@ function queueTranslate(order) {
       o.status = "error"; o.error = String((e && e.message) || e); save();
       if (o.kind === "bot") await botSay(o, "⚠️ Не получилось перевести: " + o.error).catch(() => {});
     }
+    if (o.portal) { try { portalGroupReport(o.portal.number); } catch (e) { console.error("portalGroupReport:", e.message); } }
   });
 }
 function queueCompare(order, learn) {
@@ -785,6 +939,7 @@ function queueReview(order) {
       else { o.compareStatus = "error"; o.compareError = String((e && e.message) || e); }
       save();
     }
+    if (o.portalLearn) { try { portalLearnReport(o.portalLearn); } catch (e) { console.error("portalLearnReport:", e.message); } }
   });
 }
 function queueCorrect(order, instruction, author) {
@@ -1037,6 +1192,7 @@ function orderView(o, full) {
     correctionsCnt: (o.corrections || []).length,
     learned: o.learned || null,
     chat: o.chat ? { from: o.chat.from, text: o.chat.text } : null,
+    portal: o.portal || null,
   };
   if (full) { v.check = o.check || null; v.compare = o.compare || null; v.corrections = o.corrections || []; v.usage = o.usage || null; }
   return v;
@@ -1073,13 +1229,19 @@ function mount(app, deps) {
     return res.json({ success: true, token: tok });
   });
 
-  // Доступ: код /translate ИЛИ админ ИЛИ руководитель с "translate" в vscRestrict.tabs (Зайцева).
+  // Доступ: код /translate ИЛИ админ ИЛИ руководитель с "translate" в vscRestrict.tabs (Зайцева)
+  // ИЛИ портальный staff-токен work.voyotravel.ru, если юзеру в портале Кати открыт
+  // раздел «Переводы» (ТЗ Зайцевой 21.08: отдельный код входа в её модуле убран)
+  // ИЛИ её служебный ключ (для server-to-server, тот же widgetKey что в 4.1 ТЗ).
   function requireTranslate(req, res, next) {
     const tok = tokenFromReq(req);
     const rec = tok && authTokens()[tok];
     if (rec && Date.now() - (rec.at || 0) <= TOKEN_TTL) { req.staff = { role: "translate", name: "сотрудник (код)" }; return next(); }
     const s = getStaffFromReq(req);
     if (s && (s.role === "admin" || (s.vscRestrict && Array.isArray(s.vscRestrict.tabs) && s.vscRestrict.tabs.indexOf("translate") >= 0))) { req.staff = s; return next(); }
+    if (s && portalHasTranslate(s.email)) { req.staff = s; return next(); }
+    const pk = portalKey();
+    if (pk && (String(req.query.key || "") === pk || String(req.headers["x-portal-key"] || "") === pk)) { req.staff = { role: "portal", name: "портал work." }; return next(); }
     return res.status(401).json({ success: false, message: "Нет доступа" });
   }
   const up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 45 * 1024 * 1024, files: 10 } });
@@ -1102,35 +1264,6 @@ function mount(app, deps) {
     });
   });
 
-  // ── Аналитика (черновая вкладка «Дашборд», запрос Зайцевой 08.08) ──
-  // Считаем на лету из orders.json: заказов мало (до 500), отдельного хранилища
-  // не заводим. Цены моделей — для прикидки расхода, курс 80 ₽/$.
-  const PRICES = { // $ за 1M токенов: [вход, выход]
-    "claude-opus-5": [5, 25], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5],
-  };
-  // Считаем по накопительному журналу spend (все проходы, каждый по своей
-  // модели). Для заказов, сделанных до появления журнала, — прикидка по
-  // последнему проходу и текущей модели, такие помечаем отдельно.
-  function orderCost(o) {
-    let usd = 0;
-    if (Array.isArray(o.spend) && o.spend.length) {
-      for (const e of o.spend) {
-        const rate = PRICES[e.model] || PRICES["claude-sonnet-5"];
-        usd += ((e.in || 0) + (e.cr || 0) * 0.1 + (e.cw || 0) * 1.25) * rate[0] / 1e6 + (e.out || 0) * rate[1] / 1e6;
-      }
-      return { usd, exact: true };
-    }
-    // Заказы без журнала — это всё, что переведено до 08.08.2026, а тогда
-    // сервис работал на Opus 5. Считаем их по его тарифу, иначе расход
-    // занижается почти вдвое.
-    const rate = PRICES["claude-opus-5"];
-    for (const v of Object.values(o.usage || {})) {
-      if (!v) continue;
-      usd += ((v.input_tokens || 0) + (v.cache_read_input_tokens || 0) * 0.1 + (v.cache_creation_input_tokens || 0) * 1.25) * rate[0] / 1e6
-        + (v.output_tokens || 0) * rate[1] / 1e6;
-    }
-    return { usd, exact: false };
-  }
   // ── /translate_pay — черновой SaaS для внешних клиентов (просьба Андрея 12.08) ──
   // Личный кабинет: регистрация по email, баланс в рублях, заказы того же
   // движка (kind: "pay", в общем store — пайплайны/очистка/учёт работают как
@@ -1503,9 +1636,99 @@ function mount(app, deps) {
     });
   });
 
-  app.post("/translate/api/order", requireTranslate, up.array("files", 10), (req, res) => {
+  // ── Приём заказа целиком из портала Кати (ТЗ 6.1): FormData meta (JSON) + files ──
+  // meta: {number, dealId, dealName, country, author, apps: [{translit, files: [{name,
+  // docType, srcLang, lang, scope, range, pages, from, to, orient, keepLayout}]}]}.
+  // Каждый файл — свой внутренний заказ (kind "portal"), группа связана номером ЕЗ7;
+  // отчёт по группе уходит на её server/report, когда все файлы готовы.
+  function parsePageRange(str) {
+    const out = new Set();
+    String(str || "").split(/[,;]+/).forEach((part) => {
+      const m = part.trim().match(/^(\d+)\s*[-–—]\s*(\d+)$/);
+      if (m) { for (let i = +m[1]; i <= +m[2] && i <= +m[1] + 500; i++) out.add(i); }
+      else if (/^\d+$/.test(part.trim())) out.add(+part.trim());
+    });
+    return Array.from(out).filter((n) => n >= 1).sort((a, b) => a - b);
+  }
+  async function extractPdfPages(buf, pageNums) {
+    const { PDFDocument } = require("pdf-lib");
+    const srcDoc = await PDFDocument.load(buf, { ignoreEncryption: true });
+    const n = srcDoc.getPageCount();
+    const idx = pageNums.filter((p) => p <= n).map((p) => p - 1);
+    if (!idx.length || idx.length === n) return buf;
+    const nd = await PDFDocument.create();
+    (await nd.copyPages(srcDoc, idx)).forEach((pg) => nd.addPage(pg));
+    return Buffer.from(await nd.save());
+  }
+  async function portalOrderIntake(req, res) {
+    let meta;
+    try { meta = JSON.parse(String(req.body.meta)); } catch (_) { return res.status(400).json({ success: false, message: "Поле meta — не JSON" }); }
+    const number = String(meta.number || "").trim().slice(0, 20);
+    if (!number) return res.status(400).json({ success: false, message: "В meta нет номера заказа (number)" });
+    if (store().orders.some((o) => o.portal && o.portal.number === number)) return res.status(400).json({ success: false, message: "Заказ " + number + " уже принят в перевод" });
+    const files = req.files || [];
+    const flat = [];
+    (Array.isArray(meta.apps) ? meta.apps : []).forEach((a) => (Array.isArray(a.files) ? a.files : []).forEach((f) => flat.push({ app: a, f })));
+    if (!flat.length) return res.status(400).json({ success: false, message: "В meta нет файлов" });
+    if (files.length !== flat.length) return res.status(400).json({ success: false, message: "Файлов приложено " + files.length + ", а в meta перечислено " + flat.length + " — порядок и состав должны совпадать" });
+    // Валидация до создания заказов — чтобы не оставить полгруппы при ошибке.
+    for (let i = 0; i < files.length; i++) {
+      const name = Buffer.from(files[i].originalname, "latin1").toString("utf8");
+      if (!srcSupported(name)) return res.status(400).json({ success: false, message: "Формат «" + name + "» не поддерживается. Можно: PDF, DOCX, TXT, JPG/PNG/WEBP." });
+      if (files[i].size > MAX_TOTAL_SRC) return res.status(413).json({ success: false, message: "Файл «" + name + "» больше 45 МБ" });
+    }
+    const created = [];
+    for (let i = 0; i < flat.length; i++) {
+      const { app, f } = flat[i];
+      const name = Buffer.from(files[i].originalname, "latin1").toString("utf8");
+      let buf = files[i].buffer;
+      let rangeNote = "";
+      if (String(f.scope) === "part" && f.range) {
+        if (/\.pdf$/i.test(name)) {
+          try { buf = await extractPdfPages(buf, parsePageRange(f.range)); }
+          catch (e) { rangeNote = "Переводить ТОЛЬКО страницы: " + f.range; console.warn("translate portal: не вырезал страницы из PDF:", e.message); }
+        } else rangeNote = "Переводить ТОЛЬКО страницы: " + f.range;
+      }
+      const noteBits = [];
+      if (f.docType) noteBits.push("Тип документа: " + String(f.docType).slice(0, 100));
+      const srcLang = String(f.srcLang || "ru").toLowerCase();
+      if (srcLang && srcLang !== "ru") noteBits.push("Язык оригинала: " + srcLang + " (переводить С этого языка)");
+      if (rangeNote) noteBits.push(rangeNote);
+      if (String(f.orient) === "landscape") noteBits.push("Страницы оригинала альбомные — помечай их class=\"page landscape\"");
+      if (f.keepLayout) noteBits.push("Строго сохранить вёрстку и разбивку на страницы как в оригинале");
+      const order = {
+        id: newId(), num: nextNum(), kind: "portal", createdAt: Date.now(), status: "new",
+        params: {
+          translit: String(app.translit || "").slice(0, 200),
+          country: String(meta.country || "").slice(0, 100),
+          targetLang: String(f.lang || "en").slice(0, 40),
+          note: noteBits.join(". ").slice(0, 1000),
+        },
+        meta: f.docType ? { docType: String(f.docType).slice(0, 100) } : undefined,
+        portal: {
+          number, dealId: String(meta.dealId || "").slice(0, 20), dealName: String(meta.dealName || "").slice(0, 200),
+          author: String(meta.author || (req.staff && (req.staff.name || req.staff.email)) || "").slice(0, 100),
+          pagesDeclared: Math.max(0, Math.round(Number(f.pages) || 0)),
+          from: String(f.from || "").slice(0, 10), to: String(f.to || "").slice(0, 10),
+        },
+        dlToken: crypto.randomBytes(12).toString("hex"),
+        src: [], files: {},
+      };
+      order.src.push({ file: saveFile(order.id, "src-0", buf, name, files[i].mimetype), name });
+      created.push(order);
+    }
+    const st = store();
+    created.slice().reverse().forEach((o) => st.orders.unshift(o));
+    if (st.orders.length > MAX_ORDERS) st.orders.length = MAX_ORDERS;
+    save();
+    created.forEach(queueTranslate);
+    return res.json({ success: true, orderId: "grp-" + number, ids: created.map((o) => o.id) });
+  }
+
+  app.post("/translate/api/order", requireTranslate, up.array("files", 40), (req, res) => {
     try {
       if (!aiConfigured()) return res.status(400).json({ success: false, message: "ИИ не настроен: добавьте ANTHROPIC_API_KEY в .env на сервере и перезапустите" });
+      if (req.body && req.body.meta) return void portalOrderIntake(req, res).catch((e) => { try { res.status(500).json({ success: false, message: e.message }); } catch (_) {} });
       const files = req.files || [];
       if (!files.length) return res.status(400).json({ success: false, message: "Прикрепите файл (PDF, DOCX или фото)" });
       const total = files.reduce((s, f) => s + f.size, 0);
@@ -1638,10 +1861,13 @@ function mount(app, deps) {
         const { pairs, unpaired } = pairArchiveEntries(files);
         if (!pairs.length) return res.status(400).json({ success: false, message: "Не смог разобрать, где оригиналы, а где переводы. Назовите файлы одинаково с пометкой (например «справка_оригинал.pdf» и «справка_перевод.docx») или загрузите пары по одной." });
         for (const p of pairs.slice(0, 50)) created.push(makeReviewOrder(p.original.buf, p.original.name, p.human.buf, p.human.name, meta));
+        // ТЗ 6.2: номер прогона обучения из портала Кати (ОБ7) — по нему потом
+        // отчитываемся расходом на её learn-cost.
+        if (meta.number) created.forEach((o) => { o.portalLearn = String(meta.number).slice(0, 20); });
         save();
         created.forEach(queueReview);
         return res.json({
-          success: true, created: created.length, unpaired,
+          success: true, created: created.length, unpaired, ids: created.map((o) => o.id),
           pairs: pairs.slice(0, 50).map((p) => ({ original: p.original.path, human: p.human.path })),
         });
       }
@@ -1650,9 +1876,10 @@ function mount(app, deps) {
       const o = f.original[0], h = f.human[0];
       if (!srcSupported(nameOf(o))) return res.status(400).json({ success: false, message: "Формат оригинала не поддерживается (нужен PDF, DOCX, TXT или фото)" });
       const order = makeReviewOrder(o.buffer, nameOf(o), h.buffer, nameOf(h), meta);
+      if (meta.number) order.portalLearn = String(meta.number).slice(0, 20);
       save();
       queueReview(order);
-      return res.json({ success: true, created: 1, id: order.id });
+      return res.json({ success: true, created: 1, id: order.id, ids: [order.id] });
     } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
   });
 
@@ -1761,6 +1988,82 @@ function mount(app, deps) {
     if (dlName) res.set("Content-Disposition", "attachment; filename*=UTF-8''" + encodeURIComponent(dlName));
     return res.send(buf);
   });
+
+  // ── Портал Кати: привязка номера прогона, правки по группе, скачивание ──
+  // Её страница сначала шлёт пары на /review, потом регистрирует прогон у себя
+  // (номер ОБ7 появляется после) — этим вызовом номер доклеивается к уже
+  // созданным заказам, и по завершении уходит learn-cost.
+  app.post("/translate/api/review/attach", requireTranslate, (req, res) => {
+    const b = req.body || {};
+    const number = String(b.number || "").trim().slice(0, 20);
+    const ids = Array.isArray(b.ids) ? b.ids : [];
+    if (!number || !ids.length) return res.status(400).json({ success: false, message: "Нужны number и ids" });
+    let n = 0;
+    for (const id of ids) { const o = findOrder(String(id)); if (o) { o.portalLearn = number; n++; } }
+    save();
+    try { portalLearnReport(number); } catch (_) {} // вдруг прогоны уже успели завершиться
+    return res.json({ success: true, attached: n });
+  });
+
+  // ТЗ 6.3: правки менеджера по заказу портала — применяем ко всем файлам
+  // группы, по завершении отчитываемся статусом returned (+ свежие ссылки и cost).
+  app.post("/translate/api/portal/correct", requireTranslate, (req, res) => {
+    const b = req.body || {};
+    const number = String(b.number || "").trim().slice(0, 20);
+    const text = String(b.text || "").trim();
+    if (!number || !text) return res.status(400).json({ success: false, message: "Нужны number и text" });
+    const list = portalGroupOrders(number).filter((o) => o.status === "done");
+    if (!list.length) return res.status(404).json({ success: false, message: "По заказу " + number + " нет готовых переводов" });
+    const author = (req.staff && (req.staff.name || req.staff.email)) || "портал";
+    list.forEach((o) => { o.portalFixPending = true; });
+    const st = store();
+    if (st.portalSent) delete st.portalSent[number]; // после правки итоговый отчёт должен уйти заново
+    save();
+    list.forEach((o) => {
+      queueCorrect(o, text, author);
+      // Цепочка per-order гарантирует: эта задача выполнится после правки.
+      enqueue("portalfix " + o.id, async () => {
+        const cur = findOrder(o.id);
+        if (cur) { cur.portalFixPending = false; save(); }
+        try { portalGroupReport(number, { returned: true }); } catch (e) { console.error("portal returned:", e.message); }
+      });
+    });
+    return res.json({ success: true, orders: list.length });
+  });
+
+  // Скачивание результата по неугадываемому токену заказа (кнопки в карточке
+  // заказа у Кати; авторизации нет — токен случайный per-order).
+  app.get("/translate/api/dl/:id/:tok/:which", (req, res) => {
+    const o = findOrder(req.params.id);
+    if (!o || !o.dlToken || o.dlToken !== req.params.tok) return res.status(404).send("Не найдено");
+    let fn = null, dlName = null;
+    if (req.params.which === "docx") { fn = o.files && o.files.docx; dlName = docxDlName(o); }
+    else if (req.params.which === "html") { fn = o.files && o.files.html; }
+    if (!fn) return res.status(404).send("Нет файла");
+    let buf;
+    try { buf = readFileBuf(fn); } catch (_) { return res.status(404).send("Файл утерян (хранение 60 дней)"); }
+    res.set("Content-Type", mimeByExt(fn));
+    if (dlName) res.set("Content-Disposition", "attachment; filename*=UTF-8''" + encodeURIComponent(dlName));
+    return res.send(buf);
+  });
+
+  // ТЗ 7: источник правила — единый словарь manual|review|correction|auto.
+  // Старые записи мигрируем на месте (прежнее значение остаётся в sourceRef).
+  (function migrateLessonSources() {
+    let changed = false;
+    for (const l of lessons()) {
+      const s = String(l.source || "");
+      if (["manual", "review", "correction", "auto"].indexOf(s) >= 0) continue;
+      if (s) l.sourceRef = s;
+      l.source = /^review:/.test(s) ? "review" : (/^[0-9a-f]{12}$/.test(s) ? "correction" : "auto");
+      changed = true;
+    }
+    if (changed) save();
+  })();
+
+  // Недоставленные отчёты порталу — дошлём (её сервис могли перезапускать).
+  setInterval(() => { portalFlush().catch(() => {}); }, 60000);
+  setTimeout(() => { portalFlush().catch(() => {}); }, 15000);
 
   // Отложенные сравнения (человек прислал раньше, чем ИИ доделал) — добираем.
   setInterval(() => {
