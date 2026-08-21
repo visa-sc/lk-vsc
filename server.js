@@ -39,7 +39,8 @@ app.get("/", (req, res, next) => {
   const h = String(req.hostname || "").toLowerCase();
   if (h === "vsc.voyotravel.ru") return serveAdminPanel(res, true);
   if (h === "dev.voyotravel.ru") return serveAdminPanel(res, false);
-  // admin.voyotravel.ru обслуживает ОТДЕЛЬНЫЙ сервис kateadmin (:3002, nginx ведёт
+  // work.voyotravel.ru (бывш. admin., переименован 20.08.2026; admin. — 301 на work.)
+  // обслуживает ОТДЕЛЬНЫЙ сервис kateadmin (:3002, nginx ведёт
   // мимо нас) — рабочее место Зайцевой, обособленное от основного приложения (07.08.2026).
   if (h === "crm.voyotravel.ru") { // копия amoCRM — crm.voyotravel.ru (та же страница, что /amocrm_copy)
     res.set("Cache-Control", "no-cache");
@@ -14419,7 +14420,7 @@ const WEBAUTHN_ORIGIN = process.env.WEBAUTHN_ORIGIN || "https://voyovoyo.ru";
 // НЕ ломая уже зарегистрированные паспорт-ки (на каждом домене свои). Для
 // voyovoyo.ru helper возвращает ровно прежние значения → поведение не меняется.
 // Неизвестный/поддельный Host → дефолт voyovoyo.ru. www.* считаем тем же доменом.
-const WEBAUTHN_ALLOWED_HOSTS = { "voyovoyo.ru": true, "voyotravel.ru": true, "dev.voyotravel.ru": true, "vsc.voyotravel.ru": true, "admin.voyotravel.ru": true };
+const WEBAUTHN_ALLOWED_HOSTS = { "voyovoyo.ru": true, "voyotravel.ru": true, "dev.voyotravel.ru": true, "vsc.voyotravel.ru": true, "admin.voyotravel.ru": true, "work.voyotravel.ru": true };
 function webauthnHostName(req) {
   const h = String((req && req.headers && req.headers.host) || "").toLowerCase().split(":")[0].replace(/^www\./, "");
   return WEBAUTHN_ALLOWED_HOSTS[h] ? h : WEBAUTHN_RP_ID;
