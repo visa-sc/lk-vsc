@@ -16,7 +16,7 @@
 //         claude-sonnet-5,claude-haiku-4-5) — чужую модель подменяет на
 //         TRANSLATE_MODEL, т.е. включить дорогую модель из движка нельзя;
 //       • считает расход по usage из ответов (в т.ч. из SSE-потока) и при
-//         превышении ENGINE_DAILY_BUDGET_RUB (дефолт 3000 ₽/сутки) отвечает 429 —
+//         превышении ENGINE_DAILY_BUDGET_USD (дефолт 15 $/сутки, по решению Андрея 22.08) отвечает 429 —
 //         предохранитель от регулярных задач, жгущих баланс; на 80% и на 100%
 //         пишет письмо Андрею (раз в сутки каждое). Журнал: .engineBudget.json.
 //  4. /internal/engine/mail — письма от имени движка через mail.js (SMTP здесь).
@@ -63,7 +63,8 @@ function mountEarly(app, deps) {
   const SECRET = String(process.env.ENGINE_SECRET || "");
   const ALLOWED = String(process.env.ENGINE_ALLOWED_MODELS || "claude-sonnet-5,claude-haiku-4-5").split(",").map((s) => s.trim()).filter(Boolean);
   const FORCED = process.env.TRANSLATE_MODEL || "claude-sonnet-5";
-  const DAILY_RUB = Number(process.env.ENGINE_DAILY_BUDGET_RUB || 3000);
+  const DAILY_USD = Number(process.env.ENGINE_DAILY_BUDGET_USD || 15); // суточный лимит в $ (решение Андрея: 15 $, не рубли)
+  const fmt = (usd) => usd.toFixed(2) + " $ (≈" + Math.round(usd * RUB) + " ₽)";
   const ALERT_TO = process.env.ENGINE_ALERT_EMAIL || "director@visa-sc.ru";
 
   // ── 2. Страницы (остаются на основном приложении) ──
@@ -107,12 +108,12 @@ function mountEarly(app, deps) {
     const day = mskDay();
     const d = budget.days[day] || (budget.days[day] = { usd: 0, calls: 0, forced: 0 });
     // Предохранитель: суточный бюджет исчерпан → 429 (движок покажет ошибку в заказе)
-    if (req.method === "POST" && d.usd * RUB >= DAILY_RUB) {
+    if (req.method === "POST" && d.usd >= DAILY_USD) {
       if (!budget.alerts[day + ":100"]) {
         budget.alerts[day + ":100"] = Date.now(); saveBudget(budget);
-        sendMail({ to: ALERT_TO, subject: "Движок переводов: суточный бюджет исчерпан", text: "Расход движка переводов за " + day + " достиг " + Math.round(d.usd * RUB) + " ₽ (лимит ENGINE_DAILY_BUDGET_RUB = " + DAILY_RUB + " ₽). Новые запросы к Anthropic отклоняются до полуночи МСК. Если это штатная нагрузка — поднимите лимит в .env основного приложения и перезапустите voyo." }).catch(() => {});
+        sendMail({ to: ALERT_TO, subject: "Движок переводов: суточный бюджет исчерпан", text: "Расход движка переводов за " + day + " достиг " + fmt(d.usd) + " — лимит ENGINE_DAILY_BUDGET_USD = " + DAILY_USD + " $. Новые запросы к Anthropic отклоняются до полуночи МСК. Если это штатная нагрузка — поднимите лимит в .env основного приложения и перезапустите voyo." }).catch(() => {});
       }
-      return res.status(429).json({ type: "error", error: { type: "rate_limit_error", message: "Суточный бюджет движка переводов исчерпан (" + DAILY_RUB + " ₽) — обратитесь к Андрею" } });
+      return res.status(429).json({ type: "error", error: { type: "rate_limit_error", message: "Суточный бюджет движка переводов исчерпан (" + DAILY_USD + " $) — обратитесь к Андрею" } });
     }
     let body = req.body;
     let model = null, forcedNow = 0;
@@ -174,9 +175,9 @@ function mountEarly(app, deps) {
         d2.usd += usd; d2.calls++; d2.forced = (d2.forced || 0) + forcedNow;
         // чистим журнал старше 90 дней
         for (const k of Object.keys(b2.days)) if (k < new Date(Date.now() - 90 * 86400e3).toISOString().slice(0, 10)) delete b2.days[k];
-        if (d2.usd * RUB >= DAILY_RUB * 0.8 && !b2.alerts[day + ":80"]) {
+        if (d2.usd >= DAILY_USD * 0.8 && !b2.alerts[day + ":80"]) {
           b2.alerts[day + ":80"] = Date.now();
-          sendMail({ to: ALERT_TO, subject: "Движок переводов: 80% суточного бюджета", text: "Расход движка переводов за " + day + " — " + Math.round(d2.usd * RUB) + " ₽ из " + DAILY_RUB + " ₽ (ENGINE_DAILY_BUDGET_RUB). Запросов: " + d2.calls + ". Если это не штатная нагрузка — проверьте, что Катя не запустила массовые прогоны; лимит сработает на 100%." }).catch(() => {});
+          sendMail({ to: ALERT_TO, subject: "Движок переводов: 80% суточного бюджета", text: "Расход движка переводов за " + day + " — " + fmt(d2.usd) + " из " + DAILY_USD + " $ (ENGINE_DAILY_BUDGET_USD). Запросов: " + d2.calls + ". Если это не штатная нагрузка — проверьте, что Катя не запустила массовые прогоны; лимит сработает на 100%." }).catch(() => {});
         }
         saveBudget(b2);
       }
@@ -197,7 +198,7 @@ function mountEarly(app, deps) {
   app.get("/internal/engine/budget", (req, res) => {
     if (!isLocal(req)) return res.status(403).end();
     const b = loadBudget();
-    res.json({ ok: true, dailyLimitRub: DAILY_RUB, allowedModels: ALLOWED, days: Object.fromEntries(Object.entries(b.days).sort().slice(-31).map(([k, v]) => [k, { rub: Math.round(v.usd * RUB), calls: v.calls, forced: v.forced || 0 }])) });
+    res.json({ ok: true, dailyLimitUsd: DAILY_USD, allowedModels: ALLOWED, days: Object.fromEntries(Object.entries(b.days).sort().slice(-31).map(([k, v]) => [k, { usd: +v.usd.toFixed(3), rub: Math.round(v.usd * RUB), calls: v.calls, forced: v.forced || 0 }])) });
   });
 }
 
