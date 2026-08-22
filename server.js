@@ -14,11 +14,14 @@ const iconv = require("iconv-lite");
 const sms = require("./sms");
 const mail = require("./mail");
 const esign = require("./esign"); // ПЭП-подпись (аналог fdoc) — отдельный модуль, монтируется ниже
-const translateMod = require("./translate"); // Переводы документов с ИИ-проверкой (/translate) — отдельный модуль, монтируется ниже
+const engineProxy = require("./engine-proxy"); // Мост к движку переводов (отдельный сервис translate-engine :3003, правит Зайцева); монтируется сразу после app — до body-парсеров
 const chatMod = require("./chat"); // Продающий ИИ-чат по визам (/chat_test) — отдельный модуль, монтируется ниже
 const finMod = require("./fin"); // Личные финансы Андрея (/fin) — отдельный модуль, монтируется ниже
 
 const app = express();
+// ── Мост к движку переводов: прокси /translate/api/*, страницы /translate*, шлюз Anthropic
+// с белым списком моделей и суточным бюджетом, почта для движка. ДО express.json — нужны сырые тела.
+engineProxy.mountEarly(app, { getStaffFromReq: (req) => getStaffFromReq(req), sendMail: (o) => mail.sendMail(o), publicDir: path.join(__dirname, "public") });
 const PORT = process.env.PORT || 3000;
 
 app.use((req, res, next) => {
@@ -2279,11 +2282,10 @@ if (!loadLoyalty()) setTimeout(() => { Promise.resolve(amoBg(() => runLoyaltyAcc
 // НЕ интегрировано в клиентский ЛК и не меняет вход/авторизацию (требование Андрея).
 esign.mount(app, { requireVscAccess, requireAdmin });
 
-// ── Переводы документов с ИИ (/translate, проект Зайцевой) — отдельный модуль.
-// Доступ: админ или руководитель с "translate" в vscRestrict.tabs (Зайцева).
-// Клиентский ЛК и amoCRM не затрагивает; бот Я.Мессенджера стартует только при
-// заданном YM_BOT_TOKEN (тихий режим — в чат ничего не пишет).
-translateMod.mount(app, { getStaffFromReq });
+// ── Переводы документов с ИИ (/translate, проект Зайцевой): с 22.08.2026 движок
+// (translate.js) — ОТДЕЛЬНЫЙ сервис translate-engine (:3003, /var/www/translate-engine,
+// правит Зайцева сама). Здесь только мост engine-proxy.js (смонтирован в начале файла):
+// прокси API, страницы, шлюз Anthropic с принудительной моделью и бюджетом, почта.
 
 // ── Продающий ИИ-чат по визам (/chat_test). Отвечает клиентам, берёт контакт
 // (телефон/WhatsApp/Telegram) в .chatLeads.json; выгрузка лидов — только админ.

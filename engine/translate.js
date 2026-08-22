@@ -393,8 +393,33 @@ function fitHtmlForDocx(html, landscape) {
     .replace(/\s+width\s*=\s*("[0-9.]+%"|'[0-9.]+%'|[0-9.]+%)/gi, ""); // %-атрибуты роняют конвертер — убираем (любые кавычки)
 }
 
+// ── PDF из того же HTML через headless Chromium (puppeteer): постранично, как
+// «печать» из браузера — section.page → страница, @page задаёт ориентацию.
+// Если puppeteer не установлен — PDF просто не будет (pdfError), DOCX останется.
+let _browser = null;
+async function pdfBrowser() {
+  let puppeteer;
+  try { puppeteer = require("puppeteer"); } catch (_) { return null; }
+  if (_browser && _browser.connected !== false) return _browser;
+  _browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"] });
+  _browser.on("disconnected", () => { _browser = null; });
+  return _browser;
+}
+async function htmlToPdf(fullHtml, landscape) {
+  const b = await pdfBrowser();
+  if (!b) throw new Error("puppeteer не установлен");
+  const page = await b.newPage();
+  try {
+    await page.setContent(fullHtml, { waitUntil: "load", timeout: 60000 });
+    return Buffer.from(await page.pdf({ format: "A4", landscape: !!landscape, printBackground: true, preferCSSPageSize: true,
+      margin: { top: "12mm", right: "12mm", bottom: "12mm", left: "12mm" }, timeout: 120000 }));
+  } finally { await page.close().catch(() => {}); }
+}
+
 async function buildOutputs(order, html) {
-  const landscape = detectLandscape(html);
+  // Ориентацию заказа портала (orient из ТЗ Кати) уважаем буквально; иначе — по HTML.
+  const po = order.portal && String(order.portal.orient || "");
+  const landscape = po === "landscape" ? true : (po === "portrait" ? false : detectLandscape(html));
   html = fitHtmlForDocx(html, landscape);
   order.landscape = landscape;
   const fullHtml = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Перевод</title><style>body{font-family:'Times New Roman',serif;max-width:" + (landscape ? 1160 : 820) + "px;margin:24px auto;padding:0 16px;color:#111}table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #444;padding:4px 6px;font-size:13px}section.page{page-break-after:always;margin-bottom:36px;border-bottom:1px dashed #bbb;padding-bottom:24px}.tr-note{color:#333}@page{size:A4 " + (landscape ? "landscape" : "portrait") + ";margin:12mm}@media print{body{max-width:none;margin:0}section.page{border-bottom:0;margin-bottom:0;padding-bottom:0}}</style><script>if(/[?&]print=1/.test(location.search)){window.addEventListener(\"load\",function(){setTimeout(function(){window.print()},400)})}</script></head><body>" + html + "</body></html>";
@@ -428,13 +453,23 @@ async function buildOutputs(order, html) {
       order.docxError = "DOCX не собрался: " + e2.message;
     }
   }
+  // PDF — тем же HTML, постранично (ТЗ Кати: «to: PDF», keepLayout, orient).
+  order.pdfError = null;
+  try {
+    const pdfBuf = await htmlToPdf(fullHtml, landscape);
+    order.files.pdf = saveFile(order.id, "result", pdfBuf, "result.pdf", "application/pdf");
+  } catch (e) {
+    order.pdfError = "PDF не собрался: " + String((e && e.message) || e).slice(0, 200);
+    console.warn("translate pdf:", order.pdfError);
+  }
 }
 function currentHtml(order) {
   try { return readFileBuf(order.files.html).toString("utf8").replace(/^[\s\S]*?<body>/, "").replace(/<\/body>[\s\S]*$/, ""); } catch (_) { return ""; }
 }
-function docxDlName(order) {
-  return "Перевод " + (((order.src[0] && order.src[0].name) || order.id).replace(/\.[^.]+$/, "")) + ".docx";
+function resultName(order, ext) {
+  return "Перевод " + (((order.src[0] && order.src[0].name) || order.id).replace(/\.[^.]+$/, "")) + "." + ext;
 }
+function docxDlName(order) { return resultName(order, "docx"); }
 
 // ── Проверка вторым проходом ──────────────────────────────────────────────
 async function runCheck(order, html, files) {
@@ -827,11 +862,23 @@ function portalGroupReport(number, opts) {
   const errs = list.filter((o) => o.status === "error");
   const cost = Math.round(list.reduce((s, o) => s + orderCost(o).usd, 0) * RUB_RATE * 100) / 100;
   const pages = list.reduce((s, o) => s + ((o.meta && o.meta.pages) || 0), 0);
-  const files = [];
+  // Формат результата — по полю to заказа (ТЗ Кати): PDF → PDF, DOCX → DOCX;
+  // JPG/PNG/TXT → PDF (постранично). Если нужного формата нет — отдаём что есть
+  // и честно пишем в error, молча подменять нельзя.
+  const files = [], notes = [];
   for (const o of list) {
     const base = PORTAL_PUBLIC + "/translate/api/dl/" + o.id + "/" + o.dlToken + "/";
-    if (o.files && o.files.docx) files.push({ name: docxDlName(o), url: base + "docx" });
-    else if (o.files && o.files.html) files.push({ name: "Перевод (веб-версия): " + ((o.src[0] && o.src[0].name) || o.id), url: base + "html" });
+    const want = String((o.portal && o.portal.to) || "DOCX").toUpperCase();
+    const srcName = (o.src[0] && o.src[0].name) || o.id;
+    const hasPdf = !!(o.files && o.files.pdf), hasDocx = !!(o.files && o.files.docx);
+    if (want === "DOCX") {
+      if (hasDocx) files.push({ name: resultName(o, "docx"), url: base + "docx" });
+      else if (hasPdf) { files.push({ name: resultName(o, "pdf"), url: base + "pdf" }); notes.push(srcName + ": запрошен DOCX, собрался только PDF" + (o.docxError ? " (" + o.docxError + ")" : "")); }
+    } else {
+      if (hasPdf) { files.push({ name: resultName(o, "pdf"), url: base + "pdf" }); if (want !== "PDF") notes.push(srcName + ": запрошен " + want + ", отдаём PDF (постранично)"); }
+      else if (hasDocx) { files.push({ name: resultName(o, "docx"), url: base + "docx" }); notes.push(srcName + ": запрошен " + want + ", PDF не собрался — отдаём DOCX" + (o.pdfError ? " (" + o.pdfError + ")" : "")); }
+    }
+    if (!hasPdf && !hasDocx && o.files && o.files.html) files.push({ name: "Перевод (веб-версия): " + srcName, url: base + "html" });
   }
   const payload = {
     number,
@@ -840,6 +887,7 @@ function portalGroupReport(number, opts) {
   };
   if (pages) payload.pages = pages;
   if (errs.length) payload.error = errs.map((o) => o.error).filter(Boolean).join("; ").slice(0, 500);
+  else if (notes.length) payload.error = notes.join("; ").slice(0, 500);
   const st = store();
   st.portalSent = st.portalSent || {};
   const sig = payload.status + "|" + cost + "|" + files.length;
@@ -1180,7 +1228,7 @@ function orderView(o, full) {
     kind: o.kind, createdAt: o.createdAt, doneAt: o.doneAt || null,
     status: o.status, error: o.error || null,
     params: o.params, srcNames: (o.src || []).map((f) => f.name),
-    hasDocx: !!(o.files && o.files.docx), hasHtml: !!(o.files && o.files.html),
+    hasDocx: !!(o.files && o.files.docx), hasPdf: !!(o.files && o.files.pdf), hasHtml: !!(o.files && o.files.html),
     docxError: o.docxError || null,
     filesPurged: !!o.filesPurged, progress: o.progress || null,
     checkVerdict: (o.check && o.check.verdict) || null,
@@ -1357,7 +1405,7 @@ function mount(app, deps) {
     const v = {
       id: o.id, num: o.num || null, createdAt: o.createdAt, status: o.status, progress: o.progress || null,
       error: o.error || null, srcNames: (o.src || []).map((f) => f.name),
-      params: o.params, hasDocx: !!(o.files && o.files.docx), hasHtml: !!(o.files && o.files.html),
+      params: o.params, hasDocx: !!(o.files && o.files.docx), hasPdf: !!(o.files && o.files.pdf), hasHtml: !!(o.files && o.files.html),
       checkVerdict: (o.check && o.check.verdict) || null, checkRevised: !!(o.check && o.check.revised),
       correctStatus: o.correctStatus || null, correctionsCnt: (o.corrections || []).length,
       pages: (o.meta && o.meta.pages) || null, docType: (o.meta && o.meta.docType) || null,
@@ -1427,6 +1475,7 @@ function mount(app, deps) {
     const which = req.params.which;
     let fn = null, dlName = null;
     if (which === "docx") { fn = o.files && o.files.docx; dlName = docxDlName(o); }
+    else if (which === "pdf") { fn = o.files && o.files.pdf; dlName = resultName(o, "pdf"); }
     else if (which === "html") { fn = o.files && o.files.html; }
     if (!fn) return res.status(404).send("Нет файла");
     let buf;
@@ -1562,7 +1611,7 @@ function mount(app, deps) {
       for (const o of store().orders) {
         if (o.filesPurged || (o.createdAt || 0) > cutoff) continue;
         if (["new", "queued", "translating", "checking", "revising"].indexOf(o.status) >= 0 || o.compareStatus === "processing" || o.correctStatus === "processing") continue;
-        const all = [...(o.src || []).map((f) => f.file), ...((o.srcOriginal || []).map((f) => f.file)), o.files && o.files.html, o.files && o.files.docx, o.files && o.files.human].filter(Boolean);
+        const all = [...(o.src || []).map((f) => f.file), ...((o.srcOriginal || []).map((f) => f.file)), o.files && o.files.html, o.files && o.files.docx, o.files && o.files.pdf, o.files && o.files.human].filter(Boolean);
         for (const fn of all) { try { fs.unlinkSync(path.join(FILES_DIR, fn)); } catch (_) {} }
         o.filesPurged = true; o.files = {}; n++;
       }
@@ -1710,6 +1759,7 @@ function mount(app, deps) {
           author: String(meta.author || (req.staff && (req.staff.name || req.staff.email)) || "").slice(0, 100),
           pagesDeclared: Math.max(0, Math.round(Number(f.pages) || 0)),
           from: String(f.from || "").slice(0, 10), to: String(f.to || "").slice(0, 10),
+          orient: String(f.orient || "").slice(0, 12), keepLayout: !!f.keepLayout,
         },
         dlToken: crypto.randomBytes(12).toString("hex"),
         src: [], files: {},
@@ -1941,7 +1991,7 @@ function mount(app, deps) {
     const i = st.orders.findIndex((o) => o.id === req.params.id);
     if (i < 0) return res.status(404).json({ success: false, message: "Не найден" });
     const o = st.orders[i];
-    const all = [...(o.src || []).map((f) => f.file), o.files && o.files.html, o.files && o.files.docx, o.files && o.files.human].filter(Boolean);
+    const all = [...(o.src || []).map((f) => f.file), o.files && o.files.html, o.files && o.files.docx, o.files && o.files.pdf, o.files && o.files.human].filter(Boolean);
     for (const fn of all) { try { fs.unlinkSync(path.join(FILES_DIR, fn)); } catch (_) {} }
     // Журнал расхода удалённого заказа сохраняем отдельно — иначе удаление
     // «возвращает» деньги в оценку остатка баланса и статистику.
@@ -1978,6 +2028,7 @@ function mount(app, deps) {
     const which = req.params.which;
     let fn = null, dlName = null;
     if (which === "docx") { fn = o.files && o.files.docx; dlName = docxDlName(o); }
+    else if (which === "pdf") { fn = o.files && o.files.pdf; dlName = resultName(o, "pdf"); }
     else if (which === "html") { fn = o.files && o.files.html; }
     else if (which === "human") { fn = o.files && o.files.human; dlName = o.humanName || "human"; }
     else if (/^src(\d+)$/.test(which)) { const i = Number(which.slice(3)); fn = o.src[i] && o.src[i].file; dlName = o.src[i] && o.src[i].name; }
@@ -2038,6 +2089,7 @@ function mount(app, deps) {
     if (!o || !o.dlToken || o.dlToken !== req.params.tok) return res.status(404).send("Не найдено");
     let fn = null, dlName = null;
     if (req.params.which === "docx") { fn = o.files && o.files.docx; dlName = docxDlName(o); }
+    else if (req.params.which === "pdf") { fn = o.files && o.files.pdf; dlName = resultName(o, "pdf"); }
     else if (req.params.which === "html") { fn = o.files && o.files.html; }
     if (!fn) return res.status(404).send("Нет файла");
     let buf;
