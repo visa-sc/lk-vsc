@@ -32,34 +32,34 @@
       radial-gradient(900px 480px at 105% 12%, rgba(18, 58, 120, .08), transparent 55%),
       linear-gradient(180deg, #f8fafd 0%, #eef2f9 100%);
   }
-  /* ── Общий знак площадки: логотип VOYO + by VSC, полоса от края до края ── */
+  /* ── Общий знак площадки (ТЗ Кати 22.08, копия 1-в-1 из «Сверок»/«Переводов»):
+     высоты заданы числами намеренно — итог шапки ровно 81px, чтобы при переходе
+     между /calc и её разделами знак не сдвигался ни на пиксель ── */
   html { scrollbar-gutter: stable; }
   .brand {
     display: flex; flex-direction: column; align-items: center; gap: 8px;
-    padding: 14px 0; margin-bottom: 18px;
-    border-bottom: 3px solid #0093ce;
-    width: 100vw; position: relative; left: 50%; margin-left: -50vw;
+    padding: 14px 0 12px; margin: 0 0 18px -50vw;
+    width: 100vw; position: relative; left: 50%;
+    border-bottom: 3px solid #0093ce; box-sizing: border-box;
   }
-  .brand-row { display: flex; align-items: baseline; gap: 10px; }
+  .brand-row { display: flex; align-items: baseline; gap: 10px; height: 32px; }
   .brand-logo { height: 20px; width: auto; display: block; }
-  .brand-by { font-size: 13px; font-weight: 600; color: #98a0b0; letter-spacing: .02em; }
-  .vsc-wm {
-    display: inline-flex; align-items: center; gap: 7px; line-height: 1;
-    font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
-    font-weight: 800; font-size: 28px;
-  }
-  .vsc-wm b {
-    background: linear-gradient(135deg, #00c8f2 0%, #0097ca 52%, #123a78 130%);
-    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  }
+  .brand-by { font-size: 13px; line-height: 20px; font-weight: 600;
+              color: #98a0b0; letter-spacing: .02em; }
+  .vsc-wm { display: inline-flex; align-items: center; gap: 7px;
+            font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+            font-weight: 800; font-size: 28px; line-height: 20px; }
+  .vsc-wm b { background: linear-gradient(135deg, #00c8f2 0%, #0097ca 52%, #123a78 130%);
+              -webkit-background-clip: text; background-clip: text;
+              -webkit-text-fill-color: transparent; }
   .vsc-wm i { width: 2px; height: 16px; border-radius: 2px;
               background: linear-gradient(180deg, #00bff0, #0088c2); opacity: .5; }
   .brand-sub {
-    font-size: 11px; font-weight: 600; color: #98a0b0;
+    font-size: 11px; line-height: 12px; font-weight: 600; color: #98a0b0;
     letter-spacing: .5em; text-transform: lowercase; margin-right: -.5em;
   }
   /* Отступ сверху = отступу от меню до карточки (28px): переключатель висит ровно между верхом окна и калькулятором. */
-  .wrap { max-width: 900px; margin: 0 auto; padding: 10px 18px 80px; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 26px 18px 80px; }
   .card { background: #fff; border: 1px solid var(--line); border-radius: 24px; padding: 28px; box-shadow: var(--sh-lg); }
   h1 { font-size: 30px; font-weight: 700; letter-spacing: -.022em; margin: 0 0 16px; }
   /* «i» с пояснением у заголовка (как на /vsc): весь вводный текст спрятан сюда. */
@@ -116,10 +116,12 @@
   .out .v { font-size: 24px; font-weight: 700; color: #1f8f4d; margin-top: 6px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .out::after { content: "⧉"; position: absolute; top: 13px; right: 15px; font-size: 13px; color: var(--green); opacity: .5; transition: opacity .15s ease; }
   .out:hover::after { opacity: 1; }
+  /* Кнопки в стиле площадки (ТЗ Кати 22.08): основная — #0093ce, остальные — ghost */
   .acts { margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap; }
-  .acts button { padding: 11px 20px; font-size: 13.5px; font-weight: 600; border-radius: 980px; cursor: pointer; background: #f0f0f3; color: var(--blue); border: none; font-family: inherit; letter-spacing: -.01em; transition: background .15s ease, transform .1s ease; }
-  .acts button:hover { background: #e6e6ea; }
+  .acts button { height: 38px; padding: 0 16px; border: 1px solid rgba(20,32,64,.14); border-radius: 10px; cursor: pointer; background: #fff; color: #3a4356; font-weight: 600; font-size: 14px; font-family: inherit; letter-spacing: -.01em; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease, border-color .15s ease, transform .1s ease; }
+  .acts button:hover { background: #f2fafd; border-color: rgba(0,147,206,.45); }
   .acts button:active { transform: scale(.97); }
+  #btnRefresh { border: 0; }
   #btnRefresh { background: var(--blue); color: #fff; }
   #btnRefresh:hover { background: var(--blue-d); }
   /* ── Переключатель калькуляторов: ВНЖ / Страхование (пилюля с плавающим бегунком, iOS-стиль) ── */
@@ -204,7 +206,7 @@
   <!-- Знак площадки — единый со «Сверками» и «Переводами» на work.voyotravel.ru -->
   <div class="brand">
     <div class="brand-row">
-      <img class="brand-logo" alt="VOYO" src="/logo.png" />
+      <img class="brand-logo" alt="VOYO" src="/voyo-logo.png" />
       <span class="brand-by">by</span>
       <span class="vsc-wm"><b>V</b><i></i><b>S</b><i></i><b>C</b></span>
     </div>
