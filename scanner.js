@@ -374,11 +374,18 @@ const SCHEMA = {
   type: "object", additionalProperties: false,
   required: ["doc_kind", "surname_ru", "name_ru", "patronymic_ru", "surname_lat", "name_lat",
     "birth_date", "sex", "birth_place", "citizenship", "number", "issue_date", "expiry_date",
-    "authority", "mrz_line1", "mrz_line2", "notes", "page_box"],
+    "authority", "mrz_line1", "mrz_line2", "notes", "page_box", "authority_box"],
   properties: {
     // Где на снимке сама страница с данными — чтобы вырезать её и перечитать
     // мелкий шрифт в исходном разрешении (см. cropToJpeg).
     page_box: {
+      type: "object", additionalProperties: false, required: ["x", "y", "w", "h"],
+      properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } },
+    },
+    // Где именно строка с кодом подразделения — по ней делается вторая,
+    // мелкая вырезка: код накрывают голограммой, и в масштабе страницы
+    // «78004» превращается в «78604».
+    authority_box: {
       type: "object", additionalProperties: false, required: ["x", "y", "w", "h"],
       properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } },
     },
@@ -428,6 +435,7 @@ const SYS = [
   "- authority — орган выдачи как напечатан, например «МВД 50001» или «ФМС 77712». Код подразделения набран мелко и часто смазан: читай его ПО ОДНОЙ ЦИФРЕ, не угадывай слово целиком. Легко спутать 6 и 8, 0 и 8, 3 и 8, 1 и 7 — если цифра нечёткая, выбери ту, у которой видны характерные штрихи (у 6 хвост наверху слева и замкнутая нижняя петля, у 8 две замкнутые петли).",
   "- birth_place — как напечатано ЦЕЛИКОМ, вместе с латинской частью после косой черты: «СВЕРДЛОВСКАЯ ОБЛ. / RUSSIA», «ПЕРМСКАЯ ОБЛ. / USSR», «Г. МОСКВА / USSR». Латинская часть — это страна рождения, у рождённых до 1991 года там стоит USSR, и её нельзя терять и нельзя менять на RUSSIA.",
   "- mrz_line1 и mrz_line2 — две нижние машиночитаемые строки (крупный моноширинный шрифт под фотографией), СИМВОЛ В СИМВОЛ, ровно по 44 знака каждая. Знак-заполнитель — «<» (шеврон), его в строках много подряд; не заменяй его пробелами и не пропускай. Не путай O и 0, I и 1. Пример вида: «P<RUSIVANOV<<IVAN<<<<<<<<<<<<<<<<<<<<<<<<<<<» и «7512345674RUS8503121M3001015<<<<<<<<<<<<<<04». Это самое важное поле — по нему сверяются номер и даты. ЕСЛИ машиночитаемых строк на снимке НЕ ВИДНО (обрезаны, залиты бликом, это другая страница) — верни для них ПУСТЫЕ строки. Ни в коем случае не составляй их сам из напечатанных данных: выдуманная MRZ хуже отсутствующей.",
+  "- authority_box — положение СТРОКИ с кодом подразделения (там, где «МВД 12345» под надписью «Орган, выдавший документ / Authority») в процентах от размеров снимка: x, y, w, h. Рамку бери с запасом по ширине, чтобы код попал целиком. Если строки не видно — нули.",
   "- page_box — положение самой страницы с данными (та, где фотография и под ней две машиночитаемые строки) в ПРОЦЕНТАХ от размеров снимка: x и y — левый верхний угол, w и h — ширина и высота. Снимок часто сделан издалека, паспорт занимает лишь часть кадра — покажи именно его. Если страницы не видно, верни нули.",
   "- notes — короткая пометка по-русски, если с документом что-то не так (плохо видно, обрезано, блик, это не паспорт). Обязательно напиши сюда, если какая-то ЦИФРА читается неуверенно, и укажи поле: «код подразделения смазан», «не уверен в дате выдачи».",
 ].join("\n");
@@ -521,14 +529,51 @@ function jpegInsidePdf(buf) {
   return out.length > 3 && out[0] === 0xff && out[1] === 0xd8 ? out : null;
 }
 
+// Второй вид сканов: картинка лежит в PDF не JPEG-ом, а сжатым растром
+// (FlateDecode — тот же zlib, он есть в самом Node). Разжимаем и собираем
+// пиксели: длина ровно W*H*каналы, значит предсказателей нет и данные сырые.
+function rasterInsidePdf(buf) {
+  const hay = buf.toString("latin1");
+  const re = /\/Subtype\s*\/Image([\s\S]{0,600}?)stream/g;
+  let m, best = null;
+  while ((m = re.exec(hay))) {
+    const head = m[1];
+    if (!/\/Filter\s*\/?FlateDecode/.test(head) || /\/DCTDecode|\/JPXDecode/.test(head)) continue;
+    const W = Number((head.match(/\/Width\s+(\d+)/) || [])[1] || 0);
+    const H = Number((head.match(/\/Height\s+(\d+)/) || [])[1] || 0);
+    const bpc = Number((head.match(/\/BitsPerComponent\s+(\d+)/) || [])[1] || 8);
+    if (!W || !H || bpc !== 8) continue;
+    let from = m.index + m[0].length;
+    if (hay[from] === "\r") from++;
+    if (hay[from] === "\n") from++;
+    const to = hay.indexOf("endstream", from);
+    if (to < 0) continue;
+    if (!best || W * H > best.W * best.H) best = { from, to, W, H };
+  }
+  if (!best) return null;
+  let raw;
+  try { raw = require("zlib").inflateSync(buf.subarray(best.from, best.to)); } catch (_) { return null; }
+  const px = best.W * best.H;
+  const ch = raw.length === px * 3 ? 3 : raw.length === px ? 1 : raw.length === px * 4 ? 4 : 0;
+  if (!ch) return null;                                   // с предсказателями не связываемся
+  const data = Buffer.alloc(px * 4);
+  for (let i = 0; i < px; i++) {
+    const r = raw[i * ch], g = ch === 1 ? r : raw[i * ch + 1], b = ch === 1 ? r : raw[i * ch + 2];
+    data[i * 4] = r; data[i * 4 + 1] = g; data[i * 4 + 2] = b; data[i * 4 + 3] = 255;
+  }
+  return { data, width: best.W, height: best.H };
+}
+
 function decodeImage(buf, mime, name) {
   const ext = path.extname(String(name || "")).toLowerCase();
   const m = String(mime || "").toLowerCase();
   if (m === "application/pdf" || ext === ".pdf") {
     const inner = jpegInsidePdf(buf);
-    if (!inner) return null;
-    const im = require("jpeg-js").decode(inner, { useTArray: true });
-    return { data: Buffer.from(im.data.buffer || im.data), width: im.width, height: im.height };
+    if (inner) {
+      const im = require("jpeg-js").decode(inner, { useTArray: true });
+      return { data: Buffer.from(im.data.buffer || im.data), width: im.width, height: im.height };
+    }
+    return rasterInsidePdf(buf);
   }
   if (m === "image/png" || ext === ".png") {
     const { PNG } = require("pngjs");
@@ -565,7 +610,20 @@ function cropToJpeg(buf, mime, name, box, padPct) {
   // нельзя: проверено, на ней модель прочитала фамилию хуже.
   const cap = (side) => Math.min(1, 1568 / side);
   const gain = cap(Math.max(w, h)) / cap(Math.max(im.width, im.height));
-  return { buf: Buffer.from(require("jpeg-js").encode({ data: out, width: w, height: h }, 92).data), w, h, gain, delivered: delivered(Math.max(w, h)) };
+  // used — какая рамка в процентах реально вырезана (с учётом полей): по ней
+  // потом пересчитываются координаты внутри вырезки в координаты снимка.
+  const used = { x: x / im.width * 100, y: y / im.height * 100, w: w / im.width * 100, h: h / im.height * 100 };
+  return { buf: Buffer.from(require("jpeg-js").encode({ data: out, width: w, height: h }, 92).data), w, h, gain, used, delivered: delivered(Math.max(w, h)) };
+}
+// Рамка строки — узкая полоска, к ней мерки страницы неприменимы.
+function saneLineBox(b) {
+  if (!b) return null;
+  const n = (v) => (typeof v === "number" && isFinite(v) ? v : NaN);
+  const x = n(b.x), y = n(b.y), w = n(b.w), h = n(b.h);
+  if ([x, y, w, h].some(isNaN)) return null;
+  if (w < 3 || h < 0.4 || w > 100 || h > 40) return null;
+  if (x < 0 || y < 0 || x + w > 101 || y + h > 101) return null;
+  return { x, y, w, h };
 }
 // Рамка от модели: проверяем на вменяемость, чтобы не резать по мусору.
 function sanePageBox(b) {
@@ -702,7 +760,23 @@ function buildFields(ai, mrz, alt) {
   // «КАНУННИКОВА» — здесь и вылезает.
   const ruVsMrz = (ruKey, mrzVal, human) => {
     if (!mrz || !mrzVal || !f[ruKey]) return;
-    const my = translit(f[ruKey]);
+    let my = translit(f[ruKey]);
+    // Лишняя буква в кириллице: «СПЫЛИКХИНА» вместо «СПЫЛИХИНА» (у Х в
+    // транслитерации две буквы, KH, поэтому лишняя К прячется). Пробуем убрать
+    // по одной букве и берём вариант, чья транслитерация СОВПАДАЕТ с MRZ
+    // в точности — и только если такой вариант единственный.
+    if (my !== mrzVal) {
+      const hits = [];
+      for (let i = 0; i < f[ruKey].length; i++) {
+        const cand = f[ruKey].slice(0, i) + f[ruKey].slice(i + 1);
+        if (cand.length > 2 && translit(cand) === mrzVal && hits.indexOf(cand) < 0) hits.push(cand);
+      }
+      if (hits.length === 1) {
+        warn.push(human + ": прочитано «" + f[ruKey] + "», но по MRZ («" + mrzVal + "») это «" + hits[0] + "» — лишняя буква. Исправлено, сверьте глазами.");
+        f[ruKey] = hits[0];
+        my = translit(f[ruKey]);
+      }
+    }
     if (my === mrzVal || editDist(my, mrzVal) <= 1) return;
     warn.push(human + ": прочитано «" + f[ruKey] + "», но в MRZ стоит «" + mrzVal + "», а из прочитанного вышло бы «" + my +
       "». Кириллица прочитана неуверенно — сверьте с паспортом.");
@@ -768,7 +842,44 @@ function buildFields(ai, mrz, alt) {
   // сошлось — ставим галочку; разошлось РОВНО НА ОДНУ ЦИФРУ при той же длине —
   // это описка основного прохода, берём прицельное; всё остальное (другая
   // длина, две и больше цифр разницы) — оставляем как было и предупреждаем.
-  const altAuthority = String((alt && alt.authority) || "").trim();
+  // КОД ПОДРАЗДЕЛЕНИЯ. Проверить его не с чем: в MRZ его нет, контрольной
+  // цифры нет, а цифры мелкие и часто под голограммой. Поэтому смотрим на него
+  // трижды в разном масштабе — весь снимок, вырезка страницы, вырезка самой
+  // строки — и берём то, что совпало хотя бы дважды. Опыт показал, что ни один
+  // масштаб не выигрывает всегда: на одном снимке верна строка, на другом
+  // страница. Если все три разошлись — значит читать нечего, так и пишем.
+  let authorityDecided = false;
+  {
+    const digits = (v) => String(v || "").replace(/\D/g, "");
+    const votes = [
+      { src: "по всему снимку", v: f.authority },
+      { src: "по вырезке страницы", v: alt && alt.authority },
+      { src: "по вырезке строки", v: alt && alt.authorityLine },
+    ].filter((x) => /^\d{5}$/.test(digits(x.v)));
+    if (votes.length >= 2) {
+      const count = new Map();
+      votes.forEach((x) => count.set(digits(x.v), (count.get(digits(x.v)) || 0) + 1));
+      const best = Array.from(count).sort((a, b) => b[1] - a[1]);
+      const list = votes.map((x) => "«" + String(x.v).trim() + "» " + x.src).join(", ");
+      if (best[0][1] >= 2) {
+        const win = votes.find((x) => digits(x.v) === best[0][0]);
+        if (digits(f.authority) !== best[0][0]) {
+          warn.push("Кем выдан: чтения разошлись (" + list + "). Взято «" + String(win.v).trim() + "» — за него два чтения из " + votes.length + ".");
+        } else if (votes.length >= 3 && best.length > 1) {
+          warn.push("Кем выдан: одно из трёх чтений разошлось (" + list + "). Оставлено «" + String(win.v).trim() + "», но сверьте глазами.");
+        }
+        f.authority = String(win.v).trim();
+        if (best[0][1] === votes.length && votes.length >= 2) confirmed.push("authority");
+      } else {
+        warn.push("Кем выдан: все чтения разные (" + list + ") — код набран мелко и, похоже, перекрыт голограммой. Введите вручную, глядя в паспорт.");
+        const pageVote = votes.find((x) => x.src === "по вырезке страницы") || votes[0];
+        f.authority = String(pageVote.v).trim();
+      }
+      f.authorityLat = translit(f.authority);
+      authorityDecided = true;
+    }
+  }
+  const altAuthority = authorityDecided ? "" : String((alt && alt.authority) || "").trim();
   if (altAuthority && f.authority) {
     const d = digitDiff(altAuthority, f.authority);
     const sameWord = altAuthority.replace(/[\d\s]/g, "") === f.authority.replace(/[\d\s]/g, "");
@@ -946,7 +1057,7 @@ async function recognizeOne(buf, name, mime, ctx) {
   // 77409 — каждый раз по-новому, а по вырезке трижды из трёх верно.
   let alt = null, pageShort = 0;
   if (smallPrintCheck()) {
-    let cropBlock = null, cropGain = 1;
+    let cropBlock = null, cropGain = 1, cropUsed = null;
     try {
       const box = sanePageBox(ai.page_box);
       const c = cropToJpeg(buf, mime, name, box, 5);
@@ -954,7 +1065,7 @@ async function recognizeOne(buf, name, mime, ctx) {
         // Меньше ~900 точек на страницу — мелкий шрифт не различить никакими
         // ухищрениями, честнее об этом сказать сотруднику.
         pageShort = c.delivered;
-        if (c.buf) { cropBlock = mediaBlock(c.buf, "crop.jpg", "image/jpeg"); cropGain = c.gain; }
+        if (c.buf) { cropBlock = mediaBlock(c.buf, "crop.jpg", "image/jpeg"); cropGain = c.gain; cropUsed = c.used; }
       }
     } catch (e) { console.warn("scanner: вырезка страницы не удалась:", e.message); }
     try {
@@ -980,6 +1091,33 @@ async function recognizeOne(buf, name, mime, ctx) {
             authority: j.authority, issueDate: j.issue_date,
             surnameRu: j.surname_ru, nameRu: j.name_ru, patronymicRu: j.patronymic_ru, birthPlace: j.birth_place,
           };
+          // Код подразделения — самое больное место: пять мелких цифр под
+          // голограммой. Даже на вырезке страницы «78004» читается как «78604».
+          // Поэтому режем ещё раз, уже по самой строке кода: там цифры занимают
+          // весь кадр. Рамку берём из чтения по вырезке и пересчитываем в
+          // координаты исходного снимка, запрос выходит копеечным — картинка
+          // крошечная.
+          try {
+            const ab = saneLineBox(j.authority_box);
+            const used = cropUsed;
+            if (ab && used) {
+              const abs = {
+                x: used.x + ab.x * used.w / 100, y: used.y + ab.y * used.h / 100,
+                w: ab.w * used.w / 100, h: ab.h * used.h / 100,
+              };
+              const line = cropToJpeg(buf, mime, name, abs, 2);
+              if (line && line.buf && line.w >= 120) {
+                const rl = await runJson({
+                  model: model(), max_tokens: 80,
+                  system: "Ты переписываешь то, что видишь на снимке. Ничего не додумывай.",
+                  messages: [{ role: "user", content: [mediaBlock(line.buf, "line.jpg", "image/jpeg"), { type: "text", text:
+                    "На картинке — строка из паспорта с кодом подразделения: «МВД» или «ФМС» и пять цифр. Перепиши её, рассматривая каждую цифру отдельно. Часть цифры может быть перекрыта голограммой — ориентируйся на видимые части контура. Строго JSON: {\"authority\":\"МВД 12345\"}." }] }],
+                }, SMALL_SCHEMA);
+                track(rl);
+                if (rl && rl.json && /\d{5}/.test(String(rl.json.authority || ""))) alt.authorityLine = String(rl.json.authority).trim();
+              }
+            }
+          } catch (e) { console.warn("scanner: вырезка строки с кодом не удалась:", e.message); }
           // MRZ на вырезке тоже крупнее — вдруг разберётся лучше.
           const mc = parseMrzTd3(j.mrz_line1, j.mrz_line2);
           const sc = (m) => (!m ? -1 : (m.valid ? 3 : 0) + (mrzNamesSuspect(m, ai) ? 0 : 2));
