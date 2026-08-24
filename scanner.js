@@ -322,6 +322,9 @@ function client() {
   return _client;
 }
 function model() { return process.env.SCANNER_MODEL || "claude-haiku-4-5"; }
+// Прицельная перепроверка мелкого шрифта (код подразделения, дата выдачи).
+// Включена по умолчанию: SCANNER_SMALL_PRINT=0 выключает.
+function smallPrintCheck() { return !/^(0|off|no|нет)$/i.test(String(process.env.SCANNER_SMALL_PRINT || "1").trim()); }
 // Читать документ дважды и сверять чтения между собой. «1» — вторым проходом
 // та же модель (вдвое дороже), «hard» — сильная: она ошибается в других местах,
 // поэтому ловит больше, но и стоит заметно дороже.
@@ -386,6 +389,10 @@ const SCHEMA = {
 const MRZ_SCHEMA = {
   type: "object", additionalProperties: false, required: ["mrz_line1", "mrz_line2"],
   properties: { mrz_line1: { type: "string" }, mrz_line2: { type: "string" } },
+};
+const SMALL_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["issue_date", "authority"],
+  properties: { issue_date: { type: "string" }, authority: { type: "string" } },
 };
 const EXAMPLE_SCHEMA = {
   type: "object", additionalProperties: false, required: ["lessons", "diff"],
@@ -483,8 +490,18 @@ function mediaBlock(buf, name, mime) {
   return { type: "image", source: { type: "base64", media_type: media, data: buf.toString("base64") } };
 }
 
+// Сколько цифр разошлось у двух строк одной длины (иначе — бесконечность).
+function digitDiff(a, b) {
+  const x = String(a || "").replace(/\D/g, ""), y = String(b || "").replace(/\D/g, "");
+  if (!x || !y || x.length !== y.length) return Infinity;
+  let n = 0;
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) n++;
+  return n;
+}
+
 // Свести ответ модели и разбор MRZ в итоговый набор полей.
-function buildFields(ai, mrz) {
+// alt — второе, прицельное чтение мелких полей (см. readSmallPrint): {authority, issueDate}.
+function buildFields(ai, mrz, alt) {
   const warn = [];
   const f = {
     docKind: DOC_KINDS.indexOf(ai.doc_kind) >= 0 ? ai.doc_kind : "Другой документ",
@@ -571,7 +588,54 @@ function buildFields(ai, mrz) {
   // месяц те же. А срок действия проверен контрольной цифрой MRZ. Значит по
   // нему можно и подтвердить дату выдачи, и починить одну сбитую цифру года
   // (модель прочитала «30.11.2011» вместо «30.11.2021» — 20 лет не бывает).
+  // Второе, прицельное чтение мелкого шрифта. Слепо ему верить нельзя: на
+  // хорошем снимке оно точнее основного прохода (тот читает 19 полей разом и
+  // «проскакивает» цифры), а на плохом — выдаёт откровенный мусор. Поэтому:
+  // сошлось — ставим галочку; разошлось РОВНО НА ОДНУ ЦИФРУ при той же длине —
+  // это описка основного прохода, берём прицельное; всё остальное (другая
+  // длина, две и больше цифр разницы) — оставляем как было и предупреждаем.
+  const altAuthority = String((alt && alt.authority) || "").trim();
+  if (altAuthority && f.authority) {
+    const d = digitDiff(altAuthority, f.authority);
+    const sameWord = altAuthority.replace(/[\d\s]/g, "") === f.authority.replace(/[\d\s]/g, "");
+    if (altAuthority === f.authority) confirmed.push("authority");
+    else if (d === 1 && sameWord) {
+      warn.push("Кем выдан: при беглом чтении «" + f.authority + "», при повторном, прицельном — «" + altAuthority +
+        "». Взято прицельное (различие в одной цифре), но сверьте глазами: код набран мелко.");
+      f.authority = altAuthority;
+    } else {
+      warn.push("Кем выдан: два чтения разошлись — «" + f.authority + "» и «" + altAuthority +
+        "». Оставлено первое, но полагаться на него нельзя — введите вручную.");
+    }
+    f.authorityLat = translit(f.authority);
+  } else if (altAuthority && !f.authority) {
+    f.authority = altAuthority;
+    f.authorityLat = translit(f.authority);
+  }
+
+  // У загранпаспорта РФ код подразделения — ровно пять цифр. Меньше значит,
+  // что модель их не дочитала (мелкий или размытый снимок).
+  if (f.authority && !/^\d{5}$/.test(f.authority.replace(/\D/g, ""))) {
+    warn.push("Кем выдан: «" + f.authority + "» — у загранпаспорта РФ код подразделения из пяти цифр. Прочитано не полностью, введите вручную.");
+  }
+
   const isDate = (s) => /^\d{2}\.\d{2}\.\d{4}$/.test(String(s || ""));
+  // Дата выдачи: если два чтения разошлись, спор решает срок действия из MRZ —
+  // выдача обязана отличаться от него ровно на 5 или 10 лет при том же дне.
+  const altIssue = normDate((alt && alt.issueDate) || "");
+  if (isDate(altIssue) && altIssue !== f.issueDate) {
+    const fits = (s) => isDate(s) && isDate(f.expiryDate) && s.slice(0, 5) === f.expiryDate.slice(0, 5) &&
+      [5, 10].indexOf(Number(f.expiryDate.slice(6)) - Number(s.slice(6))) >= 0;
+    if (fits(altIssue) && !fits(f.issueDate)) {
+      warn.push("Дата выдачи: при беглом чтении «" + (f.issueDate || "пусто") + "», при повторном — «" + altIssue +
+        "». Взято второе: оно сходится со сроком действия из MRZ.");
+      f.issueDate = altIssue;
+    } else if (!fits(altIssue) && !fits(f.issueDate)) {
+      warn.push("Дата выдачи: два чтения разошлись — «" + (f.issueDate || "пусто") + "» и «" + altIssue + "». Сверьте с документом.");
+    }
+  } else if (isDate(altIssue) && altIssue === f.issueDate && confirmed.indexOf("issueDate") < 0) {
+    confirmed.push("issueDate");
+  }
   if (isDate(f.issueDate) && isDate(f.expiryDate)) {
     const dm = (s) => s.slice(0, 5), yr = (s) => Number(s.slice(6));
     const ey = yr(f.expiryDate), iy = yr(f.issueDate);
@@ -635,6 +699,21 @@ async function recognizeOne(buf, name, mime, ctx) {
     model: mdl || model(), max_tokens: 1500, system: SYS, output_config: { effort: "low" },
     messages: [{ role: "user", content: [block, { type: "text", text: task + (nudge || "") }] }],
   });
+  // Прицельное чтение мелкого шрифта — двух полей, которые сверить больше не с
+  // чем: кода подразделения и даты выдачи. В MRZ их нет, контрольных цифр нет,
+  // а основной проход читает 19 полей разом и на мелких цифрах ошибается
+  // («МВД 66003» превращалось в «68003» четыре раза подряд). Спрошенная только
+  // про них, та же модель отвечает верно. Идёт параллельно основному проходу —
+  // времени не добавляет, стоит как ещё один снимок (~0,3 ₽).
+  const small = smallPrintCheck()
+    ? runJson({
+        model: model(), max_tokens: 200,
+        system: "Ты извлекаешь данные из фотографий документов для визового агентства. Отвечай строго тем, что видишь: ничего не додумывай. Если поля не видно — верни пустую строку.",
+        messages: [{ role: "user", content: [block, { type: "text", text:
+          "Найди в паспорте две строки: «Дата выдачи / Date of issue» и «Орган, выдавший документ / Authority». Код подразделения набран мелко — рассмотри каждую цифру отдельно, не угадывай число целиком. Если снимок мелкий или размытый и цифры не различаются уверенно — верни пустые строки, не гадай. Верни строго JSON: {\"issue_date\":\"ДД.ММ.ГГГГ\",\"authority\":\"МВД 12345\"}." }] }],
+      }, SMALL_SCHEMA).catch((e) => { console.warn("scanner: прицельное чтение не удалось:", e.message); return null; })
+    : Promise.resolve(null);
+
   const [r, rb] = await Promise.all([
     runJson(req(), SCHEMA),
     doubleRead()
@@ -691,7 +770,10 @@ async function recognizeOne(buf, name, mime, ctx) {
     } catch (e) { console.warn("scanner: полная перечитка не удалась:", e.message); }
   }
 
-  const { fields, warnings, confirmed } = buildFields(ai, mrz);
+  const rs = await small;
+  track(rs);
+  const alt = rs && rs.json ? { authority: rs.json.authority, issueDate: rs.json.issue_date } : null;
+  const { fields, warnings, confirmed } = buildFields(ai, mrz, alt);
 
   // Сверка двух чтений. MRZ подставляем ОДНУ И ТУ ЖЕ, чтобы сравнивать именно
   // то, что модель увидела глазами, а не разбор машиночитаемой зоны.
