@@ -198,7 +198,7 @@ function mountEarly(app, deps) {
   // Весь ИИ-трафик (переводы, чат, сканер) идёт через ретранслятор
   // ANTHROPIC_BASE_URL: Anthropic не принимает запросы с российских адресов.
   // Раньше сторож жил в translate.js, но движок переехал к Кате и теперь ходит
-  // на локальный шлюз — настоящий канал виден только отсюда. Раз в час пробуем
+  // на локальный шлюз — настоящий канал виден только отсюда. Раз в сутки ночью (03:30 МСК) пробуем
   // /v1/models: два провала подряд → письмо Андрею (не чаще раза в сутки) и,
   // если задан ANTHROPIC_BASE_URL_BACKUP, переключение на запасной адрес.
   let chFails = 0;
@@ -210,7 +210,7 @@ function mountEarly(app, deps) {
         signal: AbortSignal.timeout(30000),
       });
       if (!r.ok) throw new Error("HTTP " + r.status);
-      if (chFails >= 2) console.log("engine-proxy: канал до Anthropic снова отвечает");
+      if (chFails) console.log("engine-proxy: канал до Anthropic отвечает");
       chFails = 0;
       return;
     } catch (e) {
@@ -230,55 +230,17 @@ function mountEarly(app, deps) {
       }
     }
   }
-  setTimeout(probeChannel, 60000);
-  setInterval(probeChannel, 3600000);
-
-  // ── Раннее предупреждение о риске списаний за ретранслятор (просьба Андрея
-  // 24.08.2026) ────────────────────────────────────────────────────────────
-  // Счётчики Deno Deploy нам не видны (их письма уходят на почту аккаунта), но
-  // нагрузка на канал целиком наша: это запросы движка переводов (журнал
-  // .engineBudget.json) и распознавания паспортов (.scanner/store.json). Раз в
-  // 6 часов сравниваем сегодняшний объём со средним за две недели: резкий рост
-  // = мы движемся к лимитам площадки, а значит к приостановке или списанию.
-  // Письмо — на director@, не чаще раза в сутки.
-  const SPIKE_RATIO = Number(process.env.ENGINE_SPIKE_RATIO || 3);
-  const SPIKE_FLOOR = Number(process.env.ENGINE_SPIKE_FLOOR || 300); // меньше — не тревожим
-  function aiCallsByDay() {
-    const days = {};
-    try {
-      const b = loadBudget();
-      for (const [d, v] of Object.entries(b.days || {})) days[d] = (days[d] || 0) + (v.calls || 0);
-    } catch (_) {}
-    try {
-      const st = JSON.parse(fs.readFileSync(path.join(__dirname, ".scanner", "store.json"), "utf8"));
-      for (const doc of (st.docs || [])) {
-        const d = new Date((doc.at || 0) + 3 * 3600 * 1000).toISOString().slice(0, 10);
-        days[d] = (days[d] || 0) + ((doc.spend || []).length || 1);
-      }
-    } catch (_) {}
-    return days;
+  // Ночная проверка: один провал бывает случайным, поэтому при неудаче
+  // повторяем через минуту и только тогда пишем письмо.
+  function nightlyCheck() {
+    chFails = 0;
+    probeChannel().then(() => { if (chFails) setTimeout(probeChannel, 60000); }).catch(() => {});
   }
-  function checkLoadSpike() {
-    const days = aiCallsByDay();
-    const today = mskDay();
-    const cur = days[today] || 0;
-    if (cur < SPIKE_FLOOR) return;
-    const prev = Object.keys(days).filter((d) => d < today).sort().slice(-14).map((d) => days[d]);
-    if (prev.length < 3) return;
-    const avg = prev.reduce((a, x) => a + x, 0) / prev.length;
-    if (!avg || cur < avg * SPIKE_RATIO) return;
-    const b = loadBudget();
-    if (b.alerts[today + ":spike"]) return;
-    b.alerts[today + ":spike"] = Date.now(); saveBudget(b);
-    sendMail({ to: ALERT_TO, subject: "Нагрузка на ИИ-канал резко выросла — возможен выход за бесплатные лимиты",
-      text: "Сегодня (" + today + ") через ретранслятор до Anthropic прошло " + cur + " запросов при среднем " +
-        Math.round(avg) + " в день за последние " + prev.length + " дней (рост в " + (cur / avg).toFixed(1) + " раза).\n\n" +
-        "Сам ретранслятор бесплатный, но у площадки (Deno Deploy, организация visa-sc) есть лимиты: при их превышении приложение приостанавливают, а с привязанной картой возможны списания. " +
-        "Стоит заглянуть в console.deno.com и посмотреть расход.\n\n" +
-        "Что обычно вызывает такой рост: массовые прогоны обучения в переводах, пачки сканирования паспортов, зациклившаяся задача." }).catch(() => {});
-  }
-  setTimeout(checkLoadSpike, 120000);
-  setInterval(checkLoadSpike, 6 * 3600000);
+  const msk = new Date(Date.now() + 3 * 3600 * 1000);
+  let msTo0330 = ((((3 - msk.getUTCHours() + 24) % 24) * 60 + (30 - msk.getUTCMinutes())) * 60 - msk.getUTCSeconds()) * 1000;
+  if (msTo0330 <= 0) msTo0330 += 24 * 3600000;
+  setTimeout(() => { nightlyCheck(); setInterval(nightlyCheck, 24 * 3600000); }, msTo0330);
+  console.log("engine-proxy: проверка ИИ-канала — раз в сутки в 03:30 МСК (ближайшая через " + Math.round(msTo0330 / 60000) + " мин)");
 
   // Сводка расхода для админа (читается из /admin при желании)
   app.get("/internal/engine/budget", (req, res) => {
