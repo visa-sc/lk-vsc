@@ -322,6 +322,8 @@ function client() {
   return _client;
 }
 function model() { return process.env.SCANNER_MODEL || "claude-haiku-4-5"; }
+// Читать документ дважды и сверять два чтения между собой (вдвое дороже).
+function doubleRead() { return /^(1|true|on|yes|да)$/i.test(String(process.env.SCANNER_DOUBLE_READ || "")); }
 function modelHard() { return process.env.SCANNER_MODEL_HARD || "claude-sonnet-5"; }
 const PRICES = { "claude-opus-5": [5, 25], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5] };
 const RUB = Number(process.env.TRANSLATE_USD_RUB || 80);
@@ -403,7 +405,7 @@ const SYS = [
   "- Пол — «М» или «Ж».",
   "- number — серия и номер как напечатаны, например «75 8340533».",
   "- authority — орган выдачи как напечатан, например «МВД 50001» или «ФМС 77712».",
-  "- birth_place — как напечатано по-русски, например «СВЕРДЛОВСКАЯ ОБЛ.» (латинскую часть после «/» не включай).",
+  "- birth_place — как напечатано ЦЕЛИКОМ, вместе с латинской частью после косой черты: «СВЕРДЛОВСКАЯ ОБЛ. / RUSSIA», «ПЕРМСКАЯ ОБЛ. / USSR», «Г. МОСКВА / USSR». Латинская часть — это страна рождения, у рождённых до 1991 года там стоит USSR, и её нельзя терять и нельзя менять на RUSSIA.",
   "- mrz_line1 и mrz_line2 — две нижние машиночитаемые строки (крупный моноширинный шрифт под фотографией), СИМВОЛ В СИМВОЛ, ровно по 44 знака каждая. Знак-заполнитель — «<» (шеврон), его в строках много подряд; не заменяй его пробелами и не пропускай. Не путай O и 0, I и 1. Пример вида: «P<RUSIVANOV<<IVAN<<<<<<<<<<<<<<<<<<<<<<<<<<<» и «7512345674RUS8503121M3001015<<<<<<<<<<<<<<04». Это самое важное поле — по нему сверяются номер и даты. ЕСЛИ машиночитаемых строк на снимке НЕ ВИДНО (обрезаны, залиты бликом, это другая страница) — верни для них ПУСТЫЕ строки. Ни в коем случае не составляй их сам из напечатанных данных: выдуманная MRZ хуже отсутствующей.",
   "- notes — короткая пометка по-русски, если с документом что-то не так (плохо видно, обрезано, блик, это не паспорт).",
 ].join("\n");
@@ -483,8 +485,17 @@ function buildFields(ai, mrz) {
   // «РОССИЙСКАЯ ФЕДЕРАЦИЯ / RUSSIAN FEDERATION» → в поле гражданства оставляем
   // только русскую часть, английская уедет в отдельное поле.
   if (/[А-ЯЁ]/.test(f.citizenship) && /\//.test(f.citizenship)) f.citizenship = f.citizenship.split("/")[0].trim();
-  // Место рождения тоже часто печатают через дробь с «/ RUSSIA».
-  if (/[А-ЯЁ]/.test(f.birthPlace) && /\//.test(f.birthPlace)) f.birthPlace = f.birthPlace.split("/")[0].trim();
+  // Место рождения печатают через дробь: слева по-русски регион, справа
+  // латиницей СТРАНА рождения — и это не перевод региона, а важные данные:
+  // у рождённых до 1991 там стоит USSR, консульства к этому придирчивы.
+  // В русском поле оставляем русскую часть, страну приберегаем для латинского.
+  let birthCountryLat = "";
+  if (/\//.test(f.birthPlace)) {
+    const parts = f.birthPlace.split("/");
+    const tail = parts.slice(1).join("/").replace(/[^A-Z ]/gi, " ").trim().toUpperCase();
+    if (/[А-ЯЁ]/.test(parts[0])) f.birthPlace = parts[0].trim();   // «ПЕРМСКАЯ ОБЛ.» — точку сокращения не трогаем
+    if (tail) birthCountryLat = tail;
+  }
   const confirmed = [];
   if (mrz) {
     // Поле считается надёжным, если сошлась контрольная цифра MRZ ИЛИ если
@@ -537,7 +548,8 @@ function buildFields(ai, mrz) {
   // Полей ниже в MRZ нет вовсе — транслитерируем сами по правилам загранпаспорта.
   f.patronymicLat = translit(f.patronymicRu);
   f.citizenshipEn = citizenshipEn(f.citizenship, mrz && mrz.nationality);
-  f.birthPlaceLat = translit(f.birthPlace);
+  // Место рождения латиницей = транслитерация региона + страна, как в паспорте.
+  f.birthPlaceLat = [translit(f.birthPlace), birthCountryLat].filter(Boolean).join(" / ");
   f.authorityLat = translit(f.authority);
   // Здравый смысл: срок действия загранпаспорта — 5 или 10 лет от выдачи.
   if (f.issueDate && f.expiryDate) {
@@ -568,11 +580,26 @@ async function recognizeOne(buf, name, mime, ctx) {
 
   // Основной проход: effort low — это извлечение данных, а не рассуждение;
   // с ним ответ приходит в разы быстрее, а точность на печатном тексте та же.
-  let r = await runJson({
+  //
+  // Второе мнение (SCANNER_DOUBLE_READ=1) — тот же снимок читается ещё раз,
+  // ПАРАЛЛЕЛЬНО первому: по времени почти даром, по деньгам ровно вдвое.
+  // Нужно оно тем полям, которые сверить больше не с чем: кириллица, дата
+  // выдачи, код подразделения — в MRZ их нет, контрольных цифр у них нет.
+  // Ошибку второе чтение не исправляет, а делает видимой: разошлись — снимаем
+  // галочку и пишем оба варианта.
+  const req = (nudge) => ({
     model: model(), max_tokens: 1500, system: SYS, output_config: { effort: "low" },
-    messages: [{ role: "user", content: [block, { type: "text", text: task }] }],
-  }, SCHEMA);
-  track(r);
+    messages: [{ role: "user", content: [block, { type: "text", text: task + (nudge || "") }] }],
+  });
+  const [r, rb] = await Promise.all([
+    runJson(req(), SCHEMA),
+    doubleRead()
+      ? runJson(req("\n\nОсобое внимание — цифрам: номер, даты, код подразделения в поле «кем выдан». Перечитай каждую цифру по отдельности."), SCHEMA).catch((e) => {
+          console.warn("scanner: второе чтение не удалось:", e.message); return null;
+        })
+      : Promise.resolve(null),
+  ]);
+  track(r); track(rb);
   let ai = r.json || {};
   let mrz = parseMrzTd3(ai.mrz_line1, ai.mrz_line2);
   const mrzRaw = { line1: String((ai && ai.mrz_line1) || ""), line2: String((ai && ai.mrz_line2) || "") };
@@ -620,13 +647,31 @@ async function recognizeOne(buf, name, mime, ctx) {
   }
 
   const { fields, warnings, confirmed } = buildFields(ai, mrz);
+
+  // Сверка двух чтений. MRZ подставляем ОДНУ И ТУ ЖЕ, чтобы сравнивать именно
+  // то, что модель увидела глазами, а не разбор машиночитаемой зоны.
+  let secondRead = null;
+  if (rb && rb.json) {
+    const b = buildFields(rb.json, mrz);
+    secondRead = { agreed: [], differ: [] };
+    for (const fl of FIELDS) {
+      const va = String(fields[fl.key] || ""), vb = String(b.fields[fl.key] || "");
+      if (!va && !vb) continue;
+      if (va === vb) { secondRead.agreed.push(fl.key); if (confirmed.indexOf(fl.key) < 0) confirmed.push(fl.key); continue; }
+      secondRead.differ.push({ key: fl.key, a: va, b: vb });
+      const i = confirmed.indexOf(fl.key);
+      if (i >= 0) confirmed.splice(i, 1);                 // сверенным больше не считается
+      warnings.push(fl.label + ": два чтения разошлись — «" + (va || "пусто") + "» и «" + (vb || "пусто") + "». Сверьте с документом.");
+    }
+  }
+
   const doc = {
     id: newId(), at: Date.now(), by: (ctx && ctx.by) || "",
     file: name, ms: Date.now() - started, model: usedModel,
     fields, warnings, confirmed, note: (ai.notes || "").trim(),
     mrz: mrz ? { line1: mrz.line1, line2: mrz.line2, valid: !!mrz.valid, checks: mrz.checks } : null,
     mrzRaw: mrz ? null : mrzRaw, // что модель увидела вместо MRZ — для разбора ошибок
-    spend, corrected: false,
+    spend, corrected: false, secondRead,
   };
   // Фото храним недолго — только чтобы разобрать ошибку, если сотрудник её пришлёт.
   try {
@@ -956,7 +1001,11 @@ function mount(app, deps) {
         corrected: docs.filter((d) => d.corrected).length,
         cleanPct: docs.length ? Math.round((1 - docs.filter((d) => d.corrected).length / docs.length) * 100) : null,
         mrzPct: docs.length ? Math.round(mrzOk / docs.length * 100) : null,
-        rereadPct: docs.length ? Math.round(docs.filter((d) => (d.spend || []).length > 1).length / docs.length * 100) : null,
+        // Перечитка — это запрос СВЕРХ обычных (второе чтение, если включено,
+        // обычным и считается), поэтому порог зависит от режима документа.
+        rereadPct: docs.length ? Math.round(docs.filter((d) => (d.spend || []).length > (d.secondRead ? 2 : 1)).length / docs.length * 100) : null,
+        doubleReadPct: docs.length ? Math.round(docs.filter((d) => d.secondRead).length / docs.length * 100) : null,
+        doubleDiffer: docs.filter((d) => d.secondRead && d.secondRead.differ.length).length,
         // Контрольные цифры имена не покрывают, поэтому «MRZ сошлась» о ФИО ничего
         // не говорит: считаем отдельно, как часто два чтения латиницы разошлись.
         latMismatch: docs.filter((d) => (d.warnings || []).some((w) => /два чтения разошлись/.test(w))).length,
