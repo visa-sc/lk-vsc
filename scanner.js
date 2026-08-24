@@ -233,6 +233,48 @@ function editDist(a, b) {
   return prev[b.length];
 }
 
+// Кириллица прочитана с ошибкой в одну букву — а латиница в MRZ говорит, как
+// должно быть: «СЫГАНКОВА» при «TSYGANKOVA» это «ЦЫГАНКОВА», «ЮЛЯ» при
+// «IULIIA» это «ЮЛИЯ». Перебираем все правки в один знак (замена, удаление,
+// вставка) и берём ту, чья транслитерация совпадает с MRZ ТОЧНО. Замена
+// вперёд удаления и вставки: она сохраняет длину прочитанного, а значит ближе
+// к тому, что модель действительно видела. Если внутри одного вида правок
+// подходит несколько разных слов — не угадываем, оставляем как есть.
+const AZBUKA = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ".split("");
+function repairByMrz(cyr, mrzLat) {
+  const src = String(cyr || "");
+  if (!src || !mrzLat || src.length > 40) return null;
+  const uniq = (arr) => Array.from(new Set(arr));
+  // Отсекаем заведомо нерусские сочетания: иначе к «ЮЛИЯ» в кандидаты лезет
+  // «ЮЛЙЯ» (транслитерация та же), и выбрать не из чего.
+  const looksRussian = (c) => !/^[ЬЪЫ]/.test(c) && !/Й[АЕЁИОУЫЭЮЯ]/.test(c) &&
+    !/[ЬЪ][ЬЪ]/.test(c) && !/(.)\1\1/.test(c) && !/[АЕЁИОУЫЭЮЯ][ЬЪ]/.test(c);
+  const fits = (c) => c.length > 1 && looksRussian(c) && translit(c) === mrzLat;
+  const swaps = [], drops = [], adds = [];
+  for (let i = 0; i < src.length; i++) {
+    for (const ch of AZBUKA) {
+      // Ь и Ъ в транслитерации пустые, поэтому замена на них «подходит» почти
+      // всегда и превращает «СПЫЛИКХИНА» в «СПЫЛИЬХИНА». Заменять на них нельзя.
+      if (ch === src[i] || ch === "Ь" || ch === "Ъ") continue;
+      const c = src.slice(0, i) + ch + src.slice(i + 1);
+      if (fits(c)) swaps.push(c);
+    }
+    const d = src.slice(0, i) + src.slice(i + 1);
+    if (fits(d)) drops.push(d);
+  }
+  for (let i = 0; i <= src.length; i++) {
+    for (const ch of AZBUKA) {
+      const c = src.slice(0, i) + ch + src.slice(i);
+      if (fits(c)) adds.push(c);
+    }
+  }
+  for (const list of [uniq(swaps), uniq(drops), uniq(adds)]) {
+    if (list.length === 1) return list[0];
+    if (list.length > 1) return null;                    // несколько вариантов — не гадаем
+  }
+  return null;
+}
+
 // Имена в MRZ НЕ защищены контрольной цифрой (она считается только по номеру,
 // датам и служебным полям второй строки), поэтому ошибка модели в первой строке
 // проходит мимо всех проверок — «MRZ сошлась», а фамилия неверная. Единственная
@@ -761,19 +803,12 @@ function buildFields(ai, mrz, alt) {
   const ruVsMrz = (ruKey, mrzVal, human) => {
     if (!mrz || !mrzVal || !f[ruKey]) return;
     let my = translit(f[ruKey]);
-    // Лишняя буква в кириллице: «СПЫЛИКХИНА» вместо «СПЫЛИХИНА» (у Х в
-    // транслитерации две буквы, KH, поэтому лишняя К прячется). Пробуем убрать
-    // по одной букве и берём вариант, чья транслитерация СОВПАДАЕТ с MRZ
-    // в точности — и только если такой вариант единственный.
     if (my !== mrzVal) {
-      const hits = [];
-      for (let i = 0; i < f[ruKey].length; i++) {
-        const cand = f[ruKey].slice(0, i) + f[ruKey].slice(i + 1);
-        if (cand.length > 2 && translit(cand) === mrzVal && hits.indexOf(cand) < 0) hits.push(cand);
-      }
-      if (hits.length === 1) {
-        warn.push(human + ": прочитано «" + f[ruKey] + "», но по MRZ («" + mrzVal + "») это «" + hits[0] + "» — лишняя буква. Исправлено, сверьте глазами.");
-        f[ruKey] = hits[0];
+      const fix = repairByMrz(f[ruKey], mrzVal);
+      if (fix) {
+        warn.push(human + ": прочитано «" + f[ruKey] + "», но по MRZ («" + mrzVal + "») это «" + fix +
+          "» — ошибка в одну букву. Исправлено, сверьте глазами.");
+        f[ruKey] = fix;
         my = translit(f[ruKey]);
       }
     }
@@ -807,6 +842,17 @@ function buildFields(ai, mrz, alt) {
       warn.push(label + ": на общем снимке прочиталось «" + f[key] + "», на увеличенной вырезке — «" + v +
         "». Взято второе (там шрифт крупнее), но сверьте глазами.");
       f[key] = v;
+    }
+  }
+  // Модель иногда меняет фамилию и имя местами (в паспорте они идут в две
+  // строки без подписей, спутать легко). Ловится по MRZ: там порядок задан
+  // жёстко — фамилия, два шеврона, имя.
+  if (mrz && mrz.surnameLat && mrz.nameLat && f.surnameRu && f.nameRu) {
+    const asIs = editDist(translit(f.surnameRu), mrz.surnameLat) + editDist(translit(f.nameRu), mrz.nameLat);
+    const swapped = editDist(translit(f.nameRu), mrz.surnameLat) + editDist(translit(f.surnameRu), mrz.nameLat);
+    if (swapped === 0 && asIs > 0) {
+      warn.push("Фамилия и имя: в прочитанном они поменяны местами (по MRZ фамилия «" + mrz.surnameLat + "», имя «" + mrz.nameLat + "»). Переставил обратно.");
+      const t = f.surnameRu; f.surnameRu = f.nameRu; f.nameRu = t;
     }
   }
   ruVsMrz("surnameRu", mrz && mrz.surnameLat, "Фамилия");
