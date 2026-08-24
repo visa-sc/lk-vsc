@@ -584,6 +584,7 @@
       h += '<div class="tile"><b>' + (t.medSec || 0) + ' с</b><span>медиана на документ</span></div>';
       h += '<div class="tile"><b>' + (t.cleanPct == null ? "—" : t.cleanPct + "%") + "</b><span>без правок сотрудника</span></div>";
       h += '<div class="tile"><b>' + (t.mrzPct == null ? "—" : t.mrzPct + "%") + "</b><span>MRZ прочитана и сошлась</span></div>";
+      h += '<div class="tile"><b>' + (t.latMismatch || 0) + "</b><span>расхождений в ФИО латиницей (поймано сверкой)</span></div>";
       h += '<div class="tile"><b>' + (t.rereadPct == null ? "—" : t.rereadPct + "%") + "</b><span>с перечиткой MRZ (дороже)</span></div>";
       h += '<div class="tile"><b>' + (t.rubPerDoc || 0) + " ₽</b><span>стоимость документа</span></div>";
       h += '<div class="tile"><b>' + (t.rub || 0) + " ₽</b><span>расход ИИ за период</span></div>";

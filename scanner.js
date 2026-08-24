@@ -957,6 +957,9 @@ function mount(app, deps) {
         cleanPct: docs.length ? Math.round((1 - docs.filter((d) => d.corrected).length / docs.length) * 100) : null,
         mrzPct: docs.length ? Math.round(mrzOk / docs.length * 100) : null,
         rereadPct: docs.length ? Math.round(docs.filter((d) => (d.spend || []).length > 1).length / docs.length * 100) : null,
+        // Контрольные цифры имена не покрывают, поэтому «MRZ сошлась» о ФИО ничего
+        // не говорит: считаем отдельно, как часто два чтения латиницы разошлись.
+        latMismatch: docs.filter((d) => (d.warnings || []).some((w) => /два чтения разошлись/.test(w))).length,
         avgSec: ms.length ? +(ms.reduce((a, b) => a + b, 0) / ms.length / 1000).toFixed(1) : 0,
         medSec: ms.length ? +(ms[Math.floor(ms.length / 2)] / 1000).toFixed(1) : 0,
         rub: Math.round(rub * 10) / 10,
