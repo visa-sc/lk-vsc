@@ -1017,8 +1017,11 @@ function buildFields(ai, mrz, alt) {
         // Никто не сошёлся: берём пятизначный код, если он есть (потерять цифру
         // модель может легко, дорисовать лишнюю — почти нет), иначе чтение по
         // вырезке страницы как самое крупное.
-        const five = votes.filter((x) => digits(x.v).length === 5);
-        const pick = five[0] || votes.find((x) => x.src === "по вырезке страницы") || votes[0];
+        // При равном счёте верим тому, кто смотрел крупнее: сначала вырезка
+        // строки, потом вырезка страницы, и лишь потом общий снимок.
+        const rank = (x) => (x.src === "по вырезке строки" ? 0 : x.src === "по вырезке страницы" ? 1 : 2);
+        const five = votes.filter((x) => digits(x.v).length === 5).sort((a, b) => rank(a) - rank(b));
+        const pick = five[0] || votes.slice().sort((a, b) => rank(a) - rank(b))[0];
         f.authority = String(pick.v).trim();
       }
       f.authorityLat = translit(f.authority);
@@ -1253,7 +1256,51 @@ async function recognizeOne(buf, name, mime, ctx) {
   // исходном разрешении: на целом снимке «МВД 77438» читалось как 77436, 77449,
   // 77409 — каждый раз по-новому, а по вырезке трижды из трёх верно.
   let alt = null, pageShort = 0;
-  if (smallPrintCheck()) {
+  // Документ прочитан чисто: MRZ сошлась контрольными цифрами, и кириллица ей
+  // соответствует. Тогда второй полный разбор — деньги на ветер: перечитывать
+  // нечего, кроме кода подразделения, у которого проверки нет вовсе. Его и
+  // перечитываем — по крошечной вырезке одной строки, это копейки.
+  const cleanRead = () => !!(mrz && mrz.valid && !visualLooksWrong());
+  if (smallPrintCheck() && cleanRead()) {
+    try {
+      // Документ прочитан чисто — значит переспрашивать надо только то, что
+      // проверить нечем: код подразделения и дату выдачи. Спрашиваем по вырезке
+      // страницы (там модель видит подпись поля и не путает строки), но всего
+      // про два поля, а не про все девятнадцать: полный разбор стоил бы столько
+      // же по картинке, но дольше и с риском переписать верно прочитанное.
+      const pb = sanePageBox(ai.page_box);
+      const rot = [90, 180, 270].indexOf(Number(ai.page_rotation)) >= 0 ? Number(ai.page_rotation) : 0;
+      const page = (pb || rot) ? cropToJpeg(buf, mime, name, pb, 5, rot) : null;
+      if (page) pageShort = page.delivered;
+      if (page && page.buf) {
+        const rp = await runJson({
+          model: model(), max_tokens: 200,
+          system: "Ты извлекаешь данные из фотографий документов для визового агентства. Отвечай строго тем, что видишь: ничего не додумывай. Если поля не видно — верни пустую строку.",
+          messages: [{ role: "user", content: [mediaBlock(page.buf, "crop.jpg", "image/jpeg"), { type: "text", text:
+            "Найди в паспорте две строки: «Дата выдачи / Date of issue» и «Орган, выдавший документ / Authority». Код подразделения набран мелко — рассмотри каждую цифру отдельно, не угадывай число целиком. Если цифры не различаются уверенно — верни пустые строки, не гадай. Строго JSON: {\"issue_date\":\"ДД.ММ.ГГГГ\",\"authority\":\"МВД 12345\"}." }] }],
+        }, SMALL_SCHEMA);
+        track(rp);
+        if (rp && rp.json) alt = { cropped: true, trusted: false, authority: rp.json.authority, issueDate: rp.json.issue_date };
+      }
+      const ab = saneLineBox(ai.authority_box);
+      // Рамку строки берём с запасом: модель указывает её приблизительно, а
+      // впритык вырезанная полоска может не захватить крайнюю цифру.
+      const line = ab && cropToJpeg(buf, mime, name, ab, 6);
+      if (line && line.buf && line.w >= 200) {
+        const rl = await runJson({
+          model: model(), max_tokens: 80,
+          system: "Ты переписываешь то, что видишь на снимке. Ничего не додумывай.",
+          messages: [{ role: "user", content: [mediaBlock(line.buf, "line.jpg", "image/jpeg"), { type: "text", text:
+            "На картинке — строка из паспорта с кодом подразделения: «МВД» или «ФМС» и четыре-пять цифр. Перепиши её, рассматривая каждую цифру отдельно. Часть цифры может быть перекрыта голограммой — ориентируйся на видимые части контура. Строго JSON: {\"authority\":\"МВД 12345\"}." }] }],
+        }, SMALL_SCHEMA);
+        track(rl);
+        if (rl && rl.json && /\d{4,5}/.test(String(rl.json.authority || ""))) {
+          alt = Object.assign({ cropped: false, trusted: false, authority: "", issueDate: "" }, alt || {},
+            { authorityLine: String(rl.json.authority).trim() });
+        }
+      }
+    } catch (e) { console.warn("scanner: чтение строки кода не удалось:", e.message); }
+  } else if (smallPrintCheck()) {
     let cropBlock = null, cropGain = 1, cropUsed = null;
     try {
       const box = sanePageBox(ai.page_box);
