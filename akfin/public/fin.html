@@ -21,10 +21,10 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
-body{min-height:100vh}
-/* фон-«холст»: бумажный коллаж с короной (fin-bg.png, своя графика);
-   фиксированный слой — на iOS background-attachment:fixed дёргается */
-body::before{content:"";position:fixed;inset:0;z-index:-1;background:#efe6ce url("/fin-bg.png") center top/cover no-repeat}
+/* фон-«холст»: бумажный коллаж с короной (fin-bg.png, своя графика).
+   Свойства порознь и прямо на body: сокращённую запись «center top/cover»
+   iOS Safari отбрасывал целиком — фон оставался бежевой заливкой */
+body{min-height:100vh;background-color:#efe6ce;background-image:url("/fin-bg.png");background-repeat:no-repeat;background-position:center top;background-size:cover}
 .wrap{max-width:520px;margin:0 auto;padding:0 18px 48px}
 /* форма опущена ближе к середине экрана (просьба Андрея) */
 /* форма сознательно опущена пониже — так ближе тянуться пальцем (Андрей, 19.08);
