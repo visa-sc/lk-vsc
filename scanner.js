@@ -217,6 +217,68 @@ function translit(sIn) {
   return out;
 }
 
+// Расстояние Левенштейна — отличить «модель сбилась на знак» от «прочитала другое слово».
+function editDist(a, b) {
+  a = String(a || ""); b = String(b || "");
+  if (a === b) return 0;
+  if (!a.length || !b.length) return Math.max(a.length, b.length);
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+// Имена в MRZ НЕ защищены контрольной цифрой (она считается только по номеру,
+// датам и служебным полям второй строки), поэтому ошибка модели в первой строке
+// проходит мимо всех проверок — «MRZ сошлась», а фамилия неверная. Единственная
+// опора — латиница, напечатанная в визуальной зоне: в загранпаспорте РФ она
+// совпадает с MRZ всегда, любое расхождение = чья-то ошибка чтения.
+//
+// Что чиним:
+//   1) имя, заехавшее в фамилию (модель потеряла второй «<» разделителя);
+//   2) фамилию, прочитанную с потерей куска («KOMISARENKO» → «KOMISAR»).
+// Мелкое расхождение (один знак) оставляем за MRZ — это официальная
+// транслитерация; крупное считаем сбоем чтения MRZ и оставляем напечатанное.
+function reconcileLat(mrzSurname, mrzGiven, printedSurname, printedGiven) {
+  let surname = String(mrzSurname || "").trim();
+  let given = String(mrzGiven || "").trim();
+  const pS = String(printedSurname || "").trim(), pG = String(printedGiven || "").trim();
+  // 1) Слово из фамилии, совпавшее с напечатанным именем, — это имя, а не фамилия.
+  const words = surname.split(/\s+/).filter(Boolean);
+  if (words.length > 1 && pG) {
+    const own = words.filter((w) => w !== pG && !(pG.split(/\s+/).indexOf(w) >= 0));
+    if (own.length && own.length < words.length) {
+      surname = own.join(" ");
+      if (!given) given = pG;
+    }
+  }
+  // 2) Фамилия/имя разошлись с напечатанным сильнее, чем на один знак.
+  const notes = [], bad = [];
+  const check = (mv, pv, key, human) => {
+    if (!mv || !pv || mv === pv) return mv;
+    if (editDist(mv, pv) <= 1) return mv;                 // мелочь — верим MRZ
+    bad.push(key);
+    notes.push(human + ": в MRZ прочитано «" + mv + "», в паспорте напечатано «" + pv +
+      "» — расхождение слишком большое, MRZ прочитана неуверенно, оставлено как в паспорте. Сверьте глазами.");
+    return pv;
+  };
+  surname = check(surname, pS, "surnameLat", "Фамилия латиницей");
+  given = check(given, pG, "nameLat", "Имя латиницей");
+  return { surname, given, suspect: bad.length > 0, bad, notes };
+}
+// Признак, что первую строку MRZ стоит перечитать сильной моделью.
+function mrzNamesSuspect(mrz, ai) {
+  if (!mrz) return false;
+  return reconcileLat(mrz.surnameLat, mrz.nameLat,
+    String((ai && ai.surname_lat) || "").trim().toUpperCase(),
+    String((ai && ai.name_lat) || "").trim().toUpperCase()).suspect;
+}
+
 // ── Claude ────────────────────────────────────────────────────────────────
 function aiConfigured() { return !!process.env.ANTHROPIC_API_KEY; }
 let _client = null;
@@ -264,6 +326,7 @@ const FIELDS = [
   { key: "birthPlaceLat", label: "Место рождения (латиницей)" },
   { key: "citizenship", label: "Гражданство" },
   { key: "citizenshipEn", label: "Гражданство (англ.)" },
+  { key: "number", label: "Серия и номер" },
   { key: "series", label: "Серия" },
   { key: "numberOnly", label: "Номер" },
   { key: "issueDate", label: "Дата выдачи" },
@@ -423,14 +486,18 @@ function buildFields(ai, mrz) {
     put("expiryDate", mrz.expiryDate, mrz.checks.expiry, "Срок действия");
     if (mrz.sex) { if (!f.sex || f.sex === mrz.sex) { if (f.sex === mrz.sex) confirmed.push("sex"); f.sex = mrz.sex; } else warn.push("Пол: в документе «" + f.sex + "», в MRZ «" + mrz.sex + "»"); }
     // Латиница из MRZ — официальная транслитерация, для виз важна именно она.
+    const lat = reconcileLat(mrz.surnameLat, mrz.nameLat, f.surnameLat, f.nameLat);
+    for (const n of lat.notes) warn.push(n);
+    // Галочку ставим только там, где MRZ и паспорт действительно сошлись:
+    // поле, где MRZ прочиталась неуверенно, подтверждённым считать нельзя.
     const putLat = (key, val, human) => {
       if (!val) return;
       if (f[key] && f[key] !== val) warn.push(human + ": в документе «" + f[key] + "», в MRZ «" + val + "» — взято из MRZ (это официальная транслитерация)");
-      else if (f[key] === val) confirmed.push(key);
+      else if (f[key] === val && lat.bad.indexOf(key) < 0) confirmed.push(key);
       f[key] = val;
     };
-    putLat("surnameLat", mrz.surnameLat, "Фамилия латиницей");
-    putLat("nameLat", mrz.nameLat, "Имя латиницей");
+    putLat("surnameLat", lat.surname, "Фамилия латиницей");
+    putLat("nameLat", lat.given, "Имя латиницей");
     if (mrz.nationality === "RUS" && !f.citizenship) f.citizenship = "РОССИЙСКАЯ ФЕДЕРАЦИЯ";
   } else {
     warn.push("MRZ не распознана — все поля прочитаны только глазами модели, проверьте внимательно");
@@ -440,7 +507,7 @@ function buildFields(ai, mrz) {
   if (confirmed.indexOf("surnameLat") >= 0 && confirmed.indexOf("nameLat") >= 0) confirmed.push("translit");
   // Серия и номер — двумя блоками (у загранпаспорта РФ это 2 + 7 цифр).
   const nd = String(f.number || "").replace(/\D/g, "");
-  if (nd.length === 9) { f.series = nd.slice(0, 2); f.numberOnly = nd.slice(2); }
+  if (nd.length === 9) { f.number = prettyRuNumber(nd); f.series = nd.slice(0, 2); f.numberOnly = nd.slice(2); }
   else { f.series = ""; f.numberOnly = String(f.number || "").trim(); }
   if (confirmed.indexOf("number") >= 0) { confirmed.push("series"); confirmed.push("numberOnly"); }
   // Полей ниже в MRZ нет вовсе — транслитерируем сами по правилам загранпаспорта.
@@ -490,17 +557,23 @@ async function recognizeOne(buf, name, mime, ctx) {
   // MRZ — наш якорь точности. Если она не прочиталась или контрольные цифры не
   // сошлись, перечитываем ТОЛЬКО две строки (маленький быстрый запрос), а не
   // весь документ заново.
-  if (!mrz || !mrz.valid) {
+  // Отдельный повод перечитать: контрольные цифры сошлись, но имена в первой
+  // строке разошлись с напечатанным в паспорте — цифрами имена не проверяются.
+  if (!mrz || !mrz.valid || mrzNamesSuspect(mrz, ai)) {
     try {
       const r2 = await runJson({
         model: modelHard(), max_tokens: 300, output_config: { effort: "low" },
         system: "Ты переписываешь машиночитаемую зону (MRZ) документа символ в символ.",
         messages: [{ role: "user", content: [block, { type: "text", text:
-          "Внизу страницы паспорта — две машиночитаемые строки крупным моноширинным шрифтом, ровно по 44 знака каждая. Перепиши их ТОЧНО, знак в знак. Знак-заполнитель — «<» (не пробел, не «к»). Если этих строк на снимке нет или они не читаются — верни две ПУСТЫЕ строки; не составляй их из напечатанных данных. Верни строго JSON: {\"mrz_line1\":\"…\",\"mrz_line2\":\"…\"}." }] }],
+          "Внизу страницы паспорта — две машиночитаемые строки крупным моноширинным шрифтом, ровно по 44 знака каждая. Перепиши их ТОЧНО, знак в знак. Знак-заполнитель — «<» (не пробел, не «к»). В первой строке фамилия отделена от имени ДВУМЯ знаками «<<» подряд — не потеряй ни один из них и не потеряй ни одной буквы фамилии. Если этих строк на снимке нет или они не читаются — верни две ПУСТЫЕ строки; не составляй их из напечатанных данных. Верни строго JSON: {\"mrz_line1\":\"…\",\"mrz_line2\":\"…\"}." }] }],
       }, MRZ_SCHEMA);
       track(r2);
       const m2 = parseMrzTd3(r2.json && r2.json.mrz_line1, r2.json && r2.json.mrz_line2);
-      if (m2 && (m2.valid || !mrz)) { mrz = m2; usedModel = usedModel + "+" + r2.model; }
+      // Что лучше: сошедшиеся контрольные цифры весомее, но имена, сошедшиеся
+      // с напечатанным, тоже стоят в зачёт — иначе «валидная» MRZ с испорченной
+      // первой строкой останется победителем.
+      const score = (m) => (!m ? -1 : (m.valid ? 3 : 0) + (mrzNamesSuspect(m, ai) ? 0 : 2));
+      if (m2 && score(m2) > score(mrz)) { mrz = m2; usedModel = usedModel + "+" + r2.model; }
       if (r2.json) { mrzRaw.retry1 = String(r2.json.mrz_line1 || ""); mrzRaw.retry2 = String(r2.json.mrz_line2 || ""); }
     } catch (e) { console.warn("scanner: перечитка MRZ не удалась:", e.message); }
   }
