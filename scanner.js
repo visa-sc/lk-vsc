@@ -417,6 +417,7 @@ function lessonsBlock() {
 const SYS = [
   "Ты извлекаешь данные из фотографий и сканов удостоверяющих документов для визового агентства.",
   "Отвечай СТРОГО данными из документа: ничего не додумывай и не «исправляй» — если поля не видно или его нет, оставь пустую строку.",
+  "Часто присылают не само фото, а скриншот из мессенджера: сверху и снизу видны имя отправителя, время, кнопки. Это НЕ данные документа — бери только то, что напечатано на самой странице паспорта.",
   "Правила заполнения:",
   "- Кириллические поля (фамилия, имя, отчество, место рождения, кем выдан) переписывай ровно как напечатано, ЗАГЛАВНЫМИ, без точек в конце.",
   "- Латиница (surname_lat, name_lat) — как в документе/MRZ, заглавными.",
@@ -509,16 +510,28 @@ function decodeImage(buf, mime, name) {
 function cropToJpeg(buf, mime, name, box, padPct) {
   const im = decodeImage(buf, mime, name);
   if (!im) return null;
+  // Сколько точек снимка реально доходит до модели: она ужимает картинку до
+  // 1568 px по длинной стороне. Пригодится, чтобы честно сказать «снимок мелкий».
+  const delivered = (side) => Math.round(Math.min(side, 1568));
+  const whole = { buf: null, delivered: delivered(Math.max(im.width, im.height)) };
+  if (!box) return whole;
   const pad = padPct || 5;
   let x = Math.round(im.width * (box.x - pad) / 100), y = Math.round(im.height * (box.y - pad) / 100);
   let w = Math.round(im.width * (box.w + pad * 2) / 100), h = Math.round(im.height * (box.h + pad * 2) / 100);
   x = Math.max(0, Math.min(im.width - 1, x)); y = Math.max(0, Math.min(im.height - 1, y));
   w = Math.min(im.width - x, w); h = Math.min(im.height - y, h);
-  if (w < 200 || h < 120) return null;                       // вырезка слишком мелкая — толку не будет
-  if (w * h > 0.92 * im.width * im.height) return null;      // это почти весь кадр, резать незачем
+  if (w < 200 || h < 120) return whole;                      // вырезка слишком мелкая — толку не будет
+  if (w * h > 0.92 * im.width * im.height) return whole;     // это почти весь кадр, резать незачем
   const out = Buffer.alloc(w * h * 4);
   for (let r = 0; r < h; r++) im.data.copy(out, r * w * 4, ((y + r) * im.width + x) * 4, ((y + r) * im.width + x + w) * 4);
-  return Buffer.from(require("jpeg-js").encode({ data: out, width: w, height: h }, 92).data);
+  // Насколько крупнее станет страница в глазах модели. Картинку она всё равно
+  // ужимает до 1568 px по длинной стороне, поэтому выигрыш даёт не сама резка,
+  // а то, что из кадра ушло лишнее. Если снимок и так мелкий (скриншот 369x800),
+  // выигрыша нет никакого — и доверять такой «вырезке» больше, чем оригиналу,
+  // нельзя: проверено, на ней модель прочитала фамилию хуже.
+  const cap = (side) => Math.min(1, 1568 / side);
+  const gain = cap(Math.max(w, h)) / cap(Math.max(im.width, im.height));
+  return { buf: Buffer.from(require("jpeg-js").encode({ data: out, width: w, height: h }, 92).data), w, h, gain, delivered: delivered(Math.max(w, h)) };
 }
 // Рамка от модели: проверяем на вменяемость, чтобы не резать по мусору.
 function sanePageBox(b) {
@@ -629,6 +642,31 @@ function buildFields(ai, mrz, alt) {
   if (nd.length === 9) { f.number = prettyRuNumber(nd); f.series = nd.slice(0, 2); f.numberOnly = nd.slice(2); }
   else { f.series = ""; f.numberOnly = String(f.number || "").trim(); }
   if (confirmed.indexOf("number") >= 0) { confirmed.push("series"); confirmed.push("numberOnly"); }
+  // Модель иногда приклеивает к фамилии код государства из MRZ:
+  // «P<RUSKANUNNIKOV» → «РУСКАНУННИКОВ». Ловится сверкой с фамилией из MRZ.
+  if (mrz && mrz.surnameLat && /^РУС/.test(f.surnameRu)) {
+    const bare = f.surnameRu.replace(/^РУС/, "");
+    if (translit(bare) === mrz.surnameLat && translit(f.surnameRu) !== mrz.surnameLat) {
+      f.surnameRu = bare;
+    }
+  }
+  // Кириллица: в MRZ её нет и контрольных цифр у неё нет, поэтому единственная
+  // защита — второе чтение по увеличенной вырезке страницы. Там модель верно
+  // читает то, что на общем снимке путала (КАНУННИКОВ вместо РУКАВИШНИКОВ,
+  // КУРСК вместо КИРОВА). Верим вырезке только если она про тот же документ —
+  // это проверяется по номеру, сошедшемуся с MRZ (alt.trusted).
+  if (alt && alt.trusted) {
+    for (const key of ["surnameRu", "nameRu", "patronymicRu", "birthPlace"]) {
+      let v = String(alt[key] || "").trim().toUpperCase();
+      if (key === "birthPlace") v = v.replace(/\s*\/\s*/g, " / ").trim();
+      if (!v || v === f[key]) { if (v && v === f[key]) confirmed.push(key); continue; }
+      const label = (FIELDS.find((x) => x.key === key) || {}).label || key;
+      if (!f[key]) { f[key] = v; continue; }
+      warn.push(label + ": на общем снимке прочиталось «" + f[key] + "», на увеличенной вырезке — «" + v +
+        "». Взято второе (там шрифт крупнее), но сверьте глазами.");
+      f[key] = v;
+    }
+  }
   // Полей ниже в MRZ нет вовсе — транслитерируем сами по правилам загранпаспорта.
   f.patronymicLat = translit(f.patronymicRu);
   f.citizenshipEn = citizenshipEn(f.citizenship, mrz && mrz.nationality);
@@ -823,26 +861,64 @@ async function recognizeOne(buf, name, mime, ctx) {
   // Главное здесь не «спросить ещё раз», а спросить по ВЫРЕЗКЕ страницы в
   // исходном разрешении: на целом снимке «МВД 77438» читалось как 77436, 77449,
   // 77409 — каждый раз по-новому, а по вырезке трижды из трёх верно.
-  let alt = null, cropped = false;
+  let alt = null, pageShort = 0;
   if (smallPrintCheck()) {
-    let smallBlock = block;
+    let cropBlock = null, cropGain = 1;
     try {
       const box = sanePageBox(ai.page_box);
-      const c = box && cropToJpeg(buf, mime, name, box, 5);
-      if (c) { smallBlock = mediaBlock(c, "crop.jpg", "image/jpeg"); cropped = true; }
+      const c = cropToJpeg(buf, mime, name, box, 5);
+      if (c) {
+        // Меньше ~900 точек на страницу — мелкий шрифт не различить никакими
+        // ухищрениями, честнее об этом сказать сотруднику.
+        pageShort = c.delivered;
+        if (c.buf) { cropBlock = mediaBlock(c.buf, "crop.jpg", "image/jpeg"); cropGain = c.gain; }
+      }
     } catch (e) { console.warn("scanner: вырезка страницы не удалась:", e.message); }
     try {
-      const rs = await runJson({
-        model: model(), max_tokens: 200,
-        system: "Ты извлекаешь данные из фотографий документов для визового агентства. Отвечай строго тем, что видишь: ничего не додумывай. Если поля не видно — верни пустую строку.",
-        messages: [{ role: "user", content: [smallBlock, { type: "text", text:
-          "Найди в паспорте две строки: «Дата выдачи / Date of issue» и «Орган, выдавший документ / Authority». Код подразделения набран мелко — рассмотри каждую цифру отдельно, не угадывай число целиком. Если цифры не различаются уверенно — верни пустые строки, не гадай. Верни строго JSON: {\"issue_date\":\"ДД.ММ.ГГГГ\",\"authority\":\"МВД 12345\"}." }] }],
-      }, SMALL_SCHEMA);
-      track(rs);
-      if (rs && rs.json) alt = { authority: rs.json.authority, issueDate: rs.json.issue_date, cropped };
-    } catch (e) { console.warn("scanner: прицельное чтение не удалось:", e.message); }
+      if (cropBlock) {
+        // Второе чтение по вырезке — ВСЕХ полей, а не только мелких: на
+        // увеличенной странице модель верно читает и фамилию, и место
+        // рождения, и отчество, где на общем снимке путала буквы.
+        const rc = await runJson({
+          model: model(), max_tokens: 1500, system: SYS, output_config: { effort: "low" },
+          messages: [{ role: "user", content: [cropBlock, { type: "text", text:
+            "Это увеличенная страница того же паспорта. Прочитай данные заново, внимательно: шрифт здесь крупнее, чем на общем снимке. " + task }] }],
+        }, SCHEMA);
+        track(rc);
+        if (rc && rc.json) {
+          const j = rc.json;
+          // Вырезке верим целиком только если она про тот же документ:
+          // сверяем номер с подтверждённой MRZ.
+          const same = mrz && mrz.valid
+            ? String(j.number || "").replace(/\D/g, "") === String(mrz.number || "").replace(/\D/g, "")
+            : false;
+          alt = {
+            cropped: true, trusted: same && cropGain >= 1.2,
+            authority: j.authority, issueDate: j.issue_date,
+            surnameRu: j.surname_ru, nameRu: j.name_ru, patronymicRu: j.patronymic_ru, birthPlace: j.birth_place,
+          };
+          // MRZ на вырезке тоже крупнее — вдруг разберётся лучше.
+          const mc = parseMrzTd3(j.mrz_line1, j.mrz_line2);
+          const sc = (m) => (!m ? -1 : (m.valid ? 3 : 0) + (mrzNamesSuspect(m, ai) ? 0 : 2));
+          if (mc && sc(mc) > sc(mrz)) { mrz = mc; usedModel = usedModel + "+вырезка"; }
+        }
+      } else {
+        // Рамку не нашли — спрашиваем по общему снимку хотя бы про мелкий шрифт.
+        const rs = await runJson({
+          model: model(), max_tokens: 200,
+          system: "Ты извлекаешь данные из фотографий документов для визового агентства. Отвечай строго тем, что видишь: ничего не додумывай. Если поля не видно — верни пустую строку.",
+          messages: [{ role: "user", content: [block, { type: "text", text:
+            "Найди в паспорте две строки: «Дата выдачи / Date of issue» и «Орган, выдавший документ / Authority». Код подразделения набран мелко — рассмотри каждую цифру отдельно, не угадывай число целиком. Если цифры не различаются уверенно — верни пустые строки, не гадай. Верни строго JSON: {\"issue_date\":\"ДД.ММ.ГГГГ\",\"authority\":\"МВД 12345\"}." }] }],
+        }, SMALL_SCHEMA);
+        track(rs);
+        if (rs && rs.json) alt = { authority: rs.json.authority, issueDate: rs.json.issue_date, cropped: false, trusted: false };
+      }
+    } catch (e) { console.warn("scanner: чтение по вырезке не удалось:", e.message); }
   }
   const { fields, warnings, confirmed } = buildFields(ai, mrz, alt);
+  if (pageShort && pageShort < 900) {
+    warnings.unshift("Снимок мелкий: страница паспорта — всего " + pageShort + " точек по длинной стороне. Мелкий шрифт (код подразделения, отчество, место рождения) на таком читается ненадёжно — лучше запросить исходное фото, а не пересланный скриншот.");
+  }
 
   // Сверка двух чтений. MRZ подставляем ОДНУ И ТУ ЖЕ, чтобы сравнивать именно
   // то, что модель увидела глазами, а не разбор машиночитаемой зоны.
