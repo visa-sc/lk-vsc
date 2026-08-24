@@ -494,14 +494,8 @@ function buildFields(ai, mrz) {
   // Место рождения печатают через дробь: слева по-русски регион, справа
   // латиницей СТРАНА рождения — и это не перевод региона, а важные данные:
   // у рождённых до 1991 там стоит USSR, консульства к этому придирчивы.
-  // В русском поле оставляем русскую часть, страну приберегаем для латинского.
-  let birthCountryLat = "";
-  if (/\//.test(f.birthPlace)) {
-    const parts = f.birthPlace.split("/");
-    const tail = parts.slice(1).join("/").replace(/[^A-Z ]/gi, " ").trim().toUpperCase();
-    if (/[А-ЯЁ]/.test(parts[0])) f.birthPlace = parts[0].trim();   // «ПЕРМСКАЯ ОБЛ.» — точку сокращения не трогаем
-    if (tail) birthCountryLat = tail;
-  }
+  // Оставляем строку ровно как в паспорте, целиком (просьба Андрея 24.08).
+  f.birthPlace = f.birthPlace.replace(/\s*\/\s*/g, " / ").trim();
   const confirmed = [];
   if (mrz) {
     // Поле считается надёжным, если сошлась контрольная цифра MRZ ИЛИ если
@@ -554,8 +548,9 @@ function buildFields(ai, mrz) {
   // Полей ниже в MRZ нет вовсе — транслитерируем сами по правилам загранпаспорта.
   f.patronymicLat = translit(f.patronymicRu);
   f.citizenshipEn = citizenshipEn(f.citizenship, mrz && mrz.nationality);
-  // Место рождения латиницей = транслитерация региона + страна, как в паспорте.
-  f.birthPlaceLat = [translit(f.birthPlace), birthCountryLat].filter(Boolean).join(" / ");
+  // Латиница: кириллица переводится по таблице, латинская часть («/ USSR»)
+  // проходит насквозь — в таблице её букв нет.
+  f.birthPlaceLat = translit(f.birthPlace);
   f.authorityLat = translit(f.authority);
   // Здравый смысл: срок действия загранпаспорта — 5 или 10 лет от выдачи.
   if (f.issueDate && f.expiryDate) {
