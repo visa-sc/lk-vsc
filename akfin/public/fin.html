@@ -6,13 +6,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Life Investments">
-<meta name="theme-color" content="#efe6ce">
+<meta name="theme-color" content="#f2f5f9">
 <link rel="apple-touch-icon" href="/fin-icon.png">
 <title>Life Investments</title>
 <style>
 /* Светлый «воздушный» скин в духе клиентского ЛК (#3589BD, мягкие тени) */
 :root{
-  --bg:#efe6ce; --card:#ffffff; --line:rgba(60,48,20,.10);
+  --bg:#f2f5f9; --card:#ffffff; --line:rgba(23,32,60,.08);
   --ink:#171c29; --muted:#6a7385; --faint:#9aa3b2;
   --acc:#3589BD;
   --pos:#34c759; --ok:#3589BD; --nope:#ff9500; --trash:#ff3b30;
@@ -21,10 +21,9 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
-/* фон-«холст»: бумажный коллаж с короной (fin-bg.png, своя графика).
-   Свойства порознь и прямо на body: сокращённую запись «center top/cover»
-   iOS Safari отбрасывал целиком — фон оставался бежевой заливкой */
-body{min-height:100vh;background-color:#efe6ce;background-image:url("/fin-bg.png");background-repeat:no-repeat;background-position:center top;background-size:cover}
+/* однотонный светлый фон с едва заметным градиентом (вернули по просьбе Андрея 25.08) */
+body{min-height:100vh;background:var(--bg)}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(180deg,#f7fafd 0%,#f2f5f9 45%,#edf1f7 100%)}
 .wrap{max-width:520px;margin:0 auto;padding:0 18px 48px}
 /* форма опущена ближе к середине экрана (просьба Андрея) */
 /* форма сознательно опущена пониже — так ближе тянуться пальцем (Андрей, 19.08);
