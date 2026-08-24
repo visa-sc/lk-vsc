@@ -322,8 +322,14 @@ function client() {
   return _client;
 }
 function model() { return process.env.SCANNER_MODEL || "claude-haiku-4-5"; }
-// Читать документ дважды и сверять два чтения между собой (вдвое дороже).
-function doubleRead() { return /^(1|true|on|yes|да)$/i.test(String(process.env.SCANNER_DOUBLE_READ || "")); }
+// Читать документ дважды и сверять чтения между собой. «1» — вторым проходом
+// та же модель (вдвое дороже), «hard» — сильная: она ошибается в других местах,
+// поэтому ловит больше, но и стоит заметно дороже.
+function doubleRead() {
+  const v = String(process.env.SCANNER_DOUBLE_READ || "").toLowerCase().trim();
+  if (/^(hard|sonnet|strong|сильная)$/.test(v)) return "hard";
+  return /^(1|true|on|yes|да)$/.test(v) ? "same" : "";
+}
 function modelHard() { return process.env.SCANNER_MODEL_HARD || "claude-sonnet-5"; }
 const PRICES = { "claude-opus-5": [5, 25], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5] };
 const RUB = Number(process.env.TRANSLATE_USD_RUB || 80);
@@ -587,14 +593,15 @@ async function recognizeOne(buf, name, mime, ctx) {
   // выдачи, код подразделения — в MRZ их нет, контрольных цифр у них нет.
   // Ошибку второе чтение не исправляет, а делает видимой: разошлись — снимаем
   // галочку и пишем оба варианта.
-  const req = (nudge) => ({
-    model: model(), max_tokens: 1500, system: SYS, output_config: { effort: "low" },
+  const req = (nudge, mdl) => ({
+    model: mdl || model(), max_tokens: 1500, system: SYS, output_config: { effort: "low" },
     messages: [{ role: "user", content: [block, { type: "text", text: task + (nudge || "") }] }],
   });
   const [r, rb] = await Promise.all([
     runJson(req(), SCHEMA),
     doubleRead()
-      ? runJson(req("\n\nОсобое внимание — цифрам: номер, даты, код подразделения в поле «кем выдан». Перечитай каждую цифру по отдельности."), SCHEMA).catch((e) => {
+      ? runJson(req("\n\nОсобое внимание — цифрам: номер, даты, код подразделения в поле «кем выдан». Перечитай каждую цифру по отдельности.",
+          doubleRead() === "hard" ? modelHard() : null), SCHEMA).catch((e) => {
           console.warn("scanner: второе чтение не удалось:", e.message); return null;
         })
       : Promise.resolve(null),
