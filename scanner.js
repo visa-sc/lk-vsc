@@ -494,9 +494,42 @@ async function heicToJpeg(buf, name) {
 // читается никакой моделью. Лечится не переспрашиванием, а разрешением:
 // вырезаем страницу в ИСХОДНОМ качестве и задаём вопрос уже по ней.
 // Всё на чистом JS — jpeg-js и pngjs уже стоят, ничего системного не нужно.
+// Скан паспорта в PDF — это почти всегда одна фотография, вложенная внутрь
+// готовым JPEG (фильтр DCTDecode). Растеризовать PDF нечем (для этого нужны
+// системные библиотеки), а вот достать оттуда исходный JPEG можно простым
+// разбором: находим потоки с DCTDecode и берём самый большой. Тогда вырезка
+// страницы работает и для PDF — а без неё мелкий шрифт в сканах не читался.
+function jpegInsidePdf(buf) {
+  const hay = buf.toString("latin1");
+  let best = null;
+  const re = /\/Filter\s*(?:\[\s*)?\/DCTDecode/g;
+  let m;
+  while ((m = re.exec(hay))) {
+    const s = hay.indexOf("stream", m.index);
+    if (s < 0) continue;
+    let from = s + 6;
+    if (hay[from] === "\r") from++;
+    if (hay[from] === "\n") from++;
+    const to = hay.indexOf("endstream", from);
+    if (to < 0) continue;
+    const len = to - from;
+    if (len > 5000 && (!best || len > best.len)) best = { from, len };
+  }
+  if (!best) return null;
+  const out = buf.subarray(best.from, best.from + best.len);
+  // Поток должен начинаться сигнатурой JPEG, иначе это что-то другое.
+  return out.length > 3 && out[0] === 0xff && out[1] === 0xd8 ? out : null;
+}
+
 function decodeImage(buf, mime, name) {
   const ext = path.extname(String(name || "")).toLowerCase();
   const m = String(mime || "").toLowerCase();
+  if (m === "application/pdf" || ext === ".pdf") {
+    const inner = jpegInsidePdf(buf);
+    if (!inner) return null;
+    const im = require("jpeg-js").decode(inner, { useTArray: true });
+    return { data: Buffer.from(im.data.buffer || im.data), width: im.width, height: im.height };
+  }
   if (m === "image/png" || ext === ".png") {
     const { PNG } = require("pngjs");
     const p = PNG.sync.read(buf);
@@ -643,6 +676,24 @@ function buildFields(ai, mrz, alt) {
   if (nd.length === 9) { f.number = prettyRuNumber(nd); f.series = nd.slice(0, 2); f.numberOnly = nd.slice(2); }
   else { f.series = ""; f.numberOnly = String(f.number || "").trim(); }
   if (confirmed.indexOf("number") >= 0) { confirmed.push("series"); confirmed.push("numberOnly"); }
+  // Модель иногда набирает кириллическое поле вперемешку с латиницей:
+  // «СОРОKIN» вместо «СОРОКИН» — буквы-двойники неразличимы на глаз. Чиним
+  // подстановкой двойников, но принимаем результат ТОЛЬКО если он сходится
+  // с латиницей MRZ: угадывать вслепую нельзя.
+  const LOOKALIKE = { A: "А", B: "В", C: "С", E: "Е", H: "Н", I: "И", K: "К", M: "М", N: "Н",
+    O: "О", P: "Р", T: "Т", X: "Х", Y: "У", U: "У", G: "Г", D: "Д", L: "Л", R: "Р", S: "С", F: "Ф", V: "В", Z: "З", J: "Ж" };
+  const fixMixed = (key, mrzVal) => {
+    const v = f[key];
+    if (!v || !/[A-Z]/.test(v) || !/[А-ЯЁ]/.test(v)) return;   // не смесь — не трогаем
+    const guess = v.replace(/[A-Z]/g, (ch) => LOOKALIKE[ch] || ch);
+    if (mrzVal && translit(guess) === mrzVal) { f[key] = guess; return; }
+    warn.push(((FIELDS.find((x) => x.key === key) || {}).label || key) + ": «" + v +
+      "» набрано вперемешку кириллицей и латиницей — прочитано неуверенно, сверьте с паспортом.");
+  };
+  fixMixed("surnameRu", mrz && mrz.surnameLat);
+  fixMixed("nameRu", mrz && mrz.nameLat);
+  fixMixed("patronymicRu", null);
+
   // Кириллицу проверять нечем — кроме одного: в загранпаспорте латиница в MRZ
   // это транслитерация той же самой кириллической фамилии. Прогоняем прочитанную
   // кириллицу через нашу таблицу ICAO и сравниваем. Мелкое расхождение не в счёт
@@ -686,6 +737,19 @@ function buildFields(ai, mrz, alt) {
   }
   ruVsMrz("surnameRu", mrz && mrz.surnameLat, "Фамилия");
   ruVsMrz("nameRu", mrz && mrz.nameLat, "Имя");
+  // Бывает, что оба латинских чтения сошлись — и оба неверны: «ALEXANDRA» там,
+  // где по правилам транслитерации «ALEKSANDRA» (X вместо KS модель ставит
+  // охотно, потому что так пишут в жизни). Подменять нельзя: у паспортов до
+  // 2010 года транслитерация была своя, там расхождения законны. Предупреждаем.
+  const latVsTranslit = (latKey, ruKey, human) => {
+    if (!f[latKey] || !f[ruKey]) return;
+    const my = translit(f[ruKey]);
+    if (!my || my === f[latKey] || editDist(my, f[latKey]) <= 1) return;
+    warn.push(human + ": в паспорте «" + f[latKey] + "», а по нынешним правилам транслитерации с «" + f[ruKey] +
+      "» вышло бы «" + my + "». Если паспорт выдан после 2010 года — вероятно, латиница прочитана неверно.");
+  };
+  latVsTranslit("surnameLat", "surnameRu", "Фамилия латиницей");
+  latVsTranslit("nameLat", "nameRu", "Имя латиницей");
   // Полей ниже в MRZ нет вовсе — транслитерируем сами по правилам загранпаспорта.
   f.patronymicLat = translit(f.patronymicRu);
   f.citizenshipEn = citizenshipEn(f.citizenship, mrz && mrz.nationality);
@@ -1337,4 +1401,4 @@ function mount(app, deps) {
   setInterval(purgeOldFiles, 6 * 3600 * 1000);
 }
 
-module.exports = { mount, recognizeOne, parseMrzTd3, mrzCheckDigit, buildFields, reconcileLat, mrzNamesSuspect, mrzNamesUnresolved, prettyRuNumber, translit, citizenshipEn, FIELDS };
+module.exports = { mount, recognizeOne, jpegInsidePdf, decodeImage, cropToJpeg, parseMrzTd3, mrzCheckDigit, buildFields, reconcileLat, mrzNamesSuspect, mrzNamesUnresolved, prettyRuNumber, translit, citizenshipEn, FIELDS };
