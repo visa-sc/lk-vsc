@@ -194,6 +194,92 @@ function mountEarly(app, deps) {
     catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
+  // ── Сторож канала до Anthropic (24.08.2026) ──────────────────────────────
+  // Весь ИИ-трафик (переводы, чат, сканер) идёт через ретранслятор
+  // ANTHROPIC_BASE_URL: Anthropic не принимает запросы с российских адресов.
+  // Раньше сторож жил в translate.js, но движок переехал к Кате и теперь ходит
+  // на локальный шлюз — настоящий канал виден только отсюда. Раз в час пробуем
+  // /v1/models: два провала подряд → письмо Андрею (не чаще раза в сутки) и,
+  // если задан ANTHROPIC_BASE_URL_BACKUP, переключение на запасной адрес.
+  let chFails = 0;
+  async function probeChannel() {
+    const base = (process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/+$/, "");
+    try {
+      const r = await fetch(base + "/v1/models?limit=1", {
+        headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01" },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      if (chFails >= 2) console.log("engine-proxy: канал до Anthropic снова отвечает");
+      chFails = 0;
+      return;
+    } catch (e) {
+      chFails++;
+      console.warn("engine-proxy: канал до Anthropic не ответил (" + chFails + "): " + e.message);
+      if (chFails < 2) return;
+      const b = loadBudget();
+      const day = mskDay();
+      if (!b.alerts[day + ":channel"]) {
+        b.alerts[day + ":channel"] = Date.now(); saveBudget(b);
+        const backup = process.env.ANTHROPIC_BASE_URL_BACKUP || "";
+        sendMail({ to: ALERT_TO, subject: "ИИ-канал не отвечает: переводы, чат и сканер могут встать",
+          text: "Ретранслятор до Anthropic (" + base.replace(/\/[^/]+$/, "/…") + ") не отвечает уже " + chFails + " проверки подряд: " + e.message +
+            "\n\nЧерез него работают переводы, ИИ-чат и сканер паспортов — сейчас они будут отдавать ошибку канала." +
+            (backup ? "\n\nЗапасной канал задан, но переключение делается вручную (ANTHROPIC_BASE_URL в .env)." :
+              "\n\nЗапасного канала НЕТ. Частая причина — приостановка приложения на Deno Deploy из-за лимитов: проверьте console.deno.com (организация visa-sc).") }).catch(() => {});
+      }
+    }
+  }
+  setTimeout(probeChannel, 60000);
+  setInterval(probeChannel, 3600000);
+
+  // ── Раннее предупреждение о риске списаний за ретранслятор (просьба Андрея
+  // 24.08.2026) ────────────────────────────────────────────────────────────
+  // Счётчики Deno Deploy нам не видны (их письма уходят на почту аккаунта), но
+  // нагрузка на канал целиком наша: это запросы движка переводов (журнал
+  // .engineBudget.json) и распознавания паспортов (.scanner/store.json). Раз в
+  // 6 часов сравниваем сегодняшний объём со средним за две недели: резкий рост
+  // = мы движемся к лимитам площадки, а значит к приостановке или списанию.
+  // Письмо — на director@, не чаще раза в сутки.
+  const SPIKE_RATIO = Number(process.env.ENGINE_SPIKE_RATIO || 3);
+  const SPIKE_FLOOR = Number(process.env.ENGINE_SPIKE_FLOOR || 300); // меньше — не тревожим
+  function aiCallsByDay() {
+    const days = {};
+    try {
+      const b = loadBudget();
+      for (const [d, v] of Object.entries(b.days || {})) days[d] = (days[d] || 0) + (v.calls || 0);
+    } catch (_) {}
+    try {
+      const st = JSON.parse(fs.readFileSync(path.join(__dirname, ".scanner", "store.json"), "utf8"));
+      for (const doc of (st.docs || [])) {
+        const d = new Date((doc.at || 0) + 3 * 3600 * 1000).toISOString().slice(0, 10);
+        days[d] = (days[d] || 0) + ((doc.spend || []).length || 1);
+      }
+    } catch (_) {}
+    return days;
+  }
+  function checkLoadSpike() {
+    const days = aiCallsByDay();
+    const today = mskDay();
+    const cur = days[today] || 0;
+    if (cur < SPIKE_FLOOR) return;
+    const prev = Object.keys(days).filter((d) => d < today).sort().slice(-14).map((d) => days[d]);
+    if (prev.length < 3) return;
+    const avg = prev.reduce((a, x) => a + x, 0) / prev.length;
+    if (!avg || cur < avg * SPIKE_RATIO) return;
+    const b = loadBudget();
+    if (b.alerts[today + ":spike"]) return;
+    b.alerts[today + ":spike"] = Date.now(); saveBudget(b);
+    sendMail({ to: ALERT_TO, subject: "Нагрузка на ИИ-канал резко выросла — возможен выход за бесплатные лимиты",
+      text: "Сегодня (" + today + ") через ретранслятор до Anthropic прошло " + cur + " запросов при среднем " +
+        Math.round(avg) + " в день за последние " + prev.length + " дней (рост в " + (cur / avg).toFixed(1) + " раза).\n\n" +
+        "Сам ретранслятор бесплатный, но у площадки (Deno Deploy, организация visa-sc) есть лимиты: при их превышении приложение приостанавливают, а с привязанной картой возможны списания. " +
+        "Стоит заглянуть в console.deno.com и посмотреть расход.\n\n" +
+        "Что обычно вызывает такой рост: массовые прогоны обучения в переводах, пачки сканирования паспортов, зациклившаяся задача." }).catch(() => {});
+  }
+  setTimeout(checkLoadSpike, 120000);
+  setInterval(checkLoadSpike, 6 * 3600000);
+
   // Сводка расхода для админа (читается из /admin при желании)
   app.get("/internal/engine/budget", (req, res) => {
     if (!isLocal(req)) return res.status(403).end();
