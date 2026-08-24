@@ -241,10 +241,16 @@ function editDist(a, b) {
 //
 // Что чиним:
 //   1) имя, заехавшее в фамилию (модель потеряла второй «<» разделителя);
-//   2) фамилию, прочитанную с потерей куска («KOMISARENKO» → «KOMISAR»).
-// Мелкое расхождение (один знак) оставляем за MRZ — это официальная
-// транслитерация; крупное считаем сбоем чтения MRZ и оставляем напечатанное.
-function reconcileLat(mrzSurname, mrzGiven, printedSurname, printedGiven) {
+//   2) фамилию, прочитанную с ошибкой («KOMISARENKO» → «KOMISAR», «KOMIISARENKO»).
+//
+// Считать мелкое расхождение «официальной транслитерацией» нельзя: в паспорте
+// латиница печатается ровно та же, что в MRZ, поэтому ЛЮБОЕ различие — чья-то
+// ошибка чтения, хоть на один знак (так и вышло с «KOMIISARENKO»). Кто из двух
+// прав, решает третий, независимый от латиницы источник: транслитерация
+// кириллической фамилии нашей же таблицей ICAO. Он не годится как главный
+// (в паспортах до 2010 года правила были другие — ANDREY вместо ANDREI), но
+// как судья между двумя чтениями одного и того же слова работает.
+function reconcileLat(mrzSurname, mrzGiven, printedSurname, printedGiven, ruSurname, ruGiven) {
   let surname = String(mrzSurname || "").trim();
   let given = String(mrzGiven || "").trim();
   const pS = String(printedSurname || "").trim(), pG = String(printedGiven || "").trim();
@@ -259,16 +265,24 @@ function reconcileLat(mrzSurname, mrzGiven, printedSurname, printedGiven) {
   }
   // 2) Фамилия/имя разошлись с напечатанным сильнее, чем на один знак.
   const notes = [], bad = [];
-  const check = (mv, pv, key, human) => {
-    if (!mv || !pv || mv === pv) return mv;
-    if (editDist(mv, pv) <= 1) return mv;                 // мелочь — верим MRZ
+  const check = (mv, pv, ru, key, human) => {
+    if (!mv || !pv) return mv || pv;
+    if (mv === pv) return mv;                             // два чтения сошлись
     bad.push(key);
+    // Третий голос: как эта же фамилия выглядит по правилам транслитерации.
+    const exp = translit(String(ru || "").replace(/[^А-ЯЁ\- ]/gi, "").trim().toUpperCase());
+    let val = pv, why = "взято напечатанное в паспорте (крупный шрифт читается вернее)";
+    if (exp) {
+      const dm = editDist(mv, exp), dp = editDist(pv, exp);
+      if (dm < dp) { val = mv; why = "взято «" + mv + "» — оно ближе к транслитерации кириллицы («" + exp + "»)"; }
+      else if (dp < dm) { why = "взято «" + pv + "» — оно ближе к транслитерации кириллицы («" + exp + "»)"; }
+    }
     notes.push(human + ": в MRZ прочитано «" + mv + "», в паспорте напечатано «" + pv +
-      "» — расхождение слишком большое, MRZ прочитана неуверенно, оставлено как в паспорте. Сверьте глазами.");
-    return pv;
+      "» — два чтения разошлись, " + why + ". Сверьте глазами.");
+    return val;
   };
-  surname = check(surname, pS, "surnameLat", "Фамилия латиницей");
-  given = check(given, pG, "nameLat", "Имя латиницей");
+  surname = check(surname, pS, ruSurname, "surnameLat", "Фамилия латиницей");
+  given = check(given, pG, ruGiven, "nameLat", "Имя латиницей");
   return { surname, given, suspect: bad.length > 0, bad, notes };
 }
 // Признак, что первую строку MRZ стоит перечитать сильной моделью.
@@ -276,7 +290,8 @@ function mrzNamesSuspect(mrz, ai) {
   if (!mrz) return false;
   return reconcileLat(mrz.surnameLat, mrz.nameLat,
     String((ai && ai.surname_lat) || "").trim().toUpperCase(),
-    String((ai && ai.name_lat) || "").trim().toUpperCase()).suspect;
+    String((ai && ai.name_lat) || "").trim().toUpperCase(),
+    String((ai && ai.surname_ru) || ""), String((ai && ai.name_ru) || "")).suspect;
 }
 
 // ── Claude ────────────────────────────────────────────────────────────────
@@ -485,13 +500,15 @@ function buildFields(ai, mrz) {
     put("birthDate", mrz.birthDate, mrz.checks.birth, "Дата рождения");
     put("expiryDate", mrz.expiryDate, mrz.checks.expiry, "Срок действия");
     if (mrz.sex) { if (!f.sex || f.sex === mrz.sex) { if (f.sex === mrz.sex) confirmed.push("sex"); f.sex = mrz.sex; } else warn.push("Пол: в документе «" + f.sex + "», в MRZ «" + mrz.sex + "»"); }
-    // Латиница из MRZ — официальная транслитерация, для виз важна именно она.
-    const lat = reconcileLat(mrz.surnameLat, mrz.nameLat, f.surnameLat, f.nameLat);
+    // Латиница из MRZ — официальная транслитерация, для виз важна именно она;
+    // но только если MRZ и напечатанное в паспорте говорят одно и то же.
+    const lat = reconcileLat(mrz.surnameLat, mrz.nameLat, f.surnameLat, f.nameLat, f.surnameRu, f.nameRu);
     for (const n of lat.notes) warn.push(n);
     // Галочку ставим только там, где MRZ и паспорт действительно сошлись:
     // поле, где MRZ прочиталась неуверенно, подтверждённым считать нельзя.
     const putLat = (key, val, human) => {
       if (!val) return;
+      if (lat.bad.indexOf(key) >= 0) { f[key] = val; return; }   // про это уже сказано выше
       if (f[key] && f[key] !== val) warn.push(human + ": в документе «" + f[key] + "», в MRZ «" + val + "» — взято из MRZ (это официальная транслитерация)");
       else if (f[key] === val && lat.bad.indexOf(key) < 0) confirmed.push(key);
       f[key] = val;
