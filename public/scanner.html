@@ -1,235 +1,569 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="robots" content="noindex, nofollow" />
-<title>Сканер паспорта (пилот) · VOYO</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VSC сканер документов</title>
+<link rel="apple-touch-icon" href="/vsc-logo.png">
+<link rel="icon" type="image/png" href="/vsc-logo.png">
 <style>
-  :root{--bg:#f4f6fa;--card:#fff;--line:#e7ebf2;--ink:#1d2433;--mut:#8a90a0;--accent:#3589bd;--accent-d:#2c6f96;--green:#2c7a43;--red:#b0263a;--amber:#7a5b12;}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;}
-  .wrap{max-width:720px;margin:0 auto;padding:22px 16px 70px;}
-  h1{font-size:21px;margin:4px 0 2px;}
-  .sub{color:var(--mut);font-size:13px;margin-bottom:14px;}
-  .priv{background:#eef7f0;border:1px solid #cfe9d6;color:#256138;border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:16px;}
-  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:16px;}
-  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:0 0 12px;font-weight:700;}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
-  button{cursor:pointer;border:0;border-radius:10px;padding:11px 16px;font-weight:600;background:var(--accent);color:#fff;}
-  button.sec{background:#eef2f7;color:var(--ink);}
-  button:disabled{opacity:.5;cursor:default;}
-  input[type=file]{font:inherit;}
-  .preview{max-width:100%;max-height:260px;border-radius:10px;border:1px solid var(--line);margin-top:12px;display:none;}
-  .prog{margin-top:12px;font-size:13px;color:var(--accent-d);display:none;}
-  .prog .bar{height:6px;background:#e8eef4;border-radius:99px;overflow:hidden;margin-top:6px;}
-  .prog .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s;}
-  table.fields{width:100%;border-collapse:collapse;font-size:14px;}
-  table.fields td{padding:6px 6px;border-bottom:1px solid var(--line);vertical-align:middle;}
-  table.fields td.k{color:var(--mut);width:42%;font-size:13px;}
-  table.fields input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;}
-  table.fields input:focus{outline:none;border-color:var(--accent);}
-  .badge{font-size:11px;font-weight:700;padding:2px 7px;border-radius:99px;margin-left:6px;}
-  .ok{background:#e7f6ec;color:var(--green);} .bad{background:#fdeaea;color:var(--red);} .neutral{background:#eef2f7;color:#667;}
-  .mrz{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:#0f1b25;color:#cfe6f5;padding:10px;border-radius:8px;white-space:pre;overflow:auto;}
-  details{margin-top:10px;} summary{cursor:pointer;font-size:13px;color:var(--accent-d);font-weight:600;}
-  .raw{white-space:pre-wrap;font-size:12px;color:#444;background:#fafbfd;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px;max-height:240px;overflow:auto;}
-  .warn{background:#fff7e6;border:1px solid #ffe2a8;color:var(--amber);border-radius:10px;padding:9px 12px;font-size:12.5px;margin-top:10px;}
-  .hint{font-size:12px;color:var(--mut);margin-top:6px;}
-  .conf{font-size:12px;color:var(--mut);margin-top:8px;}
+  /* Сканер паспортов — вёрстка в одном стиле с /translate и клиентским ЛК:
+     воздух, мягкие карточки, сегмент-контрол. Значение любого поля копируется
+     кликом — как выходные плитки в /calc. */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1c2130; background: #f5f7fb; min-height: 100vh; -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1;
+    background:
+      radial-gradient(1100px 520px at 12% -8%, rgba(0, 190, 240, .12), transparent 60%),
+      radial-gradient(900px 480px at 105% 12%, rgba(18, 58, 120, .08), transparent 55%),
+      linear-gradient(180deg, #f8fafd 0%, #eef2f9 100%);
+  }
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 26px 18px 70px; }
+  .brand { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 4px 0 22px; }
+  .vsc-wm { display: flex; align-items: center; gap: 11px; font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; font-weight: 800; font-size: 32px; line-height: 1; }
+  .vsc-wm i { width: 2px; height: 18px; border-radius: 2px; background: linear-gradient(180deg, #00bff0, #0088c2); opacity: .5; }
+  .vsc-wm b { background: linear-gradient(135deg, #00c8f2 0%, #0097ca 52%, #123a78 130%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .brand .sub { font-size: 11px; font-weight: 600; color: #98a0b0; letter-spacing: .5em; text-transform: lowercase; margin-right: -.5em; }
+
+  .card { background: rgba(255,255,255,.86); border: 1px solid rgba(24,36,66,.06); border-radius: 22px; padding: 22px; margin-bottom: 18px; box-shadow: 0 14px 44px rgba(24,36,66,.06); }
+  body.login-mode { display: flex; flex-direction: column; justify-content: center; min-height: 100vh; }
+  #login { width: 100%; max-width: 400px; margin: 0 auto; background: rgba(255,255,255,.92); border: 1px solid rgba(24,36,66,.06); border-radius: 26px; padding: 26px; box-shadow: 0 18px 50px rgba(24,36,66,.08); text-align: center; }
+  #login .sub2 { margin: 0 0 18px; font-size: 13px; color: #98a0b0; }
+  .login-form-inner { display: flex; flex-direction: column; gap: 10px; }
+  .login-input { width: 100%; height: 52px; border: 1px solid #e8e9f0; border-radius: 15px; padding: 0 16px; font-size: 16px; outline: none; font-family: inherit; color: #1c2130; background: #fafbfe; text-align: center; transition: border-color .2s, box-shadow .2s, background .2s; }
+  .login-input[type="password"]:not(:placeholder-shown) { letter-spacing: .18em; font-size: 22px; }
+  .login-input::placeholder { color: #a2a8b6; letter-spacing: normal; font-size: 15px; }
+  .login-input:focus { border-color: #35a3d4; background: #fff; box-shadow: 0 0 0 4px rgba(0,151,202,.1); }
+  .login-btn { width: 100%; height: 46px; border: 0; border-radius: 13px; background: #0097ca; color: #fff; font-size: 14.5px; font-weight: 600; cursor: pointer; font-family: inherit; transition: filter .15s; }
+  .login-btn:hover { filter: brightness(1.06); }
+  #loginErr { color: #c2334a; font-size: 13.5px; min-height: 18px; margin-top: 10px; }
+
+  .seg { display: flex; gap: 4px; background: rgba(21,32,60,.055); border-radius: 15px; padding: 4px; margin: 0 0 18px; overflow-x: auto; }
+  .seg button { flex: 1 0 auto; border: 0; background: transparent; color: #55607a; border-radius: 11px; padding: 10px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; transition: color .15s; }
+  .seg button.active { background: #fff; color: #101728; box-shadow: 0 3px 10px rgba(24,36,66,.1); }
+
+  .sec-h { display: flex; align-items: baseline; gap: 10px; margin: 0 2px 16px; flex-wrap: wrap; }
+  .sec-h b { font-size: 17px; font-weight: 700; letter-spacing: -.01em; color: #101728; }
+  .sec-h span { font-size: 12.5px; color: #98a0b0; }
+
+  .banner { border-radius: 15px; padding: 13px 16px; font-size: 13.5px; line-height: 1.55; margin-bottom: 16px; }
+  .banner.warn { background: #fdf7e8; border: 1px solid #f2e3b3; color: #7a5b00; }
+  .banner.info { background: #f0f7fc; border: 1px solid #dcebf5; color: #33648a; }
+  .banner code { background: rgba(0,0,0,.05); border-radius: 5px; padding: 1px 6px; font-size: 12.5px; }
+
+  .drop { border: 1.5px dashed #c4cddb; border-radius: 18px; background: #fafbfe; padding: 34px 18px; text-align: center; color: #55607a; font-size: 14.5px; cursor: pointer; transition: border-color .2s, background .2s; }
+  .drop:hover, .drop.over { border-color: #35a3d4; background: #f2f9fd; }
+  .drop b { color: #0b7fb0; }
+  .drop .mut { font-size: 12.5px; color: #98a0b0; margin-top: 6px; }
+  .drop .big { font-size: 30px; line-height: 1; margin-bottom: 10px; }
+  .acts-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+  .pri-btn { border: 0; background: #0097ca; color: #fff; border-radius: 13px; padding: 13px 26px; font-size: 14.5px; font-weight: 600; cursor: pointer; font-family: inherit; transition: filter .15s; }
+  .pri-btn:hover { filter: brightness(1.06); }
+  .pri-btn:disabled { opacity: .5; cursor: default; }
+  .ghost-btn { border: 1px solid #dfe3ec; background: #fff; color: #6a7488; border-radius: 12px; padding: 11px 20px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .ghost-btn:hover { background: #f6f8fb; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #9ed4ea; border-top-color: #0097ca; border-radius: 50%; animation: sp 1s linear infinite; vertical-align: -2px; margin-right: 6px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .queue { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .queue span { font-size: 12.5px; background: #eef4fa; border-radius: 9px; padding: 5px 11px; color: #3c4c66; }
+
+  /* Карточка человека */
+  .pcard { border: 1px solid #eef0f5; border-radius: 18px; background: #fff; padding: 16px 18px; margin-bottom: 14px; box-shadow: 0 4px 18px rgba(24,36,66,.04); }
+  .pcard-h { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 4px; }
+  .pcard-h b { font-size: 16.5px; font-weight: 700; color: #101728; letter-spacing: -.01em; }
+  .pcard-sub { font-size: 12.5px; color: #98a0b0; margin-bottom: 13px; }
+  .pill { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 3.5px 10px; white-space: nowrap; }
+  .pill.green { background: #e8f6ee; color: #257a45; }
+  .pill.amber { background: #fcf3d9; color: #8a5f00; }
+  .pill.red { background: #fbeae8; color: #b0263a; }
+  .pill.gray { background: #f0f2f6; color: #5a636f; }
+  .pill.blue { background: #e7f4fb; color: #0e7fae; }
+
+  .fgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 8px; }
+  .f {
+    border: 1px solid #edf0f5; border-radius: 13px; padding: 9px 12px; background: #fafbfd;
+    cursor: pointer; transition: background .15s, border-color .15s, transform .08s; position: relative;
+  }
+  .f:hover { background: #f2f9fd; border-color: #cfe6f3; }
+  .f:active { transform: scale(.99); }
+  .f .k { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #98a0b0; display: block; margin-bottom: 3px; }
+  .f .v { font-size: 14.5px; font-weight: 600; color: #101728; word-break: break-word; line-height: 1.35; min-height: 20px; }
+  .f.empty .v { color: #c3c9d4; font-weight: 400; }
+  .f.copied { background: #e6f6ec; border-color: #bfe4cc; }
+  .f.ok { border-color: #cfe8d8; }
+  .f.ok .k::after { content: " ✓"; color: #2b9e5f; font-weight: 700; }
+  .f.copied .k { color: #257a45; }
+  .f.mrz { grid-column: 1 / -1; }
+  .f.mrz .v { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; letter-spacing: .02em; font-weight: 500; overflow-x: auto; white-space: nowrap; }
+  .warns { margin-top: 12px; }
+  .warns div { font-size: 12.5px; line-height: 1.5; color: #8a5f00; background: #fdf9ec; border-left: 3px solid #e3b53a; border-radius: 4px; padding: 6px 11px; margin: 5px 0; }
+  .warns div.bad { color: #b0263a; background: #fdf1f0; border-left-color: #d2685f; }
+  .pacts { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 13px; }
+  .pacts button { border: 0; background: #f2f4f8; border-radius: 999px; font-size: 12px; font-weight: 600; color: #3c4c66; padding: 8px 15px; cursor: pointer; font-family: inherit; transition: background .15s; }
+  .pacts button:hover { background: #e8ecf3; }
+  .pacts button.accent { background: #0097ca; color: #fff; }
+  .pacts button.accent:hover { background: #0a89b5; }
+
+  /* Правка и обучение */
+  .edit { margin-top: 14px; border-top: 1px solid #f0f2f6; padding-top: 14px; }
+  .edit .eg { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 10px; }
+  .edit label { display: block; font-size: 11px; font-weight: 600; color: #6a7488; margin: 0 0 5px 2px; }
+  .edit input, .edit textarea { width: 100%; font-family: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid #e8e9f0; border-radius: 12px; background: #fafbfe; color: #1c2130; outline: none; transition: border-color .2s, box-shadow .2s, background .2s; }
+  .edit input:focus, .edit textarea:focus { border-color: #35a3d4; background: #fff; box-shadow: 0 0 0 4px rgba(0,151,202,.1); }
+  .edit input.chg { border-color: #f0c04a; background: #fffdf5; }
+  .edit textarea { min-height: 74px; resize: vertical; line-height: 1.5; }
+  .edit .full { grid-column: 1 / -1; }
+  .learned { margin-top: 12px; font-size: 13px; color: #257a45; background: #eef8f1; border: 1px solid #cfe9d8; border-radius: 12px; padding: 11px 14px; line-height: 1.55; }
+  .learned b { display: block; margin-bottom: 4px; }
+
+  /* Дашборд */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .tile { border: 1px solid #eef0f5; border-radius: 16px; padding: 14px 16px; background: #fff; }
+  .tile b { display: block; font-size: 26px; font-weight: 700; letter-spacing: -.02em; color: #101728; line-height: 1.25; font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
+  .tile span { font-size: 11.5px; color: #78818f; }
+  .brk { margin-top: 20px; }
+  .brk h4 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #98a0b0; font-weight: 600; }
+  .bar { display: grid; grid-template-columns: 190px 1fr 44px; align-items: center; gap: 10px; margin: 7px 0; font-size: 12.5px; }
+  @media (max-width: 600px) { .bar { grid-template-columns: 120px 1fr 40px; } }
+  .bar em { font-style: normal; color: #3c4c66; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar .tr { background: #eef1f6; border-radius: 4px; height: 7px; overflow: hidden; }
+  .bar .tr i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #35c3ea, #0097ca); }
+  .bar u { text-decoration: none; color: #78818f; font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  .mon { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
+  .mon select { font-family: inherit; font-size: 13.5px; height: 40px; padding: 0 12px; border: 1px solid #e8e9f0; border-radius: 12px; background: #fafbfe; outline: none; color: #1c2130; }
+
+  /* Обучение */
+  .lesson-add { display: flex; gap: 8px; margin: 12px 0 4px; }
+  .lesson-add input { flex: 1; height: 44px; font-family: inherit; font-size: 13.5px; padding: 0 14px; border: 1px solid #e8e9f0; border-radius: 12px; background: #fafbfe; outline: none; }
+  .lesson-add input:focus { border-color: #35a3d4; background: #fff; box-shadow: 0 0 0 4px rgba(0,151,202,.1); }
+  .les { display: flex; align-items: flex-start; gap: 9px; border: 1px solid #edf0f5; border-radius: 12px; padding: 10px 13px; margin: 7px 0; background: #fff; font-size: 13.5px; line-height: 1.5; }
+  .les .src { font-size: 10.5px; color: #98a0b0; margin-top: 3px; }
+  .les .x { margin-left: auto; border: 0; background: transparent; color: #b6bcc8; font-size: 15px; cursor: pointer; padding: 0 3px; }
+  .les .x:hover { color: #c2334a; }
+  .corr { border: 1px solid #edf0f5; border-radius: 14px; padding: 12px 14px; margin: 9px 0; background: #fff; font-size: 13px; }
+  .corr .top { font-size: 12px; color: #98a0b0; margin-bottom: 6px; }
+  .corr .ch { line-height: 1.6; }
+  .corr .ch s { color: #b0263a; text-decoration: line-through; }
+  .corr .ch em { font-style: normal; color: #257a45; font-weight: 600; }
+  .corr .cm { margin-top: 6px; color: #3a4356; background: #f7f9fc; border-radius: 9px; padding: 8px 11px; line-height: 1.5; }
+  .empty { color: #9aa0ab; font-size: 13.5px; padding: 8px 4px; }
+  .err-t { color: #c2334a; font-size: 13px; }
+  .ok-t { color: #257a45; font-size: 13px; }
+  .thumb { max-width: 100%; border-radius: 12px; border: 1px solid #eef0f5; margin-top: 10px; display: block; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Сканер паспорта — пилот (помощник с проверкой)</h1>
-  <div class="sub">MRZ (загранпаспорт) + бесплатный OCR (tesseract.js). Не интегрирован — данные никуда не отправляются.</div>
-  <div class="priv">🔒 Фото обрабатывается <b>прямо в этом браузере</b> и <b>не загружается на сервер</b>. Распознавание локальное (tesseract.js).</div>
-
-  <div class="panel">
-    <h2>1. Загрузите фото / скан паспорта</h2>
-    <div class="row">
-      <input type="file" id="file" accept="image/*" capture="environment" />
-      <button id="runBtn" disabled>Распознать</button>
-    </div>
-    <div class="hint">Лучше всего — главная страница загранпаспорта целиком, ровно, без бликов (нужны 2 нижние строки MRZ).</div>
-    <img id="preview" class="preview" alt="preview" />
-    <div class="prog" id="prog"><span id="progTxt">Готовлю распознавание…</span><div class="bar"><i id="progBar"></i></div></div>
+  <div class="brand">
+    <div class="vsc-wm"><b>V</b><i></i><b>S</b><i></i><b>C</b></div>
+    <div class="sub">сканер</div>
   </div>
 
-  <div class="panel" id="mrzPanel" style="display:none;">
-    <h2>2. Данные из MRZ (машинно-читаемая зона)</h2>
-    <div id="mrzStatus" class="conf"></div>
-    <div class="mrz" id="mrzRaw"></div>
-    <div class="warn" id="mrzWarn" style="display:none;">MRZ не найдена/не распозналась. Поля ниже заполните по визуальной зоне и проверьте вручную. MRZ есть у загранпаспорта (2 строки внизу); у внутреннего РФ-паспорта — отдельный формат, его лучше вводить вручную.</div>
+  <div id="login" style="display:none;">
+    <div class="sub2">Распознавание паспортов · введите код доступа</div>
+    <form id="codeForm" class="login-form-inner">
+      <input id="code" class="login-input" type="password" inputmode="numeric" autocomplete="off" placeholder="Код доступа">
+      <input id="who" class="login-input" type="text" autocomplete="name" placeholder="Ваше имя (для статистики)" style="height:46px;font-size:15px;">
+      <button type="submit" class="login-btn">Войти</button>
+    </form>
+    <div id="loginErr"></div>
   </div>
 
-  <div class="panel" id="resPanel" style="display:none;">
-    <h2>3. Поля для договора / опросника — ПРОВЕРЬТЕ и поправьте</h2>
-    <table class="fields"><tbody id="fields"></tbody></table>
-    <div class="row" style="margin-top:12px;">
-      <button class="sec" id="copyBtn">Скопировать JSON</button>
-      <span class="conf" id="copyMsg"></span>
+  <div id="app" style="display:none;">
+    <div id="aiBanner" class="banner warn" style="display:none;">
+      ⚠️ <b>ИИ не подключён.</b> На сервере не задан <code>ANTHROPIC_API_KEY</code> — распознавание работать не будет.
     </div>
-    <div class="warn">⚠️ Это пилот-«помощник»: OCR ошибается, особенно на фото с телефона и на кириллице. <b>Обязательно сверьте каждое поле с оригиналом</b> перед использованием. Никуда автоматически ничего не подставляется.</div>
-    <details><summary>Показать весь распознанный текст (для проверки)</summary>
-      <div class="raw" id="rawText"></div>
-    </details>
+
+    <div class="seg" role="tablist">
+      <button type="button" class="active" data-tab="scan">Распознавание</button>
+      <button type="button" data-tab="dash">Дашборд</button>
+      <button type="button" data-tab="learn">Обучение</button>
+    </div>
+
+    <!-- ── Распознавание ── -->
+    <div id="tab-scan">
+      <div class="card">
+        <div class="sec-h"><b>Загрузите документы</b><span>российские загранпаспорта · можно сразу несколько</span></div>
+        <div class="drop" id="drop">
+          <div class="big">🛂</div>
+          <div><b>Выберите файлы</b> или перетащите сюда</div>
+          <div class="mut">Фото или скан разворота с фотографией · JPG, PNG, PDF · до 20 файлов за раз</div>
+        </div>
+        <input type="file" id="file" accept="image/*,application/pdf" multiple style="display:none;">
+        <div class="queue" id="queue"></div>
+        <div class="acts-row">
+          <button type="button" class="pri-btn" id="go" disabled>Распознать</button>
+          <button type="button" class="ghost-btn" id="clearAll" style="display:none;">Очистить результаты</button>
+          <span id="scanMsg" class="err-t"></span>
+        </div>
+        <div class="banner info" style="margin:16px 0 0;">
+          Номер, даты, пол и латиница берутся из машиночитаемой строки внизу паспорта и проверяются контрольными цифрами: такие поля помечены галочкой ✓ — им можно верить. Кириллицу (ФИО, место рождения, кем выдан) читает ИИ: <b>сверьте её глазами</b>. Нашли ошибку — нажмите «Поправить и обучить», сервис запомнит правило на будущее.
+        </div>
+      </div>
+
+      <div id="results"></div>
+    </div>
+
+    <!-- ── Дашборд ── -->
+    <div class="card" id="tab-dash" style="display:none;">
+      <div class="sec-h"><b>Дашборд</b><span>как работает сканер</span></div>
+      <div class="mon">
+        <select id="dashMonth"><option value="">За всё время</option></select>
+        <button type="button" class="ghost-btn" id="dashRefresh">Обновить</button>
+      </div>
+      <div id="dashBody"><div class="empty">Загружаю…</div></div>
+    </div>
+
+    <!-- ── Обучение ── -->
+    <div class="card" id="tab-learn" style="display:none;">
+      <div class="sec-h"><b>Обучение сервиса</b><span>правила подмешиваются в каждое распознавание</span></div>
+      <div class="banner info">
+        Здесь живёт память сканера. Правила появляются двумя путями: сотрудник нажал «Поправить и обучить» в карточке — из правки выведено общее правило; либо правило добавлено вручную ниже. Пишите так, как сказали бы человеку: «отчество бери из строки под именем», «в поле “кем выдан” оставляй только код без слова МВД».
+      </div>
+      <div class="lesson-add">
+        <input type="text" id="lessonText" placeholder="Новое правило для сканера…">
+        <button type="button" class="pri-btn" id="lessonAdd">Добавить</button>
+      </div>
+      <div id="lessonsBox"></div>
+      <div class="sec-h" style="margin-top:26px;"><b>Последние правки сотрудников</b><span>что и почему исправляли</span></div>
+      <div id="corrBox"><div class="empty">Загружаю…</div></div>
+    </div>
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
-(function(){
-  "use strict";
-  var fileEl=document.getElementById("file"), runBtn=document.getElementById("runBtn"), preview=document.getElementById("preview");
-  var prog=document.getElementById("prog"), progTxt=document.getElementById("progTxt"), progBar=document.getElementById("progBar");
-  var curFile=null;
+(function () {
+  var TOKEN_KEY = "voyo_scanner_token";
+  var token = null; try { token = localStorage.getItem(TOKEN_KEY); } catch (_) {}
+  var $ = function (s) { return document.querySelector(s); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var FIELDS = [], cards = [], files = [], state = null;
 
-  fileEl.addEventListener("change", function(){
-    curFile = fileEl.files && fileEl.files[0];
-    if(!curFile){ runBtn.disabled=true; preview.style.display="none"; return; }
-    preview.src = URL.createObjectURL(curFile); preview.style.display="block"; runBtn.disabled=false;
-  });
-
-  function setProg(show, txt, pct){ prog.style.display=show?"block":"none"; if(txt) progTxt.textContent=txt; if(pct!=null) progBar.style.width=Math.round(pct*100)+"%"; }
-
-  // ── MRZ TD3 (загранпаспорт): 2 строки по 44 символа ──
-  function mrzCharVal(c){ if(c==="<")return 0; if(c>="0"&&c<="9")return c.charCodeAt(0)-48; if(c>="A"&&c<="Z")return c.charCodeAt(0)-55; return 0; }
-  function mrzCheck(s){ var w=[7,3,1], sum=0; for(var i=0;i<s.length;i++) sum+=mrzCharVal(s[i])*w[i%3]; return sum%10; }
-  function fmtMrzDate(s, future){
-    if(!/^\d{6}$/.test(s)) return "";
-    var yy=parseInt(s.slice(0,2),10), mm=s.slice(2,4), dd=s.slice(4,6), now=new Date().getFullYear()%100, yyyy;
-    if(future){ yyyy=2000+yy; } else { yyyy = yy<=now ? 2000+yy : 1900+yy; }
-    return dd+"."+mm+"."+yyyy;
-  }
-  function cleanMrzLine(l){ return (l||"").toUpperCase().replace(/[^A-Z0-9<]/g,""); }
-  function findMrzLines(text){
-    var lines=(text||"").split(/\r?\n/).map(cleanMrzLine).filter(function(l){ return l.length>=28 && (l.indexOf("<")>=0); });
-    // кандидаты — самые длинные «MRZ-похожие» строки; берём 2 последние
-    lines.sort(function(a,b){ return b.length-a.length; });
-    var cand = lines.slice(0,4).sort(function(a,b){ return 0; });
-    // ищем пару, где вторая строка похожа на data-line (есть цифры и позиции)
-    // простая эвристика: берём 2 самые длинные, в исходном порядке
-    var byLen=lines.slice(0,2);
-    return byLen.length>=2 ? byLen : (lines.length?[lines[0]]:[]);
-  }
-  function parseTD3(l1,l2){
-    l1=(l1+"<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<").slice(0,44);
-    l2=(l2+"<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<").slice(0,44);
-    var docType=l1.slice(0,2).replace(/</g,"");
-    var country=l1.slice(2,5).replace(/</g,"");
-    var nm=l1.slice(5).split("<<");
-    var surname=(nm[0]||"").replace(/</g," ").trim();
-    var given=(nm[1]||"").replace(/</g," ").trim();
-    var passNo=l2.slice(0,9), passNoCd=l2[9];
-    var nat=l2.slice(10,13).replace(/</g,"");
-    var dob=l2.slice(13,19), dobCd=l2[19];
-    var sex=l2[20];
-    var exp=l2.slice(21,27), expCd=l2[27];
-    var checks={
-      passNo: String(mrzCheck(passNo))===passNoCd,
-      dob: String(mrzCheck(dob))===dobCd,
-      exp: String(mrzCheck(exp))===expCd
-    };
-    var okCount=(checks.passNo?1:0)+(checks.dob?1:0)+(checks.exp?1:0);
-    return {
-      docType:docType, country:country, surnameLat:surname, givenLat:given,
-      passNo:passNo.replace(/</g,""), nationality:nat,
-      dob:fmtMrzDate(dob,false), sex:(sex==="M"?"М":sex==="F"?"Ж":""),
-      expiry:fmtMrzDate(exp,true), checks:checks, okCount:okCount
-    };
-  }
-
-  var FIELD_DEFS=[
-    ["surnameCyr","Фамилия (кириллица)"],
-    ["givenCyr","Имя (кириллица)"],
-    ["patronymicCyr","Отчество (кириллица)"],
-    ["dob","Дата рождения"],
-    ["sex","Пол"],
-    ["nationality","Гражданство"],
-    ["passNo","Серия и номер"],
-    ["issueDate","Дата выдачи"],
-    ["expiry","Срок действия"],
-    ["authority","Кем выдан"],
-    ["surnameLat","Фамилия (латиница, MRZ)"],
-    ["givenLat","Имя (латиница, MRZ)"]
-  ];
-  function renderFields(values){
-    var tb=document.getElementById("fields"); tb.innerHTML="";
-    FIELD_DEFS.forEach(function(f){
-      var tr=document.createElement("tr");
-      tr.innerHTML='<td class="k">'+f[1]+'</td><td><input data-k="'+f[0]+'" value="'+(values[f[0]]?String(values[f[0]]).replace(/"/g,"&quot;"):"")+'"></td>';
-      tb.appendChild(tr);
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign(opts.headers || {}, token ? { Authorization: "Bearer " + token } : {});
+    if (!(opts.body instanceof FormData) && opts.method && opts.method !== "GET") opts.headers["Content-Type"] = opts.headers["Content-Type"] || "application/json";
+    return fetch(path, opts).then(function (r) {
+      if (r.status === 401) { showLogin(); throw new Error("auth"); }
+      return r.json();
     });
-    document.getElementById("resPanel").style.display="block";
   }
+  function showLogin() { $("#login").style.display = ""; $("#app").style.display = "none"; document.body.classList.add("login-mode"); }
+  function showApp() { $("#login").style.display = "none"; $("#app").style.display = ""; document.body.classList.remove("login-mode"); }
 
-  // эвристики по кириллическому тексту (очень грубо — пилот)
-  function guessFromCyrillic(text, out){
-    var t=(text||"");
-    var m;
-    if((m=t.match(/Код подразделения[^\d]*(\d{3}[\-\s]?\d{3})/i))) out.authorityCode=m[1];
-    // дата выдачи: ищем дату рядом со словом «выдан»
-    if((m=t.match(/выдан[^\d]{0,40}(\d{2}[.\s]\d{2}[.\s]\d{4})/i))) out.issueDate=m[1].replace(/\s/g,".");
-  }
-
-  async function recognize(){
-    if(!curFile) return;
-    runBtn.disabled=true; document.getElementById("mrzPanel").style.display="none"; document.getElementById("resPanel").style.display="none";
-    var values={};
-    try{
-      // Проход 1 — MRZ (латиница/цифры, ограниченный набор символов)
-      setProg(true,"Загружаю движок и распознаю MRZ…",0.02);
-      var w1=await Tesseract.createWorker("eng",1,{ logger:function(m){ if(m.status==="recognizing text") setProg(true,"Распознаю MRZ…",m.progress); else if(m.status) setProg(true,m.status+"…",null); } });
-      await w1.setParameters({ tessedit_char_whitelist:"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ<" });
-      var r1=await w1.recognize(curFile);
-      await w1.terminate();
-      var mrzText=r1.data.text||"";
-      var lines=findMrzLines(mrzText);
-      var mrzPanel=document.getElementById("mrzPanel"); mrzPanel.style.display="block";
-      var parsed=null;
-      if(lines.length>=2){ parsed=parseTD3(lines[0],lines[1]); }
-      if(parsed && parsed.okCount>=1){
-        document.getElementById("mrzRaw").textContent=lines[0]+"\n"+lines[1];
-        document.getElementById("mrzWarn").style.display="none";
-        var badge=function(ok){ return '<span class="badge '+(ok?"ok":"bad")+'">'+(ok?"✓ контр.число":"✗ контр.число")+'</span>'; };
-        document.getElementById("mrzStatus").innerHTML="Совпало контрольных чисел: <b>"+parsed.okCount+"/3</b> · номер"+badge(parsed.checks.passNo)+" дата рожд."+badge(parsed.checks.dob)+" срок"+badge(parsed.checks.exp);
-        values.surnameLat=parsed.surnameLat; values.givenLat=parsed.givenLat;
-        values.passNo=parsed.passNo; values.dob=parsed.dob; values.sex=parsed.sex;
-        values.nationality=parsed.nationality==="RUS"?"РФ":parsed.nationality; values.expiry=parsed.expiry;
-      } else {
-        document.getElementById("mrzRaw").textContent=(lines.join("\n"))||"(MRZ-строки не найдены)";
-        document.getElementById("mrzWarn").style.display="block";
-        document.getElementById("mrzStatus").innerHTML="";
-      }
-
-      // Проход 2 — кириллица (визуальная зона)
-      setProg(true,"Загружаю русский язык и распознаю текст…",0.02);
-      var w2=await Tesseract.createWorker("rus",1,{ logger:function(m){ if(m.status==="recognizing text") setProg(true,"Распознаю кириллицу…",m.progress); else if(m.status) setProg(true,m.status+"…",null); } });
-      var r2=await w2.recognize(curFile);
-      await w2.terminate();
-      var cyr=r2.data.text||"";
-      document.getElementById("rawText").textContent="── MRZ-проход ──\n"+mrzText+"\n\n── Кириллица ──\n"+cyr;
-      guessFromCyrillic(cyr, values);
-
-      renderFields(values);
-      setProg(false);
-    }catch(e){
-      setProg(false);
-      alert("Ошибка распознавания: "+(e&&e.message||e));
-    }
-    runBtn.disabled=false;
-  }
-  runBtn.addEventListener("click", recognize);
-
-  document.getElementById("copyBtn").addEventListener("click", function(){
-    var out={};
-    document.querySelectorAll("#fields input").forEach(function(i){ var v=i.value.trim(); if(v) out[i.getAttribute("data-k")]=v; });
-    var json=JSON.stringify(out,null,2);
-    if(navigator.clipboard) navigator.clipboard.writeText(json);
-    document.getElementById("copyMsg").textContent="Скопировано (проверенные поля).";
-    setTimeout(function(){ document.getElementById("copyMsg").textContent=""; }, 2500);
+  $("#codeForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    $("#loginErr").textContent = "";
+    fetch("/scanner/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: $("#code").value.trim(), name: $("#who").value.trim() })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j && j.token) { token = j.token; try { localStorage.setItem(TOKEN_KEY, token); } catch (_) {} boot(); }
+      else $("#loginErr").textContent = (j && j.message) || "Неверный код";
+    }).catch(function () { $("#loginErr").textContent = "Сервер не ответил"; });
   });
+
+  // Вкладки
+  Array.prototype.forEach.call(document.querySelectorAll(".seg button"), function (b) {
+    b.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".seg button"), function (x) { x.classList.remove("active"); });
+      b.classList.add("active");
+      var t = b.getAttribute("data-tab");
+      ["scan", "dash", "learn"].forEach(function (k) { $("#tab-" + k).style.display = k === t ? "" : "none"; });
+      if (t === "dash") loadDash();
+      if (t === "learn") { renderLessons(); loadCorrections(); }
+    });
+  });
+
+  // ── Копирование значения по клику (как выходные плитки в /calc) ──
+  function copyText(text, el, labelEl) {
+    if (!text) return;
+    function flash() {
+      if (!el) return;
+      el.classList.add("copied");
+      var k = labelEl || el.querySelector(".k");
+      var orig = k ? k.textContent : "";
+      if (k) k.textContent = "✓ Скопировано";
+      setTimeout(function () { el.classList.remove("copied"); if (k) k.textContent = orig; }, 1000);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(flash).catch(function () { fallback(); });
+    else fallback();
+    function fallback() {
+      var ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch (_) {}
+      document.body.removeChild(ta); flash();
+    }
+  }
+
+  // ── Загрузка файлов ──
+  function renderQueue() {
+    $("#queue").innerHTML = files.map(function (f) { return "<span>" + esc(f.name) + " · " + Math.round(f.size / 1024) + " КБ</span>"; }).join("");
+    $("#go").disabled = !files.length;
+    $("#go").textContent = files.length > 1 ? "Распознать " + files.length + " документа" + (files.length > 4 ? "" : "") : "Распознать";
+  }
+  $("#drop").addEventListener("click", function () { $("#file").click(); });
+  $("#file").addEventListener("change", function () { files = Array.prototype.slice.call(this.files || []); renderQueue(); });
+  ["dragover", "dragleave", "drop"].forEach(function (ev) {
+    $("#drop").addEventListener(ev, function (e) {
+      e.preventDefault();
+      this.classList.toggle("over", ev === "dragover");
+      if (ev === "drop") { files = Array.prototype.slice.call(e.dataTransfer.files || []); renderQueue(); }
+    });
+  });
+
+  $("#go").addEventListener("click", function () {
+    if (!files.length) return;
+    var fd = new FormData();
+    files.forEach(function (f) { fd.append("files", f, f.name); });
+    $("#go").disabled = true;
+    $("#go").innerHTML = '<span class="spin"></span>распознаю…';
+    $("#scanMsg").textContent = "";
+    var t0 = Date.now();
+    api("/scanner/api/parse", { method: "POST", body: fd }).then(function (j) {
+      $("#go").disabled = false; $("#go").textContent = "Распознать";
+      if (!j.success) { $("#scanMsg").textContent = j.message || "Не получилось"; return; }
+      var okN = 0;
+      (j.results || []).forEach(function (r) {
+        if (r && r.ok) { addCard(r.doc); okN++; }
+        else $("#scanMsg").textContent = ((r && r.file) ? r.file + ": " : "") + ((r && r.message) || "ошибка");
+      });
+      files = []; $("#file").value = ""; renderQueue();
+      $("#clearAll").style.display = cards.length ? "" : "none";
+      if (okN) {
+        var sec = ((Date.now() - t0) / 1000).toFixed(1);
+        $("#scanMsg").className = "ok-t";
+        $("#scanMsg").textContent = "Готово: " + okN + " док. за " + sec + " сек.";
+        setTimeout(function () { $("#scanMsg").textContent = ""; $("#scanMsg").className = "err-t"; }, 6000);
+      }
+    }).catch(function (e) {
+      $("#go").disabled = false; $("#go").textContent = "Распознать";
+      if (e.message !== "auth") $("#scanMsg").textContent = "Сервер не ответил — попробуйте ещё раз";
+    });
+  });
+  $("#clearAll").addEventListener("click", function () { cards = []; renderCards(); $("#clearAll").style.display = "none"; });
+
+  // Группировка «по людям»: один и тот же паспорт (или тот же человек), пришедший
+  // двумя файлами, показываем одной карточкой.
+  function personKey(d) {
+    var f = d.fields || {};
+    return (String(f.number || "").replace(/\D/g, "") || ((f.translit || "") + "|" + (f.birthDate || "")) || d.id).toUpperCase();
+  }
+  function addCard(doc) {
+    var k = personKey(doc);
+    var ex = null;
+    for (var i = 0; i < cards.length; i++) if (cards[i].key === k && k) { ex = cards[i]; break; }
+    if (ex) {
+      ex.docs.push(doc);
+      FIELDS.forEach(function (f) { if (!ex.fields[f.key] && doc.fields[f.key]) ex.fields[f.key] = doc.fields[f.key]; });
+      (doc.warnings || []).forEach(function (w) { if (ex.warnings.indexOf(w) < 0) ex.warnings.push(w); });
+      (doc.confirmed || []).forEach(function (k2) { if (ex.confirmed.indexOf(k2) < 0) ex.confirmed.push(k2); });
+    } else {
+      cards.unshift({ key: k, id: doc.id, docs: [doc], fields: Object.assign({}, doc.fields), warnings: (doc.warnings || []).slice(), confirmed: (doc.confirmed || []).slice(), mrz: doc.mrz, edit: false, learned: null });
+    }
+    renderCards();
+  }
+
+  function fullName(f) {
+    return [f.surnameRu, f.nameRu, f.patronymicRu].filter(Boolean).join(" ") || f.translit || "Документ";
+  }
+  function plainAll(c) {
+    var out = [];
+    FIELDS.forEach(function (f) { if (c.fields[f.key]) out.push(f.label + ": " + c.fields[f.key]); });
+    return out.join("\n");
+  }
+  function renderCards() {
+    if (!cards.length) { $("#results").innerHTML = ""; return; }
+    $("#results").innerHTML = cards.map(function (c, ci) {
+      var f = c.fields;
+      var conf = c.confirmed || [];
+      var keyOk = ["number", "birthDate", "expiryDate"].every(function (k2) { return conf.indexOf(k2) >= 0; });
+      var h = '<div class="card pcard" data-ci="' + ci + '">';
+      h += '<div class="pcard-h"><b>' + esc(fullName(f)) + "</b>";
+      h += (c.mrz && c.mrz.valid) ? '<span class="pill green">MRZ сошлась</span>'
+        : keyOk ? '<span class="pill green">номер и даты сверены с MRZ</span>'
+        : '<span class="pill amber">сверьте номер и даты</span>';
+      if (f.docKind) h += '<span class="pill gray">' + esc(f.docKind) + "</span>";
+      if (c.docs.length > 1) h += '<span class="pill blue">' + c.docs.length + " файла</span>";
+      h += "</div>";
+      h += '<div class="pcard-sub">' + esc(c.docs.map(function (d) { return d.file; }).join(" · ")) + " · " +
+        ((c.docs.reduce(function (s, d) { return s + (d.ms || 0); }, 0) / 1000).toFixed(1)) + " сек.</div>";
+      h += '<div class="fgrid">';
+      FIELDS.forEach(function (fl) {
+        var v = f[fl.key] || "";
+        h += '<div class="f' + (v ? "" : " empty") + (conf.indexOf(fl.key) >= 0 ? " ok" : "") + '" data-copy="' + esc(v) + '" title="Нажмите, чтобы скопировать"><span class="k">' + esc(fl.label) + '</span><div class="v">' + (v ? esc(v) : "—") + "</div></div>";
+      });
+      if (c.mrz) h += '<div class="f mrz" data-copy="' + esc(c.mrz.line1 + "\n" + c.mrz.line2) + '"><span class="k">MRZ</span><div class="v">' + esc(c.mrz.line1) + "<br>" + esc(c.mrz.line2) + "</div></div>";
+      h += "</div>";
+      if (c.warnings && c.warnings.length) {
+        h += '<div class="warns">' + c.warnings.map(function (w) {
+          return '<div class="' + (/просрочен|не сошлась/i.test(w) ? "bad" : "") + '">' + esc(w) + "</div>";
+        }).join("") + "</div>";
+      }
+      h += '<div class="pacts">';
+      h += '<button type="button" data-act="all">Скопировать все поля</button>';
+      h += '<button type="button" data-act="json">JSON</button>';
+      h += '<button type="button" data-act="edit" class="accent">' + (c.edit ? "Свернуть правку" : "Поправить и обучить") + "</button>";
+      h += "</div>";
+      if (c.learned) {
+        h += '<div class="learned"><b>Спасибо, поправил и запомнил</b>' +
+          (c.learned.length ? c.learned.map(function (t) { return "• " + esc(t); }).join("<br>") : "Правка сохранена. Общего правила из неё не вывел — если ошибка повторится, напишите подробнее в комментарии.") + "</div>";
+      }
+      if (c.edit) {
+        h += '<div class="edit"><div class="eg">';
+        FIELDS.forEach(function (fl) {
+          h += '<div><label>' + esc(fl.label) + '</label><input type="text" data-fk="' + fl.key + '" value="' + esc(f[fl.key] || "") + '"></div>';
+        });
+        h += '<div class="full"><label>Что было не так (пойдёт в обучение)</label><textarea data-cm placeholder="Например: отчество прочитал с ошибкой — в паспорте АНДРЕЕВИЧ, а не АНДРЕВИЧ. Или: место рождения нужно без латинской части после дроби."></textarea></div>';
+        h += '</div><div class="pacts" style="margin-top:12px;"><button type="button" class="accent" data-act="save">Сохранить и обучить</button><button type="button" data-act="cancel">Отмена</button><span data-msg class="err-t" style="align-self:center;"></span></div>';
+        var withImg = c.docs.filter(function (d) { return d.hasImg !== false; })[0];
+        if (withImg) h += '<img class="thumb" src="/scanner/api/doc/' + withImg.id + '/image?token=' + encodeURIComponent(token || "") + '" alt="">';
+        h += "</div>";
+      }
+      h += "</div>";
+      return h;
+    }).join("");
+  }
+
+  // Делегирование кликов в карточках
+  $("#results").addEventListener("click", function (e) {
+    var cardEl = e.target.closest(".pcard");
+    if (!cardEl) return;
+    var ci = Number(cardEl.getAttribute("data-ci"));
+    var c = cards[ci];
+    if (!c) return;
+    var fEl = e.target.closest(".f");
+    if (fEl && !e.target.closest(".edit")) { copyText(fEl.getAttribute("data-copy"), fEl); return; }
+    var btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    var act = btn.getAttribute("data-act");
+    if (act === "all") { copyText(plainAll(c), null); btn.textContent = "✓ Скопировано"; setTimeout(function () { btn.textContent = "Скопировать все поля"; }, 1000); }
+    if (act === "json") { copyText(JSON.stringify(c.fields, null, 1), null); btn.textContent = "✓ JSON"; setTimeout(function () { btn.textContent = "JSON"; }, 1000); }
+    if (act === "edit") { c.edit = !c.edit; c.learned = null; renderCards(); }
+    if (act === "cancel") { c.edit = false; renderCards(); }
+    if (act === "save") {
+      var vals = {};
+      Array.prototype.forEach.call(cardEl.querySelectorAll("input[data-fk]"), function (i) { vals[i.getAttribute("data-fk")] = i.value.trim(); });
+      var cm = cardEl.querySelector("textarea[data-cm]");
+      var msg = cardEl.querySelector("[data-msg]");
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span>сохраняю…';
+      api("/scanner/api/correct", { method: "POST", body: JSON.stringify({ id: c.docs[0].id, fields: vals, comment: cm ? cm.value.trim() : "" }) })
+        .then(function (j) {
+          btn.disabled = false; btn.textContent = "Сохранить и обучить";
+          if (!j.success) { if (msg) msg.textContent = j.message || "Не получилось"; return; }
+          c.fields = Object.assign(c.fields, j.fields || vals);
+          c.learned = j.learned || [];
+          c.edit = false;
+          renderCards();
+          if (state) loadState();
+        }).catch(function (e2) {
+          btn.disabled = false; btn.textContent = "Сохранить и обучить";
+          if (e2.message !== "auth" && msg) msg.textContent = "Сервер не ответил";
+        });
+    }
+  });
+
+  // ── Обучение ──
+  function renderLessons() {
+    var ls = (state && state.lessons) || [];
+    var src = { manual: "добавлено вручную", correction: "из правки сотрудника", auto: "выучено само" };
+    $("#lessonsBox").innerHTML = ls.length ? ls.map(function (l) {
+      return '<div class="les" data-lid="' + esc(l.id) + '"><div style="flex:1;">' + esc(l.text) +
+        '<div class="src">' + new Date(l.createdAt).toLocaleDateString("ru-RU") + " · " + (src[l.source] || l.source || "") + (l.by ? " · " + esc(l.by) : "") + "</div></div>" +
+        '<button class="x" title="Удалить">✕</button></div>';
+    }).join("") : '<div class="empty">Правил пока нет. Сервис работает по базовым инструкциям.</div>';
+  }
+  $("#lessonsBox").addEventListener("click", function (e) {
+    var b = e.target.closest(".x"); if (!b) return;
+    var id = b.parentNode.getAttribute("data-lid");
+    api("/scanner/api/lesson/" + id, { method: "DELETE" }).then(loadState);
+  });
+  $("#lessonAdd").addEventListener("click", function () {
+    var t = $("#lessonText").value.trim();
+    if (!t) return;
+    api("/scanner/api/lesson", { method: "POST", body: JSON.stringify({ text: t }) }).then(function () { $("#lessonText").value = ""; loadState(); });
+  });
+  $("#lessonText").addEventListener("keydown", function (e) { if (e.key === "Enter") $("#lessonAdd").click(); });
+
+  function loadCorrections() {
+    api("/scanner/api/stats").then(function (j) {
+      if (!j.success) return;
+      var cs = j.corrections || [];
+      $("#corrBox").innerHTML = cs.length ? cs.map(function (c) {
+        var h = '<div class="corr"><div class="top">' + new Date(c.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) +
+          (c.by ? " · " + esc(c.by) : "") + (c.file ? " · " + esc(c.file) : "") + "</div>";
+        if (c.changed && c.changed.length) {
+          h += '<div class="ch">' + c.changed.map(function (x) {
+            return esc(x.label) + ": <s>" + esc(x.was || "пусто") + "</s> → <em>" + esc(x.now || "пусто") + "</em>";
+          }).join("<br>") + "</div>";
+        }
+        if (c.comment) h += '<div class="cm">' + esc(c.comment) + "</div>";
+        if (c.learned && c.learned.length) h += '<div class="cm" style="color:#257a45;background:#eef8f1;">Выучено: ' + c.learned.map(esc).join("; ") + "</div>";
+        return h + "</div>";
+      }).join("") : '<div class="empty">Правок пока не было.</div>';
+    }).catch(function () {});
+  }
+
+  // ── Дашборд ──
+  function bars(title, arr, unit) {
+    if (!arr || !arr.length) return "";
+    var max = Math.max.apply(null, arr.map(function (x) { return x.count; })) || 1;
+    return '<div class="brk"><h4>' + esc(title) + "</h4>" + arr.slice(0, 8).map(function (x) {
+      return '<div class="bar"><em>' + esc(x.name) + '</em><div class="tr"><i style="width:' + Math.round(x.count / max * 100) + '%"></i></div><u>' + x.count + (unit || "") + "</u></div>";
+    }).join("") + "</div>";
+  }
+  function loadDash() {
+    var m = $("#dashMonth").value || "";
+    api("/scanner/api/stats" + (m ? "?month=" + m : "")).then(function (j) {
+      if (!j.success) return;
+      var sel = $("#dashMonth");
+      if (sel.options.length <= 1 && j.months) {
+        j.months.forEach(function (k) {
+          var p = k.split("-");
+          var nm = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"][Number(p[1]) - 1] + " " + p[0];
+          var o = document.createElement("option"); o.value = k; o.textContent = nm; sel.appendChild(o);
+        });
+      }
+      var t = j.totals;
+      var h = '<div class="tiles">';
+      h += '<div class="tile"><b>' + t.docs + "</b><span>документов распознано</span></div>";
+      h += '<div class="tile"><b>' + (t.medSec || 0) + ' с</b><span>медиана на документ</span></div>';
+      h += '<div class="tile"><b>' + (t.cleanPct == null ? "—" : t.cleanPct + "%") + "</b><span>без правок сотрудника</span></div>";
+      h += '<div class="tile"><b>' + (t.mrzPct == null ? "—" : t.mrzPct + "%") + "</b><span>MRZ прочитана и сошлась</span></div>";
+      h += '<div class="tile"><b>' + (t.rubPerDoc || 0) + " ₽</b><span>стоимость документа</span></div>";
+      h += '<div class="tile"><b>' + (t.rub || 0) + " ₽</b><span>расход ИИ за период</span></div>";
+      h += '<div class="tile"><b>' + t.corrections + "</b><span>правок сотрудников</span></div>";
+      h += '<div class="tile"><b>' + t.lessons + "</b><span>правил в памяти</span></div>";
+      h += "</div>";
+      h += bars("Чаще всего правят поля", j.fieldFixes);
+      h += bars("Кто пользуется", j.byUser);
+      h += bars("Типы документов", j.byKind);
+      h += bars("По дням (последние 2 недели)", (j.byDay || []).map(function (x) {
+        var p = x.name.split("-"); return { name: p[2] + "." + p[1], count: x.count };
+      }));
+      $("#dashBody").innerHTML = h;
+    }).catch(function () {});
+  }
+  $("#dashRefresh").addEventListener("click", loadDash);
+  $("#dashMonth").addEventListener("change", loadDash);
+
+  function loadState() {
+    return api("/scanner/api/state").then(function (j) {
+      if (!j.success) return;
+      state = j;
+      FIELDS = j.fields || [];
+      showApp();
+      $("#aiBanner").style.display = j.aiConfigured ? "none" : "";
+      renderLessons();
+    });
+  }
+  function boot() { loadState().catch(function (e) { if (e.message !== "auth") showLogin(); }); }
+  if (token) boot(); else showLogin();
 })();
 </script>
 </body>

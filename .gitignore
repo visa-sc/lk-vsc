@@ -155,3 +155,6 @@ fin.seed.json
 .wazzupRelayFailed.ndjson
 .chatKnowledge.md
 amo-export/
+
+# Сканер документов (/scanner) — журнал распознаваний + фото паспортов (ПДн), НЕ коммитить
+.scanner/

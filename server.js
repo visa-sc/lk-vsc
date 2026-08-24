@@ -15,6 +15,7 @@ const sms = require("./sms");
 const mail = require("./mail");
 const esign = require("./esign"); // ПЭП-подпись (аналог fdoc) — отдельный модуль, монтируется ниже
 const engineProxy = require("./engine-proxy"); // Мост к движку переводов (отдельный сервис translate-engine :3003, правит Зайцева); монтируется сразу после app — до body-парсеров
+const scannerMod = require("./scanner"); // Сканер паспортов (/scanner) — распознавание документов для сотрудников
 const chatMod = require("./chat"); // Продающий ИИ-чат по визам (/chat_test) — отдельный модуль, монтируется ниже
 const finMod = require("./fin"); // Личные финансы Андрея (/fin) — отдельный модуль, монтируется ниже
 
@@ -1454,9 +1455,6 @@ app.post("/admin/api/vsc/planerka", requireAdmin, (req, res) => {
   try { fs.writeFileSync(VSC_PLANERKA_FILE, JSON.stringify(_planerka, null, 2), "utf8"); } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
   return res.json({ success: true });
 });
-// Пилот сканера паспорта /scanner (MRZ + OCR ПОЛНОСТЬЮ в браузере — на сервер фото
-// не загружается, серверной логики нет). «Помощник с проверкой», не интегрирован.
-app.get("/scanner", (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", "scanner.html")); });
 
 // ── Пилот «Экскурсии Sputnik8» (standalone, НЕ привязан к ЛК/амоCRM/опросникам) ──
 // Партнёрская интеграция: каталог городов/туров Sputnik8 через их API v1
@@ -2281,6 +2279,11 @@ if (!loadLoyalty()) setTimeout(() => { Promise.resolve(amoBg(() => runLoyaltyAcc
 // ── Подписание документов ПЭП (аналог fdoc) — отдельные маршруты /esign*, /api/esign*.
 // НЕ интегрировано в клиентский ЛК и не меняет вход/авторизацию (требование Андрея).
 esign.mount(app, { requireVscAccess, requireAdmin });
+
+// ── Сканер документов (/scanner): фото/скан паспорта → поля (MRZ разбирается
+// кодом с контрольными цифрами, кириллицу читает Claude), обучение на правках
+// сотрудников, дашборд. Клиентский ЛК и amoCRM не затрагивает.
+scannerMod.mount(app, { getStaffFromReq });
 
 // ── Переводы документов с ИИ (/translate, проект Зайцевой): с 22.08.2026 движок
 // (translate.js) — ОТДЕЛЬНЫЙ сервис translate-engine (:3003, /var/www/translate-engine,
