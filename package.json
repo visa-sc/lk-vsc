@@ -19,6 +19,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "heic-convert": "^2.1.0",
     "html-to-docx": "^1.8.0",
     "iconv-lite": "^0.7.2",
     "mammoth": "^1.12.0",

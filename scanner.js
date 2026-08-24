@@ -457,6 +457,20 @@ async function runJson(params, schema) {
   return { json, usage: r.usage, model: r.model };
 }
 
+// Айфон снимает в HEIC, а модели такой формат не принимают. Переводим в JPEG
+// сами: heic-convert — чистый JS (libheif, собранный в wasm), никаких системных
+// библиотек ставить не нужно. Возвращаем новый буфер и имя с .jpg, чтобы фото
+// в истории потом открывалось в браузере (он HEIC тоже не показывает).
+function isHeic(name, mime) {
+  const ext = path.extname(String(name || "")).toLowerCase();
+  return /^image\/hei[cf]/.test(String(mime || "").toLowerCase()) || ext === ".heic" || ext === ".heif";
+}
+async function heicToJpeg(buf, name) {
+  const convert = require("heic-convert");
+  const out = await convert({ buffer: buf, format: "JPEG", quality: 0.92 });
+  return { buf: Buffer.from(out), name: String(name || "фото").replace(/\.hei[cf]$/i, "") + ".jpg" };
+}
+
 function mediaBlock(buf, name, mime) {
   const ext = path.extname(String(name || "")).toLowerCase();
   const m = String(mime || "").toLowerCase();
@@ -571,8 +585,17 @@ function buildFields(ai, mrz) {
 }
 
 async function recognizeOne(buf, name, mime, ctx) {
+  if (isHeic(name, mime)) {
+    try {
+      const c = await heicToJpeg(buf, name);
+      buf = c.buf; name = c.name; mime = "image/jpeg";
+    } catch (e) {
+      console.warn("scanner: HEIC не сконвертировался:", e.message);
+      throw new Error("Не удалось прочитать «" + name + "»: файл HEIC повреждён или это живое фото (Live Photo). Пересохраните его в JPG.");
+    }
+  }
   const block = mediaBlock(buf, name, mime);
-  if (!block) throw new Error("Формат «" + name + "» не поддерживается. Нужны JPG, PNG, WEBP или PDF (фото с айфона в HEIC — пересохраните в JPG).");
+  if (!block) throw new Error("Формат «" + name + "» не поддерживается. Нужны JPG, PNG, HEIC, WEBP или PDF.");
   const task = "Извлеки данные из этого документа (обычно это разворот российского загранпаспорта). " +
     "Верни строго JSON по схеме. Если на снимке несколько документов — бери тот, что виден целиком." + lessonsBlock();
   const started = Date.now();

@@ -209,9 +209,9 @@
         <div class="drop" id="drop">
           <div class="big">🛂</div>
           <div><b>Выберите файлы</b> или перетащите сюда</div>
-          <div class="mut">Фото или скан разворота с фотографией · JPG, PNG, PDF · до 20 файлов за раз</div>
+          <div class="mut">Фото или скан разворота с фотографией · JPG, PNG, HEIC, PDF · до 20 файлов за раз</div>
         </div>
-        <input type="file" id="file" accept="image/*,application/pdf" multiple style="display:none;">
+        <input type="file" id="file" accept="image/*,.heic,.heif,application/pdf" multiple style="display:none;">
         <div class="queue" id="queue"></div>
         <div class="acts-row">
           <button type="button" class="pri-btn" id="go" disabled>Распознать</button>
@@ -269,7 +269,7 @@
           <div><b>Выберите снимок</b> или перетащите сюда</div>
           <div class="mut" id="exName">файл не выбран</div>
         </div>
-        <input type="file" id="exFile" accept="image/*,application/pdf" style="display:none;">
+        <input type="file" id="exFile" accept="image/*,.heic,.heif,application/pdf" style="display:none;">
         <textarea id="exRef" style="margin-top:10px;" placeholder="Как правильно. Можно построчно, например:&#10;Фамилия: КОМИСАРЕНКО&#10;Имя: АНДРЕЙ&#10;Отчество: ВИКТОРОВИЧ&#10;Кем выдан: МВД 50001&#10;…или просто словами: «отчество должно быть ВИКТОРОВИЧ, а не ВИКТОРОВИЧЬ»"></textarea>
         <div class="acts-row">
           <button type="button" class="pri-btn" id="exGo">Разобрать пример</button>
