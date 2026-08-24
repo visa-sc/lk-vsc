@@ -17,7 +17,7 @@ const esign = require("./esign"); // ПЭП-подпись (аналог fdoc) �
 const engineProxy = require("./engine-proxy"); // Мост к движку переводов (отдельный сервис translate-engine :3003, правит Зайцева); монтируется сразу после app — до body-парсеров
 const scannerMod = require("./scanner"); // Сканер паспортов (/scanner) — распознавание документов для сотрудников
 const chatMod = require("./chat"); // Продающий ИИ-чат по визам (/chat_test) — отдельный модуль, монтируется ниже
-const finMod = require("./fin"); // Личные финансы Андрея (/fin) — отдельный модуль, монтируется ниже
+// Личные финансы переехали на ak-co.ru (сервис akfin) — модуль здесь больше не монтируется
 
 const app = express();
 // ── Мост к движку переводов: прокси /translate/api/*, страницы /translate*, шлюз Anthropic
@@ -2296,10 +2296,10 @@ scannerMod.mount(app, { getStaffFromReq });
 // переиспользует env переводов (ANTHROPIC_API_KEY/BASE_URL/TRANSLATE_PROXY).
 chatMod.mount(app, { requireAdmin });
 
-// ── Личные финансы Андрея (/fin): ввод расходов с телефона → .fin/store.json →
-// агент на маке Андрея дописывает в «Личные финансы.numbers» (iCloud). Никого,
-// кроме Андрея, не касается; вход по FIN_CODE, агент — по FIN_AGENT_KEY.
-finMod.mount(app, { requireAdmin });
+// ── Личные финансы Андрея ПЕРЕЕХАЛИ на ak-co.ru (обособленный сервис akfin,
+// 25.08.2026). Здесь осталась только переадресация со старого адреса, чтобы
+// прежняя иконка/ссылки не умерли. Данные и код — /var/www/akfin.
+app.use("/fin", (req, res) => res.redirect(301, "https://ak-co.ru/fin"));
 
 // ── DISK WATCH: контроль свободного места на диске сервера (просьба Андрея 08.08).
 // Каждые 6 часов; если свободно меньше DISK_ALERT_GB (дефолт 1 ГБ) — письмо
