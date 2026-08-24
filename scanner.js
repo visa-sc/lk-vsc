@@ -264,35 +264,42 @@ function reconcileLat(mrzSurname, mrzGiven, printedSurname, printedGiven, ruSurn
     }
   }
   // 2) Фамилия/имя разошлись с напечатанным сильнее, чем на один знак.
-  const notes = [], bad = [];
+  const notes = [], bad = [], open = [];
   const check = (mv, pv, ru, key, human) => {
     if (!mv || !pv) return mv || pv;
     if (mv === pv) return mv;                             // два чтения сошлись
     bad.push(key);
     // Третий голос: как эта же фамилия выглядит по правилам транслитерации.
     const exp = translit(String(ru || "").replace(/[^А-ЯЁ\- ]/gi, "").trim().toUpperCase());
+    const dm = exp ? editDist(mv, exp) : -1, dp = exp ? editDist(pv, exp) : -1;
     let val = pv, why = "взято напечатанное в паспорте (крупный шрифт читается вернее)";
-    if (exp) {
-      const dm = editDist(mv, exp), dp = editDist(pv, exp);
-      if (dm < dp) { val = mv; why = "взято «" + mv + "» — оно ближе к транслитерации кириллицы («" + exp + "»)"; }
-      else if (dp < dm) { why = "взято «" + pv + "» — оно ближе к транслитерации кириллицы («" + exp + "»)"; }
-    }
+    if (exp && dm < dp) { val = mv; why = "взято «" + mv + "» — оно ближе к транслитерации кириллицы («" + exp + "»)"; }
+    else if (exp && dp < dm) { why = "взято «" + pv + "» — оно ближе к транслитерации кириллицы («" + exp + "»)"; }
+    // Спор считаем решённым, когда один из вариантов в точности равен
+    // транслитерации кириллицы: два независимых источника из трёх сошлись,
+    // перечитывать MRZ сильной моделью незачем — это лишние деньги и секунды.
+    if (!(exp && Math.min(dm, dp) === 0 && dm !== dp)) open.push(key);
     notes.push(human + ": в MRZ прочитано «" + mv + "», в паспорте напечатано «" + pv +
       "» — два чтения разошлись, " + why + ". Сверьте глазами.");
     return val;
   };
   surname = check(surname, pS, ruSurname, "surnameLat", "Фамилия латиницей");
   given = check(given, pG, ruGiven, "nameLat", "Имя латиницей");
-  return { surname, given, suspect: bad.length > 0, bad, notes };
+  // suspect — «есть расхождение» (галочку не ставим, пишем предупреждение),
+  // unresolved — «расхождение, которое нечем рассудить» (только тут перечитываем).
+  return { surname, given, suspect: bad.length > 0, unresolved: open.length > 0, bad, notes };
 }
-// Признак, что первую строку MRZ стоит перечитать сильной моделью.
-function mrzNamesSuspect(mrz, ai) {
-  if (!mrz) return false;
+// Разбор имён MRZ глазами сверки. mrzNamesSuspect — «имена разошлись»
+// (используется при выборе лучшего из двух разборов), mrzNamesUnresolved —
+// «разошлись, и рассудить нечем» (единственный повод платить за перечитку).
+function latVerdict(mrz, ai) {
   return reconcileLat(mrz.surnameLat, mrz.nameLat,
     String((ai && ai.surname_lat) || "").trim().toUpperCase(),
     String((ai && ai.name_lat) || "").trim().toUpperCase(),
-    String((ai && ai.surname_ru) || ""), String((ai && ai.name_ru) || "")).suspect;
+    String((ai && ai.surname_ru) || ""), String((ai && ai.name_ru) || ""));
 }
+function mrzNamesSuspect(mrz, ai) { return mrz ? latVerdict(mrz, ai).suspect : false; }
+function mrzNamesUnresolved(mrz, ai) { return mrz ? latVerdict(mrz, ai).unresolved : false; }
 
 // ── Claude ────────────────────────────────────────────────────────────────
 function aiConfigured() { return !!process.env.ANTHROPIC_API_KEY; }
@@ -575,8 +582,9 @@ async function recognizeOne(buf, name, mime, ctx) {
   // сошлись, перечитываем ТОЛЬКО две строки (маленький быстрый запрос), а не
   // весь документ заново.
   // Отдельный повод перечитать: контрольные цифры сошлись, но имена в первой
-  // строке разошлись с напечатанным в паспорте — цифрами имена не проверяются.
-  if (!mrz || !mrz.valid || mrzNamesSuspect(mrz, ai)) {
+  // строке разошлись с напечатанным в паспорте (цифрами имена не проверяются)
+  // И спор не решается транслитерацией кириллицы. Если решается — не платим.
+  if (!mrz || !mrz.valid || mrzNamesUnresolved(mrz, ai)) {
     try {
       const r2 = await runJson({
         model: modelHard(), max_tokens: 300, output_config: { effort: "low" },
@@ -948,6 +956,7 @@ function mount(app, deps) {
         corrected: docs.filter((d) => d.corrected).length,
         cleanPct: docs.length ? Math.round((1 - docs.filter((d) => d.corrected).length / docs.length) * 100) : null,
         mrzPct: docs.length ? Math.round(mrzOk / docs.length * 100) : null,
+        rereadPct: docs.length ? Math.round(docs.filter((d) => (d.spend || []).length > 1).length / docs.length * 100) : null,
         avgSec: ms.length ? +(ms.reduce((a, b) => a + b, 0) / ms.length / 1000).toFixed(1) : 0,
         medSec: ms.length ? +(ms[Math.floor(ms.length / 2)] / 1000).toFixed(1) : 0,
         rub: Math.round(rub * 10) / 10,
@@ -970,4 +979,4 @@ function mount(app, deps) {
   setInterval(purgeOldFiles, 6 * 3600 * 1000);
 }
 
-module.exports = { mount, parseMrzTd3, mrzCheckDigit, buildFields, prettyRuNumber, translit, citizenshipEn, FIELDS };
+module.exports = { mount, parseMrzTd3, mrzCheckDigit, buildFields, reconcileLat, mrzNamesSuspect, mrzNamesUnresolved, prettyRuNumber, translit, citizenshipEn, FIELDS };
