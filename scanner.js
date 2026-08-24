@@ -566,12 +566,32 @@ function buildFields(ai, mrz) {
   // проходит насквозь — в таблице её букв нет.
   f.birthPlaceLat = translit(f.birthPlace);
   f.authorityLat = translit(f.authority);
-  // Здравый смысл: срок действия загранпаспорта — 5 или 10 лет от выдачи.
-  if (f.issueDate && f.expiryDate) {
-    const d = (s) => { const p = s.split("."); return new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0])); };
-    const years = (d(f.expiryDate) - d(f.issueDate)) / (365.25 * 24 * 3600e3);
-    if (years > 0 && Math.abs(years - 5) > 0.6 && Math.abs(years - 10) > 0.6) {
-      warn.push("Между выдачей и окончанием " + years.toFixed(1) + " года — у загранпаспорта обычно 5 или 10 лет, проверьте даты");
+  // Даты выдачи в MRZ нет, но она жёстко связана со сроком действия: у
+  // загранпаспорта РФ окончание — это выдача плюс ровно 5 или 10 лет, день и
+  // месяц те же. А срок действия проверен контрольной цифрой MRZ. Значит по
+  // нему можно и подтвердить дату выдачи, и починить одну сбитую цифру года
+  // (модель прочитала «30.11.2011» вместо «30.11.2021» — 20 лет не бывает).
+  const isDate = (s) => /^\d{2}\.\d{2}\.\d{4}$/.test(String(s || ""));
+  if (isDate(f.issueDate) && isDate(f.expiryDate)) {
+    const dm = (s) => s.slice(0, 5), yr = (s) => Number(s.slice(6));
+    const ey = yr(f.expiryDate), iy = yr(f.issueDate);
+    const expOk = confirmed.indexOf("expiryDate") >= 0;
+    if (dm(f.issueDate) !== dm(f.expiryDate)) {
+      warn.push("Дата выдачи «" + f.issueDate + "» и окончание «" + f.expiryDate + "» расходятся днём и месяцем — у загранпаспорта РФ они совпадают. Проверьте обе даты.");
+    } else if (iy === ey - 10 || iy === ey - 5) {
+      if (expOk && confirmed.indexOf("issueDate") < 0) confirmed.push("issueDate");
+    } else {
+      // Насколько год не похож на верный: считаем разошедшиеся цифры.
+      const off = (c) => String(c).split("").filter((ch, i) => ch !== String(iy)[i]).length;
+      const cand = [ey - 10, ey - 5].map((c) => ({ c, d: off(c) })).sort((a, b) => a.d - b.d);
+      if (expOk && cand[0].d === 1 && cand[1].d > 1) {
+        warn.push("Дата выдачи: в документе прочитано «" + f.issueDate + "», но окончание «" + f.expiryDate +
+          "» подтверждено MRZ, а срок загранпаспорта — ровно 5 или 10 лет. Исправлено на «" + dm(f.issueDate) + "." + cand[0].c + "», сверьте глазами.");
+        f.issueDate = dm(f.issueDate) + "." + cand[0].c;
+      } else {
+        warn.push("Между выдачей «" + f.issueDate + "» и окончанием «" + f.expiryDate + "» " + (ey - iy) +
+          " лет — у загранпаспорта РФ бывает 5 или 10. Проверьте даты.");
+      }
     }
   }
   if (f.expiryDate) {
