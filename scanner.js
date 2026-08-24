@@ -233,6 +233,17 @@ function editDist(a, b) {
   return prev[b.length];
 }
 
+// Приведение латиницы к «общему знаменателю»: до 2010 года фамилии писали по
+// другим правилам (ALEXEY, а не ALEKSEI; IULIYA, а не IULIIA), и такие паспорта
+// живы до сих пор. Без этого сверка кириллицы с MRZ ругается на верное чтение —
+// и однажды стёрла правильное имя. Сравниваем не буквы, а звучание.
+function latLoose(sIn) {
+  return String(sIn || "").toUpperCase()
+    .replace(/KH/g, "H").replace(/TS/g, "C").replace(/YE/g, "E")
+    .replace(/X/g, "KS").replace(/[YJ]/g, "I").replace(/W/g, "V")
+    .replace(/([A-Z])\1+/g, "$1");
+}
+
 // Кириллица прочитана с ошибкой в одну букву — а латиница в MRZ говорит, как
 // должно быть: «СЫГАНКОВА» при «TSYGANKOVA» это «ЦЫГАНКОВА», «ЮЛЯ» при
 // «IULIIA» это «ЮЛИЯ». Перебираем все правки в один знак (замена, удаление,
@@ -270,9 +281,32 @@ function repairByMrz(cyr, mrzLat) {
   }
   for (const list of [uniq(swaps), uniq(drops), uniq(adds)]) {
     if (list.length === 1) return list[0];
-    if (list.length > 1) return null;                    // несколько вариантов — не гадаем
+    if (list.length > 1) return resolveIY(list);         // либо И/Й, либо не гадаем
   }
   return null;
+}
+
+// Частный, но постоянный спор: И или Й. Транслитерация у них одна (I), поэтому
+// MRZ не различает «КОЛОЙДЕНКО» и «КОЛОИДЕНКО». Рассудить можно правилом языка:
+// после гласной перед согласной стоит Й (КОЛОЙДЕНКО, АНДРЕЙЧУК), в остальных
+// местах — И. Если кандидаты расходятся не только этим, не гадаем.
+function resolveIY(list) {
+  if (list.length !== 2) return null;
+  const [a, b] = list;
+  if (a.length !== b.length) return null;
+  let at = -1;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] === b[i]) continue;
+    if (at >= 0) return null;
+    if (!((a[i] === "И" && b[i] === "Й") || (a[i] === "Й" && b[i] === "И"))) return null;
+    at = i;
+  }
+  if (at < 0) return null;
+  const vowels = "АЕЁИОУЫЭЮЯ";
+  const prev = at > 0 ? a[at - 1] : "";
+  const next = at + 1 < a.length ? a[at + 1] : "";
+  const wantY = vowels.indexOf(prev) >= 0 && next && vowels.indexOf(next) < 0;
+  return (a[at] === (wantY ? "Й" : "И")) ? a : b;
 }
 
 // Имена в MRZ НЕ защищены контрольной цифрой (она считается только по номеру,
@@ -859,13 +893,15 @@ function buildFields(ai, mrz, alt) {
       }
     }
     if (my === mrzVal || editDist(my, mrzVal) <= 1) return;
+    // Старая транслитерация — не ошибка чтения.
+    if (latLoose(my) === latLoose(mrzVal) || editDist(latLoose(my), latLoose(mrzVal)) <= 1) return;
     const i = confirmed.indexOf(ruKey);
     if (i >= 0) confirmed.splice(i, 1);
     // Расхождение в половину слова — это не «неточность», а нечитаемый снимок:
     // модель выдала набор букв («ПАРВСАМИТИКМАРИН» при «PAVLIUK» в MRZ).
     // Показывать такое как данные нельзя — выглядит выдуманным и вводит в
     // заблуждение. Оставляем поле пустым и говорим, что известно из MRZ.
-    if (editDist(my, mrzVal) > Math.max(2, Math.round(mrzVal.length * 0.35))) {
+    if (editDist(latLoose(my), latLoose(mrzVal)) > Math.max(2, Math.round(mrzVal.length * 0.35))) {
       warn.push(human + ": прочитать не удалось (со снимка вышло «" + f[ruKey] + "», это не похоже на «" + mrzVal +
         "» из MRZ). Поле оставлено пустым — впишите вручную, латиницей это «" + mrzVal + "».");
       f[ruKey] = "";
@@ -921,6 +957,7 @@ function buildFields(ai, mrz, alt) {
     if (!f[latKey] || !f[ruKey]) return;
     const my = translit(f[ruKey]);
     if (!my || my === f[latKey] || editDist(my, f[latKey]) <= 1) return;
+    if (latLoose(my) === latLoose(f[latKey])) return;      // разные правила транслитерации, не ошибка
     warn.push(human + ": в паспорте «" + f[latKey] + "», а по нынешним правилам транслитерации с «" + f[ruKey] +
       "» вышло бы «" + my + "». Если паспорт выдан после 2010 года — вероятно, латиница прочитана неверно.");
   };
@@ -961,7 +998,10 @@ function buildFields(ai, mrz, alt) {
     if (votes.length >= 2) {
       const count = new Map();
       votes.forEach((x) => count.set(digits(x.v), (count.get(digits(x.v)) || 0) + 1));
-      const best = Array.from(count).sort((a, b) => b[1] - a[1]);
+      // Пятизначный код перевешивает четырёхзначный при равном числе голосов:
+      // четыре цифры бывают, но редко, а вот потерять цифру модель может легко
+      // («МВД 5040» вместо «МВД 50049»).
+      const best = Array.from(count).sort((a, b) => (b[1] - a[1]) || (b[0].length - a[0].length));
       const list = votes.map((x) => "«" + String(x.v).trim() + "» " + x.src).join(", ");
       if (best[0][1] >= 2) {
         const win = votes.find((x) => digits(x.v) === best[0][0]);
@@ -974,8 +1014,12 @@ function buildFields(ai, mrz, alt) {
         if (best[0][1] === votes.length && votes.length >= 2) confirmed.push("authority");
       } else {
         warn.push("Кем выдан: все чтения разные (" + list + ") — код набран мелко и, похоже, перекрыт голограммой. Введите вручную, глядя в паспорт.");
-        const pageVote = votes.find((x) => x.src === "по вырезке страницы") || votes[0];
-        f.authority = String(pageVote.v).trim();
+        // Никто не сошёлся: берём пятизначный код, если он есть (потерять цифру
+        // модель может легко, дорисовать лишнюю — почти нет), иначе чтение по
+        // вырезке страницы как самое крупное.
+        const five = votes.filter((x) => digits(x.v).length === 5);
+        const pick = five[0] || votes.find((x) => x.src === "по вырезке страницы") || votes[0];
+        f.authority = String(pick.v).trim();
       }
       f.authorityLat = translit(f.authority);
       authorityDecided = true;
