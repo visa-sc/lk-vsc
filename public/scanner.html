@@ -154,6 +154,19 @@
   .empty { color: #9aa0ab; font-size: 13.5px; padding: 8px 4px; }
   .err-t { color: #c2334a; font-size: 13px; }
   .ok-t { color: #257a45; font-size: 13px; }
+  .copyhint { font-size: 12px; color: #7b93a8; background: #f2f9fd; border: 1px solid #dcebf5; border-radius: 10px; padding: 7px 12px; margin: 0 0 10px; display: inline-block; }
+  .reg-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .reg-controls input[type=text] { flex: 1; min-width: 220px; font-family: inherit; font-size: 13.5px; height: 42px; padding: 0 14px; border: 1px solid #e8e9f0; border-radius: 12px; background: #fafbfe; outline: none; }
+  .reg-controls input[type=text]:focus { border-color: #35a3d4; background: #fff; box-shadow: 0 0 0 4px rgba(0,151,202,.1); }
+  .chk { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: #55607a; cursor: pointer; }
+  .hrow { display: flex; align-items: center; gap: 10px; border: 1px solid #edf0f5; border-radius: 13px; padding: 11px 14px; margin: 7px 0; background: #fff; cursor: pointer; transition: box-shadow .15s, border-color .15s; }
+  .hrow:hover { box-shadow: 0 5px 16px rgba(24,36,66,.06); border-color: #cfe6f3; }
+  .hrow .nm { font-weight: 600; font-size: 14px; color: #101728; }
+  .hrow .mt { font-size: 12px; color: #98a0b0; margin-top: 2px; }
+  .hrow .go { margin-left: auto; font-size: 12px; font-weight: 600; color: #0e7fae; white-space: nowrap; }
+  .exform { margin-top: 12px; }
+  .exform textarea { width: 100%; min-height: 96px; font-family: inherit; font-size: 13.5px; padding: 10px 12px; border: 1px solid #e8e9f0; border-radius: 12px; background: #fafbfe; outline: none; line-height: 1.5; resize: vertical; }
+  .exform textarea:focus { border-color: #35a3d4; background: #fff; box-shadow: 0 0 0 4px rgba(0,151,202,.1); }
   .thumb { max-width: 100%; border-radius: 12px; border: 1px solid #eef0f5; margin-top: 10px; display: block; }
 </style>
 </head>
@@ -181,6 +194,7 @@
 
     <div class="seg" role="tablist">
       <button type="button" class="active" data-tab="scan">Распознавание</button>
+      <button type="button" data-tab="hist">История</button>
       <button type="button" data-tab="dash">Дашборд</button>
       <button type="button" data-tab="learn">Обучение</button>
     </div>
@@ -209,6 +223,18 @@
       <div id="results"></div>
     </div>
 
+    <!-- ── История ── -->
+    <div class="card" id="tab-hist" style="display:none;">
+      <div class="sec-h"><b>История сканирований</b><span id="histSub">можно открыть прошлый документ и снова скопировать поля</span></div>
+      <div class="reg-controls">
+        <input type="text" id="histSearch" placeholder="Поиск: фамилия, номер, файл, сотрудник…">
+        <label class="chk"><input type="checkbox" id="histMine"> только мои</label>
+        <button type="button" class="ghost-btn" id="histRefresh">Обновить</button>
+      </div>
+      <div id="histBody"><div class="empty">Загружаю…</div></div>
+      <div id="histMore" style="display:none;margin-top:12px;"><button type="button" class="ghost-btn" id="histMoreBtn">Показать ещё</button></div>
+    </div>
+
     <!-- ── Дашборд ── -->
     <div class="card" id="tab-dash" style="display:none;">
       <div class="sec-h"><b>Дашборд</b><span>как работает сканер</span></div>
@@ -230,6 +256,24 @@
         <button type="button" class="pri-btn" id="lessonAdd">Добавить</button>
       </div>
       <div id="lessonsBox"></div>
+
+      <div class="sec-h" style="margin-top:26px;"><b>Обучение на примерах</b><span>снимок + как правильно</span></div>
+      <div class="banner info">
+        Загрузите снимок документа и напишите, как он должен быть распознан. Сервис прочитает его сам, сравнит с вашим эталоном и выведет правила из расхождений — так же, как «проверка прошлых переводов» в переводах.
+      </div>
+      <div class="exform">
+        <div class="drop" id="exDrop" style="padding:20px;">
+          <div><b>Выберите снимок</b> или перетащите сюда</div>
+          <div class="mut" id="exName">файл не выбран</div>
+        </div>
+        <input type="file" id="exFile" accept="image/*,application/pdf" style="display:none;">
+        <textarea id="exRef" style="margin-top:10px;" placeholder="Как правильно. Можно построчно, например:&#10;Фамилия: КОМИСАРЕНКО&#10;Имя: АНДРЕЙ&#10;Отчество: ВИКТОРОВИЧ&#10;Кем выдан: МВД 50001&#10;…или просто словами: «отчество должно быть ВИКТОРОВИЧ, а не ВИКТОРОВИЧЬ»"></textarea>
+        <div class="acts-row">
+          <button type="button" class="pri-btn" id="exGo">Разобрать пример</button>
+          <span id="exMsg" class="err-t"></span>
+        </div>
+        <div id="exResult"></div>
+      </div>
       <div class="sec-h" style="margin-top:26px;"><b>Последние правки сотрудников</b><span>что и почему исправляли</span></div>
       <div id="corrBox"><div class="empty">Загружаю…</div></div>
     </div>
@@ -274,13 +318,18 @@
       Array.prototype.forEach.call(document.querySelectorAll(".seg button"), function (x) { x.classList.remove("active"); });
       b.classList.add("active");
       var t = b.getAttribute("data-tab");
-      ["scan", "dash", "learn"].forEach(function (k) { $("#tab-" + k).style.display = k === t ? "" : "none"; });
+      ["scan", "hist", "dash", "learn"].forEach(function (k) { $("#tab-" + k).style.display = k === t ? "" : "none"; });
+      if (t === "hist") { histOffset = 0; loadHist(); }
       if (t === "dash") loadDash();
       if (t === "learn") { renderLessons(); loadCorrections(); }
     });
   });
 
   // ── Копирование значения по клику (как выходные плитки в /calc) ──
+  function trackCopy(key) {
+    if (!key) return;
+    try { api("/scanner/api/copy", { method: "POST", body: JSON.stringify({ field: key }) }).catch(function () {}); } catch (_) {}
+  }
   function copyText(text, el, labelEl) {
     if (!text) return;
     function flash() {
@@ -393,12 +442,12 @@
       h += "</div>";
       h += '<div class="pcard-sub">' + esc(c.docs.map(function (d) { return d.file; }).join(" · ")) + " · " +
         ((c.docs.reduce(function (s, d) { return s + (d.ms || 0); }, 0) / 1000).toFixed(1)) + " сек.</div>";
+      h += '<div class="copyhint">Нажмите на любое поле — значение скопируется в буфер</div>';
       h += '<div class="fgrid">';
       FIELDS.forEach(function (fl) {
         var v = f[fl.key] || "";
-        h += '<div class="f' + (v ? "" : " empty") + (conf.indexOf(fl.key) >= 0 ? " ok" : "") + '" data-copy="' + esc(v) + '" title="Нажмите, чтобы скопировать"><span class="k">' + esc(fl.label) + '</span><div class="v">' + (v ? esc(v) : "—") + "</div></div>";
+        h += '<div class="f' + (v ? "" : " empty") + (conf.indexOf(fl.key) >= 0 ? " ok" : "") + '" data-copy="' + esc(v) + '" data-fk="' + esc(fl.key) + '" title="Нажмите, чтобы скопировать"><span class="k">' + esc(fl.label) + '</span><div class="v">' + (v ? esc(v) : "—") + "</div></div>";
       });
-      if (c.mrz) h += '<div class="f mrz" data-copy="' + esc(c.mrz.line1 + "\n" + c.mrz.line2) + '"><span class="k">MRZ</span><div class="v">' + esc(c.mrz.line1) + "<br>" + esc(c.mrz.line2) + "</div></div>";
       h += "</div>";
       if (c.warnings && c.warnings.length) {
         h += '<div class="warns">' + c.warnings.map(function (w) {
@@ -438,12 +487,12 @@
     var c = cards[ci];
     if (!c) return;
     var fEl = e.target.closest(".f");
-    if (fEl && !e.target.closest(".edit")) { copyText(fEl.getAttribute("data-copy"), fEl); return; }
+    if (fEl && !e.target.closest(".edit")) { copyText(fEl.getAttribute("data-copy"), fEl); trackCopy(fEl.getAttribute("data-fk")); return; }
     var btn = e.target.closest("button[data-act]");
     if (!btn) return;
     var act = btn.getAttribute("data-act");
-    if (act === "all") { copyText(plainAll(c), null); btn.textContent = "✓ Скопировано"; setTimeout(function () { btn.textContent = "Скопировать все поля"; }, 1000); }
-    if (act === "json") { copyText(JSON.stringify(c.fields, null, 1), null); btn.textContent = "✓ JSON"; setTimeout(function () { btn.textContent = "JSON"; }, 1000); }
+    if (act === "all") { copyText(plainAll(c), null); trackCopy("__all"); btn.textContent = "✓ Скопировано"; setTimeout(function () { btn.textContent = "Скопировать все поля"; }, 1000); }
+    if (act === "json") { copyText(JSON.stringify(c.fields, null, 1), null); trackCopy("__json"); btn.textContent = "✓ JSON"; setTimeout(function () { btn.textContent = "JSON"; }, 1000); }
     if (act === "edit") { c.edit = !c.edit; c.learned = null; renderCards(); }
     if (act === "cancel") { c.edit = false; renderCards(); }
     if (act === "save") {
@@ -540,6 +589,7 @@
       h += '<div class="tile"><b>' + t.corrections + "</b><span>правок сотрудников</span></div>";
       h += '<div class="tile"><b>' + t.lessons + "</b><span>правил в памяти</span></div>";
       h += "</div>";
+      h += bars("Какие поля копируют чаще всего", j.copyStats);
       h += bars("Чаще всего правят поля", j.fieldFixes);
       h += bars("Кто пользуется", j.byUser);
       h += bars("Типы документов", j.byKind);
@@ -551,6 +601,76 @@
   }
   $("#dashRefresh").addEventListener("click", loadDash);
   $("#dashMonth").addEventListener("change", loadDash);
+
+  // ── История ──
+  var histOffset = 0, histDocs = [];
+  function loadHist(more) {
+    if (!more) { histOffset = 0; histDocs = []; $("#histBody").innerHTML = '<div class="empty">Загружаю…</div>'; }
+    var q = encodeURIComponent($("#histSearch").value.trim());
+    var mine = $("#histMine").checked ? "1" : "";
+    api("/scanner/api/history?limit=30&offset=" + histOffset + (q ? "&q=" + q : "") + (mine ? "&mine=1" : "")).then(function (j) {
+      if (!j.success) return;
+      histDocs = histDocs.concat(j.docs || []);
+      $("#histSub").textContent = "всего " + j.total + " · хранятся " + j.keepDays + " дней · нажмите на строку, чтобы открыть и копировать";
+      $("#histBody").innerHTML = histDocs.length ? histDocs.map(function (d, i) {
+        var f = d.fields || {};
+        return '<div class="hrow" data-hi="' + i + '"><div><div class="nm">' + esc([f.surnameRu, f.nameRu, f.patronymicRu].filter(Boolean).join(" ") || f.translit || d.file) + "</div>" +
+          '<div class="mt">' + esc(f.series ? f.series + " " + f.numberOnly : (f.numberOnly || "")) + (f.birthDate ? " · " + esc(f.birthDate) : "") + " · " +
+          new Date(d.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) +
+          (d.by ? " · " + esc(d.by) : "") + (d.corrected ? " · поправлено" : "") + "</div></div>" +
+          '<div class="go">открыть →</div></div>';
+      }).join("") : '<div class="empty">Пока пусто.</div>';
+      histOffset += (j.docs || []).length;
+      $("#histMore").style.display = histOffset < j.total ? "" : "none";
+    }).catch(function () {});
+  }
+  $("#histRefresh").addEventListener("click", function () { loadHist(); });
+  $("#histMoreBtn").addEventListener("click", function () { loadHist(true); });
+  $("#histMine").addEventListener("change", function () { loadHist(); });
+  var histT = null;
+  $("#histSearch").addEventListener("input", function () { clearTimeout(histT); histT = setTimeout(function () { loadHist(); }, 350); });
+  $("#histBody").addEventListener("click", function (e) {
+    var row = e.target.closest(".hrow"); if (!row) return;
+    var d = histDocs[Number(row.getAttribute("data-hi"))];
+    if (!d) return;
+    addCard({ id: d.id, file: d.file, ms: 0, fields: d.fields, warnings: d.warnings || [], confirmed: d.confirmed || [], mrz: d.mrz, hasImg: d.hasImg });
+    $("#clearAll").style.display = "";
+    Array.prototype.forEach.call(document.querySelectorAll(".seg button"), function (x) { x.classList.toggle("active", x.getAttribute("data-tab") === "scan"); });
+    ["scan", "hist", "dash", "learn"].forEach(function (k) { $("#tab-" + k).style.display = k === "scan" ? "" : "none"; });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  // ── Обучение на примерах ──
+  var exFile = null;
+  $("#exDrop").addEventListener("click", function () { $("#exFile").click(); });
+  $("#exFile").addEventListener("change", function () { exFile = this.files[0] || null; $("#exName").textContent = exFile ? exFile.name : "файл не выбран"; });
+  ["dragover", "dragleave", "drop"].forEach(function (ev) {
+    $("#exDrop").addEventListener(ev, function (e) {
+      e.preventDefault(); this.classList.toggle("over", ev === "dragover");
+      if (ev === "drop") { exFile = e.dataTransfer.files[0] || null; $("#exName").textContent = exFile ? exFile.name : "файл не выбран"; }
+    });
+  });
+  $("#exGo").addEventListener("click", function () {
+    var ref = $("#exRef").value.trim();
+    if (!exFile) { $("#exMsg").textContent = "Выберите снимок"; return; }
+    if (!ref) { $("#exMsg").textContent = "Напишите, как должно быть распознано"; return; }
+    var fd = new FormData(); fd.append("file", exFile, exFile.name); fd.append("reference", ref);
+    $("#exGo").disabled = true; $("#exGo").innerHTML = '<span class="spin"></span>разбираю…'; $("#exMsg").textContent = "";
+    api("/scanner/api/example", { method: "POST", body: fd }).then(function (j) {
+      $("#exGo").disabled = false; $("#exGo").textContent = "Разобрать пример";
+      if (!j.success) { $("#exMsg").textContent = j.message || "Не получилось"; return; }
+      var h = '<div class="learned"><b>' + (j.learned && j.learned.length ? "Выучил из примера:" : "Расхождений с эталоном не нашёл") + "</b>";
+      if (j.learned && j.learned.length) h += j.learned.map(function (t) { return "• " + esc(t); }).join("<br>");
+      if (j.diff) h += '<div style="margin-top:8px;color:#3a4356;">' + esc(j.diff) + "</div>";
+      h += "</div>";
+      $("#exResult").innerHTML = h;
+      exFile = null; $("#exFile").value = ""; $("#exName").textContent = "файл не выбран"; $("#exRef").value = "";
+      loadState();
+    }).catch(function (e2) {
+      $("#exGo").disabled = false; $("#exGo").textContent = "Разобрать пример";
+      if (e2.message !== "auth") $("#exMsg").textContent = "Сервер не ответил";
+    });
+  });
 
   function loadState() {
     return api("/scanner/api/state").then(function (j) {

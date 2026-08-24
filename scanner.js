@@ -40,6 +40,9 @@ const MAX_DOCS = 3000;
 const MAX_LESSONS_IN_PROMPT = 40;
 const KEEP_DAYS = Number(process.env.SCANNER_KEEP_DAYS || 3);
 const KEEP_CORRECTED_DAYS = Number(process.env.SCANNER_KEEP_CORRECTED_DAYS || 30);
+// Сколько живёт САМА запись в истории сканирований (поля без фото) — как срок
+// хранения заказов в переводах.
+const KEEP_HISTORY_DAYS = Number(process.env.SCANNER_KEEP_HISTORY_DAYS || 90);
 
 function ensureDirs() { try { fs.mkdirSync(FILES_DIR, { recursive: true }); } catch (_) {} }
 let _store = null;
@@ -50,6 +53,8 @@ function store() {
   if (!Array.isArray(_store.docs)) _store.docs = [];
   if (!Array.isArray(_store.lessons)) _store.lessons = [];
   if (!Array.isArray(_store.corrections)) _store.corrections = [];
+  if (!Array.isArray(_store.examples)) _store.examples = [];
+  if (!_store.copyStats || typeof _store.copyStats !== "object") _store.copyStats = {};
   if (!_store.auth) _store.auth = {};
   return _store;
 }
@@ -91,12 +96,16 @@ function cleanMrzLine(s) {
 }
 // Имена из первой строки: P<RUS SURNAME<<GIVEN<NAMES
 function mrzNames(l1) {
+  // Модель нередко дописывает в конец первой строки хвост второй («…<<02»),
+  // поэтому оставляем только буквенные слова: в именах цифр не бывает.
+  const clean = (x) => String(x || "").replace(/</g, " ").split(/\s+/)
+    .filter((w) => w && /^[A-Z-]+$/.test(w)).join(" ").trim();
   let surname = "", given = "";
   if (l1.length >= 6) {
     const names = l1.slice(5).replace(/<+$/, "");
     const parts = names.split("<<");
-    surname = (parts[0] || "").replace(/</g, " ").trim();
-    given = (parts.slice(1).join(" ") || "").replace(/</g, " ").replace(/\s+/g, " ").trim();
+    surname = clean(parts[0]);
+    given = clean(parts.slice(1).join(" "));
   }
   return { surname, given };
 }
@@ -163,6 +172,51 @@ function normDate(s) {
   return dd + "." + mm + "." + yy;
 }
 
+// ── Транслитерация кириллицы по правилам загранпаспорта (ICAO Doc 9303,
+// в РФ применяется с 2014 г.). Нужна для полей, которых в MRZ нет: отчество,
+// место рождения, орган выдачи. Проверено на паспорте: ВИКТОРОВИЧ → VIKTOROVICH,
+// СВЕРДЛОВСКАЯ ОБЛ. → SVERDLOVSKAIA OBL., МВД → MVD.
+const TRANSLIT = {
+  А: "A", Б: "B", В: "V", Г: "G", Д: "D", Е: "E", Ё: "E", Ж: "ZH", З: "Z", И: "I",
+  Й: "I", К: "K", Л: "L", М: "M", Н: "N", О: "O", П: "P", Р: "R", С: "S", Т: "T",
+  У: "U", Ф: "F", Х: "KH", Ц: "TS", Ч: "CH", Ш: "SH", Щ: "SHCH", Ъ: "IE", Ы: "Y",
+  Ь: "", Э: "E", Ю: "IU", Я: "IA",
+};
+// Гражданство по-английски — это НЕ транслитерация: нужны официальные названия
+// стран. Берём по трёхбуквенному коду из MRZ (ISO 3166), а если MRZ нет —
+// по написанию в паспорте.
+const NAT_EN = {
+  RUS: "RUSSIAN FEDERATION", KAZ: "KAZAKHSTAN", BLR: "BELARUS", UKR: "UKRAINE",
+  UZB: "UZBEKISTAN", ARM: "ARMENIA", AZE: "AZERBAIJAN", GEO: "GEORGIA",
+  KGZ: "KYRGYZSTAN", TJK: "TAJIKISTAN", TKM: "TURKMENISTAN", MDA: "MOLDOVA",
+  LTU: "LITHUANIA", LVA: "LATVIA", EST: "ESTONIA", ISR: "ISRAEL", TUR: "TURKEY",
+  DEU: "GERMANY", USA: "UNITED STATES OF AMERICA", GBR: "UNITED KINGDOM",
+  FRA: "FRANCE", ITA: "ITALY", ESP: "SPAIN", CHN: "CHINA", IND: "INDIA",
+  SRB: "SERBIA", MNE: "MONTENEGRO", THA: "THAILAND", ARE: "UNITED ARAB EMIRATES",
+};
+const NAT_RU_EN = {
+  "РОССИЙСКАЯ ФЕДЕРАЦИЯ": "RUSSIAN FEDERATION", "РОССИЯ": "RUSSIAN FEDERATION",
+  "КАЗАХСТАН": "KAZAKHSTAN", "БЕЛАРУСЬ": "BELARUS", "БЕЛОРУССИЯ": "BELARUS",
+  "УКРАИНА": "UKRAINE", "УЗБЕКИСТАН": "UZBEKISTAN", "АРМЕНИЯ": "ARMENIA",
+  "АЗЕРБАЙДЖАН": "AZERBAIJAN", "ГРУЗИЯ": "GEORGIA", "КИРГИЗИЯ": "KYRGYZSTAN",
+  "КЫРГЫЗСТАН": "KYRGYZSTAN", "ТАДЖИКИСТАН": "TAJIKISTAN", "МОЛДОВА": "MOLDOVA",
+};
+function citizenshipEn(ru, natCode) {
+  const code = String(natCode || "").toUpperCase().trim();
+  if (NAT_EN[code]) return NAT_EN[code];
+  const key = String(ru || "").toUpperCase().replace(/[^А-ЯЁ ]/g, "").trim();
+  if (NAT_RU_EN[key]) return NAT_RU_EN[key];
+  // В паспорте латинское название часто напечатано рядом через дробь.
+  const lat = String(ru || "").match(/[A-Z][A-Z ]{3,}/);
+  return lat ? lat[0].trim() : "";
+}
+function translit(sIn) {
+  const src = String(sIn || "").toUpperCase();
+  let out = "";
+  for (const ch of src) out += Object.prototype.hasOwnProperty.call(TRANSLIT, ch) ? TRANSLIT[ch] : ch;
+  return out;
+}
+
 // ── Claude ────────────────────────────────────────────────────────────────
 function aiConfigured() { return !!process.env.ANTHROPIC_API_KEY; }
 let _client = null;
@@ -202,15 +256,20 @@ const FIELDS = [
   { key: "patronymicRu", label: "Отчество" },
   { key: "surnameLat", label: "Фамилия (латиницей)" },
   { key: "nameLat", label: "Имя (латиницей)" },
-  { key: "translit", label: "ФИО латиницей" },
+  { key: "patronymicLat", label: "Отчество (латиницей)" },
+  { key: "translit", label: "Имя и фамилия латиницей" },
   { key: "birthDate", label: "Дата рождения" },
   { key: "sex", label: "Пол" },
   { key: "birthPlace", label: "Место рождения" },
+  { key: "birthPlaceLat", label: "Место рождения (латиницей)" },
   { key: "citizenship", label: "Гражданство" },
-  { key: "number", label: "Серия и номер" },
+  { key: "citizenshipEn", label: "Гражданство (англ.)" },
+  { key: "series", label: "Серия" },
+  { key: "numberOnly", label: "Номер" },
   { key: "issueDate", label: "Дата выдачи" },
   { key: "expiryDate", label: "Действителен до" },
   { key: "authority", label: "Кем выдан" },
+  { key: "authorityLat", label: "Кем выдан (латиницей)" },
   { key: "docKind", label: "Тип документа" },
 ];
 
@@ -234,6 +293,10 @@ const SCHEMA = {
 const MRZ_SCHEMA = {
   type: "object", additionalProperties: false, required: ["mrz_line1", "mrz_line2"],
   properties: { mrz_line1: { type: "string" }, mrz_line2: { type: "string" } },
+};
+const EXAMPLE_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["lessons", "diff"],
+  properties: { lessons: { type: "array", items: { type: "string" } }, diff: { type: "string" } },
 };
 const LESSONS_SCHEMA = {
   type: "object", additionalProperties: false, required: ["lessons"],
@@ -332,6 +395,11 @@ function buildFields(ai, mrz) {
     expiryDate: normDate(ai.expiry_date),
     authority: (ai.authority || "").trim(),
   };
+  // «РОССИЙСКАЯ ФЕДЕРАЦИЯ / RUSSIAN FEDERATION» → в поле гражданства оставляем
+  // только русскую часть, английская уедет в отдельное поле.
+  if (/[А-ЯЁ]/.test(f.citizenship) && /\//.test(f.citizenship)) f.citizenship = f.citizenship.split("/")[0].trim();
+  // Место рождения тоже часто печатают через дробь с «/ RUSSIA».
+  if (/[А-ЯЁ]/.test(f.birthPlace) && /\//.test(f.birthPlace)) f.birthPlace = f.birthPlace.split("/")[0].trim();
   const confirmed = [];
   if (mrz) {
     // Поле считается надёжным, если сошлась контрольная цифра MRZ ИЛИ если
@@ -367,8 +435,19 @@ function buildFields(ai, mrz) {
   } else {
     warn.push("MRZ не распознана — все поля прочитаны только глазами модели, проверьте внимательно");
   }
-  f.translit = [f.surnameLat, f.nameLat].filter(Boolean).join(" ");
+  // Имя первым, фамилия второй (просьба Андрея 22.08).
+  f.translit = [f.nameLat, f.surnameLat].filter(Boolean).join(" ");
   if (confirmed.indexOf("surnameLat") >= 0 && confirmed.indexOf("nameLat") >= 0) confirmed.push("translit");
+  // Серия и номер — двумя блоками (у загранпаспорта РФ это 2 + 7 цифр).
+  const nd = String(f.number || "").replace(/\D/g, "");
+  if (nd.length === 9) { f.series = nd.slice(0, 2); f.numberOnly = nd.slice(2); }
+  else { f.series = ""; f.numberOnly = String(f.number || "").trim(); }
+  if (confirmed.indexOf("number") >= 0) { confirmed.push("series"); confirmed.push("numberOnly"); }
+  // Полей ниже в MRZ нет вовсе — транслитерируем сами по правилам загранпаспорта.
+  f.patronymicLat = translit(f.patronymicRu);
+  f.citizenshipEn = citizenshipEn(f.citizenship, mrz && mrz.nationality);
+  f.birthPlaceLat = translit(f.birthPlace);
+  f.authorityLat = translit(f.authority);
   // Здравый смысл: срок действия загранпаспорта — 5 или 10 лет от выдачи.
   if (f.issueDate && f.expiryDate) {
     const d = (s) => { const p = s.split("."); return new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0])); };
@@ -462,11 +541,21 @@ async function recognizeOne(buf, name, mime, ctx) {
   return doc;
 }
 
-// Удаление старых файлов (поля в журнале остаются).
+// Удаление старых файлов и записей истории.
 function purgeOldFiles() {
   const st = store();
   const now = Date.now();
   let n = 0;
+  // Записи старше срока хранения истории — удаляем целиком (вместе с файлом).
+  const keep = [];
+  let dropped = 0;
+  for (const d of st.docs) {
+    if (now - d.at > KEEP_HISTORY_DAYS * 86400e3) {
+      if (d.imgFile) { try { fs.unlinkSync(path.join(FILES_DIR, d.imgFile)); } catch (_) {} }
+      dropped++;
+    } else keep.push(d);
+  }
+  if (dropped) { st.docs = keep; console.log("scanner: из истории удалено записей по сроку (" + KEEP_HISTORY_DAYS + " дн.):", dropped); save(); }
   for (const d of st.docs) {
     if (!d.imgFile) continue;
     const days = d.corrected ? KEEP_CORRECTED_DAYS : KEEP_DAYS;
@@ -475,6 +564,32 @@ function purgeOldFiles() {
     delete d.imgFile; d.imgPurged = true; n++;
   }
   if (n) { console.log("scanner: удалено файлов по сроку хранения:", n); save(); }
+}
+
+// ── Доступ из портала Кати (work.voyotravel.ru) ──
+// Её сервис проксирует /scanner/api/* сюда; право определяется разделом
+// «scanner» в ЕЁ data/portal.json (личные вкладки ∪ отделы). Ключей и настроек
+// движка это не даёт: модель и лимиты живут только здесь.
+const PORTAL_DATA_DIR = process.env.TRANSLATE_PORTAL_DATA || "/var/www/kateadmin/data";
+const _portalCache = { at: 0, data: null };
+function portalHasScanner(email) {
+  if (!email) return false;
+  if (Date.now() - _portalCache.at > 30000) {
+    try { _portalCache.data = JSON.parse(fs.readFileSync(path.join(PORTAL_DATA_DIR, "portal.json"), "utf8")); }
+    catch (_) { _portalCache.data = null; }
+    _portalCache.at = Date.now();
+  }
+  const pj = _portalCache.data;
+  if (!pj) return false;
+  const e = String(email).toLowerCase().trim();
+  const owners = [String(pj.owner || "").toLowerCase()].concat((pj.coOwners || []).map((x) => String(x).toLowerCase()));
+  if (owners.indexOf(e) >= 0) return true;
+  const u = (pj.users || {})[e];
+  const tabs = new Set((u && Array.isArray(u.tabs)) ? u.tabs : []);
+  for (const d of (pj.departments || [])) {
+    if (Array.isArray(d.members) && d.members.indexOf(e) >= 0) (d.tabs || []).forEach((t) => tabs.add(t));
+  }
+  return tabs.has("scanner");
 }
 
 function mount(app, deps) {
@@ -494,7 +609,14 @@ function mount(app, deps) {
     const rec = tok && authTokens()[tok];
     if (rec && Date.now() - (rec.at || 0) <= TOKEN_TTL) { req.who = rec.name || "сотрудник"; return next(); }
     const s = getStaffFromReq && getStaffFromReq(req);
-    if (s) { req.who = s.name || s.email || "сотрудник"; return next(); }
+    if (s) {
+      // Свои (админ и руководители Андрея) — всегда. Аккаунты, заведённые Катей
+      // в портале, — только если ей открыт им раздел «Сканер»: доступами её
+      // сотрудников управляет она сама, как в переводах.
+      const own = s.role === "admin" || (Array.isArray(s.perms) && s.perms.length > 0) || !!s.vscRestrict;
+      if (own || portalHasScanner(s.email)) { req.who = s.name || s.email || "сотрудник"; return next(); }
+      return res.status(401).json({ success: false, message: "Раздел «Сканер» вам не открыт — попросите Екатерину Зайцеву выдать доступ" });
+    }
     return res.status(401).json({ success: false, message: "Нет доступа" });
   }
 
@@ -528,7 +650,7 @@ function mount(app, deps) {
       success: true, aiConfigured: aiConfigured(), model: model(), me: req.who,
       fields: FIELDS,
       lessons: st.lessons.slice().reverse(),
-      keepDays: KEEP_DAYS, keepCorrectedDays: KEEP_CORRECTED_DAYS,
+      keepDays: KEEP_DAYS, keepCorrectedDays: KEEP_CORRECTED_DAYS, keepHistoryDays: KEEP_HISTORY_DAYS,
       recent: st.docs.slice(-30).reverse().map((d) => ({ id: d.id, at: d.at, by: d.by, file: d.file, fields: d.fields, warnings: d.warnings, mrz: d.mrz, ms: d.ms, corrected: d.corrected, hasImg: !!d.imgFile })),
     });
   });
@@ -557,6 +679,48 @@ function mount(app, deps) {
     if (st.docs.length > MAX_DOCS) st.docs.splice(0, st.docs.length - MAX_DOCS);
     save();
     res.json({ success: true, results: out });
+  });
+
+  // История сканирований: можно открыть прошлый документ и снова накопировать
+  // поля. Записи живут KEEP_HISTORY_DAYS (90 дней), потом удаляются сами.
+  app.get("/scanner/api/history", requireScanner, (req, res) => {
+    const st = store();
+    const q = String(req.query.q || "").trim().toLowerCase();
+    const mine = String(req.query.mine || "") === "1";
+    let list = st.docs.slice().reverse();
+    if (mine) list = list.filter((d) => (d.by || "") === req.who);
+    if (q) {
+      list = list.filter((d) => {
+        const f = d.fields || {};
+        return [f.surnameRu, f.nameRu, f.patronymicRu, f.translit, f.number, f.numberOnly, d.file, d.by]
+          .filter(Boolean).join(" ").toLowerCase().indexOf(q) >= 0;
+      });
+    }
+    const total = list.length;
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 30));
+    res.json({
+      success: true, total, offset, limit, keepDays: KEEP_HISTORY_DAYS,
+      docs: list.slice(offset, offset + limit).map((d) => ({
+        id: d.id, at: d.at, by: d.by, file: d.file, fields: d.fields, warnings: d.warnings,
+        confirmed: d.confirmed || [], mrz: d.mrz ? { valid: d.mrz.valid } : null,
+        corrected: !!d.corrected, hasImg: !!d.imgFile,
+      })),
+    });
+  });
+
+  // Что копируют сотрудники — для дашборда (какие поля реально нужны в работе).
+  app.post("/scanner/api/copy", requireScanner, (req, res) => {
+    const keys = Array.isArray(req.body && req.body.fields) ? req.body.fields : [String((req.body && req.body.field) || "")];
+    const st = store();
+    let n = 0;
+    for (const k of keys) {
+      const key = String(k || "").slice(0, 40);
+      if (!FIELDS.some((f) => f.key === key) && key !== "__all" && key !== "__json") continue;
+      st.copyStats[key] = (st.copyStats[key] || 0) + 1; n++;
+    }
+    if (n) save();
+    res.json({ success: true });
   });
 
   app.get("/scanner/api/doc/:id/image", requireScanner, (req, res) => {
@@ -616,6 +780,40 @@ function mount(app, deps) {
     res.json({ success: true, learned, before, fields: d.fields });
   });
 
+  // Обучение на примерах: сотрудник грузит снимок и пишет, как правильно.
+  // Сервис распознаёт его сам, сверяет с эталоном и выводит правила — как
+  // «проверка прошлых переводов» в /translate.
+  app.post("/scanner/api/example", requireScanner, up.single("file"), async (req, res) => {
+    if (!aiConfigured()) return res.status(400).json({ success: false, message: "ИИ не настроен" });
+    if (!req.file) return res.status(400).json({ success: false, message: "Прикрепите снимок документа" });
+    const ref = String((req.body && req.body.reference) || "").slice(0, 4000).trim();
+    if (!ref) return res.status(400).json({ success: false, message: "Напишите, как должно быть распознано (эталон)" });
+    const name = Buffer.from(req.file.originalname, "latin1").toString("utf8");
+    let doc;
+    try { doc = await recognizeOne(req.file.buffer, name, req.file.mimetype, { by: req.who }); }
+    catch (e) { return res.status(400).json({ success: false, message: String((e && e.message) || e) }); }
+    doc.kind = "example";
+    const st = store();
+    st.docs.push(doc);
+    const got = FIELDS.map((f) => f.label + ": " + (doc.fields[f.key] || "—")).join("\n");
+    let learned = [], diff = "";
+    try {
+      const existing = lessons().map((l) => l.text);
+      const r = await runJson({
+        model: model(), max_tokens: 1200,
+        system: "Ты ведёшь базу правил для сервиса распознавания паспортов. Тебе дают эталон (как ДОЛЖНО быть) и то, что распозналось. Найди расхождения и сформулируй 0–5 ОБЩИХ правил на будущее (по-русски, коротко, повелительно, применимо к любому такому документу). Если расхождений нет — верни пустой список. Не дублируй существующие правила. Отвечай строго JSON: {\"lessons\":[\"правило\"],\"diff\":\"краткий разбор расхождений по-русски\"}.",
+        messages: [{ role: "user", content: "ЭТАЛОН (как правильно):\n" + ref + "\n\nРАСПОЗНАЛОСЬ:\n" + got + "\n\nСуществующие правила:\n" + (existing.join("\n") || "(пусто)") }],
+      }, EXAMPLE_SCHEMA);
+      learned = ((r.json && r.json.lessons) || []).map((t) => String(t).trim()).filter((t) => t && !existing.some((e) => e.toLowerCase() === t.toLowerCase())).slice(0, 5);
+      diff = String((r.json && r.json.diff) || "").slice(0, 1500);
+      for (const t of learned) lessons().push({ id: newId(), createdAt: Date.now(), text: t.slice(0, 400), source: "example", sourceRef: doc.id, by: req.who });
+    } catch (e) { console.warn("scanner example:", e.message); }
+    st.examples.push({ id: newId(), at: Date.now(), by: req.who, file: name, docId: doc.id, reference: ref, learned, diff });
+    if (st.examples.length > 300) st.examples.splice(0, st.examples.length - 300);
+    save();
+    res.json({ success: true, fields: doc.fields, warnings: doc.warnings, learned, diff, docId: doc.id });
+  });
+
   app.post("/scanner/api/lesson", requireScanner, (req, res) => {
     const text = String((req.body && req.body.text) || "").trim().slice(0, 400);
     if (!text) return res.status(400).json({ success: false, message: "Пустое правило" });
@@ -667,6 +865,9 @@ function mount(app, deps) {
         lessons: st.lessons.length,
         corrections: corrs.length,
       },
+      copyStats: FIELDS.map((f) => ({ name: f.label, key: f.key, count: st.copyStats[f.key] || 0 }))
+        .filter((x) => x.count > 0).sort((a, b) => b.count - a.count),
+      examples: st.examples.slice(-20).reverse().map((e) => ({ id: e.id, at: e.at, by: e.by, file: e.file, learned: e.learned, diff: e.diff })),
       byKind: tally(docs, (d) => d.fields && d.fields.docKind),
       byUser: tally(docs, (d) => d.by),
       fieldFixes: Array.from(fieldFixes, ([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
@@ -679,4 +880,4 @@ function mount(app, deps) {
   setInterval(purgeOldFiles, 6 * 3600 * 1000);
 }
 
-module.exports = { mount, parseMrzTd3, mrzCheckDigit, buildFields, prettyRuNumber };
+module.exports = { mount, parseMrzTd3, mrzCheckDigit, buildFields, prettyRuNumber, translit, citizenshipEn, FIELDS };
