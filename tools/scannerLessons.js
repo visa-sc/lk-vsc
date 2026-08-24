@@ -12,6 +12,8 @@
 //                                            к ИИ не обращается, API-баланс не тратит
 //   node tools/scannerLessons.js regress   — платный прогон по самим снимкам (~10 ₽),
 //                                            только когда без него никак
+//   node tools/scannerLessons.js try ФАЙЛ  — прогнать один снимок МИМО журнала
+//                                            (в историю и дашборд не попадёт)
 //   node tools/scannerLessons.js ack ID…   — пометить правки разобранными
 //   node tools/scannerLessons.js ack --all — пометить разобранными все текущие
 //
@@ -130,6 +132,28 @@ function cmdRegress() {
   process.stdout.write(ssh("cp /root/scanner-regress.js sregress.tmp.js && node sregress.tmp.js; rm -f sregress.tmp.js"));
 }
 
+// Проверка снимка в обход журнала: зовём распознавание напрямую, запись в
+// историю делает не оно, а маршрут /scanner/api/parse. Так мои проверки больше
+// не подмешиваются к работе сотрудников и не портят дашборд.
+function cmdTry(args) {
+  const img = args[0];
+  if (!img) { console.log("нужно имя файла из .scanner/files"); return; }
+  const script = [
+    'require("dotenv").config();const fs=require("fs");const s=require("./scanner.js");',
+    'const p=".scanner/files/" + process.argv[2];',
+    'const mime=/[.]png$/i.test(p)?"image/png":/[.]pdf$/i.test(p)?"application/pdf":"image/jpeg";',
+    '(async()=>{const d=await s.recognizeOne(fs.readFileSync(p),process.argv[2],mime,{by:"проверка"});',
+    ' const f=d.fields;const rub=(d.spend||[]).reduce((a,e)=>a+((e.in||0)*1+(e.out||0)*5)/1e6,0)*80;',
+    ' console.log(f.surnameRu,f.nameRu,f.patronymicRu,"|",f.surnameLat,f.nameLat);',
+    ' console.log("серия и номер:",f.number,"| выдан:",f.issueDate,f.authority,"| место рожд.:",f.birthPlace);',
+    ' console.log("запросов:",(d.spend||[]).length,"| ~"+rub.toFixed(2)+" руб |",(d.ms/1000).toFixed(1)+"с |",d.model);',
+    ' (d.warnings||[]).forEach(w=>console.log("  ·",w.slice(0,150)));})();',
+  ].join("");
+  fs.writeFileSync("/tmp/scanner-try.js", script);
+  execFileSync("scp", ["/tmp/scanner-try.js", HOST + ":/root/scanner-try.js"], { stdio: "ignore" });
+  process.stdout.write(ssh("cp /root/scanner-try.js stry.tmp.js && node stry.tmp.js " + JSON.stringify(img) + "; rm -f stry.tmp.js"));
+}
+
 function cmdAck(args) {
   const done = seen();
   if (args[0] === "--all") {
@@ -145,6 +169,7 @@ const cmd = process.argv[2] || "check";
 try {
   if (cmd === "check") cmdCheck();
   else if (cmd === "replay") cmdReplay();
+  else if (cmd === "try") cmdTry(process.argv.slice(3));
   else if (cmd === "regress") cmdRegress();
   else if (cmd === "ack") cmdAck(process.argv.slice(3));
   else { console.log("Команды: check | regress | ack ID… | ack --all"); process.exit(1); }
