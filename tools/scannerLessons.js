@@ -7,7 +7,11 @@
 // по тем же снимкам, чтобы проверить, исправлено ли.
 //
 //   node tools/scannerLessons.js check     — новые правки (ничего не помечает)
-//   node tools/scannerLessons.js regress   — прогон по снимкам с правками, сверка с эталоном
+//   node tools/scannerLessons.js replay    — БЕСПЛАТНАЯ проверка: разбор гоняется
+//                                            заново по сохранённым ответам модели,
+//                                            к ИИ не обращается, API-баланс не тратит
+//   node tools/scannerLessons.js regress   — платный прогон по самим снимкам (~10 ₽),
+//                                            только когда без него никак
 //   node tools/scannerLessons.js ack ID…   — пометить правки разобранными
 //   node tools/scannerLessons.js ack --all — пометить разобранными все текущие
 //
@@ -67,6 +71,38 @@ function cmdCheck() {
   console.log("\nвсего правил в памяти сканера: " + data.lessons.length);
 }
 
+// Бесплатная проверка: берём сохранённые сырые ответы модели (doc.raw) и
+// прогоняем по ним ТОЛЬКО наш разбор — сверку с MRZ, транслитерацию, даты,
+// код подразделения. К ИИ не обращаемся ни разу, денег с баланса не уходит.
+// Проверяет ровно ту часть, где живут почти все доработки; чтение снимка
+// моделью так не проверить — для этого есть платный regress.
+function cmdReplay() {
+  const script = [
+    'const fs=require("fs");const s=require("./scanner.js");',
+    'const st=JSON.parse(fs.readFileSync(".scanner/store.json","utf8"));',
+    'const byId=new Map(st.docs.map(d=>[d.id,d]));const truth=new Map();',
+    'for(const c of st.corrections||[]){const d=byId.get(c.docId);if(!d)continue;',
+    '  if(!truth.has(c.docId))truth.set(c.docId,{doc:d,by:c.by,want:new Map()});',
+    '  for(const ch of c.changed||[])truth.get(c.docId).want.set(ch.label,ch.now);}',
+    'const key=l=>(s.FIELDS.find(f=>f.label===l)||{}).key;',
+    'let ok=0,bad=0,noraw=0;const fails=[];',
+    'for(const [id,t] of truth){const d=t.doc;',
+    ' if(!d.raw||!d.raw.ai){noraw++;continue;}',
+    ' const mrz=d.raw.mrz?s.parseMrzTd3(d.raw.mrz.line1,d.raw.mrz.line2):s.parseMrzTd3(d.raw.ai.mrz_line1,d.raw.ai.mrz_line2);',
+    ' const r=s.buildFields(d.raw.ai,mrz,d.raw.alt);',
+    ' console.log("\\n"+String(d.file).slice(0,50)+"  (правил: "+(t.by||"?")+")");',
+    ' for(const [label,want] of t.want){const k=key(label);if(!k)continue;',
+    '  const got=String(r.fields[k]||"");const norm=x=>String(x).replace(/\\s+/g," ").trim().toUpperCase();',
+    '  const good=norm(got)===norm(want);if(good)ok++;else{bad++;fails.push(String(d.file)+" · "+label+": «"+got+"» вместо «"+want+"»");}',
+    '  console.log("  "+(good?"верно":"НЕВЕРНО")+" "+label+": "+(good?got:"«"+got+"» — надо «"+want+"»"));}}',
+    'console.log("\\n———\\nсовпало: "+ok+" из "+(ok+bad)+(noraw?"  (без сохранённого ответа модели, пропущено документов: "+noraw+")":""));',
+    'if(fails.length){console.log("осталось неверным:");fails.forEach(f=>console.log("  · "+f));}',
+  ].join("");
+  fs.writeFileSync("/tmp/scanner-replay.js", script);
+  execFileSync("scp", ["/tmp/scanner-replay.js", HOST + ":/root/scanner-replay.js"], { stdio: "ignore" });
+  process.stdout.write(ssh("cp /root/scanner-replay.js sreplay.tmp.js && node sreplay.tmp.js; rm -f sreplay.tmp.js"));
+}
+
 // Прогон сканера по снимкам, которые правили, со сверкой по эталону сотрудника.
 function cmdRegress() {
   const script = [
@@ -108,6 +144,7 @@ function cmdAck(args) {
 const cmd = process.argv[2] || "check";
 try {
   if (cmd === "check") cmdCheck();
+  else if (cmd === "replay") cmdReplay();
   else if (cmd === "regress") cmdRegress();
   else if (cmd === "ack") cmdAck(process.argv.slice(3));
   else { console.log("Команды: check | regress | ack ID… | ack --all"); process.exit(1); }

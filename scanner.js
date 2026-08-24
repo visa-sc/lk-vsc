@@ -420,6 +420,7 @@ const SYS = [
   "Часто присылают не само фото, а скриншот из мессенджера: сверху и снизу видны имя отправителя, время, кнопки. Это НЕ данные документа — бери только то, что напечатано на самой странице паспорта.",
   "Правила заполнения:",
   "- Кириллические поля (фамилия, имя, отчество, место рождения, кем выдан) переписывай ровно как напечатано, ЗАГЛАВНЫМИ, без точек в конце.",
+  "- В паспортах уроженцев Средней Азии отчество состоит из двух слов: «ИСРОИЛЖОН УГЛИ», «АЗИЗ КЫЗЫ», «РУСТАМ ОГЛЫ», «БЕКОВИЧ УУЛУ». Слово «УГЛИ», «КЫЗЫ», «ОГЛЫ», «УУЛУ» — часть отчества, не теряй его и не приписывай к имени.",
   "- Латиница (surname_lat, name_lat) — как в документе/MRZ, заглавными.",
   "- Даты — в формате ДД.ММ.ГГГГ.",
   "- Пол — «М» или «Ж».",
@@ -642,6 +643,22 @@ function buildFields(ai, mrz, alt) {
   if (nd.length === 9) { f.number = prettyRuNumber(nd); f.series = nd.slice(0, 2); f.numberOnly = nd.slice(2); }
   else { f.series = ""; f.numberOnly = String(f.number || "").trim(); }
   if (confirmed.indexOf("number") >= 0) { confirmed.push("series"); confirmed.push("numberOnly"); }
+  // Кириллицу проверять нечем — кроме одного: в загранпаспорте латиница в MRZ
+  // это транслитерация той же самой кириллической фамилии. Прогоняем прочитанную
+  // кириллицу через нашу таблицу ICAO и сравниваем. Мелкое расхождение не в счёт
+  // (в паспортах до 2010 года правила были другие: ANDREY против ANDREI), а
+  // крупное значит, что кириллица прочитана неверно: «РУСКУННИКОВ» вместо
+  // «КАНУННИКОВА» — здесь и вылезает.
+  const ruVsMrz = (ruKey, mrzVal, human) => {
+    if (!mrz || !mrzVal || !f[ruKey]) return;
+    const my = translit(f[ruKey]);
+    if (my === mrzVal || editDist(my, mrzVal) <= 1) return;
+    warn.push(human + ": прочитано «" + f[ruKey] + "», но в MRZ стоит «" + mrzVal + "», а из прочитанного вышло бы «" + my +
+      "». Кириллица прочитана неуверенно — сверьте с паспортом.");
+    const i = confirmed.indexOf(ruKey);
+    if (i >= 0) confirmed.splice(i, 1);
+  };
+
   // Модель иногда приклеивает к фамилии код государства из MRZ:
   // «P<RUSKANUNNIKOV» → «РУСКАНУННИКОВ». Ловится сверкой с фамилией из MRZ.
   if (mrz && mrz.surnameLat && /^РУС/.test(f.surnameRu)) {
@@ -667,6 +684,8 @@ function buildFields(ai, mrz, alt) {
       f[key] = v;
     }
   }
+  ruVsMrz("surnameRu", mrz && mrz.surnameLat, "Фамилия");
+  ruVsMrz("nameRu", mrz && mrz.nameLat, "Имя");
   // Полей ниже в MRZ нет вовсе — транслитерируем сами по правилам загранпаспорта.
   f.patronymicLat = translit(f.patronymicRu);
   f.citizenshipEn = citizenshipEn(f.citizenship, mrz && mrz.nationality);
@@ -944,6 +963,21 @@ async function recognizeOne(buf, name, mime, ctx) {
     mrz: mrz ? { line1: mrz.line1, line2: mrz.line2, valid: !!mrz.valid, checks: mrz.checks } : null,
     mrzRaw: mrz ? null : mrzRaw, // что модель увидела вместо MRZ — для разбора ошибок
     spend, corrected: false, secondRead,
+    // Сырые ответы модели — чтобы потом заново прогнать разбор (сверку с MRZ,
+    // даты, транслитерацию) БЕЗ обращения к ИИ: правки сотрудников проверяются
+    // на них бесплатно. Персональных данных здесь не больше, чем в fields,
+    // и живёт это ровно столько же — до чистки истории.
+    raw: {
+      ai: {
+        doc_kind: ai.doc_kind, surname_ru: ai.surname_ru, name_ru: ai.name_ru, patronymic_ru: ai.patronymic_ru,
+        surname_lat: ai.surname_lat, name_lat: ai.name_lat, birth_date: ai.birth_date, sex: ai.sex,
+        birth_place: ai.birth_place, citizenship: ai.citizenship, number: ai.number,
+        issue_date: ai.issue_date, expiry_date: ai.expiry_date, authority: ai.authority,
+        mrz_line1: ai.mrz_line1, mrz_line2: ai.mrz_line2,
+      },
+      mrz: mrz ? { line1: mrz.line1, line2: mrz.line2 } : null,
+      alt: alt || null,
+    },
   };
   // Фото храним недолго — только чтобы разобрать ошибку, если сотрудник её пришлёт.
   try {
