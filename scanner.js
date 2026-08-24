@@ -1303,4 +1303,4 @@ function mount(app, deps) {
   setInterval(purgeOldFiles, 6 * 3600 * 1000);
 }
 
-module.exports = { mount, parseMrzTd3, mrzCheckDigit, buildFields, reconcileLat, mrzNamesSuspect, mrzNamesUnresolved, prettyRuNumber, translit, citizenshipEn, FIELDS };
+module.exports = { mount, recognizeOne, parseMrzTd3, mrzCheckDigit, buildFields, reconcileLat, mrzNamesSuspect, mrzNamesUnresolved, prettyRuNumber, translit, citizenshipEn, FIELDS };
