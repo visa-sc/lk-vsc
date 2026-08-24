@@ -1,0 +1,12 @@
+{
+  "name": "akfin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ak-co.ru — личные финансы (обособленный сервис)",
+  "main": "server.js",
+  "dependencies": {
+    "@simplewebauthn/server": "^9.0.3",
+    "adm-zip": "^0.5.14",
+    "express": "^4.19.2"
+  }
+}

@@ -161,3 +161,8 @@ amo-export/
 
 # Наблюдатель за правками сканера — рабочее состояние, не код
 .scannerLessonsSeen.json
+
+# ak-co.ru — обособленный сервис личных финансов (akfin): данные и сид приватны
+akfin/node_modules/
+akfin/.fin/
+akfin/fin.seed.json
