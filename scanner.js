@@ -416,7 +416,7 @@ const SCHEMA = {
   type: "object", additionalProperties: false,
   required: ["doc_kind", "surname_ru", "name_ru", "patronymic_ru", "surname_lat", "name_lat",
     "birth_date", "sex", "birth_place", "citizenship", "number", "issue_date", "expiry_date",
-    "authority", "mrz_line1", "mrz_line2", "notes", "page_box", "authority_box"],
+    "authority", "mrz_line1", "mrz_line2", "notes", "page_box", "authority_box", "page_rotation"],
   properties: {
     // Где на снимке сама страница с данными — чтобы вырезать её и перечитать
     // мелкий шрифт в исходном разрешении (см. cropToJpeg).
@@ -424,6 +424,9 @@ const SCHEMA = {
       type: "object", additionalProperties: false, required: ["x", "y", "w", "h"],
       properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } },
     },
+    // На сколько повернуть снимок, чтобы текст встал горизонтально: паспорт
+    // сплошь и рядом снимают боком, а на боковом тексте модель выдумывает.
+    page_rotation: { type: "number" },
     // Где именно строка с кодом подразделения — по ней делается вторая,
     // мелкая вырезка: код накрывают голограммой, и в масштабе страницы
     // «78004» превращается в «78604».
@@ -458,10 +461,20 @@ const LESSONS_SCHEMA = {
   properties: { lessons: { type: "array", items: { type: "string" } } },
 };
 
+// В промпт идут ТОЛЬКО правила, написанные человеком руками.
+//
+// Выведенные автоматически из правок (source: correction/example) оказались
+// вредны: обобщённые с одного снимка, они превращались в «если серия 66, в коде
+// подразделения 3 или 4 цифры» и «проверяй код по соседним цифрам (0→3, 6→0)» —
+// то есть прямо велели модели подменять буквы и цифры, вопреки главному
+// правилу «ничего не додумывай». К 34 таким правилам сканер начал выдавать
+// данные, которых в документе нет (правка Плинер от 24.08 по 12.jpeg).
+// Правки сотрудников остаются в разделе «Обучение» как запись и как эталон
+// для проверок — но промпт ими больше не засоряется.
 function lessonsBlock() {
-  const ls = lessons().slice(-MAX_LESSONS_IN_PROMPT);
+  const ls = lessons().filter((l) => l.source === "manual").slice(-MAX_LESSONS_IN_PROMPT);
   if (!ls.length) return "";
-  return "\n\nЧему научили сотрудники на прошлых документах (соблюдай):\n" + ls.map((l, i) => (i + 1) + ". " + l.text).join("\n");
+  return "\n\nПравила, добавленные сотрудниками вручную (соблюдай):\n" + ls.map((l, i) => (i + 1) + ". " + l.text).join("\n");
 }
 const SYS = [
   "Ты извлекаешь данные из фотографий и сканов удостоверяющих документов для визового агентства.",
@@ -478,6 +491,7 @@ const SYS = [
   "- birth_place — как напечатано ЦЕЛИКОМ, вместе с латинской частью после косой черты: «СВЕРДЛОВСКАЯ ОБЛ. / RUSSIA», «ПЕРМСКАЯ ОБЛ. / USSR», «Г. МОСКВА / USSR». Латинская часть — это страна рождения, у рождённых до 1991 года там стоит USSR, и её нельзя терять и нельзя менять на RUSSIA.",
   "- mrz_line1 и mrz_line2 — две нижние машиночитаемые строки (крупный моноширинный шрифт под фотографией), СИМВОЛ В СИМВОЛ, ровно по 44 знака каждая. Знак-заполнитель — «<» (шеврон), его в строках много подряд; не заменяй его пробелами и не пропускай. Не путай O и 0, I и 1. Пример вида: «P<RUSIVANOV<<IVAN<<<<<<<<<<<<<<<<<<<<<<<<<<<» и «7512345674RUS8503121M3001015<<<<<<<<<<<<<<04». Это самое важное поле — по нему сверяются номер и даты. ЕСЛИ машиночитаемых строк на снимке НЕ ВИДНО (обрезаны, залиты бликом, это другая страница) — верни для них ПУСТЫЕ строки. Ни в коем случае не составляй их сам из напечатанных данных: выдуманная MRZ хуже отсутствующей.",
   "- authority_box — положение СТРОКИ с кодом подразделения (там, где «МВД 12345» под надписью «Орган, выдавший документ / Authority») в процентах от размеров снимка: x, y, w, h. Рамку бери с запасом по ширине, чтобы код попал целиком. Если строки не видно — нули.",
+  "- page_rotation — на сколько градусов ПО ЧАСОВОЙ стрелке надо повернуть снимок, чтобы строки паспорта стали горизонтальными и читались слева направо: 0, 90, 180 или 270. Смотри на надпись «РОССИЙСКАЯ ФЕДЕРАЦИЯ» и машиночитаемые строки. Если снимок и так ровный — 0.",
   "- page_box — положение самой страницы с данными (та, где фотография и под ней две машиночитаемые строки) в ПРОЦЕНТАХ от размеров снимка: x и y — левый верхний угол, w и h — ширина и высота. Снимок часто сделан издалека, паспорт занимает лишь часть кадра — покажи именно его. Если страницы не видно, верни нули.",
   "- notes — короткая пометка по-русски, если с документом что-то не так (плохо видно, обрезано, блик, это не паспорт). Обязательно напиши сюда, если какая-то ЦИФРА читается неуверенно, и укажи поле: «код подразделения смазан», «не уверен в дате выдачи».",
 ].join("\n");
@@ -628,13 +642,20 @@ function decodeImage(buf, mime, name) {
   }
   return null; // PDF и прочее не режем
 }
-function cropToJpeg(buf, mime, name, box, padPct) {
-  const im = decodeImage(buf, mime, name);
+function cropToJpeg(buf, mime, name, box, padPct, rotate) {
+  let im = decodeImage(buf, mime, name);
   if (!im) return null;
   // Сколько точек снимка реально доходит до модели: она ужимает картинку до
   // 1568 px по длинной стороне. Пригодится, чтобы честно сказать «снимок мелкий».
   const delivered = (side) => Math.round(Math.min(side, 1568));
   const whole = { buf: null, delivered: delivered(Math.max(im.width, im.height)) };
+  // Рамки нет, но снимок лежит боком — поворачиваем целиком: одно это уже
+  // спасает чтение, модель на боковом тексте выдумывает.
+  if (!box && rotate) {
+    const rot = rotateRgba(im, rotate);
+    return { buf: Buffer.from(require("jpeg-js").encode({ data: rot.data, width: rot.width, height: rot.height }, 92).data),
+      w: rot.width, h: rot.height, gain: 1, used: { x: 0, y: 0, w: 100, h: 100 }, delivered: whole.delivered, rotatedOnly: true };
+  }
   if (!box) return whole;
   const pad = padPct || 5;
   let x = Math.round(im.width * (box.x - pad) / 100), y = Math.round(im.height * (box.y - pad) / 100);
@@ -643,8 +664,12 @@ function cropToJpeg(buf, mime, name, box, padPct) {
   w = Math.min(im.width - x, w); h = Math.min(im.height - y, h);
   if (w < 200 || h < 120) return whole;                      // вырезка слишком мелкая — толку не будет
   if (w * h > 0.92 * im.width * im.height) return whole;     // это почти весь кадр, резать незачем
-  const out = Buffer.alloc(w * h * 4);
+  let out = Buffer.alloc(w * h * 4);
   for (let r = 0; r < h; r++) im.data.copy(out, r * w * 4, ((y + r) * im.width + x) * 4, ((y + r) * im.width + x + w) * 4);
+  if (rotate) {
+    const rot = rotateRgba({ data: out, width: w, height: h }, rotate);
+    out = rot.data; w = rot.width; h = rot.height;
+  }
   // Насколько крупнее станет страница в глазах модели. Картинку она всё равно
   // ужимает до 1568 px по длинной стороне, поэтому выигрыш даёт не сама резка,
   // а то, что из кадра ушло лишнее. Если снимок и так мелкий (скриншот 369x800),
@@ -656,6 +681,26 @@ function cropToJpeg(buf, mime, name, box, padPct) {
   // потом пересчитываются координаты внутри вырезки в координаты снимка.
   const used = { x: x / im.width * 100, y: y / im.height * 100, w: w / im.width * 100, h: h / im.height * 100 };
   return { buf: Buffer.from(require("jpeg-js").encode({ data: out, width: w, height: h }, 92).data), w, h, gain, used, delivered: delivered(Math.max(w, h)) };
+}
+// Поворот картинки на 90/180/270 по часовой. Паспорт очень часто снимают
+// боком, и на боковом тексте модель плывёт вплоть до полной выдумки.
+function rotateRgba(im, deg) {
+  const d = ((Math.round(deg / 90) * 90) % 360 + 360) % 360;
+  if (!d) return im;
+  const W = im.width, H = im.height;
+  const nw = d === 180 ? W : H, nh = d === 180 ? H : W;
+  const out = Buffer.alloc(nw * nh * 4);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const si = (y * W + x) * 4;
+      let nx, ny;
+      if (d === 90) { nx = H - 1 - y; ny = x; }
+      else if (d === 180) { nx = W - 1 - x; ny = H - 1 - y; }
+      else { nx = y; ny = W - 1 - x; }
+      im.data.copy(out, (ny * nw + nx) * 4, si, si + 4);
+    }
+  }
+  return { data: out, width: nw, height: nh };
 }
 // Рамка строки — узкая полоска, к ней мерки страницы неприменимы.
 function saneLineBox(b) {
@@ -813,10 +858,20 @@ function buildFields(ai, mrz, alt) {
       }
     }
     if (my === mrzVal || editDist(my, mrzVal) <= 1) return;
-    warn.push(human + ": прочитано «" + f[ruKey] + "», но в MRZ стоит «" + mrzVal + "», а из прочитанного вышло бы «" + my +
-      "». Кириллица прочитана неуверенно — сверьте с паспортом.");
     const i = confirmed.indexOf(ruKey);
     if (i >= 0) confirmed.splice(i, 1);
+    // Расхождение в половину слова — это не «неточность», а нечитаемый снимок:
+    // модель выдала набор букв («ПАРВСАМИТИКМАРИН» при «PAVLIUK» в MRZ).
+    // Показывать такое как данные нельзя — выглядит выдуманным и вводит в
+    // заблуждение. Оставляем поле пустым и говорим, что известно из MRZ.
+    if (editDist(my, mrzVal) > Math.max(2, Math.round(mrzVal.length * 0.35))) {
+      warn.push(human + ": прочитать не удалось (со снимка вышло «" + f[ruKey] + "», это не похоже на «" + mrzVal +
+        "» из MRZ). Поле оставлено пустым — впишите вручную, латиницей это «" + mrzVal + "».");
+      f[ruKey] = "";
+      return;
+    }
+    warn.push(human + ": прочитано «" + f[ruKey] + "», но в MRZ стоит «" + mrzVal + "», а из прочитанного вышло бы «" + my +
+      "». Кириллица прочитана неуверенно — сверьте с паспортом.");
   };
 
   // Модель иногда приклеивает к фамилии код государства из MRZ:
@@ -901,7 +956,7 @@ function buildFields(ai, mrz, alt) {
       { src: "по всему снимку", v: f.authority },
       { src: "по вырезке страницы", v: alt && alt.authority },
       { src: "по вырезке строки", v: alt && alt.authorityLine },
-    ].filter((x) => /^\d{5}$/.test(digits(x.v)));
+    ].filter((x) => /^\d{4,5}$/.test(digits(x.v)));
     if (votes.length >= 2) {
       const count = new Map();
       votes.forEach((x) => count.set(digits(x.v), (count.get(digits(x.v)) || 0) + 1));
@@ -929,7 +984,7 @@ function buildFields(ai, mrz, alt) {
   if (altAuthority && f.authority) {
     const d = digitDiff(altAuthority, f.authority);
     const sameWord = altAuthority.replace(/[\d\s]/g, "") === f.authority.replace(/[\d\s]/g, "");
-    const wellFormed = /^(МВД|ФМС|УФМС|ГУВД|УВД)?\s*\d{5}$/i.test(altAuthority.trim());
+    const wellFormed = /^(МВД|ФМС|УФМС|ГУВД|УВД|МИД(\s+РОССИИ)?)?\s*\d{4,5}$/i.test(altAuthority.trim());
     if (altAuthority === f.authority) confirmed.push("authority");
     else if (alt.cropped && wellFormed) {
       // Вырезка страницы в исходном разрешении — самый надёжный источник для
@@ -953,7 +1008,7 @@ function buildFields(ai, mrz, alt) {
 
   // У загранпаспорта РФ код подразделения — ровно пять цифр. Меньше значит,
   // что модель их не дочитала (мелкий или размытый снимок).
-  if (f.authority && !/^\d{5}$/.test(f.authority.replace(/\D/g, ""))) {
+  if (f.authority && !/^\d{4,5}$/.test(f.authority.replace(/\D/g, ""))) {
     warn.push("Кем выдан: «" + f.authority + "» — у загранпаспорта РФ код подразделения из пяти цифр. Прочитано не полностью, введите вручную.");
   }
 
@@ -1019,7 +1074,7 @@ async function recognizeOne(buf, name, mime, ctx) {
       throw new Error("Не удалось прочитать «" + name + "»: файл HEIC повреждён или это живое фото (Live Photo). Пересохраните его в JPG.");
     }
   }
-  const block = mediaBlock(buf, name, mime);
+  let block = mediaBlock(buf, name, mime);
   if (!block) throw new Error("Формат «" + name + "» не поддерживается. Нужны JPG, PNG, HEIC, WEBP или PDF.");
   const task = "Извлеки данные из этого документа (обычно это разворот российского загранпаспорта). " +
     "Верни строго JSON по схеме. Если на снимке несколько документов — бери тот, что виден целиком." + lessonsBlock();
@@ -1080,6 +1135,57 @@ async function recognizeOne(buf, name, mime, ctx) {
     } catch (e) { console.warn("scanner: перечитка MRZ не удалась:", e.message); }
   }
 
+  // Паспорт сняли боком. Это самый злой случай: на повёрнутом тексте модель не
+  // «плохо читает», а выдумывает — выдаёт связные, но чужие ФИО (жалоба Плинер
+  // 24.08: «данные выглядят выдуманными»). Спрашивать у модели угол поворота
+  // бесполезно, она ошибается и в нём. Зато угол можно установить объективно:
+  // повернуть снимок и посмотреть, сойдутся ли контрольные цифры MRZ. Сошлись —
+  // значит прочитан настоящий документ, а не выдумка. Стоит это одного мелкого
+  // запроса на поворот и только для снимков, которые иначе не читаются.
+  // Признак «снимок надо крутить» — не только нечитаемая MRZ, но и кириллица,
+  // не похожая на неё: MRZ сильная модель дочитает и с бокового снимка, а ФИО
+  // так и останутся выдумкой.
+  const visualLooksWrong = () => {
+    if (!mrz || !mrz.surnameLat || !ai || !ai.surname_ru) return false;
+    const my = translit(String(ai.surname_ru).toUpperCase());
+    return editDist(my, mrz.surnameLat) > Math.max(2, Math.round(mrz.surnameLat.length * 0.35));
+  };
+  if (!mrz || !mrz.valid || visualLooksWrong()) {
+    const hint = Number(ai && ai.page_rotation);
+    const before = mrz && mrz.valid ? String(mrz.number || "").replace(/\D/g, "") : "";
+    const order = [90, 270, 180].sort((a, b) => (a === hint ? -1 : b === hint ? 1 : 0));
+    for (const deg of order) {
+      try {
+        const c = cropToJpeg(buf, mime, name, null, 0, deg);
+        if (!c || !c.buf) continue;
+        const blk = mediaBlock(c.buf, "rot.jpg", "image/jpeg");
+        const rr = await runJson({
+          model: model(), max_tokens: 300,
+          system: "Ты переписываешь машиночитаемую зону (MRZ) документа символ в символ.",
+          messages: [{ role: "user", content: [blk, { type: "text", text:
+            "Внизу страницы паспорта — две машиночитаемые строки моноширинным шрифтом, по 44 знака. Перепиши их знак в знак. Знак-заполнитель «<». Если строк не видно или они боком — верни две пустые строки, не выдумывай. Строго JSON: {\"mrz_line1\":\"…\",\"mrz_line2\":\"…\"}." }] }],
+        }, MRZ_SCHEMA);
+        track(rr);
+        const m = parseMrzTd3(rr.json && rr.json.mrz_line1, rr.json && rr.json.mrz_line2);
+        if (!m || !m.valid) continue;
+        // Тот же документ? Если MRZ уже была сошедшейся, номер обязан совпасть.
+        if (before && String(m.number || "").replace(/\D/g, "") !== before) continue;
+        // Угол найден — читаем документ заново уже ровным.
+        const rf = await runJson({
+          model: model(), max_tokens: 1500, system: SYS, output_config: { effort: "low" },
+          messages: [{ role: "user", content: [blk, { type: "text", text: task }] }],
+        }, SCHEMA);
+        track(rf);
+        if (rf && rf.json) ai = rf.json;
+        mrz = m;
+        buf = c.buf; mime = "image/jpeg"; name = String(name || "фото").replace(/\.[^.]+$/, "") + ".jpg";
+        block = blk;
+        usedModel = usedModel + "+поворот" + deg;
+        break;
+      } catch (e) { console.warn("scanner: поворот " + deg + " не удался:", e.message); }
+    }
+  }
+
   // Полная перечитка сильной моделью — только если документ вообще не прочитан.
   if (!ai.surname_ru && !ai.number && modelHard() !== model()) {
     try {
@@ -1106,7 +1212,8 @@ async function recognizeOne(buf, name, mime, ctx) {
     let cropBlock = null, cropGain = 1, cropUsed = null;
     try {
       const box = sanePageBox(ai.page_box);
-      const c = cropToJpeg(buf, mime, name, box, 5);
+      const rot = [90, 180, 270].indexOf(Number(ai.page_rotation)) >= 0 ? Number(ai.page_rotation) : 0;
+      const c = (box || rot) ? cropToJpeg(buf, mime, name, box, 5, rot) : null;
       if (c) {
         // Меньше ~900 точек на страницу — мелкий шрифт не различить никакими
         // ухищрениями, честнее об этом сказать сотруднику.
@@ -1126,7 +1233,17 @@ async function recognizeOne(buf, name, mime, ctx) {
         }, SCHEMA);
         track(rc);
         if (rc && rc.json) {
-          const j = rc.json;
+          let j = rc.json;
+          // Если на общем снимке MRZ не читалась (боком снят паспорт — обычное
+          // дело), а на вырезке читается и контрольные цифры сходятся, то
+          // главным становится чтение по вырезке: сошедшаяся MRZ — это
+          // доказательство, что прочитан настоящий документ, а не выдумка.
+          const mc0 = parseMrzTd3(j.mrz_line1, j.mrz_line2);
+          if (mc0 && mc0.valid && (!mrz || !mrz.valid)) {
+            ai = j; mrz = mc0;
+            usedModel = usedModel + "+вырезка";
+            j = rc.json;
+          }
           // Вырезке верим целиком только если она про тот же документ:
           // сверяем номер с подтверждённой MRZ.
           const same = mrz && mrz.valid
@@ -1151,7 +1268,7 @@ async function recognizeOne(buf, name, mime, ctx) {
                 x: used.x + ab.x * used.w / 100, y: used.y + ab.y * used.h / 100,
                 w: ab.w * used.w / 100, h: ab.h * used.h / 100,
               };
-              const line = cropToJpeg(buf, mime, name, abs, 2);
+              const line = cropToJpeg(buf, mime, name, abs, 2, [0, 90, 180, 270].indexOf(Number(ai.page_rotation)) >= 0 ? Number(ai.page_rotation) : 0);
               if (line && line.buf && line.w >= 120) {
                 const rl = await runJson({
                   model: model(), max_tokens: 80,
@@ -1221,7 +1338,7 @@ async function recognizeOne(buf, name, mime, ctx) {
         surname_lat: ai.surname_lat, name_lat: ai.name_lat, birth_date: ai.birth_date, sex: ai.sex,
         birth_place: ai.birth_place, citizenship: ai.citizenship, number: ai.number,
         issue_date: ai.issue_date, expiry_date: ai.expiry_date, authority: ai.authority,
-        mrz_line1: ai.mrz_line1, mrz_line2: ai.mrz_line2,
+        mrz_line1: ai.mrz_line1, mrz_line2: ai.mrz_line2, page_rotation: ai.page_rotation,
       },
       mrz: mrz ? { line1: mrz.line1, line2: mrz.line2 } : null,
       alt: alt || null,
