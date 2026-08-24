@@ -374,8 +374,14 @@ const SCHEMA = {
   type: "object", additionalProperties: false,
   required: ["doc_kind", "surname_ru", "name_ru", "patronymic_ru", "surname_lat", "name_lat",
     "birth_date", "sex", "birth_place", "citizenship", "number", "issue_date", "expiry_date",
-    "authority", "mrz_line1", "mrz_line2", "notes"],
+    "authority", "mrz_line1", "mrz_line2", "notes", "page_box"],
   properties: {
+    // Где на снимке сама страница с данными — чтобы вырезать её и перечитать
+    // мелкий шрифт в исходном разрешении (см. cropToJpeg).
+    page_box: {
+      type: "object", additionalProperties: false, required: ["x", "y", "w", "h"],
+      properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } },
+    },
     doc_kind: { type: "string", enum: DOC_KINDS },
     surname_ru: { type: "string" }, name_ru: { type: "string" }, patronymic_ru: { type: "string" },
     surname_lat: { type: "string" }, name_lat: { type: "string" },
@@ -420,6 +426,7 @@ const SYS = [
   "- authority — орган выдачи как напечатан, например «МВД 50001» или «ФМС 77712». Код подразделения набран мелко и часто смазан: читай его ПО ОДНОЙ ЦИФРЕ, не угадывай слово целиком. Легко спутать 6 и 8, 0 и 8, 3 и 8, 1 и 7 — если цифра нечёткая, выбери ту, у которой видны характерные штрихи (у 6 хвост наверху слева и замкнутая нижняя петля, у 8 две замкнутые петли).",
   "- birth_place — как напечатано ЦЕЛИКОМ, вместе с латинской частью после косой черты: «СВЕРДЛОВСКАЯ ОБЛ. / RUSSIA», «ПЕРМСКАЯ ОБЛ. / USSR», «Г. МОСКВА / USSR». Латинская часть — это страна рождения, у рождённых до 1991 года там стоит USSR, и её нельзя терять и нельзя менять на RUSSIA.",
   "- mrz_line1 и mrz_line2 — две нижние машиночитаемые строки (крупный моноширинный шрифт под фотографией), СИМВОЛ В СИМВОЛ, ровно по 44 знака каждая. Знак-заполнитель — «<» (шеврон), его в строках много подряд; не заменяй его пробелами и не пропускай. Не путай O и 0, I и 1. Пример вида: «P<RUSIVANOV<<IVAN<<<<<<<<<<<<<<<<<<<<<<<<<<<» и «7512345674RUS8503121M3001015<<<<<<<<<<<<<<04». Это самое важное поле — по нему сверяются номер и даты. ЕСЛИ машиночитаемых строк на снимке НЕ ВИДНО (обрезаны, залиты бликом, это другая страница) — верни для них ПУСТЫЕ строки. Ни в коем случае не составляй их сам из напечатанных данных: выдуманная MRZ хуже отсутствующей.",
+  "- page_box — положение самой страницы с данными (та, где фотография и под ней две машиночитаемые строки) в ПРОЦЕНТАХ от размеров снимка: x и y — левый верхний угол, w и h — ширина и высота. Снимок часто сделан издалека, паспорт занимает лишь часть кадра — покажи именно его. Если страницы не видно, верни нули.",
   "- notes — короткая пометка по-русски, если с документом что-то не так (плохо видно, обрезано, блик, это не паспорт). Обязательно напиши сюда, если какая-то ЦИФРА читается неуверенно, и укажи поле: «код подразделения смазан», «не уверен в дате выдачи».",
 ].join("\n");
 
@@ -476,6 +483,52 @@ async function heicToJpeg(buf, name) {
   const convert = require("heic-convert");
   const out = await convert({ buffer: buf, format: "JPEG", quality: 0.92 });
   return { buf: Buffer.from(out), name: String(name || "фото").replace(/\.hei[cf]$/i, "") + ".jpg" };
+}
+
+// ── Вырезка страницы паспорта ────────────────────────────────────────────
+// Снимок обычно делают «человек держит паспорт»: сам документ занимает четверть
+// кадра, а модель получает картинку, ужатую до 1568 px по длинной стороне.
+// Мелкий шрифт (код подразделения) превращается в десяток пикселей и не
+// читается никакой моделью. Лечится не переспрашиванием, а разрешением:
+// вырезаем страницу в ИСХОДНОМ качестве и задаём вопрос уже по ней.
+// Всё на чистом JS — jpeg-js и pngjs уже стоят, ничего системного не нужно.
+function decodeImage(buf, mime, name) {
+  const ext = path.extname(String(name || "")).toLowerCase();
+  const m = String(mime || "").toLowerCase();
+  if (m === "image/png" || ext === ".png") {
+    const { PNG } = require("pngjs");
+    const p = PNG.sync.read(buf);
+    return { data: Buffer.from(p.data), width: p.width, height: p.height };
+  }
+  if (/jpe?g/.test(m) || ext === ".jpg" || ext === ".jpeg") {
+    const im = require("jpeg-js").decode(buf, { useTArray: true });
+    return { data: Buffer.from(im.data.buffer || im.data), width: im.width, height: im.height };
+  }
+  return null; // PDF и прочее не режем
+}
+function cropToJpeg(buf, mime, name, box, padPct) {
+  const im = decodeImage(buf, mime, name);
+  if (!im) return null;
+  const pad = padPct || 5;
+  let x = Math.round(im.width * (box.x - pad) / 100), y = Math.round(im.height * (box.y - pad) / 100);
+  let w = Math.round(im.width * (box.w + pad * 2) / 100), h = Math.round(im.height * (box.h + pad * 2) / 100);
+  x = Math.max(0, Math.min(im.width - 1, x)); y = Math.max(0, Math.min(im.height - 1, y));
+  w = Math.min(im.width - x, w); h = Math.min(im.height - y, h);
+  if (w < 200 || h < 120) return null;                       // вырезка слишком мелкая — толку не будет
+  if (w * h > 0.92 * im.width * im.height) return null;      // это почти весь кадр, резать незачем
+  const out = Buffer.alloc(w * h * 4);
+  for (let r = 0; r < h; r++) im.data.copy(out, r * w * 4, ((y + r) * im.width + x) * 4, ((y + r) * im.width + x + w) * 4);
+  return Buffer.from(require("jpeg-js").encode({ data: out, width: w, height: h }, 92).data);
+}
+// Рамка от модели: проверяем на вменяемость, чтобы не резать по мусору.
+function sanePageBox(b) {
+  if (!b) return null;
+  const n = (v) => (typeof v === "number" && isFinite(v) ? v : NaN);
+  const x = n(b.x), y = n(b.y), w = n(b.w), h = n(b.h);
+  if ([x, y, w, h].some(isNaN)) return null;
+  if (w < 8 || h < 8 || w > 100 || h > 100) return null;
+  if (x < 0 || y < 0 || x + w > 101 || y + h > 101) return null;
+  return { x, y, w, h };
 }
 
 function mediaBlock(buf, name, mime) {
@@ -598,8 +651,15 @@ function buildFields(ai, mrz, alt) {
   if (altAuthority && f.authority) {
     const d = digitDiff(altAuthority, f.authority);
     const sameWord = altAuthority.replace(/[\d\s]/g, "") === f.authority.replace(/[\d\s]/g, "");
+    const wellFormed = /^(МВД|ФМС|УФМС|ГУВД|УВД)?\s*\d{5}$/i.test(altAuthority.trim());
     if (altAuthority === f.authority) confirmed.push("authority");
-    else if (d === 1 && sameWord) {
+    else if (alt.cropped && wellFormed) {
+      // Вырезка страницы в исходном разрешении — самый надёжный источник для
+      // мелкого шрифта: на целом снимке цифры просто не долетают до модели.
+      warn.push("Кем выдан: на общем снимке прочиталось «" + f.authority + "», а на увеличенной вырезке страницы — «" + altAuthority +
+        "». Взято второе (там шрифт крупнее), но сверьте глазами.");
+      f.authority = altAuthority;
+    } else if (d === 1 && sameWord) {
       warn.push("Кем выдан: при беглом чтении «" + f.authority + "», при повторном, прицельном — «" + altAuthority +
         "». Взято прицельное (различие в одной цифре), но сверьте глазами: код набран мелко.");
       f.authority = altAuthority;
@@ -702,21 +762,6 @@ async function recognizeOne(buf, name, mime, ctx) {
     model: mdl || model(), max_tokens: 1500, system: SYS, output_config: { effort: "low" },
     messages: [{ role: "user", content: [block, { type: "text", text: task + (nudge || "") }] }],
   });
-  // Прицельное чтение мелкого шрифта — двух полей, которые сверить больше не с
-  // чем: кода подразделения и даты выдачи. В MRZ их нет, контрольных цифр нет,
-  // а основной проход читает 19 полей разом и на мелких цифрах ошибается
-  // («МВД 66003» превращалось в «68003» четыре раза подряд). Спрошенная только
-  // про них, та же модель отвечает верно. Идёт параллельно основному проходу —
-  // времени не добавляет, стоит как ещё один снимок (~0,3 ₽).
-  const small = smallPrintCheck()
-    ? runJson({
-        model: model(), max_tokens: 200,
-        system: "Ты извлекаешь данные из фотографий документов для визового агентства. Отвечай строго тем, что видишь: ничего не додумывай. Если поля не видно — верни пустую строку.",
-        messages: [{ role: "user", content: [block, { type: "text", text:
-          "Найди в паспорте две строки: «Дата выдачи / Date of issue» и «Орган, выдавший документ / Authority». Код подразделения набран мелко — рассмотри каждую цифру отдельно, не угадывай число целиком. Если снимок мелкий или размытый и цифры не различаются уверенно — верни пустые строки, не гадай. Верни строго JSON: {\"issue_date\":\"ДД.ММ.ГГГГ\",\"authority\":\"МВД 12345\"}." }] }],
-      }, SMALL_SCHEMA).catch((e) => { console.warn("scanner: прицельное чтение не удалось:", e.message); return null; })
-    : Promise.resolve(null);
-
   const [r, rb] = await Promise.all([
     runJson(req(), SCHEMA),
     doubleRead()
@@ -773,9 +818,30 @@ async function recognizeOne(buf, name, mime, ctx) {
     } catch (e) { console.warn("scanner: полная перечитка не удалась:", e.message); }
   }
 
-  const rs = await small;
-  track(rs);
-  const alt = rs && rs.json ? { authority: rs.json.authority, issueDate: rs.json.issue_date } : null;
+  // Прицельное чтение мелкого шрифта — двух полей, которые сверить больше не с
+  // чем: кода подразделения и даты выдачи (в MRZ их нет, контрольных цифр нет).
+  // Главное здесь не «спросить ещё раз», а спросить по ВЫРЕЗКЕ страницы в
+  // исходном разрешении: на целом снимке «МВД 77438» читалось как 77436, 77449,
+  // 77409 — каждый раз по-новому, а по вырезке трижды из трёх верно.
+  let alt = null, cropped = false;
+  if (smallPrintCheck()) {
+    let smallBlock = block;
+    try {
+      const box = sanePageBox(ai.page_box);
+      const c = box && cropToJpeg(buf, mime, name, box, 5);
+      if (c) { smallBlock = mediaBlock(c, "crop.jpg", "image/jpeg"); cropped = true; }
+    } catch (e) { console.warn("scanner: вырезка страницы не удалась:", e.message); }
+    try {
+      const rs = await runJson({
+        model: model(), max_tokens: 200,
+        system: "Ты извлекаешь данные из фотографий документов для визового агентства. Отвечай строго тем, что видишь: ничего не додумывай. Если поля не видно — верни пустую строку.",
+        messages: [{ role: "user", content: [smallBlock, { type: "text", text:
+          "Найди в паспорте две строки: «Дата выдачи / Date of issue» и «Орган, выдавший документ / Authority». Код подразделения набран мелко — рассмотри каждую цифру отдельно, не угадывай число целиком. Если цифры не различаются уверенно — верни пустые строки, не гадай. Верни строго JSON: {\"issue_date\":\"ДД.ММ.ГГГГ\",\"authority\":\"МВД 12345\"}." }] }],
+      }, SMALL_SCHEMA);
+      track(rs);
+      if (rs && rs.json) alt = { authority: rs.json.authority, issueDate: rs.json.issue_date, cropped };
+    } catch (e) { console.warn("scanner: прицельное чтение не удалось:", e.message); }
+  }
   const { fields, warnings, confirmed } = buildFields(ai, mrz, alt);
 
   // Сверка двух чтений. MRZ подставляем ОДНУ И ТУ ЖЕ, чтобы сравнивать именно
