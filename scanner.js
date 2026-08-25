@@ -520,7 +520,7 @@ const MRZ_SCHEMA = {
 };
 const SMALL_SCHEMA = {
   type: "object", additionalProperties: false, required: ["issue_date", "authority"],
-  properties: { issue_date: { type: "string" }, authority: { type: "string" } },
+  properties: { issue_date: { type: "string" }, authority: { type: "string" }, patronymic_ru: { type: "string" } },
 };
 const EXAMPLE_SCHEMA = {
   type: "object", additionalProperties: false, required: ["lessons", "diff"],
@@ -1013,6 +1013,18 @@ function buildFields(ai, mrz, alt) {
   };
   latVsTranslit("surnameLat", "surnameRu", "Фамилия латиницей");
   latVsTranslit("nameLat", "nameRu", "Имя латиницей");
+  // Отчество: с Ь/Ъ/Ы русские слова не начинаются — такое чтение сбито.
+  // Если переспрос по вырезке дал осмысленный вариант, берём его; иначе честно
+  // предупреждаем.
+  if (/^[ЬЪЫ]/.test(f.patronymicRu || "") || /[A-Z]/.test(f.patronymicRu || "")) {
+    const p2 = String((alt && alt.patronymicRu) || "").trim().toUpperCase();
+    if (p2 && /^[А-ЯЁ][А-ЯЁ -]+$/.test(p2) && !/^[ЬЪЫ]/.test(p2)) {
+      warn.push("Отчество: со снимка вышло «" + f.patronymicRu + "», при повторном чтении по вырезке — «" + p2 + "». Взято второе, сверьте глазами.");
+      f.patronymicRu = p2;
+    } else {
+      warn.push("Отчество «" + f.patronymicRu + "» не похоже на русское слово — прочитано неуверенно, сверьте с паспортом.");
+    }
+  }
   // Полей ниже в MRZ нет вовсе — транслитерируем сами по правилам загранпаспорта.
   f.patronymicLat = translit(f.patronymicRu);
   f.citizenshipEn = citizenshipEn(f.citizenship, mrz && mrz.nationality);
@@ -1067,9 +1079,16 @@ function buildFields(ai, mrz, alt) {
         // Никто не сошёлся: берём пятизначный код, если он есть (потерять цифру
         // модель может легко, дорисовать лишнюю — почти нет), иначе чтение по
         // вырезке страницы как самое крупное.
-        // При равном счёте верим тому, кто смотрел крупнее: сначала вырезка
-        // строки, потом вырезка страницы, и лишь потом общий снимок.
-        const rank = (x) => (x.src === "по вырезке строки" ? 0 : x.src === "по вырезке страницы" ? 1 : 2);
+        // При равном счёте верим тому, кто смотрел крупнее: вырезка строки,
+        // потом страницы, потом общий снимок. НО на мелком снимке (страница
+        // меньше ~900 точек) вырезка ничего не увеличивает, а контекст теряет —
+        // там порядок обратный: живой пример, где вырезка строки выдала
+        // «МВД 7701» на месте верного «МВД 0123» из основного чтения.
+        const small = alt && alt.small;
+        const rank = (x) => {
+          const r = x.src === "по вырезке строки" ? 0 : x.src === "по вырезке страницы" ? 1 : 2;
+          return small ? 2 - r : r;
+        };
         const five = votes.filter((x) => digits(x.v).length === 5).sort((a, b) => rank(a) - rank(b));
         const pick = five[0] || votes.slice().sort((a, b) => rank(a) - rank(b))[0];
         f.authority = String(pick.v).trim();
@@ -1322,15 +1341,20 @@ async function recognizeOne(buf, name, mime, ctx) {
       const rot = [90, 180, 270].indexOf(Number(ai.page_rotation)) >= 0 ? Number(ai.page_rotation) : 0;
       const page = (pb || rot) ? cropToJpeg(buf, mime, name, pb, 5, rot) : null;
       if (page) pageShort = page.delivered;
+      // Отчество не похоже на русское слово (с Ь/Ъ/Ы слова не начинаются,
+      // латиницы в нём не бывает) — модель сбилась, переспрашиваем и его.
+      const badPatr = /^[ЬЪЫ]/.test(String(ai.patronymic_ru || "")) || /[A-Z]/.test(String(ai.patronymic_ru || ""));
       if (page && page.buf) {
         const rp = await runJson({
-          model: model(), max_tokens: 200,
+          model: model(), max_tokens: 250,
           system: "Ты извлекаешь данные из фотографий документов для визового агентства. Отвечай строго тем, что видишь: ничего не додумывай. Если поля не видно — верни пустую строку.",
           messages: [{ role: "user", content: [mediaBlock(page.buf, "crop.jpg", "image/jpeg"), { type: "text", text:
-            "Найди в паспорте две строки: «Дата выдачи / Date of issue» и «Орган, выдавший документ / Authority». Код подразделения набран мелко — рассмотри каждую цифру отдельно, не угадывай число целиком. Если цифры не различаются уверенно — верни пустые строки, не гадай. Строго JSON: {\"issue_date\":\"ДД.ММ.ГГГГ\",\"authority\":\"МВД 12345\"}." }] }],
+            "Найди в паспорте две строки: «Дата выдачи / Date of issue» и «Орган, выдавший документ / Authority». Код подразделения набран мелко — рассмотри каждую цифру отдельно, не угадывай число целиком. Если цифры не различаются уверенно — верни пустые строки, не гадай." +
+            (badPatr ? " Также перепиши ОТЧЕСТВО из строки «Имя / Given names» (второе слово после имени, кириллицей, буква в букву) в поле patronymic_ru." : "") +
+            " Строго JSON: {\"issue_date\":\"ДД.ММ.ГГГГ\",\"authority\":\"МВД 12345\"" + (badPatr ? ",\"patronymic_ru\":\"…\"" : "") + "}." }] }],
         }, SMALL_SCHEMA);
         track(rp);
-        if (rp && rp.json) alt = { cropped: true, trusted: false, authority: rp.json.authority, issueDate: rp.json.issue_date };
+        if (rp && rp.json) alt = { cropped: true, trusted: false, authority: rp.json.authority, issueDate: rp.json.issue_date, patronymicRu: rp.json.patronymic_ru || "" };
       }
       const ab = saneLineBox(ai.authority_box);
       // Рамку строки берём с запасом: модель указывает её приблизительно, а
@@ -1441,6 +1465,7 @@ async function recognizeOne(buf, name, mime, ctx) {
       }
     } catch (e) { console.warn("scanner: чтение по вырезке не удалось:", e.message); }
   }
+  if (alt && pageShort && pageShort < 900) alt.small = true;
   const { fields, warnings, confirmed } = buildFields(ai, mrz, alt);
   if (pageShort && pageShort < 900) {
     warnings.unshift("Снимок мелкий: страница паспорта — всего " + pageShort + " точек по длинной стороне. Мелкий шрифт (код подразделения, отчество, место рождения) на таком читается ненадёжно — лучше запросить исходное фото, а не пересланный скриншот.");
