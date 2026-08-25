@@ -13,6 +13,24 @@
 
   gtag('config', 'G-CD86GW8FPM');
 </script>
+
+<!-- Event snippet for Отправка формы для потенциальных клиентов conversion page -->
+<script>
+function gtag_report_conversion(url) {
+  var callback = function () {
+    if (typeof(url) != 'undefined') {
+      window.location = url;
+    }
+  };
+  gtag('event', 'conversion', {
+      'send_to': 'AW-18409333270/8l3UCJzmqOccEJbEoMpE',
+      'value': 1.0,
+      'currency': 'RUB',
+      'event_callback': callback
+  });
+  return false;
+}
+</script>
 <title>Spain Residence Permit for Foreigners: Digital Nomad, Non-Lucrative, Startup | VSC</title>
 <meta name="description" content="Get a Spanish residence permit in about 3 months, valid for 3 years. Apply from anywhere in the world, no obligatory stay, no Spanish taxes, no language exam. Family included. From EUR 4,000.">
 <link rel="canonical" href="https://visa-sc.com/">
@@ -944,6 +962,7 @@ p{margin:0 0 14px}
                 page_location: location.href
               });
             }
+            if (typeof window.gtag_report_conversion === "function") gtag_report_conversion();
             if (typeof window.ym === "function" && window.vscYmId) window.ym(window.vscYmId, "reachGoal", "lead");
           } else {
             setNote(form, (res && res.message) || "Could not send the request. Please call us at +7 495 369-18-67.");
