@@ -151,6 +151,8 @@ fin.seed.json
 
 # Лиды продающего ИИ-чата /chat_test (персональные контакты — не в git)
 .chatLeads.json
+# Журнал заявок с англоязычного лендинга visa-sc.com (персональные данные, только на проде)
+.vscomLeads.json
 .wazzupInbox.ndjson
 .wazzupRelayFailed.ndjson
 .chatKnowledge.md

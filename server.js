@@ -17,6 +17,7 @@ const esign = require("./esign"); // ПЭП-подпись (аналог fdoc) �
 const engineProxy = require("./engine-proxy"); // Мост к движку переводов (отдельный сервис translate-engine :3003, правит Зайцева); монтируется сразу после app — до body-парсеров
 const scannerMod = require("./scanner"); // Сканер паспортов (/scanner) — распознавание документов для сотрудников
 const chatMod = require("./chat"); // Продающий ИИ-чат по визам (/chat_test) — отдельный модуль, монтируется ниже
+const vscomMod = require("./vscom"); // Заявки с англоязычного лендинга visa-sc.com — отдельный модуль, монтируется ниже
 // Личные финансы переехали на ak-co.ru (сервис akfin) — модуль здесь больше не монтируется
 
 const app = express();
@@ -2295,6 +2296,22 @@ scannerMod.mount(app, { getStaffFromReq });
 // Изолирован: клиентский ЛК/amoCRM/переводы не затрагивает; канал до Anthropic
 // переиспользует env переводов (ANTHROPIC_API_KEY/BASE_URL/TRANSLATE_PROXY).
 chatMod.mount(app, { requireAdmin });
+
+// ── visa-sc.com: англоязычная копия лендинга «ВНЖ Испании» (visa-sc.ru/spain_vnzh/).
+// Сама страница — статика, её отдаёт nginx из /var/www/visa-sc-com; сюда nginx
+// проксирует ТОЛЬКО /api/vscom-lead и подменяет Host на voyotravel.ru, чтобы
+// host-зависимая логика ЛК ничего не заметила. Заявки уходят в три места:
+// amoCRM (сделка с тегом VSC-EN), письмо на director@visa-sc.ru и локальный
+// журнал .vscomLeads.json. Клиентский ЛК не затрагивается.
+vscomMod.mount(app, {
+  amoGetAllPages,
+  amoPost,
+  findMatchingContacts,
+  normalizeText,
+  amoBaseUrl: () => `https://${AMO_SUBDOMAIN}.amocrm.ru`,
+  sendMail: mail.sendMail,
+  requireStaff
+});
 
 // ── Личные финансы Андрея ПЕРЕЕХАЛИ на ak-co.ru (обособленный сервис akfin,
 // 25.08.2026). Здесь осталась только переадресация со старого адреса, чтобы
