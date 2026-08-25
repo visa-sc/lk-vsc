@@ -491,8 +491,11 @@ const SCHEMA = {
     // Где на снимке сама страница с данными — чтобы вырезать её и перечитать
     // мелкий шрифт в исходном разрешении (см. cropToJpeg).
     page_box: {
-      type: "object", additionalProperties: false, required: ["x", "y", "w", "h"],
-      properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } },
+      anyOf: [
+        { type: "object", additionalProperties: false, required: ["x", "y", "w", "h"],
+          properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } } },
+        { type: "array", items: { type: "number" } },
+      ],
     },
     // На сколько повернуть снимок, чтобы текст встал горизонтально: паспорт
     // сплошь и рядом снимают боком, а на боковом тексте модель выдумывает.
@@ -501,8 +504,11 @@ const SCHEMA = {
     // мелкая вырезка: код накрывают голограммой, и в масштабе страницы
     // «78004» превращается в «78604».
     authority_box: {
-      type: "object", additionalProperties: false, required: ["x", "y", "w", "h"],
-      properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } },
+      anyOf: [
+        { type: "object", additionalProperties: false, required: ["x", "y", "w", "h"],
+          properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } } },
+        { type: "array", items: { type: "number" } },
+      ],
     },
     doc_kind: { type: "string", enum: DOC_KINDS },
     surname_ru: { type: "string" }, name_ru: { type: "string" }, patronymic_ru: { type: "string" },
@@ -520,7 +526,14 @@ const MRZ_SCHEMA = {
 };
 const SMALL_SCHEMA = {
   type: "object", additionalProperties: false, required: ["issue_date", "authority"],
-  properties: { issue_date: { type: "string" }, authority: { type: "string" }, patronymic_ru: { type: "string" } },
+  properties: {
+    issue_date: { type: "string" }, authority: { type: "string" }, patronymic_ru: { type: "string" },
+    authority_box: { anyOf: [
+      { type: "object", additionalProperties: false, required: ["x", "y", "w", "h"],
+        properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } } },
+      { type: "array", items: { type: "number" } },
+    ] },
+  },
 };
 const EXAMPLE_SCHEMA = {
   type: "object", additionalProperties: false, required: ["lessons", "diff"],
@@ -741,6 +754,11 @@ function cropToJpeg(buf, mime, name, box, padPct, rotate) {
     const rot = rotateRgba({ data: out, width: w, height: h }, rotate);
     out = rot.data; w = rot.width; h = rot.height;
   }
+  // Мелкую вырезку увеличиваем вдвое (см. upscale2) — до разумного предела.
+  while (Math.max(w, h) < 1100 && w * h * 4 < 40e6) {
+    const up = upscale2({ data: out, width: w, height: h });
+    out = up.data; w = up.width; h = up.height;
+  }
   // Насколько крупнее станет страница в глазах модели. Картинку она всё равно
   // ужимает до 1568 px по длинной стороне, поэтому выигрыш даёт не сама резка,
   // а то, что из кадра ушло лишнее. Если снимок и так мелкий (скриншот 369x800),
@@ -773,8 +791,32 @@ function rotateRgba(im, deg) {
   }
   return { data: out, width: nw, height: nh };
 }
+// Билинейное увеличение вдвое. Информации не добавляет, но мелкий текст у
+// предела разрешения модель читает по нему ЗАМЕТНО лучше: на живом снимке
+// 606 px код подразделения без увеличения не читался вовсе, с ним — 10 из 10.
+function upscale2(im) {
+  const W = im.width * 2, H = im.height * 2, out = Buffer.alloc(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    const sy = y / 2, y0 = Math.floor(sy), y1 = Math.min(im.height - 1, y0 + 1), fy = sy - y0;
+    for (let x = 0; x < W; x++) {
+      const sx = x / 2, x0 = Math.floor(sx), x1 = Math.min(im.width - 1, x0 + 1), fx = sx - x0;
+      for (let c = 0; c < 4; c++) {
+        const a = im.data[(y0 * im.width + x0) * 4 + c], b = im.data[(y0 * im.width + x1) * 4 + c];
+        const d = im.data[(y1 * im.width + x0) * 4 + c], e = im.data[(y1 * im.width + x1) * 4 + c];
+        out[(y * W + x) * 4 + c] = Math.round((a * (1 - fx) + b * fx) * (1 - fy) + (d * (1 - fx) + e * fx) * fy);
+      }
+    }
+  }
+  return { data: out, width: W, height: H };
+}
+// Модель отдаёт рамку то объектом {x,y,w,h}, то массивом [x,y,w,h] — принимаем обе.
+function boxOf(b) {
+  if (Array.isArray(b) && b.length === 4) return { x: b[0], y: b[1], w: b[2], h: b[3] };
+  return b;
+}
 // Рамка строки — узкая полоска, к ней мерки страницы неприменимы.
 function saneLineBox(b) {
+  b = boxOf(b);
   if (!b) return null;
   const n = (v) => (typeof v === "number" && isFinite(v) ? v : NaN);
   const x = n(b.x), y = n(b.y), w = n(b.w), h = n(b.h);
@@ -785,6 +827,7 @@ function saneLineBox(b) {
 }
 // Рамка от модели: проверяем на вменяемость, чтобы не резать по мусору.
 function sanePageBox(b) {
+  b = boxOf(b);
   if (!b) return null;
   const n = (v) => (typeof v === "number" && isFinite(v) ? v : NaN);
   const x = n(b.x), y = n(b.y), w = n(b.w), h = n(b.h);
@@ -1073,7 +1116,11 @@ function buildFields(ai, mrz, alt) {
           warn.push("Кем выдан: одно из трёх чтений разошлось (" + list + "). Оставлено «" + String(win.v).trim() + "», но сверьте глазами.");
         }
         f.authority = String(win.v).trim();
-        if (best[0][1] === votes.length && votes.length >= 2) confirmed.push("authority");
+        // На мелком снимке (страница меньше ~900 точек) согласие чтений ничего
+        // не доказывает: цифры 6 и 8 там неразличимы, и оба чтения ошибаются
+        // одинаково — живой пример, где двое сошлись на «77718» вместо «77716».
+        // Галочку не ставим, предупреждение «снимок мелкий» уже стоит.
+        if (best[0][1] === votes.length && votes.length >= 2 && !(alt && alt.small)) confirmed.push("authority");
       } else {
         warn.push("Кем выдан: все чтения разные (" + list + ") — код набран мелко и, похоже, перекрыт голограммой. Введите вручную, глядя в паспорт.");
         // Никто не сошёлся: берём пятизначный код, если он есть (потерять цифру
@@ -1102,7 +1149,7 @@ function buildFields(ai, mrz, alt) {
     const d = digitDiff(altAuthority, f.authority);
     const sameWord = altAuthority.replace(/[\d\s]/g, "") === f.authority.replace(/[\d\s]/g, "");
     const wellFormed = /^(МВД|ФМС|УФМС|ГУВД|УВД|МИД(\s+РОССИИ)?)?\s*\d{4,5}$/i.test(altAuthority.trim());
-    if (altAuthority === f.authority) confirmed.push("authority");
+    if (altAuthority === f.authority && !(alt && alt.small)) confirmed.push("authority");
     else if (alt.cropped && wellFormed) {
       // Вырезка страницы в исходном разрешении — самый надёжный источник для
       // мелкого шрифта: на целом снимке цифры просто не долетают до модели.
@@ -1344,19 +1391,32 @@ async function recognizeOne(buf, name, mime, ctx) {
       // Отчество не похоже на русское слово (с Ь/Ъ/Ы слова не начинаются,
       // латиницы в нём не бывает) — модель сбилась, переспрашиваем и его.
       const badPatr = /^[ЬЪЫ]/.test(String(ai.patronymic_ru || "")) || /[A-Z]/.test(String(ai.patronymic_ru || ""));
+      let altLineBox = null;
       if (page && page.buf) {
         const rp = await runJson({
           model: model(), max_tokens: 250,
           system: "Ты извлекаешь данные из фотографий документов для визового агентства. Отвечай строго тем, что видишь: ничего не додумывай. Если поля не видно — верни пустую строку.",
           messages: [{ role: "user", content: [mediaBlock(page.buf, "crop.jpg", "image/jpeg"), { type: "text", text:
-            "Найди в паспорте две строки: «Дата выдачи / Date of issue» и «Орган, выдавший документ / Authority». Код подразделения набран мелко — рассмотри каждую цифру отдельно, не угадывай число целиком. Если цифры не различаются уверенно — верни пустые строки, не гадай." +
+            "Найди в паспорте две строки: «Дата выдачи / Date of issue» и «Орган, выдавший документ / Authority». Код подразделения набран мелко — рассмотри каждую цифру отдельно, не угадывай число целиком. На месте цифры, которая не читается уверенно, поставь знак вопроса — не придумывай её." +
             (badPatr ? " Также перепиши ОТЧЕСТВО из строки «Имя / Given names» (второе слово после имени, кириллицей, буква в букву) в поле patronymic_ru." : "") +
-            " Строго JSON: {\"issue_date\":\"ДД.ММ.ГГГГ\",\"authority\":\"МВД 12345\"" + (badPatr ? ",\"patronymic_ru\":\"…\"" : "") + "}." }] }],
+            " Верни также authority_box — положение строки «Орган, выдавший документ» на ЭТОМ снимке в процентах (x, y, w, h)." +
+            " Строго JSON: {\"issue_date\":\"ДД.ММ.ГГГГ\",\"authority\":\"...\"" + (badPatr ? ",\"patronymic_ru\":\"…\"" : "") + "}." }] }],
         }, SMALL_SCHEMA);
         track(rp);
-        if (rp && rp.json) alt = { cropped: true, trusted: false, authority: rp.json.authority, issueDate: rp.json.issue_date, patronymicRu: rp.json.patronymic_ru || "" };
+        if (rp && rp.json) {
+          alt = { cropped: true, trusted: false, authority: rp.json.authority, issueDate: rp.json.issue_date, patronymicRu: rp.json.patronymic_ru || "" };
+          altLineBox = saneLineBox(rp.json.authority_box);
+        }
       }
-      const ab = saneLineBox(ai.authority_box);
+      // Рамка строки кода: из основного прохода, а если он её не дал — из
+      // переспроса по вырезке (те координаты — внутри вырезки, пересчитываем
+      // в проценты исходного снимка).
+      let ab = saneLineBox(ai.authority_box);
+      if (!ab && altLineBox && page && page.used) {
+        const u = page.used;
+        ab = { x: u.x + altLineBox.x * u.w / 100, y: u.y + altLineBox.y * u.h / 100,
+               w: altLineBox.w * u.w / 100, h: altLineBox.h * u.h / 100 };
+      }
       // Рамку строки берём с запасом: модель указывает её приблизительно, а
       // впритык вырезанная полоска может не захватить крайнюю цифру.
       const line = ab && cropToJpeg(buf, mime, name, ab, 6);
@@ -1365,7 +1425,7 @@ async function recognizeOne(buf, name, mime, ctx) {
           model: model(), max_tokens: 80,
           system: "Ты переписываешь то, что видишь на снимке. Ничего не додумывай.",
           messages: [{ role: "user", content: [mediaBlock(line.buf, "line.jpg", "image/jpeg"), { type: "text", text:
-            "На картинке — строка из паспорта с кодом подразделения: «МВД» или «ФМС» и четыре-пять цифр. Перепиши её, рассматривая каждую цифру отдельно. Часть цифры может быть перекрыта голограммой — ориентируйся на видимые части контура. Строго JSON: {\"authority\":\"МВД 12345\"}." }] }],
+            "На картинке — строка из паспорта с кодом подразделения: «МВД» или «ФМС» и четыре-пять цифр. Перепиши её по одной цифре, слева направо. На месте цифры, которая не читается уверенно, поставь знак вопроса — не придумывай. Часть цифры может быть перекрыта голограммой — ориентируйся на видимые части контура. Строго JSON: {\"authority\":\"...\"}." }] }],
         }, SMALL_SCHEMA);
         track(rl);
         if (rl && rl.json && /\d{4,5}/.test(String(rl.json.authority || ""))) {
@@ -1440,7 +1500,7 @@ async function recognizeOne(buf, name, mime, ctx) {
                   model: model(), max_tokens: 80,
                   system: "Ты переписываешь то, что видишь на снимке. Ничего не додумывай.",
                   messages: [{ role: "user", content: [mediaBlock(line.buf, "line.jpg", "image/jpeg"), { type: "text", text:
-                    "На картинке — строка из паспорта с кодом подразделения: «МВД» или «ФМС» и пять цифр. Перепиши её, рассматривая каждую цифру отдельно. Часть цифры может быть перекрыта голограммой — ориентируйся на видимые части контура. Строго JSON: {\"authority\":\"МВД 12345\"}." }] }],
+                    "На картинке — строка из паспорта с кодом подразделения: «МВД» или «ФМС» и пять цифр. Перепиши её по одной цифре, слева направо. На месте цифры, которая не читается уверенно, поставь знак вопроса — не придумывай. Часть цифры может быть перекрыта голограммой — ориентируйся на видимые части контура. Строго JSON: {\"authority\":\"...\"}." }] }],
                 }, SMALL_SCHEMA);
                 track(rl);
                 if (rl && rl.json && /\d{5}/.test(String(rl.json.authority || ""))) alt.authorityLine = String(rl.json.authority).trim();
@@ -1458,7 +1518,7 @@ async function recognizeOne(buf, name, mime, ctx) {
           model: model(), max_tokens: 200,
           system: "Ты извлекаешь данные из фотографий документов для визового агентства. Отвечай строго тем, что видишь: ничего не додумывай. Если поля не видно — верни пустую строку.",
           messages: [{ role: "user", content: [block, { type: "text", text:
-            "Найди в паспорте две строки: «Дата выдачи / Date of issue» и «Орган, выдавший документ / Authority». Код подразделения набран мелко — рассмотри каждую цифру отдельно, не угадывай число целиком. Если цифры не различаются уверенно — верни пустые строки, не гадай. Верни строго JSON: {\"issue_date\":\"ДД.ММ.ГГГГ\",\"authority\":\"МВД 12345\"}." }] }],
+            "Найди в паспорте две строки: «Дата выдачи / Date of issue» и «Орган, выдавший документ / Authority». Код подразделения набран мелко — рассмотри каждую цифру отдельно, не угадывай число целиком. На месте цифры, которая не читается уверенно, поставь знак вопроса — не придумывай её. Верни строго JSON: {\"issue_date\":\"ДД.ММ.ГГГГ\",\"authority\":\"...\"}." }] }],
         }, SMALL_SCHEMA);
         track(rs);
         if (rs && rs.json) alt = { authority: rs.json.authority, issueDate: rs.json.issue_date, cropped: false, trusted: false };
