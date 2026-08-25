@@ -244,6 +244,26 @@ function latLoose(sIn) {
     .replace(/([A-Z])\1+/g, "$1");
 }
 
+// Обратная транслитерация MRZ-латиницы в кириллицу. Неоднозначна в общем
+// случае, поэтому результат принимается ТОЛЬКО если прямая транслитерация
+// возвращает исходную строку (круговой прогон): ALEKSANDRA → АЛЕКСАНДРА →
+// ALEKSANDRA — совпало, значит восстановление честное.
+const REV_PAIRS = [["SHCH","Щ"],["ZH","Ж"],["KH","Х"],["TS","Ц"],["CH","Ч"],["SH","Ш"],
+  ["IU","Ю"],["IA","Я"],["IE","Ъ"],["A","А"],["B","Б"],["V","В"],["G","Г"],["D","Д"],
+  ["E","Е"],["Z","З"],["I","И"],["K","К"],["L","Л"],["M","М"],["N","Н"],["O","О"],
+  ["P","П"],["R","Р"],["S","С"],["T","Т"],["U","У"],["F","Ф"],["Y","Ы"]];
+function reverseTranslit(lat) {
+  const src = String(lat || "").toUpperCase();
+  let out = "", i = 0;
+  outer: while (i < src.length) {
+    for (const [l, c] of REV_PAIRS) {
+      if (src.startsWith(l, i)) { out += c; i += l.length; continue outer; }
+    }
+    out += src[i]; i++;
+  }
+  return translit(out) === src ? out : null;
+}
+
 // Кириллица прочитана с ошибкой в одну букву — а латиница в MRZ говорит, как
 // должно быть: «СЫГАНКОВА» при «TSYGANKOVA» это «ЦЫГАНКОВА», «ЮЛЯ» при
 // «IULIIA» это «ЮЛИЯ». Перебираем все правки в один знак (замена, удаление,
@@ -376,6 +396,22 @@ function latVerdict(mrz, ai) {
 }
 function mrzNamesSuspect(mrz, ai) { return mrz ? latVerdict(mrz, ai).suspect : false; }
 function mrzNamesUnresolved(mrz, ai) { return mrz ? latVerdict(mrz, ai).unresolved : false; }
+// Модель «причёсывает» латиницу под привычное английское написание — KS
+// превращается в X (ALEKSANDRA → ALEXANDRA) разом и в паспорте, и в MRZ,
+// поэтому сверки двух чтений молчат. Выдаёт её транслитерация кириллицы:
+// звучание совпало, буквы нет. Это ещё не приговор (в паспорте может законно
+// стоять старое написание — ALEXEY у Осокина), но повод перечитать MRZ.
+function anglicismSuspect(mrz, ai) {
+  if (!mrz) return false;
+  const pairs = [[ai && ai.surname_ru, mrz.surnameLat], [ai && ai.name_ru, mrz.nameLat]];
+  for (const [ru, mv] of pairs) {
+    const r = String(ru || "").trim().toUpperCase();
+    if (/[A-Z]/.test(r) && mv) return true;               // латиница в кириллическом поле — само по себе подозрение
+    const my = translit(r);
+    if (my && mv && my !== mv && latLoose(my) === latLoose(mv)) return true;
+  }
+  return false;
+}
 
 // ── Claude ────────────────────────────────────────────────────────────────
 function aiConfigured() { return !!process.env.ANTHROPIC_API_KEY; }
@@ -856,6 +892,20 @@ function buildFields(ai, mrz, alt) {
   if (nd.length === 9) { f.number = prettyRuNumber(nd); f.series = nd.slice(0, 2); f.numberOnly = nd.slice(2); }
   else { f.series = ""; f.numberOnly = String(f.number || "").trim(); }
   if (confirmed.indexOf("number") >= 0) { confirmed.push("series"); confirmed.push("numberOnly"); }
+  // В кириллическом поле латиница или пусто (модель списала латинскую строку
+  // или поле стёрто правилом «мусор → пусто») — восстанавливаем из MRZ
+  // обратной транслитерацией, если круговой прогон сходится.
+  for (const [key, mrzVal, human] of [["surnameRu", mrz && mrz.surnameLat, "Фамилия"], ["nameRu", mrz && mrz.nameLat, "Имя"]]) {
+    if (!mrzVal) continue;
+    const v = String(f[key] || "");
+    if (v && /[А-ЯЁ]/.test(v)) continue;                  // кириллица есть — не наш случай
+    const rec = reverseTranslit(mrzVal);
+    if (rec) {
+      warn.push(human + ": по-русски со снимка не прочиталось" + (v ? " (вышло «" + v + "»)" : "") +
+        " — восстановлено из MRZ: «" + rec + "». Сверьте глазами.");
+      f[key] = rec;
+    }
+  }
   // Модель иногда набирает кириллическое поле вперемешку с латиницей:
   // «СОРОKIN» вместо «СОРОКИН» — буквы-двойники неразличимы на глаз. Чиним
   // подстановкой двойников, но принимаем результат ТОЛЬКО если он сходится
@@ -1164,20 +1214,20 @@ async function recognizeOne(buf, name, mime, ctx) {
   // Отдельный повод перечитать: контрольные цифры сошлись, но имена в первой
   // строке разошлись с напечатанным в паспорте (цифрами имена не проверяются)
   // И спор не решается транслитерацией кириллицы. Если решается — не платим.
-  if (!mrz || !mrz.valid || mrzNamesUnresolved(mrz, ai)) {
+  if (!mrz || !mrz.valid || mrzNamesUnresolved(mrz, ai) || anglicismSuspect(mrz, ai)) {
     try {
       const r2 = await runJson({
         model: modelHard(), max_tokens: 300, output_config: { effort: "low" },
         system: "Ты переписываешь машиночитаемую зону (MRZ) документа символ в символ.",
         messages: [{ role: "user", content: [block, { type: "text", text:
-          "Внизу страницы паспорта — две машиночитаемые строки крупным моноширинным шрифтом, ровно по 44 знака каждая. Перепиши их ТОЧНО, знак в знак. Знак-заполнитель — «<» (не пробел, не «к»). В первой строке фамилия отделена от имени ДВУМЯ знаками «<<» подряд — не потеряй ни один из них и не потеряй ни одной буквы фамилии. Если этих строк на снимке нет или они не читаются — верни две ПУСТЫЕ строки; не составляй их из напечатанных данных. Верни строго JSON: {\"mrz_line1\":\"…\",\"mrz_line2\":\"…\"}." }] }],
+          "Внизу страницы паспорта — две машиночитаемые строки крупным моноширинным шрифтом, ровно по 44 знака каждая. Перепиши их ТОЧНО, знак в знак. Знак-заполнитель — «<» (не пробел, не «к»). В первой строке фамилия отделена от имени ДВУМЯ знаками «<<» подряд — не потеряй ни один из них и не потеряй ни одной буквы фамилии. Буквосочетания переписывай ровно как напечатаны: KS и X — РАЗНЫЕ написания (ALEKSANDRA ≠ ALEXANDRA), не заменяй одно другим. Если этих строк на снимке нет или они не читаются — верни две ПУСТЫЕ строки; не составляй их из напечатанных данных. Верни строго JSON: {\"mrz_line1\":\"…\",\"mrz_line2\":\"…\"}." }] }],
       }, MRZ_SCHEMA);
       track(r2);
       const m2 = parseMrzTd3(r2.json && r2.json.mrz_line1, r2.json && r2.json.mrz_line2);
       // Что лучше: сошедшиеся контрольные цифры весомее, но имена, сошедшиеся
       // с напечатанным, тоже стоят в зачёт — иначе «валидная» MRZ с испорченной
       // первой строкой останется победителем.
-      const score = (m) => (!m ? -1 : (m.valid ? 3 : 0) + (mrzNamesSuspect(m, ai) ? 0 : 2));
+      const score = (m) => (!m ? -1 : (m.valid ? 3 : 0) + (mrzNamesSuspect(m, ai) ? 0 : 2) + (anglicismSuspect(m, ai) ? 0 : 1));
       if (m2 && score(m2) > score(mrz)) { mrz = m2; usedModel = usedModel + "+" + r2.model; }
       if (r2.json) { mrzRaw.retry1 = String(r2.json.mrz_line1 || ""); mrzRaw.retry2 = String(r2.json.mrz_line2 || ""); }
     } catch (e) { console.warn("scanner: перечитка MRZ не удалась:", e.message); }
