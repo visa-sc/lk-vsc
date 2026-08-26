@@ -107,7 +107,14 @@ function store() {
   if (!c.waitSec) c.waitSec = 240;                              // сколько ждём появления в amo
   if (!c.testName) c.testName = "ТЕСТ ИНТЕГРАЦИИ";
   if (!c.testPhone) c.testPhone = "+79990000042";               // телефон для заявок с форм
+  // Сверка (OnlinePBX и Flexbe против amoCRM): доступы вводятся на странице.
+  if (!c.pbx || typeof c.pbx !== "object") c.pbx = { domain: "", key: "" };
+  if (!Array.isArray(c.flexbe) || !c.flexbe.length) c.flexbe = [
+    { id: "visa-sc", label: "visa-sc.ru", apiUrl: "https://visa-sc.ru/api/v1/leads", apiKey: "" },
+    { id: "spb", label: "spb.visa-sc.ru", apiUrl: "https://spb.visa-sc.ru/api/v1/leads", apiKey: "" },
+  ];
   if (!Array.isArray(_store.runs)) _store.runs = [];
+  if (!Array.isArray(_store.recons)) _store.recons = [];
   return _store;
 }
 function save() {
@@ -535,6 +542,206 @@ function mount(app, deps) {
     return delay;
   }
 
+  // ── Сверка за период: OnlinePBX и Flexbe ↔ amoCRM ──────────────────────
+  // Пассивная проверка (задача Андрея 26.08): каждый номер, с которого был
+  // входящий звонок, и каждая заявка из Flexbe должны существовать в amoCRM
+  // контактом. Ничего не создаём и не удаляем — только читаем и сравниваем.
+  let reconRunning = false;
+  let reconCurrent = null;
+  function rlog(msg) {
+    if (!reconCurrent) return;
+    reconCurrent.log.push({ at: Date.now(), msg });
+    if (reconCurrent.log.length > 400) reconCurrent.log.splice(0, reconCurrent.log.length - 400);
+    console.log("PHONETEST-RECON:", msg);
+  }
+
+  // Входящие звонки из OnlinePBX. Авторизация двухшаговая: auth_key меняем на
+  // временные key_id/key, ими подписываем запрос истории.
+  async function pbxCalls(pbx, fromTs, toTs) {
+    const dom = String(pbx.domain || "").trim();
+    const form = (o) => new URLSearchParams(o).toString();
+    const FH = { "Content-Type": "application/x-www-form-urlencoded" };
+    const auth = await axios.post(
+      "https://api.onlinepbx.ru/" + dom + "/auth.json",
+      form({ auth_key: String(pbx.key || "").trim(), new: "true" }),
+      { headers: FH, timeout: 30000 }
+    );
+    const a = auth.data;
+    if (!a || String(a.status) !== "1" || !a.data || !a.data.key_id) {
+      throw new Error("OnlinePBX не принял ключ: " + JSON.stringify(a).slice(0, 200));
+    }
+    const r = await axios.post(
+      "https://api.onlinepbx.ru/" + dom + "/mongo_history/search.json",
+      form({ start_stamp_from: String(Math.floor(fromTs / 1000)), start_stamp_to: String(Math.floor(toTs / 1000)) }),
+      { headers: Object.assign({ "x-pbx-authentication": a.data.key_id + ":" + a.data.key }, FH), timeout: 60000 }
+    );
+    const d = r.data;
+    if (!d || String(d.status) !== "1") throw new Error("OnlinePBX не отдал историю: " + JSON.stringify(d).slice(0, 200));
+    let rows = d.data;
+    if (rows && !Array.isArray(rows)) rows = rows.list || rows.rows || rows.items || [];
+    if (!Array.isArray(rows)) rows = [];
+    const calls = [];
+    for (const row of rows) {
+      const dir = String(row.accountcode || row.direction || "").toLowerCase();
+      if (dir && dir.indexOf("inbound") === -1) continue; // явно не входящий
+      const caller = digits(row.caller_id_number || row.caller || row.from || "");
+      const callee = digits(row.destination_number || row.callee || row.to || "");
+      const ts = Number(row.start_stamp || row.start || 0) * 1000;
+      if (caller.length < 10) continue; // внутренние и скрытые номера
+      calls.push({ caller, callee, ts });
+    }
+    if (rows.length && !calls.length) {
+      rlog("историю получил (" + rows.length + " записей), но входящих не распознал; поля записи: " + Object.keys(rows[0] || {}).join(", "));
+    }
+    return calls;
+  }
+
+  // Заявки из Flexbe. Формат их API уточняется при первом живом ключе, поэтому
+  // разбор терпимый: ищем массив в ответе и телефон в полях каждой записи.
+  function parseAnyTs(v) {
+    if (v == null) return null;
+    if (typeof v === "number") return v > 1e12 ? v : v * 1000;
+    const t = Date.parse(String(v).replace(" ", "T"));
+    return isNaN(t) ? null : t;
+  }
+  function digDeep(obj, test, depth) {
+    if (depth > 3 || obj == null) return null;
+    if (typeof obj === "string" || typeof obj === "number") return test(String(obj)) ? String(obj) : null;
+    if (typeof obj !== "object") return null;
+    for (const k of Object.keys(obj)) {
+      const r = digDeep(obj[k], test, depth + 1);
+      if (r) return r;
+    }
+    return null;
+  }
+  async function flexbeFetch(site, fromTs, toTs) {
+    const r = await axios.get(site.apiUrl, {
+      params: { api_key: site.apiKey, limit: 100 },
+      headers: { "X-API-KEY": site.apiKey },
+      timeout: 30000, validateStatus: () => true,
+    });
+    if (r.status !== 200) throw new Error("HTTP " + r.status + ": " + JSON.stringify(r.data).slice(0, 200));
+    let list = r.data;
+    if (list && !Array.isArray(list)) list = list.leads || list.data || list.items || list.result || null;
+    if (list && !Array.isArray(list) && Array.isArray(list.items)) list = list.items;
+    if (!Array.isArray(list)) throw new Error("не понял формат ответа Flexbe: " + JSON.stringify(r.data).slice(0, 250));
+    const out = [];
+    for (const it of list) {
+      const phoneRaw = it.phone || it.tel || digDeep(it, (v) => {
+        const d10 = digits(v);
+        return d10.length >= 10 && d10.length <= 11 && /^[+]?[-()\d\s]+$/.test(String(v));
+      }, 0);
+      const phone = digits(phoneRaw || "");
+      if (phone.length < 10) continue;
+      const ts = parseAnyTs(it.created_at || it.date || it.time || it.created || null);
+      if (ts != null && (ts < fromTs || ts > toTs)) continue;
+      out.push({ phone, name: it.name || null, ts });
+    }
+    return out;
+  }
+
+  async function amoFindByPhone(num) {
+    const base = amoBaseUrl();
+    try {
+      const data = await amoBg(() => amoGet(base + "/api/v4/contacts", { query: last10(num), limit: 10 }));
+      return ((data && data._embedded && data._embedded.contacts) || []).map((c) => ({ id: c.id, name: c.name }));
+    } catch (e) {
+      if (e && e.response && e.response.status === 204) return [];
+      throw e;
+    }
+  }
+
+  async function runRecon(opts) {
+    if (reconRunning) throw new Error("сверка уже идёт");
+    reconRunning = true;
+    const cfg = store().config;
+    const hours = Math.min(168, Math.max(1, Number((opts && opts.hours) || 24)));
+    const toTs = Date.now(), fromTs = toTs - hours * 3600000;
+    reconCurrent = { id: newId(), startedAt: toTs, hours, by: (opts && opts.by) || "", log: [], pbx: null, forms: [], summary: null, finishedAt: null };
+    try {
+      const ourPhones = new Set(cfg.numbers.map((n) => last10(n.phone)));
+      // 1) Звонки OnlinePBX
+      if (cfg.pbx && cfg.pbx.domain && cfg.pbx.key) {
+        try {
+          rlog("запрашиваю входящие OnlinePBX за " + hours + " ч");
+          const calls = await pbxCalls(cfg.pbx, fromTs, toTs);
+          const uniq = new Map();
+          for (const c of calls) {
+            const k = last10(c.caller);
+            if (ourPhones.has(k)) continue; // наши собственные номера
+            const u = uniq.get(k) || { phone: c.caller, count: 0, firstAt: c.ts, lastAt: c.ts, to: c.callee };
+            u.count++;
+            if (c.ts) { u.firstAt = Math.min(u.firstAt || c.ts, c.ts); u.lastAt = Math.max(u.lastAt || 0, c.ts); }
+            uniq.set(k, u);
+          }
+          rlog("входящих звонков: " + calls.length + ", уникальных внешних номеров: " + uniq.size);
+          const missing = [];
+          let checked = 0, foundN = 0;
+          for (const [k, u] of uniq) {
+            const contacts = await amoFindByPhone(k);
+            checked++;
+            if (contacts.length) foundN++;
+            else missing.push(u);
+            if (checked % 25 === 0) rlog("сверено с amoCRM: " + checked + " из " + uniq.size);
+            await new Promise((r) => setTimeout(r, 150));
+          }
+          reconCurrent.pbx = { calls: calls.length, unique: uniq.size, found: foundN, missing };
+          rlog("звонки: найдено в amoCRM " + foundN + " из " + uniq.size + (missing.length ? ", ПРОПАЛО: " + missing.length : ""));
+        } catch (e) {
+          reconCurrent.pbx = { error: String((e && e.message) || e) };
+          rlog("OnlinePBX: " + reconCurrent.pbx.error);
+        }
+      } else {
+        reconCurrent.pbx = { skipped: "не заданы домен и ключ OnlinePBX" };
+        rlog("звонки пропущены: нет доступов OnlinePBX");
+      }
+      // 2) Заявки Flexbe по сайтам
+      for (const site of cfg.flexbe || []) {
+        const fr = { id: site.id, label: site.label };
+        if (!site.apiKey || !site.apiUrl) {
+          fr.skipped = "нет ключа API";
+          rlog("форма " + site.label + " пропущена: нет ключа");
+          reconCurrent.forms.push(fr);
+          continue;
+        }
+        try {
+          rlog("запрашиваю заявки " + site.label);
+          const leads = await flexbeFetch(site, fromTs, toTs);
+          const missing = [];
+          let foundN = 0;
+          for (const l of leads) {
+            const contacts = await amoFindByPhone(l.phone);
+            if (contacts.length) foundN++;
+            else missing.push(l);
+            await new Promise((r) => setTimeout(r, 150));
+          }
+          fr.leads = leads.length; fr.found = foundN; fr.missing = missing;
+          rlog(site.label + ": заявок " + leads.length + ", в amoCRM " + foundN + (missing.length ? ", ПРОПАЛО: " + missing.length : ""));
+        } catch (e) {
+          fr.error = String((e && e.message) || e);
+          rlog(site.label + ": " + fr.error);
+        }
+        reconCurrent.forms.push(fr);
+      }
+      const p = reconCurrent.pbx || {};
+      reconCurrent.summary = {
+        calls: p.calls || 0, unique: p.unique || 0,
+        callsMissing: (p.missing && p.missing.length) || 0,
+        formsLeads: reconCurrent.forms.reduce((n, f) => n + (f.leads || 0), 0),
+        formsMissing: reconCurrent.forms.reduce((n, f) => n + ((f.missing && f.missing.length) || 0), 0),
+        errors: [p.error].concat(reconCurrent.forms.map((f) => f.error)).filter(Boolean).length,
+        skipped: [p.skipped].concat(reconCurrent.forms.map((f) => f.skipped)).filter(Boolean).length,
+      };
+      reconCurrent.finishedAt = Date.now();
+      rlog("сверка завершена");
+      const st = store();
+      st.recons.push(JSON.parse(JSON.stringify(reconCurrent)));
+      if (st.recons.length > 30) st.recons.splice(0, st.recons.length - 30);
+      save();
+      return reconCurrent;
+    } finally { reconRunning = false; }
+  }
+
   // ── API ────────────────────────────────────────────────────────────────
   app.get("/phone_test", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -555,7 +762,52 @@ function mount(app, deps) {
       })),
       dict: { sources: SRC_NAMES, regions: REG_NAMES, callSources: CALL_SOURCE_ENUM },
       smsReady: !!SMS_API(),
+      recon: {
+        running: reconRunning,
+        current: reconCurrent && !reconCurrent.finishedAt ? reconCurrent : null,
+        last: (st.recons && st.recons.length) ? st.recons[st.recons.length - 1] : null,
+        history: (st.recons || []).slice(-15).reverse().map((r) => ({
+          id: r.id, startedAt: r.startedAt, finishedAt: r.finishedAt, hours: r.hours, by: r.by, summary: r.summary,
+        })),
+        config: {
+          pbxDomain: (st.config.pbx && st.config.pbx.domain) || "",
+          pbxKeySet: !!(st.config.pbx && st.config.pbx.key),
+          flexbe: (st.config.flexbe || []).map((f) => ({ id: f.id, label: f.label, apiUrl: f.apiUrl || "", apiKeySet: !!f.apiKey })),
+        },
+      },
     });
+  });
+
+  app.get("/phone_test/api/recon/:id", requirePT, (req, res) => {
+    const r = store().recons.find((x) => x.id === req.params.id);
+    if (!r) return res.status(404).json({ success: false, message: "Сверка не найдена" });
+    res.json({ success: true, recon: r });
+  });
+
+  app.post("/phone_test/api/recon", requirePT, (req, res) => {
+    if (reconRunning) return res.status(409).json({ success: false, message: "Сверка уже идёт" });
+    const hours = Number((req.body && req.body.hours) || 24);
+    runRecon({ hours, by: req.who }).catch((e) => console.error("phonetest recon:", e.message));
+    res.json({ success: true, started: true });
+  });
+
+  // Доступы сверки. Ключи наружу не отдаются (в state только «задан/не задан»);
+  // пустое значение в запросе значит «оставить как есть».
+  app.post("/phone_test/api/recon-config", requirePT, (req, res) => {
+    const b = req.body || {};
+    const c = store().config;
+    if (typeof b.pbxDomain === "string") c.pbx.domain = b.pbxDomain.trim().slice(0, 120);
+    if (typeof b.pbxKey === "string" && b.pbxKey.trim()) c.pbx.key = b.pbxKey.trim().slice(0, 240);
+    if (Array.isArray(b.flexbe)) {
+      for (const f of b.flexbe) {
+        const cur = c.flexbe.find((x) => x.id === f.id);
+        if (!cur) continue;
+        if (typeof f.apiUrl === "string" && f.apiUrl.trim()) cur.apiUrl = f.apiUrl.trim().slice(0, 300);
+        if (typeof f.apiKey === "string" && f.apiKey.trim()) cur.apiKey = f.apiKey.trim().slice(0, 240);
+      }
+    }
+    save();
+    res.json({ success: true });
   });
 
   app.get("/phone_test/api/run/:id", requirePT, (req, res) => {

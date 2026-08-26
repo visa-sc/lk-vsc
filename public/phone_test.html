@@ -57,6 +57,10 @@
   .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #9ed4ea; border-top-color: #0097ca; border-radius: 50%; animation: sp 1s linear infinite; vertical-align: -2px; margin-right: 6px; }
   @keyframes sp { to { transform: rotate(360deg); } }
 
+  .tabs { display: flex; gap: 8px; margin: 0 0 18px; justify-content: center; flex-wrap: wrap; }
+  .tab { border: 1px solid #dfe3ec; background: rgba(255,255,255,.72); color: #6a7488; border-radius: 999px; padding: 10px 22px; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .tab:hover { background: #fff; }
+  .tab.active { background: #0097ca; border-color: #0097ca; color: #fff; }
   .sw { display: inline-flex; align-items: center; gap: 9px; font-size: 13.5px; color: #3c4c66; cursor: pointer; }
   .sw input { width: 18px; height: 18px; }
 
@@ -98,6 +102,12 @@
   </div>
 
   <div id="app" style="display:none;">
+    <div class="tabs">
+      <button class="tab active" data-tab="tests">Тест звонков и форм</button>
+      <button class="tab" data-tab="recon">Сверка с amoCRM</button>
+    </div>
+
+    <div id="tab-tests">
     <div class="card">
       <div class="sec-h"><b>Что делает эта проверка</b><span>звонки на наши номера и заявки с сайтов</span></div>
       <div class="banner info">
@@ -139,6 +149,51 @@
       <div class="sec-h"><b>История прогонов</b></div>
       <div id="runsBox"><div class="empty">Пусто.</div></div>
     </div>
+    </div>
+
+    <div id="tab-recon" style="display:none;">
+    <div class="card">
+      <div class="sec-h"><b>Сверка с amoCRM</b><span>каждый звонок и заявка должны быть в CRM</span></div>
+      <div class="banner info">
+        Берём из OnlinePBX <b>все входящие звонки</b> за выбранный период и все <b>заявки из Flexbe</b> с обоих сайтов, и проверяем, что каждый номер есть в amoCRM контактом. Ничего не создаётся и не удаляется — только чтение и сравнение.
+      </div>
+      <div id="reconBanner"></div>
+      <div class="acts">
+        <button class="pri-btn" id="reconBtn">Сверить сейчас</button>
+        <select id="reconHours">
+          <option value="24">за последние 24 часа</option>
+          <option value="48">за 48 часов</option>
+          <option value="72">за 72 часа</option>
+          <option value="168">за неделю</option>
+        </select>
+        <span id="reconMsg" class="note"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>Результат сверки</b><span id="reconSub"></span></div>
+      <div id="reconResults"><div class="empty">Сверка ещё не запускалась.</div></div>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>Ход сверки</b></div>
+      <div class="logbox" id="reconLog"><div class="empty">Пусто.</div></div>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>Доступы</b><span>ключи хранятся только на сервере, наружу не показываются</span></div>
+      <div style="overflow-x:auto;"><table class="t" id="reconCfg"></table></div>
+      <div class="acts" style="margin-top:14px;">
+        <button class="ghost-btn" id="reconCfgSave">Сохранить доступы</button>
+        <span id="reconCfgMsg" class="note"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>История сверок</b></div>
+      <div id="reconRuns"><div class="empty">Пусто.</div></div>
+    </div>
+    </div>
   </div>
 </div>
 
@@ -148,7 +203,7 @@
   var token = null; try { token = localStorage.getItem(TOKEN_KEY) || localStorage.getItem("voyo_vsc_token"); } catch (_) {}
   var $ = function (s) { return document.querySelector(s); };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
-  var state = null, poll = null;
+  var state = null, poll = null, reconCfgDirty = false;
 
   function api(path, opts) {
     opts = opts || {};
@@ -284,6 +339,123 @@
     }).join("") + "</table>" : '<div class="empty">Пусто.</div>';
   }
 
+  function renderReconCfg(conf) {
+    var h = "<tr><th>Сервис</th><th>Адрес</th><th>Ключ API</th></tr>";
+    h += '<tr data-pbx="1"><td><b>OnlinePBX</b><div class="note">звонки</div></td>' +
+      '<td><input type="text" class="r-dom" style="width:230px;" placeholder="домен АТС, например vsc.onpbx.ru" value="' + esc(conf.pbxDomain || "") + '"></td>' +
+      '<td><input type="text" class="r-key" style="width:230px;" placeholder="' + (conf.pbxKeySet ? "ключ задан — ввести новый для замены" : "auth-ключ из кабинета OnlinePBX") + '"></td></tr>';
+    (conf.flexbe || []).forEach(function (f) {
+      h += '<tr data-flex="' + esc(f.id) + '"><td><b>Flexbe</b><div class="note">' + esc(f.label) + '</div></td>' +
+        '<td><input type="text" class="r-url" style="width:280px;" value="' + esc(f.apiUrl || "") + '"></td>' +
+        '<td><input type="text" class="r-key" style="width:230px;" placeholder="' + (f.apiKeySet ? "ключ задан — ввести новый для замены" : "ключ API из настроек сайта Flexbe") + '"></td></tr>';
+    });
+    $("#reconCfg").innerHTML = h;
+    Array.prototype.forEach.call(document.querySelectorAll("#reconCfg input"), function (inp) {
+      inp.addEventListener("input", function () { reconCfgDirty = true; });
+    });
+  }
+
+  function renderRecon() {
+    var rc = (state && state.recon) || {};
+    var conf = rc.config || {};
+    var miss = [];
+    if (!conf.pbxKeySet) miss.push("OnlinePBX");
+    (conf.flexbe || []).forEach(function (f) { if (!f.apiKeySet) miss.push("Flexbe " + f.label); });
+    $("#reconBanner").innerHTML = miss.length
+      ? '<div class="banner warn">Не заданы доступы: <b>' + miss.map(esc).join(", ") + '</b>. Введите их в блоке «Доступы» ниже — без ключа эта часть сверки пропускается.</div>' : "";
+
+    var run = rc.current || rc.last;
+    if (!run) { $("#reconResults").innerHTML = '<div class="empty">Сверка ещё не запускалась.</div>'; $("#reconSub").textContent = ""; }
+    else {
+      $("#reconSub").textContent = fmtTime(run.startedAt) + " · период " + run.hours + " ч" + (run.finishedAt ? "" : " · идёт…");
+      var out = "";
+      var p = run.pbx || {};
+      out += '<div class="sec-h" style="margin:4px 2px 10px;"><b style="font-size:14.5px;">Звонки (OnlinePBX)</b></div>';
+      if (p.skipped) out += '<div class="banner info">' + esc(p.skipped) + "</div>";
+      else if (p.error) out += '<div class="banner danger">' + esc(p.error) + "</div>";
+      else {
+        out += '<div class="note" style="font-size:13px;margin-bottom:8px;">Входящих звонков: <b>' + (p.calls || 0) + "</b> · уникальных номеров: <b>" + (p.unique || 0) + "</b> · найдено в amoCRM: <b>" + (p.found || 0) + "</b></div>";
+        if (p.missing && p.missing.length) {
+          out += '<div class="banner danger">Номеров без контакта в amoCRM: <b>' + p.missing.length + "</b></div>" +
+            '<div style="overflow-x:auto;"><table class="t"><tr><th>Номер</th><th>Звонков</th><th>Последний звонок</th><th>Звонили на</th></tr>' +
+            p.missing.map(function (m) {
+              return '<tr><td class="num">' + esc(m.phone) + "</td><td>" + m.count + "</td><td>" + fmtTime(m.lastAt) + '</td><td class="num">' + esc(m.to || "—") + "</td></tr>";
+            }).join("") + "</table></div>";
+        } else if (run.finishedAt) out += '<span class="pill green">все номера на месте</span>';
+      }
+      (run.forms || []).forEach(function (f) {
+        out += '<div class="sec-h" style="margin:18px 2px 10px;"><b style="font-size:14.5px;">Заявки ' + esc(f.label) + "</b></div>";
+        if (f.skipped) out += '<div class="banner info">' + esc(f.skipped) + "</div>";
+        else if (f.error) out += '<div class="banner danger">' + esc(f.error) + "</div>";
+        else {
+          out += '<div class="note" style="font-size:13px;margin-bottom:8px;">Заявок: <b>' + (f.leads || 0) + "</b> · найдено в amoCRM: <b>" + (f.found || 0) + "</b></div>";
+          if (f.missing && f.missing.length) {
+            out += '<div class="banner danger">Заявок без контакта: <b>' + f.missing.length + "</b></div>" +
+              '<div style="overflow-x:auto;"><table class="t"><tr><th>Телефон</th><th>Имя</th><th>Когда</th></tr>' +
+              f.missing.map(function (m) {
+                return '<tr><td class="num">' + esc(m.phone) + "</td><td>" + esc(m.name || "—") + "</td><td>" + (m.ts ? fmtTime(m.ts) : "—") + "</td></tr>";
+              }).join("") + "</table></div>";
+          } else out += '<span class="pill green">все заявки на месте</span>';
+        }
+      });
+      $("#reconResults").innerHTML = out;
+    }
+
+    var l = (run && run.log) || [];
+    $("#reconLog").innerHTML = l.length ? l.slice().reverse().map(function (x) {
+      return "<div><b>" + new Date(x.at).toLocaleTimeString("ru-RU") + "</b> · " + esc(x.msg) + "</div>";
+    }).join("") : '<div class="empty">Пусто.</div>';
+
+    if (!reconCfgDirty) renderReconCfg(conf);
+
+    var rs = rc.history || [];
+    $("#reconRuns").innerHTML = rs.length ? '<table class="t"><tr><th>Когда</th><th>Период</th><th>Кто</th><th>Итог</th></tr>' + rs.map(function (r) {
+      var sm = r.summary || {};
+      var bad = (sm.callsMissing || 0) + (sm.formsMissing || 0);
+      var pill = !r.finishedAt ? "идёт…" : bad ? '<span class="pill red">пропаж: ' + bad + "</span>"
+        : sm.errors ? '<span class="pill amber">с ошибками</span>'
+        : sm.skipped ? '<span class="pill gray">частично (нет ключей)</span>' : '<span class="pill green">всё на месте</span>';
+      return "<tr><td>" + fmtTime(r.startedAt) + "</td><td>" + r.hours + " ч</td><td>" + esc(r.by || "—") + "</td><td>" + pill + "</td></tr>";
+    }).join("") + "</table>" : '<div class="empty">Пусто.</div>';
+
+    $("#reconBtn").disabled = !!rc.running;
+    $("#reconBtn").innerHTML = rc.running ? '<span class="spin"></span>идёт сверка…' : "Сверить сейчас";
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (b) {
+    b.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (x) { x.classList.toggle("active", x === b); });
+      $("#tab-tests").style.display = b.getAttribute("data-tab") === "tests" ? "" : "none";
+      $("#tab-recon").style.display = b.getAttribute("data-tab") === "recon" ? "" : "none";
+    });
+  });
+
+  $("#reconBtn").addEventListener("click", function () {
+    $("#reconBtn").disabled = true;
+    $("#reconMsg").textContent = "";
+    api("/phone_test/api/recon", { method: "POST", body: JSON.stringify({ hours: Number($("#reconHours").value) }) }).then(function (j) {
+      if (!j.success) { $("#reconMsg").textContent = j.message || "не получилось"; $("#reconBtn").disabled = false; return; }
+      load();
+    }).catch(function (e) { if (e.message !== "auth") { $("#reconMsg").textContent = "сервер не ответил"; $("#reconBtn").disabled = false; } });
+  });
+
+  $("#reconCfgSave").addEventListener("click", function () {
+    var tr = document.querySelector("#reconCfg tr[data-pbx]");
+    if (!tr) return;
+    var body = { pbxDomain: tr.querySelector(".r-dom").value.trim(), pbxKey: tr.querySelector(".r-key").value.trim(), flexbe: [] };
+    Array.prototype.forEach.call(document.querySelectorAll("#reconCfg tr[data-flex]"), function (row) {
+      body.flexbe.push({ id: row.getAttribute("data-flex"), apiUrl: row.querySelector(".r-url").value.trim(), apiKey: row.querySelector(".r-key").value.trim() });
+    });
+    api("/phone_test/api/recon-config", { method: "POST", body: JSON.stringify(body) }).then(function (j) {
+      if (j.success) {
+        reconCfgDirty = false;
+        $("#reconCfgMsg").textContent = "сохранено";
+        setTimeout(function () { $("#reconCfgMsg").textContent = ""; }, 2000);
+        load();
+      }
+    });
+  });
+
   function load() {
     return api("/phone_test/api/state").then(function (j) {
       if (!j.success) return;
@@ -295,10 +467,12 @@
       renderLog(run);
       renderConfig();
       renderRuns();
+      renderRecon();
       $("#runBtn").disabled = !!j.running;
       $("#runBtn").innerHTML = j.running ? '<span class="spin"></span>идёт проверка…' : "Прогнать проверку сейчас";
-      if (j.running && !poll) poll = setInterval(load, 5000);
-      if (!j.running && poll) { clearInterval(poll); poll = null; }
+      var busy = j.running || (j.recon && j.recon.running);
+      if (busy && !poll) poll = setInterval(load, 5000);
+      if (!busy && poll) { clearInterval(poll); poll = null; }
     });
   }
 
