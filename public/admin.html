@@ -2281,7 +2281,18 @@
       const VSC_ADDITIVE = { budget: 1, processed: 1, over: 1, targetDev: 1 };
       function vscMonthFilled(m) { return !!(m && m.total && ((m.total.budget != null && m.total.budget > 0) || m.total.cv != null)); }
       function vscFilledMonths() { return (vscData.months || []).map((m, i) => ({ m: m, i: i })).filter((x) => vscMonthFilled(x.m)); }
-      function vscFilledDays(m) { return (m.days || []).filter((d) => (d.processed != null && d.processed > 0) || (d.budget != null && d.budget > 0)).length; }
+      // День считается заполненным для СРАВНЕНИЙ, только если он календарно закрыт:
+      // сегодняшние частичные данные (контакты капают в течение дня, выручка
+      // вносится за закрытые дни) не должны отдавать прошлому периоду лишний
+      // полный день (жалоба Андрея 26.08: неделя показывала −31% из-за этого).
+      function vscFilledDays(m) {
+        const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+        return (m.days || []).filter((d) => {
+          if (!((d.processed != null && d.processed > 0) || (d.budget != null && d.budget > 0))) return false;
+          const dd = d.date ? vscParseDMY(d.date) : null;
+          return !dd || dd.getTime() < today0.getTime();
+        }).length;
+      }
       function vscPrevFilledIdx(idx) { const f = vscFilledMonths().map((x) => x.i).filter((i) => i < idx); return f.length ? f[f.length - 1] : -1; }
       // Сравнение месяца с предыдущим за СОПОСТАВИМОЕ число прошедших дней:
       // аддитивные KPI — сумма первых N дней пред. месяца; коэффициенты — среднее
@@ -3563,7 +3574,7 @@
 
         const tiles = document.createElement("div"); tiles.className = "vsc-tiles";
         kpisForView.forEach((kpi) => {
-          let v = null, prev = null;
+          let v = null, prev = null, cmpV;
           if (vscGran === "year") { v = (kpi.key === "drrExtra") ? vscDrrExtraYear() : (vscData.year ? vscData.year[kpi.key] : null); }
           else if (vscGran === "month") { if (cmpRes) { v = cmpRes[kpi.key].cur; prev = cmpRes[kpi.key].prev; } }
           else {
@@ -3575,12 +3586,21 @@
               const prevDay = curK ? vscDayByOffset(vscAllDays, curK.date, -7) : null;
               prev = prevDay ? prevDay[kpi.key] : null;
             } else {
-              // Неделя: аддитивные KPI (выручка и т.п.) — сумма тех же дней прошлой
-              // недели (первые N дней, где N — кол-во заполненных дней текущей недели).
+              // Неделя: аддитивные KPI (выручка и т.п.) — сравнение по КАЛЕНДАРНО
+              // ЗАКРЫТЫМ дням: и prev (те же дни прошлой недели), и база дельты.
+              // Сегодняшний день заполнен лишь частично, и если считать его целым,
+              // прошлой неделе достаётся полный лишний день — неделя ложно уходила
+              // в минус (например −31% при факте пн-вт лучше прошлых пн-вт).
               const prevK = series[idx - 1] ? series[idx - 1].k : null;
               if (VSC_ADDITIVE[kpi.key] && curK && prevK) {
-                const n = (curK.days || []).filter(vscDayFilled).length;
-                prev = vscSumDays((prevK.days || []).slice(0, n), kpi.key);
+                const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+                const closed = (curK.days || []).filter((d) => {
+                  if (!vscDayFilled(d)) return false;
+                  const dd = d.date ? vscParseDMY(d.date) : null;
+                  return !dd || dd.getTime() < today0.getTime();
+                });
+                prev = vscSumDays((prevK.days || []).slice(0, closed.length), kpi.key);
+                cmpV = vscSumDays(closed, kpi.key);
               } else {
                 prev = vscNearestPrev(series, kpi.key, idx);
               }
@@ -3589,8 +3609,9 @@
           const tile = document.createElement("div"); tile.className = "vsc-tile";
           const cls = kpi.fmt === "signed" ? (v > 0 ? " pos" : v < 0 ? " neg" : "") : "";
           let delta = "";
-          if (v != null && prev != null && prev !== v) {
-            const d = v - prev; const up = d > 0;
+          const vd = (cmpV !== undefined && cmpV !== null) ? cmpV : v; // база дельты (неделя: закрытые дни)
+          if (vd != null && prev != null && prev !== vd) {
+            const d = vd - prev; const up = d > 0;
             const dirCls = kpi.good === 0 ? "neu" : ((d * kpi.good > 0) ? "up" : "down");
             const rel = Math.abs(prev) ? Math.round(Math.abs(d) / Math.abs(prev) * 100) : null;
             delta = '<div class="vsc-tile-d ' + dirCls + '">' + (up ? "▲" : "▼") + " " + vscFmt(Math.abs(d), kpi.fmt).replace(" ₽", "").replace(/^\+/, "") + (rel != null && kpi.fmt !== "pct" ? " (" + rel + "%)" : "") + " к пред.</div>";
