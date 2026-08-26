@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Проверка интеграций — VSC</title>
+<link rel="apple-touch-icon" href="/vsc-logo.png">
+<link rel="icon" type="image/png" href="/vsc-logo.png">
+<style>
+  /* Стиль тот же, что у /scanner и /translate: воздух, мягкие карточки. */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1c2130; background: #f5f7fb; min-height: 100vh; -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1;
+    background:
+      radial-gradient(1100px 520px at 12% -8%, rgba(0, 190, 240, .12), transparent 60%),
+      radial-gradient(900px 480px at 105% 12%, rgba(18, 58, 120, .08), transparent 55%),
+      linear-gradient(180deg, #f8fafd 0%, #eef2f9 100%);
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 26px 18px 70px; }
+  .brand { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 4px 0 22px; }
+  .vsc-wm { display: flex; align-items: center; gap: 11px; font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; font-weight: 800; font-size: 32px; line-height: 1; }
+  .vsc-wm i { width: 2px; height: 18px; border-radius: 2px; background: linear-gradient(180deg, #00bff0, #0088c2); opacity: .5; }
+  .vsc-wm b { background: linear-gradient(135deg, #00c8f2 0%, #0097ca 52%, #123a78 130%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .brand .sub { font-size: 11px; font-weight: 600; color: #98a0b0; letter-spacing: .42em; text-transform: lowercase; margin-right: -.42em; }
+
+  .card { background: rgba(255,255,255,.86); border: 1px solid rgba(24,36,66,.06); border-radius: 22px; padding: 22px; margin-bottom: 18px; box-shadow: 0 14px 44px rgba(24,36,66,.06); }
+  body.login-mode { display: flex; flex-direction: column; justify-content: center; min-height: 100vh; }
+  #login { width: 100%; max-width: 400px; margin: 0 auto; background: rgba(255,255,255,.92); border: 1px solid rgba(24,36,66,.06); border-radius: 26px; padding: 26px; box-shadow: 0 18px 50px rgba(24,36,66,.08); text-align: center; }
+  #login .sub2 { margin: 0 0 18px; font-size: 13px; color: #98a0b0; }
+  .login-input { width: 100%; height: 52px; border: 1px solid #e8e9f0; border-radius: 15px; padding: 0 16px; font-size: 16px; outline: none; font-family: inherit; color: #1c2130; background: #fafbfe; text-align: center; }
+  .login-input:not(:placeholder-shown) { letter-spacing: .18em; font-size: 22px; }
+  .login-input::placeholder { letter-spacing: normal; font-size: 15px; color: #a2a8b6; }
+  .login-input:focus { border-color: #35a3d4; background: #fff; box-shadow: 0 0 0 4px rgba(0,151,202,.1); }
+  .login-btn { width: 100%; height: 46px; margin-top: 10px; border: 0; border-radius: 13px; background: #0097ca; color: #fff; font-size: 14.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  #loginErr { color: #c2334a; font-size: 13.5px; min-height: 18px; margin-top: 10px; }
+
+  .sec-h { display: flex; align-items: baseline; gap: 10px; margin: 0 2px 16px; flex-wrap: wrap; }
+  .sec-h b { font-size: 17px; font-weight: 700; letter-spacing: -.01em; color: #101728; }
+  .sec-h span { font-size: 12.5px; color: #98a0b0; }
+  .banner { border-radius: 15px; padding: 13px 16px; font-size: 13.5px; line-height: 1.55; margin-bottom: 16px; }
+  .banner.warn { background: #fdf7e8; border: 1px solid #f2e3b3; color: #7a5b00; }
+  .banner.info { background: #f0f7fc; border: 1px solid #dcebf5; color: #33648a; }
+  .banner.danger { background: #fdf1f0; border: 1px solid #f3ccc7; color: #99372c; }
+  .banner code { background: rgba(0,0,0,.05); border-radius: 5px; padding: 1px 6px; font-size: 12.5px; }
+
+  .pri-btn { border: 0; background: #0097ca; color: #fff; border-radius: 13px; padding: 13px 24px; font-size: 14.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .pri-btn:hover { filter: brightness(1.06); }
+  .pri-btn:disabled { opacity: .5; cursor: default; }
+  .ghost-btn { border: 1px solid #dfe3ec; background: #fff; color: #6a7488; border-radius: 12px; padding: 11px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .ghost-btn:hover { background: #f6f8fb; }
+  .acts { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #9ed4ea; border-top-color: #0097ca; border-radius: 50%; animation: sp 1s linear infinite; vertical-align: -2px; margin-right: 6px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+
+  .sw { display: inline-flex; align-items: center; gap: 9px; font-size: 13.5px; color: #3c4c66; cursor: pointer; }
+  .sw input { width: 18px; height: 18px; }
+
+  table.t { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table.t th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #98a0b0; font-weight: 600; padding: 8px 10px; border-bottom: 1px solid #edf0f5; white-space: nowrap; }
+  table.t td { padding: 9px 10px; border-bottom: 1px solid #f4f6fa; vertical-align: top; }
+  table.t tr:hover td { background: #fafbfd; }
+  .num { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; color: #33415a; white-space: nowrap; }
+  .pill { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 3.5px 10px; white-space: nowrap; display: inline-block; }
+  .pill.green { background: #e8f6ee; color: #257a45; }
+  .pill.red { background: #fbeae8; color: #b0263a; }
+  .pill.amber { background: #fcf3d9; color: #8a5f00; }
+  .pill.gray { background: #f0f2f6; color: #5a636f; }
+  .pill.blue { background: #e7f4fb; color: #0e7fae; }
+  .prob { color: #b0263a; font-size: 12.5px; line-height: 1.5; margin-top: 3px; }
+  .note { color: #78818f; font-size: 12px; margin-top: 3px; }
+  .logbox { max-height: 320px; overflow: auto; background: #fafbfd; border: 1px solid #edf0f5; border-radius: 13px; padding: 12px 14px; font-size: 12.5px; line-height: 1.65; color: #3c4c66; }
+  .logbox div { border-bottom: 1px solid #f2f4f8; padding: 2px 0; }
+  .logbox b { color: #101728; font-weight: 600; }
+  .empty { color: #9aa0ab; font-size: 13.5px; padding: 8px 4px; }
+  select, input[type=text] { font-family: inherit; font-size: 13px; height: 34px; padding: 0 8px; border: 1px solid #e8e9f0; border-radius: 9px; background: #fafbfe; color: #1c2130; outline: none; }
+  select:focus, input[type=text]:focus { border-color: #35a3d4; background: #fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <div class="vsc-wm"><b>V</b><i></i><b>S</b><i></i><b>C</b></div>
+    <div class="sub">проверка интеграций</div>
+  </div>
+
+  <div id="login" style="display:none;">
+    <div class="sub2">Раздел только для администратора</div>
+    <form id="codeForm">
+      <input id="code" class="login-input" type="password" inputmode="numeric" autocomplete="off" placeholder="Код доступа">
+      <button type="submit" class="login-btn">Войти</button>
+    </form>
+    <div id="loginErr"></div>
+  </div>
+
+  <div id="app" style="display:none;">
+    <div class="card">
+      <div class="sec-h"><b>Что делает эта проверка</b><span>звонки на наши номера и заявки с сайтов</span></div>
+      <div class="banner info">
+        По каждому номеру: сервис <b>звонит через sms.ru</b> с постороннего номера (как живой клиент) → ждёт, пока телефония создаст в amoCRM контакт и сделку → сверяет источник (у номеров 812 везде должно быть <b>СПБ</b>) → <b>удаляет созданное этим звонком</b> и переходит к следующему. По формам: одна заявка на visa-sc.ru и одна на spb.visa-sc.ru — та же сверка и уборка. Стоимость звонка — 40 копеек.
+      </div>
+      <div id="modeBanner"></div>
+      <div class="acts">
+        <button class="pri-btn" id="runBtn">Прогнать проверку сейчас</button>
+        <select id="onlySel"><option value="">все номера и формы</option></select>
+        <button class="ghost-btn" id="refreshBtn">Обновить</button>
+        <span id="runMsg" class="note"></span>
+      </div>
+      <div class="acts" style="margin-top:14px;">
+        <label class="sw"><input type="checkbox" id="dryRun"> <span>режим проверки: <b>не удалять</b> ничего в amoCRM</span></label>
+        <label class="sw"><input type="checkbox" id="schedOn"> <span>запускать по расписанию: понедельник, 04:00</span></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>Последний прогон</b><span id="lastSub"></span></div>
+      <div id="results"><div class="empty">Проверка ещё не запускалась.</div></div>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>Ход работы</b><span>что происходило по шагам</span></div>
+      <div class="logbox" id="logBox"><div class="empty">Пусто.</div></div>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>Что проверяем</b><span>номера, ожидаемый источник и формы</span></div>
+      <div style="overflow-x:auto;"><table class="t" id="cfgTable"></table></div>
+      <div class="acts" style="margin-top:14px;">
+        <button class="ghost-btn" id="saveCfg">Сохранить настройки</button>
+        <span id="cfgMsg" class="note"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sec-h"><b>История прогонов</b></div>
+      <div id="runsBox"><div class="empty">Пусто.</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var TOKEN_KEY = "voyo_admin_token";
+  var token = null; try { token = localStorage.getItem(TOKEN_KEY) || localStorage.getItem("voyo_vsc_token"); } catch (_) {}
+  var $ = function (s) { return document.querySelector(s); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var state = null, poll = null;
+
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign(opts.headers || {}, token ? { Authorization: "Bearer " + token } : {});
+    if (opts.method && opts.method !== "GET") opts.headers["Content-Type"] = "application/json";
+    return fetch(path, opts).then(function (r) {
+      if (r.status === 401) { showLogin(); throw new Error("auth"); }
+      return r.json();
+    });
+  }
+  function showLogin() { $("#login").style.display = ""; $("#app").style.display = "none"; document.body.classList.add("login-mode"); }
+  function showApp() { $("#login").style.display = "none"; $("#app").style.display = ""; document.body.classList.remove("login-mode"); }
+
+  $("#codeForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    $("#loginErr").textContent = "";
+    fetch("/admin/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("#code").value.trim() }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.token) { token = j.token; try { localStorage.setItem(TOKEN_KEY, token); } catch (_) {} load(); }
+        else $("#loginErr").textContent = (j && j.message) || "Неверный код";
+      }).catch(function () { $("#loginErr").textContent = "Сервер не ответил"; });
+  });
+
+  function fmtTime(ts) { return ts ? new Date(ts).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"; }
+  function srcName(id) { return (state && state.dict.sources[id]) || (id ? String(id) : "—"); }
+  function regName(id) { return (state && state.dict.regions[id]) || (id ? String(id) : "—"); }
+  function callName(id) {
+    if (!id) return "—";
+    var m = state && state.dict.callSources;
+    for (var k in m) if (m[k] === id) return k;
+    return String(id);
+  }
+
+  function renderMode() {
+    var c = state.config;
+    var h = "";
+    if (c.dryRun) h += '<div class="banner warn">⚠️ <b>Режим проверки.</b> Сервис найдёт тестовые контакты и сделки, покажет их, но <b>ничего не удалит</b> из amoCRM. Уборку включает галочка ниже — только когда вы убедитесь, что находится ровно то, что нужно.</div>';
+    else h += '<div class="banner danger">🗑 <b>Удаление включено.</b> Найденные тестовые контакты и сделки будут удаляться из amoCRM. Удаляется только то, что создано этой проверкой: контакт должен содержать номер, с которого мы звонили, и быть созданным в окне проверки.</div>';
+    if (!state.smsReady) h += '<div class="banner danger">Не задан ключ sms.ru — звонки работать не будут.</div>';
+    if (!c.scheduleEnabled) h += '<div class="banner info">Расписание выключено: проверка запускается только кнопкой.</div>';
+    $("#modeBanner").innerHTML = h;
+    $("#dryRun").checked = !!c.dryRun;
+    $("#schedOn").checked = !!c.scheduleEnabled;
+  }
+
+  function renderResults(run) {
+    if (!run || !run.results || !run.results.length) {
+      $("#results").innerHTML = '<div class="empty">' + (run ? "Прогон идёт, результатов пока нет." : "Проверка ещё не запускалась.") + "</div>";
+      $("#lastSub").textContent = run ? "запущен " + fmtTime(run.startedAt) : "";
+      return;
+    }
+    var okN = run.results.filter(function (r) { return r.ok; }).length;
+    $("#lastSub").textContent = fmtTime(run.startedAt) + " · " + okN + " из " + run.results.length + " успешно" +
+      (run.dryRun ? " · без удаления" : "") + (run.finishedAt ? "" : " · идёт…");
+    var h = '<div style="overflow-x:auto;"><table class="t"><tr><th>Что проверяли</th><th>Итог</th><th>Создано в amoCRM</th><th>Источник</th><th>Уборка</th></tr>';
+    run.results.forEach(function (r) {
+      h += "<tr><td><b>" + esc(r.label || r.phone || r.id) + "</b>" +
+        (r.phone ? '<div class="num">' + esc(r.phone) + "</div>" : "") +
+        (r.caller ? '<div class="note">звонили с ' + esc(r.caller) + "</div>" : "") + "</td>";
+      h += "<td>" + (r.ok ? '<span class="pill green">всё сошлось</span>'
+        : r.error ? '<span class="pill red">ошибка</span>' : '<span class="pill amber">расхождение</span>');
+      if (r.error) h += '<div class="prob">' + esc(r.error) + "</div>";
+      h += "</td>";
+      h += "<td>" + (r.contact ? 'контакт <span class="num">' + r.contact.id + "</span><div class=\"note\">" + esc(r.contact.name || "") + "</div>" : "—");
+      if (r.leads && r.leads.length) h += '<div class="note">сделок: ' + r.leads.length + " (" + r.leads.map(function (l) { return l.id; }).join(", ") + ")</div>";
+      else if (r.contact) h += '<div class="prob">сделка не создана</div>';
+      h += "</td>";
+      h += "<td>";
+      if (r.got) {
+        h += '<div class="note">Источник: <b>' + esc(srcName(r.got.contactSource)) + "</b></div>";
+        h += '<div class="note">Region: <b>' + esc(regName(r.got.contactRegion)) + "</b></div>";
+        h += '<div class="note">Источник звонка: <b>' + esc(callName(r.got.leadCallSource)) + "</b></div>";
+      } else h += "—";
+      if (r.problems && r.problems.length) h += '<div class="prob">' + r.problems.map(esc).join("<br>") + "</div>";
+      h += "</td>";
+      h += "<td>" + (r.deleted ? '<span class="pill gray">удалено</span>' : (r.contact ? '<span class="pill blue">оставлено</span>' : "—"));
+      if (r.deleteReason) h += '<div class="note">' + esc(r.deleteReason) + "</div>";
+      h += "</td></tr>";
+    });
+    h += "</table></div>";
+    $("#results").innerHTML = h;
+  }
+
+  function renderLog(run) {
+    var l = (run && run.log) || [];
+    $("#logBox").innerHTML = l.length ? l.slice().reverse().map(function (x) {
+      return "<div><b>" + new Date(x.at).toLocaleTimeString("ru-RU") + "</b> · " + esc(x.step) + " — " + esc(x.msg) + "</div>";
+    }).join("") : '<div class="empty">Пусто.</div>';
+  }
+
+  function renderConfig() {
+    var c = state.config;
+    var srcOpts = function (sel) {
+      var o = '<option value="">не проверять</option>';
+      for (var id in state.dict.sources) o += '<option value="' + id + '"' + (Number(sel) === Number(id) ? " selected" : "") + ">" + esc(state.dict.sources[id]) + "</option>";
+      return o;
+    };
+    var regOpts = function (sel) {
+      var o = '<option value="">не проверять</option>';
+      for (var id in state.dict.regions) o += '<option value="' + id + '"' + (Number(sel) === Number(id) ? " selected" : "") + ">" + esc(state.dict.regions[id]) + "</option>";
+      return o;
+    };
+    var h = "<tr><th>Вкл.</th><th>Номер / форма</th><th>Название</th><th>Ожидаем «Источник»</th><th>Ожидаем «Region»</th><th>Ожидаем «Источник звонка»</th></tr>";
+    c.numbers.forEach(function (n) {
+      h += '<tr data-phone="' + esc(n.phone) + '">' +
+        '<td><input type="checkbox" class="c-en"' + (n.enabled !== false ? " checked" : "") + "></td>" +
+        '<td class="num">' + esc(n.phone) + "</td><td>" + esc(n.label) + "</td>" +
+        '<td><select class="c-src">' + srcOpts(n.contactSource) + "</select></td>" +
+        '<td><select class="c-reg">' + regOpts(n.contactRegion) + "</select></td>" +
+        "<td>" + (n.callSource ? '<span class="pill blue">' + esc(callName(n.callSource)) + "</span>" : '<span class="note">нет такого значения в amo — просто фиксируем</span>') + "</td></tr>";
+    });
+    c.forms.forEach(function (f) {
+      h += '<tr data-form="' + esc(f.id) + '">' +
+        '<td><input type="checkbox" class="c-en"' + (f.enabled !== false ? " checked" : "") + "></td>" +
+        "<td>форма</td><td>" + esc(f.label) + '<div class="note">' + esc(f.url) + "</div></td>" +
+        '<td><select class="c-src">' + srcOpts(f.contactSource) + "</select></td>" +
+        '<td><select class="c-reg">' + regOpts(f.contactRegion) + "</select></td>" +
+        '<td><span class="note">заявка, не звонок</span></td></tr>';
+    });
+    $("#cfgTable").innerHTML = h;
+    var sel = $("#onlySel");
+    sel.innerHTML = '<option value="">все номера и формы</option>' +
+      c.numbers.map(function (n) { return '<option value="' + esc(n.phone) + '">только ' + esc(n.label) + " · " + esc(n.phone) + "</option>"; }).join("") +
+      c.forms.map(function (f) { return '<option value="' + esc(f.id) + '">только форма ' + esc(f.label) + "</option>"; }).join("");
+  }
+
+  function renderRuns() {
+    var rs = state.runs || [];
+    $("#runsBox").innerHTML = rs.length ? '<table class="t"><tr><th>Когда</th><th>Кто</th><th>Итог</th><th>Режим</th></tr>' + rs.map(function (r) {
+      return "<tr><td>" + fmtTime(r.startedAt) + "</td><td>" + esc(r.by || "—") + "</td><td>" +
+        r.ok + " из " + r.total + "</td><td>" + (r.dryRun ? "без удаления" : "с удалением") + "</td></tr>";
+    }).join("") + "</table>" : '<div class="empty">Пусто.</div>';
+  }
+
+  function load() {
+    return api("/phone_test/api/state").then(function (j) {
+      if (!j.success) return;
+      state = j;
+      showApp();
+      renderMode();
+      var run = j.current || j.lastRun;
+      renderResults(run);
+      renderLog(run);
+      renderConfig();
+      renderRuns();
+      $("#runBtn").disabled = !!j.running;
+      $("#runBtn").innerHTML = j.running ? '<span class="spin"></span>идёт проверка…' : "Прогнать проверку сейчас";
+      if (j.running && !poll) poll = setInterval(load, 5000);
+      if (!j.running && poll) { clearInterval(poll); poll = null; }
+    });
+  }
+
+  $("#refreshBtn").addEventListener("click", load);
+  $("#runBtn").addEventListener("click", function () {
+    var only = $("#onlySel").value;
+    var what = only ? "проверку «" + $("#onlySel").selectedOptions[0].textContent + "»" : "полную проверку (все номера и формы)";
+    var mode = state.config.dryRun ? "Ничего удаляться не будет (режим проверки)." : "ВНИМАНИЕ: найденные тестовые контакты и сделки будут УДАЛЕНЫ из amoCRM.";
+    if (!confirm("Запустить " + what + "?\n\n" + mode)) return;
+    $("#runBtn").disabled = true;
+    $("#runMsg").textContent = "";
+    api("/phone_test/api/run", { method: "POST", body: JSON.stringify({ only: only }) }).then(function (j) {
+      if (!j.success) { $("#runMsg").textContent = j.message || "не получилось"; $("#runBtn").disabled = false; return; }
+      load();
+    }).catch(function (e) { if (e.message !== "auth") { $("#runMsg").textContent = "сервер не ответил"; $("#runBtn").disabled = false; } });
+  });
+
+  function saveConfig(extra) {
+    var numbers = [], forms = [];
+    Array.prototype.forEach.call(document.querySelectorAll("#cfgTable tr[data-phone]"), function (tr) {
+      numbers.push({
+        phone: tr.getAttribute("data-phone"),
+        enabled: tr.querySelector(".c-en").checked,
+        contactSource: tr.querySelector(".c-src").value || null,
+        contactRegion: tr.querySelector(".c-reg").value || null,
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("#cfgTable tr[data-form]"), function (tr) {
+      forms.push({
+        id: tr.getAttribute("data-form"),
+        enabled: tr.querySelector(".c-en").checked,
+        contactSource: tr.querySelector(".c-src").value || null,
+        contactRegion: tr.querySelector(".c-reg").value || null,
+      });
+    });
+    var body = Object.assign({ numbers: numbers, forms: forms }, extra || {});
+    return api("/phone_test/api/config", { method: "POST", body: JSON.stringify(body) }).then(function (j) {
+      if (j.success) { state.config = j.config; renderMode(); $("#cfgMsg").textContent = "сохранено"; setTimeout(function () { $("#cfgMsg").textContent = ""; }, 2000); }
+    });
+  }
+  $("#saveCfg").addEventListener("click", function () { saveConfig(); });
+  $("#dryRun").addEventListener("change", function () {
+    if (!this.checked && !confirm("Выключить режим проверки?\n\nПосле этого сервис будет УДАЛЯТЬ из amoCRM найденные тестовые контакты и сделки.")) { this.checked = true; return; }
+    saveConfig({ dryRun: this.checked });
+  });
+  $("#schedOn").addEventListener("change", function () {
+    if (this.checked && !confirm("Включить автозапуск каждый понедельник в 04:00?")) { this.checked = false; return; }
+    saveConfig({ scheduleEnabled: this.checked });
+  });
+
+  if (token) load().catch(function (e) { if (e.message !== "auth") showLogin(); });
+  else showLogin();
+})();
+</script>
+</body>
+</html>

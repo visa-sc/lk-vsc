@@ -15,6 +15,7 @@ const sms = require("./sms");
 const mail = require("./mail");
 const esign = require("./esign"); // ПЭП-подпись (аналог fdoc) — отдельный модуль, монтируется ниже
 const engineProxy = require("./engine-proxy"); // Мост к движку переводов (отдельный сервис translate-engine :3003, правит Зайцева); монтируется сразу после app — до body-парсеров
+const phoneTestMod = require("./phonetest"); // Проверка интеграций: звонки на наши номера и заявки с сайтов → amoCRM (/phone_test)
 const scannerMod = require("./scanner"); // Сканер паспортов (/scanner) — распознавание документов для сотрудников
 const chatMod = require("./chat"); // Продающий ИИ-чат по визам (/chat_test) — отдельный модуль, монтируется ниже
 const vscomMod = require("./vscom"); // Заявки с англоязычного лендинга visa-sc.com — отдельный модуль, монтируется ниже
@@ -2285,6 +2286,23 @@ esign.mount(app, { requireVscAccess, requireAdmin });
 // кодом с контрольными цифрами, кириллицу читает Claude), обучение на правках
 // сотрудников, дашборд. Клиентский ЛК и amoCRM не затрагивает.
 scannerMod.mount(app, { getStaffFromReq });
+
+// ── Проверка интеграций (/phone_test, задача Андрея 25.08.2026): по расписанию
+// (понедельник 04:00 МСК, ПОКА ВЫКЛЮЧЕНО) звонит через sms.ru на наши 24 номера
+// и оставляет по заявке на visa-sc.ru и spb.visa-sc.ru, сверяет в amoCRM создание
+// контакта/сделки и источник, затем удаляет СВОИ тестовые записи. Всё через
+// лимитер низким приоритетом; удаление по умолчанию выключено (режим проверки).
+// amoBg объявлен ниже по файлу (const) — передаём обёрткой, иначе на этапе
+// монтирования получим ReferenceError.
+phoneTestMod.mount(app, {
+  amoGet: (u, p) => amoGet(u, p),
+  amoPost: (u, b) => amoPost(u, b),
+  amoDelete: (u, b) => amoDelete(u, b),
+  amoBg: (fn) => amoBg(fn),
+  amoBaseUrl: () => `https://${AMO_SUBDOMAIN}.amocrm.ru`,
+  getStaffFromReq: (req) => getStaffFromReq(req),
+  sendMail: (o) => mail.sendMail(o),
+});
 
 // ── Переводы документов с ИИ (/translate, проект Зайцевой): с 22.08.2026 движок
 // (translate.js) — ОТДЕЛЬНЫЙ сервис translate-engine (:3003, /var/www/translate-engine,
@@ -7938,6 +7956,23 @@ async function amoPatch(url, body) {
     });
     return response.data;
   }, `PATCH ${url}`);
+}
+
+// Удаление сущностей amoCRM (пакетное, API v4: тело — массив [{id}]).
+// Используется ТОЛЬКО модулем проверки интеграций для стирания собственных
+// тестовых записей; в остальном коде удалений нет и быть не должно.
+async function amoDelete(url, body) {
+  console.log("AMO DELETE:", url, JSON.stringify(body));
+  return amoRequestWithRetry(async () => {
+    const response = await axios.delete(url, {
+      data: body,
+      headers: {
+        Authorization: `Bearer ${AMO_ACCESS_TOKEN}`,
+        "Content-Type": "application/json"
+      }
+    });
+    return response.data;
+  }, `DELETE ${url}`);
 }
 
 function getEntityCustomFieldValue(entity, fieldId) {

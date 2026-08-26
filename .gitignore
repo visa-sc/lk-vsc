@@ -168,3 +168,6 @@ amo-export/
 akfin/node_modules/
 akfin/.fin/
 akfin/fin.seed.json
+
+# Проверка интеграций (/phone_test) — журнал прогонов и настройки
+.phonetest/
