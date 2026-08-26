@@ -340,15 +340,50 @@ function mount(app, deps) {
   }
 
   // ── Проверка формы (браузером, как человек) ────────────────────────────
+  // Chromium на проде лежит не в стандартном кеше puppeteer, а в
+  // /var/www/voyo/.chrome — находим бинарь сами.
+  function findChrome() {
+    const root = path.join(__dirname, ".chrome", "chrome");
+    try {
+      for (const ver of fs.readdirSync(root)) {
+        const p = path.join(root, ver, "chrome-linux64", "chrome");
+        if (fs.existsSync(p)) return p;
+      }
+    } catch (_) {}
+    return null;
+  }
   async function submitForm(form, cfg) {
     let puppeteer;
     try { puppeteer = require("puppeteer"); }
     catch (_) { throw new Error("на сервере не установлен puppeteer — заявку отправить нечем"); }
-    const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"] });
+    const chromePath = findChrome();
+    const browser = await puppeteer.launch({
+      headless: true,
+      executablePath: chromePath || undefined,
+      args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+    });
     try {
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 900 });
-      await page.goto(form.url, { waitUntil: "networkidle2", timeout: 90000 });
+      // На сайтах стоит антибот botfaqtor: его iframe создаются и умирают прямо
+      // во время загрузки, из-за чего page.goto может ЛОЖНО упасть с «frame was
+      // detached» (гонка в puppeteer), хотя страница загружается нормально.
+      // Такую ошибку глотаем и просто ждём поле телефона поллингом.
+      try {
+        await page.goto(form.url, { waitUntil: "domcontentloaded", timeout: 90000 });
+      } catch (e) {
+        if (!/frame was detached|detached Frame/i.test(String(e.message || ""))) throw e;
+      }
+      const readyBy = Date.now() + 45000;
+      let ready = false;
+      while (Date.now() < readyBy && !ready) {
+        try {
+          ready = await page.evaluate(() => !!document.querySelector('input[type=tel], input[data-check=phone]'));
+        } catch (_) {}
+        if (!ready) await new Promise((r) => setTimeout(r, 1500));
+      }
+      if (!ready) throw new Error("поле телефона так и не появилось на странице");
+      await new Promise((r) => setTimeout(r, 3000)); // скриптам сайта — дозагрузиться
       // Ищем первую форму, где есть поле телефона, и заполняем её как человек.
       const filled = await page.evaluate((name, phone) => {
         const forms = Array.from(document.querySelectorAll("form"));
@@ -397,8 +432,19 @@ function mount(app, deps) {
     const res = { kind: "form", id: form.id, label: form.label, url: form.url, at: Date.now(), ok: false };
     const t0 = Date.now();
     log(step, "открываю сайт и отправляю заявку");
-    try { await submitForm(form, cfg); }
-    catch (e) { res.error = "заявку отправить не удалось: " + e.message; return res; }
+    // Гонки puppeteer с iframe антибота лечатся повтором — до 3 попыток.
+    let sent = false, lastErr = null;
+    for (let attempt = 1; attempt <= 3 && !sent; attempt++) {
+      try { await submitForm(form, cfg); sent = true; }
+      catch (e) {
+        lastErr = e;
+        const transient = /frame was detached|detached Frame|Target closed|Protocol error/i.test(String(e.message || ""));
+        if (!transient || attempt === 3) break;
+        log(step, "попытка " + attempt + " сорвалась (" + e.message + ") — пробую ещё раз");
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    }
+    if (!sent) { res.error = "заявку отправить не удалось: " + lastErr.message; return res; }
     log(step, "заявка отправлена, жду появления в amoCRM");
     const ctx = { step, windowFrom: t0 - 120000, windowTo: t0 + (cfg.waitSec + 180) * 1000, marker: cfg.testPhone };
     const found = await waitForAmo(ctx, last10(cfg.testPhone));
