@@ -450,7 +450,17 @@ function mount(app, deps) {
     if (!e) return res.status(404).json({ success: false, message: "Не найдено" });
     const b = req.body || {};
     if (b.name != null) { const n = String(b.name).trim().slice(0, 200); if (n) e.name = n; }
-    if (b.amount != null) { const a = Math.round(Number(b.amount) * 100) / 100; if (a > 0) e.amount = a; }
+    if (b.amount != null) { const a = Math.round(Number(b.amount) * 100) / 100; if (a > 0) { e.amount = a; e.formula = ""; } }
+    // формула (валютный ввод) перекрывает amount: пересчитываем и храним выражение
+    if (b.formula != null) {
+      const f = String(b.formula).trim().slice(0, 120).replace(/,/g, ".").replace(/\s+/g, "");
+      if (f) {
+        if (!/^[0-9.+\-*/()]+$/.test(f)) return res.status(400).json({ success: false, message: "В выражении только цифры и + − × ÷" });
+        let val; try { val = Function('"use strict";return(' + f + ')')(); } catch (_) { val = NaN; }
+        if (!isFinite(val) || !(val > 0)) return res.status(400).json({ success: false, message: "Не могу посчитать выражение" });
+        e.formula = f; e.amount = Math.round(val * 100) / 100;
+      } else if (b.amount == null) { e.formula = ""; }
+    }
     if (b.bucket != null && BUCKETS.includes(b.bucket)) e.bucket = b.bucket;
     if (b.category != null) e.category = String(b.category).trim() || e.category;
     if (b.flag != null) e.flag = ["yellow", "red"].includes(b.flag) ? b.flag : "";

@@ -89,13 +89,18 @@ input.pill::placeholder{color:var(--faint)}
 #records{display:none;margin-top:4px}
 .sec h2{font-size:14px;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;padding:0 4px}
 .sec h2 .sum{color:var(--ink)}
-/* свайп влево по записи → кнопка «Удалить» под строкой */
+/* свайп влево по записи → кнопки «Изменить» и «Удалить» под строкой */
 .swipe{position:relative;margin-top:8px}
-.swipe .del{position:absolute;top:0;right:0;bottom:0;width:88px;border:0;border-radius:14px;background:var(--trash);color:#fff;font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s}
-.swipe.open .del{opacity:1;pointer-events:auto}
+.swipe .del,.swipe .edit{position:absolute;top:0;bottom:0;width:88px;border:0;border-radius:14px;color:#fff;font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s}
+.swipe .del{right:0;background:var(--trash)}
+.swipe .edit{right:94px;background:var(--acc)}
+.swipe.open .del,.swipe.open .edit{opacity:1;pointer-events:auto}
 .swipe .entry{margin-top:0;transition:transform .18s;touch-action:pan-y}
-.swipe.open .entry{transform:translateX(-96px)}
+.swipe.open .entry{transform:translateX(-188px)}
 .swipe .entry.drag{transition:none}
+/* плашка режима правки над формой */
+#editBar{display:none;justify-content:space-between;align-items:center;background:rgba(53,137,189,.10);border:1px solid var(--acc);border-radius:14px;padding:9px 14px;margin-bottom:10px;font-size:13.5px;color:var(--acc);font-weight:600}
+#editBar button{background:none;border:0;color:var(--trash);font-size:13.5px;font-weight:600}
 .entry{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 13px;margin-top:8px;box-shadow:var(--shadow)}
 .entry .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
 .dot.pos{background:var(--pos)}.dot.ok{background:var(--ok)}.dot.nope{background:var(--nope)}.dot.trash{background:var(--trash)}
@@ -126,6 +131,11 @@ input.pill::placeholder{color:var(--faint)}
       <button id="bioEnroll" style="display:none" onclick="bioRegister()">Включить Face ID</button>
     </div>
     <div class="spacer"></div>
+
+    <div id="editBar">
+      <span id="editLabel">Правка записи</span>
+      <button onclick="cancelEdit()">Отмена</button>
+    </div>
 
     <div class="curr" id="currRow">
       <button class="mathbtn" onmousedown="event.preventDefault()" onclick="insMath('-')">−</button>
@@ -404,6 +414,17 @@ async function saveEntry() {
   };
   $("saveBtn").disabled = true;
   try {
+    // режим правки: пересохраняем существующую запись (только онлайн)
+    if (editingId) {
+      const r = await api("/fin/api/edit/" + editingId, { method: "POST", body: JSON.stringify(payload) });
+      if (!r.success) { toast(r.message || "Ошибка"); return; }
+      cancelEdit();
+      $("saveBtn").classList.add("flash"); $("saveBtn").textContent = "Сохранено ✓";
+      setTimeout(() => { $("saveBtn").classList.remove("flash"); $("saveBtn").textContent = "Внести"; }, 900);
+      await refresh();
+      if (daysOpen) await loadDays();
+      return;
+    }
     // не даём интерфейсу «тупить»: 6 секунд на попытку, дальше — офлайн-очередь
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 6000);
@@ -416,6 +437,7 @@ async function saveEntry() {
     await refresh();
   } catch (e) {
     if (String(e.message) === "auth") return;
+    if (editingId) { toast("Нет связи — правка возможна только онлайн"); return; }
     // нет связи: фиксируем локально, уйдёт само при появлении интернета
     setQueue(getQueue().concat([payload]));
     clearForm();
@@ -441,10 +463,13 @@ function plural(n, one, few, many) {
   if (b === 1) return one;
   return many;
 }
+const ENTRIES = {}; // id → запись, для кнопки «Изменить»
 function entryRow(e, showDate) {
+  ENTRIES[e.id] = e;
   const fl = e.flag === "yellow" ? "🟡 " : e.flag === "red" ? "🔴 " : "";
   const nm = esc(e.name) + (e.comment ? ` <span class="cmt">- ${esc(e.comment)}</span>` : "");
   return `<div class="swipe" data-id="${e.id}">
+    <button class="edit">Изменить</button>
     <button class="del">Удалить</button>
     <div class="entry${e.pending ? " pending" : ""}">
       <div class="dot ${e.bucket}"></div>
@@ -468,8 +493,8 @@ document.addEventListener("touchmove", (ev) => {
   if (swMode === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) swMode = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
   if (swMode !== "h") return;
   closeSwipes(swEl);
-  const base = swEl.classList.contains("open") ? -96 : 0;
-  swDx = Math.min(0, Math.max(-110, base + dx));
+  const base = swEl.classList.contains("open") ? -188 : 0;
+  swDx = Math.min(0, Math.max(-200, base + dx));
   const en = swEl.querySelector(".entry");
   en.classList.add("drag");
   en.style.transform = `translateX(${swDx}px)`;
@@ -481,7 +506,45 @@ document.addEventListener("touchend", () => {
   if (swMode === "h") swEl.classList.toggle("open", swDx < -48);
   swEl = null; swMode = null; swDx = 0;
 });
+// ── режим правки: «Изменить» заполняет форму значениями записи ──
+let editingId = null;
+function startEdit(e) {
+  editingId = e.id;
+  // сумма: если запись была выражением — показываем выражение, иначе число
+  $("amount").value = e.formula ? e.formula : (e.amount > 0 ? String(e.amount) : "");
+  $("name").value = e.name;
+  setBucket(e.bucket || "ok");
+  flag = ""; toggleFlag(e.flag || ""); // toggleFlag(x) включает x, если flag был пуст
+  if (!e.flag) { flag = ""; $("flagY").classList.remove("on"); $("flagR").classList.remove("on"); }
+  $("comment").value = e.comment || "";
+  $("category").value = e.category || "";
+  $("date").value = e.date; $("date").dataset.auto = ""; // дата записи, авто-подмену выключаем
+  updateRub(); renderChips($("name").value);
+  $("editLabel").textContent = "Правка: " + (e.name.length > 24 ? e.name.slice(0, 24) + "…" : e.name);
+  $("editBar").style.display = "flex";
+  $("saveBtn").textContent = "Сохранить";
+  closeSwipes();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function cancelEdit() {
+  editingId = null;
+  $("editBar").style.display = "none";
+  $("amount").value = ""; $("name").value = ""; setBucket("ok"); $("category").value = ""; $("comment").value = "";
+  flag = ""; $("flagY").classList.remove("on"); $("flagR").classList.remove("on");
+  $("date").value = TODAY || ""; $("date").dataset.auto = TODAY || "";
+  $("saveBtn").textContent = "Внести";
+  updateRub(); renderChips("");
+}
+
 document.addEventListener("click", async (ev) => {
+  const edit = ev.target.closest(".swipe .edit");
+  if (edit) {
+    const s = edit.closest(".swipe");
+    if (s.dataset.id.indexOf("local-") === 0) { toast("Эта запись ещё не ушла на сервер — её можно только удалить"); return; }
+    const e = ENTRIES[s.dataset.id];
+    if (e) startEdit(e);
+    return;
+  }
   const del = ev.target.closest(".swipe .del");
   if (!del) { if (!ev.target.closest(".swipe")) closeSwipes(); return; }
   const s = del.closest(".swipe");
