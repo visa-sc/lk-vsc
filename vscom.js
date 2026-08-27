@@ -4,15 +4,16 @@
 // проксирует ТОЛЬКО /api/vscom-lead (с Host: voyotravel.ru, чтобы не задевать
 // host-зависимую логику основного приложения).
 //
-// КУДА ПАДАЮТ ЗАЯВКИ (три независимых адресата, каждый работает сам по себе):
-//   1) amoCRM — контакт + сделка в воронке «Отдел продаж», статус «Ещё не
-//      связывались», тег VSCOM_AMO_TAG (по умолчанию «VSC-EN») и закреплённое
-//      примечание со всеми полями формы (имя, телефон, email, ответы квиза,
-//      страница, UTM). Отключается VSCOM_AMO=0.
-//   2) Письмо на VSCOM_LEADS_EMAIL (по умолчанию director@visa-sc.ru) —
-//      страховка на случай, если amo недоступна.
-//   3) Локальный журнал .vscomLeads.json рядом с server.js — последние 2000
-//      заявок, чтобы ничего не терялось даже при падении и amo, и почты.
+// КУДА ПАДАЮТ ЗАЯВКИ:
+//   1) Письмо на VSCOM_LEADS_EMAIL (по умолчанию director@visa-sc.ru).
+//      Отправитель — noreply@voyotravel.ru (SMTP_FROM основного приложения),
+//      чтобы не заводить платную рассылку на info@visa-sc.com. Это ОСНОВНОЙ
+//      и единственный канал доставки.
+//   2) Локальный журнал .vscomLeads.json рядом с server.js — последние 2000
+//      заявок, страховка на случай проблем с почтой.
+//   3) amoCRM — ВЫКЛЮЧЕНА (решение Андрея 27.08.2026). Включается VSCOM_AMO=1:
+//      тогда создаётся контакт + сделка «Отдел продаж» → «Ещё не связывались»
+//      с тегом VSCOM_AMO_TAG и примечанием со всеми полями формы.
 //
 // Приложение НИКОГДА не отвечает клиенту ошибкой, если заявка легла хотя бы в
 // журнал: для посетителя важно увидеть «спасибо», разбор проблем — наше дело.
@@ -23,7 +24,9 @@ const path = require("path");
 const LEADS_FILE = path.join(__dirname, ".vscomLeads.json");
 const LEADS_EMAIL = process.env.VSCOM_LEADS_EMAIL || "director@visa-sc.ru";
 const AMO_TAG = process.env.VSCOM_AMO_TAG || "VSC-EN";
-const AMO_ENABLED = process.env.VSCOM_AMO !== "0";
+// С 27.08.2026 по решению Андрея заявки в amoCRM НЕ заводим: они уходят письмом
+// на director@visa-sc.ru. Включить обратно можно переменной VSCOM_AMO=1.
+const AMO_ENABLED = process.env.VSCOM_AMO === "1";
 const PIPELINE_NAME = "отдел продаж";
 const STATUS_NAME = "ещё не связывались";
 const MAX_STORED = 2000;
@@ -195,9 +198,12 @@ async function mailLead(lead, amo, deps) {
   const rows = leadRows(lead)
     .map(([k, v]) => `<tr><td style="padding:5px 12px 5px 0;color:#6b7280;white-space:nowrap;vertical-align:top">${esc(k)}</td><td style="padding:5px 0"><b>${esc(v)}</b></td></tr>`)
     .join("");
+  // Когда amo отключена намеренно, красная плашка «не создана» только пугает.
   const amoLine = amo && amo.leadId
     ? `<p style="margin:0 0 14px">Сделка в amoCRM: <a href="${esc(deps.amoBaseUrl())}/leads/detail/${amo.leadId}">${amo.leadId}</a></p>`
-    : `<p style="margin:0 0 14px;color:#b8351a">В amoCRM сделка НЕ создана, обработайте вручную.</p>`;
+    : (AMO_ENABLED
+        ? `<p style="margin:0 0 14px;color:#b8351a">В amoCRM сделка НЕ создана, обработайте вручную.</p>`
+        : "");
   const html = `
     <div style="font-family:Arial,sans-serif;font-size:14px;color:#1b1f21">
       <h2 style="margin:0 0 10px;font-size:18px">Заявка с visa-sc.com (английский лендинг, ВНЖ Испании)</h2>
