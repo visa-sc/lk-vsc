@@ -116,6 +116,7 @@ p{margin:0 0 14px}
 .hdr__nav a:hover{opacity:1;color:var(--blue)}
 .hdr__tel{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:500;text-decoration:none;white-space:nowrap}
 .hdr__tel img{width:20px;height:20px}
+.lbl-s{display:none}
 .hdr__burger{display:none;margin-left:auto;background:none;border:0;padding:8px;cursor:pointer}
 .hdr__burger span{display:block;width:22px;height:2px;background:var(--ink);margin:4px 0}
 
@@ -303,11 +304,14 @@ p{margin:0 0 14px}
   .facts{grid-template-columns:repeat(2,1fr)}
   .grid--2,.grid--3,.grid--4,.steps,.gallery,.ftr__grid{grid-template-columns:1fr}
   .card,.quiz{padding:24px}
-  .hdr__in{gap:12px}
-  .hdr__tel{font-size:14px;gap:6px;margin-left:auto}
-  .hdr__tel img{width:17px;height:17px}
-  .hdr .btn--sm{display:none}
-  .hdr__burger{margin-left:0}
+  .hdr__in{gap:9px}
+  .hdr__logo{width:38px;height:38px;flex:0 0 38px}
+  .hdr__tel{font-size:13.5px;gap:5px;margin-left:auto}
+  .hdr__tel img{width:16px;height:16px}
+  .hdr .btn--sm{padding:9px 11px;font-size:12.5px}
+  .hdr__burger{margin-left:0;padding:6px}
+  .lbl-l{display:none}
+  .lbl-s{display:inline}
   .case{flex-direction:column}
   .case img{width:100%;flex:0 0 auto}
 }
@@ -326,8 +330,8 @@ p{margin:0 0 14px}
       <a href="#faq">FAQ</a>
       <a href="#contacts">Contacts</a>
     </nav>
-    <a class="hdr__tel" href="tel:+444953691867"><img src="/img/icon-phone.svg" alt="">+44 495 369-18-67</a>
-    <a class="btn btn--sm btn--inline" href="#top-form">Book a call</a>
+    <a class="hdr__tel" href="tel:+442037699209"><img src="/img/icon-phone.svg" alt="">+44 20 3769 9209</a>
+    <a class="btn btn--sm btn--inline" href="#top-form"><span class="lbl-l">Book a call</span><span class="lbl-s">Call</span></a>
     <button class="hdr__burger" id="burger" aria-label="Menu"><span></span><span></span><span></span></button>
   </div>
 </header>
@@ -366,7 +370,7 @@ p{margin:0 0 14px}
           <div class="field"><input type="text" name="name" placeholder="Name" autocomplete="name"></div>
           <div class="field"><input type="tel" name="phone" placeholder="Phone, with country code *" autocomplete="tel" required></div>
           <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-          <button class="btn" type="submit">Find my program</button>
+          <button class="btn" type="submit">Find my programme</button>
           <p class="consent">By clicking the button you agree to the <a href="https://visa-sc.ru/files/policy_20241106155551.pdf" target="_blank" rel="noopener">processing of your personal data</a>.</p>
           <div class="form-note"></div>
         </div>
@@ -383,7 +387,7 @@ p{margin:0 0 14px}
 <!-- ============ QUIZ ============ -->
 <section class="section section--pale">
   <div class="container">
-    <h2 style="text-align:center">Find your program in four short questions</h2>
+    <h2 style="text-align:center">Find your programme in four short questions</h2>
     <div class="quiz">
       <form class="vsc-form" data-form="quiz" id="quizForm">
         <div class="form-body">
@@ -485,7 +489,7 @@ p{margin:0 0 14px}
               <div class="field"><input type="tel" name="phone" placeholder="Phone, with country code *" autocomplete="tel" required></div>
               <div class="field"><input type="email" name="email" placeholder="Email" autocomplete="email"></div>
               <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-              <button class="btn" type="submit">Get my program</button>
+              <button class="btn" type="submit">Get my programme</button>
               <p class="consent">By clicking the button you agree to the <a href="https://visa-sc.ru/files/policy_20241106155551.pdf" target="_blank" rel="noopener">processing of your personal data</a>.</p>
               <div class="form-note"></div>
               <button type="button" class="quiz__back" id="quizBack">Back</button>
@@ -562,7 +566,7 @@ p{margin:0 0 14px}
         <h3>Not sure which one is yours?</h3>
         <p>We will look at your situation and pick the right legal basis for you, free of charge.</p>
       </div>
-      <a class="btn" href="#quizForm">Find my program</a>
+      <a class="btn" href="#quizForm">Find my programme</a>
     </div>
   </div>
 </section>
@@ -726,8 +730,8 @@ p{margin:0 0 14px}
       <details open><summary>Does this work if I am not in tech?</summary><p>Yes. The programme fits remote employees, freelancers, sole traders and business owners from any field.</p></details>
       <details><summary>Do I have to work remotely?</summary><p>No. Remote work is only one of the routes to Spanish residency. For entrepreneurs, financially independent applicants and other situations there are separate programmes, and we will pick the one that fits you.</p></details>
       <details><summary>What are the requirements for an applicant?</summary><p>A source of income or savings, a degree or work experience, and a clean criminal record certificate. The exact list depends on the programme and we go through it on the free consultation.</p></details>
-      <details><summary>Can I apply from the UK or another country?</summary><p>Yes. We run the whole process remotely from anywhere in the world. You do not need to come to our office.</p></details>
-      <details><summary>Do I need to speak Spanish?</summary><p>No. There is no language requirement for these residence permits.</p></details>
+      <details><summary>Can I apply from the UK or another country?</summary><p>Yes. We run the whole process remotely from anywhere in the world. You don't need to come to our office.</p></details>
+      <details><summary>Do I need to speak Spanish?</summary><p>No. There's no language requirement for these residence permits.</p></details>
       <details><summary>Will my family move with me?</summary><p>Yes. Your spouse and children receive their status together with the main applicant.</p></details>
       <details><summary>What taxes does a Spanish resident pay?</summary><p>It depends on your situation, in particular on how many days a year you actually spend in Spain. We explain the rules and help you understand your obligations after the move.</p></details>
     </div>
@@ -772,7 +776,7 @@ p{margin:0 0 14px}
         <div class="form-done">
           <div class="tick"><img src="/img/icon-check.svg" width="30" height="30" alt=""></div>
           <h3>Thank you, your request is with us</h3>
-          <p>A manager will contact you during working hours, Monday to Friday 08:00 to 17:00 CET.</p>
+          <p>A manager will contact you during working hours, Monday to Friday 08:00 to 17:00 London time.</p>
         </div>
       </form>
     </div>
@@ -785,17 +789,15 @@ p{margin:0 0 14px}
     <div class="ftr__grid">
       <div>
         <b>Barcelona</b>
-        <p><a href="tel:+444953691867">+44 495 369-18-67</a>, <a href="tel:+444999385358">+44 499 938-53-58</a></p>
+        <p><a href="tel:+442037699209">+44 20 3769 9209</a></p>
         <p><a href="mailto:info@visa-sc.ru">info@visa-sc.ru</a></p>
-        <p>WhatsApp <a href="https://wa.me/449299435150" target="_blank" rel="noopener">+44 929 943-51-50</a>, Telegram <a href="https://t.me/vsc_operator" target="_blank" rel="noopener">@vsc_operator</a></p>
-        <p>Mon to Fri 08:00 to 17:00, Sat and Sun 10:00 to 16:00 (CET)</p>
+                <p>Mon to Fri 08:00 to 17:00, Sat and Sun 12:00 to 16:00 (London time)</p>
       </div>
       <div>
         <b>Madrid</b>
-        <p><a href="tel:+448122440468">+44 812 244-04-68</a>, <a href="tel:+448122200365">+44 812 220-03-65</a></p>
+        <p><a href="tel:+442037699209">+44 20 3769 9209</a></p>
         <p><a href="mailto:info@visa-sc.ru">info@visa-sc.ru</a></p>
-        <p>WhatsApp <a href="https://wa.me/449299435150" target="_blank" rel="noopener">+44 929 943-51-50</a>, Telegram <a href="https://t.me/vsc_operator" target="_blank" rel="noopener">@vsc_operator</a></p>
-        <p>Mon to Fri 08:00 to 17:00, Sat and Sun 10:00 to 16:00 (CET)</p>
+                <p>Mon to Fri 08:00 to 17:00, Sat and Sun 12:00 to 16:00 (London time)</p>
       </div>
     </div>
     <div class="ftr__fine">
@@ -804,7 +806,7 @@ p{margin:0 0 14px}
       <p>The consultation is free when you order our processing services. As a standalone service the consultation costs £20.</p>
       <p>By leaving a request on this website or by contacting Visa Services Center by phone you may receive single informational SMS messages intended to make the process more convenient. These are not marketing mailings.</p>
       <p>Information published on this website is for general reference only and under no circumstances constitutes a public offer within the meaning of Article 437(2) of the Civil Code of the Russian Federation. For details on prices please contact the sales department by phone or through the forms on this site.</p>
-      <p>AK Group LLC. Russian language version: <a href="https://visa-sc.ru/spain_vnzh/">visa-sc.ru</a></p>
+      <p>AK Group LLC.</p>
     </div>
   </div>
 </footer>
@@ -964,11 +966,11 @@ p{margin:0 0 14px}
             if (typeof window.gtag_report_conversion === "function") gtag_report_conversion();
             if (typeof window.ym === "function" && window.vscYmId) window.ym(window.vscYmId, "reachGoal", "lead");
           } else {
-            setNote(form, (res && res.message) || "Could not send the request. Please call us at +44 495 369-18-67.");
+            setNote(form, (res && res.message) || "Could not send the request. Please call us at +44 20 3769 9209.");
           }
         })
         .catch(function () {
-          setNote(form, "Network error. Please try again or call +44 495 369-18-67.");
+          setNote(form, "Network error. Please try again or call +44 20 3769 9209.");
         })
         .then(function () {
           if (btn) { btn.disabled = false; btn.textContent = oldText; }

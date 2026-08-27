@@ -31,14 +31,14 @@ function gtag_report_conversion(url) {
   return false;
 }
 </script>
-<title>Free Consultation on Moving to Spain | VSC</title>
-<meta name="description" content="Free consultation for Britons planning a move to Spain: which route fits you, what it takes, how long it lasts, what it costs. Family included, no language exam.">
+<title>Spanish Residency and the 90-Day Limit: Free Consultation | VSC</title>
+<meta name="description" content="Spanish residency lets you stay past the 90-day limit and keeps the rest of Europe open. Free consultation for Britons: which route fits you, what it takes, what it costs.">
 <meta name="robots" content="noindex, follow">
 <link rel="canonical" href="https://visa-sc.com/ga">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://visa-sc.com/ga">
-<meta property="og:title" content="Free consultation on moving to Spain">
-<meta property="og:description" content="One free call: which route fits your situation, what it takes, how long it lasts and what it costs.">
+<meta property="og:title" content="Spanish residency and the 90-day limit">
+<meta property="og:description" content="Residency means Spain stops counting your days, and the rest of Europe stays open. One free call to see which route fits you.">
 <meta property="og:image" content="https://visa-sc.com/img/og-cover.jpg?v=2">
 <meta property="og:site_name" content="VSC Visa Services Center">
 <meta property="og:locale" content="en_US">
@@ -86,17 +86,21 @@ p{margin:0 0 14px}
 .hdr__nav a:hover{opacity:1;color:var(--blue)}
 .hdr__burger{display:none;margin-left:auto;background:none;border:0;padding:8px;cursor:pointer}
 .hdr__burger span{display:block;width:22px;height:2px;background:var(--ink);margin:4px 0}
+.hdr__tel{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:500;
+  text-decoration:none;white-space:nowrap}
+.hdr__tel img{width:20px;height:20px}
+.lbl-s{display:none}
 
 .hero{position:relative;color:#fff;overflow:hidden}
 .hero__bg{position:absolute;inset:0;background:url('/img/hero-spain.webp') center/cover no-repeat}
 .hero__veil{position:absolute;inset:0;
   background:linear-gradient(100deg,rgba(9,18,40,.88) 0%,rgba(9,18,40,.70) 42%,rgba(9,18,40,.28) 72%,rgba(9,18,40,.38) 100%)}
 .hero__in{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:48px;
-  align-items:center;padding-top:72px;padding-bottom:76px}
+  align-items:center;padding-top:144px;padding-bottom:152px}
 .hero h1{font-size:clamp(29px,3.8vw,42px);line-height:1.16;margin-bottom:16px}
 .hero h1 .hl{background:rgba(0,152,202,.72);box-decoration-break:clone;
   -webkit-box-decoration-break:clone;padding:2px 6px;margin:0 -2px}
-.hero__sub{color:rgba(255,255,255,.86);font-size:16px;max-width:600px;margin-bottom:28px;line-height:1.7}
+.hero__sub{color:rgba(255,255,255,.86);font-size:16px;max-width:660px;margin-bottom:28px;line-height:1.75}
 .facts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:610px}
 .fact{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.16);border-radius:10px;
   padding:13px 15px;backdrop-filter:blur(3px)}
@@ -126,6 +130,16 @@ p{margin:0 0 14px}
 /* Карточка стоит внутри .hero, где у <p> белый цвет. Возвращаем читаемый. */
 .card .card__sub,.card .consent,.card .form-done p{color:var(--muted)}
 .card .consent a{color:var(--muted)}
+
+.modal{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;
+  padding:20px;background:rgba(9,18,40,.6)}
+.modal.is-on{display:flex}
+.modal__box{background:#fff;border-radius:18px;padding:32px;width:100%;max-width:430px;position:relative;
+  max-height:90vh;overflow:auto}
+.modal__x{position:absolute;top:12px;right:15px;background:none;border:0;font-size:27px;line-height:1;
+  color:var(--muted);cursor:pointer;padding:4px 8px}
+.modal__box .card__sub,.modal__box .consent,.modal__box .form-done p{color:var(--muted)}
+.modal__box .consent a{color:var(--muted)}
 
 .grid{display:grid;gap:22px}
 .grid--2{grid-template-columns:repeat(2,1fr)}
@@ -202,7 +216,7 @@ p{margin:0 0 14px}
   .hdr__nav.is-on{display:flex;position:absolute;top:68px;left:0;right:0;background:#fff;
     flex-direction:column;padding:18px 24px;gap:16px;border-bottom:1px solid var(--line);
     box-shadow:var(--shadow)}
-  .hero__in{grid-template-columns:1fr;padding-top:48px;padding-bottom:54px}
+  .hero__in{grid-template-columns:1fr;padding-top:96px;padding-bottom:108px}
   .grid--3,.grid--4,.steps{grid-template-columns:repeat(2,1fr)}
   .cta{grid-template-columns:1fr;padding:30px}
 }
@@ -211,7 +225,14 @@ p{margin:0 0 14px}
   .facts{grid-template-columns:repeat(2,1fr)}
   .grid--2,.grid--3,.grid--4,.steps,.covers{grid-template-columns:1fr}
   .card{padding:23px}
-  .hdr__in{gap:12px}
+  .hdr__in{gap:9px}
+  .hdr__logo{width:38px;height:38px;flex:0 0 38px}
+  .hdr__tel{font-size:13.5px;gap:5px;margin-left:auto}
+  .hdr__tel img{width:16px;height:16px}
+  .hdr .btn--sm{padding:9px 11px;font-size:12.5px}
+  .hdr__burger{margin-left:0;padding:6px}
+  .lbl-l{display:none}
+  .lbl-s{display:inline}
   .person{max-width:100%}
 }
 </style>
@@ -228,7 +249,8 @@ p{margin:0 0 14px}
       <a href="#advisers">Advisers</a>
       <a href="#faq">FAQ</a>
     </nav>
-    <a class="btn btn--sm btn--inline" href="#form">Free consultation</a>
+    <a class="hdr__tel" href="tel:+442037699209"><img src="/img/icon-phone.svg" alt="">+44 20 3769 9209</a>
+    <a class="btn btn--sm btn--inline" href="#form"><span class="lbl-l">Free consultation</span><span class="lbl-s">Free call</span></a>
     <button class="hdr__burger" id="burger" aria-label="Menu"><span></span><span></span><span></span></button>
   </div>
 </header>
@@ -240,14 +262,15 @@ p{margin:0 0 14px}
   <div class="container hero__in">
     <div>
       <h1>
-        Live in Spain. Move around Europe like a local.<br>
-        <span class="hl">Find out for free what it takes.</span>
+        Spanish residency: stay past the 90-day limit<br>
+        <span class="hl">and keep the rest of Europe open.</span>
       </h1>
       <p class="hero__sub">
-        For British remote workers, freelancers and business owners. Spain becomes your home base,
-        and the other 28 Schengen countries open up with no visas and no day counting.
-        Keep your UK employer and clients, bring your family.
-        One free call and you will know which route is yours and how to get there.
+        For British remote workers, freelancers and business owners.<br>
+        Residency means Spain stops counting your days altogether.<br>
+        The other 28 Schengen countries stay open, with no visas.<br>
+        Keep your UK employer and clients. Bring your family.<br>
+        One free call and you'll know exactly which route is yours.
       </p>
       <div class="facts">
         <div class="fact"><span>Europe</span><b>29 countries</b></div>
@@ -263,7 +286,7 @@ p{margin:0 0 14px}
       <form class="vsc-form" data-form="ga">
         <div class="form-body">
           <div class="card__title"><em>Free consultation</em><br>on your move to Spain</div>
-          <p class="card__sub">No charge, no obligation. An adviser calls you back.</p>
+          <p class="card__sub">No charge, no obligation. One of our advisers will ring you back.</p>
           <div class="field"><input type="text" name="name" placeholder="Name" autocomplete="name"></div>
           <div class="field"><input type="tel" name="phone" placeholder="Phone, with country code *" autocomplete="tel" required></div>
           <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
@@ -273,8 +296,8 @@ p{margin:0 0 14px}
         </div>
         <div class="form-done">
           <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
-          <h3>Thank you, we have your request</h3>
-          <p>An adviser will call you to agree a time.</p>
+          <h3>Thanks, we've got your details</h3>
+          <p>An adviser will ring you to fix a time.</p>
         </div>
       </form>
     </div>
@@ -288,7 +311,7 @@ p{margin:0 0 14px}
     <div class="grid grid--3">
       <div class="benefit"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12"/><path d="M4 16h24M16 4c3.5 4 3.5 20 0 24M16 4c-3.5 4-3.5 20 0 24"/></svg><div><b>All of Schengen opens up</b><span>Live in Spain, come and go across 29 countries. No visas, no queues, no counting days.</span></div></div>
       <div class="benefit"><svg viewBox="0 0 32 32"><rect x="3" y="9" width="26" height="18" rx="2.5"/><path d="M11 9V6.5A2.5 2.5 0 0 1 13.5 4h5A2.5 2.5 0 0 1 21 6.5V9"/></svg><div><b>Keep your UK income</b><span>Same employer or clients, new address.</span></div></div>
-      <div class="benefit"><svg viewBox="0 0 32 32"><rect x="3" y="7" width="26" height="18" rx="2.5"/><path d="M3 13h26M8 20h6"/></svg><div><b>European bank accounts</b><span>Residency opens normal EU banking.</span></div></div>
+      <div class="benefit"><svg viewBox="0 0 32 32"><rect x="3" y="7" width="26" height="18" rx="2.5"/><path d="M3 13h26M8 20h6"/></svg><div><b>European bank accounts</b><span>Residency gets you proper European banking.</span></div></div>
       <div class="benefit"><svg viewBox="0 0 32 32"><circle cx="11" cy="12" r="4"/><circle cx="22" cy="13" r="3.2"/><path d="M4 26c0-4 3.2-7 7-7s7 3 7 7M19 26c0-3 2-5.5 5-5.5s4 2.2 4 5.5"/></svg><div><b>Family on the same case</b><span>Spouse and children get status with you.</span></div></div>
       <div class="benefit"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12"/><path d="M16 9v7l5 3"/></svg><div><b>Permanent residence at 5 years</b><span>The clock starts the day you arrive.</span></div></div>
       <div class="benefit"><svg viewBox="0 0 32 32"><path d="M16 3l3.6 7.6 8.4 1.1-6.1 5.8 1.5 8.3L16 22l-7.4 3.8 1.5-8.3L4 11.7l8.4-1.1L16 3Z"/></svg><div><b>Citizenship on the horizon</b><span>Ten years of legal residence, then a passport.</span></div></div>
@@ -308,15 +331,15 @@ p{margin:0 0 14px}
         <ul>
           <li>Income from outside Spain, about €2,850 a month</li>
           <li>Degree or three years of relevant experience</li>
-          <li>Status for 3 years</li>
-          <li>Flat 24% tax regime may apply</li>
+          <li>Valid for 3 years</li>
+          <li>You may qualify for the flat 24% tax rate</li>
         </ul>
       </div>
       <div class="prog">
         <h3>Non-Lucrative</h3>
         <div class="prog__for">Financially independent, retired</div>
         <ul>
-          <li>Savings or passive income, no Spanish work</li>
+          <li>Savings or passive income, no working in Spain</li>
           <li>Renewable, leads to permanent residence</li>
           <li>Family included</li>
           <li>Popular with second-home owners</li>
@@ -327,8 +350,8 @@ p{margin:0 0 14px}
         <div class="prog__for">Founders with an innovative project</div>
         <ul>
           <li>Business plan approved by ENISA</li>
-          <li>Capital to launch</li>
-          <li>Status for 3 years</li>
+          <li>Capital to get it off the ground</li>
+          <li>Valid for 3 years</li>
           <li>Team can relocate too</li>
         </ul>
       </div>
@@ -336,7 +359,7 @@ p{margin:0 0 14px}
     <div class="cta">
       <div>
         <h3>Not sure which is yours?</h3>
-        <p>That is exactly what the free call is for. We match you to a route, then help you get there.</p>
+        <p>That's exactly what the free call is for. We'll match you to a route, then help you get there.</p>
       </div>
       <a class="btn" href="#form">Get my free consultation</a>
     </div>
@@ -348,10 +371,10 @@ p{margin:0 0 14px}
   <div class="container">
     <h2>What you walk away with after one call</h2>
     <ul class="covers">
-      <li>The route that fits you, and the ones that do not</li>
+      <li>The route that fits you, and the ones that don't</li>
       <li>The exact documents your case needs</li>
       <li>Realistic timing, stage by stage</li>
-      <li>Full cost, ours and the official fees, separately</li>
+      <li>The full cost: our fee and the official charges, itemised</li>
       <li>What changes for your spouse and children</li>
       <li>Where your tax position lands after the move</li>
       <li>How much of Europe opens up, and on what terms</li>
@@ -364,10 +387,10 @@ p{margin:0 0 14px}
   <div class="container">
     <h2>How it works</h2>
     <div class="steps">
-      <div class="step"><b>You leave a request</b><span>Name and phone, nothing else.</span></div>
-      <div class="step"><b>We call back</b><span>Same working day, to agree a time.</span></div>
+      <div class="step"><b>You get in touch</b><span>Name and number, nothing else.</span></div>
+      <div class="step"><b>We ring you back</b><span>Same working day, to fix a time.</span></div>
       <div class="step"><b>The free call</b><span>About 30 minutes, in English.</span></div>
-      <div class="step"><b>Your plan</b><span>Written summary. Then we help you follow it.</span></div>
+      <div class="step"><b>Your plan</b><span>A written summary. Then we help you follow it.</span></div>
     </div>
   </div>
 </section>
@@ -377,14 +400,14 @@ p{margin:0 0 14px}
   <div class="container">
     <h2>Why applications get refused</h2>
     <ul class="refuse">
-      <li><b>An incomplete file.</b> One missing certificate or an outdated form is enough for a no.</li>
-      <li><b>Documents that do not meet the criteria.</b> Expired certificates, missing apostille, no certified translation, copies instead of originals.</li>
+      <li><b>An incomplete file.</b> One missing certificate or an out-of-date form is enough for a refusal.</li>
+      <li><b>Documents that don't meet the criteria.</b> Expired certificates, missing apostille, no certified translation, copies instead of originals.</li>
       <li><b>Weak proof of income.</b> The money has to be shown the way the authorities expect it, not the way it looks on your bank app.</li>
       <li><b>Immigration or criminal history.</b> A conviction or a breach of stay rules almost always closes the door.</li>
     </ul>
     <p style="margin-top:24px;color:var(--muted);max-width:860px">
       Every one of these is avoidable, and every one of them is easier to spot before you start than after a refusal.
-      That is what we go through on the call.
+      That's what we go through on the call.
     </p>
   </div>
 </section>
@@ -392,7 +415,7 @@ p{margin:0 0 14px}
 <!-- ============ ADVISERS ============ -->
 <section class="section" id="advisers">
   <div class="container">
-    <h2>Who you will be speaking to</h2>
+    <h2>Who you'll be speaking to</h2>
     <div class="grid grid--3">
       <div class="person"><img src="/img/team-ragoza.webp" alt="Kristina Ragoza" loading="lazy"><b>Kristina Ragoza</b><span>Head of Client Relations, Barcelona</span></div>
       <div class="person"><img src="/img/team-kuznetsova.webp" alt="Margarita Lynn" loading="lazy"><b>Margarita Lynn</b><span>Head of Client Relations, Madrid</span></div>
@@ -408,12 +431,12 @@ p{margin:0 0 14px}
     <div class="faq">
       <details open><summary>Is the consultation really free?</summary><p>Yes. Free, and with no obligation to go any further.</p></details>
       <details><summary>Do I have to work in tech?</summary><p>No. Remote employees, freelancers, sole traders and business owners from any field.</p></details>
-      <details><summary>Do I need Spanish?</summary><p>No. There is no language requirement, and the call is in English.</p></details>
-      <details><summary>Can I do this from the UK?</summary><p>Yes. The whole process runs remotely. Filing from inside Spain gives a three-year status straight away, and we cover that difference on the call.</p></details>
-      <details><summary>Does this let me live anywhere in Europe?</summary><p>Your home is Spain, that is where the status is issued. From there the whole Schengen area is open: you travel and stay in the other 28 countries without visas and without the 90/180 headache Britons have had since Brexit. Moving your permanent home to another EU country is a separate step, and we explain how that works on the call.</p></details>
+      <details><summary>Do I need Spanish?</summary><p>No. There's no language requirement, and the call's in English.</p></details>
+      <details><summary>Can I do this from the UK?</summary><p>Yes, the whole thing runs remotely. Applying from inside Spain gets you the three-year status straight away, and we'll go through that difference on the call.</p></details>
+      <details><summary>Does this let me live anywhere in Europe?</summary><p>Your home is Spain, that's where the status is issued. From there the whole Schengen area opens up: you travel and stay in the other 28 countries with no visas and none of the 90/180 headache Britons have had since Brexit. Moving your permanent home to another EU country is a separate step, and we'll explain how that works on the call.</p></details>
       <details><summary>Will my family come with me?</summary><p>Yes. Spouse and children take the same route as the main applicant.</p></details>
-      <details><summary>What if my plan is not realistic?</summary><p>We say so on the call. Cheaper for everyone than finding out later.</p></details>
-      <details><summary>Who are you?</summary><p>VSC is a private advisory company. We have been advising on relocation and residency since 2011. We are not a government body and we do not decide anything ourselves.</p></details>
+      <details><summary>What if my plan isn't realistic?</summary><p>We say so on the call. Cheaper for everyone than finding out later.</p></details>
+      <details><summary>Who are you?</summary><p>VSC is a private advisory firm. We've been advising on relocation and residency since 2011. We're not a government body and we don't decide anything ourselves.</p></details>
     </div>
   </div>
 </section>
@@ -424,18 +447,43 @@ p{margin:0 0 14px}
     <div class="cta">
       <div>
         <h3>Spain as your base, Europe as your range</h3>
-        <p>Thirty minutes with an adviser. You leave knowing your route, your timeline and your costs.</p>
+        <p>Thirty minutes with an adviser. You'll come away knowing your route, your timeline and your costs.</p>
       </div>
       <a class="btn" href="#form">Book my free consultation</a>
     </div>
   </div>
 </section>
 
+
+<!-- ============ ВСПЛЫВАЮЩАЯ ФОРМА ============ -->
+<div class="modal" id="callModal">
+  <div class="modal__box">
+    <button class="modal__x" data-close aria-label="Close">&times;</button>
+    <form class="vsc-form" data-form="ga-modal">
+      <div class="form-body">
+        <div class="card__title"><em>Free consultation</em><br>on your move to Spain</div>
+        <p class="card__sub">No charge, no obligation. An adviser calls you back.</p>
+        <div class="field"><input type="text" name="name" placeholder="Name" autocomplete="name"></div>
+        <div class="field"><input type="tel" name="phone" placeholder="Phone, with country code *" autocomplete="tel" required></div>
+        <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <button class="btn" type="submit">Book my free consultation</button>
+        <p class="consent">By clicking the button you agree to the <a href="https://visa-sc.ru/files/policy_20241106155551.pdf" target="_blank" rel="noopener">processing of your personal data</a>.</p>
+        <div class="form-note"></div>
+      </div>
+      <div class="form-done">
+        <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
+        <h3>Thanks, we've got your details</h3>
+        <p>An adviser will ring you to fix a time.</p>
+      </div>
+    </form>
+  </div>
+</div>
+
 <footer class="ftr" id="contacts">
   <div class="container">
     <b>VSC Visa Services Center</b>
-    <p><a href="mailto:info@visa-sc.ru">info@visa-sc.ru</a> · Telegram <a href="https://t.me/vsc_operator" target="_blank" rel="noopener">@vsc_operator</a></p>
-    <p>Mon to Fri 08:00 to 17:00, Sat and Sun 10:00 to 16:00 (CET)</p>
+    <p><a href="tel:+442037699209">+44 20 3769 9209</a> · <a href="mailto:info@visa-sc.ru">info@visa-sc.ru</a></p>
+    <p>Mon to Fri 08:00 to 17:00, Sat and Sun 12:00 to 16:00 (London time)</p>
     <div class="ftr__fine">
       <p>VSC is a private company. It is not a consulate, an embassy or a government agency, and it is
       not an official representative of any country. Decisions on visas and residence permits are taken
@@ -443,7 +491,7 @@ p{margin:0 0 14px}
       the information we give you.</p>
       <p>Information on this page is general and does not constitute legal or tax advice, nor a public
       offer. What applies to your case is settled on the consultation.</p>
-      <p>AK Group LLC. Russian language site: <a href="https://visa-sc.ru/">visa-sc.ru</a></p>
+      <p>AK Group LLC.</p>
     </div>
   </div>
 </footer>
@@ -454,6 +502,24 @@ p{margin:0 0 14px}
   var burger = document.getElementById("burger"), nav = document.getElementById("nav");
   if (burger) burger.addEventListener("click", function () { nav.classList.toggle("is-on"); });
   nav.addEventListener("click", function (e) { if (e.target.tagName === "A") nav.classList.remove("is-on"); });
+
+  // Все кнопки «консультация» открывают всплывающую форму, а не прокручивают
+  // к первому экрану: человек уже дочитал до кнопки, гонять его наверх незачем.
+  var modal = document.getElementById("callModal");
+  function openModal() {
+    modal.classList.add("is-on");
+    var f = modal.querySelector('input[name="name"]');
+    if (f) setTimeout(function () { f.focus(); }, 60);
+  }
+  function closeModal() { modal.classList.remove("is-on"); }
+  document.addEventListener("click", function (e) {
+    var opener = e.target.closest('a[href="#form"]');
+    if (opener) { e.preventDefault(); openModal(); return; }
+    if (e.target.closest("[data-close]") || e.target === modal) closeModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && modal.classList.contains("is-on")) closeModal();
+  });
 
   var qs = new URLSearchParams(location.search), utm = {};
   ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","gclid","yclid"].forEach(function (k) {
@@ -494,7 +560,7 @@ p{margin:0 0 14px}
       btn.disabled = true; btn.textContent = "Sending...";
 
       var payload = {
-        form: "ga", name: data.name || "", phone: data.phone || "",
+        form: "ga", source: form.dataset.form, name: data.name || "", phone: data.phone || "",
         page: location.href, referrer: document.referrer || "", utm: utm,
         lang: navigator.language || "",
         elapsed: Math.round((Date.now() - openedAt) / 1000),
