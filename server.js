@@ -3663,6 +3663,12 @@ app.get("/admin/kb/logic", requireStaff, (req, res) => {
 // инфраструктура). Пишем понятно, без воды, но со всеми нюансами + кто просил.
 // ВАЖНО: при любой правке клиентского ЛК — добавлять сюда новую запись сверху.
 const LK_CHANGELOG = [
+  { date: "28.08.2026", title: "Опросники: выбранный ответ выделяется ярко (жалоба клиента)", by: "корректировка Ксении М. (ОП)", points: [
+    "Клиент жаловался: при выборе ответа в опроснике (пилюли «Семейное положение» и т.п.) изменение почти не видно — казалось, что поля неактивны. Причина двойная: бледная подсветка + в старых браузерах (без поддержки CSS :has()) индикации не было вообще.",
+    "Теперь выбранная пилюля заливается фирменным голубым градиентом с белым текстом и мягкой тенью — не заметить невозможно; у невыбранных появился hover. Единый акцентный цвет (синий ЛК) вместо блёклого зелёного, плавные переходы.",
+    "Для браузеров без :has() добавлен JS-фолбэк (класс на выбранной пилюле) — индикация работает везде. Красная подсветка ответов «Нет» на подтверждениях уcилена так же.",
+    "Затронуты оба опросника — Шенген (радио-пилюли, галочки согласий и рода занятий) и Япония (радио-пилюли, вертикальные списки, карточки-чекбоксы). Логика, поля и PDF не менялись — только внешний вид."
+  ] },
   { date: "19.08.2026", title: "Приветственные баллы другу — сразу при регистрации", by: "решение Андрея", points: [
     "Клиент, пришедший по приглашению, получает 2 000 баллов СРАЗУ в момент привязки промокода — при регистрации по ссылке друга или когда сотрудник внёс промокод в админке. Раньше он ждал собственной оплаты, и баллы, которыми можно было заплатить, приходили уже после оплаты.",
     "Пригласившему 2 000 баллов по-прежнему начисляются только после того, как приглашённый оплатил: сделка попала в платёжные статусы и заполнено поле «Бюджет».",
@@ -9056,20 +9062,38 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
       border: 1px solid #e8e2ee;
       border-radius: 12px;
       background: #fff;
+      -webkit-user-select: none; user-select: none;
+      transition: border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease;
     }
-    .radio-group input[type="radio"] { accent-color: #4f9f68; width: 16px; height: 16px; }
-    .radio-group label:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    .radio-group label:hover { border-color: #b9c6d6; }
+    .radio-group input[type="radio"] { accent-color: #3589BD; width: 16px; height: 16px; }
+    /* Выбранный ответ — ярко и однозначно (корр. Ксении М. 28.08: «сливается, не заметно»).
+       Селектор :has() продублирован классами .checked/.checked-no — их ставит JS-фолбэк
+       для браузеров без поддержки :has() (старые Safari/Firefox — у клиента индикации
+       не было ВООБЩЕ, только маленький кружок). */
+    .radio-group label:has(input:checked),
+    .radio-group label.checked {
+      border-color: transparent;
+      background: linear-gradient(135deg, #43a3d9 0%, #2e7fae 100%);
+      color: #fff;
+      box-shadow: 0 8px 18px -9px rgba(43, 111, 150, .7);
+    }
+    .radio-group label:has(input:checked) input,
+    .radio-group label.checked input { accent-color: #ffffff; }
     .radio-group label:has(input[name="confirmAccuracy"][value="Нет"]:checked),
     .radio-group label:has(input[name="confirmPrevData"][value="Нет"]:checked),
-    .radio-group label:has(input[name="personalDataConsent"][value="Нет"]:checked) {
-      border-color: #d97a8a;
-      background: #fbebee;
-      color: #a15561;
+    .radio-group label:has(input[name="personalDataConsent"][value="Нет"]:checked),
+    .radio-group label.checked-no {
+      border-color: transparent;
+      background: linear-gradient(135deg, #e88585 0%, #d05a5a 100%);
+      color: #fff;
+      box-shadow: 0 8px 18px -9px rgba(190, 80, 80, .6);
     }
     .radio-group label:has(input[name="confirmAccuracy"][value="Нет"]:checked) input,
     .radio-group label:has(input[name="confirmPrevData"][value="Нет"]:checked) input,
-    .radio-group label:has(input[name="personalDataConsent"][value="Нет"]:checked) input {
-      accent-color: #d97a8a;
+    .radio-group label:has(input[name="personalDataConsent"][value="Нет"]:checked) input,
+    .radio-group label.checked-no input {
+      accent-color: #ffffff;
     }
     .cond { display: none; }
     .cond.show { display: grid; gap: 14px; }
@@ -9137,7 +9161,7 @@ function buildQuestionnaireHtml({ phone, leadId, countryService, applicantIndex 
     }
     .ack-row input[type="checkbox"] {
       margin: 3px 0 0;
-      accent-color: #4f9f68;
+      accent-color: #3589BD;
       width: 16px;
       height: 16px;
       flex: 0 0 auto;
@@ -9800,6 +9824,25 @@ ${mixedFieldsHtml}
   const submitBtn = document.getElementById("submitBtn");
   const errorBox = document.getElementById("errorBox");
   const successBox = document.getElementById("successBox");
+
+  // Фолбэк индикации выбранного ответа для браузеров без :has() (корр. Ксении М. 28.08):
+  // вешаем класс .checked на пилюлю-label, иначе выбор там не был виден вообще.
+  (function () {
+    var hasSupport = false;
+    try { hasSupport = CSS.supports("selector(:has(input))"); } catch (_) {}
+    if (hasSupport) return;
+    function syncChecked() {
+      var labels = form.querySelectorAll(".radio-group label, .radio-stack label, .checkbox-card, .checkbox-stack label");
+      for (var i = 0; i < labels.length; i++) {
+        var inp = labels[i].querySelector('input[type="radio"], input[type="checkbox"]');
+        if (!inp) continue;
+        labels[i].classList.toggle("checked", inp.checked);
+        labels[i].classList.toggle("checked-no", inp.checked && inp.value === "Нет" && /^(confirmAccuracy|confirmPrevData|personalDataConsent)$/.test(inp.name));
+      }
+    }
+    form.addEventListener("change", syncChecked);
+    syncChecked();
+  })();
 
   function showBox(el, msg) { el.style.display = "block"; el.textContent = msg || ""; }
   function hideBox(el) { el.style.display = "none"; el.textContent = ""; }
@@ -10550,32 +10593,53 @@ function buildJapanQuestionnaireHtml({ phone, leadId, countryService, applicantI
     .radio-group label {
       display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 400; color: #1d2330; cursor: pointer;
       padding: 10px 16px; border: 1px solid #e8e2ee; border-radius: 12px; background: #fff;
+      -webkit-user-select: none; user-select: none;
+      transition: border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease;
     }
-    .radio-group input[type="radio"] { accent-color: #4f9f68; width: 16px; height: 16px; }
-    .radio-group label:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    .radio-group input[type="radio"] { accent-color: #3589BD; width: 16px; height: 16px; }
     /* Вертикальный список «пилюль» для длинных radio-списков (цель визита, род занятий, статус приглашающего). */
     .radio-stack { display: grid; gap: 8px; }
     .radio-stack label {
       display: flex; align-items: center; gap: 8px; font-size: 14px; color: #1d2330; cursor: pointer;
       padding: 12px 16px; border: 1px solid #e8e2ee; border-radius: 12px; background: #fff;
+      -webkit-user-select: none; user-select: none;
+      transition: border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease;
     }
-    .radio-stack input[type="radio"] { accent-color: #4f9f68; width: 16px; height: 16px; }
-    .radio-stack label:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    .radio-stack input[type="radio"] { accent-color: #3589BD; width: 16px; height: 16px; }
     /* Одиночные «карточки-чекбоксы» (Да-если-отмечено). */
     .checkbox-card {
       display: flex; align-items: center; gap: 10px; font-size: 14px; color: #1d2330; cursor: pointer;
       padding: 12px 16px; border: 1px solid #e8e2ee; border-radius: 12px; background: #fff;
+      -webkit-user-select: none; user-select: none;
+      transition: border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease;
     }
-    .checkbox-card input[type="checkbox"] { accent-color: #4f9f68; width: 16px; height: 16px; flex: 0 0 auto; }
-    .checkbox-card:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    .checkbox-card input[type="checkbox"] { accent-color: #3589BD; width: 16px; height: 16px; flex: 0 0 auto; }
     /* Группа чекбоксов (multi-select) для «что применимо к вам». */
     .checkbox-stack { display: grid; gap: 8px; }
     .checkbox-stack label {
       display: flex; align-items: flex-start; gap: 10px; font-size: 14px; color: #1d2330; cursor: pointer;
       padding: 12px 16px; border: 1px solid #e8e2ee; border-radius: 12px; background: #fff; line-height: 1.4;
+      -webkit-user-select: none; user-select: none;
+      transition: border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease;
     }
-    .checkbox-stack input[type="checkbox"] { accent-color: #4f9f68; width: 16px; height: 16px; flex: 0 0 auto; margin-top: 1px; }
-    .checkbox-stack label:has(input:checked) { border-color: #4f9f68; background: #f0faf3; }
+    .checkbox-stack input[type="checkbox"] { accent-color: #3589BD; width: 16px; height: 16px; flex: 0 0 auto; margin-top: 1px; }
+    .radio-group label:hover, .radio-stack label:hover, .checkbox-card:hover, .checkbox-stack label:hover { border-color: #b9c6d6; }
+    /* Выбранный ответ — ярко и однозначно (корр. Ксении М. 28.08: «сливается, не заметно»).
+       Селектор :has() продублирован классом .checked — его ставит JS-фолбэк
+       для браузеров без поддержки :has() (там индикации не было вообще). */
+    .radio-group label:has(input:checked),    .radio-group label.checked,
+    .radio-stack label:has(input:checked),    .radio-stack label.checked,
+    .checkbox-card:has(input:checked),        .checkbox-card.checked,
+    .checkbox-stack label:has(input:checked), .checkbox-stack label.checked {
+      border-color: transparent;
+      background: linear-gradient(135deg, #43a3d9 0%, #2e7fae 100%);
+      color: #fff;
+      box-shadow: 0 8px 18px -9px rgba(43, 111, 150, .7);
+    }
+    .radio-group label:has(input:checked) input,    .radio-group label.checked input,
+    .radio-stack label:has(input:checked) input,    .radio-stack label.checked input,
+    .checkbox-card:has(input:checked) input,        .checkbox-card.checked input,
+    .checkbox-stack label:has(input:checked) input, .checkbox-stack label.checked input { accent-color: #ffffff; }
     /* Условные блоки — показываются только после установки галки/выбора. */
     .cond { display: none; }
     .cond.show { display: grid; gap: 14px; }
@@ -10981,6 +11045,24 @@ ${mixedFieldsHtml}
   const errorBox = document.getElementById("errorBox");
   const successBox = document.getElementById("successBox");
   const EXISTING_FIOS = ${existingFiosJsonSafe};
+
+  // Фолбэк индикации выбранного ответа для браузеров без :has() (корр. Ксении М. 28.08):
+  // вешаем класс .checked на пилюлю-label, иначе выбор там не был виден вообще.
+  (function () {
+    var hasSupport = false;
+    try { hasSupport = CSS.supports("selector(:has(input))"); } catch (_) {}
+    if (hasSupport) return;
+    function syncChecked() {
+      var labels = form.querySelectorAll(".radio-group label, .radio-stack label, .checkbox-card, .checkbox-stack label");
+      for (var i = 0; i < labels.length; i++) {
+        var inp = labels[i].querySelector('input[type="radio"], input[type="checkbox"]');
+        if (!inp) continue;
+        labels[i].classList.toggle("checked", inp.checked);
+      }
+    }
+    form.addEventListener("change", syncChecked);
+    syncChecked();
+  })();
 
   function showBox(el, msg) { el.style.display = "block"; el.textContent = msg || ""; }
   function hideBox(el) { el.style.display = "none"; el.textContent = ""; }
