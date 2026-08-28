@@ -62,8 +62,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-grad
 .chip b{font-weight:600}
 .chip .c-amt{color:var(--faint);font-size:12px}
 .buckets{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
-.bk{border:1.5px solid var(--line);background:var(--card);border-radius:16px;padding:12px 6px;text-align:center;font-size:13.5px;font-weight:600;color:var(--muted);box-shadow:var(--shadow)}
-.bk small{display:block;font-weight:400;font-size:10.5px;margin-top:2px;color:var(--faint)}
+.bk{border:1.5px solid var(--line);background:var(--card);border-radius:16px;padding:14px 8px;min-height:54px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:13.5px;font-weight:600;color:var(--muted);box-shadow:var(--shadow)}
 .bk[data-b="pos"].sel{background:rgba(52,199,89,.10);border-color:var(--pos);color:#1e9e46}
 .bk[data-b="ok"].sel{background:rgba(53,137,189,.10);border-color:var(--ok);color:var(--ok)}
 .bk[data-b="nope"].sel{background:rgba(255,149,0,.10);border-color:var(--nope);color:#cc7a00}
@@ -72,10 +71,14 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-grad
 .pill{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:9px 15px;font-size:13.5px;color:var(--muted);box-shadow:var(--shadow)}
 input.pill{outline:none;color:var(--ink)}
 input.pill::placeholder{color:var(--faint)}
-.flagbtn{cursor:pointer;user-select:none;white-space:nowrap;padding:9px 12px}
 #date{min-width:106px;font-size:13px;padding:9px 10px}
-.flagbtn.on{color:var(--ink);border-color:var(--nope);background:rgba(255,149,0,.08)}
-#flagR.on{border-color:var(--trash);background:rgba(255,59,48,.06)}
+/* метки — просто цветные кружки без подписей; выбранная — с синим кольцом */
+.flagdot{width:42px;height:42px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);box-shadow:var(--shadow);flex:0 0 auto;position:relative;padding:0}
+.flagdot::after{content:"";position:absolute;inset:9px;border-radius:50%}
+#flagY::after{background:#ffcc00}
+#flagR::after{background:#ff3b30}
+#flagG::after{background:#34c759}
+.flagdot.on{border-color:var(--acc);border-width:2.5px}
 #saveBtn{width:100%;margin-top:16px;background:var(--acc);border:0;border-radius:18px;color:#fff;font-size:18px;font-weight:700;padding:16px;box-shadow:var(--shadow-hi)}
 #saveBtn:disabled{opacity:.4}
 #saveBtn.flash{background:var(--pos)}
@@ -154,15 +157,16 @@ input.pill::placeholder{color:var(--faint)}
     <div class="chips" id="chips"></div>
 
     <div class="buckets" id="buckets">
-      <div class="bk" data-b="pos">Позитивные<small>инвестиции в себя</small></div>
-      <div class="bk sel" data-b="ok">Допустимые<small>обычная жизнь</small></div>
-      <div class="bk" data-b="nope">Можно было не тратить<small>импульсивное</small></div>
-      <div class="bk" data-b="trash">Выброшенные<small>штрафы, потери</small></div>
+      <div class="bk" data-b="pos">Позитивные</div>
+      <div class="bk sel" data-b="ok">Допустимые</div>
+      <div class="bk" data-b="nope">Можно было не тратить</div>
+      <div class="bk" data-b="trash">Выброшенные</div>
     </div>
 
     <div class="meta-row">
-      <div class="pill flagbtn" id="flagY" onclick="toggleFlag('yellow')">🟡 разобраться</div>
-      <div class="pill flagbtn" id="flagR" onclick="toggleFlag('red')">🔴 вернуть</div>
+      <button class="flagdot" id="flagY" onclick="toggleFlag('yellow')" aria-label="жёлтая метка"></button>
+      <button class="flagdot" id="flagR" onclick="toggleFlag('red')" aria-label="красная метка"></button>
+      <button class="flagdot" id="flagG" onclick="toggleFlag('green')" aria-label="зелёная метка"></button>
       <input id="date" type="date" class="pill" style="flex:1;min-width:90px">
     </div>
     <div class="meta-row">
@@ -174,11 +178,8 @@ input.pill::placeholder{color:var(--faint)}
     <button id="saveBtn" onclick="saveEntry()">Внести</button>
 
     <div class="recline">
-      <span class="tiny" id="totalInfo"></span>
-      <span class="recline-right">
-        <button id="dlBtn" onclick="downloadTable()">Скачать таблицу</button>
-        <button id="recToggle" onclick="toggleRecords()">Записи ›</button>
-      </span>
+      <button id="dlBtn" onclick="downloadTable()">Скачать таблицу</button>
+      <button id="recToggle" onclick="toggleRecords()">Записи ›</button>
     </div>
     <div id="records">
       <div class="sec">
@@ -338,6 +339,7 @@ function toggleFlag(f) {
   flag = flag === f ? "" : f;
   $("flagY").classList.toggle("on", flag === "yellow");
   $("flagR").classList.toggle("on", flag === "red");
+  $("flagG").classList.toggle("on", flag === "green");
 }
 
 // ── частые покупки ──
@@ -466,7 +468,7 @@ function plural(n, one, few, many) {
 const ENTRIES = {}; // id → запись, для кнопки «Изменить»
 function entryRow(e, showDate) {
   ENTRIES[e.id] = e;
-  const fl = e.flag === "yellow" ? "🟡 " : e.flag === "red" ? "🔴 " : "";
+  const fl = e.flag === "yellow" ? "🟡 " : e.flag === "red" ? "🔴 " : e.flag === "green" ? "🟢 " : "";
   const nm = esc(e.name) + (e.comment ? ` <span class="cmt">- ${esc(e.comment)}</span>` : "");
   return `<div class="swipe" data-id="${e.id}">
     <button class="edit">Изменить</button>
@@ -515,7 +517,7 @@ function startEdit(e) {
   $("name").value = e.name;
   setBucket(e.bucket || "ok");
   flag = ""; toggleFlag(e.flag || ""); // toggleFlag(x) включает x, если flag был пуст
-  if (!e.flag) { flag = ""; $("flagY").classList.remove("on"); $("flagR").classList.remove("on"); }
+  if (!e.flag) { flag = ""; $("flagY").classList.remove("on"); $("flagR").classList.remove("on"); $("flagG").classList.remove("on"); $("flagG").classList.remove("on"); }
   $("comment").value = e.comment || "";
   $("category").value = e.category || "";
   $("date").value = e.date; $("date").dataset.auto = ""; // дата записи, авто-подмену выключаем
@@ -530,7 +532,7 @@ function cancelEdit() {
   editingId = null;
   $("editBar").style.display = "none";
   $("amount").value = ""; $("name").value = ""; setBucket("ok"); $("category").value = ""; $("comment").value = "";
-  flag = ""; $("flagY").classList.remove("on"); $("flagR").classList.remove("on");
+  flag = ""; $("flagY").classList.remove("on"); $("flagR").classList.remove("on"); $("flagG").classList.remove("on");
   $("date").value = TODAY || ""; $("date").dataset.auto = TODAY || "";
   $("saveBtn").textContent = "Внести";
   updateRub(); renderChips("");
@@ -573,7 +575,6 @@ function renderToday(r) {
     ? all.slice().reverse().map((e) => entryRow(e)).join("")
     : `<div class="tiny" style="padding:10px 4px">Пока пусто</div>`;
   const total = (r && r.total || 0) + q.length;
-  $("totalInfo").textContent = total ? `${total} ${plural(total, "запись", "записи", "записей")} всего` : "";
 }
 async function refresh() {
   let r;
