@@ -164,16 +164,16 @@ function buildXlsx(entries) {
     // копировании строк читает bgColor — с indexed=64 (системный) он давал ЧЁРНЫЕ ячейки.
     // Палитра ОТКАЛИБРОВАНА под импорт Numbers (19.08.2026): hex подобраны так,
     // чтобы ПОСЛЕ импорта совпадать с реальной таблицей Андрея до единиц:
-    // 11FFF8 → бирюза шапки/категорий (9468,65535,63216), 7BFFF5 → полоса дней
-    // (28011,65535,62194), FFE061 → его жёлтый (65353,56456,20393). Не «красивые»
+    // 11FFF8 → бирюза шапки/категорий, 7AFCF4 → полоса дней, FEFEFE → день —
+    // РОВНО те hex, которыми сам Numbers экспортирует таблицу Андрея в xlsx
     // sRGB-значения: Numbers конвертирует цвета через профиль при импорте.
     + '<fills count="9"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
     + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFE061"/><bgColor rgb="FFFFE061"/></patternFill></fill>'
     + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFC7CE"/><bgColor rgb="FFFFC7CE"/></patternFill></fill>'
     + '<fill><patternFill patternType="solid"><fgColor rgb="FF11FFF8"/><bgColor rgb="FF11FFF8"/></patternFill></fill>'
     + '<fill><patternFill patternType="solid"><fgColor rgb="FFBFBFBF"/><bgColor rgb="FFBFBFBF"/></patternFill></fill>'
-    + '<fill><patternFill patternType="solid"><fgColor rgb="FF7BFFF5"/><bgColor rgb="FF7BFFF5"/></patternFill></fill>'
-    + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/><bgColor rgb="FFFFFFFF"/></patternFill></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FF7AFCF4"/><bgColor rgb="FF7AFCF4"/></patternFill></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FFFEFEFE"/><bgColor rgb="FFFEFEFE"/></patternFill></fill>'
     + '<fill><patternFill patternType="solid"><fgColor rgb="FFC6EFCE"/><bgColor rgb="FFC6EFCE"/></patternFill></fill></fills>'
     + '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'
     + '<border><left style="thin"><color rgb="FFD9D9D9"/></left><right style="thin"><color rgb="FFD9D9D9"/></right>'
