@@ -184,6 +184,39 @@ async function ensureChunks(order) {
   }
   if (changed) { order.srcOriginal = order.src; order.src = out; save(); }
 }
+// Плотный документ — банковская выписка, реестр операций — весит немного,
+// но перевод не влезает в ответ модели. Режем такой PDF по страницам:
+// не по весу файла, а по числу страниц в части.
+async function splitByPages(order, perPart) {
+  const base = (order.srcOriginal && order.srcOriginal.length) ? order.srcOriginal : order.src;
+  const { PDFDocument } = require("pdf-lib");
+  const out = [];
+  let changed = false;
+  for (const f of base) {
+    if (!/\.pdf$/i.test(f.file)) { out.push(f); continue; }
+    let srcDoc;
+    try { srcDoc = await PDFDocument.load(readFileBuf(f.file), { ignoreEncryption: true }); }
+    catch (_) { out.push(f); continue; }
+    const n = srcDoc.getPageCount();
+    if (n <= perPart) { out.push(f); continue; }
+    for (let i = 0, part = 0; i < n; i += perPart, part++) {
+      const nd = await PDFDocument.create();
+      const pages = await nd.copyPages(srcDoc, Array.from({ length: Math.min(perPart, n - i) }, (_, k) => i + k));
+      pages.forEach((pg) => nd.addPage(pg));
+      const buf = Buffer.from(await nd.save());
+      const fn = saveFile(order.id, "p" + perPart + "-" + out.length + "-" + part, buf, "part.pdf", "");
+      out.push({ file: fn, name: f.name + " (стр. " + (i + 1) + "–" + Math.min(i + perPart, n) + ")" });
+    }
+    changed = true;
+    console.log("translate: «" + f.name + "» (" + n + " стр.) нарезан по " + perPart + " стр. на части");
+  }
+  if (!changed) return false;
+  if (!order.srcOriginal || !order.srcOriginal.length) order.srcOriginal = base;
+  order.src = out;
+  save();
+  return true;
+}
+
 // Разбивка списка исходников на пакеты «по одному запросу».
 function srcBatches(order) {
   const batches = [[]];
@@ -262,6 +295,7 @@ const SYS_COMMON = [
   "- ВСЕ числа, суммы, даты, номера счетов и документов переносятся АБСОЛЮТНО точно, ничего не округляется и не пропускается; формат дат сохраняется как в оригинале.",
   "- Печати, штампы, подписи, логотипы обозначаются пометами в квадратных скобках: [Signature], [Round seal: ...], [Stamp: ...], [Logo]; неразборчивое — [illegible].",
   "- Ничего не добавляется от себя и не комментируется сверх задачи.",
+  "- Когда ответом должен быть HTML-перевод: в ответе ТОЛЬКО <section>-блоки, без единого слова до, после или между ними. Любые пояснения, извинения или комментарии («Понял…», «Возвращаю…») ЗАПРЕЩЕНЫ — весь текст вне <section> будет отброшен автоматически.",
 ].join("\n");
 
 // Сетевая ли ошибка (обрыв канала/блокировка), а не ответ API.
@@ -318,6 +352,20 @@ async function runClaudeJson(params, schema) {
 
 function langName(code) { if (code === "en" || !code) return "английский"; if (code === "other") return "язык, указанный в комментарии заказа"; return code; }
 function stripFences(t) { return String(t || "").trim().replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, ""); }
+// Перевод обязан состоять только из <section class="page">…</section>.
+// Любой текст вокруг или между секциями — пояснения модели («Понял, но…»),
+// которые попадали в готовый PDF (случай Плинер 28.08). Выбрасываем их:
+// берём только сами секции. Если секций нет вовсе — возвращаем как есть,
+// чтобы не потерять нестандартный, но честный перевод.
+function sectionsOnly(html) {
+  // Сохраняем в исходном порядке: шапки <p class="tr-note"> (Translation from …,
+  // штатно стоят перед первой секцией) и сами секции. Всё прочее вне секций —
+  // болтовня, отбрасываем. tr-note ВНУТРИ секции сюда не попадает отдельно:
+  // секция матчится целым блоком раньше.
+  const m = String(html || "").match(/<p class="tr-note">[\s\S]*?<\/p>|<section[^>]*>[\s\S]*?<\/section>/gi);
+  if (!m || !m.some((b) => b.lastIndexOf("<section", 0) === 0)) return String(html || "");
+  return m.join("\n");
+}
 
 const CHECK_SCHEMA = {
   type: "object", additionalProperties: false,
@@ -405,6 +453,38 @@ async function pdfBrowser() {
   _browser.on("disconnected", () => { _browser = null; });
   return _browser;
 }
+// Сколько страниц в готовом PDF — по нему решаем, поместилась ли вёрстка
+async function pdfPageCount(buf) {
+  try {
+    const { PDFDocument } = require("pdf-lib");
+    const doc = await PDFDocument.load(buf, { ignoreEncryption: true });
+    return doc.getPageCount();
+  } catch (_) { return 0; }
+}
+
+// Менеджеры просят: перевод должен занимать столько же страниц, сколько оригинал —
+// его подают в консульство рядом с оригиналом, страница к странице. Поэтому при
+// галочке «сохранить вёрстку» ужимаем текст, пока не уложимся: сначала как есть,
+// потом всё меньше. Ниже 60% не опускаемся — такое уже не читается.
+const FIT_STEPS = [1, 0.94, 0.88, 0.82, 0.76, 0.7, 0.65, 0.6];
+
+function withZoom(fullHtml, zoom) {
+  if (!(zoom < 0.999)) return fullHtml;
+  const css = "<style>html{zoom:" + zoom + "}</style>";
+  return fullHtml.indexOf("</head>") !== -1
+    ? fullHtml.replace("</head>", css + "</head>")
+    : css + fullHtml;
+}
+
+// Сколько страниц должно получиться: сколько блоков-страниц собрал переводчик,
+// а если их нет — сколько страниц указал менеджер в заказе.
+function wantedPages(order, html) {
+  const blocks = (String(html || "").match(/<section[^>]*class="[^"]*page[^"]*"/gi) || []).length;
+  if (blocks > 0) return blocks;
+  const p = Math.round(Number((order.portal && order.portal.pages) || 0));
+  return p > 0 ? p : 0;
+}
+
 async function htmlToPdf(fullHtml, landscape) {
   const b = await pdfBrowser();
   if (!b) throw new Error("puppeteer не установлен");
@@ -417,6 +497,7 @@ async function htmlToPdf(fullHtml, landscape) {
 }
 
 async function buildOutputs(order, html) {
+  html = sectionsOnly(html);
   // Ориентацию заказа портала (orient из ТЗ Кати) уважаем буквально; иначе — по HTML.
   const po = order.portal && String(order.portal.orient || "");
   const landscape = po === "landscape" ? true : (po === "portrait" ? false : detectLandscape(html));
@@ -455,9 +536,28 @@ async function buildOutputs(order, html) {
   }
   // PDF — тем же HTML, постранично (ТЗ Кати: «to: PDF», keepLayout, orient).
   order.pdfError = null;
+  order.pdfNote = null;
   try {
-    const pdfBuf = await htmlToPdf(fullHtml, landscape);
+    const keep = !!(order.portal && order.portal.keepLayout);
+    const want = keep ? wantedPages(order, html) : 0;
+    let pdfBuf = null, used = 1, got = 0;
+    for (const z of (want > 0 ? FIT_STEPS : [1])) {
+      pdfBuf = await htmlToPdf(withZoom(fullHtml, z), landscape);
+      used = z;
+      got = want > 0 ? await pdfPageCount(pdfBuf) : 0;
+      if (!want || !got || got <= want) break;
+    }
     order.files.pdf = saveFile(order.id, "result", pdfBuf, "result.pdf", "application/pdf");
+    order.pdfPages = got || null;
+    order.pdfZoom = used;
+    if (want > 0 && got > want) {
+      // Не уложились даже в самом мелком масштабе — честно говорим менеджеру,
+      // а не отдаём молча документ на лишнюю страницу.
+      order.pdfNote = "перевод не уместился в " + want +
+        " стр. как в оригинале — получилось " + got + " стр.";
+    } else if (want > 0 && used < 0.999) {
+      console.log("translate pdf: уложились в " + want + " стр. при масштабе " + Math.round(used * 100) + "%");
+    }
   } catch (e) {
     order.pdfError = "PDF не собрался: " + String((e && e.message) || e).slice(0, 200);
     console.warn("translate pdf:", order.pdfError);
@@ -525,7 +625,7 @@ async function pipelineTranslate(order) {
         output_config: { effort: effortMain() },
         messages: [{ role: "user", content: [...(await srcBlocks(order, true, batches[bi])), { type: "text", text: partTask }] }],
       });
-      const partHtml = stripFences(r.text);
+      const partHtml = sectionsOnly(stripFences(r.text));
       trackUsage(order, "translate" + (bi || ""), model(), r.usage);
       order.status = "checking"; save();
       const chk = await runCheck(order, partHtml, batches[bi]);
@@ -877,6 +977,8 @@ function portalGroupReport(number, opts) {
     } else {
       if (hasPdf) { files.push({ name: resultName(o, "pdf"), url: base + "pdf" }); if (want !== "PDF") notes.push(srcName + ": запрошен " + want + ", отдаём PDF (постранично)"); }
       else if (hasDocx) { files.push({ name: resultName(o, "docx"), url: base + "docx" }); notes.push(srcName + ": запрошен " + want + ", PDF не собрался — отдаём DOCX" + (o.pdfError ? " (" + o.pdfError + ")" : "")); }
+      // Не уложились в число страниц оригинала — менеджер должен знать до подачи
+      if (hasPdf && o.pdfNote) notes.push(srcName + ": " + o.pdfNote);
     }
     if (!hasPdf && !hasDocx && o.files && o.files.html) files.push({ name: "Перевод (веб-версия): " + srcName, url: base + "html" });
   }
@@ -949,7 +1051,25 @@ function queueTranslate(order) {
     const o = findOrder(order.id);
     if (!o) return;
     try {
-      await pipelineTranslate(o);
+      // Ответ модели могло обрезать по лимиту — тогда режем документ на части
+      // помельче и переводим заново. Сначала по две страницы, потом по одной:
+      // просить менеджера «разбейте документ сами» — плохая работа.
+      const tooBig = err => /обрезан по лимиту/i.test(String((err && err.message) || err));
+      try {
+        await pipelineTranslate(o);
+      } catch (e1) {
+        if (!tooBig(e1)) throw e1;
+        console.warn("translate: ответ обрезан, режу документ по 2 страницы (" + o.id + ")");
+        if (!(await splitByPages(o, 2))) throw e1;
+        try {
+          await pipelineTranslate(o);
+        } catch (e2) {
+          if (!tooBig(e2)) throw e2;
+          console.warn("translate: снова обрезан, режу по одной странице (" + o.id + ")");
+          if (!(await splitByPages(o, 1))) throw e2;
+          await pipelineTranslate(o);
+        }
+      }
       if (o.kind === "bot") await botDeliver(o).catch((e) => console.error("botDeliver:", e.message));
       if (o.kind === "pay" && payChargeOrderRef.fn) { try { payChargeOrderRef.fn(o); } catch (e) { console.error("payCharge:", e.message); } }
     } catch (e) {
@@ -1241,6 +1361,13 @@ function orderView(o, full) {
     learned: o.learned || null,
     chat: o.chat ? { from: o.chat.from, text: o.chat.text } : null,
     portal: o.portal || null,
+    // Ссылки на результат по неугадываемому токену — те же, что уходят
+    // в отчёте порталу. Нужны, чтобы скачивать прямо из списка заказов.
+    dl: o.dlToken ? {
+      pdf: o.files && o.files.pdf ? "/translate/api/dl/" + o.id + "/" + o.dlToken + "/pdf" : "",
+      docx: o.files && o.files.docx ? "/translate/api/dl/" + o.id + "/" + o.dlToken + "/docx" : "",
+      html: o.files && o.files.html ? "/translate/api/dl/" + o.id + "/" + o.dlToken + "/html" : "",
+    } : null,
   };
   if (full) { v.check = o.check || null; v.compare = o.compare || null; v.corrections = o.corrections || []; v.usage = o.usage || null; }
   return v;
@@ -1301,6 +1428,9 @@ function mount(app, deps) {
   app.get("/translate_v2", (req, res) => res.redirect(302, "/translate"));
 
   app.get("/translate/api/state", requireTranslate, (req, res) => {
+    // Временная отметка: видно, доходит ли запрос страницы и кем он подписан
+    console.log("state: запрос от " + ((req.staff && (req.staff.name || req.staff.email)) || "?") +
+      " · правил " + lessons().length + " · заказов " + store().orders.length);
     const st = store();
     res.json({
       success: true,
@@ -1308,6 +1438,7 @@ function mount(app, deps) {
       botConfigured: botConfigured(), quietChats: quietChatIds(),
       botChats: st.bot.chats || {},
       lessons: lessons().slice().reverse(),
+      lessonsDeleted: (st.lessonsDeleted || []).slice(-200).reverse(),
       orders: st.orders.filter((o) => o.kind !== "pay").map((o) => orderView(o, false)),
     });
   });
@@ -2017,7 +2148,18 @@ function mount(app, deps) {
     const ls = lessons();
     const i = ls.findIndex((l) => l.id === req.params.id);
     if (i < 0) return res.status(404).json({ success: false, message: "Не найдено" });
+    const gone = ls[i];
     ls.splice(i, 1);
+    // След удаления: на дашборде видно, сколько правил руководители убрали
+    // и когда. Без этого память молча худеет и понять причину нельзя.
+    const st = store();
+    st.lessonsDeleted = st.lessonsDeleted || [];
+    st.lessonsDeleted.push({
+      id: gone.id, text: String(gone.text || "").slice(0, 300),
+      source: gone.source || "", createdAt: gone.createdAt || null,
+      at: Date.now(), by: (req.staff && (req.staff.name || req.staff.email)) || "—",
+    });
+    if (st.lessonsDeleted.length > 500) st.lessonsDeleted = st.lessonsDeleted.slice(-500);
     save();
     return res.json({ success: true });
   });
@@ -2082,6 +2224,86 @@ function mount(app, deps) {
     return res.json({ success: true, orders: list.length });
   });
 
+  // Сколько страниц в приложенном файле. Нужно модулю, чтобы предупредить
+  // менеджера: в файле 84 страницы, а к переводу указано 24 — не забыл ли он
+  // выбрать нужные страницы. Ничего не сохраняем и ИИ не трогаем.
+  app.post("/translate/api/portal/pagecount", requireTranslate, up.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ success: false, message: "Нет файла" });
+      const name = Buffer.from(req.file.originalname, "latin1").toString("utf8");
+      if (!/\.pdf$/i.test(name)) return res.json({ success: true, pages: 0, why: "не PDF" });
+      const { PDFDocument } = require("pdf-lib");
+      const doc = await PDFDocument.load(req.file.buffer, { ignoreEncryption: true });
+      return res.json({ success: true, pages: doc.getPageCount(), name: name });
+    } catch (e) {
+      return res.json({ success: true, pages: 0, why: String((e && e.message) || e).slice(0, 80) });
+    }
+  });
+
+  // Повтор заказа портала: переводим заново только то, что не получилось.
+  // Удавшиеся файлы не трогаем — их незачем гонять через ИИ второй раз
+  // и тратить бюджет.
+  app.post("/translate/api/portal/retry", requireTranslate, (req, res) => {
+    const b = req.body || {};
+    const number = String(b.number || "").trim().slice(0, 20);
+    if (!number) return res.status(400).json({ success: false, message: "Нужен number" });
+    if (!aiConfigured()) return res.status(400).json({ success: false, message: "ИИ не настроен" });
+    const list = portalGroupOrders(number);
+    if (!list.length) return res.status(404).json({ success: false, message: "Заказ " + number + " не найден" });
+    // Бывает, что перевод собрался, а споткнулась проверка после него — канал
+    // до ИИ отдал ошибку. Такой заказ переводить заново незачем: файлы готовы,
+    // достаточно снять ошибку и отчитаться порталу ещё раз.
+    // Перезапуск сервиса обрывает перевод на полуслове: заказ остаётся
+    // «переводится», а очередь пуста. Такие тоже подхватываем — иначе они
+    // висят вечно и менеджер ничего не может сделать.
+    const STUCK = ["error", "queued", "translating", "checking", "revising"];
+    const ready = list.filter((o) => o.status === "error" && o.files && o.files.html);
+    const bad = list.filter((o) => STUCK.indexOf(o.status) !== -1 && !(o.files && o.files.html));
+    if (!ready.length && !bad.length) {
+      return res.json({ success: true, requeued: 0, message: "Все файлы уже переведены" });
+    }
+    const st = store();
+    if (st.portalSent) delete st.portalSent[number];   // отчёт должен уйти заново
+    ready.forEach((o) => { o.error = null; o.status = "done"; });
+    bad.forEach((o) => { o.error = null; queueTranslate(o); });
+    save();
+    if (ready.length && !bad.length) {
+      // Ничего не переводим — сразу говорим порталу, что заказ готов
+      try { portalGroupReport(number); } catch (e) { console.error("portal retry report:", e.message); }
+    }
+    return res.json({
+      success: true, requeued: bad.length, restored: ready.length, total: list.length
+    });
+  });
+
+  // Перевод от живого переводчика по отклонённому заказу портала: файлы кладём
+  // к заказам группы по порядку и запускаем сравнение — из расхождений движок
+  // выведет правила. Раньше файлы до движка не доходили вовсе: модуль сохранял
+  // только их имена, и учиться было не на чем.
+  app.post("/translate/api/portal/human", requireTranslate, up.array("files", 20), (req, res) => {
+    try {
+      const number = String((req.body && req.body.number) || "").trim().slice(0, 20);
+      if (!number) return res.status(400).json({ success: false, message: "Нужен number" });
+      const list = portalGroupOrders(number);
+      if (!list.length) return res.status(404).json({ success: false, message: "Заказ " + number + " не найден" });
+      const files = req.files || [];
+      if (!files.length) return res.status(400).json({ success: false, message: "Нет файлов" });
+
+      let taken = 0;
+      files.forEach((f, i) => {
+        const o = list[i] || list[list.length - 1];   // файлов может быть меньше
+        const name = Buffer.from(f.originalname, "latin1").toString("utf8");
+        o.files = o.files || {};
+        o.files.human = saveFile(o.id, "human", f.buffer, name, f.mimetype);
+        o.humanName = name;
+        taken++;
+        if (o.status === "done") queueCompare(o); else o.pendingCompare = true;
+      });
+      save();
+      return res.json({ success: true, taken: taken, orders: list.length });
+    } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
+  });
+
   // Скачивание результата по неугадываемому токену заказа (кнопки в карточке
   // заказа у Кати; авторизации нет — токен случайный per-order).
   app.get("/translate/api/dl/:id/:tok/:which", (req, res) => {
@@ -2130,3 +2352,5 @@ function mount(app, deps) {
 }
 
 module.exports = { mount };
+// Для проверки вёрстки без живого заказа: даёт прогнать сборку файлов руками
+module.exports.__buildOutputs = buildOutputs;
