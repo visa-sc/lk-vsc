@@ -121,6 +121,7 @@ function store() {
   }
   if (!Array.isArray(_store.runs)) _store.runs = [];
   if (!Array.isArray(_store.recons)) _store.recons = [];
+  if (!_store.reconDays || typeof _store.reconDays !== "object") _store.reconDays = {}; // итог сверки по дням (ночные прогоны)
   return _store;
 }
 function save() {
@@ -655,13 +656,23 @@ function mount(app, deps) {
     }
   }
 
+  const mskDayStr = (ts) => new Date(ts + 3 * 3600000).toISOString().slice(0, 10);
   async function runRecon(opts) {
     if (reconRunning) throw new Error("сверка уже идёт");
     reconRunning = true;
     const cfg = store().config;
     const hours = Math.min(168, Math.max(1, Number((opts && opts.hours) || 24)));
-    const toTs = Date.now(), fromTs = toTs - hours * 3600000;
-    reconCurrent = { id: newId(), startedAt: toTs, hours, by: (opts && opts.by) || "", log: [], pbx: null, forms: [], summary: null, finishedAt: null };
+    // Ночной режим: окно — ПОЛНЫЕ прошедшие сутки по МСК (просьба Андрея 31.08),
+    // итог записывается в дневную историю reconDays.
+    let fromTs, toTs, dayStr = null;
+    if (opts && opts.day === "yesterday") {
+      const DAY = 86400000;
+      const todayMsk0 = Math.floor((Date.now() + 3 * 3600000) / DAY) * DAY - 3 * 3600000; // полночь МСК
+      fromTs = todayMsk0 - DAY; toTs = todayMsk0; dayStr = mskDayStr(fromTs);
+    } else {
+      toTs = Date.now(); fromTs = toTs - hours * 3600000;
+    }
+    reconCurrent = { id: newId(), startedAt: Date.now(), hours: dayStr ? 24 : hours, day: dayStr, by: (opts && opts.by) || "", log: [], pbx: null, forms: [], summary: null, finishedAt: null };
     try {
       const ourPhones = new Set(cfg.numbers.map((n) => last10(n.phone)));
       // 1) Звонки OnlinePBX
@@ -741,6 +752,11 @@ function mount(app, deps) {
       const st = store();
       st.recons.push(JSON.parse(JSON.stringify(reconCurrent)));
       if (st.recons.length > 30) st.recons.splice(0, st.recons.length - 30);
+      if (reconCurrent.day) { // дневная история для блока в /vsc (копится с первой ночи)
+        st.reconDays[reconCurrent.day] = Object.assign({ at: reconCurrent.finishedAt }, reconCurrent.summary);
+        const keys = Object.keys(st.reconDays).sort();
+        while (keys.length > 40) delete st.reconDays[keys.shift()];
+      }
       save();
       return reconCurrent;
     } finally { reconRunning = false; }
@@ -859,6 +875,22 @@ function mount(app, deps) {
     res.json({ success: true, config: c });
   });
 
+  // Ночная сверка за полные прошедшие сутки — 04:30 МСК ежедневно (просьба
+  // Андрея 31.08: «сверку делай ночью»). Не пересекается с ночными съёмами amo
+  // (00:00/00:30) и сторожами (03:30/03:40); из amo только чтение фоном.
+  function scheduleReconNightly() {
+    const msk = new Date(Date.now() + 3 * 3600 * 1000);
+    let ms = ((((4 - msk.getUTCHours() + 24) % 24) * 60 + (30 - msk.getUTCMinutes())) * 60 - msk.getUTCSeconds()) * 1000;
+    if (ms <= 0) ms += 24 * 3600000;
+    setTimeout(() => {
+      runRecon({ day: "yesterday", by: "ночное расписание" }).catch((e) => console.error("phonetest night recon:", e.message));
+      scheduleReconNightly();
+    }, ms);
+    return ms;
+  }
+  const reconDelay = scheduleReconNightly();
+  console.log("PHONETEST: ночная сверка контактов в 04:30 МСК (ближайшая через " + Math.round(reconDelay / 3600000) + " ч)");
+
   const delay = scheduleNext();
   console.log("PHONETEST: страница /phone_test готова; расписание " +
     (store().config.scheduleEnabled ? "ВКЛЮЧЕНО" : "выключено") +
@@ -870,14 +902,17 @@ function mount(app, deps) {
 function reconSummary() {
   const st = store();
   const configured = !!(st.config.pbx && st.config.pbx.key) || (st.config.flexbe || []).some((f) => f.apiKey);
+  const days = Object.keys(st.reconDays || {}).sort().reverse().slice(0, 30)
+    .map((d) => Object.assign({ day: d }, st.reconDays[d]));
   const r = (st.recons && st.recons.length) ? st.recons[st.recons.length - 1] : null;
-  if (!r) return { configured, last: null };
+  if (!r) return { configured, last: null, days };
   const p = r.pbx || {};
   const slim = (m) => ({ phone: m.phone, count: m.count || null, at: m.lastAt || m.ts || null });
   return {
     configured,
+    days,
     last: {
-      at: r.startedAt, hours: r.hours,
+      at: r.startedAt, hours: r.hours, day: r.day || null,
       pbx: p.error ? { error: p.error } : p.skipped ? { skipped: p.skipped }
         : { calls: p.calls || 0, unique: p.unique || 0, found: p.found || 0, missing: (p.missing || []).slice(0, 20).map(slim) },
       forms: (r.forms || []).map((f) => f.error ? { label: f.label, error: f.error }
