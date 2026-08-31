@@ -2659,7 +2659,37 @@
           return Array.from(buckets.values())
             .filter((b) => b.mon <= today)               // недели, которые уже начались
             .sort((a, b) => a.mon - b.mon)
-            .map((b) => { const k = aggBlocks(b.blocks); k.label = b.label; return { x: b.label, x2: b.end, k: k, range: b.range, monTs: b.mon.getTime() }; });
+            .map((b) => {
+              // Неполная (текущая) неделя показывается ТОЛЬКО когда в ней есть хотя бы
+              // один календарно ЗАВЕРШЁННЫЙ заполненный день, и считается строго по
+              // таким дням — ночные контакты сегодняшнего дня не подмешиваются
+              // (просьба Андрея 31.08: в понедельник утром показываем прошлую неделю).
+              // Коэффициенты пересчитываем той же взвешенной склейкой aggBlocks (из
+              // implied-баз), НЕ усреднением — усреднение расходится с KPI-таблицей.
+              const weekEnd = new Date(b.mon.getTime() + 7 * 86400000);
+              let k;
+              if (weekEnd > today) { // неделя календарно не закончилась
+                const allDays = b.blocks.reduce((a, x) => a.concat(x.days || []), []);
+                const closed = allDays.filter((d) => {
+                  const dd = vscParseDMY(d.date);
+                  return filled(d) && dd && dd < today;
+                });
+                if (!closed.length) return null; // ни одного завершённого дня — не показываем
+                k = aggBlocks(closed.length === 1 ? [Object.assign({}, closed[0])] : closed);
+                k.days = closed;
+                // %-метрики, которых нет в implied-склейке — взвешенно по контактам дня.
+                ["missedPct", "junkPct"].forEach((pk) => {
+                  let num = 0, den = 0;
+                  closed.forEach((d) => { if (d[pk] == null || !d.processed) return; num += d[pk] * d.processed; den += d.processed; });
+                  if (k[pk] == null) k[pk] = den ? num / den : null;
+                });
+              } else {
+                k = aggBlocks(b.blocks);
+              }
+              k.label = b.label;
+              return { x: b.label, x2: b.end, k: k, range: b.range, monTs: b.mon.getTime() };
+            })
+            .filter(Boolean);
         }
         // День: ПОСЛЕДНИЕ 90 заполненных дней по ВСЕМ месяцам (а не только текущий месяц),
         // строго ДО сегодня (показываем вчерашний, не сегодня). Подписываем день недели +
