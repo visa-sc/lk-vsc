@@ -110,8 +110,9 @@ function store() {
   // Сверка (OnlinePBX и Flexbe против amoCRM): доступы вводятся на странице.
   if (!c.pbx || typeof c.pbx !== "object") c.pbx = { domain: "", key: "" };
   if (!Array.isArray(c.flexbe) || !c.flexbe.length) c.flexbe = [
-    { id: "visa-sc", label: "visa-sc.ru", apiUrl: "https://visa-sc.ru/api/v1/leads", apiKey: "" },
-    { id: "spb", label: "spb.visa-sc.ru", apiUrl: "https://spb.visa-sc.ru/api/v1/leads", apiKey: "" },
+    // URL из раздела Flexbe «Настройки → API» (скрин Андрея 31.08): /mod/api/
+    { id: "visa-sc", label: "visa-sc.ru", apiUrl: "https://visa-sc.ru/mod/api/", apiKey: "" },
+    { id: "spb", label: "spb.visa-sc.ru", apiUrl: "https://spb.visa-sc.ru/mod/api/", apiKey: "" },
   ];
   if (!Array.isArray(_store.runs)) _store.runs = [];
   if (!Array.isArray(_store.recons)) _store.recons = [];
