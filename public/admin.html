@@ -3777,7 +3777,9 @@
         vscContent.appendChild(vscReturnsStackedChart(retSeries));
         // ── % записанных сделок (Шенген/США) — сразу под возвратами (по просьбе Андрея) ──
         vscContent.appendChild(vscSchengenBlock());
-        // ── Скорость первого касания лида — третьим сверху (по просьбе Андрея 20.07) ──
+        // ── Сверка контактов — ТРЕТЬИМ сверху (по просьбе Андрея 31.08); только админ ──
+        if (currentRole() === "admin") vscContent.appendChild(vscReconBlock());
+        // ── Скорость первого касания лида (по просьбе Андрея 20.07 был 3-м, теперь 4-й) ──
         vscContent.appendChild(vscFirstTouchBlock());
         // ── Выручка по городам (СПб/МСК) — по месяцам, из amoCRM (ночной расчёт 05:00) ──
         const hCity = document.createElement("div"); hCity.className = "ref-sec-h"; hCity.textContent = "Выручка по городам — по месяцам (2026)";
@@ -3828,8 +3830,6 @@
         // ── «Выкупы — сверка р/с с таблицей» (только админ; руководителям блок не показываем,
         // эндпоинт requireAdmin — raw fetch, чтобы 401 не выкидывал их на логин) ──
         if (currentRole() === "admin") vscContent.appendChild(vscBuyoutsBlock());
-        // Сверка контактов: входящие OnlinePBX + заявки Flexbe против amoCRM (только админ).
-        if (currentRole() === "admin") vscContent.appendChild(vscReconBlock());
         // Комиссии эквайринга (торговый + интернет, ООО + ИП) — только админ, из T-Bank API.
         if (currentRole() === "admin") {
           const hAcq = document.createElement("div"); hAcq.className = "ref-sec-h"; hAcq.style.marginTop = "22px"; hAcq.textContent = "Комиссии эквайринга (торговый и интернет)";
@@ -4434,8 +4434,20 @@
         const box = document.createElement("div"); box.className = "vsc-chart";
         box.innerHTML = '<div class="loading-state">Загружаем сверку контактов…</div>';
         wrap.appendChild(box);
+        const CITY = { "visa-sc": "МСК", "spb": "СПБ", "ekb": "ЕКБ" };
         const pill = (ok, txt) => '<span style="font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 7px;white-space:nowrap;color:' + (ok ? "#2c7a43" : "#a12b3c") + ';background:' + (ok ? "#e3f3e7" : "#fbe9ec") + ';">' + txt + '</span>';
         const fmtDay = function (d) { const p = String(d || "").split("-"); return p.length === 3 ? p[2] + "." + p[1] : d; };
+        // Строка вида: ✓ Номера (все): 33/33 · Заявки МСК: 10/10 · Заявки СПБ: 3/3 · Заявки ЕКБ: 0/0
+        function reconLine(unique, found, forms, ok) {
+          const num = function (a, b) { return '<b style="color:' + (a === b ? "#1d2330" : "#a12b3c") + ';">' + a + "/" + b + "</b>"; };
+          let out = ok ? '<span style="color:#2c7a43;font-weight:800;font-size:14px;">✓</span>' : '<span style="color:#a12b3c;font-weight:800;font-size:14px;">✗</span>';
+          out += '<span style="margin-left:8px;white-space:nowrap;">Номера (все): ' + num(found, unique) + "</span>";
+          (forms || []).forEach(function (f) {
+            const city = CITY[f.id] || escapeHtml(f.label || "");
+            out += '<span style="margin-left:14px;white-space:nowrap;">Заявки ' + city + ": " + num(f.found || 0, f.leads || 0) + "</span>";
+          });
+          return '<div style="font-size:13px;color:#1d2330;display:flex;flex-wrap:wrap;align-items:baseline;row-gap:4px;">' + out + "</div>";
+        }
         fetch("/admin/api/vsc/recon-summary", { headers: { Authorization: "Bearer " + getToken() } })
           .then(function (r) { return r.json(); })
           .then(function (j) {
@@ -4447,44 +4459,29 @@
             const L = j.last;
             const fmtT = function (ts) { return new Date(ts).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
             const p = L.pbx || {};
-            const totalLeads = (L.forms || []).reduce(function (n, f) { return n + (f.leads || 0); }, 0);
             const miss = [];
             (p.missing || []).forEach(function (m) { miss.push("звонок с " + escapeHtml(m.phone)); });
             (L.forms || []).forEach(function (f) { (f.missing || []).forEach(function (m) { miss.push("заявка " + escapeHtml(m.phone) + " (" + escapeHtml(f.label) + ")"); }); });
             const errParts = [];
-            if (p.error) errParts.push("звонки: " + String(p.error).slice(0, 100));
-            (L.forms || []).forEach(function (f) { if (f.error) errParts.push(f.label + ": " + String(f.error).slice(0, 100)); });
+            if (p.error) errParts.push("звонки: " + escapeHtml(String(p.error).slice(0, 140)));
+            (L.forms || []).forEach(function (f) { if (f.error) errParts.push(escapeHtml(f.label) + ": " + escapeHtml(String(f.error).slice(0, 140))); });
             let html = '<div style="font-size:11.5px;color:#8a8f9c;margin-bottom:8px;">Последняя сверка: ' + fmtT(L.at) + (L.day ? " · за " + fmtDay(L.day) + " (полные сутки)" : " · период " + L.hours + " ч") + "</div>";
-            if (!miss.length && !errParts.length) {
-              // Всё ок — одной компактной строкой.
-              html += '<div style="font-size:13px;color:#1d2330;">' + pill(true, "всё ок") + ' <span style="margin-left:6px;">' + (p.calls || 0) + " звонков (" + (p.unique || 0) + " номеров) и " + totalLeads + " заявок — все есть в amoCRM</span></div>";
-            } else {
-              // Есть проблемы — разворачиваем построчно.
-              const rows = [];
-              const pushRow = function (name, st) { rows.push('<tr style="border-top:1px solid #f0eef5;"><td style="padding:6px 14px 6px 0;color:#3a4256;white-space:nowrap;"><b>' + name + '</b></td><td style="padding:6px 0;">' + st + '</td></tr>'); };
-              if (p.error) pushRow("Звонки (OnlinePBX)", '<span style="color:#a12b3c;">ошибка: ' + escapeHtml(String(p.error).slice(0, 140)) + "</span>");
-              else if (p.skipped) pushRow("Звонки (OnlinePBX)", '<span style="color:#8a8f9c;">' + escapeHtml(p.skipped) + "</span>");
-              else pushRow("Звонки (OnlinePBX)", p.calls + " звонков · " + p.unique + " номеров · " + ((p.missing || []).length ? pill(false, "нет в amo: " + p.missing.length) : pill(true, "все в amoCRM")));
-              (L.forms || []).forEach(function (f) {
-                const nm = "Заявки " + escapeHtml(f.label || "");
-                if (f.error) pushRow(nm, '<span style="color:#a12b3c;">ошибка: ' + escapeHtml(String(f.error).slice(0, 140)) + "</span>");
-                else if (f.skipped) pushRow(nm, '<span style="color:#8a8f9c;">' + escapeHtml(f.skipped) + "</span>");
-                else pushRow(nm, f.leads + " заявок · " + ((f.missing || []).length ? pill(false, "нет в amo: " + f.missing.length) : pill(true, "все в amoCRM")));
-              });
-              html += '<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:12.5px;width:100%;max-width:560px;">' + rows.join("") + "</table></div>";
-              if (miss.length) html += '<div style="margin-top:8px;color:#a12b3c;font-size:12px;line-height:1.6;"><b>Пропавшие:</b><br>' + miss.slice(0, 15).join("<br>") + (miss.length > 15 ? "<br>…и ещё " + (miss.length - 15) : "") + "</div>";
-            }
-            // История по дням (копится ночными сверками, показываем до 30 дней).
+            html += reconLine(p.unique || 0, p.found || 0, L.forms, !miss.length && !errParts.length);
+            if (errParts.length) html += '<div style="margin-top:7px;color:#a12b3c;font-size:12px;line-height:1.6;">' + errParts.join("<br>") + "</div>";
+            if (miss.length) html += '<div style="margin-top:7px;color:#a12b3c;font-size:12px;line-height:1.6;"><b>Пропавшие:</b><br>' + miss.slice(0, 15).join("<br>") + (miss.length > 15 ? "<br>…и ещё " + (miss.length - 15) : "") + "</div>";
+            // История по дням — тем же форматом строки.
             const days = j.days || [];
             if (days.length) {
               html += '<div style="margin-top:10px;"><button type="button" id="reconHistBtn" class="vsc-dayrev-refresh" style="margin-top:0;">История (' + days.length + " дн.)</button></div>";
-              html += '<div id="reconHistBox" style="display:none;margin-top:8px;"><table style="border-collapse:collapse;font-size:12px;">' + days.map(function (d) {
-                const bad = (d.callsMissing || 0) + (d.formsMissing || 0);
-                let st;
-                if (d.errors) st = '<span style="color:#a12b3c;">сверка с ошибками</span>';
-                else if (bad) st = pill(false, "нет в amo: " + bad);
-                else st = pill(true, "всё ок") + ' <span style="color:#8a8f9c;">' + (d.calls || 0) + " звонков, " + (d.formsLeads || 0) + " заявок</span>";
-                return '<tr style="border-top:1px solid #f0eef5;"><td style="padding:5px 14px 5px 0;color:#3a4256;white-space:nowrap;"><b>' + fmtDay(d.day) + '</b></td><td style="padding:5px 0;">' + st + "</td></tr>";
+              html += '<div id="reconHistBox" style="display:none;margin-top:8px;"><table style="border-collapse:collapse;font-size:12px;width:100%;">' + days.map(function (d) {
+                let cell;
+                if (d.forms) {
+                  cell = reconLine(d.unique || 0, (d.found != null ? d.found : (d.unique || 0) - (d.callsMissing || 0)), d.forms, !((d.callsMissing || 0) + (d.formsMissing || 0)) && !d.errors);
+                } else { // старый формат записи (без разбивки)
+                  const bad = (d.callsMissing || 0) + (d.formsMissing || 0);
+                  cell = d.errors ? '<span style="color:#a12b3c;">сверка с ошибками</span>' : bad ? pill(false, "нет в amo: " + bad) : pill(true, "всё ок");
+                }
+                return '<tr style="border-top:1px solid #f0eef5;"><td style="padding:5px 14px 5px 0;color:#3a4256;white-space:nowrap;vertical-align:top;"><b>' + fmtDay(d.day) + '</b></td><td style="padding:5px 0;">' + cell + "</td></tr>";
               }).join("") + "</table></div>";
             } else {
               html += '<div style="margin-top:8px;font-size:11.5px;color:#8a8f9c;">История по дням начнёт копиться с сегодняшней ночи (сверка каждую ночь в 04:30 за полные сутки).</div>';

@@ -740,10 +740,15 @@ function mount(app, deps) {
       }
       const p = reconCurrent.pbx || {};
       reconCurrent.summary = {
-        calls: p.calls || 0, unique: p.unique || 0,
+        calls: p.calls || 0, unique: p.unique || 0, found: p.found || 0,
         callsMissing: (p.missing && p.missing.length) || 0,
         formsLeads: reconCurrent.forms.reduce((n, f) => n + (f.leads || 0), 0),
         formsMissing: reconCurrent.forms.reduce((n, f) => n + ((f.missing && f.missing.length) || 0), 0),
+        // Разбивка по сайтам — для строк истории в блоке /vsc («Заявки МСК: 10/10»).
+        forms: reconCurrent.forms.map((f) => ({
+          id: f.id, label: f.label, leads: f.leads || 0, found: f.found || 0,
+          miss: (f.missing && f.missing.length) || 0, error: !!f.error, skipped: !!f.skipped,
+        })),
         errors: [p.error].concat(reconCurrent.forms.map((f) => f.error)).filter(Boolean).length,
         skipped: [p.skipped].concat(reconCurrent.forms.map((f) => f.skipped)).filter(Boolean).length,
       };
@@ -915,9 +920,9 @@ function reconSummary() {
       at: r.startedAt, hours: r.hours, day: r.day || null,
       pbx: p.error ? { error: p.error } : p.skipped ? { skipped: p.skipped }
         : { calls: p.calls || 0, unique: p.unique || 0, found: p.found || 0, missing: (p.missing || []).slice(0, 20).map(slim) },
-      forms: (r.forms || []).map((f) => f.error ? { label: f.label, error: f.error }
-        : f.skipped ? { label: f.label, skipped: f.skipped }
-        : { label: f.label, leads: f.leads || 0, found: f.found || 0, missing: (f.missing || []).slice(0, 20).map(slim) }),
+      forms: (r.forms || []).map((f) => f.error ? { id: f.id, label: f.label, error: f.error }
+        : f.skipped ? { id: f.id, label: f.label, skipped: f.skipped }
+        : { id: f.id, label: f.label, leads: f.leads || 0, found: f.found || 0, missing: (f.missing || []).slice(0, 20).map(slim) }),
     },
   };
 }
