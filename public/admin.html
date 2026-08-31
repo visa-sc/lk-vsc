@@ -4472,7 +4472,8 @@
             // История по дням — тем же форматом строки.
             const days = j.days || [];
             if (days.length) {
-              html += '<div style="margin-top:10px;"><button type="button" id="reconHistBtn" class="vsc-dayrev-refresh" style="margin-top:0;">История (' + days.length + " дн.)</button></div>";
+              // Кнопка — как «Показать логи» в «Сделках без задач» (просьба Андрея 31.08).
+              html += '<div style="margin-top:10px;"><button type="button" id="reconHistBtn" style="padding:9px 16px;font-size:13px;font-weight:600;border-radius:10px;cursor:pointer;line-height:1;background:#fff;color:#3589BD;border:1px solid #bcdcef;">Показать историю</button></div>';
               html += '<div id="reconHistBox" style="display:none;margin-top:8px;"><table style="border-collapse:collapse;font-size:12px;width:100%;">' + days.map(function (d) {
                 let cell;
                 if (d.forms) {
@@ -4492,7 +4493,7 @@
               const el = box.querySelector("#reconHistBox");
               const open = el.style.display !== "none";
               el.style.display = open ? "none" : "";
-              hb.textContent = (open ? "История (" : "Скрыть историю (") + days.length + " дн.)";
+              hb.textContent = open ? "Показать историю" : "Скрыть историю";
             });
           })
           .catch(function () { box.innerHTML = '<div class="vsc-empty">Сервер не ответил.</div>'; });
