@@ -2304,6 +2304,10 @@ phoneTestMod.mount(app, {
   sendMail: (o) => mail.sendMail(o),
 });
 
+// Сторож баланса Рег.облака: ночью раз в сутки, письмо на director@ при
+// балансе ниже порога. Без REGRU_CLOUD_TOKEN в .env — спит.
+const regruWatch = require("./regru-watch").mount({ sendMail: (o) => mail.sendMail(o) });
+
 // ── Переводы документов с ИИ (/translate, проект Зайцевой): с 22.08.2026 движок
 // (translate.js) — ОТДЕЛЬНЫЙ сервис translate-engine (:3003, /var/www/translate-engine,
 // правит Зайцева сама). Здесь только мост engine-proxy.js (смонтирован в начале файла):
