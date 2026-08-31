@@ -2,9 +2,11 @@
 // Сторож баланса Рег.облака (просьба Андрея 31.08.2026): раз в сутки ночью
 // проверяем баланс облака reg.ru (на нём живёт прод-сервер) и, если денег
 // меньше порога, шлём письмо на director@ — раз в сутки, пока не пополнят.
-// Требует REGRU_CLOUD_TOKEN в .env (API-токен из панели cloud.reg.ru);
-// без токена модуль просто спит и напоминает об этом в логе при старте.
-// Порог настраивается через REGRU_BALANCE_ALERT_RUB (по умолчанию 500 ₽).
+// Требует REGRU_CLOUD_TOKEN в .env (токен с вкладки «Настройки» панели
+// облачных серверов); без токена модуль просто спит и пишет об этом в лог.
+// Два порога (решение Андрея 31.08): ниже 1000 ₽ — ОДНО письмо (повторится,
+// только если баланс поднялся выше и снова упал); ниже 500 ₽ — письмо
+// КАЖДЫЙ день, пока не пополнят. REGRU_BALANCE_WARN_RUB / _ALERT_RUB.
 // ─────────────────────────────────────────────────────────────────────────
 const fs = require("fs");
 const path = require("path");
@@ -14,6 +16,7 @@ const STATE = path.join(__dirname, ".regruWatch.json");
 function mount(deps) {
   const sendMail = deps.sendMail;
   const TOKEN = () => (process.env.REGRU_CLOUD_TOKEN || "").trim();
+  const WARN = () => Number(process.env.REGRU_BALANCE_WARN_RUB || 1000);
   const LIMIT = () => Number(process.env.REGRU_BALANCE_ALERT_RUB || 500);
   const TO = process.env.REGRU_ALERT_EMAIL || "director@visa-sc.ru";
 
@@ -66,20 +69,37 @@ function mount(deps) {
       }
       return null;
     }
-    console.log("regru-watch: баланс Рег.облака " + bal + " ₽ (порог " + LIMIT() + " ₽)");
+    console.log("regru-watch: баланс Рег.облака " + bal + " ₽ (пороги " + WARN() + "/" + LIMIT() + " ₽)");
+    const st = load();
     if (bal < LIMIT()) {
-      const st = load();
+      // Критично: письмо каждый день, пока не пополнят.
       if (st.alertDay !== mskDay()) {
-        st.alertDay = mskDay(); save(st);
+        st.alertDay = mskDay(); st.warnSent = true; save(st);
         sendMail({
           to: TO,
-          subject: "⚠️ Баланс Рег.облака " + Math.round(bal) + " ₽ — пора пополнить",
-          text: "На балансе Рег.облака осталось " + bal + " ₽ — меньше порога " + LIMIT() + " ₽." +
+          subject: "🔴 Баланс Рег.облака " + Math.round(bal) + " ₽ — срочно пополнить",
+          text: "На балансе Рег.облака осталось " + bal + " ₽ — меньше " + LIMIT() + " ₽." +
             "\n\nНа этом облаке работает прод-сервер voyotravel.ru (ЛК, /vsc, сайты): если баланс уйдёт в ноль," +
             " Рег.ру остановит сервер.\n\nПополнить: https://cloud.reg.ru (раздел «Баланс»)." +
-            "\n\nПисьмо приходит раз в сутки, пока баланс ниже порога.",
+            "\n\nЭто письмо будет приходить раз в сутки, пока баланс ниже " + LIMIT() + " ₽.",
         }).catch(() => {});
       }
+    } else if (bal < WARN()) {
+      // Предупреждение: одно письмо на «заход» ниже порога, без ежедневных повторов.
+      if (!st.warnSent) {
+        st.warnSent = true; save(st);
+        sendMail({
+          to: TO,
+          subject: "⚠️ Баланс Рег.облака " + Math.round(bal) + " ₽ — ниже " + WARN() + " ₽",
+          text: "На балансе Рег.облака осталось " + bal + " ₽ — меньше " + WARN() + " ₽." +
+            "\n\nПока не критично, но лучше пополнить заранее: https://cloud.reg.ru (раздел «Баланс»)." +
+            "\n\nСледующее письмо придёт, только если баланс опустится ниже " + LIMIT() + " ₽ (дальше — ежедневно)" +
+            " или если после пополнения снова упадёт ниже " + WARN() + " ₽.",
+        }).catch(() => {});
+      }
+    } else if (st.warnSent || st.alertDay) {
+      // Пополнили — взводим предупреждение заново.
+      delete st.warnSent; delete st.alertDay; save(st);
     }
     return bal;
   }
@@ -90,7 +110,7 @@ function mount(deps) {
   if (msTo <= 0) msTo += 24 * 3600000;
   setTimeout(() => { check(); setInterval(check, 24 * 3600000); }, msTo);
   console.log("regru-watch: " + (TOKEN()
-    ? "проверка баланса Рег.облака раз в сутки в 03:40 МСК (порог " + LIMIT() + " ₽, ближайшая через " + Math.round(msTo / 60000) + " мин)"
+    ? "проверка баланса Рег.облака раз в сутки в 03:40 МСК (пороги " + WARN() + "/" + LIMIT() + " ₽, ближайшая через " + Math.round(msTo / 60000) + " мин)"
     : "СПИТ — нет REGRU_CLOUD_TOKEN в .env (токен: панель cloud.reg.ru → API)"));
   return { check };
 }
