@@ -6648,6 +6648,9 @@ async function runBuyoutsCheck(trigger) {
   } catch (e) { console.error("runBuyoutsCheck:", e.message); return { error: e.message }; }
   finally { _buyoutsRunning = false; }
 }
+// Сводка сверки контактов (OnlinePBX + Flexbe против amoCRM) — блок в
+// «Ежемесячном контроле», только админ (как выкупы).
+app.get("/admin/api/vsc/recon-summary", requireAdmin, (req, res) => res.json(Object.assign({ success: true }, phoneTestMod.reconSummary())));
 app.get("/admin/api/vsc/buyouts", requireAdmin, (req, res) => res.json({ success: true, data: loadBuyouts(), running: _buyoutsRunning, configured: !!TBANK_TOKEN }));
 app.post("/admin/api/vsc/buyouts/run", requireAdmin, (req, res) => {
   if (_buyoutsRunning) return res.json({ success: true, started: false, running: true });

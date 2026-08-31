@@ -109,11 +109,16 @@ function store() {
   if (!c.testPhone) c.testPhone = "+79990000042";               // телефон для заявок с форм
   // Сверка (OnlinePBX и Flexbe против amoCRM): доступы вводятся на странице.
   if (!c.pbx || typeof c.pbx !== "object") c.pbx = { domain: "", key: "" };
-  if (!Array.isArray(c.flexbe) || !c.flexbe.length) c.flexbe = [
-    // URL из раздела Flexbe «Настройки → API» (скрин Андрея 31.08): /mod/api/
+  // URL из раздела Flexbe «Настройки → API» (скрин Андрея 31.08): /mod/api/
+  const FLEXBE_DEFAULTS = [
     { id: "visa-sc", label: "visa-sc.ru", apiUrl: "https://visa-sc.ru/mod/api/", apiKey: "" },
     { id: "spb", label: "spb.visa-sc.ru", apiUrl: "https://spb.visa-sc.ru/mod/api/", apiKey: "" },
+    { id: "ekb", label: "ekb.visa-sc.ru", apiUrl: "https://ekb.visa-sc.ru/mod/api/", apiKey: "" },
   ];
+  if (!Array.isArray(c.flexbe)) c.flexbe = [];
+  for (const d of FLEXBE_DEFAULTS) { // дозаполняем новые сайты в уже созданном конфиге
+    if (!c.flexbe.find((x) => x.id === d.id)) c.flexbe.push(Object.assign({}, d));
+  }
   if (!Array.isArray(_store.runs)) _store.runs = [];
   if (!Array.isArray(_store.recons)) _store.recons = [];
   return _store;
@@ -615,28 +620,26 @@ function mount(app, deps) {
     }
     return null;
   }
+  // Flexbe getLeads (формат выяснен по живому API 31.08): data.leads — ОБЪЕКТ
+  // id→заявка; телефон в client.phone, время в time (unix, сек), имя в client.name.
+  // До 1000 заявок за запрос, сортировка от новых к старым — за сутки хватает.
   async function flexbeFetch(site, fromTs, toTs) {
     const r = await axios.get(site.apiUrl, {
-      params: { api_key: site.apiKey, limit: 100 },
-      headers: { "X-API-KEY": site.apiKey },
+      params: { api_key: site.apiKey, method: "getLeads", count: 500 },
       timeout: 30000, validateStatus: () => true,
     });
     if (r.status !== 200) throw new Error("HTTP " + r.status + ": " + JSON.stringify(r.data).slice(0, 200));
-    let list = r.data;
-    if (list && !Array.isArray(list)) list = list.leads || list.data || list.items || list.result || null;
-    if (list && !Array.isArray(list) && Array.isArray(list.items)) list = list.items;
-    if (!Array.isArray(list)) throw new Error("не понял формат ответа Flexbe: " + JSON.stringify(r.data).slice(0, 250));
+    if (r.data && r.data.error) throw new Error("Flexbe: " + JSON.stringify(r.data.error).slice(0, 200));
+    let leads = r.data && r.data.data && r.data.data.leads;
+    if (leads && !Array.isArray(leads)) leads = Object.values(leads);
+    if (!Array.isArray(leads)) throw new Error("не понял формат ответа Flexbe: " + JSON.stringify(r.data).slice(0, 250));
     const out = [];
-    for (const it of list) {
-      const phoneRaw = it.phone || it.tel || digDeep(it, (v) => {
-        const d10 = digits(v);
-        return d10.length >= 10 && d10.length <= 11 && /^[+]?[-()\d\s]+$/.test(String(v));
-      }, 0);
-      const phone = digits(phoneRaw || "");
+    for (const it of leads) {
+      const phone = digits((it.client && it.client.phone) || it.phone || "");
       if (phone.length < 10) continue;
-      const ts = parseAnyTs(it.created_at || it.date || it.time || it.created || null);
+      const ts = it.time ? Number(it.time) * 1000 : parseAnyTs(it.created_at || it.date || null);
       if (ts != null && (ts < fromTs || ts > toTs)) continue;
-      out.push({ phone, name: it.name || null, ts });
+      out.push({ phone, name: (it.client && it.client.name) || it.name || null, ts, num: it.num || null });
     }
     return out;
   }
@@ -863,4 +866,25 @@ function mount(app, deps) {
     (store().config.dryRun ? "ВЫКЛЮЧЕНО (режим проверки)" : "включено"));
 }
 
-module.exports = { mount, CALL_SOURCE_ENUM, defaultNumberConfig };
+// Краткая сводка последней сверки — для блока в /vsc «Ежемесячный контроль».
+function reconSummary() {
+  const st = store();
+  const configured = !!(st.config.pbx && st.config.pbx.key) || (st.config.flexbe || []).some((f) => f.apiKey);
+  const r = (st.recons && st.recons.length) ? st.recons[st.recons.length - 1] : null;
+  if (!r) return { configured, last: null };
+  const p = r.pbx || {};
+  const slim = (m) => ({ phone: m.phone, count: m.count || null, at: m.lastAt || m.ts || null });
+  return {
+    configured,
+    last: {
+      at: r.startedAt, hours: r.hours,
+      pbx: p.error ? { error: p.error } : p.skipped ? { skipped: p.skipped }
+        : { calls: p.calls || 0, unique: p.unique || 0, found: p.found || 0, missing: (p.missing || []).slice(0, 20).map(slim) },
+      forms: (r.forms || []).map((f) => f.error ? { label: f.label, error: f.error }
+        : f.skipped ? { label: f.label, skipped: f.skipped }
+        : { label: f.label, leads: f.leads || 0, found: f.found || 0, missing: (f.missing || []).slice(0, 20).map(slim) }),
+    },
+  };
+}
+
+module.exports = { mount, CALL_SOURCE_ENUM, defaultNumberConfig, reconSummary };

@@ -3828,6 +3828,8 @@
         // ── «Выкупы — сверка р/с с таблицей» (только админ; руководителям блок не показываем,
         // эндпоинт requireAdmin — raw fetch, чтобы 401 не выкидывал их на логин) ──
         if (currentRole() === "admin") vscContent.appendChild(vscBuyoutsBlock());
+        // Сверка контактов: входящие OnlinePBX + заявки Flexbe против amoCRM (только админ).
+        if (currentRole() === "admin") vscContent.appendChild(vscReconBlock());
         // Комиссии эквайринга (торговый + интернет, ООО + ИП) — только админ, из T-Bank API.
         if (currentRole() === "admin") {
           const hAcq = document.createElement("div"); hAcq.className = "ref-sec-h"; hAcq.style.marginTop = "22px"; hAcq.textContent = "Комиссии эквайринга (торговый и интернет)";
@@ -4420,6 +4422,51 @@
             fetch("/admin/api/vsc/firsttouch/run", { method: "POST", headers: { Authorization: "Bearer " + getToken() } }).catch(function () {})
           ]).then(function () { _vscStaffCache = null; b.textContent = "Считается (несколько минут) — обнови вкладку позже"; });
         });
+      }
+      // ── «Сверка контактов» (Ежемесячный контроль, только админ) ──
+      // Итог последней сверки /phone_test: все входящие звонки OnlinePBX и заявки
+      // Flexbe должны существовать в amoCRM контактами. Только чтение серверного
+      // журнала — сама сверка запускается на /phone_test (или ночным расписанием).
+      function vscReconBlock() {
+        const wrap = document.createElement("div");
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.style.marginTop = "22px"; h.textContent = "Сверка контактов — звонки и заявки в amoCRM";
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart";
+        box.innerHTML = '<div class="loading-state">Загружаем сверку контактов…</div>';
+        wrap.appendChild(box);
+        const pill = (ok, txt) => '<span style="font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 7px;white-space:nowrap;color:' + (ok ? "#2c7a43" : "#a12b3c") + ';background:' + (ok ? "#e3f3e7" : "#fbe9ec") + ';">' + txt + '</span>';
+        fetch("/admin/api/vsc/recon-summary", { headers: { Authorization: "Bearer " + getToken() } })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            if (!j || !j.success) { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить сверку контактов.</div>'; return; }
+            if (!j.last) {
+              box.innerHTML = '<div class="vsc-empty">Сверка ещё не запускалась' + (j.configured ? "" : " — не заданы ключи OnlinePBX/Flexbe") + '. Запуск — на странице <a href="/phone_test" target="_blank" style="color:#4356c0;">/phone_test</a>.</div>';
+              return;
+            }
+            const L = j.last;
+            const fmtT = function (ts) { return new Date(ts).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
+            const rows = [];
+            const pushRow = function (name, st) { rows.push('<tr style="border-top:1px solid #f0eef5;"><td style="padding:6px 14px 6px 0;color:#3a4256;white-space:nowrap;"><b>' + name + '</b></td><td style="padding:6px 0;">' + st + '</td></tr>'); };
+            const p = L.pbx || {};
+            if (p.error) pushRow("Звонки (OnlinePBX)", '<span style="color:#a12b3c;">ошибка: ' + escapeHtml(String(p.error).slice(0, 140)) + '</span>');
+            else if (p.skipped) pushRow("Звонки (OnlinePBX)", '<span style="color:#8a8f9c;">' + escapeHtml(p.skipped) + '</span>');
+            else pushRow("Звонки (OnlinePBX)", p.calls + " звонков · " + p.unique + " номеров · " + ((p.missing || []).length ? pill(false, "нет в amo: " + p.missing.length) : pill(true, "все в amoCRM")));
+            (L.forms || []).forEach(function (f) {
+              const nm = "Заявки " + escapeHtml(f.label || "");
+              if (f.error) pushRow(nm, '<span style="color:#a12b3c;">ошибка: ' + escapeHtml(String(f.error).slice(0, 140)) + '</span>');
+              else if (f.skipped) pushRow(nm, '<span style="color:#8a8f9c;">' + escapeHtml(f.skipped) + '</span>');
+              else pushRow(nm, f.leads + " заявок · " + ((f.missing || []).length ? pill(false, "нет в amo: " + f.missing.length) : pill(true, "все в amoCRM")));
+            });
+            let html = '<div style="font-size:11.5px;color:#8a8f9c;margin-bottom:8px;">Последняя сверка: ' + fmtT(L.at) + " · период " + L.hours + ' ч · <a href="/phone_test" target="_blank" style="color:#4356c0;">подробнее и запуск →</a></div>';
+            html += '<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:12.5px;width:100%;max-width:560px;">' + rows.join("") + "</table></div>";
+            const miss = [];
+            ((L.pbx && L.pbx.missing) || []).forEach(function (m) { miss.push("звонок с " + escapeHtml(m.phone)); });
+            (L.forms || []).forEach(function (f) { (f.missing || []).forEach(function (m) { miss.push("заявка " + escapeHtml(m.phone) + " (" + escapeHtml(f.label) + ")"); }); });
+            if (miss.length) html += '<div style="margin-top:8px;color:#a12b3c;font-size:12px;line-height:1.6;"><b>Пропавшие:</b><br>' + miss.slice(0, 15).join("<br>") + (miss.length > 15 ? "<br>…и ещё " + (miss.length - 15) : "") + "</div>";
+            box.innerHTML = html;
+          })
+          .catch(function () { box.innerHTML = '<div class="vsc-empty">Сервер не ответил.</div>'; });
+        return wrap;
       }
       // ── «Выкупы — сверка р/с с таблицей» (Ежемесячный контроль, только админ) ──
       // Банк (T-Bank API, Turkish + OneTwoTrip, только проведённые операции, месяц по
