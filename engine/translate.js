@@ -1419,7 +1419,7 @@ function mount(app, deps) {
     if (pk && (String(req.query.key || "") === pk || String(req.headers["x-portal-key"] || "") === pk)) { req.staff = { role: "portal", name: "портал work." }; return next(); }
     return res.status(401).json({ success: false, message: "Нет доступа" });
   }
-  const up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 45 * 1024 * 1024, files: 10 } });
+  const up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 45 * 1024 * 1024, files: 40 } });
 
   // С 16.08 редизайн (translate2.html) — основная страница /translate; движок, API и данные общие.
   // Старая вёрстка доступна на /translate_old, /translate_v2 остаётся редиректом со старых ссылок.
