@@ -1833,7 +1833,7 @@ async function recognizeRf(buf, name, mime, ctx) {
   }
   let block = mediaBlock(buf, name, mime);
   if (!block) throw new Error("Формат «" + name + "» не поддерживается. Нужны JPG, PNG, HEIC, WEBP или PDF.");
-  const task = "Извлеки данные из этого разворота внутреннего паспорта РФ. Верни строго JSON по схеме.";
+  const task = "Извлеки данные из этого разворота внутреннего паспорта РФ. Верни строго JSON по схеме." + lessonsBlock();
   const started = Date.now();
   const spend = [];
   const track = (r) => { if (r && r.usage) spend.push({ model: r.model, in: r.usage.input_tokens || 0, out: r.usage.output_tokens || 0, cw: r.usage.cache_creation_input_tokens || 0, cr: r.usage.cache_read_input_tokens || 0 }); };

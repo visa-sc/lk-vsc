@@ -12,7 +12,8 @@
 //                                            к ИИ не обращается, API-баланс не тратит
 //   node tools/scannerLessons.js regress   — платный прогон по самим снимкам (~10 ₽),
 //                                            только когда без него никак
-//   node tools/scannerLessons.js try ФАЙЛ  — прогнать один снимок МИМО журнала
+//   node tools/scannerLessons.js try ФАЙЛ [rf] — прогнать один снимок МИМО журнала
+//                                            (rf — как внутренний паспорт)
 //                                            (в историю и дашборд не попадёт)
 //   node tools/scannerLessons.js ack ID…   — пометить правки разобранными
 //   node tools/scannerLessons.js ack --all — пометить разобранными все текущие
@@ -86,12 +87,13 @@ function cmdReplay() {
     'for(const c of st.corrections||[]){const d=byId.get(c.docId);if(!d)continue;',
     '  if(!truth.has(c.docId))truth.set(c.docId,{doc:d,by:c.by,want:new Map()});',
     '  for(const ch of c.changed||[])truth.get(c.docId).want.set(ch.label,ch.now);}',
-    'const key=l=>(s.FIELDS.find(f=>f.label===l)||{}).key;',
+    'const AF=s.FIELDS.concat(s.FIELDS_RF||[],s.FIELDS_RF_REG||[]);const key=l=>(AF.find(f=>f.label===l)||{}).key;',
     'let ok=0,bad=0,noraw=0;const fails=[];',
     'for(const [id,t] of truth){const d=t.doc;',
     ' if(!d.raw||!d.raw.ai){noraw++;continue;}',
-    ' const mrz=d.raw.mrz?s.parseMrzTd3(d.raw.mrz.line1,d.raw.mrz.line2):s.parseMrzTd3(d.raw.ai.mrz_line1,d.raw.ai.mrz_line2);',
-    ' const r=s.buildFields(d.raw.ai,mrz,d.raw.alt);',
+    ' let r;',
+    ' if(d.rf){const mrz=s.parseMrzRf(d.raw.ai.mrz_line1,d.raw.ai.mrz_line2);r=s.buildFieldsRf(d.raw.ai,mrz);}',
+    ' else{const mrz=d.raw.mrz?s.parseMrzTd3(d.raw.mrz.line1,d.raw.mrz.line2):s.parseMrzTd3(d.raw.ai.mrz_line1,d.raw.ai.mrz_line2);r=s.buildFields(d.raw.ai,mrz,d.raw.alt);}',
     ' console.log("\\n"+String(d.file).slice(0,50)+"  (правил: "+(t.by||"?")+")");',
     ' for(const [label,want] of t.want){const k=key(label);if(!k)continue;',
     '  const got=String(r.fields[k]||"");const norm=x=>String(x).replace(/\\s+/g," ").trim().toUpperCase();',
@@ -112,12 +114,12 @@ function cmdRegress() {
     'const st=JSON.parse(fs.readFileSync(".scanner/store.json","utf8"));',
     'const byId=new Map(st.docs.map(d=>[d.id,d]));const truth=new Map();',
     'for(const c of st.corrections||[]){const d=byId.get(c.docId);if(!d||!d.imgFile)continue;',
-    '  if(!truth.has(c.docId))truth.set(c.docId,{img:d.imgFile,name:d.file,by:c.by,want:new Map()});',
+    '  if(!truth.has(c.docId))truth.set(c.docId,{img:d.imgFile,name:d.file,by:c.by,rf:!!d.rf,want:new Map()});',
     '  for(const ch of c.changed||[])truth.get(c.docId).want.set(ch.label,ch.now);}',
-    'const key=l=>(s.FIELDS.find(f=>f.label===l)||{}).key;',
+    'const AF=s.FIELDS.concat(s.FIELDS_RF||[],s.FIELDS_RF_REG||[]);const key=l=>(AF.find(f=>f.label===l)||{}).key;',
     '(async()=>{let ok=0,bad=0;const fails=[];',
     ' for(const [id,t] of truth){const p=".scanner/files/"+t.img;if(!fs.existsSync(p))continue;',
-    '  let doc;try{doc=await s.recognizeOne(fs.readFileSync(p),t.name,/\\.png$/i.test(t.img)?"image/png":"image/jpeg",{by:"регресс"});}',
+    '  let doc;try{doc=await (t.rf?s.recognizeRf:s.recognizeOne)(fs.readFileSync(p),t.name,/\\.png$/i.test(t.img)?"image/png":"image/jpeg",{by:"регресс"});}',
     '  catch(e){console.log(t.name+" — ошибка: "+e.message);continue;}',
     '  console.log("\\n"+t.name.slice(0,50)+"  (правил: "+(t.by||"?")+")");',
     '  for(const [label,want] of t.want){const k=key(label);if(!k)continue;',
@@ -142,7 +144,8 @@ function cmdTry(args) {
     'require("dotenv").config();const fs=require("fs");const s=require("./scanner.js");',
     'const p=".scanner/files/" + process.argv[2];',
     'const mime=/[.]png$/i.test(p)?"image/png":/[.]pdf$/i.test(p)?"application/pdf":"image/jpeg";',
-    '(async()=>{const d=await s.recognizeOne(fs.readFileSync(p),process.argv[2],mime,{by:"проверка"});',
+    'const rf=process.argv[3]==="rf";',
+    '(async()=>{const d=await (rf?s.recognizeRf:s.recognizeOne)(fs.readFileSync(p),process.argv[2],mime,{by:"проверка"});',
     ' const f=d.fields;const rub=(d.spend||[]).reduce((a,e)=>a+((e.in||0)*1+(e.out||0)*5)/1e6,0)*80;',
     ' console.log(f.surnameRu,f.nameRu,f.patronymicRu,"|",f.surnameLat,f.nameLat);',
     ' console.log("серия и номер:",f.number,"| выдан:",f.issueDate,f.authority,"| место рожд.:",f.birthPlace);',
@@ -151,7 +154,7 @@ function cmdTry(args) {
   ].join("");
   fs.writeFileSync("/tmp/scanner-try.js", script);
   execFileSync("scp", ["/tmp/scanner-try.js", HOST + ":/root/scanner-try.js"], { stdio: "ignore" });
-  process.stdout.write(ssh("cp /root/scanner-try.js stry.tmp.js && node stry.tmp.js " + JSON.stringify(img) + "; rm -f stry.tmp.js"));
+  process.stdout.write(ssh("cp /root/scanner-try.js stry.tmp.js && node stry.tmp.js " + JSON.stringify(img) + (args[1] === "rf" ? " rf" : "") + "; rm -f stry.tmp.js"));
 }
 
 function cmdAck(args) {
