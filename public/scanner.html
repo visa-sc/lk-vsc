@@ -193,7 +193,8 @@
     </div>
 
     <div class="seg" role="tablist">
-      <button type="button" class="active" data-tab="scan">Распознавание</button>
+      <button type="button" class="active" data-tab="scan">Загранпаспорт</button>
+      <button type="button" data-tab="rf">Внутренний РФ</button>
       <button type="button" data-tab="hist">История</button>
       <button type="button" data-tab="dash">Дашборд</button>
       <button type="button" data-tab="learn">Обучение</button>
@@ -204,7 +205,7 @@
       <div class="card">
         <div class="sec-h"><b>Загрузите документы</b><span>можно сразу несколько</span></div>
         <div class="banner info" style="margin-bottom:14px;">
-          Пока сервис работает <b>только с загранпаспортами РФ</b>. Внутренние российские и иностранные паспорта распознаются плохо — им нужны свои поля и своя проверка, это следующий шаг.
+          Эта вкладка — для <b>загранпаспортов РФ</b>. Внутренние российские паспорта сканируются на соседней вкладке «Внутренний РФ». Иностранные паспорта пока не поддерживаются.
         </div>
         <div class="drop" id="drop">
           <div class="big">🛂</div>
@@ -224,6 +225,32 @@
       </div>
 
       <div id="results"></div>
+    </div>
+
+    <!-- ── Внутренний паспорт РФ ── -->
+    <div id="tab-rf" style="display:none;">
+      <div class="card">
+        <div class="sec-h"><b>Внутренний паспорт РФ</b><span>разворот с фото и разворот с пропиской</span></div>
+        <div class="banner info" style="margin-bottom:14px;">
+          Загрузите <b>разворот с фотографией</b> (страницы 2–3) и, если нужна регистрация, <b>разворот «Место жительства»</b> со штампом. Можно оба файла сразу — данные объединятся в одну карточку. Серия, номер, дата рождения, дата выдачи и код подразделения сверяются с машиночитаемой строкой и помечаются галочкой ✓.
+        </div>
+        <div class="drop" id="dropRf">
+          <div class="big">📕</div>
+          <div><b>Выберите файлы</b> или перетащите сюда</div>
+          <div class="mut">Фото или скан разворота · JPG, PNG, HEIC, PDF · до 20 файлов за раз</div>
+        </div>
+        <input type="file" id="fileRf" accept="image/*,.heic,.heif,application/pdf" multiple style="display:none;">
+        <div class="queue" id="queueRf"></div>
+        <div class="acts-row">
+          <button type="button" class="pri-btn" id="goRf" disabled>Распознать</button>
+          <button type="button" class="ghost-btn" id="clearAllRf" style="display:none;">Очистить результаты</button>
+          <span id="scanMsgRf" class="err-t"></span>
+        </div>
+        <div class="banner info" style="margin:16px 0 0;">
+          Рукописные штампы прописки читаются хуже печатных — такие карточки получают предупреждение, сверьте адрес глазами. Нашли ошибку — «Поправить и обучить», как с загранпаспортами.
+        </div>
+      </div>
+      <div id="resultsRf"></div>
     </div>
 
     <!-- ── История ── -->
@@ -289,7 +316,22 @@
   var token = null; try { token = localStorage.getItem(TOKEN_KEY); } catch (_) {}
   var $ = function (s) { return document.querySelector(s); };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
-  var FIELDS = [], cards = [], files = [], state = null;
+  var FIELDS = [], FIELDS_RF = [], FIELDS_RF_REG = [], cards = [], files = [], filesRf = [], state = null;
+  // Список полей карточки зависит от типа документа: загран, внутренний
+  // (главный разворот) или прописка; главный+прописка вместе — объединённый.
+  function isRfCard(c) { return /^Внутренний паспорт РФ/.test((c.fields && c.fields.docKind) || ""); }
+  function cardFields(c) {
+    var kind = (c.fields && c.fields.docKind) || "";
+    if (/прописка/.test(kind) && !c.fields.surnameRu) return FIELDS_RF_REG;
+    if (/^Внутренний/.test(kind)) {
+      var base = FIELDS_RF.slice();
+      if (c.fields.regAddress || c.fields.regDate) {
+        FIELDS_RF_REG.forEach(function (f) { if (f.key !== "docKind") base.push(f); });
+      }
+      return base;
+    }
+    return FIELDS;
+  }
 
   function api(path, opts) {
     opts = opts || {};
@@ -321,7 +363,7 @@
       Array.prototype.forEach.call(document.querySelectorAll(".seg button"), function (x) { x.classList.remove("active"); });
       b.classList.add("active");
       var t = b.getAttribute("data-tab");
-      ["scan", "hist", "dash", "learn"].forEach(function (k) { $("#tab-" + k).style.display = k === t ? "" : "none"; });
+      ["scan", "rf", "hist", "dash", "learn"].forEach(function (k) { $("#tab-" + k).style.display = k === t ? "" : "none"; });
       if (t === "hist") { histOffset = 0; loadHist(); }
       if (t === "dash") loadDash();
       if (t === "learn") { renderLessons(); loadCorrections(); }
@@ -400,10 +442,72 @@
   });
   $("#clearAll").addEventListener("click", function () { cards = []; renderCards(); $("#clearAll").style.display = "none"; });
 
+  // ── Вкладка «Внутренний РФ»: своя очередь, тот же конвейер ──
+  function renderQueueRf() {
+    $("#queueRf").innerHTML = filesRf.map(function (f) { return "<span>" + esc(f.name) + "</span>"; }).join("");
+    $("#goRf").disabled = !filesRf.length;
+  }
+  $("#dropRf").addEventListener("click", function () { $("#fileRf").click(); });
+  $("#fileRf").addEventListener("change", function () { filesRf = Array.prototype.slice.call(this.files || []); renderQueueRf(); });
+  ["dragover", "dragleave", "drop"].forEach(function (ev) {
+    $("#dropRf").addEventListener(ev, function (e) {
+      e.preventDefault();
+      this.classList.toggle("over", ev === "dragover");
+      if (ev === "drop") { filesRf = Array.prototype.slice.call(e.dataTransfer.files || []); renderQueueRf(); }
+    });
+  });
+  $("#goRf").addEventListener("click", function () {
+    if (!filesRf.length) return;
+    var fd = new FormData();
+    fd.append("mode", "rf");
+    filesRf.forEach(function (f) { fd.append("files", f, f.name); });
+    $("#goRf").disabled = true;
+    $("#goRf").innerHTML = '<span class="spin"></span>распознаю…';
+    $("#scanMsgRf").textContent = "";
+    var t0 = Date.now();
+    api("/scanner/api/parse", { method: "POST", body: fd }).then(function (j) {
+      $("#goRf").disabled = false; $("#goRf").textContent = "Распознать";
+      if (!j.success) { $("#scanMsgRf").textContent = j.message || "Не получилось"; return; }
+      var docs = (j.results || []).filter(function (r) { return r && r.ok; }).map(function (r) { return r.doc; });
+      (j.results || []).forEach(function (r) { if (r && !r.ok) $("#scanMsgRf").textContent = ((r.file ? r.file + ": " : "") + (r.message || "ошибка")); });
+      // Главный разворот и прописка из одной пачки — это один человек:
+      // если главный ровно один, прописки вклеиваем в его карточку.
+      var mains = docs.filter(function (d) { return (d.fields.docKind || "") === "Внутренний паспорт РФ"; });
+      var regs = docs.filter(function (d) { return /прописка/.test(d.fields.docKind || ""); });
+      var rest = docs.filter(function (d) { return mains.indexOf(d) < 0 && regs.indexOf(d) < 0; });
+      if (mains.length === 1 && regs.length) {
+        regs.forEach(function (rg) {
+          Object.keys(rg.fields).forEach(function (k) { if (k !== "docKind" && rg.fields[k] && !mains[0].fields[k]) mains[0].fields[k] = rg.fields[k]; });
+          (rg.warnings || []).forEach(function (w) { mains[0].warnings.push(w); });
+          mains[0].docs = mains[0].docs || [];
+        });
+        mains[0].file = mains[0].file + (regs.length ? " + прописка" : "");
+        regs = [];
+      }
+      mains.concat(regs, rest).forEach(function (d) { addCard(d); });
+      filesRf = []; $("#fileRf").value = ""; renderQueueRf();
+      $("#clearAllRf").style.display = cards.some(function (c) { return isRfCard(c); }) ? "" : "none";
+      if (docs.length) {
+        $("#scanMsgRf").className = "ok-t";
+        $("#scanMsgRf").textContent = "Готово: " + docs.length + " док. за " + ((Date.now() - t0) / 1000).toFixed(1) + " сек.";
+        setTimeout(function () { $("#scanMsgRf").textContent = ""; $("#scanMsgRf").className = "err-t"; }, 6000);
+      }
+    }).catch(function (e) {
+      $("#goRf").disabled = false; $("#goRf").textContent = "Распознать";
+      if (e.message !== "auth") $("#scanMsgRf").textContent = "Сервер не ответил — попробуйте ещё раз";
+    });
+  });
+  $("#clearAllRf").addEventListener("click", function () {
+    cards = cards.filter(function (c) { return !isRfCard(c); });
+    renderCards(); $("#clearAllRf").style.display = "none";
+  });
+
   // Группировка «по людям»: один и тот же паспорт (или тот же человек), пришедший
   // двумя файлами, показываем одной карточкой.
   function personKey(d) {
     var f = d.fields || {};
+    if (/прописка/.test(f.docKind || "")) return "";           // прописку клеим отдельно, см. goRf
+    if (/^Внутренний/.test(f.docKind || "")) return ("RF" + String(f.seriesNumberRf || "").replace(/\D/g, "")) || d.id;
     return (String(f.number || "").replace(/\D/g, "") || ((f.translit || "") + "|" + (f.birthDate || "")) || d.id).toUpperCase();
   }
   function addCard(doc) {
@@ -412,7 +516,8 @@
     for (var i = 0; i < cards.length; i++) if (cards[i].key === k && k) { ex = cards[i]; break; }
     if (ex) {
       ex.docs.push(doc);
-      FIELDS.forEach(function (f) { if (!ex.fields[f.key] && doc.fields[f.key]) ex.fields[f.key] = doc.fields[f.key]; });
+      cardFields({ fields: doc.fields }).forEach(function (f) { if (!ex.fields[f.key] && doc.fields[f.key]) ex.fields[f.key] = doc.fields[f.key]; });
+      if (/прописка/.test(doc.fields.docKind || "") && /^Внутренний/.test(ex.fields.docKind || "")) ex.fields.docKind = "Внутренний паспорт РФ";
       (doc.warnings || []).forEach(function (w) { if (ex.warnings.indexOf(w) < 0) ex.warnings.push(w); });
       (doc.confirmed || []).forEach(function (k2) { if (ex.confirmed.indexOf(k2) < 0) ex.confirmed.push(k2); });
     } else {
@@ -422,24 +527,38 @@
   }
 
   function fullName(f) {
-    return [f.surnameRu, f.nameRu, f.patronymicRu].filter(Boolean).join(" ") || f.translit || "Документ";
+    return [f.surnameRu, f.nameRu, f.patronymicRu].filter(Boolean).join(" ") || f.translit ||
+      (/прописка/.test(f.docKind || "") ? "Прописка" : "Документ");
   }
   function plainAll(c) {
     var out = [];
-    FIELDS.forEach(function (f) { if (c.fields[f.key]) out.push(f.label + ": " + c.fields[f.key]); });
+    cardFields(c).forEach(function (f) { if (c.fields[f.key]) out.push(f.label + ": " + c.fields[f.key]); });
     return out.join("\n");
   }
   function renderCards() {
-    if (!cards.length) { $("#results").innerHTML = ""; return; }
-    $("#results").innerHTML = cards.map(function (c, ci) {
+    var htmlStd = "", htmlRf = "";
+    cards.forEach(function (c, ci) {
+      var h = cardHtml(c, ci);
+      if (isRfCard(c)) htmlRf += h; else htmlStd += h;
+    });
+    $("#results").innerHTML = htmlStd;
+    $("#resultsRf").innerHTML = htmlRf;
+  }
+  function cardHtml(c, ci) {
+    return (function (c, ci) {
       var f = c.fields;
       var conf = c.confirmed || [];
-      var keyOk = ["number", "birthDate", "expiryDate"].every(function (k2) { return conf.indexOf(k2) >= 0; });
+      var rfCard = isRfCard(c);
+      var keyOk = (rfCard ? ["seriesNumberRf", "birthDate"] : ["number", "birthDate", "expiryDate"]).every(function (k2) { return conf.indexOf(k2) >= 0; });
       var h = '<div class="card pcard" data-ci="' + ci + '">';
       h += '<div class="pcard-h"><b>' + esc(fullName(f)) + "</b>";
-      h += (c.mrz && c.mrz.valid) ? '<span class="pill green">MRZ сошлась</span>'
-        : keyOk ? '<span class="pill green">номер и даты сверены с MRZ</span>'
-        : '<span class="pill amber">сверьте номер и даты</span>';
+      if (/прописка/.test(c.fields.docKind || "") && !c.fields.surnameRu) {
+        h += '<span class="pill blue">штамп о регистрации</span>';
+      } else {
+        h += (c.mrz && c.mrz.valid) ? '<span class="pill green">MRZ сошлась</span>'
+          : keyOk ? '<span class="pill green">номер и даты сверены с MRZ</span>'
+          : '<span class="pill amber">сверьте номер и даты</span>';
+      }
       if (f.docKind) h += '<span class="pill gray">' + esc(f.docKind) + "</span>";
       if (c.docs.length > 1) h += '<span class="pill blue">' + c.docs.length + " файла</span>";
       h += "</div>";
@@ -447,7 +566,7 @@
         ((c.docs.reduce(function (s, d) { return s + (d.ms || 0); }, 0) / 1000).toFixed(1)) + " сек.</div>";
       h += '<div class="copyhint">Нажмите на любое поле — значение скопируется в буфер</div>';
       h += '<div class="fgrid">';
-      FIELDS.forEach(function (fl) {
+      cardFields(c).forEach(function (fl) {
         var v = f[fl.key] || "";
         h += '<div class="f' + (v ? "" : " empty") + (conf.indexOf(fl.key) >= 0 ? " ok" : "") + '" data-copy="' + esc(v) + '" data-fk="' + esc(fl.key) + '" title="Нажмите, чтобы скопировать"><span class="k">' + esc(fl.label) + '</span><div class="v">' + (v ? esc(v) : "—") + "</div></div>";
       });
@@ -468,7 +587,7 @@
       }
       if (c.edit) {
         h += '<div class="edit"><div class="eg">';
-        FIELDS.forEach(function (fl) {
+        cardFields(c).forEach(function (fl) {
           h += '<div><label>' + esc(fl.label) + '</label><input type="text" data-fk="' + fl.key + '" value="' + esc(f[fl.key] || "") + '"></div>';
         });
         h += '<div class="full"><label>Что было не так (пойдёт в обучение)</label><textarea data-cm placeholder="Например: отчество прочитал с ошибкой — в паспорте АНДРЕЕВИЧ, а не АНДРЕВИЧ. Или: место рождения нужно без латинской части после дроби."></textarea></div>';
@@ -479,11 +598,11 @@
       }
       h += "</div>";
       return h;
-    }).join("");
+    })(c, ci);
   }
 
-  // Делегирование кликов в карточках
-  $("#results").addEventListener("click", function (e) {
+  // Делегирование кликов в карточках (общий обработчик обоих контейнеров)
+  function onCardsClick(e) {
     var cardEl = e.target.closest(".pcard");
     if (!cardEl) return;
     var ci = Number(cardEl.getAttribute("data-ci"));
@@ -518,7 +637,9 @@
           if (e2.message !== "auth" && msg) msg.textContent = "Сервер не ответил";
         });
     }
-  });
+  }
+  $("#results").addEventListener("click", onCardsClick);
+  $("#resultsRf").addEventListener("click", onCardsClick);
 
   // ── Обучение ──
   function renderLessons() {
@@ -683,6 +804,8 @@
       if (!j.success) return;
       state = j;
       FIELDS = j.fields || [];
+      FIELDS_RF = j.fieldsRf || [];
+      FIELDS_RF_REG = j.fieldsRfReg || [];
       showApp();
       $("#aiBanner").style.display = j.aiConfigured ? "none" : "";
       renderLessons();

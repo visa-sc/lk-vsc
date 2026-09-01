@@ -1582,6 +1582,342 @@ async function recognizeOne(buf, name, mime, ctx) {
   return doc;
 }
 
+
+// ═══════════════════ ВНУТРЕННИЙ ПАСПОРТ РФ ═══════════════════
+// Два разворота: главный (с фотографией) и прописка. У главного есть своя MRZ
+// с контрольными цифрами — в её служебном поле лежат последняя цифра номера,
+// ДАТА ВЫДАЧИ и КОД ПОДРАЗДЕЛЕНИЯ, то есть якорь точности даже сильнее, чем у
+// заграна. Транслитерация в этой MRZ своя, национальная, с цифрами вместо
+// части букв (Ч→3, Й→Q, Я→6, Ю→9…) — для сверки кириллицы used rfTranslit;
+// наружу (в «английские» поля) отдаём обычную визовую транслитерацию ICAO.
+const RF_MRZ_TRANSLIT = {
+  А: "A", Б: "B", В: "V", Г: "G", Д: "D", Е: "E", Ё: "2", Ж: "J", З: "Z", И: "I",
+  Й: "Q", К: "K", Л: "L", М: "M", Н: "N", О: "O", П: "P", Р: "R", С: "S", Т: "T",
+  У: "U", Ф: "F", Х: "H", Ц: "C", Ч: "3", Ш: "W", Щ: "X", Ъ: "7", Ы: "Y", Ь: "8",
+  Э: "4", Ю: "9", Я: "6",
+};
+function rfTranslit(sIn) {
+  const src = String(sIn || "").toUpperCase();
+  let out = "";
+  for (const ch of src) out += Object.prototype.hasOwnProperty.call(RF_MRZ_TRANSLIT, ch) ? RF_MRZ_TRANSLIT[ch] : (/[А-Я]/.test(ch) ? "?" : ch);
+  return out.replace(/[ \-]/g, "<");
+}
+
+// Разбор MRZ внутреннего паспорта (PN RUS …). Нижняя строка:
+//   [0-8] серия(4)+первые 5 цифр номера, [9] контрольная,
+//   [10-12] RUS, [13-18] дата рождения ГГММДД, [19] контрольная, [20] пол,
+//   [21-27] срок действия (пустой, ‹‹‹‹‹‹ + контрольная «<» или 0),
+//   [28-41] служебное: последняя цифра номера + дата выдачи ГГММДД + код
+//   подразделения (6 цифр), [42] контрольная служебного, [43] общая.
+function parseMrzRf(l1raw, l2raw) {
+  const l1 = cleanMrzLine(l1raw), l2 = cleanMrzLine(l2raw);
+  if (!/^PN/.test(l1) || l2.length < 42) return null;
+  // Имена разбираем сами: в национальной транслитерации цифры — законные
+  // буквы (ВАЛЕРИЯ → VALERI6), фильтр заграна их бы выкинул.
+  // Строка: PNRUS SURNAME << NAME < PATRONYMIC
+  const names = l1.slice(5).replace(/<+$/, "").split("<<");
+  const surnameMrz = String(names[0] || "").replace(/</g, " ").trim();
+  const given = String(names.slice(1).join(" ")).split("<").map((w) => w.trim()).filter(Boolean);
+  const m = l2.match(/^(\d{9})(\d)RUS(\d{6})(\d)([MF])<*?(\d)(\d{6})(\d{6})<?(\d)?/);
+  if (!m) return null;
+  const [, num9, numChk, bd, bdChk, sex, lastDigit, issue, division, optChk] = m;
+  const checks = {
+    number: mrzCheckDigit(num9) === Number(numChk),
+    birth: mrzCheckDigit(bd) === Number(bdChk),
+    // Контрольная служебного поля покрывает последнюю цифру номера, дату
+    // выдачи и код подразделения — если сошлась, им можно верить как цифрам.
+    opt: optChk === undefined ? null : mrzCheckDigit(lastDigit + issue + division) === Number(optChk),
+  };
+  const series = num9.slice(0, 4), number = num9.slice(4, 9) + lastDigit;
+  return {
+    line1: l1, line2: l2,
+    surnameMrz, nameMrz: given[0] || "", patronymicMrz: given.slice(1).join(" "),
+    series, number,
+    seriesNumber: series.slice(0, 2) + " " + series.slice(2) + " " + number,
+    birthDate: mrzDate(bd, "birth"),
+    sex: sex === "M" ? "М" : "Ж",
+    issueDate: (function () { const d = issue.slice(4, 6), mo = issue.slice(2, 4), y = Number(issue.slice(0, 2)); return d + "." + mo + "." + ((y > 50 ? 1900 : 2000) + y); })(),
+    divisionCode: division.slice(0, 3) + "-" + division.slice(3),
+    checks, valid: checks.number === true && checks.birth === true,
+  };
+}
+
+const FIELDS_RF = [
+  { key: "surnameRu", label: "Фамилия" },
+  { key: "nameRu", label: "Имя" },
+  { key: "patronymicRu", label: "Отчество" },
+  { key: "surnameLat", label: "Фамилия (латиницей)" },
+  { key: "nameLat", label: "Имя (латиницей)" },
+  { key: "patronymicLat", label: "Отчество (латиницей)" },
+  { key: "translit", label: "Имя и фамилия латиницей" },
+  { key: "birthDate", label: "Дата рождения" },
+  { key: "sex", label: "Пол" },
+  { key: "birthPlace", label: "Место рождения" },
+  { key: "birthPlaceLat", label: "Место рождения (латиницей)" },
+  { key: "seriesNumberRf", label: "Серия и номер" },
+  { key: "seriesRf", label: "Серия" },
+  { key: "numberRf", label: "Номер" },
+  { key: "issueDate", label: "Дата выдачи" },
+  { key: "authority", label: "Кем выдан" },
+  { key: "authorityLat", label: "Кем выдан (латиницей)" },
+  { key: "divisionCode", label: "Код подразделения" },
+  { key: "docKind", label: "Тип документа" },
+];
+const FIELDS_RF_REG = [
+  { key: "regDate", label: "Дата регистрации" },
+  { key: "regAddress", label: "Адрес регистрации" },
+  { key: "regAddressLat", label: "Адрес (латиницей)" },
+  { key: "regAuthority", label: "Кем зарегистрирован" },
+  { key: "regCode", label: "Код подразделения (штамп)" },
+  { key: "docKind", label: "Тип документа" },
+];
+
+// Все поля всех типов документов — для правок, истории и дашборда.
+function fieldsAll() {
+  const seen = new Map();
+  for (const f of FIELDS.concat(FIELDS_RF, FIELDS_RF_REG)) if (!seen.has(f.key)) seen.set(f.key, f);
+  return Array.from(seen.values());
+}
+const BOX_ANY = { anyOf: [
+  { type: "object", additionalProperties: false, required: ["x", "y", "w", "h"],
+    properties: { x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } } },
+  { type: "array", items: { type: "number" } },
+] };
+const SCHEMA_RF = {
+  type: "object", additionalProperties: false,
+  required: ["page_type", "surname_ru", "name_ru", "patronymic_ru", "birth_date", "sex", "birth_place",
+    "series_number", "issue_date", "authority", "division_code", "mrz_line1", "mrz_line2",
+    "reg_date", "reg_address", "reg_authority", "reg_code", "handwritten", "page_rotation", "notes"],
+  properties: {
+    page_type: { type: "string", enum: ["main", "reg", "other"] },
+    surname_ru: { type: "string" }, name_ru: { type: "string" }, patronymic_ru: { type: "string" },
+    birth_date: { type: "string" }, sex: { type: "string" }, birth_place: { type: "string" },
+    series_number: { type: "string" }, issue_date: { type: "string" }, authority: { type: "string" },
+    division_code: { type: "string" }, mrz_line1: { type: "string" }, mrz_line2: { type: "string" },
+    reg_date: { type: "string" }, reg_address: { type: "string" }, reg_authority: { type: "string" },
+    reg_code: { type: "string" }, handwritten: { type: "boolean" },
+    page_rotation: { type: "number" }, page_box: BOX_ANY, notes: { type: "string" },
+  },
+};
+
+const SYS_RF = [
+  "Ты извлекаешь данные из фотографий и сканов ВНУТРЕННЕГО паспорта РФ для визового агентства.",
+  "Отвечай СТРОГО данными из документа: ничего не додумывай и не «исправляй» — если поля не видно, оставь пустую строку.",
+  "Часто присылают скриншот из мессенджера: имя отправителя, время, кнопки — это НЕ данные документа.",
+  "Определи page_type: «main» — разворот с фотографией (вверху кем выдан, дата выдачи, код подразделения; внизу ФИО, пол, дата и место рождения; под страницей две машиночитаемые строки, начинаются с PN); «reg» — разворот «МЕСТО ЖИТЕЛЬСТВА» со штампами о регистрации; «other» — всё остальное.",
+  "Правила для main:",
+  "- Кириллицу переписывай ровно как напечатано, ЗАГЛАВНЫМИ. Фамилия, имя и отчество напечатаны каждое на своей строке возле подписей «Фамилия», «Имя», «Отчество».",
+  "- НЕ «причёсывай» непривычные имена под привычные: переписывай буква в букву.",
+  "- birth_place — все строки места рождения, объединённые через пробел («Г. КУРСК КУРСКАЯ ОБЛ. РОССИЯ»).",
+  "- series_number — красные вертикальные цифры у правого края: первые две пары — серия, шесть цифр — номер, например «38 24 546626».",
+  "- division_code — код подразделения в формате 460-003.",
+  "- mrz_line1 и mrz_line2 — две машиночитаемые строки под страницей, СИМВОЛ В СИМВОЛ. Транслитерация там особая, с ЦИФРАМИ вместо части букв (3, 6, 9, Q, W) — это не ошибка, переписывай как напечатано. Если строк не видно — верни пустые, не сочиняй.",
+  "Правила для reg:",
+  "- Читай штамп «ЗАРЕГИСТРИРОВАН». Если штампов несколько — бери самый ПОЗДНИЙ по дате; штампы «снят с регистрационного учёта» не бери.",
+  "- reg_date — дата в штампе (ДД.ММ.ГГГГ). reg_address — область/город/улица/дом/корпус/квартира одной строкой, как в штампе. reg_authority — наименование подразделения из штампа. reg_code — код подразделения из штампа (например 500-154).",
+  "- Штамп бывает заполнен ОТ РУКИ — тогда handwritten: true; переписывай рукопись аккуратно, не угадывай.",
+  "- page_rotation — на сколько градусов ПО ЧАСОВОЙ повернуть снимок, чтобы текст стал горизонтальным: 0, 90, 180 или 270.",
+  "- notes — короткая пометка по-русски, если что-то не так (плохо видно, обрезано, рукопись неразборчива).",
+].join("\n");
+
+// Свести ответ модели и MRZ внутреннего паспорта в поля.
+function buildFieldsRf(ai, mrz) {
+  const warn = [];
+  const confirmed = [];
+  const up = (v) => String(v || "").trim().toUpperCase();
+  const isReg = ai.page_type === "reg";
+  const f = { docKind: isReg ? "Внутренний паспорт РФ — прописка" : "Внутренний паспорт РФ" };
+  if (isReg) {
+    f.regDate = normDate(ai.reg_date);
+    f.regAddress = up(ai.reg_address).replace(/\s+/g, " ");
+    f.regAddressLat = translit(f.regAddress);
+    f.regAuthority = up(ai.reg_authority).replace(/\s+/g, " ");
+    f.regCode = String(ai.reg_code || "").replace(/[^0-9]/g, "").replace(/^(\d{3})(\d{3})$/, "$1-$2");
+    if (ai.handwritten) warn.push("Штамп заполнен от руки — рукопись читается ненадёжно, сверьте адрес и дату с документом.");
+    if (!f.regAddress) warn.push("Адрес в штампе прочитать не удалось — впишите вручную.");
+    if (f.regCode && !/^\d{3}-\d{3}$/.test(f.regCode)) { warn.push("Код подразделения в штампе прочитан не полностью («" + f.regCode + "»)."); }
+    return { fields: f, warnings: warn, confirmed };
+  }
+  f.surnameRu = up(ai.surname_ru); f.nameRu = up(ai.name_ru); f.patronymicRu = up(ai.patronymic_ru);
+  f.birthDate = normDate(ai.birth_date);
+  f.sex = /ж|f/i.test(ai.sex || "") ? "Ж" : (/м|m/i.test(ai.sex || "") ? "М" : "");
+  f.birthPlace = up(ai.birth_place).replace(/\s+/g, " ");
+  const snDigits = String(ai.series_number || "").replace(/\D/g, "");
+  f.seriesRf = snDigits.slice(0, 4).replace(/^(\d{2})(\d{2})$/, "$1 $2");
+  f.numberRf = snDigits.slice(4, 10);
+  f.issueDate = normDate(ai.issue_date);
+  f.authority = up(ai.authority).replace(/\s+/g, " ");
+  f.divisionCode = String(ai.division_code || "").replace(/[^0-9]/g, "").replace(/^(\d{3})(\d{3})$/, "$1-$2");
+
+  if (mrz) {
+    // Серия и номер, дата рождения — под контрольной цифрой MRZ.
+    const put = (key, val, ok, human) => {
+      if (!val) return;
+      if (f[key] && f[key] === val) { confirmed.push(key); return; }
+      if (ok === true) {
+        if (f[key]) warn.push(human + ": в документе «" + f[key] + "», по MRZ «" + val + "» — взято из MRZ");
+        f[key] = val; confirmed.push(key);
+      } else if (!f[key]) { f[key] = val; warn.push(human + ": взято из MRZ, контрольной цифрой не подтверждено — сверьте глазами"); }
+      else warn.push(human + ": в документе «" + f[key] + "», в MRZ «" + val + "» — оставил как в документе, сверьте глазами");
+    };
+    put("birthDate", mrz.birthDate, mrz.checks.birth, "Дата рождения");
+    const snPrinted = (f.seriesRf + " " + f.numberRf).trim();
+    if (mrz.checks.number === true) {
+      if (snDigits && snDigits !== mrz.series + mrz.number) warn.push("Серия и номер: в документе «" + snPrinted + "», по MRZ «" + mrz.seriesNumber + "» — взято из MRZ");
+      f.seriesRf = mrz.series.slice(0, 2) + " " + mrz.series.slice(2);
+      f.numberRf = mrz.number;
+      confirmed.push("seriesRf"); confirmed.push("numberRf"); confirmed.push("seriesNumberRf");
+    }
+    if (mrz.sex) { if (!f.sex) f.sex = mrz.sex; else if (f.sex === mrz.sex) confirmed.push("sex"); else warn.push("Пол: в документе «" + f.sex + "», в MRZ «" + mrz.sex + "»"); }
+    // Дата выдачи и код подразделения — из служебного поля MRZ; если его
+    // контрольная цифра сошлась, это самые надёжные их источники.
+    if (mrz.checks.opt === true) {
+      if (f.issueDate && f.issueDate !== mrz.issueDate) warn.push("Дата выдачи: в документе «" + f.issueDate + "», по MRZ «" + mrz.issueDate + "» — взято из MRZ");
+      f.issueDate = mrz.issueDate; confirmed.push("issueDate");
+      if (f.divisionCode && f.divisionCode !== mrz.divisionCode) warn.push("Код подразделения: в документе «" + f.divisionCode + "», по MRZ «" + mrz.divisionCode + "» — взято из MRZ");
+      f.divisionCode = mrz.divisionCode; confirmed.push("divisionCode");
+    } else {
+      if (f.issueDate && mrz.issueDate === f.issueDate) confirmed.push("issueDate");
+      if (f.divisionCode && mrz.divisionCode === f.divisionCode) confirmed.push("divisionCode");
+    }
+    // Кириллица ФИО против национальной транслитерации из MRZ. Здесь она
+    // точная (печатается из того же источника), поэтому ошибку в одну букву
+    // можно не только поймать, но и починить — перебором правок в один знак.
+    const rfRepair = (cyr, mv) => {
+      const hits = new Set();
+      const az = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
+      for (let i = 0; i < cyr.length; i++) {
+        for (const ch of az) { if (ch !== cyr[i]) { const c = cyr.slice(0, i) + ch + cyr.slice(i + 1); if (rfTranslit(c) === mv) hits.add(c); } }
+        const d = cyr.slice(0, i) + cyr.slice(i + 1);
+        if (d.length > 1 && rfTranslit(d) === mv) hits.add(d);
+      }
+      for (let i = 0; i <= cyr.length; i++) for (const ch of az) { const c = cyr.slice(0, i) + ch + cyr.slice(i); if (rfTranslit(c) === mv) hits.add(c); }
+      const arr = Array.from(hits);
+      return arr.length === 1 ? arr[0] : null;
+    };
+    const ruCheck = (key, mv, human) => {
+      if (!f[key] || !mv) return;
+      const my = rfTranslit(f[key]);
+      if (my === mv) { confirmed.push(key); return; }
+      const fix = my.indexOf("?") < 0 ? rfRepair(f[key], mv) : null;
+      if (fix) {
+        warn.push(human + ": прочитано «" + f[key] + "», но по MRZ («" + mv + "») это «" + fix + "» — исправлено, сверьте глазами.");
+        f[key] = fix;
+        return;
+      }
+      warn.push(human + ": прочитано «" + f[key] + "», а в MRZ стоит «" + mv + "» — расходятся, сверьте глазами.");
+    };
+    ruCheck("surnameRu", mrz.surnameMrz, "Фамилия");
+    ruCheck("nameRu", mrz.nameMrz, "Имя");
+    ruCheck("patronymicRu", mrz.patronymicMrz, "Отчество");
+  } else {
+    warn.push("MRZ не распознана — поля прочитаны только глазами модели, проверьте внимательно");
+  }
+  f.seriesNumberRf = (f.seriesRf + " " + f.numberRf).trim();
+  if (f.numberRf && f.numberRf.length !== 6) warn.push("Номер «" + f.numberRf + "» — у внутреннего паспорта 6 цифр, прочитано не полностью.");
+  // Английские поля — обычная визовая транслитерация ICAO, как в загране.
+  f.surnameLat = translit(f.surnameRu); f.nameLat = translit(f.nameRu); f.patronymicLat = translit(f.patronymicRu);
+  f.translit = [f.nameLat, f.surnameLat].filter(Boolean).join(" ");
+  if (confirmed.indexOf("surnameRu") >= 0 && confirmed.indexOf("nameRu") >= 0) { confirmed.push("surnameLat"); confirmed.push("nameLat"); confirmed.push("translit"); }
+  f.birthPlaceLat = translit(f.birthPlace);
+  f.authorityLat = translit(f.authority);
+  if (/^[ЬЪЫ]/.test(f.patronymicRu || "")) warn.push("Отчество «" + f.patronymicRu + "» не похоже на русское слово — сверьте с паспортом.");
+  return { fields: f, warnings: warn, confirmed };
+}
+
+// Распознавание одного файла внутреннего паспорта.
+async function recognizeRf(buf, name, mime, ctx) {
+  if (isHeic(name, mime)) {
+    const c = await heicToJpeg(buf, name);
+    buf = c.buf; name = c.name; mime = "image/jpeg";
+  }
+  let block = mediaBlock(buf, name, mime);
+  if (!block) throw new Error("Формат «" + name + "» не поддерживается. Нужны JPG, PNG, HEIC, WEBP или PDF.");
+  const task = "Извлеки данные из этого разворота внутреннего паспорта РФ. Верни строго JSON по схеме.";
+  const started = Date.now();
+  const spend = [];
+  const track = (r) => { if (r && r.usage) spend.push({ model: r.model, in: r.usage.input_tokens || 0, out: r.usage.output_tokens || 0, cw: r.usage.cache_creation_input_tokens || 0, cr: r.usage.cache_read_input_tokens || 0 }); };
+  let r = await runJson({
+    model: model(), max_tokens: 1200, system: SYS_RF, output_config: { effort: "low" },
+    messages: [{ role: "user", content: [block, { type: "text", text: task }] }],
+  }, SCHEMA_RF);
+  track(r);
+  let ai = r.json || {};
+  let usedModel = r.model;
+  let mrz = ai.page_type === "main" ? parseMrzRf(ai.mrz_line1, ai.mrz_line2) : null;
+  // Если MRZ начинается с «P<» (а не «PN») — это загранпаспорт, попавший не на
+  // ту вкладку. Не жжём перечитки, честно говорим, куда идти.
+  const l1c = cleanMrzLine(ai.mrz_line1);
+  const looksZagran = /^P</.test(l1c) && !/^PN/.test(l1c);
+
+  // Главный разворот, а MRZ не сошлась — тот же приём, что у заграна:
+  // прицельная перечитка двух строк, при неудаче — поворот снимка.
+  if (!looksZagran && ai.page_type === "main" && (!mrz || !mrz.valid)) {
+    try {
+      const r2 = await runJson({
+        model: modelHard(), max_tokens: 300, output_config: { effort: "low" },
+        system: "Ты переписываешь машиночитаемую зону (MRZ) документа символ в символ.",
+        messages: [{ role: "user", content: [block, { type: "text", text:
+          "Под страницей паспорта — две машиночитаемые строки моноширинным шрифтом, первая начинается с PN. Транслитерация там особая: среди букв встречаются ЦИФРЫ (3, 6, 9) и буквы Q, W — переписывай РОВНО как напечатано, не «исправляй» цифры на буквы. Знак-заполнитель «<». Если строк не видно — верни пустые. Строго JSON: {\"mrz_line1\":\"…\",\"mrz_line2\":\"…\"}." }] }],
+      }, MRZ_SCHEMA);
+      track(r2);
+      const m2 = parseMrzRf(r2.json && r2.json.mrz_line1, r2.json && r2.json.mrz_line2);
+      if (m2 && (m2.valid || !mrz)) { mrz = m2; usedModel = usedModel + "+" + r2.model; }
+    } catch (e) { console.warn("scanner-rf: перечитка MRZ не удалась:", e.message); }
+  }
+  if (!looksZagran && ai.page_type === "main" && (!mrz || !mrz.valid)) {
+    const hint = Number(ai && ai.page_rotation);
+    for (const deg of [90, 270, 180].sort((a, b) => (a === hint ? -1 : b === hint ? 1 : 0))) {
+      try {
+        const c = cropToJpeg(buf, mime, name, null, 0, deg);
+        if (!c || !c.buf) continue;
+        const blk = mediaBlock(c.buf, "rot.jpg", "image/jpeg");
+        const rr = await runJson({
+          model: model(), max_tokens: 300,
+          system: "Ты переписываешь машиночитаемую зону (MRZ) документа символ в символ.",
+          messages: [{ role: "user", content: [blk, { type: "text", text:
+            "Под страницей паспорта — две машиночитаемые строки, первая начинается с PN. Среди букв встречаются цифры — переписывай ровно как напечатано. Если строк не видно или они боком — верни пустые. Строго JSON: {\"mrz_line1\":\"…\",\"mrz_line2\":\"…\"}." }] }],
+        }, MRZ_SCHEMA);
+        track(rr);
+        const m = parseMrzRf(rr.json && rr.json.mrz_line1, rr.json && rr.json.mrz_line2);
+        if (!m || !m.valid) continue;
+        const rf2 = await runJson({
+          model: model(), max_tokens: 1200, system: SYS_RF, output_config: { effort: "low" },
+          messages: [{ role: "user", content: [blk, { type: "text", text: task }] }],
+        }, SCHEMA_RF);
+        track(rf2);
+        if (rf2 && rf2.json) ai = rf2.json;
+        mrz = m; buf = c.buf; mime = "image/jpeg"; block = blk;
+        usedModel = usedModel + "+поворот" + deg;
+        break;
+      } catch (e) { console.warn("scanner-rf: поворот " + deg + " не удался:", e.message); }
+    }
+  }
+
+  const { fields, warnings, confirmed } = buildFieldsRf(ai, mrz);
+  if (looksZagran) {
+    fields.docKind = "Загранпаспорт РФ";
+    warnings.unshift("Это загранпаспорт — отсканируйте его на вкладке «Загранпаспорт», там сверка по его машиночитаемой строке.");
+  }
+  const doc = {
+    id: newId(), at: Date.now(), by: (ctx && ctx.by) || "",
+    file: name, ms: Date.now() - started, model: usedModel, rf: true,
+    fields, warnings, confirmed, note: (ai.notes || "").trim(),
+    mrz: mrz ? { line1: mrz.line1, line2: mrz.line2, valid: !!mrz.valid, checks: mrz.checks } : null,
+    raw: { ai, mrz: mrz ? { line1: mrz.line1, line2: mrz.line2 } : null, alt: null },
+    spend, corrected: false,
+  };
+  try {
+    ensureDirs();
+    const ext = path.extname(name || "").toLowerCase() || ".jpg";
+    const fn = doc.id + ext;
+    fs.writeFileSync(path.join(FILES_DIR, fn), buf);
+    doc.imgFile = fn;
+  } catch (e) { console.warn("scanner-rf: не сохранил файл:", e.message); }
+  return doc;
+}
+// ═══════════════ конец блока внутреннего паспорта ═══════════════
+
 // Удаление старых файлов и записей истории.
 function purgeOldFiles() {
   const st = store();
@@ -1690,6 +2026,8 @@ function mount(app, deps) {
     res.json({
       success: true, aiConfigured: aiConfigured(), model: model(), me: req.who,
       fields: FIELDS,
+      fieldsRf: FIELDS_RF,
+      fieldsRfReg: FIELDS_RF_REG,
       lessons: st.lessons.slice().reverse(),
       keepDays: KEEP_DAYS, keepCorrectedDays: KEEP_CORRECTED_DAYS, keepHistoryDays: KEEP_HISTORY_DAYS,
       recent: st.docs.slice(-30).reverse().map((d) => ({ id: d.id, at: d.at, by: d.by, file: d.file, fields: d.fields, warnings: d.warnings, mrz: d.mrz, ms: d.ms, corrected: d.corrected, hasImg: !!d.imgFile })),
@@ -1710,7 +2048,8 @@ function mount(app, deps) {
         const i = idx++;
         if (i >= named.length) return;
         const x = named[i];
-        try { out[i] = { ok: true, doc: await recognizeOne(x.buf, x.name, x.mime, { by: req.who }) }; }
+        const rf = String((req.body && req.body.mode) || "") === "rf";
+        try { out[i] = { ok: true, doc: await (rf ? recognizeRf : recognizeOne)(x.buf, x.name, x.mime, { by: req.who }) }; }
         catch (e) { out[i] = { ok: false, file: x.name, message: String((e && e.message) || e) }; }
       }
     };
@@ -1757,7 +2096,7 @@ function mount(app, deps) {
     let n = 0;
     for (const k of keys) {
       const key = String(k || "").slice(0, 40);
-      if (!FIELDS.some((f) => f.key === key) && key !== "__all" && key !== "__json") continue;
+      if (!fieldsAll().some((f) => f.key === key) && key !== "__all" && key !== "__json") continue;
       st.copyStats[key] = (st.copyStats[key] || 0) + 1; n++;
     }
     if (n) save();
@@ -1782,7 +2121,7 @@ function mount(app, deps) {
     if (!d) return res.status(404).json({ success: false, message: "Документ не найден (возможно, распознан давно)" });
     const after = {};
     const changed = [];
-    for (const f of FIELDS) {
+    for (const f of fieldsAll()) {
       if (b.fields && Object.prototype.hasOwnProperty.call(b.fields, f.key)) {
         const v = String(b.fields[f.key] == null ? "" : b.fields[f.key]).slice(0, 300).trim();
         after[f.key] = v;
@@ -1836,7 +2175,7 @@ function mount(app, deps) {
     doc.kind = "example";
     const st = store();
     st.docs.push(doc);
-    const got = FIELDS.map((f) => f.label + ": " + (doc.fields[f.key] || "—")).join("\n");
+    const got = fieldsAll().filter((f) => doc.fields[f.key]).map((f) => f.label + ": " + doc.fields[f.key]).join("\n");
     let learned = [], diff = "";
     try {
       const existing = lessons().map((l) => l.text);
@@ -1914,7 +2253,7 @@ function mount(app, deps) {
         lessons: st.lessons.length,
         corrections: corrs.length,
       },
-      copyStats: FIELDS.map((f) => ({ name: f.label, key: f.key, count: st.copyStats[f.key] || 0 }))
+      copyStats: fieldsAll().map((f) => ({ name: f.label, key: f.key, count: st.copyStats[f.key] || 0 }))
         .filter((x) => x.count > 0).sort((a, b) => b.count - a.count),
       examples: st.examples.slice(-20).reverse().map((e) => ({ id: e.id, at: e.at, by: e.by, file: e.file, learned: e.learned, diff: e.diff })),
       byKind: tally(docs, (d) => d.fields && d.fields.docKind),
@@ -1929,4 +2268,4 @@ function mount(app, deps) {
   setInterval(purgeOldFiles, 6 * 3600 * 1000);
 }
 
-module.exports = { mount, recognizeOne, jpegInsidePdf, decodeImage, cropToJpeg, parseMrzTd3, mrzCheckDigit, buildFields, reconcileLat, mrzNamesSuspect, mrzNamesUnresolved, prettyRuNumber, translit, citizenshipEn, FIELDS };
+module.exports = { mount, recognizeOne, recognizeRf, parseMrzRf, rfTranslit, buildFieldsRf, FIELDS_RF, FIELDS_RF_REG, jpegInsidePdf, decodeImage, cropToJpeg, parseMrzTd3, mrzCheckDigit, buildFields, reconcileLat, mrzNamesSuspect, mrzNamesUnresolved, prettyRuNumber, translit, citizenshipEn, FIELDS };
