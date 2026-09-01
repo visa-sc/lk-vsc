@@ -331,7 +331,26 @@ function updateRub() {
   el.textContent = v > 0 ? "= " + fmt(Math.round(v * 100) / 100) + " ₽" : "₽";
   el.classList.add("calc");
 }
-$("amount").addEventListener("input", updateRub);
+// разделение тысяч пробелами прямо при вводе («50 000», «50 000*79.8»);
+// перед расчётом пробелы всегда срезаются (normExpr/parseFloat со strip)
+function fmtAmountField() {
+  const el = $("amount");
+  const before = el.value;
+  const caret = el.selectionStart == null ? before.length : el.selectionStart;
+  let seen = 0; // непробельных символов до курсора
+  for (let i = 0; i < caret; i++) if (before[i] !== " ") seen++;
+  const formatted = before.replace(/\s+/g, "").replace(/\d+(?:[.,]\d*)?/g, (num) => {
+    const m = num.match(/^(\d+)([.,]\d*)?$/);
+    if (!m) return num;
+    return m[1].replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0") + (m[2] || "");
+  });
+  if (formatted === before) return;
+  let pos = 0, cnt = 0;
+  while (pos < formatted.length && cnt < seen) { if (formatted[pos] !== "\u00A0") cnt++; pos++; }
+  el.value = formatted;
+  try { el.setSelectionRange(pos, pos); } catch (e) {}
+}
+$("amount").addEventListener("input", () => { fmtAmountField(); updateRub(); });
 
 // ── метки ──
 let flag = "";
@@ -354,7 +373,7 @@ $("chips").addEventListener("click", (e) => {
   const c = e.target.closest(".chip"); if (!c) return;
   const x = FREQ[Number(c.dataset.i)]; if (!x) return;
   $("name").value = x.name;
-  if (!$("amount").value) $("amount").value = String(x.amount);
+  if (!$("amount").value) { $("amount").value = String(x.amount); fmtAmountField(); }
   setBucket(x.bucket);
   $("category").value = x.category || "";
   $("amount").focus(); $("amount").select();
@@ -401,7 +420,7 @@ function clearForm() {
 async function saveEntry() {
   const raw = $("amount").value.trim();
   const expr = isExpr(raw);
-  const amount = expr ? calcExpr(raw) : parseFloat(raw.replace(",", "."));
+  const amount = expr ? calcExpr(raw) : parseFloat(raw.replace(/\s+/g, "").replace(",", "."));
   const formula = expr ? normExpr(raw) : "";
   const name = $("name").value.trim();
   if (!name) { toast("Заполни название"); return; }
@@ -514,6 +533,7 @@ function startEdit(e) {
   editingId = e.id;
   // сумма: если запись была выражением — показываем выражение, иначе число
   $("amount").value = e.formula ? e.formula : (e.amount > 0 ? String(e.amount) : "");
+  fmtAmountField();
   $("name").value = e.name;
   setBucket(e.bucket || "ok");
   flag = ""; toggleFlag(e.flag || ""); // toggleFlag(x) включает x, если flag был пуст
