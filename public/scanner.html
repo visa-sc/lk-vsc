@@ -742,7 +742,7 @@
       $("#histBody").innerHTML = histDocs.length ? histDocs.map(function (d, i) {
         var f = d.fields || {};
         return '<div class="hrow" data-hi="' + i + '"><div><div class="nm">' + esc([f.surnameRu, f.nameRu, f.patronymicRu].filter(Boolean).join(" ") || f.translit || d.file) + "</div>" +
-          '<div class="mt">' + esc(f.series ? f.series + " " + f.numberOnly : (f.numberOnly || "")) + (f.birthDate ? " · " + esc(f.birthDate) : "") + " · " +
+          '<div class="mt">' + esc(f.seriesNumberRf || (f.series ? f.series + " " + f.numberOnly : (f.numberOnly || ""))) + (/прописка/.test(f.docKind || "") ? " · прописка" : "") + (f.birthDate ? " · " + esc(f.birthDate) : "") + " · " +
           new Date(d.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) +
           (d.by ? " · " + esc(d.by) : "") + (d.corrected ? " · поправлено" : "") + "</div></div>" +
           '<div class="go">открыть →</div></div>';
@@ -761,9 +761,11 @@
     var d = histDocs[Number(row.getAttribute("data-hi"))];
     if (!d) return;
     addCard({ id: d.id, file: d.file, ms: 0, fields: d.fields, warnings: d.warnings || [], confirmed: d.confirmed || [], mrz: d.mrz, hasImg: d.hasImg });
-    $("#clearAll").style.display = "";
-    Array.prototype.forEach.call(document.querySelectorAll(".seg button"), function (x) { x.classList.toggle("active", x.getAttribute("data-tab") === "scan"); });
-    ["scan", "hist", "dash", "learn"].forEach(function (k) { $("#tab-" + k).style.display = k === "scan" ? "" : "none"; });
+    // Внутренний паспорт открываем на его вкладке, загран — на своей.
+    var tgt = /^Внутренний паспорт РФ/.test((d.fields || {}).docKind || "") ? "rf" : "scan";
+    $(tgt === "rf" ? "#clearAllRf" : "#clearAll").style.display = "";
+    Array.prototype.forEach.call(document.querySelectorAll(".seg button"), function (x) { x.classList.toggle("active", x.getAttribute("data-tab") === tgt); });
+    ["scan", "rf", "hist", "dash", "learn"].forEach(function (k) { $("#tab-" + k).style.display = k === tgt ? "" : "none"; });
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
 

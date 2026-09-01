@@ -2072,7 +2072,7 @@ function mount(app, deps) {
     if (q) {
       list = list.filter((d) => {
         const f = d.fields || {};
-        return [f.surnameRu, f.nameRu, f.patronymicRu, f.translit, f.number, f.numberOnly, d.file, d.by]
+        return [f.surnameRu, f.nameRu, f.patronymicRu, f.translit, f.number, f.numberOnly, f.seriesNumberRf, f.regAddress, d.file, d.by]
           .filter(Boolean).join(" ").toLowerCase().indexOf(q) >= 0;
       });
     }
