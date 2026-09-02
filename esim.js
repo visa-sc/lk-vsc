@@ -120,6 +120,23 @@ const mobimatter = {
     const r = await axios.get(MM_BASE + "/order/" + encodeURIComponent(orderId), { headers: mmHeaders(), timeout: 30000 });
     return r.data && (r.data.result || r.data);
   },
+  // Остаток трафика по купленной eSIM — для «моя eSIM» в ЛК (сверено 02.09.2026
+  // на тест-заказе): GET /provider/info/{orderId} → esim.installationStatus +
+  // packages[{totalAllowanceMb, usedMb, activationDate, expirationDate}]
+  async getUsage(orderId) {
+    const r = await axios.get(MM_BASE + "/provider/info/" + encodeURIComponent(orderId), { headers: mmHeaders(), timeout: 30000 });
+    const d = (r.data && (r.data.result || r.data)) || {};
+    const es = d.esim || {};
+    return {
+      installed: es.installationStatus === "INSTALLED",
+      status: es.status || null, iccid: es.iccid || null, suspended: !!es.isSuspended,
+      packages: (d.packages || []).map((p) => ({
+        name: p.name, totalMb: Number(p.totalAllowanceMb || 0), usedMb: Number(p.usedMb || 0),
+        remainingMb: Math.max(0, Number(p.totalAllowanceMb || 0) - Number(p.usedMb || 0)),
+        activatedAt: p.activationDate || null, expiresAt: p.expirationDate || null,
+      })),
+    };
+  },
   async getBalance() {
     // сверено 02.09.2026: GET /merchant/balance → { result: { balance: 250 } }
     const r = await axios.get(MM_BASE + "/merchant/balance", { headers: mmHeaders(), timeout: 15000 });
