@@ -83,6 +83,17 @@
   .pk .pr small{font-size:12px;font-weight:600;color:var(--mut);}
   .pk .go{font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;}
   .pk .adm{font-size:11px;color:var(--mut);margin-top:8px;background:#fbf7ec;border:1px dashed #e3d5ae;border-radius:8px;padding:5px 8px;}
+  /* ── конструктор «дни × ГБ» ── */
+  .cfg{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px 16px;box-shadow:var(--sh);margin-bottom:14px;}
+  .cfg .frow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+  .cfg .frow:last-child{margin-bottom:0;}
+  .cfg .fl{flex:none;font-size:12.5px;font-weight:700;color:var(--mut);width:110px;}
+  .fchips{display:flex;gap:6px;flex-wrap:wrap;}
+  .fchip{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink);
+    border-radius:10px;padding:7px 12px;cursor:pointer;transition:all .13s ease;}
+  .fchip:hover{border-color:#bcd7e8;}
+  .fchip.on{background:linear-gradient(140deg,#4aa3d8,#3589BD);color:#fff;border-color:transparent;}
+  .fchip.dis{opacity:.35;cursor:default;pointer-events:none;}
   .more{display:block;margin:18px auto 0;font:inherit;font-size:13.5px;font-weight:600;border:1px solid var(--line);
     background:rgba(255,255,255,.85);color:var(--ink);border-radius:12px;padding:10px 22px;cursor:pointer;box-shadow:var(--sh);}
   .empty{color:var(--mut);font-size:14px;padding:20px 0;text-align:center;}
@@ -176,9 +187,13 @@
   <div class="sect" id="sect" style="display:none;">
     <h2 id="sectTitle"></h2>
     <div class="sub" id="sectSub"></div>
+    <div class="cfg" id="cfg" style="display:none;">
+      <div class="frow"><div class="fl">Сколько дней</div><div class="fchips" id="fDays"></div></div>
+      <div class="frow"><div class="fl">Сколько ГБ</div><div class="fchips" id="fGb"></div></div>
+    </div>
     <div class="grid" id="grid"></div>
     <button class="more" id="moreBtn" style="display:none;" type="button">Показать ещё</button>
-    <div class="empty" id="emptyMsg" style="display:none;">По этому направлению пакетов пока нет — напишите нам, подберём вручную.</div>
+    <div class="empty" id="emptyMsg" style="display:none;">Такой комбинации нет — ослабьте фильтры или напишите нам, подберём вручную.</div>
   </div>
 
   <div class="how">
@@ -297,12 +312,42 @@
     return card;
   }
 
-  function renderPacks(){
+  /* ── конструктор «дни × ГБ»: пакет подходит, если его срок и объём ≥ выбранных ── */
+  var wantDays = 0, wantGb = 0; // 0 = не важно; wantGb -1 = только безлимит
+  var DAY_OPTS = [0,3,5,7,10,14,21,30,60,90];
+  var GB_OPTS = [0,1,3,5,10,20,30,50,100,-1];
+  function fitDays(p,v){ return !v || (p.days||0) >= v; }
+  function fitGb(p,v){ if(!v) return true; if(v===-1) return !!p.unlimited; return p.unlimited || (p.dataGb||0) >= v; }
+  function matches(p){ return fitDays(p,wantDays) && fitGb(p,wantGb); }
+  function renderCfg(list){
+    var cfg=document.getElementById("cfg");
+    if(!list.length){ cfg.style.display="none"; return; }
+    cfg.style.display="block";
+    var fd=document.getElementById("fDays"), fg=document.getElementById("fGb");
+    fd.innerHTML=""; fg.innerHTML="";
+    DAY_OPTS.forEach(function(v){
+      var avail = v===0 || list.some(function(p){ return fitDays(p,v) && fitGb(p,wantGb); });
+      var b = el('<button class="fchip'+(wantDays===v?" on":"")+(avail?"":" dis")+'" type="button">'+(v===0?"Не важно":v+" дн.")+'</button>');
+      b.addEventListener("click",function(){ wantDays=v; renderPacks(true); });
+      fd.appendChild(b);
+    });
+    GB_OPTS.forEach(function(v){
+      var avail = v===0 || list.some(function(p){ return fitGb(p,v) && fitDays(p,wantDays); });
+      var b = el('<button class="fchip'+(wantGb===v?" on":"")+(avail?"":" dis")+'" type="button">'+(v===0?"Не важно":(v===-1?"Безлимит":v+" ГБ"))+'</button>');
+      b.addEventListener("click",function(){ wantGb=v; renderPacks(true); });
+      fg.appendChild(b);
+    });
+  }
+
+  function renderPacks(keepScroll){
     var sect=document.getElementById("sect"), grid=document.getElementById("grid");
-    var list = packsFor(current);
+    var all = packsFor(current);
+    var list = all.filter(matches);
+    if(wantDays || wantGb) list = list.slice().sort(function(a,b){ return a.priceRub-b.priceRub; });
     sect.style.display="block";
     document.getElementById("sectTitle").innerHTML = flag(current)+" "+esc(cname(current));
-    document.getElementById("sectSub").textContent = list.length ? "Пакеты с мгновенной выдачей QR-кода. Цена — окончательная, в рублях." : "";
+    document.getElementById("sectSub").textContent = all.length ? ((wantDays||wantGb)?"Подходящие пакеты — от самого выгодного. Срок и объём пакета покрывают выбранное.":"Пакеты с мгновенной выдачей QR-кода. Цена — окончательная, в рублях.") : "";
+    renderCfg(all);
     grid.innerHTML="";
     document.getElementById("emptyMsg").style.display = list.length ? "none":"block";
     shown = Math.min(PAGE, list.length);
@@ -314,11 +359,12 @@
       list.slice(shown,next).forEach(function(p){ grid.appendChild(pkCard(p)); });
       shown = next; more.style.display = list.length > shown ? "block":"none";
     };
-    sect.scrollIntoView({behavior:"smooth", block:"start"});
+    if(!keepScroll) sect.scrollIntoView({behavior:"smooth", block:"start"});
   }
 
   function choose(iso){
     current = iso;
+    wantDays = 0; wantGb = 0;
     document.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("on", c.getAttribute("data-iso")===iso); });
     renderPacks();
   }
