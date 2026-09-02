@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Моя eSIM — VOYO mobile</title>
+<link rel="apple-touch-icon" href="/icon-app.png" />
+<link rel="icon" type="image/png" href="/icon-app.png" />
+<style>
+  :root{
+    --bg:#f5f7fb; --card:#ffffff; --line:#e6eaf2; --ink:#16202e; --mut:#8b93a5;
+    --accent:#3589bd; --accent-d:#2c6f96; --green:#2c7a43; --red:#b0263a; --amber:#8a6d1d;
+    --grad:linear-gradient(135deg,#2c6f96 0%,#3d95c7 55%,#5ac8fa 120%);
+    --sh:0 1px 2px rgba(16,24,40,.04),0 18px 44px -22px rgba(22,48,80,.22);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  .blob{position:fixed;border-radius:50%;filter:blur(70px);pointer-events:none;z-index:-1;opacity:.55;}
+  .blob.b1{width:520px;height:520px;left:50%;top:-260px;transform:translateX(-60%);
+    background:radial-gradient(circle,#bfe3f7 0%,rgba(191,227,247,0) 70%);}
+  .wrap{max-width:520px;margin:0 auto;padding:0 18px 70px;}
+
+  .hdr{display:flex;align-items:center;justify-content:space-between;padding:20px 0 14px;}
+  .brand{display:flex;align-items:center;gap:2px;text-decoration:none;color:var(--ink);}
+  .brand .lg{height:52px;display:block;mix-blend-mode:multiply;margin:-14px -8px -14px -14px;}
+  .brand .wm{font-size:19px;font-weight:300;letter-spacing:.01em;line-height:1;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .hdr a.shop{font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;}
+
+  h1{font-size:26px;letter-spacing:-.03em;margin:10px 0 16px;font-weight:800;}
+
+  /* ── карта eSIM ── */
+  .sim{background:linear-gradient(135deg,#265f81 0%,#3589bd 55%,#4fb3e0 120%);color:#fff;border-radius:24px;
+    padding:22px 22px 20px;box-shadow:0 16px 40px -14px rgba(38,95,129,.55);position:relative;overflow:hidden;}
+  .sim::after{content:"";position:absolute;right:-60px;top:-60px;width:200px;height:200px;background:rgba(255,255,255,.09);border-radius:50%;}
+  .sim .top{display:flex;justify-content:space-between;align-items:center;position:relative;z-index:1;}
+  .sim .bn{font-size:12px;font-weight:700;letter-spacing:.08em;opacity:.85;}
+  .st{font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.2);}
+  .st.ok{background:rgba(66,190,110,.35);}
+  .st.warn{background:rgba(255,205,80,.35);}
+  .st.bad{background:rgba(255,110,110,.4);}
+  .sim .bal{margin:18px 0 4px;position:relative;z-index:1;}
+  .sim .bal .v{font-size:44px;font-weight:800;letter-spacing:-.03em;line-height:1;}
+  .sim .bal .v small{font-size:17px;font-weight:600;opacity:.85;margin-left:6px;letter-spacing:0;}
+  .sim .bal .of{font-size:13.5px;opacity:.85;margin-top:5px;}
+  .sim .bar{height:8px;background:rgba(255,255,255,.25);border-radius:99px;overflow:hidden;margin-top:14px;position:relative;z-index:1;}
+  .sim .bar i{display:block;height:100%;background:#fff;border-radius:99px;transition:width .6s ease;}
+  .sim .term{font-size:12.5px;opacity:.9;margin-top:9px;position:relative;z-index:1;}
+  .sim .pk{font-size:12.5px;opacity:.8;margin-top:14px;position:relative;z-index:1;}
+  .sim .pk b{opacity:1;}
+
+  .refresh{display:block;margin:12px auto 0;font:inherit;font-size:12.5px;font-weight:600;color:var(--mut);
+    background:none;border:0;cursor:pointer;}
+  .refresh:hover{color:var(--accent);}
+
+  /* ── секции ── */
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px 20px;box-shadow:var(--sh);margin-top:16px;}
+  .panel h2{font-size:16px;letter-spacing:-.015em;margin:0 0 4px;font-weight:800;}
+  .panel .ps{font-size:12.5px;color:var(--mut);margin-bottom:12px;line-height:1.5;}
+  .qrbox{text-align:center;}
+  .qrbox img{width:200px;height:200px;border:1px solid var(--line);border-radius:16px;padding:8px;background:#fff;}
+  .lparow{display:flex;gap:8px;margin-top:12px;}
+  .lparow input{flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:11.5px;color:var(--mut);background:#f8fafc;min-width:0;}
+  .lparow button{font:inherit;font-size:13px;font-weight:600;border:0;background:#eef4f9;color:var(--accent-d);
+    border-radius:12px;padding:10px 14px;cursor:pointer;white-space:nowrap;}
+  .steps{background:#f4f9fd;border:1px solid #ddedf7;border-radius:14px;padding:12px 14px;margin-top:12px;text-align:left;}
+  .steps .st2{display:flex;gap:10px;font-size:13px;line-height:1.55;margin-bottom:7px;color:#3a4356;}
+  .steps .st2:last-child{margin-bottom:0;}
+  .steps .n{flex:none;width:20px;height:20px;border-radius:7px;background:var(--grad);color:#fff;font-size:11px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;margin-top:1px;}
+  details.qr summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--accent);list-style:none;}
+  details.qr summary::-webkit-details-marker{display:none;}
+
+  /* ── топапы ── */
+  .tp{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);
+    border-radius:16px;padding:13px 15px;margin-bottom:9px;cursor:pointer;transition:all .15s ease;background:#fff;}
+  .tp:hover{border-color:#aed3ea;box-shadow:0 10px 24px -14px rgba(53,137,189,.4);transform:translateY(-1px);}
+  .tp .l .g{font-size:17px;font-weight:800;letter-spacing:-.01em;}
+  .tp .l .d{font-size:12px;color:var(--mut);margin-top:2px;}
+  .tp .p{font-size:16px;font-weight:800;white-space:nowrap;}
+  .tp .p small{display:block;font-size:11px;font-weight:600;color:var(--accent);text-align:right;margin-top:2px;}
+  .tpform{border:1px solid #ddedf7;background:#f4f9fd;border-radius:16px;padding:14px 15px;margin-top:6px;display:none;}
+  .tpform.on{display:block;}
+  .tpform .t{font-size:13.5px;font-weight:700;margin-bottom:8px;}
+  .tpform label{font-size:12px;color:var(--mut);display:block;margin-bottom:6px;}
+  .tpform input{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 13px;font:inherit;font-size:15px;margin-bottom:10px;}
+  .tpform input:focus{outline:none;border-color:#9fcbe6;box-shadow:0 0 0 4px rgba(53,137,189,.12);}
+  .buy{width:100%;font:inherit;font-size:15px;font-weight:700;border:0;cursor:pointer;border-radius:14px;padding:14px;
+    background:var(--grad);color:#fff;box-shadow:0 12px 26px -12px rgba(53,137,189,.85);}
+  .buy:disabled{opacity:.6;cursor:default;}
+  .ok{background:#e9f6ee;border:1px solid #cfe9d8;color:var(--green);border-radius:14px;padding:12px 14px;font-size:13.5px;line-height:1.5;margin-top:8px;display:none;}
+  .ok.on{display:block;}
+  .err{color:var(--red);font-size:13px;margin-top:8px;display:none;}
+  .err.on{display:block;}
+  .mnote{font-size:11.5px;color:var(--mut);text-align:center;margin-top:10px;line-height:1.5;}
+
+  .dead{text-align:center;padding:70px 10px;color:var(--mut);font-size:15px;line-height:1.6;display:none;}
+  .dead.on{display:block;}
+  .loading{text-align:center;padding:70px 10px;color:var(--mut);font-size:14px;}
+  .foot{margin-top:36px;text-align:center;font-size:11.5px;color:var(--mut);line-height:1.7;}
+  .foot a{color:var(--accent);text-decoration:none;font-weight:600;}
+</style>
+</head>
+<body>
+<div class="blob b1"></div>
+<div class="wrap">
+  <div class="hdr">
+    <a class="brand" href="/esim"><img class="lg" src="/logo.png" alt="VOYO"/><span class="wm">mobile</span></a>
+    <a class="shop" href="/esim">Купить ещё ›</a>
+  </div>
+
+  <div class="loading" id="loading">Загружаем вашу eSIM…</div>
+  <div class="dead" id="dead">Ссылка недействительна или устарела.<br/>Напишите нам — пришлём новую.</div>
+
+  <div id="main" style="display:none;">
+    <h1>Моя eSIM</h1>
+
+    <div class="sim">
+      <div class="top"><span class="bn">VOYO mobile · eSIM</span><span class="st" id="stChip"></span></div>
+      <div class="bal">
+        <div class="v" id="balV"></div>
+        <div class="of" id="balOf"></div>
+      </div>
+      <div class="bar"><i id="bar" style="width:0%"></i></div>
+      <div class="term" id="term"></div>
+      <div class="pk" id="pkInfo"></div>
+    </div>
+    <button class="refresh" id="refreshBtn" type="button">↻ Обновить остаток</button>
+
+    <div class="panel" id="qrPanel" style="display:none;">
+      <div id="qrOpenWrap">
+        <h2>QR-код для установки</h2>
+        <div class="ps" id="qrHint"></div>
+        <div class="qrbox">
+          <img id="qrImg" alt="QR-код eSIM"/>
+          <div class="lparow"><input id="lpaInp" readonly/><button id="lpaCopy" type="button">Скопировать</button></div>
+        </div>
+        <div class="steps">
+          <div class="st2"><div class="n">1</div><div>Настройки → Сотовая связь → Добавить eSIM → сканировать этот QR (или вставьте скопированную строку вручную).</div></div>
+          <div class="st2"><div class="n">2</div><div>Устанавливайте дома по Wi-Fi, до поездки.</div></div>
+          <div class="st2"><div class="n">3</div><div>В поездке включите «Роуминг данных» для линии eSIM — интернет заработает сам.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="tpPanel" style="display:none;">
+      <h2>Продлить интернет</h2>
+      <div class="ps">Гигабайты добавятся на эту же eSIM — ничего переустанавливать не нужно.</div>
+      <div id="tpList"></div>
+      <div class="tpform" id="tpForm">
+        <div class="t" id="tpFormT"></div>
+        <label>Телефон для связи — менеджер пришлёт счёт, трафик добавим сразу после оплаты</label>
+        <input id="tpPhone" type="tel" placeholder="+7 999 123-45-67"/>
+        <button class="buy" id="tpBuy" type="button">Оставить заявку</button>
+        <div class="err" id="tpErr"></div>
+      </div>
+      <div class="ok" id="tpOk">Заявка принята! Менеджер VOYO свяжется в ближайшее время — после оплаты гигабайты добавятся на вашу eSIM автоматически.</div>
+      <div class="mnote">Онлайн-оплата картой подключается — пока продлеваем через менеджера за пару минут.</div>
+    </div>
+
+    <div class="panel" id="noTp" style="display:none;">
+      <h2>Нужно больше интернета?</h2>
+      <div class="ps">Для этого тарифа продление недоступно — но можно за минуту купить ещё один пакет на эту же поездку.</div>
+      <a href="/esim"><button class="buy" type="button">Выбрать пакет ›</button></a>
+    </div>
+  </div>
+
+  <div class="foot">VOYO mobile · сервис компании VOYO · <a href="/esim">витрина пакетов</a><br/>Вопросы — пишите нам, поможем с настройкой.</div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var qs = new URLSearchParams(location.search);
+  var O = qs.get("o")||"", T = qs.get("t")||"";
+  function el(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
+  function gb(mb){ var g = mb/1024; return g >= 10 ? String(Math.round(g)) : String(Math.round(g*10)/10).replace(".", ","); }
+  function fmtD(iso){ try{ return new Date(iso).toLocaleDateString("ru-RU",{day:"numeric",month:"long"}); }catch(e){ return ""; } }
+  function plural(n,a){ n=Math.abs(n)%100; var n1=n%10; if(n>10&&n<20)return a[2]; if(n1>1&&n1<5)return a[1]; if(n1===1)return a[0]; return a[2]; }
+
+  var DATA=null, selTp=null;
+
+  function render(j){
+    var u = j.usage, o = j.order;
+    el("main").style.display="block";
+    // статус
+    var chip = el("stChip");
+    if(u && u.suspended){ chip.textContent="Приостановлена"; chip.className="st bad"; }
+    else if(u && u.installed){ chip.textContent="Установлена"; chip.className="st ok"; }
+    else { chip.textContent="Ждёт установки"; chip.className="st warn"; }
+    // остаток: суммируем пакеты (основной + топапы)
+    var total=0, used=0, exp=null, activated=false;
+    (u && u.packages || []).forEach(function(p){
+      total+=p.totalMb; used+=p.usedMb;
+      if(p.activatedAt) activated=true;
+      if(p.expiresAt && (!exp || new Date(p.expiresAt)>new Date(exp))) exp=p.expiresAt;
+    });
+    var rem = Math.max(0, total-used);
+    if(total>0){
+      el("balV").innerHTML = esc(gb(rem))+'<small>ГБ '+(used>0?"осталось":"доступно")+'</small>';
+      el("balOf").textContent = "из "+gb(total)+" ГБ · потрачено "+gb(used)+" ГБ";
+      el("bar").style.width = Math.max(3, Math.round(rem/total*100))+"%";
+    } else {
+      el("balV").innerHTML = esc(o.title||"eSIM");
+      el("balOf").textContent = "";
+      el("bar").style.width = "0%";
+    }
+    // срок
+    if(exp){
+      var days = Math.ceil((new Date(exp)-Date.now())/86400000);
+      el("term").textContent = days>0
+        ? ("Действует до "+fmtD(exp)+" · "+(days===1?"последний день":"ещё "+days+" "+plural(days,["день","дня","дней"])))
+        : "Срок действия истёк";
+    } else {
+      el("term").textContent = activated ? "" : "Пакет активируется при первом подключении в поездке";
+    }
+    el("pkInfo").innerHTML = "<b>"+esc(o.title||"")+"</b>"+(o.operator?" · сеть "+esc(o.operator):"")+(o.iccid?"<br/>ICCID "+esc(o.iccid):"");
+    // QR
+    if(o.qrDataUrl || o.lpa){
+      el("qrPanel").style.display="block";
+      if(o.qrDataUrl) el("qrImg").src = o.qrDataUrl; else el("qrImg").style.display="none";
+      el("lpaInp").value = o.lpa || o.activationCode || "";
+      var installed = u && u.installed;
+      el("qrHint").textContent = installed
+        ? "eSIM уже установлена на телефон. QR ниже — на случай переустановки (например, на новом телефоне)."
+        : "Отсканируйте QR с другого устройства или скопируйте строку установки.";
+      if(installed){
+        // установлена — прячем QR под спойлер, чтобы не мешал
+        var wrap = el("qrOpenWrap");
+        var d = document.createElement("details"); d.className="qr";
+        d.innerHTML = '<summary>Показать QR-код ещё раз ›</summary>';
+        wrap.parentNode.insertBefore(d, wrap);
+        d.appendChild(wrap);
+        wrap.querySelector("h2").style.display="none";
+      }
+    }
+    // топапы
+    if(j.topups && j.topups.length){
+      el("tpPanel").style.display="block";
+      var host = el("tpList"); host.innerHTML="";
+      j.topups.forEach(function(t){
+        var g = t.unlimited ? "Безлимит" : (RU(t.dataGb)+" ГБ");
+        var row = document.createElement("div"); row.className="tp";
+        row.innerHTML = '<div class="l"><div class="g">+ '+esc(g)+'</div><div class="d">'+(t.days?("на "+RU(t.days)+" "+plural(t.days,["день","дня","дней"])):"на текущий срок")+'</div></div>'+
+          '<div class="p">'+RU(t.priceRub)+' ₽<small>Продлить ›</small></div>';
+        row.addEventListener("click",function(){
+          selTp = t;
+          el("tpFormT").textContent = "+ "+g+" за "+RU(t.priceRub)+" ₽";
+          el("tpForm").classList.add("on");
+          el("tpOk").classList.remove("on");
+          el("tpForm").scrollIntoView({behavior:"smooth",block:"center"});
+          el("tpPhone").focus();
+        });
+        host.appendChild(row);
+      });
+    } else {
+      el("noTp").style.display="block";
+    }
+  }
+
+  el("lpaCopy") && el("lpaCopy").addEventListener("click",function(){
+    var i=el("lpaInp"); i.select();
+    try{ navigator.clipboard.writeText(i.value); this.textContent="✓ Скопировано"; var b=this; setTimeout(function(){ b.textContent="Скопировать"; },1600); }
+    catch(e){ document.execCommand("copy"); }
+  });
+
+  el("tpBuy").addEventListener("click", async function(){
+    var err=el("tpErr"); err.classList.remove("on");
+    var phone = el("tpPhone").value.trim();
+    if(phone.replace(/\D/g,"").length<10){ err.textContent="Введите телефон."; err.classList.add("on"); return; }
+    if(!selTp) return;
+    this.disabled=true; this.textContent="Отправляем…";
+    try{
+      var g = selTp.unlimited ? "безлимит" : (selTp.dataGb+" ГБ");
+      var r = await fetch("/esim/api/my/topup",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({o:O,t:T,productId:selTp.id,priceRub:selTp.priceRub,phone:phone,
+          label:"+"+g+(selTp.days?(" · "+selTp.days+" дн."):"")})});
+      var j = await r.json();
+      if(j && j.success){ el("tpForm").classList.remove("on"); el("tpOk").classList.add("on"); }
+      else throw new Error();
+    }catch(e){ err.textContent="Не получилось — попробуйте ещё раз."; err.classList.add("on"); }
+    this.disabled=false; this.textContent="Оставить заявку";
+  });
+
+  async function load(){
+    el("loading").style.display="block"; el("dead").classList.remove("on");
+    try{
+      var r = await fetch("/esim/api/my?o="+encodeURIComponent(O)+"&t="+encodeURIComponent(T));
+      var j = await r.json();
+      el("loading").style.display="none";
+      if(!r.ok || !j || !j.success){ el("dead").classList.add("on"); return; }
+      DATA=j; render(j);
+    }catch(e){ el("loading").style.display="none"; el("dead").classList.add("on"); }
+  }
+  el("refreshBtn").addEventListener("click",function(){ el("main").style.display="none"; load(); });
+  if(!O || !T){ el("loading").style.display="none"; el("dead").classList.add("on"); }
+  else load();
+})();
+</script>
+</body>
+</html>

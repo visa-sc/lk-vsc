@@ -34,17 +34,10 @@
 
   /* ── шапка ── */
   .hdr{display:flex;align-items:center;justify-content:space-between;padding:22px 0 6px;}
-  .brand{display:flex;align-items:center;gap:11px;text-decoration:none;color:var(--ink);}
-  .brand .mark{width:38px;height:38px;border-radius:12px;background:var(--grad);
-    box-shadow:0 8px 20px -8px rgba(53,137,189,.7),inset 0 1px 0 rgba(255,255,255,.25);
-    display:flex;align-items:center;justify-content:center;}
-  .brand .mark svg{display:block;}
-  .brand .wm{line-height:1;display:flex;align-items:baseline;gap:6px;}
-  .brand .wm b{font-size:19px;font-weight:800;letter-spacing:-.02em;}
-  .brand .wm span{font-size:19px;font-weight:300;letter-spacing:-.01em;
+  .brand{display:flex;align-items:center;gap:2px;text-decoration:none;color:var(--ink);}
+  .brand .lg{height:56px;display:block;mix-blend-mode:multiply;margin:-16px -8px -16px -15px;}
+  .brand .wm{font-size:20px;font-weight:300;letter-spacing:.01em;line-height:1;
     background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
-  .hdr .beta{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-d);
-    background:rgba(255,255,255,.7);border:1px solid var(--line);border-radius:999px;padding:6px 12px;}
 
   /* ── герой ── */
   .hero{text-align:center;padding:52px 0 10px;}
@@ -212,17 +205,9 @@
 
   <div class="hdr">
     <a class="brand" href="/esim">
-      <span class="mark">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-          <path d="M12 18.5a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2Z" fill="#fff"/>
-          <path d="M7.4 15.9a6.5 6.5 0 0 1 9.2 0" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/>
-          <path d="M4.2 12.7a11 11 0 0 1 15.6 0" stroke="#fff" stroke-width="2.1" stroke-linecap="round" opacity=".72"/>
-          <path d="M1.6 9.4a14.7 14.7 0 0 1 20.8 0" stroke="#fff" stroke-width="2.1" stroke-linecap="round" opacity=".45"/>
-        </svg>
-      </span>
-      <span class="wm"><b>VOYO</b><span>mobile</span></span>
+      <img class="lg" src="/logo.png" alt="VOYO" />
+      <span class="wm">mobile</span>
     </a>
-    <div class="beta">Бета</div>
   </div>
 
   <div class="hero">

@@ -60,15 +60,16 @@ const mobimatter = {
   name: "mobimatter",
   ready() { return Boolean(process.env.MOBIMATTER_API_KEY && process.env.MOBIMATTER_MERCHANT_ID); },
   // Каталог → нормализованный формат витрины (одинаковый для любого поставщика).
-  // Структура сверена с живым API 02.09.2026: PLAN_VALIDITY — в ЧАСАХ (720=30 дн),
-  // продаём только esim_realtime (мгновенная выдача QR); esim_addon — топапы
-  // (пригодятся рефералке), esim_delayed/replacement не берём.
+  // Структура сверена с живым API 02.09.2026: PLAN_VALIDITY — в ЧАСАХ (720=30 дн).
+  // Продаём esim_realtime (мгновенная выдача QR); esim_addon — ТОПАПЫ, идут
+  // отдельным списком: топап совместим с eSIM, если у их продуктов одинаковый
+  // productFamilyId (правило из доков). esim_delayed/replacement не берём.
   async fetchProducts() {
     const r = await axios.get(MM_BASE + "/products", { headers: mmHeaders(), timeout: 60000 });
     const list = (r.data && (r.data.result || r.data)) || [];
-    const out = [];
+    const products = [], addons = [];
     for (const p of list) {
-      if (p.productCategory !== "esim_realtime") continue;
+      if (p.productCategory !== "esim_realtime" && p.productCategory !== "esim_addon") continue;
       const det = {};
       (p.productDetails || []).forEach((d) => { det[String(d.name || "").trim()] = d.value; });
       const rawData = parseFloat(det.PLAN_DATA_LIMIT || "") || null;
@@ -76,8 +77,9 @@ const mobimatter = {
       const hours = parseInt(det.PLAN_VALIDITY || "", 10) || 0;
       const cost = Number(p.wholesalePrice || 0);
       if (!cost) continue;
-      out.push({
+      const item = {
         id: String(p.productId || p.uniqueId),
+        familyId: String(p.productFamilyId || ""),
         title: det.PLAN_TITLE || "",
         operator: p.providerName || "",
         countries: p.countries || [],
@@ -89,17 +91,24 @@ const mobimatter = {
         fiveG: det.FIVEG === "1",
         hotspot: det.HOTSPOT === "1",
         topup: det.TOPUP === "1",
-      });
+      };
+      (p.productCategory === "esim_addon" ? addons : products).push(item);
     }
-    return out;
+    return { products, addons };
   },
   // Заказ — два шага, ОБКАТАНО на тест-продукте 02.09.2026 (AKGR-23460525):
   //  1) POST /order {productId, productCategory} → orderId (холд на кошельке);
   //  2) PUT /order/complete {orderId} → orderState=Completed + lineItemDetails
   //     с ICCID, LPA-строкой, кодом активации, APN и ГОТОВЫМ QR (data:image/png).
   // Возвращаем нормализованный объект — витрине всё равно, кто поставщик.
-  async createOrder(productId) {
-    const c = await axios.post(MM_BASE + "/order", { productId, productCategory: "esim_realtime" }, { headers: mmHeaders(), timeout: 60000 });
+  async createOrder(productId) { return this._order({ productId, productCategory: "esim_realtime" }); },
+  // Топап (продление) существующей eSIM: та же пара create→complete, но категория
+  // esim_addon + addOnOrderIdentifier = ИСХОДНЫЙ заказ esim_realtime (из доков).
+  async createTopup(productId, parentOrderId) {
+    return this._order({ productId, productCategory: "esim_addon", addOnOrderIdentifier: parentOrderId });
+  },
+  async _order(body) {
+    const c = await axios.post(MM_BASE + "/order", body, { headers: mmHeaders(), timeout: 60000 });
     const orderId = c.data && c.data.result && c.data.result.orderId;
     if (!orderId) throw new Error("MobiMatter: заказ не создан");
     const d = await axios.put(MM_BASE + "/order/complete", { orderId }, { headers: mmHeaders(), timeout: 120000 });
@@ -169,18 +178,30 @@ const DEMO_PRODUCTS = [
 ];
 
 // ═══════════════ каталог с кэшем ═══════════════
-let _catalog = null; // { ts, source, products }
+let _catalog = null; // { ts, source, products, addons }
 function loadCatalogFile() { if (!_catalog) _catalog = readJson(CATALOG_FILE, null); return _catalog; }
 async function getCatalog(force) {
   const cached = loadCatalogFile();
-  if (!provider.ready()) return { ts: Date.now(), source: "demo", products: DEMO_PRODUCTS };
-  if (!force && cached && cached.source === provider.name && Date.now() - cached.ts < CATALOG_TTL_MS) return cached;
+  if (!provider.ready()) return { ts: Date.now(), source: "demo", products: DEMO_PRODUCTS, addons: [] };
+  // кэш старого формата (без addons) не годится — обновляем
+  if (!force && cached && cached.source === provider.name && Array.isArray(cached.addons) && Date.now() - cached.ts < CATALOG_TTL_MS) return cached;
   try {
-    const products = await provider.fetchProducts();
-    if (products.length) { _catalog = { ts: Date.now(), source: provider.name, products }; writeJson(CATALOG_FILE, _catalog); return _catalog; }
+    const { products, addons } = await provider.fetchProducts();
+    if (products.length) { _catalog = { ts: Date.now(), source: provider.name, products, addons }; writeJson(CATALOG_FILE, _catalog); return _catalog; }
   } catch (e) { console.error("esim catalog:", e.message); }
   // API упал — отдаём последний кэш, если есть, иначе демо
-  return cached && cached.products && cached.products.length ? cached : { ts: Date.now(), source: "demo", products: DEMO_PRODUCTS };
+  if (cached && cached.products && cached.products.length) { if (!Array.isArray(cached.addons)) cached.addons = []; return cached; }
+  return { ts: Date.now(), source: "demo", products: DEMO_PRODUCTS, addons: [] };
+}
+
+// ═══════════════ подписанные ссылки «Моя eSIM» ═══════════════
+// Клиент открывает /esim/my?o=<orderId>&t=<подпись> — без входа в ЛК (пока
+// продажи ручные). Подпись отсекает перебор номеров заказов AKGR-… .
+const LINK_SECRET = process.env.ESIM_LINK_SECRET || (ADMIN_CODE + ":voyo-esim-my");
+function signOrder(orderId) { return crypto.createHmac("sha256", LINK_SECRET).update(String(orderId)).digest("hex").slice(0, 12); }
+function checkSig(orderId, t) {
+  const a = Buffer.from(signOrder(orderId)), b = Buffer.from(String(t || ""));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 // ═══════════════ mount ═══════════════
@@ -240,10 +261,92 @@ function mount(app, opts) {
           "\nЦена для клиента: " + (order.priceRub ? order.priceRub + " ₽" : "—") +
           "\nТелефон клиента: " + phone +
           "\nID продукта MobiMatter: " + (order.productId || "—") +
-          "\n\nКупить пакет: partner.mobimatter.com → Buy eSIMs (найти по ID) → QR-код отправить клиенту.",
+          "\n\nКупить пакет: partner.mobimatter.com → Buy eSIMs (найти по ID) → QR-код отправить клиенту." +
+          "\nПосле покупки возьмите номер заказа (AKGR-…) и откройте voyotravel.ru/esim/mylink?adm=КОД&o=НОМЕР — " +
+          "получится персональная ссылка «Моя eSIM» для клиента (остаток трафика, QR, продление). Отправьте её вместе с QR.",
       }).then((r) => { if (r && !r.ok) console.error("esim mail:", r.error); }).catch((e) => console.error("esim mail:", e.message));
     }
     res.json({ success: true, pending: true });
+  });
+
+  // ═══ «Моя eSIM» — страница клиента: остаток, срок, QR, продление ═══
+  app.get("/esim/my", (req, res) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.sendFile(path.join(__dirname, "public", "esim-my.html"));
+  });
+
+  // Данные eSIM клиента: заказ (QR/LPA) + живой остаток + совместимые топапы в ₽
+  app.get("/esim/api/my", async (req, res) => {
+    const o = String(req.query.o || "").slice(0, 40);
+    if (!o || !checkSig(o, req.query.t)) return res.status(403).json({ success: false, message: "Ссылка недействительна." });
+    try {
+      const [order, usage, cat, rate] = await Promise.all([
+        provider.getOrder(o),
+        provider.getUsage(o).catch(() => null), // остаток может быть недоступен у отдельных операторов — страница переживёт
+        getCatalog(false), usdRate(),
+      ]);
+      const li = (order && order.orderLineItem) || {};
+      const det = {};
+      (li.lineItemDetails || []).forEach((x) => { det[String(x.name || "").trim()] = x.value; });
+      const familyId = String(li.productFamilyId || "");
+      const topups = (cat.addons || [])
+        .filter((a) => a.familyId === familyId)
+        .map((a) => ({ id: a.id, title: a.title, dataGb: a.dataGb, unlimited: !!a.unlimited, days: a.days, priceRub: toRetailRub(a.costUsd, rate) }))
+        .sort((x, y) => x.priceRub - y.priceRub);
+      res.json({
+        success: true,
+        order: {
+          id: o, state: (order && order.orderState) || null, title: li.title || "", operator: li.providerName || "",
+          qrDataUrl: det.QR_CODE || null, lpa: det.LOCAL_PROFILE_ASSISTANT || null,
+          activationCode: det.ACTIVATION_CODE || null, smdp: det.SMDP_ADDRESS || null,
+          apn: det.ACCESS_POINT_NAME || null, iccid: det.ICCID || null,
+        },
+        usage, topups,
+      });
+    } catch (e) {
+      const code = e.response && e.response.status;
+      res.status(code === 404 ? 404 : 500).json({ success: false, message: code === 404 ? "Заказ не найден." : e.message });
+    }
+  });
+
+  // Заявка на продление (топап). Пока без эквайринга — письмо менеджеру;
+  // с оплатой здесь встанет: оплата → provider.createTopup → трафик добавлен.
+  app.post("/esim/api/my/topup", (req, res) => {
+    const b = req.body || {};
+    const o = String(b.o || "").slice(0, 40);
+    if (!o || !checkSig(o, b.t)) return res.status(403).json({ success: false });
+    const phone = String(b.phone || "").trim().slice(0, 30);
+    if (phone.replace(/\D/g, "").length < 10) return res.status(400).json({ success: false, message: "Нужен телефон." });
+    const lead = {
+      id: crypto.randomBytes(6).toString("hex"), ts: Date.now(), status: "topup-lead",
+      parentOrderId: o, productId: String(b.productId || "").slice(0, 64),
+      label: String(b.label || "").slice(0, 120), priceRub: Number(b.priceRub) || null, phone,
+    };
+    const orders = readJson(ORDERS_FILE, []);
+    orders.unshift(lead);
+    writeJson(ORDERS_FILE, orders.slice(0, 5000));
+    if (opts && opts.sendMail) {
+      opts.sendMail({
+        to: "director@visa-sc.ru",
+        subject: "VOYO eSIM: ПРОДЛЕНИЕ " + (lead.label || lead.productId),
+        text: "Клиент просит продлить интернет (топап) со страницы «Моя eSIM»\n\nИсходный заказ MobiMatter: " + o +
+          "\nТопап: " + (lead.label || "—") + "\nЦена для клиента: " + (lead.priceRub ? lead.priceRub + " ₽" : "—") +
+          "\nТелефон клиента: " + phone + "\nID топап-продукта: " + (lead.productId || "—") +
+          "\n\nВыполнить: partner.mobimatter.com → Order History & Topup → найти заказ " + o + " → Topup.",
+      }).then((r) => { if (r && !r.ok) console.error("esim topup mail:", r.error); }).catch((e) => console.error("esim topup mail:", e.message));
+    }
+    res.json({ success: true, pending: true });
+  });
+
+  // Генератор клиентской ссылки для менеджера (после ручной покупки в портале)
+  app.get("/esim/mylink", (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).send("Нет доступа.");
+    const o = String(req.query.o || "").trim().slice(0, 40);
+    if (!o) return res.send("Добавьте &o=НОМЕР_ЗАКАЗА (AKGR-…) к адресу.");
+    const url = "https://voyotravel.ru/esim/my?o=" + encodeURIComponent(o) + "&t=" + signOrder(o);
+    res.set("Content-Type", "text/html; charset=utf-8");
+    res.send('<meta name="viewport" content="width=device-width,initial-scale=1"/><body style="font-family:-apple-system,sans-serif;padding:24px;line-height:1.6">' +
+      "<b>Ссылка «Моя eSIM» для клиента:</b><br/><a href=\"" + url + "\">" + url + "</a><br/><br/>Отправьте её клиенту вместе с QR-кодом — там остаток трафика, QR и продление.</body>");
   });
 
   // Служебное: состояние провайдера и кошелька (для админки/сторожа депозита)
