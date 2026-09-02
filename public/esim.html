@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>VOYO eSIM — интернет для поездки</title>
+<link rel="apple-touch-icon" href="/icon-app.png" />
+<link rel="icon" type="image/png" href="/icon-app.png" />
+<style>
+  :root{
+    --bg:#f4f6fa; --card:#ffffff; --line:#e7ebf2; --ink:#1d2433; --mut:#8a90a0;
+    --accent:#3589bd; --accent-d:#2c6f96; --green:#2c7a43; --red:#b0263a;
+    --sh:0 1px 2px rgba(16,24,40,.04),0 14px 34px -18px rgba(16,32,64,.20);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#f2f5f9;color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:radial-gradient(1100px 520px at 50% -140px,#e8f2fa 0%,rgba(232,242,250,0) 70%),
+               linear-gradient(180deg,#f7f9fc 0%,#eef1f6 100%);}
+  .wrap{max-width:980px;margin:0 auto;padding:0 16px 70px;}
+
+  /* ── шапка ── */
+  .hdr{display:flex;align-items:center;justify-content:space-between;padding:20px 0 6px;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand img{height:30px;display:block;}
+  .brand .bx{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--accent-d);
+    background:#eaf3f9;border:1px solid #d5e7f2;border-radius:999px;padding:4px 10px;}
+  .hdr .beta{font-size:11.5px;color:var(--mut);}
+
+  /* ── герой ── */
+  .hero{text-align:center;padding:34px 0 8px;}
+  .hero h1{font-size:34px;letter-spacing:-.03em;margin:0 0 10px;font-weight:800;}
+  .hero h1 em{font-style:normal;background:linear-gradient(120deg,#2c6f96,#43a0c8);
+    -webkit-background-clip:text;background-clip:text;color:transparent;}
+  .hero .sub{color:var(--mut);font-size:15.5px;line-height:1.55;max-width:560px;margin:0 auto 24px;}
+  .searchbox{position:relative;max-width:560px;margin:0 auto;}
+  .searchbox input{width:100%;border:1px solid var(--line);border-radius:16px;padding:16px 48px 16px 20px;
+    font:inherit;font-size:16px;background:#fff;color:var(--ink);box-shadow:var(--sh);}
+  .searchbox input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(53,137,189,.13),var(--sh);}
+  .searchbox .ic{position:absolute;right:16px;top:50%;transform:translateY(-50%);color:var(--mut);font-size:18px;pointer-events:none;}
+  .drop{position:absolute;left:0;right:0;top:calc(100% + 8px);background:#fff;border:1px solid var(--line);
+    border-radius:16px;box-shadow:0 24px 60px -24px rgba(16,32,64,.35);z-index:30;overflow:hidden;display:none;
+    max-height:320px;overflow-y:auto;text-align:left;}
+  .drop.on{display:block;}
+  .drop .it{display:flex;align-items:center;gap:12px;padding:12px 18px;cursor:pointer;font-size:15px;}
+  .drop .it:hover,.drop .it.sel{background:#f3f8fb;}
+  .drop .it .fl{font-size:20px;}
+  .drop .it .n{flex:1;}
+  .drop .it .c{font-size:12px;color:var(--mut);}
+  .drop .none{padding:14px 18px;color:var(--mut);font-size:14px;}
+
+  /* ── чипы направлений ── */
+  .chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:20px auto 6px;max-width:720px;}
+  .chip{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.85);border:1px solid var(--line);
+    border-radius:999px;padding:8px 14px;font-size:13.5px;font-weight:600;cursor:pointer;color:var(--ink);
+    transition:all .15s ease;box-shadow:0 1px 2px rgba(16,24,40,.03);}
+  .chip:hover{border-color:#bcd7e8;transform:translateY(-1px);}
+  .chip.on{background:linear-gradient(140deg,#4aa3d8,#3589BD);color:#fff;border-color:transparent;
+    box-shadow:0 8px 18px -9px rgba(53,137,189,.65);}
+
+  /* ── секция пакетов ── */
+  .sect{margin-top:26px;}
+  .sect h2{font-size:20px;letter-spacing:-.02em;margin:0 0 4px;display:flex;align-items:center;gap:10px;}
+  .sect .sub{color:var(--mut);font-size:13.5px;margin-bottom:14px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
+  .pk{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:var(--sh);
+    cursor:pointer;transition:transform .15s ease,box-shadow .15s ease;position:relative;display:flex;flex-direction:column;}
+  .pk:hover{transform:translateY(-2px);box-shadow:0 2px 4px rgba(16,24,40,.05),0 24px 44px -20px rgba(16,32,64,.28);}
+  .pk .top{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
+  .pk .fl{font-size:22px;line-height:1;}
+  .pk .cn{font-size:14px;font-weight:700;flex:1;line-height:1.25;}
+  .pk .cn small{display:block;font-weight:500;font-size:11.5px;color:var(--mut);margin-top:1px;}
+  .badge5g{font-size:10px;font-weight:800;color:var(--accent-d);background:#eaf3f9;border-radius:6px;padding:3px 6px;letter-spacing:.03em;}
+  .pk .mid{display:flex;align-items:baseline;gap:8px;margin:2px 0 2px;}
+  .pk .gb{font-size:30px;font-weight:800;letter-spacing:-.02em;}
+  .pk .gb small{font-size:15px;font-weight:600;color:var(--mut);margin-left:2px;}
+  .pk .days{font-size:13px;color:var(--mut);}
+  .pk .bot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);}
+  .pk .pr{font-size:20px;font-weight:800;}
+  .pk .pr small{font-size:12px;font-weight:600;color:var(--mut);}
+  .pk .go{font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;}
+  .pk .adm{font-size:11px;color:var(--mut);margin-top:8px;background:#fbf7ec;border:1px dashed #e3d5ae;border-radius:8px;padding:5px 8px;}
+  .more{display:block;margin:18px auto 0;font:inherit;font-size:13.5px;font-weight:600;border:1px solid var(--line);
+    background:rgba(255,255,255,.85);color:var(--ink);border-radius:12px;padding:10px 22px;cursor:pointer;box-shadow:var(--sh);}
+  .empty{color:var(--mut);font-size:14px;padding:20px 0;text-align:center;}
+
+  /* ── как работает ── */
+  .how{margin-top:44px;}
+  .how h2{font-size:20px;letter-spacing:-.02em;margin:0 0 14px;text-align:center;}
+  .how .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
+  .how .c{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--sh);}
+  .how .n{width:30px;height:30px;border-radius:50%;background:#eaf3f9;color:var(--accent-d);font-weight:800;font-size:14px;
+    display:flex;align-items:center;justify-content:center;margin-bottom:10px;}
+  .how .t{font-weight:700;font-size:15px;margin-bottom:5px;}
+  .how .d{font-size:13.5px;color:var(--mut);line-height:1.55;}
+
+  /* ── FAQ ── */
+  .faq{margin-top:40px;max-width:720px;margin-left:auto;margin-right:auto;}
+  .faq h2{font-size:20px;letter-spacing:-.02em;margin:0 0 12px;text-align:center;}
+  .faq details{background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:8px;box-shadow:var(--sh);overflow:hidden;}
+  .faq summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:14.5px;list-style:none;display:flex;justify-content:space-between;align-items:center;}
+  .faq summary::after{content:"+";color:var(--mut);font-size:18px;font-weight:400;}
+  .faq details[open] summary::after{content:"−";}
+  .faq .a{padding:0 18px 14px;font-size:13.5px;color:var(--mut);line-height:1.6;}
+  .foot{margin-top:44px;text-align:center;font-size:12px;color:var(--mut);line-height:1.6;}
+
+  /* ── модал пакета ── */
+  .ovl{position:fixed;inset:0;background:rgba(20,30,45,.45);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    z-index:100;display:none;align-items:flex-end;justify-content:center;padding:0;}
+  .ovl.on{display:flex;}
+  @media(min-width:640px){ .ovl{align-items:center;padding:24px;} }
+  .modal{background:#fff;border-radius:24px 24px 0 0;max-width:480px;width:100%;max-height:92vh;overflow-y:auto;
+    padding:24px 22px 22px;position:relative;animation:up .22s ease;}
+  @media(min-width:640px){ .modal{border-radius:24px;animation:pop .18s ease;} }
+  @keyframes up{from{transform:translateY(40px);opacity:.5}to{transform:none;opacity:1}}
+  @keyframes pop{from{transform:scale(.96);opacity:.5}to{transform:none;opacity:1}}
+  .modal .x{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:50%;border:0;cursor:pointer;
+    background:#f0f3f7;color:var(--mut);font-size:16px;display:flex;align-items:center;justify-content:center;}
+  .modal .mh{display:flex;align-items:center;gap:12px;margin-bottom:6px;}
+  .modal .mh .fl{font-size:34px;}
+  .modal .mh .t{font-size:19px;font-weight:800;letter-spacing:-.02em;line-height:1.2;}
+  .modal .mh .s{font-size:12.5px;color:var(--mut);margin-top:2px;}
+  .specs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0;}
+  .specs .b{background:#f6f8fb;border-radius:12px;padding:10px 12px;}
+  .specs .k{font-size:11px;color:var(--mut);margin-bottom:2px;}
+  .specs .v{font-size:14.5px;font-weight:700;}
+  .cov{font-size:12.5px;color:var(--mut);line-height:1.6;margin:-6px 0 14px;}
+  .cov b{color:var(--ink);}
+  .steps{background:#f6fafd;border:1px solid #e0eef7;border-radius:14px;padding:13px 15px;margin-bottom:16px;}
+  .steps .h{font-size:12px;font-weight:700;color:var(--accent-d);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;}
+  .steps .st{display:flex;gap:9px;font-size:13px;line-height:1.5;margin-bottom:6px;color:#3a4356;}
+  .steps .st:last-child{margin-bottom:0;}
+  .steps .n{flex:none;width:19px;height:19px;border-radius:50%;background:#eaf3f9;color:var(--accent-d);font-size:11px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;margin-top:1px;}
+  .buy{width:100%;font:inherit;font-size:16px;font-weight:700;border:0;cursor:pointer;border-radius:14px;padding:15px;
+    background:linear-gradient(140deg,#4aa3d8,#3589BD);color:#fff;box-shadow:0 10px 24px -10px rgba(53,137,189,.75);}
+  .buy:disabled{opacity:.6;cursor:default;}
+  .phonewrap{margin-bottom:10px;display:none;}
+  .phonewrap.on{display:block;}
+  .phonewrap label{font-size:12.5px;color:var(--mut);display:block;margin-bottom:6px;}
+  .phonewrap input{width:100%;border:1px solid var(--line);border-radius:12px;padding:13px 14px;font:inherit;font-size:15px;}
+  .phonewrap input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(53,137,189,.14);}
+  .mnote{font-size:12px;color:var(--mut);text-align:center;margin-top:10px;line-height:1.5;}
+  .ok{background:#e9f6ee;border:1px solid #cfe9d8;color:var(--green);border-radius:12px;padding:12px 14px;font-size:14px;
+    line-height:1.5;display:none;margin-bottom:6px;}
+  .ok.on{display:block;}
+  .err{color:var(--red);font-size:13px;margin-top:8px;display:none;}
+  .err.on{display:block;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr">
+    <div class="brand">
+      <img src="/logo-voyo.png" alt="VOYO" onerror="this.style.display='none'" />
+      <span class="bx">eSIM</span>
+    </div>
+    <div class="beta">бета-версия</div>
+  </div>
+
+  <div class="hero">
+    <h1>Интернет для поездки — <em>за минуту</em></h1>
+    <div class="sub">Туристический eSIM: покупаете пакет, сканируете QR-код — интернет включается сам при посадке. Без физической симки, без роуминга, в разы дешевле операторского.</div>
+    <div class="searchbox">
+      <input id="q" type="text" placeholder="Куда летите? Например, Испания" autocomplete="off" />
+      <span class="ic">🔍</span>
+      <div class="drop" id="drop"></div>
+    </div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="sect" id="sect" style="display:none;">
+    <h2 id="sectTitle"></h2>
+    <div class="sub" id="sectSub"></div>
+    <div class="grid" id="grid"></div>
+    <button class="more" id="moreBtn" style="display:none;" type="button">Показать ещё</button>
+    <div class="empty" id="emptyMsg" style="display:none;">По этому направлению пакетов пока нет — напишите нам, подберём вручную.</div>
+  </div>
+
+  <div class="how">
+    <h2>Как это работает</h2>
+    <div class="cards">
+      <div class="c"><div class="n">1</div><div class="t">Выбираете пакет</div><div class="d">Страна, объём интернета и срок. Оплата в рублях российской картой.</div></div>
+      <div class="c"><div class="n">2</div><div class="t">Сканируете QR-код</div><div class="d">Пришлём QR сразу после оплаты. Настройки → Сотовая связь → Добавить eSIM. Одна минута.</div></div>
+      <div class="c"><div class="n">3</div><div class="t">Интернет включается сам</div><div class="d">При посадке телефон сам поймает местную сеть. Основная симка остаётся на месте — звонки и SMS работают как обычно.</div></div>
+    </div>
+  </div>
+
+  <div class="faq">
+    <h2>Частые вопросы</h2>
+    <details><summary>Мой телефон поддерживает eSIM?</summary><div class="a">iPhone XS/XR и новее, Samsung Galaxy S20 и новее, Google Pixel 3 и новее, и большинство флагманов последних лет. Проверить точно: наберите <b>*#06#</b> — если в списке есть EID, eSIM поддерживается. Телефон должен быть без привязки к оператору.</div></details>
+    <details><summary>Останется ли мой обычный номер?</summary><div class="a">Да. eSIM ставится второй линией только для интернета. Ваша основная симка продолжает работать: звонки и SMS приходят как обычно (в роуминге), а интернет идёт через дешёвый eSIM.</div></details>
+    <details><summary>Когда покупать и когда активировать?</summary><div class="a">Покупайте за 1–3 дня до вылета и установите QR дома по Wi-Fi. Пакет у большинства тарифов начинает действовать при первом подключении к сети за границей.</div></details>
+    <details><summary>Можно ли раздавать интернет?</summary><div class="a">Да, почти все наши пакеты поддерживают режим модема (hotspot) — можно раздать на ноутбук или второй телефон.</div></details>
+    <details><summary>Что если что-то не заработает?</summary><div class="a">Мы на связи: поможем с настройкой в чате или по телефону. Если пакет не активировался по нашей вине — вернём деньги.</div></details>
+  </div>
+
+  <div class="foot">VOYO eSIM · сервис компании VOYO (ООО «ЭЙ КЕЙ ГРУПП») · Витрина работает в режиме беты, цены уточняются.<br/>Покупка пока оформляется через менеджера — оставьте заявку, пришлём счёт и QR-код.</div>
+</div>
+
+<!-- модал пакета -->
+<div class="ovl" id="ovl">
+  <div class="modal" id="modal">
+    <button class="x" id="mClose" type="button">✕</button>
+    <div class="mh"><div class="fl" id="mFlag"></div><div><div class="t" id="mTitle"></div><div class="s" id="mSub"></div></div></div>
+    <div class="specs" id="mSpecs"></div>
+    <div class="cov" id="mCov"></div>
+    <div class="steps">
+      <div class="h">Установка</div>
+      <div class="st"><div class="n">1</div><div>После оплаты пришлём QR-код в ЛК и на телефон.</div></div>
+      <div class="st"><div class="n">2</div><div>Настройки → Сотовая связь → Добавить eSIM → сканировать QR.</div></div>
+      <div class="st"><div class="n">3</div><div>В поездке включите «Роуминг данных» для линии eSIM — интернет заработает сам.</div></div>
+    </div>
+    <div class="ok" id="mOk"></div>
+    <div class="phonewrap" id="mPhoneWrap">
+      <label>Телефон для связи — менеджер пришлёт счёт и QR-код</label>
+      <input id="mPhone" type="tel" placeholder="+7 999 123-45-67" />
+    </div>
+    <button class="buy" id="mBuy" type="button"></button>
+    <div class="err" id="mErr"></div>
+    <div class="mnote">Оплата в рублях. Онлайн-оплата картой подключается — пока оформляем через менеджера за пару минут.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  function el(html){ var t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstChild; }
+  var ADM = new URLSearchParams(location.search).get("adm") || "";
+
+  // ── названия стран по-русски + флаги из ISO-кода ──
+  var dn; try{ dn = new Intl.DisplayNames(["ru"],{type:"region"}); }catch(e){ dn = null; }
+  var SHORT = {US:"США", GB:"Великобритания", AE:"ОАЭ", KR:"Южная Корея", CZ:"Чехия"};
+  function cname(iso){ if(iso==="EU-REGION") return "Европа"; if(SHORT[iso]) return SHORT[iso]; try{ return (dn && dn.of(iso)) || iso; }catch(e){ return iso; } }
+  function flag(iso){
+    if(iso==="EU-REGION") return "🇪🇺";
+    if(!/^[A-Z]{2}$/.test(iso)) return "🌍";
+    return String.fromCodePoint(0x1F1E6+iso.charCodeAt(0)-65, 0x1F1E6+iso.charCodeAt(1)-65);
+  }
+
+  var EU = {AT:1,BE:1,BG:1,HR:1,CY:1,CZ:1,DK:1,EE:1,FI:1,FR:1,DE:1,GR:1,HU:1,IS:1,IE:1,IT:1,LV:1,LI:1,LT:1,LU:1,MT:1,NL:1,NO:1,PL:1,PT:1,RO:1,SK:1,SI:1,ES:1,SE:1,CH:1,GB:1};
+  var POPULAR = ["ES","IT","FR","EU-REGION","TR","AE","TH","JP","US","CN","EG","ID"];
+
+  var CATALOG = [];        // все пакеты с сервера
+  var byCountry = {};      // ISO → [пакеты]
+  var current = null;      // выбранное направление
+  var shown = 0;           // сколько карточек показано
+  var PAGE = 12;
+
+  function isEuroRegional(p){
+    if(!p.countries || p.countries.length < 15) return false;
+    var eu = p.countries.filter(function(c){ return EU[c]; }).length;
+    return eu >= 15;
+  }
+
+  function packsFor(iso){
+    var list;
+    if(iso === "EU-REGION"){ list = CATALOG.filter(isEuroRegional); }
+    else {
+      list = (byCountry[iso]||[]).slice();
+      // локальные (только эта страна) выше, потом небольшие регионалки, потом глобалы; внутри — по цене
+      list.sort(function(a,b){
+        var la = a.countries.length, lb = b.countries.length;
+        var ga = la===1?0:(la<=40?1:2), gb = lb===1?0:(lb<=40?1:2);
+        if(ga!==gb) return ga-gb;
+        return a.priceRub-b.priceRub;
+      });
+      return list;
+    }
+    list.sort(function(a,b){ return a.priceRub-b.priceRub; });
+    return list;
+  }
+
+  function pkCard(p){
+    var multi = p.countries.length > 1;
+    var iso = current && current !== "EU-REGION" ? current : (multi ? "EU-REGION" : p.countries[0]);
+    var head, sub;
+    if(current === "EU-REGION" || (multi && !current)){ head = "Европа и рядом"; sub = p.countries.length+" стран"; }
+    else { head = cname(iso); sub = multi ? ("+ ещё "+(p.countries.length-1)+" стран") : (p.operator||""); }
+    var gb = p.unlimited ? '∞' : (p.dataGb!=null ? RU(p.dataGb) : "—");
+    var card = el('<div class="pk">'+
+      '<div class="top"><span class="fl">'+flag(multi&&current!=="EU-REGION"?(current||p.countries[0]):(multi?"EU-REGION":p.countries[0]))+'</span>'+
+      '<span class="cn">'+esc(head)+'<small>'+esc(sub)+'</small></span>'+
+      (p.fiveG?'<span class="badge5g">5G</span>':"")+'</div>'+
+      '<div class="mid"><span class="gb">'+gb+'<small>'+(p.unlimited?"безлимит":"ГБ")+'</small></span>'+
+      '<span class="days">· '+RU(p.days)+' дн.</span></div>'+
+      '<div class="bot"><span class="pr">'+RU(p.priceRub)+' ₽</span><span class="go">Выбрать ›</span></div>'+
+      (p.marginRub!=null?'<div class="adm">закупка '+esc(p.costUsd)+' $ ≈ '+RU(p.costRub)+' ₽ · маржа '+RU(p.marginRub)+' ₽</div>':"")+
+      '</div>');
+    card.addEventListener("click",function(){ openModal(p); });
+    return card;
+  }
+
+  function renderPacks(){
+    var sect=document.getElementById("sect"), grid=document.getElementById("grid");
+    var list = packsFor(current);
+    sect.style.display="block";
+    document.getElementById("sectTitle").innerHTML = flag(current)+" "+esc(cname(current));
+    document.getElementById("sectSub").textContent = list.length ? "Пакеты с мгновенной выдачей QR-кода. Цена — окончательная, в рублях." : "";
+    grid.innerHTML="";
+    document.getElementById("emptyMsg").style.display = list.length ? "none":"block";
+    shown = Math.min(PAGE, list.length);
+    list.slice(0, shown).forEach(function(p){ grid.appendChild(pkCard(p)); });
+    var more=document.getElementById("moreBtn");
+    more.style.display = list.length > shown ? "block":"none";
+    more.onclick = function(){
+      var next = Math.min(shown+PAGE, list.length);
+      list.slice(shown,next).forEach(function(p){ grid.appendChild(pkCard(p)); });
+      shown = next; more.style.display = list.length > shown ? "block":"none";
+    };
+    sect.scrollIntoView({behavior:"smooth", block:"start"});
+  }
+
+  function choose(iso){
+    current = iso;
+    document.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("on", c.getAttribute("data-iso")===iso); });
+    renderPacks();
+  }
+
+  // ── чипы популярных ──
+  var chipsHost = document.getElementById("chips");
+  POPULAR.forEach(function(iso){
+    var c = el('<button class="chip" type="button" data-iso="'+iso+'">'+flag(iso)+' '+esc(cname(iso))+'</button>');
+    c.addEventListener("click",function(){ choose(iso); });
+    chipsHost.appendChild(c);
+  });
+
+  // ── поиск с автодополнением ──
+  var q=document.getElementById("q"), drop=document.getElementById("drop");
+  var countryIndex = []; // {iso, name, count}
+  function rebuildIndex(){
+    countryIndex = Object.keys(byCountry).map(function(iso){
+      return { iso:iso, name:cname(iso), count:byCountry[iso].length };
+    }).sort(function(a,b){ return a.name.localeCompare(b.name,"ru"); });
+  }
+  function renderDrop(items){
+    drop.innerHTML="";
+    if(!items.length){ drop.appendChild(el('<div class="none">Не нашли — попробуйте другое написание.</div>')); }
+    items.slice(0,12).forEach(function(it){
+      var n = el('<div class="it"><span class="fl">'+flag(it.iso)+'</span><span class="n">'+esc(it.name)+'</span><span class="c">'+it.count+' пак.</span></div>');
+      n.addEventListener("mousedown",function(e){ e.preventDefault(); q.value=it.name; drop.classList.remove("on"); choose(it.iso); });
+      drop.appendChild(n);
+    });
+    drop.classList.add("on");
+  }
+  q.addEventListener("input",function(){
+    var s=q.value.trim().toLowerCase();
+    if(s.length<2){ drop.classList.remove("on"); return; }
+    renderDrop(countryIndex.filter(function(it){ return it.name.toLowerCase().indexOf(s)===0 || it.name.toLowerCase().indexOf(" "+s)>0 || it.iso.toLowerCase()===s; }));
+  });
+  q.addEventListener("blur",function(){ setTimeout(function(){ drop.classList.remove("on"); },150); });
+  q.addEventListener("keydown",function(e){
+    if(e.key==="Enter"){
+      var s=q.value.trim().toLowerCase();
+      var hit = countryIndex.filter(function(it){ return it.name.toLowerCase().indexOf(s)===0; })[0];
+      if(hit){ q.value=hit.name; drop.classList.remove("on"); choose(hit.iso); }
+    }
+  });
+
+  // ── модал ──
+  var ovl=document.getElementById("ovl"), mBuy=document.getElementById("mBuy"), mP=null;
+  function openModal(p){
+    mP = p;
+    var multi = p.countries.length>1;
+    var iso = multi ? "EU-REGION" : p.countries[0];
+    if(!multi) document.getElementById("mFlag").textContent = flag(p.countries[0]);
+    else document.getElementById("mFlag").textContent = current && current!=="EU-REGION" ? flag(current) : "🌍";
+    var gb = p.unlimited ? "Безлимит" : (RU(p.dataGb)+" ГБ");
+    var where = current && current!=="EU-REGION" ? cname(current) : (multi ? p.countries.length+" стран" : cname(p.countries[0]));
+    document.getElementById("mTitle").textContent = where + " · " + gb;
+    document.getElementById("mSub").textContent = (p.title || "") + (p.operator ? " · сеть "+p.operator : "");
+    document.getElementById("mSpecs").innerHTML =
+      '<div class="b"><div class="k">Интернет</div><div class="v">'+gb+'</div></div>'+
+      '<div class="b"><div class="k">Срок</div><div class="v">'+RU(p.days)+' дней</div></div>'+
+      '<div class="b"><div class="k">Сеть</div><div class="v">'+(p.fiveG?"5G / 4G LTE":"4G LTE")+'</div></div>'+
+      '<div class="b"><div class="k">Раздача Wi-Fi</div><div class="v">'+(p.hotspot!==false?"Да":"Нет")+'</div></div>';
+    var cov = "";
+    if(multi){
+      var names = p.countries.slice(0,8).map(cname).join(", ");
+      cov = '<b>Покрытие:</b> '+esc(names)+(p.countries.length>8?" и ещё "+(p.countries.length-8)+" стран":"")+".";
+    }
+    document.getElementById("mCov").innerHTML = cov;
+    document.getElementById("mOk").classList.remove("on");
+    document.getElementById("mErr").classList.remove("on");
+    document.getElementById("mPhoneWrap").classList.remove("on");
+    mBuy.disabled=false;
+    mBuy.textContent = "Купить — "+RU(p.priceRub)+" ₽";
+    mBuy.dataset.step="1";
+    ovl.classList.add("on");
+    document.body.style.overflow="hidden";
+  }
+  function closeModal(){ ovl.classList.remove("on"); document.body.style.overflow=""; }
+  document.getElementById("mClose").addEventListener("click",closeModal);
+  ovl.addEventListener("click",function(e){ if(e.target===ovl) closeModal(); });
+
+  mBuy.addEventListener("click", async function(){
+    var err=document.getElementById("mErr");
+    err.classList.remove("on");
+    if(mBuy.dataset.step==="1"){
+      document.getElementById("mPhoneWrap").classList.add("on");
+      document.getElementById("mPhone").focus();
+      mBuy.textContent="Оставить заявку";
+      mBuy.dataset.step="2";
+      return;
+    }
+    var phone = document.getElementById("mPhone").value.trim();
+    if(phone.replace(/\D/g,"").length < 10){ err.textContent="Введите телефон — на него пришлём счёт и QR-код."; err.classList.add("on"); return; }
+    mBuy.disabled=true; mBuy.textContent="Отправляем…";
+    try{
+      var r = await fetch("/esim/api/order",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({productId:mP.id, phone:phone, priceRub:mP.priceRub,
+          label:(mP.countries.length>1?mP.countries.length+" стран":cname(mP.countries[0]))+" · "+(mP.unlimited?"безлимит":mP.dataGb+" ГБ")+" · "+mP.days+" дн."})});
+      var j = await r.json();
+      if(j && j.success){
+        var ok=document.getElementById("mOk");
+        ok.textContent="Заявка принята! Менеджер VOYO свяжется в ближайшее время, пришлёт счёт и QR-код для установки.";
+        ok.classList.add("on");
+        document.getElementById("mPhoneWrap").classList.remove("on");
+        mBuy.textContent="Готово ✓";
+      } else { throw new Error((j&&j.message)||"Ошибка"); }
+    }catch(e){
+      err.textContent="Не получилось отправить — попробуйте ещё раз."; err.classList.add("on");
+      mBuy.disabled=false; mBuy.textContent="Оставить заявку";
+    }
+  });
+
+  // ── загрузка каталога ──
+  (async function(){
+    try{
+      var r = await fetch("/esim/api/catalog"+(ADM?("?adm="+encodeURIComponent(ADM)):""));
+      var j = await r.json();
+      if(!j || !j.success) throw new Error("catalog");
+      CATALOG = j.products||[];
+      byCountry = {};
+      CATALOG.forEach(function(p){
+        (p.countries||[]).forEach(function(iso){ (byCountry[iso]=byCountry[iso]||[]).push(p); });
+      });
+      rebuildIndex();
+    }catch(e){ console.error(e); }
+  })();
+})();
+</script>
+</body>
+</html>
