@@ -93,10 +93,31 @@ const mobimatter = {
     }
     return out;
   },
-  // Заказ: create → в ответе QR/LPA (activation). До первого боевого заказа
-  // обкатать на тест-продуктах ($0.01, тумблер «Enable test products» в портале).
+  // Заказ — два шага, ОБКАТАНО на тест-продукте 02.09.2026 (AKGR-23460525):
+  //  1) POST /order {productId, productCategory} → orderId (холд на кошельке);
+  //  2) PUT /order/complete {orderId} → orderState=Completed + lineItemDetails
+  //     с ICCID, LPA-строкой, кодом активации, APN и ГОТОВЫМ QR (data:image/png).
+  // Возвращаем нормализованный объект — витрине всё равно, кто поставщик.
   async createOrder(productId) {
-    const r = await axios.post(MM_BASE + "/order", { productId, productCategory: "esim_realtime" }, { headers: mmHeaders(), timeout: 60000 });
+    const c = await axios.post(MM_BASE + "/order", { productId, productCategory: "esim_realtime" }, { headers: mmHeaders(), timeout: 60000 });
+    const orderId = c.data && c.data.result && c.data.result.orderId;
+    if (!orderId) throw new Error("MobiMatter: заказ не создан");
+    const d = await axios.put(MM_BASE + "/order/complete", { orderId }, { headers: mmHeaders(), timeout: 120000 });
+    const resErr = !d.data || !d.data.result || d.data.result.orderState !== "Completed";
+    if (resErr) throw new Error("MobiMatter: заказ " + orderId + " не завершился: " + JSON.stringify(d.data).slice(0, 200));
+    const li = d.data.result.orderLineItem || {};
+    const det = {};
+    (li.lineItemDetails || []).forEach((x) => { det[x.name] = x.value; });
+    return {
+      orderId, state: d.data.result.orderState, title: li.title || "",
+      costUsd: Number(li.wholesalePrice || 0),
+      iccid: det.ICCID || null, lpa: det.LOCAL_PROFILE_ASSISTANT || null,
+      activationCode: det.ACTIVATION_CODE || null, smdp: det.SMDP_ADDRESS || null,
+      apn: det.ACCESS_POINT_NAME || null, qrDataUrl: det.QR_CODE || null,
+    };
+  },
+  async getOrder(orderId) {
+    const r = await axios.get(MM_BASE + "/order/" + encodeURIComponent(orderId), { headers: mmHeaders(), timeout: 30000 });
     return r.data && (r.data.result || r.data);
   },
   async getBalance() {
