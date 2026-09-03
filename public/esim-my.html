@@ -152,13 +152,13 @@
       <div id="tpList"></div>
       <div class="tpform" id="tpForm">
         <div class="t" id="tpFormT"></div>
-        <label>Телефон для связи — менеджер пришлёт счёт, трафик добавим сразу после оплаты</label>
+        <label id="tpLb">Телефон для связи — менеджер пришлёт счёт, трафик добавим сразу после оплаты</label>
         <input id="tpPhone" type="tel" placeholder="+7 999 123-45-67"/>
         <button class="buy" id="tpBuy" type="button">Оставить заявку</button>
         <div class="err" id="tpErr"></div>
       </div>
       <div class="ok" id="tpOk">Заявка принята! Менеджер VOYO свяжется в ближайшее время — после оплаты гигабайты добавятся на вашу eSIM автоматически.</div>
-      <div class="mnote">Онлайн-оплата картой подключается — пока продлеваем через менеджера за пару минут.</div>
+      <div class="mnote" id="tpNote">Онлайн-оплата картой подключается — пока продлеваем через менеджера за пару минут.</div>
     </div>
 
     <div class="panel" id="noTp" style="display:none;">
@@ -183,7 +183,7 @@
   function fmtD(iso){ try{ return new Date(iso).toLocaleDateString("ru-RU",{day:"numeric",month:"long"}); }catch(e){ return ""; } }
   function plural(n,a){ n=Math.abs(n)%100; var n1=n%10; if(n>10&&n<20)return a[2]; if(n1>1&&n1<5)return a[1]; if(n1===1)return a[0]; return a[2]; }
 
-  var DATA=null, selTp=null;
+  var DATA=null, selTp=null, PAY=false;
 
   function render(j){
     var u = j.usage, o = j.order;
@@ -242,6 +242,7 @@
     // топапы
     if(j.topups && j.topups.length){
       el("tpPanel").style.display="block";
+      if(PAY) el("tpNote").textContent = "Оплата картой в рублях. Гигабайты добавятся сразу после оплаты.";
       var host = el("tpList"); host.innerHTML="";
       j.topups.forEach(function(t){
         var g = t.unlimited ? "Безлимит" : (RU(t.dataGb)+" ГБ");
@@ -251,6 +252,8 @@
         row.addEventListener("click",function(){
           selTp = t;
           el("tpFormT").textContent = "+ "+g+" за "+RU(t.priceRub)+" ₽";
+          el("tpBuy").textContent = PAY ? ("Оплатить "+RU(t.priceRub)+" ₽") : "Оставить заявку";
+          if(PAY) el("tpLb").textContent = "Телефон — на него придёт подтверждение";
           el("tpForm").classList.add("on");
           el("tpOk").classList.remove("on");
           el("tpForm").scrollIntoView({behavior:"smooth",block:"center"});
@@ -274,7 +277,20 @@
     var phone = el("tpPhone").value.trim();
     if(phone.replace(/\D/g,"").length<10){ err.textContent="Введите телефон."; err.classList.add("on"); return; }
     if(!selTp) return;
-    this.disabled=true; this.textContent="Отправляем…";
+    this.disabled=true; this.textContent = PAY ? "Открываем оплату…" : "Отправляем…";
+    if(PAY){
+      try{
+        var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({productId:selTp.id, phone:phone, parent:O, t:T})});
+        var pj = await pr.json();
+        if(pj && pj.success && pj.url){ location.href = pj.url; return; }
+        throw new Error();
+      }catch(e2){
+        err.textContent="Не удалось открыть оплату — попробуйте ещё раз."; err.classList.add("on");
+        this.disabled=false; this.textContent="Оплатить "+RU(selTp.priceRub)+" ₽";
+        return;
+      }
+    }
     try{
       var g = selTp.unlimited ? "безлимит" : (selTp.dataGb+" ГБ");
       var r = await fetch("/esim/api/my/topup",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -294,7 +310,7 @@
       var j = await r.json();
       el("loading").style.display="none";
       if(!r.ok || !j || !j.success){ el("dead").classList.add("on"); return; }
-      DATA=j; render(j);
+      PAY=!!j.pay; DATA=j; render(j);
     }catch(e){ el("loading").style.display="none"; el("dead").classList.add("on"); }
   }
   el("refreshBtn").addEventListener("click",function(){ el("main").style.display="none"; load(); });

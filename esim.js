@@ -29,7 +29,9 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const axios = require("axios");
+const tbank = require("./tbank"); // Т-Касса: приём оплат (банк за интерфейсом, как и поставщик eSIM)
 
+const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
 const DIR = path.join(__dirname, ".esim");
 const CATALOG_FILE = path.join(DIR, "catalog.json");
 const ORDERS_FILE = path.join(DIR, "orders.json");
@@ -232,7 +234,7 @@ function mount(app, opts) {
         if (adm) { o.costUsd = p.costUsd; o.costRub = Math.round(p.costUsd * rate); o.marginRub = o.priceRub - o.costRub; }
         return o;
       });
-      res.json({ success: true, demo: cat.source === "demo", live: provider.ready(), updatedAt: cat.ts, usdRate: Math.round(rate * 100) / 100, markup: adm ? MARKUP : undefined, products });
+      res.json({ success: true, demo: cat.source === "demo", live: provider.ready(), pay: tbank.ready(), updatedAt: cat.ts, usdRate: Math.round(rate * 100) / 100, markup: adm ? MARKUP : undefined, products });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
 
@@ -294,7 +296,7 @@ function mount(app, opts) {
         .map((a) => ({ id: a.id, title: a.title, dataGb: a.dataGb, unlimited: !!a.unlimited, days: a.days, priceRub: toRetailRub(a.costUsd, rate) }))
         .sort((x, y) => x.priceRub - y.priceRub);
       res.json({
-        success: true,
+        success: true, pay: tbank.ready(),
         order: {
           id: o, state: (order && order.orderState) || null, title: li.title || "", operator: li.providerName || "",
           qrDataUrl: det.QR_CODE || null, lpa: det.LOCAL_PROFILE_ASSISTANT || null,
@@ -347,6 +349,153 @@ function mount(app, opts) {
     res.set("Content-Type", "text/html; charset=utf-8");
     res.send('<meta name="viewport" content="width=device-width,initial-scale=1"/><body style="font-family:-apple-system,sans-serif;padding:24px;line-height:1.6">' +
       "<b>Ссылка «Моя eSIM» для клиента:</b><br/><a href=\"" + url + "\">" + url + "</a><br/><br/>Отправьте её клиенту вместе с QR-кодом — там остаток трафика, QR и продление.</body>");
+  });
+
+  // ═══════════════ ОНЛАЙН-ОПЛАТА (Т-Касса) ═══════════════
+  // Цикл: /pay/start → ссылка Т-Банка → клиент платит → вебхук /pay/notify →
+  // покупаем eSIM у поставщика → клиент попадает на «Мою eSIM» с QR.
+  // Заводить номенклатуру в банке не нужно: сумма и позиция чека уходят в Init.
+
+  function findProduct(cat, id) {
+    const inMain = (cat.products || []).find((x) => x.id === id);
+    if (inMain) return { item: inMain, addon: false };
+    const inAdd = (cat.addons || []).find((x) => x.id === id);
+    return inAdd ? { item: inAdd, addon: true } : null;
+  }
+  function labelFor(p) {
+    const vol = p.unlimited ? "безлимит" : (p.dataGb + " ГБ");
+    return "eSIM " + (p.title || "") + " · " + vol + (p.days ? (" · " + p.days + " дн.") : "");
+  }
+  function findLocal(id) {
+    const orders = readJson(ORDERS_FILE, []);
+    const i = orders.findIndex((o) => o.id === id);
+    return i < 0 ? null : { orders, i, order: orders[i] };
+  }
+  function saveLocal(orders) { writeJson(ORDERS_FILE, orders.slice(0, 5000)); }
+
+  // Выдача товара после подтверждённой оплаты. Идемпотентна: повторный вебхук
+  // не купит вторую eSIM (банк может слать уведомление несколько раз).
+  async function fulfil(id) {
+    const f = findLocal(id);
+    if (!f) return { ok: false, message: "заказ не найден" };
+    const o = f.order;
+    if (o.status === "done") return { ok: true, already: true, order: o };
+    if (o.status === "fulfilling") return { ok: true, pending: true };
+    o.status = "fulfilling"; saveLocal(f.orders);
+    try {
+      const res = o.parentOrderId
+        ? await provider.createTopup(o.productId, o.parentOrderId)
+        : await provider.createOrder(o.productId);
+      const g = findLocal(id);
+      Object.assign(g.order, {
+        status: "done", paidAt: Date.now(),
+        mmOrderId: res.orderId, iccid: res.iccid || null, costUsd: res.costUsd || null,
+        myUrl: BASE_URL + "/esim/my?o=" + encodeURIComponent(o.parentOrderId || res.orderId) +
+               "&t=" + signOrder(o.parentOrderId || res.orderId),
+      });
+      saveLocal(g.orders);
+      if (opts && opts.sendSms && g.order.phone) {
+        opts.sendSms(g.order.phone, "VOYO mobile: ваша eSIM готова. QR и остаток трафика — " + g.order.myUrl)
+          .catch((e) => console.error("esim sms:", e.message));
+      }
+      if (opts && opts.sendMail) {
+        opts.sendMail({
+          to: "director@visa-sc.ru",
+          subject: "VOYO eSIM: ОПЛАЧЕНО " + (g.order.label || ""),
+          text: "Клиент оплатил и получил eSIM автоматически.\n\nПакет: " + (g.order.label || "—") +
+            "\nСумма: " + (g.order.priceRub || "—") + " ₽\nТелефон: " + (g.order.phone || "—") +
+            "\nЗаказ MobiMatter: " + res.orderId + "\nСсылка клиента: " + g.order.myUrl,
+        }).catch(() => {});
+      }
+      return { ok: true, order: g.order };
+    } catch (e) {
+      const g = findLocal(id);
+      if (g) { g.order.status = "paid_failed"; g.order.error = String(e.message).slice(0, 300); saveLocal(g.orders); }
+      console.error("esim fulfil:", e.message);
+      // Деньги уже списаны — зовём менеджера руками добить заказ.
+      if (opts && opts.sendMail) {
+        opts.sendMail({
+          to: "director@visa-sc.ru",
+          subject: "VOYO eSIM: ОПЛАЧЕНО, но выдача НЕ прошла — нужен ручной заказ",
+          text: "Клиент заплатил, но купить пакет у поставщика не удалось.\n\nВнутренний заказ: " + id +
+            "\nПакет: " + (o.label || "—") + "\nID продукта: " + o.productId +
+            "\nСумма: " + (o.priceRub || "—") + " ₽\nТелефон: " + (o.phone || "—") +
+            "\nОшибка: " + e.message + "\n\nКупите пакет в portal.mobimatter.com и отправьте клиенту QR.",
+        }).catch(() => {});
+      }
+      return { ok: false, message: e.message };
+    }
+  }
+
+  // Начало оплаты: создаём внутренний заказ и получаем ссылку Т-Банка
+  app.post("/esim/api/pay/start", async (req, res) => {
+    if (!tbank.ready()) return res.status(503).json({ success: false, message: "Оплата ещё не подключена." });
+    const b = req.body || {};
+    const phone = String(b.phone || "").trim().slice(0, 30);
+    if (phone.replace(/\D/g, "").length < 10) return res.status(400).json({ success: false, message: "Нужен телефон." });
+    const parentOrderId = b.parent ? String(b.parent).slice(0, 40) : null;
+    if (parentOrderId && !checkSig(parentOrderId, b.t)) return res.status(403).json({ success: false });
+    try {
+      const [cat, rate] = await Promise.all([getCatalog(false), usdRate()]);
+      const found = findProduct(cat, String(b.productId || ""));
+      if (!found) return res.status(400).json({ success: false, message: "Пакет не найден." });
+      if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
+      const priceRub = toRetailRub(found.item.costUsd, rate);
+      const id = crypto.randomBytes(6).toString("hex");
+      const label = labelFor(found.item);
+      const orders = readJson(ORDERS_FILE, []);
+      orders.unshift({
+        id, ts: Date.now(), status: "pending", productId: found.item.id, parentOrderId,
+        label, priceRub, phone, email: String(b.email || "").trim().slice(0, 80) || null,
+      });
+      saveLocal(orders);
+      const pay = await tbank.init({
+        orderId: id, amountRub: priceRub,
+        description: label.slice(0, 140), itemName: label,
+        phone, email: String(b.email || "").trim() || null,
+        notificationUrl: BASE_URL + "/esim/api/pay/notify",
+        successUrl: BASE_URL + "/esim/pay/ok?o=" + id + "&t=" + signOrder(id),
+        failUrl: BASE_URL + "/esim/pay/fail?o=" + id,
+      });
+      if (!pay.ok) { console.error("esim pay init:", pay.message); return res.status(502).json({ success: false, message: "Банк не принял платёж. Попробуйте ещё раз." }); }
+      const g = findLocal(id);
+      if (g) { g.order.paymentId = pay.paymentId; saveLocal(g.orders); }
+      return res.json({ success: true, url: pay.url });
+    } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
+  });
+
+  // Вебхук банка. Отвечаем строкой OK — иначе Т-Банк будет повторять.
+  app.post("/esim/api/pay/notify", async (req, res) => {
+    const b = req.body || {};
+    if (!tbank.verifyNotification(b)) { console.error("esim notify: подпись не сошлась"); return res.status(403).send("NO"); }
+    res.send("OK"); // отвечаем сразу, выдачу делаем следом
+    try {
+      if (!tbank.isPaid(b.Status) || b.Success === false) return;
+      await fulfil(String(b.OrderId || ""));
+    } catch (e) { console.error("esim notify:", e.message); }
+  });
+
+  // Статус внутреннего заказа — страница «оплачено» опрашивает его
+  app.get("/esim/api/pay/status", async (req, res) => {
+    const id = String(req.query.o || "").slice(0, 40);
+    if (!id || !checkSig(id, req.query.t)) return res.status(403).json({ success: false });
+    const f = findLocal(id);
+    if (!f) return res.status(404).json({ success: false });
+    // Страховка: вебхук мог не дойти — спросим банк сами
+    if (f.order.status === "pending" && f.order.paymentId) {
+      const st = await tbank.getState(f.order.paymentId);
+      if (st && st.Success && tbank.isPaid(st.Status)) { fulfil(id).catch(() => {}); return res.json({ success: true, status: "fulfilling" }); }
+    }
+    return res.json({ success: true, status: f.order.status, myUrl: f.order.myUrl || null });
+  });
+
+  app.get("/esim/pay/ok", (req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.sendFile(path.join(__dirname, "public", "esim-pay-ok.html"));
+  });
+  app.get("/esim/pay/fail", (req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.sendFile(path.join(__dirname, "public", "esim-pay-fail.html"));
   });
 
   // Служебное: состояние провайдера и кошелька (для админки/сторожа депозита)

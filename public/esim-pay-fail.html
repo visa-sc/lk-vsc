@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Оплата не прошла — VOYO mobile</title>
+<link rel="apple-touch-icon" href="/icon-app.png" />
+<link rel="icon" type="image/png" href="/icon-app.png" />
+<style>
+  :root{
+    --bg:#f5f7fb; --card:#ffffff; --line:#e6eaf2; --ink:#16202e; --mut:#8b93a5;
+    --accent:#3589bd; --grad:linear-gradient(135deg,#2c6f96 0%,#3d95c7 55%,#5ac8fa 120%);
+    --sh:0 1px 2px rgba(16,24,40,.04),0 18px 44px -22px rgba(22,48,80,.22);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);min-height:100vh;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .blob{position:fixed;border-radius:50%;filter:blur(70px);pointer-events:none;z-index:-1;opacity:.5;
+    width:520px;height:520px;left:50%;top:-240px;transform:translateX(-55%);
+    background:radial-gradient(circle,#dfe6ee 0%,rgba(223,230,238,0) 70%);}
+  .box{background:var(--card);border:1px solid var(--line);border-radius:26px;box-shadow:var(--sh);
+    max-width:420px;width:100%;padding:34px 28px 28px;text-align:center;}
+  .brand{display:flex;align-items:center;justify-content:center;gap:9px;margin-bottom:22px;}
+  .brand img{height:18px;display:block;}
+  .brand span{font-size:19px;font-weight:300;letter-spacing:.01em;line-height:1;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .ic{width:64px;height:64px;border-radius:50%;background:#eef2f7;margin:0 auto 18px;
+    display:flex;align-items:center;justify-content:center;}
+  h1{font-size:23px;letter-spacing:-.025em;margin:0 0 10px;font-weight:800;}
+  .sub{color:var(--mut);font-size:14.5px;line-height:1.6;margin-bottom:22px;}
+  .btn{display:block;width:100%;font:inherit;font-size:16px;font-weight:700;border:0;cursor:pointer;
+    border-radius:15px;padding:15px;background:var(--grad);color:#fff;text-decoration:none;
+    box-shadow:0 12px 28px -12px rgba(53,137,189,.85);}
+  .note{font-size:12px;color:var(--mut);margin-top:14px;line-height:1.55;}
+</style>
+</head>
+<body>
+<div class="blob"></div>
+<div class="box">
+  <div class="brand"><img src="/voyo-logo.png" alt="VOYO"/><span>mobile</span></div>
+  <div class="ic">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="#8b93a5" stroke-width="2.6" stroke-linecap="round"/></svg>
+  </div>
+  <h1>Оплата не прошла</h1>
+  <div class="sub">Деньги не списаны. Попробуйте ещё раз — или напишите нам, поможем оформить вручную.</div>
+  <a class="btn" href="/esim">Вернуться к пакетам</a>
+  <div class="note">Если деньги всё же списались — сообщите нам, вернём в течение дня.</div>
+</div>
+</body>
+</html>
