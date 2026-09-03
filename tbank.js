@@ -22,9 +22,33 @@
 // TBANK_VAT (дефолт none — УСН без НДС).
 // ─────────────────────────────────────────────────────────────────────────
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
+const https = require("https");
+const tls = require("tls");
 const axios = require("axios");
 
 const API = process.env.TBANK_ACQ_API || "https://securepay.tinkoff.ru/v2";
+
+// securepay.tinkoff.ru отдаёт сертификат УЦ Минцифры («Russian Trusted Root CA»),
+// которого нет в стандартном хранилище Node — без него запросы падают с
+// «self-signed certificate in certificate chain». Добавляем корневой сертификат
+// ТОЛЬКО для запросов к банку: системное хранилище и остальной трафик не трогаем.
+// Файл — публичный корневой сертификат с gu-st.ru, отпечаток SHA-256:
+// D2:6D:2D:02:31:B7:C3:9F:92:CC:73:85:12:BA:54:10:35:19:E4:40:5D:68:B5:BD:70:3E:97:88:CA:8E:CF:31
+let _agent = null;
+function agent() {
+  if (_agent !== null) return _agent || undefined;
+  try {
+    const f = path.join(__dirname, "certs", "russian_trusted_root_ca.pem");
+    const extra = fs.readFileSync(f, "utf8");
+    _agent = new https.Agent({ ca: [].concat(tls.rootCertificates, [extra]) });
+  } catch (e) {
+    console.error("tbank: корневой сертификат Минцифры не найден —", e.message);
+    _agent = false; // работаем на системных доверия; проверка сертификата НЕ отключается
+  }
+  return _agent || undefined;
+}
 const TAXATION = process.env.TBANK_TAXATION || "usn_income";
 const VAT = process.env.TBANK_VAT || "none";
 
@@ -78,7 +102,7 @@ async function init({ orderId, amountRub, description, itemName, email, phone, s
   body.Token = signature(body);                    // считается ДО добавления Receipt
   body.Receipt = buildReceipt({ itemName: itemName || description, amountKop, email, phone });
   try {
-    const r = await axios.post(API + "/Init", body, { timeout: 30000, headers: { "Content-Type": "application/json" } });
+    const r = await axios.post(API + "/Init", body, { timeout: 30000, httpsAgent: agent(), headers: { "Content-Type": "application/json" } });
     const d = r.data || {};
     if (!d.Success) return { ok: false, message: (d.Message || "") + " " + (d.Details || "") || d.ErrorCode || "Ошибка Т-Кассы" };
     return { ok: true, url: d.PaymentURL, paymentId: String(d.PaymentId || ""), status: d.Status };
@@ -101,7 +125,7 @@ async function getState(paymentId) {
   const body = { TerminalKey: key(), PaymentId: String(paymentId) };
   body.Token = signature(body);
   try {
-    const r = await axios.post(API + "/GetState", body, { timeout: 20000 });
+    const r = await axios.post(API + "/GetState", body, { timeout: 20000, httpsAgent: agent() });
     return r.data || null;
   } catch (e) { return null; }
 }

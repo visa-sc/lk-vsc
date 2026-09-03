@@ -275,8 +275,8 @@
     </div>
     <div class="ok" id="mOk"></div>
     <div class="phonewrap" id="mPhoneWrap">
-      <label id="mPhoneLb">Телефон для связи — менеджер пришлёт счёт и QR-код</label>
-      <input id="mPhone" type="tel" placeholder="+7 999 123-45-67" />
+      <label id="mPhoneLb">Email — пришлём чек и доступ к вашей eSIM</label>
+      <input id="mPhone" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" />
     </div>
     <button class="buy" id="mBuy" type="button"></button>
     <div class="err" id="mErr"></div>
@@ -498,7 +498,7 @@
     mBuy.textContent = "Купить — "+RU(p.priceRub)+" ₽";
     mBuy.dataset.step="1";
     if(PAY){
-      document.getElementById("mPhoneLb").textContent = "Телефон — пришлём на него ссылку на вашу eSIM";
+      document.getElementById("mPhoneLb").textContent = "Email — пришлём чек и доступ к вашей eSIM";
       document.getElementById("mNote").textContent = "Оплата картой в рублях через Т-Банк. Сразу после оплаты придёт QR-код.";
     }
     ovl.classList.add("on");
@@ -519,12 +519,13 @@
       return;
     }
     var phone = document.getElementById("mPhone").value.trim();
-    if(phone.replace(/\D/g,"").length < 10){ err.textContent="Введите телефон — на него пришлём счёт и QR-код."; err.classList.add("on"); return; }
+    if(PAY && !/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(phone)){ err.textContent="Введите email — на него придёт чек и доступ к eSIM."; err.classList.add("on"); return; }
+    if(!PAY && phone.replace(/\D/g,"").length < 10){ err.textContent="Введите телефон — на него пришлём счёт и QR-код."; err.classList.add("on"); return; }
     mBuy.disabled=true; mBuy.textContent = PAY ? "Открываем оплату…" : "Отправляем…";
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:mP.id, phone:phone})});
+          body:JSON.stringify({productId:mP.id, email:phone})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){ location.href = pj.url; return; }
         throw new Error((pj&&pj.message)||"Ошибка");

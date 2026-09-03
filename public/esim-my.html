@@ -152,8 +152,8 @@
       <div id="tpList"></div>
       <div class="tpform" id="tpForm">
         <div class="t" id="tpFormT"></div>
-        <label id="tpLb">Телефон для связи — менеджер пришлёт счёт, трафик добавим сразу после оплаты</label>
-        <input id="tpPhone" type="tel" placeholder="+7 999 123-45-67"/>
+        <label id="tpLb">Email — пришлём чек, трафик добавим сразу после оплаты</label>
+        <input id="tpPhone" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"/>
         <button class="buy" id="tpBuy" type="button">Оставить заявку</button>
         <div class="err" id="tpErr"></div>
       </div>
@@ -253,7 +253,7 @@
           selTp = t;
           el("tpFormT").textContent = "+ "+g+" за "+RU(t.priceRub)+" ₽";
           el("tpBuy").textContent = PAY ? ("Оплатить "+RU(t.priceRub)+" ₽") : "Оставить заявку";
-          if(PAY) el("tpLb").textContent = "Телефон — на него придёт подтверждение";
+          if(PAY) el("tpLb").textContent = "Email — пришлём чек и подтверждение";
           el("tpForm").classList.add("on");
           el("tpOk").classList.remove("on");
           el("tpForm").scrollIntoView({behavior:"smooth",block:"center"});
@@ -275,13 +275,14 @@
   el("tpBuy").addEventListener("click", async function(){
     var err=el("tpErr"); err.classList.remove("on");
     var phone = el("tpPhone").value.trim();
-    if(phone.replace(/\D/g,"").length<10){ err.textContent="Введите телефон."; err.classList.add("on"); return; }
+    if(PAY && !/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(phone)){ err.textContent="Введите email."; err.classList.add("on"); return; }
+    if(!PAY && phone.replace(/\D/g,"").length<10){ err.textContent="Введите телефон."; err.classList.add("on"); return; }
     if(!selTp) return;
     this.disabled=true; this.textContent = PAY ? "Открываем оплату…" : "Отправляем…";
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:selTp.id, phone:phone, parent:O, t:T})});
+          body:JSON.stringify({productId:selTp.id, email:phone, parent:O, t:T})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){ location.href = pj.url; return; }
         throw new Error();

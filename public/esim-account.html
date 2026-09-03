@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Мои eSIM — VOYO mobile</title>
+<link rel="apple-touch-icon" href="/icon-app.png" />
+<link rel="icon" type="image/png" href="/icon-app.png" />
+<style>
+  :root{
+    --bg:#f5f7fb; --card:#ffffff; --line:#e6eaf2; --ink:#16202e; --mut:#8b93a5;
+    --accent:#3589bd; --grad:linear-gradient(135deg,#2c6f96 0%,#3d95c7 55%,#5ac8fa 120%);
+    --sh:0 1px 2px rgba(16,24,40,.04),0 18px 44px -22px rgba(22,48,80,.22);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  .blob{position:fixed;border-radius:50%;filter:blur(70px);pointer-events:none;z-index:-1;opacity:.55;
+    width:520px;height:520px;left:50%;top:-260px;transform:translateX(-60%);
+    background:radial-gradient(circle,#bfe3f7 0%,rgba(191,227,247,0) 70%);}
+  .wrap{max-width:520px;margin:0 auto;padding:0 18px 70px;}
+  .hdr{display:flex;align-items:center;justify-content:space-between;padding:20px 0 14px;}
+  .brand{display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink);}
+  .brand img{height:18px;display:block;}
+  .brand span{font-size:19px;font-weight:300;letter-spacing:.01em;line-height:1;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .hdr a.shop{font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;}
+  h1{font-size:26px;letter-spacing:-.03em;margin:10px 0 4px;font-weight:800;}
+  .who{font-size:13px;color:var(--mut);margin-bottom:18px;}
+  .card{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);
+    border-radius:20px;padding:16px 18px;box-shadow:var(--sh);margin-bottom:12px;transition:all .16s ease;}
+  .card:hover{transform:translateY(-2px);border-color:#d3e6f2;box-shadow:0 2px 4px rgba(16,24,40,.05),0 26px 48px -22px rgba(41,110,160,.3);}
+  .card .t{font-size:15.5px;font-weight:700;letter-spacing:-.01em;line-height:1.3;}
+  .card .m{font-size:12.5px;color:var(--mut);margin-top:4px;}
+  .card .go{font-size:13px;font-weight:700;color:var(--accent);margin-top:10px;}
+  .tag{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+    background:#eef4f9;color:var(--accent);border-radius:6px;padding:3px 7px;margin-left:7px;vertical-align:1px;}
+  .empty,.dead,.loading{text-align:center;padding:60px 10px;color:var(--mut);font-size:14.5px;line-height:1.6;}
+  .dead{display:none;} .dead.on{display:block;}
+  .btn{display:block;font:inherit;font-size:16px;font-weight:700;border:0;cursor:pointer;border-radius:15px;
+    padding:15px;background:var(--grad);color:#fff;text-decoration:none;text-align:center;
+    box-shadow:0 12px 28px -12px rgba(53,137,189,.85);margin-top:18px;}
+  .foot{margin-top:34px;text-align:center;font-size:11.5px;color:var(--mut);line-height:1.7;}
+</style>
+</head>
+<body>
+<div class="blob"></div>
+<div class="wrap">
+  <div class="hdr">
+    <a class="brand" href="/esim"><img src="/voyo-logo.png" alt="VOYO"/><span>mobile</span></a>
+    <a class="shop" href="/esim">Купить ещё ›</a>
+  </div>
+
+  <div class="loading" id="loading">Загружаем ваши eSIM…</div>
+  <div class="dead" id="dead">Ссылка недействительна.<br/>Откройте её из письма — или напишите нам, пришлём новую.</div>
+
+  <div id="main" style="display:none;">
+    <h1>Мои eSIM</h1>
+    <div class="who" id="who"></div>
+    <div id="list"></div>
+    <a class="btn" href="/esim">Купить ещё eSIM</a>
+  </div>
+
+  <div class="foot">VOYO mobile · сервис компании VOYO<br/>Ссылка постоянная — сохраните письмо, чтобы вернуться сюда.</div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var qs = new URLSearchParams(location.search);
+  var E = qs.get("e")||"", T = qs.get("t")||"";
+  function el(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  function fmt(ts){ try{ return new Date(ts).toLocaleDateString("ru-RU",{day:"numeric",month:"long",year:"numeric"}); }catch(e){ return ""; } }
+  var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
+
+  (async function(){
+    if(!E || !T){ el("loading").style.display="none"; el("dead").classList.add("on"); return; }
+    try{
+      var r = await fetch("/esim/api/account?e="+encodeURIComponent(E)+"&t="+encodeURIComponent(T));
+      var j = await r.json();
+      el("loading").style.display="none";
+      if(!r.ok || !j || !j.success){ el("dead").classList.add("on"); return; }
+      el("main").style.display="block";
+      el("who").textContent = j.email;
+      var host = el("list");
+      if(!(j.esims||[]).length){
+        host.innerHTML = '<div class="empty">Здесь появятся ваши eSIM после первой покупки.</div>';
+        return;
+      }
+      j.esims.forEach(function(s){
+        var a = document.createElement("a");
+        a.className="card"; a.href=s.url;
+        a.innerHTML = '<div class="t">'+esc(s.label||"eSIM")+(s.topup?'<span class="tag">продление</span>':'')+'</div>'+
+          '<div class="m">'+fmt(s.ts)+(s.priceRub?(' · '+RU(s.priceRub)+' ₽'):'')+'</div>'+
+          '<div class="go">Открыть QR и остаток ›</div>';
+        host.appendChild(a);
+      });
+    }catch(e){ el("loading").style.display="none"; el("dead").classList.add("on"); }
+  })();
+})();
+</script>
+</body>
+</html>

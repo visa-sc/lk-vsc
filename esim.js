@@ -201,6 +201,14 @@ async function getCatalog(force) {
 // продажи ручные). Подпись отсекает перебор номеров заказов AKGR-… .
 const LINK_SECRET = process.env.ESIM_LINK_SECRET || (ADMIN_CODE + ":voyo-esim-my");
 function signOrder(orderId) { return crypto.createHmac("sha256", LINK_SECRET).update(String(orderId)).digest("hex").slice(0, 12); }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function normEmail(e) { return String(e || "").trim().toLowerCase(); }
+function signEmail(email) { return crypto.createHmac("sha256", LINK_SECRET).update("acc:" + normEmail(email)).digest("hex").slice(0, 16); }
+function checkEmailSig(email, t) {
+  const a = Buffer.from(signEmail(email)), b = Buffer.from(String(t || ""));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function validEmail(e) { return /^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(normEmail(e)); }
 function checkSig(orderId, t) {
   const a = Buffer.from(signOrder(orderId)), b = Buffer.from(String(t || ""));
   return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -398,12 +406,33 @@ function mount(app, opts) {
         opts.sendSms(g.order.phone, "VOYO mobile: ваша eSIM готова. QR и остаток трафика — " + g.order.myUrl)
           .catch((e) => console.error("esim sms:", e.message));
       }
+      // Письмо клиенту: доступ в кабинет + QR-строка на случай, если картинка не откроется
+      if (opts && opts.sendMail && g.order.email) {
+        const acc = BASE_URL + "/esim/account?e=" + encodeURIComponent(g.order.email) + "&t=" + signEmail(g.order.email);
+        opts.sendMail({
+          to: g.order.email,
+          subject: "VOYO mobile: ваша eSIM готова",
+          html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#16202e">' +
+            '<p style="font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px">Ваша eSIM готова</p>' +
+            '<p style="color:#8b93a5;font-size:14px;line-height:1.6;margin:0 0 18px">' + esc(g.order.label || "") + '</p>' +
+            '<p style="margin:0 0 18px"><a href="' + g.order.myUrl + '" style="display:inline-block;background:#3589bd;color:#fff;' +
+            'text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:12px">Открыть QR-код и остаток</a></p>' +
+            '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">Установка: Настройки → Сотовая связь → Добавить eSIM → сканировать QR. ' +
+            'Сделайте это дома по Wi-Fi, до вылета. В поездке включите «Роуминг данных» для линии eSIM.</p>' +
+            '<p style="font-size:13px;line-height:1.6;color:#8b93a5;margin:0 0 6px">Ваш личный кабинет со всеми eSIM: <a href="' + acc + '" style="color:#3589bd">открыть</a><br/>' +
+            'Ссылка постоянная — сохраните это письмо.</p>' +
+            '<p style="font-size:12px;color:#a6adbd;margin:18px 0 0">VOYO mobile · интернет в поездке</p></div>',
+          text: "Ваша eSIM готова: " + (g.order.label || "") + "\n\nQR-код и остаток трафика: " + g.order.myUrl +
+                "\nЛичный кабинет со всеми eSIM: " + acc,
+        }).catch((e) => console.error("esim client mail:", e.message));
+      }
       if (opts && opts.sendMail) {
         opts.sendMail({
           to: "director@visa-sc.ru",
           subject: "VOYO eSIM: ОПЛАЧЕНО " + (g.order.label || ""),
           text: "Клиент оплатил и получил eSIM автоматически.\n\nПакет: " + (g.order.label || "—") +
             "\nСумма: " + (g.order.priceRub || "—") + " ₽\nТелефон: " + (g.order.phone || "—") +
+            "\nEmail: " + (g.order.email || "—") +
             "\nЗаказ MobiMatter: " + res.orderId + "\nСсылка клиента: " + g.order.myUrl,
         }).catch(() => {});
       }
@@ -431,8 +460,11 @@ function mount(app, opts) {
   app.post("/esim/api/pay/start", async (req, res) => {
     if (!tbank.ready()) return res.status(503).json({ success: false, message: "Оплата ещё не подключена." });
     const b = req.body || {};
-    const phone = String(b.phone || "").trim().slice(0, 30);
-    if (phone.replace(/\D/g, "").length < 10) return res.status(400).json({ success: false, message: "Нужен телефон." });
+    // Спрашиваем ТОЛЬКО email: на него уйдёт чек от онлайн-кассы (банк требует
+    // контакт покупателя в чеке) и ссылка на личный кабинет с QR и остатком.
+    const email = normEmail(b.email);
+    if (!validEmail(email)) return res.status(400).json({ success: false, message: "Нужен корректный email." });
+    const phone = String(b.phone || "").trim().slice(0, 30) || null;
     const parentOrderId = b.parent ? String(b.parent).slice(0, 40) : null;
     if (parentOrderId && !checkSig(parentOrderId, b.t)) return res.status(403).json({ success: false });
     try {
@@ -446,13 +478,13 @@ function mount(app, opts) {
       const orders = readJson(ORDERS_FILE, []);
       orders.unshift({
         id, ts: Date.now(), status: "pending", productId: found.item.id, parentOrderId,
-        label, priceRub, phone, email: String(b.email || "").trim().slice(0, 80) || null,
+        label, priceRub, phone, email,
       });
       saveLocal(orders);
       const pay = await tbank.init({
         orderId: id, amountRub: priceRub,
         description: label.slice(0, 140), itemName: label,
-        phone, email: String(b.email || "").trim() || null,
+        phone, email,
         notificationUrl: BASE_URL + "/esim/api/pay/notify",
         successUrl: BASE_URL + "/esim/pay/ok?o=" + id + "&t=" + signOrder(id),
         failUrl: BASE_URL + "/esim/pay/fail?o=" + id,
@@ -496,6 +528,26 @@ function mount(app, opts) {
   app.get("/esim/pay/fail", (req, res) => {
     res.set("Cache-Control", "no-store");
     res.sendFile(path.join(__dirname, "public", "esim-pay-fail.html"));
+  });
+
+  // ═══ Личный кабинет по email: все eSIM клиента ═══
+  app.get("/esim/account", (req, res) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.sendFile(path.join(__dirname, "public", "esim-account.html"));
+  });
+  app.get("/esim/api/account", (req, res) => {
+    const email = normEmail(req.query.e);
+    if (!validEmail(email) || !checkEmailSig(email, req.query.t)) return res.status(403).json({ success: false });
+    const mine = readJson(ORDERS_FILE, []).filter((o) => o.email === email && o.status === "done" && o.mmOrderId);
+    res.json({
+      success: true, email,
+      esims: mine.map((o) => ({
+        label: o.label, ts: o.ts, priceRub: o.priceRub,
+        url: BASE_URL + "/esim/my?o=" + encodeURIComponent(o.parentOrderId || o.mmOrderId) +
+             "&t=" + signOrder(o.parentOrderId || o.mmOrderId),
+        topup: !!o.parentOrderId,
+      })),
+    });
   });
 
   // Служебное: состояние провайдера и кошелька (для админки/сторожа депозита)
