@@ -37,9 +37,11 @@
   .card .go{font-size:13px;font-weight:700;color:var(--accent);margin-top:10px;}
   .tag{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
     background:#eef4f9;color:var(--accent);border-radius:6px;padding:3px 7px;margin-left:7px;vertical-align:1px;}
-  .empty,.dead,.loading{text-align:center;padding:60px 10px;color:var(--mut);font-size:14.5px;line-height:1.6;}
+  .empty,.loading{text-align:center;padding:60px 10px;color:var(--mut);font-size:14.5px;line-height:1.6;}
+  .dead{padding:40px 0 10px;color:var(--mut);font-size:14.5px;line-height:1.6;max-width:380px;margin:0 auto;text-align:center;}
+  .dead h1{color:var(--ink);}
   .dead{display:none;} .dead.on{display:block;}
-  .btn{display:block;font:inherit;font-size:16px;font-weight:700;border:0;cursor:pointer;border-radius:15px;
+  .btn{display:block;width:100%;font:inherit;font-size:16px;font-weight:700;border:0;cursor:pointer;border-radius:15px;
     padding:15px;background:var(--grad);color:#fff;text-decoration:none;text-align:center;
     box-shadow:0 12px 28px -12px rgba(53,137,189,.85);margin-top:18px;}
   .foot{margin-top:34px;text-align:center;font-size:11.5px;color:var(--mut);line-height:1.7;}
@@ -52,12 +54,19 @@
     <a class="brand" href="/esim"><img src="/voyo-logo.png" alt="VOYO"/><span>mobile</span></a>
     <span style="display:flex;align-items:center;gap:14px">
       <a class="shop" href="/esim">Купить ещё ›</a>
-      <a class="shop" href="/esim/logout" style="color:var(--mut)">Выйти</a>
+      <a class="shop" id="outLink" href="/esim/logout" style="color:var(--mut);display:none">Выйти</a>
     </span>
   </div>
 
   <div class="loading" id="loading">Загружаем ваши eSIM…</div>
-  <div class="dead" id="dead">Ссылка недействительна.<br/>Откройте её из письма — или напишите нам, пришлём новую.</div>
+  <div class="dead" id="dead">
+    <h1 style="margin:0 0 6px">Вход в кабинет</h1>
+    <div style="font-size:13.5px;margin-bottom:18px">Укажите почту, на которую покупали eSIM — пришлём ссылку для входа.</div>
+    <input id="lgEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"
+      style="width:100%;border:1px solid var(--line);border-radius:14px;padding:14px 15px;font:inherit;font-size:15.5px;margin-bottom:10px;text-align:left" />
+    <button class="btn" id="lgBtn" type="button" style="margin-top:0">Прислать ссылку</button>
+    <div id="lgMsg" style="font-size:13px;margin-top:12px;line-height:1.55"></div>
+  </div>
 
   <div id="main" style="display:none;">
     <h1>Мои eSIM</h1>
@@ -86,8 +95,9 @@
       var r = await fetch("/esim/api/account"+q);
       var j = await r.json();
       el("loading").style.display="none";
-      if(!r.ok || !j || !j.success){ el("dead").classList.add("on"); return; }
+      if(!r.ok || !j || !j.success){ el("dead").classList.add("on"); setTimeout(function(){ el("lgEmail").focus(); },100); return; }
       el("main").style.display="block";
+      el("outLink").style.display="inline";
       el("who").textContent = j.email;
       if(E || T){ try{ history.replaceState(null,"","/esim/account"); }catch(e){} }
       var host = el("list");
@@ -105,6 +115,23 @@
       });
     }catch(e){ el("loading").style.display="none"; el("dead").classList.add("on"); }
   })();
+
+  // ── вход по почте ──
+  el("lgBtn").addEventListener("click", async function(){
+    var m = el("lgMsg"), v = el("lgEmail").value.trim();
+    if(!/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(v)){ m.style.color="var(--red,#b0263a)"; m.textContent="Введите корректный email."; return; }
+    this.disabled=true; this.textContent="Отправляем…";
+    try{
+      await fetch("/esim/api/account/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:v})});
+      m.style.color="var(--mut)";
+      m.innerHTML = "Если на эту почту покупали eSIM — письмо со ссылкой уже отправлено.<br/>Проверьте входящие и папку «Спам».";
+      el("lgEmail").style.display="none"; this.style.display="none";
+    }catch(e){
+      m.style.color="var(--red,#b0263a)"; m.textContent="Не получилось, попробуйте ещё раз.";
+      this.disabled=false; this.textContent="Прислать ссылку";
+    }
+  });
+  el("lgEmail").addEventListener("keydown",function(e){ if(e.key==="Enter") el("lgBtn").click(); });
 })();
 </script>
 </body>

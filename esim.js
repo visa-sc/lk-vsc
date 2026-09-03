@@ -593,6 +593,37 @@ function mount(app, opts) {
     res.json({ success: true, email, esims: esimsOf(email) });
   });
 
+  // Вход в кабинет по email: клиент сменил телефон или потерял письмо.
+  // Пароля нет специально — лишний барьер на покупке; ключ это почта.
+  const _loginAt = new Map(); // антиспам: не чаще раза в минуту на адрес
+  app.post("/esim/api/account/login", (req, res) => {
+    const email = normEmail((req.body || {}).email);
+    if (!validEmail(email)) return res.status(400).json({ success: false, message: "Введите корректный email." });
+    const now = Date.now(), prev = _loginAt.get(email) || 0;
+    // Ответ всегда одинаковый — по нему нельзя проверить, есть ли у нас такой клиент
+    if (now - prev < 60000) return res.json({ success: true, sent: true });
+    _loginAt.set(email, now);
+    const mine = esimsOf(email);
+    if (mine.length && opts && opts.sendMail) {
+      const acc = BASE_URL + "/esim/account?e=" + encodeURIComponent(email) + "&t=" + signEmail(email);
+      opts.sendMail({
+        to: email,
+        subject: "VOYO mobile: вход в кабинет",
+        html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#16202e">' +
+          '<p style="font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px">Вход в кабинет VOYO mobile</p>' +
+          '<p style="color:#8b93a5;font-size:14px;line-height:1.6;margin:0 0 18px">У вас ' + mine.length +
+          ' eSIM. Нажмите кнопку — откроется кабинет с QR-кодами и остатком трафика.</p>' +
+          '<p style="margin:0 0 18px"><a href="' + acc + '" style="display:inline-block;background:#3589bd;color:#fff;' +
+          'text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:12px">Войти в кабинет</a></p>' +
+          '<p style="font-size:12.5px;line-height:1.6;color:#8b93a5;margin:0">Ссылка постоянная — сохраните письмо. ' +
+          'Если вход запрашивали не вы, просто удалите письмо.</p></div>',
+        text: "Вход в кабинет VOYO mobile\n\nУ вас " + mine.length + " eSIM.\nОткройте ссылку: " + acc +
+              "\n\nСсылка постоянная — сохраните письмо.",
+      }).catch((e) => console.error("esim login mail:", e.message));
+    }
+    res.json({ success: true, sent: true });
+  });
+
   // Кто я сейчас (для шапки страниц)
   app.get("/esim/api/session", (req, res) => {
     const email = readSession(req);
