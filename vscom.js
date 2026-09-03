@@ -193,6 +193,18 @@ async function pushToAmo(lead, deps) {
   return { contactId, leadId };
 }
 
+// Одна ручка принимает заявки с четырёх разных страниц — подписываем письмо
+// по источнику, иначе заявка с виз США приходит как «ВНЖ Испании».
+const MAIL_TITLES = {
+  "usa-ga":   ["Заявка с visa-sc.com/usa (визы США)", "visa-sc.com/usa: заявка"],
+  "spain-ga": ["Заявка с spain.visa-sc.com/ga (ВНЖ Испании)", "spain.visa-sc.com: заявка"],
+  "spain":    ["Заявка с spain.visa-sc.com (ВНЖ Испании)", "spain.visa-sc.com: заявка"],
+  "ga":       ["Заявка с visa-sc.com/ga (английский лендинг, ВНЖ Испании)", "visa-sc.com: заявка"]
+};
+function formTitles(form) {
+  return MAIL_TITLES[form] || ["Заявка с visa-sc.com (английский лендинг, ВНЖ Испании)", "visa-sc.com: заявка"];
+}
+
 // ── письмо-дубль ─────────────────────────────────────────────────────────────
 async function mailLead(lead, amo, deps) {
   const rows = leadRows(lead)
@@ -204,15 +216,16 @@ async function mailLead(lead, amo, deps) {
     : (AMO_ENABLED
         ? `<p style="margin:0 0 14px;color:#b8351a">В amoCRM сделка НЕ создана, обработайте вручную.</p>`
         : "");
+  const [heading, subjPrefix] = formTitles(lead.form);
   const html = `
     <div style="font-family:Arial,sans-serif;font-size:14px;color:#1b1f21">
-      <h2 style="margin:0 0 10px;font-size:18px">Заявка с visa-sc.com (английский лендинг, ВНЖ Испании)</h2>
+      <h2 style="margin:0 0 10px;font-size:18px">${esc(heading)}</h2>
       ${amoLine}
       <table style="border-collapse:collapse">${rows}</table>
     </div>`;
   const res = await deps.sendMail({
     to: LEADS_EMAIL,
-    subject: `visa-sc.com: заявка ${lead.phoneDisplay}${lead.name ? " — " + lead.name : ""}`,
+    subject: `${subjPrefix} ${lead.phoneDisplay}${lead.name ? " — " + lead.name : ""}`,
     html,
     text: leadRows(lead).map(([k, v]) => `${k}: ${v}`).join("\n")
   });
