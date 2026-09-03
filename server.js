@@ -6447,6 +6447,11 @@ const BUYOUTS_MERCH_RE = /TURKISH|ONETWOTRIP/i;
 // С июня 2026 движение ведём сами по банку (июнь перепроверен: банк == его строка
 // до копейки). Если Андрей пересверит месяцы — обновить массив и BUYOUTS_SEED_UPTO.
 const BUYOUTS_SEED_UPTO = "2026-05";
+// Месяцы, сверенные Андреем руками УЖЕ ПОСЛЕ сида — секция 2 блока выкупов
+// показывает по ним «✓ сверено вручную» вместо расхождения. Август 2026:
+// Δ −548 543 ₽ — августовские выкупы, проведённые банком позже; Андрей
+// 03.09.2026 подтвердил «всё сверено, всё сходится». Пересверит — убрать.
+const BUYOUTS_MANUAL_OK = ["2026-08"];
 const BUYOUTS_SEED = [
   { label: "Май 2023 – Декабрь 2024", deb: 149608178.92, cre: 143530513.17 },
   { ym: "2025-01", deb: 4311329.66, cre: 2876469.71 },
@@ -6659,7 +6664,7 @@ async function runBuyoutsCheck(trigger) {
 // Сводка сверки контактов (OnlinePBX + Flexbe против amoCRM) — блок в
 // «Ежемесячном контроле», только админ (как выкупы).
 app.get("/admin/api/vsc/recon-summary", requireAdmin, (req, res) => res.json(Object.assign({ success: true }, phoneTestMod.reconSummary())));
-app.get("/admin/api/vsc/buyouts", requireAdmin, (req, res) => res.json({ success: true, data: loadBuyouts(), running: _buyoutsRunning, configured: !!TBANK_TOKEN }));
+app.get("/admin/api/vsc/buyouts", requireAdmin, (req, res) => res.json({ success: true, data: loadBuyouts(), manualOk: BUYOUTS_MANUAL_OK, running: _buyoutsRunning, configured: !!TBANK_TOKEN }));
 app.post("/admin/api/vsc/buyouts/run", requireAdmin, (req, res) => {
   if (_buyoutsRunning) return res.json({ success: true, started: false, running: true });
   setImmediate(() => { Promise.resolve(runBuyoutsCheck("manual")).catch(() => {}); });

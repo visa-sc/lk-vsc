@@ -4543,6 +4543,7 @@
           // (договорённость с Андреем 06.08); сошёлся — уезжает в историю.
           const prevOk = (function () {
             if (prevYm <= (d.seedUpto || "2026-05")) return true;
+            if ((j.manualOk || []).indexOf(prevYm) >= 0) return true; // сверено руками — уезжает в историю
             const b = (d.bank || {})[prevYm], s = (d.sheet || {})[prevYm];
             if (!b && !s) return false;
             return Math.abs(((b || {}).deb || 0) - (((s || {}).deb) || 0)) <= 2000;
@@ -4569,7 +4570,7 @@
           const cmpHtml = cmpYms.map((ym) => {
             const recent = isRecent(ym);
             const trOpen = '<tr class="' + (recent ? "" : "buyoutsHist2") + '" style="border-top:1px solid #f0eef5;vertical-align:top;' + (recent ? "" : "display:none;") + '">';
-            if (ym <= seedUpto) {
+            if (ym <= seedUpto || (j.manualOk || []).indexOf(ym) >= 0) {
               return trOpen + td('<b style="color:#1d2330;">' + ymName(ym) + '</b>')
                 + '<td style="padding:5px 8px;color:#2c7a43;font-weight:600;">✓ сверено вручную — всё ок</td></tr>';
             }
