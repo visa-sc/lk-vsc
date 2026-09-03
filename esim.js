@@ -514,6 +514,12 @@ function mount(app, opts) {
       const [cat, rate] = await Promise.all([getCatalog(false), usdRate()]);
       const found = findProduct(cat, String(b.productId || ""));
       if (!found) return res.status(400).json({ success: false, message: "Пакет не найден." });
+      // Предохранитель на время обкатки: пока терминал тестовый, деньги с карт не
+      // списываются, а закупка у поставщика РЕАЛЬНАЯ — за пару кликов можно сжечь
+      // депозит. С ESIM_TEST_ONLY=1 покупаются только служебные пакеты ($0.01).
+      if (String(process.env.ESIM_TEST_ONLY || "") === "1" && Number(found.item.costUsd) > 0.01) {
+        return res.status(403).json({ success: false, message: "Идёт тестирование: доступны только служебные пакеты «Test 1 GB» и «Test 2 GB» (Германия и Италия)." });
+      }
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
       const priceRub = toRetailRub(found.item.costUsd, rate);
       const id = crypto.randomBytes(6).toString("hex");
