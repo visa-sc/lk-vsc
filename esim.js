@@ -209,6 +209,47 @@ function checkEmailSig(email, t) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 function validEmail(e) { return /^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(normEmail(e)); }
+
+// ── Сессия клиента: подписанная кука, чтобы email спрашивался один раз ──
+// Ставится, когда человек открывает свою ПОДПИСАННУЮ ссылку (из письма или
+// после оплаты). Отдельного пароля нет и не нужно: владение ссылкой и есть
+// доступ, а кука просто избавляет от повторного ввода почты.
+const SESS_COOKIE = "voyo_esim";
+const SESS_DAYS = 180;
+function sessValue(email) { return Buffer.from(normEmail(email)).toString("base64url") + "." + signEmail(email); }
+function setSession(res, email) {
+  if (!validEmail(email)) return;
+  try {
+    res.cookie(SESS_COOKIE, sessValue(email), {
+      maxAge: SESS_DAYS * 24 * 3600 * 1000, httpOnly: true, sameSite: "lax",
+      secure: BASE_URL.indexOf("https://") === 0, path: "/esim",
+    });
+  } catch (_) {}
+}
+function clearSession(res) { try { res.clearCookie(SESS_COOKIE, { path: "/esim" }); } catch (_) {} }
+function readSession(req) {
+  const raw = String((req.headers && req.headers.cookie) || "");
+  const m = new RegExp("(?:^|;\\s*)" + SESS_COOKIE + "=([^;]+)").exec(raw);
+  if (!m) return null;
+  const parts = decodeURIComponent(m[1]).split(".");
+  if (parts.length !== 2) return null;
+  let email;
+  try { email = Buffer.from(parts[0], "base64url").toString("utf8"); } catch (_) { return null; }
+  return validEmail(email) && checkEmailSig(email, parts[1]) ? normEmail(email) : null;
+}
+function emailOfProviderOrder(mmOrderId) {
+  const o = readJson(ORDERS_FILE, []).find((x) => x.status === "done" && (x.mmOrderId === mmOrderId || x.parentOrderId === mmOrderId));
+  return o && o.email ? o.email : null;
+}
+function esimsOf(email) {
+  return readJson(ORDERS_FILE, [])
+    .filter((o) => o.email === email && o.status === "done" && o.mmOrderId)
+    .map((o) => ({
+      label: o.label, ts: o.ts, priceRub: o.priceRub, topup: !!o.parentOrderId,
+      url: BASE_URL + "/esim/my?o=" + encodeURIComponent(o.parentOrderId || o.mmOrderId) +
+           "&t=" + signOrder(o.parentOrderId || o.mmOrderId),
+    }));
+}
 function checkSig(orderId, t) {
   const a = Buffer.from(signOrder(orderId)), b = Buffer.from(String(t || ""));
   return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -303,8 +344,10 @@ function mount(app, opts) {
         .filter((a) => a.familyId === familyId)
         .map((a) => ({ id: a.id, title: a.title, dataGb: a.dataGb, unlimited: !!a.unlimited, days: a.days, priceRub: toRetailRub(a.costUsd, rate) }))
         .sort((x, y) => x.priceRub - y.priceRub);
+      const owner = emailOfProviderOrder(o);
+      if (owner) setSession(res, owner);
       res.json({
-        success: true, pay: tbank.ready(),
+        success: true, pay: tbank.ready(), you: owner || readSession(req),
         order: {
           id: o, state: (order && order.orderState) || null, title: li.title || "", operator: li.providerName || "",
           qrDataUrl: det.QR_CODE || null, lpa: det.LOCAL_PROFILE_ASSISTANT || null,
@@ -462,7 +505,7 @@ function mount(app, opts) {
     const b = req.body || {};
     // Спрашиваем ТОЛЬКО email: на него уйдёт чек от онлайн-кассы (банк требует
     // контакт покупателя в чеке) и ссылка на личный кабинет с QR и остатком.
-    const email = normEmail(b.email);
+    const email = normEmail(b.email) || readSession(req);
     if (!validEmail(email)) return res.status(400).json({ success: false, message: "Нужен корректный email." });
     const phone = String(b.phone || "").trim().slice(0, 30) || null;
     const parentOrderId = b.parent ? String(b.parent).slice(0, 40) : null;
@@ -536,19 +579,21 @@ function mount(app, opts) {
     res.sendFile(path.join(__dirname, "public", "esim-account.html"));
   });
   app.get("/esim/api/account", (req, res) => {
-    const email = normEmail(req.query.e);
-    if (!validEmail(email) || !checkEmailSig(email, req.query.t)) return res.status(403).json({ success: false });
-    const mine = readJson(ORDERS_FILE, []).filter((o) => o.email === email && o.status === "done" && o.mmOrderId);
-    res.json({
-      success: true, email,
-      esims: mine.map((o) => ({
-        label: o.label, ts: o.ts, priceRub: o.priceRub,
-        url: BASE_URL + "/esim/my?o=" + encodeURIComponent(o.parentOrderId || o.mmOrderId) +
-             "&t=" + signOrder(o.parentOrderId || o.mmOrderId),
-        topup: !!o.parentOrderId,
-      })),
-    });
+    // Вход по подписанной ссылке из письма ИЛИ по уже открытой сессии
+    let email = normEmail(req.query.e);
+    if (email && checkEmailSig(email, req.query.t)) setSession(res, email);
+    else email = readSession(req);
+    if (!email) return res.status(403).json({ success: false });
+    res.json({ success: true, email, esims: esimsOf(email) });
   });
+
+  // Кто я сейчас (для шапки страниц)
+  app.get("/esim/api/session", (req, res) => {
+    const email = readSession(req);
+    res.json({ success: true, email, esims: email ? esimsOf(email) : [] });
+  });
+
+  app.get("/esim/logout", (req, res) => { clearSession(res); res.redirect("/esim"); });
 
   // Служебное: состояние провайдера и кошелька (для админки/сторожа депозита)
   app.get("/esim/api/health", async (req, res) => {

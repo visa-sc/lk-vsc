@@ -29,32 +29,56 @@
   .brand .wm{font-size:19px;font-weight:300;letter-spacing:.01em;line-height:1;
     background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
   .hdr a.shop{font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;}
+  .nav{display:flex;align-items:center;gap:14px;}
+  .nav a.out{font-size:13px;font-weight:600;color:var(--mut);text-decoration:none;}
+  .nav a.out:hover{color:var(--ink);}
 
   h1{font-size:26px;letter-spacing:-.03em;margin:10px 0 16px;font-weight:800;}
 
   /* ── карта eSIM ── */
-  .sim{background:linear-gradient(135deg,#265f81 0%,#3589bd 55%,#4fb3e0 120%);color:#fff;border-radius:24px;
-    padding:22px 22px 20px;box-shadow:0 16px 40px -14px rgba(38,95,129,.55);position:relative;overflow:hidden;}
-  .sim::after{content:"";position:absolute;right:-60px;top:-60px;width:200px;height:200px;background:rgba(255,255,255,.09);border-radius:50%;}
-  .sim .top{display:flex;justify-content:space-between;align-items:center;position:relative;z-index:1;}
-  .sim .bn{font-size:12px;font-weight:700;letter-spacing:.08em;opacity:.85;}
-  .st{font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.2);}
-  .st.ok{background:rgba(66,190,110,.35);}
-  .st.warn{background:rgba(255,205,80,.35);}
-  .st.bad{background:rgba(255,110,110,.4);}
-  .sim .bal{margin:18px 0 4px;position:relative;z-index:1;}
-  .sim .bal .v{font-size:44px;font-weight:800;letter-spacing:-.03em;line-height:1;}
-  .sim .bal .v small{font-size:17px;font-weight:600;opacity:.85;margin-left:6px;letter-spacing:0;}
-  .sim .bal .of{font-size:13.5px;opacity:.85;margin-top:5px;}
-  .sim .bar{height:8px;background:rgba(255,255,255,.25);border-radius:99px;overflow:hidden;margin-top:14px;position:relative;z-index:1;}
-  .sim .bar i{display:block;height:100%;background:#fff;border-radius:99px;transition:width .6s ease;}
-  .sim .term{font-size:12.5px;opacity:.9;margin-top:9px;position:relative;z-index:1;}
-  .sim .pk{font-size:12.5px;opacity:.8;margin-top:14px;position:relative;z-index:1;}
-  .sim .pk b{opacity:1;}
+  .sim{background:linear-gradient(135deg,#265f81 0%,#3589bd 55%,#4fb3e0 120%);color:#fff;border-radius:26px;
+    padding:22px 22px 20px;box-shadow:0 16px 40px -14px rgba(38,95,129,.55);position:relative;overflow:hidden;
+    transition:transform .28s cubic-bezier(.2,.9,.3,1),box-shadow .28s ease;}
+  .sim::after{content:"";position:absolute;right:-60px;top:-70px;width:220px;height:220px;
+    background:rgba(255,255,255,.10);border-radius:50%;transition:transform .5s cubic-bezier(.2,.9,.3,1);}
+  /* блик, проезжающий по карте при наведении */
+  .sim::before{content:"";position:absolute;top:0;bottom:0;width:45%;left:-60%;z-index:1;pointer-events:none;
+    background:linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.16),rgba(255,255,255,0));
+    transition:left .7s cubic-bezier(.3,.8,.3,1);}
+  .sim:hover{transform:translateY(-3px);box-shadow:0 24px 54px -16px rgba(38,95,129,.62);}
+  .sim:hover::after{transform:scale(1.14) translate(-6px,6px);}
+  .sim:hover::before{left:115%;}
+  .sim:active{transform:translateY(-1px);}
+  @media(prefers-reduced-motion:reduce){.sim,.sim::before,.sim::after{transition:none;}}
 
-  .refresh{display:block;margin:12px auto 0;font:inherit;font-size:12.5px;font-weight:600;color:var(--mut);
-    background:none;border:0;cursor:pointer;}
-  .refresh:hover{color:var(--accent);}
+  .sim .top{display:flex;justify-content:space-between;align-items:center;position:relative;z-index:2;}
+  .sim .bn{font-size:11.5px;font-weight:700;letter-spacing:.09em;opacity:.8;}
+  .refresh{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12px;font-weight:700;
+    color:#fff;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22);border-radius:999px;
+    padding:7px 13px 7px 11px;cursor:pointer;transition:background .18s ease,transform .18s ease;
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);}
+  .refresh:hover{background:rgba(255,255,255,.28);transform:translateY(-1px);}
+  .refresh:active{transform:scale(.96);}
+  .refresh svg{transition:transform .5s cubic-bezier(.3,.8,.3,1);}
+  .refresh:hover svg{transform:rotate(180deg);}
+  .refresh.spin svg{animation:rot .9s linear infinite;}
+  @keyframes rot{to{transform:rotate(360deg)}}
+
+  .sim .bal{margin:20px 0 2px;position:relative;z-index:2;}
+  .sim .bal .v{font-size:46px;font-weight:800;letter-spacing:-.035em;line-height:1;}
+  .sim .bal .v small{font-size:17px;font-weight:600;opacity:.82;margin-left:7px;letter-spacing:0;}
+  .sim .bal .of{font-size:13px;opacity:.8;margin-top:6px;}
+  .sim .bar{height:8px;background:rgba(255,255,255,.22);border-radius:99px;overflow:hidden;margin-top:15px;position:relative;z-index:2;}
+  .sim .bar i{display:block;height:100%;background:#fff;border-radius:99px;transition:width .8s cubic-bezier(.2,.9,.3,1);
+    box-shadow:0 0 12px rgba(255,255,255,.5);}
+  .sim .term{font-size:12.5px;opacity:.88;margin-top:10px;position:relative;z-index:2;}
+  .simfoot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px;
+    padding-top:14px;border-top:1px solid rgba(255,255,255,.16);position:relative;z-index:2;}
+  .simfoot .pkname{font-size:12.5px;opacity:.85;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .st{flex:none;font-size:11px;font-weight:700;padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.2);}
+  .st.ok{background:rgba(66,190,110,.4);}
+  .st.warn{background:rgba(255,205,80,.32);}
+  .st.bad{background:rgba(255,110,110,.42);}
 
   /* ── секции ── */
   .panel{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px 20px;box-shadow:var(--sh);margin-top:16px;}
@@ -109,7 +133,7 @@
 <div class="wrap">
   <div class="hdr">
     <a class="brand" href="/esim"><img class="lg" src="/voyo-logo.png" alt="VOYO"/><span class="wm">mobile</span></a>
-    <a class="shop" href="/esim">Купить ещё ›</a>
+    <span class="nav" id="nav"><a class="shop" href="/esim">Купить ещё ›</a></span>
   </div>
 
   <div class="loading" id="loading">Загружаем вашу eSIM…</div>
@@ -119,16 +143,21 @@
     <h1>Моя eSIM</h1>
 
     <div class="sim">
-      <div class="top"><span class="bn">VOYO mobile · eSIM</span><span class="st" id="stChip"></span></div>
+      <div class="top">
+        <span class="bn">VOYO MOBILE · eSIM</span>
+        <button class="refresh" id="refreshBtn" type="button">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Обновить
+        </button>
+      </div>
       <div class="bal">
         <div class="v" id="balV"></div>
         <div class="of" id="balOf"></div>
       </div>
       <div class="bar"><i id="bar" style="width:0%"></i></div>
       <div class="term" id="term"></div>
-      <div class="pk" id="pkInfo"></div>
+      <div class="simfoot"><span class="pkname" id="pkInfo"></span><span class="st" id="stChip"></span></div>
     </div>
-    <button class="refresh" id="refreshBtn" type="button">↻ Обновить остаток</button>
 
     <div class="panel" id="qrPanel" style="display:none;">
       <div id="qrOpenWrap">
@@ -152,7 +181,8 @@
       <div id="tpList"></div>
       <div class="tpform" id="tpForm">
         <div class="t" id="tpFormT"></div>
-        <label id="tpLb">Email — пришлём чек, трафик добавим сразу после оплаты</label>
+        <div id="tpLb2" style="display:none;font-size:12px;color:var(--mut);margin-bottom:10px;"></div>
+      <label id="tpLb">Email — пришлём чек, трафик добавим сразу после оплаты</label>
         <input id="tpPhone" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"/>
         <button class="buy" id="tpBuy" type="button">Оставить заявку</button>
         <div class="err" id="tpErr"></div>
@@ -183,7 +213,7 @@
   function fmtD(iso){ try{ return new Date(iso).toLocaleDateString("ru-RU",{day:"numeric",month:"long"}); }catch(e){ return ""; } }
   function plural(n,a){ n=Math.abs(n)%100; var n1=n%10; if(n>10&&n<20)return a[2]; if(n1>1&&n1<5)return a[1]; if(n1===1)return a[0]; return a[2]; }
 
-  var DATA=null, selTp=null, PAY=false;
+  var DATA=null, selTp=null, PAY=false, YOU=null;
 
   function render(j){
     var u = j.usage, o = j.order;
@@ -219,7 +249,7 @@
     } else {
       el("term").textContent = activated ? "" : "Пакет активируется при первом подключении в поездке";
     }
-    el("pkInfo").innerHTML = "<b>"+esc(o.title||"")+"</b>"+(o.operator?" · сеть "+esc(o.operator):"")+(o.iccid?"<br/>ICCID "+esc(o.iccid):"");
+    el("pkInfo").textContent = (o.title||"") + (o.operator ? " · " + o.operator : "");
     // QR
     if(o.qrDataUrl || o.lpa){
       el("qrPanel").style.display="block";
@@ -254,10 +284,16 @@
           el("tpFormT").textContent = "+ "+g+" за "+RU(t.priceRub)+" ₽";
           el("tpBuy").textContent = PAY ? ("Оплатить "+RU(t.priceRub)+" ₽") : "Оставить заявку";
           if(PAY) el("tpLb").textContent = "Email — пришлём чек и подтверждение";
+          // клиент уже в своём кабинете — почта известна, повторно не спрашиваем
+          var known = PAY && YOU;
+          el("tpLb").style.display = known ? "none" : "block";
+          el("tpPhone").style.display = known ? "none" : "block";
+          if(known) el("tpLb2").textContent = "Чек придёт на " + YOU;
+          el("tpLb2").style.display = known ? "block" : "none";
           el("tpForm").classList.add("on");
           el("tpOk").classList.remove("on");
           el("tpForm").scrollIntoView({behavior:"smooth",block:"center"});
-          el("tpPhone").focus();
+          if(!(PAY && YOU)) el("tpPhone").focus();
         });
         host.appendChild(row);
       });
@@ -274,7 +310,7 @@
 
   el("tpBuy").addEventListener("click", async function(){
     var err=el("tpErr"); err.classList.remove("on");
-    var phone = el("tpPhone").value.trim();
+    var phone = (PAY && YOU) ? YOU : el("tpPhone").value.trim();
     if(PAY && !/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(phone)){ err.textContent="Введите email."; err.classList.add("on"); return; }
     if(!PAY && phone.replace(/\D/g,"").length<10){ err.textContent="Введите телефон."; err.classList.add("on"); return; }
     if(!selTp) return;
@@ -304,17 +340,27 @@
     this.disabled=false; this.textContent="Оставить заявку";
   });
 
-  async function load(){
-    el("loading").style.display="block"; el("dead").classList.remove("on");
+  async function load(quiet){
+    if(!quiet){ el("loading").style.display="block"; }
+    el("dead").classList.remove("on");
     try{
       var r = await fetch("/esim/api/my?o="+encodeURIComponent(O)+"&t="+encodeURIComponent(T));
       var j = await r.json();
       el("loading").style.display="none";
       if(!r.ok || !j || !j.success){ el("dead").classList.add("on"); return; }
-      PAY=!!j.pay; DATA=j; render(j);
+      PAY=!!j.pay; DATA=j; YOU=j.you||null; render(j);
+      if(YOU){
+        el("nav").innerHTML = '<a class="shop" href="/esim/account">Мои eSIM</a>'+
+          '<a class="shop" href="/esim">Купить ещё ›</a>'+
+          '<a class="out" href="/esim/logout">Выйти</a>';
+      }
     }catch(e){ el("loading").style.display="none"; el("dead").classList.add("on"); }
   }
-  el("refreshBtn").addEventListener("click",function(){ el("main").style.display="none"; load(); });
+  el("refreshBtn").addEventListener("click", async function(){
+    this.classList.add("spin"); this.disabled=true;
+    await load(true);
+    this.classList.remove("spin"); this.disabled=false;
+  });
   if(!O || !T){ el("loading").style.display="none"; el("dead").classList.add("on"); }
   else load();
 })();

@@ -50,7 +50,10 @@
 <div class="wrap">
   <div class="hdr">
     <a class="brand" href="/esim"><img src="/voyo-logo.png" alt="VOYO"/><span>mobile</span></a>
-    <a class="shop" href="/esim">Купить ещё ›</a>
+    <span style="display:flex;align-items:center;gap:14px">
+      <a class="shop" href="/esim">Купить ещё ›</a>
+      <a class="shop" href="/esim/logout" style="color:var(--mut)">Выйти</a>
+    </span>
   </div>
 
   <div class="loading" id="loading">Загружаем ваши eSIM…</div>
@@ -77,14 +80,16 @@
   var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
 
   (async function(){
-    if(!E || !T){ el("loading").style.display="none"; el("dead").classList.add("on"); return; }
+    // Ссылка из письма (e+t) ИЛИ уже открытая сессия — параметры не обязательны
     try{
-      var r = await fetch("/esim/api/account?e="+encodeURIComponent(E)+"&t="+encodeURIComponent(T));
+      var q = (E && T) ? ("?e="+encodeURIComponent(E)+"&t="+encodeURIComponent(T)) : "";
+      var r = await fetch("/esim/api/account"+q);
       var j = await r.json();
       el("loading").style.display="none";
       if(!r.ok || !j || !j.success){ el("dead").classList.add("on"); return; }
       el("main").style.display="block";
       el("who").textContent = j.email;
+      if(E || T){ try{ history.replaceState(null,"","/esim/account"); }catch(e){} }
       var host = el("list");
       if(!(j.esims||[]).length){
         host.innerHTML = '<div class="empty">Здесь появятся ваши eSIM после первой покупки.</div>';
