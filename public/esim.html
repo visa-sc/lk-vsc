@@ -180,8 +180,8 @@
     border:0;background:transparent;border-radius:14px;padding:10px 12px;transition:background .15s ease;}
   .sortmenu button:hover{background:#f2f6fa;}
   .sortmenu .tx{flex:1;}
-  .sortmenu .t{font-size:14px;font-weight:600;color:var(--ink);letter-spacing:-.01em;}
-  .sortmenu .d{font-size:12px;color:var(--mut);margin-top:2px;line-height:1.4;}
+  .sortmenu .t{display:block;font-size:14px;font-weight:600;color:var(--ink);letter-spacing:-.01em;}
+  .sortmenu .d{display:block;font-size:12px;color:var(--mut);margin-top:3px;line-height:1.4;}
   .sortmenu .ck{flex:none;color:var(--accent);opacity:0;transition:opacity .15s ease;}
   .sortmenu button.on .ck{opacity:1;}
   .helpblk{margin-top:28px;padding:18px 20px;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:var(--sh);}
@@ -330,7 +330,7 @@
     <div class="sortbar" id="sortBar">
       <button class="sortbtn" id="sortBtn" type="button" aria-haspopup="true" aria-expanded="false">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M7 4v16m0 0-3.5-3.5M7 20l3.5-3.5"/><path d="M17 20V4m0 0-3.5 3.5M17 4l3.5 3.5"/></svg>
-        <span id="sortLbl">Выгодные</span>
+        <span id="sortLbl">Подешевле</span>
         <svg class="cv" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="m6 9 6 6 6-6"/></svg>
       </button>
       <div class="sortmenu" id="sortMenu" role="menu"></div>
@@ -469,11 +469,12 @@
 
   /* ── сортировка списка: выбор клиента, запоминаем в браузере ── */
   var SORTS = [
-    {k:"value", lbl:"Выгодные",    t:"Сначала выгодные",   d:"Лучшая цена за гигабайт"},
     {k:"price", lbl:"Подешевле",   t:"Сначала дешёвые",    d:"По цене пакета"},
+    {k:"value", lbl:"Выгодные",    t:"Сначала выгодные",   d:"Лучшая цена за гигабайт"},
     {k:"gb",    lbl:"Больше ГБ",   t:"Больше гигабайтов",  d:"Сначала объёмные пакеты"}
   ];
-  var sortBy = "value";
+  // По умолчанию — самые дешёвые: большой ценник первым отпугивает
+  var sortBy = "price";
   try{
     var sv = localStorage.getItem("voyo_esim_sort");
     if(sv && SORTS.some(function(x){ return x.k===sv; })) sortBy = sv;
