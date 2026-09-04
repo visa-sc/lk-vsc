@@ -159,7 +159,7 @@
 <div class="wrap">
   <div class="hdr">
     <a class="brand" href="/esim"><img class="lg" src="/voyo-logo.png" alt="VOYO"/><span class="wm">mobile</span></a>
-    <span class="nav" id="nav"><a class="shop" href="/esim">Купить ещё ›</a></span>
+    <span class="nav" id="nav"><a class="shop" href="/esim/account">Мои eSIM</a></span>
   </div>
 
   <div class="loading" id="loading">Загружаем вашу eSIM…</div>
@@ -222,12 +222,13 @@
       </div>
       <div class="ok" id="tpOk">Заявка принята! Менеджер VOYO свяжется в ближайшее время — после оплаты гигабайты добавятся на вашу eSIM автоматически.</div>
       <div class="mnote" id="tpNote">Онлайн-оплата картой подключается — пока продлеваем через менеджера за пару минут.</div>
+      <a class="buy" href="/esim" style="display:block;text-decoration:none;text-align:center;margin-top:14px">Купить ещё eSIM</a>
     </div>
 
     <div class="panel" id="noTp" style="display:none;">
       <h2>Нужно больше интернета?</h2>
       <div class="ps">Для этого тарифа продление недоступно — но можно за минуту купить ещё один пакет на эту же поездку.</div>
-      <a href="/esim"><button class="buy" type="button">Выбрать пакет ›</button></a>
+      <a href="/esim"><button class="buy" type="button">Купить ещё eSIM</button></a>
     </div>
   </div>
 
@@ -402,7 +403,6 @@
       PAY=!!j.pay; DATA=j; YOU=j.you||null; render(j);
       if(YOU){
         el("nav").innerHTML = '<a class="shop" href="/esim/account">Мои eSIM</a>'+
-          '<a class="shop" href="/esim">Купить ещё ›</a>'+
           '<a class="out" href="/esim/logout">Выйти</a>';
       }
     }catch(e){ el("loading").style.display="none"; el("dead").classList.add("on"); }
