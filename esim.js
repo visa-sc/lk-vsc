@@ -65,6 +65,15 @@ function readJson(f, dflt) { try { return JSON.parse(fs.readFileSync(f, "utf8"))
 function writeJson(f, d) { ensureDir(); try { fs.writeFileSync(f, JSON.stringify(d, null, 1), "utf8"); } catch (e) { console.error("esim write:", e.message); } }
 
 // ── округление розницы: вверх до ближайших …90 ──
+// Свой промокод «по себестоимости»: закупка у поставщика по курсу ЦБ плюс запас
+// на разницу курса конвертации и комиссия эквайринга — чтобы такая продажа
+// выходила в ноль, а не в минус.
+const FX_SPREAD = Number(process.env.ESIM_FX_SPREAD || 0.05);   // 5% на конвертацию
+const ACQ_FEE = Number(process.env.ESIM_ACQ_FEE || 0.015);      // 1,5% эквайринг
+function toCostRub(costUsd, usdRate) {
+  return Math.ceil(Number(costUsd) * usdRate * (1 + FX_SPREAD) * (1 + ACQ_FEE));
+}
+
 function toRetailRub(costUsd, usdRate) {
   const raw = costUsd * usdRate * MARKUP;
   const rounded = Math.ceil((raw + 10) / 100) * 100 - 10; // 1462→1490, 930→990
@@ -302,7 +311,7 @@ function checkPromo(code, listPrice, email) {
   const rub = p.pct
     ? Math.round((Number(listPrice) || 0) * Number(p.pct) / 100)
     : Math.max(0, Number(p.rub) || 0);
-  return { code, rub, pct: Number(p.pct) || 0, firstOnly: !!p.firstOnly };
+  return { code, rub, pct: Number(p.pct) || 0, firstOnly: !!p.firstOnly, cost: !!p.cost };
 }
 function usePromo(code) {
   code = String(code || "").trim().toUpperCase();
@@ -312,12 +321,16 @@ function usePromo(code) {
 
 // Единая калькуляция цены: список → промокод/реферал → списание баланса.
 // Скидки не складываются между собой (промокод ИЛИ реферальная), баланс — сверху.
-function priceWithDiscounts({ listPrice, email, promoCode, refCode, useBalance }) {
+function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, useBalance }) {
   const out = { listPrice, discountRub: 0, discountKind: null, promoCode: null, promoReason: null, refBy: null,
                 balanceRub: 0, balanceCanUse: 0, balanceUsed: 0, total: listPrice };
   const promo = checkPromo(promoCode, listPrice, email);
   out.promoReason = _promoReason;
-  if (promo && promo.rub > 0) {
+  if (promo && promo.cost && costRub != null) {
+    // Промокод «по себестоимости»: цена не скидывается на сумму, а становится равной закупке
+    out.discountRub = Math.max(0, listPrice - Math.max(MIN_PAY_RUB, costRub));
+    out.discountKind = "cost"; out.promoCode = promo.code;
+  } else if (promo && promo.rub > 0) {
     out.discountRub = promo.rub; out.discountKind = "promo"; out.promoCode = promo.code;
   } else if (refCode) {
     const inviter = customerByRef(refCode);
@@ -716,7 +729,8 @@ function mount(app, opts) {
       }
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
       const listPrice = toRetailRub(found.item.costUsd, rate);
-      const calc = priceWithDiscounts({ listPrice, email, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
+      const calc = priceWithDiscounts({ listPrice, costRub: toCostRub(found.item.costUsd, rate),
+        email, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const priceRub = calc.total;
       const id = crypto.randomBytes(6).toString("hex");
       const label = labelFor(found.item);
@@ -752,7 +766,8 @@ function mount(app, opts) {
       if (!found) return res.status(400).json({ success: false, message: "Пакет не найден." });
       const email = normEmail(b.email) || readSession(req) || "";
       const listPrice = toRetailRub(found.item.costUsd, rate);
-      const calc = priceWithDiscounts({ listPrice, email, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
+      const calc = priceWithDiscounts({ listPrice, costRub: toCostRub(found.item.costUsd, rate),
+        email, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const promoTried = String(b.promo || "").trim();
       res.json({
         success: true, listPrice, total: calc.total,
@@ -945,8 +960,9 @@ function mount(app, opts) {
     else {
       const pct = Math.max(0, Math.min(100, parseInt(b.pct, 10) || 0));
       all[code] = {
-        rub: pct ? 0 : Math.max(1, parseInt(b.rub, 10) || REF_BONUS_RUB),
-        pct: pct || 0, firstOnly: !!b.firstOnly, oncePerUser: b.oncePerUser !== false, active: true,
+        rub: (b.cost || pct) ? 0 : Math.max(1, parseInt(b.rub, 10) || REF_BONUS_RUB),
+        pct: b.cost ? 0 : (pct || 0), cost: !!b.cost,
+        firstOnly: !!b.firstOnly, oncePerUser: b.oncePerUser !== false, active: true,
         uses: (all[code] && all[code].uses) || 0,
         maxUses: parseInt(b.max, 10) || null,
         note: String(b.note || "").slice(0, 80), ts: (all[code] && all[code].ts) || Date.now(),

@@ -474,6 +474,7 @@
     return forms[2];
   }
   function nStran(n){ return n + " " + plural(n, ["страна","страны","стран"]); }
+  function vStranah(n){ return "в " + n + " " + (n % 10 === 1 && n % 100 !== 11 ? "стране" : "странах"); }
 
   // Регионы мира — чтобы список покрытия читался, а не был простынёй из 80 строк
   var REGIONS = [
@@ -679,8 +680,8 @@
       return { iso:iso, name:cname(iso), count:byCountry[iso].length };
     }).sort(function(a,b){ return a.name.localeCompare(b.name,"ru"); });
     // счётчик в кнопке и заголовке — честное число из каталога
-    allBtn.innerHTML = '<span class="fl">🌍</span>Все '+countryIndex.length+' стран';
-    document.getElementById("allTitle").textContent = "Все "+countryIndex.length+" стран — интернет есть везде";
+    allBtn.innerHTML = '<span class="fl">🌍</span>Все '+nStran(countryIndex.length);
+    document.getElementById("allTitle").textContent = "Все "+nStran(countryIndex.length)+" — интернет есть везде";
     var g=document.getElementById("allGrid"); g.innerHTML="";
     countryIndex.forEach(function(it){
       var n = el('<div class="ac"><span class="fl">'+flag(it.iso)+'</span><span class="n">'+esc(it.name)+'</span></div>');
@@ -723,7 +724,7 @@
     if(!multi) document.getElementById("mFlag").textContent = flag(p.countries[0]);
     else document.getElementById("mFlag").textContent = current && current!=="EU-REGION" ? flag(current) : "🌍";
     var gb = p.unlimited ? "Безлимит" : (RU(p.dataGb)+" ГБ");
-    var where = current && current!=="EU-REGION" ? cname(current) : (multi ? p.countries.length+" стран" : cname(p.countries[0]));
+    var where = current && current!=="EU-REGION" ? cname(current) : (multi ? nStran(p.countries.length) : cname(p.countries[0]));
     document.getElementById("mTitle").textContent = where + " · " + gb;
     document.getElementById("mSub").textContent = (p.title || "") + (p.operator ? " · сеть "+p.operator : "");
     document.getElementById("mSpecs").innerHTML =
@@ -783,7 +784,7 @@
       var box = document.getElementById("mSum"), rows = "";
       if(j.discountRub > 0 || j.balanceUsed > 0){
         rows += '<div class="l"><span>Пакет</span><span>'+RU(j.listPrice)+' ₽</span></div>';
-        if(j.discountRub > 0) rows += '<div class="l"><span>'+(j.discountKind==="ref"?"Скидка по приглашению":"Промокод")+'</span><span class="g">−'+RU(j.discountRub)+' ₽</span></div>';
+        if(j.discountRub > 0) rows += '<div class="l"><span>'+(j.discountKind==="ref"?"Скидка по приглашению":(j.discountKind==="cost"?"По себестоимости":"Промокод"))+'</span><span class="g">−'+RU(j.discountRub)+' ₽</span></div>';
         if(j.balanceUsed > 0) rows += '<div class="l"><span>Бонусами</span><span class="g">−'+RU(j.balanceUsed)+' ₽</span></div>';
         rows += '<div class="l"><span>К оплате</span><span>'+RU(j.total)+' ₽</span></div>';
         box.innerHTML = rows; box.classList.add("on");
@@ -833,7 +834,7 @@
       html += '<div class="rg"><div class="rt">Другие страны · '+left.length+'</div><div class="rl">'+
         esc(left.map(cname).sort(function(a,b){ return a.localeCompare(b,"ru"); }).join(", "))+'</div></div>';
     }
-    document.getElementById("covSub").textContent = "Пакет работает в " + nStran(p.countries.length) + " — интернет включится в любой из них.";
+    document.getElementById("covSub").textContent = "Пакет работает " + vStranah(p.countries.length) + " — интернет включится в любой из них.";
     document.getElementById("covBody").innerHTML = html;
     covOvl.classList.add("on");
   }
@@ -886,7 +887,7 @@
     try{
       var r = await fetch("/esim/api/order",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({productId:mP.id, phone:phone, priceRub:mP.priceRub,
-          label:(mP.countries.length>1?mP.countries.length+" стран":cname(mP.countries[0]))+" · "+(mP.unlimited?"безлимит":mP.dataGb+" ГБ")+" · "+mP.days+" дн."})});
+          label:(mP.countries.length>1?nStran(mP.countries.length):cname(mP.countries[0]))+" · "+(mP.unlimited?"безлимит":mP.dataGb+" ГБ")+" · "+mP.days+" дн."})});
       var j = await r.json();
       if(j && j.success){
         var ok=document.getElementById("mOk");
