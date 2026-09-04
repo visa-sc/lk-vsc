@@ -340,10 +340,27 @@ function mount(app, opts) {
       const det = {};
       (li.lineItemDetails || []).forEach((x) => { det[String(x.name || "").trim()] = x.value; });
       const familyId = String(li.productFamilyId || "");
-      const topups = (cat.addons || [])
-        .filter((a) => a.familyId === familyId)
-        .map((a) => ({ id: a.id, title: a.title, dataGb: a.dataGb, unlimited: !!a.unlimited, days: a.days, priceRub: toRetailRub(a.costUsd, rate) }))
-        .sort((x, y) => x.priceRub - y.priceRub);
+      // Список продлений у поставщика бывает диким: у одного пакета 258 вариантов
+      // с дублями («+1 ГБ на 14 дней» 14 раз) и немонотонными ценами. Причёсываем:
+      //  1) одинаковые «объём+срок» схлопываем в самый дешёвый;
+      //  2) выкидываем заведомо невыгодные — те, где за те же деньги есть больше ГБ;
+      //  3) сортируем от меньшего объёма к большему и показываем не больше 8.
+      const byKey = new Map();
+      (cat.addons || []).filter((a) => a.familyId === familyId).forEach((a) => {
+        const price = toRetailRub(a.costUsd, rate);
+        const key = (a.unlimited ? "inf" : a.dataGb) + "/" + a.days;
+        const prev = byKey.get(key);
+        if (!prev || price < prev.priceRub) {
+          byKey.set(key, { id: a.id, title: a.title, dataGb: a.dataGb, unlimited: !!a.unlimited, days: a.days, priceRub: price });
+        }
+      });
+      const vol = (t) => (t.unlimited ? 1e6 : Number(t.dataGb) || 0);
+      const uniq = Array.from(byKey.values());
+      const topups = uniq
+        .filter((t) => !uniq.some((o) => o !== t && o.priceRub <= t.priceRub && vol(o) >= vol(t) && (o.days || 0) >= (t.days || 0)
+                                          && (o.priceRub < t.priceRub || vol(o) > vol(t) || (o.days || 0) > (t.days || 0))))
+        .sort((x, y) => vol(x) - vol(y) || x.priceRub - y.priceRub)
+        .slice(0, 8);
       const owner = emailOfProviderOrder(o);
       if (owner) setSession(res, owner);
       res.json({
