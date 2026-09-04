@@ -38,6 +38,10 @@
   .brand .lg{height:19px;display:block;}
   .brand .wm{font-size:20px;font-weight:300;letter-spacing:.01em;line-height:1;
     background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .hdr .mine{display:inline-flex;align-items:center;gap:7px;text-decoration:none;font-size:13.5px;font-weight:600;
+    color:var(--accent-d);background:rgba(255,255,255,.8);border:1px solid var(--line);border-radius:999px;
+    padding:9px 15px;transition:all .16s ease;box-shadow:0 1px 2px rgba(16,24,40,.03);}
+  .hdr .mine:hover{border-color:#aed3ea;transform:translateY(-1px);box-shadow:0 8px 18px -10px rgba(53,137,189,.45);}
 
   /* ── герой ── */
   .hero{text-align:center;padding:52px 0 10px;}
@@ -207,6 +211,13 @@
     <a class="brand" href="/esim">
       <img class="lg" src="/voyo-logo.png" alt="VOYO" />
       <span class="wm">mobile</span>
+    </a>
+    <a class="mine" href="/esim/account">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex:none">
+        <rect x="6" y="2.5" width="12" height="19" rx="2.6" stroke="currentColor" stroke-width="2"/>
+        <path d="M10 18.5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      Мои eSIM
     </a>
   </div>
 
