@@ -235,8 +235,9 @@
   .specs .k{font-size:11px;color:var(--mut);margin-bottom:3px;font-weight:600;}
   .specs .v{font-size:15px;font-weight:700;letter-spacing:-.01em;}
   .cov{font-size:12.5px;color:var(--mut);line-height:1.6;margin:-6px 0 16px;}
-  .cov .more{color:var(--accent);font-weight:600;cursor:pointer;text-decoration:none;border-bottom:1px solid rgba(53,137,189,.35);}
-  .cov .more:hover{border-bottom-color:var(--accent);}
+  .cov .covlink{color:var(--accent);font-weight:600;cursor:pointer;text-decoration:none;
+    border-bottom:1px solid rgba(53,137,189,.4);}
+  .cov .covlink:hover{border-bottom-color:var(--accent);}
   /* Окно «где работает» — поверх карточки пакета, заметно меньше её */
   .covovl{position:fixed;inset:0;z-index:120;display:none;align-items:center;justify-content:center;padding:18px;
     background:rgba(18,28,42,.42);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
@@ -735,7 +736,7 @@
       var names = p.countries.slice(0,8).map(cname).join(", ");
       var rest = p.countries.length - 8;
       cov = '<b>Покрытие:</b> '+esc(names) +
-        (rest > 0 ? ' и ещё <a class="more" id="covMore" href="#">'+nStran(rest)+'</a>' : "") + ".";
+        (rest > 0 ? ' и ещё <a class="covlink" id="covMore" href="#">'+nStran(rest)+'</a>' : "") + ".";
     }
     document.getElementById("mCov").innerHTML = cov;
     var covMore = document.getElementById("covMore");
