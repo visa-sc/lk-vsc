@@ -458,7 +458,15 @@
     var j = await tpRecalc();
     this.disabled = false;
     if(j && j.promoOk){ msg.style.color="var(--green)"; msg.textContent="Промокод применён: −"+RU(j.discountRub)+" ₽"; }
-    else { msg.style.color="var(--red)"; msg.textContent="Такого промокода нет или он уже не действует."; TPPROMO=""; await tpRecalc(); }
+    else {
+      var why = {
+        not_found: "Такого промокода нет — проверьте написание.",
+        inactive: "Промокод больше не действует.",
+        limit: "Промокод исчерпан.",
+        first_only: "Промокод только для первой eSIM, а у вас уже есть купленные.",
+        used: "Вы уже пользовались этим промокодом."
+      }[j && j.promoReason] || "Промокод не подошёл.";
+      msg.style.color="var(--red)"; msg.textContent=why; TPPROMO=""; await tpRecalc(); }
   });
   el("tpPromo").addEventListener("keydown", function(e){ if(e.key==="Enter") el("tpPromoApply").click(); });
 

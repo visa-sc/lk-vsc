@@ -274,18 +274,22 @@ function hasOrders(email) {
 // ═══ Промокоды ═══
 // { "КОД": { rub: 100, active: true, maxUses: null, uses: 0, note: "" } }
 function loadPromos() { return readJson(PROMOS_FILE, {}); }
+// Возвращает скидку либо причину отказа — клиенту важно понимать, почему код не сработал
+let _promoReason = null;
 function checkPromo(code, listPrice, email) {
+  _promoReason = null;
   code = String(code || "").trim().toUpperCase();
   if (!code) return null;
   const p = loadPromos()[code];
-  if (!p || p.active === false) return null;
-  if (p.maxUses && (p.uses || 0) >= p.maxUses) return null;
+  if (!p) { _promoReason = "not_found"; return null; }
+  if (p.active === false) { _promoReason = "inactive"; return null; }
+  if (p.maxUses && (p.uses || 0) >= p.maxUses) { _promoReason = "limit"; return null; }
   // «Только на первую eSIM» — у клиента ещё не должно быть выданных заказов
-  if (p.firstOnly && email && hasOrders(email)) return null;
+  if (p.firstOnly && email && hasOrders(email)) { _promoReason = "first_only"; return null; }
   // «Один раз на клиента» — код уже засчитан этой почте
   if (p.oncePerUser !== false && email) {
     const c = getCustomer(email, false);
-    if (c && (c.usedPromos || []).indexOf(code) >= 0) return null;
+    if (c && (c.usedPromos || []).indexOf(code) >= 0) { _promoReason = "used"; return null; }
   }
   const rub = p.pct
     ? Math.round((Number(listPrice) || 0) * Number(p.pct) / 100)
@@ -301,9 +305,10 @@ function usePromo(code) {
 // Единая калькуляция цены: список → промокод/реферал → списание баланса.
 // Скидки не складываются между собой (промокод ИЛИ реферальная), баланс — сверху.
 function priceWithDiscounts({ listPrice, email, promoCode, refCode, useBalance }) {
-  const out = { listPrice, discountRub: 0, discountKind: null, promoCode: null, refBy: null,
+  const out = { listPrice, discountRub: 0, discountKind: null, promoCode: null, promoReason: null, refBy: null,
                 balanceRub: 0, balanceCanUse: 0, balanceUsed: 0, total: listPrice };
   const promo = checkPromo(promoCode, listPrice, email);
+  out.promoReason = _promoReason;
   if (promo && promo.rub > 0) {
     out.discountRub = promo.rub; out.discountKind = "promo"; out.promoCode = promo.code;
   } else if (refCode) {
@@ -732,6 +737,7 @@ function mount(app, opts) {
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         balanceRub: calc.balanceRub, balanceCanUse: calc.balanceCanUse, balanceUsed: calc.balanceUsed,
         promoOk: promoTried ? calc.discountKind === "promo" : null,
+        promoReason: calc.promoReason,
       });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
