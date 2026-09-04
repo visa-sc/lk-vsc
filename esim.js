@@ -37,6 +37,13 @@ const CATALOG_FILE = path.join(DIR, "catalog.json");
 const ORDERS_FILE = path.join(DIR, "orders.json");
 const CUSTOMERS_FILE = path.join(DIR, "customers.json"); // баланс и реф-коды клиентов
 const PROMOS_FILE = path.join(DIR, "promos.json");       // промокоды
+const NOTIFY_FILE = path.join(DIR, "notify.json");       // какие напоминания уже отправлены
+
+// Напоминания о продлении: чем ближе конец пакета, тем выше шанс, что клиент
+// докупит — но письмо каждого типа шлём ровно один раз на eSIM.
+const NOTIFY_DAYS_BEFORE = Number(process.env.ESIM_NOTIFY_DAYS || 2);   // за сколько дней до конца срока
+const NOTIFY_LOW_SHARE = Number(process.env.ESIM_NOTIFY_LOW || 0.2);    // остаток трафика ниже 20%
+const NOTIFY_EVERY_MS = Number(process.env.ESIM_NOTIFY_EVERY_H || 4) * 3600 * 1000;
 
 // Скидки: промокод и реферальная программа дают фиксированную сумму в рублях.
 // К оплате всегда остаётся не меньше MIN_PAY_RUB — иначе банку нечего проводить,
@@ -934,6 +941,112 @@ function mount(app, opts) {
     const orders = readJson(ORDERS_FILE, []);
     out.interest = orders.length;
     res.json(out);
+  });
+
+  // ═══ Напоминания клиентам: срок и остаток трафика ═══
+  // Раз в несколько часов спрашиваем у поставщика остаток по каждой выданной
+  // eSIM. Письмо каждого типа уходит один раз — отметки в .esim/notify.json.
+  function esimsToWatch() {
+    const orders = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.mmOrderId);
+    const byEsim = new Map();
+    // Идём от старых к новым, чтобы в карточке остался самый свежий email и ссылка
+    orders.slice().reverse().forEach((o) => {
+      const id = o.parentOrderId || o.mmOrderId;
+      byEsim.set(id, { esimId: id, email: o.email, label: o.label, myUrl: o.myUrl, productId: o.productId });
+    });
+    return Array.from(byEsim.values()).filter((x) => x.email && x.myUrl);
+  }
+
+  async function hasTopups(productId) {
+    try {
+      const cat = await getCatalog(false);
+      const main = (cat.products || []).find((x) => x.id === productId);
+      if (!main) return false;
+      return (cat.addons || []).some((a) => a.familyId === main.familyId);
+    } catch (_) { return false; }
+  }
+
+  function notifyLetter({ kind, item, left, total, days, canTopup }) {
+    const isData = kind === "lowData";
+    const cta = isData ? (canTopup ? "Докупить гигабайты" : "Купить ещё eSIM")
+                       : (canTopup ? "Продлить пакет" : "Купить новый пакет");
+    const link = canTopup ? item.myUrl : (BASE_URL + "/esim");
+    const title = isData
+      ? "Интернет почти закончился"
+      : (days <= 0 ? "Пакет заканчивается сегодня" : "Пакет заканчивается через " + days + " " + (days === 1 ? "день" : "дня"));
+    const body = isData
+      ? ("Осталось " + left + " из " + total + " — при активном интернете это меньше дня. " +
+         (canTopup ? "Гигабайты добавятся на эту же eSIM, переустанавливать ничего не нужно."
+                   : "На этом тарифе добавить трафик нельзя, но можно взять ещё один пакет."))
+      : ((days <= 0 ? "Сегодня последний день действия пакета. " : "Через " + days + " " + (days === 1 ? "день" : "дня") + " пакет перестанет работать. ") +
+         (canTopup ? "Продление продлит и срок, и трафик на этой же eSIM."
+                   : "На этом тарифе продление недоступно — если поездка продолжается, возьмите новый пакет."));
+    return {
+      subject: "VOYO mobile: " + (isData ? "интернет почти закончился" : title.toLowerCase()),
+      html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#16202e">' +
+        '<p style="font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px">' + esc(title) + '</p>' +
+        '<p style="color:#8b93a5;font-size:14px;line-height:1.6;margin:0 0 6px">' + esc(item.label || "") + '</p>' +
+        '<p style="font-size:14.5px;line-height:1.6;margin:0 0 18px">' + esc(body) + '</p>' +
+        '<p style="margin:0 0 18px"><a href="' + link + '" style="display:inline-block;background:#3589bd;color:#fff;' +
+        'text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:12px">' + cta + '</a></p>' +
+        '<p style="font-size:12.5px;color:#8b93a5;margin:0">Остаток и QR всегда здесь: <a href="' + item.myUrl + '" style="color:#3589bd">моя eSIM</a></p>' +
+        '<p style="font-size:12px;color:#a6adbd;margin:16px 0 0">VOYO mobile · интернет в поездке</p></div>',
+      text: title + "\n\n" + (item.label || "") + "\n" + body + "\n\n" + cta + ": " + link,
+    };
+  }
+
+  let _notifyRunning = false;
+  async function runNotifications() {
+    if (_notifyRunning || !provider.ready() || !(opts && opts.sendMail)) return;
+    _notifyRunning = true;
+    const sent = readJson(NOTIFY_FILE, {});
+    let mails = 0;
+    try {
+      for (const item of esimsToWatch()) {
+        const mark = sent[item.esimId] || {};
+        if (mark.expiry && mark.lowData) continue;          // по этой eSIM всё уже сказано
+        let usage = null;
+        try { usage = await provider.getUsage(item.esimId); } catch (_) { continue; }
+        const packs = (usage && usage.packages) || [];
+        if (!packs.length) continue;
+        const totalMb = packs.reduce((a, x) => a + x.totalMb, 0);
+        const leftMb = packs.reduce((a, x) => a + x.remainingMb, 0);
+        const activated = packs.some((x) => x.activatedAt);
+        let expiresAt = null;
+        packs.forEach((x) => { if (x.expiresAt && (!expiresAt || new Date(x.expiresAt) > new Date(expiresAt))) expiresAt = x.expiresAt; });
+        const daysLeft = expiresAt ? Math.ceil((new Date(expiresAt) - Date.now()) / 86400000) : null;
+        const gb = (mb) => (mb / 1024 >= 10 ? String(Math.round(mb / 1024)) : String(Math.round(mb / 102.4) / 10).replace(".", ",")) + " ГБ";
+
+        // 1) срок на исходе — считаем только по активированным, у остальных отсчёт ещё не пошёл
+        if (!mark.expiry && activated && daysLeft !== null && daysLeft <= NOTIFY_DAYS_BEFORE && daysLeft >= 0) {
+          const canTopup = await hasTopups(item.productId);
+          await opts.sendMail(Object.assign({ to: item.email },
+            notifyLetter({ kind: "expiry", item, days: daysLeft, canTopup }))).catch(() => {});
+          mark.expiry = Date.now(); mails++;
+        }
+        // 2) трафик на исходе
+        if (!mark.lowData && totalMb > 0 && leftMb / totalMb < NOTIFY_LOW_SHARE && (activated || leftMb < totalMb)) {
+          const canTopup = await hasTopups(item.productId);
+          await opts.sendMail(Object.assign({ to: item.email },
+            notifyLetter({ kind: "lowData", item, left: gb(leftMb), total: gb(totalMb), canTopup }))).catch(() => {});
+          mark.lowData = Date.now(); mails++;
+        }
+        if (mark.expiry || mark.lowData) sent[item.esimId] = mark;
+        await new Promise((r) => setTimeout(r, 400));       // не долбим API поставщика
+      }
+      writeJson(NOTIFY_FILE, sent);
+      if (mails) console.log("esim: напоминаний отправлено", mails);
+    } catch (e) { console.error("esim notify:", e.message); }
+    finally { _notifyRunning = false; }
+  }
+  setTimeout(() => { runNotifications(); }, 3 * 60 * 1000);
+  setInterval(() => { runNotifications(); }, NOTIFY_EVERY_MS);
+
+  // Ручной прогон и просмотр — для проверки
+  app.get("/esim/api/notify/run", async (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    await runNotifications();
+    res.json({ success: true, watched: esimsToWatch().length, sent: readJson(NOTIFY_FILE, {}) });
   });
 
   // Прогрев кэша каталога после старта (не блокируем запуск)
