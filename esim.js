@@ -35,6 +35,14 @@ const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
 const DIR = path.join(__dirname, ".esim");
 const CATALOG_FILE = path.join(DIR, "catalog.json");
 const ORDERS_FILE = path.join(DIR, "orders.json");
+const CUSTOMERS_FILE = path.join(DIR, "customers.json"); // баланс и реф-коды клиентов
+const PROMOS_FILE = path.join(DIR, "promos.json");       // промокоды
+
+// Скидки: промокод и реферальная программа дают фиксированную сумму в рублях.
+// К оплате всегда остаётся не меньше MIN_PAY_RUB — иначе банку нечего проводить,
+// а нам нечем подтвердить покупку и выбить чек.
+const REF_BONUS_RUB = Number(process.env.ESIM_REF_BONUS || 100);   // другу и пригласившему
+const MIN_PAY_RUB = Number(process.env.ESIM_MIN_PAY || 100);
 
 const MARKUP = Number(process.env.ESIM_MARKUP || 2.5);
 const MIN_RUB = Number(process.env.ESIM_MIN_RUB || 590);
@@ -209,6 +217,99 @@ function checkEmailSig(email, t) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 function validEmail(e) { return /^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(normEmail(e)); }
+
+// ═══ Клиенты: баланс в рублях и реферальный код ═══
+// Отдельный файл, чтобы заказы оставались журналом покупок, а деньги клиента —
+// самостоятельной сущностью с историей начислений и списаний.
+function loadCustomers() { return readJson(CUSTOMERS_FILE, {}); }
+function saveCustomers(d) { writeJson(CUSTOMERS_FILE, d); }
+// Код без похожих символов (0/O, 1/I) — его диктуют голосом и пишут от руки
+const REF_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function makeRefCode(email, all) {
+  const h = crypto.createHmac("sha256", LINK_SECRET).update("ref:" + email).digest();
+  for (let attempt = 0; attempt < 40; attempt++) {
+    let code = "";
+    for (let i = 0; i < 6; i++) code += REF_ALPHABET[h[(i + attempt * 6) % h.length] % REF_ALPHABET.length];
+    if (!Object.values(all).some((c) => c.refCode === code)) return code;
+  }
+  return crypto.randomBytes(4).toString("hex").toUpperCase();
+}
+function getCustomer(email, create) {
+  email = normEmail(email);
+  if (!validEmail(email)) return null;
+  const all = loadCustomers();
+  if (!all[email]) {
+    if (!create) return null;
+    all[email] = { email, refCode: makeRefCode(email, all), balanceRub: 0, invitedBy: null, ts: Date.now(), ledger: [] };
+    saveCustomers(all);
+  }
+  return all[email];
+}
+function updateCustomer(email, fn) {
+  email = normEmail(email);
+  const all = loadCustomers();
+  if (!all[email]) all[email] = { email, refCode: makeRefCode(email, all), balanceRub: 0, invitedBy: null, ts: Date.now(), ledger: [] };
+  fn(all[email]);
+  saveCustomers(all);
+  return all[email];
+}
+function addBalance(email, rub, note) {
+  return updateCustomer(email, (c) => {
+    c.balanceRub = Math.max(0, Math.round((c.balanceRub || 0) + rub));
+    c.ledger = [{ ts: Date.now(), rub: Math.round(rub), note: String(note || "").slice(0, 80) }].concat(c.ledger || []).slice(0, 100);
+  });
+}
+function customerByRef(code) {
+  code = String(code || "").trim().toUpperCase();
+  if (!code) return null;
+  return Object.values(loadCustomers()).find((c) => c.refCode === code) || null;
+}
+function hasOrders(email) {
+  email = normEmail(email);
+  return readJson(ORDERS_FILE, []).some((o) => o.email === email && (o.status === "done" || o.status === "fulfilling"));
+}
+
+// ═══ Промокоды ═══
+// { "КОД": { rub: 100, active: true, maxUses: null, uses: 0, note: "" } }
+function loadPromos() { return readJson(PROMOS_FILE, {}); }
+function checkPromo(code) {
+  code = String(code || "").trim().toUpperCase();
+  if (!code) return null;
+  const p = loadPromos()[code];
+  if (!p || p.active === false) return null;
+  if (p.maxUses && (p.uses || 0) >= p.maxUses) return null;
+  return { code, rub: Math.max(0, Number(p.rub) || 0) };
+}
+function usePromo(code) {
+  code = String(code || "").trim().toUpperCase();
+  const all = loadPromos();
+  if (all[code]) { all[code].uses = (all[code].uses || 0) + 1; writeJson(PROMOS_FILE, all); }
+}
+
+// Единая калькуляция цены: список → промокод/реферал → списание баланса.
+// Скидки не складываются между собой (промокод ИЛИ реферальная), баланс — сверху.
+function priceWithDiscounts({ listPrice, email, promoCode, refCode }) {
+  const out = { listPrice, discountRub: 0, discountKind: null, promoCode: null, refBy: null, balanceUsed: 0, total: listPrice };
+  const promo = checkPromo(promoCode);
+  if (promo && promo.rub > 0) {
+    out.discountRub = promo.rub; out.discountKind = "promo"; out.promoCode = promo.code;
+  } else if (refCode) {
+    const inviter = customerByRef(refCode);
+    // Реферальная скидка — только новому клиенту и не по своей же ссылке
+    if (inviter && normEmail(inviter.email) !== normEmail(email) && !hasOrders(email)) {
+      out.discountRub = REF_BONUS_RUB; out.discountKind = "ref"; out.refBy = inviter.email;
+    }
+  }
+  let afterDiscount = Math.max(MIN_PAY_RUB, listPrice - out.discountRub);
+  out.discountRub = listPrice - afterDiscount;          // если упёрлись в минимум — показываем честную скидку
+  const cust = getCustomer(email, false);
+  if (cust && cust.balanceRub > 0) {
+    out.balanceUsed = Math.min(cust.balanceRub, Math.max(0, afterDiscount - MIN_PAY_RUB));
+    afterDiscount -= out.balanceUsed;
+  }
+  out.total = afterDiscount;
+  return out;
+}
 
 // ── Сессия клиента: подписанная кука, чтобы email спрашивался один раз ──
 // Ставится, когда человек открывает свою ПОДПИСАННУЮ ссылку (из письма или
@@ -462,6 +563,29 @@ function mount(app, opts) {
                "&t=" + signOrder(o.parentOrderId || res.orderId),
       });
       saveLocal(g.orders);
+      // Деньги и бонусы проводим только после подтверждённой оплаты
+      try {
+        if (g.order.balanceUsed > 0) addBalance(g.order.email, -g.order.balanceUsed, "Оплата: " + (g.order.label || ""));
+        if (g.order.promoCode) usePromo(g.order.promoCode);
+        if (g.order.refBy) {
+          updateCustomer(g.order.email, (c) => { if (!c.invitedBy) c.invitedBy = g.order.refBy; });
+          addBalance(g.order.refBy, REF_BONUS_RUB, "Бонус за друга");
+          if (opts && opts.sendMail) {
+            const accInv = BASE_URL + "/esim/account?e=" + encodeURIComponent(g.order.refBy) + "&t=" + signEmail(g.order.refBy);
+            opts.sendMail({
+              to: g.order.refBy,
+              subject: "VOYO mobile: вам начислено " + REF_BONUS_RUB + " ₽ за друга",
+              html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#16202e">' +
+                '<p style="font-size:19px;font-weight:700;margin:0 0 6px">+' + REF_BONUS_RUB + ' ₽ на ваш баланс</p>' +
+                '<p style="color:#8b93a5;font-size:14px;line-height:1.6;margin:0 0 18px">Друг купил eSIM по вашей ссылке. Бонус спишется автоматически со следующей покупки.</p>' +
+                '<p style="margin:0"><a href="' + accInv + '" style="display:inline-block;background:#3589bd;color:#fff;text-decoration:none;' +
+                'font-weight:700;font-size:15px;padding:13px 22px;border-radius:12px">Открыть кабинет</a></p></div>',
+              text: "+" + REF_BONUS_RUB + " ₽ на ваш баланс — друг купил eSIM по вашей ссылке.\nКабинет: " + accInv,
+            }).catch(() => {});
+          }
+        }
+        getCustomer(g.order.email, true); // заводим карточку с реф-кодом покупателю
+      } catch (e) { console.error("esim bonuses:", e.message); }
       if (opts && opts.sendSms && g.order.phone) {
         opts.sendSms(g.order.phone, "VOYO mobile: ваша eSIM готова. QR и остаток трафика — " + g.order.myUrl)
           .catch((e) => console.error("esim sms:", e.message));
@@ -538,13 +662,17 @@ function mount(app, opts) {
         return res.status(403).json({ success: false, message: "Идёт тестирование: доступны только служебные пакеты «Test 1 GB» и «Test 2 GB» (Германия и Италия)." });
       }
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
-      const priceRub = toRetailRub(found.item.costUsd, rate);
+      const listPrice = toRetailRub(found.item.costUsd, rate);
+      const calc = priceWithDiscounts({ listPrice, email, promoCode: b.promo, refCode: b.ref });
+      const priceRub = calc.total;
       const id = crypto.randomBytes(6).toString("hex");
       const label = labelFor(found.item);
       const orders = readJson(ORDERS_FILE, []);
       orders.unshift({
         id, ts: Date.now(), status: "pending", productId: found.item.id, parentOrderId,
-        label, priceRub, phone, email,
+        label, priceRub, listPriceRub: listPrice, phone, email,
+        discountRub: calc.discountRub, discountKind: calc.discountKind,
+        promoCode: calc.promoCode, refBy: calc.refBy, balanceUsed: calc.balanceUsed,
       });
       saveLocal(orders);
       const pay = await tbank.init({
@@ -560,6 +688,26 @@ function mount(app, opts) {
       if (g) { g.order.paymentId = pay.paymentId; saveLocal(g.orders); }
       return res.json({ success: true, url: pay.url });
     } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
+  });
+
+  // Предрасчёт цены для витрины: проверка промокода, реф-скидки и баланса
+  app.post("/esim/api/price", async (req, res) => {
+    const b = req.body || {};
+    try {
+      const [cat, rate] = await Promise.all([getCatalog(false), usdRate()]);
+      const found = findProduct(cat, String(b.productId || ""));
+      if (!found) return res.status(400).json({ success: false, message: "Пакет не найден." });
+      const email = normEmail(b.email) || readSession(req) || "";
+      const listPrice = toRetailRub(found.item.costUsd, rate);
+      const calc = priceWithDiscounts({ listPrice, email, promoCode: b.promo, refCode: b.ref });
+      const promoTried = String(b.promo || "").trim();
+      res.json({
+        success: true, listPrice, total: calc.total,
+        discountRub: calc.discountRub, discountKind: calc.discountKind,
+        balanceUsed: calc.balanceUsed,
+        promoOk: promoTried ? calc.discountKind === "promo" : null,
+      });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
 
   // Вебхук банка. Отвечаем строкой OK — иначе Т-Банк будет повторять.
@@ -607,7 +755,17 @@ function mount(app, opts) {
     if (email && checkEmailSig(email, req.query.t)) setSession(res, email);
     else email = readSession(req);
     if (!email) return res.status(403).json({ success: false });
-    res.json({ success: true, email, esims: esimsOf(email) });
+    const c = getCustomer(email, true);
+    const invited = Object.values(loadCustomers()).filter((x) => normEmail(x.invitedBy || "") === email);
+    res.json({
+      success: true, email, esims: esimsOf(email),
+      balanceRub: c.balanceRub || 0,
+      refCode: c.refCode,
+      refLink: BASE_URL + "/esim?ref=" + c.refCode,
+      refBonus: REF_BONUS_RUB,
+      invitedCount: invited.length,
+      ledger: (c.ledger || []).slice(0, 10),
+    });
   });
 
   // Вход в кабинет по email: клиент сменил телефон или потерял письмо.
@@ -648,6 +806,40 @@ function mount(app, opts) {
   });
 
   app.get("/esim/logout", (req, res) => { clearSession(res); res.redirect("/esim"); });
+
+  // Промокоды: создать/выключить/посмотреть. Только с админ-кодом.
+  app.get("/esim/promo", (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).send("Нет доступа.");
+    const all = loadPromos();
+    const code = String(req.query.code || "").trim().toUpperCase();
+    if (code) {
+      if (String(req.query.off || "") === "1") {
+        if (all[code]) { all[code].active = false; writeJson(PROMOS_FILE, all); }
+      } else {
+        all[code] = {
+          rub: Math.max(0, parseInt(req.query.rub, 10) || REF_BONUS_RUB),
+          active: true, uses: (all[code] && all[code].uses) || 0,
+          maxUses: parseInt(req.query.max, 10) || null,
+          note: String(req.query.note || "").slice(0, 80), ts: Date.now(),
+        };
+        writeJson(PROMOS_FILE, all);
+      }
+    }
+    res.set("Content-Type", "text/html; charset=utf-8");
+    const rows = Object.entries(loadPromos()).map(([k, v]) =>
+      "<tr><td><b>" + esc(k) + "</b></td><td>" + v.rub + " ₽</td><td>" + (v.active === false ? "выключен" : "активен") +
+      "</td><td>" + (v.uses || 0) + (v.maxUses ? " / " + v.maxUses : "") + "</td><td>" + esc(v.note || "") + "</td></tr>").join("");
+    res.send('<meta name="viewport" content="width=device-width,initial-scale=1"/>' +
+      '<body style="font-family:-apple-system,sans-serif;padding:24px;line-height:1.6;max-width:760px;margin:0 auto">' +
+      "<h2>Промокоды VOYO mobile</h2>" +
+      '<table cellpadding="8" style="border-collapse:collapse;width:100%;font-size:14px">' +
+      "<tr style=\"text-align:left;color:#888\"><th>Код</th><th>Скидка</th><th>Статус</th><th>Использован</th><th>Заметка</th></tr>" +
+      (rows || '<tr><td colspan="5" style="color:#888">Пока нет ни одного</td></tr>') + "</table>" +
+      '<p style="color:#888;font-size:13px;margin-top:22px">Создать или изменить:<br/>' +
+      "<code>/esim/promo?adm=КОД&amp;code=VOYO100&amp;rub=100</code><br/>" +
+      "необязательно: <code>&amp;max=500</code> (лимит использований), <code>&amp;note=текст</code><br/>" +
+      "Выключить: <code>/esim/promo?adm=КОД&amp;code=VOYO100&amp;off=1</code></p></body>");
+  });
 
   // Служебное: состояние провайдера и кошелька (для админки/сторожа депозита)
   app.get("/esim/api/health", async (req, res) => {

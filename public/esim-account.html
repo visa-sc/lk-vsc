@@ -63,6 +63,20 @@
   .help-btn:hover{color:var(--accent);border-color:#c6dceb;transform:translateY(-1px);}
   .help-btn .help-icon{width:14px;height:14px;flex:0 0 14px;}
   @media(max-width:560px){.help-actions{grid-template-columns:1fr;}}
+  /* ── бонусы и приглашения ── */
+  .bonus{background:linear-gradient(135deg,#265f81 0%,#3589bd 55%,#4fb3e0 120%);color:#fff;border-radius:24px;
+    padding:20px 22px;box-shadow:0 16px 40px -14px rgba(38,95,129,.5);position:relative;overflow:hidden;margin-bottom:16px;}
+  .bonus::after{content:"";position:absolute;right:-60px;top:-70px;width:210px;height:210px;
+    background:rgba(255,255,255,.10);border-radius:50%;}
+  .bonus .bt{font-size:11.5px;font-weight:700;letter-spacing:.09em;opacity:.8;position:relative;z-index:1;}
+  .bonus .bv{font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;margin:10px 0 4px;position:relative;z-index:1;}
+  .bonus .bs{font-size:13px;opacity:.85;position:relative;z-index:1;line-height:1.5;}
+  .reflink{display:flex;gap:8px;margin-top:16px;position:relative;z-index:1;}
+  .reflink input{flex:1;min-width:0;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.16);
+    color:#fff;border-radius:12px;padding:11px 13px;font:inherit;font-size:12.5px;}
+  .reflink button{font:inherit;font-size:13px;font-weight:700;border:0;background:#fff;color:var(--accent-d,#2c6f96);
+    border-radius:12px;padding:0 16px;cursor:pointer;white-space:nowrap;}
+  .refstat{font-size:12.5px;opacity:.85;margin-top:11px;position:relative;z-index:1;}
   .foot{margin-top:34px;text-align:center;font-size:11.5px;color:var(--mut);line-height:1.7;}
 </style>
 </head>
@@ -87,6 +101,13 @@
   <div id="main" style="display:none;">
     <h1>Мои eSIM</h1>
     <div class="who" id="who"></div>
+    <div class="bonus" id="bonusBox" style="display:none">
+      <div class="bt">БОНУСЫ VOYO</div>
+      <div class="bv" id="bonusV">0 ₽</div>
+      <div class="bs" id="bonusS"></div>
+      <div class="reflink"><input id="refInp" readonly/><button id="refCopy" type="button">Копировать</button></div>
+      <div class="refstat" id="refStat"></div>
+    </div>
     <div id="list"></div>
     <a class="btn" href="/esim">Купить ещё eSIM</a>
   </div>
@@ -133,6 +154,16 @@
       el("main").style.display="block";
       el("outLink").style.display="inline";
       el("who").textContent = j.email;
+      // Бонусы и приглашение друзей
+      el("bonusBox").style.display = "block";
+      el("bonusV").textContent = RU(j.balanceRub || 0) + " ₽";
+      el("bonusS").innerHTML = (j.balanceRub > 0)
+        ? "Спишутся автоматически со следующей покупки."
+        : "Приглашайте друзей: другу " + RU(j.refBonus) + " ₽ скидки на первую eSIM, вам " + RU(j.refBonus) + " ₽ на баланс.";
+      el("refInp").value = j.refLink || "";
+      el("refStat").textContent = j.invitedCount
+        ? ("По вашей ссылке купили: " + j.invitedCount)
+        : ("Ваш код: " + (j.refCode || ""));
       if(E || T){ try{ history.replaceState(null,"","/esim/account"); }catch(e){} }
       var host = el("list");
       if(!(j.esims||[]).length){
@@ -151,6 +182,13 @@
   })();
 
   // ── вход по почте ──
+  el("refCopy").addEventListener("click", function(){
+    var i = el("refInp"); i.select();
+    var b = this;
+    try{ navigator.clipboard.writeText(i.value); }catch(e){ try{ document.execCommand("copy"); }catch(e2){} }
+    b.textContent = "Скопировано"; setTimeout(function(){ b.textContent = "Копировать"; }, 1600);
+  });
+
   el("lgBtn").addEventListener("click", async function(){
     var m = el("lgMsg"), v = el("lgEmail").value.trim();
     if(!/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(v)){ m.style.color="var(--red,#b0263a)"; m.textContent="Введите корректный email."; return; }

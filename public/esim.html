@@ -204,6 +204,25 @@
   .phonewrap label{font-size:12.5px;color:var(--mut);display:block;margin-bottom:7px;}
   .phonewrap input{width:100%;border:1px solid var(--line);border-radius:14px;padding:14px 15px;font:inherit;font-size:15.5px;}
   .phonewrap input:focus{outline:none;border-color:#9fcbe6;box-shadow:0 0 0 4px rgba(53,137,189,.12);}
+  /* ── промокод и итог со скидкой ── */
+  .promo{margin-bottom:12px;}
+  .promo .toggle{font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;display:inline-block;}
+  .promo .body{display:none;margin-top:9px;}
+  .promo .body.on{display:block;}
+  .promo .row{display:flex;gap:8px;}
+  .promo input{flex:1;min-width:0;border:1px solid var(--line);border-radius:12px;padding:12px 13px;font:inherit;
+    font-size:15px;text-transform:uppercase;}
+  .promo input:focus{outline:none;border-color:#9fcbe6;box-shadow:0 0 0 4px rgba(53,137,189,.12);}
+  .promo button{font:inherit;font-size:14px;font-weight:600;border:0;background:#eef4f9;color:var(--accent-d);
+    border-radius:12px;padding:0 16px;cursor:pointer;white-space:nowrap;}
+  .promo .msg{font-size:12.5px;margin-top:7px;line-height:1.5;}
+  .sumbox{background:#f6f9fc;border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px;
+    font-size:13.5px;display:none;}
+  .sumbox.on{display:block;}
+  .sumbox .l{display:flex;justify-content:space-between;gap:10px;margin-bottom:5px;color:var(--mut);}
+  .sumbox .l:last-child{margin-bottom:0;padding-top:7px;border-top:1px solid var(--line);color:var(--ink);
+    font-weight:800;font-size:15px;}
+  .sumbox .l .g{color:var(--green);}
   .mnote{font-size:12px;color:var(--mut);text-align:center;margin-top:12px;line-height:1.55;}
   .ok{background:#e9f6ee;border:1px solid #cfe9d8;color:var(--green);border-radius:14px;padding:13px 15px;font-size:14px;
     line-height:1.5;display:none;margin-bottom:8px;}
@@ -304,6 +323,17 @@
       <div class="st"><div class="n">3</div><div>В поездке включите «Роуминг данных» для линии eSIM — интернет заработает сам.</div></div>
     </div>
     <div class="ok" id="mOk"></div>
+    <div class="promo" id="mPromoWrap" style="display:none">
+      <span class="toggle" id="mPromoToggle">У меня есть промокод</span>
+      <div class="body" id="mPromoBody">
+        <div class="row">
+          <input id="mPromo" type="text" placeholder="Промокод" autocomplete="off" />
+          <button id="mPromoApply" type="button">Применить</button>
+        </div>
+        <div class="msg" id="mPromoMsg"></div>
+      </div>
+    </div>
+    <div class="sumbox" id="mSum"></div>
     <div class="phonewrap" id="mPhoneWrap">
       <label id="mPhoneLb">Email — пришлём чек и доступ к вашей eSIM</label>
       <input id="mPhone" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" />
@@ -321,6 +351,15 @@
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
   function el(html){ var t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstChild; }
   var ADM = new URLSearchParams(location.search).get("adm") || "";
+  // Реферальная метка живёт в браузере: клиент пришёл по ссылке друга сегодня,
+  // а покупает через два дня — метка должна дожить до оплаты.
+  var REF = "";
+  try{
+    var urlRef = new URLSearchParams(location.search).get("ref");
+    if(urlRef){ localStorage.setItem("voyo_esim_ref", urlRef.toUpperCase()); history.replaceState(null,"",location.pathname); }
+    REF = localStorage.getItem("voyo_esim_ref") || "";
+  }catch(e){}
+  var PROMO = "";
 
   var dn; try{ dn = new Intl.DisplayNames(["ru"],{type:"region"}); }catch(e){ dn = null; }
   var SHORT = {US:"США", GB:"Великобритания", AE:"ОАЭ", KR:"Южная Корея", CZ:"Чехия"};
@@ -527,6 +566,13 @@
     mBuy.disabled=false;
     mBuy.textContent = "Купить — "+RU(p.priceRub)+" ₽";
     mBuy.dataset.step="1";
+    PROMO = "";
+    document.getElementById("mPromo").value = "";
+    document.getElementById("mPromoMsg").textContent = "";
+    document.getElementById("mPromoBody").classList.remove("on");
+    document.getElementById("mSum").classList.remove("on");
+    document.getElementById("mPromoWrap").style.display = PAY ? "block" : "none";
+    if(PAY && REF) recalc();
     if(PAY){
       document.getElementById("mPhoneLb").textContent = "Email — пришлём чек и доступ к вашей eSIM";
       document.getElementById("mNote").textContent = "Оплата картой в рублях через Т-Банк. Сразу после оплаты придёт QR-код.";
@@ -534,6 +580,43 @@
     ovl.classList.add("on");
     document.body.style.overflow="hidden";
   }
+  // Пересчёт суммы: промокод, реферальная скидка и списание бонусов считает сервер
+  async function recalc(){
+    if(!mP || !PAY) return null;
+    try{
+      var r = await fetch("/esim/api/price",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({productId:mP.id, promo:PROMO, ref:REF, email:(document.getElementById("mPhone").value||"").trim()})});
+      var j = await r.json();
+      if(!j || !j.success) return null;
+      var box = document.getElementById("mSum"), rows = "";
+      if(j.discountRub > 0 || j.balanceUsed > 0){
+        rows += '<div class="l"><span>Пакет</span><span>'+RU(j.listPrice)+' ₽</span></div>';
+        if(j.discountRub > 0) rows += '<div class="l"><span>'+(j.discountKind==="ref"?"Скидка по приглашению":"Промокод")+'</span><span class="g">−'+RU(j.discountRub)+' ₽</span></div>';
+        if(j.balanceUsed > 0) rows += '<div class="l"><span>Списано бонусами</span><span class="g">−'+RU(j.balanceUsed)+' ₽</span></div>';
+        rows += '<div class="l"><span>К оплате</span><span>'+RU(j.total)+' ₽</span></div>';
+        box.innerHTML = rows; box.classList.add("on");
+      } else { box.classList.remove("on"); }
+      if(mBuy.dataset.step==="2") mBuy.textContent = "Оплатить "+RU(j.total)+" ₽";
+      else mBuy.textContent = "Купить — "+RU(j.total)+" ₽";
+      return j;
+    }catch(e){ return null; }
+  }
+  document.getElementById("mPromoToggle").addEventListener("click",function(){
+    document.getElementById("mPromoBody").classList.toggle("on");
+    document.getElementById("mPromo").focus();
+  });
+  document.getElementById("mPromoApply").addEventListener("click", async function(){
+    var msg = document.getElementById("mPromoMsg");
+    PROMO = document.getElementById("mPromo").value.trim().toUpperCase();
+    if(!PROMO){ msg.textContent=""; await recalc(); return; }
+    this.disabled=true;
+    var j = await recalc();
+    this.disabled=false;
+    if(j && j.promoOk){ msg.style.color="var(--green)"; msg.textContent="Промокод применён: −"+RU(j.discountRub)+" ₽"; }
+    else { msg.style.color="var(--red)"; msg.textContent="Такого промокода нет или он уже не действует."; PROMO=""; await recalc(); }
+  });
+  document.getElementById("mPromo").addEventListener("keydown",function(e){ if(e.key==="Enter") document.getElementById("mPromoApply").click(); });
+
   function closeModal(){ ovl.classList.remove("on"); document.body.style.overflow=""; }
   document.getElementById("mClose").addEventListener("click",closeModal);
   ovl.addEventListener("click",function(e){ if(e.target===ovl) closeModal(); });
@@ -546,6 +629,7 @@
       document.getElementById("mPhone").focus();
       mBuy.textContent = PAY ? ("Оплатить "+RU(mP.priceRub)+" ₽") : "Оставить заявку";
       mBuy.dataset.step="2";
+      if(PAY) recalc();
       return;
     }
     var phone = document.getElementById("mPhone").value.trim();
@@ -555,7 +639,7 @@
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:mP.id, email:phone})});
+          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){ location.href = pj.url; return; }
         throw new Error((pj&&pj.message)||"Ошибка");

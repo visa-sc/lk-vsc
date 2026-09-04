@@ -51,7 +51,7 @@
   .sim:active{transform:translateY(-1px);}
   @media(prefers-reduced-motion:reduce){.sim,.sim::before,.sim::after{transition:none;}}
 
-  .sim .top{display:flex;justify-content:space-between;align-items:center;position:relative;z-index:2;}
+  .sim .top{display:flex;justify-content:flex-end;align-items:center;position:relative;z-index:2;}
   .sim .bn{font-size:11.5px;font-weight:700;letter-spacing:.09em;opacity:.8;}
   .refresh{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12px;font-weight:700;
     color:#fff;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22);border-radius:999px;
@@ -64,10 +64,10 @@
   .refresh.spin svg{animation:rot .9s linear infinite;}
   @keyframes rot{to{transform:rotate(360deg)}}
 
-  .sim .bal{margin:20px 0 2px;position:relative;z-index:2;}
-  .sim .bal .v{font-size:46px;font-weight:800;letter-spacing:-.035em;line-height:1;}
-  .sim .bal .v small{font-size:17px;font-weight:600;opacity:.82;margin-left:7px;letter-spacing:0;}
-  .sim .bal .of{font-size:13px;opacity:.8;margin-top:6px;}
+  .sim .bal{margin:6px 0 2px;position:relative;z-index:2;}
+  .sim .bal .v{font-size:60px;font-weight:800;letter-spacing:-.04em;line-height:1;}
+  .sim .bal .v small{font-size:22px;font-weight:600;opacity:.85;margin-left:8px;letter-spacing:0;}
+  .sim .bal .of{font-size:15px;opacity:.85;margin-top:9px;}
   .sim .bar{height:8px;background:rgba(255,255,255,.22);border-radius:99px;overflow:hidden;margin-top:15px;position:relative;z-index:2;}
   .sim .bar i{display:block;height:100%;background:#fff;border-radius:99px;transition:width .8s cubic-bezier(.2,.9,.3,1);
     box-shadow:0 0 12px rgba(255,255,255,.5);}
@@ -106,13 +106,18 @@
   details.qr summary::-webkit-details-marker{display:none;}
 
   /* ── топапы ── */
-  .tp{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);
-    border-radius:16px;padding:13px 15px;margin-bottom:9px;cursor:pointer;transition:all .15s ease;background:#fff;}
-  .tp:hover{border-color:#aed3ea;box-shadow:0 10px 24px -14px rgba(53,137,189,.4);transform:translateY(-1px);}
-  .tp .l .g{font-size:17px;font-weight:800;letter-spacing:-.01em;}
-  .tp .l .d{font-size:12px;color:var(--mut);margin-top:2px;}
-  .tp .p{font-size:16px;font-weight:800;white-space:nowrap;}
-  .tp .p small{display:block;font-size:11px;font-weight:600;color:var(--accent);text-align:right;margin-top:2px;}
+  .tp{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #d9ebf7;
+    border-radius:18px;padding:14px 14px 14px 17px;margin-bottom:10px;cursor:pointer;background:linear-gradient(135deg,#f2f9fd,#e9f4fb);
+    transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease;}
+  .tp:hover{border-color:#a9d3ec;box-shadow:0 12px 26px -14px rgba(53,137,189,.5);transform:translateY(-2px);}
+  .tp:active{transform:translateY(0);}
+  .tp .l{min-width:0;}
+  .tp .l .g{font-size:18px;font-weight:800;letter-spacing:-.015em;}
+  .tp .l .d{font-size:12.5px;color:var(--mut);margin-top:2px;}
+  .tp .r{display:flex;align-items:center;gap:12px;flex:none;}
+  .tp .p{font-size:17px;font-weight:800;white-space:nowrap;letter-spacing:-.01em;}
+  .tp .go{font:inherit;font-size:14px;font-weight:700;color:#fff;background:var(--grad);border:0;border-radius:12px;
+    padding:11px 18px;white-space:nowrap;box-shadow:0 10px 20px -10px rgba(53,137,189,.85);pointer-events:none;}
   .tpform{border:1px solid #ddedf7;background:#f4f9fd;border-radius:16px;padding:14px 15px;margin-top:6px;display:none;}
   .tpform.on{display:block;}
   .tpform .t{font-size:13.5px;font-weight:700;margin-bottom:8px;}
@@ -170,7 +175,6 @@
 
     <div class="sim">
       <div class="top">
-        <span class="bn">VOYO MOBILE · eSIM</span>
         <button class="refresh" id="refreshBtn" type="button">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Обновить
@@ -198,7 +202,7 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 11V6.5a1.8 1.8 0 1 1 3.6 0V11m0-1.6a1.7 1.7 0 0 1 3.4 0V12m0-1a1.7 1.7 0 0 1 3.4 0v4.6c0 3.2-2.3 5.9-5.6 5.9-2.2 0-3.6-.9-4.7-2.4l-3-4.3a1.8 1.8 0 0 1 2.7-2.3L9 14.2" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
         <span class="tx"><b>Проще всего на iPhone</b>
-          Нажмите на QR-код выше и <b style="display:inline;text-transform:none;letter-spacing:0;font-size:13.5px">удерживайте</b> — снизу появится пункт «Добавить eSIM». Второй телефон не нужен.</span>
+          Нажмите на QR-код выше и <b style="display:inline;text-transform:none;letter-spacing:0;font-size:13.5px">удерживайте</b> — снизу появится пункт «Добавить eSIM».</span>
       </div>
         <div class="steps">
           <div class="st2"><div class="n">1</div><div>Или обычным путём: Настройки → Сотовая связь → Добавить eSIM → сканировать этот QR с другого телефона. На Android так же, либо вставьте строку выше вручную.</div></div>
@@ -222,13 +226,17 @@
       </div>
       <div class="ok" id="tpOk">Заявка принята! Менеджер VOYO свяжется в ближайшее время — после оплаты гигабайты добавятся на вашу eSIM автоматически.</div>
       <div class="mnote" id="tpNote">Онлайн-оплата картой подключается — пока продлеваем через менеджера за пару минут.</div>
-      <a class="buy" href="/esim" style="display:block;text-decoration:none;text-align:center;margin-top:14px">Купить ещё eSIM</a>
+    </div>
+
+    <div class="panel" id="another">
+      <h2>Нужна eSIM для другой страны?</h2>
+      <div class="ps">Эта работает только там, где куплена. Для новой поездки возьмите отдельный пакет.</div>
+      <a class="buy" href="/esim" style="display:block;text-decoration:none;text-align:center">Купить другую eSIM</a>
     </div>
 
     <div class="panel" id="noTp" style="display:none;">
-      <h2>Нужно больше интернета?</h2>
-      <div class="ps">Для этого тарифа продление недоступно — но можно за минуту купить ещё один пакет на эту же поездку.</div>
-      <a href="/esim"><button class="buy" type="button">Купить ещё eSIM</button></a>
+      <h2>Продление недоступно</h2>
+      <div class="ps">У этого тарифа поставщик не даёт добавить гигабайты. Если интернет закончится — возьмите ещё один пакет кнопкой ниже.</div>
     </div>
   </div>
 
@@ -330,7 +338,7 @@
         var g = t.unlimited ? "Безлимит" : (RU(t.dataGb)+" ГБ");
         var row = document.createElement("div"); row.className="tp";
         row.innerHTML = '<div class="l"><div class="g">+ '+esc(g)+'</div><div class="d">'+(t.days?("на "+RU(t.days)+" "+plural(t.days,["день","дня","дней"])):"на текущий срок")+'</div></div>'+
-          '<div class="p">'+RU(t.priceRub)+' ₽<small>Продлить ›</small></div>';
+          '<div class="r"><span class="p">'+RU(t.priceRub)+' ₽</span><span class="go">Продлить</span></div>';
         row.addEventListener("click",function(){
           selTp = t;
           el("tpFormT").textContent = "+ "+g+" за "+RU(t.priceRub)+" ₽";
