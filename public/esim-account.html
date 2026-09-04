@@ -220,8 +220,15 @@
       var j = await r.json();
       el("loading").style.display="none";
       if(!r.ok || !j || !j.success){ askEmail(); return; }
-      // Ссылку просили из клиентского ЛК — туда и возвращаем, в свой раздел eSIM
-      if(LK && j.email){ location.replace("/cabinet#esim"); return; }
+      // Ссылку просили из клиентского ЛК — туда и возвращаем, в свой раздел eSIM.
+      // Но только если кабинет вообще открыт в этом браузере: письмо могли
+      // открыть на другом устройстве, и тогда человек упал бы на экран входа
+      // по телефону. Нет сессии кабинета — остаёмся здесь, всё уже показано.
+      if(LK && j.email){
+        var inLk = false;
+        try{ var me = await fetch("/api/me",{credentials:"same-origin"}); inLk = me.ok; }catch(e){}
+        if(inLk){ location.replace("/cabinet#esim"); return; }
+      }
       el("main").style.display="block";
       // В кабинете человек уже вошёл по телефону: почту знаем сами, а если
       // покупок на неё нет — предлагаем указать другую, но не гоним «войти».
