@@ -162,6 +162,28 @@
   .faq details[open] summary::after{content:"−";}
   .faq .a{padding:0 20px 16px;font-size:13.5px;color:var(--mut);line-height:1.65;}
   /* ── блок поддержки (как в клиентском ЛК) ── */
+  /* Шильдик сортировки над списком пакетов */
+  .sortbar{display:none;justify-content:flex-end;position:relative;margin:0 0 12px;}
+  .sortbar.on{display:flex;}
+  .sortbtn{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:13px;font-weight:600;color:#5d6675;
+    background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:999px;padding:8px 13px;cursor:pointer;
+    box-shadow:0 1px 2px rgba(16,24,40,.04);transition:border-color .18s ease,color .18s ease;}
+  .sortbtn:hover{color:var(--accent);border-color:#c6dceb;}
+  .sortbtn .cv{transition:transform .2s ease;}
+  .sortbtn.open .cv{transform:rotate(180deg);}
+  .sortmenu{position:absolute;right:0;top:calc(100% + 8px);min-width:250px;z-index:30;padding:6px;
+    background:rgba(255,255,255,.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    border:1px solid var(--line);border-radius:20px;box-shadow:var(--sh);display:none;}
+  .sortmenu.on{display:block;animation:fadein .16s ease;}
+  @keyframes fadein{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .sortmenu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:inherit;cursor:pointer;
+    border:0;background:transparent;border-radius:14px;padding:10px 12px;transition:background .15s ease;}
+  .sortmenu button:hover{background:#f2f6fa;}
+  .sortmenu .tx{flex:1;}
+  .sortmenu .t{font-size:14px;font-weight:600;color:var(--ink);letter-spacing:-.01em;}
+  .sortmenu .d{font-size:12px;color:var(--mut);margin-top:2px;line-height:1.4;}
+  .sortmenu .ck{flex:none;color:var(--accent);opacity:0;transition:opacity .15s ease;}
+  .sortmenu button.on .ck{opacity:1;}
   .helpblk{margin-top:28px;padding:18px 20px;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:var(--sh);}
   .helpblk h3{margin:0 0 12px;font-size:13px;color:var(--mut);font-weight:600;text-align:center;}
   .help-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
@@ -171,17 +193,23 @@
   .help-btn:hover{color:var(--accent);border-color:#c6dceb;transform:translateY(-1px);}
   .help-btn .help-icon{width:14px;height:14px;flex:0 0 14px;}
   @media(max-width:560px){.help-actions{grid-template-columns:1fr;}}
-  /* Встраивание в клиентский ЛК (?embed=1): оставляем только витрину —
-     шапка, FAQ, поддержка и подвал там уже свои. */
-  body.embed .hdr, body.embed .faq, body.embed .helpblk, body.embed .foot, body.embed .how{display:none;}
-  /* Отступ сверху как у «Баллов» в кабинете — заголовок не липнет к краю */
-  body.embed .wrap{padding-top:26px;padding-bottom:24px;}
-  body.embed .hero{padding:0 0 4px;}
-  body.embed .hero h1{font-size:clamp(24px,5.2vw,30px);margin-bottom:10px;}
-  body.embed .hero .sub{font-size:14px;margin-bottom:20px;}
-  body.embed .blob{display:none;}
-  body.embed .wrap{padding-bottom:112px;}   /* место под нижнее меню кабинета */
-  body.embed #mBonusWrap{display:none!important;}
+  /* Блок обратной связи — тот же, что в клиентском ЛК (виден только во встроенном режиме) */
+  .lkhelp{display:none;margin-top:18px;padding:18px 20px;border:1px solid #ece7f2;border-radius:18px;background:#fff;}
+  body.embed .lkhelp{display:block;}
+  .lkhelp h3{margin:0 0 10px;font-size:13px;color:#9096a3;font-weight:600;text-align:center;}
+  .lkhelp .ha{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  .lkhelp .hb{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;border:1px solid #e3e0eb;
+    border-radius:12px;background:transparent;color:#9096a3;font-size:13px;font-weight:500;padding:0 12px;
+    text-decoration:none;text-align:center;transition:.15s;}
+  .lkhelp .hb:hover{color:#3589BD;border-color:#c6dceb;}
+  .lkhelp .hb svg{width:14px;height:14px;flex:0 0 14px;}
+  @media(max-width:560px){.lkhelp .ha{grid-template-columns:1fr;}}
+  /* Встраивание в клиентский ЛК (?embed=1): страница переносится целиком —
+     убираем только логотип-шапку (в кабинете своя), свой блок помощи (вместо
+     него единый кабинетный) и подвал. */
+  body.embed .hdr, body.embed .helpblk, body.embed .foot{display:none;}
+  body.embed .wrap{padding-top:20px;padding-bottom:112px;}  /* воздух сверху и место под меню кабинета */
+  body.embed #mBonusWrap{display:none!important;}           /* бонусы рефералки — только на /esim */
   .foot{margin-top:56px;text-align:center;font-size:12px;color:var(--mut);line-height:1.7;}
 
   /* ── модал пакета ── */
@@ -299,6 +327,14 @@
       <div class="frow"><div class="fl">Сколько дней</div><div class="fchips" id="fDays"></div></div>
       <div class="frow"><div class="fl">Сколько ГБ</div><div class="fchips" id="fGb"></div></div>
     </div>
+    <div class="sortbar" id="sortBar">
+      <button class="sortbtn" id="sortBtn" type="button" aria-haspopup="true" aria-expanded="false">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M7 4v16m0 0-3.5-3.5M7 20l3.5-3.5"/><path d="M17 20V4m0 0-3.5 3.5M17 4l3.5 3.5"/></svg>
+        <span id="sortLbl">Выгодные</span>
+        <svg class="cv" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="sortmenu" id="sortMenu" role="menu"></div>
+    </div>
     <div class="grid" id="grid"></div>
     <button class="more" id="moreBtn" style="display:none;" type="button">Показать ещё</button>
     <div class="empty" id="emptyMsg" style="display:none;">Такой комбинации нет — ослабьте фильтры или напишите нам, подберём вручную.</div>
@@ -322,6 +358,14 @@
     <details><summary>Что если что-то не заработает?</summary><div class="a">Мы на связи: поможем с настройкой в чате или по телефону. Если пакет не активировался по нашей вине — вернём деньги.</div></details>
   </div>
 
+  <div class="lkhelp">
+    <h3>Нужна помощь?</h3>
+    <div class="ha">
+      <a class="hb" href="https://wa.me/+79299435150" target="_blank" rel="noopener"> <svg  viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg> Написать в WhatsApp </a>
+      <a class="hb" href="https://t.me/vsc_operator" target="_blank" rel="noopener"> <svg  viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg> Написать в Telegram </a>
+      <a class="hb" href="tel:+74953691867"> <svg  viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg> Позвонить </a>
+    </div>
+  </div>
   <div class="helpblk">
     <h3>Нужна помощь?</h3>
     <div class="help-actions">
@@ -418,21 +462,71 @@
   }
 
   function packsFor(iso){
-    var list;
-    if(iso === "EU-REGION"){ list = CATALOG.filter(isEuroRegional); }
-    else {
-      list = (byCountry[iso]||[]).slice();
-      list.sort(function(a,b){
-        var la = a.countries.length, lb = b.countries.length;
-        var ga = la===1?0:(la<=40?1:2), gb = lb===1?0:(lb<=40?1:2);
-        if(ga!==gb) return ga-gb;
-        return a.priceRub-b.priceRub;
-      });
-      return list;
-    }
-    list.sort(function(a,b){ return a.priceRub-b.priceRub; });
-    return list;
+    // Порядок задаёт сортировка, выбранная клиентом (sortList) — здесь только отбор
+    if(iso === "EU-REGION") return CATALOG.filter(isEuroRegional);
+    return (byCountry[iso]||[]).slice();
   }
+
+  /* ── сортировка списка: выбор клиента, запоминаем в браузере ── */
+  var SORTS = [
+    {k:"value", lbl:"Выгодные",    t:"Сначала выгодные",   d:"Лучшая цена за гигабайт"},
+    {k:"price", lbl:"Подешевле",   t:"Сначала дешёвые",    d:"По цене пакета"},
+    {k:"gb",    lbl:"Больше ГБ",   t:"Больше гигабайтов",  d:"Сначала объёмные пакеты"}
+  ];
+  var sortBy = "value";
+  try{
+    var sv = localStorage.getItem("voyo_esim_sort");
+    if(sv && SORTS.some(function(x){ return x.k===sv; })) sortBy = sv;
+  }catch(e){}
+
+  // Выгоду считаем по объёму, который человек реально успеет потратить: гигабайты
+  // сверх запрошенного (или сверх 20 ГБ, когда фильтр не задан) в зачёт не идут —
+  // иначе годовые «100 ГБ» всегда оказывались бы «самыми выгодными».
+  function useGb(p){
+    var cap = wantGb > 0 ? wantGb * 1.5 : 20;
+    var g = p.unlimited ? cap : (p.dataGb || 0);
+    return Math.max(0.5, Math.min(g, cap));
+  }
+  function rawGb(p){ return p.unlimited ? 1e6 : (p.dataGb || 0); }
+  function sortList(list){
+    var l = list.slice();
+    if(sortBy === "price") l.sort(function(a,b){ return (a.priceRub-b.priceRub) || (rawGb(b)-rawGb(a)); });
+    else if(sortBy === "gb") l.sort(function(a,b){ return (rawGb(b)-rawGb(a)) || (a.priceRub-b.priceRub); });
+    else l.sort(function(a,b){ return (a.priceRub/useGb(a) - b.priceRub/useGb(b)) || (a.priceRub-b.priceRub); });
+    return l;
+  }
+
+  var sortMenu = document.getElementById("sortMenu"), sortBtn = document.getElementById("sortBtn");
+  function sortMenuOpen(on){
+    sortMenu.classList.toggle("on", on);
+    sortBtn.classList.toggle("open", on);
+    sortBtn.setAttribute("aria-expanded", on ? "true" : "false");
+  }
+  function renderSort(){
+    var cur = SORTS.filter(function(x){ return x.k===sortBy; })[0] || SORTS[0];
+    document.getElementById("sortLbl").textContent = cur.lbl;
+    sortMenu.innerHTML = "";
+    SORTS.forEach(function(x){
+      var b = el('<button type="button" role="menuitem" class="'+(x.k===sortBy?"on":"")+'">'+
+        '<span class="tx"><span class="t">'+x.t+'</span><span class="d">'+x.d+'</span></span>'+
+        '<svg class="ck" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>'+
+        '</button>');
+      b.addEventListener("click", function(){
+        sortBy = x.k;
+        try{ localStorage.setItem("voyo_esim_sort", sortBy); }catch(e){}
+        sortMenuOpen(false);
+        renderPacks(true);
+      });
+      sortMenu.appendChild(b);
+    });
+  }
+  sortBtn.addEventListener("click", function(e){
+    e.stopPropagation();
+    sortMenuOpen(!sortMenu.classList.contains("on"));
+  });
+  document.addEventListener("click", function(e){
+    if(sortMenu.classList.contains("on") && !sortMenu.contains(e.target)) sortMenuOpen(false);
+  });
 
   function pkCard(p){
     var multi = p.countries.length > 1;
@@ -483,12 +577,13 @@
   function renderPacks(keepScroll){
     var sect=document.getElementById("sect"), grid=document.getElementById("grid");
     var all = packsFor(current);
-    var list = all.filter(matches);
-    if(wantDays || wantGb) list = list.slice().sort(function(a,b){ return a.priceRub-b.priceRub; });
+    var list = sortList(all.filter(matches));
     sect.style.display="block";
     document.getElementById("sectTitle").innerHTML = flag(current)+" "+esc(cname(current));
-    document.getElementById("sectSub").textContent = all.length ? ((wantDays||wantGb)?"Подходящие пакеты — от самого выгодного. Срок и объём пакета покрывают выбранное.":"Пакеты с мгновенной выдачей QR-кода. Цена — окончательная, в рублях.") : "";
+    document.getElementById("sectSub").textContent = all.length ? ((wantDays||wantGb)?"Срок и объём пакета покрывают выбранное.":"Пакеты с мгновенной выдачей QR-кода. Цена — окончательная, в рублях.") : "";
     renderCfg(all);
+    document.getElementById("sortBar").classList.toggle("on", list.length > 1);
+    renderSort();
     grid.innerHTML="";
     document.getElementById("emptyMsg").style.display = list.length ? "none":"block";
     shown = Math.min(PAGE, list.length);
@@ -689,7 +784,7 @@
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF,
+          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM,
             useBalance:document.getElementById("mBonus").checked})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){

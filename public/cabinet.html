@@ -4189,8 +4189,19 @@
     /* Витрина eSIM — та же страница /esim в режиме ?embed=1 (без своей шапки и
        подвала). Держим её рамкой во всю высоту: прокручивается она сама, поэтому
        у этого экрана своего padding и скролла нет. */
-    .lkl-page.frame { padding: 0; overflow: hidden; }
-    .lkl-page.frame iframe { display: block; width: 100%; height: 100%; border: 0; background: transparent; }
+    .lkl-page.frame { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+    .lkl-page.frame iframe { display: block; width: 100%; flex: 1; min-height: 0; border: 0; background: transparent; }
+    .lkl-page.frame iframe[hidden] { display: none; }
+    /* Переключатель «Купить eSIM» / «Мои eSIM» — витрина и личные симки в одном разделе */
+    .lkl-seg { flex: none; width: min(520px, 100%); margin: 0 auto; padding: 16px 18px 0; display: flex; gap: 4px; }
+    .lkl-seg-in { display: flex; width: 100%; padding: 4px; border-radius: 999px;
+      background: rgba(255,255,255,.7); border: 1px solid rgba(53,137,189,.18);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.9); }
+    .lkl-seg button { flex: 1; border: 0; cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 600;
+      letter-spacing: -.01em; color: #7b8494; background: transparent; border-radius: 999px; padding: 9px 10px;
+      transition: background .2s ease, color .2s ease; -webkit-tap-highlight-color: transparent; }
+    .lkl-seg button.on { color: #fff; background: linear-gradient(140deg,#4aa3d8,#3589BD);
+      box-shadow: 0 6px 16px -8px rgba(53,137,189,.9); }
 
     /* ── карточка-оффер в кабинете ──
        Оформление берём у обычной карточки ЛК (class="card"): тот же белый фон,
@@ -4260,7 +4271,14 @@
     </div>
   </div>
 
-  <div class="lkl-page frame" id="lklEsim"></div>
+  <div class="lkl-page frame" id="lklEsim">
+    <div class="lkl-seg" id="lklEsimSeg">
+      <div class="lkl-seg-in">
+        <button type="button" data-esim="shop" class="on">Купить eSIM</button>
+        <button type="button" data-esim="my">Мои eSIM</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     // Инициализируется из bootstrap только при валидной сессии и loyalty:true.
@@ -4309,21 +4327,44 @@
         // session:true — телефон сервер берёт из cookie-сессии, в запросах его нет.
         window.VoyoLoyalty.mount(body, { session: true, api: "/cabinet/api/loyalty" });
       }
-      // Витрину грузим только когда её открыли в первый раз — кабинету это
-      // ничего не стоит, пока клиент туда не зашёл.
+      // Витрину и «Мои eSIM» грузим только когда их открыли в первый раз —
+      // кабинету это ничего не стоит, пока клиент туда не зашёл. Каждая живёт
+      // в своей рамке: переключение вкладок не перезагружает вторую.
       var esimPage = document.getElementById("lklEsim");
-      function mountEsim() {
-        if (!esimPage || esimPage.dataset.on) return;
-        esimPage.dataset.on = "1";
-        var f = document.createElement("iframe");
-        f.src = "/esim?embed=1";
-        f.title = "VOYO mobile — интернет в поездке";
+      var esimSrc = { shop: "/esim?embed=1", my: "/esim/account?embed=1" };
+      var esimTitle = { shop: "VOYO mobile — интернет в поездке", my: "Мои eSIM" };
+      var esimTab = "shop";
+      function esimFrame(which) {
+        var f = esimPage.querySelector('iframe[data-esim="' + which + '"]');
+        if (f) return f;
+        f = document.createElement("iframe");
+        f.dataset.esim = which;
+        f.src = esimSrc[which];
+        f.title = esimTitle[which];
         f.setAttribute("loading", "lazy");
         f.addEventListener("load", function () {
           try { f.contentWindow.addEventListener("scroll", watch, { passive: true }); } catch (_) {}
         });
         esimPage.appendChild(f);
+        return f;
       }
+      function esimGo(which) {
+        esimTab = which;
+        esimPage.querySelectorAll(".lkl-seg button").forEach(function (b) {
+          b.classList.toggle("on", b.dataset.esim === which);
+        });
+        esimFrame(which).hidden = false;
+        var other = which === "shop" ? "my" : "shop";
+        var f = esimPage.querySelector('iframe[data-esim="' + other + '"]');
+        if (f) f.hidden = true;
+        watch();
+      }
+      function mountEsim() {
+        if (esimPage && !esimPage.dataset.on) { esimPage.dataset.on = "1"; esimGo("shop"); }
+      }
+      if (esimPage) esimPage.querySelectorAll(".lkl-seg button").forEach(function (b) {
+        b.addEventListener("click", function () { esimGo(b.dataset.esim); });
+      });
       function go(which) {
         var loyalty = which === "loyalty", esim = which === "esim";
         nav.querySelectorAll("button").forEach(function (b) { b.classList.toggle("act", b.dataset.go === which); });
@@ -4345,13 +4386,17 @@
       function watch() {
         var y;
         if (esimPage && esimPage.classList.contains("open")) {
-          var f = esimPage.querySelector("iframe");
+          var f = esimPage.querySelector('iframe[data-esim="' + esimTab + '"]');
+          if (!f) return;
           try { y = f.contentWindow.scrollY || 0; } catch (_) { y = 0; }
         } else if (page.classList.contains("open")) y = page.scrollTop;
         else y = window.scrollY || document.documentElement.scrollTop || 0;
         var min = y > 24;
         if (min !== nav.classList.contains("min")) nav.classList.toggle("min", min);
       }
+      // Вернулись по ссылке из письма (/cabinet#esim) — сразу открываем раздел
+      if (location.hash === "#esim") { go("esim"); try { history.replaceState(null, "", "/cabinet"); } catch (_) {} }
+
       window.addEventListener("scroll", watch, { passive: true });
       page.addEventListener("scroll", watch, { passive: true });
       watch();

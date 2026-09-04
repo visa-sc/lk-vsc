@@ -38,6 +38,7 @@ const ORDERS_FILE = path.join(DIR, "orders.json");
 const CUSTOMERS_FILE = path.join(DIR, "customers.json"); // баланс и реф-коды клиентов
 const PROMOS_FILE = path.join(DIR, "promos.json");       // промокоды
 const NOTIFY_FILE = path.join(DIR, "notify.json");       // какие напоминания уже отправлены
+const LKBIND_FILE = path.join(DIR, "lkbind.json");       // телефон в ЛК → почты, на которые куплены eSIM
 
 // Напоминания о продлении: чем ближе конец пакета, тем выше шанс, что клиент
 // докупит — но письмо каждого типа шлём ровно один раз на eSIM.
@@ -408,7 +409,7 @@ function mount(app, opts) {
     try {
       const [cat, rate] = await Promise.all([getCatalog(false), usdRate()]);
       const adm = String(req.query.adm || "") === ADMIN_CODE;
-      const products = cat.products.map((p) => {
+      const products = cat.products.filter((p) => adm || !isTestProduct(p)).map((p) => {
         const o = {
           id: p.id, title: p.title || "", operator: p.operator || "", countries: p.countries || [],
           dataGb: p.dataGb, unlimited: !!p.unlimited, days: p.days,
@@ -558,6 +559,13 @@ function mount(app, opts) {
   // покупаем eSIM у поставщика → клиент попадает на «Мою eSIM» с QR.
   // Заводить номенклатуру в банке не нужно: сумма и позиция чека уходят в Init.
 
+  // Служебные пакеты MobiMatter ($0.01, «Test 1 GB»/«Test 2 GB») нужны только нам
+  // для сквозной проверки оплаты — интернета они не дают. Клиенту их не показываем
+  // и не продаём; нам самим они видны по adm-коду.
+  function isTestProduct(p) {
+    return Number(p.costUsd) <= 0.05 || /(^|\s)test\b/i.test(String(p.title || ""));
+  }
+
   function findProduct(cat, id) {
     const inMain = (cat.products || []).find((x) => x.id === id);
     if (inMain) return { item: inMain, addon: false };
@@ -689,6 +697,9 @@ function mount(app, opts) {
     const phone = String(b.phone || "").trim().slice(0, 30) || null;
     const parentOrderId = b.parent ? String(b.parent).slice(0, 40) : null;
     if (parentOrderId && !checkSig(parentOrderId, b.t)) return res.status(403).json({ success: false });
+    // Купил из клиентского ЛК — запоминаем связку телефон → почта, чтобы в
+    // разделе «Мои eSIM» больше не спрашивать почту
+    try { const lk = await lkEmails(req); if (lk) bindLk(lk.phone, email); } catch (_) {}
     try {
       const [cat, rate] = await Promise.all([getCatalog(false), usdRate()]);
       const found = findProduct(cat, String(b.productId || ""));
@@ -698,6 +709,10 @@ function mount(app, opts) {
       // депозит. С ESIM_TEST_ONLY=1 покупаются только служебные пакеты ($0.01).
       if (String(process.env.ESIM_TEST_ONLY || "") === "1" && Number(found.item.costUsd) > 0.01) {
         return res.status(403).json({ success: false, message: "Идёт тестирование: доступны только служебные пакеты «Test 1 GB» и «Test 2 GB» (Германия и Италия)." });
+      }
+      // Служебный пакет можно купить только с adm-кодом — клиент его и не увидит
+      if (isTestProduct(found.item) && String(b.adm || "") !== ADMIN_CODE) {
+        return res.status(400).json({ success: false, message: "Пакет не найден." });
       }
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
       const listPrice = toRetailRub(found.item.costUsd, rate);
@@ -788,16 +803,57 @@ function mount(app, opts) {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.sendFile(path.join(__dirname, "public", "esim-account.html"));
   });
-  app.get("/esim/api/account", (req, res) => {
+  // Клиент, вошедший в кабинет по телефону, не должен вводить почту второй раз.
+  // Держим связку телефон → почты локально: один раз узнали (из покупки или из
+  // карточки amoCRM) — дальше в amo не ходим.
+  function bindLk(phone, email) {
+    if (!phone || !email) return;
+    const b = readJson(LKBIND_FILE, {});
+    const list = b[phone] || [];
+    if (list.indexOf(email) < 0) { list.unshift(email); b[phone] = list.slice(0, 5); writeJson(LKBIND_FILE, b); }
+  }
+  async function lkEmails(req) {
+    if (!(opts && opts.lkClient)) return null;
+    let lk = null;
+    try { lk = await opts.lkClient(req); } catch (_) { return null; }
+    if (!lk || !lk.phone) return null;
+    const saved = (readJson(LKBIND_FILE, {})[lk.phone] || []);
+    const seen = {}, all = [];
+    saved.concat((lk.emails || []).map(normEmail)).forEach((e) => {
+      if (e && !seen[e]) { seen[e] = 1; all.push(e); }
+    });
+    return { phone: lk.phone, emails: all };
+  }
+
+  app.get("/esim/api/account", async (req, res) => {
     // Вход по подписанной ссылке из письма ИЛИ по уже открытой сессии
     let email = normEmail(req.query.e);
     if (email && checkEmailSig(email, req.query.t)) setSession(res, email);
     else email = readSession(req);
-    if (!email) return res.status(403).json({ success: false });
+
+    // Внутри клиентского ЛК почту не спрашиваем: берём её у кабинета (связка
+    // телефон → почта). Складываем eSIM со всех почт этого человека.
+    const lk = await lkEmails(req);
+    let extra = [];
+    if (lk) {
+      if (email) bindLk(lk.phone, email);
+      const withEsims = lk.emails.filter((e) => esimsOf(e).length);
+      if (!email && withEsims.length) { email = withEsims[0]; setSession(res, email); }
+      extra = withEsims.filter((e) => e !== email);
+    }
+
+    if (!email) {
+      // В кабинете человек уже «свой» — покажем пустой список, а не форму входа
+      if (lk) return res.json({ success: true, lk: true, email: null, esims: [], balanceRub: 0 });
+      return res.status(403).json({ success: false });
+    }
     const c = getCustomer(email, true);
     const invited = Object.values(loadCustomers()).filter((x) => normEmail(x.invitedBy || "") === email);
+    let list = esimsOf(email);
+    extra.forEach((e) => { list = list.concat(esimsOf(e)); });
+    list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
     res.json({
-      success: true, email, esims: esimsOf(email),
+      success: true, email, esims: list, lk: !!lk,
       balanceRub: c.balanceRub || 0,
       refCode: c.refCode,
       refLink: BASE_URL + "/esim?ref=" + c.refCode,
@@ -819,7 +875,8 @@ function mount(app, opts) {
     _loginAt.set(email, now);
     const mine = esimsOf(email);
     if (mine.length && opts && opts.sendMail) {
-      const acc = BASE_URL + "/esim/account?e=" + encodeURIComponent(email) + "&t=" + signEmail(email);
+      const acc = BASE_URL + "/esim/account?e=" + encodeURIComponent(email) + "&t=" + signEmail(email) +
+        ((req.body || {}).lk ? "&lk=1" : "");
       opts.sendMail({
         to: email,
         subject: "VOYO mobile: вход в кабинет",
