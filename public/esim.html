@@ -171,6 +171,17 @@
   .help-btn:hover{color:var(--accent);border-color:#c6dceb;transform:translateY(-1px);}
   .help-btn .help-icon{width:14px;height:14px;flex:0 0 14px;}
   @media(max-width:560px){.help-actions{grid-template-columns:1fr;}}
+  /* Встраивание в клиентский ЛК (?embed=1): оставляем только витрину —
+     шапка, FAQ, поддержка и подвал там уже свои. */
+  body.embed .hdr, body.embed .faq, body.embed .helpblk, body.embed .foot, body.embed .how{display:none;}
+  /* Отступ сверху как у «Баллов» в кабинете — заголовок не липнет к краю */
+  body.embed .wrap{padding-top:26px;padding-bottom:24px;}
+  body.embed .hero{padding:0 0 4px;}
+  body.embed .hero h1{font-size:clamp(24px,5.2vw,30px);margin-bottom:10px;}
+  body.embed .hero .sub{font-size:14px;margin-bottom:20px;}
+  body.embed .blob{display:none;}
+  body.embed .wrap{padding-bottom:112px;}   /* место под нижнее меню кабинета */
+  body.embed #mBonusWrap{display:none!important;}
   .foot{margin-top:56px;text-align:center;font-size:12px;color:var(--mut);line-height:1.7;}
 
   /* ── модал пакета ── */
@@ -369,13 +380,15 @@
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
   function el(html){ var t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstChild; }
   var ADM = new URLSearchParams(location.search).get("adm") || "";
+  var EMBED = new URLSearchParams(location.search).get("embed") === "1";
+  if(EMBED) document.body.classList.add("embed");
   // Реферальная метка живёт в браузере: клиент пришёл по ссылке друга сегодня,
   // а покупает через два дня — метка должна дожить до оплаты.
   var REF = "";
   try{
     var urlRef = new URLSearchParams(location.search).get("ref");
     if(urlRef){ localStorage.setItem("voyo_esim_ref", urlRef.toUpperCase()); history.replaceState(null,"",location.pathname); }
-    REF = localStorage.getItem("voyo_esim_ref") || "";
+    REF = EMBED ? "" : (localStorage.getItem("voyo_esim_ref") || "");
   }catch(e){}
   var PROMO = "";
 
@@ -679,7 +692,11 @@
           body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF,
             useBalance:document.getElementById("mBonus").checked})});
         var pj = await pr.json();
-        if(pj && pj.success && pj.url){ location.href = pj.url; return; }
+        if(pj && pj.success && pj.url){
+          if(EMBED){ try{ window.top.location.href = pj.url; }catch(e){ location.href = pj.url; } }
+          else location.href = pj.url;
+          return;
+        }
         throw new Error((pj&&pj.message)||"Ошибка");
       }catch(e){
         err.textContent="Не удалось открыть оплату — попробуйте ещё раз."; err.classList.add("on");

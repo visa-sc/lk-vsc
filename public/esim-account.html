@@ -87,11 +87,23 @@
     border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.16);color:#fff;font:inherit;font-size:12.5px;
     font-weight:800;font-style:italic;line-height:1;transition:background .16s ease;}
   .binfo:hover{background:rgba(255,255,255,.3);}
-  .binfobox{display:none;background:#f4f9fd;border:1px solid #ddedf7;border-radius:16px;padding:14px 16px;margin-bottom:16px;}
-  .binfobox.on{display:block;animation:fadeup .2s ease;}
-  .binfobox b{display:block;font-size:13px;color:var(--accent);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;}
-  .binfobox span{display:block;font-size:13.5px;line-height:1.55;color:#3a4356;margin-bottom:5px;}
-  .binfobox span:last-child{margin-bottom:0;}
+  .ovl{position:fixed;inset:0;background:rgba(18,28,42,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    z-index:100;display:none;align-items:flex-end;justify-content:center;padding:0;}
+  .ovl.on{display:flex;}
+  @media(min-width:640px){ .ovl{align-items:center;padding:24px;} }
+  .modal{background:#fff;border-radius:28px 28px 0 0;max-width:440px;width:100%;max-height:92vh;overflow-y:auto;
+    padding:26px 24px 24px;position:relative;animation:up .24s cubic-bezier(.2,.9,.3,1);}
+  @media(min-width:640px){ .modal{border-radius:28px;animation:pop .2s cubic-bezier(.2,.9,.3,1);} }
+  @keyframes up{from{transform:translateY(48px);opacity:.4}to{transform:none;opacity:1}}
+  @keyframes pop{from{transform:scale(.95);opacity:.4}to{transform:none;opacity:1}}
+  .modal .x{position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:50%;border:0;cursor:pointer;
+    background:#f0f3f7;color:var(--mut);font-size:15px;display:flex;align-items:center;justify-content:center;}
+  .modal h3{margin:0 0 14px;font-size:19px;font-weight:800;letter-spacing:-.025em;padding-right:38px;}
+  .modal .step{display:flex;gap:11px;align-items:flex-start;margin-bottom:12px;}
+  .modal .step:last-of-type{margin-bottom:0;}
+  .modal .step .n{flex:none;width:23px;height:23px;border-radius:50%;background:#eaf3fa;color:var(--accent);
+    font-size:12.5px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:1px;}
+  .modal .step .tx{font-size:14px;line-height:1.55;color:#3a4356;}
   @keyframes fadeup{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
   .foot{margin-top:34px;text-align:center;font-size:11.5px;color:var(--mut);line-height:1.7;}
 </style>
@@ -124,15 +136,19 @@
       <div class="reflink"><input id="refInp" readonly/><button id="refCopy" type="button">Копировать</button></div>
       <div class="refstat" id="refStat"></div>
     </div>
-    <div class="binfobox" id="bonusInfoBox">
-      <b>Как это работает</b>
-      <span>1. Отправьте другу ссылку — или продиктуйте код.</span>
-      <span>2. Он покупает eSIM: по ссылке скидка применится сама, по коду — вводит его при оплате.</span>
-      <span>3. Друг платит на 100 ₽ меньше, вам приходит 100 ₽ на баланс.</span>
-      <span>4. Ваш баланс списывается сам со следующей покупки.</span>
-    </div>
     <div id="list"></div>
     <a class="btn" href="/esim">Купить ещё eSIM</a>
+  </div>
+
+  <div class="ovl" id="bonusOvl">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Как работает приглашение друзей">
+      <button class="x" id="bonusX" type="button" aria-label="Закрыть">✕</button>
+      <h3>Как это работает</h3>
+      <div class="step"><span class="n">1</span><span class="tx">Отправьте другу ссылку — или продиктуйте код.</span></div>
+      <div class="step"><span class="n">2</span><span class="tx">Он покупает eSIM: по ссылке скидка применится сама, по коду — вводит его при оплате.</span></div>
+      <div class="step"><span class="n">3</span><span class="tx">Друг платит на 100 ₽ меньше, вам приходит 100 ₽ на баланс.</span></div>
+      <div class="step"><span class="n">4</span><span class="tx">Ваш баланс списывается сам со следующей покупки.</span></div>
+    </div>
   </div>
 
   <div class="faq">
@@ -204,7 +220,15 @@
   })();
 
   // ── вход по почте ──
-  el("bonusInfo").addEventListener("click", function(){ el("bonusInfoBox").classList.toggle("on"); });
+  // Подсказка про рефералку — всплывающим окном, как остальные «i» в кабинете
+  function bonusOvl(on){
+    el("bonusOvl").classList.toggle("on", on);
+    document.body.style.overflow = on ? "hidden" : "";
+  }
+  el("bonusInfo").addEventListener("click", function(){ bonusOvl(true); });
+  el("bonusX").addEventListener("click", function(){ bonusOvl(false); });
+  el("bonusOvl").addEventListener("click", function(e){ if(e.target === this) bonusOvl(false); });
+  document.addEventListener("keydown", function(e){ if(e.key === "Escape") bonusOvl(false); });
 
   el("refCopy").addEventListener("click", function(){
     var i = el("refInp"); i.select();
