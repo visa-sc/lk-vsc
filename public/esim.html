@@ -218,6 +218,7 @@
   .promo .row{display:flex;gap:8px;}
   .promo input{flex:1;min-width:0;border:1px solid var(--line);border-radius:12px;padding:12px 13px;font:inherit;
     font-size:15px;text-transform:uppercase;}
+  .promo input::placeholder{text-transform:none;}
   .promo input:focus{outline:none;border-color:#9fcbe6;box-shadow:0 0 0 4px rgba(53,137,189,.12);}
   .promo button{font:inherit;font-size:14px;font-weight:600;border:0;background:#eef4f9;color:var(--accent-d);
     border-radius:12px;padding:0 16px;cursor:pointer;white-space:nowrap;}
@@ -340,7 +341,7 @@
       <span class="toggle" id="mPromoToggle">У меня есть промокод</span>
       <div class="body" id="mPromoBody">
         <div class="row">
-          <input id="mPromo" type="text" placeholder="Промокод" autocomplete="off" />
+          <input id="mPromo" type="text" placeholder="Введите промокод" autocomplete="off" />
           <button id="mPromoApply" type="button">Применить</button>
         </div>
         <div class="msg" id="mPromoMsg"></div>
