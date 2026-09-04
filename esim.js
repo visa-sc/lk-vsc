@@ -274,13 +274,23 @@ function hasOrders(email) {
 // ═══ Промокоды ═══
 // { "КОД": { rub: 100, active: true, maxUses: null, uses: 0, note: "" } }
 function loadPromos() { return readJson(PROMOS_FILE, {}); }
-function checkPromo(code) {
+function checkPromo(code, listPrice, email) {
   code = String(code || "").trim().toUpperCase();
   if (!code) return null;
   const p = loadPromos()[code];
   if (!p || p.active === false) return null;
   if (p.maxUses && (p.uses || 0) >= p.maxUses) return null;
-  return { code, rub: Math.max(0, Number(p.rub) || 0) };
+  // «Только на первую eSIM» — у клиента ещё не должно быть выданных заказов
+  if (p.firstOnly && email && hasOrders(email)) return null;
+  // «Один раз на клиента» — код уже засчитан этой почте
+  if (p.oncePerUser !== false && email) {
+    const c = getCustomer(email, false);
+    if (c && (c.usedPromos || []).indexOf(code) >= 0) return null;
+  }
+  const rub = p.pct
+    ? Math.round((Number(listPrice) || 0) * Number(p.pct) / 100)
+    : Math.max(0, Number(p.rub) || 0);
+  return { code, rub, pct: Number(p.pct) || 0, firstOnly: !!p.firstOnly };
 }
 function usePromo(code) {
   code = String(code || "").trim().toUpperCase();
@@ -293,7 +303,7 @@ function usePromo(code) {
 function priceWithDiscounts({ listPrice, email, promoCode, refCode, useBalance }) {
   const out = { listPrice, discountRub: 0, discountKind: null, promoCode: null, refBy: null,
                 balanceRub: 0, balanceCanUse: 0, balanceUsed: 0, total: listPrice };
-  const promo = checkPromo(promoCode);
+  const promo = checkPromo(promoCode, listPrice, email);
   if (promo && promo.rub > 0) {
     out.discountRub = promo.rub; out.discountKind = "promo"; out.promoCode = promo.code;
   } else if (refCode) {
@@ -577,7 +587,12 @@ function mount(app, opts) {
       // Деньги и бонусы проводим только после подтверждённой оплаты
       try {
         if (g.order.balanceUsed > 0) addBalance(g.order.email, -g.order.balanceUsed, "Оплата: " + (g.order.label || ""));
-        if (g.order.promoCode) usePromo(g.order.promoCode);
+        if (g.order.promoCode) {
+          usePromo(g.order.promoCode);
+          updateCustomer(g.order.email, (c) => {
+            c.usedPromos = (c.usedPromos || []).concat([g.order.promoCode]).slice(-50);
+          });
+        }
         if (g.order.refBy) {
           updateCustomer(g.order.email, (c) => { if (!c.invitedBy) c.invitedBy = g.order.refBy; });
           addBalance(g.order.refBy, REF_BONUS_RUB, "Бонус за друга");
@@ -827,7 +842,8 @@ function mount(app, opts) {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
     const promosRaw = loadPromos();
     const promos = Object.entries(promosRaw).map(([code, v]) => ({
-      code, rub: v.rub, uses: v.uses || 0, maxUses: v.maxUses || null,
+      code, rub: v.rub, pct: v.pct || 0, firstOnly: !!v.firstOnly, oncePerUser: v.oncePerUser !== false,
+      uses: v.uses || 0, maxUses: v.maxUses || null,
       active: v.active !== false, note: v.note || "", ts: v.ts || null,
     })).sort((a, b) => (b.ts || 0) - (a.ts || 0));
     const custAll = loadCustomers();
@@ -857,8 +873,10 @@ function mount(app, opts) {
     const all = loadPromos();
     if (b.off) { if (all[code]) all[code].active = false; }
     else {
+      const pct = Math.max(0, Math.min(100, parseInt(b.pct, 10) || 0));
       all[code] = {
-        rub: Math.max(1, parseInt(b.rub, 10) || REF_BONUS_RUB), active: true,
+        rub: pct ? 0 : Math.max(1, parseInt(b.rub, 10) || REF_BONUS_RUB),
+        pct: pct || 0, firstOnly: !!b.firstOnly, oncePerUser: b.oncePerUser !== false, active: true,
         uses: (all[code] && all[code].uses) || 0,
         maxUses: parseInt(b.max, 10) || null,
         note: String(b.note || "").slice(0, 80), ts: (all[code] && all[code].ts) || Date.now(),

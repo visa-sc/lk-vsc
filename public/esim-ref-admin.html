@@ -77,7 +77,14 @@
       <div class="form">
         <input class="code" id="nCode" placeholder="КОД" autocomplete="off" />
         <input class="rub" id="nRub" type="number" value="100" min="1" />
-        <span class="mini">₽ скидка</span>
+        <span class="mini">₽</span>
+        <span class="mini">или</span>
+        <input class="rub" id="nPct" type="number" placeholder="%" min="1" max="100" />
+        <span class="mini">%</span>
+        <label class="mini" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="nFirst" style="width:16px;height:16px;accent-color:var(--accent)" />только 1-я eSIM</label>
+        <label class="mini" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="nOnce" checked style="width:16px;height:16px;accent-color:var(--accent)" />1 раз на клиента</label>
         <input class="rub" id="nMax" type="number" placeholder="лимит" min="1" />
         <input class="note" id="nNote" placeholder="заметка (для себя)" />
         <button class="btn" id="add" type="button">Создать</button>
@@ -124,7 +131,9 @@
     else {
       p.innerHTML = '<table><thead><tr><th>Код</th><th>Скидка</th><th>Использован</th><th>Статус</th><th>Заметка</th><th></th></tr></thead><tbody>'+
         d.promos.map(function(x){
-          return '<tr><td class="code">'+esc(x.code)+'</td><td>'+RU(x.rub)+' ₽</td>'+
+          return '<tr><td class="code">'+esc(x.code)+(x.firstOnly?'<div class="mini" style="font-weight:500">только 1-я eSIM</div>':'')+
+            (x.oncePerUser?'<div class="mini" style="font-weight:500">1 раз на клиента</div>':'')+'</td>'+
+            '<td>'+(x.pct?(x.pct+' %'):(RU(x.rub)+' ₽'))+'</td>'+
             '<td>'+RU(x.uses)+(x.maxUses?(' <span class="mini">из '+RU(x.maxUses)+'</span>'):'')+'</td>'+
             '<td><span class="badge '+(x.active?"on":"off")+'">'+(x.active?"активен":"выключен")+'</span></td>'+
             '<td class="mini">'+esc(x.note||"")+'</td>'+
@@ -174,9 +183,10 @@
     this.disabled = true;
     await api("/esim/api/ref-admin/promo", {
       code: code, rub: parseInt(el("nRub").value,10)||100,
+      pct: parseInt(el("nPct").value,10)||0, firstOnly: el("nFirst").checked, oncePerUser: el("nOnce").checked,
       max: parseInt(el("nMax").value,10)||null, note: el("nNote").value.trim(),
     });
-    el("nCode").value=""; el("nNote").value=""; el("nMax").value="";
+    el("nCode").value=""; el("nNote").value=""; el("nMax").value=""; el("nPct").value=""; el("nFirst").checked=false; el("nOnce").checked=true;
     this.disabled = false;
     load();
   });

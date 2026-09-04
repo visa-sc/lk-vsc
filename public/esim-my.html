@@ -129,6 +129,30 @@
   .tpform label{font-size:12px;color:var(--mut);display:block;margin-bottom:6px;}
   .tpform input{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 13px;font:inherit;font-size:15px;margin-bottom:10px;}
   .tpform input:focus{outline:none;border-color:#9fcbe6;box-shadow:0 0 0 4px rgba(53,137,189,.12);}
+  .promo{margin-bottom:12px;}
+  .promo .toggle{font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;display:inline-block;}
+  .promo .body{display:none;margin-top:9px;}
+  .promo .body.on{display:block;}
+  .promo .prow{display:flex;gap:8px;}
+  .promo input{flex:1;min-width:0;border:1px solid var(--line);border-radius:12px;padding:11px 13px;font:inherit;
+    font-size:15px;text-transform:uppercase;margin-bottom:0;}
+  .promo button{font:inherit;font-size:14px;font-weight:600;border:0;background:#e7eff6;color:var(--accent-d);
+    border-radius:12px;padding:0 16px;cursor:pointer;white-space:nowrap;}
+  .promo .msg{font-size:12.5px;margin-top:7px;line-height:1.5;}
+  .usebonus{display:none;align-items:flex-start;gap:10px;background:#fff;border:1px solid #d9ebf7;
+    border-radius:14px;padding:12px 14px;margin-bottom:12px;cursor:pointer;user-select:none;}
+  .usebonus.on{display:flex;}
+  .usebonus input{width:19px;height:19px;flex:none;margin:1px 0 0;accent-color:var(--accent);cursor:pointer;}
+  .usebonus .t2{font-size:13.5px;line-height:1.45;}
+  .usebonus .t2 b{display:block;font-weight:700;}
+  .usebonus .t2 span{color:var(--mut);font-size:12.5px;}
+  .sumbox{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px;
+    font-size:13.5px;display:none;}
+  .sumbox.on{display:block;}
+  .sumbox .l{display:flex;justify-content:space-between;gap:10px;margin-bottom:5px;color:var(--mut);}
+  .sumbox .l:last-child{margin-bottom:0;padding-top:7px;border-top:1px solid var(--line);color:var(--ink);
+    font-weight:800;font-size:15px;}
+  .sumbox .l .g{color:var(--green);}
   .buy{width:100%;font:inherit;font-size:15px;font-weight:700;border:0;cursor:pointer;border-radius:14px;padding:14px;
     background:var(--grad);color:#fff;box-shadow:0 12px 26px -12px rgba(53,137,189,.85);}
   .buy:disabled{opacity:.6;cursor:default;}
@@ -224,7 +248,22 @@
         <div id="tpLb2" style="display:none;font-size:12px;color:var(--mut);margin-bottom:10px;"></div>
       <label id="tpLb">Email — пришлём чек, трафик добавим сразу после оплаты</label>
         <input id="tpPhone" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"/>
-        <button class="buy" id="tpBuy" type="button">Оставить заявку</button>
+        <div class="promo" id="tpPromoWrap" style="display:none">
+        <span class="toggle" id="tpPromoToggle">У меня есть промокод</span>
+        <div class="body" id="tpPromoBody">
+          <div class="prow">
+            <input id="tpPromo" type="text" placeholder="Промокод" autocomplete="off" />
+            <button id="tpPromoApply" type="button">Применить</button>
+          </div>
+          <div class="msg" id="tpPromoMsg"></div>
+        </div>
+      </div>
+      <label class="usebonus" id="tpBonusWrap">
+        <input type="checkbox" id="tpBonus" />
+        <span class="t2"><b id="tpBonusT"></b><span id="tpBonusS"></span></span>
+      </label>
+      <div class="sumbox" id="tpSum"></div>
+      <button class="buy" id="tpBuy" type="button">Оставить заявку</button>
         <div class="err" id="tpErr"></div>
       </div>
       <div class="ok" id="tpOk">Заявка принята! Менеджер VOYO свяжется в ближайшее время — после оплаты гигабайты добавятся на вашу eSIM автоматически.</div>
@@ -356,6 +395,14 @@
           el("tpOk").classList.remove("on");
           el("tpForm").scrollIntoView({behavior:"smooth",block:"center"});
           if(!(PAY && YOU)) el("tpPhone").focus();
+          TPPROMO = "";
+          el("tpPromo").value = ""; el("tpPromoMsg").textContent = "";
+          el("tpPromoBody").classList.remove("on");
+          el("tpBonus").checked = false;
+          el("tpBonusWrap").classList.remove("on");
+          el("tpSum").classList.remove("on");
+          el("tpPromoWrap").style.display = PAY ? "block" : "none";
+          if(PAY) tpRecalc();
         });
         host.appendChild(row);
       });
@@ -370,6 +417,50 @@
     catch(e){ document.execCommand("copy"); }
   });
 
+  // Пересчёт продления: промокод, бонусы и итог считает сервер — тот же путь, что на витрине
+  var TPPROMO = "";
+  async function tpRecalc(){
+    if(!selTp || !PAY) return null;
+    try{
+      var r = await fetch("/esim/api/price",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({productId:selTp.id, promo:TPPROMO, useBalance:el("tpBonus").checked,
+          email:(YOU || (el("tpPhone").value||"").trim())})});
+      var j = await r.json();
+      if(!j || !j.success) return null;
+      var bw = el("tpBonusWrap");
+      if(j.balanceCanUse > 0){
+        bw.classList.add("on");
+        el("tpBonusT").textContent = "Списать "+RU(j.balanceCanUse)+" ₽ бонусами";
+        el("tpBonusS").textContent = "У вас "+RU(j.balanceRub)+" ₽. Бонусами можно закрыть до половины стоимости.";
+      } else { bw.classList.remove("on"); }
+      var box = el("tpSum"), rows = "";
+      if(j.discountRub > 0 || j.balanceUsed > 0){
+        rows += '<div class="l"><span>Продление</span><span>'+RU(j.listPrice)+' ₽</span></div>';
+        if(j.discountRub > 0) rows += '<div class="l"><span>Промокод</span><span class="g">−'+RU(j.discountRub)+' ₽</span></div>';
+        if(j.balanceUsed > 0) rows += '<div class="l"><span>Бонусами</span><span class="g">−'+RU(j.balanceUsed)+' ₽</span></div>';
+        rows += '<div class="l"><span>К оплате</span><span>'+RU(j.total)+' ₽</span></div>';
+        box.innerHTML = rows; box.classList.add("on");
+      } else { box.classList.remove("on"); }
+      el("tpBuy").textContent = "Оплатить "+RU(j.total)+" ₽";
+      return j;
+    }catch(e){ return null; }
+  }
+  el("tpBonus").addEventListener("change", tpRecalc);
+  el("tpPromoToggle").addEventListener("click", function(){
+    el("tpPromoBody").classList.toggle("on"); el("tpPromo").focus();
+  });
+  el("tpPromoApply").addEventListener("click", async function(){
+    var msg = el("tpPromoMsg");
+    TPPROMO = el("tpPromo").value.trim().toUpperCase();
+    if(!TPPROMO){ msg.textContent=""; await tpRecalc(); return; }
+    this.disabled = true;
+    var j = await tpRecalc();
+    this.disabled = false;
+    if(j && j.promoOk){ msg.style.color="var(--green)"; msg.textContent="Промокод применён: −"+RU(j.discountRub)+" ₽"; }
+    else { msg.style.color="var(--red)"; msg.textContent="Такого промокода нет или он уже не действует."; TPPROMO=""; await tpRecalc(); }
+  });
+  el("tpPromo").addEventListener("keydown", function(e){ if(e.key==="Enter") el("tpPromoApply").click(); });
+
   el("tpBuy").addEventListener("click", async function(){
     var err=el("tpErr"); err.classList.remove("on");
     var phone = (PAY && YOU) ? YOU : el("tpPhone").value.trim();
@@ -380,7 +471,8 @@
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:selTp.id, email:phone, parent:O, t:T})});
+          body:JSON.stringify({productId:selTp.id, email:phone, parent:O, t:T,
+            promo:TPPROMO, useBalance:el("tpBonus").checked})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){ location.href = pj.url; return; }
         throw new Error();
