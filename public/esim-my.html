@@ -171,8 +171,6 @@
   <div class="dead" id="dead">Ссылка недействительна или устарела.<br/>Напишите нам — пришлём новую.</div>
 
   <div id="main" style="display:none;">
-    <h1>Моя eSIM</h1>
-
     <div class="sim">
       <div class="top">
         <button class="refresh" id="refreshBtn" type="button">
@@ -292,7 +290,7 @@
     });
     var rem = Math.max(0, total-used);
     if(total>0){
-      el("balV").innerHTML = esc(gb(rem))+'<small>ГБ '+(used>0?"осталось":"доступно")+'</small>';
+      el("balV").innerHTML = esc(gb(rem))+'<small>ГБ</small>';
       el("balOf").textContent = "из "+gb(total)+" ГБ · потрачено "+gb(used)+" ГБ";
       el("bar").style.width = Math.max(3, Math.round(rem/total*100))+"%";
     } else {
