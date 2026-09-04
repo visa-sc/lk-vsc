@@ -24,7 +24,8 @@
   .wrap{max-width:520px;margin:0 auto;padding:0 18px 70px;}
 
   .hdr{display:flex;align-items:center;justify-content:space-between;padding:20px 0 14px;}
-  .brand{display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink);}
+  .brand{display:inline-flex;flex-direction:column;align-items:flex-start;text-decoration:none;color:var(--ink);}
+  .brandrow{display:flex;align-items:center;gap:9px;}
   .brand .lg{height:18px;display:block;}
   .brand .wm{font-size:19px;font-weight:300;letter-spacing:.01em;line-height:1;
     background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
@@ -33,6 +34,10 @@
   .nav a.out{font-size:13px;font-weight:600;color:var(--mut);text-decoration:none;}
   .nav a.out:hover{color:var(--ink);}
 
+  /* подпись «by V|S|C» — буквы фирменного знака VSC, без плашки */
+  .byvsc{display:block;font-size:9px;letter-spacing:.02em;color:#a7b0bf;margin-top:3px;white-space:nowrap;line-height:1;}
+  .byvsc b{font-weight:800;font-size:9.5px;color:#0099cf;letter-spacing:.06em;}
+  .byvsc i{font-style:normal;color:#bcd8e6;margin:0 1.5px;font-weight:400;}
   h1{font-size:26px;letter-spacing:-.03em;margin:10px 0 16px;font-weight:800;}
 
   /* ── карта eSIM ── */
@@ -163,7 +168,7 @@
 <div class="blob b1"></div>
 <div class="wrap">
   <div class="hdr">
-    <a class="brand" href="/esim"><img class="lg" src="/voyo-logo.png" alt="VOYO"/><span class="wm">mobile</span></a>
+    <a class="brand" href="/esim"><span class="brandrow"><img class="lg" src="/voyo-logo.png" alt="VOYO"/><span class="wm">mobile</span></span><span class="byvsc">by <b>V</b><i>|</i><b>S</b><i>|</i><b>C</b></span></a>
     <span class="nav" id="nav"><a class="shop" href="/esim/account">Мои eSIM</a></span>
   </div>
 

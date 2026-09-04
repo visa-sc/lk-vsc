@@ -22,11 +22,16 @@
     background:radial-gradient(circle,#bfe3f7 0%,rgba(191,227,247,0) 70%);}
   .wrap{max-width:520px;margin:0 auto;padding:0 18px 70px;}
   .hdr{display:flex;align-items:center;justify-content:space-between;padding:20px 0 14px;}
-  .brand{display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink);}
+  .brand{display:inline-flex;flex-direction:column;align-items:flex-start;text-decoration:none;color:var(--ink);}
+  .brandrow{display:flex;align-items:center;gap:9px;}
   .brand img{height:18px;display:block;}
-  .brand span{font-size:19px;font-weight:300;letter-spacing:.01em;line-height:1;
+  .brand .wm2{font-size:19px;font-weight:300;letter-spacing:.01em;line-height:1;
     background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
   .hdr a.shop{font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;}
+  /* подпись «by V|S|C» — буквы фирменного знака VSC, без плашки */
+  .byvsc{display:block;font-size:9px;letter-spacing:.02em;color:#a7b0bf;margin-top:3px;white-space:nowrap;line-height:1;}
+  .byvsc b{font-weight:800;font-size:9.5px;color:#0099cf;letter-spacing:.06em;}
+  .byvsc i{font-style:normal;color:#bcd8e6;margin:0 1.5px;font-weight:400;}
   h1{font-size:26px;letter-spacing:-.03em;margin:10px 0 4px;font-weight:800;}
   .who{font-size:13px;color:var(--mut);margin-bottom:18px;}
   .card{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);
@@ -84,7 +89,7 @@
 <div class="blob"></div>
 <div class="wrap">
   <div class="hdr">
-    <a class="brand" href="/esim"><img src="/voyo-logo.png" alt="VOYO"/><span>mobile</span></a>
+    <a class="brand" href="/esim"><span class="brandrow"><img src="/voyo-logo.png" alt="VOYO"/><span class="wm2">mobile</span></span><span class="byvsc">by <b>V</b><i>|</i><b>S</b><i>|</i><b>C</b></span></a>
     <a class="shop" id="outLink" href="/esim/logout" style="color:var(--mut);display:none">Выйти</a>
   </div>
 

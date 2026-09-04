@@ -34,7 +34,8 @@
 
   /* ── шапка ── */
   .hdr{display:flex;align-items:center;justify-content:space-between;padding:22px 0 6px;}
-  .brand{display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink);}
+  .brand{display:inline-flex;flex-direction:column;align-items:flex-start;text-decoration:none;color:var(--ink);}
+  .brandrow{display:flex;align-items:center;gap:9px;}
   .brand .lg{height:19px;display:block;}
   .brand .wm{font-size:20px;font-weight:300;letter-spacing:.01em;line-height:1;
     background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
@@ -43,6 +44,10 @@
     padding:9px 15px;transition:all .16s ease;box-shadow:0 1px 2px rgba(16,24,40,.03);}
   .hdr .mine:hover{border-color:#aed3ea;transform:translateY(-1px);box-shadow:0 8px 18px -10px rgba(53,137,189,.45);}
 
+  /* подпись «by V|S|C» — буквы фирменного знака VSC, без плашки */
+  .byvsc{display:block;font-size:9px;letter-spacing:.02em;color:#a7b0bf;margin-top:3px;white-space:nowrap;line-height:1;}
+  .byvsc b{font-weight:800;font-size:9.5px;color:#0099cf;letter-spacing:.06em;}
+  .byvsc i{font-style:normal;color:#bcd8e6;margin:0 1.5px;font-weight:400;}
   /* ── герой ── */
   .hero{text-align:center;padding:52px 0 10px;}
   .hero h1{font-size:clamp(34px,5.6vw,56px);line-height:1.06;letter-spacing:-.035em;margin:0 0 16px;font-weight:800;}
@@ -238,8 +243,8 @@
 
   <div class="hdr">
     <a class="brand" href="/esim">
-      <img class="lg" src="/voyo-logo.png" alt="VOYO" />
-      <span class="wm">mobile</span>
+      <span class="brandrow"><img class="lg" src="/voyo-logo.png" alt="VOYO" /><span class="wm">mobile</span></span>
+      <span class="byvsc">by <b>V</b><i>|</i><b>S</b><i>|</i><b>C</b></span>
     </a>
     <a class="mine" href="/esim/account">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex:none">
