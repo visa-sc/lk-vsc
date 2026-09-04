@@ -4146,9 +4146,13 @@
                   inset 0 1px 0 rgba(255,255,255,.9);
       backdrop-filter: saturate(1.7) blur(18px); -webkit-backdrop-filter: saturate(1.7) blur(18px);
       transition: height .3s cubic-bezier(.34,1.2,.5,1), width .3s cubic-bezier(.34,1.2,.5,1),
-                  bottom .3s cubic-bezier(.34,1.2,.5,1), box-shadow .25s ease;
+                  bottom .3s cubic-bezier(.34,1.2,.5,1), box-shadow .25s ease,
+                  opacity .22s ease, transform .26s cubic-bezier(.34,1.2,.5,1);
     }
     .lkl-nav.show { display: flex; }
+    /* Пока в рамке eSIM открыта карточка пакета, меню уезжает вниз — иначе оно
+       перекрывает кнопку «Купить». Возвращается, как только карточку закрыли. */
+    .lkl-nav.away { opacity: 0; pointer-events: none; transform: translate(-50%, 26px); }
     /* При скролле меню ужимается до иконок — не закрывает содержимое */
     /* При сжатии меняем только размер — высоту над краем НЕ трогаем, иначе меню
        «ныряет» вниз и выглядит прилипшим к нижней границе экрана. */
@@ -4394,6 +4398,13 @@
         var min = y > 24;
         if (min !== nav.classList.contains("min")) nav.classList.toggle("min", min);
       }
+      window.addEventListener("message", function (e) {
+        if (e.origin !== location.origin) return;
+        var d = e.data;
+        if (!d || d.voyoEsim !== "modal") return;
+        nav.classList.toggle("away", !!d.open);
+      });
+
       // Вернулись по ссылке из письма (/cabinet#esim) — сразу открываем раздел
       if (location.hash === "#esim") { go("esim"); try { history.replaceState(null, "", "/cabinet"); } catch (_) {} }
 

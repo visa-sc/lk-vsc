@@ -210,6 +210,7 @@
   body.embed .hdr, body.embed .helpblk, body.embed .foot{display:none;}
   body.embed .wrap{padding-top:20px;padding-bottom:112px;}  /* воздух сверху и место под меню кабинета */
   body.embed #mBonusWrap{display:none!important;}           /* бонусы рефералки — только на /esim */
+  body.embed .modal{padding-bottom:34px;}                   /* меню кабинета на время карточки прячется */
   .foot{margin-top:56px;text-align:center;font-size:12px;color:var(--mut);line-height:1.7;}
 
   /* ── модал пакета ── */
@@ -217,7 +218,7 @@
     z-index:100;display:none;align-items:flex-end;justify-content:center;padding:0;}
   .ovl.on{display:flex;}
   @media(min-width:640px){ .ovl{align-items:center;padding:24px;} }
-  .modal{background:#fff;border-radius:28px 28px 0 0;max-width:480px;width:100%;max-height:92vh;overflow-y:auto;
+  .modal{background:#fff;border-radius:28px 28px 0 0;max-width:480px;width:100%;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
     padding:26px 24px 24px;position:relative;animation:up .24s cubic-bezier(.2,.9,.3,1);}
   @media(min-width:640px){ .modal{border-radius:28px;animation:pop .2s cubic-bezier(.2,.9,.3,1);} }
   @keyframes up{from{transform:translateY(48px);opacity:.4}to{transform:none;opacity:1}}
@@ -330,7 +331,7 @@
     <div class="sortbar" id="sortBar">
       <button class="sortbtn" id="sortBtn" type="button" aria-haspopup="true" aria-expanded="false">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M7 4v16m0 0-3.5-3.5M7 20l3.5-3.5"/><path d="M17 20V4m0 0-3.5 3.5M17 4l3.5 3.5"/></svg>
-        <span id="sortLbl">Подешевле</span>
+        <span id="sortLbl">Дешевле</span>
         <svg class="cv" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="m6 9 6 6 6-6"/></svg>
       </button>
       <div class="sortmenu" id="sortMenu" role="menu"></div>
@@ -469,7 +470,7 @@
 
   /* ── сортировка списка: выбор клиента, запоминаем в браузере ── */
   var SORTS = [
-    {k:"price", lbl:"Подешевле",   t:"Сначала дешёвые",    d:"По цене пакета"},
+    {k:"price", lbl:"Дешевле",     t:"Сначала дешёвые",    d:"По цене пакета"},
     {k:"value", lbl:"Выгодные",    t:"Сначала выгодные",   d:"Лучшая цена за гигабайт"},
     {k:"gb",    lbl:"Больше ГБ",   t:"Больше гигабайтов",  d:"Сначала объёмные пакеты"}
   ];
@@ -707,6 +708,7 @@
       document.getElementById("mNote").textContent = "Оплата картой в рублях через Т-Банк. Сразу после оплаты придёт QR-код.";
     }
     ovl.classList.add("on");
+    tellLk(true);
     document.body.style.overflow="hidden";
   }
   // Пересчёт суммы: промокод, реферальная скидка и списание бонусов считает сервер
@@ -763,7 +765,11 @@
   });
   document.getElementById("mPromo").addEventListener("keydown",function(e){ if(e.key==="Enter") document.getElementById("mPromoApply").click(); });
 
-  function closeModal(){ ovl.classList.remove("on"); document.body.style.overflow=""; }
+  function tellLk(open){
+    if(!EMBED) return;
+    try{ window.parent.postMessage({ voyoEsim:"modal", open:!!open }, location.origin); }catch(e){}
+  }
+  function closeModal(){ ovl.classList.remove("on"); document.body.style.overflow=""; tellLk(false); }
   document.getElementById("mClose").addEventListener("click",closeModal);
   ovl.addEventListener("click",function(e){ if(e.target===ovl) closeModal(); });
 
