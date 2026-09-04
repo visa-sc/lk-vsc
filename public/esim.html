@@ -235,6 +235,24 @@
   .specs .k{font-size:11px;color:var(--mut);margin-bottom:3px;font-weight:600;}
   .specs .v{font-size:15px;font-weight:700;letter-spacing:-.01em;}
   .cov{font-size:12.5px;color:var(--mut);line-height:1.6;margin:-6px 0 16px;}
+  .cov .more{color:var(--accent);font-weight:600;cursor:pointer;text-decoration:none;border-bottom:1px solid rgba(53,137,189,.35);}
+  .cov .more:hover{border-bottom-color:var(--accent);}
+  /* Окно «где работает» — поверх карточки пакета, заметно меньше её */
+  .covovl{position:fixed;inset:0;z-index:120;display:none;align-items:center;justify-content:center;padding:18px;
+    background:rgba(18,28,42,.42);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
+  .covovl.on{display:flex;}
+  .covbox{background:#fff;border-radius:24px;max-width:400px;width:100%;max-height:min(72vh,calc(100% - 8px));
+    display:flex;flex-direction:column;position:relative;overflow:hidden;
+    box-shadow:0 24px 60px -20px rgba(16,32,64,.45);animation:pop .18s cubic-bezier(.2,.9,.3,1);}
+  .covbox .ch{flex:none;padding:20px 22px 12px;}
+  .covbox .ch .t{font-size:17px;font-weight:800;letter-spacing:-.02em;padding-right:34px;}
+  .covbox .ch .s{font-size:12.5px;color:var(--mut);margin-top:3px;}
+  .covbox .cx{position:absolute;top:14px;right:14px;width:30px;height:30px;border-radius:50%;border:0;cursor:pointer;
+    background:#f0f3f7;color:var(--mut);font-size:14px;display:flex;align-items:center;justify-content:center;}
+  .covbox .cb{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 22px 20px;}
+  .covbox .rg{margin-top:14px;}
+  .covbox .rg .rt{font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);margin-bottom:5px;}
+  .covbox .rg .rl{font-size:13px;line-height:1.6;color:#3a4356;}
   .cov b{color:var(--ink);}
   .steps{background:#f4f9fd;border:1px solid #ddedf7;border-radius:16px;padding:14px 16px;margin-bottom:18px;}
   .steps .h{font-size:11px;font-weight:800;color:var(--accent-d);text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px;}
@@ -381,6 +399,14 @@
 </div>
 
 <!-- модал пакета -->
+<div class="covovl" id="covOvl">
+  <div class="covbox" role="dialog" aria-modal="true" aria-label="Где работает eSIM">
+    <button class="cx" id="covX" type="button" aria-label="Закрыть">✕</button>
+    <div class="ch"><div class="t">Где работает</div><div class="s" id="covSub"></div></div>
+    <div class="cb" id="covBody"></div>
+  </div>
+</div>
+
 <div class="ovl" id="ovl">
   <div class="modal" id="modal">
     <button class="x" id="mClose" type="button">✕</button>
@@ -438,8 +464,29 @@
   }catch(e){}
   var PROMO = "";
 
+  // «1 страна», «2 страны», «5 стран» — иначе бросается в глаза
+  function plural(n, forms){
+    var a = Math.abs(n) % 100, b = a % 10;
+    if(a > 10 && a < 20) return forms[2];
+    if(b > 1 && b < 5) return forms[1];
+    if(b === 1) return forms[0];
+    return forms[2];
+  }
+  function nStran(n){ return n + " " + plural(n, ["страна","страны","стран"]); }
+
+  // Регионы мира — чтобы список покрытия читался, а не был простынёй из 80 строк
+  var REGIONS = [
+    ["Европа", "AL AD AT BY BE BA BG HR CY CZ DK EE FO FI FR DE GI GR GG HU IS IE IM IT JE XK LV LI LT LU MT MD MC ME NL MK NO PL PT RO RU SM RS SK SI ES SE CH TR UA GB VA"],
+    ["Азия", "AF AM AZ BD BT BN KH CN GE HK IN ID JP KZ KG LA MO MY MV MN MM NP KP KR PK PH SG LK TW TJ TH TL TM UZ VN"],
+    ["Ближний Восток", "BH IQ IR IL JO KW LB OM PS QA SA SY AE YE"],
+    ["Африка", "DZ AO BJ BW BF BI CM CV CF TD KM CD CG CI DJ EG GQ ER SZ ET GA GM GH GN GW KE LS LR LY MG MW ML MR MU MA MZ NA NE NG RE RW ST SN SC SL SO ZA SS SD TZ TG TN UG ZM ZW"],
+    ["Северная Америка", "US CA BM GL PM"],
+    ["Латинская Америка и Карибы", "AI AG AR AW BS BB BZ BO BQ BR VG KY CL CO CR CU CW DM DO EC SV FK GF GD GP GT GY HT HN JM MQ MX MS NI PA PY PE PR BL KN LC MF VC SR TT TC UY VE"],
+    ["Океания", "AS AU CK FJ PF GU KI MH FM NR NC NZ NU MP PW PG WS SB TK TO TV VU WF"]
+  ].map(function(r){ var set={}; r[1].split(" ").forEach(function(c){ set[c]=1; }); return {name:r[0], set:set}; });
+
   var dn; try{ dn = new Intl.DisplayNames(["ru"],{type:"region"}); }catch(e){ dn = null; }
-  var SHORT = {US:"США", GB:"Великобритания", AE:"ОАЭ", KR:"Южная Корея", CZ:"Чехия"};
+  var SHORT = {US:"США", GB:"Великобритания", AE:"ОАЭ", KR:"Южная Корея", CZ:"Чехия", "US-HI":"Гавайи"};
   function cname(iso){ if(iso==="EU-REGION") return "Европа"; if(SHORT[iso]) return SHORT[iso]; try{ return (dn && dn.of(iso)) || iso; }catch(e){ return iso; } }
   function flag(iso){
     if(iso==="EU-REGION") return "🇪🇺";
@@ -534,8 +581,8 @@
   function pkCard(p){
     var multi = p.countries.length > 1;
     var head, sub;
-    if(current === "EU-REGION" || (multi && !current)){ head = "Европа и рядом"; sub = p.countries.length+" стран"; }
-    else { head = cname(current||p.countries[0]); sub = multi ? ("+ ещё "+(p.countries.length-1)+" стран") : (p.operator||""); }
+    if(current === "EU-REGION" || (multi && !current)){ head = "Европа и рядом"; sub = nStran(p.countries.length); }
+    else { head = cname(current||p.countries[0]); sub = multi ? ("+ ещё "+nStran(p.countries.length-1)) : (p.operator||""); }
     var gb = p.unlimited ? '∞' : (p.dataGb!=null ? RU(p.dataGb) : "—");
     var card = el('<div class="pk">'+
       '<div class="top"><span class="fl">'+flag(multi&&current!=="EU-REGION"?(current||p.countries[0]):(multi?"EU-REGION":p.countries[0]))+'</span>'+
@@ -686,9 +733,13 @@
     var cov = "";
     if(multi){
       var names = p.countries.slice(0,8).map(cname).join(", ");
-      cov = '<b>Покрытие:</b> '+esc(names)+(p.countries.length>8?" и ещё "+(p.countries.length-8)+" стран":"")+".";
+      var rest = p.countries.length - 8;
+      cov = '<b>Покрытие:</b> '+esc(names) +
+        (rest > 0 ? ' и ещё <a class="more" id="covMore" href="#">'+nStran(rest)+'</a>' : "") + ".";
     }
     document.getElementById("mCov").innerHTML = cov;
+    var covMore = document.getElementById("covMore");
+    if(covMore) covMore.addEventListener("click", function(e){ e.preventDefault(); openCov(p); });
     document.getElementById("mOk").classList.remove("on");
     document.getElementById("mErr").classList.remove("on");
     document.getElementById("mPhoneWrap").classList.remove("on");
@@ -765,6 +816,30 @@
       msg.style.color="var(--red)"; msg.textContent=why; PROMO=""; await recalc(); }
   });
   document.getElementById("mPromo").addEventListener("keydown",function(e){ if(e.key==="Enter") document.getElementById("mPromoApply").click(); });
+
+  /* ── «Где работает»: полный список стран по регионам ── */
+  var covOvl = document.getElementById("covOvl");
+  function openCov(p){
+    var left = p.countries.slice(), html = "";
+    REGIONS.forEach(function(r){
+      var mine = left.filter(function(c){ return r.set[c] || r.set[c.split("-")[0]]; });
+      if(!mine.length) return;
+      left = left.filter(function(c){ return !(r.set[c] || r.set[c.split("-")[0]]); });
+      html += '<div class="rg"><div class="rt">'+esc(r.name)+' · '+mine.length+'</div><div class="rl">'+
+        esc(mine.map(cname).sort(function(a,b){ return a.localeCompare(b,"ru"); }).join(", "))+'</div></div>';
+    });
+    if(left.length){
+      html += '<div class="rg"><div class="rt">Другие страны · '+left.length+'</div><div class="rl">'+
+        esc(left.map(cname).sort(function(a,b){ return a.localeCompare(b,"ru"); }).join(", "))+'</div></div>';
+    }
+    document.getElementById("covSub").textContent = "Пакет работает в " + nStran(p.countries.length) + " — интернет включится в любой из них.";
+    document.getElementById("covBody").innerHTML = html;
+    covOvl.classList.add("on");
+  }
+  function closeCov(){ covOvl.classList.remove("on"); }
+  document.getElementById("covX").addEventListener("click", closeCov);
+  covOvl.addEventListener("click", function(e){ if(e.target === covOvl) closeCov(); });
+  document.addEventListener("keydown", function(e){ if(e.key === "Escape" && covOvl.classList.contains("on")) closeCov(); });
 
   function tellLk(open){
     if(!EMBED) return;
