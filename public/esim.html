@@ -221,6 +221,13 @@
   .promo button{font:inherit;font-size:14px;font-weight:600;border:0;background:#eef4f9;color:var(--accent-d);
     border-radius:12px;padding:0 16px;cursor:pointer;white-space:nowrap;}
   .promo .msg{font-size:12.5px;margin-top:7px;line-height:1.5;}
+  .usebonus{display:none;align-items:flex-start;gap:10px;background:#f2f9fd;border:1px solid #d9ebf7;
+    border-radius:14px;padding:12px 14px;margin-bottom:12px;cursor:pointer;user-select:none;}
+  .usebonus.on{display:flex;}
+  .usebonus input{width:19px;height:19px;flex:none;margin:1px 0 0;accent-color:var(--accent);cursor:pointer;}
+  .usebonus .t{font-size:13.5px;line-height:1.45;}
+  .usebonus .t b{display:block;font-weight:700;}
+  .usebonus .t span{color:var(--mut);font-size:12.5px;}
   .sumbox{background:#f6f9fc;border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px;
     font-size:13.5px;display:none;}
   .sumbox.on{display:block;}
@@ -338,6 +345,10 @@
         <div class="msg" id="mPromoMsg"></div>
       </div>
     </div>
+    <label class="usebonus" id="mBonusWrap">
+      <input type="checkbox" id="mBonus" />
+      <span class="t"><b id="mBonusT"></b><span id="mBonusS"></span></span>
+    </label>
     <div class="sumbox" id="mSum"></div>
     <div class="phonewrap" id="mPhoneWrap">
       <label id="mPhoneLb">Email — пришлём чек и доступ к вашей eSIM</label>
@@ -576,6 +587,8 @@
     document.getElementById("mPromoMsg").textContent = "";
     document.getElementById("mPromoBody").classList.remove("on");
     document.getElementById("mSum").classList.remove("on");
+    document.getElementById("mBonus").checked = false;
+    document.getElementById("mBonusWrap").classList.remove("on");
     document.getElementById("mPromoWrap").style.display = PAY ? "block" : "none";
     if(PAY && REF) recalc();
     if(PAY){
@@ -590,14 +603,22 @@
     if(!mP || !PAY) return null;
     try{
       var r = await fetch("/esim/api/price",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({productId:mP.id, promo:PROMO, ref:REF, email:(document.getElementById("mPhone").value||"").trim()})});
+        body:JSON.stringify({productId:mP.id, promo:PROMO, ref:REF, useBalance:document.getElementById("mBonus").checked,
+          email:(document.getElementById("mPhone").value||"").trim()})});
       var j = await r.json();
       if(!j || !j.success) return null;
+      // Бонусы предлагаем, но не списываем без согласия
+      var bw = document.getElementById("mBonusWrap");
+      if(j.balanceCanUse > 0){
+        bw.classList.add("on");
+        document.getElementById("mBonusT").textContent = "Списать "+RU(j.balanceCanUse)+" ₽ бонусами";
+        document.getElementById("mBonusS").textContent = "У вас "+RU(j.balanceRub)+" ₽. Бонусами можно закрыть до половины стоимости.";
+      } else { bw.classList.remove("on"); }
       var box = document.getElementById("mSum"), rows = "";
       if(j.discountRub > 0 || j.balanceUsed > 0){
         rows += '<div class="l"><span>Пакет</span><span>'+RU(j.listPrice)+' ₽</span></div>';
         if(j.discountRub > 0) rows += '<div class="l"><span>'+(j.discountKind==="ref"?"Скидка по приглашению":"Промокод")+'</span><span class="g">−'+RU(j.discountRub)+' ₽</span></div>';
-        if(j.balanceUsed > 0) rows += '<div class="l"><span>Списано бонусами</span><span class="g">−'+RU(j.balanceUsed)+' ₽</span></div>';
+        if(j.balanceUsed > 0) rows += '<div class="l"><span>Бонусами</span><span class="g">−'+RU(j.balanceUsed)+' ₽</span></div>';
         rows += '<div class="l"><span>К оплате</span><span>'+RU(j.total)+' ₽</span></div>';
         box.innerHTML = rows; box.classList.add("on");
       } else { box.classList.remove("on"); }
@@ -606,6 +627,7 @@
       return j;
     }catch(e){ return null; }
   }
+  document.getElementById("mBonus").addEventListener("change", recalc);
   document.getElementById("mPromoToggle").addEventListener("click",function(){
     document.getElementById("mPromoBody").classList.toggle("on");
     document.getElementById("mPromo").focus();
@@ -644,7 +666,8 @@
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF})});
+          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF,
+            useBalance:document.getElementById("mBonus").checked})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){ location.href = pj.url; return; }
         throw new Error((pj&&pj.message)||"Ошибка");

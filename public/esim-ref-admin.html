@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Промокоды и рефералка — VOYO mobile</title>
+<link rel="icon" type="image/png" href="/icon-app.png" />
+<style>
+  :root{
+    --bg:#f5f7fb; --card:#fff; --line:#e6eaf2; --ink:#16202e; --mut:#8b93a5;
+    --accent:#3589bd; --accent-d:#2c6f96; --green:#2c7a43; --red:#b0263a;
+    --grad:linear-gradient(135deg,#2c6f96 0%,#3d95c7 55%,#5ac8fa 120%);
+    --sh:0 1px 2px rgba(16,24,40,.04),0 18px 44px -22px rgba(22,48,80,.22);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1000px;margin:0 auto;padding:26px 18px 80px;}
+  .hdr{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:22px;}
+  .hdr .t{font-size:24px;font-weight:800;letter-spacing:-.025em;}
+  .hdr .t small{display:block;font-size:12.5px;font-weight:500;color:var(--mut);margin-top:3px;letter-spacing:0;}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:22px;}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:var(--sh);}
+  .stat .k{font-size:11.5px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
+  .stat .v{font-size:24px;font-weight:800;letter-spacing:-.02em;margin-top:5px;}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px 20px;box-shadow:var(--sh);margin-bottom:18px;}
+  .panel h2{font-size:16px;font-weight:800;margin:0 0 4px;letter-spacing:-.015em;}
+  .panel .ps{font-size:12.5px;color:var(--mut);margin-bottom:14px;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);
+    font-weight:700;padding:0 10px 9px 0;border-bottom:1px solid var(--line);}
+  td{padding:11px 10px 11px 0;border-bottom:1px solid var(--line);vertical-align:middle;}
+  tr:last-child td{border-bottom:0;}
+  .code{font-weight:800;letter-spacing:.03em;}
+  .badge{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:3px 9px;}
+  .badge.on{background:#e6f5ec;color:var(--green);}
+  .badge.off{background:#f0f2f5;color:var(--mut);}
+  .mini{font-size:12px;color:var(--mut);}
+  .form{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+  .form input{border:1px solid var(--line);border-radius:11px;padding:10px 12px;font:inherit;font-size:14px;}
+  .form input.code{width:150px;text-transform:uppercase;}
+  .form input.rub{width:90px;}
+  .form input.note{flex:1;min-width:140px;text-transform:none;font-weight:400;letter-spacing:0;}
+  .btn{font:inherit;font-size:14px;font-weight:700;border:0;border-radius:11px;padding:11px 18px;cursor:pointer;
+    background:var(--grad);color:#fff;box-shadow:0 10px 20px -10px rgba(53,137,189,.8);}
+  .btn.sec{background:#eef2f7;color:var(--ink);box-shadow:none;font-weight:600;}
+  .btn:disabled{opacity:.55;cursor:default;}
+  .lnk{background:none;border:0;color:var(--red);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;padding:0;}
+  .empty{color:var(--mut);font-size:13.5px;padding:14px 0;}
+  .msg{font-size:13px;margin-top:10px;}
+  .gate{max-width:340px;margin:80px auto;text-align:center;}
+  .gate input{width:100%;border:1px solid var(--line);border-radius:14px;padding:14px 15px;font:inherit;font-size:16px;margin:14px 0 10px;text-align:center;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="gate" class="gate">
+    <div style="font-size:19px;font-weight:800;letter-spacing:-.02em">Промокоды и рефералка</div>
+    <input id="code" type="password" inputmode="numeric" placeholder="Код доступа" />
+    <button class="btn" id="enter" type="button" style="width:100%">Войти</button>
+    <div class="msg" id="gateMsg" style="color:var(--red)"></div>
+  </div>
+
+  <div id="main" style="display:none">
+    <div class="hdr">
+      <div class="t">Промокоды и рефералка<small>VOYO mobile · voyotravel.ru/esim</small></div>
+      <button class="btn sec" id="reload" type="button">Обновить</button>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="panel">
+      <h2>Промокоды</h2>
+      <div class="ps">Скидка в рублях с покупки. Промокод вводится клиентом в окне оплаты.</div>
+      <div class="form">
+        <input class="code" id="nCode" placeholder="КОД" autocomplete="off" />
+        <input class="rub" id="nRub" type="number" value="100" min="1" />
+        <span class="mini">₽ скидка</span>
+        <input class="rub" id="nMax" type="number" placeholder="лимит" min="1" />
+        <input class="note" id="nNote" placeholder="заметка (для себя)" />
+        <button class="btn" id="add" type="button">Создать</button>
+      </div>
+      <div id="promos"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Клиенты и бонусы</h2>
+      <div class="ps">Баланс начисляется за приглашённых друзей и списывается с их покупок автоматически.</div>
+      <div id="customers"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var ADM = "";
+  function el(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
+  function fmt(ts){ try{ return new Date(ts).toLocaleDateString("ru-RU",{day:"numeric",month:"short",year:"2-digit"}); }catch(e){ return ""; } }
+
+  async function api(path, body){
+    var r = await fetch(path + (path.indexOf("?")>0?"&":"?") + "adm=" + encodeURIComponent(ADM),
+      body ? {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)} : {});
+    if(r.status === 403) throw new Error("forbidden");
+    return await r.json();
+  }
+
+  function render(d){
+    var st = el("stats");
+    st.innerHTML =
+      '<div class="stat"><div class="k">Промокодов</div><div class="v">'+d.promos.length+'</div></div>'+
+      '<div class="stat"><div class="k">Применений промо</div><div class="v">'+RU(d.stats.promoUses)+'</div></div>'+
+      '<div class="stat"><div class="k">Клиентов</div><div class="v">'+RU(d.stats.customers)+'</div></div>'+
+      '<div class="stat"><div class="k">Приглашено друзей</div><div class="v">'+RU(d.stats.invited)+'</div></div>'+
+      '<div class="stat"><div class="k">Бонусов на балансах</div><div class="v">'+RU(d.stats.balanceTotal)+' ₽</div></div>'+
+      '<div class="stat"><div class="k">Списано бонусами</div><div class="v">'+RU(d.stats.spent)+' ₽</div></div>';
+
+    var p = el("promos");
+    if(!d.promos.length){ p.innerHTML = '<div class="empty">Промокодов пока нет.</div>'; }
+    else {
+      p.innerHTML = '<table><thead><tr><th>Код</th><th>Скидка</th><th>Использован</th><th>Статус</th><th>Заметка</th><th></th></tr></thead><tbody>'+
+        d.promos.map(function(x){
+          return '<tr><td class="code">'+esc(x.code)+'</td><td>'+RU(x.rub)+' ₽</td>'+
+            '<td>'+RU(x.uses)+(x.maxUses?(' <span class="mini">из '+RU(x.maxUses)+'</span>'):'')+'</td>'+
+            '<td><span class="badge '+(x.active?"on":"off")+'">'+(x.active?"активен":"выключен")+'</span></td>'+
+            '<td class="mini">'+esc(x.note||"")+'</td>'+
+            '<td>'+(x.active?'<button class="lnk" data-off="'+esc(x.code)+'">выключить</button>':'')+'</td></tr>';
+        }).join("")+'</tbody></table>';
+      p.querySelectorAll("[data-off]").forEach(function(b){
+        b.addEventListener("click", async function(){
+          b.disabled = true;
+          await api("/esim/api/ref-admin/promo", { code: b.getAttribute("data-off"), off: true });
+          load();
+        });
+      });
+    }
+
+    var c = el("customers");
+    if(!d.customers.length){ c.innerHTML = '<div class="empty">Пока нет ни одного клиента.</div>'; }
+    else {
+      c.innerHTML = '<table><thead><tr><th>Email</th><th>Реф-код</th><th>Баланс</th><th>Пригласил</th><th>Пришёл от</th><th>Покупок</th><th>С нами с</th></tr></thead><tbody>'+
+        d.customers.map(function(x){
+          return '<tr><td>'+esc(x.email)+'</td><td class="code">'+esc(x.refCode||"")+'</td>'+
+            '<td><b>'+RU(x.balanceRub)+' ₽</b></td><td>'+RU(x.invitedCount)+'</td>'+
+            '<td class="mini">'+esc(x.invitedBy||"—")+'</td><td>'+RU(x.orders)+'</td>'+
+            '<td class="mini">'+fmt(x.ts)+'</td></tr>';
+        }).join("")+'</tbody></table>';
+    }
+  }
+
+  async function load(){
+    try{
+      var d = await api("/esim/api/ref-admin");
+      if(!d || !d.success) throw new Error("bad");
+      el("gate").style.display="none"; el("main").style.display="block";
+      try{ sessionStorage.setItem("voyo_esim_adm", ADM); }catch(e){}
+      render(d);
+    }catch(e){
+      el("gateMsg").textContent = e.message==="forbidden" ? "Неверный код." : "Не удалось загрузить.";
+      el("gate").style.display="block"; el("main").style.display="none";
+    }
+  }
+
+  el("enter").addEventListener("click", function(){ ADM = el("code").value.trim(); if(ADM) load(); });
+  el("code").addEventListener("keydown", function(e){ if(e.key==="Enter") el("enter").click(); });
+  el("reload").addEventListener("click", load);
+  el("add").addEventListener("click", async function(){
+    var code = el("nCode").value.trim().toUpperCase();
+    if(!code) return;
+    this.disabled = true;
+    await api("/esim/api/ref-admin/promo", {
+      code: code, rub: parseInt(el("nRub").value,10)||100,
+      max: parseInt(el("nMax").value,10)||null, note: el("nNote").value.trim(),
+    });
+    el("nCode").value=""; el("nNote").value=""; el("nMax").value="";
+    this.disabled = false;
+    load();
+  });
+
+  var saved = ""; try{ saved = sessionStorage.getItem("voyo_esim_adm")||""; }catch(e){}
+  if(saved){ ADM = saved; load(); }
+})();
+</script>
+</body>
+</html>

@@ -43,6 +43,8 @@ const PROMOS_FILE = path.join(DIR, "promos.json");       // промокоды
 // а нам нечем подтвердить покупку и выбить чек.
 const REF_BONUS_RUB = Number(process.env.ESIM_REF_BONUS || 100);   // другу и пригласившему
 const MIN_PAY_RUB = Number(process.env.ESIM_MIN_PAY || 100);
+// Бонусами можно закрыть не больше половины стоимости пакета — остальное деньгами
+const MAX_BONUS_SHARE = Number(process.env.ESIM_MAX_BONUS_SHARE || 0.5);
 
 const MARKUP = Number(process.env.ESIM_MARKUP || 2.5);
 const MIN_RUB = Number(process.env.ESIM_MIN_RUB || 590);
@@ -288,8 +290,9 @@ function usePromo(code) {
 
 // Единая калькуляция цены: список → промокод/реферал → списание баланса.
 // Скидки не складываются между собой (промокод ИЛИ реферальная), баланс — сверху.
-function priceWithDiscounts({ listPrice, email, promoCode, refCode }) {
-  const out = { listPrice, discountRub: 0, discountKind: null, promoCode: null, refBy: null, balanceUsed: 0, total: listPrice };
+function priceWithDiscounts({ listPrice, email, promoCode, refCode, useBalance }) {
+  const out = { listPrice, discountRub: 0, discountKind: null, promoCode: null, refBy: null,
+                balanceRub: 0, balanceCanUse: 0, balanceUsed: 0, total: listPrice };
   const promo = checkPromo(promoCode);
   if (promo && promo.rub > 0) {
     out.discountRub = promo.rub; out.discountKind = "promo"; out.promoCode = promo.code;
@@ -303,8 +306,16 @@ function priceWithDiscounts({ listPrice, email, promoCode, refCode }) {
   let afterDiscount = Math.max(MIN_PAY_RUB, listPrice - out.discountRub);
   out.discountRub = listPrice - afterDiscount;          // если упёрлись в минимум — показываем честную скидку
   const cust = getCustomer(email, false);
-  if (cust && cust.balanceRub > 0) {
-    out.balanceUsed = Math.min(cust.balanceRub, Math.max(0, afterDiscount - MIN_PAY_RUB));
+  out.balanceRub = (cust && cust.balanceRub) || 0;
+  // Сколько бонусов вообще можно пустить в дело: не больше половины пакета,
+  // не больше самого баланса и так, чтобы к оплате осталась минимальная сумма.
+  out.balanceCanUse = Math.max(0, Math.min(
+    out.balanceRub,
+    Math.floor(listPrice * MAX_BONUS_SHARE),
+    afterDiscount - MIN_PAY_RUB
+  ));
+  if (useBalance && out.balanceCanUse > 0) {
+    out.balanceUsed = out.balanceCanUse;
     afterDiscount -= out.balanceUsed;
   }
   out.total = afterDiscount;
@@ -663,7 +674,7 @@ function mount(app, opts) {
       }
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
       const listPrice = toRetailRub(found.item.costUsd, rate);
-      const calc = priceWithDiscounts({ listPrice, email, promoCode: b.promo, refCode: b.ref });
+      const calc = priceWithDiscounts({ listPrice, email, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const priceRub = calc.total;
       const id = crypto.randomBytes(6).toString("hex");
       const label = labelFor(found.item);
@@ -699,12 +710,12 @@ function mount(app, opts) {
       if (!found) return res.status(400).json({ success: false, message: "Пакет не найден." });
       const email = normEmail(b.email) || readSession(req) || "";
       const listPrice = toRetailRub(found.item.costUsd, rate);
-      const calc = priceWithDiscounts({ listPrice, email, promoCode: b.promo, refCode: b.ref });
+      const calc = priceWithDiscounts({ listPrice, email, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const promoTried = String(b.promo || "").trim();
       res.json({
         success: true, listPrice, total: calc.total,
         discountRub: calc.discountRub, discountKind: calc.discountKind,
-        balanceUsed: calc.balanceUsed,
+        balanceRub: calc.balanceRub, balanceCanUse: calc.balanceCanUse, balanceUsed: calc.balanceUsed,
         promoOk: promoTried ? calc.discountKind === "promo" : null,
       });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
@@ -806,6 +817,56 @@ function mount(app, opts) {
   });
 
   app.get("/esim/logout", (req, res) => { clearSession(res); res.redirect("/esim"); });
+
+  // ═══ Админка промокодов и рефералки: /esim_ref_admin ═══
+  app.get("/esim_ref_admin", (req, res) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.sendFile(path.join(__dirname, "public", "esim-ref-admin.html"));
+  });
+  app.get("/esim/api/ref-admin", (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    const promosRaw = loadPromos();
+    const promos = Object.entries(promosRaw).map(([code, v]) => ({
+      code, rub: v.rub, uses: v.uses || 0, maxUses: v.maxUses || null,
+      active: v.active !== false, note: v.note || "", ts: v.ts || null,
+    })).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    const custAll = loadCustomers();
+    const orders = readJson(ORDERS_FILE, []);
+    const customers = Object.values(custAll).map((c) => ({
+      email: c.email, refCode: c.refCode, balanceRub: c.balanceRub || 0,
+      invitedBy: c.invitedBy || null, ts: c.ts || null,
+      invitedCount: Object.values(custAll).filter((x) => normEmail(x.invitedBy || "") === normEmail(c.email)).length,
+      orders: orders.filter((o) => o.email === c.email && o.status === "done").length,
+    })).sort((a, b) => (b.balanceRub - a.balanceRub) || (b.ts || 0) - (a.ts || 0));
+    res.json({
+      success: true, promos, customers,
+      stats: {
+        promoUses: promos.reduce((s2, x) => s2 + x.uses, 0),
+        customers: customers.length,
+        invited: customers.filter((c) => c.invitedBy).length,
+        balanceTotal: customers.reduce((s2, c) => s2 + c.balanceRub, 0),
+        spent: orders.filter((o) => o.status === "done").reduce((s2, o) => s2 + (o.balanceUsed || 0), 0),
+      },
+    });
+  });
+  app.post("/esim/api/ref-admin/promo", (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    const b = req.body || {};
+    const code = String(b.code || "").trim().toUpperCase();
+    if (!code) return res.status(400).json({ success: false });
+    const all = loadPromos();
+    if (b.off) { if (all[code]) all[code].active = false; }
+    else {
+      all[code] = {
+        rub: Math.max(1, parseInt(b.rub, 10) || REF_BONUS_RUB), active: true,
+        uses: (all[code] && all[code].uses) || 0,
+        maxUses: parseInt(b.max, 10) || null,
+        note: String(b.note || "").slice(0, 80), ts: (all[code] && all[code].ts) || Date.now(),
+      };
+    }
+    writeJson(PROMOS_FILE, all);
+    res.json({ success: true });
+  });
 
   // Промокоды: создать/выключить/посмотреть. Только с админ-кодом.
   app.get("/esim/promo", (req, res) => {
