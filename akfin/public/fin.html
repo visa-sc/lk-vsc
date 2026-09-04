@@ -87,7 +87,9 @@ input.pill::placeholder{color:var(--faint)}
 .recline-right{display:flex;align-items:center;gap:8px}
 #dlBtn{background:#fff;border:1px solid var(--line);color:var(--muted);font-size:13px;line-height:1;
   padding:9px 14px;border-radius:999px;white-space:nowrap;cursor:pointer;-webkit-appearance:none;appearance:none}
-#dlBtn:active{background:#f2f4f8}
+#dlBtn:active,#copyBtn:active{background:#f2f4f8}
+#copyBtn{background:#fff;border:1px solid var(--line);color:var(--muted);font-size:13px;line-height:1;
+  padding:9px 14px;border-radius:999px;white-space:nowrap;cursor:pointer;-webkit-appearance:none;appearance:none}
 #recToggle{background:none;border:0;color:var(--faint);font-size:13px;padding:6px 0}
 #records{display:none;margin-top:4px}
 .sec h2{font-size:14px;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;padding:0 4px}
@@ -178,7 +180,10 @@ input.pill::placeholder{color:var(--faint)}
     <button id="saveBtn" onclick="saveEntry()">Внести</button>
 
     <div class="recline">
-      <button id="dlBtn" onclick="downloadTable()">Скачать таблицу</button>
+      <span class="recline-right">
+        <button id="copyBtn" onclick="copyRows()">Скопировать</button>
+        <button id="dlBtn" onclick="downloadTable()">Скачать таблицу</button>
+      </span>
       <button id="recToggle" onclick="toggleRecords()">Записи ›</button>
     </div>
     <div id="records">
@@ -615,6 +620,60 @@ async function refresh() {
   }
   renderChips($("name").value);
   renderToday(r);
+}
+
+// Копирование строк в буфер: главный путь на маке — Cmd+V прямо в Numbers.
+// ClipboardItem получает ПРОМИС (Safari разрешает так внутри жеста пользователя);
+// text/html несёт точные цвета таблицы, text/plain — тот же набор табами.
+async function copyRows() {
+  const t = token || "";
+  if (!t) { toast("Сначала войдите"); return; }
+  const url = "/fin/api/rows.html?scope=new&token=" + encodeURIComponent(t);
+  const btn = $("copyBtn");
+  btn.disabled = true;
+  try {
+    // одна загрузка: из неё и HTML для буфера, и список id, и месяц партии
+    const meta = { ids: "", month: "", more: "0", html: "", rows: 0 };
+    const load = fetch(url).then(async (r) => {
+      meta.ids = r.headers.get("X-Fin-Ids") || "";
+      meta.month = r.headers.get("X-Fin-Month") || "";
+      meta.more = r.headers.get("X-Fin-More") || "0";
+      meta.html = await r.text();
+      meta.rows = (meta.html.match(/<tr>/g) || []).length;
+      return meta.html;
+    });
+    const htmlBlob = load.then((h) => new Blob([h], { type: "text/html" }));
+    const textBlob = load.then((h) => {
+      const doc = new DOMParser().parseFromString(h, "text/html");
+      const lines = [...doc.querySelectorAll("tr")].map((tr) => [...tr.children].map((td) => td.textContent).join("\t"));
+      return new Blob([lines.join("\n")], { type: "text/plain" });
+    });
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      await navigator.clipboard.write([new ClipboardItem({ "text/html": htmlBlob, "text/plain": textBlob })]);
+    } else {
+      // фолбэк (старые браузеры): выделяем скрытый блок и copy
+      const h = await load;
+      const box = document.createElement("div");
+      box.innerHTML = h;
+      box.style.cssText = "position:fixed;left:-9999px;top:0";
+      document.body.appendChild(box);
+      const range = document.createRange();
+      range.selectNodeContents(box);
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(range);
+      document.execCommand("copy");
+      sel.removeAllRanges(); box.remove();
+    }
+    if (!meta.rows) { toast("Новых строк нет"); return; }
+    await api("/fin/api/mark-copied", { method: "POST", body: JSON.stringify({ ids: meta.ids }) });
+    const monthName = meta.month ? " (" + meta.month + ")" : "";
+    toast(+meta.more > 0
+      ? meta.rows + " стр." + monthName + " — вставь и нажми ещё раз"
+      : meta.rows + " стр." + monthName + " — вставляй в Numbers");
+    await refresh();
+  } catch (e) {
+    if (String(e.message) !== "auth") toast("Не получилось скопировать");
+  } finally { btn.disabled = false; }
 }
 
 // Выгрузка таблицы: .xlsx с раскладкой листа «Личные финансы» (открывается в Numbers).

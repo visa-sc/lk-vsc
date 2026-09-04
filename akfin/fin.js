@@ -495,6 +495,75 @@ function mount(app, deps) {
 
   // Выгрузка таблицы: .xlsx с раскладкой листа Андрея (открывается в Numbers).
   // ?month=YYYY-MM — только один месяц; без параметра — все месяцы с записями.
+  // ── Строки для буфера обмена (28.08.2026) ──
+  // Главный путь вместо скачивания файла: на маке открыть страницу → «Скопировать
+  // строки» → Cmd+V прямо в «Личные финансы». Numbers читает text/html из буфера
+  // и берёт background-color как есть — ни Excel, ни xlsx в цепочке нет, поэтому
+  // цвета не искажаются (Excel при копировании подменял бирюзу и жёлтый).
+  function buildRowsHtml(entries) {
+    const C = {
+      dayNum: "#FEFEFE", dayCont: "#7AFCF4", name: "#BFBFBF",
+      yellow: "#FFE061", red: "#FFC7CE", green: "#C6EFCE",
+      sum: "#FFFFFF", cat: "#11FFF8",
+    };
+    const esc = (s) => xmlEsc(s);
+    const F = "font-family:Helvetica;font-size:10pt;";
+    const B = "border:1px solid #D9D9D9;";
+    const list = entries.slice().sort((a, b) => (a.date === b.date ? a.at - b.at : (a.date < b.date ? -1 : 1)));
+    let prevDay = null;
+    const rows = list.map((e) => {
+      const day = +String(e.date).slice(8, 10);
+      const firstOfDay = day !== prevDay;
+      prevDay = day;
+      const flagBg = e.flag === "yellow" ? C.yellow : e.flag === "red" ? C.red : e.flag === "green" ? C.green : C.name;
+      const cells = [];
+      cells.push(firstOfDay
+        ? `<td style="${F}${B}background-color:${C.dayNum};font-weight:bold;text-align:center">${day}</td>`
+        : `<td style="${F}${B}background-color:${C.dayCont}"></td>`);
+      cells.push(`<td style="${F}${B}background-color:${flagBg}">${esc(e.comment ? e.name + " - " + e.comment : e.name)}</td>`);
+      const col = BUCKET_COL_XL[e.bucket] != null ? BUCKET_COL_XL[e.bucket] : 3; // 2..5 → C..F
+      for (let c = 2; c <= 5; c++) {
+        const val = (e.amount > 0 && c === col) ? String(e.amount).replace(".", ",") : "";
+        cells.push(`<td style="${F}${B}background-color:${C.sum};text-align:right">${val}</td>`);
+      }
+      cells.push(`<td style="${F}${B}background-color:${C.cat}">${esc(e.category || "")}</td>`);
+      cells.push(`<td style="${F}${B}background-color:${C.cat}"></td>`);
+      return "<tr>" + cells.join("") + "</tr>";
+    });
+    return '<meta charset="utf-8"><table border="0" cellspacing="0" cellpadding="2">' + rows.join("") + "</table>";
+  }
+  // scope=new (по умолчанию) — только строки, ещё не скопированные, и только за
+  // САМЫЙ РАННИЙ из оставшихся месяцев: вставка всегда идёт в один лист месяца.
+  // Ответ несёт X-Fin-Ids/X-Fin-Month, страница потом помечает их скопированными.
+  app.get("/fin/api/rows.html", requireFin, (req, res) => {
+    const st = store();
+    const mon = String((req.query && req.query.month) || "").trim();
+    const scope = String((req.query && req.query.scope) || "new").trim();
+    let list = st.entries.filter((e) => !e.deleted);
+    if (/^\d{4}-\d{2}$/.test(mon)) list = list.filter((e) => String(e.date).slice(0, 7) === mon);
+    else if (scope === "new") {
+      const fresh = list.filter((e) => !e.copiedAt);
+      const months = [...new Set(fresh.map((e) => String(e.date).slice(0, 7)))].sort();
+      list = months.length ? fresh.filter((e) => String(e.date).slice(0, 7) === months[0]) : [];
+      res.set("X-Fin-Month", months[0] || "");
+      res.set("X-Fin-More", String(Math.max(0, months.length - 1)));
+    }
+    res.set("X-Fin-Ids", list.map((e) => e.id).join(","));
+    res.set("Access-Control-Expose-Headers", "X-Fin-Ids, X-Fin-Month, X-Fin-More");
+    res.set("Content-Type", "text/html; charset=utf-8");
+    res.set("Cache-Control", "no-store");
+    res.send(buildRowsHtml(list));
+  });
+  // отметить строки скопированными (после успешной записи в буфер)
+  app.post("/fin/api/mark-copied", requireFin, (req, res) => {
+    const ids = String((req.body && req.body.ids) || "").split(",").filter(Boolean);
+    const st = store();
+    let n = 0;
+    for (const e of st.entries) if (ids.includes(e.id) && !e.copiedAt) { e.copiedAt = Date.now(); n++; }
+    if (n) save();
+    res.json({ success: true, marked: n });
+  });
+
   app.get("/fin/api/export.xlsx", requireFin, (req, res) => {
     const st = store();
     const mon = String((req.query && req.query.month) || "").trim();
