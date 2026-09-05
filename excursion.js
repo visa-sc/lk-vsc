@@ -421,11 +421,12 @@ function mount(app, opts) {
         number: o.order_number, created: o.created_at || "", eventDate: o.event_date || "",
         city: o.city_name || "", country: o.country_name || "", title: o.description || "",
         status: o.status || o.order_status || "", paid: o.paid_status || "",
-        amount: num(o.amount || o.total || o.price), currency: (o.currency || "rub").toUpperCase(),
-        income: num(o.partner_income != null ? o.partner_income : o.income),
-        cancelled: !!o.cancellation_date
+        amount: num(o.price), currency: (o.currency || "rub").toUpperCase(),
+        // profit — наше вознаграждение по заказу; paid_by_sputnik_to_agent — уже выплачено
+        income: num(o.profit), paidOut: num(o.paid_by_sputnik_to_agent),
+        test: !!o.is_test, cancelled: !!o.cancellation_date
       }));
-      const income = orders.filter((o) => !o.cancelled).reduce((s, o) => s + (o.income || 0), 0);
+      const income = orders.filter((o) => !o.cancelled && !o.test).reduce((s, o) => s + (o.income || 0), 0);
       res.json({ success: true, count: orders.length, income, orders, leads: readJson(LEADS_FILE, []).slice(0, 100), starts: readJson(STARTS_FILE, []).slice(0, 100) });
     } catch (e) { res.status(502).json({ success: false, message: "Отчёт недоступен" }); }
   });
