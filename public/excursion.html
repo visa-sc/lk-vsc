@@ -17,20 +17,21 @@
     --sh-hov:0 2px 4px rgba(16,24,40,.05),0 30px 60px -24px rgba(41,110,160,.35);
   }
   *{box-sizing:border-box}
-  html{scroll-behavior:smooth;}
+  html{scroll-behavior:smooth;overflow-x:clip;}
+  body{overflow-x:clip;}
   body{margin:0;background:var(--bg);color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:hidden;}
   body.lock{overflow:hidden;}
   a{color:inherit;}
-  .blob{position:fixed;border-radius:50%;filter:blur(70px);pointer-events:none;z-index:-1;opacity:.55;}
-  .blob.b1{width:560px;height:560px;left:50%;top:-260px;transform:translateX(-70%);
-    background:radial-gradient(circle,#bfe3f7 0%,rgba(191,227,247,0) 70%);animation:fl1 22s ease-in-out infinite alternate;}
-  .blob.b2{width:460px;height:460px;right:-160px;top:120px;
-    background:radial-gradient(circle,#d4ecfb 0%,rgba(212,236,251,0) 70%);animation:fl2 26s ease-in-out infinite alternate;}
-  @keyframes fl1{to{transform:translateX(-30%) translateY(60px);}}
-  @keyframes fl2{to{transform:translateY(-60px);}}
-  @media(prefers-reduced-motion:reduce){.blob{animation:none;}}
+  /* Мягкий свет фоном. Раньше это были два position:fixed «пятна», одно из них
+     торчало на 160px за правый край: десктопные браузеры такое не считают
+     прокруткой, а Safari на iPhone считает — страница уезжала вбок.
+     Фон размером ровно во весь экран вылезти не может в принципе. */
+  body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(620px 620px at 22% -180px,rgba(191,227,247,.55) 0%,rgba(191,227,247,0) 70%),
+      radial-gradient(520px 520px at 104% 340px,rgba(212,236,251,.55) 0%,rgba(212,236,251,0) 70%);}
   .wrap{max-width:1080px;margin:0 auto;padding:0 18px 80px;}
 
   /* ── шапка ── */
@@ -401,8 +402,6 @@
 </style>
 </head>
 <body>
-<div class="blob b1"></div>
-<div class="blob b2"></div>
 
 <div class="wrap">
   <div class="hdr">
@@ -685,6 +684,8 @@
             '<div class="meta">'+
               (p.duration?'<span>'+esc(p.duration)+'</span>':'')+
               (p.reviews?'<span>'+RU(p.reviews)+' '+plural(p.reviews,["отзыв","отзыва","отзывов"])+'</span>':'')+
+              // у индивидуальных цена за всю группу — в списке это стоит пояснить
+              (p.type==="private"?'<span>цена за группу</span>':'')+
             '</div>'+
             '<div class="foot">'+
               '<div><span class="pr"><small>от</small>'+(p.price?RU(p.price)+' ₽':'—')+'</span>'+
@@ -764,7 +765,9 @@
     if(p.importantList&&p.importantList.length>1)
       left+='<div class="blk"><h3>Важно знать</h3><ul class="lst">'+p.importantList.map(function(x){return '<li>'+esc(x)+'</li>';}).join("")+'</ul></div>';
     else if(p.importantInfo) left+='<div class="blk"><h3>Важно знать</h3><p>'+esc(p.importantInfo)+'</p></div>';
-    if(p.refundInfo) left+='<div class="blk"><h3>Отмена и возврат</h3><p>'+esc(p.refundInfo)+'</p></div>';
+    if(p.refundList&&p.refundList.length>1)
+      left+='<div class="blk"><h3>Отмена и возврат</h3><ul class="lst">'+p.refundList.map(function(x){return '<li>'+esc(x)+'</li>';}).join("")+'</ul></div>';
+    else if(p.refundInfo) left+='<div class="blk"><h3>Отмена и возврат</h3><p>'+esc(p.refundInfo)+'</p></div>';
     if(p.reviewsList&&p.reviewsList.length){
       var shown=p.reviewsList.slice(0,4), rest=p.reviewsList.slice(4);
       left+='<div class="blk"><h3>Отзывы туристов</h3><div id="revBox">'+shown.map(revHtml).join("")+'</div>'+

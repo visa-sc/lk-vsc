@@ -102,9 +102,15 @@ function galleryOf(x) {
   return out.slice(0, 12);
 }
 // Описания приходят с HTML — вычищаем до текста с абзацами (свою вёрстку рисуем сами).
+// Латинские двойники внутри русского слова («чаcов» с латинской c) — меняем
+// только когда СОСЕДИ кириллические, чтобы не портить Toyota и прочие названия.
+const LAT2CYR = { a: "а", c: "с", e: "е", o: "о", p: "р", x: "х", y: "у", A: "А", B: "В", C: "С", E: "Е", H: "Н", K: "К", M: "М", O: "О", P: "Р", T: "Т", X: "Х", Y: "У" };
+function fixMixedScript(t) {
+  return t.replace(/([А-Яа-яЁё])([A-Za-z])(?=[А-Яа-яЁё])/g, (m, a, b) => a + (LAT2CYR[b] || b));
+}
 function clean(s) {
   if (!s) return "";
-  return String(s)
+  return fixMixedScript(String(s)
     .replace(/[\u200B-\u200F\u2060-\u2064\uFEFF]/g, "")
     .replace(/<\s*br\s*\/?>/gi, "\n")
     .replace(/<\/\s*(p|div|li|h\d)\s*>/gi, "\n")
@@ -113,7 +119,7 @@ function clean(s) {
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .trim());
 }
 // «• пункт • пункт» и переводы строк → массив пунктов
 function bullets(s) {
@@ -123,10 +129,12 @@ function bullets(s) {
   // Часть полей приходит одной строкой-перечислением в кавычках:
   // «"Транспортное обслуживание", "Услуги гида"» — разбираем на пункты.
   if (parts.length === 1 && /"[^"]*"\s*,\s*"/.test(parts[0])) parts = parts[0].split(/\s*,\s*(?=")/);
+  // «1) … 2) … 3) …» сплошным текстом — тоже перечисление
+  if (parts.length === 1 && (parts[0].match(/\d{1,2}\)\s/g) || []).length > 1) parts = parts[0].split(/\s+(?=\d{1,2}\)\s)/);
   return parts
     // кавычки снимаем ТОЛЬКО когда они обрамляют весь пункт целиком,
     // иначе ломаются названия вроде «Киностудия «Мосфильм»»
-    .map((x) => x.trim().replace(/^[-–—]\s*/, "").replace(/^"(.*)"$/s, "$1").replace(/^«([^«»]*)»$/s, "$1").trim())
+    .map((x) => x.trim().replace(/^\d{1,2}[).]\s*/, "").replace(/^[-–—]\s*/, "").replace(/^"(.*)"$/s, "$1").replace(/^«([^«»]*)»$/s, "$1").trim())
     .filter((x) => x.length > 1).slice(0, 30);
 }
 function cardOf(x) {
@@ -270,7 +278,7 @@ function mount(app, opts) {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ success: false });
     try {
-      const x = await sp("/products/" + id, { lang: "ru" }, 10 * 60 * 1000);
+      const x = await sp("/products/" + id, { lang: "ru", currency: "rub" }, 10 * 60 * 1000);
       if (!x || !x.id) return res.status(404).json({ success: false, message: "Экскурсия не найдена" });
       const base = cardOf(x);
       const host = x.host && typeof x.host === "object" ? {
@@ -294,6 +302,7 @@ function mount(app, opts) {
           // сплошным текстом это читается плохо
           importantList: bullets(x.important_info),
           refundInfo: clean(x.refund_info),
+          refundList: bullets(x.refund_info),
           meetingPoint: (x.begin_place && x.begin_place.address) || "",
           meetingComment: (x.begin_place && x.begin_place.address_comment) || "",
           finishPoint: typeof x.finish_point === "string" ? clean(x.finish_point) : "",
@@ -343,7 +352,7 @@ function mount(app, opts) {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ success: false });
     try {
-      const data = await sp("/events/" + id + "/order_options", { lang: "ru" }, 3 * 60 * 1000);
+      const data = await sp("/events/" + id + "/order_options", { lang: "ru", currency: "rub" }, 3 * 60 * 1000);
       const arr = Array.isArray(data) ? data : (data && (data.order_options || data.items)) || [];
       // order_lines — ценовые СТУПЕНИ по количеству: «1–15 чел. по 1200»,
       // «16–30 по 1100». Отдаём все, цену за штуку витрина берёт по количеству.
@@ -351,7 +360,8 @@ function mount(app, opts) {
         const lines = (Array.isArray(o.order_lines) ? o.order_lines : []).map((l) => ({
           from: l.from_quantity != null ? Number(l.from_quantity) : 1,
           to: l.to_quantity != null ? Number(l.to_quantity) : null,
-          price: num(l.price) ?? num(l.all_prices && l.all_prices.RUB)
+          // у зарубежных экскурсий l.price приходит в валюте тура — рубли берём явно
+          price: num(l.all_prices && l.all_prices.RUB) ?? num(l.price)
         })).filter((l) => l.price != null).sort((a, b) => a.from - b.from);
         const price = lines.length ? lines[0].price : null;
         return {
