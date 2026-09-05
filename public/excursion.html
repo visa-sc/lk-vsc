@@ -126,6 +126,9 @@
   .cd .pr{font-size:19px;font-weight:800;letter-spacing:-.02em;}
   .cd .pr small{font-size:12px;font-weight:600;color:var(--mut);margin-right:4px;}
   .cd .old{font-size:12.5px;color:var(--mut);text-decoration:line-through;}
+  .prsk{display:inline-block;width:92px;height:19px;border-radius:6px;
+    background:linear-gradient(90deg,#eef2f7 25%,#f7fafd 50%,#eef2f7 75%);background-size:200% 100%;
+    animation:sh 1.1s infinite;}
   .cd .go{font-size:12.5px;font-weight:700;color:var(--accent);}
   .more{display:block;margin:22px auto 0;font:inherit;font-size:14px;font-weight:700;cursor:pointer;background:#fff;
     border:1px solid var(--line);border-radius:14px;padding:13px 28px;color:var(--ink);box-shadow:var(--sh);}
@@ -663,6 +666,29 @@
     ST.items=ST.items.concat(list);
     render();
   }
+  // Пока цена не уточнена по расписанию — показываем плейсхолдер, а не число
+  // поставщика: оно у части экскурсий отличается от реального билета.
+  function priceHtml(p){
+    if(!p.priceExact) return '<span class="prsk"></span>';
+    return '<span class="pr"><small>от</small>'+(p.price?RU(p.price)+' ₽':'—')+'</span>'+
+      (p.oldPrice&&p.price&&p.oldPrice>p.price?' <span class="old">'+RU(p.oldPrice)+' ₽</span>':'');
+  }
+  // Дозапрашиваем точные цены небольшими пачками и подставляем в карточки.
+  async function fillPrices(list){
+    var need=list.filter(function(p){ return !p.priceExact; });
+    while(need.length){
+      // порциями по 12 — первые карточки получают цену вдвое быстрее
+      var chunk=need.splice(0,12);
+      var r=await api("/excursion/api/prices?ids="+chunk.map(function(p){return p.id;}).join(","));
+      var got=(r.j&&r.j.prices)||{};
+      chunk.forEach(function(p){
+        if(got[p.id]) p.price=got[p.id];
+        p.priceExact=true;
+        var box=document.querySelector('.prwrap[data-id="'+p.id+'"]');
+        if(box) box.innerHTML=priceHtml(p);
+      });
+    }
+  }
   function render(){
     var g=$("grid"); g.innerHTML="";
     if(!ST.items.length){
@@ -688,8 +714,7 @@
               (p.type==="private"?'<span>цена за группу</span>':'')+
             '</div>'+
             '<div class="foot">'+
-              '<div><span class="pr"><small>от</small>'+(p.price?RU(p.price)+' ₽':'—')+'</span>'+
-              (p.oldPrice&&p.price&&p.oldPrice>p.price?' <span class="old">'+RU(p.oldPrice)+' ₽</span>':'')+'</div>'+
+              '<div class="prwrap" data-id="'+p.id+'">'+priceHtml(p)+'</div>'+
               '<span class="go">Подробнее</span>'+
             '</div>'+
           '</div>'+
@@ -698,6 +723,7 @@
       g.appendChild(c);
     });
     $("moreBtn").style.display=ST.more?"block":"none";
+    fillPrices(ST.items);
   }
   $("moreBtn").addEventListener("click",function(){ ST.page++; load(false); });
 
@@ -839,11 +865,20 @@
     for(var i=0;i<ls.length;i++){ var l=ls[i]; if(n>=l.from&&(l.to==null||n<=l.to)) return l; }
     return ls[ls.length-1]||null;
   }
+  // Заголовок цены считаем по загруженным билетам сеанса, чтобы он никогда
+  // не спорил со списком билетов прямо под ним.
+  function headPrice(){
+    var ts=(ST.tickets||[]).filter(function(t){ return !t.free && t.price; });
+    if(!ts.length) return ST.product.price;
+    var base=ts.filter(function(t){ return t.isBase; });
+    var pool=(base.length?base:ts).map(function(t){ return unitPrice(t,1); });
+    return Math.min.apply(null,pool);
+  }
   function renderBooking(){
     var bp=$("bp"); if(!bp) return;
-    var p=ST.product;
-    var h='<div class="prow"><span class="pr"><small>от</small>'+(p.price?RU(p.price)+' ₽':'—')+'</span>'+
-      (p.oldPrice&&p.price&&p.oldPrice>p.price?'<span class="old">'+RU(p.oldPrice)+' ₽</span>':'')+'</div>'+
+    var p=ST.product, hp=headPrice();
+    var h='<div class="prow"><span class="pr"><small>от</small>'+(hp?RU(hp)+' ₽':'—')+'</span>'+
+      (p.oldPrice&&hp&&p.oldPrice>hp?'<span class="old">'+RU(p.oldPrice)+' ₽</span>':'')+'</div>'+
       '<div class="pnote">'+(p.payType?esc(p.payType.charAt(0).toUpperCase()+p.payType.slice(1)):'Онлайн-бронирование')+
       (p.type==="private"?' · цена за всю группу, не за человека':'')+'</div>';
 

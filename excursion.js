@@ -55,17 +55,36 @@ function ready() { return !!(KEY && USER); }
 
 // ═══════════════ клиент к API поставщика (кэш в памяти) ═══════════════
 const _cache = new Map();
+// Поставщик отказывает, когда к нему летит пачка одновременных запросов
+// (ловили: витрина переставала открываться, пока прогревались цены).
+// Держим не больше 4 живых запросов сразу и один раз повторяем при сбое.
+const MAX_INFLIGHT = 4;
+let _inflight = 0; const _waiting = [];
+async function acquire() {
+  if (_inflight < MAX_INFLIGHT) { _inflight++; return; }
+  await new Promise((r) => _waiting.push(r));
+  _inflight++;
+}
+function release() { _inflight--; const w = _waiting.shift(); if (w) w(); }
 async function sp(pathname, params, ttlMs) {
   const qs = Object.assign({ api_key: KEY, username: USER }, params || {});
   const ck = pathname + "?" + Object.keys(qs).filter((k) => k !== "api_key").sort().map((k) => k + "=" + qs[k]).join("&");
   const now = Date.now();
   if (ttlMs) { const h = _cache.get(ck); if (h && now - h.at < ttlMs) return h.data; }
-  const r = await axios.get(API + pathname, { params: qs, timeout: 20000 });
+  let data, lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await acquire();
+    try { const r = await axios.get(API + pathname, { params: qs, timeout: 20000 }); data = r.data; lastErr = null; break; }
+    catch (e) { lastErr = e; }
+    finally { release(); }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  if (lastErr) throw lastErr;
   if (ttlMs) {
-    _cache.set(ck, { at: now, data: r.data });
+    _cache.set(ck, { at: now, data });
     if (_cache.size > 400) { const o = Array.from(_cache.entries()).sort((a, b) => a[1].at - b[1].at)[0]; if (o) _cache.delete(o[0]); }
   }
-  return r.data;
+  return data;
 }
 
 // Справочники отдаются постранично (лимит 100) — собираем целиком.
@@ -158,6 +177,101 @@ function cardOf(x) {
   };
 }
 
+// ═══════════════ реальная цена «от» ═══════════════
+// У товара есть base_price, но это витринная цена: у части экскурсий она —
+// заглушка («Билет» 2316 ₽), а реальные билеты ближайшего сеанса стоят вдвое
+// дороже. Клиент видел одну цену в списке и другую в карточке. Поэтому для
+// карточек берём МИНИМАЛЬНУЮ цену настоящих билетов ближайшего сеанса.
+// Кэш на 30 минут, чтобы не дёргать API поставщика на каждый показ списка.
+const _fromPrice = new Map();
+function todayKey() { return new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(0, 10); }
+// Расписание клиенту и цена «от» на карточке ОБЯЗАНЫ считаться по одному и тому
+// же сеансу, иначе в списке одна цена, а в карточке другая. Одна функция на всех.
+function scheduleDays(rawEvents) {
+  const arr = Array.isArray(rawEvents) ? rawEvents : [];
+  const byDate = {};
+  arr.filter((e) => e && e.status === "active" && !e.is_hidden && e.date >= todayKey()).forEach((e) => {
+    const day = (byDate[e.date] = byDate[e.date] || {});
+    const t = e.time || "";
+    const cap = e.max_capacity != null ? Number(e.max_capacity) : 0;
+    if (!day[t] || cap > day[t].capacity) day[t] = { eventId: e.id, time: t, capacity: cap, duration: e.duration || "" };
+  });
+  return Object.keys(byDate).sort().map((d) => ({
+    date: d, slots: Object.keys(byDate[d]).sort().map((t) => byDate[d][t])
+  }));
+}
+// Цена «от» — это БАЗОВЫЙ (взрослый) билет, а не самый дешёвый: иначе на
+// карточке светился бы детский билет за 579 ₽ при взрослом 4297 ₽.
+function baseTicketPrice(options) {
+  const cands = [];
+  (Array.isArray(options) ? options : []).forEach((o) => {
+    // Ступени приходят в произвольном порядке («для 3 человек» может быть
+    // первой) — цена «от» это всегда ступень с наименьшим количеством.
+    const lines = (Array.isArray(o.order_lines) ? o.order_lines : [])
+      .slice().sort((a, b) => (Number(a.from_quantity) || 1) - (Number(b.from_quantity) || 1));
+    const l = lines[0] || {};
+    const v = num(l.all_prices && l.all_prices.RUB) ?? num(l.price);
+    if (v && v > 0) cands.push({ v, isBase: !!o.is_base });
+  });
+  if (!cands.length) return null;
+  const base = cands.filter((c) => c.isBase);
+  const pool = base.length ? base : cands;
+  return Math.min.apply(null, pool.map((c) => c.v));
+}
+async function realFromPrice(id) {
+  const hit = _fromPrice.get(id);
+  // Удачную цену держим 30 минут, «пусто» — всего минуту: иначе один сетевой
+  // сбой в пачке запросов «отравлял» карточку на полчаса и цена расходилась.
+  if (hit && Date.now() - hit.at < (hit.price ? 30 * 60 * 1000 : 60 * 1000)) return hit.price;
+  let price = null, failed = false;
+  for (let attempt = 0; attempt < 3 && price == null; attempt++) {
+    failed = false;
+    try {
+      const ev = await sp("/events", { activity_id: id, lang: "ru", limit: 100 }, 5 * 60 * 1000);
+      const days = scheduleDays(ev);
+      const first = days[0] && days[0].slots[0];
+      if (!first) break; // экскурсия без ближайших дат — повторять нечего
+      const oo = await sp("/events/" + first.eventId + "/order_options", { lang: "ru", currency: "rub" }, 5 * 60 * 1000);
+      price = baseTicketPrice(oo);
+    } catch (_) { failed = true; await new Promise((r) => setTimeout(r, 400 * (attempt + 1))); }
+  }
+  // Сбой поставщика (он режет пачки параллельных запросов) НЕ кэшируем совсем,
+  // иначе карточка так и останется без настоящей цены до истечения кэша.
+  if (!failed) {
+    _fromPrice.set(id, { at: Date.now(), price });
+    if (_fromPrice.size > 3000) _fromPrice.delete(_fromPrice.keys().next().value);
+  }
+  return price;
+}
+function applyRealPrice(it, p) {
+  if (p && p > 0) { it.price = p; it.priceExact = true; if (it.oldPrice && it.oldPrice <= p) it.oldPrice = null; }
+  else it.priceExact = false;
+}
+// Из кэша — мгновенно, без обращений к поставщику: список отдаётся сразу.
+// Чего нет в кэше, витрина потом дозапросит поштучно (/api/price/:id) и
+// покажет точную цену. Так в списке и в карточке всегда одно и то же число.
+function enrichFromCache(items) {
+  items.forEach((it) => {
+    const hit = _fromPrice.get(it.id);
+    if (hit && Date.now() - hit.at < 30 * 60 * 1000) applyRealPrice(it, hit.price);
+    else it.priceExact = false;
+  });
+  return items;
+}
+// Полное уточнение — когда нужен правильный порядок по цене.
+async function enrichAll(items, budgetMs) {
+  const deadline = Date.now() + (budgetMs || 12000);
+  const queue = items.slice();
+  const worker = async () => {
+    while (queue.length && Date.now() < deadline) {
+      const it = queue.shift();
+      applyRealPrice(it, await realFromPrice(it.id));
+    }
+  };
+  await Promise.all(new Array(4).fill(0).map(() => worker()));
+  return items;
+}
+
 // ═══════════════ бронирование ═══════════════
 // Ссылка на защищённую форму подтверждения с НАШЕЙ преднастройкой.
 // Открывается в модальном окне внутри нашей страницы — клиент не уходит.
@@ -244,8 +358,31 @@ function mount(app, opts) {
       // Цену сортируем у себя — так предсказуемее, чем гадать про поля поставщика.
       if (sort === "cheap") out.sort((a, b) => (a.price || 1e9) - (b.price || 1e9));
       if (sort === "rating") out.sort((a, b) => (b.rating || 0) - (a.rating || 0) || (b.reviews || 0) - (a.reviews || 0));
+      if (sort === "cheap") { await enrichAll(out, 12000); out.sort((a, b) => (a.price || 1e9) - (b.price || 1e9)); }
+      else enrichFromCache(out);
       res.json({ success: true, page: p.page, count: out.length, products: out });
     } catch (e) { res.status(502).json({ success: false, message: "Не удалось загрузить экскурсии" }); }
+  });
+
+  // Точные цены пачкой — витрина спрашивает их одним запросом на весь список,
+  // так все карточки получают цену разом, а не по одной в течение минуты.
+  app.get("/excursion/api/prices", async (req, res) => {
+    const ids = String(req.query.ids || "").split(",").map((x) => parseInt(x, 10)).filter(Boolean).slice(0, 40);
+    if (!ready() || !ids.length) return res.json({ success: true, prices: {} });
+    const items = ids.map((id) => ({ id }));
+    await enrichAll(items, 20000);
+    const prices = {};
+    items.forEach((it) => { prices[it.id] = it.priceExact ? it.price : null; });
+    res.json({ success: true, prices });
+  });
+
+  // Точная цена одной экскурсии (цена базового билета ближайшего сеанса).
+  // Витрина дозапрашивает её для карточек, которых не было в кэше.
+  app.get("/excursion/api/price/:id", async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!ready() || !id) return res.json({ success: false });
+    const price = await realFromPrice(id);
+    res.json({ success: true, id, price: price || null });
   });
 
   // Категории конкретного города (фильтр-чипы).
@@ -281,6 +418,8 @@ function mount(app, opts) {
       const x = await sp("/products/" + id, { lang: "ru", currency: "rub" }, 10 * 60 * 1000);
       if (!x || !x.id) return res.status(404).json({ success: false, message: "Экскурсия не найдена" });
       const base = cardOf(x);
+      const real = await realFromPrice(id);
+      if (real && real > 0) { base.price = real; if (base.oldPrice && base.oldPrice <= real) base.oldPrice = null; }
       const host = x.host && typeof x.host === "object" ? {
         name: x.host.name || "", photo: x.host.photo || "",
         rating: x.host.review_rating != null ? Number(x.host.review_rating) : null,
@@ -327,22 +466,7 @@ function mount(app, opts) {
     if (!id) return res.status(400).json({ success: false });
     try {
       const data = await sp("/events", { activity_id: id, lang: "ru", limit: 100 }, 5 * 60 * 1000);
-      const arr = Array.isArray(data) ? data : (data && (data.events || data.items)) || [];
-      const today = new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(0, 10);
-      // Одно и то же время в один день может прийти несколькими сеансами
-      // (разные автобусы/группы) — показываем клиенту один, где больше мест.
-      const byDate = {};
-      arr.filter((e) => e && e.status === "active" && !e.is_hidden && e.date >= today).forEach((e) => {
-        const day = (byDate[e.date] = byDate[e.date] || {});
-        const t = e.time || "";
-        const cap = e.max_capacity != null ? Number(e.max_capacity) : 0;
-        if (!day[t] || cap > day[t].capacity) day[t] = { eventId: e.id, time: t, capacity: cap, duration: e.duration || "" };
-      });
-      const days = Object.keys(byDate).sort().map((d) => ({
-        date: d,
-        slots: Object.keys(byDate[d]).sort().map((t) => byDate[d][t]).filter((s) => s.capacity !== 0 || true)
-      }));
-      res.json({ success: true, days });
+      res.json({ success: true, days: scheduleDays(data) });
     } catch (e) { res.json({ success: true, days: [] }); }
   });
 
