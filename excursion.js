@@ -238,9 +238,19 @@ function mount(app, opts) {
     try {
       const data = await sp("/cities/" + cityId + "/categories", { lang: "ru" }, 6 * 3600 * 1000);
       const arr = Array.isArray(data) ? data : (data && (data.categories || data.items)) || [];
+      // Верхний уровень — пустая обёртка, реальные категории лежат в
+      // sub_categories (с количеством экскурсий). Берём самые наполненные.
+      const flat = [];
+      arr.forEach((c) => {
+        if (c && c.id && (c.name || c.short_name)) flat.push(c);
+        (Array.isArray(c && c.sub_categories) ? c.sub_categories : []).forEach((sc) => { if (sc && sc.id && (sc.name || sc.short_name)) flat.push(sc); });
+      });
       const seen = {};
-      const categories = arr.map((c) => ({ id: c.id, name: c.short_name || c.name || "" }))
-        .filter((c) => c.id && c.name && !seen[c.name] && (seen[c.name] = 1)).slice(0, 14);
+      const categories = flat
+        .map((c) => ({ id: c.id, name: c.short_name || c.name, count: Array.isArray(c.products) ? c.products.length : 0 }))
+        .filter((c) => c.name && !seen[c.name] && (seen[c.name] = 1))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 12);
       res.json({ success: true, categories });
     } catch (e) { res.json({ success: true, categories: [] }); }
   });

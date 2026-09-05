@@ -156,7 +156,14 @@
     padding:8px 13px;font-size:13px;font-weight:600;box-shadow:0 1px 2px rgba(16,24,40,.03);}
   .pm i{font-style:normal;color:var(--gold);}
   .pcols{display:grid;grid-template-columns:1fr 340px;gap:24px;align-items:start;}
-  @media(max-width:860px){.pcols{grid-template-columns:1fr;} .gal{grid-template-rows:110px 110px;}}
+  /* На узком экране панель бронирования встаёт сразу под заголовком,
+     а не в конце длинного описания. */
+  @media(max-width:860px){
+    .pcols{grid-template-columns:1fr;}
+    .pside{order:-1;}
+    .gal{grid-template-rows:110px 110px;}
+    .bp{position:static;}
+  }
   .blk{background:#fff;border:1px solid var(--line);border-radius:20px;padding:18px 20px;margin-bottom:14px;box-shadow:var(--sh);}
   .blk h3{font-size:15px;font-weight:800;margin:0 0 10px;letter-spacing:-.01em;}
   .blk p{margin:0 0 10px;font-size:14.5px;line-height:1.62;color:#2c3a4d;white-space:pre-line;}
@@ -676,9 +683,10 @@
         (rest.length?'<button class="revmore" id="revMore" type="button">Показать ещё '+rest.length+'</button>':'')+'</div>';
     }
 
-    var html='<div class="pcols"><div>'+galHtml+
-      '<h1 class="ptitle">'+esc(p.title)+'</h1><div class="pmeta">'+meta.join("")+'</div>'+left+'</div>'+
-      '<div><div class="bp" id="bp"></div></div></div>';
+    var html='<div class="phead">'+galHtml+
+      '<h1 class="ptitle">'+esc(p.title)+'</h1><div class="pmeta">'+meta.join("")+'</div></div>'+
+      '<div class="pcols"><div class="pmain">'+left+'</div>'+
+      '<div class="pside"><div class="bp" id="bp"></div></div></div>';
     $("pvBody").innerHTML=html;
     var rm=$("revMore");
     if(rm) rm.addEventListener("click",function(){ $("revBox").innerHTML=p.reviewsList.map(revHtml).join(""); rm.remove(); });
