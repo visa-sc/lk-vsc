@@ -173,3 +173,6 @@ akfin/fin.seed.json
 .phonetest/
 .regruWatch.json
 .esim/
+
+# VOYO Экскурсии: заявки и начатые брони (рантайм, не в git)
+.excursion/

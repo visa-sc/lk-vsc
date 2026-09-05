@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>VOYO экскурсии — впечатления по всему миру</title>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="icon" type="image/png" href="/apple-touch-icon.png" />
+<style>
+  :root{
+    --bg:#f5f7fb; --card:#ffffff; --line:#e6eaf2; --ink:#16202e; --mut:#8b93a5;
+    --accent:#3589bd; --accent-d:#2c6f96; --cyan:#5ac8fa; --green:#2c7a43; --red:#b0263a;
+    --gold:#e8a317;
+    --grad:linear-gradient(135deg,#2c6f96 0%,#3d95c7 55%,#5ac8fa 120%);
+    --sh:0 1px 2px rgba(16,24,40,.04),0 18px 44px -22px rgba(22,48,80,.22);
+    --sh-hov:0 2px 4px rgba(16,24,40,.05),0 30px 60px -24px rgba(41,110,160,.35);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:hidden;}
+  body.lock{overflow:hidden;}
+  a{color:inherit;}
+  .blob{position:fixed;border-radius:50%;filter:blur(70px);pointer-events:none;z-index:-1;opacity:.55;}
+  .blob.b1{width:560px;height:560px;left:50%;top:-260px;transform:translateX(-70%);
+    background:radial-gradient(circle,#bfe3f7 0%,rgba(191,227,247,0) 70%);animation:fl1 22s ease-in-out infinite alternate;}
+  .blob.b2{width:460px;height:460px;right:-160px;top:120px;
+    background:radial-gradient(circle,#d4ecfb 0%,rgba(212,236,251,0) 70%);animation:fl2 26s ease-in-out infinite alternate;}
+  @keyframes fl1{to{transform:translateX(-30%) translateY(60px);}}
+  @keyframes fl2{to{transform:translateY(-60px);}}
+  @media(prefers-reduced-motion:reduce){.blob{animation:none;}}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 18px 80px;}
+
+  /* ── шапка ── */
+  .hdr{display:flex;align-items:center;justify-content:space-between;padding:22px 0 6px;}
+  .brand{display:inline-flex;flex-direction:column;align-items:flex-start;text-decoration:none;color:var(--ink);}
+  .brandrow{display:flex;align-items:center;gap:9px;}
+  .brand .lg{height:19px;display:block;}
+  .brand .wm{font-size:20px;font-weight:300;letter-spacing:.01em;line-height:1;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .byvsc{display:block;font-size:9px;letter-spacing:.02em;color:#a7b0bf;margin-top:6px;white-space:nowrap;
+    line-height:1;align-self:flex-start;width:83.2px;text-align:right;}
+  .byvsc b{font-weight:800;font-size:9.5px;color:#0099cf;letter-spacing:.03em;}
+  .hdr .mine{display:inline-flex;align-items:center;gap:7px;text-decoration:none;font-size:13.5px;font-weight:600;
+    color:var(--accent-d);background:rgba(255,255,255,.8);border:1px solid var(--line);border-radius:999px;
+    padding:9px 15px;transition:all .16s ease;box-shadow:0 1px 2px rgba(16,24,40,.03);cursor:pointer;}
+  .hdr .mine:hover{border-color:#aed3ea;transform:translateY(-1px);box-shadow:0 8px 18px -10px rgba(53,137,189,.45);}
+
+  /* ── герой ── */
+  .hero{text-align:center;padding:52px 0 10px;}
+  .hero h1{font-size:clamp(34px,5.6vw,56px);line-height:1.06;letter-spacing:-.035em;margin:0 0 16px;font-weight:800;}
+  .hero h1 em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .hero .sub{color:var(--mut);font-size:16.5px;line-height:1.6;max-width:560px;margin:0 auto 30px;font-weight:400;}
+  .searchbox{position:relative;max-width:560px;margin:0 auto;}
+  .searchbox input{width:100%;border:1px solid rgba(230,234,242,.9);border-radius:20px;padding:18px 62px 18px 22px;
+    font:inherit;font-size:16.5px;background:rgba(255,255,255,.82);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+    color:var(--ink);box-shadow:var(--sh);transition:box-shadow .2s ease,border-color .2s ease;}
+  .searchbox input::placeholder{color:#a6adbd;}
+  .searchbox input:focus{outline:none;border-color:#9fcbe6;box-shadow:0 0 0 5px rgba(53,137,189,.10),var(--sh);}
+  .searchbox .go{position:absolute;right:9px;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:14px;
+    background:var(--grad);display:flex;align-items:center;justify-content:center;pointer-events:none;
+    box-shadow:0 8px 16px -8px rgba(53,137,189,.8);}
+  .drop{position:absolute;left:0;right:0;top:calc(100% + 10px);background:rgba(255,255,255,.96);backdrop-filter:blur(20px);
+    -webkit-backdrop-filter:blur(20px);border:1px solid var(--line);border-radius:20px;
+    box-shadow:0 30px 70px -28px rgba(16,32,64,.4);z-index:30;overflow:hidden;display:none;max-height:340px;overflow-y:auto;text-align:left;}
+  .drop.on{display:block;}
+  .drop .it{display:flex;align-items:center;gap:12px;padding:13px 20px;cursor:pointer;font-size:15px;font-weight:500;}
+  .drop .it:hover{background:#f2f8fc;}
+  .drop .it .n{flex:1;}
+  .drop .it .c{font-size:12px;color:var(--mut);}
+  .drop .none{padding:15px 20px;color:var(--mut);font-size:14px;}
+  .chips{display:flex;gap:9px;flex-wrap:wrap;justify-content:center;margin:24px auto 0;max-width:820px;}
+  .chip{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.78);border:1px solid var(--line);
+    border-radius:999px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;color:var(--ink);
+    transition:all .16s ease;box-shadow:0 1px 2px rgba(16,24,40,.03);font-family:inherit;}
+  .chip:hover{border-color:#aed3ea;transform:translateY(-1px);box-shadow:0 8px 18px -10px rgba(53,137,189,.4);}
+  .chip.on{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 10px 22px -10px rgba(53,137,189,.75);}
+  .chip.all{background:var(--ink);color:#fff;border-color:transparent;}
+  .chip.all:hover{background:#243244;}
+  .allp{max-width:800px;margin:16px auto 0;background:rgba(255,255,255,.85);backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:24px;box-shadow:var(--sh);
+    overflow:hidden;display:none;text-align:left;}
+  .allp.on{display:block;animation:fadeup .25s ease;}
+  .allp .ah{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 4px;}
+  .allp .ah .t{font-size:15px;font-weight:800;}
+  .allp .ah .x{border:0;background:#eef2f7;color:var(--mut);width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:14px;}
+  .allp .agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:2px;padding:12px 12px 16px;
+    max-height:400px;overflow-y:auto;}
+  .allp .ac{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:12px;cursor:pointer;font-size:13.5px;font-weight:500;}
+  .allp .ac:hover{background:#f0f7fc;}
+  .allp .ac .n{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .allp .ac .c{font-size:11.5px;color:var(--mut);}
+  @keyframes fadeup{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+
+  /* ── каталог ── */
+  .sect{margin-top:34px;}
+  .sect h2{font-size:24px;letter-spacing:-.025em;margin:0 0 5px;font-weight:800;}
+  .sect .sub{color:var(--mut);font-size:13.5px;margin-bottom:16px;}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
+  .fchips{display:flex;gap:6px;flex-wrap:wrap;flex:1;}
+  .fchip{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink);
+    border-radius:11px;padding:8px 13px;cursor:pointer;transition:all .13s ease;}
+  .fchip:hover{border-color:#aed3ea;}
+  .fchip.on{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 6px 14px -8px rgba(53,137,189,.7);}
+  .sortbtn{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;
+    background:#fff;border:1px solid var(--line);border-radius:11px;padding:8px 13px;color:var(--ink);}
+  .sortbtn:hover{border-color:#aed3ea;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:16px;}
+  .cd{background:var(--card);border:1px solid var(--line);border-radius:22px;overflow:hidden;cursor:pointer;
+    box-shadow:var(--sh);transition:transform .18s ease,box-shadow .18s ease;display:flex;flex-direction:column;}
+  .cd:hover{transform:translateY(-3px);box-shadow:var(--sh-hov);}
+  .cd .ph{position:relative;aspect-ratio:4/3;background:#e9eef5 center/cover no-repeat;}
+  .cd .ph .badge{position:absolute;left:11px;top:11px;background:rgba(22,32,46,.78);color:#fff;font-size:11.5px;font-weight:700;
+    padding:5px 10px;border-radius:999px;backdrop-filter:blur(6px);}
+  .cd .ph .rt{position:absolute;right:11px;top:11px;background:rgba(255,255,255,.94);color:var(--ink);font-size:12px;font-weight:800;
+    padding:5px 9px;border-radius:999px;display:flex;align-items:center;gap:4px;}
+  .cd .ph .rt i{color:var(--gold);font-style:normal;}
+  .cd .bd{padding:14px 16px 16px;display:flex;flex-direction:column;flex:1;}
+  .cd .t{font-size:15.5px;font-weight:700;line-height:1.3;letter-spacing:-.01em;margin-bottom:7px;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .cd .meta{font-size:12.5px;color:var(--mut);display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+  .cd .foot{margin-top:auto;display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+  .cd .pr{font-size:19px;font-weight:800;letter-spacing:-.02em;}
+  .cd .pr small{font-size:12px;font-weight:600;color:var(--mut);margin-right:4px;}
+  .cd .old{font-size:12.5px;color:var(--mut);text-decoration:line-through;}
+  .cd .go{font-size:12.5px;font-weight:700;color:var(--accent);}
+  .more{display:block;margin:22px auto 0;font:inherit;font-size:14px;font-weight:700;cursor:pointer;background:#fff;
+    border:1px solid var(--line);border-radius:14px;padding:13px 28px;color:var(--ink);box-shadow:var(--sh);}
+  .more:hover{border-color:#aed3ea;}
+  .empty{text-align:center;color:var(--mut);font-size:14px;padding:34px 10px;}
+  .skel{background:linear-gradient(90deg,#eef2f7 25%,#f6f9fc 50%,#eef2f7 75%);background-size:200% 100%;
+    animation:sh 1.2s infinite;border-radius:22px;height:310px;}
+  @keyframes sh{to{background-position:-200% 0;}}
+
+  /* ── карточка экскурсии (полноэкранный слой) ── */
+  .pv{position:fixed;inset:0;background:rgba(12,20,32,.55);backdrop-filter:blur(6px);z-index:80;display:none;
+    overflow-y:auto;padding:0;}
+  .pv.on{display:block;}
+  .pvin{max-width:980px;margin:0 auto;background:var(--bg);min-height:100%;animation:slideup .28s cubic-bezier(.2,.8,.3,1);}
+  @keyframes slideup{from{opacity:0;transform:translateY(18px);}to{opacity:1;transform:none;}}
+  .pvbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:12px 18px;
+    background:rgba(255,255,255,.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);}
+  .pvbar .bk{border:0;background:#eef2f7;width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:16px;color:var(--ink);flex:none;}
+  .pvbar .bt{font-size:14.5px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pvbody{padding:0 18px 40px;}
+  .gal{display:grid;grid-template-columns:2fr 1fr;grid-template-rows:150px 150px;gap:8px;margin:16px 0 22px;border-radius:22px;overflow:hidden;}
+  .gal .g{background:#e9eef5 center/cover no-repeat;cursor:pointer;}
+  .gal .g:first-child{grid-row:span 2;}
+  .gal.one{grid-template-columns:1fr;grid-template-rows:300px;}
+  .gal.one .g:first-child{grid-row:auto;}
+  .ptitle{font-size:clamp(23px,3.4vw,32px);line-height:1.15;letter-spacing:-.03em;font-weight:800;margin:0 0 12px;}
+  .pmeta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;}
+  .pm{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:999px;
+    padding:8px 13px;font-size:13px;font-weight:600;box-shadow:0 1px 2px rgba(16,24,40,.03);}
+  .pm i{font-style:normal;color:var(--gold);}
+  .pcols{display:grid;grid-template-columns:1fr 340px;gap:24px;align-items:start;}
+  @media(max-width:860px){.pcols{grid-template-columns:1fr;} .gal{grid-template-rows:110px 110px;}}
+  .blk{background:#fff;border:1px solid var(--line);border-radius:20px;padding:18px 20px;margin-bottom:14px;box-shadow:var(--sh);}
+  .blk h3{font-size:15px;font-weight:800;margin:0 0 10px;letter-spacing:-.01em;}
+  .blk p{margin:0 0 10px;font-size:14.5px;line-height:1.62;color:#2c3a4d;white-space:pre-line;}
+  .blk p:last-child{margin-bottom:0;}
+  .lst{list-style:none;padding:0;margin:0;}
+  .lst li{position:relative;padding:6px 0 6px 24px;font-size:14px;line-height:1.5;color:#2c3a4d;}
+  .lst li:before{content:"";position:absolute;left:4px;top:13px;width:6px;height:6px;border-radius:50%;background:var(--accent);}
+  .lst.no li:before{background:#d6dde7;}
+  .guide{display:flex;align-items:center;gap:13px;}
+  .guide .av{width:52px;height:52px;border-radius:50%;background:#e9eef5 center/cover no-repeat;flex:none;}
+  .guide .gn{font-size:15px;font-weight:700;}
+  .guide .gs{font-size:12.5px;color:var(--mut);margin-top:2px;}
+  .rev{border-top:1px solid var(--line);padding:13px 0 3px;}
+  .rev:first-of-type{border-top:0;padding-top:0;}
+  .rev .rh{display:flex;align-items:baseline;gap:8px;margin-bottom:5px;}
+  .rev .rn{font-size:13.5px;font-weight:700;}
+  .rev .rd{font-size:11.5px;color:var(--mut);}
+  .rev .rs{color:var(--gold);font-size:12px;}
+  .rev .rt{font-size:13.5px;line-height:1.55;color:#33415a;}
+  .revmore{font:inherit;font-size:13px;font-weight:700;color:var(--accent);background:none;border:0;cursor:pointer;padding:8px 0 0;}
+
+  /* ── панель бронирования ── */
+  .bp{position:sticky;top:70px;background:#fff;border:1px solid var(--line);border-radius:22px;padding:18px 20px 20px;box-shadow:var(--sh);}
+  .bp .prow{display:flex;align-items:baseline;gap:8px;margin-bottom:4px;}
+  .bp .pr{font-size:27px;font-weight:800;letter-spacing:-.025em;}
+  .bp .pr small{font-size:13px;font-weight:600;color:var(--mut);margin-right:5px;}
+  .bp .old{font-size:14px;color:var(--mut);text-decoration:line-through;}
+  .bp .pnote{font-size:12.5px;color:var(--mut);margin-bottom:15px;}
+  .bl{font-size:11.5px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin:15px 0 8px;}
+  .dates{display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;}
+  .dt{flex:none;border:1px solid var(--line);background:#fff;border-radius:13px;padding:9px 12px;cursor:pointer;text-align:center;
+    font:inherit;transition:all .13s ease;min-width:62px;}
+  .dt:hover{border-color:#aed3ea;}
+  .dt.on{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 6px 14px -8px rgba(53,137,189,.7);}
+  .dt .dw{font-size:10.5px;font-weight:700;opacity:.75;text-transform:uppercase;}
+  .dt .dd{font-size:14.5px;font-weight:800;margin-top:2px;}
+  .dt .dm{font-size:10.5px;opacity:.75;}
+  .times{display:flex;gap:6px;flex-wrap:wrap;}
+  .tm{border:1px solid var(--line);background:#fff;border-radius:11px;padding:8px 13px;cursor:pointer;font:inherit;
+    font-size:13.5px;font-weight:700;transition:all .13s ease;}
+  .tm:hover{border-color:#aed3ea;}
+  .tm.on{background:var(--grad);color:#fff;border-color:transparent;}
+  .tk{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);}
+  .tk:last-of-type{border-bottom:0;}
+  .tk .ti{flex:1;min-width:0;}
+  .tk .tt{font-size:14px;font-weight:600;}
+  .tk .tp{font-size:12.5px;color:var(--mut);margin-top:2px;}
+  .cnt{display:flex;align-items:center;gap:9px;flex:none;}
+  .cnt button{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:#fff;cursor:pointer;
+    font-size:17px;line-height:1;color:var(--accent-d);font-weight:700;display:flex;align-items:center;justify-content:center;padding:0;}
+  .cnt button:hover:not(:disabled){border-color:#aed3ea;background:#f2f8fc;}
+  .cnt button:disabled{opacity:.35;cursor:default;}
+  .cnt .v{min-width:18px;text-align:center;font-size:15px;font-weight:800;}
+  .tot{display:flex;align-items:baseline;justify-content:space-between;margin:15px 0 4px;padding-top:14px;border-top:1px solid var(--line);}
+  .tot .tl{font-size:14px;font-weight:700;color:var(--mut);}
+  .tot .tv{font-size:24px;font-weight:800;letter-spacing:-.02em;}
+  .book{width:100%;font:inherit;font-size:16px;font-weight:800;color:#fff;background:var(--grad);border:0;border-radius:16px;
+    padding:16px;cursor:pointer;margin-top:12px;box-shadow:0 14px 28px -14px rgba(53,137,189,.9);transition:transform .14s ease;}
+  .book:hover:not(:disabled){transform:translateY(-1px);}
+  .book:disabled{opacity:.45;cursor:default;box-shadow:none;}
+  .bsec{width:100%;font:inherit;font-size:13.5px;font-weight:700;color:var(--accent-d);background:#fff;border:1px solid var(--line);
+    border-radius:14px;padding:12px;cursor:pointer;margin-top:9px;}
+  .bsec:hover{border-color:#aed3ea;background:#f7fbfe;}
+  .trust{margin-top:14px;display:grid;gap:9px;}
+  .trust .tr{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;color:#41506a;line-height:1.45;}
+  .trust .tr svg{flex:none;margin-top:1px;color:var(--green);}
+  .bnote{font-size:12px;color:var(--mut);margin-top:12px;line-height:1.5;}
+  .loading{color:var(--mut);font-size:13.5px;padding:8px 0;}
+
+  /* ── модалка бронирования (форма подтверждения внутри нашей страницы) ── */
+  .bkovl{position:fixed;inset:0;background:rgba(12,20,32,.6);backdrop-filter:blur(6px);z-index:95;display:none;
+    align-items:center;justify-content:center;padding:16px;}
+  .bkovl.on{display:flex;}
+  .bkm{background:#fff;border-radius:24px;width:100%;max-width:940px;height:min(88vh,900px);display:flex;flex-direction:column;
+    overflow:hidden;box-shadow:0 40px 90px -30px rgba(10,24,48,.6);animation:slideup .25s ease;}
+  .bkh{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);}
+  .bkh .bi{width:34px;height:34px;border-radius:11px;background:var(--grad);display:flex;align-items:center;justify-content:center;flex:none;}
+  .bkh .bt{flex:1;min-width:0;}
+  .bkh .b1{font-size:14.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .bkh .b2{font-size:12px;color:var(--mut);margin-top:1px;}
+  .bkh .bx{border:0;background:#eef2f7;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:15px;flex:none;}
+  .bkbody{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#fff;}
+  .bkf{display:block;border:0;width:100%;height:1560px;background:#fff;}
+  .bkfoot{padding:10px 18px;border-top:1px solid var(--line);font-size:12px;color:var(--mut);text-align:center;background:#fff;}
+
+  /* ── модалка «через менеджера» ── */
+  .ovl{position:fixed;inset:0;background:rgba(12,20,32,.55);backdrop-filter:blur(5px);z-index:96;display:none;
+    align-items:center;justify-content:center;padding:16px;}
+  .ovl.on{display:flex;}
+  .md{background:#fff;border-radius:24px;width:100%;max-width:440px;padding:24px;position:relative;box-shadow:0 40px 90px -30px rgba(10,24,48,.55);
+    animation:slideup .25s ease;max-height:92vh;overflow-y:auto;}
+  .md .x{position:absolute;right:14px;top:14px;border:0;background:#eef2f7;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:14px;}
+  .md h3{font-size:19px;font-weight:800;margin:0 0 6px;letter-spacing:-.02em;}
+  .md .s{font-size:13.5px;color:var(--mut);line-height:1.55;margin-bottom:16px;}
+  .fld{margin-bottom:11px;}
+  .fld label{display:block;font-size:12px;font-weight:700;color:var(--mut);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em;}
+  .fld input,.fld textarea{width:100%;border:1px solid var(--line);border-radius:13px;padding:12px 14px;font:inherit;font-size:15px;
+    background:#fff;color:var(--ink);}
+  .fld textarea{min-height:74px;resize:vertical;}
+  .fld input:focus,.fld textarea:focus{outline:none;border-color:#9fcbe6;box-shadow:0 0 0 4px rgba(53,137,189,.1);}
+  .sub2{width:100%;font:inherit;font-size:15.5px;font-weight:800;color:#fff;background:var(--grad);border:0;border-radius:15px;
+    padding:15px;cursor:pointer;margin-top:6px;box-shadow:0 12px 26px -14px rgba(53,137,189,.9);}
+  .sub2:disabled{opacity:.5;cursor:default;}
+  .err{color:var(--red);font-size:13px;margin-top:8px;}
+  .okmsg{text-align:center;padding:14px 0 4px;}
+  .okmsg .ic{width:56px;height:56px;border-radius:50%;background:#e8f6ed;color:var(--green);display:flex;align-items:center;
+    justify-content:center;margin:0 auto 12px;font-size:27px;}
+  .okmsg .t{font-size:17px;font-weight:800;margin-bottom:6px;}
+  .okmsg .d{font-size:13.5px;color:var(--mut);line-height:1.55;}
+
+  /* ── как это работает / faq / помощь ── */
+  .how{margin-top:52px;}
+  .how h2,.faq h2{font-size:24px;font-weight:800;letter-spacing:-.025em;margin:0 0 16px;}
+  .how .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
+  .how .c{background:#fff;border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:var(--sh);}
+  .how .c .n{width:30px;height:30px;border-radius:50%;background:var(--grad);color:#fff;font-size:14px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;margin-bottom:11px;}
+  .how .c .t{font-size:15px;font-weight:700;margin-bottom:5px;}
+  .how .c .d{font-size:13.5px;color:var(--mut);line-height:1.55;}
+  .faq{margin-top:46px;}
+  .faq details{background:#fff;border:1px solid var(--line);border-radius:16px;padding:15px 18px;margin-bottom:9px;box-shadow:0 1px 2px rgba(16,24,40,.03);}
+  .faq summary{font-size:14.5px;font-weight:700;cursor:pointer;list-style:none;}
+  .faq summary::-webkit-details-marker{display:none;}
+  .faq summary:before{content:"+";float:right;color:var(--accent);font-weight:800;font-size:17px;line-height:1;}
+  .faq details[open] summary:before{content:"–";}
+  .faq .a{font-size:14px;line-height:1.6;color:#33415a;margin-top:10px;}
+  .helpblk{margin-top:46px;background:#fff;border:1px solid var(--line);border-radius:22px;padding:24px;text-align:center;box-shadow:var(--sh);}
+  .helpblk h3{font-size:19px;font-weight:800;margin:0 0 5px;}
+  .helpblk .hs{font-size:13.5px;color:var(--mut);margin-bottom:16px;}
+  .ha{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+  .hb{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-size:14px;font-weight:700;color:var(--ink);
+    background:#f4f7fb;border:1px solid var(--line);border-radius:14px;padding:12px 18px;transition:all .15s ease;}
+  .hb:hover{border-color:#aed3ea;transform:translateY(-1px);}
+  .hb svg{width:17px;height:17px;flex:none;}
+  .foot{text-align:center;color:var(--mut);font-size:12px;margin-top:40px;line-height:1.7;}
+
+  /* ── режим встраивания (?embed=1): страница живёт внутри пилота /app,
+        своя шапка/подвал не нужны, отступ снизу — под меню приложения ── */
+  body.embed .hdr,body.embed .how,body.embed .faq,body.embed .helpblk,body.embed .foot,body.embed .blob{display:none;}
+  body.embed .hero{padding:18px 0 4px;}
+  body.embed .hero h1{font-size:clamp(23px,5vw,30px);margin-bottom:9px;}
+  body.embed .hero .sub{font-size:14px;margin-bottom:18px;}
+  body.embed .wrap{padding-bottom:120px;}
+  body.embed .pvbody{padding-bottom:120px;}
+  body.embed .bp{position:static;}
+
+  /* ── отчёт для своих (?adm=) ── */
+  .rep{margin-top:40px;background:#fff;border:1px solid var(--line);border-radius:22px;padding:20px;box-shadow:var(--sh);display:none;}
+  .rep.on{display:block;}
+  .rep h3{font-size:17px;font-weight:800;margin:0 0 12px;}
+  .rep table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .rep th,.rep td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);}
+  .rep th{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.04em;}
+  .rep td.r,.rep th.r{text-align:right;}
+  .repchips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .repchip{background:#f3f6fa;border:1px solid var(--line);border-radius:11px;padding:8px 12px;font-size:12px;color:var(--mut);}
+  .repchip b{display:block;color:var(--ink);font-size:16px;font-weight:800;margin-top:2px;}
+</style>
+</head>
+<body>
+<div class="blob b1"></div>
+<div class="blob b2"></div>
+
+<div class="wrap">
+  <div class="hdr">
+    <a class="brand" href="/excursion">
+      <span class="brandrow"><img class="lg" src="/voyo-logo.png" alt="VOYO" /><span class="wm">экскурсии</span></span>
+      <span class="byvsc">by <b>VSC</b></span>
+    </a>
+    <span class="mine" id="askBtn">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="flex:none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      Подобрать экскурсию
+    </span>
+  </div>
+
+  <div class="hero">
+    <h1>Экскурсии, которые<br/><em>запоминаются</em></h1>
+    <div class="sub">17 000 экскурсий в 770 городах мира с проверенными гидами. Выбираете дату и время, бронируете за минуту — подтверждение сразу.</div>
+    <div class="searchbox">
+      <input id="q" type="text" placeholder="Куда едете?" autocomplete="off" />
+      <span class="go">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#fff" stroke-width="2.4"/><path d="m16.5 16.5 4 4" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>
+      </span>
+      <div class="drop" id="drop"></div>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="allp" id="allPanel">
+      <div class="ah"><span class="t">Все направления</span><button class="x" id="allClose" type="button">✕</button></div>
+      <div class="agrid" id="allGrid"></div>
+    </div>
+  </div>
+
+  <div class="sect" id="sect" style="display:none;">
+    <h2 id="sectTitle"></h2>
+    <div class="sub" id="sectSub"></div>
+    <div class="toolbar">
+      <div class="fchips" id="cats"></div>
+      <button class="sortbtn" id="sortBtn" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 4v16m0 0-3.5-3.5M7 20l3.5-3.5"/><path d="M17 20V4m0 0-3.5 3.5M17 4l3.5 3.5"/></svg>
+        <span id="sortLbl">Сначала популярные</span>
+      </button>
+    </div>
+    <div class="grid" id="grid"></div>
+    <button class="more" id="moreBtn" style="display:none;" type="button">Показать ещё</button>
+    <div class="empty" id="emptyMsg" style="display:none;"></div>
+  </div>
+
+  <div class="how">
+    <h2>Как это работает</h2>
+    <div class="cards">
+      <div class="c"><div class="n">1</div><div class="t">Выбираете экскурсию</div><div class="d">Программа, отзывы, гид, место встречи — всё видно заранее.</div></div>
+      <div class="c"><div class="n">2</div><div class="t">Дата и билеты</div><div class="d">Реальное расписание: свободные даты, время и количество мест.</div></div>
+      <div class="c"><div class="n">3</div><div class="t">Бронируете за минуту</div><div class="d">Подтверждение приходит сразу. Многие экскурсии — с оплатой на месте.</div></div>
+      <div class="c"><div class="n">4</div><div class="t">Гуляете</div><div class="d">Приходите к месту встречи — гид уже ждёт. Отмена бесплатна за 48 часов.</div></div>
+    </div>
+  </div>
+
+  <div class="faq">
+    <h2>Частые вопросы</h2>
+    <details><summary>Когда придёт подтверждение?</summary><div class="a">Сразу после бронирования — на почту приходит ваучер с местом встречи и контактами гида. Если экскурсия требует подтверждения гидом, статус обновится в течение нескольких часов.</div></details>
+    <details><summary>Когда платить?</summary><div class="a">Зависит от экскурсии: часть можно оплатить на месте гиду (в карточке написано «оплата на месте»), часть бронируется с онлайн-оплатой или депозитом. Точные условия всегда видны перед подтверждением.</div></details>
+    <details><summary>Можно ли отменить?</summary><div class="a">Да. По большинству экскурсий — бесплатная отмена за 48 часов до начала, деньги возвращаются полностью. Если экскурсию отменяет гид, возврат всегда 100%.</div></details>
+    <details><summary>Экскурсии на русском?</summary><div class="a">Да, все экскурсии в нашем каталоге проводятся русскоязычными гидами — и в России, и за рубежом.</div></details>
+    <details><summary>А если нужной даты нет?</summary><div class="a">Нажмите «Подобрать экскурсию» — менеджер найдёт вариант под ваши даты, соберёт индивидуальную программу или организует экскурсию для группы.</div></details>
+    <details><summary>Кто проводит экскурсии?</summary><div class="a">Проверенные local-гиды и экскурсионные бюро с рейтингом и отзывами реальных туристов. Рейтинг в карточке — это оценки людей, которые уже сходили.</div></details>
+  </div>
+
+  <div class="helpblk">
+    <h3>Нужна помощь?</h3>
+    <div class="hs">Подберём экскурсию под ваш маршрут, соберём программу для семьи или группы.</div>
+    <div class="ha">
+      <a class="hb" href="https://wa.me/+79299435150" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>WhatsApp</a>
+      <a class="hb" href="https://t.me/vsc_operator" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>Telegram</a>
+      <a class="hb" href="tel:+74953691867"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>Позвонить</a>
+    </div>
+  </div>
+
+  <div class="rep" id="rep">
+    <h3>Наши брони и комиссия</h3>
+    <div class="repchips" id="repChips"></div>
+    <div id="repTable"></div>
+  </div>
+
+  <div class="foot">VOYO — сервис компании Visa Solution Center.<br/>Экскурсии проводят проверенные гиды и экскурсионные бюро.</div>
+</div>
+
+<!-- карточка экскурсии -->
+<div class="pv" id="pv">
+  <div class="pvin">
+    <div class="pvbar">
+      <button class="bk" id="pvBack" type="button">←</button>
+      <div class="bt" id="pvBarTitle"></div>
+    </div>
+    <div class="pvbody" id="pvBody"></div>
+  </div>
+</div>
+
+<!-- бронирование: подтверждение и оплата внутри нашей страницы -->
+<div class="bkovl" id="bkOvl">
+  <div class="bkm">
+    <div class="bkh">
+      <div class="bi"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg></div>
+      <div class="bt"><div class="b1" id="bkTitle">Бронирование</div><div class="b2" id="bkSub">Защищённая форма — данные не покидают страницу</div></div>
+      <button class="bx" id="bkClose" type="button">✕</button>
+    </div>
+    <div class="bkbody" id="bkBody"><iframe class="bkf" id="bkFrame" src="about:blank" allow="payment"></iframe></div>
+    <div class="bkfoot">Бронь оформляется на VOYO. Подтверждение и ваучер придут на вашу почту сразу после оформления.</div>
+  </div>
+</div>
+
+<!-- подбор менеджером -->
+<div class="ovl" id="ovl">
+  <div class="md" id="md">
+    <button class="x" id="mdClose" type="button">✕</button>
+    <div id="mdBody">
+      <h3>Подобрать экскурсию</h3>
+      <div class="s" id="mdSub">Напишите, куда и когда едете — менеджер подберёт вариант, соберёт программу для семьи или группы и забронирует за вас.</div>
+      <div class="fld"><label>Ваше имя</label><input id="fName" type="text" placeholder="Как к вам обращаться" /></div>
+      <div class="fld"><label>Телефон</label><input id="fPhone" type="tel" inputmode="tel" placeholder="+7 999 123-45-67" /></div>
+      <div class="fld"><label>Даты и сколько человек</label><input id="fPeople" type="text" placeholder="12–15 сентября, 2 взрослых и ребёнок" /></div>
+      <div class="fld"><label>Пожелания</label><textarea id="fComment" placeholder="Город, что хочется посмотреть, язык, особые пожелания"></textarea></div>
+      <button class="sub2" id="fSend" type="button">Отправить заявку</button>
+      <div class="err" id="fErr"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  // Фон картинкой внутри style="..." — кавычки обязательно как &quot;,
+  // иначе атрибут рвётся и фон не применяется.
+  function bg(u){ return u?('background-image:url(&quot;'+esc(u)+'&quot;)'):''; }
+  function el(h){ var t=document.createElement("template"); t.innerHTML=String(h).trim(); return t.content.firstChild; }
+  function plural(n,a){ n=Math.abs(Number(n)||0)%100; var n1=n%10; if(n>10&&n<20)return a[2]; if(n1>1&&n1<5)return a[1]; if(n1===1)return a[0]; return a[2]; }
+  async function api(url,opts){
+    var r=await fetch(url,Object.assign({headers:{"Content-Type":"application/json"}},opts||{}));
+    var j=null; try{ j=await r.json(); }catch(e){}
+    return {ok:r.ok,status:r.status,j:j};
+  }
+  var MON=["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
+  var MONF=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
+  var WD=["вс","пн","вт","ср","чт","пт","сб"];
+  function dparts(iso){ var p=String(iso).split("-"); var d=new Date(Number(p[0]),Number(p[1])-1,Number(p[2])); return {d:d,day:d.getDate(),mon:MON[d.getMonth()],monf:MONF[d.getMonth()],wd:WD[d.getDay()]}; }
+
+  // ─────────── состояние ───────────
+  var ST={ dest:null, cats:[], catId:null, sort:"popular", page:1, items:[], more:true, loading:false, product:null, sched:null, sel:{date:null,eventId:null,time:null,tickets:{},prices:{}} };
+  var CITIES=[], COUNTRIES=[];
+  var POPULAR=["Москва","Санкт-Петербург","Сочи","Казань","Калининград","Стамбул","Дубай","Ереван","Тбилиси","Минск"];
+  var SORTS=[["popular","Сначала популярные"],["rating","С лучшим рейтингом"],["cheap","Сначала дешёвые"],["new","Новые"]];
+
+  // ─────────── направления ───────────
+  async function loadDest(){
+    var r=await api("/excursion/api/destinations");
+    if(!r.j||!r.j.success) return;
+    CITIES=r.j.cities||[]; COUNTRIES=r.j.countries||[];
+    var box=$("chips"); box.innerHTML="";
+    POPULAR.forEach(function(nm){
+      var c=CITIES.find(function(x){ return x.name===nm; });
+      if(!c) return;
+      var b=el('<button class="chip" type="button">'+esc(nm)+'</button>');
+      b.addEventListener("click",function(){ pick({type:"city",id:c.id,name:c.name,country:c.country}); });
+      box.appendChild(b);
+    });
+    var all=el('<button class="chip all" type="button">Все направления</button>');
+    all.addEventListener("click",function(){ $("allPanel").classList.toggle("on"); if($("allPanel").classList.contains("on")) renderAll(); });
+    box.appendChild(all);
+    route();
+  }
+  function renderAll(){
+    var g=$("allGrid"); g.innerHTML="";
+    CITIES.slice(0,600).forEach(function(c){
+      var n=el('<div class="ac"><span class="n">'+esc(c.name)+'</span><span class="c">'+esc(c.country||"")+'</span></div>');
+      n.addEventListener("click",function(){ $("allPanel").classList.remove("on"); pick({type:"city",id:c.id,name:c.name,country:c.country}); });
+      g.appendChild(n);
+    });
+  }
+
+  // ─────────── поиск ───────────
+  var qi=$("q"), drop=$("drop");
+  qi.addEventListener("input",function(){
+    var v=qi.value.trim().toLowerCase();
+    if(v.length<2){ drop.classList.remove("on"); return; }
+    var mc=CITIES.filter(function(c){ return c.name.toLowerCase().indexOf(v)===0; }).slice(0,7);
+    var mc2=CITIES.filter(function(c){ return c.name.toLowerCase().indexOf(v)>0; }).slice(0,4);
+    var mk=COUNTRIES.filter(function(c){ return c.name.toLowerCase().indexOf(v)===0; }).slice(0,4);
+    drop.innerHTML="";
+    mk.forEach(function(c){
+      var n=el('<div class="it"><span class="n">'+esc(c.name)+'</span><span class="c">страна</span></div>');
+      n.addEventListener("click",function(){ qi.value=""; drop.classList.remove("on"); pick({type:"country",id:c.id,name:c.name}); });
+      drop.appendChild(n);
+    });
+    mc.concat(mc2).forEach(function(c){
+      var n=el('<div class="it"><span class="n">'+esc(c.name)+'</span><span class="c">'+esc(c.country||"")+'</span></div>');
+      n.addEventListener("click",function(){ qi.value=""; drop.classList.remove("on"); pick({type:"city",id:c.id,name:c.name,country:c.country}); });
+      drop.appendChild(n);
+    });
+    if(!drop.children.length) drop.appendChild(el('<div class="none">Ничего не нашли. Попробуйте другой город.</div>'));
+    drop.classList.add("on");
+  });
+  document.addEventListener("click",function(e){ if(!drop.contains(e.target)&&e.target!==qi) drop.classList.remove("on"); });
+
+  // ─────────── каталог ───────────
+  function pick(dest){
+    ST.dest=dest; ST.catId=null; ST.page=1; ST.items=[]; ST.more=true; ST.cats=[];
+    Array.prototype.forEach.call(document.querySelectorAll("#chips .chip"),function(b){
+      b.classList.toggle("on", b.textContent===dest.name);
+    });
+    var u=new URL(location.href); u.searchParams.delete("tour");
+    u.searchParams.set(dest.type==="country"?"country":"city",String(dest.id));
+    u.searchParams.delete(dest.type==="country"?"city":"country");
+    history.pushState({},"",u);
+    $("sect").style.display="block";
+    $("sectTitle").textContent="Экскурсии — "+dest.name;
+    $("sectSub").textContent=dest.country?dest.country:"";
+    $("grid").innerHTML='<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
+    if(dest.type==="city") loadCats(dest.id);
+    load(true);
+    setTimeout(function(){ $("sect").scrollIntoView({behavior:"smooth",block:"start"}); },80);
+  }
+  async function loadCats(cityId){
+    var r=await api("/excursion/api/categories?city_id="+cityId);
+    ST.cats=(r.j&&r.j.categories)||[]; renderCats();
+  }
+  function renderCats(){
+    var box=$("cats"); box.innerHTML="";
+    if(!ST.cats.length) return;
+    var all=el('<button class="fchip'+(ST.catId?"":" on")+'" type="button">Все</button>');
+    all.addEventListener("click",function(){ ST.catId=null; ST.page=1; ST.items=[]; ST.more=true; renderCats(); load(true); });
+    box.appendChild(all);
+    ST.cats.forEach(function(c){
+      var b=el('<button class="fchip'+(ST.catId===c.id?" on":"")+'" type="button">'+esc(c.name)+'</button>');
+      b.addEventListener("click",function(){ ST.catId=(ST.catId===c.id?null:c.id); ST.page=1; ST.items=[]; ST.more=true; renderCats(); load(true); });
+      box.appendChild(b);
+    });
+  }
+  $("sortBtn").addEventListener("click",function(){
+    var i=SORTS.findIndex(function(s){ return s[0]===ST.sort; });
+    var n=SORTS[(i+1)%SORTS.length]; ST.sort=n[0]; $("sortLbl").textContent=n[1];
+    ST.page=1; ST.items=[]; ST.more=true; load(true);
+  });
+  async function load(reset){
+    if(ST.loading||!ST.dest) return;
+    ST.loading=true; $("moreBtn").style.display="none"; $("emptyMsg").style.display="none";
+    var p=new URLSearchParams();
+    p.set(ST.dest.type==="country"?"country_id":"city_id",String(ST.dest.id));
+    if(ST.catId) p.set("category_id",String(ST.catId));
+    p.set("sort",ST.sort); p.set("page",String(ST.page)); p.set("limit","24");
+    var r=await api("/excursion/api/products?"+p.toString());
+    ST.loading=false;
+    if(reset) ST.items=[];
+    var list=(r.j&&r.j.products)||[];
+    ST.more=list.length>=24;
+    ST.items=ST.items.concat(list);
+    render();
+  }
+  function render(){
+    var g=$("grid"); g.innerHTML="";
+    if(!ST.items.length){
+      $("emptyMsg").style.display="block";
+      $("emptyMsg").innerHTML="Здесь пока нет экскурсий по этим фильтрам. Попробуйте другую категорию — или <b style='color:var(--accent);cursor:pointer' id='emptyAsk'>попросите подобрать</b>.";
+      var a=$("emptyAsk"); if(a) a.addEventListener("click",openAsk);
+      return;
+    }
+    ST.items.forEach(function(p){
+      var badge=p.type==="private"?"Индивидуальная":(p.payType==="оплата на месте"?"Оплата на месте":"");
+      var c=el(
+        '<div class="cd">'+
+          '<div class="ph" style="'+bg(p.photo)+'">'+
+            (badge?'<span class="badge">'+esc(badge)+'</span>':'')+
+            (p.rating?'<span class="rt"><i>★</i>'+p.rating.toFixed(1)+'</span>':'')+
+          '</div>'+
+          '<div class="bd">'+
+            '<div class="t">'+esc(p.title)+'</div>'+
+            '<div class="meta">'+
+              (p.duration?'<span>'+esc(p.duration)+'</span>':'')+
+              (p.reviews?'<span>'+RU(p.reviews)+' '+plural(p.reviews,["отзыв","отзыва","отзывов"])+'</span>':'')+
+            '</div>'+
+            '<div class="foot">'+
+              '<div><span class="pr"><small>от</small>'+(p.price?RU(p.price)+' ₽':'—')+'</span>'+
+              (p.oldPrice&&p.price&&p.oldPrice>p.price?' <span class="old">'+RU(p.oldPrice)+' ₽</span>':'')+'</div>'+
+              '<span class="go">Подробнее</span>'+
+            '</div>'+
+          '</div>'+
+        '</div>');
+      c.addEventListener("click",function(){ openProduct(p.id); });
+      g.appendChild(c);
+    });
+    $("moreBtn").style.display=ST.more?"block":"none";
+  }
+  $("moreBtn").addEventListener("click",function(){ ST.page++; load(false); });
+
+  // ─────────── карточка ───────────
+  async function openProduct(id){
+    var u=new URL(location.href); u.searchParams.set("tour",String(id)); history.pushState({},"",u);
+    document.body.classList.add("lock");
+    $("pv").classList.add("on"); $("pv").scrollTop=0;
+    $("pvBarTitle").textContent="Загружаем…";
+    $("pvBody").innerHTML='<div class="loading" style="padding:40px 0;text-align:center">Загружаем экскурсию…</div>';
+    var r=await api("/excursion/api/product/"+id);
+    if(!r.j||!r.j.success){ $("pvBody").innerHTML='<div class="empty">Не удалось загрузить экскурсию.</div>'; return; }
+    ST.product=r.j.product; ST.sel={date:null,eventId:null,time:null,tickets:{},prices:{}};
+    renderProduct();
+    loadSchedule(id);
+  }
+  function closeProduct(){
+    $("pv").classList.remove("on"); document.body.classList.remove("lock"); ST.product=null;
+    var u=new URL(location.href); u.searchParams.delete("tour"); history.pushState({},"",u);
+  }
+  $("pvBack").addEventListener("click",closeProduct);
+
+  function renderProduct(){
+    var p=ST.product;
+    $("pvBarTitle").textContent=p.title;
+    var g=p.gallery&&p.gallery.length?p.gallery:[p.photo].filter(Boolean);
+    var galHtml='<div class="gal'+(g.length<2?" one":"")+'">'+g.slice(0,3).map(function(u){
+      return '<div class="g" style="'+bg(u)+'"></div>'; }).join("")+'</div>';
+
+    var meta=[];
+    if(p.rating) meta.push('<span class="pm"><i>★</i> '+p.rating.toFixed(1)+(p.reviews?' · '+RU(p.reviews)+' '+plural(p.reviews,["отзыв","отзыва","отзывов"]):'')+'</span>');
+    var dur=p.duration||(ST.sched&&ST.sched[0]&&ST.sched[0].slots[0]&&ST.sched[0].slots[0].duration)||"";
+    if(dur) meta.push('<span class="pm">⏱ '+esc(dur)+'</span>');
+    if(p.type==="private") meta.push('<span class="pm">Индивидуальная</span>');
+    else if(p.type==="shared") meta.push('<span class="pm">Групповая</span>');
+    if(p.groupMax) meta.push('<span class="pm">до '+p.groupMax+' чел.</span>');
+    if(p.city) meta.push('<span class="pm">📍 '+esc(p.city)+'</span>');
+
+    var left="";
+    if(p.short) left+='<div class="blk"><p>'+esc(p.short)+'</p></div>';
+    if(p.description) left+='<div class="blk"><h3>Что вас ждёт</h3><p>'+esc(p.description)+'</p></div>';
+    if(p.places&&p.places.length) left+='<div class="blk"><h3>Что увидите</h3><ul class="lst">'+p.places.map(function(x){return '<li>'+esc(x)+'</li>';}).join("")+'</ul></div>';
+    if((p.included&&p.included.length)||(p.notIncluded&&p.notIncluded.length)){
+      left+='<div class="blk"><h3>Что входит в цену</h3>'+
+        (p.included&&p.included.length?'<ul class="lst">'+p.included.map(function(x){return '<li>'+esc(x)+'</li>';}).join("")+'</ul>':'')+
+        (p.notIncluded&&p.notIncluded.length?'<h3 style="margin-top:14px">Оплачивается отдельно</h3><ul class="lst no">'+p.notIncluded.map(function(x){return '<li>'+esc(x)+'</li>';}).join("")+'</ul>':'')+
+        '</div>';
+    }
+    if(p.meetingPoint){
+      left+='<div class="blk"><h3>Место встречи</h3><p>'+esc(p.meetingPoint)+(p.meetingComment?'\n'+esc(p.meetingComment):'')+'</p>'+
+        '<a href="https://yandex.ru/maps/?text='+encodeURIComponent((p.city?p.city+", ":"")+p.meetingPoint)+'" target="_blank" rel="noopener" style="font-size:13.5px;font-weight:700;color:var(--accent);text-decoration:none">Открыть на карте →</a></div>';
+    }
+    if(p.host&&p.host.name){
+      left+='<div class="blk"><h3>Гид</h3><div class="guide">'+
+        (p.host.photo?'<div class="av" style="'+bg(p.host.photo)+'"></div>':'<div class="av"></div>')+
+        '<div><div class="gn">'+esc(p.host.name)+'</div><div class="gs">'+
+        (p.host.rating?'★ '+Number(p.host.rating).toFixed(1):'')+(p.host.reviews?' · '+RU(p.host.reviews)+' '+plural(p.host.reviews,["отзыв","отзыва","отзывов"]):'')+
+        '</div></div></div></div>';
+    }
+    if(p.importantInfo) left+='<div class="blk"><h3>Важно знать</h3><p>'+esc(p.importantInfo)+'</p></div>';
+    if(p.refundInfo) left+='<div class="blk"><h3>Отмена и возврат</h3><p>'+esc(p.refundInfo)+'</p></div>';
+    if(p.reviewsList&&p.reviewsList.length){
+      var shown=p.reviewsList.slice(0,4), rest=p.reviewsList.slice(4);
+      left+='<div class="blk"><h3>Отзывы туристов</h3><div id="revBox">'+shown.map(revHtml).join("")+'</div>'+
+        (rest.length?'<button class="revmore" id="revMore" type="button">Показать ещё '+rest.length+'</button>':'')+'</div>';
+    }
+
+    var html='<div class="pcols"><div>'+galHtml+
+      '<h1 class="ptitle">'+esc(p.title)+'</h1><div class="pmeta">'+meta.join("")+'</div>'+left+'</div>'+
+      '<div><div class="bp" id="bp"></div></div></div>';
+    $("pvBody").innerHTML=html;
+    var rm=$("revMore");
+    if(rm) rm.addEventListener("click",function(){ $("revBox").innerHTML=p.reviewsList.map(revHtml).join(""); rm.remove(); });
+    renderBooking();
+  }
+  function revHtml(r){
+    return '<div class="rev"><div class="rh"><span class="rn">'+esc(r.name)+'</span>'+
+      (r.rating?'<span class="rs">'+"★".repeat(Math.round(r.rating))+'</span>':'')+
+      (r.date?'<span class="rd">'+esc(r.date)+'</span>':'')+'</div><div class="rt">'+esc(r.text)+'</div></div>';
+  }
+
+  // ─────────── расписание и билеты ───────────
+  async function loadSchedule(id){
+    var r=await api("/excursion/api/product/"+id+"/schedule");
+    ST.sched=(r.j&&r.j.days)||[];
+    if(ST.sched.length){
+      ST.sel.date=ST.sched[0].date;
+      var s=ST.sched[0].slots[0];
+      if(s){ ST.sel.eventId=s.eventId; ST.sel.time=s.time; }
+    }
+    if(!ST.product.duration&&ST.sched.length) renderProduct();
+    renderBooking();
+    if(ST.sel.eventId) loadTickets(ST.sel.eventId);
+  }
+  async function loadTickets(eventId){
+    var box=$("tkBox"); if(box) box.innerHTML='<div class="loading">Смотрим свободные места…</div>';
+    var r=await api("/excursion/api/event/"+eventId+"/tickets");
+    var tickets=(r.j&&r.j.tickets)||[];
+    ST.tickets=tickets; ST.sel.tickets={};
+    var base=tickets.find(function(t){ return t.isBase&&!t.free; })||tickets.find(function(t){ return !t.free; });
+    if(base) ST.sel.tickets[base.id]=1;
+    renderBooking();
+  }
+  // Цена за штуку зависит от количества: у билета есть ступени
+  // «1–15 чел. по 1200 ₽», «16–30 по 1100 ₽» — берём подходящую.
+  function unitPrice(t,q){
+    var ls=t.lines||[]; if(!ls.length) return t.price||0;
+    var n=Math.max(1,q||1);
+    for(var i=0;i<ls.length;i++){ var l=ls[i]; if(n>=l.from&&(l.to==null||n<=l.to)) return l.price||0; }
+    return ls[ls.length-1].price||0;
+  }
+  function total(){
+    var s=0; (ST.tickets||[]).forEach(function(t){ var q=ST.sel.tickets[t.id]||0; s+=q*unitPrice(t,q); });
+    return s;
+  }
+  function renderBooking(){
+    var bp=$("bp"); if(!bp) return;
+    var p=ST.product;
+    var h='<div class="prow"><span class="pr"><small>от</small>'+(p.price?RU(p.price)+' ₽':'—')+'</span>'+
+      (p.oldPrice&&p.price&&p.oldPrice>p.price?'<span class="old">'+RU(p.oldPrice)+' ₽</span>':'')+'</div>'+
+      '<div class="pnote">'+(p.payType?esc(p.payType.charAt(0).toUpperCase()+p.payType.slice(1)):'Онлайн-бронирование')+
+      (p.type==="private"?' · цена за группу':'')+'</div>';
+
+    if(ST.sched===null){ h+='<div class="loading">Загружаем расписание…</div>'; }
+    else if(!ST.sched.length){
+      h+='<div class="loading">Ближайших дат нет в расписании. Менеджер подберёт дату под вас.</div>'+
+        '<button class="book" id="bAsk" type="button">Подобрать дату</button>';
+    } else {
+      h+='<div class="bl">Дата</div><div class="dates" id="dts">';
+      ST.sched.slice(0,30).forEach(function(d){
+        var q=dparts(d.date);
+        h+='<button class="dt'+(ST.sel.date===d.date?" on":"")+'" type="button" data-d="'+d.date+'">'+
+          '<div class="dw">'+q.wd+'</div><div class="dd">'+q.day+'</div><div class="dm">'+q.mon+'</div></button>';
+      });
+      h+='</div>';
+      var day=ST.sched.find(function(d){ return d.date===ST.sel.date; });
+      if(day&&day.slots.length>1){
+        h+='<div class="bl">Время</div><div class="times" id="tms">';
+        day.slots.forEach(function(s){ h+='<button class="tm'+(ST.sel.eventId===s.eventId?" on":"")+'" type="button" data-e="'+s.eventId+'" data-t="'+esc(s.time)+'">'+esc(s.time||"—")+'</button>'; });
+        var few=day.slots.filter(function(s){ return s.capacity>0&&s.capacity<=6; })[0];
+        if(few) h+='<div style="font-size:12px;color:var(--red);margin-top:7px">Осталось мало мест — '+few.capacity+'</div>';
+        h+='</div>';
+      }
+      h+='<div class="bl">Билеты</div><div id="tkBox">';
+      if(!ST.tickets) h+='<div class="loading">Смотрим свободные места…</div>';
+      else if(!ST.tickets.length) h+='<div class="loading">На эту дату мест нет — выберите другую.</div>';
+      else ST.tickets.forEach(function(t){
+        var q=ST.sel.tickets[t.id]||0;
+        var up=unitPrice(t,q||1);
+        var cheaper=(t.lines||[]).length>1?(t.lines[t.lines.length-1].price<t.lines[0].price):false;
+        h+='<div class="tk"><div class="ti"><div class="tt">'+esc(t.title)+'</div>'+
+          '<div class="tp">'+(t.free?"Бесплатно":(up?RU(up)+" ₽ / чел.":"—"))+
+          (cheaper?' · <span style="color:var(--green)">от '+t.lines[t.lines.length-1].from+' чел. дешевле</span>':'')+'</div></div>'+
+          '<div class="cnt"><button type="button" data-m="'+t.id+'"'+(q<=0?" disabled":"")+'>−</button>'+
+          '<span class="v">'+q+'</span><button type="button" data-p="'+t.id+'"'+((t.maxQty&&q>=t.maxQty)?" disabled":"")+'>+</button></div></div>';
+      });
+      h+='</div>';
+      var tt=total();
+      h+='<div class="tot"><span class="tl">Итого</span><span class="tv">'+RU(tt)+' ₽</span></div>';
+      h+='<button class="book" id="bGo" type="button"'+(tt<=0&&!hasFree()?" disabled":"")+'>Забронировать</button>';
+      h+='<button class="bsec" id="bAsk" type="button">Оформить через менеджера</button>';
+    }
+    h+='<div class="trust">'+
+      '<div class="tr"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg><span>Подтверждение сразу после бронирования</span></div>'+
+      '<div class="tr"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg><span>Бесплатная отмена за 48 часов</span></div>'+
+      '<div class="tr"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg><span>Русскоязычный гид и поддержка VOYO</span></div>'+
+      '</div>';
+    bp.innerHTML=h;
+
+    var dts=$("dts");
+    if(dts) dts.addEventListener("click",function(e){
+      var b=e.target.closest(".dt"); if(!b) return;
+      ST.sel.date=b.getAttribute("d")||b.dataset.d;
+      var day=ST.sched.find(function(d){ return d.date===ST.sel.date; });
+      var s=day&&day.slots[0];
+      ST.sel.eventId=s?s.eventId:null; ST.sel.time=s?s.time:null; ST.tickets=null;
+      renderBooking(); if(ST.sel.eventId) loadTickets(ST.sel.eventId);
+    });
+    var tms=$("tms");
+    if(tms) tms.addEventListener("click",function(e){
+      var b=e.target.closest(".tm"); if(!b) return;
+      ST.sel.eventId=Number(b.dataset.e); ST.sel.time=b.dataset.t; ST.tickets=null;
+      renderBooking(); loadTickets(ST.sel.eventId);
+    });
+    var tk=$("tkBox");
+    if(tk) tk.addEventListener("click",function(e){
+      var b=e.target.closest("button"); if(!b) return;
+      var pid=b.dataset.p, mid=b.dataset.m;
+      if(pid){ ST.sel.tickets[pid]=(ST.sel.tickets[pid]||0)+1; }
+      if(mid){ ST.sel.tickets[mid]=Math.max(0,(ST.sel.tickets[mid]||0)-1); }
+      renderBooking();
+    });
+    var go=$("bGo"); if(go) go.addEventListener("click",book);
+    var ask=$("bAsk"); if(ask) ask.addEventListener("click",openAsk);
+  }
+  function hasFree(){ return (ST.tickets||[]).some(function(t){ return t.free&&(ST.sel.tickets[t.id]||0)>0; }); }
+
+  // ─────────── бронирование ───────────
+  async function book(){
+    var p=ST.product;
+    var tickets=Object.keys(ST.sel.tickets).map(function(id){ return {id:Number(id),qty:ST.sel.tickets[id]}; }).filter(function(t){ return t.qty>0; });
+    if(!tickets.length) return;
+    var btn=$("bGo"); btn.disabled=true; btn.textContent="Открываем…";
+    var r=await api("/excursion/api/book",{method:"POST",body:JSON.stringify({
+      productId:p.id, eventId:ST.sel.eventId, date:ST.sel.date, time:ST.sel.time,
+      title:p.title, total:total(), tickets:tickets
+    })});
+    btn.disabled=false; btn.textContent="Забронировать";
+    if(!r.j||!r.j.success) return;
+    if(r.j.mode==="form"&&r.j.url){
+      var q=ST.sel.date?dparts(ST.sel.date):null;
+      $("bkTitle").textContent=p.title;
+      $("bkSub").textContent=(q?q.day+" "+q.monf:"")+(ST.sel.time?", "+ST.sel.time:"")+" · "+RU(total())+" ₽ · защищённая форма";
+      $("bkFrame").src=r.j.url;
+      $("bkOvl").classList.add("on"); document.body.classList.add("lock");
+      var bb=$("bkBody"); if(bb) bb.scrollTop=0;
+    }
+  }
+  $("bkClose").addEventListener("click",function(){
+    $("bkOvl").classList.remove("on"); $("bkFrame").src="about:blank";
+    if(!$("pv").classList.contains("on")) document.body.classList.remove("lock");
+  });
+
+  // ─────────── подбор менеджером ───────────
+  function openAsk(){
+    $("ovl").classList.add("on"); document.body.classList.add("lock");
+    if(ST.product){
+      $("mdSub").textContent="Подберём дату и оформим «"+ST.product.title+"» — или предложим похожее, если эта не подходит.";
+    }
+  }
+  function closeAsk(){ $("ovl").classList.remove("on"); if(!$("pv").classList.contains("on")) document.body.classList.remove("lock"); }
+  $("mdClose").addEventListener("click",closeAsk);
+  $("askBtn").addEventListener("click",openAsk);
+  $("ovl").addEventListener("click",function(e){ if(e.target===$("ovl")) closeAsk(); });
+  $("fSend").addEventListener("click",async function(){
+    var err=$("fErr"); err.textContent="";
+    var phone=$("fPhone").value.trim();
+    if(phone.replace(/\D/g,"").length<10){ err.textContent="Укажите телефон, чтобы мы могли ответить."; return; }
+    var b=$("fSend"); b.disabled=true; b.textContent="Отправляем…";
+    var r=await api("/excursion/api/lead",{method:"POST",body:JSON.stringify({
+      name:$("fName").value.trim(), phone:phone, people:$("fPeople").value.trim(), comment:$("fComment").value.trim(),
+      productId:ST.product?ST.product.id:null, title:ST.product?ST.product.title:"", date:ST.sel.date||""
+    })});
+    b.disabled=false; b.textContent="Отправить заявку";
+    if(!r.j||!r.j.success){ err.textContent=(r.j&&r.j.message)||"Не отправилось. Напишите нам в WhatsApp."; return; }
+    $("mdBody").innerHTML='<div class="okmsg"><div class="ic">✓</div><div class="t">Заявка принята</div>'+
+      '<div class="d">Менеджер свяжется с вами в ближайшее время и подберёт экскурсию.</div></div>';
+  });
+
+  // ─────────── роутинг ───────────
+  function route(){
+    var u=new URL(location.href);
+    var city=u.searchParams.get("city"), country=u.searchParams.get("country"), tour=u.searchParams.get("tour");
+    if(city){ var c=CITIES.find(function(x){ return String(x.id)===String(city); }); if(c) pickSilent({type:"city",id:c.id,name:c.name,country:c.country}); }
+    else if(country){ var k=COUNTRIES.find(function(x){ return String(x.id)===String(country); }); if(k) pickSilent({type:"country",id:k.id,name:k.name}); }
+    if(tour) openProduct(Number(tour));
+  }
+  function pickSilent(dest){
+    ST.dest=dest; ST.page=1; ST.items=[]; ST.more=true;
+    $("sect").style.display="block";
+    $("sectTitle").textContent="Экскурсии — "+dest.name;
+    $("sectSub").textContent=dest.country||"";
+    if(dest.type==="city") loadCats(dest.id);
+    load(true);
+  }
+  window.addEventListener("popstate",function(){
+    var tour=new URL(location.href).searchParams.get("tour");
+    if(!tour&&$("pv").classList.contains("on")){ $("pv").classList.remove("on"); document.body.classList.remove("lock"); }
+  });
+
+  // ─────────── отчёт для своих ───────────
+  (async function(){
+    var adm=new URL(location.href).searchParams.get("adm");
+    if(!adm) return;
+    var r=await api("/excursion/api/report?adm="+encodeURIComponent(adm));
+    if(!r.j||!r.j.success) return;
+    $("rep").classList.add("on");
+    $("repChips").innerHTML=
+      '<div class="repchip">Броней всего<b>'+RU(r.j.count)+'</b></div>'+
+      '<div class="repchip">Наша комиссия<b>'+RU(r.j.income)+' ₽</b></div>'+
+      '<div class="repchip">Заявок менеджеру<b>'+RU((r.j.leads||[]).length)+'</b></div>'+
+      '<div class="repchip">Начатых броней<b>'+RU((r.j.starts||[]).length)+'</b></div>';
+    var rows=(r.j.orders||[]).slice(0,60).map(function(o){
+      return '<tr><td>'+esc(o.title||"—")+'<div style="color:var(--mut);font-size:11px">'+esc(o.city||"")+' · '+esc(o.eventDate||"")+'</div></td>'+
+        '<td>'+esc(o.status||"")+'</td><td class="r">'+(o.amount?RU(o.amount)+" "+esc(o.currency):"—")+'</td>'+
+        '<td class="r">'+(o.income?RU(o.income):"—")+'</td></tr>';
+    }).join("");
+    $("repTable").innerHTML='<table><thead><tr><th>Экскурсия</th><th>Статус</th><th class="r">Сумма</th><th class="r">Наш доход</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  })();
+
+  $("allClose").addEventListener("click",function(){ $("allPanel").classList.remove("on"); });
+  if(new URL(location.href).searchParams.get("embed")==="1") document.body.classList.add("embed");
+  loadDest();
+})();
+</script>
+</body>
+</html>

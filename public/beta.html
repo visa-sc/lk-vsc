@@ -315,27 +315,12 @@
     </div>
   </section>
 
-  <!-- ВКЛАДКА 2: ЭКСКУРСИИ — каталог Sputnik8 (тема-зависимый, поверх /sputnik/api/*) -->
+  <!-- ВКЛАДКА 2: ЭКСКУРСИИ — наш сервис /excursion во встроенном режиме.
+       Раньше здесь был свой мини-каталог, где «Забронировать» уводило на сайт
+       партнёра; теперь весь цикл (каталог, расписание, билеты, оформление)
+       проходит внутри VOYO. Отдельная страница /excursion при этом не меняется. -->
   <section class="tab" id="tab-tours" data-tab="tours">
-    <div class="scroller" id="toursScroll">
-      <div class="wrap">
-        <div class="brand">VOYO · ЭКСКУРСИИ</div>
-        <div class="htitle">Экскурсии и активности <span class="pill">пилот</span></div>
-        <div class="hsub">Выберите город — покажем туры с ценами и рейтингом. Онлайн-бронирование.</div>
-        <div class="panel">
-          <div class="ctrls">
-            <div class="fld full"><label for="city">Город или направление</label>
-              <select id="city"><option value="">Загружаем города…</option></select></div>
-            <div class="fld grow"><label for="sort">Сортировка</label>
-              <select id="sort"><option value="product_id">Сначала популярные</option><option value="rating">По рейтингу</option></select></div>
-            <button class="btn" id="go" disabled>Показать</button>
-          </div>
-        </div>
-        <div id="grid" class="grid" hidden></div>
-        <div id="tState" class="state">Выберите город и нажмите «Показать».</div>
-        <div id="more" class="more" hidden><button id="moreBtn" class="btn sec">Показать ещё</button></div>
-      </div>
-    </div>
+    <iframe class="frame" id="toursFrame" title="Экскурсии VOYO"></iframe>
   </section>
 
   <!-- ВКЛАДКА 3: АККАУНТ — бонусная карта + тема -->
@@ -607,23 +592,8 @@
   }
   function ensureTours(){
     if(loaded.tours) return; loaded.tours=true;
-    citySel=document.getElementById("city"); sortSel=document.getElementById("sort");
-    goBtn=document.getElementById("go"); grid=document.getElementById("grid"); tState=document.getElementById("tState");
-    moreWrap=document.getElementById("more"); moreBtn=document.getElementById("moreBtn");
-    attachShrink(function(){ return document.getElementById("toursScroll").scrollTop; }, document.getElementById("toursScroll"));
-    goBtn.addEventListener("click",function(){ curCity=citySel.value; curSort=sortSel.value; loadProducts(true); });
-    moreBtn.addEventListener("click",function(){ page++; loadProducts(false); });
-    fetch("/sputnik/api/cities").then(function(r){return r.json();}).then(function(j){
-      if(j&&j.configured===false){ citySel.innerHTML='<option value="">—</option>'; goBtn.disabled=true; tSet("Каталог экскурсий ещё подключается. Загляните чуть позже.",true); return; }
-      if(j&&j.error){ citySel.innerHTML='<option value="">—</option>'; tSet(j.error,true); return; }
-      var cities=(j&&j.cities)||[];
-      if(!cities.length){ citySel.innerHTML='<option value="">Города не получены</option>'; return; }
-      citySel.innerHTML='<option value="">— все направления —</option>'+cities.map(function(c){ return '<option value="'+c.id+'">'+escapeHtml(c.name)+(c.country?(" · "+escapeHtml(c.country)):"")+'</option>'; }).join("");
-      goBtn.disabled=false;
-      // По умолчанию сразу показываем самые высокорейтинговые (без выбора города),
-      // чтобы вкладка не открывалась пустой. Выбор города/сортировки остаётся.
-      sortSel.value="rating"; curSort="rating"; curCity=""; loadProducts(true);
-    }).catch(function(){ citySel.innerHTML='<option value="">Ошибка загрузки городов</option>'; });
+    var f=document.getElementById("toursFrame");
+    if(f && !f.getAttribute("src")) f.setAttribute("src","/excursion?embed=1");
   }
 
   /* ───── ВКЛАДКА «Аккаунт»: бонус-карта ───── */
