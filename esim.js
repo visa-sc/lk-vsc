@@ -773,7 +773,8 @@ function mount(app, opts) {
         success: true, listPrice, total: calc.total,
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         balanceRub: calc.balanceRub, balanceCanUse: calc.balanceCanUse, balanceUsed: calc.balanceUsed,
-        promoOk: promoTried ? calc.discountKind === "promo" : null,
+        // Промокод засчитан, если сервер его принял — хоть скидкой, хоть себестоимостью
+        promoOk: promoTried ? !!calc.promoCode : null,
         promoReason: calc.promoReason,
       });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
