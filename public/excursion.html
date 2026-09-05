@@ -118,7 +118,7 @@
     padding:5px 9px;border-radius:999px;display:flex;align-items:center;gap:4px;}
   .cd .ph .rt i{color:var(--gold);font-style:normal;}
   .cd .bd{padding:14px 16px 16px;display:flex;flex-direction:column;flex:1;}
-  .cd .t{font-size:15.5px;font-weight:700;line-height:1.3;letter-spacing:-.01em;margin-bottom:7px;
+  .cd .t{font-size:15.5px;font-weight:700;line-height:1.3;letter-spacing:-.01em;margin-bottom:7px;overflow-wrap:break-word;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
   .cd .meta{font-size:12.5px;color:var(--mut);display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
   .cd .foot{margin-top:auto;display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
@@ -150,26 +150,30 @@
   .gal .g:first-child{grid-row:span 2;}
   .gal.one{grid-template-columns:1fr;grid-template-rows:300px;}
   .gal.one .g:first-child{grid-row:auto;}
-  .ptitle{font-size:clamp(23px,3.4vw,32px);line-height:1.15;letter-spacing:-.03em;font-weight:800;margin:0 0 12px;}
+  .ptitle{font-size:clamp(22px,3.4vw,32px);line-height:1.18;letter-spacing:-.03em;font-weight:800;margin:0 0 12px;overflow-wrap:break-word;}
   .pmeta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;}
   .pm{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:999px;
     padding:8px 13px;font-size:13px;font-weight:600;box-shadow:0 1px 2px rgba(16,24,40,.03);}
   .pm i{font-style:normal;color:var(--gold);}
   .pcols{display:grid;grid-template-columns:1fr 340px;gap:24px;align-items:start;}
+  /* Без min-width:0 элемент грида не может стать уже своего содержимого:
+     горизонтальная лента дат распирала всю колонку и ломала вёрстку. */
+  .pmain,.pside{min-width:0;}
   /* На узком экране панель бронирования встаёт сразу под заголовком,
      а не в конце длинного описания. */
   @media(max-width:860px){
-    .pcols{grid-template-columns:1fr;}
+    .pcols{grid-template-columns:1fr;gap:16px;}
     .pside{order:-1;}
     .gal{grid-template-rows:110px 110px;}
     .bp{position:static;}
   }
+
   .blk{background:#fff;border:1px solid var(--line);border-radius:20px;padding:18px 20px;margin-bottom:14px;box-shadow:var(--sh);}
   .blk h3{font-size:15px;font-weight:800;margin:0 0 10px;letter-spacing:-.01em;}
-  .blk p{margin:0 0 10px;font-size:14.5px;line-height:1.62;color:#2c3a4d;white-space:pre-line;}
+  .blk p{margin:0 0 10px;font-size:14.5px;line-height:1.62;color:#2c3a4d;white-space:pre-line;overflow-wrap:break-word;}
   .blk p:last-child{margin-bottom:0;}
   .lst{list-style:none;padding:0;margin:0;}
-  .lst li{position:relative;padding:6px 0 6px 24px;font-size:14px;line-height:1.5;color:#2c3a4d;}
+  .lst li{position:relative;padding:6px 0 6px 24px;font-size:14px;line-height:1.5;color:#2c3a4d;overflow-wrap:break-word;}
   .lst li:before{content:"";position:absolute;left:4px;top:13px;width:6px;height:6px;border-radius:50%;background:var(--accent);}
   .lst.no li:before{background:#d6dde7;}
   .guide{display:flex;align-items:center;gap:13px;}
@@ -182,8 +186,12 @@
   .rev .rn{font-size:13.5px;font-weight:700;}
   .rev .rd{font-size:11.5px;color:var(--mut);}
   .rev .rs{color:var(--gold);font-size:12px;}
-  .rev .rt{font-size:13.5px;line-height:1.55;color:#33415a;}
-  .revmore{font:inherit;font-size:13px;font-weight:700;color:var(--accent);background:none;border:0;cursor:pointer;padding:8px 0 0;}
+  .rev .rt{font-size:13.5px;line-height:1.55;color:#33415a;overflow-wrap:break-word;}
+  .revmore,.descmore{font:inherit;font-size:13px;font-weight:700;color:var(--accent);background:none;border:0;cursor:pointer;padding:8px 0 0;}
+  .desc{position:relative;}
+  .desc.clip{max-height:230px;overflow:hidden;}
+  .desc.clip:after{content:"";position:absolute;left:0;right:0;bottom:0;height:70px;
+    background:linear-gradient(180deg,rgba(255,255,255,0),#fff);}
 
   /* ── панель бронирования ── */
   .bp{position:sticky;top:70px;background:#fff;border:1px solid var(--line);border-radius:22px;padding:18px 20px 20px;box-shadow:var(--sh);}
@@ -193,7 +201,10 @@
   .bp .old{font-size:14px;color:var(--mut);text-decoration:line-through;}
   .bp .pnote{font-size:12.5px;color:var(--mut);margin-bottom:15px;}
   .bl{font-size:11.5px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin:15px 0 8px;}
-  .dates{display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;}
+  .dates{display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none;min-width:0;
+    -webkit-overflow-scrolling:touch;scroll-snap-type:x proximity;}
+  .dates::-webkit-scrollbar{display:none;}
+  .dt{scroll-snap-align:start;}
   .dt{flex:none;border:1px solid var(--line);background:#fff;border-radius:13px;padding:9px 12px;cursor:pointer;text-align:center;
     font:inherit;transition:all .13s ease;min-width:62px;}
   .dt:hover{border-color:#aed3ea;}
@@ -243,7 +254,7 @@
   .bkh .bi{width:34px;height:34px;border-radius:11px;background:var(--grad);display:flex;align-items:center;justify-content:center;flex:none;}
   .bkh .bt{flex:1;min-width:0;}
   .bkh .b1{font-size:14.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .bkh .b2{font-size:12px;color:var(--mut);margin-top:1px;}
+  .bkh .b2{font-size:12px;color:var(--mut);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .bkh .bx{border:0;background:#eef2f7;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:15px;flex:none;}
   .bkbody{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#fff;}
   .bkf{display:block;border:0;width:100%;height:1560px;background:#fff;}
@@ -321,6 +332,72 @@
   .repchips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
   .repchip{background:#f3f6fa;border:1px solid var(--line);border-radius:11px;padding:8px 12px;font-size:12px;color:var(--mut);}
   .repchip b{display:block;color:var(--ink);font-size:16px;font-weight:800;margin-top:2px;}
+  /* ───── телефон ───── */
+  @media(max-width:600px){
+    .wrap{padding:0 14px 64px;}
+    .hero{padding:30px 0 6px;}
+    .hero h1{font-size:29px;letter-spacing:-.03em;margin-bottom:12px;}
+    .hero .sub{font-size:14.5px;margin-bottom:22px;}
+    .searchbox input{padding:15px 54px 15px 18px;font-size:16px;border-radius:17px;}
+    .searchbox .go{width:38px;height:38px;border-radius:12px;}
+    .chips{gap:7px;margin-top:18px;}
+    .chip{padding:9px 13px;font-size:13.5px;}
+    .sect{margin-top:26px;}
+    .sect h2{font-size:20px;}
+    .grid{grid-template-columns:1fr;gap:13px;}
+    .cd{border-radius:18px;}
+    /* фильтр категорий — одна прокручиваемая лента во всю ширину экрана,
+       иначе чипы занимали пол-экрана и отодвигали сами экскурсии */
+    .toolbar{gap:10px;flex-direction:column;align-items:stretch;}
+    .fchips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;
+      margin:0 -14px;padding:0 14px 2px;-webkit-overflow-scrolling:touch;}
+    .fchips::-webkit-scrollbar{display:none;}
+    .fchip{flex:none;}
+    .sortbtn{width:100%;justify-content:center;}
+    /* карточка экскурсии */
+    .pvbar{padding:10px 14px;}
+    .pvbar .bt{font-size:13.5px;}
+    .pvbody{padding:0 14px 34px;}
+    .gal{grid-template-rows:88px 88px;gap:6px;border-radius:18px;margin:12px 0 16px;}
+    .gal.one{grid-template-rows:210px;}
+    .ptitle{font-size:23px;margin-bottom:10px;}
+    .pmeta{gap:6px;margin-bottom:16px;}
+    .pm{padding:7px 11px;font-size:12.5px;}
+    .blk{padding:15px 16px;border-radius:18px;margin-bottom:12px;}
+    .blk h3{font-size:14.5px;}
+    .blk p{font-size:14px;}
+    .bp{padding:16px;border-radius:18px;}
+    .bp .pr{font-size:25px;}
+    .tot .tv{font-size:22px;}
+    .book{padding:15px;font-size:15.5px;border-radius:15px;}
+    .dt{min-width:58px;padding:8px 10px;}
+    /* окно бронирования — на весь экран, чтобы форма не жалась */
+    .bkovl{padding:0;}
+    .bkm{max-width:100%;width:100%;height:100vh;height:100dvh;border-radius:0;}
+    .bkh{padding:11px 13px;gap:10px;}
+    .bkh .bi{width:30px;height:30px;border-radius:9px;}
+    .bkh .b1{font-size:13.5px;}
+    .bkh .b2{font-size:11.5px;}
+    .bkfoot{padding:9px 14px;font-size:11.5px;}
+    /* на телефоне форма партнёра раскладывается в столбик и выше — даём запас,
+       чтобы кнопка оформления никогда не обрезалась */
+    .bkf{height:1980px;}
+    /* модалка «через менеджера» */
+    .ovl{padding:0;align-items:flex-end;}
+    .md{max-width:100%;border-radius:22px 22px 0 0;padding:22px 18px calc(22px + env(safe-area-inset-bottom));max-height:94vh;}
+    .how,.faq{margin-top:34px;}
+    .how h2,.faq h2{font-size:20px;}
+    /* шапка: кнопка в одну строку, чтобы не наезжала на логотип */
+    .hdr{padding:16px 0 2px;gap:10px;}
+    .brand .lg{height:16px;}
+    .brand .wm{font-size:17px;}
+    .byvsc{font-size:8.5px;width:71px;margin-top:5px;}
+    .hdr .mine{font-size:12.5px;padding:9px 13px;white-space:nowrap;flex:none;}
+    .mhide{display:none;}
+    .helpblk{margin-top:34px;padding:20px 16px;}
+    .ha{gap:8px;}
+    .hb{padding:11px 15px;font-size:13.5px;}
+  }
 </style>
 </head>
 <body>
@@ -335,7 +412,7 @@
     </a>
     <span class="mine" id="askBtn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="flex:none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      Подобрать экскурсию
+      Подобрать<span class="mhide"> экскурсию</span>
     </span>
   </div>
 
@@ -536,12 +613,15 @@
       b.classList.toggle("on", b.textContent===dest.name);
     });
     var u=new URL(location.href); u.searchParams.delete("tour");
-    u.searchParams.set(dest.type==="country"?"country":"city",String(dest.id));
-    u.searchParams.delete(dest.type==="country"?"city":"country");
+    if(dest.type==="top"){ u.searchParams.delete("city"); u.searchParams.delete("country"); }
+    else{
+      u.searchParams.set(dest.type==="country"?"country":"city",String(dest.id));
+      u.searchParams.delete(dest.type==="country"?"city":"country");
+    }
     history.pushState({},"",u);
     $("sect").style.display="block";
-    $("sectTitle").textContent="Экскурсии — "+dest.name;
-    $("sectSub").textContent=dest.country?dest.country:"";
+    $("sectTitle").textContent=dest.type==="top"?"Популярные экскурсии":("Экскурсии — "+dest.name);
+    $("sectSub").textContent=dest.type==="top"?"Топ по оценкам путешественников — выберите город, чтобы увидеть больше":(dest.country||"");
     $("grid").innerHTML='<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
     if(dest.type==="city") loadCats(dest.id);
     load(true);
@@ -572,7 +652,8 @@
     if(ST.loading||!ST.dest) return;
     ST.loading=true; $("moreBtn").style.display="none"; $("emptyMsg").style.display="none";
     var p=new URLSearchParams();
-    p.set(ST.dest.type==="country"?"country_id":"city_id",String(ST.dest.id));
+    if(ST.dest.type==="city") p.set("city_id",String(ST.dest.id));
+    else if(ST.dest.type==="country") p.set("country_id",String(ST.dest.id));
     if(ST.catId) p.set("category_id",String(ST.catId));
     p.set("sort",ST.sort); p.set("page",String(ST.page)); p.set("limit","24");
     var r=await api("/excursion/api/products?"+p.toString());
@@ -656,7 +737,12 @@
 
     var left="";
     if(p.short) left+='<div class="blk"><p>'+esc(p.short)+'</p></div>';
-    if(p.description) left+='<div class="blk"><h3>Что вас ждёт</h3><p>'+esc(p.description)+'</p></div>';
+    if(p.description){
+      var LONG=620, isLong=p.description.length>LONG;
+      left+='<div class="blk"><h3>Что вас ждёт</h3>'+
+        '<div class="desc'+(isLong?" clip":"")+'" id="descBox"><p>'+esc(p.description)+'</p></div>'+
+        (isLong?'<button class="descmore" id="descMore" type="button">Читать полностью</button>':'')+'</div>';
+    }
     if(p.places&&p.places.length) left+='<div class="blk"><h3>Что увидите</h3><ul class="lst">'+p.places.map(function(x){return '<li>'+esc(x)+'</li>';}).join("")+'</ul></div>';
     if((p.included&&p.included.length)||(p.notIncluded&&p.notIncluded.length)){
       left+='<div class="blk"><h3>Что входит в цену</h3>'+
@@ -675,7 +761,9 @@
         (p.host.rating?'★ '+Number(p.host.rating).toFixed(1):'')+(p.host.reviews?' · '+RU(p.host.reviews)+' '+plural(p.host.reviews,["отзыв","отзыва","отзывов"]):'')+
         '</div></div></div></div>';
     }
-    if(p.importantInfo) left+='<div class="blk"><h3>Важно знать</h3><p>'+esc(p.importantInfo)+'</p></div>';
+    if(p.importantList&&p.importantList.length>1)
+      left+='<div class="blk"><h3>Важно знать</h3><ul class="lst">'+p.importantList.map(function(x){return '<li>'+esc(x)+'</li>';}).join("")+'</ul></div>';
+    else if(p.importantInfo) left+='<div class="blk"><h3>Важно знать</h3><p>'+esc(p.importantInfo)+'</p></div>';
     if(p.refundInfo) left+='<div class="blk"><h3>Отмена и возврат</h3><p>'+esc(p.refundInfo)+'</p></div>';
     if(p.reviewsList&&p.reviewsList.length){
       var shown=p.reviewsList.slice(0,4), rest=p.reviewsList.slice(4);
@@ -688,6 +776,8 @@
       '<div class="pcols"><div class="pmain">'+left+'</div>'+
       '<div class="pside"><div class="bp" id="bp"></div></div></div>';
     $("pvBody").innerHTML=html;
+    var dm=$("descMore");
+    if(dm) dm.addEventListener("click",function(){ $("descBox").classList.remove("clip"); dm.remove(); });
     var rm=$("revMore");
     if(rm) rm.addEventListener("click",function(){ $("revBox").innerHTML=p.reviewsList.map(revHtml).join(""); rm.remove(); });
     renderBooking();
@@ -872,13 +962,14 @@
     var city=u.searchParams.get("city"), country=u.searchParams.get("country"), tour=u.searchParams.get("tour");
     if(city){ var c=CITIES.find(function(x){ return String(x.id)===String(city); }); if(c) pickSilent({type:"city",id:c.id,name:c.name,country:c.country}); }
     else if(country){ var k=COUNTRIES.find(function(x){ return String(x.id)===String(country); }); if(k) pickSilent({type:"country",id:k.id,name:k.name}); }
+    else { ST.sort="rating"; $("sortLbl").textContent="С лучшим рейтингом"; pickSilent({type:"top",name:"Популярные"}); }
     if(tour) openProduct(Number(tour));
   }
   function pickSilent(dest){
     ST.dest=dest; ST.page=1; ST.items=[]; ST.more=true;
     $("sect").style.display="block";
-    $("sectTitle").textContent="Экскурсии — "+dest.name;
-    $("sectSub").textContent=dest.country||"";
+    $("sectTitle").textContent=dest.type==="top"?"Популярные экскурсии":("Экскурсии — "+dest.name);
+    $("sectSub").textContent=dest.type==="top"?"Топ по оценкам путешественников — выберите город, чтобы увидеть больше":(dest.country||"");
     if(dest.type==="city") loadCats(dest.id);
     load(true);
   }

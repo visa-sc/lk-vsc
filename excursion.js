@@ -105,6 +105,7 @@ function galleryOf(x) {
 function clean(s) {
   if (!s) return "";
   return String(s)
+    .replace(/[\u200B-\u200F\u2060-\u2064\uFEFF]/g, "")
     .replace(/<\s*br\s*\/?>/gi, "\n")
     .replace(/<\/\s*(p|div|li|h\d)\s*>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
@@ -118,7 +119,15 @@ function clean(s) {
 function bullets(s) {
   const t = clean(s);
   if (!t) return [];
-  return t.split(/\n+|\s*•\s*|\s*·\s*/).map((x) => x.trim()).filter((x) => x.length > 1).slice(0, 30);
+  let parts = t.split(/\n+|\s*•\s*|\s*·\s*/);
+  // Часть полей приходит одной строкой-перечислением в кавычках:
+  // «"Транспортное обслуживание", "Услуги гида"» — разбираем на пункты.
+  if (parts.length === 1 && /"[^"]*"\s*,\s*"/.test(parts[0])) parts = parts[0].split(/\s*,\s*(?=")/);
+  return parts
+    // кавычки снимаем ТОЛЬКО когда они обрамляют весь пункт целиком,
+    // иначе ломаются названия вроде «Киностудия «Мосфильм»»
+    .map((x) => x.trim().replace(/^[-–—]\s*/, "").replace(/^"(.*)"$/s, "$1").replace(/^«([^«»]*)»$/s, "$1").trim())
+    .filter((x) => x.length > 1).slice(0, 30);
 }
 function cardOf(x) {
   return {
@@ -281,6 +290,9 @@ function mount(app, opts) {
           notIncluded: bullets(x.what_not_included),
           places: bullets(x.places_to_see),
           importantInfo: clean(x.important_info),
+          // тем же полем, но списком: в исходнике пункты через «•» и пустые строки,
+          // сплошным текстом это читается плохо
+          importantList: bullets(x.important_info),
           refundInfo: clean(x.refund_info),
           meetingPoint: (x.begin_place && x.begin_place.address) || "",
           meetingComment: (x.begin_place && x.begin_place.address_comment) || "",
