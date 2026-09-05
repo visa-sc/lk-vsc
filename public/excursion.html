@@ -818,9 +818,23 @@
     for(var i=0;i<ls.length;i++){ var l=ls[i]; if(n>=l.from&&(l.to==null||n<=l.to)) return l.price||0; }
     return ls[ls.length-1].price||0;
   }
+  // Индивидуальная экскурсия: счётчик — это число участников, а цена в ступени
+  // уже за ВСЮ группу (1–5 чел. = 10 000 ₽, 6 чел. = 11 600 ₽), умножать нельзя.
+  // Групповая: цена за человека, умножаем на количество.
+  function isPrivate(){ return !!(ST.product && ST.product.type==="private"); }
   function total(){
-    var s=0; (ST.tickets||[]).forEach(function(t){ var q=ST.sel.tickets[t.id]||0; s+=q*unitPrice(t,q); });
+    var s=0, group=isPrivate();
+    (ST.tickets||[]).forEach(function(t){
+      var q=ST.sel.tickets[t.id]||0; if(!q) return;
+      s += group ? unitPrice(t,q) : q*unitPrice(t,q);
+    });
     return s;
+  }
+  // текущая ступень — чтобы показать «группа от X до Y человек»
+  function tierOf(t,q){
+    var ls=t.lines||[]; var n=Math.max(1,q||1);
+    for(var i=0;i<ls.length;i++){ var l=ls[i]; if(n>=l.from&&(l.to==null||n<=l.to)) return l; }
+    return ls[ls.length-1]||null;
   }
   function renderBooking(){
     var bp=$("bp"); if(!bp) return;
@@ -828,7 +842,7 @@
     var h='<div class="prow"><span class="pr"><small>от</small>'+(p.price?RU(p.price)+' ₽':'—')+'</span>'+
       (p.oldPrice&&p.price&&p.oldPrice>p.price?'<span class="old">'+RU(p.oldPrice)+' ₽</span>':'')+'</div>'+
       '<div class="pnote">'+(p.payType?esc(p.payType.charAt(0).toUpperCase()+p.payType.slice(1)):'Онлайн-бронирование')+
-      (p.type==="private"?' · цена за группу':'')+'</div>';
+      (p.type==="private"?' · цена за всю группу, не за человека':'')+'</div>';
 
     if(ST.sched===null){ h+='<div class="loading">Загружаем расписание…</div>'; }
     else if(!ST.sched.length){
@@ -850,15 +864,18 @@
         if(few) h+='<div style="font-size:12px;color:var(--red);margin-top:7px">Осталось мало мест — '+few.capacity+'</div>';
         h+='</div>';
       }
-      h+='<div class="bl">Билеты</div><div id="tkBox">';
+      h+='<div class="bl">'+(isPrivate()?"Сколько участников":"Билеты")+'</div><div id="tkBox">';
       if(!ST.tickets) h+='<div class="loading">Смотрим свободные места…</div>';
       else if(!ST.tickets.length) h+='<div class="loading">На эту дату мест нет — выберите другую.</div>';
       else ST.tickets.forEach(function(t){
         var q=ST.sel.tickets[t.id]||0;
-        var up=unitPrice(t,q||1);
-        var cheaper=(t.lines||[]).length>1?(t.lines[t.lines.length-1].price<t.lines[0].price):false;
+        var up=unitPrice(t,q||1), grp=isPrivate(), tier=tierOf(t,q||1);
+        var cheaper=!grp&&(t.lines||[]).length>1?(t.lines[t.lines.length-1].price<t.lines[0].price):false;
+        var priceTxt = t.free ? "Бесплатно"
+          : (up ? (RU(up)+" ₽"+(grp?" за группу":" / чел.")) : "—");
+        var tierTxt = (grp&&tier&&tier.to) ? (" · группа от "+tier.from+" до "+tier.to+" чел.") : "";
         h+='<div class="tk"><div class="ti"><div class="tt">'+esc(t.title)+'</div>'+
-          '<div class="tp">'+(t.free?"Бесплатно":(up?RU(up)+" ₽ / чел.":"—"))+
+          '<div class="tp">'+priceTxt+esc(tierTxt)+
           (cheaper?' · <span style="color:var(--green)">от '+t.lines[t.lines.length-1].from+' чел. дешевле</span>':'')+'</div></div>'+
           '<div class="cnt"><button type="button" data-m="'+t.id+'"'+(q<=0?" disabled":"")+'>−</button>'+
           '<span class="v">'+q+'</span><button type="button" data-p="'+t.id+'"'+((t.maxQty&&q>=t.maxQty)?" disabled":"")+'>+</button></div></div>';
