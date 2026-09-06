@@ -6430,22 +6430,19 @@ async function runDealCycle(trigger) {
   } catch (e) { console.error("runDealCycle:", e && e.message); return { error: e && e.message }; }
   finally { _dealCycleRunning = false; }
 }
-// Скользящие окна по месяцам 2026 — из бакетов (месяц M = 12 бакетов, оканчивающихся M).
+// Месяцы 2026 — из бакетов по КАЛЕНДАРНОМУ месяцу создания контакта (Андрей
+// передумал 06.09: скользящий год заменён на простой месяц — январь = контакты,
+// созданные в январе; их оплата может случиться в любом следующем месяце, но
+// учитывается всё равно в январе). Только завершённые месяцы.
 function dealCycleMonths(d) {
   if (!d || !d.buckets) return null;
   const months = {};
   const now = new Date(Date.now() + 3 * 3600 * 1000);
   const curYm = now.getUTCFullYear() * 12 + now.getUTCMonth();
   for (let m = 0; m < 12; m++) {
-    const ymNum = 2026 * 12 + m;
-    if (ymNum >= curYm) break; // только ЗАВЕРШЁННЫЕ месяцы (Андрей: «весь год, включая август»)
-    let sum = 0, count = 0;
-    for (let k = ymNum - 11; k <= ymNum; k++) {
-      const key = Math.floor(k / 12) + "-" + String((k % 12) + 1).padStart(2, "0");
-      const b = d.buckets[key];
-      if (b) { sum += b.sum; count += b.count; }
-    }
-    if (count) months["2026-" + String(m + 1).padStart(2, "0")] = { avgDays: Math.round(sum / count * 10) / 10, count };
+    if (2026 * 12 + m >= curYm) break;
+    const b = d.buckets["2026-" + String(m + 1).padStart(2, "0")];
+    if (b && b.count) months["2026-" + String(m + 1).padStart(2, "0")] = { avgDays: Math.round(b.sum / b.count * 10) / 10, count: b.count };
   }
   return months;
 }
