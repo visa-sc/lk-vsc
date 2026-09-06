@@ -3779,7 +3779,9 @@
         vscContent.appendChild(vscSchengenBlock());
         // ── Сверка контактов — ТРЕТЬИМ сверху (по просьбе Андрея 31.08); только админ ──
         if (currentRole() === "admin") vscContent.appendChild(vscReconBlock());
-        // ── Скорость первого касания лида (по просьбе Андрея 20.07 был 3-м, теперь 4-й) ──
+        // ── Цикл сделки — ЧЕТВЁРТЫМ сверху (по просьбе Андрея 06.09) ──
+        vscContent.appendChild(vscDealCycleBlock());
+        // ── Скорость первого касания лида (был 3-м, теперь 5-й) ──
         vscContent.appendChild(vscFirstTouchBlock());
         // ── Выручка по городам (СПб/МСК) — по месяцам, из amoCRM (ночной расчёт 05:00) ──
         const hCity = document.createElement("div"); hCity.className = "ref-sec-h"; hCity.textContent = "Выручка по городам — по месяцам (2026)";
@@ -4245,6 +4247,44 @@
         if (v < 60) return (Math.round(v * 10) / 10) + " мин";
         const h = Math.floor(v / 60), mm = Math.round(v % 60);
         return h + "ч " + (mm < 10 ? "0" : "") + mm + "м";
+      }
+      // ── Блок «Цикл сделки» (Ежемесячный контроль, 4-й сверху; Андрей 06.09) ──
+      function vscDealCycleBlock() {
+        const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
+        const info = "<b>Что показывает</b><br>Средний цикл сделки: от даты <b>создания контакта</b> в amoCRM (первое появление клиента у нас) до даты <b>первой оплаты</b> его сделки (поле «Дата оплаты», те же статусы, по которым считаем выручку).<br><br><b>Как считается месяц</b><br>Каждый месяц — среднее по всем контактам, созданным за скользящий ГОД, оканчивающийся этим месяцем. Например, август 2026 = контакты, созданные с 01.09.2025 по 31.08.2026; январь 2026 = с 01.02.2025 по 31.01.2026.<br><br><b>Детали</b><br>• Оплатой считается сделка с заполненной «Датой оплаты» И заполненным бюджетом (пустой бюджет — не оплата).<br>• Доплаты не считаются: сделки в статусе «Доплата» и с «доплата» в названии исключены; в расчёте только контакты с настоящей первой оплатой.<br>• Если у контакта несколько оплаченных сделок — берётся первая оплата.<br>• Пары «оплата раньше создания контакта» (мусор старых импортов) отбрасываются.<br>• Показываются только завершённые месяцы (текущий появится, когда закончится).<br>• Источник — живая amoCRM самым низким приоритетом, пересчёт раз в сутки в 00:50 МСК.";
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Цикл сделки — от появления контакта до оплаты"; h.appendChild(vscInfo(info));
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        wrap.appendChild(box);
+        apiFetch("/admin/api/vsc/dealcycle").then(function (j) {
+          const months = j && j.months;
+          if (!months || !Object.keys(months).length) {
+            box.innerHTML = '<div class="vsc-empty">' + (j && j.running ? "Идёт первый расчёт по истории amoCRM (низким приоритетом, может занять заметное время) — загляните позже." : "Данных пока нет — первый расчёт запустится автоматически.") + '</div>';
+            return;
+          }
+          const yms = Object.keys(months).sort();
+          const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+          box.innerHTML = "";
+          const maxV = Math.max.apply(null, yms.map(function (ym) { return months[ym].avgDays; }).concat([1]));
+          const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "200px";
+          yms.forEach(function (ym) {
+            const mo = months[ym];
+            const col = document.createElement("div"); col.className = "vsc-bar-col"; col.style.flex = "0 0 74px";
+            col.title = MONF[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4) + " · окно: год по конец месяца\nсредний цикл: " + mo.avgDays + " дн\nконтактов с оплатой в окне: " + mo.count;
+            const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = Math.round(mo.avgDays) + " дн";
+            const bar = document.createElement("div"); bar.className = "vsc-bar"; bar.style.width = "32px";
+            bar.style.height = Math.max(2, Math.round(mo.avgDays / maxV * 130)) + "px";
+            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = MONF[+ym.slice(5, 7) - 1];
+            col.appendChild(vl); col.appendChild(bar); col.appendChild(xl);
+            bars.appendChild(col);
+          });
+          box.appendChild(bars);
+          const upd = j.ts ? new Date(j.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+          const foot = document.createElement("div"); foot.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:10px;";
+          foot.textContent = "обновлено: " + upd + " МСК · источник: amoCRM, раз в сутки в 00:50";
+          box.appendChild(foot);
+        }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить.</div>'; });
+        return wrap;
       }
       function vscFirstTouchBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";

@@ -6351,6 +6351,127 @@ setTimeout(() => { if (!loadSchengen()) Promise.resolve(amoBg(() => runSchengenL
   console.log("VSC SCHENGEN: раз в сутки 00:00 МСК из живой amoCRM (самый низкий приоритет amoBg)");
 })();
 
+// ═══ «Цикл сделки» (Ежемесячный контроль, 4-й блок; задача Андрея 06.09.2026) ═══════════
+// Цикл = от даты СОЗДАНИЯ КОНТАКТА (первое появление клиента у нас) до даты ПЕРВОЙ
+// ОПЛАТЫ его сделки (поле «Дата оплаты» 427242, те же выручечные статусы, что в
+// «Выручке по городам» — CITY_REV_STATUSES). Для месяца M дашборд показывает СРЕДНЕЕ
+// по контактам, созданным в скользящем ГОДЕ, оканчивающемся последним днём M
+// (август-2026 = контакты 01.09.2025–31.08.2026, январь-2026 = 01.02.2025–31.01.2026).
+// Храним агрегат по МЕСЯЦУ СОЗДАНИЯ контакта (sum дней + count) — скользящее окно
+// собирается из 12 бакетов без пересчёта. Отрицательные циклы (оплата раньше
+// создания контакта — мусор импорта) отбрасываются и считаются отдельно.
+const VSC_DEALCYCLE_FILE = path.join(__dirname, ".vscDealCycle.json");
+function loadDealCycle() { try { return JSON.parse(fs.readFileSync(VSC_DEALCYCLE_FILE, "utf8")); } catch (_) { return null; } }
+let _dealCycleRunning = false;
+async function runDealCycle(trigger) {
+  if (_dealCycleRunning) return { skipped: true };
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
+  _dealCycleRunning = true;
+  const t0 = Date.now();
+  try {
+    const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+    // Сделки выручечных статусов, обновлённые с 01.02.2025: для окна января-2026 нужны
+    // оплаты с февраля-2025, а оплата не бывает раньше обновления сделки. Оплаты ранних
+    // лет не нужны: их контакты созданы до окон 2026 года и в расчёт не попадают.
+    const params = { with: "contacts" };
+    CITY_REV_STATUSES.forEach((st, i) => { params[`filter[statuses][${i}][pipeline_id]`] = String(st.pipeline_id); params[`filter[statuses][${i}][status_id]`] = String(st.status_id); });
+    params["filter[updated_at][from]"] = String(Math.floor(Date.UTC(2025, 1, 1, 0, 0, 0) / 1000) - 3 * 3600);
+    // Постранично и ПОСЛЕДОВАТЕЛЬНО (раз в сутки, спешить некуда — как schengen-съём).
+    const paidByContact = new Map(); // id контакта → unix САМОЙ РАННЕЙ оплаты
+    let scanned = 0;
+    for (let page = 1; page < 500; page++) {
+      const data = await amoGet(`${baseUrl}/api/v4/leads`, Object.assign({ limit: 250, page }, params));
+      const leads = (data && data._embedded && data._embedded.leads) || [];
+      if (!leads.length) break;
+      scanned += leads.length;
+      for (const l of leads) {
+        const paid = Number(_cityCfVal(l, CITY_CF_DATE));
+        if (!paid || isNaN(paid)) continue;
+        // Уточнение Андрея 06.09: оплата = заполненный бюджет; сделки с датой
+        // оплаты, но нулевым/пустым бюджетом — не оплата, пропускаем.
+        if (!(Number(l.price) > 0)) continue;
+        // Доплаты — не первые деньги клиента (уточнение Андрея 06.09): сделка в
+        // статусе «Доплата» (ОРК 21271227) или с «доплат…» в названии оплатой не
+        // считается; контакт, у которого есть только доплаты, в расчёт не попадает.
+        if (Number(l.status_id) === 21271227) continue;
+        if (/доплат/i.test(String(l.name || ""))) continue;
+        const cs = (l._embedded && l._embedded.contacts) || [];
+        const mc = cs.find((c) => c.is_main) || cs[0];
+        if (!mc) continue;
+        const cur = paidByContact.get(mc.id);
+        if (cur == null || paid < cur) paidByContact.set(mc.id, paid);
+      }
+      if (leads.length < 250) break;
+    }
+    // created_at контактов — батчами по 250 id.
+    const ids = [...paidByContact.keys()];
+    const buckets = {}; // "YYYY-MM" (месяц создания контакта, МСК) → { sum: дней, count }
+    let negative = 0, paired = 0;
+    for (let i = 0; i < ids.length; i += 250) {
+      const cp = { limit: 250 };
+      ids.slice(i, i + 250).forEach((id, k) => { cp[`filter[id][${k}]`] = String(id); });
+      const data = await amoGet(`${baseUrl}/api/v4/contacts`, cp);
+      for (const c of ((data && data._embedded && data._embedded.contacts) || [])) {
+        const created = Number(c.created_at) || 0;
+        const paid = paidByContact.get(c.id);
+        if (!created || !paid) continue;
+        const days = (paid - created) / 86400;
+        if (days < 0) { negative++; continue; }
+        const d = new Date((created + 3 * 3600) * 1000);
+        const bk = d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
+        const b = buckets[bk] || (buckets[bk] = { sum: 0, count: 0 });
+        b.sum += days; b.count++; paired++;
+      }
+    }
+    const out = { ts: Date.now(), scanned, contacts: ids.length, paired, negative, durationMs: Date.now() - t0, buckets };
+    fs.writeFileSync(VSC_DEALCYCLE_FILE, JSON.stringify(out, null, 1), "utf8");
+    console.log(`VSC DEALCYCLE [${trigger || "cron"}]: сделок просмотрено ${scanned}, контактов с оплатой ${ids.length}, пар ${paired} (отброшено отрицательных ${negative}), ${out.durationMs}ms`);
+    return out;
+  } catch (e) { console.error("runDealCycle:", e && e.message); return { error: e && e.message }; }
+  finally { _dealCycleRunning = false; }
+}
+// Скользящие окна по месяцам 2026 — из бакетов (месяц M = 12 бакетов, оканчивающихся M).
+function dealCycleMonths(d) {
+  if (!d || !d.buckets) return null;
+  const months = {};
+  const now = new Date(Date.now() + 3 * 3600 * 1000);
+  const curYm = now.getUTCFullYear() * 12 + now.getUTCMonth();
+  for (let m = 0; m < 12; m++) {
+    const ymNum = 2026 * 12 + m;
+    if (ymNum >= curYm) break; // только ЗАВЕРШЁННЫЕ месяцы (Андрей: «весь год, включая август»)
+    let sum = 0, count = 0;
+    for (let k = ymNum - 11; k <= ymNum; k++) {
+      const key = Math.floor(k / 12) + "-" + String((k % 12) + 1).padStart(2, "0");
+      const b = d.buckets[key];
+      if (b) { sum += b.sum; count += b.count; }
+    }
+    if (count) months["2026-" + String(m + 1).padStart(2, "0")] = { avgDays: Math.round(sum / count * 10) / 10, count };
+  }
+  return months;
+}
+app.get("/admin/api/vsc/dealcycle", requireVscDashboard, (req, res) => {
+  const d = loadDealCycle();
+  res.json({ success: true, ts: d && d.ts, months: dealCycleMonths(d), running: _dealCycleRunning });
+});
+app.post("/admin/api/vsc/dealcycle/run", requireAdmin, (req, res) => {
+  if (_dealCycleRunning) return res.json({ success: true, started: false, running: true });
+  setImmediate(() => { Promise.resolve(amoBg(() => runDealCycle("manual"))).catch(() => {}); });
+  res.json({ success: true, started: true });
+});
+// Расписание: раз в сутки в 00:50 МСК (после сделок 00:00 и касаний 00:30), низким
+// приоритетом amoBg. После рестарта — разовый прогон, только если файла ещё нет.
+setTimeout(() => { if (!loadDealCycle()) Promise.resolve(amoBg(() => runDealCycle("startup"))).catch(() => {}); }, 240 * 1000);
+(function scheduleDealCycleDaily() {
+  const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000;
+  (function nextRun() {
+    const mskNow = Date.now() + MSK_OFFSET;
+    let target = Math.floor(mskNow / DAY_MS) * DAY_MS + 50 * 60 * 1000; // 00:50 МСК
+    if (target <= mskNow) target += DAY_MS;
+    setTimeout(() => { Promise.resolve(amoBg(() => runDealCycle("cron"))).catch(() => {}); nextRun(); }, Math.max(1000, target - mskNow));
+  })();
+  console.log("VSC DEALCYCLE: раз в сутки 00:50 МСК из живой amoCRM (самый низкий приоритет amoBg)");
+})();
+
 // ═══ «Скорость первого касания лида» (Ежемесячный контроль, по месяцам) ══════════════════
 // ТЗ Андрея 20.07: из ЖИВОЙ amoCRM. Для лидов, созданных в 2026: время от создания до
 // ПЕРВОГО действия менеджера (исходящий звонок ИЛИ сообщение в мессенджер от человека).
