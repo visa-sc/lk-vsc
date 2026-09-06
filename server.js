@@ -6439,16 +6439,22 @@ function dealCycleMonths(d) {
   const months = {};
   const now = new Date(Date.now() + 3 * 3600 * 1000);
   const curYm = now.getUTCFullYear() * 12 + now.getUTCMonth();
+  let ySum = 0, yCount = 0;
   for (let m = 0; m < 12; m++) {
     if (2026 * 12 + m >= curYm) break;
     const b = d.buckets["2026-" + String(m + 1).padStart(2, "0")];
-    if (b && b.count) months["2026-" + String(m + 1).padStart(2, "0")] = { avgDays: Math.round(b.sum / b.count * 10) / 10, count: b.count };
+    if (b && b.count) {
+      months["2026-" + String(m + 1).padStart(2, "0")] = { avgDays: Math.round(b.sum / b.count * 10) / 10, count: b.count };
+      ySum += b.sum; yCount += b.count;
+    }
   }
-  return months;
+  // Годовой итог — средневзвешенно по ВСЕМ контактам завершённых месяцев (не среднее средних).
+  return { months, year: yCount ? { avgDays: Math.round(ySum / yCount * 10) / 10, count: yCount } : null };
 }
 app.get("/admin/api/vsc/dealcycle", requireVscDashboard, (req, res) => {
   const d = loadDealCycle();
-  res.json({ success: true, ts: d && d.ts, months: dealCycleMonths(d), running: _dealCycleRunning });
+  const dc = dealCycleMonths(d) || {};
+  res.json({ success: true, ts: d && d.ts, months: dc.months || null, year: dc.year || null, running: _dealCycleRunning });
 });
 app.post("/admin/api/vsc/dealcycle/run", requireAdmin, (req, res) => {
   if (_dealCycleRunning) return res.json({ success: true, started: false, running: true });

@@ -4265,8 +4265,23 @@
           const yms = Object.keys(months).sort();
           const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
           box.innerHTML = "";
-          const maxV = Math.max.apply(null, yms.map(function (ym) { return months[ym].avgDays; }).concat([1]));
+          const maxV = Math.max.apply(null, yms.map(function (ym) { return months[ym].avgDays; }).concat([j.year ? j.year.avgDays : 1, 1]));
           const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "215px";
+          // Годовой итог — первой карточкой с подложкой (как «2026 год» в «Отзывах»):
+          // средневзвешенно по всем контактам завершённых месяцев января–августа и далее.
+          if (j.year) {
+            const yc = document.createElement("div"); yc.className = "vsc-bar-col";
+            yc.style.cssText = "flex:0 0 84px;background:#eef5fb;border:1px solid #d3e3f2;border-radius:12px;padding:8px 6px 6px;box-sizing:border-box;margin-right:14px;";
+            yc.title = "2026 год · все контакты завершённых месяцев\nсредний цикл: " + j.year.avgDays + " дн\nконтактов с оплатой: " + j.year.count;
+            const yv = document.createElement("div"); yv.className = "vsc-bar-v"; yv.style.fontWeight = "700"; yv.textContent = Math.round(j.year.avgDays) + " дн";
+            const yb = document.createElement("div"); yb.className = "vsc-bar"; yb.style.width = "32px";
+            yb.style.height = Math.max(2, Math.round(j.year.avgDays / maxV * 130)) + "px";
+            const yx = document.createElement("div"); yx.className = "vsc-bar-x"; yx.style.cssText = "font-weight:700;color:#2c5a86;font-size:10.5px;";
+            yx.textContent = "2026 год";
+            const yd = document.createElement("div"); yd.className = "vsc-bar-d"; // пустышка — подписи месяцев и года на одном уровне
+            yc.appendChild(yv); yc.appendChild(yb); yc.appendChild(yx); yc.appendChild(yd);
+            bars.appendChild(yc);
+          }
           let prevAvg = null;
           yms.forEach(function (ym) {
             const mo = months[ym];
