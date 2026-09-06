@@ -742,12 +742,15 @@ function mount(app, deps) {
       reconCurrent.summary = {
         calls: p.calls || 0, unique: p.unique || 0, found: p.found || 0,
         callsMissing: (p.missing && p.missing.length) || 0,
+        // Сами телефоны пропавших — для «подробнее» в истории блока /vsc (Андрей 06.09).
+        missCalls: (p.missing || []).slice(0, 30).map((m) => m.phone),
         formsLeads: reconCurrent.forms.reduce((n, f) => n + (f.leads || 0), 0),
         formsMissing: reconCurrent.forms.reduce((n, f) => n + ((f.missing && f.missing.length) || 0), 0),
         // Разбивка по сайтам — для строк истории в блоке /vsc («Заявки МСК: 10/10»).
         forms: reconCurrent.forms.map((f) => ({
           id: f.id, label: f.label, leads: f.leads || 0, found: f.found || 0,
           miss: (f.missing && f.missing.length) || 0, error: !!f.error, skipped: !!f.skipped,
+          missPhones: (f.missing || []).slice(0, 30).map((m) => m.phone),
         })),
         errors: [p.error].concat(reconCurrent.forms.map((f) => f.error)).filter(Boolean).length,
         skipped: [p.skipped].concat(reconCurrent.forms.map((f) => f.skipped)).filter(Boolean).length,
@@ -907,8 +910,23 @@ function mount(app, deps) {
 function reconSummary() {
   const st = store();
   const configured = !!(st.config.pbx && st.config.pbx.key) || (st.config.flexbe || []).some((f) => f.apiKey);
+  // Дневные записи до 06.09 не содержали телефонов пропавших — дотягиваем их из
+  // полных журналов сверок (recons хранит последние 30 прогонов целиком).
+  const fullByDay = {};
+  for (const r of st.recons || []) if (r.day) fullByDay[r.day] = r;
   const days = Object.keys(st.reconDays || {}).sort().reverse().slice(0, 30)
-    .map((d) => Object.assign({ day: d }, st.reconDays[d]));
+    .map((d) => {
+      const rec = Object.assign({ day: d }, st.reconDays[d]);
+      if (!rec.missCalls && fullByDay[d]) {
+        const full = fullByDay[d];
+        rec.missCalls = (((full.pbx || {}).missing) || []).slice(0, 30).map((m) => m.phone);
+        (rec.forms || []).forEach((f) => {
+          const ff = (full.forms || []).find((x) => x.id === f.id);
+          f.missPhones = ((ff && ff.missing) || []).slice(0, 30).map((m) => m.phone);
+        });
+      }
+      return rec;
+    });
   const r = (st.recons && st.recons.length) ? st.recons[st.recons.length - 1] : null;
   if (!r) return { configured, last: null, days };
   const p = r.pbx || {};
