@@ -886,10 +886,11 @@ function mount(app, opts) {
     const email = normEmail((req.body || {}).email);
     if (!validEmail(email)) return res.status(400).json({ success: false, message: "Введите корректный email." });
     const now = Date.now(), prev = _loginAt.get(email) || 0;
-    // Ответ всегда одинаковый — по нему нельзя проверить, есть ли у нас такой клиент
-    if (now - prev < 60000) return res.json({ success: true, sent: true });
-    _loginAt.set(email, now);
     const mine = esimsOf(email);
+    // Клиенту важнее понять, что он ошибся почтой, чем нам скрывать факт покупки:
+    // отвечаем честно (found), но письмо шлём не чаще раза в минуту на адрес.
+    if (now - prev < 60000) return res.json({ success: true, sent: mine.length > 0, found: mine.length > 0 });
+    _loginAt.set(email, now);
     if (mine.length && opts && opts.sendMail) {
       const acc = BASE_URL + "/esim/account?e=" + encodeURIComponent(email) + "&t=" + signEmail(email) +
         ((req.body || {}).lk ? "&lk=1" : "");
@@ -908,7 +909,7 @@ function mount(app, opts) {
               "\n\nСсылка постоянная — сохраните письмо.",
       }).catch((e) => console.error("esim login mail:", e.message));
     }
-    res.json({ success: true, sent: true });
+    res.json({ success: true, sent: mine.length > 0, found: mine.length > 0 });
   });
 
   // Кто я сейчас (для шапки страниц)

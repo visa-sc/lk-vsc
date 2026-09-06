@@ -36,6 +36,8 @@
   /* Встраивание в клиентский ЛК (?embed=1): шапка, вопросы и подвал там свои */
   body.embed .hdr, body.embed .helpblk, body.embed .foot, body.embed #buyMore{display:none;}
   body.embed #bonusBox, body.embed #bonusOvl{display:none!important;}  /* рефералка — только на /esim */
+  /* поле с инлайновой рамкой — перебиваем важностью */
+  #lgEmail.bad{border-color:#e2637a!important;background:#fff6f7!important;}
   .otheremail{display:block;margin:14px auto 0;text-align:center;font-size:13px;font-weight:600;color:var(--accent);
     background:none;border:0;cursor:pointer;font-family:inherit;}
   body.embed .blob{display:none;}
@@ -301,17 +303,29 @@
     var m = el("lgMsg"), v = el("lgEmail").value.trim();
     if(!/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(v)){ m.style.color="var(--red,#b0263a)"; m.textContent="Введите корректный email."; return; }
     this.disabled=true; this.textContent="Отправляем…";
+    el("lgEmail").classList.remove("bad");
     try{
-      await fetch("/esim/api/account/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:v, lk:EMBED})});
-      m.style.color="var(--mut)";
-      m.innerHTML = "Если на эту почту покупали eSIM — письмо со ссылкой уже отправлено.<br/>Проверьте входящие и папку «Спам».";
-      el("lgEmail").style.display="none"; this.style.display="none";
+      var r = await fetch("/esim/api/account/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:v, lk:EMBED})});
+      var j = await r.json();
+      if(j && j.found){
+        // Письмо ушло — форма больше не нужна, вместо неё простая инструкция
+        el("lgTitle").textContent = "Проверьте почту";
+        el("lgSub").innerHTML = "Отправили ссылку для входа на <b>"+esc(v)+"</b>.<br/>Если письма нет — загляните в папку «Спам».";
+        el("lgEmail").style.display="none"; this.style.display="none"; m.textContent="";
+      } else {
+        // Такой почты у нас нет — форму оставляем, чтобы человек ввёл другую
+        el("lgEmail").classList.add("bad");
+        m.style.color="var(--red,#b0263a)";
+        m.innerHTML = "На эту почту eSIM не покупали. Проверьте адрес или укажите другой — тот, на который приходил чек.";
+        this.disabled=false; this.textContent="Прислать ссылку";
+      }
     }catch(e){
       m.style.color="var(--red,#b0263a)"; m.textContent="Не получилось, попробуйте ещё раз.";
       this.disabled=false; this.textContent="Прислать ссылку";
     }
   });
   el("lgEmail").addEventListener("keydown",function(e){ if(e.key==="Enter") el("lgBtn").click(); });
+  el("lgEmail").addEventListener("input",function(){ this.classList.remove("bad"); el("lgMsg").textContent=""; });
 })();
 </script>
 </body>
