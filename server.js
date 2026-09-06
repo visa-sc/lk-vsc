@@ -6370,16 +6370,21 @@ async function runDealCycle(trigger) {
   const t0 = Date.now();
   try {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
-    // Сделки выручечных статусов, обновлённые с 01.02.2025: для окна января-2026 нужны
-    // оплаты с февраля-2025, а оплата не бывает раньше обновления сделки. Оплаты ранних
-    // лет не нужны: их контакты созданы до окон 2026 года и в расчёт не попадают.
+    // Сделки выручечных статусов, обновлённые с 2023 года: глубокая история нужна
+    // для «% повторных — версия ИИ» (клиент, покупавший в 2023–2024 и вернувшийся в
+    // 2026, должен опознаваться повторным, а не новым). Для самого цикла хватило бы
+    // и 2025-го, но скан общий — раз в сутки ночью это по силам.
     const params = { with: "contacts" };
     CITY_REV_STATUSES.forEach((st, i) => { params[`filter[statuses][${i}][pipeline_id]`] = String(st.pipeline_id); params[`filter[statuses][${i}][status_id]`] = String(st.status_id); });
-    params["filter[updated_at][from]"] = String(Math.floor(Date.UTC(2025, 1, 1, 0, 0, 0) / 1000) - 3 * 3600);
+    params["filter[updated_at][from]"] = String(Math.floor(Date.UTC(2023, 0, 1, 0, 0, 0) / 1000) - 3 * 3600);
     // Постранично и ПОСЛЕДОВАТЕЛЬНО (раз в сутки, спешить некуда — как schengen-съём).
-    const paidByContact = new Map(); // id контакта → unix САМОЙ РАННЕЙ оплаты
+    const paidByContact = new Map(); // id контакта → unix САМОЙ РАННЕЙ оплаты (для цикла)
+    const paysByContact = new Map(); // id контакта → ВСЕ его оплаты (для повторных)
+    const deals26 = [];              // оплаты 2026 года: { paid, cid } (для повторных)
+    const Y26_FROM = Math.floor(Date.UTC(2026, 0, 1) / 1000) - 3 * 3600;
+    const Y27_FROM = Math.floor(Date.UTC(2027, 0, 1) / 1000) - 3 * 3600;
     let scanned = 0;
-    for (let page = 1; page < 500; page++) {
+    for (let page = 1; page < 900; page++) {
       const data = await amoGet(`${baseUrl}/api/v4/leads`, Object.assign({ limit: 250, page }, params));
       const leads = (data && data._embedded && data._embedded.leads) || [];
       if (!leads.length) break;
@@ -6387,25 +6392,28 @@ async function runDealCycle(trigger) {
       for (const l of leads) {
         const paid = Number(_cityCfVal(l, CITY_CF_DATE));
         if (!paid || isNaN(paid)) continue;
-        // Уточнение Андрея 06.09: оплата = заполненный бюджет; сделки с датой
-        // оплаты, но нулевым/пустым бюджетом — не оплата, пропускаем.
-        if (!(Number(l.price) > 0)) continue;
-        // Доплаты — не первые деньги клиента (уточнение Андрея 06.09): сделка в
-        // статусе «Доплата» (ОРК 21271227) или с «доплат…» в названии оплатой не
-        // считается; контакт, у которого есть только доплаты, в расчёт не попадает.
+        // Доплаты — не деньги клиента «с нуля» (Андрей 06.09): ни в цикл, ни в повторные.
         if (Number(l.status_id) === 21271227) continue;
         if (/доплат/i.test(String(l.name || ""))) continue;
+        // Оплата = заполненный бюджет. ВОЗВРАТ (Андрей 06.09) считается оплатой даже
+        // с занулённым бюджетом: деньги и цикл случились, судьба денег — не про цикл.
+        const isReturn = Number(l.status_id) === 21256761 || Number(l.status_id) === 43200834;
+        if (!(Number(l.price) > 0) && !isReturn) continue;
         const cs = (l._embedded && l._embedded.contacts) || [];
         const mc = cs.find((c) => c.is_main) || cs[0];
         if (!mc) continue;
         const cur = paidByContact.get(mc.id);
         if (cur == null || paid < cur) paidByContact.set(mc.id, paid);
+        const arr = paysByContact.get(mc.id);
+        if (arr) arr.push(paid); else paysByContact.set(mc.id, [paid]);
+        if (paid >= Y26_FROM && paid < Y27_FROM) deals26.push({ paid, cid: mc.id });
       }
       if (leads.length < 250) break;
     }
     // created_at контактов — батчами по 250 id.
     const ids = [...paidByContact.keys()];
     const buckets = {}; // "YYYY-MM" (месяц создания контакта, МСК) → { sum: дней, count }
+    const createdBy = {}; // id контакта → created_at (для повторных)
     let negative = 0, paired = 0;
     for (let i = 0; i < ids.length; i += 250) {
       const cp = { limit: 250 };
@@ -6415,6 +6423,7 @@ async function runDealCycle(trigger) {
         const created = Number(c.created_at) || 0;
         const paid = paidByContact.get(c.id);
         if (!created || !paid) continue;
+        createdBy[c.id] = created;
         const days = (paid - created) / 86400;
         if (days < 0) { negative++; continue; }
         const d = new Date((created + 3 * 3600) * 1000);
@@ -6423,7 +6432,22 @@ async function runDealCycle(trigger) {
         b.sum += days; b.count++; paired++;
       }
     }
-    const out = { ts: Date.now(), scanned, contacts: ids.length, paired, negative, durationMs: Date.now() - t0, buckets };
+    // «% повторных сделок — версия ИИ» (Андрей 06.09): сделка месяца M повторная,
+    // если у её контакта была БОЛЕЕ РАННЯЯ оплата (успех или возврат, не доплата)
+    // И контакт создан ДО начала M. Горизонт истории оплат — с 2023 года.
+    const repeats = {};
+    for (const d26 of deals26) {
+      const dd = new Date((d26.paid + 3 * 3600) * 1000);
+      if (dd.getUTCFullYear() !== 2026) continue;
+      const mIdx = dd.getUTCMonth();
+      const mk = "2026-" + String(mIdx + 1).padStart(2, "0");
+      const monthStart = Math.floor(Date.UTC(2026, mIdx, 1) / 1000) - 3 * 3600;
+      const r = repeats[mk] || (repeats[mk] = { total: 0, rep: 0 });
+      r.total++;
+      const created = createdBy[d26.cid];
+      if (created != null && created < monthStart && (paysByContact.get(d26.cid) || []).some((pp) => pp < d26.paid)) r.rep++;
+    }
+    const out = { ts: Date.now(), scanned, contacts: ids.length, paired, negative, durationMs: Date.now() - t0, buckets, repeats };
     fs.writeFileSync(VSC_DEALCYCLE_FILE, JSON.stringify(out, null, 1), "utf8");
     console.log(`VSC DEALCYCLE [${trigger || "cron"}]: сделок просмотрено ${scanned}, контактов с оплатой ${ids.length}, пар ${paired} (отброшено отрицательных ${negative}), ${out.durationMs}ms`);
     return out;
@@ -6454,7 +6478,17 @@ function dealCycleMonths(d) {
 app.get("/admin/api/vsc/dealcycle", requireVscDashboard, (req, res) => {
   const d = loadDealCycle();
   const dc = dealCycleMonths(d) || {};
-  res.json({ success: true, ts: d && d.ts, months: dc.months || null, year: dc.year || null, running: _dealCycleRunning });
+  // Повторные — тоже только завершённые месяцы.
+  let repeats = null;
+  if (d && d.repeats) {
+    repeats = {};
+    const now = new Date(Date.now() + 3 * 3600 * 1000);
+    const curYm = now.getUTCFullYear() * 12 + now.getUTCMonth();
+    Object.keys(d.repeats).sort().forEach((mk) => {
+      if (2026 * 12 + (+mk.slice(5) - 1) < curYm) repeats[mk] = d.repeats[mk];
+    });
+  }
+  res.json({ success: true, ts: d && d.ts, months: dc.months || null, year: dc.year || null, repeats, running: _dealCycleRunning });
 });
 app.post("/admin/api/vsc/dealcycle/run", requireAdmin, (req, res) => {
   if (_dealCycleRunning) return res.json({ success: true, started: false, running: true });

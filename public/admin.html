@@ -3815,6 +3815,8 @@
         const h3 = document.createElement("div"); h3.className = "ref-sec-h"; h3.style.marginTop = "22px"; h3.textContent = "Сделки — по месяцам (2026)";
         vscContent.appendChild(h3);
         vscContent.appendChild(vscBarChart({ key: "repeatPct", label: "% повторных сделок", fmt: "pct", good: 1 }, ctrlSeries));
+        // «% повторных — версия ИИ» из живой amoCRM (Андрей 06.09) — сразу под табличной версией.
+        vscContent.appendChild(vscRepeatAiBlock());
         // Item 14 — CPL/ДРР с учётом доп. расходов.
         const h4 = document.createElement("div"); h4.className = "ref-sec-h"; h4.style.marginTop = "22px"; h4.textContent = "Реклама с учётом доп. расходов — по месяцам";
         vscContent.appendChild(h4);
@@ -4248,10 +4250,60 @@
         const h = Math.floor(v / 60), mm = Math.round(v % 60);
         return h + "ч " + (mm < 10 ? "0" : "") + mm + "м";
       }
+      // ── Блок «% повторных сделок — версия ИИ» (под табличным % повторных; Андрей 06.09) ──
+      function vscRepeatAiBlock() {
+        const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
+        const info = "<b>Чем отличается от блока выше</b><br>Верхний «% повторных сделок» — из таблицы KPI. Этот считается напрямую из amoCRM по сделкам.<br><br><b>Методика</b><br>Сделка месяца считается ПОВТОРНОЙ, если: у её контакта уже была более ранняя оплаченная сделка (успешная или возврат — факт оплаты был), И контакт создан раньше этого месяца. Доплаты не считаются ни сделками, ни признаком повторности.<br><br><b>Детали</b><br>• Знаменатель — все оплаченные сделки месяца (без доплат; возвраты входят).<br>• История оплат смотрится с 2023 года: клиент, покупавший в 2023–2024 и вернувшийся, опознаётся повторным.<br>• Источник — живая amoCRM самым низким приоритетом, пересчёт раз в сутки в 00:50 МСК.";
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "% повторных сделок — версия ИИ (из amoCRM)"; h.appendChild(vscInfo(info));
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        wrap.appendChild(box);
+        apiFetch("/admin/api/vsc/dealcycle").then(function (j) {
+          const reps = j && j.repeats;
+          if (!reps || !Object.keys(reps).length) {
+            box.innerHTML = '<div class="vsc-empty">' + (j && j.running ? "Идёт пересчёт по истории amoCRM (низким приоритетом) — загляните позже." : "Данных пока нет — появятся после ближайшего ночного пересчёта (00:50).") + '</div>';
+            return;
+          }
+          const yms = Object.keys(reps).sort();
+          const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+          box.innerHTML = "";
+          const pctOf = function (m) { return m.total ? Math.round(m.rep / m.total * 1000) / 10 : null; };
+          const maxV = Math.max.apply(null, yms.map(function (ym) { return pctOf(reps[ym]) || 0; }).concat([1]));
+          const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "215px";
+          let prevPct = null;
+          yms.forEach(function (ym) {
+            const mo = reps[ym]; const pc = pctOf(mo);
+            const col = document.createElement("div"); col.className = "vsc-bar-col"; col.style.flex = "0 0 74px";
+            col.title = MONF[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4) + "\nповторных: " + mo.rep + " из " + mo.total + " оплаченных сделок";
+            const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = pc != null ? (String(pc).replace(".", ",") + "%") : "—";
+            const bar = document.createElement("div"); bar.className = "vsc-bar"; bar.style.width = "32px";
+            bar.style.height = (pc != null ? Math.max(2, Math.round(pc / maxV * 130)) : 2) + "px";
+            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = MONF[+ym.slice(5, 7) - 1];
+            const dl = document.createElement("div"); dl.className = "vsc-bar-d";
+            if (pc != null && prevPct != null && prevPct !== 0) {
+              const pd = Math.round((pc - prevPct) / Math.abs(prevPct) * 100);
+              if (pd === 0) { dl.className = "vsc-bar-d flat"; dl.textContent = "0%"; }
+              else {
+                dl.className = "vsc-bar-d " + (pd > 0 ? "up" : "down"); // больше повторных — хорошо
+                dl.textContent = (pd > 0 ? "▲ " : "▼ ") + Math.abs(pd) + "%";
+              }
+            }
+            if (pc != null) prevPct = pc;
+            col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(dl);
+            bars.appendChild(col);
+          });
+          box.appendChild(bars);
+          const upd = j.ts ? new Date(j.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+          const foot = document.createElement("div"); foot.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:10px;";
+          foot.textContent = "обновлено: " + upd + " МСК · источник: amoCRM (история оплат с 2023), раз в сутки в 00:50";
+          box.appendChild(foot);
+        }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить.</div>'; });
+        return wrap;
+      }
       // ── Блок «Цикл сделки» (Ежемесячный контроль, 4-й сверху; Андрей 06.09) ──
       function vscDealCycleBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
-        const info = "<b>Что показывает</b><br>Средний цикл сделки: от даты <b>создания контакта</b> в amoCRM (первое появление клиента у нас) до даты <b>первой оплаты</b> его сделки (поле «Дата оплаты», те же статусы, по которым считаем выручку).<br><br><b>Как считается месяц</b><br>Каждый месяц — среднее по всем контактам, СОЗДАННЫМ в этом календарном месяце. Оплата может прийти и позже (январский контакт оплатился в феврале — всё равно январь). Свежие месяцы поэтому «живые»: контакты, которые ещё думают, оплатятся и подтянут цифру задним числом при ночном пересчёте.<br><br><b>Детали</b><br>• Оплатой считается сделка с заполненной «Датой оплаты» И заполненным бюджетом (пустой бюджет — не оплата).<br>• Доплаты не считаются: сделки в статусе «Доплата» и с «доплата» в названии исключены; в расчёте только контакты с настоящей первой оплатой.<br>• Если у контакта несколько оплаченных сделок — берётся первая оплата.<br>• Пары «оплата раньше создания контакта» (мусор старых импортов) отбрасываются.<br>• Показываются только завершённые месяцы (текущий появится, когда закончится).<br>• Источник — живая amoCRM самым низким приоритетом, пересчёт раз в сутки в 00:50 МСК.";
+        const info = "<b>Что показывает</b><br>Средний цикл сделки: от даты <b>создания контакта</b> в amoCRM (первое появление клиента у нас) до даты <b>первой оплаты</b> его сделки (поле «Дата оплаты», те же статусы, по которым считаем выручку).<br><br><b>Как считается месяц</b><br>Каждый месяц — среднее по всем контактам, СОЗДАННЫМ в этом календарном месяце. Оплата может прийти и позже (январский контакт оплатился в феврале — всё равно январь). Свежие месяцы поэтому «живые»: контакты, которые ещё думают, оплатятся и подтянут цифру задним числом при ночном пересчёте.<br><br><b>Детали</b><br>• Оплатой считается сделка с заполненной «Датой оплаты» И заполненным бюджетом; ВОЗВРАТЫ учитываются (оплата и цикл случились — даже если бюджет занулили при возврате).<br>• Доплаты не считаются: сделки в статусе «Доплата» и с «доплата» в названии исключены; в расчёте только контакты с настоящей первой оплатой.<br>• Если у контакта несколько оплаченных сделок — берётся первая оплата.<br>• Пары «оплата раньше создания контакта» (мусор старых импортов) отбрасываются.<br>• Показываются только завершённые месяцы (текущий появится, когда закончится).<br>• Источник — живая amoCRM самым низким приоритетом, пересчёт раз в сутки в 00:50 МСК.";
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Цикл сделки — от появления контакта до оплаты"; h.appendChild(vscInfo(info));
         wrap.appendChild(h);
         const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем…</div>';
