@@ -6478,17 +6478,22 @@ function dealCycleMonths(d) {
 app.get("/admin/api/vsc/dealcycle", requireVscDashboard, (req, res) => {
   const d = loadDealCycle();
   const dc = dealCycleMonths(d) || {};
-  // Повторные — тоже только завершённые месяцы.
-  let repeats = null;
+  // Повторные — тоже только завершённые месяцы + годовой итог (по всем сделкам года).
+  let repeats = null, repeatsYear = null;
   if (d && d.repeats) {
     repeats = {};
+    let rt = 0, rr = 0;
     const now = new Date(Date.now() + 3 * 3600 * 1000);
     const curYm = now.getUTCFullYear() * 12 + now.getUTCMonth();
     Object.keys(d.repeats).sort().forEach((mk) => {
-      if (2026 * 12 + (+mk.slice(5) - 1) < curYm) repeats[mk] = d.repeats[mk];
+      if (2026 * 12 + (+mk.slice(5) - 1) < curYm) {
+        repeats[mk] = d.repeats[mk];
+        rt += d.repeats[mk].total || 0; rr += d.repeats[mk].rep || 0;
+      }
     });
+    if (rt) repeatsYear = { total: rt, rep: rr };
   }
-  res.json({ success: true, ts: d && d.ts, months: dc.months || null, year: dc.year || null, repeats, running: _dealCycleRunning });
+  res.json({ success: true, ts: d && d.ts, months: dc.months || null, year: dc.year || null, repeats, repeatsYear, running: _dealCycleRunning });
 });
 app.post("/admin/api/vsc/dealcycle/run", requireAdmin, (req, res) => {
   if (_dealCycleRunning) return res.json({ success: true, started: false, running: true });
