@@ -6363,6 +6363,22 @@ setTimeout(() => { if (!loadSchengen()) Promise.resolve(amoBg(() => runSchengenL
 const VSC_DEALCYCLE_FILE = path.join(__dirname, ".vscDealCycle.json");
 function loadDealCycle() { try { return JSON.parse(fs.readFileSync(VSC_DEALCYCLE_FILE, "utf8")); } catch (_) { return null; } }
 let _dealCycleRunning = false;
+// ВНЖ оплачивают частями (уточнение Андрея 07.09): вторая и последующие части —
+// это продолжение той же продажи, а не новая сделка. Считаем их как доплату:
+// в цикл и в «% повторных» идёт только ПЕРВАЯ часть ВНЖ у контакта.
+// Статусы найдены по API 07.09: воронка «Отдел Продаж» (138231) — «Часть оплаты
+// по ВНЖ» (83715629) и «Успешно реализовано (для ВНЖ)» (142).
+const VNJ_PIPELINE = 138231, VNJ_STATUSES = new Set([83715629, 142]);
+function isVnjDeal(l) {
+  if (Number(l.pipeline_id) === VNJ_PIPELINE && VNJ_STATUSES.has(Number(l.status_id))) return true;
+  return /внж/i.test(String(l.name || ""));
+}
+// Явные маркеры «это не первая часть» в названии («ВНЖ 2 часть», «2я часть ВНЖ»,
+// «постоплата ВНЖ», «ВНЖ 2ч»). Первая часть («ВНЖ первая часть оплаты») не ловится.
+// (\b после кириллицы в JS не работает — граница слова считается по латинице,
+// поэтому «не продолжается буквой» проверяем через (?![а-яё]).)
+const VNJ_NEXT_RE = /постоплат|втор[а-я]*\s*част|(^|[^\d.,])[2-9]\s*[-–—]?\s*(я|ая|ой)?\s*ч(асть|аст[ьи])?(?![а-яё])|част[ьи]\s*[№#]?\s*[2-9]/i;
+
 async function runDealCycle(trigger) {
   if (_dealCycleRunning) return { skipped: true };
   if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
@@ -6378,11 +6394,13 @@ async function runDealCycle(trigger) {
     CITY_REV_STATUSES.forEach((st, i) => { params[`filter[statuses][${i}][pipeline_id]`] = String(st.pipeline_id); params[`filter[statuses][${i}][status_id]`] = String(st.status_id); });
     params["filter[updated_at][from]"] = String(Math.floor(Date.UTC(2023, 0, 1, 0, 0, 0) / 1000) - 3 * 3600);
     // Постранично и ПОСЛЕДОВАТЕЛЬНО (раз в сутки, спешить некуда — как schengen-съём).
-    const paidByContact = new Map(); // id контакта → unix САМОЙ РАННЕЙ оплаты (для цикла)
-    const paysByContact = new Map(); // id контакта → ВСЕ его оплаты (для повторных)
-    const deals26 = [];              // оплаты 2026 года: { paid, cid } (для повторных)
     const Y26_FROM = Math.floor(Date.UTC(2026, 0, 1) / 1000) - 3 * 3600;
     const Y27_FROM = Math.floor(Date.UTC(2027, 0, 1) / 1000) - 3 * 3600;
+    // Сырые оплаты: { paid, cid, vnj } — ВНЖ-части отсеиваем ВТОРЫМ проходом, когда
+    // видна вся цепочка контакта (какая часть первая, а какие — продолжение).
+    const raw = [];
+    // Разложение сделок 2026 — чтобы можно было объяснить, куда уходит каждая сделка.
+    const br = { total: 0, surcharge: 0, vnjNext: 0, zeroBudget: 0, noContact: 0 };
     let scanned = 0;
     for (let page = 1; page < 900; page++) {
       const data = await amoGet(`${baseUrl}/api/v4/leads`, Object.assign({ limit: 250, page }, params));
@@ -6392,23 +6410,46 @@ async function runDealCycle(trigger) {
       for (const l of leads) {
         const paid = Number(_cityCfVal(l, CITY_CF_DATE));
         if (!paid || isNaN(paid)) continue;
+        const in26 = paid >= Y26_FROM && paid < Y27_FROM;
+        if (in26) br.total++;
+        const nm = String(l.name || "");
         // Доплаты — не деньги клиента «с нуля» (Андрей 06.09): ни в цикл, ни в повторные.
-        if (Number(l.status_id) === 21271227) continue;
-        if (/доплат/i.test(String(l.name || ""))) continue;
+        if (Number(l.status_id) === 21271227 || /доплат/i.test(nm)) { if (in26) br.surcharge++; continue; }
+        const vnj = isVnjDeal(l);
+        // ВНЖ с явным «2-я часть/постоплата» — отсекаем сразу (Андрей 07.09).
+        if (vnj && VNJ_NEXT_RE.test(nm)) { if (in26) br.vnjNext++; continue; }
         // Оплата = заполненный бюджет. ВОЗВРАТ (Андрей 06.09) считается оплатой даже
         // с занулённым бюджетом: деньги и цикл случились, судьба денег — не про цикл.
         const isReturn = Number(l.status_id) === 21256761 || Number(l.status_id) === 43200834;
-        if (!(Number(l.price) > 0) && !isReturn) continue;
+        if (!(Number(l.price) > 0) && !isReturn) { if (in26) br.zeroBudget++; continue; }
         const cs = (l._embedded && l._embedded.contacts) || [];
         const mc = cs.find((c) => c.is_main) || cs[0];
-        if (!mc) continue;
-        const cur = paidByContact.get(mc.id);
-        if (cur == null || paid < cur) paidByContact.set(mc.id, paid);
-        const arr = paysByContact.get(mc.id);
-        if (arr) arr.push(paid); else paysByContact.set(mc.id, [paid]);
-        if (paid >= Y26_FROM && paid < Y27_FROM) deals26.push({ paid, cid: mc.id });
+        if (!mc) { if (in26) br.noContact++; continue; }
+        raw.push({ paid, cid: mc.id, vnj });
       }
       if (leads.length < 250) break;
+    }
+    // ВНЖ-цепочки: у контакта учитываем только САМУЮ РАННЮЮ ВНЖ-оплату, остальные —
+    // продолжение той же продажи (как доплата), в расчёты не идут.
+    const firstVnj = new Map();
+    for (const d of raw) {
+      if (!d.vnj) continue;
+      const cur = firstVnj.get(d.cid);
+      if (cur == null || d.paid < cur) firstVnj.set(d.cid, d.paid);
+    }
+    const paidByContact = new Map(); // id контакта → unix САМОЙ РАННЕЙ оплаты (для цикла)
+    const paysByContact = new Map(); // id контакта → ВСЕ его оплаты (для повторных)
+    const deals26 = [];              // оплаты 2026 года: { paid, cid } (для повторных)
+    for (const d of raw) {
+      if (d.vnj && firstVnj.get(d.cid) !== d.paid) { // не первая часть ВНЖ
+        if (d.paid >= Y26_FROM && d.paid < Y27_FROM) br.vnjNext++;
+        continue;
+      }
+      const cur = paidByContact.get(d.cid);
+      if (cur == null || d.paid < cur) paidByContact.set(d.cid, d.paid);
+      const arr = paysByContact.get(d.cid);
+      if (arr) arr.push(d.paid); else paysByContact.set(d.cid, [d.paid]);
+      if (d.paid >= Y26_FROM && d.paid < Y27_FROM) deals26.push({ paid: d.paid, cid: d.cid });
     }
     // created_at контактов — батчами по 250 id.
     const ids = [...paidByContact.keys()];
@@ -6436,6 +6477,7 @@ async function runDealCycle(trigger) {
     // если у её контакта была БОЛЕЕ РАННЯЯ оплата (успех или возврат, не доплата)
     // И контакт создан ДО начала M. Горизонт истории оплат — с 2023 года.
     const repeats = {};
+    br.repeat = 0; br.firstNew = 0; br.firstOld = 0; br.anomaly = 0; br.money = 0;
     for (const d26 of deals26) {
       const dd = new Date((d26.paid + 3 * 3600) * 1000);
       if (dd.getUTCFullYear() !== 2026) continue;
@@ -6443,13 +6485,19 @@ async function runDealCycle(trigger) {
       const mk = "2026-" + String(mIdx + 1).padStart(2, "0");
       const monthStart = Math.floor(Date.UTC(2026, mIdx, 1) / 1000) - 3 * 3600;
       const r = repeats[mk] || (repeats[mk] = { total: 0, rep: 0 });
-      r.total++;
+      r.total++; br.money++;
       const created = createdBy[d26.cid];
-      if (created != null && created < monthStart && (paysByContact.get(d26.cid) || []).some((pp) => pp < d26.paid)) r.rep++;
+      const isRep = created != null && created < monthStart && (paysByContact.get(d26.cid) || []).some((pp) => pp < d26.paid);
+      if (isRep) { r.rep++; br.repeat++; continue; }
+      // Куда делась «неповторная» сделка в графике цикла:
+      if (created == null || created > d26.paid) br.anomaly++;      // контакт создан позже оплаты
+      else if (created >= Y26_FROM) br.firstNew++;                   // когорта 2026 — видна на графике
+      else br.firstOld++;                                            // контакт из 2025 и раньше — бакет вне 2026
     }
-    const out = { ts: Date.now(), scanned, contacts: ids.length, paired, negative, durationMs: Date.now() - t0, buckets, repeats };
+    const out = { ts: Date.now(), scanned, contacts: ids.length, paired, negative, durationMs: Date.now() - t0, buckets, repeats, breakdown2026: br };
     fs.writeFileSync(VSC_DEALCYCLE_FILE, JSON.stringify(out, null, 1), "utf8");
     console.log(`VSC DEALCYCLE [${trigger || "cron"}]: сделок просмотрено ${scanned}, контактов с оплатой ${ids.length}, пар ${paired} (отброшено отрицательных ${negative}), ${out.durationMs}ms`);
+    console.log(`VSC DEALCYCLE разложение 2026: всего ${br.total} = доплаты ${br.surcharge} + ВНЖ-части ${br.vnjNext} + нулевой бюджет ${br.zeroBudget} + без контакта ${br.noContact} + в расчёте ${br.money} (повторные ${br.repeat}, первая оплата: контакт-2026 ${br.firstNew}, контакт до 2026 ${br.firstOld}, аномалии ${br.anomaly})`);
     return out;
   } catch (e) { console.error("runDealCycle:", e && e.message); return { error: e && e.message }; }
   finally { _dealCycleRunning = false; }
@@ -6493,7 +6541,7 @@ app.get("/admin/api/vsc/dealcycle", requireVscDashboard, (req, res) => {
     });
     if (rt) repeatsYear = { total: rt, rep: rr };
   }
-  res.json({ success: true, ts: d && d.ts, months: dc.months || null, year: dc.year || null, repeats, repeatsYear, running: _dealCycleRunning });
+  res.json({ success: true, ts: d && d.ts, months: dc.months || null, year: dc.year || null, repeats, repeatsYear, breakdown: (d && d.breakdown2026) || null, running: _dealCycleRunning });
 });
 app.post("/admin/api/vsc/dealcycle/run", requireAdmin, (req, res) => {
   if (_dealCycleRunning) return res.json({ success: true, started: false, running: true });
