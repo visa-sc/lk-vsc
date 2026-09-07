@@ -3817,6 +3817,8 @@
         // «% повторных сделок» — считается напрямую из amoCRM (решение Андрея 06.09:
         // версия из таблицы KPI сильно занижала, старый блок vscBarChart(repeatPct) убран).
         vscContent.appendChild(vscRepeatAiBlock());
+        // Тот же расчёт, но в деньгах: доля выручки от вернувшихся клиентов (Андрей 07.09).
+        vscContent.appendChild(vscRepeatRevBlock());
         // Item 14 — CPL/ДРР с учётом доп. расходов.
         const h4 = document.createElement("div"); h4.className = "ref-sec-h"; h4.style.marginTop = "22px"; h4.textContent = "Реклама с учётом доп. расходов — по месяцам";
         vscContent.appendChild(h4);
@@ -4311,6 +4313,68 @@
           const upd = j.ts ? new Date(j.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
           const foot = document.createElement("div"); foot.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:10px;";
           foot.textContent = "обновлено: " + upd + " МСК · источник: amoCRM (история оплат с 2023), раз в сутки в 00:50";
+          box.appendChild(foot);
+        }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить.</div>'; });
+        return wrap;
+      }
+      // ── Блок «% выручки от повторных клиентов» (под «% повторных сделок»; Андрей 07.09) ──
+      function vscRepeatRevBlock() {
+        const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
+        const info = "<b>Что показывает</b><br>Какая доля ВСЕЙ выручки месяца пришла от клиентов, которые уже покупали у нас раньше.<br><br><b>Методика</b><br>• Знаменатель — вся выручка месяца по оплаченным сделкам (та же, что в дашборде), включая доплаты и вторые части ВНЖ.<br>• Числитель — выручка тех сделок, чей клиент уже платил раньше (контакт создан до этого месяца и у него была более ранняя оплата). Доплата или вторая часть ВНЖ старого клиента — это тоже деньги вернувшегося клиента, поэтому они в числителе, хотя отдельными сделками в блоке выше не считаются.<br><br>Сравнивая с «% повторных сделок» выше, видно, дороже или дешевле покупают вернувшиеся клиенты.<br><br>Источник — живая amoCRM, пересчёт раз в сутки в 00:50 МСК.";
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "% выручки от повторных клиентов"; h.appendChild(vscInfo(info));
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        wrap.appendChild(box);
+        apiFetch("/admin/api/vsc/dealcycle").then(function (j) {
+          const reps = j && j.repeatsRev;
+          if (!reps || !Object.keys(reps).length) {
+            box.innerHTML = '<div class="vsc-empty">' + (j && j.running ? "Идёт пересчёт по amoCRM — загляните позже." : "Данных пока нет — появятся после ближайшего ночного пересчёта (00:50).") + '</div>';
+            return;
+          }
+          const yms = Object.keys(reps).sort();
+          const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+          const money = function (v) { return Math.round(v).toLocaleString("ru-RU") + " ₽"; };
+          const pctOf = function (m) { return m.total ? Math.round(m.rep / m.total * 1000) / 10 : null; };
+          box.innerHTML = "";
+          const yearPct = j.repeatsRevYear ? pctOf(j.repeatsRevYear) : null;
+          const maxV = Math.max.apply(null, yms.map(function (ym) { return pctOf(reps[ym]) || 0; }).concat([yearPct || 0, 1]));
+          const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "215px";
+          if (yearPct != null) {
+            const yc = document.createElement("div"); yc.className = "vsc-bar-col";
+            yc.style.cssText = "flex:0 0 74px;background:#eef5fb;border:1px solid #d3e3f2;border-radius:12px;padding:8px 6px 6px;box-sizing:border-box;margin-right:12px;";
+            yc.title = "2026 год · все завершённые месяцы\nот повторных: " + money(j.repeatsRevYear.rep) + " из " + money(j.repeatsRevYear.total);
+            const yv = document.createElement("div"); yv.className = "vsc-bar-v"; yv.style.fontWeight = "700"; yv.textContent = String(yearPct).replace(".", ",") + "%";
+            const yb = document.createElement("div"); yb.className = "vsc-bar"; yb.style.width = "32px";
+            yb.style.height = Math.max(2, Math.round(yearPct / maxV * 130)) + "px";
+            const yx = document.createElement("div"); yx.className = "vsc-bar-x"; yx.style.cssText = "font-weight:700;color:#2c5a86;font-size:10.5px;";
+            yx.textContent = "2026 год";
+            const yd = document.createElement("div"); yd.className = "vsc-bar-d";
+            yc.appendChild(yv); yc.appendChild(yb); yc.appendChild(yx); yc.appendChild(yd);
+            bars.appendChild(yc);
+          }
+          let prevPct = null;
+          yms.forEach(function (ym) {
+            const mo = reps[ym]; const pc = pctOf(mo);
+            const col = document.createElement("div"); col.className = "vsc-bar-col";
+            col.title = MONF[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4) + "\nот повторных: " + money(mo.rep) + "\nвся выручка месяца: " + money(mo.total);
+            const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = pc != null ? (String(pc).replace(".", ",") + "%") : "—";
+            const bar = document.createElement("div"); bar.className = "vsc-bar"; bar.style.width = "32px";
+            bar.style.height = (pc != null ? Math.max(2, Math.round(pc / maxV * 130)) : 2) + "px";
+            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = MONF[+ym.slice(5, 7) - 1];
+            const dl = document.createElement("div"); dl.className = "vsc-bar-d";
+            if (pc != null && prevPct != null && prevPct !== 0) {
+              const pd = Math.round((pc - prevPct) / Math.abs(prevPct) * 100);
+              if (pd === 0) { dl.className = "vsc-bar-d flat"; dl.textContent = "0%"; }
+              else { dl.className = "vsc-bar-d " + (pd > 0 ? "up" : "down"); dl.textContent = (pd > 0 ? "▲ " : "▼ ") + Math.abs(pd) + "%"; }
+            }
+            if (pc != null) prevPct = pc;
+            col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(dl);
+            bars.appendChild(col);
+          });
+          box.appendChild(bars);
+          const upd = j.ts ? new Date(j.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+          const foot = document.createElement("div"); foot.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:10px;";
+          foot.textContent = "обновлено: " + upd + " МСК · источник: amoCRM, раз в сутки в 00:50";
           box.appendChild(foot);
         }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить.</div>'; });
         return wrap;

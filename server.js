@@ -6399,6 +6399,9 @@ async function runDealCycle(trigger) {
     // Сырые оплаты: { paid, cid, vnj } — ВНЖ-части отсеиваем ВТОРЫМ проходом, когда
     // видна вся цепочка контакта (какая часть первая, а какие — продолжение).
     const raw = [];
+    // ВСЯ выручка 2026 (включая доплаты и вторые части ВНЖ — это тоже деньги месяца):
+    // { paid, cid, price }. Нужна для «% выручки от повторных клиентов» (Андрей 07.09).
+    const rev26 = [];
     // Разложение сделок 2026 — чтобы можно было объяснить, куда уходит каждая сделка.
     const br = { total: 0, surcharge: 0, vnjNext: 0, zeroBudget: 0, noContact: 0 };
     let scanned = 0;
@@ -6412,6 +6415,11 @@ async function runDealCycle(trigger) {
         if (!paid || isNaN(paid)) continue;
         const in26 = paid >= Y26_FROM && paid < Y27_FROM;
         if (in26) br.total++;
+        if (in26 && Number(l.price) > 0) {
+          const cs0 = (l._embedded && l._embedded.contacts) || [];
+          const mc0 = cs0.find((c) => c.is_main) || cs0[0];
+          if (mc0) rev26.push({ paid, cid: mc0.id, price: Number(l.price) });
+        }
         const nm = String(l.name || "");
         // Доплаты — не деньги клиента «с нуля» (Андрей 06.09): ни в цикл, ни в повторные.
         if (Number(l.status_id) === 21271227 || /доплат/i.test(nm)) { if (in26) br.surcharge++; continue; }
@@ -6494,7 +6502,25 @@ async function runDealCycle(trigger) {
       else if (created >= Y26_FROM) br.firstNew++;                   // когорта 2026 — видна на графике
       else br.firstOld++;                                            // контакт из 2025 и раньше — бакет вне 2026
     }
-    const out = { ts: Date.now(), scanned, contacts: ids.length, paired, negative, durationMs: Date.now() - t0, buckets, repeats, breakdown2026: br };
+    // «% выручки от повторных клиентов» (Андрей 07.09): берём ВСЮ выручку месяца
+    // (включая доплаты и вторые части ВНЖ — это деньги месяца) и смотрим, какая её
+    // часть пришла от клиентов, которые УЖЕ покупали раньше (контакт создан до этого
+    // месяца И была более ранняя настоящая оплата). Доплата/вторая часть ВНЖ старого
+    // клиента — тоже деньги вернувшегося клиента, поэтому в числитель они входят.
+    const repRev = {};
+    for (const r26 of rev26) {
+      const dd = new Date((r26.paid + 3 * 3600) * 1000);
+      if (dd.getUTCFullYear() !== 2026) continue;
+      const mIdx = dd.getUTCMonth();
+      const mk = "2026-" + String(mIdx + 1).padStart(2, "0");
+      const monthStart = Math.floor(Date.UTC(2026, mIdx, 1) / 1000) - 3 * 3600;
+      const rr = repRev[mk] || (repRev[mk] = { total: 0, rep: 0 });
+      rr.total += r26.price;
+      const created = createdBy[r26.cid];
+      if (created != null && created < monthStart && (paysByContact.get(r26.cid) || []).some((pp) => pp < r26.paid)) rr.rep += r26.price;
+    }
+    Object.values(repRev).forEach((v) => { v.total = Math.round(v.total); v.rep = Math.round(v.rep); });
+    const out = { ts: Date.now(), scanned, contacts: ids.length, paired, negative, durationMs: Date.now() - t0, buckets, repeats, repeatsRev: repRev, breakdown2026: br };
     fs.writeFileSync(VSC_DEALCYCLE_FILE, JSON.stringify(out, null, 1), "utf8");
     console.log(`VSC DEALCYCLE [${trigger || "cron"}]: сделок просмотрено ${scanned}, контактов с оплатой ${ids.length}, пар ${paired} (отброшено отрицательных ${negative}), ${out.durationMs}ms`);
     console.log(`VSC DEALCYCLE разложение 2026: всего ${br.total} = доплаты ${br.surcharge} + ВНЖ-части ${br.vnjNext} + нулевой бюджет ${br.zeroBudget} + без контакта ${br.noContact} + в расчёте ${br.money} (повторные ${br.repeat}, первая оплата: контакт-2026 ${br.firstNew}, контакт до 2026 ${br.firstOld}, аномалии ${br.anomaly})`);
@@ -6541,7 +6567,22 @@ app.get("/admin/api/vsc/dealcycle", requireVscDashboard, (req, res) => {
     });
     if (rt) repeatsYear = { total: rt, rep: rr };
   }
-  res.json({ success: true, ts: d && d.ts, months: dc.months || null, year: dc.year || null, repeats, repeatsYear, breakdown: (d && d.breakdown2026) || null, running: _dealCycleRunning });
+  // Доля выручки от повторных клиентов — те же завершённые месяцы + год.
+  let repeatsRev = null, repeatsRevYear = null;
+  if (d && d.repeatsRev) {
+    repeatsRev = {};
+    let rt = 0, rr = 0;
+    const now2 = new Date(Date.now() + 3 * 3600 * 1000);
+    const curYm2 = now2.getUTCFullYear() * 12 + now2.getUTCMonth();
+    Object.keys(d.repeatsRev).sort().forEach((mk) => {
+      if (2026 * 12 + (+mk.slice(5) - 1) < curYm2) {
+        repeatsRev[mk] = d.repeatsRev[mk];
+        rt += d.repeatsRev[mk].total || 0; rr += d.repeatsRev[mk].rep || 0;
+      }
+    });
+    if (rt) repeatsRevYear = { total: rt, rep: rr };
+  }
+  res.json({ success: true, ts: d && d.ts, months: dc.months || null, year: dc.year || null, repeats, repeatsYear, repeatsRev, repeatsRevYear, breakdown: (d && d.breakdown2026) || null, running: _dealCycleRunning });
 });
 app.post("/admin/api/vsc/dealcycle/run", requireAdmin, (req, res) => {
   if (_dealCycleRunning) return res.json({ success: true, started: false, running: true });
