@@ -463,6 +463,17 @@
     if(urlRef){ localStorage.setItem("voyo_esim_ref", urlRef.toUpperCase()); history.replaceState(null,"",location.pathname); }
     REF = EMBED ? "" : (localStorage.getItem("voyo_esim_ref") || "");
   }catch(e){}
+
+  // Промокод из рассылки. Человек пришёл по ссылке с меткой — вводить код
+  // руками не должен: подставим сами и запомним, чтобы дожил до оплаты.
+  var UTM_PROMO = "VSC20OFF3";
+  var UTM_SOURCES = {sms:1, email:1, tg:1};
+  var AUTO_PROMO = "";
+  try{
+    var src = String(new URLSearchParams(location.search).get("utm_source") || "").toLowerCase();
+    if(UTM_SOURCES[src]) localStorage.setItem("voyo_esim_autopromo", UTM_PROMO);
+    AUTO_PROMO = localStorage.getItem("voyo_esim_autopromo") || "";
+  }catch(e){ }
   var PROMO = "";
 
   // «1 страна», «2 страны», «5 стран» — иначе бросается в глаза
@@ -756,7 +767,13 @@
     document.getElementById("mBonus").checked = false;
     document.getElementById("mBonusWrap").classList.remove("on");
     document.getElementById("mPromoWrap").style.display = PAY ? "block" : "none";
-    if(PAY && REF) recalc();
+    if(PAY && AUTO_PROMO){
+      PROMO = AUTO_PROMO;
+      document.getElementById("mPromo").value = AUTO_PROMO;
+      document.getElementById("mPromoBody").classList.add("on");
+      applyAuto();
+    }
+    else if(PAY && REF) recalc();
     if(PAY){
       document.getElementById("mPhoneLb").textContent = "Email — пришлём чек и доступ к вашей eSIM";
       document.getElementById("mNote").textContent = "Оплата картой в рублях через Т-Банк. Сразу после оплаты придёт QR-код.";
@@ -765,6 +782,27 @@
     tellLk(true);
     document.body.style.overflow="hidden";
   }
+  // Промокод из ссылки применяем молча: сработал — зелёная строка, уже
+  // использован — убираем его и не мешаем человеку покупать.
+  async function applyAuto(){
+    var msg = document.getElementById("mPromoMsg");
+    var j = await recalc();
+    if(j && j.promoOk){
+      msg.style.color = "var(--green)";
+      msg.textContent = "Скидка по вашей ссылке применена: −" + RU(j.discountRub) + " ₽";
+      return;
+    }
+    PROMO = "";
+    document.getElementById("mPromo").value = "";
+    if(j && j.promoReason === "used"){
+      try{ localStorage.removeItem("voyo_esim_autopromo"); }catch(e){}
+      AUTO_PROMO = "";
+      msg.style.color = "var(--mut)";
+      msg.textContent = "Скидку по ссылке вы уже использовали.";
+    } else msg.textContent = "";
+    await recalc();
+  }
+
   // Пересчёт суммы: промокод, реферальная скидка и списание бонусов считает сервер
   async function recalc(){
     if(!mP || !PAY) return null;
