@@ -176,3 +176,4 @@ akfin/fin.seed.json
 
 # VOYO Экскурсии: заявки и начатые брони (рантайм, не в git)
 .excursion/
+.wazzupRelayTargets.json

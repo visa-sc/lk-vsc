@@ -301,7 +301,64 @@ function mount(app, deps) {
   const WAZZUP_KEY = process.env.WAZZUP_HOOK_KEY || ""; // секрет в query ?k=
   // Адресов ретрансляции может быть несколько (через запятую в WAZZUP_RELAY_URL):
   // сейчас Google Script (таблица Ксюши Масловой), при желании — приёмник Кати.
-  const WAZZUP_RELAY = (process.env.WAZZUP_RELAY_URL || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const WAZZUP_RELAY_ENV = (process.env.WAZZUP_RELAY_URL || "").split(",").map((s) => s.trim()).filter(Boolean);
+  // Самообслуживание: адреса, подписанные владельцем направления (Екатерина
+  // Зайцева) через /api/wazzup/subscribe — без правки .env и участия админов.
+  const RELAY_TARGETS_FILE = path.join(__dirname, ".wazzupRelayTargets.json");
+  const SELF_TOKEN = process.env.WAZZUP_SELF_TOKEN || "";
+  function loadRelayTargets() {
+    try {
+      const a = JSON.parse(fs.readFileSync(RELAY_TARGETS_FILE, "utf8"));
+      return Array.isArray(a) ? a.filter((x) => x && typeof x.url === "string") : [];
+    } catch (_) { return []; }
+  }
+  function saveRelayTargets(list) {
+    try { fs.writeFileSync(RELAY_TARGETS_FILE, JSON.stringify(list, null, 1), "utf8"); return true; }
+    catch (e) { console.error("wazzup targets:", e.message); return false; }
+  }
+  function relayTargets() {
+    return WAZZUP_RELAY_ENV.concat(loadRelayTargets().map((t) => t.url));
+  }
+  // Защита от превращения приёмника в чужой ретранслятор: только https, не
+  // локальные/приватные адреса, разумная длина.
+  function validRelayUrl(u) {
+    if (typeof u !== "string" || u.length > 300) return false;
+    let x; try { x = new URL(u); } catch (_) { return false; }
+    if (x.protocol !== "https:") return false;
+    const h = x.hostname.toLowerCase();
+    if (h === "localhost" || h.endsWith(".local")) return false;
+    if (/^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h)) return false;
+    if (h === "::1" || h.startsWith("[")) return false;
+    // защита от петли: нельзя подписать сам приёмник вебхуков
+    if (/\/api\/wazzup\/webhook/.test(x.pathname)) return false;
+    return true;
+  }
+  // Проба нового адреса: как это делает сам Wazzup — POST {"test":true}, ждём 2xx.
+  function probeUrl(target) {
+    return new Promise((resolve) => {
+      const https = require("https");
+      const data = JSON.stringify({ test: true });
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; resolve(v); } };
+      const go = (urlStr, hops) => {
+        let u; try { u = new URL(urlStr); } catch (_) { return finish({ ok: false, error: "плохой URL" }); }
+        const r = https.request(
+          { host: u.host, path: u.pathname + u.search, method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) }, timeout: 20000 },
+          (resp) => {
+            resp.resume();
+            if ([301, 302, 303, 307, 308].includes(resp.statusCode) && resp.headers.location && hops < 3) {
+              return go(new URL(resp.headers.location, urlStr).toString(), hops + 1);
+            }
+            finish(resp.statusCode < 400 ? { ok: true, code: resp.statusCode } : { ok: false, error: "адрес ответил " + resp.statusCode });
+          }
+        );
+        r.on("error", (e) => finish({ ok: false, error: String(e.message).slice(0, 120) }));
+        r.on("timeout", () => { r.destroy(); finish({ ok: false, error: "таймаут 20с" }); });
+        r.end(data);
+      };
+      go(target, 0);
+    });
+  }
   function relayOne(target, body, attempt) {
     attempt = attempt || 1;
     const https = require("https");
@@ -337,8 +394,64 @@ function mount(app, deps) {
     try { post(target, 0); } catch (e) { retry(); }
   }
   function wazzupRelay(body) {
-    for (const t of WAZZUP_RELAY) relayOne(t, body);
+    for (const t of relayTargets()) relayOne(t, body);
   }
+  // ── Самообслуживание владельца направления Wazzup ─────────────────────────
+  // Позволяет подписать свой адрес на копию потока и выгрузить накопленное,
+  // не обращаясь к администраторам. Доступ по WAZZUP_SELF_TOKEN.
+  function selfAuth(req, res) {
+    const t = String(req.query.token || (req.body && req.body.token) || "").trim();
+    if (!SELF_TOKEN || t !== SELF_TOKEN) { res.status(403).json({ ok: false, error: "нужен верный token" }); return false; }
+    return true;
+  }
+  // Список подписанных адресов
+  app.get("/api/wazzup/subscribe", (req, res) => {
+    if (!selfAuth(req, res)) return;
+    res.json({ ok: true, targets: loadRelayTargets(), note: "адрес Google-скрипта настроен отдельно и здесь не показывается" });
+  });
+  // Подписать / отписать адрес: {token, url, action:"add"|"remove"}
+  app.post("/api/wazzup/subscribe", async (req, res) => {
+    if (!selfAuth(req, res)) return;
+    const body = req.body || {};
+    const url = String(body.url || "").trim();
+    const action = String(body.action || "add").toLowerCase();
+    if (!validRelayUrl(url)) return res.status(400).json({ ok: false, error: "нужен публичный https-адрес" });
+    const list = loadRelayTargets();
+    if (action === "remove") {
+      const next = list.filter((t) => t.url !== url);
+      saveRelayTargets(next);
+      return res.json({ ok: true, action: "removed", targets: next });
+    }
+    if (list.length >= 5) return res.status(400).json({ ok: false, error: "уже 5 адресов, сначала удалите лишние" });
+    if (list.some((t) => t.url === url)) return res.json({ ok: true, action: "already", targets: list });
+    const probe = await probeUrl(url);
+    if (!probe.ok) return res.status(400).json({ ok: false, error: "адрес не принял проверочный запрос: " + probe.error + ". Он должен отвечать 200 на POST {\"test\":true}" });
+    list.push({ url, addedAt: new Date().toISOString() });
+    saveRelayTargets(list);
+    res.json({ ok: true, action: "added", targets: list });
+  });
+  // Выгрузка накопленного: ?token=…&since=2026-09-01&limit=5000 → NDJSON
+  app.get("/api/wazzup/export", (req, res) => {
+    if (!selfAuth(req, res)) return;
+    const since = String(req.query.since || "").trim();
+    const limit = Math.min(parseInt(req.query.limit || "5000", 10) || 5000, 50000);
+    let out = [], scanned = 0;
+    try {
+      const lines = fs.readFileSync(WAZZUP_INBOX, "utf8").split("\n");
+      for (const line of lines) {
+        if (!line) continue;
+        scanned++;
+        if (since && line.slice(6, 6 + since.length) < since) continue;
+        out.push(line);
+        if (out.length >= limit) break;
+      }
+    } catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
+    res.set("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.set("Content-Disposition", 'attachment; filename="wazzup-export.ndjson"');
+    res.set("X-Total-Scanned", String(scanned));
+    res.send(out.join("\n") + (out.length ? "\n" : ""));
+  });
+
   app.post("/api/wazzup/webhook", (req, res) => {
     if (WAZZUP_KEY && String(req.query.k || "") !== WAZZUP_KEY) return res.status(403).json({ success: false });
     res.status(200).json({ ok: true }); // Wazzup ждёт 200 в течение 30с — отвечаем сразу
