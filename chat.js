@@ -218,6 +218,32 @@ function leadsToCsv(leads) {
   return "﻿" + lines.join("\n"); // BOM — чтобы Excel понял кириллицу в UTF-8
 }
 
+// Страница-заглушка на время заморозки чата (без JS и без вызовов ИИ).
+const FROZEN_PAGE = `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Визовый центр VSC</title>
+<link rel="icon" href="/vsc-icon.png">
+<style>
+  body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:#1d1d1f;background:radial-gradient(1200px 700px at 15% -10%,rgba(10,169,224,.18),transparent 60%),#f5f7fa;padding:24px;}
+  .card{background:#fff;border-radius:22px;box-shadow:0 20px 60px rgba(0,50,80,.12);padding:34px 30px;max-width:440px;text-align:center;}
+  .logo{width:56px;height:56px;border-radius:15px;background:#0098ce;color:#fff;font-weight:700;font-size:19px;
+    display:flex;align-items:center;justify-content:center;margin:0 auto 18px;letter-spacing:.06em;}
+  h1{font-size:19px;margin:0 0 10px;font-weight:600;}
+  p{font-size:15px;line-height:1.55;color:#6e6e73;margin:0 0 8px;}
+  a{color:#0098ce;text-decoration:none;font-weight:500;}
+</style></head><body>
+  <div class="card">
+    <div class="logo">VSC</div>
+    <h1>Страница временно недоступна</h1>
+    <p>Онлайн-консультант на техническом обслуживании.</p>
+    <p>По вопросам оформления виз напишите нам в WhatsApp или позвоните:<br>
+    <a href="tel:+74953691867">+7 (495) 369-18-67</a></p>
+  </div>
+</body></html>`;
+
 // ── Монтирование маршрутов ──────────────────────────────────────────────────
 function mount(app, deps) {
   deps = deps || {};
@@ -225,6 +251,11 @@ function mount(app, deps) {
 
   app.get("/chat_test", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    // Заморозка страницы (файл .chatPaused на проде): отдаём статичную заглушку,
+    // сам чат не грузится и API не дёргается. Снять — удалить файл, рестарт не нужен.
+    if (fs.existsSync(path.join(__dirname, ".chatPaused"))) {
+      return res.send(FROZEN_PAGE);
+    }
     res.sendFile(path.join(__dirname, "public", "chat_test.html"));
   });
 
@@ -268,12 +299,21 @@ function mount(app, deps) {
   // Откат: PATCH https://api.wazzup24.com/v3/webhooks на WAZZUP_RELAY_URL.
   const WAZZUP_INBOX = path.join(__dirname, ".wazzupInbox.ndjson");
   const WAZZUP_KEY = process.env.WAZZUP_HOOK_KEY || ""; // секрет в query ?k=
-  const WAZZUP_RELAY = process.env.WAZZUP_RELAY_URL || "";
-  function wazzupRelay(body, attempt) {
-    if (!WAZZUP_RELAY) return;
+  // Адресов ретрансляции может быть несколько (через запятую в WAZZUP_RELAY_URL):
+  // сейчас Google Script (таблица Ксюши Масловой), при желании — приёмник Кати.
+  const WAZZUP_RELAY = (process.env.WAZZUP_RELAY_URL || "").split(",").map((s) => s.trim()).filter(Boolean);
+  function relayOne(target, body, attempt) {
     attempt = attempt || 1;
     const https = require("https");
     const data = JSON.stringify(body);
+    const retry = () => {
+      if (attempt >= 3) {
+        console.error("wazzup relay: не доставлено (" + target.slice(0, 40) + "…) после 3 попыток");
+        try { fs.appendFileSync(path.join(__dirname, ".wazzupRelayFailed.ndjson"), JSON.stringify({ t: new Date().toISOString(), url: target, b: body }) + "\n"); } catch (e) {}
+        return;
+      }
+      setTimeout(() => relayOne(target, body, attempt + 1), attempt * 15000);
+    };
     const post = (urlStr, hops) => {
       const u = new URL(urlStr);
       const r = https.request(
@@ -294,16 +334,10 @@ function mount(app, deps) {
       r.on("timeout", () => { r.destroy(); retry(); });
       r.end(data);
     };
-    const retry = () => {
-      if (attempt >= 3) {
-        console.error("wazzup relay: не доставлено в Google Script после 3 попыток");
-        // копим недоставленное для повторной отправки (ночной цикл дошлёт)
-        try { fs.appendFileSync(path.join(__dirname, ".wazzupRelayFailed.ndjson"), JSON.stringify({ t: new Date().toISOString(), b: body }) + "\n"); } catch (e) {}
-        return;
-      }
-      setTimeout(() => wazzupRelay(body, attempt + 1), attempt * 15000);
-    };
-    try { post(WAZZUP_RELAY, 0); } catch (e) { retry(); }
+    try { post(target, 0); } catch (e) { retry(); }
+  }
+  function wazzupRelay(body) {
+    for (const t of WAZZUP_RELAY) relayOne(t, body);
   }
   app.post("/api/wazzup/webhook", (req, res) => {
     if (WAZZUP_KEY && String(req.query.k || "") !== WAZZUP_KEY) return res.status(403).json({ success: false });

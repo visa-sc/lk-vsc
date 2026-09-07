@@ -20,7 +20,8 @@ function transporter() {
   return _t;
 }
 
-// sendMail({to, subject, html, text?, replyTo?}) → {ok:true,id} | {ok:false,error}
+// sendMail({to, subject, html, text?, replyTo?, cc?, attachments?}) → {ok:true,id} | {ok:false,error}
+// attachments — массив nodemailer: [{filename, path}] или [{filename, content}]
 async function sendMail(opts) {
   const t = transporter();
   if (!t) return { ok: false, error: "SMTP не сконфигурирован" };
@@ -32,7 +33,9 @@ async function sendMail(opts) {
       subject: opts.subject,
       html: opts.html,
       text: opts.text || undefined,
-      replyTo: opts.replyTo || undefined
+      replyTo: opts.replyTo || undefined,
+      cc: opts.cc || undefined,
+      attachments: opts.attachments || undefined
     });
     return { ok: true, id: info && info.messageId };
   } catch (e) {
