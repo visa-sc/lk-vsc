@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-CD86GW8FPM"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-CD86GW8FPM');
+  // Тег Google Ads: без него gtag('event','conversion',{send_to:'AW-…'}) молчит.
+  gtag('config', 'AW-18409333270');
+</script>
+
+<!-- Event snippet for Отправка формы для потенциальных клиентов conversion page -->
+<script>
+function gtag_report_conversion(url) {
+  var callback = function () {
+    if (typeof(url) != 'undefined') {
+      window.location = url;
+    }
+  };
+  gtag('event', 'conversion', {
+      'send_to': 'AW-18409333270/8l3UCJzmqOccEJbEoMpE',
+      'value': 1.0,
+      'currency': 'RUB',
+      'event_callback': callback
+  });
+  return false;
+}
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+   (function(m,e,t,r,i,k,a){
+       m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+       m[i].l=1*new Date();
+       for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+       k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+   })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=112104063', 'ym');
+
+   ym(112104063, 'init', {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", accurateTrackBounce:true, trackLinks:true});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/112104063" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+<title>Виртуальная карта для оплаты за границей | VSC</title>
+<meta name="description" content="Виртуальная карта VSC для покупок по всему миру: выпуск за 5 минут онлайн, пополнение рублями по СБП, Apple Pay и Google Pay, оплата в 180+ странах и в иностранных сервисах.">
+<meta name="robots" content="noindex, follow">
+<link rel="canonical" href="https://visa-sc.com/virtual_card">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://visa-sc.com/virtual_card">
+<meta property="og:title" content="Виртуальная карта VSC для покупок по всему миру">
+<meta property="og:description" content="Выпуск за 5 минут онлайн, пополнение по СБП, Apple Pay и Google Pay, оплата в 180+ странах.">
+<meta property="og:image" content="https://visa-sc.com/img/og-cover.jpg">
+<meta property="og:site_name" content="VSC Visa Services Center">
+<meta property="og:locale" content="ru_RU">
+<link rel="icon" href="/img/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#10204a; --ink:#1b1f21; --muted:#6b7280;
+  --accent:#ee7257; --accent-hover:#ff5a36;
+  --gold:#ffbe3d; --blue:#0098ca; --blue-pale:#e5f5fa;
+  --line:rgba(16,32,74,.12); --shadow:0 18px 44px rgba(16,32,74,.10);
+  --radius:14px; --container:1150px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:#fff;color:var(--ink);
+  font:400 16px/1.5 Roboto,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased}
+img{max-width:100%;display:block}
+a{color:inherit}
+.container{width:100%;max-width:var(--container);margin:0 auto;padding:0 24px}
+.section{padding:66px 0}
+.section--pale{background:var(--blue-pale)}
+.section--navy{background:var(--navy);color:#fff}
+h1,h2,h3{margin:0;font-weight:500;letter-spacing:-.01em}
+h2{font-size:clamp(25px,3.2vw,36px);line-height:1.16;margin-bottom:30px}
+h3{font-size:18px;line-height:1.28}
+p{margin:0 0 14px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;border:0;cursor:pointer;
+  font:500 16px/1 Roboto,Arial,sans-serif;padding:19px 28px;border-radius:10px;
+  background:var(--accent);color:#fff;text-decoration:none;width:100%;text-align:center;
+  transition:background .18s ease}
+.btn:hover{background:var(--accent-hover)}
+.btn--inline{width:auto}
+.btn--sm{padding:13px 20px;font-size:15px}
+
+.hdr{position:sticky;top:0;z-index:60;background:#fff;border-bottom:1px solid var(--line)}
+.hdr__in{display:flex;align-items:center;gap:26px;height:68px}
+.hdr__logo{width:44px;height:44px;flex:0 0 44px}
+.hdr__nav{display:flex;gap:22px;font-size:15px;margin-right:auto}
+.hdr__nav a{text-decoration:none;color:var(--ink);opacity:.85;white-space:nowrap}
+.hdr__nav a:hover{opacity:1;color:var(--blue)}
+.hdr__burger{display:none;margin-left:auto;background:none;border:0;padding:8px;cursor:pointer}
+.hdr__burger span{display:block;width:22px;height:2px;background:var(--ink);margin:4px 0}
+.hdr__tels{display:flex;flex-direction:column;gap:1px}
+.hdr__tel{display:flex;align-items:center;gap:8px;font-size:14.5px;font-weight:500;
+  text-decoration:none;white-space:nowrap}
+.hdr__tel img{width:17px;height:17px}
+.lbl-s{display:none}
+
+.hero{position:relative;color:#fff;overflow:hidden}
+.hero__bg{position:absolute;inset:0;background:
+  radial-gradient(1100px 620px at 78% 18%,rgba(0,152,202,.42) 0%,rgba(0,152,202,0) 62%),
+  radial-gradient(760px 520px at 12% 88%,rgba(238,114,87,.28) 0%,rgba(238,114,87,0) 60%),
+  linear-gradient(120deg,#0b1531 0%,#12275c 55%,#0d1c40 100%)}
+.hero__veil{position:absolute;inset:0;
+  background:linear-gradient(100deg,rgba(9,18,40,.88) 0%,rgba(9,18,40,.70) 42%,rgba(9,18,40,.28) 72%,rgba(9,18,40,.38) 100%)}
+.hero__in{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:48px;
+  align-items:center;padding-top:150px;padding-bottom:160px}
+.hero h1{font-size:clamp(29px,3.6vw,40px);line-height:1.22;margin-bottom:16px}
+.hero h1 .hl{background:rgba(0,152,202,.72);box-decoration-break:clone;
+  -webkit-box-decoration-break:clone;padding:2px 6px;margin:0 -2px}
+.hero__sub{color:rgba(255,255,255,.86);font-size:16px;max-width:660px;margin-bottom:28px;line-height:1.75}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:610px}
+.fact{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.16);border-radius:10px;
+  padding:13px 15px;backdrop-filter:blur(3px)}
+.fact span{display:block;font-size:13px;color:rgba(255,255,255,.65);margin-bottom:3px;white-space:nowrap}
+.fact b{display:block;font-weight:500;font-size:16px}
+
+/* Мессенджеры на первом экране: отдельная строка сетки во всю ширину, по центру.
+   Люди, живущие за границей, чаще пишут в мессенджер, чем оставляют номер. */
+.hero-msgr{grid-column:1/-1;display:flex;flex-wrap:wrap;justify-content:center;gap:14px}
+.hero-msgr .msgr{margin:0;padding:14px 26px;font-size:15.5px;
+  box-shadow:0 8px 24px rgba(4,12,30,.28);transition:transform .15s ease,box-shadow .15s ease}
+.hero-msgr .msgr:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(4,12,30,.34)}
+.hero-msgr .msgr svg{width:18px;height:18px}
+
+.card{background:#fff;color:var(--ink);border-radius:18px;padding:30px;box-shadow:var(--shadow)}
+.card__title{font-size:23px;font-weight:500;line-height:1.26;margin-bottom:6px}
+.card__title em{font-style:normal;background:var(--gold);padding:1px 5px;margin:0 -3px}
+.card__sub{font-size:14.5px;margin-bottom:20px}
+.field{margin-bottom:12px}
+.field input{width:100%;height:56px;border:1px solid var(--line);border-radius:8px;background:#f6f8fb;
+  padding:0 16px;font:400 16px/1 Roboto,Arial,sans-serif;color:var(--ink);outline:none;
+  transition:border-color .15s ease,background .15s ease}
+.field input:focus{border-color:var(--blue);background:#fff}
+.field--err input{border-color:var(--accent)}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.consent{font-size:12.5px;margin:13px 0 0;line-height:1.45}
+.form-note{display:none;margin-top:13px;font-size:14px;border-radius:8px;padding:11px 13px}
+.form-note.is-err{display:block;background:#fdeae6;color:#b8351a}
+.form-done{display:none;text-align:center;padding:14px 0}
+.form-done h3{margin-bottom:10px}
+.is-sent .form-body{display:none}
+.is-sent .form-done{display:block}
+.tick-round{width:54px;height:54px;margin:0 auto 15px;border-radius:50%;background:var(--blue-pale);
+  display:flex;align-items:center;justify-content:center}
+/* Карточка стоит внутри .hero, где у <p> белый цвет. Возвращаем читаемый. */
+.card .card__sub,.card .consent,.card .form-done p{color:var(--muted)}
+.card .consent a{color:var(--muted)}
+
+.modal{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;
+  padding:20px;background:rgba(9,18,40,.6)}
+.modal.is-on{display:flex}
+.modal__box{background:#fff;border-radius:18px;padding:32px;width:100%;max-width:430px;position:relative;
+  max-height:90vh;overflow:auto}
+.modal__x{position:absolute;top:12px;right:15px;background:none;border:0;font-size:27px;line-height:1;
+  color:var(--muted);cursor:pointer;padding:4px 8px}
+.modal__box .card__sub,.modal__box .consent,.modal__box .form-done p{color:var(--muted)}
+.modal__box .consent a{color:var(--muted)}
+
+.grid{display:grid;gap:22px}
+.grid--2{grid-template-columns:repeat(2,1fr)}
+.grid--3{grid-template-columns:repeat(3,1fr)}
+
+.benefit{display:flex;gap:15px;align-items:flex-start}
+.benefit svg{flex:0 0 30px;width:30px;height:30px;stroke:var(--gold);fill:none;stroke-width:1.5;
+  stroke-linecap:round;stroke-linejoin:round}
+.benefit b{display:block;font-weight:500;font-size:16.5px;margin-bottom:3px}
+.benefit span{color:rgba(255,255,255,.72);font-size:15px}
+
+.prog{position:relative;background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+  padding:26px 24px}
+.prog--top{border-color:var(--blue);box-shadow:0 14px 34px rgba(0,152,202,.16)}
+.prog__badge{position:absolute;top:-13px;left:24px;background:var(--blue);color:#fff;border-radius:50px;
+  padding:6px 15px;font-size:13px;font-weight:500}
+.prog h3{margin-bottom:5px}
+.prog__for{color:var(--muted);font-size:14.5px;margin-bottom:15px}
+.prog ul{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+.prog li{position:relative;padding-left:24px;font-size:15px}
+.prog li:before{content:"";position:absolute;left:0;top:6px;width:13px;height:13px;border-radius:50%;
+  background:var(--blue-pale);box-shadow:inset 0 0 0 2px var(--blue)}
+
+.covers{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,1fr);gap:13px}
+.covers li{position:relative;padding-left:30px;font-size:16px}
+.covers li:before{content:"";position:absolute;left:0;top:5px;width:17px;height:17px;border-radius:50%;
+  background:var(--blue-pale);box-shadow:inset 0 0 0 2px var(--blue)}
+
+.steps{counter-reset:s;display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+.step{position:relative;padding-top:48px}
+.step:before{counter-increment:s;content:counter(s);position:absolute;top:0;left:0;width:36px;height:36px;
+  border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;
+  justify-content:center;font-weight:500;font-size:15px}
+.step b{display:block;font-weight:500;margin-bottom:3px}
+.step span{color:var(--muted);font-size:15px}
+
+.person{max-width:230px}
+.person img{width:100%;height:auto;aspect-ratio:4/5;object-fit:cover;border-radius:12px;
+  margin-bottom:12px;box-shadow:0 10px 26px rgba(16,32,74,.10)}
+.person b{display:block;font-weight:500;font-size:15.5px}
+.person span{color:var(--muted);font-size:14px}
+
+.refuse{list-style:none;margin:0;padding:0;display:grid;gap:14px;max-width:860px}
+.refuse li{position:relative;padding-left:30px;font-size:16px;color:var(--muted)}
+.refuse li b{color:var(--ink);font-weight:500}
+.refuse li:before{content:"";position:absolute;left:0;top:7px;width:16px;height:16px;border-radius:50%;
+  background:#fdeae6;box-shadow:inset 0 0 0 2px var(--accent)}
+
+.cta{background:linear-gradient(120deg,#10204a 0%,#1b3a72 100%);color:#fff;border-radius:18px;
+  padding:40px;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:32px;align-items:center}
+.cta h3{font-size:25px;margin-bottom:8px}
+.cta p{color:rgba(255,255,255,.75);margin:0;font-size:15.5px}
+
+.faq{max-width:840px}
+.faq details{border-bottom:1px solid var(--line);padding:18px 0}
+.faq summary{cursor:pointer;font-size:17px;font-weight:500;list-style:none;
+  display:flex;justify-content:space-between;gap:16px}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary:after{content:"+";color:var(--blue);font-size:22px;line-height:1}
+.faq details[open] summary:after{content:"–"}
+.faq p{color:var(--muted);margin:10px 0 0}
+
+.contact-grid{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:40px;align-items:center}
+.office{margin-bottom:22px;font-size:15.5px;line-height:1.6}
+.office b{display:block;font-weight:500;font-size:16.5px;margin-bottom:3px}
+.office a{text-decoration:none}
+.office .mut{color:var(--muted)}
+.msgr{display:inline-flex;align-items:center;gap:7px;margin:8px 10px 0 0;padding:11px 20px;
+  border-radius:999px;color:#fff;font-weight:500;font-size:15px;line-height:1;text-decoration:none}
+.msgr--wa{background:#25D366}
+.msgr--tg{background:#229ED9}
+.msgr svg{flex:none}
+
+.ftr{background:#0d1830;color:rgba(255,255,255,.68);padding:44px 0 30px;font-size:14.5px}
+.ftr a{color:#fff}
+.ftr b{color:#fff;display:block;margin-bottom:8px;font-weight:500;font-size:16px}
+.ftr__fine{border-top:1px solid rgba(255,255,255,.12);margin-top:26px;padding-top:20px;
+  font-size:12.5px;line-height:1.6;color:rgba(255,255,255,.5)}
+.ftr__fine p{margin:0 0 9px}
+.ftr__fine a{color:rgba(255,255,255,.7)}
+
+@media (max-width:1000px){
+  .hdr__nav{display:none}
+  .hdr__burger{display:block}
+  .hdr__nav.is-on{display:flex;position:absolute;top:68px;left:0;right:0;background:#fff;
+    flex-direction:column;padding:18px 24px;gap:16px;border-bottom:1px solid var(--line);
+    box-shadow:var(--shadow)}
+  .hero__in{grid-template-columns:1fr;padding-top:100px;padding-bottom:110px}
+  .grid--3,.steps{grid-template-columns:repeat(2,1fr)}
+  .cta{grid-template-columns:1fr;padding:30px}
+  .contact-grid{grid-template-columns:1fr}
+}
+@media (max-width:640px){
+  .section{padding:46px 0}
+  .hero-msgr{gap:10px}
+  .hero-msgr .msgr{flex:1 1 100%;max-width:330px;justify-content:center;padding:14px 18px}
+  .facts{grid-template-columns:repeat(2,1fr)}
+  .grid--2,.grid--3,.steps,.covers{grid-template-columns:1fr}
+  .card{padding:23px}
+  .hdr__in{gap:9px}
+  .hdr__logo{width:38px;height:38px;flex:0 0 38px}
+  .hdr__tels{margin-left:auto}
+  .hdr__tel{font-size:12.5px;gap:4px}
+  .hdr__tel img{width:14px;height:14px}
+  .hdr .btn--sm{padding:9px 11px;font-size:12.5px}
+  .hdr__burger{margin-left:0;padding:6px}
+  .lbl-l{display:none}
+  .lbl-s{display:inline}
+  .person{max-width:100%}
+}
+
+/* ── страница виртуальных карт ─────────────────────────────────────────────
+   Визуал самой карты рисуем на CSS: фотографий под неё нет, а картинка
+   с реквизитами на лендинге всё равно должна быть нарисованной. */
+.pcard{position:relative;aspect-ratio:1.586/1;border-radius:16px;padding:20px 22px;color:#fff;
+  display:flex;flex-direction:column;justify-content:space-between;margin-bottom:20px;
+  box-shadow:0 18px 40px rgba(16,32,74,.28);overflow:hidden}
+.pcard--rub{background:linear-gradient(135deg,#123a7a 0%,#0a1b3f 100%)}
+.pcard--usd{background:linear-gradient(135deg,#0098ca 0%,#0b3c66 100%)}
+.pcard:after{content:"";position:absolute;right:-70px;top:-70px;width:210px;height:210px;
+  border-radius:50%;background:rgba(255,255,255,.07)}
+.pcard__top{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
+.pcard__brand{font-weight:700;letter-spacing:.22em;font-size:13px}
+.pcard__sys{font-weight:500;font-size:14px;opacity:.92}
+.pcard__num{font-size:clamp(16px,2.6vw,19px);letter-spacing:.16em;position:relative;z-index:1}
+.pcard__bot{display:flex;align-items:flex-end;justify-content:space-between;font-size:11.5px;
+  letter-spacing:.06em;color:rgba(255,255,255,.72);position:relative;z-index:1}
+.pcard__bot b{display:block;font-weight:500;font-size:13px;color:#fff;letter-spacing:.02em}
+
+.hero-card{max-width:360px;margin:0 auto}
+
+.limits{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 16px}
+.limit{background:var(--blue-pale);border-radius:10px;padding:11px 12px;text-align:center}
+.limit span{display:block;font-size:11.5px;color:var(--muted);letter-spacing:.04em;margin-bottom:3px}
+.limit b{font-weight:500;font-size:15px;white-space:nowrap}
+
+.tariff__note{font-size:14px;color:var(--muted);margin:0 0 15px}
+.price{display:flex;align-items:baseline;gap:12px;margin:18px 0 14px}
+.price b{font-size:26px;font-weight:500;line-height:1}
+.price s{color:var(--muted);font-size:17px}
+
+.pays{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+.pays li b{display:block;font-weight:500;font-size:16.5px;margin-bottom:4px}
+.pays li span{color:var(--muted);font-size:15px}
+
+.legal{color:var(--muted);font-size:13.5px;line-height:1.6;max-width:900px;margin-top:26px}
+
+@media (max-width:1000px){
+  .pays{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:640px){
+  .pays{grid-template-columns:1fr}
+  .limits{grid-template-columns:1fr}
+  .limit{display:flex;align-items:center;justify-content:space-between;text-align:left}
+  .limit span{margin:0}
+}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="container hdr__in">
+    <a href="/virtual_card" aria-label="VSC"><img class="hdr__logo" src="/img/logo-vsc.svg" alt="VSC Visa Services Center"></a>
+    <nav class="hdr__nav" id="nav">
+      <a href="#tasks">Задачи</a>
+      <a href="#cards">Карты</a>
+      <a href="#how">Как получить</a>
+      <a href="#pays">Что оплачивать</a>
+      <a href="#faq">Вопросы</a>
+      <a href="#contacts">Контакты</a>
+    </nav>
+    <div class="hdr__tels">
+      <a class="hdr__tel" href="tel:+74999385654"><img src="/img/icon-phone.svg" alt="">+7 (499) 938-56-54</a>
+    </div>
+    <a class="btn btn--sm btn--inline" href="#form"><span class="lbl-l">Выпустить карту</span><span class="lbl-s">Заявка</span></a>
+    <button class="hdr__burger" id="burger" aria-label="Меню"><span></span><span></span><span></span></button>
+  </div>
+</header>
+
+<!-- ============ ПЕРВЫЙ ЭКРАН ============ -->
+<section class="hero">
+  <div class="hero__bg" role="img" aria-label=""></div>
+  <div class="hero__veil"></div>
+  <div class="container hero__in">
+    <div>
+      <h1>
+        Виртуальная карта для реальных покупок по всему миру.<br>
+        <span class="hl">Выпуск за 5 минут, без визита в офис.</span>
+      </h1>
+      <p class="hero__sub">
+        Откройте карту онлайн, пополните рублями по СБП и оплачивайте подписки,<br>
+        поездки и покупки в 180+ странах.<br>
+        Карты МИР и Visa работают с Apple Pay и Google Pay.<br>
+        Выпускает партнёрская кредитная организация с банковской лицензией.
+      </p>
+      <div class="facts">
+        <div class="fact"><span>Выпуск</span><b>за 5 минут</b></div>
+        <div class="fact"><span>География</span><b>180+ стран</b></div>
+        <div class="fact"><span>Обслуживание</span><b>бесплатно</b></div>
+        <div class="fact"><span>Пополнение</span><b>по СБП</b></div>
+        <div class="fact"><span>Кошелёк</span><b>Apple и Google Pay</b></div>
+        <div class="fact"><span>Поддержка</span><b>24/7</b></div>
+      </div>
+    </div>
+
+    <div class="card" id="form">
+      <form class="vsc-form" data-form="card-ga">
+          <div class="form-body">
+            <div class="card__title"><em>Выпустить карту</em><br>бесплатная консультация по оформлению</div>
+            <p class="card__sub">Расскажем, какая карта подойдёт под ваши задачи, и поможем оформить. Ни к чему не обязывает.</p>
+            <div class="field"><input type="text" name="name" placeholder="Имя" autocomplete="name"></div>
+            <div class="field"><input type="tel" name="phone" placeholder="Телефон, с кодом страны *" autocomplete="tel" required></div>
+            <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
+            <button class="btn" type="submit">Оставить заявку</button>
+            <p class="consent">Нажимая на кнопку, вы даете согласие на обработку <a href="/files/policy_20241106155551.pdf" target="_blank" rel="noopener">персональных данных</a>.</p>
+            <div class="form-note"></div>
+          </div>
+          <div class="form-done">
+            <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
+            <h3>Спасибо, заявка получена</h3>
+            <p>Специалист свяжется с вами и поможет выпустить карту.</p>
+          </div>
+        </form>
+    </div>
+
+    <div class="hero-msgr">
+      <a class="msgr msgr--wa" data-msgr="whatsapp" href="https://wa.me/79299435150" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm5.8 14.16c-.24.68-1.42 1.32-1.95 1.36-.5.04-.98.22-3.3-.72-2.78-1.1-4.55-3.94-4.69-4.12-.14-.18-1.12-1.49-1.12-2.85 0-1.35.71-2.02.96-2.3.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.55.8 1.9.87 2.04.07.14.12.3.02.48-.09.18-.14.3-.28.46-.14.16-.29.36-.42.48-.14.14-.28.29-.12.57.16.27.72 1.19 1.55 1.93 1.07.95 1.97 1.25 2.25 1.39.28.14.44.12.6-.07.18-.2.7-.81.88-1.09.19-.27.37-.23.62-.14.25.09 1.6.76 1.87.9.27.14.46.2.53.32.06.11.06.66-.18 1.34Z"/></svg>Написать в WhatsApp</a>
+      <a class="msgr msgr--tg" data-msgr="telegram" href="https://t.me/vsc_operator" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M21.9 4.3 18.6 20c-.25 1.1-.9 1.37-1.83.85l-5.05-3.72-2.44 2.35c-.27.27-.5.5-1.02.5l.36-5.15 9.37-8.47c.4-.36-.09-.56-.63-.2L5.79 13.06.82 11.5c-1.08-.34-1.1-1.08.23-1.6l19.44-7.5c.9-.33 1.69.2 1.4 1.9Z"/></svg>Написать в Telegram</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ЗАДАЧИ ============ -->
+<section class="section section--navy" id="tasks">
+  <div class="container">
+    <h2>Знакомые ситуации? Карта VSC их решает</h2>
+    <div class="grid grid--2">
+      <div class="benefit">
+        <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        <div><b>Карта не принимается за границей</b>
+        <span>Оплачивайте отели, авиабилеты и кофе в 180+ странах через Apple Pay и Google Pay.</span></div>
+      </div>
+      <div class="benefit">
+        <svg viewBox="0 0 24 24"><path d="M12 2v20"/><path d="M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <div><b>Иностранные сервисы отклоняют оплату</b>
+        <span>Трастовые карты VSC подходят для зарубежных сервисов и не блокируются из-за плохих BIN.</span></div>
+      </div>
+      <div class="benefit">
+        <svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.4 8.3-8 9-4.6-.7-8-4-8-9V7l8-4z"/><path d="M9 12l2 2 4-4"/></svg>
+        <div><b>Обменники с непонятным курсом</b>
+        <span>Понятный курс и никаких потерь на скрытых процентах: всё видно в личном кабинете.</span></div>
+      </div>
+      <div class="benefit">
+        <svg viewBox="0 0 24 24"><path d="M3 12h18"/><path d="M14 5l7 7-7 7"/></svg>
+        <div><b>Крупные платежи за рубеж</b>
+        <span>Оплата учёбы, аренды, недвижимости или авто за границей — прозрачно и без сюрпризов.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ КАРТЫ ============ -->
+<section class="section" id="cards">
+  <div class="container">
+    <h2>Выберите свою карту</h2>
+    <p style="color:var(--muted);max-width:760px;margin:-16px 0 30px">Обе карты выпускаются онлайн,
+    без комиссии за обслуживание. Пополнение рублями по СБП.</p>
+    <div class="grid grid--2">
+
+      <div class="prog">
+        <div class="pcard pcard--rub">
+          <div class="pcard__top"><span class="pcard__brand">V S C</span><span class="pcard__sys">МИР</span></div>
+          <div class="pcard__num">&bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; 5810</div>
+          <div class="pcard__bot">
+            <span>CARDHOLDER<b>IVAN IVANOV</b></span>
+            <span>VALID THRU<b>05 / 31</b></span>
+            <span>РУБЛЁВАЯ</span>
+          </div>
+        </div>
+        <h3>Рублёвая карта</h3>
+        <p class="prog__for">Для повседневных задач в России и за рубежом</p>
+        <div class="limits">
+          <div class="limit"><span>ТРАНЗАКЦИЯ</span><b>400 000 ₽</b></div>
+          <div class="limit"><span>СУТКИ</span><b>400 000 ₽</b></div>
+          <div class="limit"><span>МЕСЯЦ</span><b>800 000 ₽</b></div>
+        </div>
+        <p class="tariff__note">Комиссия отсутствует · Обслуживание бесплатно</p>
+        <ul>
+          <li>Пополнение рублями по СБП</li>
+          <li>Вывод в рублях и долларах на любые карты</li>
+          <li>Оплата по QR везде, где поддерживается МИР</li>
+          <li>Покупки на маркетплейсах и в онлайн-сервисах</li>
+        </ul>
+        <div class="price"><b>Бесплатно</b><s>2 500 ₽</s></div>
+        <a class="btn" href="#form">Выпустить рублёвую карту</a>
+      </div>
+
+      <div class="prog prog--top">
+        <div class="prog__badge">Для заграницы</div>
+        <div class="pcard pcard--usd">
+          <div class="pcard__top"><span class="pcard__brand">V S C</span><span class="pcard__sys">VISA</span></div>
+          <div class="pcard__num">&bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; &bull;&bull;&bull;&bull; 5810</div>
+          <div class="pcard__bot">
+            <span>CARDHOLDER<b>IVAN IVANOV</b></span>
+            <span>VALID THRU<b>05 / 31</b></span>
+            <span>МЕЖДУНАРОДНАЯ</span>
+          </div>
+        </div>
+        <h3>Международная карта</h3>
+        <p class="prog__for">Одна карта для любых задач по всему миру</p>
+        <div class="limits">
+          <div class="limit"><span>ТРАНЗАКЦИЯ</span><b>50 000 $</b></div>
+          <div class="limit"><span>СУТКИ</span><b>200 000 $</b></div>
+          <div class="limit"><span>МЕСЯЦ</span><b>6 000 000 $</b></div>
+        </div>
+        <p class="tariff__note">Комиссия отсутствует · Обслуживание бесплатно</p>
+        <ul>
+          <li>Привязка к Apple Pay, Google Pay и App Store</li>
+          <li>Доступ к нейросетям и ИИ-инструментам</li>
+          <li>Бронирование отелей и покупка авиабилетов</li>
+          <li>Оплата через терминалы в 180+ странах</li>
+          <li>Персональная поддержка 24/7</li>
+        </ul>
+        <div class="price"><b>1 990 ₽</b><s>4 990 ₽</s></div>
+        <a class="btn" href="#form">Выпустить международную карту</a>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============ КАК ПОЛУЧИТЬ ============ -->
+<section class="section section--pale" id="how">
+  <div class="container">
+    <h2>От регистрации до первой оплаты — 5 минут</h2>
+    <p style="color:var(--muted);max-width:760px;margin:-16px 0 30px">Без новых приложений и сложных
+    анкет. Всё управление картой — в личном кабинете.</p>
+    <div class="steps">
+      <div class="step"><b>Зарегистрируйтесь</b>
+        <span>Создайте бесплатный аккаунт в личном кабинете: карта, баланс и управление внутри.</span></div>
+      <div class="step"><b>Пройдите проверку</b>
+        <span>Загрузите фото паспорта. Проверка занимает несколько минут, дальше выдаются реквизиты.</span></div>
+      <div class="step"><b>Пополните баланс</b>
+        <span>Рублями по СБП. Зачисление мгновенное, курс и комиссия видны заранее.</span></div>
+      <div class="step"><b>Оплачивайте покупки</b>
+        <span>Карта готова к работе: онлайн и офлайн, с привязкой к Apple Pay и Google Pay.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ЧТО ОПЛАЧИВАТЬ ============ -->
+<section class="section" id="pays">
+  <div class="container">
+    <h2>Любые покупки. В любой ситуации.</h2>
+    <p style="color:var(--muted);max-width:760px;margin:-16px 0 30px">Оплата по QR-коду через СБП или
+    картой Visa через Apple Pay и Google Pay.</p>
+    <ul class="pays">
+      <li><b>Подписки</b><span>Netflix, Spotify, ChatGPT, YouTube, App Store</span></li>
+      <li><b>Недвижимость</b><span>Оплата аренды и покупки за рубежом</span></li>
+      <li><b>Гостиницы</b><span>Booking, Airbnb, Ostrovok и депозиты</span></li>
+      <li><b>Авиабилеты</b><span>Aviasales и иностранные авиакомпании</span></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ БОЛЬШЕ, ЧЕМ КАРТА ============ -->
+<section class="section section--navy">
+  <div class="container">
+    <h2>Полноценный платёжный сервис</h2>
+    <p style="color:rgba(255,255,255,.75);max-width:760px;margin:-16px 0 30px">Не просто карта, а
+    кошелёк с банковской лицензией: карты, QR-платежи и переводы в одном месте.</p>
+    <div class="grid grid--3">
+      <div class="benefit">
+        <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        <div><b>Карты МИР и Visa</b><span>Покупки по всему миру онлайн и офлайн, пополнение рублями.</span></div>
+      </div>
+      <div class="benefit">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM19 19h2v2h-2z"/></svg>
+        <div><b>Платежи по QR-коду</b><span>Забыли телефон с Apple Pay? Оплачивайте сканированием QR.</span></div>
+      </div>
+      <div class="benefit">
+        <svg viewBox="0 0 24 24"><path d="M7 10l-4 4 4 4"/><path d="M3 14h13"/><path d="M17 14l4-4-4-4"/><path d="M21 10H8"/></svg>
+        <div><b>Переводы между пользователями</b><span>Мгновенные переводы рублей другим пользователям по нику.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section class="section section--pale" id="faq">
+  <div class="container">
+    <h2>Главные вопросы</h2>
+    <div class="faq">
+      <details><summary>Карта Visa точно привяжется к Apple Pay и Google Pay?</summary>
+        <p>Да, международная карта поддерживает оба кошелька, а также оплату в App Store. Если привязка
+        не пройдёт, поддержка разбирается вместе с вами — на это есть персональный менеджер 24/7.</p></details>
+      <details><summary>Как пополнить карту и какие комиссии?</summary>
+        <p>Рублями по СБП, зачисление мгновенное. Комиссия за пополнение отсутствует, обслуживание
+        карты бесплатное. Курс конвертации виден в личном кабинете до подтверждения операции.</p></details>
+      <details><summary>Сколько стоит карта?</summary>
+        <p>Рублёвая карта сейчас выпускается бесплатно вместо 2 500 ₽. Международная — 1 990 ₽
+        вместо 4 990 ₽. Обслуживание в обоих случаях бесплатное, скрытых платежей нет.</p></details>
+      <details><summary>Насколько это безопасно?</summary>
+        <p>Карты выпускает партнёрская кредитная организация с банковской лицензией, деньги хранятся
+        на счёте, а не на балансе сервиса. Реквизиты видны только вам в личном кабинете.</p></details>
+      <details><summary>Нужно ли устанавливать приложение?</summary>
+        <p>Нет. Всё управление — в личном кабинете в браузере: баланс, реквизиты, история операций
+        и лимиты. Ставить отдельное приложение не требуется.</p></details>
+      <details><summary>Какие документы нужны?</summary>
+        <p>Достаточно фотографии паспорта. Проверка занимает несколько минут, приезжать в офис
+        и подписывать бумаги не нужно.</p></details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ФИНАЛЬНЫЙ CTA + КОНТАКТЫ ============ -->
+<section class="section" id="contacts">
+  <div class="container">
+    <div class="contact-grid">
+      <div>
+        <div class="office">
+          <b>Москва, Ветошный переулок 9</b>
+          ТЦ «Никольский Пассаж», 1 этаж<br>
+          <a href="tel:+74999385654">+7 (499) 938-56-54</a><br>
+          info@visa-sc.com<br>
+          <span class="mut">Пн–Пт 10:00–19:00, Сб–Вс 12:00–18:00</span>
+        </div>
+        <div class="office">
+          <b>Санкт-Петербург, улица Марата 86</b>
+          ТЦ «Планета Нептун», 2 этаж<br>
+          <a href="tel:+74999385654">+7 (499) 938-56-54</a><br>
+          info@visa-sc.com<br>
+          <span class="mut">Пн–Пт 10:00–19:00, Сб–Вс 12:00–18:00</span>
+        </div>
+        <div>
+          <a class="msgr msgr--wa" data-msgr="whatsapp" href="https://wa.me/79299435150" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm5.8 14.16c-.24.68-1.42 1.32-1.95 1.36-.5.04-.98.22-3.3-.72-2.78-1.1-4.55-3.94-4.69-4.12-.14-.18-1.12-1.49-1.12-2.85 0-1.35.71-2.02.96-2.3.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.55.8 1.9.87 2.04.07.14.12.3.02.48-.09.18-.14.3-.28.46-.14.16-.29.36-.42.48-.14.14-.28.29-.12.57.16.27.72 1.19 1.55 1.93 1.07.95 1.97 1.25 2.25 1.39.28.14.44.12.6-.07.18-.2.7-.81.88-1.09.19-.27.37-.23.62-.14.25.09 1.6.76 1.87.9.27.14.46.2.53.32.06.11.06.66-.18 1.34Z"/></svg>WhatsApp</a>
+          <a class="msgr msgr--tg" data-msgr="telegram" href="https://t.me/vsc_operator" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M21.9 4.3 18.6 20c-.25 1.1-.9 1.37-1.83.85l-5.05-3.72-2.44 2.35c-.27.27-.5.5-1.02.5l.36-5.15 9.37-8.47c.4-.36-.09-.56-.63-.2L5.79 13.06.82 11.5c-1.08-.34-1.1-1.08.23-1.6l19.44-7.5c.9-.33 1.69.2 1.4 1.9Z"/></svg>Telegram</a>
+        </div>
+      </div>
+      <div class="card">
+        <form class="vsc-form" data-form="card-ga-bottom">
+          <div class="form-body">
+            <div class="card__title"><em>Выпустить карту</em><br>бесплатная консультация по оформлению</div>
+            <p class="card__sub">Расскажем, какая карта подойдёт под ваши задачи, и поможем оформить. Ни к чему не обязывает.</p>
+            <div class="field"><input type="text" name="name" placeholder="Имя" autocomplete="name"></div>
+            <div class="field"><input type="tel" name="phone" placeholder="Телефон, с кодом страны *" autocomplete="tel" required></div>
+            <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
+            <button class="btn" type="submit">Оставить заявку</button>
+            <p class="consent">Нажимая на кнопку, вы даете согласие на обработку <a href="/files/policy_20241106155551.pdf" target="_blank" rel="noopener">персональных данных</a>.</p>
+            <div class="form-note"></div>
+          </div>
+          <div class="form-done">
+            <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
+            <h3>Спасибо, заявка получена</h3>
+            <p>Специалист свяжется с вами и поможет выпустить карту.</p>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ВСПЛЫВАЮЩАЯ ФОРМА ============ -->
+<div class="modal" id="callModal">
+  <div class="modal__box">
+    <button class="modal__x" data-close aria-label="Закрыть">&times;</button>
+    <form class="vsc-form" data-form="card-ga-modal">
+          <div class="form-body">
+            <div class="card__title"><em>Выпустить карту</em><br>бесплатная консультация по оформлению</div>
+            <p class="card__sub">Расскажем, какая карта подойдёт под ваши задачи, и поможем оформить. Ни к чему не обязывает.</p>
+            <div class="field"><input type="text" name="name" placeholder="Имя" autocomplete="name"></div>
+            <div class="field"><input type="tel" name="phone" placeholder="Телефон, с кодом страны *" autocomplete="tel" required></div>
+            <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
+            <button class="btn" type="submit">Оставить заявку</button>
+            <p class="consent">Нажимая на кнопку, вы даете согласие на обработку <a href="/files/policy_20241106155551.pdf" target="_blank" rel="noopener">персональных данных</a>.</p>
+            <div class="form-note"></div>
+          </div>
+          <div class="form-done">
+            <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
+            <h3>Спасибо, заявка получена</h3>
+            <p>Специалист свяжется с вами и поможет выпустить карту.</p>
+          </div>
+        </form>
+  </div>
+</div>
+
+<footer class="ftr">
+  <div class="container">
+    <b>VSC · Виртуальные карты</b>
+    <p><a href="tel:+74999385654">+7 (499) 938-56-54</a> · <a href="mailto:info@visa-sc.com">info@visa-sc.com</a></p>
+    <div class="ftr__fine">
+      <p>Виртуальные карты выпускаются партнёрской кредитной организацией с банковской лицензией.
+      VSC — сервис оформления и сопровождения, а не банк и не эмитент.</p>
+      <p>Информация на этой странице носит справочный характер, не является публичной офертой,
+      определяемой положением Статьи 437 (2) Гражданского кодекса Российской Федерации, а также
+      не является индивидуальной инвестиционной или налоговой рекомендацией. Тарифы, лимиты и
+      условия выпуска уточняются при оформлении.</p>
+      <p>ООО «Эй Кей Групп» · ИНН 7704349866 · 115280, г. Москва, Автозаводская ул., д. 23а, к. 2</p>
+      <p><a href="/files/policy_20241106155551.pdf" target="_blank" rel="noopener">Политика конфиденциальности</a></p>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var burger = document.getElementById("burger"), nav = document.getElementById("nav");
+  if (burger) burger.addEventListener("click", function () { nav.classList.toggle("is-on"); });
+  nav.addEventListener("click", function (e) { if (e.target.tagName === "A") nav.classList.remove("is-on"); });
+
+  // Все кнопки «консультация» открывают всплывающую форму, а не гоняют
+  // человека к первому экрану.
+  var modal = document.getElementById("callModal");
+  function openModal() {
+    modal.classList.add("is-on");
+    var f = modal.querySelector('input[name="name"]');
+    if (f) setTimeout(function () { f.focus(); }, 60);
+  }
+  function closeModal() { modal.classList.remove("is-on"); }
+  document.addEventListener("click", function (e) {
+    var opener = e.target.closest('a[href="#form"]');
+    if (opener) { e.preventDefault(); openModal(); return; }
+    if (e.target.closest("[data-close]") || e.target === modal) closeModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && modal.classList.contains("is-on")) closeModal();
+  });
+
+  var qs = new URLSearchParams(location.search), utm = {};
+  ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","gclid","yclid"].forEach(function (k) {
+    if (qs.get(k)) utm[k] = qs.get(k);
+  });
+  var openedAt = Date.now();
+
+  function setNote(form, msg) {
+    var n = form.querySelector(".form-note");
+    n.textContent = msg || "";
+    n.className = "form-note" + (msg ? " is-err" : "");
+  }
+  function validPhone(v) {
+    var d = (v || "").replace(/\D/g, "");
+    return d.length >= 9 && d.length <= 15;
+  }
+
+  // Клик по мессенджеру. WhatsApp и Telegram у нас общие на все каналы, по самой
+  // переписке источник не определить — поэтому пишем сам переход себе в журнал.
+  // sendBeacon не мешает переходу: браузер отправляет запрос уже после ухода.
+  document.querySelectorAll("[data-msgr]").forEach(function (a) {
+    a.addEventListener("click", function () {
+      var body = JSON.stringify({
+        messenger: a.dataset.msgr, form: "card-ga",
+        page: location.href, referrer: document.referrer || "", utm: utm
+      });
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon("/api/vscom-click", new Blob([body], { type: "application/json" }));
+        } else {
+          fetch("/api/vscom-click", { method: "POST", keepalive: true,
+            headers: { "Content-Type": "application/json" }, body: body });
+        }
+      } catch (e) {}
+      if (typeof window.gtag === "function") {
+        gtag("event", "messenger_click", { messenger: a.dataset.msgr, form_id: "card-ga" });
+      }
+    });
+  });
+
+  document.querySelectorAll(".vsc-form").forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      setNote(form, "");
+      var data = {};
+      form.querySelectorAll("input").forEach(function (el) {
+        if (el.name) data[el.name] = (el.value || "").trim();
+      });
+
+      var phoneEl = form.querySelector('[name="phone"]');
+      if (!validPhone(data.phone)) {
+        phoneEl.closest(".field").classList.add("field--err");
+        setNote(form, "Укажите, пожалуйста, номер телефона с кодом страны.");
+        phoneEl.focus();
+        return;
+      }
+      phoneEl.closest(".field").classList.remove("field--err");
+
+      var btn = form.querySelector('button[type="submit"]');
+      var old = btn.textContent;
+      btn.disabled = true; btn.textContent = "Отправляем...";
+
+      var payload = {
+        form: "card-ga", source: form.dataset.form, name: data.name || "", phone: data.phone || "",
+        page: location.href, referrer: document.referrer || "", utm: utm,
+        lang: navigator.language || "",
+        elapsed: Math.round((Date.now() - openedAt) / 1000),
+        company: data.company || ""
+      };
+
+      fetch("/api/vscom-lead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function (res) {
+          if (res && res.ok) {
+            form.classList.add("is-sent");
+            if (typeof window.gtag === "function") {
+              gtag("event", "generate_lead", { form_id: "card-ga", page_location: location.href });
+            }
+            if (typeof window.gtag_report_conversion === "function") gtag_report_conversion();
+          } else {
+            setNote(form, (res && res.message) || "Не получилось отправить. Напишите на info@visa-sc.com.");
+          }
+        })
+        .catch(function () { setNote(form, "Ошибка сети. Попробуйте ещё раз или напишите на info@visa-sc.com."); })
+        .then(function () { btn.disabled = false; btn.textContent = old; });
+    });
+  });
+})();
+</script>
+</body>
+</html>

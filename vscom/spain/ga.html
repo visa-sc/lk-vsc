@@ -124,6 +124,14 @@ p{margin:0 0 14px}
 .fact span{display:block;font-size:13px;color:rgba(255,255,255,.65);margin-bottom:3px;white-space:nowrap}
 .fact b{display:block;font-weight:500;font-size:16px}
 
+/* Мессенджеры на первом экране: отдельная строка сетки во всю ширину, по центру.
+   Люди, живущие за границей, чаще пишут в мессенджер, чем оставляют номер. */
+.hero-msgr{grid-column:1/-1;display:flex;flex-wrap:wrap;justify-content:center;gap:14px}
+.hero-msgr .msgr{margin:0;padding:14px 26px;font-size:15.5px;
+  box-shadow:0 8px 24px rgba(4,12,30,.28);transition:transform .15s ease,box-shadow .15s ease}
+.hero-msgr .msgr:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(4,12,30,.34)}
+.hero-msgr .msgr svg{width:18px;height:18px}
+
 .card{background:#fff;color:var(--ink);border-radius:18px;padding:30px;box-shadow:var(--shadow)}
 .card__title{font-size:23px;font-weight:500;line-height:1.26;margin-bottom:6px}
 .card__title em{font-style:normal;background:var(--gold);padding:1px 5px;margin:0 -3px}
@@ -251,6 +259,8 @@ p{margin:0 0 14px}
 }
 @media (max-width:640px){
   .section{padding:46px 0}
+  .hero-msgr{gap:10px}
+  .hero-msgr .msgr{flex:1 1 100%;max-width:330px;justify-content:center;padding:14px 18px}
   .facts{grid-template-columns:repeat(2,1fr)}
   .grid--2,.grid--3,.steps,.covers{grid-template-columns:1fr}
   .card{padding:23px}
@@ -333,6 +343,11 @@ p{margin:0 0 14px}
           <p>Эксперт свяжется с вами, чтобы договориться о времени.</p>
         </div>
       </form>
+    </div>
+
+    <div class="hero-msgr">
+      <a class="msgr msgr--wa" data-msgr="whatsapp" href="https://wa.me/79299435150" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm5.8 14.16c-.24.68-1.42 1.32-1.95 1.36-.5.04-.98.22-3.3-.72-2.78-1.1-4.55-3.94-4.69-4.12-.14-.18-1.12-1.49-1.12-2.85 0-1.35.71-2.02.96-2.3.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.55.8 1.9.87 2.04.07.14.12.3.02.48-.09.18-.14.3-.28.46-.14.16-.29.36-.42.48-.14.14-.28.29-.12.57.16.27.72 1.19 1.55 1.93 1.07.95 1.97 1.25 2.25 1.39.28.14.44.12.6-.07.18-.2.7-.81.88-1.09.19-.27.37-.23.62-.14.25.09 1.6.76 1.87.9.27.14.46.2.53.32.06.11.06.66-.18 1.34Z"/></svg>Написать в WhatsApp</a>
+      <a class="msgr msgr--tg" data-msgr="telegram" href="https://t.me/vsc_operator" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M21.9 4.3 18.6 20c-.25 1.1-.9 1.37-1.83.85l-5.05-3.72-2.44 2.35c-.27.27-.5.5-1.02.5l.36-5.15 9.37-8.47c.4-.36-.09-.56-.63-.2L5.79 13.06.82 11.5c-1.08-.34-1.1-1.08.23-1.6l19.44-7.5c.9-.33 1.69.2 1.4 1.9Z"/></svg>Написать в Telegram</a>
     </div>
   </div>
 </section>
@@ -607,6 +622,29 @@ p{margin:0 0 14px}
     var d = (v || "").replace(/\D/g, "");
     return d.length >= 9 && d.length <= 15;
   }
+
+  // Клик по мессенджеру. WhatsApp и Telegram у нас общие на все каналы, по самой
+  // переписке источник не определить — поэтому пишем сам переход себе в журнал.
+  // sendBeacon не мешает переходу: браузер отправляет запрос уже после ухода.
+  document.querySelectorAll("[data-msgr]").forEach(function (a) {
+    a.addEventListener("click", function () {
+      var body = JSON.stringify({
+        messenger: a.dataset.msgr, form: "spain-ga",
+        page: location.href, referrer: document.referrer || "", utm: utm
+      });
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon("/api/vscom-click", new Blob([body], { type: "application/json" }));
+        } else {
+          fetch("/api/vscom-click", { method: "POST", keepalive: true,
+            headers: { "Content-Type": "application/json" }, body: body });
+        }
+      } catch (e) {}
+      if (typeof window.gtag === "function") {
+        gtag("event", "messenger_click", { messenger: a.dataset.msgr, form_id: "spain-ga" });
+      }
+    });
+  });
 
   document.querySelectorAll(".vsc-form").forEach(function (form) {
     form.addEventListener("submit", function (e) {

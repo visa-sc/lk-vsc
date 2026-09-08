@@ -22,6 +22,9 @@ const fs = require("fs");
 const path = require("path");
 
 const LEADS_FILE = path.join(__dirname, ".vscomLeads.json");
+// Журнал переходов в мессенджеры с первого экрана. Мессенджер у нас общий на все
+// каналы, поэтому по самой переписке источник не определить — фиксируем сам клик.
+const CLICKS_FILE = path.join(__dirname, ".vscomClicks.json");
 const LEADS_EMAIL = process.env.VSCOM_LEADS_EMAIL || "director@visa-sc.ru";
 const AMO_TAG = process.env.VSCOM_AMO_TAG || "VSC-EN";
 // С 27.08.2026 по решению Андрея заявки в amoCRM НЕ заводим: они уходят письмом
@@ -54,6 +57,24 @@ function saveLead(entry) {
   all.push(entry);
   const trimmed = all.length > MAX_STORED ? all.slice(all.length - MAX_STORED) : all;
   fs.writeFileSync(LEADS_FILE, JSON.stringify(trimmed, null, 2));
+}
+
+// ── журнал кликов по мессенджерам ────────────────────────────────────────────
+const MAX_CLICKS = 5000;
+
+function loadClicks() {
+  try {
+    return JSON.parse(fs.readFileSync(CLICKS_FILE, "utf8"));
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveClick(entry) {
+  const all = loadClicks();
+  all.push(entry);
+  const trimmed = all.length > MAX_CLICKS ? all.slice(all.length - MAX_CLICKS) : all;
+  fs.writeFileSync(CLICKS_FILE, JSON.stringify(trimmed, null, 2));
 }
 
 // ── антиспам: не больше 5 заявок с одного IP за 10 минут ─────────────────────
@@ -199,7 +220,8 @@ const MAIL_TITLES = {
   "usa-ga":   ["Заявка с visa-sc.com/usa (визы США)", "visa-sc.com/usa: заявка"],
   "spain-ga": ["Заявка с spain.visa-sc.com/ga (ВНЖ Испании)", "spain.visa-sc.com: заявка"],
   "spain":    ["Заявка с spain.visa-sc.com (ВНЖ Испании)", "spain.visa-sc.com: заявка"],
-  "ga":       ["Заявка с visa-sc.com/ga (английский лендинг, ВНЖ Испании)", "visa-sc.com: заявка"]
+  "ga":       ["Заявка с visa-sc.com/ga (английский лендинг, ВНЖ Испании)", "visa-sc.com: заявка"],
+  "card-ga":  ["Заявка с visa-sc.com/virtual_card (виртуальные карты)", "visa-sc.com/virtual_card: заявка"]
 };
 function formTitles(form) {
   return MAIL_TITLES[form] || ["Заявка с visa-sc.com (английский лендинг, ВНЖ Испании)", "visa-sc.com: заявка"];
@@ -306,6 +328,29 @@ function mount(app, deps) {
     return res.json({ ok: true });
   });
 
+  // Переход в мессенджер с лендинга. Приходит через navigator.sendBeacon, поэтому
+  // отвечаем максимально дёшево и никогда не ошибкой: клиент уже ушёл в WhatsApp.
+  app.post("/api/vscom-click", (req, res) => {
+    res.status(204).end();
+    try {
+      const b = req.body || {};
+      const what = clean(b.messenger, 20);
+      if (what !== "whatsapp" && what !== "telegram") return;
+      saveClick({
+        at: new Date().toISOString(),
+        messenger: what,
+        form: clean(b.form, 40),
+        page: clean(b.page, 400),
+        referrer: clean(b.referrer, 400),
+        utm: b.utm && typeof b.utm === "object" ? b.utm : {},
+        ip: String(req.headers["x-forwarded-for"] || req.ip || "").split(",")[0].trim(),
+        ua: clean(req.headers["user-agent"], 300)
+      });
+    } catch (e) {
+      console.error("VSCOM click store:", e.message);
+    }
+  });
+
   // Просмотр журнала заявок — только для сотрудников (guard приходит извне).
   if (deps.requireStaff) {
     app.get("/admin/api/vscom-leads", deps.requireStaff, (req, res) => {
@@ -313,7 +358,7 @@ function mount(app, deps) {
     });
   }
 
-  console.log(`VSCOM: /api/vscom-lead смонтирован (amo=${AMO_ENABLED ? "вкл, тег " + AMO_TAG : "выкл"}, письма → ${LEADS_EMAIL})`);
+  console.log(`VSCOM: /api/vscom-lead и /api/vscom-click смонтированы (amo=${AMO_ENABLED ? "вкл, тег " + AMO_TAG : "выкл"}, письма → ${LEADS_EMAIL})`);
 }
 
-module.exports = { mount, loadLeads };
+module.exports = { mount, loadLeads, loadClicks };
