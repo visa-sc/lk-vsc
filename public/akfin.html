@@ -85,21 +85,23 @@
   .chips button small{color:var(--muted);margin-left:6px;font-size:13px;}
 
   /* метки строки: красят «Наименование» в таблице (жёлтая — разобраться, красная — вернуть) */
-  .flagrow{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
-  .flag{width:44px;height:44px;border-radius:22px;border:2px solid transparent;background:var(--card);
+  .flag{flex:0 0 auto;width:42px;height:42px;border-radius:21px;border:2px solid transparent;background:var(--card);
         box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;}
   .flag i{display:block;width:22px;height:22px;border-radius:11px;}
   .flag.yellow i{background:#ffd60a;}
   .flag.red i{background:#ff453a;}
   .flag.on{border-color:var(--brand);}
-  .flagrow .fld{flex:1;margin-bottom:0;}
   /* составные ряды: слева прокручиваемые чипсы/метки, справа поле */
-  .row2{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
-  .row2 .chips{flex:1;min-width:0;margin-bottom:0;}
-  .row2 .fld{margin-bottom:0;}
-  /* дата занимает минимум, чтобы обе категории влезали в строку целиком */
-  .datefld{flex:0 0 auto;width:152px;padding-left:10px;padding-right:10px;}
+  .row2{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+  /* чипсы добирают зазор строки, чтобы дата вставала ровно по правому краю */
+  .row2 .chips{flex:1 1 auto;min-width:0;margin-bottom:0;gap:8px;}
+  .row2 .fld{flex:1 1 auto;min-width:0;margin-bottom:0;}
+  /* дата добирает остаток строки, но не уже, чем нужно под «08.09.2026» */
+  /* дата держит свою ширину и НЕ растягивается, иначе выдавливает комментарий
+     на вторую строку; остаток строки достаётся комментарию */
+  .row2 .datefld{flex:0 1 140px;min-width:140px;padding-left:8px;padding-right:8px;}
   .datefld input{text-align:center;font-size:15px;}
+  .row2 .commentfld{flex:1 1 88px;min-width:88px;}
   .row2 .chips button{padding:10px 13px;font-size:14px;}
   #addBtn{width:100%;font-size:17px;padding:16px;border-radius:18px;}
 
@@ -167,15 +169,12 @@
   <div class="fld"><input id="name" type="text" placeholder="за что" autocomplete="off"></div>
   <div class="chips" id="sugg"></div>
 
-  <div class="row2" id="catRow">
+  <div class="row2">
     <div class="chips" id="cats"></div>
     <div class="fld datefld"><input id="date" type="date"></div>
-  </div>
-
-  <div class="row2">
     <button class="flag yellow" id="flagYellow" onclick="setFlag('yellow')" title="разобраться"><i></i></button>
     <button class="flag red" id="flagRed" onclick="setFlag('red')" title="вернуть"><i></i></button>
-    <div class="fld"><input id="comment" type="text" placeholder="комментарий" autocomplete="off"></div>
+    <div class="fld commentfld"><input id="comment" type="text" placeholder="комментарий" autocomplete="off"></div>
   </div>
 
   <button id="addBtn" class="btn" onclick="addEntry()">Внести</button>
