@@ -18,6 +18,7 @@ const engineProxy = require("./engine-proxy"); // Мост к движку пе�
 const phoneTestMod = require("./phonetest"); // Проверка интеграций: звонки на наши номера и заявки с сайтов → amoCRM (/phone_test)
 const scannerMod = require("./scanner"); // Сканер паспортов (/scanner) — распознавание документов для сотрудников
 const chatMod = require("./chat"); // Продающий ИИ-чат по визам (/chat_test) — отдельный модуль, монтируется ниже
+const vscFinMod = require("./vscfin"); // Рабочие расходы и приходы (/akfin) — отдельный модуль, монтируется ниже
 const vscomMod = require("./vscom"); // Заявки с англоязычного лендинга visa-sc.com — отдельный модуль, монтируется ниже
 // Личные финансы переехали на ak-co.ru (сервис akfin) — модуль здесь больше не монтируется
 
@@ -2364,6 +2365,12 @@ const regruWatch = require("./regru-watch").mount({ sendMail: (o) => mail.sendMa
 // Изолирован: клиентский ЛК/amoCRM/переводы не затрагивает; канал до Anthropic
 // переиспользует env переводов (ANTHROPIC_API_KEY/BASE_URL/TRANSLATE_PROXY).
 chatMod.mount(app, { requireAdmin });
+
+// ── Рабочие расходы и приходы (/akfin): быстрый ввод с телефона + перенос в
+// «vsc таблица» (Numbers) через буфер. Вход по коду 280992 и Face ID (свои
+// ключи). Курсы EUR/USD берёт у калькулятора (fetchCbrRates, кэш 1 ч).
+// Изолирован: ЛК, amoCRM, /fin на ak-co.ru не затрагивает.
+vscFinMod.mount(app, { fetchCbrRates });
 
 // ── visa-sc.com: англоязычная копия лендинга «ВНЖ Испании» (visa-sc.ru/spain_vnzh/).
 // Сама страница — статика, её отдаёт nginx из /var/www/visa-sc-com; сюда nginx

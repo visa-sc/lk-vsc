@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="VSC fin">
+<meta name="theme-color" content="#f5f7fa">
+<title>VSC fin — рабочие финансы</title>
+<link rel="apple-touch-icon" href="/fin-logo.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/fin-logo.png">
+<link rel="icon" href="/fin-logo.png">
+<style>
+  :root{
+    --brand:#2695d9;
+    --brand-dark:#164296;
+    --ink:#1d1d1f;
+    --sub:#6e6e73;
+    --line:rgba(0,0,0,.09);
+    --field:#f0f2f5;
+    --card:#fff;
+    --bg:#f5f7fa;
+    --green:#34c759;
+    --red:#ff3b30;
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:14px 14px 100px;}
+
+  /* ── Вход ── */
+  #login{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;}
+  #login img{width:88px;height:88px;border-radius:22px;box-shadow:0 10px 30px rgba(38,149,217,.35);}
+  #login h1{font-size:20px;font-weight:600;margin:0;}
+  #login .row{display:flex;gap:10px;width:100%;max-width:320px;}
+  #login .row .btn{flex:1;}
+  #bioBtn{width:100%;max-width:320px;}
+  #code{flex:1;font:inherit;font-size:20px;text-align:center;letter-spacing:4px;padding:14px;border:none;border-radius:14px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.06);}
+  .btn{font:inherit;font-size:16px;font-weight:500;border:none;border-radius:14px;padding:14px 18px;cursor:pointer;background:var(--brand);color:#fff;transition:transform .1s,opacity .2s;}
+  .btn:active{transform:scale(.97);}
+  .btn:disabled{opacity:.5;}
+  .btn.ghost{background:#fff;color:var(--brand);box-shadow:0 2px 10px rgba(0,0,0,.06);}
+  #loginErr{color:var(--red);font-size:14px;min-height:18px;}
+
+  /* ── Шапка ── */
+  header{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+  header img{width:42px;height:42px;border-radius:11px;}
+  header h1{font-size:18px;font-weight:600;margin:0;letter-spacing:-.01em;}
+  .rates{margin-left:auto;text-align:right;font-size:12px;color:var(--sub);line-height:1.4;cursor:pointer;}
+  .rates b{color:var(--ink);font-weight:600;}
+
+  /* ── Вкладки ── */
+  .tabs{display:flex;background:var(--field);border-radius:12px;padding:3px;margin-bottom:14px;}
+  .tabs button{flex:1;font:inherit;font-size:15px;font-weight:500;border:none;background:transparent;color:var(--sub);padding:9px;border-radius:9px;cursor:pointer;transition:.18s;}
+  .tabs button.on{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.1);}
+
+  /* ── Карточка формы ── */
+  .card{background:var(--card);border-radius:var(--radius);padding:16px;box-shadow:0 2px 14px rgba(0,50,80,.07);margin-bottom:14px;}
+  label{display:block;font-size:12px;color:var(--sub);margin:0 0 6px 2px;}
+  input[type=text],input[type=date],input[type=tel],textarea{
+    width:100%;font:inherit;font-size:16px;padding:12px 14px;border:none;border-radius:12px;background:var(--field);color:var(--ink);
+  }
+  input:focus,textarea:focus{outline:2px solid rgba(38,149,217,.35);}
+  .fld{margin-bottom:12px;}
+  .sum-row{display:flex;gap:8px;}
+  .sum-row input{flex:1;font-size:22px;font-weight:600;text-align:right;}
+  .cur{display:flex;background:var(--field);border-radius:12px;padding:3px;}
+  .cur button{font:inherit;font-size:16px;font-weight:600;border:none;background:transparent;color:var(--sub);width:42px;border-radius:9px;cursor:pointer;}
+  .cur button.on{background:#fff;color:var(--brand);box-shadow:0 1px 4px rgba(0,0,0,.1);}
+  .conv{font-size:13px;color:var(--sub);margin-top:6px;text-align:right;min-height:18px;}
+  .conv b{color:var(--ink);}
+
+  .chips{display:flex;gap:7px;flex-wrap:wrap;}
+  .chips button{font:inherit;font-size:13.5px;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:999px;padding:7px 13px;cursor:pointer;transition:.15s;}
+  .chips button.on{background:var(--brand);border-color:var(--brand);color:#fff;}
+  .chips.sugg{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px;}
+  .chips.sugg::-webkit-scrollbar{display:none;}
+  .chips.sugg button{flex:0 0 auto;white-space:nowrap;background:rgba(38,149,217,.07);border-color:rgba(38,149,217,.16);color:var(--brand);}
+
+  .more{font-size:13.5px;color:var(--brand);cursor:pointer;user-select:none;padding:4px 2px;}
+  #addBtn{width:100%;font-size:17px;padding:15px;}
+
+  /* ── Нижняя панель ── */
+  .bar{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.9);backdrop-filter:saturate(180%) blur(12px);
+       border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:flex;gap:10px;max-width:640px;margin:0 auto;}
+  .bar .btn{flex:1;padding:13px;font-size:15px;}
+  .badge{display:inline-block;min-width:20px;padding:0 6px;border-radius:10px;background:rgba(255,255,255,.28);font-size:13px;margin-left:6px;}
+
+  /* ── Записи ── */
+  .day{margin-bottom:14px;}
+  .day h3{font-size:13px;font-weight:600;color:var(--sub);margin:0 0 7px 4px;display:flex;}
+  .day h3 span{margin-left:auto;}
+  .rec{background:#fff;border-radius:14px;padding:11px 14px;margin-bottom:7px;display:flex;align-items:center;gap:10px;box-shadow:0 1px 6px rgba(0,50,80,.06);}
+  .rec .nm{flex:1;min-width:0;}
+  .rec .nm b{display:block;font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rec .nm i{font-style:normal;font-size:12px;color:var(--sub);}
+  .rec .am{font-size:16px;font-weight:600;white-space:nowrap;}
+  .rec.copied{opacity:.5;}
+  .rec .x{font-size:20px;color:#c7c7cc;cursor:pointer;padding:0 2px;}
+  .empty{text-align:center;color:var(--sub);font-size:14px;padding:26px 0;}
+
+  #toast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);background:rgba(0,0,0,.86);color:#fff;
+         font-size:14px;padding:11px 18px;border-radius:12px;opacity:0;transition:.25s;pointer-events:none;z-index:50;max-width:90vw;text-align:center;}
+  #toast.on{opacity:1;}
+  .hide{display:none!important;}
+</style>
+</head>
+<body>
+
+<!-- ── Экран входа ── -->
+<div id="login">
+  <img src="/fin-logo.png" alt="VSC fin">
+  <h1>Рабочие финансы</h1>
+  <div class="row"><input id="code" type="tel" inputmode="numeric" placeholder="код" autocomplete="off"></div>
+  <div class="row"><button class="btn" onclick="doLogin()">Войти</button></div>
+  <button id="bioBtn" class="btn ghost hide" onclick="bioLogin()">Войти по Face ID</button>
+  <div id="loginErr"></div>
+</div>
+
+<!-- ── Основной экран ── -->
+<div id="main" class="wrap hide">
+  <header>
+    <img src="/fin-logo.png" alt="">
+    <h1>Рабочие финансы</h1>
+    <div class="rates" id="rates" onclick="refreshRates(1)">курсы…</div>
+  </header>
+
+  <div class="tabs">
+    <button id="tabExp" class="on" onclick="setTab('exp')">Расходы</button>
+    <button id="tabInc" onclick="setTab('inc')">Приходы</button>
+  </div>
+
+  <!-- Форма ввода -->
+  <div id="form" class="card">
+    <div class="fld">
+      <label>Наименование</label>
+      <input id="name" type="text" placeholder="за что / от кого" autocomplete="off">
+      <div class="chips sugg" id="sugg" style="margin-top:8px"></div>
+    </div>
+
+    <div class="fld">
+      <label>Сумма</label>
+      <div class="sum-row">
+        <input id="amount" type="text" inputmode="decimal" placeholder="0">
+        <div class="cur">
+          <button data-cur="RUB" class="on" onclick="setCur('RUB')">₽</button>
+          <button data-cur="USD" onclick="setCur('USD')">$</button>
+          <button data-cur="EUR" onclick="setCur('EUR')">€</button>
+        </div>
+      </div>
+      <div class="conv" id="conv"></div>
+    </div>
+
+    <div class="fld expOnly">
+      <label>Категория</label>
+      <div class="chips" id="cats"></div>
+    </div>
+
+    <div class="fld expOnly">
+      <label>Безнал / нал</label>
+      <div class="chips" id="cash"></div>
+    </div>
+
+    <div class="fld expOnly">
+      <label>Юр. лицо</label>
+      <div class="chips" id="legals"></div>
+    </div>
+
+    <div class="more" id="moreToggle" onclick="toggleMore()">Контрагент, дата, комментарий ›</div>
+    <div id="moreBox" class="hide" style="margin-top:12px">
+      <div class="fld"><label>Контрагент</label><input id="party" type="text" placeholder="кому / от кого" autocomplete="off"></div>
+      <div class="fld"><label>Комментарий</label><input id="comment" type="text" placeholder="уточнение к названию" autocomplete="off"></div>
+      <div class="fld"><label>Дата</label><input id="date" type="date"></div>
+    </div>
+
+    <button id="addBtn" class="btn" onclick="addEntry()">Добавить</button>
+  </div>
+
+  <!-- Записи -->
+  <div id="list"></div>
+</div>
+
+<div class="bar hide" id="bar">
+  <button class="btn" id="copyBtn" onclick="copyRows()">Скопировать<span class="badge" id="pend">0</span></button>
+  <button class="btn ghost" id="bioEnroll" onclick="bioRegister()">Face ID</button>
+</div>
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const LS_TOKEN = "vscfinToken";
+let token = localStorage.getItem(LS_TOKEN) || "";
+let tab = "exp";
+let cur = "RUB";
+let state = { ref: { categories: [], cash: [], legals: [], expense: [], income: [] }, rates: {}, today: "" };
+let sel = { category: "", cash: "", legal: "" };
+let editId = null;
+
+function toast(t) { const el = $("toast"); el.textContent = t; el.classList.add("on"); setTimeout(() => el.classList.remove("on"), 2600); }
+function fmt(n) { return (Math.round(n * 100) / 100).toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 }); }
+
+async function api(url, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({ "Content-Type": "application/json", Authorization: "Bearer " + token }, opts.headers || {});
+  const r = await fetch(url, opts);
+  if (r.status === 401) { localStorage.removeItem(LS_TOKEN); token = ""; showLogin(); throw new Error("auth"); }
+  return r.json();
+}
+
+/* ── Вход ── */
+function showLogin() { $("login").classList.remove("hide"); $("main").classList.add("hide"); $("bar").classList.add("hide"); updateBioBtn(); }
+function showMain() { $("login").classList.add("hide"); $("main").classList.remove("hide"); $("bar").classList.remove("hide"); }
+async function doLogin() {
+  $("loginErr").textContent = "";
+  try {
+    const r = await (await fetch("/akfin/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("code").value.trim() }) })).json();
+    if (!r.success) { $("loginErr").textContent = r.message || "Ошибка"; return; }
+    token = r.token; localStorage.setItem(LS_TOKEN, token);
+    showMain(); await refresh();
+  } catch (e) { $("loginErr").textContent = "Ошибка сети"; }
+}
+$("code").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+
+/* ── Face ID ── */
+const b2a = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+const a2b = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+async function updateBioBtn() {
+  try {
+    if (!window.PublicKeyCredential) return;
+    const r = await (await fetch("/akfin/api/bio/has", { method: "POST" })).json();
+    $("bioBtn").classList.toggle("hide", !r.has);
+  } catch (e) {}
+}
+async function bioLogin() {
+  try {
+    const opts = await (await fetch("/akfin/api/bio/auth-options", { method: "POST" })).json();
+    if (!opts.challenge) return false;
+    opts.challenge = b2a(opts.challenge);
+    (opts.allowCredentials || []).forEach((c) => { c.id = b2a(c.id); });
+    const cred = await navigator.credentials.get({ publicKey: opts });
+    const payload = { id: cred.id, rawId: a2b(cred.rawId), type: cred.type,
+      response: { clientDataJSON: a2b(cred.response.clientDataJSON), authenticatorData: a2b(cred.response.authenticatorData),
+        signature: a2b(cred.response.signature), userHandle: cred.response.userHandle ? a2b(cred.response.userHandle) : null },
+      clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {} };
+    const r = await (await fetch("/akfin/api/bio/auth-verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assertionResponse: payload }) })).json();
+    if (!r.success) { $("loginErr").textContent = r.message || "Не получилось"; return false; }
+    token = r.token; localStorage.setItem(LS_TOKEN, token);
+    showMain(); await refresh();
+    return true;
+  } catch (e) { return false; }
+}
+async function bioRegister() {
+  try {
+    const opts = await api("/akfin/api/bio/register-options", { method: "POST" });
+    if (!opts.challenge) { toast(opts.message || "Ошибка"); return; }
+    opts.challenge = b2a(opts.challenge);
+    opts.user.id = new TextEncoder().encode("vscfin-owner");
+    (opts.excludeCredentials || []).forEach((c) => { c.id = b2a(c.id); });
+    const cred = await navigator.credentials.create({ publicKey: opts });
+    const payload = { id: cred.id, rawId: a2b(cred.rawId), type: cred.type,
+      response: { clientDataJSON: a2b(cred.response.clientDataJSON), attestationObject: a2b(cred.response.attestationObject) },
+      clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {} };
+    const r = await api("/akfin/api/bio/register-verify", { method: "POST", body: JSON.stringify({ attestationResponse: payload }) });
+    if (r.success) { $("bioEnroll").classList.add("hide"); toast("Face ID включён"); }
+    else toast(r.message || "Не получилось");
+  } catch (e) {
+    if (String(e.message) === "auth") return;
+    if (e && e.name === "InvalidStateError") { $("bioEnroll").classList.add("hide"); toast("Face ID уже был включён"); }
+    else toast("Face ID отменён");
+  }
+}
+
+/* ── Курсы ЦБ ── */
+function renderRates() {
+  const r = state.rates || {};
+  if (!r.usd && !r.eur) { $("rates").textContent = "курсы ЦБ недоступны"; return; }
+  const d = r.date ? String(r.date).slice(0, 5) : "";
+  $("rates").innerHTML = "$ <b>" + fmt(r.usd || 0) + "</b> · € <b>" + fmt(r.eur || 0) + "</b><br>ЦБ" + (d ? " на " + d : "");
+  updateConv();
+}
+async function refreshRates(fresh) {
+  try {
+    const r = await api("/akfin/api/rates" + (fresh ? "?fresh=1" : ""));
+    if (r.success) { state.rates = r.rates; renderRates(); if (fresh) toast("Курсы обновлены"); }
+  } catch (e) {}
+}
+
+/* ── Форма ── */
+function setTab(t) {
+  tab = t;
+  $("tabExp").classList.toggle("on", t === "exp");
+  $("tabInc").classList.toggle("on", t === "inc");
+  document.querySelectorAll(".expOnly").forEach((el) => el.classList.toggle("hide", t !== "exp"));
+  $("name").placeholder = t === "exp" ? "за что" : "от кого / за что";
+  renderSugg(); renderPend(); loadDays();
+}
+function setCur(c) {
+  cur = c;
+  document.querySelectorAll(".cur button").forEach((b) => b.classList.toggle("on", b.dataset.cur === c));
+  updateConv();
+}
+function parseAmount() {
+  const raw = String($("amount").value || "").replace(/\s/g, "").replace(",", ".");
+  const v = parseFloat(raw);
+  return isFinite(v) && v > 0 ? v : 0;
+}
+function rateFor(c) { return c === "USD" ? (state.rates.usd || 0) : c === "EUR" ? (state.rates.eur || 0) : 1; }
+function updateConv() {
+  const v = parseAmount();
+  if (cur === "RUB" || !v) { $("conv").textContent = ""; return; }
+  const rt = rateFor(cur);
+  if (!rt) { $("conv").textContent = "нет курса ЦБ"; return; }
+  $("conv").innerHTML = fmt(v) + " " + (cur === "USD" ? "$" : "€") + " × " + fmt(rt) + " = <b>" + fmt(v * rt) + " ₽</b>";
+}
+$("amount").addEventListener("input", updateConv);
+
+function chipRow(box, items, key) {
+  box.innerHTML = "";
+  items.filter(Boolean).forEach((it) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = it;
+    b.className = sel[key] === it ? "on" : "";
+    b.onclick = () => { sel[key] = sel[key] === it ? "" : it; chipRow(box, items, key); };
+    box.appendChild(b);
+  });
+}
+function renderRef() {
+  chipRow($("cats"), state.ref.categories, "category");
+  chipRow($("cash"), state.ref.cash, "cash");
+  chipRow($("legals"), state.ref.legals, "legal");
+}
+function renderSugg() {
+  const q = String($("name").value || "").toLowerCase().trim();
+  const src = tab === "exp" ? state.ref.expense : state.ref.income;
+  const list = (q ? src.filter((x) => x.name.toLowerCase().includes(q)) : src).slice(0, 6);
+  const box = $("sugg");
+  box.innerHTML = "";
+  list.forEach((x) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = x.name.length > 34 ? x.name.slice(0, 33) + "…" : x.name;
+    b.onclick = () => {
+      $("name").value = x.name;
+      if (x.category) sel.category = x.category;
+      if (x.cash) sel.cash = x.cash;
+      if (x.legal) sel.legal = x.legal;
+      if (x.party) $("party").value = x.party;
+      renderRef(); renderSugg(); $("amount").focus();
+    };
+    box.appendChild(b);
+  });
+}
+$("name").addEventListener("input", renderSugg);
+function toggleMore() {
+  const box = $("moreBox");
+  const open = box.classList.toggle("hide");
+  $("moreToggle").textContent = open ? "Контрагент, дата, комментарий ›" : "Свернуть ˅";
+}
+
+async function addEntry() {
+  const name = String($("name").value || "").trim();
+  const v = parseAmount();
+  if (!name) { toast("Впишите наименование"); return; }
+  if (!v) { toast("Впишите сумму"); return; }
+  const rt = rateFor(cur);
+  if (cur !== "RUB" && !rt) { toast("Нет курса ЦБ — введите в рублях"); return; }
+  const body = {
+    type: tab, name, rub: cur === "RUB" ? v : v * rt,
+    cur: cur === "RUB" ? null : cur, curAmount: cur === "RUB" ? null : v, rate: cur === "RUB" ? null : rt,
+    party: $("party").value.trim(), comment: $("comment").value.trim(),
+    date: $("date").value || state.today,
+    category: sel.category, cash: sel.cash, legal: sel.legal,
+    cid: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+  };
+  $("addBtn").disabled = true;
+  try {
+    const r = editId
+      ? await api("/akfin/api/edit/" + editId, { method: "POST", body: JSON.stringify(body) })
+      : await api("/akfin/api/add", { method: "POST", body: JSON.stringify(body) });
+    if (!r.success) { toast(r.message || "Не получилось"); return; }
+    toast(editId ? "Сохранено" : (tab === "exp" ? "Расход добавлен" : "Приход добавлен"));
+    clearForm();
+    await refresh();
+  } catch (e) { if (String(e.message) !== "auth") toast("Ошибка сети"); }
+  finally { $("addBtn").disabled = false; }
+}
+function clearForm() {
+  editId = null;
+  $("name").value = ""; $("amount").value = ""; $("party").value = ""; $("comment").value = "";
+  sel = { category: "", cash: "", legal: "" };
+  setCur("RUB"); renderRef(); renderSugg(); $("conv").textContent = "";
+  $("addBtn").textContent = "Добавить";
+}
+
+/* ── Записи ── */
+async function loadDays() {
+  try {
+    const r = await api("/akfin/api/days?type=" + tab);
+    const box = $("list");
+    box.innerHTML = "";
+    if (!r.days || !r.days.length) { box.innerHTML = '<div class="empty">Пока пусто</div>'; return; }
+    r.days.forEach((d) => {
+      const wrap = document.createElement("div");
+      wrap.className = "day";
+      const dt = new Date(d.date + "T12:00:00");
+      const title = dt.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+      wrap.innerHTML = '<h3>' + title + '<span>' + fmt(d.total) + ' ₽</span></h3>';
+      d.entries.forEach((e) => {
+        const row = document.createElement("div");
+        row.className = "rec" + (e.copiedAt ? " copied" : "");
+        const meta = [e.category, e.cash, e.legal, e.party].filter(Boolean).join(" · ")
+          + (e.cur ? (e.category || e.party ? " · " : "") + fmt(e.curAmount) + (e.cur === "USD" ? " $" : " €") : "");
+        row.innerHTML = '<div class="nm"><b></b><i></i></div><div class="am">' + fmt(e.rub) + ' ₽</div><div class="x">×</div>';
+        row.querySelector("b").textContent = e.comment ? e.name + " - " + e.comment : e.name;
+        row.querySelector("i").textContent = meta;
+        row.querySelector(".nm").onclick = () => startEdit(e);
+        row.querySelector(".x").onclick = () => delEntry(e);
+        wrap.appendChild(row);
+      });
+      box.appendChild(wrap);
+    });
+  } catch (e) {}
+}
+function startEdit(e) {
+  editId = e.id;
+  $("name").value = e.name; $("amount").value = String(e.rub).replace(".", ",");
+  $("party").value = e.party || ""; $("comment").value = e.comment || "";
+  $("date").value = e.date;
+  sel = { category: e.category || "", cash: e.cash || "", legal: e.legal || "" };
+  setCur("RUB"); renderRef();
+  $("addBtn").textContent = "Сохранить";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  toast("Правка записи");
+}
+async function delEntry(e) {
+  if (!confirm("Удалить «" + e.name + "»?")) return;
+  try { await api("/akfin/api/delete/" + e.id, { method: "POST" }); toast("Удалено"); await refresh(); }
+  catch (err) {}
+}
+
+/* ── Копирование в Numbers ── */
+// ClipboardItem получает ПРОМИС — иначе Safari режет запись вне жеста пользователя.
+// text/html несёт заливки и шрифт листа, text/plain — те же ячейки табами.
+async function copyRows() {
+  if (!token) { toast("Сначала войдите"); return; }
+  const url = "/akfin/api/rows.html?scope=new&type=" + tab + "&token=" + encodeURIComponent(token);
+  const btn = $("copyBtn");
+  btn.disabled = true;
+  try {
+    const meta = { ids: "", month: "", more: "0", rows: 0 };
+    const load = fetch(url).then(async (r) => {
+      meta.ids = r.headers.get("X-Fin-Ids") || "";
+      meta.month = r.headers.get("X-Fin-Month") || "";
+      meta.more = r.headers.get("X-Fin-More") || "0";
+      const h = await r.text();
+      meta.rows = (h.match(/<tr>/g) || []).length;
+      return h;
+    });
+    const htmlBlob = load.then((h) => new Blob([h], { type: "text/html" }));
+    const textBlob = load.then((h) => {
+      const doc = new DOMParser().parseFromString(h, "text/html");
+      const lines = [...doc.querySelectorAll("tr")].map((tr) => [...tr.children].map((td) => td.textContent).join("\t"));
+      return new Blob([lines.join("\n")], { type: "text/plain" });
+    });
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      await navigator.clipboard.write([new ClipboardItem({ "text/html": htmlBlob, "text/plain": textBlob })]);
+    } else {
+      const h = await load;
+      const box = document.createElement("div");
+      box.innerHTML = h; box.style.cssText = "position:fixed;left:-9999px;top:0";
+      document.body.appendChild(box);
+      const range = document.createRange(); range.selectNodeContents(box);
+      const s = window.getSelection(); s.removeAllRanges(); s.addRange(range);
+      document.execCommand("copy"); s.removeAllRanges(); box.remove();
+    }
+    if (!meta.rows) { toast("Новых строк нет"); return; }
+    await api("/akfin/api/mark-copied", { method: "POST", body: JSON.stringify({ ids: meta.ids }) });
+    const where = tab === "exp" ? "в колонку «день»" : "в колонку приходов";
+    toast(meta.rows + " стр." + (meta.month ? " (" + meta.month + ")" : "") + " — вставляйте " + where
+      + (+meta.more > 0 ? ", потом нажмите ещё" : ""));
+    await refresh();
+  } catch (e) {
+    if (String(e.message) !== "auth") toast("Не получилось скопировать");
+  } finally { btn.disabled = false; }
+}
+
+function renderPend() {
+  const n = (state.pending && state.pending[tab]) || 0;
+  $("pend").textContent = n;
+  $("pend").style.display = n ? "" : "none";
+}
+
+async function refresh() {
+  try {
+    const r = await api("/akfin/api/state");
+    if (!r.success) return;
+    state = Object.assign(state, r);
+    if (!$("date").value) $("date").value = r.today;
+    renderRates(); renderRef(); renderSugg(); renderPend();
+    // кнопку «Face ID» показываем только пока ключ не заведён на этом домене
+    try {
+      const b = await (await fetch("/akfin/api/bio/has", { method: "POST" })).json();
+      $("bioEnroll").classList.toggle("hide", !!(b && b.has));
+    } catch (e) {}
+    await loadDays();
+  } catch (e) {}
+}
+
+/* ── Старт ── */
+(async function init() {
+  setTab('exp');
+  if (token) { showMain(); await refresh(); }
+  else { showLogin(); if (localStorage.getItem("vscfinBio") === "1") bioLogin(); }
+})();
+</script>
+</body>
+</html>
