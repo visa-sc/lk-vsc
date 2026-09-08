@@ -114,7 +114,7 @@ p{margin:0 0 14px}
   radial-gradient(760px 520px at 12% 88%,rgba(238,114,87,.28) 0%,rgba(238,114,87,0) 60%),
   linear-gradient(120deg,#0b1531 0%,#12275c 55%,#0d1c40 100%)}
 .hero__veil{position:absolute;inset:0;
-  background:linear-gradient(100deg,rgba(9,18,40,.88) 0%,rgba(9,18,40,.70) 42%,rgba(9,18,40,.28) 72%,rgba(9,18,40,.38) 100%)}
+  background:linear-gradient(100deg,rgba(9,18,40,.90) 0%,rgba(9,18,40,.66) 40%,rgba(9,18,40,.16) 70%,rgba(9,18,40,.24) 100%)}
 .hero__in{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:48px;
   align-items:center;padding-top:150px;padding-bottom:160px}
 .hero h1{font-size:clamp(29px,3.6vw,40px);line-height:1.22;margin-bottom:16px}
@@ -299,6 +299,12 @@ p{margin:0 0 14px}
 
 .hero-card{max-width:360px;margin:0 auto}
 
+/* Графика первого экрана. Рисуем сами, а не берём фотосток: на снимке оплаты
+   всегда чей-то терминал, чей-то логотип платёжной системы и чей-то номер
+   карты — ровно то, к чему цепляется модерация Google. */
+.hero__art{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.hero__art svg{display:block;width:100%;height:100%}
+
 .limits{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 16px}
 .limit{background:var(--blue-pale);border-radius:10px;padding:11px 12px;text-align:center}
 .limit span{display:block;font-size:11.5px;color:var(--muted);letter-spacing:.04em;margin-bottom:3px}
@@ -349,7 +355,77 @@ p{margin:0 0 14px}
 
 <!-- ============ ПЕРВЫЙ ЭКРАН ============ -->
 <section class="hero">
-  <div class="hero__bg" role="img" aria-label=""></div>
+  <div class="hero__bg"></div>
+  <div class="hero__art" aria-hidden="true">
+    <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="cg1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#ffffff" stop-opacity=".30"/>
+          <stop offset="1" stop-color="#ffffff" stop-opacity=".08"/>
+        </linearGradient>
+        <linearGradient id="cg2" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#12b7ee" stop-opacity=".55"/>
+          <stop offset="1" stop-color="#0b3c66" stop-opacity=".18"/>
+        </linearGradient>
+        <linearGradient id="cg3" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#ee7257" stop-opacity=".46"/>
+          <stop offset="1" stop-color="#ee7257" stop-opacity=".08"/>
+        </linearGradient>
+        <pattern id="dots" width="32" height="32" patternUnits="userSpaceOnUse">
+          <circle cx="2" cy="2" r="1.7" fill="#ffffff" opacity=".12"/>
+        </pattern>
+        <g id="chip">
+          <rect width="52" height="38" rx="7" fill="#ffffff" opacity=".55"/>
+          <path d="M0 13h52M0 25h52M17 0v38M35 0v38" stroke="#0b1531" stroke-opacity=".45" stroke-width="2"/>
+        </g>
+        <g id="wave" fill="none" stroke="#ffffff" stroke-linecap="round" stroke-width="5">
+          <path d="M0 0a30 30 0 0 1 0 40" opacity=".85"/>
+          <path d="M13 -10a46 46 0 0 1 0 60" opacity=".58"/>
+          <path d="M26 -20a62 62 0 0 1 0 80" opacity=".34"/>
+        </g>
+      </defs>
+
+      <rect width="1440" height="760" fill="url(#dots)"/>
+
+      <!-- дальняя карта, уходит за правый нижний угол -->
+      <g transform="translate(1104 470) rotate(11)">
+        <rect width="430" height="270" rx="26" fill="url(#cg3)" stroke="#ffffff" stroke-opacity=".26" stroke-width="2"/>
+        <use href="#chip" x="38" y="78"/>
+        <g fill="#ffffff" opacity=".38">
+          <rect x="38" y="190" width="70" height="10" rx="5"/>
+          <rect x="118" y="190" width="70" height="10" rx="5"/>
+          <rect x="198" y="190" width="70" height="10" rx="5"/>
+          <rect x="278" y="190" width="70" height="10" rx="5"/>
+        </g>
+      </g>
+
+      <!-- ближняя карта, уходит за правый верхний угол -->
+      <g transform="translate(966 40) rotate(-14)">
+        <rect width="510" height="320" rx="32" fill="url(#cg1)" stroke="#ffffff" stroke-opacity=".38" stroke-width="2"/>
+        <rect width="510" height="320" rx="32" fill="url(#cg2)"/>
+        <g transform="translate(48 96) scale(1.25)"><use href="#chip"/></g>
+        <g transform="translate(214 130)"><use href="#wave"/></g>
+        <g fill="#ffffff" opacity=".55">
+          <rect x="48" y="228" width="80" height="12" rx="6"/>
+          <rect x="140" y="228" width="80" height="12" rx="6"/>
+          <rect x="232" y="228" width="80" height="12" rx="6"/>
+          <rect x="324" y="228" width="80" height="12" rx="6"/>
+        </g>
+        <g fill="#ffffff" opacity=".3">
+          <rect x="48" y="264" width="128" height="9" rx="4.5"/>
+          <rect x="366" y="264" width="52" height="9" rx="4.5"/>
+        </g>
+      </g>
+
+      <!-- волны бесконтактной оплаты, левый нижний угол -->
+      <g transform="translate(150 622) scale(1.5)" opacity=".5"><use href="#wave"/></g>
+
+      <!-- траектория платежа -->
+      <path d="M236 606C450 700 760 652 986 528" fill="none" stroke="#ffffff" stroke-opacity=".26"
+            stroke-width="2.5" stroke-dasharray="10 13" stroke-linecap="round"/>
+      <circle cx="986" cy="530" r="7.5" fill="#ffffff" opacity=".5"/>
+    </svg>
+  </div>
   <div class="hero__veil"></div>
   <div class="container hero__in">
     <div>
