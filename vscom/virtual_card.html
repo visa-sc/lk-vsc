@@ -305,6 +305,29 @@ p{margin:0 0 14px}
 .hero__art{position:absolute;inset:0;overflow:hidden;pointer-events:none}
 .hero__art svg{display:block;width:100%;height:100%}
 
+/* Формы на этой странице нет: карту выпускают в кабинете партнёра по
+   реферальной ссылке, поэтому первый экран одноколоночный, а справа
+   остаётся видна графика. */
+.hero__in{grid-template-columns:1fr}
+.hero__in>div:first-child{max-width:760px}
+.hero__cta{display:flex;flex-wrap:wrap;align-items:center;gap:13px;margin-top:30px}
+.hero__cta .btn{width:auto;padding:19px 34px;font-size:17px;
+  box-shadow:0 14px 34px rgba(238,114,87,.34)}
+.hero__cta .msgr{margin:0;padding:17px 22px;font-size:15.5px}
+.hero__note{color:rgba(255,255,255,.62);font-size:14px;margin:14px 0 0}
+
+.final{background:linear-gradient(120deg,#10204a 0%,#1b3a72 100%);color:#fff;border-radius:18px;
+  padding:46px 40px;text-align:center}
+.final h3{font-size:27px;margin-bottom:10px}
+.final p{color:rgba(255,255,255,.76);max-width:620px;margin:0 auto 26px;font-size:16px}
+.final .btn{width:auto;padding:19px 34px;font-size:17px}
+
+@media (max-width:640px){
+  .hero__cta{gap:10px}
+  .hero__cta .btn,.hero__cta .msgr{width:100%;justify-content:center}
+  .final{padding:34px 22px}
+}
+
 .limits{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 16px}
 .limit{background:var(--blue-pale);border-radius:10px;padding:11px 12px;text-align:center}
 .limit span{display:block;font-size:11.5px;color:var(--muted);letter-spacing:.04em;margin-bottom:3px}
@@ -348,7 +371,7 @@ p{margin:0 0 14px}
     <div class="hdr__tels">
       <a class="hdr__tel" href="tel:+74999385654"><img src="/img/icon-phone.svg" alt="">+7 (499) 938-56-54</a>
     </div>
-    <a class="btn btn--sm btn--inline" href="#form"><span class="lbl-l">Выпустить карту</span><span class="lbl-s">Заявка</span></a>
+    <a class="btn btn--sm btn--inline" href="https://lk.anakondos.com/auth?anakondos=CB6ie3G" target="_blank" rel="noopener nofollow" data-ref-card><span class="lbl-l">Выпустить карту</span><span class="lbl-s">Карта</span></a>
     <button class="hdr__burger" id="burger" aria-label="Меню"><span></span><span></span><span></span></button>
   </div>
 </header>
@@ -449,29 +472,13 @@ p{margin:0 0 14px}
       </div>
     </div>
 
-    <div class="card" id="form">
-      <form class="vsc-form" data-form="card-ga">
-          <div class="form-body">
-            <div class="card__title"><em>Выпустить карту</em><br>бесплатная консультация по оформлению</div>
-            <p class="card__sub">Расскажем, какая карта подойдёт под ваши задачи, и поможем оформить. Ни к чему не обязывает.</p>
-            <div class="field"><input type="text" name="name" placeholder="Имя" autocomplete="name"></div>
-            <div class="field"><input type="tel" name="phone" placeholder="Телефон, с кодом страны *" autocomplete="tel" required></div>
-            <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-            <button class="btn" type="submit">Оставить заявку</button>
-            <p class="consent">Нажимая на кнопку, вы даете согласие на обработку <a href="/files/policy_20241106155551.pdf" target="_blank" rel="noopener">персональных данных</a>.</p>
-            <div class="form-note"></div>
-          </div>
-          <div class="form-done">
-            <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
-            <h3>Спасибо, заявка получена</h3>
-            <p>Специалист свяжется с вами и поможет выпустить карту.</p>
-          </div>
-        </form>
-    </div>
-
-    <div class="hero-msgr">
-      <a class="msgr msgr--wa" data-msgr="whatsapp" href="https://wa.me/79299435150" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm5.8 14.16c-.24.68-1.42 1.32-1.95 1.36-.5.04-.98.22-3.3-.72-2.78-1.1-4.55-3.94-4.69-4.12-.14-.18-1.12-1.49-1.12-2.85 0-1.35.71-2.02.96-2.3.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.55.8 1.9.87 2.04.07.14.12.3.02.48-.09.18-.14.3-.28.46-.14.16-.29.36-.42.48-.14.14-.28.29-.12.57.16.27.72 1.19 1.55 1.93 1.07.95 1.97 1.25 2.25 1.39.28.14.44.12.6-.07.18-.2.7-.81.88-1.09.19-.27.37-.23.62-.14.25.09 1.6.76 1.87.9.27.14.46.2.53.32.06.11.06.66-.18 1.34Z"/></svg>Написать в WhatsApp</a>
-      <a class="msgr msgr--tg" data-msgr="telegram" href="https://t.me/vsc_operator" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M21.9 4.3 18.6 20c-.25 1.1-.9 1.37-1.83.85l-5.05-3.72-2.44 2.35c-.27.27-.5.5-1.02.5l.36-5.15 9.37-8.47c.4-.36-.09-.56-.63-.2L5.79 13.06.82 11.5c-1.08-.34-1.1-1.08.23-1.6l19.44-7.5c.9-.33 1.69.2 1.4 1.9Z"/></svg>Написать в Telegram</a>
+      <div class="hero__cta">
+        <a class="btn" href="https://lk.anakondos.com/auth?anakondos=CB6ie3G" target="_blank" rel="noopener nofollow" data-ref-card>Выпустить карту бесплатно</a>
+        <a class="msgr msgr--wa" data-msgr="whatsapp" href="https://wa.me/79299435150" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm5.8 14.16c-.24.68-1.42 1.32-1.95 1.36-.5.04-.98.22-3.3-.72-2.78-1.1-4.55-3.94-4.69-4.12-.14-.18-1.12-1.49-1.12-2.85 0-1.35.71-2.02.96-2.3.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.55.8 1.9.87 2.04.07.14.12.3.02.48-.09.18-.14.3-.28.46-.14.16-.29.36-.42.48-.14.14-.28.29-.12.57.16.27.72 1.19 1.55 1.93 1.07.95 1.97 1.25 2.25 1.39.28.14.44.12.6-.07.18-.2.7-.81.88-1.09.19-.27.37-.23.62-.14.25.09 1.6.76 1.87.9.27.14.46.2.53.32.06.11.06.66-.18 1.34Z"/></svg>WhatsApp</a>
+        <a class="msgr msgr--tg" data-msgr="telegram" href="https://t.me/vsc_operator" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M21.9 4.3 18.6 20c-.25 1.1-.9 1.37-1.83.85l-5.05-3.72-2.44 2.35c-.27.27-.5.5-1.02.5l.36-5.15 9.37-8.47c.4-.36-.09-.56-.63-.2L5.79 13.06.82 11.5c-1.08-.34-1.1-1.08.23-1.6l19.44-7.5c.9-.33 1.69.2 1.4 1.9Z"/></svg>Telegram</a>
+      </div>
+      <p class="hero__note">Регистрация бесплатная, карта выпускается в личном кабинете партнёра.
+      Вопросы по оформлению — в мессенджер или по телефону.</p>
     </div>
   </div>
 </section>
@@ -538,7 +545,7 @@ p{margin:0 0 14px}
           <li>Покупки на маркетплейсах и в онлайн-сервисах</li>
         </ul>
         <div class="price"><b>Бесплатно</b><s>2 500 ₽</s></div>
-        <a class="btn" href="#form">Выпустить рублёвую карту</a>
+        <a class="btn" href="https://lk.anakondos.com/auth?anakondos=CB6ie3G" target="_blank" rel="noopener nofollow" data-ref-card>Выпустить рублёвую карту</a>
       </div>
 
       <div class="prog prog--top">
@@ -568,7 +575,7 @@ p{margin:0 0 14px}
           <li>Персональная поддержка 24/7</li>
         </ul>
         <div class="price"><b>1 990 ₽</b><s>4 990 ₽</s></div>
-        <a class="btn" href="#form">Выпустить международную карту</a>
+        <a class="btn" href="https://lk.anakondos.com/auth?anakondos=CB6ie3G" target="_blank" rel="noopener nofollow" data-ref-card>Выпустить международную карту</a>
       </div>
 
     </div>
@@ -659,10 +666,23 @@ p{margin:0 0 14px}
   </div>
 </section>
 
-<!-- ============ ФИНАЛЬНЫЙ CTA + КОНТАКТЫ ============ -->
-<section class="section" id="contacts">
+<!-- ============ ФИНАЛЬНЫЙ CTA ============ -->
+<section class="section">
   <div class="container">
-    <div class="contact-grid">
+    <div class="final">
+      <h3>Выпустите карту VSC прямо сейчас</h3>
+      <p>Бесплатная регистрация, выпуск за 5 минут и первая оплата уже сегодня.
+      Без визита в офис и лишних документов.</p>
+      <a class="btn" href="https://lk.anakondos.com/auth?anakondos=CB6ie3G" target="_blank" rel="noopener nofollow" data-ref-card>Выпустить карту бесплатно</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ КОНТАКТЫ ============ -->
+<section class="section section--pale" id="contacts">
+  <div class="container">
+    <h2>Остались вопросы</h2>
+    <div class="grid grid--2">
       <div>
         <div class="office">
           <b>Москва, Ветошный переулок 9</b>
@@ -678,57 +698,17 @@ p{margin:0 0 14px}
           info@visa-sc.com<br>
           <span class="mut">Пн–Пт 10:00–19:00, Сб–Вс 12:00–18:00</span>
         </div>
-        <div>
-          <a class="msgr msgr--wa" data-msgr="whatsapp" href="https://wa.me/79299435150" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm5.8 14.16c-.24.68-1.42 1.32-1.95 1.36-.5.04-.98.22-3.3-.72-2.78-1.1-4.55-3.94-4.69-4.12-.14-.18-1.12-1.49-1.12-2.85 0-1.35.71-2.02.96-2.3.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.55.8 1.9.87 2.04.07.14.12.3.02.48-.09.18-.14.3-.28.46-.14.16-.29.36-.42.48-.14.14-.28.29-.12.57.16.27.72 1.19 1.55 1.93 1.07.95 1.97 1.25 2.25 1.39.28.14.44.12.6-.07.18-.2.7-.81.88-1.09.19-.27.37-.23.62-.14.25.09 1.6.76 1.87.9.27.14.46.2.53.32.06.11.06.66-.18 1.34Z"/></svg>WhatsApp</a>
-          <a class="msgr msgr--tg" data-msgr="telegram" href="https://t.me/vsc_operator" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M21.9 4.3 18.6 20c-.25 1.1-.9 1.37-1.83.85l-5.05-3.72-2.44 2.35c-.27.27-.5.5-1.02.5l.36-5.15 9.37-8.47c.4-.36-.09-.56-.63-.2L5.79 13.06.82 11.5c-1.08-.34-1.1-1.08.23-1.6l19.44-7.5c.9-.33 1.69.2 1.4 1.9Z"/></svg>Telegram</a>
-        </div>
       </div>
-      <div class="card">
-        <form class="vsc-form" data-form="card-ga-bottom">
-          <div class="form-body">
-            <div class="card__title"><em>Выпустить карту</em><br>бесплатная консультация по оформлению</div>
-            <p class="card__sub">Расскажем, какая карта подойдёт под ваши задачи, и поможем оформить. Ни к чему не обязывает.</p>
-            <div class="field"><input type="text" name="name" placeholder="Имя" autocomplete="name"></div>
-            <div class="field"><input type="tel" name="phone" placeholder="Телефон, с кодом страны *" autocomplete="tel" required></div>
-            <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-            <button class="btn" type="submit">Оставить заявку</button>
-            <p class="consent">Нажимая на кнопку, вы даете согласие на обработку <a href="/files/policy_20241106155551.pdf" target="_blank" rel="noopener">персональных данных</a>.</p>
-            <div class="form-note"></div>
-          </div>
-          <div class="form-done">
-            <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
-            <h3>Спасибо, заявка получена</h3>
-            <p>Специалист свяжется с вами и поможет выпустить карту.</p>
-          </div>
-        </form>
+      <div>
+        <p style="color:var(--muted);margin-bottom:18px">Напишите нам, если не уверены, какая карта
+        подойдёт под ваши задачи, или что-то не получается на этапе оформления. Отвечаем в рабочее
+        время, обычно в течение нескольких минут.</p>
+        <a class="msgr msgr--wa" data-msgr="whatsapp" href="https://wa.me/79299435150" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm5.8 14.16c-.24.68-1.42 1.32-1.95 1.36-.5.04-.98.22-3.3-.72-2.78-1.1-4.55-3.94-4.69-4.12-.14-.18-1.12-1.49-1.12-2.85 0-1.35.71-2.02.96-2.3.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.55.8 1.9.87 2.04.07.14.12.3.02.48-.09.18-.14.3-.28.46-.14.16-.29.36-.42.48-.14.14-.28.29-.12.57.16.27.72 1.19 1.55 1.93 1.07.95 1.97 1.25 2.25 1.39.28.14.44.12.6-.07.18-.2.7-.81.88-1.09.19-.27.37-.23.62-.14.25.09 1.6.76 1.87.9.27.14.46.2.53.32.06.11.06.66-.18 1.34Z"/></svg>Написать в WhatsApp</a>
+        <a class="msgr msgr--tg" data-msgr="telegram" href="https://t.me/vsc_operator" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M21.9 4.3 18.6 20c-.25 1.1-.9 1.37-1.83.85l-5.05-3.72-2.44 2.35c-.27.27-.5.5-1.02.5l.36-5.15 9.37-8.47c.4-.36-.09-.56-.63-.2L5.79 13.06.82 11.5c-1.08-.34-1.1-1.08.23-1.6l19.44-7.5c.9-.33 1.69.2 1.4 1.9Z"/></svg>Написать в Telegram</a>
       </div>
     </div>
   </div>
 </section>
-
-<!-- ============ ВСПЛЫВАЮЩАЯ ФОРМА ============ -->
-<div class="modal" id="callModal">
-  <div class="modal__box">
-    <button class="modal__x" data-close aria-label="Закрыть">&times;</button>
-    <form class="vsc-form" data-form="card-ga-modal">
-          <div class="form-body">
-            <div class="card__title"><em>Выпустить карту</em><br>бесплатная консультация по оформлению</div>
-            <p class="card__sub">Расскажем, какая карта подойдёт под ваши задачи, и поможем оформить. Ни к чему не обязывает.</p>
-            <div class="field"><input type="text" name="name" placeholder="Имя" autocomplete="name"></div>
-            <div class="field"><input type="tel" name="phone" placeholder="Телефон, с кодом страны *" autocomplete="tel" required></div>
-            <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-            <button class="btn" type="submit">Оставить заявку</button>
-            <p class="consent">Нажимая на кнопку, вы даете согласие на обработку <a href="/files/policy_20241106155551.pdf" target="_blank" rel="noopener">персональных данных</a>.</p>
-            <div class="form-note"></div>
-          </div>
-          <div class="form-done">
-            <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
-            <h3>Спасибо, заявка получена</h3>
-            <p>Специалист свяжется с вами и поможет выпустить карту.</p>
-          </div>
-        </form>
-  </div>
-</div>
 
 <footer class="ftr">
   <div class="container">
@@ -754,111 +734,41 @@ p{margin:0 0 14px}
   if (burger) burger.addEventListener("click", function () { nav.classList.toggle("is-on"); });
   nav.addEventListener("click", function (e) { if (e.target.tagName === "A") nav.classList.remove("is-on"); });
 
-  // Все кнопки «консультация» открывают всплывающую форму, а не гоняют
-  // человека к первому экрану.
-  var modal = document.getElementById("callModal");
-  function openModal() {
-    modal.classList.add("is-on");
-    var f = modal.querySelector('input[name="name"]');
-    if (f) setTimeout(function () { f.focus(); }, 60);
-  }
-  function closeModal() { modal.classList.remove("is-on"); }
-  document.addEventListener("click", function (e) {
-    var opener = e.target.closest('a[href="#form"]');
-    if (opener) { e.preventDefault(); openModal(); return; }
-    if (e.target.closest("[data-close]") || e.target === modal) closeModal();
-  });
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && modal.classList.contains("is-on")) closeModal();
-  });
-
   var qs = new URLSearchParams(location.search), utm = {};
   ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","gclid","yclid"].forEach(function (k) {
     if (qs.get(k)) utm[k] = qs.get(k);
   });
-  var openedAt = Date.now();
 
-  function setNote(form, msg) {
-    var n = form.querySelector(".form-note");
-    n.textContent = msg || "";
-    n.className = "form-note" + (msg ? " is-err" : "");
-  }
-  function validPhone(v) {
-    var d = (v || "").replace(/\D/g, "");
-    return d.length >= 9 && d.length <= 15;
+  // Формы здесь нет: карта выпускается в кабинете партнёра по реферальной
+  // ссылке, и уход по ней — единственное, что мы вообще можем засчитать.
+  // sendBeacon не задерживает переход: браузер досылает запрос после ухода.
+  function track(kind, extra) {
+    var body = JSON.stringify({
+      messenger: kind, form: "card-ga",
+      page: location.href, referrer: document.referrer || "", utm: utm
+    });
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon("/api/vscom-click", new Blob([body], { type: "application/json" }));
+      } else {
+        fetch("/api/vscom-click", { method: "POST", keepalive: true,
+          headers: { "Content-Type": "application/json" }, body: body });
+      }
+    } catch (e) {}
+    if (typeof window.gtag === "function") gtag("event", extra.event, extra.params);
   }
 
-  // Клик по мессенджеру. WhatsApp и Telegram у нас общие на все каналы, по самой
-  // переписке источник не определить — поэтому пишем сам переход себе в журнал.
-  // sendBeacon не мешает переходу: браузер отправляет запрос уже после ухода.
   document.querySelectorAll("[data-msgr]").forEach(function (a) {
     a.addEventListener("click", function () {
-      var body = JSON.stringify({
-        messenger: a.dataset.msgr, form: "card-ga",
-        page: location.href, referrer: document.referrer || "", utm: utm
-      });
-      try {
-        if (navigator.sendBeacon) {
-          navigator.sendBeacon("/api/vscom-click", new Blob([body], { type: "application/json" }));
-        } else {
-          fetch("/api/vscom-click", { method: "POST", keepalive: true,
-            headers: { "Content-Type": "application/json" }, body: body });
-        }
-      } catch (e) {}
-      if (typeof window.gtag === "function") {
-        gtag("event", "messenger_click", { messenger: a.dataset.msgr, form_id: "card-ga" });
-      }
+      track(a.dataset.msgr, { event: "messenger_click",
+        params: { messenger: a.dataset.msgr, form_id: "card-ga" } });
     });
   });
 
-  document.querySelectorAll(".vsc-form").forEach(function (form) {
-    form.addEventListener("submit", function (e) {
-      e.preventDefault();
-      setNote(form, "");
-      var data = {};
-      form.querySelectorAll("input").forEach(function (el) {
-        if (el.name) data[el.name] = (el.value || "").trim();
-      });
-
-      var phoneEl = form.querySelector('[name="phone"]');
-      if (!validPhone(data.phone)) {
-        phoneEl.closest(".field").classList.add("field--err");
-        setNote(form, "Укажите, пожалуйста, номер телефона с кодом страны.");
-        phoneEl.focus();
-        return;
-      }
-      phoneEl.closest(".field").classList.remove("field--err");
-
-      var btn = form.querySelector('button[type="submit"]');
-      var old = btn.textContent;
-      btn.disabled = true; btn.textContent = "Отправляем...";
-
-      var payload = {
-        form: "card-ga", source: form.dataset.form, name: data.name || "", phone: data.phone || "",
-        page: location.href, referrer: document.referrer || "", utm: utm,
-        lang: navigator.language || "",
-        elapsed: Math.round((Date.now() - openedAt) / 1000),
-        company: data.company || ""
-      };
-
-      fetch("/api/vscom-lead", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }).then(function (r) { return r.json().catch(function () { return {}; }); })
-        .then(function (res) {
-          if (res && res.ok) {
-            form.classList.add("is-sent");
-            if (typeof window.gtag === "function") {
-              gtag("event", "generate_lead", { form_id: "card-ga", page_location: location.href });
-            }
-            if (typeof window.gtag_report_conversion === "function") gtag_report_conversion();
-          } else {
-            setNote(form, (res && res.message) || "Не получилось отправить. Напишите на info@visa-sc.com.");
-          }
-        })
-        .catch(function () { setNote(form, "Ошибка сети. Попробуйте ещё раз или напишите на info@visa-sc.com."); })
-        .then(function () { btn.disabled = false; btn.textContent = old; });
+  document.querySelectorAll("[data-ref-card]").forEach(function (a) {
+    a.addEventListener("click", function () {
+      track("card", { event: "card_referral_click",
+        params: { form_id: "card-ga", link_text: (a.textContent || "").trim() } });
     });
   });
 })();

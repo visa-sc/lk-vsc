@@ -334,8 +334,10 @@ function mount(app, deps) {
     res.status(204).end();
     try {
       const b = req.body || {};
+      // card — переход по реферальной ссылке на выпуск карты: формы на той
+      // странице нет, и это единственный след, что человек пошёл оформляться.
       const what = clean(b.messenger, 20);
-      if (what !== "whatsapp" && what !== "telegram") return;
+      if (!["whatsapp", "telegram", "card"].includes(what)) return;
       saveClick({
         at: new Date().toISOString(),
         messenger: what,
