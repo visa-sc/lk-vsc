@@ -92,7 +92,15 @@
   .flag.yellow i{background:#ffd60a;}
   .flag.red i{background:#ff453a;}
   .flag.on{border-color:var(--brand);}
-  .flagrow .fld{flex:1;margin-bottom:0;text-align:center;}
+  .flagrow .fld{flex:1;margin-bottom:0;}
+  /* составные ряды: слева прокручиваемые чипсы/метки, справа поле */
+  .row2{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .row2 .chips{flex:1;min-width:0;margin-bottom:0;}
+  .row2 .fld{margin-bottom:0;}
+  /* дата занимает минимум, чтобы обе категории влезали в строку целиком */
+  .datefld{flex:0 0 auto;width:152px;padding-left:10px;padding-right:10px;}
+  .datefld input{text-align:center;font-size:15px;}
+  .row2 .chips button{padding:10px 13px;font-size:14px;}
   #addBtn{width:100%;font-size:17px;padding:16px;border-radius:18px;}
 
   /* ── Нижняя строка: выгрузка и записи ── */
@@ -159,15 +167,16 @@
   <div class="fld"><input id="name" type="text" placeholder="за что" autocomplete="off"></div>
   <div class="chips" id="sugg"></div>
 
-  <div class="lbl" id="catLbl">Категория</div>
-  <div class="chips" id="cats"></div>
+  <div class="row2" id="catRow">
+    <div class="chips" id="cats"></div>
+    <div class="fld datefld"><input id="date" type="date"></div>
+  </div>
 
-  <div class="flagrow">
+  <div class="row2">
     <button class="flag yellow" id="flagYellow" onclick="setFlag('yellow')" title="разобраться"><i></i></button>
     <button class="flag red" id="flagRed" onclick="setFlag('red')" title="вернуть"><i></i></button>
-    <div class="fld"><input id="date" type="date"></div>
+    <div class="fld"><input id="comment" type="text" placeholder="комментарий" autocomplete="off"></div>
   </div>
-  <div class="fld"><input id="comment" type="text" placeholder="комментарий" autocomplete="off"></div>
 
   <button id="addBtn" class="btn" onclick="addEntry()">Внести</button>
 
@@ -315,7 +324,6 @@ function setTab(t) {
   tab = t;
   $("tabExp").classList.toggle("on", t === "exp");
   $("tabInc").classList.toggle("on", t === "inc");
-  $("catLbl").classList.toggle("hide", t !== "exp");
   $("cats").classList.toggle("hide", t !== "exp");
   $("name").placeholder = t === "exp" ? "за что" : "от кого / за что";
   renderSugg(); loadDays();
@@ -323,7 +331,9 @@ function setTab(t) {
 function renderCats() {
   const box = $("cats");
   box.innerHTML = "";
-  (state.ref.categories || []).forEach((c) => {
+  const list = (state.ref.categories || []).slice();
+  if (selCat && !list.includes(selCat)) list.push(selCat);
+  list.forEach((c) => {
     const b = document.createElement("button");
     b.type = "button"; b.textContent = c;
     b.className = selCat === c ? "on" : "";
