@@ -30,8 +30,6 @@ const MAX_ENTRIES = 50000;
 // ── Справочники: сняты с «vsc таблица» (август 2026) ──────────────────────────
 const SEED = {
   categories: ["Сбор", "ФОТ", "Финансы"],
-  cash: ["Безнал", "Нал"],
-  legals: ["ООО Эй Кей", "ООО Альта", "ИП Комисаренко", "ИП Панфилова"],
   expense: [
     { name: "ВНЖ USDT", category: "Сбор" },
     { name: "Обслуживание ВТБ Комисаренко", category: "Финансы" },
@@ -54,13 +52,13 @@ const SEED = {
     { name: "Комиссии торговый эквайринг ООО Альта", category: "Финансы" },
     { name: "ФОТ - Зайцева", category: "ФОТ" },
     { name: "ФОТ - НДФЛ - сверить", category: "ФОТ" },
-    { name: "ФОТ - Сбер - сверить", category: "ФОТ", cash: "Нал" },
-    { name: "ФОТ - Нал - сверить", category: "ФОТ", cash: "Нал" },
+    { name: "ФОТ - Сбер - сверить", category: "ФОТ" },
+    { name: "ФОТ - Нал - сверить", category: "ФОТ" },
     { name: "ФОТ - безнал - сверить Эй Кей", category: "ФОТ" },
     { name: "ФОТ - безнал - сверить Альта", category: "ФОТ" },
     { name: "ФОТ - безнал - сверить ИП П", category: "ФОТ" },
     { name: "ФОТ - безнал - сверить ИП К", category: "ФОТ" },
-    { name: "Единый налоговый платеж (Взносы)", category: "ФОТ", legal: "ИП Комисаренко" },
+    { name: "Единый налоговый платеж (Взносы)", category: "ФОТ" },
   ],
   income: [
     "Комиссия ВНЖ (USDT)",
@@ -116,56 +114,136 @@ function numForNumbers(v) {
   return String(r).replace(".", ",");
 }
 
-// ── Заливки и шрифт — КАНОН из собственного экспорта Numbers ──────────────────
-// Спрашиваем сам Numbers (export as Microsoft Excel → styles.xml/indexedColors),
-// а НЕ пипетку и не AppleScript: background color через AppleScript отдаёт цвет
-// в другом пространстве (#6DFFF2 вместо #7AFCF4) — вставка была бы мимо стиля.
-// Карта колонок листа «vsc таблица» (08.09.2026):
-//   A день  #FEFEFE (первая строка дня) / #7AFCF4 (продолжение)
-//   B Категория #7AFCF4 · C Безнал/нал #7AFCF4 · D Наименование #FEFEFE
-//   E Контрагент #FEFEFE · F Стоимость #FEFEFE · G Юр. лицо #7AFCF4, кегль 8
-//   I/J/K приходы — все #FEFEFE
-const C = { cyan: "#7AFCF4", white: "#FEFEFE" };
-const BORD = "border:1px solid #D9D9D9;";
-function font(pt) { return "font-family:Helvetica;font-size:" + (pt || 10) + "pt;"; }
-function td(bg, text, align, pt) {
-  return `<td style="${font(pt)}${BORD}background-color:${bg};${align ? "text-align:" + align + ";" : ""}">${xmlEsc(text)}</td>`;
-}
+// ── Выгрузка .xlsx в раскладке листа «vsc таблица» ───────────────────────────
+// Открывать ТОЛЬКО в Numbers (Excel искажает цвета — грабли из /fin), лист на
+// каждый месяц с записями. Дальше строки копируются в основную таблицу руками.
+//
+// Палитра и кегли — КАНОН из собственного экспорта Numbers (export as Microsoft
+// Excel → styles.xml → indexedColors), а НЕ пипетка и не AppleScript: последний
+// отдаёт цвет в другом пространстве (#6DFFF2 вместо #7AFCF4).
+//   бирюза служебных колонок #7AFCF4 · ячейки данных #FEFEFE
+//   Helvetica 10, шапка Helvetica-Bold 12, «Юр. лицо» — кегль 8
+// ВАЖНО: bgColor ДУБЛИРУЕТ fgColor — Numbers при импорте читает именно bgColor
+// (с indexed=64 ячейки приезжали чёрными).
+const AdmZip = require("adm-zip");
+const XL_MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+const XL_HEAD = ["", "Категория", "Безнал/нал", "Наименование", "Контрагент", "Стоимость", "Юр. лицо", "", "Наименование", "Контрагент", "Стоимость"];
 
-// Расходы — 7 колонок листа (вставлять в колонку «день»):
-// день | Категория | Безнал/нал | Наименование | Контрагент | Стоимость | Юр. лицо
-// День проставляется только в ПЕРВОЙ строке дня, дальше — пустая бирюзовая ячейка
-// (как в таблице Андрея: белая ячейка с номером, ниже полоса дня).
-function buildExpenseRows(list) {
-  const sorted = list.slice().sort((a, b) => (a.date === b.date ? a.at - b.at : (a.date < b.date ? -1 : 1)));
-  let prevDay = null;
-  const rows = sorted.map((e) => {
-    const day = +String(e.date).slice(8, 10);
-    const first = day !== prevDay;
-    prevDay = day;
-    const cells = [
-      first ? td(C.white, day, "center") : td(C.cyan, "", "center"),
-      td(C.cyan, e.category || ""),
-      td(C.cyan, e.cash || ""),
-      td(C.white, e.comment ? e.name + " - " + e.comment : e.name),
-      td(C.white, e.party || ""),
-      td(C.white, numForNumbers(e.rub), "right"),
-      td(C.cyan, e.legal || "", null, 8), // «Юр. лицо» в таблице набрано 8-м кеглем
-    ];
-    return "<tr>" + cells.join("") + "</tr>";
+function colLetter(i) { let s = "", n = i + 1; while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); } return s; }
+// cells: [{v, num?, style?, f?}] — f это формула без «=» («1000*86.1909»)
+function xlRow(rowIdx, cells, height) {
+  const parts = cells.map((c, i) => {
+    if (c == null || c.v === "" || c.v == null) return "";
+    const ref = colLetter(i) + rowIdx;
+    const st = c.style ? ' s="' + c.style + '"' : "";
+    if (c.f) return '<c r="' + ref + '"' + st + '><f>' + xmlEsc(c.f) + '</f><v>' + c.v + '</v></c>';
+    return c.num
+      ? '<c r="' + ref + '"' + st + '><v>' + c.v + '</v></c>'
+      : '<c r="' + ref + '"' + st + ' t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(c.v) + '</t></is></c>';
   });
-  return '<meta charset="utf-8"><table border="0" cellspacing="0" cellpadding="2">' + rows.join("") + "</table>";
+  const h = height ? ' ht="' + height + '" customHeight="1"' : "";
+  return '<row r="' + rowIdx + '"' + h + ">" + parts.join("") + "</row>";
 }
 
-// Приходы — 3 колонки листа: Наименование | Контрагент | Стоимость
-function buildIncomeRows(list) {
-  const sorted = list.slice().sort((a, b) => (a.date === b.date ? a.at - b.at : (a.date < b.date ? -1 : 1)));
-  const rows = sorted.map((e) => "<tr>" + [
-    td(C.white, e.comment ? e.name + " - " + e.comment : e.name),
-    td(C.white, e.party || ""),
-    td(C.white, numForNumbers(e.rub), "right"),
-  ].join("") + "</tr>");
-  return '<meta charset="utf-8"><table border="0" cellspacing="0" cellpadding="2">' + rows.join("") + "</table>";
+function buildXlsx(entries) {
+  const byMonth = new Map();
+  entries.slice().sort((a, b) => (a.date === b.date ? a.at - b.at : (a.date < b.date ? -1 : 1))).forEach((e) => {
+    const ym = String(e.date).slice(0, 7);
+    if (!byMonth.has(ym)) byMonth.set(ym, []);
+    byMonth.get(ym).push(e);
+  });
+  const yms = Array.from(byMonth.keys()).sort();
+  if (!yms.length) yms.push(todayMsk().slice(0, 7));
+
+  const sheets = yms.map((ym) => {
+    const list = byMonth.get(ym) || [];
+    const exp = list.filter((e) => e.type === "exp");
+    const inc = list.filter((e) => e.type === "inc");
+    const rows = [xlRow(1, XL_HEAD.map((h) => ({ v: h || " ", style: 1 })), 30)];
+    // Расходы (A..G) и приходы (I..K) идут двумя независимыми столбиками —
+    // ровно как в листе Андрея: строки левой и правой половины не связаны.
+    const n = Math.max(exp.length, inc.length);
+    let prevDay = null;
+    for (let i = 0; i < n; i++) {
+      const cells = new Array(11).fill(null);
+      const e = exp[i];
+      if (e) {
+        const day = +String(e.date).slice(8, 10);
+        cells[0] = day !== prevDay ? { v: day, num: true, style: 4 } : { v: " ", style: 3 };
+        prevDay = day;
+        cells[1] = { v: e.category || " ", style: 3 };
+        cells[2] = { v: " ", style: 3 };                       // Безнал/нал — руками
+        cells[3] = { v: e.comment ? e.name + " - " + e.comment : e.name, style: 0 };
+        cells[4] = { v: e.party || " ", style: 0 };
+        cells[5] = { v: e.rub, num: true, style: 2, f: e.formula || null };
+        cells[6] = { v: " ", style: 6 };                       // Юр. лицо — руками, кегль 8
+      }
+      cells[7] = { v: " ", style: 3 };                         // разделитель — бирюзовая полоса во всех строках
+      const k = inc[i];
+      if (k) {
+        cells[8] = { v: k.comment ? k.name + " - " + k.comment : k.name, style: 0 };
+        cells[9] = { v: k.party || " ", style: 0 };
+        cells[10] = { v: k.rub, num: true, style: 2, f: k.formula || null };
+      }
+      rows.push(xlRow(i + 2, cells));
+    }
+    const pp = ym.split("-");
+    return { name: XL_MONTHS[+pp[1] - 1] + " " + pp[0], xml: rows.join("") };
+  });
+
+  const zip = new AdmZip();
+  zip.addFile("[Content_Types].xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+    + '<Default Extension="xml" ContentType="application/xml"/>'
+    + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+    + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+    + sheets.map((_, i) => '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join("")
+    + "</Types>", "utf8"));
+  zip.addFile("_rels/.rels", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+    + "</Relationships>", "utf8"));
+  zip.addFile("xl/workbook.xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+    + sheets.map((sh, i) => '<sheet name="' + xmlEsc(sh.name) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>').join("")
+    + "</sheets></workbook>", "utf8"));
+  zip.addFile("xl/_rels/workbook.xml.rels", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + sheets.map((_, i) => '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>').join("")
+    + '<Relationship Id="rIdS" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+    + "</Relationships>", "utf8"));
+  zip.addFile("xl/styles.xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<fonts count="3"><font><sz val="10"/><name val="Helvetica"/></font>'
+    + '<font><b/><sz val="12"/><name val="Helvetica"/></font>'
+    + '<font><sz val="8"/><name val="Helvetica"/></font></fonts>'
+    + '<fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FF7BFDF5"/><bgColor rgb="FF7BFDF5"/></patternFill></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/><bgColor rgb="FFFFFFFF"/></patternFill></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FF9CFAF4"/><bgColor rgb="FF9CFAF4"/></patternFill></fill></fills>'
+    + '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'
+    + '<border><left style="thin"><color rgb="FFD9D9D9"/></left><right style="thin"><color rgb="FFD9D9D9"/></right>'
+    + '<top style="thin"><color rgb="FFD9D9D9"/></top><bottom style="thin"><color rgb="FFD9D9D9"/></bottom><diagonal/></border></borders>'
+    + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    + '<cellXfs count="7">'
+    + '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                                     // 0 данные (белая)
+    + '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf>' // 1 шапка расходов
+    + '<xf numFmtId="4" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"/>'                               // 2 сумма
+    + '<xf numFmtId="0" fontId="0" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                                     // 3 бирюза (Категория, Безнал/нал, полоса дня)
+    + '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>'                 // 4 день с номером
+    + '<xf numFmtId="0" fontId="1" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf>' // 5 шапка приходов
+    + '<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>'                                       // 6 Юр. лицо (кегль 8)
+    + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>', "utf8"));
+  sheets.forEach((sh, i) => {
+    zip.addFile("xl/worksheets/sheet" + (i + 1) + ".xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+      + '<cols><col min="1" max="1" width="5"/><col min="2" max="3" width="13"/><col min="4" max="4" width="46"/>'
+      + '<col min="5" max="5" width="24"/><col min="6" max="6" width="14"/><col min="7" max="7" width="14"/>'
+      + '<col min="8" max="8" width="3"/><col min="9" max="9" width="40"/><col min="10" max="10" width="24"/><col min="11" max="11" width="14"/></cols>'
+      + "<sheetData>" + sh.xml + "</sheetData></worksheet>", "utf8"));
+  });
+  return zip.toBuffer();
 }
 
 function mount(app, deps) {
@@ -324,18 +402,15 @@ function mount(app, deps) {
     const expLearned = learned.filter((x) => x.type === "exp").sort((a, b) => (b.uses || 0) - (a.uses || 0));
     const incLearned = learned.filter((x) => x.type === "inc").sort((a, b) => (b.uses || 0) - (a.uses || 0));
     const seenE = new Set(); const expense = [];
-    for (const x of [...expLearned, ...SEED.expense]) if (!seenE.has(x.name)) { seenE.add(x.name); expense.push({ name: x.name, category: x.category || "", cash: x.cash || "", legal: x.legal || "", party: x.party || "" }); }
+    for (const x of [...expLearned, ...SEED.expense]) if (!seenE.has(x.name)) { seenE.add(x.name); expense.push({ name: x.name, category: x.category || "", party: x.party || "", rub: x.rub || 0 }); }
     const seenI = new Set(); const income = [];
-    for (const x of [...incLearned, ...SEED.income.map((n) => ({ name: n }))]) if (!seenI.has(x.name)) { seenI.add(x.name); income.push({ name: x.name, party: x.party || "" }); }
+    for (const x of [...incLearned, ...SEED.income.map((n) => ({ name: n }))]) if (!seenI.has(x.name)) { seenI.add(x.name); income.push({ name: x.name, party: x.party || "", rub: x.rub || 0 }); }
     const cats = [...new Set([...SEED.categories, ...learned.map((x) => x.category).filter(Boolean)])];
-    const legals = [...new Set([...SEED.legals, ...learned.map((x) => x.legal).filter(Boolean)])];
     res.json({
       success: true,
       today: todayMsk(),
       rates: await ratesPayload(false),
-      ref: { categories: cats, cash: SEED.cash, legals, expense, income },
-      pending: { exp: st.entries.filter((e) => !e.deleted && !e.copiedAt && e.type === "exp").length,
-                 inc: st.entries.filter((e) => !e.deleted && !e.copiedAt && e.type === "inc").length },
+      ref: { categories: cats, expense, income },
     });
   });
 
@@ -361,23 +436,19 @@ function mount(app, deps) {
       comment: String(b.comment || "").trim().slice(0, 300) || undefined,
       party: String(b.party || "").trim().slice(0, 200) || undefined,
       rub: Math.round(rub * 100) / 100,
-      cur: ["USD", "EUR"].includes(b.cur) ? b.cur : undefined,
-      curAmount: isFinite(Number(b.curAmount)) && Number(b.curAmount) > 0 ? Number(b.curAmount) : undefined,
-      rate: isFinite(Number(b.rate)) && Number(b.rate) > 0 ? Number(b.rate) : undefined,
+      // сумма могла быть введена выражением («1000*86.1909» после кнопки $) —
+      // храним его и отдаём в xlsx формулой, как Андрей делает в таблице руками
+      formula: /^[\d\s.,+\-*/()]+$/.test(String(b.formula || "")) && /[+\-*/]/.test(String(b.formula || "").slice(1))
+        ? String(b.formula).replace(/\s+/g, "").replace(/,/g, ".").slice(0, 120) : undefined,
     };
-    if (type === "exp") {
-      e.category = String(b.category || "").trim().slice(0, 100) || undefined;
-      e.cash = SEED.cash.includes(b.cash) ? b.cash : undefined;
-      e.legal = String(b.legal || "").trim().slice(0, 120) || undefined;
-    }
+    if (type === "exp") e.category = String(b.category || "").trim().slice(0, 100) || undefined;
     st.entries.push(e);
     // запоминаем название вместе с его реквизитами — в следующий раз подставится
     const c = st.custom[name] || { type, uses: 0 };
     c.type = type; c.uses = (c.uses || 0) + 1;
     if (e.category) c.category = e.category;
-    if (e.cash) c.cash = e.cash;
-    if (e.legal) c.legal = e.legal;
     if (e.party) c.party = e.party;
+    if (e.rub) c.rub = e.rub; // последняя сумма — подсказкой на плашке, как в /fin
     st.custom[name] = c;
     save();
     res.json({ success: true, entry: e });
@@ -393,14 +464,8 @@ function mount(app, deps) {
     if (b.date != null && /^\d{4}-\d{2}-\d{2}$/.test(String(b.date))) e.date = String(b.date);
     if (b.comment != null) e.comment = String(b.comment).trim().slice(0, 300) || undefined;
     if (b.party != null) e.party = String(b.party).trim().slice(0, 200) || undefined;
-    if (e.type === "exp") {
-      if (b.category != null) e.category = String(b.category).trim().slice(0, 100) || undefined;
-      if (b.cash != null) e.cash = SEED.cash.includes(b.cash) ? b.cash : undefined;
-      if (b.legal != null) e.legal = String(b.legal).trim().slice(0, 120) || undefined;
-    }
-    if (b.cur != null) { e.cur = ["USD", "EUR"].includes(b.cur) ? b.cur : undefined; }
-    if (b.curAmount != null) e.curAmount = Number(b.curAmount) > 0 ? Number(b.curAmount) : undefined;
-    if (b.rate != null) e.rate = Number(b.rate) > 0 ? Number(b.rate) : undefined;
+    if (e.type === "exp" && b.category != null) e.category = String(b.category).trim().slice(0, 100) || undefined;
+    if (b.formula != null) e.formula = String(b.formula).trim() ? String(b.formula).replace(/\s+/g, "").replace(/,/g, ".").slice(0, 120) : undefined;
     save();
     res.json({ success: true, entry: e });
   });
@@ -427,36 +492,16 @@ function mount(app, deps) {
     res.json({ success: true, days });
   });
 
-  // ── Строки для буфера обмена (главный путь переноса в Numbers) ──
-  // scope=new — только не скопированные, и только за САМЫЙ РАННИЙ месяц:
-  // вставка всегда идёт в один лист месяца, как в /fin.
-  app.get("/akfin/api/rows.html", requireFin, (req, res) => {
-    const type = req.query && req.query.type === "inc" ? "inc" : "exp";
-    const mon = String((req.query && req.query.month) || "").trim();
-    const scope = String((req.query && req.query.scope) || "new").trim();
-    let list = store().entries.filter((e) => !e.deleted && e.type === type);
-    if (/^\d{4}-\d{2}$/.test(mon)) list = list.filter((e) => String(e.date).slice(0, 7) === mon);
-    else if (scope === "new") {
-      const fresh = list.filter((e) => !e.copiedAt);
-      const months = [...new Set(fresh.map((e) => String(e.date).slice(0, 7)))].sort();
-      list = months.length ? fresh.filter((e) => String(e.date).slice(0, 7) === months[0]) : [];
-      res.set("X-Fin-Month", months[0] || "");
-      res.set("X-Fin-More", String(Math.max(0, months.length - 1)));
-    }
-    res.set("X-Fin-Ids", list.map((e) => e.id).join(","));
-    res.set("Access-Control-Expose-Headers", "X-Fin-Ids, X-Fin-Month, X-Fin-More");
-    res.set("Content-Type", "text/html; charset=utf-8");
-    res.set("Cache-Control", "no-store");
-    res.send(type === "inc" ? buildIncomeRows(list) : buildExpenseRows(list));
-  });
 
-  app.post("/akfin/api/mark-copied", requireFin, (req, res) => {
-    const ids = String((req.body && req.body.ids) || "").split(",").filter(Boolean);
-    const st = store();
-    let n = 0;
-    for (const e of st.entries) if (ids.includes(e.id) && !e.copiedAt) { e.copiedAt = Date.now(); n++; }
-    if (n) save();
-    res.json({ success: true, marked: n });
+  // Выгрузка таблицы: .xlsx с раскладкой листа «vsc таблица».
+  // Открывать в Numbers (не в Excel — портит цвета), строки копировать руками.
+  app.get("/akfin/api/export.xlsx", requireFin, (req, res) => {
+    const list = store().entries.filter((e) => !e.deleted);
+    const buf = buildXlsx(list);
+    res.set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.set("Content-Disposition", 'attachment; filename="vsc-fin.xlsx"');
+    res.set("Cache-Control", "no-store");
+    res.send(buf);
   });
 
   console.log("VSCFIN: /akfin смонтирован (рабочие расходы и приходы)");
