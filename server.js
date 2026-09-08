@@ -2370,7 +2370,7 @@ chatMod.mount(app, { requireAdmin });
 // «vsc таблица» (Numbers) через буфер. Вход по коду 280992 и Face ID (свои
 // ключи). Курсы EUR/USD берёт у калькулятора (fetchCbrRates, кэш 1 ч).
 // Изолирован: ЛК, amoCRM, /fin на ak-co.ru не затрагивает.
-vscFinMod.mount(app, { fetchCbrRates });
+vscFinMod.mount(app, { fetchCbrRates, loadCalcCfg });
 
 // ── visa-sc.com: англоязычная копия лендинга «ВНЖ Испании» (visa-sc.ru/spain_vnzh/).
 // Сама страница — статика, её отдаёт nginx из /var/www/visa-sc-com; сюда nginx

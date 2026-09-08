@@ -258,6 +258,9 @@ function mount(app, deps) {
   const CODE = process.env.VSCFIN_CODE || "280992";
   // Курсы ЦБ берём у основного сервера (там кэш 1 ч и почасовой прогрев).
   const fetchCbrRates = deps.fetchCbrRates || (async () => ({ rates: {}, date: null }));
+  // Курс USDT для расходов берём из настроек калькулятора (.vscCalc.json, B7):
+  // один источник правды, меняется админом в /vsc — здесь только читаем.
+  const loadCalcCfg = deps.loadCalcCfg || (() => ({}));
 
   function tokenFromReq(req) {
     const h = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
@@ -391,11 +394,18 @@ function mount(app, deps) {
   });
 
   // ── Курсы ЦБ ──
+  // Курсы округляем до сотых — в таблицу уходят «×86,19», а не «×86,1909».
+  const round2 = (v) => (v == null || !isFinite(v) ? null : Math.round(Number(v) * 100) / 100);
+  function usdtRate() {
+    const v = Number((loadCalcCfg() || {}).usdtExpense);
+    return isFinite(v) && v > 0 ? round2(v) : null;
+  }
   async function ratesPayload(force) {
+    const usdt = usdtRate();
     try {
       const c = await fetchCbrRates(force);
-      return { eur: c.rates.EUR || null, usd: c.rates.USD || null, date: c.date || null };
-    } catch (e) { return { eur: null, usd: null, date: null, error: e && e.message }; }
+      return { eur: round2(c.rates.EUR), usd: round2(c.rates.USD), usdt, date: c.date || null };
+    } catch (e) { return { eur: null, usd: null, usdt, date: null, error: e && e.message }; }
   }
   app.get("/akfin/api/rates", requireFin, async (req, res) => {
     res.json({ success: true, rates: await ratesPayload(req.query && req.query.fresh === "1") });

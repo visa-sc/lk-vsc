@@ -155,7 +155,7 @@
     <button class="opbtn" onclick="op('+')">+</button>
     <button class="opbtn" onclick="op('×')">×</button>
     <button class="opbtn" onclick="op('÷')">÷</button>
-    <button class="opbtn cur" onclick="opCur('USD')">$</button>
+    <button class="opbtn cur" id="opUsd" onclick="opCur('USD')">$</button>
     <button class="opbtn cur" onclick="opCur('EUR')">€</button>
   </div>
 
@@ -279,9 +279,11 @@ async function bioRegister() {
 /* ── Курсы ЦБ ── */
 function renderRates() {
   const r = state.rates || {};
-  if (!r.usd && !r.eur) { $("rates").textContent = "курсы ЦБ недоступны"; return; }
+  if (!r.usd && !r.eur && !r.usdt) { $("rates").textContent = "курсы недоступны"; return; }
   const d = r.date ? String(r.date).slice(0, 5) : "";
-  $("rates").innerHTML = "$ <b>" + fmt(r.usd || 0) + "</b> · € <b>" + fmt(r.eur || 0) + "</b><br>ЦБ" + (d ? " на " + d : "");
+  $("rates").innerHTML = "$ <b>" + fmt(r.usd || 0) + "</b> · € <b>" + fmt(r.eur || 0) + "</b>"
+    + (r.usdt ? " · USDT <b>" + fmt(r.usdt) + "</b>" : "")
+    + "<br>ЦБ" + (d ? " на " + d : "") + (r.usdt ? " · USDT из калькулятора" : "");
 }
 async function refreshRates(fresh) {
   try {
@@ -301,12 +303,18 @@ function calcExpr(s) {
 }
 function isExpr(s) { return /[+\-*/×÷]/.test(normExpr(s).slice(1)); } // минус первым знаком — не выражение
 function op(ch) { const a = $("amount"); a.value += ch; a.focus(); updateRub(); }
+// Доллар в РАСХОДАХ считаем по курсу USDT из калькулятора (им же считают расход
+// в /calc), в ПРИХОДАХ — по ЦБ. Евро всегда по ЦБ. Курс округлён до сотых.
+function rateFor(c) {
+  if (c === "EUR") return state.rates.eur;
+  return tab === "exp" ? (state.rates.usdt || state.rates.usd) : state.rates.usd;
+}
 function opCur(c) {
-  const rate = c === "USD" ? state.rates.usd : state.rates.eur;
-  if (!rate) { toast("Нет курса ЦБ"); return; }
+  const rate = rateFor(c);
+  if (!rate) { toast("Нет курса"); return; }
   const a = $("amount");
   if (!a.value.trim()) { toast("Сначала сумма в " + (c === "USD" ? "долларах" : "евро")); a.focus(); return; }
-  a.value += "×" + String(rate).replace(".", ",");
+  a.value += "×" + String(Math.round(rate * 100) / 100).replace(".", ",");
   a.focus(); updateRub();
 }
 function updateRub() {
@@ -326,6 +334,10 @@ function setTab(t) {
   $("tabInc").classList.toggle("on", t === "inc");
   $("cats").classList.toggle("hide", t !== "exp");
   $("name").placeholder = t === "exp" ? "за что" : "от кого / за что";
+  const ru = rateFor("USD");
+  $("opUsd").title = t === "exp"
+    ? "по курсу USDT из калькулятора" + (ru ? " (" + ru + ")" : "")
+    : "по курсу ЦБ" + (ru ? " (" + ru + ")" : "");
   renderSugg(); loadDays();
 }
 function renderCats() {
