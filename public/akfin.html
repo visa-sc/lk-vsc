@@ -31,8 +31,10 @@
   }
   button{font:inherit;cursor:pointer;}
   .wrap{max-width:620px;margin:0 auto;padding:0 16px 40px;}
-  .spacer{min-height:calc(env(safe-area-inset-top) + 54px);transition:min-height .25s;}
-  #main.hist .spacer{min-height:calc(env(safe-area-inset-top) + 6px);}
+  /* форма стоит по центру экрана (как в личных финансах); при открытых записях
+     поднимается вверх, чтобы список помещался целиком */
+  #main{min-height:100dvh;display:flex;flex-direction:column;justify-content:center;}
+  #main.hist{justify-content:flex-start;padding-top:calc(env(safe-area-inset-top) + 10px);}
 
   /* ── Вход ── */
   #login{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;}
@@ -82,7 +84,15 @@
   .chips button.on{background:#eaf5fd;border-color:var(--brand);color:var(--brand);}
   .chips button small{color:var(--muted);margin-left:6px;font-size:13px;}
 
-  .more{font-size:14px;color:var(--brand);padding:6px 4px 10px;user-select:none;}
+  /* метки строки: красят «Наименование» в таблице (жёлтая — разобраться, красная — вернуть) */
+  .flagrow{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .flag{width:44px;height:44px;border-radius:22px;border:2px solid transparent;background:var(--card);
+        box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;}
+  .flag i{display:block;width:22px;height:22px;border-radius:11px;}
+  .flag.yellow i{background:#ffd60a;}
+  .flag.red i{background:#ff453a;}
+  .flag.on{border-color:var(--brand);}
+  .flagrow .fld{flex:1;margin-bottom:0;text-align:center;}
   #addBtn{width:100%;font-size:17px;padding:16px;border-radius:18px;}
 
   /* ── Нижняя строка: выгрузка и записи ── */
@@ -121,8 +131,6 @@
 
 <!-- ── Основной экран ── -->
 <div id="main" class="wrap hide">
-  <div class="spacer"></div>
-
   <header>
     <img src="/fin-logo.png" alt="VSC fin">
     <div class="rates" id="rates" onclick="refreshRates(1)">курсы…</div>
@@ -154,14 +162,14 @@
   <div class="lbl" id="catLbl">Категория</div>
   <div class="chips" id="cats"></div>
 
-  <div class="more" id="moreToggle" onclick="toggleMore()">Контрагент, дата, комментарий ›</div>
-  <div id="moreBox" class="hide">
-    <div class="fld"><input id="party" type="text" placeholder="контрагент" autocomplete="off"></div>
-    <div class="fld"><input id="comment" type="text" placeholder="комментарий" autocomplete="off"></div>
+  <div class="flagrow">
+    <button class="flag yellow" id="flagYellow" onclick="setFlag('yellow')" title="разобраться"><i></i></button>
+    <button class="flag red" id="flagRed" onclick="setFlag('red')" title="вернуть"><i></i></button>
     <div class="fld"><input id="date" type="date"></div>
   </div>
+  <div class="fld"><input id="comment" type="text" placeholder="комментарий" autocomplete="off"></div>
 
-  <button id="addBtn" class="btn" onclick="addEntry()">Добавить</button>
+  <button id="addBtn" class="btn" onclick="addEntry()">Внести</button>
 
   <div class="recline">
     <button id="dlBtn" onclick="downloadTable()">Скачать таблицу</button>
@@ -181,6 +189,7 @@ let token = localStorage.getItem(LS_TOKEN) || "";
 let tab = "exp";
 let state = { ref: { categories: [], expense: [], income: [] }, rates: {}, today: "" };
 let selCat = "";
+let selFlag = "";
 let editId = null;
 let recordsOpen = false;
 
@@ -336,7 +345,6 @@ function renderSugg() {
     b.onclick = () => {
       $("name").value = x.name;
       if (x.category) selCat = x.category;
-      if (x.party) $("party").value = x.party;
       renderCats(); renderSugg();
       if (!$("amount").value.trim()) $("amount").focus();
     };
@@ -344,10 +352,12 @@ function renderSugg() {
   });
 }
 $("name").addEventListener("input", renderSugg);
-function toggleMore() {
-  const hidden = $("moreBox").classList.toggle("hide");
-  $("moreToggle").textContent = hidden ? "Контрагент, дата, комментарий ›" : "Свернуть ˅";
+// Метка одна на запись: повторное нажатие по той же снимает её.
+function renderFlags() {
+  $("flagYellow").classList.toggle("on", selFlag === "yellow");
+  $("flagRed").classList.toggle("on", selFlag === "red");
 }
+function setFlag(f) { selFlag = selFlag === f ? "" : f; renderFlags(); }
 
 /* ── Добавление / правка ── */
 async function addEntry() {
@@ -361,7 +371,7 @@ async function addEntry() {
   const body = {
     type: tab, name, rub,
     formula: expr ? normExpr(raw) : "",
-    party: $("party").value.trim(), comment: $("comment").value.trim(),
+    comment: $("comment").value.trim(), flag: selFlag,
     date: $("date").value || state.today,
     category: tab === "exp" ? selCat : "",
     cid: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
@@ -372,17 +382,17 @@ async function addEntry() {
       ? await api("/akfin/api/edit/" + editId, { method: "POST", body: JSON.stringify(body) })
       : await api("/akfin/api/add", { method: "POST", body: JSON.stringify(body) });
     if (!r.success) { toast(r.message || "Не получилось"); return; }
-    toast(editId ? "Сохранено" : (tab === "exp" ? "Расход добавлен" : "Приход добавлен"));
+    toast(editId ? "Сохранено" : (tab === "exp" ? "Расход внесён" : "Приход внесён"));
     clearForm();
     await refresh();
   } catch (e) { if (String(e.message) !== "auth") toast("Ошибка сети"); }
   finally { $("addBtn").disabled = false; }
 }
 function clearForm() {
-  editId = null; selCat = "";
-  $("name").value = ""; $("amount").value = ""; $("party").value = ""; $("comment").value = "";
-  updateRub(); renderCats(); renderSugg();
-  $("addBtn").textContent = "Добавить";
+  editId = null; selCat = ""; selFlag = "";
+  $("name").value = ""; $("amount").value = ""; $("comment").value = "";
+  renderFlags(); updateRub(); renderCats(); renderSugg();
+  $("addBtn").textContent = "Внести";
 }
 
 /* ── Записи (по умолчанию свёрнуты) ── */
@@ -411,7 +421,7 @@ async function loadDays() {
         row.className = "rec";
         row.innerHTML = '<div class="nm"><b></b><i></i></div><div class="am">' + fmt(e.rub) + ' ₽</div><div class="x">×</div>';
         row.querySelector("b").textContent = e.comment ? e.name + " - " + e.comment : e.name;
-        row.querySelector("i").textContent = [e.category, e.party, e.formula].filter(Boolean).join(" · ");
+        row.querySelector("i").textContent = [e.flag === "yellow" ? "🟡" : e.flag === "red" ? "🔴" : "", e.category, e.formula].filter(Boolean).join(" · ");
         row.querySelector(".nm").onclick = () => startEdit(e);
         row.querySelector(".x").onclick = () => delEntry(e);
         wrap.appendChild(row);
@@ -424,10 +434,10 @@ function startEdit(e) {
   editId = e.id;
   $("name").value = e.name;
   $("amount").value = e.formula ? e.formula.replace(/\*/g, "×").replace(/\//g, "÷") : String(e.rub).replace(".", ",");
-  $("party").value = e.party || ""; $("comment").value = e.comment || "";
+  $("comment").value = e.comment || "";
   $("date").value = e.date;
-  selCat = e.category || "";
-  updateRub(); renderCats();
+  selCat = e.category || ""; selFlag = e.flag || "";
+  renderFlags(); updateRub(); renderCats();
   $("addBtn").textContent = "Сохранить";
   window.scrollTo({ top: 0, behavior: "smooth" });
   toast("Правка записи");

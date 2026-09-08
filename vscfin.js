@@ -145,6 +145,9 @@ function xlRow(rowIdx, cells, height) {
   return '<row r="' + rowIdx + '"' + h + ">" + parts.join("") + "</row>";
 }
 
+// Метка записи красит ячейку «Наименование»: 7 — жёлтая, 8 — красная (зелёной нет).
+function flagStyle(e) { return e.flag === "yellow" ? 7 : e.flag === "red" ? 8 : 0; }
+
 function buildXlsx(entries) {
   const byMonth = new Map();
   entries.slice().sort((a, b) => (a.date === b.date ? a.at - b.at : (a.date < b.date ? -1 : 1))).forEach((e) => {
@@ -173,7 +176,7 @@ function buildXlsx(entries) {
         prevDay = day;
         cells[1] = { v: e.category || " ", style: 3 };
         cells[2] = { v: " ", style: 3 };                       // Безнал/нал — руками
-        cells[3] = { v: e.comment ? e.name + " - " + e.comment : e.name, style: 0 };
+        cells[3] = { v: e.comment ? e.name + " - " + e.comment : e.name, style: flagStyle(e) };
         cells[4] = { v: e.party || " ", style: 0 };
         cells[5] = { v: e.rub, num: true, style: 2, f: e.formula || null };
         cells[6] = { v: " ", style: 6 };                       // Юр. лицо — руками, кегль 8
@@ -181,7 +184,7 @@ function buildXlsx(entries) {
       cells[7] = { v: " ", style: 3 };                         // разделитель — бирюзовая полоса во всех строках
       const k = inc[i];
       if (k) {
-        cells[8] = { v: k.comment ? k.name + " - " + k.comment : k.name, style: 0 };
+        cells[8] = { v: k.comment ? k.name + " - " + k.comment : k.name, style: flagStyle(k) };
         cells[9] = { v: k.party || " ", style: 0 };
         cells[10] = { v: k.rub, num: true, style: 2, f: k.formula || null };
       }
@@ -218,15 +221,16 @@ function buildXlsx(entries) {
     + '<fonts count="3"><font><sz val="10"/><name val="Helvetica"/></font>'
     + '<font><b/><sz val="12"/><name val="Helvetica"/></font>'
     + '<font><sz val="8"/><name val="Helvetica"/></font></fonts>'
-    + '<fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+    + '<fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
     + '<fill><patternFill patternType="solid"><fgColor rgb="FF7BFDF5"/><bgColor rgb="FF7BFDF5"/></patternFill></fill>'
     + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/><bgColor rgb="FFFFFFFF"/></patternFill></fill>'
-    + '<fill><patternFill patternType="solid"><fgColor rgb="FF9CFAF4"/><bgColor rgb="FF9CFAF4"/></patternFill></fill></fills>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFE573"/><bgColor rgb="FFFFE573"/></patternFill></fill>'
+    + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFD5D9"/><bgColor rgb="FFFFD5D9"/></patternFill></fill></fills>'
     + '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'
     + '<border><left style="thin"><color rgb="FFD9D9D9"/></left><right style="thin"><color rgb="FFD9D9D9"/></right>'
     + '<top style="thin"><color rgb="FFD9D9D9"/></top><bottom style="thin"><color rgb="FFD9D9D9"/></bottom><diagonal/></border></borders>'
     + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-    + '<cellXfs count="7">'
+    + '<cellXfs count="9">'
     + '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                                     // 0 данные (белая)
     + '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf>' // 1 шапка расходов
     + '<xf numFmtId="4" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"/>'                               // 2 сумма
@@ -234,6 +238,8 @@ function buildXlsx(entries) {
     + '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>'                 // 4 день с номером
     + '<xf numFmtId="0" fontId="1" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf>' // 5 шапка приходов
     + '<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>'                                       // 6 Юр. лицо (кегль 8)
+    + '<xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                                     // 7 метка жёлтая
+    + '<xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                                     // 8 метка красная
     + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>', "utf8"));
   sheets.forEach((sh, i) => {
     zip.addFile("xl/worksheets/sheet" + (i + 1) + ".xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -434,8 +440,8 @@ function mount(app, deps) {
       at: Date.now(),
       date, type, name,
       comment: String(b.comment || "").trim().slice(0, 300) || undefined,
-      party: String(b.party || "").trim().slice(0, 200) || undefined,
       rub: Math.round(rub * 100) / 100,
+      flag: ["yellow", "red"].includes(b.flag) ? b.flag : undefined, // подсветка ячейки «Наименование»
       // сумма могла быть введена выражением («1000*86.1909» после кнопки $) —
       // храним его и отдаём в xlsx формулой, как Андрей делает в таблице руками
       formula: /^[\d\s.,+\-*/()]+$/.test(String(b.formula || "")) && /[+\-*/]/.test(String(b.formula || "").slice(1))
@@ -447,7 +453,6 @@ function mount(app, deps) {
     const c = st.custom[name] || { type, uses: 0 };
     c.type = type; c.uses = (c.uses || 0) + 1;
     if (e.category) c.category = e.category;
-    if (e.party) c.party = e.party;
     if (e.rub) c.rub = e.rub; // последняя сумма — подсказкой на плашке, как в /fin
     st.custom[name] = c;
     save();
@@ -466,6 +471,7 @@ function mount(app, deps) {
     if (b.party != null) e.party = String(b.party).trim().slice(0, 200) || undefined;
     if (e.type === "exp" && b.category != null) e.category = String(b.category).trim().slice(0, 100) || undefined;
     if (b.formula != null) e.formula = String(b.formula).trim() ? String(b.formula).replace(/\s+/g, "").replace(/,/g, ".").slice(0, 120) : undefined;
+    if (b.flag != null) e.flag = ["yellow", "red"].includes(b.flag) ? b.flag : undefined;
     save();
     res.json({ success: true, entry: e });
   });
