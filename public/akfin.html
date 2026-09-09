@@ -20,6 +20,7 @@
     --card:#fff;
     --bg:#f2f4f7;
     --red:#ff3b30;
+    --ctl:40px;            /* общая высота блоков строки: чипсы, метки, дата, комментарий */
     --shadow:0 1px 4px rgba(0,40,70,.06);
     --shadow-hi:0 4px 16px rgba(0,40,70,.09);
   }
@@ -31,10 +32,11 @@
   }
   button{font:inherit;cursor:pointer;}
   .wrap{max-width:620px;margin:0 auto;padding:0 16px 40px;}
-  /* форма стоит по центру экрана (как в личных финансах); при открытых записях
-     поднимается вверх, чтобы список помещался целиком */
-  #main{min-height:100dvh;display:flex;flex-direction:column;justify-content:center;}
-  #main.hist{justify-content:flex-start;padding-top:calc(env(safe-area-inset-top) + 10px);}
+  /* Воздух сверху задаём СПЕЙСЕРОМ, а не flex-центрированием: при открытии
+     клавиатуры iOS меняет высоту вьюпорта, и центрированный блок уезжал вверх
+     и не возвращался. Ровно тот же приём, что в личных финансах. */
+  #main .spacer{height:18vh;min-height:calc(env(safe-area-inset-top) + 72px);transition:height .28s ease,min-height .28s ease;}
+  #main.hist .spacer{height:0;min-height:calc(env(safe-area-inset-top) + 6px);}
 
   /* ── Вход ── */
   #login{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;}
@@ -80,29 +82,39 @@
   .chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:3px;margin-bottom:10px;scrollbar-width:none;}
   .chips::-webkit-scrollbar{display:none;}
   .chips button{flex:0 0 auto;white-space:nowrap;border:1px solid var(--line);background:var(--card);color:var(--ink);
-                border-radius:16px;padding:10px 15px;font-size:14.5px;box-shadow:var(--shadow);}
+                border-radius:var(--ctl);height:var(--ctl);padding:0 14px;font-size:14.5px;box-shadow:var(--shadow);}
   .chips button.on{background:#eaf5fd;border-color:var(--brand);color:var(--brand);}
   .chips button small{color:var(--muted);margin-left:6px;font-size:13px;}
 
   /* метки строки: красят «Наименование» в таблице (жёлтая — разобраться, красная — вернуть) */
-  .flag{flex:0 0 auto;width:42px;height:42px;border-radius:21px;border:2px solid transparent;background:var(--card);
+  .flag{flex:0 0 auto;width:var(--ctl);height:var(--ctl);border-radius:var(--ctl);border:2px solid transparent;background:var(--card);
         box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;}
-  .flag i{display:block;width:22px;height:22px;border-radius:11px;}
+  .flag i{display:block;width:21px;height:21px;border-radius:11px;}
   .flag.yellow i{background:#ffd60a;}
   .flag.red i{background:#ff453a;}
   .flag.on{border-color:var(--brand);}
-  /* составные ряды: слева прокручиваемые чипсы/метки, справа поле */
+  /* Составная строка: все блоки одной высоты (--ctl), порядок задаётся вкладкой. */
   .row2{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
-  /* чипсы добирают зазор строки, чтобы дата вставала ровно по правому краю */
-  .row2 .chips{flex:1 1 auto;min-width:0;margin-bottom:0;gap:8px;}
-  .row2 .fld{flex:1 1 auto;min-width:0;margin-bottom:0;}
-  /* дата добирает остаток строки, но не уже, чем нужно под «08.09.2026» */
-  /* дата держит свою ширину и НЕ растягивается, иначе выдавливает комментарий
-     на вторую строку; остаток строки достаётся комментарию */
-  .row2 .datefld{flex:0 1 140px;min-width:140px;padding-left:8px;padding-right:8px;}
-  .datefld input{text-align:center;font-size:15px;}
-  .row2 .commentfld{flex:1 1 88px;min-width:88px;}
-  .row2 .chips button{padding:10px 13px;font-size:14px;}
+  .row2 .chips{flex:0 1 auto;min-width:0;margin-bottom:0;gap:8px;}
+  .row2 .fld{flex:0 1 auto;min-width:0;margin-bottom:0;height:var(--ctl);padding:0 14px;
+             border-radius:var(--ctl);display:flex;align-items:center;}
+  .row2 .datefld{flex:1 1 auto;min-width:104px;padding:0 6px;}
+  .datefld input{text-align:center;font-size:14.5px;}
+  /* убираем родную иконку календаря: на айфоне её нет, а в Chrome она съедала
+     ~20px и выдавливала дату на отдельную строку (пикер открываем по тапу) */
+  .datefld input::-webkit-calendar-picker-indicator{display:none;}
+  .row2 .chips button{padding:0 12px;font-size:13.5px;}
+  /* РАСХОДЫ: категории · метки · дата — одной строкой; комментарий — отдельной */
+  #main.t-exp .row2 #cats{order:1;flex:0 1 auto;}
+  #main.t-exp .row2 .flag.yellow{order:2;}
+  #main.t-exp .row2 .flag.red{order:3;}
+  #main.t-exp .row2 .datefld{order:4;}
+  #main.t-exp .row2 .commentfld{order:5;flex:1 1 100%;}
+  /* ПРИХОДЫ: метки · комментарий · дата — всё одной строкой */
+  #main.t-inc .row2 .flag.yellow{order:1;}
+  #main.t-inc .row2 .flag.red{order:2;}
+  #main.t-inc .row2 .commentfld{order:3;flex:1 1 110px;min-width:110px;}
+  #main.t-inc .row2 .datefld{order:4;}
   #addBtn{width:100%;font-size:17px;padding:16px;border-radius:18px;}
 
   /* ── Нижняя строка: выгрузка и записи ── */
@@ -114,6 +126,16 @@
   .day{margin-bottom:14px;}
   .day h3{font-size:13px;font-weight:600;color:var(--muted);margin:0 0 7px 4px;display:flex;}
   .day h3 span{margin-left:auto;}
+  /* свайп влево по записи → «Изменить» и «Удалить» под строкой (как в /fin) */
+  .swipe{position:relative;margin-bottom:7px;}
+  .swipe .edit,.swipe .del{position:absolute;top:0;bottom:0;width:88px;border:0;border-radius:15px;color:#fff;
+        font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s;}
+  .swipe .del{right:0;background:var(--red);}
+  .swipe .edit{right:94px;background:var(--brand);}
+  .swipe.open .edit,.swipe.open .del{opacity:1;pointer-events:auto;}
+  .swipe .rec{margin-bottom:0;transition:transform .18s;touch-action:pan-y;}
+  .swipe.open .rec{transform:translateX(-188px);}
+  .swipe .rec.drag{transition:none;}
   .rec{background:#fff;border-radius:15px;padding:12px 15px;margin-bottom:7px;display:flex;align-items:center;gap:10px;box-shadow:var(--shadow);}
   .rec .nm{flex:1;min-width:0;}
   .rec .nm b{display:block;font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -140,7 +162,9 @@
 </div>
 
 <!-- ── Основной экран ── -->
-<div id="main" class="wrap hide">
+<div id="main" class="wrap hide t-exp">
+  <div class="spacer"></div>
+
   <header>
     <img src="/fin-logo.png" alt="VSC fin">
     <div class="rates" id="rates" onclick="refreshRates(1)">курсы…</div>
@@ -166,15 +190,15 @@
     <span class="rub" id="rubSign">₽</span>
   </div>
 
-  <div class="fld"><input id="name" type="text" placeholder="за что" autocomplete="off"></div>
+  <div class="fld"><input id="name" type="text" placeholder="За что" autocomplete="off"></div>
   <div class="chips" id="sugg"></div>
 
   <div class="row2">
     <div class="chips" id="cats"></div>
-    <div class="fld datefld"><input id="date" type="date"></div>
     <button class="flag yellow" id="flagYellow" onclick="setFlag('yellow')" title="разобраться"><i></i></button>
     <button class="flag red" id="flagRed" onclick="setFlag('red')" title="вернуть"><i></i></button>
-    <div class="fld commentfld"><input id="comment" type="text" placeholder="комментарий" autocomplete="off"></div>
+    <div class="fld datefld"><input id="date" type="date" onclick="if(this.showPicker)this.showPicker()"></div>
+    <div class="fld commentfld"><input id="comment" type="text" placeholder="Комментарий" autocomplete="off"></div>
   </div>
 
   <button id="addBtn" class="btn" onclick="addEntry()">Внести</button>
@@ -332,7 +356,9 @@ function setTab(t) {
   $("tabExp").classList.toggle("on", t === "exp");
   $("tabInc").classList.toggle("on", t === "inc");
   $("cats").classList.toggle("hide", t !== "exp");
-  $("name").placeholder = t === "exp" ? "за что" : "от кого / за что";
+  $("name").placeholder = "За что";
+  $("main").classList.toggle("t-exp", t === "exp");
+  $("main").classList.toggle("t-inc", t === "inc");
   const ru = rateFor("USD");
   $("opUsd").title = t === "exp"
     ? "по курсу USDT из калькулятора" + (ru ? " (" + ru + ")" : "")
@@ -405,6 +431,7 @@ async function addEntry() {
     if (!r.success) { toast(r.message || "Не получилось"); return; }
     toast(editId ? "Сохранено" : (tab === "exp" ? "Расход внесён" : "Приход внесён"));
     clearForm();
+    window.scrollTo({ top: 0, behavior: "smooth" }); // после клавиатуры возвращаем экран на место
     await refresh();
   } catch (e) { if (String(e.message) !== "auth") toast("Ошибка сети"); }
   finally { $("addBtn").disabled = false; }
@@ -438,19 +465,67 @@ async function loadDays() {
       const title = new Date(d.date + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
       wrap.innerHTML = "<h3>" + title + "<span>" + fmt(d.total) + " ₽</span></h3>";
       d.entries.forEach((e) => {
-        const row = document.createElement("div");
-        row.className = "rec";
-        row.innerHTML = '<div class="nm"><b></b><i></i></div><div class="am">' + fmt(e.rub) + ' ₽</div><div class="x">×</div>';
-        row.querySelector("b").textContent = e.comment ? e.name + " - " + e.comment : e.name;
-        row.querySelector("i").textContent = [e.flag === "yellow" ? "🟡" : e.flag === "red" ? "🔴" : "", e.category, e.formula].filter(Boolean).join(" · ");
-        row.querySelector(".nm").onclick = () => startEdit(e);
-        row.querySelector(".x").onclick = () => delEntry(e);
-        wrap.appendChild(row);
+        ENTRIES[e.id] = e;
+        const sw = document.createElement("div");
+        sw.className = "swipe";
+        sw.dataset.id = e.id;
+        sw.innerHTML = '<button class="edit">Изменить</button><button class="del">Удалить</button>'
+          + '<div class="rec"><div class="nm"><b></b><i></i></div><div class="am">' + fmt(e.rub) + ' ₽</div></div>';
+        sw.querySelector("b").textContent = e.comment ? e.name + " - " + e.comment : e.name;
+        sw.querySelector("i").textContent = [e.flag === "yellow" ? "🟡" : e.flag === "red" ? "🔴" : "", e.category, e.formula].filter(Boolean).join(" · ");
+        wrap.appendChild(sw);
       });
       box.appendChild(wrap);
     });
   } catch (e) {}
 }
+// ── свайп влево по записи → «Изменить» / «Удалить» ──
+const ENTRIES = {}; // id → запись (нужна кнопке «Изменить»)
+let swEl = null, swX = 0, swY = 0, swDx = 0, swMode = null;
+function closeSwipes(except) {
+  document.querySelectorAll(".swipe.open").forEach((s) => { if (s !== except) s.classList.remove("open"); });
+}
+document.addEventListener("touchstart", (ev) => {
+  const s = ev.target.closest(".swipe");
+  if (!s) { closeSwipes(); return; }
+  swEl = s; swX = ev.touches[0].clientX; swY = ev.touches[0].clientY; swMode = null; swDx = 0;
+}, { passive: true });
+document.addEventListener("touchmove", (ev) => {
+  if (!swEl) return;
+  const dx = ev.touches[0].clientX - swX, dy = ev.touches[0].clientY - swY;
+  if (swMode === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) swMode = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+  if (swMode !== "h") return;
+  closeSwipes(swEl);
+  const base = swEl.classList.contains("open") ? -188 : 0;
+  swDx = Math.min(0, Math.max(-200, base + dx));
+  const row = swEl.querySelector(".rec");
+  row.classList.add("drag");
+  row.style.transform = "translateX(" + swDx + "px)";
+}, { passive: true });
+document.addEventListener("touchend", () => {
+  if (!swEl) return;
+  const row = swEl.querySelector(".rec");
+  row.classList.remove("drag"); row.style.transform = "";
+  if (swMode === "h") swEl.classList.toggle("open", swDx < -48);
+  swEl = null; swMode = null; swDx = 0;
+});
+document.addEventListener("click", (ev) => {
+  const ed = ev.target.closest(".swipe .edit");
+  if (ed) { const e = ENTRIES[ed.closest(".swipe").dataset.id]; if (e) startEdit(e); closeSwipes(); return; }
+  const dl = ev.target.closest(".swipe .del");
+  if (dl) { const e = ENTRIES[dl.closest(".swipe").dataset.id]; if (e) delEntry(e); return; }
+  if (!ev.target.closest(".swipe")) closeSwipes();
+});
+
+// Клавиатура iOS сдвигает экран: как только фокус ушёл со всех полей —
+// возвращаем страницу наверх, чтобы форма снова встала на своё место.
+document.addEventListener("focusout", () => {
+  setTimeout(() => {
+    const a = document.activeElement;
+    if (!a || (a.tagName !== "INPUT" && a.tagName !== "TEXTAREA")) window.scrollTo({ top: 0, behavior: "smooth" });
+  }, 150);
+});
+
 function startEdit(e) {
   editId = e.id;
   $("name").value = e.name;
