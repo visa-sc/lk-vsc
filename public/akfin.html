@@ -471,8 +471,10 @@ async function loadDays() {
         sw.dataset.id = e.id;
         sw.innerHTML = '<button class="edit">Изменить</button><button class="del">Удалить</button>'
           + '<div class="rec"><div class="nm"><b></b><i></i></div><div class="am">' + fmt(e.rub) + ' ₽</div></div>';
-        sw.querySelector("b").textContent = e.comment ? e.name + " - " + e.comment : e.name;
-        sw.querySelector("i").textContent = [e.flag === "yellow" ? "🟡" : e.flag === "red" ? "🔴" : "", e.category, e.formula].filter(Boolean).join(" · ");
+        // метка — в ОДНОЙ строке с названием (как в личных финансах), а не отдельным кружком снизу
+        const fl = e.flag === "yellow" ? "🟡 " : e.flag === "red" ? "🔴 " : "";
+        sw.querySelector("b").textContent = fl + (e.comment ? e.name + " - " + e.comment : e.name);
+        sw.querySelector("i").textContent = [e.category, e.formula].filter(Boolean).join(" · ");
         wrap.appendChild(sw);
       });
       box.appendChild(wrap);

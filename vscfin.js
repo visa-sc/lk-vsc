@@ -492,6 +492,10 @@ function mount(app, deps) {
     const e = st.entries.find((x) => x.id === req.params.id);
     if (!e) return res.status(404).json({ success: false, message: "Запись не найдена" });
     e.deleted = true;
+    // Если записей с таким названием больше не осталось — убираем его из выученных,
+    // иначе удалённые пробные названия навсегда висят в подсказках.
+    const stillUsed = st.entries.some((x) => !x.deleted && x.name === e.name && x.type === e.type);
+    if (!stillUsed && st.custom[e.name] && st.custom[e.name].type === e.type) delete st.custom[e.name];
     save();
     res.json({ success: true });
   });
