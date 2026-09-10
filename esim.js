@@ -29,6 +29,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const axios = require("axios");
+const express = require("express"); // нужен для express.json() на ручке бота
 const tbank = require("./tbank"); // Т-Касса: приём оплат (банк за интерфейсом, как и поставщик eSIM)
 
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
@@ -919,6 +920,31 @@ function mount(app, opts) {
     res.json({ success: true, sent: mine.length > 0, found: mine.length > 0 });
   });
 
+  // Привязка почты к покупкам из телеграм-бота: там контакт — телефон, и на
+  // сайте такие eSIM иначе не найти. Зовёт только наш же бот с localhost,
+  // подтверждая себя секретом от токена.
+  app.post("/esim/api/tg/link-email", (req, res) => {
+    const secret = crypto.createHash("sha256").update("tg:" + (process.env.ESIM_TG_TOKEN || "")).digest("hex").slice(0, 24);
+    if (!process.env.ESIM_TG_TOKEN || String(req.headers["x-tg-secret"] || "") !== secret) {
+      return res.status(403).json({ success: false });
+    }
+    const b = req.body || {};
+    const email = normEmail(b.email);
+    const chat = String(b.tgChatId || "");
+    if (!validEmail(email) || !chat) return res.status(400).json({ success: false, message: "Нужны чат и корректный email." });
+    const orders = readJson(ORDERS_FILE, []);
+    let n = 0;
+    orders.forEach((o) => {
+      if (String(o.tgChatId || "") === chat && !o.email) { o.email = email; n++; }
+    });
+    if (n) writeJson(ORDERS_FILE, orders.slice(0, 5000));
+    getCustomer(email, true);                       // заводим карточку с реф-кодом
+    res.json({
+      success: true, linked: n,
+      accountUrl: BASE_URL + "/esim/account?e=" + encodeURIComponent(email) + "&t=" + signEmail(email),
+    });
+  });
+
   // Кто я сейчас (для шапки страниц)
   app.get("/esim/api/session", (req, res) => {
     const email = readSession(req);
@@ -1034,9 +1060,11 @@ function mount(app, opts) {
     // Идём от старых к новым, чтобы в карточке остался самый свежий email и ссылка
     orders.slice().reverse().forEach((o) => {
       const id = o.parentOrderId || o.mmOrderId;
-      byEsim.set(id, { esimId: id, email: o.email, label: o.label, myUrl: o.myUrl, productId: o.productId });
+      byEsim.set(id, { esimId: id, email: o.email, label: o.label, myUrl: o.myUrl, productId: o.productId,
+                       tgChatId: o.tgChatId || null });
     });
-    return Array.from(byEsim.values()).filter((x) => x.email && x.myUrl);
+    // Достучаться нужно хоть куда-то: почтой или в телеграм-чат покупателя
+    return Array.from(byEsim.values()).filter((x) => x.myUrl && (x.email || x.tgChatId));
   }
 
   async function hasTopups(productId) {
@@ -1079,7 +1107,7 @@ function mount(app, opts) {
 
   let _notifyRunning = false;
   async function runNotifications() {
-    if (_notifyRunning || !provider.ready() || !(opts && opts.sendMail)) return;
+    if (_notifyRunning || !provider.ready()) return;
     _notifyRunning = true;
     const sent = readJson(NOTIFY_FILE, {});
     let mails = 0;
@@ -1102,15 +1130,27 @@ function mount(app, opts) {
         // 1) срок на исходе — считаем только по активированным, у остальных отсчёт ещё не пошёл
         if (!mark.expiry && activated && daysLeft !== null && daysLeft <= NOTIFY_DAYS_BEFORE && daysLeft >= 0) {
           const canTopup = await hasTopups(item.productId);
-          await opts.sendMail(Object.assign({ to: item.email },
-            notifyLetter({ kind: "expiry", item, days: daysLeft, canTopup }))).catch(() => {});
+          if (item.email) {
+            await opts.sendMail(Object.assign({ to: item.email },
+              notifyLetter({ kind: "expiry", item, days: daysLeft, canTopup }))).catch(() => {});
+          }
+          if (item.tgChatId && opts.notifyTelegram) {
+            await opts.notifyTelegram({ chatId: item.tgChatId, kind: "expiry", label: item.label,
+              days: daysLeft, canTopup, myUrl: item.myUrl }).catch(() => {});
+          }
           mark.expiry = Date.now(); mails++;
         }
         // 2) трафик на исходе
         if (!mark.lowData && totalMb > 0 && leftMb / totalMb < NOTIFY_LOW_SHARE && (activated || leftMb < totalMb)) {
           const canTopup = await hasTopups(item.productId);
-          await opts.sendMail(Object.assign({ to: item.email },
-            notifyLetter({ kind: "lowData", item, left: gb(leftMb), total: gb(totalMb), canTopup }))).catch(() => {});
+          if (item.email) {
+            await opts.sendMail(Object.assign({ to: item.email },
+              notifyLetter({ kind: "lowData", item, left: gb(leftMb), total: gb(totalMb), canTopup }))).catch(() => {});
+          }
+          if (item.tgChatId && opts.notifyTelegram) {
+            await opts.notifyTelegram({ chatId: item.tgChatId, kind: "lowData", label: item.label,
+              left: gb(leftMb), total: gb(totalMb), canTopup, myUrl: item.myUrl }).catch(() => {});
+          }
           mark.lowData = Date.now(); mails++;
         }
         if (mark.expiry || mark.lowData) sent[item.esimId] = mark;

@@ -2313,6 +2313,8 @@ require("./esim").mount(app, {
   sendMail: (o) => mail.sendMail(o),
   // Покупка пришла из телеграма — бот сам отдаст клиенту QR в чат
   onIssued: (order) => { try { tgbot.onIssued(order); } catch (e) { console.error("tg onIssued:", e.message); } },
+  // Напоминания «пакет заканчивается» и «трафик на исходе» — в телеграм-чат
+  notifyTelegram: (p) => tgbot.notifyUsage(p),
   // Клиент, уже вошедший в ЛК по телефону: отдаём его почты из карточки amoCRM,
   // чтобы в разделе «eSIM» не спрашивать email второй раз. Поиск контактов
   // кэширован (findMatchingContacts, 2 мин), сам esim.js держит связку локально

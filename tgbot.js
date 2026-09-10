@@ -104,8 +104,8 @@ async function sendQr(chatId, dataUrl, caption) {
 }
 
 // ─────────────────────────── наш же API ───────────────────────────
-async function api(method, url, body) {
-  const r = await axios({ method, url: SELF + url, data: body, timeout: 60000, validateStatus: () => true });
+async function api(method, url, body, headers) {
+  const r = await axios({ method, url: SELF + url, data: body, headers, timeout: 60000, validateStatus: () => true });
   return r.data;
 }
 
@@ -278,9 +278,10 @@ async function showAllCountries(chatId, page, messageId) {
 const BTN_BUY = "🌍 Купить eSIM";
 const BTN_MY = "📱 Мои eSIM";
 const BTN_HELP = "💬 Помощь";
+const BTN_MAIL = "✉️ Почта для сайта";
 function mainKeyboard() {
   return {
-    keyboard: [[{ text: BTN_BUY }, { text: BTN_MY }], [{ text: BTN_HELP }]],
+    keyboard: [[{ text: BTN_BUY }, { text: BTN_MY }], [{ text: BTN_MAIL }, { text: BTN_HELP }]],
     resize_keyboard: true, is_persistent: true,
   };
 }
@@ -446,6 +447,32 @@ async function showMyOne(chatId, localId) {
   return send(chatId, text, { reply_markup: { inline_keyboard: rows } });
 }
 
+// ── почта для сайта: необязательная, только чтобы видеть eSIM ещё и в вебе ──
+async function askMail(chatId) {
+  const st = getState(chatId);
+  setState(chatId, { step: "linkmail" });
+  return send(chatId,
+    "<b>Почта для сайта</b>\n\n" +
+    "В боте всё и так работает: eSIM, остаток, QR. Почта нужна только если хотите видеть " +
+    "свои eSIM ещё и на сайте voyotravel.ru — там же живут бонусы и приглашение друзей.\n\n" +
+    (st.email ? "Сейчас привязана: <b>" + esc(st.email) + "</b>. Пришлите другую, если нужно поменять." :
+      "Напишите вашу почту одним сообщением."));
+}
+async function linkMail(chatId, email) {
+  const j = await api("post", "/esim/api/tg/link-email", { tgChatId: String(chatId), email }, {
+    "X-Tg-Secret": crypto.createHash("sha256").update("tg:" + TOKEN).digest("hex").slice(0, 24),
+  });
+  if (!j || !j.success) return send(chatId, "Не получилось привязать почту, попробуйте позже.");
+  const n = j.linked || 0;
+  return send(chatId,
+    "Готово. Почта <b>" + esc(email) + "</b> привязана" +
+    (n ? ", и " + n + " " + plural(n, ["ваша eSIM теперь видна", "ваши eSIM теперь видны", "ваших eSIM теперь видны"]) + " на сайте." : "."),
+    { reply_markup: { inline_keyboard: [
+      [{ text: "Открыть кабинет на сайте", url: j.accountUrl }],
+      [{ text: "📱 Мои eSIM", callback_data: "my" }],
+    ] } });
+}
+
 // ─────────────────────────── обработка апдейтов ───────────────────────────
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
 function plural(n, forms) {
@@ -472,11 +499,17 @@ async function onText(chatId, text) {
   }
   if (t === BTN_BUY) return showHome(chatId);
   if (t === BTN_MY || /^\/my|^мои/i.test(t)) return showMy(chatId);
+  if (t === BTN_MAIL || /^\/email/i.test(t)) return askMail(chatId);
   if (t === BTN_HELP || /^\/help|^помощь/i.test(t)) {
     return send(chatId, "Напишите страну, и я покажу пакеты. Живой человек на связи здесь: " + SUPPORT_TG,
       { reply_markup: homeKeyboard() });
   }
 
+  if (st.step === "linkmail") {
+    if (!validEmail(t)) return send(chatId, "Похоже, в адресе опечатка. Напишите почту целиком, например ivan@mail.ru");
+    setState(chatId, { email: t.toLowerCase(), step: null });
+    return linkMail(chatId, t.toLowerCase());
+  }
   if (st.step === "contact" || st.step === "email") {
     if (validEmail(t)) {
       setState(chatId, { email: t.toLowerCase(), step: null });
@@ -519,6 +552,7 @@ async function onCallback(q) {
   if (!chatId) return;
   if (data === "home") return edit(chatId, messageId, HELLO, { reply_markup: homeKeyboard() });
   if (data === "my") return showMy(chatId);
+  if (data === "mail") return askMail(chatId);
   if (data.indexOf("all:") === 0) return showAllCountries(chatId, parseInt(data.slice(4), 10) || 0, messageId);
   if (data.indexOf("c:") === 0) {
     const parts = data.slice(2).split(":");
@@ -553,10 +587,13 @@ async function onIssued(order) {
     "3. В поездке включите «Роуминг данных» для линии eSIM — интернет заработает сам.\n\n" +
     (o.lpa ? "Если камеры под рукой нет, введите вручную:\n<code>" + esc(o.lpa) + "</code>\n\n" : "") +
     "Остаток трафика и продление — по кнопке ниже.";
-  await send(chatId, how, { reply_markup: { inline_keyboard: [
+  const st = getState(chatId);
+  const rows = [
     [{ text: "Остаток и продление", url: order.myUrl }],
     [{ text: "📱 Мои eSIM", callback_data: "my" }, { text: "💬 Помощь", url: SUPPORT_TG }],
-  ] } });
+  ];
+  if (!st.email) rows.push([{ text: "✉️ Привязать почту для сайта", callback_data: "mail" }]);
+  await send(chatId, how, { reply_markup: { inline_keyboard: rows } });
   if (!sent) {
     await send(chatId, "QR-код картинкой отправить не удалось — откройте его здесь: " + order.myUrl);
   }
@@ -607,6 +644,31 @@ async function pollLoop() {
   }
 }
 
+// Напоминания: пакет заканчивается или гигабайты на исходе. Приходят прямо
+// в чат — открываемость выше, чем у письма, а покупателю из бота письмо и
+// слать некуда: почту мы у него не спрашиваем.
+async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, myUrl }) {
+  if (!ready() || !chatId) return;
+  const isData = kind === "lowData";
+  const title = isData ? "Интернет почти закончился"
+    : (days <= 0 ? "Пакет заканчивается сегодня"
+                 : "Пакет заканчивается через " + days + " " + plural(days, ["день", "дня", "дней"]));
+  const body = isData
+    ? ("Осталось " + left + " из " + total + ". При активном интернете это меньше дня. " +
+       (canTopup ? "Гигабайты добавятся на эту же eSIM, переустанавливать ничего не нужно."
+                 : "На этом тарифе добавить трафик нельзя, но можно взять ещё один пакет."))
+    : ((days <= 0 ? "Сегодня последний день действия пакета. "
+                  : "Через " + days + " " + plural(days, ["день", "дня", "дней"]) + " пакет перестанет работать. ") +
+       (canTopup ? "Продление продлит и срок, и трафик на этой же eSIM."
+                 : "На этом тарифе продление недоступно — если поездка продолжается, возьмите новый пакет."));
+  return send(chatId,
+    "<b>" + esc(title) + "</b>\n" + esc(label || "") + "\n\n" + esc(body),
+    { reply_markup: { inline_keyboard: [
+      [{ text: canTopup ? "Продлить пакет" : "Купить ещё eSIM", url: myUrl }],
+      [{ text: "📱 Мои eSIM", callback_data: "my" }, { text: "🌍 Другая страна", callback_data: "home" }],
+    ] } });
+}
+
 // ─────────────────────────── подключение ───────────────────────────
 function mount(app, opts) {
   if (!ready()) { console.log("tgbot: ESIM_TG_TOKEN не задан, бот выключен"); return { onIssued: () => {} }; }
@@ -624,7 +686,7 @@ function mount(app, opts) {
   }, 4000);
 
   console.log("tgbot: бот подключён" + (RELAY ? " (наружу через ретранслятор)" : " (напрямую)"));
-  return { onIssued };
+  return { onIssued, notifyUsage };
 }
 
-module.exports = { mount, onIssued, ready };
+module.exports = { mount, onIssued, notifyUsage, ready };
