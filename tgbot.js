@@ -296,10 +296,21 @@ const HELLO =
   "Основная симка остаётся на месте, eSIM ставится второй линией только для интернета.\n\n" +
   "Куда летите? Нажмите страну ниже или напишите её название.";
 
-async function showHome(chatId) {
-  await send(chatId, "Меню всегда внизу: можно уйти к своим eSIM и вернуться сюда.",
+async function showHome(chatId, welcome) {
+  await send(chatId, welcome || "Меню всегда внизу: можно уйти к своим eSIM и вернуться сюда.",
     { reply_markup: mainKeyboard() });
   return send(chatId, HELLO, { reply_markup: homeKeyboard() });
+}
+
+// Подарок новичку: 100 ₽ на счёт и сразу об этом сообщаем. Баллы включаем
+// в оплату по умолчанию — человек их видит в цене, а не ищет кнопку.
+async function welcomeGift(chatId) {
+  const j = await api("post", "/esim/api/tg/welcome", { tgChatId: String(chatId) }, { "X-Tg-Secret": tgSecret() });
+  if (!j || !j.success || !j.granted) return null;
+  setState(chatId, { useBalance: true });
+  return "<b>Добро пожаловать в VOYO mobile</b>\n\n" +
+    "У вас <b>" + RU(j.bonusRub) + " ₽</b> на балансе — спишем их с первой eSIM, " +
+    "ничего вводить не нужно.";
 }
 
 async function showCountry(chatId, iso, page, messageId) {
@@ -469,8 +480,18 @@ async function showMyOne(chatId, localId) {
     (total ? "Осталось: <b>" + gb(left) + "</b> из " + gb(total) + "\n" : "Пакет ещё не активирован.\n") +
     (exp ? "Действует до: <b>" + new Date(exp).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }) + "</b>\n" : "") +
     (packs.length && !packs.some((x) => x.activatedAt) ? "\n<i>Отсчёт срока начнётся, когда eSIM впервые выйдет в интернет.</i>" : "");
-  const rows = [[{ text: "Открыть QR и продление", url: o.myUrl }], [{ text: "‹ Мои eSIM", callback_data: "my" }]];
-  return send(chatId, text, { reply_markup: { inline_keyboard: rows } });
+  const rows = [];
+  // Продление тут же, без ухода на сайт: топапы ложатся на ту же eSIM,
+  // переустанавливать её не нужно.
+  (j.topups || []).slice(0, 5).forEach((t) => {
+    const vol = t.unlimited ? "безлимит" : RU(t.dataGb) + " ГБ";
+    rows.push([{ text: "＋ " + vol + " · " + RU(t.days) + " дн. · " + RU(t.priceRub) + " ₽",
+      callback_data: "tp:" + localId + ":" + t.id }]);
+  });
+  rows.push([{ text: "Открыть QR-код", url: o.myUrl }]);
+  rows.push([{ text: "‹ Мои eSIM", callback_data: "my" }, { text: "🌍 Другая страна", callback_data: "home" }]);
+  return send(chatId, text + ((j.topups || []).length ? "\n\n<b>Продлить</b> — трафик добавится на эту же eSIM:" : ""),
+    { reply_markup: { inline_keyboard: rows } });
 }
 
 // ── бонусы и приглашение друзей ──
@@ -525,6 +546,37 @@ async function linkMail(chatId, email) {
     ] } });
 }
 
+// Оплата продления: те же деньги и тот же банк, но пакет ложится на
+// существующую eSIM — поэтому передаём исходный заказ и его подпись.
+async function startTopup(chatId, localId, productId) {
+  const o = myOrders(chatId).find((x) => x.id === localId);
+  if (!o) return showMy(chatId);
+  const st = getState(chatId);
+  if (!st.phone && !st.email) {
+    setState(chatId, { step: "contact", topup: { localId, productId } });
+    return send(chatId,
+      "Для чека банку нужен контакт. Нажмите кнопку — телеграм передаст ваш номер.",
+      { reply_markup: { keyboard: [[{ text: "📱 Отправить мой номер", request_contact: true }]],
+        resize_keyboard: true, one_time_keyboard: true } });
+  }
+  const u = new URL(o.myUrl);
+  const j = await api("post", "/esim/api/pay/start", {
+    productId, parent: u.searchParams.get("o"), t: u.searchParams.get("t"),
+    email: st.email || "", phone: st.phone || "", tgChatId: String(chatId),
+    promo: st.promo || "", useBalance: !!st.useBalance,
+  });
+  if (!j || !j.success || !j.url) {
+    return send(chatId, "Не получилось открыть оплату продления. Напишите нам: " + SUPPORT_TG);
+  }
+  return send(chatId,
+    "<b>Продление</b>\n" + esc(o.label || "") + "\n\nПосле оплаты трафик добавится на эту же eSIM, " +
+    "переустанавливать ничего не нужно.",
+    { reply_markup: { inline_keyboard: [
+      [{ text: "Оплатить продление", url: j.url }],
+      [{ text: "‹ Мои eSIM", callback_data: "my" }],
+    ] } });
+}
+
 // ─────────────────────────── обработка апдейтов ───────────────────────────
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
 function plural(n, forms) {
@@ -550,7 +602,7 @@ async function onText(chatId, text) {
       setState(chatId, { promo: UTM_PROMO, step: null });
       await send(chatId, "Ваша скидка по ссылке уже учтена — увидите её в цене пакета.");
     } else setState(chatId, { step: null });
-    return showHome(chatId);
+    return showHome(chatId, await welcomeGift(chatId));
   }
   if (t === BTN_BUY) return showHome(chatId);
   if (t === BTN_MY || /^\/my|^мои/i.test(t)) return showMy(chatId);
@@ -660,6 +712,10 @@ async function onCallback(q) {
   if (data.indexOf("p:") === 0) return showPack(chatId, data.slice(2), messageId);
   if (data.indexOf("buy:") === 0) return startBuy(chatId, data.slice(4));
   if (data.indexOf("m:") === 0) return showMyOne(chatId, data.slice(2));
+  if (data.indexOf("tp:") === 0) {
+    const [, localId, productId] = data.split(":");
+    return startTopup(chatId, localId, productId);
+  }
   if (data === "back:pay") {
     const st = getState(chatId);
     if (!st.productId) return showHome(chatId);
@@ -672,6 +728,12 @@ async function onCallback(q) {
 async function onIssued(order) {
   if (!ready() || !order || !order.tgChatId) return;
   const chatId = order.tgChatId;
+  if (order.parentOrderId) {                       // продление: eSIM та же, QR прежний
+    return send(chatId,
+      "<b>Пакет продлён</b>\n" + esc(order.label || "") +
+      "\n\nТрафик уже на вашей eSIM, переустанавливать ничего не нужно.",
+      { reply_markup: { inline_keyboard: [[{ text: "📱 Мои eSIM", callback_data: "my" }]] } });
+  }
   const u = new URL(order.myUrl);
   const j = await api("get", "/esim/api/my?o=" + encodeURIComponent(u.searchParams.get("o")) +
     "&t=" + encodeURIComponent(u.searchParams.get("t")));
@@ -706,6 +768,11 @@ async function handleUpdate(upd) {
       const phone = String(msg.contact.phone_number || "").replace(/[^\d+]/g, "");
       setState(msg.chat.id, { phone, step: null });
       await send(msg.chat.id, "Номер получил, спасибо.", { reply_markup: mainKeyboard() });
+      const st = getState(msg.chat.id);
+      if (st.topup) {
+        setState(msg.chat.id, { topup: null });
+        return await startTopup(msg.chat.id, st.topup.localId, st.topup.productId);
+      }
       return await payLink(msg.chat.id);
     }
     if (msg && msg.chat && msg.text) return await onText(msg.chat.id, msg.text);

@@ -50,7 +50,8 @@ const NOTIFY_EVERY_MS = Number(process.env.ESIM_NOTIFY_EVERY_H || 4) * 3600 * 10
 // Скидки: промокод и реферальная программа дают фиксированную сумму в рублях.
 // К оплате всегда остаётся не меньше MIN_PAY_RUB — иначе банку нечего проводить,
 // а нам нечем подтвердить покупку и выбить чек.
-const REF_BONUS_RUB = Number(process.env.ESIM_REF_BONUS || 100);   // другу и пригласившему
+const REF_BONUS_RUB = Number(process.env.ESIM_REF_BONUS || 100);
+const TG_WELCOME_RUB = Number(process.env.ESIM_TG_WELCOME || 100);   // подарок новичку в боте   // другу и пригласившему
 const MIN_PAY_RUB = Number(process.env.ESIM_MIN_PAY || 100);
 // Бонусами можно закрыть не больше половины стоимости пакета — остальное деньгами
 const MAX_BONUS_SHARE = Number(process.env.ESIM_MAX_BONUS_SHARE || 0.5);
@@ -400,6 +401,22 @@ function readSession(req) {
 function emailOfProviderOrder(mmOrderId) {
   const o = readJson(ORDERS_FILE, []).find((x) => x.status === "done" && (x.mmOrderId === mmOrderId || x.parentOrderId === mmOrderId));
   return o && o.email ? o.email : null;
+}
+// Купленное в боте живёт на телефоне, а не на почте: клиентский ЛК как раз
+// опознаёт человека по номеру, поэтому такие eSIM находятся по нему.
+function samePhone(a, b) {
+  const d = (x) => String(x || "").replace(/\D/g, "").slice(-10);
+  return d(a).length === 10 && d(a) === d(b);
+}
+function esimsOfPhone(phone) {
+  if (!phone) return [];
+  return readJson(ORDERS_FILE, [])
+    .filter((o) => o.status === "done" && o.mmOrderId && !o.email && samePhone(o.phone, phone))
+    .map((o) => ({
+      label: o.label, ts: o.ts, priceRub: o.priceRub, topup: !!o.parentOrderId,
+      url: BASE_URL + "/esim/my?o=" + encodeURIComponent(o.parentOrderId || o.mmOrderId) +
+           "&t=" + signOrder(o.parentOrderId || o.mmOrderId),
+    }));
 }
 function esimsOf(email) {
   return readJson(ORDERS_FILE, [])
@@ -885,14 +902,15 @@ function mount(app, opts) {
       extra = withEsims.filter((e) => e !== email);
     }
 
+    // Куплено в боте на этот номер — показываем и без почты
+    const byPhone = lk ? esimsOfPhone(lk.phone) : [];
     if (!email) {
-      // В кабинете человек уже «свой» — покажем пустой список, а не форму входа
-      if (lk) return res.json({ success: true, lk: true, email: null, esims: [], balanceRub: 0 });
+      if (lk) return res.json({ success: true, lk: true, email: null, esims: byPhone, balanceRub: 0 });
       return res.status(403).json({ success: false });
     }
     const c = getCustomer(email, true);
     const invited = Object.values(loadCustomers()).filter((x) => normEmail(x.invitedBy || "") === email);
-    let list = esimsOf(email);
+    let list = esimsOf(email).concat(byPhone);
     extra.forEach((e) => { list = list.concat(esimsOf(e)); });
     list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
     res.json({
@@ -977,6 +995,27 @@ function mount(app, opts) {
       success: true, linked: n,
       accountUrl: BASE_URL + "/esim/account?e=" + encodeURIComponent(email) + "&t=" + signEmail(email),
     });
+  });
+
+  // Приветственные баллы новичку бота. Идемпотентно: карточка помечается, и
+  // повторный /start второй сотни не даёт.
+  app.post("/esim/api/tg/welcome", (req, res) => {
+    const secret = crypto.createHash("sha256").update("tg:" + (process.env.ESIM_TG_TOKEN || "")).digest("hex").slice(0, 24);
+    if (!process.env.ESIM_TG_TOKEN || String(req.headers["x-tg-secret"] || "") !== secret) {
+      return res.status(403).json({ success: false });
+    }
+    const who = tgKey((req.body || {}).tgChatId);
+    if (!validKey(who)) return res.status(400).json({ success: false });
+    const had = getCustomer(who, false);
+    if (had && had.welcomeBonus) {
+      return res.json({ success: true, granted: false, balanceRub: had.balanceRub || 0, bonusRub: TG_WELCOME_RUB });
+    }
+    const c = updateCustomer(who, (x) => {
+      x.welcomeBonus = Date.now();
+      x.balanceRub = Math.max(0, Math.round((x.balanceRub || 0) + TG_WELCOME_RUB));
+      x.ledger = [{ ts: Date.now(), rub: TG_WELCOME_RUB, note: "Приветственные баллы" }].concat(x.ledger || []).slice(0, 100);
+    });
+    res.json({ success: true, granted: true, balanceRub: c.balanceRub, bonusRub: TG_WELCOME_RUB });
   });
 
   // Бонусы и рефералка для телеграм-бота: своя карточка по чату, если почты нет
