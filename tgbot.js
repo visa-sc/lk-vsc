@@ -273,13 +273,29 @@ async function showAllCountries(chatId, page, messageId) {
   const kb = { inline_keyboard: rows };
   return messageId ? edit(chatId, messageId, head, { reply_markup: kb }) : send(chatId, head, { reply_markup: kb });
 }
+// Нижнее меню живёт всегда: с любого шага — хоть с оплаты — можно уйти
+// посмотреть свои eSIM и вернуться, ничего не потеряв.
+const BTN_BUY = "🌍 Купить eSIM";
+const BTN_MY = "📱 Мои eSIM";
+const BTN_HELP = "💬 Помощь";
+function mainKeyboard() {
+  return {
+    keyboard: [[{ text: BTN_BUY }, { text: BTN_MY }], [{ text: BTN_HELP }]],
+    resize_keyboard: true, is_persistent: true,
+  };
+}
+
 const HELLO =
   "<b>VOYO mobile — интернет в поездке</b>\n\n" +
   "Выбираете пакет, оплачиваете картой в рублях, сразу получаете QR-код прямо сюда. " +
   "Основная симка остаётся на месте, eSIM ставится второй линией только для интернета.\n\n" +
   "Куда летите? Нажмите страну ниже или напишите её название.";
 
-async function showHome(chatId) { return send(chatId, HELLO, { reply_markup: homeKeyboard() }); }
+async function showHome(chatId) {
+  await send(chatId, "Меню всегда внизу: можно уйти к своим eSIM и вернуться сюда.",
+    { reply_markup: mainKeyboard() });
+  return send(chatId, HELLO, { reply_markup: homeKeyboard() });
+}
 
 async function showCountry(chatId, iso, page, messageId) {
   const list = await packsFor(iso);
@@ -381,7 +397,9 @@ async function payLink(chatId) {
     "Нажмите кнопку — откроется защищённая страница Т-Банка. Карта или СБП.",
     { reply_markup: { inline_keyboard: [
       [{ text: "Оплатить " + RU(price.total) + " ₽", url: j.url }],
-      [{ text: "‹ Выбрать другой пакет", callback_data: "c:" + (st.iso || p.countries[0]) }],
+      [{ text: "‹ Другой пакет", callback_data: "c:" + (st.iso || p.countries[0]) },
+       { text: "📱 Мои eSIM", callback_data: "my" }],
+      [{ text: "‹ В начало", callback_data: "home" }],
     ] } });
 }
 
@@ -403,6 +421,7 @@ async function showMy(chatId) {
   }
   const rows = mine.slice(0, 8).map((o) => [{ text: (o.label || "eSIM").slice(0, 60), callback_data: "m:" + o.id }]);
   rows.push([{ text: "＋ Купить ещё eSIM", callback_data: "home" }]);
+  if (getState(chatId).productId) rows.push([{ text: "‹ Вернуться к оплате", callback_data: "back:pay" }]);
   return send(chatId, "<b>Ваши eSIM</b>\nВыберите, чтобы увидеть остаток трафика и QR-код.",
     { reply_markup: { inline_keyboard: rows } });
 }
@@ -451,8 +470,9 @@ async function onText(chatId, text) {
     } else setState(chatId, { step: null });
     return showHome(chatId);
   }
-  if (/^\/my|^мои/i.test(t)) return showMy(chatId);
-  if (/^\/help|^помощь/i.test(t)) {
+  if (t === BTN_BUY) return showHome(chatId);
+  if (t === BTN_MY || /^\/my|^мои/i.test(t)) return showMy(chatId);
+  if (t === BTN_HELP || /^\/help|^помощь/i.test(t)) {
     return send(chatId, "Напишите страну, и я покажу пакеты. Живой человек на связи здесь: " + SUPPORT_TG,
       { reply_markup: homeKeyboard() });
   }
@@ -507,6 +527,11 @@ async function onCallback(q) {
   if (data.indexOf("p:") === 0) return showPack(chatId, data.slice(2), messageId);
   if (data.indexOf("buy:") === 0) return startBuy(chatId, data.slice(4));
   if (data.indexOf("m:") === 0) return showMyOne(chatId, data.slice(2));
+  if (data === "back:pay") {
+    const st = getState(chatId);
+    if (!st.productId) return showHome(chatId);
+    return (st.phone || st.email) ? payLink(chatId) : showPack(chatId, st.productId);
+  }
 }
 
 // ─────────────────────────── выдача после оплаты ───────────────────────────
@@ -544,7 +569,7 @@ async function handleUpdate(upd) {
     if (msg && msg.contact && msg.chat) {
       const phone = String(msg.contact.phone_number || "").replace(/[^\d+]/g, "");
       setState(msg.chat.id, { phone, step: null });
-      await send(msg.chat.id, "Номер получил, спасибо.", { reply_markup: { remove_keyboard: true } });
+      await send(msg.chat.id, "Номер получил, спасибо.", { reply_markup: mainKeyboard() });
       return await payLink(msg.chat.id);
     }
     if (msg && msg.chat && msg.text) return await onText(msg.chat.id, msg.text);
