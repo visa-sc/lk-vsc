@@ -20,6 +20,7 @@ const axios = require("axios");
 
 const DIR = path.join(__dirname, ".esim");
 const STATE_FILE = path.join(DIR, "tgstate.json");     // с кем на каком шаге говорим
+const OFFSET_FILE = path.join(DIR, "tgoffset.json");   // на каком обновлении остановились
 const TG_API = "https://api.telegram.org/bot";
 
 const TOKEN = process.env.ESIM_TG_TOKEN || "";
@@ -153,8 +154,35 @@ function homeKeyboard() {
   for (let i = 0; i < POPULAR.length; i += 3) {
     rows.push(POPULAR.slice(i, i + 3).map((iso) => ({ text: flag(iso) + " " + cname(iso), callback_data: "c:" + iso })));
   }
+  rows.push([{ text: "🌍 Все страны", callback_data: "all:0" }]);
   rows.push([{ text: "📱 Мои eSIM", callback_data: "my" }, { text: "💬 Помощь", url: SUPPORT_TG }]);
   return { inline_keyboard: rows };
+}
+
+// Полный список стран страницами: в каталоге их около двух сотен, в одну
+// клавиатуру не влезут, а искать словом догадается не каждый.
+const PER_PAGE = 24;
+async function showAllCountries(chatId, page, messageId) {
+  const c = await catalog();
+  const all = c.index.slice().sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  const pages = Math.max(1, Math.ceil(all.length / PER_PAGE));
+  const p = Math.min(Math.max(0, page), pages - 1);
+  const slice = all.slice(p * PER_PAGE, p * PER_PAGE + PER_PAGE);
+  const rows = [];
+  for (let i = 0; i < slice.length; i += 3) {
+    rows.push(slice.slice(i, i + 3).map((x) => ({
+      text: flag(x.iso) + " " + x.name.slice(0, 18), callback_data: "c:" + x.iso,
+    })));
+  }
+  const nav = [];
+  if (p > 0) nav.push({ text: "‹ Назад", callback_data: "all:" + (p - 1) });
+  nav.push({ text: (p + 1) + " из " + pages, callback_data: "all:" + p });
+  if (p < pages - 1) nav.push({ text: "Далее ›", callback_data: "all:" + (p + 1) });
+  rows.push(nav);
+  rows.push([{ text: "‹ К популярным", callback_data: "home" }]);
+  const head = "<b>Все страны — " + all.length + "</b>\nВыберите из списка или просто напишите название.";
+  const kb = { inline_keyboard: rows };
+  return messageId ? edit(chatId, messageId, head, { reply_markup: kb }) : send(chatId, head, { reply_markup: kb });
 }
 const HELLO =
   "<b>VOYO mobile — интернет в поездке</b>\n\n" +
@@ -362,6 +390,7 @@ async function onCallback(q) {
   if (!chatId) return;
   if (data === "home") return edit(chatId, messageId, HELLO, { reply_markup: homeKeyboard() });
   if (data === "my") return showMy(chatId);
+  if (data.indexOf("all:") === 0) return showAllCountries(chatId, parseInt(data.slice(4), 10) || 0, messageId);
   if (data.indexOf("c:") === 0) {
     const parts = data.slice(2).split(":");
     return showCountry(chatId, parts[0], parseInt(parts[1] || "0", 10) || 0, messageId);
@@ -399,29 +428,62 @@ async function onIssued(order) {
   }
 }
 
+async function handleUpdate(upd) {
+  try {
+    if (upd.callback_query) return await onCallback(upd.callback_query);
+    const msg = upd.message || upd.edited_message;
+    if (msg && msg.chat && msg.text) return await onText(msg.chat.id, msg.text);
+  } catch (e) { console.error("tgbot update:", e.message); }
+}
+
+// Вебхук нам не годится: Telegram до нашего сервера не достучится (проверено
+// 10.09.2026 — «Connection timed out» на каждой попытке, блокировка работает в
+// обе стороны). Поэтому забираем обновления сами длинным опросом через
+// ретранслятор: канал наружу у нас есть.
+let _polling = false;
+async function pollLoop() {
+  if (_polling) return;
+  _polling = true;
+  let offset = readJson(OFFSET_FILE, { offset: 0 }).offset || 0;
+  console.log("tgbot: опрос запущен, продолжаем с обновления", offset);
+  for (;;) {
+    try {
+      const ups = await tg("getUpdates", {
+        offset, timeout: 25, allowed_updates: ["message", "callback_query"],
+      });
+      if (Array.isArray(ups) && ups.length) {
+        for (const u of ups) {
+          offset = Math.max(offset, (u.update_id || 0) + 1);
+          await handleUpdate(u);
+        }
+        writeJson(OFFSET_FILE, { offset });
+      } else if (ups === null) {
+        await new Promise((r) => setTimeout(r, 5000));   // связи нет — не долбим
+      }
+    } catch (e) {
+      console.error("tgbot опрос:", e.message);
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+}
+
 // ─────────────────────────── подключение ───────────────────────────
 function mount(app, opts) {
   if (!ready()) { console.log("tgbot: ESIM_TG_TOKEN не задан, бот выключен"); return { onIssued: () => {} }; }
   const hook = webhookPath();
 
+  // Вебхук оставлен на случай, если однажды до нас начнут доходить запросы
   app.post(hook, require("express").json({ limit: "1mb" }), async (req, res) => {
-    res.json({ ok: true });                       // Telegram ждёт быстрый ответ
-    const upd = req.body || {};
-    try {
-      if (upd.callback_query) return await onCallback(upd.callback_query);
-      const msg = upd.message || upd.edited_message;
-      if (msg && msg.chat && msg.text) return await onText(msg.chat.id, msg.text);
-    } catch (e) { console.error("tgbot update:", e.message); }
+    res.json({ ok: true });
+    await handleUpdate(req.body || {});
   });
 
-  // Ставим вебхук сами: адрес меняется вместе с секретом, руками не забыть
   setTimeout(async () => {
-    const url = BASE_URL + hook;
-    const r = await tg("setWebhook", { url, allowed_updates: ["message", "callback_query"], drop_pending_updates: false });
-    console.log("tgbot: вебхук " + (r ? "поставлен" : "НЕ поставлен") + " → " + url);
+    await tg("deleteWebhook", { drop_pending_updates: false });
+    pollLoop();
   }, 4000);
 
-  console.log("tgbot: бот подключён, вебхук " + hook + (RELAY ? " (наружу через ретранслятор)" : " (напрямую)"));
+  console.log("tgbot: бот подключён" + (RELAY ? " (наружу через ретранслятор)" : " (напрямую)"));
   return { onIssued };
 }
 
