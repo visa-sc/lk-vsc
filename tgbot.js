@@ -279,9 +279,10 @@ const BTN_BUY = "🌍 Купить eSIM";
 const BTN_MY = "📱 Мои eSIM";
 const BTN_HELP = "💬 Помощь";
 const BTN_MAIL = "✉️ Почта для сайта";
+const BTN_SITE = "🌐 Перейти на сайт";
 function mainKeyboard() {
   return {
-    keyboard: [[{ text: BTN_BUY }, { text: BTN_MY }], [{ text: BTN_MAIL }, { text: BTN_HELP }]],
+    keyboard: [[{ text: BTN_BUY }, { text: BTN_MY }], [{ text: BTN_MAIL }, { text: BTN_HELP }], [{ text: BTN_SITE }]],
     resize_keyboard: true, is_persistent: true,
   };
 }
@@ -500,6 +501,13 @@ async function onText(chatId, text) {
   if (t === BTN_BUY) return showHome(chatId);
   if (t === BTN_MY || /^\/my|^мои/i.test(t)) return showMy(chatId);
   if (t === BTN_MAIL || /^\/email/i.test(t)) return askMail(chatId);
+  if (t === BTN_SITE) {
+    return send(chatId, "Наш сайт — там же бонусы, приглашение друзей и оплата с почтой. В боте всё то же самое.",
+      { reply_markup: { inline_keyboard: [
+        [{ text: "Открыть voyotravel.ru", url: BASE_URL + "/esim" }],
+        [{ text: "📱 Мои eSIM на сайте", url: BASE_URL + "/esim/account" }],
+      ] } });
+  }
   if (t === BTN_HELP || /^\/help|^помощь/i.test(t)) {
     return send(chatId, "Напишите страну, и я покажу пакеты. Живой человек на связи здесь: " + SUPPORT_TG,
       { reply_markup: homeKeyboard() });
