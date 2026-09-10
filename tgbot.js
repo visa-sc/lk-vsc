@@ -516,6 +516,8 @@ async function showBonus(chatId) {
   return send(chatId, text, { reply_markup: { inline_keyboard: [
     [{ text: "Позвать друга", url: "https://t.me/share/url?url=" + encodeURIComponent(link) +
       "&text=" + encodeURIComponent("Интернет в поездке без роуминга: eSIM за минуту, по этой ссылке скидка " + j.refBonus + " ₽") }],
+    // Кнопка-копирование: телеграм сам кладёт ссылку в буфер, тыкать в текст не нужно
+    [{ text: "📋 Скопировать ссылку", copy_text: { text: link } }],
     [{ text: "🌍 Купить eSIM", callback_data: "home" }, { text: "📱 Мои eSIM", callback_data: "my" }],
   ] } });
 }
