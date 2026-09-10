@@ -679,6 +679,8 @@ function mount(app, opts) {
             "\nЗаказ MobiMatter: " + res.orderId + "\nСсылка клиента: " + g.order.myUrl,
         }).catch(() => {});
       }
+      // Продали через бота — пусть он сам отдаст клиенту QR в чат
+      if (opts && opts.onIssued) { try { opts.onIssued(g.order); } catch (e) { console.error("esim onIssued:", e.message); } }
       return { ok: true, order: g.order };
     } catch (e) {
       const g = findLocal(id);
@@ -708,6 +710,7 @@ function mount(app, opts) {
     const email = normEmail(b.email) || readSession(req);
     if (!validEmail(email)) return res.status(400).json({ success: false, message: "Нужен корректный email." });
     const phone = String(b.phone || "").trim().slice(0, 30) || null;
+    const tgChatId = b.tgChatId ? String(b.tgChatId).slice(0, 20) : null;   // покупка из телеграм-бота
     const parentOrderId = b.parent ? String(b.parent).slice(0, 40) : null;
     if (parentOrderId && !checkSig(parentOrderId, b.t)) return res.status(403).json({ success: false });
     // Купил из клиентского ЛК — запоминаем связку телефон → почта, чтобы в
@@ -737,7 +740,7 @@ function mount(app, opts) {
       const orders = readJson(ORDERS_FILE, []);
       orders.unshift({
         id, ts: Date.now(), status: "pending", productId: found.item.id, parentOrderId,
-        label, priceRub, listPriceRub: listPrice, phone, email,
+        label, priceRub, listPriceRub: listPrice, phone, email, tgChatId,
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         promoCode: calc.promoCode, refBy: calc.refBy, balanceUsed: calc.balanceUsed,
       });

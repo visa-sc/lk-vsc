@@ -2304,9 +2304,15 @@ scannerMod.mount(app, { getStaffFromReq });
 // становится полностью нашим). Клиентский ЛК и /admin не затрагивает.
 require("./excursion").mount(app, { sendMail: (o) => mail.sendMail(o) });
 
+// Телеграм-бот продажи eSIM — второе лицо того же сервиса (см. tgbot.js).
+// Подключаем ДО esim.mount, чтобы отдать ему крючок выдачи.
+const tgbot = require("./tgbot").mount(app, {});
+
 require("./esim").mount(app, {
   fetchCbrRates,
   sendMail: (o) => mail.sendMail(o),
+  // Покупка пришла из телеграма — бот сам отдаст клиенту QR в чат
+  onIssued: (order) => { try { tgbot.onIssued(order); } catch (e) { console.error("tg onIssued:", e.message); } },
   // Клиент, уже вошедший в ЛК по телефону: отдаём его почты из карточки amoCRM,
   // чтобы в разделе «eSIM» не спрашивать email второй раз. Поиск контактов
   // кэширован (findMatchingContacts, 2 мин), сам esim.js держит связку локально
