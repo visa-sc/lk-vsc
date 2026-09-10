@@ -128,6 +128,95 @@ const EU = "AT BE BG HR CY CZ DK EE FI FR DE GR HU IS IE IT LV LI LT LU MT NL NO
 const isEuroRegional = (p) => p.countries.filter((c) => EU[c]).length >= 15;
 const POPULAR = ["ES", "IT", "FR", "EU-REGION", "TR", "AE", "TH", "JP", "US"];
 
+// Как люди на самом деле называют страны: «Америка», «Эмираты», «Тайланд»
+// через «й», курорты вместо стран. Официальное название знают не все, а уйти
+// из бота ни с чем человек может с первой же попытки.
+const ALIAS = {
+  "US": "сша америка соединенные штаты штаты usa america united states",
+  "AE": "оаэ эмираты арабские дубай абу-даби uae dubai emirates",
+  "GB": "великобритания англия британия лондон uk britain england",
+  "KR": "южная корея корея сеул korea",
+  "CZ": "чехия прага czech",
+  "TR": "турция турци стамбул анталия анталья turkey turkiye",
+  "TH": "таиланд тайланд бангкок пхукет самуи thailand",
+  "ES": "испания барселона мадрид тенерифе майорка spain",
+  "IT": "италия рим милан венеция italy",
+  "FR": "франция париж ницца france",
+  "DE": "германия берлин мюнхен germany",
+  "GR": "греция афины крит родос greece",
+  "EG": "египет хургада шарм каир egypt",
+  "CN": "китай пекин шанхай china",
+  "JP": "япония токио japan",
+  "VN": "вьетнам нячанг фукуок дананг vietnam",
+  "GE": "грузия тбилиси батуми georgia",
+  "AM": "армения ереван armenia",
+  "AZ": "азербайджан баку azerbaijan",
+  "RS": "сербия белград serbia",
+  "ME": "черногория будва montenegro",
+  "CY": "кипр ларнака cyprus",
+  "IL": "израиль тель-авив israel",
+  "IN": "индия гоа india",
+  "ID": "индонезия бали джакарта indonesia bali",
+  "MV": "мальдивы maldives",
+  "LK": "шри-ланка шри ланка цейлон sri lanka",
+  "KZ": "казахстан алматы астана kazakhstan",
+  "UZ": "узбекистан ташкент самарканд uzbekistan",
+  "KG": "киргизия кыргызстан бишкек",
+  "BY": "беларусь белоруссия минск belarus",
+  "MD": "молдова молдавия кишинев moldova",
+  "PT": "португалия лиссабон portugal",
+  "NL": "нидерланды голландия амстердам netherlands holland",
+  "AT": "австрия вена austria",
+  "CH": "швейцария цюрих женева switzerland",
+  "PL": "польша варшава краков poland",
+  "HU": "венгрия будапешт hungary",
+  "FI": "финляндия хельсинки finland",
+  "SE": "швеция стокгольм sweden",
+  "NO": "норвегия осло norway",
+  "DK": "дания копенгаген denmark",
+  "HR": "хорватия croatia",
+  "BG": "болгария болгари bulgaria",
+  "RO": "румыния romania",
+  "AL": "албания albania",
+  "MX": "мексика канкун mexico",
+  "BR": "бразилия brazil",
+  "AR": "аргентина argentina",
+  "CA": "канада canada",
+  "AU": "австралия australia",
+  "NZ": "новая зеландия zealand",
+  "ZA": "юар южная африка africa",
+  "MA": "марокко morocco",
+  "TN": "тунис tunisia",
+  "QA": "катар доха qatar",
+  "SA": "саудовская аравия саудовская riyadh",
+  "OM": "оман oman",
+  "BH": "бахрейн bahrain",
+  "KW": "кувейт kuwait",
+  "JO": "иордания jordan",
+  "SG": "сингапур singapore",
+  "MY": "малайзия куала-лумпур malaysia",
+  "PH": "филиппины philippines",
+  "HK": "гонконг hong kong",
+  "TW": "тайвань taiwan",
+  "EU-REGION": "европа европу европе шенген евросоюз europe",
+};
+function norm(s) { return String(s || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim(); }
+
+// Ищем в таком порядке: точное название, начало названия, синоним, вхождение.
+function searchCountries(list, query) {
+  const q = norm(query);
+  if (q.length < 2) return [];
+  const seen = {}, out = [];
+  const push = (x) => { if (x && !seen[x.iso]) { seen[x.iso] = 1; out.push(x); } };
+  const named = list.map((x) => ({ iso: x.iso, name: x.name, n: norm(x.name) }));
+  named.filter((x) => x.n === q).forEach(push);
+  named.filter((x) => x.n.indexOf(q) === 0).forEach(push);
+  named.filter((x) => (ALIAS[x.iso] || "").split(" ").some((w) => w && w.indexOf(q) === 0)).forEach(push);
+  if (ALIAS["EU-REGION"].split(" ").some((w) => w && w.indexOf(q) === 0)) push({ iso: "EU-REGION", name: "Европа" });
+  named.filter((x) => x.n.indexOf(q) > 0).forEach(push);
+  return out;
+}
+
 async function catalog() {
   if (Date.now() - _cat.ts < 10 * 60 * 1000 && _cat.products.length) return _cat;
   const j = await api("get", "/esim/api/catalog");
@@ -197,13 +286,23 @@ async function showCountry(chatId, iso, page, messageId) {
   if (!list.length) {
     return send(chatId, "По этой стране пакетов сейчас нет. Напишите нам, подберём вручную: " + SUPPORT_TG);
   }
-  const PER = 8, from = page * PER;
+  const PER = 8;
+  const pages = Math.max(1, Math.ceil(list.length / PER));
+  const pg = Math.min(Math.max(0, page), pages - 1);
+  const from = pg * PER;
   const slice = list.slice(from, from + PER);
   const rows = slice.map((p) => [{ text: packLabel(p), callback_data: "p:" + p.id }]);
-  if (from + PER < list.length) rows.push([{ text: "Показать ещё", callback_data: "c:" + iso + ":" + (page + 1) }]);
+  // Листаем в обе стороны: человек может уйти вперёд и захотеть вернуться
+  const nav = [];
+  if (pg > 0) nav.push({ text: "‹ Дешевле", callback_data: "c:" + iso + ":" + (pg - 1) });
+  nav.push({ text: (pg + 1) + " из " + pages, callback_data: "c:" + iso + ":" + pg });
+  if (pg < pages - 1) nav.push({ text: "Дороже ›", callback_data: "c:" + iso + ":" + (pg + 1) });
+  if (nav.length > 1) rows.push(nav);
   rows.push([{ text: "‹ Другая страна", callback_data: "home" }]);
-  const head = flag(iso) + " <b>" + cname(iso) + "</b>\n" +
-    "Пакеты с мгновенной выдачей QR-кода. Цена окончательная, в рублях.";
+  const head = flag(iso) + " <b>" + cname(iso) + "</b> · " + list.length + " " +
+    plural(list.length, ["пакет", "пакета", "пакетов"]) + "\n" +
+    "Сначала самые дешёвые. Цена окончательная, в рублях, QR-код выдаётся сразу." +
+    (pages > 1 ? "\nСтраница " + (pg + 1) + " из " + pages + "." : "");
   const kb = { inline_keyboard: rows };
   setState(chatId, { iso });
   return messageId ? edit(chatId, messageId, head, { reply_markup: kb }) : send(chatId, head, { reply_markup: kb });
@@ -249,13 +348,18 @@ async function priceFor(chatId, p) {
 // дальше берём сохранённую и не мучаем человека повторно.
 async function startBuy(chatId, productId) {
   const st = setState(chatId, { productId });
-  if (!st.email) {
-    setState(chatId, { step: "email" });
-    return send(chatId,
-      "Напишите вашу почту — на неё придёт чек и постоянный доступ к eSIM.\n\n" +
-      "<i>QR-код всё равно придёт сюда, в телеграм.</i>");
-  }
-  return payLink(chatId);
+  if (st.phone || st.email) return payLink(chatId);
+  // Банк обязан отправить чек покупателю, поэтому один контакт всё же нужен.
+  // Телефон отдаётся одним касанием — печатать ничего не надо.
+  setState(chatId, { step: "contact" });
+  return send(chatId,
+    "Остался один шаг: банку нужен контакт для чека.\n\n" +
+    "Нажмите кнопку ниже — телеграм сам передаст ваш номер, вводить ничего не нужно. " +
+    "Чек придёт смской, а QR-код сюда, в чат.",
+    { reply_markup: {
+      keyboard: [[{ text: "📱 Отправить мой номер", request_contact: true }]],
+      resize_keyboard: true, one_time_keyboard: true,
+    } });
 }
 
 async function payLink(chatId) {
@@ -264,7 +368,8 @@ async function payLink(chatId) {
   const p = c.products.find((x) => x.id === st.productId);
   if (!p) return send(chatId, "Пакет больше не доступен, выберите другой.", { reply_markup: homeKeyboard() });
   const j = await api("post", "/esim/api/pay/start", {
-    productId: p.id, email: st.email, promo: st.promo || "", tgChatId: String(chatId),
+    productId: p.id, email: st.email || "", phone: st.phone || "",
+    promo: st.promo || "", tgChatId: String(chatId),
   });
   if (!j || !j.success || !j.url) {
     return send(chatId, "Не получилось открыть оплату. Попробуйте ещё раз или напишите нам: " + SUPPORT_TG);
@@ -272,7 +377,7 @@ async function payLink(chatId) {
   const price = await priceFor(chatId, p);
   return send(chatId,
     "<b>" + esc(p.title || "") + "</b>\n" + gbOf(p) + " · " + RU(p.days) + " дн.\n\n" +
-    "К оплате: <b>" + RU(price.total) + " ₽</b>\nЧек уйдёт на " + esc(st.email) + "\n\n" +
+    "К оплате: <b>" + RU(price.total) + " ₽</b>\nЧек уйдёт " + (st.email ? "на " + esc(st.email) : "смской на " + esc(st.phone)) + "\n\n" +
     "Нажмите кнопку — откроется защищённая страница Т-Банка. Карта или СБП.",
     { reply_markup: { inline_keyboard: [
       [{ text: "Оплатить " + RU(price.total) + " ₽", url: j.url }],
@@ -352,10 +457,16 @@ async function onText(chatId, text) {
       { reply_markup: homeKeyboard() });
   }
 
-  if (st.step === "email") {
-    if (!validEmail(t)) return send(chatId, "Похоже, в адресе опечатка. Напишите почту целиком, например ivan@mail.ru");
-    setState(chatId, { email: t.toLowerCase(), step: null });
-    return payLink(chatId);
+  if (st.step === "contact" || st.step === "email") {
+    if (validEmail(t)) {
+      setState(chatId, { email: t.toLowerCase(), step: null });
+      return payLink(chatId);
+    }
+    if (/^[\d+][\d\s()-]{9,}$/.test(t)) {
+      setState(chatId, { phone: t.replace(/[^\d+]/g, ""), step: null });
+      return payLink(chatId);
+    }
+    // молчим и ждём нажатия кнопки — это не команда и не страна
   }
 
   // Промокод человек может просто прислать сообщением
@@ -370,11 +481,9 @@ async function onText(chatId, text) {
 
   // Иначе считаем, что это страна
   const c = await catalog();
-  const low = t.toLowerCase();
-  const hits = c.index.filter((x) => x.name.toLowerCase().indexOf(low) === 0)
-    .concat(c.index.filter((x) => x.name.toLowerCase().indexOf(low) > 0));
+  const hits = searchCountries(c.index, t);
   if (!hits.length) {
-    return send(chatId, "Не нашёл такую страну. Попробуйте другое написание или выберите из списка.",
+    return send(chatId, "Не нашёл такую страну. Попробуйте другое написание, откройте полный список или напишите нам: " + SUPPORT_TG,
       { reply_markup: homeKeyboard() });
   }
   if (hits.length === 1) return showCountry(chatId, hits[0].iso, 0);
@@ -432,6 +541,12 @@ async function handleUpdate(upd) {
   try {
     if (upd.callback_query) return await onCallback(upd.callback_query);
     const msg = upd.message || upd.edited_message;
+    if (msg && msg.contact && msg.chat) {
+      const phone = String(msg.contact.phone_number || "").replace(/[^\d+]/g, "");
+      setState(msg.chat.id, { phone, step: null });
+      await send(msg.chat.id, "Номер получил, спасибо.", { reply_markup: { remove_keyboard: true } });
+      return await payLink(msg.chat.id);
+    }
     if (msg && msg.chat && msg.text) return await onText(msg.chat.id, msg.text);
   } catch (e) { console.error("tgbot update:", e.message); }
 }

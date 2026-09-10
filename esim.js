@@ -708,9 +708,13 @@ function mount(app, opts) {
     // Спрашиваем ТОЛЬКО email: на него уйдёт чек от онлайн-кассы (банк требует
     // контакт покупателя в чеке) и ссылка на личный кабинет с QR и остатком.
     const email = normEmail(b.email) || readSession(req);
-    if (!validEmail(email)) return res.status(400).json({ success: false, message: "Нужен корректный email." });
     const phone = String(b.phone || "").trim().slice(0, 30) || null;
     const tgChatId = b.tgChatId ? String(b.tgChatId).slice(0, 20) : null;   // покупка из телеграм-бота
+    // Банк требует контакт для чека: обычно это почта, но из бота человек
+    // отдаёт номер одним касанием — тогда чек уходит смской, а QR в чат.
+    if (!validEmail(email) && !(tgChatId && phone)) {
+      return res.status(400).json({ success: false, message: "Нужен корректный email." });
+    }
     const parentOrderId = b.parent ? String(b.parent).slice(0, 40) : null;
     if (parentOrderId && !checkSig(parentOrderId, b.t)) return res.status(403).json({ success: false });
     // Купил из клиентского ЛК — запоминаем связку телефон → почта, чтобы в
@@ -748,7 +752,7 @@ function mount(app, opts) {
       const pay = await tbank.init({
         orderId: id, amountRub: priceRub,
         description: label.slice(0, 140), itemName: label,
-        phone, email,
+        phone, email: validEmail(email) ? email : null,
         notificationUrl: BASE_URL + "/esim/api/pay/notify",
         successUrl: BASE_URL + "/esim/pay/ok?o=" + id + "&t=" + signOrder(id),
         failUrl: BASE_URL + "/esim/pay/fail?o=" + id,

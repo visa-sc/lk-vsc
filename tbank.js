@@ -70,7 +70,9 @@ function signature(params) {
 }
 
 // Чек для онлайн-кассы: одна позиция-услуга на всю сумму (предоплата 100%).
-function buildReceipt({ itemName, amountKop, email, phone }) {
+// letBankAsk — не подставлять наш запасной адрес: пусть банк спросит контакт
+// на своей форме (так покупает телеграм-бот, где почту у клиента не берём).
+function buildReceipt({ itemName, amountKop, email, phone, letBankAsk }) {
   const r = {
     Taxation: TAXATION,
     Items: [{
@@ -81,12 +83,12 @@ function buildReceipt({ itemName, amountKop, email, phone }) {
   };
   if (email) r.Email = email;
   if (phone) r.Phone = phone;         // хотя бы один контакт обязателен
-  if (!r.Email && !r.Phone) r.Email = process.env.TBANK_RECEIPT_FALLBACK_EMAIL || "info@visa-sc.ru";
+  if (!r.Email && !r.Phone && !letBankAsk) r.Email = process.env.TBANK_RECEIPT_FALLBACK_EMAIL || "info@visa-sc.ru";
   return r;
 }
 
 // Создать платёж → { ok, url, paymentId } | { ok:false, message }
-async function init({ orderId, amountRub, description, itemName, email, phone, successUrl, failUrl, notificationUrl }) {
+async function init({ orderId, amountRub, description, itemName, email, phone, successUrl, failUrl, notificationUrl, letBankAsk }) {
   if (!ready()) return { ok: false, message: "Т-Касса не настроена (нет TBANK_TERMINAL_KEY/PASSWORD)." };
   const amountKop = Math.round(Number(amountRub) * 100);
   if (!amountKop || amountKop < 100) return { ok: false, message: "Некорректная сумма." };
@@ -100,7 +102,7 @@ async function init({ orderId, amountRub, description, itemName, email, phone, s
   if (successUrl) body.SuccessURL = successUrl;
   if (failUrl) body.FailURL = failUrl;
   body.Token = signature(body);                    // считается ДО добавления Receipt
-  body.Receipt = buildReceipt({ itemName: itemName || description, amountKop, email, phone });
+  body.Receipt = buildReceipt({ itemName: itemName || description, amountKop, email, phone, letBankAsk });
   try {
     const r = await axios.post(API + "/Init", body, { timeout: 30000, httpsAgent: agent(), headers: { "Content-Type": "application/json" } });
     const d = r.data || {};
