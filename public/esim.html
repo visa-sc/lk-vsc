@@ -706,14 +706,22 @@
   // Safari на айфоне возвращает фокус в поле поиска, когда страницу открывают
   // из кэша (назад, вкладка из фона) — и клавиатура выскакивает сама, хотя
   // человек ничего не нажимал. Снимаем фокус, если его не ставили руками.
-  var userTapped = false;
-  q.addEventListener("pointerdown", function(){ userTapped = true; });
-  function dropFocus(){
-    if(userTapped) return;
+  // Заодно браузер прокручивает страницу к этому полю — шапка с логотипом
+  // уезжает под часы. Открываем страницу с самого верха, пока человек её
+  // не тронул; как только он сам скроллит или жмёт на поле — не мешаем.
+  var userTouched = false;
+  q.addEventListener("pointerdown", function(){ userTouched = true; });
+  ["touchstart","wheel","keydown"].forEach(function(ev){
+    window.addEventListener(ev, function(){ userTouched = true; }, {passive:true});
+  });
+  try{ if("scrollRestoration" in history) history.scrollRestoration = "manual"; }catch(e){}
+  function openClean(){
+    if(userTouched) return;
     try{ if(document.activeElement === q) q.blur(); }catch(e){}
+    window.scrollTo(0, 0);
   }
-  window.addEventListener("pageshow", function(){ userTapped = false; dropFocus(); setTimeout(dropFocus, 250); });
-  dropFocus(); setTimeout(dropFocus, 250);
+  window.addEventListener("pageshow", function(){ userTouched = false; openClean(); setTimeout(openClean, 250); });
+  openClean(); setTimeout(openClean, 250);
   function renderDrop(items){
     drop.innerHTML="";
     if(!items.length){ drop.appendChild(el('<div class="none">Не нашли — попробуйте другое написание.</div>')); }
