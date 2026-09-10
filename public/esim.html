@@ -703,6 +703,17 @@
 
   /* ── поиск с автодополнением ── */
   var q=document.getElementById("q"), drop=document.getElementById("drop");
+  // Safari на айфоне возвращает фокус в поле поиска, когда страницу открывают
+  // из кэша (назад, вкладка из фона) — и клавиатура выскакивает сама, хотя
+  // человек ничего не нажимал. Снимаем фокус, если его не ставили руками.
+  var userTapped = false;
+  q.addEventListener("pointerdown", function(){ userTapped = true; });
+  function dropFocus(){
+    if(userTapped) return;
+    try{ if(document.activeElement === q) q.blur(); }catch(e){}
+  }
+  window.addEventListener("pageshow", function(){ userTapped = false; dropFocus(); setTimeout(dropFocus, 250); });
+  dropFocus(); setTimeout(dropFocus, 250);
   function renderDrop(items){
     drop.innerHTML="";
     if(!items.length){ drop.appendChild(el('<div class="none">Не нашли — попробуйте другое написание.</div>')); }
