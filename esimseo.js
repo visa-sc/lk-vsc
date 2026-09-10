@@ -14,7 +14,8 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 
-const ARTICLES = require("./esim-articles.json");
+// Статьи лежат в двух файлах, чтобы каждый оставался обозримым при правке
+const ARTICLES = Object.assign({}, require("./esim-articles.json"), require("./esim-articles-2.json"));
 const SELF = process.env.ESIM_SELF_BASE || "http://127.0.0.1:3000";
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
 const BOT = "https://t.me/" + (process.env.ESIM_TG_USERNAME || "esimvoyo_bot");
