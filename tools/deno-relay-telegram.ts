@@ -23,6 +23,13 @@ const UPSTREAM = "https://api.telegram.org";
 
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
+
+  // Deno Deploy при выкладке стучится в корень и ждёт успешный ответ
+  // («Warm up»). Отвечаем ему коротким ok, иначе выкладка считается неудачной.
+  if (url.pathname === "/" || url.pathname === "") {
+    return new Response("ok", { status: 200 });
+  }
+
   const prefix = "/" + SECRET;
   if (!url.pathname.startsWith(prefix + "/")) {
     return new Response("forbidden", { status: 403 });
