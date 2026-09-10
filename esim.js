@@ -40,6 +40,7 @@ const CUSTOMERS_FILE = path.join(DIR, "customers.json"); // баланс и ре
 const PROMOS_FILE = path.join(DIR, "promos.json");       // промокоды
 const NOTIFY_FILE = path.join(DIR, "notify.json");       // какие напоминания уже отправлены
 const LKBIND_FILE = path.join(DIR, "lkbind.json");       // телефон в ЛК → почты, на которые куплены eSIM
+const TGWELCOME_FILE = path.join(DIR, "tgwelcome.json"); // каким чатам уже дарили приветственные баллы
 
 // Напоминания о продлении: чем ближе конец пакета, тем выше шанс, что клиент
 // докупит — но письмо каждого типа шлём ровно один раз на eSIM.
@@ -1011,12 +1012,18 @@ function mount(app, opts) {
     if (!process.env.ESIM_TG_TOKEN || String(req.headers["x-tg-secret"] || "") !== secret) {
       return res.status(403).json({ success: false });
     }
-    const who = tgKey((req.body || {}).tgChatId);
+    const chat = String((req.body || {}).tgChatId || "").replace(/\D/g, "");
+    const who = tgKey(chat);
     if (!validKey(who)) return res.status(400).json({ success: false });
+    // Отметку о подарке держим отдельно от карточки клиента: карточка может
+    // переехать на почту и исчезнуть, а второй раз дарить нельзя.
+    const given = readJson(TGWELCOME_FILE, {});
     const had = getCustomer(who, false);
-    if (had && had.welcomeBonus) {
-      return res.json({ success: true, granted: false, balanceRub: had.balanceRub || 0, bonusRub: TG_WELCOME_RUB });
+    if (given[chat] || (had && had.welcomeBonus)) {
+      return res.json({ success: true, granted: false, balanceRub: (had && had.balanceRub) || 0, bonusRub: TG_WELCOME_RUB });
     }
+    given[chat] = Date.now();
+    writeJson(TGWELCOME_FILE, given);
     const c = updateCustomer(who, (x) => {
       x.welcomeBonus = Date.now();
       x.balanceRub = Math.max(0, Math.round((x.balanceRub || 0) + TG_WELCOME_RUB));

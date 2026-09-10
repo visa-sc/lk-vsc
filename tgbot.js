@@ -249,9 +249,13 @@ async function packsFor(iso) {
 const gbOf = (p) => (p.unlimited ? "безлимит" : RU(p.dataGb) + " ГБ");
 // В списке сразу видно, сколько стран покрывает пакет: иначе «2 ГБ за 590 ₽»
 // на Испанию и на всю Европу выглядят одинаково.
-const packLabel = (p) => gbOf(p) + " · " + RU(p.days) + " дн." +
-  (p.countries.length > 1 ? " · " + p.countries.length + " " + plural(p.countries.length, ["страна", "страны", "стран"]) : "") +
-  " · " + RU(p.priceRub) + " ₽";
+// «1 ГБ · 14 дн. · 690 ₽ · +80 стран» — выбранную страну не считаем, показываем
+// ровно то, что человек получает сверх неё.
+const packLabel = (p, iso) => {
+  const extra = p.countries.length - (iso && p.countries.indexOf(iso) >= 0 ? 1 : 0);
+  return gbOf(p) + " · " + RU(p.days) + " дн. · " + RU(p.priceRub) + " ₽" +
+    (extra > 0 ? " · +" + extra + " " + plural(extra, ["страна", "страны", "стран"]) : "");
+};
 
 // ─────────────────────────── экраны ───────────────────────────
 function homeKeyboard() {
@@ -338,7 +342,7 @@ async function showCountry(chatId, iso, page, messageId) {
   const pg = Math.min(Math.max(0, page), pages - 1);
   const from = pg * PER;
   const slice = list.slice(from, from + PER);
-  const rows = slice.map((p) => [{ text: packLabel(p), callback_data: "p:" + p.id }]);
+  const rows = slice.map((p) => [{ text: packLabel(p, iso), callback_data: "p:" + p.id }]);
   // Листаем в обе стороны: человек может уйти вперёд и захотеть вернуться
   const nav = [];
   if (pg > 0) nav.push({ text: "‹ Дешевле", callback_data: "c:" + iso + ":" + (pg - 1) });
@@ -382,7 +386,7 @@ async function showPack(chatId, productId, messageId) {
   }
   // Где ещё работает пакет: пара строк в карточке, полный список по кнопке
   if (multi) {
-    const others = p.countries.filter((x) => x !== current).slice(0, 6).map(cname);
+    const others = p.countries.filter((x) => x !== st.iso).slice(0, 6).map(cname);
     const rest = p.countries.length - 1 - others.length;
     text += "Работает ещё в " + esc(others.join(", ")) +
       (rest > 0 ? " и ещё " + rest + " " + plural(rest, ["стране", "странах", "странах"]) : "") + ".\n";
