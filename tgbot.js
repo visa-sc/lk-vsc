@@ -247,7 +247,11 @@ async function packsFor(iso) {
   return list.sort((a, b) => a.priceRub - b.priceRub);
 }
 const gbOf = (p) => (p.unlimited ? "безлимит" : RU(p.dataGb) + " ГБ");
-const packLabel = (p) => gbOf(p) + " · " + RU(p.days) + " дн. · " + RU(p.priceRub) + " ₽";
+// В списке сразу видно, сколько стран покрывает пакет: иначе «2 ГБ за 590 ₽»
+// на Испанию и на всю Европу выглядят одинаково.
+const packLabel = (p) => gbOf(p) + " · " + RU(p.days) + " дн." +
+  (p.countries.length > 1 ? " · " + p.countries.length + " " + plural(p.countries.length, ["страна", "страны", "стран"]) : "") +
+  " · " + RU(p.priceRub) + " ₽";
 
 // ─────────────────────────── экраны ───────────────────────────
 function homeKeyboard() {
