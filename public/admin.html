@@ -2386,17 +2386,38 @@
           h += '<div style="margin-top:12px;border:1px solid #ece9f2;border-radius:12px;overflow:hidden;">';
           if (!hist.length) h += '<div style="padding:12px;color:#9096a3;font-size:13px;">За 30 дней проверок не было.</div>';
           hist.forEach(function (r, i) {
+            // Список id сделок, у которых не оказалось задач, — по ссылке «подробнее»
+            // справа (как в блоке сверки контактов; просьба Андрея 10.09).
+            const ids = Array.isArray(r.leadIds) ? r.leadIds : [];
+            const rid = "nt" + (r.ts || i);
             h += '<div style="padding:10px 12px;font-size:13px;' + (i ? "border-top:1px solid #f0eef5;" : "") + '">'
+              + '<div style="display:flex;align-items:baseline;gap:12px;">'
+              + '<div style="flex:1 1 auto;">'
               + '<span style="color:#737988;">' + escapeHtml(formatDateMsk(r.ts)) + '</span> · ' + (r.trigger === "manual" ? "вручную" : "по расписанию")
               + ' · найдено без задач: <b>' + (r.found || 0) + '</b> · назначено задач: <b>' + (r.assigned || 0) + '</b>'
               + (r.errors ? ' · ошибок: ' + r.errors : "")
               + (r.error ? ' · <span style="color:#b03a3a;">' + escapeHtml(r.error) + '</span>' : "")
+              + '</div>'
+              + (ids.length ? '<a href="#" class="nt-more" data-rid="' + rid + '" style="font-size:12px;font-weight:600;color:#3589BD;text-decoration:none;white-space:nowrap;">подробнее</a>' : "")
+              + '</div>'
+              + (ids.length ? '<div class="nt-ids" data-rid="' + rid + '" style="display:none;margin-top:6px;font-size:12.5px;color:#737988;line-height:1.7;word-break:break-word;">'
+                  + 'ID сделок: ' + ids.join(", ") + '</div>' : "")
               + '</div>';
           });
           h += '</div>';
         }
         h += '</div>';
         vscNoTaskBlock.innerHTML = h;
+        Array.prototype.forEach.call(vscNoTaskBlock.querySelectorAll(".nt-more"), function (a) {
+          a.addEventListener("click", function (e) {
+            e.preventDefault();
+            const box = vscNoTaskBlock.querySelector('.nt-ids[data-rid="' + a.getAttribute("data-rid") + '"]');
+            if (!box) return;
+            const open = box.style.display !== "none";
+            box.style.display = open ? "none" : "";
+            a.textContent = open ? "подробнее" : "скрыть";
+          });
+        });
         const tgl = document.getElementById("noTaskToggle");
         if (tgl) tgl.addEventListener("click", function () { noTaskExpanded = !noTaskExpanded; renderNoTaskBlock(d); });
         const runBtn = document.getElementById("noTaskRun");
