@@ -129,6 +129,17 @@ const EU = "AT BE BG HR CY CZ DK EE FI FR DE GR HU IS IE IT LV LI LT LU MT NL NO
 const isEuroRegional = (p) => p.countries.filter((c) => EU[c]).length >= 15;
 const POPULAR = ["ES", "IT", "FR", "EU-REGION", "TR", "AE", "TH", "JP", "US"];
 
+// Регионы мира — чтобы список покрытия читался, а не был простынёй из 80 строк
+const REGIONS = [
+  ["Европа", "AL AD AT BY BE BA BG HR CY CZ DK EE FO FI FR DE GI GR GG HU IS IE IM IT JE XK LV LI LT LU MT MD MC ME NL MK NO PL PT RO RU SM RS SK SI ES SE CH TR UA GB VA"],
+  ["Азия", "AF AM AZ BD BT BN KH CN GE HK IN ID JP KZ KG LA MO MY MV MN MM NP KP KR PK PH SG LK TW TJ TH TL TM UZ VN"],
+  ["Ближний Восток", "BH IQ IR IL JO KW LB OM PS QA SA SY AE YE"],
+  ["Африка", "DZ AO BJ BW BF BI CM CV CF TD KM CD CG CI DJ EG GQ ER SZ ET GA GM GH GN GW KE LS LR LY MG MW ML MR MU MA MZ NA NE NG RE RW ST SN SC SL SO ZA SS SD TZ TG TN UG ZM ZW"],
+  ["Северная Америка", "US CA BM GL PM"],
+  ["Латинская Америка", "AI AG AR AW BS BB BZ BO BQ BR VG KY CL CO CR CU CW DM DO EC SV FK GF GD GP GT GY HT HN JM MQ MX MS NI PA PY PE PR BL KN LC MF VC SR TT TC UY VE"],
+  ["Океания", "AS AU CK FJ PF GU KI MH FM NR NC NZ NU MP PW PG WS SB TK TO TV VU WF"],
+].map((r) => { const set = {}; r[1].split(" ").forEach((c) => { set[c] = 1; }); return { name: r[0], set }; });
+
 // Как люди на самом деле называют страны: «Америка», «Эмираты», «Тайланд»
 // через «й», курорты вместо стран. Официальное название знают не все, а уйти
 // из бота ни с чем человек может с первой же попытки.
@@ -365,8 +376,16 @@ async function showPack(chatId, productId, messageId) {
   } else {
     text += "Цена: <b>" + RU(price.total) + " ₽</b>\n";
   }
+  // Где ещё работает пакет: пара строк в карточке, полный список по кнопке
+  if (multi) {
+    const others = p.countries.filter((x) => x !== current).slice(0, 6).map(cname);
+    const rest = p.countries.length - 1 - others.length;
+    text += "Работает ещё в " + esc(others.join(", ")) +
+      (rest > 0 ? " и ещё " + rest + " " + plural(rest, ["стране", "странах", "странах"]) : "") + ".\n";
+  }
   text += "\nПосле оплаты QR-код придёт сюда же, в этот чат.";
   const rows = [[{ text: "Оплатить " + RU(price.total) + " ₽", callback_data: "buy:" + p.id }]]
+    .concat(multi ? [[{ text: "🌍 Где ещё работает", callback_data: "cov:" + p.id }]] : [])
     .concat(discountRows(chatId, price))
     .concat([[{ text: "‹ Назад к пакетам", callback_data: "c:" + (st.iso || p.countries[0]) }]]);
   const kb = { inline_keyboard: rows };
@@ -548,6 +567,30 @@ async function linkMail(chatId, email) {
     ] } });
 }
 
+// Полное покрытие по регионам — как на сайте, чтобы не гадать по названию
+async function showCoverage(chatId, productId) {
+  const c = await catalog();
+  const p = c.products.find((x) => x.id === productId);
+  if (!p) return showHome(chatId);
+  let left = p.countries.slice(), out = "";
+  REGIONS.forEach((r) => {
+    const mine = left.filter((x) => r.set[x] || r.set[String(x).split("-")[0]]);
+    if (!mine.length) return;
+    left = left.filter((x) => !(r.set[x] || r.set[String(x).split("-")[0]]));
+    out += "\n<b>" + r.name + " · " + mine.length + "</b>\n" +
+      esc(mine.map(cname).sort((a, b) => a.localeCompare(b, "ru")).join(", ")) + "\n";
+  });
+  if (left.length) {
+    out += "\n<b>Другие страны · " + left.length + "</b>\n" +
+      esc(left.map(cname).sort((a, b) => a.localeCompare(b, "ru")).join(", ")) + "\n";
+  }
+  const n = p.countries.length;
+  return send(chatId,
+    "<b>Где работает</b>\nПакет работает в " + n + " " +
+    (n % 10 === 1 && n % 100 !== 11 ? "стране" : "странах") + " — интернет включится в любой из них.\n" + out,
+    { reply_markup: { inline_keyboard: [[{ text: "‹ К пакету", callback_data: "p:" + productId }]] } });
+}
+
 // Оплата продления: те же деньги и тот же банк, но пакет ложится на
 // существующую eSIM — поэтому передаём исходный заказ и его подпись.
 async function startTopup(chatId, localId, productId) {
@@ -714,6 +757,7 @@ async function onCallback(q) {
   if (data.indexOf("p:") === 0) return showPack(chatId, data.slice(2), messageId);
   if (data.indexOf("buy:") === 0) return startBuy(chatId, data.slice(4));
   if (data.indexOf("m:") === 0) return showMyOne(chatId, data.slice(2));
+  if (data.indexOf("cov:") === 0) return showCoverage(chatId, data.slice(4));
   if (data.indexOf("tp:") === 0) {
     const [, localId, productId] = data.split(":");
     return startTopup(chatId, localId, productId);

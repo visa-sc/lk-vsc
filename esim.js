@@ -707,9 +707,16 @@ function mount(app, opts) {
       if (opts && opts.sendMail) {
         opts.sendMail({
           to: "director@visa-sc.ru",
-          subject: "VOYO eSIM: ОПЛАЧЕНО " + (g.order.label || ""),
-          text: "Клиент оплатил и получил eSIM автоматически.\n\nПакет: " + (g.order.label || "—") +
-            "\nСумма: " + (g.order.priceRub || "—") + " ₽\nТелефон: " + (g.order.phone || "—") +
+          subject: "VOYO eSIM: ОПЛАЧЕНО " + (g.order.label || "") + (g.order.tgChatId ? " (телеграм-бот)" : ""),
+          text: "Клиент оплатил и получил eSIM автоматически.\n\nОткуда: " +
+            (g.order.tgChatId ? "телеграм-бот, чат " + g.order.tgChatId : "сайт") +
+            "\nПакет: " + (g.order.label || "—") +
+            (g.order.parentOrderId ? "\nЭто ПРОДЛЕНИЕ заказа " + g.order.parentOrderId : "") +
+            "\nСумма: " + (g.order.priceRub || "—") + " ₽" +
+            (g.order.discountRub ? " (скидка " + g.order.discountRub + " ₽" +
+              (g.order.promoCode ? ", промокод " + g.order.promoCode : "") + ")" : "") +
+            (g.order.balanceUsed ? "\nСписано бонусами: " + g.order.balanceUsed + " ₽" : "") +
+            "\nТелефон: " + (g.order.phone || "—") +
             "\nEmail: " + (g.order.email || "—") +
             "\nЗаказ MobiMatter: " + res.orderId + "\nСсылка клиента: " + g.order.myUrl,
         }).catch(() => {});
