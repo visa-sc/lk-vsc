@@ -32,6 +32,7 @@ const SELF = process.env.ESIM_SELF_BASE || "http://127.0.0.1:3000";
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
 const UTM_PROMO = process.env.ESIM_UTM_PROMO || "VSC20OFF3";
 const SUPPORT_TG = "https://t.me/vsc_operator";
+const BOT_NAME = process.env.ESIM_TG_USERNAME || "esimvoyo_bot";
 
 function ready() { return !!TOKEN; }
 function webhookPath() {
@@ -280,9 +281,11 @@ const BTN_MY = "📱 Мои eSIM";
 const BTN_HELP = "💬 Помощь";
 const BTN_MAIL = "✉️ Почта для сайта";
 const BTN_SITE = "🌐 Перейти на сайт";
+const BTN_BONUS = "🎁 Бонусы";
 function mainKeyboard() {
   return {
-    keyboard: [[{ text: BTN_BUY }, { text: BTN_MY }], [{ text: BTN_MAIL }, { text: BTN_HELP }], [{ text: BTN_SITE }]],
+    keyboard: [[{ text: BTN_BUY }, { text: BTN_MY }], [{ text: BTN_BONUS }, { text: BTN_HELP }],
+               [{ text: BTN_MAIL }, { text: BTN_SITE }]],
     resize_keyboard: true, is_persistent: true,
   };
 }
@@ -340,26 +343,47 @@ async function showPack(chatId, productId, messageId) {
     "Срок: <b>" + RU(p.days) + " дн.</b> с первого выхода в интернет\n" +
     "Сеть: <b>" + (p.fiveG ? "5G / 4G LTE" : "4G LTE") + "</b>\n" +
     "Раздача Wi-Fi: <b>" + (p.hotspot !== false ? "да" : "нет") + "</b>\n\n";
-  if (price.discountRub > 0) {
+  if (price.discountRub > 0 || price.balanceUsed > 0) {
+    const why = price.discountKind === "ref" ? "скидка по приглашению друга"
+      : price.discountKind === "cost" ? "цена по себестоимости"
+      : price.discountKind === "promo" ? "промокод " + (st.promo || "")
+      : "скидка";
     text += "Цена: <s>" + RU(price.listPrice) + " ₽</s>  <b>" + RU(price.total) + " ₽</b>\n" +
-            "Скидка по вашей ссылке уже применена.\n";
+            (price.discountRub > 0 ? esc(why) + " −" + RU(price.discountRub) + " ₽\n" : "") +
+            (price.balanceUsed > 0 ? "бонусами −" + RU(price.balanceUsed) + " ₽\n" : "");
   } else {
     text += "Цена: <b>" + RU(price.total) + " ₽</b>\n";
   }
   text += "\nПосле оплаты QR-код придёт сюда же, в этот чат.";
-  const rows = [
-    [{ text: "Оплатить " + RU(price.total) + " ₽", callback_data: "buy:" + p.id }],
-    [{ text: "‹ Назад к пакетам", callback_data: "c:" + (st.iso || p.countries[0]) }],
-  ];
+  const rows = [[{ text: "Оплатить " + RU(price.total) + " ₽", callback_data: "buy:" + p.id }]]
+    .concat(discountRows(chatId, price))
+    .concat([[{ text: "‹ Назад к пакетам", callback_data: "c:" + (st.iso || p.countries[0]) }]]);
   const kb = { inline_keyboard: rows };
   return messageId ? edit(chatId, messageId, text, { reply_markup: kb }) : send(chatId, text, { reply_markup: kb });
 }
 
 async function priceFor(chatId, p) {
   const st = getState(chatId);
-  const j = await api("post", "/esim/api/price", { productId: p.id, promo: st.promo || "", email: st.email || "" });
+  const j = await api("post", "/esim/api/price", {
+    productId: p.id, promo: st.promo || "", ref: st.ref || "", email: st.email || "",
+    tgChatId: String(chatId), useBalance: !!st.useBalance,
+  });
   if (j && j.success) return j;
-  return { listPrice: p.priceRub, total: p.priceRub, discountRub: 0 };
+  return { listPrice: p.priceRub, total: p.priceRub, discountRub: 0, balanceCanUse: 0 };
+}
+
+// Кнопки скидок под карточкой и под оплатой: промокод и списание бонусов
+function discountRows(chatId, price) {
+  const st = getState(chatId);
+  const rows = [];
+  if (st.promo) rows.push([{ text: "🎟 Промокод " + st.promo + " — убрать", callback_data: "promo:off" }]);
+  else rows.push([{ text: "🎟 У меня есть промокод", callback_data: "promo:on" }]);
+  if (price.balanceCanUse > 0 || st.useBalance) {
+    rows.push([{ text: st.useBalance
+      ? "💰 Бонусы списаны: −" + RU(price.balanceUsed || price.balanceCanUse) + " ₽ (отменить)"
+      : "💰 Списать " + RU(price.balanceCanUse) + " ₽ бонусами", callback_data: "bal:" + (st.useBalance ? "off" : "on") }]);
+  }
+  return rows;
 }
 
 // Оплата: спрашиваем почту один раз — на неё уходит чек от онлайн-кассы,
@@ -397,12 +421,13 @@ async function payLink(chatId) {
     "<b>" + esc(p.title || "") + "</b>\n" + gbOf(p) + " · " + RU(p.days) + " дн.\n\n" +
     "К оплате: <b>" + RU(price.total) + " ₽</b>\nЧек уйдёт " + (st.email ? "на " + esc(st.email) : "смской на " + esc(st.phone)) + "\n\n" +
     "Нажмите кнопку — откроется защищённая страница Т-Банка. Карта или СБП.",
-    { reply_markup: { inline_keyboard: [
-      [{ text: "Оплатить " + RU(price.total) + " ₽", url: j.url }],
-      [{ text: "‹ Другой пакет", callback_data: "c:" + (st.iso || p.countries[0]) },
-       { text: "📱 Мои eSIM", callback_data: "my" }],
-      [{ text: "‹ В начало", callback_data: "home" }],
-    ] } });
+    { reply_markup: { inline_keyboard: [[{ text: "Оплатить " + RU(price.total) + " ₽", url: j.url }]]
+      .concat(discountRows(chatId, price))
+      .concat([
+        [{ text: "‹ Другой пакет", callback_data: "c:" + (st.iso || p.countries[0]) },
+         { text: "📱 Мои eSIM", callback_data: "my" }],
+        [{ text: "‹ В начало", callback_data: "home" }],
+      ]) } });
 }
 
 // ─────────────────────────── мои eSIM ───────────────────────────
@@ -446,6 +471,32 @@ async function showMyOne(chatId, localId) {
     (packs.length && !packs.some((x) => x.activatedAt) ? "\n<i>Отсчёт срока начнётся, когда eSIM впервые выйдет в интернет.</i>" : "");
   const rows = [[{ text: "Открыть QR и продление", url: o.myUrl }], [{ text: "‹ Мои eSIM", callback_data: "my" }]];
   return send(chatId, text, { reply_markup: { inline_keyboard: rows } });
+}
+
+// ── бонусы и приглашение друзей ──
+function tgSecret() { return crypto.createHash("sha256").update("tg:" + TOKEN).digest("hex").slice(0, 24); }
+async function bonusInfo(chatId) {
+  const st = getState(chatId);
+  return api("post", "/esim/api/tg/bonus", { tgChatId: String(chatId), email: st.email || "" },
+    { "X-Tg-Secret": tgSecret() });
+}
+async function showBonus(chatId) {
+  const j = await bonusInfo(chatId);
+  if (!j || !j.success) return send(chatId, "Не удалось получить бонусы, попробуйте позже.");
+  const link = "https://t.me/" + BOT_NAME + "?start=ref_" + j.refCode;
+  const text =
+    "<b>Бонусы VOYO</b>\n\n" +
+    "На счету: <b>" + RU(j.balanceRub) + " ₽</b>\n" +
+    (j.invitedCount ? "По вашей ссылке купили: <b>" + j.invitedCount + "</b>\n" : "") +
+    "\nПриглашайте друзей — по <b>" + RU(j.refBonus) + " ₽</b> вам и другу.\n" +
+    "Другу скидка сразу на первую eSIM, вам бонус приходит после его оплаты.\n" +
+    "Бонусами можно закрыть до половины стоимости пакета — предложу при оплате.\n\n" +
+    "Ваша ссылка:\n<code>" + link + "</code>";
+  return send(chatId, text, { reply_markup: { inline_keyboard: [
+    [{ text: "Позвать друга", url: "https://t.me/share/url?url=" + encodeURIComponent(link) +
+      "&text=" + encodeURIComponent("Интернет в поездке без роуминга: eSIM за минуту, по этой ссылке скидка " + j.refBonus + " ₽") }],
+    [{ text: "🌍 Купить eSIM", callback_data: "home" }, { text: "📱 Мои eSIM", callback_data: "my" }],
+  ] } });
 }
 
 // ── почта для сайта: необязательная, только чтобы видеть eSIM ещё и в вебе ──
@@ -492,7 +543,10 @@ async function onText(chatId, text) {
   if (/^\/start/i.test(t)) {
     // Ссылка из рассылки: t.me/esimvoyo_bot?start=sms — скидка применится сама
     const payload = (t.split(/\s+/)[1] || "").toLowerCase();
-    if (["sms", "email", "tg"].indexOf(payload) >= 0) {
+    if (payload.indexOf("ref_") === 0) {
+      setState(chatId, { ref: payload.slice(4).toUpperCase(), step: null });
+      await send(chatId, "Вы пришли по приглашению друга — скидка на первую eSIM применится сама.");
+    } else if (["sms", "email", "tg"].indexOf(payload) >= 0) {
       setState(chatId, { promo: UTM_PROMO, step: null });
       await send(chatId, "Ваша скидка по ссылке уже учтена — увидите её в цене пакета.");
     } else setState(chatId, { step: null });
@@ -500,6 +554,7 @@ async function onText(chatId, text) {
   }
   if (t === BTN_BUY) return showHome(chatId);
   if (t === BTN_MY || /^\/my|^мои/i.test(t)) return showMy(chatId);
+  if (t === BTN_BONUS || /^\/bonus|^бонус/i.test(t)) return showBonus(chatId);
   if (t === BTN_MAIL || /^\/email/i.test(t)) return askMail(chatId);
   if (t === BTN_SITE) {
     return send(chatId, "Наш сайт — там же бонусы, приглашение друзей и оплата с почтой. В боте всё то же самое.",
@@ -513,6 +568,27 @@ async function onText(chatId, text) {
       { reply_markup: homeKeyboard() });
   }
 
+  if (st.step === "promo") {
+    const code = t.trim().toUpperCase();
+    const j = await api("post", "/esim/api/price", {
+      productId: st.productId, promo: code, ref: st.ref || "", email: st.email || "",
+      tgChatId: String(chatId), useBalance: !!st.useBalance,
+    });
+    if (j && j.promoOk) {
+      setState(chatId, { promo: code, step: null });
+      await send(chatId, "Промокод принят: −" + RU(j.discountRub) + " ₽");
+      return st.productId ? showPack(chatId, st.productId) : showHome(chatId);
+    }
+    const why = {
+      not_found: "Такого промокода нет — проверьте написание.",
+      inactive: "Промокод больше не действует.",
+      limit: "Промокод исчерпан.",
+      first_only: "Промокод только для первой eSIM, а у вас уже есть купленные.",
+      used: "Вы уже использовали этот промокод.",
+    }[j && j.promoReason] || "Промокод не подошёл.";
+    return send(chatId, why + "\n\nПришлите другой код или вернитесь к пакету.",
+      { reply_markup: { inline_keyboard: [[{ text: "‹ К пакету", callback_data: "back:pay" }]] } });
+  }
   if (st.step === "linkmail") {
     if (!validEmail(t)) return send(chatId, "Похоже, в адресе опечатка. Напишите почту целиком, например ivan@mail.ru");
     setState(chatId, { email: t.toLowerCase(), step: null });
@@ -561,6 +637,21 @@ async function onCallback(q) {
   if (data === "home") return edit(chatId, messageId, HELLO, { reply_markup: homeKeyboard() });
   if (data === "my") return showMy(chatId);
   if (data === "mail") return askMail(chatId);
+  if (data === "bonus") return showBonus(chatId);
+  if (data === "promo:on") {
+    setState(chatId, { step: "promo" });
+    return send(chatId, "Пришлите промокод одним сообщением.");
+  }
+  if (data === "promo:off") {
+    setState(chatId, { promo: "" });
+    const st = getState(chatId);
+    return st.productId ? showPack(chatId, st.productId) : showHome(chatId);
+  }
+  if (data.indexOf("bal:") === 0) {
+    setState(chatId, { useBalance: data.slice(4) === "on" });
+    const st = getState(chatId);
+    return st.productId ? showPack(chatId, st.productId) : showBonus(chatId);
+  }
   if (data.indexOf("all:") === 0) return showAllCountries(chatId, parseInt(data.slice(4), 10) || 0, messageId);
   if (data.indexOf("c:") === 0) {
     const parts = data.slice(2).split(":");
@@ -655,8 +746,14 @@ async function pollLoop() {
 // Напоминания: пакет заканчивается или гигабайты на исходе. Приходят прямо
 // в чат — открываемость выше, чем у письма, а покупателю из бота письмо и
 // слать некуда: почту мы у него не спрашиваем.
-async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, myUrl }) {
+async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, myUrl, bonusRub }) {
   if (!ready() || !chatId) return;
+  if (kind === "refBonus") {
+    return send(chatId,
+      "<b>+" + RU(bonusRub) + " ₽ на ваш счёт</b>\nДруг купил eSIM по вашей ссылке. " +
+      "Бонусы спишутся при следующей покупке — предложу при оплате.",
+      { reply_markup: { inline_keyboard: [[{ text: "🎁 Мои бонусы", callback_data: "bonus" }]] } });
+  }
   const isData = kind === "lowData";
   const title = isData ? "Интернет почти закончился"
     : (days <= 0 ? "Пакет заканчивается сегодня"

@@ -254,9 +254,20 @@ function makeRefCode(email, all) {
   }
   return crypto.randomBytes(4).toString("hex").toUpperCase();
 }
+// Кто перед нами. На сайте это почта, в телеграм-боте почты может не быть —
+// тогда личностью служит сам чат: «tg:12345». Ключ один и тот же и для
+// промокодов (чтобы одноразовый не сработал дважды), и для бонусов рефералки.
+function tgKey(chatId) { return chatId ? "tg:" + String(chatId).replace(/[^\d]/g, "") : ""; }
+function custKey(email, tgChatId) {
+  const e = normEmail(email);
+  if (validEmail(e)) return e;
+  return tgKey(tgChatId);
+}
+function validKey(k) { return validEmail(k) || /^tg:\d+$/.test(String(k || "")); }
+
 function getCustomer(email, create) {
   email = normEmail(email);
-  if (!validEmail(email)) return null;
+  if (!validKey(email)) return null;
   const all = loadCustomers();
   if (!all[email]) {
     if (!create) return null;
@@ -284,9 +295,9 @@ function customerByRef(code) {
   if (!code) return null;
   return Object.values(loadCustomers()).find((c) => c.refCode === code) || null;
 }
-function hasOrders(email) {
-  email = normEmail(email);
-  return readJson(ORDERS_FILE, []).some((o) => o.email === email && (o.status === "done" || o.status === "fulfilling"));
+function hasOrders(key) {
+  key = normEmail(key);
+  return readJson(ORDERS_FILE, []).some((o) => (o.custKey || o.email) === key && (o.status === "done" || o.status === "fulfilling"));
 }
 
 // ═══ Промокоды ═══
@@ -620,17 +631,23 @@ function mount(app, opts) {
       saveLocal(g.orders);
       // Деньги и бонусы проводим только после подтверждённой оплаты
       try {
-        if (g.order.balanceUsed > 0) addBalance(g.order.email, -g.order.balanceUsed, "Оплата: " + (g.order.label || ""));
+        const who = g.order.custKey || g.order.email;
+        if (g.order.balanceUsed > 0) addBalance(who, -g.order.balanceUsed, "Оплата: " + (g.order.label || ""));
         if (g.order.promoCode) {
           usePromo(g.order.promoCode);
-          updateCustomer(g.order.email, (c) => {
+          updateCustomer(who, (c) => {
             c.usedPromos = (c.usedPromos || []).concat([g.order.promoCode]).slice(-50);
           });
         }
         if (g.order.refBy) {
-          updateCustomer(g.order.email, (c) => { if (!c.invitedBy) c.invitedBy = g.order.refBy; });
+          updateCustomer(who, (c) => { if (!c.invitedBy) c.invitedBy = g.order.refBy; });
           addBalance(g.order.refBy, REF_BONUS_RUB, "Бонус за друга");
-          if (opts && opts.sendMail) {
+          // Пригласивший может жить в боте — тогда обрадуем его прямо в чате
+          if (String(g.order.refBy).indexOf("tg:") === 0 && opts && opts.notifyTelegram) {
+            opts.notifyTelegram({ chatId: String(g.order.refBy).slice(3), kind: "refBonus",
+              bonusRub: REF_BONUS_RUB }).catch(() => {});
+          }
+          if (validEmail(g.order.refBy) && opts && opts.sendMail) {
             const accInv = BASE_URL + "/esim/account?e=" + encodeURIComponent(g.order.refBy) + "&t=" + signEmail(g.order.refBy);
             opts.sendMail({
               to: g.order.refBy,
@@ -644,7 +661,7 @@ function mount(app, opts) {
             }).catch(() => {});
           }
         }
-        getCustomer(g.order.email, true); // заводим карточку с реф-кодом покупателю
+        getCustomer(who, true); // заводим карточку с реф-кодом покупателю
       } catch (e) { console.error("esim bonuses:", e.message); }
       if (opts && opts.sendSms && g.order.phone) {
         opts.sendSms(g.order.phone, "VOYO mobile: ваша eSIM готова. QR и остаток трафика — " + g.order.myUrl)
@@ -737,15 +754,16 @@ function mount(app, opts) {
       }
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
       const listPrice = toRetailRub(found.item.costUsd, rate);
+      const who = custKey(email, tgChatId);
       const calc = priceWithDiscounts({ listPrice, costRub: toCostRub(found.item.costUsd, rate),
-        email, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
+        email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const priceRub = calc.total;
       const id = crypto.randomBytes(6).toString("hex");
       const label = labelFor(found.item);
       const orders = readJson(ORDERS_FILE, []);
       orders.unshift({
         id, ts: Date.now(), status: "pending", productId: found.item.id, parentOrderId,
-        label, priceRub, listPriceRub: listPrice, phone, email, tgChatId,
+        label, priceRub, listPriceRub: listPrice, phone, email, tgChatId, custKey: who,
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         promoCode: calc.promoCode, refBy: calc.refBy, balanceUsed: calc.balanceUsed,
       });
@@ -773,9 +791,10 @@ function mount(app, opts) {
       const found = findProduct(cat, String(b.productId || ""));
       if (!found) return res.status(400).json({ success: false, message: "Пакет не найден." });
       const email = normEmail(b.email) || readSession(req) || "";
+      const who = custKey(email, b.tgChatId);
       const listPrice = toRetailRub(found.item.costUsd, rate);
       const calc = priceWithDiscounts({ listPrice, costRub: toCostRub(found.item.costUsd, rate),
-        email, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
+        email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const promoTried = String(b.promo || "").trim();
       res.json({
         success: true, listPrice, total: calc.total,
@@ -935,13 +954,46 @@ function mount(app, opts) {
     const orders = readJson(ORDERS_FILE, []);
     let n = 0;
     orders.forEach((o) => {
-      if (String(o.tgChatId || "") === chat && !o.email) { o.email = email; n++; }
+      if (String(o.tgChatId || "") === chat && !o.email) { o.email = email; o.custKey = email; n++; }
     });
     if (n) writeJson(ORDERS_FILE, orders.slice(0, 5000));
-    getCustomer(email, true);                       // заводим карточку с реф-кодом
+    // Переносим на почту всё, что человек накопил, пока был «просто чатом»:
+    // бонусы, историю промокодов и тех, кого он привёл.
+    const from = tgKey(chat), all = loadCustomers();
+    getCustomer(email, true);
+    if (all[from]) {
+      updateCustomer(email, (c) => {
+        c.balanceRub = Math.max(0, Math.round((c.balanceRub || 0) + (all[from].balanceRub || 0)));
+        c.usedPromos = Array.from(new Set((c.usedPromos || []).concat(all[from].usedPromos || []))).slice(-50);
+        c.ledger = (all[from].ledger || []).concat(c.ledger || []).slice(0, 100);
+        if (!c.invitedBy && all[from].invitedBy) c.invitedBy = all[from].invitedBy;
+      });
+      const after = loadCustomers();
+      Object.keys(after).forEach((k) => { if (String(after[k].invitedBy || "") === from) after[k].invitedBy = email; });
+      delete after[from];
+      saveCustomers(after);
+    }
     res.json({
       success: true, linked: n,
       accountUrl: BASE_URL + "/esim/account?e=" + encodeURIComponent(email) + "&t=" + signEmail(email),
+    });
+  });
+
+  // Бонусы и рефералка для телеграм-бота: своя карточка по чату, если почты нет
+  app.post("/esim/api/tg/bonus", (req, res) => {
+    const secret = crypto.createHash("sha256").update("tg:" + (process.env.ESIM_TG_TOKEN || "")).digest("hex").slice(0, 24);
+    if (!process.env.ESIM_TG_TOKEN || String(req.headers["x-tg-secret"] || "") !== secret) {
+      return res.status(403).json({ success: false });
+    }
+    const b = req.body || {};
+    const who = custKey(b.email, b.tgChatId);
+    if (!validKey(who)) return res.status(400).json({ success: false });
+    const c = getCustomer(who, true);
+    const invited = Object.values(loadCustomers()).filter((x) => String(x.invitedBy || "") === who);
+    res.json({
+      success: true, balanceRub: c.balanceRub || 0, refCode: c.refCode,
+      refBonus: REF_BONUS_RUB, invitedCount: invited.length,
+      maxShare: MAX_BONUS_SHARE, ledger: (c.ledger || []).slice(0, 5),
     });
   });
 
