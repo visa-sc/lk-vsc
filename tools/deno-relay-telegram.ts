@@ -21,7 +21,12 @@
 const SECRET = "b7f1c0a94e2d4a6f8c3b5e7d9a1f2c48";
 const UPSTREAM = "https://api.telegram.org";
 
-Deno.serve(async (req: Request) => {
+// Новый Deno Deploy запускает приложение в контейнере и передаёт свой порт в
+// переменной PORT: если слушать привычный 8000, проверка живости («Warm up»)
+// не достучится и вся выкладка считается неудачной.
+const PORT = Number(Deno.env.get("PORT") || 8000);
+
+Deno.serve({ port: PORT }, async (req: Request) => {
   const url = new URL(req.url);
 
   // Deno Deploy при выкладке стучится в корень и ждёт успешный ответ
