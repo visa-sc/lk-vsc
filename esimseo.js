@@ -14,110 +14,16 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 
-// Статьи лежат в двух файлах, чтобы каждый оставался обозримым при правке
-const ARTICLES = Object.assign({}, require("./esim-articles.json"), require("./esim-articles-2.json"));
+// Статьи разложены по файлам, чтобы каждый оставался обозримым при правке
+const ARTICLES = Object.assign({},
+  require("./esim-articles.json"), require("./esim-articles-2.json"), require("./esim-articles-3.json"));
+// Инструкции и сравнения: другой шаблон, другие запросы, но тот же раздел
+const GUIDES = require("./esim-guides.json");
 const SELF = process.env.ESIM_SELF_BASE || "http://127.0.0.1:3000";
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
 const BOT = "https://t.me/" + (process.env.ESIM_TG_USERNAME || "esimvoyo_bot");
 
-const RU = (n) => Math.round(Number(n) || 0).toLocaleString("ru-RU");
-function esc(s) {
-  return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-}
-function plural(n, forms) {
-  const a = Math.abs(n) % 100, b = a % 10;
-  if (a > 10 && a < 20) return forms[2];
-  if (b > 1 && b < 5) return forms[1];
-  if (b === 1) return forms[0];
-  return forms[2];
-}
-
-// Каталог тянем у себя же и держим полчаса: цены меняются раз в сутки, а
-// страницы должны отдаваться мгновенно.
-let _cat = { ts: 0, products: [] };
-async function catalog() {
-  if (Date.now() - _cat.ts < 30 * 60 * 1000 && _cat.products.length) return _cat.products;
-  try {
-    const r = await axios.get(SELF + "/esim/api/catalog", { timeout: 30000 });
-    if (r.data && r.data.success) _cat = { ts: Date.now(), products: r.data.products };
-  } catch (e) { console.error("esimseo каталог:", e.message); }
-  return _cat.products;
-}
-
-// Витрина страны: самые дешёвые пакеты на 1/3/5/10/20 ГБ — по одному на объём,
-// чтобы таблица была короткой и понятной, а не списком из 80 строк.
-function pickPackages(products, iso) {
-  const mine = products.filter((p) => (p.countries || []).indexOf(iso) >= 0);
-  const byVol = new Map();
-  mine.forEach((p) => {
-    const key = p.unlimited ? "inf" : Math.round(Number(p.dataGb) || 0);
-    const prev = byVol.get(key);
-    if (!prev || p.priceRub < prev.priceRub) byVol.set(key, p);
-  });
-  const rows = Array.from(byVol.values())
-    .sort((a, b) => (a.unlimited ? 1e6 : a.dataGb) - (b.unlimited ? 1e6 : b.dataGb))
-    .filter((p) => p.unlimited || p.dataGb >= 1);
-  const want = [1, 3, 5, 10, 20, 50];
-  const out = [];
-  want.forEach((v) => {
-    const hit = rows.find((p) => !p.unlimited && Math.round(p.dataGb) === v);
-    if (hit) out.push(hit);
-  });
-  const inf = rows.find((p) => p.unlimited);
-  if (inf) out.push(inf);
-  return { all: mine, rows: out.slice(0, 6), min: mine.length ? Math.min(...mine.map((p) => p.priceRub)) : 0 };
-}
-
-function page(slug, a, data) {
-  const url = BASE_URL + "/esim/" + slug;
-  const title = a.title.replace("{minPrice}", RU(data.min));
-  const desc = a.description.replace("{minPrice}", RU(data.min));
-  const rows = data.rows.map((p) => {
-    const vol = p.unlimited ? "Безлимит" : RU(p.dataGb) + " ГБ";
-    const extra = p.countries.length > 1 ? p.countries.length + " " + plural(p.countries.length, ["страна", "страны", "стран"]) : "только " + a.nameNom;
-    return '<tr><td><b>' + vol + "</b></td><td>" + RU(p.days) + " дн.</td><td>" + esc(extra) +
-      "</td><td class=\"p\">" + RU(p.priceRub) + " ₽</td></tr>";
-  }).join("");
-
-  const faq = a.faq.map(([q, ans]) =>
-    '<details><summary>' + esc(q) + "</summary><div class=\"a\">" + esc(ans) + "</div></details>").join("");
-
-  const faqLd = {
-    "@context": "https://schema.org", "@type": "FAQPage",
-    mainEntity: a.faq.map(([q, ans]) => ({
-      "@type": "Question", name: q,
-      acceptedAnswer: { "@type": "Answer", text: ans },
-    })),
-  };
-  const productLd = {
-    "@context": "https://schema.org", "@type": "Product",
-    name: "eSIM для " + a.name, description: desc,
-    brand: { "@type": "Brand", name: "VOYO mobile" },
-    offers: { "@type": "AggregateOffer", priceCurrency: "RUB", lowPrice: data.min,
-      offerCount: data.all.length, availability: "https://schema.org/InStock", url },
-  };
-
-  const others = Object.keys(ARTICLES).filter((s) => s !== slug)
-    .map((s) => '<a href="/esim/' + s + '">' + ARTICLES[s].flag + " " + esc(ARTICLES[s].nameNom) + "</a>").join("");
-
-  return `<!DOCTYPE html>
-<html lang="ru"><head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${esc(title)}</title>
-<meta name="description" content="${esc(desc)}" />
-<meta name="keywords" content="${esc(a.keywords)}" />
-<link rel="canonical" href="${url}" />
-<meta property="og:type" content="article" />
-<meta property="og:title" content="${esc(title)}" />
-<meta property="og:description" content="${esc(desc)}" />
-<meta property="og:url" content="${url}" />
-<meta property="og:site_name" content="VOYO mobile" />
-<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-<link rel="icon" type="image/png" href="/apple-touch-icon.png" />
-<script type="application/ld+json">${JSON.stringify(faqLd)}</script>
-<script type="application/ld+json">${JSON.stringify(productLd)}</script>
-<style>
+const STYLE = `<style>
   :root{--bg:#f5f7fb;--card:#fff;--line:#e6eaf2;--ink:#16202e;--mut:#8b93a5;--accent:#3589bd;
     --grad:linear-gradient(135deg,#2c6f96 0%,#3d95c7 55%,#5ac8fa 120%);
     --sh:0 1px 2px rgba(16,24,40,.04),0 18px 44px -22px rgba(22,48,80,.22);}
@@ -172,7 +78,117 @@ function page(slug, a, data) {
     border-radius:999px;padding:8px 14px;box-shadow:var(--sh);}
   .foot{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--mut);}
   .foot a{color:var(--accent);}
-</style></head><body>
+</style>`;
+
+const RU = (n) => Math.round(Number(n) || 0).toLocaleString("ru-RU");
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+function plural(n, forms) {
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return forms[2];
+  if (b > 1 && b < 5) return forms[1];
+  if (b === 1) return forms[0];
+  return forms[2];
+}
+
+// Каталог тянем у себя же и держим полчаса: цены меняются раз в сутки, а
+// страницы должны отдаваться мгновенно.
+let _cat = { ts: 0, products: [] };
+async function catalog() {
+  if (Date.now() - _cat.ts < 30 * 60 * 1000 && _cat.products.length) return _cat.products;
+  try {
+    const r = await axios.get(SELF + "/esim/api/catalog", { timeout: 30000 });
+    if (r.data && r.data.success) _cat = { ts: Date.now(), products: r.data.products };
+  } catch (e) { console.error("esimseo каталог:", e.message); }
+  return _cat.products;
+}
+
+// Витрина страны: самые дешёвые пакеты на 1/3/5/10/20 ГБ — по одному на объём,
+// чтобы таблица была короткой и понятной, а не списком из 80 строк.
+function pickPackages(products, iso) {
+  const mine = products.filter((p) => (p.countries || []).indexOf(iso) >= 0);
+  const byVol = new Map();
+  mine.forEach((p) => {
+    const key = p.unlimited ? "inf" : Math.round(Number(p.dataGb) || 0);
+    const prev = byVol.get(key);
+    if (!prev || p.priceRub < prev.priceRub) byVol.set(key, p);
+  });
+  const rows = Array.from(byVol.values())
+    .sort((a, b) => (a.unlimited ? 1e6 : a.dataGb) - (b.unlimited ? 1e6 : b.dataGb))
+    .filter((p) => p.unlimited || p.dataGb >= 1);
+  const want = [1, 3, 5, 10, 20, 50];
+  const out = [];
+  want.forEach((v) => {
+    const hit = rows.find((p) => !p.unlimited && Math.round(p.dataGb) === v);
+    if (hit) out.push(hit);
+  });
+  const inf = rows.find((p) => p.unlimited);
+  if (inf) out.push(inf);
+  return { all: mine, rows: out.slice(0, 6), min: mine.length ? Math.min(...mine.map((p) => p.priceRub)) : 0 };
+}
+
+// К «информационным» запросам обязательно добавляем коммерческие: купить,
+// цена, оформить, онлайн. Именно по ним приходит человек с деньгами, а не
+// с любопытством.
+function commercialKeys(a) {
+  const n = a.nameNom.toLowerCase();
+  return [
+    "купить esim " + n, "esim " + n + " цена", "оформить esim " + n,
+    "esim " + n + " купить онлайн", "есим " + n + " купить", "esim " + n + " стоимость",
+  ].join(", ");
+}
+
+function page(slug, a, data) {
+  const url = BASE_URL + "/esim/" + slug;
+  const title = a.title.replace("{minPrice}", RU(data.min));
+  const desc = a.description.replace("{minPrice}", RU(data.min));
+  const rows = data.rows.map((p) => {
+    const vol = p.unlimited ? "Безлимит" : RU(p.dataGb) + " ГБ";
+    const extra = p.countries.length > 1 ? p.countries.length + " " + plural(p.countries.length, ["страна", "страны", "стран"]) : "только " + a.nameNom;
+    return '<tr><td><b>' + vol + "</b></td><td>" + RU(p.days) + " дн.</td><td>" + esc(extra) +
+      "</td><td class=\"p\">" + RU(p.priceRub) + " ₽</td></tr>";
+  }).join("");
+
+  const faq = a.faq.map(([q, ans]) =>
+    '<details><summary>' + esc(q) + "</summary><div class=\"a\">" + esc(ans) + "</div></details>").join("");
+
+  const faqLd = {
+    "@context": "https://schema.org", "@type": "FAQPage",
+    mainEntity: a.faq.map(([q, ans]) => ({
+      "@type": "Question", name: q,
+      acceptedAnswer: { "@type": "Answer", text: ans },
+    })),
+  };
+  const productLd = {
+    "@context": "https://schema.org", "@type": "Product",
+    name: "eSIM для " + a.name, description: desc,
+    brand: { "@type": "Brand", name: "VOYO mobile" },
+    offers: { "@type": "AggregateOffer", priceCurrency: "RUB", lowPrice: data.min,
+      offerCount: data.all.length, availability: "https://schema.org/InStock", url },
+  };
+
+  const others = Object.keys(ARTICLES).filter((s) => s !== slug)
+    .map((s) => '<a href="/esim/' + s + '">' + ARTICLES[s].flag + " " + esc(ARTICLES[s].nameNom) + "</a>").join("");
+
+  return `<!DOCTYPE html>
+<html lang="ru"><head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${esc(title)}</title>
+<meta name="description" content="${esc(desc)}" />
+<meta name="keywords" content="${esc(a.keywords + ", " + commercialKeys(a))}" />
+<link rel="canonical" href="${url}" />
+<meta property="og:type" content="article" />
+<meta property="og:title" content="${esc(title)}" />
+<meta property="og:description" content="${esc(desc)}" />
+<meta property="og:url" content="${url}" />
+<meta property="og:site_name" content="VOYO mobile" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="icon" type="image/png" href="/apple-touch-icon.png" />
+<script type="application/ld+json">${JSON.stringify(faqLd)}</script>
+<script type="application/ld+json">${JSON.stringify(productLd)}</script>
+${STYLE}</head><body>
 <div class="wrap">
 
   <div class="hdr">
@@ -223,7 +239,8 @@ function page(slug, a, data) {
   </ol>
 
   <div class="cta">
-    <a class="btn" href="/esim?c=${a.iso}">Оформить eSIM для ${esc(a.name)}</a>
+    <a class="btn" href="/esim?c=${a.iso}">Купить eSIM для ${esc(a.name)}</a>
+    <a class="btn sec" href="${BOT}">Оформить в телеграме</a>
   </div>
 
   <h2>Частые вопросы</h2>
@@ -231,6 +248,9 @@ function page(slug, a, data) {
 
   <h2>eSIM для других направлений</h2>
   <div class="others">${others}</div>
+
+  <h2>Полезное перед поездкой</h2>
+  <div class="others">${guideLinks(slug)}</div>
 
   <div class="foot">
     VOYO mobile — сервис компании VOYO (ООО «ЭЙ КЕЙ ГРУПП»). Интернет в поездке без роуминга:
@@ -240,8 +260,107 @@ function page(slug, a, data) {
 </body></html>`;
 }
 
+function guideLinks(skip) {
+  return Object.keys(GUIDES).filter((g) => g !== skip)
+    .map((g) => '<a href="/esim/' + g + '">' + esc(GUIDES[g].h1) + "</a>").join("");
+}
+
+function guidePage(slug, g, minPrice) {
+  const url = BASE_URL + "/esim/" + slug;
+  const body = g.blocks.map((b) => {
+    let h = "<h2>" + esc(b.h2) + "</h2>";
+    if (b.p) h += b.p.map((t) => "<p>" + esc(t) + "</p>").join("");
+    if (b.list) h += "<ul>" + b.list.map((t) => "<li>" + esc(t) + "</li>").join("") + "</ul>";
+    if (b.steps) h += '<ol class="steps">' + b.steps.map((t) => "<li>" + esc(t) + "</li>").join("") + "</ol>";
+    return h;
+  }).join("\n  ");
+
+  const faq = g.faq.map(([q, ans]) =>
+    "<details><summary>" + esc(q) + '</summary><div class="a">' + esc(ans) + "</div></details>").join("");
+  const faqLd = {
+    "@context": "https://schema.org", "@type": "FAQPage",
+    mainEntity: g.faq.map(([q, ans]) => ({ "@type": "Question", name: q,
+      acceptedAnswer: { "@type": "Answer", text: ans } })),
+  };
+  const howLd = {
+    "@context": "https://schema.org", "@type": "Article", headline: g.h1,
+    description: g.description, inLanguage: "ru-RU",
+    publisher: { "@type": "Organization", name: "VOYO mobile" }, mainEntityOfPage: url,
+  };
+  const countries = Object.keys(ARTICLES).slice(0, 12)
+    .map((s) => '<a href="/esim/' + s + '">' + ARTICLES[s].flag + " " + esc(ARTICLES[s].nameNom) + "</a>").join("");
+
+  return `<!DOCTYPE html>
+<html lang="ru"><head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${esc(g.title)}</title>
+<meta name="description" content="${esc(g.description)}" />
+<meta name="keywords" content="${esc(g.keywords)}" />
+<link rel="canonical" href="${url}" />
+<meta property="og:type" content="article" />
+<meta property="og:title" content="${esc(g.title)}" />
+<meta property="og:description" content="${esc(g.description)}" />
+<meta property="og:url" content="${url}" />
+<meta property="og:site_name" content="VOYO mobile" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="icon" type="image/png" href="/apple-touch-icon.png" />
+<script type="application/ld+json">${JSON.stringify(faqLd)}</script>
+<script type="application/ld+json">${JSON.stringify(howLd)}</script>
+${STYLE}
+</head><body>
+<div class="wrap">
+  <div class="hdr">
+    <a class="brand" href="/esim">
+      <span class="brandrow"><img src="/voyo-logo.png" alt="VOYO" /><span class="wm">mobile</span></span>
+      <span class="byvsc">by <b>VSC</b></span>
+    </a>
+    <a class="mine" href="/esim/account">Мои eSIM</a>
+  </div>
+
+  <h1>${esc(g.h1)}</h1>
+  <p class="lead">${esc(g.lead)}</p>
+
+  <div class="cta">
+    <a class="btn" href="/esim">Купить eSIM от ${RU(minPrice)} ₽</a>
+    <a class="btn sec" href="${BOT}">Оформить в телеграме</a>
+  </div>
+
+  ${body}
+
+  <div class="cta">
+    <a class="btn" href="/esim">Выбрать пакет от ${RU(minPrice)} ₽</a>
+  </div>
+
+  <h2>Частые вопросы</h2>
+  ${faq}
+
+  <h2>Популярные направления</h2>
+  <div class="others">${countries}</div>
+
+  <h2>Другие инструкции</h2>
+  <div class="others">${guideLinks(slug)}</div>
+
+  <div class="foot">
+    VOYO mobile — сервис компании VOYO (ООО «ЭЙ КЕЙ ГРУПП»).
+    <a href="/esim">Все страны и пакеты</a> · <a href="/esim/account">мои eSIM</a> · <a href="${BOT}">телеграм-бот</a>
+  </div>
+</div>
+</body></html>`;
+}
+
 function mount(app) {
   const slugs = Object.keys(ARTICLES);
+  const guideSlugs = Object.keys(GUIDES);
+
+  guideSlugs.forEach((slug) => {
+    app.get("/esim/" + slug, async (req, res) => {
+      const products = await catalog();
+      const min = products.length ? Math.min(...products.map((p) => p.priceRub)) : 590;
+      res.set("Cache-Control", "public, max-age=1800");
+      res.type("html").send(guidePage(slug, GUIDES[slug], min));
+    });
+  });
 
   slugs.forEach((slug) => {
     app.get("/esim/" + slug, async (req, res) => {
@@ -255,8 +374,12 @@ function mount(app) {
   });
 
   // Карта сайта и роботы: без них робот про эти страницы просто не узнает
-  app.get("/sitemap.xml", (req, res) => {
-    const urls = ["/esim"].concat(slugs.map((s) => "/esim/" + s));
+  app.get("/sitemap.xml", async (req, res) => {
+    // В карту не попадают страны, по которым у поставщика нет пакетов:
+    // такая ссылка уводила бы робота на редирект
+    const products = await catalog();
+    const live = slugs.filter((s) => products.some((p) => (p.countries || []).indexOf(ARTICLES[s].iso) >= 0));
+    const urls = ["/esim"].concat(live.map((s) => "/esim/" + s)).concat(guideSlugs.map((s) => "/esim/" + s));
     const today = new Date().toISOString().slice(0, 10);
     res.type("application/xml").send(
       '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
@@ -272,7 +395,7 @@ function mount(app) {
       "Allow: /esim\n\nSitemap: " + BASE_URL + "/sitemap.xml\n");
   });
 
-  console.log("esimseo: страницы направлений — " + slugs.length + " шт. (" + slugs.join(", ") + ")");
+  console.log("esimseo: страниц направлений " + slugs.length + ", инструкций " + guideSlugs.length);
 }
 
-module.exports = { mount, slugs: Object.keys(ARTICLES) };
+module.exports = { mount, slugs: Object.keys(ARTICLES), guides: Object.keys(GUIDES) };
