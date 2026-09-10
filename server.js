@@ -2308,6 +2308,9 @@ require("./excursion").mount(app, { sendMail: (o) => mail.sendMail(o) });
 // Подключаем ДО esim.mount, чтобы отдать ему крючок выдачи.
 const tgbot = require("./tgbot").mount(app, {});
 
+// Страницы направлений под поиск (/esim/turkey и т.п.) + карта сайта
+require("./esimseo").mount(app);
+
 require("./esim").mount(app, {
   fetchCbrRates,
   sendMail: (o) => mail.sendMail(o),
