@@ -3818,6 +3818,8 @@
           const crSeries = Object.keys(cr.months).map(Number).sort((a, b) => a - b).map((m) => ({ x: MONTHS_RU[m], k: cr.months[String(m)] }));
           vscContent.appendChild(vscBarChart({ key: "spb", label: "Выручка СПб", fmt: "money", good: 1 }, crSeries));
           vscContent.appendChild(vscBarChart({ key: "msk", label: "Выручка МСК", fmt: "money", good: 1 }, crSeries));
+          // Прибыль Санкт-Петербурга — оценка (просьба Андрея 11.09.2026).
+          if (currentRole() === "admin") vscContent.appendChild(vscSpbProfitBlock());
         } else {
           const e = document.createElement("div"); e.className = "vsc-chart";
           e.innerHTML = '<div class="vsc-empty">Выручка по городам считается ночью (05:00 МСК) из amoCRM — данные появятся после первого расчёта.</div>';
@@ -5066,6 +5068,75 @@
           ]).then(function () { _vscStaffCache = null; b.textContent = "Считается (несколько минут) — обнови вкладку позже"; });
         });
       }
+      // ── «Прибыль Санкт-Петербурга» (оценка; Андрей 11.09.2026) ─────────────────
+      // Отдельной прибыли по городу в учёте нет: вводится только общая. Поэтому
+      // считаем оценку: доля города в выручке × прибыль месяца, плюс поправка на
+      // реальную стоимость городской команды (ОРК Санкт-Петербург дешевле или
+      // дороже своей пропорциональной доли клиентских отделов).
+      function vscSpbProfitBlock() {
+        const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Прибыль Санкт-Петербурга — оценка";
+        h.appendChild(vscInfo("<b>Почему оценка</b><br>В учёте прибыль считается общая, по городам её никто не разносит. Точно известны только выручка города (из amoCRM) и зарплаты клиентского отдела ОРК Санкт-Петербург (из зарплатной таблицы).<br><br><b>Как считаем</b><br>1) Берём долю города в выручке месяца.<br>2) Умножаем на прибыль месяца — это пропорциональная часть.<br>3) Добавляем поправку: сравниваем, сколько ОРК Санкт-Петербург стоит на самом деле, с его пропорциональной долей в зарплатах клиентских отделов (ОРК Москва + ОРК Санкт-Петербург). Если городская команда дешевле своей доли, прибыль выше пропорции, и наоборот.<br><br>Общие расходы (реклама, аренда, продажи, оформление) делятся пропорционально выручке — раздельного учёта по ним нет. Это оценка порядка величины, а не бухгалтерский результат."));
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart";
+        box.innerHTML = '<div class="loading-state">Считаем…</div>';
+        wrap.appendChild(box);
+        apiFetch("/admin/api/vsc/zarplata").then(function (z) {
+          const cr = vscData.cityRevenue, prof = vscData.profit || {};
+          if (!cr || !cr.months) { box.innerHTML = '<div class="vsc-empty">Нет выручки по городам.</div>'; return; }
+          const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+          const zm = (z && z.data && z.data.months) || {};
+          const rows = [];
+          Object.keys(cr.months).map(Number).sort((a, b) => a - b).forEach(function (mi) {
+            const c = cr.months[String(mi)] || {};
+            const name = MONF[mi] + " 2026";
+            const p = prof[name];
+            if (p == null || !c.total) return;                    // без введённой прибыли месяц не считаем
+            const share = c.spb / c.total;
+            let spbProfit = p * share, fix = 0;
+            const dep = zm[name] && zm[name].depts;
+            if (dep && dep.orkSpb && dep.orkMsk) {
+              const orkAll = (dep.orkSpb.accrued || 0) + (dep.orkMsk.accrued || 0);
+              fix = orkAll * share - (dep.orkSpb.accrued || 0);   // сэкономили (+) или переплатили (−)
+              spbProfit += fix;
+            }
+            rows.push({ mi: mi, name: MONF[mi], rev: c.spb, share: share * 100, profit: spbProfit, fix: fix, base: p });
+          });
+          if (!rows.length) { box.innerHTML = '<div class="vsc-empty">Нет месяцев с введённой прибылью.</div>'; return; }
+          const money = (v) => (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽";
+          // График: прибыль города по месяцам (минус — красным вниз, как в «расхождении с НДС»)
+          const chart = vscDivergingBars("Прибыль СПб по месяцам (оценка)", rows.map((r) => ({ x: r.name.slice(0, 3), v: r.profit })), "money");
+          box.innerHTML = "";
+          box.appendChild(chart);
+          // Таблица с расшифровкой
+          const TD = 'style="padding:6px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;"';
+          const TH = 'style="padding:6px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;"';
+          let html = '<div style="overflow-x:auto;margin-top:14px;"><table style="width:100%;min-width:640px;border-collapse:collapse;font-size:12.5px;">'
+            + '<tr><th ' + TH.replace("right", "left") + '>Месяц</th><th ' + TH + '>Выручка СПб</th><th ' + TH + '>Доля города</th>'
+            + '<th ' + TH + '>Прибыль всего</th><th ' + TH + '>Поправка на ОРК СПб</th><th ' + TH + '>Прибыль СПб</th></tr>';
+          rows.forEach(function (r) {
+            const col = r.profit >= 0 ? "#2c7a43" : "#b0263a";
+            html += '<tr><td ' + TD.replace("right", "left") + '><b>' + r.name + '</b></td>'
+              + '<td ' + TD + '>' + money(r.rev) + '</td>'
+              + '<td ' + TD + '>' + (Math.round(r.share * 10) / 10) + '%</td>'
+              + '<td ' + TD + '>' + money(r.base) + '</td>'
+              + '<td ' + TD + ' >' + (r.fix ? (r.fix > 0 ? "+" : "−") + money(Math.abs(r.fix)).replace("+", "") : "—") + '</td>'
+              + '<td ' + TD.replace('style="', 'style="color:' + col + ';font-weight:700;') + '>' + money(r.profit) + '</td></tr>';
+          });
+          const sumP = rows.reduce((a, r) => a + r.profit, 0), sumR = rows.reduce((a, r) => a + r.rev, 0);
+          html += '<tr><td ' + TD.replace("right", "left") + '><b>Итого</b></td><td ' + TD + '><b>' + money(sumR) + '</b></td><td ' + TD + '>—</td>'
+            + '<td ' + TD + '><b>' + money(rows.reduce((a, r) => a + r.base, 0)) + '</b></td><td ' + TD + '>—</td>'
+            + '<td ' + TD.replace('style="', 'style="color:' + (sumP >= 0 ? "#2c7a43" : "#b0263a") + ';font-weight:800;') + '>' + money(sumP) + '</td></tr>';
+          html += '</table></div>';
+          html += '<div style="font-size:12px;color:#6b7280;margin-top:10px;">Рентабельность города: <b>' + (sumR ? (Math.round(sumP / sumR * 1000) / 10) + "%" : "—") + '</b> · по компании в целом: <b>'
+            + (function () { const tr = Object.keys(cr.months).reduce((a, k) => a + (cr.months[k].total || 0), 0);
+                 const tp = rows.reduce((a, r) => a + r.base, 0); return tr ? (Math.round(tp / tr * 1000) / 10) + "%" : "—"; })() + '</b></div>';
+          const tail = document.createElement("div"); tail.innerHTML = html;
+          box.appendChild(tail);
+        }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось посчитать.</div>'; });
+        return wrap;
+      }
+
       // ── «Сверка контактов» (Ежемесячный контроль, только админ) ──
       // Итог последней сверки /phone_test: все входящие звонки OnlinePBX и заявки
       // Flexbe должны существовать в amoCRM контактами. Только чтение серверного
