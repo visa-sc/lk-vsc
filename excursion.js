@@ -314,8 +314,11 @@ function mount(app, opts) {
   const sendMail = (opts && opts.sendMail) || null;
   const page = (file) => (req, res) => { res.set("Cache-Control", "no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "public", file)); };
 
+  // Раздел называется «Туры»; /excursion остаётся рабочим адресом, чтобы не
+  // ломать уже отправленные ссылки.
+  app.get("/tours", page("excursion.html"));
   app.get("/excursion", page("excursion.html"));
-  app.get("/excursions", (req, res) => res.redirect(301, "/excursion"));
+  app.get("/excursions", (req, res) => res.redirect(301, "/tours"));
 
   // Направления: города со странами + список стран. Кэш 6 ч.
   app.get("/excursion/api/destinations", async (req, res) => {

@@ -4136,7 +4136,7 @@
     .lkl-nav {
       position: fixed; left: 50%; transform: translateX(-50%); z-index: 1200;
       bottom: calc(20px + env(safe-area-inset-bottom));
-      width: min(352px, calc(100% - 18px)); height: 60px; display: none;
+      width: min(430px, calc(100% - 18px)); height: 60px; display: none;
       align-items: center; padding: 0 6px;
       /* Не белое пятно на белом фоне: мягкий уход из белого в голубой, голубоватая
          рамка и подсвеченная тень — меню читается как отдельный элемент. */
@@ -4157,7 +4157,7 @@
     /* При сжатии меняем только размер — высоту над краем НЕ трогаем, иначе меню
        «ныряет» вниз и выглядит прилипшим к нижней границе экрана. */
     .lkl-nav.min {
-      height: 50px; width: min(186px, calc(100% - 96px));
+      height: 50px; width: min(244px, calc(100% - 96px));
       box-shadow: 0 6px 18px -8px rgba(16,32,64,.32);
     }
     .lkl-nav.min .lb { display: none; }
@@ -4169,14 +4169,14 @@
       font: inherit; transition: color .18s ease; -webkit-tap-highlight-color: transparent;
     }
     .lkl-nav .nit {
-      display: flex; align-items: center; gap: 7px; padding: 9px 12px; border-radius: 999px;
+      display: flex; align-items: center; gap: 6px; padding: 9px 10px; border-radius: 999px;
       background: transparent; transition: background .2s ease, transform .24s cubic-bezier(.34,1.4,.5,1);
     }
     .lkl-nav button.act { color: #fff; }
     .lkl-nav button.act .nit { background: linear-gradient(140deg,#4aa3d8,#3589BD); }
     .lkl-nav button:active .nit { transform: scale(.94); }
     .lkl-nav svg { width: 22px; height: 22px; display: block; flex: none; }
-    .lkl-nav .lb { font-size: 12.5px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
+    .lkl-nav .lb { font-size: 12px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
     body.lkl-has-nav { padding-bottom: 96px; }
 
     /* ── экран бонусной программы поверх кабинета ── */
@@ -4262,6 +4262,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 3h4.8L17 6.6V19.4A1.6 1.6 0 0 1 15.4 21H8.6A1.6 1.6 0 0 1 7 19.4V4.6A1.6 1.6 0 0 1 8.6 3Z"/><rect x="9.4" y="10.9" width="5.2" height="5.4" rx="1.2"/><path d="M12 10.9v5.4M9.4 13.6h5.2" stroke-width="1.2"/></svg>
       <span class="lb">eSIM</span></span>
     </button>
+    <button type="button" data-go="tours"><span class="nit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.2 8.8-2.1 4.9-4.9 2.1 2.1-4.9z"/></svg>
+      <span class="lb">Туры</span></span>
+    </button>
     <button type="button" data-go="loyalty"><span class="nit">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19"/><path d="M6 15h4"/></svg>
       <span class="lb">Баллы</span></span>
@@ -4283,6 +4287,8 @@
       </div>
     </div>
   </div>
+
+  <div class="lkl-page frame" id="lklTours"></div>
 
   <script>
     // Инициализируется из bootstrap только при валидной сессии и loyalty:true.
@@ -4369,14 +4375,30 @@
       if (esimPage) esimPage.querySelectorAll(".lkl-seg button").forEach(function (b) {
         b.addEventListener("click", function () { esimGo(b.dataset.esim); });
       });
+      // «Туры» — та же страница /excursion в режиме ?embed=1, одной рамкой.
+      var toursPage = document.getElementById("lklTours");
+      function mountTours() {
+        if (!toursPage || toursPage.dataset.on) return;
+        toursPage.dataset.on = "1";
+        var f = document.createElement("iframe");
+        f.src = "/excursion?embed=1";
+        f.title = "Туры и экскурсии";
+        f.setAttribute("loading", "lazy");
+        f.addEventListener("load", function () {
+          try { f.contentWindow.addEventListener("scroll", watch, { passive: true }); } catch (_) {}
+        });
+        toursPage.appendChild(f);
+      }
       function go(which) {
-        var loyalty = which === "loyalty", esim = which === "esim";
+        var loyalty = which === "loyalty", esim = which === "esim", tours = which === "tours";
         nav.querySelectorAll("button").forEach(function (b) { b.classList.toggle("act", b.dataset.go === which); });
         page.classList.toggle("open", loyalty);
         if (esimPage) esimPage.classList.toggle("open", esim);
-        document.body.style.overflow = (loyalty || esim) ? "hidden" : "";
+        if (toursPage) toursPage.classList.toggle("open", tours);
+        document.body.style.overflow = (loyalty || esim || tours) ? "hidden" : "";
         if (loyalty) { page.scrollTop = 0; mountWidget(); }
         if (esim) mountEsim();
+        if (tours) mountTours();
       }
       nav.querySelectorAll("button").forEach(function (b) {
         b.addEventListener("click", function () { go(b.dataset.go); });
@@ -4389,7 +4411,11 @@
       // вкладках не выполняется — меню осталось бы «широким» после скролла.
       function watch() {
         var y;
-        if (esimPage && esimPage.classList.contains("open")) {
+        if (toursPage && toursPage.classList.contains("open")) {
+          var tf = toursPage.querySelector("iframe");
+          if (!tf) return;
+          try { y = tf.contentWindow.scrollY || 0; } catch (_) { y = 0; }
+        } else if (esimPage && esimPage.classList.contains("open")) {
           var f = esimPage.querySelector('iframe[data-esim="' + esimTab + '"]');
           if (!f) return;
           try { y = f.contentWindow.scrollY || 0; } catch (_) { y = 0; }
