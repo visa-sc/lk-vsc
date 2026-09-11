@@ -4004,16 +4004,17 @@
           ork: [{ k: "took", t: "Принял сделок", f: int, good: 1 }, { k: "tookRev", t: "Выручка", f: money, good: 1 },
                 { k: "tookAtv", t: "Средний чек", f: money, good: 1 }, { k: "tookReturns", t: "Возвраты", f: int, good: -1 },
                 { k: "tookRetPct", t: "% возвратов", f: pctv, good: -1 }],
-          oo: [{ k: "deals", t: "Сделок в работе", f: int, good: 1 }, { k: "revenue", t: "Выручка", f: money, good: 1 },
-               { k: "atv", t: "Средний чек", f: money, good: 1 }, { k: "returns", t: "Возвраты", f: int, good: -1 },
-               { k: "retPct", t: "% возвратов", f: pctv, good: -1 }, { k: "days", t: "Дней до закрытия", f: n1, good: -1 }]
+          oo: [{ k: "s1", t: "Этап 1", f: int, good: 1 }, { k: "s2", t: "Этап 2", f: int, good: 1 },
+               { k: "s2rev", t: "Выручка по 2 этапу", f: money, good: 1 }, { k: "s2ret", t: "Возвраты", f: int, good: -1 },
+               { k: "s2retPct", t: "% возвратов", f: pctv, good: -1 }, { k: "dlLate", t: "Просрочено дедлайнов", f: int, good: -1 },
+               { k: "dlPct", t: "% просрочки", f: pctv, good: -1 }, { k: "days", t: "Дней до закрытия", f: n1, good: -1 }]
         };
         const DEPTS = [
           { key: "pl", title: "Первая линия", dcols: "pl", ucols: "pl", def: "calls" },
           { key: "op", title: "Отдел продаж", dcols: "op", ucols: "op", udef: "soldRev", def: "revenue" },
           { key: "orkMsk", title: "ОРК Москва", dcols: "ork", ucols: "ork", udef: "took", def: "deals" },
           { key: "orkSpb", title: "ОРК Санкт-Петербург", dcols: "ork", ucols: "ork", udef: "took", def: "deals" },
-          { key: "oo", title: "Отдел оформления", dcols: "ork", ucols: "oo", udef: "deals", def: "deals" }
+          { key: "oo", title: "Отдел оформления", dcols: "ork", ucols: "oo", udef: "s2", def: "deals" }
         ];
         const TD = "padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;";
         const NM = "padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:left;white-space:nowrap;font-weight:600;";
@@ -4106,7 +4107,7 @@
           det.appendChild(box2);
           const hint = document.createElement("div"); hint.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:8px;";
           hint.innerHTML = "Клик по месяцу разворачивает фамилии. Клик по заголовку колонки сотрудников сортирует их во всех раскрытых месяцах: первый клик лучшие сверху, второй худшие."
-            + (D.key === "oo" ? "<br>У оформления объём отдела — весь объём сделок месяца, а по сотрудникам видно только то, где человек числится ответственным, поэтому сумма по фамилиям меньше объёма отдела." : "")
+            + (D.key === "oo" ? "<br>Объём отдела — весь объём сделок месяца. По сотрудникам этапы берутся из полей сделки «Менеджер ОО 1й/2й ЭТАП», просрочка — когда дата бонуса за второй этап позже «Дедлайна ОО». Сделки, где в этих полях стоит «АКК», «БОТ» или «Запись не требуется», в фамилии не попадают." : "")
             + (D.key === "op" ? "<br>Объём отдела — все сделки, давшие выручку месяца, включая повторных клиентов. По сотрудникам продажи считаются по автору сделки." : "");
           det.appendChild(hint);
           wrap.appendChild(det);
@@ -4128,6 +4129,9 @@
               took: x.took || 0, tookRev: x.tookRev || 0, tookReturns: x.tookReturns || 0,
               tookAtv: x.took ? x.tookRev / x.took : null,
               tookRetPct: x.took ? (x.tookReturns || 0) / x.took * 100 : null,
+              s1: x.s1 || 0, s2: x.s2 || 0, s2rev: x.s2rev || 0, s2ret: x.s2ret || 0,
+              s2retPct: x.s2 ? (x.s2ret || 0) / x.s2 * 100 : null,
+              dlLate: x.dlLate || 0, dlPct: x.dlTotal ? (x.dlLate || 0) / x.dlTotal * 100 : null,
               deals: x.deals || 0, revenue: x.revenue || 0, returns: x.returns || 0,
               atv: x.deals ? x.revenue / x.deals : null,
               retPct: x.deals ? x.returns / x.deals * 100 : null,
