@@ -975,6 +975,51 @@ function saveNoTaskLog() {
   try { fs.writeFileSync(LK_NOTASK_FILE, JSON.stringify(_noTaskLog || { history: [] }, null, 2), "utf8"); }
   catch (e) { console.error("saveNoTaskLog error:", e.message); }
 }
+// ── Эскалация «сделок без задач» (просьба Андрея 11.09.2026) ────────────────
+// 1-й день — задача ответственному (как было). 2-й день подряд — плюс задача
+// руководителям ЕГО отдела. 3-й день и дальше — плюс все руководители и
+// управляющий директор. Кто руководитель, узнаём в самой amoCRM (группы
+// «Руководители ОП/ОРК/ОО» и «Управляющий директор»), а не списком в коде.
+const NOTASK_HEAD_GROUPS = { 165711: "Руководители ОП", 590097: "Руководители ОРК", 590121: "Руководители ОО", 590197: "Управляющий директор" };
+// Отдел сотрудника → группа его руководителей.
+const NOTASK_DEPT_TO_HEADS = {
+  0: 165711, 485693: 165711, 590093: 165711, 590181: 165711,          // продажи и первая линия
+  590101: 590097, 590105: 590097, 590117: 590097,                      // ОРК МСК/СПБ
+  590161: 590121, 590165: 590121,                                      // отдел оформления
+};
+let _notaskUsers = { ts: 0, list: [] };
+async function notaskLoadUsers(baseUrl) {
+  if (Date.now() - _notaskUsers.ts < 3600000 && _notaskUsers.list.length) return _notaskUsers.list;
+  const data = await amoGet(`${baseUrl}/api/v4/users`, { limit: 250 });
+  const list = ((data && data._embedded && data._embedded.users) || []).map((u) => ({
+    id: u.id, name: u.name,
+    group: (u.rights && u.rights.group_id) != null ? u.rights.group_id : null,
+    active: !(u.rights && u.rights.is_active === false),
+  }));
+  if (list.length) _notaskUsers = { ts: Date.now(), list };
+  return _notaskUsers.list;
+}
+// Сколько дней ПОДРЯД сделка числится без задач (сегодняшний день — первый).
+function notaskStreak(leadId, history) {
+  const dayKey = (ts) => _mskDayKey(Number(ts));
+  const byDay = new Map();                      // день → был ли id в этот день
+  for (const r of history || []) {
+    if (!r || !Array.isArray(r.leadIds)) continue;
+    const k = dayKey(r.ts);
+    if (!byDay.has(k)) byDay.set(k, false);
+    if (r.leadIds.map(Number).includes(Number(leadId))) byDay.set(k, true);
+  }
+  let streak = 1;                               // сегодняшнее попадание
+  const today = _mskDayKey(Date.now());
+  for (let back = 1; back < 30; back++) {
+    const d = _mskDayKey(Date.now() - back * 86400000);
+    if (d === today) continue;
+    if (byDay.get(d) === true) streak++;
+    else break;                                  // день без попадания (или проверки не было) — цепочка кончилась
+  }
+  return streak;
+}
+
 let _noTaskRunning = false;
 async function runNoTaskCheck(trigger) {
   if (_noTaskRunning) return { skipped: true, reason: "Проверка уже выполняется" };
@@ -993,16 +1038,47 @@ async function runNoTaskCheck(trigger) {
     const noTask = (leads || []).filter((l) => l && l.id && !withTask.has(String(l.id)));
     rec.found = noTask.length;
     rec.leadIds = noTask.map((l) => Number(l.id));
+    loadNoTaskLog();
+    rec.streaks = {};
+    for (const l of noTask) rec.streaks[String(l.id)] = notaskStreak(l.id, (_noTaskLog && _noTaskLog.history) || []);
     const taskTypeId = 1; // встроенный тип задачи «Связаться» (по просьбе Андрея)
     const nowSec = Math.floor(Date.now() / 1000);
+    loadNoTaskLog();
+    const users = await notaskLoadUsers(baseUrl).catch(() => []);
+    const headsOf = (groupId) => users.filter((u) => u.active && u.group === groupId).map((u) => u.id);
+    const allHeads = users.filter((u) => u.active && NOTASK_HEAD_GROUPS[u.group]).map((u) => u.id);
+    rec.escalated = { toHeads: 0, toAll: 0 };
     for (const lead of noTask) {
+      const resp = Number(lead.responsible_user_id);
+      // День 1 — ответственному, как и раньше.
       try {
         const body = [{ task_type_id: taskTypeId, text: "Сделка без задачи. Поставьте задачу.", complete_till: nowSec, entity_id: Number(lead.id), entity_type: "leads" }];
-        const resp = Number(lead.responsible_user_id);
         if (Number.isFinite(resp) && resp > 0) body[0].responsible_user_id = resp;
         await amoPost(`${baseUrl}/api/v4/tasks`, body);
         rec.assigned++;
       } catch (e) { rec.errors++; console.error("NO-TASK assign err lead", lead.id, e && e.message); }
+      // Эскалация — по числу дней подряд.
+      let targets = [];
+      const streak = notaskStreak(lead.id, (_noTaskLog && _noTaskLog.history) || []);
+      if (streak === 2) {
+        const me = users.find((u) => u.id === resp);
+        const headGroup = me ? NOTASK_DEPT_TO_HEADS[me.group] : null;
+        targets = headGroup ? headsOf(headGroup) : [];
+        if (targets.length) rec.escalated.toHeads++;
+      } else if (streak >= 3) {
+        targets = allHeads;
+        if (targets.length) rec.escalated.toAll++;
+      }
+      for (const uid of targets) {
+        if (uid === resp) continue; // ответственному уже поставили
+        try {
+          await amoPost(`${baseUrl}/api/v4/tasks`, [{
+            task_type_id: taskTypeId, text: "Разберитесь со сделкой без задач",
+            complete_till: nowSec, entity_id: Number(lead.id), entity_type: "leads", responsible_user_id: uid,
+          }]);
+        } catch (e) { rec.errors++; console.error("NO-TASK escalate err lead", lead.id, "user", uid, e && e.message); }
+      }
+      if (targets.length) console.log(`NO-TASK эскалация: сделка ${lead.id}, день ${streak}, задачи ${targets.length} руководителям`);
     }
     rec.assignedTs = Date.now();
     console.log(`NO-TASK CHECK [${rec.trigger}]: leads=${(leads || []).length} found=${rec.found} assigned=${rec.assigned} errors=${rec.errors}`);
