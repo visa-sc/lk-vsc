@@ -3955,8 +3955,9 @@
         // лучше, −1 — меньше лучше). По умолчанию сортируем по главному показателю.
         const COLS = {
           op: [
-            { k: "contacts", t: "Контакты", f: int, good: 1 }, { k: "deals", t: "Сделки", f: int, good: 1 },
-            { k: "revenue", t: "Выручка", f: money, good: 1 }, { k: "atv", t: "Средний чек", f: money, good: 1 },
+            { k: "contacts", t: "Контакты", f: int, good: 1 }, { k: "sold", t: "Продажи", f: int, good: 1 },
+            { k: "soldNew", t: "Из них по новым", f: int, good: 1 },
+            { k: "soldRev", t: "Выручка", f: money, good: 1 }, { k: "soldAtv", t: "Средний чек", f: money, good: 1 },
             { k: "conv", t: "Конверсия", f: pctv, good: 1 }
           ],
           pl: [
@@ -3971,7 +3972,7 @@
         };
         const DEPTS = [
           { key: "pl", title: "Первая линия", cols: "pl", def: "contacts" },
-          { key: "op", title: "Отдел продаж", cols: "op", def: "conv" },
+          { key: "op", title: "Отдел продаж", cols: "op", def: "soldRev" },
           { key: "orkMsk", title: "ОРК Москва", cols: "ork", def: "deals" },
           { key: "orkSpb", title: "ОРК Санкт-Петербург", cols: "ork", def: "deals" },
           { key: "oo", title: "Отдел оформления", cols: "ork", def: "deals" }
@@ -3985,13 +3986,17 @@
               return {
                 name: u.name, deals: x.deals || 0, revenue: x.revenue || 0, returns: x.returns || 0,
                 contacts: x.contacts || 0,
+                sold: x.sold || 0, soldNew: x.soldNew || 0, soldRev: x.soldRev || 0,
                 atv: x.deals ? x.revenue / x.deals : null,
-                conv: x.contacts ? (x.deals / x.contacts * 100) : null,
+                soldAtv: x.sold ? x.soldRev / x.sold : null,
+                // Конверсия отдела продаж — как в их недельном стафе: продажи по новым
+                // заявкам к набранным контактам этого же менеджера.
+                conv: x.contacts ? ((x.soldNew || 0) / x.contacts * 100) : null,
                 retPct: x.deals ? (x.returns / x.deals * 100) : null,
                 days: x.closedCnt ? (x.closedDays / x.closedCnt) : null
               };
             })
-            .filter((r) => r.deals > 0 || r.contacts > 0);
+            .filter((r) => r.deals > 0 || r.contacts > 0 || r.sold > 0);
           const st = _vscSpSort[D.key] || { k: D.def, dir: -1 };   // −1 = лучший сверху
           const sc = cols.find((c) => c.k === st.k) || cols[0];
           rows.sort(function (a, b) {
@@ -4029,9 +4034,10 @@
             const TD = "padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;";
             const NM = "padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:left;white-space:nowrap;font-weight:600;";
             const THS = "padding:7px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;cursor:pointer;user-select:none;";
-            const tot = rows.reduce((a, r) => ({ deals: a.deals + r.deals, revenue: a.revenue + r.revenue, returns: a.returns + r.returns, contacts: a.contacts + r.contacts }), { deals: 0, revenue: 0, returns: 0, contacts: 0 });
+            const tot = rows.reduce((a, r) => ({ deals: a.deals + r.deals, revenue: a.revenue + r.revenue, returns: a.returns + r.returns, contacts: a.contacts + r.contacts, sold: a.sold + r.sold, soldNew: a.soldNew + r.soldNew, soldRev: a.soldRev + r.soldRev }), { deals: 0, revenue: 0, returns: 0, contacts: 0, sold: 0, soldNew: 0, soldRev: 0 });
             tot.atv = tot.deals ? tot.revenue / tot.deals : null;
-            tot.conv = tot.contacts ? tot.deals / tot.contacts * 100 : null;
+            tot.soldAtv = tot.sold ? tot.soldRev / tot.sold : null;
+            tot.conv = tot.contacts ? tot.soldNew / tot.contacts * 100 : null;
             tot.retPct = tot.deals ? tot.returns / tot.deals * 100 : null;
             tot.days = null;
             const tl = "padding:9px 8px;border-top:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;background:#fafbfd;";

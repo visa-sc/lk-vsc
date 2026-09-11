@@ -1192,6 +1192,16 @@ async function runCityRevenue(trigger) {
         if (inF1 || inF2) months[mk].deals.spb++; else months[mk].deals.msk++;
         // Разрез по ответственному — для стафф-перформанса (сделки, выручка, возвраты,
         // время от оплаты до закрытия). Цикл считаем только по закрытым сделкам.
+        // ВАЖНО: у отдела продаж сделку считаем по АВТОРУ (кто её завёл) — после
+        // продажи ответственный меняется на специалиста ОРК, и продажа «уезжает» из
+        // отчёта менеджера. У ОРК и оформления наоборот: там важен ответственный.
+        const aid = String(l.created_by || "");
+        if (aid) {
+          const am = byUser[aid] || (byUser[aid] = {});
+          const a2 = am[mk] || (am[mk] = { deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
+          a2.sold = (a2.sold || 0) + 1; a2.soldRev = (a2.soldRev || 0) + price;
+          if (isReturn) a2.soldReturns = (a2.soldReturns || 0) + 1;
+        }
         const uid = String(l.responsible_user_id || "");
         if (uid) {
           const um = byUser[uid] || (byUser[uid] = {});
@@ -1204,7 +1214,7 @@ async function runCityRevenue(trigger) {
           // Для отдела продаж считаем отдельно «сделки по НОВЫМ заявкам» — как в их
           // собственном стафе: сделка засчитывается, если контакт клиента заведён в
           // том же месяце. Месяц создания контакта узнаём ниже, на проходе по контактам.
-          if (cid) dealsForNew.push({ uid: uid, mk: mk, cid: cid, price: price });
+          if (cid) dealsForNew.push({ uid: uid, aid: aid, mk: mk, cid: cid, price: price });
         }
       }
     }
@@ -1316,9 +1326,10 @@ async function buildStaffPerf(baseUrl, byUser, dealsForNew) {
   // 2б. Сделки по новым заявкам: контакт заведён в том же месяце, что и оплата.
   (dealsForNew || []).forEach((d) => {
     if (cCreated[String(d.cid)] !== d.mk) return;
-    const um = byUser[d.uid]; if (!um || !um[d.mk]) return;
-    um[d.mk].newDeals = (um[d.mk].newDeals || 0) + 1;
-    um[d.mk].newRevenue = (um[d.mk].newRevenue || 0) + (d.price || 0);
+    const um = byUser[d.uid];
+    if (um && um[d.mk]) { um[d.mk].newDeals = (um[d.mk].newDeals || 0) + 1; um[d.mk].newRevenue = (um[d.mk].newRevenue || 0) + (d.price || 0); }
+    const am = d.aid ? byUser[d.aid] : null;
+    if (am && am[d.mk]) { am[d.mk].soldNew = (am[d.mk].soldNew || 0) + 1; am[d.mk].soldNewRev = (am[d.mk].soldNewRev || 0) + (d.price || 0); }
   });
   // 3. Финальная запись — уже с контактами и сделками по новым заявкам.
   const data = persist();
