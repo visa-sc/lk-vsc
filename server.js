@@ -1128,6 +1128,7 @@ const CITY_REV_STATUSES = [].concat(
   [142, 143, 21256590, 21256593, 21256668, 22535466, 22916152, 26918115, 43200834, 58405049, 58405421, 58406233, 61251437, 76836369].map((s) => ({ pipeline_id: 1312578, status_id: s }))
 );
 const CITY_CF_DATE = 427242, CITY_CF_LEAD = 573762, CITY_CF_CONTACT = 571754;
+const CITY_CF_TOOK = 443488;                      // «Кто принял клиента» — специалист ОРК
 const CITY_F1_LEAD = new Set([1093564, 1093566, 1093568, 1095864]);
 const CITY_F1_CONTACT = 1090888;
 const CITY_F2_LEAD = 1093566;
@@ -1164,7 +1165,7 @@ async function runCityRevenue(trigger) {
       const list = (data && data._embedded && data._embedded.contacts) || [];
       list.forEach((c) => { cmap[c.id] = _cityCfEnums(c, CITY_CF_CONTACT); });
     }
-    const months = {}, byUser = {}, dealsForNew = [];
+    const months = {}, byUser = {}, dealsForNew = [], byKto = {};
     for (const l of rev) {
       const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); const mk = String(ym.m);
       const price = Number(l.price) || 0;
@@ -1172,7 +1173,7 @@ async function runCityRevenue(trigger) {
       const cid = mainCid(l); const c571 = cid ? (cmap[cid] || []) : [];
       const inF1 = (emptyL || l573.some((v) => CITY_F1_LEAD.has(v))) && c571.includes(CITY_F1_CONTACT);
       const inF2 = l573.includes(CITY_F2_LEAD) && (c571.length === 0 || c571.some((v) => CITY_F2_CONTACT.has(v)));
-      if (!months[mk]) months[mk] = { total: 0, spb: 0, deals: { total: 0, spb: 0, msk: 0 } };
+      if (!months[mk]) months[mk] = { total: 0, spb: 0, deals: { total: 0, spb: 0, msk: 0, returns: 0, returnsSpb: 0 } };
       months[mk].total += price;
       if (inF1 || inF2) months[mk].spb += price;
       // ── Объём сделок месяца (для «Нагрузки на персонал», Андрей 11.09) ──────
@@ -1190,8 +1191,19 @@ async function runCityRevenue(trigger) {
       if (!isSurcharge && !isVnjNext && (price > 0 || isReturn)) {
         months[mk].deals.total++;
         if (inF1 || inF2) months[mk].deals.spb++; else months[mk].deals.msk++;
+        if (isReturn) { months[mk].deals.returns++; if (inF1 || inF2) months[mk].deals.returnsSpb++; }
         // Разрез по ответственному — для стафф-перформанса (сделки, выручка, возвраты,
         // время от оплаты до закрытия). Цикл считаем только по закрытым сделкам.
+        // «Кто принял клиента» (поле 443488) — это специалист ОРК, который реально
+        // вёл сделку. Оно заполнено практически у всех сделок и даёт полную раскладку
+        // объёма месяца по людям, в отличие от «ответственного», который к моменту
+        // оплаты успевает смениться.
+        const kto = String(_cityCfVal(l, CITY_CF_TOOK) || "").trim();
+        if (kto && !/^не имеет значения$/i.test(kto)) {
+          const km = byKto[kto] || (byKto[kto] = {});
+          const k = km[mk] || (km[mk] = { took: 0, tookRev: 0, tookReturns: 0 });
+          k.took++; k.tookRev += price; if (isReturn) k.tookReturns++;
+        }
         // ВАЖНО: у отдела продаж сделку считаем по АВТОРУ (кто её завёл) — после
         // продажи ответственный меняется на специалиста ОРК, и продажа «уезжает» из
         // отчёта менеджера. У ОРК и оформления наоборот: там важен ответственный.
@@ -1228,7 +1240,7 @@ async function runCityRevenue(trigger) {
     // прохода по сделкам не делаем, только по контактам года (они нужны отделу продаж
     // для конверсии «контакт → продажа»). СТРОГО ПОСЛЕ сохранения выручки: этот кусок
     // длинный, и он не должен задерживать блок «Выручка по городам».
-    try { await buildStaffPerf(baseUrl, byUser, dealsForNew); } catch (e) { console.error("STAFF PERF:", e && e.message); }
+    try { await buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, out); } catch (e) { console.error("STAFF PERF:", e && e.message); }
     return result;
   } catch (e) { console.error("runCityRevenue:", e.message); _cityRevLog.unshift({ ts: Date.now(), trigger, error: e.message }); return { error: e.message }; }
   finally { _cityRevRunning = false; }
@@ -1254,7 +1266,7 @@ const STAFF_DEPT_BY_GROUP = [
   [/(^|\s)оп(\s|\d|$)|отдел\s*продаж|роп/i, "op"],
   [/(^|\s)оо(\s|$)|отдел\s*оформлени/i, "oo"]
 ];
-async function buildStaffPerf(baseUrl, byUser, dealsForNew) {
+async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals) {
   // 1. Сотрудники и их группы.
   const users = {};
   for (let page = 1; page < 12; page++) {
@@ -1283,6 +1295,17 @@ async function buildStaffPerf(baseUrl, byUser, dealsForNew) {
   // Сохраняем ПРОМЕЖУТОЧНО, до длинного прохода по контактам: часть по сделкам уже
   // готова, и если процесс перезапустят на середине, данные не потеряются.
   const persist = () => {
+    // «Кто принял клиента» приходит текстом — сшиваем с сотрудниками по имени.
+    const norm = (x) => String(x || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+    const ktoByName = {}; Object.keys(byKto || {}).forEach((n) => { ktoByName[norm(n)] = byKto[n]; });
+    Object.keys(users).forEach((uid) => {
+      const k = ktoByName[norm(users[uid].name)]; if (!k) return;
+      const um = byUser[uid] || (byUser[uid] = {});
+      Object.keys(k).forEach((mk) => {
+        const t = um[mk] || (um[mk] = { deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
+        t.took = k[mk].took; t.tookRev = k[mk].tookRev; t.tookReturns = k[mk].tookReturns;
+      });
+    });
     const rows = [];
     Object.keys(byUser).forEach((uid) => {
       const u = users[uid]; if (!u) return;
@@ -1295,7 +1318,7 @@ async function buildStaffPerf(baseUrl, byUser, dealsForNew) {
       }
       rows.push({ uid: uid, name: u.name, group: u.group, dept: dept, months: byUser[uid] });
     });
-    const data = { ts: Date.now(), year: Y, users: rows };
+    const data = { ts: Date.now(), year: Y, users: rows, monthTotals: monthTotals || null };
     _staffPerf = data;
     try { fs.writeFileSync(VSC_STAFFPERF_FILE, JSON.stringify(data), "utf8"); } catch (e) { console.error("saveStaffPerf:", e.message); }
     return data;
@@ -6474,6 +6497,9 @@ async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
 // август совпали до рубля; KPI-колонка «Рекламные расходы СПБ» отставала в свежих
 // месяцах, поэтому источник — сам Директ. Отчёт тяжёлый, кэш на сутки.
 const SPB_AD_RE = /spb|спб|piter|питер|санкт/i;
+// Кампания «Поиск – ЕПК – Карта банка – Мск и СПБ» общая для двух городов —
+// по указанию Андрея (11.09.2026) в рекламу Петербурга НЕ идёт.
+const SPB_AD_EXCLUDE_RE = /мск\s*и\s*спб|епк/i;
 let _spbAdCache = { at: 0, data: null };
 async function vscSpbAdByMonth() {
   if (_spbAdCache.data && Date.now() - _spbAdCache.at < 12 * 3600 * 1000) return _spbAdCache.data;
@@ -6505,7 +6531,7 @@ async function vscSpbAdByMonth() {
   const out = {};
   for (const line of text.trim().split("\n")) {
     const [name, monthRaw, cost] = line.split("\t");
-    if (!name || !monthRaw || !SPB_AD_RE.test(name)) continue;
+    if (!name || !monthRaw || !SPB_AD_RE.test(name) || SPB_AD_EXCLUDE_RE.test(name)) continue;
     const mm = String(monthRaw).slice(0, 7).split("-");
     if (mm.length < 2) continue;
     const key = MONF[Number(mm[1]) - 1] + " " + mm[0];
