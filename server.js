@@ -1164,7 +1164,7 @@ async function runCityRevenue(trigger) {
       const list = (data && data._embedded && data._embedded.contacts) || [];
       list.forEach((c) => { cmap[c.id] = _cityCfEnums(c, CITY_CF_CONTACT); });
     }
-    const months = {}, byUser = {};
+    const months = {}, byUser = {}, dealsForNew = [];
     for (const l of rev) {
       const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); const mk = String(ym.m);
       const price = Number(l.price) || 0;
@@ -1201,6 +1201,10 @@ async function runCityRevenue(trigger) {
           if (inF1 || inF2) u.spb++;
           const closed = Number(l.closed_at) || 0, paid = Number(_cityCfVal(l, CITY_CF_DATE)) || 0;
           if (closed > paid && paid > 0) { u.closedCnt++; u.closedDays += (closed - paid) / 86400; }
+          // Для отдела продаж считаем отдельно «сделки по НОВЫМ заявкам» — как в их
+          // собственном стафе: сделка засчитывается, если контакт клиента заведён в
+          // том же месяце. Месяц создания контакта узнаём ниже, на проходе по контактам.
+          if (cid) dealsForNew.push({ uid: uid, mk: mk, cid: cid, price: price });
         }
       }
     }
@@ -1214,7 +1218,7 @@ async function runCityRevenue(trigger) {
     // прохода по сделкам не делаем, только по контактам года (они нужны отделу продаж
     // для конверсии «контакт → продажа»). СТРОГО ПОСЛЕ сохранения выручки: этот кусок
     // длинный, и он не должен задерживать блок «Выручка по городам».
-    try { await buildStaffPerf(baseUrl, byUser); } catch (e) { console.error("STAFF PERF:", e && e.message); }
+    try { await buildStaffPerf(baseUrl, byUser, dealsForNew); } catch (e) { console.error("STAFF PERF:", e && e.message); }
     return result;
   } catch (e) { console.error("runCityRevenue:", e.message); _cityRevLog.unshift({ ts: Date.now(), trigger, error: e.message }); return { error: e.message }; }
   finally { _cityRevRunning = false; }
@@ -1240,7 +1244,7 @@ const STAFF_DEPT_BY_GROUP = [
   [/(^|\s)оп(\s|\d|$)|отдел\s*продаж|роп/i, "op"],
   [/(^|\s)оо(\s|$)|отдел\s*оформлени/i, "oo"]
 ];
-async function buildStaffPerf(baseUrl, byUser) {
+async function buildStaffPerf(baseUrl, byUser, dealsForNew) {
   // 1. Сотрудники и их группы.
   const users = {};
   for (let page = 1; page < 12; page++) {
@@ -1265,10 +1269,33 @@ async function buildStaffPerf(baseUrl, byUser) {
     users[uid].group = gname;
     users[uid].dept = hit ? hit[1] : null;
   });
+  const Y = new Date(Date.now() + 3 * 3600 * 1000).getUTCFullYear();
+  // Сохраняем ПРОМЕЖУТОЧНО, до длинного прохода по контактам: часть по сделкам уже
+  // готова, и если процесс перезапустят на середине, данные не потеряются.
+  const persist = () => {
+    const rows = [];
+    Object.keys(byUser).forEach((uid) => {
+      const u = users[uid]; if (!u) return;
+      let dept = u.dept;
+      if (!dept && /орк|клиент/i.test(u.group || "")) dept = "orkMsk";
+      if (dept === "orkMsk" || dept === "orkSpb") {
+        let spb = 0, all = 0;
+        Object.keys(byUser[uid]).forEach((mk) => { spb += byUser[uid][mk].spb || 0; all += byUser[uid][mk].deals || 0; });
+        if (all > 0) dept = (spb * 2 > all) ? "orkSpb" : "orkMsk";
+      }
+      rows.push({ uid: uid, name: u.name, group: u.group, dept: dept, months: byUser[uid] });
+    });
+    const data = { ts: Date.now(), year: Y, users: rows };
+    _staffPerf = data;
+    try { fs.writeFileSync(VSC_STAFFPERF_FILE, JSON.stringify(data), "utf8"); } catch (e) { console.error("saveStaffPerf:", e.message); }
+    return data;
+  };
+  persist();
+  console.log("STAFF PERF: сделки записаны, идём за контактами");
   // 2. Контакты года по ответственному и месяцу создания. Тег «Дополнительный
   // контакт» не считаем — это добавленный вручную контакт к существующей сделке.
-  const Y = new Date(Date.now() + 3 * 3600 * 1000).getUTCFullYear();
   const yearFrom = Math.floor(Date.UTC(Y, 0, 1) / 1000) - 3 * 3600;
+  const cCreated = {};                       // id контакта → месяц создания
   for (let page = 1; page < 400; page++) {
     const d = await amoGet(`${baseUrl}/api/v4/contacts`, { limit: 250, page, "filter[created_at][from]": String(yearFrom) });
     const list = (d && d._embedded && d._embedded.contacts) || [];
@@ -1277,6 +1304,7 @@ async function buildStaffPerf(baseUrl, byUser) {
       const tags = ((c._embedded && c._embedded.tags) || []).map((t) => String(t.name || ""));
       if (tags.some((t) => /дополнительный\s*контакт/i.test(t))) return;
       const ym = _cityYm(c.created_at); if (!ym || ym.y !== Y) return;
+      cCreated[String(c.id)] = String(ym.m);
       const uid = String(c.responsible_user_id || ""); if (!uid) return;
       const um = byUser[uid] || (byUser[uid] = {});
       const u = um[String(ym.m)] || (um[String(ym.m)] = { deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
@@ -1285,25 +1313,16 @@ async function buildStaffPerf(baseUrl, byUser) {
     if (page % 20 === 0) console.log("STAFF PERF: контактов прочитано ~" + page * 250);
     if (list.length < 250) break;
   }
-  // 3. Раскладка по отделам. У руководителей ОРК группа общая — город берём по их
-  // же сделкам (где больше, туда и относим).
-  const rows = [];
-  Object.keys(byUser).forEach((uid) => {
-    const u = users[uid]; if (!u) return;
-    const months = byUser[uid];
-    let dept = u.dept;
-    if (!dept && /орк|клиент/i.test(u.group || "")) dept = "orkMsk";
-    if (dept === "orkMsk" || dept === "orkSpb") {
-      let spb = 0, all = 0;
-      Object.keys(months).forEach((mk) => { spb += months[mk].spb || 0; all += months[mk].deals || 0; });
-      if (all > 0) dept = (spb * 2 > all) ? "orkSpb" : "orkMsk";
-    }
-    rows.push({ uid: uid, name: u.name, group: u.group, dept: dept, months: months });
+  // 2б. Сделки по новым заявкам: контакт заведён в том же месяце, что и оплата.
+  (dealsForNew || []).forEach((d) => {
+    if (cCreated[String(d.cid)] !== d.mk) return;
+    const um = byUser[d.uid]; if (!um || !um[d.mk]) return;
+    um[d.mk].newDeals = (um[d.mk].newDeals || 0) + 1;
+    um[d.mk].newRevenue = (um[d.mk].newRevenue || 0) + (d.price || 0);
   });
-  const data = { ts: Date.now(), year: Y, users: rows };
-  _staffPerf = data;
-  try { fs.writeFileSync(VSC_STAFFPERF_FILE, JSON.stringify(data), "utf8"); } catch (e) { console.error("saveStaffPerf:", e.message); }
-  console.log("STAFF PERF: сотрудников " + rows.length);
+  // 3. Финальная запись — уже с контактами и сделками по новым заявкам.
+  const data = persist();
+  console.log("STAFF PERF: сотрудников " + data.users.length);
   return data;
 }
 app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => res.json({ success: true, data: loadStaffPerf() }));
@@ -6438,6 +6457,104 @@ async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
   _taxLegRetCache[qkey] = { at: Date.now(), ttl: failed.length ? 2 * 60 * 1000 : 15 * 60 * 1000, data };
   return data;
 }
+// ═══ «Запас на сборы» (Ежемесячный контроль; просьба Андрея 11.09.2026) ══════
+// Приход — деньги, которые клиенты заплатили за сборы и сопутствующее: колонки
+// CU..DD месячной вкладки «срм-факт» (Ваучеры Авиа, Регистрация, Подача, ФОТО,
+// Консульские сборы, Услуги АКК, Запись/БОТ, Сторонние курьеры, Страховка,
+// Языковые переводы), строка «Итог». Возвраты — из таблицы возвратов, блок
+// «РАЗБИВКА СУММЫ ВОЗВРАТА» без колонок «Услуги» и «НДС» (они про наши услуги,
+// а не про сборы). Расход — категория «Сборы» из Платрума; пока доступа к их
+// API нет, сумма вводится руками и хранится в .vscSboryExpense.json.
+const VSC_SBORY_EXP_FILE = path.join(__dirname, ".vscSboryExpense.json");
+function vscSboryExpLoad() { try { return JSON.parse(fs.readFileSync(VSC_SBORY_EXP_FILE, "utf8")) || {}; } catch (_) { return {}; } }
+function vscSboryExpSave(m) { try { fs.writeFileSync(VSC_SBORY_EXP_FILE, JSON.stringify(m, null, 2), "utf8"); return true; } catch (e) { console.error("vscSboryExpSave:", e.message); return false; } }
+// Колонки ищем ПО НАЗВАНИЯМ, а не по позиции: в январе-апреле вёрстка листа
+// другая (в январе сборы лежат в 87..96, с мая — в 98..107 = CU..DD).
+const VSC_SBORY_NAMES = ["ваучеры авиа", "регистрация", "подача", "фото", "консульские сборы", "услуги акк", "запись/бот", "сторонние курьеры", "страховка", "языковые переводы"];
+let _sboryCache = { at: 0, data: null };
+async function vscSboryData() {
+  if (_sboryCache.data && Date.now() - _sboryCache.at < 30 * 60 * 1000) return _sboryCache.data;
+  const money = (v) => { const n = parseFloat(String(v == null ? "" : v).replace(/\s|\u00a0/g, "").replace(/₽|руб\.?/gi, "").replace(",", ".")); return isFinite(n) ? n : 0; };
+  const out = {};
+  // 1) Приход из срм-факт
+  try {
+    const disc = await vscDiscoverGids(VSC_TAXES_PUB).catch(() => null);
+    const tabs = vscMonthTabs(disc, VSC_TAXES_GID);
+    for (const tab of tabs) {
+      if (!/2026$/.test(tab.name)) continue;
+      try {
+        const r = await axios.get(VSC_TAXES_PUB + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
+        const R = vscParseCsv(r.data);
+        const itog = R.find((row) => String((row || [])[0] || "").trim().toLowerCase() === "итог");
+        if (!itog) continue;
+        let inc = 0; const incParts = {};
+        const width = Math.max.apply(null, [0, 1, 2, 3].map((i) => (R[i] || []).length).concat([itog.length]));
+        for (let j = 0; j < width; j++) {
+          const names = [0, 1, 2, 3].map((i) => String(((R[i] || [])[j]) || "").replace(/\s+/g, " ").trim().toLowerCase());
+          const hit = names.find((n) => VSC_SBORY_NAMES.indexOf(n) >= 0);
+          if (!hit) continue;
+          const v = money(itog[j]);
+          inc += v; if (Math.abs(v) > 0.5) incParts[hit] = Math.round(v);
+        }
+        const recI = (out[tab.name] = out[tab.name] || {});
+        recI.income = Math.round(inc); recI.incomeParts = incParts;
+      } catch (e) { console.error("sbory income " + tab.name + ":", e.message); }
+    }
+  } catch (e) { console.error("sbory income:", e.message); }
+  // 2) Возвраты по сборам
+  try {
+    const disc = await vscDiscoverGids(VSC_RETURNS_PUB).catch(() => null);
+    const tabs = vscMonthTabs(disc, VSC_RETURNS_GID);
+    for (const tab of tabs) {
+      if (!/2026$/.test(tab.name)) continue;
+      try {
+        const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
+        const R = vscParseCsv(r.data);
+        const hdrRow = R.findIndex((row) => (row || []).some((c) => String(c || "").trim().toLowerCase() === "услуги"));
+        if (hdrRow < 0) continue;
+        const head = R[hdrRow] || [], zone = R[0] || [];
+        let from = -1, to = -1;
+        for (let j = 0; j < zone.length; j++) {
+          const z = String(zone[j] || "").toUpperCase();
+          if (z.includes("РАЗБИВКА")) from = j;
+          else if (from >= 0 && z.trim() && to < 0) to = j - 1;
+        }
+        if (from < 0) continue;
+        if (to < 0) to = head.length - 1;
+        let ret = 0; const parts = {};
+        for (let j = from; j <= to; j++) {
+          const name = String(head[j] || "").trim(), low = name.toLowerCase();
+          if (!name || low === "услуги" || low === "ндс") continue;   // это про наши услуги, не про сборы
+          let sum = 0;
+          for (let i = hdrRow + 1; i < R.length; i++) sum += money((R[i] || [])[j]);
+          if (Math.abs(sum) > 0.5) parts[name] = Math.round(sum);
+          ret += sum;
+        }
+        const rec = (out[tab.name] = out[tab.name] || {});
+        rec.returns = Math.round(ret); rec.returnParts = parts;
+      } catch (e) { console.error("sbory returns " + tab.name + ":", e.message); }
+    }
+  } catch (e) { console.error("sbory returns:", e.message); }
+  const exp = vscSboryExpLoad();
+  for (const k in out) if (exp[k] != null) out[k].expense = exp[k];
+  _sboryCache = { at: Date.now(), data: out };
+  return out;
+}
+app.get("/admin/api/vsc/sbory", requireVscDashboard, async (req, res) => {
+  try { res.json({ success: true, months: await vscSboryData() }); }
+  catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+app.post("/admin/api/vsc/sbory-expense", requireAdmin, (req, res) => {
+  const month = String((req.body && req.body.month) || "").trim();
+  const v = req.body && req.body.expense;
+  if (!month) return res.status(400).json({ success: false, message: "Нужен month" });
+  const m = vscSboryExpLoad();
+  if (v == null || v === "") delete m[month]; else { const n = parseFloat(v); if (!isFinite(n)) return res.status(400).json({ success: false, message: "Расход должен быть числом" }); m[month] = n; }
+  const ok = vscSboryExpSave(m);
+  _sboryCache = { at: 0, data: null };
+  res.json({ success: ok, expenses: m });
+});
+
 // Автотяг из «срм-факт» (VSC_TAXES_PUB, месячные вкладки, строка «Итог»):
 //  • выручки 4 юрлиц — зона «ВЫГРУЗКА ИЗ CRM» (колонки по именам юрлиц в шапке);
 //  • нал без чека — Σ колонок с «без чека» (МСК+СПБ);

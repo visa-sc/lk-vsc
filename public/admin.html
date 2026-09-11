@@ -3863,6 +3863,7 @@
         // ── Не-графики — опущены ВНИЗ (по просьбе Андрея): «Реклама Я.Директ vs таблица» и «План ОП — проверка» ──
         // ── «Выкупы — сверка р/с с таблицей» (только админ; руководителям блок не показываем,
         // эндпоинт requireAdmin — raw fetch, чтобы 401 не выкидывал их на логин) ──
+        if (currentRole() === "admin") vscContent.appendChild(vscSboryBlock());
         if (currentRole() === "admin") vscContent.appendChild(vscBuyoutsBlock());
         // Комиссии эквайринга (торговый + интернет, ООО + ИП) — только админ, из T-Bank API.
         if (currentRole() === "admin") {
@@ -5068,6 +5069,70 @@
           ]).then(function () { _vscStaffCache = null; b.textContent = "Считается (несколько минут) — обнови вкладку позже"; });
         });
       }
+      // ── «Запас на сборы» (Ежемесячный контроль; Андрей 11.09.2026) ─────────────
+      // Клиенты платят нам за консульские сборы, запись, страховки и прочее —
+      // эти деньги мы потом отдаём наружу. Блок показывает, остаётся ли запас.
+      function vscSboryBlock() {
+        const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Запас на сборы — по месяцам";
+        h.appendChild(vscInfo("<b>Приход</b><br>Из таблицы «срм-факт», строка «Итог»: колонки сборов — ваучеры авиа, регистрация, подача, фото, консульские сборы, услуги АКК, запись/бот, сторонние курьеры, страховка, языковые переводы. Колонки ищутся по названию, поэтому разная вёрстка месяцев не мешает.<br><br><b>Расход</b><br>Категория «Сборы» из Платрума. Прямого доступа к их API у нас пока нет, поэтому сумма вносится руками в поле в таблице — она сохраняется на сервере.<br><br><b>Возвраты</b><br>Из отчёта по возвратам, блок «Разбивка суммы возврата» — всё, кроме колонок «Услуги» и «НДС» (они про наши услуги, а не про сборы).<br><br><b>Разница</b> = приход − расход − возвраты. Плюс значит, что собранного хватает с запасом; минус — что за месяц мы отдали больше, чем собрали."));
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart";
+        box.innerHTML = '<div class="loading-state">Считаем запас на сборы…</div>';
+        wrap.appendChild(box);
+        const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+        const money = (v) => (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽";
+        function paint(j) {
+          const ms = (j && j.months) || {};
+          const names = Object.keys(ms).sort(function (a, b) {
+            const ia = MONF.indexOf(a.replace(/\s*20\d\d/, "")), ib = MONF.indexOf(b.replace(/\s*20\d\d/, ""));
+            return ia - ib;
+          });
+          if (!names.length) { box.innerHTML = '<div class="vsc-empty">Нет данных по сборам.</div>'; return; }
+          const TD = 'style="padding:7px 9px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;"';
+          const TH = 'style="padding:7px 9px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;"';
+          let html = '<div style="overflow-x:auto;"><table style="width:100%;min-width:680px;border-collapse:collapse;font-size:13px;">'
+            + '<tr><th ' + TH.replace("right", "left") + '>Месяц</th><th ' + TH + '>Приход</th><th ' + TH + '>Расход</th><th ' + TH + '>Возвраты</th><th ' + TH + '>Разница</th></tr>';
+          let sI = 0, sE = 0, sR = 0, sD = 0;
+          names.forEach(function (n) {
+            const m = ms[n] || {};
+            const inc = m.income || 0, ret = m.returns || 0;
+            const exp = (m.expense != null) ? m.expense : null;
+            const diff = (exp != null) ? inc - exp - ret : null;
+            sI += inc; sR += ret; if (exp != null) { sE += exp; sD += diff; }
+            const col = diff == null ? "#9096a3" : (diff >= 0 ? "#2c7a43" : "#b0263a");
+            const bg = diff == null ? "" : (diff >= 0 ? "background:#eaf6ee;" : "background:#fdecef;");
+            html += '<tr><td ' + TD.replace("right", "left") + '><b>' + escapeHtml(n.replace(/\s*20\d\d/, "")) + '</b></td>'
+              + '<td ' + TD + '>' + money(inc) + '</td>'
+              + '<td ' + TD + '><input type="text" class="sbory-exp" data-month="' + escapeHtml(n) + '" value="' + (exp != null ? Math.round(exp) : "") + '" placeholder="ввести" '
+              + 'style="width:110px;text-align:right;border:1px solid #dfe3ec;border-radius:8px;padding:4px 7px;font-size:12.5px;font-family:inherit;"></td>'
+              + '<td ' + TD + '>' + money(ret) + '</td>'
+              + '<td ' + TD.replace('style="', 'style="' + bg + 'color:' + col + ';font-weight:700;') + '>' + (diff == null ? "—" : money(diff)) + '</td></tr>';
+          });
+          const colT = sD >= 0 ? "#2c7a43" : "#b0263a";
+          html += '<tr><td ' + TD.replace("right", "left") + '><b>Итого</b></td><td ' + TD + '><b>' + money(sI) + '</b></td>'
+            + '<td ' + TD + '><b>' + (sE ? money(sE) : "—") + '</b></td><td ' + TD + '><b>' + money(sR) + '</b></td>'
+            + '<td ' + TD.replace('style="', 'style="color:' + colT + ';font-weight:800;') + '>' + (sE ? money(sD) : "—") + '</td></tr>';
+          html += '</table></div>';
+          html += '<div style="font-size:11.5px;color:#9096a3;margin-top:10px;">Расход по категории «Сборы» вносится руками из Платрума — введите сумму и нажмите Enter. Приход и возвраты считаются автоматически.</div>';
+          box.innerHTML = html;
+          // сохранение расхода
+          Array.prototype.forEach.call(box.querySelectorAll(".sbory-exp"), function (inp) {
+            inp.addEventListener("keydown", function (e) { if (e.key === "Enter") inp.blur(); });
+            inp.addEventListener("change", function () {
+              const raw = inp.value.replace(/\s/g, "").replace(",", ".");
+              inp.disabled = true;
+              fetch("/admin/api/vsc/sbory-expense", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ month: inp.getAttribute("data-month"), expense: raw }) })
+                .then(function () { return apiFetch("/admin/api/vsc/sbory"); })
+                .then(function (fresh) { paint(fresh); })
+                .catch(function () { inp.disabled = false; });
+            });
+          });
+        }
+        apiFetch("/admin/api/vsc/sbory").then(paint).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось посчитать запас на сборы.</div>'; });
+        return wrap;
+      }
+
       // ── «Прибыль Санкт-Петербурга» (оценка; Андрей 11.09.2026) ─────────────────
       // Отдельной прибыли по городу в учёте нет: вводится только общая. Поэтому
       // считаем оценку: доля города в выручке × прибыль месяца, плюс поправка на
