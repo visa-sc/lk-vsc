@@ -263,6 +263,19 @@
   .bkbody{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#fff;}
   .bkf{display:block;border:0;width:100%;height:1560px;background:#fff;}
   .bkfoot{padding:10px 18px;border-top:1px solid var(--line);font-size:12px;color:var(--mut);text-align:center;background:#fff;}
+  [hidden]{display:none!important;}
+  /* Их форма жёстко открывает последний шаг новой вкладкой (target="_blank").
+     Чтобы возврат на нашу страницу не выглядел сбоем, показываем свой экран. */
+  .bkafter{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:30px 24px;background:#fff;}
+  .bkafter .ic{width:62px;height:62px;border-radius:50%;background:#e8f4fb;color:var(--accent-d);
+    display:flex;align-items:center;justify-content:center;font-size:27px;margin-bottom:16px;}
+  .bkafter .t{font-size:19px;font-weight:800;letter-spacing:-.02em;margin-bottom:8px;}
+  .bkafter .d{font-size:14px;color:var(--mut);line-height:1.55;max-width:380px;margin-bottom:20px;}
+  .bkafter .btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+  .bkafter button{font:inherit;font-size:14.5px;font-weight:700;border:0;border-radius:14px;padding:13px 22px;cursor:pointer;
+    background:var(--grad);color:#fff;box-shadow:0 12px 24px -14px rgba(53,137,189,.9);}
+  .bkafter button.sec{background:#fff;color:var(--accent-d);border:1px solid var(--line);box-shadow:none;}
 
   /* ── модалка «через менеджера» ── */
   .ovl{position:fixed;inset:0;background:rgba(12,20,32,.55);backdrop-filter:blur(5px);z-index:96;display:none;
@@ -509,7 +522,16 @@
       <button class="bx" id="bkClose" type="button">✕</button>
     </div>
     <div class="bkbody" id="bkBody"><iframe class="bkf" id="bkFrame" src="about:blank" allow="payment"></iframe></div>
-    <div class="bkfoot">Бронь оформляется на VOYO. Подтверждение и ваучер придут на вашу почту сразу после оформления.</div>
+    <div class="bkafter" id="bkAfter" hidden>
+      <div class="ic">✈</div>
+      <div class="t">Оформление открылось в новой вкладке</div>
+      <div class="d">Закончите бронирование там. Подтверждение и ваучер придут на вашу почту, а эта страница останется здесь.</div>
+      <div class="btns">
+        <button id="bkDone" type="button">Готово</button>
+        <button id="bkBack" class="sec" type="button">Вернуться к форме</button>
+      </div>
+    </div>
+    <div class="bkfoot" id="bkFoot">Последний шаг, подтверждение и оплата, откроется в новой вкладке. Ваучер придёт на вашу почту.</div>
   </div>
 </div>
 
@@ -977,13 +999,27 @@
       $("bkSub").textContent=(q?q.day+" "+q.monf:"")+(ST.sel.time?", "+ST.sel.time:"")+" · "+RU(total())+" ₽ · защищённая форма";
       $("bkFrame").src=r.j.url;
       $("bkOvl").classList.add("on"); document.body.classList.add("lock");
+      bkShowForm(); bkOpenedAt=Date.now();
       var bb=$("bkBody"); if(bb) bb.scrollTop=0;
     }
   }
-  $("bkClose").addEventListener("click",function(){
-    $("bkOvl").classList.remove("on"); $("bkFrame").src="about:blank";
+  // Уход в новую вкладку кросс-доменно не поймать, но видно, что наша страница
+  // ушла из фокуса. Вернулся клиент — показываем свой экран, а не чужую форму.
+  var bkHandoff=false, bkOpenedAt=0;
+  function bkShowAfter(){ $("bkBody").hidden=true; $("bkAfter").hidden=false; $("bkFoot").hidden=true; }
+  function bkShowForm(){ bkHandoff=false; $("bkAfter").hidden=true; $("bkBody").hidden=false; $("bkFoot").hidden=false; }
+  function bkClose(){
+    $("bkOvl").classList.remove("on"); $("bkFrame").src="about:blank"; bkShowForm();
     if(!$("pv").classList.contains("on")) document.body.classList.remove("lock");
+  }
+  document.addEventListener("visibilitychange",function(){
+    if(!$("bkOvl").classList.contains("on")) return;
+    if(document.hidden){ if(Date.now()-bkOpenedAt>4000) bkHandoff=true; }
+    else if(bkHandoff) bkShowAfter();
   });
+  $("bkClose").addEventListener("click",bkClose);
+  $("bkDone").addEventListener("click",bkClose);
+  $("bkBack").addEventListener("click",bkShowForm);
 
   // ─────────── подбор менеджером ───────────
   function openAsk(){

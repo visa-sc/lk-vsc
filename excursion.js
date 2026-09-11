@@ -282,6 +282,9 @@ function bookingUrl(o) {
   // Во фрейме нет их куки локали, и форма может уехать в английский —
   // фиксируем русский и рубли явно.
   q.set("locale", "ru"); q.set("lang", "ru"); q.set("currency", "RUB");
+  // Тот же параметр добавляет их собственный скрипт встраивания — говорит
+  // поставщику, что форма открыта внутри нашей страницы.
+  q.set("parent_url", "https://voyotravel.ru/excursion");
   if (o.date) q.set("event_date", String(o.date));
   if (o.eventId) q.set("event_id", String(o.eventId));
   (o.tickets || []).forEach((t) => { if (t && t.id != null && Number(t.qty) > 0) q.set("ticket_id_" + t.id, String(Number(t.qty))); });
