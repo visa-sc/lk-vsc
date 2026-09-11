@@ -6468,6 +6468,99 @@ async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
   _taxLegRetCache[qkey] = { at: Date.now(), ttl: failed.length ? 2 * 60 * 1000 : 15 * 60 * 1000, data };
   return data;
 }
+// ═══ Прибыль Санкт-Петербурга — по методике Андрея (11.09.2026) ══════════════
+// Его таблица считает так (сверено до копейки на августе: итог 122 138,39):
+//   выручка СПб − ФОТ ОРК СПб − взносы (25% ФОТ) − налог (3% выручки)
+//   − реклама СПб − аренда − курьеры − эквайринг (2,1% выручки) − возвраты СПб
+//   − прочее − аренда бэк-офиса − доли ФОТ общих отделов (ОП/ОО/Упр/Маркетинг/ПЛ).
+// Источники: выручка — ночной съём amoCRM по городам; ФОТ — зарплатная таблица,
+// отдел «ОРК Санкт-Петербург»; реклама — KPI-лист, колонка «Рекламные расходы
+// СПБ» (Grand total); возвраты — отчёт по возвратам, колонка «Услуги» строк с
+// филиалом СПб. Остальное — фиксированные суммы из его модели.
+const SPB_FIX = { rent: 70000, couriers: 30000, other: 25000, backOffice: 30000, fotOP: 100000, fotOO: 75000, fotUpr: 50000, fotMkt: 30000, fotPL: 30000 };
+const SPB_CONTRIB_RATE = 0.25, SPB_TAX_RATE = 0.03, SPB_ACQ_RATE = 0.021;
+let _spbCache = { at: 0, data: null };
+async function vscSpbPnl() {
+  if (_spbCache.data && Date.now() - _spbCache.at < 30 * 60 * 1000) return _spbCache.data;
+  const money = (v) => { const n = parseFloat(String(v == null ? "" : v).replace(/\s|\u00a0/g, "").replace(/₽|руб\.?/gi, "").replace(",", ".")); return isFinite(n) ? n : 0; };
+  const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+  const out = {};
+  // 1) Выручка города — из ночного съёма amoCRM
+  const cr = loadCityRev();
+  if (cr && cr.months) for (const mk in cr.months) {
+    const mi = Number(mk); if (isNaN(mi)) continue;
+    out[MONF[mi] + " 2026"] = { revenue: cr.months[mk].spb || 0, share: cr.months[mk].total ? (cr.months[mk].spb / cr.months[mk].total) : null };
+  }
+  // 2) Реклама СПб — KPI-лист, Grand total
+  try {
+    const disc = await vscDiscoverGids(VSC_PUB_BASE).catch(() => null);
+    const tabs = vscMonthTabs(disc, Object.fromEntries(VSC_SHEETS.map((t) => [t.name, t.gid])));
+    for (const tab of tabs) {
+      if (!out[tab.name]) continue;
+      try {
+        const r = await axios.get(VSC_PUB_BASE + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
+        const R = vscParseCsv(r.data);
+        const gt = R.findIndex((row) => /grand total/i.test(String((row || [])[0] || "")));
+        if (gt < 0) continue;
+        for (let j = 0; j < (R[gt] || []).length + 20; j++) {
+          const nm = [0, 1, 2, 3, 4].map((i) => String(((R[i] || [])[j]) || "").replace(/\s+/g, " ").trim()).filter(Boolean).join(" / ");
+          if (/рекламные расходы спб/i.test(nm)) { out[tab.name].ad = money((R[gt] || [])[j]); break; }
+        }
+      } catch (e) { console.error("spb ad " + tab.name + ":", e.message); }
+    }
+  } catch (e) { console.error("spb ad:", e.message); }
+  // 3) Возвраты СПб — «Услуги» по строкам филиала Санкт-Петербург
+  try {
+    const disc = await vscDiscoverGids(VSC_RETURNS_PUB).catch(() => null);
+    const tabs = vscMonthTabs(disc, VSC_RETURNS_GID);
+    for (const tab of tabs) {
+      if (!out[tab.name]) continue;
+      try {
+        const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
+        const R = vscParseCsv(r.data);
+        const hdr = R.findIndex((row) => (row || []).some((c) => String(c || "").trim().toLowerCase() === "услуги"));
+        if (hdr < 0) continue;
+        const head = R[hdr] || [];
+        const bCol = head.findIndex((c) => /филиал/i.test(String(c || "")));
+        const uCol = head.findIndex((c) => String(c || "").trim().toLowerCase() === "услуги");
+        if (bCol < 0 || uCol < 0) continue;
+        let sum = 0;
+        for (let i = hdr + 1; i < R.length; i++) {
+          const b = String((R[i] || [])[bCol] || "").toLowerCase();
+          if (/спб|санкт|питер/.test(b)) sum += money((R[i] || [])[uCol]);
+        }
+        out[tab.name].returns = Math.round(sum);
+      } catch (e) { console.error("spb ret " + tab.name + ":", e.message); }
+    }
+  } catch (e) { console.error("spb ret:", e.message); }
+  // 4) ФОТ отдела ОРК Санкт-Петербург + расчёт итога
+  let zar = null;
+  try { zar = await zarplata.getZarplata(false); } catch (e) { console.error("spb zarplata:", e.message); }
+  const fixSum = Object.values(SPB_FIX).reduce((a, b) => a + b, 0);
+  const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
+  for (const name of Object.keys(out)) {
+    const rec = out[name];
+    const zm = zar && zar.months && zar.months[name];
+    rec.fot = (zm && zm.depts && zm.depts.orkSpb) ? Math.round(zm.depts.orkSpb.accrued || 0) : null;
+    rec.contrib = rec.fot != null ? Math.round(rec.fot * SPB_CONTRIB_RATE) : null;
+    rec.tax = Math.round(rec.revenue * SPB_TAX_RATE);
+    rec.acquiring = Math.round(rec.revenue * SPB_ACQ_RATE);
+    rec.fixed = fixSum; rec.fixedParts = SPB_FIX;
+    if (rec.fot != null && rec.ad != null && rec.returns != null) {
+      rec.profit = Math.round(rec.revenue - rec.fot - rec.contrib - rec.tax - rec.ad - rec.acquiring - (rec.returns || 0) - fixSum);
+    } else rec.profit = null;
+    // месяц закрыт только с 4-го числа следующего
+    const mi = MONF.indexOf(name.replace(/\s*20\d\d/, ""));
+    if (mi >= 0 && nowMsk.getTime() < Date.UTC(2026, mi + 1, 4)) delete out[name];
+  }
+  _spbCache = { at: Date.now(), data: out };
+  return out;
+}
+app.get("/admin/api/vsc/spb-pnl", requireAdmin, async (req, res) => {
+  try { res.json({ success: true, months: await vscSpbPnl(), rates: { contrib: SPB_CONTRIB_RATE, tax: SPB_TAX_RATE, acquiring: SPB_ACQ_RATE }, fixed: SPB_FIX }); }
+  catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
 // ═══ «Запас на сборы» (Ежемесячный контроль; просьба Андрея 11.09.2026) ══════
 // Приход — деньги, которые клиенты заплатили за сборы и сопутствующее: колонки
 // CU..DD месячной вкладки «срм-факт» (Ваучеры Авиа, Регистрация, Подача, ФОТО,
