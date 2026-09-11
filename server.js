@@ -6546,6 +6546,18 @@ async function vscSboryData() {
       } catch (e) { console.error("sbory returns " + tab.name + ":", e.message); }
     }
   } catch (e) { console.error("sbory returns:", e.message); }
+  // Месяц считается закрытым только с 4-го числа следующего (Андрей 11.09.2026):
+  // до этого дня данные в таблицах ещё доносят, показывать их рано.
+  const MONF_I = { "январь": 0, "февраль": 1, "март": 2, "апрель": 3, "май": 4, "июнь": 5, "июль": 6, "август": 7, "сентябрь": 8, "октябрь": 9, "ноябрь": 10, "декабрь": 11 };
+  const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
+  for (const k of Object.keys(out)) {
+    const mm = /^([А-Яа-яёЁ]+)\s+(\d{4})$/.exec(k);
+    if (!mm) continue;
+    const mi = MONF_I[mm[1].toLowerCase()], yr = +mm[2];
+    if (mi == null) continue;
+    const openFrom = Date.UTC(yr, mi + 1, 4);           // 4-е число следующего месяца
+    if (nowMsk.getTime() < openFrom) delete out[k];
+  }
   const exp = vscSboryExpLoad();
   for (const k in out) if (exp[k] != null) out[k].expense = exp[k];
   _sboryCache = { at: Date.now(), data: out };
