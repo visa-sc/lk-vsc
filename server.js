@@ -1172,22 +1172,24 @@ async function runCityRevenue(trigger) {
       const cid = mainCid(l); const c571 = cid ? (cmap[cid] || []) : [];
       const inF1 = (emptyL || l573.some((v) => CITY_F1_LEAD.has(v))) && c571.includes(CITY_F1_CONTACT);
       const inF2 = l573.includes(CITY_F2_LEAD) && (c571.length === 0 || c571.some((v) => CITY_F2_CONTACT.has(v)));
-      if (!months[mk]) months[mk] = { total: 0, spb: 0, deals: { orkMsk: 0, orkSpb: 0, oo: 0 } };
+      if (!months[mk]) months[mk] = { total: 0, spb: 0, deals: { total: 0, spb: 0, msk: 0 } };
       months[mk].total += price;
       if (inF1 || inF2) months[mk].spb += price;
-      // ── Успешные сделки по отделам (для «Нагрузки на персонал», Андрей 11.09) ──
-      // Те же отсечки, что и в «% повторных сделок»: доплаты (статус и по названию),
-      // вторые части ВНЖ, возвраты и сделки с нулевым бюджетом — это не новая
-      // обработанная клиентская сделка. Воронка = отдел: «Отдел по работе с
-      // Клиентами» (делим на МСК/СПб тем же признаком города) и «Отдел Оформления».
-      const st = Number(l.status_id), pl = Number(l.pipeline_id);
+      // ── Объём сделок месяца (для «Нагрузки на персонал», Андрей 11.09) ──────
+      // Считаем НЕ по воронке: сделка переезжает между воронками, и текущая воронка
+      // говорит, где сделка лежит сейчас, а не кто её вёл. Берём весь объём сделок,
+      // давший выручку месяца, по той же логике, что и «% повторных сделок»:
+      // без доплат (по статусу и по названию) и без вторых частей ВНЖ; возврат
+      // считаем — сделка была обработана, судьба денег к нагрузке отношения не имеет.
+      // Через оформление проходит ВЕСЬ объём, ОРК делим на города тем же признаком.
+      const st = Number(l.status_id);
       const nm = String(l.name || "");
       const isReturn = st === 21256761 || st === 43200834;
       const isSurcharge = st === 21271227 || /доплат/i.test(nm);
       const isVnjNext = isVnjDeal(l) && VNJ_NEXT_RE.test(nm);
-      if (!isReturn && !isSurcharge && !isVnjNext && price > 0) {
-        if (pl === 1312578) months[mk].deals.oo++;
-        else if (pl === 1309524) { if (inF1 || inF2) months[mk].deals.orkSpb++; else months[mk].deals.orkMsk++; }
+      if (!isSurcharge && !isVnjNext && (price > 0 || isReturn)) {
+        months[mk].deals.total++;
+        if (inF1 || inF2) months[mk].deals.spb++; else months[mk].deals.msk++;
       }
     }
     const out = {};
@@ -1235,10 +1237,48 @@ const VSC_MGRPAY_SEED = {
 };
 function loadMgrPay() { try { return Object.assign({}, VSC_MGRPAY_SEED, JSON.parse(fs.readFileSync(VSC_MGRPAY_FILE, "utf8")) || {}); } catch (_) { return Object.assign({}, VSC_MGRPAY_SEED); } }
 function saveMgrPay(m) { try { fs.writeFileSync(VSC_MGRPAY_FILE, JSON.stringify(m || {}, null, 2), "utf8"); return true; } catch (e) { console.error("saveMgrPay:", e.message); return false; } }
+// База нагрузки из листа /vsc: целевые контакты (факт таргета МСК+СПб) и звонки из
+// PBX (входящие и пропущенные) — строка «Grand total» каждой месячной вкладки.
+// Читаем ОТДЕЛЬНО от дашборда: у замороженных месяцев в снимке этих полей нет
+// (снимок сделан раньше), а история нагрузки нужна с начала года. Заморозку не
+// трогаем — она про цифры дашборда. Кэш 6 часов.
+let _vscLoadBase = null, _vscLoadBaseAt = 0;
+async function vscStaffLoadBase() {
+  if (_vscLoadBase && (Date.now() - _vscLoadBaseAt) < 6 * 3600 * 1000) return _vscLoadBase;
+  const out = {};
+  try {
+    const tabs = vscMonthTabs(await vscDiscoverGids(VSC_PUB_BASE), {});
+    for (const tab of tabs) {
+      try {
+        const r = await axios.get(VSC_PUB_BASE + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
+        const rows = vscParseCsv(r.data);
+        // Шапка — строка с «Дата» в первой ячейке (как в основном разборе листа).
+        let hi = -1; for (let i = 0; i < Math.min(rows.length, 15); i++) if (rows[i] && String(rows[i][0]).trim() === "Дата") { hi = i; break; }
+        if (hi < 0) continue;
+        const hdr = (rows[hi] || []).map((x) => String(x || "").replace(/\s+/g, " ").toLowerCase());
+        const colsAll = (kw) => hdr.map((h, i) => ({ h, i })).filter((x) => kw.every((k) => x.h.indexOf(k) >= 0)).map((x) => x.i);
+        const one = (kw) => { const c = colsAll(kw); return c.length ? c[0] : -1; };
+        const cIn = one(["общее количество входящих звонков"]);
+        const cMiss = one(["количество пропущенных звонков"]);
+        // Именно «Таргет МСК/СПБ ФАКТ». Просто ["таргет","факт"] ловит ещё и
+        // «недобор/перебор контактов … (от таргета … факт)» — это другая величина.
+        const cFact = [one(["таргет мск", "факт"]), one(["таргет спб", "факт"])].filter((i) => i >= 0);
+        const gt = rows.find((rr) => String((rr || [])[0] || "").trim().toLowerCase() === "grand total");
+        if (!gt) continue;
+        const sum = (idxs) => { const v = idxs.map((i) => (i >= 0 ? vscNum(gt[i]) : null)).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
+        out[tab.name] = { targetFact: sum(cFact), callsIn: sum([cIn]), callsMissed: sum([cMiss]) };
+      } catch (e) { /* вкладка недоступна — пропускаем, остальные читаются */ }
+    }
+  } catch (e) { console.error("vscStaffLoadBase:", e && e.message); }
+  if (Object.keys(out).length) { _vscLoadBase = out; _vscLoadBaseAt = Date.now(); }
+  return _vscLoadBase || out;
+}
 app.get("/admin/api/vsc/zarplata", requireAdmin, async (req, res) => {
   try {
-    const d = await zarplata.getZarplata(String(req.query.force || "") === "1");
-    return res.json({ success: true, data: d, managerPay: loadMgrPay(), cityRevenue: loadCityRev() });
+    const force = String(req.query.force || "") === "1";
+    if (force) { _vscLoadBaseAt = 0; }
+    const [d, base] = await Promise.all([zarplata.getZarplata(force), vscStaffLoadBase()]);
+    return res.json({ success: true, data: d, managerPay: loadMgrPay(), cityRevenue: loadCityRev(), loadBase: base });
   } catch (e) {
     console.error("vsc zarplata:", e && e.message);
     return res.status(500).json({ success: false, message: "Не удалось прочитать зарплатную таблицу: " + (e && e.message) });

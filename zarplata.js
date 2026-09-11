@@ -56,6 +56,16 @@ const DEPT_BY_NAME = [
   [/кудрин/i, "oo"]
 ];
 const DEPT_TITLES = { pl: "Первая линия", op: "Отдел продаж", orkMsk: "ОРК Москва", orkSpb: "ОРК Санкт-Петербург", oo: "Отдел оформления", none: "Вне отделов" };
+// Январь–апрель 2026: на тех листах ещё НЕТ колонки «Группа должности», разложить
+// сотрудников по отделам нечем. Средние за эти месяцы взяты из таблицы Андрея
+// (скриншот 11.09.2026) — разово, только чтобы история не обрывалась. С мая 2026
+// колонка появилась, и всё считается из листа само.
+const DEPT_AVG_SEED = {
+  "Январь 2026": { pl: 69038.66, op: 145036.41, orkMsk: 99094.06, orkSpb: 97105.09, oo: 87313.59 },
+  "Февраль 2026": { pl: 77456.96, op: 145678.51, orkMsk: 99218.58, orkSpb: 112248.21, oo: 96411.42 },
+  "Март 2026": { pl: 82935.22, op: 155327.80, orkMsk: 114500.71, orkSpb: 114514.80, oo: 106813.11 },
+  "Апрель 2026": { pl: 79010.75, op: 167824.43, orkMsk: 104278.33, orkSpb: 135080.55, oo: 109327.95 }
+};
 
 // ── xlsx: минимальный разбор ───────────────────────────────────────────────
 function colToNum(s) { let n = 0; for (let i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64); return n; }
@@ -223,7 +233,8 @@ function parseMonth(cells, monthName) {
     workDays: workDays, calDays: calDays,
     vacDaysTotal: Math.round(counted.reduce((a, p) => a + p.vacDays, 0) * 10) / 10,
     depts: depts,
-    hasDepts: !!C.dept
+    hasDepts: !!C.dept,
+    deptAvgSeed: (!C.dept && DEPT_AVG_SEED[monthName]) ? DEPT_AVG_SEED[monthName] : null
   };
 }
 function nextCol(c) { const n = colToNum(c) + 1; return numToCol(n); }
