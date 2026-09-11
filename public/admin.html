@@ -4078,6 +4078,22 @@
           + tbl(["Месяц", "Рабочих дней", "Отпускных дней"].concat(LOADK.map((k) => LOADT[k])), r3)
           + '<div style="font-size:11.5px;color:#9096a3;margin-top:7px;">В ячейке: нагрузка на человека в день · всего за месяц / эффективный штат отдела. У первой линии вторая строка — пропущенные звонки на человека в день.</div>';
 
+        // ── 4. Первая линия: скорость ответа и пропущенные (АТС → лист /vsc) ──
+        const r4 = list.map(function (m) {
+          const b = loadBase[m.month] || {};
+          if (b.callsIn == null && b.waitSec == null) return "";
+          return '<tr><td ' + L + '>' + escapeHtml(m.month) + '</td>'
+            + '<td ' + TD + '>' + (b.callsIn != null ? Math.round(b.callsIn).toLocaleString("ru-RU") : "—") + '</td>'
+            + '<td ' + TD + '>' + (b.callsMissed != null ? Math.round(b.callsMissed).toLocaleString("ru-RU") : "—") + '</td>'
+            + '<td ' + TD + '><b>' + (b.missedPct != null ? pct(b.missedPct) : "—") + '</b></td>'
+            + '<td ' + TD + '><b>' + (b.waitSec != null ? num1(b.waitSec) + ' с' : "—") + '</b></td></tr>';
+        }).filter(Boolean);
+        if (r4.length) {
+          html += '<div class="vsc-chart-h" style="margin:22px 0 8px;">Первая линия — звонки и скорость ответа</div>'
+            + tbl(["Месяц", "Входящих", "Пропущено", "% пропущенных", "Среднее ожидание на линии"], r4)
+            + '<div style="font-size:11.5px;color:#9096a3;margin-top:7px;">Цифры АТС попадают к нам через лист /vsc: там они лежат по дням на всю компанию. Разреза по сотрудникам в листе нет — для скорости перезвона по каждому оператору нужен доступ к самой АТС.</div>';
+        }
+
         const upd = j.data.ts ? new Date(j.data.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
         html += '<div style="font-size:11.5px;color:#9096a3;margin-top:12px;">зарплатная таблица прочитана: ' + escapeHtml(upd) + ' МСК</div>';
         box.innerHTML = html;
@@ -4102,6 +4118,8 @@
           const b = loadBase[m.month] || {};
           k.callsPer = (m.depts && m.depts.pl && m.depts.pl.manDays && b.callsIn != null) ? Math.round(b.callsIn / m.depts.pl.manDays * 100) / 100 : null;
           k.missedPer = (m.depts && m.depts.pl && m.depts.pl.manDays && b.callsMissed != null) ? Math.round(b.callsMissed / m.depts.pl.manDays * 100) / 100 : null;
+          k.waitSec = b.waitSec != null ? b.waitSec : null;
+          k.missedPct = b.missedPct != null ? b.missedPct : null;
           return { x: short(m.month), k: k };
         });
         box.appendChild(sub2("Графики — деньги и штат"));
@@ -4118,6 +4136,8 @@
         box.appendChild(sub2("Графики — нагрузка на человека в день"));
         box.appendChild(vscBarChart({ key: "callsPer", label: "Первая линия — входящих звонков", fmt: "num", good: 0 }, series, { compact: true }));
         box.appendChild(vscBarChart({ key: "missedPer", label: "Первая линия — пропущенных звонков", fmt: "num", good: -1 }, series, { compact: true }));
+        box.appendChild(vscBarChart({ key: "waitSec", label: "Первая линия — среднее ожидание на линии, секунд", fmt: "num", good: -1 }, series, { compact: true }));
+        box.appendChild(vscBarChart({ key: "missedPct", label: "Первая линия — % пропущенных звонков", fmt: "pct", good: -1 }, series, { compact: true }));
         LOADK.filter((k) => k !== "pl").forEach((k) => box.appendChild(vscBarChart({ key: "load_" + k, label: DT[k], fmt: "num", good: 0 }, series, { compact: true })));
 
         // ── Ввод ЗП управляющей за прошлый месяц (с 4 числа, пока не введена) ──

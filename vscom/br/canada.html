@@ -318,6 +318,104 @@ p{margin:0 0 14px}
   box-shadow:0 14px 34px rgba(238,114,87,.32)}
 .hero__cta .msgr{margin:0;padding:17px 22px;font-size:15.5px}
 
+
+/* ── мастер оформления ─────────────────────────────────────────────────────*/
+.order{display:grid;grid-template-columns:300px minmax(0,1fr);gap:28px;align-items:start}
+.aside{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px;
+  position:sticky;top:88px}
+.aside__ttl{display:flex;align-items:center;gap:10px;font-weight:500;font-size:17px;margin-bottom:18px}
+.aside__flag{font-size:22px;line-height:1}
+.aside dl{margin:0;display:grid;gap:14px}
+.aside dt{color:var(--muted);font-size:13px;margin-bottom:2px}
+.aside dd{margin:0;font-weight:500;font-size:15.5px}
+.aside__row{padding-bottom:14px;border-bottom:1px solid var(--line)}
+.aside__row:last-child{padding-bottom:0;border-bottom:0}
+
+.wiz{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:28px 30px}
+.wiz__steps{display:flex;align-items:center;gap:10px;margin-bottom:26px;flex-wrap:wrap}
+.wiz__step{display:flex;align-items:center;gap:8px;font-size:14.5px;color:var(--muted);white-space:nowrap}
+.wiz__step b{width:24px;height:24px;border-radius:50%;background:#e8edf5;color:var(--muted);
+  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;flex:none}
+.wiz__step.is-on{color:var(--ink)}
+.wiz__step.is-on b{background:var(--blue);color:#fff}
+.wiz__step.is-done b{background:var(--blue-pale);color:var(--blue)}
+.wiz__line{flex:1;height:1px;background:var(--line);min-width:16px}
+.wiz h3{font-size:21px;margin-bottom:4px}
+.wiz__hint{color:var(--muted);font-size:14.5px;margin-bottom:20px}
+.wiz__pane{display:none}
+.wiz__pane.is-on{display:block}
+
+.opt{display:grid;gap:12px;margin-bottom:8px}
+.opt label{display:flex;align-items:center;gap:14px;border:1px solid var(--line);border-radius:12px;
+  padding:16px 18px;cursor:pointer;transition:border-color .15s ease,background .15s ease}
+.opt label:hover{border-color:var(--blue)}
+.opt input{position:absolute;opacity:0;pointer-events:none}
+.opt input:checked+.opt__in{}
+.opt label:has(input:checked){border-color:var(--blue);background:var(--blue-pale)}
+.opt__dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);flex:none;
+  position:relative}
+.opt label:has(input:checked) .opt__dot{border-color:var(--blue)}
+.opt label:has(input:checked) .opt__dot:after{content:"";position:absolute;inset:3px;border-radius:50%;
+  background:var(--blue)}
+.opt__txt{flex:1;min-width:0}
+.opt__txt b{display:block;font-weight:500;font-size:16.5px}
+.opt__txt span{color:var(--muted);font-size:14px}
+.opt__price{font-weight:500;font-size:18px;white-space:nowrap}
+.opt__tag{display:inline-block;background:var(--gold);color:#1b1f21;border-radius:50px;
+  padding:2px 9px;font-size:11.5px;font-weight:500;margin-left:8px;vertical-align:2px}
+
+.trav{border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:14px;position:relative}
+.trav__ttl{font-weight:500;font-size:15.5px;margin-bottom:14px;display:flex;
+  justify-content:space-between;align-items:center;gap:10px}
+.trav__del{background:none;border:0;color:var(--accent);cursor:pointer;font-size:14px;padding:2px 4px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.field label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px}
+.field select{width:100%;height:56px;border:1px solid var(--line);border-radius:8px;background:#f6f8fb;
+  padding:0 14px;font:400 16px/1 Roboto,Arial,sans-serif;color:var(--ink);outline:none;
+  -webkit-appearance:none;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center}
+.field select:focus{border-color:var(--blue);background-color:#fff}
+.sex{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sex label{display:flex;align-items:center;justify-content:center;gap:9px;border:1px solid var(--line);
+  border-radius:8px;height:56px;cursor:pointer;font-size:15.5px;margin:0}
+.sex label:has(input:checked){border-color:var(--blue);background:var(--blue-pale)}
+.sex input{position:absolute;opacity:0;pointer-events:none}
+
+.addbtn{background:none;border:1px dashed var(--line);border-radius:12px;width:100%;padding:15px;
+  cursor:pointer;color:var(--blue);font:500 15px/1 Roboto,Arial,sans-serif}
+.addbtn:hover{border-color:var(--blue)}
+
+.sum{border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:18px}
+.sum__row{display:flex;justify-content:space-between;gap:16px;font-size:15px;padding:7px 0}
+.sum__row--tot{border-top:1px solid var(--line);margin-top:7px;padding-top:13px;
+  font-weight:500;font-size:19px}
+.sum__who{color:var(--muted);font-size:14px;padding:5px 0}
+
+.wiz__nav{display:flex;gap:12px;margin-top:22px;align-items:center;flex-wrap:wrap}
+.wiz__nav .btn{width:auto;padding:17px 30px}
+.btn--ghost{background:none;color:var(--blue);border:1px solid var(--line)}
+.btn--ghost:hover{background:var(--blue-pale)}
+.wiz__err{display:none;margin-top:14px;font-size:14px;border-radius:8px;padding:11px 13px;
+  background:#fdeae6;color:#b8351a}
+.wiz__err.is-on{display:block}
+.wiz__done{display:none;text-align:center;padding:26px 0}
+.wiz__done .tick-round{margin-bottom:16px}
+.is-sent .wiz__steps,.is-sent .wiz__pane{display:none}
+.is-sent .wiz__done{display:block}
+
+@media (max-width:1000px){
+  .order{grid-template-columns:1fr}
+  .aside{position:static}
+}
+@media (max-width:640px){
+  .wiz{padding:22px 18px}
+  .row2,.row3{grid-template-columns:1fr}
+  .wiz__step span{display:none}
+  .wiz__nav .btn{width:100%}
+}
+
 @media (max-width:1000px){ .tiers{grid-template-columns:1fr} }
 @media (max-width:640px){
   .hero__cta .btn,.hero__cta .msgr{width:100%;justify-content:center}
@@ -393,30 +491,11 @@ p{margin:0 0 14px}
       <p class="hero__sub">Nem todo brasileiro pode usar a eTA — e essa é a parte que confunde quase todo mundo.<br>Conferimos o seu caso antes de qualquer pagamento e dizemos com clareza o que se aplica a você.<br>Se a eTA não for possível, explicamos o caminho do visto em vez de vender algo que não serve.</p>
       <div class="facts"><div class="fact"><span>Taxa oficial</span><b>CAD 7</b></div><div class="fact"><span>Validade</span><b>5 anos</b></div><div class="fact"><span>Resposta</span><b>minutos a 3 dias</b></div><div class="fact"><span>Estadia</span><b>até 6 meses</b></div><div class="fact"><span>Só por via</span><b>aérea</b></div><div class="fact"><span>Suporte</span><b>em português</b></div></div>
       <div class="hero__cta">
+        <a class="btn" href="#form">Verificar meu caso</a>
         <a class="msgr msgr--wa" data-msgr="whatsapp" href="https://wa.me/79299435150" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm5.8 14.16c-.24.68-1.42 1.32-1.95 1.36-.5.04-.98.22-3.3-.72-2.78-1.1-4.55-3.94-4.69-4.12-.14-.18-1.12-1.49-1.12-2.85 0-1.35.71-2.02.96-2.3.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.55.8 1.9.87 2.04.07.14.12.3.02.48-.09.18-.14.3-.28.46-.14.16-.29.36-.42.48-.14.14-.28.29-.12.57.16.27.72 1.19 1.55 1.93 1.07.95 1.97 1.25 2.25 1.39.28.14.44.12.6-.07.18-.2.7-.81.88-1.09.19-.27.37-.23.62-.14.25.09 1.6.76 1.87.9.27.14.46.2.53.32.06.11.06.66-.18 1.34Z"/></svg>Falar no WhatsApp</a>
       </div>
     </div>
 
-    <div class="card" id="form">
-      <form class="vsc-form" data-form="br-ca">
-          <div class="form-body">
-            <div class="card__title"><em>Verificar o meu caso</em><br>e solicitar a eTA</div>
-            <p class="card__sub">A verificação é gratuita e sem compromisso. Só depois dela você decide se contrata.</p>
-            <div class="field"><input type="text" name="name" placeholder="Nome completo, como no passaporte" autocomplete="name"></div>
-            <div class="field"><input type="email" name="email" placeholder="E-mail" autocomplete="email"></div>
-            <div class="field"><input type="tel" name="phone" placeholder="WhatsApp com DDD *" autocomplete="tel" required></div>
-            <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-            <button class="btn" type="submit">Verificar meu caso</button>
-            <p class="consent">Ao enviar, você concorda com o tratamento dos seus <a href="/files/policy_20241106155551.pdf" target="_blank" rel="noopener">dados pessoais</a>.</p>
-            <div class="form-note"></div>
-          </div>
-          <div class="form-done">
-            <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
-            <h3>Recebemos o seu pedido</h3>
-            <p>Um especialista entra em contato pelo WhatsApp para confirmar os dados.</p>
-          </div>
-        </form>
-    </div>
   </div>
 </section>
 
@@ -454,38 +533,101 @@ p{margin:0 0 14px}
   </div>
 </section>
 
-<!-- ============ PRECOS ============ -->
-<section class="section section--pale" id="price">
+<section class="section section--pale" id="form">
   <div class="container">
-    <h2>Quanto custa</h2>
-    <p style="color:var(--muted);max-width:780px;margin:-16px 0 34px">Mostramos separado o que vai para o governo canadense e o que fica com a gente. A verificação de elegibilidade é gratuita e vem antes de qualquer cobrança.</p>
-    <div class="tiers">
-      <div class="tier">
-        <h3>Verificação</h3>
-        <p class="tier__time">Resposta em até 2 horas</p>
-        <div class="tier__sum"><b>Grátis</b></div>
-        <p class="tier__split">Sem custo e sem compromisso</p>
-        <ul><li>Analisamos o seu passaporte e vistos</li><li>Dizemos se a eTA se aplica ao seu caso</li><li>Se não se aplicar, explicamos o caminho do visto</li><li>Resposta em português no WhatsApp</li></ul>
-        <a class="btn" href="#form">Verificar meu caso</a>
-      </div>
-      <div class="tier tier--top"><div class="tier__badge">Mais escolhido</div>
-        <h3>Padrão</h3>
-        <p class="tier__time">Enviamos em até 24 horas</p>
-        <div class="tier__sum"><b>R$ 179</b></div>
-        <p class="tier__split">Taxa oficial CAD 7 (≈ R$ 27) + taxa de serviço R$ 152</p>
-        <ul><li>Verificação de elegibilidade incluída</li><li>Revisão completa do formulário</li><li>Envio e acompanhamento até a resposta</li><li>Suporte em português no WhatsApp</li></ul>
-        <a class="btn" href="#form">Verificar meu caso</a>
-      </div>
-      <div class="tier">
-        <h3>Urgente</h3>
-        <p class="tier__time">Enviamos em até 1 hora</p>
-        <div class="tier__sum"><b>R$ 329</b></div>
-        <p class="tier__split">Taxa oficial CAD 7 (≈ R$ 27) + taxa de serviço R$ 302</p>
-        <ul><li>Tudo do plano Padrão</li><li>Seu pedido entra na frente da fila</li><li>Atendimento fora do horário comercial</li><li>Para quem viaja em menos de 48 horas</li></ul>
-        <a class="btn" href="#form">Verificar meu caso</a>
+    <h2>Solicite a sua eTA</h2>
+    <p style="color:var(--muted);max-width:780px;margin:-16px 0 30px">Três passos: escolher a velocidade, informar quem viaja e confirmar. Antes de qualquer cobrança conferimos se você tem direito à eTA.</p>
+
+    <div class="order">
+      <aside class="aside">
+        <div class="aside__ttl"><span class="aside__flag">🇨🇦</span>eTA do Canadá</div>
+        <dl>
+          <div class="aside__row"><dt>Entrega mais rápida</dt><dd>3 horas</dd></div>
+          <div class="aside__row"><dt>Checagem de direito</dt><dd>antes de cobrar</dd></div>
+          <div class="aside__row"><dt>Atendimento</dt><dd>em português</dd></div>
+          <div class="aside__row"><dt>Taxa oficial inclusa</dt><dd>CAD 7 por pessoa</dd></div>
+        </dl>
+      </aside>
+
+      <div class="wiz" id="wiz">
+        <div class="wiz__steps">
+          <div class="wiz__step is-on" data-s="1"><b>1</b><span>Dados</span></div>
+          <div class="wiz__line"></div>
+          <div class="wiz__step" data-s="2"><b>2</b><span>Viajantes</span></div>
+          <div class="wiz__line"></div>
+          <div class="wiz__step" data-s="3"><b>3</b><span>Confirmar</span></div>
+        </div>
+
+        <!-- 1 -->
+        <div class="wiz__pane is-on" data-pane="1">
+          <h3>Qual a pressa?</h3>
+          <p class="wiz__hint">Todos os planos incluem a checagem de elegibilidade e a taxa oficial de CAD 7.</p>
+          <div class="opt">
+          <label>
+            <input type="radio" name="tier" value="padrao" data-price="499" data-label="Padrão — Pronto em até 24 horas" checked>
+            <span class="opt__dot"></span>
+            <span class="opt__txt"><b>Padrão</b><span>Pronto em até 24 horas</span></span>
+            <span class="opt__price">R$ 499</span>
+          </label>
+          <label>
+            <input type="radio" name="tier" value="rapido" data-price="699" data-label="Rápido — Pronto em até 6 horas">
+            <span class="opt__dot"></span>
+            <span class="opt__txt"><b>Rápido<span class="opt__tag">Mais escolhido</span></b><span>Pronto em até 6 horas</span></span>
+            <span class="opt__price">R$ 699</span>
+          </label>
+          <label>
+            <input type="radio" name="tier" value="urgente" data-price="899" data-label="Urgente — Pronto em até 3 horas">
+            <span class="opt__dot"></span>
+            <span class="opt__txt"><b>Urgente</b><span>Pronto em até 3 horas</span></span>
+            <span class="opt__price">R$ 899</span>
+          </label>
+          </div>
+          <div class="wiz__nav">
+            <button class="btn" type="button" data-next="2">Continuar</button>
+          </div>
+        </div>
+
+        <!-- 2 -->
+        <div class="wiz__pane" data-pane="2">
+          <h3>Quem vai viajar</h3>
+          <p class="wiz__hint">Escreva exatamente como está no passaporte, sem abreviar.</p>
+          <div id="travs"></div>
+          <button class="addbtn" type="button" id="addTrav">+ Adicionar outro viajante</button>
+          <div class="wiz__err" id="err2"></div>
+          <div class="wiz__nav">
+            <button class="btn btn--ghost" type="button" data-next="1">Voltar</button>
+            <button class="btn" type="button" data-next="3">Continuar</button>
+          </div>
+        </div>
+
+        <!-- 3 -->
+        <div class="wiz__pane" data-pane="3">
+          <h3>Confira e envie</h3>
+          <p class="wiz__hint">Antes de cobrar, confirmamos pelo WhatsApp se a eTA se aplica ao seu caso.</p>
+          <div class="sum" id="sum"></div>
+          <div class="row2">
+            <div class="field"><label>E-mail para receber</label>
+              <input type="email" name="email" placeholder="voce@email.com" autocomplete="email"></div>
+            <div class="field"><label>WhatsApp com DDD</label>
+              <input type="tel" name="phone" placeholder="(11) 99999-9999" autocomplete="tel"></div>
+          </div>
+          <p class="consent" style="color:var(--muted)">Ao enviar, você concorda com o tratamento dos seus <a href="/files/policy_20241106155551.pdf" target="_blank" rel="noopener">dados pessoais</a>.</p>
+          <div class="wiz__err" id="err3"></div>
+          <div class="wiz__nav">
+            <button class="btn btn--ghost" type="button" data-next="2">Voltar</button>
+            <button class="btn" type="button" id="send">Enviar pedido</button>
+          </div>
+        </div>
+
+        <div class="wiz__done">
+          <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
+          <h3>Recebemos o seu pedido</h3>
+          <p style="color:var(--muted)">Um especialista entra em contato pelo WhatsApp para confirmar os dados.</p>
+        </div>
       </div>
     </div>
-    <div class="gov">Valores em reais convertidos pela cotação do dia; a taxa oficial é cobrada em dólares canadenses pelo governo (CAD 7 por pessoa). Pagamento por Pix ou cartão. <b>Não garantimos aprovação</b> — a decisão é exclusiva das autoridades canadenses. Se a verificação mostrar que você não tem direito à eTA, não cobramos nada.</div>
+
+    <div class="gov" style="margin-top:26px"><b>Não somos um órgão do governo.</b> A VSC é uma empresa privada de assessoria e não tem vínculo com o governo do Canadá. Você pode solicitar a eTA por conta própria no site oficial <a href="https://www.canada.ca/en/immigration-refugees-citizenship/services/visit-canada/eta.html" target="_blank" rel="noopener nofollow">canada.ca</a> pagando apenas a taxa oficial de CAD 7. O que você paga aqui a mais é o nosso trabalho: verificar a elegibilidade, revisar o formulário, enviar e acompanhar em português.</div>
   </div>
 </section>
 
@@ -662,6 +804,144 @@ p{margin:0 0 14px}
     var d = (v || "").replace(/\D/g, "");
     return d.length >= 9 && d.length <= 15;
   }
+
+
+  // ── мастер оформления ────────────────────────────────────────────────────
+  var wiz = document.getElementById("wiz");
+  if (wiz) (function () {
+    var travs = document.getElementById("travs"), n = 0;
+    var PRICE_FMT = function (v) { return "R$ " + v.toLocaleString("pt-BR"); };
+
+    function travHtml(i) {
+      return '<div class="trav" data-t="' + i + '">' +
+        '<div class="trav__ttl"><span>Viajante ' + (i + 1) + '</span>' +
+        (i > 0 ? '<button type="button" class="trav__del">Remover</button>' : '') + '</div>' +
+        '<div class="field" style="margin-bottom:12px"><label>Passaporte</label>' +
+        '<select name="passport"><option>Brasil</option><option>Argentina</option><option>Chile</option><option>México</option><option>Uruguai</option><option>Panamá</option><option>Costa Rica</option><option>Tailândia</option><option>Filipinas</option><option>Marrocos</option><option>Trinidad e Tobago</option><option>Seicheles</option><option>Outro</option></select></div>' +
+        '<div class="row2">' +
+          '<div class="field"><label>Nome e nome do meio</label><input type="text" name="firstName" placeholder="John William"></div>' +
+          '<div class="field"><label>Sobrenome</label><input type="text" name="lastName" placeholder="Smith"></div>' +
+        '</div>' +
+        '<div class="field" style="margin-bottom:12px"><label>Data de nascimento</label>' +
+        '<input type="date" name="birth"></div>' +
+        '<div class="field"><label>Sexo</label><div class="sex">' +
+          '<label><input type="radio" name="sex' + i + '" value="M">Masculino</label>' +
+          '<label><input type="radio" name="sex' + i + '" value="F">Feminino</label>' +
+        '</div></div></div>';
+    }
+    function addTrav() {
+      travs.insertAdjacentHTML("beforeend", travHtml(n));
+      n++;
+    }
+    addTrav();
+    document.getElementById("addTrav").addEventListener("click", addTrav);
+    travs.addEventListener("click", function (e) {
+      var d = e.target.closest(".trav__del");
+      if (!d) return;
+      d.closest(".trav").remove();
+      [].forEach.call(travs.querySelectorAll(".trav"), function (el, i) {
+        el.querySelector(".trav__ttl span").textContent = "Viajante " + (i + 1);
+      });
+    });
+
+    function tier() {
+      var el = wiz.querySelector('input[name="tier"]:checked');
+      return { id: el.value, price: parseInt(el.dataset.price, 10), label: el.dataset.label };
+    }
+    function collect() {
+      return [].map.call(travs.querySelectorAll(".trav"), function (el) {
+        var sex = el.querySelector('input[type="radio"]:checked');
+        return {
+          passport: el.querySelector('[name="passport"]').value,
+          firstName: el.querySelector('[name="firstName"]').value.trim(),
+          lastName: el.querySelector('[name="lastName"]').value.trim(),
+          birth: el.querySelector('[name="birth"]').value,
+          gender: sex ? sex.value : ""
+        };
+      });
+    }
+    function err(id, msg) {
+      var e = document.getElementById(id);
+      e.textContent = msg || "";
+      e.classList.toggle("is-on", !!msg);
+    }
+
+    function renderSum() {
+      var t = tier(), list = collect(), box = document.getElementById("sum");
+      var html = '<div class="sum__row"><span>' + t.label + '</span><span>' + PRICE_FMT(t.price) + '</span></div>';
+      list.forEach(function (x) {
+        html += '<div class="sum__who">' + (x.firstName + " " + x.lastName).trim() +
+                (x.passport ? " · " + x.passport : "") + '</div>';
+      });
+      html += '<div class="sum__row"><span>Viajantes</span><span>' + list.length + '</span></div>';
+      html += '<div class="sum__row sum__row--tot"><span>Total</span><span>' +
+              PRICE_FMT(t.price * list.length) + '</span></div>';
+      box.innerHTML = html;
+    }
+
+    function go(step) {
+      [].forEach.call(wiz.querySelectorAll(".wiz__pane"), function (p) {
+        p.classList.toggle("is-on", p.dataset.pane === String(step));
+      });
+      [].forEach.call(wiz.querySelectorAll(".wiz__step"), function (s) {
+        var v = parseInt(s.dataset.s, 10);
+        s.classList.toggle("is-on", v === step);
+        s.classList.toggle("is-done", v < step);
+      });
+      if (step === 3) renderSum();
+      wiz.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    wiz.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-next]");
+      if (!b) return;
+      var to = parseInt(b.dataset.next, 10);
+      if (to === 3) {
+        var list = collect();
+        var bad = list.some(function (x) { return !x.firstName || !x.lastName || !x.birth || !x.gender; });
+        if (!list.length || bad) { err("err2", "Preencha nome, sobrenome, data de nascimento e sexo de cada viajante."); return; }
+        err("err2", "");
+      }
+      go(to);
+    });
+
+    document.getElementById("send").addEventListener("click", function () {
+      var btn = this, t = tier(), list = collect();
+      var email = wiz.querySelector('[name="email"]').value.trim();
+      var phone = wiz.querySelector('[name="phone"]').value.trim();
+      if ((phone.replace(/\D/g, "") || "").length < 9) { err("err3", "Informe um telefone válido com o DDD."); return; }
+      err("err3", "");
+      var old = btn.textContent;
+      btn.disabled = true; btn.textContent = "Enviando...";
+
+      fetch("/api/vscom-lead", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          form: "br-ca", source: "wizard", name: (list[0] || {}).firstName || "",
+          phone: phone, email: email, page: location.href,
+          referrer: document.referrer || "", utm: utm, lang: navigator.language || "",
+          order: { product: "eTA do Canadá", tier: t.id, tierLabel: t.label,
+                   priceEach: PRICE_FMT(t.price), total: PRICE_FMT(t.price * list.length),
+                   travellers: list }
+        })
+      }).then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function (res) {
+          if (res && res.ok) {
+            wiz.classList.add("is-sent");
+            if (typeof window.gtag === "function") {
+              gtag("event", "generate_lead", { form_id: "br-ca", value: t.price * list.length,
+                currency: "BRL", page_location: location.href });
+            }
+            if (typeof window.gtag_report_conversion === "function") gtag_report_conversion();
+            wiz.scrollIntoView({ behavior: "smooth", block: "center" });
+          } else {
+            err("err3", (res && res.message) || "Não foi possível enviar. Escreva para info@visa-sc.com.");
+          }
+        })
+        .catch(function () { err("err3", "Erro de conexão. Tente novamente ou escreva para info@visa-sc.com."); })
+        .then(function () { btn.disabled = false; btn.textContent = old; });
+    });
+  })();
 
   document.querySelectorAll(".vsc-form").forEach(function (form) {
     form.addEventListener("submit", function (e) {

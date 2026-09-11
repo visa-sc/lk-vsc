@@ -59,6 +59,28 @@ function saveLead(entry) {
   fs.writeFileSync(LEADS_FILE, JSON.stringify(trimmed, null, 2));
 }
 
+// ── заказ со страниц ETA ─────────────────────────────────────────────────────
+const MAX_TRAVELLERS = 10;
+
+function sanitizeOrder(o) {
+  if (!o || typeof o !== "object") return null;
+  const list = Array.isArray(o.travellers) ? o.travellers.slice(0, MAX_TRAVELLERS) : [];
+  return {
+    product: clean(o.product, 40),
+    tier: clean(o.tier, 40),
+    tierLabel: clean(o.tierLabel, 80),
+    priceEach: clean(o.priceEach, 20),
+    total: clean(o.total, 20),
+    travellers: list.map((t) => ({
+      passport: clean(t && t.passport, 60),
+      firstName: clean(t && t.firstName, 80),
+      lastName: clean(t && t.lastName, 80),
+      birth: clean(t && t.birth, 20),
+      gender: clean(t && t.gender, 20)
+    })).filter((t) => t.firstName || t.lastName)
+  };
+}
+
 // ── журнал кликов по мессенджерам ────────────────────────────────────────────
 const MAX_CLICKS = 5000;
 
@@ -125,6 +147,16 @@ function leadRows(lead) {
     if (lead.quiz.location) rows.push(["Quiz: currently in", lead.quiz.location]);
     if (lead.quiz.qualification) rows.push(["Quiz: degree / experience", lead.quiz.qualification]);
     if (lead.quiz.income) rows.push(["Quiz: remote income", lead.quiz.income]);
+  }
+  if (lead.order) {
+    const o = lead.order;
+    if (o.tierLabel) rows.push(["Тариф", `${o.tierLabel} · ${o.priceEach} за человека`]);
+    if (o.total) rows.push(["Итого", o.total]);
+    (o.travellers || []).forEach((t, i) => {
+      const parts = [t.firstName, t.lastName].filter(Boolean).join(" ");
+      const extra = [t.passport, t.birth, t.gender].filter(Boolean).join(" · ");
+      rows.push([`Путешественник ${i + 1}`, extra ? `${parts} (${extra})` : parts]);
+    });
   }
   if (lead.page) rows.push(["Page", lead.page]);
   if (lead.referrer) rows.push(["Referrer", lead.referrer]);
@@ -291,6 +323,9 @@ function mount(app, deps) {
         qualification: clean(b.quiz.qualification, 60),
         income: clean(b.quiz.income, 60)
       } : null,
+      // Заявка с бразильских страниц ETA — это уже оформление, а не просто
+      // «перезвоните»: тариф и данные путешественников менеджеру нужны сразу.
+      order: sanitizeOrder(b.order),
       page: clean(b.page, 400),
       referrer: clean(b.referrer, 400),
       lang: clean(b.lang, 20),

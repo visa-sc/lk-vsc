@@ -1260,6 +1260,10 @@ async function vscStaffLoadBase() {
         const one = (kw) => { const c = colsAll(kw); return c.length ? c[0] : -1; };
         const cIn = one(["общее количество входящих звонков"]);
         const cMiss = one(["количество пропущенных звонков"]);
+        // Скорость ответа первой линии: среднее время ожидания на линии (сек) и доля
+        // пропущенных. В строке Grand total это уже средние за месяц, не суммы.
+        const cWait = one(["время ожидания на линии"]);
+        const cMissPct = one(["процент", "пропущен", "звонк"]);
         // Набранные контакты — ровно как на дашборде: сумма «полученные до/после конца
         // рабочего дня» по городам МИНУС «Дополнительный контакт (создан вручную)»
         // (иначе ручные контакты считаются дважды). Август 2026 = 1446, сверено.
@@ -1271,7 +1275,9 @@ async function vscStaffLoadBase() {
         const proc = sum(cProc);
         out[tab.name] = {
           contacts: proc == null ? null : proc - (sum(cManual) || 0),
-          callsIn: sum([cIn]), callsMissed: sum([cMiss])
+          callsIn: sum([cIn]), callsMissed: sum([cMiss]),
+          waitSec: cWait >= 0 ? vscNum(gt[cWait]) : null,
+          missedPct: cMissPct >= 0 ? vscNum(gt[cMissPct]) : null
         };
       } catch (e) { /* вкладка недоступна — пропускаем, остальные читаются */ }
     }
