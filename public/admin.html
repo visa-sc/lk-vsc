@@ -2273,6 +2273,7 @@
         if (v == null || isNaN(v)) return "—";
         if (fmt === "money") return Math.round(v).toLocaleString("ru-RU") + " ₽";
         if (fmt === "int") return Math.round(v).toLocaleString("ru-RU");
+        if (fmt === "num") return (Math.round(v * 100) / 100).toLocaleString("ru-RU");   // дробное без валюты (нагрузка, звонки)
         if (fmt === "pct") return (Math.round(v * 10) / 10).toLocaleString("ru-RU") + "%";
         if (fmt === "signed") { const r = Math.round(v); return (r > 0 ? "+" : r < 0 ? "−" : "") + Math.abs(r); }
         return String(v);
@@ -3456,7 +3457,7 @@
         // «Статистика по сотрудникам» временно скрыта у админа (просьба Андрея 22.07);
         // у Зайцевой убрана из vscRestrict.tabs в lkManagers.seed.json. Вернуть: флаг false + seed.
         const VSC_STAFF_HIDE_ADMIN = true;
-        let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["forecast", "Прогноз прибыли"], ["mktkpi", "Маркетинг KPI"], ["staff", "Статистика по сотрудникам"], ["mktplan", "Маркетинг"], ["taxes", "Налоги"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
+        let TABS = [["dash", "Дашборд"], ["monthly", "Ежемесячный контроль"], ["fot", "ФОТ"], ["forecast", "Прогноз прибыли"], ["mktkpi", "Маркетинг KPI"], ["staff", "Статистика по сотрудникам"], ["mktplan", "Маркетинг"], ["taxes", "Налоги"], ["calc", "Калькулятор ВНЖ"], ["bot", "Бот VFS"]];
         if (VSC_BOT_HIDDEN) TABS = TABS.filter(([tb]) => tb !== "bot");
         if (isMgr) {
           if (myVscRestrict && Array.isArray(myVscRestrict.tabs)) {
@@ -3471,6 +3472,8 @@
           if (VSC_MKTKPI_HIDE_ADMIN) TABS = TABS.filter(([tb]) => tb !== "mktkpi");
           if (VSC_STAFF_HIDE_ADMIN) TABS = TABS.filter(([tb]) => tb !== "staff");
         }
+        // «ФОТ» — деликатные цифры (зарплаты, ЗП управляющей): только админ, эндпоинт requireAdmin.
+        if (currentRole() !== "admin") TABS = TABS.filter(([tb]) => tb !== "fot");
         // Текущая вкладка могла скрыться (в т.ч. «Бот VFS» у админа) — уходим на первую доступную.
         if (!TABS.some(([tb]) => tb === vscTab)) vscTab = (TABS[0] && TABS[0][0]) || "calc";
         const maintabs = document.createElement("div"); maintabs.className = "vsc-maintabs";
@@ -3498,6 +3501,7 @@
         if (vscNoTaskBlock) vscNoTaskBlock.style.display = (vscTab === "dash" && !vscRestricted) ? "" : "none";
         if (vscYdStopsBlock) vscYdStopsBlock.style.display = (vscTab === "dash" && !vscRestricted) ? "" : "none";
         if (vscTab === "monthly") { renderVscMonthly(); return; }
+        if (vscTab === "fot") { renderVscFot(); return; }
         if (vscTab === "forecast") { renderVscForecast(); return; }
         if (vscTab === "mktkpi") { renderVscMktKpi(); return; }
         if (vscTab === "staff") { renderVscStaff(); return; }
@@ -3928,11 +3932,10 @@
           vscContent.appendChild(hMkt);
           vscContent.appendChild(vscMarketChart(mktRows));
         }
-        // ── Зарплаты, штат и нагрузка — САМЫЙ НИЗ раздела. Только админ
-        // (ФОТ, средние зарплаты, ЗП управляющей — деликатные цифры). ──
-        if (currentRole() === "admin") vscContent.appendChild(vscZarplataBlock());
       }
-      // ═══ Зарплаты, штат, взносы и нагрузка на персонал (низ «Ежемесячного контроля»).
+      // ═══ Вкладка «ФОТ» — зарплаты, штат, взносы и нагрузка на персонал. ═══════════
+      function renderVscFot() { vscContent.appendChild(vscZarplataBlock()); }
+      // ═══ Зарплаты, штат, взносы и нагрузка на персонал.
       // Источник — опубликованная зарплатная таблица «расчет ЗП Визы» (сервер читает
       // xlsx-экспорт книги, по вкладке на месяц). Прибыль — уже загруженная vscData.profit,
       // целевые контакты — из листа /vsc, успешные сделки по отделам — из ночного съёма
@@ -3995,8 +3998,25 @@
             + '<td ' + TD + '>' + money2(mp) + '</td>'
             + '<td ' + TD.slice(0, -1) + col(mpPct) + '">' + pct(mpPct) + '</td></tr>';
         });
+        // Итог года: по каждому столбцу среднее за месяцы с данными. Прибыль показываем
+        // средней за месяц — так она сопоставима с «ЗП управляющей» в той же строке.
+        const avgOf = (fn) => { const v = list.map(fn).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+        const TDY = 'style="padding:9px 8px;border-top:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;background:#fafbfd;"';
+        const avgP = avgOf((m) => profitOf(m.month));
+        const avgMp = avgOf((m) => mgrPay[m.month]);
+        const yearRow = '<tr><td ' + TDY.replace("text-align:right", "text-align:left") + '>В среднем за ' + (list[0] ? list[0].year : "") + '</td>'
+          + '<td ' + TDY + '>' + num1(avgOf((m) => m.staff)) + '</td>'
+          + '<td ' + TDY + '>' + money(avgOf((m) => m.fotTotal)) + '</td>'
+          + '<td ' + TDY + '>' + money2(avgOf((m) => m.avgSalary)) + '</td>'
+          + '<td ' + TDY + '>' + money(avgOf((m) => m.fotProject)) + '</td>'
+          + '<td ' + TDY + '>' + money(avgOf((m) => m.contrib)) + '</td>'
+          + '<td ' + TDY + '>' + pct(avgOf((m) => m.contribPct)) + '</td>'
+          + '<td ' + TDY + '>' + money(avgP) + '</td>'
+          + '<td ' + TDY + '>' + money(avgOf((m) => { const p = profitOf(m.month); return (p != null && m.staff) ? p / m.staff : null; })) + '</td>'
+          + '<td ' + TDY + '>' + money2(avgMp) + '</td>'
+          + '<td ' + TDY + '>' + pct(avgP ? avgMp / avgP * 100 : null) + '</td></tr>';
         html += '<div class="vsc-chart-h" style="margin-bottom:8px;">Зарплаты, штат и взносы — по месяцам</div>'
-          + tbl(["Месяц", "Штат", "ФОТ общий (вкл. взносы)", "Средняя ЗП", "ФОТ через зп-проект", "Взносы", "% взносов", "Прибыль", "Прибыль на сотрудника", "ЗП управляющей", "% от прибыли"], r1);
+          + tbl(["Месяц", "Штат", "ФОТ общий (вкл. взносы)", "Средняя ЗП", "ФОТ через зп-проект", "Взносы", "% взносов", "Прибыль", "Прибыль на сотрудника", "ЗП управляющей", "% от прибыли"], r1.concat(yearRow));
 
         // ── 2. Средняя зарплата по отделам ──
         const DK = ["pl", "op", "orkMsk", "orkSpb", "oo", "none"];
@@ -4022,19 +4042,19 @@
         const LOADK = ["pl", "op", "orkMsk", "orkSpb", "oo"];
         const sub = (t) => '<div style="font-weight:400;color:#9096a3;">' + t + '</div>';
         const LOADT = {
-          pl: "Первая линия" + sub("входящие звонки"), op: "Отдел продаж" + sub("целевые контакты"),
+          pl: "Первая линия" + sub("входящие звонки"), op: "Отдел продаж" + sub("набранные контакты"),
           orkMsk: "ОРК Москва" + sub("сделки Москвы"), orkSpb: "ОРК СПб" + sub("сделки Петербурга"),
           oo: "Отдел оформления" + sub("весь объём сделок")
         };
         // База нагрузки. Первая линия — входящие звонки из PBX, отдел продаж —
-        // целевые контакты (и то и другое из листа /vsc). Через оформление проходит
+        // набранные контакты (та же цифра, что на дашборде; и то и другое из листа /vsc). Через оформление проходит
         // ВЕСЬ объём сделок, давший выручку месяца; ОРК — своя половина по городу.
         // Воронку amoCRM не используем: сделка по ней переезжает.
         const DEALKEY = { orkMsk: "msk", orkSpb: "spb", oo: "total" };
         const baseOf = function (m, key) {
           const b = loadBase[m.month] || {};
           if (key === "pl") return b.callsIn != null ? b.callsIn : null;
-          if (key === "op") return b.targetFact != null ? b.targetFact : null;
+          if (key === "op") return b.contacts != null ? b.contacts : null;
           const cm = cityRev && cityRev.months && cityRev.months[String(m.mi)];
           const dk = DEALKEY[key];
           return (cm && cm.deals && dk && cm.deals[dk] != null && m.year === (cityRev.year || m.year)) ? cm.deals[dk] : null;
@@ -4045,9 +4065,9 @@
             + '<td ' + TD + '>' + (m.workDays || "—") + '</td>'
             + '<td ' + TD + '>' + num1(m.vacDaysTotal) + '</td>'
             + LOADK.map(function (k) {
-              // Без колонки «Группа должности» (январь–апрель 2026) штата по отделам нет —
-              // делить не на что, ставим прочерк, а не считаем по случайным остаткам.
-              const d = m.hasDepts && m.depts ? m.depts[k] : null, base = baseOf(m, k);
+              // Январь–апрель 2026: колонки «Группа должности» на листе нет, отделы
+              // восстановлены по именам сотрудников из более поздних месяцев.
+              const d = (m.hasDepts || m.deptsFromNames) && m.depts ? m.depts[k] : null, base = baseOf(m, k);
               if (!d || !d.manDays || base == null) return '<td ' + TD + '>—</td>';
               const perDay = base / d.manDays;
               const miss = (k === "pl" && b.callsMissed != null) ? '<div style="color:#b8602a;font-weight:400;">' + num1(b.callsMissed / d.manDays) + ' пропущ.</div>' : "";
@@ -4061,6 +4081,44 @@
         const upd = j.data.ts ? new Date(j.data.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
         html += '<div style="font-size:11.5px;color:#9096a3;margin-top:12px;">зарплатная таблица прочитана: ' + escapeHtml(upd) + ' МСК</div>';
         box.innerHTML = html;
+
+        // ── Графики по всему, что в таблицах выше ──────────────────────────────
+        const sub2 = (t) => { const e = document.createElement("div"); e.className = "ref-sec-h"; e.style.margin = "26px 0 10px"; e.textContent = t; return e; };
+        const series = list.map(function (m) {
+          const p = profitOf(m.month), mp = mgrPay[m.month];
+          const k = {
+            avgSalary: m.avgSalary, contribPct: m.contribPct, contrib: m.contrib, fotTotal: m.fotTotal,
+            staff: m.staff, mgrPay: mp != null ? mp : null,
+            mgrPct: (mp != null && p) ? mp / p * 100 : null,
+            perHead: (p != null && m.staff) ? p / m.staff : null
+          };
+          DK.forEach(function (dk) {
+            const d = (m.hasDepts || m.deptsFromNames) && m.depts ? m.depts[dk] : null;
+            const seeded = m.deptAvgSeed ? m.deptAvgSeed[dk] : null;
+            k["avg_" + dk] = seeded != null ? seeded : (d ? d.avg : null);
+            const base = LOADK.indexOf(dk) >= 0 ? baseOf(m, dk) : null;
+            k["load_" + dk] = (d && d.manDays && base != null) ? Math.round(base / d.manDays * 100) / 100 : null;
+          });
+          const b = loadBase[m.month] || {};
+          k.callsPer = (m.depts && m.depts.pl && m.depts.pl.manDays && b.callsIn != null) ? Math.round(b.callsIn / m.depts.pl.manDays * 100) / 100 : null;
+          k.missedPer = (m.depts && m.depts.pl && m.depts.pl.manDays && b.callsMissed != null) ? Math.round(b.callsMissed / m.depts.pl.manDays * 100) / 100 : null;
+          return { x: short(m.month), k: k };
+        });
+        box.appendChild(sub2("Графики — деньги и штат"));
+        [{ key: "avgSalary", label: "Средняя зарплата (ФОТ вкл. взносы ÷ штат)", fmt: "money", good: 0 },
+         { key: "fotTotal", label: "ФОТ общий (вкл. взносы)", fmt: "money", good: -1 },
+         { key: "contribPct", label: "% взносов от ФОТ через зарплатный проект", fmt: "pct", good: -1 },
+         { key: "staff", label: "Штат", fmt: "int", good: 0 },
+         { key: "perHead", label: "Прибыль на сотрудника", fmt: "money", good: 1 },
+         { key: "mgrPay", label: "ЗП управляющей", fmt: "money", good: 0 },
+         { key: "mgrPct", label: "ЗП управляющей — % от прибыли", fmt: "pct", good: -1 }
+        ].forEach((kpi) => box.appendChild(vscBarChart(kpi, series)));
+        box.appendChild(sub2("Графики — средняя начисленная зарплата по отделам"));
+        DK.filter((k) => k !== "none").forEach((k) => box.appendChild(vscBarChart({ key: "avg_" + k, label: DT[k], fmt: "money", good: 0 }, series, { compact: true })));
+        box.appendChild(sub2("Графики — нагрузка на человека в день"));
+        box.appendChild(vscBarChart({ key: "callsPer", label: "Первая линия — входящих звонков", fmt: "num", good: 0 }, series, { compact: true }));
+        box.appendChild(vscBarChart({ key: "missedPer", label: "Первая линия — пропущенных звонков", fmt: "num", good: -1 }, series, { compact: true }));
+        LOADK.filter((k) => k !== "pl").forEach((k) => box.appendChild(vscBarChart({ key: "load_" + k, label: DT[k], fmt: "num", good: 0 }, series, { compact: true })));
 
         // ── Ввод ЗП управляющей за прошлый месяц (с 4 числа, пока не введена) ──
         const today = new Date();

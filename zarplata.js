@@ -60,6 +60,13 @@ const DEPT_TITLES = { pl: "Первая линия", op: "Отдел прода�
 // сотрудников по отделам нечем. Средние за эти месяцы взяты из таблицы Андрея
 // (скриншот 11.09.2026) — разово, только чтобы история не обрывалась. С мая 2026
 // колонка появилась, и всё считается из листа само.
+// Январь и февраль 2026: на листе января итог «ИТОГО ФОТ» и блок взносов вообще не
+// посчитаны, а февральский лист правился уже после того, как Андрей снял с него свою
+// таблицу. Эти два месяца берём из его таблицы, остальные считаются из листа.
+const FOT_SEED = {
+  "Январь 2026": { fot: 5180319.64, contrib: 591177 },
+  "Февраль 2026": { fot: 6249136.65, contrib: 591267 }
+};
 const DEPT_AVG_SEED = {
   "Январь 2026": { pl: 69038.66, op: 145036.41, orkMsk: 99094.06, orkSpb: 97105.09, oo: 87313.59 },
   "Февраль 2026": { pl: 77456.96, op: 145678.51, orkMsk: 99218.58, orkSpb: 112248.21, oo: 96411.42 },
@@ -191,6 +198,8 @@ function parseMonth(cells, monthName) {
   const accruedTotal = tot(C.accrued);
 
   // 6. Штат, средние, отделы.
+  const seedFot = FOT_SEED[monthName];
+  if (seedFot) { if (fotTotal == null) fotTotal = seedFot.fot; else fotTotal = seedFot.fot; if (seedFot.contrib != null) contrib = seedFot.contrib; }
   const counted = people.filter((p) => p.counted);
   const staff = counted.length;
   // Рабочих дней в месяце — из нормы производственного календаря (часы / 8).
@@ -201,22 +210,11 @@ function parseMonth(cells, monthName) {
   const year = parseInt(norm(monthName).split(" ")[1], 10);
   const calDays = (mi != null && year) ? new Date(year, mi + 1, 0).getDate() : 30;
 
-  const depts = {};
-  counted.forEach((p) => {
-    const d = depts[p.dept] || (depts[p.dept] = { key: p.dept, title: DEPT_TITLES[p.dept] || p.dept, staff: 0, accrued: 0, vacDays: 0 });
-    d.staff++; d.accrued += p.accrued; d.vacDays += p.vacDays;
-  });
-  Object.keys(depts).forEach((k) => {
-    const d = depts[k];
-    d.avg = d.staff ? Math.round(d.accrued / d.staff) : null;
-    // Отпуск в календарных днях → в рабочих: доля месяца × рабочие дни.
-    d.effStaff = Math.round((d.staff - d.vacDays / calDays) * 100) / 100;
-    d.manDays = workDays ? Math.round(d.effStaff * workDays * 10) / 10 : null;
-    d.accrued = Math.round(d.accrued);
-  });
+  const depts = buildDepts(counted, workDays, calDays);
 
   return {
     month: monthName, year: year, mi: mi,
+    people: people,                                  // внутреннее: нужно для разбора по именам, наружу не отдаём
     staff: staff,
     rows: people.length,
     excluded: people.filter((p) => !p.counted).map((p) => p.name),
@@ -236,6 +234,24 @@ function parseMonth(cells, monthName) {
     hasDepts: !!C.dept,
     deptAvgSeed: (!C.dept && DEPT_AVG_SEED[monthName]) ? DEPT_AVG_SEED[monthName] : null
   };
+}
+// Свод по отделам: штат, средняя начисленная, отпускные дни и человеко-дни с вычетом
+// отпусков (отпуск в календарных днях переводим в рабочие долей месяца).
+function buildDepts(counted, workDays, calDays) {
+  const depts = {};
+  counted.forEach((p) => {
+    const d = depts[p.dept] || (depts[p.dept] = { key: p.dept, title: DEPT_TITLES[p.dept] || p.dept, staff: 0, accrued: 0, vacDays: 0 });
+    d.staff++; d.accrued += p.accrued; d.vacDays += p.vacDays;
+  });
+  Object.keys(depts).forEach((k) => {
+    const d = depts[k];
+    d.avg = d.staff ? Math.round(d.accrued / d.staff) : null;
+    d.effStaff = Math.round((d.staff - d.vacDays / calDays) * 100) / 100;
+    d.manDays = workDays ? Math.round(d.effStaff * workDays * 10) / 10 : null;
+    d.accrued = Math.round(d.accrued);
+    d.vacDays = Math.round(d.vacDays * 10) / 10;
+  });
+  return depts;
 }
 function nextCol(c) { const n = colToNum(c) + 1; return numToCol(n); }
 function prevCol(c) { const n = colToNum(c) - 1; return n < 1 ? c : numToCol(n); }
@@ -269,6 +285,27 @@ function parseWorkbook(buf) {
       const parsed = parseMonth(parseSheetXml(xml, shared), sh.name.trim());
       if (parsed) months[sh.name.trim()] = parsed;
     } catch (e) { console.error("ZARPLATA: вкладка «" + sh.name + "»:", e && e.message); }
+  });
+  // Второй проход: у январь-апрельских листов нет колонки «Группа должности», но люди
+  // те же самые. Строим карту «фамилия имя → отдел» по месяцам, где колонка есть, и
+  // раскладываем ранние месяцы по именам. Кто до мая уволился — остаётся вне отделов
+  // (таких 1–5 человек в месяц), поэтому средние по этим месяцам показываем из таблицы
+  // Андрея (DEPT_AVG_SEED), а штат и человеко-дни считаем по карте имён.
+  const nameDept = {};
+  Object.keys(months).forEach((k) => {
+    const m = months[k]; if (!m.hasDepts) return;
+    (m.people || []).forEach((p) => { if (p.dept && p.dept !== "none") nameDept[p.name.toLowerCase()] = p.dept; });
+  });
+  Object.keys(months).forEach((k) => {
+    const m = months[k];
+    if (!m.hasDepts && Object.keys(nameDept).length) {
+      let matched = 0;
+      (m.people || []).forEach((p) => { const d = nameDept[p.name.toLowerCase()]; if (d) { p.dept = d; matched++; } });
+      m.depts = buildDepts((m.people || []).filter((p) => p.counted), m.workDays, m.calDays);
+      m.deptsFromNames = true;
+      m.deptsUnmatched = (m.people || []).filter((p) => p.counted && p.dept === "none").length;
+    }
+    delete m.people;                                  // имена и суммы по людям наружу не отдаём
   });
   return months;
 }

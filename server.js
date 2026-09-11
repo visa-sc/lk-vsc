@@ -1260,13 +1260,19 @@ async function vscStaffLoadBase() {
         const one = (kw) => { const c = colsAll(kw); return c.length ? c[0] : -1; };
         const cIn = one(["общее количество входящих звонков"]);
         const cMiss = one(["количество пропущенных звонков"]);
-        // Именно «Таргет МСК/СПБ ФАКТ». Просто ["таргет","факт"] ловит ещё и
-        // «недобор/перебор контактов … (от таргета … факт)» — это другая величина.
-        const cFact = [one(["таргет мск", "факт"]), one(["таргет спб", "факт"])].filter((i) => i >= 0);
+        // Набранные контакты — ровно как на дашборде: сумма «полученные до/после конца
+        // рабочего дня» по городам МИНУС «Дополнительный контакт (создан вручную)»
+        // (иначе ручные контакты считаются дважды). Август 2026 = 1446, сверено.
+        const cProc = colsAll(["полученные", "конца рабочего дня"]);
+        const cManual = colsAll(["дополнительный контакт", "вручную"]);
         const gt = rows.find((rr) => String((rr || [])[0] || "").trim().toLowerCase() === "grand total");
         if (!gt) continue;
         const sum = (idxs) => { const v = idxs.map((i) => (i >= 0 ? vscNum(gt[i]) : null)).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
-        out[tab.name] = { targetFact: sum(cFact), callsIn: sum([cIn]), callsMissed: sum([cMiss]) };
+        const proc = sum(cProc);
+        out[tab.name] = {
+          contacts: proc == null ? null : proc - (sum(cManual) || 0),
+          callsIn: sum([cIn]), callsMissed: sum([cMiss])
+        };
       } catch (e) { /* вкладка недоступна — пропускаем, остальные читаются */ }
     }
   } catch (e) { console.error("vscStaffLoadBase:", e && e.message); }
