@@ -1164,7 +1164,7 @@ async function runCityRevenue(trigger) {
       const list = (data && data._embedded && data._embedded.contacts) || [];
       list.forEach((c) => { cmap[c.id] = _cityCfEnums(c, CITY_CF_CONTACT); });
     }
-    const months = {};
+    const months = {}, byUser = {};
     for (const l of rev) {
       const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); const mk = String(ym.m);
       const price = Number(l.price) || 0;
@@ -1190,6 +1190,18 @@ async function runCityRevenue(trigger) {
       if (!isSurcharge && !isVnjNext && (price > 0 || isReturn)) {
         months[mk].deals.total++;
         if (inF1 || inF2) months[mk].deals.spb++; else months[mk].deals.msk++;
+        // Разрез по ответственному — для стафф-перформанса (сделки, выручка, возвраты,
+        // время от оплаты до закрытия). Цикл считаем только по закрытым сделкам.
+        const uid = String(l.responsible_user_id || "");
+        if (uid) {
+          const um = byUser[uid] || (byUser[uid] = {});
+          const u = um[mk] || (um[mk] = { deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
+          u.deals++; u.revenue += price;
+          if (isReturn) u.returns++;
+          if (inF1 || inF2) u.spb++;
+          const closed = Number(l.closed_at) || 0, paid = Number(_cityCfVal(l, CITY_CF_DATE)) || 0;
+          if (closed > paid && paid > 0) { u.closedCnt++; u.closedDays += (closed - paid) / 86400; }
+        }
       }
     }
     const out = {};
@@ -1198,10 +1210,103 @@ async function runCityRevenue(trigger) {
     saveCityRev(result);
     _cityRevLog.unshift({ ts: result.ts, trigger: trigger || "cron", leads: rev.length, ms: result.durationMs }); _cityRevLog = _cityRevLog.slice(0, 30);
     console.log(`CITY REVENUE: ok, сделок ${rev.length}, месяцев ${Object.keys(out).length}, ${result.durationMs}ms`);
+    // Стафф-перформанс собираем на ТОМ ЖЕ съёме (сделки уже в руках) — отдельного
+    // прохода по сделкам не делаем, только по контактам года (они нужны отделу продаж
+    // для конверсии «контакт → продажа»). СТРОГО ПОСЛЕ сохранения выручки: этот кусок
+    // длинный, и он не должен задерживать блок «Выручка по городам».
+    try { await buildStaffPerf(baseUrl, byUser); } catch (e) { console.error("STAFF PERF:", e && e.message); }
     return result;
   } catch (e) { console.error("runCityRevenue:", e.message); _cityRevLog.unshift({ ts: Date.now(), trigger, error: e.message }); return { error: e.message }; }
   finally { _cityRevRunning = false; }
 }
+// ═══ Стафф-перформанс: кто как сработал внутри отдела ════════════════════════
+// Считается на съёме «Выручки по городам» (сделки уже выбраны тем же фильтром, что
+// и месячная выручка) плюс отдельный проход по контактам года — он нужен отделу
+// продаж для конверсии «обработанный контакт → продажа». Отдел сотрудника берём из
+// его группы в amoCRM; руководителей ОРК группа не делит на города, поэтому МСК/СПб
+// у них определяем по тому, где лежат их же сделки.
+const VSC_STAFFPERF_FILE = path.join(__dirname, ".vscStaffPerf.json");
+let _staffPerf;
+function loadStaffPerf() {
+  if (_staffPerf !== undefined) return _staffPerf;
+  try { _staffPerf = JSON.parse(fs.readFileSync(VSC_STAFFPERF_FILE, "utf8")); } catch (_) { _staffPerf = null; }
+  return _staffPerf;
+}
+// Группа в amoCRM → отдел. Порядок важен: городские ОРК проверяем до общих правил.
+const STAFF_DEPT_BY_GROUP = [
+  [/перва[яй]\s*лини/i, "pl"],
+  [/орк\s*мск/i, "orkMsk"],
+  [/орк\s*спб/i, "orkSpb"],
+  [/(^|\s)оп(\s|\d|$)|отдел\s*продаж|роп/i, "op"],
+  [/(^|\s)оо(\s|$)|отдел\s*оформлени/i, "oo"]
+];
+async function buildStaffPerf(baseUrl, byUser) {
+  // 1. Сотрудники и их группы.
+  const users = {};
+  for (let page = 1; page < 12; page++) {
+    const d = await amoGet(`${baseUrl}/api/v4/users`, { limit: 250, page });
+    const list = (d && d._embedded && d._embedded.users) || [];
+    if (!list.length) break;
+    list.forEach((u) => {
+      const grp = (u.rights && u.rights.group_id != null) ? String(u.rights.group_id) : "";
+      users[String(u.id)] = { name: String(u.name || "").trim(), groupId: grp, dept: null };
+    });
+    if (list.length < 250) break;
+  }
+  // Названия групп — из справочника аккаунта (with=groups у /account).
+  let groupNames = {};
+  try {
+    const acc = await amoGet(`${baseUrl}/api/v4/account`, { with: "users_groups" });
+    ((acc && acc._embedded && acc._embedded.users_groups) || []).forEach((g) => { groupNames[String(g.id)] = String(g.name || ""); });
+  } catch (_) {}
+  Object.keys(users).forEach((uid) => {
+    const gname = groupNames[users[uid].groupId] || "";
+    const hit = STAFF_DEPT_BY_GROUP.find((x) => x[0].test(gname));
+    users[uid].group = gname;
+    users[uid].dept = hit ? hit[1] : null;
+  });
+  // 2. Контакты года по ответственному и месяцу создания. Тег «Дополнительный
+  // контакт» не считаем — это добавленный вручную контакт к существующей сделке.
+  const Y = new Date(Date.now() + 3 * 3600 * 1000).getUTCFullYear();
+  const yearFrom = Math.floor(Date.UTC(Y, 0, 1) / 1000) - 3 * 3600;
+  for (let page = 1; page < 400; page++) {
+    const d = await amoGet(`${baseUrl}/api/v4/contacts`, { limit: 250, page, "filter[created_at][from]": String(yearFrom) });
+    const list = (d && d._embedded && d._embedded.contacts) || [];
+    if (!list.length) break;
+    list.forEach((c) => {
+      const tags = ((c._embedded && c._embedded.tags) || []).map((t) => String(t.name || ""));
+      if (tags.some((t) => /дополнительный\s*контакт/i.test(t))) return;
+      const ym = _cityYm(c.created_at); if (!ym || ym.y !== Y) return;
+      const uid = String(c.responsible_user_id || ""); if (!uid) return;
+      const um = byUser[uid] || (byUser[uid] = {});
+      const u = um[String(ym.m)] || (um[String(ym.m)] = { deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
+      u.contacts++;
+    });
+    if (page % 20 === 0) console.log("STAFF PERF: контактов прочитано ~" + page * 250);
+    if (list.length < 250) break;
+  }
+  // 3. Раскладка по отделам. У руководителей ОРК группа общая — город берём по их
+  // же сделкам (где больше, туда и относим).
+  const rows = [];
+  Object.keys(byUser).forEach((uid) => {
+    const u = users[uid]; if (!u) return;
+    const months = byUser[uid];
+    let dept = u.dept;
+    if (!dept && /орк|клиент/i.test(u.group || "")) dept = "orkMsk";
+    if (dept === "orkMsk" || dept === "orkSpb") {
+      let spb = 0, all = 0;
+      Object.keys(months).forEach((mk) => { spb += months[mk].spb || 0; all += months[mk].deals || 0; });
+      if (all > 0) dept = (spb * 2 > all) ? "orkSpb" : "orkMsk";
+    }
+    rows.push({ uid: uid, name: u.name, group: u.group, dept: dept, months: months });
+  });
+  const data = { ts: Date.now(), year: Y, users: rows };
+  _staffPerf = data;
+  try { fs.writeFileSync(VSC_STAFFPERF_FILE, JSON.stringify(data), "utf8"); } catch (e) { console.error("saveStaffPerf:", e.message); }
+  console.log("STAFF PERF: сотрудников " + rows.length);
+  return data;
+}
+app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => res.json({ success: true, data: loadStaffPerf() }));
 function scheduleCityRevenueDaily() {
   const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000;
   (function nextRun() {
@@ -1221,7 +1326,7 @@ app.post("/admin/api/vsc/city-revenue/run", requireAdmin, (req, res) => {
 });
 scheduleCityRevenueDaily();
 // Первичный расчёт через 2 мин после старта, если кэша ещё нет (далее — крон 05:00).
-if (!loadCityRev()) setTimeout(() => { Promise.resolve(amoBg(() => runCityRevenue("startup"))).catch(() => {}); }, 120 * 1000);
+if (!loadCityRev() || !loadStaffPerf()) setTimeout(() => { Promise.resolve(amoBg(() => runCityRevenue("startup"))).catch(() => {}); }, 120 * 1000);
 
 // ── Зарплатная таблица «расчет ЗП Визы» (/vsc «Ежемесячный контроль», низ) ─────
 // Разбор живёт в zarplata.js (опубликованный xlsx-экспорт книги, только чтение).
