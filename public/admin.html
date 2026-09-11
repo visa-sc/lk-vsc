@@ -5644,7 +5644,240 @@
         if (d && d.month) _vscFcClient = d;
         if (vscTab !== "forecast") return; // пользователь переключил вкладку, пока считалось
         paintForecast(box, d);
+        // Прогноз показателей на весь месяц + радар возможностей (Андрей 11.09).
+        try {
+          const proj = vscMonthProjection();
+          if (proj) {
+            const hp = document.createElement("div"); hp.className = "ref-sec-h"; hp.style.marginTop = "26px";
+            hp.textContent = "Показатели до конца месяца — прогноз";
+            hp.appendChild(vscInfo("<b>Как считаем</b><br>Берём дневные данные года, считаем среднее по каждому дню недели за последние 8 недель (учитывает недельный ритм — в выходные выручка ниже) и умножаем на коэффициент свежего тренда: последние 2 недели против последних 8. Затем складываем по всем оставшимся дням месяца.<br><br><b>Как читать графики</b><br>Сплошной столбик — факт, пунктирная надстройка сверху — прогноз до конца месяца. Закрытые месяцы показаны как есть."));
+            vscContent.appendChild(hp);
+            const sum = document.createElement("div"); sum.className = "vsc-chart";
+            const m = (v) => Math.round(v).toLocaleString("ru-RU");
+            sum.innerHTML = '<div style="font-size:13px;color:#6b7280;font-weight:600;">Итог ' + escapeHtml(String(proj.monthName || "")) + ' по текущей динамике</div>'
+              + '<div style="display:flex;flex-wrap:wrap;gap:22px;margin-top:10px;">'
+              + '<div><div style="font-size:11.5px;color:#9096a3;">Выручка</div><div style="font-size:24px;font-weight:800;color:#1d2330;">' + m(proj.total.budget) + ' ₽</div>'
+              + '<div style="font-size:11.5px;color:#6b7280;">факт ' + m(proj.fact.budget) + ' + прогноз ' + m(proj.rest.budget) + '</div></div>'
+              + '<div><div style="font-size:11.5px;color:#9096a3;">Контакты</div><div style="font-size:24px;font-weight:800;color:#1d2330;">' + m(proj.total.processed) + '</div>'
+              + '<div style="font-size:11.5px;color:#6b7280;">факт ' + m(proj.fact.processed) + ' + прогноз ' + m(proj.rest.processed) + '</div></div>'
+              + '<div><div style="font-size:11.5px;color:#9096a3;">Реклама</div><div style="font-size:24px;font-weight:800;color:#1d2330;">' + m(proj.total.ad) + ' ₽</div>'
+              + '<div style="font-size:11.5px;color:#6b7280;">ДРР ' + (proj.total.drr != null ? (Math.round(proj.total.drr * 10) / 10) + "%" : "—") + '</div></div>'
+              + '<div><div style="font-size:11.5px;color:#9096a3;">Осталось дней</div><div style="font-size:24px;font-weight:800;color:#3589BD;">' + proj.rest.days + '</div>'
+              + '<div style="font-size:11.5px;color:#6b7280;">посчитано по ' + proj.factDays + ' закрытым дням</div></div>'
+              + '</div>';
+            vscContent.appendChild(sum);
+            vscContent.appendChild(vscForecastBars("Выручка по месяцам с прогнозом", "budget", "money", proj));
+            vscContent.appendChild(vscForecastBars("Набранные контакты с прогнозом", "processed", "int", proj));
+            vscContent.appendChild(vscForecastBars("Расходы на рекламу с прогнозом", "ad", "money", proj));
+            vscContent.appendChild(vscOpportunityRadar(proj));
+          }
+        } catch (e) { console.error("forecast extras:", e && e.message); }
       }
+      // ═══ Прогноз показателей на весь текущий месяц + радар возможностей ═══════
+      // (просьба Андрея 11.09.2026). Метод честный и объяснимый: берём дневные
+      // данные года, считаем среднее ПО ДНЯМ НЕДЕЛИ за последние 8 недель (так
+      // учитывается недельный ритм — в выходные выручка ниже), умножаем на
+      // коэффициент свежего тренда (последние 14 дней против последних 56) и
+      // складываем по оставшимся дням месяца. Факт месяца при этом не трогаем.
+      function vscMonthProjection() {
+        const months = vscData.months || [];
+        const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
+        const curIdx = nowMsk.getUTCMonth(), curYear = nowMsk.getUTCFullYear();
+        const cur = months[curIdx];
+        if (!cur) return null;
+        const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+        const allDays = months.reduce((a, m) => a.concat(m.days || []), [])
+          .map((d) => ({ d: d, dt: d.date ? vscParseDMY(d.date) : null }))
+          .filter((x) => x.dt && x.dt < today0 && ((x.d.budget || 0) > 0 || (x.d.processed || 0) > 0))
+          .sort((a, b) => a.dt - b.dt);
+        if (allDays.length < 14) return null;
+        const val = (d, k) => (d && d[k] != null && !isNaN(d[k])) ? Number(d[k]) : 0;
+        const avgBy = (arr, k) => arr.length ? arr.reduce((a, x) => a + val(x.d, k), 0) / arr.length : 0;
+        // Среднее по дню недели за последние 8 недель
+        const last56 = allDays.slice(-56);
+        const byDow = {};
+        for (let dow = 0; dow < 7; dow++) {
+          const sel = last56.filter((x) => x.dt.getDay() === dow);
+          byDow[dow] = { budget: avgBy(sel, "budget"), processed: avgBy(sel, "processed"), ad: avgBy(sel, "ad"), n: sel.length };
+        }
+        // Коэффициент свежего тренда: последние 2 недели против последних 8
+        const last14 = allDays.slice(-14);
+        const trendOf = (k) => {
+          const a = avgBy(last14, k), b = avgBy(last56, k);
+          if (!b) return 1;
+          return Math.max(0.5, Math.min(1.6, a / b)); // без экстремумов
+        };
+        const trend = { budget: trendOf("budget"), processed: trendOf("processed"), ad: trendOf("ad") };
+        // Факт месяца (только закрытые дни) и остаток
+        const dim = new Date(Date.UTC(curYear, curIdx + 1, 0)).getUTCDate();
+        const factDays = (cur.days || []).filter((d) => {
+          const dt = d.date ? vscParseDMY(d.date) : null;
+          return dt && dt < today0 && ((d.budget || 0) > 0 || (d.processed || 0) > 0);
+        });
+        const fact = { budget: 0, processed: 0, ad: 0 };
+        factDays.forEach((d) => { fact.budget += val(d, "budget"); fact.processed += val(d, "processed"); fact.ad += val(d, "ad"); });
+        const lastFactDay = factDays.length ? Math.max.apply(null, factDays.map((d) => vscParseDMY(d.date).getDate())) : 0;
+        const rest = { budget: 0, processed: 0, ad: 0, days: 0 };
+        for (let day = lastFactDay + 1; day <= dim; day++) {
+          const dt = new Date(curYear, curIdx, day);
+          const b = byDow[dt.getDay()] || { budget: 0, processed: 0, ad: 0 };
+          rest.budget += b.budget * trend.budget;
+          rest.processed += b.processed * trend.processed;
+          rest.ad += b.ad * trend.ad;
+          rest.days++;
+        }
+        const total = { budget: fact.budget + rest.budget, processed: fact.processed + rest.processed, ad: fact.ad + rest.ad };
+        // Производные показатели прогноза
+        const cv = cur.total && cur.total.cv != null ? cur.total.cv : null;
+        const atv = cur.total && cur.total.atv != null ? cur.total.atv : null;
+        total.cpl = total.processed ? total.ad / (total.processed / (cv ? 1 : 1)) : null; // лиды ≈ контакты
+        total.cpl = total.processed ? total.ad / total.processed : null;
+        total.drr = total.budget ? total.ad / total.budget * 100 : null;
+        total.atv = atv; total.cv = cv;
+        return { monthName: cur.name, fact, rest, total, lastFactDay, daysInMonth: dim, trend, factDays: factDays.length };
+      }
+
+      // График «факт + прогноз»: сплошные столбики — закрытые месяцы, текущий
+      // месяц двумя частями (факт сплошной, прогнозная надстройка — контуром).
+      function vscForecastBars(title, key, fmt, proj) {
+        const wrap = document.createElement("div"); wrap.className = "vsc-chart"; wrap.style.marginTop = "14px";
+        const cap = document.createElement("div"); cap.style.cssText = "font-size:13px;font-weight:700;color:#33415a;margin-bottom:10px;";
+        cap.textContent = title;
+        wrap.appendChild(cap);
+        const months = (vscData.months || []).filter((m) => m.total && (m.total.budget || m.total.processed));
+        const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
+        const curIdx = nowMsk.getUTCMonth();
+        const vals = months.map((m, i) => {
+          const isCur = (vscData.months || []).indexOf(m) === curIdx;
+          if (!isCur) return { x: m.name, fact: (m.total && m.total[key] != null) ? m.total[key] : 0, proj: 0 };
+          return { x: m.name, fact: proj.fact[key] != null ? proj.fact[key] : 0, proj: proj.rest[key] != null ? proj.rest[key] : 0 };
+        });
+        const maxV = Math.max.apply(null, vals.map((v) => v.fact + v.proj).concat([1]));
+        const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "200px";
+        const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+        vals.forEach(function (v) {
+          const col = document.createElement("div"); col.className = "vsc-bar-col";
+          const totalV = v.fact + v.proj;
+          col.title = v.x + (v.proj ? ("\nфакт: " + vscFmt(v.fact, fmt) + "\nпрогноз до конца месяца: " + vscFmt(totalV, fmt)) : ("\n" + vscFmt(v.fact, fmt)));
+          const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700";
+          vl.textContent = vscFmt(totalV, fmt).replace(" ₽", "");
+          if (v.proj) { vl.style.color = "#3589BD"; }
+          // столбик: факт + контурная надстройка прогноза
+          const stack = document.createElement("div");
+          stack.style.cssText = "width:32px;display:flex;flex-direction:column;justify-content:flex-end;";
+          if (v.proj) {
+            const pj = document.createElement("div");
+            pj.style.cssText = "width:32px;height:" + Math.max(2, Math.round(v.proj / maxV * 130)) + "px;"
+              + "border:2px dashed #3589BD;border-bottom:none;border-radius:5px 5px 0 0;background:rgba(53,137,189,.10);box-sizing:border-box;";
+            stack.appendChild(pj);
+          }
+          const fb = document.createElement("div"); fb.className = "vsc-bar";
+          fb.style.cssText = "width:32px;height:" + Math.max(2, Math.round(v.fact / maxV * 130)) + "px;" + (v.proj ? "border-radius:0 0 0 0;" : "");
+          stack.appendChild(fb);
+          const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.cssText = "font-weight:700;color:" + (v.proj ? "#3589BD" : "#5a626f") + ";";
+          xl.textContent = MONF[(vscData.months || []).indexOf((vscData.months || []).find((m) => m.name === v.x))] || v.x.replace(/\s*20\d\d/, "");
+          col.appendChild(vl); col.appendChild(stack); col.appendChild(xl);
+          bars.appendChild(col);
+        });
+        wrap.appendChild(bars);
+        return wrap;
+      }
+
+      // ═══ Радар возможностей: где сейчас деньги лежат на полу ═══════════════════
+      // Каждая карточка — простое действие и его оценка в рублях за месяц.
+      // Считаем от прогноза текущего месяца и от лучших собственных показателей
+      // года (не от абстрактных «норм»): вернуться к своему же уровню — реально.
+      function vscOpportunityRadar(proj) {
+        const wrap = document.createElement("div"); wrap.style.marginTop = "26px";
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Радар возможностей";
+        h.appendChild(vscInfo("<b>Что это</b><br>Простые действия, которые заметнее всего повлияют на чистую прибыль в этом месяце. Считается от прогноза текущего месяца и от ЛУЧШИХ собственных показателей года — то есть «вернуться к своему же уровню», а не к абстрактной норме.<br><br><b>Как читать</b><br>Цвет — величина эффекта: красный больше 500 тыс ₽ в месяц, жёлтый 150–500 тыс, зелёный — уже в порядке. Суммы приблизительные: это оценка порядка величины, а не бухгалтерский расчёт."));
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart";
+        wrap.appendChild(box);
+
+        const months = (vscData.months || []).filter((m) => m.total && m.total.budget);
+        const closed = months.filter((m) => (vscData.months || []).indexOf(m) < new Date(Date.now() + 3 * 3600 * 1000).getUTCMonth());
+        if (!closed.length || !proj) { box.innerHTML = '<div class="vsc-empty">Недостаточно данных.</div>'; return wrap; }
+        const revM = proj.total.budget;                       // прогноз выручки месяца
+        const cards = [];
+        const money = (v) => Math.round(v).toLocaleString("ru-RU") + " ₽";
+        const best = (key, mode) => {
+          const vals = closed.map((m) => m.total[key]).filter((v) => v != null && !isNaN(v));
+          if (!vals.length) return null;
+          return mode === "min" ? Math.min.apply(null, vals) : Math.max.apply(null, vals);
+        };
+        const lastClosed = closed[closed.length - 1] || {};
+        const lt = lastClosed.total || {};
+
+        // 1. Возвраты
+        const retNow = lt.returnsPct, retBest = best("returnsPct", "min");
+        if (retNow != null && retBest != null && retNow > retBest) {
+          const gain = revM * (retNow - retBest) / 100;
+          cards.push({ gain, title: "Возвраты клиентам", now: "сейчас " + (Math.round(retNow * 10) / 10) + "% от выручки",
+            target: "лучший месяц года — " + (Math.round(retBest * 10) / 10) + "%",
+            act: "Разобрать причины возвратов последних месяцев и вернуться к своему весеннему уровню." });
+        }
+        // 2. Реклама (ДРР с доп. расходами)
+        const drrNow = (lastClosed.ctrl && lastClosed.ctrl.drrExtra) || lt.drr, drrBest = (function () {
+          const vals = closed.map((m) => (m.ctrl && m.ctrl.drrExtra) || (m.total && m.total.drr)).filter((v) => v != null);
+          return vals.length ? Math.min.apply(null, vals) : null;
+        })();
+        if (drrNow != null && drrBest != null && drrNow > drrBest) {
+          const gain = revM * (drrNow - drrBest) / 100;
+          cards.push({ gain, title: "Расходы на рекламу", now: "сейчас " + (Math.round(drrNow * 10) / 10) + "% от выручки",
+            target: "лучший месяц года — " + (Math.round(drrBest * 10) / 10) + "%",
+            act: "Отключить кампании с худшим CPL, а не резать бюджет целиком: вернуть долю рекламы к своему лучшему уровню." });
+        }
+        // 3. Конверсия отдела продаж
+        const cvNow = lt.cv, cvBest = best("cv", "max");
+        if (cvNow != null && cvBest != null && cvBest > cvNow) {
+          const atv = lt.atv || proj.total.atv || 0;
+          const gain = (proj.total.processed || 0) * (cvBest - cvNow) / 100 * atv * 0.5; // половину прироста считаем достижимой
+          if (gain > 0) cards.push({ gain, title: "Конверсия отдела продаж", now: "сейчас " + (Math.round(cvNow * 10) / 10) + "%",
+            target: "лучший месяц года — " + (Math.round(cvBest * 10) / 10) + "%",
+            act: "Подтянуть слабых менеджеров к своему же лучшему месяцу: те же лиды дают больше выручки." });
+        }
+        // 4. Пропущенные звонки
+        const missNow = lt.missedPct, missBest = best("missedPct", "min");
+        if (missNow != null && missBest != null && missNow > missBest) {
+          const atv = lt.atv || 0, cv = (lt.cv || 0) / 100;
+          const lost = (proj.total.processed || 0) * (missNow - missBest) / 100;
+          const gain = lost * cv * atv;
+          if (gain > 0) cards.push({ gain, title: "Пропущенные звонки", now: "сейчас " + (Math.round(missNow * 10) / 10) + "% звонков пропускаем",
+            target: "лучший месяц года — " + (Math.round(missBest * 10) / 10) + "%",
+            act: "Закрыть дыры в расписании первой линии: каждый принятый звонок — это лид, за который уже заплачено." });
+        }
+        // 5. Средний чек
+        const atvNow = lt.atv, atvPlan = lastClosed.ctrl && lastClosed.ctrl.planATV;
+        if (atvNow != null && atvPlan && atvPlan > atvNow) {
+          const deals = (proj.total.budget && atvNow) ? proj.total.budget / atvNow : 0;
+          const gain = deals * (atvPlan - atvNow);
+          if (gain > 0) cards.push({ gain, title: "Средний чек", now: "сейчас " + money(atvNow), target: "план месяца — " + money(atvPlan),
+            act: "Допродажи и пакеты: дотянуть чек до собственного плана." });
+        }
+
+        cards.sort((a, b) => b.gain - a.gain);
+        const color = (g) => g >= 500000 ? ["#b0263a", "#fdecef"] : g >= 150000 ? ["#8a5f00", "#fdf6e3"] : ["#2c7a43", "#eaf6ee"];
+        let html = '<div style="font-size:12.5px;color:#6b7280;margin-bottom:12px;">Оценка на ' + escapeHtml(String(proj.monthName || "")) + ' · от прогноза выручки ' + money(revM) + '</div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:12px;">';
+        if (!cards.length) html += '<div class="vsc-empty">Все показатели на своих лучших значениях года — очевидных резервов не видно.</div>';
+        cards.forEach(function (c) {
+          const col = color(c.gain);
+          html += '<div style="flex:1 1 280px;min-width:260px;background:' + col[1] + ';border:1px solid ' + col[0] + '33;border-radius:14px;padding:14px 16px;">'
+            + '<div style="font-size:13.5px;font-weight:800;color:#1d2330;">' + escapeHtml(c.title) + '</div>'
+            + '<div style="font-size:22px;font-weight:800;color:' + col[0] + ';margin:6px 0 2px;">+' + money(c.gain) + '</div>'
+            + '<div style="font-size:11.5px;color:#6b7280;margin-bottom:8px;">в месяц к чистой прибыли</div>'
+            + '<div style="font-size:12.5px;color:#3a4256;line-height:1.55;">' + escapeHtml(c.now) + '<br>цель: ' + escapeHtml(c.target) + '</div>'
+            + '<div style="font-size:12.5px;color:#1d2330;line-height:1.55;margin-top:8px;">' + escapeHtml(c.act) + '</div>'
+            + '</div>';
+        });
+        html += '</div>';
+        const sum = cards.reduce((a, c) => a + c.gain, 0);
+        if (sum) html += '<div style="margin-top:14px;font-size:13px;color:#1d2330;">Если закрыть всё сразу: <b>+' + money(sum) + '</b> в месяц. Это вернуло бы месяц в прибыль.</div>';
+        box.innerHTML = html;
+        return wrap;
+      }
+
       function paintForecast(box, d) {
         box.innerHTML = "";
         if (!d || !d.month) { box.innerHTML = '<div class="vsc-empty">Недостаточно данных для прогноза.</div>'; return; }
