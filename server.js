@@ -1129,6 +1129,11 @@ const CITY_REV_STATUSES = [].concat(
 );
 const CITY_CF_DATE = 427242, CITY_CF_LEAD = 573762, CITY_CF_CONTACT = 571754;
 const CITY_CF_TOOK = 443488;                      // «Кто принял клиента» — специалист ОРК
+// Отдел оформления: свои поля сделки. Первый этап — приём в работу, второй — доведение
+// до выдачи; «Дедлайн ОО» против «Даты бонуса ОО 2й ЭТАП» даёт просрочку (D% из
+// калькулятора Плинер). Значения-заглушки («АКК», «БОТ», «Запись не требуется»)
+// отсеиваются сами: они не совпадают ни с одним сотрудником amoCRM.
+const OO_CF_MGR1 = 574024, OO_CF_MGR2 = 427128, OO_CF_DEADLINE = 577948, OO_CF_BONUS2 = 446802;
 const CITY_F1_LEAD = new Set([1093564, 1093566, 1093568, 1095864]);
 const CITY_F1_CONTACT = 1090888;
 const CITY_F2_LEAD = 1093566;
@@ -1165,7 +1170,7 @@ async function runCityRevenue(trigger) {
       const list = (data && data._embedded && data._embedded.contacts) || [];
       list.forEach((c) => { cmap[c.id] = _cityCfEnums(c, CITY_CF_CONTACT); });
     }
-    const months = {}, byUser = {}, dealsForNew = [], byKto = {};
+    const months = {}, byUser = {}, dealsForNew = [], byKto = {}, byStage = {};
     for (const l of rev) {
       const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); const mk = String(ym.m);
       const price = Number(l.price) || 0;
@@ -1204,6 +1209,18 @@ async function runCityRevenue(trigger) {
           const k = km[mk] || (km[mk] = { took: 0, tookRev: 0, tookReturns: 0 });
           k.took++; k.tookRev += price; if (isReturn) k.tookReturns++;
         }
+        // Отдел оформления: этапы по своим полям сделки.
+        const stg = (name, fn) => {
+          const n = String(name || "").trim(); if (!n) return;
+          const sm = byStage[n] || (byStage[n] = {});
+          fn(sm[mk] || (sm[mk] = { s1: 0, s2: 0, s2rev: 0, s2ret: 0, dlTotal: 0, dlLate: 0 }));
+        };
+        stg(_cityCfVal(l, OO_CF_MGR1), (o) => { o.s1++; });
+        stg(_cityCfVal(l, OO_CF_MGR2), (o) => {
+          o.s2++; o.s2rev += price; if (isReturn) o.s2ret++;
+          const dl = Number(_cityCfVal(l, OO_CF_DEADLINE)) || 0, done = Number(_cityCfVal(l, OO_CF_BONUS2)) || 0;
+          if (dl > 0 && done > 0) { o.dlTotal++; if (done > dl) o.dlLate++; }
+        });
         // ВАЖНО: у отдела продаж сделку считаем по АВТОРУ (кто её завёл) — после
         // продажи ответственный меняется на специалиста ОРК, и продажа «уезжает» из
         // отчёта менеджера. У ОРК и оформления наоборот: там важен ответственный.
@@ -1240,7 +1257,7 @@ async function runCityRevenue(trigger) {
     // прохода по сделкам не делаем, только по контактам года (они нужны отделу продаж
     // для конверсии «контакт → продажа»). СТРОГО ПОСЛЕ сохранения выручки: этот кусок
     // длинный, и он не должен задерживать блок «Выручка по городам».
-    try { await buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, out); } catch (e) { console.error("STAFF PERF:", e && e.message); }
+    try { await buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, out, byStage); } catch (e) { console.error("STAFF PERF:", e && e.message); }
     return result;
   } catch (e) { console.error("runCityRevenue:", e.message); _cityRevLog.unshift({ ts: Date.now(), trigger, error: e.message }); return { error: e.message }; }
   finally { _cityRevRunning = false; }
@@ -1266,7 +1283,7 @@ const STAFF_DEPT_BY_GROUP = [
   [/(^|\s)оп(\s|\d|$)|отдел\s*продаж|роп/i, "op"],
   [/(^|\s)оо(\s|$)|отдел\s*оформлени/i, "oo"]
 ];
-async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals) {
+async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, byStage) {
   // 1. Сотрудники и их группы.
   const users = {};
   for (let page = 1; page < 12; page++) {
@@ -1298,12 +1315,20 @@ async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals) 
     // «Кто принял клиента» приходит текстом — сшиваем с сотрудниками по имени.
     const norm = (x) => String(x || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
     const ktoByName = {}; Object.keys(byKto || {}).forEach((n) => { ktoByName[norm(n)] = byKto[n]; });
+    const stgByName = {}; Object.keys(byStage || {}).forEach((n) => { stgByName[norm(n)] = byStage[n]; });
+    const blank = () => ({ deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
     Object.keys(users).forEach((uid) => {
-      const k = ktoByName[norm(users[uid].name)]; if (!k) return;
+      const k = ktoByName[norm(users[uid].name)], g = stgByName[norm(users[uid].name)];
+      if (!k && !g) return;
       const um = byUser[uid] || (byUser[uid] = {});
-      Object.keys(k).forEach((mk) => {
-        const t = um[mk] || (um[mk] = { deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
+      if (k) Object.keys(k).forEach((mk) => {
+        const t = um[mk] || (um[mk] = blank());
         t.took = k[mk].took; t.tookRev = k[mk].tookRev; t.tookReturns = k[mk].tookReturns;
+      });
+      if (g) Object.keys(g).forEach((mk) => {
+        const t = um[mk] || (um[mk] = blank());
+        t.s1 = g[mk].s1; t.s2 = g[mk].s2; t.s2rev = g[mk].s2rev; t.s2ret = g[mk].s2ret;
+        t.dlTotal = g[mk].dlTotal; t.dlLate = g[mk].dlLate;
       });
     });
     const rows = [];
@@ -6554,6 +6579,10 @@ const SPB_LEAD_STATUSES = new Set([].concat(
   [142, 143, 21232020, 21232023, 21256203, 21256455, 21256458, 21256761, 21271227, 21271230, 30302436, 70381749, 70957793, 70957929, 76835705, 76836473].map((x) => "1309524:" + x),
   [142, 143, 21256590, 21256593, 21256668, 22535466, 26918115, 43200834, 58405049, 58405421, 58406233, 61251437, 76836369].map((x) => "1312578:" + x)
 ));
+// Контакты с тегом «добавлен вручную» — не лиды (их завели руками, а не из
+// рекламы/обращения); Андрей 11.09 просил их не считать. Фильтра по ответственным
+// НЕТ сознательно: берём всех сотрудников, состав меняется — как в таргете.
+const SPB_LEAD_SKIP_TAG = /добавлен\s*вручную/i;
 const SPB_LEADS_FILE = path.join(__dirname, ".vscSpbLeads.json");
 function spbLeadsLoad() { try { return JSON.parse(fs.readFileSync(SPB_LEADS_FILE, "utf8")) || {}; } catch (_) { return {}; } }
 function spbLeadsSave(m) { try { fs.writeFileSync(SPB_LEADS_FILE, JSON.stringify(m, null, 2), "utf8"); } catch (e) { console.error("spbLeadsSave:", e.message); } }
@@ -6576,6 +6605,8 @@ async function vscSpbLeadsMonth(year, mi) {
       const cf = (c.custom_fields_values || []).find((f) => Number(f.field_id) === CITY_CF_CONTACT);
       const vals = cf && cf.values ? cf.values.map((v) => Number(v.enum_id)) : [];
       if (!vals.includes(CITY_F1_CONTACT)) continue;           // 1090888 — «Источник» = СПБ
+      const tags = (c._embedded && c._embedded.tags) || [];
+      if (tags.some((t) => SPB_LEAD_SKIP_TAG.test(String(t && t.name || "")))) continue;
       const ids = ((c._embedded && c._embedded.leads) || []).map((l) => Number(l.id));
       contactLeads.set(c.id, ids);
       ids.forEach((id) => leadIds.add(id));
