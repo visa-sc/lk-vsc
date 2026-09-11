@@ -492,7 +492,6 @@ p{margin:0 0 14px}
       <div class="facts"><div class="fact"><span>Taxa oficial</span><b>£20</b></div><div class="fact"><span>Validade</span><b>2 anos</b></div><div class="fact"><span>Resposta</span><b>até 3 dias úteis</b></div><div class="fact"><span>Estadia</span><b>até 6 meses</b></div><div class="fact"><span>Entradas</span><b>quantas quiser</b></div><div class="fact"><span>Suporte</span><b>em português</b></div></div>
       <div class="hero__cta">
         <a class="btn" href="#form">Solicitar minha ETA</a>
-        <a class="msgr msgr--wa" data-msgr="whatsapp" href="https://wa.me/79299435150" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm5.8 14.16c-.24.68-1.42 1.32-1.95 1.36-.5.04-.98.22-3.3-.72-2.78-1.1-4.55-3.94-4.69-4.12-.14-.18-1.12-1.49-1.12-2.85 0-1.35.71-2.02.96-2.3.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.55.8 1.9.87 2.04.07.14.12.3.02.48-.09.18-.14.3-.28.46-.14.16-.29.36-.42.48-.14.14-.28.29-.12.57.16.27.72 1.19 1.55 1.93 1.07.95 1.97 1.25 2.25 1.39.28.14.44.12.6-.07.18-.2.7-.81.88-1.09.19-.27.37-.23.62-.14.25.09 1.6.76 1.87.9.27.14.46.2.53.32.06.11.06.66-.18 1.34Z"/></svg>Falar no WhatsApp</a>
       </div>
     </div>
 
@@ -789,7 +788,8 @@ p{margin:0 0 14px}
         }
       } catch (e) {}
       if (typeof window.gtag === "function") {
-        gtag("event", "messenger_click", { messenger: a.dataset.msgr, form_id: "br-gb" });
+        gtag("event", a.dataset.msgr === "phone" ? "phone_click" : "messenger_click",
+             { messenger: a.dataset.msgr, form_id: "br-gb" });
       }
     });
   });
@@ -841,6 +841,30 @@ p{margin:0 0 14px}
       [].forEach.call(travs.querySelectorAll(".trav"), function (el, i) {
         el.querySelector(".trav__ttl span").textContent = "Viajante " + (i + 1);
       });
+    });
+
+    // Первое касание формы — уже интерес, даже если человек не дойдёт до конца.
+    // Считаем один раз на загрузку страницы: фокус, ввод или выбор тарифа.
+    var started = false;
+    function formStart() {
+      if (started) return;
+      started = true;
+      var body = JSON.stringify({ messenger: "form_start", form: "br-gb",
+        page: location.href, referrer: document.referrer || "", utm: utm });
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon("/api/vscom-click", new Blob([body], { type: "application/json" }));
+        } else {
+          fetch("/api/vscom-click", { method: "POST", keepalive: true,
+            headers: { "Content-Type": "application/json" }, body: body });
+        }
+      } catch (e) {}
+      if (typeof window.gtag === "function") {
+        gtag("event", "form_start", { form_id: "br-gb", page_location: location.href });
+      }
+    }
+    ["focusin", "input", "change"].forEach(function (ev) {
+      wiz.addEventListener(ev, formStart, { once: false, passive: true });
     });
 
     function tier() {

@@ -377,7 +377,9 @@ function mount(app, deps) {
       const what = clean(b.messenger, 20);
       // phone — клик по номеру на странице. Сам звонок мы не видим (номер не наш),
       // но нажатие показывает намерение позвонить, а это уже сигнал интереса.
-      if (!["whatsapp", "telegram", "card", "phone"].includes(what)) return;
+      // form_start — первое касание мастера оформления: человек начал вводить
+      // данные. До конца дойдёт не каждый, но интерес уже проявлен.
+      if (!["whatsapp", "telegram", "card", "phone", "form_start"].includes(what)) return;
       saveClick({
         at: new Date().toISOString(),
         messenger: what,
