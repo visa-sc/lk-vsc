@@ -3357,10 +3357,13 @@
       function vscDivergingBars(title, data, fmt, legend) {
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
         const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = title; wrap.appendChild(h);
-        const leg = document.createElement("div"); leg.className = "rev-legend";
-        const lg = legend || { pos: "запас (+)", neg: "нехватка (−)" };
-        leg.innerHTML = '<span><i style="background:#4f9f68"></i>' + escapeHtml(lg.pos) + '</span><span><i style="background:#d2685f"></i>' + escapeHtml(lg.neg) + '</span>';
-        wrap.appendChild(leg);
+        // legend === false — рисуем без подписей (когда знак столбика и так очевиден)
+        if (legend !== false) {
+          const leg = document.createElement("div"); leg.className = "rev-legend";
+          const lg = legend || { pos: "запас (+)", neg: "нехватка (−)" };
+          leg.innerHTML = '<span><i style="background:#4f9f68"></i>' + escapeHtml(lg.pos) + '</span><span><i style="background:#d2685f"></i>' + escapeHtml(lg.neg) + '</span>';
+          wrap.appendChild(leg);
+        }
         const pts = (data || []).filter((d) => d && d.v != null && !isNaN(d.v));
         if (!pts.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных."; wrap.appendChild(e); return wrap; }
         const maxAbs = Math.max.apply(null, pts.map((d) => Math.abs(d.v))) || 1;
@@ -5240,7 +5243,7 @@
           box.innerHTML = "";
           box.appendChild(vscDivergingBars("Прибыль СПб по месяцам", names.map(function (n) {
             return { x: n.replace(/\s*20\d\d/, "").slice(0, 3), v: ms[n].profit };
-          }), "money"));
+          }), "money", false));
           const TD = 'style="padding:6px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;"';
           const TH = 'style="padding:6px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;font-size:12px;"';
           let html = '<div style="overflow-x:auto;margin-top:14px;"><table style="width:100%;min-width:1180px;border-collapse:collapse;font-size:12.5px;">'
