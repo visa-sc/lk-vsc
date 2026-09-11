@@ -3973,6 +3973,11 @@
             o.atv = (o.deals && o.revenue != null) ? o.revenue / o.deals : null;
             o.conv = (o.deals != null && o.contacts) ? o.deals / o.contacts * 100 : null;
             o.perDay = (o.contacts != null && o.manDays) ? o.contacts / o.manDays : null;
+            // Сколько из объёма месяца завели сами менеджеры продаж — чтобы список
+            // фамилий ниже сходился с цифрой в строке, а не расходился в разы.
+            let od = 0, orv = 0;
+            sp.users.forEach((u) => { if (u.dept !== "op") return; const x = u.months && u.months[String(m.mi)]; if (!x) return; od += x.sold || 0; orv += x.soldRev || 0; });
+            o.opDeals = od; o.opRev = orv;
           } else {
             const isMsk = D.key === "orkMsk", isSpb = D.key === "orkSpb";
             o.deals = md ? (isMsk ? md.msk : isSpb ? md.spb : md.total) : null;
@@ -3989,7 +3994,10 @@
                { k: "missedPct", t: "% пропущенных", f: pctv, good: -1 }, { k: "wait", t: "Ожидание", f: secs, good: -1 },
                { k: "perDay", t: "Звонков на человека в день", f: n1, good: 0 }],
           op: [{ k: "contacts", t: "Целевые контакты", f: int, good: 1, sum: 1 }, { k: "deals", t: "Сделки", f: int, good: 1, sum: 1 },
-               { k: "revenue", t: "Выручка", f: money, good: 1, sum: 1 }, { k: "atv", t: "Средний чек", f: money, good: 1 },
+               { k: "revenue", t: "Выручка", f: money, good: 1, sum: 1 },
+               { k: "opDeals", t: "Завели менеджеры ОП", f: int, good: 1, sum: 1 },
+               { k: "opRev", t: "Их выручка", f: money, good: 1, sum: 1 },
+               { k: "atv", t: "Средний чек", f: money, good: 1 },
                { k: "conv", t: "Конверсия", f: pctv, good: 1 }, { k: "perDay", t: "Контактов на человека в день", f: n1, good: 0 }],
           ork: [{ k: "deals", t: "Сделки", f: int, good: 1, sum: 1 }, { k: "revenue", t: "Выручка", f: money, good: 1, sum: 1 },
                 { k: "atv", t: "Средний чек", f: money, good: 1 }, { k: "returns", t: "Возвраты", f: int, good: -1, sum: 1 },
@@ -3997,7 +4005,9 @@
         };
         // Колонки сотрудников внутри месяца.
         const USER_COLS = {
-          pl: [],
+          pl: [{ k: "callIn", t: "Входящих", f: int, good: 1 }, { k: "callMissed", t: "Пропущено", f: int, good: -1 },
+               { k: "callMissPct", t: "% пропущенных", f: pctv, good: -1 }, { k: "callOut", t: "Исходящих", f: int, good: 1 },
+               { k: "talkMin", t: "Минут разговора", f: int, good: 1 }],
           op: [{ k: "contacts", t: "Контакты", f: int, good: 1 }, { k: "sold", t: "Продажи", f: int, good: 1 },
                { k: "soldRev", t: "Выручка", f: money, good: 1 }, { k: "soldAtv", t: "Средний чек", f: money, good: 1 },
                { k: "uconv", t: "Конверсия", f: pctv, good: 1 }],
@@ -4010,7 +4020,7 @@
                { k: "dlPct", t: "% просрочки", f: pctv, good: -1 }, { k: "days", t: "Дней до закрытия", f: n1, good: -1 }]
         };
         const DEPTS = [
-          { key: "pl", title: "Первая линия", dcols: "pl", ucols: "pl", def: "calls" },
+          { key: "pl", title: "Первая линия", dcols: "pl", ucols: "pl", udef: "callIn", def: "calls" },
           { key: "op", title: "Отдел продаж", dcols: "op", ucols: "op", udef: "soldRev", def: "revenue" },
           { key: "orkMsk", title: "ОРК Москва", dcols: "ork", ucols: "ork", udef: "took", def: "deals" },
           { key: "orkSpb", title: "ОРК Санкт-Петербург", dcols: "ork", ucols: "ork", udef: "took", def: "deals" },
@@ -4069,8 +4079,7 @@
               const span = dcols.length + 1;
               if (!urows.length) {
                 html += '<tr><td colspan="' + span + '" style="padding:10px 14px;background:#fafbfd;color:#9096a3;font-size:12.5px;">'
-                  + (D.key === "pl" ? "Разреза по операторам нет: звонки в лист /vsc приходят из АТС общей суммой за день. Нужен доступ к API самой АТС."
-                     : "За этот месяц в amoCRM нет данных по сотрудникам отдела.") + '</td></tr>';
+                  + "За этот месяц в amoCRM нет данных по сотрудникам отдела." + '</td></tr>';
               } else {
                 html += '<tr><td colspan="' + span + '" style="padding:0;background:#fafbfd;"><div style="padding:8px 14px 12px;">'
                   + '<table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
@@ -4108,7 +4117,8 @@
           const hint = document.createElement("div"); hint.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:8px;";
           hint.innerHTML = "Клик по месяцу разворачивает фамилии. Клик по заголовку колонки сотрудников сортирует их во всех раскрытых месяцах: первый клик лучшие сверху, второй худшие."
             + (D.key === "oo" ? "<br>Объём отдела — весь объём сделок месяца. По сотрудникам этапы берутся из полей сделки «Менеджер ОО 1й/2й ЭТАП», просрочка — когда дата бонуса за второй этап позже «Дедлайна ОО». Сделки, где в этих полях стоит «АКК», «БОТ» или «Запись не требуется», в фамилии не попадают." : "")
-            + (D.key === "op" ? "<br>Объём отдела — все сделки, давшие выручку месяца, включая повторных клиентов. По сотрудникам продажи считаются по автору сделки." : "");
+            + (D.key === "op" ? "<br>Объём отдела и конверсия считаются от ВСЕХ сделок, давших выручку месяца, включая повторных клиентов. Колонка «Завели менеджеры ОП» показывает, сколько из этого объёма создали сами продажники — именно это и раскладывается по фамилиям. Остальное приходит повторными клиентами напрямую в ОРК, минуя продажи." : "")
+            + (D.key === "pl" ? "<br>Звонки по операторам берутся из нот amoCRM (call_in и call_out), пропущенным считается входящий с нулевой длительностью. Это тот же съём, что кормит «Скорость первого касания», отдельных запросов в CRM он не добавляет. Суммарные цифры в строке месяца — из листа /vsc, там они от АТС, поэтому с суммой по операторам могут немного расходиться." : "");
           det.appendChild(hint);
           wrap.appendChild(det);
         });
@@ -4135,7 +4145,10 @@
               deals: x.deals || 0, revenue: x.revenue || 0, returns: x.returns || 0,
               atv: x.deals ? x.revenue / x.deals : null,
               retPct: x.deals ? x.returns / x.deals * 100 : null,
-              days: x.closedCnt ? x.closedDays / x.closedCnt : null
+              days: x.closedCnt ? x.closedDays / x.closedCnt : null,
+              callIn: x.callIn || 0, callOut: x.callOut || 0, callMissed: x.callMissed || 0,
+              callMissPct: x.callIn ? (x.callMissed || 0) / x.callIn * 100 : null,
+              talkMin: x.talkSec ? x.talkSec / 60 : 0
             };
           }).filter(function (r) { return ucols.some((c) => r[c.k]); });
           const st = _vscSpSort[D.key] || { k: D.udef || "deals", dir: -1 };

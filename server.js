@@ -1384,7 +1384,29 @@ async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, 
   console.log("STAFF PERF: сотрудников " + data.users.length);
   return data;
 }
-app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => res.json({ success: true, data: loadStaffPerf() }));
+// Звонки по сотрудникам — побочный продукт ночного съёма «Скорости первого касания»
+// (он и так читает все ноты call_in/call_out за год). Отдельного обращения к amoCRM нет.
+const VSC_CALLSTATS_FILE = path.join(__dirname, ".vscCallStats.json");
+let _callStats;
+function loadCallStats() {
+  if (_callStats !== undefined) return _callStats;
+  try { _callStats = JSON.parse(fs.readFileSync(VSC_CALLSTATS_FILE, "utf8")); } catch (_) { _callStats = null; }
+  return _callStats;
+}
+app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
+  const d = loadStaffPerf();
+  const cs = loadCallStats();
+  if (d && cs && cs.byUser) {
+    (d.users || []).forEach((u) => {
+      const c = cs.byUser[u.uid]; if (!c) return;
+      Object.keys(c).forEach((mk) => {
+        const t = u.months[mk] || (u.months[mk] = { deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
+        t.callIn = c[mk].in; t.callOut = c[mk].out; t.callMissed = c[mk].missed; t.talkSec = c[mk].talkSec;
+      });
+    });
+  }
+  return res.json({ success: true, data: d, callsTs: cs ? cs.ts : null });
+});
 function scheduleCityRevenueDaily() {
   const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000;
   (function nextRun() {
@@ -1425,9 +1447,23 @@ function saveMgrPay(m) { try { fs.writeFileSync(VSC_MGRPAY_FILE, JSON.stringify(
 // Читаем ОТДЕЛЬНО от дашборда: у замороженных месяцев в снимке этих полей нет
 // (снимок сделан раньше), а история нагрузки нужна с начала года. Заморозку не
 // трогаем — она про цифры дашборда. Кэш 6 часов.
-let _vscLoadBase = null, _vscLoadBaseAt = 0;
+// Кэш держим И на диске: после перезапуска процесса память пустая, а девять CSV
+// по Google-вкладкам читаются долго — раздел «ФОТ» в этот момент висел на спиннере.
+const VSC_LOADBASE_FILE = path.join(__dirname, ".vscLoadBase.json");
+let _vscLoadBase = null, _vscLoadBaseAt = 0, _vscLoadBaseRunning = false;
+function loadBaseFromDisk() {
+  if (_vscLoadBase) return _vscLoadBase;
+  try { const d = JSON.parse(fs.readFileSync(VSC_LOADBASE_FILE, "utf8")); if (d && d.data) { _vscLoadBase = d.data; _vscLoadBaseAt = d.ts || 0; } } catch (_) {}
+  return _vscLoadBase;
+}
+// Тёплый кэш отдаём СРАЗУ, свежее тянем в фоне (stale-while-revalidate, как дашборд).
+function vscStaffLoadBaseWarm() {
+  const cached = loadBaseFromDisk();
+  const stale = !cached || (Date.now() - _vscLoadBaseAt) > 6 * 3600 * 1000;
+  if (stale && !_vscLoadBaseRunning) { _vscLoadBaseRunning = true; vscStaffLoadBase().catch(() => {}).then(() => { _vscLoadBaseRunning = false; }); }
+  return cached;                                   // null только до самого первого расчёта
+}
 async function vscStaffLoadBase() {
-  if (_vscLoadBase && (Date.now() - _vscLoadBaseAt) < 6 * 3600 * 1000) return _vscLoadBase;
   const out = {};
   try {
     const tabs = vscMonthTabs(await vscDiscoverGids(VSC_PUB_BASE), {});
@@ -1465,14 +1501,32 @@ async function vscStaffLoadBase() {
       } catch (e) { /* вкладка недоступна — пропускаем, остальные читаются */ }
     }
   } catch (e) { console.error("vscStaffLoadBase:", e && e.message); }
-  if (Object.keys(out).length) { _vscLoadBase = out; _vscLoadBaseAt = Date.now(); }
+  if (Object.keys(out).length) {
+    _vscLoadBase = out; _vscLoadBaseAt = Date.now();
+    try { fs.writeFileSync(VSC_LOADBASE_FILE, JSON.stringify({ ts: _vscLoadBaseAt, data: out }), "utf8"); } catch (e) { console.error("saveLoadBase:", e.message); }
+    console.log("VSC LOADBASE: прочитано вкладок " + Object.keys(out).length);
+  }
   return _vscLoadBase || out;
 }
+// Фоновый прогрев раздела «ФОТ»: зарплатная таблица и база нагрузки. Обе живут в
+// Google, amoCRM здесь не трогаем вообще. Раз в 3 часа — вдвое чаще, чем протухает
+// кэш, поэтому пользователю всегда достаётся тёплое.
+(function scheduleFotPrewarm() {
+  const warm = () => {
+    Promise.resolve(zarplata.getZarplata()).catch((e) => console.error("FOT prewarm zarplata:", e && e.message));
+    vscStaffLoadBase().catch((e) => console.error("FOT prewarm loadbase:", e && e.message));
+  };
+  setTimeout(warm, 25 * 1000);
+  setInterval(warm, 3 * 3600 * 1000);
+})();
 app.get("/admin/api/vsc/zarplata", requireAdmin, async (req, res) => {
   try {
     const force = String(req.query.force || "") === "1";
     if (force) { _vscLoadBaseAt = 0; }
-    const [d, base] = await Promise.all([zarplata.getZarplata(force), vscStaffLoadBase()]);
+    // Ничего не ждём: отдаём тёплый кэш, свежее подтягивается фоном. Единственное
+    // ожидание — самый первый заход, когда снимка ещё нет ни на диске, ни в памяти.
+    const d = await zarplata.getZarplata(force);
+    const base = force ? await vscStaffLoadBase() : (vscStaffLoadBaseWarm() || await vscStaffLoadBase());
     return res.json({ success: true, data: d, managerPay: loadMgrPay(), cityRevenue: loadCityRev(), loadBase: base });
   } catch (e) {
     console.error("vsc zarplata:", e && e.message);
@@ -7408,12 +7462,30 @@ async function runFirstTouch(trigger) {
       }
       if (list.length < 250) break;
     }
+    const callStats = {};                       // сотрудник → месяц → звонки (побочный продукт съёма нот)
     // 2) Звонки (ноты call_in/call_out): earliest in / earliest out per lead
     for (let page = 1; page < 700; page++) {
       const data = await amoGet(`${baseUrl}/api/v4/leads/notes`, { limit: 250, page, "filter[note_type][0]": "call_in", "filter[note_type][1]": "call_out", "filter[updated_at][from]": String(from) });
       const list = (data && data._embedded && data._embedded.notes) || [];
       if (!list.length) break;
       for (const n of list) {
+        // Попутно копим статистику звонков по сотрудникам — тот же самый съём нот,
+        // дополнительной нагрузки на amoCRM ноль. Считаем ВСЕ ноты, а не только те,
+        // что попали в выборку лидов первого касания.
+        {
+          const d0 = new Date((n.created_at || 0) * 1000 + 3 * 3600 * 1000);
+          if (d0.getUTCFullYear() === FTOUCH_YEAR) {
+            const uid = String(n.responsible_user_id || n.created_by || "");
+            if (uid && uid !== "0") {
+              const mk = String(d0.getUTCMonth());
+              const um = callStats[uid] || (callStats[uid] = {});
+              const c = um[mk] || (um[mk] = { in: 0, out: 0, missed: 0, talkSec: 0 });
+              const dd = (n.params && +n.params.duration) || 0;
+              if (n.note_type === "call_in") { c.in++; if (!dd) c.missed++; } else if (n.note_type === "call_out") c.out++;
+              c.talkSec += dd;
+            }
+          }
+        }
         const L = leads[n.entity_id]; if (!L) continue;
         const t = n.created_at, dur = (n.params && +n.params.duration) || 0;
         if (n.note_type === "call_in") { if (L.inT == null || t < L.inT) { L.inT = t; L.inDur = dur; } }
@@ -7480,6 +7552,11 @@ async function runFirstTouch(trigger) {
     }
     const out = { ts: Date.now(), year: FTOUCH_YEAR, months };
     fs.writeFileSync(VSC_FTOUCH_FILE, JSON.stringify(out, null, 2), "utf8");
+    try {
+      fs.writeFileSync(VSC_CALLSTATS_FILE, JSON.stringify({ ts: Date.now(), year: FTOUCH_YEAR, byUser: callStats }), "utf8");
+      _callStats = undefined;
+      console.log("VSC CALLS: статистика звонков по " + Object.keys(callStats).length + " сотрудникам");
+    } catch (e) { console.error("saveCallStats:", e.message); }
     console.log(`VSC FTOUCH [${trigger || "cron"}]: месяцев ${Object.keys(months).length}, лидов ${Object.keys(leads).length}, ${Date.now() - t0run}ms`);
     return out;
   } catch (e) { console.error("runFirstTouch:", e && e.message); return { error: e && e.message }; }

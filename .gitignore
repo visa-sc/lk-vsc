@@ -191,3 +191,5 @@ akfin/fin.seed.json
 .vscSpbSnap.json
 .vscSpbLeads.json
 docs/staff-reports/
+.vscLoadBase.json
+.vscCallStats.json
