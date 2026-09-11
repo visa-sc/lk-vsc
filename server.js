@@ -6915,7 +6915,21 @@ function vscSboryExpSave(m) { try { fs.writeFileSync(VSC_SBORY_EXP_FILE, JSON.st
 // Колонки ищем ПО НАЗВАНИЯМ, а не по позиции: в январе-апреле вёрстка листа
 // другая (в январе сборы лежат в 87..96, с мая — в 98..107 = CU..DD).
 const VSC_SBORY_NAMES = ["ваучеры авиа", "регистрация", "подача", "фото", "консульские сборы", "услуги акк", "запись/бот", "сторонние курьеры", "страховка", "языковые переводы"];
-let _sboryCache = { at: 0, data: null };
+// Кэш «Запаса на сборы» тоже держим на диске: расчёт читает несколько Google-вкладок,
+// после перезапуска процесса память пустая и блок висел бы на спиннере.
+const VSC_SBORY_CACHE_FILE = path.join(__dirname, ".vscSboryCache.json");
+let _sboryCache = { at: 0, data: null }, _sboryRunning = false;
+function _sboryFromDisk() {
+  if (_sboryCache.data) return _sboryCache.data;
+  try { const d = JSON.parse(fs.readFileSync(VSC_SBORY_CACHE_FILE, "utf8")); if (d && d.data) _sboryCache = { at: d.ts || 0, data: d.data }; } catch (_) {}
+  return _sboryCache.data;
+}
+function vscSboryWarm() {
+  const cached = _sboryFromDisk();
+  const stale = !cached || (Date.now() - _sboryCache.at) > 30 * 60 * 1000;
+  if (stale && !_sboryRunning) { _sboryRunning = true; vscSboryData().catch(() => {}).then(() => { _sboryRunning = false; }); }
+  return cached;
+}
 async function vscSboryData() {
   if (_sboryCache.data && Date.now() - _sboryCache.at < 30 * 60 * 1000) return _sboryCache.data;
   const money = (v) => { const n = parseFloat(String(v == null ? "" : v).replace(/\s|\u00a0/g, "").replace(/₽|руб\.?/gi, "").replace(",", ".")); return isFinite(n) ? n : 0; };
@@ -6994,12 +7008,19 @@ async function vscSboryData() {
   const exp = vscSboryExpLoad();
   for (const k in out) if (exp[k] != null) out[k].expense = exp[k];
   _sboryCache = { at: Date.now(), data: out };
+  try { fs.writeFileSync(VSC_SBORY_CACHE_FILE, JSON.stringify({ ts: _sboryCache.at, data: out }), "utf8"); } catch (e) { console.error("saveSboryCache:", e.message); }
   return out;
 }
 app.get("/admin/api/vsc/sbory", requireVscDashboard, async (req, res) => {
-  try { res.json({ success: true, months: await vscSboryData() }); }
+  try { res.json({ success: true, months: vscSboryWarm() || await vscSboryData() }); }
   catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
+// Фоновый прогрев «Запаса на сборы»: через 55 секунд после старта и раз в полчаса.
+(function scheduleSboryPrewarm() {
+  const warm = () => { vscSboryData().catch((e) => console.error("SBORY prewarm:", e && e.message)); };
+  setTimeout(warm, 55 * 1000);
+  setInterval(warm, 30 * 60 * 1000);
+})();
 app.post("/admin/api/vsc/sbory-expense", requireAdmin, (req, res) => {
   const month = String((req.body && req.body.month) || "").trim();
   const v = req.body && req.body.expense;
@@ -7513,7 +7534,23 @@ async function runFirstTouch(trigger) {
       }
       if (list.length < 250) break;
     }
-    const callStats = {};                       // сотрудник → месяц → звонки (побочный продукт съёма нот)
+    // Звонки по сотрудникам — побочный продукт этого же съёма нот.
+    // Оператор берётся из created_by (кто зафиксировал звонок), а НЕ из
+    // responsible_user_id: тот показывает владельца сделки, и звонки размазывались
+    // по менеджерам вместо тех, кто реально снял трубку.
+    const callStats = {};
+    const addCall = (n) => {
+      const d0 = new Date((n.created_at || 0) * 1000 + 3 * 3600 * 1000);
+      if (d0.getUTCFullYear() !== FTOUCH_YEAR) return;
+      const uid = String(n.created_by || n.responsible_user_id || "");
+      if (!uid || uid === "0") return;
+      const mk = String(d0.getUTCMonth());
+      const um = callStats[uid] || (callStats[uid] = {});
+      const c = um[mk] || (um[mk] = { in: 0, out: 0, missed: 0, talkSec: 0 });
+      const dd = (n.params && +n.params.duration) || 0;
+      if (n.note_type === "call_in") { c.in++; if (!dd) c.missed++; } else if (n.note_type === "call_out") c.out++;
+      c.talkSec += dd;
+    };
     // 2) Звонки (ноты call_in/call_out): earliest in / earliest out per lead
     for (let page = 1; page < 700; page++) {
       const data = await amoGet(`${baseUrl}/api/v4/leads/notes`, { limit: 250, page, "filter[note_type][0]": "call_in", "filter[note_type][1]": "call_out", "filter[updated_at][from]": String(from) });
@@ -7523,20 +7560,7 @@ async function runFirstTouch(trigger) {
         // Попутно копим статистику звонков по сотрудникам — тот же самый съём нот,
         // дополнительной нагрузки на amoCRM ноль. Считаем ВСЕ ноты, а не только те,
         // что попали в выборку лидов первого касания.
-        {
-          const d0 = new Date((n.created_at || 0) * 1000 + 3 * 3600 * 1000);
-          if (d0.getUTCFullYear() === FTOUCH_YEAR) {
-            const uid = String(n.responsible_user_id || n.created_by || "");
-            if (uid && uid !== "0") {
-              const mk = String(d0.getUTCMonth());
-              const um = callStats[uid] || (callStats[uid] = {});
-              const c = um[mk] || (um[mk] = { in: 0, out: 0, missed: 0, talkSec: 0 });
-              const dd = (n.params && +n.params.duration) || 0;
-              if (n.note_type === "call_in") { c.in++; if (!dd) c.missed++; } else if (n.note_type === "call_out") c.out++;
-              c.talkSec += dd;
-            }
-          }
-        }
+        addCall(n);
         const L = leads[n.entity_id]; if (!L) continue;
         const t = n.created_at, dur = (n.params && +n.params.duration) || 0;
         if (n.note_type === "call_in") { if (L.inT == null || t < L.inT) { L.inT = t; L.inDur = dur; } }
@@ -7545,6 +7569,19 @@ async function runFirstTouch(trigger) {
       if (list.length < 250) break;
       if (page % 100 === 0) console.log("VSC FTOUCH: notes страница " + page + "…");
     }
+    // 2б) Звонки по КОНТАКТАМ: первая линия принимает вызовы по клиентам, у которых
+    // сделки ещё нет, и такие ноты лежат на контакте. Для первого касания они не
+    // нужны, а для статистики звонков это основная масса.
+    try {
+      for (let page = 1; page < 900; page++) {
+        const data = await amoGet(`${baseUrl}/api/v4/contacts/notes`, { limit: 250, page, "filter[note_type][0]": "call_in", "filter[note_type][1]": "call_out", "filter[updated_at][from]": String(from) });
+        const list = (data && data._embedded && data._embedded.notes) || [];
+        if (!list.length) break;
+        for (const n of list) addCall(n);
+        if (list.length < 250) break;
+        if (page % 100 === 0) console.log("VSC FTOUCH: ноты контактов, страница " + page + "…");
+      }
+    } catch (e) { console.error("VSC FTOUCH contacts/notes:", e && e.message); }
     // 3) Исходящие сообщения мессенджеров (события; created_by=0 — боты/рассылки, пропуск)
     try {
       for (let page = 1; page < 900; page++) {

@@ -194,3 +194,4 @@ docs/staff-reports/
 .vscLoadBase.json
 .vscCallStats.json
 .vscSpbPnl.json
+.vscSboryCache.json
