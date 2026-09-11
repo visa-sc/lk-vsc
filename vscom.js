@@ -221,7 +221,10 @@ const MAIL_TITLES = {
   "spain-ga": ["Заявка с spain.visa-sc.com/ga (ВНЖ Испании)", "spain.visa-sc.com: заявка"],
   "spain":    ["Заявка с spain.visa-sc.com (ВНЖ Испании)", "spain.visa-sc.com: заявка"],
   "ga":       ["Заявка с visa-sc.com/ga (английский лендинг, ВНЖ Испании)", "visa-sc.com: заявка"],
-  "card-ga":  ["Заявка с visa-sc.com/virtual_card (виртуальные карты)", "visa-sc.com/virtual_card: заявка"]
+  "card-ga":  ["Заявка с visa-sc.com/virtual_card (виртуальные карты)", "visa-sc.com/virtual_card: заявка"],
+  // Бразильские страницы ETA: пишут по-португальски, отвечать тоже по-португальски.
+  "br-gb":    ["Pedido de visa-sc.com/br/gb (ETA Reino Unido, PT-BR)", "br/gb: pedido ETA UK"],
+  "br-ca":    ["Pedido de visa-sc.com/br/canada (eTA Canadá, PT-BR)", "br/canada: pedido eTA Canadá"]
 };
 function formTitles(form) {
   return MAIL_TITLES[form] || ["Заявка с visa-sc.com (английский лендинг, ВНЖ Испании)", "visa-sc.com: заявка"];
