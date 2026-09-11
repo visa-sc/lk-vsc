@@ -1129,6 +1129,7 @@ const CITY_REV_STATUSES = [].concat(
 );
 const CITY_CF_DATE = 427242, CITY_CF_LEAD = 573762, CITY_CF_CONTACT = 571754;
 const CITY_CF_TOOK = 443488;                      // «Кто принял клиента» — специалист ОРК
+const CITY_CF_OPMGR = 453768;                     // «Менеджер ОП» — продажник, который привёл клиента
 // Отдел оформления: свои поля сделки. Первый этап — приём в работу, второй — доведение
 // до выдачи; «Дедлайн ОО» против «Даты бонуса ОО 2й ЭТАП» даёт просрочку (D% из
 // калькулятора Плинер). Значения-заглушки («АКК», «БОТ», «Запись не требуется»)
@@ -1170,7 +1171,7 @@ async function runCityRevenue(trigger) {
       const list = (data && data._embedded && data._embedded.contacts) || [];
       list.forEach((c) => { cmap[c.id] = _cityCfEnums(c, CITY_CF_CONTACT); });
     }
-    const months = {}, byUser = {}, dealsForNew = [], byKto = {}, byStage = {};
+    const months = {}, byUser = {}, dealsForNew = [], byKto = {}, byStage = {}, byOpMgr = {};
     for (const l of rev) {
       const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); const mk = String(ym.m);
       const price = Number(l.price) || 0;
@@ -1221,16 +1222,17 @@ async function runCityRevenue(trigger) {
           const dl = Number(_cityCfVal(l, OO_CF_DEADLINE)) || 0, done = Number(_cityCfVal(l, OO_CF_BONUS2)) || 0;
           if (dl > 0 && done > 0) { o.dlTotal++; if (done > dl) o.dlLate++; }
         });
-        // ВАЖНО: у отдела продаж сделку считаем по АВТОРУ (кто её завёл) — после
-        // продажи ответственный меняется на специалиста ОРК, и продажа «уезжает» из
-        // отчёта менеджера. У ОРК и оформления наоборот: там важен ответственный.
-        const aid = String(l.created_by || "");
-        if (aid) {
-          const am = byUser[aid] || (byUser[aid] = {});
-          const a2 = am[mk] || (am[mk] = { deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
-          a2.sold = (a2.sold || 0) + 1; a2.soldRev = (a2.soldRev || 0) + price;
-          if (isReturn) a2.soldReturns = (a2.soldReturns || 0) + 1;
+        // Отдел продаж: поле сделки «Менеджер ОП». Заполнено у всех сделок и
+        // закрывает весь объём месяца, включая повторных клиентов — они всё равно
+        // когда-то пришли через продажи. Ни «ответственный» (к оплате уже ОРК), ни
+        // «автор сделки» (повторную часто заводит сам ОРК) этого не дают.
+        const opm = String(_cityCfVal(l, CITY_CF_OPMGR) || "").trim();
+        if (opm) {
+          const om = byOpMgr[opm] || (byOpMgr[opm] = {});
+          const o2 = om[mk] || (om[mk] = { sold: 0, soldRev: 0, soldReturns: 0 });
+          o2.sold++; o2.soldRev += price; if (isReturn) o2.soldReturns++;
         }
+        const aid = String(l.created_by || "");
         const uid = String(l.responsible_user_id || "");
         if (uid) {
           const um = byUser[uid] || (byUser[uid] = {});
@@ -1257,7 +1259,7 @@ async function runCityRevenue(trigger) {
     // прохода по сделкам не делаем, только по контактам года (они нужны отделу продаж
     // для конверсии «контакт → продажа»). СТРОГО ПОСЛЕ сохранения выручки: этот кусок
     // длинный, и он не должен задерживать блок «Выручка по городам».
-    try { await buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, out, byStage); } catch (e) { console.error("STAFF PERF:", e && e.message); }
+    try { await buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, out, byStage, byOpMgr); } catch (e) { console.error("STAFF PERF:", e && e.message); }
     return result;
   } catch (e) { console.error("runCityRevenue:", e.message); _cityRevLog.unshift({ ts: Date.now(), trigger, error: e.message }); return { error: e.message }; }
   finally { _cityRevRunning = false; }
@@ -1283,7 +1285,7 @@ const STAFF_DEPT_BY_GROUP = [
   [/(^|\s)оп(\s|\d|$)|отдел\s*продаж|роп/i, "op"],
   [/(^|\s)оо(\s|$)|отдел\s*оформлени/i, "oo"]
 ];
-async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, byStage) {
+async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, byStage, byOpMgr) {
   // 1. Сотрудники и их группы.
   const users = {};
   for (let page = 1; page < 12; page++) {
@@ -1316,14 +1318,19 @@ async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, 
     const norm = (x) => String(x || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
     const ktoByName = {}; Object.keys(byKto || {}).forEach((n) => { ktoByName[norm(n)] = byKto[n]; });
     const stgByName = {}; Object.keys(byStage || {}).forEach((n) => { stgByName[norm(n)] = byStage[n]; });
+    const opByName = {}; Object.keys(byOpMgr || {}).forEach((n) => { opByName[norm(n)] = byOpMgr[n]; });
     const blank = () => ({ deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
     Object.keys(users).forEach((uid) => {
-      const k = ktoByName[norm(users[uid].name)], g = stgByName[norm(users[uid].name)];
-      if (!k && !g) return;
+      const k = ktoByName[norm(users[uid].name)], g = stgByName[norm(users[uid].name)], o = opByName[norm(users[uid].name)];
+      if (!k && !g && !o) return;
       const um = byUser[uid] || (byUser[uid] = {});
       if (k) Object.keys(k).forEach((mk) => {
         const t = um[mk] || (um[mk] = blank());
         t.took = k[mk].took; t.tookRev = k[mk].tookRev; t.tookReturns = k[mk].tookReturns;
+      });
+      if (o) Object.keys(o).forEach((mk) => {
+        const t = um[mk] || (um[mk] = blank());
+        t.sold = o[mk].sold; t.soldRev = o[mk].soldRev; t.soldReturns = o[mk].soldReturns;
       });
       if (g) Object.keys(g).forEach((mk) => {
         const t = um[mk] || (um[mk] = blank());
