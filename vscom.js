@@ -375,7 +375,9 @@ function mount(app, deps) {
       // card — переход по реферальной ссылке на выпуск карты: формы на той
       // странице нет, и это единственный след, что человек пошёл оформляться.
       const what = clean(b.messenger, 20);
-      if (!["whatsapp", "telegram", "card"].includes(what)) return;
+      // phone — клик по номеру на странице. Сам звонок мы не видим (номер не наш),
+      // но нажатие показывает намерение позвонить, а это уже сигнал интереса.
+      if (!["whatsapp", "telegram", "card", "phone"].includes(what)) return;
       saveClick({
         at: new Date().toISOString(),
         messenger: what,
