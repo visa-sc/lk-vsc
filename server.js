@@ -1219,7 +1219,7 @@ async function runCityRevenue(trigger) {
       }
     }
     const out = {};
-    Object.keys(months).forEach((mk) => { out[mk] = { total: Math.round(months[mk].total), spb: Math.round(months[mk].spb), msk: Math.round(months[mk].total - months[mk].spb), deals: months[mk].deals }; });
+    Object.keys(months).forEach((mk) => { out[mk] = { total: Math.round(months[mk].total), spb: Math.round(months[mk].spb), msk: Math.round(months[mk].total - months[mk].spb), deals: months[mk].deals, spbDeals: months[mk].spbDeals || 0 }; });
     const result = { ts: Date.now(), year: 2026, leads: rev.length, durationMs: Date.now() - t0, months: out };
     saveCityRev(result);
     _cityRevLog.unshift({ ts: result.ts, trigger: trigger || "cron", leads: rev.length, ms: result.durationMs }); _cityRevLog = _cityRevLog.slice(0, 30);
@@ -6468,6 +6468,54 @@ async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
   _taxLegRetCache[qkey] = { at: Date.now(), ttl: failed.length ? 2 * 60 * 1000 : 15 * 60 * 1000, data };
   return data;
 }
+// Реклама Санкт-Петербурга — НАПРЯМУЮ из Я.Директа (уточнение Андрея 11.09.2026):
+// берём все кампании, в названии которых есть SPB/СПБ (включая общую «Мск и СПБ»),
+// расход без НДС × 1,22. Сверено с его таблицей: январь, февраль, май, июнь и
+// август совпали до рубля; KPI-колонка «Рекламные расходы СПБ» отставала в свежих
+// месяцах, поэтому источник — сам Директ. Отчёт тяжёлый, кэш на сутки.
+const SPB_AD_RE = /spb|спб|piter|питер|санкт/i;
+let _spbAdCache = { at: 0, data: null };
+async function vscSpbAdByMonth() {
+  if (_spbAdCache.data && Date.now() - _spbAdCache.at < 12 * 3600 * 1000) return _spbAdCache.data;
+  if (!process.env.YANDEX_DIRECT_TOKEN) return {};
+  const headers = {
+    Authorization: "Bearer " + process.env.YANDEX_DIRECT_TOKEN,
+    "Accept-Language": "ru", "Client-Login": process.env.YANDEX_DIRECT_LOGIN || "",
+    "Content-Type": "application/json; charset=utf-8",
+    processingMode: "auto", returnMoneyInMicros: "false", skipReportHeader: "true", skipReportSummary: "true",
+  };
+  const body = { params: {
+    SelectionCriteria: { DateFrom: "2026-01-01", DateTo: "2026-12-31" },
+    FieldNames: ["CampaignName", "Month", "Cost"],
+    ReportName: "spb-ad-" + Date.now(), ReportType: "CAMPAIGN_PERFORMANCE_REPORT",
+    DateRangeType: "CUSTOM_DATE", Format: "TSV", IncludeVAT: "NO", IncludeDiscount: "NO",
+  } };
+  let text = null;
+  for (let i = 0; i < 20; i++) {
+    const r = await axios.post("https://api.direct.yandex.com/json/v5/reports", body, {
+      headers, timeout: 120000, validateStatus: () => true, responseType: "text", transformResponse: [(d) => d],
+    });
+    if (r.status === 200) { text = String(r.data); break; }
+    if (r.status === 201 || r.status === 202) { await new Promise((s) => setTimeout(s, 5000)); continue; }
+    console.error("spb ad report: HTTP " + r.status + " " + String(r.data).slice(0, 150));
+    return _spbAdCache.data || {};
+  }
+  if (!text) return _spbAdCache.data || {};
+  const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+  const out = {};
+  for (const line of text.trim().split("\n")) {
+    const [name, monthRaw, cost] = line.split("\t");
+    if (!name || !monthRaw || !SPB_AD_RE.test(name)) continue;
+    const mm = String(monthRaw).slice(0, 7).split("-");
+    if (mm.length < 2) continue;
+    const key = MONF[Number(mm[1]) - 1] + " " + mm[0];
+    out[key] = (out[key] || 0) + (parseFloat(cost) || 0) * 1.22;   // с НДС, как в модели Андрея
+  }
+  for (const k in out) out[k] = Math.round(out[k]);
+  _spbAdCache = { at: Date.now(), data: out };
+  return out;
+}
+
 // ═══ Прибыль Санкт-Петербурга — по методике Андрея (11.09.2026) ══════════════
 // Его таблица считает так (сверено до копейки на августе: итог 122 138,39):
 //   выручка СПб − ФОТ ОРК СПб − взносы (25% ФОТ) − налог (3% выручки)
@@ -6477,6 +6525,32 @@ async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
 // отдел «ОРК Санкт-Петербург»; реклама — KPI-лист, колонка «Рекламные расходы
 // СПБ» (Grand total); возвраты — отчёт по возвратам, колонка «Услуги» строк с
 // филиалом СПб. Остальное — фиксированные суммы из его модели.
+// Выручка города «уплывает»: сделки переносят между городами и статусами задним
+// числом, поэтому живой пересчёт расходится со снимком, по которому Андрей считал
+// месяц. Чтобы прошлое не менялось, закрытые месяцы ФИКСИРУЕМ: январь–июль взяты
+// из его таблицы, дальше снимок делается сам при первом расчёте после закрытия
+// месяца (4-е число следующего) и больше не пересчитывается.
+const SPB_REV_SEED = {
+  "Январь 2026": 1963904, "Февраль 2026": 2151584, "Март 2026": 2054077, "Апрель 2026": 2957631,
+  "Май 2026": 1953202, "Июнь 2026": 1659012, "Июль 2026": 2153513,
+};
+// Реклама закрытых месяцев тоже фиксируется: в Директе суммы прошлых периодов
+// корректируются задним числом (возвраты средств, пересчёты), а месяц уже закрыт.
+const SPB_AD_SEED = {
+  "Январь 2026": 372910.78, "Февраль 2026": 369177.96, "Март 2026": 336537.14, "Апрель 2026": 358241.92,
+  "Май 2026": 375680.06, "Июнь 2026": 354903.51, "Июль 2026": 372325.74, "Август 2026": 296942.80,
+};
+// Сделки и лиды города: за закрытые месяцы — из таблицы Андрея, дальше сделки
+// считает ночной съём amoCRM (spbDeals), лиды пока фиксируются снимком.
+const SPB_DEALS_SEED = { "Январь 2026": 93, "Февраль 2026": 102, "Март 2026": 98, "Апрель 2026": 138, "Май 2026": 91, "Июнь 2026": 79, "Июль 2026": 92, "Август 2026": 79 };
+const SPB_LEADS_SEED = { "Январь 2026": 379, "Февраль 2026": 390, "Март 2026": 398, "Апрель 2026": 418, "Май 2026": 389, "Июнь 2026": 339, "Июль 2026": 318, "Август 2026": 200 };
+const SPB_FOT_SEED = {
+  "Январь 2026": 485525.45, "Февраль 2026": 561241.04, "Март 2026": 572573.98, "Апрель 2026": 675402.74,
+  "Май 2026": 520361.21, "Июнь 2026": 542738.80, "Июль 2026": 612560.29,
+};
+const SPB_SNAP_FILE = path.join(__dirname, ".vscSpbSnap.json");
+function spbSnapLoad() { try { return JSON.parse(fs.readFileSync(SPB_SNAP_FILE, "utf8")) || {}; } catch (_) { return {}; } }
+function spbSnapSave(m) { try { fs.writeFileSync(SPB_SNAP_FILE, JSON.stringify(m, null, 2), "utf8"); } catch (e) { console.error("spbSnapSave:", e.message); } }
 const SPB_FIX = { rent: 70000, couriers: 30000, other: 25000, backOffice: 30000, fotOP: 100000, fotOO: 75000, fotUpr: 50000, fotMkt: 30000, fotPL: 30000 };
 const SPB_CONTRIB_RATE = 0.25, SPB_TAX_RATE = 0.03, SPB_ACQ_RATE = 0.021;
 let _spbCache = { at: 0, data: null };
@@ -6491,23 +6565,10 @@ async function vscSpbPnl() {
     const mi = Number(mk); if (isNaN(mi)) continue;
     out[MONF[mi] + " 2026"] = { revenue: cr.months[mk].spb || 0, share: cr.months[mk].total ? (cr.months[mk].spb / cr.months[mk].total) : null };
   }
-  // 2) Реклама СПб — KPI-лист, Grand total
+  // 2) Реклама СПб — из Я.Директа по кампаниям со словом СПБ (с НДС)
   try {
-    const disc = await vscDiscoverGids(VSC_PUB_BASE).catch(() => null);
-    const tabs = vscMonthTabs(disc, Object.fromEntries(VSC_SHEETS.map((t) => [t.name, t.gid])));
-    for (const tab of tabs) {
-      if (!out[tab.name]) continue;
-      try {
-        const r = await axios.get(VSC_PUB_BASE + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
-        const R = vscParseCsv(r.data);
-        const gt = R.findIndex((row) => /grand total/i.test(String((row || [])[0] || "")));
-        if (gt < 0) continue;
-        for (let j = 0; j < (R[gt] || []).length + 20; j++) {
-          const nm = [0, 1, 2, 3, 4].map((i) => String(((R[i] || [])[j]) || "").replace(/\s+/g, " ").trim()).filter(Boolean).join(" / ");
-          if (/рекламные расходы спб/i.test(nm)) { out[tab.name].ad = money((R[gt] || [])[j]); break; }
-        }
-      } catch (e) { console.error("spb ad " + tab.name + ":", e.message); }
-    }
+    const ads = await vscSpbAdByMonth();
+    for (const name in out) if (ads[name] != null) out[name].ad = ads[name];
   } catch (e) { console.error("spb ad:", e.message); }
   // 3) Возвраты СПб — «Услуги» по строкам филиала Санкт-Петербург
   try {
@@ -6533,7 +6594,10 @@ async function vscSpbPnl() {
       } catch (e) { console.error("spb ret " + tab.name + ":", e.message); }
     }
   } catch (e) { console.error("spb ret:", e.message); }
-  // 4) ФОТ отдела ОРК Санкт-Петербург + расчёт итога
+  // 4) Закрытые месяцы — из снимка (или из сид-значений таблицы Андрея)
+  const snap = spbSnapLoad();
+  let snapDirty = false;
+  // 5) ФОТ отдела ОРК Санкт-Петербург + расчёт итога
   let zar = null;
   try { zar = await zarplata.getZarplata(false); } catch (e) { console.error("spb zarplata:", e.message); }
   const fixSum = Object.values(SPB_FIX).reduce((a, b) => a + b, 0);
@@ -6542,6 +6606,19 @@ async function vscSpbPnl() {
     const rec = out[name];
     const zm = zar && zar.months && zar.months[name];
     rec.fot = (zm && zm.depts && zm.depts.orkSpb) ? Math.round(zm.depts.orkSpb.accrued || 0) : null;
+    // Закрытый месяц: выручка и ФОТ берутся зафиксированными, живой пересчёт их не двигает.
+    const mIdx = MONF.indexOf(name.replace(/\s*20\d\d/, ""));
+    const closed = mIdx >= 0 && nowMsk.getTime() >= Date.UTC(2026, mIdx + 1, 4);
+    if (SPB_REV_SEED[name] != null) rec.revenue = SPB_REV_SEED[name];
+    if (SPB_FOT_SEED[name] != null) rec.fot = Math.round(SPB_FOT_SEED[name]);
+    if (SPB_AD_SEED[name] != null) rec.ad = Math.round(SPB_AD_SEED[name]);
+    if (snap[name]) {
+      if (snap[name].revenue != null) rec.revenue = snap[name].revenue;
+      if (snap[name].fot != null) rec.fot = snap[name].fot;
+      if (snap[name].ad != null) rec.ad = snap[name].ad;
+    } else if (closed && rec.revenue && rec.fot != null && rec.ad != null) {
+      snap[name] = { revenue: rec.revenue, fot: rec.fot, ad: rec.ad, at: Date.now() }; snapDirty = true;
+    }
     rec.contrib = rec.fot != null ? Math.round(rec.fot * SPB_CONTRIB_RATE) : null;
     rec.tax = Math.round(rec.revenue * SPB_TAX_RATE);
     rec.acquiring = Math.round(rec.revenue * SPB_ACQ_RATE);
@@ -6549,10 +6626,18 @@ async function vscSpbPnl() {
     if (rec.fot != null && rec.ad != null && rec.returns != null) {
       rec.profit = Math.round(rec.revenue - rec.fot - rec.contrib - rec.tax - rec.ad - rec.acquiring - (rec.returns || 0) - fixSum);
     } else rec.profit = null;
+    // Показатели города (колонки из таблицы Андрея): ДРР, ATV, CV.
+    rec.drr = (rec.ad != null && rec.revenue) ? Math.round(rec.ad / rec.revenue * 1000) / 10 : null;
+    const cnt = (cr && cr.months && cr.months[String(MONF.indexOf(name.replace(/\s*20\d\d/, "")))]) || null;
+    rec.deals = SPB_DEALS_SEED[name] != null ? SPB_DEALS_SEED[name] : ((cnt && cnt.spbDeals) || null);
+    rec.leads = SPB_LEADS_SEED[name] != null ? SPB_LEADS_SEED[name] : null;
+    rec.atv = (rec.deals) ? Math.round(rec.revenue / rec.deals) : null;
+    rec.cv = (rec.deals && rec.leads) ? Math.round(rec.deals / rec.leads * 1000) / 10 : null;
     // месяц закрыт только с 4-го числа следующего
     const mi = MONF.indexOf(name.replace(/\s*20\d\d/, ""));
     if (mi >= 0 && nowMsk.getTime() < Date.UTC(2026, mi + 1, 4)) delete out[name];
   }
+  if (snapDirty) spbSnapSave(snap);
   _spbCache = { at: Date.now(), data: out };
   return out;
 }

@@ -5169,27 +5169,36 @@
           }), "money"));
           const TD = 'style="padding:6px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;"';
           const TH = 'style="padding:6px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;font-size:12px;"';
-          let html = '<div style="overflow-x:auto;margin-top:14px;"><table style="width:100%;min-width:900px;border-collapse:collapse;font-size:12.5px;">'
+          let html = '<div style="overflow-x:auto;margin-top:14px;"><table style="width:100%;min-width:1180px;border-collapse:collapse;font-size:12.5px;">'
             + '<tr><th ' + TH.replace("right", "left") + '>Месяц</th><th ' + TH + '>Выручка</th><th ' + TH + '>ФОТ</th><th ' + TH + '>Взносы</th>'
             + '<th ' + TH + '>Налог</th><th ' + TH + '>Реклама</th><th ' + TH + '>Эквайринг</th><th ' + TH + '>Возвраты</th>'
-            + '<th ' + TH + '>Постоянные</th><th ' + TH + '>Итог</th></tr>';
-          let sum = { revenue: 0, fot: 0, contrib: 0, tax: 0, ad: 0, acquiring: 0, returns: 0, fixed: 0, profit: 0 };
+            + '<th ' + TH + '>Постоянные</th><th ' + TH + '>Сделок</th><th ' + TH + '>Лидов</th>'
+            + '<th ' + TH + '>Итог</th><th ' + TH + '>ДРР</th><th ' + TH + '>CV</th><th ' + TH + '>ATV</th></tr>';
+          let sum = { revenue: 0, fot: 0, contrib: 0, tax: 0, ad: 0, acquiring: 0, returns: 0, fixed: 0, profit: 0, deals: 0, leads: 0 };
           names.forEach(function (n) {
             const m = ms[n];
-            ["revenue", "fot", "contrib", "tax", "ad", "acquiring", "returns", "fixed", "profit"].forEach(function (k) { sum[k] += (m[k] || 0); });
+            ["revenue", "fot", "contrib", "tax", "ad", "acquiring", "returns", "fixed", "profit", "deals", "leads"].forEach(function (k) { sum[k] += (m[k] || 0); });
             const col = m.profit >= 0 ? "#2c7a43" : "#b0263a";
             html += '<tr><td ' + TD.replace("right", "left") + '><b>' + escapeHtml(n.replace(/\s*20\d\d/, "")) + '</b></td>'
               + '<td ' + TD + '>' + money(m.revenue) + '</td><td ' + TD + '>' + money(m.fot) + '</td><td ' + TD + '>' + money(m.contrib) + '</td>'
               + '<td ' + TD + '>' + money(m.tax) + '</td><td ' + TD + '>' + money(m.ad) + '</td><td ' + TD + '>' + money(m.acquiring) + '</td>'
               + '<td ' + TD + '>' + money(m.returns) + '</td><td ' + TD + '>' + money(m.fixed) + '</td>'
-              + '<td ' + TD.replace('style="', 'style="color:' + col + ';font-weight:700;') + '>' + money(m.profit) + '</td></tr>';
+              + '<td ' + TD + '>' + (m.deals != null ? m.deals : "—") + '</td><td ' + TD + '>' + (m.leads != null ? m.leads : "—") + '</td>'
+              + '<td ' + TD.replace('style="', 'style="color:' + col + ';font-weight:700;') + '>' + money(m.profit) + '</td>'
+              + '<td ' + TD + '>' + (m.drr != null ? String(m.drr).replace(".", ",") + "%" : "—") + '</td>'
+              + '<td ' + TD + '>' + (m.cv != null ? String(m.cv).replace(".", ",") + "%" : "—") + '</td>'
+              + '<td ' + TD + '>' + (m.atv != null ? Math.round(m.atv).toLocaleString("ru-RU") : "—") + '</td></tr>';
           });
           const colT = sum.profit >= 0 ? "#2c7a43" : "#b0263a";
           html += '<tr><td ' + TD.replace("right", "left") + '><b>Итого</b></td>'
             + '<td ' + TD + '><b>' + money(sum.revenue) + '</b></td><td ' + TD + '><b>' + money(sum.fot) + '</b></td><td ' + TD + '><b>' + money(sum.contrib) + '</b></td>'
             + '<td ' + TD + '><b>' + money(sum.tax) + '</b></td><td ' + TD + '><b>' + money(sum.ad) + '</b></td><td ' + TD + '><b>' + money(sum.acquiring) + '</b></td>'
             + '<td ' + TD + '><b>' + money(sum.returns) + '</b></td><td ' + TD + '><b>' + money(sum.fixed) + '</b></td>'
-            + '<td ' + TD.replace('style="', 'style="color:' + colT + ';font-weight:800;') + '>' + money(sum.profit) + '</td></tr>';
+            + '<td ' + TD + '><b>' + (sum.deals || "—") + '</b></td><td ' + TD + '><b>' + (sum.leads || "—") + '</b></td>'
+            + '<td ' + TD.replace('style="', 'style="color:' + colT + ';font-weight:800;') + '>' + money(sum.profit) + '</td>'
+            + '<td ' + TD + '><b>' + (sum.revenue ? (Math.round(sum.ad / sum.revenue * 1000) / 10).toString().replace(".", ",") + "%" : "—") + '</b></td>'
+            + '<td ' + TD + '><b>' + (sum.deals && sum.leads ? (Math.round(sum.deals / sum.leads * 1000) / 10).toString().replace(".", ",") + "%" : "—") + '</b></td>'
+            + '<td ' + TD + '><b>' + (sum.deals ? Math.round(sum.revenue / sum.deals).toLocaleString("ru-RU") : "—") + '</b></td></tr>';
           html += '</table></div>';
           html += '<div style="font-size:12px;color:#6b7280;margin-top:10px;">Рентабельность города: <b>' + (sum.revenue ? (Math.round(sum.profit / sum.revenue * 1000) / 10) + "%" : "—") + '</b>'
             + ' · постоянные расходы месяца: аренда 70 000, курьеры 30 000, прочее 25 000, бэк-офис 30 000, ФОТ общих отделов 285 000 — всего 440 000 ₽.</div>';
