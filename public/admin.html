@@ -3989,9 +3989,10 @@
                 sold: x.sold || 0, soldNew: x.soldNew || 0, soldRev: x.soldRev || 0,
                 atv: x.deals ? x.revenue / x.deals : null,
                 soldAtv: x.sold ? x.soldRev / x.sold : null,
-                // Конверсия отдела продаж — как в их недельном стафе: продажи по новым
-                // заявкам к набранным контактам этого же менеджера.
-                conv: x.contacts ? ((x.soldNew || 0) / x.contacts * 100) : null,
+                // Конверсия отдела продаж: его продажи к его же набранным контактам.
+                // «По новым заявкам» отдельной колонкой — там контакт заведён в том же
+                // месяце, что и оплата, и в конверсию эта отсечка не идёт.
+                conv: x.contacts ? ((x.sold || 0) / x.contacts * 100) : null,
                 retPct: x.deals ? (x.returns / x.deals * 100) : null,
                 days: x.closedCnt ? (x.closedDays / x.closedCnt) : null
               };
@@ -4037,7 +4038,7 @@
             const tot = rows.reduce((a, r) => ({ deals: a.deals + r.deals, revenue: a.revenue + r.revenue, returns: a.returns + r.returns, contacts: a.contacts + r.contacts, sold: a.sold + r.sold, soldNew: a.soldNew + r.soldNew, soldRev: a.soldRev + r.soldRev }), { deals: 0, revenue: 0, returns: 0, contacts: 0, sold: 0, soldNew: 0, soldRev: 0 });
             tot.atv = tot.deals ? tot.revenue / tot.deals : null;
             tot.soldAtv = tot.sold ? tot.soldRev / tot.sold : null;
-            tot.conv = tot.contacts ? tot.soldNew / tot.contacts * 100 : null;
+            tot.conv = tot.contacts ? tot.sold / tot.contacts * 100 : null;
             tot.retPct = tot.deals ? tot.returns / tot.deals * 100 : null;
             tot.days = null;
             const tl = "padding:9px 8px;border-top:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;background:#fafbfd;";
