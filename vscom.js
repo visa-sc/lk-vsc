@@ -256,7 +256,10 @@ const MAIL_TITLES = {
   "card-ga":  ["Заявка с visa-sc.com/virtual_card (виртуальные карты)", "visa-sc.com/virtual_card: заявка"],
   // Бразильские страницы ETA: пишут по-португальски, отвечать тоже по-португальски.
   "br-gb":    ["Pedido de visa-sc.com/br/gb (ETA Reino Unido, PT-BR)", "br/gb: pedido ETA UK"],
-  "br-ca":    ["Pedido de visa-sc.com/br/canada (eTA Canadá, PT-BR)", "br/canada: pedido eTA Canadá"]
+  "br-ca":    ["Pedido de visa-sc.com/br/canada (eTA Canadá, PT-BR)", "br/canada: pedido eTA Canadá"],
+  "es-gb":    ["Solicitud de visa-sc.com/es/gb (ETA Reino Unido, ES)", "es/gb: solicitud ETA UK"],
+  "it-gb":    ["Richiesta da visa-sc.com/it/gb (ETA Regno Unito, IT)", "it/gb: richiesta ETA UK"],
+  "us-gb":    ["Application from visa-sc.com/us/gb (UK ETA, EN-US)", "us/gb: UK ETA application"]
 };
 function formTitles(form) {
   return MAIL_TITLES[form] || ["Заявка с visa-sc.com (английский лендинг, ВНЖ Испании)", "visa-sc.com: заявка"];
