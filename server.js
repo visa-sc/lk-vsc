@@ -6542,6 +6542,97 @@ async function vscSpbAdByMonth() {
   return out;
 }
 
+// ── Лиды Санкт-Петербурга (фильтр Андрея из amoCRM, 11.09.2026) ─────────────
+// Контакт считается лидом города, если он СОЗДАН в этом месяце, в поле «Источник»
+// у него стоит СПБ и есть хотя бы одна сделка в рабочем статусе (мусор, спам и
+// дубли в его фильтре не перечислены, поэтому такие контакты не в счёт).
+// Сверено с его таблицей: август 200, июль 318 — совпало точно.
+// Считается РАЗ В СУТКИ ночью и только для незакрытых месяцев, всё через лимитер
+// низким приоритетом: ~14 запросов на месяц, для amoCRM это незаметно.
+const SPB_LEAD_STATUSES = new Set([].concat(
+  [10687611, 10687614, 12122583, 14133133, 142, 143, 21411408, 21914946, 64030065, 81648369, 81648373, 81648377, 83715629, 85862533, 85963077].map((x) => "138231:" + x),
+  [142, 143, 21232020, 21232023, 21256203, 21256455, 21256458, 21256761, 21271227, 21271230, 30302436, 70381749, 70957793, 70957929, 76835705, 76836473].map((x) => "1309524:" + x),
+  [142, 143, 21256590, 21256593, 21256668, 22535466, 26918115, 43200834, 58405049, 58405421, 58406233, 61251437, 76836369].map((x) => "1312578:" + x)
+));
+const SPB_LEADS_FILE = path.join(__dirname, ".vscSpbLeads.json");
+function spbLeadsLoad() { try { return JSON.parse(fs.readFileSync(SPB_LEADS_FILE, "utf8")) || {}; } catch (_) { return {}; } }
+function spbLeadsSave(m) { try { fs.writeFileSync(SPB_LEADS_FILE, JSON.stringify(m, null, 2), "utf8"); } catch (e) { console.error("spbLeadsSave:", e.message); } }
+async function vscSpbLeadsMonth(year, mi) {
+  const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+  const from = Math.floor(Date.UTC(year, mi, 1) / 1000) - 3 * 3600;
+  const to = Math.floor(Date.UTC(year, mi + 1, 1) / 1000) - 3 * 3600 - 1;
+  const contactLeads = new Map(); const leadIds = new Set();
+  for (let page = 1; page < 80; page++) {
+    let data;
+    try {
+      data = await amoGet(`${baseUrl}/api/v4/contacts`, {
+        limit: 250, page, with: "leads",
+        "filter[created_at][from]": String(from), "filter[created_at][to]": String(to),
+      });
+    } catch (e) { if (e && e.response && e.response.status === 204) break; throw e; }
+    const list = (data && data._embedded && data._embedded.contacts) || [];
+    if (!list.length) break;
+    for (const c of list) {
+      const cf = (c.custom_fields_values || []).find((f) => Number(f.field_id) === CITY_CF_CONTACT);
+      const vals = cf && cf.values ? cf.values.map((v) => Number(v.enum_id)) : [];
+      if (!vals.includes(CITY_F1_CONTACT)) continue;           // 1090888 — «Источник» = СПБ
+      const ids = ((c._embedded && c._embedded.leads) || []).map((l) => Number(l.id));
+      contactLeads.set(c.id, ids);
+      ids.forEach((id) => leadIds.add(id));
+    }
+    if (list.length < 250) break;
+  }
+  const stOf = {};
+  const uniq = [...leadIds];
+  for (let i = 0; i < uniq.length; i += 250) {
+    const p = { limit: 250 };
+    uniq.slice(i, i + 250).forEach((id, k) => { p["filter[id][" + k + "]"] = String(id); });
+    try {
+      const data = await amoGet(`${baseUrl}/api/v4/leads`, p);
+      for (const l of ((data && data._embedded && data._embedded.leads) || [])) stOf[l.id] = l.pipeline_id + ":" + l.status_id;
+    } catch (e) { if (!(e && e.response && e.response.status === 204)) throw e; }
+  }
+  let leads = 0;
+  for (const ids of contactLeads.values()) if (ids.some((id) => SPB_LEAD_STATUSES.has(stOf[id]))) leads++;
+  return leads;
+}
+let _spbLeadsRunning = false;
+async function vscSpbLeadsRefresh(trigger) {
+  if (_spbLeadsRunning) return { skipped: true };
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
+  _spbLeadsRunning = true;
+  const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+  const store = spbLeadsLoad();
+  const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
+  try {
+    for (let mi = 0; mi <= nowMsk.getUTCMonth(); mi++) {
+      const name = MONF[mi] + " 2026";
+      if (SPB_LEADS_SEED[name] != null) continue;                       // закрытые месяцы — из таблицы Андрея
+      const closed = nowMsk.getTime() >= Date.UTC(2026, mi + 1, 4);
+      if (closed && store[name] && store[name].final) continue;         // закрытый месяц уже зафиксирован
+      const leads = await vscSpbLeadsMonth(2026, mi);
+      store[name] = { leads, final: closed, at: Date.now() };
+      console.log(`VSC SPB LEADS [${trigger || "cron"}]: ${name} = ${leads}`);
+    }
+    spbLeadsSave(store);
+    _spbCache = { at: 0, data: null };                                   // пересобрать прибыль города
+    return store;
+  } catch (e) { console.error("vscSpbLeadsRefresh:", e && e.message); return { error: e && e.message }; }
+  finally { _spbLeadsRunning = false; }
+}
+// Раз в сутки в 01:10 МСК, самым низким приоритетом.
+setTimeout(() => { if (!Object.keys(spbLeadsLoad()).length) Promise.resolve(amoBg(() => vscSpbLeadsRefresh("startup"))).catch(() => {}); }, 300 * 1000);
+(function scheduleSpbLeads() {
+  const MSK = 3 * 3600 * 1000, DAY = 86400000;
+  (function next() {
+    const now = Date.now() + MSK;
+    let target = Math.floor(now / DAY) * DAY + 70 * 60 * 1000;           // 01:10 МСК
+    if (target <= now) target += DAY;
+    setTimeout(() => { Promise.resolve(amoBg(() => vscSpbLeadsRefresh("cron"))).catch(() => {}); next(); }, Math.max(1000, target - now));
+  })();
+  console.log("VSC SPB LEADS: раз в сутки 01:10 МСК (лимитер, низкий приоритет)");
+})();
+
 // ═══ Прибыль Санкт-Петербурга — по методике Андрея (11.09.2026) ══════════════
 // Его таблица считает так (сверено до копейки на августе: итог 122 138,39):
 //   выручка СПб − ФОТ ОРК СПб − взносы (25% ФОТ) − налог (3% выручки)
@@ -6622,6 +6713,7 @@ async function vscSpbPnl() {
   } catch (e) { console.error("spb ret:", e.message); }
   // 4) Закрытые месяцы — из снимка (или из сид-значений таблицы Андрея)
   const snap = spbSnapLoad();
+  const spbLeadsStore = spbLeadsLoad();
   let snapDirty = false;
   // 5) ФОТ отдела ОРК Санкт-Петербург + расчёт итога
   let zar = null;
@@ -6656,7 +6748,8 @@ async function vscSpbPnl() {
     rec.drr = (rec.ad != null && rec.revenue) ? Math.round(rec.ad / rec.revenue * 1000) / 10 : null;
     const cnt = (cr && cr.months && cr.months[String(MONF.indexOf(name.replace(/\s*20\d\d/, "")))]) || null;
     rec.deals = SPB_DEALS_SEED[name] != null ? SPB_DEALS_SEED[name] : ((cnt && cnt.spbDeals) || null);
-    rec.leads = SPB_LEADS_SEED[name] != null ? SPB_LEADS_SEED[name] : null;
+    const lv = spbLeadsStore[name];
+    rec.leads = SPB_LEADS_SEED[name] != null ? SPB_LEADS_SEED[name] : (lv && lv.leads != null ? lv.leads : null);
     rec.atv = (rec.deals) ? Math.round(rec.revenue / rec.deals) : null;
     rec.cv = (rec.deals && rec.leads) ? Math.round(rec.deals / rec.leads * 1000) / 10 : null;
     // месяц закрыт только с 4-го числа следующего
