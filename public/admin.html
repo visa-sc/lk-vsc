@@ -2903,7 +2903,20 @@
           wrap.appendChild(e); return wrap;
         }
         const VW = 1000, VH = 160, PT = 12, PB = 148, PL = 8, PR = 8; // виртуальная ширина; высота 1:1 к px
-        const allVals = []; pts.forEach((p) => lineDefs.forEach((ld) => { const v = valOf(p.s, ld.key); if (v != null) allVals.push(v); }));
+        // ld.own — у кривой своя шкала (когда на одном графике рубли и проценты):
+        // она рисуется по собственному диапазону, в тултипе — честное значение.
+        const ownOf = {};
+        lineDefs.forEach((ld) => {
+          if (!ld.own) return;
+          const vv = pts.map((p) => valOf(p.s, ld.key)).filter((v) => v != null);
+          if (!vv.length) return;
+          let lo = Math.min.apply(null, vv), hi = Math.max.apply(null, vv);
+          if (hi === lo) { hi += 1; lo -= 1; }
+          ownOf[ld.key] = { lo: lo, hi: hi };
+        });
+        const fmtOf = (ld) => (ld && ld.fmt) || kpi.fmt;
+        const allVals = []; pts.forEach((p) => lineDefs.forEach((ld) => { if (ld.own) return; const v = valOf(p.s, ld.key); if (v != null) allVals.push(v); }));
+        if (!allVals.length) pts.forEach((p) => lineDefs.forEach((ld) => { const v = valOf(p.s, ld.key); if (v != null) allVals.push(v); }));
         let vMin = Math.min.apply(null, allVals), vMax = Math.max.apply(null, allVals);
         if (kpi.fmt !== "signed" && vMin > 0) vMin = Math.min(vMin, vMin * 0.95); // чуть воздуха снизу
         if (vMax === vMin) { vMax += 1; vMin -= 1; }
@@ -2923,8 +2936,29 @@
         let grid = gridLine(PT) + gridLine((PT + PB) / 2) + gridLine(PB);
         if (vMin < 0 && vMax > 0) grid += gridLine(Y(0), true); // ось нуля для знаковых
         const polySvg = lineDefs.map((ld, li) => {
-          const lp = pts.map((p, i) => { const v = valOf(p.s, ld.key); return v == null ? null : X(i).toFixed(1) + "," + Y(v).toFixed(1); }).filter(Boolean).join(" ");
-          return lp ? '<polyline points="' + lp + '" fill="none" stroke="' + (ld.color || "#4a90d9") + '" stroke-width="' + (li === 0 ? 2.5 : 2) + '" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>' : "";
+          const own = ownOf[ld.key];
+          const Yl = own ? ((v) => PT + (1 - (v - own.lo) / (own.hi - own.lo)) * (PB - PT)) : Y;
+          const raw = pts.map((p, i) => { const v = valOf(p.s, ld.key); return v == null ? null : { x: X(i), y: Yl(v), v: v }; }).filter(Boolean);
+          if (!raw.length) return "";
+          const w = (li === 0 ? 2.5 : 2), base = ld.color || "#4a90d9";
+          // kpi.negRed — часть кривой ниже нуля красим красным, с точкой пересечения оси.
+          if (!kpi.negRed) {
+            return '<polyline points="' + raw.map((q) => q.x.toFixed(1) + "," + q.y.toFixed(1)).join(" ") + '" fill="none" stroke="' + base + '" stroke-width="' + w + '" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>';
+          }
+          const segs = []; let cur = [raw[0]], neg = raw[0].v < 0;
+          for (let i = 1; i < raw.length; i++) {
+            const a0 = raw[i - 1], b0 = raw[i], nb = b0.v < 0;
+            if (nb !== neg && (b0.v - a0.v) !== 0) {
+              const t = (0 - a0.v) / (b0.v - a0.v);                 // где кривая пересекает ноль
+              const cross = { x: a0.x + (b0.x - a0.x) * t, y: Y(0), v: 0 };
+              cur.push(cross); segs.push({ neg: neg, pts: cur });
+              cur = [cross, b0]; neg = nb;
+            } else cur.push(b0);
+          }
+          segs.push({ neg: neg, pts: cur });
+          return segs.map((sg) => sg.pts.length < 2 ? "" :
+            '<polyline points="' + sg.pts.map((q) => q.x.toFixed(1) + "," + q.y.toFixed(1)).join(" ") + '" fill="none" stroke="'
+            + (sg.neg ? "#d2685f" : "#4f9f68") + '" stroke-width="' + w + '" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>').join("");
         }).join("");
         box.innerHTML =
           '<svg width="100%" height="' + VH + '" viewBox="0 0 ' + VW + ' ' + VH + '" preserveAspectRatio="none" style="display:block;">'
@@ -2966,7 +3000,7 @@
             }
           }
           const body = kpi.lines
-            ? lineDefs.map((ld) => '<span style="color:' + ld.color + ';">●</span> ' + escapeHtml(ld.label || "") + ': <b>' + vscFmt(valOf(p.s, ld.key), kpi.fmt) + '</b>' + (ld.key === kpi.key ? dHtml : "")).join("<br>")
+            ? lineDefs.map((ld) => '<span style="color:' + ld.color + ';">●</span> ' + escapeHtml(ld.label || "") + ': <b>' + vscFmt(valOf(p.s, ld.key), fmtOf(ld)) + '</b>' + (ld.key === kpi.key ? dHtml : "")).join("<br>")
             : '<b>' + vscFmt(p.v, kpi.fmt) + '</b>' + dHtml;
           tip.innerHTML = '<span style="color:#aab3c5;">' + escapeHtml(label) + '</span><br>' + body;
           tip.style.display = "block";
@@ -3367,13 +3401,19 @@
         const pts = (data || []).filter((d) => d && d.v != null && !isNaN(d.v));
         if (!pts.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных."; wrap.appendChild(e); return wrap; }
         const maxAbs = Math.max.apply(null, pts.map((d) => Math.abs(d.v))) || 1;
+        // Высоты половин — по факту данных, а не фиксированные 92px на каждую: иначе
+        // под мелким минусовым столбиком зияет пустота до подписи месяца.
+        const maxPos = Math.max.apply(null, pts.map((d) => (d.v > 0 ? d.v : 0)));
+        const maxNeg = Math.max.apply(null, pts.map((d) => (d.v < 0 ? -d.v : 0)));
+        const topH = maxPos > 0 ? Math.max(26, Math.round(maxPos / maxAbs * 92)) : 0;
+        const botH = maxNeg > 0 ? Math.max(26, Math.round(maxNeg / maxAbs * 92)) : 0;
         const lbl = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + (fmt === "money" ? Math.abs(Math.round(v)).toLocaleString("ru-RU") : Math.abs(Math.round(v)));
         const bars = document.createElement("div"); bars.className = "rev-bars";
         pts.forEach((d) => {
           const col = document.createElement("div"); col.className = "rev-col";
-          const top = document.createElement("div"); top.className = "rev-half top";
+          const top = document.createElement("div"); top.className = "rev-half top"; top.style.height = topH + "px";
           const axis = document.createElement("div"); axis.className = "rev-axis";
-          const bot = document.createElement("div"); bot.className = "rev-half bot";
+          const bot = document.createElement("div"); bot.className = "rev-half bot"; bot.style.height = botH + "px";
           const ht = Math.max(2, Math.round(Math.abs(d.v) / maxAbs * 88)) + "px";
           if (d.v >= 0) {
             const pv = document.createElement("div"); pv.className = "rev-v pos"; pv.textContent = lbl(d.v);
@@ -3943,10 +3983,11 @@
       // Пять раскрывающихся блоков по отделам за выбранный месяц: сверху лучший
       // результат, снизу худший. Колонки у каждого отдела свои — у продаж конверсия
       // и средний чек, у оформления и ОРК возвраты и время на сделку.
-      // Стафф-перформанс по отделу: строки — месяцы года плюс итог за год; клик по
-      // месяцу разворачивает фамилии сотрудников за этот месяц. Сортировка фамилий —
-      // кликом по заголовку колонки, применяется сразу ко всем раскрытым месяцам.
-      let _vscSpSort = {}, _vscSpOpen = {}, _vscSpMonthOpen = {};
+      // Стафф-перформанс по отделу. В таблице строки — месяцы года: по умолчанию видны
+      // последний месяц и итог за год, остальное под кнопкой «История». Клик по месяцу
+      // разворачивает под ним фамилии, клик по заголовку колонки сортирует их сразу во
+      // всех раскрытых месяцах.
+      let _vscSpSort = {}, _vscSpOpen = {}, _vscSpMonthOpen = {}, _vscSpHist = {};
       function vscStaffPerfDepts(sp, list, cityRev, loadBase, redraw) {
         const wrap = document.createElement("div");
         const money = (v) => (v == null || isNaN(v) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
@@ -3954,9 +3995,9 @@
         const n1 = (v) => (v == null || isNaN(v) ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU"));
         const pctv = (v) => (v == null || isNaN(v) ? "—" : (Math.round(v * 10) / 10).toLocaleString("ru-RU") + "%");
         const secs = (v) => (v == null || isNaN(v) ? "—" : n1(v) + " с");
-        // Показатели отдела за месяц. Объём берём ТОТ ЖЕ, что дал выручку месяца:
-        // через оформление проходит весь объём, ОРК получает свой город, у продаж
-        // база — целевые (набранные) контакты, у первой линии — звонки из АТС.
+        // Показатели отдела за месяц. Объём — тот же, что дал выручку месяца: через
+        // оформление проходит весь объём, ОРК получает свой город, у продаж база —
+        // целевые (набранные) контакты, у первой линии — звонки из АТС.
         function deptMonth(D, m) {
           const cm = (cityRev && cityRev.months && cityRev.months[String(m.mi)]) || null;
           const b = loadBase[m.month] || {};
@@ -3976,8 +4017,8 @@
             o.atv = (o.deals && o.revenue != null) ? o.revenue / o.deals : null;
             o.conv = (o.deals != null && o.contacts) ? o.deals / o.contacts * 100 : null;
             o.perDay = (o.contacts != null && o.manDays) ? o.contacts / o.manDays : null;
-            // Сколько из объёма месяца закреплено за менеджерами продаж полем
-            // «Менеджер ОП» — список фамилий ниже сходится именно с этой цифрой.
+            // Сколько из объёма месяца закреплено полем «Менеджер ОП» — список фамилий
+            // ниже сходится именно с этой цифрой.
             let od = 0, orv = 0;
             sp.users.forEach((u) => { if (u.dept !== "op") return; const x = u.months && u.months[String(m.mi)]; if (!x) return; od += x.sold || 0; orv += x.soldRev || 0; });
             o.opDeals = od; o.opRev = orv;
@@ -3985,54 +4026,52 @@
             const isMsk = D.key === "orkMsk", isSpb = D.key === "orkSpb";
             o.deals = md ? (isMsk ? md.msk : isSpb ? md.spb : md.total) : null;
             o.revenue = cm ? (isMsk ? cm.msk : isSpb ? cm.spb : cm.total) : null;
-            o.returns = md ? (isMsk ? (md.returns - md.returnsSpb) : isSpb ? md.returnsSpb : md.returns) : null;
-            o.atv = (o.deals && o.revenue != null) ? o.revenue / o.deals : null;
+            o.returns = md ? (isMsk ? ((md.returns || 0) - (md.returnsSpb || 0)) : isSpb ? (md.returnsSpb || 0) : (md.returns || 0)) : null;
             o.retPct = (o.deals && o.returns != null) ? o.returns / o.deals * 100 : null;
             o.perDay = (o.deals != null && o.manDays) ? o.deals / o.manDays : null;
           }
           return o;
         }
         const DEPT_COLS = {
-          pl: [{ k: "calls", t: "Входящих", f: int, good: 0, sum: 1 }, { k: "missed", t: "Пропущено", f: int, good: -1, sum: 1 },
-               { k: "missedPct", t: "% пропущенных", f: pctv, good: -1 }, { k: "wait", t: "Ожидание", f: secs, good: -1 },
-               { k: "perDay", t: "Звонков на человека в день", f: n1, good: 0 }],
-          op: [{ k: "contacts", t: "Целевые контакты", f: int, good: 1, sum: 1 }, { k: "deals", t: "Сделки", f: int, good: 1, sum: 1 },
-               { k: "revenue", t: "Выручка", f: money, good: 1, sum: 1 },
-               { k: "opDeals", t: "Закреплено за ОП", f: int, good: 1, sum: 1 },
-               { k: "opRev", t: "Их выручка", f: money, good: 1, sum: 1 },
-               { k: "atv", t: "Средний чек", f: money, good: 1 },
-               { k: "conv", t: "Конверсия", f: pctv, good: 1 }, { k: "perDay", t: "Контактов на человека в день", f: n1, good: 0 }],
-          ork: [{ k: "deals", t: "Сделки", f: int, good: 1, sum: 1 }, { k: "revenue", t: "Выручка", f: money, good: 1, sum: 1 },
-                { k: "atv", t: "Средний чек", f: money, good: 1 }, { k: "returns", t: "Возвраты", f: int, good: -1, sum: 1 },
-                { k: "retPct", t: "% возвратов", f: pctv, good: -1 }, { k: "perDay", t: "Сделок на человека в день", f: n1, good: 0 }]
+          pl: [{ k: "calls", t: "Звонков", f: int, sum: 1 }, { k: "missed", t: "Пропущено", f: int, sum: 1 },
+               { k: "missedPct", t: "% пропущ.", f: pctv }, { k: "wait", t: "Ожидание", f: secs },
+               { k: "perDay", t: "звонков&nbsp;/&nbsp;чел&nbsp;/&nbsp;день", f: n1 }],
+          op: [{ k: "contacts", t: "Лидов", f: int, sum: 1 }, { k: "deals", t: "Сделки", f: int, sum: 1 },
+               { k: "opDeals", t: "Сделки ОП", f: int, sum: 1 },
+               { k: "revenue", t: "Выручка", f: money, sum: 1 }, { k: "opRev", t: "Выручка ОП", f: money, sum: 1 },
+               { k: "atv", t: "Средний чек", f: money }, { k: "conv", t: "Конверсия", f: pctv },
+               { k: "perDay", t: "лидов&nbsp;/&nbsp;чел&nbsp;/&nbsp;день", f: n1 }],
+          ork: [{ k: "deals", t: "Сделки", f: int, sum: 1 }, { k: "revenue", t: "Выручка", f: money, sum: 1 },
+                { k: "returns", t: "Возвраты", f: int, sum: 1 }, { k: "retPct", t: "% возвратов", f: pctv },
+                { k: "perDay", t: "сделок&nbsp;/&nbsp;чел&nbsp;/&nbsp;день", f: n1 }]
         };
-        // Колонки сотрудников внутри месяца.
         const USER_COLS = {
-          pl: [{ k: "callIn", t: "Входящих", f: int, good: 1 }, { k: "callMissed", t: "Пропущено", f: int, good: -1 },
-               { k: "callMissPct", t: "% пропущенных", f: pctv, good: -1 }, { k: "callOut", t: "Исходящих", f: int, good: 1 },
-               { k: "talkMin", t: "Минут разговора", f: int, good: 1 }],
-          op: [{ k: "contacts", t: "Контакты", f: int, good: 1 }, { k: "sold", t: "Продажи", f: int, good: 1 },
-               { k: "soldRev", t: "Выручка", f: money, good: 1 }, { k: "soldAtv", t: "Средний чек", f: money, good: 1 },
+          pl: [{ k: "callIn", t: "Звонков", f: int, good: 1 }, { k: "callMissed", t: "Пропущ.", f: int, good: -1 },
+               { k: "callMissPct", t: "%", f: pctv, good: -1 }, { k: "callOut", t: "Исход.", f: int, good: 1 },
+               { k: "talkMin", t: "Минут", f: int, good: 1 }, { k: "callPerDay", t: "звонков / день", f: n1, good: 1 }],
+          op: [{ k: "contacts", t: "Лиды", f: int, good: 1 }, { k: "sold", t: "Продажи", f: int, good: 1 },
+               { k: "soldRev", t: "Выручка", f: money, good: 1 }, { k: "soldAtv", t: "Ср. чек", f: money, good: 1 },
                { k: "uconv", t: "Конверсия", f: pctv, good: 1 }],
-          ork: [{ k: "took", t: "Принял сделок", f: int, good: 1 }, { k: "tookRev", t: "Выручка", f: money, good: 1 },
-                { k: "tookAtv", t: "Средний чек", f: money, good: 1 }, { k: "tookReturns", t: "Возвраты", f: int, good: -1 },
-                { k: "tookRetPct", t: "% возвратов", f: pctv, good: -1 }],
+          ork: [{ k: "took", t: "Сделок", f: int, good: 1 }, { k: "tookRev", t: "Выручка", f: money, good: 1 },
+                { k: "tookReturns", t: "Возвраты", f: int, good: -1 }, { k: "tookRetPct", t: "% возвр.", f: pctv, good: -1 }],
           oo: [{ k: "s1", t: "Этап 1", f: int, good: 1 }, { k: "s2", t: "Этап 2", f: int, good: 1 },
-               { k: "s2rev", t: "Выручка по 2 этапу", f: money, good: 1 }, { k: "s2ret", t: "Возвраты", f: int, good: -1 },
-               { k: "s2retPct", t: "% возвратов", f: pctv, good: -1 }, { k: "dlLate", t: "Просрочено дедлайнов", f: int, good: -1 },
-               { k: "dlPct", t: "% просрочки", f: pctv, good: -1 }, { k: "days", t: "Дней до закрытия", f: n1, good: -1 }]
+               { k: "s2rev", t: "Выручка", f: money, good: 1 }, { k: "s2ret", t: "Возвраты", f: int, good: -1 },
+               { k: "s2retPct", t: "% возвр.", f: pctv, good: -1 }, { k: "dlLate", t: "Просроч.", f: int, good: -1 },
+               { k: "dlPct", t: "% просроч.", f: pctv, good: -1 }, { k: "days", t: "Дней", f: n1, good: -1 }]
         };
+        const INFO_COMMON = "<b>Как читать</b><br>Строки — месяцы года, внизу накопленный итог. Клик по месяцу разворачивает фамилии сотрудников, клик по заголовку колонки в списке фамилий сортирует их: первый клик — лучшие сверху, второй — худшие. Кнопка «История» показывает месяцы, которые свёрнуты."
+          + "<br><br><b>Объём</b><br>Считается по всем сделкам, давшим выручку месяца, включая повторных клиентов. Из объёма исключены доплаты (по статусу и по слову «доплата» в названии) и вторые части ВНЖ.";
         const DEPTS = [
-          { key: "pl", title: "Первая линия", dcols: "pl", ucols: "pl", udef: "callIn", def: "calls" },
-          { key: "op", title: "Отдел продаж", dcols: "op", ucols: "op", udef: "soldRev", def: "revenue" },
-          { key: "orkMsk", title: "ОРК Москва", dcols: "ork", ucols: "ork", udef: "took", def: "deals" },
-          { key: "orkSpb", title: "ОРК Санкт-Петербург", dcols: "ork", ucols: "ork", udef: "took", def: "deals" },
-          { key: "oo", title: "Отдел оформления", dcols: "ork", ucols: "oo", udef: "s2", def: "deals" }
+          { key: "pl", title: "Первая линия", dcols: "pl", ucols: "pl", udef: "callIn", info: INFO_COMMON + "<br><br><b>Первая линия</b><br>Звонки в строке месяца — из листа /vsc, туда их кладёт АТС общей суммой за день. По сотрудникам звонки берутся из нот amoCRM (входящие и исходящие), пропущенным считается входящий с нулевой длительностью. Суммы из листа и из amoCRM могут немного расходиться." },
+          { key: "op", title: "Отдел продаж", dcols: "op", ucols: "op", udef: "soldRev", info: INFO_COMMON + "<br><br><b>Отдел продаж</b><br>Конверсия — все сделки месяца к целевым (набранным) контактам. «Сделки ОП» и «Выручка ОП» — та часть объёма, что закреплена полем сделки «Менеджер ОП»; именно она раскладывается по фамилиям. Ответственный за сделку для этого не годится: к моменту оплаты там уже специалист ОРК." },
+          { key: "orkMsk", title: "ОРК МСК", dcols: "ork", ucols: "ork", udef: "took", info: INFO_COMMON + "<br><br><b>ОРК</b><br>По сотрудникам сделка считается по полю «Кто принял клиента» — оно заполнено почти везде и раскладывает объём месяца по людям.<br><br><b>Возвраты</b><br>Считаются по когорте месяца ОПЛАТЫ: возврат по майской сделке остаётся в мае. Поэтому у свежих месяцев процент низкий — возвраты ещё не дозрели. В отчёте по возвратам процент другой: там доля ДЕНЕГ и по месяцу самого возврата. Возвратом считается статус «Возврат» или заполненная «Дата возврата»; «Ожидает решения о возврате» не считается." },
+          { key: "orkSpb", title: "ОРК СПБ", dcols: "ork", ucols: "ork", udef: "took", info: INFO_COMMON + "<br><br><b>ОРК</b><br>По сотрудникам сделка считается по полю «Кто принял клиента».<br><br><b>Возвраты</b><br>По когорте месяца оплаты, поэтому у свежих месяцев процент низкий. Возвратом считается статус «Возврат» или заполненная «Дата возврата»." },
+          { key: "oo", title: "Отдел оформления", dcols: "ork", ucols: "oo", udef: "s2", info: INFO_COMMON + "<br><br><b>Оформление</b><br>Через отдел проходит весь объём сделок месяца. По сотрудникам этапы берутся из полей сделки «Менеджер ОО 1й и 2й ЭТАП», выручка и возвраты — по второму этапу, просрочка — когда дата бонуса за второй этап позже «Дедлайна ОО». Сделки с заглушками «АКК», «БОТ» и «Запись не требуется» в фамилии не попадают." }
         ];
-        const TD = "padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;";
-        const NM = "padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:left;white-space:nowrap;font-weight:600;";
-        const THS = "padding:7px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;";
-        const TLY = "padding:9px 8px;border-top:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;background:#fafbfd;";
+        const TD = "padding:5px 7px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;";
+        const NM = "padding:5px 7px;border-bottom:1px solid #eef0f4;text-align:left;white-space:nowrap;font-weight:600;";
+        const THS = "padding:5px 7px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;";
+        const TLY = "padding:7px;border-top:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;background:#fafbfd;";
 
         DEPTS.forEach(function (D) {
           const dcols = DEPT_COLS[D.dcols], ucols = USER_COLS[D.ucols];
@@ -4041,59 +4080,65 @@
           det.className = "vsc-chart"; det.style.marginBottom = "10px";
           if (_vscSpOpen[D.key]) det.open = true;
           det.addEventListener("toggle", function () { _vscSpOpen[D.key] = det.open; });
-          // Годовой накопленный итог: аддитивное складываем, ставки пересчитываем.
+          // Итог за год: аддитивное складываем, ставки пересчитываем от итогов.
           const yr = {};
           dcols.forEach((c) => { if (c.sum) yr[c.k] = rowsM.reduce((a, r) => a + (r[c.k] || 0), 0); });
+          const mdAll = rowsM.reduce((a, r) => a + (r.manDays || 0), 0);
           if (D.key === "pl") {
             yr.missedPct = yr.calls ? yr.missed / yr.calls * 100 : null;
             const w = rowsM.map((r) => r.wait).filter((x) => x != null); yr.wait = w.length ? w.reduce((a, b) => a + b, 0) / w.length : null;
-            const md = rowsM.reduce((a, r) => a + (r.manDays || 0), 0); yr.perDay = md ? yr.calls / md : null;
+            yr.perDay = mdAll ? yr.calls / mdAll : null;
           } else if (D.key === "op") {
             yr.atv = yr.deals ? yr.revenue / yr.deals : null;
             yr.conv = yr.contacts ? yr.deals / yr.contacts * 100 : null;
-            const md = rowsM.reduce((a, r) => a + (r.manDays || 0), 0); yr.perDay = md ? yr.contacts / md : null;
+            yr.perDay = mdAll ? yr.contacts / mdAll : null;
           } else {
-            yr.atv = yr.deals ? yr.revenue / yr.deals : null;
             yr.retPct = yr.deals ? yr.returns / yr.deals * 100 : null;
-            const md = rowsM.reduce((a, r) => a + (r.manDays || 0), 0); yr.perDay = md ? yr.deals / md : null;
+            yr.perDay = mdAll ? yr.deals / mdAll : null;
           }
-          const last = rowsM[rowsM.length - 1] || {};
           const sum = document.createElement("summary");
           sum.style.cssText = "cursor:pointer;font-weight:700;font-size:14.5px;color:#1c2a44;";
-          sum.innerHTML = escapeHtml(D.title) + '<span style="font-weight:400;color:#9096a3;font-size:13px;"> · за год '
-            + (D.key === "pl" ? int(yr.calls) + " звонков" : int(yr.deals) + " сделок, " + money(yr.revenue))
-            + (last.staff ? " · штат " + last.staff : "") + '</span>';
+          sum.textContent = D.title;
+          sum.appendChild(vscInfo(D.info));
           det.appendChild(sum);
           const box2 = document.createElement("div");
           box2.style.cssText = "overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:12px;";
           const tb = document.createElement("table");
-          tb.style.cssText = "width:100%;min-width:640px;border-collapse:collapse;font-size:13px;";
-          const st = _vscSpSort[D.key] || { k: D.udef || "deals", dir: -1 };
+          tb.style.cssText = "width:100%;min-width:520px;border-collapse:collapse;font-size:12.5px;";
+          const st = _vscSpSort[D.key] || { k: D.udef, dir: -1 };
           const arrow = (k) => (st.k === k ? (st.dir === -1 ? " ↓" : " ↑") : "");
+          const showAll = !!_vscSpHist[D.key];
           let html = '<tr><th style="' + THS.replace("text-align:right", "text-align:left") + '">Месяц</th>'
-            + dcols.map((c) => '<th style="' + THS + '">' + escapeHtml(c.t) + '</th>').join("") + '</tr>';
-          rowsM.forEach(function (r) {
+            + dcols.map((c) => '<th style="' + THS + '">' + c.t + '</th>').join("") + '</tr>';
+          rowsM.forEach(function (r, idx) {
+            const isLast = idx === rowsM.length - 1;
+            if (!showAll && !isLast) return;                     // свёрнуто — только последний месяц
             const openK = D.key + ":" + r.mi, isOpen = !!_vscSpMonthOpen[openK];
             html += '<tr data-mk="' + r.mi + '" style="cursor:pointer;"><td style="' + NM + '">'
               + '<span style="color:#9096a3;font-weight:400;">' + (isOpen ? "▾" : "▸") + '</span> ' + escapeHtml(r.month) + '</td>'
               + dcols.map((c) => '<td style="' + TD + '">' + c.f(r[c.k]) + '</td>').join("") + '</tr>';
             if (isOpen) {
-              const urows = vscSpUsers(sp, D, r.mi);
+              const urows = vscSpUsers(sp, D, r.mi, r);
               const span = dcols.length + 1;
               if (!urows.length) {
-                html += '<tr><td colspan="' + span + '" style="padding:10px 14px;background:#fafbfd;color:#9096a3;font-size:12.5px;">'
+                html += '<tr><td colspan="' + span + '" style="padding:9px 12px;background:#fafbfd;color:#9096a3;font-size:12px;">'
                   + "За этот месяц в amoCRM нет данных по сотрудникам отдела." + '</td></tr>';
               } else {
-                html += '<tr><td colspan="' + span + '" style="padding:0;background:#fafbfd;"><div style="padding:8px 14px 12px;">'
-                  + '<table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
-                  + '<tr><th data-sk="name" style="' + THS.replace("text-align:right", "text-align:left") + 'cursor:pointer;user-select:none;border-bottom-width:1px;">Сотрудник' + arrow("name") + '</th>'
-                  + ucols.map((c) => '<th data-sk="' + c.k + '" style="' + THS + 'cursor:pointer;user-select:none;border-bottom-width:1px;">' + escapeHtml(c.t) + arrow(c.k) + '</th>').join("") + '</tr>'
-                  + urows.map((u, i) => '<tr><td style="' + NM + 'font-weight:500;"><span style="color:#9096a3;font-weight:400;">' + (i + 1) + '.</span> ' + escapeHtml(u.name) + '</td>'
-                    + ucols.map((c) => '<td style="' + TD + '">' + c.f(u[c.k]) + '</td>').join("") + '</tr>').join("")
+                html += '<tr><td colspan="' + span + '" style="padding:0;background:#fafbfd;"><div style="padding:6px 10px 10px;overflow-x:auto;">'
+                  + '<table style="border-collapse:collapse;font-size:12px;">'
+                  + '<tr><th data-sk="name" style="' + THS.replace("text-align:right", "text-align:left") + 'cursor:pointer;user-select:none;border-bottom-width:1px;padding-right:14px;">Сотрудник' + arrow("name") + '</th>'
+                  + ucols.map((c) => '<th data-sk="' + c.k + '" style="' + THS + 'cursor:pointer;user-select:none;border-bottom-width:1px;padding-left:14px;">' + c.t + arrow(c.k) + '</th>').join("") + '</tr>'
+                  + urows.map((u, i) => '<tr><td style="' + NM + 'font-weight:500;padding-right:14px;"><span style="color:#9096a3;font-weight:400;">' + (i + 1) + '.</span> ' + escapeHtml(u.name) + '</td>'
+                    + ucols.map((c) => '<td style="' + TD + 'padding-left:14px;">' + c.f(u[c.k]) + '</td>').join("") + '</tr>').join("")
                   + '</table></div></td></tr>';
               }
             }
           });
+          if (rowsM.length > 1) {
+            html += '<tr><td colspan="' + (dcols.length + 1) + '" style="padding:7px;text-align:left;border-bottom:1px solid #eef0f4;">'
+              + '<button type="button" data-sphist="' + D.key + '" style="border:1px solid #dfe3ec;background:#fff;border-radius:9px;padding:4px 11px;font-size:12px;font-family:inherit;color:#33415a;cursor:pointer;">'
+              + (showAll ? "Скрыть историю" : "История · " + (rowsM.length - 1) + " мес.") + '</button></td></tr>';
+          }
           html += '<tr><td style="' + TLY.replace("text-align:right", "text-align:left") + '">Итого за ' + (list[0] ? list[0].year : "") + '</td>'
             + dcols.map((c) => '<td style="' + TLY + '">' + c.f(yr[c.k]) + '</td>').join("") + '</tr>';
           tb.innerHTML = html;
@@ -4109,29 +4154,32 @@
             th.addEventListener("click", function (e) {
               e.stopPropagation();
               const k = th.getAttribute("data-sk");
-              const cur = _vscSpSort[D.key] || { k: D.udef || "deals", dir: -1 };
+              const cur = _vscSpSort[D.key] || { k: D.udef, dir: -1 };
               _vscSpSort[D.key] = (cur.k === k) ? { k: k, dir: -cur.dir } : { k: k, dir: -1 };
+              _vscSpOpen[D.key] = true;
+              if (typeof redraw === "function") redraw();
+            });
+          });
+          tb.querySelectorAll("button[data-sphist]").forEach(function (b) {
+            b.addEventListener("click", function (e) {
+              e.stopPropagation();
+              _vscSpHist[D.key] = !_vscSpHist[D.key];
               _vscSpOpen[D.key] = true;
               if (typeof redraw === "function") redraw();
             });
           });
           box2.appendChild(tb);
           det.appendChild(box2);
-          const hint = document.createElement("div"); hint.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:8px;";
-          hint.innerHTML = "Клик по месяцу разворачивает фамилии. Клик по заголовку колонки сотрудников сортирует их во всех раскрытых месяцах: первый клик лучшие сверху, второй худшие."
-            + (D.key === "oo" ? "<br>Объём отдела — весь объём сделок месяца. По сотрудникам этапы берутся из полей сделки «Менеджер ОО 1й/2й ЭТАП», просрочка — когда дата бонуса за второй этап позже «Дедлайна ОО». Сделки, где в этих полях стоит «АКК», «БОТ» или «Запись не требуется», в фамилии не попадают." : "")
-            + (D.key === "op" ? "<br>Объём отдела и конверсия считаются от ВСЕХ сделок, давших выручку месяца, включая повторных клиентов. Продажи по сотрудникам берутся из поля сделки «Менеджер ОП» — оно заполнено у всех сделок и закрывает весь объём месяца, включая повторных клиентов. Колонка «Закреплено за ОП» показывает, сколько из объёма месяца стоит на менеджерах продаж; остаток — на сотрудниках других отделов." : "")
-            + (D.key === "pl" ? "<br>Звонки по операторам берутся из нот amoCRM (call_in и call_out), пропущенным считается входящий с нулевой длительностью. Это тот же съём, что кормит «Скорость первого касания», отдельных запросов в CRM он не добавляет. Суммарные цифры в строке месяца — из листа /vsc, там они от АТС, поэтому с суммой по операторам могут немного расходиться." : "");
-          det.appendChild(hint);
           wrap.appendChild(det);
         });
         const foot = document.createElement("div"); foot.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:6px;";
-        foot.textContent = "обновлено: " + (sp.ts ? new Date(sp.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—") + " МСК · amoCRM, ночной расчёт 05:00";
+        foot.textContent = "обновлено: " + (sp.ts ? new Date(sp.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—") + " МСК · amoCRM, ночной расчёт";
         wrap.appendChild(foot);
         return wrap;
 
-        function vscSpUsers(sp, D, mi) {
+        function vscSpUsers(sp, D, mi, dm) {
           const ucols = USER_COLS[D.ucols];
+          const perPersonDays = (dm && dm.effStaff && dm.manDays) ? (dm.manDays / dm.effStaff) : null;  // рабочих дней на человека
           const rows = sp.users.filter((u) => u.dept === D.key && u.months && u.months[mi]).map(function (u) {
             const x = u.months[mi];
             return {
@@ -4140,21 +4188,18 @@
               soldAtv: x.sold ? x.soldRev / x.sold : null,
               uconv: x.contacts ? (x.sold || 0) / x.contacts * 100 : null,
               took: x.took || 0, tookRev: x.tookRev || 0, tookReturns: x.tookReturns || 0,
-              tookAtv: x.took ? x.tookRev / x.took : null,
               tookRetPct: x.took ? (x.tookReturns || 0) / x.took * 100 : null,
               s1: x.s1 || 0, s2: x.s2 || 0, s2rev: x.s2rev || 0, s2ret: x.s2ret || 0,
               s2retPct: x.s2 ? (x.s2ret || 0) / x.s2 * 100 : null,
               dlLate: x.dlLate || 0, dlPct: x.dlTotal ? (x.dlLate || 0) / x.dlTotal * 100 : null,
-              deals: x.deals || 0, revenue: x.revenue || 0, returns: x.returns || 0,
-              atv: x.deals ? x.revenue / x.deals : null,
-              retPct: x.deals ? x.returns / x.deals * 100 : null,
               days: x.closedCnt ? x.closedDays / x.closedCnt : null,
               callIn: x.callIn || 0, callOut: x.callOut || 0, callMissed: x.callMissed || 0,
               callMissPct: x.callIn ? (x.callMissed || 0) / x.callIn * 100 : null,
-              talkMin: x.talkSec ? x.talkSec / 60 : 0
+              talkMin: x.talkSec ? x.talkSec / 60 : 0,
+              callPerDay: (perPersonDays && x.callIn) ? x.callIn / perPersonDays : null
             };
           }).filter(function (r) { return ucols.some((c) => r[c.k]); });
-          const st = _vscSpSort[D.key] || { k: D.udef || "deals", dir: -1 };
+          const st = _vscSpSort[D.key] || { k: D.udef, dir: -1 };
           const sc = ucols.find((c) => c.k === st.k);
           rows.sort(function (a, b) {
             if (st.k === "name" || !sc) return (st.dir || 1) * String(a.name).localeCompare(String(b.name), "ru");
@@ -4182,7 +4227,7 @@
           + "<br><br><b>Нагрузка</b> — на человека в день с вычетом отпусков: эффективный штат = штат − (отпускные дни ÷ календарные дни месяца), человеко-дни = эффективный штат × рабочие дни производственного календаря. База: отдел продаж — целевые контакты (факт таргета МСК+СПб), ОРК Москва / ОРК Санкт-Петербург / отдел оформления — успешные сделки своей воронки amoCRM без доплат, вторых частей ВНЖ и возвратов."
         ));
         wrap.appendChild(h);
-        const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем зарплатную таблицу…</div>';
+        const box = document.createElement("div"); box.innerHTML = '<div class="vsc-chart"><div class="loading-state">Загружаем зарплатную таблицу…</div></div>';
         wrap.appendChild(box);
         apiFetch("/admin/api/vsc/zarplata").then(function (j) {
           if (!j || !j.success || !j.data || !j.data.months) { box.innerHTML = '<div class="vsc-empty">' + escapeHtml((j && j.message) || "Не удалось прочитать зарплатную таблицу.") + '</div>'; return; }
@@ -4209,9 +4254,32 @@
         const TD = 'style="padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;"';
         const TH = 'style="padding:7px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;"';
         const L = 'style="padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:left;white-space:nowrap;font-weight:600;"';
-        const tbl = (head, rows) => '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;min-width:720px;border-collapse:collapse;font-size:13px;">'
-          + '<tr><th ' + TH.replace("text-align:right", "text-align:left") + '>' + head[0] + '</th>' + head.slice(1).map((x) => '<th ' + TH + '>' + x + '</th>').join("") + '</tr>'
-          + rows.join("") + '</table></div>';
+        // Таблица месяцев: по умолчанию виден только последний месяц, остальные
+        // прячутся под кнопку «История» — как в блоке «План ОП».
+        let _histSeq = 0;
+        const tbl = function (head, rows, opts) {
+          const o = opts || {};
+          const minW = o.minWidth || 720;
+          const id = "zh" + (++_histSeq);
+          let body = rows.join("");
+          // keep — сколько рядов с конца остаётся видимыми: последний месяц и
+          // строка «В среднем за год». Всё, что выше, прячется под «Историю».
+          const keep = o.keep || 2;
+          if (o.collapse && rows.length > keep) {
+            const n = rows.length - keep;
+            const hist = rows.slice(0, n).map((r) => r.replace("<tr>", '<tr class="' + id + '" style="display:none;">')).join("");
+            const btn = '<tr><td colspan="' + head.length + '" style="padding:8px;text-align:left;border-bottom:1px solid #eef0f4;">'
+              + '<button type="button" data-hist="' + id + '" data-n="' + n + '" style="border:1px solid #dfe3ec;background:#fff;border-radius:9px;padding:5px 12px;font-size:12.5px;font-family:inherit;color:#33415a;cursor:pointer;">История · ' + n + ' мес.</button></td></tr>';
+            body = hist + rows[rows.length - 2] + btn + rows[rows.length - 1];
+          }
+          return '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;min-width:' + minW + 'px;border-collapse:collapse;font-size:13px;">'
+            + '<tr><th ' + TH.replace("text-align:right", "text-align:left") + '>' + head[0] + '</th>' + head.slice(1).map((x) => '<th ' + TH + '>' + x + '</th>').join("") + '</tr>'
+            + body + '</table></div>';
+        };
+        // Заголовок секции с «i»: текст пояснения кладём в data-info, после вставки
+        // html навешиваем настоящий поповер.
+        const secH = (title, info, mt) => '<div class="vsc-chart-h"' + (mt ? ' style="margin:' + mt + '"' : "")
+          + (info ? ' data-info="' + escapeHtml(info) + '"' : "") + '>' + title + '</div>';
         let html = "";
 
         // ── 1. Зарплаты, штат, взносы, прибыль на сотрудника, ЗП управляющей ──
@@ -4253,13 +4321,18 @@
           + '<td ' + TDY + '>' + pct(avgOf((m) => { const rv = revenueOf(m.month); return (rv && m.fotTotal != null) ? m.fotTotal / rv * 100 : null; })) + '</td>'
           + '<td ' + TDY + '>' + money2(avgMp) + '</td>'
           + '<td ' + TDY + '>' + pct(avgP ? avgMp / avgP * 100 : null) + '</td></tr>';
-        html += '<div class="vsc-chart-h" style="margin-bottom:8px;">Зарплаты, штат и взносы — по месяцам</div>'
-          + tbl(["Месяц", "Штат", "ФОТ общий (вкл. взносы)", "Средняя ЗП", "ФОТ через зп-проект", "Взносы", "% взносов", "Прибыль", "Прибыль на сотрудника", "% ФОТ от выручки", "ЗП управляющей", "% УПР от прибыли"], r1.concat(yearRow));
+        const htmlPay = secH("Зарплаты, штат и взносы — по месяцам",
+            "ФОТ общий — собственный итог зарплатного листа: начислено плюс взносы. Штат — строки сотрудников месяца минус Зайцева Екатерина, Комисаренко и Панфилова Галина. Средняя ЗП = ФОТ ÷ штат."
+            + " ФОТ через зарплатный проект — колонки «выплачено через зп проект» плюс НДФЛ, взносы начисляются на грязную базу. Январь и февраль по ФОТ и взносам взяты из таблицы Андрея: на листе января итог не посчитан, февральский правился после снятия его таблицы."
+            + " Прибыль и ЗП управляющей вносятся руками. «% УПР от прибыли» — зарплата управляющей к прибыли месяца.", "0 0 8px")
+          + tbl(["Месяц", "Штат", "ФОТ общий (вкл. взносы)", "Средняя ЗП", "ФОТ через зп-проект", "Взносы", "% взносов", "Прибыль", "Прибыль на сотрудника", "% ФОТ от выручки", "ЗП управляющей", "% УПР от прибыли"], r1.concat(yearRow), { collapse: true });
 
         // ── 2. Средняя зарплата по отделам ──
         const DK = ["pl", "op", "orkMsk", "orkSpb", "oo", "none"];
-        const DT = { pl: "Первая линия", op: "Отдел продаж", orkMsk: "ОРК Москва", orkSpb: "ОРК СПб", oo: "Отдел оформления", none: "Вне отделов" };
+        const DT = { pl: "Первая линия", op: "Отдел продаж", orkMsk: "ОРК МСК", orkSpb: "ОРК СПБ", oo: "Отдел оформления", none: "Вне отделов" };
         const withDepts = list.filter((m) => (m.hasDepts && m.depts && Object.keys(m.depts).length) || m.deptAvgSeed);
+        const TDYD = TDY, avgOfD = (fn) => { const v = withDepts.map(fn).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+        let htmlDept = "";
         if (withDepts.length) {
           const r2 = withDepts.map(function (m) {
             const seeded = !m.hasDepts && m.deptAvgSeed;
@@ -4270,9 +4343,18 @@
                 return '<td ' + TD + '>' + (d ? money(d.avg) + '<span style="color:#9096a3;font-weight:400;"> · ' + d.staff + ' чел.</span>' : "—") + '</td>';
               }).join("") + '</tr>';
           });
-          html += '<div class="vsc-chart-h" style="margin:22px 0 8px;">Средняя начисленная зарплата по отделам</div>'
-            + tbl(["Месяц"].concat(DK.map((k) => DT[k])), r2)
-            + '<div style="font-size:11.5px;color:#9096a3;margin-top:7px;">По отделам — средняя НАЧИСЛЕННАЯ зарплата (без взносов), поэтому она ниже общей средней, где ФОТ взят вместе с взносами. Месяцы со звёздочкой перенесены из таблицы Андрея: на тех листах ещё нет колонки «Группа должности», разложить сотрудников по отделам нечем.</div>';
+          const r2y = '<tr><td ' + TDYD.replace("text-align:right", "text-align:left") + '>В среднем за ' + (withDepts[0] ? withDepts[0].year : "") + '</td>'
+            + DK.map(function (k) {
+              const v = avgOfD(function (m) {
+                if (!m.hasDepts && m.deptAvgSeed) return m.deptAvgSeed[k];
+                const d = m.depts ? m.depts[k] : null; return d ? d.avg : null;
+              });
+              return '<td ' + TDYD + '>' + money(v) + '</td>';
+            }).join("") + '</tr>';
+          htmlDept = secH("Средняя начисленная зарплата по отделам",
+              "Это средняя НАЧИСЛЕННАЯ зарплата, без взносов, поэтому она ниже общей средней, где ФОТ взят вместе с взносами. Руководители считаются в своём отделе, Кудрина Яна отнесена к оформлению, Трембачева и Пятилова вне отделов."
+              + " Месяцы со звёздочкой перенесены из таблицы Андрея: на тех листах ещё нет колонки «Группа должности», разложить сотрудников по отделам нечем.", "0 0 8px")
+            + tbl(["Месяц"].concat(DK.map((k) => DT[k])), r2.concat(r2y), { collapse: true, minWidth: 640 });
         }
 
         // ── 3. Нагрузка на персонал с учётом отпусков ──
@@ -4280,9 +4362,9 @@
         const LOADK = ["pl", "op", "orkMsk", "orkSpb", "oo"];
         const sub = (t) => '<div style="font-weight:400;color:#9096a3;">' + t + '</div>';
         const LOADT = {
-          pl: "Первая линия" + sub("входящие звонки"), op: "Отдел продаж" + sub("набранные контакты"),
-          orkMsk: "ОРК Москва" + sub("сделки Москвы"), orkSpb: "ОРК СПб" + sub("сделки Петербурга"),
-          oo: "Отдел оформления" + sub("весь объём сделок")
+          pl: "Первая линия" + sub("ср. звонков / день"), op: "Отдел продаж" + sub("ср. лидов / день"),
+          orkMsk: "ОРК МСК" + sub("сделок / день"), orkSpb: "ОРК СПБ" + sub("сделок / день"),
+          oo: "Отдел оформления" + sub("сделок / день")
         };
         // База нагрузки. Первая линия — входящие звонки из PBX, отдел продаж —
         // набранные контакты (та же цифра, что на дашборде; и то и другое из листа /vsc). Через оформление проходит
@@ -4307,35 +4389,46 @@
               // восстановлены по именам сотрудников из более поздних месяцев.
               const d = (m.hasDepts || m.deptsFromNames) && m.depts ? m.depts[k] : null, base = baseOf(m, k);
               if (!d || !d.manDays || base == null) return '<td ' + TD + '>—</td>';
-              const perDay = base / d.manDays;
-              const miss = (k === "pl" && b.callsMissed != null) ? '<div style="color:#b8602a;font-weight:400;">' + num1(b.callsMissed / d.manDays) + ' пропущ.</div>' : "";
-              return '<td ' + TD + '><b>' + num1(perDay) + '</b><span style="color:#9096a3;font-weight:400;"> · ' + Math.round(base).toLocaleString("ru-RU") + ' / ' + num1(d.effStaff) + ' чел.</span>' + miss + '</td>';
+              return '<td ' + TD + '><b>' + num1(base / d.manDays) + '</b></td>';
             }).join("") + '</tr>';
         });
-        html += '<div class="vsc-chart-h" style="margin:22px 0 8px;">Нагрузка на человека в день (с вычетом отпусков)</div>'
-          + tbl(["Месяц", "Рабочих дней", "Отпускных дней"].concat(LOADK.map((k) => LOADT[k])), r3)
-          + '<div style="font-size:11.5px;color:#9096a3;margin-top:7px;">В ячейке: нагрузка на человека в день · всего за месяц / эффективный штат отдела. У первой линии вторая строка — пропущенные звонки на человека в день.</div>';
-
-        // ── 4. Первая линия: скорость ответа и пропущенные (АТС → лист /vsc) ──
-        const r4 = list.map(function (m) {
-          const b = loadBase[m.month] || {};
-          if (b.callsIn == null && b.waitSec == null) return "";
-          return '<tr><td ' + L + '>' + escapeHtml(m.month) + '</td>'
-            + '<td ' + TD + '>' + (b.callsIn != null ? Math.round(b.callsIn).toLocaleString("ru-RU") : "—") + '</td>'
-            + '<td ' + TD + '>' + (b.callsMissed != null ? Math.round(b.callsMissed).toLocaleString("ru-RU") : "—") + '</td>'
-            + '<td ' + TD + '><b>' + (b.missedPct != null ? pct(b.missedPct) : "—") + '</b></td>'
-            + '<td ' + TD + '><b>' + (b.waitSec != null ? num1(b.waitSec) + ' с' : "—") + '</b></td>'
-            + '<td ' + TD + '><b>' + ((m.depts && m.depts.pl && m.depts.pl.manDays && b.callsIn != null) ? num1(b.callsIn / m.depts.pl.manDays) : "—") + '</b></td></tr>';
-        }).filter(Boolean);
-        if (r4.length) {
-          html += '<div class="vsc-chart-h" style="margin:22px 0 8px;">Первая линия — звонки и скорость ответа</div>'
-            + tbl(["Месяц", "Всего входящих", "Из них пропущено", "% пропущенных", "Среднее ожидание на линии", "Звонков на человека в день"], r4)
-            + '<div style="font-size:11.5px;color:#9096a3;margin-top:7px;">Цифры АТС попадают к нам через лист /vsc: там они лежат по дням на всю компанию. Разреза по сотрудникам в листе нет — для скорости перезвона по каждому оператору нужен доступ к самой АТС. Пропущенные входят в общее число входящих (процент пропущенных из листа это подтверждает), поэтому складывать их нельзя.</div>';
-        }
+        const r3y = '<tr><td ' + TDY.replace("text-align:right", "text-align:left") + '>В среднем за ' + (list[0] ? list[0].year : "") + '</td>'
+          + '<td ' + TDY + '>' + num1(avgOf((m) => m.workDays)) + '</td>'
+          + '<td ' + TDY + '>' + num1(avgOf((m) => m.vacDaysTotal)) + '</td>'
+          + LOADK.map(function (k) {
+            const v = avgOf(function (m) {
+              const d = (m.hasDepts || m.deptsFromNames) && m.depts ? m.depts[k] : null, base = baseOf(m, k);
+              return (d && d.manDays && base != null) ? base / d.manDays : null;
+            });
+            return '<td ' + TDY + '>' + num1(v) + '</td>';
+          }).join("") + '</tr>';
+        const htmlLoad = secH("Нагрузка на человека в день (с вычетом отпусков)",
+            "В ячейке — сколько единиц работы приходится на одного человека в день с учётом отпусков. Эффективный штат = штат минус отпускные дни, делённые на календарные дни месяца; человеко-дни = эффективный штат × рабочие дни производственного календаря."
+            + " База у каждого отдела своя: первая линия — входящие звонки из АТС, отдел продаж — набранные (целевые) контакты, ОРК — сделки своего города, оформление — весь объём сделок месяца, через него проходит всё.", "0 0 8px")
+          + tbl(["Месяц", "Раб. дней", "Отпуск, дн."].concat(LOADK.map((k) => LOADT[k])), r3.concat(r3y), { collapse: true, minWidth: 560 });
+        // Нагрузка — самое важное, поэтому идёт первой; дальше деньги и отделы.
+        // Каждая секция — своя карточка, иначе три таблицы подряд сливаются в кашу.
+        const card = (inner) => inner ? '<div class="vsc-chart" style="margin-bottom:16px;">' + inner + '</div>' : "";
+        html = card(htmlLoad) + card(htmlPay) + card(htmlDept);
 
         const upd = j.data.ts ? new Date(j.data.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
         html += '<div style="font-size:11.5px;color:#9096a3;margin-top:12px;">зарплатная таблица прочитана: ' + escapeHtml(upd) + ' МСК</div>';
         box.innerHTML = html;
+        // Кнопки «История»: показывают скрытые месяцы таблицы.
+        box.querySelectorAll("button[data-hist]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            const id = btn.getAttribute("data-hist"), n = btn.getAttribute("data-n");
+            const rows = box.querySelectorAll("tr." + id);
+            const hidden = rows.length && rows[0].style.display === "none";
+            rows.forEach((tr) => { tr.style.display = hidden ? "" : "none"; });
+            btn.textContent = hidden ? "Скрыть историю" : ("История · " + n + " мес.");
+          });
+        });
+        // Поповеры «i» у заголовков секций.
+        box.querySelectorAll("[data-info]").forEach(function (el) {
+          const t = el.getAttribute("data-info"); el.removeAttribute("data-info");
+          if (t) el.appendChild(vscInfo(t));
+        });
 
         // ── Стафф-перформанс: кто как сработал внутри отдела ───────────────────
         const spWrap = document.createElement("div"); spWrap.style.marginTop = "26px";
@@ -4383,29 +4476,42 @@
           k.missedPct = b.missedPct != null ? b.missedPct : null;
           return { x: short(m.month), k: k };
         });
+        // Все графики раздела — кривые, как на дашборде по дням: одинаково читаются
+        // и на телефоне, и на десктопе (SVG тянется по ширине).
         box.appendChild(sub2("Графики — деньги и штат"));
-        // Расходные показатели: рост — красным, снижение — зелёным (good: -1).
-        [{ key: "avgSalary", label: "Средняя зарплата (ФОТ вкл. взносы ÷ штат)", fmt: "money", good: -1 },
-         { key: "fotTotal", label: "ФОТ общий (вкл. взносы)", fmt: "money", good: -1 },
-         { key: "contribPct", label: "% взносов от ФОТ через зарплатный проект", fmt: "pct", good: -1 },
-         { key: "fotRev", label: "% ФОТ от выручки", fmt: "pct", good: -1 },
-         { key: "staff", label: "Штат", fmt: "int", good: 0 },
-         { key: "mgrPay", label: "ЗП управляющей", fmt: "money", good: -1 }
-        ].forEach((kpi) => box.appendChild(vscBarChart(kpi, series)));
-        // Показатели, уходящие в минус, рисуем вниз красным — как прибыль на дашборде.
-        box.appendChild(vscDivergingBars("Прибыль на сотрудника", series.map((s) => ({ x: s.x, v: s.k.perHead })), "money", { pos: "прибыль", neg: "убыток" }));
-        box.appendChild(vscDivergingBars("ЗП управляющей — % от прибыли", series.map((s) => ({ x: s.x, v: s.k.mgrPct })), "int", { pos: "% от прибыли", neg: "% от убытка" }));
+        [{ key: "avgSalary", label: "Средняя зарплата (ФОТ вкл. взносы ÷ штат)", fmt: "money" },
+         { key: "fotTotal", label: "ФОТ общий (вкл. взносы)", fmt: "money" },
+         { key: "contribPct", label: "% взносов от ФОТ через зарплатный проект", fmt: "pct" },
+         { key: "fotRev", label: "% ФОТ от выручки", fmt: "pct" },
+         { key: "staff", label: "Штат", fmt: "int" },
+         { key: "mgrPay", label: "ЗП управляющей", fmt: "money" }
+        ].forEach((kpi) => box.appendChild(vscLineChart(kpi, series)));
+        // Уходят в минус — часть кривой ниже нуля красим красным.
+        box.appendChild(vscLineChart({ key: "perHead", label: "Прибыль на сотрудника", fmt: "money", negRed: true }, series));
+        // Зарплата управляющей и её доля в прибыли — на одном графике. У процента своя
+        // шкала (рубли и проценты несопоставимы), в подсказке показываются оба честно.
+        box.appendChild(vscLineChart({
+          key: "mgrPay", label: "ЗП управляющей", fmt: "money",
+          lines: [{ key: "mgrPay", color: "#4a90d9", label: "ЗП управляющей, ₽" },
+                  { key: "mgrPct", color: "#c9762e", label: "% от прибыли", own: true, fmt: "pct" }]
+        }, series));
+        const PAL = ["#4a90d9", "#c9762e", "#4f9f68", "#9b6bd2", "#d2685f"];
         box.appendChild(sub2("Графики — средняя начисленная зарплата по отделам"));
-        // Зарплата — расход: рост красным, снижение зелёным.
-        DK.filter((k) => k !== "none").forEach((k) => box.appendChild(vscBarChart({ key: "avg_" + k, label: DT[k], fmt: "money", good: -1 }, series, { compact: true })));
+        box.appendChild(vscLineChart({
+          key: "avg_op", label: "Средняя начисленная зарплата по отделам", fmt: "money",
+          lines: DK.filter((k) => k !== "none").map((k, i) => ({ key: "avg_" + k, color: PAL[i % PAL.length], label: DT[k] }))
+        }, series));
         box.appendChild(sub2("Графики — нагрузка на человека в день"));
-        // Пропущенные ВХОДЯТ в общее число входящих (процент пропущенных из листа это
-        // подтверждает), поэтому складывать их нельзя — показываем всего и из них.
-        box.appendChild(vscBarChart({ key: "callsPer", label: "Первая линия — всего входящих звонков на человека в день (включая пропущенные)", fmt: "num", good: 0 }, series, { compact: true }));
-        box.appendChild(vscBarChart({ key: "missedPer", label: "Первая линия — из них пропущенных на человека в день", fmt: "num", good: -1 }, series, { compact: true }));
-        box.appendChild(vscBarChart({ key: "waitSec", label: "Первая линия — среднее ожидание на линии, секунд", fmt: "num", good: -1 }, series, { compact: true }));
-        box.appendChild(vscBarChart({ key: "missedPct", label: "Первая линия — % пропущенных звонков", fmt: "pct", good: -1 }, series, { compact: true }));
-        LOADK.filter((k) => k !== "pl").forEach((k) => box.appendChild(vscBarChart({ key: "load_" + k, label: DT[k], fmt: "num", good: 0 }, series, { compact: true })));
+        // У отделов разные единицы (звонки, лиды, сделки) и разный порядок величин,
+        // поэтому у каждой кривой своя шкала; в подсказке значения честные.
+        box.appendChild(vscLineChart({
+          key: "load_orkMsk", label: "Нагрузка на человека в день", fmt: "num",
+          lines: [{ key: "callsPer", color: PAL[0], label: "Первая линия — звонков", own: true }]
+            .concat(LOADK.filter((k) => k !== "pl").map((k, i) => ({
+              key: "load_" + k, color: PAL[(i + 1) % PAL.length],
+              label: DT[k] + " — " + (k === "op" ? "лидов" : "сделок"), own: true
+            })))
+        }, series));
 
         // ── Ввод ЗП управляющей за прошлый месяц (с 4 числа, пока не введена) ──
         const today = new Date();
@@ -5224,9 +5330,10 @@
       // дороже своей пропорциональной доли клиентских отделов).
       function vscSpbProfitBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
-        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Прибыль Санкт-Петербурга";
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Прибыль СПб";
         h.appendChild(vscInfo("<b>Как считаем</b><br>По вашей модели: выручка города минус ФОТ отдела ОРК Санкт-Петербург, взносы (25% от ФОТ), налог (3% от выручки), реклама СПб, аренда 70 000, курьеры 30 000, эквайринг (2,1% от выручки), возвраты СПб, прочее 25 000, аренда бэк-офиса 30 000 и доли общих отделов — ОП 100 000, ОО 75 000, управление 50 000, маркетинг 30 000, первая линия 30 000."
           + "<br><br><b>Откуда цифры</b><br>Выручка — ночной съём amoCRM по городам. ФОТ — зарплатная таблица, отдел «ОРК Санкт-Петербург». Реклама — KPI-лист, колонка «Рекламные расходы СПБ» (Grand total). Возвраты — отчёт по возвратам, колонка «Услуги» по строкам филиала СПб. Остальные статьи — фиксированные суммы вашей модели."
+          + "<br><br><b>Постоянные расходы месяца</b><br>Аренда 70 000, курьеры 30 000, прочее 25 000, бэк-офис 30 000, ФОТ общих отделов 285 000 — всего 440 000 ₽."
           + "<br><br>Месяц появляется с 4-го числа следующего, когда данные донесены."));
         wrap.appendChild(h);
         const box = document.createElement("div"); box.className = "vsc-chart";
@@ -5277,10 +5384,17 @@
             + '<td ' + TD + '><b>' + (sum.deals && sum.leads ? (Math.round(sum.deals / sum.leads * 1000) / 10).toString().replace(".", ",") + "%" : "—") + '</b></td>'
             + '<td ' + TD + '><b>' + (sum.deals ? Math.round(sum.revenue / sum.deals).toLocaleString("ru-RU") : "—") + '</b></td></tr>';
           html += '</table></div>';
-          html += '<div style="font-size:12px;color:#6b7280;margin-top:10px;">Рентабельность города: <b>' + (sum.revenue ? (Math.round(sum.profit / sum.revenue * 1000) / 10) + "%" : "—") + '</b>'
-            + ' · постоянные расходы месяца: аренда 70 000, курьеры 30 000, прочее 25 000, бэк-офис 30 000, ФОТ общих отделов 285 000 — всего 440 000 ₽.</div>';
+          // Таблица по статьям нужна не каждый раз — прячем под «Подробнее».
+          const det = document.createElement("details"); det.style.marginTop = "12px";
+          const sm = document.createElement("summary");
+          sm.style.cssText = "cursor:pointer;font-size:13px;font-weight:600;color:#33415a;user-select:none;";
+          sm.textContent = "Подробнее — по статьям и месяцам";
+          const rent = sum.revenue ? (Math.round(sum.profit / sum.revenue * 1000) / 10) : null;
+          if (rent != null) sm.innerHTML += '<span style="font-weight:400;color:#9096a3;"> · рентабельность города ' + String(rent).replace(".", ",") + '%</span>';
+          det.appendChild(sm);
           const tail = document.createElement("div"); tail.innerHTML = html;
-          box.appendChild(tail);
+          det.appendChild(tail);
+          box.appendChild(det);
         }).catch(function (e) { box.innerHTML = '<div class="vsc-empty">Не удалось посчитать: ' + escapeHtml(e.message) + '</div>'; });
         return wrap;
       }

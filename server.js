@@ -1130,6 +1130,7 @@ const CITY_REV_STATUSES = [].concat(
 const CITY_CF_DATE = 427242, CITY_CF_LEAD = 573762, CITY_CF_CONTACT = 571754;
 const CITY_CF_TOOK = 443488;                      // «Кто принял клиента» — специалист ОРК
 const CITY_CF_OPMGR = 453768;                     // «Менеджер ОП» — продажник, который привёл клиента
+const CITY_CF_RETDATE = 446714;                   // «Дата возврата» — возврат реально состоялся
 // Отдел оформления: свои поля сделки. Первый этап — приём в работу, второй — доведение
 // до выдачи; «Дедлайн ОО» против «Даты бонуса ОО 2й ЭТАП» даёт просрочку (D% из
 // калькулятора Плинер). Значения-заглушки («АКК», «БОТ», «Запись не требуется»)
@@ -1191,9 +1192,21 @@ async function runCityRevenue(trigger) {
       // Через оформление проходит ВЕСЬ объём, ОРК делим на города тем же признаком.
       const st = Number(l.status_id);
       const nm = String(l.name || "");
-      const isReturn = st === 21256761 || st === 43200834;
+      // Возврат = статус «Возврат» ИЛИ заполнена «Дата возврата» (статус мог уехать
+      // дальше). «ОЖИДАЕТ РЕШЕНИЯ О ВОЗВРАТЕ» возвратом НЕ считаем — решения ещё нет.
+      const isReturn = st === 21256761 || !!_cityCfVal(l, CITY_CF_RETDATE);
       const isSurcharge = st === 21271227 || /доплат/i.test(nm);
       const isVnjNext = isVnjDeal(l) && VNJ_NEXT_RE.test(nm);
+      // Доплата — не отдельная сделка, но деньги по ней реальные. Поэтому в выручку
+      // менеджера продаж она идёт, а в счётчик сделок — нет (решение Андрея 11.09).
+      if (isSurcharge && !isVnjNext && price > 0) {
+        const opmS = String(_cityCfVal(l, CITY_CF_OPMGR) || "").trim();
+        if (opmS) {
+          const om = byOpMgr[opmS] || (byOpMgr[opmS] = {});
+          const o2 = om[mk] || (om[mk] = { sold: 0, soldRev: 0, soldReturns: 0 });
+          o2.soldRev += price;
+        }
+      }
       if (!isSurcharge && !isVnjNext && (price > 0 || isReturn)) {
         months[mk].deals.total++;
         if (inF1 || inF2) months[mk].deals.spb++; else months[mk].deals.msk++;
@@ -6768,7 +6781,23 @@ function spbSnapLoad() { try { return JSON.parse(fs.readFileSync(SPB_SNAP_FILE, 
 function spbSnapSave(m) { try { fs.writeFileSync(SPB_SNAP_FILE, JSON.stringify(m, null, 2), "utf8"); } catch (e) { console.error("spbSnapSave:", e.message); } }
 const SPB_FIX = { rent: 70000, couriers: 30000, other: 25000, backOffice: 30000, fotOP: 100000, fotOO: 75000, fotUpr: 50000, fotMkt: 30000, fotPL: 30000 };
 const SPB_CONTRIB_RATE = 0.25, SPB_TAX_RATE = 0.03, SPB_ACQ_RATE = 0.021;
-let _spbCache = { at: 0, data: null };
+// Кэш прибыли СПб держим И на диске: расчёт тянет Я.Директ, зарплатную таблицу,
+// возвраты и KPI-лист, на телефоне это заметные секунды ожидания. После
+// перезапуска процесса память пустая, поэтому снимок лежит рядом на диске.
+const VSC_SPBPNL_FILE = path.join(__dirname, ".vscSpbPnl.json");
+let _spbCache = { at: 0, data: null }, _spbRunning = false;
+function _spbFromDisk() {
+  if (_spbCache.data) return _spbCache.data;
+  try { const d = JSON.parse(fs.readFileSync(VSC_SPBPNL_FILE, "utf8")); if (d && d.data) _spbCache = { at: d.ts || 0, data: d.data }; } catch (_) {}
+  return _spbCache.data;
+}
+// Тёплое отдаём сразу, свежее считаем фоном (как дашборд).
+function vscSpbPnlWarm() {
+  const cached = _spbFromDisk();
+  const stale = !cached || (Date.now() - _spbCache.at) > 30 * 60 * 1000;
+  if (stale && !_spbRunning) { _spbRunning = true; vscSpbPnl().catch(() => {}).then(() => { _spbRunning = false; }); }
+  return cached;
+}
 async function vscSpbPnl() {
   if (_spbCache.data && Date.now() - _spbCache.at < 30 * 60 * 1000) return _spbCache.data;
   const money = (v) => { const n = parseFloat(String(v == null ? "" : v).replace(/\s|\u00a0/g, "").replace(/₽|руб\.?/gi, "").replace(",", ".")); return isFinite(n) ? n : 0; };
@@ -6856,12 +6885,21 @@ async function vscSpbPnl() {
   }
   if (snapDirty) spbSnapSave(snap);
   _spbCache = { at: Date.now(), data: out };
+  try { fs.writeFileSync(VSC_SPBPNL_FILE, JSON.stringify({ ts: _spbCache.at, data: out }), "utf8"); } catch (e) { console.error("saveSpbPnl:", e.message); }
   return out;
 }
 app.get("/admin/api/vsc/spb-pnl", requireAdmin, async (req, res) => {
-  try { res.json({ success: true, months: await vscSpbPnl(), rates: { contrib: SPB_CONTRIB_RATE, tax: SPB_TAX_RATE, acquiring: SPB_ACQ_RATE }, fixed: SPB_FIX }); }
-  catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  try {
+    const warm = vscSpbPnlWarm();                       // ничего не ждём, если снимок есть
+    res.json({ success: true, months: warm || await vscSpbPnl(), rates: { contrib: SPB_CONTRIB_RATE, tax: SPB_TAX_RATE, acquiring: SPB_ACQ_RATE }, fixed: SPB_FIX });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
+// Фоновый прогрев прибыли СПб: через 40 секунд после старта и дальше раз в час.
+(function scheduleSpbPrewarm() {
+  const warm = () => { vscSpbPnl().catch((e) => console.error("SPB prewarm:", e && e.message)); };
+  setTimeout(warm, 40 * 1000);
+  setInterval(warm, 3600 * 1000);
+})();
 
 // ═══ «Запас на сборы» (Ежемесячный контроль; просьба Андрея 11.09.2026) ══════
 // Приход — деньги, которые клиенты заплатили за сборы и сопутствующее: колонки
