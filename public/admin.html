@@ -3928,6 +3928,154 @@
           vscContent.appendChild(hMkt);
           vscContent.appendChild(vscMarketChart(mktRows));
         }
+        // ── Зарплаты, штат и нагрузка — САМЫЙ НИЗ раздела. Только админ
+        // (ФОТ, средние зарплаты, ЗП управляющей — деликатные цифры). ──
+        if (currentRole() === "admin") vscContent.appendChild(vscZarplataBlock());
+      }
+      // ═══ Зарплаты, штат, взносы и нагрузка на персонал (низ «Ежемесячного контроля»).
+      // Источник — опубликованная зарплатная таблица «расчет ЗП Визы» (сервер читает
+      // xlsx-экспорт книги, по вкладке на месяц). Прибыль — уже загруженная vscData.profit,
+      // целевые контакты — из листа /vsc, успешные сделки по отделам — из ночного съёма
+      // amoCRM «Выручка по городам». ЗП управляющей вносится руками (её нет в ФОТ).
+      function vscZarplataBlock() {
+        const wrap = document.createElement("div"); wrap.style.marginTop = "26px";
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Зарплаты, штат и нагрузка";
+        h.appendChild(vscInfo(
+          "<b>Откуда цифры</b><br>Зарплатная таблица «расчет ЗП Визы» (опубликованный экспорт, только чтение; обновляется раз в 6 часов). По каждой месячной вкладке берём её собственный итог «ИТОГО ФОТ» (начислено + взносы), строки сотрудников и колонку отпускных дней."
+          + "<br><br><b>Штат</b> — строки сотрудников месяца МИНУС Зайцева Екатерина, Комисаренко Андрей и Панфилова Галина. <b>Средняя зарплата</b> = ФОТ общий ÷ штат — ровно так, как считает Андрей (август 2026: 5 728 903,39 ÷ 50 = 114 578,07)."
+          + "<br><br><b>Взносы</b> — сумма строк «взносы/осфр» по четырём юрлицам под итогом листа; разовый платёж с пометкой «ЕНС» не учитывается (май 2026). <b>ФОТ через зарплатный проект</b> — колонки «выплачено через зп проект» ПЛЮС НДФЛ: выплаты в таблице чистыми, а взносы начисляются на грязную базу. В таблице Андрея до мая 2026 НДФЛ в эту базу не включался, поэтому процент взносов за январь–май здесь ниже, чем в старом файле."
+          + "<br><br><b>Отделы</b> — колонка «Группа должности»; руководители идут в свой отдел, Кудрина Яна отнесена к оформлению. Трембачева и Пятилова вне отделов, управляющая тоже."
+          + "<br><br><b>Нагрузка</b> — на человека в день с вычетом отпусков: эффективный штат = штат − (отпускные дни ÷ календарные дни месяца), человеко-дни = эффективный штат × рабочие дни производственного календаря. База: отдел продаж — целевые контакты (факт таргета МСК+СПб), ОРК Москва / ОРК Санкт-Петербург / отдел оформления — успешные сделки своей воронки amoCRM без доплат, вторых частей ВНЖ и возвратов."
+        ));
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем зарплатную таблицу…</div>';
+        wrap.appendChild(box);
+        apiFetch("/admin/api/vsc/zarplata").then(function (j) {
+          if (!j || !j.success || !j.data || !j.data.months) { box.innerHTML = '<div class="vsc-empty">' + escapeHtml((j && j.message) || "Не удалось прочитать зарплатную таблицу.") + '</div>'; return; }
+          vscZarplataRender(box, j);
+        }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить зарплатную таблицу.</div>'; });
+        return wrap;
+      }
+      function vscZarplataRender(box, j) {
+        const months = j.data.months || {}, mgrPay = j.managerPay || {}, cityRev = j.cityRevenue || null;
+        const RU_MI = { "январь": 0, "февраль": 1, "март": 2, "апрель": 3, "май": 4, "июнь": 5, "июль": 6, "август": 7, "сентябрь": 8, "октябрь": 9, "ноябрь": 10, "декабрь": 11 };
+        // Показываем только месяцы, где лист посчитан до итога (ФОТ общий есть).
+        const list = Object.keys(months).map((k) => months[k]).filter((m) => m.fotTotal != null)
+          .sort((a, b) => (a.year * 12 + a.mi) - (b.year * 12 + b.mi));
+        if (!list.length) { box.innerHTML = '<div class="vsc-empty">В зарплатной таблице пока нет закрытых месяцев (итог «ИТОГО ФОТ» не посчитан).</div>'; return; }
+        const money = (v) => (v == null ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
+        const money2 = (v) => (v == null ? "—" : v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽");
+        const pct = (v) => (v == null ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU") + "%");
+        const num1 = (v) => (v == null ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU"));
+        const profitOf = (name) => (vscData && vscData.profit) ? vscData.profit[name] : null;
+        const short = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
+        const TD = 'style="padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;"';
+        const TH = 'style="padding:7px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;"';
+        const L = 'style="padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:left;white-space:nowrap;font-weight:600;"';
+        const tbl = (head, rows) => '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;min-width:720px;border-collapse:collapse;font-size:13px;">'
+          + '<tr><th ' + TH.replace("text-align:right", "text-align:left") + '>' + head[0] + '</th>' + head.slice(1).map((x) => '<th ' + TH + '>' + x + '</th>').join("") + '</tr>'
+          + rows.join("") + '</table></div>';
+        let html = "";
+
+        // ── 1. Зарплаты, штат, взносы, прибыль на сотрудника, ЗП управляющей ──
+        const r1 = list.map(function (m) {
+          const p = profitOf(m.month), mp = mgrPay[m.month];
+          const perHead = (p != null && m.staff) ? p / m.staff : null;
+          const mpPct = (mp != null && p) ? mp / p * 100 : null;
+          const col = (v) => (v != null && v < 0) ? ' color:#b0263a;' : "";
+          return '<tr><td ' + L + '>' + escapeHtml(m.month) + '</td>'
+            + '<td ' + TD + '>' + m.staff + '</td>'
+            + '<td ' + TD + '>' + money2(m.fotTotal) + '</td>'
+            + '<td ' + TD + '><b>' + money2(m.avgSalary) + '</b></td>'
+            + '<td ' + TD + '>' + money2(m.fotProject) + '</td>'
+            + '<td ' + TD + '>' + money2(m.contrib) + '</td>'
+            + '<td ' + TD + '><b>' + pct(m.contribPct) + '</b></td>'
+            + '<td ' + TD.slice(0, -1) + col(p) + '">' + money(p) + '</td>'
+            + '<td ' + TD.slice(0, -1) + col(perHead) + '">' + money(perHead) + '</td>'
+            + '<td ' + TD + '>' + money2(mp) + '</td>'
+            + '<td ' + TD.slice(0, -1) + col(mpPct) + '">' + pct(mpPct) + '</td></tr>';
+        });
+        html += '<div class="vsc-chart-h" style="margin-bottom:8px;">Зарплаты, штат и взносы — по месяцам</div>'
+          + tbl(["Месяц", "Штат", "ФОТ общий (вкл. взносы)", "Средняя ЗП", "ФОТ через зп-проект", "Взносы", "% взносов", "Прибыль", "Прибыль на сотрудника", "ЗП управляющей", "% от прибыли"], r1);
+
+        // ── 2. Средняя зарплата по отделам ──
+        const DK = ["pl", "op", "orkMsk", "orkSpb", "oo", "none"];
+        const DT = { pl: "Первая линия", op: "Отдел продаж", orkMsk: "ОРК Москва", orkSpb: "ОРК СПб", oo: "Отдел оформления", none: "Вне отделов" };
+        const withDepts = list.filter((m) => m.hasDepts && m.depts && Object.keys(m.depts).length);
+        if (withDepts.length) {
+          const r2 = withDepts.map(function (m) {
+            return '<tr><td ' + L + '>' + escapeHtml(m.month) + '</td>'
+              + DK.map(function (k) {
+                const d = m.depts[k];
+                return '<td ' + TD + '>' + (d ? money(d.avg) + '<span style="color:#9096a3;font-weight:400;"> · ' + d.staff + ' чел.</span>' : "—") + '</td>';
+              }).join("") + '</tr>';
+          });
+          html += '<div class="vsc-chart-h" style="margin:22px 0 8px;">Средняя начисленная зарплата по отделам</div>'
+            + tbl(["Месяц"].concat(DK.map((k) => DT[k])), r2)
+            + '<div style="font-size:11.5px;color:#9096a3;margin-top:7px;">По отделам — средняя НАЧИСЛЕННАЯ зарплата (без взносов), поэтому она ниже общей средней, где ФОТ взят вместе с взносами.</div>';
+        }
+
+        // ── 3. Нагрузка на персонал с учётом отпусков ──
+        const LOADK = ["op", "orkMsk", "orkSpb", "oo"];
+        const LOADT = { op: "Отдел продаж<div style=\"font-weight:400;color:#9096a3;\">целевые контакты</div>", orkMsk: "ОРК Москва<div style=\"font-weight:400;color:#9096a3;\">успешные сделки</div>", orkSpb: "ОРК СПб<div style=\"font-weight:400;color:#9096a3;\">успешные сделки</div>", oo: "Отдел оформления<div style=\"font-weight:400;color:#9096a3;\">успешные сделки</div>" };
+        const baseOf = function (m, key) {
+          if (key === "op") {
+            const vm = (vscData.months || []).find((x) => x.name === m.month);
+            return (vm && vm.total && vm.total.targetFact != null) ? vm.total.targetFact : null;
+          }
+          const cm = cityRev && cityRev.months && cityRev.months[String(m.mi)];
+          return (cm && cm.deals && cm.deals[key] != null && m.year === (cityRev.year || m.year)) ? cm.deals[key] : null;
+        };
+        const r3 = list.map(function (m) {
+          return '<tr><td ' + L + '>' + escapeHtml(m.month) + '</td>'
+            + '<td ' + TD + '>' + (m.workDays || "—") + '</td>'
+            + '<td ' + TD + '>' + num1(m.vacDaysTotal) + '</td>'
+            + LOADK.map(function (k) {
+              const d = m.depts && m.depts[k], base = baseOf(m, k);
+              if (!d || !d.manDays || base == null) return '<td ' + TD + '>—</td>';
+              const perDay = base / d.manDays;
+              return '<td ' + TD + '><b>' + num1(perDay) + '</b><span style="color:#9096a3;font-weight:400;"> · ' + base.toLocaleString("ru-RU") + ' / ' + num1(d.effStaff) + ' чел.</span></td>';
+            }).join("") + '</tr>';
+        });
+        html += '<div class="vsc-chart-h" style="margin:22px 0 8px;">Нагрузка на человека в день (с вычетом отпусков)</div>'
+          + tbl(["Месяц", "Рабочих дней", "Отпускных дней"].concat(LOADK.map((k) => LOADT[k])), r3)
+          + '<div style="font-size:11.5px;color:#9096a3;margin-top:7px;">В ячейке: нагрузка на человека в день · всего за месяц / эффективный штат отдела. Первая линия (входящие и пропущенные звонки на человека) ещё не подключена — нужен источник по звонкам.</div>';
+
+        const upd = j.data.ts ? new Date(j.data.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+        html += '<div style="font-size:11.5px;color:#9096a3;margin-top:12px;">зарплатная таблица прочитана: ' + escapeHtml(upd) + ' МСК</div>';
+        box.innerHTML = html;
+
+        // ── Ввод ЗП управляющей за прошлый месяц (с 4 числа, пока не введена) ──
+        const today = new Date();
+        if (today.getDate() >= 4) {
+          const pm = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
+          const py = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+          const prevName = VSC_MON_NAMES[pm] + " " + py;
+          if (mgrPay[prevName] == null) {
+            const card = document.createElement("div"); card.className = "vsc-chart vsc-profit-banner"; card.style.marginTop = "14px";
+            card.innerHTML = '<div class="vsc-chart-h" style="margin-bottom:5px;">ЗП управляющей за ' + escapeHtml(prevName) + '</div>'
+              + '<div style="font-size:12.5px;color:#6b7280;margin-bottom:11px;line-height:1.5;">Сколько заработала Екатерина Зайцева за прошлый месяц (₽). В зарплатной таблице этой суммы нет — попадёт в таблицу выше и в «% от прибыли».</div>'
+              + '<div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;">'
+              + '<input id="vscMgrPayField" type="number" inputmode="numeric" placeholder="например, 250 000" style="flex:1;min-width:200px;height:46px;padding:0 15px;font-size:15px;border:1px solid rgba(20,32,64,.14);border-radius:12px;box-sizing:border-box;font-family:inherit;background:#fff;" />'
+              + '<button id="vscMgrPaySave" type="button" class="vsc-dayrev-refresh" style="height:46px;padding:0 22px;font-size:14px;margin-top:0;">Сохранить</button>'
+              + '</div><div id="vscMgrPayErr" style="color:#b0263a;font-size:12.5px;margin-top:8px;display:none;"></div>';
+            const inp = card.querySelector("#vscMgrPayField"), err = card.querySelector("#vscMgrPayErr"), btn = card.querySelector("#vscMgrPaySave");
+            const save = async () => {
+              const val = parseFloat(String(inp.value).replace(/\s/g, "").replace(",", "."));
+              if (!isFinite(val)) { err.textContent = "Введите число"; err.style.display = "block"; return; }
+              btn.disabled = true; btn.textContent = "Сохраняем…";
+              try {
+                const resp = await fetch("/admin/api/vsc/manager-pay", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ month: prevName, pay: val }) });
+                const r = await resp.json();
+                if (r && r.success) { j.managerPay = r.managerPay; vscZarplataRender(box, j); }
+                else { err.textContent = (r && r.message) || "Не удалось сохранить"; err.style.display = "block"; btn.disabled = false; btn.textContent = "Сохранить"; }
+              } catch (e) { err.textContent = "Ошибка сети"; err.style.display = "block"; btn.disabled = false; btn.textContent = "Сохранить"; }
+            };
+            btn.addEventListener("click", save);
+            inp.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
+            box.appendChild(card);
+          }
+        }
       }
       // Блок «% записанных сделок — Шенген и США» — из живой amoCRM (по дате оплаты),
       // живой (без заморозки). Два вида (переключение флагом — лёгкий откат):

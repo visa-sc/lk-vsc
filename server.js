@@ -1172,12 +1172,26 @@ async function runCityRevenue(trigger) {
       const cid = mainCid(l); const c571 = cid ? (cmap[cid] || []) : [];
       const inF1 = (emptyL || l573.some((v) => CITY_F1_LEAD.has(v))) && c571.includes(CITY_F1_CONTACT);
       const inF2 = l573.includes(CITY_F2_LEAD) && (c571.length === 0 || c571.some((v) => CITY_F2_CONTACT.has(v)));
-      if (!months[mk]) months[mk] = { total: 0, spb: 0 };
+      if (!months[mk]) months[mk] = { total: 0, spb: 0, deals: { orkMsk: 0, orkSpb: 0, oo: 0 } };
       months[mk].total += price;
       if (inF1 || inF2) months[mk].spb += price;
+      // ── Успешные сделки по отделам (для «Нагрузки на персонал», Андрей 11.09) ──
+      // Те же отсечки, что и в «% повторных сделок»: доплаты (статус и по названию),
+      // вторые части ВНЖ, возвраты и сделки с нулевым бюджетом — это не новая
+      // обработанная клиентская сделка. Воронка = отдел: «Отдел по работе с
+      // Клиентами» (делим на МСК/СПб тем же признаком города) и «Отдел Оформления».
+      const st = Number(l.status_id), pl = Number(l.pipeline_id);
+      const nm = String(l.name || "");
+      const isReturn = st === 21256761 || st === 43200834;
+      const isSurcharge = st === 21271227 || /доплат/i.test(nm);
+      const isVnjNext = isVnjDeal(l) && VNJ_NEXT_RE.test(nm);
+      if (!isReturn && !isSurcharge && !isVnjNext && price > 0) {
+        if (pl === 1312578) months[mk].deals.oo++;
+        else if (pl === 1309524) { if (inF1 || inF2) months[mk].deals.orkSpb++; else months[mk].deals.orkMsk++; }
+      }
     }
     const out = {};
-    Object.keys(months).forEach((mk) => { out[mk] = { total: Math.round(months[mk].total), spb: Math.round(months[mk].spb), msk: Math.round(months[mk].total - months[mk].spb) }; });
+    Object.keys(months).forEach((mk) => { out[mk] = { total: Math.round(months[mk].total), spb: Math.round(months[mk].spb), msk: Math.round(months[mk].total - months[mk].spb), deals: months[mk].deals }; });
     const result = { ts: Date.now(), year: 2026, leads: rev.length, durationMs: Date.now() - t0, months: out };
     saveCityRev(result);
     _cityRevLog.unshift({ ts: result.ts, trigger: trigger || "cron", leads: rev.length, ms: result.durationMs }); _cityRevLog = _cityRevLog.slice(0, 30);
@@ -1206,6 +1220,37 @@ app.post("/admin/api/vsc/city-revenue/run", requireAdmin, (req, res) => {
 scheduleCityRevenueDaily();
 // Первичный расчёт через 2 мин после старта, если кэша ещё нет (далее — крон 05:00).
 if (!loadCityRev()) setTimeout(() => { Promise.resolve(amoBg(() => runCityRevenue("startup"))).catch(() => {}); }, 120 * 1000);
+
+// ── Зарплатная таблица «расчет ЗП Визы» (/vsc «Ежемесячный контроль», низ) ─────
+// Разбор живёт в zarplata.js (опубликованный xlsx-экспорт книги, только чтение).
+// Раздел деликатный (ФОТ, средние зарплаты, ЗП управляющей) → ТОЛЬКО админ.
+const zarplata = require("./zarplata");
+// ЗП управляющей в зарплатной таблице нет (она вне ФОТ) — Андрей вносит руками,
+// как прибыль. Хранение тем же способом: { "Август 2026": 250000 }.
+const VSC_MGRPAY_FILE = path.join(__dirname, ".vscManagerPay.json");
+// История — со скриншота Андрея (11.09.2026); дальше вносится через форму.
+const VSC_MGRPAY_SEED = {
+  "Январь 2026": 485591.91, "Февраль 2026": 510917.62, "Март 2026": 426100, "Апрель 2026": 455128,
+  "Май 2026": 484760, "Июнь 2026": 250000, "Июль 2026": 250000, "Август 2026": 250000
+};
+function loadMgrPay() { try { return Object.assign({}, VSC_MGRPAY_SEED, JSON.parse(fs.readFileSync(VSC_MGRPAY_FILE, "utf8")) || {}); } catch (_) { return Object.assign({}, VSC_MGRPAY_SEED); } }
+function saveMgrPay(m) { try { fs.writeFileSync(VSC_MGRPAY_FILE, JSON.stringify(m || {}, null, 2), "utf8"); return true; } catch (e) { console.error("saveMgrPay:", e.message); return false; } }
+app.get("/admin/api/vsc/zarplata", requireAdmin, async (req, res) => {
+  try {
+    const d = await zarplata.getZarplata(String(req.query.force || "") === "1");
+    return res.json({ success: true, data: d, managerPay: loadMgrPay(), cityRevenue: loadCityRev() });
+  } catch (e) {
+    console.error("vsc zarplata:", e && e.message);
+    return res.status(500).json({ success: false, message: "Не удалось прочитать зарплатную таблицу: " + (e && e.message) });
+  }
+});
+app.post("/admin/api/vsc/manager-pay", requireAdmin, (req, res) => {
+  const month = String((req.body && req.body.month) || "").trim();
+  const pay = parseFloat(req.body && req.body.pay);
+  if (!month || !isFinite(pay)) return res.status(400).json({ success: false, message: "Нужны month и числовой pay" });
+  const m = loadMgrPay(); m[month] = pay;
+  return res.json({ success: saveMgrPay(m), managerPay: m });
+});
 
 // ── Выручка за ТЕКУЩИЕ сутки (раздел «День» дашборда /vsc) ────────────────────
 // «Вся выручка» по тому же набору статусов 3 воронок, что и «Выручка по городам»
@@ -4814,6 +4859,8 @@ function vscParseMonth(rows) {
     atv: C.atv >= 0 ? vscNum(r[C.atv]) : null, asp: vscNum(r[C.asp]), upt: vscNum(r[C.upt]),
     cv: vscNum(r[C.cv]), cpl: vscNum(r[C.cpl]), drr: vscNum(r[C.drr]),
     over: sumNN(r, overCols), targetDev: targetDev(r),
+    // Целевые контакты (ФАКТ МСК + ФАКТ СПб) — база нагрузки отдела продаж.
+    targetFact: sumNN(r, [C.factMSK, C.factSPB].filter((i) => i >= 0)),
     processed: (function () { const b = sumNN(r, processedCols); if (b == null) return null; const a = sumNN(r, manualAddCols); return b - (a || 0); })(),
     rev: vscNum(r[C.rev]), ad: vscNum(r[C.ad]), budget: C.budget >= 0 ? vscNum(r[C.budget]) : null,
     missedPct: C.missedPct >= 0 ? vscNum(r[C.missedPct]) : null,
