@@ -4483,8 +4483,7 @@
          { key: "fotTotal", label: "ФОТ общий (вкл. взносы)", fmt: "money" },
          { key: "contribPct", label: "% взносов от ФОТ через зарплатный проект", fmt: "pct" },
          { key: "fotRev", label: "% ФОТ от выручки", fmt: "pct" },
-         { key: "staff", label: "Штат", fmt: "int" },
-         { key: "mgrPay", label: "ЗП управляющей", fmt: "money" }
+         { key: "staff", label: "Штат", fmt: "int" }
         ].forEach((kpi) => box.appendChild(vscLineChart(kpi, series)));
         // Уходят в минус — часть кривой ниже нуля красим красным.
         box.appendChild(vscLineChart({ key: "perHead", label: "Прибыль на сотрудника", fmt: "money", negRed: true }, series));
