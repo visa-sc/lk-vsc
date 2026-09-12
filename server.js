@@ -6972,8 +6972,7 @@ app.get("/admin/api/vsc/spb-pnl", requireAdmin, async (req, res) => {
 // Консульские сборы, Услуги АКК, Запись/БОТ, Сторонние курьеры, Страховка,
 // Языковые переводы), строка «Итог». Возвраты — из таблицы возвратов, блок
 // «РАЗБИВКА СУММЫ ВОЗВРАТА» без колонок «Услуги» и «НДС» (они про наши услуги,
-// а не про сборы). Расход — категория «Сборы» из Платрума; пока доступа к их
-// API нет, сумма вводится руками и хранится в .vscSboryExpense.json.
+// а не про сборы). Расход — категория «Сборы» из P&L Платрума, тянется по API.
 const VSC_SBORY_EXP_FILE = path.join(__dirname, ".vscSboryExpense.json");
 // Расход по категории «Сборы» тянется из P&L Платрума (строка «Сборы» в переменных
 // расходах). Файл .vscSboryExpense.json остался как ручное переопределение на
@@ -6986,6 +6985,7 @@ function vscSboryExpLoad() {
   } catch (e) { console.error("sbory из Платрума:", e && e.message); }
   try { return Object.assign(fromPlatrum, JSON.parse(fs.readFileSync(VSC_SBORY_EXP_FILE, "utf8")) || {}); } catch (_) { return fromPlatrum; }
 }
+function vscSboryOverrides() { try { return JSON.parse(fs.readFileSync(VSC_SBORY_EXP_FILE, "utf8")) || {}; } catch (_) { return {}; } }
 function vscSboryExpSave(m) { try { fs.writeFileSync(VSC_SBORY_EXP_FILE, JSON.stringify(m, null, 2), "utf8"); return true; } catch (e) { console.error("vscSboryExpSave:", e.message); return false; } }
 // Колонки ищем ПО НАЗВАНИЯМ, а не по позиции: в январе-апреле вёрстка листа
 // другая (в январе сборы лежат в 87..96, с мая — в 98..107 = CU..DD).
@@ -7100,7 +7100,7 @@ app.post("/admin/api/vsc/sbory-expense", requireAdmin, (req, res) => {
   const month = String((req.body && req.body.month) || "").trim();
   const v = req.body && req.body.expense;
   if (!month) return res.status(400).json({ success: false, message: "Нужен month" });
-  const m = vscSboryExpLoad();
+  const m = vscSboryOverrides();                       // правим ТОЛЬКО ручные правки, значения Платрума в файл не пишем
   if (v == null || v === "") delete m[month]; else { const n = parseFloat(v); if (!isFinite(n)) return res.status(400).json({ success: false, message: "Расход должен быть числом" }); m[month] = n; }
   const ok = vscSboryExpSave(m);
   _sboryCache = { at: 0, data: null };
