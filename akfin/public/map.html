@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Карта">
+<meta name="theme-color" content="#f2f5f9">
+<link rel="apple-touch-icon" href="/fin-icon.png">
+<title>Карта сервисов</title>
+<style>
+/* Тот же светлый скин, что у личных финансов, но шире — здесь таблица, а не форма */
+:root{
+  --bg:#f2f5f9; --card:#ffffff; --line:rgba(23,32,60,.08);
+  --ink:#171c29; --muted:#6a7385; --faint:#9aa3b2;
+  --acc:#3589BD; --warn:#ff9500; --bad:#ff3b30; --good:#34c759;
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 14px 34px -18px rgba(16,32,64,.20);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+body{min-height:100vh}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(180deg,#f7fafd 0%,#f2f5f9 45%,#edf1f7 100%)}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+code,.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
+
+/* ── вход ── */
+#login{display:none;flex-direction:column;gap:16px;align-items:center;padding-top:24vh}
+#login input{font-size:26px;text-align:center;letter-spacing:8px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 10px;width:220px;outline:none;box-shadow:var(--shadow)}
+#login button{font-size:17px;font-weight:600;background:var(--acc);color:#fff;border:0;border-radius:16px;padding:14px 44px;box-shadow:var(--shadow)}
+#login #bioBtn{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.err{color:var(--bad);font-size:14px;min-height:18px}
+
+/* ── шапка ── */
+#main{display:none}
+.head{padding:calc(env(safe-area-inset-top) + 26px) 0 6px}
+h1{font-size:30px;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:13px;margin-top:6px;line-height:1.5}
+.counters{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 6px}
+.counter{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:9px 14px;box-shadow:var(--shadow);min-width:84px}
+.counter b{display:block;font-size:21px;letter-spacing:-.02em}
+.counter span{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.tools{position:sticky;top:0;z-index:5;display:flex;gap:8px;padding:12px 0;background:linear-gradient(180deg,#f4f7fb 70%,rgba(244,247,251,0))}
+#q{flex:1;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 16px;font-size:16px;outline:none;box-shadow:var(--shadow);color:var(--ink);min-width:0}
+.btn{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:0 16px;font-size:14px;color:var(--muted);box-shadow:var(--shadow);white-space:nowrap;font-family:inherit}
+.btn:active{background:var(--bg)}
+
+/* ── блоки ── */
+.sec{margin-top:26px}
+.sec > h2{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:0 4px 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);margin-bottom:12px;overflow:hidden}
+.dom{display:flex;align-items:flex-start;gap:10px;padding:15px 17px;cursor:pointer}
+.dom .nm{font-size:17px;font-weight:650;letter-spacing:-.01em;word-break:break-all}
+.dom .meta{color:var(--muted);font-size:12.5px;margin-top:3px;line-height:1.45}
+.dom .cnt{margin-left:auto;color:var(--faint);font-size:12px;white-space:nowrap;padding-top:3px}
+.tag{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:7px;background:#eef2f7;color:var(--muted);vertical-align:2px;margin-left:6px;letter-spacing:.02em}
+.tag.app{background:#e7f1f8;color:#2c6f98}
+.tag.redirect{background:#f3f0fa;color:#6f5bb0}
+.tag.static{background:#eef5ee;color:#4b7a53}
+.tag.proxy{background:#fbf2e8;color:#9a6b26}
+.tag.lock{background:#fdeeee;color:#b3453c}
+.body{display:none;border-top:1px solid var(--line);padding:4px 0 8px}
+.card.open .body{display:block}
+.grp{padding:12px 17px 2px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+.row{padding:9px 17px;border-top:1px solid rgba(23,32,60,.045)}
+.row:first-of-type{border-top:0}
+.row .p{font-size:14px;font-weight:600;word-break:break-all}
+.row .p .host{color:var(--faint);font-weight:400}
+.row .d{color:var(--muted);font-size:12.5px;margin-top:2px;line-height:1.45}
+.row .src{color:#b6bdc9;font-size:11px;margin-top:3px}
+.secs{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.secs span{font-size:11.5px;background:#f2f5f9;color:var(--muted);border-radius:7px;padding:3px 8px}
+.more{padding:10px 17px;color:var(--acc);font-size:13px;cursor:pointer;border-top:1px solid rgba(23,32,60,.045)}
+.list{padding:2px 17px 10px;display:none;flex-wrap:wrap;gap:6px}
+.list.open{display:flex}
+.list code{font-size:11.5px;color:var(--muted);background:#f4f6fa;border-radius:6px;padding:3px 7px;word-break:break-all}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-weight:600;color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:10px 14px;border-bottom:1px solid var(--line)}
+td{padding:10px 14px;border-bottom:1px solid rgba(23,32,60,.045);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td .s{color:var(--muted);font-size:12.5px}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--good);margin-right:6px;vertical-align:1px}
+.dot.off{background:var(--bad)}
+.scroll{overflow-x:auto}
+.chg{padding:12px 17px;border-top:1px solid rgba(23,32,60,.045)}
+.chg:first-child{border-top:0}
+.chg .when{font-size:12px;color:var(--faint);margin-bottom:6px}
+.chg .add{color:#2f7d3b}
+.chg .rem{color:#a8443c}
+.chg ul{margin:2px 0 0 18px;font-size:13px;line-height:1.55}
+.empty{padding:16px 17px;color:var(--muted);font-size:13.5px}
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:#171c29;color:#fff;font-size:14px;padding:11px 18px;border-radius:14px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
+#toast.on{opacity:1;transform:translateX(-50%)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div id="login">
+    <input id="code" type="tel" inputmode="numeric" placeholder="код" autocomplete="one-time-code">
+    <div class="err" id="loginErr"></div>
+    <button onclick="doLogin()">Войти</button>
+    <button id="bioBtn" style="display:none" onclick="bioLogin()">Face ID</button>
+  </div>
+
+  <div id="main">
+    <div class="head">
+      <h1>Карта</h1>
+      <div class="sub" id="stamp"></div>
+      <div class="counters" id="counters"></div>
+    </div>
+
+    <div class="tools">
+      <input id="q" placeholder="Поиск по домену, странице, разделу" autocomplete="off">
+      <button class="btn" onclick="refreshScan()" id="rescanBtn">Обновить</button>
+      <button class="btn" onclick="toggleAll()" id="expandBtn">Развернуть</button>
+    </div>
+
+    <div id="out"></div>
+  </div>
+
+</div>
+<div id="toast"></div>
+
+<script>
+// Токен общий с /fin: если вошёл в финансы на этом телефоне, карта откроется сразу.
+const LS_TOKEN = "finToken";
+let token = localStorage.getItem(LS_TOKEN) || "";
+let DATA = null;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function toast(t) { const e = $("toast"); e.textContent = t; e.classList.add("on"); setTimeout(() => e.classList.remove("on"), 2200); }
+
+async function api(path, opts = {}) {
+  opts.headers = Object.assign({ "Content-Type": "application/json", Authorization: "Bearer " + token }, opts.headers || {});
+  const r = await fetch(path, opts);
+  if (r.status === 401 && !path.endsWith("/login")) { showLogin(); throw new Error("auth"); }
+  return r.json();
+}
+function showLogin() { $("login").style.display = "flex"; $("main").style.display = "none"; updateBioBtn(); }
+function showMain() { $("login").style.display = "none"; $("main").style.display = "block"; }
+
+/* ── вход: код и Face ID, ровно те же ручки, что у /fin ── */
+const b2a = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+const a2b = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+async function updateBioBtn() {
+  try {
+    if (!window.PublicKeyCredential) return;
+    const r = await (await fetch("/fin/api/bio/has", { method: "POST" })).json();
+    $("bioBtn").style.display = r.has ? "" : "none";
+  } catch (e) {}
+}
+async function bioLogin() {
+  try {
+    const opts = await (await fetch("/fin/api/bio/auth-options", { method: "POST" })).json();
+    if (!opts.challenge) return false;
+    opts.challenge = b2a(opts.challenge);
+    (opts.allowCredentials || []).forEach((c) => { c.id = b2a(c.id); });
+    const cred = await navigator.credentials.get({ publicKey: opts });
+    const payload = {
+      id: cred.id, rawId: a2b(cred.rawId), type: cred.type,
+      response: {
+        clientDataJSON: a2b(cred.response.clientDataJSON),
+        authenticatorData: a2b(cred.response.authenticatorData),
+        signature: a2b(cred.response.signature),
+        userHandle: cred.response.userHandle ? a2b(cred.response.userHandle) : null,
+      },
+      clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    };
+    const r = await (await fetch("/fin/api/bio/auth-verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assertionResponse: payload }) })).json();
+    if (!r.success) { $("loginErr").textContent = r.message || "Не получилось"; return false; }
+    token = r.token; localStorage.setItem(LS_TOKEN, token);
+    showMain(); await load();
+    return true;
+  } catch (e) { return false; }
+}
+async function doLogin() {
+  $("loginErr").textContent = "";
+  try {
+    const r = await api("/fin/api/login", { method: "POST", body: JSON.stringify({ code: $("code").value.trim() }) });
+    if (!r.success) { $("loginErr").textContent = r.message || "Ошибка"; return; }
+    token = r.token; localStorage.setItem(LS_TOKEN, token);
+    showMain(); await load();
+  } catch (e) { $("loginErr").textContent = "Ошибка сети"; }
+}
+$("code").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+
+/* ── данные ── */
+async function load() {
+  const r = await api("/map/api/data");
+  if (!r.success) { $("out").innerHTML = '<div class="card"><div class="empty">' + esc(r.message) + "</div></div>"; return; }
+  DATA = r.data;
+  render();
+}
+async function refreshScan() {
+  const b = $("rescanBtn"); b.textContent = "Считаю…"; b.disabled = true;
+  try {
+    const r = await api("/map/api/refresh", { method: "POST" });
+    if (r.success) { await load(); toast(r.log || "Обновлено"); }
+    else toast(r.message || "Не вышло");
+  } catch (e) { if (String(e.message) !== "auth") toast("Ошибка сети"); }
+  b.textContent = "Обновить"; b.disabled = false;
+}
+
+/* ── отрисовка ── */
+const fmtAgo = (iso) => {
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 2) return "только что";
+  if (m < 60) return m + " мин назад";
+  const h = Math.round(m / 60);
+  if (h < 24) return h + " ч назад";
+  return Math.round(h / 24) + " дн назад";
+};
+const fmtUp = (ms) => {
+  const h = Math.floor(ms / 3600000);
+  if (h < 48) return h + " ч";
+  return Math.floor(h / 24) + " дн";
+};
+
+function render() {
+  const d = DATA, s = d.stats || {};
+  $("stamp").innerHTML = "Собрано автоматически " + esc(fmtAgo(d.generatedAt)) +
+    "<br>Источники: nginx, pm2, объявления маршрутов в коде, crontab. Пересборка раз в час.";
+  $("counters").innerHTML = [
+    [s.domains, "домены"], [s.pages, "страницы"], [s.sections, "разделы"],
+    [s.api, "api"], [s.services, "сервисы"], [(d.external || []).length, "внешние"],
+  ].map(([n, t]) => '<div class="counter"><b>' + (n || 0) + "</b><span>" + t + "</span></div>").join("");
+  paint();
+}
+
+// Порядок групп: сначала то, что видит клиент, в конце — служебные хвосты.
+const GROUPS = ["Клиент", "Поиск", "Управление", "Рабочее место", "Личное", "Лендинги", "Служебное"];
+function byGroup(a, b) {
+  const ga = GROUPS.indexOf(a.group || ""), gb = GROUPS.indexOf(b.group || "");
+  const ka = ga < 0 ? GROUPS.length : ga, kb = gb < 0 ? GROUPS.length : gb;
+  return ka - kb || a.path.localeCompare(b.path);
+}
+
+function matches(q, ...parts) {
+  if (!q) return true;
+  return parts.filter(Boolean).join(" ").toLowerCase().includes(q);
+}
+
+function paint() {
+  const q = $("q").value.trim().toLowerCase();
+  const d = DATA;
+  let h = "";
+
+  /* Домены и их страницы */
+  h += '<div class="sec"><h2>Домены и страницы</h2>';
+  for (const dom of d.domains) {
+    const pages = (dom.pages || []).filter((p) =>
+      matches(q, p.path, p.title, p.desc, p.group, (p.sections || []).map((x) => x.label).join(" ")));
+    const domHit = matches(q, dom.domain, dom.aliases.join(" "), dom.note);
+    if (q && !domHit && !pages.length) continue;
+    let show = (q ? (domHit ? dom.pages || [] : pages) : dom.pages || []).slice().sort(byGroup);
+    // Страниц под поиск десятки, и описание у них одно на всех — в развёрнутом
+    // виде они забивают карточку. Прячем их под строку-раскрывашку, но при
+    // поиске показываем как обычные строки, иначе найденное не увидеть.
+    let seo = [];
+    if (!q) { seo = show.filter((p) => p.group === "Поиск"); show = show.filter((p) => p.group !== "Поиск"); }
+
+    const meta = [];
+    if (dom.service) meta.push("сервис " + dom.service + (dom.port ? " :" + dom.port : ""));
+    if (dom.kind === "redirect") meta.push("→ " + dom.target);
+    if (dom.mirrorOf) meta.push("тот же процесс, что у " + dom.mirrorOf);
+    if (dom.kind === "static") meta.push("статика " + dom.target);
+    if (dom.aliases && dom.aliases.length) meta.push("алиасы: " + dom.aliases.join(", "));
+
+    h += '<div class="card' + (q ? " open" : "") + '"><div class="dom" onclick="this.parentNode.classList.toggle(\'open\')">' +
+      '<div><div class="nm">' + esc(dom.domain) + '<span class="tag ' + dom.kind + '">' + kindName(dom.kind) + "</span></div>" +
+      (dom.note ? '<div class="meta">' + esc(dom.note) + "</div>" : "") +
+      (meta.length ? '<div class="meta">' + esc(meta.join(" · ")) + "</div>" : "") +
+      "</div>" +
+      '<div class="cnt">' + (show.length + seo.length ? show.length + seo.length + " стр." : "") +
+      ((dom.api || []).length ? " · " + dom.api.length + " api" : "") + "</div>" +
+      "</div>";
+
+    h += '<div class="body">';
+    if (!show.length && !seo.length) h += '<div class="empty">' + (dom.mirrorOf ? "Страницы перечислены у " + esc(dom.mirrorOf) + "." : "Своих страниц нет.") + "</div>";
+    let grp = null;
+    for (const p of show) {
+      const g = p.group || "Без группы";
+      if (g !== grp) { grp = g; h += '<div class="grp">' + esc(g) + "</div>"; }
+      h += '<div class="row"><div class="p">' + esc(p.path) +
+        (p.access ? '<span class="tag lock">' + esc(p.access) + "</span>" : "") + "</div>";
+      const text = p.desc || p.title;
+      if (text) h += '<div class="d">' + esc(text) + "</div>";
+      if (!p.desc) h += '<div class="d" style="color:var(--warn)">без описания — допишите строку в tools/sitemap-notes.json</div>';
+      if (p.sections && p.sections.length) {
+        h += '<div class="secs">' + p.sections.map((x) => "<span>" + esc(x.label) + "</span>").join("") + "</div>";
+      }
+      if (p.src) h += '<div class="src mono">' + esc(p.src) + "</div>";
+      h += "</div>";
+    }
+    if (seo.length) {
+      h += '<div class="more" onclick="this.nextElementSibling.classList.toggle(\'open\')">Страницы под поиск — ' + seo.length + "</div>";
+      h += '<div class="list">' + seo.map((p) => "<code>" + esc(p.path) + "</code>").join("") + "</div>";
+    }
+    if ((dom.api || []).length) {
+      h += '<div class="more" onclick="this.nextElementSibling.classList.toggle(\'open\')">API — ' + dom.api.length + " ручек</div>";
+      h += '<div class="list">' + dom.api.map((a) => "<code>" + esc(a.methods.join("/")) + " " + esc(a.path) + "</code>").join("") + "</div>";
+    }
+    if ((dom.assets || []).length) {
+      h += '<div class="more" onclick="this.nextElementSibling.classList.toggle(\'open\')">Служебные файлы — ' + dom.assets.length + "</div>";
+      h += '<div class="list">' + dom.assets.map((a) => "<code>" + esc(a.path) + "</code>").join("") + "</div>";
+    }
+    if (dom.fallback) h += '<div class="empty">' + esc(dom.fallback) + "</div>";
+    h += "</div></div>";
+  }
+  h += "</div>";
+
+  /* Процессы */
+  const svc = (d.services || []).filter((x) => matches(q, x.name, x.cwd, x.user));
+  if (svc.length) {
+    h += '<div class="sec"><h2>Процессы на сервере</h2><div class="card"><div class="scroll"><table>' +
+      "<tr><th>Сервис</th><th>Где</th><th>Аптайм</th><th>Память</th></tr>" +
+      svc.map((x) => "<tr><td><span class='dot" + (x.status === "online" ? "" : " off") + "'></span><b>" + esc(x.name) + "</b>" +
+        "<div class='s'>под " + esc(x.user) + " · " + esc(x.script) + "</div></td>" +
+        "<td class='s mono'>" + esc(x.cwd) + "</td>" +
+        "<td class='s'>" + esc(fmtUp(x.uptimeMs)) + "<div class='s'>" + x.restarts + " рестартов</div></td>" +
+        "<td class='s'>" + Math.round((x.mem || 0) / 1048576) + " МБ</td></tr>").join("") +
+      "</table></div></div></div>";
+  }
+
+  /* Внешние системы */
+  const ext = (d.external || []).filter((x) => matches(q, x.name, x.kind, x.note, x.where));
+  if (ext.length) {
+    h += '<div class="sec"><h2>Внешние системы</h2><div class="card">' +
+      ext.map((x) => '<div class="row"><div class="p">' + esc(x.name) + '<span class="tag">' + esc(x.kind) + "</span></div>" +
+        '<div class="d">' + esc(x.note) + "</div>" +
+        '<div class="src">' + esc(x.where) + "</div></div>").join("") + "</div></div>";
+  }
+
+  /* Сторожа и задачи */
+  const wd = (d.watchdogs || []).filter((x) => matches(q, x.name, x.what, x.where));
+  const jobs = (d.jobs || []).filter((x) => matches(q, x.cmd, x.schedule));
+  if (wd.length || jobs.length) {
+    h += '<div class="sec"><h2>Что работает само</h2><div class="card">';
+    for (const x of wd) {
+      h += '<div class="row"><div class="p">' + esc(x.name) + '<span class="tag">' + esc(x.when) + "</span></div>" +
+        '<div class="d">' + esc(x.what) + "</div><div class='src mono'>" + esc(x.where) + "</div></div>";
+    }
+    if (jobs.length) {
+      h += '<div class="more" onclick="this.nextElementSibling.classList.toggle(\'open\')">Задания cron — ' + jobs.length + "</div>";
+      h += '<div class="list">' + jobs.map((j) => "<code>" + esc(j.schedule) + "  " + esc(j.cmd) + "</code>").join("") + "</div>";
+    }
+    h += "</div></div>";
+  }
+
+  /* Где лежат данные */
+  const st = (d.storage || []).filter((x) => matches(q, x.what, x.where, x.note));
+  if (st.length) {
+    h += '<div class="sec"><h2>Где лежат данные</h2><div class="card">' +
+      st.map((x) => '<div class="row"><div class="p">' + esc(x.what) + "</div>" +
+        '<div class="d">' + esc(x.note) + "</div><div class='src mono'>" + esc(x.where) + "</div></div>").join("") + "</div></div>";
+  }
+
+  /* Изменения структуры */
+  const chg = (d.changelog || []).slice(0, 20);
+  if (chg.length && !q) {
+    h += '<div class="sec"><h2>Изменения структуры</h2><div class="card">' +
+      chg.map((c) => '<div class="chg"><div class="when">' + esc(new Date(c.at).toLocaleString("ru-RU")) + "</div>" +
+        (c.added.length ? '<div class="add">Появилось:<ul>' + c.added.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul></div>" : "") +
+        (c.removed.length ? '<div class="rem" style="margin-top:6px">Пропало:<ul>' + c.removed.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul></div>" : "") +
+        "</div>").join("") + "</div></div>";
+  } else if (!q) {
+    h += '<div class="sec"><h2>Изменения структуры</h2><div class="card"><div class="empty">С прошлого снимка ничего не менялось. Как только появится новая страница, домен или раздел, они окажутся здесь сами, и на director@visa-sc.ru придёт письмо.</div></div></div>';
+  }
+
+  $("out").innerHTML = h;
+}
+
+function kindName(k) {
+  return { app: "приложение", redirect: "редирект", static: "статика", proxy: "прокси" }[k] || k;
+}
+
+let allOpen = false;
+function toggleAll() {
+  allOpen = !allOpen;
+  document.querySelectorAll("#out .card").forEach((c) => c.classList.toggle("open", allOpen));
+  $("expandBtn").textContent = allOpen ? "Свернуть" : "Развернуть";
+}
+
+let qt = null;
+$("q").addEventListener("input", () => { clearTimeout(qt); qt = setTimeout(paint, 120); });
+
+/* ── старт ── */
+(async () => {
+  if (!token) { showLogin(); if (window.PublicKeyCredential) bioLogin(); return; }
+  showMain();
+  try { await load(); } catch (e) {}
+})();
+</script>
+</body>
+</html>

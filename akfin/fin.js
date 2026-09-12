@@ -593,6 +593,9 @@ function mount(app, deps) {
   });
 
   console.log("FIN: /fin смонтирован (личные финансы)");
+  // Отдаём наружу проверку доступа: карта /map живёт в соседнем модуле,
+  // но вход у неё тот же (код 280992 и Face ID) — второй логин ни к чему.
+  return { requireFin };
 }
 
 module.exports = { mount };

@@ -22,6 +22,10 @@ for (const f of ["fin-icon.png", "fin-bg.png", "fin-sw.js", "apple-touch-icon.pn
 }
 
 // Админского контура здесь нет — служебный /fin/api/status закрыт.
-finMod.mount(app, { requireAdmin: (req, res) => res.status(403).json({ success: false, message: "Нет доступа" }) });
+const finApi = finMod.mount(app, { requireAdmin: (req, res) => res.status(403).json({ success: false, message: "Нет доступа" }) });
+
+// Карта всего: домены, сервисы, страницы, разделы. Снимок собирает сканер
+// tools/sitemap-scan.js в основном репозитории, сюда попадает файлом.
+require("./map").mount(app, { requireFin: finApi.requireFin });
 
 app.listen(PORT, "127.0.0.1", () => console.log("AKFIN: личные финансы на порту " + PORT));
