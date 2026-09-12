@@ -3988,7 +3988,8 @@
       // разворачивает под ним фамилии, клик по заголовку колонки сортирует их сразу во
       // всех раскрытых месяцах.
       let _vscSpSort = {}, _vscSpOpen = {}, _vscSpMonthOpen = {}, _vscSpHist = {};
-      function vscStaffPerfDepts(sp, list, cityRev, loadBase, redraw) {
+      function vscStaffPerfDepts(sp, list, cityRev, loadBase, redraw, plCalls) {
+        plCalls = plCalls || {};
         const wrap = document.createElement("div");
         const money = (v) => (v == null || isNaN(v) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
         const int = (v) => (v == null || isNaN(v) ? "—" : Math.round(v).toLocaleString("ru-RU"));
@@ -4005,10 +4006,14 @@
           const md = cm && cm.deals ? cm.deals : null;
           const o = { month: m.month, mi: String(m.mi), staff: dep ? dep.staff : null, manDays: dep ? dep.manDays : null, effStaff: dep ? dep.effStaff : null };
           if (D.key === "pl") {
-            o.calls = b.callsIn != null ? b.callsIn : null;
+            // Звонки первой линии — сумма по её сотрудникам из amoCRM; пропущенные и
+            // ожидание берутся из листа /vsc, там они от АТС и по всей компании.
+            const pc = plCalls[String(m.mi)];
+            const ok = pc && pc.calls && !(b.callsIn && pc.calls < b.callsIn * 0.5);
+            o.calls = ok ? pc.calls : null;
+            o.talkMin = (ok && pc.talkSec) ? pc.talkSec / 60 : null;
             o.missed = b.callsMissed != null ? b.callsMissed : null;
             o.missedPct = b.missedPct != null ? b.missedPct : null;
-            o.wait = b.waitSec != null ? b.waitSec : null;
             o.perDay = (o.calls != null && o.manDays) ? o.calls / o.manDays : null;
           } else if (D.key === "op") {
             o.contacts = b.contacts != null ? b.contacts : null;
@@ -4033,8 +4038,9 @@
           return o;
         }
         const DEPT_COLS = {
-          pl: [{ k: "calls", t: "Звонков", f: int, sum: 1 }, { k: "missed", t: "Пропущено", f: int, sum: 1 },
-               { k: "missedPct", t: "% пропущ.", f: pctv }, { k: "wait", t: "Ожидание", f: secs },
+          pl: [{ k: "calls", t: "Принято", f: int, sum: 1 }, { k: "talkMin", t: "Минут", f: int, sum: 1 },
+               { k: "missed", t: "Пропущено<div style=\"font-weight:400;color:#9096a3;\">вся компания</div>", f: int, sum: 1 },
+               { k: "missedPct", t: "% пропущ.", f: pctv },
                { k: "perDay", t: "звонков&nbsp;/&nbsp;чел&nbsp;/&nbsp;день", f: n1 }],
           op: [{ k: "contacts", t: "Лидов", f: int, sum: 1 }, { k: "deals", t: "Сделки", f: int, sum: 1 },
                { k: "opDeals", t: "Сделки ОП", f: int, sum: 1 },
@@ -4058,18 +4064,18 @@
           ork: [{ k: "took", t: "Сделок", f: int, good: 1 }, { k: "tookRev", t: "Выручка", f: money, good: 1 },
                 { k: "tookReturns", t: "Возвраты", f: int, good: -1 }, { k: "tookRetPct", t: "% возвр.", f: pctv, good: -1 }],
           oo: [{ k: "s1", t: "Этап 1", f: int, good: 1 }, { k: "s2", t: "Этап 2", f: int, good: 1 },
-               { k: "s2rev", t: "Выручка", f: money, good: 1 }, { k: "s2ret", t: "Возвраты", f: int, good: -1 },
-               { k: "s2retPct", t: "% возвр.", f: pctv, good: -1 }, { k: "dlLate", t: "Просроч.", f: int, good: -1 },
+               { k: "s2rev", t: "Выручка", f: money, good: 1 },
+               { k: "dlLate", t: "Просроч.", f: int, good: -1 },
                { k: "dlPct", t: "% просроч.", f: pctv, good: -1 }, { k: "days", t: "Дней", f: n1, good: -1 }]
         };
         const INFO_COMMON = "<b>Как читать</b><br>Строки — месяцы года, внизу накопленный итог. Клик по месяцу разворачивает фамилии сотрудников, клик по заголовку колонки в списке фамилий сортирует их: первый клик — лучшие сверху, второй — худшие. Кнопка «История» показывает месяцы, которые свёрнуты."
           + "<br><br><b>Объём</b><br>Считается по всем сделкам, давшим выручку месяца, включая повторных клиентов. Из объёма исключены доплаты (по статусу и по слову «доплата» в названии) и вторые части ВНЖ.";
         const DEPTS = [
-          { key: "pl", title: "Первая линия", dcols: "pl", ucols: "pl", udef: "callIn", info: INFO_COMMON + "<br><br><b>Первая линия</b><br>В строке месяца цифры из листа /vsc — их туда кладёт АТС OnlinePBX общей суммой за день, включая пропущенные.<br><br>По сотрудникам берутся ноты звонков из amoCRM: оператор определяется по тому, кто зафиксировал звонок. Пропущенных по людям здесь нет и быть не может — на неотвеченный вызов нота с оператором не создаётся. Чтобы видеть пропущенные и скорость ответа по каждому оператору, нужен доступ к API OnlinePBX." },
+          { key: "pl", title: "Первая линия", dcols: "pl", ucols: "pl", udef: "callIn", info: INFO_COMMON + "<br><br><b>Первая линия</b><br>В строке месяца цифры из листа /vsc — их туда кладёт АТС OnlinePBX общей суммой за день, включая пропущенные.<br><br>По сотрудникам берутся ноты звонков из amoCRM: оператор определяется по тому, кто зафиксировал звонок. Достоверно это работает с июля 2026 — раньше интеграция АТС писала в CRM меньше половины звонков, поэтому такие месяцы показаны прочерком, чтобы не занижать нагрузку. Пропущенных по людям здесь нет и быть не может — на неотвеченный вызов нота с оператором не создаётся. Чтобы видеть пропущенные и скорость ответа по каждому оператору, нужен доступ к API OnlinePBX." },
           { key: "op", title: "Отдел продаж", dcols: "op", ucols: "op", udef: "soldRev", info: INFO_COMMON + "<br><br><b>Отдел продаж</b><br>Конверсия — все сделки месяца к целевым (набранным) контактам. «Сделки ОП» и «Выручка ОП» — та часть объёма, что закреплена полем сделки «Менеджер ОП»; именно она раскладывается по фамилиям. Ответственный за сделку для этого не годится: к моменту оплаты там уже специалист ОРК." },
           { key: "orkMsk", title: "ОРК МСК", dcols: "ork", ucols: "ork", udef: "took", info: INFO_COMMON + "<br><br><b>ОРК</b><br>По сотрудникам сделка считается по полю «Кто принял клиента» — оно заполнено почти везде и раскладывает объём месяца по людям.<br><br><b>Возвраты</b><br>Считаются по когорте месяца ОПЛАТЫ: возврат по майской сделке остаётся в мае. Поэтому у свежих месяцев процент низкий — возвраты ещё не дозрели. В отчёте по возвратам процент другой: там доля ДЕНЕГ и по месяцу самого возврата. Возвратом считается статус «Возврат» или заполненная «Дата возврата»; «Ожидает решения о возврате» не считается." },
           { key: "orkSpb", title: "ОРК СПБ", dcols: "ork", ucols: "ork", udef: "took", info: INFO_COMMON + "<br><br><b>ОРК</b><br>По сотрудникам сделка считается по полю «Кто принял клиента».<br><br><b>Возвраты</b><br>По когорте месяца оплаты, поэтому у свежих месяцев процент низкий. Возвратом считается статус «Возврат» или заполненная «Дата возврата»." },
-          { key: "oo", title: "Отдел оформления", dcols: "ork", ucols: "oo", udef: "s2", info: INFO_COMMON + "<br><br><b>Оформление</b><br>Через отдел проходит весь объём сделок месяца. По сотрудникам этапы берутся из полей сделки «Менеджер ОО 1й и 2й ЭТАП», выручка и возвраты — по второму этапу, просрочка — когда дата бонуса за второй этап позже «Дедлайна ОО». Сделки с заглушками «АКК», «БОТ» и «Запись не требуется» в фамилии не попадают." }
+          { key: "oo", title: "Отдел оформления", dcols: "ork", ucols: "oo", udef: "s2", info: INFO_COMMON + "<br><br><b>Возвраты</b><br>В строке месяца — возвраты по всему объёму. По сотрудникам их нет и не будет: возврат почти всегда случается ДО того, как сделка доходит до оформления. За июнь и июль из 44 возвратов только у четырёх заполнен менеджер первого этапа и ни у одного — второго.<br><br><b>Оформление</b><br>Через отдел проходит весь объём сделок месяца. По сотрудникам этапы берутся из полей сделки «Менеджер ОО 1й и 2й ЭТАП», выручка и возвраты — по второму этапу, просрочка — когда дата бонуса за второй этап позже «Дедлайна ОО». Сделки с заглушками «АКК», «БОТ» и «Запись не требуется» в фамилии не попадают." }
         ];
         const TD = "padding:5px 7px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;";
         const NM = "padding:5px 7px;border-bottom:1px solid #eef0f4;text-align:left;white-space:nowrap;font-weight:600;";
@@ -4088,8 +4094,7 @@
           dcols.forEach((c) => { if (c.sum) yr[c.k] = rowsM.reduce((a, r) => a + (r[c.k] || 0), 0); });
           const mdAll = rowsM.reduce((a, r) => a + (r.manDays || 0), 0);
           if (D.key === "pl") {
-            yr.missedPct = yr.calls ? yr.missed / yr.calls * 100 : null;
-            const w = rowsM.map((r) => r.wait).filter((x) => x != null); yr.wait = w.length ? w.reduce((a, b) => a + b, 0) / w.length : null;
+            yr.missedPct = (yr.missed != null && yr.calls) ? yr.missed / (yr.calls + yr.missed) * 100 : null;
             yr.perDay = mdAll ? yr.calls / mdAll : null;
           } else if (D.key === "op") {
             yr.atv = yr.deals ? yr.revenue / yr.deals : null;
@@ -4240,7 +4245,7 @@
         return wrap;
       }
       function vscZarplataRender(box, j) {
-        const months = j.data.months || {}, mgrPay = j.managerPay || {}, cityRev = j.cityRevenue || null;
+        const months = j.data.months || {}, mgrPay = j.managerPay || {}, cityRev = j.cityRevenue || null, plCalls = j.plCalls || {};
         const RU_MI = { "январь": 0, "февраль": 1, "март": 2, "апрель": 3, "май": 4, "июнь": 5, "июль": 6, "август": 7, "сентябрь": 8, "октябрь": 9, "ноябрь": 10, "декабрь": 11 };
         // Показываем только месяцы, где лист посчитан до итога (ФОТ общий есть).
         const list = Object.keys(months).map((k) => months[k]).filter((m) => m.fotTotal != null || m.deptAvgSeed)
@@ -4377,7 +4382,17 @@
         const DEALKEY = { orkMsk: "msk", orkSpb: "spb", oo: "total" };
         const baseOf = function (m, key) {
           const b = loadBase[m.month] || {};
-          if (key === "pl") return b.callsIn != null ? b.callsIn : null;
+          // Первая линия: берём звонки САМОЙ первой линии (из amoCRM по её сотрудникам),
+          // а не общую цифру АТС по компании из листа — иначе нагрузка завышена вдвое.
+          if (key === "pl") {
+            const pc = plCalls[String(m.mi)];
+            // Интеграция АТС начала писать звонки в amoCRM массово только с июля 2026:
+            // за более ранние месяцы в CRM лежит меньше половины того, что показывает
+            // сама АТС в листе. Такие месяцы не показываем, чтобы не занижать нагрузку.
+            if (!pc || !pc.calls) return null;
+            if (b.callsIn && pc.calls < b.callsIn * 0.5) return null;
+            return pc.calls;
+          }
           if (key === "op") return b.contacts != null ? b.contacts : null;
           const cm = cityRev && cityRev.months && cityRev.months[String(m.mi)];
           const dk = DEALKEY[key];
@@ -4450,7 +4465,7 @@
         apiFetch("/admin/api/vsc/staffperf").then(function (r) {
           const sp = r && r.data;
           if (!sp || !Array.isArray(sp.users) || !sp.users.length) { spBody.innerHTML = '<div class="vsc-chart"><div class="vsc-empty">Данные по сотрудникам считаются ночью вместе с выручкой по городам — появятся после первого расчёта.</div></div>'; return; }
-          const draw = () => { spBody.innerHTML = ""; spBody.appendChild(vscStaffPerfDepts(sp, list, cityRev, loadBase, draw)); };
+          const draw = () => { spBody.innerHTML = ""; spBody.appendChild(vscStaffPerfDepts(sp, list, cityRev, loadBase, draw, plCalls)); };
           draw();
         }).catch(function () { spBody.innerHTML = '<div class="vsc-chart"><div class="vsc-empty">Не удалось загрузить данные по сотрудникам.</div></div>'; });
 
@@ -4472,7 +4487,9 @@
             k["load_" + dk] = (d && d.manDays && base != null) ? Math.round(base / d.manDays * 100) / 100 : null;
           });
           const b = loadBase[m.month] || {};
-          k.callsPer = (m.depts && m.depts.pl && m.depts.pl.manDays && b.callsIn != null) ? Math.round(b.callsIn / m.depts.pl.manDays * 100) / 100 : null;
+          const pc0 = plCalls[String(m.mi)];
+          const pcOk = pc0 && pc0.calls && !(b.callsIn && pc0.calls < b.callsIn * 0.5);
+          k.callsPer = (m.depts && m.depts.pl && m.depts.pl.manDays && pcOk) ? Math.round(pc0.calls / m.depts.pl.manDays * 100) / 100 : null;
           k.missedPer = (m.depts && m.depts.pl && m.depts.pl.manDays && b.callsMissed != null) ? Math.round(b.callsMissed / m.depts.pl.manDays * 100) / 100 : null;
           const rv2 = revenueOf(m.month);
           k.fotRev = (rv2 && m.fotTotal != null) ? Math.round(m.fotTotal / rv2 * 1000) / 10 : null;
@@ -5262,75 +5279,6 @@
           ]).then(function () { _vscStaffCache = null; b.textContent = "Считается (несколько минут) — обнови вкладку позже"; });
         });
       }
-      // ── «Запас на сборы» (Ежемесячный контроль; Андрей 11.09.2026) ─────────────
-      // Клиенты платят нам за консульские сборы, запись, страховки и прочее —
-      // эти деньги мы потом отдаём наружу. Блок показывает, остаётся ли запас.
-      function vscSboryBlock() {
-        const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
-        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Запас на сборы — по месяцам";
-        h.appendChild(vscInfo("<b>Приход</b><br>Из таблицы «срм-факт», строка «Итог»: колонки сборов — ваучеры авиа, регистрация, подача, фото, консульские сборы, услуги АКК, запись/бот, сторонние курьеры, страховка, языковые переводы. Колонки ищутся по названию, поэтому разная вёрстка месяцев не мешает.<br><br><b>Расход</b><br>Категория «Сборы» из Платрума. Прямого доступа к их API у нас пока нет, поэтому сумма вносится руками в поле в таблице — она сохраняется на сервере.<br><br><b>Возвраты</b><br>Из отчёта по возвратам, блок «Разбивка суммы возврата» — всё, кроме колонок «Услуги» и «НДС» (они про наши услуги, а не про сборы).<br><br><b>Разница</b> = приход − расход − возвраты. Плюс значит, что собранного хватает с запасом; минус — что за месяц мы отдали больше, чем собрали."));
-        wrap.appendChild(h);
-        const box = document.createElement("div"); box.className = "vsc-chart";
-        box.innerHTML = '<div class="loading-state">Считаем запас на сборы…</div>';
-        wrap.appendChild(box);
-        const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
-        const money = (v) => (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽";
-        function paint(j) {
-          const ms = (j && j.months) || {};
-          const names = Object.keys(ms).sort(function (a, b) {
-            const ia = MONF.indexOf(a.replace(/\s*20\d\d/, "")), ib = MONF.indexOf(b.replace(/\s*20\d\d/, ""));
-            return ia - ib;
-          });
-          if (!names.length) { box.innerHTML = '<div class="vsc-empty">Нет данных по сборам.</div>'; return; }
-          const TD = 'style="padding:7px 9px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;"';
-          const TH = 'style="padding:7px 9px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;"';
-          let html = '<div style="overflow-x:auto;"><table style="width:100%;min-width:680px;border-collapse:collapse;font-size:13px;">'
-            + '<tr><th ' + TH.replace("right", "left") + '>Месяц</th><th ' + TH + '>Приход</th><th ' + TH + '>Расход</th><th ' + TH + '>Возвраты</th><th ' + TH + '>Разница</th></tr>';
-          let sI = 0, sE = 0, sR = 0, sD = 0;
-          names.forEach(function (n) {
-            const m = ms[n] || {};
-            const inc = m.income || 0, ret = m.returns || 0;
-            const exp = (m.expense != null) ? m.expense : null;
-            const diff = (exp != null) ? inc - exp - ret : null;
-            sI += inc; sR += ret; if (exp != null) { sE += exp; sD += diff; }
-            const col = diff == null ? "#9096a3" : (diff >= 0 ? "#2c7a43" : "#b0263a");
-            const bg = diff == null ? "" : (diff >= 0 ? "background:#eaf6ee;" : "background:#fdecef;");
-            html += '<tr><td ' + TD.replace("right", "left") + '><b>' + escapeHtml(n.replace(/\s*20\d\d/, "")) + '</b></td>'
-              + '<td ' + TD + '>' + money(inc) + '</td>'
-              + '<td ' + TD + '><input type="text" class="sbory-exp" data-month="' + escapeHtml(n) + '" value="' + (exp != null ? Math.round(exp) : "") + '" placeholder="ввести" '
-              + 'style="width:110px;text-align:right;border:1px solid #dfe3ec;border-radius:8px;padding:4px 7px;font-size:12.5px;font-family:inherit;"></td>'
-              + '<td ' + TD + '>' + money(ret) + '</td>'
-              + '<td ' + TD.replace('style="', 'style="' + bg + 'color:' + col + ';font-weight:700;') + '>' + (diff == null ? "—" : money(diff)) + '</td></tr>';
-          });
-          const colT = sD >= 0 ? "#2c7a43" : "#b0263a";
-          html += '<tr><td ' + TD.replace("right", "left") + '><b>Итого</b></td><td ' + TD + '><b>' + money(sI) + '</b></td>'
-            + '<td ' + TD + '><b>' + (sE ? money(sE) : "—") + '</b></td><td ' + TD + '><b>' + money(sR) + '</b></td>'
-            + '<td ' + TD.replace('style="', 'style="color:' + colT + ';font-weight:800;') + '>' + (sE ? money(sD) : "—") + '</td></tr>';
-          html += '</table></div>';
-          html += '<div style="font-size:11.5px;color:#9096a3;margin-top:10px;">Расход по категории «Сборы» вносится руками из Платрума — введите сумму и нажмите Enter. Приход и возвраты считаются автоматически.</div>';
-          box.innerHTML = html;
-          // сохранение расхода
-          Array.prototype.forEach.call(box.querySelectorAll(".sbory-exp"), function (inp) {
-            inp.addEventListener("keydown", function (e) { if (e.key === "Enter") inp.blur(); });
-            inp.addEventListener("change", function () {
-              const raw = inp.value.replace(/\s/g, "").replace(",", ".");
-              inp.disabled = true;
-              fetch("/admin/api/vsc/sbory-expense", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ month: inp.getAttribute("data-month"), expense: raw }) })
-                .then(function () { return apiFetch("/admin/api/vsc/sbory"); })
-                .then(function (fresh) { paint(fresh); })
-                .catch(function () { inp.disabled = false; });
-            });
-          });
-        }
-        apiFetch("/admin/api/vsc/sbory").then(paint).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось посчитать запас на сборы.</div>'; });
-        return wrap;
-      }
-
-      // ── «Прибыль Санкт-Петербурга» (оценка; Андрей 11.09.2026) ─────────────────
-      // Отдельной прибыли по городу в учёте нет: вводится только общая. Поэтому
-      // считаем оценку: доля города в выручке × прибыль месяца, плюс поправка на
-      // реальную стоимость городской команды (ОРК Санкт-Петербург дешевле или
-      // дороже своей пропорциональной доли клиентских отделов).
       function vscSpbProfitBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Прибыль СПб";
@@ -5407,8 +5355,8 @@
       // эти деньги мы потом отдаём наружу. Блок показывает, остаётся ли запас.
       function vscSboryBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
-        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Запас на сборы — по месяцам";
-        h.appendChild(vscInfo("<b>Приход</b><br>Из таблицы «срм-факт», строка «Итог»: колонки сборов — ваучеры авиа, регистрация, подача, фото, консульские сборы, услуги АКК, запись/бот, сторонние курьеры, страховка, языковые переводы. Колонки ищутся по названию, поэтому разная вёрстка месяцев не мешает.<br><br><b>Расход</b><br>Категория «Сборы» из Платрума. Прямого доступа к их API у нас пока нет, поэтому сумма вносится руками в поле в таблице — она сохраняется на сервере.<br><br><b>Возвраты</b><br>Из отчёта по возвратам, блок «Разбивка суммы возврата» — всё, кроме колонок «Услуги» и «НДС» (они про наши услуги, а не про сборы).<br><br><b>Разница</b> = приход − расход − возвраты. Плюс значит, что собранного хватает с запасом; минус — что за месяц мы отдали больше, чем собрали."));
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Запас на сборы";
+        h.appendChild(vscInfo("<b>Приход</b><br>Из таблицы «срм-факт», строка «Итог»: колонки сборов — ваучеры авиа, регистрация, подача, фото, консульские сборы, услуги АКК, запись/бот, сторонние курьеры, страховка, языковые переводы. Колонки ищутся по названию, поэтому разная вёрстка месяцев не мешает.<br><br><b>Расход</b><br>Категория «Сборы» из Платрума. Автоматически подтянуть пока нечего: в вашем Платруме (visasc.platrum.ru) модули «Финансы», «Финплан» и «Дашборды» пустые, там ведутся только метрики. Поэтому сумма вводится руками — введите и нажмите Enter, она сохранится на сервере. Как только подскажете, где именно лежит категория «Сборы», подключу автоматику.<br><br><b>Возвраты</b><br>Из отчёта по возвратам, блок «Разбивка суммы возврата» — всё, кроме колонок «Услуги» и «НДС» (они про наши услуги, а не про сборы).<br><br><b>Разница</b> = приход − расход − возвраты. Плюс значит, что собранного хватает с запасом; минус — что за месяц мы отдали больше, чем собрали."));
         wrap.appendChild(h);
         const box = document.createElement("div"); box.className = "vsc-chart";
         box.innerHTML = '<div class="loading-state">Считаем запас на сборы…</div>';
@@ -5427,7 +5375,7 @@
           let html = '<div style="overflow-x:auto;"><table style="width:100%;min-width:680px;border-collapse:collapse;font-size:13px;">'
             + '<tr><th ' + TH.replace("right", "left") + '>Месяц</th><th ' + TH + '>Приход</th><th ' + TH + '>Расход</th><th ' + TH + '>Возвраты</th><th ' + TH + '>Разница</th></tr>';
           let sI = 0, sE = 0, sR = 0, sD = 0;
-          names.forEach(function (n) {
+          names.forEach(function (n, i) {
             const m = ms[n] || {};
             const inc = m.income || 0, ret = m.returns || 0;
             const exp = (m.expense != null) ? m.expense : null;
@@ -5435,21 +5383,28 @@
             sI += inc; sR += ret; if (exp != null) { sE += exp; sD += diff; }
             const col = diff == null ? "#9096a3" : (diff >= 0 ? "#2c7a43" : "#b0263a");
             const bg = diff == null ? "" : (diff >= 0 ? "background:#eaf6ee;" : "background:#fdecef;");
-            html += '<tr><td ' + TD.replace("right", "left") + '><b>' + escapeHtml(n.replace(/\s*20\d\d/, "")) + '</b></td>'
+            const isLast = (i === names.length - 1);
+            html += '<tr' + (isLast ? "" : ' class="sbory-hist" style="display:none;"') + '><td ' + TD.replace("right", "left") + '><b>' + escapeHtml(n.replace(/\s*20\d\d/, "")) + '</b></td>'
               + '<td ' + TD + '>' + money(inc) + '</td>'
               + '<td ' + TD + '><input type="text" class="sbory-exp" data-month="' + escapeHtml(n) + '" value="' + (exp != null ? Math.round(exp) : "") + '" placeholder="ввести" '
-              + 'style="width:110px;text-align:right;border:1px solid #dfe3ec;border-radius:8px;padding:4px 7px;font-size:12.5px;font-family:inherit;"></td>'
+              + 'style="width:104px;text-align:right;border:1px solid #dfe3ec;border-radius:8px;padding:4px 7px;font-size:12.5px;font-family:inherit;"></td>'
               + '<td ' + TD + '>' + money(ret) + '</td>'
               + '<td ' + TD.replace('style="', 'style="' + bg + 'color:' + col + ';font-weight:700;') + '>' + (diff == null ? "—" : money(diff)) + '</td></tr>';
           });
+          if (names.length > 1) {
+            html += '<tr><td colspan="5" style="padding:8px;text-align:left;border-bottom:1px solid #eef0f4;">'
+              + '<button type="button" data-sbhist="1" style="border:1px solid #dfe3ec;background:#fff;border-radius:9px;padding:5px 12px;font-size:12.5px;font-family:inherit;color:#33415a;cursor:pointer;">История · ' + (names.length - 1) + ' мес.</button></td></tr>';
+          }
           const colT = sD >= 0 ? "#2c7a43" : "#b0263a";
           html += '<tr><td ' + TD.replace("right", "left") + '><b>Итого</b></td><td ' + TD + '><b>' + money(sI) + '</b></td>'
             + '<td ' + TD + '><b>' + (sE ? money(sE) : "—") + '</b></td><td ' + TD + '><b>' + money(sR) + '</b></td>'
             + '<td ' + TD.replace('style="', 'style="color:' + colT + ';font-weight:800;') + '>' + (sE ? money(sD) : "—") + '</td></tr>';
           html += '</table></div>';
-          html += '<div style="font-size:11.5px;color:#9096a3;margin-top:10px;">Расход по категории «Сборы» вносится руками из Платрума — введите сумму и нажмите Enter. Приход и возвраты считаются автоматически.</div>';
+
           box.innerHTML = html;
-          // сохранение расхода
+          // Свёрнуто до последнего месяца: остальное открывается кнопкой «История».
+          // Расход пока вводится руками: в Платруме компании модули «Финансы»,
+          // «Финплан» и «Дашборды» пустые, тянуть категорию «Сборы» неоткуда.
           Array.prototype.forEach.call(box.querySelectorAll(".sbory-exp"), function (inp) {
             inp.addEventListener("keydown", function (e) { if (e.key === "Enter") inp.blur(); });
             inp.addEventListener("change", function () {
@@ -5459,6 +5414,14 @@
                 .then(function () { return apiFetch("/admin/api/vsc/sbory"); })
                 .then(function (fresh) { paint(fresh); })
                 .catch(function () { inp.disabled = false; });
+            });
+          });
+          box.querySelectorAll("button[data-sbhist]").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              const rows = box.querySelectorAll("tr.sbory-hist");
+              const hidden = rows.length && rows[0].style.display === "none";
+              rows.forEach((tr) => { tr.style.display = hidden ? "" : "none"; });
+              btn.textContent = hidden ? "Скрыть историю" : ("История · " + rows.length + " мес.");
             });
           });
         }

@@ -1547,7 +1547,24 @@ app.get("/admin/api/vsc/zarplata", requireAdmin, async (req, res) => {
     // ожидание — самый первый заход, когда снимка ещё нет ни на диске, ни в памяти.
     const d = await zarplata.getZarplata(force);
     const base = force ? await vscStaffLoadBase() : (vscStaffLoadBaseWarm() || await vscStaffLoadBase());
-    return res.json({ success: true, data: d, managerPay: loadMgrPay(), cityRevenue: loadCityRev(), loadBase: base });
+    // Звонки ИМЕННО первой линии, по месяцам: в листе /vsc цифра по всей компании,
+    // и нагрузка на человека получалась завышенной. Берём сумму по сотрудникам,
+    // которые числятся в первой линии, — тогда строка месяца и фамилии сходятся.
+    const plCalls = {};
+    try {
+      const sp = loadStaffPerf(), cs = loadCallStats();
+      if (sp && cs && cs.byUser) {
+        (sp.users || []).forEach((u) => {
+          if (u.dept !== "pl") return;
+          const c = cs.byUser[u.uid]; if (!c) return;
+          Object.keys(c).forEach((mk) => {
+            const t = plCalls[mk] || (plCalls[mk] = { calls: 0, talkSec: 0, out: 0 });
+            t.calls += c[mk].in || 0; t.talkSec += c[mk].talkSec || 0; t.out += c[mk].out || 0;
+          });
+        });
+      }
+    } catch (e) { console.error("plCalls:", e && e.message); }
+    return res.json({ success: true, data: d, managerPay: loadMgrPay(), cityRevenue: loadCityRev(), loadBase: base, plCalls: plCalls });
   } catch (e) {
     console.error("vsc zarplata:", e && e.message);
     return res.status(500).json({ success: false, message: "Не удалось прочитать зарплатную таблицу: " + (e && e.message) });
