@@ -349,7 +349,7 @@ p{margin:0 0 14px}
 .opt label{display:flex;align-items:center;gap:14px;border:1px solid var(--line);border-radius:12px;
   padding:16px 18px;cursor:pointer;transition:border-color .15s ease,background .15s ease}
 .opt label:hover{border-color:var(--blue)}
-.opt input{position:absolute;opacity:0;pointer-events:none}
+.opt input{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none}
 .opt input:checked+.opt__in{}
 .opt label:has(input:checked){border-color:var(--blue);background:var(--blue-pale)}
 .opt__dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);flex:none;
@@ -377,11 +377,17 @@ p{margin:0 0 14px}
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 14px center}
 .field select:focus{border-color:var(--blue);background-color:#fff}
+/* iOS не уважает width:100% у input[type=date] и раздувает поле по содержимому,
+   из-за чего оно вылезало за край карточки. Ширину задаём жёстко. */
+.field input[type=date]{width:100%;max-width:100%;min-width:0;display:block;
+  -webkit-appearance:none;appearance:none}
+.trav .field,.trav .row2,.trav .row3{min-width:0}
+.trav input,.trav select{max-width:100%}
 .sex{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .sex label{display:flex;align-items:center;justify-content:center;gap:9px;border:1px solid var(--line);
   border-radius:8px;height:56px;cursor:pointer;font-size:15.5px;margin:0}
 .sex label:has(input:checked){border-color:var(--blue);background:var(--blue-pale)}
-.sex input{position:absolute;opacity:0;pointer-events:none}
+.sex input{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none}
 
 .addbtn{background:none;border:1px dashed var(--line);border-radius:12px;width:100%;padding:15px;
   cursor:pointer;color:var(--blue);font:500 15px/1 Roboto,Arial,sans-serif}
@@ -636,7 +642,7 @@ p{margin:0 0 14px}
     <div class="steps">
       <div class="step"><b>Compili i dati</b><span>Dati del passaporto nel modulo. Due minuti.</span></div>
       <div class="step"><b>Li controlliamo</b><span>Confrontiamo ogni campo con il documento e ti avvisiamo se qualcosa non torna.</span></div>
-      <div class="step"><b>Inviamo e paghiamo la tassa</b><span>Presentiamo la richiesta ufficiale e paghiamo le £20.</span></div>
+      <div class="step"><b>Seguiamo la pratica</b><span>Ci occupiamo di tutto dall'inizio alla fine, tassa ufficiale compresa.</span></div>
       <div class="step"><b>Ricevi la risposta</b><span>L'ETA resta collegata al passaporto. Ti avvisiamo appena arriva.</span></div>
     </div>
   </div>
@@ -652,7 +658,7 @@ p{margin:0 0 14px}
       <details><summary>Viene applicata sul passaporto?</summary><p>No, è elettronica e resta collegata al numero di passaporto. Se cambi passaporto ne serve una nuova.</p></details>
       <details><summary>Serve anche per mio figlio piccolo?</summary><p>Sì, ogni passeggero deve avere la propria, a qualsiasi età. Gestiamo tutta la famiglia in una volta sola.</p></details>
       <details><summary>Garantite l'approvazione?</summary><p>No, e diffida di chi la garantisce: la decisione spetta alle autorità britanniche. Quello che garantiamo è una richiesta senza errori di compilazione, che è dove nascono quasi tutti i rifiuti.</p></details>
-      <details><summary>Posso farlo da solo?</summary><p>Puoi, e ti spieghiamo come: la richiesta si fa su gov.uk pagando £20. La nostra tariffa è per il lavoro di controllare, inviare e seguire la pratica in italiano.</p></details>
+      <details><summary>Posso farlo da solo?</summary><p>Puoi, e ti spieghiamo come: la richiesta si fa su gov.uk pagando £20. La nostra tariffa è per il lavoro di controllare, guidarti e seguire la pratica in italiano.</p></details>
       <details><summary>Come si paga?</summary><p>Lo concordiamo dopo la richiesta. Ricevi la ricevuta e la fattura via e-mail.</p></details>
       <details><summary>E se viene rifiutata?</summary><p>Il governo non restituisce la tassa ufficiale in nessun caso. Se il rifiuto dipende da un errore nostro, rifacciamo la richiesta senza farti pagare di nuovo la nostra tariffa.</p></details>
     </div>
@@ -759,8 +765,8 @@ p{margin:0 0 14px}
   }
   function closeModal() { modal.classList.remove("is-on"); }
   document.addEventListener("click", function (e) {
-    var opener = e.target.closest('a[href="#form"]');
-    if (opener && window.innerWidth < 1000) { e.preventDefault(); openModal(); return; }
+    // Кнопки первого экрана ведут прямо к мастеру оформления, а не к короткой
+    // форме «перезвоните»: человек пришёл оформлять, а не оставлять телефон.
     if (e.target.closest("[data-close]") || e.target === modal) closeModal();
   });
   document.addEventListener("keydown", function (e) {

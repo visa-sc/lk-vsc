@@ -349,7 +349,7 @@ p{margin:0 0 14px}
 .opt label{display:flex;align-items:center;gap:14px;border:1px solid var(--line);border-radius:12px;
   padding:16px 18px;cursor:pointer;transition:border-color .15s ease,background .15s ease}
 .opt label:hover{border-color:var(--blue)}
-.opt input{position:absolute;opacity:0;pointer-events:none}
+.opt input{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none}
 .opt input:checked+.opt__in{}
 .opt label:has(input:checked){border-color:var(--blue);background:var(--blue-pale)}
 .opt__dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);flex:none;
@@ -377,11 +377,17 @@ p{margin:0 0 14px}
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 14px center}
 .field select:focus{border-color:var(--blue);background-color:#fff}
+/* iOS не уважает width:100% у input[type=date] и раздувает поле по содержимому,
+   из-за чего оно вылезало за край карточки. Ширину задаём жёстко. */
+.field input[type=date]{width:100%;max-width:100%;min-width:0;display:block;
+  -webkit-appearance:none;appearance:none}
+.trav .field,.trav .row2,.trav .row3{min-width:0}
+.trav input,.trav select{max-width:100%}
 .sex{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .sex label{display:flex;align-items:center;justify-content:center;gap:9px;border:1px solid var(--line);
   border-radius:8px;height:56px;cursor:pointer;font-size:15.5px;margin:0}
 .sex label:has(input:checked){border-color:var(--blue);background:var(--blue-pale)}
-.sex input{position:absolute;opacity:0;pointer-events:none}
+.sex input{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none}
 
 .addbtn{background:none;border:1px dashed var(--line);border-radius:12px;width:100%;padding:15px;
   cursor:pointer;color:var(--blue);font:500 15px/1 Roboto,Arial,sans-serif}
@@ -636,7 +642,7 @@ p{margin:0 0 14px}
     <div class="steps">
       <div class="step"><b>Rellenas los datos</b><span>Datos del pasaporte en el formulario. Dos minutos.</span></div>
       <div class="step"><b>Los revisamos</b><span>Comparamos cada campo con el documento y te avisamos si algo no cuadra.</span></div>
-      <div class="step"><b>Enviamos y pagamos la tasa</b><span>Presentamos la solicitud oficial y pagamos las £20.</span></div>
+      <div class="step"><b>Nos ocupamos del trámite</b><span>Hacemos el seguimiento de principio a fin, tasa oficial incluida.</span></div>
       <div class="step"><b>Recibes la respuesta</b><span>La ETA queda ligada al pasaporte. Te avisamos en cuanto salga.</span></div>
     </div>
   </div>
@@ -652,7 +658,7 @@ p{margin:0 0 14px}
       <details><summary>¿Se pega en el pasaporte?</summary><p>No, es electrónica y queda ligada al número de pasaporte. Si cambias de pasaporte, necesitas una nueva.</p></details>
       <details><summary>¿Mi hijo pequeño también la necesita?</summary><p>Sí, cada pasajero necesita la suya, sea cual sea su edad. Tramitamos la de toda la familia de una vez.</p></details>
       <details><summary>¿Garantizáis la aprobación?</summary><p>No, y desconfía de quien la garantice: la decisión es de las autoridades británicas. Lo que garantizamos es una solicitud sin errores de cumplimentación, que es donde se producen la mayoría de las denegaciones.</p></details>
-      <details><summary>¿Puedo hacerlo yo mismo?</summary><p>Puedes, y te explicamos cómo: la solicitud se hace en gov.uk pagando £20. Nuestra tarifa es por revisar, enviar y hacer el seguimiento en español.</p></details>
+      <details><summary>¿Puedo hacerlo yo mismo?</summary><p>Puedes, y te explicamos cómo: la solicitud se hace en gov.uk pagando £20. Nuestra tarifa es por revisar, orientarte y hacer el seguimiento en español.</p></details>
       <details><summary>¿Cómo se paga?</summary><p>Lo acordamos después de la solicitud. Recibes el justificante y la factura por correo.</p></details>
       <details><summary>¿Y si me la deniegan?</summary><p>El Gobierno no devuelve la tasa oficial en ningún caso. Si la denegación viene de un error nuestro, repetimos la solicitud sin cobrarte otra vez nuestra tarifa.</p></details>
     </div>
@@ -759,8 +765,8 @@ p{margin:0 0 14px}
   }
   function closeModal() { modal.classList.remove("is-on"); }
   document.addEventListener("click", function (e) {
-    var opener = e.target.closest('a[href="#form"]');
-    if (opener && window.innerWidth < 1000) { e.preventDefault(); openModal(); return; }
+    // Кнопки первого экрана ведут прямо к мастеру оформления, а не к короткой
+    // форме «перезвоните»: человек пришёл оформлять, а не оставлять телефон.
     if (e.target.closest("[data-close]") || e.target === modal) closeModal();
   });
   document.addEventListener("keydown", function (e) {
