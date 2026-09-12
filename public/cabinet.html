@@ -4157,7 +4157,7 @@
     /* При сжатии меняем только размер — высоту над краем НЕ трогаем, иначе меню
        «ныряет» вниз и выглядит прилипшим к нижней границе экрана. */
     .lkl-nav.min {
-      height: 50px; width: min(244px, calc(100% - 96px));
+      height: 50px; width: min(286px, calc(100% - 34px));
       box-shadow: 0 6px 18px -8px rgba(16,32,64,.32);
     }
     .lkl-nav.min .lb { display: none; }
@@ -4176,7 +4176,13 @@
     .lkl-nav button.act .nit { background: linear-gradient(140deg,#4aa3d8,#3589BD); }
     .lkl-nav button:active .nit { transform: scale(.94); }
     .lkl-nav svg { width: 22px; height: 22px; display: block; flex: none; }
-    .lkl-nav .lb { font-size: 12px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
+    .lkl-nav .lb { font-size: 12px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; display: none; }
+    /* Разделов пять — пять подписей в «пилюлю» не помещаются даже на 430px.
+       Подпись показываем только у открытого раздела: остальные читаются
+       иконками, как и в сжатом состоянии меню. */
+    .lkl-nav button.act .lb { display: block; }
+    /* Сжатое меню — только иконки, включая открытый раздел. */
+    .lkl-nav.min button.act .lb { display: none; }
     body.lkl-has-nav { padding-bottom: 96px; }
 
     /* ── экран бонусной программы поверх кабинета ── */
@@ -4262,12 +4268,16 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 3h4.8L17 6.6V19.4A1.6 1.6 0 0 1 15.4 21H8.6A1.6 1.6 0 0 1 7 19.4V4.6A1.6 1.6 0 0 1 8.6 3Z"/><rect x="9.4" y="10.9" width="5.2" height="5.4" rx="1.2"/><path d="M12 10.9v5.4M9.4 13.6h5.2" stroke-width="1.2"/></svg>
       <span class="lb">eSIM</span></span>
     </button>
+    <button type="button" data-go="cards"><span class="nit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19"/><path d="M6 15h4"/></svg>
+      <span class="lb">Карты</span></span>
+    </button>
     <button type="button" data-go="tours"><span class="nit">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.2 8.8-2.1 4.9-4.9 2.1 2.1-4.9z"/></svg>
       <span class="lb">Туры</span></span>
     </button>
     <button type="button" data-go="loyalty"><span class="nit">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19"/><path d="M6 15h4"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6l2.6 5.3 5.8.85-4.2 4.1 1 5.8-5.2-2.73-5.2 2.73 1-5.8-4.2-4.1 5.8-.85z"/></svg>
       <span class="lb">Баллы</span></span>
     </button>
   </nav>
@@ -4287,6 +4297,8 @@
       </div>
     </div>
   </div>
+
+  <div class="lkl-page frame" id="lklCards"></div>
 
   <div class="lkl-page frame" id="lklTours"></div>
 
@@ -4375,6 +4387,21 @@
       if (esimPage) esimPage.querySelectorAll(".lkl-seg button").forEach(function (b) {
         b.addEventListener("click", function () { esimGo(b.dataset.esim); });
       });
+      // «Карты» — страница /cards в режиме ?embed=1: виртуальная карта и карта
+      // зарубежного банка, обе с оформлением в один тап.
+      var cardsPage = document.getElementById("lklCards");
+      function mountCards() {
+        if (!cardsPage || cardsPage.dataset.on) return;
+        cardsPage.dataset.on = "1";
+        var f = document.createElement("iframe");
+        f.src = "/cards?embed=1";
+        f.title = "Банковские карты";
+        f.setAttribute("loading", "lazy");
+        f.addEventListener("load", function () {
+          try { f.contentWindow.addEventListener("scroll", watch, { passive: true }); } catch (_) {}
+        });
+        cardsPage.appendChild(f);
+      }
       // «Туры» — та же страница /excursion в режиме ?embed=1, одной рамкой.
       var toursPage = document.getElementById("lklTours");
       function mountTours() {
@@ -4390,14 +4417,17 @@
         toursPage.appendChild(f);
       }
       function go(which) {
-        var loyalty = which === "loyalty", esim = which === "esim", tours = which === "tours";
+        var loyalty = which === "loyalty", esim = which === "esim",
+            cards = which === "cards", tours = which === "tours";
         nav.querySelectorAll("button").forEach(function (b) { b.classList.toggle("act", b.dataset.go === which); });
         page.classList.toggle("open", loyalty);
         if (esimPage) esimPage.classList.toggle("open", esim);
+        if (cardsPage) cardsPage.classList.toggle("open", cards);
         if (toursPage) toursPage.classList.toggle("open", tours);
-        document.body.style.overflow = (loyalty || esim || tours) ? "hidden" : "";
+        document.body.style.overflow = (loyalty || esim || cards || tours) ? "hidden" : "";
         if (loyalty) { page.scrollTop = 0; mountWidget(); }
         if (esim) mountEsim();
+        if (cards) mountCards();
         if (tours) mountTours();
       }
       nav.querySelectorAll("button").forEach(function (b) {
@@ -4415,6 +4445,10 @@
           var tf = toursPage.querySelector("iframe");
           if (!tf) return;
           try { y = tf.contentWindow.scrollY || 0; } catch (_) { y = 0; }
+        } else if (cardsPage && cardsPage.classList.contains("open")) {
+          var cf = cardsPage.querySelector("iframe");
+          if (!cf) return;
+          try { y = cf.contentWindow.scrollY || 0; } catch (_) { y = 0; }
         } else if (esimPage && esimPage.classList.contains("open")) {
           var f = esimPage.querySelector('iframe[data-esim="' + esimTab + '"]');
           if (!f) return;
@@ -4433,13 +4467,16 @@
 
       // Вернулись по ссылке из письма (/cabinet#esim) — сразу открываем раздел
       if (location.hash === "#esim") { go("esim"); try { history.replaceState(null, "", "/cabinet"); } catch (_) {} }
+      if (location.hash === "#cards") { go("cards"); try { history.replaceState(null, "", "/cabinet"); } catch (_) {} }
 
       window.addEventListener("scroll", watch, { passive: true });
       page.addEventListener("scroll", watch, { passive: true });
       watch();
       document.addEventListener("keydown", function (e) {
         if (e.key !== "Escape") return;
-        if (page.classList.contains("open") || (esimPage && esimPage.classList.contains("open"))) go("visas");
+        if (page.classList.contains("open") || (esimPage && esimPage.classList.contains("open"))
+          || (cardsPage && cardsPage.classList.contains("open"))
+          || (toursPage && toursPage.classList.contains("open"))) go("visas");
       });
     };
   </script>
