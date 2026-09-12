@@ -26,7 +26,7 @@
 // с ?adm=<ESIM_ADMIN_CODE>.
 //
 // env: MOBIMATTER_MERCHANT_ID, MOBIMATTER_API_KEY — ключи из портала;
-// ESIM_MARKUP_TIERS (дефолт «3:2.5,8:2.3,15:2.05,30:1.8,*:1.7»),
+// ESIM_MARKUP_TIERS (дефолт «3:2.5,15:2.45,22:2.04,40:1.93,*:1.85»),
 // ESIM_MARKUP (2.5 — запасной множитель, если ступени не разобрались),
 // ESIM_MIN_RUB (590), ESIM_USD_FALLBACK (90),
 // ESIM_ADMIN_CODE (дефолт 280992 — превью-код Андрея).
@@ -67,7 +67,7 @@ const MARKUP = Number(process.env.ESIM_MARKUP || 2.5);
 // Ступени наценки: «порог закупки в $ : множитель», последняя со звёздочкой —
 // всё, что дороже. Разбирается из строки, чтобы менять без выкатки кода.
 const MARKUP_TIERS = (function () {
-  const raw = String(process.env.ESIM_MARKUP_TIERS || "3:2.5,8:2.3,15:2.05,30:1.8,*:1.7");
+  const raw = String(process.env.ESIM_MARKUP_TIERS || "3:2.5,15:2.45,22:2.04,40:1.93,*:1.85");
   const tiers = [];
   for (const part of raw.split(",")) {
     const [lim, mul] = part.split(":");
