@@ -16,13 +16,19 @@
 //    ⚠ Эндпоинты заказа сверить с доками в портале при первом реальном
 //    заказе — написаны по публичной документации v2.
 //
-// Цены: розница ₽ = закупка $ × курс ЦБ USD × наценка (дефолт ×2.5),
-// округление вверх до …90 (990/1490/2190…), минимум ESIM_MIN_RUB.
+// Цены: розница ₽ = закупка $ × курс ЦБ USD × наценка, округление вверх до …90
+// (990/1490/2190…), минимум ESIM_MIN_RUB.
+// Наценка УБЫВАЮЩАЯ по ступеням закупки (12.09.2026): плоские ×2,5 делали
+// дорогие направления непродаваемыми — на Мальдивах те же проценты давали
+// +2500 ₽ вместо +350 ₽ на Турции. Ступени задаются ESIM_MARKUP_TIERS.
+// ОТКАТ к прежней схеме: ESIM_MARKUP_TIERS=*:2.5 в .env + pm2 restart voyo.
 // Закупка и маржа клиенту НЕ отдаются; на тестовой странице видны только
 // с ?adm=<ESIM_ADMIN_CODE>.
 //
 // env: MOBIMATTER_MERCHANT_ID, MOBIMATTER_API_KEY — ключи из портала;
-// ESIM_MARKUP (2.5), ESIM_MIN_RUB (590), ESIM_USD_FALLBACK (90),
+// ESIM_MARKUP_TIERS (дефолт «3:2.5,8:2.3,15:2.05,30:1.8,*:1.7»),
+// ESIM_MARKUP (2.5 — запасной множитель, если ступени не разобрались),
+// ESIM_MIN_RUB (590), ESIM_USD_FALLBACK (90),
 // ESIM_ADMIN_CODE (дефолт 280992 — превью-код Андрея).
 // ─────────────────────────────────────────────────────────────────────────
 const fs = require("fs");
@@ -58,6 +64,29 @@ const MIN_PAY_RUB = Number(process.env.ESIM_MIN_PAY || 100);
 const MAX_BONUS_SHARE = Number(process.env.ESIM_MAX_BONUS_SHARE || 0.5);
 
 const MARKUP = Number(process.env.ESIM_MARKUP || 2.5);
+// Ступени наценки: «порог закупки в $ : множитель», последняя со звёздочкой —
+// всё, что дороже. Разбирается из строки, чтобы менять без выкатки кода.
+const MARKUP_TIERS = (function () {
+  const raw = String(process.env.ESIM_MARKUP_TIERS || "3:2.5,8:2.3,15:2.05,30:1.8,*:1.7");
+  const tiers = [];
+  for (const part of raw.split(",")) {
+    const [lim, mul] = part.split(":");
+    const m = Number(mul);
+    if (!m || m <= 0) continue;
+    tiers.push({ upTo: String(lim).trim() === "*" ? Infinity : Number(lim), mul: m });
+  }
+  tiers.sort((a, b) => a.upTo - b.upTo);
+  return tiers.length ? tiers : [{ upTo: Infinity, mul: MARKUP }];
+})();
+function markupFor(costUsd) {
+  const u = Number(costUsd) || 0;
+  for (const t of MARKUP_TIERS) if (u <= t.upTo) return t.mul;
+  return MARKUP;
+}
+// Человекочитаемые ступени для админки и сторожа
+function markupLabel() {
+  return MARKUP_TIERS.map((t) => (t.upTo === Infinity ? ">" + "$" : "≤$" + t.upTo) + " ×" + t.mul).join(", ");
+}
 const MIN_RUB = Number(process.env.ESIM_MIN_RUB || 590);
 const USD_FALLBACK = Number(process.env.ESIM_USD_FALLBACK || 90);
 const ADMIN_CODE = String(process.env.ESIM_ADMIN_CODE || "280992");
@@ -78,7 +107,7 @@ function toCostRub(costUsd, usdRate) {
 }
 
 function toRetailRub(costUsd, usdRate) {
-  const raw = costUsd * usdRate * MARKUP;
+  const raw = costUsd * usdRate * markupFor(costUsd);
   const rounded = Math.ceil((raw + 10) / 100) * 100 - 10; // 1462→1490, 930→990
   return Math.max(MIN_RUB, rounded);
 }
@@ -333,16 +362,24 @@ function usePromo(code) {
   if (all[code]) { all[code].uses = (all[code].uses || 0) + 1; writeJson(PROMOS_FILE, all); }
 }
 
-// Единая калькуляция цены: список → промокод/реферал → списание баланса.
-// Скидки не складываются между собой (промокод ИЛИ реферальная), баланс — сверху.
+// Единая калькуляция цены: список → промокод/реферал ЛИБО списание баланса.
+// Два правила, введены 12.09.2026:
+//  1. ПОЛ ПО СЕБЕСТОИМОСТИ. Ни скидка, ни баллы не опускают цену ниже закупки
+//     с учётом конвертации и эквайринга. Раньше единственным ограничителем были
+//     100 ₽ минимального платежа, и связка «промокод + баллы» уводила в минус.
+//  2. ЛИБО ПРОМОКОД, ЛИБО БАЛЛЫ. Не складываются. Промокод (и реферальная
+//     скидка) в приоритете: его вводят осознанно, а баллы — это переключатель.
+//     Неизрасходованные баллы остаются на балансе до следующей покупки.
 function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, useBalance }) {
   const out = { listPrice, discountRub: 0, discountKind: null, promoCode: null, promoReason: null, refBy: null,
-                balanceRub: 0, balanceCanUse: 0, balanceUsed: 0, total: listPrice };
+                balanceRub: 0, balanceCanUse: 0, balanceUsed: 0, balanceBlockedBy: null, total: listPrice };
+  // Ниже этой суммы цена не опускается ни при каких скидках
+  const floorRub = Math.min(listPrice, Math.max(MIN_PAY_RUB, Number(costRub) || 0));
   const promo = checkPromo(promoCode, listPrice, email);
   out.promoReason = _promoReason;
   if (promo && promo.cost && costRub != null) {
     // Промокод «по себестоимости»: цена не скидывается на сумму, а становится равной закупке
-    out.discountRub = Math.max(0, listPrice - Math.max(MIN_PAY_RUB, costRub));
+    out.discountRub = Math.max(0, listPrice - floorRub);
     out.discountKind = "cost"; out.promoCode = promo.code;
   } else if (promo && promo.rub > 0) {
     out.discountRub = promo.rub; out.discountKind = "promo"; out.promoCode = promo.code;
@@ -353,16 +390,17 @@ function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, use
       out.discountRub = REF_BONUS_RUB; out.discountKind = "ref"; out.refBy = inviter.email;
     }
   }
-  let afterDiscount = Math.max(MIN_PAY_RUB, listPrice - out.discountRub);
-  out.discountRub = listPrice - afterDiscount;          // если упёрлись в минимум — показываем честную скидку
+  let afterDiscount = Math.max(floorRub, listPrice - out.discountRub);
+  out.discountRub = listPrice - afterDiscount;          // если упёрлись в пол — показываем честную скидку
   const cust = getCustomer(email, false);
   out.balanceRub = (cust && cust.balanceRub) || 0;
-  // Сколько бонусов вообще можно пустить в дело: не больше половины пакета,
-  // не больше самого баланса и так, чтобы к оплате осталась минимальная сумма.
-  out.balanceCanUse = Math.max(0, Math.min(
+  // Баллы идут в дело, только если скидки не было: не больше половины пакета,
+  // не больше самого баланса и так, чтобы цена не пробила пол по себестоимости.
+  if (out.discountKind) out.balanceBlockedBy = out.discountKind;
+  out.balanceCanUse = out.balanceBlockedBy ? 0 : Math.max(0, Math.min(
     out.balanceRub,
     Math.floor(listPrice * MAX_BONUS_SHARE),
-    afterDiscount - MIN_PAY_RUB
+    afterDiscount - floorRub
   ));
   if (useBalance && out.balanceCanUse > 0) {
     out.balanceUsed = out.balanceCanUse;
@@ -461,7 +499,7 @@ function mount(app, opts) {
         if (adm) { o.costUsd = p.costUsd; o.costRub = Math.round(p.costUsd * rate); o.marginRub = o.priceRub - o.costRub; }
         return o;
       });
-      res.json({ success: true, demo: cat.source === "demo", live: provider.ready(), pay: tbank.ready(), updatedAt: cat.ts, usdRate: Math.round(rate * 100) / 100, markup: adm ? MARKUP : undefined, products });
+      res.json({ success: true, demo: cat.source === "demo", live: provider.ready(), pay: tbank.ready(), updatedAt: cat.ts, usdRate: Math.round(rate * 100) / 100, markup: adm ? markupLabel() : undefined, products });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
 
@@ -825,6 +863,7 @@ function mount(app, opts) {
         success: true, listPrice, total: calc.total,
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         balanceRub: calc.balanceRub, balanceCanUse: calc.balanceCanUse, balanceUsed: calc.balanceUsed,
+        balanceBlockedBy: calc.balanceBlockedBy,
         // Промокод засчитан, если сервер его принял — хоть скидкой, хоть себестоимостью
         promoOk: promoTried ? !!calc.promoCode : null,
         promoReason: calc.promoReason,
@@ -1149,7 +1188,7 @@ function mount(app, opts) {
   // Служебное: состояние провайдера и кошелька (для админки/сторожа депозита)
   app.get("/esim/api/health", async (req, res) => {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
-    const out = { success: true, provider: provider.name, ready: provider.ready(), markup: MARKUP, minRub: MIN_RUB };
+    const out = { success: true, provider: provider.name, ready: provider.ready(), markup: markupLabel(), minRub: MIN_RUB };
     if (provider.ready()) { try { out.balance = await provider.getBalance(); } catch (e) { out.balanceError = e.message; } }
     const orders = readJson(ORDERS_FILE, []);
     out.interest = orders.length;

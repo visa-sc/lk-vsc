@@ -416,7 +416,10 @@ function discountRows(chatId, price) {
   const rows = [];
   if (st.promo) rows.push([{ text: "🎟 Промокод " + st.promo + " — убрать", callback_data: "promo:off" }]);
   else rows.push([{ text: "🎟 У меня есть промокод", callback_data: "promo:on" }]);
-  if (price.balanceCanUse > 0 || st.useBalance) {
+  // Бонусы и скидка не складываются: при активном промокоде кнопку не показываем
+  if (price.balanceBlockedBy) {
+    if (price.balanceRub > 0) rows.push([{ text: "💰 Бонусы " + RU(price.balanceRub) + " ₽ — вместе со скидкой не списываются", callback_data: "bal:info" }]);
+  } else if (price.balanceCanUse > 0 || st.useBalance) {
     rows.push([{ text: st.useBalance
       ? "💰 Бонусы списаны: −" + RU(price.balanceUsed || price.balanceCanUse) + " ₽ (отменить)"
       : "💰 Списать " + RU(price.balanceCanUse) + " ₽ бонусами", callback_data: "bal:" + (st.useBalance ? "off" : "on") }]);
@@ -751,6 +754,10 @@ async function onCallback(q) {
     setState(chatId, { promo: "" });
     const st = getState(chatId);
     return st.productId ? showPack(chatId, st.productId) : showHome(chatId);
+  }
+  if (data === "bal:info") {
+    return tg("sendMessage", { chat_id: chatId, parse_mode: "HTML",
+      text: "Бонусы и промокод не складываются: работает что-то одно. Уберите промокод, если хотите списать бонусы. Бонусы не сгорают и останутся до следующей покупки." });
   }
   if (data.indexOf("bal:") === 0) {
     setState(chatId, { useBalance: data.slice(4) === "on" });

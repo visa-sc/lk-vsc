@@ -810,6 +810,7 @@
     document.getElementById("mPromoBody").classList.remove("on");
     document.getElementById("mSum").classList.remove("on");
     document.getElementById("mBonus").checked = false;
+    document.getElementById("mBonus").disabled = false;
     document.getElementById("mBonusWrap").classList.remove("on");
     document.getElementById("mPromoWrap").style.display = PAY ? "block" : "none";
     if(PAY && AUTO_PROMO){
@@ -863,7 +864,14 @@
         bw.classList.add("on");
         document.getElementById("mBonusT").textContent = "Списать "+RU(j.balanceCanUse)+" ₽ бонусами";
         document.getElementById("mBonusS").textContent = "У вас "+RU(j.balanceRub)+" ₽. Бонусами можно закрыть до половины стоимости.";
-      } else { bw.classList.remove("on"); }
+      } else if(j.balanceBlockedBy && j.balanceRub > 0){
+        // Бонусы и скидка не складываются — показываем баланс, но списать не даём
+        bw.classList.add("on");
+        document.getElementById("mBonus").checked = false;
+        document.getElementById("mBonus").disabled = true;
+        document.getElementById("mBonusT").textContent = "Бонусы: "+RU(j.balanceRub)+" ₽";
+        document.getElementById("mBonusS").textContent = "Вместе со скидкой бонусы не списываются. Они останутся на балансе до следующей покупки.";
+      } else { bw.classList.remove("on"); document.getElementById("mBonus").disabled = false; }
       var box = document.getElementById("mSum"), rows = "";
       if(j.discountRub > 0 || j.balanceUsed > 0){
         rows += '<div class="l"><span>Пакет</span><span>'+RU(j.listPrice)+' ₽</span></div>';
