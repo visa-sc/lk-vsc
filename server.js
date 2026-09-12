@@ -6967,7 +6967,16 @@ app.get("/admin/api/vsc/spb-pnl", requireAdmin, async (req, res) => {
 // а не про сборы). Расход — категория «Сборы» из Платрума; пока доступа к их
 // API нет, сумма вводится руками и хранится в .vscSboryExpense.json.
 const VSC_SBORY_EXP_FILE = path.join(__dirname, ".vscSboryExpense.json");
-function vscSboryExpLoad() { try { return JSON.parse(fs.readFileSync(VSC_SBORY_EXP_FILE, "utf8")) || {}; } catch (_) { return {}; } }
+// Расход по категории «Сборы» — из P&L Платрума (visasc.platrum.ru → Финансы → P&L,
+// строка «Сборы» в переменных расходах). Снято 12.09.2026 за январь–август.
+// Автоматически тянуть пока нечем: у Платрума нужен API-ключ, а в интерфейсе
+// страница настроек с ним не открывается. Новые месяцы вводятся руками и
+// перекрывают сид — файл читается поверх этих значений.
+const VSC_SBORY_EXP_SEED = {
+  "Январь 2026": 3323739, "Февраль 2026": 5097192, "Март 2026": 7322856, "Апрель 2026": 8535790,
+  "Май 2026": 7292361, "Июнь 2026": 11609737, "Июль 2026": 12105238, "Август 2026": 11621727
+};
+function vscSboryExpLoad() { try { return Object.assign({}, VSC_SBORY_EXP_SEED, JSON.parse(fs.readFileSync(VSC_SBORY_EXP_FILE, "utf8")) || {}); } catch (_) { return Object.assign({}, VSC_SBORY_EXP_SEED); } }
 function vscSboryExpSave(m) { try { fs.writeFileSync(VSC_SBORY_EXP_FILE, JSON.stringify(m, null, 2), "utf8"); return true; } catch (e) { console.error("vscSboryExpSave:", e.message); return false; } }
 // Колонки ищем ПО НАЗВАНИЯМ, а не по позиции: в январе-апреле вёрстка листа
 // другая (в январе сборы лежат в 87..96, с мая — в 98..107 = CU..DD).
