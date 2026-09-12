@@ -15136,6 +15136,24 @@ let _cachedStageStatsTs = 0;
 let _stageStatsInflight = null;
 const STAGE_STATS_CACHE_TTL_MS = 22 * 60 * 1000; // > интервала пре-warm (20 мин), чтобы кеш не остывал
 function invalidateStageStatsCache() { _cachedStageStats = null; _cachedStageStatsTs = 0; }
+// Кеш держим И на диске (12.09.2026). Расчёт идёт по всем авторизованным номерам
+// через лимитер amoCRM и занимает больше пяти минут — ровно столько, сколько ждёт
+// nginx. После каждого перезапуска память пустая, и раздел встречал открывшего
+// пустой страницей с ошибкой. Теперь снимок переживает перезапуск: страница сразу
+// показывает последний расчёт, а свежий готовится в фоне.
+const STAGE_STATS_FILE = path.join(__dirname, ".stageStats.json");
+function stageStatsFromDisk() {
+  if (_cachedStageStats) return _cachedStageStats;
+  try {
+    const d = JSON.parse(fs.readFileSync(STAGE_STATS_FILE, "utf8"));
+    if (d && d.data) { _cachedStageStats = d.data; _cachedStageStatsTs = d.ts || 0; }
+  } catch (_) {}
+  return _cachedStageStats;
+}
+function stageStatsToDisk(data) {
+  try { fs.writeFileSync(STAGE_STATS_FILE, JSON.stringify({ ts: Date.now(), data }), "utf8"); }
+  catch (e) { console.error("stageStats save:", e.message); }
+}
 
 // Тихий помощник: максимальный cabinet_stage_index по видимым сделкам номера.
 // Переиспользует те же кирпичики, что getLeadsByPhone, но без verbose-логов и
@@ -15175,7 +15193,17 @@ async function getMaxCabinetStageForPhone(phone, statusesMap, baseUrl) {
 
 async function computeStageStats() {
   const now = Date.now();
-  if (_cachedStageStats && (now - _cachedStageStatsTs) < STAGE_STATS_CACHE_TTL_MS) return _cachedStageStats;
+  const warm = stageStatsFromDisk();
+  if (warm && (now - _cachedStageStatsTs) < STAGE_STATS_CACHE_TTL_MS) return warm;
+  // Кеш протух, но что-то посчитанное есть: отдаём его сразу и обновляем в фоне.
+  // Ждать пересчёт нельзя — он дольше таймаута nginx, открывший раздел увидел бы ошибку.
+  if (warm) {
+    if (!_stageStatsInflight) {
+      _stageStatsInflight = amoBg(() => _computeStageStatsInner()).finally(() => { _stageStatsInflight = null; });
+      _stageStatsInflight.catch((e) => console.error("STAGE STATS background:", e && e.message));
+    }
+    return warm;
+  }
   if (_stageStatsInflight) return _stageStatsInflight;
   _stageStatsInflight = _computeStageStatsInner().finally(() => { _stageStatsInflight = null; });
   return _stageStatsInflight;
@@ -15211,7 +15239,7 @@ async function _computeStageStatsInner() {
 
   if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) {
     const r = baseResult([], phoneEntries.length, { primary:0, prep:0, waiting:0, review:0, passport:0, done:0 });
-    _cachedStageStats = r; _cachedStageStatsTs = Date.now(); return r;
+    _cachedStageStats = r; _cachedStageStatsTs = Date.now(); stageStatsToDisk(r); return r;
   }
   const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
   let statusesMap = null;
@@ -15264,6 +15292,7 @@ async function _computeStageStatsInner() {
 
   const result = baseResult(perPhone, phoneEntries.length, c);
   _cachedStageStats = result; _cachedStageStatsTs = Date.now();
+  stageStatsToDisk(result);
   return result;
 }
 

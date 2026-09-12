@@ -15,8 +15,10 @@
 //     идёт весь трафик движка переводов, включая служебные прогоны и сверки;
 //   • .scanner/store.json — распознавание паспортов, оно ходит в Anthropic мимо
 //     шлюза, своим ключом.
-// День пополнения засчитываем в расход целиком: в журнале шлюза суток без часов,
-// и лучше показать остаток чуть меньше реального, чем проспать ноль.
+// Часов в журнале шлюза нет, только сутки, поэтому «расход после пополнения»
+// считаем не по дате, а по срезу: в момент пополнения запоминаем, сколько всего
+// потрачено за всё время, и потом вычитаем это число. Тогда траты того же дня до
+// пополнения не приписываются новым деньгам.
 //
 // Пороги и частота (слова Андрея 12.09.2026):
 //   • остаток ≤ $7 — одно письмо, больше по этому порогу не тревожим;
@@ -58,7 +60,13 @@ function init() {
 // заработали заново.
 function addTopup(usd, note) {
   const d = init();
-  d.topups.push({ at: Date.now(), usd: Number(usd), note: note || "" });
+  const gw = spendGatewayTotal(), sc = spendScannerTotal();
+  d.topups.push({
+    at: Date.now(), usd: Number(usd), note: note || "",
+    // срез счётчиков на момент пополнения — от него считаем новый расход
+    baseGatewayUsd: gw.usd, baseGatewayCalls: gw.calls,
+    baseScannerUsd: sc.usd, baseScannerDocs: sc.docs,
+  });
   d.warnSentAt = null;
   d.lastDailyDay = null;
   save(d);
@@ -71,25 +79,20 @@ function lastTopup() {
 }
 
 // ── Расход после момента ts ──────────────────────────────────────────────────
-function spendGatewayUsd(sinceTs) {
-  // Журнал шлюза по дням: {"2026-09-12": {usd, calls}}. День пополнения берём целиком.
+// Накопленный расход за всё время — по каждому журналу отдельно.
+function spendGatewayTotal() {
   let usd = 0, calls = 0;
   try {
     const b = JSON.parse(fs.readFileSync(ENGINE_BUDGET, "utf8"));
-    const sinceDay = new Date(sinceTs + 3 * 3600 * 1000).toISOString().slice(0, 10);
-    for (const [day, v] of Object.entries(b.days || {})) {
-      if (day < sinceDay) continue;
-      usd += v.usd || 0; calls += v.calls || 0;
-    }
+    for (const v of Object.values(b.days || {})) { usd += v.usd || 0; calls += v.calls || 0; }
   } catch (_) {}
   return { usd, calls };
 }
-function spendScannerUsd(sinceTs) {
+function spendScannerTotal() {
   let usd = 0, docs = 0;
   try {
     const st = JSON.parse(fs.readFileSync(SCANNER_STORE, "utf8"));
     for (const doc of st.docs || []) {
-      if ((doc.at || 0) < sinceTs) continue;
       docs++;
       for (const e of doc.spend || []) {
         const p = PRICES[e.model] || PRICES["claude-haiku-4-5"];
@@ -103,8 +106,17 @@ function spendScannerUsd(sinceTs) {
 function status() {
   const t = lastTopup();
   if (!t) return { known: false, message: "сумма пополнения не задана — node tools/ai-topup.js <сумма в $>" };
-  const gw = spendGatewayUsd(t.at);
-  const sc = spendScannerUsd(t.at);
+  const gwAll = spendGatewayTotal(), scAll = spendScannerTotal();
+  // Для пополнений, записанных до появления срезов, база — ноль: тогда расход
+  // посчитается с начала журналов, остаток будет занижен, но не завышен.
+  const gw = {
+    usd: Math.max(0, gwAll.usd - (t.baseGatewayUsd || 0)),
+    calls: Math.max(0, gwAll.calls - (t.baseGatewayCalls || 0)),
+  };
+  const sc = {
+    usd: Math.max(0, scAll.usd - (t.baseScannerUsd || 0)),
+    docs: Math.max(0, scAll.docs - (t.baseScannerDocs || 0)),
+  };
   const spent = gw.usd + sc.usd;
   return {
     known: true, topupUsd: t.usd, topupAt: t.at,
