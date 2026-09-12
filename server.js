@@ -3668,6 +3668,14 @@ async function flushDirectorMailQueue() {
 // Проверяем очередь на старте и каждые 5 мин (граница окна пн 08:00 отлавливается в пределах 5 мин).
 setInterval(() => { flushDirectorMailQueue().catch(() => {}); }, 5 * 60 * 1000);
 flushDirectorMailQueue().catch(() => {});
+
+// ── Сторож баланса Anthropic ────────────────────────────────────────────────
+// Старый сторож жил в движке переводов, видел только заказы переводов и слал
+// ровно одно письмо за всё время — поэтому 12.09.2026 деньги кончились молча и
+// доступ к API отключили. Новый считает весь расход (шлюз переводов + сканер) и
+// шлёт письма через окно пн 08:00 – пт 15:00 МСК: ниже $7 разово, ниже $5 каждый день.
+const aiBalance = require("./ai-balance");
+aiBalance.schedule(sendOrQueueDirectorMail);
 function emailDoc(inner, accent, footer) {
   accent = accent || "#3589BD";
   footer = footer || 'Служебное письмо для сотрудников VOYO. Отвечать на него не нужно.<br>С уважением, команда VOYO · Visa Services Center';

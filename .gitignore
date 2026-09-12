@@ -200,3 +200,5 @@ docs/staff-reports/
 .vscSboryCache.json
 .vscPbxStats.json
 .vscPlatrum.json
+
+.aiBalance.json
