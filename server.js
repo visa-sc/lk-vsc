@@ -1419,6 +1419,7 @@ app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
   // Звонки из АТС по добавочным сшиваем с сотрудниками по имени: у АТС свой
   // справочник добавочных, у amoCRM — свои пользователи, общее только ФИО.
   const px = pbx.load();
+  let pbxUnmatched = [];
   if (d && px && px.months) {
     const norm = (x) => String(x || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
     const byName = {};
@@ -1429,6 +1430,13 @@ app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
         ((byName[nm] || (byName[nm] = {}))[mk] = be[ext]);
       });
     });
+    // Кто из справочника АТС не нашёлся среди пользователей amoCRM: либо человека
+    // завели только в одной системе, либо имя написано по-разному. Такой оператор
+    // молча выпал бы из статистики, поэтому показываем это в разделе.
+    const amoNames = new Set((d.users || []).map((u) => norm(u.name)));
+    pbxUnmatched = Object.keys(px.ext || {})
+      .filter((e) => (px.ext[e] || "").trim() && !amoNames.has(norm(px.ext[e])))
+      .map((e) => ({ ext: e, name: px.ext[e] }));
     (d.users || []).forEach((u) => {
       const rec = byName[norm(u.name)]; if (!rec) return;
       Object.keys(rec).forEach((mk) => {
@@ -1448,7 +1456,16 @@ app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
       });
     });
   }
-  return res.json({ success: true, data: d, callsTs: cs ? cs.ts : null, pbxTs: px ? px.ts : null });
+  // Сверка справочников: что изменилось в АТС и кто не сшился с amoCRM.
+  const sync = {
+    pbxUnmatched: pbxUnmatched,
+    rosterLive: px ? !!px.rosterLive : false,
+    rosterTs: px ? px.rosterTs || null : null,
+    rosterDiff: px ? px.rosterDiff || null : null,
+    amoUsers: d ? (d.users || []).length : 0,
+    pbxUsers: px ? Object.keys(px.ext || {}).length : 0
+  };
+  return res.json({ success: true, data: d, callsTs: cs ? cs.ts : null, pbxTs: px ? px.ts : null, sync: sync });
 });
 function scheduleCityRevenueDaily() {
   const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000;

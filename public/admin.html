@@ -3988,9 +3988,39 @@
       // разворачивает под ним фамилии, клик по заголовку колонки сортирует их сразу во
       // всех раскрытых месяцах.
       let _vscSpSort = {}, _vscSpOpen = {}, _vscSpMonthOpen = {}, _vscSpHist = {};
+      // Сверка справочников: сотрудники приходят и уходят, и в АТС, и в amoCRM.
+      // Список добавочных тянется из АТС на каждом ночном пересчёте, пользователи
+      // amoCRM — на ночном съёме. Здесь показываем то, что требует человека:
+      // кто не сшился по имени и что изменилось в АТС с прошлого раза.
+      function vscStaffSyncNote(sync) {
+        if (!sync) return null;
+        const parts = [];
+        if (sync.rosterLive === false && sync.pbxUsers) parts.push("Справочник АТС не ответил при последнем пересчёте, считали по сохранённому списку.");
+        const d = sync.rosterDiff;
+        if (d && ((d.added || []).length || (d.removed || []).length)) {
+          const fmt = (a) => a.map((x) => escapeHtml(x.name || "") + " (" + escapeHtml(x.ext) + ")").join(", ");
+          const when = d.ts ? new Date(d.ts).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) : "";
+          const bits = [];
+          if ((d.added || []).length) bits.push("добавлены " + fmt(d.added));
+          if ((d.removed || []).length) bits.push("убраны " + fmt(d.removed));
+          parts.push("Изменения в АТС" + (when ? " " + when : "") + ": " + bits.join("; ") + ".");
+        }
+        if ((sync.pbxUnmatched || []).length) {
+          parts.push("В АТС есть, в amoCRM не нашлись по имени: "
+            + sync.pbxUnmatched.map((x) => escapeHtml(x.name) + " (" + escapeHtml(x.ext) + ")").join(", ")
+            + ". Их звонки в статистику не попадают, пока имена не совпадут.");
+        }
+        if (!parts.length) return null;
+        const el = document.createElement("div");
+        el.className = "vsc-chart";
+        el.style.cssText = "margin-top:12px;border-left:3px solid #e0b84a;";
+        el.innerHTML = '<div style="font-size:12.5px;color:#5b6274;line-height:1.55;"><b style="color:#33415a;">Сверка справочников</b><br>'
+          + parts.join("<br>") + '</div>';
+        return el;
+      }
       function vscStaffPerfDepts(sp, list, cityRev, loadBase, redraw, plCalls, pbxData) {
         plCalls = plCalls || {};
-        const PL_EXT2 = ["502", "503", "505", "506", "508"];
+        const PL_EXT2 = (pbxData && pbxData.plExt && pbxData.plExt.length) ? pbxData.plExt : ["502", "503", "505", "506", "508"];
         // Первая линия — из самой АТС: принято её операторами, пропущено по компании,
         // среднее ожидание ответа. amoCRM пропущенных не знает в принципе.
         const plPbx = (mi) => {
@@ -4269,7 +4299,9 @@
         // Звонки первой линии берём из самой АТС: принято её операторами за месяц.
         // Это точнее нот amoCRM и есть за весь год.
         const pbxData = j.pbx || null;
-        const PL_EXT = ["502", "503", "505", "506", "508"];
+        // Состав первой линии берём из группы «Первая Линия» в самой АТС: люди
+        // приходят и уходят, список в коде устарел бы на первой же замене.
+        const PL_EXT = (pbxData && pbxData.plExt && pbxData.plExt.length) ? pbxData.plExt : ["502", "503", "505", "506", "508"];
         const plFromPbx = (mi) => {
           if (!pbxData || !pbxData.months || !pbxData.months[String(mi)]) return null;
           const be = pbxData.months[String(mi)].byExt || {};
@@ -4488,7 +4520,12 @@
         apiFetch("/admin/api/vsc/staffperf").then(function (r) {
           const sp = r && r.data;
           if (!sp || !Array.isArray(sp.users) || !sp.users.length) { spBody.innerHTML = '<div class="vsc-chart"><div class="vsc-empty">Данные по сотрудникам считаются ночью вместе с выручкой по городам — появятся после первого расчёта.</div></div>'; return; }
-          const draw = () => { spBody.innerHTML = ""; spBody.appendChild(vscStaffPerfDepts(sp, list, cityRev, loadBase, draw, plCalls, pbxData)); };
+          const draw = () => {
+            spBody.innerHTML = "";
+            spBody.appendChild(vscStaffPerfDepts(sp, list, cityRev, loadBase, draw, plCalls, pbxData));
+            const note = vscStaffSyncNote(r.sync);
+            if (note) spBody.appendChild(note);
+          };
           draw();
         }).catch(function () { spBody.innerHTML = '<div class="vsc-chart"><div class="vsc-empty">Не удалось загрузить данные по сотрудникам.</div></div>'; });
 

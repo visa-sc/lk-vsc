@@ -27,9 +27,12 @@ const DOMAIN = process.env.PBX_DOMAIN || "visasc.onpbx.ru";
 const BASE = "https://api2.onlinepbx.ru/" + DOMAIN;
 const FILE = path.join(__dirname, ".vscPbxStats.json");
 
-// Добавочные сотрудников — из кабинета АТС, раздел «Права доступа» (11.09.2026).
-// Ключ — добавочный, значение — имя ровно как в amoCRM, чтобы сшивать со стафами.
-const EXT = {
+// Справочник добавочных АТС читается ИЗ САМОЙ АТС при каждом пересчёте
+// (POST /user/get.json — номер, имя, включён ли; POST /group/get.json — группы,
+// откуда берётся состав «Первой Линии»). Люди приходят и уходят, руками такую
+// карту не удержать. Карта ниже осталась запасной: если справочник не ответит,
+// считаем по ней и пишем об этом в лог.
+const EXT_FALLBACK = {
   "100": "Кристина Рагоза", "101": "Любовь Красикова", "102": "Артём Ларионов",
   "103": "Руфат Ягудин", "104": "Ани Рейнер", "105": "Дарья Шмидт", "106": "Илья Русанов",
   "120": "Мария Андреева", "121": "Анастасия Волик", "122": "Светлана Чернышова",
@@ -47,6 +50,8 @@ const EXT = {
   "502": "Анастасия Маркина", "503": "Данил Инчин", "505": "Кристина Осипова",
   "506": "Екатерина Лемаева", "508": "Николай Коковякин"
 };
+// Первая линия по умолчанию — если АТС не отдала группы.
+const PL_FALLBACK = ["502", "503", "505", "506", "508"];
 
 let _auth = { at: 0, key_id: null, key: null };
 async function auth() {
@@ -61,8 +66,36 @@ async function auth() {
   return _auth;
 }
 
+// Справочник АТС: кто есть в компании и кто числится в первой линии.
+// Возвращает { ext: {добавочный: имя}, plExt: [...], groups: {название: [...]}, live: true }.
+async function fetchRoster() {
+  const a = await auth();
+  const H = { "x-pbx-authentication": a.key_id + ":" + a.key, "Content-Type": "application/x-www-form-urlencoded" };
+  const u = await axios.post(BASE + "/user/get.json", "", { headers: H, timeout: 25000 });
+  const list = (u.data && u.data.data) || [];
+  if (!list.length) throw new Error("АТС вернула пустой справочник пользователей");
+  const ext = {};
+  list.forEach((x) => { if (x && x.num && x.name && x.enabled !== false) ext[String(x.num)] = String(x.name).trim(); });
+  const groups = {};
+  let plExt = null;
+  try {
+    const g = await axios.post(BASE + "/group/get.json", "", { headers: H, timeout: 25000 });
+    (g.data && g.data.data || []).forEach((gr) => {
+      if (!gr || !gr.name) return;
+      const nums = String(gr.users || "").split(";").map((n) => n.trim()).filter(Boolean);
+      groups[String(gr.name).trim()] = nums;
+      // В группе перечислены все номера отдела, включая незанятые. Оставляем тех,
+      // у кого есть живой добавочный, иначе в знаменатель попадут пустые места.
+      // \w с кириллицей в JS не работает — сопоставляем без классов символов.
+      if (/перв.*лини/i.test(String(gr.name))) plExt = nums.filter((n) => ext[n]);
+    });
+  } catch (e) { console.error("PBX группы:", e && e.message); }
+  return { ext: ext, plExt: (plExt && plExt.length) ? plExt : null, groups: groups, live: true };
+}
+
 // Сводка за один месяц. Возвращает { byExt: {доб: {...}}, total: {...} }.
-async function fetchMonth(year, mi) {
+async function fetchMonth(year, mi, extMap) {
+  const EXT = extMap || EXT_FALLBACK;
   const a = await auth();
   const H = { "x-pbx-authentication": a.key_id + ":" + a.key, "Content-Type": "application/x-www-form-urlencoded" };
   const days = new Date(Date.UTC(year, mi + 1, 0)).getUTCDate();
@@ -122,7 +155,23 @@ async function run(opts) {
   const now = new Date(Date.now() + 3 * 3600 * 1000);
   const year = o.year || now.getUTCFullYear();
   let cur = load();
-  if (!cur || cur.year !== year) cur = { ts: 0, year: year, months: {}, ext: EXT };
+  if (!cur || cur.year !== year) cur = { ts: 0, year: year, months: {}, ext: EXT_FALLBACK };
+  // Сначала обновляем справочник: кто-то мог прийти, уйти или сменить добавочный.
+  // Что изменилось — пишем в лог и сохраняем в снимок, чтобы это было видно в разделе.
+  let roster = { ext: cur.ext || EXT_FALLBACK, plExt: cur.plExt || PL_FALLBACK, live: false };
+  try {
+    const fresh = await fetchRoster();
+    const before = cur.ext || {};
+    const added = Object.keys(fresh.ext).filter((n) => !before[n] || before[n] !== fresh.ext[n]);
+    const removed = Object.keys(before).filter((n) => !fresh.ext[n]);
+    if ((added.length || removed.length) && Object.keys(before).length) {
+      console.log("PBX справочник: пришли/сменились " + (added.map((n) => n + " " + fresh.ext[n]).join(", ") || "—")
+        + "; ушли " + (removed.map((n) => n + " " + before[n]).join(", ") || "—"));
+      cur.rosterDiff = { ts: Date.now(), added: added.map((n) => ({ ext: n, name: fresh.ext[n] })), removed: removed.map((n) => ({ ext: n, name: before[n] })) };
+    }
+    roster = fresh;
+    cur.rosterTs = Date.now();
+  } catch (e) { console.error("PBX справочник недоступен, считаем по запасной карте:", e && e.message); }
   let list = o.months;
   if (!list) {
     const has = Object.keys(cur.months).length;
@@ -131,14 +180,16 @@ async function run(opts) {
   }
   for (const mi of list) {
     try {
-      const r = await fetchMonth(year, mi);
+      const r = await fetchMonth(year, mi, roster.ext);
       cur.months[String(mi)] = { byExt: r.byExt, total: r.total };
       console.log("PBX: месяц " + (mi + 1) + " — записей " + r.rows + ", входящих " + r.total.inbound + ", пропущено " + r.total.missed);
     } catch (e) { console.error("PBX месяц " + (mi + 1) + ":", e && e.message); }
   }
-  cur.ts = Date.now(); cur.ext = EXT;
+  cur.ts = Date.now();
+  cur.ext = roster.ext; cur.plExt = roster.plExt || PL_FALLBACK; cur.rosterLive = !!roster.live;
+  cur.groups = roster.groups || cur.groups || null;
   save(cur);
   return cur;
 }
 
-module.exports = { run, load, EXT, fetchMonth };
+module.exports = { run, load, fetchMonth, fetchRoster, EXT_FALLBACK, PL_FALLBACK };
