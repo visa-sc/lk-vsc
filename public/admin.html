@@ -3988,8 +3988,19 @@
       // разворачивает под ним фамилии, клик по заголовку колонки сортирует их сразу во
       // всех раскрытых месяцах.
       let _vscSpSort = {}, _vscSpOpen = {}, _vscSpMonthOpen = {}, _vscSpHist = {};
-      function vscStaffPerfDepts(sp, list, cityRev, loadBase, redraw, plCalls) {
+      function vscStaffPerfDepts(sp, list, cityRev, loadBase, redraw, plCalls, pbxData) {
         plCalls = plCalls || {};
+        const PL_EXT2 = ["502", "503", "505", "506", "508"];
+        // Первая линия — из самой АТС: принято её операторами, пропущено по компании,
+        // среднее ожидание ответа. amoCRM пропущенных не знает в принципе.
+        const plPbx = (mi) => {
+          const mm = pbxData && pbxData.months && pbxData.months[String(mi)];
+          if (!mm) return null;
+          const be = mm.byExt || {};
+          let a2 = 0, ms = 0, t2 = 0, ws = 0, wc = 0;
+          PL_EXT2.forEach((e) => { const x = be[e]; if (!x) return; a2 += x.answered || 0; ms += x.missed || 0; t2 += x.talkSec || 0; ws += x.waitSum || 0; wc += x.waitCnt || 0; });
+          return { answered: a2, missed: ms, talkSec: t2, wait: wc ? ws / wc : null, total: mm.total };
+        };
         const wrap = document.createElement("div");
         const money = (v) => (v == null || isNaN(v) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
         const int = (v) => (v == null || isNaN(v) ? "—" : Math.round(v).toLocaleString("ru-RU"));
@@ -4006,14 +4017,15 @@
           const md = cm && cm.deals ? cm.deals : null;
           const o = { month: m.month, mi: String(m.mi), staff: dep ? dep.staff : null, manDays: dep ? dep.manDays : null, effStaff: dep ? dep.effStaff : null };
           if (D.key === "pl") {
-            // Звонки первой линии — сумма по её сотрудникам из amoCRM; пропущенные и
-            // ожидание берутся из листа /vsc, там они от АТС и по всей компании.
-            const pc = plCalls[String(m.mi)];
-            const ok = pc && pc.calls && !(b.callsIn && pc.calls < b.callsIn * 0.5);
-            o.calls = ok ? pc.calls : null;
-            o.talkMin = (ok && pc.talkSec) ? pc.talkSec / 60 : null;
-            o.missed = b.callsMissed != null ? b.callsMissed : null;
-            o.missedPct = b.missedPct != null ? b.missedPct : null;
+            // Всё из АТС: принято операторами первой линии, ими же не отвечено,
+            // среднее ожидание ответа и пропущенные по компании (никто не взял).
+            const px = plPbx(m.mi);
+            const pc = px ? { calls: px.answered, talkSec: px.talkSec } : plCalls[String(m.mi)];
+            o.calls = (pc && pc.calls) ? pc.calls : null;
+            o.talkMin = (pc && pc.talkSec) ? pc.talkSec / 60 : null;
+            o.wait = px && px.wait != null ? px.wait : null;
+            o.missed = px && px.total ? px.total.missed : (b.callsMissed != null ? b.callsMissed : null);
+            o.missedPct = (px && px.total && px.total.inbound) ? px.total.missed / px.total.inbound * 100 : (b.missedPct != null ? b.missedPct : null);
             o.perDay = (o.calls != null && o.manDays) ? o.calls / o.manDays : null;
           } else if (D.key === "op") {
             o.contacts = b.contacts != null ? b.contacts : null;
@@ -4039,6 +4051,7 @@
         }
         const DEPT_COLS = {
           pl: [{ k: "calls", t: "Принято", f: int, sum: 1 }, { k: "talkMin", t: "Минут", f: int, sum: 1 },
+               { k: "wait", t: "Ср. ответ", f: secs },
                { k: "missed", t: "Пропущено<div style=\"font-weight:400;color:#9096a3;\">вся компания</div>", f: int, sum: 1 },
                { k: "missedPct", t: "% пропущ.", f: pctv },
                { k: "perDay", t: "звонков&nbsp;/&nbsp;чел&nbsp;/&nbsp;день", f: n1 }],
@@ -4055,9 +4068,9 @@
           // Пропущенные по операторам amoCRM не отдаёт: на неотвеченный звонок ноты с
           // оператором не заводится. Поэтому у людей — только принятые и минуты, а
           // пропущенные видно в строке месяца, там они из листа /vsc (данные АТС).
-          pl: [{ k: "callIn", t: "Принято", f: int, good: 1 }, { k: "talkMin", t: "Минут", f: int, good: 1 },
-               { k: "callPerDay", t: "звонков / день", f: n1, good: 1 },
-               { k: "minPerCall", t: "Минут на звонок", f: n1, good: 0 }],
+          pl: [{ k: "pbxAnswered", t: "Принял", f: int, good: 1 }, { k: "pbxMissed", t: "Не ответил", f: int, good: -1 },
+               { k: "pbxWait", t: "Ср. ответ", f: secs, good: -1 }, { k: "pbxTalkMin", t: "Минут", f: int, good: 1 },
+               { k: "pbxOut", t: "Исход.", f: int, good: 1 }, { k: "callPerDay", t: "звонков / день", f: n1, good: 1 }],
           op: [{ k: "contacts", t: "Лиды", f: int, good: 1 }, { k: "sold", t: "Продажи", f: int, good: 1 },
                { k: "soldRev", t: "Выручка", f: money, good: 1 }, { k: "soldAtv", t: "Ср. чек", f: money, good: 1 },
                { k: "uconv", t: "Конверсия", f: pctv, good: 1 }],
@@ -4071,7 +4084,7 @@
         const INFO_COMMON = "<b>Как читать</b><br>Строки — месяцы года, внизу накопленный итог. Клик по месяцу разворачивает фамилии сотрудников, клик по заголовку колонки в списке фамилий сортирует их: первый клик — лучшие сверху, второй — худшие. Кнопка «История» показывает месяцы, которые свёрнуты."
           + "<br><br><b>Объём</b><br>Считается по всем сделкам, давшим выручку месяца, включая повторных клиентов. Из объёма исключены доплаты (по статусу и по слову «доплата» в названии) и вторые части ВНЖ.";
         const DEPTS = [
-          { key: "pl", title: "Первая линия", dcols: "pl", ucols: "pl", udef: "callIn", info: INFO_COMMON + "<br><br><b>Первая линия</b><br>В строке месяца цифры из листа /vsc — их туда кладёт АТС OnlinePBX общей суммой за день, включая пропущенные.<br><br>По сотрудникам берутся ноты звонков из amoCRM: оператор определяется по тому, кто зафиксировал звонок. Достоверно это работает с июля 2026 — раньше интеграция АТС писала в CRM меньше половины звонков, поэтому такие месяцы показаны прочерком, чтобы не занижать нагрузку. Пропущенных по людям здесь нет и быть не может — на неотвеченный вызов нота с оператором не создаётся. Чтобы видеть пропущенные и скорость ответа по каждому оператору, нужен доступ к API OnlinePBX." },
+          { key: "pl", title: "Первая линия", dcols: "pl", ucols: "pl", udef: "callIn", info: INFO_COMMON + "<br><br><b>Первая линия</b><br>Источник — API АТС OnlinePBX, помесячно за весь год. Сходится с листом /vsc: август по АТС 3 889 входящих против 3 663 в листе, лист считает только рабочие часы.<br><br>Всё берётся напрямую из АТС OnlinePBX: «Принял» — звонки, на которые оператор ответил первым, «Не ответил» — вызовы, которые ему предлагались, но взял их кто-то другой, «Ср. ответ» — сколько клиент ждал до снятия трубки. «Пропущено» в строке месяца — звонки, на которые не ответил никто в компании. Пропущенных по людям здесь нет и быть не может — на неотвеченный вызов нота с оператором не создаётся. Чтобы видеть пропущенные и скорость ответа по каждому оператору, нужен доступ к API OnlinePBX." },
           { key: "op", title: "Отдел продаж", dcols: "op", ucols: "op", udef: "soldRev", info: INFO_COMMON + "<br><br><b>Отдел продаж</b><br>Конверсия — все сделки месяца к целевым (набранным) контактам. «Сделки ОП» и «Выручка ОП» — та часть объёма, что закреплена полем сделки «Менеджер ОП»; именно она раскладывается по фамилиям. Ответственный за сделку для этого не годится: к моменту оплаты там уже специалист ОРК." },
           { key: "orkMsk", title: "ОРК МСК", dcols: "ork", ucols: "ork", udef: "took", info: INFO_COMMON + "<br><br><b>ОРК</b><br>По сотрудникам сделка считается по полю «Кто принял клиента» — оно заполнено почти везде и раскладывает объём месяца по людям.<br><br><b>Возвраты</b><br>Считаются по когорте месяца ОПЛАТЫ: возврат по майской сделке остаётся в мае. Поэтому у свежих месяцев процент низкий — возвраты ещё не дозрели. В отчёте по возвратам процент другой: там доля ДЕНЕГ и по месяцу самого возврата. Возвратом считается статус «Возврат» или заполненная «Дата возврата»; «Ожидает решения о возврате» не считается." },
           { key: "orkSpb", title: "ОРК СПБ", dcols: "ork", ucols: "ork", udef: "took", info: INFO_COMMON + "<br><br><b>ОРК</b><br>По сотрудникам сделка считается по полю «Кто принял клиента».<br><br><b>Возвраты</b><br>По когорте месяца оплаты, поэтому у свежих месяцев процент низкий. Возвратом считается статус «Возврат» или заполненная «Дата возврата»." },
@@ -4094,7 +4107,15 @@
           dcols.forEach((c) => { if (c.sum) yr[c.k] = rowsM.reduce((a, r) => a + (r[c.k] || 0), 0); });
           const mdAll = rowsM.reduce((a, r) => a + (r.manDays || 0), 0);
           if (D.key === "pl") {
-            yr.missedPct = (yr.missed != null && yr.calls) ? yr.missed / (yr.calls + yr.missed) * 100 : null;
+            let ib = 0, ms = 0, ws = 0, wc = 0;
+            rowsM.forEach((r) => {
+              const px = plPbx(r.mi); if (!px || !px.total) return;
+              ib += px.total.inbound || 0; ms += px.total.missed || 0;
+              if (px.wait != null) { ws += px.wait; wc++; }
+            });
+            yr.missed = ms || yr.missed;
+            yr.missedPct = ib ? ms / ib * 100 : null;
+            yr.wait = wc ? ws / wc : null;
             yr.perDay = mdAll ? yr.calls / mdAll : null;
           } else if (D.key === "op") {
             yr.atv = yr.deals ? yr.revenue / yr.deals : null;
@@ -4201,11 +4222,10 @@
               s2retPct: x.s2 ? (x.s2ret || 0) / x.s2 * 100 : null,
               dlLate: x.dlLate || 0, dlPct: x.dlTotal ? (x.dlLate || 0) / x.dlTotal * 100 : null,
               days: x.closedCnt ? x.closedDays / x.closedCnt : null,
-              callIn: x.callIn || 0, callOut: x.callOut || 0, callMissed: x.callMissed || 0,
-              callMissPct: x.callIn ? (x.callMissed || 0) / x.callIn * 100 : null,
-              talkMin: x.talkSec ? x.talkSec / 60 : 0,
-              minPerCall: (x.callIn && x.talkSec) ? (x.talkSec / 60) / x.callIn : null,
-              callPerDay: (perPersonDays && x.callIn) ? x.callIn / perPersonDays : null
+              pbxAnswered: x.pbxAnswered || 0, pbxMissed: x.pbxMissed || 0, pbxOut: x.pbxOut || 0,
+              pbxWait: x.pbxWait != null ? x.pbxWait : null,
+              pbxTalkMin: x.pbxTalkSec ? x.pbxTalkSec / 60 : 0,
+              callPerDay: (perPersonDays && x.pbxAnswered) ? x.pbxAnswered / perPersonDays : null
             };
           }).filter(function (r) { return ucols.some((c) => r[c.k]); });
           const st = _vscSpSort[D.key] || { k: D.udef, dir: -1 };
@@ -4246,6 +4266,17 @@
       }
       function vscZarplataRender(box, j) {
         const months = j.data.months || {}, mgrPay = j.managerPay || {}, cityRev = j.cityRevenue || null, plCalls = j.plCalls || {};
+        // Звонки первой линии берём из самой АТС: принято её операторами за месяц.
+        // Это точнее нот amoCRM и есть за весь год.
+        const pbxData = j.pbx || null;
+        const PL_EXT = ["502", "503", "505", "506", "508"];
+        const plFromPbx = (mi) => {
+          if (!pbxData || !pbxData.months || !pbxData.months[String(mi)]) return null;
+          const be = pbxData.months[String(mi)].byExt || {};
+          let a2 = 0, t2 = 0;
+          PL_EXT.forEach((e) => { const x = be[e]; if (x) { a2 += x.answered || 0; t2 += x.talkSec || 0; } });
+          return a2 ? { calls: a2, talkSec: t2 } : null;
+        };
         const RU_MI = { "январь": 0, "февраль": 1, "март": 2, "апрель": 3, "май": 4, "июнь": 5, "июль": 6, "август": 7, "сентябрь": 8, "октябрь": 9, "ноябрь": 10, "декабрь": 11 };
         // Показываем только месяцы, где лист посчитан до итога (ФОТ общий есть).
         const list = Object.keys(months).map((k) => months[k]).filter((m) => m.fotTotal != null || m.deptAvgSeed)
@@ -4384,15 +4415,7 @@
           const b = loadBase[m.month] || {};
           // Первая линия: берём звонки САМОЙ первой линии (из amoCRM по её сотрудникам),
           // а не общую цифру АТС по компании из листа — иначе нагрузка завышена вдвое.
-          if (key === "pl") {
-            const pc = plCalls[String(m.mi)];
-            // Интеграция АТС начала писать звонки в amoCRM массово только с июля 2026:
-            // за более ранние месяцы в CRM лежит меньше половины того, что показывает
-            // сама АТС в листе. Такие месяцы не показываем, чтобы не занижать нагрузку.
-            if (!pc || !pc.calls) return null;
-            if (b.callsIn && pc.calls < b.callsIn * 0.5) return null;
-            return pc.calls;
-          }
+          if (key === "pl") { const pc = plFromPbx(m.mi) || plCalls[String(m.mi)]; return (pc && pc.calls) ? pc.calls : null; }
           if (key === "op") return b.contacts != null ? b.contacts : null;
           const cm = cityRev && cityRev.months && cityRev.months[String(m.mi)];
           const dk = DEALKEY[key];
@@ -4465,7 +4488,7 @@
         apiFetch("/admin/api/vsc/staffperf").then(function (r) {
           const sp = r && r.data;
           if (!sp || !Array.isArray(sp.users) || !sp.users.length) { spBody.innerHTML = '<div class="vsc-chart"><div class="vsc-empty">Данные по сотрудникам считаются ночью вместе с выручкой по городам — появятся после первого расчёта.</div></div>'; return; }
-          const draw = () => { spBody.innerHTML = ""; spBody.appendChild(vscStaffPerfDepts(sp, list, cityRev, loadBase, draw, plCalls)); };
+          const draw = () => { spBody.innerHTML = ""; spBody.appendChild(vscStaffPerfDepts(sp, list, cityRev, loadBase, draw, plCalls, pbxData)); };
           draw();
         }).catch(function () { spBody.innerHTML = '<div class="vsc-chart"><div class="vsc-empty">Не удалось загрузить данные по сотрудникам.</div></div>'; });
 
@@ -4487,9 +4510,8 @@
             k["load_" + dk] = (d && d.manDays && base != null) ? Math.round(base / d.manDays * 100) / 100 : null;
           });
           const b = loadBase[m.month] || {};
-          const pc0 = plCalls[String(m.mi)];
-          const pcOk = pc0 && pc0.calls && !(b.callsIn && pc0.calls < b.callsIn * 0.5);
-          k.callsPer = (m.depts && m.depts.pl && m.depts.pl.manDays && pcOk) ? Math.round(pc0.calls / m.depts.pl.manDays * 100) / 100 : null;
+          const pc0 = plFromPbx(m.mi) || plCalls[String(m.mi)];
+          k.callsPer = (m.depts && m.depts.pl && m.depts.pl.manDays && pc0 && pc0.calls) ? Math.round(pc0.calls / m.depts.pl.manDays * 100) / 100 : null;
           k.missedPer = (m.depts && m.depts.pl && m.depts.pl.manDays && b.callsMissed != null) ? Math.round(b.callsMissed / m.depts.pl.manDays * 100) / 100 : null;
           const rv2 = revenueOf(m.month);
           k.fotRev = (rv2 && m.fotTotal != null) ? Math.round(m.fotTotal / rv2 * 1000) / 10 : null;

@@ -1416,6 +1416,29 @@ function loadCallStats() {
 app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
   const d = loadStaffPerf();
   const cs = loadCallStats();
+  // Звонки из АТС по добавочным сшиваем с сотрудниками по имени: у АТС свой
+  // справочник добавочных, у amoCRM — свои пользователи, общее только ФИО.
+  const px = pbx.load();
+  if (d && px && px.months) {
+    const norm = (x) => String(x || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+    const byName = {};
+    Object.keys(px.months).forEach((mk) => {
+      const be = px.months[mk].byExt || {};
+      Object.keys(be).forEach((ext) => {
+        const nm = norm((px.ext || {})[ext]); if (!nm) return;
+        ((byName[nm] || (byName[nm] = {}))[mk] = be[ext]);
+      });
+    });
+    (d.users || []).forEach((u) => {
+      const rec = byName[norm(u.name)]; if (!rec) return;
+      Object.keys(rec).forEach((mk) => {
+        const t = u.months[mk] || (u.months[mk] = { deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
+        t.pbxAnswered = rec[mk].answered; t.pbxMissed = rec[mk].missed;
+        t.pbxTalkSec = rec[mk].talkSec; t.pbxOut = rec[mk].outbound;
+        t.pbxWait = rec[mk].waitCnt ? Math.round(rec[mk].waitSum / rec[mk].waitCnt) : null;
+      });
+    });
+  }
   if (d && cs && cs.byUser) {
     (d.users || []).forEach((u) => {
       const c = cs.byUser[u.uid]; if (!c) return;
@@ -1425,7 +1448,7 @@ app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
       });
     });
   }
-  return res.json({ success: true, data: d, callsTs: cs ? cs.ts : null });
+  return res.json({ success: true, data: d, callsTs: cs ? cs.ts : null, pbxTs: px ? px.ts : null });
 });
 function scheduleCityRevenueDaily() {
   const MSK_OFFSET = 3 * 3600 * 1000, DAY_MS = 86400000;
@@ -1452,6 +1475,23 @@ if (!loadCityRev() || !loadStaffPerf()) setTimeout(() => { Promise.resolve(amoBg
 // Разбор живёт в zarplata.js (опубликованный xlsx-экспорт книги, только чтение).
 // Раздел деликатный (ФОТ, средние зарплаты, ЗП управляющей) → ТОЛЬКО админ.
 const zarplata = require("./zarplata");
+// Статистика звонков из самой АТС (OnlinePBX): принято/не ответил/скорость ответа
+// по каждому оператору. amoCRM этого не знает — там нет пропущенных.
+const pbx = require("./pbx");
+// Ночной пересчёт АТС в 01:10 МСК (после съёма нот в 00:30): обновляем текущий и
+// прошлый месяц, история уже собрана. Первый запуск при пустом файле берёт год.
+(function schedulePbxDaily() {
+  const MSK = 3 * 3600 * 1000, DAY = 86400000;
+  const runIt = (why) => pbx.run().then((d) => console.log("PBX [" + why + "]: месяцев " + Object.keys(d.months || {}).length)).catch((e) => console.error("PBX:", e && e.message));
+  (function next() {
+    const now = Date.now() + MSK;
+    let t = Math.floor(now / DAY) * DAY + 70 * 60 * 1000;
+    if (t <= now) t += DAY;
+    setTimeout(() => { runIt("cron"); next(); }, Math.max(1000, t - now));
+  })();
+  if (!pbx.load()) setTimeout(() => runIt("startup"), 6 * 60 * 1000);
+  console.log("PBX: ежедневный пересчёт звонков в 01:10 МСК");
+})();
 // ЗП управляющей в зарплатной таблице нет (она вне ФОТ) — Андрей вносит руками,
 // как прибыль. Хранение тем же способом: { "Август 2026": 250000 }.
 const VSC_MGRPAY_FILE = path.join(__dirname, ".vscManagerPay.json");
@@ -1564,7 +1604,7 @@ app.get("/admin/api/vsc/zarplata", requireAdmin, async (req, res) => {
         });
       }
     } catch (e) { console.error("plCalls:", e && e.message); }
-    return res.json({ success: true, data: d, managerPay: loadMgrPay(), cityRevenue: loadCityRev(), loadBase: base, plCalls: plCalls });
+    return res.json({ success: true, data: d, managerPay: loadMgrPay(), cityRevenue: loadCityRev(), loadBase: base, plCalls: plCalls, pbx: pbx.load() });
   } catch (e) {
     console.error("vsc zarplata:", e && e.message);
     return res.status(500).json({ success: false, message: "Не удалось прочитать зарплатную таблицу: " + (e && e.message) });
