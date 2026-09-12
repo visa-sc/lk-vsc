@@ -5378,7 +5378,7 @@
       function vscSboryBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Запас на сборы";
-        h.appendChild(vscInfo("<b>Приход</b><br>Из таблицы «срм-факт», строка «Итог»: колонки сборов — ваучеры авиа, регистрация, подача, фото, консульские сборы, услуги АКК, запись/бот, сторонние курьеры, страховка, языковые переводы. Колонки ищутся по названию, поэтому разная вёрстка месяцев не мешает.<br><br><b>Расход</b><br>Категория «Сборы» из Платрума. Автоматически подтянуть пока нечего: в вашем Платруме (visasc.platrum.ru) модули «Финансы», «Финплан» и «Дашборды» пустые, там ведутся только метрики. Поэтому сумма вводится руками — введите и нажмите Enter, она сохранится на сервере. Как только подскажете, где именно лежит категория «Сборы», подключу автоматику.<br><br><b>Возвраты</b><br>Из отчёта по возвратам, блок «Разбивка суммы возврата» — всё, кроме колонок «Услуги» и «НДС» (они про наши услуги, а не про сборы).<br><br><b>Разница</b> = приход − расход − возвраты. Плюс значит, что собранного хватает с запасом; минус — что за месяц мы отдали больше, чем собрали."));
+        h.appendChild(vscInfo("<b>Приход</b><br>Из таблицы «срм-факт», строка «Итог»: колонки сборов — ваучеры авиа, регистрация, подача, фото, консульские сборы, услуги АКК, запись/бот, сторонние курьеры, страховка, языковые переводы. Колонки ищутся по названию, поэтому разная вёрстка месяцев не мешает.<br><br><b>Расход</b><br>Категория «Сборы» из P&amp;L Платрума, строка в переменных расходах. Тянется по API автоматически, обновляется раз в шесть часов. Руками вводить ничего не нужно.<br><br><b>Возвраты</b><br>Из отчёта по возвратам, блок «Разбивка суммы возврата» — всё, кроме колонок «Услуги» и «НДС» (они про наши услуги, а не про сборы).<br><br><b>Разница</b> = приход − расход − возвраты. Плюс значит, что собранного хватает с запасом; минус — что за месяц мы отдали больше, чем собрали."));
         wrap.appendChild(h);
         const box = document.createElement("div"); box.className = "vsc-chart";
         box.innerHTML = '<div class="loading-state">Считаем запас на сборы…</div>';
@@ -5408,8 +5408,7 @@
             const isLast = (i === names.length - 1);
             html += '<tr' + (isLast ? "" : ' class="sbory-hist" style="display:none;"') + '><td ' + TD.replace("right", "left") + '><b>' + escapeHtml(n.replace(/\s*20\d\d/, "")) + '</b></td>'
               + '<td ' + TD + '>' + money(inc) + '</td>'
-              + '<td ' + TD + '><input type="text" class="sbory-exp" data-month="' + escapeHtml(n) + '" value="' + (exp != null ? Math.round(exp) : "") + '" placeholder="ввести" '
-              + 'style="width:104px;text-align:right;border:1px solid #dfe3ec;border-radius:8px;padding:4px 7px;font-size:12.5px;font-family:inherit;"></td>'
+              + '<td ' + TD + '>' + (exp != null ? money(exp) : "—") + '</td>'
               + '<td ' + TD + '>' + money(ret) + '</td>'
               + '<td ' + TD.replace('style="', 'style="' + bg + 'color:' + col + ';font-weight:700;') + '>' + (diff == null ? "—" : money(diff)) + '</td></tr>';
           });
@@ -5425,19 +5424,6 @@
 
           box.innerHTML = html;
           // Свёрнуто до последнего месяца: остальное открывается кнопкой «История».
-          // Расход пока вводится руками: в Платруме компании модули «Финансы»,
-          // «Финплан» и «Дашборды» пустые, тянуть категорию «Сборы» неоткуда.
-          Array.prototype.forEach.call(box.querySelectorAll(".sbory-exp"), function (inp) {
-            inp.addEventListener("keydown", function (e) { if (e.key === "Enter") inp.blur(); });
-            inp.addEventListener("change", function () {
-              const raw = inp.value.replace(/\s/g, "").replace(",", ".");
-              inp.disabled = true;
-              fetch("/admin/api/vsc/sbory-expense", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() }, body: JSON.stringify({ month: inp.getAttribute("data-month"), expense: raw }) })
-                .then(function () { return apiFetch("/admin/api/vsc/sbory"); })
-                .then(function (fresh) { paint(fresh); })
-                .catch(function () { inp.disabled = false; });
-            });
-          });
           box.querySelectorAll("button[data-sbhist]").forEach(function (btn) {
             btn.addEventListener("click", function () {
               const rows = box.querySelectorAll("tr.sbory-hist");
