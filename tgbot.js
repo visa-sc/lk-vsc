@@ -27,7 +27,18 @@ const TOKEN = process.env.ESIM_TG_TOKEN || "";
 // С прод-сервера исходящие к api.telegram.org не проходят, поэтому наружу
 // ходим через свой ретранслятор на Deno (tools/deno-relay-telegram.ts).
 // Входящие вебхуки Telegram присылает нам напрямую — им релей не нужен.
-const RELAY = (process.env.ESIM_TG_RELAY || "").replace(/\/+$/, "");
+// Адрес чистим защитно. 11.09.2026 кто-то дописал в .env новую переменную без
+// переноса строки, она приклеилась к ESIM_TG_RELAY, адрес стал битым, ретранслятор
+// отвечал 403, и бот молчал полтора суток. Отрезаем всё, что после пробела или
+// после приклеенного «ИМЯ=», и громко пишем об этом в лог и в письмо.
+const RELAY_RAW = String(process.env.ESIM_TG_RELAY || "");
+const RELAY_GLUED = /\s|[A-Z][A-Z0-9_]{2,}=/.test(RELAY_RAW);
+const RELAY = RELAY_RAW.split(/\s/)[0].replace(/[A-Z][A-Z0-9_]{2,}=.*$/, "").replace(/\/+$/, "");
+if (RELAY_GLUED) console.error("tgbot: ESIM_TG_RELAY в .env склеен с другой строкой — хвост отрезан, но строку надо поправить");
+const WATCH_FILE = path.join(DIR, "tgwatch.json");     // с какого момента бот без связи и кому уже написали
+const ALERT_AFTER_MS = 10 * 60 * 1000;                 // молчит дольше 10 минут — пишем
+const ALERT_REPEAT_MS = 12 * 3600 * 1000;              // пока не починили — напоминаем раз в 12 часов
+const ALERT_TO = process.env.ESIM_TG_ALERT_TO || "director@visa-sc.ru";
 const SELF = process.env.ESIM_SELF_BASE || "http://127.0.0.1:3000";
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
 const UTM_PROMO = process.env.ESIM_UTM_PROMO || "VSC20OFF3";
@@ -65,13 +76,17 @@ function callUrl(method) { return RELAY ? RELAY + "/" + method : TG_API + TOKEN 
 function callHeaders(extra) {
   return Object.assign({}, extra || {}, RELAY ? { "X-Bot-Token": TOKEN } : {});
 }
-async function tg(method, payload) {
+// Последняя ошибка связи — по ней сторож ставит диагноз в письме
+let _lastErr = null;
+async function tg(method, payload, opts) {
   try {
     const r = await axios.post(callUrl(method), payload, { timeout: 30000, headers: callHeaders() });
     return r.data && r.data.result;
   } catch (e) {
     const d = e.response && e.response.data;
-    console.error("tg " + method + ":", (d && d.description) || e.message);
+    _lastErr = { status: (e.response && e.response.status) || 0,
+                 desc: String((d && (d.description || (typeof d === "string" ? d : ""))) || e.message).slice(0, 200) };
+    if (!(opts && opts.quiet)) console.error("tg " + method + ":", _lastErr.desc);
     return null;
   }
 }
@@ -845,30 +860,140 @@ async function handleUpdate(upd) {
 // обе стороны). Поэтому забираем обновления сами длинным опросом через
 // ретранслятор: канал наружу у нас есть.
 let _polling = false;
+// ─────────────────────────── опрос и его сторож ───────────────────────────
+// Каждый запуск цикла получает свой номер. Если цикл завис на каком-то await,
+// сторож запускает новый, а старый, если когда-нибудь очнётся, увидит чужой
+// номер и тихо выйдет. Так двух опросов одновременно не бывает.
+let _pollGen = 0;
+let _lastLoopAt = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Одно зависшее обновление не должно замораживать весь бот
+function withTimeout(p, ms) {
+  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("обработка дольше " + ms / 1000 + " с")), ms))]);
+}
+
 async function pollLoop() {
-  if (_polling) return;
+  const gen = ++_pollGen;
   _polling = true;
   let offset = readJson(OFFSET_FILE, { offset: 0 }).offset || 0;
   console.log("tgbot: опрос запущен, продолжаем с обновления", offset);
-  for (;;) {
+  let lastLogged = "";
+  while (gen === _pollGen) {
+    _lastLoopAt = Date.now();
     try {
       const ups = await tg("getUpdates", {
         offset, timeout: 25, allowed_updates: ["message", "callback_query"],
-      });
-      if (Array.isArray(ups) && ups.length) {
+      }, { quiet: true });
+      if (gen !== _pollGen) return;
+      if (Array.isArray(ups)) {
+        markOk();
+        _lastErr = null;
+        if (lastLogged) { console.log("tgbot: связь восстановлена"); lastLogged = ""; }
         for (const u of ups) {
           offset = Math.max(offset, (u.update_id || 0) + 1);
-          await handleUpdate(u);
+          try { await withTimeout(handleUpdate(u), 60000); }
+          catch (e) { console.error("tgbot обновление " + u.update_id + ":", e.message); }
+          writeJson(OFFSET_FILE, { offset });   // сохраняем после каждого, чтобы при сбое не повторять
         }
-        writeJson(OFFSET_FILE, { offset });
-      } else if (ups === null) {
-        await new Promise((r) => setTimeout(r, 5000));   // связи нет — не долбим
+      } else {
+        markFail();
+        const sig = (_lastErr && _lastErr.status) + " " + (_lastErr && _lastErr.desc);
+        // В лог пишем только смену ошибки: раньше одна и та же строка легла в лог 15 тысяч раз
+        if (sig !== lastLogged) { console.error("tgbot опрос не прошёл:", sig); lastLogged = sig; }
+        // Отказ в доступе сам не пройдёт — не долбим каждые 5 секунд
+        const hard = _lastErr && [401, 403, 404].indexOf(_lastErr.status) >= 0;
+        await sleep(hard ? 60000 : 5000);
       }
     } catch (e) {
       console.error("tgbot опрос:", e.message);
-      await new Promise((r) => setTimeout(r, 5000));
+      await sleep(5000);
     }
   }
+}
+
+function readWatch() { return readJson(WATCH_FILE, {}); }
+function markOk() {
+  const w = readWatch();
+  const now = Date.now();
+  // Писать в файл на каждый пустой опрос незачем — только при смене состояния или раз в 10 минут
+  if (!w.downSince && w.lastOkAt && now - w.lastOkAt < 600000) { _memOkAt = now; return; }
+  const wasDown = !!w.downSince, wasAlerted = !!w.alertedAt, downSince = w.downSince;
+  writeJson(WATCH_FILE, { lastOkAt: now });
+  _memOkAt = now;
+  if (wasDown && wasAlerted) {
+    alertMail("Бот @" + BOT_NAME + " снова работает",
+      "<p>Связь с телеграмом восстановлена, бот отвечает клиентам.</p>" +
+      "<p>Простой длился " + humanDur(now - downSince) + ".</p>");
+  }
+}
+let _memOkAt = 0;
+function markFail() {
+  const w = readWatch();
+  if (!w.downSince) { w.downSince = Date.now(); writeJson(WATCH_FILE, w); }
+}
+
+function humanDur(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 60) return m + " мин";
+  const h = Math.floor(m / 60);
+  return h < 48 ? h + " ч " + (m % 60) + " мин" : Math.floor(h / 24) + " дн " + (h % 24) + " ч";
+}
+
+// Диагноз по коду ошибки — чтобы из письма сразу было понятно, куда смотреть
+function diagnose(err) {
+  const s = err ? err.status : 0;
+  const d = err ? err.desc : "";
+  if (RELAY_GLUED) return "Строка ESIM_TG_RELAY в /var/www/voyo/.env склеена с соседней переменной. Бот обрезал хвост сам, но если связь всё равно не идёт — поправьте строку руками.";
+  if (s === 403 && RELAY) return "Ретранслятор на Deno отказывает в доступе. Чаще всего это битый адрес ESIM_TG_RELAY в /var/www/voyo/.env (например, склеилась строка) или сменился секрет в проекте на Deno.";
+  if (s === 401 || /unauthorized/i.test(d)) return "Телеграм не принимает токен бота. Перевыпустите токен в @BotFather и обновите ESIM_TG_TOKEN в /var/www/voyo/.env.";
+  if (s === 404) return "Метод не найден: либо неверный токен, либо ретранслятор отдаёт не ту страницу. Проверьте ESIM_TG_TOKEN и ESIM_TG_RELAY.";
+  if (s === 409) return "Бота опрашивает кто-то ещё или на нём включён вебхук. Проверьте, не запущена ли вторая копия бота.";
+  if (s >= 500) return "Ретранслятор на Deno падает с ошибкой сервера. Проверьте проект на dash.deno.com.";
+  return "Ретранслятор не отвечает (таймаут или нет сети). Проверьте, жив ли проект на dash.deno.com.";
+}
+
+function alertMail(subject, html) {
+  try {
+    const mail = require("./mail.js");
+    Promise.resolve(mail.sendMail({ to: ALERT_TO, replyTo: ALERT_TO, subject, html,
+      text: html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() }))
+      .then((r) => console.log("tgbot сторож: письмо «" + subject + "» " + (r && r.ok === false ? "НЕ ушло: " + r.error : "отправлено")))
+      .catch((e) => console.error("tgbot сторож: письмо не ушло:", e.message));
+  } catch (e) { console.error("tgbot сторож: почта недоступна:", e.message); }
+}
+
+function watchdogTick() {
+  const now = Date.now();
+  // 1) Цикл опроса завис: одна итерация не может длиться дольше ~40 секунд
+  if (_polling && _lastLoopAt && now - _lastLoopAt > 3 * 60 * 1000) {
+    console.error("tgbot сторож: опрос завис на " + humanDur(now - _lastLoopAt) + ", перезапускаю цикл");
+    pollLoop();
+    return;
+  }
+  // 2) Связи нет слишком долго — пишем директору, потом напоминаем раз в 12 часов
+  const w = readWatch();
+  if (!w.downSince || now - w.downSince < ALERT_AFTER_MS) return;
+  if (w.alertedAt && now - w.alertedAt < ALERT_REPEAT_MS) return;
+  const err = _lastErr || {};
+  alertMail("Бот @" + BOT_NAME + " не отвечает клиентам " + humanDur(now - w.downSince),
+    "<p><b>Бот продажи eSIM не получает сообщения " + humanDur(now - w.downSince) + ".</b> Клиенты пишут /start и не получают ответа.</p>" +
+    "<p><b>Что случилось:</b> " + diagnose(err) + "</p>" +
+    "<p style=\"color:#8b93a5\">Код ошибки: " + (err.status || "нет ответа") + (err.desc ? ", " + String(err.desc).replace(/</g, "&lt;") : "") + "</p>" +
+    "<p style=\"color:#8b93a5\">Когда связь вернётся, придёт письмо «снова работает». Повтор этого письма — через 12 часов, если не починится.</p>");
+  w.alertedAt = now;
+  writeJson(WATCH_FILE, w);
+}
+
+function botStatus() {
+  const w = readWatch();
+  return {
+    relay: !!RELAY, relayGlued: RELAY_GLUED, polling: _polling,
+    lastOkAt: Math.max(w.lastOkAt || 0, _memOkAt) || null,
+    downSince: w.downSince || null, alertedAt: w.alertedAt || null,
+    lastLoopAgoSec: _lastLoopAt ? Math.round((Date.now() - _lastLoopAt) / 1000) : null,
+    lastError: _lastErr,
+  };
 }
 
 // Напоминания: пакет заканчивается или гигабайты на исходе. Приходят прямо
@@ -918,8 +1043,18 @@ function mount(app, opts) {
     pollLoop();
   }, 4000);
 
+  // Сторож: зависший опрос перезапускает, долгое молчание сообщает письмом
+  setInterval(watchdogTick, 60 * 1000);
+
+  // Состояние бота для проверки руками: /esim/api/tg/health?adm=КОД
+  app.get("/esim/api/tg/health", (req, res) => {
+    if (String(req.query.adm || "") !== String(process.env.ESIM_ADMIN_CODE || "280992")) return res.status(403).json({ success: false });
+    const s = botStatus();
+    res.json(Object.assign({ success: true, ok: !s.downSince && !!s.lastOkAt }, s));
+  });
+
   console.log("tgbot: бот подключён" + (RELAY ? " (наружу через ретранслятор)" : " (напрямую)"));
-  return { onIssued, notifyUsage };
+  return { onIssued, notifyUsage, status: botStatus };
 }
 
 module.exports = { mount, onIssued, notifyUsage, ready };
