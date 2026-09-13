@@ -39,6 +39,13 @@ const express = require("express"); // нужен для express.json() на р�
 const tbank = require("./tbank"); // Т-Касса: приём оплат (банк за интерфейсом, как и поставщик eSIM)
 
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
+// Витрина открыта ещё и на своём поддомене. Возврат из банка и ссылка входа в
+// кабинет должны вести туда же, где человек покупал: кука кабинета у каждого
+// домена своя, и с чужого домена он оказался бы не вошедшим.
+const ESIM_HOSTS = { "esim.voyotravel.ru": "https://esim.voyotravel.ru" };
+function baseFor(req) {
+  return ESIM_HOSTS[String((req && req.hostname) || "").toLowerCase()] || BASE_URL;
+}
 const DIR = path.join(__dirname, ".esim");
 const CATALOG_FILE = path.join(DIR, "catalog.json");
 const ORDERS_FILE = path.join(DIR, "orders.json");
@@ -836,8 +843,8 @@ function mount(app, opts) {
         description: label.slice(0, 140), itemName: label,
         phone, email: validEmail(email) ? email : null,
         notificationUrl: BASE_URL + "/esim/api/pay/notify",
-        successUrl: BASE_URL + "/esim/pay/ok?o=" + id + "&t=" + signOrder(id),
-        failUrl: BASE_URL + "/esim/pay/fail?o=" + id,
+        successUrl: baseFor(req) + "/esim/pay/ok?o=" + id + "&t=" + signOrder(id),
+        failUrl: baseFor(req) + "/esim/pay/fail?o=" + id,
       });
       if (!pay.ok) { console.error("esim pay init:", pay.message); return res.status(502).json({ success: false, message: "Банк не принял платёж. Попробуйте ещё раз." }); }
       const g = findLocal(id);
@@ -984,7 +991,7 @@ function mount(app, opts) {
     if (now - prev < 60000) return res.json({ success: true, sent: mine.length > 0, found: mine.length > 0 });
     _loginAt.set(email, now);
     if (mine.length && opts && opts.sendMail) {
-      const acc = BASE_URL + "/esim/account?e=" + encodeURIComponent(email) + "&t=" + signEmail(email) +
+      const acc = baseFor(req) + "/esim/account?e=" + encodeURIComponent(email) + "&t=" + signEmail(email) +
         ((req.body || {}).lk ? "&lk=1" : "");
       opts.sendMail({
         to: email,

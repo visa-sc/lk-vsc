@@ -23,6 +23,16 @@ const vscomMod = require("./vscom"); // Заявки с англоязычног
 // Личные финансы переехали на ak-co.ru (сервис akfin) — модуль здесь больше не монтируется
 
 const app = express();
+// На поддомене eSIM живёт только eSIM: витрина, кабинет покупателя, оплата,
+// SEO-страницы и картинки для них. Всё остальное (кабинет виз, админка и т.д.)
+// уводим на основной домен, чтобы поддомен не стал второй копией всего сайта.
+// Стоит первым: раньше всех подключается мост переводов, и иначе /translate прошёл бы мимо.
+const ESIM_HOST_ALLOW = /^\/($|esim(\/|_|\?|$)|apple-touch-icon[^/]*\.png$|voyo-logo\.png$|favicon\.ico$|robots\.txt$|sitemap\.xml$)/;
+app.use((req, res, next) => {
+  if (String(req.hostname || "").toLowerCase() !== "esim.voyotravel.ru") return next();
+  if (ESIM_HOST_ALLOW.test(req.path)) return next();
+  return res.redirect(301, "https://voyotravel.ru" + req.originalUrl);
+});
 // ── Мост к движку переводов: прокси /translate/api/*, страницы /translate*, шлюз Anthropic
 // с белым списком моделей и суточным бюджетом, почта для движка. ДО express.json — нужны сырые тела.
 engineProxy.mountEarly(app, { getStaffFromReq: (req) => getStaffFromReq(req), sendMail: (o) => mail.sendMail(o), publicDir: path.join(__dirname, "public") });
@@ -52,6 +62,12 @@ app.get("/", (req, res, next) => {
   if (h === "crm.voyotravel.ru") { // копия amoCRM — crm.voyotravel.ru (та же страница, что /amocrm_copy)
     res.set("Cache-Control", "no-cache");
     return res.sendFile(path.join(__dirname, "public", "amocrm_copy.html"));
+  }
+  // esim.voyotravel.ru (13.09.2026) — витрина eSIM в корне поддомена, та же
+  // страница, что voyotravel.ru/esim. Её запросы и так ходят по /esim/*.
+  if (h === "esim.voyotravel.ru") {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    return res.sendFile(path.join(__dirname, "public", "esim.html"));
   }
   next();
 });
