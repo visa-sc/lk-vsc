@@ -23,13 +23,18 @@ const vscomMod = require("./vscom"); // Заявки с англоязычног
 // Личные финансы переехали на ak-co.ru (сервис akfin) — модуль здесь больше не монтируется
 
 const app = express();
-// На поддомене eSIM живёт только eSIM: витрина, кабинет покупателя, оплата,
-// SEO-страницы и картинки для них. Всё остальное (кабинет виз, админка и т.д.)
-// уводим на основной домен, чтобы поддомен не стал второй копией всего сайта.
-// Стоит первым: раньше всех подключается мост переводов, и иначе /translate прошёл бы мимо.
+// Отдельные сайты eSIM: esim.voyotravel.ru (13.09.2026), voyomobile.ru и voyomobile.com
+// (13.09.2026). На них живёт только eSIM: витрина в корне, кабинет покупателя, оплата,
+// SEO-страницы и картинки для них. Всё остальное (кабинет виз, админка и т.д.) уводим
+// на voyotravel.ru, чтобы эти домены не стали второй копией всего сайта. www. уводим
+// на домен без www. Стоит первым: раньше всех подключается мост переводов, и иначе
+// /translate прошёл бы мимо. Список доменов общий с esim.js (ESIM_HOSTS).
+const ESIM_SITE_HOSTS = new Set(["esim.voyotravel.ru", "voyomobile.ru", "voyomobile.com"]);
 const ESIM_HOST_ALLOW = /^\/($|esim(\/|_|\?|$)|apple-touch-icon[^/]*\.png$|voyo-logo\.png$|favicon\.ico$|robots\.txt$|sitemap\.xml$)/;
 app.use((req, res, next) => {
-  if (String(req.hostname || "").toLowerCase() !== "esim.voyotravel.ru") return next();
+  const h = String(req.hostname || "").toLowerCase();
+  if (h.startsWith("www.") && ESIM_SITE_HOSTS.has(h.slice(4))) return res.redirect(301, "https://" + h.slice(4) + req.originalUrl);
+  if (!ESIM_SITE_HOSTS.has(h)) return next();
   if (ESIM_HOST_ALLOW.test(req.path)) return next();
   return res.redirect(301, "https://voyotravel.ru" + req.originalUrl);
 });
@@ -63,9 +68,9 @@ app.get("/", (req, res, next) => {
     res.set("Cache-Control", "no-cache");
     return res.sendFile(path.join(__dirname, "public", "amocrm_copy.html"));
   }
-  // esim.voyotravel.ru (13.09.2026) — витрина eSIM в корне поддомена, та же
-  // страница, что voyotravel.ru/esim. Её запросы и так ходят по /esim/*.
-  if (h === "esim.voyotravel.ru") {
+  // Сайты eSIM (esim.voyotravel.ru, voyomobile.ru, voyomobile.com) — витрина в корне,
+  // та же страница, что voyotravel.ru/esim. Её запросы и так ходят по /esim/*.
+  if (ESIM_SITE_HOSTS.has(h)) {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     return res.sendFile(path.join(__dirname, "public", "esim.html"));
   }

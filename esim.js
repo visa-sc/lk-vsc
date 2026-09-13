@@ -39,10 +39,15 @@ const express = require("express"); // нужен для express.json() на р�
 const tbank = require("./tbank"); // Т-Касса: приём оплат (банк за интерфейсом, как и поставщик eSIM)
 
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
-// Витрина открыта ещё и на своём поддомене. Возврат из банка и ссылка входа в
-// кабинет должны вести туда же, где человек покупал: кука кабинета у каждого
-// домена своя, и с чужого домена он оказался бы не вошедшим.
-const ESIM_HOSTS = { "esim.voyotravel.ru": "https://esim.voyotravel.ru" };
+// Витрина открыта ещё на esim.voyotravel.ru, voyomobile.ru и voyomobile.com. Возврат из
+// банка и ссылка входа в кабинет ведут туда же, где человек покупал: кука кабинета у
+// каждого домена своя, и с чужого домена он оказался бы не вошедшим. Список доменов
+// общий с server.js (ESIM_SITE_HOSTS).
+const ESIM_HOSTS = {
+  "esim.voyotravel.ru": "https://esim.voyotravel.ru",
+  "voyomobile.ru": "https://voyomobile.ru",
+  "voyomobile.com": "https://voyomobile.com",
+};
 function baseFor(req) {
   return ESIM_HOSTS[String((req && req.hostname) || "").toLowerCase()] || BASE_URL;
 }
