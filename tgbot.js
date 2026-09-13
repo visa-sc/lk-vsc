@@ -23,18 +23,30 @@ const STATE_FILE = path.join(DIR, "tgstate.json");     // с кем на как�
 const OFFSET_FILE = path.join(DIR, "tgoffset.json");   // на каком обновлении остановились
 const TG_API = "https://api.telegram.org/bot";
 
-const TOKEN = process.env.ESIM_TG_TOKEN || "";
+// Токен и адрес ретранслятора читаем защитно. 12.09.2026 в .env дописали ключ
+// АТС, а файл не заканчивался переносом строки: ключ приклеился к ESIM_TG_RELAY,
+// адрес стал битым, ретранслятор отвечал 403, и бот молчал почти сутки.
+// Теперь приклеенный хвост отрезается, а в лог и в статус пишется предупреждение.
+// Токен телеграма имеет строгий вид «цифры:35 символов», по нему и вырезаем.
+const TOKEN_RAW = String(process.env.ESIM_TG_TOKEN || "").trim();
+const TOKEN_M = /^(\d{6,12}:[A-Za-z0-9_-]{35})/.exec(TOKEN_RAW);
+const TOKEN = TOKEN_M ? TOKEN_M[1] : TOKEN_RAW;
+const TOKEN_GLUED = !!TOKEN_M && TOKEN_M[1] !== TOKEN_RAW;
+if (TOKEN_GLUED) console.error("tgbot: ESIM_TG_TOKEN в .env склеен с другой строкой — хвост отрезан");
 // С прод-сервера исходящие к api.telegram.org не проходят, поэтому наружу
 // ходим через свой ретранслятор на Deno (tools/deno-relay-telegram.ts).
-// Входящие вебхуки Telegram присылает нам напрямую — им релей не нужен.
-// Адрес чистим защитно. 11.09.2026 кто-то дописал в .env новую переменную без
-// переноса строки, она приклеилась к ESIM_TG_RELAY, адрес стал битым, ретранслятор
-// отвечал 403, и бот молчал полтора суток. Отрезаем всё, что после пробела или
-// после приклеенного «ИМЯ=», и громко пишем об этом в лог и в письмо.
+function cleanRelay(raw) {
+  return String(raw || "").split(/\s/)[0].replace(/[A-Z][A-Z0-9_]{2,}=.*$/, "").replace(/\/+$/, "");
+}
 const RELAY_RAW = String(process.env.ESIM_TG_RELAY || "");
-const RELAY_GLUED = /\s|[A-Z][A-Z0-9_]{2,}=/.test(RELAY_RAW);
-const RELAY = RELAY_RAW.split(/\s/)[0].replace(/[A-Z][A-Z0-9_]{2,}=.*$/, "").replace(/\/+$/, "");
-if (RELAY_GLUED) console.error("tgbot: ESIM_TG_RELAY в .env склеен с другой строкой — хвост отрезан, но строку надо поправить");
+const RELAY_GLUED = /\s|[A-Z][A-Z0-9_]{2,}=/.test(RELAY_RAW.trim());
+if (RELAY_GLUED) console.error("tgbot: ESIM_TG_RELAY в .env склеен с другой строкой — хвост отрезан");
+// Запасной ретранслятор: если основной лёг, бот сам переключится на него.
+// Пока ESIM_TG_RELAY_FALLBACK не задан, работает только основной.
+const RELAYS = [cleanRelay(RELAY_RAW), cleanRelay(process.env.ESIM_TG_RELAY_FALLBACK)].filter(Boolean);
+let _relayIdx = 0;
+const relay = () => RELAYS[_relayIdx] || "";
+const RELAY = RELAYS[0] || "";
 const WATCH_FILE = path.join(DIR, "tgwatch.json");     // с какого момента бот без связи и кому уже написали
 const ALERT_AFTER_MS = 10 * 60 * 1000;                 // молчит дольше 10 минут — пишем
 const ALERT_REPEAT_MS = 12 * 3600 * 1000;              // пока не починили — напоминаем раз в 12 часов
@@ -72,9 +84,9 @@ function setState(chatId, patch) {
 }
 
 // ─────────────────────────── разговор с Telegram ───────────────────────────
-function callUrl(method) { return RELAY ? RELAY + "/" + method : TG_API + TOKEN + "/" + method; }
+function callUrl(method) { return relay() ? relay() + "/" + method : TG_API + TOKEN + "/" + method; }
 function callHeaders(extra) {
-  return Object.assign({}, extra || {}, RELAY ? { "X-Bot-Token": TOKEN } : {});
+  return Object.assign({}, extra || {}, relay() ? { "X-Bot-Token": TOKEN } : {});
 }
 // Последняя ошибка связи — по ней сторож ставит диагноз в письме
 let _lastErr = null;
@@ -852,7 +864,18 @@ async function handleUpdate(upd) {
       return await payLink(msg.chat.id);
     }
     if (msg && msg.chat && msg.text) return await onText(msg.chat.id, msg.text);
-  } catch (e) { console.error("tgbot update:", e.message); }
+  } catch (e) { console.error("tgbot update:", e.message); noteHandlerError(e); }
+}
+
+// Падения на сообщениях считаем: связь при этом жива, опрос идёт, а клиент
+// нажимает кнопку и ничего не происходит. Так было 10.09 с ошибкой в коде
+// карточки пакета. Счётчик читает сторож и внешний монитор.
+function noteHandlerError(e) {
+  const w = readJson(WATCH_FILE, {});
+  const cut = Date.now() - 30 * 60 * 1000;
+  w.handlerErrors = (w.handlerErrors || []).filter((t) => t > cut).concat([Date.now()]).slice(-50);
+  w.lastHandlerError = String((e && (e.stack || e.message)) || e).split("\n").slice(0, 3).join(" | ").slice(0, 400);
+  writeJson(WATCH_FILE, w);
 }
 
 // Вебхук нам не годится: Telegram до нашего сервера не достучится (проверено
@@ -879,6 +902,7 @@ async function pollLoop() {
   let offset = readJson(OFFSET_FILE, { offset: 0 }).offset || 0;
   console.log("tgbot: опрос запущен, продолжаем с обновления", offset);
   let lastLogged = "";
+  let failStreak = 0;
   while (gen === _pollGen) {
     _lastLoopAt = Date.now();
     try {
@@ -887,24 +911,43 @@ async function pollLoop() {
       }, { quiet: true });
       if (gen !== _pollGen) return;
       if (Array.isArray(ups)) {
+        failStreak = 0;
         markOk();
         _lastErr = null;
         if (lastLogged) { console.log("tgbot: связь восстановлена"); lastLogged = ""; }
         for (const u of ups) {
           offset = Math.max(offset, (u.update_id || 0) + 1);
           try { await withTimeout(handleUpdate(u), 60000); }
-          catch (e) { console.error("tgbot обновление " + u.update_id + ":", e.message); }
+          catch (e) { console.error("tgbot обновление " + u.update_id + ":", e.message); noteHandlerError(e); }
           writeJson(OFFSET_FILE, { offset });   // сохраняем после каждого, чтобы при сбое не повторять
         }
-      } else {
-        markFail();
-        const sig = (_lastErr && _lastErr.status) + " " + (_lastErr && _lastErr.desc);
-        // В лог пишем только смену ошибки: раньше одна и та же строка легла в лог 15 тысяч раз
-        if (sig !== lastLogged) { console.error("tgbot опрос не прошёл:", sig); lastLogged = sig; }
-        // Отказ в доступе сам не пройдёт — не долбим каждые 5 секунд
-        const hard = _lastErr && [401, 403, 404].indexOf(_lastErr.status) >= 0;
-        await sleep(hard ? 60000 : 5000);
+        continue;
       }
+      failStreak++;
+      markFail();
+      const st = _lastErr ? _lastErr.status : 0;
+      const sig = st + " " + (_lastErr && _lastErr.desc) + " @" + _relayIdx;
+      // В лог пишем только смену ошибки: раньше одна и та же строка легла в лог 15 тысяч раз
+      if (sig !== lastLogged) { console.error("tgbot опрос не прошёл:", sig); lastLogged = sig; }
+
+      // Автопочинка 1. На боте включён вебхук или его опрашивает кто-то ещё —
+      // снимаем вебхук сами, дальше опрос продолжится.
+      if (st === 409) {
+        await tg("deleteWebhook", { drop_pending_updates: false }, { quiet: true });
+        console.error("tgbot: конфликт опроса, вебхук снят автоматически");
+        await sleep(5000);
+        continue;
+      }
+      // Автопочинка 2. Ретранслятор лёг или отказывает, а запасной задан —
+      // переключаемся. Токен при этом не виноват, поэтому 401 не считаем.
+      if (RELAYS.length > 1 && st !== 401 && failStreak >= 3) {
+        _relayIdx = (_relayIdx + 1) % RELAYS.length;
+        failStreak = 0;
+        console.error("tgbot: ретранслятор не отвечает, переключаюсь на " + (_relayIdx === 0 ? "основной" : "запасной"));
+        continue;
+      }
+      // Отказ в доступе сам не пройдёт — не долбим каждые 5 секунд
+      await sleep([401, 403, 404].indexOf(st) >= 0 ? 60000 : 5000);
     } catch (e) {
       console.error("tgbot опрос:", e.message);
       await sleep(5000);
@@ -912,25 +955,34 @@ async function pollLoop() {
   }
 }
 
+// ─────────────────────────── состояние для сторожей ───────────────────────────
+// Один файл на всё: переживает перезапуски, его же читает внешний монитор.
+// Писать всегда слиянием, чтобы один сторож не стирал поля другого.
 function readWatch() { return readJson(WATCH_FILE, {}); }
-function markOk() {
-  const w = readWatch();
-  const now = Date.now();
-  // Писать в файл на каждый пустой опрос незачем — только при смене состояния или раз в 10 минут
-  if (!w.downSince && w.lastOkAt && now - w.lastOkAt < 600000) { _memOkAt = now; return; }
-  const wasDown = !!w.downSince, wasAlerted = !!w.alertedAt, downSince = w.downSince;
-  writeJson(WATCH_FILE, { lastOkAt: now });
-  _memOkAt = now;
-  if (wasDown && wasAlerted) {
-    alertMail("Бот @" + BOT_NAME + " снова работает",
-      "<p>Связь с телеграмом восстановлена, бот отвечает клиентам.</p>" +
-      "<p>Простой длился " + humanDur(now - downSince) + ".</p>");
-  }
+function patchWatch(patch) {
+  const w = Object.assign(readWatch(), patch);
+  Object.keys(w).forEach((k) => { if (w[k] === undefined) delete w[k]; });
+  writeJson(WATCH_FILE, w);
+  return w;
 }
 let _memOkAt = 0;
-function markFail() {
+function markOk() {
+  const now = Date.now();
+  _memOkAt = now;
   const w = readWatch();
-  if (!w.downSince) { w.downSince = Date.now(); writeJson(WATCH_FILE, w); }
+  // Пустой опрос каждые 25 секунд в файл не пишем — только смену состояния или раз в 10 минут
+  if (!w.downSince && w.lastOkAt && now - w.lastOkAt < 600000) return;
+  if (w.downSince && w.alertedAt) {
+    // Письмо «не работает» уже уходило — значит, нужно и «снова работает».
+    // Отправит сторож, когда откроется окно рассылки.
+    patchWatch({ lastOkAt: now, downSince: undefined, alertedAt: undefined,
+                 recovered: { at: now, downFor: now - w.downSince } });
+  } else {
+    patchWatch({ lastOkAt: now, downSince: undefined, alertedAt: undefined });
+  }
+}
+function markFail() {
+  if (!readWatch().downSince) patchWatch({ downSince: Date.now() });
 }
 
 function humanDur(ms) {
@@ -940,17 +992,27 @@ function humanDur(ms) {
   return h < 48 ? h + " ч " + (m % 60) + " мин" : Math.floor(h / 24) + " дн " + (h % 24) + " ч";
 }
 
+// Окно рассылки по просьбе Андрея: с 08:00 понедельника до 15:00 пятницы МСК.
+// Вне окна письма не шлём и в очередь не копим: если к утру понедельника
+// проблема ещё есть, сторож напишет о ней, а решённая за выходные не тревожит.
+function inMailWindow(d) {
+  const msk = new Date((d || new Date()).getTime() + 3 * 3600 * 1000);
+  const day = msk.getUTCDay(), hour = msk.getUTCHours();
+  if (day === 0 || day === 6) return false;
+  if (day === 1) return hour >= 8;
+  if (day === 5) return hour < 15;
+  return true;
+}
+
 // Диагноз по коду ошибки — чтобы из письма сразу было понятно, куда смотреть
 function diagnose(err) {
   const s = err ? err.status : 0;
   const d = err ? err.desc : "";
-  if (RELAY_GLUED) return "Строка ESIM_TG_RELAY в /var/www/voyo/.env склеена с соседней переменной. Бот обрезал хвост сам, но если связь всё равно не идёт — поправьте строку руками.";
-  if (s === 403 && RELAY) return "Ретранслятор на Deno отказывает в доступе. Чаще всего это битый адрес ESIM_TG_RELAY в /var/www/voyo/.env (например, склеилась строка) или сменился секрет в проекте на Deno.";
   if (s === 401 || /unauthorized/i.test(d)) return "Телеграм не принимает токен бота. Перевыпустите токен в @BotFather и обновите ESIM_TG_TOKEN в /var/www/voyo/.env.";
+  if (s === 403 && relay()) return "Ретранслятор на Deno отказывает в доступе. Чаще всего это битый адрес ESIM_TG_RELAY в /var/www/voyo/.env или сменился секрет в проекте на Deno.";
   if (s === 404) return "Метод не найден: либо неверный токен, либо ретранслятор отдаёт не ту страницу. Проверьте ESIM_TG_TOKEN и ESIM_TG_RELAY.";
-  if (s === 409) return "Бота опрашивает кто-то ещё или на нём включён вебхук. Проверьте, не запущена ли вторая копия бота.";
-  if (s >= 500) return "Ретранслятор на Deno падает с ошибкой сервера. Проверьте проект на dash.deno.com.";
-  return "Ретранслятор не отвечает (таймаут или нет сети). Проверьте, жив ли проект на dash.deno.com.";
+  if (s >= 500) return "Ретранслятор на Deno падает с ошибкой сервера. Проверьте проект на dash.deno.com." + (RELAYS.length < 2 ? " Запасного ретранслятора нет, переключиться не на что." : "");
+  return "Ретранслятор не отвечает (таймаут или нет сети). Проверьте, жив ли проект на dash.deno.com." + (RELAYS.length < 2 ? " Запасного ретранслятора нет, переключиться не на что." : "");
 }
 
 function alertMail(subject, html) {
@@ -965,33 +1027,62 @@ function alertMail(subject, html) {
 
 function watchdogTick() {
   const now = Date.now();
-  // 1) Цикл опроса завис: одна итерация не может длиться дольше ~40 секунд
+  // 1) Цикл опроса завис: одна итерация не может длиться дольше ~90 секунд
   if (_polling && _lastLoopAt && now - _lastLoopAt > 3 * 60 * 1000) {
     console.error("tgbot сторож: опрос завис на " + humanDur(now - _lastLoopAt) + ", перезапускаю цикл");
     pollLoop();
     return;
   }
-  // 2) Связи нет слишком долго — пишем директору, потом напоминаем раз в 12 часов
+  if (!inMailWindow()) return;
   const w = readWatch();
-  if (!w.downSince || now - w.downSince < ALERT_AFTER_MS) return;
-  if (w.alertedAt && now - w.alertedAt < ALERT_REPEAT_MS) return;
-  const err = _lastErr || {};
-  alertMail("Бот @" + BOT_NAME + " не отвечает клиентам " + humanDur(now - w.downSince),
-    "<p><b>Бот продажи eSIM не получает сообщения " + humanDur(now - w.downSince) + ".</b> Клиенты пишут /start и не получают ответа.</p>" +
-    "<p><b>Что случилось:</b> " + diagnose(err) + "</p>" +
-    "<p style=\"color:#8b93a5\">Код ошибки: " + (err.status || "нет ответа") + (err.desc ? ", " + String(err.desc).replace(/</g, "&lt;") : "") + "</p>" +
-    "<p style=\"color:#8b93a5\">Когда связь вернётся, придёт письмо «снова работает». Повтор этого письма — через 12 часов, если не починится.</p>");
-  w.alertedAt = now;
-  writeJson(WATCH_FILE, w);
+
+  // 2) Починилось после письма о поломке — сообщаем
+  if (w.recovered) {
+    alertMail("Бот @" + BOT_NAME + " снова работает",
+      "<p>Связь с телеграмом восстановлена, бот отвечает клиентам.</p>" +
+      "<p>Простой длился " + humanDur(w.recovered.downFor) + ", восстановлен " + fmtMsk(w.recovered.at) + " МСК.</p>");
+    patchWatch({ recovered: undefined });
+  }
+
+  // 3) Связи нет дольше 10 минут — пишем, пока не починится, напоминаем раз в 12 часов
+  if (w.downSince && now - w.downSince >= ALERT_AFTER_MS && !(w.alertedAt && now - w.alertedAt < ALERT_REPEAT_MS)) {
+    const err = _lastErr || {};
+    alertMail("Бот @" + BOT_NAME + " не отвечает клиентам " + humanDur(now - w.downSince),
+      "<p><b>Бот продажи eSIM не получает сообщения " + humanDur(now - w.downSince) + ".</b> Клиенты пишут /start и не получают ответа.</p>" +
+      "<p><b>Что случилось:</b> " + diagnose(err) + "</p>" +
+      "<p style=\"color:#8b93a5\">Код ошибки: " + (err.status || "нет ответа") + (err.desc ? ", " + String(err.desc).replace(/</g, "&lt;") : "") + "</p>" +
+      "<p style=\"color:#8b93a5\">Когда связь вернётся, придёт письмо «снова работает». Повтор этого письма — через 12 часов, если не починится.</p>");
+    patchWatch({ alertedAt: now });
+  }
+
+  // 4) Бот на связи, но падает на сообщениях: клиент жмёт кнопку, и ничего не происходит
+  const errs = (w.handlerErrors || []).filter((t) => t > now - 30 * 60 * 1000);
+  if (errs.length >= 5 && !(w.crashAlertedAt && now - w.crashAlertedAt < ALERT_REPEAT_MS)) {
+    alertMail("Бот @" + BOT_NAME + " падает на сообщениях клиентов",
+      "<p><b>За последние 30 минут бот " + errs.length + " раз упал при обработке сообщений.</b> Связь при этом есть, но клиенты жмут кнопки и не получают ответа.</p>" +
+      "<p><b>Что случилось:</b> это ошибка в коде бота, сама она не пройдёт. Нужен разработчик.</p>" +
+      "<p style=\"color:#8b93a5\">Последняя ошибка: " + String(w.lastHandlerError || "").replace(/</g, "&lt;") + "</p>");
+    patchWatch({ crashAlertedAt: now });
+  }
+}
+
+function fmtMsk(ts) {
+  const d = new Date(ts + 3 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
 }
 
 function botStatus() {
   const w = readWatch();
+  const now = Date.now();
   return {
-    relay: !!RELAY, relayGlued: RELAY_GLUED, polling: _polling,
+    relays: RELAYS.length, relayActive: _relayIdx === 0 ? "основной" : "запасной",
+    relayGlued: RELAY_GLUED, tokenGlued: TOKEN_GLUED, polling: _polling,
     lastOkAt: Math.max(w.lastOkAt || 0, _memOkAt) || null,
     downSince: w.downSince || null, alertedAt: w.alertedAt || null,
-    lastLoopAgoSec: _lastLoopAt ? Math.round((Date.now() - _lastLoopAt) / 1000) : null,
+    lastLoopAgoSec: _lastLoopAt ? Math.round((now - _lastLoopAt) / 1000) : null,
+    handlerErrors30m: (w.handlerErrors || []).filter((t) => t > now - 30 * 60 * 1000).length,
+    lastHandlerError: w.lastHandlerError || null,
     lastError: _lastErr,
   };
 }
