@@ -1319,6 +1319,73 @@ const STAFF_DEPT_BY_GROUP = [
   [/(^|\s)оп(\s|\d|$)|отдел\s*продаж|роп/i, "op"],
   [/(^|\s)оо(\s|$)|отдел\s*оформлени/i, "oo"]
 ];
+// Роль внутри отдела — по названию группы amoCRM: у ОРК МСК, например, отдельные
+// группы «специалисты» и «администраторы», у оформления — «специалисты» и «ассистенты».
+function staffRoleOf(group) {
+  const g = String(group || "");
+  if (/руковод|роп/i.test(g)) return "head";
+  if (/администратор/i.test(g)) return "admin";
+  if (/ассистент/i.test(g)) return "assistant";
+  return "spec";
+}
+// Справочник пользователей amoCRM с группами. Съём стафов кладёт в снимок только тех,
+// у кого за год есть сделки или контакты, — администраторы ОРК и новички туда не
+// попадали. Справочник — два лёгких запроса самым низким приоритетом раз в 6 часов,
+// снимок на диске; так и пришедшие-ушедшие видны в тот же день, без ночного съёма.
+const VSC_AMO_ROSTER_FILE = path.join(__dirname, ".vscAmoRoster.json");
+let _amoRoster = null, _amoRosterRunning = false;
+function amoRosterLoad() {
+  if (_amoRoster) return _amoRoster;
+  try { _amoRoster = JSON.parse(fs.readFileSync(VSC_AMO_ROSTER_FILE, "utf8")); } catch (_) { _amoRoster = null; }
+  return _amoRoster;
+}
+async function amoRosterRefresh() {
+  if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return null;
+  const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+  const groups = {};
+  const acc = await amoGet(`${baseUrl}/api/v4/account`, { with: "users_groups" });
+  ((acc && acc._embedded && acc._embedded.users_groups) || []).forEach((g) => { groups[String(g.id)] = String(g.name || ""); });
+  const users = [];
+  for (let page = 1; page < 12; page++) {
+    const d = await amoGet(`${baseUrl}/api/v4/users`, { limit: 250, page });
+    const list = (d && d._embedded && d._embedded.users) || [];
+    list.forEach((u) => {
+      const gid = (u.rights && u.rights.group_id != null) ? String(u.rights.group_id) : "";
+      const group = groups[gid] || "";
+      const hit = STAFF_DEPT_BY_GROUP.find((x) => x[0].test(group));
+      users.push({ uid: String(u.id), name: String(u.name || "").trim(), group: group, dept: hit ? hit[1] : null,
+        role: staffRoleOf(group), active: !(u.rights && u.rights.is_active === false) });
+    });
+    if (list.length < 250) break;
+  }
+  if (!users.length) throw new Error("amoCRM вернула пустой список пользователей");
+  const prev = amoRosterLoad();
+  const data = { ts: Date.now(), users: users };
+  if (prev && prev.users) {
+    const was = new Map(prev.users.filter((u) => u.active).map((u) => [u.uid, u]));
+    const now = new Map(users.filter((u) => u.active).map((u) => [u.uid, u]));
+    const added = [...now.values()].filter((u) => !was.has(u.uid) || was.get(u.uid).group !== u.group);
+    const removed = [...was.values()].filter((u) => !now.has(u.uid));
+    if (added.length || removed.length) {
+      data.diff = { ts: Date.now(), added: added.map((u) => ({ name: u.name, group: u.group })), removed: removed.map((u) => ({ name: u.name, group: u.group })) };
+      console.log("AMO ROSTER: пришли/сменили группу " + (added.map((u) => u.name + " (" + u.group + ")").join(", ") || "—") + "; ушли " + (removed.map((u) => u.name).join(", ") || "—"));
+    } else if (prev.diff) data.diff = prev.diff;
+  }
+  _amoRoster = data;
+  try { fs.writeFileSync(VSC_AMO_ROSTER_FILE, JSON.stringify(data), "utf8"); } catch (e) { console.error("saveAmoRoster:", e.message); }
+  return data;
+}
+function amoRosterWarm() {
+  const c = amoRosterLoad();
+  if ((!c || Date.now() - c.ts > 6 * 3600 * 1000) && !_amoRosterRunning) {
+    _amoRosterRunning = true;
+    Promise.resolve(amoBg(() => amoRosterRefresh())).catch((e) => console.error("AMO ROSTER:", e && e.message)).then(() => { _amoRosterRunning = false; });
+  }
+  return c;
+}
+setTimeout(amoRosterWarm, 150 * 1000);
+setInterval(amoRosterWarm, 6 * 3600 * 1000);
+
 async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, byStage, byOpMgr) {
   // 1. Сотрудники и их группы.
   const users = {};
@@ -1439,6 +1506,19 @@ app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
   const cs = loadCallStats();
   // Звонки из АТС по добавочным сшиваем с сотрудниками по имени: у АТС свой
   // справочник добавочных, у amoCRM — свои пользователи, общее только ФИО.
+  // Сотрудники отделов, которых нет в ночном снимке (нет сделок и контактов за год:
+  // администраторы ОРК, новички), добавляются из справочника amoCRM — пустыми, их
+  // звонки из АТС подтянутся ниже. Роль (специалист/администратор/руководитель) — всем.
+  const roster = amoRosterWarm();
+  if (d && roster && roster.users) {
+    const have = new Set((d.users || []).map((u) => String(u.uid)));
+    const rmap = new Map(roster.users.map((u) => [u.uid, u]));
+    (d.users || []).forEach((u) => { const r = rmap.get(String(u.uid)); u.role = staffRoleOf(r ? r.group : u.group); if (r) u.active = r.active; });
+    roster.users.forEach((r) => {
+      if (!r.active || !r.dept || have.has(r.uid)) return;
+      d.users.push({ uid: r.uid, name: r.name, group: r.group, dept: r.dept, role: r.role, active: true, months: {}, fromRoster: true });
+    });
+  }
   const px = pbx.load();
   let pbxUnmatched = [];
   if (d && px && px.months) {
@@ -1454,7 +1534,9 @@ app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
     // Кто из справочника АТС не нашёлся среди пользователей amoCRM: либо человека
     // завели только в одной системе, либо имя написано по-разному. Такой оператор
     // молча выпал бы из статистики, поэтому показываем это в разделе.
-    const amoNames = new Set((d.users || []).map((u) => norm(u.name)));
+    // Сверяем с ПОЛНЫМ справочником amoCRM, а не только с теми, у кого есть данные:
+    // иначе администраторы ОРК выглядели «без учётки в amoCRM», хотя она у них есть.
+    const amoNames = new Set((d.users || []).map((u) => norm(u.name)).concat(((roster && roster.users) || []).filter((u) => u.active).map((u) => norm(u.name))));
     pbxUnmatched = Object.keys(px.ext || {})
       .filter((e) => (px.ext[e] || "").trim() && !amoNames.has(norm(px.ext[e])))
       .map((e) => ({ ext: e, name: px.ext[e] }));
@@ -1483,7 +1565,8 @@ app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
     rosterLive: px ? !!px.rosterLive : false,
     rosterTs: px ? px.rosterTs || null : null,
     rosterDiff: px ? px.rosterDiff || null : null,
-    amoUsers: d ? (d.users || []).length : 0,
+    amoUsers: roster && roster.users ? roster.users.filter((u) => u.active).length : (d ? (d.users || []).length : 0),
+    amoDiff: roster ? roster.diff || null : null,
     pbxUsers: px ? Object.keys(px.ext || {}).length : 0
   };
   return res.json({ success: true, data: d, callsTs: cs ? cs.ts : null, pbxTs: px ? px.ts : null, sync: sync });
@@ -1595,7 +1678,28 @@ async function vscStaffLoadBase() {
         const cProc = colsAll(["полученные", "конца рабочего дня"]);
         const cManual = colsAll(["дополнительный контакт", "вручную"]);
         const gt = rows.find((rr) => String((rr || [])[0] || "").trim().toLowerCase() === "grand total");
-        if (!gt) continue;
+        if (!gt) {
+          // Текущий месяц: строки Grand total ещё нет (она появляется в конце месяца).
+          // Складываем прошедшие сутки — строки с датой раньше сегодняшней по Москве;
+          // недельные «Total» пропускаются сами, у них нет даты.
+          const today = new Date(Date.now() + 3 * 3600 * 1000); const todayKey = today.getUTCFullYear() * 10000 + (today.getUTCMonth() + 1) * 100 + today.getUTCDate();
+          const days = rows.filter((rr) => {
+            const mm = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String((rr || [])[0] || "").trim());
+            return mm && (+mm[3] * 10000 + +mm[2] * 100 + +mm[1]) < todayKey;
+          });
+          if (!days.length) continue;
+          const dsum = (idxs) => { let t = 0, any = false; days.forEach((rr) => idxs.forEach((i) => { const v = i >= 0 ? vscNum(rr[i]) : null; if (v != null) { t += v; any = true; } })); return any ? t : null; };
+          const proc = dsum(cProc), cin = dsum([cIn]), cms = dsum([cMiss]);
+          const waits = cWait >= 0 ? days.map((rr) => vscNum(rr[cWait])).filter((x) => x != null && x > 0) : [];
+          out[tab.name] = {
+            contacts: proc == null ? null : proc - (dsum(cManual) || 0),
+            callsIn: cin, callsMissed: cms,
+            waitSec: waits.length ? waits.reduce((a, b) => a + b, 0) / waits.length : null,
+            missedPct: (cin && cms != null) ? cms / cin * 100 : null,
+            partial: true, days: days.length, through: String(days[days.length - 1][0]).trim()
+          };
+          continue;
+        }
         const sum = (idxs) => { const v = idxs.map((i) => (i >= 0 ? vscNum(gt[i]) : null)).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
         const proc = sum(cProc);
         out[tab.name] = {

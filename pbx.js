@@ -99,12 +99,17 @@ async function fetchMonth(year, mi, extMap) {
   const a = await auth();
   const H = { "x-pbx-authentication": a.key_id + ":" + a.key, "Content-Type": "application/x-www-form-urlencoded" };
   const days = new Date(Date.UTC(year, mi + 1, 0)).getUTCDate();
-  const nowSec = Math.floor(Date.now() / 1000);
+  // Берём только ПРОШЕДШИЕ сутки: у текущего месяца накопленная статистика идёт
+  // по вчерашний день включительно, неполные сегодняшние сутки в неё не попадают.
+  const mskNow = new Date(Date.now() + 3 * 3600 * 1000);
+  const todayStart = Math.floor(Date.UTC(mskNow.getUTCFullYear(), mskNow.getUTCMonth(), mskNow.getUTCDate()) / 1000) - 3 * 3600;
   const rows = [];
+  let lastDay = 0;
   for (let d0 = 1; d0 <= days; d0++) {
     const from = Math.floor(Date.UTC(year, mi, d0) / 1000) - 3 * 3600;
     const to = from + 86400;
-    if (from > nowSec) break;                       // будущие дни не запрашиваем
+    if (to > todayStart) break;
+    lastDay = d0;
     try {
       const r = await axios.post(BASE + "/mongo_history/search.json",
         "start_stamp_from=" + from + "&start_stamp_to=" + to + "&limit=5000",
@@ -142,7 +147,7 @@ async function fetchMonth(year, mi, extMap) {
     const answeredBy = new Set(talked.map((e) => String(e.number)));
     [...new Set(us.map((e) => String(e.number)))].forEach((n) => { if (!answeredBy.has(n)) slot(n).missed++; });
   });
-  return { byExt, total, rows: rows.length };
+  return { byExt, total, rows: rows.length, lastDay };
 }
 
 function load() { try { return JSON.parse(fs.readFileSync(FILE, "utf8")); } catch (_) { return null; } }
@@ -181,7 +186,7 @@ async function run(opts) {
   for (const mi of list) {
     try {
       const r = await fetchMonth(year, mi, roster.ext);
-      cur.months[String(mi)] = { byExt: r.byExt, total: r.total };
+      cur.months[String(mi)] = { byExt: r.byExt, total: r.total, lastDay: r.lastDay };
       console.log("PBX: месяц " + (mi + 1) + " — записей " + r.rows + ", входящих " + r.total.inbound + ", пропущено " + r.total.missed);
     } catch (e) { console.error("PBX месяц " + (mi + 1) + ":", e && e.message); }
   }
