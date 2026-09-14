@@ -1193,7 +1193,7 @@ async function runCityRevenue(trigger) {
       const list = (data && data._embedded && data._embedded.contacts) || [];
       list.forEach((c) => { cmap[c.id] = _cityCfEnums(c, CITY_CF_CONTACT); });
     }
-    const months = {}, byUser = {}, dealsForNew = [], byKto = {}, byStage = {}, byOpMgr = {};
+    const months = {}, byUser = {}, dealsForNew = [], byKto = {}, byStage = {}, byOpMgr = {}, ooDeals = [];
     for (const l of rev) {
       const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); const mk = String(ym.m);
       const price = Number(l.price) || 0;
@@ -1251,6 +1251,11 @@ async function runCityRevenue(trigger) {
           fn(sm[mk] || (sm[mk] = { s1: 0, s2: 0, s2rev: 0, s2ret: 0, dlTotal: 0, dlLate: 0 }));
         };
         stg(_cityCfVal(l, OO_CF_MGR1), (o) => { o.s1++; });
+        // Для сделок оформления по людям: одна сделка — один сотрудник. Кому её
+        // засчитать, решается ниже, когда известны имена сотрудников (заглушки вроде
+        // «Оформление не требуется» — не люди): решение Андрея 14.09.
+        const oo1 = String(_cityCfVal(l, OO_CF_MGR1) || "").trim(), oo2 = String(_cityCfVal(l, OO_CF_MGR2) || "").trim();
+        if (oo1 || oo2) ooDeals.push({ id: String(l.id), mk: mk, m1: oo1, m2: oo2, price: price, ret: isReturn });
         stg(_cityCfVal(l, OO_CF_MGR2), (o) => {
           o.s2++; o.s2rev += price; if (isReturn) o.s2ret++;
           const dl = Number(_cityCfVal(l, OO_CF_DEADLINE)) || 0, done = Number(_cityCfVal(l, OO_CF_BONUS2)) || 0;
@@ -1293,7 +1298,7 @@ async function runCityRevenue(trigger) {
     // прохода по сделкам не делаем, только по контактам года (они нужны отделу продаж
     // для конверсии «контакт → продажа»). СТРОГО ПОСЛЕ сохранения выручки: этот кусок
     // длинный, и он не должен задерживать блок «Выручка по городам».
-    try { await buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, out, byStage, byOpMgr); } catch (e) { console.error("STAFF PERF:", e && e.message); }
+    try { await buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, out, byStage, byOpMgr, ooDeals); } catch (e) { console.error("STAFF PERF:", e && e.message); }
     return result;
   } catch (e) { console.error("runCityRevenue:", e.message); _cityRevLog.unshift({ ts: Date.now(), trigger, error: e.message }); return { error: e.message }; }
   finally { _cityRevRunning = false; }
@@ -1305,6 +1310,7 @@ async function runCityRevenue(trigger) {
 // его группы в amoCRM; руководителей ОРК группа не делит на города, поэтому МСК/СПб
 // у них определяем по тому, где лежат их же сделки.
 const VSC_STAFFPERF_FILE = path.join(__dirname, ".vscStaffPerf.json");
+const STAFF_PERF_V = 2;   // 2 — сделки оформления по одному владельцу (14.09.2026)
 let _staffPerf;
 function loadStaffPerf() {
   if (_staffPerf !== undefined) return _staffPerf;
@@ -1386,7 +1392,7 @@ function amoRosterWarm() {
 setTimeout(amoRosterWarm, 150 * 1000);
 setInterval(amoRosterWarm, 6 * 3600 * 1000);
 
-async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, byStage, byOpMgr) {
+async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, byStage, byOpMgr, ooDeals) {
   // 1. Сотрудники и их группы.
   const users = {};
   for (let page = 1; page < 12; page++) {
@@ -1420,10 +1426,25 @@ async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, 
     const ktoByName = {}; Object.keys(byKto || {}).forEach((n) => { ktoByName[norm(n)] = byKto[n]; });
     const stgByName = {}; Object.keys(byStage || {}).forEach((n) => { stgByName[norm(n)] = byStage[n]; });
     const opByName = {}; Object.keys(byOpMgr || {}).forEach((n) => { opByName[norm(n)] = byOpMgr[n]; });
+    // Сделки оформления по людям без задвоения: у каждой сделки ОДИН владелец —
+    // менеджер второго этапа (кто занимался последним), а если его нет или там
+    // заглушка — менеджер первого этапа. Один и тот же человек на обоих этапах —
+    // это одна сделка. Уникальность — по ID сделки.
+    const staffNames = new Set(Object.keys(users).map((uid) => norm(users[uid].name)));
+    const ownByName = {}, seenOo = new Set();
+    (ooDeals || []).forEach((dd) => {
+      if (seenOo.has(dd.id)) return; seenOo.add(dd.id);
+      const owner = staffNames.has(norm(dd.m2)) ? norm(dd.m2) : (staffNames.has(norm(dd.m1)) ? norm(dd.m1) : "");
+      if (!owner) return;
+      const om = ownByName[owner] || (ownByName[owner] = {});
+      const o = om[dd.mk] || (om[dd.mk] = { ooDeals: 0, ooRev: 0, ooRet: 0, ooBoth: 0 });
+      o.ooDeals++; o.ooRev += dd.price; if (dd.ret) o.ooRet++;
+      if (dd.m1 && norm(dd.m1) === norm(dd.m2)) o.ooBoth++;
+    });
     const blank = () => ({ deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
     Object.keys(users).forEach((uid) => {
-      const k = ktoByName[norm(users[uid].name)], g = stgByName[norm(users[uid].name)], o = opByName[norm(users[uid].name)];
-      if (!k && !g && !o) return;
+      const k = ktoByName[norm(users[uid].name)], g = stgByName[norm(users[uid].name)], o = opByName[norm(users[uid].name)], w = ownByName[norm(users[uid].name)];
+      if (!k && !g && !o && !w) return;
       const um = byUser[uid] || (byUser[uid] = {});
       if (k) Object.keys(k).forEach((mk) => {
         const t = um[mk] || (um[mk] = blank());
@@ -1432,6 +1453,10 @@ async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, 
       if (o) Object.keys(o).forEach((mk) => {
         const t = um[mk] || (um[mk] = blank());
         t.sold = o[mk].sold; t.soldRev = o[mk].soldRev; t.soldReturns = o[mk].soldReturns;
+      });
+      if (w) Object.keys(w).forEach((mk) => {
+        const t = um[mk] || (um[mk] = blank());
+        t.ooDeals = w[mk].ooDeals; t.ooRev = w[mk].ooRev; t.ooRet = w[mk].ooRet; t.ooBoth = w[mk].ooBoth;
       });
       if (g) Object.keys(g).forEach((mk) => {
         const t = um[mk] || (um[mk] = blank());
@@ -1451,7 +1476,8 @@ async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, 
       }
       rows.push({ uid: uid, name: u.name, group: u.group, dept: dept, months: byUser[uid] });
     });
-    const data = { ts: Date.now(), year: Y, users: rows, monthTotals: monthTotals || null };
+    // v — версия формата снимка: при смене состава полей старт сервера пересчитывает его сам.
+    const data = { ts: Date.now(), v: STAFF_PERF_V, year: Y, users: rows, monthTotals: monthTotals || null };
     _staffPerf = data;
     try { fs.writeFileSync(VSC_STAFFPERF_FILE, JSON.stringify(data), "utf8"); } catch (e) { console.error("saveStaffPerf:", e.message); }
     return data;
@@ -1590,7 +1616,8 @@ app.post("/admin/api/vsc/city-revenue/run", requireAdmin, (req, res) => {
 });
 scheduleCityRevenueDaily();
 // Первичный расчёт через 2 мин после старта, если кэша ещё нет (далее — крон 05:00).
-if (!loadCityRev() || !loadStaffPerf()) setTimeout(() => { Promise.resolve(amoBg(() => runCityRevenue("startup"))).catch(() => {}); }, 120 * 1000);
+// Снимок старого формата (без полей текущей версии) — тоже повод пересчитать один раз.
+if (!loadCityRev() || !loadStaffPerf() || (loadStaffPerf().v || 1) < STAFF_PERF_V) setTimeout(() => { Promise.resolve(amoBg(() => runCityRevenue("startup"))).catch(() => {}); }, 120 * 1000);
 
 // ── Зарплатная таблица «расчет ЗП Визы» (/vsc «Ежемесячный контроль», низ) ─────
 // Разбор живёт в zarplata.js (опубликованный xlsx-экспорт книги, только чтение).
