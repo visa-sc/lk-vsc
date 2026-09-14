@@ -6686,7 +6686,7 @@
         const ru2 = (v) => (v == null || isNaN(v)) ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU");
         const b7El = $("calcB7"), prihodEl = $("calcPrihod"), partnerEl = $("calcPartner"), mustEurEl = $("calcMustEur");
         let needfillTimer = null; // подсветка «Клиент должен был в евро» красным через 2с
-        let mismatchTimer = null, lastMismatchSig = ""; // фиксация расхождений (недобор в рублях)
+        let mismatchTimer = null, lastMismatchSig = ""; // фиксация расхождений при оплате в рублях (недобор и перебор)
         function paintBanki() {
           const bk = vscCalcRates && vscCalcRates.banki;
           const bv = $("calcBankiVal"), bb = $("calcBankiBank");
@@ -6731,18 +6731,22 @@
           }
 
           // Проверка «не добрали с клиента»: приход в рублях должен быть ≥ (Клиент должен был в евро × выгодный курс покупки евро banki.ru).
-          let under = false;
+          // Перебор («в плюс») тоже уходит в историю расхождений, но без красной плашки — это не ошибка.
+          let mism = false;
           if (rub && bk && bk.eurBuyBest && mustEur > 0) {
             const needRub = mustEur * bk.eurBuyBest;
-            if (prihod < needRub - 0.5) {
-              under = true;
+            if (prihod > needRub + 0.5) {
+              mism = true;
+              scheduleMismatchLog(prihod, mustEur, bk.eurBuyBest);
+            } else if (prihod < needRub - 0.5) {
+              mism = true;
               const diff = needRub - prihod;
               if (budgetCard) budgetCard.classList.add("bad");
               if (warn) { warn.style.display = "block"; warn.textContent = "Не добрали с клиента (разница между «Клиент должен был в евро» и «Приход в рублях»): " + ru0(diff) + " ₽. Нужно ≥ " + ru0(needRub) + " ₽ (" + ru2(mustEur) + " € × " + ru2(bk.eurBuyBest) + " ₽, выгодный курс покупки евро banki.ru)."; }
               scheduleMismatchLog(prihod, mustEur, bk.eurBuyBest);
             }
           }
-          if (!under && mismatchTimer) { clearTimeout(mismatchTimer); mismatchTimer = null; } // расхождение исправлено до фиксации
+          if (!mism && mismatchTimer) { clearTimeout(mismatchTimer); mismatchTimer = null; } // расхождение исправлено до фиксации
         }
         // Фиксируем расхождение с задержкой 2.5с (когда перестали печатать) + дедуп по значениям.
         function scheduleMismatchLog(prihod, mustEur, rate) {
@@ -6838,9 +6842,19 @@
             const r = await fetch("/api/calc-mismatch").then((x) => x.json());
             const hist = (r && r.history) || [];
             if (!hist.length) { p.innerHTML = '<div class="vc-muted">Расхождений пока не зафиксировано.</div>'; return; }
-            const head = 'Расхождения при оплате в рублях — недобор с клиента (всего: ' + (r.total || hist.length) + ')';
-            let html = '<div class="vc-hist"><div class="vc-hist-h">' + head + '</div><div class="vc-hist-scroll"><table><thead><tr><th>Дата</th><th>Время</th><th style="text-align:right;">Клиент должен был, €</th><th style="text-align:right;">Курс €, banki.ru</th><th style="text-align:right;">Должно быть ≥, ₽</th><th style="text-align:right;">Приход, ₽</th><th style="text-align:right;">Недобор, ₽</th></tr></thead><tbody>';
-            hist.forEach((e, i) => { html += '<tr style="' + (i ? "border-top:1px solid rgba(0,0,0,.05);" : "") + '"><td>' + escapeHtml(e.date) + '</td><td style="color:#8a8a8e;">' + escapeHtml(e.time) + '</td><td style="text-align:right;">' + ru2(e.mustEur) + '</td><td style="text-align:right;">' + ru2(e.rate) + ' ₽</td><td style="text-align:right;">' + ru0(e.needRub) + ' ₽</td><td style="text-align:right;">' + ru0(e.prihod) + ' ₽</td><td style="text-align:right;font-weight:700;color:#b0263a;">' + ru0(e.diff) + ' ₽</td></tr>'; });
+            const head = 'Расхождения при оплате в рублях (всего: ' + (r.total || hist.length) + ')';
+            const since = r.bothSince; let sepDone = !since, afterSep = false;
+            // Пунктирная граница: выше — записи, где фиксируется и плюс, и минус; ниже — старые, только недобор.
+            const sepRow = () => '<tr><td colspan="7" style="padding:9px 16px;border-top:1px dashed #c7c7cc;border-bottom:1px dashed #c7c7cc;color:#8a8a8e;font-size:12px;text-align:center;white-space:normal;">↑ С ' + escapeHtml(since.date) + ' фиксируются расхождения и в плюс, и в минус · ниже — только в минус</td></tr>';
+            let html = '<div class="vc-hist"><div class="vc-hist-h">' + head + '</div><div class="vc-hist-scroll"><table><thead><tr><th>Дата</th><th>Время</th><th style="text-align:right;">Клиент должен был, €</th><th style="text-align:right;">Курс €, banki.ru</th><th style="text-align:right;">Должно быть ≥, ₽</th><th style="text-align:right;">Приход, ₽</th><th style="text-align:right;">Расхождение, ₽</th></tr></thead><tbody>';
+            hist.forEach((e, i) => {
+              if (!sepDone && e.ts < since.ts) { html += sepRow(); sepDone = true; afterSep = true; }
+              const over = e.diff < 0; // перебор: приход больше, чем нужно по курсу
+              const dcell = over ? '<span style="color:#1f8f4d;">+' + ru0(-e.diff) + ' ₽</span>' : '<span style="color:#b0263a;">−' + ru0(e.diff) + ' ₽</span>';
+              html += '<tr style="' + (i && !afterSep ? "border-top:1px solid rgba(0,0,0,.05);" : "") + '"><td>' + escapeHtml(e.date) + '</td><td style="color:#8a8a8e;">' + escapeHtml(e.time) + '</td><td style="text-align:right;">' + ru2(e.mustEur) + '</td><td style="text-align:right;">' + ru2(e.rate) + ' ₽</td><td style="text-align:right;">' + ru0(e.needRub) + ' ₽</td><td style="text-align:right;">' + ru0(e.prihod) + ' ₽</td><td style="text-align:right;font-weight:700;">' + dcell + '</td></tr>';
+              afterSep = false;
+            });
+            if (!sepDone) html += sepRow(); // все записи уже нового периода — пометка в конце списка
             html += '</tbody></table></div></div>';
             p.innerHTML = html;
           } catch (e) { p.innerHTML = '<div class="vc-muted" style="color:#c0392b;">Не удалось загрузить расхождения.</div>'; }

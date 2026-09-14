@@ -6339,8 +6339,12 @@ app.get("/api/calc-rates-history", async (req, res) => {
     return res.json({ success: true, history: hist });
   } catch (e) { return res.json({ success: false, history: [], error: e && e.message }); }
 });
-// ── Накопительный лог расхождений «не добрали при оплате в рублях» ──
-// Фиксируем КАЖДЫЙ случай, когда (Клиент должен был в евро × выгодный курс banki.ru) > Сумма прихода (₽).
+// ── Накопительный лог расхождений при оплате в рублях ──
+// Сравниваем Сумму прихода (₽) с (Клиент должен был в евро × выгодный курс banki.ru).
+// diff = needRub − prihod: > 0 — недобор с клиента («в минус»), < 0 — перебор («в плюс»).
+// До CALC_MISMATCH_BOTH_SINCE писался только недобор; с этого момента — оба направления
+// (просьба Андрея 14.09.2026). В истории на этой границе рисуется пунктирная пометка.
+const CALC_MISMATCH_BOTH_SINCE = 1789392417834; // 14.09.2026 16:26 МСК
 const CALC_MISMATCH_FILE = path.join(__dirname, ".calcMismatchLog.json");
 function readMismatchLog() { try { return JSON.parse(fs.readFileSync(CALC_MISMATCH_FILE, "utf8")) || []; } catch (_) { return []; } }
 app.post("/api/calc-mismatch", (req, res) => {
@@ -6351,8 +6355,8 @@ app.post("/api/calc-mismatch", (req, res) => {
   }
   const needRub = Math.round(mustEur * rate * 100) / 100;
   const diff = Math.round((needRub - prihod) * 100) / 100;
-  if (diff <= 0.5) return res.json({ success: true, skipped: "not-under" }); // не недобор — не пишем
-  if (diff > 50000) return res.json({ success: true, skipped: "too-big" }); // недобор >50к — почти наверняка ошибка ввода, не пишем
+  if (Math.abs(diff) <= 0.5) return res.json({ success: true, skipped: "no-diff" }); // сошлось до копеек — не пишем
+  if (Math.abs(diff) > 50000) return res.json({ success: true, skipped: "too-big" }); // расхождение >50к в любую сторону — почти наверняка ошибка ввода, не пишем
   const now = Date.now(), p = mskParts(now);
   let log = readMismatchLog();
   const SIX_H = 6 * 3600 * 1000;
@@ -6378,7 +6382,8 @@ app.post("/api/calc-mismatch", (req, res) => {
 app.get("/api/calc-mismatch", (req, res) => {
   const all = readMismatchLog();
   const history = all.slice().sort((a, b) => b.ts - a.ts).slice(0, 1000); // новые сверху, максимум 1000 в выдаче
-  return res.json({ success: true, history, total: all.length });
+  const since = mskParts(CALC_MISMATCH_BOTH_SINCE);
+  return res.json({ success: true, history, total: all.length, bothSince: { ts: CALC_MISMATCH_BOTH_SINCE, date: since.date } });
 });
 // ── Счётчик использований калькулятора страхования ──
 // Клиент шлёт пинг, когда вкладка «Страхование» открыта и сделано ≥2 кликов в калькуляторе
