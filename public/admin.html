@@ -4352,7 +4352,7 @@
             const hist = rows.slice(0, n).map((r) => r.replace("<tr>", '<tr class="' + id + '" style="display:none;">')).join("");
             const btn = '<tr><td colspan="' + head.length + '" style="padding:8px;text-align:left;border-bottom:1px solid #eef0f4;">'
               + '<button type="button" data-hist="' + id + '" data-n="' + n + '" style="border:1px solid #dfe3ec;background:#fff;border-radius:9px;padding:5px 12px;font-size:12.5px;font-family:inherit;color:#33415a;cursor:pointer;">История · ' + n + ' мес.</button></td></tr>';
-            body = hist + rows[rows.length - 2] + btn + rows[rows.length - 1];
+            body = hist + rows.slice(n, rows.length - 1).join("") + btn + rows[rows.length - 1];
           }
           return '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;min-width:' + minW + 'px;border-collapse:collapse;font-size:13px;">'
             + '<tr><th ' + TH.replace("text-align:right", "text-align:left") + '>' + head[0] + '</th>' + head.slice(1).map((x) => '<th ' + TH + '>' + x + '</th>').join("") + '</tr>'
@@ -4439,6 +4439,35 @@
             + tbl(["Месяц"].concat(DK.map((k) => DT[k])), r2.concat(r2y), { collapse: true, minWidth: 640 });
         }
 
+        // Текущий месяц — накопленный итог по вчерашний день (и в нагрузке, и в стафах). Ведомость по нему ещё не
+        // закрыта (нет итога ФОТ и нормы часов), поэтому в таблицах выше его нет. Для
+        // стафов берём штат и отпуска из уже заведённого листа месяца (или прошлого, если
+        // листа ещё нет), а человеко-дни считаем по прошедшим будням.
+        const spList = (function () {
+          const now = new Date(Date.now() + 3 * 3600 * 1000);
+          const cy = now.getUTCFullYear(), cmi = now.getUTCMonth(), lastDay = now.getUTCDate() - 1;
+          const base = list.filter((m) => !(m.year === cy && m.mi === cmi));
+          if (lastDay < 1) return base;
+          const HOL = { "1-1": 1, "1-2": 1, "1-3": 1, "1-4": 1, "1-5": 1, "1-6": 1, "1-7": 1, "1-8": 1, "2-23": 1, "3-8": 1, "5-1": 1, "5-9": 1, "6-12": 1, "11-4": 1, "12-31": 1 };
+          let wd = 0;
+          for (let d = 1; d <= lastDay; d++) {
+            const dow = new Date(Date.UTC(cy, cmi, d)).getUTCDay();
+            if (dow !== 0 && dow !== 6 && !HOL[(cmi + 1) + "-" + d]) wd++;
+          }
+          if (!wd) return base;
+          const cur = Object.keys(months).map((k) => months[k]).find((m) => m.year === cy && m.mi === cmi && m.depts);
+          const src = cur || base[base.length - 1];
+          if (!src || !src.depts) return base;
+          const depts = {};
+          Object.keys(src.depts).forEach((k) => {
+            const x = src.depts[k]; const eff = x.effStaff != null ? x.effStaff : x.staff;
+            depts[k] = { staff: x.staff, effStaff: eff, manDays: eff ? Math.round(eff * wd * 10) / 10 : null };
+          });
+          const RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+          const dd = (n) => (n < 10 ? "0" : "") + n;
+          return base.concat([{ month: RU[cmi] + " " + cy + " · по " + dd(lastDay) + "." + dd(cmi + 1), sheetMonth: RU[cmi] + " " + cy,
+            year: cy, mi: cmi, hasDepts: true, depts: depts, workDays: wd, vacDaysTotal: cur ? cur.vacDaysTotal : null, partial: true }]);
+        })();
         // ── 3. Нагрузка на персонал с учётом отпусков ──
         const loadBase = j.loadBase || {};
         const LOADK = ["pl", "op", "orkMsk", "orkSpb", "oo"];
@@ -4454,7 +4483,7 @@
         // Воронку amoCRM не используем: сделка по ней переезжает.
         const DEALKEY = { orkMsk: "msk", orkSpb: "spb", oo: "total" };
         const baseOf = function (m, key) {
-          const b = loadBase[m.month] || {};
+          const b = loadBase[m.sheetMonth || m.month] || {};
           // Первая линия: берём звонки САМОЙ первой линии (из amoCRM по её сотрудникам),
           // а не общую цифру АТС по компании из листа — иначе нагрузка завышена вдвое.
           if (key === "pl") { const pc = plFromPbx(m.mi) || plCalls[String(m.mi)]; return (pc && pc.calls) ? pc.calls : null; }
@@ -4463,9 +4492,11 @@
           const dk = DEALKEY[key];
           return (cm && cm.deals && dk && cm.deals[dk] != null && m.year === (cityRev.year || m.year)) ? cm.deals[dk] : null;
         };
-        const r3 = list.map(function (m) {
-          const b = loadBase[m.month] || {};
-          return '<tr><td ' + L + '>' + escapeHtml(m.month) + '</td>'
+        // Текущий месяц идёт последней строкой накопленным итогом; в «В среднем за год»
+        // он не входит — там только закрытые месяцы.
+        const r3 = spList.map(function (m) {
+          return '<tr><td ' + L + '>' + escapeHtml(m.month)
+            + (m.partial ? ' <span style="font-size:10.5px;font-weight:700;color:#2f6db5;background:#e8f0fb;border-radius:6px;padding:1px 6px;">идёт</span>' : "") + '</td>'
             + '<td ' + TD + '>' + (m.workDays || "—") + '</td>'
             + '<td ' + TD + '>' + num1(m.vacDaysTotal) + '</td>'
             + LOADK.map(function (k) {
@@ -4488,8 +4519,9 @@
           }).join("") + '</tr>';
         const htmlLoad = secH("Нагрузка на человека в день (с вычетом отпусков)",
             "В ячейке — сколько единиц работы приходится на одного человека в день с учётом отпусков. Эффективный штат = штат минус отпускные дни, делённые на календарные дни месяца; человеко-дни = эффективный штат × рабочие дни производственного календаря."
-            + " База у каждого отдела своя: первая линия — входящие звонки из АТС, отдел продаж — набранные (целевые) контакты, ОРК — сделки своего города, оформление — весь объём сделок месяца, через него проходит всё.", "0 0 8px")
-          + tbl(["Месяц", "Раб. дней", "Отпуск, дн."].concat(LOADK.map((k) => LOADT[k])), r3.concat(r3y), { collapse: true, minWidth: 560 });
+            + " База у каждого отдела своя: первая линия — входящие звонки из АТС, отдел продаж — набранные (целевые) контакты, ОРК — сделки своего города, оформление — весь объём сделок месяца, через него проходит всё."
+            + " Текущий месяц помечен «идёт»: это накопленный итог за прошедшие сутки по вчерашний день включительно, обновляется каждую ночь. «Раб. дней» у него — прошедшие будни, штат и отпуска — из листа месяца в ведомости. В строку «В среднем за год» он не входит.", "0 0 8px")
+          + tbl(["Месяц", "Раб. дней", "Отпуск, дн."].concat(LOADK.map((k) => LOADT[k])), r3.concat(r3y), { collapse: true, minWidth: 560, keep: (spList.length && spList[spList.length - 1].partial) ? 3 : 2 });
         // Нагрузка — самое важное, поэтому идёт первой; дальше деньги и отделы.
         // Каждая секция — своя карточка, иначе три таблицы подряд сливаются в кашу.
         const card = (inner) => inner ? '<div class="vsc-chart" style="margin-bottom:16px;">' + inner + '</div>' : "";
@@ -4527,43 +4559,14 @@
         const spBody = document.createElement("div"); spBody.innerHTML = '<div class="vsc-chart"><div class="loading-state">Загружаем…</div></div>';
         spWrap.appendChild(spBody);
         box.appendChild(spWrap);
-        // Текущий месяц — накопленный итог по вчерашний день. Ведомость по нему ещё не
-        // закрыта (нет итога ФОТ и нормы часов), поэтому в таблицах выше его нет. Для
-        // стафов берём штат и отпуска из уже заведённого листа месяца (или прошлого, если
-        // листа ещё нет), а человеко-дни считаем по прошедшим будням.
-        const spList = (function () {
-          const now = new Date(Date.now() + 3 * 3600 * 1000);
-          const cy = now.getUTCFullYear(), cmi = now.getUTCMonth(), lastDay = now.getUTCDate() - 1;
-          const base = list.filter((m) => !(m.year === cy && m.mi === cmi));
-          if (lastDay < 1) return base;
-          const HOL = { "1-1": 1, "1-2": 1, "1-3": 1, "1-4": 1, "1-5": 1, "1-6": 1, "1-7": 1, "1-8": 1, "2-23": 1, "3-8": 1, "5-1": 1, "5-9": 1, "6-12": 1, "11-4": 1, "12-31": 1 };
-          let wd = 0;
-          for (let d = 1; d <= lastDay; d++) {
-            const dow = new Date(Date.UTC(cy, cmi, d)).getUTCDay();
-            if (dow !== 0 && dow !== 6 && !HOL[(cmi + 1) + "-" + d]) wd++;
-          }
-          if (!wd) return base;
-          const cur = Object.keys(months).map((k) => months[k]).find((m) => m.year === cy && m.mi === cmi && m.depts);
-          const src = cur || base[base.length - 1];
-          if (!src || !src.depts) return base;
-          const depts = {};
-          Object.keys(src.depts).forEach((k) => {
-            const x = src.depts[k]; const eff = x.effStaff != null ? x.effStaff : x.staff;
-            depts[k] = { staff: x.staff, effStaff: eff, manDays: eff ? Math.round(eff * wd * 10) / 10 : null };
-          });
-          const RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
-          const dd = (n) => (n < 10 ? "0" : "") + n;
-          return base.concat([{ month: RU[cmi] + " " + cy + " · по " + dd(lastDay) + "." + dd(cmi + 1), sheetMonth: RU[cmi] + " " + cy,
-            year: cy, mi: cmi, hasDepts: true, depts: depts, workDays: wd, partial: true }]);
-        })();
         apiFetch("/admin/api/vsc/staffperf").then(function (r) {
           const sp = r && r.data;
           if (!sp || !Array.isArray(sp.users) || !sp.users.length) { spBody.innerHTML = '<div class="vsc-chart"><div class="vsc-empty">Данные по сотрудникам считаются ночью вместе с выручкой по городам — появятся после первого расчёта.</div></div>'; return; }
           const draw = () => {
             spBody.innerHTML = "";
             spBody.appendChild(vscStaffPerfDepts(sp, spList, cityRev, loadBase, draw, plCalls, pbxData));
-            const note = vscStaffSyncNote(r.sync);
-            if (note) spBody.appendChild(note);
+            // Сверка справочников АТС и amoCRM в интерфейсе не показывается (Андрей 14.09):
+            // сервер по-прежнему отдаёт её в r.sync, её разбирает ежемесячная проверка.
           };
           draw();
         }).catch(function () { spBody.innerHTML = '<div class="vsc-chart"><div class="vsc-empty">Не удалось загрузить данные по сотрудникам.</div></div>'; });
