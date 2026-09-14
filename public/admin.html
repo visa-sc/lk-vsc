@@ -4116,6 +4116,7 @@
         const ROLE_T = { admin: "админ", head: "рук.", assistant: "ассист." };
         const INFO_COMMON = "<b>Как читать</b><br>Строки — месяцы года, внизу накопленный итог. Клик по месяцу разворачивает фамилии сотрудников, клик по заголовку колонки в списке фамилий сортирует их: первый клик — лучшие сверху, второй — худшие. Кнопка «История» показывает месяцы, которые свёрнуты."
           + "<br><br><b>Текущий месяц</b><br>Помечен «идёт» — это накопленный итог по вчерашний день включительно, обновляется каждую ночь. Штат и отпуска берутся из листа месяца в зарплатной ведомости, человеко-дни — по прошедшим будням, поэтому нагрузка на человека в день сопоставима с закрытыми месяцами. В нём показаны все действующие сотрудники отдела, даже те, у кого данных пока нет."
+          + "<br><br><b>Итого за год</b><br>Строка раскрывается так же, как месяц: под ней сотрудники, которые сейчас работают в отделе, с цифрами за весь год. Суммы складываются по месяцам, доли и средние пересчитываются от сумм, «звонков в день» делится на рабочие дни тех месяцев, где у человека есть данные. Уволенные в список не попадают, но их вклад остаётся в строке отдела."
           + "<br><br><b>Объём</b><br>Считается по всем сделкам, давшим выручку месяца, включая повторных клиентов. Из объёма исключены доплаты (по статусу и по слову «доплата» в названии) и вторые части ВНЖ.";
         const DEPTS = [
           { key: "pl", title: "Первая линия", dcols: "pl", ucols: "pl", udef: "callIn", info: INFO_COMMON + "<br><br><b>Первая линия</b><br>Источник — API АТС OnlinePBX, помесячно за весь год. Сходится с листом /vsc: август по АТС 3 889 входящих против 3 663 в листе, лист считает только рабочие часы.<br><br>Всё берётся напрямую из АТС OnlinePBX: «Принял» — звонки, на которые оператор ответил первым, «Не ответил» — вызовы, которые ему предлагались, но взял их кто-то другой, «Ср. ответ» — сколько клиент ждал до снятия трубки. «Пропущено» в строке месяца — звонки, на которые не ответил никто в компании; у сотрудника «Не ответил» — вызовы, которые ему предлагались, но взял их коллега. Колонка «звонков / чел / день» в строке месяца — это принятые первой линией, делённые на человеко-дни отдела с вычетом отпусков; по людям та же цифра считается от рабочих дней на одного человека, поэтому сумма по фамилиям равна среднему отдела, умноженному на его штат." },
@@ -4174,6 +4175,19 @@
           let html = '<tr><th style="' + THS.replace("text-align:right", "text-align:left") + '">Месяц</th>'
             + dcols.map((c) => '<th style="' + THS + '">' + c.t + '</th>').join("") + '</tr>';
           const keepN = (list.length && list[list.length - 1].partial) ? 2 : 1;   // текущий месяц + последний закрытый
+          // Таблица фамилий под строкой месяца или года — одна разметка на оба случая.
+          const usersHtml = function (urows, emptyText) {
+            const span = dcols.length + 1;
+            if (!urows.length) return '<tr><td colspan="' + span + '" style="padding:9px 12px;background:#fafbfd;color:#9096a3;font-size:12px;">' + emptyText + '</td></tr>';
+            return '<tr><td colspan="' + span + '" style="padding:0;background:#fafbfd;"><div style="padding:6px 10px 10px;overflow-x:auto;">'
+              + '<table style="border-collapse:collapse;font-size:12px;">'
+              + '<tr><th data-sk="name" style="' + THS.replace("text-align:right", "text-align:left") + 'cursor:pointer;user-select:none;border-bottom-width:1px;padding-right:14px;">Сотрудник' + arrow("name") + '</th>'
+              + ucols.map((c) => '<th data-sk="' + c.k + '" style="' + THS + 'cursor:pointer;user-select:none;border-bottom-width:1px;padding-left:14px;">' + c.t + arrow(c.k) + '</th>').join("") + '</tr>'
+              + urows.map((u, i) => '<tr><td style="' + NM + 'font-weight:500;padding-right:14px;"><span style="color:#9096a3;font-weight:400;">' + (i + 1) + '.</span> ' + escapeHtml(u.name)
+                + (ROLE_T[u.role] ? ' <span style="font-size:10.5px;font-weight:600;color:#6b7385;background:#eef0f4;border-radius:6px;padding:1px 6px;">' + ROLE_T[u.role] + '</span>' : "") + '</td>'
+                + ucols.map((c) => '<td style="' + TD + 'padding-left:14px;">' + c.f(u[c.k]) + '</td>').join("") + '</tr>').join("")
+              + '</table></div></td></tr>';
+          };
           rowsM.forEach(function (r, idx) {
             if (!showAll && idx < rowsM.length - keepN) return;  // свёрнуто — только последние месяцы
             const isCurM = !!(list[idx] && list[idx].partial);
@@ -4182,31 +4196,19 @@
               + '<span style="color:#9096a3;font-weight:400;">' + (isOpen ? "▾" : "▸") + '</span> ' + escapeHtml(r.month)
               + (isCurM ? ' <span style="font-size:10.5px;font-weight:700;color:#2f6db5;background:#e8f0fb;border-radius:6px;padding:1px 6px;">идёт</span>' : "") + '</td>'
               + dcols.map((c) => '<td style="' + TD + '">' + c.f(r[c.k]) + '</td>').join("") + '</tr>';
-            if (isOpen) {
-              const urows = vscSpUsers(sp, D, r.mi, r, isCurM);
-              const span = dcols.length + 1;
-              if (!urows.length) {
-                html += '<tr><td colspan="' + span + '" style="padding:9px 12px;background:#fafbfd;color:#9096a3;font-size:12px;">'
-                  + "За этот месяц в amoCRM нет данных по сотрудникам отдела." + '</td></tr>';
-              } else {
-                html += '<tr><td colspan="' + span + '" style="padding:0;background:#fafbfd;"><div style="padding:6px 10px 10px;overflow-x:auto;">'
-                  + '<table style="border-collapse:collapse;font-size:12px;">'
-                  + '<tr><th data-sk="name" style="' + THS.replace("text-align:right", "text-align:left") + 'cursor:pointer;user-select:none;border-bottom-width:1px;padding-right:14px;">Сотрудник' + arrow("name") + '</th>'
-                  + ucols.map((c) => '<th data-sk="' + c.k + '" style="' + THS + 'cursor:pointer;user-select:none;border-bottom-width:1px;padding-left:14px;">' + c.t + arrow(c.k) + '</th>').join("") + '</tr>'
-                  + urows.map((u, i) => '<tr><td style="' + NM + 'font-weight:500;padding-right:14px;"><span style="color:#9096a3;font-weight:400;">' + (i + 1) + '.</span> ' + escapeHtml(u.name)
-                    + (ROLE_T[u.role] ? ' <span style="font-size:10.5px;font-weight:600;color:#6b7385;background:#eef0f4;border-radius:6px;padding:1px 6px;">' + ROLE_T[u.role] + '</span>' : "") + '</td>'
-                    + ucols.map((c) => '<td style="' + TD + 'padding-left:14px;">' + c.f(u[c.k]) + '</td>').join("") + '</tr>').join("")
-                  + '</table></div></td></tr>';
-              }
-            }
+            if (isOpen) html += usersHtml(vscSpUsers(sp, D, r.mi, r, isCurM), "За этот месяц в amoCRM нет данных по сотрудникам отдела.");
           });
           if (rowsM.length > keepN) {
             html += '<tr><td colspan="' + (dcols.length + 1) + '" style="padding:7px;text-align:left;border-bottom:1px solid #eef0f4;">'
               + '<button type="button" data-sphist="' + D.key + '" style="border:1px solid #dfe3ec;background:#fff;border-radius:9px;padding:4px 11px;font-size:12px;font-family:inherit;color:#33415a;cursor:pointer;">'
               + (showAll ? "Скрыть историю" : "История · " + (rowsM.length - keepN) + " мес.") + '</button></td></tr>';
           }
-          html += '<tr><td style="' + TLY.replace("text-align:right", "text-align:left") + '">Итого за ' + (list[0] ? list[0].year : "") + '</td>'
+          const yOpen = !!_vscSpMonthOpen[D.key + ":y"];
+          html += '<tr data-mk="y" style="cursor:pointer;"><td style="' + TLY.replace("text-align:right", "text-align:left") + '">'
+            + '<span style="color:#9096a3;font-weight:400;">' + (yOpen ? "▾" : "▸") + '</span> Итого за ' + (list[0] ? list[0].year : "") + '</td>'
             + dcols.map((c) => '<td style="' + TLY + '">' + c.f(yr[c.k]) + '</td>').join("") + '</tr>';
+          // Под итогом года — действующие сотрудники отдела с цифрами за весь год.
+          if (yOpen) html += usersHtml(vscSpYearUsers(sp, D, rowsM), "В отделе нет действующих сотрудников.");
           tb.innerHTML = html;
           tb.querySelectorAll("tr[data-mk]").forEach(function (tr) {
             tr.addEventListener("click", function () {
@@ -4249,7 +4251,41 @@
           // В идущем месяце показываем всех действующих сотрудников отдела, даже если
           // данных пока нет, — иначе не видно, кто за месяц ещё ничего не сделал.
           const rows = sp.users.filter((u) => u.dept === D.key && ((u.months && u.months[mi]) || (isCur && u.active !== false))).map(function (u) {
-            const x = (u.months && u.months[mi]) || {};
+            return spRow(u, (u.months && u.months[mi]) || {}, perPersonDays);
+          }).filter(function (r) { return (isCur && sp.users.some((u) => u.name === r.name && u.dept === D.key && u.active !== false)) || ucols.some((c) => r[c.k]); });
+          return spSort(rows, D);
+        }
+        // Итог года по людям: только те, кто сейчас работает в отделе. Суммы складываются
+        // по всем месяцам года, доли и средние пересчитываются от сумм, а «звонков в день»
+        // делится на рабочие дни тех месяцев, где у сотрудника есть данные.
+        function vscSpYearUsers(sp, D, rowsM) {
+          const ADD = ["contacts", "sold", "soldRev", "took", "tookRev", "tookReturns", "s1", "s2", "s2rev", "s2ret", "ooDeals", "ooRev",
+            "dlLate", "dlTotal", "closedCnt", "closedDays", "pbxAnswered", "pbxMissed", "pbxOut", "pbxTalkSec"];
+          const rows = sp.users.filter((u) => u.dept === D.key && u.active !== false).map(function (u) {
+            const x = {}; let waitSum = 0, waitCnt = 0, days = 0;
+            rowsM.forEach(function (dm) {
+              const m = u.months && u.months[dm.mi]; if (!m) return;
+              ADD.forEach((k) => { if (m[k]) x[k] = (x[k] || 0) + m[k]; });
+              if (m.pbxWait != null && m.pbxAnswered) { waitSum += m.pbxWait * m.pbxAnswered; waitCnt += m.pbxAnswered; }
+              if (dm.effStaff && dm.manDays) days += dm.manDays / dm.effStaff;
+            });
+            x.pbxWait = waitCnt ? waitSum / waitCnt : null;
+            return spRow(u, x, days || null);
+          });
+          return spSort(rows, D);
+        }
+        function spSort(rows, D) {
+          const ucols = USER_COLS[D.ucols];
+          const st = _vscSpSort[D.key] || { k: D.udef, dir: -1 };
+          const sc = ucols.find((c) => c.k === st.k);
+          rows.sort(function (a, b) {
+            if (st.k === "name" || !sc) return (st.dir || 1) * String(a.name).localeCompare(String(b.name), "ru");
+            const av = a[st.k] == null ? -Infinity : a[st.k], bv = b[st.k] == null ? -Infinity : b[st.k];
+            return (av - bv) * (st.dir === -1 ? -sc.good : sc.good);
+          });
+          return rows;
+        }
+        function spRow(u, x, perPersonDays) {
             return {
               name: u.name, role: u.role,
               contacts: x.contacts || 0, sold: x.sold || 0, soldRev: x.soldRev || 0,
@@ -4267,15 +4303,6 @@
               pbxTalkMin: x.pbxTalkSec ? x.pbxTalkSec / 60 : 0,
               callPerDay: (perPersonDays && x.pbxAnswered) ? x.pbxAnswered / perPersonDays : null
             };
-          }).filter(function (r) { return (isCur && sp.users.some((u) => u.name === r.name && u.dept === D.key && u.active !== false)) || ucols.some((c) => r[c.k]); });
-          const st = _vscSpSort[D.key] || { k: D.udef, dir: -1 };
-          const sc = ucols.find((c) => c.k === st.k);
-          rows.sort(function (a, b) {
-            if (st.k === "name" || !sc) return (st.dir || 1) * String(a.name).localeCompare(String(b.name), "ru");
-            const av = a[st.k] == null ? -Infinity : a[st.k], bv = b[st.k] == null ? -Infinity : b[st.k];
-            return (av - bv) * (st.dir === -1 ? -sc.good : sc.good);
-          });
-          return rows;
         }
       }
       // ═══ Вкладка «ФОТ» — зарплаты, штат, взносы и нагрузка на персонал. ═══════════
