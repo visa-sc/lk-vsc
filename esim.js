@@ -37,6 +37,7 @@ const crypto = require("crypto");
 const axios = require("axios");
 const express = require("express"); // нужен для express.json() на ручке бота
 const tbank = require("./tbank"); // Т-Касса: приём оплат (банк за интерфейсом, как и поставщик eSIM)
+const adsource = require("./adsource"); // откуда пришёл покупатель: метки Google Ads, utm и т.п.
 
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
 // Витрина открыта ещё на esim.voyotravel.ru, voyomobile.ru и voyomobile.com. Возврат из
@@ -552,6 +553,7 @@ function mount(app, opts) {
       id: crypto.randomBytes(6).toString("hex"), ts: Date.now(), status: "lead",
       productId: String(b.productId || "").slice(0, 64), label: String(b.label || "").slice(0, 120),
       priceRub: Number(b.priceRub) || null, phone,
+      ads: adsource.readAds(req, b),
     };
     const orders = readJson(ORDERS_FILE, []);
     orders.unshift(order);
@@ -564,6 +566,7 @@ function mount(app, opts) {
         text: "Новая заявка на eSIM с voyotravel.ru/esim\n\nПакет: " + (order.label || "—") +
           "\nЦена для клиента: " + (order.priceRub ? order.priceRub + " ₽" : "—") +
           "\nТелефон клиента: " + phone +
+          "\nИсточник: " + adsource.describeAds(order.ads) +
           "\nID продукта MobiMatter: " + (order.productId || "—") +
           "\n\nКупить пакет: partner.mobimatter.com → Buy eSIMs (найти по ID) → QR-код отправить клиенту." +
           "\nПосле покупки возьмите номер заказа (AKGR-…) и откройте voyotravel.ru/esim/mylink?adm=КОД&o=НОМЕР — " +
@@ -789,6 +792,7 @@ function mount(app, opts) {
           subject: "VOYO eSIM: ОПЛАЧЕНО " + (g.order.label || "") + (g.order.tgChatId ? " (телеграм-бот)" : ""),
           text: "Клиент оплатил и получил eSIM автоматически.\n\nОткуда: " +
             (g.order.tgChatId ? "телеграм-бот, чат " + g.order.tgChatId : "сайт") +
+            (g.order.tgChatId ? "" : "\nИсточник: " + adsource.describeAds(g.order.ads)) +
             "\nПакет: " + (g.order.label || "—") +
             (g.order.parentOrderId ? "\nЭто ПРОДЛЕНИЕ заказа " + g.order.parentOrderId : "") +
             "\nСумма: " + (g.order.priceRub || "—") + " ₽" +
@@ -869,6 +873,7 @@ function mount(app, opts) {
         label, priceRub, listPriceRub: listPrice, phone, email, tgChatId, custKey: who,
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         promoCode: calc.promoCode, refBy: calc.refBy, balanceUsed: calc.balanceUsed,
+        ads: tgChatId ? null : adsource.readAds(req, b),
       });
       saveLocal(orders);
       const pay = await tbank.init({
@@ -933,7 +938,10 @@ function mount(app, opts) {
       const st = await tbank.getState(f.order.paymentId);
       if (st && st.Success && tbank.isPaid(st.Status)) { fulfil(id).catch(() => {}); return res.json({ success: true, status: "fulfilling" }); }
     }
-    return res.json({ success: true, status: f.order.status, myUrl: f.order.myUrl || null });
+    // Сумма и метка конверсии нужны странице «оплачено», чтобы передать покупку
+    // в Google Ads. ESIM_AW_PURCHASE — «AW-…/label» из действия-конверсии в Ads.
+    return res.json({ success: true, status: f.order.status, myUrl: f.order.myUrl || null,
+      priceRub: f.order.priceRub || null, aw: process.env.ESIM_AW_PURCHASE || "" });
   });
 
   app.get("/esim/pay/ok", (req, res) => {

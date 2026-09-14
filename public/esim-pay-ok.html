@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
 <title>Оплачено — VOYO mobile</title>
+<!-- Google tag: покупка уходит в Google Ads событием purchase с суммой -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=AW-18409333270"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'AW-18409333270');
+</script>
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png" />
 <link rel="icon" type="image/png" href="/apple-touch-icon.png" />
@@ -104,6 +112,15 @@
       if(j && j.success && j.status==="done" && j.myUrl){
         document.getElementById("goBtn").href = j.myUrl;
         show("done");
+        // Покупка в Google Ads — один раз на заказ, даже если страницу обновят
+        try{
+          if(j.priceRub && typeof gtag==="function" && !localStorage.getItem("voyo_conv_"+O)){
+            localStorage.setItem("voyo_conv_"+O, "1");
+            var conv = {transaction_id:O, value:Number(j.priceRub), currency:"RUB"};
+            gtag("event", "purchase", conv);
+            if(j.aw) gtag("event", "conversion", Object.assign({send_to:j.aw}, conv));
+          }
+        }catch(e){}
         // подтягиваем QR, чтобы клиент установил eSIM не уходя со страницы
         try{
           var u = new URL(j.myUrl);

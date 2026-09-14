@@ -20,6 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const fs = require("fs");
 const path = require("path");
+const adsource = require("./adsource");
 
 const LEADS_FILE = path.join(__dirname, ".vscomLeads.json");
 // Журнал переходов в мессенджеры с первого экрана. Мессенджер у нас общий на все
@@ -82,7 +83,8 @@ function sanitizeOrder(o) {
 }
 
 // ── журнал кликов по мессенджерам ────────────────────────────────────────────
-const MAX_CLICKS = 5000;
+// С 14.09 сюда пишутся и просмотры страницы карт (view) — запас подняли.
+const MAX_CLICKS = 20000;
 
 function loadClicks() {
   try {
@@ -96,7 +98,7 @@ function saveClick(entry) {
   const all = loadClicks();
   all.push(entry);
   const trimmed = all.length > MAX_CLICKS ? all.slice(all.length - MAX_CLICKS) : all;
-  fs.writeFileSync(CLICKS_FILE, JSON.stringify(trimmed, null, 2));
+  fs.writeFileSync(CLICKS_FILE, JSON.stringify(trimmed));
 }
 
 // ── антиспам: не больше 5 заявок с одного IP за 10 минут ─────────────────────
@@ -382,14 +384,18 @@ function mount(app, deps) {
       // но нажатие показывает намерение позвонить, а это уже сигнал интереса.
       // form_start — первое касание мастера оформления: человек начал вводить
       // данные. До конца дойдёт не каждый, но интерес уже проявлен.
-      if (!["whatsapp", "telegram", "card", "phone", "form_start"].includes(what)) return;
+      // view — открытие страницы живым браузером (раз за сессию), чтобы видеть
+      // реальное число людей с рекламы, а не заходы серверов Google.
+      if (!["whatsapp", "telegram", "card", "phone", "form_start", "view"].includes(what)) return;
       saveClick({
         at: new Date().toISOString(),
         messenger: what,
         form: clean(b.form, 40),
         page: clean(b.page, 400),
         referrer: clean(b.referrer, 400),
-        utm: b.utm && typeof b.utm === "object" ? b.utm : {},
+        utm: adsource.cleanTouch(b.utm) || {},
+        // первый и последний заход с метками — переживает возврат без gclid
+        touch: adsource.cleanAds(b.touch),
         ip: String(req.headers["x-forwarded-for"] || req.ip || "").split(",")[0].trim(),
         ua: clean(req.headers["user-agent"], 300)
       });

@@ -356,7 +356,7 @@
   function click(kind) {
     try {
       fetch("/cards/api/click", {
-        method: "POST", credentials: "same-origin",
+        method: "POST", credentials: "same-origin", keepalive: true,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind: kind })
       }).catch(function () {});

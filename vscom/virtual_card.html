@@ -732,10 +732,29 @@ p{margin:0 0 14px}
   if (burger) burger.addEventListener("click", function () { nav.classList.toggle("is-on"); });
   nav.addEventListener("click", function (e) { if (e.target.tagName === "A") nav.classList.remove("is-on"); });
 
-  var qs = new URLSearchParams(location.search), utm = {};
-  ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","gclid","yclid"].forEach(function (k) {
-    if (qs.get(k)) utm[k] = qs.get(k);
+  var qs = new URLSearchParams(location.search), utm = {}, hasTag = false;
+  ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","gclid","gbraid","wbraid",
+   "gad_source","gad_campaignid","yclid","fbclid"].forEach(function (k) {
+    if (qs.get(k)) { utm[k] = qs.get(k).slice(0, 200); hasTag = true; }
   });
+
+  // Метки перехода помним 90 дней: человек пришёл с рекламы, ушёл и вернулся
+  // напрямую — его переход в кабинет партнёра всё равно засчитается рекламе
+  // (поле touch в журнале: первый и последний заход).
+  var touch = {};
+  try {
+    touch = JSON.parse(localStorage.getItem("vsc_ads") || "null") || {};
+    var rh = ""; try { rh = document.referrer ? new URL(document.referrer).hostname : ""; } catch (e) {}
+    var ext = rh && !/(^|\.)visa-sc\.com$/.test(rh);
+    if (hasTag || ext) {
+      var t = { ref: ext ? document.referrer.slice(0, 300) : "",
+                landing: (location.pathname + location.search).slice(0, 300), at: Date.now() };
+      for (var k in utm) t[k] = utm[k];
+      if (!touch.first) touch.first = t;
+      touch.last = t;
+      localStorage.setItem("vsc_ads", JSON.stringify(touch));
+    }
+  } catch (e) {}
 
   // Формы здесь нет: карта выпускается в кабинете партнёра по реферальной
   // ссылке, и уход по ней — единственное, что мы вообще можем засчитать.
@@ -743,7 +762,7 @@ p{margin:0 0 14px}
   function track(kind, extra) {
     var body = JSON.stringify({
       messenger: kind, form: "card-ga",
-      page: location.href, referrer: document.referrer || "", utm: utm
+      page: location.href, referrer: document.referrer || "", utm: utm, touch: touch
     });
     try {
       if (navigator.sendBeacon) {
@@ -753,8 +772,14 @@ p{margin:0 0 14px}
           headers: { "Content-Type": "application/json" }, body: body });
       }
     } catch (e) {}
-    if (typeof window.gtag === "function") gtag("event", extra.event, extra.params);
+    if (extra && typeof window.gtag === "function") gtag("event", extra.event, extra.params);
   }
+
+  // Просмотр страницы — раз за сессию. Серверы Google, открывающие ссылку
+  // объявления, скрипты не выполняют, так что в журнал попадают живые люди.
+  try {
+    if (!sessionStorage.getItem("vsc_view")) { sessionStorage.setItem("vsc_view", "1"); track("view"); }
+  } catch (e) { track("view"); }
 
   document.querySelectorAll("[data-msgr]").forEach(function (a) {
     a.addEventListener("click", function () {

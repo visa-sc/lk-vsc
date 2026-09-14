@@ -738,6 +738,15 @@
   /* ───── Старт ───── */
   ensureVisas();   // первая вкладка — визы
 })();
+
+// Переход к оформлению карты у партнёра — в общий журнал раздела «Карты»
+// (/cards/api/click), чтобы отличать клиентов из кабинета от клиентов с рекламы.
+document.querySelectorAll('a.esim-cta[href*="CB6ie3G"]').forEach(function(a){
+  a.addEventListener("click", function(){
+    try{ fetch("/cards/api/click", { method:"POST", credentials:"same-origin", keepalive:true,
+      headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ kind:"beta_card" }) }).catch(function(){}); }catch(_){}
+  });
+});
 </script>
 </body>
 </html>

@@ -24,6 +24,15 @@
 </script>
 <noscript><div><img src="https://mc.yandex.ru/watch/109614823" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
 <!-- /Yandex.Metrika counter -->
+<!-- Google tag (14.09): связывает клик в Google Ads с визитом (кука _gcl_aw),
+     покупку в рекламу передаёт страница /esim/pay/ok -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=AW-18409333270"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'AW-18409333270');
+</script>
 
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png" />
@@ -487,6 +496,38 @@
   var ADM = new URLSearchParams(location.search).get("adm") || "";
   var EMBED = new URLSearchParams(location.search).get("embed") === "1";
   if(EMBED) document.body.classList.add("embed");
+
+  // Откуда пришёл человек. Метки перехода (gclid, utm_*, yclid) запоминаем до
+  // оплаты: первый заход и последний. Кладём и в localStorage, и в куку voyo_ads —
+  // кука дойдёт до сервера, даже если скрипт оплаты метки не передаст.
+  // Считываем ДО обработки ?ref=, которая чистит адресную строку.
+  var ADS = null;
+  try{
+    var AK = ["gclid","gbraid","wbraid","gad_source","gad_campaignid","utm_source","utm_medium",
+              "utm_campaign","utm_term","utm_content","yclid","fbclid"];
+    var q = new URLSearchParams(location.search), touch = {}, hasTag = false;
+    AK.forEach(function(k){ var v=q.get(k); if(v){ touch[k]=v.slice(0,200); hasTag=true; } });
+    var refHost = ""; try{ refHost = document.referrer ? new URL(document.referrer).hostname : ""; }catch(e){}
+    var external = refHost && refHost !== location.hostname && !/(^|\.)(voyotravel\.ru|voyovoyo\.ru|voyomobile\.(ru|com))$/.test(refHost)
+                   && !/(^|\.)(securepay\.tinkoff\.ru|tbank\.ru)$/.test(refHost);
+    try{ ADS = JSON.parse(localStorage.getItem("voyo_ads")||"null"); }catch(e){ ADS = null; }
+    if(!ADS || typeof ADS!=="object") ADS = {};
+    if(!EMBED && (hasTag || external)){
+      touch.ref = external ? document.referrer.slice(0,300) : "";
+      touch.landing = (location.pathname + location.search).slice(0,300);
+      touch.at = Date.now();
+      if(!ADS.first) ADS.first = touch;
+      ADS.last = touch;
+      localStorage.setItem("voyo_ads", JSON.stringify(ADS));
+    }
+    if(EMBED) ADS.embed = true;
+    if(ADS.first || ADS.last){
+      var dom = /(^|\.)voyotravel\.ru$/.test(location.hostname) ? "; domain=.voyotravel.ru" : "";
+      document.cookie = "voyo_ads=" + encodeURIComponent(JSON.stringify({first:ADS.first, last:ADS.last}))
+        + "; max-age=" + (90*86400) + "; path=/" + dom + "; samesite=lax" + (location.protocol==="https:"?"; secure":"");
+    }
+  }catch(e){}
+
   // Реферальная метка живёт в браузере: клиент пришёл по ссылке друга сегодня,
   // а покупает через два дня — метка должна дожить до оплаты.
   var REF = "";
@@ -966,7 +1007,7 @@
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM,
+          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS,
             useBalance:document.getElementById("mBonus").checked})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){
@@ -983,7 +1024,7 @@
     }
     try{
       var r = await fetch("/esim/api/order",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({productId:mP.id, phone:phone, priceRub:mP.priceRub,
+        body:JSON.stringify({productId:mP.id, phone:phone, priceRub:mP.priceRub, ads:ADS,
           label:(mP.countries.length>1?nStran(mP.countries.length):cname(mP.countries[0]))+" · "+(mP.unlimited?"безлимит":mP.dataGb+" ГБ")+" · "+mP.days+" дн."})});
       var j = await r.json();
       if(j && j.success){
