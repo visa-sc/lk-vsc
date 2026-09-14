@@ -129,6 +129,15 @@
     display:flex;align-items:center;justify-content:center;margin-top:1px;}
   details.qr summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--accent);list-style:none;}
   details.qr summary::-webkit-details-marker{display:none;}
+  /* Рекомендации для Китая: кнопка-раскрывашка под инструкцией установки */
+  details.better{margin-top:12px;}
+  details.better summary{list-style:none;cursor:pointer;display:block;position:relative;text-align:center;
+    border:1px solid #cfe3f1;background:#fff;color:var(--accent-d);font-weight:700;font-size:14px;line-height:1.35;border-radius:14px;padding:13px 40px;}
+  details.better summary::-webkit-details-marker{display:none;}
+  details.better summary::after{content:"›";position:absolute;right:16px;top:50%;font-size:18px;line-height:1;
+    transform:translateY(-50%) rotate(90deg);transition:transform .2s ease;}
+  details.better[open] summary::after{transform:translateY(-50%) rotate(-90deg);}
+  details.better .note{font-size:12.5px;line-height:1.5;color:var(--mut);margin-top:8px;}
 
   /* ── топапы ── */
   .tp{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #d9ebf7;
@@ -259,6 +268,17 @@
           <div class="st2"><div class="n">3</div><div>В поездке включите «Роуминг данных» для линии eSIM — интернет заработает сам.</div></div>
         </div>
       </div>
+      <!-- Только для eSIM на Китай. Текст держать одинаковым с CHINA_TIPS в esim.js (уходит в письмо). -->
+      <details class="better" id="cnTips" hidden>
+        <summary>Рекомендации по улучшению работы</summary>
+        <div class="steps">
+          <div class="st2"><div class="n">1</div><div>Настройки → Сотовая связь → линия eSIM → «Выбор сети»: выключите «Автоматически» и выберите China Mobile. Если связь слабая, попробуйте China Unicom.</div></div>
+          <div class="st2"><div class="n">2</div><div>Там же «Голос и данные» → LTE вместо 5G.</div></div>
+          <div class="st2"><div class="n">3</div><div>Раздаёте интернет на компьютер: «Режим модема» → включите «Максимальная совместимость».</div></div>
+          <div class="st2"><div class="n">4</div><div>Не включайте VPN: мессенджеры и Google работают и без него, а с ним всё медленнее.</div></div>
+          <div class="note">Российские сайты в Китае открываются медленнее, чем дома. Это нормально для любой eSIM.</div>
+        </div>
+      </details>
     </div>
 
     <div class="panel" id="tpPanel" style="display:none;">
@@ -383,6 +403,8 @@
       el("term").textContent = activated ? "" : "Пакет активируется при первом подключении в поездке";
     }
     el("pkInfo").textContent = (o.title||"") + (o.operator ? " · " + o.operator : "");
+    // Рекомендации по работе в Китае — только для китайских пакетов
+    el("cnTips").hidden = !/china/i.test(o.title || "");
     // QR
     if(o.qrDataUrl || o.lpa){
       el("qrPanel").style.display="block";

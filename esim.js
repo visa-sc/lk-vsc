@@ -124,6 +124,31 @@ function toRetailRub(costUsd, usdRate) {
   return Math.max(MIN_RUB, rounded);
 }
 
+// ── Рекомендации для eSIM на Китай (14.09.2026) ──
+// Любая eSIM в Китае выпускает трафик за границей, поэтому сеть бывает
+// нестабильной, а российские сайты медленные. Появилось после жалобы клиента:
+// сеть пропадала до авиарежима, CRM на ноутбуке еле грузились. Шаги ниже
+// уходят в письмо о выдаче и открываются кнопкой на странице «Моя eSIM»
+// (там свой текст в public/esim-my.html, держать одинаковым). Только Китай:
+// пакеты, в названии которых есть China.
+const CHINA_TIPS = [
+  "Настройки → Сотовая связь → линия eSIM → «Выбор сети»: выключите «Автоматически» и выберите China Mobile. Если связь слабая, попробуйте China Unicom.",
+  "Там же «Голос и данные» → LTE вместо 5G.",
+  "Раздаёте интернет на компьютер: «Режим модема» → включите «Максимальная совместимость».",
+  "Не включайте VPN: мессенджеры и Google работают и без него, а с ним всё медленнее.",
+];
+const CHINA_TIPS_NOTE = "Российские сайты в Китае открываются медленнее, чем дома. Это нормально для любой eSIM.";
+const CHINA_TIPS_TEXT = "Если интернет в Китае тормозит или пропадает:\n" +
+  CHINA_TIPS.map((t, i) => (i + 1) + ". " + t).join("\n") + "\n" + CHINA_TIPS_NOTE + "\n";
+function isChinaLabel(label) { return /china/i.test(String(label || "")); }
+function chinaTipsHtml() {
+  return '<div style="background:#f4f9fd;border:1px solid #ddedf7;border-radius:12px;padding:12px 16px;margin:0 0 14px">' +
+    '<p style="font-size:14px;font-weight:700;margin:0 0 6px;color:#16202e">Если интернет в Китае тормозит или пропадает</p>' +
+    '<ol style="margin:0 0 8px;padding-left:18px;font-size:13.5px;line-height:1.55;color:#3a4356">' +
+    CHINA_TIPS.map((t) => '<li style="margin:0 0 4px">' + t + "</li>").join("") + "</ol>" +
+    '<p style="font-size:12.5px;line-height:1.5;color:#8b93a5;margin:0">' + CHINA_TIPS_NOTE + "</p></div>";
+}
+
 // ═══════════════ ПОСТАВЩИК: MobiMatter ═══════════════
 const MM_BASE = "https://api.mobimatter.com/mobimatter/api/v2";
 function mmHeaders() {
@@ -737,6 +762,7 @@ function mount(app, opts) {
       }
       // Письмо клиенту: доступ в кабинет + QR-строка на случай, если картинка не откроется
       if (opts && opts.sendMail && g.order.email) {
+        const tipsCN = isChinaLabel(g.order.label);
         const acc = BASE_URL + "/esim/account?e=" + encodeURIComponent(g.order.email) + "&t=" + signEmail(g.order.email);
         opts.sendMail({
           to: g.order.email,
@@ -748,10 +774,12 @@ function mount(app, opts) {
             'text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:12px">Открыть QR-код и остаток</a></p>' +
             '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">Установка: Настройки → Сотовая связь → Добавить eSIM → сканировать QR. ' +
             'Сделайте это дома по Wi-Fi, до вылета. В поездке включите «Роуминг данных» для линии eSIM.</p>' +
+            (tipsCN ? chinaTipsHtml() : "") +
             '<p style="font-size:13px;line-height:1.6;color:#8b93a5;margin:0 0 6px">Ваш личный кабинет со всеми eSIM: <a href="' + acc + '" style="color:#3589bd">открыть</a><br/>' +
             'Ссылка постоянная — сохраните это письмо.</p>' +
             '<p style="font-size:12px;color:#a6adbd;margin:18px 0 0">VOYO mobile · интернет в поездке</p></div>',
           text: "Ваша eSIM готова: " + (g.order.label || "") + "\n\nQR-код и остаток трафика: " + g.order.myUrl +
+                (tipsCN ? "\n\n" + CHINA_TIPS_TEXT : "") +
                 "\nЛичный кабинет со всеми eSIM: " + acc,
         }).catch((e) => console.error("esim client mail:", e.message));
       }
