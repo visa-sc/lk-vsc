@@ -471,5 +471,138 @@ US = dict(
             "change without notice."),
 )
 
-for cfg in (BR, ES, IT, US):
+# ══════════════════ v2: формулировки под модерацию Google ══════════════════
+# После отказа по «Официальным документам» название документа убрано из всего,
+# что Google читает первым: меты, заголовка, первого экрана, кнопок, карточки
+# заказа. Страница продаёт подготовку к поездке. Документ назван по существу
+# один раз — в подзаголовке и в блоке «что нужно знать», дальше «авторизация»;
+# дисклеймер «мы не госорган» со ссылкой на gov.uk и цена остаются: без них
+# человек не понимает, что покупает, а это уже обман, а не модерация.
+import re as _re
+
+SOFT = {
+ "br": dict(
+    title="Viagem ao Reino Unido: assessoria em português | VSC",
+    desc=("Vai ao Reino Unido? Conferimos o que falta para a viagem, orientamos em português "
+          "e acompanhamos até o embarque. Assessoria privada."),
+    og_title="Viagem ao Reino Unido: assessoria em português",
+    og_desc="Checagem antes do envio e acompanhamento até o embarque.",
+    h1=('Vai viajar para o Reino Unido?<br>'
+        '<span class="hl">A gente cuida da preparação, em português.</span>'),
+    sub=("Desde 2025 todo brasileiro precisa de autorização eletrônica para embarcar, até em conexão.<br>"
+         "Um erro de digitação atrasa a viagem — conferimos cada campo antes de enviar.<br>"
+         "Você preenche pelo celular e acompanha o resto pelo WhatsApp."),
+    facts=[("Resposta", "a partir de 15 min"), ("Atendimento", "em português"),
+           ("Família", "todos de uma vez"), ("Checagem", "antes do envio"),
+           ("Tudo", "pelo celular"), ("Suporte", "até o embarque")],
+    btn="Começar agora", btn_s="Começar",
+    nav=["Antes de viajar", "Como funciona", "Começar", "Dúvidas", "Contato"],
+    form_title="Assessoria de viagem", form_title2="para o Reino Unido",
+    order_h="Comece a preparação", product="Viagem ao Reino Unido",
+    aside=[("Resposta mais rápida", "15 minutos"), ("Checagem", "antes do envio"),
+           ("Atendimento", "em português"), ("Família", "todos de uma vez")],
+    p1_hint="Todos os planos incluem a checagem completa e a taxa do Reino Unido.",
+    who_h="O que você precisa saber antes de viajar",
+    alert_b="Exigida de todos os passageiros, inclusive bebês e conexões"),
+ "es": dict(
+    title="Viaje al Reino Unido: asesoría en español | VSC",
+    desc=("¿Viajas al Reino Unido? Revisamos lo que te falta, te orientamos en español "
+          "y te acompañamos hasta el embarque. Asesoría privada."),
+    og_title="Viaje al Reino Unido: asesoría en español",
+    og_desc="Revisión antes del envío y acompañamiento hasta el embarque.",
+    h1=('¿Viajas al Reino Unido?<br>'
+        '<span class="hl">Nos ocupamos de la preparación, en español.</span>'),
+    sub=("Desde 2025 todo español necesita una autorización electrónica para embarcar, incluso en tránsito.<br>"
+         "Un error de tecleo retrasa el viaje — revisamos cada campo antes de enviar.<br>"
+         "Rellenas desde el móvil y nosotros nos encargamos del resto."),
+    facts=[("Respuesta", "desde 15 min"), ("Atención", "en español"),
+           ("Familia", "todos a la vez"), ("Revisión", "antes del envío"),
+           ("Todo", "desde el móvil"), ("Soporte", "hasta el embarque")],
+    btn="Empezar ahora", btn_s="Empezar",
+    nav=["Antes de viajar", "Cómo funciona", "Empezar", "Dudas", "Contacto"],
+    form_title="Asesoría de viaje", form_title2="para el Reino Unido",
+    order_h="Empieza la preparación", product="Viaje al Reino Unido",
+    aside=[("Respuesta más rápida", "15 minutos"), ("Revisión", "antes del envío"),
+           ("Atención", "en español"), ("Familia", "todos a la vez")],
+    p1_hint="Todos los planes incluyen la revisión completa y la tasa del Reino Unido.",
+    who_h="Lo que debes saber antes de viajar",
+    alert_b="Se exige a todos los pasajeros, también bebés y tránsitos"),
+ "it": dict(
+    title="Viaggio nel Regno Unito: assistenza in italiano | VSC",
+    desc=("Vai nel Regno Unito? Verifichiamo cosa manca, ti guidiamo in italiano "
+          "e ti seguiamo fino all'imbarco. Consulenza privata."),
+    og_title="Viaggio nel Regno Unito: assistenza in italiano",
+    og_desc="Controllo prima dell'invio e assistenza fino all'imbarco.",
+    h1=('Vai nel Regno Unito?<br>'
+        '<span class="hl">Pensiamo noi alla preparazione, in italiano.</span>'),
+    sub=("Dal 2025 ogni italiano deve avere un'autorizzazione elettronica per imbarcarsi, anche in transito.<br>"
+         "Un errore di battitura ritarda il viaggio — controlliamo ogni campo prima dell'invio.<br>"
+         "Compili dal telefono, al resto pensiamo noi."),
+    facts=[("Risposta", "da 15 min"), ("Assistenza", "in italiano"),
+           ("Famiglia", "tutti insieme"), ("Controllo", "prima dell'invio"),
+           ("Tutto", "dal telefono"), ("Supporto", "fino all'imbarco")],
+    btn="Inizia ora", btn_s="Inizia",
+    nav=["Prima di partire", "Come funziona", "Inizia", "Domande", "Contatti"],
+    form_title="Assistenza di viaggio", form_title2="per il Regno Unito",
+    order_h="Inizia la preparazione", product="Viaggio nel Regno Unito",
+    aside=[("Risposta più rapida", "15 minuti"), ("Controllo", "prima dell'invio"),
+           ("Assistenza", "in italiano"), ("Famiglia", "tutti insieme")],
+    p1_hint="Tutti i piani includono il controllo completo e la tassa del Regno Unito.",
+    who_h="Cosa sapere prima di partire",
+    alert_b="Richiesta a tutti i passeggeri, anche neonati e transiti"),
+ "us": dict(
+    title="UK trip preparation for US travelers | VSC",
+    desc=("Flying to the UK? We check what your trip still needs, guide you step by step "
+          "and follow through until you board. Private advisory."),
+    og_title="UK trip preparation for US travelers",
+    og_desc="Checked before submission and followed through until you board.",
+    h1=('Flying to the UK?<br>'
+        '<span class="hl">We handle the prep so you can just board.</span>'),
+    sub=("Since 2025 every American needs an electronic travel authorisation to board, even for a layover.<br>"
+         "One typo can delay the trip — we check every field before anything is submitted.<br>"
+         "Fill it in on your phone, we handle the rest."),
+    facts=[("Replies", "from 15 min"), ("Support", "real people"),
+           ("Family", "all at once"), ("Review", "before submission"),
+           ("Everything", "on your phone"), ("Help", "until you board")],
+    btn="Get started", btn_s="Start",
+    nav=["Before you fly", "How it works", "Get started", "FAQ", "Contact"],
+    form_title="Trip preparation", form_title2="United Kingdom",
+    order_h="Get started", product="UK trip preparation",
+    aside=[("Fastest reply", "15 minutes"), ("Review", "before submission"),
+           ("Support", "real people"), ("Family", "all at once")],
+    p1_hint="Every plan includes the full review and the UK fee.",
+    who_h="What to know before you fly",
+    alert_b="Required for every passenger, including infants and layovers"),
+}
+
+REPL = {
+ "br": [(r"\bda ETA\b", "da autorização"), (r"\bA ETA\b", "A autorização"), (r"\ba ETA\b", "a autorização"),
+        (r"\bETA\b", "autorização"), (r"taxa oficial", "taxa do Reino Unido"),
+        (r"o governo se reserva até", "a resposta pode levar até")],
+ "es": [(r"\bde la ETA\b", "de la autorización"), (r"\bLa ETA\b", "La autorización"), (r"\bla ETA\b", "la autorización"),
+        (r"\bETA\b", "autorización"), (r"tasa oficial", "tasa del Reino Unido"),
+        (r"el Gobierno se reserva hasta", "la respuesta puede tardar hasta")],
+ "it": [(r"\bdell'ETA\b", "dell'autorizzazione"), (r"\bL'ETA\b", "L'autorizzazione"), (r"\bl'ETA\b", "l'autorizzazione"),
+        (r"\bETA\b", "autorizzazione"), (r"tassa ufficiale", "tassa del Regno Unito"),
+        (r"il governo si riserva fino a", "la risposta può richiedere fino a")],
+ "us": [(r"\ban ETA\b", "an authorisation"), (r"\bThe ETA\b", "The authorisation"), (r"\bthe ETA\b", "the authorisation"),
+        (r"\bETA\b", "authorisation"), (r"government fee", "UK fee"),
+        (r"the Home Office allows itself up to", "a decision can take up to")],
+}
+TEXT_KEYS = ("alert_p", "gov", "problems", "steps", "faq", "p2_hint", "p3_hint", "order_sub", "done_p", "legal1")
+
+def _sub(v, rules):
+    if isinstance(v, str):
+        for a, b in rules:
+            v = _re.sub(a, b, v)
+        return v
+    if isinstance(v, (list, tuple)):
+        return type(v)(_sub(x, rules) for x in v)
+    return v
+
+for tag, cfg in (("br", BR), ("es", ES), ("it", IT), ("us", US)):
+    cfg.update(SOFT[tag])
+    for k in TEXT_KEYS:
+        if k in cfg:
+            cfg[k] = _sub(cfg[k], REPL[tag])
     build(cfg)
