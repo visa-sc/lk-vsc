@@ -1392,6 +1392,107 @@ function amoRosterWarm() {
 setTimeout(amoRosterWarm, 150 * 1000);
 setInterval(amoRosterWarm, 6 * 3600 * 1000);
 
+// ═══ Действия сотрудников ОРК в amoCRM: закрытые задачи, смены этапа, сообщения ═══
+// Сделки в ОРК по людям считаются по «Кто принял клиента», а администраторы и
+// руководители туда не попадают — их работа видна только в действиях в CRM (Андрей
+// 14.09). Источники:
+//  • с августа — локальная копия CRM (crm.voyotravel.ru), в ней все события amoCRM
+//    с 18.07.2026; ни одного запроса в API, считается отдельным процессом;
+//  • январь–июль — разовая догрузка из API amoCRM (/api/v4/events с фильтром по
+//    авторам и типам), через общий ограничитель, самым низким приоритетом и с паузой
+//    между страницами. Закрытые месяцы больше не перечитываются.
+const VSC_ORK_ACT_FILE = path.join(__dirname, ".vscOrkActivity.json");
+const ORK_ACT_TYPES = { task_completed: "tasks", lead_status_changed: "stages", outgoing_chat_message: "msgs" };
+const ORK_ACT_COPY_FROM_MI = 7;                 // с августа 2026 — из копии (в ней события с 18.07)
+let _orkAct = null, _orkActApiRunning = false, _orkActCopyRunning = false;
+function orkActLoad() {
+  if (_orkAct) return _orkAct;
+  try { _orkAct = JSON.parse(fs.readFileSync(VSC_ORK_ACT_FILE, "utf8")); } catch (_) { _orkAct = { ts: 0, year: 2026, api: {}, copy: {}, apiMonthsDone: [] }; }
+  return _orkAct;
+}
+function orkActSave() { try { fs.writeFileSync(VSC_ORK_ACT_FILE, JSON.stringify(_orkAct), "utf8"); } catch (e) { console.error("saveOrkAct:", e.message); } }
+function orkActUids() {
+  const r = amoRosterLoad();
+  return r && r.users ? r.users.filter((u) => /орк/i.test(u.group || "")).map((u) => u.uid) : [];
+}
+async function orkActBackfillApi() {
+  if (_orkActApiRunning || !AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return;
+  const uids = orkActUids(); if (!uids.length) return;
+  _orkActApiRunning = true;
+  const st = orkActLoad();
+  const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+  const Y = 2026;
+  try {
+    for (let mi = 0; mi < ORK_ACT_COPY_FROM_MI; mi++) {
+      if ((st.apiMonthsDone || []).includes(mi)) continue;
+      const from = Math.floor(Date.UTC(Y, mi, 1) / 1000) - 3 * 3600, to = Math.floor(Date.UTC(Y, mi + 1, 1) / 1000) - 3 * 3600;
+      const agg = {};
+      let pages = 0;
+      // Авторов передаём пачками по 10 — столько фильтр принимает гарантированно.
+      for (let i = 0; i < uids.length; i += 10) {
+        const chunk = uids.slice(i, i + 10);
+        for (let page = 1; page < 500; page++) {
+          const d = await amoGet(`${baseUrl}/api/v4/events`, {
+            "filter[created_by]": chunk, "filter[type]": Object.keys(ORK_ACT_TYPES),
+            "filter[created_at][from]": from, "filter[created_at][to]": to - 1, limit: 100, page
+          });
+          const list = (d && d._embedded && d._embedded.events) || [];
+          pages++;
+          list.forEach((e) => {
+            const k = ORK_ACT_TYPES[e.type]; if (!k) return;
+            const um = agg[String(e.created_by)] || (agg[String(e.created_by)] = {});
+            const o = um[String(mi)] || (um[String(mi)] = { tasks: 0, stages: 0, msgs: 0 });
+            o[k]++;
+          });
+          if (list.length < 100) break;
+          await new Promise((r) => setTimeout(r, 350));   // оставляем запас лимита живому трафику
+        }
+      }
+      Object.keys(agg).forEach((uid) => { (st.api[uid] || (st.api[uid] = {}))[String(mi)] = agg[uid][String(mi)]; });
+      st.apiMonthsDone = (st.apiMonthsDone || []).concat([mi]);
+      st.ts = Date.now();
+      orkActSave();
+      console.log("ORK ACT: месяц " + (mi + 1) + " догружен из API, страниц " + pages);
+    }
+  } catch (e) { console.error("ORK ACT API:", e && e.message); }
+  _orkActApiRunning = false;
+}
+function orkActFromCopy() {
+  if (_orkActCopyRunning) return;
+  const uids = orkActUids(); if (!uids.length) return;
+  _orkActCopyRunning = true;
+  const from = Math.floor(Date.UTC(2026, ORK_ACT_COPY_FROM_MI, 1) / 1000) - 3 * 3600;
+  require("child_process").execFile("nice", ["-n", "15", process.execPath, path.join(__dirname, "tools", "orkActivityFromCopy.js"), String(from), uids.join(",")],
+    { timeout: 10 * 60 * 1000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
+      _orkActCopyRunning = false;
+      if (err) { console.error("ORK ACT копия:", err.message); return; }
+      try {
+        const r = JSON.parse(stdout);
+        const st = orkActLoad();
+        st.copy = r.byUser || {}; st.copyMaxTs = r.maxTs || null; st.ts = Date.now();
+        orkActSave();
+        console.log("ORK ACT: из копии CRM, сотрудников " + Object.keys(st.copy).length + ", события по " + (r.maxTs ? new Date(r.maxTs * 1000).toISOString() : "—"));
+      } catch (e) { console.error("ORK ACT разбор:", e.message); }
+    });
+}
+// Итог по сотруднику и месяцу: январь–июль из API, с августа из копии.
+function orkActFor(uid, mk) {
+  const st = orkActLoad();
+  return +mk >= ORK_ACT_COPY_FROM_MI ? ((st.copy || {})[uid] || {})[mk] : ((st.api || {})[uid] || {})[mk];
+}
+// Старт: копия через 3 минуты, догрузка API — через 4 (после прогрева справочника).
+setTimeout(orkActFromCopy, 180 * 1000);
+setTimeout(() => { Promise.resolve(amoBg(() => orkActBackfillApi())).catch(() => {}); }, 240 * 1000);
+// Каждую ночь в 01:40 МСК — пересчёт из копии (текущий и прошлые месяцы с августа).
+(function scheduleOrkAct() {
+  const MSK = 3 * 3600 * 1000, DAY = 86400000;
+  (function next() {
+    const now = Date.now() + MSK;
+    let t = Math.floor(now / DAY) * DAY + 100 * 60 * 1000; if (t <= now) t += DAY;
+    setTimeout(() => { orkActFromCopy(); Promise.resolve(amoBg(() => orkActBackfillApi())).catch(() => {}); next(); }, t - now);
+  })();
+})();
+
 async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, byStage, byOpMgr, ooDeals) {
   // 1. Сотрудники и их группы.
   const users = {};
@@ -1543,6 +1644,18 @@ app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
     roster.users.forEach((r) => {
       if (!r.active || !r.dept || have.has(r.uid)) return;
       d.users.push({ uid: r.uid, name: r.name, group: r.group, dept: r.dept, role: r.role, active: true, months: {}, fromRoster: true });
+    });
+  }
+  // Действия в amoCRM (задачи, этапы, сообщения) — сотрудникам ОРК по uid.
+  if (d) {
+    const MK = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"];
+    (d.users || []).forEach((u) => {
+      if (u.dept !== "orkMsk" && u.dept !== "orkSpb") return;
+      MK.forEach((mk) => {
+        const a = orkActFor(String(u.uid), mk); if (!a) return;
+        const t = u.months[mk] || (u.months[mk] = { deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
+        t.actTasks = a.tasks || 0; t.actStages = a.stages || 0; t.actMsgs = a.msgs || 0;
+      });
     });
   }
   const px = pbx.load();

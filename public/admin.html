@@ -4107,7 +4107,9 @@
           ork: [{ k: "took", t: "Сделок", f: int, good: 1 }, { k: "tookRev", t: "Выручка", f: money, good: 1 },
                 { k: "tookReturns", t: "Возвраты", f: int, good: -1 }, { k: "tookRetPct", t: "% возвр.", f: pctv, good: -1 },
                 { k: "pbxAnswered", t: "Звонков", f: int, good: 1 }, { k: "pbxTalkMin", t: "Минут", f: int, good: 1 },
-                { k: "pbxOut", t: "Исход.", f: int, good: 1 }],
+                { k: "pbxOut", t: "Исход.", f: int, good: 1 },
+                { k: "actTasks", t: "Задач", f: int, good: 1 }, { k: "actStages", t: "Этапов", f: int, good: 1 },
+                { k: "actMsgs", t: "Сообщ.", f: int, good: 1 }],
           oo: [{ k: "ooDeals", t: "Сделок", f: int, good: 1 },
                { k: "ooRev", t: "Выручка", f: money, good: 1 },
                { k: "dlLate", t: "Просроч.", f: int, good: -1 },
@@ -4121,7 +4123,7 @@
         const DEPTS = [
           { key: "pl", title: "Первая линия", dcols: "pl", ucols: "pl", udef: "callIn", info: INFO_COMMON + "<br><br><b>Первая линия</b><br>Источник — API АТС OnlinePBX, помесячно за весь год. Сходится с листом /vsc: август по АТС 3 889 входящих против 3 663 в листе, лист считает только рабочие часы.<br><br>Всё берётся напрямую из АТС OnlinePBX: «Принял» — звонки, на которые оператор ответил первым, «Не ответил» — вызовы, которые ему предлагались, но взял их кто-то другой, «Ср. ответ» — сколько клиент ждал до снятия трубки. «Пропущено» в строке месяца — звонки, на которые не ответил никто в компании; у сотрудника «Не ответил» — вызовы, которые ему предлагались, но взял их коллега. Колонка «звонков / чел / день» в строке месяца — это принятые первой линией, делённые на человеко-дни отдела с вычетом отпусков; по людям та же цифра считается от рабочих дней на одного человека, поэтому сумма по фамилиям равна среднему отдела, умноженному на его штат." },
           { key: "op", title: "Отдел продаж", dcols: "op", ucols: "op", udef: "soldRev", info: INFO_COMMON + "<br><br><b>Отдел продаж</b><br>Конверсия — все сделки месяца к целевым (набранным) контактам. «Сделки ОП» и «Выручка ОП» — та часть объёма, что закреплена полем сделки «Менеджер ОП»; именно она раскладывается по фамилиям. Ответственный за сделку для этого не годится: к моменту оплаты там уже специалист ОРК." },
-          { key: "orkMsk", title: "ОРК МСК", dcols: "ork", ucols: "ork", udef: "took", info: INFO_COMMON + "<br><br><b>ОРК</b><br>По сотрудникам сделка считается по полю «Кто принял клиента» — оно заполнено почти везде и раскладывает объём месяца по людям.<br><br><b>Специалисты и администраторы</b><br>В отдел попадают все группы amoCRM «ОРК МСК»: специалисты и администраторы, плюс руководители ОРК. У администраторов сделок по «Кто принял клиента» обычно нет, их работа видна в звонках: «Звонков» — принятые ими входящие из АТС, «Минут» — время разговоров, «Исход.» — исходящие.<br><br><b>Возвраты</b><br>Считаются по когорте месяца ОПЛАТЫ: возврат по майской сделке остаётся в мае. Поэтому у свежих месяцев процент низкий — возвраты ещё не дозрели. В отчёте по возвратам процент другой: там доля ДЕНЕГ и по месяцу самого возврата. Возвратом считается статус «Возврат» или заполненная «Дата возврата»; «Ожидает решения о возврате» не считается." },
+          { key: "orkMsk", title: "ОРК МСК", dcols: "ork", ucols: "ork", udef: "took", info: INFO_COMMON + "<br><br><b>ОРК</b><br>По сотрудникам сделка считается по полю «Кто принял клиента» — оно заполнено почти везде и раскладывает объём месяца по людям.<br><br><b>Специалисты и администраторы</b><br>В отдел попадают все группы amoCRM «ОРК МСК»: специалисты и администраторы, плюс руководители ОРК. У администраторов и руководителей сделок по «Кто принял клиента» нет, их работа видна в звонках и действиях в amoCRM. «Звонков» — принятые входящие из АТС, «Минут» — время разговоров, «Исход.» — исходящие звонки. «Задач» — закрытые задачи, «Этапов» — сколько раз сотрудник перевёл сделку на другой этап, «Сообщ.» — исходящие сообщения клиентам в чатах amoCRM. Действия с августа считаются по локальной копии CRM, январь–июль разово догружены из amoCRM.<br><br><b>Возвраты</b><br>Считаются по когорте месяца ОПЛАТЫ: возврат по майской сделке остаётся в мае. Поэтому у свежих месяцев процент низкий — возвраты ещё не дозрели. В отчёте по возвратам процент другой: там доля ДЕНЕГ и по месяцу самого возврата. Возвратом считается статус «Возврат» или заполненная «Дата возврата»; «Ожидает решения о возврате» не считается." },
           { key: "orkSpb", title: "ОРК СПБ", dcols: "ork", ucols: "ork", udef: "took", info: INFO_COMMON + "<br><br><b>ОРК</b><br>По сотрудникам сделка считается по полю «Кто принял клиента».<br><br><b>Возвраты</b><br>По когорте месяца оплаты, поэтому у свежих месяцев процент низкий. Возвратом считается статус «Возврат» или заполненная «Дата возврата»." },
           { key: "oo", title: "Отдел оформления", dcols: "ork", ucols: "oo", udef: "ooDeals", info: INFO_COMMON + "<br><br><b>Возвраты</b><br>В строке месяца — возвраты по всему объёму. По сотрудникам их нет и не будет: возврат почти всегда случается ДО того, как сделка доходит до оформления. За июнь и июль из 44 возвратов только у четырёх заполнен менеджер первого этапа и ни у одного — второго.<br><br><b>Оформление</b><br>Через отдел проходит весь объём сделок месяца. По сотрудникам каждая сделка засчитывается один раз и одному человеку: менеджеру второго этапа, то есть тому, кто занимался ей последним. Если второй этап не заполнен, сделка идёт менеджеру первого этапа. Один и тот же менеджер на обоих этапах — это одна сделка, а не две. Выручка — по тем же сделкам. Просрочка — когда дата бонуса за второй этап позже «Дедлайна ОО». Сделки с заглушками «АКК», «БОТ» и «Запись не требуется» в фамилии не попадают." }
         ];
@@ -4260,7 +4262,7 @@
         // делится на рабочие дни тех месяцев, где у сотрудника есть данные.
         function vscSpYearUsers(sp, D, rowsM) {
           const ADD = ["contacts", "sold", "soldRev", "took", "tookRev", "tookReturns", "s1", "s2", "s2rev", "s2ret", "ooDeals", "ooRev",
-            "dlLate", "dlTotal", "closedCnt", "closedDays", "pbxAnswered", "pbxMissed", "pbxOut", "pbxTalkSec"];
+            "dlLate", "dlTotal", "closedCnt", "closedDays", "pbxAnswered", "pbxMissed", "pbxOut", "pbxTalkSec", "actTasks", "actStages", "actMsgs"];
           const rows = sp.users.filter((u) => u.dept === D.key && u.active !== false).map(function (u) {
             const x = {}; let waitSum = 0, waitCnt = 0, days = 0;
             rowsM.forEach(function (dm) {
@@ -4301,6 +4303,7 @@
               pbxAnswered: x.pbxAnswered || 0, pbxMissed: x.pbxMissed || 0, pbxOut: x.pbxOut || 0,
               pbxWait: x.pbxWait != null ? x.pbxWait : null,
               pbxTalkMin: x.pbxTalkSec ? x.pbxTalkSec / 60 : 0,
+              actTasks: x.actTasks || 0, actStages: x.actStages || 0, actMsgs: x.actMsgs || 0,
               callPerDay: (perPersonDays && x.pbxAnswered) ? x.pbxAnswered / perPersonDays : null
             };
         }
@@ -6339,8 +6342,9 @@
             act: "Допродажи и пакеты: дотянуть чек до собственного плана." });
         }
 
-        cards.sort((a, b) => b.gain - a.gain);
         const color = (g) => g >= 500000 ? ["#b0263a", "#fdecef"] : g >= 150000 ? ["#8a5f00", "#fdf6e3"] : ["#2c7a43", "#eaf6ee"];
+        const paint = function () {
+        cards.sort((a, b) => b.gain - a.gain);
         let html = '<div style="font-size:12.5px;color:#6b7280;margin-bottom:12px;">Оценка на ' + escapeHtml(String(proj.monthName || "")) + ' · от прогноза выручки ' + money(revM) + '</div>';
         html += '<div style="display:flex;flex-wrap:wrap;gap:12px;">';
         if (!cards.length) html += '<div class="vsc-empty">Все показатели на своих лучших значениях года — очевидных резервов не видно.</div>';
@@ -6352,13 +6356,109 @@
             + '<div style="font-size:11.5px;color:#6b7280;margin-bottom:8px;">в месяц к чистой прибыли</div>'
             + '<div style="font-size:12.5px;color:#3a4256;line-height:1.55;">' + escapeHtml(c.now) + '<br>цель: ' + escapeHtml(c.target) + '</div>'
             + '<div style="font-size:12.5px;color:#1d2330;line-height:1.55;margin-top:8px;">' + escapeHtml(c.act) + '</div>'
+            + (c.calc ? '<div style="font-size:11.5px;color:#6b7280;line-height:1.5;margin-top:8px;">' + escapeHtml(c.calc) + '</div>' : "")
             + '</div>';
         });
         html += '</div>';
         const sum = cards.reduce((a, c) => a + c.gain, 0);
         if (sum) html += '<div style="margin-top:14px;font-size:13px;color:#1d2330;">Если закрыть всё сразу: <b>+' + money(sum) + '</b> в месяц. Это вернуло бы месяц в прибыль.</div>';
         box.innerHTML = html;
+        };
+        paint();
+        // Персонал — только админу: зарплаты и фамилии не уходят никому больше (эндпоинты
+        // тоже закрыты на сервере). Карточки дорисовываются, когда придут данные ФОТ.
+        if (currentRole() === "admin") {
+          Promise.all([apiFetch("/admin/api/vsc/zarplata"), apiFetch("/admin/api/vsc/staffperf")]).then(function (res) {
+            const add = vscStaffRadarCards(res[0], res[1] && res[1].data);
+            if (add.length) { add.forEach((c) => cards.push(c)); paint(); }
+          }).catch(function (e) { console.error("радар персонала:", e && e.message); });
+        }
         return wrap;
+      }
+      // ═══ Радар: персонал (Андрей 14.09) ═══════════════════════════════════════════
+      // Две находки, обе от собственных цифр раздела «ФОТ»:
+      //  1. Слабый продажник. Конверсия контакта в продажу за три закрытых месяца заметно
+      //     ниже, чем у остальных. Если его контакты раздать сильным, та же воронка даёт
+      //     больше выручки, а зарплата уходит из расходов.
+      //  2. Лишние ставки в ОРК и оформлении. Сделок на человека в день в последнем
+      //     закрытом месяце меньше, чем отдел сам делал в свои лучшие месяцы года. Разница
+      //     переводится в ставки — не больше двух на отдел, чтобы не рвать процессы.
+      // Экономия — средняя начисленная зарплата отдела плюс взносы: точной зарплаты
+      // конкретного человека в интерфейсе нет, фамилии и оклады остаются на сервере.
+      function vscStaffRadarCards(zar, sp) {
+        const out = [];
+        if (!zar || !zar.data || !zar.data.months || !sp || !sp.users) return out;
+        const money = (v) => Math.round(v).toLocaleString("ru-RU") + " ₽";
+        const pct = (v) => (Math.round(v * 10) / 10).toLocaleString("ru-RU") + "%";
+        const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
+        const closed = Object.keys(zar.data.months).map((k) => zar.data.months[k])
+          .filter((m) => m.fotTotal != null && m.depts && !(m.year === nowMsk.getUTCFullYear() && m.mi === nowMsk.getUTCMonth()))
+          .sort((a, b) => (a.year * 12 + a.mi) - (b.year * 12 + b.mi));
+        if (closed.length < 3) return out;
+        const last = closed[closed.length - 1], last3 = closed.slice(-3);
+        const costOf = (m, k) => {
+          const d = m.depts && m.depts[k]; if (!d || !d.avg) return null;
+          const load = (m.contrib && m.accruedTotal) ? m.contrib / m.accruedTotal : 0.3;
+          return d.avg * (1 + load);
+        };
+        const PREP = ["январе", "феврале", "марте", "апреле", "мае", "июне", "июле", "августе", "сентябре", "октябре", "ноябре", "декабре"];
+        const ppl = (n) => (n === 1 ? "одного человека" : "двух человек");
+        const mNames = last3.map((m) => String(m.month).replace(/\s*20\d\d/, "").toLowerCase()).join(", ");
+
+        // 1. Отдел продаж: конверсия по людям за три месяца.
+        const sum3 = (u, key) => last3.reduce((a, m) => a + (((u.months || {})[String(m.mi)] || {})[key] || 0), 0);
+        const ops = sp.users.filter((u) => u.dept === "op" && u.active !== false && u.role !== "head")
+          .map((u) => ({ name: u.name, contacts: sum3(u, "contacts"), sold: sum3(u, "sold"), rev: sum3(u, "soldRev") }))
+          .filter((u) => u.contacts >= 150);
+        const opCost = costOf(last, "op");
+        ops.forEach(function (u) {
+          const others = ops.filter((o) => o !== u);
+          const oc = others.reduce((a, o) => a + o.contacts, 0), os = others.reduce((a, o) => a + o.sold, 0), orv = others.reduce((a, o) => a + o.rev, 0);
+          if (!oc || !os) return;
+          const conv = u.sold / u.contacts, oConv = os / oc, oAtv = orv / os;
+          if (conv >= oConv * 0.6) return;
+          const extraRev = (u.contacts / 3) * (oConv - conv) * oAtv;   // в месяц
+          const gainRev = extraRev * 0.5;                             // половину прироста выручки считаем прибылью
+          const gain = gainRev + (opCost || 0);
+          out.push({ gain, title: "Отдел продаж: " + u.name,
+            now: "конверсия " + pct(conv * 100) + " за " + mNames + " (" + u.contacts.toLocaleString("ru-RU") + " контактов, " + u.sold + " продаж)",
+            target: "у остальных продажников — " + pct(oConv * 100),
+            act: "Расстаться и раздать его контакты сильным менеджерам. Контактов и так не хватает, поэтому каждый контакт должен попадать к тому, кто продаёт лучше.",
+            calc: "Экономия на зарплате ≈ " + (opCost ? money(opCost) : "—") + " в месяц (средняя по отделу со взносами). Плюс выручка: те же " + Math.round(u.contacts / 3).toLocaleString("ru-RU")
+              + " контактов в месяц по конверсии остальных дадут ещё ≈ " + money(extraRev) + ", в прибыль засчитана половина — " + money(gainRev) + "." });
+        });
+
+        // 2. ОРК и оформление: сделок на человека в день против лучших месяцев года.
+        const cr = zar.cityRevenue;
+        const DK = { orkMsk: ["msk", "ОРК МСК", "took"], orkSpb: ["spb", "ОРК СПБ", "took"], oo: ["total", "Отдел оформления", "ooDeals"] };
+        Object.keys(DK).forEach(function (k) {
+          const per = (m) => {
+            const d = m.depts && m.depts[k], c = cr && cr.months && cr.months[String(m.mi)];
+            return (d && d.manDays && c && c.deals && c.deals[DK[k][0]] != null) ? c.deals[DK[k][0]] / d.manDays : null;
+          };
+          const vals = closed.map(per).filter((v) => v != null).sort((a, b) => b - a);
+          const now = per(last), dl = last.depts[k];
+          if (now == null || vals.length < 3 || !dl) return;
+          const target = (vals[0] + vals[1] + vals[2]) / 3;           // среднее трёх лучших месяцев года
+          if (now >= target * 0.85) return;
+          const n = Math.min(2, Math.floor(dl.effStaff * (1 - now / target)));
+          if (n < 1) return;
+          const cost = costOf(last, k); if (!cost) return;
+          // Кандидаты — специалисты с наименьшим числом сделок за три месяца; кто
+          // работает меньше трёх месяцев, в кандидаты не попадает.
+          const cand = sp.users.filter((u) => u.dept === k && u.active !== false && (u.role === "spec" || !u.role)
+              && last3.every((m) => (u.months || {})[String(m.mi)]))
+            .map((u) => ({ name: u.name, v: sum3(u, DK[k][2]) }))
+            .sort((a, b) => a.v - b.v).slice(0, n);
+          out.push({ gain: n * cost, title: DK[k][1] + ": минус " + n + (n === 1 ? " ставка" : " ставки"),
+            now: "сделок на человека в день в " + PREP[last.mi] + " — " + (Math.round(now * 100) / 100).toLocaleString("ru-RU"),
+            target: "три лучших месяца года — " + (Math.round(target * 100) / 100).toLocaleString("ru-RU"),
+            act: "Отдел справляется с объёмом меньшим составом: сократить " + ppl(n) + " и распределить сделки на остальных."
+              + (cand.length ? " Меньше всего сделок за три месяца: " + cand.map((c) => c.name + " (" + c.v + ")").join(", ") + "." : ""),
+            calc: "Экономия ≈ " + money(cost) + " за ставку в месяц (средняя начисленная по отделу со взносами). При нагрузке трёх лучших месяцев года тот же объём сделок закрывают на "
+              + ppl(n) + " меньше. Больше двух ставок за раз не предлагаем." });
+        });
+        return out;
       }
 
       function paintForecast(box, d) {
