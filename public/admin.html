@@ -6845,8 +6845,15 @@
             const head = 'Расхождения при оплате в рублях (всего: ' + (r.total || hist.length) + ')';
             const since = r.bothSince; let sepDone = !since, afterSep = false;
             // Пунктирная граница: выше — записи, где фиксируется и плюс, и минус; ниже — старые, только недобор.
+            // Итог расхождений нового периода (считает сервер по всему логу): общий «±» + разбивка.
+            const tot = (since && since.count != null) ? since : null;
+            const sgn = (v) => { v = Math.round(v); return (v > 0 ? "+" : v < 0 ? "−" : "") + ru0(Math.abs(v)) + " ₽"; };
+            const totHtml = tot ? '<div style="padding:10px 14px;border-bottom:1px solid rgba(0,0,0,.05);display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;font-size:13px;">'
+              + '<span style="color:#6e6e73;">Итог расхождений с ' + escapeHtml(tot.date) + ' · записей: ' + tot.count + '</span>'
+              + '<b style="font-size:17px;letter-spacing:-.02em;color:' + (Math.round(tot.net) < 0 ? '#b0263a' : Math.round(tot.net) > 0 ? '#1f8f4d' : '#1d1d1f') + ';">' + sgn(tot.net) + '</b>'
+              + '<span style="color:#8a8a8e;font-size:12px;">в плюс <span style="color:#1f8f4d;">' + sgn(tot.plus) + '</span> · в минус <span style="color:#b0263a;">' + sgn(-tot.minus) + '</span></span></div>' : '';
             const sepRow = () => '<tr><td colspan="7" style="padding:9px 16px;border-top:1px dashed #c7c7cc;border-bottom:1px dashed #c7c7cc;color:#8a8a8e;font-size:12px;text-align:center;white-space:normal;">↑ С ' + escapeHtml(since.date) + ' фиксируются расхождения и в плюс, и в минус · ниже — только в минус</td></tr>';
-            let html = '<div class="vc-hist"><div class="vc-hist-h">' + head + '</div><div class="vc-hist-scroll"><table><thead><tr><th>Дата</th><th>Время</th><th style="text-align:right;">Клиент должен был, €</th><th style="text-align:right;">Курс €, banki.ru</th><th style="text-align:right;">Должно быть ≥, ₽</th><th style="text-align:right;">Приход, ₽</th><th style="text-align:right;">Расхождение, ₽</th></tr></thead><tbody>';
+            let html = '<div class="vc-hist"><div class="vc-hist-h">' + head + '</div>' + totHtml + '<div class="vc-hist-scroll"><table><thead><tr><th>Дата</th><th>Время</th><th style="text-align:right;">Клиент должен был, €</th><th style="text-align:right;">Курс €, banki.ru</th><th style="text-align:right;">Должно быть ≥, ₽</th><th style="text-align:right;">Приход, ₽</th><th style="text-align:right;">Расхождение, ₽</th></tr></thead><tbody>';
             hist.forEach((e, i) => {
               if (!sepDone && e.ts < since.ts) { html += sepRow(); sepDone = true; afterSep = true; }
               const over = e.diff < 0; // перебор: приход больше, чем нужно по курсу

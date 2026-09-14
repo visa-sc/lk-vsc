@@ -6383,7 +6383,17 @@ app.get("/api/calc-mismatch", (req, res) => {
   const all = readMismatchLog();
   const history = all.slice().sort((a, b) => b.ts - a.ts).slice(0, 1000); // новые сверху, максимум 1000 в выдаче
   const since = mskParts(CALC_MISMATCH_BOTH_SINCE);
-  return res.json({ success: true, history, total: all.length, bothSince: { ts: CALC_MISMATCH_BOTH_SINCE, date: since.date } });
+  // Итог расхождений только за новый период (с CALC_MISMATCH_BOTH_SINCE): старые записи
+  // (до него писался лишь недобор) в сумму не входят. net = перебор − недобор.
+  let plus = 0, minus = 0, count = 0;
+  all.forEach((e) => {
+    if (!(e.ts >= CALC_MISMATCH_BOTH_SINCE) || !isFinite(e.diff)) return;
+    count++;
+    if (e.diff < 0) plus += -e.diff; else minus += e.diff;
+  });
+  const r2 = (x) => Math.round(x * 100) / 100;
+  return res.json({ success: true, history, total: all.length,
+    bothSince: { ts: CALC_MISMATCH_BOTH_SINCE, date: since.date, count, plus: r2(plus), minus: r2(minus), net: r2(plus - minus) } });
 });
 // ── Счётчик использований калькулятора страхования ──
 // Клиент шлёт пинг, когда вкладка «Страхование» открыта и сделано ≥2 кликов в калькуляторе
