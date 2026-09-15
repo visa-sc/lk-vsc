@@ -309,8 +309,8 @@
   + 'backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}'
   + '.vl-toast.on{opacity:1;transform:translateX(-50%) translateY(0);}'
   /* ── «Как работает бонусная программа» ──────────────────────────────────
-     Кнопка — белая «пилюля» с мягким переливом: раз в несколько секунд по ней
-     пробегает блик, как по карте. Окно — в стиле поповера «i» (тёмное стекло),
+     Кнопка — белая «пилюля» с лёгким градиентом, без анимации (блик убран по
+     просьбе Андрея 15.09). Окно — в стиле поповера «i» (тёмное стекло),
      живёт порталом в body: у .vl-root есть анимация с transform, внутри неё
      position:fixed привязался бы к блоку, а не к экрану. */
   + '.vl-howb{position:relative;overflow:hidden;width:100%;display:flex;align-items:center;justify-content:center;gap:10px;'
@@ -321,10 +321,6 @@
   + 'transition:transform .16s ease,box-shadow .2s ease,border-color .2s ease;}'
   + '.vl-howb:hover{border-color:rgba(53,137,189,.3);box-shadow:0 1px 2px rgba(16,24,40,.05),0 14px 30px -14px rgba(53,137,189,.55),inset 0 1px 0 #fff;}'
   + '.vl-howb:active{transform:scale(.985);}'
-  + '.vl-howb::after{content:"";position:absolute;top:0;bottom:0;left:-60%;width:45%;pointer-events:none;'
-  + 'background:linear-gradient(100deg,rgba(255,255,255,0) 0%,rgba(190,225,247,.55) 45%,rgba(255,255,255,.9) 50%,rgba(190,225,247,.55) 55%,rgba(255,255,255,0) 100%);'
-  + 'transform:skewX(-18deg);animation:vlhowshine 5.5s 1.2s cubic-bezier(.4,0,.2,1) infinite;}'
-  + '@keyframes vlhowshine{0%{left:-60%}28%{left:125%}100%{left:125%}}'
   + '.vl-howb-q{position:relative;flex:0 0 auto;width:24px;height:24px;border-radius:50%;display:inline-flex;'
   + 'align-items:center;justify-content:center;color:#fff;font-size:13.5px;font-weight:700;line-height:1;'
   + 'background:linear-gradient(145deg,#5cb0e0,#2b6d97);box-shadow:0 3px 8px -2px rgba(43,109,151,.55);}'
@@ -380,7 +376,7 @@
   + '.vl-sheet .vl-how-tr.now,.vl-sheet .vl-how-tr.now b{color:#8fd0f5;}'
   + '@media(max-width:420px){.vl-sheet-hd{padding:20px 66px 14px 18px}.vl-sheet-bd{padding:2px 18px 22px}'
   + '.vl-sheet-ttl{font-size:17px}.vl-x{top:14px;right:14px}}'
-  + '@media(prefers-reduced-motion:reduce){.vl-root>*,.vl-sheen,.vl-pop.show,.vl-howb::after{animation:none!important}'
+  + '@media(prefers-reduced-motion:reduce){.vl-root>*,.vl-sheen,.vl-pop.show{animation:none!important}'
   + '.vl-card{transition:none!important}.vl-modal,.vl-sheet,.vl-x{transition:none!important}}';
 
   function injectCss() {
