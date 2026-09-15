@@ -2727,6 +2727,53 @@
             return { x: (d.date || "").slice(0, 5), k: d, wd: dt ? WDV[dow] : "", weekend: dow === 0 || dow === 6 };
           });
       }
+      // ── Дневные графики коэффициентов — скользящая неделя (просьба Андрея 15.09.2026) ──
+      // ДРР, CPL, CV, ATV и конверсия трафика — это отношения. В день с почти нулевой
+      // выручкой (13.09 в таблице стоит 1 ₽ при рекламе 43 тыс.) ДРР дня улетал в
+      // миллионы процентов, шкала графика растягивалась, и остальные 89 дней сливались
+      // в прямую линию. Поэтому точка дня = отношение СУММ за семь календарных дней по
+      // этот день включительно — ровно как считает недельная строка таблицы, а не
+      // среднее процентов. Делители восстанавливаем из баз дня так же, как склейка
+      // недель: сделки = выручка ÷ ATV, контакты = сделки ÷ CV, лиды = реклама ÷ CPL,
+      // трафик = лиды ÷ конверсия. Окно берёт и дни до начала 90-дневного ряда, чтобы
+      // первые точки не были рваными. Плитки периода не трогаем, фактическое значение
+      // дня видно в подсказке графика.
+      const VSC_ROLL_KEYS = ["atv", "cv", "cpl", "drr", "trafConv"];
+      function vscRollDays(series) {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const all = (vscData.months || []).reduce((a, mm) => a.concat(mm.days || []), [])
+          .map((d) => ({ d: d, dt: vscParseDMY(d.date) }))
+          .filter((x) => x.dt && x.dt < today && vscDayFilled(x.d))
+          .map((x) => {
+            const k = x.d, B = k.budget || 0, A = k.ad || 0;
+            const T = k.atv ? B / k.atv : 0;
+            const C = k.cv ? T / (k.cv / 100) : 0;
+            const L = k.cpl ? A / k.cpl : 0;
+            const Tr = k.trafConv ? L / (k.trafConv / 100) : 0;
+            return { t: x.dt.getTime(), B: B, A: A, T: T, C: C, L: L, Tr: Tr, msk: k.trafConvMsk, spb: k.trafConvSpb };
+          });
+        return series.map((s) => {
+          const dt = vscParseDMY(s.k && s.k.date);
+          if (!dt) return s;
+          const to = dt.getTime(), from = to - 6 * 86400000;
+          let B = 0, A = 0, T = 0, C = 0, L = 0, Tr = 0, mN = 0, mD = 0, sN = 0, sD = 0;
+          all.forEach((b) => {
+            if (b.t < from || b.t > to) return;
+            B += b.B; A += b.A; T += b.T; C += b.C; L += b.L; Tr += b.Tr;
+            if (b.msk != null && b.Tr) { mN += b.msk * b.Tr; mD += b.Tr; }
+            if (b.spb != null && b.Tr) { sN += b.spb * b.Tr; sD += b.Tr; }
+          });
+          const k = Object.assign({}, s.k, { _day: s.k });
+          k.drr = B ? A / B * 100 : null;
+          k.atv = T ? B / T : null;
+          k.cv = C ? T / C * 100 : null;
+          k.cpl = L ? A / L : null;
+          k.trafConv = Tr ? L / Tr * 100 : null;
+          k.trafConvMsk = mD ? mN / mD : null;
+          k.trafConvSpb = sD ? sN / sD : null;
+          return Object.assign({}, s, { k: k });
+        });
+      }
       function vscNearestPrev(series, key, fromIdx) {
         for (let i = fromIdx - 1; i >= 0; i--) { const v = series[i].k ? series[i].k[key] : null; if (v != null && !isNaN(v)) return v; }
         return null;
@@ -3002,7 +3049,11 @@
           const body = kpi.lines
             ? lineDefs.map((ld) => '<span style="color:' + ld.color + ';">●</span> ' + escapeHtml(ld.label || "") + ': <b>' + vscFmt(valOf(p.s, ld.key), fmtOf(ld)) + '</b>' + (ld.key === kpi.key ? dHtml : "")).join("<br>")
             : '<b>' + vscFmt(p.v, kpi.fmt) + '</b>' + dHtml;
-          tip.innerHTML = '<span style="color:#aab3c5;">' + escapeHtml(label) + '</span><br>' + body;
+          // Сглаженная точка (скользящая неделя) — ниже честное значение самого дня.
+          const dayK = p.s.k && p.s.k._day;
+          const dayV = (dayK && !kpi.lines && dayK[kpi.key] != null && !isNaN(dayK[kpi.key])) ? +dayK[kpi.key] : null;
+          const dayHtml = dayK ? '<br><span style="color:#aab3c5;">за день: ' + (dayV != null ? vscFmt(dayV, kpi.fmt) : "—") + '</span>' : "";
+          tip.innerHTML = '<span style="color:#aab3c5;">' + escapeHtml(label) + (dayK ? " · 7 дней" : "") + '</span><br>' + body + (kpi.lines ? "" : dayHtml);
           tip.style.display = "block";
           const tw = tip.offsetWidth;
           tip.style.left = Math.max(2, Math.min(r.width - tw - 2, px - tw / 2)) + "px";
@@ -3817,14 +3868,23 @@
         // наведению/пальцу); «Месяц»/«Год» — столбцы, как раньше. Данные series те же.
         // yearOnly-показатели (ДРР с доп. расходами) — только плитка: помесячный график
         // для них уже есть в «Ежемесячном контроле», в series этих значений нет.
-        else kpisForView.filter((k) => !k.yearOnly).forEach((kpi) => vscContent.appendChild((vscGran === "week" || vscGran === "day") ? vscLineChart(kpi, series) : vscBarChart(kpi, series)));
+        else {
+          const rolled = (vscGran === "day") ? vscRollDays(series) : null;
+          const rollKpi = (kpi) => Object.assign({}, kpi, { labelHtml: escapeHtml(kpi.label) + ' <span style="font-weight:400;color:#9aa0ab;font-size:.86em;">за 7 дней</span>' });
+          kpisForView.filter((k) => !k.yearOnly).forEach((kpi) => {
+            if (vscGran !== "week" && vscGran !== "day") { vscContent.appendChild(vscBarChart(kpi, series)); return; }
+            const roll = rolled && VSC_ROLL_KEYS.indexOf(kpi.key) >= 0;
+            vscContent.appendChild(roll ? vscLineChart(rollKpi(kpi), rolled) : vscLineChart(kpi, series));
+          });
+        }
         // График «Конверсия из трафика в лид» — во ВСЕХ разрезах (год/месяц/неделя/день).
         // series уже несёт trafConv (+ trafConvMsk/Spb) в k: день — строка дня; неделя —
         // Total/склейка огрызков; месяц/год — Grand total месяца. День/неделя — 3 кривые
         // (общая+МСК+СПБ, kpi.lines, отключаемые в легенде); месяц/год — столбики в
         // формате эквайринга: высота = общая, сегменты МСК/СПБ с цифрами внутри.
-        if (series.length) vscContent.appendChild((vscGran === "week" || vscGran === "day")
-          ? vscLineChart(VSC_TRAFCONV, series)
+        if (series.length) vscContent.appendChild(vscGran === "day"
+          ? vscLineChart(Object.assign({}, VSC_TRAFCONV, { labelHtml: escapeHtml(VSC_TRAFCONV.label) + ' <span style="font-weight:400;color:#9aa0ab;font-size:.86em;">за 7 дней</span>' }), vscRollDays(series))
+          : vscGran === "week" ? vscLineChart(VSC_TRAFCONV, series)
           : vscTrafConvBars(VSC_TRAFCONV, series));
         // Прибыль и рентабельность по месяцам — графики в «Год» и «Месяц».
         // Скрываем для руководителя с ограничением hideProfit (напр. Андрей Петров).
