@@ -13,8 +13,8 @@ import io, os, re
 from build_eta import meta_pixel
 
 BASE = "/Users/andrey/Documents/Бизнес/VOYO/lk-vsc-macbook/vscom/spain"
-META_PIXEL = ""          # ID пикселя VSC из Events Manager
-META_VERIFY = ""         # метатег подтверждения домена visa-sc.com
+META_PIXEL = "1431030702505962"          # ID пикселя VSC из Events Manager
+META_VERIFY = "f2ko3or5swjxp3imio4ohdfqrjap3e"         # метатег подтверждения домена visa-sc.com
 
 src = io.open(os.path.join(BASE, "ga.html"), encoding="utf-8").read()
 html = src

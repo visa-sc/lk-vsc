@@ -427,6 +427,32 @@ p{margin:0 0 14px}
   .hero__cta .btn,.hero__cta .msgr{width:100%;justify-content:center}
 }
 </style>
+<meta name="facebook-domain-verification" content="f2ko3or5swjxp3imio4ohdfqrjap3e">
+<!-- Meta Pixel -->
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '1431030702505962');
+fbq('track', 'PageView');
+(function () {
+  var g = window.gtag;
+  if (typeof g !== "function") return;
+  window.gtag = function (kind, name, p) {
+    try {
+      if (kind === "event") {
+        if (name === "generate_lead") fbq("track", "Lead", p && p.value ? { value: p.value, currency: p.currency || "BRL" } : {});
+        else if (name === "phone_click" || name === "messenger_click") fbq("track", "Contact");
+        else if (name === "form_start") fbq("trackCustom", "FormStart");
+      }
+    } catch (e) {}
+    return g.apply(this, arguments);
+  };
+})();
+</script>
+<noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1431030702505962&ev=PageView&noscript=1"></noscript>
 </head>
 <body>
 

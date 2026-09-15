@@ -612,8 +612,8 @@ for tag, cfg in (("br", BR), ("es", ES), ("it", IT), ("us", US)):
 # только контактами (один настоящий британский номер, без офисов), пикселем
 # Meta и адресом. Форма та же, поэтому письмо-заявка приходит как обычно, а
 # отличить Meta можно по строкам Page и UTM (fbclid).
-META_PIXEL_ETA = ""      # ID пикселя «VSC ETA» из Events Manager
-META_VERIFY_VSCOM = ""   # метатег подтверждения домена visa-sc.com
+META_PIXEL_ETA = "1431030702505962"      # ID пикселя «VSC ETA» из Events Manager
+META_VERIFY_VSCOM = "f2ko3or5swjxp3imio4ohdfqrjap3e"   # метатег подтверждения домена visa-sc.com
 
 META = {
  "br": dict(file="br/reino-unido.html", path="/br/reino-unido", url="https://visa-sc.com/br/reino-unido",
