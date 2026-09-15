@@ -386,7 +386,9 @@
     var rem = Math.max(0, total-used);
     if(total>0){
       el("balV").innerHTML = esc(gb(rem))+'<small>ГБ</small>';
-      el("balOf").textContent = "из "+gb(total)+" ГБ · потрачено "+gb(used)+" ГБ";
+      el("balOf").textContent = u.daily
+        ? "на сегодня из "+gb(total)+" ГБ в день · потрачено "+gb(used)+" ГБ"
+        : "из "+gb(total)+" ГБ · потрачено "+gb(used)+" ГБ";
       el("bar").style.width = Math.max(3, Math.round(rem/total*100))+"%";
     } else {
       el("balV").innerHTML = esc(o.title||"eSIM");

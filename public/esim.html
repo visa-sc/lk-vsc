@@ -607,8 +607,26 @@
 
   function packsFor(iso){
     // Порядок задаёт сортировка, выбранная клиентом (sortList) — здесь только отбор
-    if(iso === "EU-REGION") return CATALOG.filter(isEuroRegional);
-    return (byCountry[iso]||[]).slice();
+    if(iso === "EU-REGION") return dropDominated(CATALOG.filter(isEuroRegional), true);
+    return dropDominated((byCountry[iso]||[]).slice(), false);
+  }
+  // Пакеты второго поставщика (id «ts_») идут по многу вариантов: одно и то же
+  // есть на страну и в региональных наборах. Прячем такой пакет, если рядом есть
+  // не хуже: дешевле или так же, не меньше ГБ и дней, и с покрытием не хуже для
+  // этой страницы (на стране — сам по стране, на Европе — больше стран).
+  // Та же функция стоит в tgbot.js.
+  function dropDominated(list, wide){
+    return list.filter(function(p){
+      if(String(p.id).indexOf("ts_") !== 0) return true;
+      return !list.some(function(q){
+        if(q === p || !!q.daily !== !!p.daily || q.unlimited !== p.unlimited) return false;
+        var nq = q.countries.length, np = p.countries.length;
+        var cov = wide ? nq >= np : nq <= np;
+        if(!cov || q.priceRub > p.priceRub || (q.dataGb||0) < (p.dataGb||0) || (q.days||0) < (p.days||0)) return false;
+        var same = q.priceRub === p.priceRub && q.dataGb === p.dataGb && q.days === p.days && nq === np;
+        return !same || String(q.id) < String(p.id);
+      });
+    });
   }
 
   /* ── сортировка списка: выбор клиента, запоминаем в браузере ── */
@@ -629,10 +647,13 @@
   // иначе годовые «100 ГБ» всегда оказывались бы «самыми выгодными».
   function useGb(p){
     var cap = wantGb > 0 ? wantGb * 1.5 : 20;
-    var g = p.unlimited ? cap : (p.dataGb || 0);
+    var g = p.unlimited ? cap : totGb(p);
     return Math.max(0.5, Math.min(g, cap));
   }
-  function rawGb(p){ return p.unlimited ? 1e6 : (p.dataGb || 0); }
+  // Суточный пакет («0,5 ГБ в день») в сравнениях считаем за весь срок
+  function totGb(p){ return (p.dataGb || 0) * (p.daily ? (p.days || 1) : 1); }
+  function GBN(n){ return (Math.round((Number(n)||0)*10)/10).toLocaleString("ru-RU"); }
+  function rawGb(p){ return p.unlimited ? 1e6 : totGb(p); }
   function sortList(list){
     var l = list.slice();
     if(sortBy === "price") l.sort(function(a,b){ return (a.priceRub-b.priceRub) || (rawGb(b)-rawGb(a)); });
@@ -678,12 +699,12 @@
     var head, sub;
     if(current === "EU-REGION" || (multi && !current)){ head = "Европа и рядом"; sub = nStran(p.countries.length); }
     else { head = cname(current||p.countries[0]); sub = multi ? ("+ ещё "+nStran(p.countries.length-1)) : (p.operator||""); }
-    var gb = p.unlimited ? '∞' : (p.dataGb!=null ? RU(p.dataGb) : "—");
+    var gb = p.unlimited ? '∞' : (p.dataGb!=null ? GBN(p.dataGb) : "—");
     var card = el('<div class="pk">'+
       '<div class="top"><span class="fl">'+flag(multi&&current!=="EU-REGION"?(current||p.countries[0]):(multi?"EU-REGION":p.countries[0]))+'</span>'+
       '<span class="cn">'+esc(head)+'<small>'+esc(sub)+'</small></span>'+
       (p.fiveG?'<span class="badge5g">5G</span>':"")+'</div>'+
-      '<div class="mid"><span class="gb">'+gb+'<small>'+(p.unlimited?"безлимит":"ГБ")+'</small></span>'+
+      '<div class="mid"><span class="gb">'+gb+'<small>'+(p.unlimited?"безлимит":(p.daily?"ГБ в день":"ГБ"))+'</small></span>'+
       '<span class="days">· '+RU(p.days)+' дн.</span></div>'+
       (p.ruPick?'<div class="rupick">Рекомендуем для Битрикс, amoCRM и др. российских сервисов в Китае</div>':"")+
       '<div class="bot"><span class="pr">'+RU(p.priceRub)+' ₽</span><span class="go">Выбрать ›</span></div>'+
@@ -698,7 +719,7 @@
   var DAY_OPTS = [0,3,5,7,10,14,21,30,60,90];
   var GB_OPTS = [0,1,3,5,10,20,30,50,100,-1];
   function fitDays(p,v){ return !v || (p.days||0) >= v; }
-  function fitGb(p,v){ if(!v) return true; if(v===-1) return !!p.unlimited; return p.unlimited || (p.dataGb||0) >= v; }
+  function fitGb(p,v){ if(!v) return true; if(v===-1) return !!p.unlimited; return p.unlimited || totGb(p) >= v; }
   function matches(p){ return fitDays(p,wantDays) && fitGb(p,wantGb); }
   function renderCfg(list){
     var cfg=document.getElementById("cfg");
@@ -846,7 +867,7 @@
     var multi = p.countries.length>1;
     if(!multi) document.getElementById("mFlag").textContent = flag(p.countries[0]);
     else document.getElementById("mFlag").textContent = current && current!=="EU-REGION" ? flag(current) : "🌍";
-    var gb = p.unlimited ? "Безлимит" : (RU(p.dataGb)+" ГБ");
+    var gb = p.unlimited ? "Безлимит" : (GBN(p.dataGb)+(p.daily?" ГБ в день":" ГБ"));
     var where = current && current!=="EU-REGION" ? cname(current) : (multi ? nStran(p.countries.length) : cname(p.countries[0]));
     document.getElementById("mTitle").textContent = where + " · " + gb;
     document.getElementById("mSub").textContent = (p.title || "") + (p.operator ? " · сеть "+p.operator : "");
@@ -1046,7 +1067,7 @@
     try{
       var r = await fetch("/esim/api/order",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({productId:mP.id, phone:phone, priceRub:mP.priceRub, ads:ADS,
-          label:(mP.countries.length>1?nStran(mP.countries.length):cname(mP.countries[0]))+" · "+(mP.unlimited?"безлимит":mP.dataGb+" ГБ")+" · "+mP.days+" дн."})});
+          label:(mP.countries.length>1?nStran(mP.countries.length):cname(mP.countries[0]))+" · "+(mP.unlimited?"безлимит":GBN(mP.dataGb)+(mP.daily?" ГБ в день":" ГБ"))+" · "+mP.days+" дн."})});
       var j = await r.json();
       if(j && j.success){
         var ok=document.getElementById("mOk");

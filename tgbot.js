@@ -190,9 +190,26 @@ async function catalog() {
 async function packsFor(iso) {
   const c = await catalog();
   const list = iso === "EU-REGION" ? c.products.filter(isEuroRegional) : (c.byCountry[iso] || []).slice();
-  return list.sort((a, b) => a.priceRub - b.priceRub);
+  return dropDominated(list, iso === "EU-REGION").sort((a, b) => a.priceRub - b.priceRub);
 }
-const gbOf = (p) => (p.unlimited ? "безлимит" : RU(p.dataGb) + " ГБ");
+// Пакеты TSim (id «ts_») прячем, если рядом есть не хуже: цена, ГБ, дни и
+// покрытие для этой страницы. Та же функция стоит на витрине (public/esim.html).
+function dropDominated(list, wide) {
+  return list.filter((p) => {
+    if (String(p.id).indexOf("ts_") !== 0) return true;
+    return !list.some((q) => {
+      if (q === p || !!q.daily !== !!p.daily || q.unlimited !== p.unlimited) return false;
+      const nq = q.countries.length, np = p.countries.length;
+      const cov = wide ? nq >= np : nq <= np;
+      if (!cov || q.priceRub > p.priceRub || (q.dataGb || 0) < (p.dataGb || 0) || (q.days || 0) < (p.days || 0)) return false;
+      const same = q.priceRub === p.priceRub && q.dataGb === p.dataGb && q.days === p.days && nq === np;
+      return !same || String(q.id) < String(p.id);
+    });
+  });
+}
+const GBN = (n) => (Math.round((Number(n) || 0) * 10) / 10).toLocaleString("ru-RU");
+// суточные пакеты TSim: «0,5 ГБ в день»
+const gbOf = (p) => (p.unlimited ? "безлимит" : GBN(p.dataGb) + (p.daily ? " ГБ в день" : " ГБ"));
 // В списке сразу видно, сколько стран покрывает пакет: иначе «2 ГБ за 590 ₽»
 // на Испанию и на всю Европу выглядят одинаково.
 // «1 ГБ · 14 дн. · 690 ₽ · +80 стран» — выбранную страну не считаем, показываем

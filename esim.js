@@ -119,10 +119,10 @@ function toCostRub(costUsd, usdRate) {
   return Math.ceil(Number(costUsd) * usdRate * (1 + FX_SPREAD) * (1 + ACQ_FEE));
 }
 
-function toRetailRub(costUsd, usdRate) {
+function toRetailRub(costUsd, usdRate, minRub) {
   const raw = costUsd * usdRate * markupFor(costUsd);
   const rounded = Math.ceil((raw + 10) / 100) * 100 - 10; // 1462→1490, 930→990
-  return Math.max(MIN_RUB, rounded);
+  return Math.max(minRub == null ? MIN_RUB : minRub, rounded);
 }
 
 // ── Рекомендации для eSIM на Китай (14.09.2026) ──
@@ -262,7 +262,194 @@ const mobimatter = {
     return r.data && (r.data.result || r.data);
   },
 };
-const provider = mobimatter; // единственная точка смены поставщика
+const provider = mobimatter; // основной поставщик: каталог, топапы, служебные ручки
+
+// ═══════════════ ПОСТАВЩИК №2: TSim Tech напрямую (15.09.2026) ═══════════════
+// Пакеты TSim лежат в той же витрине, клиент поставщика не видит. Незаметная
+// метка: id пакета начинается с «ts_», номер заказа с «TS-», в заказе src:"tsim".
+// Выключить все пакеты TSim разом: ESIM_TSIM=0 в .env и pm2 restart voyo.
+// Такие же пакеты MobiMatter, спрятанные как дубли, вернутся на витрину сами.
+// API сверен 15.09.2026: подпись HMAC-SHA256(account+nonce+timestamp), тело JSON,
+// ответ {code:1,msg,result}; запросы пускают только с IP боевого сервера.
+const TSIM_BASE = "https://api.tsimtech.com";
+const TSIM_CATALOG_FILE = path.join(DIR, "catalog-tsim.json");
+const TSIM_WATCH_FILE = path.join(DIR, "tsimwatch.json");
+// Баланса в API нет, поэтому считаем сами: сколько всего внесено (тест $100,
+// дальше депозиты) минус закупка по выданным заказам. Когда остаётся меньше
+// резерва, пакеты TSim прячутся с витрины, а на почту уходит письмо.
+const TSIM_CREDIT_USD = Number(process.env.ESIM_TSIM_CREDIT_USD || 100);
+const TSIM_RESERVE_USD = Number(process.env.ESIM_TSIM_RESERVE_USD || 10);
+// Нижняя цена для TSim своя: у них есть суточные пакеты и 1 ГБ за $0,5–1,
+// и общий пол 590 ₽ съел бы весь смысл дешёвого входа. Наценка та же.
+const TSIM_MIN_RUB = Number(process.env.ESIM_TSIM_MIN_RUB || 190);
+function isTsimId(id) { return /^(ts_|TS-)/.test(String(id || "")); }
+function tsimOn() {
+  return Boolean(process.env.TSIM_ACCOUNT && process.env.TSIM_SECRET) && String(process.env.ESIM_TSIM || "1") !== "0";
+}
+function tsimHeaders(json) {
+  const nonce = crypto.randomBytes(8).toString("hex");
+  const ts = String(Math.floor(Date.now() / 1000));
+  const sign = crypto.createHmac("sha256", String(process.env.TSIM_SECRET || ""))
+    .update(String(process.env.TSIM_ACCOUNT || "") + nonce + ts).digest("hex");
+  const h = { "TSIM-ACCOUNT": process.env.TSIM_ACCOUNT, "TSIM-NONCE": nonce, "TSIM-TIMESTAMP": ts, "TSIM-SIGN": sign };
+  if (json) h["Content-Type"] = "application/json";
+  return h;
+}
+async function tsimCall(method, p, body) {
+  const r = await axios({ method, url: TSIM_BASE + p, data: body ? JSON.stringify(body) : undefined,
+    headers: tsimHeaders(!!body), timeout: 60000 });
+  const d = r.data || {};
+  if (Number(d.code) !== 1) {
+    const e = new Error("TSim " + p.split("?")[0] + ": " + (d.msg || "ошибка"));
+    e.tsimCode = d.code;
+    throw e;
+  }
+  return d.result;
+}
+// Время у TSim — пекинское (UTC+8) строкой «2025-10-27 12:17:06»
+function tsimTime(s) {
+  const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})$/.exec(String(s || "").trim());
+  return m ? new Date(m[1] + "T" + m[2] + "+08:00").toISOString() : null;
+}
+function lpaParts(lpa) {
+  const m = /^LPA:1\$([^$]+)\$(.+)$/.exec(String(lpa || ""));
+  return m ? { smdp: m[1], code: m[2] } : { smdp: null, code: null };
+}
+// QR рисуем сами из LPA-строки; если библиотека не загрузилась, берём картинку TSim
+async function qrFromLpa(lpa, remoteUrl) {
+  try { return await require("qrcode").toDataURL(lpa, { margin: 1, width: 480 }); } catch (_) {}
+  if (!remoteUrl) return null;
+  try {
+    const r = await axios.get(remoteUrl, { responseType: "arraybuffer", timeout: 20000 });
+    const ct = String(r.headers["content-type"] || "image/png").split(";")[0];
+    return /^image\//.test(ct) ? "data:" + ct + ";base64," + Buffer.from(r.data).toString("base64") : null;
+  } catch (_) { return null; }
+}
+// У TSim на каждую страну по 70–80 вариантов: 8 сроков на каждый объём и 11
+// сроков у суточных. Чтобы витрина не превратилась в кашу, берём привычные
+// сроки. Списки меняются в .env без выкатки кода.
+const TSIM_DAYS = String(process.env.ESIM_TSIM_DAYS || "7,15,30").split(",").map(Number);
+const TSIM_DAILY_DAYS = String(process.env.ESIM_TSIM_DAILY_DAYS || "1,3,5,7,10,15").split(",").map(Number);
+const TSIM_DAILY_MAX_MB = Number(process.env.ESIM_TSIM_DAILY_MAX_MB || 1024);
+function tsimItem(p) {
+  if (p.status != null && String(p.status) !== "1") return null;
+  const isDaily = p.is_daily === true || String(p.is_daily) === "1";
+  if (isDaily ? (TSIM_DAILY_DAYS.indexOf(Number(p.day)) < 0 || Number(p.data_allowance) > TSIM_DAILY_MAX_MB)
+              : TSIM_DAYS.indexOf(Number(p.day)) < 0) return null;
+  if (String(p.currency || "USD").toUpperCase() !== "USD") return null;
+  // пакеты с датой активации «на заказ» требуют дату при покупке — не наш случай
+  if (Number(p.scheduled_activation) === 1) return null;
+  const cost = Number(p.price);
+  const mb = Number(p.data_allowance);
+  const countries = (p.coverages || []).map((c) => String(c.country_code || "").toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c));
+  if (!cost || !mb || mb <= 0 || !countries.length || !p.channel_dataplan_id) return null;
+  const name = String(p.channel_dataplan_name || "");
+  return {
+    id: "ts_" + p.channel_dataplan_id, src: "tsim", familyId: "",
+    title: name, operator: "TSimTech", countries,
+    dataGb: Math.round((mb / 1024) * 10) / 10, unlimited: false,
+    daily: p.is_daily === true || String(p.is_daily) === "1",
+    days: Number(p.day) || null, costUsd: cost, retailUsd: null,
+    fiveG: /5g/i.test(name + " " + (p.spec_name || "")), hotspot: true,
+    topup: Number(p.topup_support) === 1,
+    ipBreakout: /\(T\+C\)/i.test(name) ? "T+C" : "",
+    dataMb: mb,
+  };
+}
+function tsimSpentUsd() {
+  return readJson(ORDERS_FILE, []).filter((o) => o.src === "tsim" && o.status === "done")
+    .reduce((s, o) => s + (Number(o.costUsd) || 0), 0);
+}
+function tsimLeftUsd() { return Math.round((TSIM_CREDIT_USD - tsimSpentUsd()) * 100) / 100; }
+function loadTsimCatalog() { return readJson(TSIM_CATALOG_FILE, null); }
+
+const tsim = {
+  name: "tsim",
+  ready: tsimOn,
+  async fetchProducts() {
+    const products = [];
+    for (let page = 1; page <= 200; page++) {
+      const res = await tsimCall("get", "/tsim/v2/dataplanList?pageNo=" + page + "&pageSize=100&all_column=1");
+      const data = (res && res.data) || [];
+      data.forEach((p) => { const it = tsimItem(p); if (it) products.push(it); });
+      if (!data.length || page >= Number((res && res.last_page) || 0)) break;
+    }
+    return { products, addons: [] };
+  },
+  // Заказ: esimSubscribe → topup_id, профиль готовится асинхронно, поэтому
+  // опрашиваем topupDetail, пока не придёт LPA-строка.
+  async createOrder(productId) {
+    const planId = String(productId).replace(/^ts_/, "");
+    const plan = ((loadTsimCatalog() || {}).products || []).find((x) => x.id === productId) || {};
+    let topupId;
+    try {
+      const r = await tsimCall("post", "/tsim/v1/esimSubscribe", {
+        number: 1, channel_dataplan_id: planId, custom_order_no: "VOYO" + Date.now() + crypto.randomBytes(2).toString("hex"),
+      });
+      topupId = r && r.topup_id;
+    } catch (e) { e.noOrder = true; throw e; }
+    if (!topupId) { const e = new Error("TSim: заказ не создан"); e.noOrder = true; throw e; }
+    let det = null;
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 3000));
+      try { det = await tsimCall("post", "/tsim/v1/topupDetail", { topup_id: topupId }); } catch (e) { if (Number(e.tsimCode) !== 1006) throw e; }
+      if (det && (det.lpa_str || [])[0]) break;
+    }
+    if (!det || !(det.lpa_str || [])[0]) throw new Error("TSim: заказ TS-" + topupId + " создан, но QR не пришёл за 90 секунд");
+    const view = await this._view(det);
+    return Object.assign(view, { orderId: "TS-" + topupId, state: "Completed", costUsd: Number(plan.costUsd) || null });
+  },
+  async createTopup() { throw new Error("TSim: продление через API пока не подключено"); },
+  async _view(det) {
+    const lpa = (det.lpa_str || [])[0] || null;
+    const parts = lpaParts(lpa);
+    return {
+      title: det.channel_dataplan_name || "", operator: "TSimTech",
+      iccid: (det.operator_iccids || [])[0] || (det.device_ids || [])[0] || null,
+      deviceId: (det.device_ids || [])[0] || null,
+      lpa, activationCode: parts.code, smdp: parts.smdp, apn: det.apn || null,
+      qrDataUrl: lpa ? await qrFromLpa(lpa, (det.qrcode || [])[0]) : null,
+      planId: det.channel_dataplan_id || "",
+    };
+  },
+  async getOrderView(orderId) {
+    const det = await tsimCall("post", "/tsim/v1/topupDetail", { topup_id: String(orderId).replace(/^TS-/, "") });
+    return this._view(det || {});
+  },
+  // Остаток: deviceDetail по ICCID. У суточных пакетов показываем сегодняшний день.
+  async getUsage(orderId) {
+    const topupId = String(orderId).replace(/^TS-/, "");
+    const det = await tsimCall("post", "/tsim/v1/topupDetail", { topup_id: topupId });
+    const deviceId = (det && (det.device_ids || [])[0]) || null;
+    const plan = ((loadTsimCatalog() || {}).products || []).find((x) => x.id === "ts_" + (det && det.channel_dataplan_id)) || {};
+    const totalMb = Number(plan.dataMb) || 0;
+    let d = null;
+    if (deviceId) { try { d = await tsimCall("post", "/tsim/v1/deviceDetail", { device_id: deviceId, topup_id: topupId }); } catch (_) {} }
+    const events = (d && d.esim_event) || [];
+    const daily = d ? (d.is_daily === true || String(d.is_daily) === "1") : !!plan.daily;
+    let usedMb = d ? Number(d.data_usage) || 0 : 0;
+    if (daily && d) {
+      const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+      const day = (d.data_usage_daily || []).find((x) => x.date === today);
+      usedMb = day ? Number(day.total_usage) || 0 : 0;
+    }
+    return {
+      installed: events.some((e) => /INSTALL|ENABLE|DOWNLOAD/i.test(e.notify_type || "")),
+      status: (d && d.status) || null, iccid: (det && ((det.operator_iccids || [])[0] || deviceId)) || null,
+      suspended: !!(d && d.terminate_time), daily,
+      packages: totalMb ? [{
+        name: (det && det.channel_dataplan_name) || "", totalMb, usedMb,
+        remainingMb: Math.max(0, totalMb - usedMb),
+        // до активации expire_time — крайний срок установки, а не конец пакета
+        activatedAt: d ? tsimTime(d.active_time) : null,
+        expiresAt: d && tsimTime(d.active_time) ? tsimTime(d.expire_time) : null,
+      }] : [],
+    };
+  },
+  getBalance() { return { spentUsd: Math.round(tsimSpentUsd() * 100) / 100, leftUsd: tsimLeftUsd(), creditUsd: TSIM_CREDIT_USD }; },
+};
+// По номеру заказа или id пакета понимаем, у кого он куплен
+function providerFor(id) { return isTsimId(id) ? tsim : provider; }
 
 // ═══════════════ ДЕМО-КАТАЛОГ (закупки с partner.mobimatter.com, 02.09.2026) ═══════════════
 const EU33 = ["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IS","IE","IT","LV","LI","LT","LU","MT","NL","NO","PL","PT","RO","SK","SI","ES","SE","CH","GB","UA"];
@@ -290,7 +477,38 @@ const DEMO_PRODUCTS = [
 // ═══════════════ каталог с кэшем ═══════════════
 let _catalog = null; // { ts, source, products, addons }
 function loadCatalogFile() { if (!_catalog) _catalog = readJson(CATALOG_FILE, null); return _catalog; }
+// Общий каталог витрины: MobiMatter + пакеты TSim (если включены и хватает кредита)
 async function getCatalog(force) {
+  const mm = await getMmCatalog(force);
+  const ts = await getTsimProducts(force);
+  return ts.length ? Object.assign({}, mm, { products: mm.products.concat(ts) }) : mm;
+}
+let _tsimFetching = null;
+async function getTsimProducts(force) {
+  if (!tsim.ready()) return [];
+  const cached = loadTsimCatalog();
+  // пустой список (пакеты ещё не открыли) перепроверяем чаще
+  const ttl = cached && cached.products && cached.products.length ? CATALOG_TTL_MS : 20 * 60 * 1000;
+  let cat = cached;
+  if (force || !cached || Date.now() - cached.ts > ttl) {
+    if (!_tsimFetching) {
+      _tsimFetching = tsim.fetchProducts()
+        .then(({ products }) => { const c = { ts: Date.now(), products }; writeJson(TSIM_CATALOG_FILE, c); return c; })
+        .catch((e) => { console.error("esim tsim catalog:", e.message); return cached; })
+        .finally(() => { _tsimFetching = null; });
+    }
+    // без кэша ждём ответа; с кэшем отдаём старое, свежее подтянется фоном
+    if (!cached || force) cat = await _tsimFetching;
+  }
+  if (!cat || !cat.products || !cat.products.length) return [];
+  if (tsimLeftUsd() < TSIM_RESERVE_USD) return [];
+  return cat.products;
+}
+// Розница: наценка общая, нижняя цена у TSim своя
+function retailFor(item, rate) {
+  return toRetailRub(item.costUsd, rate, isTsimId(item.id) ? TSIM_MIN_RUB : MIN_RUB);
+}
+async function getMmCatalog(force) {
   const cached = loadCatalogFile();
   if (!provider.ready()) return { ts: Date.now(), source: "demo", products: DEMO_PRODUCTS, addons: [] };
   // кэш старого формата (без addons) не годится — обновляем
@@ -541,16 +759,17 @@ function mount(app, opts) {
     try {
       const [cat, rate] = await Promise.all([getCatalog(false), usdRate()]);
       const adm = String(req.query.adm || "") === ADMIN_CODE;
-      const products = cat.products.filter((p) => adm || !isTestProduct(p)).map((p) => {
+      let products = cat.products.filter((p) => adm || !isTestProduct(p)).map((p) => {
         const o = {
           id: p.id, title: p.title || "", operator: p.operator || "", countries: p.countries || [],
-          dataGb: p.dataGb, unlimited: !!p.unlimited, days: p.days,
-          fiveG: !!p.fiveG, hotspot: p.hotspot !== false, priceRub: toRetailRub(p.costUsd, rate),
+          dataGb: p.dataGb, unlimited: !!p.unlimited, daily: !!p.daily, days: p.days,
+          fiveG: !!p.fiveG, hotspot: p.hotspot !== false, priceRub: retailFor(p, rate),
           ruPick: isRuServicesPick(p),
         };
-        if (adm) { o.costUsd = p.costUsd; o.costRub = Math.round(p.costUsd * rate); o.marginRub = o.priceRub - o.costRub; }
+        if (adm) { o.src = p.src || "mobimatter"; o.costUsd = p.costUsd; o.costRub = Math.round(p.costUsd * rate); o.marginRub = o.priceRub - o.costRub; }
         return o;
       });
+      products = hideSupplierDups(products);
       res.json({ success: true, demo: cat.source === "demo", live: provider.ready(), pay: tbank.ready(), updatedAt: cat.ts, usdRate: Math.round(rate * 100) / 100, markup: adm ? markupLabel() : undefined, products });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
@@ -600,6 +819,23 @@ function mount(app, opts) {
   app.get("/esim/api/my", async (req, res) => {
     const o = String(req.query.o || "").slice(0, 40);
     if (!o || !checkSig(o, req.query.t)) return res.status(403).json({ success: false, message: "Ссылка недействительна." });
+    // eSIM от TSim: те же поля страницы, продлений пока нет (кнопка «Купить другую eSIM»)
+    if (isTsimId(o)) {
+      try {
+        const [view, usage] = await Promise.all([tsim.getOrderView(o), tsim.getUsage(o).catch(() => null)]);
+        const owner = emailOfProviderOrder(o);
+        if (owner) setSession(res, owner);
+        return res.json({
+          success: true, pay: tbank.ready(), you: owner || readSession(req),
+          order: { id: o, state: "Completed", title: view.title, operator: view.operator, qrDataUrl: view.qrDataUrl,
+            lpa: view.lpa, activationCode: view.activationCode, smdp: view.smdp, apn: view.apn, iccid: view.iccid },
+          usage, topups: [],
+        });
+      } catch (e) {
+        const nf = Number(e.tsimCode) === 1006;
+        return res.status(nf ? 404 : 500).json({ success: false, message: nf ? "Заказ не найден." : e.message });
+      }
+    }
     try {
       const [order, usage, cat, rate] = await Promise.all([
         provider.getOrder(o),
@@ -701,6 +937,22 @@ function mount(app, opts) {
     return Number(p.costUsd) <= 0.05 || /(^|\s)test\b/i.test(String(p.title || ""));
   }
 
+  // Один и тот же пакет (страны, объём, срок) у двух поставщиков показываем
+  // один раз — по меньшей цене. Дубли внутри MobiMatter не трогаем, как и было.
+  function hideSupplierDups(list) {
+    const key = (p) => p.countries.slice().sort().join(",") + "|" + (p.unlimited ? "u" : p.dataGb) + "|" + (p.daily ? "d" : "") + "|" + p.days;
+    const best = new Map(); // ключ → { ts: минимальная цена TSim, mm: минимальная цена остальных }
+    list.forEach((p) => {
+      const k = key(p), b = best.get(k) || { ts: Infinity, mm: Infinity };
+      if (isTsimId(p.id)) b.ts = Math.min(b.ts, p.priceRub); else b.mm = Math.min(b.mm, p.priceRub);
+      best.set(k, b);
+    });
+    return list.filter((p) => {
+      const b = best.get(key(p));
+      return isTsimId(p.id) ? p.priceRub < b.mm : p.priceRub <= b.ts;
+    });
+  }
+
   function findProduct(cat, id) {
     const inMain = (cat.products || []).find((x) => x.id === id);
     if (inMain) return { item: inMain, addon: false };
@@ -708,7 +960,8 @@ function mount(app, opts) {
     return inAdd ? { item: inAdd, addon: true } : null;
   }
   function labelFor(p) {
-    const vol = p.unlimited ? "безлимит" : (p.dataGb + " ГБ");
+    const gb = String(p.dataGb).replace(".", ",");
+    const vol = p.unlimited ? "безлимит" : (gb + (p.daily ? " ГБ в день" : " ГБ"));
     return "eSIM " + (p.title || "") + " · " + vol + (p.days ? (" · " + p.days + " дн.") : "");
   }
   function findLocal(id) {
@@ -717,6 +970,33 @@ function mount(app, opts) {
     return i < 0 ? null : { orders, i, order: orders[i] };
   }
   function saveLocal(orders) { writeJson(ORDERS_FILE, orders.slice(0, 5000)); }
+
+  // Такой же пакет у MobiMatter (страны, объём, срок) с закупкой не дороже оплаченного
+  async function mmTwin(tsimProductId, paidRub) {
+    const [cat, rate] = await Promise.all([getMmCatalog(false), usdRate()]);
+    const t = ((loadTsimCatalog() || {}).products || []).find((x) => x.id === tsimProductId);
+    if (!t || t.daily) return null;
+    const cs = t.countries.slice().sort().join(",");
+    return (cat.products || [])
+      .filter((p) => !p.unlimited && !isTestProduct(p) && p.dataGb === t.dataGb && (p.days || 0) >= (t.days || 0) &&
+        (p.countries || []).slice().sort().join(",") === cs && toCostRub(p.costUsd, rate) <= Number(paidRub || 0))
+      .sort((a, b) => a.costUsd - b.costUsd)[0] || null;
+  }
+
+  // Кредит TSim на исходе: одно письмо на каждое пересечение резерва
+  function checkTsimCredit() {
+    const left = tsimLeftUsd(), w = readJson(TSIM_WATCH_FILE, {});
+    if (left >= TSIM_RESERVE_USD) { if (w.lowSent) { w.lowSent = 0; writeJson(TSIM_WATCH_FILE, w); } return; }
+    if (w.lowSent || !(opts && opts.sendMail)) return;
+    w.lowSent = Date.now(); writeJson(TSIM_WATCH_FILE, w);
+    opts.sendMail({
+      to: "director@visa-sc.ru",
+      subject: "VOYO eSIM: кредит TSim заканчивается, их пакеты скрыты с витрины",
+      text: "По нашему учёту у TSim осталось $" + left + " из внесённых $" + TSIM_CREDIT_USD +
+        ". Пакеты TSim спрятаны с витрины, продажи идут через MobiMatter.\n\n" +
+        "Пополнили депозит — впишите новую общую сумму в .env: ESIM_TSIM_CREDIT_USD=<всего внесено> и перезапустите voyo.",
+    }).catch(() => {});
+  }
 
   // Выдача товара после подтверждённой оплаты. Идемпотентна: повторный вебхук
   // не купит вторую eSIM (банк может слать уведомление несколько раз).
@@ -728,17 +1008,29 @@ function mount(app, opts) {
     if (o.status === "fulfilling") return { ok: true, pending: true };
     o.status = "fulfilling"; saveLocal(f.orders);
     try {
-      const res = o.parentOrderId
-        ? await provider.createTopup(o.productId, o.parentOrderId)
-        : await provider.createOrder(o.productId);
+      let res, src = isTsimId(o.productId) ? "tsim" : "mobimatter", fallbackFrom = null;
+      if (o.parentOrderId) res = await providerFor(o.parentOrderId).createTopup(o.productId, o.parentOrderId);
+      else if (src === "tsim") {
+        try { res = await tsim.createOrder(o.productId); }
+        catch (e) {
+          // TSim не принял заказ (заказа у них нет) — выдаём такой же пакет MobiMatter,
+          // если его закупка укладывается в оплаченную сумму. Иначе ручной разбор.
+          const alt = e.noOrder ? await mmTwin(o.productId, o.priceRub) : null;
+          if (!alt) throw e;
+          console.error("esim tsim → mobimatter:", e.message);
+          res = await provider.createOrder(alt.id);
+          fallbackFrom = o.productId; src = "mobimatter";
+        }
+      } else res = await provider.createOrder(o.productId);
       const g = findLocal(id);
       Object.assign(g.order, {
-        status: "done", paidAt: Date.now(),
+        status: "done", paidAt: Date.now(), src, fallbackFrom,
         mmOrderId: res.orderId, iccid: res.iccid || null, costUsd: res.costUsd || null,
         myUrl: BASE_URL + "/esim/my?o=" + encodeURIComponent(o.parentOrderId || res.orderId) +
                "&t=" + signOrder(o.parentOrderId || res.orderId),
       });
       saveLocal(g.orders);
+      if (src === "tsim") checkTsimCredit();
       // Деньги и бонусы проводим только после подтверждённой оплаты
       try {
         const who = g.order.custKey || g.order.email;
@@ -815,7 +1107,10 @@ function mount(app, opts) {
             (g.order.balanceUsed ? "\nСписано бонусами: " + g.order.balanceUsed + " ₽" : "") +
             "\nТелефон: " + (g.order.phone || "—") +
             "\nEmail: " + (g.order.email || "—") +
-            "\nЗаказ MobiMatter: " + res.orderId + "\nСсылка клиента: " + g.order.myUrl,
+            "\nЗаказ " + (src === "tsim" ? "TSim" : "MobiMatter") + ": " + res.orderId +
+            (fallbackFrom ? "\nTSim не принял заказ, выдан такой же пакет MobiMatter." : "") +
+            (src === "tsim" ? "\nКредит TSim по учёту: $" + tsimLeftUsd() : "") +
+            "\nСсылка клиента: " + g.order.myUrl,
         }).catch(() => {});
       }
       // Продали через бота — пусть он сам отдаст клиенту QR в чат
@@ -833,7 +1128,11 @@ function mount(app, opts) {
           text: "Клиент заплатил, но купить пакет у поставщика не удалось.\n\nВнутренний заказ: " + id +
             "\nПакет: " + (o.label || "—") + "\nID продукта: " + o.productId +
             "\nСумма: " + (o.priceRub || "—") + " ₽\nТелефон: " + (o.phone || "—") +
-            "\nОшибка: " + e.message + "\n\nКупите пакет в portal.mobimatter.com и отправьте клиенту QR.",
+            "\nОшибка: " + e.message +
+            (isTsimId(o.productId)
+              ? "\n\nПакет TSim. Если в ошибке есть номер TS-…, заказ у TSim создан, но QR не пришёл: откройте ссылку " +
+                BASE_URL + "/esim/mylink?adm=КОД&o=TS-… чуть позже. Иначе купите похожий пакет в portal.mobimatter.com и отправьте клиенту QR."
+              : "\n\nКупите пакет в portal.mobimatter.com и отправьте клиенту QR."),
         }).catch(() => {});
       }
       return { ok: false, message: e.message };
@@ -874,7 +1173,7 @@ function mount(app, opts) {
         return res.status(400).json({ success: false, message: "Пакет не найден." });
       }
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
-      const listPrice = toRetailRub(found.item.costUsd, rate);
+      const listPrice = retailFor(found.item, rate);
       const who = custKey(email, tgChatId);
       const calc = priceWithDiscounts({ listPrice, costRub: toCostRub(found.item.costUsd, rate),
         email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
@@ -914,7 +1213,7 @@ function mount(app, opts) {
       if (!found) return res.status(400).json({ success: false, message: "Пакет не найден." });
       const email = normEmail(b.email) || readSession(req) || "";
       const who = custKey(email, b.tgChatId);
-      const listPrice = toRetailRub(found.item.costUsd, rate);
+      const listPrice = retailFor(found.item, rate);
       const calc = priceWithDiscounts({ listPrice, costRub: toCostRub(found.item.costUsd, rate),
         email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const promoTried = String(b.promo || "").trim();
@@ -1252,6 +1551,8 @@ function mount(app, opts) {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
     const out = { success: true, provider: provider.name, ready: provider.ready(), markup: markupLabel(), minRub: MIN_RUB };
     if (provider.ready()) { try { out.balance = await provider.getBalance(); } catch (e) { out.balanceError = e.message; } }
+    out.tsim = { on: tsim.ready(), plans: ((loadTsimCatalog() || {}).products || []).length,
+      shown: (await getTsimProducts(false)).length, minRub: TSIM_MIN_RUB, reserveUsd: TSIM_RESERVE_USD, ...tsim.getBalance() };
     const orders = readJson(ORDERS_FILE, []);
     out.interest = orders.length;
     res.json(out);
@@ -1322,7 +1623,9 @@ function mount(app, opts) {
         const mark = sent[item.esimId] || {};
         if (mark.expiry && mark.lowData) continue;          // по этой eSIM всё уже сказано
         let usage = null;
-        try { usage = await provider.getUsage(item.esimId); } catch (_) { continue; }
+        try { usage = await providerFor(item.esimId).getUsage(item.esimId); } catch (_) { continue; }
+        // у суточного пакета трафик обнуляется каждый день — «почти закончился» не пишем
+        if (usage && usage.daily) mark.lowData = mark.lowData || -1;
         const packs = (usage && usage.packages) || [];
         if (!packs.length) continue;
         const totalMb = packs.reduce((a, x) => a + x.totalMb, 0);
@@ -1381,4 +1684,5 @@ function mount(app, opts) {
   if (provider.ready()) setTimeout(() => { getCatalog(true).catch(() => {}); }, 15000);
 }
 
-module.exports = { mount };
+// _tsim — для ручной проверки заказа со скрипта на сервере (tools/ не нужен)
+module.exports = { mount, _tsim: tsim };
