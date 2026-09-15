@@ -308,36 +308,80 @@
   + 'opacity:0;transition:all .28s ease;pointer-events:none;box-shadow:0 18px 40px rgba(16,24,40,.35);'
   + 'backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}'
   + '.vl-toast.on{opacity:1;transform:translateX(-50%) translateY(0);}'
-  /* ── «Как работает бонусная программа»: кнопка и условия в ОДНОЙ панели ──
-     Раскрытие — через grid-template-rows 0fr → 1fr: высота анимируется без
-     замеров в JS и без обрезки текста на любой ширине. */
-  + '.vl-how{padding:0;overflow:hidden;}'
-  + '.vl-how-btn{width:100%;display:flex;align-items:center;gap:10px;background:none;border:0;cursor:pointer;'
-  + 'padding:14px 16px;font:inherit;font-size:clamp(13px,3.7vw,14.5px);font-weight:600;letter-spacing:-.015em;color:var(--vl-ink);text-align:left;'
-  + '-webkit-tap-highlight-color:transparent;transition:background .18s ease;}'
-  + '.vl-how-btn:hover{background:rgba(53,137,189,.05);}'
-  + '.vl-how-q{flex:0 0 auto;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;'
-  + 'background:rgba(53,137,189,.12);color:var(--vl-accent-d);font-size:14px;font-weight:700;line-height:1;}'
-  + '.vl-how-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
-  + '.vl-how-ch{flex:0 0 auto;width:18px;height:18px;color:var(--vl-mut);transition:transform .3s cubic-bezier(.22,.61,.36,1);}'
-  + '.vl-how.on .vl-how-ch{transform:rotate(180deg);}'
-  + '.vl-how-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .38s cubic-bezier(.22,.61,.36,1);}'
-  + '.vl-how.on .vl-how-body{grid-template-rows:1fr;}'
-  + '.vl-how-in{min-height:0;overflow:hidden;}'
-  + '.vl-how-pad{margin:0 16px;padding:2px 0 16px;border-top:1px solid var(--vl-hair);}'
-  + '.vl-how-h{font-size:13.5px;font-weight:600;color:var(--vl-ink);margin:16px 0 8px;letter-spacing:-.01em;}'
-  + '.vl-how ul{list-style:none;margin:0;padding:0;}'
-  + '.vl-how li{position:relative;padding-left:15px;margin:0 0 7px;font-size:13px;line-height:1.55;color:#4b5363;}'
-  + '.vl-how li::before{content:"";position:absolute;left:2px;top:.62em;width:5px;height:5px;border-radius:50%;background:var(--vl-accent);opacity:.7;}'
-  + '.vl-how li b{color:var(--vl-ink);font-weight:600;}'
-  + '.vl-how-tiers{margin:4px 0 9px 15px;border-radius:12px;background:var(--vl-soft);padding:4px 12px;}'
-  + '.vl-how-tr{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:6px 0;font-size:12.5px;'
-  + 'border-bottom:1px solid var(--vl-hair);color:#4b5363;}'
-  + '.vl-how-tr:last-child{border-bottom:0;}'
-  + '.vl-how-tr b{color:var(--vl-ink);font-weight:600;font-variant-numeric:tabular-nums;}'
-  + '.vl-how-tr span i{font-style:normal;color:var(--vl-mut);margin-left:6px;}'
-  + '@media(prefers-reduced-motion:reduce){.vl-root>*,.vl-sheen,.vl-pop.show{animation:none!important}'
-  + '.vl-card{transition:none!important}.vl-how-body,.vl-how-ch{transition:none!important}}';
+  /* ── «Как работает бонусная программа» ──────────────────────────────────
+     Кнопка — белая «пилюля» с мягким переливом: раз в несколько секунд по ней
+     пробегает блик, как по карте. Окно — в стиле поповера «i» (тёмное стекло),
+     живёт порталом в body: у .vl-root есть анимация с transform, внутри неё
+     position:fixed привязался бы к блоку, а не к экрану. */
+  + '.vl-howb{position:relative;overflow:hidden;width:100%;display:flex;align-items:center;justify-content:center;gap:10px;'
+  + 'border:1px solid rgba(53,137,189,.16);border-radius:16px;padding:14px 16px;cursor:pointer;font:inherit;'
+  + 'font-size:clamp(13px,3.7vw,14.5px);font-weight:600;letter-spacing:-.015em;color:var(--vl-accent-d);'
+  + 'background:linear-gradient(180deg,#ffffff 0%,#f4f9fd 100%);-webkit-tap-highlight-color:transparent;'
+  + 'box-shadow:0 1px 2px rgba(16,24,40,.04),0 10px 26px -14px rgba(53,137,189,.45),inset 0 1px 0 #fff;'
+  + 'transition:transform .16s ease,box-shadow .2s ease,border-color .2s ease;}'
+  + '.vl-howb:hover{border-color:rgba(53,137,189,.3);box-shadow:0 1px 2px rgba(16,24,40,.05),0 14px 30px -14px rgba(53,137,189,.55),inset 0 1px 0 #fff;}'
+  + '.vl-howb:active{transform:scale(.985);}'
+  + '.vl-howb::after{content:"";position:absolute;top:0;bottom:0;left:-60%;width:45%;pointer-events:none;'
+  + 'background:linear-gradient(100deg,rgba(255,255,255,0) 0%,rgba(190,225,247,.55) 45%,rgba(255,255,255,.9) 50%,rgba(190,225,247,.55) 55%,rgba(255,255,255,0) 100%);'
+  + 'transform:skewX(-18deg);animation:vlhowshine 5.5s 1.2s cubic-bezier(.4,0,.2,1) infinite;}'
+  + '@keyframes vlhowshine{0%{left:-60%}28%{left:125%}100%{left:125%}}'
+  + '.vl-howb-q{position:relative;flex:0 0 auto;width:24px;height:24px;border-radius:50%;display:inline-flex;'
+  + 'align-items:center;justify-content:center;color:#fff;font-size:13.5px;font-weight:700;line-height:1;'
+  + 'background:linear-gradient(145deg,#5cb0e0,#2b6d97);box-shadow:0 3px 8px -2px rgba(43,109,151,.55);}'
+  + '.vl-howb-t{position:relative;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
+
+  /* окно */
+  + '.vl-modal{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;'
+  + 'padding:max(16px,env(safe-area-inset-top)) 14px max(16px,env(safe-area-inset-bottom));'
+  + 'background:rgba(10,15,26,.46);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);'
+  + 'opacity:0;transition:opacity .22s ease;'
+  + 'font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;'
+  + '-webkit-font-smoothing:antialiased;}'
+  + '.vl-modal.on{opacity:1;}'
+  + '.vl-sheet{position:relative;box-sizing:border-box;width:min(460px,100%);max-height:min(84vh,760px);display:flex;flex-direction:column;'
+  + 'background:rgba(22,27,38,.97);color:#e9edf5;border-radius:24px;overflow:hidden;'
+  + 'box-shadow:0 30px 70px rgba(4,8,18,.55),inset 0 1px 0 rgba(255,255,255,.08),inset 0 0 0 1px rgba(255,255,255,.06);'
+  + 'transform:translateY(14px) scale(.97);transition:transform .3s cubic-bezier(.22,.61,.36,1);}'
+  + '.vl-modal.on .vl-sheet{transform:none;}'
+  + '.vl-sheet-hd{position:relative;flex:0 0 auto;padding:22px 72px 16px 22px;'
+  + 'border-bottom:1px solid rgba(255,255,255,.08);}'
+  + '.vl-sheet-ttl{margin:0;font-size:18px;line-height:1.3;font-weight:650;letter-spacing:-.02em;color:#fff;}'
+  + '.vl-sheet-sub{margin-top:4px;font-size:12.5px;color:rgba(233,237,245,.6);}'
+  /* крестик: белый крест в белом кольце, крупный и заметный */
+  + '.vl-x{position:absolute;top:16px;right:16px;width:42px;height:42px;border-radius:50%;cursor:pointer;padding:0;'
+  + 'display:flex;align-items:center;justify-content:center;color:#fff;'
+  + 'background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.78);'
+  + 'box-shadow:0 6px 18px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.18);'
+  + 'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);-webkit-tap-highlight-color:transparent;'
+  + 'transition:background .18s ease,transform .18s ease,border-color .18s ease;}'
+  + '.vl-x svg{width:18px;height:18px;display:block;}'
+  + '.vl-x:hover{background:rgba(255,255,255,.22);border-color:#fff;transform:rotate(90deg);}'
+  + '.vl-x:active{transform:scale(.92);}'
+  + '.vl-x:focus-visible{outline:2px solid #8fd0f5;outline-offset:3px;}'
+  + '.vl-sheet-bd{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;'
+  + 'padding:4px 22px 24px;}'
+  + '.vl-sheet-bd::-webkit-scrollbar{width:6px;}'
+  + '.vl-sheet-bd::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:6px;}'
+  + '.vl-sheet .vl-how-h{display:flex;align-items:center;gap:9px;font-size:14.5px;font-weight:600;color:#fff;'
+  + 'margin:20px 0 10px;letter-spacing:-.01em;}'
+  + '.vl-sheet .vl-how-h i{flex:0 0 auto;width:26px;height:26px;border-radius:9px;display:inline-flex;align-items:center;'
+  + 'justify-content:center;background:rgba(143,208,245,.14);color:#8fd0f5;font-style:normal;}'
+  + '.vl-sheet .vl-how-h i svg{width:15px;height:15px;}'
+  + '.vl-sheet ul{list-style:none;margin:0;padding:0;}'
+  + '.vl-sheet li{position:relative;padding-left:16px;margin:0 0 8px;font-size:13.5px;line-height:1.58;color:rgba(233,237,245,.84);}'
+  + '.vl-sheet li::before{content:"";position:absolute;left:2px;top:.66em;width:5px;height:5px;border-radius:50%;background:#8fd0f5;}'
+  + '.vl-sheet li b{color:#fff;font-weight:600;}'
+  + '.vl-sheet .vl-how-tiers{margin:2px 0 10px 16px;border-radius:14px;background:rgba(255,255,255,.06);padding:4px 13px;}'
+  + '.vl-sheet .vl-how-tr{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:7px 0;'
+  + 'font-size:13px;border-bottom:1px solid rgba(255,255,255,.08);color:rgba(233,237,245,.84);}'
+  + '.vl-sheet .vl-how-tr:last-child{border-bottom:0;}'
+  + '.vl-sheet .vl-how-tr b{color:#fff;font-weight:600;font-variant-numeric:tabular-nums;}'
+  + '.vl-sheet .vl-how-tr span i{font-style:normal;color:rgba(233,237,245,.5);margin-left:6px;}'
+  + '.vl-sheet .vl-how-tr.now,.vl-sheet .vl-how-tr.now b{color:#8fd0f5;}'
+  + '@media(max-width:420px){.vl-sheet-hd{padding:20px 66px 14px 18px}.vl-sheet-bd{padding:2px 18px 22px}'
+  + '.vl-sheet-ttl{font-size:17px}.vl-x{top:14px;right:14px}}'
+  + '@media(prefers-reduced-motion:reduce){.vl-root>*,.vl-sheen,.vl-pop.show,.vl-howb::after{animation:none!important}'
+  + '.vl-card{transition:none!important}.vl-modal,.vl-sheet,.vl-x{transition:none!important}}';
 
   function injectCss() {
     if (d.getElementById("vl-style")) return;
@@ -664,10 +708,16 @@
     return s;
   }
 
-  // «Как работает бонусная программа» — условия целиком, свёрнуты под кнопкой.
-  // Кнопка и раскрытый текст живут в одной панели. Числа (ступени, лимиты,
-  // награды за друга) берутся из ответа сервера, а не зашиты в текст.
-  function vHow(card, ref, state) {
+  // «Как работает бонусная программа» — белая кнопка, по нажатию всплывает окно
+  // со всеми условиями. Числа (ступени, лимиты, награды за друга) берутся из
+  // ответа сервера, а не зашиты в текст.
+  var HOW_ICO = {
+    earn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.8l2.8 5.7 6.3.9-4.55 4.43 1.07 6.27L12 17.14 6.38 20.1l1.07-6.27L2.9 9.4l6.3-.9z"/></svg>',
+    friends: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    spend: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20M6 15h4"/></svg>',
+    x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'
+  };
+  function howBody(card, ref) {
     var paid = (card.tiers || []).filter(function (t) { return t.rate > 0; })
       .sort(function (a, b) { return a.min - b.min; });
     var pct = function (r) { return Math.round((Number(r) || 0) * 100) + "%"; };
@@ -676,12 +726,13 @@
     var friend = RU((ref && ref.rewardFriend) || 2000);
     var inviter = RU((ref && ref.rewardInviter) || 2000);
 
+    // Текущий статус клиента подсвечен — сразу видно, где он на лестнице.
     var tiers = paid.map(function (t) {
-      return '<div class="vl-how-tr"><span>' + esc(t.name) + "<i>от " + RU(t.min) + " ₽</i></span><b>" + pct(t.rate) + "</b></div>";
+      return '<div class="vl-how-tr' + (t.current ? " now" : "") + '"><span>' + esc(t.name)
+        + (t.current ? " · ваш статус" : "") + "<i>от " + RU(t.min) + " ₽</i></span><b>" + pct(t.rate) + "</b></div>";
     }).join("");
 
-    // Пример ступенчатого расчёта на первых двух платных ступенях:
-    // сумма чуть выше порога второй ступени.
+    // Пример ступенчатого расчёта на первых двух платных ступенях.
     var example = "";
     if (paid.length >= 2) {
       var t1 = paid[0], t2 = paid[1], extra = 10000, total = t2.min + extra;
@@ -692,8 +743,8 @@
         + " ₽, итого " + RU(pts) + " баллов.</li>";
     }
 
-    var body = ''
-      + '<div class="vl-how-h">Как начисляются баллы</div><ul>'
+    return ''
+      + '<div class="vl-how-h"><i>' + HOW_ICO.earn + "</i>Как начисляются баллы</div><ul>"
       + "<li>Баллы начисляются за услуги, которые <b>успешно завершены</b>. Пока заявка в работе, баллов по ней нет.</li>"
       + "<li><b>1 балл = 1 ₽.</b> Баллы появляются в кабинете на следующий день после завершения услуги.</li>"
       + "<li>Процент зависит от общей суммы ваших заказов:</li></ul>"
@@ -701,7 +752,7 @@
       + "<ul>" + example
       + "<li>Если по услуге оформлен возврат, баллы за неё списываются.</li></ul>"
 
-      + '<div class="vl-how-h">Приглашения друзей</div><ul>'
+      + '<div class="vl-how-h"><i>' + HOW_ICO.friends + "</i>Приглашения друзей</div><ul>"
       + "<li>У вас есть личный промокод из 6 символов. Нажмите на него, чтобы скопировать ссылку, или отправьте другу через WhatsApp или Telegram.</li>"
       + "<li>Друг регистрируется по вашей ссылке, и промокод подставляется сам. Можно также назвать промокод менеджеру.</li>"
       + "<li>Другу <b>" + friend + " баллов</b> начисляются <b>сразу</b>: ими можно оплатить часть первой услуги.</li>"
@@ -709,31 +760,54 @@
       + "<li>Если друг оформит возврат, баллы за его приглашение у вас спишутся.</li>"
       + "<li>Приглашать можно сколько угодно друзей.</li></ul>"
 
-      + '<div class="vl-how-h">Как потратить баллы</div><ul>'
+      + '<div class="vl-how-h"><i>' + HOW_ICO.spend + "</i>Как потратить баллы</div><ul>"
       + "<li>Баллами можно оплатить <b>до " + share + "</b> стоимости любой услуги: визы, ВНЖ, страховки, банковской карты, тура.</li>"
       + "<li>Минимум к списанию — " + minRedeem + " баллов.</li>"
       + "<li>Скажите менеджеру при оформлении, что хотите оплатить часть услуги баллами: он спишет их и уменьшит сумму к оплате.</li>"
       + "<li>Баллы не сгорают и привязаны к вашему номеру телефона.</li></ul>";
+  }
 
-    var s = el('<section><div class="vl-panel vl-how">'
-      + '<button class="vl-how-btn" type="button" aria-expanded="false">'
-      + '<span class="vl-how-q" aria-hidden="true">?</span>'
-      + '<span class="vl-how-t">Как работает бонусная программа</span>'
-      + '<svg class="vl-how-ch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>'
-      + "</button>"
-      + '<div class="vl-how-body"><div class="vl-how-in"><div class="vl-how-pad">' + body + "</div></div></div>"
-      + "</div></section>");
-
-    var panel = s.querySelector(".vl-how"), btn = s.querySelector(".vl-how-btn"), inner = s.querySelector(".vl-how-in");
-    function apply(open) {
-      panel.classList.toggle("on", open);
-      btn.setAttribute("aria-expanded", open ? "true" : "false");
-      // Свёрнутый текст не должен попадать под фокус и читалку экрана.
-      if (open) { inner.removeAttribute("inert"); inner.removeAttribute("aria-hidden"); }
-      else { inner.setAttribute("inert", ""); inner.setAttribute("aria-hidden", "true"); }
+  // Окно: закрывается крестиком, нажатием мимо окна и клавишей Esc. Пока оно
+  // открыто, страница под ним не прокручивается.
+  function howOpen(card, ref, opener) {
+    popCloseAll();
+    var prevHtml = d.documentElement.style.overflow, prevBody = d.body.style.overflow;
+    var m = el('<div class="vl-modal" role="dialog" aria-modal="true" aria-labelledby="vl-how-ttl">'
+      + '<div class="vl-sheet">'
+      + '<div class="vl-sheet-hd"><h2 class="vl-sheet-ttl" id="vl-how-ttl">Как работает бонусная программа</h2>'
+      + '<div class="vl-sheet-sub">Всё о баллах, статусах и приглашениях</div>'
+      + '<button class="vl-x" type="button" aria-label="Закрыть">' + HOW_ICO.x + "</button></div>"
+      + '<div class="vl-sheet-bd">' + howBody(card, ref) + "</div>"
+      + "</div></div>");
+    var closed = false;
+    function close() {
+      if (closed) return; closed = true;
+      d.removeEventListener("keydown", onKey);
+      d.documentElement.style.overflow = prevHtml; d.body.style.overflow = prevBody;
+      m.classList.remove("on");
+      setTimeout(function () { if (m.parentNode) m.parentNode.removeChild(m); }, calm() ? 0 : 240);
+      try { if (opener) opener.focus({ preventScroll: true }); } catch (e) {}
     }
-    apply(!!state.open);
-    btn.addEventListener("click", function () { state.open = !state.open; apply(state.open); });
+    function onKey(e) { if (e.key === "Escape") close(); }
+    m.addEventListener("click", function (e) { if (e.target === m) close(); });   // мимо окна
+    m.querySelector(".vl-x").addEventListener("click", close);
+    d.addEventListener("keydown", onKey);
+    d.documentElement.style.overflow = "hidden"; d.body.style.overflow = "hidden";
+    d.body.appendChild(m);
+    // Принудительный пересчёт стилей, чтобы сработал переход появления. Не rAF:
+    // он не выполняется в фоновых вкладках, и окно осталось бы прозрачным.
+    void m.offsetWidth; m.classList.add("on");
+    try { m.querySelector(".vl-x").focus({ preventScroll: true }); } catch (e) {}
+    return close;
+  }
+
+  function vHow(card, ref) {
+    var s = el('<section><button class="vl-howb" type="button" aria-haspopup="dialog">'
+      + '<span class="vl-howb-q" aria-hidden="true">?</span>'
+      + '<span class="vl-howb-t">Как работает бонусная программа</span>'
+      + "</button></section>");
+    var btn = s.querySelector(".vl-howb");
+    btn.addEventListener("click", function (e) { e.stopPropagation(); howOpen(card, ref, btn); });
     return s;
   }
 
@@ -801,7 +875,6 @@
     var root = el('<div class="vl-root"></div>');
     var phone = session ? "-" : (opts.phone || (askPhone ? lsGet() : ""));
     var last = null, lastWide = null, rsT = 0;
-    var howState = { open: false };   // раскрыт ли блок «Как работает бонусная программа»
     target.innerHTML = ""; target.appendChild(root);
     // Перерисовываем только когда экран реально перешёл границу мобильный/десктоп.
     w.addEventListener("resize", function () {
@@ -831,7 +904,7 @@
       var pend = vPending(card, post, function () { load(phone); });
       if (pend) root.appendChild(pend);
       if (!opts.compact) {
-        root.appendChild(vHow(card, ref, howState));
+        root.appendChild(vHow(card, ref));
         var r = vRef(ref, refBase); if (r) root.appendChild(r);
         var h = vHist(card); if (h) root.appendChild(h);
       }
