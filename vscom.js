@@ -254,6 +254,7 @@ const MAIL_TITLES = {
   "usa-ga":   ["Заявка с visa-sc.com/usa (визы США)", "visa-sc.com/usa: заявка"],
   "spain-ga": ["Заявка с spain.visa-sc.com/ga (ВНЖ Испании)", "spain.visa-sc.com: заявка"],
   "spain":    ["Заявка с spain.visa-sc.com (ВНЖ Испании)", "spain.visa-sc.com: заявка"],
+  "spain-fb": ["Заявка с spain.visa-sc.com/fb (ВНЖ Испании, реклама Facebook/Instagram)", "spain.visa-sc.com/fb: заявка из Meta"],
   "ga":       ["Заявка с visa-sc.com/ga (английский лендинг, ВНЖ Испании)", "visa-sc.com: заявка"],
   "card-ga":  ["Заявка с visa-sc.com/virtual_card (виртуальные карты)", "visa-sc.com/virtual_card: заявка"],
   // Бразильские страницы ETA: пишут по-португальски, отвечать тоже по-португальски.
