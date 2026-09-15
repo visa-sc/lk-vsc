@@ -402,7 +402,7 @@ async function showPack(chatId, productId, messageId) {
     "Сеть: <b>" + (p.fiveG ? "5G / 4G LTE" : "4G LTE") + "</b>\n" +
     "Раздача Wi-Fi: <b>" + (p.hotspot !== false ? "да" : "нет") + "</b>\n" +
     // та же сноска, что на витрине: NextLink через Сингапур советуем для российских сервисов
-    (p.ruPick ? "✅ Рекомендуем для Битрикс, amoCRM и других российских сервисов в Китае\n" : "") + "\n";
+    (p.ruPick ? "✅ Рекомендуем для Битрикс, amoCRM и др. российских сервисов в Китае\n" : "") + "\n";
   if (price.discountRub > 0 || price.balanceUsed > 0) {
     const why = price.discountKind === "ref" ? "скидка по приглашению друга"
       : price.discountKind === "cost" ? "цена по себестоимости"
