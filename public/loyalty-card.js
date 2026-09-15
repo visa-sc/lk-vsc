@@ -308,8 +308,36 @@
   + 'opacity:0;transition:all .28s ease;pointer-events:none;box-shadow:0 18px 40px rgba(16,24,40,.35);'
   + 'backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}'
   + '.vl-toast.on{opacity:1;transform:translateX(-50%) translateY(0);}'
+  /* ── «Как работает бонусная программа»: кнопка и условия в ОДНОЙ панели ──
+     Раскрытие — через grid-template-rows 0fr → 1fr: высота анимируется без
+     замеров в JS и без обрезки текста на любой ширине. */
+  + '.vl-how{padding:0;overflow:hidden;}'
+  + '.vl-how-btn{width:100%;display:flex;align-items:center;gap:10px;background:none;border:0;cursor:pointer;'
+  + 'padding:14px 16px;font:inherit;font-size:clamp(13px,3.7vw,14.5px);font-weight:600;letter-spacing:-.015em;color:var(--vl-ink);text-align:left;'
+  + '-webkit-tap-highlight-color:transparent;transition:background .18s ease;}'
+  + '.vl-how-btn:hover{background:rgba(53,137,189,.05);}'
+  + '.vl-how-q{flex:0 0 auto;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;'
+  + 'background:rgba(53,137,189,.12);color:var(--vl-accent-d);font-size:14px;font-weight:700;line-height:1;}'
+  + '.vl-how-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
+  + '.vl-how-ch{flex:0 0 auto;width:18px;height:18px;color:var(--vl-mut);transition:transform .3s cubic-bezier(.22,.61,.36,1);}'
+  + '.vl-how.on .vl-how-ch{transform:rotate(180deg);}'
+  + '.vl-how-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .38s cubic-bezier(.22,.61,.36,1);}'
+  + '.vl-how.on .vl-how-body{grid-template-rows:1fr;}'
+  + '.vl-how-in{min-height:0;overflow:hidden;}'
+  + '.vl-how-pad{margin:0 16px;padding:2px 0 16px;border-top:1px solid var(--vl-hair);}'
+  + '.vl-how-h{font-size:13.5px;font-weight:600;color:var(--vl-ink);margin:16px 0 8px;letter-spacing:-.01em;}'
+  + '.vl-how ul{list-style:none;margin:0;padding:0;}'
+  + '.vl-how li{position:relative;padding-left:15px;margin:0 0 7px;font-size:13px;line-height:1.55;color:#4b5363;}'
+  + '.vl-how li::before{content:"";position:absolute;left:2px;top:.62em;width:5px;height:5px;border-radius:50%;background:var(--vl-accent);opacity:.7;}'
+  + '.vl-how li b{color:var(--vl-ink);font-weight:600;}'
+  + '.vl-how-tiers{margin:4px 0 9px 15px;border-radius:12px;background:var(--vl-soft);padding:4px 12px;}'
+  + '.vl-how-tr{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:6px 0;font-size:12.5px;'
+  + 'border-bottom:1px solid var(--vl-hair);color:#4b5363;}'
+  + '.vl-how-tr:last-child{border-bottom:0;}'
+  + '.vl-how-tr b{color:var(--vl-ink);font-weight:600;font-variant-numeric:tabular-nums;}'
+  + '.vl-how-tr span i{font-style:normal;color:var(--vl-mut);margin-left:6px;}'
   + '@media(prefers-reduced-motion:reduce){.vl-root>*,.vl-sheen,.vl-pop.show{animation:none!important}'
-  + '.vl-card{transition:none!important}}';
+  + '.vl-card{transition:none!important}.vl-how-body,.vl-how-ch{transition:none!important}}';
 
   function injectCss() {
     if (d.getElementById("vl-style")) return;
@@ -636,6 +664,79 @@
     return s;
   }
 
+  // «Как работает бонусная программа» — условия целиком, свёрнуты под кнопкой.
+  // Кнопка и раскрытый текст живут в одной панели. Числа (ступени, лимиты,
+  // награды за друга) берутся из ответа сервера, а не зашиты в текст.
+  function vHow(card, ref, state) {
+    var paid = (card.tiers || []).filter(function (t) { return t.rate > 0; })
+      .sort(function (a, b) { return a.min - b.min; });
+    var pct = function (r) { return Math.round((Number(r) || 0) * 100) + "%"; };
+    var share = pct(card.redeemMaxShare || 0.3);
+    var minRedeem = RU(card.redeemMin || 500);
+    var friend = RU((ref && ref.rewardFriend) || 2000);
+    var inviter = RU((ref && ref.rewardInviter) || 2000);
+
+    var tiers = paid.map(function (t) {
+      return '<div class="vl-how-tr"><span>' + esc(t.name) + "<i>от " + RU(t.min) + " ₽</i></span><b>" + pct(t.rate) + "</b></div>";
+    }).join("");
+
+    // Пример ступенчатого расчёта на первых двух платных ступенях:
+    // сумма чуть выше порога второй ступени.
+    var example = "";
+    if (paid.length >= 2) {
+      var t1 = paid[0], t2 = paid[1], extra = 10000, total = t2.min + extra;
+      var pts = Math.round(t2.min * t1.rate + extra * t2.rate);
+      example = "<li>Первый статус даёт процент на <b>всю сумму</b> заказов. Дальше повышенный процент действует "
+        + "только на часть суммы <b>сверх порога</b>. Например, при заказах на " + RU(total) + " ₽ это "
+        + pct(t1.rate) + " с первых " + RU(t2.min) + " ₽ и " + pct(t2.rate) + " с оставшихся " + RU(extra)
+        + " ₽, итого " + RU(pts) + " баллов.</li>";
+    }
+
+    var body = ''
+      + '<div class="vl-how-h">Как начисляются баллы</div><ul>'
+      + "<li>Баллы начисляются за услуги, которые <b>успешно завершены</b>. Пока заявка в работе, баллов по ней нет.</li>"
+      + "<li><b>1 балл = 1 ₽.</b> Баллы появляются в кабинете на следующий день после завершения услуги.</li>"
+      + "<li>Процент зависит от общей суммы ваших заказов:</li></ul>"
+      + (tiers ? '<div class="vl-how-tiers">' + tiers + "</div>" : "")
+      + "<ul>" + example
+      + "<li>Если по услуге оформлен возврат, баллы за неё списываются.</li></ul>"
+
+      + '<div class="vl-how-h">Приглашения друзей</div><ul>'
+      + "<li>У вас есть личный промокод из 6 символов. Нажмите на него, чтобы скопировать ссылку, или отправьте другу через WhatsApp или Telegram.</li>"
+      + "<li>Друг регистрируется по вашей ссылке, и промокод подставляется сам. Можно также назвать промокод менеджеру.</li>"
+      + "<li>Другу <b>" + friend + " баллов</b> начисляются <b>сразу</b>: ими можно оплатить часть первой услуги.</li>"
+      + "<li>Вам <b>" + inviter + " баллов</b> придут после того, как друг оплатит услугу, обычно на следующий день.</li>"
+      + "<li>Если друг оформит возврат, баллы за его приглашение у вас спишутся.</li>"
+      + "<li>Приглашать можно сколько угодно друзей.</li></ul>"
+
+      + '<div class="vl-how-h">Как потратить баллы</div><ul>'
+      + "<li>Баллами можно оплатить <b>до " + share + "</b> стоимости любой услуги: визы, ВНЖ, страховки, банковской карты, тура.</li>"
+      + "<li>Минимум к списанию — " + minRedeem + " баллов.</li>"
+      + "<li>Скажите менеджеру при оформлении, что хотите оплатить часть услуги баллами: он спишет их и уменьшит сумму к оплате.</li>"
+      + "<li>Баллы не сгорают и привязаны к вашему номеру телефона.</li></ul>";
+
+    var s = el('<section><div class="vl-panel vl-how">'
+      + '<button class="vl-how-btn" type="button" aria-expanded="false">'
+      + '<span class="vl-how-q" aria-hidden="true">?</span>'
+      + '<span class="vl-how-t">Как работает бонусная программа</span>'
+      + '<svg class="vl-how-ch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>'
+      + "</button>"
+      + '<div class="vl-how-body"><div class="vl-how-in"><div class="vl-how-pad">' + body + "</div></div></div>"
+      + "</div></section>");
+
+    var panel = s.querySelector(".vl-how"), btn = s.querySelector(".vl-how-btn"), inner = s.querySelector(".vl-how-in");
+    function apply(open) {
+      panel.classList.toggle("on", open);
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      // Свёрнутый текст не должен попадать под фокус и читалку экрана.
+      if (open) { inner.removeAttribute("inert"); inner.removeAttribute("aria-hidden"); }
+      else { inner.setAttribute("inert", ""); inner.setAttribute("aria-hidden", "true"); }
+    }
+    apply(!!state.open);
+    btn.addEventListener("click", function () { state.open = !state.open; apply(state.open); });
+    return s;
+  }
+
   // История скрыта за кнопкой: экран остаётся коротким, но всё под рукой.
   function vHist(card) {
     var list = (card.history || []).slice();
@@ -700,6 +801,7 @@
     var root = el('<div class="vl-root"></div>');
     var phone = session ? "-" : (opts.phone || (askPhone ? lsGet() : ""));
     var last = null, lastWide = null, rsT = 0;
+    var howState = { open: false };   // раскрыт ли блок «Как работает бонусная программа»
     target.innerHTML = ""; target.appendChild(root);
     // Перерисовываем только когда экран реально перешёл границу мобильный/десктоп.
     w.addEventListener("resize", function () {
@@ -729,6 +831,7 @@
       var pend = vPending(card, post, function () { load(phone); });
       if (pend) root.appendChild(pend);
       if (!opts.compact) {
+        root.appendChild(vHow(card, ref, howState));
         var r = vRef(ref, refBase); if (r) root.appendChild(r);
         var h = vHist(card); if (h) root.appendChild(h);
       }
