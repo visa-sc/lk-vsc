@@ -659,6 +659,8 @@ async function onText(chatId, text) {
       limit: "Промокод исчерпан.",
       first_only: "Промокод только для первой eSIM, а у вас уже есть купленные.",
       used: "Вы уже использовали этот промокод.",
+      not_started: "Акция по этому промокоду ещё не началась.",
+      expired: "Срок действия промокода закончился.",
     }[j && j.promoReason] || "Промокод не подошёл.";
     return send(chatId, why + "\n\nПришлите другой код или вернитесь к пакету.",
       { reply_markup: { inline_keyboard: [[{ text: "‹ К пакету", callback_data: "back:pay" }]] } });

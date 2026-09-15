@@ -615,6 +615,11 @@ function checkPromo(code, listPrice, email) {
   const p = loadPromos()[code];
   if (!p) { _promoReason = "not_found"; return null; }
   if (p.active === false) { _promoReason = "inactive"; return null; }
+  // Срок акции по московскому времени: from — с начала дня, to — до конца дня
+  // включительно. Появилось 15.09.2026 под SEXTRIP (15–27 октября).
+  const now = Date.now();
+  if (p.from && now < new Date(p.from + "T00:00:00+03:00").getTime()) { _promoReason = "not_started"; return null; }
+  if (p.to && now > new Date(p.to + "T23:59:59.999+03:00").getTime()) { _promoReason = "expired"; return null; }
   if (p.maxUses && (p.uses || 0) >= p.maxUses) { _promoReason = "limit"; return null; }
   // «Только на первую eSIM» — у клиента ещё не должно быть выданных заказов
   if (p.firstOnly && email && hasOrders(email)) { _promoReason = "first_only"; return null; }
@@ -1508,6 +1513,9 @@ function mount(app, opts) {
         firstOnly: !!b.firstOnly, oncePerUser: b.oncePerUser !== false, active: true,
         uses: (all[code] && all[code].uses) || 0,
         maxUses: parseInt(b.max, 10) || null,
+        // срок акции переживает правку кода из админки
+        from: b.from || (all[code] && all[code].from) || undefined,
+        to: b.to || (all[code] && all[code].to) || undefined,
         note: String(b.note || "").slice(0, 80), ts: (all[code] && all[code].ts) || Date.now(),
       };
     }
