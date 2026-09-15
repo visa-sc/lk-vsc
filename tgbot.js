@@ -167,93 +167,12 @@ const REGIONS = [
   ["Океания", "AS AU CK FJ PF GU KI MH FM NR NC NZ NU MP PW PG WS SB TK TO TV VU WF"],
 ].map((r) => { const set = {}; r[1].split(" ").forEach((c) => { set[c] = 1; }); return { name: r[0], set }; });
 
-// Как люди на самом деле называют страны: «Америка», «Эмираты», «Тайланд»
-// через «й», курорты вместо стран. Официальное название знают не все, а уйти
-// из бота ни с чем человек может с первой же попытки.
-const ALIAS = {
-  "US": "сша америка соединенные штаты штаты usa america united states",
-  "AE": "оаэ эмираты арабские дубай абу-даби uae dubai emirates",
-  "GB": "великобритания англия британия лондон uk britain england",
-  "KR": "южная корея корея сеул korea",
-  "CZ": "чехия прага czech",
-  "TR": "турция турци стамбул анталия анталья turkey turkiye",
-  "TH": "таиланд тайланд бангкок пхукет самуи thailand",
-  "ES": "испания барселона мадрид тенерифе майорка spain",
-  "IT": "италия рим милан венеция italy",
-  "FR": "франция париж ницца france",
-  "DE": "германия берлин мюнхен germany",
-  "GR": "греция афины крит родос greece",
-  "EG": "египет хургада шарм каир egypt",
-  "CN": "китай пекин шанхай china",
-  "JP": "япония токио japan",
-  "VN": "вьетнам нячанг фукуок дананг vietnam",
-  "GE": "грузия тбилиси батуми georgia",
-  "AM": "армения ереван armenia",
-  "AZ": "азербайджан баку azerbaijan",
-  "RS": "сербия белград serbia",
-  "ME": "черногория будва montenegro",
-  "CY": "кипр ларнака cyprus",
-  "IL": "израиль тель-авив israel",
-  "IN": "индия гоа india",
-  "ID": "индонезия бали джакарта indonesia bali",
-  "MV": "мальдивы maldives",
-  "LK": "шри-ланка шри ланка цейлон sri lanka",
-  "KZ": "казахстан алматы астана kazakhstan",
-  "UZ": "узбекистан ташкент самарканд uzbekistan",
-  "KG": "киргизия кыргызстан бишкек",
-  "BY": "беларусь белоруссия минск belarus",
-  "MD": "молдова молдавия кишинев moldova",
-  "PT": "португалия лиссабон portugal",
-  "NL": "нидерланды голландия амстердам netherlands holland",
-  "AT": "австрия вена austria",
-  "CH": "швейцария цюрих женева switzerland",
-  "PL": "польша варшава краков poland",
-  "HU": "венгрия будапешт hungary",
-  "FI": "финляндия хельсинки finland",
-  "SE": "швеция стокгольм sweden",
-  "NO": "норвегия осло norway",
-  "DK": "дания копенгаген denmark",
-  "HR": "хорватия croatia",
-  "BG": "болгария болгари bulgaria",
-  "RO": "румыния romania",
-  "AL": "албания albania",
-  "MX": "мексика канкун mexico",
-  "BR": "бразилия brazil",
-  "AR": "аргентина argentina",
-  "CA": "канада canada",
-  "AU": "австралия australia",
-  "NZ": "новая зеландия zealand",
-  "ZA": "юар южная африка africa",
-  "MA": "марокко morocco",
-  "TN": "тунис tunisia",
-  "QA": "катар доха qatar",
-  "SA": "саудовская аравия саудовская riyadh",
-  "OM": "оман oman",
-  "BH": "бахрейн bahrain",
-  "KW": "кувейт kuwait",
-  "JO": "иордания jordan",
-  "SG": "сингапур singapore",
-  "MY": "малайзия куала-лумпур malaysia",
-  "PH": "филиппины philippines",
-  "HK": "гонконг hong kong",
-  "TW": "тайвань taiwan",
-  "EU-REGION": "европа европу европе шенген евросоюз europe",
-};
-function norm(s) { return String(s || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim(); }
-
-// Ищем в таком порядке: точное название, начало названия, синоним, вхождение.
+// Поиск страны — общий с витриной модуль: раскладка, транслит, английские
+// названия, синонимы и одна опечатка (public/esim_country_search.js).
+const countrySearch = require("./public/esim_country_search.js");
 function searchCountries(list, query) {
-  const q = norm(query);
-  if (q.length < 2) return [];
-  const seen = {}, out = [];
-  const push = (x) => { if (x && !seen[x.iso]) { seen[x.iso] = 1; out.push(x); } };
-  const named = list.map((x) => ({ iso: x.iso, name: x.name, n: norm(x.name) }));
-  named.filter((x) => x.n === q).forEach(push);
-  named.filter((x) => x.n.indexOf(q) === 0).forEach(push);
-  named.filter((x) => (ALIAS[x.iso] || "").split(" ").some((w) => w && w.indexOf(q) === 0)).forEach(push);
-  if (ALIAS["EU-REGION"].split(" ").some((w) => w && w.indexOf(q) === 0)) push({ iso: "EU-REGION", name: "Европа" });
-  named.filter((x) => x.n.indexOf(q) > 0).forEach(push);
-  return out;
+  const all = list.some((x) => x.iso === "EU-REGION") ? list : list.concat([{ iso: "EU-REGION", name: "Европа" }]);
+  return countrySearch.search(all, query, { withScore: true });
 }
 
 async function catalog() {
@@ -756,12 +675,14 @@ async function onText(chatId, text) {
 
   // Иначе считаем, что это страна
   const c = await catalog();
-  const hits = searchCountries(c.index, t);
+  const scored = searchCountries(c.index, t);
+  const hits = scored.map((h) => h.item);
   if (!hits.length) {
     return send(chatId, "Не нашёл такую страну. Попробуйте другое написание, откройте полный список или напишите нам: " + SUPPORT_TG,
       { reply_markup: homeKeyboard() });
   }
-  if (hits.length === 1) return showCountry(chatId, hits[0].iso, 0);
+  // Одна страна или лучшая явно впереди («China» → Китай, а не Гонконг и Макао) — открываем сразу
+  if (hits.length === 1 || (scored[0].score <= 4 && scored[0].score < scored[1].score)) return showCountry(chatId, hits[0].iso, 0);
   const rows = hits.slice(0, 8).map((x) => [{ text: flag(x.iso) + " " + x.name, callback_data: "c:" + x.iso }]);
   return send(chatId, "Уточните страну:", { reply_markup: { inline_keyboard: rows } });
 }

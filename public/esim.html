@@ -494,6 +494,8 @@
   </div>
 </div>
 
+<!-- Поиск страны: раскладка, транслит, английские названия, синонимы. Общий с телеграм-ботом. -->
+<script src="/esim_country_search.js"></script>
 <script>
 (function(){
   "use strict";
@@ -803,6 +805,16 @@
   }
   window.addEventListener("pageshow", function(){ userTouched = false; openClean(); setTimeout(openClean, 250); });
   openClean(); setTimeout(openClean, 250);
+  // Страна находится как угодно: «rbnfq», «China», «kitay», «Италия» с опечаткой.
+  // Если модуль поиска не загрузился — простой поиск по началу русского названия.
+  function findCountries(s){
+    if(window.EsimCountrySearch){
+      // Европа целиком — отдельный пункт, как чип «Европа» на главной
+      var withEu = countryIndex.concat([{ iso:"EU-REGION", name:"Европа", count: packsFor("EU-REGION").length }]);
+      return window.EsimCountrySearch.search(withEu, s);
+    }
+    return countryIndex.filter(function(it){ return it.name.toLowerCase().indexOf(s)===0 || it.name.toLowerCase().indexOf(" "+s)>0; });
+  }
   function renderDrop(items){
     drop.innerHTML="";
     if(!items.length){ drop.appendChild(el('<div class="none">Не нашли — попробуйте другое написание.</div>')); }
@@ -816,13 +828,13 @@
   q.addEventListener("input",function(){
     var s=q.value.trim().toLowerCase();
     if(s.length<2){ drop.classList.remove("on"); return; }
-    renderDrop(countryIndex.filter(function(it){ return it.name.toLowerCase().indexOf(s)===0 || it.name.toLowerCase().indexOf(" "+s)>0 || it.iso.toLowerCase()===s; }));
+    renderDrop(findCountries(s));
   });
   q.addEventListener("blur",function(){ setTimeout(function(){ drop.classList.remove("on"); },150); });
   q.addEventListener("keydown",function(e){
     if(e.key==="Enter"){
       var s=q.value.trim().toLowerCase();
-      var hit = countryIndex.filter(function(it){ return it.name.toLowerCase().indexOf(s)===0; })[0];
+      var hit = findCountries(s)[0];
       if(hit){ q.value=hit.name; drop.classList.remove("on"); choose(hit.iso); }
     }
   });
