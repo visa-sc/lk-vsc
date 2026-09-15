@@ -286,6 +286,9 @@ function isTsimId(id) { return /^(ts_|TS-)/.test(String(id || "")); }
 function tsimOn() {
   return Boolean(process.env.TSIM_ACCOUNT && process.env.TSIM_SECRET) && String(process.env.ESIM_TSIM || "1") !== "0";
 }
+// ESIM_TSIM=adm — пакеты видны и продаются только по админ-коду (обкатка до
+// депозита и полного прайса). 15.09.2026 Андрей: «не работает — на витрину не надо».
+function tsimAdmOnly() { return String(process.env.ESIM_TSIM || "1") === "adm"; }
 function tsimHeaders(json) {
   const nonce = crypto.randomBytes(8).toString("hex");
   const ts = String(Math.floor(Date.now() / 1000));
@@ -759,7 +762,7 @@ function mount(app, opts) {
     try {
       const [cat, rate] = await Promise.all([getCatalog(false), usdRate()]);
       const adm = String(req.query.adm || "") === ADMIN_CODE;
-      let products = cat.products.filter((p) => adm || !isTestProduct(p)).map((p) => {
+      let products = cat.products.filter((p) => adm || (!isTestProduct(p) && !(tsimAdmOnly() && isTsimId(p.id)))).map((p) => {
         const o = {
           id: p.id, title: p.title || "", operator: p.operator || "", countries: p.countries || [],
           dataGb: p.dataGb, unlimited: !!p.unlimited, daily: !!p.daily, days: p.days,
@@ -1169,7 +1172,7 @@ function mount(app, opts) {
         return res.status(403).json({ success: false, message: "Идёт тестирование: доступны только служебные пакеты «Test 1 GB» и «Test 2 GB» (Германия и Италия)." });
       }
       // Служебный пакет можно купить только с adm-кодом — клиент его и не увидит
-      if (isTestProduct(found.item) && String(b.adm || "") !== ADMIN_CODE) {
+      if ((isTestProduct(found.item) || (tsimAdmOnly() && isTsimId(found.item.id))) && String(b.adm || "") !== ADMIN_CODE) {
         return res.status(400).json({ success: false, message: "Пакет не найден." });
       }
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
