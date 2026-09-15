@@ -80,6 +80,7 @@ function channel(t) {
 function describeTouch(t) {
   if (!t) return "не определён";
   let s = channel(t);
+  if (isGoogleAds(t) && t.utm_medium === "display") s += " · КМС";
   if (isGoogleAds(t) && t.gad_campaignid) s += ", кампания " + t.gad_campaignid;
   if (t.utm_campaign && !isGoogleAds(t)) s += ", кампания " + t.utm_campaign;
   if (t.utm_term) s += ", запрос «" + t.utm_term + "»";
