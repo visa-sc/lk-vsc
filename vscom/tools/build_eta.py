@@ -138,6 +138,47 @@ def form_html(where, cfg, sub=None):
         </form>"""
 
 
+def meta_pixel(cfg):
+    """Пиксель Meta для копий страниц под Facebook/Instagram.
+
+    События не расставляем по коду руками: оборачиваем gtag, и всё, что уже
+    уходит в Google (form_start, phone_click, messenger_click, generate_lead),
+    зеркально уходит в Meta. Так две системы никогда не разъедутся."""
+    pid = cfg.get("pixel_id") or ""
+    verify = cfg.get("fb_verify") or ""
+    out = ""
+    if verify:
+        out += '<meta name="facebook-domain-verification" content="%s">\n' % verify
+    if not pid:
+        return out
+    return out + """<!-- Meta Pixel -->
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '__PID__');
+fbq('track', 'PageView');
+(function () {
+  var g = window.gtag;
+  if (typeof g !== "function") return;
+  window.gtag = function (kind, name, p) {
+    try {
+      if (kind === "event") {
+        if (name === "generate_lead") fbq("track", "Lead", p && p.value ? { value: p.value, currency: p.currency || "__CUR__" } : {});
+        else if (name === "phone_click" || name === "messenger_click") fbq("track", "Contact");
+        else if (name === "form_start") fbq("trackCustom", "FormStart");
+      }
+    } catch (e) {}
+    return g.apply(this, arguments);
+  };
+})();
+</script>
+<noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=__PID__&ev=PageView&noscript=1"></noscript>
+""".replace("__PID__", pid).replace("__CUR__", cfg["cur_code"])
+
+
 def build(cfg):
     head = head_src
     head = head.replace('<html lang="ru">', '<html lang="%s">' % cfg["lang"])
@@ -162,6 +203,37 @@ def build(cfg):
         "background:linear-gradient(100deg,rgba(9,18,40,.88) 0%,rgba(9,18,40,.70) 42%,rgba(9,18,40,.28) 72%,rgba(9,18,40,.38) 100%)}",
         "background:linear-gradient(100deg,rgba(9,18,40,.90) 0%,rgba(9,18,40,.68) 40%,rgba(9,18,40,.22) 70%,rgba(9,18,40,.30) 100%)}")
     head = head.replace("</style>", EXTRA_CSS, 1)
+    if cfg.get("meta"):
+        head = head.replace("</head>", meta_pixel(cfg) + "</head>", 1)
+
+    # Копия для Meta: только настоящие контакты. Местных номеров и офисов у нас
+    # нет, а выдуманный контакт в рекламе Meta — это обман и повод для бана.
+    if cfg.get("meta"):
+        tel, tel_h = TEL_UK, TEL_UK_H
+        offices = f"""        <div class="office">
+          <b>VSC — Visa Services Center</b>
+          <a href="tel:{TEL_UK_H}" data-msgr="phone">{TEL_UK}</a><br>
+          {MAIL}<br>
+          <span class="mut">{cfg.get('hours_meta') or cfg['hours_uk']}</span>
+        </div>
+"""
+    else:
+        tel, tel_h = cfg["tel"], cfg["tel_h"]
+        offices = f"""        <div class="office">
+          <b>{cfg['office_city']}</b>
+          {cfg['office_addr']}<br>
+          <a href="tel:{cfg['tel_h']}" data-msgr="phone">{cfg['tel']}</a><br>
+          {MAIL}<br>
+          <span class="mut">{cfg['hours_br']}</span>
+        </div>
+        <div class="office">
+          <b>London, 85 Great Portland Street</b>
+          Fitzrovia, W1W 7LT<br>
+          <a href="tel:{TEL_UK_H}" data-msgr="phone">{TEL_UK}</a><br>
+          {MAIL}<br>
+          <span class="mut">{cfg['hours_uk']}</span>
+        </div>
+"""
 
     steps = "".join(
         f"""      <div class="step"><b>{s[0]}</b><span>{s[1]}</span></div>\n"""
@@ -193,7 +265,7 @@ def build(cfg):
       <a href="#contacts">{cfg['nav'][4]}</a>
     </nav>
     <div class="hdr__tels">
-      <a class="hdr__tel" href="tel:{cfg['tel_h']}" data-msgr="phone"><img src="/img/icon-phone.svg" alt="">{cfg['tel']}</a>
+      <a class="hdr__tel" href="tel:{tel_h}" data-msgr="phone"><img src="/img/icon-phone.svg" alt="">{tel}</a>
     </div>
     <a class="btn btn--sm btn--inline" href="#form"><span class="lbl-l">{cfg['btn']}</span><span class="lbl-s">{cfg['btn_s']}</span></a>
     <button class="hdr__burger" id="burger" aria-label="Menu"><span></span><span></span><span></span></button>
@@ -258,21 +330,7 @@ def build(cfg):
   <div class="container">
     <div class="contact-grid">
       <div>
-        <div class="office">
-          <b>{cfg['office_city']}</b>
-          {cfg['office_addr']}<br>
-          <a href="tel:{cfg['tel_h']}" data-msgr="phone">{cfg['tel']}</a><br>
-          {MAIL}<br>
-          <span class="mut">{cfg['hours_br']}</span>
-        </div>
-        <div class="office">
-          <b>London, 85 Great Portland Street</b>
-          Fitzrovia, W1W 7LT<br>
-          <a href="tel:{TEL_UK_H}" data-msgr="phone">{TEL_UK}</a><br>
-          {MAIL}<br>
-          <span class="mut">{cfg['hours_uk']}</span>
-        </div>
-        <div>
+{offices}        <div>
           <a class="msgr msgr--wa" data-msgr="whatsapp" href="{WA}" target="_blank" rel="noopener">{WA_SVG}WhatsApp</a>
         </div>
       </div>
@@ -294,7 +352,7 @@ def build(cfg):
 <footer class="ftr">
   <div class="container">
     <b>VSC — Visa Services Center</b>
-    <p><a href="tel:{cfg['tel_h']}" data-msgr="phone">{cfg['tel']}</a> · <a href="mailto:{MAIL}">{MAIL}</a></p>
+    <p><a href="tel:{tel_h}" data-msgr="phone">{tel}</a> · <a href="mailto:{MAIL}">{MAIL}</a></p>
     <div class="ftr__fine">
       <p>{cfg['legal1']}</p>
       <p>{cfg['legal2']}</p>
@@ -422,6 +480,9 @@ __WIZJS__
 </html>
 """
     tail = tail.replace("__WIZJS__", wizard_js(cfg))
+    if cfg.get("meta"):
+        # fbclid в заявке: письмо покажет, что человек пришёл из Facebook/Instagram.
+        tail = tail.replace('"gclid","yclid"]', '"gclid","yclid","fbclid"]', 1)
     tail = (tail.replace("__FORM__", cfg["form"])
                 .replace("__ERR_PHONE__", cfg["err_phone"])
                 .replace("__SENDING__", cfg["sending"])

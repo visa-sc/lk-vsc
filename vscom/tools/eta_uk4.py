@@ -606,3 +606,25 @@ for tag, cfg in (("br", BR), ("es", ES), ("it", IT), ("us", US)):
         if k in cfg:
             cfg[k] = _sub(cfg[k], REPL[tag])
     build(cfg)
+
+# ══════════════════ копии для рекламы в Facebook и Instagram ══════════════════
+# Исходные страницы не трогаем: у них свои номера под Google. Копия отличается
+# только контактами (один настоящий британский номер, без офисов), пикселем
+# Meta и адресом. Форма та же, поэтому письмо-заявка приходит как обычно, а
+# отличить Meta можно по строкам Page и UTM (fbclid).
+META_PIXEL_ETA = ""      # ID пикселя «VSC ETA» из Events Manager
+META_VERIFY_VSCOM = ""   # метатег подтверждения домена visa-sc.com
+
+META = {
+ "br": dict(file="br/reino-unido.html", path="/br/reino-unido", url="https://visa-sc.com/br/reino-unido",
+            hours_meta="Seg a sex, 8h às 17h (horário de Londres)"),
+ "es": dict(file="es/reino-unido.html", path="/es/reino-unido", url="https://visa-sc.com/es/reino-unido",
+            hours_meta="Lun a vie, 9:00 a 18:00 (hora peninsular)"),
+ "it": dict(file="it/regno-unito.html", path="/it/regno-unito", url="https://visa-sc.com/it/regno-unito",
+            hours_meta="Lun–ven, 9:00–18:00 (ora italiana)"),
+ "us": dict(file="us/uk.html", path="/us/uk", url="https://visa-sc.com/us/uk",
+            hours_meta="Mon to Fri, 8am to 5pm (London time)"),
+}
+for tag, cfg in (("br", BR), ("es", ES), ("it", IT), ("us", US)):
+    m = dict(cfg, **META[tag], meta=True, pixel_id=META_PIXEL_ETA, fb_verify=META_VERIFY_VSCOM)
+    build(m)

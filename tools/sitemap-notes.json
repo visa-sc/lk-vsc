@@ -108,6 +108,10 @@
     "visa-sc.com/es/gb": { "group": "Лендинги", "desc": "UK ETA для испанцев." },
     "visa-sc.com/it/gb": { "group": "Лендинги", "desc": "UK ETA для итальянцев." },
     "visa-sc.com/br/gb": { "group": "Лендинги", "desc": "UK ETA для бразильцев." },
+    "visa-sc.com/br/reino-unido": { "group": "Лендинги", "desc": "UK ETA для бразильцев, копия под рекламу Facebook/Instagram: только британский номер, без офисов, пиксель Meta." },
+    "visa-sc.com/es/reino-unido": { "group": "Лендинги", "desc": "UK ETA для испанцев, копия под рекламу Facebook/Instagram: только британский номер, без офисов, пиксель Meta." },
+    "visa-sc.com/it/regno-unito": { "group": "Лендинги", "desc": "UK ETA для итальянцев, копия под рекламу Facebook/Instagram: только британский номер, без офисов, пиксель Meta." },
+    "visa-sc.com/us/uk": { "group": "Лендинги", "desc": "UK ETA для граждан США, копия под рекламу Facebook/Instagram: только британский номер, без офисов, пиксель Meta." },
     "visa-sc.com/br/canada": { "group": "Лендинги", "desc": "Canada eTA для бразильцев." },
     "spain.visa-sc.com/": { "group": "Лендинги", "desc": "ВНЖ Испании, русский." },
     "spain.visa-sc.com/ga": { "group": "Лендинги", "desc": "Версия под Google Ads." }
