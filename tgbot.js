@@ -280,7 +280,8 @@ const gbOf = (p) => (p.unlimited ? "безлимит" : RU(p.dataGb) + " ГБ");
 // ровно то, что человек получает сверх неё.
 const packLabel = (p, iso) => {
   const extra = p.countries.length - (iso && p.countries.indexOf(iso) >= 0 ? 1 : 0);
-  return gbOf(p) + " · " + RU(p.days) + " дн. · " + RU(p.priceRub) + " ₽" +
+  // ✅ у пакетов, которые советуем для российских сервисов в Китае (в карточке пояснение)
+  return (p.ruPick ? "✅ " : "") + gbOf(p) + " · " + RU(p.days) + " дн. · " + RU(p.priceRub) + " ₽" +
     (extra > 0 ? " · +" + extra + " " + plural(extra, ["страна", "страны", "стран"]) : "");
 };
 
@@ -399,7 +400,9 @@ async function showPack(chatId, productId, messageId) {
     "Интернет: <b>" + gbOf(p) + "</b>\n" +
     "Срок: <b>" + RU(p.days) + " дн.</b> с первого выхода в интернет\n" +
     "Сеть: <b>" + (p.fiveG ? "5G / 4G LTE" : "4G LTE") + "</b>\n" +
-    "Раздача Wi-Fi: <b>" + (p.hotspot !== false ? "да" : "нет") + "</b>\n\n";
+    "Раздача Wi-Fi: <b>" + (p.hotspot !== false ? "да" : "нет") + "</b>\n" +
+    // та же сноска, что на витрине: NextLink через Сингапур советуем для российских сервисов
+    (p.ruPick ? "✅ Рекомендуем для Битрикс, amoCRM и других российских сервисов в Китае\n" : "") + "\n";
   if (price.discountRub > 0 || price.balanceUsed > 0) {
     const why = price.discountKind === "ref" ? "скидка по приглашению друга"
       : price.discountKind === "cost" ? "цена по себестоимости"

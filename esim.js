@@ -150,6 +150,15 @@ function chinaTipsHtml() {
     '<p style="font-size:12.5px;line-height:1.5;color:#8b93a5;margin:0">' + CHINA_TIPS_NOTE + "</p></div>";
 }
 
+// Пакеты на Китай, которые советуем для работы с российскими сервисами
+// (Битрикс, amoCRM и т.п.): сеть NextLink с выходом в интернет через Сингапур.
+// Решение Андрея 15.09.2026 после жалобы клиента на медленные CRM через
+// гонконгский выход. На витрине и в боте такие пакеты помечены зелёной сноской.
+function isRuServicesPick(p) {
+  return p && p.operator === "NextLink" && /singapore/i.test(p.ipBreakout || "") &&
+    (p.countries || []).indexOf("CN") >= 0;
+}
+
 // ═══════════════ ПОСТАВЩИК: MobiMatter ═══════════════
 const MM_BASE = "https://api.mobimatter.com/mobimatter/api/v2";
 function mmHeaders() {
@@ -190,6 +199,8 @@ const mobimatter = {
         fiveG: det.FIVEG === "1",
         hotspot: det.HOTSPOT === "1",
         topup: det.TOPUP === "1",
+        // где трафик выходит в интернет: Hong Kong, Singapore и т.д. (нужно для подсказки ниже)
+        ipBreakout: String(det.IP_BREAKOUT || "").trim(),
       };
       (p.productCategory === "esim_addon" ? addons : products).push(item);
     }
@@ -283,7 +294,9 @@ async function getCatalog(force) {
   const cached = loadCatalogFile();
   if (!provider.ready()) return { ts: Date.now(), source: "demo", products: DEMO_PRODUCTS, addons: [] };
   // кэш старого формата (без addons) не годится — обновляем
-  if (!force && cached && cached.source === provider.name && Array.isArray(cached.addons) && Date.now() - cached.ts < CATALOG_TTL_MS) return cached;
+  // кэш без ipBreakout (до 15.09.2026) тоже старый формат
+  const fresh = cached && cached.products && cached.products[0] && ("ipBreakout" in cached.products[0]);
+  if (!force && cached && fresh && cached.source === provider.name && Array.isArray(cached.addons) && Date.now() - cached.ts < CATALOG_TTL_MS) return cached;
   try {
     const { products, addons } = await provider.fetchProducts();
     if (products.length) { _catalog = { ts: Date.now(), source: provider.name, products, addons }; writeJson(CATALOG_FILE, _catalog); return _catalog; }
@@ -533,6 +546,7 @@ function mount(app, opts) {
           id: p.id, title: p.title || "", operator: p.operator || "", countries: p.countries || [],
           dataGb: p.dataGb, unlimited: !!p.unlimited, days: p.days,
           fiveG: !!p.fiveG, hotspot: p.hotspot !== false, priceRub: toRetailRub(p.costUsd, rate),
+          ruPick: isRuServicesPick(p),
         };
         if (adm) { o.costUsd = p.costUsd; o.costRub = Math.round(p.costUsd * rate); o.marginRub = o.priceRub - o.costRub; }
         return o;
