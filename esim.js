@@ -571,7 +571,10 @@ const EA_BASE = "https://api.esimaccess.com";
 const EA_CATALOG_FILE = path.join(DIR, "catalog-ea.json");
 const EA_RESERVE_USD = Number(process.env.ESIM_EA_RESERVE_USD || 5);
 const EA_DAYS = String(process.env.ESIM_EA_DAYS || "1,3,5,7,10,15,30").split(",").map(Number);
-const EA_MIN_GB = Number(process.env.ESIM_EA_MIN_GB || 0.5);
+// Порог в мегабайтах: у них «500MB» — это 0,49 ГБ, и порог «от 0,5 ГБ» резал
+// все самые дешёвые пакеты. Пакеты по 100 МБ не берём: стоят столько же,
+// сколько 500 МБ, клиенту от них только вред.
+const EA_MIN_MB = Number(process.env.ESIM_EA_MIN_MB || 400);
 function eaMode() { return String(process.env.ESIM_EA || "0"); }
 function eaOn() { return Boolean(process.env.ESIMACCESS_ACCESS_CODE) && eaMode() !== "0"; }
 function eaAdmOnly() { return eaMode() === "adm"; }
@@ -595,7 +598,7 @@ function eaItem(p) {
   const days = Number(p.duration) || 0;
   const cost = Number(p.price) / 10000;
   if (!loc.length || !gb || !days || !cost || !p.packageCode) return null;
-  if (gb < EA_MIN_GB || EA_DAYS.indexOf(days) < 0) return null;
+  if (Math.round(gb * 1024) < EA_MIN_MB || EA_DAYS.indexOf(days) < 0) return null;
   const name = String(p.name || "");
   // «/Day» у них значит суточный пакет: объём в сутки, цена тоже за сутки
   const daily = /\/\s*day/i.test(name);
@@ -653,11 +656,13 @@ const esimaccess = {
     });
     return ((obj && (obj.esimList || obj.list)) || [])[0] || null;
   },
+  _pack(e) { return ((e && e.packageList) || [])[0] || {}; },
   async _view(e) {
     const lpa = e.ac || e.activationCode || null;
     const parts = lpaParts(lpa);
+    const pk = this._pack(e);
     return {
-      title: e.packageName || e.name || "", operator: "eSIM Access",
+      title: pk.packageName || e.packageName || "", operator: "eSIM Access",
       iccid: e.iccid || null, lpa,
       activationCode: parts.code || e.acCode || null, smdp: parts.smdp || e.smdpAddress || null,
       apn: e.apn || null,
@@ -672,17 +677,22 @@ const esimaccess = {
   async getUsage(orderId) {
     const e = await this._esim(orderId);
     if (!e) return { installed: false, status: null, iccid: null, suspended: false, packages: [] };
+    const pk = this._pack(e);
     const totalMb = Math.round(Number(e.totalVolume || 0) / 1048576);
     const usedMb = Math.round(Number(e.orderUsage || e.usage || 0) / 1048576);
+    // RELEASED значит «профиль выпущен, но ещё не установлен» — в статусах их API
+    // установка видна по installationTime и по ENABLED/INSTALLED
     const st = String(e.smdpStatus || "").toUpperCase();
     return {
-      installed: /INSTALL|ENABLE|RELEASED/.test(st) && st !== "RELEASED",
+      installed: Boolean(e.installationTime) || /INSTALL|ENABLE|DOWNLOAD/.test(st),
       status: e.esimStatus || e.smdpStatus || null, iccid: e.iccid || null,
       suspended: String(e.esimStatus || "").toUpperCase() === "SUSPENDED",
-      daily: /\/\s*day/i.test(String(e.packageName || "")),
+      daily: /\/\s*day/i.test(String(pk.packageName || "")),
       packages: totalMb ? [{
-        name: e.packageName || "", totalMb, usedMb, remainingMb: Math.max(0, totalMb - usedMb),
-        activatedAt: e.activateTime || null, expiresAt: e.expiredTime || null,
+        name: pk.packageName || "", totalMb, usedMb, remainingMb: Math.max(0, totalMb - usedMb),
+        // до активации expiredTime — крайний срок установки, а не конец пакета
+        activatedAt: e.activateTime || null,
+        expiresAt: e.activateTime ? e.expiredTime : null,
       }] : [],
     };
   },
@@ -1232,19 +1242,21 @@ function mount(app, opts) {
     return Number(p.costUsd) <= 0.05 || /(^|\s)test\b/i.test(String(p.title || ""));
   }
 
-  // Один и тот же пакет (страны, объём, срок) у двух поставщиков показываем
-  // один раз — по меньшей цене. Дубли внутри MobiMatter не трогаем, как и было.
+  // Один и тот же пакет (страны, объём, срок) у разных поставщиков показываем
+  // один раз — по меньшей цене, кто бы её ни давал. Если цена совпала, оставляем
+  // MobiMatter: там самый большой депозит (решение Андрея 16.09.2026), затем
+  // TSim, затем eSIM Access. Дубли внутри одного поставщика не трогаем.
+  function supplierRank(p) { return isEaId(p.id) ? 2 : (isTsimId(p.id) ? 1 : 0); }
   function hideSupplierDups(list) {
     const key = (p) => p.countries.slice().sort().join(",") + "|" + (p.unlimited ? "u" : p.dataGb) + "|" + (p.daily ? "d" : "") + "|" + p.days;
-    const best = new Map(); // ключ → { ts: минимальная цена TSim, mm: минимальная цена остальных }
+    const best = new Map(); // ключ → { price: минимальная цена, rank: лучший поставщик по этой цене }
     list.forEach((p) => {
-      const k = key(p), b = best.get(k) || { ts: Infinity, mm: Infinity };
-      if (isTsimId(p.id)) b.ts = Math.min(b.ts, p.priceRub); else b.mm = Math.min(b.mm, p.priceRub);
-      best.set(k, b);
+      const k = key(p), r = supplierRank(p), b = best.get(k);
+      if (!b || p.priceRub < b.price || (p.priceRub === b.price && r < b.rank)) best.set(k, { price: p.priceRub, rank: r });
     });
     return list.filter((p) => {
       const b = best.get(key(p));
-      return isTsimId(p.id) ? p.priceRub < b.mm : p.priceRub <= b.ts;
+      return p.priceRub === b.price && supplierRank(p) === b.rank;
     });
   }
 
@@ -1989,4 +2001,4 @@ function mount(app, opts) {
 }
 
 // _tsim — для ручной проверки заказа со скрипта на сервере (tools/ не нужен)
-module.exports = { mount, _tsim: tsim };
+module.exports = { mount, _tsim: tsim, _ea: esimaccess };

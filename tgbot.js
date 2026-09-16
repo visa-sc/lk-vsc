@@ -196,7 +196,7 @@ async function packsFor(iso) {
 // покрытие для этой страницы. Та же функция стоит на витрине (public/esim.html).
 function dropDominated(list, wide) {
   return list.filter((p) => {
-    if (String(p.id).indexOf("ts_") !== 0) return true;
+    if (!/^(ts_|ea_)/.test(String(p.id))) return true;
     return !list.some((q) => {
       if (q === p || !!q.daily !== !!p.daily || q.unlimited !== p.unlimited) return false;
       const nq = q.countries.length, np = p.countries.length;

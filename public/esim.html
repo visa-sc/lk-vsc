@@ -640,7 +640,7 @@
   // Та же функция стоит в tgbot.js.
   function dropDominated(list, wide){
     return list.filter(function(p){
-      if(String(p.id).indexOf("ts_") !== 0) return true;
+      if(!/^(ts_|ea_)/.test(String(p.id))) return true;
       return !list.some(function(q){
         if(q === p || !!q.daily !== !!p.daily || q.unlimited !== p.unlimited) return false;
         var nq = q.countries.length, np = p.countries.length;
