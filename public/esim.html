@@ -1145,7 +1145,11 @@
   /* ── загрузка каталога ── */
   (async function(){
     try{
-      var r = await fetch("/esim/api/catalog"+(ADM?("?adm="+encodeURIComponent(ADM)):""));
+      // на /turkey и /china просим и короткие сроки (3, 5 и 10 дней)
+      var qsCat = [];
+      if(ADM) qsCat.push("adm="+encodeURIComponent(ADM));
+      if(LANDINGS[location.pathname.replace(/\/+$/, "").toLowerCase()]) qsCat.push("land=1");
+      var r = await fetch("/esim/api/catalog"+(qsCat.length?("?"+qsCat.join("&")):""));
       var j = await r.json();
       if(!j || !j.success) throw new Error("catalog");
       PAY = !!j.pay;

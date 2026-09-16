@@ -415,9 +415,12 @@ async function qrFromLpa(lpa, remoteUrl) {
 // У TSim на каждую страну по 70–80 вариантов: 8 сроков на каждый объём и 11
 // сроков у суточных. Чтобы витрина не превратилась в кашу, берём привычные
 // сроки. Списки меняются в .env без выкатки кода.
-// 16.09.2026: добавили 3, 5 и 10 дней — в Директе конкуренты бьют именно по
-// коротким поездкам. Откат к прежнему набору: ESIM_TSIM_DAYS=7,15,30 в .env.
-const TSIM_DAYS = String(process.env.ESIM_TSIM_DAYS || "3,5,7,10,15,30").split(",").map(Number);
+// Обычные сроки в общем каталоге — 7, 15 и 30 дней, как было. Короткие 3, 5 и
+// 10 дней добавлены 16.09.2026 только для рекламных страниц стран
+// (voyomobile.ru/turkey и /china): там спрос на короткие поездки, а общий
+// каталог от них разбухает. Оба списка меняются в .env.
+const TSIM_DAYS = String(process.env.ESIM_TSIM_DAYS || "7,15,30").split(",").map(Number);
+const TSIM_DAYS_LAND = String(process.env.ESIM_TSIM_DAYS_LAND || "3,5,10").split(",").map(Number).filter((d) => d);
 const TSIM_DAILY_DAYS = String(process.env.ESIM_TSIM_DAILY_DAYS || "1,3,5,7,10,15").split(",").map(Number);
 const TSIM_DAILY_MAX_MB = Number(process.env.ESIM_TSIM_DAILY_MAX_MB || 1024);
 function tsimItem(p) {
@@ -427,8 +430,9 @@ function tsimItem(p) {
   // У суточных пакетов data_allowance — трафик за ВЕСЬ срок (3 дня × 500 МБ = 1500),
   // а на витрине нужен объём в сутки. Сверено с прайсом 16.09.2026.
   const perDayMb = isDaily && days ? Math.round(Number(p.data_allowance) / days) : Number(p.data_allowance);
+  const landOnly = !isDaily && TSIM_DAYS.indexOf(days) < 0 && TSIM_DAYS_LAND.indexOf(days) >= 0;
   if (isDaily ? (TSIM_DAILY_DAYS.indexOf(days) < 0 || perDayMb > TSIM_DAILY_MAX_MB)
-              : TSIM_DAYS.indexOf(days) < 0) return null;
+              : (TSIM_DAYS.indexOf(days) < 0 && !landOnly)) return null;
   if (String(p.currency || "USD").toUpperCase() !== "USD") return null;
   // пакеты с датой активации «на заказ» требуют дату при покупке — не наш случай
   if (Number(p.scheduled_activation) === 1) return null;
@@ -445,6 +449,7 @@ function tsimItem(p) {
     days: days || null, costUsd: cost, retailUsd: null,
     fiveG: /5g/i.test(name + " " + (p.spec_name || "")), hotspot: true,
     topup: Number(p.topup_support) === 1,
+    landOnly,   // короткий срок: показываем только на страницах стран
     ipBreakout: /\(T\+C\)/i.test(name) ? "T+C" : "",
     dataMb: mb,
   };
@@ -865,7 +870,12 @@ function mount(app, opts) {
     try {
       const [cat, rate] = await Promise.all([getCatalog(false), usdRate()]);
       const adm = String(req.query.adm || "") === ADMIN_CODE;
-      let products = cat.products.filter((p) => adm || (!isTestProduct(p) && !(tsimAdmOnly() && isTsimId(p.id)))).map((p) => {
+      // ?land=1 — запрос со страницы страны: там показываем и короткие сроки
+      const land = String(req.query.land || "") === "1";
+      let products = cat.products
+        .filter((p) => adm || (!isTestProduct(p) && !(tsimAdmOnly() && isTsimId(p.id))))
+        .filter((p) => land || adm || !p.landOnly)
+        .map((p) => {
         const o = {
           id: p.id, title: p.title || "", operator: p.operator || "", countries: p.countries || [],
           dataGb: p.dataGb, unlimited: !!p.unlimited, daily: !!p.daily, days: p.days,
