@@ -179,7 +179,7 @@
   .pk .bot{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);}
   .pk .pr{font-size:21px;font-weight:800;letter-spacing:-.02em;}
   .pk .pgb{font-size:12px;color:var(--mut);font-weight:600;margin-left:7px;letter-spacing:0;}
-  /* Шильдики доверия — только на /turkey и /china, ненавязчивой строкой под подзаголовком */
+  /* Шильдики доверия — только на рекламных страницах стран, строкой под подзаголовком */
   .trust{display:none;flex-wrap:wrap;justify-content:center;gap:8px;margin:-14px auto 26px;max-width:620px;}
   .trust.on{display:flex;}
   .trust span{font-size:12.5px;color:#54607a;background:rgba(255,255,255,.72);border:1px solid var(--line);
@@ -808,12 +808,18 @@
     if(!keepScroll) sect.scrollIntoView({behavior:"smooth", block:"start"});
   }
 
-  /* Страничка под рекламу: voyomobile.ru/turkey и /china — та же витрина, но
+  /* Страничка под рекламу: voyomobile.ru/turkey, /china, /vietnam, /thailand,
+     /egypt, /georgia, /japan — та же витрина, но
      заголовок про страну, цена «от» живая, и страна сразу выбрана. Работает и
      по адресу вида /esim?c=TR. Дизайн не меняем: правим только два текста. */
   var LANDINGS = {
-    "/turkey": { iso: "TR", where: "Турции" },
-    "/china":  { iso: "CN", where: "Китае"  },
+    "/turkey":   { iso: "TR", where: "Турции"   },
+    "/china":    { iso: "CN", where: "Китае"    },
+    "/vietnam":  { iso: "VN", where: "Вьетнаме" },
+    "/thailand": { iso: "TH", where: "Таиланде" },
+    "/egypt":    { iso: "EG", where: "Египте"   },
+    "/georgia":  { iso: "GE", where: "Грузии"   },
+    "/japan":    { iso: "JP", where: "Японии"   },
   };
   function landingCountry(){
     var byPath = LANDINGS[location.pathname.replace(/\/+$/, "").toLowerCase()];

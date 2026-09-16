@@ -31,8 +31,12 @@ const app = express();
 // /translate прошёл бы мимо. Список доменов общий с esim.js (ESIM_HOSTS).
 const ESIM_SITE_HOSTS = new Set(["esim.voyotravel.ru", "voyomobile.ru", "voyomobile.com"]);
 // Кроме /esim пропускаем короткие адреса стран под рекламу: voyomobile.ru/turkey,
-// voyomobile.ru/china — это та же витрина, просто заголовок про страну (16.09.2026)
-const ESIM_HOST_ALLOW = /^\/($|esim(\/|_|\?|$)|turkey$|china$|apple-touch-icon[^/]*\.png$|voyo-logo\.png$|favicon\.ico$|robots\.txt$|sitemap\.xml$)/;
+// voyomobile.ru/china и далее по списку — это та же витрина, просто заголовок
+// про страну (16.09.2026; Вьетнам, Таиланд, Египет, Грузия и Япония — 17.09.2026)
+const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "georgia", "japan"];
+const ESIM_HOST_ALLOW = new RegExp(
+  "^\\/($|esim(\\/|_|\\?|$)|(?:" + ESIM_LAND_PATHS.join("|") + ")\\/?$|" +
+  "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|favicon\\.ico$|robots\\.txt$|sitemap\\.xml$)");
 app.use((req, res, next) => {
   const h = String(req.hostname || "").toLowerCase();
   if (h.startsWith("www.") && ESIM_SITE_HOSTS.has(h.slice(4))) return res.redirect(301, "https://" + h.slice(4) + req.originalUrl);
@@ -78,9 +82,9 @@ app.get("/", (req, res, next) => {
   }
   next();
 });
-// Рекламные адреса стран на сайтах eSIM: /turkey и /china отдают ту же витрину,
-// заголовок и выбранную страну подставляет сама страница по адресу.
-app.get(["/turkey", "/china"], (req, res, next) => {
+// Рекламные адреса стран на сайтах eSIM отдают ту же витрину, заголовок и
+// выбранную страну подставляет сама страница по адресу (список — ESIM_LAND_PATHS).
+app.get(ESIM_LAND_PATHS.map((c) => "/" + c), (req, res, next) => {
   if (!ESIM_SITE_HOSTS.has(String(req.hostname || "").toLowerCase())) return next();
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   return res.sendFile(path.join(__dirname, "public", "esim.html"));
