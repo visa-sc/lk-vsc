@@ -472,7 +472,20 @@ function tsimSpentUsd() {
     .reduce((s, o) => s + (Number(o.costUsd) || 0), 0);
 }
 function tsimLeftUsd() { return Math.round((TSIM_CREDIT_USD - tsimSpentUsd()) * 100) / 100; }
-function loadTsimCatalog() { return readJson(TSIM_CATALOG_FILE, null); }
+// Каталоги поставщиков держим в памяти: цены считаются по каждому пакету, и
+// чтение файла на 3000 позиций из каждого вызова растягивало ответ витрины до
+// десятков секунд (поймано 16.09.2026). Перечитываем, только если файл изменился.
+const _catCache = {};
+function loadCatalogCached(file) {
+  let mt = 0;
+  try { mt = fs.statSync(file).mtimeMs; } catch (_) { return null; }
+  const c = _catCache[file];
+  if (c && c.mt === mt) return c.data;
+  const data = readJson(file, null);
+  _catCache[file] = { mt, data };
+  return data;
+}
+function loadTsimCatalog() { return loadCatalogCached(TSIM_CATALOG_FILE); }
 
 const tsim = {
   name: "tsim",
@@ -613,7 +626,7 @@ function eaItem(p) {
     dataMb: Math.round(gb * 1024),
   };
 }
-function loadEaCatalog() { return readJson(EA_CATALOG_FILE, null); }
+function loadEaCatalog() { return loadCatalogCached(EA_CATALOG_FILE); }
 let _eaBalance = { ts: 0, usd: 0 };
 const esimaccess = {
   name: "esimaccess",
