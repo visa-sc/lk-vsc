@@ -52,6 +52,21 @@ function loadBudget() {
   try { return JSON.parse(fs.readFileSync(BUDGET_FILE, "utf8")); } catch (_) { return { days: {}, alerts: {} }; }
 }
 function saveBudget(b) { try { fs.writeFileSync(BUDGET_FILE, JSON.stringify(b, null, 1)); } catch (e) { console.error("engineBudget save:", e.message); } }
+// Какой сервис пришёл в шлюз. Ключ у движка переводов и у модуля «Качество
+// коммуникации» (прослушка звонков и переписок у Кати) СЕЙЧАС ОДИН: её код читает
+// его из .env движка. Поэтому различаем по подписи клиента — движок ходит через
+// Anthropic SDK и шлёт его служебные заголовки (user-agent: Anthropic/JS,
+// x-stainless-*), её модуль стучится голым http.request без них. Заголовок
+// x-voyo-service, если он есть, важнее догадки: новый сервис называет себя сам,
+// и тогда ничего угадывать не нужно.
+const SVC_TITLES = { translate: "Переводы документов", cq: "Прослушка (качество коммуникации)", scanner: "Сканер паспортов" };
+function svcTitle(id) { return SVC_TITLES[id] || id; }
+function svcOf(req) {
+  const named = String(req.headers["x-voyo-service"] || "").trim().toLowerCase();
+  if (named && /^[a-z0-9_-]{1,24}$/.test(named)) return named;
+  if (req.headers["x-stainless-lang"] || /Anthropic\//i.test(String(req.headers["user-agent"] || ""))) return "translate";
+  return "cq";
+}
 function usdOf(model, u) {
   const rate = PRICES[model] || PRICES["claude-sonnet-5"];
   return ((u.input_tokens || 0) + (u.cache_read_input_tokens || 0) * 0.1 + (u.cache_creation_input_tokens || 0) * 1.25) * rate[0] / 1e6
@@ -173,6 +188,12 @@ function mountEarly(app, deps) {
         const b2 = loadBudget();
         const d2 = b2.days[day] || (b2.days[day] = { usd: 0, calls: 0, forced: 0 });
         d2.usd += usd; d2.calls++; d2.forced = (d2.forced || 0) + forcedNow;
+        // Разбивка по сервисам: без неё расход прослушки сливался с переводами
+        // в одну строку, и в письме о балансе было не видно, кто сколько съел.
+        const svc = svcOf(req);
+        d2.svc = d2.svc || {};
+        const sv = d2.svc[svc] || (d2.svc[svc] = { usd: 0, calls: 0 });
+        sv.usd += usd; sv.calls++;
         // чистим журнал старше 90 дней
         for (const k of Object.keys(b2.days)) if (k < new Date(Date.now() - 90 * 86400e3).toISOString().slice(0, 10)) delete b2.days[k];
         if (d2.usd >= DAILY_USD * 0.8 && !b2.alerts[day + ":80"]) {

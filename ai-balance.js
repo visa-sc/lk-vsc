@@ -65,6 +65,7 @@ function addTopup(usd, note) {
     at: Date.now(), usd: Number(usd), note: note || "",
     // срез счётчиков на момент пополнения — от него считаем новый расход
     baseGatewayUsd: gw.usd, baseGatewayCalls: gw.calls,
+    baseSvc: gw.svc || {},
     baseScannerUsd: sc.usd, baseScannerDocs: sc.docs,
   });
   d.warnSentAt = null;
@@ -80,13 +81,21 @@ function lastTopup() {
 
 // ── Расход после момента ts ──────────────────────────────────────────────────
 // Накопленный расход за всё время — по каждому журналу отдельно.
+// Названия сервисов для письма. Идентификаторы ставит шлюз (engine-proxy.svcOf).
+const SVC_TITLES = { translate: "Переводы документов", cq: "Прослушка (качество коммуникации)", scanner: "Сканер паспортов" };
 function spendGatewayTotal() {
-  let usd = 0, calls = 0;
+  let usd = 0, calls = 0; const svc = {};
   try {
     const b = JSON.parse(fs.readFileSync(ENGINE_BUDGET, "utf8"));
-    for (const v of Object.values(b.days || {})) { usd += v.usd || 0; calls += v.calls || 0; }
+    for (const v of Object.values(b.days || {})) {
+      usd += v.usd || 0; calls += v.calls || 0;
+      for (const [id, t] of Object.entries(v.svc || {})) {
+        const a = svc[id] || (svc[id] = { usd: 0, calls: 0 });
+        a.usd += t.usd || 0; a.calls += t.calls || 0;
+      }
+    }
   } catch (_) {}
-  return { usd, calls };
+  return { usd, calls, svc };
 }
 function spendScannerTotal() {
   let usd = 0, docs = 0;
@@ -104,7 +113,7 @@ function spendScannerTotal() {
 }
 // Текущая картина: сколько положили, сколько потратили, сколько осталось.
 function status() {
-  const t = lastTopup();
+  const t0 = lastTopup(), t = t0;
   if (!t) return { known: false, message: "сумма пополнения не задана — node tools/ai-topup.js <сумма в $>" };
   const gwAll = spendGatewayTotal(), scAll = spendScannerTotal();
   // Для пополнений, записанных до появления срезов, база — ноль: тогда расход
@@ -117,11 +126,23 @@ function status() {
     usd: Math.max(0, scAll.usd - (t.baseScannerUsd || 0)),
     docs: Math.max(0, scAll.docs - (t.baseScannerDocs || 0)),
   };
+  // Разбивка по сервисам. Дни до 16.09.2026 писались без неё — этот остаток
+  // показываем отдельной строкой «до разделения», чтобы сумма всегда сходилась.
+  const svc = [];
+  let svcSum = 0;
+  for (const [id, t] of Object.entries(gwAll.svc || {})) {
+    const b = (t0.baseSvc && t0.baseSvc[id]) || { usd: 0, calls: 0 };
+    const v = Math.max(0, (t.usd || 0) - (b.usd || 0));
+    const c = Math.max(0, (t.calls || 0) - (b.calls || 0));
+    if (v > 0 || c > 0) { svc.push({ id, title: SVC_TITLES[id] || id, usd: v, calls: c }); svcSum += v; }
+  }
+  svc.sort((a, b) => b.usd - a.usd);
+  const undivided = Math.max(0, gw.usd - svcSum);
   const spent = gw.usd + sc.usd;
   return {
     known: true, topupUsd: t.usd, topupAt: t.at,
     spentUsd: spent, leftUsd: t.usd - spent,
-    gateway: gw, scanner: sc,
+    gateway: gw, scanner: sc, svc, undividedUsd: undivided,
   };
 }
 
@@ -138,8 +159,11 @@ function html(s, daily) {
     + '<table style="border-collapse:collapse;font-size:14px;">'
     + '<tr><td style="padding:4px 12px 4px 0;">Пополнение от ' + when + '</td><td style="padding:4px 0;"><b>' + money(s.topupUsd) + '</b></td></tr>'
     + '<tr><td style="padding:4px 12px 4px 0;">Потрачено с тех пор</td><td style="padding:4px 0;"><b>' + money(s.spentUsd) + '</b></td></tr>'
-    + '<tr><td style="padding:4px 12px 4px 0;">Переводы документов</td><td style="padding:4px 0;">' + money(s.gateway.usd) + ' за ' + s.gateway.calls + ' обращений</td></tr>'
-    + '<tr><td style="padding:4px 12px 4px 0;">Сканер паспортов</td><td style="padding:4px 0;">' + money(s.scanner.usd) + ' за ' + s.scanner.docs + ' документов</td></tr>'
+    + (s.svc || []).map(function (x) {
+        return '<tr><td style="padding:4px 12px 4px 0;">' + x.title + '</td><td style="padding:4px 0;">' + money(x.usd) + ' за ' + x.calls + ' обращений</td></tr>';
+      }).join('')
+    + (s.undividedUsd > 0.005 ? '<tr><td style="padding:4px 12px 4px 0;">Без разделения (до 16.09)</td><td style="padding:4px 0;">' + money(s.undividedUsd) + '</td></tr>' : '')
+    + (s.scanner.usd > 0.005 ? '<tr><td style="padding:4px 12px 4px 0;">Сканер паспортов</td><td style="padding:4px 0;">' + money(s.scanner.usd) + ' за ' + s.scanner.docs + ' документов</td></tr>' : '')
     + '</table>'
     + '<p style="color:#666;font-size:13px;">Когда пополните, скажите Клоду сумму — он запишет её, и счётчик пойдёт заново. '
     + 'Без этого остаток будет считаться от прошлого пополнения и уйдёт в минус.</p>';
