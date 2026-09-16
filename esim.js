@@ -337,13 +337,17 @@ const TSIM_DAILY_MAX_MB = Number(process.env.ESIM_TSIM_DAILY_MAX_MB || 1024);
 function tsimItem(p) {
   if (p.status != null && String(p.status) !== "1") return null;
   const isDaily = p.is_daily === true || String(p.is_daily) === "1";
-  if (isDaily ? (TSIM_DAILY_DAYS.indexOf(Number(p.day)) < 0 || Number(p.data_allowance) > TSIM_DAILY_MAX_MB)
-              : TSIM_DAYS.indexOf(Number(p.day)) < 0) return null;
+  const days = Number(p.day) || 0;
+  // У суточных пакетов data_allowance — трафик за ВЕСЬ срок (3 дня × 500 МБ = 1500),
+  // а на витрине нужен объём в сутки. Сверено с прайсом 16.09.2026.
+  const perDayMb = isDaily && days ? Math.round(Number(p.data_allowance) / days) : Number(p.data_allowance);
+  if (isDaily ? (TSIM_DAILY_DAYS.indexOf(days) < 0 || perDayMb > TSIM_DAILY_MAX_MB)
+              : TSIM_DAYS.indexOf(days) < 0) return null;
   if (String(p.currency || "USD").toUpperCase() !== "USD") return null;
   // пакеты с датой активации «на заказ» требуют дату при покупке — не наш случай
   if (Number(p.scheduled_activation) === 1) return null;
   const cost = Number(p.price);
-  const mb = Number(p.data_allowance);
+  const mb = perDayMb;   // суточный — за сутки, обычный — весь пакет
   const countries = (p.coverages || []).map((c) => String(c.country_code || "").toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c));
   if (!cost || !mb || mb <= 0 || !countries.length || !p.channel_dataplan_id) return null;
   const name = String(p.channel_dataplan_name || "");
@@ -351,8 +355,8 @@ function tsimItem(p) {
     id: "ts_" + p.channel_dataplan_id, src: "tsim", familyId: "",
     title: name, operator: "TSimTech", countries,
     dataGb: Math.round((mb / 1024) * 10) / 10, unlimited: false,
-    daily: p.is_daily === true || String(p.is_daily) === "1",
-    days: Number(p.day) || null, costUsd: cost, retailUsd: null,
+    daily: isDaily,
+    days: days || null, costUsd: cost, retailUsd: null,
     fiveG: /5g/i.test(name + " " + (p.spec_name || "")), hotspot: true,
     topup: Number(p.topup_support) === 1,
     ipBreakout: /\(T\+C\)/i.test(name) ? "T+C" : "",
