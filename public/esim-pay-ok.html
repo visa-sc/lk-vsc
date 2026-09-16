@@ -5,16 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
 <title>Оплачено — VOYO mobile</title>
-<!-- Яндекс.Метрика: та же цель esim_purchase, что и в Google Ads (16.09) -->
+<!-- Яндекс.Метрика: счётчик по домену, цель esim_purchase уходит и в Google Ads (16.09) -->
 <script>
+   window.VOYO_YM = [/voyomobile\.ru$/.test(location.hostname) ? 112699399 : 109614823];
    (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
     m[i].l=1*new Date();
     for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
     k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
-   (window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=109614823', 'ym');
-   ym(109614823, 'init', {ssr:true, webvisor:false, clickmap:false, trackLinks:true, accurateTrackBounce:true});
+   (window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=' + window.VOYO_YM[0], 'ym');
+   ym(window.VOYO_YM[0], 'init', {ssr:true, webvisor:false, clickmap:false, trackLinks:true, accurateTrackBounce:true});
 </script>
-<noscript><div><img src="https://mc.yandex.ru/watch/109614823" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
 <!-- Google tag: покупка уходит в Google Ads событием purchase с суммой -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18409333270"></script>
 <script>
@@ -129,7 +129,7 @@
             var conv = {transaction_id:O, value:Number(j.priceRub), currency:"RUB"};
             gtag("event", "purchase", conv);
             if(j.aw) gtag("event", "conversion", Object.assign({send_to:j.aw}, conv));
-            try{ if(typeof ym==="function") ym(109614823,"reachGoal","esim_purchase",{order_price:Number(j.priceRub)}); }catch(e){}
+            try{ if(typeof ym==="function") (window.VOYO_YM||[109614823]).forEach(function(id){ ym(id,"reachGoal","esim_purchase",{order_price:Number(j.priceRub)}); }); }catch(e){}
           }
         }catch(e){}
         // подтягиваем QR, чтобы клиент установил eSIM не уходя со страницы

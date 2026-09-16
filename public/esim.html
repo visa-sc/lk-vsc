@@ -9,18 +9,22 @@
      главная копия одна, иначе две одинаковые страницы делят позиции между собой. -->
 <link rel="canonical" href="https://voyotravel.ru/esim" />
 <!-- Yandex.Metrika counter -->
+<!-- Счётчик выбирается по домену: у voyomobile.ru своя реклама и свой счётчик
+     112699399, у остальных копий витрины общий 109614823. Оба живут отдельно,
+     ничего никуда не переносится. -->
 <script type="text/javascript">
+    window.VOYO_YM = [/voyomobile\.ru$/.test(location.hostname) ? 112699399 : 109614823];
     (function(m,e,t,r,i,k,a){
         m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
         m[i].l=1*new Date();
         for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
         k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
-    })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=109614823', 'ym');
+    })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=' + window.VOYO_YM[0], 'ym');
 
     // webvisor ВЫКЛЮЧЕН намеренно: на странице есть поля email и промокода,
     // запись сессии означала бы отправку введённого в Яндекс. Нам нужна только
     // посещаемость и источники переходов.
-    ym(109614823, 'init', {ssr:true, webvisor:false, clickmap:true, ecommerce:"dataLayer", referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+    ym(window.VOYO_YM[0], 'init', {ssr:true, webvisor:false, clickmap:true, ecommerce:"dataLayer", referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
 </script>
 <noscript><div><img src="https://mc.yandex.ru/watch/109614823" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
 <!-- /Yandex.Metrika counter -->
@@ -516,7 +520,7 @@
      воронка «открыл пакет → нажал оплатить → оплатил» считалась одинаково
      в обеих системах. Цель в Метрике заводится по имени события. */
   function goal(name, params){
-    try{ if(typeof ym==="function") ym(109614823,"reachGoal",name,params||{}); }catch(e){}
+    try{ if(typeof ym==="function") (window.VOYO_YM||[109614823]).forEach(function(id){ ym(id,"reachGoal",name,params||{}); }); }catch(e){}
     try{ if(typeof gtag==="function") gtag("event",name,params||{}); }catch(e){}
   }
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
