@@ -607,6 +607,21 @@ async function eaCall(p, body) {
   }
   return d.obj;
 }
+function eaItemRaw(p) {
+  const loc = String(p.location || "").split(",").map((x) => x.trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c));
+  const gb = Number(p.volume) / 1073741824;
+  const days = Number(p.duration) || 0;
+  const cost = Number(p.price) / 10000;
+  if (!gb || !days || !cost || !p.packageCode) return null;
+  const name = String(p.name || "");
+  return {
+    id: "ea_" + p.packageCode, src: "esimaccess", familyId: "", title: name, operator: "eSIM Access",
+    countries: loc, dataGb: Math.round(gb * 10) / 10, unlimited: false, daily: /\/\s*day/i.test(name),
+    days, costUsd: cost, retailUsd: Number(p.retailPrice || 0) / 10000 || null,
+    fiveG: /5G/i.test(String(p.speed || "")), hotspot: true, topup: Number(p.supportTopUpType) > 0,
+    ipBreakout: String(p.ipExport || "").trim(), dataMb: Math.round(gb * 1024),
+  };
+}
 function eaItem(p) {
   const loc = String(p.location || "").split(",").map((x) => x.trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c));
   const gb = Number(p.volume) / 1073741824;
@@ -664,7 +679,40 @@ const esimaccess = {
     const view = await this._view(esim);
     return Object.assign(view, { orderId: "EA-" + orderNo, state: "Completed", costUsd: Number(plan.costUsd) || null });
   },
-  async createTopup() { throw new Error("eSIM Access: продление через API пока не подключено"); },
+  // Докупка гигабайт на ту же eSIM (16.09.2026, подтвердил Rain Wang).
+  // Список пополнений берётся по коду исходного пакета: package/list
+  // {packageCode, type:"TOPUP"} → пакеты TOPUP_*. Пополнять можно, пока eSIM
+  // новая, активная или пустая, но не после окончания срока.
+  async listTopups(orderId, rate) {
+    const e = await this._esim(orderId);
+    const base = this._pack(e).packageCode;
+    if (!e || !base) return [];
+    const obj = await eaCall("/api/v1/open/package/list", { packageCode: base, type: "TOPUP" });
+    const list = (obj && (obj.packageList || obj.list)) || [];
+    return list.map((p) => {
+      const it = eaItemRaw(p);
+      if (!it) return null;
+      const price = Math.max(up9(tsimCostRub(it.costUsd, rate) * tsimMul(totalGb(it))), tsimCostRub(it.costUsd, rate) + 1);
+      return { id: it.id, title: it.title, dataGb: it.dataGb, unlimited: false, daily: it.daily, days: it.days, priceRub: price, costUsd: it.costUsd };
+    }).filter(Boolean).sort((a, b) => a.priceRub - b.priceRub);
+  },
+  async createTopup(productId, parentOrderId) {
+    const e = await this._esim(parentOrderId);
+    if (!e) { const err = new Error("eSIM Access: eSIM не найдена"); err.noOrder = true; throw err; }
+    const code = String(productId).replace(/^ea_/, "");
+    const tops = await this.listTopups(parentOrderId, 1).catch(() => []);
+    const plan = tops.find((x) => x.id === productId);
+    const price = Math.round(Number((plan && plan.costUsd) || 0) * 10000);
+    const res = await eaCall("/api/v1/open/esim/topup", {
+      transactionId: "VOYO" + Date.now() + crypto.randomBytes(2).toString("hex"),
+      esimTranNo: e.esimTranNo, packageCode: code, amount: price, price,
+    });
+    const view = await this._view(e);
+    return Object.assign(view, {
+      orderId: parentOrderId, state: "Completed",
+      costUsd: (plan && plan.costUsd) || null, topupOrderNo: (res && (res.orderNo || res.topUpOrderNo)) || null,
+    });
+  },
   async _esim(orderNo) {
     const obj = await eaCall("/api/v1/open/esim/query", {
       orderNo: String(orderNo).replace(/^EA-/, ""), pager: { pageNum: 1, pageSize: 20 },
@@ -1145,14 +1193,18 @@ function mount(app, opts) {
     if (isTsimId(o) || isEaId(o)) {
       const who = isEaId(o) ? esimaccess : tsim;
       try {
-        const [view, usage] = await Promise.all([who.getOrderView(o), who.getUsage(o).catch(() => null)]);
+        const rate = await usdRate();
+        const [view, usage, topups] = await Promise.all([
+          who.getOrderView(o), who.getUsage(o).catch(() => null),
+          isEaId(o) ? esimaccess.listTopups(o, rate).catch(() => []) : [],
+        ]);
         const owner = emailOfProviderOrder(o);
         if (owner) setSession(res, owner);
         return res.json({
           success: true, pay: tbank.ready(), you: owner || readSession(req),
           order: { id: o, state: "Completed", title: view.title, operator: view.operator, qrDataUrl: view.qrDataUrl,
             lpa: view.lpa, activationCode: view.activationCode, smdp: view.smdp, apn: view.apn, iccid: view.iccid },
-          usage, topups: [],
+          usage, topups,
         });
       } catch (e) {
         const nf = Number(e.tsimCode) === 1006 || Number(e.eaCode) === 310272;
@@ -1334,7 +1386,10 @@ function mount(app, opts) {
     o.status = "fulfilling"; saveLocal(f.orders);
     try {
       let res, src = isEaId(o.productId) ? "esimaccess" : (isTsimId(o.productId) ? "tsim" : "mobimatter"), fallbackFrom = null;
-      if (o.parentOrderId) res = await providerFor(o.parentOrderId).createTopup(o.productId, o.parentOrderId);
+      if (o.parentOrderId) {
+        src = isEaId(o.parentOrderId) ? "esimaccess" : (isTsimId(o.parentOrderId) ? "tsim" : "mobimatter");
+        res = await providerFor(o.parentOrderId).createTopup(o.productId, o.parentOrderId);
+      }
       else if (src === "tsim" || src === "esimaccess") {
         const who = src === "tsim" ? tsim : esimaccess;
         try { res = await who.createOrder(o.productId); }
@@ -1486,7 +1541,13 @@ function mount(app, opts) {
     try { const lk = await lkEmails(req); if (lk) bindLk(lk.phone, email); } catch (_) {}
     try {
       const [cat, rate] = await Promise.all([getCatalog(false), usdRate()]);
-      const found = findProduct(cat, String(b.productId || ""));
+      let found = findProduct(cat, String(b.productId || ""));
+      // Пакеты докупки живут не в каталоге, а в списке пополнений конкретной eSIM
+      if (!found && parentOrderId && isEaId(parentOrderId) && isEaId(b.productId)) {
+        const tops = await esimaccess.listTopups(parentOrderId, rate).catch(() => []);
+        const t = tops.find((x) => x.id === String(b.productId));
+        if (t) found = { item: Object.assign({ countries: [], id: t.id }, t), addon: true };
+      }
       if (!found) return res.status(400).json({ success: false, message: "Пакет не найден." });
       // Предохранитель на время обкатки: пока терминал тестовый, деньги с карт не
       // списываются, а закупка у поставщика РЕАЛЬНАЯ — за пару кликов можно сжечь
@@ -1499,7 +1560,7 @@ function mount(app, opts) {
         return res.status(400).json({ success: false, message: "Пакет не найден." });
       }
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
-      const listPrice = retailFor(found.item, rate);
+      const listPrice = found.item.priceRub || retailFor(found.item, rate);
       const who = custKey(email, tgChatId);
       const calc = priceWithDiscounts({ listPrice, costRub: costFor(found.item, rate),
         email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
