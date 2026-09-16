@@ -379,7 +379,6 @@
     <div class="sub">eSIM для путешествий: выбираете пакет, сканируете QR-код — пользуетесь интернетом.</div>
     <div class="trust" id="trust">
       <span>Оплата картой РФ и СБП</span>
-      <span>Чек от онлайн-кассы</span>
       <span>QR сразу после оплаты</span>
       <span>Поддержка на русском</span>
     </div>
@@ -809,9 +808,9 @@
       var mine = byCountry[iso] || [];
       var min = mine.length ? Math.min.apply(null, mine.map(function(p){ return p.priceRub; })) : 0;
       document.querySelector(".hero h1").innerHTML =
-        "Интернет в&nbsp;" + esc(byPath.where) + "&nbsp;—<br/><em>за одну минуту</em>";
+        "Интернет в&nbsp;" + esc(byPath.where) + "&nbsp;—<br/><em>за одну минуту</em>" +
+        (min ? "<br/>от " + RU(min) + "&nbsp;₽" : "");
       document.querySelector(".hero .sub").textContent =
-        (min ? "eSIM от " + RU(min) + " ₽. " : "") +
         "Выбираете пакет, сканируете QR-код — пользуетесь интернетом без роуминга.";
       try{ document.title = "Интернет в " + byPath.where + " от " + RU(min) + " ₽ — VOYO mobile"; }catch(e){}
       document.getElementById("trust").classList.add("on");
