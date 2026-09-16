@@ -161,7 +161,13 @@
   .pk .cn small{display:block;font-weight:500;font-size:11.5px;color:var(--mut);margin-top:2px;}
   .badge5g{font-size:10px;font-weight:800;color:#fff;background:var(--grad);border-radius:7px;padding:4px 7px;letter-spacing:.05em;}
   .pk .mid{display:flex;align-items:baseline;gap:9px;margin:0 0 2px;}
+  /* Пустой добор внизу: карточки в ряду одной высоты, но цена у всех на одной
+     линии, а зелёная сноска висит под ценой и ничего не сдвигает. */
+  .pk::after{content:"";flex:1 0 auto;}
   /* Зелёная сноска: пакет советуем для российских сервисов в Китае (isRuServicesPick в esim.js) */
+  /* Сноска идёт ПОД ценой и не смещает её: остаток высоты карточки уходит вниз */
+  .pk .rupick{margin-top:10px;margin-bottom:0;}
+  .pk .bot ~ .rupick{margin-bottom:0;}
   .rupick{display:flex;gap:6px;align-items:flex-start;margin-top:9px;padding:6px 10px;border-radius:10px;
     background:#e9f7ef;border:1px solid #c6e9d4;color:#1f7a4a;font-size:11.5px;font-weight:600;line-height:1.35;text-align:left;letter-spacing:-.005em;}
   .rupick::before{content:"✓";font-weight:800;}
@@ -738,8 +744,8 @@
       (p.fiveG?'<span class="badge5g">5G</span>':"")+'</div>'+
       '<div class="mid"><span class="gb">'+gb+'<small>'+(p.unlimited?"безлимит":(p.daily?"ГБ в день":"ГБ"))+'</small></span>'+
       '<span class="days">· '+RU(p.days)+' дн.</span></div>'+
-      (p.note?'<div class="rupick">'+esc(p.note)+'</div>':"")+
       '<div class="bot"><span class="pr">'+RU(p.priceRub)+' ₽'+perGbTxt(p)+'</span><span class="go">Выбрать ›</span></div>'+
+      (p.note?'<div class="rupick">'+esc(p.note)+'</div>':"")+
       (p.marginRub!=null?'<div class="adm">закупка '+esc(p.costUsd)+' $ ≈ '+RU(p.costRub)+' ₽ · маржа '+RU(p.marginRub)+' ₽</div>':"")+
       '</div>');
     card.addEventListener("click",function(){ openModal(p); });
@@ -751,7 +757,12 @@
   var DAY_OPTS = [0,3,5,7,10,14,21,30,60,90];
   var GB_OPTS = [0,1,3,5,10,20,30,50,100,-1];
   function fitDays(p,v){ return !v || (p.days||0) >= v; }
-  function fitGb(p,v){ if(!v) return true; if(v===-1) return !!p.unlimited; return p.unlimited || totGb(p) >= v; }
+  /* Фильтр по гигабайтам сравнивает с тем, что написано на карточке: у обычных
+     пакетов это объём пакета, у суточных — объём в сутки. Иначе на «5 ГБ»
+     подмешивались «0,5 ГБ в день на 10 дней» — формально те же 5 ГБ, но
+     выглядит как мусор в выдаче (правка 16.09.2026). */
+  function shownGb(p){ return p.dataGb || 0; }
+  function fitGb(p,v){ if(!v) return true; if(v===-1) return !!p.unlimited; return p.unlimited || shownGb(p) >= v; }
   function matches(p){ return fitDays(p,wantDays) && fitGb(p,wantGb); }
   function renderCfg(list){
     var cfg=document.getElementById("cfg");

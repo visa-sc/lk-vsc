@@ -75,6 +75,8 @@ const TG_WELCOME_RUB = Number(process.env.ESIM_TG_WELCOME || 100);   // пода
 const MIN_PAY_RUB = Number(process.env.ESIM_MIN_PAY || 100);
 // Бонусами можно закрыть не больше половины стоимости пакета — остальное деньгами
 const MAX_BONUS_SHARE = Number(process.env.ESIM_MAX_BONUS_SHARE || 0.5);
+// Запас над себестоимостью, ниже которого не пускаем скидки и баллы
+const DISCOUNT_FLOOR_K = Number(process.env.ESIM_DISCOUNT_FLOOR || 1.08);
 
 const MARKUP = Number(process.env.ESIM_MARKUP || 2.5);
 // Ступени наценки: «порог закупки в $ : множитель», последняя со звёздочкой —
@@ -811,10 +813,11 @@ function retailFor(item, rate) {
   }
   return toRetailRub(item.costUsd, rate, isTsimId(item.id) ? TSIM_MIN_RUB : MIN_RUB);
 }
-// Себестоимость для пола скидок: у TSim с налогом, у MobiMatter как было
-function costFor(item, rate) {
-  return (isTsimId(item.id) || isEaId(item.id)) ? tsimCostRub(item.costUsd, rate) : toCostRub(item.costUsd, rate);
-}
+// СЕБЕСТОИМОСТЬ (одинаково для всех поставщиков, 16.09.2026):
+// закупка × курс ЦБ + 5% на конвертацию + 11% налога. Ниже неё цена не падает
+// ни при каких скидках. Раньше у MobiMatter считалось без налога, и промокод
+// мог увести продажу в ноль по факту.
+function costFor(item, rate) { return tsimCostRub(item.costUsd, rate); }
 async function getMmCatalog(force) {
   const cached = loadCatalogFile();
   if (!provider.ready()) return { ts: Date.now(), source: "demo", products: DEMO_PRODUCTS, addons: [] };
@@ -954,8 +957,10 @@ function usePromo(code) {
 function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, useBalance }) {
   const out = { listPrice, discountRub: 0, discountKind: null, promoCode: null, promoReason: null, refBy: null,
                 balanceRub: 0, balanceCanUse: 0, balanceUsed: 0, balanceBlockedBy: null, total: listPrice };
-  // Ниже этой суммы цена не опускается ни при каких скидках
-  const floorRub = Math.min(listPrice, Math.max(MIN_PAY_RUB, Number(costRub) || 0));
+  // Ниже этой суммы цена не опускается ни при каких скидках. Себестоимость ещё и
+  // с запасом: продавать ровно по закупке смысла нет, работа и поддержка стоят
+  // денег. Запас меняется в .env (ESIM_DISCOUNT_FLOOR=1 убирает его совсем).
+  const floorRub = Math.min(listPrice, Math.max(MIN_PAY_RUB, Math.ceil((Number(costRub) || 0) * DISCOUNT_FLOOR_K)));
   const promo = checkPromo(promoCode, listPrice, email);
   out.promoReason = _promoReason;
   if (promo && promo.cost && costRub != null) {

@@ -314,9 +314,14 @@ async function showCountry(chatId, iso, page, messageId) {
   if (pg < pages - 1) nav.push({ text: "Дороже ›", callback_data: "c:" + iso + ":" + (pg + 1) });
   if (nav.length > 1) rows.push(nav);
   rows.push([{ text: "‹ Другая страна", callback_data: "home" }]);
+  // Галочка в списке ничего не значит без расшифровки: показываем, что именно
+  // помечено на этой странице (ChatGPT и TikTok, лучшее покрытие и т. п.)
+  const notes = [];
+  slice.forEach((p) => { if (p.note && notes.indexOf(p.note) < 0) notes.push(p.note); });
   const head = flag(iso) + " <b>" + cname(iso) + "</b> · " + list.length + " " +
     plural(list.length, ["пакет", "пакета", "пакетов"]) + "\n" +
     "Сначала самые дешёвые. Цена окончательная, в рублях, QR-код выдаётся сразу." +
+    (notes.length ? "\n\n" + notes.map((n) => "✅ " + esc(n)).join("\n") : "") +
     (pages > 1 ? "\nСтраница " + (pg + 1) + " из " + pages + "." : "");
   const kb = { inline_keyboard: rows };
   setState(chatId, { iso });
