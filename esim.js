@@ -344,10 +344,15 @@ function tsimPriceMap(rate) {
     groups.get(g).push(p);
   });
   for (const list of groups.values()) {
-    const items = list.map((p) => {
+    const all = list.map((p) => {
       const cost = tsimCostRub(p.costUsd, rate), gb = totalGb(p);
       return { p, gb, cost, price: Math.max(up9(cost * tsimMul(gb)), cost + 1) };
     }).sort((a, b) => a.gb - b.gb || a.price - b.price);
+    // Лестницу строим по основным срокам. Короткие сроки (только для страниц
+    // стран) в неё не входят: иначе каждый добавленный пакет поднимал бы цену
+    // следующих ступеней, и большие пакеты дорожали бы на ровном месте.
+    const items = all.filter((x) => !x.p.landOnly);
+    const extra = all.filter((x) => x.p.landOnly);
     let prevPerGb = Infinity, prevMargin = 0, i = 0;
     while (i < items.length) {
       let j = i;
@@ -363,6 +368,11 @@ function tsimPriceMap(rate) {
       prevMargin = price - lead.cost;
       i = j;
     }
+    // Короткий срок не может стоить меньше такого же объёма из лестницы
+    extra.forEach((x) => {
+      const same = items.filter((y) => y.gb === x.gb).map((y) => map.get(y.p.id) || 0);
+      map.set(x.p.id, Math.max(x.price, same.length ? Math.min.apply(null, same) : 0, x.cost + 1));
+    });
   }
   _tsimPrices = { key, map };
   return map;
