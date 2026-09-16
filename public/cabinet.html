@@ -1138,13 +1138,15 @@
         <div id="leadList" class="lead-list"></div>
       </div>
 
-      <!-- БОНУСЫ: оффер-карточка. На десктопе встаёт слева под «Ваши обращения»
+      <!-- Оффер-карточка. На десктопе встаёт слева под «Ваши обращения»
            (вторая строка первой колонки), на мобиле уходит под рабочую область
-           перед блоком «Нужна помощь?» (order:5). Показывается только когда
-           бонусная программа включена. -->
+           перед блоком «Нужна помощь?» (order:5). Показывается вместе с меню
+           кабинета. С 16.09.2026 (просьба Андрея) ведёт не в «Баллы», а в раздел
+           «eSIM» — там та же витрина VOYO mobile, что на voyomobile.com. Цена
+           «от 59 ₽» статична: съедет нижняя планка каталога — править здесь. -->
       <div class="card lkl-offer" id="lklOffer">
-        <div class="lkl-offer-txt">Пригласите друга и получите&nbsp;4&nbsp;000&nbsp;₽!</div>
-        <button type="button" class="lkl-offer-btn">Подробнее</button>
+        <div class="lkl-offer-txt">Интернет в поездке: eSIM от&nbsp;59&nbsp;₽</div>
+        <button type="button" class="lkl-offer-btn">Выбрать пакет</button>
       </div>
 
       <div class="card">
@@ -4433,7 +4435,8 @@
       nav.querySelectorAll("button").forEach(function (b) {
         b.addEventListener("click", function () { go(b.dataset.go); });
       });
-      if (offer) offer.querySelector(".lkl-offer-btn").addEventListener("click", function () { go("loyalty"); });
+      // Кнопка оффера ведёт в «eSIM» (с 16.09.2026; до этого — в «Баллы»).
+      if (offer) offer.querySelector(".lkl-offer-btn").addEventListener("click", function () { go("esim"); });
 
       // Скролл — меню ужимается до иконок. Следим и за окном (кабинет), и за
       // экраном бонусов: при открытом разделе прокручивается именно он.
