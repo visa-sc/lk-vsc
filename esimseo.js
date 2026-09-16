@@ -349,6 +349,158 @@ ${STYLE}
 </body></html>`;
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Рекламные посадочные: /esim/internet-turkey и /esim/internet-china (16.09.2026)
+//
+// Отдельно от SEO-страниц: там длинная статья под поиск, здесь короткая
+// страница под платный клик — цена в заголовке, кнопка в первом экране,
+// четыре пакета, три шага установки. Индексацию закрываем, чтобы страницы не
+// конкурировали с /esim/turkey и /esim/china в поиске.
+//
+// Счётчики те же, что на витрине, и клик по кнопке шлёт цель esim_cta:
+// в Метрике и Google Ads видно, сколько человек дошли до выбора пакета.
+// Рекламные метки (gclid, utm) переносим на витрину как есть, иначе источник
+// продажи потеряется.
+// ═══════════════════════════════════════════════════════════════════════════
+const ADS = {
+  "internet-turkey": {
+    iso: "TR", flag: "🇹🇷", country: "Турции", countryNom: "Турция",
+    h1: "Интернет в Турции за минуту",
+    lead: "eSIM для телефона от {minPrice} ₽. Ставится дома по Wi-Fi за минуту, в поездке интернет включается сам. Роуминг отключать не нужно, местную симку покупать тоже.",
+    bullets: [
+      ["Включается за минуту", "Отсканировали QR-код — линия готова. Ничего не ждём, в салон связи идти не нужно."],
+      ["Цена окончательная", "Платите в рублях российской картой или через СБП. Ни доплат за подключение, ни комиссий."],
+      ["Номер остаётся ваш", "Основная симка работает для звонков и SMS, интернет идёт через eSIM."],
+    ],
+    faq: [
+      ["Телефон подойдёт?", "Подойдёт любой iPhone с XR и новее, Samsung с S20, Pixel с 3-го и большинство современных Android. Проверить просто: Настройки → Сотовая связь → есть пункт «Добавить eSIM»."],
+      ["Когда начнётся отсчёт дней?", "С первого выхода в интернет в поездке. Купить и установить можно заранее, дома."],
+      ["Что с WhatsApp и Telegram?", "Работают как обычно, ваш номер остаётся на основной симке."],
+      ["А если не хватит трафика?", "Возьмёте ещё один пакет в личном кабинете, он появится там же, где QR-код."],
+    ],
+  },
+  "internet-china": {
+    iso: "CN", flag: "🇨🇳", country: "Китае", countryNom: "Китай",
+    h1: "Интернет в Китае за минуту",
+    lead: "eSIM для телефона от {minPrice} ₽. Ставится дома по Wi-Fi за минуту, в поездке интернет включается сам. Google, WhatsApp и Telegram работают без VPN.",
+    bullets: [
+      ["Без VPN", "Трафик выходит в интернет за пределами Китая, поэтому привычные сервисы открываются сразу. Есть пакеты, на которых работают ChatGPT и TikTok."],
+      ["Включается за минуту", "Отсканировали QR-код — линия готова. Ничего не ждём, в салон связи идти не нужно."],
+      ["Цена окончательная", "Платите в рублях российской картой или через СБП. Ни доплат за подключение, ни комиссий."],
+    ],
+    faq: [
+      ["Точно ли работает Google и мессенджеры?", "Да. Интернет идёт через зарубежную сеть, местные ограничения на неё не действуют. На пакетах с пометкой про ChatGPT открывается и он."],
+      ["Телефон подойдёт?", "Подойдёт любой iPhone с XR и новее, Samsung с S20, Pixel с 3-го и большинство современных Android. Проверить просто: Настройки → Сотовая связь → есть пункт «Добавить eSIM»."],
+      ["Когда начнётся отсчёт дней?", "С первого выхода в интернет в поездке. Купить и установить можно заранее, дома."],
+      ["А если не хватит трафика?", "Возьмёте ещё один пакет в личном кабинете, он появится там же, где QR-код."],
+    ],
+  },
+};
+
+// Счётчики: те же, что на витрине, плюс цель по клику на кнопку
+const ADS_TAGS = `<script>
+   (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();
+    for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+    k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+   (window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=109614823', 'ym');
+   ym(109614823, 'init', {ssr:true, webvisor:false, clickmap:true, trackLinks:true, accurateTrackBounce:true});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/109614823" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<script async src="https://www.googletagmanager.com/gtag/js?id=AW-18409333270"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'AW-18409333270');
+</script>`;
+
+const ADS_SCRIPT = `<script>
+(function(){
+  // рекламные метки переносим на витрину, иначе продажа потеряет источник
+  var q = location.search || "";
+  document.querySelectorAll("a.btn").forEach(function(a){
+    if(a.href.indexOf("/esim") < 0 || a.href.indexOf("t.me") >= 0) return;
+    if(q) a.href += (a.href.indexOf("?") >= 0 ? "&" : "?") + q.slice(1);
+    a.addEventListener("click", function(){
+      try{ if(typeof ym==="function") ym(109614823,"reachGoal","esim_cta"); }catch(e){}
+      try{ if(typeof gtag==="function") gtag("event","esim_cta"); }catch(e){}
+    });
+  });
+})();
+</script>`;
+
+function adsPage(slug, a, data) {
+  const min = RU(data.min);
+  const lead = a.lead.replace("{minPrice}", min);
+  const title = "Интернет в " + a.country + " за минуту — eSIM от " + min + " ₽ | VOYO mobile";
+  const cards = data.rows.slice(0, 4).map((p) => {
+    const vol = p.unlimited ? "Безлимит" : (RU(p.dataGb) + (p.daily ? " ГБ в день" : " ГБ"));
+    return '<div class="c"><b>' + esc(vol) + "</b><span>" + RU(p.days) + " " + plural(p.days, ["день", "дня", "дней"]) +
+      " · <b style=\"color:#16202e\">" + RU(p.priceRub) + " ₽</b></span></div>";
+  }).join("\n    ");
+  return `<!DOCTYPE html><html lang="ru"><head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, follow" />
+<title>${esc(title)}</title>
+<meta name="description" content="${esc(lead)}" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="icon" type="image/png" href="/apple-touch-icon.png" />
+${ADS_TAGS}
+${STYLE}
+</head><body>
+<div class="wrap">
+  <div class="hdr">
+    <a class="brand" href="/esim">
+      <span class="brandrow"><img src="/voyo-logo.png" alt="VOYO" /><span class="wm">mobile</span></span>
+      <span class="byvsc">by <b>VSC</b></span>
+    </a>
+    <a class="mine" href="/esim/account">Мои eSIM</a>
+  </div>
+
+  <h1>${a.flag} ${esc(a.h1)}</h1>
+  <p class="lead">${esc(lead)}</p>
+
+  <div class="cta">
+    <a class="btn" href="/esim?c=${a.iso}">Выбрать пакет от ${min} ₽</a>
+    <a class="btn sec" href="${BOT}">Купить в телеграме</a>
+  </div>
+
+  <div class="grid">
+    ${a.bullets.map(([t, d]) => '<div class="c"><b>' + esc(t) + "</b><span>" + esc(d) + "</span></div>").join("\n    ")}
+  </div>
+
+  <h2>Сколько стоит</h2>
+  <div class="grid">
+    ${cards}
+  </div>
+  <p style="font-size:14px;color:#54607a">Всего ${data.all.length} ${plural(data.all.length, ["пакет", "пакета", "пакетов"])} для ${esc(a.countryNom)}: от суточных до 50 ГБ. Чем больше пакет, тем дешевле гигабайт.</p>
+
+  <h2>Как это работает</h2>
+  <ol class="steps">
+    <li><b>Выбираете пакет и платите</b> картой или через СБП. QR-код приходит сразу, на страницу и на почту.</li>
+    <li><b>Сканируете QR дома по Wi-Fi:</b> Настройки → Сотовая связь → Добавить eSIM. Минута.</li>
+    <li><b>В поездке включаете «Роуминг данных»</b> для линии eSIM, и интернет работает.</li>
+  </ol>
+
+  <div class="cta">
+    <a class="btn" href="/esim?c=${a.iso}">Купить eSIM для ${esc(a.countryNom === "Китай" ? "Китая" : "Турции")}</a>
+    <a class="btn sec" href="${BOT}">Оформить в телеграме</a>
+  </div>
+
+  <h2>Частые вопросы</h2>
+  ${a.faq.map(([q, ans]) => "<details><summary>" + esc(q) + '</summary><div class="a">' + esc(ans) + "</div></details>").join("\n  ")}
+
+  <div class="foot">
+    VOYO mobile — сервис компании VOYO (ООО «ЭЙ КЕЙ ГРУПП»). Интернет в поездке без роуминга:
+    <a href="/esim">все страны и пакеты</a> · <a href="/esim/account">мои eSIM</a> · <a href="${BOT}">телеграм-бот</a>
+  </div>
+</div>
+${ADS_SCRIPT}
+</body></html>`;
+}
+
 function mount(app) {
   const slugs = Object.keys(ARTICLES);
   const guideSlugs = Object.keys(GUIDES);
@@ -370,6 +522,18 @@ function mount(app) {
       if (!data.all.length) return res.redirect(302, "/esim");
       res.set("Cache-Control", "public, max-age=1800");
       res.type("html").send(page(slug, a, data));
+    });
+  });
+
+  // Рекламные посадочные — вне карты сайта и с noindex
+  Object.keys(ADS).forEach((slug) => {
+    app.get("/esim/" + slug, async (req, res) => {
+      const a = ADS[slug];
+      const products = await catalog();
+      const data = pickPackages(products, a.iso);
+      if (!data.all.length) return res.redirect(302, "/esim");
+      res.set("Cache-Control", "public, max-age=900");
+      res.type("html").send(adsPage(slug, a, data));
     });
   });
 
@@ -395,7 +559,8 @@ function mount(app) {
       "Allow: /esim\n\nSitemap: " + BASE_URL + "/sitemap.xml\n");
   });
 
-  console.log("esimseo: страниц направлений " + slugs.length + ", инструкций " + guideSlugs.length);
+  console.log("esimseo: страниц направлений " + slugs.length + ", инструкций " + guideSlugs.length +
+    ", рекламных посадочных " + Object.keys(ADS).length);
 }
 
-module.exports = { mount, slugs: Object.keys(ARTICLES), guides: Object.keys(GUIDES) };
+module.exports = { mount, slugs: Object.keys(ARTICLES), guides: Object.keys(GUIDES), ads: Object.keys(ADS) };

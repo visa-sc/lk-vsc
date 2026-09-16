@@ -159,6 +159,19 @@ function isRuServicesPick(p) {
     (p.countries || []).indexOf("CN") >= 0;
 }
 
+// Подпись под карточкой пакета (зелёная строка на витрине и в боте). Нужна там,
+// где рядом стоят два внешне одинаковых пакета и клиент не видит разницы:
+// у TSim на Китай это (T+C) и (Premium). Текст короткий — карточка узкая.
+function packNote(p) {
+  if (!p) return "";
+  const t = String(p.title || "");
+  const cn = (p.countries || []).indexOf("CN") >= 0;
+  if (cn && /\(T\+C\)/i.test(t)) return "Работают ChatGPT и TikTok без VPN";
+  if (cn && /premium/i.test(t) && p.src === "tsim") return "Сеть China Mobile, лучшее покрытие";
+  if (isRuServicesPick(p)) return "Рекомендуем для Битрикс, amoCRM и др. российских сервисов в Китае";
+  return "";
+}
+
 // ═══════════════ ПОСТАВЩИК: MobiMatter ═══════════════
 const MM_BASE = "https://api.mobimatter.com/mobimatter/api/v2";
 function mmHeaders() {
@@ -852,7 +865,7 @@ function mount(app, opts) {
           id: p.id, title: p.title || "", operator: p.operator || "", countries: p.countries || [],
           dataGb: p.dataGb, unlimited: !!p.unlimited, daily: !!p.daily, days: p.days,
           fiveG: !!p.fiveG, hotspot: p.hotspot !== false, priceRub: retailFor(p, rate),
-          ruPick: isRuServicesPick(p),
+          note: packNote(p), ruPick: isRuServicesPick(p),
         };
         if (adm) { o.src = p.src || "mobimatter"; o.costUsd = p.costUsd; o.costRub = costFor(p, rate); o.marginRub = o.priceRub - o.costRub; }
         return o;

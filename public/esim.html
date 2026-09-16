@@ -500,6 +500,13 @@
 (function(){
   "use strict";
   var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
+  /* Цели для Яндекс.Метрики и события для Google Ads. Одно место, чтобы
+     воронка «открыл пакет → нажал оплатить → оплатил» считалась одинаково
+     в обеих системах. Цель в Метрике заводится по имени события. */
+  function goal(name, params){
+    try{ if(typeof ym==="function") ym(109614823,"reachGoal",name,params||{}); }catch(e){}
+    try{ if(typeof gtag==="function") gtag("event",name,params||{}); }catch(e){}
+  }
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
   function el(html){ var t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstChild; }
   var ADM = new URLSearchParams(location.search).get("adm") || "";
@@ -706,7 +713,7 @@
       (p.fiveG?'<span class="badge5g">5G</span>':"")+'</div>'+
       '<div class="mid"><span class="gb">'+gb+'<small>'+(p.unlimited?"безлимит":(p.daily?"ГБ в день":"ГБ"))+'</small></span>'+
       '<span class="days">· '+RU(p.days)+' дн.</span></div>'+
-      (p.ruPick?'<div class="rupick">Рекомендуем для Битрикс, amoCRM и др. российских сервисов в Китае</div>':"")+
+      (p.note?'<div class="rupick">'+esc(p.note)+'</div>':"")+
       '<div class="bot"><span class="pr">'+RU(p.priceRub)+' ₽</span><span class="go">Выбрать ›</span></div>'+
       (p.marginRub!=null?'<div class="adm">закупка '+esc(p.costUsd)+' $ ≈ '+RU(p.costRub)+' ₽ · маржа '+RU(p.marginRub)+' ₽</div>':"")+
       '</div>');
@@ -864,6 +871,7 @@
   var ovl=document.getElementById("ovl"), mBuy=document.getElementById("mBuy"), mP=null;
   function openModal(p){
     mP = p;
+    goal("esim_pack_open", {country: current || (p.countries[0]||""), value: p.priceRub, currency: "RUB"});
     var multi = p.countries.length>1;
     if(!multi) document.getElementById("mFlag").textContent = flag(p.countries[0]);
     else document.getElementById("mFlag").textContent = current && current!=="EU-REGION" ? flag(current) : "🌍";
@@ -871,7 +879,8 @@
     var where = current && current!=="EU-REGION" ? cname(current) : (multi ? nStran(p.countries.length) : cname(p.countries[0]));
     document.getElementById("mTitle").textContent = where + " · " + gb;
     document.getElementById("mSub").textContent = (p.title || "") + (p.operator ? " · сеть "+p.operator : "");
-    document.getElementById("mRuPick").hidden = !p.ruPick;
+    var mrp = document.getElementById("mRuPick");
+    mrp.hidden = !p.note; if(p.note) mrp.textContent = p.note;
     document.getElementById("mSpecs").innerHTML =
       '<div class="b"><div class="k">Интернет</div><div class="v">'+gb+'</div></div>'+
       '<div class="b"><div class="k">Срок</div><div class="v">'+RU(p.days)+' дней</div></div>'+
@@ -1048,6 +1057,8 @@
     if(PAY && !/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(phone)){ err.textContent="Введите email — на него придёт чек и доступ к eSIM."; err.classList.add("on"); return; }
     if(!PAY && phone.replace(/\D/g,"").length < 10){ err.textContent="Введите телефон — на него пришлём счёт и QR-код."; err.classList.add("on"); return; }
     mBuy.disabled=true; mBuy.textContent = PAY ? "Открываем оплату…" : "Отправляем…";
+    goal(PAY ? "esim_pay_click" : "esim_lead",
+      {country: current || (mP.countries[0]||""), value: mP.priceRub, currency: "RUB", items: [{item_id: mP.id}]});
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
