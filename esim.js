@@ -283,6 +283,74 @@ const TSIM_RESERVE_USD = Number(process.env.ESIM_TSIM_RESERVE_USD || 10);
 // и общий пол 590 ₽ съел бы весь смысл дешёвого входа. Наценка та же.
 const TSIM_MIN_RUB = Number(process.env.ESIM_TSIM_MIN_RUB || 190);
 function isTsimId(id) { return /^(ts_|TS-)/.test(String(id || "")); }
+
+// ── Своё ценообразование для пакетов TSim (16.09.2026, просьба Андрея) ──
+// У MobiMatter всё остаётся как было. Здесь: себестоимость = закупка × курс ЦБ
+// + 5% на конвертацию + 11% налога. Наценка убывает с объёмом: ×1,8 на самых
+// маленьких пакетах и ×1,4 на самых больших, цена округляется вверх до …9.
+// Дальше лестница внутри страны: каждый следующий по объёму пакет ДЕШЕВЛЕ за
+// гигабайт, а прибыль в рублях не меньше, чем у предыдущего (деньги важнее,
+// если условия спорят). Откат к прежней схеме: ESIM_TSIM_PRICING=tiers в .env
+// (тогда работает общая ступенчатая наценка и пол ESIM_TSIM_MIN_RUB), снимок
+// прежних цен лежит в .esim/tsim-prices-before-ladder.json.
+const TSIM_PRICING = String(process.env.ESIM_TSIM_PRICING || "ladder");
+const TSIM_TAX = Number(process.env.ESIM_TSIM_TAX || 0.11);
+const TSIM_FX = Number(process.env.ESIM_TSIM_FX || 0.05);
+const TSIM_MUL_HI = Number(process.env.ESIM_TSIM_MUL_HI || 1.8);   // маленький пакет
+const TSIM_MUL_LO = Number(process.env.ESIM_TSIM_MUL_LO || 1.4);   // самый большой
+const TSIM_GB_HI = Number(process.env.ESIM_TSIM_GB_HI || 1);       // до этого объёма держим ×1,8
+const TSIM_GB_LO = Number(process.env.ESIM_TSIM_GB_LO || 50);      // с этого объёма ×1,4
+function tsimCostRub(costUsd, rate) { return Math.ceil(Number(costUsd) * rate * (1 + TSIM_FX) * (1 + TSIM_TAX)); }
+function up9(x) { return Math.ceil((x + 1) / 10) * 10 - 1; }       // 190 → 199
+function down9(x) { return Math.floor((x + 1) / 10) * 10 - 1; }    // 205 → 199
+function tsimMul(gb) {
+  const g = Math.max(0.1, Number(gb) || 0.1);
+  if (g <= TSIM_GB_HI) return TSIM_MUL_HI;
+  if (g >= TSIM_GB_LO) return TSIM_MUL_LO;
+  return TSIM_MUL_HI - (TSIM_MUL_HI - TSIM_MUL_LO) * (Math.log(g / TSIM_GB_HI) / Math.log(TSIM_GB_LO / TSIM_GB_HI));
+}
+// Сколько гигабайт человек получает за весь срок: у суточного пакета это объём в сутки × дни
+function totalGb(p) { return (Number(p.dataGb) || 0) * (p.daily ? (Number(p.days) || 1) : 1); }
+let _tsimPrices = null;
+function tsimPriceMap(rate) {
+  const cat = loadTsimCatalog();
+  const products = (cat && cat.products) || [];
+  const key = rate + ":" + ((cat && cat.ts) || 0) + ":" + products.length;
+  if (_tsimPrices && _tsimPrices.key === key) return _tsimPrices.map;
+  const map = new Map();
+  const groups = new Map();
+  products.forEach((p) => {
+    // Суточные пакеты 500 МБ/сут и 1 ГБ/сут — разные линейки: внутри каждой
+    // больше дней значит больше гигабайт и дешевле за гигабайт. Если смешать,
+    // «7 дней по 500 МБ» окажется дороже за гигабайт, чем «3 дня по 1 ГБ».
+    const g = (p.countries || []).slice().sort().join(",") + (p.daily ? "|сут" + p.dataGb : "|пакет");
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(p);
+  });
+  for (const list of groups.values()) {
+    const items = list.map((p) => {
+      const cost = tsimCostRub(p.costUsd, rate), gb = totalGb(p);
+      return { p, gb, cost, price: Math.max(up9(cost * tsimMul(gb)), cost + 1) };
+    }).sort((a, b) => a.gb - b.gb || a.price - b.price);
+    let prevPerGb = Infinity, prevMargin = 0, i = 0;
+    while (i < items.length) {
+      let j = i;
+      while (j < items.length && items[j].gb === items[i].gb) j++;
+      const tier = items.slice(i, j);
+      const lead = tier[0];                       // самый дешёвый пакет этого объёма — он и держит лестницу
+      let price = lead.price;
+      if (prevPerGb !== Infinity) price = Math.min(price, down9(prevPerGb * lead.gb - 0.01));
+      if (prevMargin > 0) price = Math.max(price, up9(lead.cost + prevMargin));
+      price = Math.max(price, lead.cost + 1);
+      tier.forEach((x) => { map.set(x.p.id, x === lead ? price : Math.max(x.price, price)); });
+      prevPerGb = price / lead.gb;
+      prevMargin = price - lead.cost;
+      i = j;
+    }
+  }
+  _tsimPrices = { key, map };
+  return map;
+}
 function tsimOn() {
   return Boolean(process.env.TSIM_ACCOUNT && process.env.TSIM_SECRET) && String(process.env.ESIM_TSIM || "1") !== "0";
 }
@@ -511,9 +579,17 @@ async function getTsimProducts(force) {
   if (tsimLeftUsd() < TSIM_RESERVE_USD) return [];
   return cat.products;
 }
-// Розница: наценка общая, нижняя цена у TSim своя
+// Розница: у MobiMatter общая ступенчатая наценка, у TSim своя лестница
 function retailFor(item, rate) {
+  if (isTsimId(item.id) && TSIM_PRICING === "ladder") {
+    const p = tsimPriceMap(rate).get(item.id);
+    if (p) return p;
+  }
   return toRetailRub(item.costUsd, rate, isTsimId(item.id) ? TSIM_MIN_RUB : MIN_RUB);
+}
+// Себестоимость для пола скидок: у TSim с налогом, у MobiMatter как было
+function costFor(item, rate) {
+  return isTsimId(item.id) ? tsimCostRub(item.costUsd, rate) : toCostRub(item.costUsd, rate);
 }
 async function getMmCatalog(force) {
   const cached = loadCatalogFile();
@@ -778,7 +854,7 @@ function mount(app, opts) {
           fiveG: !!p.fiveG, hotspot: p.hotspot !== false, priceRub: retailFor(p, rate),
           ruPick: isRuServicesPick(p),
         };
-        if (adm) { o.src = p.src || "mobimatter"; o.costUsd = p.costUsd; o.costRub = Math.round(p.costUsd * rate); o.marginRub = o.priceRub - o.costRub; }
+        if (adm) { o.src = p.src || "mobimatter"; o.costUsd = p.costUsd; o.costRub = costFor(p, rate); o.marginRub = o.priceRub - o.costRub; }
         return o;
       });
       products = hideSupplierDups(products);
@@ -1187,7 +1263,7 @@ function mount(app, opts) {
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
       const listPrice = retailFor(found.item, rate);
       const who = custKey(email, tgChatId);
-      const calc = priceWithDiscounts({ listPrice, costRub: toCostRub(found.item.costUsd, rate),
+      const calc = priceWithDiscounts({ listPrice, costRub: costFor(found.item, rate),
         email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const priceRub = calc.total;
       const id = crypto.randomBytes(6).toString("hex");
@@ -1226,7 +1302,7 @@ function mount(app, opts) {
       const email = normEmail(b.email) || readSession(req) || "";
       const who = custKey(email, b.tgChatId);
       const listPrice = retailFor(found.item, rate);
-      const calc = priceWithDiscounts({ listPrice, costRub: toCostRub(found.item.costUsd, rate),
+      const calc = priceWithDiscounts({ listPrice, costRub: costFor(found.item, rate),
         email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const promoTried = String(b.promo || "").trim();
       res.json({
