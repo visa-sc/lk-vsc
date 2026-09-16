@@ -148,6 +148,16 @@ function status() {
 
 // ── Письма ───────────────────────────────────────────────────────────────────
 function money(v) { return "$" + (Math.round(v * 100) / 100).toFixed(2); }
+// Строки письма: показываем ВСЕ известные сервисы, даже с нулевым расходом —
+// Андрей просил видеть переводы, прослушку и сканер по отдельности всегда,
+// иначе непонятно, сервис молчал или его расход опять слился с чужим.
+function rowsFor(s) {
+  const out = (s.svc || []).slice();
+  for (const id of ["translate", "cq"]) if (!out.some(function (x) { return x.id === id; }))
+    out.push({ id: id, title: SVC_TITLES[id], usd: 0, calls: 0 });
+  out.push({ id: "scanner", title: SVC_TITLES.scanner, usd: s.scanner.usd, calls: s.scanner.docs });
+  return out;
+}
 function html(s, daily) {
   const d = new Date(s.topupAt + 3 * 3600 * 1000);
   const p = (n) => String(n).padStart(2, "0");
@@ -159,11 +169,11 @@ function html(s, daily) {
     + '<table style="border-collapse:collapse;font-size:14px;">'
     + '<tr><td style="padding:4px 12px 4px 0;">Пополнение от ' + when + '</td><td style="padding:4px 0;"><b>' + money(s.topupUsd) + '</b></td></tr>'
     + '<tr><td style="padding:4px 12px 4px 0;">Потрачено с тех пор</td><td style="padding:4px 0;"><b>' + money(s.spentUsd) + '</b></td></tr>'
-    + (s.svc || []).map(function (x) {
+    + rowsFor(s).map(function (x) {
         return '<tr><td style="padding:4px 12px 4px 0;">' + x.title + '</td><td style="padding:4px 0;">' + money(x.usd) + ' за ' + x.calls + ' обращений</td></tr>';
       }).join('')
     + (s.undividedUsd > 0.005 ? '<tr><td style="padding:4px 12px 4px 0;">Без разделения (до 16.09)</td><td style="padding:4px 0;">' + money(s.undividedUsd) + '</td></tr>' : '')
-    + (s.scanner.usd > 0.005 ? '<tr><td style="padding:4px 12px 4px 0;">Сканер паспортов</td><td style="padding:4px 0;">' + money(s.scanner.usd) + ' за ' + s.scanner.docs + ' документов</td></tr>' : '')
+
     + '</table>'
     + '<p style="color:#666;font-size:13px;">Когда пополните, скажите Клоду сумму — он запишет её, и счётчик пойдёт заново. '
     + 'Без этого остаток будет считаться от прошлого пополнения и уйдёт в минус.</p>';
