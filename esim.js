@@ -327,12 +327,15 @@ function tsimMul(gb) {
 }
 // Сколько гигабайт человек получает за весь срок: у суточного пакета это объём в сутки × дни
 function totalGb(p) { return (Number(p.dataGb) || 0) * (p.daily ? (Number(p.days) || 1) : 1); }
-let _tsimPrices = null;
+const _ladderCache = {};
 function tsimPriceMap(rate) {
   const cat = loadTsimCatalog();
-  const products = (cat && cat.products) || [];
-  const key = rate + ":" + ((cat && cat.ts) || 0) + ":" + products.length;
-  if (_tsimPrices && _tsimPrices.key === key) return _tsimPrices.map;
+  return ladderMap("tsim", (cat && cat.products) || [], rate, (cat && cat.ts) || 0);
+}
+// Лестница цен для каталога одного поставщика (см. описание выше)
+function ladderMap(who, products, rate, ts) {
+  const key = rate + ":" + ts + ":" + products.length;
+  if (_ladderCache[who] && _ladderCache[who].key === key) return _ladderCache[who].map;
   const map = new Map();
   const groups = new Map();
   products.forEach((p) => {
@@ -374,7 +377,7 @@ function tsimPriceMap(rate) {
       map.set(x.p.id, Math.max(x.price, same.length ? Math.min.apply(null, same) : 0, x.cost + 1));
     });
   }
-  _tsimPrices = { key, map };
+  _ladderCache[who] = { key, map };
   return map;
 }
 function tsimOn() {
@@ -556,8 +559,145 @@ const tsim = {
   },
   getBalance() { return { spentUsd: Math.round(tsimSpentUsd() * 100) / 100, leftUsd: tsimLeftUsd(), creditUsd: TSIM_CREDIT_USD }; },
 };
+// ═══════════════ ПОСТАВЩИК №3: eSIM Access (Redtea) 16.09.2026 ═══════════════
+// Нужен там, где у TSim пусто: Грузия, Армения, Казахстан, Узбекистан,
+// Шри-Ланка, плюс дешёвые суточные и Таиланд. Устроен так же, как TSim:
+// id пакета «ea_…», номер заказа «EA-…», в заказе src:"esimaccess".
+// Режимы ESIM_EA: 0 — выключен совсем (по умолчанию), adm — видно только по
+// админ-коду, 1 — в бою. Ключ ESIMACCESS_ACCESS_CODE только в прод .env.
+// API сверен 16.09.2026: один заголовок RT-AccessCode, ответ {success,obj},
+// цены в 1/10000 USD, объём в байтах, баланс есть отдельной ручкой.
+const EA_BASE = "https://api.esimaccess.com";
+const EA_CATALOG_FILE = path.join(DIR, "catalog-ea.json");
+const EA_RESERVE_USD = Number(process.env.ESIM_EA_RESERVE_USD || 5);
+const EA_DAYS = String(process.env.ESIM_EA_DAYS || "1,3,5,7,10,15,30").split(",").map(Number);
+const EA_MIN_GB = Number(process.env.ESIM_EA_MIN_GB || 0.5);
+function eaMode() { return String(process.env.ESIM_EA || "0"); }
+function eaOn() { return Boolean(process.env.ESIMACCESS_ACCESS_CODE) && eaMode() !== "0"; }
+function eaAdmOnly() { return eaMode() === "adm"; }
+function isEaId(id) { return /^(ea_|EA-)/.test(String(id || "")); }
+async function eaCall(p, body) {
+  const r = await axios.post(EA_BASE + p, body || {}, {
+    headers: { "RT-AccessCode": process.env.ESIMACCESS_ACCESS_CODE, "Content-Type": "application/json" },
+    timeout: 60000,
+  });
+  const d = r.data || {};
+  if (!d.success) {
+    const e = new Error("eSIM Access " + p.split("/").pop() + ": " + (d.errorMsg || d.errorCode || "ошибка"));
+    e.eaCode = d.errorCode;
+    throw e;
+  }
+  return d.obj;
+}
+function eaItem(p) {
+  const loc = String(p.location || "").split(",").map((x) => x.trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c));
+  const gb = Number(p.volume) / 1073741824;
+  const days = Number(p.duration) || 0;
+  const cost = Number(p.price) / 10000;
+  if (!loc.length || !gb || !days || !cost || !p.packageCode) return null;
+  if (gb < EA_MIN_GB || EA_DAYS.indexOf(days) < 0) return null;
+  const name = String(p.name || "");
+  // «/Day» у них значит суточный пакет: объём в сутки, цена тоже за сутки
+  const daily = /\/\s*day/i.test(name);
+  return {
+    id: "ea_" + p.packageCode, src: "esimaccess", familyId: "",
+    title: name, operator: "eSIM Access", countries: loc,
+    dataGb: Math.round(gb * 10) / 10, unlimited: false, daily, days,
+    costUsd: cost, retailUsd: Number(p.retailPrice || 0) / 10000 || null,
+    fiveG: /5G/i.test(String(p.speed || "")), hotspot: true,
+    topup: Number(p.supportTopUpType) > 0,
+    ipBreakout: String(p.ipExport || "").trim(),
+    dataMb: Math.round(gb * 1024),
+  };
+}
+function loadEaCatalog() { return readJson(EA_CATALOG_FILE, null); }
+let _eaBalance = { ts: 0, usd: 0 };
+const esimaccess = {
+  name: "esimaccess",
+  ready: eaOn,
+  async fetchProducts() {
+    const obj = await eaCall("/api/v1/open/package/list", {});
+    const list = (obj && (obj.packageList || obj.list)) || [];
+    const products = [];
+    list.forEach((p) => { const it = eaItem(p); if (it) products.push(it); });
+    return { products, addons: [] };
+  },
+  async createOrder(productId) {
+    const code = String(productId).replace(/^ea_/, "");
+    const plan = ((loadEaCatalog() || {}).products || []).find((x) => x.id === productId) || {};
+    const price = Math.round(Number(plan.costUsd || 0) * 10000);
+    let orderNo;
+    try {
+      const res = await eaCall("/api/v1/open/esim/order", {
+        transactionId: "VOYO" + Date.now() + crypto.randomBytes(2).toString("hex"),
+        amount: price,
+        packageInfoList: [{ packageCode: code, count: 1, price }],
+      });
+      orderNo = res && (res.orderNo || res.orderNumber);
+    } catch (e) { e.noOrder = true; throw e; }
+    if (!orderNo) { const e = new Error("eSIM Access: заказ не создан"); e.noOrder = true; throw e; }
+    let esim = null;
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 3000));
+      try { esim = await this._esim(orderNo); } catch (e) { if (Number(e.eaCode) !== 310272) throw e; }
+      if (esim && (esim.ac || esim.qrCodeUrl)) break;
+    }
+    if (!esim || !(esim.ac || esim.qrCodeUrl)) throw new Error("eSIM Access: заказ EA-" + orderNo + " создан, но QR не пришёл за 90 секунд");
+    const view = await this._view(esim);
+    return Object.assign(view, { orderId: "EA-" + orderNo, state: "Completed", costUsd: Number(plan.costUsd) || null });
+  },
+  async createTopup() { throw new Error("eSIM Access: продление через API пока не подключено"); },
+  async _esim(orderNo) {
+    const obj = await eaCall("/api/v1/open/esim/query", {
+      orderNo: String(orderNo).replace(/^EA-/, ""), pager: { pageNum: 1, pageSize: 20 },
+    });
+    return ((obj && (obj.esimList || obj.list)) || [])[0] || null;
+  },
+  async _view(e) {
+    const lpa = e.ac || e.activationCode || null;
+    const parts = lpaParts(lpa);
+    return {
+      title: e.packageName || e.name || "", operator: "eSIM Access",
+      iccid: e.iccid || null, lpa,
+      activationCode: parts.code || e.acCode || null, smdp: parts.smdp || e.smdpAddress || null,
+      apn: e.apn || null,
+      qrDataUrl: lpa ? await qrFromLpa(lpa, e.qrCodeUrl) : null,
+    };
+  },
+  async getOrderView(orderId) {
+    const e = await this._esim(orderId);
+    if (!e) { const err = new Error("eSIM Access: заказ не найден"); err.eaCode = 310272; throw err; }
+    return this._view(e);
+  },
+  async getUsage(orderId) {
+    const e = await this._esim(orderId);
+    if (!e) return { installed: false, status: null, iccid: null, suspended: false, packages: [] };
+    const totalMb = Math.round(Number(e.totalVolume || 0) / 1048576);
+    const usedMb = Math.round(Number(e.orderUsage || e.usage || 0) / 1048576);
+    const st = String(e.smdpStatus || "").toUpperCase();
+    return {
+      installed: /INSTALL|ENABLE|RELEASED/.test(st) && st !== "RELEASED",
+      status: e.esimStatus || e.smdpStatus || null, iccid: e.iccid || null,
+      suspended: String(e.esimStatus || "").toUpperCase() === "SUSPENDED",
+      daily: /\/\s*day/i.test(String(e.packageName || "")),
+      packages: totalMb ? [{
+        name: e.packageName || "", totalMb, usedMb, remainingMb: Math.max(0, totalMb - usedMb),
+        activatedAt: e.activateTime || null, expiresAt: e.expiredTime || null,
+      }] : [],
+    };
+  },
+  // У них баланс есть в API, в отличие от TSim: держим значение пять минут
+  async getBalance() {
+    const obj = await eaCall("/api/v1/open/balance/query");
+    const usd = Number((obj && obj.balance) || 0) / 10000;
+    _eaBalance = { ts: Date.now(), usd };
+    return { balanceUsd: usd };
+  },
+  balanceUsd() { return _eaBalance.usd; },
+};
+
 // По номеру заказа или id пакета понимаем, у кого он куплен
-function providerFor(id) { return isTsimId(id) ? tsim : provider; }
+function providerFor(id) { return isEaId(id) ? esimaccess : (isTsimId(id) ? tsim : provider); }
 
 // ═══════════════ ДЕМО-КАТАЛОГ (закупки с partner.mobimatter.com, 02.09.2026) ═══════════════
 const EU33 = ["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IS","IE","IT","LV","LI","LT","LU","MT","NL","NO","PL","PT","RO","SK","SI","ES","SE","CH","GB","UA"];
@@ -588,8 +728,31 @@ function loadCatalogFile() { if (!_catalog) _catalog = readJson(CATALOG_FILE, nu
 // Общий каталог витрины: MobiMatter + пакеты TSim (если включены и хватает кредита)
 async function getCatalog(force) {
   const mm = await getMmCatalog(force);
-  const ts = await getTsimProducts(force);
-  return ts.length ? Object.assign({}, mm, { products: mm.products.concat(ts) }) : mm;
+  const [ts, ea] = await Promise.all([getTsimProducts(force), getEaProducts(force)]);
+  const extra = ts.concat(ea);
+  return extra.length ? Object.assign({}, mm, { products: mm.products.concat(extra) }) : mm;
+}
+let _eaFetching = null;
+async function getEaProducts(force) {
+  if (!esimaccess.ready()) return [];
+  const cached = loadEaCatalog();
+  const ttl = cached && cached.products && cached.products.length ? CATALOG_TTL_MS : 20 * 60 * 1000;
+  let cat = cached;
+  if (force || !cached || Date.now() - cached.ts > ttl) {
+    if (!_eaFetching) {
+      _eaFetching = esimaccess.fetchProducts()
+        .then(({ products }) => { const c = { ts: Date.now(), products }; writeJson(EA_CATALOG_FILE, c); return c; })
+        .catch((e) => { console.error("esim ea catalog:", e.message); return cached; })
+        .finally(() => { _eaFetching = null; });
+    }
+    if (!cached || force) cat = await _eaFetching;
+  }
+  if (!cat || !cat.products || !cat.products.length) return [];
+  // баланс у них живой: пакеты прячем, когда денег почти не осталось
+  if (Date.now() - _eaBalance.ts > 5 * 60 * 1000) esimaccess.getBalance().catch(() => {});
+  // в боевом режиме прячем пакеты, когда денег почти нет; в режиме adm смотрим и с нулём
+  if (eaMode() === "1" && _eaBalance.ts && _eaBalance.usd < EA_RESERVE_USD) return [];
+  return cat.products;
 }
 let _tsimFetching = null;
 async function getTsimProducts(force) {
@@ -614,6 +777,11 @@ async function getTsimProducts(force) {
 }
 // Розница: у MobiMatter общая ступенчатая наценка, у TSim своя лестница
 function retailFor(item, rate) {
+  if (isEaId(item.id) && TSIM_PRICING === "ladder") {
+    const cat = loadEaCatalog();
+    const p = ladderMap("ea", (cat && cat.products) || [], rate, (cat && cat.ts) || 0).get(item.id);
+    if (p) return p;
+  }
   if (isTsimId(item.id) && TSIM_PRICING === "ladder") {
     const p = tsimPriceMap(rate).get(item.id);
     if (p) return p;
@@ -622,7 +790,7 @@ function retailFor(item, rate) {
 }
 // Себестоимость для пола скидок: у TSim с налогом, у MobiMatter как было
 function costFor(item, rate) {
-  return isTsimId(item.id) ? tsimCostRub(item.costUsd, rate) : toCostRub(item.costUsd, rate);
+  return (isTsimId(item.id) || isEaId(item.id)) ? tsimCostRub(item.costUsd, rate) : toCostRub(item.costUsd, rate);
 }
 async function getMmCatalog(force) {
   const cached = loadCatalogFile();
@@ -883,7 +1051,7 @@ function mount(app, opts) {
       // ?land=1 — запрос со страницы страны: там показываем и короткие сроки
       const land = String(req.query.land || "") === "1";
       let products = cat.products
-        .filter((p) => adm || (!isTestProduct(p) && !(tsimAdmOnly() && isTsimId(p.id))))
+        .filter((p) => adm || (!isTestProduct(p) && !(tsimAdmOnly() && isTsimId(p.id)) && !(eaAdmOnly() && isEaId(p.id))))
         .filter((p) => land || adm || !p.landOnly)
         .map((p) => {
         const o = {
@@ -945,10 +1113,11 @@ function mount(app, opts) {
   app.get("/esim/api/my", async (req, res) => {
     const o = String(req.query.o || "").slice(0, 40);
     if (!o || !checkSig(o, req.query.t)) return res.status(403).json({ success: false, message: "Ссылка недействительна." });
-    // eSIM от TSim: те же поля страницы, продлений пока нет (кнопка «Купить другую eSIM»)
-    if (isTsimId(o)) {
+    // eSIM от TSim и eSIM Access: те же поля страницы, продлений пока нет
+    if (isTsimId(o) || isEaId(o)) {
+      const who = isEaId(o) ? esimaccess : tsim;
       try {
-        const [view, usage] = await Promise.all([tsim.getOrderView(o), tsim.getUsage(o).catch(() => null)]);
+        const [view, usage] = await Promise.all([who.getOrderView(o), who.getUsage(o).catch(() => null)]);
         const owner = emailOfProviderOrder(o);
         if (owner) setSession(res, owner);
         return res.json({
@@ -958,7 +1127,7 @@ function mount(app, opts) {
           usage, topups: [],
         });
       } catch (e) {
-        const nf = Number(e.tsimCode) === 1006;
+        const nf = Number(e.tsimCode) === 1006 || Number(e.eaCode) === 310272;
         return res.status(nf ? 404 : 500).json({ success: false, message: nf ? "Заказ не найден." : e.message });
       }
     }
@@ -1134,10 +1303,11 @@ function mount(app, opts) {
     if (o.status === "fulfilling") return { ok: true, pending: true };
     o.status = "fulfilling"; saveLocal(f.orders);
     try {
-      let res, src = isTsimId(o.productId) ? "tsim" : "mobimatter", fallbackFrom = null;
+      let res, src = isEaId(o.productId) ? "esimaccess" : (isTsimId(o.productId) ? "tsim" : "mobimatter"), fallbackFrom = null;
       if (o.parentOrderId) res = await providerFor(o.parentOrderId).createTopup(o.productId, o.parentOrderId);
-      else if (src === "tsim") {
-        try { res = await tsim.createOrder(o.productId); }
+      else if (src === "tsim" || src === "esimaccess") {
+        const who = src === "tsim" ? tsim : esimaccess;
+        try { res = await who.createOrder(o.productId); }
         catch (e) {
           // TSim не принял заказ (заказа у них нет) — выдаём такой же пакет MobiMatter,
           // если его закупка укладывается в оплаченную сумму. Иначе ручной разбор.
@@ -1233,7 +1403,7 @@ function mount(app, opts) {
             (g.order.balanceUsed ? "\nСписано бонусами: " + g.order.balanceUsed + " ₽" : "") +
             "\nТелефон: " + (g.order.phone || "—") +
             "\nEmail: " + (g.order.email || "—") +
-            "\nЗаказ " + (src === "tsim" ? "TSim" : "MobiMatter") + ": " + res.orderId +
+            "\nЗаказ " + (src === "tsim" ? "TSim" : src === "esimaccess" ? "eSIM Access" : "MobiMatter") + ": " + res.orderId +
             (fallbackFrom ? "\nTSim не принял заказ, выдан такой же пакет MobiMatter." : "") +
             (src === "tsim" ? "\nКредит TSim по учёту: $" + tsimLeftUsd() : "") +
             "\nСсылка клиента: " + g.order.myUrl,
@@ -1295,7 +1465,7 @@ function mount(app, opts) {
         return res.status(403).json({ success: false, message: "Идёт тестирование: доступны только служебные пакеты «Test 1 GB» и «Test 2 GB» (Германия и Италия)." });
       }
       // Служебный пакет можно купить только с adm-кодом — клиент его и не увидит
-      if ((isTestProduct(found.item) || (tsimAdmOnly() && isTsimId(found.item.id))) && String(b.adm || "") !== ADMIN_CODE) {
+      if ((isTestProduct(found.item) || (tsimAdmOnly() && isTsimId(found.item.id)) || (eaAdmOnly() && isEaId(found.item.id))) && String(b.adm || "") !== ADMIN_CODE) {
         return res.status(400).json({ success: false, message: "Пакет не найден." });
       }
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
@@ -1680,6 +1850,11 @@ function mount(app, opts) {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
     const out = { success: true, provider: provider.name, ready: provider.ready(), markup: markupLabel(), minRub: MIN_RUB };
     if (provider.ready()) { try { out.balance = await provider.getBalance(); } catch (e) { out.balanceError = e.message; } }
+    out.ea = { mode: eaMode(), on: esimaccess.ready(), plans: ((loadEaCatalog() || {}).products || []).length,
+      shown: (await getEaProducts(false)).length, reserveUsd: EA_RESERVE_USD };
+    if (esimaccess.ready() || process.env.ESIMACCESS_ACCESS_CODE) {
+      try { out.ea.balance = await esimaccess.getBalance(); } catch (e) { out.ea.balanceError = e.message; }
+    }
     out.tsim = { on: tsim.ready(), plans: ((loadTsimCatalog() || {}).products || []).length,
       shown: (await getTsimProducts(false)).length, minRub: TSIM_MIN_RUB, reserveUsd: TSIM_RESERVE_USD, ...tsim.getBalance() };
     const orders = readJson(ORDERS_FILE, []);
