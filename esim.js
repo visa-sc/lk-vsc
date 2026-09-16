@@ -101,6 +101,9 @@ function markupLabel() {
   return MARKUP_TIERS.map((t) => (t.upTo === Infinity ? ">" + "$" : "≤$" + t.upTo) + " ×" + t.mul).join(", ");
 }
 const MIN_RUB = Number(process.env.ESIM_MIN_RUB || 590);
+// Цена за гигабайт на карточке: так делают Yotti и Telwel, и у нас она лучше.
+// Выключить: ESIM_PER_GB=0 в .env и pm2 restart voyo.
+const SHOW_PER_GB = String(process.env.ESIM_PER_GB || "1") !== "0";
 const USD_FALLBACK = Number(process.env.ESIM_USD_FALLBACK || 90);
 const ADMIN_CODE = String(process.env.ESIM_ADMIN_CODE || "280992");
 const CATALOG_TTL_MS = 6 * 60 * 60 * 1000;
@@ -412,7 +415,9 @@ async function qrFromLpa(lpa, remoteUrl) {
 // У TSim на каждую страну по 70–80 вариантов: 8 сроков на каждый объём и 11
 // сроков у суточных. Чтобы витрина не превратилась в кашу, берём привычные
 // сроки. Списки меняются в .env без выкатки кода.
-const TSIM_DAYS = String(process.env.ESIM_TSIM_DAYS || "7,15,30").split(",").map(Number);
+// 16.09.2026: добавили 3, 5 и 10 дней — в Директе конкуренты бьют именно по
+// коротким поездкам. Откат к прежнему набору: ESIM_TSIM_DAYS=7,15,30 в .env.
+const TSIM_DAYS = String(process.env.ESIM_TSIM_DAYS || "3,5,7,10,15,30").split(",").map(Number);
 const TSIM_DAILY_DAYS = String(process.env.ESIM_TSIM_DAILY_DAYS || "1,3,5,7,10,15").split(",").map(Number);
 const TSIM_DAILY_MAX_MB = Number(process.env.ESIM_TSIM_DAILY_MAX_MB || 1024);
 function tsimItem(p) {
@@ -871,7 +876,7 @@ function mount(app, opts) {
         return o;
       });
       products = hideSupplierDups(products);
-      res.json({ success: true, demo: cat.source === "demo", live: provider.ready(), pay: tbank.ready(), updatedAt: cat.ts, usdRate: Math.round(rate * 100) / 100, markup: adm ? markupLabel() : undefined, products });
+      res.json({ success: true, demo: cat.source === "demo", live: provider.ready(), pay: tbank.ready(), updatedAt: cat.ts, usdRate: Math.round(rate * 100) / 100, markup: adm ? markupLabel() : undefined, perGb: SHOW_PER_GB, products });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
 
