@@ -36,7 +36,7 @@ const ESIM_SITE_HOSTS = new Set(["esim.voyotravel.ru", "voyomobile.ru", "voyomob
 const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "georgia", "japan"];
 const ESIM_HOST_ALLOW = new RegExp(
   "^\\/($|esim(\\/|_|\\?|$)|(?:" + ESIM_LAND_PATHS.join("|") + ")\\/?$|" +
-  "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|favicon\\.ico$|robots\\.txt$|sitemap\\.xml$)");
+  "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|favicon[^/]*\\.(?:ico|svg|png)$|robots\\.txt$|sitemap\\.xml$)");
 app.use((req, res, next) => {
   const h = String(req.hostname || "").toLowerCase();
   if (h.startsWith("www.") && ESIM_SITE_HOSTS.has(h.slice(4))) return res.redirect(301, "https://" + h.slice(4) + req.originalUrl);
