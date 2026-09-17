@@ -1547,7 +1547,7 @@ function mount(app, opts) {
       if (opts && opts.sendMail) {
         opts.sendMail({
           to: "director@visa-sc.ru",
-          subject: "VOYO eSIM: ОПЛАЧЕНО " + (g.order.label || "") + (g.order.tgChatId ? " (телеграм-бот)" : ""),
+          subject: "VOYO eSIM: ✅ ОПЛАЧЕНО " + (g.order.label || "") + (g.order.tgChatId ? " (телеграм-бот)" : ""),
           text: "Клиент оплатил и получил eSIM автоматически.\n\nОткуда: " +
             (g.order.tgChatId ? "телеграм-бот, чат " + g.order.tgChatId : "сайт") +
             (g.order.tgChatId ? "" : "\nИсточник: " + adsource.describeAds(g.order.ads)) +
