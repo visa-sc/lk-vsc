@@ -66,6 +66,12 @@ const TGWELCOME_FILE = path.join(DIR, "tgwelcome.json"); // каким чата�
 const NOTIFY_DAYS_BEFORE = Number(process.env.ESIM_NOTIFY_DAYS || 2);   // за сколько дней до конца срока
 const NOTIFY_LOW_SHARE = Number(process.env.ESIM_NOTIFY_LOW || 0.2);    // остаток трафика ниже 20%
 const NOTIFY_EVERY_MS = Number(process.env.ESIM_NOTIFY_EVERY_H || 4) * 3600 * 1000;
+// Приглашение друзей: письмо (или сообщение в бот) через сутки после первой
+// оплаты — человек уже попользовался eSIM и знает, что она работает.
+// Одному клиенту отправляем один раз, отметки в .esim/refinvite.json.
+const REFINVITE_FILE = path.join(DIR, "refinvite.json");
+const REFINVITE_AFTER_MS = Number(process.env.ESIM_REFINVITE_H || 24) * 3600 * 1000;
+const REF_SITE = process.env.ESIM_REF_SITE || "https://voyomobile.ru";
 
 // Скидки: промокод и реферальная программа дают фиксированную сумму в рублях.
 // К оплате всегда остаётся не меньше MIN_PAY_RUB — иначе банку нечего проводить,
@@ -1009,6 +1015,12 @@ function usePromo(code) {
 //     скидка) в приоритете: его вводят осознанно, а баллы — это переключатель.
 //     Неизрасходованные баллы остаются на балансе до следующей покупки.
 function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, useBalance }) {
+  // Личный код клиента работает и в поле промокода: человеку всё равно, как
+  // называется код друга, а объяснять разницу в письме незачем.
+  if (promoCode && !refCode) {
+    const byRef = customerByRef(String(promoCode).trim().toUpperCase());
+    if (byRef) { refCode = String(promoCode).trim().toUpperCase(); promoCode = null; }
+  }
   const out = { listPrice, discountRub: 0, discountKind: null, promoCode: null, promoReason: null, refBy: null,
                 balanceRub: 0, balanceCanUse: 0, balanceUsed: 0, balanceBlockedBy: null, total: listPrice };
   // Ниже этой суммы цена не опускается ни при каких скидках. Себестоимость ещё и
@@ -1028,6 +1040,10 @@ function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, use
     // Реферальная скидка — только новому клиенту и не по своей же ссылке
     if (inviter && normEmail(inviter.email) !== normEmail(email) && !hasOrders(email)) {
       out.discountRub = REF_BONUS_RUB; out.discountKind = "ref"; out.refBy = inviter.email;
+    } else if (inviter && normEmail(inviter.email) === normEmail(email)) {
+      out.promoReason = "ref_own";
+    } else if (inviter) {
+      out.promoReason = "ref_not_new";
     }
   }
   let afterDiscount = Math.max(floorRub, listPrice - out.discountRub);
@@ -1705,7 +1721,7 @@ function mount(app, opts) {
         balanceRub: calc.balanceRub, balanceCanUse: calc.balanceCanUse, balanceUsed: calc.balanceUsed,
         balanceBlockedBy: calc.balanceBlockedBy,
         // Промокод засчитан, если сервер его принял — хоть скидкой, хоть себестоимостью
-        promoOk: promoTried ? !!calc.promoCode : null,
+        promoOk: promoTried ? !!(calc.promoCode || calc.discountKind === "ref") : null,
         promoReason: calc.promoReason,
       });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
@@ -2390,6 +2406,122 @@ function mount(app, opts) {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
     await runNotifications();
     res.json({ success: true, watched: esimsToWatch().length, sent: readJson(NOTIFY_FILE, {}) });
+  });
+
+  // ═══ Приглашение друзей: письмо через сутки после первой оплаты ═══
+  // Клиент уже съездил или хотя бы поставил eSIM и убедился, что всё работает,
+  // поэтому предложение позвать друга выглядит уместно, а не как спам вдогонку
+  // к оплате. Одному клиенту письмо уходит один раз.
+  function refInviteLetter(c) {
+    const link = REF_SITE + "/?ref=" + c.refCode;
+    const acc = BASE_URL + "/esim/account?e=" + encodeURIComponent(c.email) + "&t=" + signEmail(c.email);
+    const b = REF_BONUS_RUB;
+    return {
+      subject: "VOYO mobile: " + b + " ₽ вам и " + b + " ₽ другу",
+      html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#16202e">' +
+        '<p style="font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px">Приглашайте друзей в VOYO mobile</p>' +
+        '<p style="color:#8b93a5;font-size:14px;line-height:1.6;margin:0 0 18px">Спасибо за покупку. Если кто-то из ваших ' +
+        'друзей скоро летит, поделитесь своим кодом: другу сразу ' + b + ' ₽ скидки на первую eSIM, ' +
+        'а вам ' + b + ' ₽ на баланс после его оплаты.</p>' +
+        '<p style="font-size:13px;color:#8b93a5;margin:0 0 6px">Ваш личный код</p>' +
+        '<p style="margin:0 0 16px"><span style="display:inline-block;font-family:SFMono-Regular,Consolas,monospace;' +
+        'font-size:22px;font-weight:700;letter-spacing:.12em;background:#f2f7fb;border:1px solid #e0e9f2;' +
+        'border-radius:12px;padding:12px 20px">' + c.refCode + '</span></p>' +
+        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 16px">Друг вводит его в поле ' +
+        '«Промокод» при оплате. Или просто перешлите ссылку, тогда скидка применится сама:</p>' +
+        '<p style="margin:0 0 18px;font-size:14px;word-break:break-all"><a href="' + link + '" style="color:#3589bd">' + link + '</a></p>' +
+        '<p style="margin:0 0 18px"><a href="' + acc + '" style="display:inline-block;background:#3589bd;color:#fff;' +
+        'text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:12px">Мой кабинет и баланс</a></p>' +
+        '<p style="font-size:13px;line-height:1.6;color:#8b93a5;margin:0 0 6px">Бонусами можно закрыть до половины ' +
+        'стоимости следующего пакета, они не сгорают. Приглашать можно сколько угодно друзей.</p>' +
+        '<p style="font-size:12px;color:#a6adbd;margin:18px 0 0">VOYO mobile · интернет в поездке в 209 странах</p></div>',
+      text: "Приглашайте друзей в VOYO mobile\n\n" +
+        "Другу " + b + " ₽ скидки на первую eSIM, вам " + b + " ₽ на баланс после его оплаты.\n\n" +
+        "Ваш личный код: " + c.refCode + " (друг вводит его в поле «Промокод» при оплате)\n" +
+        "Ваша ссылка: " + link + "\n\n" +
+        "Бонусами можно закрыть до половины стоимости следующего пакета, они не сгорают.\n" +
+        "Кабинет и баланс: " + acc,
+    };
+  }
+
+  // Кому и когда: у клиента есть оплаченный заказ, с первой оплаты прошли сутки,
+  // письма ещё не было. backfill=1 отправляет и тем, кто купил раньше.
+  function refInviteTargets({ backfill }) {
+    const orders = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt);
+    const firstPaid = new Map();
+    orders.forEach((o) => {
+      const key = o.custKey || normEmail(o.email) || (o.tgChatId ? "tg:" + o.tgChatId : "");
+      if (!key) return;
+      if (!firstPaid.has(key) || o.paidAt < firstPaid.get(key)) firstPaid.set(key, o.paidAt);
+    });
+    const sent = readJson(REFINVITE_FILE, {});
+    const all = loadCustomers();
+    const out = [];
+    firstPaid.forEach((ts, key) => {
+      if (sent[key]) return;
+      if (!backfill && Date.now() - ts < REFINVITE_AFTER_MS) return;
+      const c = all[key] || all[normEmail(key)];
+      if (!c || !c.refCode) return;
+      const tg = String(key).indexOf("tg:") === 0 ? String(key).slice(3) : null;
+      if (!tg && !validEmail(c.email)) return;
+      out.push({ key, email: c.email, refCode: c.refCode, tgChatId: tg, firstPaid: ts });
+    });
+    return out.sort((a, b) => a.firstPaid - b.firstPaid);
+  }
+
+  async function runRefInvites({ backfill, dry } = {}) {
+    const targets = refInviteTargets({ backfill });
+    const done = [];
+    for (const t of targets) {
+      if (dry) { done.push({ key: t.key, how: t.tgChatId ? "телеграм" : "почта", dry: true }); continue; }
+      let ok = false;
+      if (t.tgChatId && opts && opts.notifyTelegram) {
+        await opts.notifyTelegram({ chatId: t.tgChatId, kind: "refInvite", refCode: t.refCode,
+          bonusRub: REF_BONUS_RUB }).then(() => { ok = true; }).catch((e) => console.error("esim refinvite tg:", e.message));
+      } else if (opts && opts.sendMail) {
+        const L = refInviteLetter(t);
+        const r = await opts.sendMail({ to: t.email, subject: L.subject, html: L.html, text: L.text })
+          .catch((e) => ({ ok: false, error: e.message }));
+        ok = !r || r.ok !== false;
+        if (!ok) console.error("esim refinvite mail:", t.email, (r && r.error) || "");
+      }
+      if (ok) {
+        const sent = readJson(REFINVITE_FILE, {});
+        sent[t.key] = Date.now();
+        writeJson(REFINVITE_FILE, sent);
+        done.push({ key: t.key, how: t.tgChatId ? "телеграм" : "почта" });
+      }
+      await new Promise((r) => setTimeout(r, 700));      // не долбим SMTP пачкой
+    }
+    if (done.length) console.log("esim: приглашений отправлено", done.length);
+    return { targets: targets.length, sent: done };
+  }
+
+  // Раз в час смотрим, кому пора. Ручной прогон и предпросмотр — по админ-коду:
+  //   ?adm=КОД            — кто в очереди (ничего не отправляет)
+  //   ?adm=КОД&test=почта — прислать письмо на указанный адрес, для проверки
+  //   ?adm=КОД&run=1      — отправить тем, у кого срок подошёл
+  //   ?adm=КОД&run=1&backfill=1 — отправить всем, кто уже покупал
+  setTimeout(() => { runRefInvites({}).catch((e) => console.error("esim refinvite:", e.message)); }, 6 * 60 * 1000);
+  setInterval(() => { runRefInvites({}).catch((e) => console.error("esim refinvite:", e.message)); }, 60 * 60 * 1000);
+
+  app.get("/esim/api/ref/invite", async (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    const test = String(req.query.test || "").trim();
+    if (test) {
+      if (!validEmail(test)) return res.status(400).json({ success: false, message: "Нужен корректный адрес." });
+      const me = getCustomer(test, true);
+      const L = refInviteLetter({ email: test, refCode: me.refCode });
+      const r = opts && opts.sendMail ? await opts.sendMail({ to: test, subject: L.subject, html: L.html, text: L.text }) : null;
+      return res.json({ success: true, test: test, refCode: me.refCode, mail: r });
+    }
+    const backfill = req.query.backfill === "1";
+    if (req.query.run !== "1") {
+      return res.json({ success: true, dry: true, afterHours: REFINVITE_AFTER_MS / 3600000,
+        queue: (await runRefInvites({ backfill, dry: true })).sent, already: readJson(REFINVITE_FILE, {}) });
+    }
+    const r = await runRefInvites({ backfill });
+    res.json(Object.assign({ success: true, backfill }, r));
   });
 
   // Прогрев кэша каталога после старта (не блокируем запуск)

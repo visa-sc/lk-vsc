@@ -1050,8 +1050,24 @@ function botStatus() {
 // Напоминания: пакет заканчивается или гигабайты на исходе. Приходят прямо
 // в чат — открываемость выше, чем у письма, а покупателю из бота письмо и
 // слать некуда: почту мы у него не спрашиваем.
-async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, myUrl, bonusRub }) {
+async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, myUrl, bonusRub, refCode }) {
   if (!ready() || !chatId) return;
+  // Через сутки после первой оплаты: человек уже проверил, что eSIM работает,
+  // и предложение позвать друга читается как польза, а не как реклама вдогонку.
+  if (kind === "refInvite") {
+    const link = "https://t.me/" + BOT_NAME + "?start=ref_" + refCode;
+    return send(chatId,
+      "<b>Приглашайте друзей</b>\n\n" +
+      "Другу сразу <b>" + RU(bonusRub) + " ₽</b> скидки на первую eSIM, вам <b>" + RU(bonusRub) + " ₽</b> " +
+      "на баланс после его оплаты. Бонусами можно закрыть до половины следующего пакета, они не сгорают.\n\n" +
+      "Ваш код: <code>" + esc(refCode) + "</code>\nВаша ссылка:\n<code>" + link + "</code>",
+      { reply_markup: { inline_keyboard: [
+        [{ text: "Позвать друга", url: "https://t.me/share/url?url=" + encodeURIComponent(link) +
+          "&text=" + encodeURIComponent("Интернет в поездке без роуминга: eSIM за минуту, по этой ссылке скидка " + bonusRub + " ₽") }],
+        [{ text: "📋 Скопировать ссылку", copy_text: { text: link } }],
+        [{ text: "🎁 Мои бонусы", callback_data: "bonus" }, { text: "🌍 Купить eSIM", callback_data: "home" }],
+      ] } });
+  }
   if (kind === "refBonus") {
     return send(chatId,
       "<b>+" + RU(bonusRub) + " ₽ на ваш счёт</b>\nДруг купил eSIM по вашей ссылке. " +
