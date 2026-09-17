@@ -181,12 +181,40 @@
   .pk .bot{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);}
   .pk .pr{font-size:21px;font-weight:800;letter-spacing:-.02em;}
   .pk .pgb{font-size:12px;color:var(--mut);font-weight:600;margin-left:7px;letter-spacing:0;}
-  /* Шильдики доверия — только на рекламных страницах стран, строкой под подзаголовком */
-  .trust{display:none;flex-wrap:wrap;justify-content:center;gap:8px;margin:-14px auto 26px;max-width:620px;}
-  .trust.on{display:flex;}
-  .trust span{font-size:12.5px;color:#54607a;background:rgba(255,255,255,.72);border:1px solid var(--line);
-    border-radius:999px;padding:7px 13px;white-space:nowrap;}
-  @media(max-width:420px){ .trust span{font-size:12px;padding:6px 11px;} }
+  /* Три карточки доверия под подзаголовком: оплата, QR, поддержка — с рисунками,
+     а не просто текст в пилюле. Ниже — рейтинг компании на Яндекс Картах. */
+  .trust{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:-8px auto 16px;max-width:760px;}
+  .trust .tc{display:flex;align-items:center;gap:11px;text-align:left;background:rgba(255,255,255,.78);
+    border:1px solid var(--line);border-radius:16px;padding:12px 14px 12px 12px;backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);box-shadow:0 1px 2px rgba(16,24,40,.03);flex:1 1 236px;max-width:248px;min-height:70px;}
+  .trust .ti{flex:0 0 34px;display:flex;align-items:center;justify-content:center;}
+  .trust .tt{font-size:12.4px;line-height:1.32;color:#5a6580;font-weight:500;}
+  .trust .tt b{display:block;font-size:13.4px;font-weight:700;color:var(--ink);margin-bottom:3px;letter-spacing:-.01em;}
+  .pays{display:inline-flex;align-items:center;gap:9px;margin-top:1px;}
+  .pays .sbpw{font-size:11.5px;font-weight:800;color:#16202e;letter-spacing:.02em;margin-left:-5px;}
+  .rate{display:inline-flex;align-items:center;gap:10px;margin:0 auto 26px;text-decoration:none;
+    background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:999px;padding:8px 16px 8px 13px;
+    box-shadow:0 1px 2px rgba(16,24,40,.03);transition:all .16s ease;}
+  .rate:hover{border-color:#aed3ea;transform:translateY(-1px);box-shadow:0 10px 22px -12px rgba(53,137,189,.5);}
+  .rate .stars{display:flex;gap:1.5px;}
+  .rate .num{font-size:15px;font-weight:800;color:var(--ink);letter-spacing:-.02em;}
+  .rate .txt{font-size:12.4px;color:#5a6580;}
+  .rate .txt b{color:var(--ink);font-weight:700;}
+  .heroRate{display:flex;justify-content:center;}
+  @media(max-width:560px){
+    .trust{gap:8px;}
+    .trust .tc{flex:1 1 100%;max-width:340px;padding:10px 14px 10px 11px;}
+    .rate{flex-wrap:wrap;justify-content:center;text-align:center;}
+    .rate .txt{font-size:12px;}
+  }
+  /* Отзывы: официальный виджет Яндекс Карт — настоящие отзывы, не наш пересказ */
+  .revs{margin:44px 0 0;}
+  .revs h2{font-size:clamp(21px,3vw,27px);letter-spacing:-.02em;margin:0 0 6px;text-align:center;}
+  .revs .rsub{color:var(--mut);font-size:14.5px;text-align:center;margin:0 auto 18px;max-width:560px;}
+  .revs .rbox{background:#fff;border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:var(--sh);}
+  .revs iframe{display:block;width:100%;height:460px;border:0;}
+  .revs .rlink{display:block;text-align:center;font-size:13px;color:var(--accent-d);text-decoration:none;margin-top:12px;}
+  .revs .rlink:hover{text-decoration:underline;}
   .pk .go{font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;transition:transform .15s ease;}
   .pk:hover .go{transform:translateX(3px);}
   .pk .adm{font-size:11px;color:#7a6a35;margin-top:10px;background:#fdf9ee;border:1px dashed #e8dcb4;border-radius:9px;padding:6px 9px;}
@@ -387,12 +415,28 @@
   </div>
 
   <div class="hero">
-    <h1>Интернет в&nbsp;поездке&nbsp;—<br/><em>за одну минуту</em></h1>
+    <h1>Интернет в&nbsp;поездке&nbsp;—<br/><em>eSIM за одну минуту</em></h1>
     <div class="sub">eSIM для путешествий: выбираете пакет, сканируете QR-код — пользуетесь интернетом.</div>
     <div class="trust" id="trust">
-      <span>Оплата картой РФ и СБП</span>
-      <span>QR сразу после оплаты</span>
-      <span>Поддержка на русском</span>
+      <div class="tc">
+        <span class="ti"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="11" fill="#eaf4fb"/><rect x="7.5" y="10" width="19" height="14" rx="3" fill="#fff" stroke="#2c6f96" stroke-width="1.6"/><path d="M7.5 14.6h19" stroke="#2c6f96" stroke-width="1.6"/><rect x="10.4" y="18.2" width="6" height="2" rx="1" fill="#7fb4d6"/></svg></span>
+        <span class="tt"><b>Оплата картой РФ</b><span class="pays"><svg width="38" height="14" viewBox="0 0 38 14" aria-label="Мир"><text x="0" y="11.8" font-family="-apple-system,Arial,sans-serif" font-size="13.4" font-weight="800" fill="#1a9c4f">МИР</text></svg><svg width="18" height="18" viewBox="0 0 24 26" aria-hidden="true"><path d="M3 6 7.5 9.8v6.4L3 20z" fill="#5b57a2"/><path d="M7.5 9.8 13 6.4V13z" fill="#fab718"/><path d="M7.5 16.2 13 19.6V13z" fill="#0fa8e0"/><path d="M13 6.4 18.5 3v6.6z" fill="#d90751"/><path d="M13 19.6 18.5 23v-6.6z" fill="#1f5eaa"/><path d="M18.5 3 21.6 13l-3.1 10z" fill="#ed6f26"/></svg><span class="sbpw">СБП</span></span></span>
+      </div>
+      <div class="tc">
+        <span class="ti"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="11" fill="#eef2fa"/><g fill="#3c4b66"><path d="M9 9h6v6H9zm1.6 1.6v2.8h2.8v-2.8z"/><path d="M19 9h6v6h-6zm1.6 1.6v2.8h2.8v-2.8z"/><path d="M9 19h6v6H9zm1.6 1.6v2.8h2.8v-2.8z"/><rect x="18.8" y="18.8" width="2.4" height="2.4" rx=".5"/><rect x="22.6" y="18.8" width="2.4" height="2.4" rx=".5"/><rect x="18.8" y="22.6" width="2.4" height="2.4" rx=".5"/><rect x="22.6" y="22.6" width="2.4" height="2.4" rx=".5"/></g></svg></span>
+        <span class="tt"><b>QR-код через 1 секунду</b>после оплаты, установка за минуту</span>
+      </div>
+      <div class="tc">
+        <span class="ti"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="11" fill="#e9f6f0"/><path d="M10 18.4v-1.6a7 7 0 0 1 14 0v1.6" stroke="#2a8f6a" stroke-width="1.8" fill="none" stroke-linecap="round"/><rect x="8.4" y="17.4" width="4" height="6" rx="2" fill="#2a8f6a"/><rect x="21.6" y="17.4" width="4" height="6" rx="2" fill="#2a8f6a"/><path d="M23.6 23.4v.8a2.4 2.4 0 0 1-2.4 2.4H18" stroke="#2a8f6a" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="16.4" cy="26.6" r="1.7" fill="#2a8f6a"/></svg></span>
+        <span class="tt"><b>Поддержка на русском</b>живой оператор в чате и по телефону</span>
+      </div>
+    </div>
+    <div class="heroRate">
+      <a class="rate" href="https://yandex.ru/maps/org/tsentr_vizovykh_uslug/237552272856/reviews/" target="_blank" rel="noopener">
+        <span class="stars"><svg width="14" height="14" viewBox="0 0 24 24" fill="#ffb800"><path d="m12 17.3-6.2 3.5 1.6-7-5.4-4.7 7.1-.6L12 2l2.9 6.5 7.1.6-5.4 4.7 1.6 7z"/></svg><svg width="14" height="14" viewBox="0 0 24 24" fill="#ffb800"><path d="m12 17.3-6.2 3.5 1.6-7-5.4-4.7 7.1-.6L12 2l2.9 6.5 7.1.6-5.4 4.7 1.6 7z"/></svg><svg width="14" height="14" viewBox="0 0 24 24" fill="#ffb800"><path d="m12 17.3-6.2 3.5 1.6-7-5.4-4.7 7.1-.6L12 2l2.9 6.5 7.1.6-5.4 4.7 1.6 7z"/></svg><svg width="14" height="14" viewBox="0 0 24 24" fill="#ffb800"><path d="m12 17.3-6.2 3.5 1.6-7-5.4-4.7 7.1-.6L12 2l2.9 6.5 7.1.6-5.4 4.7 1.6 7z"/></svg><svg width="14" height="14" viewBox="0 0 24 24" fill="#ffb800"><path d="m12 17.3-6.2 3.5 1.6-7-5.4-4.7 7.1-.6L12 2l2.9 6.5 7.1.6-5.4 4.7 1.6 7z"/></svg></span>
+        <span class="num">5,0</span>
+        <span class="txt"><b>1325 оценок</b> нашей компании на Яндекс Картах</span>
+      </a>
     </div>
     <div class="searchbox">
       <input id="q" type="text" placeholder="Куда летите?" autocomplete="off" />
@@ -435,6 +479,15 @@
       <div class="c"><div class="n">2</div><div class="t">Сканируете QR-код</div><div class="d">Придёт сразу после оплаты. Установка — минута.</div></div>
       <div class="c"><div class="n">3</div><div class="t">Пользуетесь интернетом</div><div class="d">Основная симка остаётся на месте.</div></div>
     </div>
+  </div>
+
+  <div class="revs">
+    <h2>Что о нас пишут</h2>
+    <div class="rsub">VOYO mobile — сервис компании VSC: визы, туры и страховки с 2016 года. Отзывы настоящие, прямо с карточки компании на Яндекс Картах.</div>
+    <div class="rbox">
+      <iframe src="https://yandex.ru/maps-reviews-widget/237552272856?comments" loading="lazy" title="Отзывы о нас на Яндекс Картах"></iframe>
+    </div>
+    <a class="rlink" href="https://yandex.ru/maps/org/tsentr_vizovykh_uslug/237552272856/reviews/" target="_blank" rel="noopener">Открыть все отзывы на Яндекс Картах ›</a>
   </div>
 
   <div class="faq">
@@ -838,12 +891,11 @@
       var mine = byCountry[iso] || [];
       var min = mine.length ? Math.min.apply(null, mine.map(function(p){ return p.priceRub; })) : 0;
       document.querySelector(".hero h1").innerHTML =
-        "Интернет в&nbsp;" + esc(byPath.where) + "&nbsp;—<br/><em>за одну минуту</em>" +
+        "Интернет в&nbsp;" + esc(byPath.where) + "&nbsp;—<br/><em>eSIM за одну минуту</em>" +
         (min ? "<br/>от " + RU(min) + "&nbsp;₽" : "");
       document.querySelector(".hero .sub").textContent =
         "Выбираете пакет, сканируете QR-код — пользуетесь интернетом без роуминга.";
       try{ document.title = "Интернет в " + byPath.where + " от " + RU(min) + " ₽ — VOYO mobile"; }catch(e){}
-      document.getElementById("trust").classList.add("on");
     }
     choose(iso);
     try{ window.scrollTo({ top: 0 }); }catch(e){}
