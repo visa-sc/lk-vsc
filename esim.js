@@ -2190,8 +2190,13 @@ function mount(app, opts) {
     };
   }
 
+  // Свои же ящики: тестовые заказы с них делали мы, догонять их письмами незачем
+  function ourOwnEmail(e) { return /@(voyotravel\.ru|voyovoyo\.ru|voyomobile\.(ru|com)|visa-sc\.(ru|com))$/i.test(String(e || "")); }
+
   let _abandonRunning = false;
-  async function runAbandoned() {
+  // opt.all — разовый прогон по всем заказам без оплаты, а не только за последние
+  // полтора суток (например, когда решили догнать накопившиеся).
+  async function runAbandoned(opt) {
     if (_abandonRunning || !tbank.ready() || !(opts && opts.sendMail)) return;
     _abandonRunning = true;
     let mails = 0;
@@ -2210,9 +2215,12 @@ function mount(app, opts) {
       for (const o of orders) {
         if (o.status !== "pending" || !o.paymentId) continue;
         const age = now - (o.ts || 0);
-        if (age > ABANDON_MAX_MS || age < ABANDON_AFTER_MS) continue;
+        if (age < ABANDON_AFTER_MS) continue;
+        if (age > ABANDON_MAX_MS && !(opt && opt.all)) continue;
         if (o.abandonMail && o.abandonAdmin) continue;
         if (/\btest\b/i.test(o.label || "")) continue;
+        // Заказы с наших же ящиков — это проверки, а не потерянные клиенты
+        if (ourOwnEmail(o.email)) { o.abandonMail = -1; o.abandonAdmin = -1; changed = true; continue; }
         if (paidAfter(o)) { o.abandonMail = o.abandonMail || -1; o.abandonAdmin = o.abandonAdmin || -1; changed = true; continue; }
 
         let st = null;
@@ -2223,7 +2231,7 @@ function mount(app, opts) {
         const why = bankWhy(st);
 
         if (!o.abandonMail) {
-          const to = validEmail(o.email) ? o.email : null;
+          const to = validEmail(o.email) && !ourOwnEmail(o.email) ? o.email : null;
           const key = o.custKey || o.email;
           if (to && !wroteTo.has(key)) {
             const r = await opts.sendMail(Object.assign({ to }, abandonLetter(o, why))).catch(() => ({ ok: false }));
@@ -2232,6 +2240,9 @@ function mount(app, opts) {
           } else { o.abandonMail = -1; }
           changed = true;
         }
+        // Про старые заказы письмо директору уже не новость: при разовом догоне
+        // накопившихся оно только засоряет почту, клиенту письмо всё равно уйдёт.
+        if (!o.abandonAdmin && age > ABANDON_MAX_MS) { o.abandonAdmin = -1; changed = true; }
         if (!o.abandonAdmin && age >= ABANDON_ADMIN_MS) {
           await opts.sendMail(abandonAdminLetter(o, why, st)).catch(() => {});
           o.abandonAdmin = now; changed = true; mails++;
@@ -2338,11 +2349,14 @@ function mount(app, opts) {
       let st = null;
       try { const r = await tbank.getState(o.paymentId); st = (r && r.Status) || null; } catch (_) {}
       const why = bankWhy(st);
-      const a1 = await opts.sendMail(Object.assign({ to: req.query.test }, abandonLetter(o, why)));
-      const a2 = await opts.sendMail(Object.assign({}, abandonAdminLetter(o, why, st), { to: req.query.test }));
+      const only = String(req.query.only || "");
+      const a1 = only === "admin" ? null
+        : await opts.sendMail(Object.assign({ to: req.query.test }, abandonLetter(o, why)));
+      const a2 = only === "client" ? null
+        : await opts.sendMail(Object.assign({}, abandonAdminLetter(o, why, st), { to: req.query.test }));
       return res.json({ success: true, test: true, order: o.id, bank: st, why, client: a1, admin: a2 });
     }
-    await runAbandoned();
+    await runAbandoned({ all: String(req.query.all || "") === "1" });
     const now = Date.now();
     res.json({ success: true, promo: ABANDON_PROMO, pending: readJson(ORDERS_FILE, [])
       .filter((o) => o.status === "pending" && now - o.ts < ABANDON_MAX_MS)
