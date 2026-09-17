@@ -183,19 +183,25 @@
   .pk .pgb{font-size:12px;color:var(--mut);font-weight:600;margin-left:7px;letter-spacing:0;}
   /* Три карточки доверия под подзаголовком: оплата, QR, поддержка — с рисунками,
      а не просто текст в пилюле. Ниже — рейтинг компании на Яндекс Картах. */
-  .trust{display:flex;flex-wrap:wrap;justify-content:center;align-items:stretch;gap:10px;margin:-8px auto 26px;max-width:960px;}
+  .trust{display:flex;flex-wrap:wrap;justify-content:center;align-items:stretch;gap:10px;margin:-8px auto 26px;
+    max-width:960px;perspective:1000px;}
   .trust .tc{display:flex;align-items:center;justify-content:center;gap:10px;text-align:center;
     background:rgba(255,255,255,.78);border:1px solid var(--line);border-radius:16px;padding:13px 16px;
     backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 1px 2px rgba(16,24,40,.03);
-    flex:0 1 auto;min-height:64px;}
+    flex:0 1 auto;min-height:64px;will-change:transform;backface-visibility:hidden;
+    transition:box-shadow .45s ease,border-color .45s ease;}
+  /* «Живые» карточки, как в карте лояльности: наклон за курсором и парящая тень */
+  .trust .tc.live{border-color:#cfe2f0;box-shadow:0 24px 44px -22px rgba(22,48,80,.42),0 3px 10px rgba(16,24,40,.07);}
   .trust .ti{flex:0 0 32px;display:flex;align-items:center;justify-content:center;}
   .trust .tt{font-size:13.4px;font-weight:700;color:var(--ink);line-height:1.25;letter-spacing:-.01em;}
   .pays{display:inline-flex;align-items:center;gap:9px;}
   .pays .sbpw{font-size:12px;font-weight:800;color:#16202e;letter-spacing:.02em;margin-left:-5px;}
   /* Четвёртый блок ряда — рейтинг. Синий фирменный, чтобы его замечали первым. */
-  .trust .tc.rate{position:relative;overflow:hidden;gap:9px;background:var(--grad);border-color:transparent;
-    color:#fff;box-shadow:0 10px 24px -14px rgba(44,111,150,.75);cursor:default;
+  .trust .tc.rate{position:relative;overflow:hidden;gap:9px;border-color:transparent;color:#fff;cursor:default;
+    background:linear-gradient(135deg,#4a8cb2 0%,#5aa8d6 55%,#82cff5 120%);
+    box-shadow:0 10px 24px -14px rgba(44,111,150,.6);text-shadow:0 1px 2px rgba(16,40,64,.28);
     user-select:none;-webkit-user-select:none;}
+  .trust .tc.rate.live{border-color:transparent;box-shadow:0 26px 48px -20px rgba(53,137,189,.65),0 3px 10px rgba(16,24,40,.08);}
   .trust .tc.rate .num{color:#fff;font-size:16px;}
   .trust .tc.rate .txt{color:rgba(255,255,255,.92);font-size:12.6px;}
   .trust .tc.rate .txt b{color:#fff;font-weight:700;}
@@ -225,14 +231,6 @@
     .trust{gap:8px;}
     .trust .tc{flex:1 1 100%;max-width:340px;min-height:58px;padding:11px 14px;}
   }
-  /* Отзывы: официальный виджет Яндекс Карт — настоящие отзывы, не наш пересказ */
-  .revs{margin:44px 0 0;}
-  .revs h2{font-size:clamp(21px,3vw,27px);letter-spacing:-.02em;margin:0 0 6px;text-align:center;}
-  .revs .rsub{color:var(--mut);font-size:14.5px;text-align:center;margin:0 auto 18px;max-width:560px;}
-  .revs .rbox{background:#fff;border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:var(--sh);}
-  .revs iframe{display:block;width:100%;height:460px;border:0;}
-  .revs .rlink{display:block;text-align:center;font-size:13px;color:var(--accent-d);text-decoration:none;margin-top:12px;}
-  .revs .rlink:hover{text-decoration:underline;}
   .pk .go{font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;transition:transform .15s ease;}
   .pk:hover .go{transform:translateX(3px);}
   .pk .adm{font-size:11px;color:#7a6a35;margin-top:10px;background:#fdf9ee;border:1px dashed #e8dcb4;border-radius:9px;padding:6px 9px;}
@@ -495,15 +493,6 @@
       <div class="c"><div class="n">2</div><div class="t">Сканируете QR-код</div><div class="d">Придёт сразу после оплаты. Установка — минута.</div></div>
       <div class="c"><div class="n">3</div><div class="t">Пользуетесь интернетом</div><div class="d">Основная симка остаётся на месте.</div></div>
     </div>
-  </div>
-
-  <div class="revs">
-    <h2>Что о нас пишут</h2>
-    <div class="rsub">VOYO mobile — сервис компании VSC: визы, туры и страховки с 2016 года. Отзывы настоящие, прямо с карточки компании на Яндекс Картах.</div>
-    <div class="rbox">
-      <iframe src="https://yandex.ru/maps-reviews-widget/237552272856?comments" loading="lazy" title="Отзывы о нас на Яндекс Картах"></iframe>
-    </div>
-    <a class="rlink" href="https://yandex.ru/maps/org/tsentr_vizovykh_uslug/237552272856/reviews/" target="_blank" rel="noopener">Открыть все отзывы на Яндекс Картах ›</a>
   </div>
 
   <div class="faq">
@@ -928,6 +917,44 @@
     if(iso && byCountry[iso]) choose(iso);
     openModal(p);
   }
+
+  // Карточки первого экрана «живые»: наклон за курсором и парящая тень.
+  // Значения не ставим из события напрямую — каждый кадр текущее состояние
+  // догоняет цель с затуханием, отсюда мягкий разгон и плавный возврат
+  // (тот же приём, что в карте лояльности в ЛК).
+  (function(){
+    try{ if(window.matchMedia("(prefers-reduced-motion: reduce)").matches) return; }catch(e){}
+    if(!window.matchMedia || !window.matchMedia("(hover: hover)").matches) return;
+    document.querySelectorAll(".trust .tc").forEach(function(node){
+      var MAX = 7, tgt = { rx:0, ry:0, s:1, lift:0 }, cur = { rx:0, ry:0, s:1, lift:0 }, raf = 0, live = false;
+      function frame(){
+        var k = live ? .16 : .1, moving = false;
+        for(var p in tgt){
+          var dl = tgt[p] - cur[p];
+          if(Math.abs(dl) > 0.0015){ cur[p] += dl * k; moving = true; } else cur[p] = tgt[p];
+        }
+        node.style.transform = "translate3d(0,-" + cur.lift.toFixed(2) + "px,0) scale(" + cur.s.toFixed(4) + ")"
+          + " rotateX(" + cur.rx.toFixed(3) + "deg) rotateY(" + cur.ry.toFixed(3) + "deg)";
+        raf = (moving || live) ? requestAnimationFrame(frame) : 0;
+      }
+      function run(){ if(!raf) raf = requestAnimationFrame(frame); }
+      node.addEventListener("pointermove", function(e){
+        var r = node.getBoundingClientRect();
+        var px = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        var py = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+        tgt.ry = (px - .5) * 2 * MAX; tgt.rx = (.5 - py) * 2 * MAX;
+        tgt.lift = 6; tgt.s = 1.02;
+        if(!live){ live = true; node.classList.add("live"); }
+        run();
+      });
+      function rest(){
+        live = false; node.classList.remove("live");
+        tgt.rx = tgt.ry = 0; tgt.s = 1; tgt.lift = 0; run();
+      }
+      node.addEventListener("pointerleave", rest);
+      node.addEventListener("pointercancel", rest);
+    });
+  })();
 
   // Счётчик оценок в синей плашке: цифра набегает от нуля — блок оживает,
   // но никуда не ведёт (ссылку на карточку компании держим в блоке отзывов).
