@@ -861,7 +861,7 @@ async function getTsimProducts(force) {
   return cat.products;
 }
 // Розница: у MobiMatter общая ступенчатая наценка, у TSim своя лестница
-function retailFor(item, rate) {
+function baseRetailFor(item, rate) {
   if (isEaId(item.id) && TSIM_PRICING === "ladder") {
     const cat = loadEaCatalog();
     const p = ladderMap("ea", (cat && cat.products) || [], rate, (cat && cat.ts) || 0).get(item.id);
@@ -872,6 +872,59 @@ function retailFor(item, rate) {
     if (p) return p;
   }
   return toRetailRub(item.costUsd, rate, isTsimId(item.id) ? TSIM_MIN_RUB : MIN_RUB);
+}
+
+// ── ПОДЪЁМ ЦЕН (17.09.2026, решение Андрея) ─────────────────────────────
+// Входные пакеты дешевле 200 ₽ не трогаем: на эти цифры («от 59 ₽») идут
+// объявления в Директе и первый экран витрины. Выше — шаг вверх ступенями,
+// округление вверх до …9. Ступени задаются строкой «порог:процент»,
+// ESIM_UPLIFT=0 выключает подъём целиком и возвращает прежние цены.
+const UPLIFT_RAW = String(process.env.ESIM_UPLIFT || "200:5,500:8,1000:10");
+const UPLIFT_STEPS = (UPLIFT_RAW === "0" ? [] : UPLIFT_RAW.split(","))
+  .map((x) => ({ from: Number(x.split(":")[0]), k: 1 + Number(x.split(":")[1]) / 100 }))
+  .filter((x) => x.from > 0 && x.k > 1)
+  .sort((a, b) => b.from - a.from);
+function upliftOf(price) {
+  const st = UPLIFT_STEPS.find((x) => price >= x.from);
+  return st ? up9(price * st.k) : price;
+}
+// Гигабайт в большом пакете обязан остаться дешевле, чем в меньшем. Если
+// подъём это правило ломает — такой пакет оставляем в прежней цене (просьба
+// Андрея: «если на объёме выйдет дороже, чем поштучно, не поднимай»).
+let _upliftSkip = { key: "", set: new Set() };
+function upliftSkipSet(rate) {
+  const cats = [loadCatalogFile(), loadTsimCatalog(), loadEaCatalog()];
+  const key = cats.map((c) => (c && c.ts) || 0).join("|") + "|" + rate + "|" + UPLIFT_RAW;
+  if (_upliftSkip.key === key) return _upliftSkip.set;
+  const skip = new Set();
+  const groups = new Map();
+  cats.forEach((c) => ((c && c.products) || []).forEach((p) => {
+    if (!p || !p.id || p.unlimited || !p.dataGb) return;
+    // сравниваем внутри одного набора стран; суточные линейки считаем отдельно
+    const g = (p.countries || []).slice().sort().join(",") + (p.daily ? "|сут" + p.dataGb : "|пакет");
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(p);
+  }));
+  groups.forEach((list) => {
+    const vol = (p) => p.dataGb * (p.daily ? (p.days || 1) : 1);
+    list.sort((a, b) => vol(a) - vol(b));
+    let best = Infinity;                      // лучшая (наименьшая) цена за ГБ среди меньших пакетов
+    list.forEach((p) => {
+      const gb = vol(p) || 1;
+      const base = baseRetailFor(p, rate);
+      const up = upliftOf(base);
+      if (up > base && up / gb > best) skip.add(p.id);
+      best = Math.min(best, (skip.has(p.id) ? base : up) / gb);
+    });
+  });
+  _upliftSkip = { key, set: skip };
+  return skip;
+}
+function retailFor(item, rate) {
+  const base = baseRetailFor(item, rate);
+  if (!UPLIFT_STEPS.length) return base;
+  if (item.unlimited || !item.dataGb) return upliftOf(base);   // безлимит сравнивать по ГБ не с чем
+  return upliftSkipSet(rate).has(item.id) ? base : upliftOf(base);
 }
 // СЕБЕСТОИМОСТЬ (одинаково для всех поставщиков, 16.09.2026):
 // закупка × курс ЦБ + 5% на конвертацию + 11% налога. Ниже неё цена не падает
