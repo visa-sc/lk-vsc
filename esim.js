@@ -2173,7 +2173,7 @@ function mount(app, opts) {
       : "до оплаты не дошёл (" + (st || "—") + ")";
     return {
       to: ABANDON_TO,
-      subject: "VOYO eSIM: НЕ ОПЛАЧЕНО " + (o.priceRub || "—") + " ₽ · " + (o.label || "—"),
+      subject: "VOYO eSIM: ❌ НЕ ОПЛАЧЕНО " + (o.priceRub || "—") + " ₽ · " + (o.label || "—"),
       text: "Заказ висит без оплаты больше двух часов.\n\nЧто случилось: " + whyRu +
         "\nПакет: " + (o.label || "—") +
         "\nСумма: " + (o.priceRub || "—") + " ₽" +
