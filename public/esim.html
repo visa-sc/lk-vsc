@@ -840,6 +840,23 @@
     try{ window.scrollTo({ top: 0 }); }catch(e){}
   }
 
+  // Минимальная цена живьём из каталога: на первом экране видно, от чего считать.
+  // На страницах стран (/turkey, /china) цену уже подставил landingCountry().
+  function heroMinPrice(){
+    if(LANDINGS[location.pathname.replace(/\/+$/, "").toLowerCase()]) return;
+    var min = 0;
+    CATALOG.forEach(function(p){ if(p.priceRub && (!min || p.priceRub < min)) min = p.priceRub; });
+    if(!min) return;
+    var h1 = document.querySelector(".hero h1");
+    if(h1 && h1.innerHTML.indexOf("от&nbsp;") < 0){
+      h1.innerHTML = h1.innerHTML + "<br/>от&nbsp;" + RU(min) + "&nbsp;₽";
+    }
+    var sub = document.querySelector(".hero .sub");
+    if(sub) sub.textContent = "eSIM для путешествий в " + nStran(countryIndex.length)
+      + ": выбираете пакет, сканируете QR-код — пользуетесь интернетом.";
+    try{ document.title = "eSIM для поездок от " + RU(min) + " ₽ — VOYO mobile"; }catch(e){}
+  }
+
   function choose(iso){
     current = iso;
     wantDays = 0; wantGb = 0;
@@ -1182,6 +1199,7 @@
       });
       rebuildIndex();
       landingCountry();
+      heroMinPrice();
     }catch(e){ console.error(e); }
   })();
 })();
