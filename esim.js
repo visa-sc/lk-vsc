@@ -1420,7 +1420,7 @@ function mount(app, opts) {
       Object.assign(g.order, {
         status: "done", paidAt: Date.now(), src, fallbackFrom,
         mmOrderId: res.orderId, iccid: res.iccid || null, costUsd: res.costUsd || null,
-        myUrl: BASE_URL + "/esim/my?o=" + encodeURIComponent(o.parentOrderId || res.orderId) +
+        myUrl: (g.order.base || BASE_URL) + "/esim/my?o=" + encodeURIComponent(o.parentOrderId || res.orderId) +
                "&t=" + signOrder(o.parentOrderId || res.orderId),
       });
       saveLocal(g.orders);
@@ -1587,6 +1587,9 @@ function mount(app, opts) {
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         promoCode: calc.promoCode, refBy: calc.refBy, balanceUsed: calc.balanceUsed,
         ads: tgChatId ? null : adsource.readAds(req, b),
+        // Домен покупки: ссылка с QR должна вести туда же, иначе счётчик Метрики
+        // окажется другим и покупка не свяжется с рекламным визитом (17.09.2026)
+        base: baseFor(req),
       });
       saveLocal(orders);
       const pay = await tbank.init({
