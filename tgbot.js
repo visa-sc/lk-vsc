@@ -1057,10 +1057,13 @@ async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, m
   if (kind === "refInvite") {
     const link = "https://t.me/" + BOT_NAME + "?start=ref_" + refCode;
     return send(chatId,
-      "<b>Приглашайте друзей</b>\n\n" +
-      "Другу сразу <b>" + RU(bonusRub) + " ₽</b> скидки на первую eSIM, вам <b>" + RU(bonusRub) + " ₽</b> " +
-      "на баланс после его оплаты. Бонусами можно закрыть до половины следующего пакета, они не сгорают.\n\n" +
-      "Ваш код: <code>" + esc(refCode) + "</code>\nВаша ссылка:\n<code>" + link + "</code>",
+      "<b>Приглашайте друзей в VOYO mobile</b>\n\n" +
+      "Спасибо за покупку!\n\n" +
+      "Если кому-либо из ваших друзей и близких понадобится eSIM в любой стране мира, поделитесь своим промокодом " +
+      "или ссылкой: друг сразу получит скидку <b>" + RU(bonusRub) + " ₽</b>, а вы получите <b>" + RU(bonusRub) + " ₽</b> " +
+      "на свой баланс сразу после оплаты друга.\n\n" +
+      "Ваш промокод: <code>" + esc(refCode) + "</code>\nВаша ссылка:\n<code>" + link + "</code>\n\n" +
+      "Бонусами можно оплатить до половины стоимости eSIM, они не сгорают. Приглашать можно сколько угодно друзей.",
       { reply_markup: { inline_keyboard: [
         [{ text: "Позвать друга", url: "https://t.me/share/url?url=" + encodeURIComponent(link) +
           "&text=" + encodeURIComponent("Интернет в поездке без роуминга: eSIM за минуту, по этой ссылке скидка " + bonusRub + " ₽") }],

@@ -2472,27 +2472,29 @@ function mount(app, opts) {
     return {
       subject: "VOYO mobile: " + b + " ₽ вам и " + b + " ₽ другу",
       html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#16202e">' +
-        '<p style="font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px">Приглашайте друзей в VOYO mobile</p>' +
-        '<p style="color:#8b93a5;font-size:14px;line-height:1.6;margin:0 0 18px">Спасибо за покупку. Если кто-то из ваших ' +
-        'друзей скоро летит, поделитесь своим кодом: другу сразу ' + b + ' ₽ скидки на первую eSIM, ' +
-        'а вам ' + b + ' ₽ на баланс после его оплаты.</p>' +
-        '<p style="font-size:13px;color:#8b93a5;margin:0 0 6px">Ваш личный код</p>' +
-        '<p style="margin:0 0 16px"><span style="display:inline-block;font-family:SFMono-Regular,Consolas,monospace;' +
+        '<p style="font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 10px">Приглашайте друзей в VOYO mobile</p>' +
+        '<p style="font-size:14.5px;line-height:1.6;color:#3a4356;margin:0 0 10px">Спасибо за покупку!</p>' +
+        '<p style="font-size:14.5px;line-height:1.6;color:#3a4356;margin:0 0 18px">Если кому-либо из ваших друзей и близких ' +
+        'понадобится eSIM в любой стране мира, поделитесь своим промокодом или ссылкой: друг сразу получит скидку ' +
+        b + ' ₽, а вы получите ' + b + ' ₽ на свой баланс сразу после оплаты друга.</p>' +
+        '<p style="font-size:13px;color:#8b93a5;margin:0 0 6px">Ваш личный промокод</p>' +
+        '<p style="margin:0 0 14px"><span style="display:inline-block;font-family:SFMono-Regular,Consolas,monospace;' +
         'font-size:22px;font-weight:700;letter-spacing:.12em;background:#f2f7fb;border:1px solid #e0e9f2;' +
         'border-radius:12px;padding:12px 20px">' + c.refCode + '</span></p>' +
-        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 16px">Друг вводит его в поле ' +
-        '«Промокод» при оплате. Или просто перешлите ссылку, тогда скидка применится сама:</p>' +
+        '<p style="font-size:14.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">Вводите в поле «Промокод» при оплате.<br/>' +
+        'Также можно отправить вашу персональную ссылку, и бонус применится автоматически:</p>' +
         '<p style="margin:0 0 18px;font-size:14px;word-break:break-all"><a href="' + link + '" style="color:#3589bd">' + link + '</a></p>' +
         '<p style="margin:0 0 18px"><a href="' + acc + '" style="display:inline-block;background:#3589bd;color:#fff;' +
         'text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:12px">Мой кабинет и баланс</a></p>' +
-        '<p style="font-size:13px;line-height:1.6;color:#8b93a5;margin:0 0 6px">Бонусами можно закрыть до половины ' +
-        'стоимости следующего пакета, они не сгорают. Приглашать можно сколько угодно друзей.</p>' +
-        '<p style="font-size:12px;color:#a6adbd;margin:18px 0 0">VOYO mobile · интернет в поездке в 209 странах</p></div>',
-      text: "Приглашайте друзей в VOYO mobile\n\n" +
-        "Другу " + b + " ₽ скидки на первую eSIM, вам " + b + " ₽ на баланс после его оплаты.\n\n" +
-        "Ваш личный код: " + c.refCode + " (друг вводит его в поле «Промокод» при оплате)\n" +
-        "Ваша ссылка: " + link + "\n\n" +
-        "Бонусами можно закрыть до половины стоимости следующего пакета, они не сгорают.\n" +
+        '<p style="font-size:13px;line-height:1.6;color:#8b93a5;margin:0 0 6px">Бонусами можно оплатить до половины ' +
+        'стоимости eSIM, они не сгорают. Приглашать можно сколько угодно друзей.</p>' +
+        '<p style="font-size:12px;color:#a6adbd;margin:18px 0 0">VOYO mobile · выгодный интернет в 209 странах мира</p></div>',
+      text: "Приглашайте друзей в VOYO mobile\n\nСпасибо за покупку!\n\n" +
+        "Если кому-либо из ваших друзей и близких понадобится eSIM в любой стране мира, поделитесь своим промокодом " +
+        "или ссылкой: друг сразу получит скидку " + b + " ₽, а вы получите " + b + " ₽ на свой баланс сразу после оплаты друга.\n\n" +
+        "Ваш личный промокод: " + c.refCode + "\nВводите в поле «Промокод» при оплате.\n" +
+        "Также можно отправить вашу персональную ссылку, и бонус применится автоматически:\n" + link + "\n\n" +
+        "Бонусами можно оплатить до половины стоимости eSIM, они не сгорают. Приглашать можно сколько угодно друзей.\n" +
         "Кабинет и баланс: " + acc,
     };
   }
