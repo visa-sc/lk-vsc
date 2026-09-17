@@ -589,8 +589,8 @@ const EA_RESERVE_USD = Number(process.env.ESIM_EA_RESERVE_USD || 5);
 // ниже «критического» — каждые сутки, пока не пополним. Файл состояния общий.
 const BAL_WATCH_FILE = path.join(DIR, "balancewatch.json");
 const EA_LOW_USD = Number(process.env.ESIM_EA_LOW_USD || 20);
-const MM_LOW_USD = Number(process.env.ESIM_MM_LOW_USD || 50);
-const MM_CRIT_USD = Number(process.env.ESIM_MM_CRIT_USD || 15);
+const MM_LOW_USD = Number(process.env.ESIM_MM_LOW_USD || 20);
+const MM_CRIT_USD = Number(process.env.ESIM_MM_CRIT_USD || 10);
 const EA_DAYS = String(process.env.ESIM_EA_DAYS || "1,3,5,7,10,15,30").split(",").map(Number);
 // Порог в мегабайтах: у них «500MB» — это 0,49 ГБ, и порог «от 0,5 ГБ» резал
 // все самые дешёвые пакеты. Пакеты по 100 МБ не берём: стоят столько же,
