@@ -154,7 +154,9 @@ function flag(iso) {
 const EU = "AT BE BG HR CY CZ DK EE FI FR DE GR HU IS IE IT LV LI LT LU MT NL NO PL PT RO SK SI ES SE CH GB"
   .split(" ").reduce((a, c) => (a[c] = 1, a), {});
 const isEuroRegional = (p) => p.countries.filter((c) => EU[c]).length >= 15;
-const POPULAR = ["ES", "IT", "FR", "EU-REGION", "TR", "AE", "TH", "JP", "US"];
+// Те же популярные направления, что на витрине: Турция, ОАЭ, Египет, Таиланд,
+// Китай, Вьетнам, Грузия, Армения, Казахстан, Европа, Италия, Испания
+const POPULAR = ["TR", "AE", "EG", "TH", "CN", "VN", "GE", "AM", "KZ", "EU-REGION", "IT", "ES"];
 
 // Регионы мира — чтобы список покрытия читался, а не был простынёй из 80 строк
 const REGIONS = [
