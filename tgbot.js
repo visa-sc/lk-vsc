@@ -479,10 +479,19 @@ async function showMyOne(chatId, localId) {
   const gb = (mb) => (mb / 1024 >= 10 ? String(Math.round(mb / 1024)) : String(Math.round(mb / 102.4) / 10).replace(".", ",")) + " ГБ";
   let exp = null;
   packs.forEach((x) => { if (x.expiresAt && (!exp || new Date(x.expiresAt) > new Date(exp))) exp = x.expiresAt; });
-  const text = "<b>" + esc(o.label || "eSIM") + "</b>\n\n" +
-    (total ? "Осталось: <b>" + gb(left) + "</b> из " + gb(total) + "\n" : "Пакет ещё не активирован.\n") +
-    (exp ? "Действует до: <b>" + new Date(exp).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }) + "</b>\n" : "") +
-    (packs.length && !packs.some((x) => x.activatedAt) ? "\n<i>Отсчёт срока начнётся, когда eSIM впервые выйдет в интернет.</i>" : "");
+  const day = (iso) => new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  // Суточные тарифы на новые сутки обнуляют счётчик, поэтому у законченного
+  // пакета остаток снова «полный». Срок кончился — так и пишем, цифру не показываем.
+  const over = Boolean(j.usage && j.usage.expired);
+  const daily = Boolean(j.usage && j.usage.daily);
+  const body = over
+    ? "Пакет закончился" + (exp ? " " + day(exp) : "") + ".\nСама eSIM остаётся в телефоне — чтобы снова выйти в интернет, возьмите новый пакет.\n"
+    : (total
+        ? "Осталось" + (daily ? " на сегодня" : "") + ": <b>" + gb(left) + "</b> из " + gb(total) + (daily ? " в день" : "") + "\n"
+        : "Пакет ещё не активирован.\n") +
+      (exp ? "Действует до: <b>" + day(exp) + "</b>\n" : "");
+  const text = "<b>" + esc(o.label || "eSIM") + "</b>\n\n" + body +
+    (!over && packs.length && !packs.some((x) => x.activatedAt) ? "\n<i>Отсчёт срока начнётся, когда eSIM впервые выйдет в интернет.</i>" : "");
   const rows = [];
   // Продление тут же, без ухода на сайт: топапы ложатся на ту же eSIM,
   // переустанавливать её не нужно.
@@ -491,6 +500,7 @@ async function showMyOne(chatId, localId) {
     rows.push([{ text: "＋ " + vol + " · " + RU(t.days) + " дн. · " + RU(t.priceRub) + " ₽",
       callback_data: "tp:" + localId + ":" + t.id }]);
   });
+  if (over) rows.push([{ text: "🌍 Купить новый пакет", callback_data: "home" }]);
   rows.push([{ text: "Открыть QR-код", url: o.myUrl }]);
   rows.push([{ text: "‹ Мои eSIM", callback_data: "my" }, { text: "🌍 Другая страна", callback_data: "home" }]);
   return send(chatId, text + ((j.topups || []).length ? "\n\n<b>Продлить</b> — трафик добавится на эту же eSIM:" : ""),

@@ -114,6 +114,8 @@
   .sim .bal{margin:6px 0 2px;position:relative;z-index:2;}
   .sim .bal .v{font-size:60px;font-weight:800;letter-spacing:-.04em;line-height:1;}
   .sim .bal .v small{font-size:22px;font-weight:600;opacity:.85;margin-left:8px;letter-spacing:0;}
+  /* вместо цифры остатка — фраза («Пакет закончился»): 60px не влезают в телефон */
+  .sim .bal .v.txt{font-size:34px;line-height:1.1;letter-spacing:-.02em;}
   .sim .bal .of{font-size:15px;opacity:.85;margin-top:9px;}
   .sim .bar{height:8px;background:rgba(255,255,255,.22);border-radius:99px;overflow:hidden;margin-top:15px;position:relative;z-index:2;}
   .sim .bar i{display:block;height:100%;background:#fff;border-radius:99px;transition:width .8s cubic-bezier(.2,.9,.3,1);
@@ -395,7 +397,9 @@
     el("main").style.display="block";
     // статус
     var chip = el("stChip");
-    if(u && u.suspended){ chip.textContent="Приостановлена"; chip.className="st bad"; }
+    var over = !!(u && u.expired);
+    if(over){ chip.textContent="Пакет закончился"; chip.className="st bad"; }
+    else if(u && u.suspended){ chip.textContent="Приостановлена"; chip.className="st bad"; }
     else if(u && u.installed){ chip.textContent="Установлена"; chip.className="st ok"; }
     else { chip.textContent="Ждёт установки"; chip.className="st warn"; }
     // остаток: суммируем пакеты (основной + топапы)
@@ -406,7 +410,15 @@
       if(p.expiresAt && (!exp || new Date(p.expiresAt)>new Date(exp))) exp=p.expiresAt;
     });
     var rem = Math.max(0, total-used);
-    if(total>0){
+    // Суточные тарифы обнуляют счётчик на новые сутки: у законченного пакета
+    // остаток снова выглядит полным. Срок кончился — показываем это, а не цифру.
+    el("balV").className = over ? "v txt" : "v";
+    if(over){
+      el("balV").innerHTML = "Пакет закончился";
+      el("balOf").textContent = exp ? ("Срок действия истёк "+fmtD(exp)+" · eSIM остаётся в телефоне, нужен новый пакет")
+                                    : "eSIM остаётся в телефоне, нужен новый пакет";
+      el("bar").style.width = "0%";
+    } else if(total>0){
       el("balV").innerHTML = esc(gb(rem))+'<small>ГБ</small>';
       el("balOf").textContent = u.daily
         ? "на сегодня из "+gb(total)+" ГБ в день · потрачено "+gb(used)+" ГБ"
@@ -418,7 +430,9 @@
       el("bar").style.width = "0%";
     }
     // срок
-    if(exp){
+    if(over){
+      el("term").textContent = "";
+    } else if(exp){
       var days = Math.ceil((new Date(exp)-Date.now())/86400000);
       el("term").textContent = days>0
         ? ("Действует до "+fmtD(exp)+" · "+(days===1?"последний день":"ещё "+days+" "+plural(days,["день","дня","дней"])))
@@ -484,6 +498,10 @@
         });
         host.appendChild(row);
       });
+    } else if(over){
+      el("noTp").style.display="block";
+      el("noTp").querySelector("h2").textContent = "Продление недоступно";
+      el("noTp").querySelector(".ps").textContent = "Срок пакета истёк, добавить к нему гигабайты уже нельзя. Возьмите новый пакет кнопкой «Купить другую eSIM» выше — eSIM в телефоне переустанавливать не нужно, придёт новый QR-код.";
     } else {
       el("noTp").style.display="block";
     }

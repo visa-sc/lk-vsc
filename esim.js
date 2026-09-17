@@ -1197,6 +1197,27 @@ function mount(app, opts) {
     res.json({ success: true, pending: true });
   });
 
+  // Пакет кончился. Поставщики считают трафик по суткам и на новые сутки
+  // обнуляют счётчик — у суточного тарифа после окончания срока остаток снова
+  // выглядит «полным» (клиент 17.09.2026: «вчера симка закончилась, а сегодня
+  // показывает полный пакет»). Поэтому окончание определяем по сроку сами и
+  // отдаём отдельным полем, а не доверяем цифре остатка.
+  function markExpiry(usage) {
+    if (!usage || !Array.isArray(usage.packages)) return usage;
+    const now = Date.now();
+    usage.packages.forEach((p) => {
+      // только для начатых пакетов: у неактивированной eSIM в этом поле у части
+      // поставщиков лежит срок установки, а не конец интернета
+      const started = Boolean(p.activatedAt) || Number(p.usedMb) > 0;
+      p.expired = Boolean(started && p.expiresAt && new Date(p.expiresAt).getTime() <= now);
+    });
+    const dated = usage.packages.filter((p) => p.expiresAt);
+    usage.expired = dated.length > 0 && dated.length === usage.packages.length && dated.every((p) => p.expired);
+    usage.expiredAt = usage.expired
+      ? usage.packages.map((p) => p.expiresAt).sort().slice(-1)[0] : null;
+    return usage;
+  }
+
   // ═══ «Моя eSIM» — страница клиента: остаток, срок, QR, продление ═══
   app.get("/esim/my", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -1223,7 +1244,7 @@ function mount(app, opts) {
           conv: convPayload(orderByProviderId(o)),
           order: { id: o, state: "Completed", title: view.title, operator: view.operator, qrDataUrl: view.qrDataUrl,
             lpa: view.lpa, activationCode: view.activationCode, smdp: view.smdp, apn: view.apn, iccid: view.iccid },
-          usage, topups,
+          usage: markExpiry(usage), topups: (usage && usage.expired) ? [] : topups,
         });
       } catch (e) {
         const nf = Number(e.tsimCode) === 1006 || Number(e.eaCode) === 310272;
@@ -1271,7 +1292,7 @@ function mount(app, opts) {
           activationCode: det.ACTIVATION_CODE || null, smdp: det.SMDP_ADDRESS || null,
           apn: det.ACCESS_POINT_NAME || null, iccid: det.ICCID || null,
         },
-        usage, topups,
+        usage: markExpiry(usage), topups: (usage && usage.expired) ? [] : topups,
       });
     } catch (e) {
       const code = e.response && e.response.status;
