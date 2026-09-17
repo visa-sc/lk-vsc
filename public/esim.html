@@ -584,7 +584,11 @@
   var AUTO_PROMO = "";
   try{
     var src = String(new URLSearchParams(location.search).get("utm_source") || "").toLowerCase();
-    if(UTM_SOURCES[src]) localStorage.setItem("voyo_esim_autopromo", UTM_PROMO);
+    // Явный ?promo= из письма главнее метки: в письме про брошенную оплату
+    // свой код, и он не должен подменяться кодом рассылки.
+    var urlPromo = String(new URLSearchParams(location.search).get("promo") || "").trim().toUpperCase();
+    if(urlPromo) localStorage.setItem("voyo_esim_autopromo", urlPromo);
+    else if(UTM_SOURCES[src]) localStorage.setItem("voyo_esim_autopromo", UTM_PROMO);
     AUTO_PROMO = localStorage.getItem("voyo_esim_autopromo") || "";
   }catch(e){ }
   var PROMO = "";
@@ -843,6 +847,18 @@
     }
     choose(iso);
     try{ window.scrollTo({ top: 0 }); }catch(e){}
+  }
+
+  // Ссылка из письма про брошенную оплату ведёт на тот же пакет: ?p=ID —
+  // открываем карточку сразу, человеку остаётся нажать «Купить».
+  function autoOpenPack(){
+    var pid = new URLSearchParams(location.search).get("p");
+    if(!pid) return;
+    var p = CATALOG.filter(function(x){ return String(x.id) === String(pid); })[0];
+    if(!p) return;
+    var iso = (p.countries || [])[0];
+    if(iso && byCountry[iso]) choose(iso);
+    openModal(p);
   }
 
   // Минимальная цена живьём из каталога: на первом экране видно, от чего считать.
@@ -1192,6 +1208,8 @@
       var qsCat = [];
       if(ADM) qsCat.push("adm="+encodeURIComponent(ADM));
       if(LANDINGS[location.pathname.replace(/\/+$/, "").toLowerCase()]) qsCat.push("land=1");
+      // по ссылке на конкретный пакет каталог нужен полный, иначе короткие сроки не найдутся
+      if(new URLSearchParams(location.search).get("p")) qsCat.push("land=1");
       var r = await fetch("/esim/api/catalog"+(qsCat.length?("?"+qsCat.join("&")):""));
       var j = await r.json();
       if(!j || !j.success) throw new Error("catalog");
@@ -1205,6 +1223,7 @@
       rebuildIndex();
       landingCountry();
       heroMinPrice();
+      autoOpenPack();
     }catch(e){ console.error(e); }
   })();
 })();
