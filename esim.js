@@ -585,6 +585,12 @@ const tsim = {
 const EA_BASE = "https://api.esimaccess.com";
 const EA_CATALOG_FILE = path.join(DIR, "catalog-ea.json");
 const EA_RESERVE_USD = Number(process.env.ESIM_EA_RESERVE_USD || 5);
+// Сторож баланса поставщиков: ниже «низкого» порога уходит письмо один раз,
+// ниже «критического» — каждые сутки, пока не пополним. Файл состояния общий.
+const BAL_WATCH_FILE = path.join(DIR, "balancewatch.json");
+const EA_LOW_USD = Number(process.env.ESIM_EA_LOW_USD || 20);
+const MM_LOW_USD = Number(process.env.ESIM_MM_LOW_USD || 50);
+const MM_CRIT_USD = Number(process.env.ESIM_MM_CRIT_USD || 15);
 const EA_DAYS = String(process.env.ESIM_EA_DAYS || "1,3,5,7,10,15,30").split(",").map(Number);
 // Порог в мегабайтах: у них «500MB» — это 0,49 ГБ, и порог «от 0,5 ГБ» резал
 // все самые дешёвые пакеты. Пакеты по 100 МБ не берём: стоят столько же,
@@ -1388,6 +1394,57 @@ function mount(app, opts) {
     }).catch(() => {});
   }
 
+  // Деньги у поставщиков на исходе. У TSim кредит считаем сами (выше), у
+  // eSIM Access и MobiMatter баланс живой в их API. Письмо уходит один раз на
+  // пересечение порога; если остаток упал ниже критического — раз в сутки,
+  // пока не пополним. Порог обратно перешли — счётчик сбрасывается.
+  const BALANCE_WATCH = [
+    {
+      key: "ea", name: "eSIM Access", low: EA_LOW_USD, crit: EA_RESERVE_USD,
+      on: () => eaMode() !== "0",
+      read: async () => Number((await esimaccess.getBalance()).balanceUsd),
+      risk: "Ниже $" + EA_RESERVE_USD + " их пакеты прячутся с витрины — а это весь дешёвый вход " +
+        "(Турция 59 ₽, Китай 79 ₽) и вся реклама, которая на эти цены ведёт.",
+      how: "Пополнить: console.esimaccess.com → Balance → Recharge (от $50).",
+    },
+    {
+      key: "mm", name: "MobiMatter", low: MM_LOW_USD, crit: MM_CRIT_USD,
+      on: () => provider.ready(),
+      read: async () => Number((await provider.getBalance()).balance),
+      risk: "Когда депозит кончится, заказы у MobiMatter перестанут выдаваться, " +
+        "а клиент уже оплатил — деньги придётся возвращать руками.",
+      how: "Пополнить: partner.mobimatter.com → Billing.",
+    },
+  ];
+
+  async function checkSupplierBalances() {
+    const w = readJson(BAL_WATCH_FILE, {});
+    let changed = false;
+    for (const s of BALANCE_WATCH) {
+      if (!s.on()) continue;
+      let usd = null;
+      try { usd = await s.read(); } catch (e) { continue; }   // API молчит — посмотрим на следующем круге
+      if (!Number.isFinite(usd)) continue;
+      const st = w[s.key] || (w[s.key] = {});
+      st.usd = Math.round(usd * 100) / 100; st.ts = Date.now(); changed = true;
+      if (usd >= s.low) { if (st.sentAt) { st.sentAt = 0; } continue; }
+      const crit = usd < s.crit;
+      if (st.sentAt && (!crit || Date.now() - st.sentAt < 24 * 3600 * 1000)) continue;
+      if (!(opts && opts.sendMail)) continue;
+      st.sentAt = Date.now();
+      opts.sendMail({
+        to: "director@visa-sc.ru",
+        subject: "VOYO eSIM: у " + s.name + " осталось $" + st.usd + (crit ? " — пополнить срочно" : " — пора пополнить"),
+        text: "Баланс " + s.name + ": $" + st.usd + " (порог предупреждения $" + s.low + ").\n\n" +
+          s.risk + "\n\n" + s.how +
+          (crit ? "\n\nОстаток ниже критического $" + s.crit + " — письмо будет приходить каждые сутки, пока не пополните." : ""),
+      }).catch(() => {});
+      console.log("esim: письмо о балансе " + s.name + " $" + st.usd);
+    }
+    if (changed) writeJson(BAL_WATCH_FILE, w);
+    return w;
+  }
+
   // Выдача товара после подтверждённой оплаты. Идемпотентна: повторный вебхук
   // не купит вторую eSIM (банк может слать уведомление несколько раз).
   async function fulfil(id) {
@@ -1425,6 +1482,7 @@ function mount(app, opts) {
       });
       saveLocal(g.orders);
       if (src === "tsim") checkTsimCredit();
+      checkSupplierBalances().catch(() => {});
       // Деньги и бонусы проводим только после подтверждённой оплаты
       try {
         const who = g.order.custKey || g.order.email;
@@ -1940,10 +1998,15 @@ function mount(app, opts) {
       if (String(req.query.off || "") === "1") {
         if (all[code]) { all[code].active = false; writeJson(PROMOS_FILE, all); }
       } else {
+        // Скидка либо в рублях (rub), либо процентом (pct) — процент считается
+        // от цены пакета в checkPromo.
+        const pct = Math.min(90, Math.max(0, parseInt(req.query.pct, 10) || 0));
         all[code] = {
-          rub: Math.max(0, parseInt(req.query.rub, 10) || REF_BONUS_RUB),
+          rub: pct ? 0 : Math.max(0, parseInt(req.query.rub, 10) || REF_BONUS_RUB),
+          pct: pct || undefined,
           active: true, uses: (all[code] && all[code].uses) || 0,
           maxUses: parseInt(req.query.max, 10) || null,
+          to: String(req.query.to || "").slice(0, 10) || undefined,
           note: String(req.query.note || "").slice(0, 80), ts: Date.now(),
         };
         writeJson(PROMOS_FILE, all);
@@ -1951,7 +2014,7 @@ function mount(app, opts) {
     }
     res.set("Content-Type", "text/html; charset=utf-8");
     const rows = Object.entries(loadPromos()).map(([k, v]) =>
-      "<tr><td><b>" + esc(k) + "</b></td><td>" + v.rub + " ₽</td><td>" + (v.active === false ? "выключен" : "активен") +
+      "<tr><td><b>" + esc(k) + "</b></td><td>" + (v.pct ? "−" + v.pct + " %" : v.rub + " ₽") + "</td><td>" + (v.active === false ? "выключен" : "активен") +
       "</td><td>" + (v.uses || 0) + (v.maxUses ? " / " + v.maxUses : "") + "</td><td>" + esc(v.note || "") + "</td></tr>").join("");
     res.send('<meta name="viewport" content="width=device-width,initial-scale=1"/>' +
       '<body style="font-family:-apple-system,sans-serif;padding:24px;line-height:1.6;max-width:760px;margin:0 auto">' +
@@ -1960,8 +2023,9 @@ function mount(app, opts) {
       "<tr style=\"text-align:left;color:#888\"><th>Код</th><th>Скидка</th><th>Статус</th><th>Использован</th><th>Заметка</th></tr>" +
       (rows || '<tr><td colspan="5" style="color:#888">Пока нет ни одного</td></tr>') + "</table>" +
       '<p style="color:#888;font-size:13px;margin-top:22px">Создать или изменить:<br/>' +
-      "<code>/esim/promo?adm=КОД&amp;code=VOYO100&amp;rub=100</code><br/>" +
-      "необязательно: <code>&amp;max=500</code> (лимит использований), <code>&amp;note=текст</code><br/>" +
+      "<code>/esim/promo?adm=КОД&amp;code=VOYO100&amp;rub=100</code> — скидка в рублях<br/>" +
+      "<code>/esim/promo?adm=КОД&amp;code=BONUS10&amp;pct=10</code> — скидка процентом<br/>" +
+      "необязательно: <code>&amp;max=500</code> (лимит использований), <code>&amp;to=2026-12-31</code>, <code>&amp;note=текст</code><br/>" +
       "Выключить: <code>/esim/promo?adm=КОД&amp;code=VOYO100&amp;off=1</code></p></body>");
   });
 
@@ -2036,6 +2100,150 @@ function mount(app, opts) {
     };
   }
 
+
+  // ═══ Брошенная оплата ═══════════════════════════════════════════════════
+  // Человек выбрал пакет, дошёл до банка и не заплатил: карту отбили, закрыл
+  // окно СБП, отвлёкся. Такие заказы не видел никто — за неделю их набежало на
+  // 7,6 тыс. ₽ (17.09.2026). Теперь через полчаса клиенту уходит письмо с
+  // разовым промокодом и ссылкой на тот же пакет, а через два часа о заказе
+  // узнаёт директор.
+  const ABANDON_AFTER_MS = Number(process.env.ESIM_ABANDON_AFTER_MIN || 30) * 60000;
+  const ABANDON_ADMIN_MS = Number(process.env.ESIM_ABANDON_ADMIN_MIN || 120) * 60000;
+  const ABANDON_MAX_MS = 36 * 3600 * 1000;   // старее — догонять уже неловко
+  const ABANDON_PROMO = String(process.env.ESIM_ABANDON_PROMO || "BONUS10").toUpperCase();
+  const ABANDON_TO = process.env.ESIM_ABANDON_TO || "director@visa-sc.ru";
+  const HELP_WA = "https://wa.me/79299435150";
+  const HELP_TG = "https://t.me/vsc_operator";
+
+  // Что сказал банк: NEW/FORM_SHOWED — до оплаты не дошёл, REJECTED/AUTH_FAIL —
+  // карту не пропустили, DEADLINE_EXPIRED — форма протухла.
+  const BANK_PAID = ["CONFIRMED", "AUTHORIZED", "PARTIAL_REFUNDED", "REFUNDED"];
+  function bankWhy(st) {
+    if (st === "REJECTED" || st === "AUTH_FAIL") return "declined";
+    if (st === "DEADLINE_EXPIRED") return "expired";
+    return "left";
+  }
+
+  function abandonLink(o) {
+    return (o.base || BASE_URL) + "/esim?p=" + encodeURIComponent(o.productId) +
+      "&promo=" + ABANDON_PROMO + "&utm_source=voyo_letter&utm_medium=email&utm_campaign=esim_abandon";
+  }
+
+  function abandonLetter(o, why) {
+    const link = abandonLink(o);
+    const title = why === "declined" ? "Банк не пропустил оплату" : "Вы не завершили оплату eSIM";
+    const lead = why === "declined"
+      ? "Карта не прошла — так бывает с лимитами и подтверждением по SMS. Заказ мы сохранили: попробуйте ещё раз этой же картой, другой картой или по СБП."
+      : (why === "expired"
+        ? "Страница оплаты закрылась раньше, чем прошёл платёж. Заказ мы сохранили — открыть его можно в один клик."
+        : "Пакет выбран, но оплата так и не прошла. Заказ мы сохранили — вернуться к нему можно в один клик.");
+    const price = o.priceRub ? String(o.priceRub) + " ₽" : "";
+    const disc = o.priceRub ? String(Math.round(o.priceRub * 0.9)) + " ₽" : "";
+    return {
+      subject: "VOYO mobile: завершите оплату — дарим промокод на 10%",
+      html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#16202e">' +
+        '<p style="font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px">' + esc(title) + '</p>' +
+        '<p style="color:#8b93a5;font-size:14px;line-height:1.6;margin:0 0 14px">' + esc(o.label || "eSIM") +
+        (price ? ' · ' + price : '') + '</p>' +
+        '<p style="font-size:14.5px;line-height:1.6;margin:0 0 16px">' + esc(lead) + '</p>' +
+        '<div style="background:#f2f8fc;border:1px solid #d9e9f4;border-radius:14px;padding:16px 18px;margin:0 0 18px">' +
+        '<p style="font-size:14.5px;line-height:1.6;margin:0 0 8px">И чтобы не откладывать — дарим промокод на <b>−10%</b> к этому заказу:</p>' +
+        '<p style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:22px;font-weight:700;' +
+        'letter-spacing:.06em;margin:0 0 8px;color:#16202e">' + esc(ABANDON_PROMO) + '</p>' +
+        '<p style="font-size:13px;color:#6b748a;line-height:1.55;margin:0">Промокод разовый' +
+        (disc ? ' — пакет выйдет в ' + disc : '') + '. По кнопке ниже он подставится сам.</p></div>' +
+        '<p style="margin:0 0 18px"><a href="' + link + '" style="display:inline-block;background:#3589bd;color:#fff;' +
+        'text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:12px">Оплатить со скидкой 10%</a></p>' +
+        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">Оплата картой российского банка или по СБП, ' +
+        'QR-код придёт сразу после оплаты. Интернет включится за минуту.</p>' +
+        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 6px">Если возникли сложности — напишите нам, поможем: ' +
+        '<a href="' + HELP_WA + '" style="color:#3589bd;font-weight:600">WhatsApp</a> · ' +
+        '<a href="' + HELP_TG + '" style="color:#3589bd;font-weight:600">Telegram</a></p>' +
+        '<p style="font-size:12px;color:#a6adbd;margin:18px 0 0">VOYO mobile · интернет в поездке</p></div>',
+      text: title + "\n\n" + (o.label || "eSIM") + (price ? " · " + price : "") + "\n" + lead +
+        "\n\nПромокод на −10%: " + ABANDON_PROMO + " (разовый" + (disc ? ", пакет выйдет в " + disc : "") + ")" +
+        "\nОплатить: " + link +
+        "\n\nЕсли возникли сложности, напишите нам: WhatsApp " + HELP_WA + " · Telegram " + HELP_TG,
+    };
+  }
+
+  function abandonAdminLetter(o, why, st) {
+    const whyRu = why === "declined" ? "банк отклонил платёж (" + (st || "—") + ")"
+      : why === "expired" ? "форма оплаты протухла (DEADLINE_EXPIRED)"
+      : "до оплаты не дошёл (" + (st || "—") + ")";
+    return {
+      to: ABANDON_TO,
+      subject: "VOYO eSIM: НЕ ОПЛАЧЕНО " + (o.priceRub || "—") + " ₽ · " + (o.label || "—"),
+      text: "Заказ висит без оплаты больше двух часов.\n\nЧто случилось: " + whyRu +
+        "\nПакет: " + (o.label || "—") +
+        "\nСумма: " + (o.priceRub || "—") + " ₽" +
+        (o.discountRub ? " (скидка " + o.discountRub + " ₽" + (o.promoCode ? ", промокод " + o.promoCode : "") + ")" : "") +
+        "\nТелефон: " + (o.phone || "—") +
+        "\nEmail: " + (o.email || "—") +
+        (o.tgChatId ? "\nТелеграм-бот, чат " + o.tgChatId : "\nИсточник: " + adsource.describeAds(o.ads)) +
+        "\nЗаказ создан: " + adsource.mskTime(o.ts) + " МСК" +
+        "\nВнутренний номер: " + o.id +
+        "\n\nКлиенту " + (o.abandonMail > 0 ? "письмо с промокодом " + ABANDON_PROMO + " уже ушло."
+          : "письмо не отправляли (нет почты или уже писали сегодня).") +
+        (o.email ? "\nНаписать: " + o.email : "") +
+        (o.phone ? "\nПозвонить: " + o.phone : ""),
+    };
+  }
+
+  let _abandonRunning = false;
+  async function runAbandoned() {
+    if (_abandonRunning || !tbank.ready() || !(opts && opts.sendMail)) return;
+    _abandonRunning = true;
+    let mails = 0;
+    try {
+      const orders = readJson(ORDERS_FILE, []);
+      const now = Date.now();
+      // кому уже писали за сутки — второй раз не пишем, даже если заказов несколько
+      const wroteTo = new Set();
+      orders.forEach((o) => {
+        if (o.abandonMail > 0 && now - o.abandonMail < 24 * 3600 * 1000) wroteTo.add(o.custKey || o.email);
+      });
+      const paidAfter = (o) => orders.some((x) => (x.custKey || x.email) === (o.custKey || o.email) &&
+        (x.status === "done" || x.status === "fulfilling") && x.ts >= o.ts - 5 * 60000);
+
+      let changed = false;
+      for (const o of orders) {
+        if (o.status !== "pending" || !o.paymentId) continue;
+        const age = now - (o.ts || 0);
+        if (age > ABANDON_MAX_MS || age < ABANDON_AFTER_MS) continue;
+        if (o.abandonMail && o.abandonAdmin) continue;
+        if (/\btest\b/i.test(o.label || "")) continue;
+        if (paidAfter(o)) { o.abandonMail = o.abandonMail || -1; o.abandonAdmin = o.abandonAdmin || -1; changed = true; continue; }
+
+        let st = null;
+        try { const r = await tbank.getState(o.paymentId); st = (r && r.Status) || null; } catch (_) { continue; }
+        if (!st) continue;
+        // заплатил, а выдача не сработала — это не брошенная оплата, а авария
+        if (BANK_PAID.indexOf(st) >= 0) { o.abandonMail = -1; o.abandonAdmin = -1; changed = true; continue; }
+        const why = bankWhy(st);
+
+        if (!o.abandonMail) {
+          const to = validEmail(o.email) ? o.email : null;
+          const key = o.custKey || o.email;
+          if (to && !wroteTo.has(key)) {
+            const r = await opts.sendMail(Object.assign({ to }, abandonLetter(o, why))).catch(() => ({ ok: false }));
+            o.abandonMail = r && r.ok === false ? -1 : now;
+            if (o.abandonMail > 0) { wroteTo.add(key); mails++; }
+          } else { o.abandonMail = -1; }
+          changed = true;
+        }
+        if (!o.abandonAdmin && age >= ABANDON_ADMIN_MS) {
+          await opts.sendMail(abandonAdminLetter(o, why, st)).catch(() => {});
+          o.abandonAdmin = now; changed = true; mails++;
+        }
+        await new Promise((r) => setTimeout(r, 300));       // не долбим банк
+      }
+      if (changed) saveLocal(orders);
+      if (mails) console.log("esim: писем по брошенной оплате", mails);
+    } catch (e) { console.error("esim abandon:", e.message); }
+    finally { _abandonRunning = false; }
+  }
+
   let _notifyRunning = false;
   async function runNotifications() {
     if (_notifyRunning || !provider.ready()) return;
@@ -2096,6 +2304,51 @@ function mount(app, opts) {
   }
   setTimeout(() => { runNotifications(); }, 3 * 60 * 1000);
   setInterval(() => { runNotifications(); }, NOTIFY_EVERY_MS);
+
+  // Баланс поставщиков смотрим раз в полчаса и сразу после каждой выдачи
+  setTimeout(() => { checkSupplierBalances().catch(() => {}); }, 4 * 60 * 1000);
+  setInterval(() => { checkSupplierBalances().catch(() => {}); }, 30 * 60 * 1000);
+
+  // Состояние сторожа баланса и ручной прогон: ?adm=КОД[&run=1]
+  app.get("/esim/api/balance/watch", async (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    const state = req.query.run === "1" ? await checkSupplierBalances() : readJson(BAL_WATCH_FILE, {});
+    res.json({
+      success: true,
+      thresholds: BALANCE_WATCH.map((s) => ({ key: s.key, name: s.name, lowUsd: s.low, critUsd: s.crit, on: s.on() })),
+      tsim: { leftUsd: tsimLeftUsd(), reserveUsd: TSIM_RESERVE_USD, watch: readJson(TSIM_WATCH_FILE, {}) },
+      state,
+    });
+  });
+
+  // Брошенную оплату проверяем часто: письмо должно прийти, пока человек ещё
+  // не забыл про поездку.
+  setTimeout(() => { runAbandoned(); }, 4 * 60 * 1000);
+  setInterval(() => { runAbandoned(); }, 10 * 60 * 1000);
+
+  // Ручной прогон писем по брошенной оплате — для проверки
+  app.get("/esim/api/abandon/run", async (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    // Проверка вёрстки: оба письма по конкретному заказу уходят на указанный
+    // адрес, отметки в заказе не ставятся и клиент ничего не получает.
+    if (validEmail(req.query.test)) {
+      const list = readJson(ORDERS_FILE, []).filter((o) => o.status === "pending" && o.paymentId);
+      const o = req.query.o ? list.find((x) => x.id === String(req.query.o)) : list[0];
+      if (!o) return res.json({ success: false, message: "Нет ни одного заказа в ожидании оплаты." });
+      let st = null;
+      try { const r = await tbank.getState(o.paymentId); st = (r && r.Status) || null; } catch (_) {}
+      const why = bankWhy(st);
+      const a1 = await opts.sendMail(Object.assign({ to: req.query.test }, abandonLetter(o, why)));
+      const a2 = await opts.sendMail(Object.assign({}, abandonAdminLetter(o, why, st), { to: req.query.test }));
+      return res.json({ success: true, test: true, order: o.id, bank: st, why, client: a1, admin: a2 });
+    }
+    await runAbandoned();
+    const now = Date.now();
+    res.json({ success: true, promo: ABANDON_PROMO, pending: readJson(ORDERS_FILE, [])
+      .filter((o) => o.status === "pending" && now - o.ts < ABANDON_MAX_MS)
+      .map((o) => ({ id: o.id, ts: adsource.mskTime(o.ts), rub: o.priceRub, label: o.label,
+                     email: o.email, mail: o.abandonMail || 0, adm: o.abandonAdmin || 0 })) });
+  });
 
   // Ручной прогон и просмотр — для проверки
   app.get("/esim/api/notify/run", async (req, res) => {
