@@ -1071,6 +1071,18 @@ function readSession(req) {
   try { email = Buffer.from(parts[0], "base64url").toString("utf8"); } catch (_) { return null; }
   return validEmail(email) && checkEmailSig(email, parts[1]) ? normEmail(email) : null;
 }
+// Покупка засчитывается один раз на заказ, где бы её ни поймали: на странице
+// «оплачено» или позже на странице с QR. Клиент после СБП часто не возвращается
+// на сайт, поэтому одной точки мало — заказ 739 ₽ от 16.09 так и потерялся.
+function orderByProviderId(mmOrderId) {
+  return readJson(ORDERS_FILE, []).find(
+    (x) => x.status === "done" && (x.mmOrderId === mmOrderId || x.parentOrderId === mmOrderId)) || null;
+}
+function convPayload(order) {
+  if (!order || !order.priceRub || order.convSent) return null;
+  return { id: order.id, t: signOrder(order.id), price: Number(order.priceRub),
+           title: order.label || order.title || "eSIM", aw: process.env.ESIM_AW_PURCHASE || "" };
+}
 function emailOfProviderOrder(mmOrderId) {
   const o = readJson(ORDERS_FILE, []).find((x) => x.status === "done" && (x.mmOrderId === mmOrderId || x.parentOrderId === mmOrderId));
   return o && o.email ? o.email : null;
@@ -1202,6 +1214,7 @@ function mount(app, opts) {
         if (owner) setSession(res, owner);
         return res.json({
           success: true, pay: tbank.ready(), you: owner || readSession(req),
+          conv: convPayload(orderByProviderId(o)),
           order: { id: o, state: "Completed", title: view.title, operator: view.operator, qrDataUrl: view.qrDataUrl,
             lpa: view.lpa, activationCode: view.activationCode, smdp: view.smdp, apn: view.apn, iccid: view.iccid },
           usage, topups,
@@ -1641,7 +1654,20 @@ function mount(app, opts) {
     // Сумма и метка конверсии нужны странице «оплачено», чтобы передать покупку
     // в Google Ads. ESIM_AW_PURCHASE — «AW-…/label» из действия-конверсии в Ads.
     return res.json({ success: true, status: f.order.status, myUrl: f.order.myUrl || null,
-      priceRub: f.order.priceRub || null, aw: process.env.ESIM_AW_PURCHASE || "" });
+      priceRub: f.order.priceRub || null, aw: process.env.ESIM_AW_PURCHASE || "",
+      conv: convPayload(f.order) });
+  });
+
+  // Страница сообщает, что цель ушла в Метрику: ставим отметку, иначе при
+  // повторном заходе покупка задвоится.
+  app.post("/esim/api/conv-ack", (req, res) => {
+    const id = String((req.query.o || (req.body && req.body.o) || "")).slice(0, 40);
+    const t = String(req.query.t || (req.body && req.body.t) || "");
+    if (!id || !checkSig(id, t)) return res.status(403).json({ success: false });
+    const f = findLocal(id);
+    if (!f) return res.status(404).json({ success: false });
+    if (!f.order.convSent) { f.order.convSent = Date.now(); saveLocal(f.orders); }
+    return res.json({ success: true });
   });
 
   app.get("/esim/pay/ok", (req, res) => {

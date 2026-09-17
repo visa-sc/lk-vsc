@@ -5,6 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
 <title>Моя eSIM — VOYO mobile</title>
+<!-- Метрика: страница с QR — второй рубеж зачёта покупки. После оплаты по СБП
+     клиент часто не возвращается на «оплачено», но за QR приходит почти всегда. -->
+<script>
+  window.VOYO_YM = [/voyomobile\.ru$/.test(location.hostname) ? 112699399 : 109614823];
+  (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+  m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+  (window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=' + window.VOYO_YM[0], 'ym');
+  ym(window.VOYO_YM[0], 'init', {ssr:true, webvisor:false, clickmap:false, ecommerce:"dataLayer", trackLinks:true, accurateTrackBounce:true});
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){ dataLayer.push(arguments); }
+  window.voyoSendPurchase = function(conv){
+    if(!conv || !conv.price || !conv.id) return;
+    try{ window.dataLayer.push({ ecommerce: { currencyCode: "RUB", purchase: {
+      actionField: { id: conv.id, revenue: Number(conv.price) },
+      products: [{ id: conv.id, name: String(conv.title||"eSIM"), price: Number(conv.price), quantity: 1 }] } } }); }catch(e){}
+    try{ (window.VOYO_YM||[]).forEach(function(id){
+      ym(id, "reachGoal", "esim_purchase", { order_price: Number(conv.price), currency: "RUB" }); }); }catch(e){}
+    try{ fetch("/esim/api/conv-ack?o="+encodeURIComponent(conv.id)+"&t="+encodeURIComponent(conv.t), {method:"POST"}); }catch(e){}
+  };
+</script>
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png" />
 <link rel="icon" type="image/png" href="/apple-touch-icon.png" />
@@ -573,6 +593,7 @@
       el("loading").style.display="none";
       if(!r.ok || !j || !j.success){ el("dead").classList.add("on"); return; }
       PAY=!!j.pay; DATA=j; YOU=j.you||null; render(j);
+      try{ window.voyoSendPurchase(j.conv); }catch(e){}
       if(YOU){
         el("nav").innerHTML = '<a class="shop" href="/esim/account">Мои eSIM</a>'+
           '<a class="out" href="/esim/logout">Выйти</a>';

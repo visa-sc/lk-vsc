@@ -13,7 +13,7 @@
     for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
     k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
    (window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=' + window.VOYO_YM[0], 'ym');
-   ym(window.VOYO_YM[0], 'init', {ssr:true, webvisor:false, clickmap:false, trackLinks:true, accurateTrackBounce:true});
+   ym(window.VOYO_YM[0], 'init', {ssr:true, webvisor:false, clickmap:false, ecommerce:"dataLayer", trackLinks:true, accurateTrackBounce:true});
 </script>
 <!-- Google tag: покупка уходит в Google Ads событием purchase с суммой -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18409333270"></script>
@@ -108,6 +108,26 @@
 </div>
 
 <script>
+  // Покупка уходит один раз на заказ: отметку ставит сервер, поэтому неважно,
+  // на какой странице клиент оказался и с какого устройства.
+  window.voyoSendPurchase = function(conv){
+    if(!conv || !conv.price || !conv.id) return;
+    try{
+      if(window.dataLayer) window.dataLayer.push({ ecommerce: { currencyCode: "RUB", purchase: {
+        actionField: { id: conv.id, revenue: Number(conv.price) },
+        products: [{ id: conv.id, name: String(conv.title||"eSIM"), price: Number(conv.price), quantity: 1 }] } } });
+    }catch(e){}
+    try{ (window.VOYO_YM||[]).forEach(function(id){
+      ym(id, "reachGoal", "esim_purchase", { order_price: Number(conv.price), currency: "RUB" }); }); }catch(e){}
+    try{ if(typeof gtag==="function"){
+      var g = { transaction_id: conv.id, value: Number(conv.price), currency: "RUB" };
+      gtag("event","purchase", g);
+      if(conv.aw) gtag("event","conversion", Object.assign({ send_to: conv.aw }, g));
+    } }catch(e){}
+    try{ fetch("/esim/api/conv-ack?o="+encodeURIComponent(conv.id)+"&t="+encodeURIComponent(conv.t), {method:"POST"}); }catch(e){}
+  };
+</script>
+<script>
 (function(){
   "use strict";
   var qs = new URLSearchParams(location.search);
@@ -122,16 +142,9 @@
       if(j && j.success && j.status==="done" && j.myUrl){
         document.getElementById("goBtn").href = j.myUrl;
         show("done");
-        // Покупка в Google Ads — один раз на заказ, даже если страницу обновят
-        try{
-          if(j.priceRub && typeof gtag==="function" && !localStorage.getItem("voyo_conv_"+O)){
-            localStorage.setItem("voyo_conv_"+O, "1");
-            var conv = {transaction_id:O, value:Number(j.priceRub), currency:"RUB"};
-            gtag("event", "purchase", conv);
-            if(j.aw) gtag("event", "conversion", Object.assign({send_to:j.aw}, conv));
-            try{ if(typeof ym==="function") (window.VOYO_YM||[109614823]).forEach(function(id){ ym(id,"reachGoal","esim_purchase",{order_price:Number(j.priceRub)}); }); }catch(e){}
-          }
-        }catch(e){}
+        // Покупка в Метрику и Google Ads. Отметку о зачёте ставит сервер (conv.t),
+        // а j.conv приходит пустым, если цель уже засчитана раньше.
+        try{ window.voyoSendPurchase(j.conv); }catch(e){}
         // подтягиваем QR, чтобы клиент установил eSIM не уходя со страницы
         try{
           var u = new URL(j.myUrl);
