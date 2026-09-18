@@ -670,17 +670,18 @@
   // A/B-тест меню фильтров (18.09.2026): половина посетителей видит старое меню
   // («Не важно / 3 дн. / 5 дн.…» + «Тип тарифа»), половина — новое, как у Trip.com.
   // Вариант закрепляется за браузером; ?menu=old|new — посмотреть нужный руками.
-  var AB = "";
+  var AB = "", AB_FORCED = false;
   try{
     var abq = new URLSearchParams(location.search).get("menu");
-    AB = (abq === "old" || abq === "new") ? abq : (localStorage.getItem("voyo_ab_menu") || "");
+    AB_FORCED = abq === "old" || abq === "new";   // просмотр по ссылке ?menu= в тест не засчитываем
+    AB = AB_FORCED ? abq : (localStorage.getItem("voyo_ab_menu") || "");
     if(AB !== "old" && AB !== "new") AB = Math.random() < 0.5 ? "old" : "new";
     if(!abq) localStorage.setItem("voyo_ab_menu", AB);
   }catch(e){ if(AB !== "old" && AB !== "new") AB = Math.random() < 0.5 ? "old" : "new"; }
   function track(step){
     if(ADM) return;                                   // свои заходы с админ-кодом не считаем
     try{ fetch("/esim/api/ev", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ src: "site", step: step, vid: VID, ab: AB,
+      body: JSON.stringify({ src: "site", step: step, vid: VID, ab: AB_FORCED ? undefined : AB,
         // язык телефона и признак рекламного перехода — только для статистики языков
         lang: step === "visit" ? ((navigator.languages && navigator.languages[0]) || navigator.language || "") : undefined,
         ad: step === "visit" ? /[?&](gclid|gbraid|wbraid|gad_source|yclid|fbclid|utm_source)=/.test(location.search) : undefined
@@ -801,21 +802,26 @@
     if(iso === "EU-REGION") return dropDominated(CATALOG.filter(isEuroRegional), true);
     return dropDominated((byCountry[iso]||[]).slice(), false);
   }
-  // Пакеты второго поставщика (id «ts_») идут по многу вариантов: одно и то же
-  // есть на страну и в региональных наборах. Прячем такой пакет, если рядом есть
-  // не хуже: дешевле или так же, не меньше ГБ и дней, и с покрытием не хуже для
-  // этой страницы (на стране — сам по стране, на Европе — больше стран).
+  // Одинаковых по условиям пакетов на витрине быть не должно (18.09.2026, раньше
+  // правило касалось только TSim и eSIM Access): прячем пакет, если рядом есть
+  // не хуже — дешевле или так же, не меньше ГБ и дней. Покрытие на странице
+  // страны не мешает (региональный за 9 669 ₽ не нужен рядом с таким же за 1 179 ₽),
+  // при равенстве остаётся пакет на меньше стран. На «Европе» — только если у
+  // соседа стран не меньше. Пакет с пометкой («без VPN», «China Mobile»,
+  // «для российских сервисов») уступает только пакету с той же пометкой.
   // Та же функция стоит в tgbot.js.
   function dropDominated(list, wide){
     return list.filter(function(p){
-      if(!/^(ts_|ea_)/.test(String(p.id))) return true;
       return !list.some(function(q){
-        if(q === p || !!q.daily !== !!p.daily || q.unlimited !== p.unlimited) return false;
+        if(q === p || !!q.daily !== !!p.daily || !!q.unlimited !== !!p.unlimited) return false;
+        if(p.note && q.note !== p.note) return false;
         var nq = q.countries.length, np = p.countries.length;
-        var cov = wide ? nq >= np : nq <= np;
-        if(!cov || q.priceRub > p.priceRub || (q.dataGb||0) < (p.dataGb||0) || (q.days||0) < (p.days||0)) return false;
-        var same = q.priceRub === p.priceRub && q.dataGb === p.dataGb && q.days === p.days && nq === np;
-        return !same || String(q.id) < String(p.id);
+        if(wide && nq < np) return false;
+        if(q.priceRub > p.priceRub || (q.dataGb||0) < (p.dataGb||0) || (q.days||0) < (p.days||0)) return false;
+        var same = q.priceRub === p.priceRub && (q.dataGb||0) === (p.dataGb||0) && (q.days||0) === (p.days||0);
+        if(!same) return true;
+        if(nq !== np) return wide ? nq > np : nq < np;
+        return String(q.id) < String(p.id);
       });
     });
   }
