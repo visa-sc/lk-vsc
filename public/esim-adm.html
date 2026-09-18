@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="robots" content="noindex,nofollow"/>
+<title>VOYO mobile — показатели</title>
+<link rel="icon" href="/favicon.ico" sizes="any"/>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+<style>
+  :root{
+    --bg:#f5f7fb; --card:#fff; --line:#e6eaf2; --ink:#16202e; --mut:#8b93a5;
+    --accent:#3589bd; --accent-d:#2c6f96; --green:#1f7a4a; --red:#b0263a;
+    --sh:0 1px 2px rgba(16,24,40,.04),0 18px 44px -26px rgba(22,48,80,.22);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-size:15px;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1120px;margin:0 auto;padding:18px 16px 70px;}
+  .hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:6px 0 18px;}
+  .hdr h1{font-size:21px;letter-spacing:-.02em;margin:0;}
+  .hdr .sub{color:var(--mut);font-size:13px;margin-top:2px;}
+  .per{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  .per button{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);background:#fff;color:#41506b;
+    border-radius:999px;padding:8px 14px;cursor:pointer;}
+  .per button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .per input{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:10px;padding:7px 9px;background:#fff;}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:10px;margin:0 0 18px;}
+  .tile{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:13px 15px;box-shadow:var(--sh);}
+  .tile .k{font-size:12px;color:var(--mut);margin-bottom:5px;}
+  .tile .v{font-size:23px;font-weight:800;letter-spacing:-.03em;}
+  .tile .v small{font-size:13px;font-weight:600;color:var(--mut);margin-left:5px;letter-spacing:0;}
+  .tile.big{background:linear-gradient(135deg,#2c6f96,#4aa3d6);border-color:transparent;color:#fff;}
+  .tile.big .k{color:rgba(255,255,255,.85)}
+  .tile.big .v small{color:rgba(255,255,255,.8)}
+  .tile.neg .v{color:var(--red)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px 17px;box-shadow:var(--sh);margin:0 0 14px;}
+  .card h2{font-size:15.5px;margin:0 0 12px;letter-spacing:-.01em;}
+  .card h2 span{font-weight:400;color:var(--mut);font-size:13px;margin-left:8px;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);font-weight:600;
+    padding:0 10px 8px 0;white-space:nowrap;}
+  td{padding:8px 10px 8px 0;border-top:1px solid #eef1f7;white-space:nowrap;}
+  td.r,th.r{text-align:right;padding-right:0;}
+  .g{color:var(--green);font-weight:700}
+  .r2{color:var(--red);font-weight:700}
+  .mono{font-family:SFMono-Regular,Consolas,monospace;font-size:12.5px;}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .bars{display:flex;align-items:flex-end;gap:5px;height:140px;margin:6px 0 4px;}
+  .bars .b{flex:1 1 0;min-width:6px;background:linear-gradient(180deg,#65b3e0,#2c6f96);border-radius:5px 5px 2px 2px;position:relative;}
+  .bars .b:hover{filter:brightness(1.08)}
+  .bars .b i{position:absolute;left:50%;transform:translateX(-50%);top:-17px;font-style:normal;font-size:10.5px;color:#5a6580;}
+  .xlabels{display:flex;gap:5px;font-size:10px;color:var(--mut);}
+  .xlabels span{flex:1 1 0;min-width:6px;text-align:center;overflow:hidden;}
+  form.add{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:12px;}
+  form.add label{font-size:11.5px;color:var(--mut);display:block;margin-bottom:4px;}
+  form.add input,form.add select{font:inherit;font-size:13.5px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fff;}
+  form.add button{font:inherit;font-size:13.5px;font-weight:700;border:0;border-radius:10px;padding:9px 16px;
+    background:var(--accent);color:#fff;cursor:pointer;}
+  .x{border:0;background:none;color:var(--mut);cursor:pointer;font-size:15px;padding:0 4px;}
+  .x:hover{color:var(--red)}
+  .gate{max-width:340px;margin:16vh auto;background:#fff;border:1px solid var(--line);border-radius:20px;
+    padding:22px;box-shadow:var(--sh);text-align:center;}
+  .gate h1{font-size:18px;margin:0 0 4px;}
+  .gate p{color:var(--mut);font-size:13.5px;margin:0 0 16px;}
+  .gate input{width:100%;font:inherit;font-size:17px;text-align:center;letter-spacing:.2em;border:1px solid var(--line);
+    border-radius:13px;padding:13px;margin-bottom:10px;}
+  .gate button{width:100%;font:inherit;font-size:15px;font-weight:700;border:0;border-radius:13px;padding:13px;
+    background:var(--accent);color:#fff;cursor:pointer;}
+  .err{color:var(--red);font-size:13px;min-height:18px;margin-top:6px;}
+  .foot{color:var(--mut);font-size:12px;text-align:center;margin-top:22px;}
+  @media(max-width:600px){ .tile .v{font-size:20px} .wrap{padding:12px 12px 60px} }
+</style>
+</head>
+<body>
+
+<div id="gate" class="gate" style="display:none">
+  <h1>VOYO mobile</h1>
+  <p>Панель показателей</p>
+  <input id="code" type="password" inputmode="numeric" placeholder="код" autocomplete="off"/>
+  <button id="enter" type="button">Войти</button>
+  <div class="err" id="gateErr"></div>
+</div>
+
+<div class="wrap" id="app" style="display:none">
+  <div class="hdr">
+    <div>
+      <h1>Показатели eSIM</h1>
+      <div class="sub" id="sub">загружаем…</div>
+    </div>
+    <div class="per" id="per">
+      <button data-d="7">7 дней</button>
+      <button data-d="30" class="on">30 дней</button>
+      <button data-d="0">всё время</button>
+      <input id="from" type="date"/>
+      <input id="to" type="date"/>
+      <button id="apply">Показать</button>
+      <label style="font-size:12.5px;color:#5a6580;display:inline-flex;align-items:center;gap:5px;cursor:pointer">
+        <input id="withTest" type="checkbox"/> с тестовыми</label>
+    </div>
+  </div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="card">
+    <h2>Выручка по дням <span id="chartNote"></span></h2>
+    <div class="bars" id="bars"></div>
+    <div class="xlabels" id="xlabels"></div>
+  </div>
+
+  <div class="card">
+    <h2>По дням</h2>
+    <div class="scroll"><table id="tDays"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Реклама и окупаемость <span>расход вносится руками, выручка считается по меткам utm</span></h2>
+    <div class="scroll"><table id="tChan"></table></div>
+    <form class="add" id="spendForm">
+      <div><label>Канал</label><input id="sChannel" list="chanList" placeholder="yandex" required/>
+        <datalist id="chanList">
+          <option value="yandex">Яндекс Директ</option>
+          <option value="google">Google Ads</option>
+          <option value="telegram_bot">Телеграм-бот</option>
+          <option value="blogger">Блогеры</option>
+          <option value="vk">ВКонтакте</option>
+        </datalist></div>
+      <div><label>Дата</label><input id="sDate" type="date" required/></div>
+      <div><label>Сумма, ₽</label><input id="sRub" type="number" min="1" step="1" required/></div>
+      <div><label>Комментарий</label><input id="sNote" placeholder="необязательно"/></div>
+      <button type="submit">Добавить расход</button>
+      <div style="margin-left:auto"><label>Комиссия банка, %</label><input id="sAcq" type="number" step="0.1" min="0" max="20" style="width:90px"/></div>
+    </form>
+    <div class="scroll" style="margin-top:12px"><table id="tSpend"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Клиенты <span id="custNote"></span></h2>
+    <div class="scroll"><table id="tCust"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Промокоды</h2>
+    <div class="scroll"><table id="tPromo"></table></div>
+  </div>
+
+  <div class="foot">VOYO mobile · панель показателей · данные живые, обновляются при загрузке страницы</div>
+</div>
+
+<script>
+(function(){
+  var ADM = localStorage.getItem("voyo_esim_adm") || "";
+  var DATA = null, DAYS = 30;
+  var el = function(id){ return document.getElementById(id); };
+  var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  function dayRu(d){ var p=String(d).split("-"); return p[2]+"."+p[1]; }
+  function fmtDate(ts){ try{ return new Date(ts).toLocaleDateString("ru-RU",{day:"numeric",month:"short"}); }catch(e){ return ""; } }
+
+  function range(){
+    var f = el("from").value, t = el("to").value;
+    if(f || t) return { from: f, to: t };
+    if(!DAYS) return {};
+    var to = new Date(Date.now()+3*3600e3), from = new Date(Date.now()+3*3600e3 - (DAYS-1)*864e5);
+    return { from: from.toISOString().slice(0,10), to: to.toISOString().slice(0,10) };
+  }
+
+  async function load(){
+    var r = range();
+    var q = "/esim/api/adm/stats?adm="+encodeURIComponent(ADM)
+      + (r.from?"&from="+r.from:"") + (r.to?"&to="+r.to:"")
+      + (el("withTest").checked?"&test=1":"");
+    var res = await fetch(q, { cache:"no-store" });
+    if(res.status === 403){ gate("Код не подошёл."); return; }
+    DATA = await res.json();
+    if(!DATA || !DATA.success){ el("sub").textContent = "не удалось загрузить данные"; return; }
+    render();
+  }
+
+  function render(){
+    var t = DATA.totals;
+    el("sub").textContent = (DATA.from ? dayRu(DATA.from)+" — "+dayRu(DATA.to||DATA.from) : "за всё время")
+      + " · курс доллара " + (Math.round(DATA.usdRate*100)/100).toString().replace(".", ",") + " ₽"
+      + (DATA.testShown ? " · тестовые покупки включены в цифры"
+                        : (DATA.testCount ? " · тестовых покупок скрыто: " + DATA.testCount : ""));
+    var neg = t.profit < 0;
+    el("tiles").innerHTML = [
+      tile("Выручка", RU(t.revenue)+"<small>₽</small>"),
+      tile("Пакетов продано", RU(t.orders)+"<small>шт</small>"),
+      tile("Средний чек", RU(t.avgCheck)+"<small>₽</small>"),
+      tile("Себестоимость", RU(t.cost)+"<small>₽</small>"),
+      tile("Комиссия банка", RU(t.acq)+"<small>₽ · "+t.acqPct+"%</small>"),
+      tile("Реклама", RU(t.adSpend)+"<small>₽</small>"),
+      tile("Итог", RU(t.profit)+"<small>₽</small>", "big"+(neg?" neg":"")),
+      tile("Клиентов с покупкой", RU(t.customers)+"<small>из "+RU(t.customersAll)+" в базе</small>"),
+    ].join("");
+
+    var days = DATA.days, max = Math.max.apply(null, days.map(function(d){ return d.revenue; }).concat([1]));
+    el("chartNote").textContent = days.length ? ("максимум "+RU(max)+" ₽") : "";
+    el("bars").innerHTML = days.map(function(d){
+      var h = Math.max(3, Math.round(d.revenue/max*100));
+      return '<div class="b" style="height:'+h+'%" title="'+d.day+': '+RU(d.revenue)+' ₽, '+d.orders+' шт">'+
+        (days.length<=31?'<i>'+RU(d.revenue)+'</i>':'')+'</div>';
+    }).join("") || '<div style="color:#8b93a5;font-size:13px">за этот период продаж не было</div>';
+    el("xlabels").innerHTML = days.map(function(d){ return "<span>"+(days.length<=31?dayRu(d.day):"")+"</span>"; }).join("");
+
+    el("tDays").innerHTML = head(["День","Пакетов","Выручка","Себестоимость","Маржа"], [0,1,1,1,1]) +
+      "<tbody>" + days.slice().reverse().map(function(d){
+        return row([dayRu(d.day), RU(d.orders), RU(d.revenue)+" ₽", RU(d.cost)+" ₽",
+          '<span class="g">'+RU(d.margin)+' ₽</span>'], [0,1,1,1,1]);
+      }).join("") + "</tbody>";
+
+    el("tChan").innerHTML = head(["Канал","Пакетов","Выручка","Маржа","Расход","ДРР","Цена заказа","Итог по каналу"],[0,1,1,1,1,1,1,1]) +
+      "<tbody>" + DATA.channels.map(function(c){
+        return row([esc(c.name), RU(c.orders), RU(c.revenue)+" ₽",
+          '<span class="g">'+RU(c.margin)+' ₽</span>', c.spend?RU(c.spend)+" ₽":"—",
+          c.drr!=null&&c.spend?c.drr+" %":"—", c.cpo?RU(c.cpo)+" ₽":"—",
+          '<span class="'+(c.profit<0?"r2":"g")+'">'+RU(c.profit)+' ₽</span>'], [0,1,1,1,1,1,1,1]);
+      }).join("") + "</tbody>";
+
+    el("tSpend").innerHTML = DATA.spend.length
+      ? head(["Дата","Канал","Сумма","Комментарий",""],[0,0,1,0,1]) + "<tbody>" + DATA.spend.map(function(s){
+          return row([dayRu(s.date), esc(s.channel), RU(s.rub)+" ₽", esc(s.note||""),
+            '<button class="x" data-del="'+s.id+'" title="удалить">✕</button>'], [0,0,1,0,1]);
+        }).join("") + "</tbody>"
+      : '<tbody><tr><td style="color:#8b93a5">расходов пока не внесено</td></tr></tbody>';
+    el("sAcq").value = DATA.totals.acqPct;
+
+    el("custNote").textContent = DATA.customers.length + " с оплатой";
+    el("tCust").innerHTML = head(["Клиент","Откуда","Покупок","Сумма","Первая","Последняя","Промокод","Баланс"],[0,0,1,1,0,0,0,1]) +
+      "<tbody>" + DATA.customers.map(function(c){
+        var who = c.key.indexOf("tg:")===0 ? "телеграм "+c.key.slice(3) : c.key;
+        return row(['<span class="mono">'+esc(who)+'</span>', esc(chanName(c.channel)), RU(c.orders),
+          RU(c.revenue)+" ₽", fmtDate(c.first), fmtDate(c.last),
+          '<span class="mono">'+esc(c.refCode||"")+'</span>', RU(c.balanceRub)+" ₽"], [0,0,1,1,0,0,0,1]);
+      }).join("") + "</tbody>";
+
+    el("tPromo").innerHTML = head(["Код","Что даёт","Использован","Лимит","Срок","Выручка","Статус"],[0,0,1,1,0,1,0]) +
+      "<tbody>" + DATA.promos.map(function(p){
+        var what = p.cost ? "по себестоимости" : (p.pct ? p.pct+" %" : (p.rub ? RU(p.rub)+" ₽" : "—"));
+        var term = (p.from||p.to) ? ((p.from?dayRu(p.from):"")+" — "+(p.to?dayRu(p.to):"")) : "без срока";
+        return row(['<span class="mono">'+esc(p.code)+'</span>', what, RU(p.uses||0),
+          p.maxUses?RU(p.maxUses):"без лимита", term, RU(p.revenue)+" ₽",
+          p.active===false?'<span class="r2">выключен</span>':'<span class="g">работает</span>'], [0,0,1,1,0,1,0]);
+      }).join("") + "</tbody>";
+  }
+
+  function chanName(k){
+    var m = { yandex:"Яндекс Директ", google:"Google Ads", telegram_bot:"Телеграм-бот", direct:"Прямой заход",
+              vk:"ВКонтакте", blogger:"Блогеры", email:"Рассылка" };
+    return m[k] || k;
+  }
+  function tile(k,v,cls){ return '<div class="tile '+(cls||"")+'"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>'; }
+  function head(cols,right){ return "<thead><tr>"+cols.map(function(c,i){ return '<th'+(right[i]?' class="r"':'')+'>'+c+'</th>'; }).join("")+"</tr></thead>"; }
+  function row(cells,right){ return "<tr>"+cells.map(function(c,i){ return '<td'+(right[i]?' class="r"':'')+'>'+c+'</td>'; }).join("")+"</tr>"; }
+
+  document.addEventListener("click", async function(e){
+    var b = e.target.closest && e.target.closest("[data-del]");
+    if(!b) return;
+    if(!confirm("Удалить эту запись о расходе?")) return;
+    await post({ del: b.getAttribute("data-del") });
+  });
+  el("per").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-d]");
+    if(!b) return;
+    DAYS = Number(b.getAttribute("data-d"));
+    el("from").value = ""; el("to").value = "";
+    document.querySelectorAll("#per button[data-d]").forEach(function(x){ x.classList.toggle("on", x===b); });
+    load();
+  });
+  el("withTest").addEventListener("change", function(){ load(); });
+  el("apply").addEventListener("click", function(){
+    document.querySelectorAll("#per button[data-d]").forEach(function(x){ x.classList.remove("on"); });
+    load();
+  });
+  el("spendForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+    await post({ add: { channel: el("sChannel").value, date: el("sDate").value,
+      rub: el("sRub").value, note: el("sNote").value } });
+    el("sRub").value = ""; el("sNote").value = "";
+  });
+  el("sAcq").addEventListener("change", function(){ post({ acqPct: this.value }); });
+
+  async function post(body){
+    var r = await fetch("/esim/api/adm/spend", { method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(Object.assign({ adm: ADM }, body)) });
+    var j = await r.json().catch(function(){ return null; });
+    if(!j || !j.success){ alert((j && j.message) || "Не получилось сохранить."); return; }
+    load();
+  }
+
+  function gate(msg){
+    el("app").style.display = "none";
+    el("gate").style.display = "block";
+    el("gateErr").textContent = msg || "";
+    el("code").focus();
+  }
+  el("enter").addEventListener("click", function(){
+    ADM = el("code").value.trim();
+    localStorage.setItem("voyo_esim_adm", ADM);
+    el("gate").style.display = "none";
+    el("app").style.display = "block";
+    load();
+  });
+  el("code").addEventListener("keydown", function(e){ if(e.key==="Enter") el("enter").click(); });
+
+  if(ADM){ el("app").style.display = "block"; load(); } else gate();
+})();
+</script>
+</body>
+</html>

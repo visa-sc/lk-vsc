@@ -2461,6 +2461,155 @@ function mount(app, opts) {
     res.json({ success: true, watched: esimsToWatch().length, sent: readJson(NOTIFY_FILE, {}) });
   });
 
+  // ═══ Панель показателей: dev.voyomobile.ru ═══
+  // Выручка и пакеты по дням, реклама по каналам и её окупаемость, клиенты,
+  // промокоды и итог: выручка минус себестоимость, комиссия банка и реклама.
+  // Расходы на рекламу вносятся руками (в API их нет), лежат в .esim/adspend.json.
+  const ADSPEND_FILE = path.join(DIR, "adspend.json");
+  function loadSpend() {
+    const d = readJson(ADSPEND_FILE, null) || {};
+    return { acqPct: Number(d.acqPct != null ? d.acqPct : 2.5), items: Array.isArray(d.items) ? d.items : [] };
+  }
+  // Канал берём из первой метки: она отвечает за то, откуда человек пришёл впервые.
+  function channelOf(o) {
+    const a = (o.ads && (o.ads.first || o.ads)) || null;
+    const src = a && String(a.utm_source || "").toLowerCase();
+    if (src) return src;
+    if (a && a.yclid) return "yandex";
+    if (a && a.gclid) return "google";
+    if (o.tgChatId) return "telegram_bot";
+    return "direct";
+  }
+  const CHANNEL_NAMES = {
+    yandex: "Яндекс Директ", google: "Google Ads", telegram_bot: "Телеграм-бот",
+    direct: "Прямые заходы", vk: "ВКонтакте", blogger: "Блогеры", email: "Рассылка",
+  };
+  function channelName(k) { return CHANNEL_NAMES[k] || k; }
+  const mskDay = (ts) => new Date(ts + 3 * 3600 * 1000).toISOString().slice(0, 10);
+  // Свои проверочные покупки в цифры не пускаем: Андрей смотрит на них как на
+  // реальные продажи и злится. Показать их можно галочкой в панели (?test=1).
+  const TEST_EMAILS = String(process.env.ESIM_TEST_EMAILS || "komizarenko@gmail.com,probe@example.com")
+    .split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  function isTestOrder(o) {
+    return String(o.promoCode || "").toUpperCase() === "OWNER" ||
+      TEST_EMAILS.indexOf(normEmail(o.email)) >= 0 ||
+      /(^|\s)test\b/i.test(String(o.label || ""));
+  }
+
+  app.get("/esim/api/adm/stats", async (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    try {
+      const rate = await usdRate();
+      const spend = loadSpend();
+      const from = String(req.query.from || "").slice(0, 10);
+      const to = String(req.query.to || "").slice(0, 10);
+      const inRange = (day) => (!from || day >= from) && (!to || day <= to);
+      const withTest = req.query.test === "1";
+      const all = readJson(ORDERS_FILE, []).filter((o) => withTest || !isTestOrder(o));
+      const testCount = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && isTestOrder(o)).length;
+      const paid = all.filter((o) => o.status === "done" && o.paidAt && o.priceRub)
+        .filter((o) => inRange(mskDay(o.paidAt)));
+      const costOf = (o) => (o.costUsd ? tsimCostRub(o.costUsd, rate) : 0);
+
+      const days = new Map();
+      const chans = new Map();
+      let revenue = 0, cost = 0;
+      paid.forEach((o) => {
+        const day = mskDay(o.paidAt), c = costOf(o);
+        revenue += o.priceRub; cost += c;
+        const d = days.get(day) || { day, revenue: 0, orders: 0, cost: 0 };
+        d.revenue += o.priceRub; d.orders++; d.cost += c; days.set(day, d);
+        const k = channelOf(o);
+        const ch = chans.get(k) || { key: k, name: channelName(k), orders: 0, revenue: 0, cost: 0, spend: 0 };
+        ch.orders++; ch.revenue += o.priceRub; ch.cost += c; chans.set(k, ch);
+      });
+      spend.items.filter((x) => inRange(String(x.date || ""))).forEach((x) => {
+        const ch = chans.get(x.channel) || { key: x.channel, name: channelName(x.channel), orders: 0, revenue: 0, cost: 0, spend: 0 };
+        ch.spend += Number(x.rub) || 0; chans.set(x.channel, ch);
+      });
+      const adSpend = spend.items.filter((x) => inRange(String(x.date || "")))
+        .reduce((a, x) => a + (Number(x.rub) || 0), 0);
+      const acq = Math.round(revenue * spend.acqPct / 100);
+
+      // клиенты: считаем только тех, у кого есть оплаченный заказ
+      const cust = loadCustomers();
+      const byCust = new Map();
+      all.filter((o) => o.status === "done" && o.paidAt).forEach((o) => {
+        const key = o.custKey || normEmail(o.email) || (o.tgChatId ? "tg:" + o.tgChatId : "");
+        if (!key) return;
+        const c = byCust.get(key) || { key, orders: 0, revenue: 0, first: o.paidAt, last: o.paidAt, channel: channelOf(o) };
+        c.orders++; c.revenue += o.priceRub || 0;
+        c.first = Math.min(c.first, o.paidAt); c.last = Math.max(c.last, o.paidAt);
+        byCust.set(key, c);
+      });
+      const customers = Array.from(byCust.values()).map((c) => {
+        const rec = cust[c.key] || cust[normEmail(c.key)] || {};
+        return Object.assign({}, c, { refCode: rec.refCode || null, balanceRub: rec.balanceRub || 0,
+          invitedBy: rec.invitedBy || null, name: c.key });
+      }).sort((a, b) => b.last - a.last);
+
+      // промокоды: сколько раз вводили и сколько по ним продали
+      const promos = readJson(PROMOS_FILE, {});
+      const promoRevenue = {};
+      all.filter((o) => o.status === "done" && o.promoCode).forEach((o) => {
+        const k = String(o.promoCode).toUpperCase();
+        promoRevenue[k] = (promoRevenue[k] || 0) + (o.priceRub || 0);
+      });
+      const promoList = Object.keys(promos).map((code) => Object.assign({ code },
+        promos[code], { revenue: promoRevenue[code] || 0 }));
+
+      res.json({
+        success: true, from: from || null, to: to || null, usdRate: rate,
+        testShown: withTest, testCount,
+        totals: {
+          revenue, orders: paid.length, cost: Math.round(cost), acq, acqPct: spend.acqPct, adSpend,
+          profit: Math.round(revenue - cost - acq - adSpend),
+          avgCheck: paid.length ? Math.round(revenue / paid.length) : 0,
+          customers: byCust.size, customersAll: Object.keys(cust).length,
+        },
+        days: Array.from(days.values()).sort((a, b) => (a.day < b.day ? -1 : 1))
+          .map((d) => Object.assign(d, { cost: Math.round(d.cost), margin: Math.round(d.revenue - d.cost) })),
+        channels: Array.from(chans.values()).map((c) => {
+          const margin = Math.round(c.revenue - c.cost - c.revenue * spend.acqPct / 100);
+          return Object.assign({}, c, { cost: Math.round(c.cost), margin,
+            profit: Math.round(margin - c.spend),
+            drr: c.revenue ? Math.round(c.spend / c.revenue * 1000) / 10 : null,
+            cpo: c.orders ? Math.round(c.spend / c.orders) : null,
+            roi: c.spend ? Math.round(margin / c.spend * 100) / 100 : null });
+        }).sort((a, b) => b.revenue - a.revenue),
+        customers, promos: promoList, spend: spend.items.slice().sort((a, b) => (a.date < b.date ? 1 : -1)),
+      });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+
+  // Расходы на рекламу и процент эквайринга правим руками из панели
+  app.post("/esim/api/adm/spend", (req, res) => {
+    const b = req.body || {};
+    if (String(b.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    const d = loadSpend();
+    if (b.acqPct != null) d.acqPct = Math.max(0, Math.min(20, Number(b.acqPct) || 0));
+    if (b.del) d.items = d.items.filter((x) => x.id !== String(b.del));
+    if (b.add) {
+      const a = b.add;
+      const rub = Math.round(Number(a.rub) || 0);
+      const date = String(a.date || "").slice(0, 10);
+      const channel = String(a.channel || "").trim().toLowerCase().slice(0, 40);
+      if (!rub || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !channel) {
+        return res.status(400).json({ success: false, message: "Нужны канал, дата и сумма." });
+      }
+      d.items.push({ id: crypto.randomBytes(4).toString("hex"), channel, date, rub,
+        note: String(a.note || "").slice(0, 120), ts: Date.now() });
+    }
+    writeJson(ADSPEND_FILE, d);
+    res.json({ success: true, acqPct: d.acqPct, items: d.items.length });
+  });
+
+  // Сама страница панели. Отдаём и по адресу /esim/adm, и в корне dev-домена.
+  app.get(["/esim/adm", "/esim/adm/"], (req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.sendFile(path.join(__dirname, "public", "esim-adm.html"));
+  });
+
   // ═══ Приглашение друзей: письмо через сутки после первой оплаты ═══
   // Клиент уже съездил или хотя бы поставил eSIM и убедился, что всё работает,
   // поэтому предложение позвать друга выглядит уместно, а не как спам вдогонку

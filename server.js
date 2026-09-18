@@ -37,6 +37,20 @@ const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "geo
 const ESIM_HOST_ALLOW = new RegExp(
   "^\\/($|esim(\\/|_|\\?|$)|(?:" + ESIM_LAND_PATHS.join("|") + ")\\/?$|" +
   "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|favicon[^/]*\\.(?:ico|svg|png)$|robots\\.txt$|sitemap\\.xml$)");
+// dev.voyomobile.ru — панель показателей eSIM (18.09.2026): выручка и пакеты
+// по дням, реклама и её окупаемость, клиенты, промокоды, итог. Отдельное имя,
+// чтобы не мешать витрине; вход по админ-коду, страница закрыта от поисковиков.
+const ESIM_ADM_HOSTS = new Set(["dev.voyomobile.ru", "dev.voyomobile.com"]);
+app.use((req, res, next) => {
+  const h = String(req.hostname || "").toLowerCase();
+  if (!ESIM_ADM_HOSTS.has(h)) return next();
+  if (req.path === "/" || req.path === "/adm") {
+    res.set("Cache-Control", "no-store");
+    return res.sendFile(path.join(__dirname, "public", "esim-adm.html"));
+  }
+  if (req.path === "/robots.txt") return res.type("text/plain").send("User-agent: *\nDisallow: /\n");
+  return next();
+});
 app.use((req, res, next) => {
   const h = String(req.hostname || "").toLowerCase();
   if (h.startsWith("www.") && ESIM_SITE_HOSTS.has(h.slice(4))) return res.redirect(301, "https://" + h.slice(4) + req.originalUrl);
