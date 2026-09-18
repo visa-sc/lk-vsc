@@ -2758,6 +2758,38 @@ function mount(app, opts) {
     if (list.indexOf(vid) < 0 && list.length < 50000) { list.push(vid); _funnelDirty = true; }
     return true;
   }
+  // A/B-тест меню фильтров (18.09.2026): какой вариант достался браузеру. Храним
+  // рядом с воронкой, чтобы шаги и оплаты делились по вариантам.
+  function abMark(vid, v) {
+    vid = String(vid || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
+    if (vid.length < 6) return;
+    const f = funnelData();
+    if (!f.ab) { f.ab = {}; f.abSince = Date.now(); }
+    if (!f.ab[vid] && Object.keys(f.ab).length < 200000) { f.ab[vid] = v; _funnelDirty = true; }
+  }
+  function abFor(from, to, withTest) {
+    const f = funnelData();
+    if (!f.ab) return null;
+    const inR = (day) => (!from || day >= from) && (!to || day <= to);
+    const out = { since: mskDay(f.abSince) };
+    const paid = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && o.paidAt >= f.abSince &&
+      inR(mskDay(o.paidAt)) && (withTest || !isTestOrder(o)) && !o.parentOrderId && !o.tgChatId && o.vid && f.ab[o.vid]);
+    ["old", "new"].forEach((v) => {
+      const r = {};
+      FUNNEL_STEPS.site.forEach((step) => {
+        const u = new Set();
+        Object.keys(f.days).filter(inR).forEach((day) => {
+          (((f.days[day].site || {})[step]) || []).forEach((x) => { if (f.ab[x] === v) u.add(x); });
+        });
+        r[step] = u.size;
+      });
+      const mine = paid.filter((o) => f.ab[o.vid] === v);
+      r.paid = new Set(mine.map((o) => o.vid)).size;
+      r.revenue = mine.reduce((a, o) => a + Number(o.payTotalRub || o.priceRub || 0), 0);
+      out[v] = r;
+    });
+    return out;
+  }
   // пишем на диск не чаще раза в 15 секунд, старше полугода — выбрасываем
   setInterval(() => {
     if (!_funnelDirty) return;
@@ -2795,6 +2827,7 @@ function mount(app, opts) {
     const b = req.body || {};
     if (b.adm) return res.json({ success: true, skipped: true });   // свои заходы с админ-кодом не считаем
     if (b.step === "visit" && b.lang) { try { langHit(b.lang, b.vid, !!b.ad); } catch (_) {} }
+    if (b.ab === "old" || b.ab === "new") abMark(b.vid, b.ab);
     res.json({ success: funnelHit(String(b.src || "site"), String(b.step || ""), b.vid) });
   });
 
@@ -2937,6 +2970,7 @@ function mount(app, opts) {
         testShown: withTest, testCount,
         closedThrough: Object.keys(daily).sort().slice(-1)[0] || null,
         funnel: funnelFor(from, to, withTest),
+        ab: abFor(from, to, withTest),
         totals: {
           revenue, orders: paid.length, cost: Math.round(cost), acq, acqPct: spend.acqPct, adSpend,
           profit: Math.round(revenue - cost - acq - adSpend),

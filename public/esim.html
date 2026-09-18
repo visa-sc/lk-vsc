@@ -162,6 +162,11 @@
   .fchip:hover{border-color:#aed3ea;}
   .fchip.on{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 6px 14px -8px rgba(53,137,189,.7);}
   .fchip.dis{opacity:.32;cursor:default;pointer-events:none;}
+  /* A/B «старое меню»: срок одной строкой без переносов (просьба Андрея 18.09.2026) */
+  .cfg.old .frow:first-child{flex-wrap:nowrap;}
+  .cfg.old #fDays{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;min-width:0;}
+  .cfg.old #fDays::-webkit-scrollbar{display:none;}
+  .cfg.old #fDays .fchip{flex:none;white-space:nowrap;}
 
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:16px;}
   .pk{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:18px 20px;box-shadow:var(--sh);
@@ -502,6 +507,7 @@
     <div class="cfg" id="cfg" style="display:none;">
       <div class="frow"><div class="fl">Сколько дней</div><div class="fchips" id="fDays"></div></div>
       <div class="frow"><div class="fl">Сколько ГБ</div><div class="fchips" id="fGb"></div></div>
+      <div class="frow" id="fTypeRow" style="display:none"><div class="fl">Тип тарифа</div><div class="fchips" id="fType"></div></div>
     </div>
     <div class="sortbar" id="sortBar">
       <button class="sortbtn" id="sortBtn" type="button" aria-haspopup="true" aria-expanded="false">
@@ -661,10 +667,20 @@
     VID = "v" + Math.random().toString(36).slice(2, 12) + Date.now().toString(36).slice(-4);
     try{ localStorage.setItem("voyo_vid", VID); }catch(e){}
   }
+  // A/B-тест меню фильтров (18.09.2026): половина посетителей видит старое меню
+  // («Не важно / 3 дн. / 5 дн.…» + «Тип тарифа»), половина — новое, как у Trip.com.
+  // Вариант закрепляется за браузером; ?menu=old|new — посмотреть нужный руками.
+  var AB = "";
+  try{
+    var abq = new URLSearchParams(location.search).get("menu");
+    AB = (abq === "old" || abq === "new") ? abq : (localStorage.getItem("voyo_ab_menu") || "");
+    if(AB !== "old" && AB !== "new") AB = Math.random() < 0.5 ? "old" : "new";
+    if(!abq) localStorage.setItem("voyo_ab_menu", AB);
+  }catch(e){ if(AB !== "old" && AB !== "new") AB = Math.random() < 0.5 ? "old" : "new"; }
   function track(step){
     if(ADM) return;                                   // свои заходы с админ-кодом не считаем
     try{ fetch("/esim/api/ev", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ src: "site", step: step, vid: VID,
+      body: JSON.stringify({ src: "site", step: step, vid: VID, ab: AB,
         // язык телефона и признак рекламного перехода — только для статистики языков
         lang: step === "visit" ? ((navigator.languages && navigator.languages[0]) || navigator.language || "") : undefined,
         ad: step === "visit" ? /[?&](gclid|gbraid|wbraid|gad_source|yclid|fbclid|utm_source)=/.test(location.search) : undefined
@@ -821,7 +837,7 @@
   // сверх запрошенного (или сверх 20 ГБ, когда фильтр не задан) в зачёт не идут —
   // иначе годовые «100 ГБ» всегда оказывались бы «самыми выгодными».
   function useGb(p){
-    var cap = (selGb && !selGb.unl && !selGb.daily) ? selGb.hi * 1.5 : 20;
+    var cap = AB === "old" ? (oGb > 0 ? oGb * 1.5 : 20) : ((selGb && !selGb.unl && !selGb.daily) ? selGb.hi * 1.5 : 20);
     var g = p.unlimited ? cap : totGb(p);
     return Math.max(0.5, Math.min(g, cap));
   }
@@ -924,7 +940,37 @@
   // объёмы на весь срок собираем в ступени, иначе кнопок выходит два десятка
   var GB_STEPS = [0.5, 1, 2, 3, 5, 7, 10, 15, 20, 30, 50, 100];
   function sameSel(a, b){ return !!a && !!b && JSON.stringify(a) === JSON.stringify(b); }
-  function matches(p){ return fitDays(p, selDays) && fitGb(p, selGb); }
+  // старое меню (вариант A/B «old») — как было до 18.09.2026
+  var oDays = 0, oGb = 0, oType = 0;
+  var O_DAYS = [0,3,5,7,10,14,21,30,60,90], O_GB = [0,1,3,5,10,20,30,50,100,-1];
+  function oFitDays(p,v){ return !v || (p.days||0) >= v; }
+  function oFitGb(p,v){ if(!v) return true; if(v===-1) return !!p.unlimited; return p.unlimited || (p.dataGb||0) >= v; }
+  function oFitType(p,v){ return !v || (v===2 ? !!p.daily : !p.daily); }
+  function matches(p){
+    if(AB === "old") return oFitDays(p,oDays) && oFitGb(p,oGb) && oFitType(p,oType);
+    return fitDays(p, selDays) && fitGb(p, selGb);
+  }
+  function renderCfgOld(list){
+    var fd=document.getElementById("fDays"), fg=document.getElementById("fGb"), ft=document.getElementById("fType");
+    fd.innerHTML=""; fg.innerHTML=""; ft.innerHTML="";
+    O_DAYS.forEach(function(v){
+      var avail = v===0 || list.some(function(p){ return oFitDays(p,v) && oFitGb(p,oGb) && oFitType(p,oType); });
+      chip(fd, v===0?"Не важно":v+" дн.", oDays===v, avail, function(){ oDays=v; renderPacks(true); });
+    });
+    O_GB.forEach(function(v){
+      var avail = v===0 || list.some(function(p){ return oFitGb(p,v) && oFitDays(p,oDays) && oFitType(p,oType); });
+      chip(fg, v===0?"Не важно":(v===-1?"Безлимит":v+" ГБ"), oGb===v, avail, function(){ oGb=v; renderPacks(true); });
+    });
+    var hasDaily = list.some(function(p){ return p.daily; }), hasPeriod = list.some(function(p){ return !p.daily; });
+    var row = document.getElementById("fTypeRow");
+    row.style.display = (hasDaily && hasPeriod) ? "" : "none";
+    if(!(hasDaily && hasPeriod)) oType = 0;
+    [[0,"Не важно"],[1,"ГБ на весь срок"],[2,"ГБ в день"]].forEach(function(o){
+      var v = o[0];
+      var avail = v===0 || list.some(function(p){ return oFitType(p,v) && oFitDays(p,oDays) && oFitGb(p,oGb); });
+      chip(ft, o[1], oType===v, avail, function(){ oType=v; renderPacks(true); });
+    });
+  }
   function chip(host, label, on, avail, click){
     var b = el('<button class="fchip'+(on?" on":"")+(avail?"":" dis")+'" type="button">'+label+'</button>');
     b.addEventListener("click", click);
@@ -934,6 +980,8 @@
     var cfg=document.getElementById("cfg");
     if(!list.length){ cfg.style.display="none"; return; }
     cfg.style.display="block";
+    cfg.classList.toggle("old", AB === "old");
+    if(AB === "old"){ renderCfgOld(list); return; }
     var fd=document.getElementById("fDays"), fg=document.getElementById("fGb");
     fd.innerHTML=""; fg.innerHTML="";
     chip(fd, "Любой срок", !selDays, true, function(){ selDays=null; renderPacks(true); });
@@ -978,7 +1026,7 @@
     var list = sortList(all.filter(matches));
     sect.style.display="block";
     document.getElementById("sectTitle").innerHTML = flag(current)+" "+esc(cname(current));
-    document.getElementById("sectSub").textContent = all.length ? ((selDays||selGb)?"Срок и объём пакета под выбранное.":"Пакеты с мгновенной выдачей QR-кода. Цена — окончательная, в рублях.") : "";
+    document.getElementById("sectSub").textContent = all.length ? ((selDays||selGb||oDays||oGb||oType)?"Срок и объём пакета под выбранное.":"Пакеты с мгновенной выдачей QR-кода. Цена — окончательная, в рублях.") : "";
     renderCfg(all);
     document.getElementById("sortBar").classList.toggle("on", list.length > 1);
     renderSort();
@@ -1117,7 +1165,7 @@
   function choose(iso){
     track("country");                   // воронка: открылся список пакетов страны (на /turkey, /china — сразу)
     current = iso;
-    selDays = null; selGb = null;
+    selDays = null; selGb = null; oDays = 0; oGb = 0; oType = 0;
     closeAll();
     document.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("on", c.getAttribute("data-iso")===iso); });
     renderPacks();
