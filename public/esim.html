@@ -894,7 +894,8 @@
     row.style.display = (hasDaily && hasPeriod) ? "" : "none";
     if(!(hasDaily && hasPeriod)) wantType = 0;
     ft.innerHTML = "";
-    [[0,"Не важно"],[1,"На весь срок"],[2,"Суточный"]].forEach(function(o){
+    // из подписи сразу ясно, на что считаются гигабайты: на весь срок или на сутки
+    [[0,"Не важно"],[1,"ГБ на весь срок"],[2,"ГБ в день"]].forEach(function(o){
       var v = o[0];
       var avail = v===0 || list.some(function(p){ return fitType(p,v) && fitDays(p,wantDays) && fitGb(p,wantGb); });
       var b = el('<button class="fchip'+(wantType===v?" on":"")+(avail?"":" dis")+'" type="button">'+o[1]+'</button>');
