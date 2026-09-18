@@ -83,7 +83,7 @@ const MIN_PAY_RUB = Number(process.env.ESIM_MIN_PAY || 100);
 // промокодом, бонусами), каждая следующая — со скидкой EXTRA_PCT от цены
 // пакета, но не ниже того же пола по себестоимости, что и у промокодов.
 const EXTRA_PCT = Number(process.env.ESIM_EXTRA_PCT || 10);
-const MAX_QTY = Number(process.env.ESIM_MAX_QTY || 5);
+const MAX_QTY = Number(process.env.ESIM_MAX_QTY || 12);
 // Скидка на вторую и следующие eSIM действует и на самых дешёвых пакетах (59 ₽ →
 // 53 ₽): порог в 100 ₽ здесь не нужен, он для промокодов (Андрей, 18.09.2026).
 // Остаётся только пол по себестоимости — в минус не продаём.
@@ -1981,14 +1981,14 @@ function mount(app, opts) {
       const st = await tbank.getState(f.order.paymentId);
       if (st && st.Success && tbank.isPaid(st.Status)) { fulfil(id).catch(() => {}); return res.json({ success: true, status: "fulfilling" }); }
     }
-    // Несколько eSIM в платеже: ждём, пока выдадутся все (до 3 минут), и отдаём ссылки
+    // Несколько eSIM в платеже: ждём, пока выдадутся все (до 5 минут), и отдаём ссылки
     if (f.order.status === "done" && validEmail(f.order.email)) setSession(res, f.order.email);
     let extra = [];
     const qty = Number(f.order.qty) || 1;
     if (qty > 1 && f.order.status === "done") {
       const kids = readJson(ORDERS_FILE, []).filter((x) => x.groupOf === id);
       const waiting = kids.filter((x) => x.status === "fulfilling").length + Math.max(0, qty - 1 - kids.length);
-      if (waiting > 0 && Date.now() - (f.order.paidAt || 0) < 180000) return res.json({ success: true, status: "fulfilling" });
+      if (waiting > 0 && Date.now() - (f.order.paidAt || 0) < 300000) return res.json({ success: true, status: "fulfilling" });
       extra = kids.filter((x) => x.status === "done").sort((a, b) => (a.id < b.id ? -1 : 1)).map((x) => x.myUrl);
     }
     // Сумма и метка конверсии нужны странице «оплачено», чтобы передать покупку

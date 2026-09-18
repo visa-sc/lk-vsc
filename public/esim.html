@@ -1315,7 +1315,7 @@
   }
 
   // Сколько eSIM берём: первая по обычной цене, каждая следующая со скидкой (считает сервер)
-  var QTY = 1, MAXQ = 5;
+  var QTY = 1, MAXQ = 12;
   function qtyUi(j){
     if(j && j.maxQty) MAXQ = j.maxQty;
     document.getElementById("mQty").textContent = QTY;
