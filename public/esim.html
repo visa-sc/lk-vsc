@@ -521,11 +521,14 @@
     </div>
   </div>
 
-  <div class="seolinks">
+  <!-- Статьи по странам с 18.09.2026 живут только на voyomobile.ru; на
+       voyotravel.ru и прочих доменах блок со ссылками на них не показываем -->
+  <div class="seolinks" id="seolinks" style="display:none">
     <span>Популярные направления:</span>
     <a href="/esim/turkey">eSIM Турция</a><a href="/esim/uae">ОАЭ</a><a href="/esim/thailand">Таиланд</a><a href="/esim/egypt">Египет</a><a href="/esim/china">Китай</a><a href="/esim/vietnam">Вьетнам</a><a href="/esim/georgia">Грузия</a><a href="/esim/armenia">Армения</a><a href="/esim/bali">Бали</a><a href="/esim/spain">Испания</a>
   </div>
   <div class="foot">VOYO mobile · сервис компании VOYO (ООО «ЭЙ КЕЙ ГРУПП»)</div>
+  <script>if (/(^|\.)voyomobile\.ru$/.test(location.hostname)) document.getElementById("seolinks").style.display = "";</script>
 </div>
 
 <!-- модал пакета -->

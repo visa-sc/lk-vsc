@@ -21,6 +21,13 @@ const ARTICLES = Object.assign({},
 const GUIDES = require("./esim-guides.json");
 const SELF = process.env.ESIM_SELF_BASE || "http://127.0.0.1:3000";
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
+// С 18.09.2026 статьи живут на voyomobile.ru — там бренд eSIM и вся реклама
+// (решение Андрея: «перенеси все статьи, с voyotravel убери»). На остальных
+// доменах (voyotravel.ru, esim.voyotravel.ru, voyomobile.com) адрес статьи
+// отдаёт 301 сюда — позиции в поиске переезжают вместе с внешними ссылками.
+const SEO_BASE = process.env.ESIM_SEO_BASE || "https://voyomobile.ru";
+const SEO_HOST = SEO_BASE.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+function onSeoHost(req) { return String((req && req.hostname) || "").toLowerCase() === SEO_HOST; }
 const BOT = "https://t.me/" + (process.env.ESIM_TG_USERNAME || "esimvoyo_bot");
 
 const STYLE = `<style>
@@ -140,7 +147,7 @@ function commercialKeys(a) {
 }
 
 function page(slug, a, data) {
-  const url = BASE_URL + "/esim/" + slug;
+  const url = SEO_BASE + "/esim/" + slug;
   const title = a.title.replace("{minPrice}", RU(data.min));
   const desc = a.description.replace("{minPrice}", RU(data.min));
   const rows = data.rows.map((p) => {
@@ -266,7 +273,7 @@ function guideLinks(skip) {
 }
 
 function guidePage(slug, g, minPrice) {
-  const url = BASE_URL + "/esim/" + slug;
+  const url = SEO_BASE + "/esim/" + slug;
   const body = g.blocks.map((b) => {
     let h = "<h2>" + esc(b.h2) + "</h2>";
     if (b.p) h += b.p.map((t) => "<p>" + esc(t) + "</p>").join("");
@@ -355,6 +362,7 @@ function mount(app) {
 
   guideSlugs.forEach((slug) => {
     app.get("/esim/" + slug, async (req, res) => {
+      if (!onSeoHost(req)) return res.redirect(301, SEO_BASE + req.originalUrl);
       const products = await catalog();
       const min = products.length ? Math.min(...products.map((p) => p.priceRub)) : 590;
       res.set("Cache-Control", "public, max-age=1800");
@@ -364,6 +372,7 @@ function mount(app) {
 
   slugs.forEach((slug) => {
     app.get("/esim/" + slug, async (req, res) => {
+      if (!onSeoHost(req)) return res.redirect(301, SEO_BASE + req.originalUrl);
       const a = ARTICLES[slug];
       const products = await catalog();
       const data = pickPackages(products, a.iso);
@@ -379,11 +388,16 @@ function mount(app) {
     // такая ссылка уводила бы робота на редирект
     const products = await catalog();
     const live = slugs.filter((s) => products.some((p) => (p.countries || []).indexOf(ARTICLES[s].iso) >= 0));
-    const urls = ["/esim"].concat(live.map((s) => "/esim/" + s)).concat(guideSlugs.map((s) => "/esim/" + s));
+    // Статьи — только в карте voyomobile.ru. Сама витрина закрыта от индекса
+    // (noindex в esim.html), поэтому её в карте voyomobile нет; на прочих
+    // доменах карта осталась прежней, но уже без статей.
+    const seo = onSeoHost(req);
+    const base = seo ? SEO_BASE : BASE_URL;
+    const urls = seo ? live.map((s) => "/esim/" + s).concat(guideSlugs.map((s) => "/esim/" + s)) : ["/esim"];
     const today = new Date().toISOString().slice(0, 10);
     res.type("application/xml").send(
       '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
-      urls.map((u) => "  <url><loc>" + BASE_URL + u + "</loc><lastmod>" + today +
+      urls.map((u) => "  <url><loc>" + base + u + "</loc><lastmod>" + today +
         "</lastmod><changefreq>weekly</changefreq><priority>" + (u === "/esim" ? "1.0" : "0.8") + "</priority></url>").join("\n") +
       "\n</urlset>");
   });
@@ -392,7 +406,7 @@ function mount(app) {
     res.type("text/plain").send(
       "User-agent: *\n" +
       "Disallow: /admin\nDisallow: /vsc\nDisallow: /cabinet\nDisallow: /esim/my\nDisallow: /esim/account\n" +
-      "Allow: /esim\n\nSitemap: " + BASE_URL + "/sitemap.xml\n");
+      "Allow: /esim\n\nSitemap: " + (onSeoHost(req) ? SEO_BASE : BASE_URL) + "/sitemap.xml\n");
   });
 
   console.log("esimseo: страниц направлений " + slugs.length + ", инструкций " + guideSlugs.length);
