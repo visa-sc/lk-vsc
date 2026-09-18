@@ -21,10 +21,10 @@
         k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
     })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=' + window.VOYO_YM[0], 'ym');
 
-    // webvisor ВЫКЛЮЧЕН намеренно: на странице есть поля email и промокода,
-    // запись сессии означала бы отправку введённого в Яндекс. Нам нужна только
-    // посещаемость и источники переходов.
-    ym(window.VOYO_YM[0], 'init', {ssr:true, webvisor:false, clickmap:true, ecommerce:"dataLayer", referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+    // Вебвизор включён 18.09.2026 для разбора поведения рекламного трафика.
+    // Поля email и промокода помечены ym-disable-keys и ym-hide-content —
+    // введённое в запись не попадает.
+    ym(window.VOYO_YM[0], 'init', {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
 </script>
 <noscript><div><img src="https://mc.yandex.ru/watch/109614823" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
 <!-- /Yandex.Metrika counter -->
@@ -555,7 +555,7 @@
       <span class="toggle" id="mPromoToggle">У меня есть промокод</span>
       <div class="body" id="mPromoBody">
         <div class="row">
-          <input id="mPromo" type="text" placeholder="Введите промокод" autocomplete="off" />
+          <input id="mPromo" class="ym-disable-keys ym-hide-content" type="text" placeholder="Введите промокод" autocomplete="off" />
           <button id="mPromoApply" type="button">Применить</button>
         </div>
         <div class="msg" id="mPromoMsg"></div>
@@ -568,7 +568,7 @@
     <div class="sumbox" id="mSum"></div>
     <div class="phonewrap" id="mPhoneWrap">
       <label id="mPhoneLb">Email — пришлём чек и доступ к вашей eSIM</label>
-      <input id="mPhone" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" />
+      <input id="mPhone" class="ym-disable-keys ym-hide-content" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" />
     </div>
     <button class="buy" id="mBuy" type="button"></button>
     <div class="err" id="mErr"></div>
