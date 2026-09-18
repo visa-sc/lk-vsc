@@ -134,8 +134,8 @@ async function sendQr(chatId, dataUrl, caption) {
 }
 
 // ─────────────────────────── наш же API ───────────────────────────
-async function api(method, url, body, headers) {
-  const r = await axios({ method, url: SELF + url, data: body, headers, timeout: 60000, validateStatus: () => true });
+async function api(method, url, body, headers, timeoutMs) {
+  const r = await axios({ method, url: SELF + url, data: body, headers, timeout: timeoutMs || 60000, validateStatus: () => true });
   return r.data;
 }
 // Шаг воронки для панели показателей: /start → страна → пакет → ссылка на оплату
@@ -562,9 +562,17 @@ async function showMyOne(chatId, localId) {
   const o = myOrders(chatId).find((x) => x.id === localId);
   if (!o) return showMy(chatId);
   const u = new URL(o.myUrl);
-  const j = await api("get", "/esim/api/my?o=" + encodeURIComponent(u.searchParams.get("o")) +
-    "&t=" + encodeURIComponent(u.searchParams.get("t")));
-  if (!j || !j.success) return send(chatId, "Не удалось получить остаток. Откройте страницу: " + o.myUrl);
+  // Поставщик порой отвечает минуту и дольше (ночью 18.09.2026 клиент дважды
+  // нажал и не дождался). Ждём 15 секунд, дальше — ссылка, а не тишина.
+  let j = null;
+  try {
+    j = await api("get", "/esim/api/my?o=" + encodeURIComponent(u.searchParams.get("o")) +
+      "&t=" + encodeURIComponent(u.searchParams.get("t")), null, null, 15000);
+  } catch (_) { j = null; }
+  if (!j || !j.success) {
+    return send(chatId, "Оператор сейчас отвечает медленно, остаток в чате показать не успел. QR-код и остаток — на странице eSIM:",
+      { reply_markup: { inline_keyboard: [[{ text: "Открыть eSIM", url: o.myUrl }], [{ text: "‹ Мои eSIM", callback_data: "my" }]] } });
+  }
   const packs = (j.usage && j.usage.packages) || [];
   const total = packs.reduce((a, x) => a + x.totalMb, 0);
   const left = packs.reduce((a, x) => a + x.remainingMb, 0);
@@ -894,15 +902,19 @@ async function onIssued(order, n, total) {
       { reply_markup: { inline_keyboard: [[{ text: "📱 Мои eSIM", callback_data: "my" }]] } });
   }
   const u = new URL(order.myUrl);
-  const j = await api("get", "/esim/api/my?o=" + encodeURIComponent(u.searchParams.get("o")) +
-    "&t=" + encodeURIComponent(u.searchParams.get("t")));
+  let j = null;
+  try {
+    j = await api("get", "/esim/api/my?o=" + encodeURIComponent(u.searchParams.get("o")) +
+      "&t=" + encodeURIComponent(u.searchParams.get("t")));
+  } catch (e) { console.error("tgbot onIssued my:", e.message); }
   const o = (j && j.order) || {};
   const caption = (total > 1 ? "<b>eSIM " + n + " из " + total + " готова</b>\n" : "<b>Ваша eSIM готова</b>\n") + esc(order.label || "") +
     "\n\nОтсканируйте QR-код на телефоне, куда ставите eSIM.";
   const sent = await sendQr(chatId, o.qrDataUrl, caption);
   // у нескольких eSIM инструкцию шлём один раз — после последней
   if (n < total) {
-    return send(chatId, "eSIM " + n + ": остаток трафика и продление — по кнопке." +
+    return send(chatId, (sent ? "" : "QR-код eSIM " + n + " картинкой не пришёл — он на странице по кнопке.\n") +
+      "eSIM " + n + ": остаток трафика и продление — по кнопке." +
       (o.lpa ? "\nВручную: <code>" + esc(o.lpa) + "</code>" : ""),
       { reply_markup: { inline_keyboard: [[{ text: "Остаток и продление · eSIM " + n, url: order.myUrl }]] } });
   }
