@@ -341,7 +341,8 @@ async function showPack(chatId, productId, messageId) {
   const c = await catalog();
   const p = c.products.find((x) => x.id === productId);
   if (!p) return send(chatId, "Пакет больше не доступен, выберите другой.", { reply_markup: homeKeyboard() });
-  const st = setState(chatId, { productId });
+  const prev = getState(chatId);
+  const st = setState(chatId, prev.productId === productId ? { productId } : { productId, qty: 1 });
   const price = await priceFor(chatId, p);
   const multi = p.countries.length > 1;
   const where = multi ? p.countries.length + " " + plural(p.countries.length, ["страна", "страны", "стран"]) : cname(p.countries[0]);
@@ -371,8 +372,10 @@ async function showPack(chatId, productId, messageId) {
     text += "Работает ещё в " + esc(others.join(", ")) +
       (rest > 0 ? " и ещё " + rest + " " + plural(rest, ["стране", "странах", "странах"]) : "") + ".\n";
   }
-  text += "\nПосле оплаты QR-код придёт сюда же, в этот чат.";
-  const rows = [[{ text: "Оплатить " + RU(price.total) + " ₽", callback_data: "buy:" + p.id }]]
+  text += qtyText(price);
+  text += "\nПосле оплаты " + ((price.qty || 1) > 1 ? "QR-коды придут" : "QR-код придёт") + " сюда же, в этот чат.";
+  const rows = [[{ text: "Оплатить " + RU(price.grandTotal || price.total) + " ₽", callback_data: "buy:" + p.id }]]
+    .concat(qtyRow(price))
     .concat(multi ? [[{ text: "🌍 Где ещё работает", callback_data: "cov:" + p.id }]] : [])
     .concat(discountRows(chatId, price))
     .concat([[{ text: "‹ Назад к пакетам", callback_data: "c:" + (st.iso || p.countries[0]) }]]);
@@ -384,10 +387,31 @@ async function priceFor(chatId, p) {
   const st = getState(chatId);
   const j = await api("post", "/esim/api/price", {
     productId: p.id, promo: st.promo || "", ref: st.ref || "", email: st.email || "",
-    tgChatId: String(chatId), useBalance: !!st.useBalance,
+    tgChatId: String(chatId), useBalance: !!st.useBalance, qty: qtyOf(st),
   });
   if (j && j.success) return j;
   return { listPrice: p.priceRub, total: p.priceRub, discountRub: 0, balanceCanUse: 0 };
+}
+
+// Сколько eSIM в заказе (18.09.2026, как на сайте): первая по своей цене,
+// вторая и следующие −10 %; с процентным промокодом — код на все eSIM.
+function qtyOf(st) { return Math.max(1, Math.min(12, parseInt(st && st.qty, 10) || 1)); }
+function qtyText(price) {
+  const q = price.qty || 1;
+  const note = price.extraMode === "promo"
+    ? "Промокод действует на все eSIM в заказе: " + RU(price.extraUnit) + " ₽ за каждую."
+    : "Вторая и следующие eSIM — на " + (price.extraPct || 10) + " % дешевле: " + RU(price.extraUnit) + " ₽ вместо " + RU(price.listPrice) + " ₽.";
+  if (q <= 1) return "\n👥 <b>Путешествуете не один?</b> " + note + "\n";
+  return "\n👥 <b>eSIM в заказе: " + q + "</b>\nПервая — " + RU(price.total) + " ₽, ещё " + (q - 1) + " × " + RU(price.extraUnit) + " ₽" +
+    (price.extraMode === "promo" ? " (по промокоду)" : " (−" + (price.extraPct || 10) + " %)") + "\nК оплате: <b>" + RU(price.grandTotal) + " ₽</b>\n";
+}
+function qtyRow(price) {
+  const q = price.qty || 1, max = price.maxQty || 12;
+  return [[
+    { text: q > 1 ? "−" : "·", callback_data: q > 1 ? "q:-" : "q:0" },
+    { text: "👥 eSIM: " + q, callback_data: "q:0" },
+    { text: q < max ? "+ ещё eSIM" : "·", callback_data: q < max ? "q:+" : "q:0" },
+  ]];
 }
 
 // Кнопки скидок под карточкой и под оплатой: промокод и списание бонусов
@@ -436,7 +460,7 @@ async function payLink(chatId) {
   // списание бонусов в боте не срабатывали).
   const j = await api("post", "/esim/api/pay/start", {
     productId: p.id, email: st.email || "", phone: st.phone || "",
-    promo: st.promo || "", ref: st.ref || "", useBalance: !!st.useBalance, tgChatId: String(chatId),
+    promo: st.promo || "", ref: st.ref || "", useBalance: !!st.useBalance, tgChatId: String(chatId), qty: qtyOf(st),
   });
   if (!j || !j.success || !j.url) {
     return send(chatId, "Не получилось открыть оплату. Попробуйте ещё раз или напишите нам: " + SUPPORT_TG);
@@ -445,9 +469,11 @@ async function payLink(chatId) {
   const price = await priceFor(chatId, p);
   return send(chatId,
     "<b>" + esc(p.title || "") + "</b>\n" + gbOf(p) + " · " + RU(p.days) + " дн.\n\n" +
-    "К оплате: <b>" + RU(price.total) + " ₽</b>\nЧек уйдёт " + (st.email ? "на " + esc(st.email) : "смской на " + esc(st.phone)) + "\n\n" +
+    ((price.qty || 1) > 1 ? "eSIM: " + price.qty + " шт. (первая " + RU(price.total) + " ₽, остальные по " + RU(price.extraUnit) + " ₽)\n" : "") +
+    "К оплате: <b>" + RU(price.grandTotal || price.total) + " ₽</b>\nЧек уйдёт " + (st.email ? "на " + esc(st.email) : "смской на " + esc(st.phone)) + "\n\n" +
     "Нажмите кнопку — откроется защищённая страница Т-Банка. Карта или СБП.",
-    { reply_markup: { inline_keyboard: [[{ text: "Оплатить " + RU(price.total) + " ₽", url: j.url }]]
+    { reply_markup: { inline_keyboard: [[{ text: "Оплатить " + RU(price.grandTotal || price.total) + " ₽", url: j.url }]]
+      .concat([[{ text: "👥 Изменить количество eSIM", callback_data: "p:" + p.id }]])
       .concat(discountRows(chatId, price))
       .concat([
         [{ text: "‹ Другой пакет", callback_data: "c:" + (st.iso || p.countries[0]) },
@@ -771,6 +797,12 @@ async function onCallback(q) {
     return showCountry(chatId, parts[0], parseInt(parts[1] || "0", 10) || 0, messageId);
   }
   if (data.indexOf("p:") === 0) return showPack(chatId, data.slice(2), messageId);
+  if (data.indexOf("q:") === 0) {
+    const st = getState(chatId);
+    if (!st.productId || data === "q:0") return;
+    setState(chatId, { qty: Math.max(1, Math.min(12, qtyOf(st) + (data === "q:+" ? 1 : -1))) });
+    return showPack(chatId, st.productId, messageId);
+  }
   if (data.indexOf("buy:") === 0) return startBuy(chatId, data.slice(4));
   if (data.indexOf("m:") === 0) return showMyOne(chatId, data.slice(2));
   if (data.indexOf("cov:") === 0) return showCoverage(chatId, data.slice(4));
@@ -787,7 +819,8 @@ async function onCallback(q) {
 
 // ─────────────────────────── выдача после оплаты ───────────────────────────
 // Зовётся из esim.js, когда пакет уже куплен у поставщика.
-async function onIssued(order) {
+async function onIssued(order, n, total) {
+  n = n || 1; total = total || 1;
   if (!ready() || !order || !order.tgChatId) return;
   const chatId = order.tgChatId;
   if (order.parentOrderId) {                       // продление: eSIM та же, QR прежний
@@ -800,10 +833,16 @@ async function onIssued(order) {
   const j = await api("get", "/esim/api/my?o=" + encodeURIComponent(u.searchParams.get("o")) +
     "&t=" + encodeURIComponent(u.searchParams.get("t")));
   const o = (j && j.order) || {};
-  const caption = "<b>Ваша eSIM готова</b>\n" + esc(order.label || "") +
+  const caption = (total > 1 ? "<b>eSIM " + n + " из " + total + " готова</b>\n" : "<b>Ваша eSIM готова</b>\n") + esc(order.label || "") +
     "\n\nОтсканируйте QR-код на телефоне, куда ставите eSIM.";
   const sent = await sendQr(chatId, o.qrDataUrl, caption);
-  const how =
+  // у нескольких eSIM инструкцию шлём один раз — после последней
+  if (n < total) {
+    return send(chatId, "eSIM " + n + ": остаток трафика и продление — по кнопке." +
+      (o.lpa ? "\nВручную: <code>" + esc(o.lpa) + "</code>" : ""),
+      { reply_markup: { inline_keyboard: [[{ text: "Остаток и продление · eSIM " + n, url: order.myUrl }]] } });
+  }
+  const how = (total > 1 ? "Каждую eSIM ставьте на свой телефон своим QR-кодом.\n\n" : "") +
     "<b>Как установить</b>\n" +
     "1. Настройки → Сотовая связь → Добавить eSIM → сканировать QR.\n" +
     "2. Сделайте это дома по Wi-Fi, до вылета.\n" +
@@ -812,7 +851,7 @@ async function onIssued(order) {
     "Остаток трафика и продление — по кнопке ниже.";
   const st = getState(chatId);
   const rows = [
-    [{ text: "Остаток и продление", url: order.myUrl }],
+    [{ text: total > 1 ? "Остаток и продление · eSIM " + n : "Остаток и продление", url: order.myUrl }],
     [{ text: "📱 Мои eSIM", callback_data: "my" }, { text: "💬 Помощь", url: SUPPORT_TG }],
   ];
   if (!st.email) rows.push([{ text: "✉️ Привязать почту для сайта", callback_data: "mail" }]);

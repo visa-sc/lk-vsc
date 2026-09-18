@@ -1801,7 +1801,17 @@ function mount(app, opts) {
         }).catch(() => {});
       }
       // Продали через бота — пусть он сам отдаст клиенту QR в чат
-      if (opts && opts.onIssued) { try { opts.onIssued(g.order); } catch (e) { console.error("esim onIssued:", e.message); } }
+      // Несколько eSIM в заказе — отдаём в чат каждую по очереди, со своим QR
+      if (opts && opts.onIssued) {
+        const kids = qty > 1 ? readJson(ORDERS_FILE, []).filter((x) => x.groupOf === id && x.status === "done")
+          .sort((a, b) => (a.id < b.id ? -1 : 1)) : [];
+        const all = [g.order].concat(kids);
+        (async () => {
+          for (let i = 0; i < all.length; i++) {
+            try { await opts.onIssued(all[i], i + 1, all.length); } catch (e) { console.error("esim onIssued:", e.message); }
+          }
+        })();
+      }
       return { ok: true, order: g.order };
     } catch (e) {
       const g = findLocal(id);

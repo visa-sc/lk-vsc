@@ -33,7 +33,7 @@ const ESIM_SITE_HOSTS = new Set(["esim.voyotravel.ru", "voyomobile.ru", "voyomob
 // Кроме /esim пропускаем короткие адреса стран под рекламу: voyomobile.ru/turkey,
 // voyomobile.ru/china и далее по списку — это та же витрина, просто заголовок
 // про страну (16.09.2026; Вьетнам, Таиланд, Египет, Грузия и Япония — 17.09.2026)
-const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "georgia", "japan"];
+const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "georgia", "japan", "dubai"];
 const ESIM_HOST_ALLOW = new RegExp(
   "^\\/($|esim(\\/|_|\\?|$)|(?:" + ESIM_LAND_PATHS.join("|") + ")\\/?$|" +
   "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|favicon[^/]*\\.(?:ico|svg|png)$|robots\\.txt$|sitemap\\.xml$)");

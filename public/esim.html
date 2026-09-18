@@ -1008,7 +1008,7 @@
   }
 
   /* Страничка под рекламу: voyomobile.ru/turkey, /china, /vietnam, /thailand,
-     /egypt, /georgia, /japan — та же витрина, но
+     /egypt, /georgia, /japan, /dubai — та же витрина, но
      заголовок про страну, цена «от» живая, и страна сразу выбрана. Работает и
      по адресу вида /esim?c=TR. Дизайн не меняем: правим только два текста. */
   var LANDINGS = {
@@ -1019,6 +1019,7 @@
     "/egypt":    { iso: "EG", where: "Египте"   },
     "/georgia":  { iso: "GE", where: "Грузии"   },
     "/japan":    { iso: "JP", where: "Японии"   },
+    "/dubai":    { iso: "AE", where: "Дубае"    },   // ОАЭ, адрес под рекламу (18.09.2026)
   };
   function landingCountry(){
     var byPath = LANDINGS[location.pathname.replace(/\/+$/, "").toLowerCase()];
