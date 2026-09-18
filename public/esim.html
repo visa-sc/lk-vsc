@@ -181,6 +181,10 @@
   .rupick[hidden]{display:none;}
   .pk .gb{font-size:34px;font-weight:800;letter-spacing:-.03em;}
   .pk .gb small{font-size:15px;font-weight:600;color:var(--mut);margin-left:3px;letter-spacing:0;}
+  /* «в день» у суточных тарифов — жёлтой плашкой, чтобы не путали с объёмом на весь срок */
+  .perday{display:inline-block;vertical-align:middle;margin-left:5px;padding:2px 8px 3px;border-radius:999px;
+    background:#fff1c9;color:#8a5a00;font-size:12px;font-weight:700;letter-spacing:.01em;line-height:1.35;transform:translateY(-2px);}
+  .modal .perday{font-size:.62em;padding:2px 9px 3px;transform:translateY(-3px);}
   .pk .days{font-size:13px;color:var(--mut);font-weight:500;}
   .pk .bot{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);}
   .pk .pr{font-size:21px;font-weight:800;letter-spacing:-.02em;}
@@ -841,7 +845,7 @@
       '<div class="top"><span class="fl">'+flag(multi&&current!=="EU-REGION"?(current||p.countries[0]):(multi?"EU-REGION":p.countries[0]))+'</span>'+
       '<span class="cn">'+esc(head)+'<small>'+esc(sub)+'</small></span>'+
       (p.fiveG?'<span class="badge5g">5G</span>':"")+'</div>'+
-      '<div class="mid"><span class="gb">'+gb+'<small>'+(p.unlimited?"безлимит":(p.daily?"ГБ в день":"ГБ"))+'</small></span>'+
+      '<div class="mid"><span class="gb">'+gb+'<small>'+(p.unlimited?"безлимит":(p.daily?'ГБ<span class="perday">в день</span>':"ГБ"))+'</small></span>'+
       '<span class="days">· '+RU(p.days)+' дн.</span></div>'+
       '<div class="bot"><span class="pr">'+RU(p.priceRub)+' ₽'+perGbTxt(p)+'</span><span class="go">Выбрать ›</span></div>'+
       (p.note?'<div class="rupick">'+esc(p.note)+'</div>':"")+
@@ -1145,9 +1149,9 @@
     var multi = p.countries.length>1;
     if(!multi) document.getElementById("mFlag").textContent = flag(p.countries[0]);
     else document.getElementById("mFlag").textContent = current && current!=="EU-REGION" ? flag(current) : "🌍";
-    var gb = p.unlimited ? "Безлимит" : (GBN(p.dataGb)+(p.daily?" ГБ в день":" ГБ"));
+    var gb = p.unlimited ? "Безлимит" : (GBN(p.dataGb)+(p.daily?' ГБ<span class="perday">в день</span>':" ГБ"));
     var where = current && current!=="EU-REGION" ? cname(current) : (multi ? nStran(p.countries.length) : cname(p.countries[0]));
-    document.getElementById("mTitle").textContent = where + " · " + gb;
+    document.getElementById("mTitle").innerHTML = esc(where) + " · " + gb;
     document.getElementById("mSub").textContent = (p.title || "") + (p.operator ? " · сеть "+p.operator : "");
     var mrp = document.getElementById("mRuPick");
     mrp.hidden = !p.note; if(p.note) mrp.textContent = p.note;
