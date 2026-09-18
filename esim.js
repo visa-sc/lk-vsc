@@ -79,6 +79,27 @@ const REF_SITE = process.env.ESIM_REF_SITE || "https://voyomobile.ru";
 const REF_BONUS_RUB = Number(process.env.ESIM_REF_BONUS || 100);
 const TG_WELCOME_RUB = Number(process.env.ESIM_TG_WELCOME || 100);   // подарок новичку в боте   // другу и пригласившему
 const MIN_PAY_RUB = Number(process.env.ESIM_MIN_PAY || 100);
+// Несколько eSIM в одном платеже (18.09.2026): первая — по обычной цене (с
+// промокодом, бонусами), каждая следующая — со скидкой EXTRA_PCT от цены
+// пакета, но не ниже того же пола по себестоимости, что и у промокодов.
+const EXTRA_PCT = Number(process.env.ESIM_EXTRA_PCT || 10);
+const MAX_QTY = Number(process.env.ESIM_MAX_QTY || 5);
+function extraUnitPrice(listPrice, costRub) {
+  const floorRub = Math.min(listPrice, Math.max(MIN_PAY_RUB, Math.ceil((Number(costRub) || 0) * DISCOUNT_FLOOR_K)));
+  return Math.max(floorRub, Math.round(listPrice * (1 - EXTRA_PCT / 100)));
+}
+// Цена второй и следующих eSIM в заказе. Правило Андрея 18.09.2026:
+//  • покупка с процентным промокодом (−10 %, −20 %…) — дополнительной скидки нет,
+//    промокод просто действует на все eSIM заказа (та же цена, что у первой);
+//  • иначе (без кода, код в рублях, реферал, баллы) — первая по своей цене,
+//    каждая следующая −EXTRA_PCT % от обычной цены, не ниже пола.
+function extrasFor(calc, listPrice, costRub) {
+  if (calc && (calc.discountKind === "cost" || (calc.discountKind === "promo" && calc.promoPct > 0))) {
+    return { unit: calc.total, mode: "promo", pct: calc.promoPct || 0 };
+  }
+  return { unit: extraUnitPrice(listPrice, costRub), mode: "extra", pct: EXTRA_PCT };
+}
+function qtyOf(b) { return Math.max(1, Math.min(MAX_QTY, Math.floor(Number(b && b.qty) || 1))); }
 // Бонусами можно закрыть не больше половины стоимости пакета — остальное деньгами
 const MAX_BONUS_SHARE = Number(process.env.ESIM_MAX_BONUS_SHARE || 0.5);
 // Запас над себестоимостью, ниже которого не пускаем скидки и баллы
@@ -1125,7 +1146,7 @@ function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, use
     out.discountRub = Math.max(0, listPrice - floorRub);
     out.discountKind = "cost"; out.promoCode = promo.code;
   } else if (promo && promo.rub > 0) {
-    out.discountRub = promo.rub; out.discountKind = "promo"; out.promoCode = promo.code;
+    out.discountRub = promo.rub; out.discountKind = "promo"; out.promoCode = promo.code; out.promoPct = promo.pct || 0;
   } else if (refCode) {
     const inviter = customerByRef(refCode);
     // Реферальная скидка — только новому клиенту и не по своей же ссылке
@@ -1199,7 +1220,7 @@ function orderByProviderId(mmOrderId) {
 }
 function convPayload(order) {
   if (!order || !order.priceRub || order.convSent) return null;
-  return { id: order.id, t: signOrder(order.id), price: Number(order.priceRub),
+  return { id: order.id, t: signOrder(order.id), price: Number(order.payTotalRub || order.priceRub),
            title: order.label || order.title || "eSIM", aw: process.env.ESIM_AW_PURCHASE || "" };
 }
 function emailOfProviderOrder(mmOrderId) {
@@ -1581,8 +1602,82 @@ function mount(app, opts) {
     return w;
   }
 
+  // Одна eSIM у поставщика по заказу o. TSim не принял заказ (заказа у них нет) —
+  // выдаём такой же пакет MobiMatter, если закупка укладывается в оплаченное.
+  async function issueOne(o, paidRub) {
+    let res, src = isEaId(o.productId) ? "esimaccess" : (isTsimId(o.productId) ? "tsim" : "mobimatter"), fallbackFrom = null;
+    if (o.parentOrderId) {
+      src = isEaId(o.parentOrderId) ? "esimaccess" : (isTsimId(o.parentOrderId) ? "tsim" : "mobimatter");
+      res = await providerFor(o.parentOrderId).createTopup(o.productId, o.parentOrderId);
+    } else if (src === "tsim" || src === "esimaccess") {
+      const who = src === "tsim" ? tsim : esimaccess;
+      try { res = await who.createOrder(o.productId); }
+      catch (e) {
+        const alt = e.noOrder ? await mmTwin(o.productId, paidRub) : null;
+        if (!alt) throw e;
+        console.error("esim tsim → mobimatter:", e.message);
+        res = await provider.createOrder(alt.id);
+        fallbackFrom = o.productId; src = "mobimatter";
+      }
+    } else res = await provider.createOrder(o.productId);
+    return { res, src, fallbackFrom };
+  }
+  function myUrlFor(order, providerOrderId) {
+    const key = order.parentOrderId || providerOrderId;
+    return (order.base || BASE_URL) + "/esim/my?o=" + encodeURIComponent(key) + "&t=" + signOrder(key);
+  }
+
+  // Письмо «eSIM готова»: одна или несколько (купили сразу на всю компанию), плюс
+  // личный промокод покупателя — «путешествуете не один?» (18.09.2026).
+  function readyLetter(order, items, refCode) {
+    const acc = BASE_URL + "/esim/account?e=" + encodeURIComponent(order.email) + "&t=" + signEmail(order.email);
+    const many = items.length > 1;
+    const tipsCN = isChinaLabel(order.label);
+    const btn = (href, text) => '<a href="' + href + '" style="display:inline-block;background:#3589bd;color:#fff;' +
+      'text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:12px">' + text + '</a>';
+    const list = many
+      ? '<table style="border-collapse:collapse;margin:0 0 18px">' + items.map((it, i) =>
+          '<tr><td style="padding:0 12px 10px 0;font-size:14px;color:#3a4356;white-space:nowrap">eSIM ' + (i + 1) + '</td>' +
+          '<td style="padding:0 0 10px">' + btn(it.myUrl, "Открыть QR-код") + '</td></tr>').join("") + '</table>'
+      : '<p style="margin:0 0 18px">' + btn(items[0].myUrl, "Открыть QR-код и остаток") + '</p>';
+    const refLink = refCode ? REF_SITE + "/?ref=" + refCode : "";
+    const refHtml = refCode
+      ? '<div style="margin:6px 0 18px;padding:16px 18px;background:#f2f7fb;border:1px solid #e0e9f2;border-radius:14px">' +
+        '<p style="font-size:15px;font-weight:700;margin:0 0 6px">Путешествуете не один?</p>' +
+        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 10px">Поделитесь своим промокодом с друзьями и близкими: ' +
+        'другу скидка ' + REF_BONUS_RUB + ' ₽ на первую eSIM, а вам ' + REF_BONUS_RUB + ' ₽ на баланс после его оплаты.</p>' +
+        '<p style="margin:0 0 8px"><span style="display:inline-block;font-family:SFMono-Regular,Consolas,monospace;font-size:19px;' +
+        'font-weight:700;letter-spacing:.12em;background:#fff;border:1px solid #e0e9f2;border-radius:10px;padding:8px 16px">' + refCode + '</span></p>' +
+        '<p style="font-size:13px;margin:0;word-break:break-all">Или ссылка: <a href="' + refLink + '" style="color:#3589bd">' + refLink + '</a></p></div>'
+      : "";
+    return {
+      subject: many ? "VOYO mobile: ваши eSIM готовы (" + items.length + " шт.)" : "VOYO mobile: ваша eSIM готова",
+      html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#16202e">' +
+        '<p style="font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px">' + (many ? "Ваши eSIM готовы" : "Ваша eSIM готова") + '</p>' +
+        '<p style="color:#8b93a5;font-size:14px;line-height:1.6;margin:0 0 18px">' + esc(order.label || "") + (many ? " · " + items.length + " шт." : "") + '</p>' +
+        list +
+        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">' + (many ? "Каждую eSIM ставьте на свой телефон своим QR-кодом. " : "") +
+        'Установка: Настройки → Сотовая связь → Добавить eSIM → сканировать QR. ' +
+        'Сделайте это дома по Wi-Fi, до вылета. В поездке включите «Роуминг данных» для линии eSIM.</p>' +
+        (tipsCN ? chinaTipsHtml() : "") +
+        refHtml +
+        '<p style="font-size:13px;line-height:1.6;color:#8b93a5;margin:0 0 6px">Ваш личный кабинет со всеми eSIM: <a href="' + acc + '" style="color:#3589bd">открыть</a><br/>' +
+        'Ссылка постоянная — сохраните это письмо.</p>' +
+        '<p style="font-size:12px;color:#a6adbd;margin:18px 0 0">VOYO mobile · выгодный интернет в 209 странах мира</p></div>',
+      text: (many ? "Ваши eSIM готовы (" + items.length + " шт.): " : "Ваша eSIM готова: ") + (order.label || "") + "\n\n" +
+        items.map((it, i) => (many ? "eSIM " + (i + 1) + ": " : "QR-код и остаток трафика: ") + it.myUrl).join("\n") +
+        (tipsCN ? "\n\n" + CHINA_TIPS_TEXT : "") +
+        (refCode ? "\n\nПутешествуете не один? Ваш промокод для друзей: " + refCode + " (другу −" + REF_BONUS_RUB + " ₽ на первую eSIM, вам +" +
+          REF_BONUS_RUB + " ₽ на баланс). Ссылка: " + refLink : "") +
+        "\nЛичный кабинет со всеми eSIM: " + acc,
+    };
+  }
+
   // Выдача товара после подтверждённой оплаты. Идемпотентна: повторный вебхук
   // не купит вторую eSIM (банк может слать уведомление несколько раз).
+  // Несколько eSIM в одном платеже (qty): первая — этот заказ, остальные —
+  // отдельные заказы «id-2», «id-3»… со своей ссылкой и QR, чтобы кабинет,
+  // напоминания и статистика работали с ними как с обычными.
   async function fulfil(id) {
     const f = findLocal(id);
     if (!f) return { ok: false, message: "заказ не найден" };
@@ -1591,33 +1686,45 @@ function mount(app, opts) {
     if (o.status === "fulfilling") return { ok: true, pending: true };
     o.status = "fulfilling"; saveLocal(f.orders);
     try {
-      let res, src = isEaId(o.productId) ? "esimaccess" : (isTsimId(o.productId) ? "tsim" : "mobimatter"), fallbackFrom = null;
-      if (o.parentOrderId) {
-        src = isEaId(o.parentOrderId) ? "esimaccess" : (isTsimId(o.parentOrderId) ? "tsim" : "mobimatter");
-        res = await providerFor(o.parentOrderId).createTopup(o.productId, o.parentOrderId);
-      }
-      else if (src === "tsim" || src === "esimaccess") {
-        const who = src === "tsim" ? tsim : esimaccess;
-        try { res = await who.createOrder(o.productId); }
-        catch (e) {
-          // TSim не принял заказ (заказа у них нет) — выдаём такой же пакет MobiMatter,
-          // если его закупка укладывается в оплаченную сумму. Иначе ручной разбор.
-          const alt = e.noOrder ? await mmTwin(o.productId, o.priceRub) : null;
-          if (!alt) throw e;
-          console.error("esim tsim → mobimatter:", e.message);
-          res = await provider.createOrder(alt.id);
-          fallbackFrom = o.productId; src = "mobimatter";
-        }
-      } else res = await provider.createOrder(o.productId);
+      const { res, src, fallbackFrom } = await issueOne(o, o.priceRub);
       const g = findLocal(id);
       Object.assign(g.order, {
         status: "done", paidAt: Date.now(), src, fallbackFrom,
         mmOrderId: res.orderId, iccid: res.iccid || null, costUsd: res.costUsd || null,
-        myUrl: (g.order.base || BASE_URL) + "/esim/my?o=" + encodeURIComponent(o.parentOrderId || res.orderId) +
-               "&t=" + signOrder(o.parentOrderId || res.orderId),
+        myUrl: myUrlFor(g.order, res.orderId),
       });
       saveLocal(g.orders);
-      if (src === "tsim") checkTsimCredit();
+      // остальные eSIM из того же платежа
+      const items = [{ myUrl: g.order.myUrl, orderId: res.orderId, src }];
+      const extraFailed = [];
+      const qty = Math.max(1, Math.min(MAX_QTY, Number(g.order.qty) || 1));
+      for (let i = 2; i <= qty; i++) {
+        const childId = id + "-" + i;
+        const child = {
+          id: childId, ts: Date.now(), status: "fulfilling", productId: g.order.productId, parentOrderId: null,
+          label: g.order.label, priceRub: g.order.extraUnitRub, listPriceRub: g.order.listPriceRub,
+          phone: g.order.phone, email: g.order.email, tgChatId: g.order.tgChatId, custKey: g.order.custKey,
+          discountRub: Math.max(0, (g.order.listPriceRub || 0) - (g.order.extraUnitRub || 0)), discountKind: "extra",
+          groupOf: id, paymentId: g.order.paymentId, ads: g.order.ads, lang: g.order.lang, vid: g.order.vid,
+          fromLk: g.order.fromLk, base: g.order.base,
+        };
+        const all = readJson(ORDERS_FILE, []); all.unshift(child); saveLocal(all);
+        try {
+          const r2 = await issueOne(child, child.priceRub);
+          const c = findLocal(childId);
+          Object.assign(c.order, { status: "done", paidAt: Date.now(), src: r2.src, fallbackFrom: r2.fallbackFrom,
+            mmOrderId: r2.res.orderId, iccid: r2.res.iccid || null, costUsd: r2.res.costUsd || null,
+            myUrl: myUrlFor(c.order, r2.res.orderId) });
+          saveLocal(c.orders);
+          items.push({ myUrl: c.order.myUrl, orderId: r2.res.orderId, src: r2.src });
+        } catch (e) {
+          const c = findLocal(childId);
+          if (c) { c.order.status = "paid_failed"; c.order.error = String(e.message).slice(0, 300); saveLocal(c.orders); }
+          extraFailed.push(childId + ": " + e.message);
+          console.error("esim fulfil extra:", e.message);
+        }
+      }
+      if (items.some((x) => x.src === "tsim")) checkTsimCredit();
       checkSupplierBalances().catch(() => {});
       // Деньги и бонусы проводим только после подтверждённой оплаты
       try {
@@ -1657,49 +1764,37 @@ function mount(app, opts) {
         opts.sendSms(g.order.phone, "VOYO mobile: ваша eSIM готова. QR и остаток трафика — " + g.order.myUrl)
           .catch((e) => console.error("esim sms:", e.message));
       }
-      // Письмо клиенту: доступ в кабинет + QR-строка на случай, если картинка не откроется
+      // Письмо клиенту: ссылки на все eSIM, кабинет и личный промокод для друзей
       if (opts && opts.sendMail && g.order.email) {
-        const tipsCN = isChinaLabel(g.order.label);
-        const acc = BASE_URL + "/esim/account?e=" + encodeURIComponent(g.order.email) + "&t=" + signEmail(g.order.email);
-        opts.sendMail({
-          to: g.order.email,
-          subject: "VOYO mobile: ваша eSIM готова",
-          html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#16202e">' +
-            '<p style="font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px">Ваша eSIM готова</p>' +
-            '<p style="color:#8b93a5;font-size:14px;line-height:1.6;margin:0 0 18px">' + esc(g.order.label || "") + '</p>' +
-            '<p style="margin:0 0 18px"><a href="' + g.order.myUrl + '" style="display:inline-block;background:#3589bd;color:#fff;' +
-            'text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:12px">Открыть QR-код и остаток</a></p>' +
-            '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">Установка: Настройки → Сотовая связь → Добавить eSIM → сканировать QR. ' +
-            'Сделайте это дома по Wi-Fi, до вылета. В поездке включите «Роуминг данных» для линии eSIM.</p>' +
-            (tipsCN ? chinaTipsHtml() : "") +
-            '<p style="font-size:13px;line-height:1.6;color:#8b93a5;margin:0 0 6px">Ваш личный кабинет со всеми eSIM: <a href="' + acc + '" style="color:#3589bd">открыть</a><br/>' +
-            'Ссылка постоянная — сохраните это письмо.</p>' +
-            '<p style="font-size:12px;color:#a6adbd;margin:18px 0 0">VOYO mobile · интернет в поездке</p></div>',
-          text: "Ваша eSIM готова: " + (g.order.label || "") + "\n\nQR-код и остаток трафика: " + g.order.myUrl +
-                (tipsCN ? "\n\n" + CHINA_TIPS_TEXT : "") +
-                "\nЛичный кабинет со всеми eSIM: " + acc,
-        }).catch((e) => console.error("esim client mail:", e.message));
+        const cust = getCustomer(g.order.custKey || g.order.email, false);
+        const L = readyLetter(g.order, items, cust && cust.refCode);
+        opts.sendMail({ to: g.order.email, subject: L.subject, html: L.html, text: L.text })
+          .catch((e) => console.error("esim client mail:", e.message));
       }
       if (opts && opts.sendMail) {
+        const payTotal = g.order.payTotalRub || g.order.priceRub;
         opts.sendMail({
           to: "director@visa-sc.ru",
-          subject: "VOYO eSIM: ✅ ОПЛАЧЕНО " + (g.order.label || "") + (g.order.tgChatId ? " (телеграм-бот)" : ""),
+          subject: "VOYO eSIM: ✅ ОПЛАЧЕНО " + (g.order.label || "") + (qty > 1 ? " × " + qty + " шт." : "") + (g.order.tgChatId ? " (телеграм-бот)" : ""),
           text: "Клиент оплатил и получил eSIM автоматически.\n\nОткуда: " +
             (g.order.tgChatId ? "телеграм-бот, чат " + g.order.tgChatId : "сайт") +
             (g.order.tgChatId ? "" : "\nИсточник: " + adsource.describeAds(g.order.ads)) +
             (g.order.tgChatId ? "" : "\nЯзык телефона: " + (g.order.lang || "—")) +
             "\nПакет: " + (g.order.label || "—") +
+            (qty > 1 ? "\nКоличество: " + qty + " eSIM (первая " + g.order.priceRub + " ₽, остальные по " + g.order.extraUnitRub + " ₽" + (g.order.extraMode === "promo" ? " — по тому же промокоду" : "") + ")" : "") +
             (g.order.parentOrderId ? "\nЭто ПРОДЛЕНИЕ заказа " + g.order.parentOrderId : "") +
-            "\nСумма: " + (g.order.priceRub || "—") + " ₽" +
-            (g.order.discountRub ? " (скидка " + g.order.discountRub + " ₽" +
+            "\nСумма: " + (payTotal || "—") + " ₽" +
+            (g.order.discountRub ? " (скидка на первую " + g.order.discountRub + " ₽" +
               (g.order.promoCode ? ", промокод " + g.order.promoCode : "") + ")" : "") +
             (g.order.balanceUsed ? "\nСписано бонусами: " + g.order.balanceUsed + " ₽" : "") +
             "\nТелефон: " + (g.order.phone || "—") +
             "\nEmail: " + (g.order.email || "—") +
-            "\nЗаказ " + (src === "tsim" ? "TSim" : src === "esimaccess" ? "eSIM Access" : "MobiMatter") + ": " + res.orderId +
+            "\nЗаказ " + (src === "tsim" ? "TSim" : src === "esimaccess" ? "eSIM Access" : "MobiMatter") + ": " +
+              items.map((x) => x.orderId).join(", ") +
             (fallbackFrom ? "\nTSim не принял заказ, выдан такой же пакет MobiMatter." : "") +
             (src === "tsim" ? "\nКредит TSim по учёту: $" + tsimLeftUsd() : "") +
-            "\nСсылка клиента: " + g.order.myUrl,
+            (extraFailed.length ? "\n\n⚠️ НЕ ВЫДАНЫ " + extraFailed.length + " из " + qty + " eSIM — докупить руками и отправить клиенту:\n" + extraFailed.join("\n") : "") +
+            "\nСсылки клиента: " + items.map((x) => x.myUrl).join("\n"),
         }).catch(() => {});
       }
       // Продали через бота — пусть он сам отдаст клиенту QR в чат
@@ -1716,7 +1811,8 @@ function mount(app, opts) {
           subject: "VOYO eSIM: ОПЛАЧЕНО, но выдача НЕ прошла — нужен ручной заказ",
           text: "Клиент заплатил, но купить пакет у поставщика не удалось.\n\nВнутренний заказ: " + id +
             "\nПакет: " + (o.label || "—") + "\nID продукта: " + o.productId +
-            "\nСумма: " + (o.priceRub || "—") + " ₽\nТелефон: " + (o.phone || "—") +
+            (Number(o.qty) > 1 ? "\nКоличество: " + o.qty + " eSIM, оплачено " + (o.payTotalRub || "—") + " ₽" : "") +
+            "\nСумма: " + (o.payTotalRub || o.priceRub || "—") + " ₽\nТелефон: " + (o.phone || "—") +
             "\nОшибка: " + e.message +
             (isTsimId(o.productId)
               ? "\n\nПакет TSim. Если в ошибке есть номер TS-…, заказ у TSim создан, но QR не пришёл: откройте ссылку " +
@@ -1774,12 +1870,18 @@ function mount(app, opts) {
       const calc = priceWithDiscounts({ listPrice, costRub: costFor(found.item, rate),
         email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const priceRub = calc.total;
+      // дополнительные eSIM — только у обычной покупки (не у продления)
+      const qty = (found.addon || parentOrderId) ? 1 : qtyOf(b);
+      const ex = extrasFor(calc, listPrice, costFor(found.item, rate));
+      const extraUnitRub = qty > 1 ? ex.unit : null;
+      const payTotalRub = priceRub + (qty - 1) * (extraUnitRub || 0);
       const id = crypto.randomBytes(6).toString("hex");
       const label = labelFor(found.item);
       const orders = readJson(ORDERS_FILE, []);
       orders.unshift({
         id, ts: Date.now(), status: "pending", productId: found.item.id, parentOrderId,
         label, priceRub, listPriceRub: listPrice, phone, email, tgChatId, custKey: who,
+        qty: qty > 1 ? qty : undefined, extraUnitRub: extraUnitRub || undefined, extraMode: qty > 1 ? ex.mode : undefined, payTotalRub: qty > 1 ? payTotalRub : undefined,
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         promoCode: calc.promoCode, refBy: calc.refBy, balanceUsed: calc.balanceUsed,
         ads: tgChatId ? null : adsource.readAds(req, b),
@@ -1792,8 +1894,8 @@ function mount(app, opts) {
       });
       saveLocal(orders);
       const pay = await tbank.init({
-        orderId: id, amountRub: priceRub,
-        description: label.slice(0, 140), itemName: label,
+        orderId: id, amountRub: payTotalRub,
+        description: (label + (qty > 1 ? " × " + qty : "")).slice(0, 140), itemName: label + (qty > 1 ? " (" + qty + " шт.)" : ""),
         phone, email: validEmail(email) ? email : null,
         notificationUrl: BASE_URL + "/esim/api/pay/notify",
         successUrl: baseFor(req) + "/esim/pay/ok?o=" + id + "&t=" + signOrder(id),
@@ -1819,8 +1921,13 @@ function mount(app, opts) {
       const calc = priceWithDiscounts({ listPrice, costRub: costFor(found.item, rate),
         email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const promoTried = String(b.promo || "").trim();
+      const qty = qtyOf(b);
+      const ex = extrasFor(calc, listPrice, costFor(found.item, rate));
+      const extraUnit = ex.unit;
       res.json({
         success: true, listPrice, total: calc.total,
+        qty, extraPct: ex.pct, extraMode: ex.mode, extraUnit, maxQty: MAX_QTY,
+        grandTotal: calc.total + (qty - 1) * extraUnit,
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         balanceRub: calc.balanceRub, balanceCanUse: calc.balanceCanUse, balanceUsed: calc.balanceUsed,
         balanceBlockedBy: calc.balanceBlockedBy,
@@ -1854,10 +1961,19 @@ function mount(app, opts) {
       const st = await tbank.getState(f.order.paymentId);
       if (st && st.Success && tbank.isPaid(st.Status)) { fulfil(id).catch(() => {}); return res.json({ success: true, status: "fulfilling" }); }
     }
+    // Несколько eSIM в платеже: ждём, пока выдадутся все (до 3 минут), и отдаём ссылки
+    let extra = [];
+    const qty = Number(f.order.qty) || 1;
+    if (qty > 1 && f.order.status === "done") {
+      const kids = readJson(ORDERS_FILE, []).filter((x) => x.groupOf === id);
+      const waiting = kids.filter((x) => x.status === "fulfilling").length + Math.max(0, qty - 1 - kids.length);
+      if (waiting > 0 && Date.now() - (f.order.paidAt || 0) < 180000) return res.json({ success: true, status: "fulfilling" });
+      extra = kids.filter((x) => x.status === "done").sort((a, b) => (a.id < b.id ? -1 : 1)).map((x) => x.myUrl);
+    }
     // Сумма и метка конверсии нужны странице «оплачено», чтобы передать покупку
     // в Google Ads. ESIM_AW_PURCHASE — «AW-…/label» из действия-конверсии в Ads.
-    return res.json({ success: true, status: f.order.status, myUrl: f.order.myUrl || null,
-      priceRub: f.order.priceRub || null, aw: process.env.ESIM_AW_PURCHASE || "",
+    return res.json({ success: true, status: f.order.status, myUrl: f.order.myUrl || null, extra,
+      priceRub: f.order.payTotalRub || f.order.priceRub || null, aw: process.env.ESIM_AW_PURCHASE || "",
       conv: convPayload(f.order) });
   });
 

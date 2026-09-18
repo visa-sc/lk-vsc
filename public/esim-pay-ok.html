@@ -144,6 +144,18 @@
       var j = await r.json();
       if(j && j.success && j.status==="done" && j.myUrl){
         document.getElementById("goBtn").href = j.myUrl;
+        // купили сразу несколько eSIM — у каждой своя кнопка
+        if(j.extra && j.extra.length){
+          var go = document.getElementById("goBtn");
+          go.textContent = "Открыть eSIM 1";
+          var after = go;
+          j.extra.forEach(function(u, i){
+            var a = go.cloneNode(false);
+            a.removeAttribute("id"); a.href = u; a.textContent = "Открыть eSIM " + (i + 2);
+            a.style.marginTop = "10px";
+            after.parentNode.insertBefore(a, after.nextSibling); after = a;
+          });
+        }
         show("done");
         // Покупка в Метрику и Google Ads. Отметку о зачёте ставит сервер (conv.t),
         // а j.conv приходит пустым, если цель уже засчитана раньше.

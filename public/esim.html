@@ -407,6 +407,17 @@
   .sumbox{background:#f6f9fc;border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px;
     font-size:13.5px;display:none;}
   .sumbox.on{display:block;}
+  /* «Путешествуете не один?» — сколько eSIM взять, каждая следующая со скидкой */
+  .qtybox{display:none;align-items:center;justify-content:space-between;gap:12px;background:#f2f9fd;border:1px solid #d9ebf7;
+    border-radius:14px;padding:11px 12px 11px 14px;margin-bottom:12px;}
+  .qtybox.on{display:flex;}
+  .qtybox .qt{display:flex;flex-direction:column;gap:2px;font-size:13px;line-height:1.35;color:#4a5670;}
+  .qtybox .qt b{font-size:14px;color:var(--ink);}
+  .stepper{display:flex;align-items:center;gap:4px;flex:none;}
+  .stepper button{width:34px;height:34px;border-radius:50%;border:1px solid #cfe1ee;background:#fff;color:var(--accent);
+    font:inherit;font-size:19px;font-weight:600;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+  .stepper button:disabled{opacity:.35;cursor:default;}
+  .stepper span{min-width:26px;text-align:center;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;}
   .sumbox .l{display:flex;justify-content:space-between;gap:10px;margin-bottom:5px;color:var(--mut);}
   .sumbox .l:last-child{margin-bottom:0;padding-top:7px;border-top:1px solid var(--line);color:var(--ink);
     font-weight:800;font-size:15px;}
@@ -580,6 +591,10 @@
     <div class="phonewrap" id="mPhoneWrap">
       <label id="mPhoneLb">Email — пришлём чек и доступ к вашей eSIM</label>
       <input id="mPhone" class="ym-disable-keys ym-hide-content" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" />
+    </div>
+    <div class="qtybox" id="mQtyWrap">
+      <div class="qt"><b>Путешествуете не один?</b><span id="mQtyNote">Каждая следующая eSIM — со скидкой 10%</span></div>
+      <div class="stepper"><button type="button" id="mQtyMinus" aria-label="Меньше">−</button><span id="mQty">1</span><button type="button" id="mQtyPlus" aria-label="Больше">+</button></div>
     </div>
     <button class="buy" id="mBuy" type="button"></button>
     <div class="err" id="mErr"></div>
@@ -855,10 +870,8 @@
   }
 
   /* ── фильтры, как у Trip.com (18.09.2026) ──
-     Срок: по дням с 1 до 14, дальше отрезками 15–21 и 22–30, плюс 60 и 90.
-     Если ровно такого срока у пакетов нет, показываем ближайший больший: на
-     «4 дня» — суточный на 5 дней и пакет на 7 дней. Суточные и пакеты на весь
-     срок подбираются отдельно, у каждых свой ближайший срок.
+     Срок: по дням с 1 до 14, дальше отрезками 15–21 и 22–30, плюс 60 и 90 —
+     показываем все пакеты, которые покрывают выбранный срок, и подольше тоже.
      Объём: «Ежедневно 0,5 ГБ» — суточные, «Всего 3 ГБ» — на весь срок; кнопки
      собираются из того, что реально есть у страны. */
   var selDays = null, selGb = null;
@@ -869,19 +882,10 @@
     o.push({lo:15, hi:21, t:"15–21 день"}, {lo:22, hi:30, t:"22–30 дней"}, {lo:60, hi:60, t:"60 дней"}, {lo:90, hi:90, t:"90 дней"});
     return o;
   })();
-  var DAY_LIST = [];                       // пакеты страны — от них считаем «ближайший больший срок»
-  // группы подбираются отдельно: суточные, безлимит и пакеты на весь срок
-  function kindOf(p){ return p.unlimited ? "u" : (p.daily ? "d" : "f"); }
-  function fitDays(p, sel){
-    if(!sel) return true;
-    var d = p.days || 0, kind = kindOf(p);
-    if(d >= sel.lo && d <= sel.hi) return true;
-    var same = DAY_LIST.filter(function(q){ return kindOf(q) === kind; });
-    if(same.some(function(q){ return q.days >= sel.lo && q.days <= sel.hi; })) return false;
-    var next = null;
-    same.forEach(function(q){ if(q.days > sel.hi && (next === null || q.days < next)) next = q.days; });
-    return next !== null && d === next;
-  }
+  // Срок в фильтре — минимум: на «14 дней» годится всё, что покрывает 14 дней и
+  // дольше. Пакет на 30 дней бывает дешевле пакета на 14 — сортировка по цене сама
+  // поднимет выгодное наверх (просьба Андрея 18.09.2026).
+  function fitDays(p, sel){ return !sel || (p.days || 0) >= sel.lo; }
   function fitGb(p, sel){
     if(!sel) return true;
     if(sel.unl) return !!p.unlimited;
@@ -901,7 +905,6 @@
     var cfg=document.getElementById("cfg");
     if(!list.length){ cfg.style.display="none"; return; }
     cfg.style.display="block";
-    DAY_LIST = list;
     var fd=document.getElementById("fDays"), fg=document.getElementById("fGb");
     fd.innerHTML=""; fg.innerHTML="";
     chip(fd, "Любой срок", !selDays, true, function(){ selDays=null; renderPacks(true); });
@@ -1213,6 +1216,7 @@
     mBuy.disabled=false;
     mBuy.textContent = "Купить — "+RU(p.priceRub)+" ₽";
     mBuy.dataset.step="1";
+    QTY = 1; document.getElementById("mQtyWrap").classList.remove("on");
     PROMO = "";
     document.getElementById("mPromo").value = "";
     document.getElementById("mPromoMsg").textContent = "";
@@ -1262,13 +1266,32 @@
     await recalc();
   }
 
+  // Сколько eSIM берём: первая по обычной цене, каждая следующая со скидкой (считает сервер)
+  var QTY = 1, MAXQ = 5;
+  function qtyUi(j){
+    if(j && j.maxQty) MAXQ = j.maxQty;
+    document.getElementById("mQty").textContent = QTY;
+    document.getElementById("mQtyMinus").disabled = QTY <= 1;
+    document.getElementById("mQtyPlus").disabled = QTY >= MAXQ;
+    if(j && j.extraUnit){
+      // С процентным промокодом доп. скидки нет — код просто действует на все eSIM заказа
+      if(j.extraMode === "promo") document.getElementById("mQtyNote").textContent =
+        "Ваш промокод действует на все eSIM в заказе: "+RU(j.extraUnit)+" ₽ за каждую";
+      else document.getElementById("mQtyNote").textContent = j.extraUnit < j.listPrice
+        ? "Каждая следующая eSIM — со скидкой "+j.extraPct+"%: "+RU(j.extraUnit)+" ₽ вместо "+RU(j.listPrice)+" ₽"
+        : "Добавьте eSIM для попутчиков: "+RU(j.extraUnit)+" ₽ за каждую";
+    }
+  }
+  document.getElementById("mQtyMinus").addEventListener("click", function(){ if(QTY > 1){ QTY--; qtyUi(); recalc(); } });
+  document.getElementById("mQtyPlus").addEventListener("click", function(){ if(QTY < MAXQ){ QTY++; qtyUi(); recalc(); } });
+
   // Пересчёт суммы: промокод, реферальная скидка и списание бонусов считает сервер
   async function recalc(){
     if(!mP || !PAY) return null;
     try{
       var r = await fetch("/esim/api/price",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({productId:mP.id, promo:PROMO, ref:REF, useBalance:document.getElementById("mBonus").checked,
-          email:(document.getElementById("mPhone").value||"").trim()})});
+          email:(document.getElementById("mPhone").value||"").trim(), qty:QTY})});
       var j = await r.json();
       if(!j || !j.success) return null;
       // Бонусы предлагаем, но не списываем без согласия
@@ -1285,16 +1308,20 @@
         document.getElementById("mBonusT").textContent = "Бонусы: "+RU(j.balanceRub)+" ₽";
         document.getElementById("mBonusS").textContent = "Вместе со скидкой бонусы не списываются. Они останутся на балансе до следующей покупки.";
       } else { bw.classList.remove("on"); document.getElementById("mBonus").disabled = false; }
+      qtyUi(j);
       var box = document.getElementById("mSum"), rows = "";
-      if(j.discountRub > 0 || j.balanceUsed > 0){
-        rows += '<div class="l"><span>Пакет</span><span>'+RU(j.listPrice)+' ₽</span></div>';
+      var extraN = Math.max(0, (j.qty || 1) - 1), grand = j.grandTotal || j.total;
+      if(j.discountRub > 0 || j.balanceUsed > 0 || extraN){
+        rows += '<div class="l"><span>'+(extraN ? "Первая eSIM" : "Пакет")+'</span><span>'+RU(j.listPrice)+' ₽</span></div>';
         if(j.discountRub > 0) rows += '<div class="l"><span>'+(j.discountKind==="ref"?"Скидка по приглашению":(j.discountKind==="cost"?"По себестоимости":"Промокод"))+'</span><span class="g">−'+RU(j.discountRub)+' ₽</span></div>';
         if(j.balanceUsed > 0) rows += '<div class="l"><span>Бонусами</span><span class="g">−'+RU(j.balanceUsed)+' ₽</span></div>';
-        rows += '<div class="l"><span>К оплате</span><span>'+RU(j.total)+' ₽</span></div>';
+        if(extraN) rows += '<div class="l"><span>Ещё '+extraN+' eSIM'+(j.extraMode === "promo" ? " по промокоду" : (j.extraUnit < j.listPrice ? " со скидкой "+j.extraPct+"%" : ""))+'</span><span>'+
+          (extraN > 1 ? extraN+" × " : "")+RU(j.extraUnit)+' ₽</span></div>';
+        rows += '<div class="l"><span>К оплате</span><span>'+RU(grand)+' ₽</span></div>';
         box.innerHTML = rows; box.classList.add("on");
       } else { box.classList.remove("on"); }
-      if(mBuy.dataset.step==="2") mBuy.textContent = "Оплатить "+RU(j.total)+" ₽";
-      else mBuy.textContent = "Купить — "+RU(j.total)+" ₽";
+      if(mBuy.dataset.step==="2") mBuy.textContent = "Оплатить "+RU(grand)+" ₽";
+      else mBuy.textContent = "Купить — "+RU(grand)+" ₽";
       return j;
     }catch(e){ return null; }
   }
@@ -1370,6 +1397,7 @@
       mBuy.textContent = PAY ? ("Оплатить "+RU(mP.priceRub)+" ₽") : "Оставить заявку";
       mBuy.dataset.step="2";
       track("buy");                       // воронка: нажал «Купить», дальше ввод почты
+      if(PAY){ document.getElementById("mQtyWrap").classList.add("on"); qtyUi(); }
       if(PAY) recalc();
       return;
     }
@@ -1382,7 +1410,7 @@
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS, vid:VID, embed:EMBED, lang:(navigator.languages&&navigator.languages[0])||navigator.language||"",
+          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS, vid:VID, embed:EMBED, qty:QTY, lang:(navigator.languages&&navigator.languages[0])||navigator.language||"",
             useBalance:document.getElementById("mBonus").checked})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){
