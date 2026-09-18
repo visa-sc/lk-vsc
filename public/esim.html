@@ -89,6 +89,13 @@
   .byvsc b{font-weight:800;font-size:9.5px;color:#0099cf;letter-spacing:.03em;}
   /* ── герой ── */
   .hero{text-align:center;padding:52px 0 10px;}
+  /* напоминание вернувшемуся покупателю: код для друзей */
+  .refnudge{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;max-width:640px;margin:-14px auto 22px;
+    padding:12px 16px;border-radius:16px;background:#fff8e1;border:1px solid #f5dc8a;text-align:left;}
+  .refnudge[hidden]{display:none;}
+  .refnudge .rt{font-size:14px;line-height:1.4;color:var(--ink);flex:1 1 300px;}
+  .refnudge .rc{font-weight:800;letter-spacing:.04em;background:#fff;border:1px dashed #d9a400;border-radius:7px;padding:1px 7px;}
+  .refnudge .rb{flex:0 0 auto;border:0;border-radius:11px;background:#1d1d1f;color:#fff;font:inherit;font-size:13.5px;font-weight:700;padding:9px 14px;cursor:pointer;}
   .hero h1{font-size:clamp(34px,5.6vw,56px);line-height:1.06;letter-spacing:-.035em;margin:0 0 16px;font-weight:800;}
   .hero h1 em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
   .hero .sub{color:var(--mut);font-size:16.5px;line-height:1.6;max-width:540px;margin:0 auto 30px;font-weight:400;}
@@ -471,6 +478,10 @@
         <span class="txt"><b><span id="rateN">1325</span> оценок</b></span>
       </div>
     </div>
+    <div class="refnudge" id="refNudge" hidden>
+      <div class="rt"><b>Путешествуете не один?</b> Поделитесь кодом <span class="rc" id="rnCode"></span> — друг получит <span id="rnB1">100</span> ₽ скидки, а вы <span id="rnB2">100</span> ₽ на счёт.</div>
+      <button type="button" class="rb" id="rnCopy">Скопировать ссылку</button>
+    </div>
     <div class="searchbox">
       <input id="q" type="text" placeholder="Куда летите?" autocomplete="off" />
       <span class="go">
@@ -621,6 +632,24 @@
   function el(html){ var t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstChild; }
   var ADM = new URLSearchParams(location.search).get("adm") || "";
   var EMBED = new URLSearchParams(location.search).get("embed") === "1";
+  // Вернувшийся покупатель видит свой код для попутчиков (сервер решает, покупал ли он)
+  (function(){
+    fetch("/esim/api/refnudge",{credentials:"same-origin"}).then(function(r){ return r.json(); }).then(function(j){
+      if(!j || !j.show) return;
+      var box = document.getElementById("refNudge");
+      document.getElementById("rnCode").textContent = j.code;
+      document.getElementById("rnB1").textContent = j.bonus;
+      document.getElementById("rnB2").textContent = j.bonus;
+      box.hidden = false;
+      document.getElementById("rnCopy").addEventListener("click", function(){
+        var b = this, done = function(){ b.textContent = "Ссылка скопирована"; setTimeout(function(){ b.textContent = "Скопировать ссылку"; }, 2200); };
+        var text = "Интернет в поездке через eSIM — по моей ссылке скидка " + j.bonus + " ₽: " + j.link;
+        if(navigator.share && /iPhone|Android/i.test(navigator.userAgent)){ navigator.share({text: text}).catch(function(){}); return; }
+        try{ navigator.clipboard.writeText(text).then(done, function(){ prompt("Скопируйте ссылку", j.link); }); }
+        catch(e){ prompt("Скопируйте ссылку", j.link); }
+      });
+    }).catch(function(){});
+  })();
   if(EMBED) document.body.classList.add("embed");
 
   // Своя воронка для панели показателей (dev.voyomobile.ru): зашёл → открыл

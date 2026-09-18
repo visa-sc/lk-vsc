@@ -1939,6 +1939,23 @@ function mount(app, opts) {
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
 
+  // Образцы письма «eSIM готова» (одна и три штуки) — на director@, только с adm-кодом
+  app.get("/esim/api/adm/letter-sample", async (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    const mine = readJson(ORDERS_FILE, []).filter((x) => x.status === "done" && x.myUrl && normEmail(x.email) === "komizarenko@gmail.com");
+    const urls = mine.slice(0, 3).map((x) => x.myUrl);
+    while (urls.length < 3) urls.push(urls[0] || REF_SITE);
+    const c = getCustomer("komizarenko@gmail.com", true);
+    const order = { email: "komizarenko@gmail.com", label: "Вьетнам · 3 ГБ · 30 дней", base: REF_SITE };
+    const sent = [];
+    for (const n of [1, 3]) {
+      const L = readyLetter(order, urls.slice(0, n).map((u) => ({ myUrl: u })), c.refCode);
+      await opts.sendMail({ to: "director@visa-sc.ru", subject: "[ОБРАЗЕЦ] " + L.subject, html: L.html, text: L.text });
+      sent.push(L.subject);
+    }
+    res.json({ success: true, sent });
+  });
+
   // Вебхук банка. Отвечаем строкой OK — иначе Т-Банк будет повторять.
   app.post("/esim/api/pay/notify", async (req, res) => {
     const b = req.body || {};
@@ -1962,6 +1979,7 @@ function mount(app, opts) {
       if (st && st.Success && tbank.isPaid(st.Status)) { fulfil(id).catch(() => {}); return res.json({ success: true, status: "fulfilling" }); }
     }
     // Несколько eSIM в платеже: ждём, пока выдадутся все (до 3 минут), и отдаём ссылки
+    if (f.order.status === "done" && validEmail(f.order.email)) setSession(res, f.order.email);
     let extra = [];
     const qty = Number(f.order.qty) || 1;
     if (qty > 1 && f.order.status === "done") {
@@ -2183,6 +2201,22 @@ function mount(app, opts) {
   });
 
   // Кто я сейчас (для шапки страниц)
+  // Напоминание вернувшемуся покупателю (18.09.2026): «путешествуете не один —
+  // вот ваш код, 100 ₽ другу и 100 ₽ вам». Кто он — по сессии сайта (ставится при
+  // открытии страницы с QR) или, внутри ЛК VOYO, по почтам кабинета.
+  app.get("/esim/api/refnudge", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    let email = readSession(req);
+    if (!email || !hasOrders(email)) {
+      const lk = await lkEmails(req).catch(() => null);
+      email = lk ? (lk.emails.find((e) => hasOrders(e)) || null) : null;
+    }
+    if (!email || !hasOrders(email)) return res.json({ success: true, show: false });
+    const c = getCustomer(email, true);
+    if (!c || !c.refCode) return res.json({ success: true, show: false });
+    res.json({ success: true, show: true, code: c.refCode, bonus: REF_BONUS_RUB, link: REF_SITE + "/?ref=" + c.refCode });
+  });
+
   app.get("/esim/api/session", (req, res) => {
     const email = readSession(req);
     res.json({ success: true, email, esims: email ? esimsOf(email) : [] });
