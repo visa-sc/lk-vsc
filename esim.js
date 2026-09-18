@@ -1789,6 +1789,7 @@ function mount(app, opts) {
         // Промокод засчитан, если сервер его принял — хоть скидкой, хоть себестоимостью
         promoOk: promoTried ? !!(calc.promoCode || calc.discountKind === "ref") : null,
         promoReason: calc.promoReason,
+        promoMinRub: MIN_PAY_RUB,      // промокоды действуют на пакеты дороже этой суммы
       });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
