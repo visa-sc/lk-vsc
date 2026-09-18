@@ -665,8 +665,10 @@
 
   // Промокод из рассылки. Человек пришёл по ссылке с меткой — вводить код
   // руками не должен: подставим сами и запомним, чтобы дожил до оплаты.
-  var UTM_PROMO = "VSC20OFF3";
-  var UTM_SOURCES = {sms:1, email:1, tg:1};
+  // Каждой рассылке — свой код (18.09.2026): автоматические SMS обещают −10%
+  // (VSC10OFF), массовые рассылки — −20% (VSC20OFF3). Раньше все метки давали 20%,
+  // и клиент из автоматической SMS получал больше обещанного.
+  var UTM_PROMOS = { sms: "VSC10OFF", sms_mass: "VSC20OFF3", email: "VSC20OFF3", tg: "VSC20OFF3" };
   var AUTO_PROMO = "";
   try{
     var src = String(new URLSearchParams(location.search).get("utm_source") || "").toLowerCase();
@@ -674,7 +676,7 @@
     // свой код, и он не должен подменяться кодом рассылки.
     var urlPromo = String(new URLSearchParams(location.search).get("promo") || "").trim().toUpperCase();
     if(urlPromo) localStorage.setItem("voyo_esim_autopromo", urlPromo);
-    else if(UTM_SOURCES[src]) localStorage.setItem("voyo_esim_autopromo", UTM_PROMO);
+    else if(UTM_PROMOS[src]) localStorage.setItem("voyo_esim_autopromo", UTM_PROMOS[src]);
     AUTO_PROMO = localStorage.getItem("voyo_esim_autopromo") || "";
   }catch(e){ }
   var PROMO = "";

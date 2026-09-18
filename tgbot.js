@@ -54,6 +54,8 @@ const ALERT_TO = process.env.ESIM_TG_ALERT_TO || "director@visa-sc.ru";
 const SELF = process.env.ESIM_SELF_BASE || "http://127.0.0.1:3000";
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
 const UTM_PROMO = process.env.ESIM_UTM_PROMO || "VSC20OFF3";
+// Автоматические SMS — −10%, массовые рассылки — −20% (как на сайте, 18.09.2026)
+const UTM_PROMOS = { sms: process.env.ESIM_SMS_PROMO || "VSC10OFF", sms_mass: UTM_PROMO, email: UTM_PROMO, tg: UTM_PROMO };
 const SUPPORT_TG = "https://t.me/vsc_operator";
 const BOT_NAME = process.env.ESIM_TG_USERNAME || "esimvoyo_bot";
 
@@ -649,8 +651,8 @@ async function onText(chatId, text) {
     if (payload.indexOf("ref_") === 0) {
       setState(chatId, { ref: payload.slice(4).toUpperCase(), step: null });
       await send(chatId, "Вы пришли по приглашению друга — скидка на первую eSIM применится сама.");
-    } else if (["sms", "email", "tg"].indexOf(payload) >= 0) {
-      setState(chatId, { promo: UTM_PROMO, step: null });
+    } else if (UTM_PROMOS[payload]) {
+      setState(chatId, { promo: UTM_PROMOS[payload], step: null });
       await send(chatId, "Ваша скидка по ссылке уже учтена — увидите её в цене пакета.");
     } else setState(chatId, { step: null });
     return showHome(chatId, await welcomeGift(chatId));

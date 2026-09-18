@@ -2482,19 +2482,28 @@ function mount(app, opts) {
   // Покупки из визового ЛК до 18.09.2026 пометки не имели — найдены по журналу
   // nginx (оплата со страницы /esim?embed=1) и перечислены здесь
   const LK_HISTORY_FILE = path.join(DIR, "lk-orders.json");
+  // Заказы из рассылок, у которых метка не сохранилась (например, опечатка в
+  // ссылке письма) — найдены по журналу nginx: {id заказа: "sms" | "email"}
+  const MAIL_HISTORY_FILE = path.join(DIR, "mail-orders.json");
+  // Канал — то, что привело человека: реклама, SMS, письмо. Если меток нет —
+  // визовый ЛК (купил из кабинета), бот или прямой заход. Пример 13.09: человек
+  // перешёл по SMS, через 4 минуты вошёл в ЛК и купил там — это сделка SMS.
   function channelOf(o) {
-    if (o.fromLk || (readJson(LK_HISTORY_FILE, []).indexOf(o.id) >= 0)) return "lk";
     const a = (o.ads && (o.ads.first || o.ads)) || null;
     const src = a && String(a.utm_source || "").toLowerCase();
     if (src) return src;
     if (a && a.yclid) return "yandex";
     if (a && a.gclid) return "google";
+    const mail = readJson(MAIL_HISTORY_FILE, {})[o.id];
+    if (mail) return mail;
+    if (o.fromLk || (readJson(LK_HISTORY_FILE, []).indexOf(o.id) >= 0)) return "lk";
     if (o.tgChatId) return "telegram_bot";
     return "direct";
   }
   const CHANNEL_NAMES = {
     yandex: "Яндекс Директ", google: "Google Ads", telegram_bot: "Телеграм-бот",
-    direct: "Прямые заходы", vk: "ВКонтакте", blogger: "Блогеры", email: "Рассылка", lk: "Личный кабинет VOYO",
+    direct: "Прямые заходы", vk: "ВКонтакте", blogger: "Блогеры", lk: "Личный кабинет VOYO",
+    sms: "SMS", sms_mass: "SMS-рассылка", email: "Email", tg: "Telegram-рассылка",
   };
   function channelName(k) { return CHANNEL_NAMES[k] || k; }
   const mskDay = (ts) => new Date(ts + 3 * 3600 * 1000).toISOString().slice(0, 10);
