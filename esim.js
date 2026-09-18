@@ -1101,6 +1101,12 @@ function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, use
   }
   let afterDiscount = Math.max(floorRub, listPrice - out.discountRub);
   out.discountRub = listPrice - afterDiscount;          // если упёрлись в пол — показываем честную скидку
+  // Скидка упёрлась в пол и вышла нулевой (пакеты дешевле 100 ₽, например вход
+  // за 59 ₽) — промокод не засчитываем: иначе одноразовый код сгорит на такой
+  // покупке впустую, а бонусы заблокируются зря. Код останется на следующий раз.
+  if (out.discountRub <= 0 && (out.discountKind === "promo" || out.discountKind === "cost")) {
+    out.discountKind = null; out.promoCode = null; out.promoReason = "floor";
+  }
   const cust = getCustomer(email, false);
   out.balanceRub = (cust && cust.balanceRub) || 0;
   // Баллы идут в дело, только если скидки не было: не больше половины пакета,
