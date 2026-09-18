@@ -615,7 +615,11 @@
   function track(step){
     if(ADM) return;                                   // свои заходы с админ-кодом не считаем
     try{ fetch("/esim/api/ev", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ src: "site", step: step, vid: VID }) }); }catch(e){}
+      body: JSON.stringify({ src: "site", step: step, vid: VID,
+        // язык телефона и признак рекламного перехода — только для статистики языков
+        lang: step === "visit" ? ((navigator.languages && navigator.languages[0]) || navigator.language || "") : undefined,
+        ad: step === "visit" ? /[?&](gclid|gbraid|wbraid|gad_source|yclid|fbclid|utm_source)=/.test(location.search) : undefined
+      }) }); }catch(e){}
   }
   track("visit");
 
@@ -1311,7 +1315,7 @@
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS, vid:VID, embed:EMBED,
+          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS, vid:VID, embed:EMBED, lang:(navigator.languages&&navigator.languages[0])||navigator.language||"",
             useBalance:document.getElementById("mBonus").checked})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){
@@ -1328,7 +1332,7 @@
     }
     try{
       var r = await fetch("/esim/api/order",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({productId:mP.id, phone:phone, priceRub:mP.priceRub, ads:ADS,
+        body:JSON.stringify({productId:mP.id, phone:phone, priceRub:mP.priceRub, ads:ADS, lang:(navigator.languages&&navigator.languages[0])||navigator.language||"",
           label:(mP.countries.length>1?nStran(mP.countries.length):cname(mP.countries[0]))+" · "+(mP.unlimited?"безлимит":GBN(mP.dataGb)+(mP.daily?" ГБ в день":" ГБ"))+" · "+mP.days+" дн."})});
       var j = await r.json();
       if(j && j.success){

@@ -85,3 +85,26 @@ cardGo.forEach((c) => {
 const lk = read(".cards/clicks.json", []).filter((c) => (c.ts || 0) >= since && c.kind !== "call");
 console.log("\nКарты, кабинет VOYO (/cards и /beta): переходов к партнёру " + lk.length);
 lk.forEach((c) => console.log("  " + msk(c.ts) + "  " + c.kind.padEnd(12) + " " + (c.phone || "без входа")));
+
+// ── языки телефонов (с 18.09.2026) ──
+const langs = read(".esim/langs.json", { days: {} }).days || {};
+const sinceDay = new Date(since + 3 * 3600e3).toISOString().slice(0, 10);
+const byLang = {};
+Object.keys(langs).filter((d) => d >= sinceDay).forEach((d) => {
+  Object.entries(langs[d]).forEach(([l, v]) => {
+    const k = l.split("-")[0].toLowerCase();
+    const x = byLang[k] || (byLang[k] = { all: new Set(), ads: new Set(), paid: 0, rub: 0, fail: 0 });
+    (v.all || []).forEach((id) => x.all.add(id));
+    (v.ads || []).forEach((id) => x.ads.add(id));
+  });
+});
+read(".esim/orders.json", []).filter((o) => (o.ts || 0) >= since && o.lang).forEach((o) => {
+  const k = o.lang.split("-")[0].toLowerCase();
+  const x = byLang[k] || (byLang[k] = { all: new Set(), ads: new Set(), paid: 0, rub: 0, fail: 0 });
+  if (o.status === "done") { x.paid++; x.rub += o.priceRub || 0; } else x.fail++;
+});
+console.log("\neSIM по языку телефона (заходы на витрину / из них с рекламы / оплаты / не оплачено):");
+Object.entries(byLang).sort((a, b) => b[1].all.size - a[1].all.size).forEach(([l, x]) =>
+  console.log("  " + l.padEnd(4) + String(x.all.size).padStart(6) + String(x.ads.size).padStart(6) +
+    String(x.paid).padStart(5) + " (" + x.rub + " ₽)" + String(x.fail).padStart(5)));
+if (!Object.keys(byLang).length) console.log("  пока пусто: язык записывается с 18.09.2026");

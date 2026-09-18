@@ -1244,6 +1244,7 @@ function mount(app, opts) {
       productId: String(b.productId || "").slice(0, 64), label: String(b.label || "").slice(0, 120),
       priceRub: Number(b.priceRub) || null, phone,
       ads: adsource.readAds(req, b),
+      lang: adsource.readLang(req, b),
     };
     const orders = readJson(ORDERS_FILE, []);
     orders.unshift(order);
@@ -1257,6 +1258,7 @@ function mount(app, opts) {
           "\nЦена для клиента: " + (order.priceRub ? order.priceRub + " ₽" : "—") +
           "\nТелефон клиента: " + phone +
           "\nИсточник: " + adsource.describeAds(order.ads) +
+          "\nЯзык телефона: " + (order.lang || "—") +
           "\nID продукта MobiMatter: " + (order.productId || "—") +
           "\n\nКупить пакет: partner.mobimatter.com → Buy eSIMs (найти по ID) → QR-код отправить клиенту." +
           "\nПосле покупки возьмите номер заказа (AKGR-…) и откройте voyotravel.ru/esim/mylink?adm=КОД&o=НОМЕР — " +
@@ -1641,6 +1643,7 @@ function mount(app, opts) {
           text: "Клиент оплатил и получил eSIM автоматически.\n\nОткуда: " +
             (g.order.tgChatId ? "телеграм-бот, чат " + g.order.tgChatId : "сайт") +
             (g.order.tgChatId ? "" : "\nИсточник: " + adsource.describeAds(g.order.ads)) +
+            (g.order.tgChatId ? "" : "\nЯзык телефона: " + (g.order.lang || "—")) +
             "\nПакет: " + (g.order.label || "—") +
             (g.order.parentOrderId ? "\nЭто ПРОДЛЕНИЕ заказа " + g.order.parentOrderId : "") +
             "\nСумма: " + (g.order.priceRub || "—") + " ₽" +
@@ -1736,6 +1739,7 @@ function mount(app, opts) {
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         promoCode: calc.promoCode, refBy: calc.refBy, balanceUsed: calc.balanceUsed,
         ads: tgChatId ? null : adsource.readAds(req, b),
+        lang: tgChatId ? null : adsource.readLang(req, b),   // язык телефона покупателя
         vid: tgChatId ? null : (String(b.vid || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32) || null),   // для воронки сайта
         fromLk: tgChatId ? undefined : (fromLk || undefined),   // канал «Личный кабинет VOYO» в панели
         // Домен покупки: ссылка с QR должна вести туда же, иначе счётчик Метрики
@@ -2274,6 +2278,7 @@ function mount(app, opts) {
         "\nТелефон: " + (o.phone || "—") +
         "\nEmail: " + (o.email || "—") +
         (o.tgChatId ? "\nТелеграм-бот, чат " + o.tgChatId : "\nИсточник: " + adsource.describeAds(o.ads)) +
+        (o.tgChatId ? "" : "\nЯзык телефона: " + (o.lang || "—")) +
         "\nЗаказ создан: " + adsource.mskTime(o.ts) + " МСК" +
         "\nВнутренний номер: " + o.id +
         "\n\nКлиенту " + (o.abandonMail > 0 ? "письмо с промокодом " + ABANDON_PROMO + " уже ушло."
@@ -2558,9 +2563,34 @@ function mount(app, opts) {
     writeJson(FUNNEL_FILE, f);
   }, 15000);
 
+  // Языки телефонов посетителей витрины (18.09.2026): сколько людей с телефонами
+  // на каждом языке зашло всего и сколько из них с рекламы. Отдельный файл,
+  // воронку не трогает. Храним только код языка и случайный номер браузера.
+  const LANGS_FILE = path.join(DIR, "langs.json");
+  let _langs = null, _langsDirty = false;
+  function langHit(lang, vid, fromAds) {
+    lang = adsource.readLang(null, { lang });
+    vid = String(vid || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
+    if (!lang || vid.length < 6) return;
+    if (!_langs) _langs = readJson(LANGS_FILE, null) || { days: {} };
+    const day = mskDay(Date.now());
+    const d = _langs.days[day] || (_langs.days[day] = {});
+    const l = d[lang] || (d[lang] = { all: [], ads: [] });
+    if (l.all.indexOf(vid) < 0 && l.all.length < 20000) { l.all.push(vid); _langsDirty = true; }
+    if (fromAds && l.ads.indexOf(vid) < 0 && l.ads.length < 20000) { l.ads.push(vid); _langsDirty = true; }
+  }
+  setInterval(() => {
+    if (!_langsDirty) return;
+    _langsDirty = false;
+    const cut = mskDay(Date.now() - 183 * 864e5);
+    Object.keys(_langs.days).forEach((k) => { if (k < cut) delete _langs.days[k]; });
+    writeJson(LANGS_FILE, _langs);
+  }, 15000);
+
   app.post("/esim/api/ev", (req, res) => {
     const b = req.body || {};
     if (b.adm) return res.json({ success: true, skipped: true });   // свои заходы с админ-кодом не считаем
+    if (b.step === "visit" && b.lang) { try { langHit(b.lang, b.vid, !!b.ad); } catch (_) {} }
     res.json({ success: funnelHit(String(b.src || "site"), String(b.step || ""), b.vid) });
   });
 

@@ -100,9 +100,19 @@ function describeAds(ads) {
   return s;
 }
 
+// Язык устройства покупателя: из браузера (navigator.language), иначе из
+// заголовка Accept-Language. Нужен, чтобы видеть, приходят ли и платят ли
+// люди с телефонами на английском (18.09.2026).
+function readLang(req, body) {
+  let v = body && body.lang;
+  if (!v) v = String((req && req.headers && req.headers["accept-language"]) || "").split(",")[0];
+  v = String(v || "").trim().split(";")[0];
+  return /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8}){0,2}$/.test(v) ? v : null;
+}
+
 function gclidOf(ads) {
   const t = ads && (isGoogleAds(ads.last) ? ads.last : isGoogleAds(ads.first) ? ads.first : null);
   return t ? (t.gclid || t.gbraid || t.wbraid || "") : "";
 }
 
-module.exports = { KEYS, cleanTouch, cleanAds, readAds, channel, describeTouch, describeAds, isGoogleAds, gclidOf, mskTime };
+module.exports = { KEYS, cleanTouch, cleanAds, readAds, readLang, channel, describeTouch, describeAds, isGoogleAds, gclidOf, mskTime };
