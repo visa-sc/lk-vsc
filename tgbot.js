@@ -203,18 +203,16 @@ async function packsFor(iso) {
 // Пакеты TSim (id «ts_») прячем, если рядом есть не хуже: цена, ГБ, дни и
 // покрытие для этой страницы. Та же функция стоит на витрине (public/esim.html).
 function dropDominated(list, wide) {
-  // одинаковые по условиям пакеты не показываем — правило как на сайте (esim.html, 18.09.2026)
-  return list.filter((p) => !list.some((q) => {
-    if (q === p || !!q.daily !== !!p.daily || !!q.unlimited !== !!p.unlimited) return false;
-    if (p.note && q.note !== p.note) return false;
-    const nq = q.countries.length, np = p.countries.length;
-    if (wide && nq < np) return false;
-    if (q.priceRub > p.priceRub || (q.dataGb || 0) < (p.dataGb || 0) || (q.days || 0) < (p.days || 0)) return false;
-    const same = q.priceRub === p.priceRub && (q.dataGb || 0) === (p.dataGb || 0) && (q.days || 0) === (p.days || 0);
-    if (!same) return true;
-    if (nq !== np) return wide ? nq > np : nq < np;
-    return String(q.id) < String(p.id);
-  }));
+  // полностью одинаковые пакеты — один, самый дешёвый; правило как на сайте (esim.html, 18.09.2026)
+  const key = (p) => [p.dataGb || 0, p.days || 0, p.daily ? 1 : 0, p.unlimited ? 1 : 0, p.fiveG ? 1 : 0, p.note || ""].join("|");
+  const best = {};
+  list.forEach((p) => {
+    const q = best[key(p)];
+    const n = p.countries.length;
+    if (!q || p.priceRub < q.priceRub || (p.priceRub === q.priceRub &&
+        (n !== q.countries.length ? (wide ? n > q.countries.length : n < q.countries.length) : String(p.id) < String(q.id)))) best[key(p)] = p;
+  });
+  return list.filter((p) => best[key(p)] === p);
 }
 const GBN = (n) => (Math.round((Number(n) || 0) * 10) / 10).toLocaleString("ru-RU");
 // суточные пакеты TSim: «0,5 ГБ в день»

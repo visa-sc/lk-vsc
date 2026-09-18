@@ -773,28 +773,20 @@
     if(iso === "EU-REGION") return dropDominated(CATALOG.filter(isEuroRegional), true);
     return dropDominated((byCountry[iso]||[]).slice(), false);
   }
-  // Одинаковых по условиям пакетов на витрине быть не должно (18.09.2026, раньше
-  // правило касалось только TSim и eSIM Access): прячем пакет, если рядом есть
-  // не хуже — дешевле или так же, не меньше ГБ и дней. Покрытие на странице
-  // страны не мешает (региональный за 9 669 ₽ не нужен рядом с таким же за 1 179 ₽),
-  // при равенстве остаётся пакет на меньше стран. На «Европе» — только если у
-  // соседа стран не меньше. Пакет с пометкой («без VPN», «China Mobile»,
-  // «для российских сервисов») уступает только пакету с той же пометкой.
-  // Та же функция стоит в tgbot.js.
+  // Полностью одинаковые пакеты показываем один раз — самый дешёвый (Андрей,
+  // 18.09.2026). Одинаковые = те же ГБ, те же дни, тот же формат (на весь срок /
+  // в день / безлимит), та же сеть 5G или 4G и та же пометка («без VPN» и т. п.).
+  // Хоть одно отличие — это другой пакет, он остаётся. При равной цене — пакет на
+  // меньше стран (на «Европе» — на больше). Та же функция стоит в tgbot.js.
   function dropDominated(list, wide){
-    return list.filter(function(p){
-      return !list.some(function(q){
-        if(q === p || !!q.daily !== !!p.daily || !!q.unlimited !== !!p.unlimited) return false;
-        if(p.note && q.note !== p.note) return false;
-        var nq = q.countries.length, np = p.countries.length;
-        if(wide && nq < np) return false;
-        if(q.priceRub > p.priceRub || (q.dataGb||0) < (p.dataGb||0) || (q.days||0) < (p.days||0)) return false;
-        var same = q.priceRub === p.priceRub && (q.dataGb||0) === (p.dataGb||0) && (q.days||0) === (p.days||0);
-        if(!same) return true;
-        if(nq !== np) return wide ? nq > np : nq < np;
-        return String(q.id) < String(p.id);
-      });
+    var best = {};
+    list.forEach(function(p){
+      var k = [p.dataGb||0, p.days||0, p.daily?1:0, p.unlimited?1:0, p.fiveG?1:0, p.note||""].join("|");
+      var q = best[k];
+      if(!q || p.priceRub < q.priceRub || (p.priceRub === q.priceRub &&
+         (p.countries.length !== q.countries.length ? (wide ? p.countries.length > q.countries.length : p.countries.length < q.countries.length) : String(p.id) < String(q.id)))) best[k] = p;
     });
+    return list.filter(function(p){ return best[[p.dataGb||0, p.days||0, p.daily?1:0, p.unlimited?1:0, p.fiveG?1:0, p.note||""].join("|")] === p; });
   }
 
   /* ── сортировка списка: выбор клиента, запоминаем в браузере ── */
