@@ -1197,7 +1197,7 @@
       msg.textContent = "Скидку по ссылке вы уже использовали.";
     } else if(j && j.promoReason === "floor"){
       // код по ссылке не выбрасываем — он пригодится на пакете подороже
-      msg.style.color = "var(--mut)";
+      msg.style.color = "var(--red)";
       msg.textContent = "Промокод действует на пакеты от " + RU(j.promoMinRub || 100) + " ₽. Ваш код сохранится для следующей покупки.";
     } else msg.textContent = "";
     await recalc();
@@ -1265,7 +1265,7 @@
         ref_own: "Это ваш собственный код — им делятся с друзьями.",
         ref_not_new: "Код друга работает только на первой покупке."
       }[j && j.promoReason] || "Промокод не подошёл.";
-      msg.style.color = (j && j.promoReason === "floor") ? "var(--mut)" : "var(--red)";
+      msg.style.color = "var(--red)";
       msg.textContent=why; PROMO=""; await recalc(); }
   });
   document.getElementById("mPromo").addEventListener("keydown",function(e){ if(e.key==="Enter") document.getElementById("mPromoApply").click(); });
