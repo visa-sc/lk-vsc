@@ -20,7 +20,8 @@
   *{box-sizing:border-box}
   body{margin:0;color:var(--ink);font-size:14px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
     font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    background:linear-gradient(180deg,#f7f9fc 0%,#eef1f6 100%);min-height:100vh;}
+    background:linear-gradient(180deg,#f7f9fc 0%,#eef1f6 100%);min-height:100vh;display:flow-root;}
+  html{background:#f7f9fc}
   body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
     background:radial-gradient(1100px 520px at 50% -120px,#e9f3fb 0%,rgba(233,243,251,0) 70%);}
   .wrap{max-width:1080px;margin:0 auto;padding:22px 18px 70px;}
@@ -131,22 +132,30 @@
   .pop.show{display:block}
   .pop b{color:#fff}
 
-  .gate{max-width:320px;margin:18vh auto 0;background:#fff;border:1px solid var(--border);border-radius:22px;
-    padding:26px 22px;box-shadow:var(--shadow-hi);text-align:center;}
-  .gate .brand{align-items:center;margin-bottom:18px}
-  .gate input{width:100%;font:inherit;font-size:18px;text-align:center;letter-spacing:.3em;border:1px solid rgba(20,32,64,.10);
-    border-radius:13px;padding:12px;margin-bottom:10px;}
-  .gate .btn{width:100%;padding:12px;font-size:14px}
+  .gate{max-width:340px;margin:16vh auto 0;background:#fff;border:1px solid var(--border);border-radius:22px;
+    padding:34px 24px 26px;box-shadow:var(--shadow-hi);text-align:center;}
+  .gate .brand{align-items:center;margin-bottom:88px}
+  .gate input{width:100%;font:inherit;font-size:17px;text-align:center;letter-spacing:.3em;border:1px solid rgba(20,32,64,.10);
+    border-radius:13px;padding:13px;margin-bottom:10px;}
+  .gate input::placeholder{letter-spacing:0;color:#a3abb9;font-size:15px}
+  .gate .btn{width:100%;padding:13px;font-size:14.5px}
+  .bio-btn{width:100%;height:48px;margin:10px 0 0;border:1.5px solid #3589bd;background:#fff;color:#3589bd;border-radius:12px;
+    font:inherit;font-size:14px;font-weight:600;cursor:pointer;display:none;align-items:center;justify-content:center;gap:8px;
+    transition:background .2s var(--ease);}
+  .bio-btn.show{display:flex}
+  .bio-btn:hover:not(:disabled){background:#f0f7fc}
+  .bio-btn:disabled{opacity:.6;cursor:progress}
+  .bio-btn svg{width:18px;height:18px;flex-shrink:0}
+  .bio-offer{display:none;margin-top:4px;padding:16px;background:#f0f7fc;border:1px solid #d3e7f4;border-radius:14px;text-align:left;}
+  .bio-offer.show{display:block}
+  .bio-offer h3{margin:0 0 6px;font-size:15px;color:#2f6e95}
+  .bio-offer p{margin:0 0 12px;font-size:13px;color:#4a5260;line-height:1.4}
+  .bio-offer-actions{display:flex;gap:10px}
+  .bio-offer-actions button{flex:1;height:38px;border-radius:10px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+  .bio-skip{border:1.5px solid #d3d2da;background:#fff;color:#4a5260}
+  .bio-enable{border:0;background:#3589bd;color:#fff}
+  .bio-offer-actions button:disabled{opacity:.6;cursor:progress}
   .err{color:var(--red);font-size:12.5px;min-height:18px;margin-top:8px;}
-  .gate .btn.bio{display:flex;align-items:center;justify-content:center;gap:9px;margin-bottom:4px;
-    background:#141a2e;border-color:transparent;color:#fff;box-shadow:0 10px 22px -12px rgba(20,26,46,.7);}
-  .gate .btn.bio:hover{color:#fff;filter:brightness(1.15)}
-  .gate .btn.bio svg{width:20px;height:20px}
-  .gate .or{font-size:12px;color:var(--mut2);margin:12px 0 10px;}
-  .offer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 14px;
-    padding:12px 14px 12px 16px;border-radius:14px;background:#fff;border:1px solid rgba(0,151,202,.22);
-    box-shadow:0 12px 28px -18px rgba(0,151,202,.45);font-size:13px;}
-  .offer .ob{display:flex;gap:8px}
   @media(max-width:640px){
     .wrap{padding:16px 12px 60px}
     .tile .v{font-size:19px}
@@ -160,13 +169,25 @@
 
 <div id="gate" class="gate" style="display:none">
   <div class="brand"><span class="brandrow"><img src="/voyo-logo.png" alt="VOYO"/><span class="wm">mobile</span></span></div>
-  <button id="bioBtn" class="btn bio" type="button" style="display:none">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9.5v1M15 9.5v1M12 9.5v3.5h-1M9.5 15.5a3.5 3.5 0 0 0 5 0"/></svg>
-    Войти по Face ID</button>
-  <div class="or" id="bioOr" style="display:none">или по коду</div>
-  <input id="code" type="password" inputmode="numeric" placeholder="код" autocomplete="off"/>
-  <button id="enter" class="btn pri" type="button">Войти</button>
-  <div class="err" id="gateErr"></div>
+  <div id="loginForm">
+    <input id="code" type="password" inputmode="numeric" placeholder="Введите код" autocomplete="current-password"/>
+    <button id="enter" class="btn pri" type="button">Войти</button>
+    <button id="bioBtn" class="bio-btn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 11a3 3 0 0 0-3 3v1m6-1v3a3 3 0 0 1-6 0M6 11a6 6 0 0 1 12 0v3m-9 4a3 3 0 0 0 6 0M5 8a8 8 0 0 1 14 0M5 14v1a8 8 0 0 0 .35 2.34"/>
+      </svg>
+      Войти по Face ID / отпечатку
+    </button>
+    <div class="err" id="gateErr"></div>
+  </div>
+  <div id="bioOffer" class="bio-offer">
+    <h3>Входить по Face ID?</h3>
+    <p>Включите вход по Face ID / отпечатку — не нужно будет каждый раз вводить код на этом устройстве.</p>
+    <div class="bio-offer-actions">
+      <button type="button" id="bioSkip" class="bio-skip">Не сейчас</button>
+      <button type="button" id="bioEnable" class="bio-enable">Включить</button>
+    </div>
+  </div>
 </div>
 
 <div class="wrap" id="app" style="display:none">
@@ -185,10 +206,6 @@
     </div>
   </div>
   <div class="meta" id="meta"></div>
-  <div class="offer" id="bioOffer" style="display:none">
-    <span>Входить по Face ID или Touch ID на этом устройстве?</span>
-    <span class="ob"><button class="btn" id="bioNo" type="button">Не сейчас</button><button class="btn pri" id="bioOn" type="button">Включить</button></span>
-  </div>
 
   <section class="sec" data-id="sum">
     <div class="sec-h"><h2>Сводка</h2><span data-info="sum"></span><span class="sum" id="sumNote"></span><span class="chev">›</span></div>
@@ -654,35 +671,36 @@
       return false;
     }catch(e){ return false; }
   }
-  // Кнопку Face ID показываем, только если устройство умеет, на сервере есть
-  // ключи и ключ заведён именно на этом устройстве — иначе iOS покажет
-  // пугающее «нет сохранённых ключей».
+  // Как на дашборде /vsc: кнопка Face ID видна, если устройство умеет и на
+  // сервере уже заведён хоть один ключ. Первый раз — вход по коду, после него
+  // на этой же карточке предложение «Входить по Face ID?».
   async function bioEligible(){
-    if (!lsGet(LOCAL_KEY)) return false;
     var ok = await platformOk(); if (!ok) return false;
-    var has = await serverHasCreds(); if (!has){ lsSet(LOCAL_KEY, null); return false; }
-    return true;
+    return await serverHasCreds();
   }
   function enter(){
+    el("bioOffer").classList.remove("show");
     el("gate").style.display = "none"; el("app").style.display = "block"; load();
+  }
+  function showForm(msg){
+    el("loginForm").style.display = ""; el("bioOffer").classList.remove("show");
+    el("gateErr").textContent = msg || "";
   }
   function gate(msg){
     TOKEN = "";
     el("app").style.display = "none"; el("gate").style.display = "block";
-    el("gateErr").textContent = msg || "";
-    bioEligible().then(function(ok){
-      el("bioBtn").style.display = ok ? "flex" : "none";
-      el("bioOr").style.display = ok ? "block" : "none";
-      if (!ok) el("code").focus();
-    });
+    showForm(msg);
+    return bioEligible().then(function(ok){ el("bioBtn").classList.toggle("show", ok); if (!ok) el("code").focus(); return ok; });
   }
   el("bioBtn").addEventListener("click", async function(){
-    var t0 = Date.now();
-    el("gateErr").textContent = "";
-    if (await bioLogin()) return enter();
-    if (Date.now() - t0 < BIO_FAST_FAIL_MS){           // ключ удалили из системы — прячем кнопку
-      lsSet(LOCAL_KEY, null); el("bioBtn").style.display = "none"; el("bioOr").style.display = "none";
-      el("gateErr").textContent = "На этом устройстве Face ID не настроен — войдите по коду.";
+    var b = this, t0 = Date.now();
+    el("gateErr").textContent = ""; b.disabled = true;
+    var ok = await bioLogin();
+    b.disabled = false;
+    if (ok) return enter();
+    if (Date.now() - t0 < BIO_FAST_FAIL_MS) {
+      lsSet(LOCAL_KEY, null);
+      el("gateErr").textContent = "На этом устройстве Face ID для панели не включён — войдите по коду, после входа предложим включить.";
     }
   });
   async function codeLogin(){
@@ -695,25 +713,29 @@
     var d = r ? await r.json().catch(function(){ return {}; }) : {};
     if (!r || !r.ok || !d.token){ el("gateErr").textContent = d.message || "Не получилось войти."; return; }
     TOKEN = d.token; el("code").value = "";
+    // Предлагаем Face ID прямо на карточке входа, как дашборд: если устройство
+    // умеет, на нём ещё не включено и «Не сейчас» здесь не нажимали
+    if (!lsGet(LOCAL_KEY) && !lsGet(SKIP_KEY) && await platformOk()){
+      el("loginForm").style.display = "none"; el("bioOffer").classList.add("show");
+      return;
+    }
     enter();
-    // предложить Face ID, если устройство умеет, ключа тут ещё нет и не отказывались
-    if (!lsGet(LOCAL_KEY) && !lsGet(SKIP_KEY) && await platformOk()) el("bioOffer").style.display = "flex";
   }
   el("enter").addEventListener("click", codeLogin);
   el("code").addEventListener("keydown", function(e){ if (e.key === "Enter") codeLogin(); });
-  el("bioOn").addEventListener("click", async function(){
+  el("bioSkip").addEventListener("click", function(){ lsSet(SKIP_KEY, "1"); enter(); });
+  el("bioEnable").addEventListener("click", async function(){
+    el("bioEnable").disabled = el("bioSkip").disabled = true;
     var ok = await bioRegister();
-    el("bioOffer").innerHTML = ok ? "<span>Готово: в следующий раз вход по Face ID.</span>"
-                                  : "<span>Не получилось включить — попробуйте ещё раз при следующем входе.</span>";
-    setTimeout(function(){ el("bioOffer").style.display = "none"; }, 3500);
+    el("bioEnable").disabled = el("bioSkip").disabled = false;
+    if (!ok) alert("Не удалось подключить Face ID на этом устройстве (возможно, запрос отменён). Можно продолжить с кодом — Face ID подключите при следующем входе.");
+    enter();
   });
-  el("bioNo").addEventListener("click", function(){ lsSet(SKIP_KEY, "1"); el("bioOffer").style.display = "none"; });
 
-  // При открытии: если ключ на устройстве есть — сразу спрашиваем Face ID,
-  // форма с кодом остаётся запасным путём
+  // При открытии: если Face ID доступен — сразу спрашиваем его, код остаётся запасным путём
   (async function(){
-    gate();
-    if (await bioEligible()){
+    var ok = await gate();
+    if (ok){
       await new Promise(function(r){ setTimeout(r, 150); });
       if (await bioLogin()) enter();
     }
