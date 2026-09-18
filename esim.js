@@ -1735,6 +1735,7 @@ function mount(app, opts) {
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         promoCode: calc.promoCode, refBy: calc.refBy, balanceUsed: calc.balanceUsed,
         ads: tgChatId ? null : adsource.readAds(req, b),
+        vid: tgChatId ? null : (String(b.vid || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32) || null),   // для воронки сайта
         // Домен покупки: ссылка с QR должна вести туда же, иначе счётчик Метрики
         // окажется другим и покупка не свяжется с рекламным визитом (17.09.2026)
         base: baseFor(req),
@@ -2504,6 +2505,66 @@ function mount(app, opts) {
       /(^|\s)test\b/i.test(String(o.label || ""));
   }
 
+  // ═══ Воронка: сайт и телеграм-бот (с 18.09.2026) ═══
+  // Метрика считает то же, но её API у нас нет, поэтому шаги пишем сами:
+  // уникальные посетители (или чаты бота) по дням и шагам. Оплаты берём из
+  // заказов — это надёжнее любого счётчика в браузере.
+  //   сайт:  visit → pack (открыл пакет) → pay (нажал «Оплатить») → оплатил
+  //   бот:   start → country (выбрал страну) → pack (открыл пакет) → pay (получил ссылку) → оплатил
+  const FUNNEL_FILE = path.join(DIR, "funnel.json");
+  const FUNNEL_STEPS = { site: ["visit", "pack", "pay"], bot: ["start", "country", "pack", "pay"] };
+  let _funnel = null, _funnelDirty = false;
+  function funnelData() {
+    if (!_funnel) _funnel = readJson(FUNNEL_FILE, null) || { since: Date.now(), days: {} };
+    return _funnel;
+  }
+  function funnelHit(src, step, vid) {
+    if (!FUNNEL_STEPS[src] || FUNNEL_STEPS[src].indexOf(step) < 0) return false;
+    vid = String(vid || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
+    if (vid.length < 6) return false;
+    const f = funnelData(), day = mskDay(Date.now());
+    const d = f.days[day] || (f.days[day] = {});
+    const s = d[src] || (d[src] = {});
+    const list = s[step] || (s[step] = []);
+    if (list.indexOf(vid) < 0 && list.length < 50000) { list.push(vid); _funnelDirty = true; }
+    return true;
+  }
+  // пишем на диск не чаще раза в 15 секунд, старше полугода — выбрасываем
+  setInterval(() => {
+    if (!_funnelDirty) return;
+    _funnelDirty = false;
+    const f = funnelData(), cut = mskDay(Date.now() - 183 * 864e5);
+    Object.keys(f.days).forEach((k) => { if (k < cut) delete f.days[k]; });
+    writeJson(FUNNEL_FILE, f);
+  }, 15000);
+
+  app.post("/esim/api/ev", (req, res) => {
+    const b = req.body || {};
+    if (b.adm) return res.json({ success: true, skipped: true });   // свои заходы с админ-кодом не считаем
+    res.json({ success: funnelHit(String(b.src || "site"), String(b.step || ""), b.vid) });
+  });
+
+  function funnelFor(from, to, withTest) {
+    const f = funnelData();
+    const inR = (day) => (!from || day >= from) && (!to || day <= to);
+    const out = { since: mskDay(f.since), site: {}, bot: {} };
+    Object.keys(FUNNEL_STEPS).forEach((src) => {
+      FUNNEL_STEPS[src].forEach((step) => {
+        const u = new Set();
+        Object.keys(f.days).filter(inR).forEach((day) => {
+          ((f.days[day][src] || {})[step] || []).forEach((v) => u.add(v));
+        });
+        out[src][step] = u.size;
+      });
+    });
+    // оплатившие — из заказов, начиная с запуска счётчика (иначе доля выше 100%)
+    const paid = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && o.paidAt >= f.since &&
+      inR(mskDay(o.paidAt)) && (withTest || !isTestOrder(o)) && !o.parentOrderId);
+    out.site.paid = new Set(paid.filter((o) => !o.tgChatId).map((o) => o.vid || o.custKey || o.email || o.id)).size;
+    out.bot.paid = new Set(paid.filter((o) => o.tgChatId).map((o) => String(o.tgChatId))).size;
+    return out;
+  }
+
   // Закрытие суток (с 18.09.2026): в 00:00 МСК прошедший день фиксируется —
   // выручка, пакеты, себестоимость и каналы с курсом ЦБ этого дня. Без этого
   // себестоимость прошлых заказов пересчитывалась бы по сегодняшнему курсу и
@@ -2615,6 +2676,7 @@ function mount(app, opts) {
         success: true, from: from || null, to: to || null, usdRate: rate,
         testShown: withTest, testCount,
         closedThrough: Object.keys(daily).sort().slice(-1)[0] || null,
+        funnel: funnelFor(from, to, withTest),
         totals: {
           revenue, orders: paid.length, cost: Math.round(cost), acq, acqPct: spend.acqPct, adSpend,
           profit: Math.round(revenue - cost - acq - adSpend),

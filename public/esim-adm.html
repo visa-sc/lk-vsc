@@ -79,6 +79,19 @@
   .chart .tip b{color:#fff;font-size:12.5px}
   .chart .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mut2);font-size:13px;}
 
+  /* воронка */
+  .fun{display:flex;flex-direction:column;gap:9px;}
+  .fr{display:grid;grid-template-columns:170px 1fr 64px 70px;align-items:center;gap:12px;font-size:13px;}
+  .fr .l{color:#41506b;}
+  .fr .bar{height:10px;border-radius:6px;background:rgba(20,32,64,.05);overflow:hidden;}
+  .fr .bar i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#0b86b8,#18b6e6);
+    transition:width .6s var(--ease);}
+  .fr.last .bar i{background:linear-gradient(90deg,#1d8a55,#35b877);}
+  .fr .n{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;}
+  .fr .c{text-align:right;color:var(--mut2);font-size:12px;font-variant-numeric:tabular-nums;}
+  .fun .note{color:var(--mut2);font-size:12px;margin-top:4px;}
+  @media(max-width:640px){ .fr{grid-template-columns:110px 1fr 44px 52px;gap:8px;font-size:12.5px;} }
+
   /* таблицы */
   .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
   table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;}
@@ -187,6 +200,16 @@
     <div class="sec-b"><div class="chart" id="chart"><div class="tip" id="tip"></div></div></div>
   </section>
 
+  <section class="sec" data-id="fsite">
+    <div class="sec-h"><h2>Воронка сайта</h2><span data-info="fsite"></span><span class="sum" id="fsiteNote"></span><span class="chev">›</span></div>
+    <div class="sec-b"><div class="fun" id="fsite"></div></div>
+  </section>
+
+  <section class="sec" data-id="fbot">
+    <div class="sec-h"><h2>Воронка телеграм-бота</h2><span data-info="fbot"></span><span class="sum" id="fbotNote"></span><span class="chev">›</span></div>
+    <div class="sec-b"><div class="fun" id="fbot"></div></div>
+  </section>
+
   <section class="sec" data-id="ads">
     <div class="sec-h"><h2>Реклама и окупаемость</h2><span data-info="ads"></span><span class="sum" id="adsNote"></span><span class="chev">›</span></div>
     <div class="sec-b">
@@ -245,6 +268,8 @@
     sum: "<b>Итог</b> = выручка − себестоимость − комиссия банка − реклама.<br><b>Себестоимость</b> — закупка у поставщика по курсу ЦБ плюс 5% на конвертацию и 11% налога.<br>Свои проверочные покупки в цифры не входят, их можно включить галочкой «тестовые».",
     chart: "Выручка по дням оплаты, время московское. Наведите на график — покажет сумму и число пакетов за день.<br>Прошедшие сутки закрываются в полночь: себестоимость фиксируется по курсу того дня и дальше не меняется. Сегодняшний день — живые цифры.",
     ads: "Канал определяется по метке, с которой человек пришёл впервые (utm, yclid, gclid). Покупки в телеграм-боте — отдельный канал.<br><b>Маржа</b> — уже без себестоимости и комиссии банка. <b>Итог</b> — ещё и без расходов на рекламу. <b>ДРР</b> — доля рекламы в выручке.<br>Расход вносится со скриншотов кабинетов общей суммой за всё время.",
+    fsite: "Уникальные посетители витрины на всех доменах (voyomobile.ru, voyotravel.ru/esim и другие), по шагам: зашёл → открыл карточку пакета → нажал «Оплатить» → оплатил.<br>Справа — доля от предыдущего шага. Первые три шага считает сама витрина, оплаты берутся из заказов. Счётчик работает с 18 сентября, раньше данных нет.",
+    fbot: "Уникальные чаты бота по шагам: нажал «Старт» → выбрал страну → открыл пакет → получил ссылку на оплату → оплатил.<br>Справа — доля от предыдущего шага. Счётчик работает с 18 сентября; люди, которые начали диалог раньше, в первый шаг не попадают, пока снова не нажмут «Старт».",
     days: "Каждая строка — сутки по Москве. Маржа — выручка минус себестоимость, без комиссии банка и рекламы.",
     cust: "Люди хотя бы с одной оплатой. <b>Откуда</b> и <b>ключевое слово</b> — по первой покупке: с какой рекламы и по какому запросу человек пришёл впервые.<br>Директ передаёт слово сам. Google — только если в шаблоне ссылки кампании стоит {keyword}, иначе будет «не передано».<br><b>Код</b> — личный промокод клиента для друзей, <b>бонусы</b> — накопленный баланс.",
     promo: "Все промокоды витрины и бота. Выручка — сумма оплаченных заказов с этим кодом.",
@@ -334,6 +359,7 @@
       tile("Итог", RU(t.profit), "₽", "acc" + (t.profit < 0 ? " neg" : "")),
     ].join("");
     drawChart();
+    renderFunnels();
     renderChannels();
     renderDays();
     renderCustomers();
@@ -440,6 +466,43 @@
     hit.addEventListener("touchstart", show, { passive: true }); hit.addEventListener("touchmove", show, { passive: true });
   }
   var rsz; addEventListener("resize", function(){ clearTimeout(rsz); rsz = setTimeout(drawChart, 150); });
+
+  /* ── воронки ── */
+  function funnelHtml(steps){
+    var top = steps[0].n || 0;
+    return steps.map(function(st, i){
+      var w = top ? Math.max(st.n ? 2 : 0, Math.round(st.n / top * 100)) : 0;
+      var prev = i ? steps[i-1].n : 0;
+      var conv = i ? (prev ? pct(Math.round(st.n / prev * 1000) / 10) : "—") : "";
+      return '<div class="fr' + (i === steps.length-1 ? " last" : "") + '"><span class="l">' + st.label + '</span>' +
+        '<span class="bar"><i style="width:' + w + '%"></i></span><span class="n">' + RU(st.n) + '</span>' +
+        '<span class="c">' + conv + '</span></div>';
+    }).join("");
+  }
+  function renderFunnels(){
+    var f = DATA.funnel; if (!f) return;
+    var r = DATA._range, early = r.from && r.from < f.since;
+    var note = early ? '<div class="note">Счётчик работает с ' + dShort(f.since) + ', за дни до этого данных нет.</div>' : "";
+    var site = [
+      { label: "Зашли на сайт", n: f.site.visit || 0 },
+      { label: "Открыли пакет", n: f.site.pack || 0 },
+      { label: "Нажали «Оплатить»", n: f.site.pay || 0 },
+      { label: "Оплатили", n: f.site.paid || 0 },
+    ];
+    var bot = [
+      { label: "Нажали «Старт»", n: f.bot.start || 0 },
+      { label: "Выбрали страну", n: f.bot.country || 0 },
+      { label: "Открыли пакет", n: f.bot.pack || 0 },
+      { label: "Перешли к оплате", n: f.bot.pay || 0 },
+      { label: "Оплатили", n: f.bot.paid || 0 },
+    ];
+    el("fsite").innerHTML = funnelHtml(site) + note;
+    el("fbot").innerHTML = funnelHtml(bot) + note;
+    var sc = site[0].n ? pct(Math.round(site[3].n / site[0].n * 1000) / 10) : "—";
+    var bc = bot[0].n ? pct(Math.round(bot[4].n / bot[0].n * 1000) / 10) : "—";
+    el("fsiteNote").textContent = RU(site[0].n) + " посетителей · в оплату " + sc;
+    el("fbotNote").textContent = RU(bot[0].n) + " чатов · в оплату " + bc;
+  }
 
   /* ── реклама ── */
   function renderChannels(){

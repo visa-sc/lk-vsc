@@ -4,6 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
+<!-- Подтверждение прав на voyomobile.ru в Яндекс.Вебмастере и Google Search Console (18.09.2026, Петров) -->
+<meta name="yandex-verification" content="764d5e365a334d94" />
+<meta name="google-site-verification" content="nfPv8beEPWwJl1g2FTE67TMUEvuPJRYftxO_my4aS08" />
 <title>VOYO mobile — интернет в поездке</title>
 <!-- Витрина открывается и на voyotravel.ru/esim, и на esim.voyotravel.ru. Для поиска
      главная копия одна, иначе две одинаковые страницы делят позиции между собой. -->
@@ -589,6 +592,8 @@
      воронка «открыл пакет → нажал оплатить → оплатил» считалась одинаково
      в обеих системах. Цель в Метрике заводится по имени события. */
   function goal(name, params){
+    var step = { esim_pack_open: "pack", esim_pay_click: "pay" }[name];
+    if(step) track(step);
     try{ if(typeof ym==="function") (window.VOYO_YM||[109614823]).forEach(function(id){ ym(id,"reachGoal",name,params||{}); }); }catch(e){}
     try{ if(typeof gtag==="function") gtag("event",name,params||{}); }catch(e){}
   }
@@ -597,6 +602,22 @@
   var ADM = new URLSearchParams(location.search).get("adm") || "";
   var EMBED = new URLSearchParams(location.search).get("embed") === "1";
   if(EMBED) document.body.classList.add("embed");
+
+  // Своя воронка для панели показателей (dev.voyomobile.ru): зашёл → открыл
+  // пакет → нажал «Оплатить». Метрика считает то же, но её цифры до панели
+  // не доходят. Посетитель — случайный номер в браузере, без личных данных.
+  var VID = "";
+  try{ VID = localStorage.getItem("voyo_vid") || ""; }catch(e){}
+  if(!VID){
+    VID = "v" + Math.random().toString(36).slice(2, 12) + Date.now().toString(36).slice(-4);
+    try{ localStorage.setItem("voyo_vid", VID); }catch(e){}
+  }
+  function track(step){
+    if(ADM) return;                                   // свои заходы с админ-кодом не считаем
+    try{ fetch("/esim/api/ev", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ src: "site", step: step, vid: VID }) }); }catch(e){}
+  }
+  track("visit");
 
   // Откуда пришёл человек. Метки перехода (gclid, utm_*, yclid) запоминаем до
   // оплаты: первый заход и последний. Кладём и в localStorage, и в куку voyo_ads —
@@ -1288,7 +1309,7 @@
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS,
+          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS, vid:VID,
             useBalance:document.getElementById("mBonus").checked})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){

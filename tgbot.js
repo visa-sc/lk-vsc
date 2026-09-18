@@ -136,6 +136,10 @@ async function api(method, url, body, headers) {
   const r = await axios({ method, url: SELF + url, data: body, headers, timeout: 60000, validateStatus: () => true });
   return r.data;
 }
+// Шаг воронки для панели показателей: /start → страна → пакет → ссылка на оплату
+function ev(chatId, step) {
+  api("post", "/esim/api/ev", { src: "bot", step, vid: "tg" + chatId }).catch(() => {});
+}
 
 let _cat = { ts: 0, products: [], byCountry: {}, index: [] };
 const RU = (n) => Math.round(Number(n) || 0).toLocaleString("ru-RU");
@@ -299,6 +303,7 @@ async function welcomeGift(chatId) {
 }
 
 async function showCountry(chatId, iso, page, messageId) {
+  ev(chatId, "country");
   const list = await packsFor(iso);
   if (!list.length) {
     return send(chatId, "По этой стране пакетов сейчас нет. Напишите нам, подберём вручную: " + SUPPORT_TG);
@@ -331,6 +336,7 @@ async function showCountry(chatId, iso, page, messageId) {
 }
 
 async function showPack(chatId, productId, messageId) {
+  ev(chatId, "pack");
   const c = await catalog();
   const p = c.products.find((x) => x.id === productId);
   if (!p) return send(chatId, "Пакет больше не доступен, выберите другой.", { reply_markup: homeKeyboard() });
@@ -423,13 +429,18 @@ async function payLink(chatId) {
   const c = await catalog();
   const p = c.products.find((x) => x.id === st.productId);
   if (!p) return send(chatId, "Пакет больше не доступен, выберите другой.", { reply_markup: homeKeyboard() });
+  // Ровно те же поля, что у расчёта цены (priceFor): без ref и useBalance бот
+  // показывал цену со скидкой друга и бонусами, а в банк уходила полная сумма
+  // (исправлено 18.09.2026 — до этого ни одна скидка по приглашению и ни одно
+  // списание бонусов в боте не срабатывали).
   const j = await api("post", "/esim/api/pay/start", {
     productId: p.id, email: st.email || "", phone: st.phone || "",
-    promo: st.promo || "", tgChatId: String(chatId),
+    promo: st.promo || "", ref: st.ref || "", useBalance: !!st.useBalance, tgChatId: String(chatId),
   });
   if (!j || !j.success || !j.url) {
     return send(chatId, "Не получилось открыть оплату. Попробуйте ещё раз или напишите нам: " + SUPPORT_TG);
   }
+  ev(chatId, "pay");
   const price = await priceFor(chatId, p);
   return send(chatId,
     "<b>" + esc(p.title || "") + "</b>\n" + gbOf(p) + " · " + RU(p.days) + " дн.\n\n" +
@@ -632,6 +643,7 @@ async function onText(chatId, text) {
   const st = getState(chatId);
 
   if (/^\/start/i.test(t)) {
+    ev(chatId, "start");
     // Ссылка из рассылки: t.me/esimvoyo_bot?start=sms — скидка применится сама
     const payload = (t.split(/\s+/)[1] || "").toLowerCase();
     if (payload.indexOf("ref_") === 0) {
