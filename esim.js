@@ -2512,7 +2512,10 @@ function mount(app, opts) {
   //   сайт:  visit → pack (открыл пакет) → pay (нажал «Оплатить») → оплатил
   //   бот:   start → country (выбрал страну) → pack (открыл пакет) → pay (получил ссылку) → оплатил
   const FUNNEL_FILE = path.join(DIR, "funnel.json");
-  const FUNNEL_STEPS = { site: ["visit", "pack", "pay"], bot: ["start", "country", "pack", "pay"] };
+  const FUNNEL_STEPS = { site: ["visit", "country", "pack", "buy", "pay"], bot: ["start", "country", "pack", "pay"] };
+  // История до запуска счётчика, восстановленная по журналу nginx и следам
+  // бота (tools/funnelBackfill.py). Живой счётчик этот файл не трогает.
+  const FUNNEL_HISTORY_FILE = path.join(DIR, "funnel-history.json");
   let _funnel = null, _funnelDirty = false;
   function funnelData() {
     if (!_funnel) _funnel = readJson(FUNNEL_FILE, null) || { since: Date.now(), days: {} };
@@ -2546,19 +2549,21 @@ function mount(app, opts) {
 
   function funnelFor(from, to, withTest) {
     const f = funnelData();
+    const h = readJson(FUNNEL_HISTORY_FILE, null) || { days: {} };
+    const since = h.since ? Math.min(h.since, f.since) : f.since;
     const inR = (day) => (!from || day >= from) && (!to || day <= to);
-    const out = { since: mskDay(f.since), site: {}, bot: {} };
+    const out = { since: mskDay(since), liveSince: mskDay(f.since), restored: !!h.since, site: {}, bot: {} };
     Object.keys(FUNNEL_STEPS).forEach((src) => {
       FUNNEL_STEPS[src].forEach((step) => {
         const u = new Set();
-        Object.keys(f.days).filter(inR).forEach((day) => {
-          ((f.days[day][src] || {})[step] || []).forEach((v) => u.add(v));
-        });
+        [h.days, f.days].forEach((days) => Object.keys(days).filter(inR).forEach((day) => {
+          ((days[day][src] || {})[step] || []).forEach((v) => u.add(v));
+        }));
         out[src][step] = u.size;
       });
     });
-    // оплатившие — из заказов, начиная с запуска счётчика (иначе доля выше 100%)
-    const paid = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && o.paidAt >= f.since &&
+    // оплатившие — из заказов, начиная с первых данных воронки (иначе доля выше 100%)
+    const paid = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && o.paidAt >= since &&
       inR(mskDay(o.paidAt)) && (withTest || !isTestOrder(o)) && !o.parentOrderId);
     out.site.paid = new Set(paid.filter((o) => !o.tgChatId).map((o) => o.vid || o.custKey || o.email || o.id)).size;
     out.bot.paid = new Set(paid.filter((o) => o.tgChatId).map((o) => String(o.tgChatId))).size;

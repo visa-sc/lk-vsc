@@ -1018,6 +1018,7 @@
   }
 
   function choose(iso){
+    track("country");                   // воронка: открылся список пакетов страны (на /turkey, /china — сразу)
     current = iso;
     wantDays = 0; wantGb = 0;
     closeAll();
@@ -1297,6 +1298,7 @@
       document.getElementById("mPhone").focus();
       mBuy.textContent = PAY ? ("Оплатить "+RU(mP.priceRub)+" ₽") : "Оставить заявку";
       mBuy.dataset.step="2";
+      track("buy");                       // воронка: нажал «Купить», дальше ввод почты
       if(PAY) recalc();
       return;
     }

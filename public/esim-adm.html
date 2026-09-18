@@ -80,18 +80,30 @@
   .chart .tip b{color:#fff;font-size:12.5px}
   .chart .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mut2);font-size:13px;}
 
-  /* воронка */
-  .fun{display:flex;flex-direction:column;gap:9px;}
-  .fr{display:grid;grid-template-columns:170px 1fr 64px 70px;align-items:center;gap:12px;font-size:13px;}
-  .fr .l{color:#41506b;}
-  .fr .bar{height:10px;border-radius:6px;background:rgba(20,32,64,.05);overflow:hidden;}
-  .fr .bar i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#0b86b8,#18b6e6);
-    transition:width .6s var(--ease);}
-  .fr.last .bar i{background:linear-gradient(90deg,#1d8a55,#35b877);}
-  .fr .n{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;}
-  .fr .c{text-align:right;color:var(--mut2);font-size:12px;font-variant-numeric:tabular-nums;}
-  .fun .note{color:var(--mut2);font-size:12px;margin-top:4px;}
-  @media(max-width:640px){ .fr{grid-template-columns:110px 1fr 44px 52px;gap:8px;font-size:12.5px;} }
+  /* воронка — как «Этапы сделок» в админке ЛК: синяя плашка со сквозной
+     конверсией, ниже карточки шагов и процент перехода между ними */
+  .hero-conv{display:flex;align-items:center;gap:18px;padding:20px 22px;margin-bottom:14px;color:#fff;border-radius:20px;
+    background:linear-gradient(135deg,#3589bd 0%,#2b6f96 100%);box-shadow:0 16px 36px -18px rgba(53,137,189,.55);}
+  .hero-conv .num{font-size:52px;font-weight:700;line-height:1;letter-spacing:-.03em;flex-shrink:0;font-variant-numeric:tabular-nums;}
+  .hero-conv .text{font-size:13px;line-height:1.5;opacity:.95;}
+  .hero-conv .text b{font-weight:600}
+  .funnel{display:flex;align-items:stretch;gap:6px;}
+  .funnel-step{flex:1 1 0;min-width:0;padding:16px 10px;text-align:center;background:#f6f4fb;border:1px solid #ece7f2;border-radius:16px;
+    transition:transform .28s var(--ease),box-shadow .28s var(--ease);}
+  .funnel-step:hover{transform:translateY(-2px);box-shadow:var(--shadow-hi);}
+  .funnel-step.first{background:#f0f7fc;border-color:#d3e7f4;}
+  .funnel-step.last{background:#eef8f1;border-color:#cfe6d8;}
+  .funnel-num{font-size:34px;font-weight:700;color:#161d45;line-height:1;margin-bottom:7px;font-variant-numeric:tabular-nums;}
+  .funnel-label{font-size:12px;line-height:1.3;color:#4a5260;}
+  .funnel-conv{flex:0 0 auto;align-self:center;background:#fff;border:1px solid #ece7f2;border-radius:999px;padding:4px 10px;
+    font-size:12px;font-weight:600;color:#3589bd;white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .funnel-conv.none{color:var(--mut2)}
+  .fun-note{color:var(--mut2);font-size:12px;margin-top:12px;}
+  @media(max-width:720px){
+    .hero-conv{gap:14px;padding:18px}.hero-conv .num{font-size:42px}
+    .funnel{flex-direction:column;gap:8px}
+    .funnel-conv{margin:-2px auto;padding:4px 14px}
+  }
 
   /* таблицы */
   .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
@@ -106,6 +118,18 @@
   .neg{color:var(--red);font-weight:600}
   .dim{color:var(--mut2)}
   .mono{font-family:SFMono-Regular,Consolas,monospace;font-size:12px;letter-spacing:.02em;}
+
+  /* сортировка по столбцам */
+  th.sort{cursor:pointer;user-select:none;transition:color .15s ease}
+  th.sort:hover{color:var(--ink)}
+  th.sort.on{color:var(--accent)}
+  th .ar{display:inline-block;margin-left:4px;font-size:10px;opacity:.55;transform:translateY(-1px)}
+  th.sort.on .ar{opacity:1}
+  /* «Выйти» — как в дашборде */
+  .footer-logout{display:flex;justify-content:center;margin:28px 0 16px}
+  .logout-btn{display:inline-block;padding:8px 14px;font:inherit;font-size:13px;color:#9096a3;background:transparent;
+    border:1px solid #e3e0eb;border-radius:14px;cursor:pointer;transition:color .15s var(--ease),border-color .15s var(--ease)}
+  .logout-btn:hover{color:#3589bd;border-color:#c6dceb}
 
   /* расходы */
   .tool{display:flex;justify-content:flex-end;margin:12px 0 0;}
@@ -219,12 +243,12 @@
 
   <section class="sec" data-id="fsite">
     <div class="sec-h"><h2>Воронка сайта</h2><span data-info="fsite"></span><span class="sum" id="fsiteNote"></span><span class="chev">›</span></div>
-    <div class="sec-b"><div class="fun" id="fsite"></div></div>
+    <div class="sec-b" id="fsite"></div>
   </section>
 
   <section class="sec" data-id="fbot">
     <div class="sec-h"><h2>Воронка телеграм-бота</h2><span data-info="fbot"></span><span class="sum" id="fbotNote"></span><span class="chev">›</span></div>
-    <div class="sec-b"><div class="fun" id="fbot"></div></div>
+    <div class="sec-b" id="fbot"></div>
   </section>
 
   <section class="sec" data-id="ads">
@@ -260,6 +284,8 @@
     <div class="sec-h"><h2>Промокоды</h2><span data-info="promo"></span><span class="sum" id="promoNote"></span><span class="chev">›</span></div>
     <div class="sec-b"><div class="scroll"><table id="tPromo"></table></div></div>
   </section>
+
+  <div class="footer-logout"><button id="logoutBtn" type="button" class="logout-btn">Выйти</button></div>
 </div>
 
 <script>
@@ -285,8 +311,8 @@
     sum: "<b>Итог</b> = выручка − себестоимость − комиссия банка − реклама.<br><b>Себестоимость</b> — закупка у поставщика по курсу ЦБ плюс 5% на конвертацию и 11% налога.<br>Свои проверочные покупки в цифры не входят, их можно включить галочкой «тестовые».",
     chart: "Выручка по дням оплаты, время московское. Наведите на график — покажет сумму и число пакетов за день.<br>Прошедшие сутки закрываются в полночь: себестоимость фиксируется по курсу того дня и дальше не меняется. Сегодняшний день — живые цифры.",
     ads: "Канал определяется по метке, с которой человек пришёл впервые (utm, yclid, gclid). Покупки в телеграм-боте — отдельный канал.<br><b>Маржа</b> — уже без себестоимости и комиссии банка. <b>Итог</b> — ещё и без расходов на рекламу. <b>ДРР</b> — доля рекламы в выручке.<br>Расход вносится со скриншотов кабинетов общей суммой за всё время.",
-    fsite: "Уникальные посетители витрины на всех доменах (voyomobile.ru, voyotravel.ru/esim и другие), по шагам: зашёл → открыл карточку пакета → нажал «Оплатить» → оплатил.<br>Справа — доля от предыдущего шага. Первые три шага считает сама витрина, оплаты берутся из заказов. Счётчик работает с 18 сентября, раньше данных нет.",
-    fbot: "Уникальные чаты бота по шагам: нажал «Старт» → выбрал страну → открыл пакет → получил ссылку на оплату → оплатил.<br>Справа — доля от предыдущего шага. Счётчик работает с 18 сентября; люди, которые начали диалог раньше, в первый шаг не попадают, пока снова не нажмут «Старт».",
+    fsite: "Уникальные посетители витрины на всех доменах (voyomobile.ru, voyotravel.ru/esim и другие): зашёл → выбрал страну (открылся список пакетов; на страницах /turkey, /china он открыт сразу) → открыл карточку пакета → нажал «Купить» (появляется поле почты) → нажал «Оплатить» → оплатил. Между карточками — доля перехода с шага на шаг, в синей плашке — сквозная.<br>С 18 сентября шаги пишет сама витрина. <b>До 18 сентября</b> — восстановлено по журналу сервера: «Выбрали страну» там видно только у заходов на страницы стран и по ссылкам из статей, а «Открыли пакет» не записывался вовсе — за те дни в этих шагах только те, кто пошёл дальше. Оплаты всегда берутся из заказов.",
+    fbot: "Уникальные чаты бота: нажал «Старт» → выбрал страну → открыл пакет → получил ссылку на оплату → оплатил. Между карточками — доля перехода с шага на шаг.<br>С 18 сентября шаги пишет сам бот. <b>До 18 сентября</b> — восстановлено по следам в боте: день первого «Старта» и заказы известны точно, а по промежуточным шагам — только до какого шага человек дошёл в итоге.",
     days: "Каждая строка — сутки по Москве. Маржа — выручка минус себестоимость, без комиссии банка и рекламы.",
     cust: "Люди хотя бы с одной оплатой. <b>Откуда</b> и <b>ключевое слово</b> — по первой покупке: с какой рекламы и по какому запросу человек пришёл впервые.<br>Директ передаёт слово сам. Google — только если в шаблоне ссылки кампании стоит {keyword}, иначе будет «не передано».<br><b>Код</b> — личный промокод клиента для друзей, <b>бонусы</b> — накопленный баланс.",
     promo: "Все промокоды витрины и бота. Выручка — сумма оплаченных заказов с этим кодом.",
@@ -484,25 +510,63 @@
   }
   var rsz; addEventListener("resize", function(){ clearTimeout(rsz); rsz = setTimeout(drawChart, 150); });
 
-  /* ── воронки ── */
-  function funnelHtml(steps){
-    var top = steps[0].n || 0;
-    return steps.map(function(st, i){
-      var w = top ? Math.max(st.n ? 2 : 0, Math.round(st.n / top * 100)) : 0;
-      var prev = i ? steps[i-1].n : 0;
-      var conv = i ? (prev ? pct(Math.round(st.n / prev * 1000) / 10) : "—") : "";
-      return '<div class="fr' + (i === steps.length-1 ? " last" : "") + '"><span class="l">' + st.label + '</span>' +
-        '<span class="bar"><i style="width:' + w + '%"></i></span><span class="n">' + RU(st.n) + '</span>' +
-        '<span class="c">' + conv + '</span></div>';
+  /* ── сортировка таблиц по клику на заголовок ── */
+  // Первый клик по числовому столбцу — по убыванию, по текстовому — по алфавиту;
+  // повторный клик разворачивает. Пустые значения («—») всегда внизу.
+  var SORT = {}, RENDER = {};
+  function sortRows(id, list, get){
+    var st = SORT[id]; if (!st || !get[st.k]) return list;
+    var g = get[st.k];
+    return list.slice().sort(function(a, b){
+      var x = g(a), y = g(b), ex = x == null || x === "", ey = y == null || y === "";
+      if (ex && ey) return 0; if (ex) return 1; if (ey) return -1;
+      return st.dir * (typeof x === "string" ? x.localeCompare(y, "ru") : x - y);
+    });
+  }
+  function sortHead(id, cols){
+    var st = SORT[id];
+    return "<thead><tr>" + cols.map(function(c){
+      var on = st && c.k && st.k === c.k;
+      var cls = (c.r ? "r" : "") + (c.k ? " sort" : "") + (on ? " on" : "");
+      return '<th class="' + cls + '"' + (c.k ? ' data-t="' + id + '" data-k="' + c.k + '" data-num="' + (c.num ? 1 : 0) + '"' : "") + ">" +
+        c.t + (c.k ? '<span class="ar">' + (on ? (st.dir > 0 ? "↑" : "↓") : "↕") + "</span>" : "") + "</th>";
+    }).join("") + "</tr></thead>";
+  }
+  document.addEventListener("click", function(e){
+    var th = e.target.closest && e.target.closest("th.sort"); if (!th) return;
+    var id = th.getAttribute("data-t"), k = th.getAttribute("data-k"), num = th.getAttribute("data-num") === "1";
+    var st = SORT[id];
+    SORT[id] = (st && st.k === k) ? { k: k, dir: -st.dir } : { k: k, dir: num ? -1 : 1 };
+    if (RENDER[id]) RENDER[id]();
+  });
+
+  /* ── воронки: плашка сквозной конверсии + карточки шагов ── */
+  function conv(n, of){ return of ? Math.round(n / of * 100) : null; }
+  function funnelHtml(steps, who){
+    var first = steps[0], last = steps[steps.length-1], total = conv(last.n, first.n);
+    var hero = '<div class="hero-conv"><div class="num">' + (total == null ? "—" : total + "%") + '</div>' +
+      '<div class="text"><b>Сквозная конверсия</b><br>из «' + first.label + '» в «' + last.label + '»<br>' +
+      RU(last.n) + " из " + RU(first.n) + " " + who + " прошли весь путь</div></div>";
+    var row = steps.map(function(st, i){
+      var cls = i === 0 ? " first" : (i === steps.length-1 ? " last" : "");
+      var cell = '<div class="funnel-step' + cls + '"><div class="funnel-num">' + RU(st.n) + '</div><div class="funnel-label">' + st.label + "</div></div>";
+      if (i === steps.length-1) return cell;
+      var c = conv(steps[i+1].n, st.n);
+      return cell + '<div class="funnel-conv' + (c == null ? " none" : "") + '">' + (c == null ? "—" : c + "%") + "</div>";
     }).join("");
+    return hero + '<div class="funnel">' + row + "</div>";
   }
   function renderFunnels(){
     var f = DATA.funnel; if (!f) return;
-    var r = DATA._range, early = r.from && r.from < f.since;
-    var note = early ? '<div class="note">Счётчик работает с ' + dShort(f.since) + ', за дни до этого данных нет.</div>' : "";
+    var r = DATA._range, old = !r.from || r.from < f.liveSince;
+    var note = !old ? "" : (f.restored
+      ? '<div class="fun-note">С ' + dShort(f.since) + " по " + dShort(f.liveSince) + " — восстановлено по журналу сервера, дальше — живой счётчик.</div>"
+      : '<div class="fun-note">Счётчик работает с ' + dShort(f.since) + ", за дни до этого данных нет.</div>");
     var site = [
       { label: "Зашли на сайт", n: f.site.visit || 0 },
+      { label: "Выбрали страну", n: f.site.country || 0 },
       { label: "Открыли пакет", n: f.site.pack || 0 },
+      { label: "Нажали «Купить»", n: f.site.buy || 0 },
       { label: "Нажали «Оплатить»", n: f.site.pay || 0 },
       { label: "Оплатили", n: f.site.paid || 0 },
     ];
@@ -513,22 +577,30 @@
       { label: "Перешли к оплате", n: f.bot.pay || 0 },
       { label: "Оплатили", n: f.bot.paid || 0 },
     ];
-    el("fsite").innerHTML = funnelHtml(site) + note;
-    el("fbot").innerHTML = funnelHtml(bot) + note;
-    var sc = site[0].n ? pct(Math.round(site[3].n / site[0].n * 1000) / 10) : "—";
-    var bc = bot[0].n ? pct(Math.round(bot[4].n / bot[0].n * 1000) / 10) : "—";
-    el("fsiteNote").textContent = RU(site[0].n) + " посетителей · в оплату " + sc;
-    el("fbotNote").textContent = RU(bot[0].n) + " чатов · в оплату " + bc;
+    el("fsite").innerHTML = funnelHtml(site, "посетителей") + note;
+    el("fbot").innerHTML = funnelHtml(bot, "чатов") + note;
+    var sc = conv(site[5].n, site[0].n), bc = conv(bot[4].n, bot[0].n);
+    el("fsiteNote").textContent = RU(site[0].n) + " посетителей · в оплату " + (sc == null ? "—" : sc + "%");
+    el("fbotNote").textContent = RU(bot[0].n) + " чатов · в оплату " + (bc == null ? "—" : bc + "%");
   }
 
   /* ── реклама ── */
+  RENDER.tChan = function(){ renderChannels(); };
   function renderChannels(){
     var list = DATA.channels, s = { orders:0, revenue:0, margin:0, spend:0, profit:0 };
     list.forEach(function(c){ s.orders += c.orders; s.revenue += c.revenue; s.margin += c.margin; s.spend += c.spend; s.profit += c.profit; });
     el("adsNote").textContent = s.spend ? ("итог " + RU(s.profit) + " ₽") : "";
     var R = [0,1,1,1,1,1,1,1];
-    el("tChan").innerHTML = head(["Канал","Пакетов","Выручка","Маржа","Расход","ДРР","Заказ стоит","Итог"], R) +
-      "<tbody>" + list.map(function(c){
+    var rows = sortRows("tChan", list, {
+      name: function(c){ return c.name; }, orders: function(c){ return c.orders; }, revenue: function(c){ return c.revenue; },
+      margin: function(c){ return c.margin; }, spend: function(c){ return c.spend || null; },
+      drr: function(c){ return c.spend && c.revenue ? c.drr : null; }, cpo: function(c){ return c.spend && c.orders ? c.cpo : null; },
+      profit: function(c){ return c.profit; } });
+    el("tChan").innerHTML = sortHead("tChan", [
+        { t: "Канал", k: "name" }, { t: "Пакетов", k: "orders", r: 1, num: 1 }, { t: "Выручка", k: "revenue", r: 1, num: 1 },
+        { t: "Маржа", k: "margin", r: 1, num: 1 }, { t: "Расход", k: "spend", r: 1, num: 1 }, { t: "ДРР", k: "drr", r: 1, num: 1 },
+        { t: "Заказ стоит", k: "cpo", r: 1, num: 1 }, { t: "Итог", k: "profit", r: 1, num: 1 } ]) +
+      "<tbody>" + rows.map(function(c){
         return row([esc(c.name), RU(c.orders), RU(c.revenue) + " ₽", RU(c.margin) + " ₽",
           c.spend ? RU(c.spend) + " ₽" : DASH,
           c.spend && c.revenue ? pct(c.drr) : DASH,
@@ -581,11 +653,19 @@
     return ({ yandex:"Яндекс Директ", google:"Google Ads", telegram_bot:"Телеграм-бот", direct:"Прямой заход",
       vk:"ВКонтакте", blogger:"Блогеры", email:"Рассылка" })[k] || k;
   }
+  RENDER.tCust = function(){ renderCustomers(); };
   function renderCustomers(){
     el("custNote").textContent = DATA.customers.length + " с оплатой";
     var R = [0,0,0,1,1,1,0,1];
-    el("tCust").innerHTML = head(["Клиент","Откуда","Ключевое слово","Покупок","Сумма","Последняя","Код","Бонусы"], R) +
-      "<tbody>" + DATA.customers.map(function(c){
+    var rows = sortRows("tCust", DATA.customers, {
+      who: function(c){ return c.key; }, ch: function(c){ return chanName(c.channel); }, term: function(c){ return c.term || null; },
+      orders: function(c){ return c.orders; }, revenue: function(c){ return c.revenue; }, last: function(c){ return c.last; },
+      code: function(c){ return c.refCode || null; }, bonus: function(c){ return c.balanceRub || null; } });
+    el("tCust").innerHTML = sortHead("tCust", [
+        { t: "Клиент", k: "who" }, { t: "Откуда", k: "ch" }, { t: "Ключевое слово", k: "term" },
+        { t: "Покупок", k: "orders", r: 1, num: 1 }, { t: "Сумма", k: "revenue", r: 1, num: 1 },
+        { t: "Последняя", k: "last", r: 1, num: 1 }, { t: "Код", k: "code" }, { t: "Бонусы", k: "bonus", r: 1, num: 1 } ]) +
+      "<tbody>" + rows.map(function(c){
         var who = c.key.indexOf("tg:") === 0 ? "телеграм · " + c.key.slice(3) : c.key;
         var ad = c.channel === "yandex" || c.channel === "google";
         var term = c.term ? esc(c.term) : (ad ? '<span class="dim">не передано</span>' : DASH);
@@ -594,12 +674,18 @@
           c.balanceRub ? RU(c.balanceRub) + " ₽" : DASH], R);
       }).join("") + "</tbody>";
   }
+  RENDER.tPromo = function(){ renderPromos(); };
   function renderPromos(){
     var live = DATA.promos.filter(function(p){ return p.active !== false; }).length;
     el("promoNote").textContent = live + " действуют";
     var R = [0,0,1,0,1,0];
-    el("tPromo").innerHTML = head(["Код","Скидка","Применён","Срок","Выручка","Статус"], R) +
-      "<tbody>" + DATA.promos.map(function(p){
+    var rows = sortRows("tPromo", DATA.promos, {
+      code: function(p){ return p.code; }, uses: function(p){ return p.uses || 0; }, revenue: function(p){ return p.revenue || 0; },
+      st: function(p){ return p.active === false ? "выключен" : "работает"; } });
+    el("tPromo").innerHTML = sortHead("tPromo", [
+        { t: "Код", k: "code" }, { t: "Скидка" }, { t: "Применён", k: "uses", r: 1, num: 1 }, { t: "Срок" },
+        { t: "Выручка", k: "revenue", r: 1, num: 1 }, { t: "Статус", k: "st" } ]) +
+      "<tbody>" + rows.map(function(p){
         var what = p.cost ? "по себестоимости" : (p.pct ? p.pct + "%" : (p.rub ? RU(p.rub) + " ₽" : "—"));
         var term = (p.from || p.to) ? ((p.from ? dShort(p.from) : "…") + " — " + (p.to ? dShort(p.to) : "…")) : '<span class="dim">без срока</span>';
         var used = RU(p.uses || 0) + (p.maxUses ? '<span class="dim"> из ' + RU(p.maxUses) + "</span>" : "");
@@ -730,6 +816,12 @@
     el("bioEnable").disabled = el("bioSkip").disabled = false;
     if (!ok) alert("Не удалось подключить Face ID на этом устройстве (возможно, запрос отменён). Можно продолжить с кодом — Face ID подключите при следующем входе.");
     enter();
+  });
+
+  el("logoutBtn").addEventListener("click", async function(){
+    try{ await fetch("/esim/api/adm/logout", { method: "POST", headers: { Authorization: "Bearer " + TOKEN } }); }catch(e){}
+    gate();
+    try{ window.scrollTo(0, 0); }catch(e){}
   });
 
   // При открытии: если Face ID доступен — сразу спрашиваем его, код остаётся запасным путём

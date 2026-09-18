@@ -16742,6 +16742,12 @@ app.post("/esim/api/adm/login", (req, res) => {
   return res.json({ success: true, token: createEsimPanelSession() });
 });
 
+app.post("/esim/api/adm/logout", (req, res) => {
+  const t = esimPanelBearer(req);
+  if (t && esimPanelSessions.delete(t)) saveEsimPanelSessions();
+  res.json({ success: true });
+});
+
 app.get("/esim/api/adm/webauthn/has-credentials", (req, res) => res.json({ hasCredentials: esimPanelPasskeys.length > 0 }));
 
 app.post("/esim/api/adm/webauthn/auth-options", async (req, res) => {
