@@ -938,15 +938,9 @@
       var avail = v===0 || list.some(function(p){ return oFitGb(p,v) && oFitDays(p,oDays) && oFitType(p,oType); });
       chip(fg, v===0?"Не важно":(v===-1?"Безлимит":v+" ГБ"), oGb===v, avail, function(){ oGb=v; renderPacks(true); });
     });
-    var hasDaily = list.some(function(p){ return p.daily; }), hasPeriod = list.some(function(p){ return !p.daily; });
-    var row = document.getElementById("fTypeRow");
-    row.style.display = (hasDaily && hasPeriod) ? "" : "none";
-    if(!(hasDaily && hasPeriod)) oType = 0;
-    [[0,"Не важно"],[1,"ГБ на весь срок"],[2,"ГБ в день"]].forEach(function(o){
-      var v = o[0];
-      var avail = v===0 || list.some(function(p){ return oFitType(p,v) && oFitDays(p,oDays) && oFitGb(p,oGb); });
-      chip(ft, o[1], oType===v, avail, function(){ oType=v; renderPacks(true); });
-    });
+    // «Тип тарифа» в старом меню не показываем — вариант как до его появления (Андрей, 18.09.2026)
+    document.getElementById("fTypeRow").style.display = "none";
+    oType = 0;
   }
   function chip(host, label, on, avail, click){
     var b = el('<button class="fchip'+(on?" on":"")+(avail?"":" dis")+'" type="button">'+label+'</button>');
