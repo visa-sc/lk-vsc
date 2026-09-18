@@ -204,7 +204,7 @@ async function packsFor(iso) {
 // покрытие для этой страницы. Та же функция стоит на витрине (public/esim.html).
 function dropDominated(list, wide) {
   // полностью одинаковые пакеты — один, самый дешёвый; правило как на сайте (esim.html, 18.09.2026)
-  const key = (p) => [p.dataGb || 0, p.days || 0, p.daily ? 1 : 0, p.unlimited ? 1 : 0, p.fiveG ? 1 : 0, p.note || ""].join("|");
+  const key = (p) => [p.dataGb || 0, p.days || 0, p.daily ? 1 : 0, p.unlimited ? 1 : 0, p.fiveG ? 1 : 0, p.hotspot === false ? 1 : 0, p.note || ""].join("|");
   const best = {};
   list.forEach((p) => {
     const q = best[key(p)];

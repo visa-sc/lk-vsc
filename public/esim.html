@@ -775,18 +775,18 @@
   }
   // Полностью одинаковые пакеты показываем один раз — самый дешёвый (Андрей,
   // 18.09.2026). Одинаковые = те же ГБ, те же дни, тот же формат (на весь срок /
-  // в день / безлимит), та же сеть 5G или 4G и та же пометка («без VPN» и т. п.).
+  // в день / безлимит), та же сеть 5G или 4G, та же раздача Wi-Fi и та же пометка («без VPN» и т. п.).
   // Хоть одно отличие — это другой пакет, он остаётся. При равной цене — пакет на
   // меньше стран (на «Европе» — на больше). Та же функция стоит в tgbot.js.
   function dropDominated(list, wide){
     var best = {};
     list.forEach(function(p){
-      var k = [p.dataGb||0, p.days||0, p.daily?1:0, p.unlimited?1:0, p.fiveG?1:0, p.note||""].join("|");
+      var k = [p.dataGb||0, p.days||0, p.daily?1:0, p.unlimited?1:0, p.fiveG?1:0, p.hotspot===false?1:0, p.note||""].join("|");
       var q = best[k];
       if(!q || p.priceRub < q.priceRub || (p.priceRub === q.priceRub &&
          (p.countries.length !== q.countries.length ? (wide ? p.countries.length > q.countries.length : p.countries.length < q.countries.length) : String(p.id) < String(q.id)))) best[k] = p;
     });
-    return list.filter(function(p){ return best[[p.dataGb||0, p.days||0, p.daily?1:0, p.unlimited?1:0, p.fiveG?1:0, p.note||""].join("|")] === p; });
+    return list.filter(function(p){ return best[[p.dataGb||0, p.days||0, p.daily?1:0, p.unlimited?1:0, p.fiveG?1:0, p.hotspot===false?1:0, p.note||""].join("|")] === p; });
   }
 
   /* ── сортировка списка: выбор клиента, запоминаем в браузере ── */
