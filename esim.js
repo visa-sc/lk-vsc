@@ -84,8 +84,11 @@ const MIN_PAY_RUB = Number(process.env.ESIM_MIN_PAY || 100);
 // пакета, но не ниже того же пола по себестоимости, что и у промокодов.
 const EXTRA_PCT = Number(process.env.ESIM_EXTRA_PCT || 10);
 const MAX_QTY = Number(process.env.ESIM_MAX_QTY || 5);
+// Скидка на вторую и следующие eSIM действует и на самых дешёвых пакетах (59 ₽ →
+// 53 ₽): порог в 100 ₽ здесь не нужен, он для промокодов (Андрей, 18.09.2026).
+// Остаётся только пол по себестоимости — в минус не продаём.
 function extraUnitPrice(listPrice, costRub) {
-  const floorRub = Math.min(listPrice, Math.max(MIN_PAY_RUB, Math.ceil((Number(costRub) || 0) * DISCOUNT_FLOOR_K)));
+  const floorRub = Math.min(listPrice, Math.max(1, Math.ceil((Number(costRub) || 0) * DISCOUNT_FLOOR_K)));
   return Math.max(floorRub, Math.round(listPrice * (1 - EXTRA_PCT / 100)));
 }
 // Цена второй и следующих eSIM в заказе. Правило Андрея 18.09.2026:
