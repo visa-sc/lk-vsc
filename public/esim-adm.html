@@ -156,9 +156,11 @@
   .pop.show{display:block}
   .pop b{color:#fff}
 
-  .gate{max-width:340px;margin:16vh auto 0;background:#fff;border:1px solid var(--border);border-radius:22px;
+  /* Карточка входа — строго по центру окна по обеим осям */
+  .gate{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(340px,calc(100% - 32px));margin:0;
+    background:#fff;border:1px solid var(--border);border-radius:22px;
     padding:34px 24px 26px;box-shadow:var(--shadow-hi);text-align:center;}
-  .gate .brand{align-items:center;margin-bottom:88px}
+  .gate .brand{align-items:center;margin-bottom:30px}
   .gate input{width:100%;font:inherit;font-size:17px;text-align:center;letter-spacing:.3em;border:1px solid rgba(20,32,64,.10);
     border-radius:13px;padding:13px;margin-bottom:10px;}
   .gate input::placeholder{letter-spacing:0;color:#a3abb9;font-size:15px}
