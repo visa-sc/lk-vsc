@@ -480,7 +480,6 @@
     <div class="cfg" id="cfg" style="display:none;">
       <div class="frow"><div class="fl">Сколько дней</div><div class="fchips" id="fDays"></div></div>
       <div class="frow"><div class="fl">Сколько ГБ</div><div class="fchips" id="fGb"></div></div>
-      <div class="frow" id="fTypeRow"><div class="fl">Тип тарифа</div><div class="fchips" id="fType"></div></div>
     </div>
     <div class="sortbar" id="sortBar">
       <button class="sortbtn" id="sortBtn" type="button" aria-haspopup="true" aria-expanded="false">
@@ -778,7 +777,7 @@
   // сверх запрошенного (или сверх 20 ГБ, когда фильтр не задан) в зачёт не идут —
   // иначе годовые «100 ГБ» всегда оказывались бы «самыми выгодными».
   function useGb(p){
-    var cap = wantGb > 0 ? wantGb * 1.5 : 20;
+    var cap = (selGb && !selGb.unl && !selGb.daily) ? selGb.hi * 1.5 : 20;
     var g = p.unlimited ? cap : totGb(p);
     return Math.max(0.5, Math.min(g, cap));
   }
@@ -855,52 +854,89 @@
     return card;
   }
 
-  /* ── конструктор «дни × ГБ» ── */
-  var wantDays = 0, wantGb = 0, wantType = 0;     // тип: 0 — не важно, 1 — на весь срок, 2 — суточный
-  var DAY_OPTS = [0,3,5,7,10,14,21,30,60,90];
-  var GB_OPTS = [0,1,3,5,10,20,30,50,100,-1];
-  function fitDays(p,v){ return !v || (p.days||0) >= v; }
-  /* Фильтр по гигабайтам сравнивает с тем, что написано на карточке: у обычных
-     пакетов это объём пакета, у суточных — объём в сутки. Иначе на «5 ГБ»
-     подмешивались «0,5 ГБ в день на 10 дней» — формально те же 5 ГБ, но
-     выглядит как мусор в выдаче (правка 16.09.2026). */
-  function shownGb(p){ return p.dataGb || 0; }
-  function fitGb(p,v){ if(!v) return true; if(v===-1) return !!p.unlimited; return p.unlimited || shownGb(p) >= v; }
-  // Суточный тариф («0,5 ГБ в день») и пакет на весь срок («10 ГБ на 30 дней») —
-  // разные вещи; третий фильтр разводит их, по умолчанию показываем всё (18.09.2026)
-  function fitType(p,v){ return !v || (v===2 ? !!p.daily : !p.daily); }
-  function matches(p){ return fitDays(p,wantDays) && fitGb(p,wantGb) && fitType(p,wantType); }
+  /* ── фильтры, как у Trip.com (18.09.2026) ──
+     Срок: по дням с 1 до 14, дальше отрезками 15–21 и 22–30, плюс 60 и 90.
+     Если ровно такого срока у пакетов нет, показываем ближайший больший: на
+     «4 дня» — суточный на 5 дней и пакет на 7 дней. Суточные и пакеты на весь
+     срок подбираются отдельно, у каждых свой ближайший срок.
+     Объём: «Ежедневно 0,5 ГБ» — суточные, «Всего 3 ГБ» — на весь срок; кнопки
+     собираются из того, что реально есть у страны. */
+  var selDays = null, selGb = null;
+  function dayWord(n){ var m=n%100, k=n%10; if(m>10&&m<20) return "дней"; if(k===1) return "день"; if(k>1&&k<5) return "дня"; return "дней"; }
+  var DAY_SEL = (function(){
+    var o = [];
+    for(var d=1; d<=14; d++) o.push({lo:d, hi:d, t:d+" "+dayWord(d)});
+    o.push({lo:15, hi:21, t:"15–21 день"}, {lo:22, hi:30, t:"22–30 дней"}, {lo:60, hi:60, t:"60 дней"}, {lo:90, hi:90, t:"90 дней"});
+    return o;
+  })();
+  var DAY_LIST = [];                       // пакеты страны — от них считаем «ближайший больший срок»
+  // группы подбираются отдельно: суточные, безлимит и пакеты на весь срок
+  function kindOf(p){ return p.unlimited ? "u" : (p.daily ? "d" : "f"); }
+  function fitDays(p, sel){
+    if(!sel) return true;
+    var d = p.days || 0, kind = kindOf(p);
+    if(d >= sel.lo && d <= sel.hi) return true;
+    var same = DAY_LIST.filter(function(q){ return kindOf(q) === kind; });
+    if(same.some(function(q){ return q.days >= sel.lo && q.days <= sel.hi; })) return false;
+    var next = null;
+    same.forEach(function(q){ if(q.days > sel.hi && (next === null || q.days < next)) next = q.days; });
+    return next !== null && d === next;
+  }
+  function fitGb(p, sel){
+    if(!sel) return true;
+    if(sel.unl) return !!p.unlimited;
+    var g = p.dataGb || 0;
+    return !p.unlimited && !!p.daily === sel.daily && g >= sel.lo - 0.05 && g <= sel.hi + 0.05;
+  }
+  // объёмы на весь срок собираем в ступени, иначе кнопок выходит два десятка
+  var GB_STEPS = [0.5, 1, 2, 3, 5, 7, 10, 15, 20, 30, 50, 100];
+  function sameSel(a, b){ return !!a && !!b && JSON.stringify(a) === JSON.stringify(b); }
+  function matches(p){ return fitDays(p, selDays) && fitGb(p, selGb); }
+  function chip(host, label, on, avail, click){
+    var b = el('<button class="fchip'+(on?" on":"")+(avail?"":" dis")+'" type="button">'+label+'</button>');
+    b.addEventListener("click", click);
+    host.appendChild(b);
+  }
   function renderCfg(list){
     var cfg=document.getElementById("cfg");
     if(!list.length){ cfg.style.display="none"; return; }
     cfg.style.display="block";
+    DAY_LIST = list;
     var fd=document.getElementById("fDays"), fg=document.getElementById("fGb");
     fd.innerHTML=""; fg.innerHTML="";
-    DAY_OPTS.forEach(function(v){
-      var avail = v===0 || list.some(function(p){ return fitDays(p,v) && fitGb(p,wantGb) && fitType(p,wantType); });
-      var b = el('<button class="fchip'+(wantDays===v?" on":"")+(avail?"":" dis")+'" type="button">'+(v===0?"Не важно":v+" дн.")+'</button>');
-      b.addEventListener("click",function(){ wantDays=v; renderPacks(true); });
-      fd.appendChild(b);
+    chip(fd, "Любой срок", !selDays, true, function(){ selDays=null; renderPacks(true); });
+    DAY_SEL.forEach(function(o){
+      var avail = list.some(function(p){ return fitDays(p,o) && fitGb(p,selGb); });
+      chip(fd, o.t, sameSel(selDays,o), avail, function(){ selDays=o; renderPacks(true); });
     });
-    GB_OPTS.forEach(function(v){
-      var avail = v===0 || list.some(function(p){ return fitGb(p,v) && fitDays(p,wantDays) && fitType(p,wantType); });
-      var b = el('<button class="fchip'+(wantGb===v?" on":"")+(avail?"":" dis")+'" type="button">'+(v===0?"Не важно":(v===-1?"Безлимит":v+" ГБ"))+'</button>');
-      b.addEventListener("click",function(){ wantGb=v; renderPacks(true); });
-      fg.appendChild(b);
+    // объёмы — из того, что есть у страны: сначала суточные, потом «всего», в конце безлимит
+    var daily = {}, total = {}, unl = false;
+    list.forEach(function(p){
+      if(p.unlimited){ unl = true; return; }
+      var g = Math.round((p.dataGb||0)*10)/10;
+      if(p.daily) daily[g] = 1; else total[g] = 1;
     });
-    // строку «Тип тарифа» показываем, только если у страны есть и те и другие
-    var hasDaily = list.some(function(p){ return p.daily; }), hasPeriod = list.some(function(p){ return !p.daily; });
-    var row = document.getElementById("fTypeRow"), ft = document.getElementById("fType");
-    row.style.display = (hasDaily && hasPeriod) ? "" : "none";
-    if(!(hasDaily && hasPeriod)) wantType = 0;
-    ft.innerHTML = "";
-    // из подписи сразу ясно, на что считаются гигабайты: на весь срок или на сутки
-    [[0,"Не важно"],[1,"ГБ на весь срок"],[2,"ГБ в день"]].forEach(function(o){
-      var v = o[0];
-      var avail = v===0 || list.some(function(p){ return fitType(p,v) && fitDays(p,wantDays) && fitGb(p,wantGb); });
-      var b = el('<button class="fchip'+(wantType===v?" on":"")+(avail?"":" dis")+'" type="button">'+o[1]+'</button>');
-      b.addEventListener("click",function(){ wantType=v; renderPacks(true); });
-      ft.appendChild(b);
+    var opts = [];
+    Object.keys(daily).map(Number).sort(function(a,b){ return a-b; }).forEach(function(g){
+      opts.push({key:{daily:true, lo:g, hi:g}, t:"Ежедневно "+GBN(g)+" ГБ"});
+    });
+    var tv = Object.keys(total).map(Number).sort(function(a,b){ return a-b; });
+    GB_STEPS.forEach(function(st, i){
+      var next = GB_STEPS[i+1] || Infinity;
+      var inb = tv.filter(function(g){ return g >= st - 0.05 && g < next - 0.05; });
+      if(!inb.length) return;
+      var lo = inb[0], hi = inb[inb.length-1];
+      opts.push({key:{daily:false, lo:lo, hi:hi}, t:"Всего "+(lo===hi ? GBN(lo) : GBN(lo)+"–"+GBN(hi))+" ГБ"});
+    });
+    // совсем мелкие (меньше 0,5 ГБ) — к первой ступени
+    var tiny = tv.filter(function(g){ return g < 0.45; });
+    if(tiny.length) opts.splice(Object.keys(daily).length, 0, {key:{daily:false, lo:tiny[0], hi:tiny[tiny.length-1]}, t:"Всего до 0,5 ГБ"});
+    if(unl) opts.push({key:{unl:true}, t:"Безлимит"});
+    chip(fg, "Любой объём", !selGb, true, function(){ selGb=null; renderPacks(true); });
+    opts.forEach(function(o){
+      var key = o.key;
+      var avail = list.some(function(p){ return fitGb(p,key) && fitDays(p,selDays); });
+      chip(fg, o.t, sameSel(selGb,key), avail, function(){ selGb=key; renderPacks(true); });
     });
   }
 
@@ -910,7 +946,7 @@
     var list = sortList(all.filter(matches));
     sect.style.display="block";
     document.getElementById("sectTitle").innerHTML = flag(current)+" "+esc(cname(current));
-    document.getElementById("sectSub").textContent = all.length ? ((wantDays||wantGb||wantType)?"Срок и объём пакета покрывают выбранное.":"Пакеты с мгновенной выдачей QR-кода. Цена — окончательная, в рублях.") : "";
+    document.getElementById("sectSub").textContent = all.length ? ((selDays||selGb)?"Срок и объём пакета под выбранное.":"Пакеты с мгновенной выдачей QR-кода. Цена — окончательная, в рублях.") : "";
     renderCfg(all);
     document.getElementById("sortBar").classList.toggle("on", list.length > 1);
     renderSort();
@@ -1049,7 +1085,7 @@
   function choose(iso){
     track("country");                   // воронка: открылся список пакетов страны (на /turkey, /china — сразу)
     current = iso;
-    wantDays = 0; wantGb = 0; wantType = 0;
+    selDays = null; selGb = null;
     closeAll();
     document.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("on", c.getAttribute("data-iso")===iso); });
     renderPacks();

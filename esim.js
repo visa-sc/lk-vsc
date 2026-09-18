@@ -602,6 +602,23 @@ const EA_DAYS = String(process.env.ESIM_EA_DAYS || "1,3,5,7,10,15,30").split(","
 // все самые дешёвые пакеты. Пакеты по 100 МБ не берём: стоят столько же,
 // сколько 500 МБ, клиенту от них только вред.
 const EA_MIN_MB = Number(process.env.ESIM_EA_MIN_MB || 400);
+// Суточные тарифы (dataType 2, «/Day»): объём и цена указаны за сутки, а число
+// дней задаётся при заказе (periodNum). Из каждого делаем варианты на несколько
+// дней — до 14 (просьба Андрея 18.09.2026). id варианта: ea_КОД~N, 1 день — как было.
+const EA_DAILY_DAYS = String(process.env.ESIM_EA_DAILY_DAYS || "1,3,5,7,10,14").split(",").map(Number).filter((n) => n > 0);
+// Скорость после суточного лимита: «384 Kbps», «1Mbps» → в килобитах
+function eaFupKbps(p) {
+  const m = String((p && (p.fupPolicy || p.name)) || "").match(/(\d+(?:\.\d+)?)\s*(k|m)bps/i);
+  return m ? Math.round(Number(m[1]) * (m[2].toLowerCase() === "m" ? 1024 : 1)) : 0;
+}
+function eaDailyVariants(it) {
+  if (!it || !it.daily || it.days !== 1) return [it];
+  return EA_DAILY_DAYS.map((n) => (n === 1 ? it : Object.assign({}, it, {
+    id: it.id + "~" + n, days: n, periodNum: n,
+    costUsd: Math.round(it.costUsd * n * 10000) / 10000,
+    retailUsd: it.retailUsd ? Math.round(it.retailUsd * n * 10000) / 10000 : null,
+  })));
+}
 function eaMode() { return String(process.env.ESIM_EA || "0"); }
 function eaOn() { return Boolean(process.env.ESIMACCESS_ACCESS_CODE) && eaMode() !== "0"; }
 function eaAdmOnly() { return eaMode() === "adm"; }
@@ -642,8 +659,8 @@ function eaItem(p) {
   if (!loc.length || !gb || !days || !cost || !p.packageCode) return null;
   if (Math.round(gb * 1024) < EA_MIN_MB || EA_DAYS.indexOf(days) < 0) return null;
   const name = String(p.name || "");
-  // «/Day» у них значит суточный пакет: объём в сутки, цена тоже за сутки
-  const daily = /\/\s*day/i.test(name);
+  // «/Day» (dataType 2) у них значит суточный пакет: объём в сутки, цена тоже за сутки
+  const daily = Number(p.dataType) === 2 || /\/\s*day/i.test(name);
   return {
     id: "ea_" + p.packageCode, src: "esimaccess", familyId: "",
     title: name, operator: "eSIM Access", countries: loc,
@@ -664,19 +681,40 @@ const esimaccess = {
     const obj = await eaCall("/api/v1/open/package/list", {});
     const list = (obj && (obj.packageList || obj.list)) || [];
     const products = [];
-    list.forEach((p) => { const it = eaItem(p); if (it) products.push(it); });
-    return { products, addons: [] };
+    list.forEach((p) => {
+      const it = eaItem(p);
+      if (!it) return;
+      it.fupKbps = eaFupKbps(p);
+      eaDailyVariants(it).forEach((v) => products.push(v));
+    });
+    // Одинаковые суточные (страны, ГБ в сутки, дни) у них бывают в двух видах:
+    // обычный и «FUP 1Mbps» (быстрее после лимита). На витрине они неотличимы —
+    // оставляем самый дешёвый, при равной цене — тот, где скорость после лимита выше.
+    const best = new Map(), keep = [];
+    products.forEach((p) => {
+      if (!p.daily) { keep.push(p); return; }
+      const k = p.countries.slice().sort().join(",") + "|" + p.dataGb + "|" + p.days;
+      const b = best.get(k);
+      if (!b || p.costUsd < b.costUsd || (p.costUsd === b.costUsd && (p.fupKbps || 0) > (b.fupKbps || 0))) best.set(k, p);
+    });
+    best.forEach((p) => keep.push(p));
+    return { products: keep, addons: [] };
   },
   async createOrder(productId) {
-    const code = String(productId).replace(/^ea_/, "");
+    const raw = String(productId).replace(/^ea_/, "");
+    const code = raw.split("~")[0];
+    const periodNum = Number(raw.split("~")[1]) || 1;        // суточный на несколько дней
     const plan = ((loadEaCatalog() || {}).products || []).find((x) => x.id === productId) || {};
-    const price = Math.round(Number(plan.costUsd || 0) * 10000);
+    const total = Math.round(Number(plan.costUsd || 0) * 10000);
+    const price = Math.round(total / periodNum);               // у суточных price — за сутки
+    const item = { packageCode: code, count: 1, price };
+    if (periodNum > 1) item.periodNum = periodNum;
     let orderNo;
     try {
       const res = await eaCall("/api/v1/open/esim/order", {
         transactionId: "VOYO" + Date.now() + crypto.randomBytes(2).toString("hex"),
-        amount: price,
-        packageInfoList: [{ packageCode: code, count: 1, price }],
+        amount: price * periodNum,
+        packageInfoList: [item],
       });
       orderNo = res && (res.orderNo || res.orderNumber);
     } catch (e) { e.noOrder = true; throw e; }
