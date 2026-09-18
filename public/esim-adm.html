@@ -184,7 +184,8 @@
     el("sub").textContent = (DATA.from ? dayRu(DATA.from)+" — "+dayRu(DATA.to||DATA.from) : "за всё время")
       + " · курс доллара " + (Math.round(DATA.usdRate*100)/100).toString().replace(".", ",") + " ₽"
       + (DATA.testShown ? " · тестовые покупки включены в цифры"
-                        : (DATA.testCount ? " · тестовых покупок скрыто: " + DATA.testCount : ""));
+                        : (DATA.testCount ? " · тестовых покупок скрыто: " + DATA.testCount : ""))
+      + (DATA.closedThrough ? " · сутки закрыты по " + dayRu(DATA.closedThrough) + ", сегодня — живые цифры" : "");
     var neg = t.profit < 0;
     el("tiles").innerHTML = [
       tile("Выручка", RU(t.revenue)+"<small>₽</small>"),

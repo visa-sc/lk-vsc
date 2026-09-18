@@ -2496,6 +2496,39 @@ function mount(app, opts) {
       /(^|\s)test\b/i.test(String(o.label || ""));
   }
 
+  // Закрытие суток (с 18.09.2026): в 00:00 МСК прошедший день фиксируется —
+  // выручка, пакеты, себестоимость и каналы с курсом ЦБ этого дня. Без этого
+  // себестоимость прошлых заказов пересчитывалась бы по сегодняшнему курсу и
+  // вчерашняя маржа плавала бы вместе с долларом.
+  const DAILY_FILE = path.join(DIR, "daily.json");
+  async function closeDays() {
+    const rate = await usdRate();
+    const daily = readJson(DAILY_FILE, {});
+    const today = mskDay(Date.now());
+    const orders = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && o.priceRub && !isTestOrder(o));
+    const days = new Set(orders.map((o) => mskDay(o.paidAt)));
+    let closed = 0;
+    days.forEach((day) => {
+      if (day >= today || daily[day]) return;
+      const mine = orders.filter((o) => mskDay(o.paidAt) === day);
+      const ch = {};
+      mine.forEach((o) => {
+        const k = channelOf(o), c = o.costUsd ? tsimCostRub(o.costUsd, rate) : 0;
+        ch[k] = ch[k] || { orders: 0, revenue: 0, cost: 0 };
+        ch[k].orders++; ch[k].revenue += o.priceRub; ch[k].cost += c;
+      });
+      daily[day] = { rate, closedAt: Date.now(), orders: mine.length,
+        revenue: mine.reduce((a, o) => a + o.priceRub, 0),
+        cost: Object.values(ch).reduce((a, x) => a + x.cost, 0), channels: ch };
+      closed++;
+    });
+    if (closed) { writeJson(DAILY_FILE, daily); console.log("esim: закрыто суток", closed); }
+    return closed;
+  }
+  // проверяем каждые 10 минут: сразу после полуночи вчерашний день закроется
+  setTimeout(() => { closeDays().catch((e) => console.error("esim closeDays:", e.message)); }, 90 * 1000);
+  setInterval(() => { closeDays().catch((e) => console.error("esim closeDays:", e.message)); }, 10 * 60 * 1000);
+
   app.get("/esim/api/adm/stats", async (req, res) => {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
     try {
@@ -2509,7 +2542,12 @@ function mount(app, opts) {
       const testCount = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && isTestOrder(o)).length;
       const paid = all.filter((o) => o.status === "done" && o.paidAt && o.priceRub)
         .filter((o) => inRange(mskDay(o.paidAt)));
-      const costOf = (o) => (o.costUsd ? tsimCostRub(o.costUsd, rate) : 0);
+      const daily = readJson(DAILY_FILE, {});
+      const costOf = (o) => {
+        if (!o.costUsd) return 0;
+        const d = daily[mskDay(o.paidAt)];
+        return tsimCostRub(o.costUsd, (d && d.rate) || rate);   // закрытый день — по курсу того дня
+      };
 
       const days = new Map();
       const chans = new Map();
@@ -2561,6 +2599,7 @@ function mount(app, opts) {
       res.json({
         success: true, from: from || null, to: to || null, usdRate: rate,
         testShown: withTest, testCount,
+        closedThrough: Object.keys(daily).sort().slice(-1)[0] || null,
         totals: {
           revenue, orders: paid.length, cost: Math.round(cost), acq, acqPct: spend.acqPct, adSpend,
           profit: Math.round(revenue - cost - acq - adSpend),
@@ -2589,6 +2628,18 @@ function mount(app, opts) {
     const d = loadSpend();
     if (b.acqPct != null) d.acqPct = Math.max(0, Math.min(20, Number(b.acqPct) || 0));
     if (b.del) d.items = d.items.filter((x) => x.id !== String(b.del));
+    // Скриншот кабинета показывает расход за всё время. Такую сумму не
+    // прибавляем, а ставим вместо прежних записей этого канала.
+    if (b.setTotal) {
+      const t = b.setTotal, channel = String(t.channel || "").trim().toLowerCase().slice(0, 40);
+      const rub = Math.round(Number(t.rub) || 0), date = String(t.date || "").slice(0, 10);
+      if (!channel || !rub || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ success: false, message: "Нужны канал, дата и сумма." });
+      }
+      d.items = d.items.filter((x) => x.channel !== channel);
+      d.items.push({ id: crypto.randomBytes(4).toString("hex"), channel, date, rub, total: true,
+        note: String(t.note || "").slice(0, 160), ts: Date.now() });
+    }
     if (b.add) {
       const a = b.add;
       const rub = Math.round(Number(a.rub) || 0);
