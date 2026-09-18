@@ -1699,7 +1699,8 @@ function mount(app, opts) {
     if (parentOrderId && !checkSig(parentOrderId, b.t)) return res.status(403).json({ success: false });
     // Купил из клиентского ЛК — запоминаем связку телефон → почта, чтобы в
     // разделе «Мои eSIM» больше не спрашивать почту
-    try { const lk = await lkEmails(req); if (lk) bindLk(lk.phone, email); } catch (_) {}
+    let fromLk = !!b.embed;                    // витрина открыта внутри визового ЛК (?embed=1)
+    try { const lk = await lkEmails(req); if (lk) { bindLk(lk.phone, email); fromLk = true; } } catch (_) {}
     try {
       const [cat, rate] = await Promise.all([getCatalog(false), usdRate()]);
       let found = findProduct(cat, String(b.productId || ""));
@@ -1736,6 +1737,7 @@ function mount(app, opts) {
         promoCode: calc.promoCode, refBy: calc.refBy, balanceUsed: calc.balanceUsed,
         ads: tgChatId ? null : adsource.readAds(req, b),
         vid: tgChatId ? null : (String(b.vid || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32) || null),   // для воронки сайта
+        fromLk: tgChatId ? undefined : (fromLk || undefined),   // канал «Личный кабинет VOYO» в панели
         // Домен покупки: ссылка с QR должна вести туда же, иначе счётчик Метрики
         // окажется другим и покупка не свяжется с рекламным визитом (17.09.2026)
         base: baseFor(req),
@@ -2472,7 +2474,11 @@ function mount(app, opts) {
     return { acqPct: Number(d.acqPct != null ? d.acqPct : 2.5), items: Array.isArray(d.items) ? d.items : [] };
   }
   // Канал берём из первой метки: она отвечает за то, откуда человек пришёл впервые.
+  // Покупки из визового ЛК до 18.09.2026 пометки не имели — найдены по журналу
+  // nginx (оплата со страницы /esim?embed=1) и перечислены здесь
+  const LK_HISTORY_FILE = path.join(DIR, "lk-orders.json");
   function channelOf(o) {
+    if (o.fromLk || (readJson(LK_HISTORY_FILE, []).indexOf(o.id) >= 0)) return "lk";
     const a = (o.ads && (o.ads.first || o.ads)) || null;
     const src = a && String(a.utm_source || "").toLowerCase();
     if (src) return src;
@@ -2483,7 +2489,7 @@ function mount(app, opts) {
   }
   const CHANNEL_NAMES = {
     yandex: "Яндекс Директ", google: "Google Ads", telegram_bot: "Телеграм-бот",
-    direct: "Прямые заходы", vk: "ВКонтакте", blogger: "Блогеры", email: "Рассылка",
+    direct: "Прямые заходы", vk: "ВКонтакте", blogger: "Блогеры", email: "Рассылка", lk: "Личный кабинет VOYO",
   };
   function channelName(k) { return CHANNEL_NAMES[k] || k; }
   const mskDay = (ts) => new Date(ts + 3 * 3600 * 1000).toISOString().slice(0, 10);

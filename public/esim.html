@@ -1311,7 +1311,7 @@
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS, vid:VID,
+          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS, vid:VID, embed:EMBED,
             useBalance:document.getElementById("mBonus").checked})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){
