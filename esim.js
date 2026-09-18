@@ -2779,7 +2779,9 @@ function mount(app, opts) {
       TEST_EMAILS.indexOf(normEmail(o.email)) >= 0 ||
       (o.phone && TEST_PHONES.indexOf(digits(o.phone)) >= 0) ||
       (o.tgChatId && TEST_TG.indexOf(String(o.tgChatId)) >= 0) ||
-      /(^|\s)test\b/i.test(String(o.label || ""));
+      /(^|\s)test\b/i.test(String(o.label || "")) ||
+      /@example\.com$|^test-(bot|check)@/i.test(String(o.email || "")) ||   // проверки сайта и бота
+      digits(o.phone) === "79990000000";
   }
   function isTestCustomerKey(k) {
     k = String(k || "").toLowerCase();
@@ -3001,11 +3003,12 @@ function mount(app, opts) {
       paid.forEach((o) => {
         const day = mskDay(o.paidAt), c = costOf(o);
         revenue += o.priceRub; cost += c;
-        const d = days.get(day) || { day, revenue: 0, orders: 0, cost: 0 };
-        d.revenue += o.priceRub; d.orders++; d.cost += c; days.set(day, d);
+        const one = o.groupOf ? 0 : 1;          // заказ = платёж; доп. eSIM из того же платежа — не новый заказ
+        const d = days.get(day) || { day, revenue: 0, orders: 0, esims: 0, cost: 0 };
+        d.revenue += o.priceRub; d.orders += one; d.esims++; d.cost += c; days.set(day, d);
         const k = channelOf(o);
-        const ch = chans.get(k) || { key: k, name: channelName(k), orders: 0, revenue: 0, cost: 0, spend: 0 };
-        ch.orders++; ch.revenue += o.priceRub; ch.cost += c; chans.set(k, ch);
+        const ch = chans.get(k) || { key: k, name: channelName(k), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0 };
+        ch.orders += one; ch.esims++; ch.revenue += o.priceRub; ch.cost += c; chans.set(k, ch);
       });
       spend.items.filter((x) => inRange(String(x.date || ""))).forEach((x) => {
         const ch = chans.get(x.channel) || { key: x.channel, name: channelName(x.channel), orders: 0, revenue: 0, cost: 0, spend: 0 };
@@ -3025,7 +3028,7 @@ function mount(app, opts) {
         const key = o.custKey || normEmail(o.email) || (o.tgChatId ? "tg:" + o.tgChatId : "");
         if (!key) return;
         const c = byCust.get(key) || { key, orders: 0, revenue: 0, first: Infinity, last: 0, channel: null, term: "" };
-        c.orders++; c.revenue += o.priceRub || 0;
+        c.orders += o.groupOf ? 0 : 1; c.revenue += o.priceRub || 0;
         if (o.paidAt < c.first) { c.first = o.paidAt; c.channel = channelOf(o); c.term = termOf(o); }
         c.last = Math.max(c.last, o.paidAt);
         byCust.set(key, c);
@@ -3058,9 +3061,9 @@ function mount(app, opts) {
         ab: abFor(from, to, withTest),
         abBot: abBotFor(from, to, withTest),
         totals: {
-          revenue, orders: paid.length, cost: Math.round(cost), acq, acqPct: spend.acqPct, adSpend,
+          revenue, orders: paid.filter((o) => !o.groupOf).length, esims: paid.length, cost: Math.round(cost), acq, acqPct: spend.acqPct, adSpend,
           profit: Math.round(revenue - cost - acq - adSpend),
-          avgCheck: paid.length ? Math.round(revenue / paid.length) : 0,
+          avgCheck: paid.filter((o) => !o.groupOf).length ? Math.round(revenue / paid.filter((o) => !o.groupOf).length) : 0,
           customers: byCust.size, customersAll: Object.keys(cust).filter((k) => withTest || !isTestCustomerKey(k)).length,
         },
         days: Array.from(days.values()).sort((a, b) => (a.day < b.day ? -1 : 1))
@@ -3070,7 +3073,7 @@ function mount(app, opts) {
           return Object.assign({}, c, { cost: Math.round(c.cost), margin,
             profit: Math.round(margin - c.spend),
             drr: c.revenue ? Math.round(c.spend / c.revenue * 1000) / 10 : null,
-            cpo: c.orders ? Math.round(c.spend / c.orders) : null,
+            cpo: c.orders ? Math.round(c.spend / c.orders) : null,   // на оплату, не на eSIM
             roi: c.spend ? Math.round(margin / c.spend * 100) / 100 : null });
         }).sort((a, b) => b.revenue - a.revenue),
         customers, promos: promoList, spend: spend.items.slice().sort((a, b) => (a.date < b.date ? 1 : -1)),

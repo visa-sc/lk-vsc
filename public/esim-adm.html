@@ -399,10 +399,11 @@
     el("meta").textContent = (r.from ? dShort(r.from) + " — " + dShort(r.to || today()) : "за всё время") +
       " · курс ЦБ " + (Math.round(DATA.usdRate*100)/100).toString().replace(".", ",") + " ₽" +
       (DATA.testShown ? " · с тестовыми покупками" : "");
-    el("sumNote").textContent = RU(t.orders) + " пакетов · " + RU(t.revenue) + " ₽";
+    el("sumNote").textContent = RU(t.esims != null ? t.esims : t.orders) + " пакетов · " + RU(t.revenue) + " ₽";
     el("tiles").innerHTML = [
       tile("Выручка", RU(t.revenue), "₽"),
-      tile("Пакетов", RU(t.orders), "шт"),
+      tile("Пакетов", RU(t.esims != null ? t.esims : t.orders), "шт"),
+      tile("Заказов", RU(t.orders), "оплат"),
       tile("Средний чек", RU(t.avgCheck), "₽"),
       tile("Себестоимость", RU(t.cost), "₽"),
       tile("Комиссия банка", RU(t.acq), "₽ · " + pct(t.acqPct)),
@@ -636,7 +637,7 @@
       drr: function(c){ return c.spend && c.revenue ? c.drr : null; }, cpo: function(c){ return c.spend && c.orders ? c.cpo : null; },
       profit: function(c){ return c.profit; } });
     el("tChan").innerHTML = sortHead("tChan", [
-        { t: "Канал", k: "name" }, { t: "Пакетов", k: "orders", r: 1, num: 1 }, { t: "Выручка", k: "revenue", r: 1, num: 1 },
+        { t: "Канал", k: "name" }, { t: "Заказов", k: "orders", r: 1, num: 1 }, { t: "Выручка", k: "revenue", r: 1, num: 1 },
         { t: "Маржа", k: "margin", r: 1, num: 1 }, { t: "Расход", k: "spend", r: 1, num: 1 }, { t: "ДРР", k: "drr", r: 1, num: 1 },
         { t: "Заказ стоит", k: "cpo", r: 1, num: 1 }, { t: "Итог", k: "profit", r: 1, num: 1 } ]) +
       "<tbody>" + rows.map(function(c){
@@ -683,7 +684,7 @@
   function renderDays(){
     var R = [0,1,1,1,1];
     el("tDays").innerHTML = DATA.days.length
-      ? head(["День","Пакетов","Выручка","Себестоимость","Маржа"], R) + "<tbody>" + DATA.days.slice().reverse().map(function(d){
+      ? head(["День","Пакетов","Выручка","Себестоимость","Маржа"], R) + "<tbody>" + DATA.days.slice().reverse().map(function(d){ d = Object.assign({}, d, { orders: d.esims != null ? d.esims : d.orders });
           return row([dShort(d.day), RU(d.orders), RU(d.revenue) + " ₽", RU(d.cost) + " ₽", money(d.margin, true)], R);
         }).join("") + "</tbody>"
       : '<tbody><tr><td class="dim">за этот период продаж не было</td></tr></tbody>';
