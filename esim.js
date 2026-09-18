@@ -2503,12 +2503,23 @@ function mount(app, opts) {
   }
   // Свои проверочные покупки в цифры не пускаем: Андрей смотрит на них как на
   // реальные продажи и злится. Показать их можно галочкой в панели (?test=1).
-  const TEST_EMAILS = String(process.env.ESIM_TEST_EMAILS || "komizarenko@gmail.com,probe@example.com")
-    .split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  // Кто свой: Андрей и Петров (Петров тестил 03.09 и заходил в бота). Узнаём по
+  // почте, телефону и чату в боте — так тест не просочится ни через сайт, ни через бот.
+  const listEnv = (name, dflt) => String(process.env[name] || dflt).split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const TEST_EMAILS = listEnv("ESIM_TEST_EMAILS", "komizarenko@gmail.com,probe@example.com,ap@spt1.ru");
+  const TEST_PHONES = listEnv("ESIM_TEST_PHONES", "79959189058,79826404543");
+  const TEST_TG = listEnv("ESIM_TEST_TG", "405697446");
+  const digits = (p) => String(p || "").replace(/\D/g, "");
   function isTestOrder(o) {
     return String(o.promoCode || "").toUpperCase() === "OWNER" ||
       TEST_EMAILS.indexOf(normEmail(o.email)) >= 0 ||
+      (o.phone && TEST_PHONES.indexOf(digits(o.phone)) >= 0) ||
+      (o.tgChatId && TEST_TG.indexOf(String(o.tgChatId)) >= 0) ||
       /(^|\s)test\b/i.test(String(o.label || ""));
+  }
+  function isTestCustomerKey(k) {
+    k = String(k || "").toLowerCase();
+    return TEST_EMAILS.indexOf(k) >= 0 || (k.indexOf("tg:") === 0 && TEST_TG.indexOf(k.slice(3)) >= 0);
   }
 
   // ═══ Воронка: сайт и телеграм-бот (с 18.09.2026) ═══
@@ -2563,7 +2574,10 @@ function mount(app, opts) {
       FUNNEL_STEPS[src].forEach((step) => {
         const u = new Set();
         [h.days, f.days].forEach((days) => Object.keys(days).filter(inR).forEach((day) => {
-          ((days[day][src] || {})[step] || []).forEach((v) => u.add(v));
+          ((days[day][src] || {})[step] || []).forEach((v) => {
+            if (!withTest && v.indexOf("tg") === 0 && TEST_TG.indexOf(v.slice(2)) >= 0) return;   // свой чат
+            u.add(v);
+          });
         }));
         out[src][step] = u.size;
       });
@@ -2672,16 +2686,17 @@ function mount(app, opts) {
 
       // промокоды: сколько раз вводили и сколько по ним продали
       const promos = readJson(PROMOS_FILE, {});
-      const promoRevenue = {};
+      const promoRevenue = {}, promoUses = {};
       all.filter((o) => o.status === "done" && o.promoCode).forEach((o) => {
         const k = String(o.promoCode).toUpperCase();
         promoRevenue[k] = (promoRevenue[k] || 0) + (o.priceRub || 0);
+        promoUses[k] = (promoUses[k] || 0) + 1;
       });
       // Служебные коды (OWNER — покупки Андрея по себестоимости) в панели не
       // светим вовсе: к ней есть доступ не только у него.
       const HIDDEN = String(process.env.ESIM_PANEL_HIDE_PROMOS || "OWNER").split(",").map((x) => x.trim().toUpperCase());
       const promoList = Object.keys(promos).filter((code) => HIDDEN.indexOf(code.toUpperCase()) < 0)
-        .map((code) => Object.assign({ code }, promos[code], { revenue: promoRevenue[code] || 0 }));
+        .map((code) => Object.assign({ code }, promos[code], { revenue: promoRevenue[code] || 0, usesPaid: promoUses[code] || 0 }));
 
       res.json({
         success: true, from: from || null, to: to || null, usdRate: rate,
@@ -2692,7 +2707,7 @@ function mount(app, opts) {
           revenue, orders: paid.length, cost: Math.round(cost), acq, acqPct: spend.acqPct, adSpend,
           profit: Math.round(revenue - cost - acq - adSpend),
           avgCheck: paid.length ? Math.round(revenue / paid.length) : 0,
-          customers: byCust.size, customersAll: Object.keys(cust).length,
+          customers: byCust.size, customersAll: Object.keys(cust).filter((k) => withTest || !isTestCustomerKey(k)).length,
         },
         days: Array.from(days.values()).sort((a, b) => (a.day < b.day ? -1 : 1))
           .map((d) => Object.assign(d, { cost: Math.round(d.cost), margin: Math.round(d.revenue - d.cost) })),

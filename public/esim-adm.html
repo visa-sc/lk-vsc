@@ -317,7 +317,7 @@
     fbot: "Уникальные чаты бота: нажал «Старт» → выбрал страну → открыл пакет → получил ссылку на оплату → оплатил. Между карточками — доля перехода с шага на шаг.<br>С 18 сентября шаги пишет сам бот. <b>До 18 сентября</b> — восстановлено по следам в боте: день первого «Старта» и заказы известны точно, а по промежуточным шагам — только до какого шага человек дошёл в итоге.",
     days: "Каждая строка — сутки по Москве. Маржа — выручка минус себестоимость, без комиссии банка и рекламы.",
     cust: "Люди хотя бы с одной оплатой. <b>Откуда</b> и <b>ключевое слово</b> — по первой покупке: с какой рекламы и по какому запросу человек пришёл впервые.<br>Директ передаёт слово сам. Google — только если в шаблоне ссылки кампании стоит {keyword}, иначе будет «не передано».<br><b>Код</b> — личный промокод клиента для друзей, <b>бонусы</b> — накопленный баланс.",
-    promo: "Все промокоды витрины и бота. Выручка — сумма оплаченных заказов с этим кодом.",
+    promo: "Все промокоды витрины и бота. <b>Применён</b> — сколько оплаченных заказов с этим кодом, <b>выручка</b> — их сумма. Свои проверочные покупки сюда не входят.",
   };
   var POP = document.createElement("div"); POP.className = "pop"; document.body.appendChild(POP);
   function showPop(icon){
@@ -682,7 +682,7 @@
     el("promoNote").textContent = live + " действуют";
     var R = [0,0,1,0,1,0];
     var rows = sortRows("tPromo", DATA.promos, {
-      code: function(p){ return p.code; }, uses: function(p){ return p.uses || 0; }, revenue: function(p){ return p.revenue || 0; },
+      code: function(p){ return p.code; }, uses: function(p){ return p.usesPaid || 0; }, revenue: function(p){ return p.revenue || 0; },
       st: function(p){ return p.active === false ? "выключен" : "работает"; } });
     el("tPromo").innerHTML = sortHead("tPromo", [
         { t: "Код", k: "code" }, { t: "Скидка" }, { t: "Применён", k: "uses", r: 1, num: 1 }, { t: "Срок" },
@@ -690,7 +690,7 @@
       "<tbody>" + rows.map(function(p){
         var what = p.cost ? "по себестоимости" : (p.pct ? p.pct + "%" : (p.rub ? RU(p.rub) + " ₽" : "—"));
         var term = (p.from || p.to) ? ((p.from ? dShort(p.from) : "…") + " — " + (p.to ? dShort(p.to) : "…")) : '<span class="dim">без срока</span>';
-        var used = RU(p.uses || 0) + (p.maxUses ? '<span class="dim"> из ' + RU(p.maxUses) + "</span>" : "");
+        var used = RU(p.usesPaid || 0) + (p.maxUses ? '<span class="dim"> из ' + RU(p.maxUses) + "</span>" : "");
         return row(['<span class="mono">' + esc(p.code) + "</span>", what, used, term, RU(p.revenue) + " ₽",
           p.active === false ? '<span class="dim">выключен</span>' : '<span class="pos">работает</span>'], R);
       }).join("") + "</tbody>";
