@@ -2201,22 +2201,6 @@ function mount(app, opts) {
   });
 
   // Кто я сейчас (для шапки страниц)
-  // Напоминание вернувшемуся покупателю (18.09.2026): «путешествуете не один —
-  // вот ваш код, 100 ₽ другу и 100 ₽ вам». Кто он — по сессии сайта (ставится при
-  // открытии страницы с QR) или, внутри ЛК VOYO, по почтам кабинета.
-  app.get("/esim/api/refnudge", async (req, res) => {
-    res.set("Cache-Control", "no-store");
-    let email = readSession(req);
-    if (!email || !hasOrders(email)) {
-      const lk = await lkEmails(req).catch(() => null);
-      email = lk ? (lk.emails.find((e) => hasOrders(e)) || null) : null;
-    }
-    if (!email || !hasOrders(email)) return res.json({ success: true, show: false });
-    const c = getCustomer(email, true);
-    if (!c || !c.refCode) return res.json({ success: true, show: false });
-    res.json({ success: true, show: true, code: c.refCode, bonus: REF_BONUS_RUB, link: REF_SITE + "/?ref=" + c.refCode });
-  });
-
   app.get("/esim/api/session", (req, res) => {
     const email = readSession(req);
     res.json({ success: true, email, esims: email ? esimsOf(email) : [] });
