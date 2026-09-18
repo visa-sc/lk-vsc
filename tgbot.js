@@ -140,7 +140,47 @@ async function api(method, url, body, headers) {
 }
 // Шаг воронки для панели показателей: /start → страна → пакет → ссылка на оплату
 function ev(chatId, step) {
-  api("post", "/esim/api/ev", { src: "bot", step, vid: "tg" + chatId }).catch(() => {});
+  api("post", "/esim/api/ev", { src: "bot", step, vid: "tg" + chatId, ab: abOf(chatId) }).catch(() => {});
+}
+// A/B-тест бота (18.09.2026): половина новых чатов после страны сначала выбирает
+// срок поездки («1–3 дня · от 59 ₽»), половина видит сразу весь список пакетов.
+// Вариант закрепляется за чатом. Итоги — в панели dev.voyomobile.ru.
+function abOf(chatId) {
+  const st = getState(chatId);
+  if (st.ab === "days" || st.ab === "list") return st.ab;
+  const v = Math.random() < 0.5 ? "days" : "list";
+  setState(chatId, { ab: v });
+  return v;
+}
+// Сроки поездки. Как на сайте: пакет на срок подольше тоже показываем, если он
+// выгоднее — среди пакетов на выбранный срок нет такого же формата, где ГБ не
+// меньше, а цена не выше. Короче выбранного срока — не показываем.
+const DAY_BUCKETS = [[1, 3], [3, 5], [5, 7], [7, 10], [10, 14], [14, 20], [20, 30], [30, 60], [60, 90], [90, 120]];
+function byBucket(list, b) {
+  const lo = b[0], hi = b[1];
+  const inR = list.filter((p) => (p.days || 0) >= lo && (p.days || 0) <= hi);
+  const longer = list.filter((p) => (p.days || 0) > hi && !inR.some((q) =>
+    !!q.daily === !!p.daily && !!q.unlimited === !!p.unlimited && (q.dataGb || 0) >= (p.dataGb || 0) && q.priceRub <= p.priceRub));
+  return inR.concat(longer).sort((a, b2) => a.priceRub - b2.priceRub);
+}
+function daysWord(b) { return b[0] + "–" + b[1] + " " + plural(b[1], ["день", "дня", "дней"]); }
+async function showDays(chatId, iso, messageId) {
+  ev(chatId, "country");
+  const list = await packsFor(iso);
+  if (!list.length) return send(chatId, "По этой стране пакетов сейчас нет. Напишите нам, подберём вручную: " + SUPPORT_TG);
+  const btns = [];
+  DAY_BUCKETS.forEach((b, i) => {
+    const l = byBucket(list, b);
+    if (l.length) btns.push({ text: daysWord(b) + " · от " + RU(l[0].priceRub) + " ₽", callback_data: "d:" + iso + ":" + i + ":0" });
+  });
+  const rows = [];
+  for (let i = 0; i < btns.length; i += 2) rows.push(btns.slice(i, i + 2));
+  rows.push([{ text: "Все пакеты (" + list.length + ")", callback_data: "d:" + iso + ":all:0" }]);
+  rows.push([{ text: "‹ Другая страна", callback_data: "home" }]);
+  setState(chatId, { iso, bucket: null });
+  const head = flag(iso) + " <b>" + cname(iso) + "</b>\nНа сколько дней поездка? Покажу подходящие пакеты — от самых дешёвых.";
+  const kb = { inline_keyboard: rows };
+  return messageId ? edit(chatId, messageId, head, { reply_markup: kb }) : send(chatId, head, { reply_markup: kb });
 }
 
 let _cat = { ts: 0, products: [], byCountry: {}, index: [] };
@@ -303,9 +343,13 @@ async function welcomeGift(chatId) {
     "ничего вводить не нужно.";
 }
 
-async function showCountry(chatId, iso, page, messageId) {
+async function showCountry(chatId, iso, page, messageId, bucket) {
   ev(chatId, "country");
-  const list = await packsFor(iso);
+  const all = await packsFor(iso);
+  const bIdx = bucket == null || bucket === "all" ? null : Number(bucket);
+  const list = bIdx == null ? all : byBucket(all, DAY_BUCKETS[bIdx] || DAY_BUCKETS[0]);
+  const byDays = abOf(chatId) === "days";
+  const navCb = (pg) => byDays ? "d:" + iso + ":" + (bIdx == null ? "all" : bIdx) + ":" + pg : "c:" + iso + ":" + pg;
   if (!list.length) {
     return send(chatId, "По этой стране пакетов сейчас нет. Напишите нам, подберём вручную: " + SUPPORT_TG);
   }
@@ -317,23 +361,31 @@ async function showCountry(chatId, iso, page, messageId) {
   const rows = slice.map((p) => [{ text: packLabel(p, iso), callback_data: "p:" + p.id }]);
   // Листаем в обе стороны: человек может уйти вперёд и захотеть вернуться
   const nav = [];
-  if (pg > 0) nav.push({ text: "‹ Дешевле", callback_data: "c:" + iso + ":" + (pg - 1) });
-  nav.push({ text: (pg + 1) + " из " + pages, callback_data: "c:" + iso + ":" + pg });
-  if (pg < pages - 1) nav.push({ text: "Дороже ›", callback_data: "c:" + iso + ":" + (pg + 1) });
+  if (pg > 0) nav.push({ text: "‹ Дешевле", callback_data: navCb(pg - 1) });
+  nav.push({ text: (pg + 1) + " из " + pages, callback_data: navCb(pg) });
+  if (pg < pages - 1) nav.push({ text: "Дороже ›", callback_data: navCb(pg + 1) });
   if (nav.length > 1) rows.push(nav);
-  rows.push([{ text: "‹ Другая страна", callback_data: "home" }]);
+  if (byDays) rows.push([{ text: "‹ Другой срок", callback_data: "c:" + iso }, { text: "‹ Другая страна", callback_data: "home" }]);
+  else rows.push([{ text: "‹ Другая страна", callback_data: "home" }]);
   // Галочка в списке ничего не значит без расшифровки: показываем, что именно
   // помечено на этой странице (ChatGPT и TikTok, лучшее покрытие и т. п.)
   const notes = [];
   slice.forEach((p) => { if (p.note && notes.indexOf(p.note) < 0) notes.push(p.note); });
-  const head = flag(iso) + " <b>" + cname(iso) + "</b> · " + list.length + " " +
-    plural(list.length, ["пакет", "пакета", "пакетов"]) + "\n" +
+  const head = flag(iso) + " <b>" + cname(iso) + "</b>" + (bIdx != null ? " · " + daysWord(DAY_BUCKETS[bIdx]) : "") +
+    " · " + list.length + " " + plural(list.length, ["пакет", "пакета", "пакетов"]) + "\n" +
+    (bIdx != null ? "Пакеты на этот срок и подольше, если они выгоднее.\n" : "") +
     "Сначала самые дешёвые. Цена окончательная, в рублях, QR-код выдаётся сразу." +
     (notes.length ? "\n\n" + notes.map((n) => "✅ " + esc(n)).join("\n") : "") +
     (pages > 1 ? "\nСтраница " + (pg + 1) + " из " + pages + "." : "");
   const kb = { inline_keyboard: rows };
-  setState(chatId, { iso });
+  setState(chatId, { iso, bucket: byDays ? (bIdx == null ? "all" : bIdx) : null });
   return messageId ? edit(chatId, messageId, head, { reply_markup: kb }) : send(chatId, head, { reply_markup: kb });
+}
+// «Назад к пакетам»: в тот же список, откуда пришли (с учётом выбранного срока)
+function listCb(st, p) {
+  const iso = st.iso || p.countries[0];
+  if (st.bucket != null && abOf(st._chat) === "days") return "d:" + iso + ":" + st.bucket + ":0";
+  return "c:" + iso;
 }
 
 async function showPack(chatId, productId, messageId) {
@@ -375,10 +427,10 @@ async function showPack(chatId, productId, messageId) {
   text += qtyText(price);
   text += "\nПосле оплаты " + ((price.qty || 1) > 1 ? "QR-коды придут" : "QR-код придёт") + " сюда же, в этот чат.";
   const rows = [[{ text: "Оплатить " + RU(price.grandTotal || price.total) + " ₽", callback_data: "buy:" + p.id }]]
-    .concat(qtyRow(price))
+    .concat(qtyRow(price, p.id))
     .concat(multi ? [[{ text: "🌍 Где ещё работает", callback_data: "cov:" + p.id }]] : [])
     .concat(discountRows(chatId, price))
-    .concat([[{ text: "‹ Назад к пакетам", callback_data: "c:" + (st.iso || p.countries[0]) }]]);
+    .concat([[{ text: "‹ Назад к пакетам", callback_data: listCb(Object.assign({ _chat: chatId }, st), p) }]]);
   const kb = { inline_keyboard: rows };
   return messageId ? edit(chatId, messageId, text, { reply_markup: kb }) : send(chatId, text, { reply_markup: kb });
 }
@@ -390,7 +442,8 @@ async function priceFor(chatId, p) {
     tgChatId: String(chatId), useBalance: !!st.useBalance, qty: qtyOf(st),
   });
   if (j && j.success) return j;
-  return { listPrice: p.priceRub, total: p.priceRub, discountRub: 0, balanceCanUse: 0 };
+  if (qtyOf(st) > 1) setState(chatId, { qty: 1 });
+  return { listPrice: p.priceRub, total: p.priceRub, grandTotal: p.priceRub, qty: 1, discountRub: 0, balanceCanUse: 0 };
 }
 
 // Сколько eSIM в заказе (18.09.2026, как на сайте): первая по своей цене,
@@ -405,12 +458,12 @@ function qtyText(price) {
   return "\n👥 <b>eSIM в заказе: " + q + "</b>\nПервая — " + RU(price.total) + " ₽, ещё " + (q - 1) + " × " + RU(price.extraUnit) + " ₽" +
     (price.extraMode === "promo" ? " (по промокоду)" : " (−" + (price.extraPct || 10) + " %)") + "\nК оплате: <b>" + RU(price.grandTotal) + " ₽</b>\n";
 }
-function qtyRow(price) {
+function qtyRow(price, productId) {
   const q = price.qty || 1, max = price.maxQty || 12;
   return [[
-    { text: q > 1 ? "−" : "·", callback_data: q > 1 ? "q:-" : "q:0" },
+    { text: q > 1 ? "−" : "·", callback_data: q > 1 ? "q:-:" + productId : "q:0" },
     { text: "👥 eSIM: " + q, callback_data: "q:0" },
-    { text: q < max ? "+ ещё eSIM" : "·", callback_data: q < max ? "q:+" : "q:0" },
+    { text: q < max ? "+ ещё eSIM" : "·", callback_data: q < max ? "q:+:" + productId : "q:0" },
   ]];
 }
 
@@ -476,7 +529,7 @@ async function payLink(chatId) {
       .concat([[{ text: "👥 Изменить количество eSIM", callback_data: "p:" + p.id }]])
       .concat(discountRows(chatId, price))
       .concat([
-        [{ text: "‹ Другой пакет", callback_data: "c:" + (st.iso || p.countries[0]) },
+        [{ text: "‹ Другой пакет", callback_data: listCb(Object.assign({ _chat: chatId }, st), p) },
          { text: "📱 Мои eSIM", callback_data: "my" }],
         [{ text: "‹ В начало", callback_data: "home" }],
       ]) } });
@@ -498,7 +551,8 @@ async function showMy(chatId) {
       (st.email ? "\n\nЕсли покупали на сайте, все ваши eSIM здесь: " + BASE_URL + "/esim/account" : ""),
       { reply_markup: homeKeyboard() });
   }
-  const rows = mine.slice(0, 8).map((o) => [{ text: (o.label || "eSIM").slice(0, 60), callback_data: "m:" + o.id }]);
+  const num = (o) => (o.groupOf ? " · eSIM " + (String(o.id).split("-").pop()) : (Number(o.qty) > 1 ? " · eSIM 1" : ""));
+  const rows = mine.slice(0, 8).map((o) => [{ text: ((o.label || "eSIM").slice(0, 50) + num(o)), callback_data: "m:" + o.id }]);
   rows.push([{ text: "＋ Купить ещё eSIM", callback_data: "home" }]);
   if (getState(chatId).productId) rows.push([{ text: "‹ Вернуться к оплате", callback_data: "back:pay" }]);
   return send(chatId, "<b>Ваши eSIM</b>\nВыберите, чтобы увидеть остаток трафика и QR-код.",
@@ -758,7 +812,7 @@ async function onText(chatId, text) {
       { reply_markup: homeKeyboard() });
   }
   // Одна страна или лучшая явно впереди («China» → Китай, а не Гонконг и Макао) — открываем сразу
-  if (hits.length === 1 || (scored[0].score <= 4 && scored[0].score < scored[1].score)) return showCountry(chatId, hits[0].iso, 0);
+  if (hits.length === 1 || (scored[0].score <= 4 && scored[0].score < scored[1].score)) return abOf(chatId) === "days" ? showDays(chatId, hits[0].iso) : showCountry(chatId, hits[0].iso, 0);
   const rows = hits.slice(0, 8).map((x) => [{ text: flag(x.iso) + " " + x.name, callback_data: "c:" + x.iso }]);
   return send(chatId, "Уточните страну:", { reply_markup: { inline_keyboard: rows } });
 }
@@ -792,16 +846,26 @@ async function onCallback(q) {
     return st.productId ? showPack(chatId, st.productId) : showBonus(chatId);
   }
   if (data.indexOf("all:") === 0) return showAllCountries(chatId, parseInt(data.slice(4), 10) || 0, messageId);
+  if (data.indexOf("d:") === 0) {
+    const [iso, b, pg] = data.slice(2).split(":");
+    return showCountry(chatId, iso, parseInt(pg || "0", 10) || 0, messageId, b);
+  }
   if (data.indexOf("c:") === 0) {
     const parts = data.slice(2).split(":");
+    // вариант «сначала срок»: страна без номера страницы — выбор срока
+    if (parts.length === 1 && abOf(chatId) === "days") return showDays(chatId, parts[0], messageId);
     return showCountry(chatId, parts[0], parseInt(parts[1] || "0", 10) || 0, messageId);
   }
   if (data.indexOf("p:") === 0) return showPack(chatId, data.slice(2), messageId);
   if (data.indexOf("q:") === 0) {
+    if (data === "q:0") return;
+    const sign = data.charAt(2), productId = data.slice(4);
     const st = getState(chatId);
-    if (!st.productId || data === "q:0") return;
-    setState(chatId, { qty: Math.max(1, Math.min(12, qtyOf(st) + (data === "q:+" ? 1 : -1))) });
-    return showPack(chatId, st.productId, messageId);
+    if (!productId) return;
+    // количество относится к пакету этой карточки; нажали на старой — начинаем с 1
+    const base = st.productId === productId ? qtyOf(st) : 1;
+    setState(chatId, { productId, qty: Math.max(1, Math.min(12, base + (sign === "+" ? 1 : -1))) });
+    return showPack(chatId, productId, messageId);
   }
   if (data.indexOf("buy:") === 0) return startBuy(chatId, data.slice(4));
   if (data.indexOf("m:") === 0) return showMyOne(chatId, data.slice(2));
@@ -849,7 +913,7 @@ async function onIssued(order, n, total) {
     "3. В поездке включите «Роуминг данных» для линии eSIM — интернет заработает сам.\n\n" +
     (o.lpa ? "Если камеры под рукой нет, введите вручную:\n<code>" + esc(o.lpa) + "</code>\n\n" : "") +
     "Остаток трафика и продление — по кнопке ниже.";
-  const st = getState(chatId);
+  const st = setState(chatId, { qty: 1 });
   const rows = [
     [{ text: total > 1 ? "Остаток и продление · eSIM " + n : "Остаток и продление", url: order.myUrl }],
     [{ text: "📱 Мои eSIM", callback_data: "my" }, { text: "💬 Помощь", url: SUPPORT_TG }],

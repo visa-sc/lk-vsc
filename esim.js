@@ -2757,12 +2757,41 @@ function mount(app, opts) {
   }
   // A/B-тест меню фильтров (18.09.2026): какой вариант достался браузеру. Храним
   // рядом с воронкой, чтобы шаги и оплаты делились по вариантам.
-  function abMark(vid, v) {
+  // key: "ab" — меню сайта (old/new), "abBot" — бот (days — сначала срок, list — сразу список)
+  function abMark(vid, v, key) {
+    key = key || "ab";
     vid = String(vid || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
     if (vid.length < 6) return;
     const f = funnelData();
-    if (!f.ab) { f.ab = {}; f.abSince = Date.now(); }
-    if (!f.ab[vid] && Object.keys(f.ab).length < 200000) { f.ab[vid] = v; _funnelDirty = true; }
+    if (!f[key]) { f[key] = {}; f[key + "Since"] = Date.now(); }
+    if (!f[key][vid] && Object.keys(f[key]).length < 200000) { f[key][vid] = v; _funnelDirty = true; }
+  }
+  function abBotFor(from, to, withTest) {
+    const f = funnelData();
+    if (!f.abBot) return null;
+    const inR = (day) => (!from || day >= from) && (!to || day <= to);
+    const out = { since: mskDay(f.abBotSince) };
+    const paid = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && o.paidAt >= f.abBotSince &&
+      inR(mskDay(o.paidAt)) && (withTest || !isTestOrder(o)) && !o.parentOrderId && !o.groupOf && o.tgChatId && f.abBot["tg" + o.tgChatId]);
+    ["list", "days"].forEach((v) => {
+      const r = {};
+      FUNNEL_STEPS.bot.forEach((step) => {
+        const u = new Set();
+        Object.keys(f.days).filter(inR).forEach((day) => {
+          (((f.days[day].bot || {})[step]) || []).forEach((x) => {
+            if (f.abBot[x] !== v) return;
+            if (!withTest && TEST_TG.indexOf(x.slice(2)) >= 0) return;
+            u.add(x);
+          });
+        });
+        r[step] = u.size;
+      });
+      const mine = paid.filter((o) => f.abBot["tg" + o.tgChatId] === v);
+      r.paid = new Set(mine.map((o) => String(o.tgChatId))).size;
+      r.revenue = mine.reduce((a, o) => a + Number(o.payTotalRub || o.priceRub || 0), 0);
+      out[v] = r;
+    });
+    return out;
   }
   function abFor(from, to, withTest) {
     const f = funnelData();
@@ -2770,7 +2799,7 @@ function mount(app, opts) {
     const inR = (day) => (!from || day >= from) && (!to || day <= to);
     const out = { since: mskDay(f.abSince) };
     const paid = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && o.paidAt >= f.abSince &&
-      inR(mskDay(o.paidAt)) && (withTest || !isTestOrder(o)) && !o.parentOrderId && !o.tgChatId && o.vid && f.ab[o.vid]);
+      inR(mskDay(o.paidAt)) && (withTest || !isTestOrder(o)) && !o.parentOrderId && !o.groupOf && !o.tgChatId && o.vid && f.ab[o.vid]);
     ["old", "new"].forEach((v) => {
       const r = {};
       FUNNEL_STEPS.site.forEach((step) => {
@@ -2825,6 +2854,7 @@ function mount(app, opts) {
     if (b.adm) return res.json({ success: true, skipped: true });   // свои заходы с админ-кодом не считаем
     if (b.step === "visit" && b.lang) { try { langHit(b.lang, b.vid, !!b.ad); } catch (_) {} }
     if (b.ab === "old" || b.ab === "new") abMark(b.vid, b.ab);
+    if ((b.ab === "days" || b.ab === "list") && b.src === "bot") abMark(b.vid, b.ab, "abBot");
     res.json({ success: funnelHit(String(b.src || "site"), String(b.step || ""), b.vid) });
   });
 
@@ -2968,6 +2998,7 @@ function mount(app, opts) {
         closedThrough: Object.keys(daily).sort().slice(-1)[0] || null,
         funnel: funnelFor(from, to, withTest),
         ab: abFor(from, to, withTest),
+        abBot: abBotFor(from, to, withTest),
         totals: {
           revenue, orders: paid.length, cost: Math.round(cost), acq, acqPct: spend.acqPct, adSpend,
           profit: Math.round(revenue - cost - acq - adSpend),
