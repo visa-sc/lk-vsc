@@ -8,319 +8,518 @@
 <link rel="icon" href="/favicon.ico" sizes="any"/>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
 <style>
+  /* Оформление — как у дашборда VSC (/vsc, body.vsc-skin): мягкий фон,
+     белые карточки с крупным скруглением, сегмент-контрол, значок «i». */
   :root{
-    --bg:#f5f7fb; --card:#fff; --line:#e6eaf2; --ink:#16202e; --mut:#8b93a5;
-    --accent:#3589bd; --accent-d:#2c6f96; --green:#1f7a4a; --red:#b0263a;
-    --sh:0 1px 2px rgba(16,24,40,.04),0 18px 44px -26px rgba(22,48,80,.22);
+    --accent:#0097ca; --accent2:#00bff0; --ink:#141a2e; --mut:#6a7385; --mut2:#9aa3b3;
+    --border:rgba(20,32,64,.07); --radius:18px;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 14px 34px -18px rgba(16,32,64,.20);
+    --shadow-hi:0 2px 6px rgba(16,24,40,.06),0 26px 50px -22px rgba(16,32,64,.30);
+    --green:#1d8a55; --red:#c0364a; --ease:cubic-bezier(.2,.8,.2,1);
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font-size:15px;
+  body{margin:0;color:var(--ink);font-size:14px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
     font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    -webkit-font-smoothing:antialiased;}
-  .wrap{max-width:1120px;margin:0 auto;padding:18px 16px 70px;}
-  .hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:6px 0 18px;}
-  .hdr h1{font-size:21px;letter-spacing:-.02em;margin:0;}
-  .hdr .sub{color:var(--mut);font-size:13px;margin-top:2px;}
-  .per{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
-  .per button{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);background:#fff;color:#41506b;
-    border-radius:999px;padding:8px 14px;cursor:pointer;}
-  .per button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
-  .per input{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:10px;padding:7px 9px;background:#fff;}
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:10px;margin:0 0 18px;}
-  .tile{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:13px 15px;box-shadow:var(--sh);}
-  .tile .k{font-size:12px;color:var(--mut);margin-bottom:5px;}
-  .tile .v{font-size:23px;font-weight:800;letter-spacing:-.03em;}
-  .tile .v small{font-size:13px;font-weight:600;color:var(--mut);margin-left:5px;letter-spacing:0;}
-  .tile.big{background:linear-gradient(135deg,#2c6f96,#4aa3d6);border-color:transparent;color:#fff;}
-  .tile.big .k{color:rgba(255,255,255,.85)}
-  .tile.big .v small{color:rgba(255,255,255,.8)}
-  .tile.neg .v{color:var(--red)}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px 17px;box-shadow:var(--sh);margin:0 0 14px;}
-  .card h2{font-size:15.5px;margin:0 0 12px;letter-spacing:-.01em;}
-  .card h2 span{font-weight:400;color:var(--mut);font-size:13px;margin-left:8px;}
-  table{width:100%;border-collapse:collapse;font-size:13.5px;}
-  th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);font-weight:600;
-    padding:0 10px 8px 0;white-space:nowrap;}
-  td{padding:8px 10px 8px 0;border-top:1px solid #eef1f7;white-space:nowrap;}
-  td.r,th.r{text-align:right;padding-right:0;}
-  tr.tot td{border-top:2px solid #d9e3ee;font-weight:800;padding-top:11px;font-size:14px;}
-  .g{color:var(--green);font-weight:700}
-  .r2{color:var(--red);font-weight:700}
-  .mono{font-family:SFMono-Regular,Consolas,monospace;font-size:12.5px;}
+    background:linear-gradient(180deg,#f7f9fc 0%,#eef1f6 100%);min-height:100vh;}
+  body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:radial-gradient(1100px 520px at 50% -120px,#e9f3fb 0%,rgba(233,243,251,0) 70%);}
+  .wrap{max-width:1080px;margin:0 auto;padding:22px 18px 70px;}
+
+  /* шапка */
+  .top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:20px;}
+  .brand{display:inline-flex;flex-direction:column;text-decoration:none;color:var(--ink);}
+  .brandrow{display:flex;align-items:center;gap:9px;}
+  .brand img{height:19px;display:block;}
+  .brand .wm{font-size:20px;font-weight:300;letter-spacing:.01em;line-height:1;
+    background:linear-gradient(135deg,#2c6f96 0%,#3d95c7 55%,#5ac8fa 120%);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .brand .by{font-size:9px;color:#a7b0bf;margin-top:6px;align-self:flex-start;width:83px;text-align:right;}
+  .brand .by b{font-weight:800;font-size:9.5px;color:#0099cf;letter-spacing:.03em;}
+  .ctrl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .seg{display:inline-flex;background:rgba(120,134,162,.10);border:1px solid rgba(20,32,64,.05);border-radius:13px;padding:4px;gap:3px;}
+  .seg button{font:inherit;font-size:12.5px;font-weight:600;border:0;background:transparent;color:#5a6478;border-radius:9px;
+    padding:7px 13px;cursor:pointer;transition:all .2s var(--ease);}
+  .seg button:hover{color:var(--ink)}
+  .seg button.on{background:#fff;color:var(--accent);box-shadow:0 1px 2px rgba(16,24,40,.05),0 5px 12px -5px rgba(16,32,64,.22);}
+  .dates{display:inline-flex;align-items:center;gap:4px;}
+  .dates input{font:inherit;font-size:12.5px;color:#4c5568;border:1px solid rgba(20,32,64,.09);border-radius:10px;
+    padding:6px 8px;background:rgba(255,255,255,.75);}
+  .chk{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--mut);cursor:pointer;user-select:none;}
+  .meta{color:var(--mut2);font-size:12px;margin:-10px 0 16px;}
+
+  /* секции со сворачиванием */
+  .sec{background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);margin:0 0 14px;overflow:hidden;}
+  .sec-h{display:flex;align-items:center;gap:2px;padding:15px 18px;cursor:pointer;user-select:none;}
+  .sec-h h2{font-size:14.5px;font-weight:700;letter-spacing:-.015em;margin:0;}
+  .sec-h .sum{margin-left:auto;margin-right:12px;color:var(--mut);font-size:12.5px;font-weight:500;white-space:nowrap;}
+  .sec-h .chev{width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:var(--mut2);
+    transition:transform .25s var(--ease);flex:0 0 auto;transform:rotate(90deg);font-size:17px;}
+  .sec-h .sp{margin-left:auto}
+  .sec.closed .chev{transform:rotate(0deg)}
+  .sec-b{padding:0 18px 18px;}
+  .sec.closed .sec-b{display:none}
+
+  /* плитки */
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  @media(max-width:760px){ .tiles{grid-template-columns:repeat(2,1fr)} }
+  .tile{border:1px solid var(--border);border-radius:14px;padding:12px 14px;background:#fbfcfe;
+    transition:transform .28s var(--ease),box-shadow .28s var(--ease),background .28s var(--ease);}
+  .tile:hover{transform:translateY(-2px);box-shadow:var(--shadow-hi);background:#fff;}
+  .tile .k{font-size:11.5px;color:var(--mut);margin-bottom:6px;}
+  .tile .v{font-size:21px;font-weight:700;letter-spacing:-.025em;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .tile .v small{font-size:12px;font-weight:500;color:var(--mut2);margin-left:4px;letter-spacing:0;}
+  .tile.acc{background:linear-gradient(135deg,#0b86b8 0%,#16aede 100%);border-color:transparent;color:#fff;
+    box-shadow:0 12px 26px -14px rgba(0,151,202,.7);}
+  .tile.acc .k,.tile.acc .v small{color:rgba(255,255,255,.82)}
+  .tile.acc.neg{background:linear-gradient(135deg,#b8374c 0%,#dd5a6c 100%);box-shadow:0 12px 26px -14px rgba(192,54,74,.6);}
+
+  /* график */
+  .chart{position:relative;height:210px;}
+  .chart svg{display:block;width:100%;height:100%;overflow:visible;}
+  .chart .tip{position:absolute;pointer-events:none;background:#1c2333;color:#e7ecf5;font-size:11.5px;line-height:1.45;
+    padding:7px 10px;border-radius:9px;white-space:nowrap;transform:translate(-50%,-100%);margin-top:-12px;
+    box-shadow:0 10px 26px rgba(16,24,40,.3);opacity:0;transition:opacity .12s ease;z-index:2;}
+  .chart .tip b{color:#fff;font-size:12.5px}
+  .chart .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mut2);font-size:13px;}
+
+  /* таблицы */
   .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
-  .bars{display:flex;align-items:flex-end;gap:5px;height:140px;margin:6px 0 4px;}
-  .bars .b{flex:1 1 0;min-width:6px;background:linear-gradient(180deg,#65b3e0,#2c6f96);border-radius:5px 5px 2px 2px;position:relative;}
-  .bars .b:hover{filter:brightness(1.08)}
-  .bars .b i{position:absolute;left:50%;transform:translateX(-50%);top:-17px;font-style:normal;font-size:10.5px;color:#5a6580;}
-  .xlabels{display:flex;gap:5px;font-size:10px;color:var(--mut);}
-  .xlabels span{flex:1 1 0;min-width:6px;text-align:center;overflow:hidden;}
-  form.add{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:12px;}
-  form.add label{font-size:11.5px;color:var(--mut);display:block;margin-bottom:4px;}
-  form.add input,form.add select{font:inherit;font-size:13.5px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fff;}
-  form.add button{font:inherit;font-size:13.5px;font-weight:700;border:0;border-radius:10px;padding:9px 16px;
-    background:var(--accent);color:#fff;cursor:pointer;}
-  .x{border:0;background:none;color:var(--mut);cursor:pointer;font-size:15px;padding:0 4px;}
-  .x:hover{color:var(--red)}
-  .gate{max-width:340px;margin:16vh auto;background:#fff;border:1px solid var(--line);border-radius:20px;
-    padding:22px;box-shadow:var(--sh);text-align:center;}
-  .gate h1{font-size:18px;margin:0 0 4px;}
-  .gate p{color:var(--mut);font-size:13.5px;margin:0 0 16px;}
-  .gate input{width:100%;font:inherit;font-size:17px;text-align:center;letter-spacing:.2em;border:1px solid var(--line);
-    border-radius:13px;padding:13px;margin-bottom:10px;}
-  .gate button{width:100%;font:inherit;font-size:15px;font-weight:700;border:0;border-radius:13px;padding:13px;
-    background:var(--accent);color:#fff;cursor:pointer;}
-  .err{color:var(--red);font-size:13px;min-height:18px;margin-top:6px;}
-  .foot{color:var(--mut);font-size:12px;text-align:center;margin-top:22px;}
-  @media(max-width:600px){ .tile .v{font-size:20px} .wrap{padding:12px 12px 60px} }
+  table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;}
+  th{text-align:left;font-size:11px;font-weight:600;color:var(--mut2);padding:0 14px 9px 0;white-space:nowrap;}
+  td{padding:9px 14px 9px 0;border-top:1px solid rgba(20,32,64,.055);white-space:nowrap;}
+  th.r,td.r{text-align:right}
+  th:last-child,td:last-child{padding-right:0}
+  tbody tr:hover td{background:rgba(0,151,202,.03)}
+  tfoot td{border-top:1.5px solid rgba(20,32,64,.12);font-weight:700;padding-top:11px;}
+  .pos{color:var(--green);font-weight:600}
+  .neg{color:var(--red);font-weight:600}
+  .dim{color:var(--mut2)}
+  .mono{font-family:SFMono-Regular,Consolas,monospace;font-size:12px;letter-spacing:.02em;}
+
+  /* расходы */
+  .tool{display:flex;justify-content:flex-end;margin:12px 0 0;}
+  .btn{font:inherit;font-size:12.5px;font-weight:600;border:1px solid rgba(20,32,64,.09);background:rgba(255,255,255,.8);
+    color:#4c5568;border-radius:10px;padding:7px 12px;cursor:pointer;transition:all .18s var(--ease);}
+  .btn:hover{border-color:rgba(20,32,64,.18);color:var(--ink)}
+  .btn.pri{background:linear-gradient(135deg,var(--accent2),var(--accent));border-color:transparent;color:#fff;
+    box-shadow:0 8px 16px -8px rgba(0,151,202,.55);}
+  .form{display:none;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:12px;padding:14px;border-radius:14px;background:#f7f9fc;}
+  .form.on{display:flex}
+  .form label{display:block;font-size:11px;color:var(--mut);margin:0 0 4px}
+  .form input{font:inherit;font-size:13px;border:1px solid rgba(20,32,64,.10);border-radius:10px;padding:7px 9px;background:#fff;}
+  .x{border:0;background:none;color:var(--mut2);cursor:pointer;font-size:13px;padding:2px 5px;border-radius:6px;}
+  .x:hover{color:var(--red);background:rgba(192,54,74,.07)}
+
+  /* значок «i» с пояснением — как в дашборде VSC */
+  .inf{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;
+    border:1.3px solid currentColor;color:#aeb6c4;font:italic 700 10px/1 Georgia,"Times New Roman",serif;
+    cursor:pointer;margin-left:8px;flex:0 0 auto;transition:color .15s ease;}
+  .inf:hover{color:var(--accent)}
+  .pop{display:none;position:fixed;z-index:9999;width:min(320px,80vw);background:#1c2333;color:#e7ecf5;
+    font:400 12px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;padding:11px 13px;
+    border-radius:12px;box-shadow:0 14px 38px rgba(16,24,40,.38);}
+  .pop.show{display:block}
+  .pop b{color:#fff}
+
+  .gate{max-width:320px;margin:18vh auto 0;background:#fff;border:1px solid var(--border);border-radius:22px;
+    padding:26px 22px;box-shadow:var(--shadow-hi);text-align:center;}
+  .gate .brand{align-items:center;margin-bottom:18px}
+  .gate input{width:100%;font:inherit;font-size:18px;text-align:center;letter-spacing:.3em;border:1px solid rgba(20,32,64,.10);
+    border-radius:13px;padding:12px;margin-bottom:10px;}
+  .gate .btn{width:100%;padding:12px;font-size:14px}
+  .err{color:var(--red);font-size:12.5px;min-height:18px;margin-top:8px;}
+  @media(max-width:640px){
+    .wrap{padding:16px 12px 60px}
+    .tile .v{font-size:19px}
+    .sec-h{padding:14px 15px}.sec-b{padding:0 15px 15px}
+    .sec-h .sum{display:none}
+    .sec-h .chev{margin-left:auto}
+  }
 </style>
 </head>
 <body>
 
 <div id="gate" class="gate" style="display:none">
-  <h1>VOYO mobile</h1>
-  <p>Панель показателей</p>
+  <div class="brand"><span class="brandrow"><img src="/voyo-logo.png" alt="VOYO"/><span class="wm">mobile</span></span></div>
   <input id="code" type="password" inputmode="numeric" placeholder="код" autocomplete="off"/>
-  <button id="enter" type="button">Войти</button>
+  <button id="enter" class="btn pri" type="button">Войти</button>
   <div class="err" id="gateErr"></div>
 </div>
 
 <div class="wrap" id="app" style="display:none">
-  <div class="hdr">
-    <div>
-      <h1>Показатели eSIM</h1>
-      <div class="sub" id="sub">загружаем…</div>
+  <div class="top">
+    <a class="brand" href="/">
+      <span class="brandrow"><img src="/voyo-logo.png" alt="VOYO"/><span class="wm">mobile</span></span>
+      <span class="by">by <b>VSC</b></span>
+    </a>
+    <div class="ctrl">
+      <div class="seg" id="seg">
+        <button data-d="7">7 дней</button>
+        <button data-d="30" class="on">30 дней</button>
+        <button data-d="0">Всё время</button>
+      </div>
+      <span class="dates"><input id="from" type="date"/><input id="to" type="date"/></span>
+      <label class="chk"><input id="withTest" type="checkbox"/> тестовые</label>
     </div>
-    <div class="per" id="per">
-      <button data-d="7">7 дней</button>
-      <button data-d="30" class="on">30 дней</button>
-      <button data-d="0">всё время</button>
-      <input id="from" type="date"/>
-      <input id="to" type="date"/>
-      <button id="apply">Показать</button>
-      <label style="font-size:12.5px;color:#5a6580;display:inline-flex;align-items:center;gap:5px;cursor:pointer">
-        <input id="withTest" type="checkbox"/> с тестовыми</label>
+  </div>
+  <div class="meta" id="meta"></div>
+
+  <section class="sec" data-id="sum">
+    <div class="sec-h"><h2>Сводка</h2><span data-info="sum"></span><span class="sum" id="sumNote"></span><span class="chev">›</span></div>
+    <div class="sec-b"><div class="tiles" id="tiles"></div></div>
+  </section>
+
+  <section class="sec" data-id="chart">
+    <div class="sec-h"><h2>Выручка по дням</h2><span data-info="chart"></span><span class="sum" id="chartNote"></span><span class="chev">›</span></div>
+    <div class="sec-b"><div class="chart" id="chart"><div class="tip" id="tip"></div></div></div>
+  </section>
+
+  <section class="sec" data-id="ads">
+    <div class="sec-h"><h2>Реклама и окупаемость</h2><span data-info="ads"></span><span class="sum" id="adsNote"></span><span class="chev">›</span></div>
+    <div class="sec-b">
+      <div class="scroll"><table id="tChan"></table></div>
+      <div class="tool"><button class="btn" id="spendToggle" type="button">Расходы и комиссия</button></div>
+      <div class="form" id="spendForm">
+        <div><label>Канал</label><input id="sChannel" list="chanList" placeholder="yandex" style="width:120px"/>
+          <datalist id="chanList"><option value="yandex">Яндекс Директ</option><option value="google">Google Ads</option>
+          <option value="blogger">Блогеры</option><option value="vk">ВКонтакте</option></datalist></div>
+        <div><label>Дата</label><input id="sDate" type="date"/></div>
+        <div><label>Сумма, ₽</label><input id="sRub" type="number" min="1" step="1" style="width:110px"/></div>
+        <div><label>Комментарий</label><input id="sNote" style="width:190px"/></div>
+        <button class="btn pri" id="sAdd" type="button">Добавить</button>
+        <div style="margin-left:auto"><label>Комиссия банка, %</label><input id="sAcq" type="number" step="0.1" min="0" max="20" style="width:80px"/></div>
+        <div class="scroll" style="flex-basis:100%;margin-top:6px"><table id="tSpend"></table></div>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <div class="tiles" id="tiles"></div>
+  <section class="sec" data-id="days">
+    <div class="sec-h"><h2>По дням</h2><span data-info="days"></span><span class="sp"></span><span class="chev">›</span></div>
+    <div class="sec-b"><div class="scroll"><table id="tDays"></table></div></div>
+  </section>
 
-  <div class="card">
-    <h2>Выручка по дням <span id="chartNote"></span></h2>
-    <div class="bars" id="bars"></div>
-    <div class="xlabels" id="xlabels"></div>
-  </div>
+  <section class="sec" data-id="cust">
+    <div class="sec-h"><h2>Клиенты</h2><span data-info="cust"></span><span class="sum" id="custNote"></span><span class="chev">›</span></div>
+    <div class="sec-b"><div class="scroll"><table id="tCust"></table></div></div>
+  </section>
 
-  <div class="card">
-    <h2>По дням</h2>
-    <div class="scroll"><table id="tDays"></table></div>
-  </div>
-
-  <div class="card">
-    <h2>Реклама и окупаемость <span>расход вносится руками, выручка считается по меткам utm</span></h2>
-    <div class="scroll"><table id="tChan"></table></div>
-    <form class="add" id="spendForm">
-      <div><label>Канал</label><input id="sChannel" list="chanList" placeholder="yandex" required/>
-        <datalist id="chanList">
-          <option value="yandex">Яндекс Директ</option>
-          <option value="google">Google Ads</option>
-          <option value="telegram_bot">Телеграм-бот</option>
-          <option value="blogger">Блогеры</option>
-          <option value="vk">ВКонтакте</option>
-        </datalist></div>
-      <div><label>Дата</label><input id="sDate" type="date" required/></div>
-      <div><label>Сумма, ₽</label><input id="sRub" type="number" min="1" step="1" required/></div>
-      <div><label>Комментарий</label><input id="sNote" placeholder="необязательно"/></div>
-      <button type="submit">Добавить расход</button>
-      <div style="margin-left:auto"><label>Комиссия банка, %</label><input id="sAcq" type="number" step="0.1" min="0" max="20" style="width:90px"/></div>
-    </form>
-    <div class="scroll" style="margin-top:12px"><table id="tSpend"></table></div>
-  </div>
-
-  <div class="card">
-    <h2>Клиенты <span id="custNote"></span></h2>
-    <div class="scroll"><table id="tCust"></table></div>
-  </div>
-
-  <div class="card">
-    <h2>Промокоды</h2>
-    <div class="scroll"><table id="tPromo"></table></div>
-  </div>
-
-  <div class="foot">VOYO mobile · панель показателей · данные живые, обновляются при загрузке страницы</div>
+  <section class="sec" data-id="promo">
+    <div class="sec-h"><h2>Промокоды</h2><span data-info="promo"></span><span class="sum" id="promoNote"></span><span class="chev">›</span></div>
+    <div class="sec-b"><div class="scroll"><table id="tPromo"></table></div></div>
+  </section>
 </div>
 
 <script>
 (function(){
-  var ADM = localStorage.getItem("voyo_esim_adm") || "";
+  var ADM = "";
+  try{ ADM = localStorage.getItem("voyo_esim_adm") || ""; }catch(e){}
   var DATA = null, DAYS = 30;
   var el = function(id){ return document.getElementById(id); };
   var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
-  function dayRu(d){ var p=String(d).split("-"); return p[2]+"."+p[1]; }
-  function fmtDate(ts){ try{ return new Date(ts).toLocaleDateString("ru-RU",{day:"numeric",month:"short"}); }catch(e){ return ""; } }
+  var MON = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
+  function dShort(d){ var p = String(d).split("-"); return (+p[2]) + " " + MON[+p[1]-1]; }
+  function fmtTs(ts){ return dShort(new Date(ts + 3*3600e3).toISOString().slice(0,10)); }
+  function kRub(n){ return n >= 1000 ? (Math.round(n/100)/10).toString().replace(".", ",") + "k" : RU(n); }
+  function pct(n){ return String(n).replace(".", ",") + "%"; }
 
+  /* ── пояснения под «i» ── */
+  var INFO = {
+    sum: "<b>Итог</b> = выручка − себестоимость − комиссия банка − реклама.<br><b>Себестоимость</b> — закупка у поставщика по курсу ЦБ плюс 5% на конвертацию и 11% налога.<br>Свои проверочные покупки в цифры не входят, их можно включить галочкой «тестовые».",
+    chart: "Выручка по дням оплаты, время московское. Наведите на график — покажет сумму и число пакетов за день.<br>Прошедшие сутки закрываются в полночь: себестоимость фиксируется по курсу того дня и дальше не меняется. Сегодняшний день — живые цифры.",
+    ads: "Канал определяется по метке, с которой человек пришёл впервые (utm, yclid, gclid). Покупки в телеграм-боте — отдельный канал.<br><b>Маржа</b> — уже без себестоимости и комиссии банка. <b>Итог</b> — ещё и без расходов на рекламу. <b>ДРР</b> — доля рекламы в выручке.<br>Расход вносится со скриншотов кабинетов общей суммой за всё время.",
+    days: "Каждая строка — сутки по Москве. Маржа — выручка минус себестоимость, без комиссии банка и рекламы.",
+    cust: "Люди хотя бы с одной оплатой. Код — их личный промокод для друзей, бонусы — накопленный баланс.",
+    promo: "Все промокоды витрины и бота. Выручка — сумма оплаченных заказов с этим кодом.",
+  };
+  var POP = document.createElement("div"); POP.className = "pop"; document.body.appendChild(POP);
+  function showPop(icon){
+    POP.innerHTML = INFO[icon.getAttribute("data-k")] || "";
+    POP.classList.add("show");
+    var r = icon.getBoundingClientRect(), w = Math.min(320, innerWidth - 24);
+    var left = Math.max(12, Math.min(r.left + r.width/2 - w/2, innerWidth - w - 12));
+    POP.style.left = left + "px"; POP.style.top = (r.bottom + 8) + "px";
+    var h = POP.offsetHeight;
+    if (r.bottom + 8 + h > innerHeight - 12) POP.style.top = (r.top - 8 - h) + "px";
+  }
+  function hidePop(){ POP.classList.remove("show"); }
+  document.querySelectorAll("[data-info]").forEach(function(s){
+    var i = document.createElement("span"); i.className = "inf"; i.textContent = "i";
+    i.setAttribute("data-k", s.getAttribute("data-info"));
+    i.addEventListener("mouseenter", function(){ showPop(i); });
+    i.addEventListener("mouseleave", hidePop);
+    i.addEventListener("click", function(e){ e.stopPropagation(); POP.classList.contains("show") ? hidePop() : showPop(i); });
+    s.replaceWith(i);
+  });
+  addEventListener("scroll", hidePop, true);
+  document.addEventListener("click", hidePop);
+
+  /* ── сворачивание, выбор запоминается ── */
+  var CLOSED = {};
+  try{ CLOSED = JSON.parse(localStorage.getItem("voyo_adm_closed") || "{}"); }catch(e){}
+  document.querySelectorAll(".sec").forEach(function(sec){
+    var id = sec.getAttribute("data-id");
+    if (CLOSED[id]) sec.classList.add("closed");
+    sec.querySelector(".sec-h").addEventListener("click", function(e){
+      if (e.target.closest(".inf")) return;
+      sec.classList.toggle("closed");
+      CLOSED[id] = sec.classList.contains("closed");
+      try{ localStorage.setItem("voyo_adm_closed", JSON.stringify(CLOSED)); }catch(e){}
+      if (id === "chart" && !CLOSED[id]) drawChart();
+    });
+  });
+
+  /* ── период ── */
+  function today(){ return new Date(Date.now()+3*3600e3).toISOString().slice(0,10); }
+  function addDays(d, n){ return new Date(new Date(d+"T00:00:00Z").getTime() + n*864e5).toISOString().slice(0,10); }
   function range(){
     var f = el("from").value, t = el("to").value;
-    if(f || t) return { from: f, to: t };
-    if(!DAYS) return {};
-    var to = new Date(Date.now()+3*3600e3), from = new Date(Date.now()+3*3600e3 - (DAYS-1)*864e5);
-    return { from: from.toISOString().slice(0,10), to: to.toISOString().slice(0,10) };
+    if (f || t) return { from: f, to: t };
+    if (!DAYS) return {};
+    return { from: addDays(today(), -(DAYS-1)), to: today() };
   }
+  el("seg").addEventListener("click", function(e){
+    var b = e.target.closest("button"); if (!b) return;
+    DAYS = +b.getAttribute("data-d"); el("from").value = ""; el("to").value = "";
+    el("seg").querySelectorAll("button").forEach(function(x){ x.classList.toggle("on", x === b); });
+    load();
+  });
+  ["from","to"].forEach(function(id){ el(id).addEventListener("change", function(){
+    el("seg").querySelectorAll("button").forEach(function(x){ x.classList.remove("on"); }); load(); }); });
+  el("withTest").addEventListener("change", load);
 
   async function load(){
     var r = range();
-    var q = "/esim/api/adm/stats?adm="+encodeURIComponent(ADM)
-      + (r.from?"&from="+r.from:"") + (r.to?"&to="+r.to:"")
-      + (el("withTest").checked?"&test=1":"");
-    var res = await fetch(q, { cache:"no-store" });
-    if(res.status === 403){ gate("Код не подошёл."); return; }
+    var q = "/esim/api/adm/stats?adm=" + encodeURIComponent(ADM) + (r.from ? "&from=" + r.from : "") +
+      (r.to ? "&to=" + r.to : "") + (el("withTest").checked ? "&test=1" : "");
+    var res = await fetch(q, { cache: "no-store" });
+    if (res.status === 403) return gate("Код не подошёл.");
     DATA = await res.json();
-    if(!DATA || !DATA.success){ el("sub").textContent = "не удалось загрузить данные"; return; }
+    if (!DATA || !DATA.success) { el("meta").textContent = "не удалось загрузить данные"; return; }
+    DATA._range = r;
     render();
   }
 
   function render(){
-    var t = DATA.totals;
-    el("sub").textContent = (DATA.from ? dayRu(DATA.from)+" — "+dayRu(DATA.to||DATA.from) : "за всё время")
-      + " · курс доллара " + (Math.round(DATA.usdRate*100)/100).toString().replace(".", ",") + " ₽"
-      + (DATA.testShown ? " · тестовые покупки включены в цифры"
-                        : (DATA.testCount ? " · тестовых покупок скрыто: " + DATA.testCount : ""))
-      + (DATA.closedThrough ? " · сутки закрыты по " + dayRu(DATA.closedThrough) + ", сегодня — живые цифры" : "");
-    var neg = t.profit < 0;
+    var t = DATA.totals, r = DATA._range;
+    el("meta").textContent = (r.from ? dShort(r.from) + " — " + dShort(r.to || today()) : "за всё время") +
+      " · курс ЦБ " + (Math.round(DATA.usdRate*100)/100).toString().replace(".", ",") + " ₽" +
+      (DATA.testShown ? " · с тестовыми покупками" : "");
+    el("sumNote").textContent = RU(t.orders) + " пакетов · " + RU(t.revenue) + " ₽";
     el("tiles").innerHTML = [
-      tile("Выручка", RU(t.revenue)+"<small>₽</small>"),
-      tile("Пакетов продано", RU(t.orders)+"<small>шт</small>"),
-      tile("Средний чек", RU(t.avgCheck)+"<small>₽</small>"),
-      tile("Себестоимость", RU(t.cost)+"<small>₽</small>"),
-      tile("Комиссия банка", RU(t.acq)+"<small>₽ · "+t.acqPct+"%</small>"),
-      tile("Реклама", RU(t.adSpend)+"<small>₽</small>"),
-      tile("Итог", RU(t.profit)+"<small>₽</small>", "big"+(neg?" neg":"")),
-      tile("Клиентов с покупкой", RU(t.customers)+"<small>из "+RU(t.customersAll)+" в базе</small>"),
+      tile("Выручка", RU(t.revenue), "₽"),
+      tile("Пакетов", RU(t.orders), "шт"),
+      tile("Средний чек", RU(t.avgCheck), "₽"),
+      tile("Себестоимость", RU(t.cost), "₽"),
+      tile("Комиссия банка", RU(t.acq), "₽ · " + pct(t.acqPct)),
+      tile("Реклама", RU(t.adSpend), "₽"),
+      tile("Клиентов", RU(t.customers), "из " + RU(t.customersAll)),
+      tile("Итог", RU(t.profit), "₽", "acc" + (t.profit < 0 ? " neg" : "")),
     ].join("");
+    drawChart();
+    renderChannels();
+    renderDays();
+    renderCustomers();
+    renderPromos();
+  }
+  function tile(k, v, unit, cls){ return '<div class="tile ' + (cls||"") + '"><div class="k">' + k + '</div><div class="v">' + v + '<small>' + unit + '</small></div></div>'; }
+  function head(cols, right){ return "<thead><tr>" + cols.map(function(c,i){ return "<th" + (right[i] ? ' class="r"' : "") + ">" + c + "</th>"; }).join("") + "</tr></thead>"; }
+  function row(cells, right){ return "<tr>" + cells.map(function(c,i){ return "<td" + (right[i] ? ' class="r"' : "") + ">" + c + "</td>"; }).join("") + "</tr>"; }
+  function money(n, sign){ return '<span class="' + (n < 0 ? "neg" : (sign ? "pos" : "")) + '">' + RU(n) + " ₽</span>"; }
+  var DASH = '<span class="dim">—</span>';
 
-    var days = DATA.days, max = Math.max.apply(null, days.map(function(d){ return d.revenue; }).concat([1]));
-    el("chartNote").textContent = days.length ? ("максимум "+RU(max)+" ₽") : "";
-    el("bars").innerHTML = days.map(function(d){
-      var h = Math.max(3, Math.round(d.revenue/max*100));
-      return '<div class="b" style="height:'+h+'%" title="'+d.day+': '+RU(d.revenue)+' ₽, '+d.orders+' шт">'+
-        (days.length<=31?'<i>'+RU(d.revenue)+'</i>':'')+'</div>';
-    }).join("") || '<div style="color:#8b93a5;font-size:13px">за этот период продаж не было</div>';
-    el("xlabels").innerHTML = days.map(function(d){ return "<span>"+(days.length<=31?dayRu(d.day):"")+"</span>"; }).join("");
+  /* ── график: тонкая плавная линия с заливкой, суммы — только при наведении ── */
+  var PTS = [];
+  function seriesDays(){
+    var r = DATA._range, byDay = {};
+    DATA.days.forEach(function(d){ byDay[d.day] = d; });
+    var from = r.from || (DATA.days[0] && DATA.days[0].day), to = r.to || today();
+    if (!from) return [];
+    var out = [], d = from, guard = 0;
+    while (d <= to && guard++ < 800) { out.push(byDay[d] || { day: d, revenue: 0, orders: 0 }); d = addDays(d, 1); }
+    return out;
+  }
+  // монотонная кубическая кривая (Фрич — Карлсон): плавно и без провалов ниже нуля
+  function monotone(p){
+    var n = p.length; if (n < 2) return "";
+    var dx = [], m = [], t = [], i;
+    for (i = 0; i < n-1; i++){ dx[i] = p[i+1].x - p[i].x; m[i] = (p[i+1].y - p[i].y) / dx[i]; }
+    t[0] = m[0]; t[n-1] = m[n-2];
+    for (i = 1; i < n-1; i++) t[i] = (m[i-1]*m[i] <= 0) ? 0 : (m[i-1] + m[i]) / 2;
+    for (i = 0; i < n-1; i++){
+      if (m[i] === 0){ t[i] = 0; t[i+1] = 0; continue; }
+      var a = t[i]/m[i], b = t[i+1]/m[i], s = a*a + b*b;
+      if (s > 9){ var k = 3/Math.sqrt(s); t[i] = k*a*m[i]; t[i+1] = k*b*m[i]; }
+    }
+    var d = "M" + p[0].x.toFixed(1) + "," + p[0].y.toFixed(1);
+    for (i = 0; i < n-1; i++){
+      var h = dx[i] / 3;
+      d += "C" + (p[i].x + h).toFixed(1) + "," + (p[i].y + t[i]*h).toFixed(1) + " " +
+           (p[i+1].x - h).toFixed(1) + "," + (p[i+1].y - t[i+1]*h).toFixed(1) + " " +
+           p[i+1].x.toFixed(1) + "," + p[i+1].y.toFixed(1);
+    }
+    return d;
+  }
+  function drawChart(){
+    var box = el("chart"); if (!DATA || !box.offsetWidth) return;
+    var days = seriesDays();
+    box.querySelectorAll("svg,.empty").forEach(function(n){ n.remove(); });
+    var total = days.reduce(function(a, d){ return a + d.revenue; }, 0);
+    el("chartNote").textContent = days.length ? ("в среднем " + RU(total / days.length) + " ₽ в день") : "";
+    if (!total || days.length < 2){
+      var e = document.createElement("div"); e.className = "empty";
+      e.textContent = total ? "нужно хотя бы два дня, чтобы построить линию" : "за этот период продаж не было";
+      box.appendChild(e); return;
+    }
+    var W = box.offsetWidth, H = box.offsetHeight, L = 40, R = 12, T = 14, B = 26;
+    var max = Math.max.apply(null, days.map(function(d){ return d.revenue; }));
+    var step = Math.pow(10, Math.floor(Math.log10(max))), top = Math.ceil(max / step) * step;
+    if (top / max > 1.5) top = Math.ceil(max / (step/2)) * (step/2);
+    var x = function(i){ return L + i * (W-L-R) / (days.length-1); };
+    var y = function(v){ return T + (1 - v / top) * (H-T-B); };
+    PTS = days.map(function(d, i){ return { x: x(i), y: y(d.revenue), d: d }; });
+    var path = monotone(PTS), base = y(0).toFixed(1);
+    var grid = "", lab = "";
+    [0, .5, 1].forEach(function(f){
+      var yy = y(top*f).toFixed(1);
+      grid += '<line x1="' + L + '" x2="' + (W-R) + '" y1="' + yy + '" y2="' + yy + '" stroke="rgba(20,32,64,' + (f ? .055 : .11) + ')" stroke-width="1"/>';
+      lab += '<text x="' + (L-8) + '" y="' + (+yy + 3.5) + '" text-anchor="end" font-size="10.5" fill="#9aa3b3">' + kRub(top*f) + '</text>';
+    });
+    // подписи дат: не больше семи и с запасом между ними, чтобы не налезали
+    var n = days.length, every = Math.max(1, Math.ceil(n / 7));
+    days.forEach(function(d, i){
+      var last = i === n-1;
+      if (!last && i % every) return;
+      if (!last && n-1-i < every * 0.7) return;
+      lab += '<text x="' + x(i).toFixed(1) + '" y="' + (H-7) + '" text-anchor="' + (i === 0 ? "start" : (last ? "end" : "middle")) +
+        '" font-size="10.5" fill="#9aa3b3">' + dShort(d.day) + '</text>';
+    });
+    var dots = n <= 45 ? PTS.filter(function(p){ return p.d.revenue > 0; }).map(function(p){
+      return '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="2.3" fill="#fff" stroke="#0097ca" stroke-width="1.4"/>';
+    }).join("") : "";
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '">' +
+      '<defs><linearGradient id="gFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#00bff0" stop-opacity=".20"/>' +
+      '<stop offset="1" stop-color="#00bff0" stop-opacity="0"/></linearGradient>' +
+      '<linearGradient id="gLine" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0b86b8"/><stop offset="1" stop-color="#18b6e6"/></linearGradient></defs>' +
+      grid + lab +
+      '<path d="' + path + " L" + PTS[n-1].x.toFixed(1) + "," + base + " L" + PTS[0].x.toFixed(1) + "," + base + 'Z" fill="url(#gFill)"/>' +
+      '<path d="' + path + '" fill="none" stroke="url(#gLine)" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>' +
+      dots +
+      '<line id="guide" y1="' + T + '" y2="' + base + '" stroke="rgba(0,151,202,.35)" stroke-width="1" stroke-dasharray="3 3" opacity="0"/>' +
+      '<circle id="hot" r="4.2" fill="#0097ca" stroke="#fff" stroke-width="2" opacity="0"/>' +
+      '<rect x="' + L + '" y="0" width="' + (W-L-R) + '" height="' + H + '" fill="transparent" id="hit"/></svg>';
+    box.insertAdjacentHTML("afterbegin", svg);
+    var hit = box.querySelector("#hit"), guide = box.querySelector("#guide"), hot = box.querySelector("#hot"), tip = el("tip");
+    function show(evt){
+      var rc = box.getBoundingClientRect(), mx = (evt.touches ? evt.touches[0].clientX : evt.clientX) - rc.left, best = PTS[0];
+      PTS.forEach(function(p){ if (Math.abs(p.x - mx) < Math.abs(best.x - mx)) best = p; });
+      guide.setAttribute("x1", best.x); guide.setAttribute("x2", best.x); guide.setAttribute("opacity", 1);
+      hot.setAttribute("cx", best.x); hot.setAttribute("cy", best.y); hot.setAttribute("opacity", 1);
+      tip.innerHTML = dShort(best.d.day) + "<br><b>" + RU(best.d.revenue) + " ₽</b> · " + best.d.orders + " шт";
+      tip.style.left = Math.max(55, Math.min(W - 55, best.x)) + "px"; tip.style.top = best.y + "px"; tip.style.opacity = 1;
+    }
+    function hide(){ guide.setAttribute("opacity", 0); hot.setAttribute("opacity", 0); tip.style.opacity = 0; }
+    hit.addEventListener("mousemove", show); hit.addEventListener("mouseleave", hide);
+    hit.addEventListener("touchstart", show, { passive: true }); hit.addEventListener("touchmove", show, { passive: true });
+  }
+  var rsz; addEventListener("resize", function(){ clearTimeout(rsz); rsz = setTimeout(drawChart, 150); });
 
-    el("tDays").innerHTML = head(["День","Пакетов","Выручка","Себестоимость","Маржа"], [0,1,1,1,1]) +
-      "<tbody>" + days.slice().reverse().map(function(d){
-        return row([dayRu(d.day), RU(d.orders), RU(d.revenue)+" ₽", RU(d.cost)+" ₽",
-          '<span class="g">'+RU(d.margin)+' ₽</span>'], [0,1,1,1,1]);
-      }).join("") + "</tbody>";
-
-    el("tChan").innerHTML = head(["Канал","Пакетов","Выручка","Маржа","Расход","ДРР","Цена заказа","Итог по каналу"],[0,1,1,1,1,1,1,1]) +
-      "<tbody>" + DATA.channels.map(function(c){
-        return row([esc(c.name), RU(c.orders), RU(c.revenue)+" ₽",
-          '<span class="g">'+RU(c.margin)+' ₽</span>', c.spend?RU(c.spend)+" ₽":"—",
-          c.drr!=null&&c.spend?c.drr+" %":"—", c.cpo?RU(c.cpo)+" ₽":"—",
-          '<span class="'+(c.profit<0?"r2":"g")+'">'+RU(c.profit)+' ₽</span>'], [0,1,1,1,1,1,1,1]);
-      }).join("") + "</tbody>" + chanTotal(DATA.channels);
-
-    el("tSpend").innerHTML = DATA.spend.length
-      ? head(["Дата","Канал","Сумма","Комментарий",""],[0,0,1,0,1]) + "<tbody>" + DATA.spend.map(function(s){
-          return row([dayRu(s.date), esc(s.channel), RU(s.rub)+" ₽", esc(s.note||""),
-            '<button class="x" data-del="'+s.id+'" title="удалить">✕</button>'], [0,0,1,0,1]);
-        }).join("") + "</tbody>"
-      : '<tbody><tr><td style="color:#8b93a5">расходов пока не внесено</td></tr></tbody>';
+  /* ── реклама ── */
+  function renderChannels(){
+    var list = DATA.channels, s = { orders:0, revenue:0, margin:0, spend:0, profit:0 };
+    list.forEach(function(c){ s.orders += c.orders; s.revenue += c.revenue; s.margin += c.margin; s.spend += c.spend; s.profit += c.profit; });
+    el("adsNote").textContent = s.spend ? ("итог " + RU(s.profit) + " ₽") : "";
+    var R = [0,1,1,1,1,1,1,1];
+    el("tChan").innerHTML = head(["Канал","Пакетов","Выручка","Маржа","Расход","ДРР","Заказ стоит","Итог"], R) +
+      "<tbody>" + list.map(function(c){
+        return row([esc(c.name), RU(c.orders), RU(c.revenue) + " ₽", RU(c.margin) + " ₽",
+          c.spend ? RU(c.spend) + " ₽" : DASH,
+          c.spend && c.revenue ? pct(c.drr) : DASH,
+          c.spend && c.orders ? RU(c.cpo) + " ₽" : DASH,
+          money(c.profit, true)], R);
+      }).join("") + "</tbody>" +
+      "<tfoot>" + row(["Всего", RU(s.orders), RU(s.revenue) + " ₽", RU(s.margin) + " ₽",
+        s.spend ? RU(s.spend) + " ₽" : "—",
+        s.spend && s.revenue ? pct(Math.round(s.spend / s.revenue * 1000) / 10) : "—",
+        s.spend && s.orders ? RU(s.spend / s.orders) + " ₽" : "—",
+        money(s.profit, true)], R) + "</tfoot>";
     el("sAcq").value = DATA.totals.acqPct;
-
-    el("custNote").textContent = DATA.customers.length + " с оплатой";
-    el("tCust").innerHTML = head(["Клиент","Откуда","Покупок","Сумма","Первая","Последняя","Промокод","Баланс"],[0,0,1,1,0,0,0,1]) +
-      "<tbody>" + DATA.customers.map(function(c){
-        var who = c.key.indexOf("tg:")===0 ? "телеграм "+c.key.slice(3) : c.key;
-        return row(['<span class="mono">'+esc(who)+'</span>', esc(chanName(c.channel)), RU(c.orders),
-          RU(c.revenue)+" ₽", fmtDate(c.first), fmtDate(c.last),
-          '<span class="mono">'+esc(c.refCode||"")+'</span>', RU(c.balanceRub)+" ₽"], [0,0,1,1,0,0,0,1]);
-      }).join("") + "</tbody>";
-
-    el("tPromo").innerHTML = head(["Код","Что даёт","Использован","Лимит","Срок","Выручка","Статус"],[0,0,1,1,0,1,0]) +
-      "<tbody>" + DATA.promos.map(function(p){
-        var what = p.cost ? "по себестоимости" : (p.pct ? p.pct+" %" : (p.rub ? RU(p.rub)+" ₽" : "—"));
-        var term = (p.from||p.to) ? ((p.from?dayRu(p.from):"")+" — "+(p.to?dayRu(p.to):"")) : "без срока";
-        return row(['<span class="mono">'+esc(p.code)+'</span>', what, RU(p.uses||0),
-          p.maxUses?RU(p.maxUses):"без лимита", term, RU(p.revenue)+" ₽",
-          p.active===false?'<span class="r2">выключен</span>':'<span class="g">работает</span>'], [0,0,1,1,0,1,0]);
-      }).join("") + "</tbody>";
+    el("tSpend").innerHTML = DATA.spend.length
+      ? head(["Дата","Канал","Сумма","Комментарий",""], [0,0,1,0,1]) + "<tbody>" + DATA.spend.map(function(x){
+          return row([dShort(x.date), esc(x.channel), RU(x.rub) + " ₽", '<span class="dim">' + esc(x.note || "") + "</span>",
+            '<button class="x" data-del="' + x.id + '" title="удалить">✕</button>'], [0,0,1,0,1]);
+        }).join("") + "</tbody>" : "";
   }
-
-  // Общий итог по всем каналам — последней строкой таблицы рекламы.
-  // Маржа уже за вычетом себестоимости и комиссии банка, итог — ещё и без рекламы.
-  function chanTotal(list){
-    var t = list.reduce(function(a,c){
-      a.orders+=c.orders; a.revenue+=c.revenue; a.margin+=c.margin; a.spend+=c.spend; a.profit+=c.profit; return a;
-    }, { orders:0, revenue:0, margin:0, spend:0, profit:0 });
-    var drr = t.revenue && t.spend ? Math.round(t.spend/t.revenue*1000)/10+" %" : "—";
-    var cpo = t.orders && t.spend ? RU(Math.round(t.spend/t.orders))+" ₽" : "—";
-    var cells = ["Всего", RU(t.orders), RU(t.revenue)+" ₽", RU(t.margin)+" ₽", t.spend?RU(t.spend)+" ₽":"—", drr, cpo,
-      '<span class="'+(t.profit<0?"r2":"g")+'">'+RU(t.profit)+' ₽</span>'];
-    return '<tfoot><tr class="tot">' + cells.map(function(c,i){
-      return '<td'+(i?' class="r"':'')+'>'+c+'</td>'; }).join("") + '</tr></tfoot>';
-  }
-  function chanName(k){
-    var m = { yandex:"Яндекс Директ", google:"Google Ads", telegram_bot:"Телеграм-бот", direct:"Прямой заход",
-              vk:"ВКонтакте", blogger:"Блогеры", email:"Рассылка" };
-    return m[k] || k;
-  }
-  function tile(k,v,cls){ return '<div class="tile '+(cls||"")+'"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>'; }
-  function head(cols,right){ return "<thead><tr>"+cols.map(function(c,i){ return '<th'+(right[i]?' class="r"':'')+'>'+c+'</th>'; }).join("")+"</tr></thead>"; }
-  function row(cells,right){ return "<tr>"+cells.map(function(c,i){ return '<td'+(right[i]?' class="r"':'')+'>'+c+'</td>'; }).join("")+"</tr>"; }
-
-  document.addEventListener("click", async function(e){
-    var b = e.target.closest && e.target.closest("[data-del]");
-    if(!b) return;
-    if(!confirm("Удалить эту запись о расходе?")) return;
-    await post({ del: b.getAttribute("data-del") });
+  el("spendToggle").addEventListener("click", function(){
+    el("spendForm").classList.toggle("on");
+    if (!el("sDate").value) el("sDate").value = today();
   });
-  el("per").addEventListener("click", function(e){
-    var b = e.target.closest("button[data-d]");
-    if(!b) return;
-    DAYS = Number(b.getAttribute("data-d"));
-    el("from").value = ""; el("to").value = "";
-    document.querySelectorAll("#per button[data-d]").forEach(function(x){ x.classList.toggle("on", x===b); });
-    load();
-  });
-  el("withTest").addEventListener("change", function(){ load(); });
-  el("apply").addEventListener("click", function(){
-    document.querySelectorAll("#per button[data-d]").forEach(function(x){ x.classList.remove("on"); });
-    load();
-  });
-  el("spendForm").addEventListener("submit", async function(e){
-    e.preventDefault();
-    await post({ add: { channel: el("sChannel").value, date: el("sDate").value,
-      rub: el("sRub").value, note: el("sNote").value } });
-    el("sRub").value = ""; el("sNote").value = "";
+  el("sAdd").addEventListener("click", function(){
+    post({ add: { channel: el("sChannel").value, date: el("sDate").value, rub: el("sRub").value, note: el("sNote").value } })
+      .then(function(ok){ if (ok){ el("sRub").value = ""; el("sNote").value = ""; } });
   });
   el("sAcq").addEventListener("change", function(){ post({ acqPct: this.value }); });
-
+  document.addEventListener("click", function(e){
+    var b = e.target.closest && e.target.closest("[data-del]"); if (!b) return;
+    if (confirm("Удалить эту запись о расходе?")) post({ del: b.getAttribute("data-del") });
+  });
   async function post(body){
-    var r = await fetch("/esim/api/adm/spend", { method:"POST", headers:{ "Content-Type":"application/json" },
+    var r = await fetch("/esim/api/adm/spend", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(Object.assign({ adm: ADM }, body)) });
     var j = await r.json().catch(function(){ return null; });
-    if(!j || !j.success){ alert((j && j.message) || "Не получилось сохранить."); return; }
-    load();
+    if (!j || !j.success){ alert((j && j.message) || "Не получилось сохранить."); return false; }
+    load(); return true;
   }
 
+  /* ── по дням, клиенты, промокоды ── */
+  function renderDays(){
+    var R = [0,1,1,1,1];
+    el("tDays").innerHTML = DATA.days.length
+      ? head(["День","Пакетов","Выручка","Себестоимость","Маржа"], R) + "<tbody>" + DATA.days.slice().reverse().map(function(d){
+          return row([dShort(d.day), RU(d.orders), RU(d.revenue) + " ₽", RU(d.cost) + " ₽", money(d.margin, true)], R);
+        }).join("") + "</tbody>"
+      : '<tbody><tr><td class="dim">за этот период продаж не было</td></tr></tbody>';
+  }
+  function chanName(k){
+    return ({ yandex:"Яндекс Директ", google:"Google Ads", telegram_bot:"Телеграм-бот", direct:"Прямой заход",
+      vk:"ВКонтакте", blogger:"Блогеры", email:"Рассылка" })[k] || k;
+  }
+  function renderCustomers(){
+    el("custNote").textContent = DATA.customers.length + " с оплатой";
+    var R = [0,0,1,1,1,0,1];
+    el("tCust").innerHTML = head(["Клиент","Откуда","Покупок","Сумма","Последняя","Код","Бонусы"], R) +
+      "<tbody>" + DATA.customers.map(function(c){
+        var who = c.key.indexOf("tg:") === 0 ? "телеграм · " + c.key.slice(3) : c.key;
+        return row(['<span class="mono">' + esc(who) + "</span>", esc(chanName(c.channel)), RU(c.orders),
+          RU(c.revenue) + " ₽", fmtTs(c.last), '<span class="mono dim">' + esc(c.refCode || "") + "</span>",
+          c.balanceRub ? RU(c.balanceRub) + " ₽" : DASH], R);
+      }).join("") + "</tbody>";
+  }
+  function renderPromos(){
+    var live = DATA.promos.filter(function(p){ return p.active !== false; }).length;
+    el("promoNote").textContent = live + " действуют";
+    var R = [0,0,1,0,1,0];
+    el("tPromo").innerHTML = head(["Код","Скидка","Применён","Срок","Выручка","Статус"], R) +
+      "<tbody>" + DATA.promos.map(function(p){
+        var what = p.cost ? "по себестоимости" : (p.pct ? p.pct + "%" : (p.rub ? RU(p.rub) + " ₽" : "—"));
+        var term = (p.from || p.to) ? ((p.from ? dShort(p.from) : "…") + " — " + (p.to ? dShort(p.to) : "…")) : '<span class="dim">без срока</span>';
+        var used = RU(p.uses || 0) + (p.maxUses ? '<span class="dim"> из ' + RU(p.maxUses) + "</span>" : "");
+        return row(['<span class="mono">' + esc(p.code) + "</span>", what, used, term, RU(p.revenue) + " ₽",
+          p.active === false ? '<span class="dim">выключен</span>' : '<span class="pos">работает</span>'], R);
+      }).join("") + "</tbody>";
+  }
+
+  /* ── вход ── */
   function gate(msg){
-    el("app").style.display = "none";
-    el("gate").style.display = "block";
-    el("gateErr").textContent = msg || "";
-    el("code").focus();
+    el("app").style.display = "none"; el("gate").style.display = "block";
+    el("gateErr").textContent = msg || ""; el("code").focus();
   }
   el("enter").addEventListener("click", function(){
     ADM = el("code").value.trim();
-    localStorage.setItem("voyo_esim_adm", ADM);
-    el("gate").style.display = "none";
-    el("app").style.display = "block";
-    load();
+    try{ localStorage.setItem("voyo_esim_adm", ADM); }catch(e){}
+    el("gate").style.display = "none"; el("app").style.display = "block"; load();
   });
-  el("code").addEventListener("keydown", function(e){ if(e.key==="Enter") el("enter").click(); });
-
-  if(ADM){ el("app").style.display = "block"; load(); } else gate();
+  el("code").addEventListener("keydown", function(e){ if (e.key === "Enter") el("enter").click(); });
+  if (ADM){ el("app").style.display = "block"; load(); } else gate();
 })();
 </script>
 </body>
