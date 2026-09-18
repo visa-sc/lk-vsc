@@ -32,8 +32,6 @@
   .brand img{height:19px;display:block;}
   .brand .wm{font-size:20px;font-weight:300;letter-spacing:.01em;line-height:1;
     background:linear-gradient(135deg,#2c6f96 0%,#3d95c7 55%,#5ac8fa 120%);-webkit-background-clip:text;background-clip:text;color:transparent;}
-  .brand .by{font-size:9px;color:#a7b0bf;margin-top:6px;align-self:flex-start;width:83px;text-align:right;}
-  .brand .by b{font-weight:800;font-size:9.5px;color:#0099cf;letter-spacing:.03em;}
   .ctrl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   .seg{display:inline-flex;background:rgba(120,134,162,.10);border:1px solid rgba(20,32,64,.05);border-radius:13px;padding:4px;gap:3px;}
   .seg button{font:inherit;font-size:12.5px;font-weight:600;border:0;background:transparent;color:#5a6478;border-radius:9px;
@@ -127,6 +125,15 @@
     border-radius:13px;padding:12px;margin-bottom:10px;}
   .gate .btn{width:100%;padding:12px;font-size:14px}
   .err{color:var(--red);font-size:12.5px;min-height:18px;margin-top:8px;}
+  .gate .btn.bio{display:flex;align-items:center;justify-content:center;gap:9px;margin-bottom:4px;
+    background:#141a2e;border-color:transparent;color:#fff;box-shadow:0 10px 22px -12px rgba(20,26,46,.7);}
+  .gate .btn.bio:hover{color:#fff;filter:brightness(1.15)}
+  .gate .btn.bio svg{width:20px;height:20px}
+  .gate .or{font-size:12px;color:var(--mut2);margin:12px 0 10px;}
+  .offer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 14px;
+    padding:12px 14px 12px 16px;border-radius:14px;background:#fff;border:1px solid rgba(0,151,202,.22);
+    box-shadow:0 12px 28px -18px rgba(0,151,202,.45);font-size:13px;}
+  .offer .ob{display:flex;gap:8px}
   @media(max-width:640px){
     .wrap{padding:16px 12px 60px}
     .tile .v{font-size:19px}
@@ -140,6 +147,10 @@
 
 <div id="gate" class="gate" style="display:none">
   <div class="brand"><span class="brandrow"><img src="/voyo-logo.png" alt="VOYO"/><span class="wm">mobile</span></span></div>
+  <button id="bioBtn" class="btn bio" type="button" style="display:none">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9.5v1M15 9.5v1M12 9.5v3.5h-1M9.5 15.5a3.5 3.5 0 0 0 5 0"/></svg>
+    Войти по Face ID</button>
+  <div class="or" id="bioOr" style="display:none">или по коду</div>
   <input id="code" type="password" inputmode="numeric" placeholder="код" autocomplete="off"/>
   <button id="enter" class="btn pri" type="button">Войти</button>
   <div class="err" id="gateErr"></div>
@@ -149,7 +160,6 @@
   <div class="top">
     <a class="brand" href="/">
       <span class="brandrow"><img src="/voyo-logo.png" alt="VOYO"/><span class="wm">mobile</span></span>
-      <span class="by">by <b>VSC</b></span>
     </a>
     <div class="ctrl">
       <div class="seg" id="seg">
@@ -162,6 +172,10 @@
     </div>
   </div>
   <div class="meta" id="meta"></div>
+  <div class="offer" id="bioOffer" style="display:none">
+    <span>Входить по Face ID или Touch ID на этом устройстве?</span>
+    <span class="ob"><button class="btn" id="bioNo" type="button">Не сейчас</button><button class="btn pri" id="bioOn" type="button">Включить</button></span>
+  </div>
 
   <section class="sec" data-id="sum">
     <div class="sec-h"><h2>Сводка</h2><span data-info="sum"></span><span class="sum" id="sumNote"></span><span class="chev">›</span></div>
@@ -210,8 +224,12 @@
 
 <script>
 (function(){
-  var ADM = "";
-  try{ ADM = localStorage.getItem("voyo_esim_adm") || ""; }catch(e){}
+  // Вход как в дашборд VSC, но свой: код или Face ID дают токен только на панель, на сутки.
+  // Токен живёт только в памяти вкладки — при каждом открытии панель сама
+  // спрашивает Face ID (так же устроен /admin: не восстанавливать сессию по
+  // сохранённому токену, иначе ломается авто-вход по биометрии).
+  var TOKEN = "";
+  try{ localStorage.removeItem("voyo_esim_adm"); }catch(e){}   // раньше тут хранили сам код — больше не храним
   var DATA = null, DAYS = 30;
   var el = function(id){ return document.getElementById(id); };
   var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
@@ -228,7 +246,7 @@
     chart: "Выручка по дням оплаты, время московское. Наведите на график — покажет сумму и число пакетов за день.<br>Прошедшие сутки закрываются в полночь: себестоимость фиксируется по курсу того дня и дальше не меняется. Сегодняшний день — живые цифры.",
     ads: "Канал определяется по метке, с которой человек пришёл впервые (utm, yclid, gclid). Покупки в телеграм-боте — отдельный канал.<br><b>Маржа</b> — уже без себестоимости и комиссии банка. <b>Итог</b> — ещё и без расходов на рекламу. <b>ДРР</b> — доля рекламы в выручке.<br>Расход вносится со скриншотов кабинетов общей суммой за всё время.",
     days: "Каждая строка — сутки по Москве. Маржа — выручка минус себестоимость, без комиссии банка и рекламы.",
-    cust: "Люди хотя бы с одной оплатой. Код — их личный промокод для друзей, бонусы — накопленный баланс.",
+    cust: "Люди хотя бы с одной оплатой. <b>Откуда</b> и <b>ключевое слово</b> — по первой покупке: с какой рекламы и по какому запросу человек пришёл впервые.<br>Директ передаёт слово сам. Google — только если в шаблоне ссылки кампании стоит {keyword}, иначе будет «не передано».<br><b>Код</b> — личный промокод клиента для друзей, <b>бонусы</b> — накопленный баланс.",
     promo: "Все промокоды витрины и бота. Выручка — сумма оплаченных заказов с этим кодом.",
   };
   var POP = document.createElement("div"); POP.className = "pop"; document.body.appendChild(POP);
@@ -289,10 +307,10 @@
 
   async function load(){
     var r = range();
-    var q = "/esim/api/adm/stats?adm=" + encodeURIComponent(ADM) + (r.from ? "&from=" + r.from : "") +
+    var q = "/esim/api/adm/stats?x=1" + (r.from ? "&from=" + r.from : "") +
       (r.to ? "&to=" + r.to : "") + (el("withTest").checked ? "&test=1" : "");
-    var res = await fetch(q, { cache: "no-store" });
-    if (res.status === 403) return gate("Код не подошёл.");
+    var res = await fetch(q, { cache: "no-store", headers: { Authorization: "Bearer " + TOKEN } });
+    if (res.status === 403 || res.status === 401) return gate("Сессия закончилась, войдите снова.");
     DATA = await res.json();
     if (!DATA || !DATA.success) { el("meta").textContent = "не удалось загрузить данные"; return; }
     DATA._range = r;
@@ -463,8 +481,8 @@
     if (confirm("Удалить эту запись о расходе?")) post({ del: b.getAttribute("data-del") });
   });
   async function post(body){
-    var r = await fetch("/esim/api/adm/spend", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign({ adm: ADM }, body)) });
+    var r = await fetch("/esim/api/adm/spend", { method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN }, body: JSON.stringify(body) });
     var j = await r.json().catch(function(){ return null; });
     if (!j || !j.success){ alert((j && j.message) || "Не получилось сохранить."); return false; }
     load(); return true;
@@ -485,11 +503,13 @@
   }
   function renderCustomers(){
     el("custNote").textContent = DATA.customers.length + " с оплатой";
-    var R = [0,0,1,1,1,0,1];
-    el("tCust").innerHTML = head(["Клиент","Откуда","Покупок","Сумма","Последняя","Код","Бонусы"], R) +
+    var R = [0,0,0,1,1,1,0,1];
+    el("tCust").innerHTML = head(["Клиент","Откуда","Ключевое слово","Покупок","Сумма","Последняя","Код","Бонусы"], R) +
       "<tbody>" + DATA.customers.map(function(c){
         var who = c.key.indexOf("tg:") === 0 ? "телеграм · " + c.key.slice(3) : c.key;
-        return row(['<span class="mono">' + esc(who) + "</span>", esc(chanName(c.channel)), RU(c.orders),
+        var ad = c.channel === "yandex" || c.channel === "google";
+        var term = c.term ? esc(c.term) : (ad ? '<span class="dim">не передано</span>' : DASH);
+        return row(['<span class="mono">' + esc(who) + "</span>", esc(chanName(c.channel)), term, RU(c.orders),
           RU(c.revenue) + " ₽", fmtTs(c.last), '<span class="mono dim">' + esc(c.refCode || "") + "</span>",
           c.balanceRub ? RU(c.balanceRub) + " ₽" : DASH], R);
       }).join("") + "</tbody>";
@@ -508,18 +528,133 @@
       }).join("") + "</tbody>";
   }
 
-  /* ── вход ── */
-  function gate(msg){
-    el("app").style.display = "none"; el("gate").style.display = "block";
-    el("gateErr").textContent = msg || ""; el("code").focus();
+  /* ── вход: код или Face ID / Touch ID — та же механика, что у дашборда ── */
+  var LOCAL_KEY = "voyo_esim_bio";         // на ЭТОМ устройстве ключ заведён
+  var SKIP_KEY = "voyo_esim_bio_skip";     // «не сейчас» — больше не предлагать
+  var BIO_FAST_FAIL_MS = 2000;             // быстрый отказ = ключа на устройстве уже нет
+  function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+  function lsSet(k, v){ try{ v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); }catch(e){} }
+  function b64uToBytes(s){
+    s = String(s).replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "=";
+    var bin = atob(s), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
   }
-  el("enter").addEventListener("click", function(){
-    ADM = el("code").value.trim();
-    try{ localStorage.setItem("voyo_esim_adm", ADM); }catch(e){}
+  function bytesToB64u(buf){
+    var b = new Uint8Array(buf), s = "";
+    for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  async function platformOk(){
+    try{ return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); }
+    catch(e){ return false; }
+  }
+  async function serverHasCreds(){
+    try{ var r = await fetch("/esim/api/adm/webauthn/has-credentials", { cache: "no-store" }); return !!(await r.json()).hasCredentials; }
+    catch(e){ return false; }
+  }
+  async function bioLogin(){
+    try{
+      var o = await fetch("/esim/api/adm/webauthn/auth-options", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      if (!o.ok) return false;
+      var opts = await o.json();
+      var publicKey = Object.assign({}, opts, { challenge: b64uToBytes(opts.challenge),
+        allowCredentials: (opts.allowCredentials || []).map(function(c){ return Object.assign({}, c, { id: b64uToBytes(c.id) }); }) });
+      var a = await navigator.credentials.get({ publicKey: publicKey });
+      var v = await fetch("/esim/api/adm/webauthn/auth-verify", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assertionResponse: { id: a.id, rawId: bytesToB64u(a.rawId), type: a.type,
+          response: { clientDataJSON: bytesToB64u(a.response.clientDataJSON), authenticatorData: bytesToB64u(a.response.authenticatorData),
+            signature: bytesToB64u(a.response.signature), userHandle: a.response.userHandle ? bytesToB64u(a.response.userHandle) : null },
+          clientExtensionResults: a.getClientExtensionResults ? a.getClientExtensionResults() : {} } }) });
+      var d = await v.json().catch(function(){ return {}; });
+      if (v.ok && d.success && d.token){ TOKEN = d.token; lsSet(LOCAL_KEY, "1"); return true; }
+      return false;
+    }catch(e){ return false; }
+  }
+  async function bioRegister(){
+    try{
+      var o = await fetch("/esim/api/adm/webauthn/register-options", { method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN }, body: "{}" });
+      if (!o.ok) return false;
+      var opts = await o.json();
+      var publicKey = Object.assign({}, opts, { challenge: b64uToBytes(opts.challenge),
+        user: Object.assign({}, opts.user, { id: b64uToBytes(opts.user.id) }),
+        excludeCredentials: (opts.excludeCredentials || []).map(function(c){ return Object.assign({}, c, { id: b64uToBytes(c.id) }); }) });
+      var a = await navigator.credentials.create({ publicKey: publicKey });
+      var v = await fetch("/esim/api/adm/webauthn/register-verify", { method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN },
+        body: JSON.stringify({ attestationResponse: { id: a.id, rawId: bytesToB64u(a.rawId), type: a.type,
+          response: { clientDataJSON: bytesToB64u(a.response.clientDataJSON), attestationObject: bytesToB64u(a.response.attestationObject) },
+          clientExtensionResults: a.getClientExtensionResults ? a.getClientExtensionResults() : {} } }) });
+      var d = await v.json().catch(function(){ return {}; });
+      if (v.ok && d.success){ lsSet(LOCAL_KEY, "1"); return true; }
+      return false;
+    }catch(e){ return false; }
+  }
+  // Кнопку Face ID показываем, только если устройство умеет, на сервере есть
+  // ключи и ключ заведён именно на этом устройстве — иначе iOS покажет
+  // пугающее «нет сохранённых ключей».
+  async function bioEligible(){
+    if (!lsGet(LOCAL_KEY)) return false;
+    var ok = await platformOk(); if (!ok) return false;
+    var has = await serverHasCreds(); if (!has){ lsSet(LOCAL_KEY, null); return false; }
+    return true;
+  }
+  function enter(){
     el("gate").style.display = "none"; el("app").style.display = "block"; load();
+  }
+  function gate(msg){
+    TOKEN = "";
+    el("app").style.display = "none"; el("gate").style.display = "block";
+    el("gateErr").textContent = msg || "";
+    bioEligible().then(function(ok){
+      el("bioBtn").style.display = ok ? "flex" : "none";
+      el("bioOr").style.display = ok ? "block" : "none";
+      if (!ok) el("code").focus();
+    });
+  }
+  el("bioBtn").addEventListener("click", async function(){
+    var t0 = Date.now();
+    el("gateErr").textContent = "";
+    if (await bioLogin()) return enter();
+    if (Date.now() - t0 < BIO_FAST_FAIL_MS){           // ключ удалили из системы — прячем кнопку
+      lsSet(LOCAL_KEY, null); el("bioBtn").style.display = "none"; el("bioOr").style.display = "none";
+      el("gateErr").textContent = "На этом устройстве Face ID не настроен — войдите по коду.";
+    }
   });
-  el("code").addEventListener("keydown", function(e){ if (e.key === "Enter") el("enter").click(); });
-  if (ADM){ el("app").style.display = "block"; load(); } else gate();
+  async function codeLogin(){
+    var code = el("code").value.trim();
+    if (!code) return;
+    el("enter").disabled = true;
+    var r = await fetch("/esim/api/adm/login", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: code }) }).catch(function(){ return null; });
+    el("enter").disabled = false;
+    var d = r ? await r.json().catch(function(){ return {}; }) : {};
+    if (!r || !r.ok || !d.token){ el("gateErr").textContent = d.message || "Не получилось войти."; return; }
+    TOKEN = d.token; el("code").value = "";
+    enter();
+    // предложить Face ID, если устройство умеет, ключа тут ещё нет и не отказывались
+    if (!lsGet(LOCAL_KEY) && !lsGet(SKIP_KEY) && await platformOk()) el("bioOffer").style.display = "flex";
+  }
+  el("enter").addEventListener("click", codeLogin);
+  el("code").addEventListener("keydown", function(e){ if (e.key === "Enter") codeLogin(); });
+  el("bioOn").addEventListener("click", async function(){
+    var ok = await bioRegister();
+    el("bioOffer").innerHTML = ok ? "<span>Готово: в следующий раз вход по Face ID.</span>"
+                                  : "<span>Не получилось включить — попробуйте ещё раз при следующем входе.</span>";
+    setTimeout(function(){ el("bioOffer").style.display = "none"; }, 3500);
+  });
+  el("bioNo").addEventListener("click", function(){ lsSet(SKIP_KEY, "1"); el("bioOffer").style.display = "none"; });
+
+  // При открытии: если ключ на устройстве есть — сразу спрашиваем Face ID,
+  // форма с кодом остаётся запасным путём
+  (async function(){
+    gate();
+    if (await bioEligible()){
+      await new Promise(function(r){ setTimeout(r, 150); });
+      if (await bioLogin()) enter();
+    }
+  })();
 })();
 </script>
 </body>

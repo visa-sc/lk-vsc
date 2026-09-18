@@ -3130,6 +3130,9 @@ require("./esim").mount(app, {
   onIssued: (order) => { try { tgbot.onIssued(order); } catch (e) { console.error("tg onIssued:", e.message); } },
   // Напоминания «пакет заканчивается» и «трафик на исходе» — в телеграм-чат
   notifyTelegram: (p) => tgbot.notifyUsage(p),
+  // Панель показателей (dev.voyomobile.ru): свой вход (код 123 или Face ID) даёт
+  // токен только на неё; токен админки тоже подходит — он строже
+  isAdminToken: (t) => isEsimPanelToken(t),
   // Клиент, уже вошедший в ЛК по телефону: отдаём его почты из карточки amoCRM,
   // чтобы в разделе «eSIM» не спрашивать email второй раз. Поиск контактов
   // кэширован (findMatchingContacts, 2 мин), сам esim.js держит связку локально
@@ -16288,7 +16291,9 @@ const WEBAUTHN_ORIGIN = process.env.WEBAUTHN_ORIGIN || "https://voyovoyo.ru";
 // НЕ ломая уже зарегистрированные паспорт-ки (на каждом домене свои). Для
 // voyovoyo.ru helper возвращает ровно прежние значения → поведение не меняется.
 // Неизвестный/поддельный Host → дефолт voyovoyo.ru. www.* считаем тем же доменом.
-const WEBAUTHN_ALLOWED_HOSTS = { "voyovoyo.ru": true, "voyotravel.ru": true, "dev.voyotravel.ru": true, "vsc.voyotravel.ru": true, "admin.voyotravel.ru": true, "work.voyotravel.ru": true };
+const WEBAUTHN_ALLOWED_HOSTS = { "voyovoyo.ru": true, "voyotravel.ru": true, "dev.voyotravel.ru": true, "vsc.voyotravel.ru": true, "admin.voyotravel.ru": true, "work.voyotravel.ru": true,
+  // панель показателей eSIM (18.09.2026): тот же вход, что в дашборд, свой домен для ключей
+  "dev.voyomobile.ru": true };
 function webauthnHostName(req) {
   const h = String((req && req.headers && req.headers.host) || "").toLowerCase().split(":")[0].replace(/^www\./, "");
   return WEBAUTHN_ALLOWED_HOSTS[h] ? h : WEBAUTHN_RP_ID;
@@ -16667,6 +16672,139 @@ function getAdminChallenge(type) {
 function clearAdminChallenge() { adminWebauthnChallenges.delete("admin"); }
 
 loadAdminPasskeys();
+
+// ──────────────────────────────────────────────────────────
+// Вход в панель показателей eSIM (dev.voyomobile.ru), 18.09.2026.
+// Механика как у дашборда (код → токен на сутки, Face ID / Touch ID через
+// WebAuthn), но ОТДЕЛЬНАЯ: свой код (по просьбе Андрея простой, 123), свои
+// токены и свои ключи биометрии. Токен панели открывает только её данные
+// (/esim/api/adm/*) и ничего больше — простой код не должен давать доступ к
+// /admin и /vsc. По той же причине ключи Face ID панели лежат отдельно: иначе
+// подобравший 123 завёл бы себе биометрию от всей админки.
+// ──────────────────────────────────────────────────────────
+const ESIM_PANEL_CODE = String(process.env.ESIM_PANEL_CODE || "123");
+const ESIM_PANEL_TTL_MS = 24 * 3600 * 1000;
+const ESIM_PANEL_SESSIONS_FILE = path.join(__dirname, ".esimPanelSessions.json");
+const ESIM_PANEL_PASSKEYS_FILE = path.join(__dirname, ".esimPanelPasskeys.json");
+const esimPanelSessions = new Map();          // token -> expiresAt
+const esimPanelFails = new Map();             // ip -> [ts, ...]
+let esimPanelPasskeys = [];
+let esimPanelChallenge = null;                // { challenge, type, expiresAt }
+try {
+  (JSON.parse(fs.readFileSync(ESIM_PANEL_SESSIONS_FILE, "utf8")) || []).forEach((p) => {
+    if (Array.isArray(p) && p[1] > Date.now()) esimPanelSessions.set(p[0], p[1]);
+  });
+} catch (_) {}
+try { esimPanelPasskeys = JSON.parse(fs.readFileSync(ESIM_PANEL_PASSKEYS_FILE, "utf8")) || []; } catch (_) {}
+function saveEsimPanelSessions() {
+  try { fs.writeFileSync(ESIM_PANEL_SESSIONS_FILE, JSON.stringify(Array.from(esimPanelSessions.entries())), "utf8"); }
+  catch (e) { console.error("esim panel sessions:", e.message); }
+}
+function saveEsimPanelPasskeys() {
+  try { fs.writeFileSync(ESIM_PANEL_PASSKEYS_FILE, JSON.stringify(esimPanelPasskeys, null, 2), "utf8"); }
+  catch (e) { console.error("esim panel passkeys:", e.message); }
+}
+function createEsimPanelSession() {
+  const token = crypto.randomBytes(24).toString("hex");
+  esimPanelSessions.set(token, Date.now() + ESIM_PANEL_TTL_MS);
+  saveEsimPanelSessions();
+  return token;
+}
+// Токен панели ИЛИ токен админки (он строже и так всё открывает)
+function isEsimPanelToken(token) {
+  if (!token) return false;
+  const exp = esimPanelSessions.get(token);
+  if (exp && exp > Date.now()) return true;
+  if (exp) { esimPanelSessions.delete(token); saveEsimPanelSessions(); }
+  return isAdminTokenValid(token);
+}
+function esimPanelBearer(req) { return String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim(); }
+function requireEsimPanel(req, res, next) {
+  if (!isEsimPanelToken(esimPanelBearer(req))) return res.status(401).json({ success: false, message: "Не авторизован" });
+  next();
+}
+function setEsimPanelChallenge(challenge, type) { esimPanelChallenge = { challenge, type, expiresAt: Date.now() + WEBAUTHN_CHALLENGE_TTL_MS }; }
+function takeEsimPanelChallenge(type) {
+  const c = esimPanelChallenge; esimPanelChallenge = null;
+  return c && c.type === type && c.expiresAt > Date.now() ? c.challenge : null;
+}
+
+app.post("/esim/api/adm/login", (req, res) => {
+  const ip = getClientIp(req);
+  const fails = pruneHistory(esimPanelFails, ip, MS_24H);
+  if (fails.length >= 10) return res.status(429).json({ success: false, message: "Слишком много неудачных попыток. Попробуйте завтра." });
+  const code = String((req.body && req.body.code) || "").trim();
+  if (!code) return res.status(400).json({ success: false, message: "Введите код" });
+  if (code !== ESIM_PANEL_CODE && code !== ADMIN_CODE) {
+    fails.push(Date.now()); esimPanelFails.set(ip, fails);
+    return res.status(403).json({ success: false, message: "Неверный код" });
+  }
+  return res.json({ success: true, token: createEsimPanelSession() });
+});
+
+app.get("/esim/api/adm/webauthn/has-credentials", (req, res) => res.json({ hasCredentials: esimPanelPasskeys.length > 0 }));
+
+app.post("/esim/api/adm/webauthn/auth-options", async (req, res) => {
+  try {
+    if (!esimPanelPasskeys.length) return res.status(404).json({ success: false });
+    const options = await webauthn.generateAuthenticationOptions({
+      rpID: rpIdFor(req),
+      allowCredentials: esimPanelPasskeys.map((c) => ({ id: bufferFromB64u(c.credentialID), type: "public-key" })),
+      userVerification: "preferred",
+    });
+    setEsimPanelChallenge(options.challenge, "auth");
+    res.json(options);
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.post("/esim/api/adm/webauthn/auth-verify", async (req, res) => {
+  try {
+    const a = req.body && req.body.assertionResponse;
+    const expectedChallenge = takeEsimPanelChallenge("auth");
+    if (!a || !expectedChallenge) return res.status(400).json({ success: false, message: "Сессия просрочена" });
+    const cred = esimPanelPasskeys.find((c) => c.credentialID === a.id);
+    if (!cred) return res.status(404).json({ success: false, message: "Ключ не найден" });
+    const v = await webauthn.verifyAuthenticationResponse({
+      response: a, expectedChallenge, expectedOrigin: originFor(req), expectedRPID: rpIdFor(req),
+      authenticator: { credentialID: bufferFromB64u(cred.credentialID), credentialPublicKey: bufferFromB64u(cred.publicKey), counter: cred.counter || 0 },
+      requireUserVerification: false,
+    });
+    if (!v.verified) return res.status(400).json({ success: false, message: "Подпись не прошла" });
+    cred.counter = v.authenticationInfo.newCounter; saveEsimPanelPasskeys();
+    res.json({ success: true, token: createEsimPanelSession() });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.post("/esim/api/adm/webauthn/register-options", requireEsimPanel, async (req, res) => {
+  try {
+    const options = await webauthn.generateRegistrationOptions({
+      rpName: "VOYO mobile", rpID: rpIdFor(req),
+      userID: "voyo-esim-panel", userName: "voyo-esim-panel", userDisplayName: "VOYO mobile — показатели",
+      attestationType: "none",
+      excludeCredentials: esimPanelPasskeys.map((c) => ({ id: bufferFromB64u(c.credentialID), type: "public-key" })),
+      authenticatorSelection: { residentKey: "preferred", userVerification: "preferred" },
+    });
+    setEsimPanelChallenge(options.challenge, "register");
+    res.json(options);
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+app.post("/esim/api/adm/webauthn/register-verify", requireEsimPanel, async (req, res) => {
+  try {
+    const a = req.body && req.body.attestationResponse;
+    const expectedChallenge = takeEsimPanelChallenge("register");
+    if (!a || !expectedChallenge) return res.status(400).json({ success: false, message: "Регистрация просрочена" });
+    const v = await webauthn.verifyRegistrationResponse({
+      response: a, expectedChallenge, expectedOrigin: originFor(req), expectedRPID: rpIdFor(req), requireUserVerification: false,
+    });
+    if (!v.verified || !v.registrationInfo) return res.status(400).json({ success: false, message: "Проверка не прошла" });
+    const info = v.registrationInfo;
+    esimPanelPasskeys.push({ credentialID: b64uFromBuffer(info.credentialID), publicKey: b64uFromBuffer(info.credentialPublicKey),
+      counter: info.counter || 0, createdAt: Date.now(), host: rpIdFor(req) });
+    saveEsimPanelPasskeys();
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
 
 // 1) Есть ли вообще зарегистрированный admin-passkey? Публичный эндпоинт —
 //    клиент решает, показать ли кнопку «Войти по Face ID».

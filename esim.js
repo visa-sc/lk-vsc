@@ -2486,6 +2486,14 @@ function mount(app, opts) {
   };
   function channelName(k) { return CHANNEL_NAMES[k] || k; }
   const mskDay = (ts) => new Date(ts + 3 * 3600 * 1000).toISOString().slice(0, 10);
+  // Доступ к панели: токен админки (вход по коду или Face ID, как в дашборд)
+  // либо сам код — для ручных проверок из консоли.
+  function isAdm(req) {
+    const code = String((req.query && req.query.adm) || (req.body && req.body.adm) || "");
+    if (code && code === ADMIN_CODE) return true;
+    const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+    return !!(token && opts && opts.isAdminToken && opts.isAdminToken(token));
+  }
   // Свои проверочные покупки в цифры не пускаем: Андрей смотрит на них как на
   // реальные продажи и злится. Показать их можно галочкой в панели (?test=1).
   const TEST_EMAILS = String(process.env.ESIM_TEST_EMAILS || "komizarenko@gmail.com,probe@example.com")
@@ -2530,7 +2538,7 @@ function mount(app, opts) {
   setInterval(() => { closeDays().catch((e) => console.error("esim closeDays:", e.message)); }, 10 * 60 * 1000);
 
   app.get("/esim/api/adm/stats", async (req, res) => {
-    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    if (!isAdm(req)) return res.status(403).json({ success: false });
     try {
       const rate = await usdRate();
       const spend = loadSpend();
@@ -2572,12 +2580,16 @@ function mount(app, opts) {
       // клиенты: считаем только тех, у кого есть оплаченный заказ
       const cust = loadCustomers();
       const byCust = new Map();
+      // Ключевое слово из рекламы: utm_term (Директ подставляет его сам, в Google —
+      // только если в шаблоне ссылки стоит {keyword}). Берём по первому заказу.
+      const termOf = (o) => { const a = (o.ads && (o.ads.first || o.ads)) || {}; return String(a.utm_term || a.keyword || "").slice(0, 80); };
       all.filter((o) => o.status === "done" && o.paidAt).forEach((o) => {
         const key = o.custKey || normEmail(o.email) || (o.tgChatId ? "tg:" + o.tgChatId : "");
         if (!key) return;
-        const c = byCust.get(key) || { key, orders: 0, revenue: 0, first: o.paidAt, last: o.paidAt, channel: channelOf(o) };
+        const c = byCust.get(key) || { key, orders: 0, revenue: 0, first: Infinity, last: 0, channel: null, term: "" };
         c.orders++; c.revenue += o.priceRub || 0;
-        c.first = Math.min(c.first, o.paidAt); c.last = Math.max(c.last, o.paidAt);
+        if (o.paidAt < c.first) { c.first = o.paidAt; c.channel = channelOf(o); c.term = termOf(o); }
+        c.last = Math.max(c.last, o.paidAt);
         byCust.set(key, c);
       });
       const customers = Array.from(byCust.values()).map((c) => {
@@ -2593,8 +2605,11 @@ function mount(app, opts) {
         const k = String(o.promoCode).toUpperCase();
         promoRevenue[k] = (promoRevenue[k] || 0) + (o.priceRub || 0);
       });
-      const promoList = Object.keys(promos).map((code) => Object.assign({ code },
-        promos[code], { revenue: promoRevenue[code] || 0 }));
+      // Служебные коды (OWNER — покупки Андрея по себестоимости) в панели не
+      // светим вовсе: к ней есть доступ не только у него.
+      const HIDDEN = String(process.env.ESIM_PANEL_HIDE_PROMOS || "OWNER").split(",").map((x) => x.trim().toUpperCase());
+      const promoList = Object.keys(promos).filter((code) => HIDDEN.indexOf(code.toUpperCase()) < 0)
+        .map((code) => Object.assign({ code }, promos[code], { revenue: promoRevenue[code] || 0 }));
 
       res.json({
         success: true, from: from || null, to: to || null, usdRate: rate,
@@ -2624,7 +2639,7 @@ function mount(app, opts) {
   // Расходы на рекламу и процент эквайринга правим руками из панели
   app.post("/esim/api/adm/spend", (req, res) => {
     const b = req.body || {};
-    if (String(b.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    if (!isAdm(req)) return res.status(403).json({ success: false });
     const d = loadSpend();
     if (b.acqPct != null) d.acqPct = Math.max(0, Math.min(20, Number(b.acqPct) || 0));
     if (b.del) d.items = d.items.filter((x) => x.id !== String(b.del));
