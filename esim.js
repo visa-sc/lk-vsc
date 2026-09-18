@@ -1952,6 +1952,64 @@ function mount(app, opts) {
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
 
+  // Сторож зависших выдач (18.09.2026): перезапуск сервера посреди выдачи оставляет
+  // заказ в «fulfilling» навсегда, а клиент без eSIM. Висит дольше 6 минут — письмо
+  // на director@ один раз, с тем, что проверить у поставщика и как восстановить.
+  function stuckCheck() {
+    try {
+      const all = readJson(ORDERS_FILE, []);
+      const stuck = all.filter((o) => o.status === "fulfilling" && !o.stuckAlerted && Date.now() - (o.ts || 0) > 6 * 60000);
+      if (!stuck.length) return;
+      stuck.forEach((o) => { o.stuckAlerted = Date.now(); });
+      saveLocal(all);
+      if (!(opts && opts.sendMail)) return;
+      opts.sendMail({ to: "director@visa-sc.ru", subject: "VOYO eSIM: ⚠️ выдача зависла (" + stuck.length + ")",
+        text: "Заказ оплачен, но выдача eSIM не закончилась больше 6 минут — скорее всего, сервер перезапустился посреди выдачи.\n\n" +
+          stuck.map((o) => o.id + " · " + (o.label || "") + " · " + (o.email || o.phone || ("tg " + o.tgChatId)) +
+            (o.groupOf ? " · доп. eSIM к заказу " + o.groupOf : "")).join("\n") +
+          "\n\nПроверить у поставщика, куплена ли eSIM (по времени заказа). Если куплена — восстановить без повторной покупки:\n" +
+          BASE_URL + "/esim/api/adm/recover?adm=КОД&id=ЗАКАЗ&ea=EA-НОМЕР&send=1" }).catch(() => {});
+    } catch (e) { console.error("esim stuck:", e.message); }
+  }
+  setTimeout(stuckCheck, 90000);
+  setInterval(stuckCheck, 5 * 60000);
+
+  // Восстановление (18.09.2026): выдача eSIM оборвалась на перезапуске сервера, а
+  // у поставщика eSIM уже куплена. Достраиваем запись по номеру заказа поставщика
+  // (без повторной покупки) и при send=1 заново шлём клиенту письмо со всеми eSIM.
+  // Только eSIM Access. /esim/api/adm/recover?adm=КОД&id=ЗАКАЗ-3&ea=EA-…&send=1
+  app.get("/esim/api/adm/recover", async (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    try {
+      const id = String(req.query.id || ""), eaNo = String(req.query.ea || "");
+      const f = findLocal(id);
+      if (!f) return res.status(404).json({ success: false, message: "заказ не найден" });
+      if (eaNo && f.order.status !== "done") {
+        const e = await esimaccess._esim(eaNo);
+        if (!e || !(e.ac || e.qrCodeUrl)) return res.status(400).json({ success: false, message: "у поставщика нет готовой eSIM " + eaNo });
+        const view = await esimaccess._view(e);
+        Object.assign(f.order, { status: "done", paidAt: f.order.paidAt || Date.now(), src: "esimaccess",
+          mmOrderId: eaNo, iccid: view.iccid || e.iccid || null, myUrl: myUrlFor(f.order, eaNo), recovered: Date.now() });
+        saveLocal(f.orders);
+      }
+      const parentId = f.order.groupOf || f.order.id;
+      const all = readJson(ORDERS_FILE, []);
+      const parent = all.find((x) => x.id === parentId);
+      const group = [parent].concat(all.filter((x) => x.groupOf === parentId).sort((x, y) => (x.id < y.id ? -1 : 1)))
+        .filter((x) => x && x.status === "done" && x.myUrl);
+      if (String(req.query.send || "") === "1" && parent && parent.email && opts && opts.sendMail) {
+        const cust = getCustomer(parent.custKey || parent.email, false);
+        const L = readyLetter(parent, group.map((x) => ({ myUrl: x.myUrl })), cust && cust.refCode);
+        await opts.sendMail({ to: parent.email, subject: L.subject, html: L.html, text: L.text });
+        await opts.sendMail({ to: "director@visa-sc.ru", subject: "VOYO eSIM: восстановлена выдача " + parentId,
+          text: "Выдача оборвалась на перезапуске сервера, eSIM у поставщика уже была куплена.\nДостроено: " + id +
+            (eaNo ? " ← " + eaNo : "") + "\nКлиенту отправлено письмо со всеми eSIM (" + group.length + " шт.) на " + parent.email +
+            "\nСсылки:\n" + group.map((x) => x.myUrl).join("\n") }).catch(() => {});
+      }
+      res.json({ success: true, group: group.map((x) => ({ id: x.id, status: x.status, ea: x.mmOrderId })), sent: String(req.query.send || "") === "1" });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+
   // Образцы письма «eSIM готова» (одна и три штуки) — на director@, только с adm-кодом
   app.get("/esim/api/adm/letter-sample", async (req, res) => {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
