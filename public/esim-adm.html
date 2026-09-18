@@ -43,6 +43,7 @@
     padding:0 10px 8px 0;white-space:nowrap;}
   td{padding:8px 10px 8px 0;border-top:1px solid #eef1f7;white-space:nowrap;}
   td.r,th.r{text-align:right;padding-right:0;}
+  tr.tot td{border-top:2px solid #d9e3ee;font-weight:800;padding-top:11px;font-size:14px;}
   .g{color:var(--green);font-weight:700}
   .r2{color:var(--red);font-weight:700}
   .mono{font-family:SFMono-Regular,Consolas,monospace;font-size:12.5px;}
@@ -217,7 +218,7 @@
           '<span class="g">'+RU(c.margin)+' ₽</span>', c.spend?RU(c.spend)+" ₽":"—",
           c.drr!=null&&c.spend?c.drr+" %":"—", c.cpo?RU(c.cpo)+" ₽":"—",
           '<span class="'+(c.profit<0?"r2":"g")+'">'+RU(c.profit)+' ₽</span>'], [0,1,1,1,1,1,1,1]);
-      }).join("") + "</tbody>";
+      }).join("") + "</tbody>" + chanTotal(DATA.channels);
 
     el("tSpend").innerHTML = DATA.spend.length
       ? head(["Дата","Канал","Сумма","Комментарий",""],[0,0,1,0,1]) + "<tbody>" + DATA.spend.map(function(s){
@@ -246,6 +247,19 @@
       }).join("") + "</tbody>";
   }
 
+  // Общий итог по всем каналам — последней строкой таблицы рекламы.
+  // Маржа уже за вычетом себестоимости и комиссии банка, итог — ещё и без рекламы.
+  function chanTotal(list){
+    var t = list.reduce(function(a,c){
+      a.orders+=c.orders; a.revenue+=c.revenue; a.margin+=c.margin; a.spend+=c.spend; a.profit+=c.profit; return a;
+    }, { orders:0, revenue:0, margin:0, spend:0, profit:0 });
+    var drr = t.revenue && t.spend ? Math.round(t.spend/t.revenue*1000)/10+" %" : "—";
+    var cpo = t.orders && t.spend ? RU(Math.round(t.spend/t.orders))+" ₽" : "—";
+    var cells = ["Всего", RU(t.orders), RU(t.revenue)+" ₽", RU(t.margin)+" ₽", t.spend?RU(t.spend)+" ₽":"—", drr, cpo,
+      '<span class="'+(t.profit<0?"r2":"g")+'">'+RU(t.profit)+' ₽</span>'];
+    return '<tfoot><tr class="tot">' + cells.map(function(c,i){
+      return '<td'+(i?' class="r"':'')+'>'+c+'</td>'; }).join("") + '</tr></tfoot>';
+  }
   function chanName(k){
     var m = { yandex:"Яндекс Директ", google:"Google Ads", telegram_bot:"Телеграм-бот", direct:"Прямой заход",
               vk:"ВКонтакте", blogger:"Блогеры", email:"Рассылка" };
