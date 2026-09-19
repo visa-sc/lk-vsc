@@ -669,6 +669,13 @@ function mount(app, deps) {
       const DAY = 86400000;
       const todayMsk0 = Math.floor((Date.now() + 3 * 3600000) / DAY) * DAY - 3 * 3600000; // полночь МСК
       fromTs = todayMsk0 - DAY; toTs = todayMsk0; dayStr = mskDayStr(fromTs);
+    } else if (opts && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.day || ""))) {
+      // Пересчёт конкретного прошедшего дня (19.09.2026: АТС сменили ключ, 17–18.09
+      // записались с ошибкой). Окно — те же полные сутки МСК, итог перезаписывает день.
+      const [y, mo, d] = String(opts.day).split("-").map(Number);
+      fromTs = Date.UTC(y, mo - 1, d) - 3 * 3600000; toTs = fromTs + 86400000;
+      if (toTs > Date.now()) { reconRunning = false; throw new Error("день ещё не закончился"); }
+      dayStr = mskDayStr(fromTs);
     } else {
       toTs = Date.now(); fromTs = toTs - hours * 3600000;
     }
@@ -815,7 +822,8 @@ function mount(app, deps) {
   app.post("/phone_test/api/recon", requirePT, (req, res) => {
     if (reconRunning) return res.status(409).json({ success: false, message: "Сверка уже идёт" });
     const hours = Number((req.body && req.body.hours) || 24);
-    runRecon({ hours, by: req.who }).catch((e) => console.error("phonetest recon:", e.message));
+    const day = req.body && /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.day || "")) ? String(req.body.day) : undefined;
+    runRecon({ hours, day, by: req.who }).catch((e) => console.error("phonetest recon:", e.message));
     res.json({ success: true, started: true });
   });
 

@@ -183,14 +183,18 @@ async function run(opts) {
     const m = now.getUTCMonth();
     list = has ? [Math.max(0, m - 1), m] : Array.from({ length: m + 1 }, (_, i) => i);
   }
+  // Время обновления ставим только при успехе. 17–18.09.2026 АТС сменили ключ,
+  // месяцы не считались, а раздел показывал «обновлено сегодня» по старым цифрам.
+  const failed = [];
   for (const mi of list) {
     try {
       const r = await fetchMonth(year, mi, roster.ext);
       cur.months[String(mi)] = { byExt: r.byExt, total: r.total, lastDay: r.lastDay };
       console.log("PBX: месяц " + (mi + 1) + " — записей " + r.rows + ", входящих " + r.total.inbound + ", пропущено " + r.total.missed);
-    } catch (e) { console.error("PBX месяц " + (mi + 1) + ":", e && e.message); }
+    } catch (e) { failed.push({ month: mi + 1, message: String((e && e.message) || e).slice(0, 200) }); console.error("PBX месяц " + (mi + 1) + ":", e && e.message); }
   }
-  cur.ts = Date.now();
+  if (failed.length) cur.lastError = { ts: Date.now(), months: failed };
+  else { cur.ts = Date.now(); delete cur.lastError; }
   cur.ext = roster.ext; cur.plExt = roster.plExt || PL_FALLBACK; cur.rosterLive = !!roster.live;
   cur.groups = roster.groups || cur.groups || null;
   save(cur);
