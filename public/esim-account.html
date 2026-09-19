@@ -50,6 +50,7 @@
   .brand img{height:18px;display:block;}
   .brand .wm2{font-size:19px;font-weight:300;letter-spacing:.01em;line-height:1;
     background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .hdr a.tgl{display:inline-flex;align-items:center;gap:6px;color:#1b7fb3;}
   .hdr a.shop{font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;}
   /* подпись «by V|S|C» — буквы фирменного знака VSC, без плашки */
   .byvsc{display:block;font-size:9px;letter-spacing:.02em;color:#a7b0bf;margin-top:6px;white-space:nowrap;
@@ -135,7 +136,8 @@
 <div class="wrap">
   <div class="hdr">
     <a class="brand" href="/esim"><span class="brandrow"><img src="/voyo-logo.png" alt="VOYO"/><span class="wm2">mobile</span></span><span class="byvsc">by <b>VSC</b></span></a>
-    <a class="shop" id="outLink" href="/esim/logout" style="color:var(--mut);display:none">Выйти</a>
+    <span style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:flex-end"><a class="shop tgl" href="https://t.me/esimvoyo_bot?start=site" target="_blank" rel="noopener"><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" style="flex:none"><circle cx="12" cy="12" r="12" fill="#27A6E5"/><path d="M5.4 11.7l11.3-4.4c.5-.2 1 .1.8.9l-1.9 9c-.1.6-.5.8-1 .5l-2.9-2.1-1.4 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.3-4.8c.2-.2 0-.3-.3-.1l-6.6 4.1-2.8-.9c-.6-.2-.6-.6.1-.9z" fill="#fff"/></svg>Оформить в TG-боте</a>
+    <a class="shop" id="outLink" href="/esim/logout" style="color:var(--mut);display:none">Выйти</a></span>
   </div>
 
   <div class="loading" id="loading">Загружаем ваши eSIM…</div>

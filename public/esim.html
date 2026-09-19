@@ -81,6 +81,11 @@
   .hdr .mine{display:inline-flex;align-items:center;gap:7px;text-decoration:none;font-size:13.5px;font-weight:600;
     color:var(--accent-d);background:rgba(255,255,255,.8);border:1px solid var(--line);border-radius:999px;
     padding:9px 15px;transition:all .16s ease;box-shadow:0 1px 2px rgba(16,24,40,.03);}
+  .hdr{gap:12px;}
+  .hbtns{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;}
+  .hdr .mine.tgb{color:#1b7fb3;}
+  .hdr .mine{white-space:nowrap;}
+  @media (max-width:430px){ .hdr .mine{font-size:12.5px;padding:8px 11px;gap:6px;} .hbtns{gap:6px;} .brand .wm{font-size:18px;} }
   .hdr .mine:hover{border-color:#aed3ea;transform:translateY(-1px);box-shadow:0 8px 18px -10px rgba(53,137,189,.45);}
 
   /* подпись «by V|S|C» — буквы фирменного знака VSC, без плашки */
@@ -445,6 +450,12 @@
       <span class="brandrow"><img class="lg" src="/voyo-logo.png" alt="VOYO" /><span class="wm">mobile</span></span>
       <span class="byvsc">by <b>VSC</b></span>
     </a>
+    <div class="hbtns">
+    <!-- «Оформить в TG-боте» (19.09.2026): кому удобнее в телеграме -->
+    <a class="mine tgb" href="https://t.me/esimvoyo_bot?start=site" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="flex:none"><circle cx="12" cy="12" r="12" fill="#27A6E5"/><path d="M5.4 11.7l11.3-4.4c.5-.2 1 .1.8.9l-1.9 9c-.1.6-.5.8-1 .5l-2.9-2.1-1.4 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.3-4.8c.2-.2 0-.3-.3-.1l-6.6 4.1-2.8-.9c-.6-.2-.6-.6.1-.9z" fill="#fff"/></svg>
+      Оформить в TG-боте
+    </a>
     <a class="mine" href="/esim/account">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex:none">
         <rect x="6" y="2.5" width="12" height="19" rx="2.6" stroke="currentColor" stroke-width="2"/>
@@ -452,6 +463,7 @@
       </svg>
       Мои eSIM
     </a>
+    </div>
   </div>
 
   <div class="hero">
@@ -617,6 +629,8 @@
   /* Цели для Яндекс.Метрики и события для Google Ads. Одно место, чтобы
      воронка «открыл пакет → нажал оплатить → оплатил» считалась одинаково
      в обеих системах. Цель в Метрике заводится по имени события. */
+  // переход в телеграм-бота из шапки — цель в Метрике
+  document.querySelectorAll(".hdr .tgb").forEach(function(b){ b.addEventListener("click", function(){ try{ goal("esim_tg_bot"); }catch(e){} }); });
   function goal(name, params){
     var step = { esim_pack_open: "pack", esim_pay_click: "pay" }[name];
     if(step) track(step);
