@@ -84,8 +84,11 @@
   .hdr{gap:12px;}
   .hbtns{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;}
   .hdr .mine.tgb{color:#1b7fb3;}
+  .tgl-s{display:none;}
+  @media (max-width:600px){ .tgl-l{display:none;} .tgl-s{display:inline;} .hbtns{flex-wrap:nowrap;} }
   .hdr .mine{white-space:nowrap;}
-  @media (max-width:430px){ .hdr .mine{font-size:12.5px;padding:8px 11px;gap:6px;} .hbtns{gap:6px;} .brand .wm{font-size:18px;} }
+  @media (max-width:430px){ .hdr{gap:8px;} .hdr .mine{font-size:12.5px;padding:7px 10px;gap:5px;} .hbtns{gap:5px;} .brand .wm{font-size:16px;} .brand .lg{height:16px;} .brandrow{gap:7px;} }
+  @media (max-width:380px){ .hdr .mine{font-size:12px;padding:7px 9px;} .hdr .mine svg{width:14px;height:14px;} }
   .hdr .mine:hover{border-color:#aed3ea;transform:translateY(-1px);box-shadow:0 8px 18px -10px rgba(53,137,189,.45);}
 
   /* подпись «by V|S|C» — буквы фирменного знака VSC, без плашки */
@@ -454,7 +457,7 @@
     <!-- «Оформить в TG-боте» (19.09.2026): кому удобнее в телеграме -->
     <a class="mine tgb" href="https://t.me/esimvoyo_bot?start=site" target="_blank" rel="noopener">
       <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="flex:none"><circle cx="12" cy="12" r="12" fill="#27A6E5"/><path d="M5.4 11.7l11.3-4.4c.5-.2 1 .1.8.9l-1.9 9c-.1.6-.5.8-1 .5l-2.9-2.1-1.4 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.3-4.8c.2-.2 0-.3-.3-.1l-6.6 4.1-2.8-.9c-.6-.2-.6-.6.1-.9z" fill="#fff"/></svg>
-      Оформить в TG-боте
+      <span class="tgl-l">Оформить в TG-боте</span><span class="tgl-s">TG-бот</span>
     </a>
     <a class="mine" href="/esim/account">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex:none">

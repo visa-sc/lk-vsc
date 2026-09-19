@@ -50,8 +50,10 @@ const STYLE = `<style>
   .hdr{gap:12px;}
   .hbtns{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;}
   .mine.tgb{display:inline-flex;align-items:center;gap:7px;color:#1b7fb3;}
+  .tgl-s{display:none;}
+  @media (max-width:600px){ .tgl-l{display:none;} .tgl-s{display:inline;} .hbtns{flex-wrap:nowrap;} }
   .mine{white-space:nowrap;}
-  @media (max-width:430px){ .mine{font-size:12.5px;padding:7px 11px;} .hbtns{gap:6px;} }
+  @media (max-width:430px){ .hdr{gap:8px;} .mine{font-size:12px;padding:7px 9px;gap:5px;} .mine svg{width:14px;height:14px;} .hbtns{gap:5px;} .brand img{height:16px;} .brand .wm{font-size:16px;} .brandrow{gap:7px;} }
   .mine{font-size:13.5px;color:var(--mut);text-decoration:none;border:1px solid var(--line);
     border-radius:999px;padding:8px 14px;background:rgba(255,255,255,.7);}
   h1{font-size:clamp(28px,6vw,40px);line-height:1.1;letter-spacing:-.03em;margin:18px 0 10px;}
@@ -208,7 +210,7 @@ ${STYLE}</head><body>
       <span class="brandrow"><img src="/voyo-logo.png" alt="VOYO" /><span class="wm">mobile</span></span>
       <span class="byvsc">by <b>VSC</b></span>
     </a>
-    <span class="hbtns"><a class="mine tgb" href="${BOT}?start=site" target="_blank" rel="noopener"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="flex:none"><circle cx="12" cy="12" r="12" fill="#27A6E5"/><path d="M5.4 11.7l11.3-4.4c.5-.2 1 .1.8.9l-1.9 9c-.1.6-.5.8-1 .5l-2.9-2.1-1.4 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.3-4.8c.2-.2 0-.3-.3-.1l-6.6 4.1-2.8-.9c-.6-.2-.6-.6.1-.9z" fill="#fff"/></svg>Оформить в TG-боте</a><a class="mine" href="/esim/account">Мои eSIM</a></span>
+    <span class="hbtns"><a class="mine tgb" href="${BOT}?start=site" target="_blank" rel="noopener"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="flex:none"><circle cx="12" cy="12" r="12" fill="#27A6E5"/><path d="M5.4 11.7l11.3-4.4c.5-.2 1 .1.8.9l-1.9 9c-.1.6-.5.8-1 .5l-2.9-2.1-1.4 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.3-4.8c.2-.2 0-.3-.3-.1l-6.6 4.1-2.8-.9c-.6-.2-.6-.6.1-.9z" fill="#fff"/></svg><span class="tgl-l">Оформить в TG-боте</span><span class="tgl-s">TG-бот</span></a><a class="mine" href="/esim/account">Мои eSIM</a></span>
   </div>
 
   <h1>${a.flag} ${esc(a.h1)}</h1>
@@ -327,7 +329,7 @@ ${STYLE}
       <span class="brandrow"><img src="/voyo-logo.png" alt="VOYO" /><span class="wm">mobile</span></span>
       <span class="byvsc">by <b>VSC</b></span>
     </a>
-    <span class="hbtns"><a class="mine tgb" href="${BOT}?start=site" target="_blank" rel="noopener"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="flex:none"><circle cx="12" cy="12" r="12" fill="#27A6E5"/><path d="M5.4 11.7l11.3-4.4c.5-.2 1 .1.8.9l-1.9 9c-.1.6-.5.8-1 .5l-2.9-2.1-1.4 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.3-4.8c.2-.2 0-.3-.3-.1l-6.6 4.1-2.8-.9c-.6-.2-.6-.6.1-.9z" fill="#fff"/></svg>Оформить в TG-боте</a><a class="mine" href="/esim/account">Мои eSIM</a></span>
+    <span class="hbtns"><a class="mine tgb" href="${BOT}?start=site" target="_blank" rel="noopener"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="flex:none"><circle cx="12" cy="12" r="12" fill="#27A6E5"/><path d="M5.4 11.7l11.3-4.4c.5-.2 1 .1.8.9l-1.9 9c-.1.6-.5.8-1 .5l-2.9-2.1-1.4 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.3-4.8c.2-.2 0-.3-.3-.1l-6.6 4.1-2.8-.9c-.6-.2-.6-.6.1-.9z" fill="#fff"/></svg><span class="tgl-l">Оформить в TG-боте</span><span class="tgl-s">TG-бот</span></a><a class="mine" href="/esim/account">Мои eSIM</a></span>
   </div>
 
   <h1>${esc(g.h1)}</h1>
