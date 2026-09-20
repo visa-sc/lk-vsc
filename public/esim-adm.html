@@ -117,6 +117,8 @@
   .pos{color:var(--green);font-weight:600}
   .neg{color:var(--red);font-weight:600}
   .dim{color:var(--mut2)}
+  .bad{color:#b4322c;}
+  #tCust td:last-child{white-space:normal;max-width:300px;line-height:1.35;}
   .mono{font-family:SFMono-Regular,Consolas,monospace;font-size:12px;letter-spacing:.02em;}
 
   /* сортировка по столбцам */
@@ -323,7 +325,7 @@
     abmenu: "С 18 сентября посетители сайта случайно делятся пополам: половина видит <b>старое меню</b> фильтров («Не важно / 3 дн. / 5 дн.…» одной строкой и «Сколько ГБ», без «Типа тарифа»), половина — <b>новое</b>, как у Trip.com (дни по одному с 1 до 14, «Ежедневно / Всего X ГБ»). Вариант закрепляется за браузером. Всё остальное на сайте у обоих одинаковое. Процент — доля от зашедших в этом варианте. <br><b>Телеграм-бот</b> (вторая таблица): половина новых чатов после выбора страны сначала выбирает срок поездки («1–3 дня · от 59 ₽»), половина видит сразу весь список пакетов. Честно сравнивать можно, когда в каждом варианте наберётся хотя бы пара сотен выбравших страну и десяток оплат.",
     fbot: "Уникальные чаты бота: нажал «Старт» → выбрал страну → открыл пакет → получил ссылку на оплату → оплатил. Между карточками — доля перехода с шага на шаг.<br>С 18 сентября шаги пишет сам бот. <b>До 18 сентября</b> — восстановлено по следам в боте: день первого «Старта» и заказы известны точно, а по промежуточным шагам — только до какого шага человек дошёл в итоге.",
     days: "Каждая строка — сутки по Москве. Маржа — выручка минус себестоимость, без комиссии банка и рекламы.",
-    cust: "Люди хотя бы с одной оплатой. <b>Откуда</b> и <b>ключевое слово</b> — по первой покупке: с какой рекламы и по какому запросу человек пришёл впервые.<br>Директ передаёт слово сам. Google — только если в шаблоне ссылки кампании стоит {keyword}, иначе будет «не передано».<br><b>Код</b> — личный промокод клиента для друзей, <b>бонусы</b> — накопленный баланс.",
+    cust: "✅ — покупка состоялась. ❌ — деньги списаны, а eSIM не выдана: нужно выдать вручную, причина в колонке «Что не так». ⏳ — человек дошёл до оплаты, но не заплатил; ему автоматически уходит письмо-напоминание.<br>С 20 сентября письма об оплатах и сорвавшихся покупках на почту не шлются — всё видно здесь.<br>Здесь все, кто хотя бы пробовал купить. <b>Откуда</b> и <b>ключевое слово</b> — по первой покупке: с какой рекламы и по какому запросу человек пришёл впервые.<br>Директ передаёт слово сам. Google — только если в шаблоне ссылки кампании стоит {keyword}, иначе будет «не передано».<br><b>Код</b> — личный промокод клиента для друзей.",
     promo: "Все промокоды витрины и бота. <b>Применён</b> — сколько оплаченных заказов с этим кодом, <b>выручка</b> — их сумма. Свои проверочные покупки сюда не входят.",
   };
   var POP = document.createElement("div"); POP.className = "pop"; document.body.appendChild(POP);
@@ -695,23 +697,38 @@
   }
   RENDER.tCust = function(){ renderCustomers(); };
   function renderCustomers(){
-    el("custNote").textContent = DATA.customers.length + " с оплатой";
-    var R = [0,0,0,1,1,1,0,1];
+    var paid = DATA.customers.filter(function(c){ return c.orders > 0; }).length;
+    var bad = DATA.customers.filter(function(c){ return c.mark === "fail"; }).length;
+    var tries = DATA.customers.filter(function(c){ return c.mark === "try"; }).length;
+    el("custNote").textContent = paid + " с оплатой" + (bad ? " · " + bad + " с проблемой" : "") + (tries ? " · " + tries + " не дошли до оплаты" : "");
+    var R = [0,0,0,0,1,1,1,0,0];
+    var MARK = { ok: "✅", fail: "❌", try: "⏳" };
+    var ORD = { fail: 0, try: 1, ok: 2 };
     var rows = sortRows("tCust", DATA.customers, {
+      st: function(c){ return ORD[c.mark]; },
       who: function(c){ return c.key; }, ch: function(c){ return chanName(c.channel); }, term: function(c){ return c.term || null; },
-      orders: function(c){ return c.orders; }, revenue: function(c){ return c.revenue; }, last: function(c){ return c.last; },
-      code: function(c){ return c.refCode || null; }, bonus: function(c){ return c.balanceRub || null; } });
+      orders: function(c){ return c.orders; }, revenue: function(c){ return c.revenue; },
+      last: function(c){ return c.last || c.lastTry; },
+      code: function(c){ return c.refCode || null; }, note: function(c){ return c.problem || null; } });
     el("tCust").innerHTML = sortHead("tCust", [
-        { t: "Клиент", k: "who" }, { t: "Откуда", k: "ch" }, { t: "Ключевое слово", k: "term" },
+        { t: "", k: "st" }, { t: "Клиент", k: "who" }, { t: "Откуда", k: "ch" }, { t: "Ключевое слово", k: "term" },
         { t: "Покупок", k: "orders", r: 1, num: 1 }, { t: "Сумма", k: "revenue", r: 1, num: 1 },
-        { t: "Последняя", k: "last", r: 1, num: 1 }, { t: "Код", k: "code" }, { t: "Бонусы", k: "bonus", r: 1, num: 1 } ]) +
+        { t: "Последняя", k: "last", r: 1, num: 1 }, { t: "Код", k: "code" }, { t: "Что не так", k: "note" } ]) +
       "<tbody>" + rows.map(function(c){
-        var who = c.key.indexOf("tg:") === 0 ? "телеграм · " + c.key.slice(3) : c.key;
+        // контакты: почта, телефон и чат телеграма — всё, что о человеке известно
+        var parts = [];
+        if (c.email) parts.push(c.email);
+        if (c.phone) parts.push(c.phone);
+        if (c.tg) parts.push("телеграм " + c.tg);
+        if (!parts.length) parts.push(c.key.indexOf("tg:") === 0 ? "телеграм " + c.key.slice(3) : c.key);
+        var who = parts.join(" · ");
         var ad = c.channel === "yandex" || c.channel === "google";
         var term = c.term ? esc(c.term) : (ad ? '<span class="dim">не передано</span>' : DASH);
-        return row(['<span class="mono">' + esc(who) + "</span>", esc(chanName(c.channel)), term, RU(c.orders),
-          RU(c.revenue) + " ₽", fmtTs(c.last), '<span class="mono dim">' + esc(c.refCode || "") + "</span>",
-          c.balanceRub ? RU(c.balanceRub) + " ₽" : DASH], R);
+        var note = c.problem ? '<span class="' + (c.mark === "fail" ? "bad" : "dim") + '">' + esc(c.problem) + "</span>" : DASH;
+        return row(['<span title="' + (c.mark === "ok" ? "покупка состоялась" : c.mark === "fail" ? "оплата прошла, eSIM не выдана" : "до оплаты не дошёл") + '">' + MARK[c.mark] + "</span>",
+          '<span class="mono">' + esc(who) + "</span>", esc(chanName(c.channel)), term, c.orders ? RU(c.orders) : DASH,
+          c.revenue ? RU(c.revenue) + " ₽" : DASH, fmtTs(c.last || c.lastTry), '<span class="mono dim">' + esc(c.refCode || "") + "</span>",
+          note], R);
       }).join("") + "</tbody>";
   }
   RENDER.tPromo = function(){ renderPromos(); };

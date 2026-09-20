@@ -1774,7 +1774,9 @@ function mount(app, opts) {
         opts.sendMail({ to: g.order.email, subject: L.subject, html: L.html, text: L.text })
           .catch((e) => console.error("esim client mail:", e.message));
       }
-      if (opts && opts.sendMail) {
+      // Письмо директору об оплате больше не шлём: покупки и попытки видны в панели
+      // dev.voyomobile.ru, раздел «Клиенты» (просьба Андрея 20.09.2026).
+      if (false) {
         const payTotal = g.order.payTotalRub || g.order.priceRub;
         opts.sendMail({
           to: "director@visa-sc.ru",
@@ -1817,8 +1819,9 @@ function mount(app, opts) {
       const g = findLocal(id);
       if (g) { g.order.status = "paid_failed"; g.order.error = String(e.message).slice(0, 300); saveLocal(g.orders); }
       console.error("esim fulfil:", e.message);
-      // Деньги уже списаны — зовём менеджера руками добить заказ.
-      if (opts && opts.sendMail) {
+      // Деньги списаны, а выдача не прошла: клиент помечен красным в панели,
+      // письмо директору не шлём (просьба Андрея 20.09.2026).
+      if (false) {
         opts.sendMail({
           to: "director@visa-sc.ru",
           subject: "VOYO eSIM: ОПЛАЧЕНО, но выдача НЕ прошла — нужен ручной заказ",
@@ -2591,10 +2594,8 @@ function mount(app, opts) {
         // Про старые заказы письмо директору уже не новость: при разовом догоне
         // накопившихся оно только засоряет почту, клиенту письмо всё равно уйдёт.
         if (!o.abandonAdmin && age > ABANDON_MAX_MS) { o.abandonAdmin = -1; changed = true; }
-        if (!o.abandonAdmin && age >= ABANDON_ADMIN_MS) {
-          await opts.sendMail(abandonAdminLetter(o, why, st)).catch(() => {});
-          o.abandonAdmin = now; changed = true; mails++;
-        }
+        // Директору про брошенную оплату не пишем — она видна в панели, в «Клиентах»
+        if (!o.abandonAdmin && age >= ABANDON_ADMIN_MS) { o.abandonAdmin = -1; changed = true; }
         await new Promise((r) => setTimeout(r, 300));       // не долбим банк
       }
       if (changed) saveLocal(orders);
@@ -3024,20 +3025,49 @@ function mount(app, opts) {
       // Ключевое слово из рекламы: utm_term (Директ подставляет его сам, в Google —
       // только если в шаблоне ссылки стоит {keyword}). Берём по первому заказу.
       const termOf = (o) => { const a = (o.ads && (o.ads.first || o.ads)) || {}; return String(a.utm_term || a.keyword || "").slice(0, 80); };
-      all.filter((o) => o.status === "done" && o.paidAt).forEach((o) => {
-        const key = o.custKey || normEmail(o.email) || (o.tgChatId ? "tg:" + o.tgChatId : "");
+      // В списке все, кто хотя бы пробовал купить: с 20.09.2026 письма об оплатах и
+      // сорвавшихся покупках не уходят, поэтому здесь видно и удачные, и неудачные
+      // попытки — с пометкой и причиной.
+      const whyOf = (o) => {
+        const e = String(o.error || "").slice(0, 160);
+        if (o.status === "paid_failed") return "Оплата прошла, а выдача не удалась" + (e ? ": " + e : "") + ". Нужно выдать вручную.";
+        if (o.status === "fulfilling") return "Выдача идёт" + (Date.now() - (o.ts || 0) > 6 * 60000 ? " дольше обычного — проверить" : "");
+        if (o.status === "pending") return "Нажал «Оплатить», но оплата не завершена" + (o.abandonMail > 0 ? " (письмо с напоминанием отправлено)" : "");
+        if (o.status === "canceled") return "Заказ отменён" + (o.note ? ": " + String(o.note).slice(0, 80) : "");
+        if (o.status === "lead") return "Оставил заявку, до оплаты не дошёл";
+        return "";
+      };
+      all.filter((o) => !isTestOrder(o)).forEach((o) => {
+        const key = o.custKey || normEmail(o.email) || (o.tgChatId ? "tg:" + o.tgChatId : "") || (o.phone ? digits(o.phone) : "");
         if (!key) return;
-        const c = byCust.get(key) || { key, orders: 0, revenue: 0, first: Infinity, last: 0, channel: null, term: "" };
-        c.orders += o.groupOf ? 0 : 1; c.revenue += o.priceRub || 0;
-        if (o.paidAt < c.first) { c.first = o.paidAt; c.channel = channelOf(o); c.term = termOf(o); }
-        c.last = Math.max(c.last, o.paidAt);
+        const c = byCust.get(key) || { key, orders: 0, revenue: 0, first: Infinity, last: 0, channel: null, term: "",
+          attempts: 0, failed: 0, problem: "", lastTry: 0, email: null, phone: null, tg: null };
+        if (o.email) c.email = normEmail(o.email);
+        if (o.phone) c.phone = o.phone;
+        if (o.tgChatId) c.tg = String(o.tgChatId);
+        c.lastTry = Math.max(c.lastTry, o.paidAt || o.ts || 0);
+        if (o.status === "done" && o.paidAt) {
+          c.orders += o.groupOf ? 0 : 1; c.revenue += o.priceRub || 0;
+          if (o.paidAt < c.first) { c.first = o.paidAt; c.channel = channelOf(o); c.term = termOf(o); }
+          c.last = Math.max(c.last, o.paidAt);
+        } else if (!o.groupOf) {
+          c.attempts++;
+          if (o.status === "paid_failed" || o.status === "fulfilling") c.failed++;
+          // показываем причину последней неудачи
+          if (!c.problemTs || (o.ts || 0) >= c.problemTs) { c.problem = whyOf(o); c.problemTs = o.ts || 0; c.problemLabel = o.label || ""; }
+          if (!c.channel) { c.channel = channelOf(o); c.term = termOf(o); }
+        }
         byCust.set(key, c);
       });
       const customers = Array.from(byCust.values()).map((c) => {
         const rec = cust[c.key] || cust[normEmail(c.key)] || {};
-        return Object.assign({}, c, { refCode: rec.refCode || null, balanceRub: rec.balanceRub || 0,
-          invitedBy: rec.invitedBy || null, name: c.key });
-      }).sort((a, b) => b.last - a.last);
+        // ✅ — покупка состоялась; ❌ — деньги списаны, а eSIM не выдана (разбираться);
+        // ⏳ — до оплаты не дошёл (брошенная корзина, напоминание уходит само)
+        const mark = c.orders > 0 ? "ok" : (c.failed > 0 ? "fail" : "try");
+        return Object.assign({}, c, { mark, refCode: rec.refCode || null, balanceRub: rec.balanceRub || 0,
+          invitedBy: rec.invitedBy || null, name: c.key,
+          problem: c.orders > 0 && c.failed === 0 ? "" : c.problem });
+      }).sort((a, b) => (b.last || b.lastTry) - (a.last || a.lastTry));
 
       // промокоды: сколько раз вводили и сколько по ним продали
       const promos = readJson(PROMOS_FILE, {});
