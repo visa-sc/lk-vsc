@@ -2628,6 +2628,12 @@ function mount(app, opts) {
         const daysLeft = expiresAt ? Math.ceil((new Date(expiresAt) - Date.now()) / 86400000) : null;
         const gb = (mb) => (mb / 1024 >= 10 ? String(Math.round(mb / 1024)) : String(Math.round(mb / 102.4) / 10).replace(".", ",")) + " ГБ";
 
+        // Трафик уже израсходован — про срок молчим: спасать нечего, а человек
+        // (или тот, кому он отдал eSIM) и так знает, что интернет кончился.
+        // 20.09.2026: Андрею пришло «заканчивается через 2 дня» по пакету с остатком 0.
+        const spent = totalMb > 0 && !(usage && usage.daily) && leftMb / totalMb < 0.02;
+        if (spent && !mark.expiry) mark.expiry = -1;
+
         // 1) срок на исходе — считаем только по активированным, у остальных отсчёт ещё не пошёл
         if (!mark.expiry && activated && daysLeft !== null && daysLeft <= NOTIFY_DAYS_BEFORE && daysLeft >= 0) {
           const canTopup = await hasTopups(item.productId);
@@ -2654,7 +2660,7 @@ function mount(app, opts) {
           }
           mark.lowData = Date.now(); mails++;
         }
-        if (mark.expiry || mark.lowData) sent[item.esimId] = mark;
+        if (mark.expiry || mark.lowData) sent[item.esimId] = mark;   // −1 = напоминание не нужно
         await new Promise((r) => setTimeout(r, 400));       // не долбим API поставщика
       }
       writeJson(NOTIFY_FILE, sent);
