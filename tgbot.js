@@ -567,6 +567,7 @@ function blogCodeLetter(rec, refCode) {
         "за каждого, кто купит по ней, вам " + blog.REF_BONUS_RUB + " ₽. Их можно потратить на интернет или вывести.");
 }
 async function blogStart(chatId) {
+  blog.addClick(chatId);                       // переход по QR с картинки — в панель
   setState(chatId, { blog: { step: "name" }, step: null });
   const st = blog.stats();
   return send(chatId, BLOG_HELLO + (st.left > 0 && st.left <= 3 ? "\n\nВ этом месяце осталось мест: " + st.left + "." : ""));

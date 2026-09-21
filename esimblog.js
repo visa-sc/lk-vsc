@@ -216,6 +216,19 @@ function markUse(code, who, orderId) {
   save(list); return rec;
 }
 
+// Переходы по ссылке с картинки (QR): каждый /start blogger. Храним чат и время,
+// чтобы в панели видеть и все переходы, и сколько разных людей пришло.
+const CLICKS = path.join(DIR, "blogclicks.json");
+function addClick(chatId) {
+  try {
+    const list = (() => { try { return JSON.parse(fs.readFileSync(CLICKS, "utf8")); } catch (_) { return []; } })();
+    list.push({ ts: Date.now(), chat: String(chatId || "") });
+    fs.mkdirSync(DIR, { recursive: true });
+    fs.writeFileSync(CLICKS, JSON.stringify(list.slice(-20000)), "utf8");
+  } catch (e) { console.error("blog click:", e.message); }
+}
+function clicks() { try { return JSON.parse(fs.readFileSync(CLICKS, "utf8")); } catch (_) { return []; } }
+
 function stats() {
   const list = load();
   const m = monthKey(today());
@@ -224,5 +237,5 @@ function stats() {
 }
 
 module.exports = { load, save, parseName, parseNetwork, parseNick, parseDates, daysBetween, today,
-  validate, create, find, checkUse, markUse, stats, ownerOf,
+  validate, create, find, checkUse, markUse, stats, ownerOf, addClick, clicks,
   MONTH_LIMIT, MAX_DAYS, COOLDOWN_H, REF_BONUS_RUB, NETWORKS };

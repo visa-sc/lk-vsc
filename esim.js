@@ -2920,6 +2920,48 @@ function mount(app, opts) {
     if (!f[key]) { f[key] = {}; f[key + "Since"] = Date.now(); }
     if (!f[key][vid] && Object.keys(f[key]).length < 200000) { f[key][vid] = v; _funnelDirty = true; }
   }
+  // Блогеры для панели: переходы по QR, выданные коды, что нам стоили бесплатные
+  // eSIM и что принесли рефералки блогеров (люди и деньги). 21.09.2026.
+  function blogStatsFor(from, to, withTest, rate) {
+    const inR = (day) => (!from || day >= from) && (!to || day <= to);
+    const recs = blog.load();
+    const all = readJson(ORDERS_FILE, []);
+    const cust = loadCustomers();
+    const clicks = blog.clicks().filter((c) => inR(mskDay(c.ts)));
+    const costOf = (o) => (o.costUsd ? tsimCostRub(o.costUsd, rate || 0) : 0);
+    // кто владелец кода: карточка чата (или та, с которой её слили)
+    const cardOf = (rec) => {
+      let k = rec.chatId ? "tg:" + rec.chatId : (rec.boundEmail || "");
+      for (let i = 0; i < 3 && cust[k] && cust[k].aliasOf; i++) k = cust[k].aliasOf;
+      return cust[k] || null;
+    };
+    const rows = recs.map((rec) => {
+      const free = all.filter((o) => o.promoCode === rec.code && o.status === "done" && o.paidAt && inR(mskDay(o.paidAt)));
+      const card = cardOf(rec);
+      const ref = card && card.refCode;
+      const invited = ref ? all.filter((o) => o.status === "done" && o.paidAt && inR(mskDay(o.paidAt)) &&
+        o.refBy && (o.refBy === card.email || normEmail(o.refBy) === normEmail(card.email)) &&
+        (withTest || !isTestOrder(o))) : [];
+      return {
+        code: rec.code, name: rec.name, nick: rec.nick, network: rec.network,
+        from: rec.from, to: rec.to, createdAt: rec.createdAt,
+        free: free.length, cost: Math.round(free.reduce((a, o) => a + costOf(o), 0)),
+        refCode: ref || null,
+        refOrders: invited.length,
+        refClients: new Set(invited.map((o) => o.custKey || o.email)).size,
+        refRevenue: invited.reduce((a, o) => a + (o.priceRub || 0), 0),
+        refPaid: invited.length * REF_BONUS_RUB,          // сколько начислили блогеру
+      };
+    }).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    const sum = (k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
+    return {
+      clicks: clicks.length, clickPeople: new Set(clicks.map((c) => c.chat)).size,
+      codes: rows.length, month: blog.stats().month, limit: blog.stats().limit, left: blog.stats().left,
+      free: sum("free"), cost: sum("cost"),
+      refClients: sum("refClients"), refOrders: sum("refOrders"), refRevenue: sum("refRevenue"), refPaid: sum("refPaid"),
+      rows,
+    };
+  }
   function abBotFor(from, to, withTest) {
     const f = funnelData();
     if (!f.abBot) return null;
@@ -3183,6 +3225,7 @@ function mount(app, opts) {
         funnel: funnelFor(from, to, withTest),
         ab: abFor(from, to, withTest),
         abBot: abBotFor(from, to, withTest),
+        blog: blogStatsFor(from, to, withTest, rate),
         totals: {
           revenue, orders: paid.filter((o) => !o.groupOf).length, esims: paid.length, cost: Math.round(cost), acq, acqPct: spend.acqPct, adSpend,
           profit: Math.round(revenue - cost - acq - adSpend),

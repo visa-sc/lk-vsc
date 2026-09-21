@@ -257,6 +257,14 @@
     <div class="sec-b" id="fsite"></div>
   </section>
 
+  <section class="sec" data-id="blog">
+    <div class="sec-h"><h2>Блогеры</h2><span data-info="blog"></span><span class="sum" id="blogNote"></span><span class="chev">›</span></div>
+    <div class="sec-b">
+      <div class="tiles" id="blogTiles"></div>
+      <div class="scroll" style="margin-top:14px"><table id="tBlog"></table></div>
+    </div>
+  </section>
+
   <section class="sec" data-id="abmenu">
     <div class="sec-h"><h2>A/B-тесты меню: сайт и бот</h2><span data-info="abmenu"></span><span class="sum" id="abNote"></span><span class="chev">›</span></div>
     <div class="sec-b"><div class="scroll"><table id="tAb"></table></div>
@@ -341,6 +349,7 @@
     chart: "Выручка по дням оплаты, время московское. Наведите на график — покажет сумму и число пакетов за день.<br>Прошедшие сутки закрываются в полночь: себестоимость фиксируется по курсу того дня и дальше не меняется. Сегодняшний день — живые цифры.",
     ads: "Канал определяется по метке, с которой человек пришёл впервые (utm, yclid, gclid). Покупки в телеграм-боте — отдельный канал. <b>SMS</b>, <b>Email</b>, <b>SMS-рассылка</b> — по метке в ссылке рассылки. <b>Личный кабинет VOYO</b> — покупки из визового ЛК, если человека не привела реклама или рассылка (иначе сделка идёт тому, что привело).<br><b>Маржа</b> — уже без себестоимости и комиссии банка. <b>Итог</b> — ещё и без расходов на рекламу. <b>ДРР</b> — доля рекламы в выручке.<br>Расход вносится со скриншотов кабинетов общей суммой за всё время.",
     fsite: "Уникальные посетители витрины на всех доменах (voyomobile.ru, voyotravel.ru/esim и другие): зашёл → выбрал страну (открылся список пакетов; на страницах /turkey, /china он открыт сразу) → открыл карточку пакета → нажал «Купить» (появляется поле почты) → нажал «Оплатить» → оплатил. Между карточками — доля перехода с шага на шаг, в синей плашке — сквозная.<br>С 18 сентября шаги пишет сама витрина. <b>До 18 сентября</b> — восстановлено по журналу сервера: «Выбрали страну» там видно только у заходов на страницы стран и по ссылкам из статей, а «Открыли пакет» не записывался вовсе — за те дни в этих шагах только те, кто пошёл дальше. Оплаты всегда берутся из заказов.",
+    blog: "Блогеры получают личный промокод: по нему eSIM бесплатно, взамен — упоминание в сторис. Вход в анкету только по ссылке с картинки (QR), в меню бота её нет.<br><b>Переходы по QR</b> — сколько раз открывали анкету, в скобках сколько разных людей. <b>Выдано кодов</b> — сколько анкет дошло до кода (не больше 7 в календарный месяц). <b>Бесплатных eSIM</b> и <b>себестоимость</b> — что блогеры уже взяли и во сколько это нам обошлось у поставщиков.<br><b>Приведено по рефералке</b> — клиенты, купившие по ссылке блогера: сколько людей, сколько покупок, на какую сумму и сколько бонусов мы начислили блогеру (по 100 ₽ за покупку). Бонусы блогер тратит на интернет или выводит раз в месяц.<br>В таблице — каждый блогер: ник, соцсеть, даты поездки, его бесплатные eSIM и что он привёл.",
     abmenu: "С 18 сентября посетители сайта случайно делятся пополам: половина видит <b>старое меню</b> фильтров («Не важно / 3 дн. / 5 дн.…» одной строкой и «Сколько ГБ», без «Типа тарифа»), половина — <b>новое</b>, как у Trip.com (дни по одному с 1 до 14, «Ежедневно / Всего X ГБ»). Вариант закрепляется за браузером. Всё остальное на сайте у обоих одинаковое. Процент — доля от зашедших в этом варианте. <br><b>Телеграм-бот</b> (вторая таблица): половина новых чатов после выбора страны сначала выбирает срок поездки («1–3 дня · от 59 ₽»), половина видит сразу весь список пакетов. Честно сравнивать можно, когда в каждом варианте наберётся хотя бы пара сотен выбравших страну и десяток оплат.",
     fbot: "Уникальные чаты бота: нажал «Старт» → выбрал страну → открыл пакет → получил ссылку на оплату → оплатил. Между карточками — доля перехода с шага на шаг.<br>С 18 сентября шаги пишет сам бот. <b>До 18 сентября</b> — восстановлено по следам в боте: день первого «Старта» и заказы известны точно, а по промежуточным шагам — только до какого шага человек дошёл в итоге.",
     days: "Каждая строка — сутки по Москве. Маржа — выручка минус себестоимость, без комиссии банка и рекламы.",
@@ -439,6 +448,7 @@
     renderCustomers();
     renderPromos();
   }
+  function plural(n, f){ var a = Math.abs(n) % 100, b = a % 10; return (a > 10 && a < 20) ? f[2] : (b > 1 && b < 5) ? f[1] : b === 1 ? f[0] : f[2]; }
   function tile(k, v, unit, cls){ return '<div class="tile ' + (cls||"") + '"><div class="k">' + k + '</div><div class="v">' + v + '<small>' + unit + '</small></div></div>'; }
   function head(cols, right){ return "<thead><tr>" + cols.map(function(c,i){ return "<th" + (right[i] ? ' class="r"' : "") + ">" + c + "</th>"; }).join("") + "</tr></thead>"; }
   function row(cells, right){ return "<tr>" + cells.map(function(c,i){ return "<td" + (right[i] ? ' class="r"' : "") + ">" + c + "</td>"; }).join("") + "</tr>"; }
@@ -612,6 +622,7 @@
     el("fbot").innerHTML = funnelHtml(bot, "чатов") + note;
     var sc = conv(site[5].n, site[0].n), bc = conv(bot[4].n, bot[0].n);
     renderAb();
+    renderBlog();
     el("fsiteNote").textContent = RU(site[0].n) + " посетителей · в оплату " + (sc == null ? "—" : sc + "%");
     el("fbotNote").textContent = RU(bot[0].n) + " чатов · в оплату " + (bc == null ? "—" : bc + "%");
   }
@@ -643,6 +654,44 @@
     t.innerHTML = "<tr><th>Телеграм-бот</th><th>Сразу список</th><th>Сначала срок</th></tr>" +
       rows.map(function(r){ return "<tr><td>" + r[1] + "</td>" + cell("list", r[0]) + cell("days", r[0]) + "</tr>"; }).join("") +
       "<tr><td><b>Выручка</b></td><td><b>" + RU(a.list.revenue) + " ₽</b></td><td><b>" + RU(a.days.revenue) + " ₽</b></td></tr>";
+  }
+
+  // Блогеры: переходы по QR, выданные коды, наши расходы и что принесли рефералки
+  RENDER.tBlog = function(){ renderBlog(); };
+  function renderBlog(){
+    var b = DATA.blog;
+    if (!b) { el("blogNote").textContent = ""; el("tBlog").innerHTML = ""; return; }
+    el("blogNote").textContent = b.codes + " " + plural(b.codes, ["код", "кода", "кодов"]) +
+      " · " + b.free + " " + plural(b.free, ["бесплатная eSIM", "бесплатные eSIM", "бесплатных eSIM"]) +
+      " · привели " + RU(b.refRevenue) + " ₽";
+    el("blogTiles").innerHTML = [
+      tile("Переходы по QR", RU(b.clicks), RU(b.clickPeople) + " " + plural(b.clickPeople, ["человек", "человека", "человек"])),
+      tile("Выдано кодов", RU(b.codes), "в этом месяце " + b.month + " из " + b.limit),
+      tile("Бесплатных eSIM", RU(b.free), "выдали блогерам"),
+      tile("Себестоимость", RU(b.cost), "₽ · наши расходы"),
+      tile("Привели клиентов", RU(b.refClients), RU(b.refOrders) + " " + plural(b.refOrders, ["покупка", "покупки", "покупок"])),
+      tile("Выручка с рефералок", RU(b.refRevenue), "₽"),
+      tile("Начислено блогерам", RU(b.refPaid), "₽ бонусами"),
+    ].join("");
+    var R = [0,0,0,0,1,1,1,1,1];
+    var rows = sortRows("tBlog", b.rows, {
+      who: function(r){ return r.nick || r.name; }, net: function(r){ return r.network; },
+      when: function(r){ return r.from; }, code: function(r){ return r.code; },
+      free: function(r){ return r.free; }, cost: function(r){ return r.cost; },
+      cl: function(r){ return r.refClients; }, rev: function(r){ return r.refRevenue; }, paid: function(r){ return r.refPaid; } });
+    var d = function(iso){ return iso ? iso.split("-").reverse().slice(0,2).join(".") : DASH; };
+    el("tBlog").innerHTML = sortHead("tBlog", [
+      { t: "Блогер", k: "who" }, { t: "Соцсеть", k: "net" }, { t: "Поездка", k: "when" }, { t: "Промокод", k: "code" },
+      { t: "Бесплатных eSIM", k: "free", r: 1, num: 1 }, { t: "Себестоимость", k: "cost", r: 1, num: 1 },
+      { t: "Привёл клиентов", k: "cl", r: 1, num: 1 }, { t: "Их покупки", k: "rev", r: 1, num: 1 },
+      { t: "Начислено ему", k: "paid", r: 1, num: 1 } ]) +
+      "<tbody>" + (rows.length ? rows.map(function(r){
+        return row([esc(r.nick || r.name) + '<div class="dim">' + esc(r.name) + "</div>", esc(r.network || DASH),
+          d(r.from) + " – " + d(r.to), '<span class="mono">' + esc(r.code) + "</span>",
+          r.free ? RU(r.free) : DASH, r.cost ? RU(r.cost) + " ₽" : DASH,
+          r.refClients ? RU(r.refClients) : DASH, r.refRevenue ? RU(r.refRevenue) + " ₽" : DASH,
+          r.refPaid ? RU(r.refPaid) + " ₽" : DASH], R);
+      }).join("") : "<tr><td colspan=9>Пока ни одного кода. Ссылка для блогеров: t.me/esimvoyo_bot?start=blogger</td></tr>") + "</tbody>";
   }
 
   /* ── реклама ── */
