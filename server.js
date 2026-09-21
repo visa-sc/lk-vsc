@@ -6099,18 +6099,29 @@ async function runYdSpendCompare(trigger) {
     if (_ydUnits && _ydUnits.balance != null && _ydUnits.balance < 5000) { console.warn("YD SPEND: мало баллов (" + _ydUnits.balance + "), пропуск"); return { skipped: true, reason: "low_units" }; }
     const mo = ydLastCompletedMonth();
     const ydNet = await ydFetchSpendNet(mo.from, mo.to);
-    let sheetTotal = null;
-    const sh = VSC_SHEETS.find((s) => s.name === mo.sheetName);
-    if (sh) {
+    // Лист месяца ищем СНАЧАЛА автообнаружением вкладок книги и только потом в
+    // жёстком списке VSC_SHEETS. 21.09.2026: список кончался июлем, и август уже не
+    // находился — блок молча показывал прочерк. Автопоиск переживает новые месяцы сам.
+    let sheetTotal = null, sheetErr = null;
+    let gid = null;
+    try {
+      const disc = await vscDiscoverGids(VSC_PUB_BASE);
+      if (disc && disc[mo.sheetName]) gid = disc[mo.sheetName];
+    } catch (e) { console.error("YD SPEND discover:", e.message); }
+    if (!gid) { const sh = VSC_SHEETS.find((s) => s.name === mo.sheetName); if (sh) gid = sh.gid; }
+    if (!gid) sheetErr = "лист «" + mo.sheetName + "» не найден в книге";
+    else {
       try {
-        const resp = await axios.get(VSC_PUB_BASE + "?gid=" + sh.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
+        const resp = await axios.get(VSC_PUB_BASE + "?gid=" + gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
         sheetTotal = extractSheetAdTotal(vscParseCsv(resp.data));
-      } catch (e) { console.error("YD SPEND sheet fetch:", e.message); }
+        if (sheetTotal == null) sheetErr = "в листе не нашлась колонка «Рекламные расходы ОБЩИЕ» или её итог";
+      } catch (e) { sheetErr = "лист не прочитался: " + e.message; console.error("YD SPEND sheet fetch:", e.message); }
     }
+    if (sheetErr) console.error("YD SPEND: " + sheetErr);
     const ydWithVat = (ydNet != null) ? Math.round(ydNet * (1 + YD_VAT_RATE)) : null;
     const deltaAbs = (ydWithVat != null && sheetTotal != null) ? (ydWithVat - sheetTotal) : null;
     const deltaPct = (deltaAbs != null && sheetTotal) ? Math.round(deltaAbs / sheetTotal * 1000) / 10 : null;
-    const result = { ts: Date.now(), ym: mo.ym, monthName: mo.sheetName, vatRate: YD_VAT_RATE, ydNet: (ydNet != null ? Math.round(ydNet) : null), ydWithVat, sheetTotal, deltaAbs, deltaPct, trigger: trigger || "cron" };
+    const result = { ts: Date.now(), ym: mo.ym, monthName: mo.sheetName, vatRate: YD_VAT_RATE, ydNet: (ydNet != null ? Math.round(ydNet) : null), ydWithVat, sheetTotal, deltaAbs, deltaPct, sheetErr: sheetErr || null, trigger: trigger || "cron" };
     saveYdSpend(result);
     console.log("YD SPEND [" + (trigger || "cron") + "]: " + mo.sheetName + " ЯД(с НДС)=" + ydWithVat + " таблица=" + sheetTotal + " Δ=" + deltaAbs);
     return result;
@@ -6132,11 +6143,32 @@ function scheduleYdSpendCompare() {
     }
     setTimeout(() => { Promise.resolve(runYdSpendCompare("cron")).catch(() => {}); tick(); }, Math.max(1000, target - now));
   })();
-  console.log("YD SPEND: сопоставление расхода запланировано на 1-е и 12-е число, 15:00 МСК");
+  // Ежедневная подстраховка в 15:10 МСК: если за последний завершённый месяц цифры
+  // неполные (лист не нашёлся, книга не ответила) или месяц сменился — досчитываем.
+  // Когда всё на месте, ничего не делаем: ни запроса в Директ, ни чтения книги.
+  (function daily() {
+    const now = Date.now() + MSK, DAY = 86400000;
+    let t = Math.floor(now / DAY) * DAY + (15 * 60 + 10) * 60 * 1000;
+    if (t <= now) t += DAY;
+    setTimeout(() => {
+      const c = loadYdSpend(), mo = ydLastCompletedMonth();
+      if (!c || c.ym !== mo.ym || c.sheetTotal == null || c.ydWithVat == null) {
+        Promise.resolve(runYdSpendCompare("daily-retry")).catch(() => {});
+      }
+      daily();
+    }, Math.max(1000, t - now));
+  })();
+  console.log("YD SPEND: сопоставление расхода 1-го и 12-го в 15:00 МСК + ежедневная досчитка в 15:10, если цифры неполные");
 }
 scheduleYdSpendCompare();
 // Стартовый расчёт, если кэша нет или он за другой месяц (read-only, один отчёт).
-(function () { const c = loadYdSpend(); const mo = ydLastCompletedMonth(); if (!c || c.ym !== mo.ym) setTimeout(() => { Promise.resolve(runYdSpendCompare("startup")).catch(() => {}); }, 90 * 1000); })();
+// Пересчёт при старте: не только для нового месяца, но и когда в прошлый раз что-то
+// не подтянулось (пустая цифра таблицы) — иначе прочерк висел бы до 1-го числа.
+(function () {
+  const c = loadYdSpend(); const mo = ydLastCompletedMonth();
+  const incomplete = c && c.ym === mo.ym && (c.sheetTotal == null || c.ydWithVat == null);
+  if (!c || c.ym !== mo.ym || incomplete) setTimeout(() => { Promise.resolve(runYdSpendCompare(incomplete ? "retry" : "startup")).catch(() => {}); }, 90 * 1000);
+})();
 
 async function getVscDashboard() {
   const now = Date.now();

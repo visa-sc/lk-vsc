@@ -3971,7 +3971,7 @@
             '<tr><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;color:#33415a;">Я.Директ (откручено, с НДС ' + vatPct + '%)</td><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;text-align:right;font-weight:700;white-space:nowrap;">' + money(yc.ydWithVat) + '</td></tr>' +
             '<tr><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;color:#33415a;">Таблица «Рекламные расходы ОБЩИЕ» (Grand total)</td><td style="padding:7px 6px;border-bottom:1px solid #eef0f4;text-align:right;font-weight:700;white-space:nowrap;">' + money(yc.sheetTotal) + '</td></tr>' +
             '<tr><td style="padding:7px 6px;color:#33415a;">Расхождение (Я.Директ − таблица)</td><td style="padding:7px 6px;text-align:right;font-weight:700;white-space:nowrap;color:' + dColor + ';">' + dStr + '</td></tr>' +
-            '</table>';
+            (yc.sheetErr ? '</table><div style="font-size:11.5px;color:#a12b3c;margin-top:8px;">Цифра из таблицы не подтянулась: ' + escapeHtml(yc.sheetErr) + '</div>' : '</table>');
           // Пояснение — под «i» в заголовке блока (просьба Андрея 22.07)
           hYd.appendChild(vscInfo("<b>Откуда данные</b><br>Открученные деньги из кабинета Я.Директа (Reports API) × НДС " + vatPct + "%. Таблица — «Рекламные расходы ОБЩИЕ», строка Grand total (при отсутствии подписи строка находится по структуре листа).<br><br>Обновляется 1-го и 12-го числа в 15:00 МСК · данные на " + escapeHtml(upd) + "."));
         } else {
