@@ -520,20 +520,33 @@ async function blogStop(chatId, text) {
   ] } });
   return showHome(chatId);
 }
-function blogCodeLetter(rec) {
+function blogCodeLetter(rec, refCode) {
   const d = (iso) => iso.split("-").reverse().join(".");
-  return "<b>Ваш промокод: <code>" + rec.code + "</code></b>\n\n" +
+  const tgLink = refCode ? "https://t.me/" + BOT_NAME + "?start=ref_" + refCode : "";
+  const siteLink = refCode ? BASE_URL + "/esim?ref=" + refCode : "";
+  return "<b>Ваш промокод: <code>" + rec.code + "</code></b>\n" +
+    "<i>(ниже есть кнопка «Скопировать промокод» — код придёт отдельным сообщением, нажатие копирует его)</i>\n\n" +
     "Действует с " + d(rec.from) + " по " + d(rec.to) + ".\n" +
     "Вводите его при оформлении — цена станет 0 ₽.\n\n" +
+    "<b>Где оформлять</b>\n" +
+    "• Здесь, в боте: код уже подставлен, просто выберите страну и пакет.\n" +
+    "• На сайте " + BASE_URL + "/esim: введите код в поле «У меня есть промокод» и укажите свою почту. " +
+    "Код закрепится за этой почтой — дальше он работает и в боте, и на сайте.\n\n" +
     "<b>Как это работает</b>\n" +
-    "• код закрепляется за вами при первом использовании, другим он не подойдёт;\n" +
-    "• пакетов можно брать сколько нужно, но не чаще одного раз в " + blog.COOLDOWN_H + " часа;\n" +
+    "• код ваш личный: у других он не сработает;\n" +
+    "• пакетов можно брать сколько нужно, но не чаще одного раза в " + blog.COOLDOWN_H + " часа — " +
+    "пауза общая для бота и сайта;\n" +
     "• после даты возвращения код перестаёт действовать.\n\n" +
     "<b>Что просим взамен</b>\nУпоминание нас в сторис во время поездки.\n\n" +
-    "<b>И ещё: ваша реферальная ссылка</b>\n" +
-    "В личном кабинете на сайте есть ваша ссылка. Публикуйте её в сторис: за каждого, " +
-    "кто купит по ней, вам " + blog.REF_BONUS_RUB + " ₽. Их можно потратить на интернет " +
-    "или вывести — вывод раз в месяц, на ИП или самозанятого.";
+    (refCode
+      ? "<b>И ещё: ваша реферальная ссылка</b>\n" +
+        "За каждого, кто купит по ней, вам " + blog.REF_BONUS_RUB + " ₽.\n" +
+        "Для сторис: <code>" + siteLink + "</code>\n" +
+        "Для телеграма: <code>" + tgLink + "</code>\n" +
+        "Ссылка всегда под рукой: в боте — кнопка «Бонусы», на сайте — в личном кабинете.\n" +
+        "Деньги можно потратить на интернет или вывести — вывод раз в месяц, на ИП или самозанятого."
+      : "<b>И ещё: реферальная ссылка</b>\nВозьмите её в боте по кнопке «Бонусы» или в личном кабинете на сайте: " +
+        "за каждого, кто купит по ней, вам " + blog.REF_BONUS_RUB + " ₽. Их можно потратить на интернет или вывести.");
 }
 async function blogStart(chatId) {
   setState(chatId, { blog: { step: "name" }, step: null });
@@ -579,8 +592,10 @@ async function blogText(chatId, t, b) {
     }
     setState(chatId, { blog: null, promo: r.rec.code });
     console.log("tgbot: код блогера", r.rec.code, "—", r.rec.nick, "(" + r.rec.network + ")");
-    return send(chatId, blogCodeLetter(r.rec) + "\n\nПромокод уже подставлен — можете оформить eSIM прямо здесь.",
+    const bi = await bonusInfo(chatId).catch(() => null);      // личная реферальная ссылка блогера
+    return send(chatId, blogCodeLetter(r.rec, bi && bi.refCode) + "\n\nПромокод уже подставлен — можете оформить eSIM прямо здесь.",
       { reply_markup: { inline_keyboard: [
+        [{ text: "📋 Скопировать промокод", callback_data: "blogcopy" }],
         [{ text: "Начать", callback_data: "home" }],
         [{ text: "Оформить на сайте", url: BASE_URL + "/esim" }],
         [{ text: "Написать менеджеру", url: SUPPORT_TG }],
@@ -887,6 +902,10 @@ async function onText(chatId, text) {
       limit: "Промокод исчерпан.",
       first_only: "Промокод только для первой eSIM, а у вас уже есть купленные.",
       floor: "Промокод действует на пакеты от " + RU((j && j.promoMinRub) || 100) + " ₽. Код сохранится для следующей покупки.",
+      blog_not_started: "Код блогера начнёт действовать в первый день поездки.",
+      blog_expired: "Срок поездки по этому коду закончился.",
+      blog_bound: "Этот код закреплён за другим человеком.",
+      blog_cooldown: "По коду блогера можно брать одну eSIM раз в " + blog.COOLDOWN_H + " часа. Попробуйте позже.",
       used: "Вы уже использовали этот промокод.",
       not_started: "Акция по этому промокоду ещё не началась.",
       expired: "Срок действия промокода закончился.",
@@ -975,6 +994,11 @@ async function onCallback(q) {
     return showCountry(chatId, parts[0], parseInt(parts[1] || "0", 10) || 0, messageId);
   }
   if (data.indexOf("p:") === 0) return showPack(chatId, data.slice(2), messageId);
+  if (data === "blogcopy") {
+    const code = (getState(chatId) || {}).promo || "";
+    if (!code) return send(chatId, "Код не найден — напишите /start и получите новый.");
+    return send(chatId, "<code>" + esc(code) + "</code>\n\nНажмите на код — он скопируется.");
+  }
   if (data.indexOf("q:") === 0) {
     if (data === "q:0") return;
     const sign = data.charAt(2), productId = data.slice(4);

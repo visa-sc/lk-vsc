@@ -1404,7 +1404,7 @@
     this.disabled=true;
     var j = await recalc();
     this.disabled=false;
-    if(j && j.free){ msg.style.color="var(--green)"; msg.textContent="Код блогера принят: этот пакет бесплатно."; }
+    if(j && j.free){ msg.style.color="var(--green)"; msg.textContent="Код блогера принят: этот пакет бесплатно. Код закрепится за указанной почтой — в телеграм-боте он тоже будет работать."; }
     else if(j && j.promoOk){ msg.style.color="var(--green)"; msg.textContent="Промокод применён: −"+RU(j.discountRub)+" ₽"; }
     else {
       var why = {
@@ -1419,7 +1419,7 @@
         ref_own: "Это ваш собственный код — им делятся с друзьями.",
         blog_not_started: "Код блогера начнёт действовать в первый день поездки.",
         blog_expired: "Срок поездки по этому коду закончился.",
-        blog_bound: "Этот код уже закреплён за другим аккаунтом.",
+        blog_bound: "Этот код уже закреплён за другой почтой. Укажите ту же почту, с которой применяли его в первый раз.",
         blog_cooldown: "По коду блогера можно брать одну eSIM раз в 4 часа. Попробуйте позже.",
         ref_not_new: "Код друга работает только на первой покупке."
       }[j && j.promoReason] || "Промокод не подошёл.";

@@ -175,15 +175,26 @@ function find(code) {
 }
 
 // Можно ли прямо сейчас взять бесплатную eSIM по этому коду.
-// who — почта покупателя или "tg:<чат>"; кто первый, за тем код и закрепляется.
+// who — почта покупателя или "tg:<чат>". Код у блогера один, а мест два: бот и сайт.
+// Поэтому свой он и там и там: чат, в котором код выдан, плюс ОДНА почта (первая,
+// с которой код применили на сайте). Чужой чат или вторая почта — отказ.
+function ownerOf(rec, who) {
+  const me = String(who || "").trim().toLowerCase();
+  if (!me) return "no_who";
+  if (me.indexOf("tg:") === 0) {
+    if (rec.chatId) return me === "tg:" + rec.chatId ? "chat" : null;   // код выдан в этом чате
+    return (!rec.boundTo || rec.boundTo === me) ? "bind" : null;        // код заведён руками, без чата
+  }
+  if (!rec.boundEmail || rec.boundEmail === me) return "email";
+  return null;
+}
 function checkUse(code, who) {
   const rec = find(code);
   if (!rec) return { ok: false, why: "not_found" };
   const day = today();
   if (day < rec.from) return { ok: false, why: "not_started", rec };
   if (day > rec.to) return { ok: false, why: "expired", rec };
-  const me = String(who || "").trim().toLowerCase();
-  if (rec.boundTo && me && rec.boundTo !== me) return { ok: false, why: "bound", rec };
+  if (!ownerOf(rec, who)) return { ok: false, why: "bound", rec };
   const last = (rec.uses || []).slice(-1)[0];
   if (last && Date.now() - last < COOLDOWN_H * 3600e3) {
     return { ok: false, why: "cooldown", rec, waitMin: Math.ceil((COOLDOWN_H * 3600e3 - (Date.now() - last)) / 60000) };
@@ -196,7 +207,10 @@ function markUse(code, who, orderId) {
   const list = load();
   const rec = list.find((b) => b.code === String(code || "").trim().toUpperCase());
   if (!rec) return null;
-  if (!rec.boundTo && who) rec.boundTo = String(who).trim().toLowerCase();
+  const me = String(who || "").trim().toLowerCase();
+  if (!rec.boundTo && me) rec.boundTo = me;
+  // почту запоминаем отдельно: по ней код работает на сайте, а в боте — по чату
+  if (me && me.indexOf("tg:") !== 0 && !rec.boundEmail) rec.boundEmail = me;
   rec.uses = (rec.uses || []).concat([Date.now()]).slice(-200);
   rec.orders = (rec.orders || []).concat([orderId]).slice(-200);
   save(list); return rec;
@@ -210,5 +224,5 @@ function stats() {
 }
 
 module.exports = { load, save, parseName, parseNetwork, parseNick, parseDates, daysBetween, today,
-  validate, create, find, checkUse, markUse, stats,
+  validate, create, find, checkUse, markUse, stats, ownerOf,
   MONTH_LIMIT, MAX_DAYS, COOLDOWN_H, REF_BONUS_RUB, NETWORKS };
