@@ -164,32 +164,33 @@ function buildXlsx(entries) {
     const exp = list.filter((e) => e.type === "exp");
     const inc = list.filter((e) => e.type === "inc");
     const rows = [xlRow(1, XL_HEAD.map((h) => ({ v: h || " ", style: 1 })), 30)];
-    // Расходы (A..G) и приходы (I..K) идут двумя независимыми столбиками —
-    // ровно как в листе Андрея: строки левой и правой половины не связаны.
-    const n = Math.max(exp.length, inc.length);
-    let prevDay = null;
-    for (let i = 0; i < n; i++) {
-      const cells = new Array(11).fill(null);
-      const e = exp[i];
-      if (e) {
-        const day = +String(e.date).slice(8, 10);
-        cells[0] = day !== prevDay ? { v: day, num: true, style: 4 } : { v: " ", style: 3 };
-        prevDay = day;
-        cells[1] = { v: e.category || " ", style: 3 };
+    // Число слева ограничивает ВСЕ операции этого дня: и расходы (A..G), и приходы
+    // (I..K). Приход 17-го стоит напротив 17-го, даже если расходов в этот день нет —
+    // тогда строка дня содержит только правую половину (просьба Андрея 21.09.2026).
+    const dayOf = (e) => +String(e.date).slice(8, 10);
+    const days = Array.from(new Set(list.map(dayOf))).sort((a, b) => a - b);
+    let r = 2;
+    for (const day of days) {
+      const de = exp.filter((e) => dayOf(e) === day);
+      const di = inc.filter((e) => dayOf(e) === day);
+      const n = Math.max(de.length, di.length, 1);
+      for (let i = 0; i < n; i++) {
+        const cells = new Array(11).fill(null);
+        cells[0] = i === 0 ? { v: day, num: true, style: 4 } : { v: " ", style: 3 };
+        const e = de[i];
+        cells[1] = { v: (e && e.category) || " ", style: 9 };  // Категория — жирная, по центру
         cells[2] = { v: " ", style: 3 };                       // Безнал/нал — руками
-        cells[3] = { v: e.comment ? e.name + " - " + e.comment : e.name, style: flagStyle(e) };
-        cells[4] = { v: e.party || " ", style: 0 };
-        cells[5] = { v: e.rub, num: true, style: 2, f: e.formula || null };
+        cells[3] = e ? { v: e.comment ? e.name + " - " + e.comment : e.name, style: flagStyle(e) } : { v: " ", style: 0 };
+        cells[4] = { v: (e && e.party) || " ", style: 0 };
+        cells[5] = e ? { v: e.rub, num: true, style: 2, f: e.formula || null } : { v: " ", style: 0 };
         cells[6] = { v: " ", style: 6 };                       // Юр. лицо — руками, кегль 8
+        cells[7] = { v: " ", style: 3 };                       // разделитель — бирюзовая полоса
+        const k = di[i];
+        cells[8] = k ? { v: k.comment ? k.name + " - " + k.comment : k.name, style: flagStyle(k) } : { v: " ", style: 0 };
+        cells[9] = { v: (k && k.party) || " ", style: 0 };
+        cells[10] = k ? { v: k.rub, num: true, style: 2, f: k.formula || null } : { v: " ", style: 0 };
+        rows.push(xlRow(r++, cells));
       }
-      cells[7] = { v: " ", style: 3 };                         // разделитель — бирюзовая полоса во всех строках
-      const k = inc[i];
-      if (k) {
-        cells[8] = { v: k.comment ? k.name + " - " + k.comment : k.name, style: flagStyle(k) };
-        cells[9] = { v: k.party || " ", style: 0 };
-        cells[10] = { v: k.rub, num: true, style: 2, f: k.formula || null };
-      }
-      rows.push(xlRow(i + 2, cells));
     }
     const pp = ym.split("-");
     return { name: XL_MONTHS[+pp[1] - 1] + " " + pp[0], xml: rows.join("") };
@@ -219,9 +220,10 @@ function buildXlsx(entries) {
     + "</Relationships>", "utf8"));
   zip.addFile("xl/styles.xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-    + '<fonts count="3"><font><sz val="10"/><name val="Helvetica"/></font>'
+    + '<fonts count="4"><font><sz val="10"/><name val="Helvetica"/></font>'
     + '<font><b/><sz val="12"/><name val="Helvetica"/></font>'
-    + '<font><sz val="8"/><name val="Helvetica"/></font></fonts>'
+    + '<font><sz val="8"/><name val="Helvetica"/></font>'
+    + '<font><b/><sz val="10"/><name val="Helvetica"/></font></fonts>'
     + '<fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
     + '<fill><patternFill patternType="solid"><fgColor rgb="FF7BFDF5"/><bgColor rgb="FF7BFDF5"/></patternFill></fill>'
     + '<fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/><bgColor rgb="FFFFFFFF"/></patternFill></fill>'
@@ -231,7 +233,7 @@ function buildXlsx(entries) {
     + '<border><left style="thin"><color rgb="FFD9D9D9"/></left><right style="thin"><color rgb="FFD9D9D9"/></right>'
     + '<top style="thin"><color rgb="FFD9D9D9"/></top><bottom style="thin"><color rgb="FFD9D9D9"/></bottom><diagonal/></border></borders>'
     + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-    + '<cellXfs count="9">'
+    + '<cellXfs count="10">'
     + '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                                     // 0 данные (белая)
     + '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf>' // 1 шапка расходов
     + '<xf numFmtId="4" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"/>'                               // 2 сумма
@@ -241,6 +243,7 @@ function buildXlsx(entries) {
     + '<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>'                                       // 6 Юр. лицо (кегль 8)
     + '<xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                                     // 7 метка жёлтая
     + '<xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>'                                                     // 8 метка красная
+    + '<xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf>' // 9 Категория: жирная, по центру
     + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>', "utf8"));
   sheets.forEach((sh, i) => {
     zip.addFile("xl/worksheets/sheet" + (i + 1) + ".xml", Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
