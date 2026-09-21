@@ -2200,6 +2200,100 @@ function mount(app, opts) {
   });
 
   // ═══ Личный кабинет по email: все eSIM клиента ═══
+  // ── «Не получается подключить eSIM»: форма обращения + инструкция ──
+  // Ссылку шлём смской тем, у кого что-то не вышло. Ответы копятся в
+  // .esim/help.json, скриншоты — в .esim/help/, письмо уходит на director@.
+  const HELP_FILE = path.join(DIR, "help.json");
+  const HELP_DIR = path.join(DIR, "help");
+  app.get("/esim/help", (req, res) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.sendFile(path.join(__dirname, "public", "esim-help.html"));
+  });
+  app.post("/esim/api/help", express.json({ limit: "7mb" }), async (req, res) => {
+    try {
+      const b = req.body || {};
+      const id = crypto.randomBytes(5).toString("hex");
+      const one = {
+        id, ts: Date.now(), tag: String(b.c || "").slice(0, 40),
+        contact: String(b.contact || "").slice(0, 120),
+        model: String(b.model || "").slice(0, 80),
+        tried: b.tried === "yes" ? "пробовал" : b.tried === "no" ? "ещё не пробовал" : "не указал",
+        error: String(b.error || "").slice(0, 2000),
+        ua: String(b.ua || "").slice(0, 200),
+        ip: String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || null, answered: false, shot: null,
+      };
+      const m = /^data:image\/(png|jpe?g|webp|heic);base64,([A-Za-z0-9+/=]+)$/i.exec(String(b.shot || ""));
+      if (m) {
+        try {
+          fs.mkdirSync(HELP_DIR, { recursive: true });
+          const ext = m[1].toLowerCase().replace("jpeg", "jpg");
+          const file = id + "." + ext;
+          fs.writeFileSync(path.join(HELP_DIR, file), Buffer.from(m[2], "base64"));
+          one.shot = file;
+        } catch (e) { console.error("esim help shot:", e.message); }
+      }
+      const all = readJson(HELP_FILE, []);
+      all.unshift(one); writeJson(HELP_FILE, all.slice(0, 2000));
+      console.log("esim help: новое обращение", id, one.contact);
+      if (opts && opts.sendMail) {
+        opts.sendMail({
+          to: "director@visa-sc.ru",
+          subject: "VOYO eSIM: обращение «не получается подключить»",
+          text: "Человек заполнил форму на " + BASE_URL + "/esim/help\n\n" +
+            "Связь: " + one.contact + "\nТелефон/модель: " + (one.model || "—") +
+            "\nПробовал подключить: " + one.tried +
+            "\nЧто происходит: " + (one.error || "—") +
+            (one.shot ? "\nСкриншот: " + BASE_URL + "/esim/api/help/shot/" + one.id + "?adm=" + ADMIN_CODE : "\nСкриншот: нет") +
+            (one.tag ? "\nМетка рассылки: " + one.tag : "") +
+            "\nУстройство: " + one.ua,
+        }).catch(() => {});
+      }
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+  // скриншот из обращения — только с админ-кодом
+  app.get("/esim/api/help/shot/:id", (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).end();
+    const one = readJson(HELP_FILE, []).find((x) => x.id === String(req.params.id));
+    if (!one || !one.shot) return res.status(404).end();
+    res.sendFile(path.join(HELP_DIR, one.shot));
+  });
+  // Сторож: обращение висит без ответа дольше двух часов — напоминаем письмом.
+  // Отметку «ответили» ставит /esim/api/help/done?adm=КОД&id=…
+  function helpWatch() {
+    try {
+      const all = readJson(HELP_FILE, []);
+      const late = all.filter((h) => !h.answered && !h.reminded && Date.now() - h.ts > 2 * 3600e3);
+      if (!late.length) return;
+      late.forEach((h) => { h.reminded = Date.now(); });
+      writeJson(HELP_FILE, all);
+      if (!(opts && opts.sendMail)) return;
+      opts.sendMail({
+        to: "director@visa-sc.ru",
+        subject: "VOYO eSIM: обращение без ответа (" + late.length + ")",
+        text: "Человек написал через форму «не получается подключить eSIM», а ответа до сих пор нет:\n\n" +
+          late.map((h) => "• " + h.contact + " · " + (h.model || "модель не указал") + " · " + h.tried +
+            "\n  " + String(h.error || "").slice(0, 200)).join("\n\n") +
+          "\n\nВсе обращения: " + BASE_URL + "/esim/api/help/list?adm=" + ADMIN_CODE,
+      }).catch(() => {});
+    } catch (e) { console.error("esim help watch:", e.message); }
+  }
+  setInterval(helpWatch, 30 * 60000);
+  app.get("/esim/api/help/done", (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    const all = readJson(HELP_FILE, []);
+    const one = all.find((x) => x.id === String(req.query.id || ""));
+    if (!one) return res.status(404).json({ success: false });
+    one.answered = Date.now(); writeJson(HELP_FILE, all);
+    res.json({ success: true });
+  });
+
+  // список обращений — для панели и для разбора
+  app.get("/esim/api/help/list", (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    res.json({ success: true, items: readJson(HELP_FILE, []).slice(0, 200) });
+  });
+
   app.get("/esim/account", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.sendFile(path.join(__dirname, "public", "esim-account.html"));

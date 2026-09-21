@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Не получается подключить eSIM — VOYO mobile</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<style>
+  :root{ --ink:#16202e; --mut:#6e7c91; --line:#e6ebf2; --accent:#3589bd; --accent-d:#2c6f96;
+         --green:#2a8f6a; --red:#b4322c; --grad:linear-gradient(135deg,#4aa3d4,#2c6f96); }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);
+       background:#f5f8fc;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:620px;margin:0 auto;padding:0 18px 60px;}
+  .hdr{display:flex;align-items:center;justify-content:space-between;padding:22px 0 6px;gap:12px;}
+  .brand{display:inline-flex;flex-direction:column;text-decoration:none;color:var(--ink);}
+  .brandrow{display:flex;align-items:center;gap:9px;}
+  .brandrow img{height:19px;display:block;}
+  .wm{font-size:20px;font-weight:300;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .byvsc{font-size:10.5px;color:var(--mut);margin-top:3px;align-self:flex-end;}
+  .byvsc b{color:var(--accent);}
+  h1{font-size:26px;letter-spacing:-.02em;margin:22px 0 8px;line-height:1.15;}
+  .lead{color:var(--mut);font-size:15px;line-height:1.5;margin:0 0 20px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:0 18px 40px -28px rgba(16,24,40,.35);}
+  label{display:block;font-size:13.5px;font-weight:600;margin:16px 0 6px;}
+  label:first-of-type{margin-top:0;}
+  input[type=text],textarea{width:100%;font:inherit;font-size:16px;color:var(--ink);background:#f7fafd;
+    border:1px solid var(--line);border-radius:13px;padding:12px 14px;outline:none;}
+  input[type=text]:focus,textarea:focus{border-color:#aed3ea;background:#fff;}
+  textarea{min-height:96px;resize:vertical;}
+  .hint{font-size:12.5px;color:var(--mut);margin-top:6px;line-height:1.4;}
+  .pills{display:flex;gap:8px;flex-wrap:wrap;}
+  .pill{font:inherit;font-size:14px;border:1px solid var(--line);background:#fff;color:var(--ink);
+    border-radius:12px;padding:10px 16px;cursor:pointer;}
+  .pill.on{background:var(--grad);color:#fff;border-color:transparent;}
+  .file{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .file button{font:inherit;font-size:14px;border:1px dashed #b9d5e8;background:#f7fafd;color:var(--accent-d);
+    border-radius:12px;padding:11px 16px;cursor:pointer;}
+  .file .name{font-size:13px;color:var(--mut);}
+  .send{width:100%;margin-top:22px;border:0;border-radius:15px;background:var(--grad);color:#fff;
+    font:inherit;font-size:16px;font-weight:700;padding:15px;cursor:pointer;}
+  .send:disabled{opacity:.6;cursor:default;}
+  .msg{margin-top:14px;font-size:14px;line-height:1.5;display:none;}
+  .msg.on{display:block;}
+  .msg.err{color:var(--red);}
+  .ok{display:none;text-align:center;padding:10px 0 4px;}
+  .ok.on{display:block;}
+  .ok .big{font-size:20px;font-weight:700;margin-bottom:8px;}
+  .ok p{color:var(--mut);font-size:15px;line-height:1.5;margin:0;}
+  details{margin-top:18px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:16px 20px;}
+  details summary{font-weight:700;font-size:15.5px;cursor:pointer;list-style:none;}
+  details summary::-webkit-details-marker{display:none;}
+  details summary::after{content:" ›";color:var(--accent);}
+  details[open] summary::after{content:" ⌄";}
+  details ol{padding-left:18px;margin:14px 0 6px;}
+  details li{font-size:14.5px;line-height:1.6;margin-bottom:10px;color:#2c3a4d;}
+  .foot{margin-top:26px;text-align:center;color:var(--mut);font-size:12.5px;line-height:1.6;}
+  .foot a{color:var(--accent);text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <a class="brand" href="/esim">
+      <span class="brandrow"><img src="/voyo-logo.png" alt="VOYO" /><span class="wm">mobile</span></span>
+      <span class="byvsc">by <b>VSC</b></span>
+    </a>
+  </div>
+
+  <h1>Не получается подключить eSIM?</h1>
+  <p class="lead">Расскажите, что пошло не так — разберёмся и ответим вам. Займёт минуту.</p>
+
+  <div class="card" id="card">
+    <div id="form">
+      <label for="contact">Как с вами связаться</label>
+      <input type="text" id="contact" placeholder="Телефон, почта или ник в телеграме" />
+      <div class="hint">Ответим тем же способом.</div>
+
+      <label for="model">Модель телефона</label>
+      <input type="text" id="model" placeholder="Например: iPhone 13, Samsung S23, Xiaomi 13" />
+
+      <label>Пробовали подключить eSIM?</label>
+      <div class="pills" id="tried">
+        <button type="button" class="pill" data-v="yes">Да, пробовал</button>
+        <button type="button" class="pill" data-v="no">Ещё нет</button>
+      </div>
+
+      <label for="err">Что происходит и какая ошибка</label>
+      <textarea id="err" placeholder="Например: сканирую QR-код, пишет «Не удалось добавить сотовый тариф»"></textarea>
+
+      <label>Скриншот ошибки</label>
+      <div class="file">
+        <button type="button" id="pick">Прикрепить скриншот</button>
+        <span class="name" id="fname">файл не выбран</span>
+        <input type="file" id="shot" accept="image/*" hidden />
+      </div>
+      <div class="hint">Не обязательно, но со скриншотом разберёмся быстрее. До 5 МБ.</div>
+
+      <button type="button" class="send" id="send">Отправить</button>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="ok" id="done">
+      <div class="big">Спасибо, получили</div>
+      <p>Мы разберёмся и ответим вам тем способом, который вы указали. Обычно отвечаем в течение рабочего дня.</p>
+    </div>
+  </div>
+
+  <details>
+    <summary>Инструкция: как установить eSIM</summary>
+    <ol>
+      <li><b>Проверьте телефон.</b> eSIM поддерживают iPhone XR и новее, Samsung S20 и новее, Pixel 3 и новее. Телефон не должен быть залочен под одного оператора.</li>
+      <li><b>Ставьте дома, по Wi-Fi, до вылета.</b> Для установки нужен интернет, в роуминге его может не быть.</li>
+      <li><b>iPhone:</b> Настройки → Сотовая связь → Добавить eSIM → Использовать QR-код → наведите камеру на наш QR.</li>
+      <li><b>Android:</b> Настройки → Подключения (или Сеть и интернет) → SIM-карты → Добавить eSIM → сканировать QR-код.</li>
+      <li><b>Если камеры под рукой нет,</b> введите данные вручную: в письме и на странице вашей eSIM есть строка вида <code>LPA:1$...</code> — её можно скопировать.</li>
+      <li><b>В поездке включите «Роуминг данных»</b> для линии eSIM и выберите её для передачи данных. Основная симка остаётся на месте, звонки идут по ней.</li>
+      <li><b>Если пишет «Не удалось добавить тариф»:</b> чаще всего QR уже был установлен на другом телефоне или сеть блокирует установку. Напишите нам через форму выше — поможем.</li>
+    </ol>
+  </details>
+
+  <div class="foot">
+    VOYO mobile · <a href="/esim">воямобайл: пакеты eSIM</a><br/>
+    Нужен живой человек? Напишите в телеграм: <a href="https://t.me/vsc_operator">@vsc_operator</a>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var qs = new URLSearchParams(location.search);
+  var C = qs.get("c") || "";                       // метка из SMS: кому отправляли
+  var tried = "";
+  var shotData = null;
+
+  var pre = qs.get("p") || "";
+  if (pre) document.getElementById("contact").value = pre;
+
+  document.getElementById("tried").addEventListener("click", function(e){
+    var b = e.target.closest(".pill"); if(!b) return;
+    tried = b.dataset.v;
+    [].forEach.call(this.querySelectorAll(".pill"), function(x){ x.classList.toggle("on", x === b); });
+  });
+
+  var shot = document.getElementById("shot");
+  document.getElementById("pick").addEventListener("click", function(){ shot.click(); });
+  shot.addEventListener("change", function(){
+    var f = shot.files && shot.files[0];
+    if(!f) return;
+    if(f.size > 5 * 1024 * 1024){ document.getElementById("fname").textContent = "файл больше 5 МБ"; shotData = null; return; }
+    var r = new FileReader();
+    r.onload = function(){ shotData = String(r.result); document.getElementById("fname").textContent = f.name; };
+    r.readAsDataURL(f);
+  });
+
+  document.getElementById("send").addEventListener("click", async function(){
+    var msg = document.getElementById("msg");
+    var contact = document.getElementById("contact").value.trim();
+    var model = document.getElementById("model").value.trim();
+    var err = document.getElementById("err").value.trim();
+    if(contact.length < 5){ msg.textContent = "Напишите, как с вами связаться."; msg.className = "msg on err"; return; }
+    if(!err && !shotData){ msg.textContent = "Опишите, что происходит, или приложите скриншот."; msg.className = "msg on err"; return; }
+    this.disabled = true; this.textContent = "Отправляем…";
+    try{
+      var r = await fetch("/esim/api/help", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ c: C, contact: contact, model: model, tried: tried, error: err, shot: shotData,
+          ua: navigator.userAgent }) });
+      var j = await r.json();
+      if(!j || !j.success) throw new Error((j && j.message) || "Ошибка");
+      document.getElementById("form").style.display = "none";
+      document.getElementById("done").classList.add("on");
+    }catch(e){
+      msg.textContent = "Не отправилось. Попробуйте ещё раз или напишите нам в телеграм @vsc_operator.";
+      msg.className = "msg on err";
+      this.disabled = false; this.textContent = "Отправить";
+    }
+  });
+})();
+</script>
+</body>
+</html>
