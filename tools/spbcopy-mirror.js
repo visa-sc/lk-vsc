@@ -433,15 +433,17 @@ const SHIM = `<script id="spbcopy-shim">
 })();
 </script>`;
 
+// Правим ТОЛЬКО свои адреса. Всё чужое (tel:, mailto:, соцсети, карты) отдаём
+// байт в байт как в оригинале — чтобы копия не отличалась даже в мелочах.
 function rewriteUrlValue(v) {
-  let s = decodeEntities(v).trim();
+  const s = decodeEntities(v).trim();
   if (!s) return v;
-  if (/^(data:|#|mailto:|tel:|javascript:|blob:)/i.test(s)) return s;
+  if (/^(data:|#|mailto:|tel:|javascript:|blob:)/i.test(s)) return v;
   const abs = s.match(/^https?:\/\/spb\.visa-sc\.ru(\/.*)?$/i);
   if (abs) return PREFIX + (abs[1] || "/");
-  if (s.startsWith("//") || /^https?:/i.test(s)) return s;
+  if (s.startsWith("//") || /^https?:/i.test(s)) return v;
   if (s.startsWith("/")) return s.startsWith(PREFIX + "/") ? s : PREFIX + s;
-  return s;
+  return v;
 }
 
 const REWRITE_ATTRS = [...ASSET_ATTRS, "action", "data-href", "data-url", "content"];

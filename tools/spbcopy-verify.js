@@ -89,6 +89,55 @@ const headings = (html, tag) =>
     m[1].replace(/<[^>]+>/g, " ").replace(/&#x2F;/gi, "/").replace(/\s+/g, " ").trim()
   );
 
+// Домен в значениях не сравниваем: в копии он наш, это ожидаемо.
+const stripHost = (s) =>
+  String(s)
+    .replace(/https?:\/\/spb\.visa-sc\.ru/gi, "")
+    .replace(/https?:\/\/spb\.voyotravel\.ru/gi, "")
+    .replace(/&#x2F;/gi, "/");
+
+// Все meta-теги страницы: «name|property = content», отсортированы.
+function allMeta(html) {
+  const out = [];
+  for (const m of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (/mc\.yandex\.ru|googletagmanager/i.test(tag)) continue; // счётчиков в копии нет
+    const key =
+      (tag.match(/\b(?:name|property|http-equiv|itemprop)=["']([^"']*)["']/i) || [, ""])[1] || "";
+    const val = (tag.match(/\bcontent=["']([^"']*)["']/i) || [, ""])[1] || "";
+    const charset = tag.match(/\bcharset=["']?([^"'\s>]+)/i);
+    if (charset) out.push(`charset=${charset[1]}`);
+    else if (key || val) out.push(`${key}=${stripHost(val).trim()}`);
+  }
+  return out.sort();
+}
+
+// Все <link rel=...>: rel + адрес без домена.
+function allLinkRel(html) {
+  const out = [];
+  for (const m of html.matchAll(/<link\b[^>]*>/gi)) {
+    const tag = m[0];
+    const rel = (tag.match(/\brel=["']([^"']*)["']/i) || [, ""])[1];
+    const href = (tag.match(/\bhref=["']([^"']*)["']/i) || [, ""])[1];
+    out.push(`${rel}|${stripHost(href).split("?")[0]}`);
+  }
+  return out.sort();
+}
+
+// Микроразметка JSON-LD (Schema.org).
+function allJsonLd(html) {
+  return [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
+    .map((m) => stripHost(m[1]).replace(/\s+/g, " ").trim())
+    .sort();
+}
+
+// Все ссылки страницы: внутренние как путь, внешние как есть.
+function anchorList(html) {
+  return [...html.matchAll(/<a\b[^>]*\bhref=["']([^"']*)["']/gi)]
+    .map((m) => stripHost(m[1]).trim())
+    .sort();
+}
+
 function shape(html) {
   return {
     title: (html.match(/<title>([\s\S]*?)<\/title>/i) || [, ""])[1].trim(),
@@ -103,6 +152,16 @@ function shape(html) {
     h1: headings(html, "h1"),
     h2: headings(html, "h2"),
     h3: headings(html, "h3"),
+    h4: headings(html, "h4"),
+    h5: headings(html, "h5"),
+    h6: headings(html, "h6"),
+    lang: (html.match(/<html[^>]*\blang=["']([^"']*)["']/i) || [, ""])[1],
+    // весь head целиком: любые meta и link rel, микроразметка
+    metaAll: allMeta(html),
+    linkRel: allLinkRel(html),
+    jsonLd: allJsonLd(html),
+    alts: [...html.matchAll(/<img[^>]*\balt=["']([^"']*)["'][^>]*>/gi)].map((m) => m[1].trim()).sort(),
+    anchors: anchorList(html),
     forms: count(html, /<form\b/gi),
     inputs: count(html, /<input\b/gi),
     textareas: count(html, /<textarea\b/gi),
@@ -156,6 +215,7 @@ async function pool(items, size, fn) {
   const limit = Number(flag("limit", 0));
   const list = limit ? pages.slice(0, limit) : pages;
   const problems = [];
+  let expectedDiffs = 0;
   const assetSet = new Set();
   let done = 0;
 
@@ -189,13 +249,38 @@ async function pool(items, size, fn) {
     for (const k of Object.keys(os)) {
       const a = JSON.stringify(cs[k]);
       const b = JSON.stringify(os[k]);
-      if (a !== b) problems.push(`${p}: ${k}: копия ${a} ≠ оригинал ${b}`);
+      if (a === b) continue;
+      if (Array.isArray(os[k])) {
+        // Два отличия сделаны намеренно и расхождением не считаются:
+        // наш noindex и вырезанный пиксель Яндекс.Метрики (у него alt="").
+        const onlyO = os[k].filter((x) => !cs[k].includes(x));
+        const onlyC = cs[k].filter((x) => !os[k].includes(x));
+        const expected =
+          onlyO.every((x) => x === "") && onlyC.every((x) => /^robots=noindex/.test(x));
+        if (expected) {
+          expectedDiffs++;
+          continue;
+        }
+      }
+      if (Array.isArray(os[k])) {
+        // показываем только то, чем списки различаются
+        const onlyOrig = os[k].filter((x) => !cs[k].includes(x));
+        const onlyCopy = cs[k].filter((x) => !os[k].includes(x));
+        problems.push(
+          `${p}: ${k}: нет в копии ${JSON.stringify(onlyOrig.slice(0, 4))}, лишнее в копии ${JSON.stringify(
+            onlyCopy.slice(0, 4)
+          )}`
+        );
+      } else {
+        problems.push(`${p}: ${k}: копия ${a} ≠ оригинал ${b}`);
+      }
     }
     assetsOf(ch).forEach((a) => assetSet.add(a));
   });
 
   process.stdout.write("\n");
   console.log(`Страниц сверено: ${done} из ${list.length}`);
+  console.log(`Намеренных отличий (наш noindex, вырезанный пиксель Метрики): ${expectedDiffs}`);
   console.log(`Уникальных ассетов к проверке: ${assetSet.size}`);
 
   const badAssets = [];
