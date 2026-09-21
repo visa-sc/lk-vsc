@@ -537,7 +537,7 @@ async function blogStop(chatId, text) {
 function blogCodeLetter(rec, refCode) {
   const d = (iso) => iso.split("-").reverse().join(".");
   const tgLink = refCode ? "https://t.me/" + BOT_NAME + "?start=ref_" + refCode : "";
-  const siteLink = refCode ? BASE_URL + "/esim?ref=" + refCode : "";
+  const siteLink = refCode ? (process.env.ESIM_REF_SITE || "https://voyomobile.ru") + "/esim?ref=" + refCode : "";
   return "<b>Ваш промокод: <code>" + rec.code + "</code></b>\n" +
     "<i>(ниже есть кнопка «Скопировать промокод» — код придёт отдельным сообщением, нажатие копирует его)</i>\n\n" +
     "Действует с " + d(rec.from) + " по " + d(rec.to) + ".\n" +
@@ -554,14 +554,13 @@ function blogCodeLetter(rec, refCode) {
     "<b>Что просим взамен</b>\n" +
     "Упоминание нас в сторис во время поездки. Укажите в сторис:\n" +
     "• телеграм-бот @" + BOT_NAME + " — https://t.me/" + BOT_NAME + "\n" +
-    "• сайт " + SITE_SHORT + "\n" +
-    "Можно поставить сразу вашу реферальную ссылку ниже — она ведёт туда же, а вам идут 100 ₽ за каждого.\n\n" +
+    "• сайт " + SITE_SHORT + "\n\n" +
     (refCode
       ? "<b>И ещё: ваша реферальная ссылка</b>\n" +
-        "За каждого, кто купит по ней, вам " + blog.REF_BONUS_RUB + " ₽.\n" +
-        "Для сторис: <code>" + siteLink + "</code>\n" +
-        "Для телеграма: <code>" + tgLink + "</code>\n" +
-        "Ссылка одна и та же в боте и на сайте: возьмёте её по кнопке «Бонусы» или в личном кабинете.\n" +
+        "За каждого, кто купит по ней, вам " + blog.REF_BONUS_RUB + " ₽.\n\n" +
+        "Ссылка на сайт:\n<b><code>" + siteLink + "</code></b>\n" +
+        "Ссылка на телеграм-бота:\n<b><code>" + tgLink + "</code></b>\n\n" +
+        "Ваши реферальные ссылки всегда доступны в личном кабинете.\n" +
         "Деньги можно потратить на интернет или вывести — вывод раз в месяц, на ИП или самозанятого."
       : "<b>И ещё: реферальная ссылка</b>\nВозьмите её в боте по кнопке «Бонусы» или в личном кабинете на сайте: " +
         "за каждого, кто купит по ней, вам " + blog.REF_BONUS_RUB + " ₽. Их можно потратить на интернет или вывести.");
@@ -621,12 +620,15 @@ async function blogText(chatId, t, b) {
       if (r.why === "dupName" || r.why === "dupNick") return blogStop(chatId, BLOG_WHY.dup);
       return blogStop(chatId, BLOG_WHY[r.why] || "Не получилось выдать код — напишите нашему менеджеру, он поможет.");
     }
-    setState(chatId, { blog: null, promo: r.rec.code });
+    setState(chatId, { blog: null, promo: r.rec.code });   // код подставится в покупку сам
     console.log("tgbot: код блогера", r.rec.code, "—", r.rec.nick, "(" + r.rec.network + ")");
     const bi = await bonusInfo(chatId).catch(() => null);      // личная реферальная ссылка блогера
+    if (bi && bi.refCode) setState(chatId, { blogRef: bi.refCode });
     return send(chatId, blogCodeLetter(r.rec, bi && bi.refCode) + "\n\nПромокод уже подставлен — можете оформить eSIM прямо здесь.",
       { reply_markup: { inline_keyboard: [
         [{ text: "📋 Скопировать промокод", callback_data: "blogcopy" }],
+        [{ text: "🔗 Ссылка на сайт", callback_data: "blogref:site" },
+         { text: "🔗 Ссылка на бота", callback_data: "blogref:tg" }],
         [{ text: "Начать", callback_data: "home" }],
         [{ text: "Оформить на сайте", url: BASE_URL + "/esim" }],
         [{ text: "Написать менеджеру", url: SUPPORT_TG }],
@@ -1038,6 +1040,14 @@ async function onCallback(q) {
     if (!net) return;
     setState(chatId, { blog: Object.assign({}, b, { network: net, step: "nick", miss: 0 }) });
     return send(chatId, "Соцсеть: <b>" + esc(net.title) + "</b>.\n\n" + BLOG_ASK.nick);
+  }
+  if (data.indexOf("blogref:") === 0) {
+    const ref = (getState(chatId) || {}).blogRef || "";
+    if (!ref) return send(chatId, "Ссылку можно взять по кнопке «Бонусы».");
+    const link = data.slice(8) === "tg"
+      ? "https://t.me/" + BOT_NAME + "?start=ref_" + ref
+      : (process.env.ESIM_REF_SITE || "https://voyomobile.ru") + "/esim?ref=" + ref;
+    return send(chatId, "<code>" + esc(link) + "</code>\n\nНажмите на ссылку — она скопируется.");
   }
   if (data === "blogcopy") {
     const code = (getState(chatId) || {}).promo || "";
