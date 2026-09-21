@@ -136,6 +136,11 @@
   body.embed .footer-logout{display:none;}
   body.embed .wrap{padding-top:4px;padding-bottom:24px;}
   body.embed .top{margin-top:0;}
+  /* ВАЖНО: min-height:100vh на body внутри фрейма = высота САМОГО фрейма.
+     Родитель подгоняет фрейм под содержимое, содержимое дорастает до фрейма —
+     и страница росла бесконечно (поймано 21.09). Во встроенном режиме высоту
+     задаёт только содержимое. */
+  body.embed{min-height:0;}
   .logout-btn{display:inline-block;padding:8px 14px;font:inherit;font-size:13px;color:#9096a3;background:transparent;
     border:1px solid #e3e0eb;border-radius:14px;cursor:pointer;transition:color .15s var(--ease),border-color .15s var(--ease)}
   .logout-btn:hover{color:#3589bd;border-color:#c6dceb}

@@ -9332,12 +9332,20 @@
         // содержимое, чтобы страница прокручивалась целиком, а не окошком внутри
         // окошка. Хост тот же, поэтому высоту читаем напрямую; данные приходят
         // асинхронно — пересчитываем ещё несколько раз и следим за ростом блоков.
+        // Подгоняем высоту ТОЛЬКО по реальному содержимому и только когда разница
+        // заметная. Без запаса «+N»: любой запас внутри фрейма превращается в
+        // новый рост содержимого и высота убегает в бесконечность (21.09 так и
+        // случилось из-за min-height:100vh у панели — он снят в esim-adm.html).
         frame.addEventListener("load", function () {
           try {
             const doc = frame.contentDocument;
+            let applied = 0;
             const fit = function () {
               const h = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight);
-              if (h > 200) frame.style.height = (h + 24) + "px";
+              if (h < 200 || h > 40000) return;          // мусорные замеры игнорируем
+              if (Math.abs(h - applied) < 8) return;     // уже подогнано — не трогаем
+              applied = h;
+              frame.style.height = h + "px";
             };
             fit();
             [600, 1500, 4000, 8000].forEach(function (ms) { setTimeout(fit, ms); });
