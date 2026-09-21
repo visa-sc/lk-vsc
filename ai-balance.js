@@ -46,7 +46,9 @@ const SCANNER_STORE = path.join(__dirname, ".scanner", "store.json");
 const PRICES = { "claude-opus-5": [5, 25], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5] };
 const WARN_USD = Number(process.env.AI_BALANCE_WARN_USD || 20);
 const ALERT_USD = Number(process.env.AI_BALANCE_ALERT_USD || 15);
-const TO = "director@visa-sc.ru";
+// Получатели: Андрей и Катя Зайцева (её просьба Андрея 21.09.2026 — она первой
+// замечает, что прослушка встала). Список через запятую, nodemailer это понимает.
+const TO = process.env.AI_BALANCE_TO || "director@visa-sc.ru, ekaterina.z@visa-sc.ru";
 
 function load() {
   try { return JSON.parse(fs.readFileSync(FILE, "utf8")); } catch (_) { return null; }
