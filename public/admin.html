@@ -5225,32 +5225,96 @@
           const years = [];
           keys.forEach(function (k) { const y = k.slice(0, 4); if (years.indexOf(y) < 0) years.push(y); });
           const sumY = function (y) { return keys.filter(function (k) { return k.slice(0, 4) === y; }).reduce(function (a, k) { return a + ms[k]; }, 0); };
-          box.innerHTML = "";
-          box.appendChild(vscDivergingBars("Прибыль по годам", years.map(function (y) { return { x: y, v: sumY(y) }; }), "money", false));
           const money = function (v) { return (v < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ru-RU"); };
           const MON = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
-          const TH = 'style="padding:6px 7px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;font-size:11.5px;"';
-          const TD = 'style="padding:5px 7px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;font-size:11.5px;"';
-          let html = '<div style="overflow-x:auto;margin-top:14px;"><table style="width:100%;min-width:900px;border-collapse:collapse;">'
-            + '<tr><th ' + TH.replace("right", "left") + '>Год</th>'
-            + MON.map(function (m) { return '<th ' + TH + '>' + m + '</th>'; }).join("")
-            + '<th ' + TH + '>Итог года</th></tr>';
-          years.slice().reverse().forEach(function (y) {
-            html += '<tr><td ' + TD.replace("right", "left") + '><b>' + y + '</b></td>';
-            for (let mi = 0; mi < 12; mi++) {
-              const v = ms[y + "-" + (mi < 9 ? "0" : "") + (mi + 1)];
-              html += '<td ' + TD + '>' + (v == null ? '<span style="color:#c8cdd8;">—</span>'
-                : '<span style="color:' + (v < 0 ? "#a12b3c" : "#2c7a43") + ';">' + money(v) + '</span>') + '</td>';
-            }
-            const ty = sumY(y);
-            html += '<td ' + TD + '><b style="color:' + (ty < 0 ? "#a12b3c" : "#2c7a43") + ';">' + money(ty) + '</b></td></tr>';
-          });
+          const MONF = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+          // Помесячный график: 125 столбиков, подписи значений не влезут — вместо них
+          // подпись года под первым его месяцем и подсказка по наведению.
+          const monthsChart = function () {
+            const w = document.createElement("div"); w.className = "vsc-chart"; w.style.cssText = "border:0;padding:0;margin:0;";
+            const hh = document.createElement("div"); hh.className = "vsc-chart-h"; hh.textContent = "Прибыль по месяцам"; w.appendChild(hh);
+            const vals = keys.map(function (k) { return ms[k]; });
+            let hi = Math.max.apply(null, vals.concat([0])), lo = Math.min.apply(null, vals.concat([0]));
+            if (hi === lo) { hi += 1; lo -= 1; }
+            const VW = 1000, VH = 180, PT = 10, PB = 150;
+            const Y = function (v) { return PT + (1 - (v - lo) / (hi - lo)) * (PB - PT); };
+            const zero = Y(0), bw = (VW - 8) / keys.length;
+            const bars = keys.map(function (k, i) {
+              const v = ms[k], y = Y(v), x = 4 + i * bw;
+              const top = v >= 0 ? y : zero, h = Math.max(1, Math.abs(zero - y));
+              return '<rect x="' + (x + bw * 0.12).toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + (bw * 0.76).toFixed(1)
+                + '" height="' + h.toFixed(1) + '" fill="' + (v < 0 ? "#d2685f" : "#4f9f68") + '" data-i="' + i + '"/>';
+            }).join("");
+            // подписи лет: под первым месяцем каждого года
+            const ticks = keys.map(function (k, i) { return k.slice(5) === "01" || i === 0 ? { i: i, y: k.slice(0, 4) } : null; }).filter(Boolean);
+            const bxi = document.createElement("div");
+            bxi.style.cssText = "position:relative;height:" + VH + "px;";
+            bxi.innerHTML = '<svg width="100%" height="' + VH + '" viewBox="0 0 ' + VW + ' ' + VH + '" preserveAspectRatio="none" style="display:block;">'
+              + '<line x1="0" x2="' + VW + '" y1="' + zero.toFixed(1) + '" y2="' + zero.toFixed(1) + '" stroke="#c9cfda" stroke-width="1" vector-effect="non-scaling-stroke"/>'
+              + bars + '</svg>'
+              + '<div style="position:absolute;left:6px;top:0;font-size:9.5px;color:#9aa0ab;background:rgba(255,255,255,.75);padding:0 3px;border-radius:4px;">' + money(hi) + '</div>'
+              + '<div style="position:absolute;left:6px;top:' + (PB - 6) + 'px;font-size:9.5px;color:#9aa0ab;background:rgba(255,255,255,.75);padding:0 3px;border-radius:4px;">' + money(lo) + '</div>'
+              + '<div class="ph-tip" style="position:absolute;display:none;background:#1d2433;color:#fff;font-size:11px;line-height:1.45;padding:6px 9px;border-radius:8px;white-space:nowrap;pointer-events:none;z-index:5;box-shadow:0 4px 14px rgba(20,30,50,.25);"></div>';
+            w.appendChild(bxi);
+            const xa = document.createElement("div");
+            xa.style.cssText = "position:relative;height:14px;font-size:9.5px;color:#9aa0ab;margin-top:2px;";
+            xa.innerHTML = ticks.map(function (t) {
+              return '<span style="position:absolute;left:' + ((4 + t.i * bw) / VW * 100).toFixed(2) + '%;">' + t.y + '</span>';
+            }).join("");
+            w.appendChild(xa);
+            const tip = bxi.querySelector(".ph-tip");
+            const showAt = function (clientX) {
+              const r = bxi.getBoundingClientRect(); if (!r.width) return;
+              let i = Math.floor(((clientX - r.left) / r.width * VW - 4) / bw);
+              i = Math.max(0, Math.min(keys.length - 1, i));
+              const k = keys[i], v = ms[k];
+              tip.innerHTML = '<span style="color:#aab3c5;">' + MONF[+k.slice(5) - 1] + " " + k.slice(0, 4) + '</span><br><b style="color:'
+                + (v < 0 ? "#f2a1ad" : "#7fd39a") + ';">' + money(v) + ' ₽</b>';
+              tip.style.display = "block";
+              const px = (4 + (i + 0.5) * bw) / VW * r.width, tw = tip.offsetWidth;
+              tip.style.left = Math.max(2, Math.min(r.width - tw - 2, px - tw / 2)) + "px";
+              tip.style.top = Math.max(0, Y(ms[k]) - tip.offsetHeight - 10) + "px";
+            };
+            bxi.addEventListener("mousemove", function (e) { showAt(e.clientX); });
+            bxi.addEventListener("mouseleave", function () { tip.style.display = "none"; });
+            bxi.addEventListener("touchstart", function (e) { if (e.touches[0]) showAt(e.touches[0].clientX); }, { passive: true });
+            bxi.addEventListener("touchmove", function (e) { if (e.touches[0]) showAt(e.touches[0].clientX); }, { passive: true });
+            bxi.addEventListener("touchend", function () { tip.style.display = "none"; });
+            return w;
+          };
+          box.innerHTML = "";
+          // Переключатель «по годам / по месяцам» (просьба Андрея 21.09.2026).
+          const sw = document.createElement("div");
+          sw.style.cssText = "display:inline-flex;gap:0;border:1px solid #dfe3ec;border-radius:999px;overflow:hidden;margin-bottom:12px;";
+          const chartHost = document.createElement("div");
+          const mkBtn = function (label, mode) {
+            const b = document.createElement("button"); b.type = "button"; b.textContent = label;
+            b.style.cssText = "border:0;background:transparent;font:inherit;font-size:12px;padding:5px 14px;cursor:pointer;color:#5a6274;";
+            b.addEventListener("click", function () { draw(mode); });
+            b.dataset.mode = mode; return b;
+          };
+          const draw = function (mode) {
+            [].forEach.call(sw.children, function (b) {
+              const on = b.dataset.mode === mode;
+              b.style.background = on ? "#3589BD" : "transparent";
+              b.style.color = on ? "#fff" : "#5a6274";
+              b.style.fontWeight = on ? "700" : "400";
+            });
+            chartHost.innerHTML = "";
+            chartHost.appendChild(mode === "months" ? monthsChart()
+              : vscDivergingBars("Прибыль по годам", years.map(function (y) { return { x: y, v: sumY(y) }; }), "money", false));
+          };
+          sw.appendChild(mkBtn("По годам", "years"));
+          sw.appendChild(mkBtn("По месяцам", "months"));
+          box.appendChild(sw); box.appendChild(chartHost);
+          draw("years");
+          // Таблицу год-на-месяц Андрей убрал 21.09.2026 — остаётся только график,
+          // цифры месяцев видно по наведению. Под графиком строка со сводным итогом.
           const all = keys.reduce(function (a, k) { return a + ms[k]; }, 0);
-          html += '</table></div><div style="font-size:11.5px;color:#9096a3;margin-top:10px;">за всё время: <b style="color:'
+          box.insertAdjacentHTML("beforeend", '<div style="font-size:11.5px;color:#9096a3;margin-top:10px;">за всё время: <b style="color:'
             + (all < 0 ? "#a12b3c" : "#2c7a43") + ';">' + money(all) + ' ₽</b> · месяцев: ' + keys.length
             + ' (с ' + MON[+keys[0].slice(5) - 1].toLowerCase() + " " + keys[0].slice(0, 4)
-            + " по " + MON[+keys[keys.length - 1].slice(5) - 1].toLowerCase() + " " + keys[keys.length - 1].slice(0, 4) + ")</div>";
-          box.insertAdjacentHTML("beforeend", html);
+            + " по " + MON[+keys[keys.length - 1].slice(5) - 1].toLowerCase() + " " + keys[keys.length - 1].slice(0, 4) + ")</div>");
         }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить.</div>'; });
         return wrap;
       }
