@@ -218,6 +218,7 @@ const REGIONS = [
 // Поиск страны — общий с витриной модуль: раскладка, транслит, английские
 // названия, синонимы и одна опечатка (public/esim_country_search.js).
 const countrySearch = require("./public/esim_country_search.js");
+const blog = require("./esimblog");      // блогеры: бесплатный интернет за сторис
 function searchCountries(list, query) {
   const all = list.some((x) => x.iso === "EU-REGION") ? list : list.concat([{ iso: "EU-REGION", name: "Европа" }]);
   return countrySearch.search(all, query, { withScore: true });
@@ -484,6 +485,111 @@ function discountRows(chatId, price) {
   return rows;
 }
 
+// ─────────────────────────── блогеры (вход только по ссылке) ───────────────────────────
+// t.me/<бот>?start=blogger — отдельная ветка разговора, в обычном меню её нет,
+// чтобы не мешать клиентам. Правила и хранилище — esimblog.js (21.09.2026).
+const BLOG_HELLO =
+  "<b>Бесплатный интернет в поездке за упоминание в сторис</b>\n\n" +
+  "Даём блогерам личный промокод: по нему eSIM в любой стране достаётся бесплатно, " +
+  "а вы рассказываете о нас в сторис.\n\n" +
+  "Четыре коротких вопроса, это займёт минуту.\n\nНапишите <b>имя и фамилию</b>.";
+const BLOG_ASK = {
+  network: "В какой соцсети выйдет упоминание? Instagram, Telegram, YouTube, TikTok, ВКонтакте.",
+  nick: "Пришлите ник в этой соцсети или ссылку на профиль, например @travel_ivan.",
+  dates: "Напишите даты поездки одной строкой, например: 01.10.2026 - 15.10.2026.\nПоездка не длиннее " + blog.MAX_DAYS + " дней.",
+};
+const BLOG_WHY = {
+  name: "Не похоже на имя и фамилию. Напишите два слова, например: Иван Петров.",
+  network: "Напишите название соцсети: Instagram, Telegram, YouTube, TikTok, ВКонтакте.",
+  nick: "Не похоже на ник. Пришлите так: @travel_ivan, или ссылкой на профиль.",
+  dates: "Не разобрал даты. Напишите их так: 01.10.2026 - 15.10.2026.",
+  order: "Дата возвращения раньше даты выезда. Напишите даты ещё раз.",
+  past: "Эти даты уже прошли. Напишите даты будущей поездки.",
+  long: "Максимальный срок поездки — " + blog.MAX_DAYS + " дней. Укажите даты покороче.",
+  month: "В этом месяце бесплатные места уже разобрали — их всего " + blog.MONTH_LIMIT + " в месяц.\n\n" +
+    "Напишите нам в начале следующего месяца, и мы вернёмся к вашей заявке.",
+  dup: "Промокод вам уже выдавали, и второй раз, к сожалению, выдать не можем: код даём один раз.\n\n" +
+    "Если нужен ещё один, это можно согласовать отдельно с нашим менеджером.",
+};
+// любой тупик заканчивается меню, чтобы человек не остался в пустом чате
+async function blogStop(chatId, text) {
+  setState(chatId, { blog: null });
+  await send(chatId, text, { reply_markup: { inline_keyboard: [
+    [{ text: "Написать менеджеру", url: SUPPORT_TG }],
+    [{ text: "Выбрать eSIM", callback_data: "home" }],
+  ] } });
+  return showHome(chatId);
+}
+function blogCodeLetter(rec) {
+  const d = (iso) => iso.split("-").reverse().join(".");
+  return "<b>Ваш промокод: <code>" + rec.code + "</code></b>\n\n" +
+    "Действует с " + d(rec.from) + " по " + d(rec.to) + ".\n" +
+    "Вводите его при оформлении — цена станет 0 ₽.\n\n" +
+    "<b>Как это работает</b>\n" +
+    "• код закрепляется за вами при первом использовании, другим он не подойдёт;\n" +
+    "• пакетов можно брать сколько нужно, но не чаще одного раз в " + blog.COOLDOWN_H + " часа;\n" +
+    "• после даты возвращения код перестаёт действовать.\n\n" +
+    "<b>Что просим взамен</b>\nУпоминание нас в сторис во время поездки.\n\n" +
+    "<b>И ещё: ваша реферальная ссылка</b>\n" +
+    "В личном кабинете на сайте есть ваша ссылка. Публикуйте её в сторис: за каждого, " +
+    "кто купит по ней, вам " + blog.REF_BONUS_RUB + " ₽. Их можно потратить на интернет " +
+    "или вывести — вывод раз в месяц, на ИП или самозанятого.";
+}
+async function blogStart(chatId) {
+  setState(chatId, { blog: { step: "name" }, step: null });
+  const st = blog.stats();
+  return send(chatId, BLOG_HELLO + (st.left > 0 && st.left <= 3 ? "\n\nВ этом месяце осталось мест: " + st.left + "." : ""));
+}
+async function blogText(chatId, t, b) {
+  const miss = (why, patch) => {                     // не понял ответ: подсказываем, после трёх — в меню
+    const n = (b.miss || 0) + 1;
+    if (n >= 3) return blogStop(chatId, "Давайте не будем мучить форму. Напишите нашему менеджеру — он выдаст промокод руками.");
+    setState(chatId, { blog: Object.assign({}, b, patch || {}, { miss: n }) });
+    return send(chatId, BLOG_WHY[why] || BLOG_WHY.dates);
+  };
+  if (b.step === "name") {
+    const name = blog.parseName(t);
+    if (!name) return miss("name");
+    if (blog.load().some((x) => String(x.name).toLowerCase() === name.toLowerCase())) return blogStop(chatId, BLOG_WHY.dup);
+    setState(chatId, { blog: Object.assign({}, b, { name, step: "network", miss: 0 }) });
+    return send(chatId, "Принял: <b>" + esc(name) + "</b>.\n\n" + BLOG_ASK.network);
+  }
+  if (b.step === "network") {
+    const net = blog.parseNetwork(t);
+    if (!net) return miss("network");
+    setState(chatId, { blog: Object.assign({}, b, { network: net, step: "nick", miss: 0 }) });
+    return send(chatId, "Соцсеть: <b>" + esc(net.title) + "</b>.\n\n" + BLOG_ASK.nick);
+  }
+  if (b.step === "nick") {
+    const nick = blog.parseNick(t);
+    if (!nick) return miss("nick");
+    const nk = (x) => String(x || "").toLowerCase().replace(/^@+/, "");
+    if (blog.load().some((x) => nk(x.nick) === nk(nick))) return blogStop(chatId, BLOG_WHY.dup);
+    setState(chatId, { blog: Object.assign({}, b, { nick, step: "dates", miss: 0 }) });
+    return send(chatId, "Ник: <b>" + esc(nick) + "</b>.\n\n" + BLOG_ASK.dates);
+  }
+  if (b.step === "dates") {
+    const d = blog.parseDates(t);
+    if (!d) return miss("dates");
+    const r = blog.create({ name: b.name, network: b.network, nick: b.nick, from: d.from, to: d.to, chatId });
+    if (!r.ok) {
+      if (["long", "order", "past", "dates"].indexOf(r.why) >= 0) return miss(r.why);
+      if (r.why === "dupName" || r.why === "dupNick") return blogStop(chatId, BLOG_WHY.dup);
+      return blogStop(chatId, BLOG_WHY[r.why] || "Не получилось выдать код — напишите нашему менеджеру, он поможет.");
+    }
+    setState(chatId, { blog: null, promo: r.rec.code });
+    console.log("tgbot: код блогера", r.rec.code, "—", r.rec.nick, "(" + r.rec.network + ")");
+    return send(chatId, blogCodeLetter(r.rec) + "\n\nПромокод уже подставлен — можете оформить eSIM прямо здесь.",
+      { reply_markup: { inline_keyboard: [
+        [{ text: "Начать", callback_data: "home" }],
+        [{ text: "Оформить на сайте", url: BASE_URL + "/esim" }],
+        [{ text: "Написать менеджеру", url: SUPPORT_TG }],
+      ] } });
+  }
+  setState(chatId, { blog: null });
+  return showHome(chatId);
+}
+
 // Оплата: спрашиваем почту один раз — на неё уходит чек от онлайн-кассы,
 // дальше берём сохранённую и не мучаем человека повторно.
 async function startBuy(chatId, productId) {
@@ -741,9 +847,13 @@ async function onText(chatId, text) {
     } else if (UTM_PROMOS[payload]) {
       setState(chatId, { promo: UTM_PROMOS[payload], step: null });
       await send(chatId, "Ваша скидка по ссылке уже учтена — увидите её в цене пакета.");
+    } else if (payload === "blogger" || payload === "blog") {
+      return blogStart(chatId);                    // ветка блогеров: только по ссылке
     } else setState(chatId, { step: null });
     return showHome(chatId, await welcomeGift(chatId));
   }
+  // пока идёт разговор с блогером, его ответы разбираем отдельно
+  if (st.blog && st.blog.step && t !== BTN_BUY && t !== BTN_MY && t !== BTN_BONUS) return blogText(chatId, t, st.blog);
   if (t === BTN_BUY) return showHome(chatId);
   if (t === BTN_MY || /^\/my|^мои/i.test(t)) return showMy(chatId);
   if (t === BTN_BONUS || /^\/bonus|^бонус/i.test(t)) return showBonus(chatId);

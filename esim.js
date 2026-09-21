@@ -37,6 +37,7 @@ const crypto = require("crypto");
 const axios = require("axios");
 const express = require("express"); // нужен для express.json() на ручке бота
 const tbank = require("./tbank"); // Т-Касса: приём оплат (банк за интерфейсом, как и поставщик eSIM)
+const blog = require("./esimblog");      // блогеры: бесплатный интернет за сторис
 const adsource = require("./adsource"); // откуда пришёл покупатель: метки Google Ads, utm и т.п.
 
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
@@ -1142,6 +1143,22 @@ function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, use
   // с запасом: продавать ровно по закупке смысла нет, работа и поддержка стоят
   // денег. Запас меняется в .env (ESIM_DISCOUNT_FLOOR=1 убирает его совсем).
   const floorRub = Math.min(listPrice, Math.max(MIN_PAY_RUB, Math.ceil((Number(costRub) || 0) * DISCOUNT_FLOOR_K)));
+  // Код блогера: eSIM бесплатно, без пола по себестоимости. Проверяем срок поездки,
+  // привязку к человеку и паузу между выдачами (esimblog.js, 21.09.2026).
+  if (promoCode && blog.find(promoCode)) {
+    const chk = blog.checkUse(promoCode, email);
+    out.promoReason = chk.ok ? null : "blog_" + chk.why;
+    out.blogWaitMin = chk.waitMin || 0;
+    out.blogTo = chk.rec && chk.rec.to;
+    if (chk.ok) {
+      out.discountRub = listPrice; out.discountKind = "blogger"; out.promoCode = chk.rec.code;
+      out.total = 0; out.free = true;
+      out.balanceRub = ((getCustomer(email, false) || {}).balanceRub) || 0;
+      out.balanceBlockedBy = "blogger";
+      return out;
+    }
+    return out;
+  }
   const promo = checkPromo(promoCode, listPrice, email);
   out.promoReason = _promoReason;
   if (promo && promo.cost && costRub != null) {
@@ -1906,7 +1923,7 @@ function mount(app, opts) {
         email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const priceRub = calc.total;
       // дополнительные eSIM — только у обычной покупки (не у продления)
-      const qty = (found.addon || parentOrderId) ? 1 : qtyOf(b);
+      const qty = (found.addon || parentOrderId || calc.free) ? 1 : qtyOf(b);
       const ex = extrasFor(calc, listPrice, costFor(found.item, rate));
       const extraUnitRub = qty > 1 ? ex.unit : null;
       const payTotalRub = priceRub + (qty - 1) * (extraUnitRub || 0);
@@ -1928,6 +1945,13 @@ function mount(app, opts) {
         base: baseFor(req),
       });
       saveLocal(orders);
+      // Код блогера: платить нечего — сразу выдаём eSIM и ведём на страницу «оплачено»
+      if (calc.free && priceRub === 0) {
+        blog.markUse(calc.promoCode, who, id);
+        fulfil(id).catch((e) => console.error("esim blog fulfil:", e.message));
+        return res.json({ success: true, free: true,
+          url: baseFor(req) + "/esim/pay/ok?o=" + id + "&t=" + signOrder(id) });
+      }
       const pay = await tbank.init({
         orderId: id, amountRub: payTotalRub,
         description: (label + (qty > 1 ? " × " + qty : "")).slice(0, 140), itemName: label + (qty > 1 ? " (" + qty + " шт.)" : ""),
@@ -1969,6 +1993,7 @@ function mount(app, opts) {
         // Промокод засчитан, если сервер его принял — хоть скидкой, хоть себестоимостью
         promoOk: promoTried ? !!(calc.promoCode || calc.discountKind === "ref") : null,
         promoReason: calc.promoReason,
+        free: !!calc.free, blogWaitMin: calc.blogWaitMin || 0, blogTo: calc.blogTo || null,
         promoMinRub: MIN_PAY_RUB,      // промокоды действуют на пакеты дороже этой суммы
       });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
