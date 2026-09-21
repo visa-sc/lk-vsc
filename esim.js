@@ -1701,32 +1701,51 @@ function mount(app, opts) {
       const items = [{ myUrl: g.order.myUrl, orderId: res.orderId, src }];
       const extraFailed = [];
       const qty = Math.max(1, Math.min(MAX_QTY, Number(g.order.qty) || 1));
-      for (let i = 2; i <= qty; i++) {
-        const childId = id + "-" + i;
-        const child = {
-          id: childId, ts: Date.now(), status: "fulfilling", productId: g.order.productId, parentOrderId: null,
-          label: g.order.label, priceRub: g.order.extraUnitRub, listPriceRub: g.order.listPriceRub,
-          phone: g.order.phone, email: g.order.email, tgChatId: g.order.tgChatId, custKey: g.order.custKey,
-          discountRub: Math.max(0, (g.order.listPriceRub || 0) - (g.order.extraUnitRub || 0)), discountKind: "extra",
-          groupOf: id, paymentId: g.order.paymentId, ads: g.order.ads, lang: g.order.lang, vid: g.order.vid,
-          fromLk: g.order.fromLk, base: g.order.base,
-        };
-        const all = readJson(ORDERS_FILE, []); all.unshift(child); saveLocal(all);
+      // Несколько eSIM в заказе покупаем у поставщика ОДНОВРЕМЕННО: по очереди
+      // выходило до полутора минут на каждую, и человек на странице оплаты ждал
+      // несколько минут (18.09.2026 клиентка просила отменить покупку).
+      const kids = [];
+      if (qty > 1) {
+        const all = readJson(ORDERS_FILE, []);
+        for (let i = 2; i <= qty; i++) {
+          const child = {
+            id: id + "-" + i, ts: Date.now(), status: "fulfilling", productId: g.order.productId, parentOrderId: null,
+            label: g.order.label, priceRub: g.order.extraUnitRub, listPriceRub: g.order.listPriceRub,
+            phone: g.order.phone, email: g.order.email, tgChatId: g.order.tgChatId, custKey: g.order.custKey,
+            discountRub: Math.max(0, (g.order.listPriceRub || 0) - (g.order.extraUnitRub || 0)), discountKind: "extra",
+            groupOf: id, paymentId: g.order.paymentId, ads: g.order.ads, lang: g.order.lang, vid: g.order.vid,
+            fromLk: g.order.fromLk, base: g.order.base,
+          };
+          kids.push(child); all.unshift(child);
+        }
+        saveLocal(all);
+      }
+      // записи на диск пишем по очереди, чтобы параллельные выдачи не затёрли друг друга
+      let saveChain = Promise.resolve();
+      const queueSave = (fn) => (saveChain = saveChain.then(fn).catch((e) => console.error("esim save:", e.message)));
+      const done = await Promise.all(kids.map(async (child) => {
         try {
           const r2 = await issueOne(child, child.priceRub);
-          const c = findLocal(childId);
-          Object.assign(c.order, { status: "done", paidAt: Date.now(), src: r2.src, fallbackFrom: r2.fallbackFrom,
-            mmOrderId: r2.res.orderId, iccid: r2.res.iccid || null, costUsd: r2.res.costUsd || null,
-            myUrl: myUrlFor(c.order, r2.res.orderId) });
-          saveLocal(c.orders);
-          items.push({ myUrl: c.order.myUrl, orderId: r2.res.orderId, src: r2.src });
+          await queueSave(() => {
+            const c = findLocal(child.id);
+            if (!c) return;
+            Object.assign(c.order, { status: "done", paidAt: Date.now(), src: r2.src, fallbackFrom: r2.fallbackFrom,
+              mmOrderId: r2.res.orderId, iccid: r2.res.iccid || null, costUsd: r2.res.costUsd || null,
+              myUrl: myUrlFor(c.order, r2.res.orderId) });
+            saveLocal(c.orders);
+          });
+          const c = findLocal(child.id);
+          return { ok: true, myUrl: c && c.order.myUrl, orderId: r2.res.orderId, src: r2.src };
         } catch (e) {
-          const c = findLocal(childId);
-          if (c) { c.order.status = "paid_failed"; c.order.error = String(e.message).slice(0, 300); saveLocal(c.orders); }
-          extraFailed.push(childId + ": " + e.message);
+          await queueSave(() => {
+            const c = findLocal(child.id);
+            if (c) { c.order.status = "paid_failed"; c.order.error = String(e.message).slice(0, 300); saveLocal(c.orders); }
+          });
           console.error("esim fulfil extra:", e.message);
+          return { ok: false, id: child.id, message: e.message };
         }
-      }
+      }));
+      done.forEach((r) => { if (r.ok) items.push({ myUrl: r.myUrl, orderId: r.orderId, src: r.src }); else extraFailed.push(r.id + ": " + r.message); });
       if (items.some((x) => x.src === "tsim")) checkTsimCredit();
       checkSupplierBalances().catch(() => {});
       // Деньги и бонусы проводим только после подтверждённой оплаты
@@ -2059,8 +2078,13 @@ function mount(app, opts) {
     if (qty > 1 && f.order.status === "done") {
       const kids = readJson(ORDERS_FILE, []).filter((x) => x.groupOf === id);
       const waiting = kids.filter((x) => x.status === "fulfilling").length + Math.max(0, qty - 1 - kids.length);
-      if (waiting > 0 && Date.now() - (f.order.paidAt || 0) < 300000) return res.json({ success: true, status: "fulfilling" });
       extra = kids.filter((x) => x.status === "done").sort((a, b) => (a.id < b.id ? -1 : 1)).map((x) => x.myUrl);
+      // Пока готовы не все — отдаём готовые сразу и показываем прогресс «1 из 3»,
+      // чтобы человек не смотрел в пустое ожидание (случай 18.09.2026).
+      if (waiting > 0 && Date.now() - (f.order.paidAt || 0) < 300000) {
+        return res.json({ success: true, status: "fulfilling", qty, ready: 1 + extra.length,
+          myUrl: f.order.myUrl, extra });
+      }
     }
     // Сумма и метка конверсии нужны странице «оплачено», чтобы передать покупку
     // в Google Ads. ESIM_AW_PURCHASE — «AW-…/label» из действия-конверсии в Ads.
