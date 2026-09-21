@@ -363,10 +363,12 @@ function mount(app, deps) {
     attempt = attempt || 1;
     const https = require("https");
     const data = JSON.stringify(body);
-    const retry = () => {
+    // Причину отказа пишем и в лог, и в файл недоставленных: без неё было видно
+    // только «после 3 попыток», и чинить на стороне скрипта нечего (21.09.2026).
+    const retry = (why) => {
       if (attempt >= 3) {
-        console.error("wazzup relay: не доставлено (" + target.slice(0, 40) + "…) после 3 попыток");
-        try { fs.appendFileSync(path.join(__dirname, ".wazzupRelayFailed.ndjson"), JSON.stringify({ t: new Date().toISOString(), url: target, b: body }) + "\n"); } catch (e) {}
+        console.error("wazzup relay: не доставлено (" + target.slice(0, 40) + "…) после 3 попыток — " + (why || "причина неизвестна"));
+        try { fs.appendFileSync(path.join(__dirname, ".wazzupRelayFailed.ndjson"), JSON.stringify({ t: new Date().toISOString(), url: target, why: why || null, b: body }) + "\n"); } catch (e) {}
         return;
       }
       setTimeout(() => relayOne(target, body, attempt + 1), attempt * 15000);
@@ -384,14 +386,14 @@ function mount(app, deps) {
             g.on("error", () => {});
             return;
           }
-          if (resp.statusCode >= 400) retry();
+          if (resp.statusCode >= 400) retry("скрипт ответил " + resp.statusCode);
         }
       );
       r.on("error", retry);
-      r.on("timeout", () => { r.destroy(); retry(); });
+      r.on("timeout", () => { r.destroy(); retry("таймаут 20 с"); });
       r.end(data);
     };
-    try { post(target, 0); } catch (e) { retry(); }
+    try { post(target, 0); } catch (e) { retry("ошибка запроса: " + String(e.message).slice(0, 80)); }
   }
   function wazzupRelay(body) {
     for (const t of relayTargets()) relayOne(t, body);
