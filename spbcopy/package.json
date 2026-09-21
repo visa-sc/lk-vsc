@@ -1,0 +1,10 @@
+{
+  "name": "spbcopy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Копия сайта spb.visa-sc.ru на нашем хостинге (spb.voyotravel.ru)",
+  "main": "server.js",
+  "dependencies": {
+    "sharp": "^0.34.2"
+  }
+}

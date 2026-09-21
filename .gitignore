@@ -204,3 +204,6 @@ docs/staff-reports/
 .aiBalance.json
 .stageStats.json
 .vscProfitHistory.json
+
+# копия spb.visa-sc.ru (собирается tools/spbcopy-mirror.js, в git не нужна)
+.spbcopy/
