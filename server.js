@@ -2236,7 +2236,10 @@ app.post("/admin/api/vsc/marketing-plan", requireMktPlan, (req, res) => {
   const d = req.body && req.body.data;
   if (!d || !Array.isArray(d.tasks) || !Array.isArray(d.channels)) return res.status(400).json({ success: false, message: "bad data" });
   if (JSON.stringify(d).length > 2_000_000) return res.status(413).json({ success: false, message: "too big" });
+  // paused — каналы на паузе; хранится вместе с планом, чтобы список правился
+  // из данных, а не только дефолтом в коде страницы (Андрей 21.09.2026).
   _mktPlan = { channels: d.channels.map(String).slice(0, 200), tasks: d.tasks.slice(0, 5000) };
+  if (Array.isArray(d.paused)) _mktPlan.paused = d.paused.map(String).slice(0, 200);
   try { fs.writeFileSync(VSC_MKTPLAN_FILE, JSON.stringify(_mktPlan, null, 2), "utf8"); } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
   return res.json({ success: true });
 });
