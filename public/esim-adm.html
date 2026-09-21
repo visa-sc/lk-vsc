@@ -129,6 +129,13 @@
   th.sort.on .ar{opacity:1}
   /* «Выйти» — как в дашборде */
   .footer-logout{display:flex;justify-content:center;margin:28px 0 16px}
+  /* Встраивание во вкладку «eSIM» панели руководителей (?embed=1, 21.09.2026):
+     у /team своя вывеска и свой «Выйти», поэтому прячем наши и убираем лишний
+     воздух сверху. Сама панель и её логика не меняются. */
+  body.embed .brand,
+  body.embed .footer-logout{display:none;}
+  body.embed .wrap{padding-top:4px;padding-bottom:24px;}
+  body.embed .top{margin-top:0;}
   .logout-btn{display:inline-block;padding:8px 14px;font:inherit;font-size:13px;color:#9096a3;background:transparent;
     border:1px solid #e3e0eb;border-radius:14px;cursor:pointer;transition:color .15s var(--ease),border-color .15s var(--ease)}
   .logout-btn:hover{color:#3589bd;border-color:#c6dceb}
@@ -306,6 +313,18 @@
   // сохранённому токену, иначе ломается авто-вход по биометрии).
   var TOKEN = "";
   try{ localStorage.removeItem("voyo_esim_adm"); }catch(e){}   // раньше тут хранили сам код — больше не храним
+  // Вкладка «eSIM» в панели руководителей (dev.voyotravel.ru): та же страница в
+  // iframe с ?embed=1. Хост тот же, значит и localStorage общий с /team —
+  // берём оттуда staff-токен и входим без второго кода. Права проверяет сервер
+  // (нужно «esimadm»): не пустил — показываем обычную форму входа, как раньше.
+  var EMBED = new URLSearchParams(location.search).get("embed") === "1";
+  function staffToken(){
+    try{
+      return localStorage.getItem("voyo_team_token") ||
+             localStorage.getItem("voyo_admin_token") ||
+             localStorage.getItem("voyo_vsc_token") || "";
+    }catch(e){ return ""; }
+  }
   var DATA = null, DAYS = 30;
   var el = function(id){ return document.getElementById(id); };
   var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
@@ -883,6 +902,11 @@
 
   // При открытии: если Face ID доступен — сразу спрашиваем его, код остаётся запасным путём
   (async function(){
+    if (EMBED){
+      document.body.classList.add("embed");
+      var st = staffToken();
+      if (st){ TOKEN = st; return enter(); }   // нет прав — load() получит 403 и покажет вход
+    }
     var ok = await gate();
     if (ok){
       await new Promise(function(r){ setTimeout(r, 150); });

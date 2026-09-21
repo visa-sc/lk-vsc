@@ -1,11 +1,11 @@
 [
-  { "email": "ekaterina.z@visa-sc.ru", "name": "Екатерина Зайцева", "perms": ["stages", "vsc"], "vscRestrict": { "tabs": ["dash", "monthly", "translate"], "hideProfit": true } },
+  { "email": "ekaterina.z@visa-sc.ru", "name": "Екатерина Зайцева", "perms": ["stages", "vsc", "esimadm"], "vscRestrict": { "tabs": ["dash", "monthly", "translate"], "hideProfit": true } },
   { "email": "margarita.k@visa-sc.ru", "name": "Маргарита Кузнецова", "perms": ["vsc"] },
   { "email": "kristina.r@visa-sc.ru", "name": "Кристина Рагоза", "perms": ["vsc"] },
   { "email": "ksenia.m@visa-sc.ru", "name": "Ксения Маслова", "perms": ["vsc"] },
   { "email": "anastasia.p@visa-sc.ru", "name": "Анастасия Плинер", "perms": ["vsc", "vfsbot"] },
   { "email": "anna.sh@visa-sc.ru", "name": "Анна Шафранская", "perms": ["vsc", "vfsbot"] },
-  { "email": "ap@spt1.ru", "name": "Андрей Петров", "perms": ["stages", "vsc"], "vscRestrict": { "tabs": ["dash", "monthly", "mktkpi", "marketing"], "hideProfit": true } },
-  { "email": "director@visa-sc.ru", "name": "Андрей Комисаренко", "perms": ["stages", "vsc", "vfsbot"] },
+  { "email": "ap@spt1.ru", "name": "Андрей Петров", "perms": ["stages", "vsc", "esimadm"], "vscRestrict": { "tabs": ["dash", "monthly", "mktkpi", "marketing"], "hideProfit": true } },
+  { "email": "director@visa-sc.ru", "name": "Андрей Комисаренко", "perms": ["stages", "vsc", "vfsbot", "esimadm"] },
   { "email": "rustam.b@visa-sc.ru", "name": "Рустам Бурханов", "perms": ["vsc"] }
 ]

@@ -3131,8 +3131,9 @@ require("./esim").mount(app, {
   // Напоминания «пакет заканчивается» и «трафик на исходе» — в телеграм-чат
   notifyTelegram: (p) => tgbot.notifyUsage(p),
   // Панель показателей (dev.voyomobile.ru): свой вход (код 123 или Face ID) даёт
-  // токен только на неё; токен админки тоже подходит — он строже
-  isAdminToken: (t) => isEsimPanelToken(t),
+  // токен только на неё; токен админки тоже подходит — он строже. Плюс staff-токен
+  // руководителя с правом «esimadm» — для вкладки «eSIM» в /team (dev.voyotravel.ru)
+  isAdminToken: (t) => isEsimPanelToken(t) || isEsimStaffToken(t),
   // Клиент, уже вошедший в ЛК по телефону: отдаём его почты из карточки amoCRM,
   // чтобы в разделе «eSIM» не спрашивать email второй раз. Поиск контактов
   // кэширован (findMatchingContacts, 2 мин), сам esim.js держит связку локально
@@ -16720,6 +16721,18 @@ function isEsimPanelToken(token) {
   if (exp && exp > Date.now()) return true;
   if (exp) { esimPanelSessions.delete(token); saveEsimPanelSessions(); }
   return isAdminTokenValid(token);
+}
+// Вкладка «eSIM» в панели руководителей (dev.voyotravel.ru, 21.09.2026): та же
+// панель показателей, что на dev.voyomobile.ru, открывается внутри /team по
+// staff-сессии — второй вход по коду 123 не нужен. Пускаем ТОЛЬКО руководителей
+// с правом «esimadm» (сейчас Зайцева и Петров); админ проходит выше, по своему
+// токену. Остальным руководителям панель по-прежнему закрыта (403).
+function isEsimStaffToken(token) {
+  if (!token) return false;
+  const m = getManagerSession(token);
+  if (!m) return false;
+  const acc = (loadManagers() || {})[String(m.email || "").toLowerCase()] || {};
+  return Array.isArray(acc.perms) && acc.perms.indexOf("esimadm") >= 0;
 }
 function esimPanelBearer(req) { return String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim(); }
 function requireEsimPanel(req, res, next) {
