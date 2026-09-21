@@ -539,7 +539,7 @@ function blogCodeLetter(rec, refCode) {
   const tgLink = refCode ? "https://t.me/" + BOT_NAME + "?start=ref_" + refCode : "";
   const siteLink = refCode ? (process.env.ESIM_REF_SITE || "https://voyomobile.ru") + "/esim?ref=" + refCode : "";
   return "<b>Ваш промокод: <code>" + rec.code + "</code></b>\n" +
-    "<i>(ниже есть кнопка «Скопировать промокод» — код придёт отдельным сообщением, нажатие копирует его)</i>\n\n" +
+    "\n" +
     "Действует с " + d(rec.from) + " по " + d(rec.to) + ".\n" +
     "Вводите его при оформлении — цена станет 0 ₽.\n\n" +
     "<b>Где оформлять</b>\n" +
