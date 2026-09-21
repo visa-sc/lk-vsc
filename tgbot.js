@@ -494,8 +494,21 @@ const BLOG_HELLO =
   "Даём блогерам личный промокод: по нему eSIM в любой стране достаётся бесплатно, " +
   "а вы рассказываете о нас в сторис.\n\n" +
   "Четыре коротких вопроса, это займёт минуту.\n\nНапишите <b>имя и фамилию</b>.";
+const BLOG_NETS = [
+  { id: "instagram", title: "Instagram" }, { id: "telegram", title: "Telegram" },
+  { id: "youtube", title: "YouTube" }, { id: "tiktok", title: "TikTok" },
+  { id: "vk", title: "ВКонтакте" }, { id: "dzen", title: "Дзен" },
+];
+function blogNetKeyboard() {
+  const rows = [];
+  for (let i = 0; i < BLOG_NETS.length; i += 2) {
+    rows.push(BLOG_NETS.slice(i, i + 2).map((n) => ({ text: n.title, callback_data: "bnet:" + n.id })));
+  }
+  rows.push([{ text: "Другая соцсеть", callback_data: "bnet:other" }]);
+  return { inline_keyboard: rows };
+}
 const BLOG_ASK = {
-  network: "В какой соцсети выйдет упоминание? Instagram, Telegram, YouTube, TikTok, ВКонтакте.",
+  network: "В какой соцсети выйдет упоминание? Выберите кнопкой или напишите название.",
   nick: "Пришлите ник в этой соцсети или ссылку на профиль, например @travel_ivan.",
   dates: "Напишите даты поездки одной строкой, например: 01.10.2026 - 15.10.2026.\nПоездка не длиннее " + blog.MAX_DAYS + " дней.",
 };
@@ -570,11 +583,23 @@ async function blogText(chatId, t, b) {
     if (!name) return miss("name");
     if (blog.load().some((x) => String(x.name).toLowerCase() === name.toLowerCase())) return blogStop(chatId, BLOG_WHY.dup);
     setState(chatId, { blog: Object.assign({}, b, { name, step: "network", miss: 0 }) });
-    return send(chatId, "Принял: <b>" + esc(name) + "</b>.\n\n" + BLOG_ASK.network);
+    return send(chatId, "Принял: <b>" + esc(name) + "</b>.\n\n" + BLOG_ASK.network, { reply_markup: blogNetKeyboard() });
+  }
+  if (b.step === "network" && b.netFree) {            // человек выбрал «другую соцсеть»
+    const title = t.replace(/\s+/g, " ").trim().slice(0, 40);
+    if (!title) return send(chatId, "Впишите ваш вариант — название соцсети или площадки.");
+    const net = { id: "other", title };
+    setState(chatId, { blog: Object.assign({}, b, { network: net, step: "nick", miss: 0, netFree: false }) });
+    return send(chatId, "Соцсеть: <b>" + esc(title) + "</b>.\n\n" + BLOG_ASK.nick);
   }
   if (b.step === "network") {
     const net = blog.parseNetwork(t);
-    if (!net) return miss("network");
+    if (!net) {
+      const n = (b.miss || 0) + 1;
+      if (n >= 3) return blogStop(chatId, "Давайте не будем мучить форму. Напишите нашему менеджеру — он выдаст промокод руками.");
+      setState(chatId, { blog: Object.assign({}, b, { miss: n }) });
+      return send(chatId, BLOG_WHY.network, { reply_markup: blogNetKeyboard() });
+    }
     setState(chatId, { blog: Object.assign({}, b, { network: net, step: "nick", miss: 0 }) });
     return send(chatId, "Соцсеть: <b>" + esc(net.title) + "</b>.\n\n" + BLOG_ASK.nick);
   }
@@ -999,6 +1024,20 @@ async function onCallback(q) {
     return showCountry(chatId, parts[0], parseInt(parts[1] || "0", 10) || 0, messageId);
   }
   if (data.indexOf("p:") === 0) return showPack(chatId, data.slice(2), messageId);
+  if (data.indexOf("bnet:") === 0) {
+    const st = getState(chatId), b = st.blog;
+    if (!b || b.step !== "network") return;
+    const id = data.slice(5);
+    if (id === "other") {
+      // свой вариант: принимаем что угодно, лишь бы не пустое
+      setState(chatId, { blog: Object.assign({}, b, { miss: 0, netFree: true }) });
+      return send(chatId, "Впишите ваш вариант — название соцсети или площадки, как вам удобно.");
+    }
+    const net = BLOG_NETS.find((n) => n.id === id);
+    if (!net) return;
+    setState(chatId, { blog: Object.assign({}, b, { network: net, step: "nick", miss: 0 }) });
+    return send(chatId, "Соцсеть: <b>" + esc(net.title) + "</b>.\n\n" + BLOG_ASK.nick);
+  }
   if (data === "blogcopy") {
     const code = (getState(chatId) || {}).promo || "";
     if (!code) return send(chatId, "Код не найден — напишите /start и получите новый.");
