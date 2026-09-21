@@ -151,127 +151,190 @@ function status() {
 }
 
 // ── Расход по месяцам ────────────────────────────────────────────────────────
-// Андрею в письме нужны прошлый и текущий месяц с разбивкой по сервисам и
-// моделями. Модели берём не из кода (они задаются переменными окружения и
-// меняются), а из журналов: шлюз пишет, какая модель отвечала, сканер — тоже.
+// В письме нужны прошлый и текущий месяц, разложенные по сервисам так, чтобы
+// строки складывались в итог месяца. Источник итога — журнал шлюза (он видит
+// фактический usage от API) плюс сканер, который ходит своим ключом мимо шлюза.
+//
+// Загвоздка: шлюз помечает вызовы сервисами только с 16.09.2026. За более ранние
+// дни разбивки нет, и раньше в письме висела отдельная строка «без разделения» —
+// из-за неё сумма строк не сходилась с итогом. Теперь за такие дни прослушку
+// берём из журналов Кати (у неё записана стоимость каждой проверки), а переводы
+// считаем как остаток дня. Итог месяца при этом всегда равен сумме строк, а
+// служебные прогоны движка попадают в переводы — что по смыслу верно.
 const MONTH_NAMES = ["январь", "февраль", "март", "апрель", "май", "июнь",
   "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
 const MODEL_NAMES = { "claude-opus-5": "Opus 5", "claude-sonnet-5": "Sonnet 5", "claude-haiku-4-5": "Haiku 4.5" };
 const SVC_ORDER = ["translate", "cq", "scanner"];
+const SVC_SHORT = { translate: "Переводы", cq: "Прослушка", scanner: "Сканер паспортов" };
+// Единицы для счётчика: у каждого сервиса своя работа, «обращения» ни о чём не говорят.
+const SVC_UNIT = {
+  translate: ["перевод", "перевода", "переводов"],
+  cq: ["проверка", "проверки", "проверок"],
+  scanner: ["паспорт", "паспорта", "паспортов"],
+};
+const CQ_DIR = process.env.CQ_DATA_DIR || "/var/www/kateadmin/data";
+const TRANSLATE_ORDERS = process.env.TRANSLATE_ORDERS_FILE || "/var/www/translate-engine/.translate/orders.json";
+const RUB = Number(process.env.TRANSLATE_USD_RUB || 80);
 
-function mskYm(ts) { return new Date(ts + 3 * 3600 * 1000).toISOString().slice(0, 7); }
+function plural(n, forms) {
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return forms[2];
+  if (b > 1 && b < 5) return forms[1];
+  if (b === 1) return forms[0];
+  return forms[2];
+}
+function mskDay(t) { return new Date(new Date(t).getTime() + 3 * 3600 * 1000).toISOString().slice(0, 10); }
 function ymShift(ym, n) {
   const [y, m] = ym.split("-").map(Number);
-  const d = new Date(Date.UTC(y, m - 1 + n, 1));
-  return d.toISOString().slice(0, 7);
+  return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7);
 }
 function ymTitle(ym) {
   const m = Number(ym.slice(5, 7));
   return (MONTH_NAMES[m - 1] || ym).replace(/^./, (c) => c.toUpperCase());
 }
-// Запасной ответ, пока журнал за месяц ещё не накопил моделей (запись моделей
-// включена 21.09.2026): берём то же, что берут сами сервисы при запуске.
-// Прослушка — код Кати в /var/www/kateadmin (CQ_AI_DEFAULT_MODEL).
-function configModel(id) {
-  if (id === "translate") return process.env.TRANSLATE_MODEL || "claude-opus-5";
-  if (id === "scanner") return process.env.SCANNER_MODEL || "claude-haiku-4-5";
-  if (id === "cq") return process.env.CQ_MODEL || "claude-haiku-4-5";
-  return "";
-}
-function modelTitle(models, id) {
-  const top = Object.entries(models || {}).sort((a, b) => b[1] - a[1]).slice(0, 2);
-  if (!top.length) { const c = configModel(id); return c ? (MODEL_NAMES[c] || c) : ""; }
-  return top.map(([m]) => MODEL_NAMES[m] || m).join(" + ");
+function readJson(p) { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (_) { return null; } }
+
+// Прослушка из журналов Кати: проверки диалогов, вычитка расшифровок звонков
+// (поле cleanCost — отдельная статья, её легко упустить) и отчёты. Стоимость
+// у неё в рублях по тому же курсу, что у нас.
+function cqJournal() {
+  const byDay = {}, byMonth = {};
+  const put = (when, usd, isCheck, model) => {
+    if (!when) return;
+    const day = mskDay(when), ym = day.slice(0, 7);
+    byDay[day] = (byDay[day] || 0) + usd;
+    const m = byMonth[ym] || (byMonth[ym] = { usd: 0, n: 0, models: {} });
+    m.usd += usd;
+    if (isCheck) m.n++;
+    if (model) m.models[model] = (m.models[model] || 0) + 1;
+  };
+  for (const x of readJson(CQ_DIR + "/cqChecks.json") || []) if (x) put(x.at, (x.cost || 0) / RUB, true, x.model);
+  for (const x of readJson(CQ_DIR + "/cqCalls.json") || []) if (x && x.cleanCost) put(x.cleanAt || x.at, (x.cleanCost || 0) / RUB, false, null);
+  for (const x of readJson(CQ_DIR + "/cqReports.json") || []) if (x) put(x.at, (x.cost || 0) / RUB, false, x.model);
+  return { byDay, byMonth };
 }
 
-// { "2026-09": { usd, svc: { id: {usd, calls, models} }, undividedUsd } }
+// Сколько переводов сделано за месяц — из журнала заказов движка. Деньги по
+// переводам берём не отсюда, а из шлюза (он точнее), здесь только счётчик.
+function translateOrdersByMonth() {
+  const out = {};
+  const j = readJson(TRANSLATE_ORDERS);
+  const arr = Array.isArray(j) ? j : (j && j.orders) || [];
+  for (const o of arr) {
+    if (!o || !o.createdAt) continue;
+    const ym = mskDay(o.createdAt).slice(0, 7);
+    out[ym] = (out[ym] || 0) + 1;
+  }
+  return out;
+}
+
+// { "2026-09": { usd, svc: { id: {usd, n, models} } } }
 function spendByMonth() {
   const out = {};
-  const slot = (ym) => out[ym] || (out[ym] = { usd: 0, svc: {}, undividedUsd: 0 });
-  const bucket = (m, id) => m.svc[id] || (m.svc[id] = { usd: 0, calls: 0, models: {} });
+  const slot = (ym) => out[ym] || (out[ym] = { usd: 0, svc: {} });
+  const bucket = (m, id) => m.svc[id] || (m.svc[id] = { usd: 0, n: 0, models: {} });
+  const cq = cqJournal();
 
-  try {
-    const b = JSON.parse(fs.readFileSync(ENGINE_BUDGET, "utf8"));
-    for (const [day, v] of Object.entries(b.days || {})) {
-      const m = slot(day.slice(0, 7));
-      m.usd += v.usd || 0;
-      let named = 0;
-      for (const [id, t] of Object.entries(v.svc || {})) {
-        const a = bucket(m, id);
-        a.usd += t.usd || 0; a.calls += t.calls || 0;
-        for (const [mid, n] of Object.entries(t.models || {})) a.models[mid] = (a.models[mid] || 0) + n;
-        named += t.usd || 0;
-      }
-      // Дни до 16.09.2026 писались без разбивки по сервисам — показываем остаток
-      // отдельной строкой, чтобы сумма всегда сходилась с итогом месяца.
-      m.undividedUsd += Math.max(0, (v.usd || 0) - named);
+  const b = readJson(ENGINE_BUDGET) || { days: {} };
+  for (const [day, v] of Object.entries(b.days || {})) {
+    const m = slot(day.slice(0, 7));
+    const total = v.usd || 0;
+    m.usd += total;
+    const svc = v.svc || {};
+    const named = Object.values(svc).reduce((s, t) => s + (t.usd || 0), 0);
+    for (const [id, t] of Object.entries(svc)) {
+      const a = bucket(m, id);
+      a.usd += t.usd || 0;
+      for (const [mid, n] of Object.entries(t.models || {})) a.models[mid] = (a.models[mid] || 0) + n;
     }
-  } catch (_) {}
+    // День без пометок сервисов (до 16.09): прослушку знаем из её журнала,
+    // остальное — движок переводов.
+    const rest = Math.max(0, total - named);
+    if (rest > 0.0001) {
+      const cqDay = Math.min(rest, cq.byDay[day] || 0);
+      if (cqDay > 0) bucket(m, "cq").usd += cqDay;
+      bucket(m, "translate").usd += rest - cqDay;
+    }
+  }
 
-  try {
-    const st = JSON.parse(fs.readFileSync(SCANNER_STORE, "utf8"));
-    for (const doc of st.docs || []) {
-      if (!doc || !doc.at) continue;
-      const m = slot(mskYm(doc.at));
-      const a = bucket(m, "scanner");
-      let usd = 0;
-      for (const e of doc.spend || []) {
-        const p = PRICES[e.model] || PRICES["claude-haiku-4-5"];
-        usd += ((e.in || 0) + (e.cr || 0) * 0.1 + (e.cw || 0) * 1.25) * p[0] / 1e6 + (e.out || 0) * p[1] / 1e6;
-        if (e.model) a.models[e.model] = (a.models[e.model] || 0) + 1;
-      }
-      a.usd += usd; a.calls++;
-      m.usd += usd;
+  // Счётчики и модели прослушки — из её журнала (там и модель записана).
+  for (const [ym, v] of Object.entries(cq.byMonth)) {
+    const a = bucket(slot(ym), "cq");
+    a.n += v.n;
+    for (const [mid, n] of Object.entries(v.models)) a.models[mid] = (a.models[mid] || 0) + n;
+  }
+  for (const [ym, n] of Object.entries(translateOrdersByMonth())) bucket(slot(ym), "translate").n += n;
+
+  // Сканер — свой ключ мимо шлюза, поэтому и деньги, и счётчик из его журнала.
+  const st = readJson(SCANNER_STORE) || { docs: [] };
+  for (const doc of st.docs || []) {
+    if (!doc || !doc.at) continue;
+    const m = slot(mskDay(doc.at).slice(0, 7));
+    const a = bucket(m, "scanner");
+    let usd = 0;
+    for (const e of doc.spend || []) {
+      const p = PRICES[e.model] || PRICES["claude-haiku-4-5"];
+      usd += ((e.in || 0) + (e.cr || 0) * 0.1 + (e.cw || 0) * 1.25) * p[0] / 1e6 + (e.out || 0) * p[1] / 1e6;
+      if (e.model) a.models[e.model] = (a.models[e.model] || 0) + 1;
     }
-  } catch (_) {}
+    a.usd += usd; a.n++;
+    m.usd += usd;
+  }
   return out;
 }
 
 // ── Письма ───────────────────────────────────────────────────────────────────
 function money(v) { return "$" + (Math.round(v * 100) / 100).toFixed(2); }
 const TOPUP_URL = "https://console.anthropic.com/settings/billing";
-// Короткие подписи — в письме важна не полнота названия, а то, чтобы строка
-// читалась одним взглядом. Полные имена остаются в журнале и в консоли.
-const SVC_SHORT = { translate: "Переводы", cq: "Прослушка", scanner: "Сканер паспортов" };
-const CELL = "padding:4px 0;";
-const C_NAME = 'style="' + CELL + 'padding-right:18px;white-space:nowrap;"';
-const C_MODEL = 'style="' + CELL + 'padding-right:18px;color:#8a8f98;white-space:nowrap;"';
-const C_USD = 'style="' + CELL + 'text-align:right;white-space:nowrap;"';
-const C_N = 'style="' + CELL + 'text-align:right;white-space:nowrap;padding-left:22px;color:#8a8f98;"';
 
-// Блок одного месяца: итог, затем строки сервисов с моделью и числом обращений.
-// Сервисы показываем всегда, даже с нулём: иначе непонятно, сервис молчал или
-// его расход опять слился с чужим.
+// Запасной ответ, пока журнал за месяц не накопил моделей (запись моделей в
+// шлюзе включена 21.09.2026): берём то же, что берут сами сервисы при запуске.
+function configModel(id) {
+  if (id === "translate") return process.env.TRANSLATE_MODEL || "claude-opus-5";
+  if (id === "scanner") return process.env.SCANNER_MODEL || "claude-haiku-4-5";
+  if (id === "cq") return process.env.CQ_MODEL || "claude-haiku-4-5";
+  return "";
+}
+// Показываем одну — ту, на которой сервис работает в основном. Вторая модель
+// (у сканера это перепроверка на Sonnet) строку только удлиняет, а письмо
+// должно читаться одним взглядом.
+function modelTitle(models, id) {
+  const top = Object.entries(models || {}).sort((a, b) => b[1] - a[1])[0];
+  const m = top ? top[0] : configModel(id);
+  return m ? (MODEL_NAMES[m] || m) : "";
+}
+
+const CELL = "padding:5px 0;";
+const C_NAME = 'style="' + CELL + 'padding-right:20px;white-space:nowrap;"';
+const C_MODEL = 'style="' + CELL + 'padding-right:20px;white-space:nowrap;color:#8a8f98;"';
+const C_USD = 'style="' + CELL + 'text-align:right;white-space:nowrap;"';
+const C_N = 'style="' + CELL + 'white-space:nowrap;padding-left:20px;color:#8a8f98;"';
+
+// Блок месяца: итог и строки сервисов. Сумма строк равна итогу — иначе письмо
+// вызывает ровно тот вопрос, который Андрей и задал: «почему не сходится».
 function monthBlock(ym, data, note) {
-  const d = data || { usd: 0, svc: {}, undividedUsd: 0 };
+  const d = data || { usd: 0, svc: {} };
   const rows = SVC_ORDER.map(function (id) {
-    const a = d.svc[id] || { usd: 0, calls: 0, models: {} };
+    const a = d.svc[id] || { usd: 0, n: 0, models: {} };
     return '<tr><td ' + C_NAME + '>' + SVC_SHORT[id] + '</td>'
       + '<td ' + C_MODEL + '>' + modelTitle(a.models, id) + '</td>'
       + '<td ' + C_USD + '>' + money(a.usd) + '</td>'
-      + '<td ' + C_N + '>' + (a.calls || 0) + '</td></tr>';
+      + '<td ' + C_N + '>' + (a.n || 0) + ' ' + plural(a.n || 0, SVC_UNIT[id]) + '</td></tr>';
   }).join("");
-  const undiv = d.undividedUsd > 0.005
-    ? '<tr><td style="' + CELL + 'padding-right:18px;" colspan="2">Переводы и прослушка вместе<br><span style="color:#8a8f98;font-size:12px;">до 16.09 не разделялись</span></td>'
-      + '<td ' + C_USD + '>' + money(d.undividedUsd) + '</td><td ' + C_N + '></td></tr>'
-    : "";
-  return '<p style="margin:20px 0 6px;"><b>' + ymTitle(ym) + '</b>'
+  return '<p style="margin:22px 0 6px;"><b>' + ymTitle(ym) + '</b>'
     + (note ? ' <span style="color:#8a8f98;font-weight:normal;">' + note + '</span>' : "")
     + ' — <b>' + money(d.usd) + '</b></p>'
-    + '<table style="border-collapse:collapse;font-size:14px;">' + rows + undiv + '</table>';
+    + '<table style="border-collapse:collapse;font-size:14px;">' + rows + '</table>';
 }
 
-function html(s, daily) {
-  const now = new Date(Date.now() + 3 * 3600 * 1000);
-  const cur = now.toISOString().slice(0, 7);
+function html(s) {
+  const cur = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 7);
   const prev = ymShift(cur, -1);
   const by = spendByMonth();
-  return '<p><b>Баланс Claude API: ' + money(s.leftUsd) + '</b>'
-    + (daily ? ' <span style="color:#888;font-weight:normal;">— письмо будет приходить каждое утро, пока счёт не пополнят</span>' : "")
-    + '</p>'
+  return '<p style="font-size:15px;"><b>Баланс Claude API: ' + money(s.leftUsd) + '</b></p>'
     + monthBlock(cur, by[cur], "(текущий)")
     + monthBlock(prev, by[prev], "")
-    + '<p style="margin:20px 0 0;"><a href="' + TOPUP_URL + '" style="background:#171c29;color:#fff;text-decoration:none;'
+    + '<p style="margin:24px 0 0;"><a href="' + TOPUP_URL + '" style="background:#171c29;color:#fff;text-decoration:none;'
     + 'padding:10px 18px;border-radius:8px;display:inline-block;font-size:14px;">Пополнить счёт</a></p>'
     + '<p style="margin:8px 0 0;font-size:12px;color:#999;">' + TOPUP_URL + '</p>';
 }
@@ -293,7 +356,7 @@ function check(send, why) {
     // Ниже $5 — письмо каждый день, но не чаще одного за сутки.
     if (d.lastDailyDay === today) return s;
     d.lastDailyDay = today; save(d);
-    send({ to: TO, subject: "Claude API: осталось " + money(s.leftUsd) + " — пополните счёт", html: html(s, true), noBanner: true });
+    send({ to: TO, subject: "Claude API: осталось " + money(s.leftUsd) + " — пополните счёт", html: html(s), noBanner: true });
     console.log("AI BALANCE [" + (why || "cron") + "]: остаток " + money(s.leftUsd) + " ≤ " + money(ALERT_USD) + " — письмо (ежедневное)");
     return s;
   }
@@ -301,7 +364,7 @@ function check(send, why) {
     // Ниже $7 — одно письмо до следующего пополнения.
     if (d.warnSentAt) return s;
     d.warnSentAt = Date.now(); save(d);
-    send({ to: TO, subject: "Claude API: осталось " + money(s.leftUsd), html: html(s, false), noBanner: true });
+    send({ to: TO, subject: "Claude API: осталось " + money(s.leftUsd), html: html(s), noBanner: true });
     console.log("AI BALANCE [" + (why || "cron") + "]: остаток " + money(s.leftUsd) + " ≤ " + money(WARN_USD) + " — разовое письмо");
   }
   return s;
@@ -320,7 +383,7 @@ function schedule(send) {
 function sendTest(send) {
   const s = status();
   if (!s.known) { console.log(s.message); return; }
-  send({ to: TO, subject: "Claude API: осталось " + money(s.leftUsd), html: html(s, true), noBanner: true });
+  send({ to: TO, subject: "Claude API: осталось " + money(s.leftUsd), html: html(s), noBanner: true });
 }
 
 module.exports = { init, addTopup, status, check, schedule, sendTest, load, save };
