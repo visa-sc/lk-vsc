@@ -5219,7 +5219,7 @@
         const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем…</div>';
         wrap.appendChild(box);
         apiFetch("/admin/api/vsc/profit-history").then(function (j) {
-          const ms = (j && j.months) || {};
+          const ms = (j && j.data && j.data.months) || (j && j.months) || {};   // apiFetch отдаёт весь ответ: {success, data:{months}}
           const keys = Object.keys(ms).sort();
           if (!keys.length) { box.innerHTML = '<div class="vsc-empty">Данных нет.</div>'; return; }
           const years = [];
