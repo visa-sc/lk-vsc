@@ -7887,6 +7887,20 @@ function dealCycleMonths(d) {
   // Годовой итог — средневзвешенно по ВСЕМ контактам завершённых месяцев (не среднее средних).
   return { months, year: yCount ? { avgDays: Math.round(ySum / yCount * 10) / 10, count: yCount } : null };
 }
+// ═══ НАЧАЛО БЛОКА «Прибыль за всё время» (21.09.2026, убирается целиком) ═════
+// Прибыль по месяцам с апреля 2016 по август 2026 — разобрана из VSC.xlsx, из
+// строки итога внизу КАЖДОГО помесячного листа (прибыль = выручка минус расход,
+// ровно то число, что в листе и записано). Данные статичные, лежат в
+// .vscProfitHistory.json рядом с кодом: новые месяцы считает /vsc сам, этот блок
+// только про историю. Чтобы убрать раздел — удалить этот эндпоинт и блок
+// vscProfitHistoryBlock в admin.html, файл данных останется нетронутым.
+const VSC_PROFHIST_FILE = path.join(__dirname, ".vscProfitHistory.json");
+let _profHist = null;
+app.get("/admin/api/vsc/profit-history", requireAdmin, (req, res) => {
+  if (!_profHist) { try { _profHist = JSON.parse(fs.readFileSync(VSC_PROFHIST_FILE, "utf8")); } catch (_) { _profHist = { months: {} }; } }
+  res.json({ success: true, data: _profHist });
+});
+// ═══ КОНЕЦ БЛОКА «Прибыль за всё время» ══════════════════════════════════════
 app.get("/admin/api/vsc/dealcycle", requireVscDashboard, (req, res) => {
   const d = loadDealCycle();
   const dc = dealCycleMonths(d) || {};

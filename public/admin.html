@@ -3901,6 +3901,8 @@
           vscContent.appendChild(vscBarChart({ key: "msk", label: "Выручка МСК", fmt: "money", good: 1 }, crSeries));
           // Прибыль Санкт-Петербурга — оценка (просьба Андрея 11.09.2026).
           if (currentRole() === "admin") vscContent.appendChild(vscSpbProfitBlock());
+          // одна строка блока «Прибыль за всё время» — убрать её, и раздел исчезнет
+          if (currentRole() === "admin") vscContent.appendChild(vscProfitHistoryBlock());
         } else {
           const e = document.createElement("div"); e.className = "vsc-chart";
           e.innerHTML = '<div class="vsc-empty">Выручка по городам считается ночью (05:00 МСК) из amoCRM — данные появятся после первого расчёта.</div>';
@@ -5206,6 +5208,53 @@
         return wrap;
       }
       // ── Блок «Цикл сделки» (Ежемесячный контроль, 4-й сверху; Андрей 06.09) ──
+      // ═══ НАЧАЛО БЛОКА «Прибыль за всё время» (21.09.2026) ══════════════════════
+      // Чтобы убрать раздел целиком: удалить эту функцию и одну строку её вызова
+      // (ищется по «vscProfitHistoryBlock»). Данные статичные, из VSC.xlsx.
+      function vscProfitHistoryBlock() {
+        const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
+        const info = "<b>Что показывает</b><br>Прибыль компании за всё время работы: с апреля 2016 по август 2026.<br><br><b>Откуда цифры</b><br>Разобраны из книги VSC.xlsx — из строки итога внизу каждого помесячного листа (выручка месяца минус расход месяца, ровно то число, что в листе и записано). Это история: новые месяцы сюда сами не добавляются, свежая прибыль живёт в дашборде и в прогнозе.<br><br><b>Детали</b><br>• 2016 год неполный — первый лист книги начинается с апреля.<br>• 2026 год показан по август включительно, сентябрь ещё не закрыт.<br>• Год — сумма своих месяцев, поэтому 2016 и 2026 с остальными впрямую не сравнить.";
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Прибыль за всё время — по годам и месяцам"; h.appendChild(vscInfo(info));
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем…</div>';
+        wrap.appendChild(box);
+        apiFetch("/admin/api/vsc/profit-history").then(function (j) {
+          const ms = (j && j.months) || {};
+          const keys = Object.keys(ms).sort();
+          if (!keys.length) { box.innerHTML = '<div class="vsc-empty">Данных нет.</div>'; return; }
+          const years = [];
+          keys.forEach(function (k) { const y = k.slice(0, 4); if (years.indexOf(y) < 0) years.push(y); });
+          const sumY = function (y) { return keys.filter(function (k) { return k.slice(0, 4) === y; }).reduce(function (a, k) { return a + ms[k]; }, 0); };
+          box.innerHTML = "";
+          box.appendChild(vscDivergingBars("Прибыль по годам", years.map(function (y) { return { x: y, v: sumY(y) }; }), "money", false));
+          const money = function (v) { return (v < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ru-RU"); };
+          const MON = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
+          const TH = 'style="padding:6px 7px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;font-size:11.5px;"';
+          const TD = 'style="padding:5px 7px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;font-size:11.5px;"';
+          let html = '<div style="overflow-x:auto;margin-top:14px;"><table style="width:100%;min-width:900px;border-collapse:collapse;">'
+            + '<tr><th ' + TH.replace("right", "left") + '>Год</th>'
+            + MON.map(function (m) { return '<th ' + TH + '>' + m + '</th>'; }).join("")
+            + '<th ' + TH + '>Итог года</th></tr>';
+          years.slice().reverse().forEach(function (y) {
+            html += '<tr><td ' + TD.replace("right", "left") + '><b>' + y + '</b></td>';
+            for (let mi = 0; mi < 12; mi++) {
+              const v = ms[y + "-" + (mi < 9 ? "0" : "") + (mi + 1)];
+              html += '<td ' + TD + '>' + (v == null ? '<span style="color:#c8cdd8;">—</span>'
+                : '<span style="color:' + (v < 0 ? "#a12b3c" : "#2c7a43") + ';">' + money(v) + '</span>') + '</td>';
+            }
+            const ty = sumY(y);
+            html += '<td ' + TD + '><b style="color:' + (ty < 0 ? "#a12b3c" : "#2c7a43") + ';">' + money(ty) + '</b></td></tr>';
+          });
+          const all = keys.reduce(function (a, k) { return a + ms[k]; }, 0);
+          html += '</table></div><div style="font-size:11.5px;color:#9096a3;margin-top:10px;">за всё время: <b style="color:'
+            + (all < 0 ? "#a12b3c" : "#2c7a43") + ';">' + money(all) + ' ₽</b> · месяцев: ' + keys.length
+            + ' (с ' + MON[+keys[0].slice(5) - 1].toLowerCase() + " " + keys[0].slice(0, 4)
+            + " по " + MON[+keys[keys.length - 1].slice(5) - 1].toLowerCase() + " " + keys[keys.length - 1].slice(0, 4) + ")</div>";
+          box.insertAdjacentHTML("beforeend", html);
+        }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить.</div>'; });
+        return wrap;
+      }
+      // ═══ КОНЕЦ БЛОКА «Прибыль за всё время» ════════════════════════════════════
       function vscDealCycleBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
         const info = "<b>Что показывает</b><br>Средний цикл сделки: от даты <b>создания контакта</b> в amoCRM (первое появление клиента у нас) до даты <b>первой оплаты</b> его сделки (поле «Дата оплаты», те же статусы, по которым считаем выручку).<br><br><b>Как считается месяц</b><br>Каждый месяц — среднее по всем контактам, СОЗДАННЫМ в этом календарном месяце. Оплата может прийти и позже (январский контакт оплатился в феврале — всё равно январь). Свежие месяцы поэтому «живые»: контакты, которые ещё думают, оплатятся и подтянут цифру задним числом при ночном пересчёте.<br><br><b>Детали</b><br>• Оплатой считается сделка с заполненной «Датой оплаты» И заполненным бюджетом; ВОЗВРАТЫ учитываются (оплата и цикл случились — даже если бюджет занулили при возврате).<br>• Доплаты не считаются: сделки в статусе «Доплата» и с «доплата» в названии исключены; в расчёте только контакты с настоящей первой оплатой.<br>• ВНЖ оплачивают частями — вторая и последующие части исключены (как доплата), считается только первая часть.<br>• Если у контакта несколько оплаченных сделок — берётся первая оплата.<br>• Пары «оплата раньше создания контакта» (мусор старых импортов) отбрасываются.<br>• Показываются только завершённые месяцы (текущий появится, когда закончится).<br>• Источник — живая amoCRM самым низким приоритетом, пересчёт раз в сутки в 00:50 МСК.";
