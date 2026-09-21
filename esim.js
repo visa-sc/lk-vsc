@@ -1051,10 +1051,43 @@ function custKey(email, tgChatId) {
 }
 function validKey(k) { return validEmail(k) || /^tg:\d+$/.test(String(k || "")); }
 
+// Один человек — один счёт. Блогер приходит из бота (ключ «tg:чат»), а на сайте
+// покупает по почте: после первой покупки его записи связываем, и дальше обе
+// ведут к одной карточке — та же реферальная ссылка и общий баланс (21.09.2026).
+function resolveKey(all, key) {
+  let k = normEmail(key);
+  for (let i = 0; i < 3; i++) {
+    const rec = all[k];
+    if (rec && rec.aliasOf && all[rec.aliasOf]) k = rec.aliasOf; else break;
+  }
+  return k;
+}
+// Слить карточку телеграма с почтовой: реферальный код оставляем прежний (его уже
+// раздали в сторис), баланс и приглашения переносим, у старой записи ставим alias.
+function mergeCustomers(fromKey, toKey) {
+  fromKey = normEmail(fromKey); toKey = normEmail(toKey);
+  if (!validKey(fromKey) || !validKey(toKey) || fromKey === toKey) return null;
+  const all = loadCustomers();
+  const from = all[fromKey];
+  if (!from || from.aliasOf) return null;
+  if (!all[toKey]) all[toKey] = { email: toKey, refCode: from.refCode, balanceRub: 0, invitedBy: null, ts: Date.now(), ledger: [] };
+  const to = all[toKey];
+  if (hasOrders(toKey) && to.refCode && to.refCode !== from.refCode) return null;   // у почты своя история — не трогаем
+  to.refCode = from.refCode;
+  to.balanceRub = Math.max(0, Math.round((to.balanceRub || 0) + (from.balanceRub || 0)));
+  to.ledger = (from.ledger || []).concat(to.ledger || []).slice(0, 100);
+  to.invitedBy = to.invitedBy || from.invitedBy || null;
+  to.usedPromos = (to.usedPromos || []).concat(from.usedPromos || []).slice(-50);
+  all[fromKey] = { email: fromKey, aliasOf: toKey, ts: from.ts || Date.now() };
+  saveCustomers(all);
+  console.log("esim: карточки объединены", fromKey, "→", toKey, "код", to.refCode);
+  return to;
+}
 function getCustomer(email, create) {
   email = normEmail(email);
   if (!validKey(email)) return null;
   const all = loadCustomers();
+  email = resolveKey(all, email);
   if (!all[email]) {
     if (!create) return null;
     all[email] = { email, refCode: makeRefCode(email, all), balanceRub: 0, invitedBy: null, ts: Date.now(), ledger: [] };
@@ -1065,6 +1098,7 @@ function getCustomer(email, create) {
 function updateCustomer(email, fn) {
   email = normEmail(email);
   const all = loadCustomers();
+  email = resolveKey(all, email);
   if (!all[email]) all[email] = { email, refCode: makeRefCode(email, all), balanceRub: 0, invitedBy: null, ts: Date.now(), ledger: [] };
   fn(all[email]);
   saveCustomers(all);
@@ -1079,7 +1113,7 @@ function addBalance(email, rub, note) {
 function customerByRef(code) {
   code = String(code || "").trim().toUpperCase();
   if (!code) return null;
-  return Object.values(loadCustomers()).find((c) => c.refCode === code) || null;
+  return Object.values(loadCustomers()).find((c) => c.refCode === code && !c.aliasOf) || null;
 }
 function hasOrders(key) {
   key = normEmail(key);
@@ -1947,6 +1981,10 @@ function mount(app, opts) {
       saveLocal(orders);
       // Код блогера: платить нечего — сразу выдаём eSIM и ведём на страницу «оплачено»
       if (calc.free && priceRub === 0) {
+        // блогер пришёл из бота, а покупает по почте — связываем карточки,
+        // чтобы реферальная ссылка и баланс были общими
+        const brec = blog.find(calc.promoCode);
+        if (brec && brec.chatId && validEmail(email)) { try { mergeCustomers("tg:" + brec.chatId, email); } catch (e) { console.error("esim merge:", e.message); } }
         blog.markUse(calc.promoCode, who, id);
         fulfil(id).catch((e) => console.error("esim blog fulfil:", e.message));
         return res.json({ success: true, free: true,
