@@ -3931,7 +3931,7 @@ function sendOrQueueDirectorMail(m) {
     return "sent";
   }
   const q = loadNotifyQueue();
-  q.push({ id: "q" + Date.now() + Math.floor(Math.random() * 1000), ts: Date.now(), to: m.to, subject: m.subject, html: m.html });
+  q.push({ id: "q" + Date.now() + Math.floor(Math.random() * 1000), ts: Date.now(), to: m.to, subject: m.subject, html: m.html, noBanner: !!m.noBanner });
   saveNotifyQueue(q);
   console.log("MAIL director: вне окна (пт15:00–пн08:00 МСК) — отложено в очередь (в очереди " + q.length + ")");
   return "queued";
@@ -3948,7 +3948,10 @@ async function flushDirectorMailQueue() {
   const remaining = [];
   for (const m of q) {
     try {
-      const banner = '<div style="background:#fff7e6;border:1px solid #ffe0a3;border-radius:8px;padding:10px 14px;margin:0 0 14px;font-size:13px;color:#8a6d3b;">' +
+      // Письмо может попросить обойтись без плашки (noBanner) — так ходит сторож
+      // баланса Claude API: там время события роли не играет, а плашка мешает.
+      const banner = m.noBanner ? "" :
+        '<div style="background:#fff7e6;border:1px solid #ffe0a3;border-radius:8px;padding:10px 14px;margin:0 0 14px;font-size:13px;color:#8a6d3b;">' +
         'Уведомление поступило в нерабочие часы (пт 15:00 – пн 08:00 МСК) и доставлено с началом рабочего окна. Время события: ' + fmtMsk(m.ts) + ' МСК.</div>';
       const r = await mail.sendMail({ to: m.to, subject: m.subject, html: banner + (m.html || "") });
       if (!r.ok) { console.error("MAIL flush:", r.error); remaining.push(m); }

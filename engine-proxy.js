@@ -194,6 +194,11 @@ function mountEarly(app, deps) {
         d2.svc = d2.svc || {};
         const sv = d2.svc[svc] || (d2.svc[svc] = { usd: 0, calls: 0 });
         sv.usd += usd; sv.calls++;
+        // Какая модель реально работала. Нужно письму о балансе: модели задаются
+        // переменными окружения и меняются, по коду их не угадать.
+        const mid = String(model || FORCED);
+        sv.models = sv.models || {};
+        sv.models[mid] = (sv.models[mid] || 0) + 1;
         // чистим журнал старше 90 дней
         for (const k of Object.keys(b2.days)) if (k < new Date(Date.now() - 90 * 86400e3).toISOString().slice(0, 10)) delete b2.days[k];
         if (d2.usd >= DAILY_USD * 0.8 && !b2.alerts[day + ":80"]) {
