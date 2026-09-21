@@ -2240,6 +2240,10 @@ app.post("/admin/api/vsc/marketing-plan", requireMktPlan, (req, res) => {
   // из данных, а не только дефолтом в коде страницы (Андрей 21.09.2026).
   _mktPlan = { channels: d.channels.map(String).slice(0, 200), tasks: d.tasks.slice(0, 5000) };
   if (Array.isArray(d.paused)) _mktPlan.paused = d.paused.map(String).slice(0, 200);
+  // В бэклоге у задач статусов быть не должно (правило Андрея 21.09.2026): статус
+  // появляется только когда задачу закрывают, а закрытие уводит её в «Сделано».
+  // Чистим на сервере, иначе старая открытая вкладка возвращает статусы обратно.
+  _mktPlan.tasks.forEach((t) => { if (t && t.section === "backlog" && t.status) delete t.status; });
   try { fs.writeFileSync(VSC_MKTPLAN_FILE, JSON.stringify(_mktPlan, null, 2), "utf8"); } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
   return res.json({ success: true });
 });

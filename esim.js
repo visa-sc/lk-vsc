@@ -648,18 +648,40 @@ function eaMode() { return String(process.env.ESIM_EA || "0"); }
 function eaOn() { return Boolean(process.env.ESIMACCESS_ACCESS_CODE) && eaMode() !== "0"; }
 function eaAdmOnly() { return eaMode() === "adm"; }
 function isEaId(id) { return /^(ea_|EA-)/.test(String(id || "")); }
+// Список пакетов у них большой (восемь тысяч позиций), и соединение иногда рвётся
+// на полпути: «stream has been aborted». Это сетевой сбой, а не отказ сервиса, и
+// повтор его снимает. Повторяем ТОЛЬКО сетевые обрывы и таймауты; отказ с их
+// кодом ошибки (нет денег, неверный пакет) возвращаем сразу — его повтор не лечит.
+const EA_NET_RETRY = 3;
+function eaIsNetworkFail(e) {
+  if (!e) return false;
+  if (e.response) return e.response.status >= 500;            // их сервер прилёг
+  const m = String(e.message || "").toLowerCase();
+  return /aborted|timeout|socket|econnreset|econnrefused|enotfound|network|stream/.test(m);
+}
 async function eaCall(p, body) {
-  const r = await axios.post(EA_BASE + p, body || {}, {
-    headers: { "RT-AccessCode": process.env.ESIMACCESS_ACCESS_CODE, "Content-Type": "application/json" },
-    timeout: 60000,
-  });
-  const d = r.data || {};
-  if (!d.success) {
-    const e = new Error("eSIM Access " + p.split("/").pop() + ": " + (d.errorMsg || d.errorCode || "ошибка"));
-    e.eaCode = d.errorCode;
-    throw e;
+  let last;
+  for (let attempt = 1; attempt <= EA_NET_RETRY; attempt++) {
+    try {
+      const r = await axios.post(EA_BASE + p, body || {}, {
+        headers: { "RT-AccessCode": process.env.ESIMACCESS_ACCESS_CODE, "Content-Type": "application/json" },
+        timeout: 120000,
+      });
+      const d = r.data || {};
+      if (!d.success) {
+        const e = new Error("eSIM Access " + p.split("/").pop() + ": " + (d.errorMsg || d.errorCode || "ошибка"));
+        e.eaCode = d.errorCode;
+        throw e;
+      }
+      if (attempt > 1) console.log("eSIM Access " + p.split("/").pop() + ": получилось с " + attempt + "-й попытки");
+      return d.obj;
+    } catch (e) {
+      last = e;
+      if (!eaIsNetworkFail(e) || attempt === EA_NET_RETRY) break;
+      await new Promise((r) => setTimeout(r, attempt * 2000));
+    }
   }
-  return d.obj;
+  throw last;
 }
 function eaItemRaw(p) {
   const loc = String(p.location || "").split(",").map((x) => x.trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c));

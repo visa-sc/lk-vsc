@@ -93,9 +93,12 @@ function callHeaders(extra) {
 }
 // Последняя ошибка связи — по ней сторож ставит диагноз в письме
 let _lastErr = null;
+// timeoutMs — для длинного опроса: getUpdates держит соединение 25 секунд, и
+// при HTTP-таймауте 30 секунд зазора почти нет. Через ретранслятор ответ иногда
+// не успевал, и нормальный опрос выглядел обрывом связи (21.09.2026).
 async function tg(method, payload, opts) {
   try {
-    const r = await axios.post(callUrl(method), payload, { timeout: 30000, headers: callHeaders() });
+    const r = await axios.post(callUrl(method), payload, { timeout: (opts && opts.timeoutMs) || 30000, headers: callHeaders() });
     return r.data && r.data.result;
   } catch (e) {
     const d = e.response && e.response.data;
@@ -1187,7 +1190,7 @@ async function pollLoop() {
     try {
       const ups = await tg("getUpdates", {
         offset, timeout: 25, allowed_updates: ["message", "callback_query"],
-      }, { quiet: true });
+      }, { quiet: true, timeoutMs: 45000 });   // 25 с ожидания + запас на дорогу
       if (gen !== _pollGen) return;
       if (Array.isArray(ups)) {
         failStreak = 0;
