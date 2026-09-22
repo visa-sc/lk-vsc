@@ -34,6 +34,11 @@ const HOSTS_SELF = ["spb.visa-sc.ru"]; // что считаем «своим» �
 // (например crm.voyotravel.ru/spb_copy), достаточно SPBCOPY_PREFIX=/spb_copy.
 const PREFIX = process.env.SPBCOPY_PREFIX || "";
 const COPY_HOST = process.env.SPBCOPY_HOST || "spb.voyotravel.ru";
+// Вместо жёсткого домена в canonical, og:*, robots.txt и sitemap.xml кладём
+// метку — сервис подставит тот домен, по которому пришёл запрос. Это и есть
+// страховка от «переехали с тестового домена вместе с его robots и noindex».
+const ORIGIN_TOKEN = "__SPBCOPY_ORIGIN__";
+const ROBOTS_SLOT = "<!--SPBCOPY_ROBOTS-->";
 const OUT = process.env.SPBCOPY_OUT || path.join(__dirname, "..", ".spbcopy");
 const RAW = path.join(OUT, "raw");
 const SITE = path.join(OUT, "site");
@@ -509,11 +514,22 @@ function rewriteHtml(html, relPath) {
     return `<script${attrs}>${rewriteJsText(body)}</script>`;
   });
 
-  // 5) шим первым делом + запрет индексации (копия не должна лезть в поиск)
+  // 5) SEO-адреса держим АБСОЛЮТНЫМИ, но без жёстко вшитого домена: подставит
+  //    сервер по имени хоста. Так при переезде на spb.visa-sc.ru canonical,
+  //    og:url и og:image станут боевыми сами, без правки файлов.
   html = html.replace(
-    /<head>/i,
-    `<head><meta name="robots" content="noindex, nofollow">${SHIM}`
+    /(<link[^>]*rel=["']canonical["'][^>]*href=["'])(\/[^"']*)(["'])/gi,
+    (m, a, p, b) => `${a}${ORIGIN_TOKEN}${p}${b}`
   );
+  html = html.replace(
+    /(<meta[^>]*(?:property|name)=["'](?:og:url|og:image|og:image:secure_url|twitter:image|twitter:url)["'][^>]*content=["'])(\/[^"']*)(["'])/gi,
+    (m, a, p, b) => `${a}${ORIGIN_TOKEN}${p}${b}`
+  );
+
+  // 6) шим первым делом + место под запрет индексации. Сам запрет НЕ вшиваем в
+  //    файл: его подставляет сервер и только на нашем тестовом домене. Иначе
+  //    при переносе сайта noindex уехал бы в бой и убил выдачу.
+  html = html.replace(/<head>/i, `<head>${ROBOTS_SLOT}${SHIM}`);
   return html;
 }
 
@@ -553,10 +569,10 @@ function cmdBuild() {
       fs.writeFileSync(dst, rewriteCssText(fs.readFileSync(src, "utf8")));
       other++;
     } else if (ext === ".xml" || ext === ".txt") {
-      // robots.txt и sitemap.xml переводим на домен копии
+      // robots.txt и sitemap.xml: домен подставит сервис по имени хоста
       const txt = fs
         .readFileSync(src, "utf8")
-        .replace(/https?:\/\/spb\.visa-sc\.ru/gi, `https://${COPY_HOST}`);
+        .replace(/https?:\/\/spb\.visa-sc\.ru/gi, ORIGIN_TOKEN);
       fs.writeFileSync(dst, txt);
       other++;
     } else {

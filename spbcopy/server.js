@@ -38,6 +38,33 @@ const LEADS = process.env.SPBCOPY_LEADS || path.join(ROOT, "..", "leads.json");
 // понимаем — на случай, если копию попросят положить в подкаталог другого домена.
 const PREFIX = process.env.SPBCOPY_PREFIX || "";
 const ALT_PREFIX = "/spb_copy";
+
+// ── ПЕРЕЕЗД И SEO ────────────────────────────────────────────────────────────
+// Пока копия живёт на тестовом домене, она закрыта от индексации: иначе
+// конкурировала бы с живым сайтом. Самый частый провал при переносе сайта —
+// уехать в бой вместе с тестовым robots.txt и noindex. Чтобы это было
+// невозможно, домен нигде не вшит: сервис смотрит на имя хоста запроса.
+//   • боевое имя (spb.visa-sc.ru) → ведём себя ровно как оригинал:
+//     robots.txt как у него, никакого noindex, canonical и og на боевой домен;
+//     • любое другое (spb.voyotravel.ru и прочие) → noindex и Disallow.
+// Список боевых имён при желании расширяется переменной SPBCOPY_LIVE_HOSTS.
+const LIVE_HOSTS = (process.env.SPBCOPY_LIVE_HOSTS || "spb.visa-sc.ru,www.spb.visa-sc.ru")
+  .split(",")
+  .map((h) => h.trim().toLowerCase())
+  .filter(Boolean);
+const ORIGIN_TOKEN = "__SPBCOPY_ORIGIN__";
+const ROBOTS_SLOT = "<!--SPBCOPY_ROBOTS-->";
+const NOINDEX_META = '<meta name="robots" content="noindex, nofollow">';
+
+function hostOf(req) {
+  const raw = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0];
+  return raw.trim().toLowerCase().replace(/:\d+$/, "");
+}
+const isLiveHost = (req) => LIVE_HOSTS.includes(hostOf(req));
+const originOf = (req) => {
+  const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
+  return `${proto}://${hostOf(req) || "localhost"}`;
+};
 const MAX_LEADS = 5000;
 
 let sharp = null;
@@ -90,9 +117,10 @@ function safeJoin(rel) {
 function send(req, res, status, body, type, extra = {}) {
   const headers = {
     "Content-Type": type,
-    "X-Robots-Tag": "noindex, nofollow",
     ...extra
   };
+  // Запрет индексации — только пока копия не на боевом имени.
+  if (!isLiveHost(req)) headers["X-Robots-Tag"] = "noindex, nofollow";
   const ext = path.extname(String(extra.__ext || "")).toLowerCase();
   const wantGzip =
     COMPRESSIBLE.has(ext) && /\bgzip\b/.test(req.headers["accept-encoding"] || "") && body.length > 1024;
@@ -111,8 +139,18 @@ function send(req, res, status, body, type, extra = {}) {
 
 function sendFile(req, res, file, status = 200) {
   const ext = path.extname(file).toLowerCase();
-  const body = fs.readFileSync(file);
+  let body = fs.readFileSync(file);
   const cache = ext === ".html" ? "no-cache" : "public, max-age=604800";
+
+  // В html, sitemap.xml и robots.txt подставляем домен текущего запроса и
+  // решаем, ставить ли запрет индексации.
+  if (ext === ".html" || ext === ".xml" || ext === ".txt") {
+    let text = body.toString("utf8");
+    if (text.includes(ORIGIN_TOKEN)) text = text.split(ORIGIN_TOKEN).join(originOf(req));
+    if (ext === ".html") text = text.replace(ROBOTS_SLOT, isLiveHost(req) ? "" : NOINDEX_META);
+    body = Buffer.from(text, "utf8");
+  }
+
   send(req, res, status, body, MIME[ext] || "application/octet-stream", {
     "Cache-Control": cache,
     __ext: ext
@@ -261,6 +299,20 @@ async function handle(req, res) {
 
   if (req.method !== "GET" && req.method !== "HEAD") {
     return sendJson(req, res, { error: "method not allowed" }, 405);
+  }
+
+  // robots.txt: на боевом имени отдаём в точности как оригинал (только строка
+  // Sitemap), на тестовом — закрываем сайт целиком, чтобы копия не попала в
+  // поиск. Файл на диске для боевого случая лежит рядом, домен подставляется.
+  if (rel === "/robots.txt" && !isLiveHost(req)) {
+    const body = Buffer.from(
+      `User-agent: *\nDisallow: /\n\n# Это тестовая копия сайта spb.visa-sc.ru.\n# На боевом домене отдаётся обычный robots.txt оригинала.\n`,
+      "utf8"
+    );
+    return send(req, res, 200, body, "text/plain; charset=utf-8", {
+      "Cache-Control": "no-cache",
+      __ext: ".txt"
+    });
   }
 
   if (rel.startsWith("/img/")) {
