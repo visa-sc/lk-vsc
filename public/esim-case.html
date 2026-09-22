@@ -65,6 +65,19 @@
     <div class="meta" id="meta"></div>
   </div>
 
+  <div class="card" id="noneCard" style="display:none">
+    <h2>Покупок на этот контакт мы не нашли</h2>
+    <p class="lead" style="margin:0 0 10px">По телефону и почте из обращения eSIM, купленных у нас, нет.</p>
+    <ol style="margin:0">
+      <li>Если покупали у нас <b>на другой номер или почту</b> — напишите в чат, найдём заказ и пришлём QR заново.</li>
+      <li>Если eSIM куплена <b>в другом месте</b>, профиль выпускает тот продавец: заменить его QR мы не можем, но шаги ниже помогают почти всегда.</li>
+    </ol>
+    <div class="btns">
+      <a class="btn ghost" href="/esim">Посмотреть наши пакеты</a>
+      <button class="btn ghost" type="button" data-vsup="chat">Написать в чат</button>
+    </div>
+  </div>
+
   <div class="card" id="esimCard" style="display:none">
     <h2>Ваши eSIM у нас</h2>
     <div id="esims"></div>
@@ -125,6 +138,7 @@
     var fix = FIXES[j.fix] || FIXES.generic;
     document.getElementById("fixTitle").textContent = fix.title;
     document.getElementById("steps").innerHTML = fix.steps.map(function(s){ return "<li>" + s + "</li>"; }).join("");
+    if(!j.esims || !j.esims.length) document.getElementById("noneCard").style.display = "";
     if(j.esims && j.esims.length){
       document.getElementById("esimCard").style.display = "";
       document.getElementById("esims").innerHTML = j.esims.map(function(e){
