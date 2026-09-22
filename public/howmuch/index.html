@@ -1,0 +1,1870 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Хау мач? — цены в рублях по фото</title>
+<meta name="description" content="Хау мач? — цены в рублях по фото. Наводите камеру на ценник за границей: 15 валют, свой курс обмена, работает без интернета.">
+<meta name="theme-color" content="#F2F3F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Хау мач?">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+  /* Шрифт названия лежит рядом, а не на Google Fonts: у приложения не должно
+     быть внешних запросов — в Китае шрифты Google заблокированы. Два файла,
+     потому что кириллица и латиница нарезаны по отдельности: браузер тянет
+     только тот кусок, который реально понадобился. */
+  @font-face{
+    font-family:"PT Sans Caption";
+    src:url("fonts/pt-sans-caption-700-cyr.woff2") format("woff2");
+    font-weight:700; font-style:normal; font-display:swap;
+    unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+  }
+  @font-face{
+    font-family:"PT Sans Caption";
+    src:url("fonts/pt-sans-caption-700-lat.woff2") format("woff2");
+    font-weight:700; font-style:normal; font-display:swap;
+    unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122;
+  }
+  :root{
+    --bg:#F2F3F7;
+    --card:#FFFFFF;
+    --card-2:#F6F7FA;
+    --label:#0B0E12;
+    --label-2:#5C6673;
+    --label-3:#8D96A3;
+    --sep:rgba(60,70,85,.13);
+    --tint:#1877F2;
+    --tint-ink:#0B5FD0;
+    --tint-soft:#E7F0FE;
+    --on-tint:#FFFFFF;
+    --good:#1B9E6A;
+    --warn:#B4681A;
+    --key:#FFFFFF;
+    --key-2:#E6E9EF;
+    --ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    color-scheme:light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#000000;
+      --card:#13171B;
+      --card-2:#1B2026;
+      --label:#F3F6F8;
+      --label-2:#A2ACB8;
+      --label-3:#6E7885;
+      --sep:rgba(255,255,255,.11);
+      --tint:#4A9AFF;
+      --tint-ink:#82B8FF;
+      --tint-soft:#101F38;
+      --on-tint:#041530;
+      --good:#37D18C;
+      --warn:#E3A34B;
+      --key:#1C2126;
+      --key-2:#2A3138;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#000000; --card:#13171B; --card-2:#1B2026;
+    --label:#F3F6F8; --label-2:#A2ACB8; --label-3:#6E7885;
+    --sep:rgba(255,255,255,.11);
+    --tint:#4A9AFF; --tint-ink:#82B8FF; --tint-soft:#101F38; --on-tint:#041530;
+    --good:#37D18C; --warn:#E3A34B; --key:#1C2126; --key-2:#2A3138;
+    color-scheme:dark;
+  }
+
+  *{box-sizing:border-box}
+  html{touch-action:manipulation;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);background:var(--bg)}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--label);
+    font-family:var(--ui);font-size:16px;line-height:1.45;
+    -webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;
+    font-variant-numeric:tabular-nums;
+  }
+  img{max-width:100%}
+  [hidden]{display:none!important}
+  button{font-family:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+  :focus-visible{outline:2.5px solid var(--tint);outline-offset:2px;border-radius:8px}
+
+  .wrap{max-width:480px;margin:0 auto;padding-inline:16px;padding-block:0 44px;display:flex;flex-direction:column;gap:22px}
+
+  /* заголовок */
+  .nav{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-block:14px 2px}
+  .brandbox{min-width:0}
+  .titlerow{display:flex;align-items:center;gap:9px;min-width:0}
+  .applogo{width:30px;height:30px;border-radius:8px;flex:none;display:block}
+  .nav h1{margin:0;font-family:"PT Sans Caption",var(--ui);font-size:clamp(24px,7vw,29px);font-weight:700;letter-spacing:-.005em;line-height:1.1;white-space:nowrap}
+  .info{
+    position:relative;
+    width:23px;height:23px;border-radius:50%;flex:none;
+    background:transparent;color:var(--label-3);
+    box-shadow:inset 0 0 0 1.5px var(--sep);
+    font-size:13px;font-weight:700;font-style:normal;
+    display:flex;align-items:center;justify-content:center;line-height:1;
+  }
+  /* палец крупнее кружка: расширяем область нажатия, не трогая вид */
+  .info::after{content:"";position:absolute;top:-11px;right:-11px;bottom:-11px;left:-11px}
+  .info:active{opacity:.55}
+  .tag{margin:4px 0 0;font-size:14px;font-weight:500;color:var(--label-2);letter-spacing:-.005em}
+
+  /* окно справки */
+  .sheet{position:fixed;inset:0;z-index:200;display:flex;align-items:flex-end;justify-content:center}
+  .scrim{position:absolute;inset:0;background:rgba(6,10,16,.45)}
+  .sheetcard{
+    position:relative;width:100%;max-width:480px;background:var(--card);
+    border-radius:22px 22px 0 0;padding:10px 20px calc(26px + env(safe-area-inset-bottom,0px));
+    max-height:88vh;overflow:auto;-webkit-overflow-scrolling:touch;
+  }
+  @media (min-width:540px){
+    .sheet{align-items:center}
+    .sheetcard{border-radius:22px;max-height:82vh;padding-bottom:26px}
+  }
+  .grab{width:38px;height:5px;border-radius:3px;background:var(--sep);margin:0 auto 16px}
+
+  /* тур */
+  .tourcard{text-align:center}
+  .tourpic{
+    background:var(--card-2);border-radius:16px;overflow:hidden;
+    margin:0 0 18px;aspect-ratio:16/10;display:flex;align-items:center;justify-content:center;
+  }
+  .tourpic svg{width:100%;height:100%;display:block}
+  .tourcard h2{margin:0 0 6px;text-align:center}
+  .tourtext{margin:0;font-size:15px;line-height:1.5;color:var(--label-2);min-height:88px;text-align:left}
+  .tourdots{display:flex;justify-content:center;gap:7px;margin:16px 0 14px}
+  .tourdots b{width:7px;height:7px;border-radius:50%;background:var(--sep);display:block;transition:background .2s}
+  .tourdots b.on{background:var(--tint)}
+  .tournav{display:flex;gap:9px;align-items:stretch}
+  .tournav .chip{flex:none;padding-inline:18px}
+  .tournav .okbtn{flex:1;margin:0}
+  .tourskip{display:block;margin:12px auto 0;font-size:14px;color:var(--label-3)}
+  .tourskip:active{opacity:.6}
+  .sheetcard h2{margin:0 0 2px;font-family:"PT Sans Caption",var(--ui);font-size:23px;font-weight:700;letter-spacing:-.005em;text-transform:none;color:var(--label)}
+  .okbtn{
+    margin-top:22px;width:100%;background:var(--tint);color:var(--on-tint);
+    border-radius:14px;padding:14px;font-size:16px;font-weight:600;
+  }
+  .ratepill{
+    display:inline-flex;align-items:center;gap:6px;
+    background:var(--tint-soft);color:var(--tint-ink);
+    border-radius:999px;padding:6px 12px;
+    font-size:13px;font-weight:600;white-space:nowrap;margin-top:6px;flex:none;
+  }
+  .ratepill .rl{opacity:.72;font-weight:500}
+  .ratepill .dot{width:6px;height:6px;border-radius:50%;background:var(--good)}
+  .ratepill.offline .dot{background:var(--label-3)}
+  .ratepill.custom .dot{background:var(--warn)}
+
+  /* выбор валюты */
+  .curbar{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin-inline:-16px;padding-inline:16px;padding-block:2px 4px}
+  .curbar::-webkit-scrollbar{display:none}
+  .cur{
+    flex:none;background:var(--card);border-radius:999px;
+    padding:8px 14px;font-size:14px;font-weight:600;color:var(--label-2);
+    display:flex;align-items:center;gap:7px;white-space:nowrap;
+    transition:background .15s ease,color .15s ease;
+  }
+  .cur .s{font-weight:700;color:var(--label-3)}
+  .cur[aria-pressed="true"]{background:var(--tint);color:var(--on-tint)}
+  .cur[aria-pressed="true"] .s{color:var(--on-tint);opacity:.72}
+
+  /* карточка конвертера */
+  .card{background:var(--card);border-radius:18px;overflow:hidden}
+  .conv{position:relative}
+  .side{padding:16px 18px 18px;display:flex;flex-direction:column;gap:3px}
+  .side + .side{border-top:1px solid var(--sep)}
+  .side .cap{font-size:13px;font-weight:500;color:var(--label-2);display:flex;align-items:center;gap:6px}
+  .side .cap b{font-weight:600;color:var(--label)}
+  .amount{display:flex;align-items:baseline;gap:8px;min-width:0}
+  .amount .v{
+    flex:1;min-width:0;width:100%;
+    font-size:clamp(34px,10.5vw,44px);font-weight:600;letter-spacing:-.03em;
+    line-height:1.15;color:var(--label);
+    border:0;background:transparent;padding:0;margin:0;
+    appearance:none;-webkit-appearance:none;
+    font-variant-numeric:tabular-nums;font-family:inherit;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    caret-color:var(--tint);
+  }
+  .amount .v:focus{outline:none}
+  .amount .v::selection{background:var(--tint);color:var(--on-tint)}
+  .amount .sym{font-size:20px;font-weight:600;color:var(--label-3);flex:none}
+  .swapbtn{
+    position:absolute;right:16px;top:50%;transform:translateY(-50%);
+    width:40px;height:40px;border-radius:50%;
+    background:var(--tint);color:var(--on-tint);
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 2px 10px -2px rgba(24,119,242,.45);
+    z-index:2;
+  }
+  .swapbtn:active{transform:translateY(-50%) scale(.92)}
+
+  /* кнопки */
+  .actions{display:flex;gap:10px}
+  .btn{
+    flex:1;background:var(--card);border-radius:14px;padding:14px 16px;
+    font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;
+  }
+  .btn.filled{background:var(--tint);color:var(--on-tint)}
+  .btn.grow{flex:2}
+  .btn:active{opacity:.75}
+
+  .note{
+    background:var(--card);border-radius:14px;padding:13px 16px;
+    font-size:14px;color:var(--label-2);display:flex;flex-direction:column;gap:9px;
+  }
+  .note .h{font-weight:600;color:var(--label);font-size:15px}
+  .note.bad .h{color:var(--warn)}
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{
+    background:var(--card-2);border-radius:999px;padding:7px 13px;
+    font-size:14px;font-weight:600;color:var(--label);
+  }
+  .chip.go{background:var(--tint);color:var(--on-tint)}
+  .chip.out{background:transparent;box-shadow:inset 0 0 0 1.5px var(--sep);color:var(--label-2)}
+
+  /* клавиатура */
+
+  /* списки */
+  .group{display:flex;flex-direction:column;gap:8px}
+  .group > h2{
+    margin:0 0 -2px 16px;font-size:13px;font-weight:600;
+    text-transform:uppercase;letter-spacing:.05em;color:var(--label-3);
+  }
+  .list{background:var(--card);border-radius:14px;overflow:hidden}
+  .row{
+    display:flex;align-items:center;gap:12px;
+    padding:12px 16px;width:100%;text-align:left;font-size:16px;
+  }
+  .row + .row{box-shadow:inset 0 1px 0 var(--sep)}
+  .row .grow{flex:1;min-width:0}
+  .row .sub{display:block;font-size:13px;color:var(--label-3);font-weight:400}
+  .row .val{color:var(--label-2);font-weight:500;white-space:nowrap}
+  .row .val b{color:var(--label);font-weight:600}
+  .sw{width:26px;height:17px;border-radius:4px;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.16)}
+
+  .field{display:flex;align-items:center;gap:12px;padding:11px 16px}
+  .field label{font-size:15px;color:var(--label-2);flex:none;min-width:132px}
+  .field input{
+    flex:1;min-width:0;font-family:inherit;font-size:17px;font-weight:600;
+    border:0;background:transparent;color:var(--label);text-align:right;padding:4px 0;
+    font-variant-numeric:tabular-nums;
+  }
+  .field input:focus{outline:none}
+  .field + .field{box-shadow:inset 0 1px 0 var(--sep)}
+  .hint{margin:0;font-size:13px;line-height:1.45;color:var(--label-3);padding-inline:16px}
+  .hint-top{margin:2px 0 6px}
+
+  /* курс: свёрнутая карточка */
+  .ratenow{
+    display:flex;align-items:center;gap:12px;
+    background:var(--card);border-radius:14px;padding:12px 14px 12px 16px;
+  }
+  .rn-l{min-width:0;flex:1}
+  .rn-k{font-size:13px;color:var(--label-3);display:flex;align-items:center;gap:6px}
+  .rn-k i{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none;display:block}
+  .ratenow.custom .rn-k i{background:var(--warn)}
+  .ratenow.offline .rn-k i{background:var(--label-3)}
+  .rn-v{font-size:19px;font-weight:600;letter-spacing:-.01em;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ratenow .chip{flex:none}
+  .saved{animation:savedflash 1.1s ease}
+  @keyframes savedflash{0%{background:var(--tint-soft)}100%{background:var(--card)}}
+
+  footer{font-size:13px;color:var(--label-3);text-align:center;line-height:1.6}
+  .footetym{margin-bottom:6px}
+  footer button{color:var(--tint-ink);font-size:13px;font-weight:500}
+
+  /* камера */
+  .ov{position:fixed;inset:0;z-index:100;background:#05090B;display:flex;flex-direction:column;
+      padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  .stage{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+  .stage video{width:100%;height:100%;object-fit:cover;background:#05090B}
+  .ret{position:absolute;left:7%;right:7%;top:36%;height:20%;
+       border:2.5px solid rgba(255,255,255,.92);border-radius:14px;
+       box-shadow:0 0 0 2000px rgba(5,9,11,.5);pointer-events:none;transition:border-color .2s}
+  .ret.hit{border-color:#4FE0C0}
+  .tip{position:absolute;left:0;right:0;top:calc(36% - 32px);text-align:center;color:#fff;
+       font-size:13px;font-weight:500;text-shadow:0 1px 4px rgba(0,0,0,.7);pointer-events:none;padding-inline:20px}
+  .live{position:absolute;left:0;right:0;top:60%;text-align:center;color:#fff;pointer-events:none;
+        padding-inline:16px;text-shadow:0 2px 10px rgba(0,0,0,.85)}
+  .live .a{font-size:19px;font-weight:600;opacity:.92}
+  .live .b{font-size:46px;font-weight:700;letter-spacing:-.03em;line-height:1.1}
+  .live .c{font-size:13px;opacity:.8;margin-top:3px}
+  .modesw{position:absolute;left:0;right:0;top:12px;display:flex;justify-content:center;gap:0;
+          background:none;pointer-events:none}
+  .modesw button{
+    pointer-events:auto;min-width:92px;height:34px;font-size:14px;font-weight:600;color:#fff;
+    background:rgba(10,14,18,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);
+  }
+  .modesw button:first-child{border-radius:17px 0 0 17px}
+  .modesw button:last-child{border-radius:0 17px 17px 0}
+  .modesw button.on{background:#fff;color:#0B0E12;box-shadow:none}
+
+  /* поиск страны */
+  /* Кнопка поиска липнет к левому краю: лента прокручивается к выбранной
+     стране, и без этого кнопка уезжала бы из зоны досягаемости. */
+  .cur.find{
+    padding-inline:11px;flex:none;
+    position:sticky;left:0;z-index:2;
+    box-shadow:0 0 0 5px var(--bg);
+  }
+  .cur.find svg{display:block}
+  .srch{position:relative;margin:0 0 12px}
+  .srch input{
+    width:100%;background:var(--card-2);border:0;border-radius:12px;
+    padding:12px 38px 12px 14px;font:inherit;font-size:16px;color:var(--label);
+    -webkit-appearance:none;appearance:none;
+  }
+  .srch input::-webkit-search-cancel-button{display:none}
+  .srch input:focus{outline:2px solid var(--tint);outline-offset:-2px}
+  .srchx{position:absolute;right:6px;top:6px;width:32px;height:32px;border-radius:50%;
+         color:var(--label-3);font-size:22px;line-height:1}
+  .picklist{max-height:58vh;overflow:auto;-webkit-overflow-scrolling:touch;margin-inline:-4px}
+  .pickrow{
+    display:flex;align-items:center;gap:12px;width:100%;text-align:left;
+    padding:11px 12px;border-radius:12px;
+  }
+  .pickrow:active{background:var(--card-2)}
+  .pickrow.on{background:var(--tint-soft)}
+  .pickrow .sym{
+    width:38px;height:38px;border-radius:50%;flex:none;background:var(--card-2);
+    display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--label-2);
+  }
+  .pickrow.on .sym{background:var(--tint);color:var(--on-tint)}
+  .pickrow .nm{min-width:0;flex:1}
+  .pickrow .nm b{display:block;font-size:16px;font-weight:600;letter-spacing:-.005em}
+  .pickrow .nm span{display:block;font-size:13px;color:var(--label-3);margin-top:1px}
+
+  .split{padding-inline:2px}
+  .splitopen{font-size:14px;font-weight:600;color:var(--tint-ink)}
+  .splitopen:active{opacity:.6}
+  .splitres{margin-top:8px;font-size:15px;color:var(--label-2)}
+  .splitres b{color:var(--label);font-size:19px;font-weight:700}
+
+  .zoom{position:absolute;left:0;right:0;bottom:14px;display:flex;justify-content:center;gap:8px}
+  .zoom button{
+    min-width:46px;height:34px;border-radius:17px;
+    background:rgba(10,14,18,.55);color:#fff;font-size:13px;font-weight:600;
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);
+  }
+  .zoom button.on{background:#fff;color:#0B0E12;box-shadow:none}
+  .bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 22px 20px;background:#05090B}
+  .shut{width:70px;height:70px;border-radius:50%;background:#fff;box-shadow:0 0 0 4px rgba(255,255,255,.28);flex:none}
+  .shut:active{transform:scale(.93)}
+  .shut[disabled]{opacity:.4}
+  .ovb{color:#fff;font-size:16px;padding:10px;min-width:88px;font-weight:500}
+  .ovb.r{text-align:right}
+  .ovmsg{color:#fff;font-size:15px;text-align:center;padding:26px;max-width:340px;line-height:1.5}
+  .dbg{position:absolute;left:10px;right:10px;bottom:8px;color:#6FE3C4;font:11px/1.35 ui-monospace,Menlo,monospace;
+       word-break:break-all;pointer-events:none;text-shadow:0 1px 2px #000}
+
+  @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="nav">
+    <div class="brandbox">
+      <div class="titlerow">
+        <img class="applogo" src="icon-192.png" alt="" width="30" height="30">
+        <h1>Хау&nbsp;мач?</h1>
+        <button class="info" id="infoBtn" type="button" aria-label="О приложении">i</button>
+      </div>
+      <p class="tag">Цены в рублях по фото</p>
+    </div>
+    <button class="ratepill" id="ratePill" type="button"><span class="dot"></span><span class="rl">Курс</span><span id="ratePillText">—</span></button>
+  </div>
+
+  <div class="curbar" id="curbar"></div>
+
+  <div class="card conv">
+    <button class="swapbtn" id="swap" type="button" aria-label="Поменять местами">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v13M7 17l-3-3M7 17l3-3M17 20V7M17 7l-3 3M17 7l3 3"/></svg>
+    </button>
+    <div class="side">
+      <span class="cap" id="capFrom"></span>
+      <div class="amount">
+        <input class="v" id="inAmount" type="text" inputmode="decimal" autocomplete="off"
+               autocorrect="off" spellcheck="false" enterkeyhint="done" aria-label="Сумма">
+        <span class="sym" id="symFrom"></span>
+      </div>
+    </div>
+    <div class="side">
+      <span class="cap" id="capTo"></span>
+      <div class="amount">
+        <span class="v" id="outAmount">0</span>
+        <span class="sym" id="symTo"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="split">
+    <button class="splitopen" id="splitOpen" type="button">Разделить на компанию</button>
+    <div id="splitPanel" hidden>
+      <div class="chips" id="splitChips"></div>
+      <div class="splitres" id="splitRes"></div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn filled grow" id="scanBtn" type="button">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9V6.5A3.5 3.5 0 0 1 6.5 3H9M15 3h2.5A3.5 3.5 0 0 1 21 6.5V9M21 15v2.5a3.5 3.5 0 0 1-3.5 3.5H15M9 21H6.5A3.5 3.5 0 0 1 3 17.5V15"/><circle cx="12" cy="12" r="3.2"/></svg>
+      Навести камеру
+    </button>
+  </div>
+  <!-- разбор снимка из галереи пока не показываем: кнопку убрали, код ниже оставлен -->
+  <input type="file" id="fileIn" accept="image/*" capture="environment" hidden>
+
+  <div class="note" id="scanOut" hidden></div>
+
+  <div class="chips" id="quick"></div>
+
+  <div class="group">
+    <h2>Курс</h2>
+
+    <!-- Свёрнутый вид: видно, по какому курсу считаем прямо сейчас, и кнопку
+         «Изменить». Раньше здесь сразу стояли три пустых поля с подсказками
+         серым — выглядело так, будто значение уже вписано и не меняется. -->
+    <div class="ratenow" id="rateNow">
+      <div class="rn-l">
+        <div class="rn-k" id="rateNowKind">Курс ЦБ</div>
+        <div class="rn-v" id="rateNowVal">—</div>
+      </div>
+      <button class="chip go" id="editRate" type="button">Изменить</button>
+    </div>
+
+    <div id="rateEdit" hidden>
+      <p class="hint hint-top">Впишите курс обменника — считать будем по нему.</p>
+      <div class="list">
+        <div class="field">
+          <label for="rateIn" id="rateInLbl">Единиц за рубль</label>
+          <input id="rateIn" inputmode="decimal" placeholder="—">
+        </div>
+      </div>
+      <p class="hint hint-top">Или не считайте сами — впишите, сколько отдали и сколько получили:</p>
+      <div class="list">
+        <div class="field">
+          <label for="gaveIn">Отдал, ₽</label>
+          <input id="gaveIn" inputmode="numeric" placeholder="10000">
+        </div>
+        <div class="field">
+          <label for="gotIn" id="gotLbl">Получил</label>
+          <input id="gotIn" inputmode="numeric" placeholder="—">
+        </div>
+      </div>
+      <div class="chips">
+        <button class="chip go" id="saveRate" type="button">Сохранить свой курс</button>
+        <button class="chip out" id="cancelRate" type="button">Отмена</button>
+        <button class="chip out" id="dropRate" type="button" hidden>Вернуть курс ЦБ</button>
+      </div>
+    </div>
+
+    <p class="hint" id="rateHint"></p>
+  </div>
+
+  <div class="group" id="notesGroup" hidden>
+    <h2 id="notesTitle">Купюры</h2>
+    <div class="list" id="notesList"></div>
+    <p class="hint" id="notesWarn"></p>
+  </div>
+
+  <div class="group">
+    <h2>История</h2>
+    <div id="histWrap"></div>
+  </div>
+
+  <footer>
+    <div class="footetym">«Хау мач?» — от англ. <i>how much</i>, «почём»</div>
+    <div id="footVer"></div>
+    <div style="margin-top:4px">
+      <button type="button" id="updBtn">проверить обновление</button> ·
+      <button type="button" id="dbgBtn">показать распознанный текст</button>
+    </div>
+  </footer>
+</div>
+
+<div class="sheet" id="pick" hidden>
+  <div class="scrim" id="pickScrim"></div>
+  <div class="sheetcard" role="dialog" aria-modal="true" aria-label="Выбор страны">
+    <div class="grab"></div>
+    <div class="srch">
+      <input id="pickIn" type="search" inputmode="search" autocomplete="off" autocorrect="off"
+             spellcheck="false" enterkeyhint="done" placeholder="Страна, валюта или город">
+      <button class="srchx" id="pickClear" type="button" aria-label="Очистить" hidden>×</button>
+    </div>
+    <div class="picklist" id="pickList"></div>
+    <p class="hint" id="pickNone" hidden>Ничего не нашлось. Попробуйте название страны или валюты.</p>
+  </div>
+</div>
+
+<!-- Тур. Показывается при первом запуске и по кнопке (i).
+     Картинки — встроенный SVG: ни одного внешнего файла, работает офлайн. -->
+<div class="sheet" id="sheet" hidden>
+  <div class="scrim" id="scrim"></div>
+  <div class="sheetcard tourcard" role="dialog" aria-modal="true" aria-label="Как это работает">
+    <div class="grab"></div>
+    <div class="tourpic" id="tourPic"></div>
+    <h2 id="tourTitle"></h2>
+    <p class="tourtext" id="tourText"></p>
+    <div class="tourdots" id="tourDots"></div>
+    <div class="tournav">
+      <button class="chip out" id="tourBack" type="button">Назад</button>
+      <button class="okbtn tnext" id="tourNext" type="button">Далее</button>
+    </div>
+    <button class="tourskip" id="tourSkip" type="button">Пропустить</button>
+  </div>
+</div>
+
+<div class="ov" id="ov" hidden>
+  <div class="stage" id="stage">
+    <video id="video" playsinline muted autoplay></video>
+    <div class="ret" id="ret"></div>
+    <div class="tip" id="tip">Наведите рамку на цену</div>
+    <div class="live" id="live" hidden>
+      <div class="a" id="liveA"></div>
+      <div class="b" id="liveB"></div>
+      <div class="c" id="liveC"></div>
+    </div>
+    <div class="modesw" id="modeSw">
+      <button type="button" id="modeTag" class="on">Ценник</button>
+      <button type="button" id="modeRcpt">Чек</button>
+    </div>
+    <div class="zoom" id="zoomBar" hidden></div>
+    <div class="ovmsg" id="ovMsg" hidden></div>
+    <div class="dbg" id="dbg" hidden></div>
+  </div>
+  <div class="bar">
+    <button class="ovb" id="ovClose" type="button">Закрыть</button>
+    <button class="shut" id="shut" type="button" aria-label="Взять цену"></button>
+    <button class="ovb r" id="ovTorch" type="button" hidden>Фонарь</button>
+  </div>
+</div>
+
+<script src="ocr/tesseract.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+var APP_VERSION = "25";
+var APP_DATE = "21.09.2026";
+var LS = "curr.v1.";
+var WHITELIST = "0123456789., ktrKTRjb";
+
+/* ======================= валюты =======================
+   big  — цены целыми, без копеек (донг, рупия, драм, тенге, сум, динар)
+   menuK— голое двузначное число в меню значит тысячи (35 → 35 000)
+   k/mil— местные сокращения тысяч и миллионов
+   fb   — запасной курс: единиц за рубль, по ЦБ на 19.09.2026            */
+var CUR = [
+  {c:"VND",n:"Вьетнам",u:"донг",   s:"₫",  big:true,  menuK:true, k:["k","ngan","ngàn","nghin","nghìn"], mil:["tr","trieu","triệu"], fb:304.5},
+  {c:"THB",n:"Таиланд",u:"бат",    s:"฿",  big:false, fb:0.3952},
+  {c:"TRY",n:"Турция", u:"лира",   s:"₺",  big:false, fb:0.5776},
+  {c:"CNY",n:"Китай",  u:"юань",   s:"¥",  big:false, fb:0.07957},
+  {c:"AED",n:"ОАЭ",    u:"дирхам", s:"dh", big:false, fb:0.04362},
+  {c:"GEL",n:"Грузия", u:"лари",   s:"₾",  big:false, fb:0.03097},
+  {c:"AMD",n:"Армения",u:"драм",   s:"֏",  big:true,  fb:4.316},
+  {c:"KZT",n:"Казахстан",u:"тенге",s:"₸",  big:true,  fb:5.280},
+  {c:"IDR",n:"Индонезия",u:"рупия",s:"Rp", big:true,  menuK:true, k:["k","rb","ribu"], mil:["jt","juta"], fb:210.9},
+  {c:"UZS",n:"Узбекистан",u:"сум", s:"сўм",big:true,  fb:140.5},
+  {c:"EGP",n:"Египет", u:"фунт",   s:"E£", big:false, fb:0.6193},
+  {c:"RSD",n:"Сербия", u:"динар",  s:"дин",big:true,  fb:1.214},
+  {c:"INR",n:"Индия",  u:"рупия",  s:"₹",  big:false, fb:1.138},
+  {c:"USD",n:"США",    u:"доллар", s:"$",  big:false, fb:0.01188},
+  {c:"EUR",n:"Европа", u:"евро",   s:"€",  big:false, fb:0.01035}
+];
+var BY = {}; CUR.forEach(function(x){ BY[x.c] = x; });
+
+var VND_NOTES = [
+  {v:500000,c:"#5FA79B",n:"полимер, бирюзово-синяя"},
+  {v:200000,c:"#C2603F",n:"полимер, рыже-красная"},
+  {v:100000,c:"#6FA86C",n:"полимер, зелёная"},
+  {v:50000, c:"#D98BA0",n:"полимер, розовая"},
+  {v:20000, c:"#6E9BC4",n:"полимер, голубая"},
+  {v:10000, c:"#C79A55",n:"полимер, жёлто-коричневая"},
+  {v:5000,  c:"#7E7FB0",n:"бумага, сине-фиолетовая"},
+  {v:2000,  c:"#B87C6A",n:"бумага, кирпичная"},
+  {v:1000,  c:"#8FA38C",n:"бумага, серо-зелёная"}
+];
+
+/* ======================= хранилище ======================= */
+function get(k,d){ try{var v=localStorage.getItem(LS+k);return v===null?d:JSON.parse(v);}catch(e){return d;} }
+function set(k,v){ try{localStorage.setItem(LS+k,JSON.stringify(v));}catch(e){} }
+
+var state = {
+  code: BY[String(get("code","VND"))] ? String(get("code","VND")) : "VND",
+  input: String(get("input","150000")),
+  rev: !!get("rev",false),            // true — считаем из рублей в валюту
+  net: get("net",{}) || {},           // курсы ЦБ: единиц за рубль
+  netAt: Number(get("netAt",0))||0,
+  netDate: String(get("netDate","")||""),   // дата, на которую ЦБ выставил эти курсы
+  mine: get("mine",{}) || {},         // свои курсы обмена по валютам
+  hist: Array.isArray(get("hist",[])) ? get("hist",[]) : [],
+  debug: !!get("debug",false),
+  split: Math.max(1, Math.min(12, Number(get("split",1))||1))   // делёж счёта на компанию
+};
+function cur(){ return BY[state.code]; }
+function rate(){
+  var c = state.code;
+  return Number(state.mine[c]) > 0 ? Number(state.mine[c])
+       : Number(state.net[c])  > 0 ? Number(state.net[c])
+       : cur().fb;
+}
+function rateKind(){
+  if(Number(state.mine[state.code]) > 0) return "свой";
+  if(Number(state.net[state.code]) > 0) return "сеть";
+  return "офлайн";
+}
+
+/* ======================= числа ======================= */
+var NBSP = " ";
+function group(s){
+  s = String(s).replace(/\D/g,"");
+  if(!s) return "";
+  s = s.replace(/^0+(?=\d)/,"");
+  return s.replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
+}
+function fmtAmount(v, c){
+  if(!isFinite(v)) return "0";
+  var dec = c.big ? 0 : (Math.abs(v) < 1000 ? 2 : 0);
+  var s = v.toFixed(dec);
+  var p = s.split(".");
+  p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
+  if(p[1]) p[1] = p[1].replace(/0+$/,"");
+  return p[1] ? p[0] + "," + p[1] : p[0];
+}
+function fmtRub(v){
+  if(!isFinite(v)) return "0";
+  var a = Math.abs(v), s;
+  if(a === 0) s = "0";
+  else if(a < 10) s = v.toFixed(2).replace(/\.?0+$/,"");
+  else if(a < 1000) s = v.toFixed(1).replace(/\.0$/,"");
+  else s = String(Math.round(v));
+  var p = s.split(".");
+  p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
+  return p.join(",");
+}
+function fmtRate(r){
+  if(r >= 100) return String(Math.round(r));
+  if(r >= 1)   return (Math.round(r*100)/100).toFixed(2).replace(/\.?0+$/,"").replace(".",",");
+  return (Math.round(r*100000)/100000).toFixed(5).replace(/0+$/,"").replace(/\.$/,"").replace(".",",");
+}
+function typedValue(){
+  var s = state.input.replace(/\s/g,"").replace(",",".");
+  var v = parseFloat(s);
+  return isFinite(v) ? v : 0;
+}
+function fmtTyped(){
+  var parts = state.input.split(",");
+  var out = group(parts[0]) || (parts.length > 1 ? "0" : "");
+  if(parts.length > 1) out += "," + parts[1].replace(/\D/g,"").slice(0,2);
+  return out;
+}
+function parseLoose(str){
+  if(str == null) return NaN;
+  var s = String(str).trim().replace(/[\s  ]/g,"").replace(",",".");
+  var v = parseFloat(s);
+  return isFinite(v) ? v : NaN;
+}
+
+/* ======================= разбор цены с ценника =======================
+   Ключевое различие: во Вьетнаме «150.000» — это сто пятьдесят тысяч,
+   а в Турции «12,50» — это двенадцать с половиной. Решает длина хвоста
+   после последнего разделителя: три цифры — разряды, одна-две — копейки. */
+function parsePrices(raw, c, opt){
+  if(!raw) return [];
+  c = c || cur(); opt = opt || {};
+  var t = String(raw).toLowerCase();
+
+  // Дату и время вычищаем ДО того, как разделители превратятся в пробелы:
+  // иначе «2026-09-13 19:20» рассыпается на числа, и 2026 уезжает в цены.
+  t = t.replace(/\d{4}[-./]\d{1,2}[-./]\d{1,2}/g, " ");
+  t = t.replace(/\d{1,2}[-./]\d{1,2}[-./]\d{2,4}/g, " ");
+  t = t.replace(/\d{1,2}:\d{2}(:\d{2})?/g, " ");
+
+  // Перевод строки НЕ становится пробелом: иначе колонка чисел, стоящих
+  // друг под другом («171 / 171 / 171»), склеивается в одно число-разряды
+  // 171171171, вылетает за предел и уносит с собой настоящий итог.
+  t = t.replace(/[\t\r]/g," ");
+  t = t.replace(/[оo]/g,"0").replace(/[l|]/g,"1");
+  t = t.replace(/vn[dđ]?/g," ").replace(/[₫đ]/g," ");
+  t = t.replace(/[^0-9.,a-zà-ỹ \n]/g," ");
+
+  // На чеке пробел между числами — это почти всегда граница колонок, а не
+  // разделитель разрядов. Поэтому в режиме чека разряды только через . и ,
+  var SEP = opt.noSpaceGroups ? "[.,]" : "[ .,]";
+
+  var out = [], ord = 0;
+  function scan(re, w, how, make){
+    var m, spans = [];
+    re.lastIndex = 0;
+    while((m = re.exec(t))){
+      var v = make(m);
+      if(isFinite(v) && v > 0) out.push({v:v, w:w, how:how, ord:ord++});
+      spans.push([m.index, m[0].length]);
+    }
+    for(var i = spans.length-1; i >= 0; i--){
+      t = t.slice(0,spans[i][0]) + new Array(spans[i][1]+1).join(" ") + t.slice(spans[i][0]+spans[i][1]);
+    }
+  }
+
+  if(c.big){
+    if(c.mil){
+      scan(new RegExp("(\\d+)[.,](\\d{1,3})\\s*("+c.mil.join("|")+")","g"), 8, "млн", function(m){
+        return Math.round(parseFloat(m[1]+"."+m[2]) * 1000000);
+      });
+      scan(new RegExp("(\\d+)\\s*("+c.mil.join("|")+")\\s*(\\d)?","g"), 8, "млн", function(m){
+        return parseInt(m[1],10)*1000000 + (m[3] ? parseInt(m[3],10)*100000 : 0);
+      });
+    }
+    if(c.k){
+      scan(new RegExp("(\\d{1,4})\\s*("+c.k.join("|")+")(?![a-zà-ỹ0-9])","g"), 8, "тыс.", function(m){
+        return parseInt(m[1],10)*1000;
+      });
+    }
+    // 38 490 000 · 150.000 · 1,500,000 — хвост \d* это прилипший знак валюты
+    scan(new RegExp("(\\d{1,3})((?:"+SEP+"\\d{3})+)(\\d*)","g"), 7, "разряды", function(m){
+      return parseInt(m[1] + m[2].replace(/[ .,]/g,""), 10);
+    });
+    scan(/(?:^|[^0-9])(\d{4,9})(?![0-9])/g, 4, "число", function(m){ return parseInt(m[1],10); });
+    if(c.menuK){
+      scan(/(?:^|[^0-9])(\d{2,3})(?![0-9])/g, 1, "меню ×1000", function(m){ return parseInt(m[1],10)*1000; });
+    }
+  }else{
+    // 1.234,56 и 1 234.56 — разряды плюс копейки
+    scan(new RegExp("(\\d{1,3}(?:"+SEP+"\\d{3})+)([.,]\\d{1,2})(?![0-9])","g"), 8, "с копейками", function(m){
+      return parseFloat(m[1].replace(/[ .,]/g,"") + "." + m[2].slice(1));
+    });
+    // 1.250 · 12 500 — только разряды
+    scan(new RegExp("(\\d{1,3}(?:"+SEP+"\\d{3})+)(?![0-9])","g"), 7, "разряды", function(m){
+      return parseInt(m[1].replace(/[ .,]/g,""), 10);
+    });
+    // 12,50 — копейки
+    scan(/(\d{1,6})[.,](\d{1,2})(?![0-9])/g, 6, "с копейками", function(m){
+      return parseFloat(m[1] + "." + m[2]);
+    });
+    scan(/(?:^|[^0-9.,])(\d{1,6})(?![0-9.,])/g, 4, "число", function(m){ return parseInt(m[1],10); });
+  }
+
+  var lo = c.big ? 1000 : 1, hi = c.big ? 900000000 : 9999999;
+  var seen = {}, res = [];
+  out.forEach(function(o){
+    if(!isFinite(o.v) || o.v < lo || o.v > hi) return;
+    if(seen[o.v]){ if(o.w > seen[o.v].w) seen[o.v].w = o.w; return; }
+    seen[o.v] = o; res.push(o);
+  });
+  var solid = res.some(function(o){ return o.w >= 4; });
+  if(solid) res = res.filter(function(o){ return o.w >= 4; });
+  res.sort(function(a,b){ return (b.w - a.w) || (a.ord - b.ord); });
+  return res;
+}
+
+/* ======================= интерфейс ======================= */
+var $ = function(id){ return document.getElementById(id); };
+
+function buildCurbar(){
+  var bar = $("curbar"); bar.innerHTML = "";
+
+  // Кнопка поиска стоит первой: с пятнадцатью странами листать ленту вбок
+  // дольше, чем набрать три буквы.
+  var f = document.createElement("button");
+  f.type = "button"; f.className = "cur find"; f.setAttribute("aria-label", "Найти страну");
+  f.innerHTML = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    + 'stroke-width="2.2" stroke-linecap="round" aria-hidden="true">'
+    + '<circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>';
+  f.addEventListener("click", openPick);
+  bar.appendChild(f);
+
+  CUR.forEach(function(c){
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "cur"; b.setAttribute("data-c", c.c);
+    b.innerHTML = '<span>' + c.n + '</span><span class="s">' + c.s + '</span>';
+    b.addEventListener("click", function(){ setCode(c.c); });
+    bar.appendChild(b);
+  });
+  syncCurbar();
+}
+/* Выбор страны в одном месте: лента вверху и окно поиска ведут сюда же. */
+function setCode(code){
+  if(!BY[code] || state.code === code) return;
+  var c = BY[code];
+  state.code = code; set("code", code);
+  if(!state.input || typedValue() === 0) state.input = c.big ? "150000" : "100";
+  syncCurbar(); render();
+  // Курс запоминается отдельно для каждой валюты — при смене страны
+  // редактор закрываем, иначе в полях останутся чужие числа.
+  $("rateIn").value = state.mine[code] ? fmtRate(state.mine[code]) : "";
+  $("gaveIn").value = ""; $("gotIn").value = "";
+  closeRateEdit();
+  // Выбранная страна подъезжает в видимую часть ленты.
+  var chip = document.querySelector('.cur[data-c="' + code + '"]');
+  if(chip && chip.scrollIntoView) try{ chip.scrollIntoView({behavior:"smooth", block:"nearest", inline:"center"}); }catch(e){}
+}
+
+/* ---------- выбор страны поиском ----------
+   Ищем по названию страны, валюты и коду, плюс несколько слов, которые люди
+   реально набирают: «бали» вместо Индонезии, «дубай» вместо ОАЭ. */
+var QEXTRA = {
+  VND:"vietnam vietnam nha trang нячанг фукуок дананг ханой хошимин",
+  THB:"thailand пхукет phuket бангкок самуи паттайя",
+  TRY:"turkey turkiye анталия стамбул алания",
+  CNY:"china rmb yuan юань пекин шанхай хайнань санья",
+  AED:"uae dubai дубай эмираты абу-даби шарджа",
+  GEL:"georgia тбилиси батуми",
+  AMD:"armenia ереван",
+  KZT:"kazakhstan алматы астана",
+  IDR:"indonesia bali бали джакарта убуд",
+  UZS:"uzbekistan ташкент самарканд бухара",
+  EGP:"egypt хургада шарм каир",
+  RSD:"serbia белград нови-сад",
+  INR:"india goa гоа дели",
+  USD:"usa америка сша dollar",
+  EUR:"euro europe европа еврозона"
+};
+function qtext(c){
+  return (c.n + " " + c.u + " " + c.c + " " + (QEXTRA[c.c] || "")).toLowerCase();
+}
+function openPick(){
+  $("pick").hidden = false;
+  document.body.style.overflow = "hidden";
+  $("pickIn").value = ""; $("pickClear").hidden = true;
+  paintPick("");
+  // Фокус с задержкой: иначе на iOS клавиатура иногда открывается раньше,
+  // чем окно доехало наверх, и список оказывается за ней.
+  setTimeout(function(){ try{ $("pickIn").focus(); }catch(e){} }, 220);
+}
+function closePick(){
+  $("pick").hidden = true;
+  document.body.style.overflow = "";
+}
+function paintPick(q){
+  q = String(q||"").trim().toLowerCase();
+  var list = $("pickList"); list.innerHTML = "";
+  var hits = CUR.filter(function(c){
+    if(!q) return true;
+    return q.split(/\s+/).every(function(w){ return qtext(c).indexOf(w) !== -1; });
+  });
+  $("pickNone").hidden = hits.length > 0;
+  hits.forEach(function(c){
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "pickrow" + (c.c === state.code ? " on" : "");
+    var r = Number(state.mine[c.c]) > 0 ? state.mine[c.c]
+          : Number(state.net[c.c]) > 0 ? state.net[c.c] : c.fb;
+    // Крупные валюты понятнее «сколько их за рубль», мелкие — наоборот,
+    // «сколько рублей стоит одна единица»: 0,3952 бата за рубль не читается.
+    var line = c.big ? c.u + " · " + fmtRate(r) + " " + c.s + " за ₽"
+                     : "1 " + c.u + " ≈ " + fmtRub(1 / r) + " ₽";
+    b.innerHTML = '<span class="sym">' + c.s + '</span>'
+      + '<span class="nm"><b>' + c.n + '</b><span>' + line + '</span></span>';
+    b.addEventListener("click", function(){ closePick(); setCode(c.c); });
+    list.appendChild(b);
+  });
+}
+$("pickIn").addEventListener("input", function(){
+  $("pickClear").hidden = !this.value;
+  paintPick(this.value);
+});
+$("pickIn").addEventListener("keydown", function(e){
+  if(e.key !== "Enter") return;
+  e.preventDefault();
+  var first = $("pickList").querySelector(".pickrow");
+  if(first) first.click(); else this.blur();
+});
+$("pickClear").addEventListener("click", function(){
+  $("pickIn").value = ""; this.hidden = true; paintPick(""); $("pickIn").focus();
+});
+$("pickScrim").addEventListener("click", closePick);
+document.addEventListener("keydown", function(e){
+  if(e.key === "Escape" && !$("pick").hidden) closePick();
+});
+
+function syncCurbar(){
+  [].forEach.call(document.querySelectorAll(".cur"), function(b){
+    var on = b.getAttribute("data-c") === state.code;
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    if(on) b.scrollIntoView({block:"nearest", inline:"center", behavior:"smooth"});
+  });
+}
+
+/* Своей клавиатуры больше нет: на телефоне по нажатию на цену открывается
+   системная, и вторая на экране только занимала место. press() остался —
+   он обрабатывает набор с физической клавиатуры на компьютере. */
+function press(k){
+  var s = state.input;
+  if(k === "back") s = s.slice(0,-1);
+  else if(k === "clear") s = "";
+  else if(k === "extra"){
+    if(cur().big) s = s === "" ? "" : s + "000";
+    else if(s.indexOf(",") === -1) s = (s === "" ? "0" : s) + ",";
+  }
+  else if(k === "swapdir"){ toggleDir(); return; }
+  else {
+    if(s.replace(/\D/g,"").length >= 12) return;
+    s = (s === "0" ? "" : s) + k;
+  }
+  state.input = s; render(); queueHist();
+}
+
+function toggleDir(){
+  // переносим посчитанное значение в поле ввода, чтобы цифры не теряли смысл
+  var v = typedValue();
+  state.rev = !state.rev;
+  var nv = state.rev ? v / rate() : v * rate();
+  state.input = formatToInput(nv, state.rev ? null : cur());
+  set("rev", state.rev);
+  render();
+}
+function formatToInput(v, c){
+  if(!isFinite(v) || v <= 0) return "";
+  if(c && !c.big && v < 1000) return String(Math.round(v*100)/100).replace(".", ",");
+  if(!c && v < 1000) return String(Math.round(v*100)/100).replace(".", ",");
+  return String(Math.round(v));
+}
+
+function render(){
+  var c = cur(), v = typedValue(), fld = $("inAmount");
+  if(fld.value.replace(/[^\d,]/g,"") !== state.input.replace(/[^\d,]/g,"")){
+    fld.value = fmtTyped();
+  }
+  if(!state.rev){
+    $("capFrom").innerHTML = "Цена · <b>" + c.n + "</b>";
+    $("symFrom").textContent = c.s;
+    $("capTo").innerHTML = "Это в рублях";
+    $("symTo").textContent = "₽";
+    $("outAmount").textContent = fmtRub(v / rate());
+  }else{
+    $("capFrom").innerHTML = "Сумма · <b>рубли</b>";
+    $("symFrom").textContent = "₽";
+    $("capTo").innerHTML = "Это в · <b>" + c.n + "</b>";
+    $("symTo").textContent = c.s;
+    $("outAmount").textContent = fmtAmount(v * rate(), c);
+  }
+
+  var kind = rateKind();
+  $("ratePillText").textContent = fmtRate(rate()) + " " + c.s + "/₽";
+  $("ratePill").className = "ratepill" + (kind === "свой" ? " custom" : kind === "офлайн" ? " offline" : "");
+
+  $("rateInLbl").textContent = c.u === "донг" ? "Донгов за рубль" : c.s + " за рубль";
+  $("gotLbl").textContent = "Получил, " + c.s;
+  $("gotIn").placeholder = c.big ? "2950000" : "1000";
+  $("rateIn").placeholder = fmtRate(Number(state.net[c.c]) > 0 ? state.net[c.c] : c.fb);
+
+  $("rateNow").className = "ratenow" + (kind === "свой" ? " custom" : kind === "офлайн" ? " offline" : "");
+  $("rateNowKind").innerHTML = "<i></i>" + (kind === "свой" ? "Ваш курс обмена" : kind === "сеть" ? "Курс ЦБ" : "Запасной курс");
+  $("rateNowVal").textContent = fmtRate(rate()) + " " + c.s + " за рубль";
+  $("editRate").textContent = kind === "свой" ? "Изменить" : "Ввести свой";
+  $("dropRate").hidden = kind !== "свой";
+  $("rateHint").textContent =
+    kind === "свой"   ? "Считаем по вашему курсу обмена. По ЦБ сейчас " + (state.net[c.c] ? fmtRate(state.net[c.c]) + " " + c.s : "курс не получен") + "."
+  : kind === "сеть"   ? "Курс ЦБ" + (state.netDate ? " на " + state.netDate : "") + ", загружен " + when(state.netAt)
+                        + ". В обменнике дают меньше — поменяли деньги, впишите свой курс, он точнее."
+  :                     "Курс ЦБ не загрузился, считаем по запасному на 19.09.2026. Впишите свой — он точнее.";
+
+  if(!$("splitPanel").hidden) paintSplit();
+  buildNotes();
+  set("input", state.input);
+}
+function when(ts){
+  if(!ts) return "—";
+  var d = new Date(ts), now = new Date();
+  var p = function(x){ return ("0"+x).slice(-2); };
+  if(d.toDateString() === now.toDateString()) return "сегодня в " + p(d.getHours()) + ":" + p(d.getMinutes());
+  return p(d.getDate()) + "." + p(d.getMonth()+1);
+}
+
+/* поле ввода */
+var fld = $("inAmount");
+function reformat(el){
+  var start = el.selectionStart == null ? el.value.length : el.selectionStart;
+  var before = el.value.slice(0,start).replace(/[^\d,]/g,"").length;
+  var raw = el.value.replace(/[^\d,]/g,"");
+  var parts = raw.split(",");
+  var clean = parts[0].replace(/^0+(?=\d)/,"").slice(0,12);
+  if(parts.length > 1 && !cur().big) clean += "," + parts[1].replace(/\D/g,"").slice(0,2);
+  state.input = clean;
+  var text = fmtTyped();
+  el.value = text;
+  var pos = 0, seen = 0;
+  while(pos < text.length && seen < before){
+    var ch = text.charAt(pos);
+    if((ch >= "0" && ch <= "9") || ch === ",") seen++;
+    pos++;
+  }
+  try{ el.setSelectionRange(pos,pos); }catch(e){}
+}
+fld.addEventListener("focus", function(){ setTimeout(function(){ try{fld.select();}catch(e){} },0); });
+fld.addEventListener("input", function(){ reformat(fld); render(); queueHist(); });
+fld.addEventListener("blur", function(){ if(!state.input) fld.value = "0"; });
+fld.addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); fld.blur(); } });
+function editValue(){ fld.focus(); try{ fld.select(); }catch(e){} }
+
+document.addEventListener("keydown", function(e){
+  if(!$("ov").hidden) return;
+  var t = e.target; if(t && (t.tagName === "INPUT")) return;
+  if(/^[0-9]$/.test(e.key)){ press(e.key); e.preventDefault(); }
+  else if(e.key === "Backspace"){ press("back"); e.preventDefault(); }
+});
+
+$("swap").addEventListener("click", toggleDir);
+
+/* быстрые суммы */
+function buildQuick(){
+  var box = $("quick"); box.innerHTML = "";
+  var c = cur();
+  var vals = c.big ? [20000,50000,100000,500000,1000000] : [50,100,200,500,1000];
+  if(c.c === "AMD" || c.c === "RSD") vals = [500,1000,2000,5000,10000];
+  if(c.c === "KZT") vals = [500,1000,5000,10000,50000];
+  if(c.c === "UZS") vals = [10000,50000,100000,500000,1000000];
+  vals.forEach(function(v){
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "chip out";
+    b.textContent = (c.big && v >= 1000000) ? (v/1000000) + " млн" : (c.big && v >= 1000) ? (v/1000) + "k" : String(v);
+    b.addEventListener("click", function(){
+      state.rev = false; set("rev", false);
+      state.input = String(v); render(); pushHist();
+    });
+    box.appendChild(b);
+  });
+}
+
+/* купюры — только там, где их легко перепутать */
+function buildNotes(){
+  var g = $("notesGroup");
+  if(state.code !== "VND"){ g.hidden = true; return; }
+  g.hidden = false;
+  $("notesTitle").textContent = "Купюры Вьетнама";
+  $("notesWarn").textContent = "20 000 и 500 000 — обе голубовато-зелёные полимерные, разница в 25 раз. Та же ловушка у 10 000 и 200 000. Считайте нули, а не цвет.";
+  var list = $("notesList"); list.innerHTML = "";
+  VND_NOTES.forEach(function(n){
+    var row = document.createElement("div"); row.className = "row";
+    var sw = document.createElement("span"); sw.className = "sw"; sw.style.background = n.c;
+    var g2 = document.createElement("span"); g2.className = "grow";
+    g2.innerHTML = group(String(n.v)) + " ₫<span class=\"sub\">" + n.n + "</span>";
+    var val = document.createElement("span"); val.className = "val";
+    val.innerHTML = "≈ <b>" + fmtRub(n.v / rate()) + " ₽</b>";
+    row.appendChild(sw); row.appendChild(g2); row.appendChild(val);
+    list.appendChild(row);
+  });
+}
+
+/* ======================= делёж счёта ======================= */
+/* Сценарий: поужинали компанией, сняли итог с чека — и сразу видно, сколько
+   с каждого. Панель раскрывается сама после съёмки чека. */
+function buildSplit(){
+  var box = $("splitChips"); box.innerHTML = "";
+  [2,3,4,5,6,8].forEach(function(n){
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.textContent = n;
+    b.setAttribute("data-n", n);
+    b.addEventListener("click", function(){
+      state.split = (state.split === n) ? 1 : n;
+      set("split", state.split); paintSplit();
+    });
+    box.appendChild(b);
+  });
+}
+function openSplit(){ $("splitPanel").hidden = false; $("splitOpen").hidden = true; paintSplit(); }
+function paintSplit(){
+  [].forEach.call($("splitChips").children, function(b){
+    b.className = "chip" + (Number(b.getAttribute("data-n")) === state.split ? " go" : "");
+  });
+  var res = $("splitRes");
+  if(state.split < 2){ res.textContent = "На скольких делим? Нажмите ещё раз, чтобы отменить."; return; }
+  var c = cur(), v = typedValue();
+  var out = state.rev ? (v * rate()) : (v / rate());
+  var per = out / state.split;
+  res.innerHTML = "По <b>" + (state.rev ? fmtAmount(per, c) + " " + c.s : fmtRub(per) + " ₽")
+    + "</b> с человека";
+}
+$("splitOpen").addEventListener("click", openSplit);
+
+/* ======================= курс ======================= */
+
+/* Редактор курса свёрнут, пока его не открыли: пустые поля рядом с готовым
+   значением читались как «тут уже что-то стоит и менять нельзя». */
+function openRateEdit(){
+  $("rateEdit").hidden = false;
+  $("rateNow").hidden = true;
+  // Подставляем действующий курс НАСТОЯЩИМ значением, а не подсказкой:
+  // видно, что именно сейчас считается, и это можно переписать.
+  if(!$("rateIn").value) $("rateIn").value = fmtRate(rate());
+  $("dropRate").hidden = rateKind() !== "свой";
+  $("rateIn").focus();
+  try{ $("rateIn").select(); }catch(e){}
+  $("rateEdit").scrollIntoView({behavior:"smooth", block:"center"});
+}
+function closeRateEdit(){
+  $("rateEdit").hidden = true;
+  $("rateNow").hidden = false;
+}
+$("editRate").addEventListener("click", openRateEdit);
+$("cancelRate").addEventListener("click", function(){
+  $("rateIn").value = state.mine[state.code] ? fmtRate(state.mine[state.code]) : "";
+  $("gaveIn").value = ""; $("gotIn").value = "";
+  closeRateEdit();
+});
+$("ratePill").addEventListener("click", function(){
+  if($("rateEdit").hidden) openRateEdit();
+  else $("rateIn").focus();
+});
+function syncExchange(){
+  var g = parseLoose($("gaveIn").value), r = parseLoose($("gotIn").value);
+  if(isFinite(g) && isFinite(r) && g > 0 && r > 0) $("rateIn").value = fmtRate(r/g);
+}
+$("gaveIn").addEventListener("input", syncExchange);
+$("gotIn").addEventListener("input", syncExchange);
+$("saveRate").addEventListener("click", function(){
+  var r = parseLoose($("rateIn").value);
+  if(!isFinite(r) || r <= 0 || r > 1000000){ $("rateHint").textContent = "Впишите, сколько " + cur().u + "ов дают за один рубль."; $("rateIn").focus(); return; }
+  state.mine[state.code] = r; set("mine", state.mine);
+  closeRateEdit(); render();
+  // Короткая вспышка на карточке: видно, что сохранилось именно новое число.
+  var n = $("rateNow"); n.classList.remove("saved"); void n.offsetWidth; n.classList.add("saved");
+});
+$("dropRate").addEventListener("click", function(){
+  delete state.mine[state.code]; set("mine", state.mine);
+  $("rateIn").value = ""; $("gaveIn").value = ""; $("gotIn").value = "";
+  closeRateEdit(); render(); fetchRates(true);
+});
+
+function cbrDay(iso){
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso||""));
+  return m ? m[3] + "." + m[2] + "." + m[1] : "";
+}
+function fetchRates(force){
+  if(!force && state.netAt && Date.now() - state.netAt < 6*3600*1000) return;
+  var codes = CUR.map(function(c){ return c.c; });
+  // Курс — официальный ЦБ РФ. Первым идёт наш собственный адрес: сервер сам
+  // ходит на cbr.ru, разбирает XML и держит разобранное в памяти и на диске —
+  // так курс одинаков у всех и не зависит от того, открывается ли сайт ЦБ из
+  // той страны, где человек сейчас стоит у ценника. Если наш сервер молчит —
+  // пробуем зеркало ЦБ напрямую. Не вышло и это — остаётся запасной курс в коде
+  // или свой, вписанный руками.
+  var srcs = [
+    { url:"rates", pick:function(d){
+        if(!d || !d.rates) return null;
+        var o = {}; codes.forEach(function(c){ if(d.rates[c] > 0) o[c] = d.rates[c]; });
+        return Object.keys(o).length ? {r:o, d:String(d.date||"")} : null;
+      } },
+    { url:"https://www.cbr-xml-daily.ru/daily_json.js", pick:function(d){
+        if(!d || !d.Valute) return null;
+        var o = {}; codes.forEach(function(c){
+          var v = d.Valute[c];
+          if(v && v.Value > 0) o[c] = v.Nominal / v.Value;
+        });
+        if(!Object.keys(o).length) return null;
+        return {r:o, d:cbrDay(d.Date)};
+      } }
+  ];
+  (function next(i){
+    if(i >= srcs.length) return;
+    fetch(srcs[i].url, {cache:"no-store"})
+      .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+      .then(function(d){
+        var o = srcs[i].pick(d);
+        if(!o) throw 0;
+        state.net = o.r; state.netAt = Date.now(); state.netDate = o.d || "";
+        set("net", o.r); set("netAt", state.netAt); set("netDate", state.netDate);
+        render();
+      })
+      .catch(function(){ next(i+1); });
+  })(0);
+}
+
+/* ======================= история ======================= */
+var histTimer = null;
+function queueHist(){ clearTimeout(histTimer); histTimer = setTimeout(pushHist, 2500); }
+function pushHist(){
+  var v = typedValue(); if(!v) return;
+  var c = cur();
+  var amount = state.rev ? v * rate() : v;
+  var rub = state.rev ? v : v / rate();
+  if(c.big && amount < 1000) return;
+  if(state.hist[0] && state.hist[0].a === amount && state.hist[0].c === c.c) return;
+  state.hist.unshift({c:c.c, a:amount, r:rub, t:Date.now()});
+  state.hist = state.hist.slice(0,8);
+  set("hist", state.hist); renderHist();
+}
+function renderHist(){
+  var w = $("histWrap"); w.innerHTML = "";
+  if(!state.hist.length){
+    var e = document.createElement("div"); e.className = "note";
+    e.textContent = "Посчитанные цены появятся здесь — чтобы вечером вспомнить, сколько стоил тот ужин.";
+    w.appendChild(e); return;
+  }
+  var list = document.createElement("div"); list.className = "list";
+  state.hist.forEach(function(h){
+    var c = BY[h.c] || cur();
+    var b = document.createElement("button"); b.type = "button"; b.className = "row";
+    var g = document.createElement("span"); g.className = "grow";
+    g.innerHTML = fmtAmount(h.a, c) + " " + c.s + "<span class=\"sub\">" + c.n + " · " + when(h.t) + "</span>";
+    var val = document.createElement("span"); val.className = "val";
+    val.innerHTML = "<b>" + fmtRub(h.r) + " ₽</b>";
+    b.appendChild(g); b.appendChild(val);
+    b.addEventListener("click", function(){
+      state.code = h.c; set("code", h.c);
+      state.rev = false; set("rev", false);
+      state.input = formatToInput(h.a, c);
+      syncCurbar(); buildQuick(); render();
+    });
+    list.appendChild(b);
+  });
+  w.appendChild(list);
+  var d = document.createElement("div"); d.className = "chips"; d.style.marginTop = "8px";
+  var cb = document.createElement("button"); cb.type = "button"; cb.className = "chip out";
+  cb.textContent = "Очистить историю";
+  cb.addEventListener("click", function(){ state.hist = []; set("hist",[]); renderHist(); });
+  d.appendChild(cb); w.appendChild(d);
+}
+
+/* ======================= подготовка кадра ======================= */
+function boxBlurGray(src,w,h,r){
+  var tmp=new Uint8ClampedArray(w*h), out=new Uint8ClampedArray(w*h), x,y,i,sum,n;
+  for(y=0;y<h;y++){
+    var row=y*w; sum=0; n=0;
+    for(i=0;i<=r&&i<w;i++){ sum+=src[row+i]; n++; }
+    for(x=0;x<w;x++){
+      tmp[row+x]=sum/n;
+      var a=x+r+1, b=x-r;
+      if(a<w){ sum+=src[row+a]; n++; }
+      if(b>=0){ sum-=src[row+b]; n--; }
+    }
+  }
+  for(x=0;x<w;x++){
+    sum=0; n=0;
+    for(i=0;i<=r&&i<h;i++){ sum+=tmp[i*w+x]; n++; }
+    for(y=0;y<h;y++){
+      out[y*w+x]=sum/n;
+      var ay=y+r+1, by=y-r;
+      if(ay<h){ sum+=tmp[ay*w+x]; n++; }
+      if(by>=0){ sum-=tmp[by*w+x]; n--; }
+    }
+  }
+  return out;
+}
+function prepCanvas(src, sw, sh, box, o){
+  o = o || {};
+  var binarize = o.binarize !== false, blurR = o.blur === undefined ? 2 : o.blur, target = o.target || 1100;
+  var cw = Math.max(1, Math.round(sw*box.w)), ch = Math.max(1, Math.round(sh*box.h));
+  var sx = Math.max(0, Math.round(sw*box.x)), sy = Math.max(0, Math.round(sh*box.y));
+  var scale = Math.min(3, Math.max(1, target/cw));
+  var c = document.createElement("canvas");
+  c.width = Math.round(cw*scale); c.height = Math.round(ch*scale);
+  var ctx = c.getContext("2d",{willReadFrequently:true});
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(src, sx, sy, cw, ch, 0, 0, c.width, c.height);
+
+  var W=c.width, H=c.height, N=W*H;
+  var img = ctx.getImageData(0,0,W,H), p = img.data;
+  var gray = new Uint8ClampedArray(N), i, j, sum=0;
+  for(i=0,j=0;j<N;i+=4,j++){ gray[j]=(p[i]*0.299+p[i+1]*0.587+p[i+2]*0.114)|0; sum+=gray[j]; }
+  var mean = sum/N;
+  if(blurR > 0){ gray = boxBlurGray(gray,W,H,blurR); gray = boxBlurGray(gray,W,H,blurR); }
+
+  var hist = new Array(256); for(i=0;i<256;i++) hist[i]=0;
+  for(j=0;j<N;j++) hist[gray[j]]++;
+  var sumAll=0,t; for(t=0;t<256;t++) sumAll+=t*hist[t];
+  var sumB=0,wB=0,best=-1,thr=128,wF,mB,mF,bet;
+  for(t=0;t<256;t++){
+    wB+=hist[t]; if(!wB) continue;
+    wF=N-wB; if(!wF) break;
+    sumB+=t*hist[t];
+    mB=sumB/wB; mF=(sumAll-sumB)/wF;
+    bet=wB*wF*(mB-mF)*(mB-mF);
+    if(bet>best){ best=bet; thr=t; }
+  }
+  var invert = mean < 118;
+  for(i=0,j=0;j<N;i+=4,j++){
+    var v;
+    if(binarize){ var on = gray[j] > thr; if(invert) on = !on; v = on ? 255 : 0; }
+    else { v = invert ? 255-gray[j] : gray[j]; }
+    p[i]=p[i+1]=p[i+2]=v; p[i+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+
+  var pad = 24;
+  var out = document.createElement("canvas");
+  out.width = W+pad*2; out.height = H+pad*2;
+  var o2 = out.getContext("2d");
+  o2.fillStyle = "#fff"; o2.fillRect(0,0,out.width,out.height);
+  o2.drawImage(c,pad,pad);
+  return out;
+}
+
+/* ======================= распознавание ======================= */
+var worker = null, workerPromise = null;
+function getWorker(){
+  if(workerPromise) return workerPromise;
+  if(typeof Tesseract === "undefined"){
+    workerPromise = Promise.reject(new Error("Движок распознавания не загрузился."));
+    return workerPromise;
+  }
+  // всё локальное: ни одного обращения наружу — важно там, где CDN недоступны
+  workerPromise = Tesseract.createWorker("eng", 1, {
+    workerPath: "ocr/worker.min.js",
+    corePath: "ocr/core",
+    langPath: "ocr/lang",
+    // Языковая модель лежит РАСПАКОВАННОЙ. Упакованный .gz ломается на многих
+    // хостингах: сервер видит расширение, сам ставит Content-Encoding: gzip,
+    // браузер распаковывает второй раз — и движок получает мусор.
+    gzip: false
+  }).then(function(w){
+    return w.setParameters({
+      tessedit_char_whitelist: WHITELIST,
+      tessedit_pageseg_mode: "6",
+      preserve_interword_spaces: "1",
+      classify_bln_numeric_mode: "1"
+    }).then(function(){ worker = w; return w; });
+  });
+  return workerPromise;
+}
+
+var ov=$("ov"), video=$("video"), stream=null, track=null;
+var scanning=false, best=null, frames=[], lastList=null, lastText="", emptyRun=0;
+/* Две рамки. Узкая — под ценник: в неё попадает одна-две строки, и это
+   отсекает лишние числа вокруг. Широкая — под чек: там наоборот нужен весь
+   лист, а нужное число выбирается уже среди прочитанных. */
+var BOX_TAG  = {x:0.07,y:0.36,w:0.86,h:0.20};
+var BOX_RCPT = {x:0.07,y:0.13,w:0.86,h:0.62};
+var camMode = "tag";
+var BOX = BOX_TAG;
+var WINDOW=7, NEED_SHOW=2, NEED_TAKE=3;
+
+function retInVideo(){
+  var vw=video.videoWidth, vh=video.videoHeight;
+  var el=$("stage"), rw=el.clientWidth, rh=el.clientHeight;
+  if(!vw||!vh||!rw||!rh) return BOX;
+
+  // Рамка задана в координатах ЭКРАНА. Если включено цифровое приближение,
+  // картинка растянута через transform:scale вокруг центра — значит сначала
+  // отматываем это растяжение назад, иначе вырежем не тот кусок кадра.
+  var zd = zoomDigital || 1, cx = rw/2, cy = rh/2;
+  var bx = cx + (BOX.x*rw - cx)/zd, by = cy + (BOX.y*rh - cy)/zd;
+  var bw = BOX.w*rw/zd,             bh = BOX.h*rh/zd;
+
+  var sc = Math.max(rw/vw, rh/vh);
+  var ox = (vw*sc-rw)/2, oy = (vh*sc-rh)/2;
+  var x=(bx+ox)/sc/vw, y=(by+oy)/sc/vh;
+  var w=bw/sc/vw, h=bh/sc/vh;
+  x=Math.max(0,Math.min(1,x)); y=Math.max(0,Math.min(1,y));
+  return {x:x,y:y,w:Math.min(w,1-x),h:Math.min(h,1-y)};
+}
+
+/* ---------- приближение ----------
+   Сначала пробуем приблизить саму камеру: на большинстве андроидов это
+   настоящий зум, а иногда и переключение на телеобъектив — картинка остаётся
+   резкой. Если камера так не умеет (весь iOS через Safari), растягиваем кадр
+   средствами страницы. Это честный компромисс: целиться удобнее, но пикселей
+   больше не становится, поэтому кратности держим скромные. */
+var zoom = 1, zoomDigital = 1, zoomCaps = null;
+function zoomSteps(){
+  // Без аппаратного зума дальше 2x не пускаем: пикселей от растягивания не
+  // прибавляется, а с 3x распознавание начинает сыпаться — пусть лучше кнопки
+  // не будет, чем она будет делать хуже.
+  if(!zoomCaps || !(zoomCaps.max > 1)) return [1,2];
+  var mx = Math.min(zoomCaps.max, 5);
+  return mx >= 5 ? [1,2,3,5] : mx >= 3 ? [1,2,3] : [1,2];
+}
+function buildZoomBar(){
+  var bar = $("zoomBar"); bar.innerHTML = "";
+  var steps = zoomSteps();
+  steps.forEach(function(z){
+    var b = document.createElement("button");
+    b.type = "button"; b.textContent = z + "\u00D7";
+    b.setAttribute("data-z", z);
+    b.addEventListener("click", function(){ applyZoom(z); });
+    bar.appendChild(b);
+  });
+  bar.hidden = false;
+  paintZoomBar();
+}
+function paintZoomBar(){
+  [].forEach.call($("zoomBar").children, function(b){
+    b.className = Math.abs(parseFloat(b.getAttribute("data-z")) - zoom) < 0.01 ? "on" : "";
+  });
+}
+function applyZoom(z){
+  var steps = zoomSteps();
+  z = Math.max(steps[0], Math.min(steps[steps.length-1], z));
+  zoom = z;
+  var done = function(nat){
+    zoomDigital = Math.max(1, z / nat);
+    video.style.transform = zoomDigital > 1 ? "scale(" + zoomDigital.toFixed(3) + ")" : "";
+    paintZoomBar();
+  };
+  if(track && zoomCaps && zoomCaps.max > 1){
+    var nat = Math.max(zoomCaps.min || 1, Math.min(zoomCaps.max, z));
+    track.applyConstraints({advanced:[{zoom:nat}]}).then(function(){ done(nat); },
+                                                          function(){ done(1); });
+  }else{
+    done(1);
+  }
+}
+function setMode(m){
+  camMode = m;
+  BOX = (m === "rcpt") ? BOX_RCPT : BOX_TAG;
+  $("modeTag").className  = m === "tag"  ? "on" : "";
+  $("modeRcpt").className = m === "rcpt" ? "on" : "";
+  // Рамка нарисована процентами в CSS — при смене режима переставляем её руками.
+  var r = $("ret").style, t = $("tip").style;
+  r.left = (BOX.x*100) + "%"; r.right = ((1-BOX.x-BOX.w)*100) + "%";
+  r.top  = (BOX.y*100) + "%"; r.height = (BOX.h*100) + "%";
+  t.top = "calc(" + (BOX.y*100) + "% - 32px)";
+  $("tip").textContent = m === "rcpt" ? "Наведите на весь чек" : "Наведите рамку на цену";
+  best=null; frames=[]; lastList=null; emptyRun=0;
+  $("shut").disabled=true; $("live").hidden=true; $("ret").classList.remove("hit");
+}
+$("modeTag").addEventListener("click", function(){ setMode("tag"); });
+$("modeRcpt").addEventListener("click", function(){ setMode("rcpt"); });
+
+/* Щипок двумя пальцами — первое, что пробуют сделать в видоискателе. */
+(function(){
+  var st = $("stage"), base = 0, z0 = 1;
+  function dist(t){ var dx=t[0].clientX-t[1].clientX, dy=t[0].clientY-t[1].clientY; return Math.sqrt(dx*dx+dy*dy); }
+  st.addEventListener("touchstart", function(e){
+    if(e.touches.length === 2){ base = dist(e.touches); z0 = zoom; }
+  }, {passive:true});
+  st.addEventListener("touchmove", function(e){
+    if(e.touches.length === 2 && base > 0){
+      e.preventDefault();
+      applyZoom(z0 * dist(e.touches) / base);
+    }
+  }, {passive:false});
+  st.addEventListener("touchend", function(){ base = 0; }, {passive:true});
+})();
+
+function showScan(html, bad){
+  var el=$("scanOut"); el.hidden=false;
+  el.className = "note" + (bad ? " bad" : "");
+  el.innerHTML = html;
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+
+function openCam(){
+  ov.hidden=false; $("ovMsg").hidden=true; $("ret").hidden=false;
+  $("tip").hidden=false; video.hidden=false; $("live").hidden=true;
+  $("dbg").hidden=!state.debug;
+  best=null; frames=[]; lastList=null; emptyRun=0;
+  $("shut").disabled=true; $("tip").textContent="Наведите рамку на цену";
+
+  // Без защищённого соединения браузер вообще не отдаёт navigator.mediaDevices.
+  // Это не «браузер не умеет» — это страница открыта по http, и так во всех браузерах.
+  if(!window.isSecureContext){
+    return camFail("Страница открыта по http — в этом режиме браузеры не дают доступ к камере. "
+      + "Откройте адрес через https:// и попробуйте снова.");
+  }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    return camFail("Этот браузер не умеет показывать камеру. Введите цену на клавиатуре.");
+  }
+  zoom=1; zoomDigital=1; zoomCaps=null; video.style.transform=""; $("zoomBar").hidden=true;
+  $("modeSw").hidden=false; setMode(camMode);
+  navigator.mediaDevices.getUserMedia({
+    // Просим кадр покрупнее: при приближении каждый лишний пиксель идёт в дело.
+    // ideal, а не exact — телефон, который так не умеет, просто отдаст меньше.
+    video:{facingMode:{ideal:"environment"}, width:{ideal:2560}, height:{ideal:1440}}, audio:false
+  }).then(function(s){
+    stream=s; track=s.getVideoTracks()[0];
+    video.srcObject=s;
+    var caps = track.getCapabilities ? track.getCapabilities() : {};
+    $("ovTorch").hidden = !(caps && caps.torch);
+    zoomCaps = (caps && caps.zoom) ? caps.zoom : null;
+    buildZoomBar();
+    return video.play().catch(function(){});
+  }).then(function(){ scanning=true; loop(); })
+  .catch(function(err){
+    var n = err && err.name ? err.name : "";
+    camFail(n === "NotAllowedError"
+      ? "Доступ к камере запрещён. Разрешите камеру для этого сайта в настройках браузера и откройте страницу заново."
+      : "Камера не открылась (" + (n||"ошибка") + "). Закройте и попробуйте ещё раз или введите цену на клавиатуре.");
+  });
+}
+function camFail(msg){
+  video.hidden=true; $("ret").hidden=true; $("tip").hidden=true; $("zoomBar").hidden=true; $("modeSw").hidden=true;
+  var m=$("ovMsg"); m.hidden=false; m.textContent=msg; $("shut").disabled=true;
+}
+function closeCam(){
+  scanning=false; ov.hidden=true;
+  zoom=1; zoomDigital=1; video.style.transform="";
+  if(stream){ stream.getTracks().forEach(function(t){t.stop();}); stream=null; track=null; }
+  video.srcObject=null;
+}
+var torch=false;
+$("ovTorch").addEventListener("click", function(){
+  if(!track) return;
+  torch=!torch;
+  track.applyConstraints({advanced:[{torch:torch}]}).catch(function(){});
+  $("ovTorch").textContent = torch ? "Фонарь вкл" : "Фонарь";
+});
+
+async function loop(){
+  while(scanning){
+    try{
+      if(video.videoWidth){
+        var c = prepCanvas(video, video.videoWidth, video.videoHeight, retInVideo(), {binarize:true, blur:2, target:1100});
+        var w = await getWorker();
+        if(!scanning) break;
+        var res = await w.recognize(c);
+        var text = (res && res.data && res.data.text) ? res.data.text.trim() : "";
+        var conf = (res && res.data && typeof res.data.confidence === "number") ? res.data.confidence : 0;
+        lastText = text;
+        if(state.debug) $("dbg").textContent = "OCR(" + Math.round(conf) + "): " + text.replace(/\n/g," ⏎ ");
+        // Уверенность движка НЕ используем как условие: на реальных кадрах она
+        // приходит нулевой даже там, где текст прочитан верно, и отсечка по ней
+        // выбрасывала правильные цены. От шума защищает сведение кадров ниже.
+        handleLive(parsePrices(text, null, {noSpaceGroups: camMode === "rcpt"}));
+      }
+    }catch(e){
+      if(!scanning) break;
+      camFail(e && e.message ? e.message : "Распознавание не запустилось.");
+      break;
+    }
+    await new Promise(function(r){ setTimeout(r,120); });
+  }
+}
+
+/* На ценнике верное число — первое по нашему разбору (цена со скидкой важнее
+   зачёркнутой). На чеке правило другое: итог обычно и самый крупный, и
+   повторяется несколько раз — «сумма», «к оплате», «итого». Поэтому считаем
+   повторы и добавляем полбалла за максимум; дата и номер стола встречаются
+   по одному разу и в итог не пролезают. */
+function pickReceipt(list){
+  if(!list.length) return 0;
+  var cnt = {}, mx = 0;
+  list.forEach(function(o){ cnt[o.v] = (cnt[o.v]||0) + 1; if(o.v > mx) mx = o.v; });
+  var best = 0, bestScore = -1;
+  Object.keys(cnt).forEach(function(k){
+    var v = Number(k), sc = cnt[k] + (v === mx ? 1.5 : 0);
+    if(sc > bestScore || (sc === bestScore && v > best)){ bestScore = sc; best = v; }
+  });
+  return best;
+}
+function receiptOrder(list){
+  var seen = {}, out = [];
+  var first = pickReceipt(list);
+  if(first) out.push(first);
+  seen[first] = 1;
+  list.map(function(o){ return o.v; })
+      .sort(function(a,b){ return b - a; })
+      .forEach(function(v){ if(!seen[v]){ seen[v]=1; out.push(v); } });
+  return out;
+}
+
+function handleLive(list){
+  frames.push(list.length ? (camMode === "rcpt" ? pickReceipt(list) : list[0].v) : 0);
+  if(frames.length > WINDOW) frames.shift();
+  if(list.length){ lastList = list; emptyRun = 0; } else { emptyRun++; }
+
+  var counts={}, top=0, topN=0;
+  frames.forEach(function(v){ if(v) counts[v]=(counts[v]||0)+1; });
+  Object.keys(counts).forEach(function(k){ if(counts[k]>topN){ topN=counts[k]; top=Number(k); } });
+
+  if(!top || topN < NEED_SHOW){
+    best=null; $("ret").classList.remove("hit"); $("shut").disabled=true; $("live").hidden=true;
+    $("tip").textContent = emptyRun > 8 ? "Цифр не видно — подойдите ближе или добавьте света"
+      : (camMode === "rcpt" ? "Наведите на весь чек" : "Наведите рамку на цену");
+    return;
+  }
+  var c = cur(), ok = topN >= NEED_TAKE;
+  var alts = camMode === "rcpt"
+    ? receiptOrder(lastList||[]).slice(0,5)
+    : (lastList||[]).map(function(o){return o.v;}).slice(0,5);
+  best = {v:top, all:alts, how:(camMode === "rcpt") ? "итог чека"
+          : ((lastList&&lastList[0]&&lastList[0].v===top)?lastList[0].how:"")};
+  $("live").hidden=false;
+  $("liveA").textContent = fmtAmount(top, c) + " " + c.s;
+  $("liveB").textContent = fmtRub(top / rate()) + " ₽";
+  // Когда число сведено, подпись не нужна: готовность видно по зелёной рамке,
+  // а круглая кнопка внизу и так читается как кнопка. Неразрывный пробел
+  // держит высоту строки, чтобы цена не подпрыгивала при смене состояния.
+  $("liveC").textContent = ok ? " " : "Свожу кадры…";
+  $("ret").classList.toggle("hit", ok);
+  $("shut").disabled=false;
+}
+
+/* окно справки */
+/* ======================= тур ======================= */
+/* Картинки рисуем прямо в разметке, SVG: ни одного внешнего файла, любой
+   размер экрана, и цвета берутся из темы — в тёмной всё перекрашивается само. */
+var S = {
+  bg:  'fill="var(--card)"',
+  soft:'fill="var(--card-2)"',
+  ink: 'fill="var(--label)"',
+  dim: 'fill="var(--label-3)"',
+  tint:'fill="var(--tint)"',
+  on:  'fill="var(--on-tint)"',
+  good:'fill="var(--good)"'
+};
+function pill(x,y,w,h,f,r){ return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+(h||16)+'" rx="'+(r||(h||16)/2)+'" '+f+'/>'; }
+function svg(inner){ return '<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg" role="img">'+inner+'</svg>'; }
+
+var TOUR = [
+  { t:"Выберите страну",
+    d:"Лента вверху листается вбок. От страны зависит и курс, и то, как читается ценник: 150.000 во Вьетнаме — это сто пятьдесят тысяч, а 12,50 в Турции — двенадцать с половиной.",
+    p:function(){ return svg(
+        pill(20,40,84,30,S.tint,15) +
+        '<text x="62" y="60" text-anchor="middle" font-size="13" font-weight="600" '+S.on+'>Вьетнам</text>' +
+        pill(112,40,80,30,S.bg,15) +
+        '<text x="152" y="60" text-anchor="middle" font-size="13" '+S.dim+'>Таиланд</text>' +
+        pill(200,40,76,30,S.bg,15) +
+        '<text x="238" y="60" text-anchor="middle" font-size="13" '+S.dim+'>Турция</text>' +
+        pill(284,40,30,30,S.bg,15) +
+        '<rect x="20" y="92" width="280" height="86" rx="16" '+S.bg+'/>' +
+        '<text x="36" y="116" font-size="12" '+S.dim+'>Цена · Вьетнам</text>' +
+        '<text x="36" y="150" font-size="30" font-weight="700" '+S.ink+'>150 000</text>' +
+        '<text x="286" y="150" text-anchor="end" font-size="15" '+S.dim+'>₫</text>'
+      ); } },
+
+  { t:"Курс подтянется сам",
+    d:"Вверху справа всегда видно, по какому курсу считаем. Зелёная точка — свежий курс ЦБ. Свой курс обмена точнее: нажмите на этот значок или откройте раздел «Курс» внизу.",
+    p:function(){ return svg(
+        pill(168,26,132,32,'fill="var(--tint-soft)"',16) +
+        '<circle cx="186" cy="42" r="4" '+S.good+'/>' +
+        '<text x="198" y="47" font-size="13" font-weight="600" fill="var(--tint-ink)">Курс 309 ₫/₽</text>' +
+        '<rect x="20" y="78" width="280" height="100" rx="16" '+S.bg+'/>' +
+        '<text x="38" y="104" font-size="12" '+S.dim+'>Курс ЦБ</text>' +
+        '<text x="38" y="128" font-size="17" font-weight="600" '+S.ink+'>309 ₫ за рубль</text>' +
+        pill(38,142,110,26,'fill="var(--tint-soft)"',13) +
+        '<text x="93" y="160" text-anchor="middle" font-size="12" font-weight="600" fill="var(--tint-ink)">Ввести свой</text>'
+      ); } },
+
+  { t:"Нажмите «Навести камеру»",
+    d:"Синяя кнопка под ценой. В первый раз телефон спросит разрешение на камеру — без него распознавание не включится.",
+    p:function(){ return svg(
+        '<rect x="20" y="30" width="280" height="62" rx="16" '+S.bg+'/>' +
+        '<text x="38" y="56" font-size="12" '+S.dim+'>Цена · Вьетнам</text>' +
+        '<text x="38" y="82" font-size="24" font-weight="700" '+S.ink+'>150 000</text>' +
+        pill(20,106,280,48,S.tint,16) +
+        '<rect x="112" y="121" width="18" height="16" rx="4" fill="none" stroke="var(--on-tint)" stroke-width="2.2"/>' +
+        '<circle cx="121" cy="129" r="3.4" fill="none" stroke="var(--on-tint)" stroke-width="2.2"/>' +
+        '<text x="142" y="136" font-size="15" font-weight="600" '+S.on+'>Навести камеру</text>'
+      ); } },
+
+  { t:"Поднесите рамку к цене",
+    d:"Держите телефон ровно и ближе. Число показывается, только когда несколько кадров подряд сошлись на одном значении — поэтому оно не дёргается. Сошлись — рамка зеленеет.",
+    p:function(){ return svg(
+        '<rect x="0" y="0" width="320" height="200" rx="0" fill="#11161c"/>' +
+        '<rect x="96" y="34" width="128" height="86" rx="6" fill="#F4F2EC"/>' +
+        '<rect x="110" y="48" width="64" height="7" rx="3.5" fill="#B9B4A8"/>' +
+        '<rect x="110" y="62" width="44" height="7" rx="3.5" fill="#B9B4A8"/>' +
+        '<text x="160" y="104" text-anchor="middle" font-size="22" font-weight="700" fill="#15181c">150.000</text>' +
+        '<rect x="82" y="72" width="156" height="50" rx="12" fill="none" stroke="var(--good)" stroke-width="3"/>' +
+        '<text x="160" y="152" text-anchor="middle" font-size="15" font-weight="600" fill="#fff">150 000 ₫</text>' +
+        '<text x="160" y="180" text-anchor="middle" font-size="24" font-weight="700" fill="#fff">485,4 ₽</text>'
+      ); } },
+
+  { t:"Нажмите круглую кнопку",
+    d:"Она внизу видоискателя. Камера закроется, а цена перенесётся в калькулятор — уже в рублях.",
+    p:function(){ return svg(
+        '<rect x="0" y="0" width="320" height="200" fill="#11161c"/>' +
+        '<rect x="82" y="30" width="156" height="50" rx="12" fill="none" stroke="var(--good)" stroke-width="3"/>' +
+        '<text x="160" y="63" text-anchor="middle" font-size="20" font-weight="700" fill="#fff">150.000</text>' +
+        '<rect x="0" y="126" width="320" height="74" fill="#05070a"/>' +
+        '<text x="34" y="169" font-size="13" fill="#9aa3ad">Закрыть</text>' +
+        '<text x="286" y="169" text-anchor="end" font-size="13" fill="#9aa3ad">Фонарь</text>' +
+        '<circle cx="160" cy="163" r="26" fill="#fff"/>' +
+        '<circle cx="160" cy="163" r="33" fill="none" stroke="#fff" stroke-width="2" opacity=".35"/>'
+      ); } },
+
+  { t:"Не то число — поправьте",
+    d:"Нажмите на цену: она выделится целиком, можно набрать заново или исправить одну цифру. Если ценник написан от руки или читается плохо — просто наберите его на клавиатуре, она всегда под рукой.",
+    p:function(){ return svg(
+        '<rect x="20" y="24" width="280" height="62" rx="16" '+S.bg+'/>' +
+        '<rect x="34" y="44" width="150" height="30" rx="6" fill="var(--tint-soft)"/>' +
+        '<text x="38" y="68" font-size="24" font-weight="700" '+S.ink+'>150 000</text>' +
+        '<rect x="186" y="44" width="2" height="30" '+S.tint+'/>' +
+        pill(20,98,84,34,S.bg,12) + '<text x="62" y="121" text-anchor="middle" font-size="16" font-weight="600" '+S.ink+'>7</text>' +
+        pill(118,98,84,34,S.bg,12) + '<text x="160" y="121" text-anchor="middle" font-size="16" font-weight="600" '+S.ink+'>8</text>' +
+        pill(216,98,84,34,S.bg,12) + '<text x="258" y="121" text-anchor="middle" font-size="16" font-weight="600" '+S.ink+'>9</text>' +
+        pill(20,142,84,34,S.bg,12) + '<text x="62" y="165" text-anchor="middle" font-size="16" font-weight="600" '+S.ink+'>4</text>' +
+        pill(118,142,84,34,S.bg,12) + '<text x="160" y="165" text-anchor="middle" font-size="16" font-weight="600" '+S.ink+'>5</text>' +
+        pill(216,142,84,34,S.soft,12) + '<text x="258" y="165" text-anchor="middle" font-size="14" font-weight="600" '+S.dim+'>000</text>'
+      ); } },
+
+  { t:"Поменяли деньги?",
+    d:"В обменнике курс всегда хуже биржевого, поэтому свой точнее. Не считайте его сами: впишите, сколько отдали рублей и сколько получили на руки — посчитаю. Курс запоминается отдельно для каждой страны и работает без интернета.",
+    p:function(){ return svg(
+        '<rect x="20" y="26" width="280" height="148" rx="16" '+S.bg+'/>' +
+        '<text x="38" y="54" font-size="13" '+S.dim+'>Отдал, ₽</text>' +
+        '<text x="282" y="54" text-anchor="end" font-size="15" font-weight="600" '+S.ink+'>10 000</text>' +
+        '<rect x="20" y="68" width="280" height="1" fill="var(--sep)"/>' +
+        '<text x="38" y="92" font-size="13" '+S.dim+'>Получил, ₫</text>' +
+        '<text x="282" y="92" text-anchor="end" font-size="15" font-weight="600" '+S.ink+'>3 050 000</text>' +
+        '<rect x="20" y="106" width="280" height="1" fill="var(--sep)"/>' +
+        '<text x="38" y="132" font-size="13" fill="var(--warn)">Ваш курс обмена</text>' +
+        '<text x="38" y="158" font-size="19" font-weight="700" '+S.ink+'>305 ₫ за рубль</text>'
+      ); } }
+];
+
+var tourAt = 0;
+function paintTour(){
+  var s = TOUR[tourAt];
+  $("tourPic").innerHTML = s.p();
+  $("tourTitle").textContent = s.t;
+  $("tourText").textContent = s.d;
+  var dots = "";
+  for(var i = 0; i < TOUR.length; i++) dots += '<b class="' + (i === tourAt ? "on" : "") + '"></b>';
+  $("tourDots").innerHTML = dots;
+  $("tourBack").hidden = tourAt === 0;
+  $("tourNext").textContent = tourAt === TOUR.length - 1 ? "Понятно" : "Далее";
+  $("tourSkip").hidden = tourAt === TOUR.length - 1;
+}
+function openSheet(at){
+  tourAt = typeof at === "number" ? at : 0;
+  paintTour();
+  $("sheet").hidden = false;
+  document.body.style.overflow = "hidden";
+}
+function closeSheet(){
+  $("sheet").hidden = true;
+  document.body.style.overflow = "";
+  set("seen", 1);
+}
+$("infoBtn").addEventListener("click", function(){ openSheet(0); });
+$("scrim").addEventListener("click", closeSheet);
+$("tourSkip").addEventListener("click", closeSheet);
+$("tourBack").addEventListener("click", function(){ if(tourAt > 0){ tourAt--; paintTour(); } });
+$("tourNext").addEventListener("click", function(){
+  if(tourAt < TOUR.length - 1){ tourAt++; paintTour(); } else closeSheet();
+});
+document.addEventListener("keydown", function(e){
+  if($("sheet").hidden) return;
+  if(e.key === "Escape") closeSheet();
+  if(e.key === "ArrowRight" && tourAt < TOUR.length - 1){ tourAt++; paintTour(); }
+  if(e.key === "ArrowLeft" && tourAt > 0){ tourAt--; paintTour(); }
+});
+/* Листание пальцем: на телефоне это первое, что пробуют сделать с такой карточкой. */
+(function(){
+  var x0 = null;
+  var card = document.querySelector(".tourcard");
+  card.addEventListener("touchstart", function(e){ x0 = e.touches[0].clientX; }, {passive:true});
+  card.addEventListener("touchend", function(e){
+    if(x0 === null) return;
+    var dx = e.changedTouches[0].clientX - x0; x0 = null;
+    if(Math.abs(dx) < 45) return;
+    if(dx < 0 && tourAt < TOUR.length - 1){ tourAt++; paintTour(); }
+    if(dx > 0 && tourAt > 0){ tourAt--; paintTour(); }
+  }, {passive:true});
+})();
+
+$("scanBtn").addEventListener("click", openCam);
+$("ovClose").addEventListener("click", closeCam);
+$("shut").addEventListener("click", function(){
+  if(!best) return;
+  apply(best.v, best.all, best.how, lastText);
+  closeCam();
+});
+$("fileIn").addEventListener("change", function(){
+  var f = this.files && this.files[0]; this.value = "";
+  if(!f) return;
+  closeCam(); readPhoto(f);
+});
+
+function readPhoto(file){
+  showScan("<div class='h'>Читаю снимок…</div><div>Пара секунд.</div>", false);
+  var url = URL.createObjectURL(file), img = new Image();
+  img.onload = function(){
+    getWorker().then(function(w){
+      var texts = [];
+      return w.setParameters({tessedit_pageseg_mode:"11", tessedit_char_whitelist:""})
+        .then(function(){ return w.recognize(prepCanvas(img, img.naturalWidth, img.naturalHeight, {x:0,y:0,w:1,h:1}, {binarize:false, blur:0, target:1600})); })
+        .then(function(r1){
+          texts.push((r1&&r1.data&&r1.data.text)?r1.data.text:"");
+          if(parsePrices(texts[0]).length) return null;
+          return w.recognize(prepCanvas(img, img.naturalWidth, img.naturalHeight, {x:0,y:0,w:1,h:1}, {binarize:true, blur:2, target:1600}));
+        })
+        .then(function(r2){
+          if(r2&&r2.data&&r2.data.text) texts.push(r2.data.text);
+          return w.setParameters({tessedit_pageseg_mode:"6", tessedit_char_whitelist:WHITELIST});
+        })
+        .then(function(){ return texts.join("\n"); });
+    }).then(function(text){
+      URL.revokeObjectURL(url);
+      text = (text||"").trim(); lastText = text;
+      var list = parsePrices(text);
+      if(!list.length){
+        showScan("<div class='h'>Цену не нашёл</div><div>Снимите крупнее — цифры должны занимать хотя бы треть кадра.</div>" +
+          (state.debug ? "<div style='font:11px/1.4 ui-monospace,monospace;opacity:.75'>OCR: "+esc(text.replace(/\n/g," / ")).slice(0,300)+"</div>" : ""), true);
+        return;
+      }
+      apply(list[0].v, list.map(function(o){return o.v;}).slice(0,5), list[0].how, text);
+    }).catch(function(e){
+      URL.revokeObjectURL(url);
+      showScan("<div class='h'>"+esc(e&&e.message?e.message:"Не получилось распознать")+"</div><div>Цену всегда можно ввести на клавиатуре.</div>", true);
+    });
+  };
+  img.onerror = function(){ URL.revokeObjectURL(url); showScan("<div class='h'>Не открылся снимок</div>", true); };
+  img.src = url;
+}
+
+function apply(v, all, how, raw){
+  var c = cur();
+  state.rev = false; set("rev", false);
+  if(camMode === "rcpt") openSplit();
+  state.input = formatToInput(v, c);
+  render(); pushHist();
+  var alts = (all||[]).filter(function(x){ return x !== v; }).slice(0,4);
+  var html = "<div class='h'>Прочитал " + fmtAmount(v,c) + " " + c.s +
+             (how ? " <span style='font-weight:400;color:var(--label-3)'>· " + esc(how) + "</span>" : "") + "</div>";
+  html += "<div class='chips' id='alts'></div>";
+  if(state.debug && raw) html += "<div style='font:11px/1.4 ui-monospace,monospace;opacity:.75'>OCR: "+esc(raw.replace(/\n/g," / ")).slice(0,300)+"</div>";
+  showScan(html, false);
+  var box = $("alts");
+  alts.forEach(function(x){
+    var b=document.createElement("button"); b.type="button"; b.className="chip";
+    b.textContent = fmtAmount(x,c) + " " + c.s;
+    b.addEventListener("click", function(){ state.input = formatToInput(x,c); render(); pushHist(); });
+    box.appendChild(b);
+  });
+  var fix=document.createElement("button"); fix.type="button"; fix.className="chip out";
+  fix.textContent="Поправить"; fix.addEventListener("click", editValue);
+  box.appendChild(fix);
+}
+
+/* ======================= служебное ======================= */
+$("dbgBtn").addEventListener("click", function(){
+  state.debug = !state.debug; set("debug", state.debug);
+  $("dbgBtn").textContent = state.debug ? "скрыть распознанный текст" : "показать распознанный текст";
+  $("dbg").hidden = !state.debug;
+});
+$("updBtn").addEventListener("click", function(){
+  var b = $("updBtn"); b.textContent = "проверяю…"; b.disabled = true;
+  var jobs = [];
+  if("serviceWorker" in navigator) jobs.push(navigator.serviceWorker.getRegistration().then(function(r){ return r && r.update(); }).catch(function(){}));
+  if(window.caches) jobs.push(caches.keys().then(function(k){
+    return Promise.all(k.filter(function(x){ return /-shell$/.test(x); }).map(function(x){ return caches.delete(x); }));
+  }).catch(function(){}));
+  Promise.all(jobs).then(function(){ setTimeout(function(){ location.reload(); }, 400); });
+});
+
+/* ======================= запуск ======================= */
+buildCurbar(); buildQuick(); buildSplit();
+if(state.split > 1) openSplit();
+$("dbgBtn").textContent = state.debug ? "скрыть распознанный текст" : "показать распознанный текст";
+$("footVer").textContent = "Версия " + APP_VERSION + " от " + APP_DATE + " · распознавание работает офлайн";
+if(state.mine[state.code]) $("rateIn").value = fmtRate(state.mine[state.code]);
+render(); renderHist(); fetchRates(false);
+
+// Первый запуск — показываем тур. Флаг ставится при его закрытии любым
+// способом, так что второй раз он сам уже не откроется; вернуться к нему
+// можно кнопкой (i).
+if(!get("seen", 0)) setTimeout(function(){ openSheet(0); }, 350);
+
+$("curbar").addEventListener("click", function(){ buildQuick(); });
+window.addEventListener("online", function(){ fetchRates(true); });
+if("serviceWorker" in navigator){
+  window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+}
+setTimeout(function(){ getWorker().catch(function(){}); }, 1000);
+})();
+</script>
+</body>
+</html>

@@ -207,3 +207,6 @@ docs/staff-reports/
 
 # копия spb.visa-sc.ru (собирается tools/spbcopy-mirror.js, в git не нужна)
 .spbcopy/
+
+# Курс ЦБ для /howmuch — снимок, обновляется сам
+.howmuchRates.json

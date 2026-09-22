@@ -103,6 +103,10 @@ app.get(ESIM_LAND_PATHS.map((c) => "/" + c), (req, res, next) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   return res.sendFile(path.join(__dirname, "public", "esim.html"));
 });
+// «Хау мач?» (/howmuch) — цена с заграничного ценника в рубли по фото.
+// Монтируется ДО express.static: адрес без слеша на конце должен уйти в 301,
+// иначе относительные пути страницы («ocr/…», «sw.js») разъедутся по корню сайта.
+require("./howmuch").mount(app);
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/cabinet", (req, res) => {
