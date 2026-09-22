@@ -56,7 +56,7 @@ const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
 const UTM_PROMO = process.env.ESIM_UTM_PROMO || "VSC20OFF3";
 // Автоматические SMS — −10%, массовые рассылки — −20% (как на сайте, 18.09.2026)
 const UTM_PROMOS = { sms: process.env.ESIM_SMS_PROMO || "VSC10OFF", sms_mass: UTM_PROMO, email: UTM_PROMO, tg: UTM_PROMO };
-const SUPPORT_TG = "https://t.me/vsc_operator";
+const SUPPORT_TG = "";   // прямых ссылок на операторов больше нет — только кнопка «Поддержка»
 const SITE_SHORT = (process.env.ESIM_REF_SITE || "https://voyomobile.ru").replace(/^https?:\/\//, "");
 const BOT_NAME = process.env.ESIM_TG_USERNAME || "esimvoyo_bot";
 
@@ -171,7 +171,7 @@ function daysWord(b) { return b[0] + "–" + b[1] + " " + plural(b[1], ["ден�
 async function showDays(chatId, iso, messageId) {
   ev(chatId, "country");
   const list = await packsFor(iso);
-  if (!list.length) return send(chatId, "По этой стране пакетов сейчас нет. Напишите нам, подберём вручную: " + SUPPORT_TG);
+  if (!list.length) return send(chatId, "По этой стране пакетов сейчас нет. Напишите нам через кнопку «🛟 Поддержка» — подберём вручную.");
   const btns = [];
   DAY_BUCKETS.forEach((b, i) => {
     const l = byBucket(list, b);
@@ -280,7 +280,7 @@ function homeKeyboard() {
     rows.push(POPULAR.slice(i, i + 3).map((iso) => ({ text: flag(iso) + " " + cname(iso), callback_data: "c:" + iso })));
   }
   rows.push([{ text: "🌍 Все страны", callback_data: "all:0" }]);
-  rows.push([{ text: "📱 Мои eSIM", callback_data: "my" }, { text: "💬 Помощь", url: SUPPORT_TG }]);
+  rows.push([{ text: "📱 Мои eSIM", callback_data: "my" }, { text: "🛟 Поддержка", callback_data: "support" }]);
   return { inline_keyboard: rows };
 }
 
@@ -313,7 +313,7 @@ async function showAllCountries(chatId, page, messageId) {
 // посмотреть свои eSIM и вернуться, ничего не потеряв.
 const BTN_BUY = "🌍 Купить eSIM";
 const BTN_MY = "📱 Мои eSIM";
-const BTN_HELP = "💬 Помощь";
+const BTN_HELP = "🛟 Поддержка";
 const BTN_MAIL = "✉️ Почта для сайта";
 const BTN_SITE = "🌐 Перейти на сайт";
 const BTN_BONUS = "🎁 Бонусы";
@@ -356,7 +356,7 @@ async function showCountry(chatId, iso, page, messageId, bucket) {
   const byDays = abOf(chatId) === "days";
   const navCb = (pg) => byDays ? "d:" + iso + ":" + (bIdx == null ? "all" : bIdx) + ":" + pg : "c:" + iso + ":" + pg;
   if (!list.length) {
-    return send(chatId, "По этой стране пакетов сейчас нет. Напишите нам, подберём вручную: " + SUPPORT_TG);
+    return send(chatId, "По этой стране пакетов сейчас нет. Напишите нам через кнопку «🛟 Поддержка» — подберём вручную.");
   }
   const PER = 8;
   const pages = Math.max(1, Math.ceil(list.length / PER));
@@ -489,6 +489,33 @@ function discountRows(chatId, price) {
   return rows;
 }
 
+// ─────────────────────────── поддержка ───────────────────────────
+// Кнопка «🛟 Поддержка»: человек пишет вопрос своими словами, вопрос уходит письмом
+// (в рабочее окно, см. esimchat.js), ответ оператора приходит ему сюда же в бот.
+async function supportStart(chatId) {
+  setState(chatId, { step: "support" });
+  return send(chatId,
+    "<b>Поддержка VOYO mobile</b>\n\n" +
+    "Опишите вопрос одним сообщением: что не получается, какой телефон, какая ошибка. " +
+    "Ответим здесь же, в этом чате.",
+    { reply_markup: { inline_keyboard: [[{ text: "‹ В начало", callback_data: "home" }]] } });
+}
+async function supportText(chatId, text) {
+  const st = getState(chatId);
+  const j = await api("post", "/esim/api/tg/support",
+    { tgChatId: String(chatId), text, email: st.email || "", phone: st.phone || "" },
+    { "X-Tg-Secret": tgSecret() }).catch(() => null);
+  setState(chatId, { step: null });
+  if (!j || !j.success) {
+    return send(chatId, "Не получилось отправить вопрос. Попробуйте ещё раз чуть позже.",
+      { reply_markup: homeKeyboard() });
+  }
+  return send(chatId,
+    "Вопрос передали оператору. Ответ придёт сюда же, в этот чат.\n\n" +
+    "Можно написать ещё — просто отправьте сообщение по кнопке «🛟 Поддержка».",
+    { reply_markup: homeKeyboard() });
+}
+
 // ─────────────────────────── блогеры (вход только по ссылке) ───────────────────────────
 // t.me/<бот>?start=blogger — отдельная ветка разговора, в обычном меню её нет,
 // чтобы не мешать клиентам. Правила и хранилище — esimblog.js (21.09.2026).
@@ -532,7 +559,7 @@ const BLOG_WHY = {
 async function blogStop(chatId, text) {
   setState(chatId, { blog: null });
   await send(chatId, text, { reply_markup: { inline_keyboard: [
-    [{ text: "Написать менеджеру", url: SUPPORT_TG }],
+    [{ text: "🛟 Написать в поддержку", callback_data: "support" }],
     [{ text: "Выбрать eSIM", callback_data: "home" }],
   ] } });
   return showHome(chatId);
@@ -635,7 +662,7 @@ async function blogText(chatId, t, b) {
          { text: "🔗 Ссылка на бота", callback_data: "blogref:tg" }],
         [{ text: "Начать", callback_data: "home" }],
         [{ text: "Оформить на сайте", url: BASE_URL + "/esim" }],
-        [{ text: "Написать менеджеру", url: SUPPORT_TG }],
+        [{ text: "🛟 Написать в поддержку", callback_data: "support" }],
       ] } });
   }
   setState(chatId, { blog: null });
@@ -674,7 +701,7 @@ async function payLink(chatId) {
     promo: st.promo || "", ref: st.ref || "", useBalance: !!st.useBalance, tgChatId: String(chatId), qty: qtyOf(st),
   });
   if (!j || !j.success || !j.url) {
-    return send(chatId, "Не получилось открыть оплату. Попробуйте ещё раз или напишите нам: " + SUPPORT_TG);
+    return send(chatId, "Не получилось открыть оплату. Попробуйте ещё раз или напишите нам через кнопку «🛟 Поддержка».");
   }
   ev(chatId, "pay");
   const price = await priceFor(chatId, p);
@@ -863,7 +890,7 @@ async function startTopup(chatId, localId, productId) {
     promo: st.promo || "", useBalance: !!st.useBalance,
   });
   if (!j || !j.success || !j.url) {
-    return send(chatId, "Не получилось открыть оплату продления. Напишите нам: " + SUPPORT_TG);
+    return send(chatId, "Не получилось открыть оплату продления. Напишите нам через кнопку «🛟 Поддержка».");
   }
   return send(chatId,
     "<b>Продление</b>\n" + esc(o.label || "") + "\n\nПосле оплаты трафик добавится на эту же eSIM, " +
@@ -917,10 +944,8 @@ async function onText(chatId, text) {
         [{ text: "📱 Мои eSIM на сайте", url: BASE_URL + "/esim/account" }],
       ] } });
   }
-  if (t === BTN_HELP || /^\/help|^помощь/i.test(t)) {
-    return send(chatId, "Напишите страну, и я покажу пакеты. Живой человек на связи здесь: " + SUPPORT_TG,
-      { reply_markup: homeKeyboard() });
-  }
+  if (t === BTN_HELP || /^\/help|^помощь|^поддержк/i.test(t)) return supportStart(chatId);
+  if (st.step === "support") return supportText(chatId, t);
 
   if (st.step === "promo") {
     const code = t.trim().toUpperCase();
@@ -982,7 +1007,7 @@ async function onText(chatId, text) {
   const scored = searchCountries(c.index, t);
   const hits = scored.map((h) => h.item);
   if (!hits.length) {
-    return send(chatId, "Не нашёл такую страну. Попробуйте другое написание, откройте полный список или напишите нам: " + SUPPORT_TG,
+    return send(chatId, "Не нашёл такую страну. Попробуйте другое написание, откройте полный список или напишите нам через кнопку «🛟 Поддержка».",
       { reply_markup: homeKeyboard() });
   }
   // Одна страна или лучшая явно впереди («China» → Китай, а не Гонконг и Макао) — открываем сразу
@@ -1053,6 +1078,7 @@ async function onCallback(q) {
       : (process.env.ESIM_REF_SITE || "https://voyomobile.ru") + "/esim?ref=" + ref;
     return send(chatId, "<code>" + esc(link) + "</code>\n\nНажмите на ссылку — она скопируется.");
   }
+  if (data === "support") return supportStart(chatId);
   if (data === "blogcopy") {
     const code = (getState(chatId) || {}).promo || "";
     if (!code) return send(chatId, "Код не найден — напишите /start и получите новый.");
@@ -1121,7 +1147,7 @@ async function onIssued(order, n, total) {
   const st = setState(chatId, { qty: 1 });
   const rows = [
     [{ text: total > 1 ? "Остаток и продление · eSIM " + n : "Остаток и продление", url: order.myUrl }],
-    [{ text: "📱 Мои eSIM", callback_data: "my" }, { text: "💬 Помощь", url: SUPPORT_TG }],
+    [{ text: "📱 Мои eSIM", callback_data: "my" }, { text: "🛟 Поддержка", callback_data: "support" }],
   ];
   if (!st.email) rows.push([{ text: "✉️ Привязать почту для сайта", callback_data: "mail" }]);
   await send(chatId, how, { reply_markup: { inline_keyboard: rows } });

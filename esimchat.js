@@ -24,7 +24,7 @@ const IMAP_STATE = path.join(DIR, "mailin.json");
 const TO = process.env.ESIM_SUPPORT_TO || "director@visa-sc.ru";
 const BLACKOUT = String(process.env.ESIM_SUPPORT_BLACKOUT || "2026-09-28").split(",").map((s) => s.trim()).filter(Boolean);
 const AUTO_REPLY = process.env.ESIM_SUPPORT_AUTOREPLY ||
-  "Спасибо, сообщение получено. Оператор уже занимается вашим вопросом — ответ придёт сюда же, в этот чат.";
+  "Ваше сообщение получено. Ожидайте ответа оператора — он придёт сюда же, в этот чат.";
 
 function readJson(f, d) { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (_) { return d; } }
 function writeJson(f, d) {
@@ -77,7 +77,7 @@ function findChat(id) { return loadChats().find((c) => c.id === String(id || "")
 function newChatId() { return crypto.randomBytes(4).toString("hex"); }
 
 // Сообщение от клиента: кладём в чат, отвечаем автоответом, письмо — в очередь
-function clientMessage({ id, text, page, ua, ip, contact }) {
+function clientMessage({ id, text, page, ua, ip, contact, tgChatId }) {
   const list = loadChats();
   let chat = list.find((c) => c.id === id);
   if (!chat) {
@@ -86,10 +86,13 @@ function clientMessage({ id, text, page, ua, ip, contact }) {
     list.unshift(chat);
   }
   if (contact) chat.contact = String(contact).slice(0, 120);
+  if (tgChatId) chat.tgChatId = String(tgChatId);   // ответ уйдёт человеку в телеграм
   const clean = String(text || "").slice(0, 4000).trim();
   if (!clean) return null;
-  // Автоответ в чате Андрей убрал 22.09.2026 — человек пишет, ответ даёт оператор
+  const first = !chat.messages.length;
   chat.messages.push({ from: "client", text: clean, ts: Date.now() });
+  // на первое сообщение подтверждаем приём, дальше в переписку не лезем
+  if (first) chat.messages.push({ from: "bot", text: AUTO_REPLY, ts: Date.now() + 1 });
   chat.lastAt = Date.now();
   saveChats(list);
 
@@ -108,6 +111,8 @@ function clientMessage({ id, text, page, ua, ip, contact }) {
 }
 
 // Ответ оператора (из письма или из панели)
+let _onOperator = null;
+function onOperator(fn) { _onOperator = fn; }
 function operatorMessage(id, text) {
   const list = loadChats();
   const chat = list.find((c) => c.id === String(id || ""));
@@ -118,6 +123,7 @@ function operatorMessage(id, text) {
   chat.lastAt = Date.now();
   saveChats(list);
   console.log("esim support: ответ оператора в чат", chat.id);
+  if (_onOperator) { try { _onOperator(chat, clean); } catch (e) { console.error("esim support hook:", e.message); } }
   return chat;
 }
 
@@ -128,6 +134,8 @@ function stripReply(raw) {
   for (const line of lines) {
     if (/^\s*>/.test(line)) break;                                   // цитата
     if (/^\s*--\s*$/.test(line)) break;                              // подпись
+    if (/^[\s_\-—=]{3,}$/.test(line)) break;                          // черта перед подписью
+    if (/^\s*(С уважением|Best regards|Regards|Sincerely)\b/i.test(line)) break;
     if (/^\s*(On .+ wrote:|.*\b\d{1,2}\s+\S+\s+\d{4}.*(пишет|wrote):)\s*$/i.test(line)) break;
     if (/^\s*(От|From|Кому|To|Отправлено|Sent|Тема|Subject)\s*:/i.test(line)) break;
     if (/^-{3,}\s*(Исходное сообщение|Original Message)/i.test(line)) break;
@@ -200,4 +208,4 @@ async function pollMailbox() {
 }
 
 module.exports = { mailWindowOpen, queueMail, flushQueue, loadChats, findChat, newChatId,
-  clientMessage, operatorMessage, stripReply, pollMailbox, esc, mskDay, TO, AUTO_REPLY, BLACKOUT };
+  clientMessage, operatorMessage, onOperator, stripReply, pollMailbox, esc, mskDay, TO, AUTO_REPLY, BLACKOUT };

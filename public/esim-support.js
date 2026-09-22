@@ -131,8 +131,8 @@
             tried: tried, error: err, shot: shot, ua: navigator.userAgent }) });
         var j = await r.json();
         if (!j || !j.success) throw new Error("fail");
-        box.innerHTML = '<div class="vsup-head"><h3>Спасибо, получили</h3><button class="vsup-x" type="button">×</button></div>' +
-          '<div class="vsup-ok"><p>Мы разберёмся и ответим тем способом, который вы указали.</p></div>';
+        box.innerHTML = '<div class="vsup-head"><h3>Обращение отправлено</h3><button class="vsup-x" type="button">×</button></div>' +
+          '<div class="vsup-ok"><b>Ваше обращение получено</b><p>Ожидайте, пожалуйста, ответа оператора — ответим тем способом, который вы указали.</p></div>';
         box.querySelector(".vsup-x").addEventListener("click", close);
       } catch (e) {
         msg.textContent = "Не отправилось. Попробуйте ещё раз или напишите в чат."; msg.classList.add("on");

@@ -2218,7 +2218,29 @@ function mount(app, opts) {
       res.json({ success: true, cid: chat.id, messages: chat.messages.slice(-50) });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
+  // Обращение из телеграм-бота: тот же чат, но с привязкой к чату бота,
+// чтобы ответ оператора ушёл человеку прямо в телеграм (22.09.2026).
+  app.post("/esim/api/tg/support", express.json({ limit: "64kb" }), (req, res) => {
+    const b = req.body || {};
+    const secret = crypto.createHash("sha256").update("tg:" + (process.env.ESIM_TG_TOKEN || "")).digest("hex").slice(0, 24);
+    if (!process.env.ESIM_TG_TOKEN || String(req.headers["x-tg-secret"] || "") !== secret) return res.status(403).json({ success: false });
+    const tgChatId = String(b.tgChatId || "").replace(/\D/g, "").slice(0, 20);
+    if (!tgChatId) return res.status(400).json({ success: false });
+    const chats = support.loadChats();
+    const mine = chats.find((c) => String(c.tgChatId || "") === tgChatId);
+    const chat = support.clientMessage({
+      id: mine ? mine.id : support.newChatId(), text: b.text, page: "телеграм-бот",
+      contact: b.email || b.phone || ("телеграм " + tgChatId), tgChatId,
+    });
+    if (!chat) return res.status(400).json({ success: false });
+    support.flushQueue(opts && opts.sendMail).catch(() => {});
+    res.json({ success: true, cid: chat.id });
+  });
+
+  // человек открыл чат — заодно заглядываем в почту, чтобы ответ появился сразу
+  let _lastPeek = 0;
   app.get("/esim/api/chat/poll", (req, res) => {
+    if (Date.now() - _lastPeek > 15000) { _lastPeek = Date.now(); support.pollMailbox().catch(() => {}); }
     const chat = support.findChat(String(req.query.cid || ""));
     res.set("Cache-Control", "no-store");
     if (!chat) return res.json({ success: true, messages: [] });
@@ -2236,7 +2258,12 @@ function mount(app, opts) {
   });
   // очередь писем и чтение ответов из почтового ящика
   setInterval(() => { support.flushQueue(opts && opts.sendMail).catch(() => {}); }, 5 * 60000);
-  setInterval(() => { support.pollMailbox().catch(() => {}); }, 2 * 60000);
+  // ответ оператора из письма: в веб-чат он попадает сам, а из бота — досылаем в телеграм
+  support.onOperator((chat, text) => {
+    if (!chat || !chat.tgChatId || !opts || !opts.notifyTelegram) return;
+    opts.notifyTelegram({ chatId: chat.tgChatId, kind: "support", text }).catch(() => {});
+  });
+  setInterval(() => { support.pollMailbox().catch(() => {}); }, 45000);
   setTimeout(() => { support.flushQueue(opts && opts.sendMail).catch(() => {}); support.pollMailbox().catch(() => {}); }, 45000);
 
   // ── «Не получается подключить eSIM»: форма обращения + инструкция ──
