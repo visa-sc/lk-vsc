@@ -2322,7 +2322,8 @@ function mount(app, opts) {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).end();
     const one = readJson(HELP_FILE, []).find((x) => x.id === String(req.params.id));
     if (!one || !one.shot) return res.status(404).end();
-    res.sendFile(path.join(HELP_DIR, one.shot));
+    // dotfiles: скриншоты лежат в скрытой папке .esim, без этого Express отдаёт 404
+    res.sendFile(path.join(HELP_DIR, one.shot), { dotfiles: "allow" });
   });
   // Сторож: обращение висит без ответа дольше двух часов — напоминаем письмом.
   // Отметку «ответили» ставит /esim/api/help/done?adm=КОД&id=…
@@ -2344,7 +2345,8 @@ function mount(app, opts) {
       }).catch(() => {});
     } catch (e) { console.error("esim help watch:", e.message); }
   }
-  setInterval(helpWatch, 30 * 60000);
+  // Повторные напоминания о необработанных обращениях Андрей отключил 22.09.2026:
+  // одного письма при поступлении достаточно. helpWatch оставлен на случай возврата.
   app.get("/esim/api/help/done", (req, res) => {
     if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
     const all = readJson(HELP_FILE, []);
@@ -2352,6 +2354,90 @@ function mount(app, opts) {
     if (!one) return res.status(404).json({ success: false });
     one.answered = Date.now(); writeJson(HELP_FILE, all);
     res.json({ success: true });
+  });
+
+  // ── Персональная страница обращения: /esim/case/<id> ──
+  // Человеку уходит ссылка (смс или письмо). На странице — его же вопрос,
+  // разбор именно его ошибки, его eSIM с QR и, если пакет не активирован,
+  // кнопка возврата. Подбор инструкции — по тексту обращения (22.09.2026).
+  app.get("/esim/case/:id", (req, res) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.sendFile(path.join(__dirname, "public", "esim-case.html"));
+  });
+  function caseFix(one) {
+    const t = String((one && one.error) || "").toLowerCase();
+    if (/сбой активации|activation|не удалось добавить|ошибка активации/.test(t)) return "activation";
+    return "generic";
+  }
+  // eSIM человека: ищем по телефону и почте из обращения
+  function caseOrders(one) {
+    const d = (x) => String(x || "").replace(/\D/g, "");
+    const c = String((one && one.contact) || "");
+    const phone = d(c).slice(-10), mail = normEmail((c.match(/[^\s]+@[^\s]+/) || [])[0] || "");
+    if (!phone && !mail) return [];
+    return readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.myUrl &&
+      ((phone && d(o.phone).slice(-10) === phone) || (mail && normEmail(o.email) === mail)));
+  }
+  app.get("/esim/api/case/:id", async (req, res) => {
+    try {
+      const one = readJson(HELP_FILE, []).find((x) => x.id === String(req.params.id));
+      if (!one) return res.status(404).json({ success: false });
+      const mine = caseOrders(one);
+      const esims = [], refundable = [];
+      for (const o of mine.slice(0, 10)) {
+        let state = "", used = true;
+        try {
+          const u = await providerFor(o.mmOrderId).getUsage(o.mmOrderId);
+          const packs = (u && u.packages) || [];
+          const total = packs.reduce((a, x) => a + x.totalMb, 0);
+          const left = packs.reduce((a, x) => a + x.remainingMb, 0);
+          const active = packs.some((x) => x.activatedAt);
+          used = active || left < total;
+          state = active ? ("активирована, осталось " + Math.round(left / 102.4) / 10 + " ГБ") : "ещё не активирована";
+        } catch (_) { state = ""; }
+        esims.push({ label: o.label || "eSIM", url: o.myUrl, state });
+        if (!used) refundable.push({ id: o.id, label: o.label || "eSIM" });
+      }
+      res.json({ success: true, error: one.error, model: one.model,
+        when: adsource.mskTime ? adsource.mskTime(one.ts) : "",
+        fix: caseFix(one), esims, refundable });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+  // «всё заработало» — закрываем обращение
+  app.post("/esim/api/case/:id/ok", (req, res) => {
+    const all = readJson(HELP_FILE, []);
+    const one = all.find((x) => x.id === String(req.params.id));
+    if (one) { one.answered = Date.now(); one.result = "ok"; writeJson(HELP_FILE, all); }
+    res.json({ success: true });
+  });
+  // заявка на возврат: сначала проверяем у поставщика, что пакет не тронут
+  app.post("/esim/api/case/:id/refund", express.json({ limit: "32kb" }), async (req, res) => {
+    try {
+      const all = readJson(HELP_FILE, []);
+      const one = all.find((x) => x.id === String(req.params.id));
+      if (!one) return res.status(404).json({ success: false });
+      const o = caseOrders(one).find((x) => x.id === String((req.body || {}).order || ""));
+      if (!o) return res.status(404).json({ success: false, message: "заказ не найден" });
+      let used = true;
+      try {
+        const u = await providerFor(o.mmOrderId).getUsage(o.mmOrderId);
+        const packs = (u && u.packages) || [];
+        const total = packs.reduce((a, x) => a + x.totalMb, 0);
+        const left = packs.reduce((a, x) => a + x.remainingMb, 0);
+        used = packs.some((x) => x.activatedAt) || left < total;
+      } catch (_) {}
+      if (used) return res.json({ success: false, message: "пакет уже активирован" });
+      one.refundAsked = Date.now(); one.refundOrder = o.id; writeJson(HELP_FILE, all);
+      support.queueMail({
+        subject: "VOYO eSIM: просят возврат по заказу " + o.id,
+        text: "Человек просит вернуть деньги, пакет НЕ активирован.\n\n" +
+          "Заказ: " + o.id + "\nПакет: " + (o.label || "—") + "\nСумма: " + (o.payTotalRub || o.priceRub) + " ₽\n" +
+          "Поставщик: " + (o.src || "—") + " " + (o.mmOrderId || "") + "\nКонтакт: " + (one.contact || "—") + "\n\n" +
+          "Проверить у поставщика и вернуть деньги в Т-Банке.",
+      });
+      support.flushQueue(opts && opts.sendMail).catch(() => {});
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
 
   // список обращений — для панели и для разбора

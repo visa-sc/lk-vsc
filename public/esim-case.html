@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Ваше обращение — VOYO mobile</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<style>
+  :root{ --ink:#16202e; --mut:#6e7c91; --line:#e6ebf2; --accent:#3589bd; --accent-d:#2c6f96;
+         --green:#2a8f6a; --red:#b4322c; --grad:linear-gradient(135deg,#4aa3d4,#2c6f96); }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:#f5f8fc;}
+  .wrap{max-width:620px;margin:0 auto;padding:0 18px 60px;}
+  .hdr{display:flex;align-items:center;justify-content:space-between;padding:22px 0 6px;}
+  .brand{display:inline-flex;flex-direction:column;text-decoration:none;color:var(--ink);}
+  .brandrow{display:flex;align-items:center;gap:9px;}
+  .brandrow img{height:19px;display:block;}
+  .wm{font-size:20px;font-weight:300;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .byvsc{font-size:10.5px;color:var(--mut);margin-top:3px;align-self:flex-end;}
+  .byvsc b{color:var(--accent);}
+  h1{font-size:25px;letter-spacing:-.02em;margin:20px 0 6px;line-height:1.15;}
+  .lead{color:var(--mut);font-size:14.5px;line-height:1.5;margin:0 0 18px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:18px 20px;margin-bottom:14px;
+        box-shadow:0 18px 40px -30px rgba(16,24,40,.35);}
+  .card h2{font-size:16.5px;margin:0 0 10px;}
+  .quote{background:#f7fafd;border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:14px;
+         line-height:1.5;color:#2c3a4d;white-space:pre-wrap;}
+  .meta{font-size:12.5px;color:var(--mut);margin-top:8px;}
+  ol{padding-left:18px;margin:10px 0 0;}
+  li{font-size:14.5px;line-height:1.6;margin-bottom:9px;color:#2c3a4d;}
+  li b{color:var(--ink);}
+  .btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+  .btn{flex:1 1 200px;border:0;border-radius:14px;background:var(--grad);color:#fff;font:inherit;font-size:15px;
+       font-weight:700;padding:13px;cursor:pointer;text-align:center;text-decoration:none;}
+  .btn.ghost{background:#fff;color:var(--accent-d);border:1px solid var(--line);}
+  .esim{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);}
+  .esim:last-child{border-bottom:0;}
+  .esim .t{font-size:14.5px;}
+  .esim .t small{display:block;color:var(--mut);font-size:12.5px;}
+  .esim a{font-size:13.5px;font-weight:600;color:var(--accent);text-decoration:none;white-space:nowrap;}
+  .done{display:none;text-align:center;padding:6px 0;}
+  .done.on{display:block;}
+  .done b{display:block;font-size:17px;margin-bottom:6px;}
+  .done p{color:var(--mut);font-size:14.5px;margin:0;line-height:1.5;}
+  .foot{margin-top:22px;text-align:center;color:var(--mut);font-size:12.5px;line-height:1.6;}
+  .foot a{color:var(--accent);text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <a class="brand" href="/esim">
+      <span class="brandrow"><img src="/voyo-logo.png" alt="VOYO" /><span class="wm">mobile</span></span>
+      <span class="byvsc">by <b>VSC</b></span>
+    </a>
+  </div>
+
+  <h1 id="h1">Ваше обращение</h1>
+  <p class="lead" id="lead">Разобрали вашу ситуацию — ниже, что делать по шагам.</p>
+
+  <div class="card" id="askCard">
+    <h2>Что вы написали</h2>
+    <div class="quote" id="ask">—</div>
+    <div class="meta" id="meta"></div>
+  </div>
+
+  <div class="card" id="esimCard" style="display:none">
+    <h2>Ваши eSIM у нас</h2>
+    <div id="esims"></div>
+  </div>
+
+  <div class="card">
+    <h2 id="fixTitle">Что делать</h2>
+    <ol id="steps"></ol>
+    <div class="btns">
+      <button class="btn" type="button" id="okBtn">Всё заработало</button>
+      <button class="btn ghost" type="button" data-vsup="chat">Не помогло, напишу в чат</button>
+    </div>
+    <div class="done" id="done"><b>Спасибо!</b><p>Рады, что заработало. Хорошей поездки.</p></div>
+  </div>
+
+  <div class="card" id="refundCard" style="display:none">
+    <h2>Возврат</h2>
+    <p class="lead" style="margin:0 0 4px">Если eSIM не пригодилась и вы её не активировали, мы вернём деньги. Выберите пакет:</p>
+    <div id="refunds"></div>
+  </div>
+
+  <div class="foot">
+    <a href="/esim">VOYO mobile — пакеты eSIM</a><br/>
+    Остались вопросы? <a href="#" data-vsup="chat">Напишите в чат</a> — ответим здесь же.
+  </div>
+</div>
+
+<script src="/esim-support.js" defer></script>
+<script>
+(function(){
+  "use strict";
+  var id = location.pathname.split("/").pop();
+
+  // Инструкции под конкретную ошибку. Подбираем по тому, что человек написал.
+  var FIXES = {
+    activation: { title: "Ошибка «Сбой активации eSIM» — что делать", steps: [
+      "<b>Проверьте интернет.</b> Для установки нужен Wi-Fi или мобильный интернет: профиль скачивается с сервера оператора. В роуминге и при слабом сигнале установка часто срывается.",
+      "<b>Подождите минуту и нажмите «Повторить».</b> Чаще всего со второй попытки профиль ставится.",
+      "<b>Проверьте, не установлен ли этот QR уже.</b> Настройки → Сотовая связь: если там появилась новая линия, eSIM уже стоит, и второй раз тот же QR не сработает. Включите её и «Роуминг данных».",
+      "<b>Введите код вручную.</b> На экране установки нажмите «Ввести данные вручную» и вставьте строку вида <code>LPA:1$…</code> — её можно скопировать со страницы вашей eSIM.",
+      "<b>Перезагрузите телефон</b> и повторите установку. На iOS 18 и новее это снимает большинство сбоев активации.",
+      "<b>Проверьте, не заблокирован ли iPhone под оператора.</b> Настройки → Основные → Об этом устройстве → «Блокировка оператора»: должно быть «Нет ограничений»."
+    ] },
+    generic: { title: "Что делать", steps: [
+      "Ставьте eSIM дома по Wi-Fi, до вылета: для установки нужен интернет.",
+      "iPhone: Настройки → Сотовая связь → Добавить eSIM → Использовать QR-код.",
+      "Android: Настройки → Подключения → SIM-карты → Добавить eSIM.",
+      "В поездке включите «Роуминг данных» для линии eSIM.",
+      "Если не выходит — напишите нам в чат, поможем руками."
+    ] }
+  };
+
+  fetch("/esim/api/case/" + encodeURIComponent(id)).then(function(r){ return r.json(); }).then(function(j){
+    if(!j || !j.success){ document.getElementById("ask").textContent = "Обращение не найдено."; return; }
+    document.getElementById("ask").textContent = j.error || "—";
+    document.getElementById("meta").textContent =
+      [j.model ? "Телефон: " + j.model : "", j.when ? "Обращение от " + j.when : ""].filter(Boolean).join(" · ");
+    var fix = FIXES[j.fix] || FIXES.generic;
+    document.getElementById("fixTitle").textContent = fix.title;
+    document.getElementById("steps").innerHTML = fix.steps.map(function(s){ return "<li>" + s + "</li>"; }).join("");
+    if(j.esims && j.esims.length){
+      document.getElementById("esimCard").style.display = "";
+      document.getElementById("esims").innerHTML = j.esims.map(function(e){
+        return '<div class="esim"><div class="t">' + e.label + "<small>" + (e.state || "") + "</small></div>" +
+          '<a href="' + e.url + '" target="_blank" rel="noopener">Открыть QR</a></div>';
+      }).join("");
+    }
+    if(j.refundable && j.refundable.length){
+      document.getElementById("refundCard").style.display = "";
+      document.getElementById("refunds").innerHTML = j.refundable.map(function(e){
+        return '<div class="esim"><div class="t">' + e.label + "<small>не активирована</small></div>" +
+          '<button class="btn" style="flex:0 0 auto;padding:10px 16px" data-refund="' + e.id + '">Вернуть деньги</button></div>';
+      }).join("");
+    }
+  }).catch(function(){});
+
+  document.getElementById("okBtn").addEventListener("click", function(){
+    fetch("/esim/api/case/" + encodeURIComponent(id) + "/ok", { method: "POST" }).catch(function(){});
+    this.parentNode.style.display = "none";
+    document.getElementById("done").classList.add("on");
+  });
+
+  document.addEventListener("click", async function(e){
+    var b = e.target.closest("[data-refund]");
+    if(!b) return;
+    b.disabled = true; b.textContent = "Оформляем…";
+    try{
+      var r = await fetch("/esim/api/case/" + encodeURIComponent(id) + "/refund", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order: b.dataset.refund }) });
+      var j = await r.json();
+      b.textContent = j && j.success ? "Заявка принята" : "Не вышло, напишите в чат";
+    }catch(err){ b.textContent = "Не вышло, напишите в чат"; }
+  });
+})();
+</script>
+</body>
+</html>
