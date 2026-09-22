@@ -46,9 +46,9 @@
 '.vsup-m.they{align-self:flex-start;background:#f1f5f9;color:#16202e;border-bottom-left-radius:5px;}' +
 '.vsup-m .who{display:block;font-size:11.5px;opacity:.75;margin-bottom:3px;}' +
 '.vsup-row{display:flex;gap:8px;align-items:flex-end;}' +
-'.vsup-row textarea{min-height:44px;max-height:120px;}' +
+'.vsup-row textarea{min-height:48px;height:48px;max-height:120px;padding:13px 14px;line-height:20px;}' +
 '.vsup-row button{flex:none;border:0;border-radius:13px;background:linear-gradient(135deg,#4aa3d4,#2c6f96);color:#fff;' +
-  'font:inherit;font-weight:700;padding:12px 16px;cursor:pointer;}';
+  'font:inherit;font-weight:700;height:48px;padding:0 18px;cursor:pointer;}';
 
   function el(html) { var t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstChild; }
   function style() {

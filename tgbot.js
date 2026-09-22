@@ -1400,6 +1400,12 @@ function botStatus() {
 // слать некуда: почту мы у него не спрашиваем.
 async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, myUrl, bonusRub, refCode }) {
   if (!ready() || !chatId) return;
+  // ответ оператора на обращение из бота (esimchat.js → esim.js → сюда)
+  if (kind === "support") {
+    return send(chatId, "<b>Ответ поддержки VOYO mobile</b>\n\n" + esc(arguments[0].text || "") +
+      "\n\nЕсли остались вопросы — напишите ещё раз по кнопке «🛟 Поддержка».",
+      { reply_markup: homeKeyboard() });
+  }
   // Через сутки после первой оплаты: человек уже проверил, что eSIM работает,
   // и предложение позвать друга читается как польза, а не как реклама вдогонку.
   if (kind === "refInvite") {
