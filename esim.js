@@ -38,6 +38,7 @@ const axios = require("axios");
 const express = require("express"); // нужен для express.json() на ручке бота
 const tbank = require("./tbank"); // Т-Касса: приём оплат (банк за интерфейсом, как и поставщик eSIM)
 const blog = require("./esimblog");      // блогеры: бесплатный интернет за сторис
+const support = require("./esimchat");   // чат и обращения: очередь писем и ответы с почты      // блогеры: бесплатный интернет за сторис
 const adsource = require("./adsource"); // откуда пришёл покупатель: метки Google Ads, utm и т.п.
 
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
@@ -2200,6 +2201,44 @@ function mount(app, opts) {
   });
 
   // ═══ Личный кабинет по email: все eSIM клиента ═══
+  // ── Чат поддержки на витрине ──
+  // Человек пишет, сразу получает автоответ, письмо уходит на director@ в рабочее
+  // окно (пн 08:00 – пт 15:00 МСК). Ответ приходит обычным ответом на письмо.
+  app.post("/esim/api/chat/send", express.json({ limit: "64kb" }), (req, res) => {
+    try {
+      const b = req.body || {};
+      const chat = support.clientMessage({
+        id: String(b.cid || "").replace(/[^a-f0-9]/gi, "").slice(0, 12) || support.newChatId(),
+        text: b.text, page: b.page, contact: b.contact,
+        ua: req.headers["user-agent"], ip: String(req.headers["x-forwarded-for"] || "").split(",")[0].trim(),
+      });
+      if (!chat) return res.status(400).json({ success: false });
+      // в рабочее окно письмо уходит сразу, вне окна — ждёт своей очереди
+      support.flushQueue(opts && opts.sendMail).catch(() => {});
+      res.json({ success: true, cid: chat.id, messages: chat.messages.slice(-50) });
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+  });
+  app.get("/esim/api/chat/poll", (req, res) => {
+    const chat = support.findChat(String(req.query.cid || ""));
+    res.set("Cache-Control", "no-store");
+    if (!chat) return res.json({ success: true, messages: [] });
+    res.json({ success: true, cid: chat.id, messages: chat.messages.slice(-50) });
+  });
+  // ответ оператора руками (на всякий случай, если почта недоступна)
+  app.get("/esim/api/chat/reply", (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    const chat = support.operatorMessage(String(req.query.cid || ""), String(req.query.text || ""));
+    res.json({ success: !!chat });
+  });
+  app.get("/esim/api/chat/list", (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    res.json({ success: true, windowOpen: support.mailWindowOpen(), chats: support.loadChats().slice(0, 100) });
+  });
+  // очередь писем и чтение ответов из почтового ящика
+  setInterval(() => { support.flushQueue(opts && opts.sendMail).catch(() => {}); }, 5 * 60000);
+  setInterval(() => { support.pollMailbox().catch(() => {}); }, 2 * 60000);
+  setTimeout(() => { support.flushQueue(opts && opts.sendMail).catch(() => {}); support.pollMailbox().catch(() => {}); }, 45000);
+
   // ── «Не получается подключить eSIM»: форма обращения + инструкция ──
   // Ссылку шлём смской тем, у кого что-то не вышло. Ответы копятся в
   // .esim/help.json, скриншоты — в .esim/help/, письмо уходит на director@.
@@ -2235,10 +2274,10 @@ function mount(app, opts) {
       const all = readJson(HELP_FILE, []);
       all.unshift(one); writeJson(HELP_FILE, all.slice(0, 2000));
       console.log("esim help: новое обращение", id, one.contact);
-      if (opts && opts.sendMail) {
-        opts.sendMail({
-          to: "director@visa-sc.ru",
-          subject: "VOYO eSIM: обращение «не получается подключить»",
+      support.flushQueue(opts && opts.sendMail).catch(() => {});
+      {
+        support.queueMail({
+          subject: "VOYO eSIM: обращение «не получается подключить» #" + one.id,
           text: "Человек заполнил форму на " + BASE_URL + "/esim/help\n\n" +
             "Связь: " + one.contact + "\nТелефон/модель: " + (one.model || "—") +
             "\nПробовал подключить: " + one.tried +
@@ -2246,7 +2285,7 @@ function mount(app, opts) {
             (one.shot ? "\nСкриншот: " + BASE_URL + "/esim/api/help/shot/" + one.id + "?adm=" + ADMIN_CODE : "\nСкриншот: нет") +
             (one.tag ? "\nМетка рассылки: " + one.tag : "") +
             "\nУстройство: " + one.ua,
-        }).catch(() => {});
+        });
       }
       res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }

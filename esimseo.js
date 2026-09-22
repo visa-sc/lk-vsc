@@ -271,6 +271,7 @@ ${STYLE}</head><body>
     <a href="/esim">все страны и пакеты</a> · <a href="/esim/account">мои eSIM</a> · <a href="${BOT}">телеграм-бот</a>
   </div>
 </div>
+<script src="/esim-support.js" defer></script>
 </body></html>`;
 }
 
@@ -360,6 +361,7 @@ ${STYLE}
     <a href="/esim">Все страны и пакеты</a> · <a href="/esim/account">мои eSIM</a> · <a href="${BOT}">телеграм-бот</a>
   </div>
 </div>
+<script src="/esim-support.js" defer></script>
 </body></html>`;
 }
 

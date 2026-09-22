@@ -36,7 +36,7 @@ const ESIM_SITE_HOSTS = new Set(["esim.voyotravel.ru", "voyomobile.ru", "voyomob
 const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "georgia", "japan", "dubai"];
 const ESIM_HOST_ALLOW = new RegExp(
   "^\\/($|esim(\\/|_|\\?|$)|(?:" + ESIM_LAND_PATHS.join("|") + ")\\/?$|" +
-  "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|favicon[^/]*\\.(?:ico|svg|png)$|robots\\.txt$|sitemap\\.xml$)");
+  "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|esim-support\\.js$|favicon[^/]*\\.(?:ico|svg|png)$|robots\\.txt$|sitemap\\.xml$)");
 // dev.voyomobile.ru — панель показателей eSIM (18.09.2026): выручка и пакеты
 // по дням, реклама и её окупаемость, клиенты, промокоды, итог. Отдельное имя,
 // чтобы не мешать витрине; вход по админ-коду, страница закрыта от поисковиков.
