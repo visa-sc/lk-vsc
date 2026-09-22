@@ -29,6 +29,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
+const leads = require("./leads");
 
 const PORT = Number(process.env.SPBCOPY_PORT || 3006);
 const ROOT = process.env.SPBCOPY_SITE || path.join(__dirname, "..", ".spbcopy", "site");
@@ -227,6 +228,11 @@ function logLead(entry) {
   try {
     all = JSON.parse(fs.readFileSync(LEADS, "utf8"));
   } catch (_) {}
+  // Номер, статус и заметки нужны разделу «Заявки» (/leads).
+  const maxId = all.reduce((m, e, i) => Math.max(m, Number(e.id) || i + 1), 0);
+  entry.id = maxId + 1;
+  entry.status = entry.status || "new";
+  entry.notes = entry.notes || "";
   all.push(entry);
   if (all.length > MAX_LEADS) all = all.slice(all.length - MAX_LEADS);
   try {
@@ -269,6 +275,20 @@ async function handle(req, res) {
   }
   if (!rel.startsWith("/")) rel = "/" + rel;
 
+  // Раздел «Заявки» — наш, у оригинала такого адреса нет. Всегда закрыт кодом
+  // и закрыт от индексации, на каком бы домене копия ни стояла.
+  if (rel === "/leads" || rel.startsWith("/leads/")) {
+    const handled = leads.handle(req, res, {
+      leadsFile: LEADS,
+      siteDir: ROOT,
+      site: hostOf(req) || "spb.voyotravel.ru",
+      secure: String(req.headers["x-forwarded-proto"] || "").includes("https"),
+      readBody,
+      send
+    });
+    if (handled) return;
+  }
+
   // Служебные ручки Flexbe: статистика, квизы, промокоды, загрузка файлов.
   if (/^\/mod\/stat\//.test(rel)) return sendJson(req, res, { success: true });
   if (/^\/mod\/quiz\//.test(rel)) return sendJson(req, res, { success: true, id: Date.now() });
@@ -287,9 +307,16 @@ async function handle(req, res) {
     } catch (_) {
       data = { raw: raw.slice(0, 5000) };
     }
+    // Адрес страницы, с которой отправили форму: сам POST уходит на служебную
+    // ручку Flexbe, поэтому берём его из Referer.
+    let pageUrl = "/";
+    try {
+      pageUrl = new URL(req.headers.referer || "/", "http://localhost").pathname;
+    } catch (_) {}
     const n = logLead({
       at: new Date().toISOString(),
       page: rel,
+      pageUrl,
       ip: (req.headers["x-real-ip"] || req.socket.remoteAddress || "").toString(),
       ua: (req.headers["user-agent"] || "").slice(0, 300),
       data
