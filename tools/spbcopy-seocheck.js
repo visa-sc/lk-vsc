@@ -101,7 +101,13 @@ function fetchPublic(url) {
 
   console.log(`\n② ТЕСТОВЫЙ домен (${TEST_URL}) — копия должна быть закрыта от поиска`);
   const testRobots = await fetchPublic(`${TEST_URL}/robots.txt`);
-  ok(/Disallow:\s*\//.test(testRobots.body), "robots.txt закрывает сайт целиком");
+  // Обход тут должен быть РАЗРЕШЁН: запрет в robots.txt не выкидывает страницы
+  // из поиска, он лишь мешает роботу увидеть noindex на самой странице.
+  ok(
+    !/^\s*Disallow:\s*\/\s*$/im.test(testRobots.body),
+    "robots.txt не запрещает обход (иначе робот не прочитает noindex)"
+  );
+  ok(!/Sitemap:/i.test(testRobots.body), "карта сайта на тестовом домене не публикуется");
   for (const p of PAGES) {
     const r = await fetchPublic(`${TEST_URL}${p}`);
     ok(/noindex/i.test(String(r.headers["x-robots-tag"] || "")), `${p}: заголовок X-Robots-Tag noindex`);
