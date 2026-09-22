@@ -2398,11 +2398,23 @@ function mount(app, opts) {
         esims.push({ label: o.label || "eSIM", url: o.myUrl, state });
         if (!used) refundable.push({ id: o.id, label: o.label || "eSIM" });
       }
-      res.json({ success: true, error: one.error, model: one.model,
+      res.json({ success: true, error: one.error, model: one.model, note: one.note || null,
         when: adsource.mskTime ? adsource.mskTime(one.ts) : "",
         fix: caseFix(one), esims, refundable });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
+  // личное сообщение оператора на странице обращения
+  app.get("/esim/api/case/:id/note", (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    const all = readJson(HELP_FILE, []);
+    const one = all.find((x) => x.id === String(req.params.id));
+    if (!one) return res.status(404).json({ success: false });
+    one.note = String(req.query.text || "").slice(0, 2000);
+    one.answered = Date.now();
+    writeJson(HELP_FILE, all);
+    res.json({ success: true });
+  });
+
   // «всё заработало» — закрываем обращение
   app.post("/esim/api/case/:id/ok", (req, res) => {
     const all = readJson(HELP_FILE, []);

@@ -59,6 +59,11 @@
   <h1 id="h1">Ваше обращение</h1>
   <p class="lead" id="lead">Разобрали вашу ситуацию — ниже, что делать по шагам.</p>
 
+  <div class="card" id="noteCard" style="display:none;border-color:#cfe2f0;background:#f7fbfe">
+    <h2>Ответ оператора</h2>
+    <div id="note" style="font-size:14.5px;line-height:1.6;white-space:pre-wrap;color:#2c3a4d"></div>
+  </div>
+
   <div class="card" id="askCard">
     <h2>Что вы написали</h2>
     <div class="quote" id="ask">—</div>
@@ -138,6 +143,7 @@
     var fix = FIXES[j.fix] || FIXES.generic;
     document.getElementById("fixTitle").textContent = fix.title;
     document.getElementById("steps").innerHTML = fix.steps.map(function(s){ return "<li>" + s + "</li>"; }).join("");
+    if(j.note){ document.getElementById("note").textContent = j.note; document.getElementById("noteCard").style.display = ""; }
     if(!j.esims || !j.esims.length) document.getElementById("noneCard").style.display = "";
     if(j.esims && j.esims.length){
       document.getElementById("esimCard").style.display = "";
