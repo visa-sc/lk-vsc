@@ -5720,15 +5720,22 @@
         // Строка вида: ✓ Номера (все): 33/33 · Заявки МСК: 10/10 · Заявки СПБ: 3/3 · Заявки ЕКБ: 0/0
         // tr — статус номеров в АТС: { total, online } либо null, если проверок не было.
         // Пятым пунктом в ТОЙ ЖЕ строке и тем же шрифтом (просьба Андрея 23.09.2026).
-        function reconLine(unique, found, forms, ok, tr) {
-          const num = function (a, b) { return '<b style="color:' + (a === b ? "#1d2330" : "#a12b3c") + ';">' + a + "/" + b + "</b>"; };
-          let out = ok ? '<span style="color:#2c7a43;font-weight:800;font-size:14px;">✓</span>' : '<span style="color:#a12b3c;font-weight:800;font-size:14px;">✗</span>';
+        // state: "ok" — всё зелено, "warn" — падало, но вернулось, "bad" — не работает сейчас.
+        function reconLine(unique, found, forms, state, tr) {
+          const num = function (a, b, color) { return '<b style="color:' + (color || (a === b ? "#1d2330" : "#a12b3c")) + ';">' + a + "/" + b + "</b>"; };
+          const MARK = { ok: '<span style="color:#2c7a43;font-weight:800;font-size:14px;">✓</span>',
+                         warn: '<span style="color:#c99a10;font-weight:800;font-size:14px;">✓</span>',
+                         bad: '<span style="color:#a12b3c;font-weight:800;font-size:14px;">✗</span>' };
+          let out = MARK[state === true ? "ok" : (state === false ? "bad" : state)] || MARK.ok;
           out += '<span style="margin-left:8px;white-space:nowrap;">Номера (все): ' + num(found, unique) + "</span>";
           (forms || []).forEach(function (f) {
             const city = CITY[f.id] || escapeHtml(f.label || "");
             out += '<span style="margin-left:14px;white-space:nowrap;">Заявки ' + city + ": " + num(f.found || 0, f.leads || 0) + "</span>";
           });
-          if (tr && tr.total) out += '<span style="margin-left:14px;white-space:nowrap;">АТС: ' + num(tr.online, tr.total) + "</span>";
+          if (tr && tr.total) {
+            const c = tr.down ? "#a12b3c" : (tr.online < tr.total ? "#c99a10" : null);
+            out += '<span style="margin-left:14px;white-space:nowrap;">АТС: ' + num(tr.online, tr.total, c) + "</span>";
+          }
           return '<div style="font-size:13px;color:#1d2330;display:flex;flex-wrap:wrap;align-items:baseline;row-gap:4px;">' + out + "</div>";
         }
         // Из сводки дня или из текущего состояния делаем { total, online, bits }:
@@ -5742,7 +5749,8 @@
             const when = x.from ? (ft(x.from) + (x.to ? " — " + ft(x.to) : " — до сих пор")) : "";
             return escapeHtml(x.number) + (x.name ? " (" + escapeHtml(x.name) + ")" : "") + (when ? " " + escapeHtml(when) : "");
           });
-          return { total: t.total, online: t.total - Object.keys(badNums).length, bits: bits };
+          const down = inc.some(function (x) { return !x.to; });   // не вернулся до сих пор
+          return { total: t.total, online: t.total - Object.keys(badNums).length, bits: bits, down: down };
         }
         fetch("/admin/api/vsc/recon-summary", { headers: { Authorization: "Bearer " + getToken() } })
           .then(function (r) { return r.json(); })
@@ -5765,10 +5773,18 @@
             // Статус номеров АТС: за прошедшие сутки, пятым пунктом в той же строке.
             const trTop = trunkView(j.trunks ? { total: (j.trunks || {}).total, incidents: (j.trunks || {}).incidents } : null);
             const trBad = trTop ? trTop.total - trTop.online : 0;
-            html += reconLine(p.unique || 0, p.found || 0, L.forms, !miss.length && !errParts.length && !trBad, trTop);
+            // Итог строки: красный крест — если что-то не работает прямо сейчас или
+            // контакты не сошлись; жёлтая галочка — номер падал, но вернулся.
+            const topState = (miss.length || errParts.length || (trTop && trTop.down)) ? "bad" : (trBad ? "warn" : "ok");
+            html += reconLine(p.unique || 0, p.found || 0, L.forms, topState, trTop);
             if (errParts.length) html += '<div style="margin-top:7px;color:#a12b3c;font-size:12px;line-height:1.6;">' + errParts.join("<br>") + "</div>";
             if (miss.length) html += '<div style="margin-top:7px;color:#a12b3c;font-size:12px;line-height:1.6;"><b>Пропавшие:</b><br>' + miss.slice(0, 15).join("<br>") + (miss.length > 15 ? "<br>…и ещё " + (miss.length - 15) : "") + "</div>";
-            if (trBad && trTop) html += '<div style="margin-top:7px;color:#a12b3c;font-size:12px;line-height:1.6;"><b>Номера АТС:</b><br>' + trTop.bits.join("<br>") + "</div>";
+            if (trBad && trTop) {
+              const col = trTop.down ? "#a12b3c" : "#8a6d0b";
+              html += '<div style="margin-top:4px;"><a href="#" id="trunkTopMore" style="font-size:11px;font-weight:600;color:#3589BD;text-decoration:none;">подробнее</a>'
+                + '<div id="trunkTopBox" style="display:none;margin-top:4px;font-size:11.5px;color:' + col + ';line-height:1.6;">'
+                + trTop.bits.join("<br>") + "</div></div>";
+            }
             // История по дням — тем же форматом строки.
             const days = j.days || [];
             if (days.length) {
@@ -5780,7 +5796,8 @@
                 const trD = trunkView(d.trunks);
                 const trBadD = trD ? trD.total - trD.online : 0;
                 if (d.forms) {
-                  cell = reconLine(d.unique || 0, (d.found != null ? d.found : (d.unique || 0) - (d.callsMissing || 0)), d.forms, !bad && !d.errors && !trBadD, trD);
+                  const dState = (bad || d.errors || (trD && trD.down)) ? "bad" : (trBadD ? "warn" : "ok");
+                  cell = reconLine(d.unique || 0, (d.found != null ? d.found : (d.unique || 0) - (d.callsMissing || 0)), d.forms, dState, trD);
                 } else { // старый формат записи (без разбивки)
                   cell = d.errors ? '<span style="color:#a12b3c;">сверка с ошибками</span>' : bad ? pill(false, "нет в amo: " + bad) : pill(true, "всё ок");
                 }
@@ -5814,6 +5831,14 @@
                 el.style.display = open ? "none" : "";
                 a.textContent = open ? "подробнее" : "скрыть";
               });
+            });
+            const ttm = box.querySelector("#trunkTopMore");
+            if (ttm) ttm.addEventListener("click", function (e) {
+              e.preventDefault();
+              const el = box.querySelector("#trunkTopBox");
+              const open = el.style.display !== "none";
+              el.style.display = open ? "none" : "";
+              ttm.textContent = open ? "подробнее" : "скрыть";
             });
             const hb = box.querySelector("#reconHistBtn");
             if (hb) hb.addEventListener("click", function () {
