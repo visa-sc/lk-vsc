@@ -5792,6 +5792,17 @@
                 } else { // старый формат записи (без разбивки)
                   cell = d.errors ? '<span style="color:#a12b3c;">сверка с ошибками</span>' : bad ? pill(false, "нет в amo: " + bad) : pill(true, "всё ок");
                 }
+                // Номера АТС за этот день: если регистрация терялась, дописываем к строке.
+                const dt = d.trunks;
+                if (dt && (dt.incidents || []).length) {
+                  const lst = dt.incidents.map(function (x) {
+                    return escapeHtml(x.number) + (x.name ? " (" + escapeHtml(x.name) + ")" : "");
+                  }).join(", ");
+                  cell += '<span style="margin-left:12px;color:#a12b3c;white-space:nowrap;" title="' + escapeHtml(lst)
+                    + '">✗ номера АТС: сбой у ' + dt.incidents.length + '</span>';
+                } else if (dt && dt.checks) {
+                  cell += '<span style="margin-left:12px;color:#7c8497;white-space:nowrap;">номера АТС: ' + dt.total + ' на связи</span>';
+                }
                 // «Подробнее» у дней с крестиком: только сами значения — номер звонившего
                 // или телефон из заявки (просьба Андрея 06.09), серым, по клику.
                 const missBits = [];

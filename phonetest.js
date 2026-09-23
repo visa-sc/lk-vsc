@@ -712,6 +712,36 @@ function mount(app, deps) {
   setTimeout(() => { checkTrunks("startup").catch(() => {}); }, 60 * 1000);
   setInterval(() => { checkTrunks("cron").catch(() => {}); }, 10 * 60 * 1000);
 
+  // Сводка по номерам за календарные сутки МСК: сколько опросов было и какие номера
+  // теряли регистрацию. Инцидент закрывается первой проверкой, где номер снова на связи.
+  function trunkDaySummary(dayStr) {
+    const st = store();
+    const log = (st.trunkLog || []).slice().sort((a, b) => a.at - b.at);
+    if (!log.length || !dayStr) return null;
+    const [y, m, d] = dayStr.split("-").map(Number);
+    const from = Date.UTC(y, m - 1, d) - 3 * 3600 * 1000, to = from + 86400000;
+    const inDay = log.filter((x) => x.at >= from && x.at < to);
+    if (!inDay.length) return null;
+    const names = st.trunkNames || {};
+    const open = {}, incidents = [];
+    inDay.forEach((entry) => {
+      if (entry.error) return;
+      const now = {};
+      (entry.down || []).forEach((x) => { now[x.number] = x; });
+      Object.keys(now).forEach((num) => {
+        if (!open[num]) open[num] = { number: num, name: now[num].name || names[num] || "", status: now[num].status, from: entry.at, to: null };
+      });
+      Object.keys(open).forEach((num) => { if (!now[num]) { open[num].to = entry.at; incidents.push(open[num]); delete open[num]; } });
+    });
+    Object.keys(open).forEach((num) => incidents.push(open[num]));
+    const okChecks = inDay.filter((x) => !x.error);
+    return {
+      checks: okChecks.length, errors: inDay.length - okChecks.length,
+      total: (okChecks[okChecks.length - 1] || {}).total || 0,
+      incidents: incidents.slice(0, 20),
+    };
+  }
+
   async function runRecon(opts) {
     if (reconRunning) throw new Error("сверка уже идёт");
     reconRunning = true;
@@ -823,7 +853,10 @@ function mount(app, deps) {
       st.recons.push(JSON.parse(JSON.stringify(reconCurrent)));
       if (st.recons.length > 30) st.recons.splice(0, st.recons.length - 30);
       if (reconCurrent.day) { // дневная история для блока в /vsc (копится с первой ночи)
-        st.reconDays[reconCurrent.day] = Object.assign({ at: reconCurrent.finishedAt }, reconCurrent.summary);
+        // Заодно кладём в день сводку по номерам АТС: сколько было проверок и какие
+        // номера теряли регистрацию за эти сутки. Журнал опросов живёт двое суток,
+        // а дневная история — сорок дней, поэтому сбои видно и через неделю.
+        st.reconDays[reconCurrent.day] = Object.assign({ at: reconCurrent.finishedAt }, reconCurrent.summary, { trunks: trunkDaySummary(reconCurrent.day) });
         const keys = Object.keys(st.reconDays).sort();
         while (keys.length > 40) delete st.reconDays[keys.shift()];
       }
