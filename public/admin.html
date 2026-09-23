@@ -5777,21 +5777,12 @@
               html += '<div id="reconHistBox" style="display:none;margin-top:8px;"><table style="border-collapse:collapse;font-size:12px;width:100%;">' + days.map(function (d) {
                 let cell;
                 const bad = (d.callsMissing || 0) + (d.formsMissing || 0);
+                const trD = trunkView(d.trunks);
+                const trBadD = trD ? trD.total - trD.online : 0;
                 if (d.forms) {
-                  cell = reconLine(d.unique || 0, (d.found != null ? d.found : (d.unique || 0) - (d.callsMissing || 0)), d.forms, !bad && !d.errors);
+                  cell = reconLine(d.unique || 0, (d.found != null ? d.found : (d.unique || 0) - (d.callsMissing || 0)), d.forms, !bad && !d.errors && !trBadD, trD);
                 } else { // старый формат записи (без разбивки)
                   cell = d.errors ? '<span style="color:#a12b3c;">сверка с ошибками</span>' : bad ? pill(false, "нет в amo: " + bad) : pill(true, "всё ок");
-                }
-                // Номера АТС за этот день: если регистрация терялась, дописываем к строке.
-                const dt = d.trunks;
-                if (dt && (dt.incidents || []).length) {
-                  const lst = dt.incidents.map(function (x) {
-                    return escapeHtml(x.number) + (x.name ? " (" + escapeHtml(x.name) + ")" : "");
-                  }).join(", ");
-                  cell += '<span style="margin-left:12px;color:#a12b3c;white-space:nowrap;" title="' + escapeHtml(lst)
-                    + '">✗ номера АТС: сбой у ' + dt.incidents.length + '</span>';
-                } else if (dt && dt.checks) {
-                  cell += '<span style="margin-left:12px;color:#7c8497;white-space:nowrap;">номера АТС: ' + dt.total + ' на связи</span>';
                 }
                 // «Подробнее» у дней с крестиком: только сами значения — номер звонившего
                 // или телефон из заявки (просьба Андрея 06.09), серым, по клику.
@@ -5800,10 +5791,13 @@
                 (d.forms || []).forEach(function (f) {
                   if ((f.missPhones || []).length) missBits.push("заявки " + (CITY[f.id] || escapeHtml(f.label || "")) + ": " + f.missPhones.map(escapeHtml).join(", "));
                 });
-                if (bad && missBits.length) {
+                if ((bad && missBits.length) || (trBadD && trD.bits.length)) {
                   cell = '<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">' + cell
                     + '<a href="#" class="rc-more" data-day="' + escapeHtml(d.day) + '" style="font-size:11px;font-weight:600;color:#3589BD;text-decoration:none;white-space:nowrap;">подробнее</a></div>'
-                    + '<div class="rc-miss" data-day="' + escapeHtml(d.day) + '" style="display:none;margin-top:4px;font-size:11.5px;color:#8a8f9c;line-height:1.6;">не нашлись в amoCRM — ' + missBits.join(" · ") + "</div>";
+                    + '<div class="rc-miss" data-day="' + escapeHtml(d.day) + '" style="display:none;margin-top:4px;font-size:11.5px;color:#8a8f9c;line-height:1.6;">'
+                    + (missBits.length ? "не нашлись в amoCRM — " + missBits.join(" · ") : "")
+                    + (trBadD && trD.bits.length ? (missBits.length ? "<br>" : "") + "теряли регистрацию в АТС — " + trD.bits.join(" · ") : "")
+                    + "</div>";
                 }
                 return '<tr style="border-top:1px solid #f0eef5;"><td style="padding:5px 14px 5px 0;color:#3a4256;white-space:nowrap;vertical-align:top;"><b>' + fmtDay(d.day) + '</b></td><td style="padding:5px 0;">' + cell + "</td></tr>";
               }).join("") + "</table></div>";
@@ -5820,13 +5814,6 @@
                 el.style.display = open ? "none" : "";
                 a.textContent = open ? "подробнее" : "скрыть";
               });
-            });
-            const tb = box.querySelector("#trunkMoreBtn");
-            if (tb) tb.addEventListener("click", function () {
-              const el = box.querySelector("#trunkMoreBox");
-              const open = el.style.display !== "none";
-              el.style.display = open ? "none" : "";
-              tb.textContent = open ? "Подробнее" : "Скрыть";
             });
             const hb = box.querySelector("#reconHistBtn");
             if (hb) hb.addEventListener("click", function () {
