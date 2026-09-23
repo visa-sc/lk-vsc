@@ -3497,6 +3497,25 @@ function mount(app, opts) {
   setTimeout(() => { closeDays().catch((e) => console.error("esim closeDays:", e.message)); }, 90 * 1000);
   setInterval(() => { closeDays().catch((e) => console.error("esim closeDays:", e.message)); }, 10 * 60 * 1000);
 
+  // Остаток денег у поставщиков — плиткой в панели (просьба Андрея 23.09.2026).
+  // У eSIM Access и MobiMatter баланс живой из их API (его раз в полчаса снимает
+  // сторож в .esim/balancewatch.json), у TSim кредит считаем сами: внесено минус
+  // закупки. Порог — тот же, на котором сторож пишет письмо.
+  function supplierBalances(rate) {
+    const w = readJson(BAL_WATCH_FILE, {});
+    const list = [];
+    if (eaMode() !== "0") list.push({ key: "ea", name: "eSIM Access", short: "EA",
+      usd: (w.ea && w.ea.usd) != null ? w.ea.usd : null, ts: (w.ea && w.ea.ts) || null, low: EA_LOW_USD });
+    if (provider.ready()) list.push({ key: "mm", name: "MobiMatter", short: "MM",
+      usd: (w.mm && w.mm.usd) != null ? w.mm.usd : null, ts: (w.mm && w.mm.ts) || null, low: MM_LOW_USD });
+    if (tsimOn()) list.push({ key: "ts", name: "TSim", short: "TSim", credit: true,
+      usd: tsimLeftUsd(), ts: Date.now(), low: TSIM_RESERVE_USD });
+    const known = list.filter((x) => Number.isFinite(x.usd));
+    const totalUsd = Math.round(known.reduce((a, x) => a + x.usd, 0) * 100) / 100;
+    return { list, totalUsd, totalRub: Math.round(totalUsd * rate),
+      low: known.some((x) => x.usd < x.low), stale: known.some((x) => x.ts && Date.now() - x.ts > 3 * 3600e3) };
+  }
+
   // Обращения из чата — чтобы их было видно не только в почте (23.09.2026).
   // «Без ответа» — последнее слово за человеком, а оператор ещё не отвечал.
   function supportForPanel() {
@@ -3636,6 +3655,7 @@ function mount(app, opts) {
         abBot: abBotFor(from, to, withTest),
         blog: blogStatsFor(from, to, withTest, rate),
         support: supportForPanel(),
+        balances: supplierBalances(rate),
         totals: {
           revenue, orders: paid.filter((o) => !o.groupOf).length, esims: paid.length, cost: Math.round(cost), acq, acqPct: spend.acqPct, adSpend,
           profit: Math.round(revenue - cost - acq - adSpend),
