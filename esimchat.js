@@ -53,6 +53,38 @@ function queueMail(mail) {
   q.push(Object.assign({ id: crypto.randomBytes(4).toString("hex"), ts: Date.now() }, mail));
   writeJson(QUEUE, q.slice(-500));
 }
+// Письма по одному чату не дробим. 23.09.2026 человек за семнадцать минут
+// прислал десять сообщений — и на почту ушло десять писем, в каждом по строчке.
+// Теперь пока «окно склейки» открыто (GROUP_MS после последнего сообщения),
+// новые строки дописываются в то же письмо, а уходит оно одно.
+const GROUP_MS = Number(process.env.ESIM_SUPPORT_GROUP_MS || 90000);
+function queueChatMail(chat, line) {
+  const q = readJson(QUEUE, []);
+  const open = q.find((m) => m.chatId === chat.id && (m.openUntil || 0) > Date.now());
+  if (open) {
+    open.lines.push(line);
+    open.openUntil = Date.now() + GROUP_MS;
+    open.contact = chat.contact || open.contact;
+    writeJson(QUEUE, q);
+    return;
+  }
+  q.push({ id: crypto.randomBytes(4).toString("hex"), ts: Date.now(), chatId: chat.id,
+    openUntil: Date.now() + GROUP_MS, lines: [line],
+    subject: "VOYO eSIM: сообщение из чата #" + chat.id,
+    page: chat.page || "", contact: chat.contact || "" });
+  writeJson(QUEUE, q.slice(-500));
+}
+// текст письма собираем в момент отправки — к этой минуте в нём уже все реплики
+function chatMailText(m) {
+  return "Человек пишет в чат на сайте.\n\n" +
+    m.lines.join("\n") + "\n\n" +
+    "— — —\n" +
+    "Чтобы ответить, просто ответьте на это письмо: текст ответа увидит человек в чате.\n" +
+    "Цитату и подпись мы вырежем сами.\n\n" +
+    "Страница: " + (m.page || "—") + "\n" +
+    (m.contact ? "Контакт: " + m.contact + "\n" : "") +
+    "Чат: " + m.chatId;
+}
 async function flushQueue(sendMail) {
   if (!sendMail) return 0;
   const q = readJson(QUEUE, []);
@@ -60,7 +92,9 @@ async function flushQueue(sendMail) {
   const rest = [];
   let sent = 0;
   for (const m of q) {
-    const r = await sendMail({ to: m.to || TO, subject: m.subject, text: m.text, replyTo: m.replyTo }).catch(() => ({ ok: false }));
+    if ((m.openUntil || 0) > Date.now()) { rest.push(m); continue; }   // человек ещё дописывает
+    const text = m.lines ? chatMailText(m) : m.text;
+    const r = await sendMail({ to: m.to || TO, subject: m.subject, text, replyTo: m.replyTo }).catch(() => ({ ok: false }));
     if (r && r.ok !== false) sent++; else rest.push(m);
     await new Promise((r2) => setTimeout(r2, 300));
   }
@@ -96,17 +130,7 @@ function clientMessage({ id, text, page, ua, ip, contact, tgChatId }) {
   chat.lastAt = Date.now();
   saveChats(list);
 
-  queueMail({
-    subject: "VOYO eSIM: сообщение из чата #" + chat.id,
-    text: "Человек пишет в чат на сайте.\n\n" +
-      clean + "\n\n" +
-      "— — —\n" +
-      "Чтобы ответить, просто ответьте на это письмо: текст ответа увидит человек в чате.\n" +
-      "Цитату и подпись мы вырежем сами.\n\n" +
-      "Страница: " + (chat.page || "—") + "\n" +
-      (chat.contact ? "Контакт: " + chat.contact + "\n" : "") +
-      "Чат: " + chat.id,
-  });
+  queueChatMail(chat, clean);
   return chat;
 }
 
@@ -123,6 +147,22 @@ function operatorMessage(id, text) {
   chat.lastAt = Date.now();
   saveChats(list);
   console.log("esim support: ответ оператора в чат", chat.id);
+  if (_onOperator) { try { _onOperator(chat, clean); } catch (e) { console.error("esim support hook:", e.message); } }
+  return chat;
+}
+
+// Ответ первой линии: разбор по живым данным сразу после сообщения человека.
+// Идёт тем же путём, что и ответ оператора, — значит попадёт и в телеграм.
+function botMessage(id, text, flag) {
+  const list = loadChats();
+  const chat = list.find((c) => c.id === String(id || ""));
+  if (!chat) return null;
+  const clean = String(text || "").slice(0, 4000).trim();
+  if (!clean) return null;
+  chat.messages.push({ from: "bot", text: clean, ts: Date.now() });
+  if (flag) chat[flag] = Date.now();
+  chat.lastAt = Date.now();
+  saveChats(list);
   if (_onOperator) { try { _onOperator(chat, clean); } catch (e) { console.error("esim support hook:", e.message); } }
   return chat;
 }
@@ -207,5 +247,5 @@ async function pollMailbox() {
   return done;
 }
 
-module.exports = { mailWindowOpen, queueMail, flushQueue, loadChats, findChat, newChatId,
-  clientMessage, operatorMessage, onOperator, stripReply, pollMailbox, esc, mskDay, TO, AUTO_REPLY, BLACKOUT };
+module.exports = { mailWindowOpen, queueMail, queueChatMail, flushQueue, loadChats, findChat, newChatId,
+  clientMessage, operatorMessage, botMessage, onOperator, stripReply, pollMailbox, esc, mskDay, TO, AUTO_REPLY, BLACKOUT };

@@ -5749,6 +5749,36 @@
             html += reconLine(p.unique || 0, p.found || 0, L.forms, !miss.length && !errParts.length);
             if (errParts.length) html += '<div style="margin-top:7px;color:#a12b3c;font-size:12px;line-height:1.6;">' + errParts.join("<br>") + "</div>";
             if (miss.length) html += '<div style="margin-top:7px;color:#a12b3c;font-size:12px;line-height:1.6;"><b>Пропавшие:</b><br>' + miss.slice(0, 15).join("<br>") + (miss.length > 15 ? "<br>…и ещё " + (miss.length - 15) : "") + "</div>";
+            // ── Статус номеров в АТС (просьба Андрея 23.09.2026) ──
+            // Зелёная точка в кабинете OnlinePBX = линия зарегистрирована у оператора.
+            // Опрашиваем каждые 10 минут, показываем «сейчас» и сбои за сутки.
+            const tr = j.trunks;
+            if (tr) {
+              const nowBad = (tr.downNow || []).length;
+              const past = (tr.incidents || []).filter(function (x) { return x.to; }).length;
+              const okAll = !tr.error && !nowBad && !past;
+              const mark = okAll ? '<span style="color:#2c7a43;font-weight:800;font-size:14px;">✓</span>'
+                : '<span style="color:#a12b3c;font-weight:800;font-size:14px;">✗</span>';
+              let txt;
+              if (tr.error) txt = "не удалось опросить АТС";
+              else if (nowBad) txt = "сейчас не на связи: " + nowBad + " из " + tr.total;
+              else if (past) txt = "все " + tr.total + " на связи, но за сутки был сбой: " + past;
+              else txt = "все " + tr.total + " номеров зелёные";
+              html += '<div style="margin-top:10px;padding-top:9px;border-top:1px solid #eef0f4;">' + mark
+                + '<span style="margin-left:8px;">Номера в АТС: <b>' + escapeHtml(txt) + '</b></span>'
+                + '<span style="color:#9aa0ab;font-size:11.5px;margin-left:8px;">проверено ' + fmtT(tr.at) + '</span>';
+              if (nowBad || past) {
+                html += ' <button type="button" id="trunkMoreBtn" style="margin-left:8px;padding:4px 11px;font-size:12px;font-weight:600;border-radius:8px;cursor:pointer;line-height:1;background:#fff;color:#3589BD;border:1px solid #bcdcef;">Подробнее</button>'
+                  + '<div id="trunkMoreBox" style="display:none;margin-top:8px;font-size:12px;line-height:1.7;">'
+                  + (tr.incidents || []).map(function (x) {
+                      const when = fmtT(x.from) + (x.to ? " — " + fmtT(x.to) : " — до сих пор");
+                      return '<div><b>' + escapeHtml(x.number) + '</b>' + (x.name ? " · " + escapeHtml(x.name) : "")
+                        + ' <span style="color:#a12b3c;">' + escapeHtml(x.status || "нет регистрации") + '</span>'
+                        + ' <span style="color:#9aa0ab;">' + escapeHtml(when) + '</span></div>';
+                    }).join("") + '</div>';
+              }
+              html += "</div>";
+            }
             // История по дням — тем же форматом строки.
             const days = j.days || [];
             if (days.length) {
@@ -5789,6 +5819,13 @@
                 el.style.display = open ? "none" : "";
                 a.textContent = open ? "подробнее" : "скрыть";
               });
+            });
+            const tb = box.querySelector("#trunkMoreBtn");
+            if (tb) tb.addEventListener("click", function () {
+              const el = box.querySelector("#trunkMoreBox");
+              const open = el.style.display !== "none";
+              el.style.display = open ? "none" : "";
+              tb.textContent = open ? "Подробнее" : "Скрыть";
             });
             const hb = box.querySelector("#reconHistBtn");
             if (hb) hb.addEventListener("click", function () {

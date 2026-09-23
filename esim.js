@@ -2204,6 +2204,83 @@ function mount(app, opts) {
   // ── Чат поддержки на витрине ──
   // Человек пишет, сразу получает автоответ, письмо уходит на director@ в рабочее
   // окно (пн 08:00 – пт 15:00 МСК). Ответ приходит обычным ответом на письмо.
+  // ── Первая линия: чат сам отвечает по делу, не дожидаясь оператора ──
+  // 23.09.2026 в 07:35 человек написал «перестала работать eSIM», получил только
+  // «ожидайте оператора» и полтора часа разбирался сам (помогло переустановить
+  // профиль). Оператор в такое время письмо не читает, поэтому теперь на
+  // сообщение о неполадке чат сразу смотрит заказ человека и остаток у
+  // поставщика и отвечает по тому, что видит.
+  const TROUBLE_RE = /(не\s*работа|перестал|пропал|отвалил|нет\s*(интернет|сет|связ|трафик)|не\s*лов|не\s*подключ|не\s*могу|не\s*устанав|не\s*актив|не\s*вид|ошибк|сбой|медленн|отключ)/i;
+  // заказ человека: сначала по адресу страницы (/esim/my?o=…), потом по контакту
+  function chatOrder(chat) {
+    const all = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.mmOrderId);
+    const mm = (/[?&]o=([A-Za-z0-9_-]+)/.exec(String(chat.page || "")) || [])[1];
+    if (mm) { const hit = all.find((o) => String(o.mmOrderId) === mm); if (hit) return hit; }
+    const c = String(chat.contact || "");
+    const mail = normEmail((c.match(/[^\s]+@[^\s]+/) || [])[0] || "");
+    const phone = c.replace(/\D/g, "").slice(-10);
+    if (!mail && !phone) return null;
+    const mine = all.filter((o) => (mail && normEmail(o.email) === mail) ||
+      (phone && String(o.phone || "").replace(/\D/g, "").slice(-10) === phone));
+    return mine.sort((a, b) => (b.paidAt || b.ts || 0) - (a.paidAt || a.ts || 0))[0] || null;
+  }
+  const GB = (mb) => (Math.round(mb / 102.4) / 10).toString().replace(".", ",");
+  // шаги «пакет живой, а интернета нет» — ровно то, чем люди и чинят сами
+  function stepsNoNet(o) {
+    const steps = [
+      "1. Настройки → Сотовая связь: линия eSIM включена, выбрана для сотовых данных, «Роуминг данных» включён. Без роуминга eSIM за границей не работает.",
+      "2. Включите режим полёта на 15 секунд и выключите — телефон заново зарегистрируется в сети.",
+      "3. Выберите сеть вручную: Настройки → Сотовая связь → линия eSIM → Выбор сети → выключить «Автоматически» и выбрать другого оператора из списка.",
+      "4. Перезагрузите телефон.",
+    ];
+    if (String(o.src || "") === "esimaccess") {
+      steps.push("5. Если не помогло — удалите профиль eSIM и установите заново по своему QR: " + o.myUrl +
+        " Пакет и остаток при этом сохраняются, QR остаётся рабочим. Иногда профиль встаёт со второй попытки.");
+    } else {
+      steps.push("5. Если не помогло — напишите здесь, проверим профиль у оператора и при необходимости выпустим новый. Удалять профиль сами пока не надо.");
+    }
+    return steps.join("\n");
+  }
+  async function chatAutoAnswer(chat) {
+    try {
+      if (!chat || !chat.messages || !chat.messages.length) return;
+      if (chat.autoDiag && Date.now() - chat.autoDiag < 6 * 3600e3) return;   // один разбор на историю
+      const last = chat.messages.filter((m) => m.from === "client").pop();
+      if (!last || !TROUBLE_RE.test(last.text)) return;
+      const o = chatOrder(chat);
+      if (!o) return;                                   // чужая покупка — пусть смотрит человек
+      let u = null;
+      try { u = await providerFor(o.mmOrderId).getUsage(o.mmOrderId); } catch (_) {}
+      if (!u) return;
+      const packs = (u.packages || []).filter((p) => !p.expired);
+      const all = u.packages || [];
+      const total = packs.reduce((a, x) => a + (x.totalMb || 0), 0);
+      const left = packs.reduce((a, x) => a + (x.remainingMb || 0), 0);
+      const active = packs.some((x) => x.activatedAt);
+      const head = "Посмотрели ваш пакет «" + (o.label || "eSIM") + "».\n\n";
+      let text = "";
+      if (u.suspended) {
+        text = head + "Пакет приостановлен на стороне оператора. Это чиним мы, а не вы: уже разбираемся и ответим здесь же.";
+      } else if (!packs.length && all.length) {
+        text = head + "Срок пакета истёк. Чтобы интернет заработал, нужен новый пакет или продление — они на вашей странице: " + o.myUrl;
+      } else if (total && left / total < 0.02) {
+        text = head + "Трафик израсходован полностью, поэтому интернет и пропал. Продлить можно на вашей странице в один тап: " + o.myUrl;
+      } else if (!active) {
+        text = head + "Профиль ещё не установлен на телефон — по данным оператора пакет не активирован.\n" +
+          "Установите его по QR со своей страницы (нужен Wi-Fi): " + o.myUrl + "\n" +
+          "iPhone: Настройки → Сотовая связь → Добавить eSIM → Использовать QR-код. Android: Настройки → Подключения → SIM-карты → Добавить eSIM.\n" +
+          "После установки включите для этой линии «Роуминг данных».";
+      } else {
+        text = head + "С пакетом всё в порядке: он активен, осталось " + GB(left) + " ГБ" +
+          (all[0] && all[0].expiresAt ? ", срок до " + String(all[0].expiresAt).slice(8, 10) + "." + String(all[0].expiresAt).slice(5, 7) : "") +
+          ". Значит, дело не в пакете, а в том, как телефон видит сеть. По порядку:\n\n" + stepsNoNet(o) +
+          "\n\nНапишите, что получилось — если не поможет, подключим оператора.";
+      }
+      support.botMessage(chat.id, text, "autoDiag");
+      console.log("esim support: первая линия ответила в чат", chat.id);
+    } catch (e) { console.error("esim support диагностика:", e.message); }
+  }
+
   app.post("/esim/api/chat/send", express.json({ limit: "64kb" }), (req, res) => {
     try {
       const b = req.body || {};
@@ -2215,6 +2292,7 @@ function mount(app, opts) {
       if (!chat) return res.status(400).json({ success: false });
       // в рабочее окно письмо уходит сразу, вне окна — ждёт своей очереди
       support.flushQueue(opts && opts.sendMail).catch(() => {});
+      chatAutoAnswer(chat).catch(() => {});             // первая линия отвечает сама
       res.json({ success: true, cid: chat.id, messages: chat.messages.slice(-50) });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
@@ -2234,6 +2312,7 @@ function mount(app, opts) {
     });
     if (!chat) return res.status(400).json({ success: false });
     support.flushQueue(opts && opts.sendMail).catch(() => {});
+    chatAutoAnswer(chat).catch(() => {});
     res.json({ success: true, cid: chat.id });
   });
 
@@ -2248,16 +2327,16 @@ function mount(app, opts) {
   });
   // ответ оператора руками (на всякий случай, если почта недоступна)
   app.get("/esim/api/chat/reply", (req, res) => {
-    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    if (!isAdm(req)) return res.status(403).json({ success: false });
     const chat = support.operatorMessage(String(req.query.cid || ""), String(req.query.text || ""));
     res.json({ success: !!chat });
   });
   app.get("/esim/api/chat/list", (req, res) => {
-    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    if (!isAdm(req)) return res.status(403).json({ success: false });
     res.json({ success: true, windowOpen: support.mailWindowOpen(), chats: support.loadChats().slice(0, 100) });
   });
   // очередь писем и чтение ответов из почтового ящика
-  setInterval(() => { support.flushQueue(opts && opts.sendMail).catch(() => {}); }, 5 * 60000);
+  setInterval(() => { support.flushQueue(opts && opts.sendMail).catch(() => {}); }, 60000);
   // ответ оператора из письма: в веб-чат он попадает сам, а из бота — досылаем в телеграм
   support.onOperator((chat, text) => {
     if (!chat || !chat.tgChatId || !opts || !opts.notifyTelegram) return;
@@ -3393,6 +3472,22 @@ function mount(app, opts) {
   setTimeout(() => { closeDays().catch((e) => console.error("esim closeDays:", e.message)); }, 90 * 1000);
   setInterval(() => { closeDays().catch((e) => console.error("esim closeDays:", e.message)); }, 10 * 60 * 1000);
 
+  // Обращения из чата — чтобы их было видно не только в почте (23.09.2026).
+  // «Без ответа» — последнее слово за человеком, а оператор ещё не отвечал.
+  function supportForPanel() {
+    const chats = support.loadChats().slice(0, 60).map((c) => {
+      const msgs = (c.messages || []).slice(-30);
+      const last = msgs[msgs.length - 1] || null;
+      const lastClient = msgs.filter((m) => m.from === "client").pop() || null;
+      const answered = msgs.some((m) => m.from === "operator" &&
+        (!lastClient || m.ts > lastClient.ts));
+      return { id: c.id, ts: c.ts, lastAt: c.lastAt || c.ts, page: c.page || "", contact: c.contact || "",
+        tg: !!c.tgChatId, auto: !!c.autoDiag, answered, waiting: !!lastClient && !answered,
+        last: last ? last.text.slice(0, 160) : "", messages: msgs };
+    });
+    return { windowOpen: support.mailWindowOpen(), waiting: chats.filter((c) => c.waiting).length, chats };
+  }
+
   app.get("/esim/api/adm/stats", async (req, res) => {
     if (!isAdm(req)) return res.status(403).json({ success: false });
     try {
@@ -3506,6 +3601,7 @@ function mount(app, opts) {
         ab: abFor(from, to, withTest),
         abBot: abBotFor(from, to, withTest),
         blog: blogStatsFor(from, to, withTest, rate),
+        support: supportForPanel(),
         totals: {
           revenue, orders: paid.filter((o) => !o.groupOf).length, esims: paid.length, cost: Math.round(cost), acq, acqPct: spend.acqPct, adSpend,
           profit: Math.round(revenue - cost - acq - adSpend),

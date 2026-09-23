@@ -203,6 +203,20 @@
     .sec-h .sum{display:none}
     .sec-h .chev{margin-left:auto}
   }
+  /* Поддержка: карточки обращений */
+  .chat{border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:10px;background:#fff;}
+  .chat .chead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--mut);margin-bottom:8px;}
+  .chat .tag{border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:600;}
+  .chat .tag.wait{background:#fdecea;color:var(--red);}
+  .chat .tag.ok{background:#e8f5ee;color:var(--green);}
+  .chat .tag.auto{background:#eef4fb;color:var(--accent);}
+  .msg{display:flex;gap:8px;margin:5px 0;font-size:13.5px;line-height:1.45;}
+  .msg .who{flex:0 0 76px;color:var(--mut);font-size:12px;padding-top:1px;}
+  .msg .tx{white-space:pre-wrap;}
+  .msg.operator .tx{color:var(--green);}
+  .msg.bot .tx{color:var(--mut);}
+  .crow{display:flex;gap:8px;margin-top:10px;}
+  .crow input{flex:1;height:38px;border:1px solid var(--border);border-radius:10px;padding:0 12px;font:inherit;font-size:13.5px;background:#fff;color:var(--ink);}
 </style>
 </head>
 <body>
@@ -250,6 +264,11 @@
   <section class="sec" data-id="sum">
     <div class="sec-h"><h2>Сводка</h2><span data-info="sum"></span><span class="sum" id="sumNote"></span><span class="chev">›</span></div>
     <div class="sec-b"><div class="tiles" id="tiles"></div></div>
+  </section>
+
+  <section class="sec" data-id="sup">
+    <div class="sec-h"><h2>Поддержка</h2><span data-info="sup"></span><span class="sum" id="supNote"></span><span class="chev">›</span></div>
+    <div class="sec-b" id="sup"></div>
   </section>
 
   <section class="sec" data-id="chart">
@@ -351,6 +370,7 @@
   /* ── пояснения под «i» ── */
   var INFO = {
     sum: "<b>Итог</b> = выручка − себестоимость − комиссия банка − реклама.<br><b>Себестоимость</b> — закупка у поставщика по курсу ЦБ плюс 5% на конвертацию и 11% налога.<br>Свои проверочные покупки в цифры не входят, их можно включить галочкой «тестовые».",
+    sup: "Обращения из чата на сайте и из телеграм-бота — здесь же, не только в почте.<br><b>Ждёт ответа</b> — последнее слово за человеком. Ответить можно прямо отсюда: человек увидит текст в чате, а если писал из бота — придёт в телеграм. Ответ обычным письмом на уведомление работает как раньше.<br><b>Первая линия</b> — чат сам разобрал проблему по живым данным: нашёл заказ человека, посмотрел остаток у поставщика и дал шаги. Так человек получает помощь сразу, даже ночью.<br>Письма об обращениях уходят на director@ только в рабочее окно: с понедельника 08:00 до пятницы 15:00 по Москве.",
     chart: "Выручка по дням оплаты, время московское. Наведите на график — покажет сумму и число пакетов за день.<br>Прошедшие сутки закрываются в полночь: себестоимость фиксируется по курсу того дня и дальше не меняется. Сегодняшний день — живые цифры.",
     ads: "Канал определяется по метке, с которой человек пришёл впервые (utm, yclid, gclid). Покупки в телеграм-боте — отдельный канал. <b>SMS</b>, <b>Email</b>, <b>SMS-рассылка</b> — по метке в ссылке рассылки. <b>Личный кабинет VOYO</b> — покупки из визового ЛК, если человека не привела реклама или рассылка (иначе сделка идёт тому, что привело).<br><b>Маржа</b> — уже без себестоимости и комиссии банка. <b>Итог</b> — ещё и без расходов на рекламу. <b>ДРР</b> — доля рекламы в выручке.<br>Расход вносится со скриншотов кабинетов общей суммой за всё время.",
     fsite: "Уникальные посетители витрины на всех доменах (voyomobile.ru, voyotravel.ru/esim и другие): зашёл → выбрал страну (открылся список пакетов; на страницах /turkey, /china он открыт сразу) → открыл карточку пакета → нажал «Купить» (появляется поле почты) → нажал «Оплатить» → оплатил. Между карточками — доля перехода с шага на шаг, в синей плашке — сквозная.<br>С 18 сентября шаги пишет сама витрина. <b>До 18 сентября</b> — восстановлено по журналу сервера: «Выбрали страну» там видно только у заходов на страницы стран и по ссылкам из статей, а «Открыли пакет» не записывался вовсе — за те дни в этих шагах только те, кто пошёл дальше. Оплаты всегда берутся из заказов.",
@@ -450,6 +470,7 @@
     renderFunnels();
     renderChannels();
     renderDays();
+    renderSupport();
     renderCustomers();
     renderPromos();
   }
@@ -698,6 +719,60 @@
           r.refPaid ? RU(r.refPaid) + " ₽" : DASH], R);
       }).join("") : "<tr><td colspan=9>Пока ни одного кода. Ссылка для блогеров: t.me/esimvoyo_bot?start=blogger</td></tr>") + "</tbody>";
   }
+
+  /* ── поддержка: обращения из чата ── */
+  function hhmm(ts){ var d = new Date(ts + 3*3600e3); return d.toISOString().slice(11,16); }
+  function whenShort(ts){
+    var d = new Date(ts + 3*3600e3).toISOString();
+    return (+d.slice(8,10)) + " " + MON[+d.slice(5,7)-1] + ", " + d.slice(11,16);
+  }
+  function renderSupport(){
+    var sup = DATA.support;
+    if (!sup || !sup.chats || !sup.chats.length){
+      el("supNote").textContent = "обращений нет";
+      el("sup").innerHTML = '<div class="dim" style="padding:4px 2px">Пока никто не писал.</div>';
+      return;
+    }
+    el("supNote").textContent = sup.waiting
+      ? sup.waiting + " " + plural(sup.waiting, ["ждёт ответа", "ждут ответа", "ждут ответа"])
+      : "все отвечены";
+    el("sup").innerHTML = sup.chats.map(function(c){
+      var who = c.contact ? esc(c.contact) : (c.tg ? "телеграм-бот" : "с сайта");
+      var tags = (c.waiting ? '<span class="tag wait">ждёт ответа</span>' : '<span class="tag ok">отвечено</span>') +
+        (c.auto ? '<span class="tag auto">первая линия</span>' : "");
+      var msgs = c.messages.map(function(m){
+        var name = m.from === "client" ? "клиент" : (m.from === "operator" ? "оператор" : "бот");
+        return '<div class="msg ' + m.from + '"><div class="who">' + hhmm(m.ts) + " " + name +
+          '</div><div class="tx">' + esc(m.text) + "</div></div>";
+      }).join("");
+      return '<div class="chat" data-cid="' + c.id + '">' +
+        '<div class="chead">' + tags + "<b>" + who + "</b><span>" + whenShort(c.lastAt) + "</span>" +
+        (c.page ? "<span>" + esc(c.page).slice(0, 70) + "</span>" : "") + "</div>" + msgs +
+        '<div class="crow"><input placeholder="Ответить человеку в чат" data-reply="' + c.id + '"/>' +
+        '<button class="btn pri" type="button" data-send="' + c.id + '">Отправить</button></div></div>';
+    }).join("");
+  }
+  document.addEventListener("click", async function(e){
+    var b = e.target.closest("[data-send]"); if (!b) return;
+    var cid = b.getAttribute("data-send");
+    var inp = document.querySelector('[data-reply="' + cid + '"]');
+    var text = (inp && inp.value || "").trim();
+    if (!text) return;
+    b.disabled = true; b.textContent = "Отправляем…";
+    try{
+      var r = await fetch("/esim/api/chat/reply?cid=" + encodeURIComponent(cid) + "&text=" + encodeURIComponent(text),
+        { headers: { Authorization: "Bearer " + TOKEN } });
+      var j = await r.json();
+      if (j && j.success){ inp.value = ""; b.textContent = "Отправлено"; await load(); }
+      else { b.textContent = "Не вышло"; b.disabled = false; }
+    }catch(err){ b.textContent = "Не вышло"; b.disabled = false; }
+  });
+  document.addEventListener("keydown", function(e){
+    if (e.key !== "Enter") return;
+    var inp = e.target.closest("[data-reply]"); if (!inp) return;
+    var b = document.querySelector('[data-send="' + inp.getAttribute("data-reply") + '"]');
+    if (b) b.click();
+  });
 
   /* ── реклама ── */
   RENDER.tChan = function(){ renderChannels(); };

@@ -657,6 +657,61 @@ function mount(app, deps) {
   }
 
   const mskDayStr = (ts) => new Date(ts + 3 * 3600000).toISOString().slice(0, 10);
+  // ── Статус номеров в АТС (просьба Андрея 23.09.2026) ──────────────────────
+  // В кабинете OnlinePBX у каждого номера горит зелёная точка — это регистрация
+  // линии у оператора. Метод trunks/get.json отдаёт ровно её: REGED значит номер
+  // на связи, любое другое значение — нет. Опрашиваем каждые 10 минут и держим
+  // журнал за двое суток: так видно не только «сейчас всё зелено», но и был ли
+  // сбой ночью, когда никто не смотрел.
+  const TRUNK_OK = "REGED";
+  async function pbxTrunks(pbx) {
+    const dom = String(pbx.domain || "").trim();
+    const form = (o) => new URLSearchParams(o).toString();
+    const FH = { "Content-Type": "application/x-www-form-urlencoded" };
+    const auth = await axios.post("https://api2.onlinepbx.ru/" + dom + "/auth.json",
+      form({ auth_key: String(pbx.key || "").trim(), new: "true" }), { headers: FH, timeout: 30000 });
+    const a = auth.data;
+    if (!a || String(a.status) !== "1" || !a.data || !a.data.key_id) throw new Error("OnlinePBX не принял ключ");
+    const r = await axios.post("https://api2.onlinepbx.ru/" + dom + "/trunks/get.json", "", {
+      headers: Object.assign({}, FH, { "x-pbx-authentication": a.data.key_id + ":" + a.data.key }), timeout: 30000 });
+    const list = (r.data && r.data.data) || [];
+    if (!Array.isArray(list) || !list.length) throw new Error("АТС вернула пустой список номеров");
+    return list.map((t) => ({
+      number: String(t.number || ""), name: String(t.description || t.name || ""), status: String(t.status || ""),
+    }));
+  }
+  let trunkRunning = false;
+  async function checkTrunks(why) {
+    if (trunkRunning) return null;
+    const cfg = store().config;
+    if (!cfg.pbx || !cfg.pbx.domain || !cfg.pbx.key) return null;
+    trunkRunning = true;
+    try {
+      const list = await pbxTrunks(cfg.pbx);
+      const down = list.filter((t) => t.status !== TRUNK_OK);
+      const st = store();
+      if (!Array.isArray(st.trunkLog)) st.trunkLog = [];
+      st.trunkLog.push({ at: Date.now(), total: list.length, down: down.map((t) => ({ number: t.number, name: t.name, status: t.status })) });
+      const cut = Date.now() - 48 * 3600 * 1000;
+      st.trunkLog = st.trunkLog.filter((x) => x.at >= cut);
+      st.trunkNames = list.reduce((m, t) => { m[t.number] = t.name; return m; }, {});
+      save();
+      if (down.length) console.error("PHONETEST-TRUNKS [" + (why || "cron") + "]: не на связи " + down.length + " из " + list.length + " — " + down.map((t) => t.number + " " + t.name).join(", "));
+      return { total: list.length, down };
+    } catch (e) {
+      const st = store();
+      if (!Array.isArray(st.trunkLog)) st.trunkLog = [];
+      st.trunkLog.push({ at: Date.now(), error: String((e && e.message) || e).slice(0, 160) });
+      st.trunkLog = st.trunkLog.filter((x) => x.at >= Date.now() - 48 * 3600 * 1000);
+      save();
+      console.error("PHONETEST-TRUNKS: " + e.message);
+      return { error: e.message };
+    } finally { trunkRunning = false; }
+  }
+  // Каждые 10 минут; первый опрос через минуту после старта.
+  setTimeout(() => { checkTrunks("startup").catch(() => {}); }, 60 * 1000);
+  setInterval(() => { checkTrunks("cron").catch(() => {}); }, 10 * 60 * 1000);
+
   async function runRecon(opts) {
     if (reconRunning) throw new Error("сверка уже идёт");
     reconRunning = true;
@@ -935,13 +990,46 @@ function reconSummary() {
       }
       return rec;
     });
+  // Статус номеров в АТС: как сейчас и были ли сбои за прошедшие сутки.
+  // Инцидент — это отрезок, когда номер не был зарегистрирован: от первой такой
+  // проверки до первой, где он снова на связи (или до сих пор, если не вернулся).
+  const trunks = (function () {
+    const log = (st.trunkLog || []).slice().sort((a, b) => a.at - b.at);
+    if (!log.length) return null;
+    const last = log[log.length - 1];
+    const dayAgo = Date.now() - 24 * 3600 * 1000;
+    const inDay = log.filter((x) => x.at >= dayAgo);
+    const names = st.trunkNames || {};
+    const open = {}, incidents = [];
+    inDay.forEach((entry) => {
+      if (entry.error) return;                       // опрос не прошёл — не считаем сбоем номера
+      const downNow = {};
+      (entry.down || []).forEach((d) => { downNow[d.number] = d; });
+      Object.keys(downNow).forEach((num) => {
+        if (!open[num]) open[num] = { number: num, name: downNow[num].name || names[num] || "", status: downNow[num].status, from: entry.at, to: null };
+      });
+      Object.keys(open).forEach((num) => {
+        if (!downNow[num]) { open[num].to = entry.at; incidents.push(open[num]); delete open[num]; }
+      });
+    });
+    Object.keys(open).forEach((num) => incidents.push(open[num]));   // ещё не восстановился
+    return {
+      at: last.at, total: last.total || 0,
+      downNow: last.error ? null : (last.down || []).map((d) => ({ number: d.number, name: d.name || names[d.number] || "", status: d.status })),
+      error: last.error || null,
+      checks24: inDay.filter((x) => !x.error).length,
+      errors24: inDay.filter((x) => x.error).length,
+      incidents: incidents.sort((a, b) => a.from - b.from).slice(0, 30),
+    };
+  })();
   const r = (st.recons && st.recons.length) ? st.recons[st.recons.length - 1] : null;
-  if (!r) return { configured, last: null, days };
+  if (!r) return { configured, last: null, days, trunks };
   const p = r.pbx || {};
   const slim = (m) => ({ phone: m.phone, count: m.count || null, at: m.lastAt || m.ts || null });
   return {
     configured,
     days,
+    trunks,
     last: {
       at: r.startedAt, hours: r.hours, day: r.day || null,
       pbx: p.error ? { error: p.error } : p.skipped ? { skipped: p.skipped }
