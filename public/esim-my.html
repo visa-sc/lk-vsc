@@ -467,7 +467,7 @@
     // топапы
     if(j.topups && j.topups.length){
       el("tpPanel").style.display="block";
-      if(PAY) el("tpNote").textContent = "Оплата картой в рублях. Гигабайты добавятся сразу после оплаты.";
+      if(PAY) el("tpNote").textContent = "Оплата картой в рублях. Гигабайты добавятся сразу после оплаты. Если интернет не появится через пару минут, выключите и включите режим полёта.";
       var host = el("tpList"); host.innerHTML="";
       j.topups.forEach(function(t){
         var g = t.unlimited ? "Безлимит" : (RU(t.dataGb)+" ГБ");
