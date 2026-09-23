@@ -3297,6 +3297,46 @@ async function ydApiCampaigns() {
   if (r.data && r.data.error) { const e = r.data.error; throw Object.assign(new Error(e.error_string + (e.error_detail ? ": " + e.error_detail : "")), { ydCode: e.error_code }); }
   return (r.data && r.data.result && r.data.result.Campaigns) || [];
 }
+// Группы объявлений: своего выключателя у группы в API нет. В интерфейсе
+// «остановить группу» — это остановить все объявления внутри, поэтому считаем
+// группу работающей, пока в ней есть хотя бы одно объявление в состоянии ON.
+// Запрашиваем реже кампаний (раз в час): группы меняют не так часто, а запрос
+// тяжелее — по тысяче объявлений на страницу.
+async function ydApiGroupsLive(campaignIds) {
+  if (!YD_TOKEN || !campaignIds.length) return null;
+  const headers = { Authorization: "Bearer " + YD_TOKEN, "Accept-Language": "ru", "Content-Type": "application/json; charset=utf-8" };
+  if (YD_LOGIN) headers["Client-Login"] = YD_LOGIN;
+  const post = async (svc, params) => {
+    const r = await axios.post(YD_API_URL + svc, { method: "get", params }, { headers, timeout: 40000 });
+    const uh = r.headers && (r.headers.units || r.headers.Units);
+    if (uh) { const p2 = String(uh).split("/").map((x) => parseInt(x, 10)); if (p2.length === 3 && p2.every((n) => Number.isFinite(n))) _ydUnits = { spent: p2[0], balance: p2[1], limit: p2[2], ts: Date.now() }; }
+    if (r.data && r.data.error) { const e = r.data.error; throw Object.assign(new Error(e.error_string || "ошибка"), { ydCode: e.error_code }); }
+    return (r.data && r.data.result) || {};
+  };
+  const liveByGroup = {};       // сколько активных объявлений в группе
+  const seenGroups = {};        // все встреченные группы: id → campaignId
+  for (let i = 0; i < campaignIds.length; i += 10) {
+    const part = campaignIds.slice(i, i + 10);
+    for (let off = 0; ; off += 1000) {
+      const res = await post("ads", { SelectionCriteria: { CampaignIds: part },
+        FieldNames: ["Id", "AdGroupId", "CampaignId", "State"], Page: { Limit: 1000, Offset: off } });
+      const chunk = res.Ads || [];
+      chunk.forEach((a) => {
+        seenGroups[a.AdGroupId] = a.CampaignId;
+        if (String(a.State) === "ON") liveByGroup[a.AdGroupId] = (liveByGroup[a.AdGroupId] || 0) + 1;
+      });
+      if (chunk.length < 1000) break;
+    }
+  }
+  const ids = Object.keys(seenGroups).map(Number);
+  const names = {};
+  for (let i = 0; i < ids.length; i += 1000) {
+    const res = await post("adgroups", { SelectionCriteria: { Ids: ids.slice(i, i + 1000) }, FieldNames: ["Id", "Name", "CampaignId"] });
+    (res.AdGroups || []).forEach((g) => { names[g.Id] = { name: g.Name, campaignId: g.CampaignId }; });
+  }
+  return { liveByGroup, seenGroups, names };
+}
+let _ydGroupsCheckedAt = 0;
 async function ydRunCheck(trigger) {
   if (_ydRunning) return { skipped: true };
   // Бережём баллы API: если остаток критически мал — пропускаем цикл (как в заявке Я.Директу).
@@ -3319,8 +3359,33 @@ async function ydRunCheck(trigger) {
       }
       log.snapshot[id] = { name: nm, state: st };
     });
+    // Группы объявлений — раз в час. Событие: в группе были активные объявления,
+    // а теперь нет ни одного. Первая проверка только снимает слепок.
+    if (Date.now() - _ydGroupsCheckedAt > 55 * 60 * 1000) {
+      try {
+        const liveCamps = camps.filter((c) => !/ARCHIVED/i.test(String(c.State || "")));
+        const g = await ydApiGroupsLive(liveCamps.map((c) => c.Id));
+        if (g) {
+          _ydGroupsCheckedAt = Date.now();
+          const campName = {}; camps.forEach((c) => { campName[String(c.Id)] = c.Name; });
+          rec.groupsChecked = Object.keys(g.seenGroups).length;
+          Object.keys(g.seenGroups).forEach((gid) => {
+            const key = "g" + gid;
+            const live = (g.liveByGroup[gid] || 0) > 0;
+            const meta = g.names[gid] || {};
+            const prev = log.snapshot[key];
+            if (prev && prev.live === true && !live) {
+              log.events.unshift({ id: String(gid), name: meta.name || ("Группа " + gid), kind: "group",
+                campaign: campName[String(meta.campaignId || g.seenGroups[gid])] || "", ts: now, to: "SUSPENDED" });
+              rec.newStops++;
+            }
+            log.snapshot[key] = { name: meta.name || ("Группа " + gid), live: live };
+          });
+        }
+      } catch (e) { console.error("YD STOPS группы:", e && e.message); }
+    }
     log.events = log.events.filter((e) => e.ts >= now - 60 * 86400000); // храним 60 дней
-    console.log(`YD STOPS [${rec.trigger}]: campaigns=${rec.checked} newStops=${rec.newStops} units=${_ydUnits ? _ydUnits.balance : "?"}`);
+    console.log(`YD STOPS [${rec.trigger}]: campaigns=${rec.checked} groups=${rec.groupsChecked || 0} newStops=${rec.newStops} units=${_ydUnits ? _ydUnits.balance : "?"}`);
   } catch (e) {
     rec.error = e && e.message; rec.ydCode = (e && e.ydCode) != null ? e.ydCode : null;
     console.error("YD STOPS check:", rec.ydCode, rec.error);
@@ -3349,6 +3414,56 @@ function ydActiveNow() {
     setTimeout(tick, (ydActiveNow() ? 10 : 30) * 60 * 1000);
   };
   setTimeout(tick, 60 * 1000); // первый запуск через минуту после старта
+})();
+// ═══ Проверка посадочных страниц Директа + утреннее письмо Петрову ══════════
+// Каждую ночь обходим страницы всех активных объявлений и быстрых ссылок и
+// смотрим, открываются ли они и нет ли на них изъянов (нет шапки, битые
+// картинки, поехавшая вёрстка). Утром одно письмо Андрею Петрову — только о
+// НОВЫХ проблемах, включая недоехавшие в amoCRM звонки и заявки и потерю
+// регистрации номеров в АТС.
+const adcheck = require("./adcheck");
+const adalert = require("./adalert");
+app.get("/admin/api/vsc/adcheck", requireAdmin, (req, res) => {
+  res.json({ success: true, data: adcheck.load() });
+});
+app.post("/admin/api/vsc/adcheck/run", requireAdmin, (req, res) => {
+  if (_adcheckRunning) return res.json({ success: true, running: true });
+  _adcheckRunning = true;
+  adcheck.run("manual").catch((e) => console.error("ADCHECK:", e.message)).finally(() => { _adcheckRunning = false; });
+  res.json({ success: true, started: true });
+});
+let _adcheckRunning = false;
+// Ночью в 03:20 МСК: Директ уже не крутит, сайты свободны, до утреннего письма есть запас.
+(function scheduleAdCheck() {
+  const MSK = 3 * 3600 * 1000, DAY = 86400000;
+  (function next() {
+    const now = Date.now() + MSK;
+    let t = Math.floor(now / DAY) * DAY + (3 * 60 + 20) * 60 * 1000;
+    if (t <= now) t += DAY;
+    setTimeout(() => {
+      if (!_adcheckRunning) {
+        _adcheckRunning = true;
+        adcheck.run("cron").catch((e) => console.error("ADCHECK:", e.message)).finally(() => { _adcheckRunning = false; });
+      }
+      next();
+    }, Math.max(1000, t - now));
+  })();
+  console.log("ADCHECK: ночная проверка страниц Директа в 03:20 МСК");
+})();
+// Утреннее письмо в 09:10 МСК — после ночных проверок, одно на все находки.
+(function scheduleAdAlert() {
+  const MSK = 3 * 3600 * 1000, DAY = 86400000;
+  (function next() {
+    const now = Date.now() + MSK;
+    let t = Math.floor(now / DAY) * DAY + (9 * 60 + 10) * 60 * 1000;
+    if (t <= now) t += DAY;
+    setTimeout(() => {
+      adalert.runMorning({ adcheck, reconSummary: phoneTestMod.reconSummary, sendMail: sendOrQueueDirectorMail }, "cron")
+        .catch((e) => console.error("ADALERT:", e.message));
+      next();
+    }, Math.max(1000, t - now));
+  })();
+  console.log("ADALERT: утреннее письмо о проблемах в 09:10 МСК (только о новых)");
 })();
 app.get("/admin/api/yd-stops", requireAdmin, (req, res) => {
   return res.json(Object.assign({ success: true }, ydStopsPayload()));
