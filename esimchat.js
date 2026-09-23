@@ -2,9 +2,12 @@
 // На витрине две кнопки: «Оставить обращение» (форма) и «Написать в чат».
 //
 // Как это работает (Андрей, 22.09.2026):
-//   • человек пишет в чат прямо на сайте, ему сразу отвечает автоответ;
-//   • сообщение уходит письмом на director@, НО только в рабочее окно:
-//     с понедельника 08:00 до пятницы 15:00 МСК, вне окна письмо ждёт;
+//   • человек пишет в чат прямо на сайте, ему сразу отвечает автоответ, а следом
+//     первая линия разбирает проблему по живым данным (см. chatAutoAnswer в esim.js);
+//   • на почту director@ письмо уходит ТОЛЬКО если первая линия не справилась
+//     («требуется внимание», не чаще раза в 12 часов на чат) и только в рабочее
+//     окно: с понедельника 08:00 до пятницы 15:00 МСК, вне окна письмо ждёт;
+//   • всё остальное видно в панели, раздел «Поддержка»;
 //   • 28 сентября письма не уходят вовсе (ESIM_SUPPORT_BLACKOUT);
 //   • Андрей отвечает ОБЫЧНЫМ ответом на письмо — мы читаем почтовый ящик по IMAP,
 //     вырезаем цитату и подпись и показываем ответ человеку в чате.
@@ -53,38 +56,35 @@ function queueMail(mail) {
   q.push(Object.assign({ id: crypto.randomBytes(4).toString("hex"), ts: Date.now() }, mail));
   writeJson(QUEUE, q.slice(-500));
 }
-// Письма по одному чату не дробим. 23.09.2026 человек за семнадцать минут
-// прислал десять сообщений — и на почту ушло десять писем, в каждом по строчке.
-// Теперь пока «окно склейки» открыто (GROUP_MS после последнего сообщения),
-// новые строки дописываются в то же письмо, а уходит оно одно.
-const GROUP_MS = Number(process.env.ESIM_SUPPORT_GROUP_MS || 90000);
-function queueChatMail(chat, line) {
-  const q = readJson(QUEUE, []);
-  const open = q.find((m) => m.chatId === chat.id && (m.openUntil || 0) > Date.now());
-  if (open) {
-    open.lines.push(line);
-    open.openUntil = Date.now() + GROUP_MS;
-    open.contact = chat.contact || open.contact;
-    writeJson(QUEUE, q);
-    return;
-  }
-  q.push({ id: crypto.randomBytes(4).toString("hex"), ts: Date.now(), chatId: chat.id,
-    openUntil: Date.now() + GROUP_MS, lines: [line],
-    subject: "VOYO eSIM: сообщение из чата #" + chat.id,
-    page: chat.page || "", contact: chat.contact || "" });
-  writeJson(QUEUE, q.slice(-500));
+// Письмо уходит, только когда первая линия не справилась и вопрос ждёт человека.
+// Андрей 23.09.2026: «не надо слать имейлы на каждое сообщение в чате, просто
+// пиши, что требуется внимание, я зайду в админку и посмотрю».
+const ATTENTION_EVERY_MS = Number(process.env.ESIM_SUPPORT_ATTENTION_MS || 12 * 3600e3);
+const PANEL_URL = process.env.ESIM_PANEL_URL || "https://dev.voyomobile.ru";
+function attention(chat, why) {
+  const list = loadChats();
+  const c = list.find((x) => x.id === chat.id) || chat;
+  if (c.mailedAt && Date.now() - c.mailedAt < ATTENTION_EVERY_MS) return false;
+  c.mailedAt = Date.now();
+  saveChats(list);
+  const said = (c.messages || []).filter((m) => m.from === "client").slice(-10)
+    .map((m) => "\u2022 " + m.text).join("\n");
+  queueMail({
+    subject: "VOYO eSIM: нужен ответ в чате поддержки #" + c.id,
+    text: "В чате поддержки ждёт человек, сами мы не справились.\n\n" +
+      "Почему: " + (why || "вопрос не разобрать автоматически") + "\n\n" +
+      "Что пишет:\n" + (said || "—") + "\n\n" +
+      "— — —\n" +
+      "Ответить: панель " + PANEL_URL + ", раздел «Поддержка».\n" +
+      "Можно и обычным ответом на это письмо: текст увидит человек в чате.\n\n" +
+      "Страница: " + (c.page || "—") + "\n" +
+      (c.contact ? "Контакт: " + c.contact + "\n" : "") +
+      "Чат: " + c.id,
+  });
+  console.log("esim support: письмо «нужен ответ» по чату", c.id, "—", why);
+  return true;
 }
-// текст письма собираем в момент отправки — к этой минуте в нём уже все реплики
-function chatMailText(m) {
-  return "Человек пишет в чат на сайте.\n\n" +
-    m.lines.join("\n") + "\n\n" +
-    "— — —\n" +
-    "Чтобы ответить, просто ответьте на это письмо: текст ответа увидит человек в чате.\n" +
-    "Цитату и подпись мы вырежем сами.\n\n" +
-    "Страница: " + (m.page || "—") + "\n" +
-    (m.contact ? "Контакт: " + m.contact + "\n" : "") +
-    "Чат: " + m.chatId;
-}
+
 async function flushQueue(sendMail) {
   if (!sendMail) return 0;
   const q = readJson(QUEUE, []);
@@ -92,9 +92,7 @@ async function flushQueue(sendMail) {
   const rest = [];
   let sent = 0;
   for (const m of q) {
-    if ((m.openUntil || 0) > Date.now()) { rest.push(m); continue; }   // человек ещё дописывает
-    const text = m.lines ? chatMailText(m) : m.text;
-    const r = await sendMail({ to: m.to || TO, subject: m.subject, text, replyTo: m.replyTo }).catch(() => ({ ok: false }));
+    const r = await sendMail({ to: m.to || TO, subject: m.subject, text: m.text, replyTo: m.replyTo }).catch(() => ({ ok: false }));
     if (r && r.ok !== false) sent++; else rest.push(m);
     await new Promise((r2) => setTimeout(r2, 300));
   }
@@ -130,8 +128,7 @@ function clientMessage({ id, text, page, ua, ip, contact, tgChatId }) {
   chat.lastAt = Date.now();
   saveChats(list);
 
-  queueChatMail(chat, clean);
-  return chat;
+  return chat;   // письмо уйдёт, только если первая линия не справится (attention)
 }
 
 // Ответ оператора (из письма или из панели)
@@ -247,5 +244,5 @@ async function pollMailbox() {
   return done;
 }
 
-module.exports = { mailWindowOpen, queueMail, queueChatMail, flushQueue, loadChats, findChat, newChatId,
+module.exports = { mailWindowOpen, queueMail, attention, flushQueue, loadChats, findChat, newChatId,
   clientMessage, operatorMessage, botMessage, onOperator, stripReply, pollMailbox, esc, mskDay, TO, AUTO_REPLY, BLACKOUT };

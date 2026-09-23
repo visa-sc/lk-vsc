@@ -370,7 +370,7 @@
   /* ── пояснения под «i» ── */
   var INFO = {
     sum: "<b>Итог</b> = выручка − себестоимость − комиссия банка − реклама.<br><b>Себестоимость</b> — закупка у поставщика по курсу ЦБ плюс 5% на конвертацию и 11% налога.<br>Свои проверочные покупки в цифры не входят, их можно включить галочкой «тестовые».",
-    sup: "Обращения из чата на сайте и из телеграм-бота — здесь же, не только в почте.<br><b>Ждёт ответа</b> — последнее слово за человеком. Ответить можно прямо отсюда: человек увидит текст в чате, а если писал из бота — придёт в телеграм. Ответ обычным письмом на уведомление работает как раньше.<br><b>Первая линия</b> — чат сам разобрал проблему по живым данным: нашёл заказ человека, посмотрел остаток у поставщика и дал шаги. Так человек получает помощь сразу, даже ночью.<br>Письма об обращениях уходят на director@ только в рабочее окно: с понедельника 08:00 до пятницы 15:00 по Москве.",
+    sup: "Все обращения: и чат на сайте и в боте, и форма «не получается подключить».<br><b>Ждёт ответа</b> — последнее слово за человеком. Ответить можно прямо отсюда: человек увидит текст в чате, а если писал из бота — придёт в телеграм. Ответ обычным письмом на уведомление работает как раньше.<br><b>Первая линия</b> — чат сам разобрал проблему по живым данным: нашёл заказ человека, посмотрел остаток у поставщика и дал шаги. Так человек получает помощь сразу, даже ночью.<br><b>Форма</b> — человек заполнил анкету со своей поломкой: видно модель телефона, что он пробовал, скриншот и ссылку на его персональную страницу. Ответ из поля попадёт на эту же страницу как ответ оператора.<br>На почту письмо уходит, только когда первая линия не справилась: «требуется внимание», не чаще раза в 12 часов на обращение, и только в рабочее окно с понедельника 08:00 до пятницы 15:00 по Москве. Всё остальное живёт здесь.",
     chart: "Выручка по дням оплаты, время московское. Наведите на график — покажет сумму и число пакетов за день.<br>Прошедшие сутки закрываются в полночь: себестоимость фиксируется по курсу того дня и дальше не меняется. Сегодняшний день — живые цифры.",
     ads: "Канал определяется по метке, с которой человек пришёл впервые (utm, yclid, gclid). Покупки в телеграм-боте — отдельный канал. <b>SMS</b>, <b>Email</b>, <b>SMS-рассылка</b> — по метке в ссылке рассылки. <b>Личный кабинет VOYO</b> — покупки из визового ЛК, если человека не привела реклама или рассылка (иначе сделка идёт тому, что привело).<br><b>Маржа</b> — уже без себестоимости и комиссии банка. <b>Итог</b> — ещё и без расходов на рекламу. <b>ДРР</b> — доля рекламы в выручке.<br>Расход вносится со скриншотов кабинетов общей суммой за всё время.",
     fsite: "Уникальные посетители витрины на всех доменах (voyomobile.ru, voyotravel.ru/esim и другие): зашёл → выбрал страну (открылся список пакетов; на страницах /turkey, /china он открыт сразу) → открыл карточку пакета → нажал «Купить» (появляется поле почты) → нажал «Оплатить» → оплатил. Между карточками — доля перехода с шага на шаг, в синей плашке — сквозная.<br>С 18 сентября шаги пишет сама витрина. <b>До 18 сентября</b> — восстановлено по журналу сервера: «Выбрали страну» там видно только у заходов на страницы стран и по ссылкам из статей, а «Открыли пакет» не записывался вовсе — за те дни в этих шагах только те, кто пошёл дальше. Оплаты всегда берутся из заказов.",
@@ -728,7 +728,8 @@
   }
   function renderSupport(){
     var sup = DATA.support;
-    if (!sup || !sup.chats || !sup.chats.length){
+    var forms = (sup && sup.forms) || [];
+    if (!sup || (!(sup.chats||[]).length && !forms.length)){
       el("supNote").textContent = "обращений нет";
       el("sup").innerHTML = '<div class="dim" style="padding:4px 2px">Пока никто не писал.</div>';
       return;
@@ -736,7 +737,27 @@
     el("supNote").textContent = sup.waiting
       ? sup.waiting + " " + plural(sup.waiting, ["ждёт ответа", "ждут ответа", "ждут ответа"])
       : "все отвечены";
-    el("sup").innerHTML = sup.chats.map(function(c){
+    // обращения с формы «не получается подключить»
+    var formsHtml = forms.map(function(h){
+      var tags = (h.answered ? '<span class="tag ok">закрыто</span>' : '<span class="tag wait">ждёт ответа</span>') +
+        '<span class="tag auto">форма</span>';
+      var lines = [
+        h.model ? ["Телефон", esc(h.model)] : null,
+        h.tried ? ["Подключить", esc(h.tried)] : null,
+        h.error ? ["Что происходит", esc(h.error)] : null,
+        h.note ? ["Наш ответ", esc(h.note)] : null,
+        h.refundAsked ? ["Возврат", "человек попросил вернуть деньги"] : null,
+      ].filter(Boolean).map(function(r){
+        return '<div class="msg"><div class="who">' + r[0] + '</div><div class="tx">' + r[1] + "</div></div>";
+      }).join("");
+      var links = '<a href="' + h.caseUrl + '" target="_blank" rel="noopener">персональная страница ›</a>' +
+        (h.shot ? ' · <a href="' + h.shot + '" target="_blank" rel="noopener">скриншот ›</a>' : "");
+      return '<div class="chat"><div class="chead">' + tags + "<b>" + esc(h.contact || "без контакта") + "</b><span>" +
+        whenShort(h.ts) + "</span><span>" + links + "</span></div>" + lines +
+        '<div class="crow"><input placeholder="Написать ответ на его персональной странице" data-note="' + h.id + '"/>' +
+        '<button class="btn pri" type="button" data-nsend="' + h.id + '">Ответить</button></div></div>';
+    }).join("");
+    el("sup").innerHTML = formsHtml + sup.chats.map(function(c){
       var who = c.contact ? esc(c.contact) : (c.tg ? "телеграм-бот" : "с сайта");
       var tags = (c.waiting ? '<span class="tag wait">ждёт ответа</span>' : '<span class="tag ok">отвечено</span>') +
         (c.auto ? '<span class="tag auto">первая линия</span>' : "");
@@ -767,11 +788,34 @@
       else { b.textContent = "Не вышло"; b.disabled = false; }
     }catch(err){ b.textContent = "Не вышло"; b.disabled = false; }
   });
+  document.addEventListener("click", async function(e){
+    var b = e.target.closest("[data-nsend]"); if (!b) return;
+    var id = b.getAttribute("data-nsend");
+    var inp = document.querySelector('[data-note="' + id + '"]');
+    var text = (inp && inp.value || "").trim();
+    if (!text) return;
+    b.disabled = true; b.textContent = "Отправляем…";
+    try{
+      var r = await fetch("/esim/api/case/" + encodeURIComponent(id) + "/note?text=" + encodeURIComponent(text),
+        { headers: { Authorization: "Bearer " + TOKEN } });
+      var j = await r.json();
+      if (j && j.success){ inp.value = ""; b.textContent = "Готово"; await load(); }
+      else { b.textContent = "Не вышло"; b.disabled = false; }
+    }catch(err){ b.textContent = "Не вышло"; b.disabled = false; }
+  });
   document.addEventListener("keydown", function(e){
     if (e.key !== "Enter") return;
-    var inp = e.target.closest("[data-reply]"); if (!inp) return;
-    var b = document.querySelector('[data-send="' + inp.getAttribute("data-reply") + '"]');
-    if (b) b.click();
+    var inp = e.target.closest("[data-reply]");
+    if (inp){
+      var b = document.querySelector('[data-send="' + inp.getAttribute("data-reply") + '"]');
+      if (b) b.click();
+      return;
+    }
+    var n = e.target.closest("[data-note]");
+    if (n){
+      var b2 = document.querySelector('[data-nsend="' + n.getAttribute("data-note") + '"]');
+      if (b2) b2.click();
+    }
   });
 
   /* ── реклама ── */

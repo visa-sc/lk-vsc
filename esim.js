@@ -2241,17 +2241,35 @@ function mount(app, opts) {
     }
     return steps.join("\n");
   }
+  // «спасибо, помогло» — не повод звать оператора
+  const THANKS_RE = /^\s*(спасибо|благодар|помогло|заработал|всё работает|все работает|ок|ok|👍|🙏)/i;
   async function chatAutoAnswer(chat) {
     try {
       if (!chat || !chat.messages || !chat.messages.length) return;
-      if (chat.autoDiag && Date.now() - chat.autoDiag < 6 * 3600e3) return;   // один разбор на историю
       const last = chat.messages.filter((m) => m.from === "client").pop();
-      if (!last || !TROUBLE_RE.test(last.text)) return;
+      if (!last) return;
+      if (THANKS_RE.test(last.text) && last.text.length < 60) return;   // человеку уже хорошо
+      // человек пишет снова после нашего разбора — значит разбор не помог
+      if (chat.autoDiag && last.ts > chat.autoDiag) {
+        support.attention(chat, "первая линия дала разбор, но человек продолжает писать");
+        return;
+      }
+      if (chat.autoDiag && Date.now() - chat.autoDiag < 6 * 3600e3) return;   // один разбор на историю
+      if (!TROUBLE_RE.test(last.text)) {
+        support.attention(chat, "вопрос не про неполадку с eSIM, нужен живой ответ");
+        return;
+      }
       const o = chatOrder(chat);
-      if (!o) return;                                   // чужая покупка — пусть смотрит человек
+      if (!o) {
+        support.attention(chat, "не нашли его покупок: ни по странице, ни по контакту");
+        return;
+      }
       let u = null;
       try { u = await providerFor(o.mmOrderId).getUsage(o.mmOrderId); } catch (_) {}
-      if (!u) return;
+      if (!u) {
+        support.attention(chat, "поставщик не ответил про его пакет, разобрать не смогли");
+        return;
+      }
       const packs = (u.packages || []).filter((p) => !p.expired);
       const all = u.packages || [];
       const total = packs.reduce((a, x) => a + (x.totalMb || 0), 0);
@@ -2278,7 +2296,12 @@ function mount(app, opts) {
       }
       support.botMessage(chat.id, text, "autoDiag");
       console.log("esim support: первая линия ответила в чат", chat.id);
-    } catch (e) { console.error("esim support диагностика:", e.message); }
+      // приостановленный пакет чинится только руками — тут человек нужен
+      if (u.suspended) support.attention(chat, "пакет приостановлен у поставщика, нужно чинить руками");
+    } catch (e) {
+      console.error("esim support диагностика:", e.message);
+      try { support.attention(chat, "разбор сорвался с ошибкой: " + e.message); } catch (_) {}
+    }
   }
 
   app.post("/esim/api/chat/send", express.json({ limit: "64kb" }), (req, res) => {
@@ -2349,6 +2372,8 @@ function mount(app, opts) {
   // Ссылку шлём смской тем, у кого что-то не вышло. Ответы копятся в
   // .esim/help.json, скриншоты — в .esim/help/, письмо уходит на director@.
   const HELP_FILE = path.join(DIR, "help.json");
+  // ссылку на скриншот в панели подписываем, чтобы не таскать админ-код в адресе
+  const shotKey = (id) => crypto.createHash("sha256").update("shot:" + id + ":" + ADMIN_CODE).digest("hex").slice(0, 16);
   const HELP_DIR = path.join(DIR, "help");
   app.get("/esim/help", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -2380,25 +2405,24 @@ function mount(app, opts) {
       const all = readJson(HELP_FILE, []);
       all.unshift(one); writeJson(HELP_FILE, all.slice(0, 2000));
       console.log("esim help: новое обращение", id, one.contact);
+      // Письмо короткое: подробности и скриншот смотрим в панели, раздел «Поддержка».
+      support.queueMail({
+        subject: "VOYO eSIM: обращение через форму #" + one.id + ", требуется внимание",
+        text: "Человек заполнил форму «не получается подключить».\n\n" +
+          "Контакт: " + (one.contact || "—") + "\n" +
+          "Что происходит: " + (one.error || "—").slice(0, 200) + "\n\n" +
+          "— — —\n" +
+          "Модель телефона, скриншот и разбор — в панели: " + (process.env.ESIM_PANEL_URL || "https://dev.voyomobile.ru") + ", раздел «Поддержка».\n" +
+          "Персональная страница для ответа человеку: " + BASE_URL + "/esim/case/" + one.id,
+      });
       support.flushQueue(opts && opts.sendMail).catch(() => {});
-      {
-        support.queueMail({
-          subject: "VOYO eSIM: обращение «не получается подключить» #" + one.id,
-          text: "Человек заполнил форму на " + BASE_URL + "/esim/help\n\n" +
-            "Связь: " + one.contact + "\nТелефон/модель: " + (one.model || "—") +
-            "\nПробовал подключить: " + one.tried +
-            "\nЧто происходит: " + (one.error || "—") +
-            (one.shot ? "\nСкриншот: " + BASE_URL + "/esim/api/help/shot/" + one.id + "?adm=" + ADMIN_CODE : "\nСкриншот: нет") +
-            (one.tag ? "\nМетка рассылки: " + one.tag : "") +
-            "\nУстройство: " + one.ua,
-        });
-      }
       res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
   // скриншот из обращения — только с админ-кодом
   app.get("/esim/api/help/shot/:id", (req, res) => {
-    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).end();
+    const byKey = String(req.query.k || "") === shotKey(String(req.params.id));
+    if (!byKey && !isAdm(req)) return res.status(403).end();
     const one = readJson(HELP_FILE, []).find((x) => x.id === String(req.params.id));
     if (!one || !one.shot) return res.status(404).end();
     // dotfiles: скриншоты лежат в скрытой папке .esim, без этого Express отдаёт 404
@@ -2484,7 +2508,7 @@ function mount(app, opts) {
   });
   // личное сообщение оператора на странице обращения
   app.get("/esim/api/case/:id/note", (req, res) => {
-    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).json({ success: false });
+    if (!isAdm(req)) return res.status(403).json({ success: false });
     const all = readJson(HELP_FILE, []);
     const one = all.find((x) => x.id === String(req.params.id));
     if (!one) return res.status(404).json({ success: false });
@@ -3486,7 +3510,16 @@ function mount(app, opts) {
         tg: !!c.tgChatId, auto: !!c.autoDiag, answered, waiting: !!lastClient && !answered,
         last: last ? last.text.slice(0, 160) : "", messages: msgs };
     });
-    return { windowOpen: support.mailWindowOpen(), waiting: chats.filter((c) => c.waiting).length, chats };
+    // обращения с формы «не получается подключить»: те же карточки, что и чаты
+    const forms = readJson(HELP_FILE, []).slice(0, 40).map((h) => ({
+      id: h.id, ts: h.ts, contact: h.contact || "", model: h.model || "", tried: h.tried || "",
+      error: h.error || "", note: h.note || "", answered: !!h.answered, result: h.result || "",
+      refundAsked: h.refundAsked || null, tag: h.tag || "",
+      shot: h.shot ? "/esim/api/help/shot/" + h.id + "?k=" + shotKey(h.id) : null,
+      caseUrl: BASE_URL + "/esim/case/" + h.id,
+    }));
+    return { windowOpen: support.mailWindowOpen(), chats, forms,
+      waiting: chats.filter((c) => c.waiting).length + forms.filter((f) => !f.answered).length };
   }
 
   app.get("/esim/api/adm/stats", async (req, res) => {
