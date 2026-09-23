@@ -2489,7 +2489,8 @@
           h += '<div style="margin-top:12px;border:1px solid #ece9f2;border-radius:12px;overflow:hidden;">';
           if (!d) h += '<div style="padding:12px;color:#9096a3;font-size:13px;">Проверка ещё не проходила — она идёт каждую ночь в 03:20.</div>';
           else if (!probs.length) h += '<div style="padding:12px;color:#2e7a43;font-size:13px;">Проверено ' + d.campaigns + " кампаний и " + d.pages + " страниц — все открываются, изъянов нет.</div>";
-          else probs.forEach(function (p, i) {
+          else {
+            probs.forEach(function (p, i) {
             h += '<div style="padding:10px 12px;font-size:13px;' + (i ? "border-top:1px solid #f0eef5;" : "") + '">'
               + '<a href="' + escapeHtml(p.url) + '" target="_blank" rel="noopener" style="color:#3589BD;text-decoration:none;font-weight:600;">' + escapeHtml(p.url.replace(/^https?:\/\//, "")) + '</a>'
               + ' · <span style="color:#b8602a;">' + escapeHtml(p.faults.join(", ")) + '</span>'
@@ -2500,7 +2501,19 @@
                     + "</div>"
                   : "")
               + '</div>';
-          });
+            });
+            // История проблем за 30 дней: когда что находилось.
+            const hist = (d.history || []).filter(function (x) { return (x.problems || []).length; });
+            if (hist.length > 1) {
+              h += '<div style="padding:10px 12px;border-top:1px solid #f0eef5;font-size:12px;color:#9096a3;">История за 30 дней</div>';
+              hist.slice(0, 20).forEach(function (x) {
+                h += '<div style="padding:6px 12px;font-size:12px;border-top:1px solid #f7f6fa;color:#5a6274;">'
+                  + '<span style="color:#9096a3;">' + escapeHtml(formatDateMsk(x.ts)) + '</span> · '
+                  + x.problems.length + " шт: " + escapeHtml(x.problems.map(function (q) { return q.url.replace(/^https?:\/\//, ""); }).slice(0, 4).join(", "))
+                  + (x.problems.length > 4 ? " …" : "") + "</div>";
+              });
+            }
+          }
           h += '</div>';
         }
         h += '</div>';

@@ -137,13 +137,22 @@ const MEASURE = `(() => {
   const vw = window.innerWidth, vh = window.innerHeight;
   const vis = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none" && +s.opacity > 0.05; };
-  // Шапка: что-то осмысленное в верхних 200 пикселях — логотип, меню или телефон.
+  // Шапка. По именам классов судить нельзя: на voyomobile она свёрстана классами
+  // hdr/brand/lg и под привычные селекторы не попадала — выходила ложная тревога.
+  // Поэтому смотрим на смысл: в верхних 170 пикселях должен быть логотип
+  // (картинка или svg), либо пара ссылок, либо телефон.
   let header = false;
-  const top = [...document.querySelectorAll("header, [class*=header], [id*=header], nav, [class*=nav], [class*=logo], [class*=menu], a[href^='tel:']")];
-  for (const el of top) {
-    if (!vis(el)) continue;
-    const r = el.getBoundingClientRect();
-    if (r.top < 200 && r.width > 40) { header = true; break; }
+  {
+    const topEls = [...document.querySelectorAll("body *")].filter((el) => {
+      if (!vis(el)) return false;
+      const r = el.getBoundingClientRect();
+      return r.top >= -20 && r.top < 170 && r.width > 24;
+    });
+    const logo = topEls.some((el) => (el.tagName === "IMG" || el.tagName === "SVG" || el.tagName === "svg") && el.getBoundingClientRect().width > 24);
+    const links = topEls.filter((el) => el.tagName === "A").length;
+    const phone = topEls.some((el) => el.tagName === "A" && /^tel:/i.test(el.getAttribute("href") || ""));
+    const named = topEls.some((el) => /header|nav|logo|menu|brand|hdr/i.test(String(el.className || "") + " " + String(el.id || "")));
+    header = logo || phone || links >= 2 || named;
   }
   // Подвал. На Flexbe тега footer нет вообще — низ страницы собран из обычных
   // блоков. Поэтому ищем не тег, а смысл: в нижней трети должен быть телефон,
@@ -151,7 +160,7 @@ const MEASURE = `(() => {
   // вёрстка нестандартная, и честно не находится там, где его правда нет.
   const docH = document.documentElement.scrollHeight;
   let footer = false;
-  const FOOT_RE = /©|\(с\)|политик[аи] конфиденц|пользовательское соглашение|все права защищ|инн\s*\d|огрн|реквизит/i;
+  const FOOT_RE = /©|\(с\)|политик[аи] конфиденц|пользовательское соглашение|все права защищ|инн\s*\d|огрн|реквизит|ооо\s*«|ооо\s+"|\bип\s+[А-ЯЁ]|сервис компании|оферт/i;
   const bot = [...document.querySelectorAll("footer, [class*=footer], [id*=footer], [class*=podval]")];
   for (const el of bot) {
     if (!vis(el)) continue;
@@ -208,7 +217,16 @@ async function inspect(browser, url, deep) {
         window.scrollTo(0, 0); })()`);
       await new Promise((r) => setTimeout(r, 1500));
     }
-    const m = await page.evaluate(MEASURE);
+    // Часть адресов отдаёт 301 на версию со слешем, и замер падает на переходе
+    // («Execution context was destroyed»). Это не изъян страницы — пережидаем
+    // редирект и меряем ещё раз.
+    let m;
+    try { m = await page.evaluate(MEASURE); }
+    catch (e) {
+      if (!/context was destroyed|Execution context/i.test(String(e.message))) throw e;
+      await new Promise((r) => setTimeout(r, 2500));
+      m = await page.evaluate(MEASURE);
+    }
     Object.assign(out, m);
   } catch (e) {
     out.error = String((e && e.message) || e).slice(0, 160);
@@ -278,6 +296,12 @@ async function run(trigger) {
     campaigns: collected.campaigns, ads: collected.ads, pages: list.length,
     okPages: list.length - problems.length, problems,
   };
+  // История за 30 дней: по одной записи на прогон, чтобы в логах было видно,
+  // когда проблема появилась и когда ушла (просьба Андрея 23.09.2026).
+  const prev = load() || {};
+  const hist = Array.isArray(prev.history) ? prev.history : [];
+  hist.unshift({ ts: out.ts, pages: out.pages, problems: problems.map((p) => ({ url: p.url, faults: p.faults, camps: p.camps })) });
+  out.history = hist.filter((h) => h.ts >= Date.now() - 30 * 86400000).slice(0, 200);
   try { fs.writeFileSync(FILE, JSON.stringify(out, null, 1), "utf8"); } catch (e) { console.error("adcheck save:", e.message); }
   console.log("ADCHECK [" + out.trigger + "]: страниц " + out.pages + ", с изъянами " + problems.length + ", за " + Math.round(out.tookMs / 1000) + " с");
   return out;
