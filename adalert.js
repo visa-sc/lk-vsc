@@ -23,6 +23,25 @@ const REPLY = "director@visa-sc.ru";
 function load() { try { return JSON.parse(fs.readFileSync(FILE, "utf8")); } catch (_) { return { keys: {}, lastMailAt: 0 }; } }
 function save(d) { try { fs.writeFileSync(FILE, JSON.stringify(d, null, 1), "utf8"); } catch (e) { console.error("adalert save:", e.message); } }
 
+// Тестовые номера: наши собственные пробные заявки и звонки, а также набивка
+// с сайта (номера, не похожие на российские). Они в amoCRM не попадают штатно,
+// и как проблему их считать не нужно (Андрей, 24.09.2026).
+const TEST_PHONES = new Set([
+  "79826404542",   // Андрей Петров
+  "79999899058",   // Андрей Комисаренко
+  "79959189058",   // Андрей Комисаренко
+  ...String(process.env.ADALERT_SKIP_PHONES || "").split(/[,\s]+/).filter(Boolean),
+].map((x) => String(x).replace(/\D/g, "")));
+
+// Российский номер: 11 цифр, 7 и следом код региона 3/4/8 (городские) или 9
+// (мобильные). Всё прочее — 72131323122, 72324324324 и им подобное — набивка.
+function junkPhone(phone) {
+  const d = String(phone || "").replace(/\D/g, "");
+  if (TEST_PHONES.has(d)) return true;
+  if (d.length === 11 && d[0] === "7" && !/[3489]/.test(d[1])) return true;
+  return false;
+}
+
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmt = (ts) => { const d = new Date(ts + 3 * 3600 * 1000); const p = (n) => (n < 10 ? "0" : "") + n;
   return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()); };
@@ -48,10 +67,12 @@ function gather(deps) {
     const day = rs && (rs.days || [])[0];
     if (day) {
       (day.missCalls || []).forEach((phone) => {
+        if (junkPhone(phone)) return;
         items.push({ group: "calls", key: "call|" + day.day + "|" + phone, title: phone, detail: "звонок был, контакта в amoCRM нет", at: day.at });
       });
       (day.forms || []).forEach((f) => {
         (f.missPhones || []).forEach((phone) => {
+          if (junkPhone(phone)) return;
           items.push({ group: "forms", key: "form|" + day.day + "|" + f.id + "|" + phone, title: phone,
             detail: "заявка с " + (f.label || f.id) + " не доехала в amoCRM", at: day.at });
         });

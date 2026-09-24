@@ -5885,7 +5885,7 @@
               const col = trTop.down ? "#a12b3c" : "#8a6d0b";
               html += '<div style="margin-top:4px;"><a href="#" id="trunkTopMore" style="font-size:11px;font-weight:600;color:#3589BD;text-decoration:none;">подробнее</a>'
                 + '<div id="trunkTopBox" style="display:none;margin-top:4px;font-size:11.5px;color:' + col + ';line-height:1.6;">'
-                + trTop.bits.join("<br>") + "</div></div>";
+                + trTop.bits.map(function (t) { return "<div>" + t + "</div>"; }).join("") + "</div></div>";
             }
             // История по дням — тем же форматом строки.
             const days = j.days || [];
@@ -5911,11 +5911,18 @@
                   if ((f.missPhones || []).length) missBits.push("заявки " + (CITY[f.id] || escapeHtml(f.label || "")) + ": " + f.missPhones.map(escapeHtml).join(", "));
                 });
                 if ((bad && missBits.length) || (trBadD && trD.bits.length)) {
+                  // Раскрытие — столбиком: заголовок, под ним каждый пункт своей
+                  // строкой с отступом (просьба Андрея 24.09): в строку они
+                  // сливались в кашу, особенно инциденты АТС с датами.
+                  const lines = function (title, arr) {
+                    return '<div style="margin-top:2px;">' + title + "</div>"
+                      + arr.map(function (t) { return '<div style="padding-left:14px;">' + t + "</div>"; }).join("");
+                  };
                   cell = '<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">' + cell
                     + '<a href="#" class="rc-more" data-day="' + escapeHtml(d.day) + '" style="font-size:11px;font-weight:600;color:#3589BD;text-decoration:none;white-space:nowrap;">подробнее</a></div>'
                     + '<div class="rc-miss" data-day="' + escapeHtml(d.day) + '" style="display:none;margin-top:4px;font-size:11.5px;color:#8a8f9c;line-height:1.6;">'
-                    + (missBits.length ? "не нашлись в amoCRM — " + missBits.join(" · ") : "")
-                    + (trBadD && trD.bits.length ? (missBits.length ? "<br>" : "") + "теряли регистрацию в АТС — " + trD.bits.join(" · ") : "")
+                    + (missBits.length ? lines("не нашлись в amoCRM:", missBits) : "")
+                    + (trBadD && trD.bits.length ? lines("теряли регистрацию в АТС:", trD.bits) : "")
                     + "</div>";
                 }
                 return '<tr style="border-top:1px solid #f0eef5;"><td style="padding:5px 14px 5px 0;color:#3a4256;white-space:nowrap;vertical-align:top;"><b>' + fmtDay(d.day) + '</b></td><td style="padding:5px 0;">' + cell + "</td></tr>";
