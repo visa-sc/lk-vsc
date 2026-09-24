@@ -7,11 +7,11 @@
 //   • номера и заявки, не доехавшие в amoCRM (ночная сверка phonetest.js);
 //   • номера в АТС, терявшие регистрацию.
 //
-// Главное правило: об одной и той же проблеме пишем ОДИН раз. Если страница
-// сломана неделю, письмо уйдёт в первое утро, дальше молчим — пока проблема не
-// исчезнет и не появится снова. Поэтому храним отпечатки уже отправленного;
-// когда проблема уходит из свежих данных, отпечаток забываем, и повторное
-// появление снова считается новостью. Нет новых проблем — письма нет вообще.
+// Правило (уточнено Андреем 24.09.2026): письмо уходит КАЖДОЕ утро, пока проблема
+// жива — чтобы висящее не забывалось. В письме отделяем новое от того, что тянется
+// с прошлых дней, и у старого пишем, с какого числа оно висит. Когда проблема
+// исчезает, её отпечаток забывается: появится снова — будет считаться новой.
+// Проблем нет — письма нет вообще.
 // ═══════════════════════════════════════════════════════════════════════════
 const fs = require("fs");
 const path = require("path");
@@ -77,22 +77,37 @@ const GROUP_TITLE = {
   trunks: "Номера, терявшие связь в АТС",
 };
 
-function buildHtml(fresh, staying) {
-  let html = "<p>Андрей, доброе утро. За прошедшие сутки нашлось вот что.</p>";
-  ["pages", "calls", "forms", "trunks"].forEach((g) => {
-    const list = fresh.filter((x) => x.group === g);
-    if (!list.length) return;
-    html += "<p><b>" + GROUP_TITLE[g] + "</b></p><ul>";
+function dayStr(ts) { const d = new Date(ts + 3 * 3600 * 1000); const p = (n) => (n < 10 ? "0" : "") + n;
+  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1); }
+
+function buildHtml(items, sinceOf) {
+  const fresh = items.filter((x) => !sinceOf[x.key]);
+  const old = items.filter((x) => sinceOf[x.key]);
+  let html = "<p>Андрей, доброе утро. По проверкам за прошедшие сутки.</p>";
+  const section = (title, list, withSince) => {
+    if (!list.length) return "";
+    let h = "<p><b>" + title + "</b></p><ul>";
     list.slice(0, 40).forEach((x) => {
-      html += "<li>" + esc(x.title)
+      h += "<li>" + esc(x.title)
         + (x.camps && x.camps.length ? ' <span style="color:#666;">(' + esc(x.camps.slice(0, 3).join(", ")) + ")</span>" : "")
-        + " — " + esc(x.detail) + "</li>";
+        + " — " + esc(x.detail)
+        + (withSince && sinceOf[x.key] ? ' <span style="color:#666;">висит с ' + dayStr(sinceOf[x.key]) + "</span>" : "")
+        + "</li>";
     });
-    if (list.length > 40) html += "<li>…и ещё " + (list.length - 40) + "</li>";
-    html += "</ul>";
+    if (list.length > 40) h += "<li>…и ещё " + (list.length - 40) + "</li>";
+    return h + "</ul>";
+  };
+  ["pages", "calls", "forms", "trunks"].forEach((g) => {
+    html += section(GROUP_TITLE[g] + (fresh.filter((x) => x.group === g).length ? " — новое" : ""), fresh.filter((x) => x.group === g), false);
   });
-  if (staying) html += '<p style="color:#666;">Кроме этого, с прошлых писем остаются нерешёнными ещё ' + staying + ". О них повторно не пишу.</p>";
-  html += '<p style="color:#666;font-size:13px;">Проверка идёт каждую ночь: страницы всех активных объявлений и быстрых ссылок Директа, сверка звонков и заявок с amoCRM, регистрация номеров в АТС. Письмо приходит только когда есть новое.</p>';
+  const oldAny = old.length;
+  if (oldAny) {
+    html += '<p style="margin-top:14px;"><b>Остаётся нерешённым</b></p>';
+    ["pages", "calls", "forms", "trunks"].forEach((g) => {
+      html += section(GROUP_TITLE[g], old.filter((x) => x.group === g), true);
+    });
+  }
+  html += '<p style="color:#666;font-size:13px;">Проверка идёт каждую ночь: страницы всех активных объявлений и быстрых ссылок Директа, сверка звонков и заявок с amoCRM, регистрация номеров в АТС. Письмо приходит каждое утро, пока есть что чинить.</p>';
   return html;
 }
 
@@ -106,19 +121,20 @@ async function runMorning(deps, trigger) {
   // Забываем то, чего больше нет: проблема ушла, её повторное появление — новость.
   Object.keys(st.keys).forEach((k) => { if (!alive[k]) delete st.keys[k]; });
   const fresh = items.filter((x) => !st.keys[x.key]);
-  const staying = items.length - fresh.length;
-  if (!fresh.length) {
+  if (!items.length) {
     save(st);
-    console.log("ADALERT [" + (trigger || "cron") + "]: новых проблем нет, письмо не отправляю (в работе " + items.length + ")");
-    return { sent: false, total: items.length };
+    console.log("ADALERT [" + (trigger || "cron") + "]: проблем нет, письма нет");
+    return { sent: false, total: 0 };
   }
-  const subj = "Проверка сайтов и заявок: " + fresh.length + (fresh.length === 1 ? " новая проблема" : " новых проблем");
-  await deps.sendMail({ to: TO, replyTo: REPLY, subject: subj, html: buildHtml(fresh, staying) });
-  fresh.forEach((x) => { st.keys[x.key] = now; });
+  const word = items.length === 1 ? "проблема" : (items.length < 5 ? "проблемы" : "проблем");
+  const subj = "Проверка сайтов и заявок: " + items.length + " " + word
+    + (fresh.length ? " (новых: " + fresh.length + ")" : " — всё то же");
+  await deps.sendMail({ to: TO, replyTo: REPLY, subject: subj, html: buildHtml(items, st.keys) });
+  fresh.forEach((x) => { st.keys[x.key] = now; });   // отмечаем день появления
   st.lastMailAt = now;
   save(st);
-  console.log("ADALERT [" + (trigger || "cron") + "]: письмо отправлено, новых " + fresh.length + ", остаётся " + staying);
-  return { sent: true, fresh: fresh.length, staying };
+  console.log("ADALERT [" + (trigger || "cron") + "]: письмо отправлено, всего " + items.length + ", из них новых " + fresh.length);
+  return { sent: true, total: items.length, fresh: fresh.length };
 }
 
 module.exports = { runMorning, gather, load };
