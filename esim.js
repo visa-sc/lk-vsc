@@ -852,6 +852,7 @@ const esimaccess = {
       installed: Boolean(e.installationTime) || /INSTALL|ENABLE|DOWNLOAD/.test(st),
       status: e.esimStatus || e.smdpStatus || null, iccid: e.iccid || null,
       suspended: String(e.esimStatus || "").toUpperCase() === "SUSPENDED",
+      canceled: String(e.esimStatus || "").toUpperCase() === "CANCEL",
       daily: /\/\s*day/i.test(String(pk.packageName || "")),
       packages: totalMb ? [{
         name: pk.packageName || "", totalMb, usedMb, remainingMb: Math.max(0, totalMb - usedMb),
@@ -2540,7 +2541,7 @@ function mount(app, opts) {
         if (!used) refundable.push({ id: o.id, label: o.label || "eSIM" });
         // Замена профиля: QR одноразовый, и если человек скачал его не на тот
         // телефон, второй раз он не встанет. Меняем, пока трафик не тронут.
-        if (String(o.src || "") === "esimaccess" && o.productId && usedMb < 10 && !(u && u.expired) &&
+        if (String(o.src || "") === "esimaccess" && o.productId && usedMb < 10 && !(u && u.expired && !u.canceled) &&
             (Number(o.costUsd || 0) <= REISSUE_MAX_USD || one.reissueOk)) {
           replaceable.push({ id: o.id, label: o.label || "eSIM" });
         }
@@ -2592,11 +2593,11 @@ function mount(app, opts) {
       // Отзыв у eSIM Access денег не возвращает (проверено 24.09.2026 на пакете
       // за $0,3: списали и не вернули). Значит замена стоит нам ещё одну закупку,
       // поэтому дорогие пакеты меняем только с разрешения: one.reissueOk.
-      if (Number(o.costUsd || 0) > REISSUE_MAX_USD && !one.reissueOk) {
+      if (Number(o.costUsd || 0) > REISSUE_MAX_USD && !one.reissueOk && !u.canceled) {
         return res.json({ success: false, message: "по этому пакету замену подтверждает оператор, напишите в чат" });
       }
       const oldNo = o.mmOrderId;
-      await esimaccess.revoke(oldNo);
+      if (!u.canceled) await esimaccess.revoke(oldNo);   // уже отменённый отзывать нечего
       // Старый профиль уже погашен: если новый не выпустится, человек останется
       // ни с чем. Поэтому пробуем трижды и, если всё равно никак, зовём на помощь.
       let fresh = null, lastErr = null;
