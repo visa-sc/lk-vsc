@@ -1750,6 +1750,10 @@ function mount(app, opts) {
         '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">' + (many ? "Каждую eSIM ставьте на свой телефон своим QR-кодом. " : "") +
         'Установка: Настройки → Сотовая связь → Добавить eSIM → сканировать QR. ' +
         'Сделайте это дома по Wi-Fi, до вылета. В поездке включите «Роуминг данных» для линии eSIM.</p>' +
+        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px;padding:10px 14px;' +
+        'background:#fdf6e7;border:1px solid #f0e2c0;border-radius:12px">Важное: QR-код ставится ' +
+        'один раз и на один телефон. Сканируйте его тем телефоном, с которым поедете: ' +
+        'на втором телефоне тот же код уже не сработает.</p>' +
         (tipsCN ? chinaTipsHtml() : "") +
         refHtml +
         '<p style="font-size:13px;line-height:1.6;color:#8b93a5;margin:0 0 6px">Ваш личный кабинет со всеми eSIM: <a href="' + acc + '" style="color:#3589bd">открыть</a><br/>' +
@@ -1757,6 +1761,8 @@ function mount(app, opts) {
         '<p style="font-size:12px;color:#a6adbd;margin:18px 0 0">VOYO mobile · выгодный интернет в 209 странах мира</p></div>',
       text: (many ? "Ваши eSIM готовы (" + items.length + " шт.): " : "Ваша eSIM готова: ") + (order.label || "") + "\n\n" +
         items.map((it, i) => (many ? "eSIM " + (i + 1) + ": " : "QR-код и остаток трафика: ") + it.myUrl).join("\n") +
+        "\n\nВажное: QR-код ставится один раз и на один телефон. Сканируйте его тем телефоном, " +
+        "с которым поедете: на втором телефоне тот же код уже не сработает." +
         (tipsCN ? "\n\n" + CHINA_TIPS_TEXT : "") +
         (refCode ? "\n\nПутешествуете не один? Ваш промокод для друзей: " + refCode + " (другу −" + REF_BONUS_RUB + " ₽ на первую eSIM, вам +" +
           REF_BONUS_RUB + " ₽ на баланс). Ссылка: " + refLink : "") +

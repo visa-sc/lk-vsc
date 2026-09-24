@@ -189,9 +189,17 @@ const MEASURE = `(() => {
   // Поля формы: самое широкое.
   const fields = [...document.querySelectorAll("input:not([type=hidden]):not([type=submit]):not([type=checkbox]):not([type=radio]), textarea, select")].filter(vis);
   const widest = fields.reduce((m, f) => Math.max(m, Math.round(f.getBoundingClientRect().width)), 0);
+  // Вылезает ли вёрстка. Считать по scrollWidth нельзя: на Flexbe фон-контейнер
+  // шире экрана, но вбок страница не двигается — выходила ложная тревога на ВНЖ
+  // Испании (Андрей проверил руками 24.09.2026). Поэтому честно пробуем прокрутить
+  // вправо и смотрим, сдвинулось ли что-нибудь.
+  const sx = window.scrollX;
+  window.scrollTo(99999, window.scrollY);
+  const moved = Math.round(window.scrollX - sx);
+  window.scrollTo(sx, window.scrollY);
   return {
     header, footer, broken, imgs: imgs.length, fields: fields.length, widest,
-    overflow: Math.max(0, document.documentElement.scrollWidth - vw),
+    overflow: moved > 4 ? moved : 0,
     title: (document.title || "").slice(0, 120),
     textLen: (document.body ? document.body.innerText.length : 0),
     vw, vh, docH,
@@ -254,7 +262,7 @@ function faults(r) {
     if (r.header === false && wantsChrome(r.url)) f.push("нет шапки");
     if (r.footer === false && wantsChrome(r.url)) f.push("нет подвала");
     if ((r.broken || []).length) f.push("не грузятся картинки: " + r.broken.length);
-    if (r.overflow > 8) f.push("вёрстка вылезает за экран на " + r.overflow + " px");
+    if (r.overflow > 8) f.push("страница прокручивается вбок на " + r.overflow + " px");
     if (r.widest > 600) f.push("поля формы растянуты до " + r.widest + " px");
   }
   return f;
