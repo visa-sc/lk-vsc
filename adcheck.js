@@ -113,7 +113,11 @@ async function collectPages() {
     let key;
     try { const u = new URL(href); key = u.origin + u.pathname.replace(/\/+$/, ""); } catch (_) { return; }
     if (/^https?:\/\/t\.me/i.test(key)) return;        // мессенджер проверять нечего
-    const cur = pages.get(key) || { url: key, camps: new Set(), groups: new Set(), fromAd: false, sample: href };
+    // Кривой адрес: в быстрой ссылке попадается второй «?» вместо «&» — параметры
+    // склеиваются в мусор, и человек уходит не на ту страницу.
+    const badLink = (String(href).match(/\?/g) || []).length > 1 ? "два знака «?» в ссылке" : null;
+    const cur = pages.get(key) || { url: key, camps: new Set(), groups: new Set(), fromAd: false, sample: href, badLink: null };
+    if (badLink && !cur.badLink) cur.badLink = badLink;
     v.camps.forEach((c) => c && cur.camps.add(c));
     (v.groups || new Set()).forEach((g) => g && cur.groups.add(g));
     cur.fromAd = cur.fromAd || v.fromAd;
@@ -237,14 +241,18 @@ async function inspect(browser, url, deep) {
 }
 
 // Из мерок делаем список претензий человеческим языком.
+// Шапку и подвал спрашиваем только с наших визовых лендингов. У voyomobile это
+// отдельный сервис со своей вёрсткой, там их и не должно быть (Андрей 24.09.2026).
+function wantsChrome(url) { return /(^|\.)visa-sc\.ru$/i.test((() => { try { return new URL(url).hostname; } catch (_) { return ""; } })()); }
 function faults(r) {
   const f = [];
   if (r.error) f.push("страница не открылась (" + r.error + ")");
   else {
     if (r.status && r.status >= 400) f.push("ответ " + r.status);
     if (r.textLen != null && r.textLen < 200 && !r.error) f.push("страница почти пустая");
-    if (r.header === false) f.push("нет шапки");
-    if (r.footer === false) f.push("нет подвала");
+    if (r.badLink) f.push("кривой адрес в объявлении: " + r.badLink);
+    if (r.header === false && wantsChrome(r.url)) f.push("нет шапки");
+    if (r.footer === false && wantsChrome(r.url)) f.push("нет подвала");
     if ((r.broken || []).length) f.push("не грузятся картинки: " + r.broken.length);
     if (r.overflow > 8) f.push("вёрстка вылезает за экран на " + r.overflow + " px");
     if (r.widest > 600) f.push("поля формы растянуты до " + r.widest + " px");
@@ -270,7 +278,7 @@ async function run(trigger) {
       while (idx < list.length) {
         const p = list[idx++];
         const r = await inspect(browser, p.url, false);
-        r.camps = [...p.camps]; r.groups = [...(p.groups || [])];
+        r.camps = [...p.camps]; r.groups = [...(p.groups || [])]; r.badLink = p.badLink || null; r.sample = p.sample;
         results.push(r);
         if (results.length % 25 === 0) console.log("ADCHECK: пройдено " + results.length + " из " + list.length);
       }
@@ -281,7 +289,7 @@ async function run(trigger) {
     if (suspect.length) console.log("ADCHECK: перепроверяю " + suspect.length + " подозрительных");
     for (const s of suspect) {
       const again = await inspect(browser, s.url, true);
-      again.camps = s.camps; again.groups = s.groups;
+      again.camps = s.camps; again.groups = s.groups; again.badLink = s.badLink; again.sample = s.sample;
       Object.assign(s, again);
       s.rechecked = true;
     }
@@ -289,7 +297,7 @@ async function run(trigger) {
     try { await browser.close(); } catch (_) {}
   }
   const problems = results.filter((r) => faults(r).length)
-    .map((r) => ({ url: r.url, camps: r.camps || [], groups: (r.groups || []).slice(0, 4), status: r.status || null, faults: faults(r) }))
+    .map((r) => ({ url: r.url, camps: r.camps || [], groups: (r.groups || []).slice(0, 4), status: r.status || null, sample: r.sample || null, faults: faults(r) }))
     .sort((a, b) => b.faults.length - a.faults.length);
   const out = {
     ts: Date.now(), trigger: trigger || "cron", tookMs: Date.now() - t0,

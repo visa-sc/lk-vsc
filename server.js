@@ -3152,25 +3152,35 @@ require("./esim").mount(app, {
   lkClient: async (req) => {
     const phone = clientPhoneFromSession(req);
     if (!phone) return null;
-    let emails = [];
-    try {
-      const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
-      const contacts = await findMatchingContacts(baseUrl, phone);
-      (contacts || []).forEach((c) => {
-        (c.custom_fields_values || []).forEach((f) => {
-          const code = String(f.field_code || "").toUpperCase();
-          const name = String(f.field_name || "").toLowerCase();
-          if (code !== "EMAIL" && !name.includes("mail")) return;
-          (f.values || []).forEach((v) => {
-            const e = String((v && v.value) || "").trim().toLowerCase();
-            if (e && e.indexOf("@") > 0 && emails.indexOf(e) < 0) emails.push(e);
-          });
+    return { phone, emails: await amoEmailsByPhone(phone) };
+  },
+  // Обращение в поддержку оставили с телефона, а покупка eSIM оформлена на почту:
+  // 24.09.2026 из-за этого клиенту ответили «покупок у вас нет», хотя пакет был
+  // куплен у нас. Теперь поддержка спрашивает почты по номеру в amoCRM.
+  emailsByPhone: (phone) => amoEmailsByPhone(phone),
+});
+
+// Почты клиента по номеру телефона: карточка amoCRM. Поиск кэширован
+// (findMatchingContacts, 2 минуты) и идёт через общий лимитер amo.
+async function amoEmailsByPhone(phone) {
+  const emails = [];
+  if (!phone) return emails;
+  try {
+    const contacts = await findMatchingContacts(`https://${AMO_SUBDOMAIN}.amocrm.ru`, phone);
+    (contacts || []).forEach((c) => {
+      (c.custom_fields_values || []).forEach((f) => {
+        const code = String(f.field_code || "").toUpperCase();
+        const name = String(f.field_name || "").toLowerCase();
+        if (code !== "EMAIL" && !name.includes("mail")) return;
+        (f.values || []).forEach((v) => {
+          const e = String((v && v.value) || "").trim().toLowerCase();
+          if (e && e.indexOf("@") > 0 && emails.indexOf(e) < 0) emails.push(e);
         });
       });
-    } catch (e) { /* нет связи с amo — просто спросим почту как раньше */ }
-    return { phone, emails };
-  },
-});
+    });
+  } catch (e) { /* нет связи с amo — работаем как раньше */ }
+  return emails;
+}
 
 // ── Проверка интеграций (/phone_test, задача Андрея 25.08.2026): по расписанию
 // (понедельник 04:00 МСК, ПОКА ВЫКЛЮЧЕНО) звонит через sms.ru на наши 24 номера

@@ -857,6 +857,16 @@ const esimaccess = {
       }] : [],
     };
   },
+  // Отзыв профиля. Нужен для замены: QR у них одноразовый, и если человек скачал
+  // профиль не на тот телефон, единственный путь — погасить старый и выпустить
+  // новый (24.09.2026). Метод сверен пробой: revoke/cancel/suspend у них есть,
+  // reissue нет. Деньги за нетронутый пакет они возвращают на баланс сами.
+  async revoke(orderId) {
+    const e = await this._esim(orderId);
+    if (!e) { const err = new Error("eSIM Access: заказ не найден"); err.eaCode = 310272; throw err; }
+    await eaCall("/api/v1/open/esim/revoke", { esimTranNo: e.esimTranNo });
+    return true;
+  },
   // У них баланс есть в API, в отличие от TSim: держим значение пять минут
   async getBalance() {
     const obj = await eaCall("/api/v1/open/balance/query");
@@ -2204,6 +2214,37 @@ function mount(app, opts) {
   // ── Чат поддержки на витрине ──
   // Человек пишет, сразу получает автоответ, письмо уходит на director@ в рабочее
   // окно (пн 08:00 – пт 15:00 МСК). Ответ приходит обычным ответом на письмо.
+  // Покупки человека по любому контакту из обращения. Если он оставил телефон, а
+  // заказ оформлен на почту, спрашиваем почты по номеру в amoCRM: 24.09.2026 мы
+  // из-за этого ответили клиенту «покупок у вас нет», а пакет был куплен у нас.
+  const _phoneMails = new Map();                       // номер → почты, на час
+  async function mailsByPhone(phone) {
+    if (!phone || !(opts && opts.emailsByPhone)) return [];
+    const hit = _phoneMails.get(phone);
+    if (hit && Date.now() - hit.ts < 3600e3) return hit.list;
+    let list = [];
+    try { list = (await opts.emailsByPhone(phone)) || []; } catch (_) { list = []; }
+    _phoneMails.set(phone, { ts: Date.now(), list });
+    return list;
+  }
+  async function ordersByContact(contact, page) {
+    const all = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.mmOrderId);
+    const mm = (/[?&]o=([A-Za-z0-9_-]+)/.exec(String(page || "")) || [])[1];
+    if (mm) { const hit = all.filter((o) => String(o.mmOrderId) === mm); if (hit.length) return hit; }
+    const c = String(contact || "");
+    const phone = c.replace(/\D/g, "").slice(-10);
+    const mails = [normEmail((c.match(/[^\s]+@[^\s]+/) || [])[0] || "")].filter(Boolean);
+    const byOne = () => all.filter((o) =>
+      (phone && String(o.phone || "").replace(/\D/g, "").slice(-10) === phone) ||
+      mails.indexOf(normEmail(o.email)) >= 0);
+    let mine = byOne();
+    if (!mine.length && phone) {
+      for (const m of await mailsByPhone(phone)) if (mails.indexOf(normEmail(m)) < 0) mails.push(normEmail(m));
+      mine = byOne();
+    }
+    return mine.sort((a, b) => (b.paidAt || b.ts || 0) - (a.paidAt || a.ts || 0));
+  }
+
   // ── Первая линия: чат сам отвечает по делу, не дожидаясь оператора ──
   // 23.09.2026 в 07:35 человек написал «перестала работать eSIM», получил только
   // «ожидайте оператора» и полтора часа разбирался сам (помогло переустановить
@@ -2212,17 +2253,8 @@ function mount(app, opts) {
   // поставщика и отвечает по тому, что видит.
   const TROUBLE_RE = /(не\s*работа|перестал|пропал|отвалил|нет\s*(интернет|сет|связ|трафик)|не\s*лов|не\s*подключ|не\s*могу|не\s*устанав|не\s*актив|не\s*вид|ошибк|сбой|медленн|отключ)/i;
   // заказ человека: сначала по адресу страницы (/esim/my?o=…), потом по контакту
-  function chatOrder(chat) {
-    const all = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.mmOrderId);
-    const mm = (/[?&]o=([A-Za-z0-9_-]+)/.exec(String(chat.page || "")) || [])[1];
-    if (mm) { const hit = all.find((o) => String(o.mmOrderId) === mm); if (hit) return hit; }
-    const c = String(chat.contact || "");
-    const mail = normEmail((c.match(/[^\s]+@[^\s]+/) || [])[0] || "");
-    const phone = c.replace(/\D/g, "").slice(-10);
-    if (!mail && !phone) return null;
-    const mine = all.filter((o) => (mail && normEmail(o.email) === mail) ||
-      (phone && String(o.phone || "").replace(/\D/g, "").slice(-10) === phone));
-    return mine.sort((a, b) => (b.paidAt || b.ts || 0) - (a.paidAt || a.ts || 0))[0] || null;
+  async function chatOrder(chat) {
+    return (await ordersByContact(chat.contact, chat.page))[0] || null;
   }
   const GB = (mb) => (Math.round(mb / 102.4) / 10).toString().replace(".", ",");
   // шаги «пакет живой, а интернета нет» — ровно то, чем люди и чинят сами
@@ -2259,7 +2291,7 @@ function mount(app, opts) {
         support.attention(chat, "вопрос не про неполадку с eSIM, нужен живой ответ");
         return;
       }
-      const o = chatOrder(chat);
+      const o = await chatOrder(chat);
       if (!o) {
         support.attention(chat, "не нашли его покупок: ни по странице, ни по контакту");
         return;
@@ -2472,38 +2504,39 @@ function mount(app, opts) {
     if (/сбой активации|activation|не удалось добавить|ошибка активации/.test(t)) return "activation";
     return "generic";
   }
-  // eSIM человека: ищем по телефону и почте из обращения
-  function caseOrders(one) {
-    const d = (x) => String(x || "").replace(/\D/g, "");
-    const c = String((one && one.contact) || "");
-    const phone = d(c).slice(-10), mail = normEmail((c.match(/[^\s]+@[^\s]+/) || [])[0] || "");
-    if (!phone && !mail) return [];
-    return readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.myUrl &&
-      ((phone && d(o.phone).slice(-10) === phone) || (mail && normEmail(o.email) === mail)));
+  // eSIM человека: по телефону и почте из обращения, при нужде через amoCRM
+  async function caseOrders(one) {
+    return (await ordersByContact(one && one.contact, "")).filter((o) => o.myUrl);
   }
   app.get("/esim/api/case/:id", async (req, res) => {
     try {
       const one = readJson(HELP_FILE, []).find((x) => x.id === String(req.params.id));
       if (!one) return res.status(404).json({ success: false });
-      const mine = caseOrders(one);
-      const esims = [], refundable = [];
+      const mine = await caseOrders(one);
+      const esims = [], refundable = [], replaceable = [];
       for (const o of mine.slice(0, 10)) {
-        let state = "", used = true;
+        let state = "", used = true, usedMb = 1e9, u = null;
         try {
-          const u = await providerFor(o.mmOrderId).getUsage(o.mmOrderId);
+          u = await providerFor(o.mmOrderId).getUsage(o.mmOrderId);
           const packs = (u && u.packages) || [];
           const total = packs.reduce((a, x) => a + x.totalMb, 0);
           const left = packs.reduce((a, x) => a + x.remainingMb, 0);
           const active = packs.some((x) => x.activatedAt);
+          usedMb = Math.round(total - left);
           used = active || left < total;
           state = active ? ("активирована, осталось " + Math.round(left / 102.4) / 10 + " ГБ") : "ещё не активирована";
         } catch (_) { state = ""; }
         esims.push({ label: o.label || "eSIM", url: o.myUrl, state });
         if (!used) refundable.push({ id: o.id, label: o.label || "eSIM" });
+        // Замена профиля: QR одноразовый, и если человек скачал его не на тот
+        // телефон, второй раз он не встанет. Меняем, пока трафик не тронут.
+        if (String(o.src || "") === "esimaccess" && o.productId && usedMb < 10 && !(u && u.expired)) {
+          replaceable.push({ id: o.id, label: o.label || "eSIM" });
+        }
       }
       res.json({ success: true, error: one.error, model: one.model, note: one.note || null,
         when: adsource.mskTime ? adsource.mskTime(one.ts) : "",
-        fix: caseFix(one), esims, refundable });
+        fix: caseFix(one), esims, refundable, replaceable });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
   // личное сообщение оператора на странице обращения
@@ -2525,13 +2558,76 @@ function mount(app, opts) {
     if (one) { one.answered = Date.now(); one.result = "ok"; writeJson(HELP_FILE, all); }
     res.json({ success: true });
   });
+  // Замена профиля одной кнопкой: гасим старый QR у поставщика и выпускаем новый
+  // на тот же пакет. Нужно, когда человек скачал профиль не на тот телефон:
+  // второй раз тот же QR не ставится, айфон пишет «Сбой активации» (24.09.2026).
+  app.post("/esim/api/case/:id/reissue", express.json({ limit: "32kb" }), async (req, res) => {
+    try {
+      const all = readJson(HELP_FILE, []);
+      const one = all.find((x) => x.id === String(req.params.id));
+      if (!one) return res.status(404).json({ success: false });
+      const o = (await caseOrders(one)).find((x) => x.id === String((req.body || {}).order || ""));
+      if (!o) return res.status(404).json({ success: false, message: "заказ не найден" });
+      if (String(o.src || "") !== "esimaccess" || !o.productId) {
+        return res.json({ success: false, message: "по этому пакету замена невозможна, напишите в чат" });
+      }
+      // ещё раз проверяем у поставщика: трафик не тронут, срок не вышел
+      const u = await providerFor(o.mmOrderId).getUsage(o.mmOrderId).catch(() => null);
+      const packs = (u && u.packages) || [];
+      const usedMb = Math.round(packs.reduce((a, x) => a + (x.usedMb || 0), 0));
+      if (!u || (u && u.expired) || usedMb >= 10) {
+        return res.json({ success: false, message: "пакетом уже пользовались, заменить нельзя" });
+      }
+      const oldNo = o.mmOrderId;
+      await esimaccess.revoke(oldNo);
+      // Старый профиль уже погашен: если новый не выпустится, человек останется
+      // ни с чем. Поэтому пробуем трижды и, если всё равно никак, зовём на помощь.
+      let fresh = null, lastErr = null;
+      for (let i = 1; i <= 3 && !fresh; i++) {
+        try { fresh = await esimaccess.createOrder(o.productId); }
+        catch (e) { lastErr = e; await new Promise((r) => setTimeout(r, i * 3000)); }
+      }
+      if (!fresh) {
+        one.reissueFailed = Date.now(); writeJson(HELP_FILE, all);
+        support.queueMail({
+          subject: "VOYO eSIM: замена профиля сорвалась, нужен ручной выпуск",
+          text: "Старый профиль " + oldNo + " уже отозван у eSIM Access, а новый выпустить не вышло.\n\n" +
+            "Заказ: " + o.id + "\nПакет: " + (o.label || "—") + " (" + o.productId + ")\n" +
+            "Клиент: " + (o.email || one.contact || "—") + "\nОшибка: " + (lastErr && lastErr.message) + "\n\n" +
+            "Выпустить пакет руками и отправить человеку QR.",
+        });
+        support.flushQueue(opts && opts.sendMail).catch(() => {});
+        return res.json({ success: false, message: "не получилось выпустить новый профиль, мы уже этим занимаемся и вернёмся с ответом" });
+      }
+      const orders = readJson(ORDERS_FILE, []);
+      const rec = orders.find((x) => x.id === o.id) || o;
+      rec.replacedFrom = (rec.replacedFrom || []).concat([{ mmOrderId: oldNo, ts: Date.now() }]);
+      rec.mmOrderId = fresh.orderId;
+      rec.iccid = fresh.iccid || null;
+      rec.myUrl = myUrlFor(rec, fresh.orderId);
+      writeJson(ORDERS_FILE, orders);
+      one.reissuedAt = Date.now(); one.reissuedTo = fresh.orderId; writeJson(HELP_FILE, all);
+      console.log("esim: замена профиля по обращению", one.id, oldNo, "→", fresh.orderId);
+      if (rec.email && opts && opts.sendMail) {
+        const cust = getCustomer(rec.custKey || rec.email, false);
+        const L = readyLetter(rec, [{ myUrl: rec.myUrl }], cust && cust.refCode);
+        opts.sendMail({ to: rec.email, subject: "VOYO mobile: новый QR для вашей eSIM", html: L.html, text: L.text })
+          .catch((e) => console.error("esim reissue mail:", e.message));
+      }
+      res.json({ success: true, url: rec.myUrl });
+    } catch (e) {
+      console.error("esim reissue:", e.message);
+      res.status(500).json({ success: false, message: e.message });
+    }
+  });
+
   // заявка на возврат: сначала проверяем у поставщика, что пакет не тронут
   app.post("/esim/api/case/:id/refund", express.json({ limit: "32kb" }), async (req, res) => {
     try {
       const all = readJson(HELP_FILE, []);
       const one = all.find((x) => x.id === String(req.params.id));
       if (!one) return res.status(404).json({ success: false });
-      const o = caseOrders(one).find((x) => x.id === String((req.body || {}).order || ""));
+      const o = (await caseOrders(one)).find((x) => x.id === String((req.body || {}).order || ""));
       if (!o) return res.status(404).json({ success: false, message: "заказ не найден" });
       let used = true;
       try {

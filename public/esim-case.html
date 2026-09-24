@@ -98,6 +98,15 @@
     <div class="done" id="done"><b>Спасибо!</b><p>Рады, что заработало. Хорошей поездки.</p></div>
   </div>
 
+  <div class="card" id="reissueCard" style="display:none">
+    <h2>Новый QR на другой телефон</h2>
+    <p class="lead" style="margin:0 0 10px">QR-код одноразовый: после первой установки тот же профиль
+      на второй телефон уже не встаёт. Трафик у вас не потрачен, поэтому мы можем погасить старый профиль
+      и выпустить новый QR на этот же пакет. Старый после этого перестанет работать.</p>
+    <div id="reissues"></div>
+    <p class="lead" style="margin:10px 0 0">Если новый профиль тоже не встанет, напишите в чат: вернём деньги.</p>
+  </div>
+
   <div class="card" id="refundCard" style="display:none">
     <h2>Возврат</h2>
     <p class="lead" style="margin:0 0 4px">Если eSIM не пригодилась и вы её не активировали, мы вернём деньги. Выберите пакет:</p>
@@ -152,6 +161,13 @@
           '<a href="' + e.url + '" target="_blank" rel="noopener">Открыть QR</a></div>';
       }).join("");
     }
+    if(j.replaceable && j.replaceable.length){
+      document.getElementById("reissueCard").style.display = "";
+      document.getElementById("reissues").innerHTML = j.replaceable.map(function(e){
+        return '<div class="esim"><div class="t">' + e.label + "<small>трафик не потрачен</small></div>" +
+          '<button class="btn" style="flex:0 0 auto;padding:10px 16px" data-reissue="' + e.id + '">Выпустить новый QR</button></div>';
+      }).join("");
+    }
     if(j.refundable && j.refundable.length){
       document.getElementById("refundCard").style.display = "";
       document.getElementById("refunds").innerHTML = j.refundable.map(function(e){
@@ -168,6 +184,25 @@
   });
 
   document.addEventListener("click", async function(e){
+    var r = e.target.closest("[data-reissue]");
+    if(r){
+      r.disabled = true; r.textContent = "Выпускаем…";
+      try{
+        var res = await fetch("/esim/api/case/" + encodeURIComponent(id) + "/reissue", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order: r.dataset.reissue }) });
+        var jj = await res.json();
+        if(jj && jj.success){
+          r.parentNode.innerHTML = '<div class="t">Новый QR готов<small>ссылку прислали на вашу почту</small></div>' +
+            '<a href="' + jj.url + '" target="_blank" rel="noopener">Открыть QR</a>';
+        } else {
+          r.textContent = "Не вышло";
+          r.insertAdjacentHTML("afterend", '<div class="meta" style="flex-basis:100%">' +
+            ((jj && jj.message) || "Напишите в чат, поможем руками.") + "</div>");
+        }
+      }catch(err){ r.textContent = "Не вышло, напишите в чат"; }
+      return;
+    }
     var b = e.target.closest("[data-refund]");
     if(!b) return;
     b.disabled = true; b.textContent = "Оформляем…";
