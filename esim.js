@@ -81,6 +81,10 @@ const REF_SITE = process.env.ESIM_REF_SITE || "https://voyomobile.ru";
 const REF_BONUS_RUB = Number(process.env.ESIM_REF_BONUS || 100);
 const TG_WELCOME_RUB = Number(process.env.ESIM_TG_WELCOME || 100);   // подарок новичку в боте   // другу и пригласившему
 const MIN_PAY_RUB = Number(process.env.ESIM_MIN_PAY || 100);
+// Замена профиля (новый QR вместо скачанного не на тот телефон) стоит нам ещё
+// одну закупку: отзыв у eSIM Access денег не возвращает. До этого порога клиент
+// меняет сам кнопкой, дороже — с подтверждения оператора (24.09.2026).
+const REISSUE_MAX_USD = Number(process.env.ESIM_REISSUE_MAX_USD || 5);
 // Несколько eSIM в одном платеже (18.09.2026): первая — по обычной цене (с
 // промокодом, бонусами), каждая следующая — со скидкой EXTRA_PCT от цены
 // пакета, но не ниже того же пола по себестоимости, что и у промокодов.
@@ -2530,7 +2534,8 @@ function mount(app, opts) {
         if (!used) refundable.push({ id: o.id, label: o.label || "eSIM" });
         // Замена профиля: QR одноразовый, и если человек скачал его не на тот
         // телефон, второй раз он не встанет. Меняем, пока трафик не тронут.
-        if (String(o.src || "") === "esimaccess" && o.productId && usedMb < 10 && !(u && u.expired)) {
+        if (String(o.src || "") === "esimaccess" && o.productId && usedMb < 10 && !(u && u.expired) &&
+            (Number(o.costUsd || 0) <= REISSUE_MAX_USD || one.reissueOk)) {
           replaceable.push({ id: o.id, label: o.label || "eSIM" });
         }
       }
@@ -2578,6 +2583,12 @@ function mount(app, opts) {
       if (!u || (u && u.expired) || usedMb >= 10) {
         return res.json({ success: false, message: "пакетом уже пользовались, заменить нельзя" });
       }
+      // Отзыв у eSIM Access денег не возвращает (проверено 24.09.2026 на пакете
+      // за $0,3: списали и не вернули). Значит замена стоит нам ещё одну закупку,
+      // поэтому дорогие пакеты меняем только с разрешения: one.reissueOk.
+      if (Number(o.costUsd || 0) > REISSUE_MAX_USD && !one.reissueOk) {
+        return res.json({ success: false, message: "по этому пакету замену подтверждает оператор, напишите в чат" });
+      }
       const oldNo = o.mmOrderId;
       await esimaccess.revoke(oldNo);
       // Старый профиль уже погашен: если новый не выпустится, человек останется
@@ -2608,6 +2619,14 @@ function mount(app, opts) {
       writeJson(ORDERS_FILE, orders);
       one.reissuedAt = Date.now(); one.reissuedTo = fresh.orderId; writeJson(HELP_FILE, all);
       console.log("esim: замена профиля по обращению", one.id, oldNo, "→", fresh.orderId);
+      support.queueMail({
+        subject: "VOYO eSIM: заменили профиль клиенту, закупка ещё раз",
+        text: "Человек не смог поставить QR на нужный телефон, выпустили новый профиль.\n\n" +
+          "Клиент: " + (o.email || one.contact || "—") + "\nПакет: " + (o.label || "—") + "\n" +
+          "Было: " + oldNo + "\nСтало: " + fresh.orderId + "\n" +
+          "Старый профиль отозван, деньги за него поставщик не возвращает: расход $" + (o.costUsd || "?") + ".",
+      });
+      support.flushQueue(opts && opts.sendMail).catch(() => {});
       if (rec.email && opts && opts.sendMail) {
         const cust = getCustomer(rec.custKey || rec.email, false);
         const L = readyLetter(rec, [{ myUrl: rec.myUrl }], cust && cust.refCode);
