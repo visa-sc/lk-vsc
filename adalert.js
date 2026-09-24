@@ -56,9 +56,16 @@ function gather(deps) {
             detail: "заявка с " + (f.label || f.id) + " не доехала в amoCRM", at: day.at });
         });
       });
+      // Номера АТС. Линия иногда перерегистрируется, и в одну проверку номер
+      // выглядит отключённым — за сутки таких морганий набирается с десяток, но
+      // звонки при этом идут. В письмо берём только настоящие сбои: номер молчал
+      // больше одной проверки (от 15 минут) или не вернулся вовсе. Моргания
+      // остаются видны в блоке на /vsc, но письма из-за них не будет.
       const tr = day.trunks;
       if (tr && (tr.incidents || []).length) {
         tr.incidents.forEach((x) => {
+          const longEnough = !x.to || (x.to - x.from) >= 15 * 60 * 1000;
+          if (!longEnough) return;
           items.push({ group: "trunks", key: "trunk|" + day.day + "|" + x.number + "|" + x.from,
             title: x.number + (x.name ? " (" + x.name + ")" : ""),
             detail: x.to ? ("не было связи " + fmt(x.from) + " — " + fmt(x.to)) : ("нет связи с " + fmt(x.from) + " и до сих пор"),
