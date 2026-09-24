@@ -5878,14 +5878,21 @@
             // Итог строки: красный крест — если что-то не работает прямо сейчас или
             // контакты не сошлись; жёлтая галочка — номер падал, но вернулся.
             const topState = (miss.length || errParts.length || (trTop && trTop.down)) ? "bad" : (trBad ? "warn" : "ok");
-            html += reconLine(p.unique || 0, p.found || 0, L.forms, topState, trTop);
-            if (errParts.length) html += '<div style="margin-top:7px;color:#a12b3c;font-size:12px;line-height:1.6;">' + errParts.join("<br>") + "</div>";
-            if (miss.length) html += '<div style="margin-top:7px;color:#a12b3c;font-size:12px;line-height:1.6;"><b>Пропавшие:</b><br>' + miss.slice(0, 15).join("<br>") + (miss.length > 15 ? "<br>…и ещё " + (miss.length - 15) : "") + "</div>";
-            if (trBad && trTop) {
-              const col = trTop.down ? "#a12b3c" : "#8a6d0b";
-              html += '<div style="margin-top:4px;"><a href="#" id="trunkTopMore" style="font-size:11px;font-weight:600;color:#3589BD;text-decoration:none;">подробнее</a>'
-                + '<div id="trunkTopBox" style="display:none;margin-top:4px;font-size:11.5px;color:' + col + ';line-height:1.6;">'
-                + trTop.bits.map(function (t) { return "<div>" + t + "</div>"; }).join("") + "</div></div>";
+            // Верх блока — одна строка за прошедшие сутки и ссылка «подробнее» рядом,
+            // ровно как в истории по дням (просьба Андрея 24.09.2026): полотно из
+            // пропавших номеров и инцидентов АТС разворачивается только по клику.
+            const topDetails = [];
+            if (errParts.length) topDetails.push({ title: "ошибки сверки:", items: errParts, color: "#a12b3c" });
+            if (miss.length) topDetails.push({ title: "не нашлись в amoCRM:", items: miss.slice(0, 15).concat(miss.length > 15 ? ["…и ещё " + (miss.length - 15)] : []), color: "#a12b3c" });
+            if (trBad && trTop && trTop.bits.length) topDetails.push({ title: "теряли регистрацию в АТС:", items: trTop.bits, color: trTop.down ? "#a12b3c" : "#8a6d0b" });
+            html += '<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">' + reconLine(p.unique || 0, p.found || 0, L.forms, topState, trTop)
+              + (topDetails.length ? '<a href="#" id="trunkTopMore" style="font-size:11px;font-weight:600;color:#3589BD;text-decoration:none;white-space:nowrap;">подробнее</a>' : "") + "</div>";
+            if (topDetails.length) {
+              html += '<div id="trunkTopBox" style="display:none;margin-top:4px;font-size:11.5px;line-height:1.6;">'
+                + topDetails.map(function (g) {
+                    return '<div style="margin-top:2px;color:' + g.color + ';">' + g.title + "</div>"
+                      + g.items.map(function (t) { return '<div style="padding-left:14px;color:' + g.color + ';">' + t + "</div>"; }).join("");
+                  }).join("") + "</div>";
             }
             // История по дням — тем же форматом строки.
             const days = j.days || [];

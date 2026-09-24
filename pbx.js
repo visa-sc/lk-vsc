@@ -58,8 +58,18 @@ async function auth() {
   const k = process.env.PBX_KEY;
   if (!k) throw new Error("нет PBX_KEY в .env");
   if (_auth.key_id && Date.now() - _auth.at < 30 * 60 * 1000) return _auth;
-  const r = await axios.post(BASE + "/auth.json", "auth_key=" + encodeURIComponent(k),
-    { headers: { "Content-Type": "application/x-www-form-urlencoded" }, timeout: 25000 });
+  // АТС изредка отвечает на авторизацию с задержкой (в ночь на 24.09.2026 оба
+  // месяца не посчитались из-за таймаута именно здесь). Даём больше времени и
+  // две попытки: обычный ответ приходит за доли секунды, так что ожидание
+  // включается только в редкий плохой момент.
+  let r = null, lastErr = null;
+  for (let i = 0; i < 2 && !r; i++) {
+    try {
+      r = await axios.post(BASE + "/auth.json", "auth_key=" + encodeURIComponent(k),
+        { headers: { "Content-Type": "application/x-www-form-urlencoded" }, timeout: 45000 });
+    } catch (e) { lastErr = e; if (i === 0) await new Promise((s2) => setTimeout(s2, 3000)); }
+  }
+  if (!r) throw lastErr;
   const d = r.data && r.data.data;
   if (!d || !d.key_id) throw new Error("АТС не авторизовала: " + JSON.stringify(r.data).slice(0, 200));
   _auth = { at: Date.now(), key_id: d.key_id, key: d.key };
