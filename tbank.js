@@ -135,4 +135,4 @@ async function getState(paymentId) {
 // Оплата прошла и деньги списаны
 function isPaid(status) { return status === "CONFIRMED" || status === "AUTHORIZED"; }
 
-module.exports = { ready, init, verifyNotification, getState, isPaid, signature };
+module.exports = { ready, init, verifyNotification, getState, isPaid, signature, agent };

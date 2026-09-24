@@ -8355,9 +8355,14 @@ const TBANK_TOKEN = process.env.TBANK_API_TOKEN || "";
 let _buyouts, _buyoutsRunning = false;
 function loadBuyouts() { if (_buyouts !== undefined) return _buyouts; try { _buyouts = JSON.parse(fs.readFileSync(BUYOUTS_FILE, "utf8")); } catch (_) { _buyouts = null; } return _buyouts; }
 function saveBuyouts(d) { _buyouts = d; try { fs.writeFileSync(BUYOUTS_FILE, JSON.stringify(d, null, 2), "utf8"); } catch (e) { console.error("saveBuyouts:", e.message); } }
+// business.tbank.ru с конца августа 2026 отдаёт сертификат УЦ Минцифры, которого
+// нет в хранилище Node: без него выписка и комиссии эквайринга падают с
+// «self-signed certificate in certificate chain». Корень тот же, что у Т-Кассы,
+// поэтому берём готовый агент из tbank.js — проверка сертификата не отключается.
+const tbCaAgent = () => { try { return require("./tbank").agent(); } catch (_) { return undefined; } };
 async function tbGet(url, attempt) {
   try {
-    const r = await axios.get(url, { headers: { Authorization: "Bearer " + TBANK_TOKEN }, timeout: 30000, validateStatus: () => true });
+    const r = await axios.get(url, { headers: { Authorization: "Bearer " + TBANK_TOKEN }, timeout: 30000, validateStatus: () => true, httpsAgent: tbCaAgent() });
     if (r.status === 200) return r.data;
     if ((r.status === 429 || r.status >= 500) && (attempt || 0) < 3) { await new Promise((s) => setTimeout(s, 1500 * ((attempt || 0) + 1))); return tbGet(url, (attempt || 0) + 1); }
     throw new Error("T-Bank HTTP " + r.status);
@@ -8590,7 +8595,7 @@ function saveAcq(d) { _acq = d; try { fs.writeFileSync(ACQ_FILE, JSON.stringify(
 // GET к T-Bank с ПРОИЗВОЛЬНЫМ токеном (у выкупов свой tbGet на TBANK_TOKEN — не трогаем).
 async function tbGetT(token, url, attempt) {
   try {
-    const r = await axios.get(url, { headers: { Authorization: "Bearer " + token }, timeout: 30000, validateStatus: () => true });
+    const r = await axios.get(url, { headers: { Authorization: "Bearer " + token }, timeout: 30000, validateStatus: () => true, httpsAgent: tbCaAgent() });
     if (r.status === 200) return r.data;
     if ((r.status === 429 || r.status >= 500) && (attempt || 0) < 3) { await new Promise((s) => setTimeout(s, 1500 * ((attempt || 0) + 1))); return tbGetT(token, url, (attempt || 0) + 1); }
     throw new Error("T-Bank HTTP " + r.status);
