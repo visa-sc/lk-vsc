@@ -8,339 +8,70 @@
 <meta name="apple-mobile-web-app-title" content="Покер">
 <meta name="theme-color" content="#0d1411">
 <link rel="apple-touch-icon" href="/poker-icon.png">
-<title>Покер — шпаргалка</title>
+<title>Покер</title>
 <style>
-/* Тёмная тема намеренно: за столом обычно полумрак, светлый экран слепит
-   и соседей, и самого себя. Размеры выставлены под iPhone 17 Pro Max
-   (440 pt в ширину), но на любом телефоне и на компьютере не разъезжается. */
-:root{
-  --bg:#0d1411; --card:#16211c; --line:rgba(255,255,255,.09);
-  --ink:#eef3f0; --muted:#9fb0a8; --faint:#6f827a;
-  --acc:#d8b26a; --good:#4ac97e; --warn:#e8b13a; --bad:#e06060;
-  --red:#e04f5f; --black:#1b2220;
-}
+/* Только карты и названия, сверху вниз от старшей комбинации к младшей.
+   Тёмный фон: за столом полумрак, светлый экран слепит.
+   Размер карт рассчитан на 440 pt ширины (iPhone 17 Pro Max) — пять карт
+   в один ряд без переноса, на узких экранах ужимаются сами. */
+:root{ --bg:#0d1411; --ink:#eef3f0; --acc:#d8b26a; --red:#d8323f; --black:#12181a; }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{background:var(--bg);color:var(--ink);
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,sans-serif;
   -webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%}
-body{min-height:100vh;background:
-  radial-gradient(120% 60% at 50% 0%, #16231d 0%, #0d1411 60%);}
-.wrap{max-width:560px;margin:0 auto;padding:0 14px 40px}
+body{min-height:100vh;background:radial-gradient(120% 55% at 50% 0%, #17241e 0%, #0d1411 60%)}
+.wrap{max-width:520px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 16px) 14px 28px}
 
-/* ── шапка и вкладки ── */
-header{padding:calc(env(safe-area-inset-top) + 18px) 0 4px}
-h1{font-size:26px;letter-spacing:-.02em;font-weight:700}
-h1 span{color:var(--acc)}
-.sub{color:var(--muted);font-size:13px;margin-top:4px}
-nav{position:sticky;top:0;z-index:10;display:flex;gap:6px;padding:12px 0 10px;
-  background:linear-gradient(180deg,#0d1411 72%,rgba(13,20,17,0));overflow-x:auto;scrollbar-width:none}
-nav::-webkit-scrollbar{display:none}
-nav button{flex:0 0 auto;font-family:inherit;font-size:14px;font-weight:600;color:var(--muted);
-  background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 14px}
-nav button.on{background:var(--acc);border-color:var(--acc);color:#1a1207}
-section{display:none}
-section.on{display:block}
+.combo{margin-bottom:22px}
+.name{display:flex;align-items:baseline;gap:9px;margin:0 2px 9px}
+.num{color:var(--acc);font-size:14px;font-weight:700;opacity:.65;min-width:16px}
+.name h2{font-size:20px;font-weight:650;letter-spacing:-.02em}
 
-/* ── карточки комбинаций ── */
-.combo{background:var(--card);border:1px solid var(--line);border-radius:16px;
-  padding:13px 14px;margin-bottom:10px}
-.combo .top{display:flex;align-items:baseline;gap:8px}
-.rank{width:26px;height:26px;flex:0 0 auto;border-radius:9px;background:rgba(216,178,106,.14);
-  color:var(--acc);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center}
-.combo h3{font-size:17px;font-weight:650;letter-spacing:-.01em}
-.combo .en{color:var(--faint);font-size:12px;margin-left:auto;white-space:nowrap}
-.combo .d{color:var(--muted);font-size:13.5px;line-height:1.5;margin-top:6px}
-.combo .odds{color:var(--faint);font-size:12px;margin-top:8px}
-.combo .odds b{color:var(--muted);font-weight:600}
-
-/* ── игральные карты ── */
-.hand{display:flex;gap:5px;margin-top:10px;flex-wrap:wrap}
-.pc{width:36px;height:50px;flex:0 0 auto;background:#f7f8f6;border-radius:6px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  color:var(--black);font-weight:700;line-height:1;box-shadow:0 1px 0 rgba(0,0,0,.4)}
-.pc .r{font-size:16px;letter-spacing:-.04em}
-.pc .s{font-size:13px;margin-top:1px}
+.hand{display:flex;gap:2.2vw;}
+.pc{flex:1 1 0;min-width:0;aspect-ratio:5/7;background:#fbfcfa;border-radius:8px;
+  position:relative;color:var(--black);box-shadow:0 2px 6px rgba(0,0,0,.45)}
 .pc.red{color:var(--red)}
-.pc.dim{opacity:.32}
-
-/* ── простые блоки текста ── */
-.note{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--acc);
-  border-radius:12px;padding:12px 14px;margin:0 0 12px;font-size:14px;line-height:1.55;color:var(--muted)}
-.note b{color:var(--ink);font-weight:650}
-h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);
-  margin:22px 4px 10px;font-weight:700}
-h2:first-child{margin-top:4px}
-ul{margin:0;padding:0;list-style:none}
-li{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;
-  margin-bottom:8px;font-size:14px;line-height:1.55;color:var(--muted)}
-li b{color:var(--ink);font-weight:650}
-li .ex{display:block;margin-top:7px;color:var(--faint);font-size:12.5px}
-
-/* ── таблицы ── */
-table{width:100%;border-collapse:collapse;font-size:13.5px;
-  background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
-th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);
-  padding:10px 12px;border-bottom:1px solid var(--line);font-weight:700}
-td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05);color:var(--muted);vertical-align:top}
-tr:last-child td{border-bottom:0}
-td b{color:var(--ink);font-weight:650}
-td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-
-/* ── сетка стартовых рук 13×13 ── */
-.grid{display:grid;grid-template-columns:repeat(13,1fr);gap:2px;margin-top:4px}
-.grid i{font-style:normal;font-size:9.5px;font-weight:700;text-align:center;
-  padding:4px 0 5px;border-radius:4px;color:#0d1411;letter-spacing:-.04em}
-.g1{background:#4ac97e}   /* поднимать всегда */
-.g2{background:#a9d86a}   /* сильные */
-.g3{background:#e8c25f}   /* играбельные */
-.g4{background:#c98a5a}   /* только в позиции / дёшево */
-.g5{background:#2a3632;color:#5e6f68}  /* пас */
-.legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;font-size:12px;color:var(--muted)}
-.legend span{display:flex;align-items:center;gap:5px}
-.legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
-.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-footer{color:var(--faint);font-size:11.5px;text-align:center;margin-top:26px;line-height:1.6}
+.pc .ix{position:absolute;top:5%;left:8%;font-size:4.6vw;font-weight:800;line-height:1;letter-spacing:-.05em}
+.pc .mid{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:11vw;line-height:1}
+@media (min-width:520px){
+  .hand{gap:11px}
+  .pc .ix{font-size:23px}
+  .pc .mid{font-size:56px}
+}
 </style>
 </head>
 <body>
-<div class="wrap">
-
-<header>
-  <h1>Покер <span>♠</span></h1>
-  <div class="sub">Техасский холдем. Комбинации, что кого бьёт, с чем заходить и какие шансы.</div>
-</header>
-
-<nav>
-  <button class="on" data-go="combos">Комбинации</button>
-  <button data-go="who">Кто сильнее</button>
-  <button data-go="start">С чем заходить</button>
-  <button data-go="odds">Шансы</button>
-  <button data-go="rules">Ход игры</button>
-</nav>
-
-<!-- ─────────────────── КОМБИНАЦИИ ─────────────────── -->
-<section id="combos" class="on">
-  <div class="note">Комбинация всегда из <b>пяти</b> карт: любые из ваших двух и пяти общих.
-    Масть на силу не влияет — червовый флеш равен пиковому.</div>
-  <div id="comboList"></div>
-</section>
-
-<!-- ─────────────────── КТО СИЛЬНЕЕ ─────────────────── -->
-<section id="who">
-  <h2>Когда комбинации одинаковые</h2>
-  <ul>
-    <li><b>Сравнивают по старшинству карт внутри комбинации.</b> Пара тузов бьёт пару королей.
-      Две пары K+7 бьют две пары Q+J: сначала сравнивают старшую пару.
-      <span class="ex">K♠K♦7♣7♥2♠ бьёт Q♠Q♦J♣J♥A♠ — короли старше дам.</span></li>
-    <li><b>Дальше идёт кикер</b> — карта, которая дополняет комбинацию до пяти.
-      <span class="ex">У обоих пара тузов: A♠A♦K♣ бьёт A♥A♣Q♦ — король старше дамы.</span></li>
-    <li><b>Считают ровно пять карт.</b> Шестая и седьмая не смотрятся, даже если они высокие.
-      <span class="ex">Оба собрали стрит на борде — ваши карты не играют вообще, банк делится.</span></li>
-    <li><b>Масти не сравнивают.</b> Одинаковые комбинации разной масти — ничья, банк пополам.</li>
-  </ul>
-
-  <h2>Что путают чаще всего</h2>
-  <ul>
-    <li><b>Стрит A-2-3-4-5 — самый младший.</b> Туз в нём считается за единицу.
-      Он проигрывает любому другому стриту, включая 2-3-4-5-6.
-      <span class="ex">Такой стрит называют «колесом».</span></li>
-    <li><b>Туз работает с обоих концов, но «через угол» — нет.</b>
-      A-K-Q-J-10 — старший стрит. А Q-K-A-2-3 стритом не является.</li>
-    <li><b>Фулл-хаус сравнивают сначала по тройке.</b>
-      <span class="ex">777+22 бьёт 666+AA — тройка семёрок старше троек шестёрок.</span></li>
-    <li><b>Флеш сравнивают по старшей карте</b>, при равенстве — по следующей, и так до пятой.</li>
-    <li><b>Две пары против пары.</b> Две пары всегда сильнее одной, какой бы высокой она ни была:
-      2-2 и 3-3 бьют пару тузов.</li>
-    <li><b>Каре бьёт фулл-хаус, а фулл-хаус — флеш.</b> Это самая частая ошибка новичка:
-      флеш кажется красивее, но он слабее фулл-хауса.</li>
-  </ul>
-</section>
-
-<!-- ─────────────────── СТАРТОВЫЕ РУКИ ─────────────────── -->
-<section id="start">
-  <div class="note">Две карты на руках. <b>s</b> — одной масти (suited), <b>o</b> — разных (offsuit).
-    Пары на диагонали, одномастные — выше неё, разномастные — ниже.</div>
-  <div class="scroll"><div class="grid" id="grid"></div></div>
-  <div class="legend">
-    <span><i class="g1"></i> Всегда повышать</span>
-    <span><i class="g2"></i> Сильная</span>
-    <span><i class="g3"></i> Можно играть</span>
-    <span><i class="g4"></i> Только в позиции</span>
-    <span><i class="g5"></i> Пас</span>
-  </div>
-
-  <h2>Коротко о руках</h2>
-  <ul>
-    <li><b>Топ-5: AA, KK, QQ, AKs, JJ.</b> С ними повышают с любой позиции.
-      AA выигрывает у любой одной руки примерно в 85 % случаев до флопа.</li>
-    <li><b>Одномастные лучше разномастных.</b> AKs сильнее AKo примерно на 3 % —
-      появляется шанс на флеш. Но одна масть не превращает мусор в руку: 7♦2♦ остаётся мусором.</li>
-    <li><b>Мелкие пары (22–66) играют на сет.</b> Тройка приходит на флопе в 12 % случаев.
-      Не пришла — пара двоек почти всегда проигрывает, её надо отпускать.</li>
-    <li><b>Позиция важнее карт.</b> Ходя последним, вы видите решения соперников —
-      в поздней позиции можно играть заметно шире.</li>
-    <li><b>Худшая рука — 7-2 разной масти.</b> Не составляет стрит и почти никогда не выигрывает.</li>
-  </ul>
-</section>
-
-<!-- ─────────────────── ШАНСЫ ─────────────────── -->
-<section id="odds">
-  <div class="note"><b>Правило 4 и 2.</b> Посчитайте ауты — карты, которые достраивают вам руку.
-    На флопе умножьте на 4, на тёрне на 2 — получите примерный процент.
-    <span style="display:block;margin-top:6px;color:var(--faint)">При 9+ аутах на флопе
-    правило немного завышает: вычтите из результата разницу между аутами и восемью.</span></div>
-
-  <h2>Сколько аутов у типичных рук</h2>
-  <div class="scroll"><table>
-    <tr><th>Ситуация</th><th class="n">Ауты</th><th class="n">С флопа</th><th class="n">С тёрна</th></tr>
-    <tr><td><b>Флеш-дро</b><div>4 карты одной масти</div></td><td class="n">9</td><td class="n">35 %</td><td class="n">20 %</td></tr>
-    <tr><td><b>Двусторонний стрит-дро</b><div>напр. 5-6-7-8</div></td><td class="n">8</td><td class="n">32 %</td><td class="n">17 %</td></tr>
-    <tr><td><b>Флеш-дро + стрит-дро</b></td><td class="n">15</td><td class="n">54 %</td><td class="n">33 %</td></tr>
-    <tr><td><b>Гатшот</b><div>дырка внутри, напр. 5-6-_-8</div></td><td class="n">4</td><td class="n">17 %</td><td class="n">9 %</td></tr>
-    <tr><td><b>Две старшие карты</b><div>надо попасть в пару</div></td><td class="n">6</td><td class="n">24 %</td><td class="n">13 %</td></tr>
-    <tr><td><b>Пара → тройка</b></td><td class="n">2</td><td class="n">8 %</td><td class="n">4 %</td></tr>
-    <tr><td><b>Две пары → фулл-хаус</b></td><td class="n">4</td><td class="n">17 %</td><td class="n">9 %</td></tr>
-  </table></div>
-
-  <h2>Что полезно помнить</h2>
-  <ul>
-    <li><b>Пара на руках → тройка на флопе:</b> 12 %. Примерно раз из восьми.</li>
-    <li><b>Две непарные карты → пара на флопе:</b> около 32 %.</li>
-    <li><b>Туз против пары</b> (например, A-K против QQ) — почти монетка, 43 % против 57 %.</li>
-    <li><b>Пара против младшей пары:</b> старшая выигрывает примерно в 80 % случаев.</li>
-    <li><b>Стоит ли уравнивать:</b> сравните процент из таблицы с долей вашей ставки в банке.
-      Если в банке 1000 и надо доставить 200, ваша доля 17 % — со флеш-дро (35 %) заходить выгодно.</li>
-  </ul>
-</section>
-
-<!-- ─────────────────── ХОД ИГРЫ ─────────────────── -->
-<section id="rules">
-  <h2>Четыре круга торговли</h2>
-  <ul>
-    <li><b>Префлоп.</b> Каждому раздают две закрытые карты. Двое слева от дилера ставят
-      малый и большой блайнды — обязательные ставки, с них начинается банк.</li>
-    <li><b>Флоп.</b> На стол выкладывают три общие карты. Второй круг ставок.</li>
-    <li><b>Тёрн.</b> Четвёртая общая карта. Третий круг.</li>
-    <li><b>Ривер.</b> Пятая, последняя общая карта. Четвёртый круг и вскрытие.</li>
-  </ul>
-
-  <h2>Что можно сделать в свой ход</h2>
-  <ul>
-    <li><b>Чек</b> — пропустить, не ставя. Можно, только если до вас никто не поставил.</li>
-    <li><b>Колл</b> — уравнять ставку соперника.</li>
-    <li><b>Рейз</b> — повысить. Остальным придётся доставить или выйти.</li>
-    <li><b>Фолд</b> — сбросить карты и выйти из раздачи. Вложенное в банк остаётся в банке.</li>
-    <li><b>Олл-ин</b> — поставить всё, что есть перед вами.</li>
-  </ul>
-
-  <h2>Мелочи, о которых спрашивают</h2>
-  <ul>
-    <li><b>Можно играть обеими общими, одной или ни одной.</b>
-      Если лучшая пятёрка целиком на столе — банк делится между всеми, кто дошёл до вскрытия.</li>
-    <li><b>Вскрываются не всегда.</b> Если на ривере все сделали чек, первым показывает тот,
-      кто слева от дилера. Если была ставка — первым показывает тот, кого уравняли.</li>
-    <li><b>Дилерская фишка сдвигается по часовой стрелке</b> после каждой раздачи,
-      вместе с ней — и блайнды.</li>
-  </ul>
-</section>
-
-<footer>Личная шпаргалка · ak-co.ru/poker<br>Добавьте на экран «Домой» — откроется как приложение</footer>
-</div>
+<div class="wrap" id="list"></div>
 
 <script>
-/* Комбинации описываем данными, а не вёрсткой: так порядок и примеры правят
-   в одном месте, и ничего не разъезжается. Масти: s — пика, h — черва,
-   d — бубна, c — треф. Проценты — вероятность собрать к риверу из семи карт. */
+/* Порядок сверху вниз = от старшей комбинации к младшей. */
 const SUIT = { s: "♠", h: "♥", d: "♦", c: "♣" };
 const COMBOS = [
-  { n: "Флеш-рояль", en: "Royal flush",
-    d: "Туз, король, дама, валет и десятка одной масти. Старшая рука в покере, побить её нечем.",
-    cards: "As Ks Qs Js Ts", odds: "0,003 %", note: "примерно одна раздача из 31 000" },
-  { n: "Стрит-флеш", en: "Straight flush",
-    d: "Пять карт подряд одной масти. Сравнивают по старшей карте.",
-    cards: "9h 8h 7h 6h 5h", odds: "0,03 %", note: "" },
-  { n: "Каре", en: "Four of a kind",
-    d: "Четыре карты одного достоинства. Пятая — кикер, она решает только при одинаковом каре.",
-    cards: "Qs Qh Qd Qc 4s", odds: "0,17 %", note: "" },
-  { n: "Фулл-хаус", en: "Full house",
-    d: "Тройка плюс пара. Сначала сравнивают тройку, и только потом пару.",
-    cards: "8s 8h 8d 3c 3s", odds: "2,6 %", note: "«восьмёрки на тройках»" },
-  { n: "Флеш", en: "Flush",
-    d: "Пять карт одной масти, не подряд. Сравнивают по старшей карте, дальше по следующей.",
-    cards: "Ad Jd 9d 6d 3d", odds: "3,0 %", note: "" },
-  { n: "Стрит", en: "Straight",
-    d: "Пять карт подряд любых мастей. Туз бывает старшим (A-K-Q-J-10) и младшим (A-2-3-4-5).",
-    cards: "9c 8d 7s 6h 5c", odds: "4,6 %", note: "" },
-  { n: "Тройка", en: "Three of a kind",
-    d: "Три карты одного достоинства. Если обе ваши карты парные — это «сет», его труднее заметить сопернику.",
-    cards: "7s 7h 7d Kc 2s", odds: "4,8 %", note: "" },
-  { n: "Две пары", en: "Two pair",
-    d: "Две разные пары. Сравнивают по старшей паре, затем по младшей, затем по кикеру.",
-    cards: "Js Jh 4d 4c As", odds: "23,5 %", note: "" },
-  { n: "Пара", en: "One pair",
-    d: "Две карты одного достоинства. При равных парах решают кикеры — до трёх штук.",
-    cards: "Ts Th Ad 8c 5s", odds: "43,8 %", note: "самая частая рука на вскрытии" },
-  { n: "Старшая карта", en: "High card",
-    d: "Ничего не собралось. Считается по старшей карте, дальше по следующим.",
-    cards: "Ah Jd 9s 6c 3h", odds: "17,4 %", note: "" },
+  ["Флеш-рояль",   "As Ks Qs Js Ts"],
+  ["Стрит-флеш",   "9h 8h 7h 6h 5h"],
+  ["Каре",         "Qs Qh Qd Qc 4s"],
+  ["Фулл-хаус",    "8s 8h 8d 3c 3s"],
+  ["Флеш",         "Ad Jd 9d 6d 3d"],
+  ["Стрит",        "9c 8d 7s 6h 5c"],
+  ["Тройка",       "7s 7h 7d Kc 2s"],
+  ["Две пары",     "Js Jh 4d 4c As"],
+  ["Пара",         "Ts Th Ad 8c 5s"],
+  ["Старшая карта","Ah Jd 9s 6c 3h"],
 ];
 
-function cardHtml(code) {
-  const r = code.slice(0, -1).replace("T", "10");
-  const s = code.slice(-1);
-  const red = (s === "h" || s === "d") ? " red" : "";
-  return '<div class="pc' + red + '"><div class="r">' + r + '</div><div class="s">' + SUIT[s] + "</div></div>";
-}
-
-document.getElementById("comboList").innerHTML = COMBOS.map(function (c, i) {
+document.getElementById("list").innerHTML = COMBOS.map(function (c, i) {
+  const cards = c[1].split(" ").map(function (code) {
+    const r = code.slice(0, -1).replace("T", "10");
+    const s = code.slice(-1);
+    const red = (s === "h" || s === "d") ? " red" : "";
+    return '<div class="pc' + red + '"><div class="ix">' + r + "</div>"
+      + '<div class="mid">' + SUIT[s] + "</div></div>";
+  }).join("");
   return '<div class="combo">'
-    + '<div class="top"><div class="rank">' + (i + 1) + "</div>"
-    + "<h3>" + c.n + '</h3><div class="en">' + c.en + "</div></div>"
-    + '<div class="hand">' + c.cards.split(" ").map(cardHtml).join("") + "</div>"
-    + '<div class="d">' + c.d + "</div>"
-    + '<div class="odds">Соберётся к риверу: <b>' + c.odds + "</b>"
-    + (c.note ? " · " + c.note : "") + "</div>"
-    + "</div>";
+    + '<div class="name"><div class="num">' + (i + 1) + "</div><h2>" + c[0] + "</h2></div>"
+    + '<div class="hand">' + cards + "</div></div>";
 }).join("");
-
-/* Сетка стартовых рук. Группы — упрощённые, но рабочие: чем ближе к левому
-   верхнему углу, тем рука сильнее. Пары стоят по диагонали. */
-const R = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"];
-const G1 = ["AA", "KK", "QQ", "JJ", "AKs", "AKo", "AQs"];
-const G2 = ["TT", "99", "AJs", "ATs", "KQs", "AQo", "KJs", "QJs", "AJo", "88"];
-const G3 = ["77", "66", "55", "A9s", "A8s", "A7s", "A6s", "A5s", "A4s", "A3s", "A2s",
-            "KTs", "QTs", "JTs", "T9s", "98s", "KQo", "KJo", "QJo", "ATo"];
-const G4 = ["44", "33", "22", "K9s", "Q9s", "J9s", "87s", "76s", "65s", "54s",
-            "KTo", "QTo", "JTo", "A9o", "T8s", "97s"];
-function cls(h) {
-  if (G1.indexOf(h) >= 0) return "g1";
-  if (G2.indexOf(h) >= 0) return "g2";
-  if (G3.indexOf(h) >= 0) return "g3";
-  if (G4.indexOf(h) >= 0) return "g4";
-  return "g5";
-}
-let g = "";
-for (let i = 0; i < 13; i++) {
-  for (let j = 0; j < 13; j++) {
-    const h = i === j ? R[i] + R[i] : (i < j ? R[i] + R[j] + "s" : R[j] + R[i] + "o");
-    g += '<i class="' + cls(h) + '">' + h + "</i>";
-  }
-}
-document.getElementById("grid").innerHTML = g;
-
-/* Вкладки. Запоминаем выбранную: вернулся к странице за столом — открылась там же. */
-const LS = "pokerTab";
-function show(id) {
-  document.querySelectorAll("section").forEach((s) => s.classList.toggle("on", s.id === id));
-  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.go === id));
-  try { localStorage.setItem(LS, id); } catch (e) {}
-  window.scrollTo(0, 0);
-}
-document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => show(b.dataset.go)));
-try {
-  const saved = localStorage.getItem(LS);
-  if (saved && document.getElementById(saved)) show(saved);
-} catch (e) {}
 </script>
 </body>
 </html>
