@@ -206,8 +206,16 @@
     .sec-h .chev{margin-left:auto}
   }
   /* Поддержка: карточки обращений */
-  .chat{border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:10px;background:#fff;}
-  .chat .chead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--mut);margin-bottom:8px;}
+  .chat{border:1px solid var(--border);border-radius:14px;padding:0;margin-bottom:8px;background:#fff;overflow:hidden;}
+  .chat[open]{box-shadow:var(--shadow);}
+  .chat .chead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--mut);
+    padding:11px 14px;cursor:pointer;list-style:none;user-select:none;}
+  .chat .chead::-webkit-details-marker{display:none;}
+  .chat .chead:hover{background:#fafbfd;}
+  .chat .chead .prev{flex:1 1 200px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--mut2);}
+  .chat .chead .chev{margin-left:auto;color:var(--mut2);transition:transform .18s var(--ease);}
+  .chat[open] .chead .chev{transform:rotate(90deg);}
+  .chat .cbody{padding:2px 14px 12px;border-top:1px solid var(--border);}
   .chat .tag{border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:600;}
   .chat .tag.wait{background:#fdecea;color:var(--red);}
   .chat .tag.ok{background:#e8f5ee;color:var(--green);}
@@ -372,7 +380,7 @@
   /* ── пояснения под «i» ── */
   var INFO = {
     sum: "<b>Итог</b> = выручка − себестоимость − комиссия банка − реклама.<br><b>Себестоимость</b> — закупка у поставщика по курсу ЦБ плюс 5% на конвертацию и 11% налога.<br>Свои проверочные покупки в цифры не входят, их можно включить галочкой «тестовые».<br><b>Баланс у поставщиков</b> — сколько денег осталось на закупку eSIM: у eSIM Access и MobiMatter живой остаток из их кабинетов (обновляется раз в полчаса), у TSim — внесённый депозит минус наши закупки. Плитка краснеет, когда кто-то из них подошёл к порогу: ниже него их пакеты прячутся с витрины, а на почту приходит письмо о пополнении.",
-    sup: "Все обращения: и чат на сайте и в боте, и форма «не получается подключить».<br><b>Ждёт ответа</b> — последнее слово за человеком. Ответить можно прямо отсюда: человек увидит текст в чате, а если писал из бота — придёт в телеграм. Ответ обычным письмом на уведомление работает как раньше.<br><b>Первая линия</b> — чат сам разобрал проблему по живым данным: нашёл заказ человека, посмотрел остаток у поставщика и дал шаги. Так человек получает помощь сразу, даже ночью.<br><b>Форма</b> — человек заполнил анкету со своей поломкой: видно модель телефона, что он пробовал, скриншот и ссылку на его персональную страницу. Ответ из поля попадёт на эту же страницу как ответ оператора.<br>На почту письмо уходит, только когда первая линия не справилась: «требуется внимание», не чаще раза в 12 часов на обращение, и только в рабочее окно с понедельника 08:00 до пятницы 15:00 по Москве. Всё остальное живёт здесь.",
+    sup: "Все обращения: и чат на сайте и в боте, и форма «не получается подключить».<br><b>Ждёт ответа</b> — последнее слово за человеком. Ответить можно прямо отсюда: человек увидит текст в чате, а если писал из бота — придёт в телеграм. Ответ обычным письмом на уведомление работает как раньше.<br><b>Первая линия</b> — чат сам разобрал проблему по живым данным: нашёл заказ человека, посмотрел остаток у поставщика и дал шаги. Так человек получает помощь сразу, даже ночью.<br>Карточки свёрнуты: видно, кто написал, когда и первую строку. Нажмите на строку, чтобы раскрыть переписку и ответить. Те, что ждут ответа, раскрыты сразу.<br><b>Форма</b> — человек заполнил анкету со своей поломкой: видно модель телефона, что он пробовал, скриншот и ссылку на его персональную страницу. Ответ из поля попадёт на эту же страницу как ответ оператора.<br>На почту письмо уходит, только когда первая линия не справилась: «требуется внимание», не чаще раза в 12 часов на обращение, и только в рабочее окно с понедельника 08:00 до пятницы 15:00 по Москве. Всё остальное живёт здесь.",
     chart: "Выручка по дням оплаты, время московское. Наведите на график — покажет сумму и число пакетов за день.<br>Прошедшие сутки закрываются в полночь: себестоимость фиксируется по курсу того дня и дальше не меняется. Сегодняшний день — живые цифры.",
     ads: "Канал определяется по метке, с которой человек пришёл впервые (utm, yclid, gclid). Покупки в телеграм-боте — отдельный канал. <b>SMS</b>, <b>Email</b>, <b>SMS-рассылка</b> — по метке в ссылке рассылки. <b>Личный кабинет VOYO</b> — покупки из визового ЛК, если человека не привела реклама или рассылка (иначе сделка идёт тому, что привело).<br><b>Маржа</b> — уже без себестоимости и комиссии банка. <b>Итог</b> — ещё и без расходов на рекламу. <b>ДРР</b> — доля рекламы в выручке.<br>Расход вносится со скриншотов кабинетов общей суммой за всё время.",
     fsite: "Уникальные посетители витрины на всех доменах (voyomobile.ru, voyotravel.ru/esim и другие): зашёл → выбрал страну (открылся список пакетов; на страницах /turkey, /china он открыт сразу) → открыл карточку пакета → нажал «Купить» (появляется поле почты) → нажал «Оплатить» → оплатил. Между карточками — доля перехода с шага на шаг, в синей плашке — сквозная.<br>С 18 сентября шаги пишет сама витрина. <b>До 18 сентября</b> — восстановлено по журналу сервера: «Выбрали страну» там видно только у заходов на страницы стран и по ссылкам из статей, а «Открыли пакет» не записывался вовсе — за те дни в этих шагах только те, кто пошёл дальше. Оплаты всегда берутся из заказов.",
@@ -767,10 +775,12 @@
       }).join("");
       var links = '<a href="' + h.caseUrl + '" target="_blank" rel="noopener">персональная страница ›</a>' +
         (h.shot ? ' · <a href="' + h.shot + '" target="_blank" rel="noopener">скриншот ›</a>' : "");
-      return '<div class="chat"><div class="chead">' + tags + "<b>" + esc(h.contact || "без контакта") + "</b><span>" +
-        whenShort(h.ts) + "</span><span>" + links + "</span></div>" + lines +
+      return '<details class="chat"' + (h.answered ? "" : " open") + '><summary class="chead">' + tags +
+        "<b>" + esc(h.contact || "без контакта") + "</b><span>" + whenShort(h.ts) + "</span>" +
+        '<span class="prev">' + esc((h.error || "").slice(0, 90)) + '</span><span class="chev">›</span></summary>' +
+        '<div class="cbody"><div style="font-size:12.5px;margin:8px 0 2px">' + links + "</div>" + lines +
         '<div class="crow"><input placeholder="Написать ответ на его персональной странице" data-note="' + h.id + '"/>' +
-        '<button class="btn pri" type="button" data-nsend="' + h.id + '">Ответить</button></div></div>';
+        '<button class="btn pri" type="button" data-nsend="' + h.id + '">Ответить</button></div></div></details>';
     }).join("");
     el("sup").innerHTML = formsHtml + sup.chats.map(function(c){
       var who = c.contact ? esc(c.contact) : (c.tg ? "телеграм-бот" : "с сайта");
@@ -781,11 +791,13 @@
         return '<div class="msg ' + m.from + '"><div class="who">' + hhmm(m.ts) + " " + name +
           '</div><div class="tx">' + esc(m.text) + "</div></div>";
       }).join("");
-      return '<div class="chat" data-cid="' + c.id + '">' +
-        '<div class="chead">' + tags + "<b>" + who + "</b><span>" + whenShort(c.lastAt) + "</span>" +
-        (c.page ? "<span>" + esc(c.page).slice(0, 70) + "</span>" : "") + "</div>" + msgs +
+      return '<details class="chat" data-cid="' + c.id + '"' + (c.waiting ? " open" : "") + '>' +
+        '<summary class="chead">' + tags + "<b>" + who + "</b><span>" + whenShort(c.lastAt) + "</span>" +
+        '<span class="prev">' + esc(c.last || "") + '</span><span class="chev">›</span></summary>' +
+        '<div class="cbody">' + (c.page ? '<div class="dim" style="font-size:12px;margin:8px 0 2px">' +
+        esc(c.page).slice(0, 90) + "</div>" : "") + msgs +
         '<div class="crow"><input placeholder="Ответить человеку в чат" data-reply="' + c.id + '"/>' +
-        '<button class="btn pri" type="button" data-send="' + c.id + '">Отправить</button></div></div>';
+        '<button class="btn pri" type="button" data-send="' + c.id + '">Отправить</button></div></div></details>';
     }).join("");
   }
   document.addEventListener("click", async function(e){
