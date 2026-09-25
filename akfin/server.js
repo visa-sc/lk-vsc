@@ -17,7 +17,7 @@ app.use(express.json({ limit: "1mb" }));
 // Статика страницы (fin.html берётся модулем из public/)
 const PUB = path.join(__dirname, "public");
 app.get("/", (req, res) => res.redirect(302, "/fin"));
-for (const f of ["fin-icon.png", "fin-bg.png", "fin-sw.js", "apple-touch-icon.png"]) {
+for (const f of ["fin-icon.png", "fin-bg.png", "fin-sw.js", "apple-touch-icon.png", "poker-icon.png"]) {
   app.get("/" + f, (req, res) => res.sendFile(path.join(PUB, f)));
 }
 
@@ -27,5 +27,12 @@ const finApi = finMod.mount(app, { requireAdmin: (req, res) => res.status(403).j
 // Карта всего: домены, сервисы, страницы, разделы. Снимок собирает сканер
 // tools/sitemap-scan.js в основном репозитории, сюда попадает файлом.
 require("./map").mount(app, { requireFin: finApi.requireFin });
+
+// Шпаргалка по покеру: статическая страница, данных и входа не требует —
+// закрывать её кодом незачем, а за столом важно открыть в одно касание.
+app.get("/poker", (req, res) => {
+  res.set("Cache-Control", "no-cache");
+  res.sendFile(path.join(PUB, "poker.html"));
+});
 
 app.listen(PORT, "127.0.0.1", () => console.log("AKFIN: личные финансы на порту " + PORT));
