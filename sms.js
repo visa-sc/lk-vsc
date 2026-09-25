@@ -34,6 +34,23 @@ function generateCode() {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 
+// Журнал отправленных смс: номер, id у оператора и статус. Без этого нельзя
+// ответить на простой вопрос «дошла ли смс клиенту» (25.09.2026). Коды из смс
+// авторизации не пишем — только сам факт отправки.
+const SMS_LOG = require("path").join(__dirname, ".esim", "smslog.json");
+function logSms(phone, message, smsId, status) {
+  try {
+    const fs = require("fs");
+    const txt = /\b\d{4}\b/.test(String(message)) && String(message).length < 90
+      ? "(код авторизации)" : String(message || "").slice(0, 160);
+    let all = [];
+    try { all = JSON.parse(fs.readFileSync(SMS_LOG, "utf8")); } catch (_) { all = []; }
+    all.unshift({ ts: Date.now(), phone, text: txt, smsId: smsId || null, status: status || null });
+    fs.mkdirSync(require("path").dirname(SMS_LOG), { recursive: true });
+    fs.writeFileSync(SMS_LOG, JSON.stringify(all.slice(0, 2000), null, 1), "utf8");
+  } catch (e) { console.error("sms log:", e.message); }
+}
+
 async function sendMessage(phone, message) {
   const apiId = getApiId();
   if (!apiId) {
@@ -64,6 +81,7 @@ async function sendMessage(phone, message) {
       const smsStatus = smsObj ? smsObj.status : "UNKNOWN";
       const smsCode = smsObj ? smsObj.status_code : null;
       const ok = smsStatus === "OK";
+      logSms(normalizedPhone, message, smsObj && smsObj.sms_id, smsStatus);
       return {
         ok,
         smsStatus,
