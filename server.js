@@ -6464,6 +6464,24 @@ async function bankiEurSafe(force) { try { return await fetchBankiEurBuy(force);
 const VSC_CALC_FILE = path.join(__dirname, ".vscCalc.json");
 function loadCalcCfg() { try { return JSON.parse(fs.readFileSync(VSC_CALC_FILE, "utf8")) || {}; } catch (_) { return {}; } }
 function saveCalcCfg(c) { try { fs.writeFileSync(VSC_CALC_FILE, JSON.stringify(c || {}, null, 2), "utf8"); return true; } catch (e) { console.error("saveCalcCfg:", e.message); return false; } }
+// ── История курса USDT для расхода («дата — курс») ──
+// Курс ставится в момент фактической закупки монеты и действует до следующей.
+// Раньше хранилось ОДНО текущее число без истории, и поднять «что было на дату»
+// было неоткуда. С 27.09.2026 каждая смена пишется сюда (просьба Андрея).
+// Файл засеян известными точками с 14.09.2026. Нужен для сверок и для разметки
+// операций крипто-кошелька задним числом («Поток»/«Касса» у Зайцевой).
+const VSC_CALC_RATES_LOG = path.join(__dirname, ".vscCalcRatesLog.json");
+function readCalcRatesLog() { try { const a = JSON.parse(fs.readFileSync(VSC_CALC_RATES_LOG, "utf8")); return Array.isArray(a) ? a : []; } catch (_) { return []; } }
+function logCalcRateChange(prev, v) {
+  try {
+    const log = readCalcRatesLog(), last = log[log.length - 1];
+    if (last && Math.abs(Number(last.rate) - v) < 1e-9) return; // то же значение — строку не плодим
+    const now = Date.now(), p = mskParts(now);
+    log.push({ ts: now, date: p.date, time: p.time, rate: v, prev: (prev != null ? prev : null) });
+    if (log.length > 2000) log.splice(0, log.length - 2000);
+    fs.writeFileSync(VSC_CALC_RATES_LOG, JSON.stringify(log, null, 2), "utf8");
+  } catch (e) { console.error("logCalcRateChange:", e && e.message); }
+}
 app.get("/admin/api/vsc-rates", requireVscAccess, async (req, res) => {
   const cfg = loadCalcCfg();
   const fresh = !!(req.query && req.query.fresh === "1"); // кнопка «Обновить курсы» — минуя кэш
@@ -6476,8 +6494,18 @@ app.get("/admin/api/vsc-rates", requireVscAccess, async (req, res) => {
 app.post("/admin/api/vsc-rates", requireAdmin, (req, res) => {
   const v = parseFloat(req.body && req.body.usdtExpense);
   if (!isFinite(v) || v <= 0) return res.status(400).json({ success: false, message: "Нужен usdtExpense > 0" });
-  const cfg = loadCalcCfg(); cfg.usdtExpense = v; saveCalcCfg(cfg);
+  const cfg = loadCalcCfg();
+  const prev = (cfg.usdtExpense != null ? cfg.usdtExpense : null);
+  cfg.usdtExpense = v; saveCalcCfg(cfg);
+  logCalcRateChange(prev, v); // фиксируем «дата — курс» в историю
   return res.json({ success: true, usdtExpense: v });
+});
+// История курса USDT для расхода. Гейт как у чтения курсов (админ ИЛИ право vsc),
+// чтобы сторона Зайцевой могла забирать её сама, не дёргая Андрея.
+app.get("/admin/api/vsc-rates-log", requireVscAccess, (req, res) => {
+  const log = readCalcRatesLog(), cfg = loadCalcCfg();
+  return res.json({ success: true, total: log.length, current: (cfg.usdtExpense != null ? cfg.usdtExpense : null),
+    history: log.slice().reverse() }); // новые сверху
 });
 // Прогрев курсов ЦБ — чтобы первое открытие калькулятора было быстрым.
 (function scheduleCbrPrewarm() {
