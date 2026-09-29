@@ -3124,6 +3124,8 @@ require("./excursion").mount(app, { sendMail: (o) => mail.sendMail(o) });
 // банка (заявка в один тап — телефон берём из сессии ЛК, формы нет).
 require("./cards").mount(app, {
   sendMail: (o) => mail.sendMail(o),
+  // Смс клиенту: готовая eSIM и разбор обращения. Журнал отправок ведёт sms.js
+  sendSms: (phone, text) => sms.sendMessage(phone, text),
   clientPhone: (req) => clientPhoneFromSession(req)
 });
 

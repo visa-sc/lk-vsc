@@ -2458,7 +2458,22 @@ function mount(app, opts) {
           "Персональная страница для ответа человеку: " + BASE_URL + "/esim/case/" + one.id,
       });
       support.flushQueue(opts && opts.sendMail).catch(() => {});
-      res.json({ success: true });
+      // Человек не должен ждать оператора: сразу отдаём ему персональную страницу,
+      // где уже собран разбор его ошибки, его eSIM и кнопки (29.09.2026).
+      const caseUrl = BASE_URL + "/esim/case/" + one.id;
+      const digits = String(one.contact || "").replace(/\D/g, "");
+      const mail2 = (String(one.contact || "").match(/[^\s]+@[^\s]+/) || [])[0];
+      if (mail2 && opts && opts.sendMail) {
+        opts.sendMail({ to: mail2, subject: "VOYO mobile: разбор вашего обращения",
+          text: "Мы получили ваше обращение и собрали для вас страницу с разбором: " + caseUrl + "\n\n" +
+            "Там пошаговое решение вашей ситуации, ваши eSIM с QR-кодом и кнопки на случай, " +
+            "если ничего не поможет. Если шаги не сработают, напишите нам в чат прямо на этой странице.\n\n" +
+            "VOYO mobile, пакеты eSIM для поездок" }).catch((e) => console.error("esim help mail:", e.message));
+      } else if (digits.length >= 10 && opts && opts.sendSms) {
+        opts.sendSms(digits, "VOYO mobile: разбор вашего обращения и что делать по шагам: " + caseUrl)
+          .catch((e) => console.error("esim help sms:", e.message));
+      }
+      res.json({ success: true, caseUrl });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
   // скриншот из обращения — только с админ-кодом
@@ -2512,6 +2527,9 @@ function mount(app, opts) {
   function caseFix(one) {
     const t = String((one && one.error) || "").toLowerCase();
     if (/сбой активации|activation|не удалось добавить|ошибка активации/.test(t)) return "activation";
+    // «не появилась строка добавить есим», «в основных данных нет ничего про есим»:
+    // человек не находит, куда вообще вставить профиль (25.09.2026)
+    if (/не появил|не наш|нет строки|нет стр[ео]ки|нет пункта|не вижу|не мог[ул] найти|куда|eid|основных данных/.test(t)) return "notfound";
     return "generic";
   }
   // eSIM человека: по телефону и почте из обращения, при нужде через amoCRM

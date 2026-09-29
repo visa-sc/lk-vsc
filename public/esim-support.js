@@ -132,7 +132,11 @@
         var j = await r.json();
         if (!j || !j.success) throw new Error("fail");
         box.innerHTML = '<div class="vsup-head"><h3>Обращение отправлено</h3><button class="vsup-x" type="button">×</button></div>' +
-          '<div class="vsup-ok"><b>Ваше обращение получено</b><p>Ожидайте, пожалуйста, ответа оператора — ответим тем способом, который вы указали.</p></div>';
+          '<div class="vsup-ok"><b>Ваше обращение получено</b><p>Мы уже собрали разбор вашей ситуации: пошаговое решение, ваши eSIM и QR-код.</p>' +
+          (j.caseUrl ? '<p style="margin-top:10px"><a href="' + j.caseUrl + '" style="display:inline-block;background:#3589bd;color:#fff;' +
+            'text-decoration:none;font-weight:700;padding:11px 18px;border-radius:12px">Открыть разбор</a></p>' +
+            '<p style="margin-top:8px">Ссылку продублировали тем способом, который вы указали. Если не поможет, напишите нам в чат.</p>' : '') +
+          '</div>';
         box.querySelector(".vsup-x").addEventListener("click", close);
       } catch (e) {
         msg.textContent = "Не отправилось. Попробуйте ещё раз или напишите в чат."; msg.classList.add("on");
