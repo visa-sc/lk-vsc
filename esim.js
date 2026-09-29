@@ -39,6 +39,7 @@ const express = require("express"); // нужен для express.json() на р�
 const tbank = require("./tbank"); // Т-Касса: приём оплат (банк за интерфейсом, как и поставщик eSIM)
 const blog = require("./esimblog");      // блогеры: бесплатный интернет за сторис
 const support = require("./esimchat");   // чат и обращения: очередь писем и ответы с почты      // блогеры: бесплатный интернет за сторис
+const doctor = require("./esimdoctor.js");   // разбор проблемы клиента головой, а не шаблоном
 const adsource = require("./adsource"); // откуда пришёл покупатель: метки Google Ads, utm и т.п.
 
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
@@ -2284,15 +2285,175 @@ function mount(app, opts) {
   }
   // «спасибо, помогло» — не повод звать оператора
   const THANKS_RE = /^\s*(спасибо|благодар|помогло|заработал|всё работает|все работает|ок|ok|👍|🙏)/i;
+  // ── Вторая линия: сервер сам решает проблему, не дожидаясь оператора ──
+  // 29.09.2026, просьба Андрея: «решай до того, как мне придёт письмо».
+  // Шаг 1 — точный разбор по всем eSIM человека (частый случай: включены две
+  // линии сразу, телефон держится за старую и новую не регистрирует).
+  // Шаг 2 — бесплатная замена пакетом другого поставщика.
+  // Шаг 3 — возврат денег. Письмо оператору уходит, только если всё это не подошло.
+  const GBs = (mb) => (Math.round(mb / 102.4) / 10).toString().replace(".", ",");
+  async function orderStates(mine) {
+    const out = [];
+    for (const o of mine.slice(0, 6)) {
+      let u = null;
+      try { u = await providerFor(o.mmOrderId).getUsage(o.mmOrderId); } catch (_) {}
+      const packs = (u && u.packages) || [];
+      out.push({ o, u,
+        installed: !!(u && u.installed),
+        active: packs.some((x) => x.activatedAt),
+        total: packs.reduce((a, x) => a + (x.totalMb || 0), 0),
+        left: packs.reduce((a, x) => a + (x.remainingMb || 0), 0),
+        expired: !!(u && u.expired),
+      });
+    }
+    return out;
+  }
+  // подбираем у eSIM Access равноценный пакет тех же стран
+  async function pickReplacement(o) {
+    const [cat, rate] = await Promise.all([getCatalog(false), usdRate()]);
+    const src = findProduct(cat, o.productId);
+    const item = src && src.item;
+    if (!item) return null;
+    const want = (item.countries || []).slice().sort().join(",");
+    if (!want) return null;
+    const list = (cat.products || []).filter((p) => isEaId(p.id) && !p.daily && !p.unlimited &&
+      (p.countries || []).slice().sort().join(",") === want &&
+      Number(p.dataGb || 0) >= Number(item.dataGb || 0) &&
+      Number(p.days || 0) >= Number(item.days || 0) &&
+      Number(p.costUsd || 99) <= REISSUE_MAX_USD);
+    list.sort((a, b) => Number(a.costUsd) - Number(b.costUsd));
+    return list[0] || null;
+  }
+  // выдаём человеку замену за наш счёт и кладём новый QR прямо в чат
+  async function giftReplacement(chat, o, sayInstead) {
+    const plan = await pickReplacement(o);
+    if (!plan) return false;
+    const fresh = await esimaccess.createOrder(plan.id);
+    const orders = readJson(ORDERS_FILE, []);
+    const gift = {
+      id: crypto.randomBytes(6).toString("hex"), ts: Date.now(), status: "done",
+      productId: plan.id, label: "eSIM " + (plan.title || "") + " · замена",
+      priceRub: 0, listPriceRub: 0, email: o.email || null, phone: o.phone || null,
+      custKey: o.custKey || normEmail(o.email) || null, tgChatId: o.tgChatId || null,
+      base: o.base || BASE_URL, paidAt: Date.now(), src: "esimaccess",
+      mmOrderId: fresh.orderId, iccid: fresh.iccid || null, costUsd: plan.costUsd || null,
+      giftFor: o.id, giftReason: "замена: пакет не заработал у клиента",
+    };
+    gift.myUrl = myUrlFor(gift, fresh.orderId);
+    orders.unshift(gift); writeJson(ORDERS_FILE, orders);
+    console.log("esim вторая линия: выдана замена", gift.mmOrderId, "вместо", o.mmOrderId);
+    support.botMessage(chat.id, sayInstead ? (sayInstead + "\n\nВаш новый QR: " + gift.myUrl) :
+      "Не будем вас мучить настройками: выдали вам другую eSIM, другого оператора, за наш счёт. " +
+      (plan.title || "") + ".\n\nНовый QR: " + gift.myUrl + "\n\n" +
+      "Поставьте её тем же путём: Настройки, Сотовая связь, Добавить eSIM. Старую линию перед этим выключите, " +
+      "чтобы телефон не держался за неё. Если и эта не заработает, напишите сюда: вернём деньги.", "autoFix2");
+    if (gift.email && opts && opts.sendMail) {
+      opts.sendMail({ to: gift.email, subject: "VOYO mobile: выдали вам другую eSIM взамен",
+        text: "Ваш пакет не заработал, поэтому мы выдали вам eSIM другого оператора за наш счёт.\n\n" +
+          (plan.title || "") + "\nQR и остаток: " + gift.myUrl + "\n\n" +
+          "Старую линию eSIM перед установкой выключите. Если и эта не заработает, ответьте на это письмо: вернём деньги.\n\n" +
+          "VOYO mobile" }).catch(() => {});
+    }
+    support.queueMail({
+      subject: "VOYO eSIM: вторая линия выдала замену клиенту",
+      text: "У человека не заработал пакет, выдали замену другого поставщика за наш счёт.\n\n" +
+        "Клиент: " + (gift.email || chat.contact || "—") + "\nБыло: " + (o.label || "—") + " (" + o.mmOrderId + ")\n" +
+        "Выдали: " + (plan.title || "") + " (" + gift.mmOrderId + "), себестоимость $" + (plan.costUsd || "?") + "\n" +
+        "Чат: " + chat.id,
+    });
+    return true;
+  }
+  async function secondLine(chat) {
+    const mine = await ordersByContact(chat.contact, chat.page);
+    if (!mine.length) return false;
+    const st = await orderStates(mine);
+    const here = st.find((x) => chat.page && chat.page.indexOf(x.o.mmOrderId) >= 0) || st[0];
+    if (!here) return false;
+    const step = chat.autoFix3 ? 3 : (chat.autoFix2 ? 2 : (chat.autoFix1 ? 1 : 0));
+
+    // Разбор головой: модели отдаём переписку и живое состояние всех его eSIM.
+    // Она отвечает человеку и говорит нам, чинить словами или менять пакет.
+    if (step < 2 && doctor.aiOn()) {
+      const tried = [];
+      if (chat.autoDiag) tried.push("первый автоматический разбор человеку уже отправляли");
+      if (chat.autoFix1) tried.push("подсказку про две включённые линии уже давали");
+      const seen = await doctor.diagnose({
+        messages: chat.messages, orders: mine, states: st,
+        ua: chat.ua, ip: chat.ip, tried, refundAllowed: false,
+      }).catch((e) => { console.error("esim доктор:", e.message); return null; });
+      if (seen && seen.reply) {
+        console.log("esim доктор:", seen.diagnosis, "→", seen.action);
+        if (seen.action === "replace") {
+          const ok = await giftReplacement(chat, here.o, seen.reply).catch((e) => {
+            console.error("esim замена:", e.message); return false;
+          });
+          if (ok) return true;
+        }
+        if (seen.action !== "escalate") {
+          support.botMessage(chat.id, seen.reply, chat.autoFix1 ? "autoFix2" : "autoFix1");
+          return true;
+        }
+      }
+    }
+
+    // Шаг 3: замену уже давали, а человек всё пишет — оформляем возврат
+    if (step >= 2) {
+      const all = readJson(ORDERS_FILE, []);
+      const rec = all.find((x) => x.id === here.o.id);
+      if (rec) { rec.refundAsked = Date.now(); writeJson(ORDERS_FILE, all); }
+      support.botMessage(chat.id,
+        "Хватит это терпеть: оформляем возврат за пакет «" + (here.o.label || "eSIM") + "». " +
+        "Деньги вернём на ту же карту, обычно они приходят за один-три рабочих дня. " +
+        "Извините, что так вышло.", "autoFix3");
+      support.queueMail({
+        subject: "VOYO eSIM: вторая линия оформила возврат, нужно вернуть деньги в банке",
+        text: "Человеку не помогли ни разбор, ни замена. Обещали возврат.\n\n" +
+          "Клиент: " + (here.o.email || chat.contact || "—") + "\nЗаказ: " + here.o.id +
+          "\nПакет: " + (here.o.label || "—") + "\nСумма: " + (here.o.payTotalRub || here.o.priceRub) + " ₽" +
+          "\nПлатёж в банке: " + (here.o.paymentId || "—") + "\n\nВернуть деньги в Т-Банке.",
+      });
+      support.flushQueue(opts && opts.sendMail).catch(() => {});
+      return true;
+    }
+
+    // Шаг 1: две линии сразу — самая частая причина «поставил, а интернета нет»
+    const live = st.find((x) => x !== here && x.active && !x.expired && x.left > 20);
+    if (step === 0 && here.installed && !here.active && live) {
+      support.botMessage(chat.id,
+        "Нашли причину. У вас на телефоне две наши eSIM. Старая, «" + (live.o.label || "") + "», сейчас активна, " +
+        "на ней осталось " + GBs(live.left) + " ГБ. Новая установлена, но в сеть не вышла: телефон держится за старую " +
+        "и новую не регистрирует.\n\n" +
+        "1. Настройки, Сотовая связь: выключите старую линию eSIM.\n" +
+        "2. Для новой включите «Роуминг данных» и выберите её в пункте «Сотовые данные».\n" +
+        "3. Режим полёта на 15 секунд и обратно.\n\n" +
+        "Через минуту интернет появится. Если нет, напишите сюда: выдадим eSIM другого оператора за наш счёт.",
+        "autoFix1");
+      return true;
+    }
+
+    // Шаг 2 (и шаг 1, если подсказать нечем): бесплатная замена другим оператором
+    if (!here.active || here.left < 20) {
+      const ok = await giftReplacement(chat, here.o).catch((e) => {
+        console.error("esim замена:", e.message); return false;
+      });
+      if (ok) return true;
+    }
+    return false;
+  }
+
   async function chatAutoAnswer(chat) {
     try {
       if (!chat || !chat.messages || !chat.messages.length) return;
       const last = chat.messages.filter((m) => m.from === "client").pop();
       if (!last) return;
       if (THANKS_RE.test(last.text) && last.text.length < 60) return;   // человеку уже хорошо
-      // человек пишет снова после нашего разбора — значит разбор не помог
+      // человек пишет снова после нашего разбора — значит разбор не помог,
+      // включаем вторую линию: она чинит сама, а не зовёт оператора
       if (chat.autoDiag && last.ts > chat.autoDiag) {
-        support.attention(chat, "первая линия дала разбор, но человек продолжает писать");
+        const did = await secondLine(chat).catch((e) => {
+          console.error("esim вторая линия:", e.message); return false;
+        });
+        if (!did) support.attention(chat, "первая линия дала разбор, вторая не нашла, чем помочь");
         return;
       }
       if (chat.autoDiag && Date.now() - chat.autoDiag < 6 * 3600e3) return;   // один разбор на историю

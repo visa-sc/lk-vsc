@@ -61,6 +61,14 @@ const SITE_SHORT = (process.env.ESIM_REF_SITE || "https://voyomobile.ru").replac
 const BOT_NAME = process.env.ESIM_TG_USERNAME || "esimvoyo_bot";
 
 function ready() { return !!TOKEN; }
+// Режим: webhook (по умолчанию) или poll. Опрос оставлен как запасной путь и
+// включается сам, если Телеграм перестаёт доставлять вебхуки (29.09.2026).
+function tgMode() { return String(process.env.ESIM_TG_MODE || "webhook").toLowerCase(); }
+const HOOK_BASE = (process.env.ESIM_TG_WEBHOOK_BASE || "https://voyovoyo.ru").replace(/\/+$/, "");
+function hookSecret() {
+  return process.env.ESIM_TG_SECRET ||
+    crypto.createHash("sha256").update("tg:" + TOKEN).digest("hex").slice(0, 24);
+}
 function webhookPath() {
   const secret = process.env.ESIM_TG_SECRET ||
     crypto.createHash("sha256").update("tg:" + TOKEN).digest("hex").slice(0, 24);
@@ -1387,6 +1395,7 @@ function botStatus() {
   return {
     relays: RELAYS.length, relayActive: _relayIdx === 0 ? "основной" : "запасной",
     relayGlued: RELAY_GLUED, tokenGlued: TOKEN_GLUED, polling: _polling,
+    mode: _hookOn ? "вебхук" : "опрос", lastHookAt: _lastHookAt || null,
     lastOkAt: Math.max(w.lastOkAt || 0, _memOkAt) || null,
     downSince: w.downSince || null, alertedAt: w.alertedAt || null,
     lastLoopAgoSec: _lastLoopAt ? Math.round((now - _lastLoopAt) / 1000) : null,
@@ -1452,6 +1461,48 @@ async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, m
     ] } });
 }
 
+// ── вебхук: включение и присмотр ──
+let _lastHookAt = 0;
+let _hookOn = false;
+async function enableWebhook() {
+  const url = HOOK_BASE + webhookPath();
+  try {
+    await tg("setWebhook", {
+      url, secret_token: hookSecret(), drop_pending_updates: false,
+      max_connections: 20, allowed_updates: ["message", "callback_query", "my_chat_member"],
+    });
+    _hookOn = true;
+    _polling = false;
+    console.log("tgbot: включён вебхук " + url.replace(/\/tg\/esim\/.*/, "/tg/esim/…"));
+  } catch (e) {
+    console.error("tgbot: вебхук не включился (" + e.message + "), остаёмся на опросе");
+    _hookOn = false;
+    pollLoop();
+  }
+}
+// Телеграм не доставляет вебхуки — молча возвращаемся на опрос, клиент этого не заметит
+async function webhookWatch() {
+  if (!_hookOn || tgMode() === "poll") return;
+  let info = null;
+  try { info = await tg("getWebhookInfo", {}, { quiet: true }); } catch (_) { return; }
+  if (!info) return;
+  const badUrl = String(info.url || "") !== HOOK_BASE + webhookPath();
+  const lastErr = Number(info.last_error_date || 0) * 1000;
+  const freshErr = lastErr && Date.now() - lastErr < 15 * 60 * 1000;
+  const stuck = Number(info.pending_update_count || 0) > 30;
+  if (!badUrl && !freshErr && !stuck) return;
+  console.error("tgbot: вебхук не работает (" + (info.last_error_message || (badUrl ? "чужой адрес" : "очередь " + info.pending_update_count)) + "), возвращаюсь на опрос");
+  _hookOn = false;
+  try { await tg("deleteWebhook", { drop_pending_updates: false }); } catch (_) {}
+  if (!_polling) pollLoop();
+  try {
+    require("./mail.js").sendMail({ to: ALERT_TO, subject: "VOYO eSIM: бот вернулся на длинный опрос",
+      text: "Телеграм перестал доставлять вебхуки: " + (info.last_error_message || "нет деталей") +
+        ".\nБот работает как раньше, через опрос: клиенты ничего не замечают.\n" +
+        "Но из-за опроса снова растёт расход памяти на Deno Deploy." }).catch(() => {});
+  } catch (_) {}
+}
+
 // ─────────────────────────── подключение ───────────────────────────
 function mount(app, opts) {
   if (!ready()) { console.log("tgbot: ESIM_TG_TOKEN не задан, бот выключен"); return { onIssued: () => {} }; }
@@ -1459,17 +1510,29 @@ function mount(app, opts) {
 
   // Вебхук оставлен на случай, если однажды до нас начнут доходить запросы
   app.post(hook, require("express").json({ limit: "1mb" }), async (req, res) => {
+    // Телеграм присылает наш секрет заголовком: чужой запрос дальше не пустим
+    const sent = String(req.headers["x-telegram-bot-api-secret-token"] || "");
+    if (sent && sent !== hookSecret()) return res.status(403).json({ ok: false });
     res.json({ ok: true });
+    _lastHookAt = Date.now();
+    _lastOkAt = Date.now();
     await handleUpdate(req.body || {});
   });
 
   setTimeout(async () => {
-    await tg("deleteWebhook", { drop_pending_updates: false });
-    pollLoop();
+    if (tgMode() === "poll") {
+      await tg("deleteWebhook", { drop_pending_updates: false });
+      pollLoop();
+      return;
+    }
+    await enableWebhook();
   }, 4000);
 
   // Сторож: зависший опрос перезапускает, долгое молчание сообщает письмом
   setInterval(watchdogTick, 60 * 1000);
+  // Сторож вебхука: если Телеграм не может до нас достучаться, возвращаемся на опрос
+  setInterval(() => { webhookWatch().catch(() => {}); }, 5 * 60 * 1000);
+  setTimeout(() => { webhookWatch().catch(() => {}); }, 3 * 60 * 1000);
 
   // Состояние бота для проверки руками: /esim/api/tg/health?adm=КОД
   app.get("/esim/api/tg/health", (req, res) => {
