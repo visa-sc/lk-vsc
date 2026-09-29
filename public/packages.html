@@ -233,7 +233,7 @@ function render(tours) {
       +     "<span>из " + esc(t.cityFrom) + "</span>"
       +     (t.rating ? "<span>рейтинг " + t.rating + "</span>" : "")
       +   "</div>"
-      +   '<div class="op">Туроператор: ' + esc(t.operator || "уточняется") + "</div>"
+      +   '<div class="op">Туроператор: ' + esc(t.operator || "уточняется при оформлении") + "</div>"
       + "</div>"
       + '<div class="buy">'
       +   '<div class="price">' + money(t.price) + "</div>"
@@ -263,7 +263,7 @@ function openClaim(i) {
   $("sheet").innerHTML = '<h2>' + esc(t.hotel) + "</h2>"
     + '<div class="who">' + esc(t.resort) + ", " + esc(t.country) + " · " + esc(t.checkIn) + " → " + esc(t.checkOut)
     + " · " + t.nights + " " + plural(t.nights, ["ночь","ночи","ночей"]) + " · " + esc(t.meal) + "<br>"
-    + "<b>" + money(t.price) + "</b> · туроператор " + esc(t.operator || "уточняется") + "</div>"
+    + "<b>" + money(t.price) + "</b> · туроператор " + esc(t.operator || "уточняется при оформлении") + "</div>"
     + '<div class="row2" style="margin-top:14px">'
     +   '<input id="cName" placeholder="Ваше имя и фамилия">'
     +   '<input id="cPhone" placeholder="Телефон" type="tel">'
@@ -272,7 +272,7 @@ function openClaim(i) {
     + people
     + '<div class="go"><button class="ghost" onclick="closeModal()">Отмена</button>'
     + '<button onclick="submitClaim(' + i + ')" id="send">Отправить заявку</button></div>'
-    + '<div class="hint" style="margin-top:10px">Заявка уходит менеджеру: он подтверждает место у туроператора и присылает ссылку на оплату. Деньги списываются только после подтверждения брони.</div>';
+    + '<div class="hint" style="margin-top:10px">Заявка уходит менеджеру: он подтверждает место у туроператора и присылает ссылку на оплату. Деньги списываются только после подтверждения брони.<br>Точное время и аэропорт вылета, а также возможные доплаты оператор называет при подтверждении — менеджер сообщит их до оплаты.</div>';
   $("modal").classList.add("on");
 }
 function closeModal() { $("modal").classList.remove("on"); }

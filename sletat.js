@@ -14,6 +14,22 @@
 //     его сами и не зависим от настроек браузера клиента;
 //   • логин и пароль кабинета не покидают сервер.
 //
+// ЧТО МЫ ПОКУПАЕМ (по письмам Слетать.ру от 29.09.2026). У них две разные
+// линейки, и путать их нельзя:
+//   • «Модули поиска туров» — готовые виджеты в их вёрстке, вставляются кодом на
+//     чужой сайт. 17 500–43 000 ₽/год. НАМ НЕ ПОДХОДЯТ: это не наш кабинет.
+//   • «Шлюз поиска туров» (XML/JSON API) — то, на чём работает этот модуль.
+//     Базовый: 15 000 ₽/3 мес, 24 000 ₽/6 мес, 42 000 ₽/год. Тест 2 недели.
+//     С расширениями — 90 000 ₽/3 мес, 165 000 ₽/6 мес, 288 000 ₽/год.
+// Базовый пакет — это ТОЛЬКО поиск. Чего в нём нет и как здесь обойдено:
+//   – имя туроператора и ссылка на тур приходят лишь при оформлении заказа,
+//     поэтому в карточке оператор может быть пустым (пишем «уточняется»);
+//   – описаний, фото и отзывов по отелям нет (расширение «Отельная база»);
+//   – доплат, времени и аэропорта вылета нет до актуализации заявки
+//     (расширение «Детальная актуализация») — про это честно сказано в форме.
+// Лимит: 20 000 поисков в месяц в базовом пакете, сверх — 10 коп./запрос
+// автосчётом в следующем месяце. Отсюда счётчик и кэш ниже.
+//
 // ЛИЦЕНЗИЯ. Пока домен не привязан к купленной лицензии, шлюз отвечает
 // демо-выдачей: туры 2014 года по Египту с оператором «Демо Sletat.ru». Это не
 // ошибка интеграции, а режим по умолчанию. Живые туры появятся сразу после
@@ -40,6 +56,7 @@ const https = require("https");
 const DIR = path.join(__dirname, ".sletat");
 const CLAIMS_FILE = path.join(DIR, "claims.json");
 const DICT_FILE = path.join(DIR, "dict.json");
+const USAGE_FILE = path.join(DIR, "usage.json");
 
 const SEARCH_BASE = "https://module.sletat.ru/Main.svc";
 const CLAIMS_URL = "https://claims.sletat.ru/XMLGate.svc";
@@ -50,9 +67,70 @@ const MARKUP_PCT = Number(process.env.SLETAT_MARKUP_PCT || 0);
 const WORKFLOW = /twostep/i.test(String(process.env.SLETAT_WORKFLOW || "")) ? 1 : 0;
 const DICT_TTL = 24 * 3600 * 1000;
 
+// Поиск у Слетать.ру тарифицируется ПОШТУЧНО: в пакет входит 20 000 запросов в
+// месяц, каждый сверх пакета — 10 копеек, счёт приходит в следующем месяце уже
+// по факту. Поэтому запросы считаем сами, а одинаковые в пределах четверти часа
+// не отправляем повторно: выдача за это время всё равно не меняется.
+const QUOTA = Number(process.env.SLETAT_QUOTA || 20000);
+const CACHE_TTL = Number(process.env.SLETAT_CACHE_MIN || 15) * 60000;
+
 function ensureDir() { try { fs.mkdirSync(DIR, { recursive: true }); } catch (_) {} }
 function readJson(p, dflt) { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (_) { return dflt; } }
 function writeJson(p, d) { ensureDir(); try { fs.writeFileSync(p, JSON.stringify(d), "utf8"); } catch (e) { console.error("sletat write:", e.message); } }
+
+/* ──────────────────── Счётчик оплачиваемых запросов ─────────────────────── */
+// Считаем помесячно и храним год с лишним: когда придёт автосчёт за перерасход,
+// будет с чем сверить. Сэкономленные кэшем запросы считаем отдельно — по ним
+// видно, нужен ли вообще расширенный пакет.
+
+function monthKey(d) {
+  const t = d || new Date();
+  return t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0");
+}
+
+function usageAll() { return readJson(USAGE_FILE, {}); }
+
+function usageBump(field) {
+  const all = usageAll();
+  const k = monthKey();
+  const cur = all[k] || (all[k] = { searches: 0, cached: 0, claims: 0 });
+  cur[field] = (cur[field] || 0) + 1;
+  const keep = Object.keys(all).sort().slice(-13);
+  const trimmed = {};
+  keep.forEach((x) => { trimmed[x] = all[x]; });
+  writeJson(USAGE_FILE, trimmed);
+  if (field === "searches" && cur.searches === QUOTA) {
+    console.error("SLETAT: месячный пакет поисков исчерпан (" + QUOTA + ") — дальше 10 коп./запрос");
+  }
+  return cur;
+}
+
+/* ─────────────────── Кэш поиска, чтобы не платить дважды ─────────────────── */
+// Один и тот же запрос (страна, даты, состав) в пределах CACHE_TTL отдаётся из
+// памяти вместе со старым requestId: дозагрузка результатов по нему у Слетать
+// отдельным запросом не считается.
+
+const _cache = new Map();
+
+function cacheKey(q) {
+  return JSON.stringify([
+    q.cityFromId, q.countryId, q.adults || 2, q.kids || 0, q.kidsAges || [],
+    q.nightsMin || 7, q.nightsMax || 10, q.departFrom || "", q.departTo || "",
+    q.priceMin || 0, q.priceMax || 0, q.stars || [], q.meals || [], q.resorts || [],
+  ]);
+}
+
+function cacheGet(k) {
+  const v = _cache.get(k);
+  if (!v) return null;
+  if (Date.now() - v.at > CACHE_TTL) { _cache.delete(k); return null; }
+  return v;
+}
+
+function cachePut(k, v) {
+  _cache.set(k, Object.assign({ at: Date.now() }, v));
+  if (_cache.size > 300) _cache.delete(_cache.keys().next().value);
+}
 
 /* ─────────────────────────── HTTP к Слетать ──────────────────────────────── */
 
@@ -234,12 +312,22 @@ const SEARCH_PARAMS = (q) => ({
 // Первый вызов создаёт поиск и возвращает requestId. Результаты забираем
 // отдельно: у Слетать выдача наполняется по мере ответа операторов.
 async function searchStart(q) {
+  const key = cacheKey(q);
+  const hit = cacheGet(key);
+  if (hit) {
+    usageBump("cached");
+    return { requestId: hit.requestId, tours: hit.tours, total: hit.total, cached: true };
+  }
   const data = await api("GetTours", SEARCH_PARAMS(q), 40000);
-  return {
+  usageBump("searches");
+  const out = {
     requestId: data && (data.requestId || data.RequestId) || null,
     tours: ((data && data.aaData) || []).map(parseRow),
     total: (data && data.iTotalRecords) || 0,
+    cached: false,
   };
+  if (out.requestId) cachePut(key, out);
+  return out;
 }
 
 // Статус опрашиваем ТОЛЬКО этим методом: опрос через GetTours у Слетать
@@ -370,11 +458,36 @@ function claimPatch(claimId, patch) {
 
 /* ──────────────────────────────── Монтаж ────────────────────────────────── */
 
+// Внутренности поставщика клиенту показывать нельзя: «Логин и/или пароль указаны
+// неверно» на витрине выглядит как сломанный кабинет, хотя это всего лишь
+// незакрытый доступ к шлюзу. Настоящий текст уходит в лог, наружу — человеческий.
+function humanError(e) {
+  const m = String((e && e.message) || e);
+  if (/логин|пароль|авторизац|лиценз|licen|доступ|denied|forbidden|40[13]/i.test(m)) {
+    return "Поиск туров временно недоступен: идёт подключение к системе бронирования. "
+      + "Напишите нам — менеджер подберёт тур вручную.";
+  }
+  if (/таймаут|timeout|ETIMEDOUT|ECONNRESET|ENOTFOUND|EAI_AGAIN/i.test(m)) {
+    return "Поставщик не ответил вовремя. Попробуйте ещё раз через минуту.";
+  }
+  return "Не удалось получить туры. Попробуйте сдвинуть даты или повторить поиск.";
+}
+
+// Защита от заевшей кнопки и от ботов: каждый лишний старт поиска стоит денег.
+const _last = new Map();
+function throttled(ip) {
+  const now = Date.now();
+  if (now - (_last.get(ip) || 0) < 2500) return true;
+  if (_last.size > 1000) _last.clear();
+  _last.set(ip, now);
+  return false;
+}
+
 function mount(app, deps) {
   const requireAdmin = (deps && deps.requireAdmin) || ((req, res) => res.status(403).json({ success: false, message: "Нет доступа" }));
   const fail = (res, e) => {
     console.error("SLETAT:", e && e.message);
-    res.json({ success: false, message: String((e && e.message) || e) });
+    res.json({ success: false, message: humanError(e) });
   };
 
   app.get("/packages", (req, res) => {
@@ -393,6 +506,7 @@ function mount(app, deps) {
     try {
       const q = req.body || {};
       if (!q.cityFromId || !q.countryId) return res.json({ success: false, message: "Выберите город вылета и страну" });
+      if (throttled(req.ip || "?")) return res.json({ success: false, message: "Подождите пару секунд — поиск уже идёт." });
       const r = await searchStart(q);
       res.json({ success: true, requestId: r.requestId, tours: r.tours, total: r.total, demo: looksDemo(r.tours), hasLicense: !!LOGIN });
     } catch (e) { fail(res, e); }
@@ -420,6 +534,7 @@ function mount(app, deps) {
       if (!c.fullName || !c.phone || !c.email) return res.json({ success: false, message: "Нужны имя, телефон и email заказчика" });
       if (!b.offerId || !b.requestId || !b.sourceId) return res.json({ success: false, message: "Тур не выбран" });
       const created = await createClaim(b);
+      usageBump("claims");
       claimAdd({
         at: Date.now(), claimId: created.claimId, number: created.number,
         offerId: String(b.offerId), sourceId: Number(b.sourceId), requestId: String(b.requestId),
@@ -444,8 +559,23 @@ function mount(app, deps) {
     res.json({ success: true, data: claimsLoad().items.slice(0, 100) });
   });
 
+  // Расход пакета поисков по месяцам — чтобы счёт за перерасход не был сюрпризом.
+  app.get("/api/sletat/usage", requireAdmin, (req, res) => {
+    const all = usageAll();
+    const cur = all[monthKey()] || { searches: 0, cached: 0, claims: 0 };
+    const over = Math.max(0, cur.searches - QUOTA);
+    res.json({
+      success: true,
+      data: {
+        month: monthKey(), quota: QUOTA, used: cur.searches, saved: cur.cached || 0,
+        over: over, overCost: Math.round(over * 0.1 * 100) / 100, byMonth: all,
+      },
+    });
+  });
+
   console.log("SLETAT: /packages смонтирован (пакетные туры"
-    + (LOGIN ? ", учётка задана" : ", БЕЗ учётки — поиск в демо-режиме, заявки недоступны") + ")");
+    + (LOGIN ? ", учётка задана" : ", БЕЗ учётки — поиск в демо-режиме, заявки недоступны")
+    + ", пакет " + QUOTA + " поисков/мес, кэш " + Math.round(CACHE_TTL / 60000) + " мин)");
 }
 
-module.exports = { mount, dict, searchStart, searchState, searchResults, createClaim, claimInfo };
+module.exports = { mount, dict, searchStart, searchState, searchResults, createClaim, claimInfo, usageAll, monthKey };
