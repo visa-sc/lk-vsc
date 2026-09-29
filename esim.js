@@ -2283,6 +2283,21 @@ function mount(app, opts) {
     }
     return steps.join("\n");
   }
+  // Свои проверочные чаты письмами не беспокоим: 29.09.2026 тестовая переписка
+  // с probe@example.com ушла Андрею как «нужен ответ в чате поддержки».
+  function isTestChat(chat) {
+    const c = String((chat && chat.contact) || "").toLowerCase();
+    if (!c) return false;
+    const digits = c.replace(/\D/g, "");
+    return /@example\.com$|^test-(bot|check)@/.test(c) ||
+      TEST_EMAILS.indexOf(normEmail(c)) >= 0 ||
+      (digits && (TEST_PHONES.indexOf(digits) >= 0 || digits === "79990000000"));
+  }
+  function callOperator(chat, why) {
+    if (isTestChat(chat)) { console.log("esim support: тестовый чат", chat.id, "— письмо не шлём (" + why + ")"); return false; }
+    return support.attention(chat, why);
+  }
+
   // «спасибо, помогло» — не повод звать оператора
   const THANKS_RE = /^\s*(спасибо|благодар|помогло|заработал|всё работает|все работает|ок|ok|👍|🙏)/i;
   // ── Вторая линия: сервер сам решает проблему, не дожидаясь оператора ──
@@ -2453,23 +2468,23 @@ function mount(app, opts) {
         const did = await secondLine(chat).catch((e) => {
           console.error("esim вторая линия:", e.message); return false;
         });
-        if (!did) support.attention(chat, "первая линия дала разбор, вторая не нашла, чем помочь");
+        if (!did) callOperator(chat, "первая линия дала разбор, вторая не нашла, чем помочь");
         return;
       }
       if (chat.autoDiag && Date.now() - chat.autoDiag < 6 * 3600e3) return;   // один разбор на историю
       if (!TROUBLE_RE.test(last.text)) {
-        support.attention(chat, "вопрос не про неполадку с eSIM, нужен живой ответ");
+        callOperator(chat, "вопрос не про неполадку с eSIM, нужен живой ответ");
         return;
       }
       const o = await chatOrder(chat);
       if (!o) {
-        support.attention(chat, "не нашли его покупок: ни по странице, ни по контакту");
+        callOperator(chat, "не нашли его покупок: ни по странице, ни по контакту");
         return;
       }
       let u = null;
       try { u = await providerFor(o.mmOrderId).getUsage(o.mmOrderId); } catch (_) {}
       if (!u) {
-        support.attention(chat, "поставщик не ответил про его пакет, разобрать не смогли");
+        callOperator(chat, "поставщик не ответил про его пакет, разобрать не смогли");
         return;
       }
       const packs = (u.packages || []).filter((p) => !p.expired);
@@ -2500,10 +2515,10 @@ function mount(app, opts) {
       support.botMessage(chat.id, text, "autoDiag");
       console.log("esim support: первая линия ответила в чат", chat.id);
       // приостановленный пакет чинится только руками — тут человек нужен
-      if (u.suspended) support.attention(chat, "пакет приостановлен у поставщика, нужно чинить руками");
+      if (u.suspended) callOperator(chat, "пакет приостановлен у поставщика, нужно чинить руками");
     } catch (e) {
       console.error("esim support диагностика:", e.message);
-      try { support.attention(chat, "разбор сорвался с ошибкой: " + e.message); } catch (_) {}
+      try { callOperator(chat, "разбор сорвался с ошибкой: " + e.message); } catch (_) {}
     }
   }
 

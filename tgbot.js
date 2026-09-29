@@ -1464,14 +1464,22 @@ async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, m
 // ── вебхук: включение и присмотр ──
 let _lastHookAt = 0;
 let _hookOn = false;
+let _hookSince = 0;
 async function enableWebhook() {
-  const url = HOOK_BASE + webhookPath();
+  // Телеграм до нашего сервера не достукивается напрямую (проверено 29.09.2026),
+  // поэтому вебхук регистрируем на ретранслятор: он примет и перешлёт нам.
+  // ESIM_TG_HOOK_VIA_RELAY=0 вернёт прямой адрес, если блокировка снимется.
+  const viaRelay = String(process.env.ESIM_TG_HOOK_VIA_RELAY || "1") !== "0" && !!relay();
+  const url = viaRelay
+    ? relay() + "/hook" + webhookPath().replace("/tg/esim", "")
+    : HOOK_BASE + webhookPath();
   try {
     await tg("setWebhook", {
       url, secret_token: hookSecret(), drop_pending_updates: false,
       max_connections: 20, allowed_updates: ["message", "callback_query", "my_chat_member"],
     });
     _hookOn = true;
+    _hookSince = Date.now();
     _polling = false;
     console.log("tgbot: включён вебхук " + url.replace(/\/tg\/esim\/.*/, "/tg/esim/…"));
   } catch (e) {
@@ -1486,9 +1494,12 @@ async function webhookWatch() {
   let info = null;
   try { info = await tg("getWebhookInfo", {}, { quiet: true }); } catch (_) { return; }
   if (!info) return;
-  const badUrl = String(info.url || "") !== HOOK_BASE + webhookPath();
+  const viaRelay = String(process.env.ESIM_TG_HOOK_VIA_RELAY || "1") !== "0" && !!relay();
+  const want = viaRelay ? relay() + "/hook" + webhookPath().replace("/tg/esim", "") : HOOK_BASE + webhookPath();
+  const badUrl = String(info.url || "") !== want;
   const lastErr = Number(info.last_error_date || 0) * 1000;
-  const freshErr = lastErr && Date.now() - lastErr < 15 * 60 * 1000;
+  // ошибка до включения нас не касается: она осталась от прошлой попытки
+  const freshErr = lastErr && lastErr > _hookSince && Date.now() - lastErr < 15 * 60 * 1000;
   const stuck = Number(info.pending_update_count || 0) > 30;
   if (!badUrl && !freshErr && !stuck) return;
   console.error("tgbot: вебхук не работает (" + (info.last_error_message || (badUrl ? "чужой адрес" : "очередь " + info.pending_update_count)) + "), возвращаюсь на опрос");
