@@ -3152,6 +3152,11 @@ const tgbot = require("./tgbot").mount(app, {});
 // Страницы направлений под поиск (/esim/turkey и т.п.) + карта сайта
 require("./esimseo").mount(app);
 
+// Пакетные туры через Слетать.ру: поиск по операторам, подбор и заявка с
+// оплатой. Вся связь с поставщиком идёт с сервера — у них доступ по Referer
+// домена лицензии и требование держать один IP на весь цикл поиска.
+require("./sletat").mount(app, { requireAdmin });
+
 require("./esim").mount(app, {
   fetchCbrRates,
   sendMail: (o) => mail.sendMail(o),

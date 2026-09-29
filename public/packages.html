@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#f4f7fb">
+<title>VOYO Туры — пакетные туры по всему миру</title>
+<style>
+/* Светлый скин клиентских страниц VOYO. Витрина своя: бренд поставщика на
+   клиенте не светится, туроператор рейса показывается в карточке — его турист
+   обязан видеть. */
+:root{
+  --bg:#f4f7fb; --card:#fff; --line:rgba(23,32,60,.09);
+  --ink:#171c29; --muted:#5b6274; --faint:#98a1b2;
+  --acc:#3589BD; --acc-d:#2b7099; --ok:#2f7d3b; --warn:#b8860b;
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 14px 34px -18px rgba(16,32,64,.22);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+body{min-height:100vh}
+.wrap{max-width:960px;margin:0 auto;padding:0 16px 60px}
+header{padding:calc(env(safe-area-inset-top) + 22px) 0 6px}
+h1{font-size:27px;letter-spacing:-.02em}
+h1 b{color:var(--acc)}
+.sub{color:var(--muted);font-size:13.5px;margin-top:5px}
+
+/* ── форма поиска ── */
+.search{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:16px;margin-top:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:10px}
+label{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-bottom:5px;font-weight:600}
+select,input{width:100%;font-family:inherit;font-size:15px;color:var(--ink);background:#fbfcfe;border:1px solid var(--line);border-radius:12px;padding:11px 12px;outline:none}
+select:focus,input:focus{border-color:var(--acc)}
+.go{margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+button{font-family:inherit;font-size:15px;font-weight:600;border:0;border-radius:13px;padding:12px 24px;background:var(--acc);color:#fff;box-shadow:var(--shadow)}
+button:disabled{opacity:.55}
+button.ghost{background:var(--card);color:var(--muted);border:1px solid var(--line)}
+.hint{font-size:12.5px;color:var(--faint)}
+
+/* ── уведомления ── */
+.note{margin-top:14px;border-radius:14px;padding:12px 15px;font-size:13.5px;line-height:1.55;
+  background:#fff8e6;border:1px solid #f0dfae;color:#7a5e12}
+.note.err{background:#fdf1f1;border-color:#f0c9c9;color:#9c3232}
+.note b{font-weight:650}
+
+/* ── выдача ── */
+.status{margin:18px 2px 10px;font-size:13px;color:var(--muted)}
+.list{display:grid;gap:12px}
+.tour{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:hidden;display:grid;grid-template-columns:190px 1fr auto}
+@media (max-width:720px){ .tour{grid-template-columns:1fr} .tour .pic{height:170px} }
+.pic{background:#e9eef5 center/cover no-repeat;min-height:150px}
+.body{padding:14px 16px;min-width:0}
+.hname{font-size:16.5px;font-weight:650;letter-spacing:-.01em}
+.hstars{color:var(--warn);font-size:13px;margin-left:5px}
+.place{color:var(--muted);font-size:13px;margin-top:3px}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.meta span{font-size:12px;background:#f1f5f9;color:var(--muted);border-radius:8px;padding:4px 9px}
+.op{color:var(--faint);font-size:11.5px;margin-top:9px}
+.buy{padding:14px 16px;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:8px;border-left:1px solid var(--line);min-width:172px}
+@media (max-width:720px){ .buy{border-left:0;border-top:1px solid var(--line);align-items:stretch} }
+.price{font-size:21px;font-weight:700;letter-spacing:-.02em;white-space:nowrap}
+.per{font-size:11.5px;color:var(--faint)}
+.buy button{padding:10px 18px;font-size:14px}
+
+/* ── оформление ── */
+.modal{position:fixed;inset:0;background:rgba(15,22,38,.45);display:none;align-items:flex-start;justify-content:center;padding:20px;overflow:auto;z-index:20}
+.modal.on{display:flex}
+.sheet{background:var(--card);border-radius:20px;box-shadow:0 30px 70px -20px rgba(10,20,40,.5);max-width:620px;width:100%;padding:20px;margin:auto}
+.sheet h2{font-size:19px;letter-spacing:-.01em}
+.sheet .who{color:var(--muted);font-size:13.5px;margin-top:5px;line-height:1.5}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+@media (max-width:560px){ .row2{grid-template-columns:1fr} }
+.tourist{border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:10px}
+.tourist h4{font-size:13px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.sheet .go{justify-content:flex-end}
+.done{text-align:center;padding:12px 4px}
+.done .big{font-size:18px;font-weight:650;margin-bottom:8px}
+.done p{color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:10px}
+.skel{height:150px;border-radius:18px;background:linear-gradient(90deg,#eef2f7,#f7fafc,#eef2f7);background-size:200% 100%;animation:sk 1.2s infinite}
+@keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>VOYO <b>Туры</b></h1>
+  <div class="sub">Пакетные туры от ведущих туроператоров: перелёт, отель, трансфер и страховка в одной цене.</div>
+</header>
+
+<div class="search">
+  <div class="grid">
+    <div><label for="from">Откуда</label><select id="from"></select></div>
+    <div><label for="country">Куда</label><select id="country"></select></div>
+    <div><label for="dateFrom">Вылет с</label><input id="dateFrom" type="date"></div>
+    <div><label for="dateTo">Вылет по</label><input id="dateTo" type="date"></div>
+    <div><label for="nights">Ночей</label>
+      <select id="nights">
+        <option value="6-8">7 ночей</option>
+        <option value="9-11" selected>10 ночей</option>
+        <option value="12-15">две недели</option>
+        <option value="3-5">короткая поездка</option>
+        <option value="3-15">любое количество</option>
+      </select>
+    </div>
+    <div><label for="adults">Взрослых</label>
+      <select id="adults"><option>1</option><option selected>2</option><option>3</option><option>4</option></select>
+    </div>
+    <div><label for="kids">Детей</label>
+      <select id="kids"><option selected>0</option><option>1</option><option>2</option><option>3</option></select>
+    </div>
+  </div>
+  <div class="go">
+    <button id="find">Найти туры</button>
+    <span class="hint" id="hint">Поиск идёт по всем операторам сразу — это занимает до полуминуты.</span>
+  </div>
+</div>
+
+<div id="notice"></div>
+<div class="status" id="status"></div>
+<div class="list" id="list"></div>
+
+</div>
+
+<!-- ── оформление заявки ── -->
+<div class="modal" id="modal">
+  <div class="sheet" id="sheet"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const money = (n) => new Intl.NumberFormat("ru-RU").format(Math.round(n)) + " ₽";
+let STATE = { requestId: null, tours: [], demo: false, hasLicense: false, poll: null };
+
+/* ── справочники ── */
+async function loadDict() {
+  const r = await (await fetch("/api/sletat/dict")).json();
+  if (!r.success) { notice(r.message || "Не удалось загрузить справочники.", true); return; }
+  const d = r.data;
+  const pop = d.departs.filter((x) => x.popular), rest = d.departs.filter((x) => !x.popular);
+  $("from").innerHTML = pop.concat(rest).map((c) =>
+    '<option value="' + c.id + '"' + (c.def ? " selected" : "") + ">" + esc(c.name) + "</option>").join("");
+  // Пляжные направления вперёд — остальные ниже, по алфавиту.
+  const TOP = ["Турция","Египет","ОАЭ","Таиланд","Вьетнам","Мальдивы","Куба","Шри-Ланка","Индия","Абхазия","Россия"];
+  const top = TOP.map((n) => d.countries.find((c) => c.name === n)).filter(Boolean);
+  const other = d.countries.filter((c) => TOP.indexOf(c.name) < 0);
+  $("country").innerHTML = top.concat(other).map((c) =>
+    '<option value="' + c.id + '">' + esc(c.name) + (c.visa ? " · нужна виза" : "") + "</option>").join("");
+}
+
+function notice(text, isErr) {
+  $("notice").innerHTML = text ? '<div class="note' + (isErr ? " err" : "") + '">' + text + "</div>" : "";
+}
+
+/* ── поиск ── */
+function nights() { return ($("nights").value || "9-11").split("-").map(Number); }
+function fmtDate(v) { if (!v) return ""; const p = v.split("-"); return p[2] + "." + p[1] + "." + p[0]; }
+
+async function search() {
+  const [nMin, nMax] = nights();
+  const q = {
+    cityFromId: Number($("from").value), countryId: Number($("country").value),
+    adults: Number($("adults").value), kids: Number($("kids").value),
+    nightsMin: nMin, nightsMax: nMax,
+    departFrom: fmtDate($("dateFrom").value), departTo: fmtDate($("dateTo").value),
+  };
+  $("find").disabled = true; notice(""); $("list").innerHTML = '<div class="skel"></div><div class="skel"></div>';
+  $("status").textContent = "Опрашиваем туроператоров…";
+  try {
+    const r = await (await fetch("/api/sletat/search", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(q),
+    })).json();
+    if (!r.success) { $("list").innerHTML = ""; $("status").textContent = ""; notice(esc(r.message), true); return; }
+    STATE.requestId = r.requestId; STATE.demo = r.demo; STATE.hasLicense = r.hasLicense;
+    render(r.tours || []);
+    if (r.requestId) poll();            // живой поиск — дособираем результаты
+    else finish(r.tours || []);
+  } catch (e) {
+    $("list").innerHTML = ""; notice("Не получилось связаться с поиском туров. Попробуйте ещё раз.", true);
+  } finally { $("find").disabled = false; }
+}
+
+// Статус спрашиваем отдельным методом — опрашивать выдачу нельзя, это нарушение
+// правил поставщика.
+function poll() {
+  let tries = 0;
+  clearInterval(STATE.poll);
+  STATE.poll = setInterval(async () => {
+    tries++;
+    try {
+      const s = await (await fetch("/api/sletat/state?requestId=" + encodeURIComponent(STATE.requestId))).json();
+      if (s.success) {
+        const d = s.data;
+        $("status").textContent = "Ответили " + d.processed + " из " + d.operators + " операторов · найдено " + d.rows;
+        if (d.ready || tries > 20) { clearInterval(STATE.poll); await results(); }
+      } else if (tries > 20) { clearInterval(STATE.poll); }
+    } catch (_) { if (tries > 20) clearInterval(STATE.poll); }
+  }, 1800);
+}
+
+async function results() {
+  const r = await (await fetch("/api/sletat/results?requestId=" + encodeURIComponent(STATE.requestId) + "&pageSize=30")).json();
+  if (r.success) { STATE.demo = r.demo; render(r.tours || []); finish(r.tours || []); }
+}
+
+function finish(tours) {
+  $("status").textContent = tours.length ? "Найдено предложений: " + tours.length : "По этим датам туров не нашлось — попробуйте сдвинуть даты.";
+  if (STATE.demo) {
+    notice("<b>Демонстрационная выдача.</b> Поставщик отдаёт учебные данные, пока домен не привязан к оплаченной лицензии. "
+      + "Поиск, подбор и оформление работают полностью — после активации лицензии здесь появятся живые туры с актуальными ценами.");
+  }
+}
+
+function render(tours) {
+  STATE.tours = tours;
+  if (!tours.length) { $("list").innerHTML = ""; return; }
+  $("list").innerHTML = tours.map(function (t, i) {
+    return '<div class="tour">'
+      + '<div class="pic" style="' + (t.photo ? "background-image:url(" + esc(t.photo) + ")" : "") + '"></div>'
+      + '<div class="body">'
+      +   '<div class="hname">' + esc(t.hotel) + '<span class="hstars">' + esc(t.stars) + "</span></div>"
+      +   '<div class="place">' + esc(t.resort) + (t.country ? ", " + esc(t.country) : "") + "</div>"
+      +   '<div class="meta">'
+      +     "<span>" + esc(t.checkIn) + " → " + esc(t.checkOut) + "</span>"
+      +     "<span>" + t.nights + " " + plural(t.nights, ["ночь","ночи","ночей"]) + "</span>"
+      +     (t.meal ? "<span>" + esc(t.meal) + "</span>" : "")
+      +     (t.room ? "<span>" + esc(t.room) + "</span>" : "")
+      +     "<span>из " + esc(t.cityFrom) + "</span>"
+      +     (t.rating ? "<span>рейтинг " + t.rating + "</span>" : "")
+      +   "</div>"
+      +   '<div class="op">Туроператор: ' + esc(t.operator || "уточняется") + "</div>"
+      + "</div>"
+      + '<div class="buy">'
+      +   '<div class="price">' + money(t.price) + "</div>"
+      +   '<div class="per">за ' + t.adults + " " + plural(t.adults, ["взрослого","взрослых","взрослых"])
+      +     (t.kids ? " и " + t.kids + " " + plural(t.kids, ["ребёнка","детей","детей"]) : "") + "</div>"
+      +   '<button onclick="openClaim(' + i + ')">Оформить</button>'
+      + "</div></div>";
+  }).join("");
+}
+function plural(n, f) { const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return f[2]; if (b > 1 && b < 5) return f[1]; if (b === 1) return f[0]; return f[2]; }
+
+/* ── оформление ── */
+function openClaim(i) {
+  const t = STATE.tours[i]; if (!t) return;
+  const total = (t.adults || 0) + (t.kids || 0);
+  let people = "";
+  for (let k = 0; k < total; k++) {
+    people += '<div class="tourist"><h4>Турист ' + (k + 1) + (k >= t.adults ? " · ребёнок" : "") + "</h4>"
+      + '<div class="row2">'
+      + '<input placeholder="Фамилия латиницей" id="t' + k + 'sur">'
+      + '<input placeholder="Имя латиницей" id="t' + k + 'first">'
+      + '<input placeholder="Дата рождения" id="t' + k + 'bd" type="date">'
+      + '<input placeholder="Загранпаспорт, серия и номер" id="t' + k + 'pass">'
+      + "</div></div>";
+  }
+  $("sheet").innerHTML = '<h2>' + esc(t.hotel) + "</h2>"
+    + '<div class="who">' + esc(t.resort) + ", " + esc(t.country) + " · " + esc(t.checkIn) + " → " + esc(t.checkOut)
+    + " · " + t.nights + " " + plural(t.nights, ["ночь","ночи","ночей"]) + " · " + esc(t.meal) + "<br>"
+    + "<b>" + money(t.price) + "</b> · туроператор " + esc(t.operator || "уточняется") + "</div>"
+    + '<div class="row2" style="margin-top:14px">'
+    +   '<input id="cName" placeholder="Ваше имя и фамилия">'
+    +   '<input id="cPhone" placeholder="Телефон" type="tel">'
+    + "</div>"
+    + '<input id="cEmail" placeholder="Email для документов" type="email" style="margin-top:10px">'
+    + people
+    + '<div class="go"><button class="ghost" onclick="closeModal()">Отмена</button>'
+    + '<button onclick="submitClaim(' + i + ')" id="send">Отправить заявку</button></div>'
+    + '<div class="hint" style="margin-top:10px">Заявка уходит менеджеру: он подтверждает место у туроператора и присылает ссылку на оплату. Деньги списываются только после подтверждения брони.</div>';
+  $("modal").classList.add("on");
+}
+function closeModal() { $("modal").classList.remove("on"); }
+$("modal").addEventListener("click", (e) => { if (e.target === $("modal")) closeModal(); });
+
+async function submitClaim(i) {
+  const t = STATE.tours[i]; if (!t) return;
+  const total = (t.adults || 0) + (t.kids || 0);
+  const tourists = [];
+  for (let k = 0; k < total; k++) {
+    const sur = ($("t" + k + "sur").value || "").trim(), first = ($("t" + k + "first").value || "").trim();
+    if (!sur || !first) { alert("Заполните фамилию и имя туриста " + (k + 1)); return; }
+    const pass = ($("t" + k + "pass").value || "").replace(/\s+/g, "");
+    tourists.push({
+      surname: sur, firstName: first,
+      birthDate: $("t" + k + "bd").value || "",
+      passportSeries: pass.slice(0, 2), passportNumber: pass.slice(2),
+    });
+  }
+  const customer = {
+    fullName: ($("cName").value || "").trim(),
+    phone: ($("cPhone").value || "").trim(),
+    email: ($("cEmail").value || "").trim(),
+  };
+  if (!customer.fullName || !customer.phone || !customer.email) { alert("Оставьте имя, телефон и email — без них заявку не оформить"); return; }
+  $("send").disabled = true; $("send").textContent = "Отправляем…";
+  try {
+    const r = await (await fetch("/api/sletat/claim", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        offerId: t.offerId, sourceId: t.sourceId, requestId: STATE.requestId,
+        customer: customer, tourists: tourists, tour: t,
+      }),
+    })).json();
+    if (!r.success) {
+      $("sheet").innerHTML = '<div class="done"><div class="big">Заявку не удалось отправить</div>'
+        + "<p>" + esc(r.message) + "</p>"
+        + '<button onclick="closeModal()">Закрыть</button></div>';
+      return;
+    }
+    const pay = r.info && r.info.payUrl;
+    $("sheet").innerHTML = '<div class="done"><div class="big">Заявка принята' + (r.number ? " № " + esc(r.number) : "") + "</div>"
+      + "<p>Менеджер подтверждает место у туроператора и связывается с вами. "
+      + (pay ? "Можно оплатить сразу — ссылка ниже действует ограниченное время."
+             : "Ссылку на оплату пришлём, как только оператор подтвердит бронь.") + "</p>"
+      + (pay ? '<button onclick="location.href=\'' + esc(pay) + '\'">Перейти к оплате</button> ' : "")
+      + '<button class="ghost" onclick="closeModal()">Закрыть</button></div>';
+  } catch (e) {
+    alert("Не получилось отправить заявку. Попробуйте ещё раз или позвоните нам.");
+  } finally { $("send").disabled = false; $("send").textContent = "Отправить заявку"; }
+}
+
+/* ── старт ── */
+(function init() {
+  const d = new Date(Date.now() + 7 * 86400000), d2 = new Date(Date.now() + 21 * 86400000);
+  $("dateFrom").value = d.toISOString().slice(0, 10);
+  $("dateTo").value = d2.toISOString().slice(0, 10);
+  $("find").addEventListener("click", search);
+  loadDict();
+})();
+</script>
+</body>
+</html>
