@@ -2416,6 +2416,12 @@ function mount(app, opts) {
     };
     gift.myUrl = myUrlFor(gift, fresh.orderId);
     orders.unshift(gift); writeJson(ORDERS_FILE, orders);
+    // старый профиль клиенту больше не нужен: гасим и просим поставщика вернуть деньги
+    if (String(o.src || "") === "esimaccess") {
+      esimaccess.revoke(o.mmOrderId).catch((e) => console.error("esim отзыв старого:", e.message));
+    }
+    askSupplierRefund({ src: o.src, providerOrderId: o.mmOrderId, iccid: o.iccid, costUsd: o.costUsd,
+      label: o.label, reason: "customer could not get the profile online, replacement issued" });
     console.log("esim вторая линия: выдана замена", gift.mmOrderId, "вместо", o.mmOrderId);
     support.botMessage(chat.id, sayInstead ? (sayInstead + "\n\nВаш новый QR: " + gift.myUrl) :
       "Не будем вас мучить настройками: выдали вам другую eSIM, другого оператора, за наш счёт. " +
@@ -2823,6 +2829,40 @@ function mount(app, opts) {
     if (one) { one.answered = Date.now(); one.result = "ok"; writeJson(HELP_FILE, all); }
     res.json({ success: true });
   });
+  // Заменили пакет — деньги за старый должны вернуться нам, а не сгореть.
+  // eSIM Access при отзыве сам ничего не возвращает (проверено 24.09.2026 на
+  // пакете за $0,3), но по письму в поддержку возвращает на баланс. Поэтому
+  // после каждой замены письмо уходит само, копия Андрею (29.09.2026).
+  const SUPPLIER_SUPPORT = { esimaccess: process.env.ESIM_EA_SUPPORT || "support@esimaccess.com" };
+  function askSupplierRefund({ src, providerOrderId, iccid, costUsd, label, reason }) {
+    if (!(opts && opts.sendMail) || !providerOrderId) return;
+    const to = SUPPLIER_SUPPORT[String(src || "")];
+    if (to) {
+      const text = "Dear eSIM Access team,\n\n" +
+        "We revoked one of our orders because the customer could not use the profile and we issued a replacement.\n\n" +
+        "Order: " + providerOrderId + "\n" +
+        (iccid ? "ICCID: " + iccid + "\n" : "") +
+        "Package: " + (label || "-") + "\n" +
+        "Price: USD " + (costUsd || "-") + "\n" +
+        "Reason: " + (reason || "profile could not be installed by the customer") + ", data used is zero.\n\n" +
+        "Please refund this order to our balance.\n\nThank you,\nVOYO mobile / AK GROUP\ndirector@visa-sc.ru";
+      opts.sendMail({ to, cc: "director@visa-sc.ru", replyTo: "director@visa-sc.ru",
+        subject: "Refund request for revoked order " + providerOrderId, text })
+        .then(() => console.log("esim: запрошен возврат у " + src + " по " + providerOrderId))
+        .catch((e) => console.error("esim возврат у поставщика:", e.message));
+      return;
+    }
+    // у остальных поставщиков возврат только перепиской руками — не теряем деньги из виду
+    support.queueMail({
+      subject: "VOYO eSIM: запросить возврат у поставщика " + (src || "?") + " по " + providerOrderId,
+      text: "Мы заменили клиенту пакет, старый профиль больше не нужен и не использован.\n\n" +
+        "Поставщик: " + (src || "?") + "\nЗаказ: " + providerOrderId + "\nПакет: " + (label || "-") +
+        "\nЗакупка: $" + (costUsd || "-") + "\nПричина: " + (reason || "профиль не встал у клиента") + "\n\n" +
+        "Написать им и вернуть деньги на баланс.",
+    });
+    support.flushQueue(opts && opts.sendMail).catch(() => {});
+  }
+
   // Замена профиля одной кнопкой: гасим старый QR у поставщика и выпускаем новый
   // на тот же пакет. Нужно, когда человек скачал профиль не на тот телефон:
   // второй раз тот же QR не ставится, айфон пишет «Сбой активации» (24.09.2026).
@@ -2878,6 +2918,8 @@ function mount(app, opts) {
       rec.myUrl = myUrlFor(rec, fresh.orderId);
       writeJson(ORDERS_FILE, orders);
       one.reissuedAt = Date.now(); one.reissuedTo = fresh.orderId; writeJson(HELP_FILE, all);
+      askSupplierRefund({ src: o.src, providerOrderId: oldNo, iccid: o.iccid, costUsd: o.costUsd,
+        label: o.label, reason: "QR was already downloaded to another phone, customer needed a new profile" });
       console.log("esim: замена профиля по обращению", one.id, oldNo, "→", fresh.orderId);
       support.queueMail({
         subject: "VOYO eSIM: заменили профиль клиенту, закупка ещё раз",
