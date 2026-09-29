@@ -4451,58 +4451,27 @@
         }
       }
       // ═══ Вкладка «ФОТ» — зарплаты, штат, взносы и нагрузка на персонал. ═══════════
-      function renderVscFot() {
-        vscContent.appendChild(vscStaffSyncBlock());
-        vscContent.appendChild(vscZarplataBlock());
-      }
-      // Сверка состава: АТС, amoCRM и зарплатная таблица. Считает сервер раз в
-      // сутки (staffsync.js), здесь только показываем снимок. Раньше эта проверка
-      // делалась руками раз в месяц и жила во вкладке «Статистика по сотрудникам»,
-      // скрытой у админа, — то есть о расхождениях не узнавал никто.
-      function vscStaffSyncBlock() {
-        const wrap = document.createElement("div");
-        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Сверка состава";
-        h.appendChild(vscInfo(
-          "<b>Что сверяется</b><br>Справочник АТС (обновляется ночным пересчётом в 01:10), пользователи amoCRM с группами (раз в 6 часов) и штат зарплатной таблицы."
-          + "<br><br>Главное, за чем следим: оператор есть в АТС, но не нашёлся в amoCRM по имени. Его звонки не попадают в статистику этого раздела, и заметить это иначе нельзя."
-          + "<br><br>Проверка идёт на сервере каждый день в 09:20 МСК. Появилось новое расхождение — уходит письмо директору; одно и то же письмом не повторяется."
-        ));
-        wrap.appendChild(h);
-        const box = document.createElement("div");
-        box.innerHTML = '<div class="vsc-chart"><div class="loading-state">Проверяем составы…</div></div>';
-        wrap.appendChild(box);
-        apiFetch("/admin/api/vsc/staffsync").then(function (j) {
-          if (!j || !j.success || !j.data) { box.innerHTML = '<div class="vsc-empty">' + escapeHtml((j && j.message) || "Снимок сверки недоступен.") + '</div>'; return; }
-          vscStaffSyncRender(box, j.data);
-        }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить сверку составов.</div>'; });
-        return wrap;
-      }
-      function vscStaffSyncRender(box, d) {
+      function renderVscFot() { vscContent.appendChild(vscZarplataBlock()); }
+      // Сверка состава для поповера «i» раздела: АТС, amoCRM и зарплатная таблица.
+      // Считает сервер раз в сутки (staffsync.js), здесь только показываем снимок —
+      // отдельным блоком он занимал место, Андрей попросил убрать его в подсказку.
+      function vscStaffSyncInfoHtml(d) {
+        if (!d) return "";
         const when = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
-        const nums = [
-          ["АТС", (d.pbx && d.pbx.users) || 0, "добавочных"],
-          ["amoCRM", (d.amo && d.amo.active) || 0, "активных"],
-          ["Первая линия", (d.pl && d.pl.ext ? d.pl.ext.length : 0), "операторов"],
-        ];
+        const nums = [["АТС", (d.pbx && d.pbx.users) || 0, "добавочных"],
+                      ["amoCRM", (d.amo && d.amo.active) || 0, "активных"],
+                      ["Первая линия", (d.pl && d.pl.ext ? d.pl.ext.length : 0), "операторов"]];
         if (d.zarplata) nums.push(["Штат «" + d.zarplata.month + "»", d.zarplata.staff, "человек"]);
-        const cells = nums.map(function (n) {
-          return '<div style="min-width:118px;"><div style="font-size:20px;font-weight:700;color:#33415a;">' + n[1] + '</div>'
-            + '<div style="font-size:11.5px;color:#8a93a5;">' + escapeHtml(n[0]) + ' · ' + n[2] + '</div></div>';
-        }).join("");
         const issues = d.issues || [];
-        const list = issues.length
-          ? '<div style="margin-top:14px;border-top:1px solid #e6eaf1;padding-top:12px;">'
-            + issues.map(function (x) {
-                return '<div style="font-size:13px;color:#5b6274;line-height:1.55;margin-bottom:7px;">'
-                  + '<span style="color:#c4952a;">•</span> ' + escapeHtml(x.text) + '</div>';
-              }).join("")
-            + '</div>'
-          : '<div style="margin-top:12px;font-size:13px;color:#2f7d3b;">Составы сходятся, расхождений нет.</div>';
-        box.innerHTML = '<div class="vsc-chart"' + (issues.length ? ' style="border-left:3px solid #e0b84a;"' : '') + '>'
-          + '<div style="display:flex;flex-wrap:wrap;gap:22px;">' + cells + '</div>'
-          + list
-          + '<div style="margin-top:12px;font-size:11.5px;color:#9aa3b2;">Проверено ' + escapeHtml(when) + ' · сервер проверяет сам каждый день в 09:20</div>'
-          + '</div>';
+        return "<b>Сверка состава</b><br>"
+          + nums.map(function (n) { return escapeHtml(n[0]) + " — <b>" + n[1] + "</b> " + n[2] + "."; }).join(" ")
+          + "<br><br>"
+          + (issues.length
+              ? issues.map(function (x) { return "⚠️ " + escapeHtml(x.text); }).join("<br>")
+              : "Составы сходятся, расхождений нет.")
+          + '<br><span style="color:#8a93a5;">Проверено ' + escapeHtml(when)
+          + '. Сервер сверяет сам каждый день в 09:20 МСК и пишет письмо, когда появляется новое расхождение.</span>'
+          + "<br><br>";
       }
       // ═══ Зарплаты, штат, взносы и нагрузка на персонал.
       // Источник — опубликованная зарплатная таблица «расчет ЗП Визы» (сервер читает
@@ -4512,13 +4481,22 @@
       function vscZarplataBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "26px";
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Зарплаты, штат и нагрузка";
-        h.appendChild(vscInfo(
+        const INFO_BASE =
           "<b>Откуда цифры</b><br>Зарплатная таблица «расчет ЗП Визы» (опубликованный экспорт, только чтение; обновляется раз в 6 часов). По каждой месячной вкладке берём её собственный итог «ИТОГО ФОТ» (начислено + взносы), строки сотрудников и колонку отпускных дней."
           + "<br><br><b>Штат</b> — строки сотрудников месяца МИНУС Зайцева Екатерина, Комисаренко Андрей и Панфилова Галина. <b>Средняя зарплата</b> = ФОТ общий ÷ штат — ровно так, как считает Андрей (август 2026: 5 728 903,39 ÷ 50 = 114 578,07)."
           + "<br><br><b>Взносы</b> — сумма строк «взносы/осфр» по четырём юрлицам под итогом листа; разовый платёж с пометкой «ЕНС» не учитывается (май 2026). <b>ФОТ через зарплатный проект</b> — колонки «выплачено через зп проект» ПЛЮС НДФЛ: выплаты в таблице чистыми, а взносы начисляются на грязную базу. В таблице Андрея до мая 2026 НДФЛ в эту базу не включался, поэтому процент взносов за январь–май здесь ниже, чем в старом файле."
           + "<br><br><b>Отделы</b> — колонка «Группа должности»; руководители идут в свой отдел, Кудрина Яна отнесена к оформлению. Трембачева и Пятилова вне отделов, управляющая тоже."
-          + "<br><br><b>Нагрузка</b> — на человека в день с вычетом отпусков: эффективный штат = штат − (отпускные дни ÷ календарные дни месяца), человеко-дни = эффективный штат × рабочие дни производственного календаря. База: отдел продаж — набранные контакты (та же цифра, что на дашборде), ОРК Москва / ОРК Санкт-Петербург / отдел оформления — успешные сделки своей воронки amoCRM без доплат, вторых частей ВНЖ и возвратов."
-        ));
+          + "<br><br><b>Нагрузка</b> — на человека в день с вычетом отпусков: эффективный штат = штат − (отпускные дни ÷ календарные дни месяца), человеко-дни = эффективный штат × рабочие дни производственного календаря. База: отдел продаж — набранные контакты (та же цифра, что на дашборде), ОРК Москва / ОРК Санкт-Петербург / отдел оформления — успешные сделки своей воронки amoCRM без доплат, вторых частей ВНЖ и возвратов.";
+        const info = vscInfo(INFO_BASE);
+        h.appendChild(info);
+        // Сверка состава встаёт в начало подсказки, когда придут данные. Поповер
+        // живёт порталом в body и позиционируется в момент открытия, поэтому
+        // дописать в него можно спокойно.
+        apiFetch("/admin/api/vsc/staffsync").then(function (r) {
+          if (!r || !r.success || !r.data || !info.__pop) return;
+          const sync = vscStaffSyncInfoHtml(r.data);
+          if (sync) info.__pop.innerHTML = sync + INFO_BASE;
+        }).catch(function () {});
         wrap.appendChild(h);
         const box = document.createElement("div"); box.innerHTML = '<div class="vsc-chart"><div class="loading-state">Загружаем зарплатную таблицу…</div></div>';
         wrap.appendChild(box);
