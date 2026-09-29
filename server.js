@@ -1900,12 +1900,15 @@ async function vscStaffLoadBase() {
   setTimeout(warm, 25 * 1000);
   setInterval(warm, 3 * 3600 * 1000);
 })();
-// Снимок сверки состава для плашки в разделе ФОТ. Считается сторожем раз в
+// Снимок сверки состава для подсказки в разделе ФОТ. Считается сторожем раз в
 // сутки; если файла ещё нет (первый запуск после выкладки) — считаем на месте,
 // это чтение трёх локальных файлов и стоит доли миллисекунды.
 app.get("/admin/api/vsc/staffsync", requireAdmin, (req, res) => {
   try {
-    const snap = staffSync.load() || staffSync.check(null, "on-demand");
+    // ВАЖНО: здесь только compute(), без check(). check() запоминает снимок, и
+    // открытие раздела «съедало» бы свежее расхождение — сторож потом считал бы
+    // его уже известным и письма не слал. Фиксирует состояние только сторож.
+    const snap = staffSync.load() || staffSync.compute();
     res.json({ success: true, data: snap });
   } catch (e) {
     res.json({ success: false, message: String((e && e.message) || e) });

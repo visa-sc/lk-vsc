@@ -153,6 +153,7 @@ function check(send, why) {
   const gone = ((prev && prev.issues) || []).filter((x) => !cur.issues.some((y) => y.key === x.key));
   cur.lastMailAt = (prev && prev.lastMailAt) || null;
 
+  let mailed = false;
   if (fresh.length && typeof send === "function") {
     const li = (arr) => arr.map((x) => "<li>" + String(x.text).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</li>").join("");
     const html = '<p><b>Сверка состава сотрудников: появилось новое.</b></p>'
@@ -162,12 +163,13 @@ function check(send, why) {
       + (cur.zarplata ? " Зарплатная таблица «" + cur.zarplata.month + "»: штат " + cur.zarplata.staff + "." : "")
       + "</p>"
       + '<p style="font-size:13px;">Раздел: <a href="https://voyotravel.ru/vsc">voyotravel.ru/vsc</a> → ФОТ.</p>';
+    mailed = true;
     send({ to: TO, subject: "Сверка состава: " + fresh.length + " " + (fresh.length === 1 ? "расхождение" : "расхождений"), html: html, noBanner: true });
     cur.lastMailAt = Date.now();
   }
   save(cur);
   console.log("STAFF SYNC [" + (why || "cron") + "]: расхождений " + cur.issues.length
-    + (fresh.length ? ", новых " + fresh.length + " — письмо" : "")
+    + (fresh.length ? ", новых " + fresh.length + (mailed ? " — письмо" : " — без письма") : "")
     + "; АТС " + cur.pbx.users + ", amoCRM " + cur.amo.active);
   return cur;
 }
