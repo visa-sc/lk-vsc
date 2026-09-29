@@ -1900,6 +1900,17 @@ async function vscStaffLoadBase() {
   setTimeout(warm, 25 * 1000);
   setInterval(warm, 3 * 3600 * 1000);
 })();
+// Снимок сверки состава для плашки в разделе ФОТ. Считается сторожем раз в
+// сутки; если файла ещё нет (первый запуск после выкладки) — считаем на месте,
+// это чтение трёх локальных файлов и стоит доли миллисекунды.
+app.get("/admin/api/vsc/staffsync", requireAdmin, (req, res) => {
+  try {
+    const snap = staffSync.load() || staffSync.check(null, "on-demand");
+    res.json({ success: true, data: snap });
+  } catch (e) {
+    res.json({ success: false, message: String((e && e.message) || e) });
+  }
+});
 app.get("/admin/api/vsc/zarplata", requireAdmin, async (req, res) => {
   try {
     const force = String(req.query.force || "") === "1";
@@ -4113,6 +4124,13 @@ flushDirectorMailQueue().catch(() => {});
 // шлёт письма через окно пн 08:00 – пт 15:00 МСК: ниже $7 разово, ниже $5 каждый день.
 const aiBalance = require("./ai-balance");
 aiBalance.schedule(sendOrQueueDirectorMail);
+
+// ── Сторож состава сотрудников (АТС ↔ amoCRM ↔ зарплатная таблица) ─────────
+// Раньше это раз в месяц проверяли руками из приложения Андрея, то есть только
+// когда оно открыто. Теперь считает сервер: раз в сутки, из уже собранных
+// файлов, без единого лишнего запроса в amoCRM. Письмо — только на новое.
+const staffSync = require("./staffsync");
+staffSync.schedule(sendOrQueueDirectorMail);
 function emailDoc(inner, accent, footer) {
   accent = accent || "#3589BD";
   footer = footer || 'Служебное письмо для сотрудников VOYO. Отвечать на него не нужно.<br>С уважением, команда VOYO · Visa Services Center';

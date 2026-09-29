@@ -4451,7 +4451,59 @@
         }
       }
       // ═══ Вкладка «ФОТ» — зарплаты, штат, взносы и нагрузка на персонал. ═══════════
-      function renderVscFot() { vscContent.appendChild(vscZarplataBlock()); }
+      function renderVscFot() {
+        vscContent.appendChild(vscStaffSyncBlock());
+        vscContent.appendChild(vscZarplataBlock());
+      }
+      // Сверка состава: АТС, amoCRM и зарплатная таблица. Считает сервер раз в
+      // сутки (staffsync.js), здесь только показываем снимок. Раньше эта проверка
+      // делалась руками раз в месяц и жила во вкладке «Статистика по сотрудникам»,
+      // скрытой у админа, — то есть о расхождениях не узнавал никто.
+      function vscStaffSyncBlock() {
+        const wrap = document.createElement("div");
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Сверка состава";
+        h.appendChild(vscInfo(
+          "<b>Что сверяется</b><br>Справочник АТС (обновляется ночным пересчётом в 01:10), пользователи amoCRM с группами (раз в 6 часов) и штат зарплатной таблицы."
+          + "<br><br>Главное, за чем следим: оператор есть в АТС, но не нашёлся в amoCRM по имени. Его звонки не попадают в статистику этого раздела, и заметить это иначе нельзя."
+          + "<br><br>Проверка идёт на сервере каждый день в 09:20 МСК. Появилось новое расхождение — уходит письмо директору; одно и то же письмом не повторяется."
+        ));
+        wrap.appendChild(h);
+        const box = document.createElement("div");
+        box.innerHTML = '<div class="vsc-chart"><div class="loading-state">Проверяем составы…</div></div>';
+        wrap.appendChild(box);
+        apiFetch("/admin/api/vsc/staffsync").then(function (j) {
+          if (!j || !j.success || !j.data) { box.innerHTML = '<div class="vsc-empty">' + escapeHtml((j && j.message) || "Снимок сверки недоступен.") + '</div>'; return; }
+          vscStaffSyncRender(box, j.data);
+        }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить сверку составов.</div>'; });
+        return wrap;
+      }
+      function vscStaffSyncRender(box, d) {
+        const when = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+        const nums = [
+          ["АТС", (d.pbx && d.pbx.users) || 0, "добавочных"],
+          ["amoCRM", (d.amo && d.amo.active) || 0, "активных"],
+          ["Первая линия", (d.pl && d.pl.ext ? d.pl.ext.length : 0), "операторов"],
+        ];
+        if (d.zarplata) nums.push(["Штат «" + d.zarplata.month + "»", d.zarplata.staff, "человек"]);
+        const cells = nums.map(function (n) {
+          return '<div style="min-width:118px;"><div style="font-size:20px;font-weight:700;color:#33415a;">' + n[1] + '</div>'
+            + '<div style="font-size:11.5px;color:#8a93a5;">' + escapeHtml(n[0]) + ' · ' + n[2] + '</div></div>';
+        }).join("");
+        const issues = d.issues || [];
+        const list = issues.length
+          ? '<div style="margin-top:14px;border-top:1px solid #e6eaf1;padding-top:12px;">'
+            + issues.map(function (x) {
+                return '<div style="font-size:13px;color:#5b6274;line-height:1.55;margin-bottom:7px;">'
+                  + '<span style="color:#c4952a;">•</span> ' + escapeHtml(x.text) + '</div>';
+              }).join("")
+            + '</div>'
+          : '<div style="margin-top:12px;font-size:13px;color:#2f7d3b;">Составы сходятся, расхождений нет.</div>';
+        box.innerHTML = '<div class="vsc-chart"' + (issues.length ? ' style="border-left:3px solid #e0b84a;"' : '') + '>'
+          + '<div style="display:flex;flex-wrap:wrap;gap:22px;">' + cells + '</div>'
+          + list
+          + '<div style="margin-top:12px;font-size:11.5px;color:#9aa3b2;">Проверено ' + escapeHtml(when) + ' · сервер проверяет сам каждый день в 09:20</div>'
+          + '</div>';
+      }
       // ═══ Зарплаты, штат, взносы и нагрузка на персонал.
       // Источник — опубликованная зарплатная таблица «расчет ЗП Визы» (сервер читает
       // xlsx-экспорт книги, по вкладке на месяц). Прибыль — уже загруженная vscData.profit,
