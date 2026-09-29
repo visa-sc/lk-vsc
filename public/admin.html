@@ -4470,7 +4470,7 @@
               ? issues.map(function (x) { return "⚠️ " + escapeHtml(x.text); }).join("<br>")
               : "Составы сходятся, расхождений нет.")
           + '<br><span style="color:#8a93a5;">Проверено ' + escapeHtml(when)
-          + '. Сервер сверяет сам каждый день в 09:20 МСК и пишет письмо, когда появляется новое расхождение.</span>'
+          + '. Сервер сверяет составы сам каждый день в 09:20 МСК.</span>'
           + "<br><br>";
       }
       // ═══ Зарплаты, штат, взносы и нагрузка на персонал.
@@ -4492,12 +4492,24 @@
         // Сверка состава встаёт в начало подсказки, когда придут данные. Поповер
         // живёт порталом в body и позиционируется в момент открытия, поэтому
         // дописать в него можно спокойно.
-        apiFetch("/admin/api/vsc/staffsync").then(function (r) {
-          if (!r || !r.success || !r.data || !info.__pop) return;
-          const sync = vscStaffSyncInfoHtml(r.data);
-          if (sync) info.__pop.innerHTML = sync + INFO_BASE;
-        }).catch(function () {});
         wrap.appendChild(h);
+        // Расхождения — мелкой строкой прямо под заголовком: письма по ним Андрей
+        // просил не слать, а заметить их надо сразу при открытии раздела.
+        // Когда всё сходится, строки нет вовсе и блок выглядит как раньше.
+        const syncLine = document.createElement("div");
+        syncLine.style.cssText = "font-size:11.5px;color:#a8792a;line-height:1.5;margin:-2px 0 8px;";
+        wrap.appendChild(syncLine);
+        apiFetch("/admin/api/vsc/staffsync").then(function (r) {
+          if (!r || !r.success || !r.data) return;
+          if (info.__pop) {
+            const sync = vscStaffSyncInfoHtml(r.data);
+            if (sync) info.__pop.innerHTML = sync + INFO_BASE;
+          }
+          const issues = r.data.issues || [];
+          if (issues.length) {
+            syncLine.innerHTML = issues.map(function (x) { return escapeHtml(x.text); }).join("<br>");
+          }
+        }).catch(function () {});
         const box = document.createElement("div"); box.innerHTML = '<div class="vsc-chart"><div class="loading-state">Загружаем зарплатную таблицу…</div></div>';
         wrap.appendChild(box);
         apiFetch("/admin/api/vsc/zarplata").then(function (j) {

@@ -15,9 +15,9 @@
 //   • .vscZarplata.json   — штат и отделы из зарплатной таблицы.
 // amoCRM здесь не дёргается вообще: лимит строгий, нас за него уже банили.
 //
-// Что делает: раз в сутки считает расхождения и, если появилось НОВОЕ, шлёт письмо
-// директору. Одно и то же расхождение письмом не повторяется — только когда оно
-// изменилось или исчезло. Тот же снимок отдаётся в раздел /vsc «ФОТ» плашкой.
+// Что делает: раз в сутки пересчитывает расхождения и кладёт снимок в файл.
+// Писем НЕ шлёт (Андрей 29.09: «это письмо мне не надо») — расхождения видно
+// строкой под заголовком блока «Зарплаты, штат и нагрузка» в разделе /vsc «ФОТ».
 // ═══════════════════════════════════════════════════════════════════════════
 const fs = require("fs");
 const path = require("path");
@@ -26,7 +26,6 @@ const FILE = path.join(__dirname, ".vscStaffSync.json");
 const PBX_FILE = path.join(__dirname, ".vscPbxStats.json");
 const AMO_ROSTER_FILE = path.join(__dirname, ".vscAmoRoster.json");
 const ZARPLATA_FILE = path.join(__dirname, ".vscZarplata.json");
-const TO = process.env.STAFF_SYNC_TO || "director@visa-sc.ru";
 const CHECK_HOUR_MSK = 9;                       // проверка в 09:20 МСК, после ночного пересчёта АТС
 
 // Из штата зарплатной таблицы исключены владелец, управляющая и Зайцева —
@@ -142,54 +141,33 @@ function compute() {
   };
 }
 
-// ── Проверка и письмо ────────────────────────────────────────────────────────
-// send — sendOrQueueDirectorMail из server.js: сам откладывает письмо, если сейчас
-// нерабочее время (окно пн 08:00 – пт 15:00 МСК).
-function check(send, why) {
-  const prev = load();
+// ── Пересчёт ────────────────────────────────────────────────────────────────
+// Держим снимок свежим, чтобы раздел открывался мгновенно. Писем нет: всё, что
+// нашлось, показывается в самом разделе.
+function check(_unused, why) {
   const cur = compute();
-  const prevKeys = new Set(((prev && prev.issues) || []).map((x) => x.key));
-  const fresh = cur.issues.filter((x) => !prevKeys.has(x.key));
-  const gone = ((prev && prev.issues) || []).filter((x) => !cur.issues.some((y) => y.key === x.key));
-  cur.lastMailAt = (prev && prev.lastMailAt) || null;
-
-  let mailed = false;
-  if (fresh.length && typeof send === "function") {
-    const li = (arr) => arr.map((x) => "<li>" + String(x.text).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</li>").join("");
-    const html = '<p><b>Сверка состава сотрудников: появилось новое.</b></p>'
-      + "<ul>" + li(fresh) + "</ul>"
-      + (gone.length ? '<p style="color:#666;">Закрылось с прошлой проверки:</p><ul style="color:#666;">' + li(gone) + "</ul>" : "")
-      + '<p style="color:#888;font-size:13px;">АТС: ' + cur.pbx.users + " добавочных. amoCRM: " + cur.amo.active + " активных."
-      + (cur.zarplata ? " Зарплатная таблица «" + cur.zarplata.month + "»: штат " + cur.zarplata.staff + "." : "")
-      + "</p>"
-      + '<p style="font-size:13px;">Раздел: <a href="https://voyotravel.ru/vsc">voyotravel.ru/vsc</a> → ФОТ.</p>';
-    mailed = true;
-    send({ to: TO, subject: "Сверка состава: " + fresh.length + " " + (fresh.length === 1 ? "расхождение" : "расхождений"), html: html, noBanner: true });
-    cur.lastMailAt = Date.now();
-  }
   save(cur);
   console.log("STAFF SYNC [" + (why || "cron") + "]: расхождений " + cur.issues.length
-    + (fresh.length ? ", новых " + fresh.length + (mailed ? " — письмо" : " — без письма") : "")
     + "; АТС " + cur.pbx.users + ", amoCRM " + cur.amo.active);
   return cur;
 }
 
 // Ежедневно в 09:20 МСК: ночной пересчёт АТС в 01:10 к этому времени уже прошёл.
-function schedule(send) {
+function schedule() {
   const MSK = 3 * 3600 * 1000, DAY = 86400000;
   (function next() {
     const now = Date.now() + MSK;
     let t = Math.floor(now / DAY) * DAY + (CHECK_HOUR_MSK * 60 + 20) * 60 * 1000;
     if (t <= now) t += DAY;
     setTimeout(() => {
-      try { check(send, "cron"); } catch (e) { console.error("staffSync:", e && e.message); }
+      try { check(null, "cron"); } catch (e) { console.error("staffSync:", e && e.message); }
       next();
     }, Math.max(1000, t - now));
   })();
   // Первый прогон через 8 минут после старта — просто чтобы снимок в разделе был
   // свежим и после перезапуска.
-  setTimeout(() => { try { check(send, "startup"); } catch (_) {} }, 8 * 60 * 1000);
-  console.log("STAFF SYNC: сверка состава АТС ↔ amoCRM ежедневно в 09:20 МСК");
+  setTimeout(() => { try { check(null, "startup"); } catch (_) {} }, 8 * 60 * 1000);
+  console.log("STAFF SYNC: сверка состава АТС ↔ amoCRM ежедневно в 09:20 МСК (без писем, видно в разделе)");
 }
 
 module.exports = { compute, check, schedule, load, save };

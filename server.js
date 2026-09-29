@@ -4128,12 +4128,13 @@ flushDirectorMailQueue().catch(() => {});
 const aiBalance = require("./ai-balance");
 aiBalance.schedule(sendOrQueueDirectorMail);
 
-// ── Сторож состава сотрудников (АТС ↔ amoCRM ↔ зарплатная таблица) ─────────
+// ── Сверка состава сотрудников (АТС ↔ amoCRM ↔ зарплатная таблица) ─────────
 // Раньше это раз в месяц проверяли руками из приложения Андрея, то есть только
 // когда оно открыто. Теперь считает сервер: раз в сутки, из уже собранных
-// файлов, без единого лишнего запроса в amoCRM. Письмо — только на новое.
+// файлов, без единого лишнего запроса в amoCRM. Писем не шлёт — расхождения
+// видно строкой под заголовком блока «Зарплаты, штат и нагрузка» в /vsc «ФОТ».
 const staffSync = require("./staffsync");
-staffSync.schedule(sendOrQueueDirectorMail);
+staffSync.schedule();
 function emailDoc(inner, accent, footer) {
   accent = accent || "#3589BD";
   footer = footer || 'Служебное письмо для сотрудников VOYO. Отвечать на него не нужно.<br>С уважением, команда VOYO · Visa Services Center';
