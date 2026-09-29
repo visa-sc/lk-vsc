@@ -40,6 +40,7 @@ const tbank = require("./tbank"); // Т-Касса: приём оплат (ба�
 const blog = require("./esimblog");      // блогеры: бесплатный интернет за сторис
 const support = require("./esimchat");   // чат и обращения: очередь писем и ответы с почты      // блогеры: бесплатный интернет за сторис
 const doctor = require("./esimdoctor.js");   // разбор проблемы клиента головой, а не шаблоном
+const partner = require("./esimpartner.js");   // партнёрские коды: процент турагентству
 const adsource = require("./adsource"); // откуда пришёл покупатель: метки Google Ads, utm и т.п.
 
 const BASE_URL = process.env.ESIM_BASE_URL || "https://voyotravel.ru";
@@ -1187,7 +1188,8 @@ function checkPromo(code, listPrice, email) {
   const rub = p.pct
     ? Math.round((Number(listPrice) || 0) * Number(p.pct) / 100)
     : Math.max(0, Number(p.rub) || 0);
-  return { code, rub, pct: Number(p.pct) || 0, firstOnly: !!p.firstOnly, cost: !!p.cost };
+  return { code, rub, pct: Number(p.pct) || 0, firstOnly: !!p.firstOnly, cost: !!p.cost,
+    partner: p.partner || null };
 }
 function usePromo(code) {
   code = String(code || "").trim().toUpperCase();
@@ -1240,6 +1242,11 @@ function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, use
     out.discountKind = "cost"; out.promoCode = promo.code;
   } else if (promo && promo.rub > 0) {
     out.discountRub = promo.rub; out.discountKind = "promo"; out.promoCode = promo.code; out.promoPct = promo.pct || 0;
+  } else if (promo && promo.partner) {
+    // Партнёрский код (турагентство): цену не режем, клиенту после оплаты падают
+    // бонусы на баланс, партнёру — процент с покупки. Маржа остаётся целой.
+    out.promoCode = promo.code; out.discountKind = "partner"; out.partner = promo.partner;
+    out.partnerBonusRub = Number(promo.partner.bonusRub || 0);
   } else if (refCode) {
     const inviter = customerByRef(refCode);
     // Реферальная скидка — только новому клиенту и не по своей же ссылке
@@ -1263,7 +1270,7 @@ function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, use
   out.balanceRub = (cust && cust.balanceRub) || 0;
   // Баллы идут в дело, только если скидки не было: не больше половины пакета,
   // не больше самого баланса и так, чтобы цена не пробила пол по себестоимости.
-  if (out.discountKind) out.balanceBlockedBy = out.discountKind;
+  if (out.discountKind && out.discountKind !== "partner") out.balanceBlockedBy = out.discountKind;
   out.balanceCanUse = out.balanceBlockedBy ? 0 : Math.max(0, Math.min(
     out.balanceRub,
     Math.floor(listPrice * MAX_BONUS_SHARE),
@@ -1874,6 +1881,20 @@ function mount(app, opts) {
             }).catch(() => {});
           }
         }
+        // Партнёрский код: клиенту бонус на баланс (один раз), партнёру процент
+        // с каждой его покупки — даже когда код он больше не вводит.
+        try {
+          const paidRub = Number(g.order.payTotalRub || g.order.priceRub || 0);
+          const res = partner.onPaid({ code: g.order.promoCode, custKey: who,
+            orderId: g.order.id, label: g.order.label, amountRub: paidRub });
+          if (res) {
+            if (res.bonusRub > 0) {
+              addBalance(who, res.bonusRub, "Бонус по коду " + res.code);
+              console.log("esim партнёр: клиенту " + res.bonusRub + " ₽ по коду " + res.code);
+            }
+            if (res.earnedRub > 0) console.log("esim партнёр: " + res.name + " заработал " + res.earnedRub + " ₽ с заказа " + g.order.id);
+          }
+        } catch (e) { console.error("esim партнёр:", e.message); }
         getCustomer(who, true); // заводим карточку с реф-кодом покупателю
       } catch (e) { console.error("esim bonuses:", e.message); }
       if (opts && opts.sendSms && g.order.phone) {
@@ -2254,6 +2275,45 @@ function mount(app, opts) {
     }
     return mine.sort((a, b) => (b.paidAt || b.ts || 0) - (a.paidAt || a.ts || 0));
   }
+
+  // ── Партнёрский кабинет: voyomobile.ru/<слаг>, вход по паролю ──
+  // Турагентство видит свой код, клиентов по нему и сколько заработало.
+  // Слаг и пароль лежат в самом промокоде (поле partner), там же процент.
+  function partnerCodes() {
+    const all = loadPromos();
+    return Object.keys(all).filter((c) => all[c] && all[c].partner && all[c].partner.slug)
+      .map((c) => ({ code: c, cfg: all[c].partner }));
+  }
+  // при старте заводим партнёров из промокодов, чтобы статистика была сразу
+  try { partnerCodes().forEach((x) => partner.ensure(x.code, x.cfg)); } catch (e) { console.error("esim партнёры:", e.message); }
+
+  function partnerBySlug(slug) {
+    slug = String(slug || "").toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    return partnerCodes().find((x) => String(x.cfg.slug || "").toLowerCase() === slug) || null;
+  }
+  app.get("/esim/api/partner/:slug", (req, res) => {
+    const found = partnerBySlug(req.params.slug);
+    if (!found) return res.status(404).json({ success: false });
+    partner.ensure(found.code, found.cfg);
+    if (!partner.checkPass(found.code, req.query.pass)) return res.status(403).json({ success: false });
+    res.set("Cache-Control", "no-store");
+    res.json({ success: true, stats: partner.stats(found.code) });
+  });
+  // выплату партнёру отмечаем с админ-кодом: /esim/api/partner/<слаг>/payout?adm=…&rub=…
+  app.get("/esim/api/partner/:slug/payout", (req, res) => {
+    if (!isAdm(req)) return res.status(403).json({ success: false });
+    const found = partnerBySlug(req.params.slug);
+    if (!found) return res.status(404).json({ success: false });
+    res.json({ success: true, stats: partner.addPayout(found.code, req.query.rub, req.query.note) });
+  });
+  partnerCodes().forEach((x) => {
+    const slug = String(x.cfg.slug || "").toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!slug) return;
+    app.get("/" + slug, (req, res) => {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.sendFile(path.join(__dirname, "public", "esim-partner.html"));
+    });
+  });
 
   // ── Первая линия: чат сам отвечает по делу, не дожидаясь оператора ──
   // 23.09.2026 в 07:35 человек написал «перестала работать eSIM», получил только

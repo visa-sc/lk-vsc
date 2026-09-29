@@ -34,8 +34,10 @@ const ESIM_SITE_HOSTS = new Set(["esim.voyotravel.ru", "voyomobile.ru", "voyomob
 // voyomobile.ru/china и далее по списку — это та же витрина, просто заголовок
 // про страну (16.09.2026; Вьетнам, Таиланд, Египет, Грузия и Япония — 17.09.2026)
 const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "georgia", "japan", "dubai"];
+// Партнёрские кабинеты турагентств: voyomobile.ru/visazen и подобные (29.09.2026)
+const ESIM_PARTNER_PATHS = ["visazen"];
 const ESIM_HOST_ALLOW = new RegExp(
-  "^\\/($|esim(\\/|_|\\?|$)|(?:" + ESIM_LAND_PATHS.join("|") + ")\\/?$|" +
+  "^\\/($|esim(\\/|_|\\?|$)|(?:" + ESIM_LAND_PATHS.concat(ESIM_PARTNER_PATHS).join("|") + ")\\/?$|" +
   "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|esim-support\\.js$|favicon[^/]*\\.(?:ico|svg|png)$|robots\\.txt$|sitemap\\.xml$)");
 // dev.voyomobile.ru — панель показателей eSIM (18.09.2026): выручка и пакеты
 // по дням, реклама и её окупаемость, клиенты, промокоды, итог. Отдельное имя,
