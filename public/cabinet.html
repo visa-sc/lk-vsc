@@ -4204,6 +4204,16 @@
     .lkl-page.frame { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
     .lkl-page.frame iframe { display: block; width: 100%; flex: 1; min-height: 0; border: 0; background: transparent; }
     .lkl-page.frame iframe[hidden] { display: none; }
+    /* Переключатель внутри раздела «Туры»: слева пакетные туры, справа экскурсии.
+       Вид тот же, что у продуктовой пилюли в «Картах», чтобы кабинет выглядел
+       одинаково во всех разделах. */
+    .lkl-seg { flex: 0 0 auto; display: flex; gap: 4px; background: #eef2f8; border: 1px solid rgba(23,32,60,.08);
+      border-radius: 999px; padding: 4px; width: calc(100% - 36px); max-width: 420px; margin: 16px auto 0; }
+    .lkl-seg button { flex: 1; min-width: 0; border: 0; background: transparent; cursor: pointer; font: inherit;
+      font-size: 13.5px; font-weight: 600; color: #67728a; padding: 10px 8px; border-radius: 999px;
+      transition: background .18s ease, color .18s ease; }
+    .lkl-seg button.on { background: #fff; color: #2b7099;
+      box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 6px 16px -10px rgba(22,48,80,.4); }
     /* Переключатель «Купить eSIM» / «Мои eSIM» — витрина и личные симки в одном разделе */
     .lkl-seg { flex: none; width: min(520px, 100%); margin: 0 auto; padding: 16px 18px 0; display: flex; gap: 4px; }
     .lkl-seg-in { display: flex; width: 100%; padding: 4px; border-radius: 999px;
@@ -4404,19 +4414,51 @@
         });
         cardsPage.appendChild(f);
       }
-      // «Туры» — та же страница /excursion в режиме ?embed=1, одной рамкой.
+      // «Туры» — два кадра под одним переключателем: слева пакетные туры
+      // (/packages), справа экскурсии (/excursion). Второй кадр создаётся
+      // только при первом переключении, чтобы не тянуть обе страницы сразу.
       var toursPage = document.getElementById("lklTours");
-      function mountTours() {
-        if (!toursPage || toursPage.dataset.on) return;
-        toursPage.dataset.on = "1";
+      var toursFrames = {};
+      var TOURS_TABS = [
+        { key: "packages", label: "Туры", src: "/packages?embed=1", title: "Пакетные туры" },
+        { key: "excursion", label: "Экскурсии", src: "/excursion?embed=1", title: "Экскурсии" }
+      ];
+      function toursFrame(tab) {
+        if (toursFrames[tab.key]) return toursFrames[tab.key];
         var f = document.createElement("iframe");
-        f.src = "/excursion?embed=1";
-        f.title = "Туры и экскурсии";
+        f.src = tab.src;
+        f.title = tab.title;
         f.setAttribute("loading", "lazy");
         f.addEventListener("load", function () {
           try { f.contentWindow.addEventListener("scroll", watch, { passive: true }); } catch (_) {}
         });
         toursPage.appendChild(f);
+        toursFrames[tab.key] = f;
+        return f;
+      }
+      function toursShow(key) {
+        TOURS_TABS.forEach(function (t) {
+          var f = t.key === key ? toursFrame(t) : toursFrames[t.key];
+          if (f) f.hidden = t.key !== key;
+        });
+        toursPage.querySelectorAll(".lkl-seg button").forEach(function (b) {
+          b.classList.toggle("on", b.dataset.tab === key);
+        });
+      }
+      function mountTours() {
+        if (!toursPage || toursPage.dataset.on) return;
+        toursPage.dataset.on = "1";
+        var seg = document.createElement("div");
+        seg.className = "lkl-seg";
+        seg.setAttribute("role", "tablist");
+        TOURS_TABS.forEach(function (t) {
+          var b = document.createElement("button");
+          b.type = "button"; b.dataset.tab = t.key; b.textContent = t.label;
+          b.addEventListener("click", function () { toursShow(t.key); });
+          seg.appendChild(b);
+        });
+        toursPage.appendChild(seg);
+        toursShow("packages");
       }
       function go(which) {
         var loyalty = which === "loyalty", esim = which === "esim",

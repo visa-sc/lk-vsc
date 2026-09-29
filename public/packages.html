@@ -21,6 +21,10 @@ html,body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkM
 body{min-height:100vh}
 .wrap{max-width:960px;margin:0 auto;padding:0 16px 60px}
 header{padding:calc(env(safe-area-inset-top) + 22px) 0 6px}
+/* Режим встраивания (?embed=1): страница живёт внутри кабинета, где свой
+   заголовок и переключатель разделов — собственную шапку прячем. */
+body.embed header{display:none}
+body.embed .wrap{padding-top:14px}
 h1{font-size:27px;letter-spacing:-.02em}
 h1 b{color:var(--acc)}
 .sub{color:var(--muted);font-size:13.5px;margin-top:5px}
@@ -323,6 +327,7 @@ async function submitClaim(i) {
 
 /* ── старт ── */
 (function init() {
+  if (/[?&]embed=1/.test(location.search)) document.body.classList.add("embed");
   const d = new Date(Date.now() + 7 * 86400000), d2 = new Date(Date.now() + 21 * 86400000);
   $("dateFrom").value = d.toISOString().slice(0, 10);
   $("dateTo").value = d2.toISOString().slice(0, 10);
