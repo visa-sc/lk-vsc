@@ -116,7 +116,7 @@ function cacheKey(q) {
   return JSON.stringify([
     q.cityFromId, q.countryId, q.adults || 2, q.kids || 0, q.kidsAges || [],
     q.nightsMin || 7, q.nightsMax || 10, q.departFrom || "", q.departTo || "",
-    q.priceMin || 0, q.priceMax || 0, q.stars || [], q.meals || [], q.resorts || [],
+    q.priceMin || 0, q.priceMax || 0, q.stars || [], q.meals || [], q.resorts || [], !!q.noFlight,
   ]);
 }
 
@@ -315,6 +315,9 @@ const SEARCH_PARAMS = (q) => ({
   cities: q.resorts && q.resorts.length ? q.resorts : undefined,
   s_hotelIsNotInStop: true,
   s_hasTickets: true,
+  // Без этого флага шлюз отдаёт и «только отель» (его клиент выбирает сам фильтром «Перелёт») — Турция на двоих за 13 тысяч
+  // без билетов. Нам нужен пакет: перелёт обязан входить в цену.
+  s_ticketsIncluded: q.noFlight ? undefined : true,
   currencyAlias: "RUB",
   includeDescriptions: 1,
 });
@@ -350,14 +353,49 @@ async function searchState(requestId) {
   return { operators: list.length, processed: done, rows: rows, ready: list.length > 0 && done >= list.length };
 }
 
-async function searchResults(requestId, page, pageSize) {
+// minStars — фильтр по звёздам на нашей стороне: у шлюза звёзды задаются его
+// внутренними кодами, а нам нужно простое «от 4 звёзд». Поэтому берём страницу
+// пошире (одним запросом, стоимость та же) и отсекаем сами. Отели с оценкой
+// туристов ниже 7 из 10 в выдачу с фильтром тоже не пускаем.
+const starsOf = (t) => Number(String(t.stars || "").replace(/[^\d]/g, "").slice(0, 1)) || 0;
+
+// Питание по возрастанию: без питания < завтраки < полупансион < пансион < всё включено.
+function mealRank(code) {
+  const c = String(code || "").toUpperCase().replace(/\s+/g, "");
+  if (/^UAI|ULTRA/.test(c)) return 5;
+  if (/^AI|ALL/.test(c)) return 4;
+  if (/^FB/.test(c)) return 3;
+  if (/^HB/.test(c)) return 2;
+  if (/^BB/.test(c)) return 1;
+  return 0;
+}
+
+async function searchResults(requestId, page, pageSize, minStars, minMeal) {
+  const want = pageSize || 30;
+  // Выдача для страницы (minStars передан, хоть 0): вся выборка разом, по отелю
+  // одна карточка. Подборки зовут без него и получают сырую страницу.
+  const shelf = minStars !== undefined;
   const data = await api("GetTours", {
     requestId: requestId, updateResult: 1,
-    pageNumber: page || 1, pageSize: pageSize || 30,
+    pageNumber: shelf ? 1 : (page || 1), pageSize: shelf ? 3000 : want,
     currencyAlias: "RUB",
   }, 40000);
-  const tours = ((data && data.aaData) || []).map(parseRow);
-  return { tours: tours, total: (data && data.iTotalRecords) || tours.length, demo: looksDemo(tours) };
+  let tours = ((data && data.aaData) || []).map(parseRow);
+  const demo = looksDemo(tours);
+  if (shelf) {
+    tours = tours.filter((t) => (!minStars || (starsOf(t) >= minStars && !(t.rating && t.rating < 7)))
+        && (!minMeal || mealRank(t.meal) >= minMeal));
+    // Один отель — одна карточка, самый дешёвый вариант. Вперёд отели, которые
+    // туристы оценили от 7,5 из 10, дальше остальные; внутри групп — по цене.
+    const byHotel = {};
+    tours.forEach((t) => { const k = t.hotel + "|" + t.resort; if (!byHotel[k] || t.price < byHotel[k].price) byHotel[k] = t; });
+    const liked = (t) => (t.rating || 0) >= 7.5 ? 0 : 1;
+    tours = Object.values(byHotel)
+      .sort((a, b) => (liked(a) - liked(b)) || (a.price - b.price))
+      .slice(0, want);
+    return { tours: tours, total: tours.length, demo: demo };
+  }
+  return { tours: tours, total: (data && data.iTotalRecords) || tours.length, demo: demo };
 }
 
 /* ─────────────────────── Подборки под формой поиска ─────────────────────── */
@@ -409,12 +447,25 @@ async function pickOne(dir) {
     try { st = await searchState(started.requestId); } catch (_) { break; }
     if (st.ready) break;
   }
-  const res = await searchResults(started.requestId, 1, 40);
+  const res = await searchResults(started.requestId, 1, 1000);
   const tours = (res.tours || []).filter((t) => t.price > 0);
   if (!tours.length || res.demo) return null;
   const cheapest = tours.slice().sort((a, b) => a.price - b.price)[0];
-  const best = tours.slice().sort((a, b) => (b.rating || 0) - (a.rating || 0))[0];
-  return { dir: dir, cheapest: cheapest, best: (best && best.rating) ? best : null };
+  return { dir: dir, cheapest: cheapest, deals: pickDeals(tours) };
+}
+
+// «Хорошие отели по хорошей цене»: четыре-пять звёзд и оценка туристов от 8 из
+// 10, по каждому отелю берём самый дешёвый вариант. Самые дешёвые туры — это
+// обычно двушки и апартаменты без питания, на витрину они не годятся.
+function pickDeals(tours) {
+  const good = (minRating) => tours.filter((t) => starsOf(t) >= 4 && (t.rating || 0) >= minRating && t.photo);
+  let list = good(8);
+  if (list.length < 3) list = good(7);
+  const byHotel = {};
+  list.forEach((t) => { const k = t.hotel; if (!byHotel[k] || t.price < byHotel[k].price) byHotel[k] = t; });
+  return Object.values(byHotel)
+    .sort((a, b) => (b.rating - a.rating) || (a.price - b.price))
+    .slice(0, 4);
 }
 
 let _picksRunning = false;
@@ -433,19 +484,23 @@ async function refreshPicks() {
         price: r.cheapest.price, nights: r.cheapest.nights,
         hotel: r.cheapest.hotel, resort: r.cheapest.resort, photo: r.cheapest.photo,
       });
-      if (r.best) {
-        top.push({
-          country: dir.name, countryId: dir.id, hue: dir.hue,
-          hotel: r.best.hotel, stars: r.best.stars, rating: r.best.rating,
-          resort: r.best.resort, price: r.best.price, photo: r.best.photo,
-        });
-      }
+      r.deals.forEach((t) => top.push({
+        country: dir.name, countryId: dir.id, hue: dir.hue,
+        hotel: t.hotel, stars: t.stars, rating: t.rating, meal: t.meal,
+        resort: t.resort, price: t.price, nights: t.nights, checkIn: t.checkIn, photo: t.photo,
+      }));
       await wait(1500);           // не молотим шлюз очередью
     }
   } finally { _picksRunning = false; }
   cheap.sort((a, b) => a.price - b.price);
-  top.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-  const data = { at: Date.now(), cheap: cheap, top: top.slice(0, 6) };
+  // Витрина вперемешку по странам: первый лучший отель каждой страны, потом второй…
+  const rounds = [];
+  top.forEach((t) => {
+    const n = top.filter((x) => x.countryId === t.countryId).indexOf(t);
+    (rounds[n] = rounds[n] || []).push(t);
+  });
+  const shelf = [].concat(...rounds.map((r) => r.sort((a, b) => b.rating - a.rating)));
+  const data = { at: Date.now(), cheap: cheap, top: shelf.slice(0, 12) };
   if (cheap.length) writeJson(PICKS_FILE, data);
   return data;
 }
@@ -638,7 +693,7 @@ function mount(app, deps) {
 
   app.get("/api/sletat/results", async (req, res) => {
     try {
-      const r = await searchResults(req.query.requestId, Number(req.query.page) || 1, Number(req.query.pageSize) || 30);
+      const r = await searchResults(req.query.requestId, Number(req.query.page) || 1, Number(req.query.pageSize) || 30, Math.min(5, Number(req.query.minStars) || 0), Math.min(5, Number(req.query.minMeal) || 0));
       res.json({ success: true, tours: r.tours, total: r.total, demo: r.demo });
     } catch (e) { fail(res, e); }
   });

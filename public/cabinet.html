@@ -4215,23 +4215,27 @@
     /* Переключатель внутри раздела «Туры»: слева пакетные туры, справа экскурсии.
        Вид тот же, что у продуктовой пилюли в «Картах», чтобы кабинет выглядел
        одинаково во всех разделах. */
-    .lkl-seg { flex: 0 0 auto; display: flex; gap: 4px; background: #eef2f8; border: 1px solid rgba(23,32,60,.08);
-      border-radius: 999px; padding: 4px; width: calc(100% - 36px); max-width: 420px; margin: 16px auto 0; }
-    .lkl-seg button { flex: 1; min-width: 0; border: 0; background: transparent; cursor: pointer; font: inherit;
-      font-size: 13.5px; font-weight: 600; color: #67728a; padding: 10px 8px; border-radius: 999px;
-      transition: background .18s ease, color .18s ease; }
+    /* Свой класс, а не .lkl-seg: правило eSIM ниже перебивало его, и пилюля
+       растягивалась во всю ширину и прилипала к верху. */
+    .lkl-tseg { flex: 0 0 auto; display: flex; gap: 4px; background: #eef2f8; border: 1px solid rgba(23,32,60,.08);
+      border-radius: 999px; padding: 4px; width: calc(100% - 36px); max-width: 340px; margin: 18px auto 6px;
+      box-sizing: border-box; }
+    .lkl-tseg button { flex: 1; min-width: 0; border: 0; background: transparent; cursor: pointer; font: inherit;
+      font-size: 13.5px; font-weight: 600; color: #67728a; padding: 9px 8px; border-radius: 999px; text-align: center;
+      transition: background .18s ease, color .18s ease; -webkit-tap-highlight-color: transparent; }
+    .lkl-tseg button.on { background: #fff; color: #2b7099;
+      box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 6px 16px -10px rgba(22,48,80,.4); }
+    /* Переключатель «Купить eSIM» / «Мои eSIM» — тот же вид, что у «Туров» и
+       у пилюли в «Картах»: серая дорожка, белая активная кнопка, по центру и с
+       отступом сверху. */
+    .lkl-seg { flex: none; width: calc(100% - 36px); max-width: 340px; margin: 18px auto 6px; padding: 0; box-sizing: border-box; }
+    .lkl-seg-in { display: flex; gap: 4px; width: 100%; padding: 4px; border-radius: 999px; box-sizing: border-box;
+      background: #eef2f8; border: 1px solid rgba(23,32,60,.08); }
+    .lkl-seg button { flex: 1; min-width: 0; border: 0; cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 600;
+      color: #67728a; background: transparent; border-radius: 999px; padding: 9px 8px; text-align: center;
+      transition: background .18s ease, color .18s ease; -webkit-tap-highlight-color: transparent; }
     .lkl-seg button.on { background: #fff; color: #2b7099;
       box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 6px 16px -10px rgba(22,48,80,.4); }
-    /* Переключатель «Купить eSIM» / «Мои eSIM» — витрина и личные симки в одном разделе */
-    .lkl-seg { flex: none; width: min(520px, 100%); margin: 0 auto; padding: 16px 18px 0; display: flex; gap: 4px; }
-    .lkl-seg-in { display: flex; width: 100%; padding: 4px; border-radius: 999px;
-      background: rgba(255,255,255,.7); border: 1px solid rgba(53,137,189,.18);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.9); }
-    .lkl-seg button { flex: 1; border: 0; cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 600;
-      letter-spacing: -.01em; color: #7b8494; background: transparent; border-radius: 999px; padding: 9px 10px;
-      transition: background .2s ease, color .2s ease; -webkit-tap-highlight-color: transparent; }
-    .lkl-seg button.on { color: #fff; background: linear-gradient(140deg,#4aa3d8,#3589BD);
-      box-shadow: 0 6px 16px -8px rgba(53,137,189,.9); }
 
     /* ── карточка-оффер в кабинете ──
        Оформление берём у обычной карточки ЛК (class="card"): тот же белый фон,
@@ -4466,7 +4470,7 @@
           var f = t.key === key ? toursFrame(t) : toursFrames[t.key];
           if (f) f.hidden = t.key !== key;
         });
-        toursPage.querySelectorAll(".lkl-seg button").forEach(function (b) {
+        toursPage.querySelectorAll(".lkl-tseg button").forEach(function (b) {
           b.classList.toggle("on", b.dataset.tab === key);
         });
       }
@@ -4474,7 +4478,7 @@
         if (!toursPage || toursPage.dataset.on) return;
         toursPage.dataset.on = "1";
         var seg = document.createElement("div");
-        seg.className = "lkl-seg";
+        seg.className = "lkl-tseg";
         seg.setAttribute("role", "tablist");
         TOURS_TABS.forEach(function (t) {
           var b = document.createElement("button");

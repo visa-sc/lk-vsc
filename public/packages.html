@@ -4,235 +4,397 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#f4f7fb">
+<meta name="theme-color" content="#f5f7fb">
 <title>VOYO Туры — пакетные туры по всему миру</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
-/* Светлый скин клиентских страниц VOYO. Витрина своя: бренд поставщика на
-   клиенте не светится, туроператор рейса показывается в карточке — его турист
-   обязан видеть. */
+/* Витрина туров в стиле VOYO mobile: тот же воздух, градиент и стекло, что на
+   /esim. Бренд поставщика на клиенте не светится. */
 :root{
-  --bg:#f4f7fb; --card:#fff; --line:rgba(23,32,60,.09);
-  --ink:#171c29; --muted:#5b6274; --faint:#98a1b2;
-  --acc:#3589BD; --acc-d:#2b7099; --ok:#2f7d3b; --warn:#b8860b;
-  --shadow:0 1px 2px rgba(16,24,40,.04), 0 14px 34px -18px rgba(16,32,64,.22);
+  --bg:#f5f7fb; --card:#fff; --line:#e6eaf2; --ink:#16202e; --mut:#6b7488; --faint:#98a1b2;
+  --accent:#3589bd; --accent-d:#2c6f96; --ok:#2c7a43; --gold:#c9951c;
+  --grad:linear-gradient(135deg,#2c6f96 0%,#3d95c7 55%,#5ac8fa 120%);
+  --sh:0 1px 2px rgba(16,24,40,.04),0 18px 44px -22px rgba(22,48,80,.22);
+  --sh-hov:0 2px 4px rgba(16,24,40,.05),0 30px 60px -24px rgba(41,110,160,.35);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
-body{min-height:100vh}
-.wrap{max-width:960px;margin:0 auto;padding:0 16px 60px}
-header{padding:calc(env(safe-area-inset-top) + 22px) 0 6px}
-/* Режим встраивания (?embed=1): страница живёт внутри кабинета, где свой
-   заголовок и переключатель разделов — собственную шапку прячем. */
-body.embed header{display:none}
-body.embed .wrap{padding-top:14px}
-h1{font-size:27px;letter-spacing:-.02em}
-h1 b{color:var(--acc)}
-.sub{color:var(--muted);font-size:13.5px;margin-top:5px}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);min-height:100vh;overflow-x:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.blob{position:fixed;border-radius:50%;filter:blur(70px);pointer-events:none;z-index:-1;opacity:.55}
+.blob.b1{width:560px;height:560px;left:50%;top:-260px;transform:translateX(-70%);
+  background:radial-gradient(circle,#bfe3f7 0%,rgba(191,227,247,0) 70%);animation:fl1 22s ease-in-out infinite alternate}
+.blob.b2{width:460px;height:460px;right:-160px;top:160px;
+  background:radial-gradient(circle,#d4ecfb 0%,rgba(212,236,251,0) 70%);animation:fl2 26s ease-in-out infinite alternate}
+@keyframes fl1{to{transform:translateX(-30%) translateY(60px)}}
+@keyframes fl2{to{transform:translateY(-60px)}}
+@media(prefers-reduced-motion:reduce){.blob{animation:none}}
 
-/* ── форма поиска ── */
-.search{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:16px;margin-top:16px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:10px}
-label{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-bottom:5px;font-weight:600}
-select,input{width:100%;font-family:inherit;font-size:15px;color:var(--ink);background:#fbfcfe;border:1px solid var(--line);border-radius:12px;padding:11px 12px;outline:none}
-select:focus,input:focus{border-color:var(--acc)}
-.go{margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-button{font-family:inherit;font-size:15px;font-weight:600;border:0;border-radius:13px;padding:12px 24px;background:var(--acc);color:#fff;box-shadow:var(--shadow)}
-button:disabled{opacity:.55}
-button.ghost{background:var(--card);color:var(--muted);border:1px solid var(--line)}
-.hint{font-size:12.5px;color:var(--faint)}
+.wrap{max-width:1020px;margin:0 auto;padding:0 18px 90px}
+
+/* ── шапка и герой ── */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:calc(env(safe-area-inset-top) + 22px) 0 6px}
+.brand{display:inline-flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink)}
+.brand img{height:19px;display:block}
+.brand .wm{font-size:20px;font-weight:300;letter-spacing:.01em;line-height:1;
+  background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero{text-align:center;padding:38px 0 22px}
+.hero h1{font-size:clamp(30px,5.2vw,50px);line-height:1.07;letter-spacing:-.035em;font-weight:800;margin-bottom:12px}
+.hero h1 em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero .sub{color:var(--mut);font-size:16px;line-height:1.55;max-width:560px;margin:0 auto}
+/* Внутри кабинета (?embed=1) своя шапка у кабинета — у нас только компактный заголовок. */
+body.embed .hdr{display:none}
+body.embed .hero{padding:18px 0 14px}
+body.embed .hero h1{font-size:clamp(24px,4.4vw,34px)}
+body.embed .hero .sub{font-size:14px}
+
+/* ── форма поиска: все поля одной высоты и в одной сетке ── */
+.search{background:rgba(255,255,255,.86);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  border:1px solid rgba(230,234,242,.9);border-radius:24px;box-shadow:var(--sh);padding:18px}
+.grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+@media (max-width:960px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:760px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.fld{min-width:0}
+.fld label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
+  margin:0 0 6px 4px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fld select,.fld input{display:block;width:100%;height:48px;font:inherit;font-size:15.5px;font-weight:500;color:var(--ink);
+  background:#f7f9fc;border:1px solid var(--line);border-radius:14px;padding:0 14px;outline:none;
+  -webkit-appearance:none;appearance:none;transition:border-color .16s ease,box-shadow .16s ease,background .16s ease}
+.fld select{padding-right:34px;text-overflow:ellipsis;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238b93a5' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center}
+.fld input[type=date]{line-height:46px}
+.fld input[type=date]::-webkit-date-and-time-value{text-align:left}
+.fld select:focus,.fld input:focus{border-color:#9fcbe6;background-color:#fff;box-shadow:0 0 0 4px rgba(53,137,189,.10)}
+.go{margin-top:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.btn{font:inherit;font-size:15.5px;font-weight:700;border:0;border-radius:14px;height:50px;padding:0 30px;cursor:pointer;
+  background:var(--grad);color:#fff;box-shadow:0 12px 24px -12px rgba(53,137,189,.85);transition:transform .16s ease,box-shadow .16s ease}
+.btn:hover{transform:translateY(-1px);box-shadow:0 16px 30px -12px rgba(53,137,189,.9)}
+.btn:disabled{opacity:.6;transform:none}
+.btn.ghost{background:#fff;color:var(--mut);border:1px solid var(--line);box-shadow:none}
+@media (max-width:760px){.go .btn{width:100%}}
+.hint{font-size:12.5px;color:var(--faint);line-height:1.45}
+
+/* ── быстрые направления ── */
+.chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:18px auto 0}
+.chip{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.8);border:1px solid var(--line);
+  border-radius:999px;padding:9px 15px;font:inherit;font-size:14px;font-weight:600;cursor:pointer;color:var(--ink);
+  transition:all .16s ease;box-shadow:0 1px 2px rgba(16,24,40,.03)}
+.chip .fl{font-size:17px;line-height:1}
+.chip:hover{border-color:#aed3ea;transform:translateY(-1px);box-shadow:0 8px 18px -10px rgba(53,137,189,.4)}
+.chip.on{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 10px 22px -10px rgba(53,137,189,.75)}
+
+/* ── доверие ── */
+.trust{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px}
+@media (max-width:760px){.trust{grid-template-columns:1fr}}
+.trust div{display:flex;gap:10px;align-items:center;background:rgba(255,255,255,.7);border:1px solid var(--line);
+  border-radius:16px;padding:12px 14px;font-size:13px;color:var(--mut);line-height:1.4}
+.trust b{display:block;color:var(--ink);font-size:13.5px;font-weight:650}
+.trust i{font-style:normal;flex:0 0 34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+  background:#eaf4fb;font-size:17px}
 
 /* ── уведомления ── */
-.note{margin-top:14px;border-radius:14px;padding:12px 15px;font-size:13.5px;line-height:1.55;
+.note{margin-top:16px;border-radius:16px;padding:13px 16px;font-size:13.5px;line-height:1.55;
   background:#fff8e6;border:1px solid #f0dfae;color:#7a5e12}
 .note.err{background:#fdf1f1;border-color:#f0c9c9;color:#9c3232}
-/* Шлюз ещё не пускает — это наша внутренняя история, а не ошибка клиента.
-   Показываем спокойную карточку с живым действием, а не красную плашку. */
-.note.calm{background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);color:var(--ink)}
-.note.calm .ttl{font-weight:650;font-size:15px;margin-bottom:4px}
-.note.calm p{color:var(--muted);font-size:13.5px;line-height:1.55}
+.note.calm{background:#fff;border:1px solid var(--line);box-shadow:var(--sh);color:var(--ink)}
+.note.calm .ttl{font-weight:700;font-size:15px;margin-bottom:4px}
+.note.calm p{color:var(--mut)}
 .note.calm .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.note.calm a{display:inline-block;text-decoration:none;font-size:14px;font-weight:600;border-radius:12px;padding:10px 18px}
-.note.calm a.wa{background:var(--acc);color:#fff;box-shadow:var(--shadow)}
-.note.calm a.tel{background:#f1f5f9;color:var(--muted)}
-.note b{font-weight:650}
+.note.calm a{display:inline-block;text-decoration:none;font-size:14px;font-weight:650;border-radius:12px;padding:10px 18px}
+.note.calm a.wa{background:var(--grad);color:#fff}
+.note.calm a.tel{background:#f1f5f9;color:var(--mut)}
 
-/* ── выдача ── */
-.status{margin:18px 2px 10px;font-size:13px;color:var(--muted)}
-.list{display:grid;gap:12px}
-.tour{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:hidden;display:grid;grid-template-columns:190px 1fr auto}
-@media (max-width:720px){ .tour{grid-template-columns:1fr} .tour .pic{height:170px} }
-.pic{background:#e9eef5 center/cover no-repeat;min-height:150px}
-.body{padding:14px 16px;min-width:0}
-.hname{font-size:16.5px;font-weight:650;letter-spacing:-.01em}
-.hstars{color:var(--warn);font-size:13px;margin-left:5px}
-.place{color:var(--muted);font-size:13px;margin-top:3px}
-.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
-.meta span{font-size:12px;background:#f1f5f9;color:var(--muted);border-radius:8px;padding:4px 9px}
-.op{color:var(--faint);font-size:11.5px;margin-top:9px}
-.buy{padding:14px 16px;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:8px;border-left:1px solid var(--line);min-width:172px}
-@media (max-width:720px){ .buy{border-left:0;border-top:1px solid var(--line);align-items:stretch} }
-.price{font-size:21px;font-weight:700;letter-spacing:-.02em;white-space:nowrap}
-.per{font-size:11.5px;color:var(--faint)}
-.buy button{padding:10px 18px;font-size:14px}
+/* ── секции витрины ── */
+.sec{margin-top:34px}
+.sech{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:14px}
+.sech h2{font-size:22px;letter-spacing:-.025em;font-weight:800}
+.sech .ss{color:var(--mut);font-size:13.5px;margin-top:3px}
+.sort{flex:none;height:40px;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink);background:#fff;
+  border:1px solid var(--line);border-radius:12px;padding:0 32px 0 12px;-webkit-appearance:none;appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238b93a5' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center}
+@media (max-width:560px){.sech{flex-wrap:wrap}.sort{width:100%}}
+
+/* карточки отелей: витрина и выдача в одном стиле */
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+@media (max-width:900px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.cards{grid-template-columns:1fr}}
+.hc{background:var(--card);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:var(--sh);
+  display:flex;flex-direction:column;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease}
+.hc:hover{transform:translateY(-3px);box-shadow:var(--sh-hov)}
+.hc .ph{position:relative;aspect-ratio:4/3;background:#e3eaf2 center/cover no-repeat}
+.hc .ph:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,16,34,0) 55%,rgba(8,16,34,.45) 100%)}
+.hc .rt{position:absolute;left:12px;top:12px;z-index:1;display:inline-flex;align-items:center;gap:6px;
+  background:rgba(255,255,255,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border-radius:10px;padding:5px 9px;font-size:12px;font-weight:650;color:var(--ink)}
+.hc .rt b{background:var(--ok);color:#fff;border-radius:7px;padding:2px 6px;font-size:12px}
+.hc .cn{position:absolute;right:12px;bottom:10px;z-index:1;color:#fff;font-size:12.5px;font-weight:650;
+  text-shadow:0 1px 3px rgba(0,0,0,.4)}
+.hc .bd{padding:14px 16px 16px;display:flex;flex-direction:column;gap:8px;flex:1}
+.hc .nm{font-size:16.5px;font-weight:700;letter-spacing:-.015em;line-height:1.25}
+.hc .st{color:var(--gold);font-size:13px;letter-spacing:1px;margin-left:4px;white-space:nowrap}
+.hc .pl{color:var(--mut);font-size:13px}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.tags span{font-size:12px;background:#f1f5f9;color:var(--mut);border-radius:8px;padding:4px 9px}
+.hc .ft{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding-top:6px}
+.hc .pr{font-size:21px;font-weight:800;letter-spacing:-.02em;white-space:nowrap}
+.hc .pr small{font-size:12.5px;font-weight:600;color:var(--mut);margin-right:3px}
+.hc .per{font-size:11.5px;color:var(--faint);margin-top:1px}
+.hc .cta{font:inherit;font-size:14px;font-weight:700;border:0;border-radius:12px;padding:10px 16px;cursor:pointer;
+  background:var(--grad);color:#fff;box-shadow:0 10px 20px -12px rgba(53,137,189,.9);white-space:nowrap}
+
+/* плитки направлений */
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:760px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tile{position:relative;border-radius:20px;overflow:hidden;aspect-ratio:1/1;cursor:pointer;box-shadow:var(--sh);
+  background:#dfe6ef center/cover no-repeat;display:flex;align-items:flex-end;transition:transform .2s ease}
+.tile:hover{transform:translateY(-3px)}
+.tile:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,20,40,0) 38%,rgba(8,16,34,.72) 100%)}
+.tile .tin{position:relative;z-index:1;padding:14px;color:#fff;width:100%}
+.tile .tn{font-size:17px;font-weight:750;letter-spacing:-.01em;text-shadow:0 1px 3px rgba(0,20,40,.5)}
+.tile .tp{font-size:13px;opacity:.95;margin-top:2px}
+
+.status{margin:22px 4px 12px;font-size:13.5px;color:var(--mut)}
+.skel{border-radius:22px;background:linear-gradient(90deg,#eef2f7,#f7fafc,#eef2f7);background-size:200% 100%;
+  animation:sk 1.2s infinite;aspect-ratio:4/5}
+@keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.more{display:flex;justify-content:center;margin-top:18px}
 
 /* ── оформление ── */
-.modal{position:fixed;inset:0;background:rgba(15,22,38,.45);display:none;align-items:flex-start;justify-content:center;padding:20px;overflow:auto;z-index:20}
+.modal{position:fixed;inset:0;background:rgba(15,22,38,.45);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+  display:none;align-items:flex-start;justify-content:center;padding:20px;overflow:auto;z-index:20}
 .modal.on{display:flex}
-.sheet{background:var(--card);border-radius:20px;box-shadow:0 30px 70px -20px rgba(10,20,40,.5);max-width:620px;width:100%;padding:20px;margin:auto}
-.sheet h2{font-size:19px;letter-spacing:-.01em}
-.sheet .who{color:var(--muted);font-size:13.5px;margin-top:5px;line-height:1.5}
+.sheet{background:var(--card);border-radius:24px;box-shadow:0 30px 70px -20px rgba(10,20,40,.5);max-width:620px;width:100%;padding:22px;margin:auto}
+.sheet h2{font-size:20px;letter-spacing:-.02em}
+.sheet .who{color:var(--mut);font-size:13.5px;margin-top:6px;line-height:1.55}
+.sheet input{display:block;width:100%;height:46px;font:inherit;font-size:15px;color:var(--ink);background:#f7f9fc;
+  border:1px solid var(--line);border-radius:12px;padding:0 13px;outline:none}
+.sheet input:focus{border-color:#9fcbe6;background:#fff}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
-@media (max-width:560px){ .row2{grid-template-columns:1fr} }
-.tourist{border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:10px}
-.tourist h4{font-size:13px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+@media (max-width:560px){.row2{grid-template-columns:1fr}}
+.tourist{border:1px solid var(--line);border-radius:16px;padding:12px;margin-top:12px}
+.tourist h4{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
 .sheet .go{justify-content:flex-end}
 .done{text-align:center;padding:12px 4px}
-.done .big{font-size:18px;font-weight:650;margin-bottom:8px}
-.done p{color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:10px}
-/* ── подборки направлений под поиском ── */
-.picks{margin-top:26px}
-.picks h3{font-size:16.5px;letter-spacing:-.01em;margin-bottom:3px}
-.picks .psub{color:var(--faint);font-size:12.5px;margin-bottom:12px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-.tile{position:relative;border-radius:16px;overflow:hidden;min-height:108px;cursor:pointer;
-  box-shadow:var(--shadow);border:1px solid var(--line);background:#dfe6ef center/cover no-repeat;
-  display:flex;align-items:flex-end}
-.tile:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,20,40,0) 34%,rgba(8,16,34,.72) 100%)}
-.tile .tin{position:relative;z-index:1;padding:11px 12px;color:#fff;width:100%}
-.tile .tname{font-size:15px;font-weight:650;letter-spacing:-.01em;text-shadow:0 1px 3px rgba(0,20,40,.5)}
-.tile .tprice{font-size:12.5px;opacity:.92;margin-top:2px}
-/* Карточки отелей с лучшими оценками — шире, с названием и оценкой. */
-.tops{display:grid;grid-template-columns:repeat(auto-fill,minmax(216px,1fr));gap:10px}
-.top{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);cursor:pointer}
-.top .tpic{height:112px;background:#e9eef5 center/cover no-repeat}
-.top .tbody{padding:10px 12px 12px}
-.top .th{font-size:14px;font-weight:650;line-height:1.3}
-.top .tm{color:var(--muted);font-size:12px;margin-top:3px}
-.top .tr{display:inline-block;margin-top:7px;font-size:12px;font-weight:650;color:var(--ok);background:#eef7ef;border-radius:8px;padding:3px 8px}
-.skel{height:150px;border-radius:18px;background:linear-gradient(90deg,#eef2f7,#f7fafc,#eef2f7);background-size:200% 100%;animation:sk 1.2s infinite}
-@keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.done .big{font-size:19px;font-weight:750;margin-bottom:8px}
+.done p{color:var(--mut);font-size:14px;line-height:1.6;margin-bottom:14px}
 </style>
 </head>
 <body>
+<div class="blob b1"></div><div class="blob b2"></div>
 <div class="wrap">
 
-<header>
-  <h1>VOYO <b>Туры</b></h1>
-  <div class="sub">Пакетные туры от ведущих туроператоров: перелёт, отель, трансфер и страховка в одной цене.</div>
-</header>
+<div class="hdr">
+  <a class="brand" href="/"><img src="/voyo-logo.png" alt="VOYO"><span class="wm">туры</span></a>
+</div>
+
+<div class="hero">
+  <h1>Туры, в которые <em>хочется улететь</em></h1>
+  <div class="sub">Перелёт, отель, трансфер и страховка одной ценой. Ищем сразу у всех крупных туроператоров.</div>
+</div>
 
 <div class="search">
   <div class="grid">
-    <div><label for="from">Откуда</label><select id="from"></select></div>
-    <div><label for="country">Куда</label><select id="country"></select></div>
-    <div><label for="dateFrom">Вылет с</label><input id="dateFrom" type="date"></div>
-    <div><label for="dateTo">Вылет по</label><input id="dateTo" type="date"></div>
-    <div><label for="nights">Ночей</label>
+    <div class="fld"><label for="from">Откуда</label><select id="from"><option>Москва</option></select></div>
+    <div class="fld"><label for="country">Куда</label><select id="country"><option>Турция</option></select></div>
+    <div class="fld"><label for="dateFrom">Вылет с</label><input id="dateFrom" type="date"></div>
+    <div class="fld"><label for="dateTo">Вылет по</label><input id="dateTo" type="date"></div>
+    <div class="fld"><label for="nights">Ночей</label>
       <select id="nights">
         <option value="6-8">7 ночей</option>
         <option value="9-11" selected>10 ночей</option>
         <option value="12-15">две недели</option>
-        <option value="3-5">короткая поездка</option>
+        <option value="3-5">3–5 ночей</option>
         <option value="3-15">любое количество</option>
       </select>
     </div>
-    <div><label for="adults">Взрослых</label>
+    <div class="fld"><label for="adults">Взрослых</label>
       <select id="adults"><option>1</option><option selected>2</option><option>3</option><option>4</option></select>
     </div>
-    <div><label for="kids">Детей</label>
+    <div class="fld"><label for="kids">Детей</label>
       <select id="kids"><option selected>0</option><option>1</option><option>2</option><option>3</option></select>
+    </div>
+    <div class="fld"><label for="stars">Отель</label>
+      <select id="stars">
+        <option value="4" selected>от 4★</option>
+        <option value="5">только 5★</option>
+        <option value="3">от 3★</option>
+        <option value="0">любой</option>
+      </select>
+    </div>
+    <div class="fld"><label for="meal">Питание</label>
+      <select id="meal">
+        <option value="0" selected>любое</option>
+        <option value="1">от завтраков</option>
+        <option value="2">от полупансиона</option>
+        <option value="4">всё включено</option>
+      </select>
+    </div>
+    <div class="fld"><label for="flight">Перелёт</label>
+      <select id="flight">
+        <option value="1" selected>с перелётом</option>
+        <option value="0">только отель</option>
+      </select>
     </div>
   </div>
   <div class="go">
-    <button id="find">Найти туры</button>
-    <span class="hint" id="hint">Поиск идёт по всем операторам сразу — это занимает до полуминуты.</span>
+    <button class="btn" id="find">Найти туры</button>
+    <span class="hint" id="hint">Опрашиваем всех туроператоров сразу, обычно это до полуминуты.</span>
   </div>
 </div>
 
+<div class="chips" id="chips"></div>
+
 <div id="notice"></div>
-<div class="status" id="status"></div>
-<div class="list" id="list"></div>
+<div id="results"></div>
 <div id="picks"></div>
 
+<div class="trust">
+  <div><i>✈️</i><span><b>Всё включено в цену</b>перелёт, отель, трансфер и страховка</span></div>
+  <div><i>🛡️</i><span><b>Оплата после подтверждения</b>менеджер сначала бронирует место у оператора</span></div>
+  <div><i>💬</i><span><b>Живой менеджер</b>поможет выбрать и ответит в WhatsApp</span></div>
 </div>
 
-<!-- ── оформление заявки ── -->
-<div class="modal" id="modal">
-  <div class="sheet" id="sheet"></div>
 </div>
+
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const money = (n) => new Intl.NumberFormat("ru-RU").format(Math.round(n)) + " ₽";
-let STATE = { requestId: null, tours: [], demo: false, hasLicense: false, poll: null };
+let STATE = { requestId: null, tours: [], demo: false, poll: null, minStars: 4, minMeal: 0, flight: true };
+
+const FLAGS = { "Турция":"🇹🇷","Египет":"🇪🇬","ОАЭ":"🇦🇪","Таиланд":"🇹🇭","Вьетнам":"🇻🇳","Мальдивы":"🇲🇻",
+  "Шри-Ланка":"🇱🇰","Куба":"🇨🇺","Индия":"🇮🇳","Абхазия":"🏝️","Россия":"🇷🇺" };
+
+function plural(n, f) { const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return f[2]; if (b > 1 && b < 5) return f[1]; if (b === 1) return f[0]; return f[2]; }
+const nightsTxt = (n) => n + " " + plural(n, ["ночь","ночи","ночей"]);
+
+// Коды питания туроператоров клиенту ничего не говорят.
+function meal(code) {
+  const c = String(code || "").toUpperCase().replace(/\s+/g, "");
+  if (!c) return "";
+  if (/^UAI|ULTRA/.test(c)) return "Ультра всё включено";
+  if (/^AI|ALL/.test(c)) return "Всё включено";
+  if (/^FB/.test(c)) return "Полный пансион";
+  if (/^HB/.test(c)) return "Завтрак и ужин";
+  if (/^BB/.test(c)) return "Завтраки";
+  if (/^(RO|OB|AO|NM|BO)/.test(c)) return "Без питания";
+  return code;
+}
+function starsLine(s) {
+  const n = Number(String(s || "").replace(/[^\d]/g, "").slice(0, 1));
+  return n ? "★".repeat(n) : esc(s || "");
+}
+function ratingWord(r) { return r >= 9 ? "превосходно" : r >= 8.5 ? "отлично" : r >= 8 ? "очень хорошо" : r >= 7 ? "хорошо" : "оценка"; }
+const fmtRating = (r) => (Math.round(r * 10) / 10).toString().replace(".", ",");
+const shortDate = (d) => { const p = String(d || "").split("."); return p.length === 3 ? p[0] + "." + p[1] : d; };
 
 /* ── справочники ── */
 async function loadDict() {
-  const r = await (await fetch("/api/sletat/dict")).json();
+  let r;
+  try { r = await (await fetch("/api/sletat/dict")).json(); } catch (_) { return; }
   if (!r.success) { notice(r.message || "Не удалось загрузить справочники.", true); return; }
   const d = r.data;
   const pop = d.departs.filter((x) => x.popular), rest = d.departs.filter((x) => !x.popular);
   $("from").innerHTML = pop.concat(rest).map((c) =>
     '<option value="' + c.id + '"' + (c.def ? " selected" : "") + ">" + esc(c.name) + "</option>").join("");
-  // Пляжные направления вперёд — остальные ниже, по алфавиту.
   const TOP = ["Турция","Египет","ОАЭ","Таиланд","Вьетнам","Мальдивы","Куба","Шри-Ланка","Индия","Абхазия","Россия"];
   const top = TOP.map((n) => d.countries.find((c) => c.name === n)).filter(Boolean);
   const other = d.countries.filter((c) => TOP.indexOf(c.name) < 0);
   $("country").innerHTML = top.concat(other).map((c) =>
     '<option value="' + c.id + '">' + esc(c.name) + (c.visa ? " · нужна виза" : "") + "</option>").join("");
+  $("chips").innerHTML = top.slice(0, 8).map((c) =>
+    '<button class="chip" data-id="' + c.id + '" onclick="pickCountry(' + c.id + ')"><span class="fl">' + (FLAGS[c.name] || "🌍") + "</span>" + esc(c.name) + "</button>").join("");
+  markChip();
+}
+function markChip() {
+  document.querySelectorAll(".chip").forEach((b) => b.classList.toggle("on", b.dataset.id === $("country").value));
 }
 
 function notice(text, isErr) {
   $("notice").innerHTML = text ? '<div class="note' + (isErr ? " err" : "") + '">' + text + "</div>" : "";
 }
-
-// Пока онлайн-поиск не подключён, раздел не должен выглядеть сломанным: вместо
-// красной ошибки — понятное предложение и две кнопки, которыми правда пользуются.
 function calmNotice(text) {
-  $("notice").innerHTML = '<div class="note calm">'
-    + '<div class="ttl">Подберём тур для вас</div>'
-    + "<p>" + text + "</p>"
-    + '<div class="acts">'
-    +   '<a class="wa" href="https://wa.me/+79299435150" target="_blank" rel="noopener">Написать в WhatsApp</a>'
-    +   '<a class="tel" href="tel:+74953691867">+7 495 369-18-67</a>'
-    + "</div></div>";
+  $("notice").innerHTML = '<div class="note calm"><div class="ttl">Подберём тур для вас</div><p>' + text + "</p>"
+    + '<div class="acts"><a class="wa" href="https://wa.me/+79299435150" target="_blank" rel="noopener">Написать в WhatsApp</a>'
+    + '<a class="tel" href="tel:+74953691867">+7 495 369-18-67</a></div></div>';
 }
 
 /* ── поиск ── */
 function nights() { return ($("nights").value || "9-11").split("-").map(Number); }
 function fmtDate(v) { if (!v) return ""; const p = v.split("-"); return p[2] + "." + p[1] + "." + p[0]; }
 
+function resultsShell(title, sub, body) {
+  return '<div class="sec"><div class="sech"><div><h2>' + title + "</h2>"
+    + '<div class="ss" id="status">' + (sub || "") + "</div></div>"
+    + '<select class="sort" id="sort" onchange="applySort()" aria-label="Порядок">'
+    +   '<option value="best">Рекомендуем</option>'
+    +   '<option value="value">Выгоднее всего</option>'
+    +   '<option value="cheap">Сначала дешевле</option>'
+    +   '<option value="dear">Сначала дороже</option>'
+    +   '<option value="rating">По оценкам туристов</option>'
+    +   '<option value="stars">По звёздам</option>'
+    + "</select></div>" + body + "</div>";
+}
+
+// Порядок меняем у себя, без нового запроса к поставщику. «Рекомендуем» —
+// как отдал сервер: сначала отели с хорошими оценками, потом по цене.
+// «Выгоднее всего» — сколько качества на рубль: оценка и звёзды против цены.
+const starN = (t) => Number(String(t.stars || "").replace(/[^\d]/g, "").slice(0, 1)) || 0;
+function applySort() {
+  const how = ($("sort") && $("sort").value) || "best";
+  const list = (STATE.orig || STATE.tours || []).slice();
+  const val = (t) => ((t.rating || 6.5) + starN(t) * 0.6) / Math.max(1, t.price / 10000);
+  if (how === "cheap") list.sort((a, b) => a.price - b.price);
+  if (how === "dear") list.sort((a, b) => b.price - a.price);
+  if (how === "rating") list.sort((a, b) => (b.rating || 0) - (a.rating || 0) || a.price - b.price);
+  if (how === "stars") list.sort((a, b) => starN(b) - starN(a) || (b.rating || 0) - (a.rating || 0) || a.price - b.price);
+  if (how === "value") list.sort((a, b) => val(b) - val(a));
+  render(list);
+}
+
 async function search() {
   const [nMin, nMax] = nights();
+  STATE.minStars = Number($("stars").value) || 0;
+  STATE.minMeal = Number($("meal").value) || 0;
+  STATE.flight = $("flight").value !== "0";
   const q = {
     cityFromId: Number($("from").value), countryId: Number($("country").value),
     adults: Number($("adults").value), kids: Number($("kids").value),
     nightsMin: nMin, nightsMax: nMax,
     departFrom: fmtDate($("dateFrom").value), departTo: fmtDate($("dateTo").value),
+    noFlight: !STATE.flight,
   };
-  $("find").disabled = true; notice(""); $("list").innerHTML = '<div class="skel"></div><div class="skel"></div>';
-  $("status").textContent = "Опрашиваем туроператоров…";
+  markChip();
+  const cname = $("country").selectedOptions[0] ? $("country").selectedOptions[0].text.replace(/ · .*/, "") : "";
+  $("find").disabled = true; notice("");
+  $("results").innerHTML = resultsShell("Туры: " + esc(cname), "Опрашиваем туроператоров…",
+    '<div class="cards"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>');
+  $("results").scrollIntoView({ behavior: "smooth", block: "start" });
   try {
     const r = await (await fetch("/api/sletat/search", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(q),
     })).json();
     if (!r.success) {
-      $("list").innerHTML = ""; $("status").textContent = "";
+      $("results").innerHTML = "";
       if (r.kind === "gateway") calmNotice(esc(r.message)); else notice(esc(r.message), true);
       return;
     }
-    STATE.requestId = r.requestId; STATE.demo = r.demo; STATE.hasLicense = r.hasLicense;
-    render(r.tours || []);
-    if (r.requestId) poll();            // живой поиск — дособираем результаты
-    else finish(r.tours || []);
+    STATE.requestId = r.requestId; STATE.demo = r.demo;
+    // Первая порция приходит без фильтра по звёздам — ждём полную выдачу.
+    if (r.requestId) poll(); else { render(r.tours || []); finish(r.tours || []); }
   } catch (e) {
-    $("list").innerHTML = ""; notice("Не получилось связаться с поиском туров. Попробуйте ещё раз.", true);
+    $("results").innerHTML = ""; notice("Не получилось связаться с поиском туров. Попробуйте ещё раз.", true);
   } finally { $("find").disabled = false; }
 }
 
-// Статус спрашиваем отдельным методом — опрашивать выдачу нельзя, это нарушение
-// правил поставщика.
+// Статус спрашиваем отдельным методом: опрашивать выдачу поставщик запрещает.
 function poll() {
   let tries = 0;
   clearInterval(STATE.poll);
@@ -241,8 +403,8 @@ function poll() {
     try {
       const s = await (await fetch("/api/sletat/state?requestId=" + encodeURIComponent(STATE.requestId))).json();
       if (s.success) {
-        const d = s.data;
-        $("status").textContent = "Ответили " + d.processed + " из " + d.operators + " операторов · найдено " + d.rows;
+        const d = s.data, st = $("status");
+        if (st) st.textContent = "Ответили " + d.processed + " из " + d.operators + " операторов";
         if (d.ready || tries > 20) { clearInterval(STATE.poll); await results(); }
       } else if (tries > 20) { clearInterval(STATE.poll); }
     } catch (_) { if (tries > 20) clearInterval(STATE.poll); }
@@ -250,47 +412,49 @@ function poll() {
 }
 
 async function results() {
-  const r = await (await fetch("/api/sletat/results?requestId=" + encodeURIComponent(STATE.requestId) + "&pageSize=30")).json();
-  if (r.success) { STATE.demo = r.demo; render(r.tours || []); finish(r.tours || []); }
+  const r = await (await fetch("/api/sletat/results?requestId=" + encodeURIComponent(STATE.requestId)
+    + "&pageSize=200&minStars=" + STATE.minStars + "&minMeal=" + STATE.minMeal)).json();
+  if (r.success) { STATE.demo = r.demo; STATE.orig = null; render(r.tours || []); applySort(); finish(r.tours || []); }
 }
 
 function finish(tours) {
-  $("status").textContent = tours.length ? "Найдено предложений: " + tours.length : "По этим датам туров не нашлось — попробуйте сдвинуть даты.";
-  if (STATE.demo) {
-    notice("<b>Демонстрационная выдача.</b> Поставщик отдаёт учебные данные, пока домен не привязан к оплаченной лицензии. "
-      + "Поиск, подбор и оформление работают полностью — после активации лицензии здесь появятся живые туры с актуальными ценами.");
-  }
+  const st = $("status"); if (!st) return;
+  st.textContent = tours.length
+    ? "Нашли " + tours.length + " " + plural(tours.length, ["отель","отеля","отелей"])
+    : ((STATE.minStars || STATE.minMeal) ? "С такими условиями на эти даты туров нет. Ослабьте фильтр по отелю или питанию, или сдвиньте даты."
+                      : "На эти даты туров не нашлось. Попробуйте сдвинуть даты.");
+  if (STATE.demo) notice("<b>Демонстрационная выдача.</b> Сейчас показываются учебные данные поставщика.");
+}
+
+function tourCard(t, onclick, cta) {
+  return '<div class="hc" onclick="' + onclick + '">'
+    + '<div class="ph" style="' + (t.photo ? "background-image:url(" + esc(t.photo) + ")" : "") + '">'
+    +   (t.rating ? '<span class="rt"><b>' + fmtRating(t.rating) + "</b>" + ratingWord(t.rating) + "</span>" : "")
+    +   (t.country ? '<span class="cn">' + (FLAGS[t.country] || "") + " " + esc(t.country) + "</span>" : "")
+    + "</div>"
+    + '<div class="bd">'
+    +   '<div class="nm">' + esc(t.hotel) + '<span class="st">' + starsLine(t.stars) + "</span></div>"
+    +   '<div class="pl">' + esc(t.resort) + (t.cityFrom ? " · вылет из: " + esc(t.cityFrom) : "") + "</div>"
+    +   '<div class="tags">'
+    +     (t.checkIn ? "<span>с " + esc(shortDate(t.checkIn)) + "</span>" : "")
+    +     (t.nights ? "<span>" + nightsTxt(t.nights) + "</span>" : "")
+    +     (t.meal ? "<span>" + esc(meal(t.meal)) + "</span>" : "")
+    +   "</div>"
+    +   '<div class="ft"><div><div class="pr">' + (cta ? "" : "<small>от</small>") + money(t.price) + "</div>"
+    +     '<div class="per">' + (t.adults ? "за " + t.adults + " " + plural(t.adults, ["взрослого","взрослых","взрослых"])
+            + (t.kids ? " и " + t.kids + " " + plural(t.kids, ["ребёнка","детей","детей"]) : "")
+            + (STATE.flight ? ", с перелётом" : ", без перелёта") : "на двоих, с перелётом") + "</div></div>"
+    +     '<button class="cta">' + (cta || "Смотреть") + "</button></div>"
+    + "</div></div>";
 }
 
 function render(tours) {
   STATE.tours = tours;
-  if (!tours.length) { $("list").innerHTML = ""; return; }
-  $("list").innerHTML = tours.map(function (t, i) {
-    return '<div class="tour">'
-      + '<div class="pic" style="' + (t.photo ? "background-image:url(" + esc(t.photo) + ")" : "") + '"></div>'
-      + '<div class="body">'
-      +   '<div class="hname">' + esc(t.hotel) + '<span class="hstars">' + esc(t.stars) + "</span></div>"
-      +   '<div class="place">' + esc(t.resort) + (t.country ? ", " + esc(t.country) : "") + "</div>"
-      +   '<div class="meta">'
-      +     "<span>" + esc(t.checkIn) + " → " + esc(t.checkOut) + "</span>"
-      +     "<span>" + t.nights + " " + plural(t.nights, ["ночь","ночи","ночей"]) + "</span>"
-      +     (t.meal ? "<span>" + esc(t.meal) + "</span>" : "")
-      +     (t.room ? "<span>" + esc(t.room) + "</span>" : "")
-      +     "<span>вылет: " + esc(t.cityFrom) + "</span>"
-      +     (t.rating ? "<span>рейтинг " + t.rating + "</span>" : "")
-      +   "</div>"
-      +   '<div class="op">Туроператор: ' + esc(t.operator || "уточняется при оформлении") + "</div>"
-      + "</div>"
-      + '<div class="buy">'
-      +   '<div class="price">' + money(t.price) + "</div>"
-      +   '<div class="per">за ' + t.adults + " " + plural(t.adults, ["взрослого","взрослых","взрослых"])
-      +     (t.kids ? " и " + t.kids + " " + plural(t.kids, ["ребёнка","детей","детей"]) : "") + "</div>"
-      +   '<button onclick="openClaim(' + i + ')">Оформить</button>'
-      + "</div></div>";
-  }).join("");
+  if (!STATE.orig || STATE.orig.length !== tours.length || tours.some((t) => STATE.orig.indexOf(t) < 0)) STATE.orig = tours.slice();
+  const box = $("results").querySelector(".cards");
+  if (!box) return;
+  box.innerHTML = tours.map((t, i) => tourCard(t, "openClaim(" + i + ")", "Оформить")).join("");
 }
-function plural(n, f) { const a = Math.abs(n) % 100, b = a % 10;
-  if (a > 10 && a < 20) return f[2]; if (b > 1 && b < 5) return f[1]; if (b === 1) return f[0]; return f[2]; }
 
 /* ── оформление ── */
 function openClaim(i) {
@@ -306,19 +470,19 @@ function openClaim(i) {
       + '<input placeholder="Загранпаспорт, серия и номер" id="t' + k + 'pass">'
       + "</div></div>";
   }
-  $("sheet").innerHTML = '<h2>' + esc(t.hotel) + "</h2>"
+  $("sheet").innerHTML = "<h2>" + esc(t.hotel) + ' <span style="color:var(--gold);font-size:15px">' + starsLine(t.stars) + "</span></h2>"
     + '<div class="who">' + esc(t.resort) + ", " + esc(t.country) + " · " + esc(t.checkIn) + " → " + esc(t.checkOut)
-    + " · " + t.nights + " " + plural(t.nights, ["ночь","ночи","ночей"]) + " · " + esc(t.meal) + "<br>"
-    + "<b>" + money(t.price) + "</b> · туроператор " + esc(t.operator || "уточняется при оформлении") + "</div>"
-    + '<div class="row2" style="margin-top:14px">'
+    + " · " + nightsTxt(t.nights) + " · " + esc(meal(t.meal)) + (t.room ? " · " + esc(t.room) : "") + "<br>"
+    + "<b>" + money(t.price) + "</b>" + (STATE.flight ? " с перелётом" : " без перелёта") + (t.operator ? " · туроператор " + esc(t.operator) : "") + "</div>"
+    + '<div class="row2" style="margin-top:16px">'
     +   '<input id="cName" placeholder="Ваше имя и фамилия">'
     +   '<input id="cPhone" placeholder="Телефон" type="tel">'
     + "</div>"
     + '<input id="cEmail" placeholder="Email для документов" type="email" style="margin-top:10px">'
     + people
-    + '<div class="go"><button class="ghost" onclick="closeModal()">Отмена</button>'
-    + '<button onclick="submitClaim(' + i + ')" id="send">Отправить заявку</button></div>'
-    + '<div class="hint" style="margin-top:10px">Заявка уходит менеджеру: он подтверждает место у туроператора и присылает ссылку на оплату. Деньги списываются только после подтверждения брони.<br>Точное время и аэропорт вылета, а также возможные доплаты оператор называет при подтверждении — менеджер сообщит их до оплаты.</div>';
+    + '<div class="go"><button class="btn ghost" onclick="closeModal()">Отмена</button>'
+    + '<button class="btn" onclick="submitClaim(' + i + ')" id="send">Отправить заявку</button></div>'
+    + '<div class="hint" style="margin-top:12px">Заявка уходит менеджеру: он подтверждает место у туроператора и присылает ссылку на оплату. Деньги списываются только после подтверждения брони. Время и аэропорт вылета, а также возможные доплаты менеджер сообщит до оплаты.</div>';
   $("modal").classList.add("on");
 }
 function closeModal() { $("modal").classList.remove("on"); }
@@ -332,89 +496,72 @@ async function submitClaim(i) {
     const sur = ($("t" + k + "sur").value || "").trim(), first = ($("t" + k + "first").value || "").trim();
     if (!sur || !first) { alert("Заполните фамилию и имя туриста " + (k + 1)); return; }
     const pass = ($("t" + k + "pass").value || "").replace(/\s+/g, "");
-    tourists.push({
-      surname: sur, firstName: first,
-      birthDate: $("t" + k + "bd").value || "",
-      passportSeries: pass.slice(0, 2), passportNumber: pass.slice(2),
-    });
+    tourists.push({ surname: sur, firstName: first, birthDate: $("t" + k + "bd").value || "",
+      passportSeries: pass.slice(0, 2), passportNumber: pass.slice(2) });
   }
-  const customer = {
-    fullName: ($("cName").value || "").trim(),
-    phone: ($("cPhone").value || "").trim(),
-    email: ($("cEmail").value || "").trim(),
-  };
-  if (!customer.fullName || !customer.phone || !customer.email) { alert("Оставьте имя, телефон и email — без них заявку не оформить"); return; }
+  const customer = { fullName: ($("cName").value || "").trim(), phone: ($("cPhone").value || "").trim(), email: ($("cEmail").value || "").trim() };
+  if (!customer.fullName || !customer.phone || !customer.email) { alert("Оставьте имя, телефон и email, без них заявку не оформить"); return; }
   $("send").disabled = true; $("send").textContent = "Отправляем…";
   try {
     const r = await (await fetch("/api/sletat/claim", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        offerId: t.offerId, sourceId: t.sourceId, requestId: STATE.requestId,
-        customer: customer, tourists: tourists, tour: t,
-      }),
+      body: JSON.stringify({ offerId: t.offerId, sourceId: t.sourceId, requestId: STATE.requestId, customer: customer, tourists: tourists, tour: t }),
     })).json();
     if (!r.success) {
-      $("sheet").innerHTML = '<div class="done"><div class="big">Заявку не удалось отправить</div>'
-        + "<p>" + esc(r.message) + "</p>"
-        + '<button onclick="closeModal()">Закрыть</button></div>';
+      $("sheet").innerHTML = '<div class="done"><div class="big">Заявку не удалось отправить</div><p>' + esc(r.message) + "</p>"
+        + '<button class="btn" onclick="closeModal()">Закрыть</button></div>';
       return;
     }
     const pay = r.info && r.info.payUrl;
     $("sheet").innerHTML = '<div class="done"><div class="big">Заявка принята' + (r.number ? " № " + esc(r.number) : "") + "</div>"
-      + "<p>Менеджер подтверждает место у туроператора и связывается с вами. "
-      + (pay ? "Можно оплатить сразу — ссылка ниже действует ограниченное время."
-             : "Ссылку на оплату пришлём, как только оператор подтвердит бронь.") + "</p>"
-      + (pay ? '<button onclick="location.href=\'' + esc(pay) + '\'">Перейти к оплате</button> ' : "")
-      + '<button class="ghost" onclick="closeModal()">Закрыть</button></div>';
+      + "<p>Менеджер подтверждает место у туроператора и свяжется с вами. "
+      + (pay ? "Можно оплатить сразу, ссылка действует ограниченное время." : "Ссылку на оплату пришлём, как только оператор подтвердит бронь.") + "</p>"
+      + (pay ? '<button class="btn" onclick="location.href=\'' + esc(pay) + '\'">Перейти к оплате</button> ' : "")
+      + '<button class="btn ghost" onclick="closeModal()">Закрыть</button></div>';
   } catch (e) {
     alert("Не получилось отправить заявку. Попробуйте ещё раз или позвоните нам.");
-  } finally { $("send").disabled = false; $("send").textContent = "Отправить заявку"; }
+  } finally { const b = $("send"); if (b) { b.disabled = false; b.textContent = "Отправить заявку"; } }
 }
 
-/* ── подборки направлений ── */
-// Живут под поиском и работают как быстрый выбор: тап по плитке подставляет
-// страну в форму и сразу ищет. Цены приходят из фоновых съёмов, и если их ещё
-// нет (шлюз не открыт), плитки всё равно показываются — просто без «от».
+/* ── витрина под поиском ── */
+// Хорошие отели (4–5★, оценка от 8) и направления с ценой «от». Данные
+// собирает сервер фоном раз в шесть часов; тап подставляет страну и ищет.
+let PICKS = null;
 async function loadPicks() {
   let d;
   try { d = (await (await fetch("/api/sletat/picks")).json()).data; } catch (_) { return; }
   if (!d) return;
+  PICKS = d;
   const byCountry = {};
   (d.cheap || []).forEach((c) => { byCountry[c.countryId] = c; });
-
+  let html = "";
+  if (d.top && d.top.length) {
+    html += '<div class="sec"><div class="sech"><div><h2>Хорошие отели по хорошей цене</h2>'
+      + '<div class="ss">4 и 5 звёзд с высокими оценками туристов, цена на двоих с перелётом</div></div></div>'
+      + '<div class="cards">' + d.top.map((t, i) => tourCard(t, "pickDeal(" + i + ")")).join("") + "</div></div>";
+  }
   const tiles = (d.directions || []).map(function (dir) {
     const c = byCountry[dir.id];
     const bg = c && c.photo ? "background-image:url(" + esc(c.photo) + ")" : "background:" + esc(dir.hue);
-    return '<div class="tile" style="' + bg + '" onclick="pickCountry(' + dir.id + ')">'
-      + '<div class="tin"><div class="tname">' + esc(dir.name) + "</div>"
-      + (c ? '<div class="tprice">от ' + money(c.price) + " · " + c.nights + " " + plural(c.nights, ["ночь","ночи","ночей"]) + "</div>" : "")
+    return '<div class="tile" style="' + bg + '" onclick="pickCountry(' + dir.id + ')"><div class="tin">'
+      + '<div class="tn">' + (FLAGS[dir.name] || "") + " " + esc(dir.name) + "</div>"
+      + (c ? '<div class="tp">от ' + money(c.price) + " · " + nightsTxt(c.nights) + "</div>" : "")
       + "</div></div>";
   }).join("");
-
-  let html = '<div class="picks"><h3>Куда полететь</h3>'
-    + '<div class="psub">' + (d.cheap && d.cheap.length
-        ? "Самые доступные предложения на ближайший месяц, на двоих"
-        : "Выберите направление — подберём даты и отель") + "</div>"
+  html += '<div class="sec"><div class="sech"><div><h2>Куда полететь</h2>'
+    + '<div class="ss">' + (d.cheap && d.cheap.length ? "Самые доступные туры на ближайшие недели, на двоих с перелётом" : "Выберите направление, подберём даты и отель") + "</div></div></div>"
     + '<div class="tiles">' + tiles + "</div></div>";
-
-  if (d.top && d.top.length) {
-    html += '<div class="picks"><h3>Отели с лучшими оценками</h3>'
-      + '<div class="psub">По отзывам туристов, на ближайший месяц</div>'
-      + '<div class="tops">' + d.top.map(function (t) {
-          return '<div class="top" onclick="pickCountry(' + t.countryId + ')">'
-            + '<div class="tpic" style="' + (t.photo ? "background-image:url(" + esc(t.photo) + ")" : "background:" + esc(t.hue)) + '"></div>'
-            + '<div class="tbody"><div class="th">' + esc(t.hotel) + " " + esc(t.stars || "") + "</div>"
-            + '<div class="tm">' + esc(t.resort) + ", " + esc(t.country) + " · от " + money(t.price) + "</div>"
-            + '<div class="tr">' + t.rating + " из 5</div></div></div>";
-        }).join("") + "</div></div>";
-  }
   $("picks").innerHTML = html;
 }
 
+function pickDeal(i) {
+  const t = PICKS && PICKS.top[i]; if (!t) return;
+  $("stars").value = "4";
+  pickCountry(t.countryId);
+}
 function pickCountry(id) {
   $("country").value = String(id);
-  if (!$("country").value) return;                // страны нет в справочнике
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (!$("country").value) return;
   search();
 }
 
@@ -425,6 +572,7 @@ function pickCountry(id) {
   $("dateFrom").value = d.toISOString().slice(0, 10);
   $("dateTo").value = d2.toISOString().slice(0, 10);
   $("find").addEventListener("click", search);
+  $("country").addEventListener("change", markChip);
   loadDict();
   loadPicks();
 })();
