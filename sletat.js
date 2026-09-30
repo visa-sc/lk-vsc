@@ -185,12 +185,16 @@ function qs(params) {
   return p.length ? "?" + p.join("&") : "";
 }
 
-// Учётка подставляется во все запросы поиска: без неё шлюз работает, но в
-// демо-режиме и без доступа к операторам, открытым по нашей лицензии.
-function auth() { return LOGIN ? { login: LOGIN, password: PASSWORD } : {}; }
+// Учётку шлюз спрашивает ТОЛЬКО у поиска (GetTours и опрос его состояния).
+// Справочники открываются одной лицензией на Referer — и если приложить к ним
+// логин, который шлюз не признаёт, они падают вместе с поиском, а форма в
+// кабинете остаётся с пустыми списками городов и стран. Поэтому сюда логин не
+// кладём: справочники должны жить своей жизнью.
+const AUTHED = { GetTours: 1, GetLoadState: 1 };
+function auth(method) { return (AUTHED[method] && LOGIN) ? { login: LOGIN, password: PASSWORD } : {}; }
 
 async function api(method, params, timeoutMs) {
-  const r = await httpGet(SEARCH_BASE + "/" + method + qs(Object.assign({}, auth(), params || {})), timeoutMs);
+  const r = await httpGet(SEARCH_BASE + "/" + method + qs(Object.assign({}, auth(method), params || {})), timeoutMs);
   let j;
   try { j = JSON.parse(r.body); }
   catch (e) { throw new Error("Слетать.ру вернул не JSON (" + r.status + "): " + String(r.body).slice(0, 160)); }
@@ -461,15 +465,22 @@ function claimPatch(claimId, patch) {
 // Внутренности поставщика клиенту показывать нельзя: «Логин и/или пароль указаны
 // неверно» на витрине выглядит как сломанный кабинет, хотя это всего лишь
 // незакрытый доступ к шлюзу. Настоящий текст уходит в лог, наружу — человеческий.
-function humanError(e) {
+// Различаем три случая: шлюз нас ещё не пускает (это не ошибка клиента и не
+// повод пугать его красным), поставщик молчит, и всё остальное.
+function errKind(e) {
   const m = String((e && e.message) || e);
-  if (/логин|пароль|авторизац|лиценз|licen|доступ|denied|forbidden|40[13]/i.test(m)) {
-    return "Поиск туров временно недоступен: идёт подключение к системе бронирования. "
-      + "Напишите нам — менеджер подберёт тур вручную.";
+  if (/логин|пароль|авторизац|лиценз|licen|referer|доступ|denied|forbidden|40[13]/i.test(m)) return "gateway";
+  if (/таймаут|timeout|ETIMEDOUT|ECONNRESET|ENOTFOUND|EAI_AGAIN/i.test(m)) return "slow";
+  return "other";
+}
+
+function humanError(e) {
+  const k = errKind(e);
+  if (k === "gateway") {
+    return "Онлайн-поиск туров сейчас подключается. Это не займёт много времени, "
+      + "а пока тур для вас подберёт менеджер — по тем же ценам туроператоров.";
   }
-  if (/таймаут|timeout|ETIMEDOUT|ECONNRESET|ENOTFOUND|EAI_AGAIN/i.test(m)) {
-    return "Поставщик не ответил вовремя. Попробуйте ещё раз через минуту.";
-  }
+  if (k === "slow") return "Поставщик не ответил вовремя. Попробуйте ещё раз через минуту.";
   return "Не удалось получить туры. Попробуйте сдвинуть даты или повторить поиск.";
 }
 
@@ -487,7 +498,7 @@ function mount(app, deps) {
   const requireAdmin = (deps && deps.requireAdmin) || ((req, res) => res.status(403).json({ success: false, message: "Нет доступа" }));
   const fail = (res, e) => {
     console.error("SLETAT:", e && e.message);
-    res.json({ success: false, message: humanError(e) });
+    res.json({ success: false, message: humanError(e), kind: errKind(e) });
   };
 
   app.get("/packages", (req, res) => {

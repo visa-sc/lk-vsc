@@ -45,6 +45,15 @@ button.ghost{background:var(--card);color:var(--muted);border:1px solid var(--li
 .note{margin-top:14px;border-radius:14px;padding:12px 15px;font-size:13.5px;line-height:1.55;
   background:#fff8e6;border:1px solid #f0dfae;color:#7a5e12}
 .note.err{background:#fdf1f1;border-color:#f0c9c9;color:#9c3232}
+/* Шлюз ещё не пускает — это наша внутренняя история, а не ошибка клиента.
+   Показываем спокойную карточку с живым действием, а не красную плашку. */
+.note.calm{background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);color:var(--ink)}
+.note.calm .ttl{font-weight:650;font-size:15px;margin-bottom:4px}
+.note.calm p{color:var(--muted);font-size:13.5px;line-height:1.55}
+.note.calm .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.note.calm a{display:inline-block;text-decoration:none;font-size:14px;font-weight:600;border-radius:12px;padding:10px 18px}
+.note.calm a.wa{background:var(--acc);color:#fff;box-shadow:var(--shadow)}
+.note.calm a.tel{background:#f1f5f9;color:var(--muted)}
 .note b{font-weight:650}
 
 /* ── выдача ── */
@@ -157,6 +166,18 @@ function notice(text, isErr) {
   $("notice").innerHTML = text ? '<div class="note' + (isErr ? " err" : "") + '">' + text + "</div>" : "";
 }
 
+// Пока онлайн-поиск не подключён, раздел не должен выглядеть сломанным: вместо
+// красной ошибки — понятное предложение и две кнопки, которыми правда пользуются.
+function calmNotice(text) {
+  $("notice").innerHTML = '<div class="note calm">'
+    + '<div class="ttl">Подберём тур для вас</div>'
+    + "<p>" + text + "</p>"
+    + '<div class="acts">'
+    +   '<a class="wa" href="https://wa.me/+79299435150" target="_blank" rel="noopener">Написать в WhatsApp</a>'
+    +   '<a class="tel" href="tel:+74953691867">+7 495 369-18-67</a>'
+    + "</div></div>";
+}
+
 /* ── поиск ── */
 function nights() { return ($("nights").value || "9-11").split("-").map(Number); }
 function fmtDate(v) { if (!v) return ""; const p = v.split("-"); return p[2] + "." + p[1] + "." + p[0]; }
@@ -175,7 +196,11 @@ async function search() {
     const r = await (await fetch("/api/sletat/search", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(q),
     })).json();
-    if (!r.success) { $("list").innerHTML = ""; $("status").textContent = ""; notice(esc(r.message), true); return; }
+    if (!r.success) {
+      $("list").innerHTML = ""; $("status").textContent = "";
+      if (r.kind === "gateway") calmNotice(esc(r.message)); else notice(esc(r.message), true);
+      return;
+    }
     STATE.requestId = r.requestId; STATE.demo = r.demo; STATE.hasLicense = r.hasLicense;
     render(r.tours || []);
     if (r.requestId) poll();            // живой поиск — дособираем результаты
