@@ -239,9 +239,11 @@ const C = {
   hotelStars: 7, stars: 8, roomType: 9, mealCode: 10, placement: 11,
   checkIn: 12, checkOut: 13, nights: 14, operator: 15, adults: 16, kids: 17,
   resort: 19, photo: 29, countryId: 30, country: 31, cityFromId: 32, cityFrom: 33,
-  rating: 35, price: 42, currency: 43, hotelName: 48, meal: 51, tourists: 53,
-  lat: 92, lon: 93,
+  rating: 35, mealRu: 36, descr: 38, price: 42, currency: 43, hotelName: 48, meal: 51, tourists: 53,
+  reviews: 90, lat: 92, lon: 93,
 };
+// ВНИМАНИЕ: колонки 30/31 («страна») — не страна тура: на Мальдивах там стоит
+// «Турция». Страну берём из запроса поиска, а не из строки.
 
 const num = (v) => { const n = Number(String(v).replace(/[^\d.-]/g, "")); return isFinite(n) ? n : 0; };
 const clean = (v) => String(v == null ? "" : v).replace(/&nbsp;/g, " ").trim();
@@ -271,6 +273,9 @@ function parseRow(row) {
     checkOut: clean(row[C.checkOut]),
     nights: Number(row[C.nights]) || 0,
     meal: clean(row[C.meal]) || clean(row[C.mealCode]),
+    mealRu: clean(row[C.mealRu]),
+    hotelId: Number(row[C.hotelId]) || 0,
+    reviews: Number(row[C.reviews]) || 0,
     room: clean(row[C.roomType]),
     placement: clean(row[C.placement]),
     adults: Number(row[C.adults]) || 0,
@@ -326,6 +331,13 @@ const SEARCH_PARAMS = (q) => ({
 // Первый вызов создаёт поиск и возвращает requestId. Результаты забираем
 // отдельно: у Слетать выдача наполняется по мере ответа операторов.
 async function searchStart(q) {
+  // Звёзды и питание фильтрует сам шлюз, по своим кодам из справочников:
+  // так фильтр работает по всей выдаче, а не по первым 2500 дешёвым строкам.
+  if (q.minStars || q.minMeal) {
+    const f = await filtersFor(q.countryId);
+    if (q.minStars) q.stars = f.stars.filter((x) => x.n >= q.minStars).map((x) => x.id);
+    if (q.minMeal) q.meals = f.meals.filter((x) => x.rank >= q.minMeal).map((x) => x.id);
+  }
   const key = cacheKey(q);
   const hit = cacheGet(key);
   if (hit) {
@@ -366,8 +378,8 @@ function mealRank(code) {
   if (/^UAI|ULTRA|УЛЬТРА/.test(c)) return 5;
   if (/^AI|ALLINC|ВСЁВКЛ|ВСЕВКЛ/.test(c)) return 4;
   if (/^FB|FULLBOARD|ПОЛНЫЙПАНС|ТРЁХРАЗ|ТРЕХРАЗ/.test(c)) return 3;
-  if (/^HB|HALFBOARD|ПОЛУПАНС|ЗАВТРАКИУЖИН/.test(c)) return 2;
-  if (/^BB|BREAKFAST|ЗАВТРАК/.test(c)) return 1;
+  if (/^(HB|LHB)|HALFBOARD|ПОЛУПАНС|ЗАВТРАКИУЖИН/.test(c)) return 2;
+  if (/^(BB|CB|BD)|BREAKFAST|ЗАВТРАК/.test(c)) return 1;
   return 0;
 }
 
@@ -397,6 +409,84 @@ async function searchResults(requestId, page, pageSize, minStars, minMeal) {
     return { tours: tours, total: tours.length, demo: demo };
   }
   return { tours: tours, total: (data && data.iTotalRecords) || tours.length, demo: demo };
+}
+
+/* ───────────────────── Фильтры страны и выдача по отелям ─────────────────── */
+// Справочники для фильтров: курорты страны, категории отелей и типы питания с
+// кодами шлюза. Меняются редко — держим сутки в памяти.
+const _filters = new Map();
+async function filtersFor(countryId) {
+  const id = Number(countryId) || 0;
+  const hit = _filters.get(id);
+  if (hit && Date.now() - hit.at < DICT_TTL) return hit.data;
+  const [cities, stars, meals] = await Promise.all([
+    api("GetCities", { countryId: id }).catch(() => []),
+    api("GetHotelStars", { countryId: id, towns: "" }).catch(() => []),
+    api("GetMeals", {}).catch(() => []),
+  ]);
+  const data = {
+    resorts: (cities || []).filter((c) => c && c.Name && !c.Hidden)
+      .map((c) => ({ id: c.Id, name: c.Name, popular: !!c.IsPopular }))
+      .sort((a, b) => (b.popular - a.popular) || a.name.localeCompare(b.name, "ru")),
+    stars: (stars || []).map((x) => ({ id: x.Id, name: x.Name, n: Number(String(x.Name).replace(/[^\d]/g, "").slice(0, 1)) || 0 }))
+      .filter((x) => x.n),
+    meals: (meals || []).map((x) => ({ id: x.Id, name: x.Name, rank: mealRank(x.Name) })),
+  };
+  _filters.set(id, { at: Date.now(), data: data });
+  return data;
+}
+
+// Выдача по отелям, как на sletat.ru: шлюз сам группирует туры по отелю
+// (groupBy), pageSize считает ОТЕЛИ, а в ответ приходят все туры этих отелей.
+// Из них собираем карточку: цена «от», сколько туров и операторов, какое
+// питание, и варианты — по одному самому дешёвому на дату/ночи/питание.
+const GROUP_BY = { popular: "hotelsPopularity", cheap: "all_sortedHotels", dear: "all_sortedHotelsDesc" };
+async function hotelsPage(requestId, sort, page, size) {
+  const data = await api("GetTours", {
+    requestId: requestId, updateResult: 1, currencyAlias: "RUB",
+    groupBy: GROUP_BY[sort] || GROUP_BY.popular,
+    pageNumber: page || 1, pageSize: size || 12, includeDescriptions: 1,
+  }, 40000);
+  const rows = (data && data.aaData) || [];
+  const order = [], byId = {};
+  rows.forEach((row) => {
+    const t = parseRow(row);
+    if (!t.price) return;
+    const k = t.hotelId || t.hotel;
+    let h = byId[k];
+    if (!h) {
+      h = byId[k] = { hotelId: t.hotelId, hotel: t.hotel, stars: t.stars, resort: t.resort, photo: t.photo,
+        rating: t.rating, reviews: t.reviews, descr: clean(row[C.descr]).slice(0, 260),
+        toursCount: 0, ops: {}, meals: {}, variants: {}, min: t };
+      order.push(k);
+    }
+    h.toursCount++;
+    h.ops[t.sourceId] = 1;
+    if (!h.photo && t.photo) h.photo = t.photo;
+    if (!h.rating && t.rating) h.rating = t.rating;
+    if (!h.descr && row[C.descr]) h.descr = clean(row[C.descr]).slice(0, 260);
+    const mk = t.mealRu || t.meal;
+    if (mk) h.meals[mk] = Math.max(h.meals[mk] || 0, mealRank(t.meal || t.mealRu));
+    if (t.price < h.min.price) h.min = t;
+    const vk = t.checkIn + "|" + t.nights + "|" + mk;
+    if (!h.variants[vk] || t.price < h.variants[vk].price) h.variants[vk] = t;
+  });
+  const dmy = (s) => { const p = String(s).split("."); return p.length === 3 ? p[2] + p[1] + p[0] : s; };
+  const hotels = order.map((k) => {
+    const h = byId[k];
+    return {
+      hotelId: h.hotelId, hotel: h.hotel, stars: h.stars, resort: h.resort, photo: h.photo,
+      rating: h.rating, reviews: h.reviews, descr: h.descr,
+      price: h.min.price, nights: h.min.nights, checkIn: h.min.checkIn, meal: h.min.mealRu || h.min.meal,
+      adults: h.min.adults, kids: h.min.kids,
+      toursCount: h.toursCount, operators: Object.keys(h.ops).length,
+      meals: Object.keys(h.meals).sort((a, b) => h.meals[a] - h.meals[b]),
+      variants: Object.values(h.variants)
+        .sort((a, b) => (dmy(a.checkIn) < dmy(b.checkIn) ? -1 : dmy(a.checkIn) > dmy(b.checkIn) ? 1 : a.price - b.price))
+        .slice(0, 40),
+    };
+  });
+  return { hotels: hotels, hotelsCount: (data && (data.hotelsCount || data.iTotalDisplayRecords)) || hotels.length, page: page || 1 };
 }
 
 /* ─────────────────────── Подборки под формой поиска ─────────────────────── */
@@ -693,6 +783,19 @@ function mount(app, deps) {
       if (throttled(req.ip || "?")) return res.json({ success: false, message: "Подождите пару секунд — поиск уже идёт." });
       const r = await searchStart(q);
       res.json({ success: true, requestId: r.requestId, tours: r.tours, total: r.total, demo: looksDemo(r.tours), hasLicense: !!LOGIN });
+    } catch (e) { fail(res, e); }
+  });
+
+  app.get("/api/sletat/filters", async (req, res) => {
+    try { res.json({ success: true, data: await filtersFor(req.query.countryId) }); }
+    catch (e) { fail(res, e); }
+  });
+
+  app.get("/api/sletat/hotels", async (req, res) => {
+    try {
+      const r = await hotelsPage(req.query.requestId, String(req.query.sort || "popular"),
+        Math.max(1, Number(req.query.page) || 1), Math.min(30, Math.max(1, Number(req.query.size) || 12)));
+      res.json({ success: true, data: r });
     } catch (e) { fail(res, e); }
   });
 
