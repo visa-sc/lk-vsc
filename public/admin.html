@@ -2035,6 +2035,9 @@
           docs.forEach((doc) => {
             const mand = (s === 0)
               ? ["Обязателен всегда — паспорта запрашиваются с самого начала."]
+              : doc.optAlways
+              ? ["Необязателен ВСЕГДА — даже в финальных статусах и при <3 кал. дней до подачи: у клиента может не оказаться этого документа.",
+                 "Кумулятивно остаётся в списке до этапа 2, пока не загружен."]
               : [
                   "Открыт для загрузки заранее; обязательность — по статусу сделки + «Дате записи на подачу».",
                   "Ядро оформления (справка с работы/учёбы, паспорт спонсора, своё проживание, авиабилеты, 2-й загран, билеты в 3-ю страну, свид-во о рождении): обязательно в статусах «Запись сделана / Электронное рассмотрение / Оформлен выкуп» за ≤7 раб. дней до подачи.",
@@ -2044,7 +2047,7 @@
                 ];
             const cond = refField("Когда", doc.when || "всегда") + refField("Обязательность", mand);
             const ctx = "Раздел: Запрос документов\nНаправление: " + dir.title + "\nДокумент: " + doc.label + "\nЭтап: " + s + ". " + spec.stages[s] + "\n" + ctxField("Обязательность", mand);
-            const badge = (s === 0) ? docBadge("req", "обязателен") : docBadge("stat", "по статусу");
+            const badge = (s === 0) ? docBadge("req", "обязателен") : (doc.optAlways ? docBadge("opt", "необязателен") : docBadge("stat", "по статусу"));
             docsreqContent.appendChild(refRow(doc.label, cond, badge, "Запрос документов", ctx));
           });
         }
@@ -7464,7 +7467,8 @@
           let any = false, anyStat = false;
           for (let s = 0; s <= st && s <= 2; s++) {
             (dir.docsByStage[String(s)] || []).filter((doc) => evalTCond(doc.cond, ans)).forEach((doc) => {
-              const req = s === 0 ? true : "stat"; if (req === "stat") anyStat = true;
+              // optAlways — документ необязателен всегда (напр. фото последней шенгенской визы)
+              const req = s === 0 ? true : (doc.optAlways ? false : "stat"); if (req === "stat") anyStat = true;
               docBox.appendChild(tstDocRow(doc.label, req, "этап " + s + (doc.when ? " · " + doc.when : ""))); any = true;
             });
           }
