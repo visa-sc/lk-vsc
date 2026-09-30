@@ -9511,8 +9511,19 @@
         } catch (_) {}
         frame.src = "/cabinet.html?phone=" + encodeURIComponent(phone);
         frame.setAttribute("title", "ЛК клиента");
-        frame.style.cssText = "width:100%;height:78vh;border:1px solid #e2dded;border-radius:14px;background:#fff;";
+        // Высота почти во всё окно (было 78vh). Причина: внутри кабинета разделы
+        // «Карты», «eSIM» и «Туры» — свои фреймы со своей прокруткой. Когда наш
+        // фрейм низкий да ещё и стоит в нижней половине страницы админки, колесо
+        // расползается: часть прокручивает страницу раздела внутри, часть тянет
+        // саму админку, и со стороны выглядит, будто раздел «не листается»
+        // (30.09, замечание Андрея по «Картам»).
+        frame.style.cssText = "width:100%;height:calc(100vh - 150px);min-height:520px;border:1px solid #e2dded;border-radius:14px;background:#fff;";
         clientViewContent.appendChild(frame);
+        // И сразу подводим кабинет к верху окна, чтобы он не оставался наполовину
+        // ниже сгиба и было очевидно, что прокручивать нужно именно его.
+        setTimeout(function () {
+          try { frame.scrollIntoView({ block: "start" }); window.scrollBy(0, -12); } catch (_) {}
+        }, 60);
       }
       function loadClientView() {
         if (!clientViewContent) return;
