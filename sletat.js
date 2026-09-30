@@ -257,7 +257,9 @@ function parseRow(row) {
   return {
     offerId: String(row[C.offerId] || ""),
     sourceId: Number(row[C.sourceId]) || 0,
-    operator: clean(row[C.operator]),
+    // В базовом пакете имя оператора закрыто, и в этой колонке приходит цена
+    // строкой («17216 RUB»). Её не показываем — клиент увидит «уточняется».
+    operator: /^[\d\s.,]+[A-Z]{3}$/.test(clean(row[C.operator])) ? "" : clean(row[C.operator]),
     hotel: clean(row[C.hotelName]) || clean(row[C.hotelStars]),
     stars: clean(row[C.stars]),
     rating: num(row[C.rating]) || null,
@@ -292,6 +294,10 @@ function looksDemo(tours) {
 
 /* ─────────────────────────────── Поиск ──────────────────────────────────── */
 
+// Даты шлюз понимает только как дд/мм/гггг. С точками он их молча игнорирует и
+// отдаёт вылеты с сегодняшнего дня — проверено на живой выдаче 30.09.2026.
+const slashDate = (s) => (s ? String(s).replace(/\./g, "/") : undefined);
+
 const SEARCH_PARAMS = (q) => ({
   cityFromId: q.cityFromId,
   countryId: q.countryId,
@@ -300,8 +306,8 @@ const SEARCH_PARAMS = (q) => ({
   s_kids_ages: q.kidsAges && q.kidsAges.length ? q.kidsAges : undefined,
   s_nightsMin: q.nightsMin || 7,
   s_nightsMax: q.nightsMax || 10,
-  s_departFrom: q.departFrom,
-  s_departTo: q.departTo,
+  s_departFrom: slashDate(q.departFrom),
+  s_departTo: slashDate(q.departTo),
   s_priceMin: q.priceMin || undefined,
   s_priceMax: q.priceMax || undefined,
   stars: q.stars && q.stars.length ? q.stars : undefined,

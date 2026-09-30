@@ -276,7 +276,7 @@ function render(tours) {
       +     "<span>" + t.nights + " " + plural(t.nights, ["ночь","ночи","ночей"]) + "</span>"
       +     (t.meal ? "<span>" + esc(t.meal) + "</span>" : "")
       +     (t.room ? "<span>" + esc(t.room) + "</span>" : "")
-      +     "<span>из " + esc(t.cityFrom) + "</span>"
+      +     "<span>вылет: " + esc(t.cityFrom) + "</span>"
       +     (t.rating ? "<span>рейтинг " + t.rating + "</span>" : "")
       +   "</div>"
       +   '<div class="op">Туроператор: ' + esc(t.operator || "уточняется при оформлении") + "</div>"
