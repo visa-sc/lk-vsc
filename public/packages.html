@@ -386,6 +386,7 @@ async function search() {
   if (bud[1]) q.priceMax = bud[1];
   markChip();
   const cname = $("country").selectedOptions[0] ? $("country").selectedOptions[0].text.replace(/ · .*/, "") : "";
+  STATE.countryName = cname;
   $("find").disabled = true; notice("");
   $("results").innerHTML = resultsShell("Туры: " + esc(cname), "Опрашиваем туроператоров…",
     '<div class="cards"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>');
@@ -462,6 +463,9 @@ function tourCard(t, onclick, cta) {
 }
 
 function render(tours) {
+  // Страну берём из поиска: колонка «страны» в выдаче поставщика бывает чужой
+  // (на Мальдивах там стояла Турция).
+  if (STATE.countryName) tours.forEach((t) => { t.country = STATE.countryName; });
   STATE.tours = tours;
   if (!STATE.orig || STATE.orig.length !== tours.length || tours.some((t) => STATE.orig.indexOf(t) < 0)) STATE.orig = tours.slice();
   const box = $("results").querySelector(".cards");
