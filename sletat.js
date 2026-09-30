@@ -308,8 +308,9 @@ const SEARCH_PARAMS = (q) => ({
   s_nightsMax: q.nightsMax || 10,
   s_departFrom: slashDate(q.departFrom),
   s_departTo: slashDate(q.departTo),
-  s_priceMin: q.priceMin || undefined,
-  s_priceMax: q.priceMax || undefined,
+  // Бюджет клиент задаёт в наших ценах (с наценкой), шлюз фильтрует по своим.
+  s_priceMin: q.priceMin ? Math.round(q.priceMin / (1 + MARKUP_PCT / 100)) : undefined,
+  s_priceMax: q.priceMax ? Math.round(q.priceMax / (1 + MARKUP_PCT / 100)) : undefined,
   stars: q.stars && q.stars.length ? q.stars : undefined,
   meals: q.meals && q.meals.length ? q.meals : undefined,
   cities: q.resorts && q.resorts.length ? q.resorts : undefined,
@@ -361,12 +362,12 @@ const starsOf = (t) => Number(String(t.stars || "").replace(/[^\d]/g, "").slice(
 
 // Питание по возрастанию: без питания < завтраки < полупансион < пансион < всё включено.
 function mealRank(code) {
-  const c = String(code || "").toUpperCase().replace(/\s+/g, "");
-  if (/^UAI|ULTRA/.test(c)) return 5;
-  if (/^AI|ALL/.test(c)) return 4;
-  if (/^FB/.test(c)) return 3;
-  if (/^HB/.test(c)) return 2;
-  if (/^BB/.test(c)) return 1;
+  const c = String(code || "").toUpperCase().replace(/[\s\-_.()]+/g, "");
+  if (/^UAI|ULTRA|УЛЬТРА/.test(c)) return 5;
+  if (/^AI|ALLINC|ВСЁВКЛ|ВСЕВКЛ/.test(c)) return 4;
+  if (/^FB|FULLBOARD|ПОЛНЫЙПАНС|ТРЁХРАЗ|ТРЕХРАЗ/.test(c)) return 3;
+  if (/^HB|HALFBOARD|ПОЛУПАНС|ЗАВТРАКИУЖИН/.test(c)) return 2;
+  if (/^BB|BREAKFAST|ЗАВТРАК/.test(c)) return 1;
   return 0;
 }
 

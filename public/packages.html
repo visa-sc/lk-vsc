@@ -53,8 +53,11 @@ body.embed .hero .sub{font-size:14px}
 /* ── форма поиска: все поля одной высоты и в одной сетке ── */
 .search{background:rgba(255,255,255,.86);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
   border:1px solid rgba(230,234,242,.9);border-radius:24px;box-shadow:var(--sh);padding:18px}
-.grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
-@media (max-width:960px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+/* Кнопка — двенадцатая ячейка сетки, на одной линии с полями. */
+.fbtn{display:flex;flex-direction:column;justify-content:flex-end}
+.fbtn .btn{width:100%;height:48px}
+@media (max-width:760px){.fbtn,.fbud{grid-column:1 / -1}.fbtn label{display:none}}
 @media (max-width:760px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .fld{min-width:0}
 .fld label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
@@ -239,11 +242,18 @@ body.embed .hero .sub{font-size:14px}
         <option value="0">только отель</option>
       </select>
     </div>
+    <div class="fld fbud"><label for="budget">Бюджет</label>
+      <select id="budget">
+        <option value="" selected>любой</option>
+        <option value="0-100000">до 100 тыс. ₽</option>
+        <option value="100000-200000">100–200 тыс. ₽</option>
+        <option value="200000-400000">200–400 тыс. ₽</option>
+        <option value="400000-0">от 400 тыс. ₽</option>
+      </select>
+    </div>
+    <div class="fld fbtn"><label>&nbsp;</label><button class="btn" id="find">Найти туры</button></div>
   </div>
-  <div class="go">
-    <button class="btn" id="find">Найти туры</button>
-    <span class="hint" id="hint">Опрашиваем всех туроператоров сразу, обычно это до полуминуты.</span>
-  </div>
+  <div class="hint" id="hint" style="margin-top:12px">Опрашиваем всех туроператоров сразу, обычно это до полуминуты. Цена указана сразу за всех туристов.</div>
 </div>
 
 <div class="chips" id="chips"></div>
@@ -277,14 +287,14 @@ const nightsTxt = (n) => n + " " + plural(n, ["ночь","ночи","ночей"
 
 // Коды питания туроператоров клиенту ничего не говорят.
 function meal(code) {
-  const c = String(code || "").toUpperCase().replace(/\s+/g, "");
+  const c = String(code || "").toUpperCase().replace(/[\s\-_.()]+/g, "");
   if (!c) return "";
-  if (/^UAI|ULTRA/.test(c)) return "Ультра всё включено";
-  if (/^AI|ALL/.test(c)) return "Всё включено";
-  if (/^FB/.test(c)) return "Полный пансион";
-  if (/^HB/.test(c)) return "Завтрак и ужин";
-  if (/^BB/.test(c)) return "Завтраки";
-  if (/^(RO|OB|AO|NM|BO)/.test(c)) return "Без питания";
+  if (/^UAI|ULTRA|УЛЬТРА/.test(c)) return "Ультра всё включено";
+  if (/^AI|ALLINC|ВСЁВКЛ|ВСЕВКЛ/.test(c)) return "Всё включено";
+  if (/^FB|FULLBOARD|ПОЛНЫЙПАНС|ТРЁХРАЗ|ТРЕХРАЗ/.test(c)) return "Полный пансион";
+  if (/^HB|HALFBOARD|ПОЛУПАНС|ЗАВТРАКИУЖИН/.test(c)) return "Завтрак и ужин";
+  if (/^BB|BREAKFAST|ЗАВТРАК/.test(c)) return "Завтраки";
+  if (/^(RO|OB|AO|NM|BO|OR)|ROOMONLY|БЕЗПИТ/.test(c)) return "Без питания";
   return code;
 }
 function starsLine(s) {
@@ -371,6 +381,9 @@ async function search() {
     departFrom: fmtDate($("dateFrom").value), departTo: fmtDate($("dateTo").value),
     noFlight: !STATE.flight,
   };
+  const bud = ($("budget").value || "").split("-").map(Number);
+  if (bud[0]) q.priceMin = bud[0];
+  if (bud[1]) q.priceMax = bud[1];
   markChip();
   const cname = $("country").selectedOptions[0] ? $("country").selectedOptions[0].text.replace(/ · .*/, "") : "";
   $("find").disabled = true; notice("");
