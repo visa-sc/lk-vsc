@@ -470,7 +470,7 @@ async function loadHotels(page) {
   let r;
   try {
     r = await (await fetch("/api/sletat/hotels?requestId=" + encodeURIComponent(STATE.requestId)
-      + "&sort=" + STATE.sort + "&page=" + page + "&size=12")).json();
+      + "&sort=" + STATE.sort + "&page=" + page + "&size=12&minStars=" + STATE.minStars)).json();
   } catch (_) { r = null; }
   if (!r || !r.success) { if (more) more.innerHTML = ""; notice("Не получилось загрузить отели. Попробуйте ещё раз.", true); return; }
   const d = r.data;

@@ -441,7 +441,7 @@ async function filtersFor(countryId) {
 // Из них собираем карточку: цена «от», сколько туров и операторов, какое
 // питание, и варианты — по одному самому дешёвому на дату/ночи/питание.
 const GROUP_BY = { popular: "hotelsPopularity", cheap: "all_sortedHotels", dear: "all_sortedHotelsDesc" };
-async function hotelsPage(requestId, sort, page, size) {
+async function hotelsPage(requestId, sort, page, size, minStars) {
   const data = await api("GetTours", {
     requestId: requestId, updateResult: 1, currencyAlias: "RUB",
     groupBy: GROUP_BY[sort] || GROUP_BY.popular,
@@ -472,7 +472,8 @@ async function hotelsPage(requestId, sort, page, size) {
     if (!h.variants[vk] || t.price < h.variants[vk].price) h.variants[vk] = t;
   });
   const dmy = (s) => { const p = String(s).split("."); return p.length === 3 ? p[2] + p[1] + p[0] : s; };
-  const hotels = order.map((k) => {
+  // Страховка: шлюз при фильтре «5★» изредка подмешивает 4★ — отсекаем сами.
+  const hotels = order.filter((k) => !minStars || starsOf(byId[k]) >= minStars).map((k) => {
     const h = byId[k];
     return {
       hotelId: h.hotelId, hotel: h.hotel, stars: h.stars, resort: h.resort, photo: h.photo,
@@ -794,7 +795,8 @@ function mount(app, deps) {
   app.get("/api/sletat/hotels", async (req, res) => {
     try {
       const r = await hotelsPage(req.query.requestId, String(req.query.sort || "popular"),
-        Math.max(1, Number(req.query.page) || 1), Math.min(30, Math.max(1, Number(req.query.size) || 12)));
+        Math.max(1, Number(req.query.page) || 1), Math.min(30, Math.max(1, Number(req.query.size) || 12)),
+        Math.min(5, Number(req.query.minStars) || 0));
       res.json({ success: true, data: r });
     } catch (e) { fail(res, e); }
   });
