@@ -346,6 +346,11 @@
     $("paneVirt").classList.toggle("on", which === "virt");
     $("panePhys").classList.toggle("on", which === "phys");
     try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) { window.scrollTo(0, 0); }
+    // Внутри кабинета эта страница не прокручивается сама — фрейм растянут под
+    // содержимое, а листается раздел кабинета. Просим его вернуться наверх.
+    if (document.body.classList.contains("embed")) {
+      try { parent.postMessage({ voyoCards: "top" }, location.origin); } catch (_) {}
+    }
   }
   segBtns.forEach(function (b) { b.addEventListener("click", function () { tab(b.dataset.tab); }); });
   if (location.hash === "#phys") tab("phys");

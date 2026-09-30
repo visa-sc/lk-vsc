@@ -4204,6 +4204,14 @@
     .lkl-page.frame { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
     .lkl-page.frame iframe { display: block; width: 100%; flex: 1; min-height: 0; border: 0; background: transparent; }
     .lkl-page.frame iframe[hidden] { display: none; }
+    /* «Карты» (30.09): прокручивается САМ раздел, а не страница внутри фрейма.
+       Фрейм растягивается под высоту содержимого, скролл — у обычного блока, как
+       у «Баллов». Причина: прокрутка страницы во фрейме, который лежит в
+       fixed-слое (а при просмотре из админки ещё и во фрейме кабинета), на
+       десктопе местами не срабатывает — раздел «не листается». Обычный блок с
+       overflow-y:auto прокручивается одинаково в любом браузере. */
+    #lklCards { display: block; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+    #lklCards iframe { flex: none; height: 100%; }
     /* Переключатель внутри раздела «Туры»: слева пакетные туры, справа экскурсии.
        Вид тот же, что у продуктовой пилюли в «Картах», чтобы кабинет выглядел
        одинаково во всех разделах. */
@@ -4408,11 +4416,28 @@
         var f = document.createElement("iframe");
         f.src = "/cards?embed=1";
         f.title = "Банковские карты";
-        f.setAttribute("loading", "lazy");
+        // Высоту фрейма задаём по содержимому, а прокручивается сам раздел
+        // (#lklCards, см. CSS). Меряем offsetHeight документа, а не scrollHeight:
+        // scrollHeight не бывает меньше высоты фрейма, и при переходе на более
+        // короткую вкладку фрейм бы никогда не ужимался. Порог и потолок —
+        // защита от петли роста (грабля 21.09 с панелью eSIM).
         f.addEventListener("load", function () {
-          try { f.contentWindow.addEventListener("scroll", watch, { passive: true }); } catch (_) {}
+          try {
+            var doc = f.contentDocument, applied = 0;
+            var fit = function () {
+              var h = Math.max(doc.documentElement.offsetHeight, doc.body.offsetHeight);
+              if (h < 200 || h > 40000) return;
+              if (Math.abs(h - applied) < 8) return;
+              applied = h;
+              f.style.height = h + "px";
+            };
+            fit();
+            [300, 1000, 2500].forEach(function (ms) { setTimeout(fit, ms); });
+            if (window.ResizeObserver) new ResizeObserver(fit).observe(doc.body);
+          } catch (_) { /* не тот origin — останется высота раздела и прокрутка внутри */ }
         });
         cardsPage.appendChild(f);
+        cardsPage.addEventListener("scroll", watch, { passive: true });
       }
       // «Туры» — два кадра под одним переключателем: слева пакетные туры
       // (/packages), справа экскурсии (/excursion). Второй кадр создаётся
@@ -4491,9 +4516,7 @@
           if (!tf) return;
           try { y = tf.contentWindow.scrollY || 0; } catch (_) { y = 0; }
         } else if (cardsPage && cardsPage.classList.contains("open")) {
-          var cf = cardsPage.querySelector("iframe");
-          if (!cf) return;
-          try { y = cf.contentWindow.scrollY || 0; } catch (_) { y = 0; }
+          y = cardsPage.scrollTop;   // с 30.09 прокручивается сам раздел, не фрейм
         } else if (esimPage && esimPage.classList.contains("open")) {
           var f = esimPage.querySelector('iframe[data-esim="' + esimTab + '"]');
           if (!f) return;
@@ -4506,6 +4529,11 @@
       window.addEventListener("message", function (e) {
         if (e.origin !== location.origin) return;
         var d = e.data;
+        // «Карты» просят вернуться наверх при смене вкладки Виртуальная/Физическая:
+        // прокручивается раздел, а не их страница, поэтому наверх ведём его.
+        // Мгновенно, без плавности: в тот же миг фрейм перестраивается под новую
+        // высоту вкладки, и плавная анимация обрывалась на полпути.
+        if (d && d.voyoCards === "top" && cardsPage) { cardsPage.scrollTop = 0; return; }
         if (!d || d.voyoEsim !== "modal") return;
         nav.classList.toggle("away", !!d.open);
       });
