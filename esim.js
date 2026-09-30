@@ -2358,6 +2358,25 @@ function mount(app, opts) {
     return support.attention(chat, why);
   }
 
+  // Один ответ моделью: с досье по человеку, если покупки есть, и просто по
+  // знаниям о продукте, если их нет. Возвращает true, если человеку ответили.
+  async function doctorReply(chat, why) {
+    if (!doctor.aiOn()) return false;
+    let mine = [], st = [];
+    try {
+      mine = await ordersByContact(chat.contact, chat.page);
+      st = mine.length ? await orderStates(mine) : [];
+    } catch (_) {}
+    const seen = await doctor.diagnose({
+      messages: chat.messages, orders: mine, states: st,
+      ua: chat.ua, ip: chat.ip, tried: [why], refundAllowed: false,
+    }).catch((e) => { console.error("esim доктор:", e.message); return null; });
+    if (!seen || !seen.reply || seen.action === "escalate") return false;
+    support.botMessage(chat.id, seen.reply, "autoDiag");
+    console.log("esim первая линия ответила по вопросу:", seen.diagnosis);
+    return true;
+  }
+
   // «спасибо, помогло» — не повод звать оператора
   const THANKS_RE = /^\s*(спасибо|благодар|помогло|заработал|всё работает|все работает|ок|ok|👍|🙏)/i;
   // ── Вторая линия: сервер сам решает проблему, не дожидаясь оператора ──
@@ -2538,13 +2557,18 @@ function mount(app, opts) {
         return;
       }
       if (chat.autoDiag && Date.now() - chat.autoDiag < 6 * 3600e3) return;   // один разбор на историю
+      // Вопрос не про поломку («а физическая симка есть?», «какой телефон нужен?»):
+      // на такие отвечает та же первая линия, оператора зовём, только если она пас.
       if (!TROUBLE_RE.test(last.text)) {
-        callOperator(chat, "вопрос не про неполадку с eSIM, нужен живой ответ");
+        const ok = await doctorReply(chat, "вопрос о продукте").catch(() => false);
+        if (!ok) callOperator(chat, "вопрос не про неполадку с eSIM, нужен живой ответ");
         return;
       }
       const o = await chatOrder(chat);
       if (!o) {
-        callOperator(chat, "не нашли его покупок: ни по странице, ни по контакту");
+        // покупок у нас нет: отвечаем по сути вопроса, а не отпиской
+        const ok = await doctorReply(chat, "покупок у человека не нашли").catch(() => false);
+        if (!ok) callOperator(chat, "не нашли его покупок: ни по странице, ни по контакту");
         return;
       }
       let u = null;
