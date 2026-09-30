@@ -537,7 +537,7 @@ async function loadPicks() {
   let html = "";
   if (d.top && d.top.length) {
     html += '<div class="sec"><div class="sech"><div><h2>Хорошие отели по хорошей цене</h2>'
-      + '<div class="ss">4 и 5 звёзд с высокими оценками туристов, цена на двоих с перелётом</div></div></div>'
+      + '<div class="ss">Отели 4 и 5 звёзд по каждому направлению, цена на двоих с перелётом</div></div></div>'
       + '<div class="cards">' + d.top.map((t, i) => tourCard(t, "pickDeal(" + i + ")")).join("") + "</div></div>";
   }
   const tiles = (d.directions || []).map(function (dir) {

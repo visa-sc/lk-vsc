@@ -461,6 +461,15 @@ function pickDeals(tours) {
   const good = (minRating) => tours.filter((t) => starsOf(t) >= 4 && (t.rating || 0) >= minRating && t.photo);
   let list = good(8);
   if (list.length < 3) list = good(7);
+  // По многим странам оценок туристов у поставщика нет вовсе — тогда берём
+  // лучшие по звёздам: сначала 5★, потом 4★, по два отеля.
+  if (!list.length) {
+    const seen = {};
+    return tours.filter((t) => starsOf(t) >= 4 && t.photo)
+      .sort((a, b) => (starsOf(b) - starsOf(a)) || (a.price - b.price))
+      .filter((t) => (seen[t.hotel] ? false : (seen[t.hotel] = true)))
+      .slice(0, 2);
+  }
   const byHotel = {};
   list.forEach((t) => { const k = t.hotel; if (!byHotel[k] || t.price < byHotel[k].price) byHotel[k] = t; });
   return Object.values(byHotel)
