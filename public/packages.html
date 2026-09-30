@@ -89,6 +89,26 @@ button.ghost{background:var(--card);color:var(--muted);border:1px solid var(--li
 .done{text-align:center;padding:12px 4px}
 .done .big{font-size:18px;font-weight:650;margin-bottom:8px}
 .done p{color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:10px}
+/* ── подборки направлений под поиском ── */
+.picks{margin-top:26px}
+.picks h3{font-size:16.5px;letter-spacing:-.01em;margin-bottom:3px}
+.picks .psub{color:var(--faint);font-size:12.5px;margin-bottom:12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.tile{position:relative;border-radius:16px;overflow:hidden;min-height:108px;cursor:pointer;
+  box-shadow:var(--shadow);border:1px solid var(--line);background:#dfe6ef center/cover no-repeat;
+  display:flex;align-items:flex-end}
+.tile:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,20,40,0) 34%,rgba(8,16,34,.72) 100%)}
+.tile .tin{position:relative;z-index:1;padding:11px 12px;color:#fff;width:100%}
+.tile .tname{font-size:15px;font-weight:650;letter-spacing:-.01em;text-shadow:0 1px 3px rgba(0,20,40,.5)}
+.tile .tprice{font-size:12.5px;opacity:.92;margin-top:2px}
+/* Карточки отелей с лучшими оценками — шире, с названием и оценкой. */
+.tops{display:grid;grid-template-columns:repeat(auto-fill,minmax(216px,1fr));gap:10px}
+.top{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);cursor:pointer}
+.top .tpic{height:112px;background:#e9eef5 center/cover no-repeat}
+.top .tbody{padding:10px 12px 12px}
+.top .th{font-size:14px;font-weight:650;line-height:1.3}
+.top .tm{color:var(--muted);font-size:12px;margin-top:3px}
+.top .tr{display:inline-block;margin-top:7px;font-size:12px;font-weight:650;color:var(--ok);background:#eef7ef;border-radius:8px;padding:3px 8px}
 .skel{height:150px;border-radius:18px;background:linear-gradient(90deg,#eef2f7,#f7fafc,#eef2f7);background-size:200% 100%;animation:sk 1.2s infinite}
 @keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
 </style>
@@ -132,6 +152,7 @@ button.ghost{background:var(--card);color:var(--muted);border:1px solid var(--li
 <div id="notice"></div>
 <div class="status" id="status"></div>
 <div class="list" id="list"></div>
+<div id="picks"></div>
 
 </div>
 
@@ -350,6 +371,53 @@ async function submitClaim(i) {
   } finally { $("send").disabled = false; $("send").textContent = "Отправить заявку"; }
 }
 
+/* ── подборки направлений ── */
+// Живут под поиском и работают как быстрый выбор: тап по плитке подставляет
+// страну в форму и сразу ищет. Цены приходят из фоновых съёмов, и если их ещё
+// нет (шлюз не открыт), плитки всё равно показываются — просто без «от».
+async function loadPicks() {
+  let d;
+  try { d = (await (await fetch("/api/sletat/picks")).json()).data; } catch (_) { return; }
+  if (!d) return;
+  const byCountry = {};
+  (d.cheap || []).forEach((c) => { byCountry[c.countryId] = c; });
+
+  const tiles = (d.directions || []).map(function (dir) {
+    const c = byCountry[dir.id];
+    const bg = c && c.photo ? "background-image:url(" + esc(c.photo) + ")" : "background:" + esc(dir.hue);
+    return '<div class="tile" style="' + bg + '" onclick="pickCountry(' + dir.id + ')">'
+      + '<div class="tin"><div class="tname">' + esc(dir.name) + "</div>"
+      + (c ? '<div class="tprice">от ' + money(c.price) + " · " + c.nights + " " + plural(c.nights, ["ночь","ночи","ночей"]) + "</div>" : "")
+      + "</div></div>";
+  }).join("");
+
+  let html = '<div class="picks"><h3>Куда полететь</h3>'
+    + '<div class="psub">' + (d.cheap && d.cheap.length
+        ? "Самые доступные предложения на ближайший месяц, на двоих"
+        : "Выберите направление — подберём даты и отель") + "</div>"
+    + '<div class="tiles">' + tiles + "</div></div>";
+
+  if (d.top && d.top.length) {
+    html += '<div class="picks"><h3>Отели с лучшими оценками</h3>'
+      + '<div class="psub">По отзывам туристов, на ближайший месяц</div>'
+      + '<div class="tops">' + d.top.map(function (t) {
+          return '<div class="top" onclick="pickCountry(' + t.countryId + ')">'
+            + '<div class="tpic" style="' + (t.photo ? "background-image:url(" + esc(t.photo) + ")" : "background:" + esc(t.hue)) + '"></div>'
+            + '<div class="tbody"><div class="th">' + esc(t.hotel) + " " + esc(t.stars || "") + "</div>"
+            + '<div class="tm">' + esc(t.resort) + ", " + esc(t.country) + " · от " + money(t.price) + "</div>"
+            + '<div class="tr">' + t.rating + " из 5</div></div></div>";
+        }).join("") + "</div></div>";
+  }
+  $("picks").innerHTML = html;
+}
+
+function pickCountry(id) {
+  $("country").value = String(id);
+  if (!$("country").value) return;                // страны нет в справочнике
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  search();
+}
+
 /* ── старт ── */
 (function init() {
   if (/[?&]embed=1/.test(location.search)) document.body.classList.add("embed");
@@ -358,6 +426,7 @@ async function submitClaim(i) {
   $("dateTo").value = d2.toISOString().slice(0, 10);
   $("find").addEventListener("click", search);
   loadDict();
+  loadPicks();
 })();
 </script>
 </body>

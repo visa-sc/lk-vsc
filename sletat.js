@@ -354,6 +354,108 @@ async function searchResults(requestId, page, pageSize) {
   return { tours: tours, total: (data && data.iTotalRecords) || tours.length, demo: looksDemo(tours) };
 }
 
+/* ─────────────────────── Подборки под формой поиска ─────────────────────── */
+// Пустая страница с одной формой выглядит как незаполненный бланк, поэтому под
+// поиском показываем живые направления: самое дешёвое предложение по каждому и
+// отели с лучшими оценками. Данные собираются фоном — по одному оплачиваемому
+// запросу на направление раз в шесть часов, это около тысячи запросов в месяц
+// из двадцати тысяч пакета.
+//
+// Пока шлюз не пускает, файл остаётся пустым: страница в этом случае рисует те
+// же плитки без цен, они всё равно работают как быстрый выбор направления.
+
+const PICKS_FILE = path.join(DIR, "picks.json");
+const PICKS_TTL = 6 * 3600 * 1000;
+
+// Города вылета у направлений разные не бывают — считаем от Москвы, она же
+// стоит в форме по умолчанию.
+const PICK_FROM = Number(process.env.SLETAT_PICK_FROM || 832);
+const PICK_DIRECTIONS = [
+  { id: 119, name: "Турция", hue: "#2e86c1" },
+  { id: 40, name: "Египет", hue: "#c8823a" },
+  { id: 90, name: "ОАЭ", hue: "#8e6fb5" },
+  { id: 113, name: "Таиланд", hue: "#2f9e7a" },
+  { id: 29, name: "Вьетнам", hue: "#3a9ec8" },
+  { id: 72, name: "Мальдивы", hue: "#1f9bb3" },
+  { id: 132, name: "Шри-Ланка", hue: "#4f9a4a" },
+  { id: 61, name: "Куба", hue: "#c2603f" },
+];
+
+function picksLoad() { return readJson(PICKS_FILE, { at: 0, cheap: [], top: [] }); }
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Один проход по направлению: создаём поиск, ждём операторов и забираем выдачу.
+async function pickOne(dir) {
+  const today = new Date();
+  const from = new Date(today.getTime() + 7 * 86400000);
+  const to = new Date(today.getTime() + 45 * 86400000);
+  const fmt = (d) => String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + d.getFullYear();
+  const q = {
+    cityFromId: PICK_FROM, countryId: dir.id, adults: 2, kids: 0,
+    nightsMin: 6, nightsMax: 8, departFrom: fmt(from), departTo: fmt(to),
+  };
+  const started = await searchStart(q);
+  if (!started.requestId) return null;
+  for (let i = 0; i < 12; i++) {
+    await wait(2000);
+    let st;
+    try { st = await searchState(started.requestId); } catch (_) { break; }
+    if (st.ready) break;
+  }
+  const res = await searchResults(started.requestId, 1, 40);
+  const tours = (res.tours || []).filter((t) => t.price > 0);
+  if (!tours.length || res.demo) return null;
+  const cheapest = tours.slice().sort((a, b) => a.price - b.price)[0];
+  const best = tours.slice().sort((a, b) => (b.rating || 0) - (a.rating || 0))[0];
+  return { dir: dir, cheapest: cheapest, best: (best && best.rating) ? best : null };
+}
+
+let _picksRunning = false;
+async function refreshPicks() {
+  if (_picksRunning) return picksLoad();
+  _picksRunning = true;
+  const cheap = [], top = [];
+  try {
+    for (const dir of PICK_DIRECTIONS) {
+      let r = null;
+      try { r = await pickOne(dir); }
+      catch (e) { console.error("SLETAT подборка " + dir.name + ":", e.message); }
+      if (!r) continue;
+      cheap.push({
+        country: dir.name, countryId: dir.id, hue: dir.hue,
+        price: r.cheapest.price, nights: r.cheapest.nights,
+        hotel: r.cheapest.hotel, resort: r.cheapest.resort, photo: r.cheapest.photo,
+      });
+      if (r.best) {
+        top.push({
+          country: dir.name, countryId: dir.id, hue: dir.hue,
+          hotel: r.best.hotel, stars: r.best.stars, rating: r.best.rating,
+          resort: r.best.resort, price: r.best.price, photo: r.best.photo,
+        });
+      }
+      await wait(1500);           // не молотим шлюз очередью
+    }
+  } finally { _picksRunning = false; }
+  cheap.sort((a, b) => a.price - b.price);
+  top.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+  const data = { at: Date.now(), cheap: cheap, top: top.slice(0, 6) };
+  if (cheap.length) writeJson(PICKS_FILE, data);
+  return data;
+}
+
+function picksSchedule() {
+  const tick = () => {
+    const p = picksLoad();
+    if (Date.now() - (p.at || 0) < PICKS_TTL) return;
+    refreshPicks().then((d) => {
+      if (d.cheap.length) console.log("SLETAT: подборки обновлены, направлений " + d.cheap.length);
+    }).catch((e) => console.error("SLETAT подборки:", e.message));
+  };
+  setTimeout(tick, 90000);        // после старта даём серверу прогреться
+  setInterval(tick, 3600000);
+}
+
 /* ─────────────────────────── Заявка и оплата ────────────────────────────── */
 
 const esc = (s) => String(s == null ? "" : s)
@@ -569,6 +671,27 @@ function mount(app, deps) {
   app.get("/api/sletat/claims", requireAdmin, (req, res) => {
     res.json({ success: true, data: claimsLoad().items.slice(0, 100) });
   });
+
+  // Подборки под формой. Отдаём и пустые — страница сама нарисует направления
+  // без цен, чтобы раздел не выглядел голым.
+  app.get("/api/sletat/picks", (req, res) => {
+    const p = picksLoad();
+    res.json({
+      success: true,
+      data: {
+        at: p.at || 0, cheap: p.cheap || [], top: p.top || [],
+        directions: PICK_DIRECTIONS,
+      },
+    });
+  });
+
+  // Пересобрать подборки руками — только админ: каждый вызов тратит запросы.
+  app.post("/api/sletat/picks/refresh", requireAdmin, async (req, res) => {
+    try { res.json({ success: true, data: await refreshPicks() }); }
+    catch (e) { fail(res, e); }
+  });
+
+  picksSchedule();
 
   // Расход пакета поисков по месяцам — чтобы счёт за перерасход не был сюрпризом.
   app.get("/api/sletat/usage", requireAdmin, (req, res) => {
