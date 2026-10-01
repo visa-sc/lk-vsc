@@ -199,6 +199,14 @@ function mountEarly(app, deps) {
         const mid = String(model || FORCED);
         sv.models = sv.models || {};
         sv.models[mid] = (sv.models[mid] || 0) + 1;
+        // Токены, включая кэш: по ним видно, работает ли кэширование у сервиса.
+        // Запись в кэш стоит 1,25 обычного входа, чтение — 0,1; если пишем много,
+        // а читаем мало, кэш не экономит, а доплачивает.
+        sv.tok = sv.tok || { in: 0, out: 0, cr: 0, cw: 0 };
+        sv.tok.in += u.input_tokens || 0;
+        sv.tok.out += u.output_tokens || 0;
+        sv.tok.cr += u.cache_read_input_tokens || 0;
+        sv.tok.cw += u.cache_creation_input_tokens || 0;
         // чистим журнал старше 90 дней
         for (const k of Object.keys(b2.days)) if (k < new Date(Date.now() - 90 * 86400e3).toISOString().slice(0, 10)) delete b2.days[k];
         if (d2.usd >= DAILY_USD * 0.8 && !b2.alerts[day + ":80"]) {
