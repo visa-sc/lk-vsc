@@ -45,10 +45,11 @@ const pathOf = (raw) => {
   // (на 60 000 перестал отвечать). Каждый скачанный месяц сохраняем — при сбое продолжаем.
   const RAW = process.env.MSKCOPY_RAW || "/root/msk-flexbe-raw";
   fs.mkdirSync(RAW, { recursive: true });
-  const getPage = async (from, to, start) => {
-    for (let t = 0; t < 5; t++) {
+  let broken = 0;
+  const getPage = async (from, to, start, count = 1000, tries = 5) => {
+    for (let t = 0; t < tries; t++) {
       try {
-        const r = await axios.get(API, { params: { api_key: site.apiKey, method: "getLeads", count: 1000, start, date_from: from, date_to: to }, timeout: 120000 });
+        const r = await axios.get(API, { params: { api_key: site.apiKey, method: "getLeads", count, start, date_from: from, date_to: to }, timeout: 120000 });
         if (r.data && r.data.error) throw new Error(JSON.stringify(r.data.error));
         let part = r.data && r.data.data && r.data.data.leads;
         if (part && !Array.isArray(part)) part = Object.values(part);
@@ -70,12 +71,44 @@ const pathOf = (raw) => {
     }
     const from = Math.floor(d.getTime() / 1000) - 3 * 3600;
     const to = Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) / 1000) - 3 * 3600 - 1;
-    const month = [];
-    for (let st = 0; ; st += 1000) {
-      const part = await getPage(from, to, st);
-      month.push(...part);
-      await sleep(1200); // лимит Flexbe — 100 запросов в минуту
-      if (part.length < 1000) break;
+    // Целиком за месяц; если Flexbe падает (500 — в выборке битая заявка, так было в марте 2022),
+    // то по дням, а сбойный день — по одной заявке, пропуская только саму битую.
+    const span = async (a, b) => {
+      const out = [];
+      for (let st = 0; ; st += 1000) {
+        const part = await getPage(a, b, st, 1000, 2);
+        out.push(...part);
+        await sleep(1200); // лимит Flexbe — 100 запросов в минуту
+        if (part.length < 1000) break;
+      }
+      return out;
+    };
+    let month = [];
+    try {
+      month = await span(from, to);
+    } catch (_) {
+      for (let a = from; a <= to; a += 86400) {
+        const b = Math.min(a + 86399, to);
+        try {
+          month.push(...(await span(a, b)));
+        } catch (_) {
+          for (let st = 0, miss = 0; miss < 3; st++) {
+            let one = null;
+            try {
+              one = await getPage(a, b, st, 1, 2);
+            } catch (_) {
+              broken++;
+              miss = 0;
+              console.log(`  битая заявка во Flexbe: ${new Date((a + 3 * 3600) * 1000).toISOString().slice(0, 10)}, позиция ${st} — пропущена`);
+              await sleep(1200);
+              continue;
+            }
+            await sleep(700);
+            if (!one.length) break;
+            month.push(...one);
+          }
+        }
+      }
     }
     fs.writeFileSync(cache, JSON.stringify(month));
     all.push(...month);
@@ -134,7 +167,7 @@ const pathOf = (raw) => {
       email: (L.client && L.client.email) || fv(/email|почт/i), pagePath, pageTitle: e.pageTitle, amount: e.amount, host: "flexbe-archive"
     });
   }
-  console.log(`из Flexbe: ${all.length}, в архив: ${index.length}, месяцев: ${months.size}`);
+  console.log(`из Flexbe: ${all.length}, в архив: ${index.length}, месяцев: ${months.size}, битых пропущено: ${broken}`);
   if (DRY) return console.log(JSON.stringify(index[0]));
   fs.mkdirSync(OUT, { recursive: true });
   for (const [m, list] of months) {
