@@ -201,13 +201,19 @@ async function report(items) {
   await axios.post(`${API}/leads/api/amo?token=${encodeURIComponent(SPB_TOKEN)}`, { items }, { timeout: 30000 });
 }
 
-(async () => {
+// Неудачные заявки не долбим каждые секунды: откладываем с нарастающей паузой.
+const retryAt = new Map();
+const BACKOFF = [60e3, 5 * 60e3, 15 * 60e3, 60 * 60e3];
+const fails = new Map();
+
+async function runOnce() {
   if (process.env.SPBCOPY_AMO === "0") return console.log("выгрузка в amo выключена (SPBCOPY_AMO=0)");
   if (!AMO_TOKEN || !SUB || !SPB_TOKEN) return console.log("нет AMO_ACCESS_TOKEN / AMO_SUBDOMAIN / SPBCOPY_API_TOKEN");
 
   const { data } = await axios.get(`${API}/leads/api/new?token=${encodeURIComponent(SPB_TOKEN)}`, { timeout: 30000 });
   const all = data.leads || [];
-  const todo = all.filter((l) => (ONLY ? String(l.id) === ONLY : TEST || LIVE_HOSTS.includes(l.host)));
+  const todo = all.filter((l) => (ONLY ? String(l.id) === ONLY : TEST || LIVE_HOSTS.includes(l.host)))
+    .filter((l) => !retryAt.has(l.id) || retryAt.get(l.id) <= Date.now());
   if (!todo.length) return; // тишина в логе, если выгружать нечего
 
   console.log(`${new Date().toISOString()} новых заявок для amo: ${todo.length}${DRY ? " (пробный заход)" : ""}`);
@@ -236,10 +242,33 @@ async function report(items) {
       done.push({ id: lead.id, leadId, contactId: contact ? contact.id : null });
       console.log(`  заявка #${lead.id} → сделка ${leadId}, контакт ${contact ? contact.id : "—"}`);
     } catch (e) {
-      console.log(`  заявка #${lead.id}: ОШИБКА ${e.message}`);
+      const n = (fails.get(lead.id) || 0) + 1;
+      fails.set(lead.id, n);
+      retryAt.set(lead.id, Date.now() + BACKOFF[Math.min(n - 1, BACKOFF.length - 1)]);
+      console.log(`  заявка #${lead.id}: ОШИБКА ${e.message} (повтор через ${Math.round(BACKOFF[Math.min(n - 1, BACKOFF.length - 1)] / 60e3)} мин)`);
     }
   }
   await report(done);
+}
+
+// --watch: постоянное наблюдение (pm2 «spb-amo»), новая заявка уходит в amo
+// за считанные секунды — как у Flexbe. Без флага — один заход и выход.
+// Режим наблюдения включается переменной SPBCOPY_AMO_WATCH=1. Флаг --watch тоже
+// понимаем, но pm2 перехватывает его как СВОЁ слежение за файлами и начинает
+// перезапускать процесс от каждого изменения в папке приложения (поймано 02.10).
+const WATCH = args.includes("--watch") || process.env.SPBCOPY_AMO_WATCH === "1";
+const EVERY = Number(process.env.SPBCOPY_AMO_EVERY_MS || 5000);
+(async () => {
+  if (!WATCH) return runOnce();
+  console.log(`${new Date().toISOString()} наблюдаю за новыми заявками, проверка каждые ${EVERY / 1000} с`);
+  for (;;) {
+    try {
+      await runOnce();
+    } catch (e) {
+      console.log(`${new Date().toISOString()} ошибка захода: ${e.message}`);
+    }
+    await sleep(EVERY);
+  }
 })().catch((e) => {
   console.log("ошибка выгрузки в amo:", e.message);
   process.exit(1);
