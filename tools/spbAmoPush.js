@@ -201,6 +201,42 @@ async function report(items) {
   await axios.post(`${API}/leads/api/amo?token=${encodeURIComponent(SPB_TOKEN)}`, { items }, { timeout: 30000 });
 }
 
+// Письмо о новой заявке — как слал Flexbe (Настройки → Уведомления: Email #1
+// visa.sc.office@yandex.ru, UTM в письмо не добавлялись). Шлём один раз на
+// заявку, сразу, независимо от того, получилось ли создать сделку в amo.
+const fsN = require("fs");
+const NOTIFY_TO = process.env.SPBCOPY_NOTIFY_TO || "visa.sc.office@yandex.ru";
+const NOTIFIED_FILE = path.join(__dirname, "..", ".spbNotified.json");
+let notified = new Set();
+try {
+  notified = new Set(JSON.parse(fsN.readFileSync(NOTIFIED_FILE, "utf8")));
+} catch (_) {}
+const escN = (x) => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+async function notifyLead(lead) {
+  if (DRY || !NOTIFY_TO || notified.has(lead.id)) return;
+  const { sendMail } = require(path.join(__dirname, "..", "mail.js"));
+  const rows = (lead.fields || [])
+    .filter((x) => String(x.value || "").trim())
+    .map((x) => `<tr><td style="padding:3px 14px 3px 0;color:#666">${escN(x.name)}</td><td style="padding:3px 0"><b>${escN(x.value)}</b></td></tr>`)
+    .join("");
+  const when = new Date(lead.at).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
+  const page = "https://spb.visa-sc.ru" + (lead.pagePath || "/");
+  const html = `<div style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111">
+<p style="font-size:17px;margin:0 0 10px"><b>Новая заявка с сайта spb.visa-sc.ru</b></p>
+<table style="border-collapse:collapse">${rows}
+<tr><td style="padding:3px 14px 3px 0;color:#666">Форма</td><td>${escN(lead.form)}</td></tr>
+<tr><td style="padding:3px 14px 3px 0;color:#666">Страница</td><td><a href="${escN(page)}">${escN(lead.pageTitle || page)}</a></td></tr>
+<tr><td style="padding:3px 14px 3px 0;color:#666">Время</td><td>${escN(when)}</td></tr>
+<tr><td style="padding:3px 14px 3px 0;color:#666">Номер заявки</td><td>#${escN(lead.id)} — <a href="https://spb.visa-sc.ru/leads/${escN(lead.id)}">открыть</a></td></tr>
+</table></div>`;
+  const r = await sendMail({ to: NOTIFY_TO, subject: `Новая заявка #${lead.id}: ${lead.form || "Заявка"} — spb.visa-sc.ru`, html });
+  if (r && r.ok) {
+    notified.add(lead.id);
+    fsN.writeFileSync(NOTIFIED_FILE, JSON.stringify([...notified].slice(-5000)));
+    console.log(`  заявка #${lead.id}: письмо на ${NOTIFY_TO} отправлено`);
+  } else console.log(`  заявка #${lead.id}: письмо не ушло — ${r && r.error}`);
+}
+
 // Неудачные заявки не долбим каждые секунды: откладываем с нарастающей паузой.
 const retryAt = new Map();
 const BACKOFF = [60e3, 5 * 60e3, 15 * 60e3, 60 * 60e3];
@@ -217,6 +253,13 @@ async function runOnce() {
   if (!todo.length) return; // тишина в логе, если выгружать нечего
 
   console.log(`${new Date().toISOString()} новых заявок для amo: ${todo.length}${DRY ? " (пробный заход)" : ""}`);
+  for (const lead of todo) {
+    try {
+      await notifyLead(lead);
+    } catch (e) {
+      console.log(`  заявка #${lead.id}: письмо не ушло — ${e.message}`);
+    }
+  }
   const done = [];
   for (const lead of todo) {
     try {
