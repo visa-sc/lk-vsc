@@ -141,6 +141,12 @@
   .seg-sub { background: #ececef; }
   .seg-sub button .op { font-weight: 600; color: var(--ink3); font-size: 12px; }
   .seg-sub button.on .op { color: var(--green-d); }
+  /* Ввод даты рождения (второй способ выбрать возраст). */
+  .dobinput { width: 100%; box-sizing: border-box; padding: 11px 12px; font-size: 15px; font-weight: 600; border: 1px solid #d2d2d7; border-radius: 12px; background: #fff; font-family: inherit; color: var(--ink); -webkit-appearance: none; }
+  .dobinput:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 4px rgba(0,113,227,.15); }
+  .dobout { margin-top: 8px; font-size: 13px; color: var(--ink3); line-height: 1.45; }
+  .dobout.ok { color: var(--green-d); font-weight: 600; }
+  .dobout.bad { color: #b0263a; font-weight: 600; }
   .receipt { margin-top: 22px; border-top: 1px dashed #e2e2e7; padding-top: 16px; }
   .rline { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 14px; }
   .rline .rl-t { color: var(--ink2); }
@@ -215,11 +221,21 @@
 
   <!-- ── Калькулятор страхования АБСОЛЮТ (вторая «вкладка», перенесён со страницы /insurance) ── -->
   <div class="card" id="cardIns" style="display:none;">
-    <p class="sub">АБСОЛЮТ · сумма покрытия 30 000 € (Программа А)</p>
+    <p class="sub" id="insSub">АБСОЛЮТ · сумма покрытия 30 000 € (Программа А)</p>
+
+    <div class="field">
+      <div class="flbl">Страховая компания</div>
+      <div class="seg" id="segIns"></div>
+    </div>
 
     <div class="field">
       <div class="flbl">Возраст застрахованного</div>
-      <div class="seg" id="segAge"></div>
+      <div class="seg seg-sub" id="segAgeMode" style="margin-bottom:8px;"></div>
+      <div id="ageByGroup"><div class="seg" id="segAge"></div></div>
+      <div id="ageByDob" style="display:none;">
+        <input type="date" id="dobInput" class="dobinput" />
+        <div class="dobout" id="dobOut"></div>
+      </div>
     </div>
 
     <div class="field">
@@ -232,10 +248,11 @@
       <div class="seg" id="segAct"></div>
     </div>
 
-    <div class="field" style="margin-bottom:4px;">
+    <div class="field" id="riskField" style="margin-bottom:4px;">
       <div class="flbl">Дополнительные риски (прибавляются к цене полиса)</div>
       <div class="risks" id="risks"></div>
     </div>
+    <div class="note hide" id="insNote"></div>
 
     <div class="receipt" id="receipt"></div>
     <div class="total" id="insTotal" title="Нажмите, чтобы скопировать сумму">
@@ -570,28 +587,53 @@
   setCur("eur");
   loadRates();
 
-  // ══ КАЛЬКУЛЯТОР СТРАХОВАНИЯ АБСОЛЮТ (вторая «вкладка» страницы, изолирован в IIFE) ══
-  // Перенесён со страницы /insurance (теперь редирект сюда). Логика ВНЖ-калькулятора не задета.
+  // ══ КАЛЬКУЛЯТОР СТРАХОВАНИЯ (вторая «вкладка» страницы, изолирован в IIFE) ══
+  // Две страховые: АБСОЛЮТ и Совкомбанк (добавлен 02.10.2026 по просьбе ОРК через Настю).
+  // У каждой свои возрастные группы, программы и тарифы; доп. риски (НС/ГО/Отмена) есть
+  // только у АБСОЛЮТа — по Совкомбанку прислали лишь базовый полис.
+  // Возраст выбирается двумя способами: группой (как раньше) или по дате рождения.
+  // Логика ВНЖ-калькулятора здесь не задета.
   (function(){
-    // ── ТАРИФЫ АБСОЛЮТ · Программа А (покрытие 30 000 €). Цены полиса — в рублях. ──
-    var AGES = [
-      { key: "kid",    label: "До 4 лет",   full: "Младше 4 лет" },
-      { key: "adult",  label: "4–64 года",  full: "От 4 до 64 лет включительно" },
-      { key: "senior", label: "65–80 лет",  full: "От 65 до 80 лет" }
-    ];
     var DURS = [
       { key: "d15", label: "1–15 дней" },
       { key: "d30", label: "16–30 дней" },
       { key: "d45", label: "31–45 дней" },
       { key: "d60", label: "46–60 дней" }
     ];
-    var ACTS = [
+
+    // Возрастные группы. y0/y1 — границы в ПОЛНЫХ годах включительно, m0 — минимум
+    // в месяцах (для младенческой группы Совкомбанка). По ним же подбирается группа
+    // при вводе даты рождения.
+    var ABS_AGES = [
+      { key: "kid",    label: "До 4 лет",  full: "Младше 4 лет",               y0: 0,  y1: 3  },
+      { key: "adult",  label: "4–64 года", full: "От 4 до 64 лет включительно", y0: 4,  y1: 64 },
+      { key: "senior", label: "65–80 лет", full: "От 65 до 80 лет",            y0: 65, y1: 80 }
+    ];
+    var SOV_AGES = [
+      { key: "m1_11",  label: "1–11 мес",   full: "От 1 мес до 11 мес", y0: 0,  y1: 0,   m0: 1 },
+      { key: "y1_3",   label: "1–3 года",   full: "От 1 до 3 лет",      y0: 1,  y1: 3   },
+      { key: "y4_8",   label: "4–8 лет",    full: "От 4 до 8 лет",      y0: 4,  y1: 8   },
+      { key: "y9_64",  label: "9–64 года",  full: "От 9 до 64 лет",     y0: 9,  y1: 64  },
+      { key: "y65_69", label: "65–69 лет",  full: "От 65 до 69 лет",    y0: 65, y1: 69  },
+      { key: "y70_79", label: "70–79 лет",  full: "От 70 до 79 лет",    y0: 70, y1: 79  },
+      { key: "y80_84", label: "80–84 года", full: "От 80 до 84 лет",    y0: 80, y1: 84  },
+      { key: "y85",    label: "от 85 лет",  full: "От 85 лет",          y0: 85, y1: 200 }
+    ];
+
+    var ABS_ACTS = [
       { key: "standard", label: "Без приключений", full: "Без приключений (стандартная страховка)" },
       { key: "active",   label: "Активный отдых",  full: "Активный отдых" },
       { key: "sport",    label: "Спорт",           full: "Спорт" }
     ];
-    // Базовый полис: BASE[act][dur][age]. Данные из листа «Стандартная» (Программа А, 30 000 €).
-    var BASE = {
+    var SOV_ACTS = [
+      { key: "standard", label: "Без приключений", full: "Без приключений (стандартная страховка)" },
+      { key: "sea",      label: "Активный отдых",  full: "Активный отдых на море" },
+      { key: "winter",   label: "Зимний / спорт",  full: "Зимний активный отдых / Спорт / Профессиональный риск" },
+      { key: "extreme",  label: "Экстрим",         full: "Экстремальный отдых" }
+    ];
+
+    // Базовый полис: BASE[программа][срок][возрастная группа]. Цены в рублях.
+    var ABS_BASE = {
       standard: {
         d15: { adult: 850,  kid: 1700,  senior: 1700 },
         d30: { adult: 1500, kid: 3000,  senior: 3000 },
@@ -611,9 +653,36 @@
         d60: { adult: 5400, kid: 10800, senior: 10800 }
       }
     };
-    // Доп. риски (листы «НС и ГО» + «Отмена поездки»). Прибавляются к базовому полису.
-    // НС и ГО — зависят только от продолжительности; Отмена — выбор страховой суммы (не от срока/возраста).
-    var RISKS = [
+    // Совкомбанк, сумма покрытия 30 000 € (лист «СОВКОМБАНК — тарифы», 02.10.2026).
+    var SOV_BASE = {
+      standard: {
+        d15: { y9_64: 850,   m1_11: 2550,  y1_3: 1955,  y4_8: 1190,  y65_69: 1700,  y70_79: 5100,  y80_84: 5950,  y85: 8500 },
+        d30: { y9_64: 1500,  m1_11: 4500,  y1_3: 3450,  y4_8: 2100,  y65_69: 3000,  y70_79: 9000,  y80_84: 10500, y85: 15000 },
+        d45: { y9_64: 2000,  m1_11: 6000,  y1_3: 4600,  y4_8: 2800,  y65_69: 4000,  y70_79: 12000, y80_84: 14000, y85: 20000 },
+        d60: { y9_64: 2700,  m1_11: 8100,  y1_3: 6210,  y4_8: 3780,  y65_69: 5400,  y70_79: 16200, y80_84: 18900, y85: 27000 }
+      },
+      sea: {
+        d15: { y9_64: 1105,  m1_11: 3315,  y1_3: 2541.5, y4_8: 1547, y65_69: 2210,  y70_79: 6630,  y80_84: 7735,  y85: 11050 },
+        d30: { y9_64: 1950,  m1_11: 5850,  y1_3: 4485,  y4_8: 2730,  y65_69: 3900,  y70_79: 11700, y80_84: 13650, y85: 19500 },
+        d45: { y9_64: 2600,  m1_11: 7800,  y1_3: 5980,  y4_8: 3640,  y65_69: 5200,  y70_79: 15600, y80_84: 18200, y85: 26000 },
+        d60: { y9_64: 3510,  m1_11: 10530, y1_3: 8073,  y4_8: 4914,  y65_69: 7020,  y70_79: 21060, y80_84: 24570, y85: 35100 }
+      },
+      winter: {
+        d15: { y9_64: 2125,  m1_11: 6375,  y1_3: 4887.5, y4_8: 2975, y65_69: 4250,  y70_79: 12750, y80_84: 14875, y85: 21250 },
+        d30: { y9_64: 3750,  m1_11: 11250, y1_3: 8625,  y4_8: 5250,  y65_69: 7500,  y70_79: 22500, y80_84: 26250, y85: 37500 },
+        d45: { y9_64: 5000,  m1_11: 15000, y1_3: 11500, y4_8: 7000,  y65_69: 10000, y70_79: 30000, y80_84: 35000, y85: 50000 },
+        d60: { y9_64: 6750,  m1_11: 20250, y1_3: 15525, y4_8: 9450,  y65_69: 13500, y70_79: 40500, y80_84: 47250, y85: 67500 }
+      },
+      extreme: {
+        d15: { y9_64: 4250,  m1_11: 12750, y1_3: 9775,  y4_8: 5950,  y65_69: 8500,  y70_79: 25500, y80_84: 29750, y85: 42500 },
+        d30: { y9_64: 7500,  m1_11: 22500, y1_3: 17250, y4_8: 10500, y65_69: 15000, y70_79: 45000, y80_84: 52500, y85: 75000 },
+        d45: { y9_64: 10000, m1_11: 30000, y1_3: 23000, y4_8: 14000, y65_69: 20000, y70_79: 60000, y80_84: 70000, y85: 100000 },
+        d60: { y9_64: 13500, m1_11: 40500, y1_3: 31050, y4_8: 18900, y65_69: 27000, y70_79: 81000, y80_84: 94500, y85: 135000 }
+      }
+    };
+
+    // Доп. риски АБСОЛЮТа (листы «НС и ГО» + «Отмена поездки»). Прибавляются к базе.
+    var ABS_RISKS = [
       { key: "ns", name: "Несчастный случай (НС)", sub: "покрытие 1 000 € · по сроку поездки", by: "dur",
         tariff: { d15: 100, d30: 200, d45: 300, d60: 400 } },
       { key: "go", name: "Гражданская ответственность (ГО)", sub: "покрытие 10 000 € · по сроку поездки", by: "dur",
@@ -622,35 +691,120 @@
         options: [ { k: "s150", label: "150 €", price: 2100 }, { k: "s200", label: "200 €", price: 2850 } ] }
     ];
 
-    var st = { age: "adult", dur: "d15", act: "standard", ns: false, go: false, cancel: false, cancelSum: "s150" };
+    var INSURERS = [
+      { key: "absolut", label: "АБСОЛЮТ", sub: "АБСОЛЮТ · сумма покрытия 30 000 € (Программа А)",
+        ages: ABS_AGES, acts: ABS_ACTS, base: ABS_BASE, risks: ABS_RISKS, defAge: "adult" },
+      { key: "sovcom", label: "Совкомбанк", sub: "СОВКОМБАНК · сумма покрытия 30 000 €",
+        ages: SOV_AGES, acts: SOV_ACTS, base: SOV_BASE, risks: [], defAge: "y9_64",
+        note: "По Совкомбанку присланы тарифы только базового полиса. Дополнительные риски (НС, ГО, отмена поездки) появятся, как только их пришлют." }
+    ];
 
-    function cancelOpt(r){ return r.options.filter(function(x){ return x.k === st.cancelSum; })[0] || r.options[0]; }
-    function riskPrice(r){
-      if (r.by === "opt") { var o = cancelOpt(r); return o ? o.price : null; }
-      return r.by === "flat" ? r.tariff : (r.tariff ? r.tariff[st.dur] : null);
+    var AGE_MODES = [ { key: "group", label: "Выбрать группу" }, { key: "dob", label: "По дате рождения" } ];
+
+    var st = { ins: "absolut", age: "adult", dur: "d15", act: "standard",
+               ns: false, go: false, cancel: false, cancelSum: "s150",
+               ageMode: "group", dob: "", ageYears: null, ageErr: null };
+
+    function INS(){ return INSURERS.filter(function(x){ return x.key === st.ins; })[0] || INSURERS[0]; }
+    function byKey(list, k){ return list.filter(function(x){ return x.key === k; })[0] || null; }
+    // Суммы у Совкомбанка бывают с половиной рубля — показываем копейки только когда они есть.
+    function rub(v){ return (v == null || isNaN(v)) ? "—" : (Math.abs(v % 1) < 1e-9 ? ru0(v) : ru2(v)); }
+    function plural(n, a, b, c){ var m = n % 100; if (m >= 11 && m <= 14) return c; m = n % 10; return m === 1 ? a : (m >= 2 && m <= 4 ? b : c); }
+
+    // ── Возраст по дате рождения ──
+    function fullAge(dobStr){ // → { y, m, months } полных на сегодня, либо null
+      var p = String(dobStr || "").split("-");
+      if (p.length !== 3) return null;
+      var Y = +p[0], M = +p[1], D = +p[2];
+      var d = new Date(Y, M - 1, D);
+      if (!(d.getFullYear() === Y && d.getMonth() === M - 1 && d.getDate() === D)) return null;
+      var now = new Date(); now.setHours(0, 0, 0, 0);
+      if (d.getTime() > now.getTime()) return null;
+      var y = now.getFullYear() - Y, m = now.getMonth() - (M - 1);
+      if (now.getDate() - D < 0) m--;
+      if (m < 0) { y--; m += 12; }
+      return { y: y, m: m, months: y * 12 + m };
     }
-    // ГО детям младше 18 лет не оформляется → для категории «До 4 лет» риск заблокирован.
-    function riskBlocked(r){ return r.key === "go" && st.age === "kid"; }
-    function normalizeState(){ if (st.age === "kid" && st.go) st.go = false; } // сняли ГО при переключении на «До 4 лет»
+    function ageText(a){
+      if (a.y < 1) return a.months + " " + plural(a.months, "месяц", "месяца", "месяцев");
+      return a.y + " " + plural(a.y, "полный год", "полных года", "полных лет");
+    }
+    function ageKeyFor(ins, a){
+      for (var i = 0; i < ins.ages.length; i++) {
+        var g = ins.ages[i];
+        if (a.y >= g.y0 && a.y <= g.y1) {
+          if (g.m0 != null && a.months < g.m0) continue; // младше месяца — не страхуют
+          return g.key;
+        }
+      }
+      return null;
+    }
 
-    // ── Отрисовка сегментов и чекбоксов ──
-    function buildSeg(host, items, stKey){
+    function riskPrice(r){
+      if (r.by === "opt") { var o = byKeyOpt(r); return o ? o.price : null; }
+      return r.tariff ? r.tariff[st.dur] : null;
+    }
+    function byKeyOpt(r){ return r.options.filter(function(x){ return x.k === st.cancelSum; })[0] || r.options[0]; }
+    // ГО детям младше 18 лет не оформляется. По дате рождения знаем возраст точно,
+    // при выборе группой — блокируем только заведомо детскую группу, как было раньше.
+    function riskBlocked(r){
+      if (r.key !== "go") return false;
+      return (st.ageYears != null) ? (st.ageYears < 18) : (st.age === "kid");
+    }
+    function normalizeState(){ if (st.go && riskBlocked({ key: "go" })) st.go = false; }
+
+    // ── Отрисовка ──
+    function buildSeg(host, items, stKey, onPick){
       host.innerHTML = "";
       items.forEach(function(it){
         var b = document.createElement("button");
         b.type = "button"; b.textContent = it.label; if (it.full) b.title = it.full;
         b.setAttribute("data-k", it.key);
         b.className = (st[stKey] === it.key ? "on" : "");
-        // Перерисовываем и плашки рисков: цены НС/ГО зависят от срока, блокировка ГО — от возраста.
-        // Цены в плашках должны меняться СРАЗУ при выборе срока (корр. Насти 31.07), не при клике по риску.
-        b.addEventListener("click", function(){ st[stKey] = it.key; buildSeg(host, items, stKey); buildRisks(); compute(); });
+        b.addEventListener("click", function(){ st[stKey] = it.key; (onPick || redraw)(); });
         host.appendChild(b);
       });
     }
+    function buildAge(){
+      var ins = INS(), byDob = (st.ageMode === "dob");
+      buildSeg($("segAgeMode"), AGE_MODES, "ageMode");
+      $("ageByGroup").style.display = byDob ? "none" : "";
+      $("ageByDob").style.display = byDob ? "" : "none";
+      st.ageErr = null;
+      if (!byDob) {
+        st.ageYears = null;
+        if (!byKey(ins.ages, st.age)) st.age = ins.defAge;
+        buildSeg($("segAge"), ins.ages, "age");
+        return;
+      }
+      var inp = $("dobInput"), out = $("dobOut");
+      if (inp.value !== st.dob) inp.value = st.dob || "";
+      var a = st.dob ? fullAge(st.dob) : null;
+      if (!st.dob) { st.ageYears = null; st.ageErr = "no-dob"; out.className = "dobout"; out.textContent = "Укажите дату рождения — возрастная группа подставится сама."; return; }
+      if (!a) { st.ageYears = null; st.ageErr = "bad-dob"; out.className = "dobout bad"; out.textContent = "Проверьте дату рождения."; return; }
+      st.ageYears = a.y;
+      var k = ageKeyFor(ins, a);
+      if (!k) {
+        st.ageErr = "no-tariff";
+        out.className = "dobout bad";
+        out.textContent = ageText(a) + " · у «" + ins.label + "» для этого возраста тарифа нет";
+        return;
+      }
+      st.age = k;
+      out.className = "dobout ok";
+      out.textContent = ageText(a) + " · группа «" + byKey(ins.ages, k).label + "»";
+    }
     function buildRisks(){
+      var ins = INS(), host = $("risks"), note = $("insNote");
+      if (!ins.risks.length) { // Совкомбанк: доп. рисков не присылали
+        $("riskField").style.display = "none"; host.innerHTML = "";
+        note.classList.remove("hide"); note.textContent = ins.note || "";
+        return;
+      }
+      $("riskField").style.display = ""; note.classList.add("hide"); note.textContent = "";
       normalizeState();
-      var host = $("risks"); host.innerHTML = "";
-      RISKS.forEach(function(r){
+      host.innerHTML = "";
+      ins.risks.forEach(function(r){
         var blocked = riskBlocked(r);
         var on = st[r.key] && !blocked;
         var p = riskPrice(r);
@@ -661,13 +815,13 @@
           ? '<span class="rprice tbd">недоступно</span>'
           : (p == null)
             ? '<span class="rprice tbd">тариф уточняется</span>'
-            : '<span class="rprice">+' + ru0(p) + ' ₽</span>';
+            : '<span class="rprice">+' + rub(p) + ' ₽</span>';
         row.innerHTML =
           '<input type="checkbox"' + (on ? " checked" : "") + ' />' +
           '<span class="rmid"><span class="rname">' + r.name + '</span><span class="rsub">' + sub + '</span></span>' +
           priceHtml;
         row.querySelector("input").addEventListener("change", function(e){
-          if (blocked) { // попытка выбрать ГО для «До 4 лет» → предупреждение, выбор не даём
+          if (blocked) { // попытка выбрать ГО несовершеннолетнему → предупреждение, выбор не даём
             e.target.checked = false;
             var subEl = row.querySelector(".rsub");
             subEl.textContent = "По ГО дети младше 18 лет не страхуются";
@@ -675,7 +829,7 @@
             setTimeout(function(){ row.classList.remove("err"); subEl.textContent = "детям младше 18 лет не оформляется"; }, 2600);
             return;
           }
-          st[r.key] = e.target.checked; buildRisks(); compute();
+          st[r.key] = e.target.checked; redraw();
         });
         host.appendChild(row);
         // Подвыбор страховой суммы (для «Отмена поездки») — показывается, когда риск включён.
@@ -688,8 +842,8 @@
             var b = document.createElement("button");
             b.type = "button";
             b.className = (st.cancelSum === o.k ? "on" : "");
-            b.innerHTML = o.label + ' <span class="op">· ' + ru0(o.price) + ' ₽</span>';
-            b.addEventListener("click", function(){ st.cancelSum = o.k; buildRisks(); compute(); });
+            b.innerHTML = o.label + ' <span class="op">· ' + rub(o.price) + ' ₽</span>';
+            b.addEventListener("click", function(){ st.cancelSum = o.k; redraw(); });
             seg.appendChild(b);
           });
           subw.appendChild(seg);
@@ -698,38 +852,77 @@
       });
     }
 
+    var lastTotal = null;
     function compute(){
-      normalizeState();
-      var base = BASE[st.act][st.dur][st.age];
-      var actLabel = ACTS.filter(function(a){ return a.key === st.act; })[0].full;
-      var rows = [{ t: "Базовый полис · " + actLabel, v: base, tbd: false }];
-      var total = base, anyTbd = false, tbdNames = [];
-      RISKS.forEach(function(r){
-        if (!st[r.key]) return;
+      var ins = INS(), rc = $("receipt"), note = $("tbdNote");
+      rc.innerHTML = ""; note.classList.add("hide"); note.textContent = "";
+      // Возраст по дате рождения не определён — считать не из чего.
+      if (st.ageErr) {
+        lastTotal = null;
+        $("totalVal").textContent = "—";
+        var msg = st.ageErr === "no-tariff"
+          ? "У «" + ins.label + "» нет тарифа для этого возраста. Выберите другую страховую или уточните дату."
+          : (st.ageErr === "bad-dob" ? "Проверьте дату рождения." : "Укажите дату рождения.");
+        rc.innerHTML = '<div class="rline"><span class="rl-t">' + msg + '</span><span class="rl-v">—</span></div>';
+        return;
+      }
+      var tbl = ins.base[st.act] && ins.base[st.act][st.dur];
+      var base = tbl ? tbl[st.age] : null;
+      if (base == null) {
+        lastTotal = null;
+        $("totalVal").textContent = "—";
+        rc.innerHTML = '<div class="rline"><span class="rl-t">Для этой комбинации тарифа нет</span><span class="rl-v">—</span></div>';
+        return;
+      }
+      var actLabel = byKey(ins.acts, st.act).full;
+      var rows = [{ t: "Базовый полис · " + ins.label + " · " + actLabel, v: base }];
+      var total = base;
+      ins.risks.forEach(function(r){
+        if (!st[r.key] || riskBlocked(r)) return;
         var p = riskPrice(r), label = r.name;
-        if (r.by === "opt") { var o = cancelOpt(r); if (o) label += " (" + o.label + ")"; }
-        if (p == null) { anyTbd = true; tbdNames.push(r.name); rows.push({ t: label, v: null, tbd: true }); }
-        else { total += p; rows.push({ t: label, v: p, tbd: false }); }
+        if (r.by === "opt") { var o = byKeyOpt(r); if (o) label += " (" + o.label + ")"; }
+        if (p == null) return;
+        total += p; rows.push({ t: label, v: p });
       });
-      var rc = $("receipt"); rc.innerHTML = "";
       rows.forEach(function(x){
         var d = document.createElement("div");
-        d.className = "rline" + (x.tbd ? " tbd" : "");
-        d.innerHTML = '<span class="rl-t">' + x.t + '</span><span class="rl-v">' + (x.tbd ? "тариф уточняется" : (ru0(x.v) + " ₽")) + '</span>';
+        d.className = "rline";
+        d.innerHTML = '<span class="rl-t">' + x.t + '</span><span class="rl-v">' + rub(x.v) + ' ₽</span>';
         rc.appendChild(d);
       });
-      $("totalVal").textContent = ru0(total) + " ₽" + (anyTbd ? " *" : "");
-      var note = $("tbdNote");
-      if (anyTbd) {
-        note.classList.remove("hide");
-        note.textContent = "* Без учёта: " + tbdNames.join(", ") + ". Тарифы этих рисков пока не заведены — итог будет пересчитан, как только их пришлют.";
-      } else { note.classList.add("hide"); note.textContent = ""; }
+      lastTotal = total;
+      $("totalVal").textContent = rub(total) + " ₽";
     }
+
+    // Полная перерисовка страхового блока (всё взаимосвязано: страховая → группы,
+    // возраст → доступность ГО, срок → цены рисков).
+    function redraw(){
+      var ins = INS();
+      $("insSub").textContent = ins.sub;
+      buildSeg($("segIns"), INSURERS, "ins", function(){ switchInsurer(); });
+      buildAge();
+      buildSeg($("segDur"), DURS, "dur");
+      if (!byKey(ins.acts, st.act)) st.act = ins.acts[0].key;
+      buildSeg($("segAct"), ins.acts, "act");
+      buildRisks();
+      compute();
+    }
+    // Смена страховой: переносим возраст и программу на её собственные группы.
+    function switchInsurer(){
+      var ins = INS();
+      if (!byKey(ins.acts, st.act)) st.act = ins.acts[0].key;
+      if (st.ageMode !== "dob" && !byKey(ins.ages, st.age)) st.age = ins.defAge;
+      redraw();
+    }
+
+    $("dobInput").addEventListener("input", function(){ st.dob = this.value; redraw(); });
+    $("dobInput").addEventListener("change", function(){ st.dob = this.value; redraw(); });
+    try { $("dobInput").max = new Date().toISOString().slice(0, 10); } catch (_) {}
 
     // Копирование итоговой суммы по клику.
     $("insTotal").addEventListener("click", function(){
-      var num = ($("totalVal").textContent || "").replace(/[^\d]/g, "");
-      if (!num) return;
+      if (lastTotal == null) return;
+      var num = (Math.abs(lastTotal % 1) < 1e-9) ? String(Math.round(lastTotal)) : String(lastTotal).replace(".", ",");
       var tt = $("insTotal").querySelector(".tt"), orig = tt.textContent;
       function flash(){ tt.textContent = "✓ Скопировано"; $("insTotal").style.background = "#dff3e6"; setTimeout(function(){ tt.textContent = orig; $("insTotal").style.background = ""; }, 1000); }
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(num).then(flash).catch(function(){});
@@ -742,12 +935,16 @@
       var pop = document.createElement("span");
       pop.className = "info-pop";
       pop.innerHTML =
-        '<b>Как пользоваться</b><br>Выбери возраст застрахованного, продолжительность поездки и программу (базовый полис). Отметь дополнительные риски — они прибавляются к цене полиса. Итог можно скопировать кликом.'
-        + '<br><br><b>Логика тарифов АБСОЛЮТ</b><br>'
-        + '• Цена базового полиса зависит от возраста и продолжительности.<br>'
-        + '• «Активный отдых» и «Спорт» — это целая (другая) стоимость полиса вместо стандартной.<br>'
-        + '• НС (покрытие 1 000 €) и ГО (покрытие 10 000 €) зависят только от продолжительности; «Отмена поездки» — на выбор страховая сумма 150 € или 200 €. От возраста цена этих трёх рисков не зависит.<br>'
-        + '• По ГО дети младше 18 лет не страхуются — для категории «До 4 лет» риск недоступен.';
+        '<b>Как пользоваться</b><br>Выбери страховую компанию, возраст застрахованного, продолжительность поездки и программу. Отметь дополнительные риски — они прибавляются к цене полиса. Итог можно скопировать кликом.'
+        + '<br><br><b>Возраст</b><br>Можно выбрать готовую группу, а можно ввести дату рождения — тогда группа подставится сама по числу полных лет на сегодня. У каждой страховой свои границы групп.'
+        + '<br><br><b>АБСОЛЮТ</b> (покрытие 30 000 €)<br>'
+        + '• Три программы: «Без приключений», «Активный отдых» и «Спорт» — это целая (другая) стоимость полиса вместо стандартной.<br>'
+        + '• НС (покрытие 1 000 €) и ГО (покрытие 10 000 €) зависят только от продолжительности; «Отмена поездки» — на выбор страховая сумма 150 € или 200 €.<br>'
+        + '• По ГО дети младше 18 лет не страхуются.'
+        + '<br><br><b>Совкомбанк</b> (покрытие 30 000 €)<br>'
+        + '• Четыре программы: «Без приключений», «Активный отдых на море», «Зимний отдых / спорт / профриск» и «Экстремальный отдых».<br>'
+        + '• Возрастных групп восемь — от месяца до 85 лет и старше.<br>'
+        + '• Доп. рисков пока нет: прислали только базовый полис.';
       function place(){
         if (pop.parentNode !== document.body) document.body.appendChild(pop);
         pop.classList.add("show");
@@ -771,11 +968,7 @@
       window.addEventListener("resize", function(){ if (pop.classList.contains("show")) close(); });
     })();
 
-    buildSeg($("segAge"), AGES, "age");
-    buildSeg($("segDur"), DURS, "dur");
-    buildSeg($("segAct"), ACTS, "act");
-    buildRisks();
-    compute();
+    redraw();
 
     // Счётчик реального использования страхового калькулятора: вкладка «Страхование»
     // открыта И сделано ≥2 кликов по его элементам (сегменты/риски/итог). Один пинг
@@ -783,7 +976,7 @@
     var usageClicks = 0, usageSent = false;
     $("cardIns").addEventListener("click", function(e){
       if (usageSent) return;
-      if (!e.target.closest("button, .risk, .total")) return; // клики по пустому месту не считаем
+      if (!e.target.closest("button, .risk, .total, input")) return; // клики по пустому месту не считаем
       usageClicks++;
       if (usageClicks >= 2 && $("cardIns").style.display !== "none") {
         usageSent = true;
