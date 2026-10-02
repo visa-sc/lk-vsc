@@ -3635,8 +3635,10 @@ function mount(app, opts) {
       orders.forEach((o) => {
         if (o.abandonMail > 0 && now - o.abandonMail < 24 * 3600 * 1000) wroteTo.add(o.custKey || o.email);
       });
+      // Оплаченный позже заказ мог потом стать «canceled» (вернули деньги, отменили
+      // eSIM) — человек всё равно дошёл до оплаты, так что смотрим и на paidAt (02.10.2026)
       const paidAfter = (o) => orders.some((x) => (x.custKey || x.email) === (o.custKey || o.email) &&
-        (x.status === "done" || x.status === "fulfilling") && x.ts >= o.ts - 5 * 60000);
+        (x.paidAt || x.status === "done" || x.status === "fulfilling") && x.ts >= o.ts - 5 * 60000);
 
       let changed = false;
       for (const o of orders) {
