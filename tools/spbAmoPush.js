@@ -201,99 +201,8 @@ async function report(items) {
   await axios.post(`${API}/leads/api/amo?token=${encodeURIComponent(SPB_TOKEN)}`, { items }, { timeout: 30000 });
 }
 
-// Письмо о новой заявке — как слал Flexbe (Настройки → Уведомления: Email #1
-// visa.sc.office@yandex.ru, UTM в письмо не добавлялись). Шлём один раз на
-// заявку, сразу, независимо от того, получилось ли создать сделку в amo.
-const fsN = require("fs");
-const NOTIFY_TO = process.env.SPBCOPY_NOTIFY_TO || "visa.sc.office@yandex.ru";
-const NOTIFIED_FILE = path.join(__dirname, "..", ".spbNotified.json");
-let notified = new Set();
-try {
-  notified = new Set(JSON.parse(fsN.readFileSync(NOTIFIED_FILE, "utf8")));
-} catch (_) {}
-const escN = (x) => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-async function notifyLead(lead) {
-  if (DRY || !NOTIFY_TO || notified.has(lead.id)) return;
-  const { sendMail } = require(path.join(__dirname, "..", "mail.js"));
-  const rows = (lead.fields || [])
-    .filter((x) => String(x.value || "").trim())
-    .map((x) => `<tr><td style="padding:3px 14px 3px 0;color:#666">${escN(x.name)}</td><td style="padding:3px 0"><b>${escN(x.value)}</b></td></tr>`)
-    .join("");
-  const when = new Date(lead.at).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
-  const page = "https://spb.visa-sc.ru" + (lead.pagePath || "/");
-  const html = `<div style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111">
-<p style="font-size:17px;margin:0 0 10px"><b>Новая заявка с сайта spb.visa-sc.ru</b></p>
-<table style="border-collapse:collapse">${rows}
-<tr><td style="padding:3px 14px 3px 0;color:#666">Форма</td><td>${escN(lead.form)}</td></tr>
-<tr><td style="padding:3px 14px 3px 0;color:#666">Страница</td><td><a href="${escN(page)}">${escN(lead.pageTitle || page)}</a></td></tr>
-<tr><td style="padding:3px 14px 3px 0;color:#666">Время</td><td>${escN(when)}</td></tr>
-<tr><td style="padding:3px 14px 3px 0;color:#666">Номер заявки</td><td>#${escN(lead.id)} — <a href="https://spb.visa-sc.ru/leads/${escN(lead.id)}">открыть</a></td></tr>
-</table></div>`;
-  const r = await sendMail({ to: NOTIFY_TO, subject: `Новая заявка #${lead.id}: ${lead.form || "Заявка"} — spb.visa-sc.ru`, html });
-  if (r && r.ok) {
-    notified.add(lead.id);
-    fsN.writeFileSync(NOTIFIED_FILE, JSON.stringify([...notified].slice(-5000)));
-    console.log(`  заявка #${lead.id}: письмо на ${NOTIFY_TO} отправлено`);
-  } else console.log(`  заявка #${lead.id}: письмо не ушло — ${r && r.error}`);
-}
-
-// Roistat. Flexbe отправлял каждую заявку вебхуком в Roistat (Настройки → API →
-// Webhook #1, cloud.roistat.com/integration/webhook?key=…) — так Roistat связывает
-// заявку с рекламным визитом. Повторяем: тот же адрес, формат вебхука Flexbe
-// (event=lead, site[…], data[…], см. help.flexbe.ru/api-documentation), плюс номер
-// визита из куки roistat_visit. Адрес с ключом — SPBCOPY_ROISTAT_WEBHOOK в .env.
-const ROISTAT_HOOK = process.env.SPBCOPY_ROISTAT_WEBHOOK || "";
-const ROISTAT_FILE = path.join(__dirname, "..", ".spbRoistatSent.json");
-let roistatSent = new Set();
-try {
-  roistatSent = new Set(JSON.parse(fsN.readFileSync(ROISTAT_FILE, "utf8")));
-} catch (_) {}
-async function sendRoistat(lead) {
-  if (DRY || !ROISTAT_HOOK || roistatSent.has(lead.id)) return;
-  const p = new URLSearchParams();
-  const put = (k, v) => p.append(k, v == null ? "" : String(v));
-  const pageUrl = "https://spb.visa-sc.ru" + (lead.pagePath || "/");
-  const utm = lead.utm || {};
-  put("event", "lead");
-  put("site[sub_id]", "130957");
-  put("site[domain]", "spb.visa-sc.ru");
-  put("site[name]", "spb.visa-sc.ru");
-  put("data[id]", lead.id);
-  put("data[num]", lead.id);
-  put("data[time]", Math.floor(new Date(lead.at).getTime() / 1000));
-  put("data[status][code]", 0);
-  put("data[status][name]", "Новая");
-  put("data[client][name]", lead.clientName || "");
-  put("data[client][phone]", lead.phone || "");
-  put("data[client][email]", lead.email || "");
-  put("data[note]", "");
-  put("data[form_name]", lead.form || "Заявка");
-  (lead.fields || []).forEach((x, i) => {
-    put(`data[form_data][${i}][name]`, x.name);
-    put(`data[form_data][${i}][value]`, x.value);
-    put(`data[form_data][${i}][type]`, x.type || "text");
-  });
-  put("data[page][url]", pageUrl);
-  put("data[page][name]", lead.pageTitle || "");
-  for (const k of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]) put(`data[utm][${k}]`, utm[k] || "");
-  put("data[utm][url]", pageUrl);
-  put("data[utm][ym_client_id]", lead.ym_client_id || "");
-  put("data[utm][ga_client_id]", lead.ga_client_id || "");
-  // номер визита — во всех местах, где его ищут обработчики Roistat
-  put("data[utm][roistat_visit]", lead.roistat_visit || "");
-  put("data[roistat_visit]", lead.roistat_visit || "");
-  put("roistat_visit", lead.roistat_visit || "");
-  const r = await axios.post(ROISTAT_HOOK, p.toString(), {
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    timeout: 20000,
-    validateStatus: () => true
-  });
-  if (r.status >= 200 && r.status < 300) {
-    roistatSent.add(lead.id);
-    fsN.writeFileSync(ROISTAT_FILE, JSON.stringify([...roistatSent].slice(-5000)));
-    console.log(`  заявка #${lead.id}: Roistat принял (визит ${lead.roistat_visit || "—"})`);
-  } else console.log(`  заявка #${lead.id}: Roistat ответил ${r.status} ${String(r.data).slice(0, 120)}`);
-}
+// Письмо на visa.sc.office@yandex.ru и отправку в Roistat, которые делал Flexbe,
+// сознательно НЕ повторяем: Андрей 02.10.2026 — оба не нужны.
 
 // Неудачные заявки не долбим каждые секунды: откладываем с нарастающей паузой.
 const retryAt = new Map();
@@ -311,18 +220,7 @@ async function runOnce() {
   if (!todo.length) return; // тишина в логе, если выгружать нечего
 
   console.log(`${new Date().toISOString()} новых заявок для amo: ${todo.length}${DRY ? " (пробный заход)" : ""}`);
-  for (const lead of todo) {
-    try {
-      await notifyLead(lead);
-    } catch (e) {
-      console.log(`  заявка #${lead.id}: письмо не ушло — ${e.message}`);
-    }
-    try {
-      await sendRoistat(lead);
-    } catch (e) {
-      console.log(`  заявка #${lead.id}: Roistat не принял — ${e.message}`);
-    }
-  }
+
   const done = [];
   for (const lead of todo) {
     try {
