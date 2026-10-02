@@ -21,6 +21,8 @@
  *
  * Запуск на сервере: node tools/spbHistory.js [--dry]. Cron — раз в сутки ночью:
  * старые сделки докрываются, повторные покупки старых клиентов добавляются.
+ * Тот же расчёт для копии основного сайта (msk.voyotravel.ru):
+ *   SPB_SITE_HOST=visa-sc.ru SPBCOPY_HISTORY=/var/www/mskcopy/stat/history.json
  * ───────────────────────────────────────────────────────────────────────────── */
 "use strict";
 
@@ -52,17 +54,19 @@ function utmOf(cf) {
 
 const SITE_FROM = Math.floor(Date.parse(process.env.SPB_SITE_FROM || "2023-12-01T00:00:00+03:00") / 1000);
 const PAGE_FIELD = 568514; // «Адрес страницы»
-const spb = db
-  .prepare("SELECT id, created_at, cf, contact_ids FROM leads WHERE created_at >= ? AND cf LIKE '%spb.visa-sc.ru%' ORDER BY created_at")
-  .all(SITE_FROM)
-  .filter((r) => {
-    try {
-      const f = (JSON.parse(r.cf || "[]") || []).find((x) => x.field_id === PAGE_FIELD);
-      return f && /^https?:\/\/(www\.)?spb\.visa-sc\.ru(\/|$)/i.test(String(f.values[0].value));
-    } catch (_) {
-      return false;
-    }
-  });
+const SITE_HOST = process.env.SPB_SITE_HOST || "spb.visa-sc.ru";
+const SITE_RE = new RegExp("^https?://(www\\.)?" + SITE_HOST.replace(/\./g, "\\.") + "(/|$)", "i");
+// построчно, а не .all(): у основного сайта сделок в разы больше, держать их cf в памяти незачем
+const spb = [];
+for (const r of db
+  .prepare("SELECT id, created_at, cf FROM leads WHERE created_at >= ? AND cf LIKE ? ORDER BY created_at")
+  .iterate(SITE_FROM, "%" + SITE_HOST + "%")) {
+  try {
+    const cf = JSON.parse(r.cf || "[]") || [];
+    const f = cf.find((x) => x.field_id === PAGE_FIELD);
+    if (f && SITE_RE.test(String(f.values[0].value))) spb.push({ id: r.id, created_at: r.created_at, utm: utmOf(cf) });
+  } catch (_) {}
+}
 
 const contactsOf = db.prepare("SELECT contact_id FROM lead_contacts WHERE lead_id = ?");
 const dealsOf = db.prepare(
@@ -73,11 +77,7 @@ const dealsOf = db.prepare(
 const firstLeadOfContact = new Map();
 const leads = [];
 for (const r of spb) {
-  let cf = [];
-  try {
-    cf = JSON.parse(r.cf || "[]") || [];
-  } catch (_) {}
-  const utm = utmOf(cf);
+  const utm = r.utm;
   const contacts = contactsOf.all(r.id).map((x) => x.contact_id);
   const lead = { id: r.id, at: r.created_at, utm, contacts, owner: true };
   for (const c of contacts) {
@@ -121,7 +121,7 @@ function group(keyFn) {
     if (l.utm.campaign) o.campaigns.add(l.utm.campaign);
   }
   return [...m.values()]
-    .map((o) => ({ ...o, campaigns: [...o.campaigns].slice(0, 5), first: new Date(o.first * 1000).toISOString().slice(0, 10), last: new Date(o.last * 1000).toISOString().slice(0, 10) }))
+    .map((o) => ({ ...o, campaigns: [...o.campaigns].slice(0, 5), first: new Date((o.first + 10800) * 1000).toISOString().slice(0, 10), last: new Date((o.last + 10800) * 1000).toISOString().slice(0, 10) }))
     .sort((a, b) => b.revenue - a.revenue || b.leads - a.leads);
 }
 
@@ -137,8 +137,8 @@ for (const l of leads) {
 
 const result = {
   builtAt: new Date().toISOString(),
-  from: leads.length ? new Date(leads[0].at * 1000).toISOString().slice(0, 10) : null,
-  to: leads.length ? new Date(leads[leads.length - 1].at * 1000).toISOString().slice(0, 10) : null,
+  from: leads.length ? new Date((leads[0].at + 10800) * 1000).toISOString().slice(0, 10) : null,
+  to: leads.length ? new Date((leads[leads.length - 1].at + 10800) * 1000).toISOString().slice(0, 10) : null,
   totals: {
     leads: leads.length,
     clients: leads.filter((l) => l.owner).length,
@@ -153,7 +153,7 @@ const result = {
 };
 
 console.log(
-  `заявок SPB: ${result.totals.leads} (${result.from} — ${result.to}), клиентов: ${result.totals.clients}, ` +
+  `заявок ${SITE_HOST}: ${result.totals.leads} (${result.from} — ${result.to}), клиентов: ${result.totals.clients}, ` +
     `успешных сделок: ${result.totals.won}, выручка: ${Math.round(result.totals.revenue).toLocaleString("ru-RU")} ₽, ` +
     `с ключевым словом: ${result.totals.withTerm}`
 );
