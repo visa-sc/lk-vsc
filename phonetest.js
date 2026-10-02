@@ -112,12 +112,21 @@ function store() {
   // URL из раздела Flexbe «Настройки → API» (скрин Андрея 31.08): /mod/api/
   const FLEXBE_DEFAULTS = [
     { id: "visa-sc", label: "visa-sc.ru", apiUrl: "https://visa-sc.ru/mod/api/", apiKey: "" },
-    { id: "spb", label: "spb.visa-sc.ru", apiUrl: "https://spb.visa-sc.ru/mod/api/", apiKey: "" },
+    // spb.visa-sc.ru 02.10.2026 переехал на наш сервер; Flexbe-версия живёт по техадресу
+    // и её API доступно там же. Пока на Flexbe ещё кто-то может отправить заявку —
+    // сверяем и её («СПБ Flexbe»), а наш сайт — отдельной строкой «СПБ».
+    { id: "spb", label: "spb.visa-sc.ru (Flexbe)", apiUrl: "https://lp130957.myflexbe.ru/mod/api/", apiKey: "" },
     { id: "ekb", label: "ekb.visa-sc.ru", apiUrl: "https://ekb.visa-sc.ru/mod/api/", apiKey: "" },
   ];
   if (!Array.isArray(c.flexbe)) c.flexbe = [];
   for (const d of FLEXBE_DEFAULTS) { // дозаполняем новые сайты в уже созданном конфиге
     if (!c.flexbe.find((x) => x.id === d.id)) c.flexbe.push(Object.assign({}, d));
+  }
+  // переезд 02.10.2026: старый адрес API питерского Flexbe теперь ведёт на наш сервер
+  const spbF = c.flexbe.find((x) => x.id === "spb");
+  if (spbF && /\/\/spb\.visa-sc\.ru\//.test(spbF.apiUrl || "")) {
+    spbF.apiUrl = "https://lp130957.myflexbe.ru/mod/api/";
+    spbF.label = "spb.visa-sc.ru (Flexbe)";
   }
   if (!Array.isArray(_store.runs)) _store.runs = [];
   if (!Array.isArray(_store.recons)) _store.recons = [];
@@ -827,6 +836,40 @@ function mount(app, deps) {
         } catch (e) {
           fr.error = String((e && e.message) || e);
           rlog(site.label + ": " + fr.error);
+        }
+        reconCurrent.forms.push(fr);
+      }
+      // 3) Наш питерский сайт (spb.visa-sc.ru на своём коде с 02.10.2026): заявки
+      //    лежат в /var/www/spbcopy/leads.json, в amo их отправляет spb-amo. Сверяем
+      //    так же — по телефону в amoCRM, плюс отметка о созданной сделке.
+      {
+        const fr = { id: "spbnew", label: "spb.visa-sc.ru (наш сайт)" };
+        try {
+          const raw = JSON.parse(fs.readFileSync(process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json", "utf8"));
+          const leads = [];
+          for (const e of raw) {
+            if (!/^(www\.)?spb\.visa-sc\.ru$/i.test(e.host || "")) continue;
+            const ts = Date.parse(e.at);
+            if (!(ts >= fromTs && ts <= toTs)) continue;
+            const fl = (e.data && e.data.fields) || [];
+            const ph = (Array.isArray(fl) ? fl : []).find((x) => /phone|tel|телефон/i.test(String(x.type || "") + String(x.name || "")));
+            const phone = digits((ph && ph.value) || "");
+            if (phone.length < 10) continue;
+            leads.push({ phone, ts, num: e.id, amoLeadId: e.amo && e.amo.leadId });
+          }
+          const missing = [];
+          let foundN = 0;
+          for (const l of leads) {
+            const contacts = await amoFindByPhone(l.phone);
+            if (contacts.length) foundN++;
+            else missing.push(l);
+            await new Promise((r) => setTimeout(r, 150));
+          }
+          fr.leads = leads.length; fr.found = foundN; fr.missing = missing;
+          rlog(fr.label + ": заявок " + leads.length + ", в amoCRM " + foundN + (missing.length ? ", ПРОПАЛО: " + missing.length : ""));
+        } catch (e) {
+          fr.error = String((e && e.message) || e);
+          rlog(fr.label + ": " + fr.error);
         }
         reconCurrent.forms.push(fr);
       }

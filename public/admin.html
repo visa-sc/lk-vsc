@@ -3989,8 +3989,10 @@
         vscContent.appendChild(vscReturnsStackedChart(retSeries));
         // ── % записанных сделок (Шенген/США) — сразу под возвратами (по просьбе Андрея) ──
         vscContent.appendChild(vscSchengenBlock());
-        // ── Сверка контактов — ТРЕТЬИМ сверху (по просьбе Андрея 31.08); только админ ──
-        if (currentRole() === "admin") vscContent.appendChild(vscReconBlock());
+        // ── Сверка контактов — ТРЕТЬИМ сверху (по просьбе Андрея 31.08); админ и
+        //    руководитель с правом recon (Петров, 02.10.2026). Сразу под ней — «Формы заявок».
+        const vscReconOk = currentRole() === "admin" || !!(myVscRestrict && Array.isArray(myVscRestrict.tabs) && myVscRestrict.tabs.indexOf("recon") >= 0);
+        if (vscReconOk) { vscContent.appendChild(vscReconBlock()); vscContent.appendChild(vscSpbFormsBlock()); }
         // ── Цикл сделки — ЧЕТВЁРТЫМ сверху (по просьбе Андрея 06.09) ──
         vscContent.appendChild(vscDealCycleBlock());
         // ── Скорость первого касания лида (был 3-м, теперь 5-й) ──
@@ -5861,7 +5863,8 @@
         const box = document.createElement("div"); box.className = "vsc-chart";
         box.innerHTML = '<div class="loading-state">Загружаем сверку контактов…</div>';
         wrap.appendChild(box);
-        const CITY = { "visa-sc": "МСК", "spb": "СПБ", "ekb": "ЕКБ" };
+        // spb — питерский сайт на Flexbe (после переезда 02.10.2026 — техадрес), spbnew — он же на нашем коде
+        const CITY = { "visa-sc": "МСК", "spb": "СПБ Flexbe", "spbnew": "СПБ", "ekb": "ЕКБ" };
         const pill = (ok, txt) => '<span style="font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 7px;white-space:nowrap;color:' + (ok ? "#2c7a43" : "#a12b3c") + ';background:' + (ok ? "#e3f3e7" : "#fbe9ec") + ';">' + txt + '</span>';
         const fmtDay = function (d) { const p = String(d || "").split("-"); return p.length === 3 ? p[2] + "." + p[1] : d; };
         // Строка вида: ✓ Номера (все): 33/33 · Заявки МСК: 10/10 · Заявки СПБ: 3/3 · Заявки ЕКБ: 0/0
@@ -6007,6 +6010,57 @@
               const open = el.style.display !== "none";
               el.style.display = open ? "none" : "";
               hb.textContent = open ? "Показать историю" : "Скрыть историю";
+            });
+          })
+          .catch(function () { box.innerHTML = '<div class="vsc-empty">Сервер не ответил.</div>'; });
+        return wrap;
+      }
+      // ── «Формы заявок» (просьба Андрея 02.10.2026): ошибки клиентов при отправке
+      // заявок на питерском сайте, по дням. Красный крест — был сбой отправки (заявка
+      // могла потеряться), жёлтая галочка — клиенты ошибались в полях (форма
+      // подсказала и не пустила), зелёная — без ошибок. «подробнее» — время, страница
+      // и причина каждого случая. Данные /admin/api/vsc/spb-forms, считаются на лету.
+      function vscSpbFormsBlock() {
+        const wrap = document.createElement("div");
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.style.marginTop = "22px"; h.textContent = "Формы заявок — СПБ";
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart";
+        box.innerHTML = '<div class="loading-state">Загружаем журнал форм…</div>';
+        wrap.appendChild(box);
+        const fmtDay = function (d) { const p = String(d || "").split("-"); return p.length === 3 ? p[2] + "." + p[1] : d; };
+        const MARK = { ok: '<span style="color:#2c7a43;font-weight:800;font-size:14px;">✓</span>',
+                       warn: '<span style="color:#c99a10;font-weight:800;font-size:14px;">✓</span>',
+                       bad: '<span style="color:#a12b3c;font-weight:800;font-size:14px;">✗</span>' };
+        fetch("/admin/api/vsc/spb-forms", { headers: { Authorization: "Bearer " + getToken() } })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            if (!j || !j.success) { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить журнал форм' + (j && j.message ? ": " + escapeHtml(j.message) : "") + '.</div>'; return; }
+            const days = j.days || [];
+            let html = '<div style="font-size:11.5px;color:#8a8f9c;margin-bottom:8px;">spb.visa-sc.ru на нашем сервере · журнал с ' + (j.start ? new Date(j.start).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "переезда") + ' · отправка — нажатие «отправить», заявка — сохранённая заявка</div>';
+            if (!days.length) { box.innerHTML = html + '<div class="vsc-empty">Пока ни одной отправки формы.</div>'; return; }
+            html += '<table style="border-collapse:collapse;font-size:12.5px;width:100%;">' + days.map(function (d) {
+              const st = d.errors ? "bad" : ((d.invalid || d.noCall) ? "warn" : "ok");
+              let line = MARK[st] + '<span style="margin-left:8px;white-space:nowrap;">Отправок: <b>' + d.submits + '</b></span>'
+                + '<span style="margin-left:14px;white-space:nowrap;">Заявок сохранено: <b>' + d.leads + '</b></span>'
+                + '<span style="margin-left:14px;white-space:nowrap;">Ошибки в полях: <b style="color:' + (d.invalid ? "#8a6d0b" : "#1d2330") + ';">' + d.invalid + '</b></span>'
+                + '<span style="margin-left:14px;white-space:nowrap;">Сбои отправки: <b style="color:' + (d.errors ? "#a12b3c" : "#1d2330") + ';">' + d.errors + '</b></span>'
+                + '<span style="margin-left:14px;white-space:nowrap;">Нажали на номер, звонка нет: <b style="color:' + (d.noCall ? "#8a6d0b" : "#1d2330") + ';">' + (d.noCall || 0) + '</b></span>';
+              if (d.items && d.items.length) {
+                line += '<a href="#" class="sf-more" data-day="' + escapeHtml(d.day) + '" style="margin-left:12px;font-size:11px;font-weight:600;color:#3589BD;text-decoration:none;white-space:nowrap;">подробнее</a>';
+                line += '<div class="sf-box" data-day="' + escapeHtml(d.day) + '" style="display:none;margin-top:4px;font-size:11.5px;line-height:1.6;color:#5a6172;">'
+                  + d.items.map(function (it) {
+                      return '<div style="padding-left:14px;"><b>' + escapeHtml(it.time) + '</b> · <a href="https://spb.visa-sc.ru' + escapeHtml(it.page) + '" target="_blank" style="color:#3589BD;text-decoration:none;">' + escapeHtml(it.page) + '</a> · <span style="color:' + (it.kind === "сбой отправки" ? "#a12b3c" : "#8a6d0b") + ';">' + escapeHtml(it.kind) + '</span> — ' + escapeHtml(it.reason || "без подробностей") + '</div>';
+                    }).join("") + "</div>";
+              }
+              return '<tr style="border-top:1px solid #f0eef5;"><td style="padding:5px 14px 5px 0;color:#3a4256;white-space:nowrap;vertical-align:top;"><b>' + fmtDay(d.day) + '</b></td><td style="padding:5px 0;">' + line + "</td></tr>";
+            }).join("") + "</table>";
+            box.innerHTML = html;
+            Array.prototype.forEach.call(box.querySelectorAll(".sf-more"), function (a) {
+              a.addEventListener("click", function (e) {
+                e.preventDefault();
+                const el = box.querySelector('.sf-box[data-day="' + a.getAttribute("data-day") + '"]');
+                if (el) el.style.display = el.style.display === "none" ? "" : "none";
+              });
             });
           })
           .catch(function () { box.innerHTML = '<div class="vsc-empty">Сервер не ответил.</div>'; });

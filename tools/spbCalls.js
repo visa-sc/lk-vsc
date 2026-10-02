@@ -150,6 +150,16 @@ async function pbxCalls(from, to) {
     }
     c.source = { how: "не определён", term: "", campaign: "", src: "", channel: "", page: "" };
   }
+  // Клики по номеру, после которых звонок до АТС так и не дошёл (за 5 минут ни
+  // одного входящего на этот номер). Не взяли трубку — это не сюда: такой звонок в АТС
+  // есть. Сюда — когда звонка в АТС нет вовсе: связь, номер не набрался, человек
+  // передумал. Показываем в «Формы заявок» (/vsc) и в аналитике сайта.
+  const knownNumbers = new Set([...spbSet, ...sharedSet]);
+  const clicksNoCall = clicks
+    .filter((k) => !usedClick.has(k) && knownNumbers.has(k.number) && k.ts < now - CLICK_WINDOW)
+    .filter((k) => !calls.some((c) => c.number === k.number && c.ts >= k.ts - 30 && c.ts <= k.ts + CLICK_WINDOW))
+    .map((k) => ({ at: new Date(k.ts * 1000).toISOString(), page: k.page || "", number: k.number, term: (k.utm || {}).utm_term || "" }));
+
   // звонки на общие с Москвой номера без клика на питерском сайте — не наши
   for (let i = calls.length - 1; i >= 0; i--)
     if (sharedSet.has(calls[i].number) && calls[i].source.how !== "клик по номеру") calls.splice(i, 1);
@@ -203,12 +213,13 @@ async function pbxCalls(from, to) {
     builtAt: new Date().toISOString(),
     since: start.at,
     numbers: SPB_NUMBERS,
+    clicksNoCall,
     calls: calls.map((c) => ({ ...c, caller: c.caller ? "•••" + c.caller.slice(-4) : "" }))
   };
   const withSrc = calls.filter((c) => c.source.how !== "не определён").length;
   console.log(
     `звонков на питерские номера с ${start.at.slice(0, 16)}: ${calls.length}, источник найден: ${withSrc}, ` +
-      `выручка: ${calls.reduce((a, c) => a + c.revenue, 0)} ₽`
+      `выручка: ${calls.reduce((a, c) => a + c.revenue, 0)} ₽, кликов без звонка: ${clicksNoCall.length}`
   );
   if (!DRY) {
     fs.writeFileSync(OUT + ".tmp", JSON.stringify(out));

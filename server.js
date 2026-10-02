@@ -3748,6 +3748,16 @@ function requireVscMktKpi(req, res, next) {
   if (r && Array.isArray(r.tabs) && r.tabs.indexOf("mktkpi") >= 0) { req.staff = s; return next(); }
   return res.status(401).json({ success: false, message: "Нет доступа" });
 }
+// «Сверка контактов» и «Формы заявок» в Ежемесячном контроле: админ ИЛИ руководитель,
+// которому персонально открыт recon через vscRestrict.tabs (Андрей Петров, 02.10.2026).
+function requireVscRecon(req, res, next) {
+  const s = getStaffFromReq(req);
+  if (!s) return res.status(401).json({ success: false, message: "Нет доступа" });
+  if (s.role === "admin") { req.staff = s; return next(); }
+  const r = s.vscRestrict;
+  if (r && Array.isArray(r.tabs) && r.tabs.indexOf("recon") >= 0) { req.staff = s; return next(); }
+  return res.status(401).json({ success: false, message: "Нет доступа" });
+}
 // Доступ к «Бот VFS»: админ ИЛИ руководитель с правом «vfsbot» (сейчас — Плинер).
 function requireVscBot(req, res, next) {
   const s = getStaffFromReq(req);
@@ -8633,7 +8643,59 @@ async function runBuyoutsCheck(trigger) {
 }
 // Сводка сверки контактов (OnlinePBX + Flexbe против amoCRM) — блок в
 // «Ежемесячном контроле», только админ (как выкупы).
-app.get("/admin/api/vsc/recon-summary", requireAdmin, (req, res) => res.json(Object.assign({ success: true }, phoneTestMod.reconSummary())));
+app.get("/admin/api/vsc/recon-summary", requireVscRecon, (req, res) => res.json(Object.assign({ success: true }, phoneTestMod.reconSummary())));
+// «Формы заявок» (Ежемесячный контроль, просьба Андрея 02.10.2026): ошибки клиентов при
+// отправке заявок на питерском сайте по дням. Источник — журнал событий счётчика сайта
+// (/var/www/spbcopy/stat/events-*.jsonl): form_submit — попытка отправки,
+// form_invalid — форма показала ошибку поля (например «Некорректный номер телефона»),
+// form_error — сбой отправки (сервер не ответил/ответил ошибкой/не сохранил заявку).
+// Плюс сохранённые заявки из /var/www/spbcopy/leads.json. Считается на лету, последние 31 день.
+app.get("/admin/api/vsc/spb-forms", requireVscRecon, (req, res) => {
+  const STAT = process.env.SPBCOPY_STAT || "/var/www/spbcopy/stat";
+  const LEADS = process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json";
+  const msk = (iso) => new Date(new Date(iso).getTime() + 3 * 3600e3).toISOString();
+  const since = msk(new Date(Date.now() - 31 * 864e5).toISOString()).slice(0, 10);
+  const days = {};
+  const day = (d) => (days[d] = days[d] || { day: d, submits: 0, leads: 0, invalid: 0, errors: 0, items: [] });
+  let start = null;
+  try { start = JSON.parse(fs.readFileSync(path.join(STAT, "start.json"), "utf8")).at; } catch (_) {}
+  try {
+    for (const f of fs.readdirSync(STAT).filter((x) => /^events-\d{4}-\d{2}\.jsonl$/.test(x)).sort()) {
+      for (const line of fs.readFileSync(path.join(STAT, f), "utf8").split("\n")) {
+        if (!line.trim()) continue;
+        let e; try { e = JSON.parse(line); } catch (_) { continue; }
+        if (!/^form_(submit|invalid|error)$/.test(e.type)) continue;
+        const m = msk(e.at); const d = m.slice(0, 10);
+        if (d < since) continue;
+        const o = day(d);
+        if (e.type === "form_submit") o.submits++;
+        else {
+          if (e.type === "form_invalid") o.invalid++; else o.errors++;
+          o.items.push({ time: m.slice(11, 16), page: String(e.page || "/").slice(0, 120), kind: e.type === "form_error" ? "сбой отправки" : "ошибка в поле", reason: String(e.value || "").slice(0, 200) });
+        }
+      }
+    }
+    // Клики по номеру телефона, после которых звонок до АТС не дошёл (tools/spbCalls.js)
+    try {
+      const cj = JSON.parse(fs.readFileSync(path.join(STAT, "calls.json"), "utf8"));
+      for (const k of cj.clicksNoCall || []) {
+        const m = msk(k.at); const d = m.slice(0, 10);
+        if (d < since) continue;
+        const o = day(d);
+        o.noCall = (o.noCall || 0) + 1;
+        o.items.push({ time: m.slice(11, 16), page: String(k.page || "/").slice(0, 120), kind: "звонок не дошёл до АТС", reason: "нажал на номер +7" + k.number + ", за 5 минут звонка на этот номер в АТС нет" });
+      }
+    } catch (_) {}
+    for (const l of JSON.parse(fs.readFileSync(LEADS, "utf8"))) {
+      if (!/^(www\.)?spb\.visa-sc\.ru$/i.test(l.host || "")) continue;
+      const d = msk(l.at).slice(0, 10);
+      if (d >= since) day(d).leads++;
+    }
+  } catch (e) { return res.json({ success: false, message: e.message }); }
+  const list = Object.values(days).sort((a, b) => (a.day < b.day ? 1 : -1));
+  list.forEach((o) => o.items.sort((a, b) => (a.time < b.time ? 1 : -1)));
+  res.json({ success: true, start, days: list });
+});
 app.get("/admin/api/vsc/buyouts", requireAdmin, (req, res) => res.json({ success: true, data: loadBuyouts(), manualOk: BUYOUTS_MANUAL_OK, running: _buyoutsRunning, configured: !!TBANK_TOKEN }));
 app.post("/admin/api/vsc/buyouts/run", requireAdmin, (req, res) => {
   if (_buyoutsRunning) return res.json({ success: true, started: false, running: true });
