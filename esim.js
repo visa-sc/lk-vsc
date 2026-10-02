@@ -2002,6 +2002,31 @@ function mount(app, opts) {
   }
 
   // Начало оплаты: создаём внутренний заказ и получаем ссылку Т-Банка
+  // ── Журнал неудачных оплат (02.10.2026, перед сменой кассы ИП → ООО) ──
+  // Кто пытался заплатить и не смог: банк не принял платёж, отклонил его или
+  // человек вернулся со страницы банка ни с чем. Только запись, без писем
+  // клиентам: кому и что отправить, решает Андрей. Файл .esim/payfails.json.
+  const PAYFAILS_FILE = path.join(DIR, "payfails.json");
+  function logPayFail(kind, order, why) {
+    try {
+      const all = readJson(PAYFAILS_FILE, []);
+      const o = order || {};
+      all.unshift({ ts: Date.now(), kind, why: String(why || "").slice(0, 300),
+        orderId: o.id || null, label: o.label || null, rub: o.payTotalRub || o.priceRub || null,
+        email: o.email || null, phone: o.phone || null, tgChatId: o.tgChatId || null,
+        terminal: String(process.env.TBANK_TERMINAL_KEY || "").slice(0, 10) || null });
+      writeJson(PAYFAILS_FILE, all.slice(0, 3000));
+      console.error("esim: неудачная оплата (" + kind + ") " + (o.id || "") + " " + (o.email || o.phone || o.tgChatId || "") + " — " + why);
+    } catch (e) { console.error("esim payfails:", e.message); }
+  }
+  // посмотреть журнал: /esim/api/adm/payfails?adm=КОД[&from=2026-10-02]
+  app.get("/esim/api/adm/payfails", (req, res) => {
+    if (!isAdm(req)) return res.status(403).json({ success: false });
+    const from = req.query.from ? new Date(String(req.query.from) + "T00:00:00+03:00").getTime() : 0;
+    const list = readJson(PAYFAILS_FILE, []).filter((x) => x.ts >= from);
+    res.json({ success: true, count: list.length, list });
+  });
+
   app.post("/esim/api/pay/start", async (req, res) => {
     if (!tbank.ready()) return res.status(503).json({ success: false, message: "Оплата ещё не подключена." });
     const b = req.body || {};
@@ -2089,7 +2114,13 @@ function mount(app, opts) {
         successUrl: baseFor(req) + "/esim/pay/ok?o=" + id + "&t=" + signOrder(id),
         failUrl: baseFor(req) + "/esim/pay/fail?o=" + id,
       });
-      if (!pay.ok) { console.error("esim pay init:", pay.message); return res.status(502).json({ success: false, message: "Банк не принял платёж. Попробуйте ещё раз." }); }
+      if (!pay.ok) {
+        console.error("esim pay init:", pay.message);
+        const gf = findLocal(id);
+        if (gf) { gf.order.payFail = { at: Date.now(), why: pay.message }; saveLocal(gf.orders); }
+        logPayFail("bank_init", gf && gf.order, pay.message);
+        return res.status(502).json({ success: false, message: "Банк не принял платёж. Попробуйте ещё раз." });
+      }
       const g = findLocal(id);
       if (g) { g.order.paymentId = pay.paymentId; saveLocal(g.orders); }
       return res.json({ success: true, url: pay.url });
@@ -2206,9 +2237,19 @@ function mount(app, opts) {
   // Вебхук банка. Отвечаем строкой OK — иначе Т-Банк будет повторять.
   app.post("/esim/api/pay/notify", async (req, res) => {
     const b = req.body || {};
-    if (!tbank.verifyNotification(b)) { console.error("esim notify: подпись не сошлась"); return res.status(403).send("NO"); }
+    if (!tbank.verifyNotification(b)) {
+      console.error("esim notify: подпись не сошлась");
+      // при смене кассы чужая подпись = вебхук от другого терминала: в журнал, чтобы не потерять оплату
+      const gx = findLocal(String(b.OrderId || ""));
+      logPayFail("notify_sign", gx && gx.order, "подпись вебхука не сошлась, терминал " + String(b.TerminalKey || "?") + ", статус " + String(b.Status || "?"));
+      return res.status(403).send("NO");
+    }
     res.send("OK"); // отвечаем сразу, выдачу делаем следом
     try {
+      if (/REJECTED|AUTH_FAIL|DEADLINE_EXPIRED/.test(String(b.Status || ""))) {
+        const gr = findLocal(String(b.OrderId || ""));
+        logPayFail("bank_rejected", gr && gr.order, "банк: " + b.Status + (b.ErrorCode && b.ErrorCode !== "0" ? ", код " + b.ErrorCode : "") + (b.Message ? ", " + b.Message : ""));
+      }
       if (!tbank.isPaid(b.Status) || b.Success === false) return;
       await fulfil(String(b.OrderId || ""));
     } catch (e) { console.error("esim notify:", e.message); }
@@ -2264,6 +2305,10 @@ function mount(app, opts) {
     res.sendFile(path.join(__dirname, "public", "esim-pay-ok.html"));
   });
   app.get("/esim/pay/fail", (req, res) => {
+    try {
+      const gfl = findLocal(String(req.query.o || "").slice(0, 40));
+      if (gfl && gfl.order && gfl.order.status !== "done") logPayFail("returned_fail", gfl.order, "вернулся со страницы банка без оплаты");
+    } catch (_) {}
     res.set("Cache-Control", "no-store");
     res.sendFile(path.join(__dirname, "public", "esim-pay-fail.html"));
   });
