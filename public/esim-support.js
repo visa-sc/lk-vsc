@@ -46,7 +46,8 @@
 '.vsup-m.they{align-self:flex-start;background:#f1f5f9;color:#16202e;border-bottom-left-radius:5px;}' +
 '.vsup-m .who{display:block;font-size:11.5px;opacity:.75;margin-bottom:3px;}' +
 '.vsup-row{display:flex;gap:8px;align-items:flex-end;}' +
-'.vsup-row textarea{min-height:48px;height:48px;max-height:120px;padding:13px 14px;line-height:20px;}' +
+'.vsup-m a{color:inherit;text-decoration:underline;word-break:break-all;overflow-wrap:anywhere;}' +
+  '.vsup-row textarea{min-height:48px;height:48px;max-height:120px;padding:13px 14px;line-height:20px;}' +
 '.vsup-row button{flex:none;border:0;border-radius:13px;background:linear-gradient(135deg,#4aa3d4,#2c6f96);color:#fff;' +
   'font:inherit;font-weight:700;height:48px;padding:0 18px;cursor:pointer;}';
 
@@ -161,6 +162,12 @@
       var mine = m.from === "client";
       var who = mine ? "" : '<span class="who">' + (m.from === "operator" ? "Оператор" : "VOYO mobile") + "</span>";
       var text = String(m.text).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; });
+      // Ссылки — кликабельными целиком. 02.10.2026 клиент скопировал адрес новой eSIM
+      // только до переноса строки на дефисе («…?o=EA-») и увидел «ссылка устарела».
+      text = text.replace(/https?:\/\/[^\s<]+/g, function (u) {
+        var clean = u.replace(/[.,;:!?)»]+$/, ""), tail = u.slice(clean.length);
+        return '<a href="' + clean + '" target="_blank" rel="noopener">' + clean + "</a>" + tail;
+      });
       return '<div class="vsup-m ' + (mine ? "me" : "they") + '">' + who + text + "</div>";
     }).join("");
     log.scrollTop = log.scrollHeight;

@@ -1503,7 +1503,15 @@ function mount(app, opts) {
       //  2) выкидываем заведомо невыгодные — те, где за те же деньги есть больше ГБ;
       //  3) сортируем от меньшего объёма к большему и показываем не больше 8.
       const byKey = new Map();
-      (cat.addons || []).filter((a) => a.familyId === familyId).forEach((a) => {
+      // У одного «семейства» поставщика продления на десяток направлений сразу:
+      // Турция, Китай, США… Клиенту показываем только те, что покрывают все
+      // страны его eSIM (02.10.2026 сингапурцу продали «Turkey 3 GB»).
+      // исходный пакет, а не продление: продления лежат в заказах с тем же номером
+      const first = readJson(ORDERS_FILE, []).find((x) => x.mmOrderId === o && !x.parentOrderId) || {};
+      const base = ((cat.products || []).find((x) => x.id === first.productId) || {});
+      const need = (base.countries || []).filter(Boolean);
+      const fits = (a) => !need.length || need.every((c) => (a.countries || []).indexOf(c) >= 0);
+      (cat.addons || []).filter((a) => a.familyId === familyId && fits(a)).forEach((a) => {
         const price = toRetailRub(a.costUsd, rate);
         const key = (a.unlimited ? "inf" : a.dataGb) + "/" + a.days;
         const prev = byKey.get(key);
@@ -2439,8 +2447,10 @@ function mount(app, opts) {
     if (String(o.src || "") === "esimaccess") {
       esimaccess.revoke(o.mmOrderId).catch((e) => console.error("esim отзыв старого:", e.message));
     }
+    const oldUse = await providerFor(o.mmOrderId).getUsage(o.mmOrderId).catch(() => null);
+    const oldUsed = ((oldUse && oldUse.packages) || []).reduce((a, x) => a + (x.usedMb || 0), 0);
     askSupplierRefund({ src: o.src, providerOrderId: o.mmOrderId, iccid: o.iccid, costUsd: o.costUsd,
-      label: o.label, reason: "customer could not get the profile online, replacement issued" });
+      label: o.label, reason: "customer could not get the profile online, replacement issued", usedMb: oldUsed });
     console.log("esim вторая линия: выдана замена", gift.mmOrderId, "вместо", o.mmOrderId);
     support.botMessage(chat.id, sayInstead ? (sayInstead + "\n\nВаш новый QR: " + gift.myUrl) :
       "Не будем вас мучить настройками: выдали вам другую eSIM, другого оператора, за наш счёт. " +
@@ -2496,24 +2506,20 @@ function mount(app, opts) {
       }
     }
 
-    // Шаг 3: замену уже давали, а человек всё пишет — оформляем возврат
+    // Замену уже выдали, а человек пишет дальше. Раньше здесь сервер сам обещал
+    // возврат на любое следующее сообщение, даже на «сеть StarHub» (02.10.2026).
+    // Деньги решает человек: отвечает модель по сути, а если ей нечем помочь,
+    // зовём оператора. Пообещать возврат может только он.
     if (step >= 2) {
-      const all = readJson(ORDERS_FILE, []);
-      const rec = all.find((x) => x.id === here.o.id);
-      if (rec) { rec.refundAsked = Date.now(); writeJson(ORDERS_FILE, all); }
-      support.botMessage(chat.id,
-        "Хватит это терпеть: оформляем возврат за пакет «" + (here.o.label || "eSIM") + "». " +
-        "Деньги вернём на ту же карту, обычно они приходят за один-три рабочих дня. " +
-        "Извините, что так вышло.", "autoFix3");
-      support.queueMail({
-        subject: "VOYO eSIM: вторая линия оформила возврат, нужно вернуть деньги в банке",
-        text: "Человеку не помогли ни разбор, ни замена. Обещали возврат.\n\n" +
-          "Клиент: " + (here.o.email || chat.contact || "—") + "\nЗаказ: " + here.o.id +
-          "\nПакет: " + (here.o.label || "—") + "\nСумма: " + (here.o.payTotalRub || here.o.priceRub) + " ₽" +
-          "\nПлатёж в банке: " + (here.o.paymentId || "—") + "\n\nВернуть деньги в Т-Банке.",
-      });
-      support.flushQueue(opts && opts.sendMail).catch(() => {});
-      return true;
+      const seen = doctor.aiOn() ? await doctor.diagnose({
+        messages: chat.messages, orders: mine, states: st, ua: chat.ua, ip: chat.ip,
+        tried: ["замену другим оператором уже выдали, QR в чате выше"], refundAllowed: false,
+      }).catch(() => null) : null;
+      if (seen && seen.reply && seen.action !== "escalate") {
+        support.botMessage(chat.id, seen.reply);
+        return true;
+      }
+      return false;          // наверху это превратится в письмо оператору
     }
 
     // Шаг 1: две линии сразу — самая частая причина «поставил, а интернета нет»
@@ -2577,11 +2583,16 @@ function mount(app, opts) {
         callOperator(chat, "поставщик не ответил про его пакет, разобрать не смогли");
         return;
       }
-      const packs = (u.packages || []).filter((p) => !p.expired);
+      const all0 = (u.packages || []).filter((p) => !p.expired);
+      // Начатые пакеты отдельно от неначатых продлений: иначе «осталось 3 ГБ»
+      // складывается из чужой страны, которую телефон тут не поймает.
+      const started = all0.filter((x) => x.activatedAt);
+      const packs = started.length ? started : all0;
       const all = u.packages || [];
       const total = packs.reduce((a, x) => a + (x.totalMb || 0), 0);
       const left = packs.reduce((a, x) => a + (x.remainingMb || 0), 0);
       const active = packs.some((x) => x.activatedAt);
+      const idleTops = started.length ? all0.filter((x) => !x.activatedAt) : [];
       const head = "Посмотрели ваш пакет «" + (o.label || "eSIM") + "».\n\n";
       let text = "";
       if (u.suspended) {
@@ -2589,7 +2600,9 @@ function mount(app, opts) {
       } else if (!packs.length && all.length) {
         text = head + "Срок пакета истёк. Чтобы интернет заработал, нужен новый пакет или продление — они на вашей странице: " + o.myUrl;
       } else if (total && left / total < 0.02) {
-        text = head + "Трафик израсходован полностью, поэтому интернет и пропал. Продлить можно на вашей странице в один тап: " + o.myUrl;
+        text = head + "Трафик израсходован полностью, поэтому интернет и пропал. Продлить можно на вашей странице в один тап: " + o.myUrl +
+          (idleTops.length ? "\n\nЕсть ещё не начатое продление «" + (idleTops[0].name || "") + "». Если оно на другую страну, " +
+            "в вашей поездке оно не заработает: напишите сюда, разберёмся." : "");
       } else if (!active) {
         text = head + "Профиль ещё не установлен на телефон — по данным оператора пакет не активирован.\n" +
           "Установите его по QR со своей страницы (нужен Wi-Fi): " + o.myUrl + "\n" +
@@ -2858,8 +2871,13 @@ function mount(app, opts) {
   // пакете за $0,3), но по письму в поддержку возвращает на баланс. Поэтому
   // после каждой замены письмо уходит само, копия Андрею (29.09.2026).
   const SUPPLIER_SUPPORT = { esimaccess: process.env.ESIM_EA_SUPPORT || "support@esimaccess.com" };
-  function askSupplierRefund({ src, providerOrderId, iccid, costUsd, label, reason }) {
+  function askSupplierRefund({ src, providerOrderId, iccid, costUsd, label, reason, usedMb }) {
     if (!(opts && opts.sendMail) || !providerOrderId) return;
+    // израсходованный пакет поставщик не вернёт, а письмо «трафик не тронут» было бы враньём
+    if (Number(usedMb || 0) >= 10) {
+      console.log("esim: возврат у поставщика не просим, пакет " + providerOrderId + " использован (" + Math.round(usedMb) + " МБ)");
+      return;
+    }
     const to = SUPPLIER_SUPPORT[String(src || "")];
     if (to) {
       const text = "Dear eSIM Access team,\n\n" +
