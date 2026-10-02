@@ -3,7 +3,7 @@
  * spbGuard — сторож и «первая линия» питерского сайта spb.visa-sc.ru (просьба
  * Андрея 02.10.2026, по образцу eSIM): каждые 2 минуты проверяет всё, что
  * может сломаться, сам чинит то, что можно починить, и пишет Андрею Петрову
- * (копия Андрею Комисаренко), что случилось и как исправлено.
+ * (без копии — решение Андрея 02.10.2026), что случилось и как исправлено.
  *
  * Что проверяем и что делаем сами:
  *   site     — сайт отвечает (локально и снаружи по https)  → перезапуск spbcopy, nginx reload
@@ -29,7 +29,8 @@ require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 
 const DRY = process.argv.includes("--dry");
 const TO = process.env.SPB_GUARD_TO || "ap@spt1.ru";
-const CC = process.env.SPB_GUARD_CC || "director@visa-sc.ru";
+// Андрей 02.10.2026: о проблемах пишем только Петрову, без копии.
+const CC = process.env.SPB_GUARD_CC || "";
 const STATE_DIR = "/var/lib/spb-guard";
 const STATE = path.join(STATE_DIR, "state.json");
 const SPB = "/var/www/spbcopy";
@@ -142,13 +143,29 @@ const pm2Status = (name, user) => {
   // ── номера в АТС ──────────────────────────────────────────────────────────
   try {
     const st = JSON.parse(fs.readFileSync(path.join(__dirname, "..", ".phonetest", "store.json"), "utf8"));
-    const last = (st.trunkLog || []).filter((x) => !x.error).sort((a, b) => b.at - a.at)[0];
+    // Номера время от времени перерегистрируются в АТС за пару минут — это норма, о ней не пишем
+    // (Андрей 02.10.2026). Тревога — только если номер не на связи 11 минут и дольше: считаем
+    // от первого опроса АТС подряд, где он был «не на связи» (опрос раз в 10 минут).
+    const polls = (st.trunkLog || []).filter((x) => !x.error).sort((a, b) => b.at - a.at);
+    const last = polls[0];
     if (last && now - last.at < 40 * 60e3) {
       const spbSet = new Set(SPB_NUMBERS.map(tail10));
-      const down = (last.down || []).filter((t) => spbSet.has(tail10(t.number)));
+      const downSince = (num) => {
+        let since = null;
+        for (const p of polls) {
+          if ((p.down || []).some((t) => tail10(t.number) === num)) since = p.at;
+          else break;
+        }
+        return since;
+      };
+      const down = (last.down || []).filter((t) => {
+        if (!spbSet.has(tail10(t.number))) return false;
+        const since = downSince(tail10(t.number));
+        return since != null && now - since >= 11 * 60e3;
+      });
       if (down.length)
         issues.numbers = {
-          what: "питерские номера не зарегистрированы в АТС (звонки на них не проходят): " + down.map((t) => "+" + t.number + (t.name ? " (" + t.name + ")" : "") + " — " + t.status).join(", "),
+          what: "питерские номера не на связи в АТС дольше 11 минут (звонки на них не проходят): " + down.map((t) => "+" + t.number + (t.name ? " (" + t.name + ")" : "") + " — " + t.status + ", с " + new Date(downSince(tail10(t.number)) + 3 * 3600e3).toISOString().slice(11, 16) + " МСК").join(", "),
           did: "автоматически не чинится: регистрация линии — на стороне оператора/АТС; проверьте OnlinePBX → Номера",
           fixed: false
         };
@@ -181,7 +198,7 @@ const pm2Status = (name, user) => {
   const send = async (subject, lines) => {
     const html = `<div style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif">${lines.map((l) => `<p style="margin:6px 0">${l}</p>`).join("")}<p style="color:#888;font-size:12px">Сторож spb.visa-sc.ru (tools/spbGuard.js), проверка каждые 2 минуты.</p></div>`;
     if (DRY) return console.log("[письмо]", subject, lines.join(" | "));
-    await sendMail({ to: TO, cc: CC, subject, html });
+    await sendMail(CC ? { to: TO, cc: CC, subject, html } : { to: TO, subject, html });
   };
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
   for (const [k, v] of Object.entries(issues)) {
