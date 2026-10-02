@@ -216,3 +216,4 @@ docs/staff-reports/
 # Пакетные туры (Слетать.ру): заявки с ПДн туристов и кэш справочников — не в git
 .sletat/
 .spbNotified.json
+.spbRoistatSent.json
