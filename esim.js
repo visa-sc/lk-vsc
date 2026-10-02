@@ -312,6 +312,16 @@ const mobimatter = {
       })),
     };
   },
+  // Возврат за нетронутый заказ: PUT /order/refund → «Order refunded», статус
+  // PendingRefund, деньги на кошелёк через сутки-двое (не каждый оператор даёт,
+  // Airalo отказывает). Проверено: AKGR-23490304, AKGR-24342566.
+  async refund(orderId) {
+    const r = await axios.put(MM_BASE + "/order/refund", { orderId: String(orderId) },
+      { headers: Object.assign({ "Content-Type": "application/json" }, mmHeaders()), timeout: 60000, validateStatus: () => true });
+    const ok = r.status === 200 && /refund/i.test(JSON.stringify(r.data || ""));
+    if (!ok) { const e = new Error("MobiMatter refund: " + JSON.stringify(r.data || r.status).slice(0, 160)); throw e; }
+    return true;
+  },
   async getBalance() {
     // сверено 02.09.2026: GET /merchant/balance → { result: { balance: 250 } }
     const r = await axios.get(MM_BASE + "/merchant/balance", { headers: mmHeaders(), timeout: 15000 });
@@ -868,6 +878,15 @@ const esimaccess = {
   // профиль не на тот телефон, единственный путь — погасить старый и выпустить
   // новый (24.09.2026). Метод сверен пробой: revoke/cancel/suspend у них есть,
   // reissue нет. Деньги за нетронутый пакет они возвращают на баланс сами.
+  // Нескачанный профиль отменяется с возвратом денег на баланс сразу
+  // (проверено 02.10.2026: Singapore 10GB, +$4,70 за пять секунд).
+  async cancel(orderId) {
+    const e = await this._esim(orderId);
+    if (!e) { const err = new Error("eSIM Access: заказ не найден"); err.eaCode = 310272; throw err; }
+    if (e.installationTime) { const err = new Error("eSIM Access: профиль уже скачан, отмена невозможна"); err.installed = true; throw err; }
+    await eaCall("/api/v1/open/esim/cancel", { esimTranNo: e.esimTranNo });
+    return true;
+  },
   async revoke(orderId) {
     const e = await this._esim(orderId);
     if (!e) { const err = new Error("eSIM Access: заказ не найден"); err.eaCode = 310272; throw err; }
@@ -2428,6 +2447,25 @@ function mount(app, opts) {
   }
   // выдаём человеку замену за наш счёт и кладём новый QR прямо в чат
   async function giftReplacement(chat, o, sayInstead) {
+    // 02.10.2026: подарили Сингапур 10 ГБ человеку, у которого рядом лежал свой
+    // рабочий Сингапур 5 ГБ с остатком 2,5 ГБ. Сначала смотрим, нет ли такого.
+    const [cat0] = [await getCatalog(false).catch(() => ({ products: [] }))];
+    const ctry = (((cat0.products || []).find((x) => x.id === o.productId) || {}).countries || []).slice().sort().join(",");
+    if (ctry) {
+      const mine = (await ordersByContact(chat.contact, chat.page)).filter((x) => x.id !== o.id && x.mmOrderId !== o.mmOrderId);
+      for (const m of mine) {
+        const c2 = (((cat0.products || []).find((x) => x.id === m.productId) || {}).countries || []).slice().sort().join(",");
+        if (c2 !== ctry) continue;
+        const u = await providerFor(m.mmOrderId).getUsage(m.mmOrderId).catch(() => null);
+        const left = ((u && u.packages) || []).filter((x) => !x.expired).reduce((a, x) => a + (x.remainingMb || 0), 0);
+        if (left >= 100) {
+          support.botMessage(chat.id, "У вас есть ещё одна наша eSIM на эту страну, «" + (m.label || "") + "», " +
+            "и на ней осталось " + GBs(left) + " ГБ. Переключитесь на неё: Настройки, Сотовая связь, выберите эту линию " +
+            "для сотовых данных и включите для неё «Роуминг данных».\n\nЕё страница с остатком: " + m.myUrl, "autoFix2");
+          return true;
+        }
+      }
+    }
     const plan = await pickReplacement(o);
     if (!plan) return false;
     const fresh = await esimaccess.createOrder(plan.id);
@@ -2443,14 +2481,9 @@ function mount(app, opts) {
     };
     gift.myUrl = myUrlFor(gift, fresh.orderId);
     orders.unshift(gift); writeJson(ORDERS_FILE, orders);
-    // старый профиль клиенту больше не нужен: гасим и просим поставщика вернуть деньги
-    if (String(o.src || "") === "esimaccess") {
-      esimaccess.revoke(o.mmOrderId).catch((e) => console.error("esim отзыв старого:", e.message));
-    }
-    const oldUse = await providerFor(o.mmOrderId).getUsage(o.mmOrderId).catch(() => null);
-    const oldUsed = ((oldUse && oldUse.packages) || []).reduce((a, x) => a + (x.usedMb || 0), 0);
-    askSupplierRefund({ src: o.src, providerOrderId: o.mmOrderId, iccid: o.iccid, costUsd: o.costUsd,
-      label: o.label, reason: "customer could not get the profile online, replacement issued", usedMb: oldUsed });
+    // старый пакет клиенту больше не нужен: возвращаем деньги у поставщика, если он нетронут
+    refundFromSupplier(o, "customer could not get the profile online, replacement issued")
+      .then((r) => console.log("esim замена, старый пакет " + o.mmOrderId + ": " + r)).catch(() => {});
     console.log("esim вторая линия: выдана замена", gift.mmOrderId, "вместо", o.mmOrderId);
     support.botMessage(chat.id, sayInstead ? (sayInstead + "\n\nВаш новый QR: " + gift.myUrl) :
       "Не будем вас мучить настройками: выдали вам другую eSIM, другого оператора, за наш счёт. " +
@@ -2473,6 +2506,23 @@ function mount(app, opts) {
     });
     return true;
   }
+  // Подарочную замену, которую человек так и не поставил, через трое суток
+  // отменяем и возвращаем деньги поставщика (eSIM Access делает это сразу).
+  async function sweepUnusedGifts() {
+    const all = readJson(ORDERS_FILE, []);
+    const old = all.filter((x) => x.giftFor && x.status === "done" && Date.now() - (x.ts || 0) > 72 * 3600e3);
+    for (const g of old) {
+      const u = await providerFor(g.mmOrderId).getUsage(g.mmOrderId).catch(() => null);
+      if (!u || u.installed) continue;
+      const r = await refundFromSupplier(g, "replacement was not needed, never installed").catch((e) => e.message);
+      const all2 = readJson(ORDERS_FILE, []);
+      const rec = all2.find((x) => x.id === g.id);
+      if (rec) { rec.status = "canceled"; rec.canceledAt = Date.now(); rec.cancelReason = "подарок не поставили за трое суток"; writeJson(ORDERS_FILE, all2); }
+      console.log("esim: невостребованный подарок " + g.mmOrderId + " отменён — " + r);
+    }
+  }
+  setInterval(() => { sweepUnusedGifts().catch((e) => console.error("esim подарки:", e.message)); }, 6 * 3600e3);
+
   async function secondLine(chat) {
     const mine = await ordersByContact(chat.contact, chat.page);
     if (!mine.length) return false;
@@ -2871,6 +2921,40 @@ function mount(app, opts) {
   // пакете за $0,3), но по письму в поддержку возвращает на баланс. Поэтому
   // после каждой замены письмо уходит само, копия Андрею (29.09.2026).
   const SUPPLIER_SUPPORT = { esimaccess: process.env.ESIM_EA_SUPPORT || "support@esimaccess.com" };
+  // Деньги за ненужный пакет — назад, каждому поставщику своим способом. Пометку
+  // supplierRefund в заказе видит сторож tools/mmRefundWatch.js (раз в сутки).
+  async function refundFromSupplier(order, reason) {
+    const id = order && order.mmOrderId;
+    if (!id) return "нет заказа";
+    const u = await providerFor(id).getUsage(id).catch(() => null);
+    const used = ((u && u.packages) || []).reduce((a, x) => a + (x.usedMb || 0), 0);
+    if (used >= 10) return "пакет использован, возврат не просим";
+    const mark = (state) => {
+      const all = readJson(ORDERS_FILE, []);
+      const rec = all.find((x) => x.id === order.id);
+      if (rec) { rec.supplierRefund = { asked: Date.now(), state, reason }; writeJson(ORDERS_FILE, all); }
+    };
+    try {
+      if (String(order.src || "") === "esimaccess") {
+        try { await esimaccess.cancel(id); mark("Refunded"); return "eSIM Access: отменён, деньги вернулись сразу"; }
+        catch (e) {
+          if (!e.installed) throw e;
+          await esimaccess.revoke(id).catch(() => {});
+          askSupplierRefund({ src: order.src, providerOrderId: id, iccid: order.iccid, costUsd: order.costUsd,
+            label: order.label, reason, usedMb: used });
+          mark("Asked"); return "eSIM Access: отозван, возврат попросили письмом";
+        }
+      }
+      if (/^AKGR-/.test(String(id))) { await provider.refund(id); mark("PendingRefund"); return "MobiMatter: возврат оформлен, ждём деньги"; }
+    } catch (e) {
+      console.error("esim возврат у поставщика:", e.message);
+    }
+    askSupplierRefund({ src: order.src, providerOrderId: id, iccid: order.iccid, costUsd: order.costUsd,
+      label: order.label, reason, usedMb: used });
+    mark("Asked");
+    return "попросили вручную";
+  }
+
   function askSupplierRefund({ src, providerOrderId, iccid, costUsd, label, reason, usedMb }) {
     if (!(opts && opts.sendMail) || !providerOrderId) return;
     // израсходованный пакет поставщик не вернёт, а письмо «трафик не тронут» было бы враньём
