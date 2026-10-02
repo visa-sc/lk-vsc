@@ -2106,7 +2106,13 @@ function mount(app, opts) {
         return res.json({ success: true, free: true,
           url: baseFor(req) + "/esim/pay/ok?o=" + id + "&t=" + signOrder(id) });
       }
+      // Тесты банка для нового магазина (ООО): платёж через DEMO-терминал. Только
+      // с админ-кодом и только служебным пакетом за цент: клиентам этот путь
+      // не виден, а закупка у поставщика реальная, поэтому — самый дешёвый пакет.
+      const useTest = !!b.kassaTest && String(b.adm || "") === ADMIN_CODE && isTestProduct(found.item) && tbank.testReady();
+      if (b.kassaTest && !useTest) return res.status(403).json({ success: false, message: "Тестовая оплата: нужен админ-код и служебный пакет Test." });
       const pay = await tbank.init({
+        useTest,
         orderId: id, amountRub: payTotalRub,
         description: (label + (qty > 1 ? " × " + qty : "")).slice(0, 140), itemName: label + (qty > 1 ? " (" + qty + " шт.)" : ""),
         phone, email: validEmail(email) ? email : null,
@@ -2122,7 +2128,8 @@ function mount(app, opts) {
         return res.status(502).json({ success: false, message: "Банк не принял платёж. Попробуйте ещё раз." });
       }
       const g = findLocal(id);
-      if (g) { g.order.paymentId = pay.paymentId; saveLocal(g.orders); }
+      // запоминаем терминал: при переезде ИП → ООО статус и возврат надо спрашивать у того, кто принял платёж
+      if (g) { g.order.paymentId = pay.paymentId; g.order.terminal = pay.terminalKey || null; if (useTest) g.order.kassaTest = true; saveLocal(g.orders); }
       return res.json({ success: true, url: pay.url });
     } catch (e) { return res.status(500).json({ success: false, message: e.message }); }
   });
@@ -2263,7 +2270,7 @@ function mount(app, opts) {
     if (!f) return res.status(404).json({ success: false });
     // Страховка: вебхук мог не дойти — спросим банк сами
     if (f.order.status === "pending" && f.order.paymentId) {
-      const st = await tbank.getState(f.order.paymentId);
+      const st = await tbank.getState(f.order.paymentId, f.order.terminal);
       if (st && st.Success && tbank.isPaid(st.Status)) { fulfil(id).catch(() => {}); return res.json({ success: true, status: "fulfilling" }); }
     }
     // Несколько eSIM в платеже: ждём, пока выдадутся все (до 5 минут), и отдаём ссылки
@@ -3634,7 +3641,7 @@ function mount(app, opts) {
         if (paidAfter(o)) { o.abandonMail = o.abandonMail || -1; o.abandonAdmin = o.abandonAdmin || -1; changed = true; continue; }
 
         let st = null;
-        try { const r = await tbank.getState(o.paymentId); st = (r && r.Status) || null; } catch (_) { continue; }
+        try { const r = await tbank.getState(o.paymentId, o.terminal); st = (r && r.Status) || null; } catch (_) { continue; }
         if (!st) continue;
         // заплатил, а выдача не сработала — это не брошенная оплата, а авария
         if (BANK_PAID.indexOf(st) >= 0) { o.abandonMail = -1; o.abandonAdmin = -1; changed = true; continue; }
@@ -3761,7 +3768,7 @@ function mount(app, opts) {
       const o = req.query.o ? list.find((x) => x.id === String(req.query.o)) : list[0];
       if (!o) return res.json({ success: false, message: "Нет ни одного заказа в ожидании оплаты." });
       let st = null;
-      try { const r = await tbank.getState(o.paymentId); st = (r && r.Status) || null; } catch (_) {}
+      try { const r = await tbank.getState(o.paymentId, o.terminal); st = (r && r.Status) || null; } catch (_) {}
       const why = bankWhy(st);
       const only = String(req.query.only || "");
       const a1 = only === "admin" ? null
