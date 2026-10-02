@@ -1390,6 +1390,15 @@ function mount(app, opts) {
     res.sendFile(path.join(__dirname, "public", "esim.html"));
   });
 
+  // Ценовые страницы: voyomobile.ru/67 — те же пакеты, но вместо 69 ₽ стоят 67 ₽.
+  // Цена меняется только для запросов с этой страницы (tier=67): основной сайт и
+  // бот не затронуты. Правило в одном месте — каталог, расчёт и оплата берут его.
+  const PRICE_TIERS = { "67": { 69: 67 } };
+  function tierRub(rub, tier) {
+    const t = PRICE_TIERS[String(tier || "")];
+    return (t && t[rub] != null) ? t[rub] : rub;
+  }
+
   // Каталог для витрины: цены уже в ₽, закупка отдаётся только с админ-кодом
   app.get("/esim/api/catalog", async (req, res) => {
     try {
@@ -1404,7 +1413,7 @@ function mount(app, opts) {
         const o = {
           id: p.id, title: p.title || "", operator: p.operator || "", countries: p.countries || [],
           dataGb: p.dataGb, unlimited: !!p.unlimited, daily: !!p.daily, days: p.days,
-          fiveG: !!p.fiveG, hotspot: p.hotspot !== false, priceRub: retailFor(p, rate),
+          fiveG: !!p.fiveG, hotspot: p.hotspot !== false, priceRub: tierRub(retailFor(p, rate), req.query.tier),
           note: packNote(p), ruPick: isRuServicesPick(p),
         };
         if (adm) { o.src = p.src || "mobimatter"; o.costUsd = p.costUsd; o.costRub = costFor(p, rate); o.marginRub = o.priceRub - o.costRub; }
@@ -2067,7 +2076,7 @@ function mount(app, opts) {
         return res.status(400).json({ success: false, message: "Пакет не найден." });
       }
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
-      const listPrice = found.item.priceRub || retailFor(found.item, rate);
+      const listPrice = tierRub(found.item.priceRub || retailFor(found.item, rate), b.tier);
       const who = custKey(email, tgChatId);
       const calc = priceWithDiscounts({ listPrice, costRub: costFor(found.item, rate),
         email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
@@ -2093,6 +2102,7 @@ function mount(app, opts) {
         // Домен покупки: ссылка с QR должна вести туда же, иначе счётчик Метрики
         // окажется другим и покупка не свяжется с рекламным визитом (17.09.2026)
         base: baseFor(req),
+        priceTier: tierRub(69, b.tier) !== 69 ? String(b.tier) : undefined,   // куплено со страницы /67
       });
       saveLocal(orders);
       // Код блогера: платить нечего — сразу выдаём eSIM и ведём на страницу «оплачено»
@@ -2143,7 +2153,7 @@ function mount(app, opts) {
       if (!found) return res.status(400).json({ success: false, message: "Пакет не найден." });
       const email = normEmail(b.email) || readSession(req) || "";
       const who = custKey(email, b.tgChatId);
-      const listPrice = retailFor(found.item, rate);
+      const listPrice = tierRub(retailFor(found.item, rate), b.tier);
       const calc = priceWithDiscounts({ listPrice, costRub: costFor(found.item, rate),
         email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const promoTried = String(b.promo || "").trim();

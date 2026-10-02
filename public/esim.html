@@ -1348,7 +1348,7 @@
     try{
       var r = await fetch("/esim/api/price",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({productId:mP.id, promo:PROMO, ref:REF, useBalance:document.getElementById("mBonus").checked,
-          email:(document.getElementById("mPhone").value||"").trim(), qty:QTY})});
+          email:(document.getElementById("mPhone").value||"").trim(), qty:QTY, tier:TIER})});
       var j = await r.json();
       if(!j || !j.success) return null;
       // Бонусы предлагаем, но не списываем без согласия
@@ -1481,7 +1481,7 @@
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS, vid:VID, embed:EMBED, qty:QTY, lang:(navigator.languages&&navigator.languages[0])||navigator.language||"",
+          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS, vid:VID, embed:EMBED, qty:QTY, tier:TIER, lang:(navigator.languages&&navigator.languages[0])||navigator.language||"",
             useBalance:document.getElementById("mBonus").checked})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){
@@ -1514,12 +1514,17 @@
     }
   });
 
+  // Ценовая страница voyomobile.ru/67: те же пакеты, но вместо 69 ₽ — 67 ₽.
+  // Цену считает сервер, страница только сообщает, откуда пришёл запрос.
+  var TIER = /^\/67\/?$/.test(location.pathname) ? "67" : "";
+
   /* ── загрузка каталога ── */
   (async function(){
     try{
       // на /turkey и /china просим и короткие сроки (3, 5 и 10 дней)
       var qsCat = [];
       if(ADM) qsCat.push("adm="+encodeURIComponent(ADM));
+      if(TIER) qsCat.push("tier="+TIER);
       if(LANDINGS[location.pathname.replace(/\/+$/, "").toLowerCase()]) qsCat.push("land=1");
       // по ссылке на конкретный пакет каталог нужен полный, иначе короткие сроки не найдутся
       if(new URLSearchParams(location.search).get("p")) qsCat.push("land=1");
