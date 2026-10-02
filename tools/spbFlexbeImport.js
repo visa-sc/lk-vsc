@@ -61,7 +61,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     for (const k of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]) if (utm[k]) u[k] = utm[k];
     let pageUrl = "/";
     try {
-      pageUrl = new URL((L.page && L.page.url) || "/", "https://spb.visa-sc.ru").pathname;
+      // Flexbe отдаёт адрес без протокола («spb.visa-sc.ru/italy/»)
+      const raw = String((L.page && L.page.url) || "/");
+      pageUrl = new URL(/^https?:\/\//.test(raw) ? raw : /^[\w.-]+\.[a-z]{2,}\//i.test(raw) ? "https://" + raw : raw, "https://spb.visa-sc.ru").pathname;
     } catch (_) {}
     const paid = !!L.pay && Number(L.pay.status && (L.pay.status.code != null ? L.pay.status.code : L.pay.status)) === 2;
     mapped.push({
