@@ -3811,34 +3811,100 @@ function mount(app, opts) {
   const ADSPEND_FILE = path.join(DIR, "adspend.json");
   function loadSpend() {
     const d = readJson(ADSPEND_FILE, null) || {};
-    return { acqPct: Number(d.acqPct != null ? d.acqPct : 2.5), acqPctAkg: d.acqPctAkg != null ? Number(d.acqPctAkg) : null,
-      items: Array.isArray(d.items) ? d.items : [] };
+    return { acqPct: Number(d.acqPct != null ? d.acqPct : 2.5), items: Array.isArray(d.items) ? d.items : [] };
   }
   // Комиссия банка — по кассе, через которую прошёл платёж (03.10.2026).
   // ИП Комиссаренко (все заказы до 02.10.2026): эквайринг ~2,5% плюс 1,5% за
   // «Чеки Т-Бизнеса» — это ручной процент acqPct, его не трогаем, история та же.
   // ООО «Эй Кей Групп»: касса своя (АТОЛ, абонплата, не с платежа), остаётся
-  // только эквайринг. Процент берём из настоящей выписки ООО — тот же разбор,
-  // что у блока «Комиссии эквайринга» в /vsc (.lkAcquiring.json, обновляется
-  // каждую ночь): комиссия / оборот интернет-эквайринга за последние 3 месяца.
-  // Ручное значение acqPctAkg, если задано в панели, важнее выписки.
-  function acqPctAkgReal() {
-    try {
-      const m = ((readJson(path.join(__dirname, ".lkAcquiring.json"), {}).ooo || {}).months) || {};
-      const keys = Object.keys(m).sort().slice(-3);
-      const g = keys.reduce((a, k) => a + (Number(m[k].inetG) || 0), 0);
-      const c = keys.reduce((a, k) => a + (Number(m[k].inetC) || 0), 0);
-      if (g > 100000 && c > 0) return Math.round(c / g * 10000) / 100;
-    } catch (_) {}
-    return 1.4;
-  }
-  function acqRates(spend) {
-    return { ip: spend.acqPct, akg: spend.acqPctAkg != null ? spend.acqPctAkg : acqPctAkgReal(),
-      akgManual: spend.acqPctAkg != null };
-  }
-  function acqPctOf(o, rates) {
+  // только эквайринг, и его берём из выписки ООО по самому магазину VOYO mobile:
+  //  · СБП — банк пишет каждую операцию отдельно: «Плата за пополнение по
+  //    операции СБП <PaymentId>. Терминал VOYO mobile» — комиссия платежа точная;
+  //  · карты — приходят реестром за день: «…(VOYO mobile) по реестру операций
+  //    от ДАТА. Сумма комиссии …» — процент реестра магазина за этот день.
+  // Пока банк реестр не прислал (1–3 дня), берём последний процент магазина по
+  // картам; до самого первого реестра — тариф ACQ_AKG_CARD_PCT.
+  const ACQ_REAL_FILE = path.join(DIR, "acqreal.json");
+  const ACQ_SHOP = process.env.ESIM_ACQ_SHOP || "VOYO mobile";
+  const ACQ_AKG_CARD_PCT = Number(process.env.ESIM_ACQ_AKG_CARD_PCT || 1.4);
+  const ACQ_AKG_SBP_PCT = Number(process.env.ESIM_ACQ_AKG_SBP_PCT || 0.7);
+  const rxEsc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  async function syncAcqReal() {
+    const token = process.env.TBANK_API_TOKEN;
+    if (!token) return;
+    const get = async (u) => (await axios.get(u, { headers: { Authorization: "Bearer " + token },
+      httpsAgent: tbank.agent(), timeout: 30000 })).data;
+    const accs = await get("https://business.tbank.ru/openapi/api/v4/bank-accounts");
+    const list = Array.isArray(accs) ? accs : (accs.accounts || []);
+    const acc = (list.find((x) => /рубл/i.test(x.name || "")) || list[0] || {}).accountNumber;
+    if (!acc) return;
+    // конец периода — параметр «to», не «till» (банк молча игнорирует незнакомый)
+    const from = "2026-10-01T00:00:00Z";
+    const to = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10) + "T00:00:00Z";
+    let cursor = "", ops = [];
+    for (let p = 0; p < 200; p++) {
+      const j = await get("https://business.tbank.ru/openapi/api/v1/statement?accountNumber=" + acc + "&from=" + from + "&to=" + to +
+        (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
+      ops = ops.concat(j.operations || []);
+      if (!j.nextCursor || !(j.operations || []).length) break;
+      cursor = j.nextCursor;
+    }
+    const shop = rxEsc(ACQ_SHOP);
+    const out = { ts: Date.now(), sbp: {}, cards: {} };
+    for (const o of ops) {
+      if (String(o.operationStatus) !== "Transaction") continue;
+      const p = String(o.payPurpose || o.description || ""), amt = Number(o.accountAmount) || 0;
+      let m;
+      if ((m = new RegExp("^Пополнение по операции СБП (\\d+)\\. Терминал " + shop + "\\s*$", "i").exec(p))) {
+        (out.sbp[m[1]] = out.sbp[m[1]] || {}).rub = amt;
+      } else if ((m = new RegExp("^Плата за пополнение по операции СБП (\\d+)\\. Терминал " + shop + "\\.", "i").exec(p))) {
+        (out.sbp[m[1]] = out.sbp[m[1]] || {}).fee = amt;
+      } else if ((m = new RegExp("\\(" + shop + "\\) по реестру операций от (\\d{2})\\.(\\d{2})\\.(\\d{4})", "i").exec(p))) {
+        const c = /сумма комиссии\s*(\d[\d\s]*)\s*руб\.?\s*(\d{1,2})\s*коп/i.exec(p);
+        if (!c) continue;
+        const fee = parseInt(c[1].replace(/\s/g, ""), 10) + parseInt(c[2], 10) / 100;
+        const day = m[3] + "-" + m[2] + "-" + m[1];
+        const d = out.cards[day] = out.cards[day] || { gross: 0, fee: 0 };
+        d.gross += amt + fee; d.fee += fee;   // приходит за вычетом комиссии
+      }
+    }
+    // Если банк кладёт карты VOYO mobile в общий реестр с визами, реестров
+    // магазина не будет вовсе — тогда один раз говорим директору, что по картам
+    // стоит тариф, а не выписка
+    const prev = readJson(ACQ_REAL_FILE, {}) || {};
+    out.warned = prev.warned || null;
     const akg = process.env.TBANK_AKG_TERMINAL_KEY;
-    return akg && o.terminal === akg ? rates.akg : rates.ip;
+    const oldCard = readJson(ORDERS_FILE, []).some((o) => o.terminal === akg && o.status === "done" && o.paidAt &&
+      Date.now() - o.paidAt > 4 * 86400e3 && !out.sbp[String(o.paymentId)]);
+    if (oldCard && !Object.keys(out.cards).length && !out.warned && opts && opts.sendMail) {
+      out.warned = Date.now();
+      Promise.resolve(opts.sendMail({ to: ABANDON_TO, subject: "VOYO mobile: банк не прислал реестр карт по магазину",
+        text: "Оплаты картой через ООО прошли больше 4 дней назад, а реестра «(" + ACQ_SHOP + ") по реестру операций» в выписке нет.\n" +
+          "Похоже, банк кладёт карты VOYO mobile в общий реестр с визами. Комиссия по картам в панели пока считается по тарифу " +
+          String(ACQ_AKG_CARD_PCT).replace(".", ",") + "%, СБП — точно по выписке." })).catch(() => {});
+    }
+    writeJson(ACQ_REAL_FILE, out);
+    return out;
+  }
+  setTimeout(() => { syncAcqReal().catch((e) => console.error("esim комиссия банка:", e.message)); }, 90000);
+  setInterval(() => { syncAcqReal().catch((e) => console.error("esim комиссия банка:", e.message)); }, 3 * 3600e3);
+
+  function acqRates(spend) {
+    const real = readJson(ACQ_REAL_FILE, {}) || {};
+    const days = Object.keys(real.cards || {}).sort();
+    const last = days.length ? real.cards[days[days.length - 1]] : null;
+    return { ip: spend.acqPct, real,
+      cardLast: last && last.gross ? last.fee / last.gross * 100 : ACQ_AKG_CARD_PCT };
+  }
+  // комиссия платежа в рублях
+  function acqFeeOf(o, rates) {
+    const akg = process.env.TBANK_AKG_TERMINAL_KEY;
+    if (!akg || o.terminal !== akg) return o.priceRub * rates.ip / 100;
+    const pay = o.groupOf ? null : String(o.paymentId || "");
+    const sbp = pay && rates.real.sbp && rates.real.sbp[pay];
+    if (sbp) return sbp.fee != null ? sbp.fee * (o.priceRub / (sbp.rub || o.priceRub)) : o.priceRub * ACQ_AKG_SBP_PCT / 100;
+    const day = (rates.real.cards || {})[mskDay(o.paidAt)];
+    return o.priceRub * (day && day.gross ? day.fee / day.gross * 100 : rates.cardLast) / 100;
   }
   // Канал берём из первой метки: она отвечает за то, откуда человек пришёл впервые.
   // Покупки из визового ЛК до 18.09.2026 пометки не имели — найдены по журналу
@@ -4201,7 +4267,7 @@ function mount(app, opts) {
       let revenue = 0, cost = 0, acqExact = 0;
       paid.forEach((o) => {
         const day = mskDay(o.paidAt), c = costOf(o);
-        const fee = o.priceRub * acqPctOf(o, rates) / 100;
+        const fee = acqFeeOf(o, rates);
         revenue += o.priceRub; cost += c; acqExact += fee;
         const one = o.groupOf ? 0 : 1;          // заказ = платёж; доп. eSIM из того же платежа — не новый заказ
         const d = days.get(day) || { day, revenue: 0, orders: 0, esims: 0, cost: 0 };
@@ -4217,7 +4283,7 @@ function mount(app, opts) {
       const adSpend = spend.items.filter((x) => inRange(String(x.date || "")))
         .reduce((a, x) => a + (Number(x.rub) || 0), 0);
       const acq = Math.round(acqExact);
-      const acqPct = revenue ? Math.round(acqExact / revenue * 10000) / 100 : rates.akg;   // средний за период
+      const acqPct = revenue ? Math.round(acqExact / revenue * 10000) / 100 : 0;   // средний за период
 
       // клиенты: считаем только тех, у кого есть оплаченный заказ
       const cust = loadCustomers();
@@ -4294,7 +4360,7 @@ function mount(app, opts) {
         support: supportForPanel(),
         balances: supplierBalances(rate),
         totals: {
-          revenue, orders: paid.filter((o) => !o.groupOf).length, esims: paid.length, cost: Math.round(cost), acq, acqPct, acqPctIp: rates.ip, acqPctAkg: rates.akg, acqPctAkgManual: rates.akgManual, adSpend,
+          revenue, orders: paid.filter((o) => !o.groupOf).length, esims: paid.length, cost: Math.round(cost), acq, acqPct, acqPctIp: rates.ip, adSpend,
           profit: Math.round(revenue - cost - acq - adSpend),
           avgCheck: paid.filter((o) => !o.groupOf).length ? Math.round(revenue / paid.filter((o) => !o.groupOf).length) : 0,
           customers: byCust.size, customersAll: Object.keys(cust).filter((k) => withTest || !isTestCustomerKey(k)).length,
@@ -4320,8 +4386,6 @@ function mount(app, opts) {
     if (!isAdm(req)) return res.status(403).json({ success: false });
     const d = loadSpend();
     if (b.acqPct != null) d.acqPct = Math.max(0, Math.min(20, Number(b.acqPct) || 0));
-    // пустое значение — вернуть процент ООО из выписки банка
-    if (b.acqPctAkg !== undefined) d.acqPctAkg = b.acqPctAkg === "" || b.acqPctAkg === null ? null : Math.max(0, Math.min(20, Number(b.acqPctAkg) || 0));
     if (b.del) d.items = d.items.filter((x) => x.id !== String(b.del));
     // Скриншот кабинета показывает расход за всё время. Такую сумму не
     // прибавляем, а ставим вместо прежних записей этого канала.
