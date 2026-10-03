@@ -1,0 +1,44 @@
+[
+  {
+    "id": 26318104,
+    "num": 70487,
+    "time": 1646475660,
+    "status": { "code": 0, "name": "Новая" },
+    "client": { "name": "", "phone": "+7 (911) 9115170", "email": "" },
+    "note": "Перенесена вручную из интерфейса Flexbe 03.10.2026: API Flexbe эту заявку не отдаёт (ошибка 500). Время — с точностью до минуты.",
+    "form_name": "Шенген-Лайт",
+    "form_data": { "33425": { "id": "33425", "name": "Телефон", "value": "+7 (911) 9115170", "type": "phone" } },
+    "page": { "url": "visa-sc.ru/europe_the_most_previous/", "name": "Шенгенская виза | Шенген в Москве от 3590р. На срок до 5 лет." },
+    "utm": {
+      "utm_medium": "cpc",
+      "utm_source": "yandex",
+      "utm_campaign": "новый-поиск-1k",
+      "utm_term": "эстония шенген",
+      "utm_content": "premium.2",
+      "ga_client_id": "46212982.1646472279",
+      "ym_client_id": "1646472278490458436"
+    },
+    "pay": null
+  },
+  {
+    "id": 26318776,
+    "num": 70488,
+    "time": 1646478420,
+    "status": { "code": 0, "name": "Новая" },
+    "client": { "name": "", "phone": "+7 (901) 7457718", "email": "" },
+    "note": "Перенесена вручную из интерфейса Flexbe 03.10.2026: API Flexbe эту заявку не отдаёт (ошибка 500). Время — с точностью до минуты.",
+    "form_name": "Шенген-Заказать звонок",
+    "form_data": { "1": { "id": "1", "name": "Телефон", "value": "+7 (901) 7457718", "type": "phone" } },
+    "page": { "url": "visa-sc.ru/europe_the_most_previous/", "name": "Шенгенская виза | Шенген в Москве от 3590р. На срок до 5 лет." },
+    "utm": {
+      "utm_medium": "cpc",
+      "utm_source": "yandex",
+      "utm_campaign": "новый-поиск-1k",
+      "utm_term": "шенген в финляндию",
+      "utm_content": "premium.1",
+      "ga_client_id": "1875774749.1646478444",
+      "ym_client_id": "1646478444542797338"
+    },
+    "pay": null
+  }
+]

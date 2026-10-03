@@ -114,6 +114,12 @@ const pathOf = (raw) => {
     all.push(...month);
     if (month.length) console.log(`  ${key}: ${month.length}, всего ${all.length}`);
   }
+  // Заявки, которые API Flexbe не отдаёт вовсе (ошибка 500 на его стороне), перенесены
+  // руками из интерфейса Flexbe — tools/mskFlexbeExtra.json (03.10.2026: №70487, №70488)
+  try {
+    const have = new Set(all.map((l) => String(l.id)));
+    for (const x of JSON.parse(fs.readFileSync(path.join(__dirname, "mskFlexbeExtra.json"), "utf8"))) if (!have.has(String(x.id))) all.push(x);
+  } catch (_) {}
   // прежние правки (статус, заметки, сумма) — не теряем при повторном переносе
   const kept = new Map();
   try {
@@ -125,6 +131,10 @@ const pathOf = (raw) => {
   const months = new Map();
   const index = [];
   const seen = new Set();
+  // У Flexbe бывают две разные заявки под одним номером (так он их и показывает). Номер у нас —
+  // ключ карточки, поэтому повтору даём ключом внутренний id Flexbe, а показываем номер (num).
+  const usedNum = new Set();
+  all.sort((a, b) => Number(a.time) - Number(b.time) || Number(a.id) - Number(b.id));
   for (const L of all) {
     const st = Number(L.status && L.status.code);
     if (st === 11 || seen.has(String(L.id))) continue; // удалённые во Flexbe и повторы
@@ -139,8 +149,10 @@ const pathOf = (raw) => {
     const paid = !!L.pay && Number(L.pay.status && (L.pay.status.code != null ? L.pay.status.code : L.pay.status)) === 2;
     const k = kept.get(String(L.id)) || {};
     const pagePath = pathOf(L.page && L.page.url);
+    const num = Number(L.num) || Number(L.id);
     const e = {
-      id: Number(L.num) || Number(L.id),
+      id: usedNum.has(num) ? Number(L.id) : num,
+      num,
       at,
       page: pagePath,
       pageUrl: pagePath,
@@ -158,11 +170,12 @@ const pathOf = (raw) => {
       flexbe: { id: L.id, num: L.num },
       amo: { skipped: "архив Flexbe — сделку создавал Flexbe" }
     };
+    usedNum.add(num);
     if (!months.has(month)) months.set(month, []);
     months.get(month).push(e);
     const fv = (re) => (fields.find((f) => re.test(String(f.type) + " " + String(f.name))) || {}).value || "";
     index.push({
-      id: e.id, at, month, status: e.status, viewed: true, notes: e.notes ? "•" : "", form: e.data.name,
+      id: e.id, num, at, month, status: e.status, viewed: true, notes: e.notes ? "•" : "", form: e.data.name,
       clientName: (L.client && L.client.name) || fv(/name|имя/i), phone: (L.client && L.client.phone) || fv(/phone|tel|телефон/i),
       email: (L.client && L.client.email) || fv(/email|почт/i), pagePath, pageTitle: e.pageTitle, amount: e.amount, host: "flexbe-archive"
     });
