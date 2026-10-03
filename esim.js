@@ -3811,7 +3811,34 @@ function mount(app, opts) {
   const ADSPEND_FILE = path.join(DIR, "adspend.json");
   function loadSpend() {
     const d = readJson(ADSPEND_FILE, null) || {};
-    return { acqPct: Number(d.acqPct != null ? d.acqPct : 2.5), items: Array.isArray(d.items) ? d.items : [] };
+    return { acqPct: Number(d.acqPct != null ? d.acqPct : 2.5), acqPctAkg: d.acqPctAkg != null ? Number(d.acqPctAkg) : null,
+      items: Array.isArray(d.items) ? d.items : [] };
+  }
+  // Комиссия банка — по кассе, через которую прошёл платёж (03.10.2026).
+  // ИП Комиссаренко (все заказы до 02.10.2026): эквайринг ~2,5% плюс 1,5% за
+  // «Чеки Т-Бизнеса» — это ручной процент acqPct, его не трогаем, история та же.
+  // ООО «Эй Кей Групп»: касса своя (АТОЛ, абонплата, не с платежа), остаётся
+  // только эквайринг. Процент берём из настоящей выписки ООО — тот же разбор,
+  // что у блока «Комиссии эквайринга» в /vsc (.lkAcquiring.json, обновляется
+  // каждую ночь): комиссия / оборот интернет-эквайринга за последние 3 месяца.
+  // Ручное значение acqPctAkg, если задано в панели, важнее выписки.
+  function acqPctAkgReal() {
+    try {
+      const m = ((readJson(path.join(__dirname, ".lkAcquiring.json"), {}).ooo || {}).months) || {};
+      const keys = Object.keys(m).sort().slice(-3);
+      const g = keys.reduce((a, k) => a + (Number(m[k].inetG) || 0), 0);
+      const c = keys.reduce((a, k) => a + (Number(m[k].inetC) || 0), 0);
+      if (g > 100000 && c > 0) return Math.round(c / g * 10000) / 100;
+    } catch (_) {}
+    return 1.4;
+  }
+  function acqRates(spend) {
+    return { ip: spend.acqPct, akg: spend.acqPctAkg != null ? spend.acqPctAkg : acqPctAkgReal(),
+      akgManual: spend.acqPctAkg != null };
+  }
+  function acqPctOf(o, rates) {
+    const akg = process.env.TBANK_AKG_TERMINAL_KEY;
+    return akg && o.terminal === akg ? rates.akg : rates.ip;
   }
   // Канал берём из первой метки: она отвечает за то, откуда человек пришёл впервые.
   // Покупки из визового ЛК до 18.09.2026 пометки не имели — найдены по журналу
@@ -4153,6 +4180,7 @@ function mount(app, opts) {
     try {
       const rate = await usdRate();
       const spend = loadSpend();
+      const rates = acqRates(spend);
       const from = String(req.query.from || "").slice(0, 10);
       const to = String(req.query.to || "").slice(0, 10);
       const inRange = (day) => (!from || day >= from) && (!to || day <= to);
@@ -4170,16 +4198,17 @@ function mount(app, opts) {
 
       const days = new Map();
       const chans = new Map();
-      let revenue = 0, cost = 0;
+      let revenue = 0, cost = 0, acqExact = 0;
       paid.forEach((o) => {
         const day = mskDay(o.paidAt), c = costOf(o);
-        revenue += o.priceRub; cost += c;
+        const fee = o.priceRub * acqPctOf(o, rates) / 100;
+        revenue += o.priceRub; cost += c; acqExact += fee;
         const one = o.groupOf ? 0 : 1;          // заказ = платёж; доп. eSIM из того же платежа — не новый заказ
         const d = days.get(day) || { day, revenue: 0, orders: 0, esims: 0, cost: 0 };
         d.revenue += o.priceRub; d.orders += one; d.esims++; d.cost += c; days.set(day, d);
         const k = channelOf(o);
-        const ch = chans.get(k) || { key: k, name: channelName(k), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0 };
-        ch.orders += one; ch.esims++; ch.revenue += o.priceRub; ch.cost += c; chans.set(k, ch);
+        const ch = chans.get(k) || { key: k, name: channelName(k), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0, acq: 0 };
+        ch.orders += one; ch.esims++; ch.revenue += o.priceRub; ch.cost += c; ch.acq += fee; chans.set(k, ch);
       });
       spend.items.filter((x) => inRange(String(x.date || ""))).forEach((x) => {
         const ch = chans.get(x.channel) || { key: x.channel, name: channelName(x.channel), orders: 0, revenue: 0, cost: 0, spend: 0 };
@@ -4187,7 +4216,8 @@ function mount(app, opts) {
       });
       const adSpend = spend.items.filter((x) => inRange(String(x.date || "")))
         .reduce((a, x) => a + (Number(x.rub) || 0), 0);
-      const acq = Math.round(revenue * spend.acqPct / 100);
+      const acq = Math.round(acqExact);
+      const acqPct = revenue ? Math.round(acqExact / revenue * 10000) / 100 : rates.akg;   // средний за период
 
       // клиенты: считаем только тех, у кого есть оплаченный заказ
       const cust = loadCustomers();
@@ -4264,7 +4294,7 @@ function mount(app, opts) {
         support: supportForPanel(),
         balances: supplierBalances(rate),
         totals: {
-          revenue, orders: paid.filter((o) => !o.groupOf).length, esims: paid.length, cost: Math.round(cost), acq, acqPct: spend.acqPct, adSpend,
+          revenue, orders: paid.filter((o) => !o.groupOf).length, esims: paid.length, cost: Math.round(cost), acq, acqPct, acqPctIp: rates.ip, acqPctAkg: rates.akg, acqPctAkgManual: rates.akgManual, adSpend,
           profit: Math.round(revenue - cost - acq - adSpend),
           avgCheck: paid.filter((o) => !o.groupOf).length ? Math.round(revenue / paid.filter((o) => !o.groupOf).length) : 0,
           customers: byCust.size, customersAll: Object.keys(cust).filter((k) => withTest || !isTestCustomerKey(k)).length,
@@ -4272,7 +4302,7 @@ function mount(app, opts) {
         days: Array.from(days.values()).sort((a, b) => (a.day < b.day ? -1 : 1))
           .map((d) => Object.assign(d, { cost: Math.round(d.cost), margin: Math.round(d.revenue - d.cost) })),
         channels: Array.from(chans.values()).map((c) => {
-          const margin = Math.round(c.revenue - c.cost - c.revenue * spend.acqPct / 100);
+          const margin = Math.round(c.revenue - c.cost - (c.acq || 0));
           return Object.assign({}, c, { cost: Math.round(c.cost), margin,
             profit: Math.round(margin - c.spend),
             drr: c.revenue ? Math.round(c.spend / c.revenue * 1000) / 10 : null,
@@ -4290,6 +4320,8 @@ function mount(app, opts) {
     if (!isAdm(req)) return res.status(403).json({ success: false });
     const d = loadSpend();
     if (b.acqPct != null) d.acqPct = Math.max(0, Math.min(20, Number(b.acqPct) || 0));
+    // пустое значение — вернуть процент ООО из выписки банка
+    if (b.acqPctAkg !== undefined) d.acqPctAkg = b.acqPctAkg === "" || b.acqPctAkg === null ? null : Math.max(0, Math.min(20, Number(b.acqPctAkg) || 0));
     if (b.del) d.items = d.items.filter((x) => x.id !== String(b.del));
     // Скриншот кабинета показывает расход за всё время. Такую сумму не
     // прибавляем, а ставим вместо прежних записей этого канала.

@@ -323,7 +323,7 @@
         <div><label>Сумма, ₽</label><input id="sRub" type="number" min="1" step="1" style="width:110px"/></div>
         <div><label>Комментарий</label><input id="sNote" style="width:190px"/></div>
         <button class="btn pri" id="sAdd" type="button">Добавить</button>
-        <div style="margin-left:auto"><label>Комиссия банка, %</label><input id="sAcq" type="number" step="0.1" min="0" max="20" style="width:80px"/></div>
+        <div style="margin-left:auto"><label title="Для платежей через ИП. Платежи через ООО считаются по выписке банка">Комиссия банка, %</label><input id="sAcq" type="number" step="0.1" min="0" max="20" style="width:80px"/></div>
         <div class="scroll" style="flex-basis:100%;margin-top:6px"><table id="tSpend"></table></div>
       </div>
     </div>
@@ -873,7 +873,7 @@
         s.spend && s.revenue ? pct(Math.round(s.spend / s.revenue * 1000) / 10) : "—",
         s.spend && s.orders ? RU(s.spend / s.orders) + " ₽" : "—",
         money(s.profit, true)], R) + "</tfoot>";
-    el("sAcq").value = DATA.totals.acqPct;
+    el("sAcq").value = DATA.totals.acqPctIp != null ? DATA.totals.acqPctIp : DATA.totals.acqPct;   // ручной процент — для платежей через ИП
     el("tSpend").innerHTML = DATA.spend.length
       ? head(["Дата","Канал","Сумма","Комментарий",""], [0,0,1,0,1]) + "<tbody>" + DATA.spend.map(function(x){
           return row([dShort(x.date), esc(x.channel), RU(x.rub) + " ₽", '<span class="dim">' + esc(x.note || "") + "</span>",
