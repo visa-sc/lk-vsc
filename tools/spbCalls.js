@@ -134,7 +134,8 @@ async function pbxCalls(from, to) {
     if (cand) {
       usedClick.add(cand);
       const u = cand.utm || {};
-      c.source = { how: "клик по номеру", term: u.utm_term || "", campaign: u.utm_campaign || "", src: u.utm_source || "", channel: cand.channel || "", page: cand.page || "" };
+      // vid — посетитель сайта: по нему аналитика восстанавливает путь клиента до звонка (атрибуция)
+      c.source = { how: "клик по номеру", term: u.utm_term || "", campaign: u.utm_campaign || "", src: u.utm_source || "", channel: cand.channel || "", page: cand.page || "", vid: cand.vid || "" };
       continue;
     }
     const l = leadByPhone.get(c.caller);
@@ -145,7 +146,7 @@ async function pbxCalls(from, to) {
         u = typeof ud === "string" ? JSON.parse(ud || "{}") : ud || {};
       } catch (_) {}
       if (l.utm && typeof l.utm === "object") u = { ...u, ...l.utm };
-      c.source = { how: "раньше оставлял заявку #" + (l.id || ""), term: u.utm_term || "", campaign: u.utm_campaign || "", src: u.utm_source || "", channel: "", page: l.pageUrl || "" };
+      c.source = { how: "раньше оставлял заявку #" + (l.id || ""), term: u.utm_term || "", campaign: u.utm_campaign || "", src: u.utm_source || "", channel: "", page: l.pageUrl || "", vid: l.vid || "" };
       continue;
     }
     c.source = { how: "не определён", term: "", campaign: "", src: "", channel: "", page: "" };

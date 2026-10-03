@@ -104,8 +104,60 @@ for (const lead of leads) {
   }
 }
 
-// 3. Сводим по ключевому слову, кампании и источнику
+// 3. Сводим по ключевому слову, кампании и источнику — в трёх моделях атрибуции (03.10.2026):
+//    first — выручка клиента у ключа его первой заявки (как было);
+//    last  — у последней заявки клиента с ключом (последний значимый переход);
+//    assoc — «ассоциированные»: у каждого ключа, с которым клиент хоть раз оставлял заявку,
+//            выручка клиента целиком (сумма по строкам больше итога).
+//    «Заявки» в строке — всегда заявки с этим ключом; клиенты, сделки и выручка — по модели.
 const norm = (s) => String(s || "").trim();
+const ownerOf = new Map(); // заявка → первая заявка её клиента
+for (const l of leads) {
+  const firsts = l.contacts.map((c) => firstLeadOfContact.get(c)).filter(Boolean).sort((a, b) => a.at - b.at);
+  ownerOf.set(l, firsts[0] || l);
+}
+const clientLeads = new Map();
+for (const l of leads) {
+  const o = ownerOf.get(l);
+  if (!clientLeads.has(o)) clientLeads.set(o, []);
+  clientLeads.get(o).push(l);
+}
+function groupModel(keyFn, model) {
+  const m = new Map();
+  const get = (k, at) => {
+    k = k || "—";
+    if (!m.has(k)) m.set(k, { key: k, leads: 0, clients: 0, won: 0, revenue: 0, first: at, last: at, campaigns: new Set() });
+    return m.get(k);
+  };
+  for (const l of leads) {
+    const o = get(norm(keyFn(l)), l.at);
+    o.leads++;
+    o.first = Math.min(o.first, l.at);
+    o.last = Math.max(o.last, l.at);
+    if (l.utm.campaign) o.campaigns.add(l.utm.campaign);
+  }
+  for (const [owner, list] of clientLeads) {
+    if (!owner.owner) continue;
+    let keys;
+    if (model === "first") keys = [norm(keyFn(owner))];
+    else if (model === "last") {
+      const withKey = list.filter((l) => norm(keyFn(l)));
+      keys = [norm(keyFn((withKey.length ? withKey : list).slice(-1)[0]))];
+    } else {
+      const all = [...new Set(list.map((l) => norm(keyFn(l))))];
+      keys = all.filter(Boolean).length ? all.filter(Boolean) : all;
+    }
+    for (const k of keys) {
+      const o = get(k, owner.at);
+      o.clients++;
+      o.won += owner.won;
+      o.revenue += owner.revenue;
+    }
+  }
+  return [...m.values()]
+    .map((o) => ({ ...o, campaigns: [...o.campaigns].slice(0, 5), first: new Date((o.first + 10800) * 1000).toISOString().slice(0, 10), last: new Date((o.last + 10800) * 1000).toISOString().slice(0, 10) }))
+    .sort((a, b) => b.revenue - a.revenue || b.leads - a.leads);
+}
 function group(keyFn) {
   const m = new Map();
   for (const l of leads) {
@@ -149,7 +201,18 @@ const result = {
   years: [...byYear.values()].sort((a, b) => a.year - b.year),
   keywords: group((l) => norm(l.utm.term)).slice(0, 3000),
   campaigns: group((l) => norm(l.utm.campaign)).slice(0, 1000),
-  sources: group((l) => norm(l.utm.source)).slice(0, 200)
+  sources: group((l) => norm(l.utm.source)).slice(0, 200),
+  // те же разрезы по другим моделям атрибуции (аналитика: переключатель «Модель атрибуции»)
+  models: Object.fromEntries(
+    ["assoc", "last"].map((m) => [
+      m,
+      {
+        keywords: groupModel((l) => l.utm.term, m).slice(0, 3000),
+        campaigns: groupModel((l) => l.utm.campaign, m).slice(0, 1000),
+        sources: groupModel((l) => l.utm.source, m).slice(0, 200)
+      }
+    ])
+  )
 };
 
 console.log(
