@@ -446,7 +446,7 @@ function doubleRead() {
   return /^(1|true|on|yes|да)$/.test(v) ? "same" : "";
 }
 function modelHard() { return process.env.SCANNER_MODEL_HARD || "claude-sonnet-5"; }
-const PRICES = { "claude-opus-5": [5, 25], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5] };
+const PRICES = { "claude-opus-5": [5, 25], "claude-sonnet-5": [2, 10], "claude-haiku-4-5": [1, 5] }; // Sonnet 5 — $2/$10 (до 05.10.2026 ошибочно $3/$15)
 const RUB = Number(process.env.TRANSLATE_USD_RUB || 80);
 function costRub(spend) {
   let usd = 0;

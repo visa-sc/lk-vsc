@@ -42,8 +42,9 @@ const FILE = path.join(__dirname, ".aiBalance.json");
 const ENGINE_BUDGET = path.join(__dirname, ".engineBudget.json");
 const SCANNER_STORE = path.join(__dirname, ".scanner", "store.json");
 
-// $ за 1M токенов: [вход, выход] — как в движке и сканере.
-const PRICES = { "claude-opus-5": [5, 25], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5] };
+// $ за 1M токенов: [вход, выход] — как в шлюзе и сканере. Sonnet 5 — $2/$10
+// (до 05.10.2026 стояли $3/$15, расход завышался).
+const PRICES = { "claude-opus-5": [5, 25], "claude-sonnet-5": [2, 10], "claude-haiku-4-5": [1, 5] };
 const WARN_USD = Number(process.env.AI_BALANCE_WARN_USD || 20);
 const ALERT_USD = Number(process.env.AI_BALANCE_ALERT_USD || 15);
 // Получатели: Андрей и Катя Зайцева (её просьба Андрея 21.09.2026 — она первой
@@ -67,12 +68,15 @@ function init() {
 function addTopup(usd, note) {
   const d = init();
   const gw = spendGatewayTotal(), sc = spendScannerTotal();
+  const now = Date.now(), day = mskDay(now), today = gatewayDay(day);
   d.topups.push({
-    at: Date.now(), usd: Number(usd), note: note || "",
+    at: now, usd: Number(usd), note: note || "",
     // срез счётчиков на момент пополнения — от него считаем новый расход
     baseGatewayUsd: gw.usd, baseGatewayCalls: gw.calls,
     baseSvc: gw.svc || {},
     baseScannerUsd: sc.usd, baseScannerDocs: sc.docs,
+    // срез по дню пополнения — им пользуется status(), см. gatewaySince
+    baseDay: day, baseDayUsd: today.usd, baseDayCalls: today.calls, baseDaySvc: today.svc,
   });
   d.warnSentAt = null;
   d.lastDailyDay = null;
@@ -103,6 +107,35 @@ function spendGatewayTotal() {
   } catch (_) {}
   return { usd, calls, svc };
 }
+function readBudgetDays() {
+  try { return JSON.parse(fs.readFileSync(ENGINE_BUDGET, "utf8")).days || {}; } catch (_) { return {}; }
+}
+function gatewayDay(day) {
+  const v = readBudgetDays()[day] || {};
+  const svc = {};
+  for (const [id, s] of Object.entries(v.svc || {})) svc[id] = { usd: s.usd || 0, calls: s.calls || 0 };
+  return { usd: v.usd || 0, calls: v.calls || 0, svc };
+}
+// Расход шлюза после пополнения t. Журнал шлюза хранит только 90 дней, поэтому
+// «всего за всё время минус срез» со временем врёт в опасную сторону: старые дни
+// выпадают, сумма уменьшается, и остаток кажется больше, чем есть. Поэтому
+// считаем по дням: всё после дня пополнения плюс прирост самого этого дня.
+function gatewaySince(t) {
+  const out = { usd: 0, calls: 0, svc: {} };
+  for (const [day, v] of Object.entries(readBudgetDays())) {
+    if (day < t.baseDay) continue;
+    const same = day === t.baseDay;
+    out.usd += Math.max(0, (v.usd || 0) - (same ? t.baseDayUsd || 0 : 0));
+    out.calls += Math.max(0, (v.calls || 0) - (same ? t.baseDayCalls || 0 : 0));
+    for (const [id, s] of Object.entries(v.svc || {})) {
+      const base = (same && t.baseDaySvc && t.baseDaySvc[id]) || { usd: 0, calls: 0 };
+      const a = out.svc[id] || (out.svc[id] = { usd: 0, calls: 0 });
+      a.usd += Math.max(0, (s.usd || 0) - (base.usd || 0));
+      a.calls += Math.max(0, (s.calls || 0) - (base.calls || 0));
+    }
+  }
+  return out;
+}
 function spendScannerTotal() {
   let usd = 0, docs = 0;
   try {
@@ -121,26 +154,37 @@ function spendScannerTotal() {
 function status() {
   const t0 = lastTopup(), t = t0;
   if (!t) return { known: false, message: "сумма пополнения не задана — node tools/ai-topup.js <сумма в $>" };
-  const gwAll = spendGatewayTotal(), scAll = spendScannerTotal();
-  // Для пополнений, записанных до появления срезов, база — ноль: тогда расход
-  // посчитается с начала журналов, остаток будет занижен, но не завышен.
-  const gw = {
-    usd: Math.max(0, gwAll.usd - (t.baseGatewayUsd || 0)),
-    calls: Math.max(0, gwAll.calls - (t.baseGatewayCalls || 0)),
-  };
+  const scAll = spendScannerTotal();
   const sc = {
     usd: Math.max(0, scAll.usd - (t.baseScannerUsd || 0)),
     docs: Math.max(0, scAll.docs - (t.baseScannerDocs || 0)),
   };
+  // Пополнения со срезом по дню (с 05.10.2026) считаем по дням журнала. Старые —
+  // по итогу за всё время; для самых старых, без срезов вовсе, база — ноль: расход
+  // посчитается с начала журналов, остаток будет занижен, но не завышен.
+  let gw, svcSince;
+  if (t.baseDay) {
+    const s = gatewaySince(t);
+    gw = { usd: s.usd, calls: s.calls };
+    svcSince = s.svc;
+  } else {
+    const gwAll = spendGatewayTotal();
+    gw = {
+      usd: Math.max(0, gwAll.usd - (t.baseGatewayUsd || 0)),
+      calls: Math.max(0, gwAll.calls - (t.baseGatewayCalls || 0)),
+    };
+    svcSince = {};
+    for (const [id, a] of Object.entries(gwAll.svc || {})) {
+      const b = (t0.baseSvc && t0.baseSvc[id]) || { usd: 0, calls: 0 };
+      svcSince[id] = { usd: Math.max(0, (a.usd || 0) - (b.usd || 0)), calls: Math.max(0, (a.calls || 0) - (b.calls || 0)) };
+    }
+  }
   // Разбивка по сервисам. Дни до 16.09.2026 писались без неё — этот остаток
   // показываем отдельной строкой «до разделения», чтобы сумма всегда сходилась.
   const svc = [];
   let svcSum = 0;
-  for (const [id, t] of Object.entries(gwAll.svc || {})) {
-    const b = (t0.baseSvc && t0.baseSvc[id]) || { usd: 0, calls: 0 };
-    const v = Math.max(0, (t.usd || 0) - (b.usd || 0));
-    const c = Math.max(0, (t.calls || 0) - (b.calls || 0));
-    if (v > 0 || c > 0) { svc.push({ id, title: SVC_TITLES[id] || id, usd: v, calls: c }); svcSum += v; }
+  for (const [id, a] of Object.entries(svcSince)) {
+    if (a.usd > 0 || a.calls > 0) { svc.push({ id, title: SVC_TITLES[id] || id, usd: a.usd, calls: a.calls }); svcSum += a.usd; }
   }
   svc.sort((a, b) => b.usd - a.usd);
   const undivided = Math.max(0, gw.usd - svcSum);

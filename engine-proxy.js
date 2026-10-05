@@ -31,8 +31,11 @@ const express = require("express");
 
 const ENGINE = { host: "127.0.0.1", port: Number(process.env.ENGINE_PORT || 3003) };
 const BUDGET_FILE = path.join(__dirname, ".engineBudget.json");
-const PRICES = { // $ за 1M токенов: [вход, выход] — как в движке
-  "claude-opus-5": [5, 25], "claude-sonnet-5": [3, 15], "claude-haiku-4-5": [1, 5],
+// $ за 1M токенов: [вход, выход]. Sonnet 5 стоит $2/$10 (до 05.10.2026 здесь
+// стояли $3/$15 от Sonnet 4.6 — расход переводов завышался в полтора раза, и
+// письмо о балансе показывало меньше денег, чем в консоли).
+const PRICES = {
+  "claude-opus-5": [5, 25], "claude-sonnet-5": [2, 10], "claude-haiku-4-5": [1, 5],
 };
 const RUB = Number(process.env.TRANSLATE_USD_RUB || 80);
 
@@ -67,9 +70,13 @@ function svcOf(req) {
   if (req.headers["x-stainless-lang"] || /Anthropic\//i.test(String(req.headers["user-agent"] || ""))) return "translate";
   return "cq";
 }
+// Запись в кэш: на 5 минут — 1,25 входа, на час — 2. API отдаёт общий объём
+// записи и отдельно часовую часть (cache_creation.ephemeral_1h_input_tokens),
+// поэтому к 1,25 за всё доплачиваем 0,75 за часовую.
+function cw1hOf(u) { return (u.cache_creation && u.cache_creation.ephemeral_1h_input_tokens) || 0; }
 function usdOf(model, u) {
   const rate = PRICES[model] || PRICES["claude-sonnet-5"];
-  return ((u.input_tokens || 0) + (u.cache_read_input_tokens || 0) * 0.1 + (u.cache_creation_input_tokens || 0) * 1.25) * rate[0] / 1e6
+  return ((u.input_tokens || 0) + (u.cache_read_input_tokens || 0) * 0.1 + (u.cache_creation_input_tokens || 0) * 1.25 + cw1hOf(u) * 0.75) * rate[0] / 1e6
     + (u.output_tokens || 0) * rate[1] / 1e6;
 }
 
@@ -207,6 +214,11 @@ function mountEarly(app, deps) {
         sv.tok.out += u.output_tokens || 0;
         sv.tok.cr += u.cache_read_input_tokens || 0;
         sv.tok.cw += u.cache_creation_input_tokens || 0;
+        sv.tok.cw1h = (sv.tok.cw1h || 0) + cw1hOf(u);
+        // Деньги по моделям: если цена какой-то модели окажется неверной,
+        // историю можно будет пересчитать точно, а не прикидкой.
+        sv.usdBy = sv.usdBy || {};
+        sv.usdBy[mid] = (sv.usdBy[mid] || 0) + usd;
         // чистим журнал старше 90 дней
         for (const k of Object.keys(b2.days)) if (k < new Date(Date.now() - 90 * 86400e3).toISOString().slice(0, 10)) delete b2.days[k];
         if (d2.usd >= DAILY_USD * 0.8 && !b2.alerts[day + ":80"]) {
