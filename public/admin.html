@@ -6028,38 +6028,100 @@
         box.innerHTML = '<div class="loading-state">Загружаем журнал форм…</div>';
         wrap.appendChild(box);
         const fmtDay = function (d) { const p = String(d || "").split("-"); return p.length === 3 ? p[2] + "." + p[1] : d; };
+        // Устроено как «Сверка контактов» (просьба Андрея 05.10.2026): сверху одна
+        // строка за прошедшие сутки и «подробнее» рядом, остальные дни — под кнопкой
+        // «Показать историю». Строка — гибкая (flex-wrap), как reconLine: раньше пункты
+        // стояли в ячейке таблицы без точек переноса, на iPhone строка вылезала за
+        // карточку, и Safari ещё и раздувал шрифт.
         const MARK = { ok: '<span style="color:#2c7a43;font-weight:800;font-size:14px;">✓</span>',
                        warn: '<span style="color:#c99a10;font-weight:800;font-size:14px;">✓</span>',
                        bad: '<span style="color:#a12b3c;font-weight:800;font-size:14px;">✗</span>' };
+        const num = function (v, color) { return '<b style="color:' + (v ? color : "#1d2330") + ';">' + v + "</b>"; };
+        const stateOf = function (d) { return d.errors ? "bad" : ((d.invalid || d.noCall) ? "warn" : "ok"); };
+        function formsLine(d) {
+          let out = MARK[stateOf(d)];
+          out += '<span style="margin-left:8px;white-space:nowrap;">Отправок: <b>' + d.submits + "</b></span>";
+          out += '<span style="margin-left:14px;white-space:nowrap;">Заявок сохранено: <b>' + d.leads + "</b></span>";
+          out += '<span style="margin-left:14px;white-space:nowrap;">Ошибки в полях: ' + num(d.invalid, "#8a6d0b") + "</span>";
+          out += '<span style="margin-left:14px;white-space:nowrap;">Сбои отправки: ' + num(d.errors, "#a12b3c") + "</span>";
+          out += '<span style="margin-left:14px;white-space:nowrap;">Нажали на номер, звонка нет: ' + num(d.noCall || 0, "#8a6d0b") + "</span>";
+          return out;
+        }
+        // Подробности столбиком: заголовок группы, под ним случаи с отступом.
+        function formsDetails(d, colored) {
+          const GROUPS = [["сбой отправки", "сбои отправки:", "#a12b3c"], ["ошибка в поле", "ошибки в полях:", "#8a6d0b"], ["звонок не дошёл до АТС", "нажали на номер, звонка нет:", "#8a6d0b"]];
+          return GROUPS.map(function (g) {
+            const items = (d.items || []).filter(function (it) { return it.kind === g[0]; });
+            if (!items.length) return "";
+            const col = colored ? g[2] : "#8a8f9c";
+            return '<div style="margin-top:2px;color:' + col + ';">' + g[1] + "</div>"
+              + items.map(function (it) {
+                  const why = it.kind === "звонок не дошёл до АТС" ? String(it.reason || "").replace(/^нажал на номер (\S+),.*$/, "$1") : (it.reason || "без подробностей");
+                  return '<div style="padding-left:14px;color:' + col + ';overflow-wrap:anywhere;">' + escapeHtml(it.time) + " · "
+                    + '<a href="https://spb.visa-sc.ru' + escapeHtml(it.page) + '" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-decoration-color:rgba(0,0,0,.2);">' + escapeHtml(it.page) + "</a>"
+                    + " — " + escapeHtml(why) + "</div>";
+                }).join("");
+          }).join("");
+        }
         fetch("/admin/api/vsc/spb-forms", { headers: { Authorization: "Bearer " + getToken() } })
           .then(function (r) { return r.json(); })
           .then(function (j) {
             if (!j || !j.success) { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить журнал форм' + (j && j.message ? ": " + escapeHtml(j.message) : "") + '.</div>'; return; }
-            const days = j.days || [];
-            let html = '<div style="font-size:11.5px;color:#8a8f9c;margin-bottom:8px;">spb.visa-sc.ru на нашем сервере · журнал с ' + (j.start ? new Date(j.start).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "переезда") + ' · отправка — нажатие «отправить», заявка — сохранённая заявка</div>';
-            if (!days.length) { box.innerHTML = html + '<div class="vsc-empty">Пока ни одной отправки формы.</div>'; return; }
-            html += '<table style="border-collapse:collapse;font-size:12.5px;width:100%;">' + days.map(function (d) {
-              const st = d.errors ? "bad" : ((d.invalid || d.noCall) ? "warn" : "ok");
-              let line = MARK[st] + '<span style="margin-left:8px;white-space:nowrap;">Отправок: <b>' + d.submits + '</b></span>'
-                + '<span style="margin-left:14px;white-space:nowrap;">Заявок сохранено: <b>' + d.leads + '</b></span>'
-                + '<span style="margin-left:14px;white-space:nowrap;">Ошибки в полях: <b style="color:' + (d.invalid ? "#8a6d0b" : "#1d2330") + ';">' + d.invalid + '</b></span>'
-                + '<span style="margin-left:14px;white-space:nowrap;">Сбои отправки: <b style="color:' + (d.errors ? "#a12b3c" : "#1d2330") + ';">' + d.errors + '</b></span>'
-                + '<span style="margin-left:14px;white-space:nowrap;">Нажали на номер, звонка нет: <b style="color:' + (d.noCall ? "#8a6d0b" : "#1d2330") + ';">' + (d.noCall || 0) + '</b></span>';
-              if (d.items && d.items.length) {
-                line += '<a href="#" class="sf-more" data-day="' + escapeHtml(d.day) + '" style="margin-left:12px;font-size:11px;font-weight:600;color:#3589BD;text-decoration:none;white-space:nowrap;">подробнее</a>';
-                line += '<div class="sf-box" data-day="' + escapeHtml(d.day) + '" style="display:none;margin-top:4px;font-size:11.5px;line-height:1.6;color:#5a6172;">'
-                  + d.items.map(function (it) {
-                      return '<div style="padding-left:14px;"><b>' + escapeHtml(it.time) + '</b> · <a href="https://spb.visa-sc.ru' + escapeHtml(it.page) + '" target="_blank" style="color:#3589BD;text-decoration:none;">' + escapeHtml(it.page) + '</a> · <span style="color:' + (it.kind === "сбой отправки" ? "#a12b3c" : "#8a6d0b") + ';">' + escapeHtml(it.kind) + '</span> — ' + escapeHtml(it.reason || "без подробностей") + '</div>';
-                    }).join("") + "</div>";
+            // Только полные сутки, как в сверке. Тихие дни (ни отправок, ни заявок) сервер
+            // не присылает — достраиваем их нулями от начала журнала до вчера.
+            const mskDay = function (ms) { return new Date(ms + 3 * 3600e3).toISOString().slice(0, 10); };
+            const yesterday = mskDay(Date.now() - 864e5);
+            const byDay = {}; (j.days || []).forEach(function (d) { byDay[d.day] = d; });
+            const first = j.start ? mskDay(new Date(j.start).getTime()) : ((j.days || []).map(function (d) { return d.day; }).sort()[0] || yesterday);
+            const days = [];
+            for (let t = Date.parse(yesterday + "T12:00:00Z"); days.length < 31; t -= 864e5) {
+              const k = new Date(t).toISOString().slice(0, 10);   // полдень UTC — дата не съезжает
+              if (k < first) break;
+              days.push(byDay[k] || { day: k, submits: 0, leads: 0, invalid: 0, errors: 0, noCall: 0, items: [] });
+            }
+            if (!days.length) { box.innerHTML = '<div class="vsc-empty">Журнал форм начался сегодня — первая строка появится завтра.</div>'; return; }
+            const top = days[0];
+            let html = '<div style="font-size:11.5px;color:#8a8f9c;margin-bottom:8px;">spb.visa-sc.ru на нашем сервере · за ' + fmtDay(top.day) + " (полные сутки)</div>";
+            const topHas = (top.items || []).length > 0;
+            html += '<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">'
+              + '<div style="font-size:13px;color:#1d2330;display:flex;flex-wrap:wrap;align-items:baseline;row-gap:4px;">' + formsLine(top) + "</div>"
+              + (topHas ? '<a href="#" id="sfTopMore" style="font-size:11px;font-weight:600;color:#3589BD;text-decoration:none;white-space:nowrap;">подробнее</a>' : "") + "</div>";
+            if (topHas) html += '<div id="sfTopBox" style="display:none;margin-top:4px;font-size:11.5px;line-height:1.6;">' + formsDetails(top, true) + "</div>";
+            // История — тем же форматом строки, кнопка как в сверке контактов.
+            html += '<div style="margin-top:10px;"><button type="button" id="sfHistBtn" style="padding:9px 16px;font-size:13px;font-weight:600;border-radius:10px;cursor:pointer;line-height:1;background:#fff;color:#3589BD;border:1px solid #bcdcef;">Показать историю</button></div>';
+            html += '<div id="sfHistBox" style="display:none;margin-top:8px;"><table style="border-collapse:collapse;font-size:12px;width:100%;">' + days.map(function (d) {
+              let cell = '<div style="font-size:13px;color:#1d2330;display:flex;flex-wrap:wrap;align-items:baseline;row-gap:4px;">' + formsLine(d) + "</div>";
+              if ((d.items || []).length) {
+                cell = '<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">' + cell
+                  + '<a href="#" class="sf-more" data-day="' + escapeHtml(d.day) + '" style="font-size:11px;font-weight:600;color:#3589BD;text-decoration:none;white-space:nowrap;">подробнее</a></div>'
+                  + '<div class="sf-box" data-day="' + escapeHtml(d.day) + '" style="display:none;margin-top:4px;font-size:11.5px;line-height:1.6;">' + formsDetails(d, false) + "</div>";
               }
-              return '<tr style="border-top:1px solid #f0eef5;"><td style="padding:5px 14px 5px 0;color:#3a4256;white-space:nowrap;vertical-align:top;"><b>' + fmtDay(d.day) + '</b></td><td style="padding:5px 0;">' + line + "</td></tr>";
-            }).join("") + "</table>";
+              return '<tr style="border-top:1px solid #f0eef5;"><td style="padding:5px 14px 5px 0;color:#3a4256;white-space:nowrap;vertical-align:top;"><b>' + fmtDay(d.day) + '</b></td><td style="padding:5px 0;">' + cell + "</td></tr>";
+            }).join("") + "</table></div>";
             box.innerHTML = html;
+            const tm = box.querySelector("#sfTopMore");
+            if (tm) tm.addEventListener("click", function (e) {
+              e.preventDefault();
+              const el = box.querySelector("#sfTopBox");
+              const open = el.style.display !== "none";
+              el.style.display = open ? "none" : "";
+              tm.textContent = open ? "подробнее" : "скрыть";
+            });
+            const hb = box.querySelector("#sfHistBtn");
+            if (hb) hb.addEventListener("click", function () {
+              const el = box.querySelector("#sfHistBox");
+              const open = el.style.display !== "none";
+              el.style.display = open ? "none" : "";
+              hb.textContent = open ? "Показать историю" : "Скрыть историю";
+            });
             Array.prototype.forEach.call(box.querySelectorAll(".sf-more"), function (a) {
               a.addEventListener("click", function (e) {
                 e.preventDefault();
                 const el = box.querySelector('.sf-box[data-day="' + a.getAttribute("data-day") + '"]');
-                if (el) el.style.display = el.style.display === "none" ? "" : "none";
+                if (!el) return;
+                const open = el.style.display !== "none";
+                el.style.display = open ? "none" : "";
+                a.textContent = open ? "подробнее" : "скрыть";
               });
             });
           })
