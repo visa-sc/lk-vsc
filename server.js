@@ -3500,6 +3500,26 @@ let _adcheckRunning = false;
   })();
   console.log("ADALERT: утреннее письмо о проблемах в 09:10 МСК (только о новых)");
 })();
+// ── Сторож пустых сделок Flexbe (05.10.2026): сделка от интеграции без контакта →
+// дописываем контакт с телефоном из самой заявки. Раз в 10 минут, один GET к amoCRM
+// низким приоритетом. Подробности и выключатель — в flexorphan.js.
+const flexorphan = require("./flexorphan");
+let _flexOrphanRunning = false;
+function flexOrphanTick() {
+  if (_flexOrphanRunning || !AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return;
+  _flexOrphanRunning = true;
+  const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
+  flexorphan.run({
+    baseUrl, amoGet, amoPost, amoBg,
+    findContacts: (phone) => _findMatchingContactsUncached(baseUrl, normalizePhone(phone)),
+    flexbeSites: phoneTestMod.flexbeSites,
+  }, "cron")
+    .then((r) => { if (r && (r.orphans || r.skipped)) console.log("FLEXORPHAN:", JSON.stringify(r)); })
+    .catch((e) => console.error("FLEXORPHAN:", e && e.message)).finally(() => { _flexOrphanRunning = false; });
+}
+setTimeout(flexOrphanTick, 90 * 1000);           // первый проход вскоре после старта
+setInterval(flexOrphanTick, 10 * 60 * 1000);
+console.log("FLEXORPHAN: сторож сделок Flexbe без контакта, раз в 10 минут");
 app.get("/admin/api/yd-stops", requireAdmin, (req, res) => {
   return res.json(Object.assign({ success: true }, ydStopsPayload()));
 });

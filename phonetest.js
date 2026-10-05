@@ -1167,4 +1167,7 @@ function reconSummary() {
   };
 }
 
-module.exports = { mount, CALL_SOURCE_ENUM, defaultNumberConfig, reconSummary, isOwnTestPhone };
+// Сайты Flexbe с ключами API — для сторожа пустых сделок (flexorphan.js). Наружу не отдаётся.
+function flexbeSites() { return ((store().config || {}).flexbe || []).map((f) => ({ id: f.id, label: f.label, apiUrl: f.apiUrl, apiKey: f.apiKey })); }
+
+module.exports = { mount, CALL_SOURCE_ENUM, defaultNumberConfig, reconSummary, isOwnTestPhone, flexbeSites };
