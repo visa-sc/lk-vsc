@@ -91,7 +91,12 @@ async function flushQueue(sendMail) {
   if (!q.length || !mailWindowOpen()) return 0;
   const rest = [];
   let sent = 0;
+  // Письмо по обращению с формы ждало окна (выходные, ночь), а человек тем
+  // временем сам нажал «Всё заработало» — такое письмо уже не нужно (05.10.2026)
+  const help = readJson(path.join(DIR, "help.json"), []);
+  const closed = (m) => m.caseId && help.some((h) => h.id === m.caseId && h.result === "ok");
   for (const m of q) {
+    if (closed(m)) { console.log("esim support: письмо по обращению", m.caseId, "не отправлено, человек сам закрыл"); continue; }
     const r = await sendMail({ to: m.to || TO, subject: m.subject, text: m.text, replyTo: m.replyTo }).catch(() => ({ ok: false }));
     if (r && r.ok !== false) sent++; else rest.push(m);
     await new Promise((r2) => setTimeout(r2, 300));
