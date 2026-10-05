@@ -4747,7 +4747,14 @@
         html = card(htmlLoad) + card(htmlPay) + card(htmlDept);
 
         const upd = j.data.ts ? new Date(j.data.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
-        html += '<div style="font-size:11.5px;color:#9096a3;margin-top:12px;">зарплатная таблица прочитана: ' + escapeHtml(upd) + ' МСК</div>';
+        // С сентября 2026 зарплаты считаются в модуле Кати на work.voyotravel.ru (05.10.2026):
+        // показываем, откуда какие месяцы, чтобы цифры не путали с Google-таблицей.
+        const workM = list.filter((m) => m.source === "work");
+        const srcNote = workM.length
+          ? "январь–" + short(list.filter((m) => m.source !== "work").slice(-1).map((m) => m.month)[0] || "август").toLowerCase() + " — зарплатная таблица Google (прочитана " + escapeHtml(upd) + " МСК) · "
+            + workM.map((m) => short(m.month).toLowerCase()).join(", ") + " — расчёт зарплат на work.voyotravel.ru"
+          : "зарплатная таблица прочитана: " + escapeHtml(upd) + " МСК";
+        html += '<div style="font-size:11.5px;color:#9096a3;margin-top:12px;">' + srcNote + '</div>';
         box.innerHTML = html;
         // Кнопки «История»: показывают скрытые месяцы таблицы.
         box.querySelectorAll("button[data-hist]").forEach(function (btn) {

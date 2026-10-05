@@ -22,6 +22,18 @@
 //   • отпуска — колонка «количество дней отпуска в месяце».
 //
 // Ничего не пишем обратно в Google — только чтение.
+//
+// С СЕНТЯБРЯ 2026 источник другой (решение Андрея 05.10.2026): расчёт зарплат
+// переехал в модуль Екатерины Зайцевой на work.voyotravel.ru (наш сервер,
+// /var/www/kateadmin/data/zp). Google-листы с сентября и дальше больше не
+// читаются, август и раньше — как были, из Google, их не трогаем.
+// Из её модуля берём только ЗАКРЫТЫЕ месяцы: итоги — из её свода fot/ГГГГ-ММ.json
+// (ФОТ общий, взносы, ФОТ через зарплатный проект, НДФЛ, рабочие дни), людей — из
+// closed/ГГГГ-ММ.json. Отделы, штат и отпуска считаем ПО НАШИМ ЖЕ правилам
+// (STAFF_EXCLUDE, DEPT_BY_GROUP, DEPT_BY_NAME), а не берём из её свода: у неё в
+// «Вне отделов» лежат и управляющая с учредителями, и нет персональных привязок.
+// Проверено на августе, который есть в обоих источниках: итоги совпали до копейки,
+// отделы по нашим правилам — тоже. Только чтение, в её файлы ничего не пишем.
 // ═══════════════════════════════════════════════════════════════════════════
 const axios = require("axios");
 const AdmZip = require("adm-zip");
@@ -310,6 +322,97 @@ function parseWorkbook(buf) {
   return months;
 }
 
+// ── Модуль зарплат Кати (work.voyotravel.ru) — сентябрь 2026 и дальше ─────────
+const KATE_ZP_DIR = process.env.KATE_ZP_DIR || "/var/www/kateadmin/data/zp";
+const KATE_FROM_YM = "2026-09";
+const RU_TITLE = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+const ymOfName = (name) => { const p = norm(name).split(" "); const mi = RU_MONTH_IDX[p[0]]; const y = parseInt(p[1], 10); return (mi != null && y) ? y + "-" + String(mi + 1).padStart(2, "0") : null; };
+const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (_) { return null; } };
+
+// Один закрытый месяц Кати → тот же объект, что даёт разбор Google-листа.
+function kateMonth(ym) {
+  const closed = readJson(path.join(KATE_ZP_DIR, "closed", ym + ".json"));
+  if (!closed || !Array.isArray(closed.rows) || !closed.rows.length) return null;
+  const fot = readJson(path.join(KATE_ZP_DIR, "fot", ym + ".json")) || {};
+  const year = +ym.slice(0, 4), mi = +ym.slice(5, 7) - 1;
+  const monthName = RU_TITLE[mi] + " " + year;
+  const people = closed.rows.map((r) => {
+    const name = String(r.name || "").trim();
+    const group = String(r.dept || r.deptView || "").trim();
+    let dept = "none";
+    const gHit = DEPT_BY_GROUP.find((x) => x[0].test(group));
+    if (gHit) dept = gHit[1];
+    else { const nHit = DEPT_BY_NAME.find((x) => x[0].test(name)); if (nHit) dept = nHit[1]; }
+    return { name, group, dept, accrued: Number(r.accrued) || 0, vacDays: Number(r.vacDays) || 0,
+      hours: r.hours != null ? Number(r.hours) : null, normHours: r.norm != null ? Number(r.norm) : null, counted: !STAFF_EXCLUDE.test(name) };
+  }).filter((p) => p.name);
+  const counted = people.filter((p) => p.counted);
+  const staff = counted.length;
+  const normVals = people.map((p) => p.normHours).filter((x) => x && x > 40).sort((a, b) => a - b);
+  const workDays = fot.workDays || (normVals.length ? Math.round(normVals[Math.floor(normVals.length / 2)] / 8) : null);
+  const calDays = new Date(year, mi + 1, 0).getDate();
+  const accruedTotal = people.reduce((a, p) => a + p.accrued, 0);
+  const has = (v) => v != null && isFinite(Number(v));
+  const fotTotal = has(fot.fotTotal) ? Math.round(fot.fotTotal * 100) / 100 : null;
+  const fotProject = has(fot.fotProject) ? Math.round(fot.fotProject * 100) / 100 : null;
+  const ndfl = has(fot.ndfl) ? Math.round(fot.ndfl * 100) / 100 : null;
+  return {
+    month: monthName, year: year, mi: mi,
+    staff: staff,
+    rows: people.length,
+    excluded: people.filter((p) => !p.counted).map((p) => p.name),
+    fotTotal: fotTotal,
+    contrib: has(fot.contrib) ? Math.round(fot.contrib * 100) / 100 : null,
+    contribRows: [],
+    fotProject: fotProject,
+    fotProjectNet: (fotProject != null && ndfl != null) ? Math.round((fotProject - ndfl) * 100) / 100 : null,
+    ndfl: ndfl,
+    contribPct: has(fot.contribPct) ? fot.contribPct : null,
+    accruedTotal: Math.round(accruedTotal),
+    avgSalary: (fotTotal != null && staff) ? Math.round(fotTotal / staff * 100) / 100 : null,
+    avgAccrued: staff ? Math.round(accruedTotal / staff) : null,
+    workDays: workDays, calDays: calDays,
+    vacDaysTotal: Math.round(counted.reduce((a, p) => a + p.vacDays, 0) * 100) / 100,
+    depts: buildDepts(counted, workDays, calDays),
+    hasDepts: true,
+    deptAvgSeed: null,
+    source: "work",                                    // подпись в интерфейсе: месяц из модуля Кати
+    closedAt: closed.closedAt || fot.closedAt || null,
+    managerPay: has(fot.managerPay) ? Number(fot.managerPay) : null
+  };
+}
+// Все закрытые у Кати месяцы начиная с сентября 2026. Файлы маленькие, но читаем
+// не чаще раза в 5 минут.
+let _kate = null, _kateAt = 0;
+function kateMonths() {
+  if (_kate && Date.now() - _kateAt < 5 * 60 * 1000) return _kate;
+  const out = {};
+  try {
+    fs.readdirSync(path.join(KATE_ZP_DIR, "closed"))
+      .map((f) => (/^(\d{4}-\d{2})\.json$/.exec(f) || [])[1]).filter(Boolean)
+      .filter((ym) => ym >= KATE_FROM_YM).sort()
+      .forEach((ym) => { try { const m = kateMonth(ym); if (m) out[m.month] = m; } catch (e) { console.error("ZARPLATA work " + ym + ":", e && e.message); } });
+  } catch (e) { if (e.code !== "ENOENT") console.error("ZARPLATA work:", e && e.message); }
+  _kate = out; _kateAt = Date.now();
+  return out;
+}
+// Google до августа + модуль Кати с сентября. Google-листы с сентября отбрасываем,
+// даже если они там есть: они больше не ведутся (сентябрьский лист пустой).
+function merged(data) {
+  if (!data || !data.months) return data;
+  const months = {};
+  Object.keys(data.months).forEach((k) => { const ym = ymOfName(k); if (!ym || ym < KATE_FROM_YM) months[k] = data.months[k]; });
+  Object.assign(months, kateMonths());
+  return Object.assign({}, data, { months: months, kateFrom: KATE_FROM_YM });
+}
+// ЗП управляющей за месяцы из модуля Кати (факт выплат по P&L «Потока»).
+// Ручной ввод в /vsc, если он есть, главнее — это решает эндпоинт.
+function kateManagerPay() {
+  const out = {};
+  Object.values(kateMonths()).forEach((m) => { if (m.managerPay != null) out[m.month] = m.managerPay; });
+  return out;
+}
+
 let _cache = null, _cacheAt = 0, _inflight = null;
 function loadDisk() {
   if (_cache) return _cache;
@@ -327,7 +430,7 @@ async function refresh() {
   return data;
 }
 // Отдаём тёплый кэш сразу, свежее тянем в фоне (Google в проде отвечает не мгновенно).
-function getZarplata(force) {
+function getZarplataGoogle(force) {
   const disk = loadDisk();
   const stale = !disk || (Date.now() - (_cacheAt || 0)) > TTL_MS;
   if (disk && !stale && !force) return Promise.resolve(disk);
@@ -335,5 +438,9 @@ function getZarplata(force) {
   if (force) return _inflight;                       // ручное «обновить» — ждём свежее
   return disk ? Promise.resolve(disk) : _inflight;   // есть снимок — не заставляем ждать
 }
+function getZarplata(force) {
+  if (force) { _kate = null; }                       // «обновить» — перечитать и модуль Кати
+  return getZarplataGoogle(force).then(merged);
+}
 
-module.exports = { getZarplata, DEPT_TITLES };
+module.exports = { getZarplata, kateManagerPay, DEPT_TITLES };

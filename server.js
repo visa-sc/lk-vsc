@@ -1943,7 +1943,10 @@ app.get("/admin/api/vsc/zarplata", requireAdmin, async (req, res) => {
         });
       }
     } catch (e) { console.error("plCalls:", e && e.message); }
-    return res.json({ success: true, data: d, managerPay: loadMgrPay(), cityRevenue: loadCityRev(), loadBase: base, plCalls: plCalls, pbx: pbx.load() });
+    // ЗП управляющей: с сентября 2026 приходит из модуля зарплат Кати (факт выплат по
+    // P&L «Потока»). Ручной ввод через баннер, если он есть, главнее.
+    const managerPay = Object.assign({}, zarplata.kateManagerPay(), loadMgrPay());
+    return res.json({ success: true, data: d, managerPay: managerPay, cityRevenue: loadCityRev(), loadBase: base, plCalls: plCalls, pbx: pbx.load() });
   } catch (e) {
     console.error("vsc zarplata:", e && e.message);
     return res.status(500).json({ success: false, message: "Не удалось прочитать зарплатную таблицу: " + (e && e.message) });
@@ -7580,7 +7583,10 @@ async function vscSpbPnl() {
   for (const name of Object.keys(out)) {
     const rec = out[name];
     const zm = zar && zar.months && zar.months[name];
-    rec.fot = (zm && zm.depts && zm.depts.orkSpb) ? Math.round(zm.depts.orkSpb.accrued || 0) : null;
+    // ФОТ берём только у ЗАКРЫТОГО месяца (посчитан ФОТ общий). 04.10.2026 сентябрь
+    // заморозился с ФОТ 20 128 ₽ из недозаполненного Google-листа — так больше не будет:
+    // пока месяц не закрыт, ФОТ пустой и снимок ждёт.
+    rec.fot = (zm && zm.fotTotal != null && zm.depts && zm.depts.orkSpb) ? Math.round(zm.depts.orkSpb.accrued || 0) : null;
     // Закрытый месяц: выручка и ФОТ берутся зафиксированными, живой пересчёт их не двигает.
     const mIdx = MONF.indexOf(name.replace(/\s*20\d\d/, ""));
     const closed = mIdx >= 0 && nowMsk.getTime() >= Date.UTC(2026, mIdx + 1, 4);
