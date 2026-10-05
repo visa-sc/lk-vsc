@@ -5933,6 +5933,9 @@
             if (errParts.length) topDetails.push({ title: "ошибки сверки:", items: errParts, color: "#a12b3c" });
             if (miss.length) topDetails.push({ title: "не нашлись в amoCRM:", items: miss.slice(0, 15).concat(miss.length > 15 ? ["…и ещё " + (miss.length - 15)] : []), color: "#a12b3c" });
             if (trBad && trTop && trTop.bits.length) topDetails.push({ title: "теряли регистрацию в АТС:", items: trTop.bits, color: trTop.down ? "#a12b3c" : "#8a6d0b" });
+            // Тестовые номера Андрея и Петрова сервер уже посчитал найденными (05.10.2026):
+            // их пропажа — не проблема, просто показываем, что тест был.
+            if ((L.testPhones || []).length) topDetails.push({ title: "тестовые номера, не считаются:", items: L.testPhones.map(escapeHtml), color: "#8a8f9c" });
             html += '<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">' + reconLine(p.unique || 0, p.found || 0, L.forms, topState, trTop)
               + (topDetails.length ? '<a href="#" id="trunkTopMore" style="font-size:11px;font-weight:600;color:#3589BD;text-decoration:none;white-space:nowrap;">подробнее</a>' : "") + "</div>";
             if (topDetails.length) {
@@ -5965,7 +5968,8 @@
                 (d.forms || []).forEach(function (f) {
                   if ((f.missPhones || []).length) missBits.push("заявки " + (CITY[f.id] || escapeHtml(f.label || "")) + ": " + f.missPhones.map(escapeHtml).join(", "));
                 });
-                if ((bad && missBits.length) || (trBadD && trD.bits.length)) {
+                const testD = (d.testPhones || []).map(escapeHtml);
+                if ((bad && missBits.length) || (trBadD && trD.bits.length) || testD.length) {
                   // Раскрытие — столбиком: заголовок, под ним каждый пункт своей
                   // строкой с отступом (просьба Андрея 24.09): в строку они
                   // сливались в кашу, особенно инциденты АТС с датами.
@@ -5978,6 +5982,7 @@
                     + '<div class="rc-miss" data-day="' + escapeHtml(d.day) + '" style="display:none;margin-top:4px;font-size:11.5px;color:#8a8f9c;line-height:1.6;">'
                     + (missBits.length ? lines("не нашлись в amoCRM:", missBits) : "")
                     + (trBadD && trD.bits.length ? lines("теряли регистрацию в АТС:", trD.bits) : "")
+                    + (testD.length ? lines("тестовые номера, не считаются:", testD) : "")
                     + "</div>";
                 }
                 return '<tr style="border-top:1px solid #f0eef5;"><td style="padding:5px 14px 5px 0;color:#3a4256;white-space:nowrap;vertical-align:top;"><b>' + fmtDay(d.day) + '</b></td><td style="padding:5px 0;">' + cell + "</td></tr>";

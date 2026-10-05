@@ -1046,6 +1046,47 @@ function mount(app, deps) {
 }
 
 // Краткая сводка последней сверки — для блока в /vsc «Ежемесячный контроль».
+// Тестовые номера Андрея и Петрова (просьба Андрея 05.10.2026): с них проверяют
+// звонки и заявки, а потом удаляют контакт из amoCRM — пропажа такого номера не
+// проблема. В сверке они считаются найденными и показываются отдельно, серым.
+// Сырые данные не трогаем — фильтр на чтении, поэтому чиста и прошлая история.
+// Дополнить список: RECON_TEST_PHONES в .env (через запятую).
+const OWN_TEST_PHONES = new Set([
+  "79826404542",   // Андрей Петров
+  "79999899058",   // Андрей Комисаренко
+  "79959189058",   // Андрей Комисаренко
+].concat(String(process.env.RECON_TEST_PHONES || "").split(/[,\s]+/).filter(Boolean))
+  .map((x) => String(x).replace(/\D/g, "").replace(/^8(?=\d{10}$)/, "7")));
+const normPhone = (p) => String(p || "").replace(/\D/g, "").replace(/^8(?=\d{10}$)/, "7");
+function isOwnTestPhone(p) { return OWN_TEST_PHONES.has(normPhone(p)); }
+// Убирает тестовые номера из «пропавших» дня и переводит их в найденные.
+function dropOwnTestFromDay(rec) {
+  const test = [];
+  if (Array.isArray(rec.missCalls)) {
+    const keep = rec.missCalls.filter((ph) => !isOwnTestPhone(ph));
+    const n = rec.missCalls.length - keep.length;
+    if (n) {
+      rec.missCalls.filter(isOwnTestPhone).forEach((ph) => test.push(normPhone(ph)));
+      rec.missCalls = keep;
+      rec.callsMissing = Math.max(0, (rec.callsMissing || 0) - n);
+      if (rec.found != null) rec.found += n;
+    }
+  }
+  (rec.forms || []).forEach((f) => {
+    if (!Array.isArray(f.missPhones)) return;
+    const keep = f.missPhones.filter((ph) => !isOwnTestPhone(ph));
+    const n = f.missPhones.length - keep.length;
+    if (!n) return;
+    f.missPhones.filter(isOwnTestPhone).forEach((ph) => test.push(normPhone(ph)));
+    f.missPhones = keep;
+    f.miss = Math.max(0, (f.miss || 0) - n);
+    f.found = (f.found || 0) + n;
+    rec.formsMissing = Math.max(0, (rec.formsMissing || 0) - n);
+  });
+  if (test.length) rec.testPhones = [...new Set(test)];
+  return rec;
+}
+
 function reconSummary() {
   const st = store();
   const configured = !!(st.config.pbx && st.config.pbx.key) || (st.config.flexbe || []).some((f) => f.apiKey);
@@ -1055,7 +1096,7 @@ function reconSummary() {
   for (const r of st.recons || []) if (r.day) fullByDay[r.day] = r;
   const days = Object.keys(st.reconDays || {}).sort().reverse().slice(0, 30)
     .map((d) => {
-      const rec = Object.assign({ day: d }, st.reconDays[d]);
+      const rec = Object.assign({ day: d }, JSON.parse(JSON.stringify(st.reconDays[d])));
       if (!rec.missCalls && fullByDay[d]) {
         const full = fullByDay[d];
         rec.missCalls = (((full.pbx || {}).missing) || []).slice(0, 30).map((m) => m.phone);
@@ -1064,7 +1105,7 @@ function reconSummary() {
           f.missPhones = ((ff && ff.missing) || []).slice(0, 30).map((m) => m.phone);
         });
       }
-      return rec;
+      return dropOwnTestFromDay(rec);
     });
   // Статус номеров в АТС: как сейчас и были ли сбои за прошедшие сутки.
   // Инцидент — это отрезок, когда номер не был зарегистрирован: от первой такой
@@ -1102,6 +1143,16 @@ function reconSummary() {
   if (!r) return { configured, last: null, days, trunks };
   const p = r.pbx || {};
   const slim = (m) => ({ phone: m.phone, count: m.count || null, at: m.lastAt || m.ts || null });
+  const lastTest = [];
+  const realMiss = (list) => (list || []).filter((m) => { if (isOwnTestPhone(m.phone)) { lastTest.push(normPhone(m.phone)); return false; } return true; });
+  const pMiss = realMiss(p.missing);
+  const pTest = (p.missing || []).length - pMiss.length;
+  const formsOut = (r.forms || []).map((f) => {
+    if (f.error) return { id: f.id, label: f.label, error: f.error };
+    if (f.skipped) return { id: f.id, label: f.label, skipped: f.skipped };
+    const fm = realMiss(f.missing);
+    return { id: f.id, label: f.label, leads: f.leads || 0, found: (f.found || 0) + ((f.missing || []).length - fm.length), missing: fm.slice(0, 20).map(slim) };
+  });
   return {
     configured,
     days,
@@ -1109,12 +1160,11 @@ function reconSummary() {
     last: {
       at: r.startedAt, hours: r.hours, day: r.day || null,
       pbx: p.error ? { error: p.error } : p.skipped ? { skipped: p.skipped }
-        : { calls: p.calls || 0, unique: p.unique || 0, found: p.found || 0, missing: (p.missing || []).slice(0, 20).map(slim) },
-      forms: (r.forms || []).map((f) => f.error ? { id: f.id, label: f.label, error: f.error }
-        : f.skipped ? { id: f.id, label: f.label, skipped: f.skipped }
-        : { id: f.id, label: f.label, leads: f.leads || 0, found: f.found || 0, missing: (f.missing || []).slice(0, 20).map(slim) }),
+        : { calls: p.calls || 0, unique: p.unique || 0, found: (p.found || 0) + pTest, missing: pMiss.slice(0, 20).map(slim) },
+      forms: formsOut,
+      testPhones: [...new Set(lastTest)],
     },
   };
 }
 
-module.exports = { mount, CALL_SOURCE_ENUM, defaultNumberConfig, reconSummary };
+module.exports = { mount, CALL_SOURCE_ENUM, defaultNumberConfig, reconSummary, isOwnTestPhone };
