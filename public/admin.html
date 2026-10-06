@@ -4456,6 +4456,136 @@
         }
       }
       // ═══ Вкладка «ФОТ» — зарплаты, штат, взносы и нагрузка на персонал. ═══════════
+      // ═══ «Проверка отпускных» и «Белые зарплаты» (Андрей 06.10.2026) ════════════
+      // Два блока раздела ФОТ между стафф-перформансом и графиками. Люди по месяцам:
+      // январь–август — Google-таблица «расчет ЗП Визы», с сентября — модуль зарплат
+      // Кати на work.voyotravel.ru (/admin/api/vsc/zarplata-people, только админ).
+      // Каждый месяц сворачивается, колонки сортируются кликом по заголовку.
+      function vscPayPeopleBlocks() {
+        const wrap = document.createElement("div");
+        const mk = (title, info) => {
+          const sec = document.createElement("div"); sec.style.marginTop = "26px";
+          const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = title;
+          h.appendChild(vscInfo(info)); sec.appendChild(h);
+          const body = document.createElement("div"); body.className = "vsc-chart";
+          body.innerHTML = '<div class="loading-state">Загружаем…</div>';
+          sec.appendChild(body); wrap.appendChild(sec);
+          return body;
+        };
+        const vacBox = mk("Проверка отпускных",
+          "<b>Как проверяются отпускные</b><br>Сумма отпускных ÷ дней отпуска × 29 = средний месячный заработок, из которого отпускные посчитаны. Если эта сумма заметно больше или меньше обычной зарплаты человека, отпускные стоит перепроверить."
+          + "<br><br><b>Откуда</b><br>Январь–август — зарплатная таблица Google, колонки «отпускные» и «количество дней отпуска в месяце». С сентября — расчёт зарплат на work.voyotravel.ru."
+          + "<br><br>Строки, где отпускные есть, а дни не проставлены, подсвечены: проверить их по формуле нельзя.");
+        const whiteBox = mk("Белые зарплаты",
+          "<b>Что это</b><br>Белая зарплата = всё, что выплачено человеку через зарплатный проект за месяц (аванс, основная выплата, отпускные, больничные, расчёт при увольнении), плюс НДФЛ по реестру бухгалтера. От этой суммы считаются взносы."
+          + "<br><br><b>Откуда</b><br>Январь–август — зарплатная таблица Google: колонки «выплачено через зп проект» и «НДФЛ». С сентября — расчёт зарплат на work.voyotravel.ru: на руки по реестру бухгалтера и НДФЛ по реестру."
+          + "<br><br>Сумма по людям за месяц равна «ФОТ через зарплатный проект» в таблице выше — до копейки. Люди без белой части (самозанятые, ИП, наличные, переводы) в таблицу не попадают, их число указано под ней.");
+        const money2 = (v) => (v == null ? "—" : v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽");
+        const num2 = (v) => (v == null ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU"));
+        const plural = (n, a, b, c) => { const m10 = n % 10, m100 = n % 100; return n + " " + (m10 === 1 && m100 !== 11 ? a : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? b : c)); };
+        const RU_MI = { "январь": 0, "февраль": 1, "март": 2, "апрель": 3, "май": 4, "июнь": 5, "июль": 6, "август": 7, "сентябрь": 8, "октябрь": 9, "ноябрь": 10, "декабрь": 11 };
+        const ord = (name) => { const p = String(name).toLowerCase().split(" "); return (+p[1] || 0) * 12 + (RU_MI[p[0]] || 0); };
+        const TH = "padding:7px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;cursor:pointer;user-select:none;";
+        const TD = "padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;";
+
+        // Общая отрисовка: месяцы новыми сверху, последний раскрыт; в каждом — таблица
+        // с сортировкой по клику на заголовок (повторный клик меняет направление).
+        function drawMonths(box, months, cfg) {
+          box.innerHTML = "";
+          const names = Object.keys(months).sort((a, b) => ord(b) - ord(a));
+          if (!names.length) { box.innerHTML = '<div class="vsc-empty">Данных пока нет.</div>'; return; }
+          names.forEach((name, idx) => {
+            const M = months[name];
+            const rows = cfg.rows(M.people);
+            const sum = cfg.summary(rows, M.people);
+            const sec = document.createElement("div");
+            sec.style.borderTop = idx ? "1px solid #eef0f4" : "none";
+            const head = document.createElement("button");
+            head.type = "button";
+            head.style.cssText = "display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;width:100%;padding:10px 2px;background:none;border:0;cursor:pointer;font-family:inherit;text-align:left;";
+            const arrow = document.createElement("span"); arrow.style.cssText = "font-size:11px;color:#8a93a5;width:12px;flex:none;";
+            const title = document.createElement("span"); title.style.cssText = "font-weight:700;font-size:14px;color:#1d2330;";
+            title.textContent = name;
+            const meta = document.createElement("span"); meta.style.cssText = "font-size:12.5px;color:#5a6172;";
+            meta.innerHTML = sum + ' <span style="color:#a0a6b3;">· ' + (M.source === "work" ? "work.voyotravel.ru" : "таблица Google") + "</span>";
+            head.appendChild(arrow); head.appendChild(title); head.appendChild(meta);
+            const body = document.createElement("div");
+            let open = idx === 0;
+            let sortKey = cfg.defaultSort, sortDir = -1;
+            const paint = () => {
+              arrow.textContent = open ? "▼" : "▶";
+              body.style.display = open ? "" : "none";
+              if (!open) return;
+              const list = rows.slice().sort((a, b) => {
+                const av = a[sortKey], bv = b[sortKey];
+                if (typeof av === "string" || typeof bv === "string") return sortDir * String(av || "").localeCompare(String(bv || ""), "ru");
+                return sortDir * ((av == null ? -Infinity : av) - (bv == null ? -Infinity : bv));
+              });
+              const th = cfg.cols.map((c) => '<th data-k="' + c.k + '" style="' + TH + (c.left ? "text-align:left;" : "") + '">' + c.t
+                + (sortKey === c.k ? (sortDir < 0 ? " ↓" : " ↑") : "") + "</th>").join("");
+              const tr = list.map((r) => '<tr' + (r._warn ? ' style="background:#fff8e6;"' : "") + ">" + cfg.cols.map((c) => '<td style="' + TD + (c.left ? "text-align:left;white-space:normal;min-width:170px;" : "") + '">' + c.f(r) + "</td>").join("") + "</tr>").join("");
+              const tot = cfg.total ? '<tr style="background:#f7f8fb;">' + cfg.total(rows).map((v, i) => '<td style="' + TD + "font-weight:700;" + (cfg.cols[i].left ? "text-align:left;" : "") + '">' + v + "</td>").join("") + "</tr>" : "";
+              body.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;min-width:560px;border-collapse:collapse;font-size:13px;"><tr>' + th + "</tr>" + tr + tot + "</table></div>"
+                + (cfg.note ? cfg.note(rows, M.people) : "") + '<div style="height:8px;"></div>';
+              body.querySelectorAll("th[data-k]").forEach((el) => el.addEventListener("click", () => {
+                const k = el.getAttribute("data-k");
+                if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = cfg.cols.find((c) => c.k === k).left ? 1 : -1; }
+                paint();
+              }));
+            };
+            head.addEventListener("click", () => { open = !open; paint(); });
+            sec.appendChild(head); sec.appendChild(body); box.appendChild(sec);
+            paint();
+          });
+        }
+        const who = (r) => '<div style="font-weight:600;color:#1d2330;">' + escapeHtml(r.name) + '</div><div style="font-size:11.5px;color:#8a93a5;">'
+          + escapeHtml([r.group, r.legal].filter(Boolean).join(" · ")) + "</div>";
+
+        apiFetch("/admin/api/vsc/zarplata-people").then(function (j) {
+          if (!j || !j.success || !j.months) { vacBox.innerHTML = whiteBox.innerHTML = '<div class="vsc-empty">Не удалось загрузить данные по сотрудникам.</div>'; return; }
+          // ── Отпускные: сумма ÷ дни × 29 ──
+          drawMonths(vacBox, j.months, {
+            defaultSort: "base",
+            rows: (people) => people.filter((p) => p.vacPay > 0 || p.vacDays > 0).map((p) => {
+              const perDay = (p.vacPay > 0 && p.vacDays > 0) ? p.vacPay / p.vacDays : null;
+              return Object.assign({}, p, { perDay: perDay, base: perDay != null ? perDay * 29 : null, _warn: perDay == null });
+            }),
+            summary: (rows) => rows.length
+              ? plural(rows.length, "человек", "человека", "человек") + " · " + num2(rows.reduce((a, r) => a + (r.vacDays || 0), 0)) + " дн. · " + money2(rows.reduce((a, r) => a + (r.vacPay || 0), 0))
+              : "отпусков не было",
+            cols: [
+              { k: "name", t: "Сотрудник", left: true, f: who },
+              { k: "vacDays", t: "Дней отпуска", f: (r) => r.vacDays > 0 ? num2(r.vacDays) : '<span style="color:#b07b00;">не указано</span>' },
+              { k: "vacPay", t: "Отпускные", f: (r) => r.vacPay > 0 ? money2(r.vacPay) : '<span style="color:#b07b00;">нет</span>' },
+              { k: "perDay", t: "В день", f: (r) => money2(r.perDay) },
+              { k: "base", t: "Сумма для расчёта (×29)", f: (r) => r.base != null ? "<b>" + money2(r.base) + "</b>" : "—" }
+            ],
+            total: (rows) => ["Итого", num2(rows.reduce((a, r) => a + (r.vacDays || 0), 0)), money2(rows.reduce((a, r) => a + (r.vacPay || 0), 0)), "", ""],
+            note: (rows) => {
+              const w = rows.filter((r) => r._warn).length;
+              return w ? '<div style="font-size:12px;color:#b07b00;margin-top:8px;">' + plural(w, "строка", "строки", "строк") + " без дней или без суммы — по формуле не проверить.</div>" : "";
+            }
+          });
+          // ── Белые зарплаты: через зарплатный проект + НДФЛ ──
+          drawMonths(whiteBox, j.months, {
+            defaultSort: "white",
+            rows: (people) => people.map((p) => Object.assign({}, p, { white: (p.proj || 0) + (p.ndfl || 0) })).filter((p) => p.white > 0),
+            summary: (rows) => plural(rows.length, "человек", "человека", "человек") + " · " + money2(rows.reduce((a, r) => a + r.white, 0)),
+            cols: [
+              { k: "name", t: "Сотрудник", left: true, f: who },
+              { k: "proj", t: "Через зарплатный проект", f: (r) => money2(r.proj) },
+              { k: "ndfl", t: "НДФЛ по реестру", f: (r) => money2(r.ndfl) },
+              { k: "white", t: "Белая зарплата", f: (r) => "<b>" + money2(r.white) + "</b>" }
+            ],
+            total: (rows) => ["Итого", money2(rows.reduce((a, r) => a + (r.proj || 0), 0)), money2(rows.reduce((a, r) => a + (r.ndfl || 0), 0)), money2(rows.reduce((a, r) => a + r.white, 0))],
+            note: (rows, people) => {
+              const n = people.length - rows.length;
+              return n > 0 ? '<div style="font-size:12px;color:#8a93a5;margin-top:8px;">Без белой части: ' + plural(n, "человек", "человека", "человек") + " (самозанятые, ИП, наличные и переводы).</div>" : "";
+            }
+          });
+        }).catch(function () { vacBox.innerHTML = whiteBox.innerHTML = '<div class="vsc-empty">Не удалось загрузить данные по сотрудникам.</div>'; });
+        return wrap;
+      }
       function renderVscFot() { vscContent.appendChild(vscZarplataBlock()); }
       // Сверка состава для поповера «i» раздела: АТС, amoCRM и зарплатная таблица.
       // Считает сервер раз в сутки (staffsync.js), здесь только показываем снимок —
@@ -4785,6 +4915,8 @@
         const spBody = document.createElement("div"); spBody.innerHTML = '<div class="vsc-chart"><div class="loading-state">Загружаем…</div></div>';
         spWrap.appendChild(spBody);
         box.appendChild(spWrap);
+        // Отпускные и белые зарплаты по людям — под стафф-перформансом, перед графиками.
+        box.appendChild(vscPayPeopleBlocks());
         apiFetch("/admin/api/vsc/staffperf").then(function (r) {
           const sp = r && r.data;
           if (!sp || !Array.isArray(sp.users) || !sp.users.length) { spBody.innerHTML = '<div class="vsc-chart"><div class="vsc-empty">Данные по сотрудникам считаются ночью вместе с выручкой по городам — появятся после первого расчёта.</div></div>'; return; }

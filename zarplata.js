@@ -142,6 +142,9 @@ function parseMonth(cells, monthName) {
     hours: find("отработанное количество"),
     normHours: find("количество часов в производственном"),
     vac: find("количество дней отпуска"),
+    // «отпускные» — только точный заголовок: слово есть и в «выплачено через зп
+    // проект (бл,отпускные и окончательный расчет)», искать по вхождению нельзя.
+    vacPay: byHeader["отпускные"] || null,
     accrued: find("начислено"),
     gross: find("итогова зп"),
     ndfl: byHeader["ндфл"] || null
@@ -174,6 +177,9 @@ function parseMonth(cells, monthName) {
       dept: dept,
       accrued: num(cells[C.accrued + r]) || 0,
       vacDays: C.vac ? (num(cells[C.vac + r]) || 0) : 0,
+      vacPay: C.vacPay ? (num(cells[C.vacPay + r]) || 0) : 0,
+      proj: projCols.reduce((a, col) => a + (num(cells[col + r]) || 0), 0),   // на руки через зарплатный проект
+      ndfl: C.ndfl ? (num(cells[C.ndfl + r]) || 0) : 0,
       hours: C.hours ? num(cells[C.hours + r]) : null,
       normHours: C.normHours ? num(cells[C.normHours + r]) : null,
       counted: !STAFF_EXCLUDE.test(name)
@@ -270,7 +276,7 @@ function prevCol(c) { const n = colToNum(c) - 1; return n < 1 ? c : numToCol(n);
 function numToCol(n) { let s = ""; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; }
 
 // ── сборка по всей книге ───────────────────────────────────────────────────
-function parseWorkbook(buf) {
+function parseWorkbook(buf, peopleSink) {
   const zip = new AdmZip(buf);
   const read = (n) => { const e = zip.getEntry(n); return e ? e.getData().toString("utf8") : ""; };
   const shared = [];
@@ -317,6 +323,13 @@ function parseWorkbook(buf) {
       m.deptsFromNames = true;
       m.deptsUnmatched = (m.people || []).filter((p) => p.counted && p.dept === "none").length;
     }
+    // Люди — отдельно, только для блоков «Проверка отпускных» и «Белые зарплаты»
+    // (свой файл и свой эндпоинт, только админ). В общий снимок их не кладём.
+    if (peopleSink) peopleSink[k] = (m.people || []).map((p) => ({
+      name: p.name, group: p.group, dept: p.dept, legal: "",
+      vacDays: p.vacDays, vacPay: Math.round(p.vacPay * 100) / 100,
+      proj: Math.round(p.proj * 100) / 100, ndfl: Math.round(p.ndfl * 100) / 100
+    }));
     delete m.people;                                  // имена и суммы по людям наружу не отдаём
   });
   return months;
@@ -405,6 +418,37 @@ function merged(data) {
   Object.assign(months, kateMonths());
   return Object.assign({}, data, { months: months, kateFrom: KATE_FROM_YM });
 }
+// Люди закрытого месяца Кати для блоков отпускных и белых зарплат.
+// Белая зарплата = на руки через зарплатный проект по реестру бухгалтера (regNet)
+// + НДФЛ по реестру (ndfl). Сумма по людям сходится с её «ФОТ через зарплатный
+// проект» до копейки (сентябрь 2026: 1 119 733,04 + 178 078 = 1 297 811,04).
+function kateMonthPeople(ym) {
+  const closed = readJson(path.join(KATE_ZP_DIR, "closed", ym + ".json"));
+  if (!closed || !Array.isArray(closed.rows)) return null;
+  return closed.rows.filter((r) => r && r.name).map((r) => {
+    const name = String(r.name).trim(), group = String(r.dept || r.deptView || "").trim();
+    let dept = "none";
+    const gHit = DEPT_BY_GROUP.find((x) => x[0].test(group));
+    if (gHit) dept = gHit[1]; else { const nHit = DEPT_BY_NAME.find((x) => x[0].test(name)); if (nHit) dept = nHit[1]; }
+    const n2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+    return { name, group, dept, legal: String(r.legalForm || ""), vacDays: n2(r.vacDays), vacPay: n2(r.vacPay), proj: n2(r.regNet), ndfl: n2(r.ndfl) };
+  });
+}
+// Январь–август — из Google (свой файл людей), сентябрь и дальше — из модуля Кати.
+// Файла людей ещё нет (первый запуск после выкладки) — один раз перечитываем Google.
+async function getPeople() {
+  let g = readJson(PEOPLE_FILE);
+  if (!g || !g.months) { try { await refresh(); } catch (e) { console.error("ZARPLATA people:", e && e.message); } g = readJson(PEOPLE_FILE) || { months: {} }; }
+  const out = {};
+  Object.keys(g.months || {}).forEach((k) => { const ym = ymOfName(k); if (ym && ym < KATE_FROM_YM) out[k] = { source: "google", people: g.months[k] }; });
+  Object.values(kateMonths()).forEach((m) => {
+    const ym = m.year + "-" + String(m.mi + 1).padStart(2, "0");
+    const ppl = kateMonthPeople(ym);
+    if (ppl) out[m.month] = { source: "work", people: ppl };
+  });
+  return { ts: g.ts || null, months: out };
+}
+
 // ЗП управляющей за месяцы из модуля Кати (факт выплат по P&L «Потока»).
 // Ручной ввод в /vsc, если он есть, главнее — это решает эндпоинт.
 function kateManagerPay() {
@@ -419,9 +463,12 @@ function loadDisk() {
   try { const d = JSON.parse(fs.readFileSync(CACHE_FILE, "utf8")); if (d && d.months) { _cache = d; _cacheAt = d.ts || 0; } } catch (_) {}
   return _cache;
 }
+const PEOPLE_FILE = path.join(__dirname, ".vscZarplataPeople.json");
 async function refresh() {
   const r = await axios.get(ZP_XLSX, { timeout: 60000, responseType: "arraybuffer", maxContentLength: 64 * 1024 * 1024 });
-  const months = parseWorkbook(Buffer.from(r.data));
+  const people = {};
+  const months = parseWorkbook(Buffer.from(r.data), people);
+  try { fs.writeFileSync(PEOPLE_FILE, JSON.stringify({ ts: Date.now(), months: people }), "utf8"); } catch (e) { console.error("ZARPLATA people write:", e.message); }
   if (!Object.keys(months).length) throw new Error("в зарплатной таблице не разобрана ни одна месячная вкладка");
   const data = { ts: Date.now(), months: months };
   _cache = data; _cacheAt = data.ts;
@@ -443,4 +490,4 @@ function getZarplata(force) {
   return getZarplataGoogle(force).then(merged);
 }
 
-module.exports = { getZarplata, kateManagerPay, DEPT_TITLES };
+module.exports = { getZarplata, getPeople, kateManagerPay, DEPT_TITLES };

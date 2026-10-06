@@ -1952,6 +1952,13 @@ app.get("/admin/api/vsc/zarplata", requireAdmin, async (req, res) => {
     return res.status(500).json({ success: false, message: "Не удалось прочитать зарплатную таблицу: " + (e && e.message) });
   }
 });
+// Люди по месяцам для блоков «Проверка отпускных» и «Белые зарплаты» в разделе ФОТ
+// (Андрей 06.10.2026). Январь–август — Google-таблица, с сентября — модуль Кати.
+// Зарплаты по фамилиям — только админ.
+app.get("/admin/api/vsc/zarplata-people", requireAdmin, async (req, res) => {
+  try { res.json(Object.assign({ success: true }, await zarplata.getPeople())); }
+  catch (e) { console.error("vsc zarplata-people:", e && e.message); res.status(500).json({ success: false, message: e.message }); }
+});
 app.post("/admin/api/vsc/manager-pay", requireAdmin, (req, res) => {
   const month = String((req.body && req.body.month) || "").trim();
   const pay = parseFloat(req.body && req.body.pay);
