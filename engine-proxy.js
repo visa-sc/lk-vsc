@@ -28,6 +28,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const express = require("express");
+const economy = require("./engine-economy"); // экономия на правках группы и выводе правил (06.10.2026)
 
 const ENGINE = { host: "127.0.0.1", port: Number(process.env.ENGINE_PORT || 3003) };
 const BUDGET_FILE = path.join(__dirname, ".engineBudget.json");
@@ -106,15 +107,35 @@ function mountEarly(app, deps) {
     try { staff = getStaffFromReq(req); } catch (_) {}
     if (staff) headers["x-voyo-staff"] = encodeURIComponent(JSON.stringify({ role: staff.role, name: staff.name, email: staff.email, perms: staff.perms, vscRestrict: staff.vscRestrict }));
     headers["x-forwarded-for"] = ((headers["x-forwarded-for"] ? headers["x-forwarded-for"] + ", " : "") + (req.socket.remoteAddress || "")).trim();
+    // Правка на весь заказ из модуля Кати: шлюзу нужно знать её текст и сколько
+    // файлов она затронет (см. engine-economy.js). Тело маленькое — читаем целиком.
+    const groupFix = req.method === "POST" && req.path === "/translate/api/portal/correct";
+    let groupText = "";
     const p = http.request({ host: ENGINE.host, port: ENGINE.port, path: req.originalUrl, method: req.method, headers }, (r) => {
-      res.writeHead(r.statusCode || 502, r.headers);
-      r.pipe(res);
+      if (!groupFix) { res.writeHead(r.statusCode || 502, r.headers); return r.pipe(res); }
+      const parts = [];
+      r.on("data", (c) => parts.push(c));
+      r.on("end", () => {
+        const out = Buffer.concat(parts);
+        try { const j = JSON.parse(out.toString("utf8")); economy.noteGroupResult(groupText, j && j.success ? Number(j.orders) || 0 : 0); }
+        catch (_) { economy.noteGroupResult(groupText, 0); }
+        res.writeHead(r.statusCode || 502, r.headers);
+        res.end(out);
+      });
     });
     p.on("error", () => {
       if (!res.headersSent) res.status(502).json({ success: false, message: "Движок переводов временно недоступен" });
       else res.end();
     });
-    req.pipe(p);
+    if (!groupFix) return req.pipe(p);
+    const inParts = [];
+    req.on("data", (c) => inParts.push(c));
+    req.on("end", () => {
+      const buf = Buffer.concat(inParts);
+      try { const b = JSON.parse(buf.toString("utf8")); groupText = String((b && b.text) || "").trim(); economy.noteGroupStart(groupText, b && b.number); }
+      catch (_) {}
+      p.end(buf);
+    });
   });
 
   // ── 3. Шлюз к Anthropic для движка ──
@@ -146,14 +167,25 @@ function mountEarly(app, deps) {
         body.model = FORCED; model = FORCED; forcedNow = 1;
       }
     }
+    // Экономия на правках (engine-economy.js): только запросы движка переводов.
+    // Любая ошибка здесь — просто обычный путь, запрос уходит к модели как раньше.
+    let econ = null;
+    if (req.method === "POST" && /^\/v1\/messages(\?|$)/.test(sub) && svcOf(req) === "translate") {
+      try {
+        econ = await economy.intercept(body, classifyCall);
+        if (econ && econ.synthetic != null) return economy.respond(res, body, econ);
+      } catch (e) { console.warn("engine-economy:", e.message); econ = null; }
+    }
     const headers = { "x-api-key": KEY, "content-type": "application/json", accept: req.headers.accept || "application/json" };
     for (const k of Object.keys(req.headers)) if (/^anthropic-/i.test(k)) headers[k] = req.headers[k];
     let up;
     try {
       up = await fetch(BASE + sub, { method: req.method, headers, body: req.method === "POST" || req.method === "PUT" ? JSON.stringify(body || {}) : undefined, signal: AbortSignal.timeout(15 * 60 * 1000) });
     } catch (e) {
+      if (econ && econ.after) econ.after(0);
       return res.status(502).json({ type: "error", error: { type: "api_error", message: "канал до Anthropic: " + e.message } });
     }
+    if (econ && econ.after) econ.after(up.status);
     res.status(up.status);
     const ct = up.headers.get("content-type") || "application/json";
     res.set("content-type", ct);
@@ -190,45 +222,63 @@ function mountEarly(app, deps) {
         let j; try { j = JSON.parse(text); } catch (_) {}
         if (j && j.usage) { Object.assign(u, j.usage); seen = true; if (!model && j.model) model = j.model; }
       }
-      if (seen) {
-        const usd = usdOf(model || FORCED, u);
-        const b2 = loadBudget();
-        const d2 = b2.days[day] || (b2.days[day] = { usd: 0, calls: 0, forced: 0 });
-        d2.usd += usd; d2.calls++; d2.forced = (d2.forced || 0) + forcedNow;
-        // Разбивка по сервисам: без неё расход прослушки сливался с переводами
-        // в одну строку, и в письме о балансе было не видно, кто сколько съел.
-        const svc = svcOf(req);
-        d2.svc = d2.svc || {};
-        const sv = d2.svc[svc] || (d2.svc[svc] = { usd: 0, calls: 0 });
-        sv.usd += usd; sv.calls++;
-        // Какая модель реально работала. Нужно письму о балансе: модели задаются
-        // переменными окружения и меняются, по коду их не угадать.
-        const mid = String(model || FORCED);
-        sv.models = sv.models || {};
-        sv.models[mid] = (sv.models[mid] || 0) + 1;
-        // Токены, включая кэш: по ним видно, работает ли кэширование у сервиса.
-        // Запись в кэш стоит 1,25 обычного входа, чтение — 0,1; если пишем много,
-        // а читаем мало, кэш не экономит, а доплачивает.
-        sv.tok = sv.tok || { in: 0, out: 0, cr: 0, cw: 0 };
-        sv.tok.in += u.input_tokens || 0;
-        sv.tok.out += u.output_tokens || 0;
-        sv.tok.cr += u.cache_read_input_tokens || 0;
-        sv.tok.cw += u.cache_creation_input_tokens || 0;
-        sv.tok.cw1h = (sv.tok.cw1h || 0) + cw1hOf(u);
-        // Деньги по моделям: если цена какой-то модели окажется неверной,
-        // историю можно будет пересчитать точно, а не прикидкой.
-        sv.usdBy = sv.usdBy || {};
-        sv.usdBy[mid] = (sv.usdBy[mid] || 0) + usd;
-        // чистим журнал старше 90 дней
-        for (const k of Object.keys(b2.days)) if (k < new Date(Date.now() - 90 * 86400e3).toISOString().slice(0, 10)) delete b2.days[k];
-        if (d2.usd >= DAILY_USD * 0.8 && !b2.alerts[day + ":80"]) {
-          b2.alerts[day + ":80"] = Date.now();
-          sendMail({ to: ALERT_TO, subject: "Движок переводов: 80% суточного бюджета", text: "Расход движка переводов за " + day + " — " + fmt(d2.usd) + " из " + DAILY_USD + " $ (ENGINE_DAILY_BUDGET_USD). Запросов: " + d2.calls + ". Если это не штатная нагрузка — проверьте, что Катя не запустила массовые прогоны; лимит сработает на 100%." }).catch(() => {});
-        }
-        saveBudget(b2);
-      }
+      if (seen) recordSpend(day, svcOf(req), model || FORCED, u, forcedNow);
     } catch (e) { console.warn("engine-proxy usage:", e.message); }
   });
+
+  // Записать расход в суточный журнал шлюза (общий итог, сервис, модель, токены).
+  function recordSpend(day, svc, model, u, forcedNow) {
+    const usd = usdOf(model, u);
+    const b2 = loadBudget();
+    const d2 = b2.days[day] || (b2.days[day] = { usd: 0, calls: 0, forced: 0 });
+    d2.usd += usd; d2.calls++; d2.forced = (d2.forced || 0) + (forcedNow || 0);
+    // Разбивка по сервисам: без неё расход прослушки сливался с переводами
+    // в одну строку, и в письме о балансе было не видно, кто сколько съел.
+    d2.svc = d2.svc || {};
+    const sv = d2.svc[svc] || (d2.svc[svc] = { usd: 0, calls: 0 });
+    sv.usd += usd; sv.calls++;
+    // Какая модель реально работала. Нужно письму о балансе: модели задаются
+    // переменными окружения и меняются, по коду их не угадать.
+    const mid = String(model);
+    sv.models = sv.models || {};
+    sv.models[mid] = (sv.models[mid] || 0) + 1;
+    // Токены, включая кэш: по ним видно, работает ли кэширование у сервиса.
+    // Запись в кэш стоит 1,25 обычного входа, чтение — 0,1; если пишем много,
+    // а читаем мало, кэш не экономит, а доплачивает.
+    sv.tok = sv.tok || { in: 0, out: 0, cr: 0, cw: 0 };
+    sv.tok.in += u.input_tokens || 0;
+    sv.tok.out += u.output_tokens || 0;
+    sv.tok.cr += u.cache_read_input_tokens || 0;
+    sv.tok.cw += u.cache_creation_input_tokens || 0;
+    sv.tok.cw1h = (sv.tok.cw1h || 0) + cw1hOf(u);
+    // Деньги по моделям: если цена какой-то модели окажется неверной,
+    // историю можно будет пересчитать точно, а не прикидкой.
+    sv.usdBy = sv.usdBy || {};
+    sv.usdBy[mid] = (sv.usdBy[mid] || 0) + usd;
+    // чистим журнал старше 90 дней
+    for (const k of Object.keys(b2.days)) if (k < new Date(Date.now() - 90 * 86400e3).toISOString().slice(0, 10)) delete b2.days[k];
+    if (d2.usd >= DAILY_USD * 0.8 && !b2.alerts[day + ":80"]) {
+      b2.alerts[day + ":80"] = Date.now();
+      sendMail({ to: ALERT_TO, subject: "Движок переводов: 80% суточного бюджета", text: "Расход движка переводов за " + day + " — " + fmt(d2.usd) + " из " + DAILY_USD + " $ (ENGINE_DAILY_BUDGET_USD). Запросов: " + d2.calls + ". Если это не штатная нагрузка — проверьте, что Катя не запустила массовые прогоны; лимит сработает на 100%." }).catch(() => {});
+    }
+    saveBudget(b2);
+  }
+
+  // Классификатор «касается ли правка документа» — короткий запрос мимо движка.
+  // Расход пишем в журнал как расход переводов: он делается ради них.
+  async function classifyCall(params) {
+    const r = await fetch(BASE + "/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": KEY, "content-type": "application/json", "anthropic-version": "2023-06-01" },
+      body: JSON.stringify(params), signal: AbortSignal.timeout(60 * 1000),
+    });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j) throw new Error("HTTP " + r.status);
+    if (j.usage) recordSpend(mskDay(), "translate", params.model, j.usage, 0);
+    return { text: (j.content || []).map((b) => (b && b.text) || "").join(""), usage: j.usage || {} };
+  }
+
+  economy.watch(sendMail); // сторож: экономия на правках не должна выключиться молча
 
   // ── 4. Почта от имени движка ──
   app.post("/internal/engine/mail", express.json({ limit: "1mb" }), async (req, res) => {
