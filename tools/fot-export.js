@@ -17,7 +17,8 @@ const FILES = [
   [".lkCityRevenue.json", "cityRevenue.json"],   // объём и выручка месяца, разрез по городам
   [".vscCallStats.json", "callStats.json"],      // звонки по операторам из нот amoCRM
   [".vscLoadBase.json", "loadBase.json"],        // целевые контакты и звонки из листа /vsc
-  [".vscZarplata.json", "zarplata.json"],        // разбор зарплатной таблицы по месяцам
+  // zarplata.json пишется отдельно ниже: с сентября 2026 месяцы берутся из её же
+  // модуля зарплат, сырой разбор Google-таблицы сюда больше не годится.
   [".vscManagerPay.json", "managerPay.json"],    // ЗП управляющей, ручной ввод
   [".vscProfit.json", "profit.json"]             // прибыль по месяцам, ручной ввод
 ];
@@ -36,6 +37,17 @@ function main() {
       ok++;
     } catch (e) { console.error("FOT EXPORT: " + from + " → " + to + ": " + e.message); }
   });
+  // Зарплаты по месяцам — тот же объединённый источник, что видит /vsc: январь–август
+  // из Google-таблицы, с сентября 2026 — её закрытые месяцы (06.10.2026).
+  try {
+    const snap = require(path.join(SRC, "zarplata.js")).getZarplataSnapshot();
+    if (snap && snap.months) {
+      const tmp = path.join(DST, "zarplata.json.tmp");
+      fs.writeFileSync(tmp, JSON.stringify(snap), "utf8");
+      fs.renameSync(tmp, path.join(DST, "zarplata.json"));
+      ok++;
+    } else skip++;
+  } catch (e) { console.error("FOT EXPORT: zarplata.json: " + e.message); }
   try {
     fs.writeFileSync(path.join(DST, "README.txt"),
       "Снимки раздела «ФОТ» с прода voyotravel.ru. Обновляются раз в сутки в 06:00 МСК.\n"

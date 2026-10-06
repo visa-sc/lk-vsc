@@ -114,20 +114,34 @@ async function fetchMonth(year, mi, extMap) {
   const mskNow = new Date(Date.now() + 3 * 3600 * 1000);
   const todayStart = Math.floor(Date.UTC(mskNow.getUTCFullYear(), mskNow.getUTCMonth(), mskNow.getUTCDate()) / 1000) - 3 * 3600;
   const rows = [];
+  const failedDays = [];
   let lastDay = 0;
   for (let d0 = 1; d0 <= days; d0++) {
     const from = Math.floor(Date.UTC(year, mi, d0) / 1000) - 3 * 3600;
     const to = from + 86400;
     if (to > todayStart) break;
     lastDay = d0;
-    try {
-      const r = await axios.post(BASE + "/mongo_history/search.json",
-        "start_stamp_from=" + from + "&start_stamp_to=" + to + "&limit=5000",
-        { headers: H, timeout: 60000, maxContentLength: 128 * 1024 * 1024 });
-      const part = (r.data && r.data.data) || [];
-      rows.push.apply(rows, part);
-    } catch (e) { console.error("PBX день " + d0 + "." + (mi + 1) + ":", e && e.message); }
+    // АТС на отказ (частота запросов, протухший ключ) отвечает HTTP 200 со
+    // status ≠ 1 и без data. Раньше это молча считалось пустым днём: в ночь на
+    // 06.10.2026 октябрь записался нулём звонков, хотя звонки были. Теперь отказ —
+    // это повтор с паузой и новой авторизацией, а после трёх отказов — ошибка дня.
+    let got = null, why = "";
+    for (let attempt = 0; attempt < 3 && got == null; attempt++) {
+      if (attempt) { await new Promise((s) => setTimeout(s, 3000 * attempt)); _auth = { at: 0, key_id: null, key: null }; const a2 = await auth(); H["x-pbx-authentication"] = a2.key_id + ":" + a2.key; }
+      try {
+        const r = await axios.post(BASE + "/mongo_history/search.json",
+          "start_stamp_from=" + from + "&start_stamp_to=" + to + "&limit=5000",
+          { headers: H, timeout: 60000, maxContentLength: 128 * 1024 * 1024 });
+        if (r.data && String(r.data.status) === "1" && Array.isArray(r.data.data)) got = r.data.data;
+        else why = "АТС отказала: " + JSON.stringify(r.data || "").slice(0, 160);
+      } catch (e) { why = (e && e.message) || String(e); }
+    }
+    if (got == null) { failedDays.push(d0); console.error("PBX день " + d0 + "." + (mi + 1) + ":", why); continue; }
+    rows.push.apply(rows, got);
   }
+  // Хоть один день не отдался — месяц целиком считаем неудачным: неполные цифры
+  // хуже прошлых полных. run() оставит прежние данные и запишет ошибку.
+  if (failedDays.length) throw new Error("АТС не отдала дни " + failedDays.join(", ") + " (" + (mi + 1) + "-й месяц)");
   const byExt = {};
   const total = { inbound: 0, answered: 0, missed: 0, waitSum: 0, waitCnt: 0, outbound: 0 };
   const slot = (n) => byExt[n] || (byExt[n] = { answered: 0, missed: 0, outbound: 0, talkSec: 0, waitSum: 0, waitCnt: 0 });

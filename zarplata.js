@@ -490,4 +490,8 @@ function getZarplata(force) {
   return getZarplataGoogle(force).then(merged);
 }
 
-module.exports = { getZarplata, getPeople, kateManagerPay, DEPT_TITLES };
+// Снимок без похода в Google — для крона экспорта Кате (tools/fot-export.js):
+// последний разбор таблицы с диска + её закрытые месяцы, как отдаёт /vsc.
+function getZarplataSnapshot() { return merged(loadDisk()); }
+
+module.exports = { getZarplata, getZarplataSnapshot, getPeople, kateManagerPay, DEPT_TITLES };
