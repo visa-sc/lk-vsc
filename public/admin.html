@@ -4050,6 +4050,8 @@
         vscContent.appendChild(vscBarChart({ key: "tax5", label: "Налог 5%", fmt: "money", good: 0 }, taxSeries));
         const rasxData = (vscData.months || []).map((mm) => ({ x: short(mm.name), v: mm.taxes ? mm.taxes.rasx : null }));
         vscContent.appendChild(vscDivergingBars("Расхождение с фактом вынесенного НДС (+ запас / − нехватка)", rasxData, "money"));
+        // Оплаты именными сертификатами — сразу после расхождения по НДС (Андрей 06.10.2026), только админ.
+        if (currentRole() === "admin") vscContent.appendChild(vscCertsBlock());
         // ── Не-графики — опущены ВНИЗ (по просьбе Андрея): «Реклама Я.Директ vs таблица» и «План ОП — проверка» ──
         // ── «Выкупы — сверка р/с с таблицей» (только админ; руководителям блок не показываем,
         // эндпоинт requireAdmin — raw fetch, чтобы 401 не выкидывал их на логин) ──
@@ -4584,6 +4586,134 @@
             }
           });
         }).catch(function () { vacBox.innerHTML = whiteBox.innerHTML = '<div class="vsc-empty">Не удалось загрузить данные по сотрудникам.</div>'; });
+        return wrap;
+      }
+      // ═══ «Оплаты именными сертификатами» (Ежемесячный контроль, Андрей 06.10.2026) ═══
+      // Сертификат — не живые деньги: перенос из бота/АКК/КС в бюджет, переделка для ОО,
+      // перекрытие скидки руководителем. Список — из CRM-факта Кати (её «Касса»), а
+      // проверка, всё ли заполнено, — по копии amoCRM (сервер, tools/certCheck.js).
+      // Ошибки за месяц краснеют только после 10-го числа следующего месяца: до этого
+      // ответственные ещё дописывают.
+      function vscCertsBlock() {
+        const wrap = document.createElement("div");
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.style.marginTop = "22px"; h.textContent = "Оплаты именными сертификатами — по месяцам";
+        h.appendChild(vscInfo(
+          "<b>Что это</b><br>Сделки, частично или полностью закрытые именным сертификатом: перенос денег из другой сделки (бот, АКК, КС) в бюджет, переделка для оформления, перекрытие скидки руководителем. Живых денег по ним не приходит, в выручке и P&L их нет."
+          + "<br><br><b>Откуда</b><br>Список — раздел «Касса → CRM-факт» на work.voyotravel.ru, день — по дате оплаты, в сумму идёт только «Сумма сертификата». Проверка заполненности — по копии amoCRM: сделки, где в «Способе оплаты» выбран «Именной Сертификат», но нет суммы или причины. В CRM-факт такие не попадают вообще, поэтому видно их только здесь."
+          + "<br><br><b>Ошибки</b><br>Красным — не заполнены сумма или причина, сертификат есть в amoCRM, но нет в CRM-факте, или по месяцу нет выгрузки. Они краснеют после 10-го числа следующего месяца, до этого видны серым. Жёлтым — описание неполное: при переносе нет номера исходной сделки, при скидке не видно клиента."));
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart";
+        box.innerHTML = '<div class="loading-state">Загружаем сертификаты…</div>';
+        wrap.appendChild(box);
+        const money = (v) => (v == null ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
+        const dd = (d) => { const p = String(d || "").split("-"); return p.length === 3 ? p[2] + "." + p[1] : d; };
+        const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
+        const curYm = nowMsk.toISOString().slice(0, 7);
+        // Срок дозаполнения: 10-е число месяца, следующего за месяцем сертификата.
+        const dueOf = (ym) => new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 10));
+        const overdue = (ym) => nowMsk.getTime() >= dueOf(ym).getTime();
+        const dueTxt = (ym) => { const d = dueOf(ym); return "10." + String(d.getUTCMonth() + 1).padStart(2, "0"); };
+        const RK = [["transfer", "Перенос в бюджет"], ["discount", "Перекрытие скидки"], ["redo", "Переделка для ОО"], ["other", "Прочее"]];
+        const errCount = (m) => (m.unfilled || []).length + (m.missingInKate || []).length + (m.noReason || []).length + (m.haveKate ? 0 : 1);
+        fetch("/admin/api/vsc/certs", { headers: { Authorization: "Bearer " + getToken() } })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            const d = j && j.data;
+            if (!j || !j.success || !d || !d.months) { box.innerHTML = '<div class="vsc-empty">Сертификаты ещё не собраны — первая выгрузка через пару минут после запуска сервера.</div>'; return; }
+            const amo = j.amoBase || "";
+            const link = (id) => amo ? '<a href="' + amo + "/leads/detail/" + id + '" target="_blank" rel="noopener" style="color:#3589BD;text-decoration:none;">' + id + "</a>" : String(id);
+            const list = Object.values(d.months).sort((a, b) => (a.ym < b.ym ? -1 : 1));
+            // Видна строка последнего закрытого месяца; текущий (он идёт) и более ранние — в истории.
+            const prevYm = (function () { const x = new Date(Date.UTC(nowMsk.getUTCFullYear(), nowMsk.getUTCMonth() - 1, 1)); return x.toISOString().slice(0, 7); })();
+            let html = "";
+            // Плашка ошибок — только по месяцам, у которых срок дозаполнения прошёл.
+            const late = list.filter((m) => m.ym !== curYm && overdue(m.ym) && errCount(m) > 0);
+            if (late.length) {
+              html += '<div style="background:#fbe9ec;border:1px solid #f1c4cc;color:#a12b3c;border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:10px;"><b>Сертификаты заполнены не полностью:</b> '
+                + late.map((m) => escapeHtml(m.name) + " — " + errCount(m)).join(" · ") + ". Раскройте месяц, чтобы увидеть сделки.</div>";
+            }
+            if (d.kateError || d.crmError) html += '<div style="color:#a12b3c;font-size:12.5px;margin-bottom:8px;">' + escapeHtml([d.kateError, d.crmError].filter(Boolean).join(" · ")) + "</div>";
+            const TH = 'style="padding:7px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;"';
+            const TD = "padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;";
+            const rowsHtml = list.map((m) => {
+              const isCur = m.ym === curYm;
+              const e = errCount(m), w = (m.items || []).filter((c) => (c.issues || []).length).length;
+              const red = !isCur && overdue(m.ym) && e > 0;
+              let prob = "";
+              if (e) prob += '<span style="color:' + (red ? "#a12b3c" : "#8a93a5") + ';font-weight:' + (red ? 700 : 400) + ';">' + e + " не заполнено" + (red ? "" : " · срок до " + dueTxt(m.ym)) + "</span>";
+              if (w) prob += (prob ? " · " : "") + '<span style="color:#b07b00;">' + w + " неполных</span>";
+              if (!prob) prob = '<span style="color:#2c7a43;">✓</span>';
+              const by = (k) => { const b = (m.byReason || {})[k]; return b ? money(b.sum) + ' <span style="color:#a0a6b3;">· ' + b.n + "</span>" : "—"; };
+              const hidden = m.ym !== prevYm;
+              return '<tr class="cert-row' + (hidden ? " cert-hist" : "") + '" data-ym="' + m.ym + '" style="cursor:pointer;' + (hidden ? "display:none;" : "") + '">'
+                + '<td style="' + TD + 'text-align:left;font-weight:600;"><span class="cert-arr" style="font-size:10px;color:#8a93a5;margin-right:6px;">▶</span>' + escapeHtml(m.name)
+                + (isCur ? ' <span style="font-size:10.5px;font-weight:700;color:#2f6db5;background:#e8f0fb;border-radius:6px;padding:1px 6px;">идёт</span>' : "") + "</td>"
+                + '<td style="' + TD + '">' + m.count + "</td>"
+                + '<td style="' + TD + 'font-weight:700;">' + money(m.sum) + "</td>"
+                + RK.slice(0, 3).map((r) => '<td style="' + TD + '">' + by(r[0]) + "</td>").join("")
+                + '<td style="' + TD + 'text-align:left;white-space:normal;">' + prob + "</td></tr>"
+                + '<tr class="cert-det" data-ym="' + m.ym + '" style="display:none;"><td colspan="7" style="padding:0 0 12px 0;border-bottom:1px solid #eef0f4;"></td></tr>';
+            }).join("");
+            const nHist = list.filter((m) => m.ym !== prevYm).length;
+            html += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;min-width:760px;border-collapse:collapse;font-size:13px;">'
+              + '<tr><th ' + TH.replace("text-align:right", "text-align:left") + '>Месяц</th><th ' + TH + '>Шт.</th><th ' + TH + '>Сумма</th><th ' + TH + '>Перенос в бюджет</th><th ' + TH + '>Перекрытие скидки</th><th ' + TH + '>Переделка для ОО</th><th ' + TH.replace("text-align:right", "text-align:left") + '>Проверка</th></tr>'
+              + rowsHtml + "</table></div>";
+            if (nHist) html += '<div style="margin-top:8px;"><button type="button" class="cert-hist-btn" style="border:1px solid #dfe3ec;background:#fff;border-radius:9px;padding:5px 12px;font-size:12.5px;font-family:inherit;color:#33415a;cursor:pointer;">История · ' + nHist + " мес.</button></div>";
+            const upd = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+            html += '<div style="font-size:11.5px;color:#9096a3;margin-top:10px;">проверено ' + escapeHtml(upd) + " МСК · список — CRM-факт Кати на work.voyotravel.ru, заполненность — копия amoCRM</div>";
+            box.innerHTML = html;
+
+            // Раскрытие месяца: свод, незаполненные сделки, сам список сертификатов.
+            const detailHtml = (m) => {
+              const isCur = m.ym === curYm, red = !isCur && overdue(m.ym);
+              const col = red ? "#a12b3c" : "#8a93a5";
+              let x = "";
+              if (!m.haveKate) x += '<div style="color:' + col + ';font-size:12.5px;margin:8px 0;">' + (m.kateError ? escapeHtml(m.kateError) : "В CRM-факте Кати нет выгрузки за этот месяц.") + "</div>";
+              const small = (title, rows, cols) => rows.length ? '<div style="margin:10px 0 4px;font-size:12.5px;font-weight:700;color:' + col + ';">' + title + "</div>"
+                + rows.map((r) => '<div style="font-size:12.5px;color:' + col + ';padding:2px 0 2px 12px;">' + cols(r) + "</div>").join("") : "";
+              x += small("Способ оплаты «Именной Сертификат», но не заполнено" + (red ? "" : " · дописать до " + dueTxt(m.ym)) + ":", m.unfilled || [],
+                (u) => dd(u.date) + " · " + link(u.id) + " · " + escapeHtml(u.name) + " — <b>" + escapeHtml(u.what) + "</b>");
+              x += small("Есть в amoCRM, но нет в CRM-факте Кати:", m.missingInKate || [],
+                (u) => dd(u.date) + " · " + link(u.id) + " · " + money(u.sum) + " · " + escapeHtml(u.name));
+              const items = (m.items || []).slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+              if (items.length) {
+                const tag = (t, c, bg) => ' <span style="font-size:10.5px;font-weight:700;color:' + c + ";background:" + bg + ';border-radius:6px;padding:1px 6px;white-space:nowrap;">' + t + "</span>";
+                x += '<div style="overflow-x:auto;margin-top:8px;"><table style="width:100%;min-width:700px;border-collapse:collapse;font-size:12.5px;">'
+                  + '<tr><th style="padding:5px 8px;text-align:left;color:#8a93a5;font-weight:600;">Дата</th><th style="padding:5px 8px;text-align:left;color:#8a93a5;font-weight:600;">Сделка</th><th style="padding:5px 8px;text-align:right;color:#8a93a5;font-weight:600;">Сумма</th><th style="padding:5px 8px;text-align:left;color:#8a93a5;font-weight:600;">Наименование</th><th style="padding:5px 8px;text-align:left;color:#8a93a5;font-weight:600;">Причина</th></tr>'
+                  + items.map((c) => {
+                      const noWhy = !String(c.why || "").trim();
+                      return '<tr style="border-top:1px solid #f0f1f5;' + ((c.issues || []).length ? "background:#fff8e6;" : "") + '">'
+                        + '<td style="padding:5px 8px;white-space:nowrap;">' + dd(c.date) + "</td>"
+                        + '<td style="padding:5px 8px;white-space:nowrap;">' + link(c.id) + "</td>"
+                        + '<td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:600;">' + money(c.sum) + "</td>"
+                        + '<td style="padding:5px 8px;">' + escapeHtml(c.name)
+                        + (c.issues || []).map((t) => tag(t, "#8a6d0b", "#fdf0c8")).join("")
+                        + (c.owner ? tag("собственник", "#5a4bb5", "#ece9fb") : "") + (c.big ? tag("от 20 000", "#33415a", "#eef0f4") : "") + "</td>"
+                        + '<td style="padding:5px 8px;' + (noWhy ? "color:" + col + ";font-weight:700;" : "") + '">' + (noWhy ? "не указана" : escapeHtml(c.why)) + "</td></tr>";
+                    }).join("") + "</table></div>";
+              } else if (m.haveKate) x += '<div style="font-size:12.5px;color:#8a93a5;margin-top:8px;">Оплат сертификатами в этом месяце нет.</div>';
+              return '<div style="padding:4px 4px 0 22px;">' + x + "</div>";
+            };
+            box.querySelectorAll("tr.cert-row").forEach((tr) => tr.addEventListener("click", () => {
+              const ym = tr.getAttribute("data-ym");
+              const det = box.querySelector('tr.cert-det[data-ym="' + ym + '"]');
+              const open = det.style.display !== "none";
+              if (!open && !det.firstChild.innerHTML) det.firstChild.innerHTML = detailHtml(d.months[ym]);
+              det.style.display = open ? "none" : "";
+              tr.querySelector(".cert-arr").textContent = open ? "▶" : "▼";
+            }));
+            const hb = box.querySelector(".cert-hist-btn");
+            if (hb) hb.addEventListener("click", () => {
+              const rows = box.querySelectorAll("tr.cert-hist");
+              const show = rows.length && rows[0].style.display === "none";
+              rows.forEach((r) => {
+                r.style.display = show ? "" : "none";
+                if (!show) { const det = box.querySelector('tr.cert-det[data-ym="' + r.getAttribute("data-ym") + '"]'); det.style.display = "none"; r.querySelector(".cert-arr").textContent = "▶"; }
+              });
+              hb.textContent = show ? "Скрыть историю" : "История · " + nHist + " мес.";
+            });
+          })
+          .catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить сертификаты.</div>'; });
         return wrap;
       }
       function renderVscFot() { vscContent.appendChild(vscZarplataBlock()); }

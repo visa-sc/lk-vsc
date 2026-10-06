@@ -1952,6 +1952,28 @@ app.get("/admin/api/vsc/zarplata", requireAdmin, async (req, res) => {
     return res.status(500).json({ success: false, message: "Не удалось прочитать зарплатную таблицу: " + (e && e.message) });
   }
 });
+// ── Оплаты именными сертификатами (Ежемесячный контроль, Андрей 06.10.2026) ──
+// Список — из CRM-факта Кати (её Касса), проверка заполненности — по локальной
+// копии amoCRM. Всё читает tools/certCheck.js отдельным процессом (sqlite синхронный)
+// и кладёт в .vscCerts.json: через 2 минуты после старта и дальше раз в 3 часа.
+const VSC_CERTS_FILE = path.join(__dirname, ".vscCerts.json");
+let _certsRunning = false;
+function runCertCheck() {
+  if (_certsRunning) return;
+  _certsRunning = true;
+  require("child_process").execFile("nice", ["-n", "15", process.execPath, path.join(__dirname, "tools", "certCheck.js")],
+    { timeout: 5 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      _certsRunning = false;
+      if (err) { console.error("CERTS:", err.message); return; }
+      console.log(String(stdout || "").trim());
+    });
+}
+setTimeout(runCertCheck, 2 * 60 * 1000);
+setInterval(runCertCheck, 3 * 3600 * 1000);
+app.get("/admin/api/vsc/certs", requireAdmin, (req, res) => {
+  let d = null; try { d = JSON.parse(fs.readFileSync(VSC_CERTS_FILE, "utf8")); } catch (_) {}
+  res.json({ success: true, data: d, amoBase: AMO_SUBDOMAIN ? `https://${AMO_SUBDOMAIN}.amocrm.ru` : null });
+});
 // Люди по месяцам для блоков «Проверка отпускных» и «Белые зарплаты» в разделе ФОТ
 // (Андрей 06.10.2026). Январь–август — Google-таблица, с сентября — модуль Кати.
 // Зарплаты по фамилиям — только админ.
