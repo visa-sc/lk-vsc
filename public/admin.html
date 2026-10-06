@@ -3840,10 +3840,10 @@
         // Автоподсветка: последний заполненный месяц против предыдущего, за
         // сопоставимое число дней; будущие/пустые месяцы игнорируются.
         const attn = vscAttention();
-        // Превышение лимита CPL (1100 ₽) — ТОЛЬКО за ПОСЛЕДНИЙ ЗАВЕРШЁННЫЙ период:
+        // Превышение лимита CPL (1500 ₽; был 1100, подняли из-за ВНЖ — Андрей 06.10.2026) — ТОЛЬКО за ПОСЛЕДНИЙ ЗАВЕРШЁННЫЙ период:
         // день — отображаемый (вчерашний); неделя — прошлая завершённая (не текущая);
         // месяц — прошлый завершённый. Старые периоды в жёлтый блок не выводим.
-        const CPL_LIMIT = 1100;
+        const CPL_LIMIT = 1500;
         const granWord = ({ year: "за прошлый месяц", month: "за прошлый месяц", week: "за прошлую неделю", day: "за прошедший день" })[vscGran] || "";
         let cplAlert = null;
         (function () {
@@ -3874,7 +3874,7 @@
             h += "</ul>";
           }
           if (cplAlert) {
-            h += '<div class="vsc-attn-h"' + (showAttn ? ' style="margin-top:9px;"' : '') + '>⚠️ CPL выше лимита 1100 ₽ (' + granWord + ', ' + escapeHtml(cplAlert.x) + '): <b>' + vscFmt(cplAlert.v, "money") + '</b></div>';
+            h += '<div class="vsc-attn-h"' + (showAttn ? ' style="margin-top:9px;"' : '') + '>⚠️ CPL выше лимита ' + CPL_LIMIT.toLocaleString("ru-RU") + ' ₽ (' + granWord + ', ' + escapeHtml(cplAlert.x) + '): <b>' + vscFmt(cplAlert.v, "money") + '</b></div>';
           }
           ab.innerHTML = h;
           vscContent.appendChild(ab);
