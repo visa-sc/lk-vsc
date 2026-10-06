@@ -1986,9 +1986,14 @@ app.get("/admin/api/vsc/zarplata", requireAdmin, async (req, res) => {
         });
       }
     } catch (e) { console.error("plCalls:", e && e.message); }
-    // ЗП управляющей: с сентября 2026 приходит из модуля зарплат Кати (факт выплат по
-    // P&L «Потока»). Ручной ввод через баннер, если он есть, главнее.
-    const managerPay = Object.assign({}, zarplata.kateManagerPay(), loadMgrPay());
+    // ЗП управляющей с сентября 2026 — НАЧИСЛЕНО за месяц в «Потоке» Кати (оклад +
+    // бонус, salaryBlock.total; сентябрь 382 568,30). Раньше бралась выплата в месяце
+    // (260 534) — это неверно, Андрей поправил 06.10.2026. Ручной ввод главнее.
+    const potokMgr = {};
+    // Только прошедшие месяцы: у идущего бонус ещё растёт вместе с прибылью.
+    const curYmM = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 7);
+    try { const pm = potok.warm() || {}; Object.keys(pm).forEach((n) => { const r = pm[n]; if (r && r.ym >= potok.FROM_YM && r.ym < curYmM && r.mgrAccrued != null) potokMgr[n] = r.mgrAccrued; }); } catch (_) {}
+    const managerPay = Object.assign({}, zarplata.kateManagerPay(), potokMgr, loadMgrPay());
     return res.json({ success: true, data: d, managerPay: managerPay, cityRevenue: loadCityRev(), loadBase: base, plCalls: plCalls, pbx: pbx.load() });
   } catch (e) {
     console.error("vsc zarplata:", e && e.message);

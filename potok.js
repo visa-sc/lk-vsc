@@ -73,6 +73,10 @@ function pick(rep) {
       });
     }
   }));
+  // ЗП управляющего директора — НАЧИСЛЕНО за месяц (оклад + бонус), как в письме
+  // «закрытие месяца» из «Потока». Не путать с выплаченным в месяце (Андрей 06.10.2026).
+  const sal = rep.salaryBlock || {};
+  if (sal.total != null) { out.mgrAccrued = Math.round(Number(sal.total) * 100) / 100; out.mgrFixed = Number(sal.fixed) || 0; out.mgrBonus = Math.round((Number(sal.bonus) || 0) * 100) / 100; }
   return out;
 }
 // Крупные платежи Директа за месяц: операции статьи «Яндекс Директ» и платежи Яндексу
