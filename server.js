@@ -7721,7 +7721,11 @@ async function vscSpbPnl() {
     // Показатели города (колонки из таблицы Андрея): ДРР, ATV, CV.
     rec.drr = (rec.ad != null && rec.revenue) ? Math.round(rec.ad / rec.revenue * 1000) / 10 : null;
     const cnt = (cr && cr.months && cr.months[String(MONF.indexOf(name.replace(/\s*20\d\d/, "")))]) || null;
-    rec.deals = SPB_DEALS_SEED[name] != null ? SPB_DEALS_SEED[name] : ((cnt && cnt.spbDeals) || null);
+    // Сделки города: закрытые до августа — из таблицы Андрея, дальше — из ночного съёма
+    // «Выручки по городам». Там они лежат в deals.spb (поле spbDeals из старой версии
+    // съёма больше не пишется — из-за этого за сентябрь были пустые ATV и CV, 06.10.2026).
+    const spbDealsLive = cnt ? ((cnt.deals && cnt.deals.spb != null) ? cnt.deals.spb : (cnt.spbDeals || null)) : null;
+    rec.deals = SPB_DEALS_SEED[name] != null ? SPB_DEALS_SEED[name] : spbDealsLive;
     const lv = spbLeadsStore[name];
     rec.leads = SPB_LEADS_SEED[name] != null ? SPB_LEADS_SEED[name] : (lv && lv.leads != null ? lv.leads : null);
     rec.atv = (rec.deals) ? Math.round(rec.revenue / rec.deals) : null;
@@ -7858,6 +7862,44 @@ async function vscSboryData() {
       } catch (e) { console.error("sbory returns " + tab.name + ":", e.message); }
     }
   } catch (e) { console.error("sbory returns:", e.message); }
+  // 3) С сентября 2026 — данные Кати на work.voyotravel.ru (Андрей 06.10.2026: Google
+  //    «срм-факт» может перестать вестись). Приход — её «Касса → CRM-факт» (по дням,
+  //    по видам сборов из сделок amoCRM), возвраты — её модуль возвратов (разбивка
+  //    каждого возврата). Сверено: сентябрь — приход 12 866 686, возвраты 459 204,
+  //    до рубля как в Google; июль и август в Google расходятся с её пересчётом, их
+  //    не трогаем. Её файлы только читаем.
+  try {
+    const KATE = "/var/www/kateadmin/data";
+    const IN_MAP = { reg: "регистрация", podacha: "подача", photo: "фото", consul: "консульские сборы", akk: "услуги акк", bot: "запись/бот",
+      voucher: "ваучеры авиа", courier: "сторонние курьеры", insur: "страховка", translate: "языковые переводы" };
+    const RET_MAP = { registration: "Регистрация", submission: "Подача", consular: "Сбор", akk: "Услуги АКК", bot: "Бот", avia: "Ваучеры", insurance: "Страховка" };
+    const MON = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+    const yms = new Set();
+    try { fs.readdirSync(KATE + "/kassa/amo").forEach((f) => { const m = /^(\d{4}-\d{2})\.json$/.exec(f); if (m) yms.add(m[1]); }); } catch (_) {}
+    try { fs.readdirSync(KATE + "/vozvraty/returns").forEach((f) => { const m = /^(\d{4}-\d{2})\.json$/.exec(f); if (m) yms.add(m[1]); }); } catch (_) {}
+    [...yms].filter((ym) => ym >= potok.FROM_YM).forEach((ym) => {
+      const name = MON[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4);
+      const rec = (out[name] = out[name] || {});
+      try {
+        const j = JSON.parse(fs.readFileSync(KATE + "/kassa/amo/" + ym + ".json", "utf8"));
+        const parts = {}; let inc = 0;
+        Object.values(j.days || {}).forEach((d) => Object.keys(IN_MAP).forEach((f) => { const v = Number(d[f]) || 0; if (v) { parts[IN_MAP[f]] = (parts[IN_MAP[f]] || 0) + v; inc += v; } }));
+        Object.keys(parts).forEach((k) => { parts[k] = Math.round(parts[k]); });
+        rec.income = Math.round(inc); rec.incomeParts = parts; rec.incomeSrc = "work";
+      } catch (_) {}
+      try {
+        const rows = JSON.parse(fs.readFileSync(KATE + "/vozvraty/returns/" + ym + ".json", "utf8"));
+        const parts = {}; let ret = 0;
+        (Array.isArray(rows) ? rows : []).forEach((r) => Object.keys(r.split || {}).forEach((k) => {
+          if (!RET_MAP[k]) return;                       // услуги и НДС — не сборы
+          const v = Number(r.split[k]) || 0; if (!v) return;
+          parts[RET_MAP[k]] = (parts[RET_MAP[k]] || 0) + v; ret += v;
+        }));
+        Object.keys(parts).forEach((k) => { parts[k] = Math.round(parts[k]); });
+        rec.returns = Math.round(ret); rec.returnParts = parts; rec.returnsSrc = "work";
+      } catch (_) {}
+    });
+  } catch (e) { console.error("sbory из work:", e.message); }
   // Месяц считается закрытым только с 4-го числа следующего (Андрей 11.09.2026):
   // до этого дня данные в таблицах ещё доносят, показывать их рано.
   const MONF_I = { "январь": 0, "февраль": 1, "март": 2, "апрель": 3, "май": 4, "июнь": 5, "июль": 6, "август": 7, "сентябрь": 8, "октябрь": 9, "ноябрь": 10, "декабрь": 11 };
