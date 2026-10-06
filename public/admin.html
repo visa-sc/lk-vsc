@@ -5490,7 +5490,7 @@
         const retTot = Object.values((RET && RET.byEnt) || {}).reduce(function (a, v) { return a + (v || 0); }, 0);
         // \u2500\u2500 \u0410\u0432\u0442\u043e-\u0434\u0430\u043d\u043d\u044b\u0435 (read-only) \u2500\u2500
         const inCard = document.createElement("div"); inCard.className = "vsc-chart";
-        let ih = '<div class="vsc-chart-h" style="margin-bottom:8px;">\u0414\u0430\u043d\u043d\u044b\u0435 \u0438\u0437 \u0441\u0440\u043c-\u0444\u0430\u043a\u0442 \u0438 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0432\u043e\u0437\u0432\u0440\u0430\u0442\u043e\u0432 (\u0430\u0432\u0442\u043e\u043c\u0430\u0442\u043e\u043c)</div>'
+        let ih = '<div class="vsc-chart-h" style="margin-bottom:8px;">Данные из раздела Кати — CRM-факт и возвраты (автоматом)' + (A.src === "work" ? "" : ' · I–II кв. — зафиксировано из прежней таблицы') + '</div>'
           + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px;"><thead><tr><th style="text-align:left;padding:6px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">\u042e\u0440\u043b\u0438\u0446\u043e</th>';
         mons.forEach(function (m) { ih += '<th style="text-align:right;padding:6px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">' + m + '</th>'; });
         ih += '<th style="text-align:right;padding:6px 8px;color:#6b7280;font-size:11px;text-transform:uppercase;">\u03a3 \u043a\u0432\u0430\u0440\u0442\u0430\u043b</th></tr></thead><tbody>';
@@ -5503,7 +5503,7 @@
         });
         ih += '</tbody></table></div>'
           + '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;font-size:12.5px;color:#5a626f;align-items:center;">'
-          + '<div>\u041d\u0430\u043b \u0431\u0435\u0437 \u0447\u0435\u043a\u0430 \u0437\u0430 \u043a\u0432 (\u0441\u0440\u043c-\u0444\u0430\u043a\u0442): <b>' + money0(A.cash) + '</b></div>'
+          + '<div>Нал без чека за кв (пересчёт сейфа): <b>' + money0(A.cash) + '</b></div>'
           + '<div>+ \u043d\u0430\u043b \u0441\u0432\u0435\u0440\u0445 \u0441\u0440\u043c-\u0444\u0430\u043a\u0442 (\u0412\u041d\u0416 \u0438 \u043f\u0440.): <input type="text" inputmode="numeric" class="tax-cash-extra" value="' + (Q.cashExtra == null ? "" : Q.cashExtra) + '" style="width:110px;text-align:right;padding:5px 7px;border:1px solid rgba(20,32,64,.14);border-radius:7px;font-size:12.5px;font-family:inherit;"></div>'
           + '<div>= \u043d\u0430\u043b \u0432\u0441\u0435\u0433\u043e: <b id="taxCashTotal">\u2014</b></div>'
           + '<div>\u0412\u044b\u043d\u0435\u0441\u0435\u043d\u043d\u044b\u0439 \u041d\u0414\u0421 \u0437\u0430 \u043a\u0432: <b>' + money0(A.vatOut) + '</b></div>'
