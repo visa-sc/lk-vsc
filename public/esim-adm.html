@@ -100,6 +100,9 @@
   .funnel-conv{flex:0 0 auto;align-self:center;background:#fff;border:1px solid #ece7f2;border-radius:999px;padding:4px 10px;
     font-size:12px;font-weight:600;color:#3589bd;white-space:nowrap;font-variant-numeric:tabular-nums;}
   .funnel-conv.none{color:var(--mut2)}
+  .ig-wrap{margin-top:26px;padding-top:22px;border-top:1px solid #ece7f2;}
+  .ig-title{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:17px;font-weight:700;color:#161d45;margin:0 0 16px;}
+  .ig-sum{margin-left:auto;font-size:13px;font-weight:500;color:var(--mut2);}
   .ig-h{font-size:14px;font-weight:700;color:#161d45;margin:0 0 10px;}
   .fun-note{color:var(--mut2);font-size:12px;margin-top:12px;}
   @media(max-width:720px){
@@ -292,16 +295,6 @@
     <div class="sec-b" id="fsite"></div>
   </section>
 
-  <section class="sec" data-id="ig">
-    <div class="sec-h"><h2>Instagram</h2><span data-info="ig"></span><span class="sum" id="igNote"></span><span class="chev">›</span></div>
-    <div class="sec-b">
-      <div class="ig-h">Сайт</div>
-      <div id="igFunnel"></div><div class="scroll" style="margin-top:14px"><table id="tIg"></table></div><div class="fun-note" id="igHint"></div>
-      <div class="ig-h" style="margin-top:26px">Телеграм-бот</div>
-      <div id="igBotFunnel"></div><div class="scroll" style="margin-top:14px"><table id="tIgBot"></table></div><div class="fun-note" id="igBotHint"></div>
-    </div>
-  </section>
-
   <section class="sec" data-id="blog">
     <div class="sec-h"><h2>Блогеры</h2><span data-info="blog"></span><span class="sum" id="blogNote"></span><span class="chev">›</span></div>
     <div class="sec-b">
@@ -336,6 +329,15 @@
         <button class="btn pri" id="sAdd" type="button">Добавить</button>
         <div style="margin-left:auto"><label title="Для платежей через ИП. Платежи через ООО считаются по выписке банка">Комиссия банка, %</label><input id="sAcq" type="number" step="0.1" min="0" max="20" style="width:80px"/></div>
         <div class="scroll" style="flex-basis:100%;margin-top:6px"><table id="tSpend"></table></div>
+      </div>
+      <!-- Воронки Instagram: сайт и телеграм-бот (просьба Петрова 06.10.2026),
+           сворачиваются вместе с рекламой -->
+      <div class="ig-wrap">
+        <div class="ig-title"><span>Instagram</span><span data-info="ig"></span><span class="ig-sum" id="igNote"></span></div>
+        <div class="ig-h">Сайт</div>
+        <div id="igFunnel"></div><div class="scroll" style="margin-top:14px"><table id="tIg"></table></div><div class="fun-note" id="igHint"></div>
+        <div class="ig-h" style="margin-top:26px">Телеграм-бот</div>
+        <div id="igBotFunnel"></div><div class="scroll" style="margin-top:14px"><table id="tIgBot"></table></div><div class="fun-note" id="igBotHint"></div>
       </div>
     </div>
   </section>
