@@ -4072,6 +4072,8 @@
         // ── «Выкупы — сверка р/с с таблицей» (только админ; руководителям блок не показываем,
         // эндпоинт requireAdmin — raw fetch, чтобы 401 не выкидывал их на логин) ──
         if (currentRole() === "admin") vscContent.appendChild(vscSboryBlock());
+        // «Проверка ваучеров» — между «Запасом на сборы» и «Выкупами» (Андрей 06.10.2026).
+        if (currentRole() === "admin") vscContent.appendChild(vscVouchersBlock());
         if (currentRole() === "admin") vscContent.appendChild(vscBuyoutsBlock());
         // Комиссии эквайринга (торговый + интернет, ООО + ИП) — только админ, из T-Bank API.
         if (currentRole() === "admin") {
@@ -4745,6 +4747,90 @@
             });
           })
           .catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить сертификаты.</div>'; });
+        return wrap;
+      }
+      // ═══ «Проверка ваучеров» (Ежемесячный контроль, Андрей 06.10.2026) ════════
+      // Выручка по авиаваучерам (CRM-факт Кати) против оплаты партнёру («Ваучер Авиа» в
+      // «Потоке»). Виден последний полный месяц, остальные — под «Показать историю»;
+      // клик по месяцу раскрывает сделки с ваучером. С августа 2026.
+      function vscVouchersBlock() {
+        const wrap = document.createElement("div");
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.style.marginTop = "22px"; h.textContent = "Проверка ваучеров";
+        h.appendChild(vscInfo("<b>Что сравниваем</b><br>Сколько клиенты заплатили за авиаваучеры и сколько мы заплатили за них партнёру."
+          + "<br><br><b>Выручка</b> — раздел Кати «Касса → CRM-факт» на work.voyotravel.ru: поле сделки amoCRM «Ваучеры авиа», день по дате оплаты. Раскройте месяц, чтобы увидеть сделки."
+          + "<br><br><b>Выкуп</b> — ваучеры выкупаем у «Виза СТО»; это статья «Ваучер Авиа» в «Сборах» P&amp;L «Потока»."
+          + "<br><br><b>Разница</b> = выручка − выкуп. Выкупы платятся пачками, а не под каждую сделку, поэтому разница отдельного месяца бывает и в минус — смотрите строку «Итого», она за все месяцы сразу."));
+        wrap.appendChild(h);
+        const box = document.createElement("div"); box.className = "vsc-chart";
+        box.innerHTML = '<div class="loading-state">Загружаем ваучеры…</div>';
+        wrap.appendChild(box);
+        const money = (v) => (v == null ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
+        const dd = (d) => { const p = String(d || "").split("-"); return p.length === 3 ? p[2] + "." + p[1] : d; };
+        fetch("/admin/api/vsc/vouchers", { headers: { Authorization: "Bearer " + getToken() } })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            const list = (j && j.success && j.months) || [];
+            if (!list.length) { box.innerHTML = '<div class="vsc-empty">Полных месяцев с данными по ваучерам пока нет.</div>'; return; }
+            const amo = j.amoBase || "";
+            const link = (id) => amo ? '<a href="' + amo + "/leads/detail/" + id + '" target="_blank" rel="noopener" style="color:#3589BD;text-decoration:none;">' + id + "</a>" : String(id);
+            const TH = 'style="padding:7px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;"';
+            const TD = "padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;";
+            const last = list[list.length - 1].ym;              // последний полный месяц
+            const rows = list.slice().reverse().map((m) => {
+              const hidden = m.ym !== last;
+              const dcol = m.diff == null ? "#33415a" : (m.diff >= 0 ? "#2c7a43" : "#a12b3c");
+              return '<tr class="vch-row' + (hidden ? " vch-hist" : "") + '" data-ym="' + m.ym + '" style="cursor:pointer;' + (hidden ? "display:none;" : "") + '">'
+                + '<td style="' + TD + 'text-align:left;font-weight:600;"><span class="vch-arr" style="font-size:10px;color:#8a93a5;margin-right:6px;">▶</span>' + escapeHtml(m.name) + "</td>"
+                + '<td style="' + TD + '">' + m.count + "</td>"
+                + '<td style="' + TD + '">' + money(m.revenue) + "</td>"
+                + '<td style="' + TD + '">' + (m.expense == null ? '<span style="color:#8a93a5;">нет в «Потоке»</span>' : money(m.expense)) + "</td>"
+                + '<td style="' + TD + 'font-weight:700;color:' + dcol + ';">' + (m.diff == null ? "—" : (m.diff > 0 ? "+" : "") + money(m.diff)) + "</td></tr>"
+                + '<tr class="vch-det" data-ym="' + m.ym + '" style="display:none;"><td colspan="5" style="padding:0 0 12px 0;border-bottom:1px solid #eef0f4;"></td></tr>';
+            }).join("");
+            const nHist = list.length - 1;
+            // Итог за все полные месяцы: выкупы идут пачками, по месяцу разница скачет.
+            const sumOf = (k) => list.reduce((a, m) => a + (m[k] || 0), 0);
+            const tDiff = sumOf("revenue") - sumOf("expense");
+            const fromWord = list[0].name.split(" ")[0].toLowerCase().replace(/ь$/, "я").replace(/т$/, "та").replace(/й$/, "я");
+            const totalRow = '<tr style="background:#f7f8fb;"><td style="' + TD + 'text-align:left;font-weight:700;">Итого с ' + escapeHtml(fromWord) + "</td>"
+              + '<td style="' + TD + 'font-weight:700;">' + sumOf("count") + "</td>"
+              + '<td style="' + TD + 'font-weight:700;">' + money(sumOf("revenue")) + "</td>"
+              + '<td style="' + TD + 'font-weight:700;">' + money(sumOf("expense")) + "</td>"
+              + '<td style="' + TD + 'font-weight:700;color:' + (tDiff >= 0 ? "#2c7a43" : "#a12b3c") + ';">' + (tDiff > 0 ? "+" : "") + money(tDiff) + "</td></tr>";
+            let html = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;min-width:560px;border-collapse:collapse;font-size:13px;">'
+              + '<tr><th ' + TH.replace("text-align:right", "text-align:left") + '>Месяц</th><th ' + TH + '>Сделок</th><th ' + TH + '>Выручка</th><th ' + TH + '>Выкуп у «Виза СТО»</th><th ' + TH + '>Разница</th></tr>'
+              + rows + totalRow + "</table></div>";
+            if (nHist > 0) html += '<div style="margin-top:10px;"><button type="button" class="vch-hist-btn" style="padding:9px 16px;font-size:13px;font-weight:600;border-radius:10px;cursor:pointer;line-height:1;background:#fff;color:#3589BD;border:1px solid #bcdcef;font-family:inherit;">Показать историю</button></div>';
+            html += '<div style="font-size:11.5px;color:#9096a3;margin-top:10px;">выручка — CRM-факт Кати, выкуп — «Ваучер Авиа» в «Потоке» (work.voyotravel.ru)</div>';
+            box.innerHTML = html;
+            const byYm = {}; list.forEach((m) => { byYm[m.ym] = m; });
+            const detail = (m) => {
+              if (!m.deals.length) return '<div style="padding:6px 22px;font-size:12.5px;color:#8a93a5;">Сделок с ваучером в этом месяце нет.</div>';
+              return '<div style="padding:4px 4px 0 22px;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;">'
+                + '<tr><th style="padding:5px 8px;text-align:left;color:#8a93a5;font-weight:600;">Дата</th><th style="padding:5px 8px;text-align:left;color:#8a93a5;font-weight:600;">Сделка</th><th style="padding:5px 8px;text-align:right;color:#8a93a5;font-weight:600;">Ваучер</th><th style="padding:5px 8px;text-align:left;color:#8a93a5;font-weight:600;">Сделка в amoCRM</th></tr>'
+                + m.deals.map((x) => '<tr style="border-top:1px solid #f0f1f5;"><td style="padding:5px 8px;white-space:nowrap;">' + dd(x.date) + '</td><td style="padding:5px 8px;white-space:nowrap;">' + link(x.id) + '</td><td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:600;">' + money(x.sum) + '</td><td style="padding:5px 8px;">' + escapeHtml(x.name) + "</td></tr>").join("")
+                + "</table>" + (m.dealsMatch ? "" : '<div style="font-size:12px;color:#8a93a5;margin-top:6px;">По сделкам ' + money(m.dealsSum) + ", в итоге дня " + money(m.revenue) + " — часть суммы без привязки к сделке.</div>") + "</div>";
+            };
+            box.querySelectorAll("tr.vch-row").forEach((tr) => tr.addEventListener("click", () => {
+              const ym = tr.getAttribute("data-ym");
+              const det = box.querySelector('tr.vch-det[data-ym="' + ym + '"]');
+              const open = det.style.display !== "none";
+              if (!open && !det.firstChild.innerHTML) det.firstChild.innerHTML = detail(byYm[ym]);
+              det.style.display = open ? "none" : "";
+              tr.querySelector(".vch-arr").textContent = open ? "▶" : "▼";
+            }));
+            const hb = box.querySelector(".vch-hist-btn");
+            if (hb) hb.addEventListener("click", () => {
+              const rs = box.querySelectorAll("tr.vch-hist");
+              const show = rs.length && rs[0].style.display === "none";
+              rs.forEach((r) => {
+                r.style.display = show ? "" : "none";
+                if (!show) { box.querySelector('tr.vch-det[data-ym="' + r.getAttribute("data-ym") + '"]').style.display = "none"; r.querySelector(".vch-arr").textContent = "▶"; }
+              });
+              hb.textContent = show ? "Скрыть историю" : "Показать историю";
+            });
+          })
+          .catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить ваучеры.</div>'; });
         return wrap;
       }
       function renderVscFot() { vscContent.appendChild(vscZarplataBlock()); }

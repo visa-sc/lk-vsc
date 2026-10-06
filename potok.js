@@ -22,7 +22,8 @@ const http = require("http");
 
 const FILE = path.join(__dirname, ".vscPotok.json");
 const TTL = 6 * 3600 * 1000;
-const FROM_YM = "2026-09";
+const FROM_YM = "2026-09";                             // с этого месяца «Поток» — источник сборов и доп. маркетинга
+const FETCH_FROM_YM = "2026-08";                       // а читаем с августа: блоку ваучеров нужен и август
 const DIRECT_BIG = 200000;                             // платёж Директа крупнее — это реклама, не доп. расход
 const HOST = process.env.KATE_PORTAL_HOST || "127.0.0.1";
 const PORT = Number(process.env.KATE_PORTAL_PORT || 3002);
@@ -53,7 +54,14 @@ function pick(rep) {
   const out = { sbory: null, marketing: null, direct: null, mktFot: null, mktOther: null };
   (rep.steps || []).forEach((st) => (st.cats || []).forEach((c) => {
     const n = String(c.name || "").trim().toLowerCase();
-    if (n === "сборы" && out.sbory == null) out.sbory = Math.round(Number(c.sum) || 0);
+    if (n === "сборы" && out.sbory == null) {
+      out.sbory = Math.round(Number(c.sum) || 0);
+      // «Ваучер Авиа» — оплата партнёру за авиаваучеры (для «Проверки ваучеров»).
+      [].concat(c.rows || [], ...(c.subs || []).map((sb) => sb.rows || [])).forEach((r) => {
+        if (/ваучер/i.test(String(r.name || ""))) out.voucherExp = (out.voucherExp || 0) + Math.round(Number(r.sum) || 0);
+      });
+      if (out.voucherExp == null) out.voucherExp = 0;
+    }
     if (n === "маркетинг" && out.marketing == null) {
       out.marketing = Math.round(Number(c.sum) || 0);
       out._rows = (c.rows || []).map((r) => ({ id: r.id, name: String(r.name || "") }));
@@ -99,7 +107,7 @@ async function refresh() {
   const months = Object.assign({}, load() || {});
   let got = 0, lastErr = null;
   for (let i = 0; i < 36; i++) {
-    const d = new Date(Date.UTC(+FROM_YM.slice(0, 4), +FROM_YM.slice(5, 7) - 1 + i, 1));
+    const d = new Date(Date.UTC(+FETCH_FROM_YM.slice(0, 4), +FETCH_FROM_YM.slice(5, 7) - 1 + i, 1));
     const ym = d.toISOString().slice(0, 7);
     if (ym > curYm) break;
     try {

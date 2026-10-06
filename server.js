@@ -2017,6 +2017,39 @@ app.get("/admin/api/vsc/certs", requireAdmin, (req, res) => {
   let d = null; try { d = JSON.parse(fs.readFileSync(VSC_CERTS_FILE, "utf8")); } catch (_) {}
   res.json({ success: true, data: d, amoBase: AMO_SUBDOMAIN ? `https://${AMO_SUBDOMAIN}.amocrm.ru` : null });
 });
+// ── «Проверка ваучеров» (Ежемесячный контроль, Андрей 06.10.2026) ──────────────
+// Выручка по авиаваучерам — CRM-факт Кати (её «Касса», поле «Ваучеры авиа» сделок
+// amoCRM, день по дате оплаты), расход — оплата партнёру, статья «Ваучер Авиа» в
+// «Сборах» её «Потока». С августа 2026; только полные месяцы. Только чтение.
+app.get("/admin/api/vsc/vouchers", requireAdmin, (req, res) => {
+  const KATE_AMO = "/var/www/kateadmin/data/kassa/amo";
+  const MON = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+  const nowYm = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 7);
+  const pm = potok.warm() || {};
+  const months = [];
+  for (let i = 0; i < 60; i++) {
+    const ym = new Date(Date.UTC(2026, 7 + i, 1)).toISOString().slice(0, 7);
+    if (ym >= nowYm) break;                                // идущий месяц не показываем
+    const name = MON[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4);
+    let revenue = null, deals = [];
+    try {
+      const j = JSON.parse(fs.readFileSync(KATE_AMO + "/" + ym + ".json", "utf8"));
+      revenue = 0;
+      Object.keys(j.days || {}).sort().forEach((day) => {
+        const d = j.days[day] || {};
+        revenue += Number(d.voucher) || 0;
+        (d.deals || []).forEach((x) => { const v = Number(x.fees && x.fees.voucher) || 0; if (v) deals.push({ date: day, id: x.id, name: String(x.name || ""), sum: v, branch: x.branch || "" }); });
+      });
+      revenue = Math.round(revenue);
+    } catch (_) {}
+    const p = pm[name];
+    const expense = p && p.voucherExp != null ? p.voucherExp : null;
+    const dealsSum = Math.round(deals.reduce((a, x) => a + x.sum, 0));
+    months.push({ ym, name, revenue, expense, diff: (revenue != null && expense != null) ? revenue - expense : null,
+      count: deals.length, deals, dealsSum, dealsMatch: revenue == null || dealsSum === revenue });
+  }
+  res.json({ success: true, months: months, amoBase: AMO_SUBDOMAIN ? `https://${AMO_SUBDOMAIN}.amocrm.ru` : null });
+});
 // Люди по месяцам для блоков «Проверка отпускных» и «Белые зарплаты» в разделе ФОТ
 // (Андрей 06.10.2026). Январь–август — Google-таблица, с сентября — модуль Кати.
 // Зарплаты по фамилиям — только админ.
