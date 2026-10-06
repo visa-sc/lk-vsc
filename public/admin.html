@@ -4063,12 +4063,39 @@
         const h6 = document.createElement("div"); h6.className = "ref-sec-h"; h6.style.marginTop = "22px"; h6.textContent = "Налоги — по месяцам";
         h6.appendChild(vscInfo("<b>Откуда</b><br>С июля 2026 — «Касса → CRM-факт» Кати на work.voyotravel.ru, ровно её расчёт налогов. Январь–июнь — прежняя таблица «срм-факт»."
           + "<br><br><b>База</b> — бюджеты сделок, оформленных на четыре юрлица (Альта, Комисаренко, Панфилова, Эй Кей). Сделки без договора (наличные без чека, крипто-кошелёк, наличные в валюте) и сборы в базу не входят — поэтому выручка может расти, а налог нет: в сентябре выручка выросла за счёт ВНЖ без договора (2,35 млн против 0,86 млн в августе), а база 9,21 млн против 9,37 млн."
-          + "<br><br><b>Предполагаемый НДС</b> = база × 5 %. <b>Налог 5 %</b> = база × 5 % без НДС в базе (решение Екатерины с сентября; по июль–август налог в таблице считался вместе с НДС, поэтому он там выше НДС). <b>Расхождение</b> = НДС, вынесенный в сделках, минус предполагаемый."));
+          + "<br><br><b>Предполагаемый НДС</b> = база × 5 %. <b>Налог 5 %</b> = база × 5 %: база — наши услуги уже без НДС, но с налогом внутри. С июля пересчитано так по данным Кати (прежняя таблица прибавляла НДС к базе налога и завышала его); январь–июнь — как в прежней таблице. <b>Расхождение</b> = НДС, вынесенный в сделках, минус предполагаемый."));
         vscContent.appendChild(h6);
         vscContent.appendChild(vscBarChart({ key: "nds", label: "Вынесенный НДС (предполагаемый, из выручки)", fmt: "money", good: 0 }, taxSeries));
         vscContent.appendChild(vscBarChart({ key: "tax5", label: "Налог 5%", fmt: "money", good: 0 }, taxSeries));
-        const rasxData = (vscData.months || []).map((mm) => ({ x: short(mm.name), v: mm.taxes ? mm.taxes.rasx : null }));
+        const rasxData = (vscData.months || []).map((mm) => ({ x: short(mm.name), v: mm.taxes && mm.taxes.rasx != null ? Math.round(mm.taxes.rasx) : null }));
         vscContent.appendChild(vscDivergingBars("Расхождение с фактом вынесенного НДС (+ запас / − нехватка)", rasxData, "money"));
+        // Проверка НДС и налога по месяцам с данными Кати (Андрей 06.10.2026): база — наши
+        // услуги без НДС (бюджеты сделок на 4 юрлица, сборы не входят); НДС должен = база × 5 %,
+        // сверяем с вынесенным в сделках, и по каждой сделке — НДС ровно 5 % её бюджета.
+        (function () {
+          const rowsT = (vscData.months || []).filter((mm) => mm.taxes && mm.taxes.src === "work" && mm.taxes.base != null);
+          if (!rowsT.length) return;
+          const m0 = (v) => (v == null ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
+          const sg = (v) => (Math.round(v) > 0 ? "+" : Math.round(v) < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ru-RU") + " ₽";
+          const TH = 'style="padding:7px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;"';
+          const TD = "padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;";
+          const box = document.createElement("div"); box.className = "vsc-chart";
+          let t = '<div class="vsc-chart-h">Проверка НДС и налога — от наших услуг без НДС</div>'
+            + '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;min-width:640px;border-collapse:collapse;font-size:13px;"><tr>'
+            + "<th " + TH.replace("text-align:right", "text-align:left") + ">Месяц</th><th " + TH + ">Услуги без НДС</th><th " + TH + ">НДС должен 5 %</th><th " + TH + ">НДС в сделках</th><th " + TH + ">Расхождение</th><th " + TH + ">Услуги + НДС</th><th " + TH + ">Налог 5 %</th><th " + TH + ">Сделки с НДС ≠ 5 %</th></tr>";
+          rowsT.slice().reverse().forEach((mm) => {
+            const x = mm.taxes, gap = x.vatFact - x.nds;
+            const gc = Math.abs(gap) <= 100 ? "#2c7a43" : (gap < 0 ? "#a12b3c" : "#c99a10");
+            const bad = x.dealsBad || 0;
+            const badTxt = !x.dealsChecked ? "—" : (bad ? '<span style="color:#a12b3c;font-weight:700;cursor:help;" title="' + escapeHtml((x.badList || []).map((b) => b.id + " · " + b.name + ": НДС " + b.nds + " вместо " + b.want).join("\n")) + '">' + bad + " из " + x.dealsChecked + "</span>" : '<span style="color:#2c7a43;">0 из ' + x.dealsChecked + " ✓</span>");
+            t += '<tr><td style="' + TD + 'text-align:left;font-weight:600;">' + escapeHtml(mm.name) + "</td><td style=\"" + TD + "\">" + m0(x.base) + "</td><td style=\"" + TD + "\">" + m0(x.nds)
+              + "</td><td style=\"" + TD + "\">" + m0(x.vatFact) + '</td><td style="' + TD + "font-weight:700;color:" + gc + ';">' + sg(gap) + "</td><td style=\"" + TD + "\">" + m0(x.base + x.vatFact)
+              + "</td><td style=\"" + TD + "\">" + m0(x.tax5) + '</td><td style="' + TD + '">' + badTxt + "</td></tr>";
+          });
+          t += "</table></div><div style=\"font-size:11.5px;color:#9096a3;margin-top:8px;line-height:1.5;\">Источник — «Касса → CRM-факт» Кати, с июля 2026. Клиент платит бюджет сделки + НДС 5 % сверху + сборы, поэтому бюджет — это наши услуги уже без НДС, но с налогом внутри: и НДС, и налог считаются от него. Сделки без договора и сборы в базу не входят.</div>";
+          box.innerHTML = t;
+          vscContent.appendChild(box);
+        })();
         // Оплаты именными сертификатами — сразу после расхождения по НДС (Андрей 06.10.2026), только админ.
         if (currentRole() === "admin") vscContent.appendChild(vscCertsBlock());
         // ── Не-графики — опущены ВНИЗ (по просьбе Андрея): «Реклама Я.Директ vs таблица» и «План ОП — проверка» ──

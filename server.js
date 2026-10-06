@@ -6117,7 +6117,7 @@ function vscExtraLGLoad() { if (_vscExtraLG) return _vscExtraLG; try { _vscExtra
 async function vscFetchExtra() {
   const ret = {}, tax = {};
   katedata.returnMonths().forEach((ym) => { const r = katedata.returnsForDashboard(ym); if (r) ret[katedata.ymName(ym)] = r; });
-  katedata.amoMonths().forEach((ym) => { const t = katedata.taxesMonth(ym); if (t) tax[katedata.ymName(ym)] = { nds: t.nds, rasx: t.rasx, tax5: t.tax5, src: "work" }; });
+  katedata.amoMonths().forEach((ym) => { const t = katedata.taxesMonth(ym); if (t) tax[katedata.ymName(ym)] = Object.assign({ src: "work" }, t); });
   // Слой «последнего удачного»: свежие месяцы → в last-good; не прочитавшиеся → из него.
   const lg = vscExtraLGLoad();
   Object.keys(ret).forEach((k) => { lg.ret[k] = ret[k]; });
@@ -6279,6 +6279,13 @@ async function vscFetchAll() {
   // Заморозка истории: подставляем/фиксируем снимки старых месяцев ДО годового агрегата,
   // чтобы год считался по стабильным значениям и вмороженные месяцы не пропадали.
   vscApplyFreeze(months);
+  // Налоги с июля 2026 — всегда из раздела Кати, в том числе у замороженных месяцев
+  // (Андрей 06.10.2026: НДС и налог — от наших услуг без НДС; прежняя таблица считала
+  // налог вместе с НДС, июль и август были завышены). Снимок не трогаем — подменяем копией.
+  for (let i = 0; i < months.length; i++) {
+    const ym = katedata.nameYm(months[i].name), t = extra.tax && extra.tax[months[i].name];
+    if (ym && ym >= katedata.FROM_YM && t && t.src === "work") months[i] = Object.assign({}, months[i], { taxes: t });
+  }
   // Год: суммируем аддитивные базы из месячных Grand total, ratio — производные/среднее.
   const withTotal = months.filter((m) => m.total);
   const sum = (f) => withTotal.reduce((a, m) => a + (m.total[f] || 0), 0);

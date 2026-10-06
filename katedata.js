@@ -114,7 +114,17 @@ function taxesMonth(ym) {
   let base = 0, vatFact = 0;
   Object.values(days).forEach((d) => { base += (Number(d.alta) || 0) + (Number(d.komis) || 0) + (Number(d.panf) || 0) + (Number(d.akg) || 0); vatFact += Number(d.nds) || 0; });
   const r2 = (v) => Math.round(v * 100) / 100;
-  return { base: r2(base), nds: r2(base * 0.05), vatFact: r2(vatFact), rasx: r2(vatFact - base * 0.05), tax5: r2(base * 0.05) };
+  // Проверка по каждой сделке на юрлица: НДС в сделке должен быть ровно 5 % её бюджета
+  // (клиент платит бюджет + НДС + сборы). Месячный итог может сойтись взаимозачётом —
+  // поэтому считаем и сделки с отклонением больше 2 ₽.
+  const ENT = ["alta", "komis", "panf", "akg"], bad = []; let checked = 0;
+  Object.values(days).forEach((d) => (d.deals || []).forEach((x) => {
+    if (ENT.indexOf(x.ent) < 0) return; checked++;
+    const want = (Number(x.price) || 0) * 0.05, got = Number(x.nds) || 0;
+    if (Math.abs(got - want) > 2) bad.push({ id: x.id, name: String(x.name || "").slice(0, 60), price: x.price, nds: got, want: r2(want) });
+  }));
+  return { base: r2(base), nds: r2(base * 0.05), vatFact: r2(vatFact), rasx: r2(vatFact - base * 0.05), tax5: r2(base * 0.05),
+    dealsChecked: checked, dealsBad: bad.length, badList: bad.slice(0, 30) };
 }
 // Выручки юрлиц за месяц (CRM-факт).
 function entityRevenue(ym) {
