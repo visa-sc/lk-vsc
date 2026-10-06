@@ -318,7 +318,7 @@
     var seif = 0, uslugi = 0, partnerOut = (b6c ? partner / b6c : 0);
     if (cur === "eur") { seif = prihod * eur; uslugi = partner * b7; }
     else if (cur === "rub") { seif = prihod; uslugi = partner * b7; }
-    else { seif = prihod * usd; uslugi = partner * b7; } // долг партнёру в USDT — по курсу для расхода, как в евро и рублях (Андрей 05.10.2026)
+    else { seif = prihod * usd; uslugi = partner * usd; } // режим USDT: и приход, и долг партнёру — по курсу ЦБ (решение Андрея 06.10.2026; 05–06.10 долг считался по курсу для расхода, прошлое не пересчитывается)
     $("oSeif").textContent = ru0(seif) + " ₽";
     $("oUsl").textContent = ru0(uslugi) + " ₽";
     $("oPartner").textContent = ru2(partnerOut);
