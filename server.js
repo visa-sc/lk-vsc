@@ -8642,6 +8642,15 @@ function _xlsxSerialToYm(v) {
   const d = new Date(Math.round((n - 25569) * 86400000));
   return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
 }
+// День «ГГГГ-ММ-ДД» из ячейки таблицы выкупов: «03.09.2026», «3.9.2026» или сериал Excel.
+function _buyDay(v) {
+  const t = String(v || "").trim();
+  const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(t);
+  if (m) return m[3] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[1]).slice(-2);
+  const n = parseFloat(t);
+  if (!isFinite(n) || n < 20000 || n > 60000) return null;
+  return new Date(Math.round((n - 25569) * 86400000)).toISOString().slice(0, 10);
+}
 async function buyoutsSheetMonths() {
   // Вкладки «Авиа»/«Отель» тянем CSV (НЕ xlsx!): в xlsx-экспорте у части ячеек-формул
   // («сумма снятия» в Отеле) НЕТ кэшированного значения → суммы занижались; CSV всегда
@@ -8668,7 +8677,9 @@ async function buyoutsSheetMonths() {
       buySum: findCol((s) => s.indexOf("сумма снятия") >= 0),
       retDate: findCol((s) => s.indexOf("дата поступления возврата") >= 0),
       retSum: findCol((s) => s.indexOf("сумма возврата") === 0),
-      authDate: findCol((s) => s.indexOf("дата авторизации") >= 0)
+      authDate: findCol((s) => s.indexOf("дата авторизации") >= 0),
+      factRet: findCol((s) => s.indexOf("фактическая дата проведения возврата") >= 0),
+      who: findCol((s) => s === "фио" || s === "клиент")
     };
     if (C.rs < 0 || C.buyDate < 0 || C.buySum < 0) { console.error("BUYOUTS sheet «" + key + "»: не найдены колонки"); continue; }
     for (let i = hdr + 1; i < rows.length; i++) {
@@ -8679,7 +8690,17 @@ async function buyoutsSheetMonths() {
       if (C.authDate >= 0 && String(rr[C.authDate] || "").toLowerCase().indexOf("не авторизован") >= 0) continue;
       const buyYm = _xlsxSerialToYm(rr[C.buyDate]);
       const buySum = vscNum(rr[C.buySum]);
-      if (buyYm && buySum != null && buySum > 0) { const m = months[buyYm] || (months[buyYm] = { deb: 0, cre: 0 }); m.deb += buySum; }
+      if (buyYm && buySum != null && buySum > 0) {
+        const m = months[buyYm] || (months[buyYm] = { deb: 0, cre: 0 }); m.deb += buySum;
+        // Отмена день в день (Андрей 06.10.2026): дата покупки = фактическая дата проведения
+        // возврата — банк такую покупку обычно не проводит, в выписке её нет. Сумму копим
+        // отдельно: в сверке она объясняет превышение таблицы над банком.
+        const bd = _buyDay(rr[C.buyDate]), fd = C.factRet >= 0 ? _buyDay(rr[C.factRet]) : null;
+        if (bd && fd && bd === fd) {
+          m.sameDay = (m.sameDay || 0) + buySum;
+          (m.sameDayList = m.sameDayList || []).push({ tab: key, who: C.who >= 0 ? String(rr[C.who] || "").trim().slice(0, 60) : "", date: bd, sum: buySum });
+        }
+      }
       const retYm = C.retDate >= 0 ? _xlsxSerialToYm(rr[C.retDate]) : null;
       const retSum = C.retSum >= 0 ? vscNum(rr[C.retSum]) : null;
       if (retYm && retSum != null && retSum > 0) { const m = months[retYm] || (months[retYm] = { deb: 0, cre: 0 }); m.cre += retSum; }

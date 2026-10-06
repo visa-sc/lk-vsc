@@ -6820,7 +6820,10 @@
             if ((j.manualOk || []).indexOf(prevYm) >= 0) return true; // сверено руками — уезжает в историю
             const b = (d.bank || {})[prevYm], s = (d.sheet || {})[prevYm];
             if (!b && !s) return false;
-            return Math.abs(((b || {}).deb || 0) - (((s || {}).deb) || 0)) <= 2000;
+            const dl = ((b || {}).deb || 0) - (((s || {}).deb) || 0);
+            if (Math.abs(dl) <= 2000) return true;
+            // Таблица больше банка, и разница объяснена холдами и отменами день в день — месяц сошёлся.
+            return dl < 0 && Math.abs(-dl - ((b || {}).holdDeb || 0) - ((s || {}).sameDay || 0)) <= 2000;
           })();
           const isRecent = (ym) => ym >= curYm || (ym === prevYm && !prevOk);
           // ── Секция 1: движение денег (сид + банк) ──
@@ -6868,8 +6871,15 @@
               grid += gL('Δ') + gV((delta > 0 ? "+" : "−") + Math.abs(Math.round(delta)).toLocaleString("ru-RU") + ' ₽', '#b8602a');
               if (sheetOver > 0) {
                 // не покрыто холдами (остаток расхождения); красным если критично (> 2000 ₽)
-                const uncovered = sheetOver - hold, crit = Math.abs(uncovered) > 2000;
+                // Отмены день в день (покупка и возврат одной датой) — в банке их нет, это не расхождение.
+                const sd = s.sameDay || 0;
+                const uncovered = sheetOver - hold - sd, crit = Math.abs(uncovered) > 2000;
                 grid += gL('На холде') + gV(money2(hold), '#6b7280');
+                if (sd > 0) {
+                  const sdTitle = (s.sameDayList || []).map((x) => x.date.split("-").reverse().join(".") + " · " + x.tab + " · " + (x.who || "—") + " · " + money2(x.sum)).join("\n");
+                  grid += gL('Отмена день в день') + '<span title="' + escapeHtml(sdTitle) + '" style="font-weight:700;color:#6b7280;white-space:nowrap;cursor:help;">' + money2(sd)
+                    + ' <span style="font-weight:400;">· ' + (s.sameDayList || []).length + ' шт.</span></span>';
+                }
                 grid += gL('Остаётся') + gV(money2(uncovered) + ' ' + (crit ? '❗' : '✓'), crit ? '#b0263a' : '#2c7a43');
               }
             }
@@ -6897,7 +6907,7 @@
             + '<tbody>' + cmpHtml + '</tbody></table></div>'
             + histBtn("buyoutsHistBtn2", cmpYms.filter((ym) => !isRecent(ym)).length)
             + '<div style="font-size:11.5px;color:#8a90a0;margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">обновлено: ' + escapeHtml(upd) + ' МСК <button type="button" id="buyoutsRun" class="vsc-dayrev-refresh" style="margin-top:0;">↻ Обновить</button></div>';
-          const cmpH = box.querySelector("#buyoutsCmpH"); if (cmpH) cmpH.appendChild(vscInfo("<b>Как считается</b><br>Банк: только проведённые операции (без холдов), месяц — по дате авторизации. Таблица: вкладки «Авиа»+«Отель», только «Расчетный счет», по сумме снятия. Сходится, если Δ ≤ 2000 ₽ (зелёным); выше — красным. Обновляется ежедневно в 00:10 МСК. Старые месяцы зафиксированы снимком (🔒)."));
+          const cmpH = box.querySelector("#buyoutsCmpH"); if (cmpH) cmpH.appendChild(vscInfo("<b>Как считается</b><br>Банк: только проведённые операции (без холдов), месяц — по дате авторизации. Таблица: вкладки «Авиа»+«Отель», только «Расчетный счет», по сумме снятия. Сходится, если Δ ≤ 2000 ₽ (зелёным); выше — красным, копейки не в счёт.<br><br><b>Когда таблица больше банка</b> — разницу объясняют: операции на холде (банк ещё не провёл) и <b>отмены день в день</b> — строки, где дата покупки совпадает с фактической датой проведения возврата: банк такую покупку не проводит, в выписке её нет. Если после этого остаётся не больше 2000 ₽ — месяц сошёлся и уходит в историю. Если банк списал БОЛЬШЕ, чем внесено в таблицу, — это всегда сигнал: что-то не внесли.<br><br>Обновляется ежедневно в 00:10 МСК. Старые месяцы зафиксированы снимком (🔒)."));
           const frozenL = box.querySelector("#frozenL"); if (frozenL) frozenL.appendChild(vscInfo("<b>Заморожено в выкупах</b><br>Расход " + money(d.frozenDeb) + " − приход " + money(d.frozenCre) + ". По май 2026 — сверено вручную, с июня — по банку. Счёт " + escapeHtml(d.account || "") + "."));
           const b = box.querySelector("#buyoutsRun"); if (b) b.addEventListener("click", runNow);
           [["buyoutsHistBtn1", "buyoutsHist1"], ["buyoutsHistBtn2", "buyoutsHist2"]].forEach(([btnId, cls]) => {
