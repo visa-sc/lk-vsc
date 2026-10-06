@@ -825,6 +825,9 @@
       padding: 10px 6px 9px; box-sizing: border-box; margin-right: 14px; margin-top: -11px;
       align-self: flex-start; }
     .rev-col-year .rev-axis { background: #c9dcee; }
+    /* Свёрнутый прошлый год (с 2027): карточка-кнопка, разворачивает год по месяцам. */
+    .vsc-yearfold { background: #eef5fb; border: 1px solid #d3e3f2; border-radius: 12px; cursor: pointer; box-sizing: border-box; padding-top: 4px; }
+    .vsc-yearfold .vsc-bar-x, .vsc-yearfold .rev-x { color: #2c5a86; font-weight: 700; }
     /* Годовая карточка закреплена слева: на узком экране месяцы листаются под ней,
        а график открывается сразу на последних месяцах (Андрей 06.10.2026). Белая
        полоса справа (тень) прячет столбики, проезжающие в зазоре. */
@@ -2293,7 +2296,63 @@
         });
         return den ? num / den : null;
       }
-      const vscShortMonth = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
+      const vscShortMonth = (n) => /^\d{4} год$/.test(String(n || "")) ? String(n) : String(n || "").replace(/\s*20\d\d/, "").trim();
+      // ═══ Смена года (подготовка к 2027; Андрей 06.10.2026) ═══════════════════════
+      // Когда в данных появляются месяцы нового года, месяцы прошлых лет в графиках
+      // сворачиваются в одну карточку «ГГГГ год» со СРЕДНИМИ значениями месяца; клик по
+      // карточке разворачивает год помесячно (подписи вида «Январь ’26»), повторный —
+      // сворачивает. Пока в данных один год — функции возвращают данные КАК ЕСТЬ.
+      const vscYearOpen = {};
+      const VSC_YEAR_RE = /^(\d{4}) год/;
+      function vscYearOfName(n) { const m = /(20\d\d)/.exec(String(n || "")); return m ? +m[1] : null; }
+      function vscAvgObj(list) {
+        const acc = {};
+        list.forEach((o) => { if (o) Object.keys(o).forEach((k) => { if (typeof o[k] === "number" && isFinite(o[k])) (acc[k] = acc[k] || []).push(o[k]); }); });
+        const out = {}; Object.keys(acc).forEach((k) => { out[k] = acc[k].reduce((a, b) => a + b, 0) / acc[k].length; });
+        return out;
+      }
+      function vscFoldMonths(months, fields) {
+        const ys = [];
+        (months || []).forEach((m) => { const y = vscYearOfName(m && m.name); if (y != null && ys.indexOf(y) < 0) ys.push(y); });
+        if (ys.length <= 1) return months || [];
+        const cur = Math.max.apply(null, ys), out = [];
+        ys.filter((y) => y < cur).sort().forEach((y) => {
+          const ms = months.filter((m) => vscYearOfName(m.name) === y);
+          const card = { name: y + " год", isYear: true, y: y };
+          (fields || ["total", "ctrl", "taxes"]).forEach((f) => { const objs = ms.map((m) => m[f]).filter(Boolean); if (objs.length) card[f] = vscAvgObj(objs); });
+          out.push(card);
+          if (vscYearOpen[y]) ms.forEach((m) => out.push(Object.assign({}, m, { name: String(m.name).replace(/\s*20(\d\d)/, " ’$1") })));
+        });
+        months.forEach((m) => { if (vscYearOfName(m.name) === cur) out.push(m); });
+        return out;
+      }
+      function vscChartMonths() { return vscFoldMonths((vscData && vscData.months) || []); }
+      // Годы, которые сейчас в данных (для подписей «(2026)» в заголовках).
+      function vscYearsLabel(months) {
+        const ys = []; (months || []).forEach((m) => { const y = vscYearOfName(m && m.name); if (y != null && ys.indexOf(y) < 0) ys.push(y); });
+        return ys.length === 1 ? " (" + ys[0] + ")" : "";
+      }
+      // Карточки «ГГГГ год» ПРОШЛЫХ лет в любом графике: подложка и клик «развернуть/свернуть».
+      // Карточки текущего года (итоги «2026 год» в Отзывах, Цикле сделки и пр.) не трогаем,
+      // поэтому сейчас, в 2026, ничего не меняется.
+      (function vscYearCardsWatch() {
+        const nowY = new Date(Date.now() + 3 * 3600 * 1000).getUTCFullYear();
+        let queued = false;
+        const run = function () {
+          queued = false;
+          document.querySelectorAll(".vsc-bar-x:not([data-ychk]), .rev-x:not([data-ychk])").forEach(function (xl) {
+            xl.setAttribute("data-ychk", "1");
+            const m = VSC_YEAR_RE.exec((xl.textContent || "").trim());
+            if (!m || +m[1] >= nowY) return;
+            const y = +m[1], col = xl.closest(".vsc-bar-col, .rev-col"); if (!col) return;
+            col.classList.add("vsc-yearfold");
+            xl.textContent = y + " год " + (vscYearOpen[y] ? "▾" : "▸");
+            col.title = vscYearOpen[y] ? "Свернуть " + y + " год" : "В среднем за месяц " + y + " года · нажмите, чтобы развернуть по месяцам";
+            col.addEventListener("click", function () { vscYearOpen[y] = !vscYearOpen[y]; try { renderVsc(); } catch (_) {} });
+          });
+        };
+        try { new MutationObserver(function () { if (!queued) { queued = true; requestAnimationFrame(run); } }).observe(document.body, { childList: true, subtree: true }); } catch (_) {}
+      })();
       const vscProfitOf = (m) => (m && vscData && vscData.profit) ? vscData.profit[m.name] : null;
       const vscRentPct = (m) => { const p = vscProfitOf(m); const b = m && m.total ? m.total.budget : null; return (p != null && b) ? p / b * 100 : null; };
       const vscLastProfitIdx = (uptoIdx) => { const ms = (vscData && vscData.months) || []; for (let i = Math.min(uptoIdx, ms.length - 1); i >= 0; i--) { if (vscProfitOf(ms[i]) != null) return i; } return -1; };
@@ -2725,7 +2784,7 @@
       function vscBuildSeries() {
         const ms = vscData.months || [];
         if (vscGran === "year" || vscGran === "month") {
-          return ms.map((m) => ({ x: m.name.replace(" 2026", "").trim(), k: m.total || {} }));
+          return vscChartMonths().map((m) => ({ x: vscShortMonth(m.name), k: m.total || {} }));
         }
         const m = ms[vscMonthIdx]; if (!m) return [];
         // «Заполненный» период — есть реальная активность (обработанные контакты
@@ -4011,7 +4070,7 @@
         // Прибыль и рентабельность по месяцам — графики в «Год» и «Месяц».
         // Скрываем для руководителя с ограничением hideProfit (напр. Андрей Петров).
         if ((vscGran === "month" || vscGran === "year") && !vscHideProfit()) {
-          const profSeries = (vscData.months || []).map((mm) => ({ x: vscShortMonth(mm.name), k: { profit: vscProfitOf(mm), rent: vscRentPct(mm) } }));
+          const profSeries = vscChartMonths().map((mm) => ({ x: vscShortMonth(mm.name), k: { profit: vscProfitOf(mm), rent: vscRentPct(mm) } }));
           vscContent.appendChild(vscSignedBarChart({ key: "profit", label: "Прибыль по месяцам, ₽", fmt: "money", good: 1 }, profSeries));
           vscContent.appendChild(vscSignedBarChart({ key: "rent", label: "Рентабельность (прибыль / выручка), %", fmt: "pct", good: 1 }, profSeries));
         }
@@ -4019,10 +4078,10 @@
       // Вкладка «Ежемесячный контроль»: качество звонков/контактов + отзывы — всё по
       // месяцам, без плиток-цифр. Не зависит от переключателя гранулярности дашборда.
       function renderVscMonthly() {
-        const monthSeries = (vscData.months || []).map((mm) => ({ x: (mm.name || "").replace(" 2026", "").trim(), k: mm.total || {} }));
-        const short = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
+        const monthSeries = vscChartMonths().map((mm) => ({ x: vscShortMonth(mm.name), k: mm.total || {} }));
+        const short = (n) => /^\d{4} год$/.test(String(n || "")) ? String(n) : String(n || "").replace(/\s*20\d\d/, "").trim();
         // ── Возвраты — по месяцам (по просьбе Андрея: САМЫЙ ВЕРХ раздела) ──
-        const retSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: mm.total ? { returnsPct: mm.total.returnsPct, retUslugi: mm.total.retUslugi, ourPct: mm.total.returnsOurPct, notOurPct: mm.total.returnsNotOurPct, unknownPct: mm.total.returnsUnknownPct } : {} }));
+        const retSeries = vscChartMonths().map((mm) => ({ x: short(mm.name), k: mm.total ? { returnsPct: mm.total.returnsPct, retUslugi: mm.total.retUslugi, ourPct: mm.total.returnsOurPct, notOurPct: mm.total.returnsNotOurPct, unknownPct: mm.total.returnsUnknownPct } : {} }));
         const h5 = document.createElement("div"); h5.className = "ref-sec-h"; h5.textContent = "Возвраты — по месяцам";
         vscContent.appendChild(h5);
         vscContent.appendChild(vscReturnsStackedChart(retSeries));
@@ -4037,12 +4096,19 @@
         // ── Скорость первого касания лида (был 3-м, теперь 5-й) ──
         vscContent.appendChild(vscFirstTouchBlock());
         // ── Выручка по городам (СПб/МСК) — по месяцам, из amoCRM (ночной расчёт 05:00) ──
-        const hCity = document.createElement("div"); hCity.className = "ref-sec-h"; hCity.textContent = "Выручка по городам — по месяцам (2026)";
+        const hCity = document.createElement("div"); hCity.className = "ref-sec-h"; hCity.textContent = "Выручка по городам — по месяцам" + vscYearsLabel(vscData.months);
         vscContent.appendChild(hCity);
         const cr = vscData.cityRevenue;
         if (cr && cr.months && Object.keys(cr.months).length) {
           const MONTHS_RU = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
-          const crSeries = Object.keys(cr.months).map(Number).sort((a, b) => a - b).map((m) => ({ x: MONTHS_RU[m], k: cr.months[String(m)] }));
+          let crSeries = Object.keys(cr.months).map(Number).sort((a, b) => a - b).map((m) => ({ x: MONTHS_RU[m], k: cr.months[String(m)] }));
+          // С 2027: сервер отдаёт cr.years { "2026": {months}, "2027": {...} } — прошлые годы сворачиваем.
+          if (cr.years && Object.keys(cr.years).length > 1) {
+            const MF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+            const flat = [];
+            Object.keys(cr.years).sort().forEach((y) => { const mm = (cr.years[y] || {}).months || {}; Object.keys(mm).map(Number).sort((a, b) => a - b).forEach((mi) => flat.push({ name: MF[mi] + " " + y, total: mm[String(mi)] })); });
+            crSeries = vscFoldMonths(flat, ["total"]).map((m) => ({ x: m.isYear ? m.name : (/’/.test(m.name) ? m.name : MONTHS_RU[MF.indexOf(vscShortMonth(m.name))]), k: m.total || {} }));
+          }
           vscContent.appendChild(vscBarChart({ key: "spb", label: "Выручка СПб", fmt: "money", good: 1 }, crSeries));
           vscContent.appendChild(vscBarChart({ key: "msk", label: "Выручка МСК", fmt: "money", good: 1 }, crSeries));
           // Прибыль Санкт-Петербурга — оценка (просьба Андрея 11.09.2026).
@@ -4057,7 +4123,7 @@
         const h1 = document.createElement("div"); h1.className = "ref-sec-h"; h1.style.marginTop = "22px"; h1.textContent = "Качество звонков и контактов — по месяцам";
         vscContent.appendChild(h1);
         VSC_EXTRA_MONTHLY.forEach((kpi) => vscContent.appendChild(vscBarChart(kpi, monthSeries)));
-        const h2 = document.createElement("div"); h2.className = "ref-sec-h"; h2.style.marginTop = "22px"; h2.textContent = "Отзывы клиентов — по месяцам (2026)";
+        const h2 = document.createElement("div"); h2.className = "ref-sec-h"; h2.style.marginTop = "22px"; h2.textContent = "Отзывы клиентов — по месяцам" + vscYearsLabel(vscData.months);
         vscContent.appendChild(h2);
         const rev = vscData.reviews || [];
         const msk = rev.map((r) => ({ x: short(r.name), pos: r.mskPos, neg: r.mskNeg }));
@@ -4067,9 +4133,9 @@
         vscContent.appendChild(vscReviewsChart("Отзывы — Санкт-Петербург", spb, revYear));
 
         // ── Сделки и реклама по месяцам (из нижнего сводного блока листа) ──
-        const ctrlSeries = (vscData.months || []).filter((mm) => mm.ctrl).map((mm) => ({ x: short(mm.name), k: mm.ctrl }));
+        const ctrlSeries = vscChartMonths().filter((mm) => mm.ctrl).map((mm) => ({ x: short(mm.name), k: mm.ctrl }));
         // Item 10 — % повторных сделок.
-        const h3 = document.createElement("div"); h3.className = "ref-sec-h"; h3.style.marginTop = "22px"; h3.textContent = "Сделки — по месяцам (2026)";
+        const h3 = document.createElement("div"); h3.className = "ref-sec-h"; h3.style.marginTop = "22px"; h3.textContent = "Сделки — по месяцам" + vscYearsLabel(vscData.months);
         vscContent.appendChild(h3);
         // «% повторных сделок» — считается напрямую из amoCRM (решение Андрея 06.09:
         // версия из таблицы KPI сильно занижала, старый блок vscBarChart(repeatPct) убран).
@@ -4082,7 +4148,7 @@
         vscContent.appendChild(vscBarChart({ key: "cplExtra", label: "CPL с учётом доп. расходов", fmt: "money", good: -1 }, ctrlSeries));
         vscContent.appendChild(vscBarChart({ key: "drrExtra", label: "ДРР с учётом доп. расходов", fmt: "pct", good: -1 }, ctrlSeries));
         // Item 13 — налоги (вынесенный НДС, налог 5%, расхождение с фактом НДС).
-        const taxSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: mm.taxes || {} }));
+        const taxSeries = vscChartMonths().map((mm) => ({ x: short(mm.name), k: mm.taxes || {} }));
         const h6 = document.createElement("div"); h6.className = "ref-sec-h"; h6.style.marginTop = "22px"; h6.textContent = "Налоги — по месяцам";
         h6.appendChild(vscInfo("<b>Откуда</b><br>С июля 2026 — «Касса → CRM-факт» Кати на work.voyotravel.ru, ровно её расчёт налогов. Январь–июнь — прежняя таблица «срм-факт»."
           + "<br><br><b>База</b> — бюджеты сделок, оформленных на четыре юрлица (Альта, Комисаренко, Панфилова, Эй Кей). Сделки без договора (наличные без чека, крипто-кошелёк, наличные в валюте) и сборы в базу не входят — поэтому выручка может расти, а налог нет: в сентябре выручка выросла за счёт ВНЖ без договора (2,35 млн против 0,86 млн в августе), а база 9,21 млн против 9,37 млн."
@@ -4090,7 +4156,7 @@
         vscContent.appendChild(h6);
         vscContent.appendChild(vscBarChart({ key: "nds", label: "Вынесенный НДС (предполагаемый, из выручки)", fmt: "money", good: 0 }, taxSeries));
         vscContent.appendChild(vscBarChart({ key: "tax5", label: "Налог 5%", fmt: "money", good: 0 }, taxSeries));
-        const rasxData = (vscData.months || []).map((mm) => ({ x: short(mm.name), v: mm.taxes && mm.taxes.rasx != null ? Math.round(mm.taxes.rasx) : null }));
+        const rasxData = vscChartMonths().map((mm) => ({ x: short(mm.name), v: mm.taxes && mm.taxes.rasx != null ? Math.round(mm.taxes.rasx) : null }));
         vscContent.appendChild(vscDivergingBars("Расхождение с фактом вынесенного НДС (+ запас / − нехватка)", rasxData, "money"));
         // Проверка НДС и налога по месяцам с данными Кати (Андрей 06.10.2026): база — наши
         // услуги без НДС (бюджеты сделок на 4 юрлица, сборы не входят); НДС должен = база × 5 %,
@@ -4961,9 +5027,11 @@
         // Состав первой линии берём из группы «Первая Линия» в самой АТС: люди
         // приходят и уходят, список в коде устарел бы на первой же замене.
         const PL_EXT = (pbxData && pbxData.plExt && pbxData.plExt.length) ? pbxData.plExt : ["502", "503", "505", "506", "508"];
-        const plFromPbx = (mi) => {
-          if (!pbxData || !pbxData.months || !pbxData.months[String(mi)]) return null;
-          const be = pbxData.months[String(mi)].byExt || {};
+        const plFromPbx = (mi, year) => {
+          const src = (pbxData && year && pbxData.years && pbxData.years[year]) ? pbxData.years[year]
+            : (pbxData && (!year || !pbxData.year || pbxData.year === year) ? pbxData : null);
+          if (!src || !src.months || !src.months[String(mi)]) return null;
+          const be = src.months[String(mi)].byExt || {};
           let a2 = 0, t2 = 0;
           PL_EXT.forEach((e) => { const x = be[e]; if (x) { a2 += x.answered || 0; t2 += x.talkSec || 0; } });
           return a2 ? { calls: a2, talkSec: t2 } : null;
@@ -4973,6 +5041,11 @@
         const list = Object.keys(months).map((k) => months[k]).filter((m) => m.fotTotal != null || m.deptAvgSeed)
           .sort((a, b) => (a.year * 12 + a.mi) - (b.year * 12 + b.mi));
         if (!list.length) { box.innerHTML = '<div class="vsc-empty">В зарплатной таблице пока нет закрытых месяцев (итог «ИТОГО ФОТ» не посчитан).</div>'; return; }
+        // Смена года (с 2027): средние «В среднем за» — по текущему году, прошлые годы —
+        // свёрнутой строкой «ГГГГ год» (в среднем), клик разворачивает их месяцы.
+        const curY = list[list.length - 1].year;
+        const listCur = list.filter((m) => m.year === curY);
+        const pastYs = list.map((m) => m.year).filter((y, i, a) => y < curY && a.indexOf(y) === i).sort();
         const money = (v) => (v == null ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽");
         const money2 = (v) => (v == null ? "—" : v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽");
         const pct = (v) => (v == null ? "—" : (Math.round(v * 100) / 100).toLocaleString("ru-RU") + "%");
@@ -4981,7 +5054,7 @@
         // Выручка месяца — та же «сумма в бюджете», по которой на дашборде считается
         // рентабельность (прибыль ÷ выручка), чтобы проценты были сопоставимы.
         const revenueOf = (name) => { const vm = (vscData.months || []).find((x) => x.name === name); return (vm && vm.total && vm.total.budget) ? vm.total.budget : null; };
-        const short = (n) => String(n || "").replace(/\s*20\d\d/, "").trim();
+        const short = (n) => /^\d{4} год$/.test(String(n || "")) ? String(n) : String(n || "").replace(/\s*20\d\d/, "").trim();
         const TD = 'style="padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;"';
         const TH = 'style="padding:7px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;"';
         const L = 'style="padding:7px 8px;border-bottom:1px solid #eef0f4;text-align:left;white-space:nowrap;font-weight:600;"';
@@ -4992,6 +5065,18 @@
           const o = opts || {};
           const minW = o.minWidth || 720;
           const id = "zh" + (++_histSeq);
+          // Прошлые годы: o.rowYears — год каждой строки (кроме последней «В среднем»),
+          // o.pastAvg[y] — строка «ГГГГ год» со средними. Их месяцы видны, только если год развёрнут.
+          let pastHtml = "";
+          if (o.rowYears && o.pastAvg && Object.keys(o.pastAvg).length) {
+            const keepRows = [], pastBy = {};
+            rows.forEach((r, i) => { const y = i < o.rowYears.length ? o.rowYears[i] : null; if (y != null && o.pastAvg[y]) (pastBy[y] = pastBy[y] || []).push(r); else keepRows.push(r); });
+            Object.keys(o.pastAvg).sort().forEach((y) => {
+              pastHtml += o.pastAvg[y].replace("<tr>", '<tr data-yfold="' + y + '" style="cursor:pointer;" title="' + (vscYearOpen[y] ? "Свернуть " : "Развернуть ") + y + ' год">')
+                + (vscYearOpen[y] ? (pastBy[y] || []).join("") : "");
+            });
+            rows = keepRows;
+          }
           let body = rows.join("");
           // keep — сколько рядов с конца остаётся видимыми: последний месяц и
           // строка «В среднем за год». Всё, что выше, прячется под «Историю».
@@ -5004,6 +5089,7 @@
             body = hist + rows.slice(n, rows.length - 1).join("") + btn + rows[rows.length - 1];
           }
           const sq = (h) => o.compact ? h.replace(/padding:\d+px \d+px/g, "padding:6px 5px") : h;
+          body = pastHtml + body;
           return '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;min-width:' + minW + 'px;border-collapse:collapse;font-size:' + (o.compact ? "12.5px" : "13px") + ';">'
             + sq('<tr><th ' + TH.replace("text-align:right", "text-align:left") + '>' + head[0] + '</th>' + head.slice(1).map((x) => '<th ' + (o.compact ? TH.replace("white-space:nowrap", "white-space:normal;vertical-align:bottom;line-height:1.25") : TH) + '>' + x + '</th>').join("") + '</tr>'
             + body) + '</table></div>';
@@ -5040,33 +5126,39 @@
         });
         // Итог года: по каждому столбцу среднее за месяцы с данными. Прибыль показываем
         // средней за месяц — так она сопоставима с «ЗП управляющей» в той же строке.
-        const avgOf = (fn) => { const v = list.map(fn).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+        const avgOf = (fn, sub) => { const v = (sub || listCur).map(fn).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+        const yLbl = (y) => y + " год " + (vscYearOpen[y] ? "▾" : "▸") + '<span style="font-weight:400;color:#9096a3;"> · в среднем</span>';
         const TDY = 'style="padding:9px 8px;border-top:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;background:#fafbfd;"';
-        const avgP = avgOf((m) => profitOf(m.month));
-        const avgMp = avgOf((m) => mgrPay[m.month]);
-        const yearRow = '<tr><td ' + TDY.replace("text-align:right", "text-align:left") + '>В среднем за ' + (list[0] ? list[0].year : "") + '</td>'
-          + '<td ' + TDY + '>' + num1(avgOf((m) => m.staff)) + '</td>'
-          + '<td ' + TDY + '>' + rub(avgOf((m) => m.fotTotal)) + '</td>'
-          + '<td ' + TDY + '>' + rub(avgOf((m) => m.avgSalary)) + '</td>'
-          + '<td ' + TDY + '>' + rub(avgOf((m) => m.fotProject)) + '</td>'
-          + '<td ' + TDY + '>' + rub(avgOf((m) => m.contrib)) + '</td>'
-          + '<td ' + TDY + '>' + pct(avgOf((m) => m.contribPct)) + '</td>'
+        const payAvgRow = (sub, label) => {
+          const avgP = avgOf((m) => profitOf(m.month), sub);
+          const avgMp = avgOf((m) => mgrPay[m.month], sub);
+          return '<tr><td ' + TDY.replace("text-align:right", "text-align:left") + '>' + label + '</td>'
+          + '<td ' + TDY + '>' + num1(avgOf((m) => m.staff, sub)) + '</td>'
+          + '<td ' + TDY + '>' + rub(avgOf((m) => m.fotTotal, sub)) + '</td>'
+          + '<td ' + TDY + '>' + rub(avgOf((m) => m.avgSalary, sub)) + '</td>'
+          + '<td ' + TDY + '>' + rub(avgOf((m) => m.fotProject, sub)) + '</td>'
+          + '<td ' + TDY + '>' + rub(avgOf((m) => m.contrib, sub)) + '</td>'
+          + '<td ' + TDY + '>' + pct(avgOf((m) => m.contribPct, sub)) + '</td>'
           + '<td ' + TDY + '>' + rub(avgP) + '</td>'
-          + '<td ' + TDY + '>' + rub(avgOf((m) => { const p = profitOf(m.month); return (p != null && m.staff) ? p / m.staff : null; })) + '</td>'
-          + '<td ' + TDY + '>' + pct(avgOf((m) => { const rv = revenueOf(m.month); return (rv && m.fotTotal != null) ? m.fotTotal / rv * 100 : null; })) + '</td>'
+          + '<td ' + TDY + '>' + rub(avgOf((m) => { const p = profitOf(m.month); return (p != null && m.staff) ? p / m.staff : null; }, sub)) + '</td>'
+          + '<td ' + TDY + '>' + pct(avgOf((m) => { const rv = revenueOf(m.month); return (rv && m.fotTotal != null) ? m.fotTotal / rv * 100 : null; }, sub)) + '</td>'
           + '<td ' + TDY + '>' + rub(avgMp) + '</td>'
           + '<td ' + TDY + '>' + pct(avgP ? avgMp / avgP * 100 : null) + '</td></tr>';
+        };
+        const yearRow = payAvgRow(listCur, "В среднем за " + curY);
+        const payPast = {}; pastYs.forEach((y) => { payPast[y] = payAvgRow(list.filter((m) => m.year === y), yLbl(y)); });
         const htmlPay = secH("Зарплаты, штат и взносы — по месяцам",
             "ФОТ общий — собственный итог зарплатного листа: начислено плюс взносы. Штат — строки сотрудников месяца минус Зайцева Екатерина, Комисаренко и Панфилова Галина. Средняя ЗП = ФОТ ÷ штат."
             + " ФОТ через зарплатный проект — колонки «выплачено через зп проект» плюс НДФЛ, взносы начисляются на грязную базу. Январь и февраль по ФОТ и взносам взяты из таблицы Андрея: на листе января итог не посчитан, февральский правился после снятия его таблицы."
             + " Прибыль и ЗП управляющей вносятся руками. «% УПР от прибыли» — зарплата управляющей к прибыли месяца.", "0 0 8px")
-          + tbl(["Месяц", "Штат", "ФОТ общий, ₽", "Средняя ЗП, ₽", "Через зп-проект, ₽", "Взносы, ₽", "% взносов", "Прибыль, ₽", "Прибыль на чел., ₽", "ФОТ / выручка", "ЗП управл., ₽", "УПР / прибыль"], r1.concat(yearRow), { collapse: true, compact: true, minWidth: 860 });
+          + tbl(["Месяц", "Штат", "ФОТ общий, ₽", "Средняя ЗП, ₽", "Через зп-проект, ₽", "Взносы, ₽", "% взносов", "Прибыль, ₽", "Прибыль на чел., ₽", "ФОТ / выручка", "ЗП управл., ₽", "УПР / прибыль"], r1.concat(yearRow), { collapse: true, compact: true, minWidth: 860, rowYears: list.map((m) => m.year), pastAvg: payPast });
 
         // ── 2. Средняя зарплата по отделам ──
         const DK = ["pl", "op", "orkMsk", "orkSpb", "oo", "none"];
         const DT = { pl: "Первая линия", op: "Отдел продаж", orkMsk: "ОРК МСК", orkSpb: "ОРК СПБ", oo: "Отдел оформления", none: "Вне отделов" };
         const withDepts = list.filter((m) => (m.hasDepts && m.depts && Object.keys(m.depts).length) || m.deptAvgSeed);
-        const TDYD = TDY, avgOfD = (fn) => { const v = withDepts.map(fn).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+        const withDeptsCur = withDepts.filter((m) => m.year === curY);
+        const TDYD = TDY, avgOfD = (fn, sub) => { const v = (sub || withDeptsCur).map(fn).filter((x) => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
         let htmlDept = "";
         if (withDepts.length) {
           const r2 = withDepts.map(function (m) {
@@ -5078,18 +5170,20 @@
                 return '<td ' + TD + '>' + (d ? money(d.avg) + '<span style="color:#9096a3;font-weight:400;"> · ' + d.staff + ' чел.</span>' : "—") + '</td>';
               }).join("") + '</tr>';
           });
-          const r2y = '<tr><td ' + TDYD.replace("text-align:right", "text-align:left") + '>В среднем за ' + (withDepts[0] ? withDepts[0].year : "") + '</td>'
+          const deptAvgRow = (sub, label) => '<tr><td ' + TDYD.replace("text-align:right", "text-align:left") + '>' + label + '</td>'
             + DK.map(function (k) {
               const v = avgOfD(function (m) {
                 if (!m.hasDepts && m.deptAvgSeed) return m.deptAvgSeed[k];
                 const d = m.depts ? m.depts[k] : null; return d ? d.avg : null;
-              });
+              }, sub);
               return '<td ' + TDYD + '>' + money(v) + '</td>';
             }).join("") + '</tr>';
+          const r2y = deptAvgRow(withDeptsCur, "В среднем за " + curY);
+          var deptPast = {}; pastYs.forEach((y) => { deptPast[y] = deptAvgRow(withDepts.filter((m) => m.year === y), yLbl(y)); });
           htmlDept = secH("Средняя начисленная зарплата по отделам",
               "Это средняя НАЧИСЛЕННАЯ зарплата, без взносов, поэтому она ниже общей средней, где ФОТ взят вместе с взносами. Руководители считаются в своём отделе, Кудрина Яна отнесена к оформлению, Трембачева и Пятилова вне отделов."
               + " Месяцы со звёздочкой перенесены из таблицы Андрея: на тех листах ещё нет колонки «Группа должности», разложить сотрудников по отделам нечем.", "0 0 8px")
-            + tbl(["Месяц"].concat(DK.map((k) => DT[k])), r2.concat(r2y), { collapse: true, minWidth: 640 });
+            + tbl(["Месяц"].concat(DK.map((k) => DT[k])), r2.concat(r2y), { collapse: true, minWidth: 640, rowYears: withDepts.map((m) => m.year), pastAvg: deptPast });
         }
 
         // Текущий месяц — накопленный итог по вчерашний день (и в нагрузке, и в стафах). Ведомость по нему ещё не
@@ -5139,8 +5233,10 @@
           const b = loadBase[m.sheetMonth || m.month] || {};
           // Первая линия: берём звонки САМОЙ первой линии (из amoCRM по её сотрудникам),
           // а не общую цифру АТС по компании из листа — иначе нагрузка завышена вдвое.
-          if (key === "pl") { const pc = plFromPbx(m.mi) || plCalls[String(m.mi)]; return (pc && pc.calls) ? pc.calls : null; }
+          if (key === "pl") { const pc = plFromPbx(m.mi, m.year) || (m.year === curY ? plCalls[String(m.mi)] : null); return (pc && pc.calls) ? pc.calls : null; }
           if (key === "op") return b.contacts != null ? b.contacts : null;
+          // С 2027 сервер отдаёт выручку городов по годам (cityRev.years).
+          if (cityRev && cityRev.years && cityRev.years[m.year]) { const cy0 = (cityRev.years[m.year].months || {})[String(m.mi)], dk0 = DEALKEY[key]; return (cy0 && cy0.deals && dk0 && cy0.deals[dk0] != null) ? cy0.deals[dk0] : null; }
           const cm = cityRev && cityRev.months && cityRev.months[String(m.mi)];
           const dk = DEALKEY[key];
           return (cm && cm.deals && dk && cm.deals[dk] != null && m.year === (cityRev.year || m.year)) ? cm.deals[dk] : null;
@@ -5160,21 +5256,23 @@
               return '<td ' + TD + '><b>' + num1(base / d.manDays) + '</b></td>';
             }).join("") + '</tr>';
         });
-        const r3y = '<tr><td ' + TDY.replace("text-align:right", "text-align:left") + '>В среднем за ' + (list[0] ? list[0].year : "") + '</td>'
-          + '<td ' + TDY + '>' + num1(avgOf((m) => m.workDays)) + '</td>'
-          + '<td ' + TDY + '>' + num1(avgOf((m) => m.vacDaysTotal)) + '</td>'
+        const loadAvgRow = (sub, label) => '<tr><td ' + TDY.replace("text-align:right", "text-align:left") + '>' + label + '</td>'
+          + '<td ' + TDY + '>' + num1(avgOf((m) => m.workDays, sub)) + '</td>'
+          + '<td ' + TDY + '>' + num1(avgOf((m) => m.vacDaysTotal, sub)) + '</td>'
           + LOADK.map(function (k) {
             const v = avgOf(function (m) {
               const d = (m.hasDepts || m.deptsFromNames) && m.depts ? m.depts[k] : null, base = baseOf(m, k);
               return (d && d.manDays && base != null) ? base / d.manDays : null;
-            });
+            }, sub);
             return '<td ' + TDY + '>' + num1(v) + '</td>';
           }).join("") + '</tr>';
+        const r3y = loadAvgRow(listCur, "В среднем за " + curY);
+        const loadPast = {}; pastYs.forEach((y) => { loadPast[y] = loadAvgRow(list.filter((m) => m.year === y), yLbl(y)); });
         const htmlLoad = secH("Нагрузка на человека в день (с вычетом отпусков)",
             "В ячейке — сколько единиц работы приходится на одного человека в день с учётом отпусков. Эффективный штат = штат минус отпускные дни, делённые на календарные дни месяца; человеко-дни = эффективный штат × рабочие дни производственного календаря."
             + " База у каждого отдела своя: первая линия — входящие звонки из АТС, отдел продаж — набранные контакты (как на дашборде), ОРК — сделки своего города, оформление — весь объём сделок месяца, через него проходит всё."
             + " Текущий месяц помечен «идёт»: это накопленный итог за прошедшие сутки по вчерашний день включительно, обновляется каждую ночь. «Раб. дней» у него — прошедшие будни, штат и отпуска — из листа месяца в ведомости. В строку «В среднем за год» он не входит.", "0 0 8px")
-          + tbl(["Месяц", "Раб. дней", "Отпуск, дн."].concat(LOADK.map((k) => LOADT[k])), r3.concat(r3y), { collapse: true, minWidth: 560, keep: (spList.length && spList[spList.length - 1].partial) ? 3 : 2 });
+          + tbl(["Месяц", "Раб. дней", "Отпуск, дн."].concat(LOADK.map((k) => LOADT[k])), r3.concat(r3y), { collapse: true, minWidth: 560, keep: (spList.length && spList[spList.length - 1].partial) ? 3 : 2, rowYears: spList.map((m) => m.year), pastAvg: loadPast });
         // Нагрузка — самое важное, поэтому идёт первой; дальше деньги и отделы.
         // Каждая секция — своя карточка, иначе три таблицы подряд сливаются в кашу.
         const card = (inner) => inner ? '<div class="vsc-chart" style="margin-bottom:16px;">' + inner + '</div>' : "";
@@ -5190,6 +5288,9 @@
           : "зарплатная таблица прочитана: " + escapeHtml(upd) + " МСК";
         html += '<div style="font-size:11.5px;color:#9096a3;margin-top:12px;">' + srcNote + '</div>';
         box.innerHTML = html;
+        box.querySelectorAll("tr[data-yfold]").forEach(function (tr) {
+          tr.addEventListener("click", function () { const y = tr.getAttribute("data-yfold"); vscYearOpen[y] = !vscYearOpen[y]; try { renderVsc(); } catch (_) {} });
+        });
         // Кнопки «История»: показывают скрытые месяцы таблицы.
         box.querySelectorAll("button[data-hist]").forEach(function (btn) {
           btn.addEventListener("click", function () {
@@ -5251,15 +5352,25 @@
             k["load_" + dk] = (d && d.manDays && base != null) ? Math.round(base / d.manDays * 100) / 100 : null;
           });
           const b = loadBase[m.month] || {};
-          const pc0 = plFromPbx(m.mi) || plCalls[String(m.mi)];
+          const pc0 = plFromPbx(m.mi, m.year) || (m.year === curY ? plCalls[String(m.mi)] : null);
           k.callsPer = (m.depts && m.depts.pl && m.depts.pl.manDays && pc0 && pc0.calls) ? Math.round(pc0.calls / m.depts.pl.manDays * 100) / 100 : null;
           k.missedPer = (m.depts && m.depts.pl && m.depts.pl.manDays && b.callsMissed != null) ? Math.round(b.callsMissed / m.depts.pl.manDays * 100) / 100 : null;
           const rv2 = revenueOf(m.month);
           k.fotRev = (rv2 && m.fotTotal != null) ? Math.round(m.fotTotal / rv2 * 1000) / 10 : null;
           k.waitSec = b.waitSec != null ? b.waitSec : null;
           k.missedPct = b.missedPct != null ? b.missedPct : null;
-          return { x: short(m.month), k: k };
+          return { x: short(m.month), y: m.year, k: k };
         });
+        if (pastYs.length) {
+          const folded = [];
+          pastYs.forEach((y) => {
+            const it = series.filter((x) => x.y === y);
+            folded.push({ x: y + " год", y: y, k: vscAvgObj(it.map((x) => x.k)) });
+            if (vscYearOpen[y]) it.forEach((x) => folded.push(Object.assign({}, x, { x: x.x + " ’" + String(y).slice(2) })));
+          });
+          series.filter((x) => x.y === curY).forEach((x) => folded.push(x));
+          series.length = 0; folded.forEach((x) => series.push(x));
+        }
         // Все графики раздела — кривые, как на дашборде по дням: одинаково читаются
         // и на телефоне, и на десктопе (SVG тянется по ширине).
         box.appendChild(sub2("Графики — деньги и штат"));
