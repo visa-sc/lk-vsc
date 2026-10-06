@@ -4,9 +4,10 @@
 // С сентября 2026 учёт расходов ведётся в «Потоке», Платрум за сентябрь пустой
 // (решение Андрея 06.10.2026 — «бери теперь из Катиного блока»). Отсюда берём:
 //   • «Сборы» — расход в блок «Запас на сборы»;
-//   • «Маркетинг»: «Яндекс Директ», «ФОТ Маркетинг», «Остальной маркетинг» —
-//     сопутствующие расходы на маркетинг (ФОТ + остальной) для CPL и ДРР с учётом
-//     доп. расходов, когда в листе KPI месяц не заполнен вручную.
+//   • «Маркетинг» — доп. расходы для CPL и ДРР с учётом доп. расходов: ВЕСЬ маркетинг,
+//     кроме крупных платежей Директа — свыше 200 000 ₽ (правило Андрея 06.10.2026: они и
+//     так сидят в CPL как реклама). Мелкие пополнения Директа под другие каналы и любые
+//     платежи Яндексу до 200 000 — это доп. расходы, в какой бы статье ни лежали.
 // Сверено с Платрумом на июле и августе: сборы расходятся на 360–410 ₽ в месяц,
 // «ФОТ Маркетинг» за август — 465 255 ₽, ровно как в листе KPI.
 //
@@ -22,6 +23,7 @@ const http = require("http");
 const FILE = path.join(__dirname, ".vscPotok.json");
 const TTL = 6 * 3600 * 1000;
 const FROM_YM = "2026-09";
+const DIRECT_BIG = 200000;                             // платёж Директа крупнее — это реклама, не доп. расход
 const HOST = process.env.KATE_PORTAL_HOST || "127.0.0.1";
 const PORT = Number(process.env.KATE_PORTAL_PORT || 3002);
 const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
@@ -54,6 +56,7 @@ function pick(rep) {
     if (n === "сборы" && out.sbory == null) out.sbory = Math.round(Number(c.sum) || 0);
     if (n === "маркетинг" && out.marketing == null) {
       out.marketing = Math.round(Number(c.sum) || 0);
+      out._rows = (c.rows || []).map((r) => ({ id: r.id, name: String(r.name || "") }));
       (c.rows || []).forEach((r) => {
         const rn = String(r.name || "").trim().toLowerCase();
         if (/директ/.test(rn)) out.direct = (out.direct || 0) + Math.round(Number(r.sum) || 0);
@@ -62,9 +65,24 @@ function pick(rep) {
       });
     }
   }));
-  // Сопутствующие расходы на маркетинг = всё, что в «Маркетинге» кроме Директа.
-  out.extra = (out.mktFot != null || out.mktOther != null) ? (out.mktFot || 0) + (out.mktOther || 0) : null;
   return out;
+}
+// Крупные платежи Директа за месяц: операции статьи «Яндекс Директ» и платежи Яндексу
+// в других строках маркетинга (кроме ФОТ), каждый СВЫШЕ 200 000 ₽.
+async function bigDirect(ym, rows, token) {
+  let sum = 0; const ops = [];
+  for (const r of rows || []) {
+    const isDirect = /директ/i.test(r.name);
+    if (/фот/i.test(r.name)) continue;
+    const res = await apiGet("/api/potok/pnl-rows?m=" + ym + "&art=" + encodeURIComponent(r.id), token);
+    const list = Array.isArray(res) ? res : (res.rows || res.list || []);
+    (list || []).forEach((o) => {
+      const v = Math.abs(Number(o.sum) || 0);
+      const yandex = isDirect || /яндекс|yandex/i.test(String(o.cp || o.counterparty || "") + " " + String(o.description || ""));
+      if (yandex && v > DIRECT_BIG) { sum += v; ops.push({ date: o.date, sum: Math.round(v), article: r.name }); }
+    });
+  }
+  return { sum: Math.round(sum), ops: ops };
 }
 
 let _cache = null, _at = 0, _running = false;
@@ -86,7 +104,13 @@ async function refresh() {
     try {
       const rep = await apiGet("/api/potok/pnl?m=" + ym, token);
       if (rep.month && rep.month !== ym) continue;     // месяца ещё нет в «Потоке» — он отдал другой
-      months[nameOf(ym)] = Object.assign(pick(rep), { ym: ym, at: Date.now() });
+      const row = pick(rep);
+      const big = await bigDirect(ym, row._rows, token);
+      delete row._rows;
+      row.bigDirect = big.sum; row.bigDirectOps = big.ops;
+      // Доп. расходы на маркетинг = весь «Маркетинг» минус крупные платежи Директа.
+      row.extra = row.marketing != null ? row.marketing - big.sum : null;
+      months[nameOf(ym)] = Object.assign(row, { ym: ym, at: Date.now() });
     } catch (e) { console.error("POTOK " + ym + ":", e.message); }
   }
   _cache = months; _at = Date.now();
