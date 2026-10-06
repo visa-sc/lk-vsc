@@ -33,6 +33,8 @@ const CHECK_HOUR_MSK = 9;                       // проверка в 09:20 М�
 const NOT_STAFF = [/комисаренко/i, /панфилова\s+галина/i, /зайцева\s+екатерина/i];
 
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (_) { return null; } };
+// Не показывать как «не нашлись в amoCRM»: у Романенко особая должность без учётки (Андрей 06.10.2026).
+const UNMATCHED_OK = /романенко/i;
 const norm = (x) => String(x || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
 const load = () => readJson(FILE);
 function save(d) {
@@ -55,7 +57,7 @@ function compute() {
   // 1. Кто есть в АТС, но не нашёлся в amoCRM. Главная поломка: звонки такого
   // оператора не попадают в статистику, и это никак иначе не заметно.
   const unmatched = Object.keys(pbxExt)
-    .filter((e) => String(pbxExt[e] || "").trim() && !amoNames.has(norm(pbxExt[e])))
+    .filter((e) => String(pbxExt[e] || "").trim() && !amoNames.has(norm(pbxExt[e])) && !UNMATCHED_OK.test(String(pbxExt[e])))
     .map((e) => ({ ext: e, name: pbxExt[e] }));
   if (unmatched.length) {
     issues.push({

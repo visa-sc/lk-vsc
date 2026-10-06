@@ -1663,6 +1663,9 @@ function loadCallStats() {
   try { _callStats = JSON.parse(fs.readFileSync(VSC_CALLSTATS_FILE, "utf8")); } catch (_) { _callStats = null; }
   return _callStats;
 }
+// Кого не показывать в «В АТС есть, в amoCRM не нашлись»: у Романенко Екатерины особая
+// должность без учётки amoCRM — это нормально (Андрей 06.10.2026).
+const STAFF_UNMATCHED_OK = /романенко/i;
 app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
   const d = loadStaffPerf();
   const cs = loadCallStats();
@@ -1712,7 +1715,7 @@ app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
     // иначе администраторы ОРК выглядели «без учётки в amoCRM», хотя она у них есть.
     const amoNames = new Set((d.users || []).map((u) => norm(u.name)).concat(((roster && roster.users) || []).filter((u) => u.active).map((u) => norm(u.name))));
     pbxUnmatched = Object.keys(px.ext || {})
-      .filter((e) => (px.ext[e] || "").trim() && !amoNames.has(norm(px.ext[e])))
+      .filter((e) => (px.ext[e] || "").trim() && !amoNames.has(norm(px.ext[e])) && !STAFF_UNMATCHED_OK.test(String(px.ext[e])))
       .map((e) => ({ ext: e, name: px.ext[e] }));
     (d.users || []).forEach((u) => {
       const rec = byName[norm(u.name)]; if (!rec) return;

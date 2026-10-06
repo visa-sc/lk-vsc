@@ -3531,7 +3531,10 @@
         wrap.appendChild(bars);
         return wrap;
       }
-      function vscDivergingBars(title, data, fmt, legend) {
+      // opts.year = { x: "2026 год", v, title } — итог года первой карточкой с подложкой;
+      // у неё свой масштаб (год в разы больше месяца), высота — на всю свою половину.
+      function vscDivergingBars(title, data, fmt, legend, opts) {
+        const yr = opts && opts.year && opts.year.v != null && !isNaN(opts.year.v) ? opts.year : null;
         const wrap = document.createElement("div"); wrap.className = "vsc-chart";
         const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = title; wrap.appendChild(h);
         // legend === false — рисуем без подписей (когда знак столбика и так очевиден)
@@ -3548,10 +3551,26 @@
         // под мелким минусовым столбиком зияет пустота до подписи месяца.
         const maxPos = Math.max.apply(null, pts.map((d) => (d.v > 0 ? d.v : 0)));
         const maxNeg = Math.max.apply(null, pts.map((d) => (d.v < 0 ? -d.v : 0)));
-        const topH = maxPos > 0 ? Math.max(26, Math.round(maxPos / maxAbs * 92)) : 0;
-        const botH = maxNeg > 0 ? Math.max(26, Math.round(maxNeg / maxAbs * 92)) : 0;
+        let topH = maxPos > 0 ? Math.max(26, Math.round(maxPos / maxAbs * 92)) : 0;
+        let botH = maxNeg > 0 ? Math.max(26, Math.round(maxNeg / maxAbs * 92)) : 0;
+        if (yr && yr.v >= 0 && topH < 60) topH = 60;
+        if (yr && yr.v < 0 && botH < 60) botH = 60;
         const lbl = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + (fmt === "money" ? Math.abs(Math.round(v)).toLocaleString("ru-RU") : Math.abs(Math.round(v)));
         const bars = document.createElement("div"); bars.className = "rev-bars";
+        if (yr) {
+          const col = document.createElement("div"); col.className = "rev-col rev-col-year";
+          if (yr.title) col.title = yr.title;
+          const top = document.createElement("div"); top.className = "rev-half top"; top.style.height = topH + "px";
+          const axis = document.createElement("div"); axis.className = "rev-axis";
+          const bot = document.createElement("div"); bot.className = "rev-half bot"; bot.style.height = botH + "px";
+          const v = document.createElement("div"); v.className = "rev-v " + (yr.v >= 0 ? "pos" : "neg"); v.textContent = lbl(yr.v);
+          const b = document.createElement("div"); b.className = yr.v >= 0 ? "rev-bar-pos" : "rev-bar-neg";
+          b.style.height = Math.max(8, (yr.v >= 0 ? topH : botH) - 16) + "px";
+          if (yr.v >= 0) { top.appendChild(v); top.appendChild(b); } else { bot.appendChild(b); bot.appendChild(v); }
+          const xl = document.createElement("div"); xl.className = "rev-x rev-x-year"; xl.textContent = yr.x;
+          col.appendChild(top); col.appendChild(axis); col.appendChild(bot); col.appendChild(xl);
+          bars.appendChild(col);
+        }
         pts.forEach((d) => {
           const col = document.createElement("div"); col.className = "rev-col";
           const top = document.createElement("div"); top.className = "rev-half top"; top.style.height = topH + "px";
@@ -4980,9 +4999,10 @@
               + '<button type="button" data-hist="' + id + '" data-n="' + n + '" style="border:1px solid #dfe3ec;background:#fff;border-radius:9px;padding:5px 12px;font-size:12.5px;font-family:inherit;color:#33415a;cursor:pointer;">История · ' + n + ' мес.</button></td></tr>';
             body = hist + rows.slice(n, rows.length - 1).join("") + btn + rows[rows.length - 1];
           }
-          return '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;min-width:' + minW + 'px;border-collapse:collapse;font-size:13px;">'
-            + '<tr><th ' + TH.replace("text-align:right", "text-align:left") + '>' + head[0] + '</th>' + head.slice(1).map((x) => '<th ' + TH + '>' + x + '</th>').join("") + '</tr>'
-            + body + '</table></div>';
+          const sq = (h) => o.compact ? h.replace(/padding:\d+px \d+px/g, "padding:6px 5px") : h;
+          return '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;min-width:' + minW + 'px;border-collapse:collapse;font-size:' + (o.compact ? "12.5px" : "13px") + ';">'
+            + sq('<tr><th ' + TH.replace("text-align:right", "text-align:left") + '>' + head[0] + '</th>' + head.slice(1).map((x) => '<th ' + (o.compact ? TH.replace("white-space:nowrap", "white-space:normal;vertical-align:bottom;line-height:1.25") : TH) + '>' + x + '</th>').join("") + '</tr>'
+            + body) + '</table></div>';
         };
         // Заголовок секции с «i»: текст пояснения кладём в data-info, после вставки
         // html навешиваем настоящий поповер.
@@ -4991,6 +5011,9 @@
         let html = "";
 
         // ── 1. Зарплаты, штат, взносы, прибыль на сотрудника, ЗП управляющей ──
+        // 12 столбцов: рубли целые и без «₽» в ячейках (знак — в заголовке), чтобы
+        // таблица помещалась в экран без прокрутки (Андрей 06.10.2026: «компактно»).
+        const rub = (v) => (v == null || isNaN(v) ? "—" : (v < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ru-RU"));
         const r1 = list.map(function (m) {
           const p = profitOf(m.month), mp = mgrPay[m.month];
           const perHead = (p != null && m.staff) ? p / m.staff : null;
@@ -5000,15 +5023,15 @@
           const col = (v) => (v != null && v < 0) ? ' color:#b0263a;' : "";
           return '<tr><td ' + L + '>' + escapeHtml(m.month) + '</td>'
             + '<td ' + TD + '>' + m.staff + '</td>'
-            + '<td ' + TD + '>' + money2(m.fotTotal) + '</td>'
-            + '<td ' + TD + '><b>' + money2(m.avgSalary) + '</b></td>'
-            + '<td ' + TD + '>' + money2(m.fotProject) + '</td>'
-            + '<td ' + TD + '>' + money2(m.contrib) + '</td>'
+            + '<td ' + TD + '>' + rub(m.fotTotal) + '</td>'
+            + '<td ' + TD + '><b>' + rub(m.avgSalary) + '</b></td>'
+            + '<td ' + TD + '>' + rub(m.fotProject) + '</td>'
+            + '<td ' + TD + '>' + rub(m.contrib) + '</td>'
             + '<td ' + TD + '><b>' + pct(m.contribPct) + '</b></td>'
-            + '<td ' + TD.slice(0, -1) + col(p) + '">' + money(p) + '</td>'
-            + '<td ' + TD.slice(0, -1) + col(perHead) + '">' + money(perHead) + '</td>'
+            + '<td ' + TD.slice(0, -1) + col(p) + '">' + rub(p) + '</td>'
+            + '<td ' + TD.slice(0, -1) + col(perHead) + '">' + rub(perHead) + '</td>'
             + '<td ' + TD + '><b>' + pct(fotRev) + '</b></td>'
-            + '<td ' + TD + '>' + money2(mp) + '</td>'
+            + '<td ' + TD + '>' + rub(mp) + '</td>'
             + '<td ' + TD.slice(0, -1) + col(mpPct) + '">' + pct(mpPct) + '</td></tr>';
         });
         // Итог года: по каждому столбцу среднее за месяцы с данными. Прибыль показываем
@@ -5019,21 +5042,21 @@
         const avgMp = avgOf((m) => mgrPay[m.month]);
         const yearRow = '<tr><td ' + TDY.replace("text-align:right", "text-align:left") + '>В среднем за ' + (list[0] ? list[0].year : "") + '</td>'
           + '<td ' + TDY + '>' + num1(avgOf((m) => m.staff)) + '</td>'
-          + '<td ' + TDY + '>' + money(avgOf((m) => m.fotTotal)) + '</td>'
-          + '<td ' + TDY + '>' + money2(avgOf((m) => m.avgSalary)) + '</td>'
-          + '<td ' + TDY + '>' + money(avgOf((m) => m.fotProject)) + '</td>'
-          + '<td ' + TDY + '>' + money(avgOf((m) => m.contrib)) + '</td>'
+          + '<td ' + TDY + '>' + rub(avgOf((m) => m.fotTotal)) + '</td>'
+          + '<td ' + TDY + '>' + rub(avgOf((m) => m.avgSalary)) + '</td>'
+          + '<td ' + TDY + '>' + rub(avgOf((m) => m.fotProject)) + '</td>'
+          + '<td ' + TDY + '>' + rub(avgOf((m) => m.contrib)) + '</td>'
           + '<td ' + TDY + '>' + pct(avgOf((m) => m.contribPct)) + '</td>'
-          + '<td ' + TDY + '>' + money(avgP) + '</td>'
-          + '<td ' + TDY + '>' + money(avgOf((m) => { const p = profitOf(m.month); return (p != null && m.staff) ? p / m.staff : null; })) + '</td>'
+          + '<td ' + TDY + '>' + rub(avgP) + '</td>'
+          + '<td ' + TDY + '>' + rub(avgOf((m) => { const p = profitOf(m.month); return (p != null && m.staff) ? p / m.staff : null; })) + '</td>'
           + '<td ' + TDY + '>' + pct(avgOf((m) => { const rv = revenueOf(m.month); return (rv && m.fotTotal != null) ? m.fotTotal / rv * 100 : null; })) + '</td>'
-          + '<td ' + TDY + '>' + money2(avgMp) + '</td>'
+          + '<td ' + TDY + '>' + rub(avgMp) + '</td>'
           + '<td ' + TDY + '>' + pct(avgP ? avgMp / avgP * 100 : null) + '</td></tr>';
         const htmlPay = secH("Зарплаты, штат и взносы — по месяцам",
             "ФОТ общий — собственный итог зарплатного листа: начислено плюс взносы. Штат — строки сотрудников месяца минус Зайцева Екатерина, Комисаренко и Панфилова Галина. Средняя ЗП = ФОТ ÷ штат."
             + " ФОТ через зарплатный проект — колонки «выплачено через зп проект» плюс НДФЛ, взносы начисляются на грязную базу. Январь и февраль по ФОТ и взносам взяты из таблицы Андрея: на листе января итог не посчитан, февральский правился после снятия его таблицы."
             + " Прибыль и ЗП управляющей вносятся руками. «% УПР от прибыли» — зарплата управляющей к прибыли месяца.", "0 0 8px")
-          + tbl(["Месяц", "Штат", "ФОТ общий (вкл. взносы)", "Средняя ЗП", "ФОТ через зп-проект", "Взносы", "% взносов", "Прибыль", "Прибыль на сотрудника", "% ФОТ от выручки", "ЗП управляющей", "% УПР от прибыли"], r1.concat(yearRow), { collapse: true });
+          + tbl(["Месяц", "Штат", "ФОТ общий, ₽", "Средняя ЗП, ₽", "Через зп-проект, ₽", "Взносы, ₽", "% взносов", "Прибыль, ₽", "Прибыль на чел., ₽", "ФОТ / выручка", "ЗП управл., ₽", "УПР / прибыль"], r1.concat(yearRow), { collapse: true, compact: true, minWidth: 860 });
 
         // ── 2. Средняя зарплата по отделам ──
         const DK = ["pl", "op", "orkMsk", "orkSpb", "oo", "none"];
@@ -5784,6 +5807,26 @@
       // ═══ НАЧАЛО БЛОКА «Прибыль за всё время» (21.09.2026) ══════════════════════
       // Чтобы убрать раздел целиком: удалить эту функцию и одну строку её вызова
       // (ищется по «vscProfitHistoryBlock»). Данные статичные, из VSC.xlsx.
+      // Столбчатые графики (.vsc-bars) на узком экране не влезают и листаются вбок —
+      // открываем их сразу на ПОСЛЕДНИХ месяцах, а не на январе (Андрей 06.10.2026:
+      // на телефоне свежие месяцы прятались справа). Один раз на каждый график,
+      // дальше пользователь листает сам. Блоки дорисовываются асинхронно — следим
+      // за появлением новых узлов.
+      (function vscBarsScrollToEnd() {
+        let queued = false;
+        const run = function () {
+          queued = false;
+          document.querySelectorAll(".vsc-bars:not([data-endscrolled])").forEach(function (b) {
+            if (!b.clientWidth) return;                       // скрыт — дождёмся показа
+            b.setAttribute("data-endscrolled", "1");
+            if (b.scrollWidth > b.clientWidth + 4) b.scrollLeft = b.scrollWidth;
+          });
+        };
+        try {
+          new MutationObserver(function () { if (!queued) { queued = true; requestAnimationFrame(run); } })
+            .observe(document.body, { childList: true, subtree: true });
+        } catch (_) {}
+      })();
       function vscProfitHistoryBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
         const info = "<b>Что показывает</b><br>Прибыль компании за всё время работы, с апреля 2016.<br><br><b>Откуда цифры</b><br>С апреля 2016 по август 2026 — из книги VSC.xlsx, из строки итога внизу каждого помесячного листа (выручка месяца минус расход месяца). С сентября 2026 — прибыль, которую вы вносите на дашборде: как только внесли месяц, он сразу появляется здесь.<br><br><b>Детали</b><br>• 2016 год неполный — первый лист книги начинается с апреля.<br>• Текущий год показан по последний внесённый месяц.<br>• Год — сумма своих месяцев, поэтому неполные годы с остальными впрямую не сравнить.<br><br><b>Подробнее</b><br>Таблица по месяцам за последние четыре года, окно сдвигается само с началом нового года. Разница — текущий год против прошлого по тем месяцам, где текущий уже внесён; процент считается от модуля прошлого года, чтобы при убыточном месяце знак не переворачивался.";
@@ -6196,9 +6239,13 @@
           if (!names.length) { box.innerHTML = '<div class="vsc-empty">Нет закрытых месяцев с полными данными.</div>'; return; }
           const money = (v) => (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽";
           box.innerHTML = "";
+          // Итог года первой колонкой (Андрей 06.10.2026): прибыль Питера за все закрытые месяцы.
+          const yrNames = names.filter(function (n) { return /20\d\d/.test(n); });
+          const yrNum = yrNames.length ? yrNames[yrNames.length - 1].match(/20\d\d/)[0] : "";
+          const yrSum = names.filter(function (n) { return n.indexOf(yrNum) >= 0; }).reduce(function (a, n) { return a + (ms[n].profit || 0); }, 0);
           box.appendChild(vscDivergingBars("Прибыль СПб по месяцам", names.map(function (n) {
             return { x: n.replace(/\s*20\d\d/, "").slice(0, 3), v: ms[n].profit };
-          }), "money", false));
+          }), "money", false, yrNum ? { year: { x: yrNum + " год", v: yrSum, title: yrNum + " год · сумма прибыли Питера за все закрытые месяцы" } } : null));
           const TD = 'style="padding:6px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;"';
           const TH = 'style="padding:6px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;font-size:12px;"';
           let html = '<div style="overflow-x:auto;margin-top:14px;"><table style="width:100%;min-width:1180px;border-collapse:collapse;font-size:12.5px;">'
