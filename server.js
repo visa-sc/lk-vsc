@@ -6289,6 +6289,15 @@ async function vscFetchAll() {
     const ym = katedata.nameYm(months[i].name), t = extra.tax && extra.tax[months[i].name];
     if (ym && ym >= katedata.FROM_YM && t && t.src === "work") months[i] = Object.assign({}, months[i], { taxes: t });
   }
+  // План ОП (средний чек и конверсия) с октября 2026 — из «Стаффа» Кати, а не из строки
+  // «ТАРГЕТ» KPI-таблицы (Андрей 06.10.2026). Факт прошлого месяца — как был, из листа.
+  for (let i = 0; i < months.length; i++) {
+    const ym = katedata.nameYm(months[i].name), pl = ym ? katedata.opPlan(ym) : null;
+    if (!pl) continue;
+    const ctrl = Object.assign({}, months[i].ctrl || {}, { planATV: pl.atv, planCV: pl.cv, planKate: { by: pl.by, at: pl.at, state: pl.state } });
+    delete ctrl.planSrc;
+    months[i] = Object.assign({}, months[i], { ctrl });
+  }
   // Год: суммируем аддитивные базы из месячных Grand total, ratio — производные/среднее.
   const withTotal = months.filter((m) => m.total);
   const sum = (f) => withTotal.reduce((a, m) => a + (m.total[f] || 0), 0);

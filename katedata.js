@@ -134,6 +134,20 @@ function entityRevenue(ym) {
   return { alta: s("alta"), kom: s("komis"), pan: s("panf"), akg: s("akg") };
 }
 
+// План отдела продаж на месяц — «Управление персоналом → Стафф → План на месяц ОП» Кати
+// (data/staffperf/op/targets-ГГГГ-ММ.json, goals: atv — средний чек, conv — конверсия
+// долей). С октября 2026 — вместо строки «ТАРГЕТ» KPI-таблицы (Андрей 06.10.2026).
+const OP_PLAN_FROM_YM = "2026-10";
+function opPlan(ym) {
+  if (ym < OP_PLAN_FROM_YM) return null;
+  const j = readJson(KATE + "/staffperf/op/targets-" + ym + ".json");
+  const g = j && j.goals; if (!g) return null;
+  const atv = Number(g.atv) || null, conv = Number(g.conv) || null;
+  if (atv == null && conv == null) return null;
+  return { atv, cv: conv != null ? Math.round(conv * 10000) / 100 : null, by: g.by || j.goalsBy || "", at: j.goalsAt || "",
+    state: (j.approve && j.approve.state) || "" };
+}
+
 // Нал без чека по пересчёту сейфа — из API «Кассы» Кати. Токен — служебная сессия
 // director@ (та же, что для «Потока»). При сбое — последнее удачное значение.
 let _tokenFn = null;
@@ -170,4 +184,4 @@ async function cashNoCheck(ym) {
 }
 
 module.exports = { FROM_YM, KATE, ymName, nameYm, returnMonths, amoMonths, returnsForDashboard, returnsSpb, returnsByEntity, returnsSbory,
-  sboryIncome, taxesMonth, entityRevenue, cashNoCheck, init };
+  sboryIncome, taxesMonth, entityRevenue, cashNoCheck, opPlan, OP_PLAN_FROM_YM, init };

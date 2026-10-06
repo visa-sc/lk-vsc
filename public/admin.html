@@ -825,6 +825,10 @@
       padding: 10px 6px 9px; box-sizing: border-box; margin-right: 14px; margin-top: -11px;
       align-self: flex-start; }
     .rev-col-year .rev-axis { background: #c9dcee; }
+    /* Годовая карточка закреплена слева: на узком экране месяцы листаются под ней,
+       а график открывается сразу на последних месяцах (Андрей 06.10.2026). Белая
+       полоса справа (тень) прячет столбики, проезжающие в зазоре. */
+    .rev-bars > .rev-col-year, .vsc-bars > .vsc-bar-col[style*="eef5fb"] { position: sticky; left: 0; z-index: 2; box-shadow: 12px 0 0 0 #fff; }
     .rev-x-year { color: #2c5a86; font-weight: 700; font-size: 10.5px; margin-top: 8px; }
     /* Доля позитивных/негативных на годовой карточке — ВНУТРИ столбика, мелким белым. */
     .rev-bar-pos, .rev-bar-neg { display: flex; align-items: center; justify-content: center; overflow: hidden; }
@@ -5816,7 +5820,7 @@
         let queued = false;
         const run = function () {
           queued = false;
-          document.querySelectorAll(".vsc-bars:not([data-endscrolled])").forEach(function (b) {
+          document.querySelectorAll(".vsc-bars:not([data-endscrolled]), .rev-bars:not([data-endscrolled])").forEach(function (b) {
             if (!b.clientWidth) return;                       // скрыт — дождёмся показа
             b.setAttribute("data-endscrolled", "1");
             if (b.scrollWidth > b.clientWidth + 4) b.scrollLeft = b.scrollWidth;
@@ -6824,7 +6828,13 @@
           rowsHtml.push('<tr class="planop-row" style="border-top:1px solid #f0eef5;"><td style="padding:7px 10px;font-weight:600;color:#1d2330;">' + escapeHtml(shortN(ms[i].name)) + '</td>' + cell(c.planATV, prevC.actualATV, "money") + cell(c.planCV, prevC.actualCV, "pct") + '</tr>');
           // Подпись «какие ячейки листа взяли» (просьба Андрея 22.07) — для месяцев,
           // где сервер вернул координаты (живые месяцы; в старых снимках их нет).
-          if (c.planSrc) {
+          if (c.planKate) {
+            const pk = c.planKate, dt = pk.at ? new Date(pk.at).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) : "";
+            const st = { draft: "черновик, ещё не утверждён", approved: "утверждён" }[pk.state] || pk.state;
+            notes.push(shortN(ms[i].name) + ": план — раздел Кати «Управление персоналом → Стафф → План на месяц ОП»"
+              + (pk.by ? ", поставил(а) " + pk.by : "") + (dt ? " " + dt : "") + (st ? " (" + st + ")" : "")
+              + "; факт для сравнения — Grand total листа «" + prevName + "».");
+          } else if (c.planSrc) {
             const s = c.planSrc, ps = prevC.planSrc;
             let t = shortN(ms[i].name) + ": план — лист «" + ms[i].name + "», ячейки " +
               (s.atvCol ? s.atvCol + s.planRowNum + " (ATV)" : "") + (s.atvCol && s.cvCol ? " и " : "") + (s.cvCol ? s.cvCol + s.planRowNum + " (конверсия)" : "") +
@@ -6851,6 +6861,14 @@
             histBtn.textContent = hidden ? "Скрыть историю" : ("История · " + histRows.length + " мес.");
           };
           wrap.appendChild(histBtn);
+        }
+        // Источник плана последнего месяца — строкой под таблицей: с октября 2026 это «Стафф» Кати.
+        const lastPl = ms.filter((m) => m && m.ctrl && (m.ctrl.planATV != null || m.ctrl.planCV != null)).slice(-1)[0];
+        if (lastPl && lastPl.ctrl.planKate) {
+          const pk = lastPl.ctrl.planKate, src = document.createElement("div");
+          src.style.cssText = "font-size:11.5px;color:#9096a3;margin-top:8px;";
+          src.textContent = "план — «Стафф» Кати, «План на месяц ОП»" + (pk.state === "draft" ? " · черновик, ещё не утверждён" : pk.state === "approved" ? " · утверждён" : "");
+          wrap.appendChild(src);
         }
         // «Откуда берём» — под «i» в заголовке (просьба Андрея 22.07, не мозолит глаза)
         if (notes.length) h.appendChild(vscInfo("<b>Откуда берём</b><br>" + notes.slice(-2).map(escapeHtml).join("<br><br>")));
