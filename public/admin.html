@@ -10124,7 +10124,11 @@
             const doc = frame.contentDocument;
             let applied = 0;
             const fit = function () {
-              const h = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight);
+              // Высота самого содержимого (body с min-height:0 и flow-root), а не
+              // scrollHeight документа: тот не бывает меньше текущей высоты фрейма,
+              // и после сворачивания разделов фрейм не уменьшался — снизу оставалась
+              // пустая простыня (06.10.2026).
+              const h = Math.ceil(doc.body.getBoundingClientRect().height);
               if (h < 200 || h > 40000) return;          // мусорные замеры игнорируем
               if (Math.abs(h - applied) < 8) return;     // уже подогнано — не трогаем
               applied = h;
