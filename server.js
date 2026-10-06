@@ -1554,9 +1554,11 @@ function orkActFromCopy() {
     });
 }
 // Итог по сотруднику и месяцу: январь–июль из API, с августа из копии.
-function orkActFor(uid, mk) {
-  const st = orkActLoad();
-  return +mk >= ORK_ACT_COPY_FROM_MI ? ((st.copy || {})[uid] || {})[mk] : ((st.api || {})[uid] || {})[mk];
+function orkActFor(uid, mk, year) {
+  const st = orkActLoad(), y = year || 2026;
+  if (y === 2026 && +mk < ORK_ACT_COPY_FROM_MI) return ((st.api || {})[uid] || {})[mk];
+  const cu = (st.copy || {})[uid] || {};
+  return cu[y + "-" + mk] || (y === 2026 ? cu[mk] : undefined);   // с 2027 — ключи с годом
 }
 // Старт: копия через 3 минуты, догрузка API — через 4 (после прогрева справочника).
 setTimeout(orkActFromCopy, 180 * 1000);
@@ -1735,7 +1737,7 @@ app.get("/admin/api/vsc/staffperf", requireAdmin, (req, res) => {
     (d.users || []).forEach((u) => {
       if (u.dept !== "orkMsk" && u.dept !== "orkSpb") return;
       MK.forEach((mk) => {
-        const a = orkActFor(String(u.uid), mk); if (!a) return;
+        const a = orkActFor(String(u.uid), mk, d.year); if (!a) return;
         const t = u.months[mk] || (u.months[mk] = { deals: 0, revenue: 0, returns: 0, spb: 0, closedCnt: 0, closedDays: 0, contacts: 0 });
         t.actTasks = a.tasks || 0; t.actStages = a.stages || 0; t.actMsgs = a.msgs || 0;
       });
@@ -7806,7 +7808,7 @@ function vscSboryExpSave(m) { try { fs.writeFileSync(VSC_SBORY_EXP_FILE, JSON.st
 // после перезапуска процесса память пустая и блок висел бы на спиннере.
 const VSC_SBORY_CACHE_FILE = path.join(__dirname, ".vscSboryCache.json");
 // Версия расчёта: при смене источников поднимаем — старый кэш с диска не подхватится.
-const VSC_SBORY_CACHE_V = 2;   // 2 — данные Кати вместо Google (06.10.2026)
+const VSC_SBORY_CACHE_V = 3;   // 2 — данные Кати вместо Google; 3 — сброс после ошибки в полях сборов (06.10.2026)
 let _sboryCache = { at: 0, data: null }, _sboryRunning = false;
 function _sboryFromDisk() {
   if (_sboryCache.data) return _sboryCache.data;
@@ -7958,11 +7960,17 @@ const SCHENGEN_TARGET = new Set([
 // Проверено по факту: оплаченные сделки в «Закрыто и не реализовано» НЕ сидят (0 шт) —
 // возвратные остаются в этих двух статусах. «Ожидает записи» = den − записано − возврат.
 const SCHENGEN_RETURN = new Set(["1309524:21256761", "1312578:43200834"]);
-const SCHENGEN_YEAR = 2026;
+// Год расчёта: текущий по Москве, но первые 10 дней января — ещё прошлый (досчитать
+// декабрь). Подготовка к 2027: раньше год был зашит 2026-м. Месяцы прошлых лет в файле
+// не теряются — при записи сливаем их с прежним содержимым.
+const vscCalcYear = () => new Date(Date.now() + 3 * 3600 * 1000 - 10 * 86400000).getUTCFullYear();
+const vscKeepOtherYears = (prev, months, y) => { if (prev) Object.keys(prev).forEach((k) => { if (k.slice(0, 4) !== String(y) && !(k in months)) months[k] = prev[k]; }); return months; };
+let SCHENGEN_YEAR = 2026;
 function loadSchengen() { try { return JSON.parse(fs.readFileSync(VSC_SCHENGEN_FILE, "utf8")); } catch (_) { return null; } }
 let _schengenRunning = false;
 async function runSchengenLive(trigger) {
   if (_schengenRunning) return { skipped: true };
+  SCHENGEN_YEAR = Math.max(2026, vscCalcYear());
   if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
   _schengenRunning = true;
   const t0 = Date.now();
@@ -8020,11 +8028,13 @@ async function runSchengenLive(trigger) {
       const a = agg[m]; if (!a || (!a.schDen && !a.usaDen && !a.ukDen)) continue;
       months[SCHENGEN_YEAR + "-" + String(m + 1).padStart(2, "0")] = { sch: grp(a.schDen, a.schNum, a.schRet), usa: grp(a.usaDen, a.usaNum, a.usaRet), uk: grp(a.ukDen, a.ukNum, a.ukRet) };
     }
+    try { const prevS = loadSchengen(); vscKeepOtherYears(prevS && prevS.months, months, SCHENGEN_YEAR); } catch (_) {}
     const out = { ts: Date.now(), year: SCHENGEN_YEAR, scanned, months };
     fs.writeFileSync(VSC_SCHENGEN_FILE, JSON.stringify(out, null, 2), "utf8");
     // Статистика по сотрудникам → отдельный файл (месяцы по дате оплаты, текущий ответственный)
     const stfMonths = {};
     for (let m = 0; m < 12; m++) { if (stf[m]) stfMonths[SCHENGEN_YEAR + "-" + String(m + 1).padStart(2, "0")] = stf[m]; }
+    try { const prevStf = JSON.parse(fs.readFileSync(VSC_STAFF_FILE, "utf8")); vscKeepOtherYears(prevStf && prevStf.months, stfMonths, SCHENGEN_YEAR); } catch (_) {}
     fs.writeFileSync(VSC_STAFF_FILE, JSON.stringify({ ts: Date.now(), year: SCHENGEN_YEAR, users, months: stfMonths }, null, 2), "utf8");
     console.log(`VSC SCHENGEN [${trigger || "cron"}]: месяцев ${Object.keys(months).length}, просмотрено ${scanned}, ${Date.now() - t0}ms (+staff)`);
     return out;
@@ -8109,7 +8119,7 @@ async function runDealCycle(trigger) {
     params["filter[updated_at][from]"] = String(Math.floor(Date.UTC(2023, 0, 1, 0, 0, 0) / 1000) - 3 * 3600);
     // Постранично и ПОСЛЕДОВАТЕЛЬНО (раз в сутки, спешить некуда — как schengen-съём).
     const Y26_FROM = Math.floor(Date.UTC(2026, 0, 1) / 1000) - 3 * 3600;
-    const Y27_FROM = Math.floor(Date.UTC(2027, 0, 1) / 1000) - 3 * 3600;
+    const Y27_FROM = Infinity;   // с 2027: окно «с 2026 года и дальше» (подготовка к смене года)
     // Сырые оплаты: { paid, cid, vnj } — ВНЖ-части отсеиваем ВТОРЫМ проходом, когда
     // видна вся цепочка контакта (какая часть первая, а какие — продолжение).
     const raw = [];
@@ -8202,10 +8212,10 @@ async function runDealCycle(trigger) {
     br.repeat = 0; br.firstNew = 0; br.firstOld = 0; br.anomaly = 0; br.money = 0;
     for (const d26 of deals26) {
       const dd = new Date((d26.paid + 3 * 3600) * 1000);
-      if (dd.getUTCFullYear() !== 2026) continue;
-      const mIdx = dd.getUTCMonth();
-      const mk = "2026-" + String(mIdx + 1).padStart(2, "0");
-      const monthStart = Math.floor(Date.UTC(2026, mIdx, 1) / 1000) - 3 * 3600;
+      if (dd.getUTCFullYear() < 2026) continue;
+      const mIdx = dd.getUTCMonth(), yy = dd.getUTCFullYear();
+      const mk = yy + "-" + String(mIdx + 1).padStart(2, "0");
+      const monthStart = Math.floor(Date.UTC(yy, mIdx, 1) / 1000) - 3 * 3600;
       const r = repeats[mk] || (repeats[mk] = { total: 0, rep: 0 });
       r.total++; br.money++;
       const created = createdBy[d26.cid];
@@ -8224,10 +8234,10 @@ async function runDealCycle(trigger) {
     const repRev = {};
     for (const r26 of rev26) {
       const dd = new Date((r26.paid + 3 * 3600) * 1000);
-      if (dd.getUTCFullYear() !== 2026) continue;
-      const mIdx = dd.getUTCMonth();
-      const mk = "2026-" + String(mIdx + 1).padStart(2, "0");
-      const monthStart = Math.floor(Date.UTC(2026, mIdx, 1) / 1000) - 3 * 3600;
+      if (dd.getUTCFullYear() < 2026) continue;
+      const mIdx = dd.getUTCMonth(), yy = dd.getUTCFullYear();
+      const mk = yy + "-" + String(mIdx + 1).padStart(2, "0");
+      const monthStart = Math.floor(Date.UTC(yy, mIdx, 1) / 1000) - 3 * 3600;
       const rr = repRev[mk] || (repRev[mk] = { total: 0, rep: 0 });
       rr.total += r26.price;
       const created = createdBy[r26.cid];
@@ -8252,16 +8262,18 @@ function dealCycleMonths(d) {
   const now = new Date(Date.now() + 3 * 3600 * 1000);
   const curYm = now.getUTCFullYear() * 12 + now.getUTCMonth();
   let ySum = 0, yCount = 0;
-  for (let m = 0; m < 12; m++) {
-    if (2026 * 12 + m >= curYm) break;
-    const b = d.buckets["2026-" + String(m + 1).padStart(2, "0")];
+  const lastY = Math.floor((curYm - 1) / 12);          // год последнего завершённого месяца
+  for (let k = 2026 * 12; k < curYm; k++) {
+    const yy = Math.floor(k / 12), m = k % 12;
+    const key = yy + "-" + String(m + 1).padStart(2, "0");
+    const b = d.buckets[key];
     if (b && b.count) {
-      months["2026-" + String(m + 1).padStart(2, "0")] = { avgDays: Math.round(b.sum / b.count * 10) / 10, count: b.count };
-      ySum += b.sum; yCount += b.count;
+      months[key] = { avgDays: Math.round(b.sum / b.count * 10) / 10, count: b.count };
+      if (yy === lastY) { ySum += b.sum; yCount += b.count; }
     }
   }
   // Годовой итог — средневзвешенно по ВСЕМ контактам завершённых месяцев (не среднее средних).
-  return { months, year: yCount ? { avgDays: Math.round(ySum / yCount * 10) / 10, count: yCount } : null };
+  return { months, year: yCount ? { avgDays: Math.round(ySum / yCount * 10) / 10, count: yCount } : null, yearNum: lastY };
 }
 // ═══ НАЧАЛО БЛОКА «Прибыль за всё время» (21.09.2026, убирается целиком) ═════
 // Прибыль по месяцам с апреля 2016 по август 2026 — разобрана из VSC.xlsx, из
@@ -8303,9 +8315,10 @@ app.get("/admin/api/vsc/dealcycle", requireVscDashboard, (req, res) => {
     const now = new Date(Date.now() + 3 * 3600 * 1000);
     const curYm = now.getUTCFullYear() * 12 + now.getUTCMonth();
     Object.keys(d.repeats).sort().forEach((mk) => {
-      if (2026 * 12 + (+mk.slice(5) - 1) < curYm) {
+      const kk = (+mk.slice(0, 4)) * 12 + (+mk.slice(5) - 1);
+      if (kk < curYm) {
         repeats[mk] = d.repeats[mk];
-        rt += d.repeats[mk].total || 0; rr += d.repeats[mk].rep || 0;
+        if (Math.floor(kk / 12) === Math.floor((curYm - 1) / 12)) { rt += d.repeats[mk].total || 0; rr += d.repeats[mk].rep || 0; }
       }
     });
     if (rt) repeatsYear = { total: rt, rep: rr };
@@ -8318,14 +8331,15 @@ app.get("/admin/api/vsc/dealcycle", requireVscDashboard, (req, res) => {
     const now2 = new Date(Date.now() + 3 * 3600 * 1000);
     const curYm2 = now2.getUTCFullYear() * 12 + now2.getUTCMonth();
     Object.keys(d.repeatsRev).sort().forEach((mk) => {
-      if (2026 * 12 + (+mk.slice(5) - 1) < curYm2) {
+      const kk = (+mk.slice(0, 4)) * 12 + (+mk.slice(5) - 1);
+      if (kk < curYm2) {
         repeatsRev[mk] = d.repeatsRev[mk];
-        rt += d.repeatsRev[mk].total || 0; rr += d.repeatsRev[mk].rep || 0;
+        if (Math.floor(kk / 12) === Math.floor((curYm2 - 1) / 12)) { rt += d.repeatsRev[mk].total || 0; rr += d.repeatsRev[mk].rep || 0; }
       }
     });
     if (rt) repeatsRevYear = { total: rt, rep: rr };
   }
-  res.json({ success: true, ts: d && d.ts, months: dc.months || null, year: dc.year || null, repeats, repeatsYear, repeatsRev, repeatsRevYear, breakdown: (d && d.breakdown2026) || null, running: _dealCycleRunning });
+  res.json({ success: true, ts: d && d.ts, months: dc.months || null, year: dc.year || null, yearNum: dc.yearNum || null, repeats, repeatsYear, repeatsRev, repeatsRevYear, breakdown: (d && d.breakdown2026) || null, running: _dealCycleRunning });
 });
 app.post("/admin/api/vsc/dealcycle/run", requireAdmin, (req, res) => {
   if (_dealCycleRunning) return res.json({ success: true, started: false, running: true });
@@ -8358,10 +8372,11 @@ setTimeout(() => { if (!loadDealCycle()) Promise.resolve(amoBg(() => runDealCycl
 // 75 дней, более старые месяцы берутся из прошлого файла (первое касание — историческое,
 // оно не меняется). Результат → .vscFirstTouch.json.
 const VSC_FTOUCH_FILE = path.join(__dirname, ".vscFirstTouch.json");
-const FTOUCH_YEAR = 2026, FTOUCH_TALK_SEC = 15, FTOUCH_INCALL_WIN = [-600, 300], FTOUCH_WINDOW_DAYS = 75;
+let FTOUCH_YEAR = 2026; const FTOUCH_TALK_SEC = 15, FTOUCH_INCALL_WIN = [-600, 300], FTOUCH_WINDOW_DAYS = 75;
 function loadFirstTouch() { try { return JSON.parse(fs.readFileSync(VSC_FTOUCH_FILE, "utf8")); } catch (_) { return null; } }
 let _ftouchRunning = false;
 async function runFirstTouch(trigger) {
+  FTOUCH_YEAR = Math.max(2026, vscCalcYear());
   if (_ftouchRunning) return { skipped: true };
   if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
   _ftouchRunning = true;
@@ -8489,6 +8504,7 @@ async function runFirstTouch(trigger) {
       const fromYm = (() => { const d = new Date(from * 1000 + 3 * 3600 * 1000); return d.getUTCFullYear() * 100 + (d.getUTCMonth() + 1); })();
       for (const ym in prev.months) { const v = +ym.replace("-", ""); if (v < fromYm && !months[ym]) months[ym] = prev.months[ym]; }
     }
+    try { const prevF = loadFirstTouch(); vscKeepOtherYears(prevF && prevF.months, months, FTOUCH_YEAR); } catch (_) {}
     const out = { ts: Date.now(), year: FTOUCH_YEAR, months };
     fs.writeFileSync(VSC_FTOUCH_FILE, JSON.stringify(out, null, 2), "utf8");
     try {

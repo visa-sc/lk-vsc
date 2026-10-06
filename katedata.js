@@ -95,7 +95,8 @@ function returnsSbory(ym) {
 }
 
 // Приход сборов из CRM-факта (поля сделок amoCRM по видам сборов).
-const IN_SBORY = { reg: "регистрация", podacha: "подача", photo: "фото", consul: "консульские сборы", akk: "услуги акк", bot: "запись/бот",
+// В «Кассе» поле фото называется foto (photo оставлен на всякий случай).
+const IN_SBORY = { reg: "регистрация", podacha: "подача", foto: "фото", photo: "фото", consul: "консульские сборы", akk: "услуги акк", bot: "запись/бот",
   voucher: "ваучеры авиа", courier: "сторонние курьеры", insur: "страховка", translate: "языковые переводы" };
 function sboryIncome(ym) {
   if (ym < FROM_YM) return null;

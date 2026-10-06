@@ -2327,6 +2327,24 @@
         return out;
       }
       function vscChartMonths() { return vscFoldMonths((vscData && vscData.months) || []); }
+      // То же для карт «ГГГГ-ММ» → значение: прошлые годы — ключом «ГГГГ-00» со сводным
+      // значением agg(список), развёрнутые — по месяцам. label(ym) — подпись или null.
+      function vscFoldYmMap(map, agg) {
+        const keys = Object.keys(map || {}).sort();
+        const ys = []; keys.forEach((k) => { const y = +k.slice(0, 4); if (ys.indexOf(y) < 0) ys.push(y); });
+        if (ys.length <= 1) return { yms: keys, map: map, label: () => null };
+        const cur = Math.max.apply(null, ys), out = Object.assign({}, map), order = [];
+        const MS = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
+        ys.filter((y) => y < cur).sort().forEach((y) => {
+          const ks = keys.filter((k) => +k.slice(0, 4) === y);
+          out[y + "-00"] = agg(ks.map((k) => map[k])); order.push(y + "-00");
+          if (vscYearOpen[y]) ks.forEach((k) => order.push(k));
+        });
+        keys.filter((k) => +k.slice(0, 4) === cur).forEach((k) => order.push(k));
+        return { yms: order, map: out, label: (k) => (k.slice(5) === "00" ? k.slice(0, 4) + " год" : (+k.slice(0, 4) < cur ? MS[+k.slice(5, 7) - 1] + " ’" + k.slice(2, 4) : null)) };
+      }
+      const vscAggSum = (list) => { const o = { total: 0, rep: 0 }; list.forEach((x) => { o.total += (x && x.total) || 0; o.rep += (x && x.rep) || 0; }); return o; };
+      const vscAggCycle = (list) => { let s = 0, c = 0; list.forEach((x) => { if (x && x.count) { s += x.avgDays * x.count; c += x.count; } }); return { avgDays: c ? Math.round(s / c * 10) / 10 : 0, count: c }; };
       // Годы, которые сейчас в данных (для подписей «(2026)» в заголовках).
       function vscYearsLabel(months) {
         const ys = []; (months || []).forEach((m) => { const y = vscYearOfName(m && m.name); if (y != null && ys.indexOf(y) < 0) ys.push(y); });
@@ -5815,36 +5833,36 @@
             box.innerHTML = '<div class="vsc-empty">' + (j && j.running ? "Идёт пересчёт по истории amoCRM (низким приоритетом) — загляните позже." : "Данных пока нет — появятся после ближайшего ночного пересчёта (00:50).") + '</div>';
             return;
           }
-          const yms = Object.keys(reps).sort();
+          const FY = vscFoldYmMap(reps, vscAggSum), yms = FY.yms;
           const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
           box.innerHTML = "";
           const pctOf = function (m) { return m.total ? Math.round(m.rep / m.total * 1000) / 10 : null; };
           const yearPct = j.repeatsYear ? pctOf(j.repeatsYear) : null;
-          const maxV = Math.max.apply(null, yms.map(function (ym) { return pctOf(reps[ym]) || 0; }).concat([yearPct || 0, 1]));
+          const maxV = Math.max.apply(null, yms.map(function (ym) { return pctOf(FY.map[ym]) || 0; }).concat([yearPct || 0, 1]));
           const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "215px";
           // Годовой итог — первой карточкой с подложкой (как в «Цикле сделки» и «Отзывах»).
           if (yearPct != null) {
             const yc = document.createElement("div"); yc.className = "vsc-bar-col";
             yc.style.cssText = "flex:0 0 74px;background:#eef5fb;border:1px solid #d3e3f2;border-radius:12px;padding:8px 6px 6px;box-sizing:border-box;margin-right:12px;";
-            yc.title = "2026 год · все завершённые месяцы\nповторных: " + j.repeatsYear.rep + " из " + j.repeatsYear.total + " оплаченных сделок";
+            yc.title = (j.yearNum || 2026) + " год · все завершённые месяцы\nповторных: " + j.repeatsYear.rep + " из " + j.repeatsYear.total + " оплаченных сделок";
             const yv = document.createElement("div"); yv.className = "vsc-bar-v"; yv.style.fontWeight = "700"; yv.textContent = String(yearPct).replace(".", ",") + "%";
             const yb = document.createElement("div"); yb.className = "vsc-bar"; yb.style.width = "32px";
             yb.style.height = Math.max(2, Math.round(yearPct / maxV * 130)) + "px";
             const yx = document.createElement("div"); yx.className = "vsc-bar-x"; yx.style.cssText = "font-weight:700;color:#2c5a86;font-size:10.5px;";
-            yx.textContent = "2026 год";
+            yx.textContent = (j.yearNum || 2026) + " год";
             const yd = document.createElement("div"); yd.className = "vsc-bar-d";
             yc.appendChild(yv); yc.appendChild(yb); yc.appendChild(yx); yc.appendChild(yd);
             bars.appendChild(yc);
           }
           let prevPct = null;
           yms.forEach(function (ym) {
-            const mo = reps[ym]; const pc = pctOf(mo);
+            const mo = FY.map[ym]; const pc = pctOf(mo);
             const col = document.createElement("div"); col.className = "vsc-bar-col";
             col.title = MONF[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4) + "\nповторных: " + mo.rep + " из " + mo.total + " оплаченных сделок";
             const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = pc != null ? (String(pc).replace(".", ",") + "%") : "—";
             const bar = document.createElement("div"); bar.className = "vsc-bar"; bar.style.width = "32px";
             bar.style.height = (pc != null ? Math.max(2, Math.round(pc / maxV * 130)) : 2) + "px";
-            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = MONF[+ym.slice(5, 7) - 1];
+            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = FY.label(ym) || MONF[+ym.slice(5, 7) - 1];
             const dl = document.createElement("div"); dl.className = "vsc-bar-d";
             if (pc != null && prevPct != null && prevPct !== 0) {
               const pd = Math.round((pc - prevPct) / Math.abs(prevPct) * 100);
@@ -5880,36 +5898,36 @@
             box.innerHTML = '<div class="vsc-empty">' + (j && j.running ? "Идёт пересчёт по amoCRM — загляните позже." : "Данных пока нет — появятся после ближайшего ночного пересчёта (00:50).") + '</div>';
             return;
           }
-          const yms = Object.keys(reps).sort();
+          const FY = vscFoldYmMap(reps, vscAggSum), yms = FY.yms;
           const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
           const money = function (v) { return Math.round(v).toLocaleString("ru-RU") + " ₽"; };
           const pctOf = function (m) { return m.total ? Math.round(m.rep / m.total * 1000) / 10 : null; };
           box.innerHTML = "";
           const yearPct = j.repeatsRevYear ? pctOf(j.repeatsRevYear) : null;
-          const maxV = Math.max.apply(null, yms.map(function (ym) { return pctOf(reps[ym]) || 0; }).concat([yearPct || 0, 1]));
+          const maxV = Math.max.apply(null, yms.map(function (ym) { return pctOf(FY.map[ym]) || 0; }).concat([yearPct || 0, 1]));
           const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "215px";
           if (yearPct != null) {
             const yc = document.createElement("div"); yc.className = "vsc-bar-col";
             yc.style.cssText = "flex:0 0 74px;background:#eef5fb;border:1px solid #d3e3f2;border-radius:12px;padding:8px 6px 6px;box-sizing:border-box;margin-right:12px;";
-            yc.title = "2026 год · все завершённые месяцы\nот повторных: " + money(j.repeatsRevYear.rep) + " из " + money(j.repeatsRevYear.total);
+            yc.title = (j.yearNum || 2026) + " год · все завершённые месяцы\nот повторных: " + money(j.repeatsRevYear.rep) + " из " + money(j.repeatsRevYear.total);
             const yv = document.createElement("div"); yv.className = "vsc-bar-v"; yv.style.fontWeight = "700"; yv.textContent = String(yearPct).replace(".", ",") + "%";
             const yb = document.createElement("div"); yb.className = "vsc-bar"; yb.style.width = "32px";
             yb.style.height = Math.max(2, Math.round(yearPct / maxV * 130)) + "px";
             const yx = document.createElement("div"); yx.className = "vsc-bar-x"; yx.style.cssText = "font-weight:700;color:#2c5a86;font-size:10.5px;";
-            yx.textContent = "2026 год";
+            yx.textContent = (j.yearNum || 2026) + " год";
             const yd = document.createElement("div"); yd.className = "vsc-bar-d";
             yc.appendChild(yv); yc.appendChild(yb); yc.appendChild(yx); yc.appendChild(yd);
             bars.appendChild(yc);
           }
           let prevPct = null;
           yms.forEach(function (ym) {
-            const mo = reps[ym]; const pc = pctOf(mo);
+            const mo = FY.map[ym]; const pc = pctOf(mo);
             const col = document.createElement("div"); col.className = "vsc-bar-col";
             col.title = MONF[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4) + "\nот повторных: " + money(mo.rep) + "\nвся выручка месяца: " + money(mo.total);
             const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = pc != null ? (String(pc).replace(".", ",") + "%") : "—";
             const bar = document.createElement("div"); bar.className = "vsc-bar"; bar.style.width = "32px";
             bar.style.height = (pc != null ? Math.max(2, Math.round(pc / maxV * 130)) : 2) + "px";
-            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = MONF[+ym.slice(5, 7) - 1];
+            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = FY.label(ym) || MONF[+ym.slice(5, 7) - 1];
             const dl = document.createElement("div"); dl.className = "vsc-bar-d";
             if (pc != null && prevPct != null && prevPct !== 0) {
               const pd = Math.round((pc - prevPct) / Math.abs(prevPct) * 100);
@@ -6115,35 +6133,35 @@
             box.innerHTML = '<div class="vsc-empty">' + (j && j.running ? "Идёт первый расчёт по истории amoCRM (низким приоритетом, может занять заметное время) — загляните позже." : "Данных пока нет — первый расчёт запустится автоматически.") + '</div>';
             return;
           }
-          const yms = Object.keys(months).sort();
+          const FY = vscFoldYmMap(months, vscAggCycle), yms = FY.yms;
           const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
           box.innerHTML = "";
-          const maxV = Math.max.apply(null, yms.map(function (ym) { return months[ym].avgDays; }).concat([j.year ? j.year.avgDays : 1, 1]));
+          const maxV = Math.max.apply(null, yms.map(function (ym) { return FY.map[ym].avgDays; }).concat([j.year ? j.year.avgDays : 1, 1]));
           const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "215px";
           // Годовой итог — первой карточкой с подложкой (как «2026 год» в «Отзывах»):
           // средневзвешенно по всем контактам завершённых месяцев января–августа и далее.
           if (j.year) {
             const yc = document.createElement("div"); yc.className = "vsc-bar-col";
             yc.style.cssText = "flex:0 0 74px;background:#eef5fb;border:1px solid #d3e3f2;border-radius:12px;padding:8px 6px 6px;box-sizing:border-box;margin-right:12px;";
-            yc.title = "2026 год · все контакты завершённых месяцев\nсредний цикл: " + j.year.avgDays + " дн\nконтактов с оплатой: " + j.year.count;
+            yc.title = (j.yearNum || 2026) + " год · все контакты завершённых месяцев\nсредний цикл: " + j.year.avgDays + " дн\nконтактов с оплатой: " + j.year.count;
             const yv = document.createElement("div"); yv.className = "vsc-bar-v"; yv.style.fontWeight = "700"; yv.textContent = Math.round(j.year.avgDays) + " дн";
             const yb = document.createElement("div"); yb.className = "vsc-bar"; yb.style.width = "32px";
             yb.style.height = Math.max(2, Math.round(j.year.avgDays / maxV * 130)) + "px";
             const yx = document.createElement("div"); yx.className = "vsc-bar-x"; yx.style.cssText = "font-weight:700;color:#2c5a86;font-size:10.5px;";
-            yx.textContent = "2026 год";
+            yx.textContent = (j.yearNum || 2026) + " год";
             const yd = document.createElement("div"); yd.className = "vsc-bar-d"; // пустышка — подписи месяцев и года на одном уровне
             yc.appendChild(yv); yc.appendChild(yb); yc.appendChild(yx); yc.appendChild(yd);
             bars.appendChild(yc);
           }
           let prevAvg = null;
           yms.forEach(function (ym) {
-            const mo = months[ym];
+            const mo = FY.map[ym];
             const col = document.createElement("div"); col.className = "vsc-bar-col";
-            col.title = MONF[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4) + " · контакты, созданные в этом месяце\nсредний цикл: " + mo.avgDays + " дн\nконтактов с оплатой: " + mo.count;
+            col.title = (FY.label(ym) || MONF[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4)) + " · контакты, созданные в этом месяце\nсредний цикл: " + mo.avgDays + " дн\nконтактов с оплатой: " + mo.count;
             const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = Math.round(mo.avgDays) + " дн";
             const bar = document.createElement("div"); bar.className = "vsc-bar"; bar.style.width = "32px";
             bar.style.height = Math.max(2, Math.round(mo.avgDays / maxV * 130)) + "px";
-            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = MONF[+ym.slice(5, 7) - 1];
+            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = FY.label(ym) || MONF[+ym.slice(5, 7) - 1];
             // Стрелка к пред. месяцу — как в выручке/% пропущенных: цикл короче —
             // хорошо (зелёная ▼), длиннее — плохо (красная ▲).
             const dl = document.createElement("div"); dl.className = "vsc-bar-d";
@@ -6178,23 +6196,23 @@
         apiFetch("/admin/api/vsc/firsttouch").then(function (j) {
           const d = j && j.data;
           if (!d || !d.months || !Object.keys(d.months).length) { box.innerHTML = '<div class="vsc-empty">Данных пока нет — идёт первый съём истории из amoCRM (займёт до часа, низким приоритетом).</div>'; return; }
-          const yms = Object.keys(d.months).sort();
+          const FY = vscFoldYmMap(d.months, function (list) { const a = vscAvgObj(list); return { medMin: a.medMin != null ? Math.round(a.medMin * 10) / 10 : null, p15: a.p15 != null ? Math.round(a.p15 * 10) / 10 : null, n: Math.round((a.n || 0) * list.length), touched: Math.round((a.touched || 0) * list.length), noTouch: Math.round((a.noTouch || 0) * list.length), recallN: Math.round((a.recallN || 0) * list.length), recallMedMin: a.recallMedMin }; }), yms = FY.yms;
           const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
           box.innerHTML = "";
-          const present = yms.map(function (ym) { return d.months[ym].medMin; }).filter(function (v) { return v != null; });
+          const present = yms.map(function (ym) { return FY.map[ym].medMin; }).filter(function (v) { return v != null; });
           const maxV = Math.max.apply(null, present.concat([1]));
           const bars = document.createElement("div"); bars.className = "vsc-bars"; bars.style.height = "215px";
           yms.forEach(function (ym) {
-            const mo = d.months[ym];
+            const mo = FY.map[ym];
             const col = document.createElement("div"); col.className = "vsc-bar-col"; col.style.flex = "0 0 74px";
-            col.title = ym + " · лидов учтено " + mo.n + " (коснулись " + mo.touched + ", без касания " + mo.noTouch + ")"
+            col.title = (FY.label(ym) || ym) + " · лидов учтено " + mo.n + " (коснулись " + mo.touched + ", без касания " + mo.noTouch + ")"
               + "\nмедиана касания: " + vscFtFmtMin(mo.medMin)
               + "\n≤15 минут: " + (mo.p15 != null ? mo.p15 + "%" : "—")
               + "\nперезвон после неудачного входящего: " + (mo.recallN || 0) + " шт" + (mo.recallMedMin != null ? ", медиана " + vscFtFmtMin(mo.recallMedMin) : "");
             const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.style.fontWeight = "700"; vl.textContent = vscFtFmtMin(mo.medMin);
             const bar = document.createElement("div"); bar.className = "vsc-bar"; bar.style.width = "32px";
             bar.style.height = (mo.medMin != null ? Math.max(2, Math.round(mo.medMin / maxV * 130)) : 2) + "px";
-            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = MONF[+ym.slice(5, 7) - 1];
+            const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.style.fontWeight = "700"; xl.style.color = "#5a626f"; xl.textContent = FY.label(ym) || MONF[+ym.slice(5, 7) - 1];
             const pl = document.createElement("div"); pl.style.cssText = "font-size:8.5px;font-weight:700;color:" + ((mo.p15 || 0) >= 70 ? "#2c7a43" : (mo.p15 || 0) >= 50 ? "#b8862a" : "#b0263a") + ";line-height:1.2;margin-top:1px;white-space:nowrap;";
             pl.textContent = mo.p15 != null ? ("≤15м: " + mo.p15 + "%") : "";
             col.appendChild(vl); col.appendChild(bar); col.appendChild(xl); col.appendChild(pl);

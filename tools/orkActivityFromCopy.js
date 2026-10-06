@@ -29,8 +29,9 @@ db.close();
 const byUser = {};
 rows.forEach((r) => {
   const um = byUser[r.u] || (byUser[r.u] = {});
-  const key = String(r.m);
-  const o = um[key] || (um[key] = { tasks: 0, stages: 0, msgs: 0, y: r.y });
-  o[TYPES[r.t]] += r.n;
+  // Ключ «ГГГГ-М» (с 2027 месяцы разных лет не должны складываться); для 2026 —
+  // ещё и прежний ключ «М», который читает сервер (подготовка к смене года, 06.10.2026).
+  const keys = [r.y + "-" + r.m].concat(r.y === 2026 ? [String(r.m)] : []);
+  keys.forEach((key) => { const o = um[key] || (um[key] = { tasks: 0, stages: 0, msgs: 0, y: r.y }); o[TYPES[r.t]] += r.n; });
 });
 process.stdout.write(JSON.stringify({ byUser, minTs: range.mn, maxTs: range.mx }));
