@@ -5873,7 +5873,7 @@
           const TH = 'style="padding:7px 9px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;"';
           const TD = "padding:6px 9px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;";
           const cell = function (v, bold) { return '<td style="' + TD + (bold ? "font-weight:700;" : "") + (v != null && v < 0 ? "color:#a12b3c;" : "") + '">' + (v == null ? "" : money(v)) + "</td>"; };
-          const pcell = function (v, bold) { return '<td style="' + TD + (bold ? "font-weight:700;" : "") + "color:" + col(v) + ';">' + (v == null ? "" : (v > 0 ? "+" : "") + (Math.round(v * 100) / 100).toLocaleString("ru-RU") + "%") + "</td>"; };
+          const pcell = function (v, bold) { return '<td style="' + TD + (bold ? "font-weight:700;" : "") + "color:" + col(v) + ';">' + (v == null ? "" : (v > 0 ? "+" : "") + (Math.round(v * 100) / 100).toLocaleString("ru-RU").replace("-", "−") + "%") + "</td>"; };
           const dcell = function (v, bold) { return '<td style="' + TD + (bold ? "font-weight:700;" : "") + "color:" + col(v) + ';">' + (v == null ? "" : (v > 0 ? "+" : "") + money(v)) + "</td>"; };
           const yy = function (y) { return String(y).slice(2); };
           let lastM = 0;
@@ -5899,7 +5899,7 @@
           const sm = document.createElement("summary");
           sm.style.cssText = "cursor:pointer;font-size:13px;font-weight:600;color:#33415a;user-select:none;";
           sm.textContent = "Подробнее — по месяцам за " + ys[0] + "–" + yNow;
-          if (hasT) sm.innerHTML += '<span style="font-weight:400;color:#9096a3;"> · ' + yNow + " к " + (yNow - 1) + " за те же месяцы: " + '<span style="color:' + col(curT - prevT) + ';">' + (curT - prevT > 0 ? "+" : "") + (Math.round(pct(curT, prevT) * 10) / 10).toString().replace(".", ",") + "%</span></span>";
+          if (hasT) sm.innerHTML += '<span style="font-weight:400;color:#9096a3;"> · ' + yNow + " к " + (yNow - 1) + " за те же месяцы: " + '<span style="color:' + col(curT - prevT) + ';">' + (curT - prevT > 0 ? "+" : "") + (Math.round(pct(curT, prevT) * 10) / 10).toString().replace(".", ",").replace("-", "−") + "%</span></span>";
           det.appendChild(sm);
           const tail = document.createElement("div"); tail.innerHTML = t; det.appendChild(tail);
           box.appendChild(det);
