@@ -1202,11 +1202,49 @@ function loadCityRev() {
   try { _cityRev = JSON.parse(fs.readFileSync(CITY_REV_FILE, "utf8")); } catch (_) { _cityRev = null; }
   return _cityRev;
 }
-function saveCityRev(d) { _cityRev = d; try { fs.writeFileSync(CITY_REV_FILE, JSON.stringify(d, null, 2), "utf8"); } catch (e) { console.error("saveCityRev:", e.message); } }
+function saveCityRev(d) {
+  // Смена года: прежний год переезжает в архив .vscCityRevenue-ГГГГ.json, а не затирается.
+  const prev = loadCityRev();
+  if (prev && prev.year && d && d.year && prev.year !== d.year) {
+    try { fs.writeFileSync(cityRevArchiveFile(prev.year), JSON.stringify(prev), "utf8"); console.log("CITY REVENUE: " + prev.year + " год перенесён в архив"); } catch (e) { console.error("cityRev archive:", e.message); }
+  }
+  _cityRev = d; try { fs.writeFileSync(CITY_REV_FILE, JSON.stringify(d, null, 2), "utf8"); } catch (e) { console.error("saveCityRev:", e.message); }
+}
+function cityRevArchiveFile(y) { return CITY_REV_FILE.replace(/\.json$/, "") + "-" + y + ".json"; }
+// Все годы выручки по городам: { "2026": {months}, "2027": {months} }. Пока архивов нет —
+// null (интерфейс тогда работает по-старому, по одному году).
+function cityRevYears() {
+  const cur = loadCityRev(); if (!cur || !cur.year) return null;
+  const out = {};
+  let fr = null; try { fr = loadVscFrozen(); } catch (_) {}
+  for (let y = 2026; y < cur.year; y++) {
+    try {
+      const a = JSON.parse(fs.readFileSync(cityRevArchiveFile(y), "utf8"));
+      if (!a || !a.months) continue;
+      const ms = Object.assign({}, a.months);
+      // Замороженные месяцы (снимок навсегда) главнее пересчёта архива.
+      if (fr && fr.city) Object.keys(fr.city).forEach((k) => { const pp = k.split("-"); if (+pp[0] === y) ms[pp[1]] = fr.city[k]; });
+      out[y] = { months: ms };
+    } catch (_) {}
+  }
+  if (!Object.keys(out).length) return null;
+  out[cur.year] = { months: cur.months };
+  return out;
+}
+function withCityYears(cr) { const ys = cityRevYears(); return (cr && ys) ? Object.assign({}, cr, { years: ys }) : cr; }
 function _cityCfEnums(e, fid) { const cf = (e.custom_fields_values || []).find((f) => f.field_id === fid); return (cf && cf.values && cf.values.length) ? cf.values.map((v) => (v.enum_id != null ? v.enum_id : v.value)) : []; }
 function _cityCfVal(e, fid) { const cf = (e.custom_fields_values || []).find((f) => f.field_id === fid); return (cf && cf.values && cf.values.length) ? cf.values[0].value : null; }
 function _cityYm(ts) { if (ts == null || ts === "" || isNaN(Number(ts))) return null; const d = new Date(Number(ts) * 1000 + 3 * 3600 * 1000); return { y: d.getUTCFullYear(), m: d.getUTCMonth() }; }
 async function runCityRevenue(trigger) {
+  // Январь: декабрь прошлого года ещё дозаполняется — пересчитываем прошлый год в архив
+  // (без стафф-перформанса), затем текущий.
+  const nowY = new Date(Date.now() + 3 * 3600 * 1000).getUTCFullYear();
+  if (new Date(Date.now() + 3 * 3600 * 1000).getUTCMonth() === 0 && nowY > 2026) {
+    try { await runCityRevenueYear(trigger, nowY - 1, true); } catch (e) { console.error("CITY REVENUE прошлый год:", e && e.message); }
+  }
+  return runCityRevenueYear(trigger, nowY, false);
+}
+async function runCityRevenueYear(trigger, Y, archive) {
   if (_cityRevRunning) return { skipped: true };
   if (!AMO_SUBDOMAIN || !AMO_ACCESS_TOKEN) return { error: "amoCRM не настроен" };
   _cityRevRunning = true;
@@ -1215,9 +1253,9 @@ async function runCityRevenue(trigger) {
     const baseUrl = `https://${AMO_SUBDOMAIN}.amocrm.ru`;
     const params = { with: "contacts" };
     CITY_REV_STATUSES.forEach((s, i) => { params[`filter[statuses][${i}][pipeline_id]`] = String(s.pipeline_id); params[`filter[statuses][${i}][status_id]`] = String(s.status_id); });
-    params["filter[updated_at][from]"] = String(Math.floor(Date.UTC(2026, 0, 1, 0, 0, 0) / 1000) - 3 * 3600);
+    params["filter[updated_at][from]"] = String(Math.floor(Date.UTC(Y, 0, 1, 0, 0, 0) / 1000) - 3 * 3600);
     const leads = await amoGetAllPagesParallel(`${baseUrl}/api/v4/leads`, params, 4);
-    const rev = (leads || []).filter((l) => { const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); return ym && ym.y === 2026; });
+    const rev = (leads || []).filter((l) => { const ym = _cityYm(_cityCfVal(l, CITY_CF_DATE)); return ym && ym.y === Y; });
     const mainCid = (l) => { const cs = (l._embedded && l._embedded.contacts) || []; const m = cs.find((c) => c.is_main); return m ? m.id : null; };
     const cids = [...new Set(rev.map(mainCid).filter(Boolean))];
     const cmap = {};
@@ -1325,7 +1363,12 @@ async function runCityRevenue(trigger) {
     }
     const out = {};
     Object.keys(months).forEach((mk) => { out[mk] = { total: Math.round(months[mk].total), spb: Math.round(months[mk].spb), msk: Math.round(months[mk].total - months[mk].spb), deals: months[mk].deals, spbDeals: months[mk].spbDeals || 0 }; });
-    const result = { ts: Date.now(), year: 2026, leads: rev.length, durationMs: Date.now() - t0, months: out };
+    const result = { ts: Date.now(), year: Y, leads: rev.length, durationMs: Date.now() - t0, months: out };
+    if (archive) {                                   // прошлый год — только в архив, без стафф-перформанса
+      try { fs.writeFileSync(cityRevArchiveFile(Y), JSON.stringify(result), "utf8"); } catch (e) { console.error("cityRev archive:", e.message); }
+      console.log("CITY REVENUE: " + Y + " (архив) — сделок " + rev.length);
+      return result;
+    }
     saveCityRev(result);
     _cityRevLog.unshift({ ts: result.ts, trigger: trigger || "cron", leads: rev.length, ms: result.durationMs }); _cityRevLog = _cityRevLog.slice(0, 30);
     console.log(`CITY REVENUE: ok, сделок ${rev.length}, месяцев ${Object.keys(out).length}, ${result.durationMs}ms`);
@@ -1333,7 +1376,7 @@ async function runCityRevenue(trigger) {
     // прохода по сделкам не делаем, только по контактам года (они нужны отделу продаж
     // для конверсии «контакт → продажа»). СТРОГО ПОСЛЕ сохранения выручки: этот кусок
     // длинный, и он не должен задерживать блок «Выручка по городам».
-    try { await buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, out, byStage, byOpMgr, ooDeals); } catch (e) { console.error("STAFF PERF:", e && e.message); }
+    try { await buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, out, byStage, byOpMgr, ooDeals, Y); } catch (e) { console.error("STAFF PERF:", e && e.message); }
     return result;
   } catch (e) { console.error("runCityRevenue:", e.message); _cityRevLog.unshift({ ts: Date.now(), trigger, error: e.message }); return { error: e.message }; }
   finally { _cityRevRunning = false; }
@@ -1528,7 +1571,7 @@ setTimeout(() => { Promise.resolve(amoBg(() => orkActBackfillApi())).catch(() =>
   })();
 })();
 
-async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, byStage, byOpMgr, ooDeals) {
+async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, byStage, byOpMgr, ooDeals, year) {
   // 1. Сотрудники и их группы.
   const users = {};
   for (let page = 1; page < 12; page++) {
@@ -1553,7 +1596,9 @@ async function buildStaffPerf(baseUrl, byUser, dealsForNew, byKto, monthTotals, 
     users[uid].group = gname;
     users[uid].dept = hit ? hit[1] : null;
   });
-  const Y = new Date(Date.now() + 3 * 3600 * 1000).getUTCFullYear();
+  const Y = year || new Date(Date.now() + 3 * 3600 * 1000).getUTCFullYear();
+  // Смена года: снимок прошлого года — в архив .vscStaffPerf-ГГГГ.json, а не затирается.
+  try { const prevSp = loadStaffPerf(); if (prevSp && prevSp.year && prevSp.year !== Y) fs.writeFileSync(VSC_STAFFPERF_FILE.replace(/\.json$/, "") + "-" + prevSp.year + ".json", JSON.stringify(prevSp), "utf8"); } catch (e) { console.error("staffPerf archive:", e.message); }
   // Сохраняем ПРОМЕЖУТОЧНО, до длинного прохода по контактам: часть по сделкам уже
   // готова, и если процесс перезапустят на середине, данные не потеряются.
   const persist = () => {
@@ -1759,7 +1804,7 @@ function scheduleCityRevenueDaily() {
   })();
   console.log("CITY REVENUE: ежедневный расчёт запланирован на 05:00 МСК");
 }
-app.get("/admin/api/vsc/city-revenue", requireVscAccess, (req, res) => { return res.json({ success: true, data: loadCityRev(), log: _cityRevLog.slice(0, 5) }); });
+app.get("/admin/api/vsc/city-revenue", requireVscAccess, (req, res) => { return res.json({ success: true, data: withCityYears(loadCityRev()), log: _cityRevLog.slice(0, 5) }); });
 app.post("/admin/api/vsc/city-revenue/run", requireAdmin, (req, res) => {
   if (_cityRevRunning) return res.json({ success: true, started: false, running: true });
   setImmediate(() => { Promise.resolve(amoBg(() => runCityRevenue("manual"))).catch(() => {}); });
@@ -2000,7 +2045,7 @@ app.get("/admin/api/vsc/zarplata", requireAdmin, async (req, res) => {
     const curYmM = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 7);
     try { const pm = potok.warm() || {}; Object.keys(pm).forEach((n) => { const r = pm[n]; if (r && r.ym >= potok.FROM_YM && r.ym < curYmM && r.mgrAccrued != null) potokMgr[n] = r.mgrAccrued; }); } catch (_) {}
     const managerPay = Object.assign({}, zarplata.kateManagerPay(), potokMgr, loadMgrPay());
-    return res.json({ success: true, data: d, managerPay: managerPay, cityRevenue: loadCityRev(), loadBase: base, plCalls: plCalls, pbx: pbx.load() });
+    return res.json({ success: true, data: d, managerPay: managerPay, cityRevenue: withCityYears(loadCityRev()), loadBase: base, plCalls: plCalls, pbx: pbx.load() });
   } catch (e) {
     console.error("vsc zarplata:", e && e.message);
     return res.status(500).json({ success: false, message: "Не удалось прочитать зарплатную таблицу: " + (e && e.message) });
@@ -6299,7 +6344,10 @@ async function vscFetchAll() {
     months[i] = Object.assign({}, months[i], { ctrl });
   }
   // Год: суммируем аддитивные базы из месячных Grand total, ratio — производные/среднее.
-  const withTotal = months.filter((m) => m.total);
+  // С 2027: год — только месяцы ТЕКУЩЕГО (последнего в данных) года, прошлые годы в
+  // итог не входят. Пока все месяцы 2026-го — то же, что раньше.
+  const lastY = months.reduce((a, m) => { const mm = /(20\d\d)/.exec(m.name || ""); return mm ? Math.max(a, +mm[1]) : a; }, 0);
+  const withTotal = months.filter((m) => m.total && (!lastY || String(m.name || "").indexOf(String(lastY)) >= 0));
   const sum = (f) => withTotal.reduce((a, m) => a + (m.total[f] || 0), 0);
   const avg = (f) => { const v = withTotal.map((m) => m.total[f]).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
   // Коэффициенты на год считаем ВЗВЕШЕННО (как «Grand total»), а не средним по
@@ -6336,7 +6384,8 @@ async function vscFetchAll() {
   // % возвратов за год = Σ Услуги (возвраты) / Σ выручка (бюджет).
   year.retUslugi = sum("retUslugi");
   year.returnsPct = (year.retUslugi && sumB) ? year.retUslugi / sumB * 100 : null;
-  return { months, year, reviews, cityRevenue: vscFreezeCity(loadCityRev()), updatedAt: new Date().toISOString() };
+  year.yearNum = lastY || null;
+  return { months, year, reviews, cityRevenue: withCityYears(vscFreezeCity(loadCityRev())), updatedAt: new Date().toISOString() };
 }
 // ── Расход Я.Директа vs «Рекламные расходы ОБЩИЕ» (таблица) — блок «Ежемесячный
 // контроль». За ПОСЛЕДНИЙ ЗАВЕРШЁННЫЙ месяц: открученные деньги из Я.Директа
@@ -7439,7 +7488,7 @@ async function vscSpbAdByMonth() {
     processingMode: "auto", returnMoneyInMicros: "false", skipReportHeader: "true", skipReportSummary: "true",
   };
   const body = { params: {
-    SelectionCriteria: { DateFrom: "2026-01-01", DateTo: "2026-12-31" },
+    SelectionCriteria: { DateFrom: "2026-01-01", DateTo: new Date(Date.now() + 3 * 3600 * 1000).getUTCFullYear() + "-12-31" },   // с 2027 — все годы
     FieldNames: ["CampaignName", "Month", "Cost"],
     ReportName: "spb-ad-" + Date.now(), ReportType: "CAMPAIGN_PERFORMANCE_REPORT",
     DateRangeType: "CUSTOM_DATE", Format: "TSV", IncludeVAT: "NO", IncludeDiscount: "NO",
@@ -7539,12 +7588,15 @@ async function vscSpbLeadsRefresh(trigger) {
   const store = spbLeadsLoad();
   const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
   try {
-    for (let mi = 0; mi <= nowMsk.getUTCMonth(); mi++) {
-      const name = MONF[mi] + " 2026";
+    // Все месяцы с января 2026 по текущий (с 2027 — и следующие годы).
+    const nowY = nowMsk.getUTCFullYear();
+    for (let k = 2026 * 12; k <= nowY * 12 + nowMsk.getUTCMonth(); k++) {
+      const yy = Math.floor(k / 12), mi = k % 12;
+      const name = MONF[mi] + " " + yy;
       if (SPB_LEADS_SEED[name] != null) continue;                       // закрытые месяцы — из таблицы Андрея
-      const closed = nowMsk.getTime() >= Date.UTC(2026, mi + 1, 4);
+      const closed = nowMsk.getTime() >= Date.UTC(yy, mi + 1, 4);
       if (closed && store[name] && store[name].final) continue;         // закрытый месяц уже зафиксирован
-      const leads = await vscSpbLeadsMonth(2026, mi);
+      const leads = await vscSpbLeadsMonth(yy, mi);
       store[name] = { leads, final: closed, at: Date.now() };
       console.log(`VSC SPB LEADS [${trigger || "cron"}]: ${name} = ${leads}`);
     }
@@ -7628,10 +7680,15 @@ async function vscSpbPnl() {
   const out = {};
   // 1) Выручка города — из ночного съёма amoCRM
   const cr = loadCityRev();
-  if (cr && cr.months) for (const mk in cr.months) {
-    const mi = Number(mk); if (isNaN(mi)) continue;
-    out[MONF[mi] + " 2026"] = { revenue: cr.months[mk].spb || 0, share: cr.months[mk].total ? (cr.months[mk].spb / cr.months[mk].total) : null };
-  }
+  // Все годы выручки городов (с 2027 — архив прошлых лет + текущий).
+  const crYears = cityRevYears() || (cr && cr.months ? { [cr.year || 2026]: { months: cr.months } } : {});
+  Object.keys(crYears).forEach((yy) => {
+    const ms = crYears[yy].months || {};
+    for (const mk in ms) {
+      const mi = Number(mk); if (isNaN(mi)) continue;
+      out[MONF[mi] + " " + yy] = { revenue: ms[mk].spb || 0, share: ms[mk].total ? (ms[mk].spb / ms[mk].total) : null };
+    }
+  });
   // 2) Реклама СПб — из Я.Директа по кампаниям со словом СПБ (с НДС)
   try {
     const ads = await vscSpbAdByMonth();
@@ -7661,7 +7718,8 @@ async function vscSpbPnl() {
     rec.fot = (zm && zm.fotTotal != null && zm.depts && zm.depts.orkSpb) ? Math.round(zm.depts.orkSpb.accrued || 0) : null;
     // Закрытый месяц: выручка и ФОТ берутся зафиксированными, живой пересчёт их не двигает.
     const mIdx = MONF.indexOf(name.replace(/\s*20\d\d/, ""));
-    const closed = mIdx >= 0 && nowMsk.getTime() >= Date.UTC(2026, mIdx + 1, 4);
+    const nameY = +((/(20\d\d)/.exec(name) || [])[1] || 2026);
+    const closed = mIdx >= 0 && nowMsk.getTime() >= Date.UTC(nameY, mIdx + 1, 4);
     if (SPB_REV_SEED[name] != null) rec.revenue = SPB_REV_SEED[name];
     if (SPB_FOT_SEED[name] != null) rec.fot = Math.round(SPB_FOT_SEED[name]);
     if (SPB_AD_SEED[name] != null) rec.ad = Math.round(SPB_AD_SEED[name]);
@@ -7681,7 +7739,7 @@ async function vscSpbPnl() {
     } else rec.profit = null;
     // Показатели города (колонки из таблицы Андрея): ДРР, ATV, CV.
     rec.drr = (rec.ad != null && rec.revenue) ? Math.round(rec.ad / rec.revenue * 1000) / 10 : null;
-    const cnt = (cr && cr.months && cr.months[String(MONF.indexOf(name.replace(/\s*20\d\d/, "")))]) || null;
+    const cnt = ((crYears[nameY] && crYears[nameY].months) || {})[String(mIdx)] || null;
     // Сделки города: закрытые до августа — из таблицы Андрея, дальше — из ночного съёма
     // «Выручки по городам». Там они лежат в deals.spb (поле spbDeals из старой версии
     // съёма больше не пишется — из-за этого за сентябрь были пустые ATV и CV, 06.10.2026).
@@ -7693,7 +7751,7 @@ async function vscSpbPnl() {
     rec.cv = (rec.deals && rec.leads) ? Math.round(rec.deals / rec.leads * 1000) / 10 : null;
     // месяц закрыт только с 4-го числа следующего
     const mi = MONF.indexOf(name.replace(/\s*20\d\d/, ""));
-    if (mi >= 0 && nowMsk.getTime() < Date.UTC(2026, mi + 1, 4)) delete out[name];
+    if (mi >= 0 && nowMsk.getTime() < Date.UTC(nameY, mi + 1, 4)) delete out[name];
   }
   if (snapDirty) spbSnapSave(snap);
   _spbCache = { at: Date.now(), data: out };

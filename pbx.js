@@ -184,7 +184,15 @@ async function run(opts) {
   const now = new Date(Date.now() + 3 * 3600 * 1000);
   const year = o.year || now.getUTCFullYear();
   let cur = load();
-  if (!cur || cur.year !== year) cur = { ts: 0, year: year, months: {}, ext: EXT_FALLBACK };
+  // Смена года (подготовка к 2027): прошлый год НЕ затираем — переносим его месяцы в
+  // cur.years[ГГГГ] и начинаем новый. Раньше 1 января файл перезаписывался пустым.
+  if (cur && cur.year && cur.year !== year && Object.keys(cur.months || {}).length) {
+    const years = Object.assign({}, cur.years || {});
+    years[cur.year] = { months: cur.months, ts: cur.ts };
+    cur = Object.assign({}, cur, { ts: 0, year: year, months: {}, years: years });
+    delete cur.lastError;
+  }
+  if (!cur || cur.year !== year) cur = { ts: 0, year: year, months: {}, ext: EXT_FALLBACK, years: (cur && cur.years) || undefined };
   // Сначала обновляем справочник: кто-то мог прийти, уйти или сменить добавочный.
   // Что изменилось — пишем в лог и сохраняем в снимок, чтобы это было видно в разделе.
   let roster = { ext: cur.ext || EXT_FALLBACK, plExt: cur.plExt || PL_FALLBACK, live: false };
@@ -216,6 +224,14 @@ async function run(opts) {
       cur.months[String(mi)] = { byExt: r.byExt, total: r.total, lastDay: r.lastDay };
       console.log("PBX: месяц " + (mi + 1) + " — записей " + r.rows + ", входящих " + r.total.inbound + ", пропущено " + r.total.missed);
     } catch (e) { failed.push({ month: mi + 1, message: String((e && e.message) || e).slice(0, 200) }); console.error("PBX месяц " + (mi + 1) + ":", e && e.message); }
+  }
+  // Январь: досчитываем декабрь прошлого года (31-е число в декабре ещё не прошло целиком).
+  if (!o.months && now.getUTCMonth() === 0 && cur.years && cur.years[year - 1]) {
+    try {
+      const r = await fetchMonth(year - 1, 11, roster.ext);
+      cur.years[year - 1].months["11"] = { byExt: r.byExt, total: r.total, lastDay: r.lastDay };
+      console.log("PBX: декабрь " + (year - 1) + " досчитан — входящих " + r.total.inbound);
+    } catch (e) { failed.push({ month: "12." + (year - 1), message: String((e && e.message) || e).slice(0, 200) }); }
   }
   if (failed.length) cur.lastError = { ts: Date.now(), months: failed };
   else { cur.ts = Date.now(); delete cur.lastError; }

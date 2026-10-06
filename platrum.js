@@ -68,9 +68,14 @@ function load() {
   try { const d = JSON.parse(fs.readFileSync(FILE, "utf8")); if (d && d.months) { _cache = d.months; _at = d.ts || 0; } } catch (_) {}
   return _cache;
 }
+// Платрум нужен /vsc только за январь–август 2026 (с сентября расходы ведутся в «Потоке»
+// Кати), поэтому всегда тянем 2026 год и сливаем с кэшем: иначе 1 января 2027 запрос ушёл
+// бы за 2027-й и затёр 2026-й (подготовка к смене года, 06.10.2026).
+const PLATRUM_YEAR = 2026;
 async function refresh() {
-  const months = await fetchPnl();
-  if (!Object.keys(months).length) throw new Error("Платрум вернул пустой P&L");
+  const fresh = await fetchPnl(PLATRUM_YEAR);
+  if (!Object.keys(fresh).length) throw new Error("Платрум вернул пустой P&L");
+  const months = Object.assign({}, load() || {}, fresh);
   _cache = months; _at = Date.now();
   try { fs.writeFileSync(FILE, JSON.stringify({ ts: _at, months: months }), "utf8"); } catch (e) { console.error("savePlatrum:", e.message); }
   console.log("PLATRUM: P&L обновлён, месяцев " + Object.keys(months).length);

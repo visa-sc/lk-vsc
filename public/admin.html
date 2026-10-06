@@ -3865,7 +3865,7 @@
         // Значения плиток + изменение «к пред.». Месяц — сравнение за сопоставимое
         // число прошедших дней (текущий неполный месяц не искажается).
         let curSub = "", cmpRes = null;
-        if (vscGran === "year") { curSub = "2026 · за год"; } // коэффициенты взвешенно за год, как Grand total; коротко — чтобы плитки на телефоне не раздувались
+        if (vscGran === "year") { curSub = ((vscData.year && vscData.year.yearNum) || 2026) + " · за год"; } // коэффициенты взвешенно за год, как Grand total; коротко — чтобы плитки на телефоне не раздувались
         else if (vscGran === "month") {
           const curM = (vscData.months || [])[vscMonthIdx];
           curSub = curM ? curM.name : "";
@@ -4014,10 +4014,11 @@
           const sTile = (label, txt, sub) => { const t = document.createElement("div"); t.className = "vsc-tile"; t.innerHTML = '<div class="vsc-tile-l">' + escapeHtml(label) + '</div><div class="vsc-tile-v">' + txt + '</div><div class="vsc-tile-s">' + escapeHtml(sub) + '</div>'; return t; };
           if (vscGran === "year") {
             let sp = 0, cnt = 0, spR = 0, sb = 0;
-            ms.forEach((mm) => { const p = vscProfitOf(mm), b = mm.total ? mm.total.budget : null; if (p != null) { sp += p; cnt++; if (b) { spR += p; sb += b; } } });
+            const yN = (vscData.year && vscData.year.yearNum) || 2026;   // с 2027 — только текущий год
+            ms.filter((mm) => String(mm.name || "").indexOf(String(yN)) >= 0).forEach((mm) => { const p = vscProfitOf(mm), b = mm.total ? mm.total.budget : null; if (p != null) { sp += p; cnt++; if (b) { spR += p; sb += b; } } });
             const avg = cnt ? sp / cnt : null;
-            tiles.appendChild(sTile("Прибыль за 2026", cnt ? vscFmt(sp, "money") : "—", cnt ? ("в среднем " + vscFmt(avg, "money") + "/мес · " + cnt + " мес.") : "введите прибыль по месяцам"));
-            tiles.appendChild(sTile("Рентабельность за 2026", (cnt && sb) ? vscFmt(spR / sb * 100, "pct") : "—", "прибыль ÷ выручка, заполн. мес."));
+            tiles.appendChild(sTile("Прибыль за " + yN, cnt ? vscFmt(sp, "money") : "—", cnt ? ("в среднем " + vscFmt(avg, "money") + "/мес · " + cnt + " мес.") : "введите прибыль по месяцам"));
+            tiles.appendChild(sTile("Рентабельность за " + yN, (cnt && sb) ? vscFmt(spR / sb * 100, "pct") : "—", "прибыль ÷ выручка, заполн. мес."));
           } else {
             const li = vscLastProfitIdx(vscMonthIdx), lm = li >= 0 ? ms[li] : null;
             const pr = lm ? vscProfitOf(lm) : null, rt = lm ? vscRentPct(lm) : null;
@@ -6348,9 +6349,9 @@
         const MONF = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
         apiFetch("/admin/api/vsc/spb-pnl").then(function (j) {
           const ms = j.months || {};
-          const names = Object.keys(ms).sort(function (a, b) {
-            return MONF.indexOf(a.replace(/\s*20\d\d/, "")) - MONF.indexOf(b.replace(/\s*20\d\d/, ""));
-          }).filter(function (n) { return ms[n].profit != null; });
+          // Порядок — по году и месяцу (с 2027 в данных будет больше одного года).
+          const keyOf = function (n) { return (vscYearOfName(n) || 2026) * 12 + MONF.indexOf(n.replace(/\s*20\d\d/, "")); };
+          const names = Object.keys(ms).sort(function (a, b) { return keyOf(a) - keyOf(b); }).filter(function (n) { return ms[n].profit != null; });
           if (!names.length) { box.innerHTML = '<div class="vsc-empty">Нет закрытых месяцев с полными данными.</div>'; return; }
           const money = (v) => (v == null || isNaN(v)) ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽";
           box.innerHTML = "";
@@ -6358,8 +6359,10 @@
           const yrNames = names.filter(function (n) { return /20\d\d/.test(n); });
           const yrNum = yrNames.length ? yrNames[yrNames.length - 1].match(/20\d\d/)[0] : "";
           const yrSum = names.filter(function (n) { return n.indexOf(yrNum) >= 0; }).reduce(function (a, n) { return a + (ms[n].profit || 0); }, 0);
-          box.appendChild(vscDivergingBars("Прибыль СПб по месяцам", names.map(function (n) {
-            return { x: n.replace(/\s*20\d\d/, "").slice(0, 3), v: ms[n].profit };
+          // Прошлые годы (с 2027) — карточкой «ГГГГ год» со средней прибылью месяца, клик разворачивает.
+          const spbF = vscFoldMonths(names.map(function (n) { return { name: n, total: { profit: ms[n].profit } }; }), ["total"]);
+          box.appendChild(vscDivergingBars("Прибыль СПб по месяцам", spbF.map(function (m) {
+            return { x: m.isYear ? m.name : (/’/.test(m.name) ? m.name.slice(0, 3) + " " + m.name.slice(m.name.indexOf("’")) : m.name.replace(/\s*20\d\d/, "").slice(0, 3)), v: m.total.profit };
           }), "money", false, yrNum ? { year: { x: yrNum + " год", v: yrSum, title: yrNum + " год · сумма прибыли Питера за все закрытые месяцы" } } : null));
           const TD = 'style="padding:6px 8px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;"';
           const TH = 'style="padding:6px 8px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;font-size:12px;"';
@@ -7290,10 +7293,20 @@
       // учитывается недельный ритм — в выходные выручка ниже), умножаем на
       // коэффициент свежего тренда (последние 14 дней против последних 56) и
       // складываем по оставшимся дням месяца. Факт месяца при этом не трогаем.
+      // Индекс ТЕКУЩЕГО календарного месяца в vscData.months — по имени «Октябрь 2026».
+      // Раньше брали номер месяца как индекс: в 2027 это указывало бы на месяцы 2026-го.
+      function vscCurMonthIdx() {
+        const months = (vscData && vscData.months) || [];
+        const now = new Date(Date.now() + 3 * 3600 * 1000);
+        const RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+        let i = months.findIndex((m) => m && m.name === RU[now.getUTCMonth()] + " " + now.getUTCFullYear());
+        if (i < 0 && now.getUTCFullYear() === 2026) i = now.getUTCMonth();   // как было до подготовки к 2027
+        return i;
+      }
       function vscMonthProjection() {
         const months = vscData.months || [];
         const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
-        const curIdx = nowMsk.getUTCMonth(), curYear = nowMsk.getUTCFullYear();
+        const calMi = nowMsk.getUTCMonth(), curYear = nowMsk.getUTCFullYear(), curIdx = vscCurMonthIdx();
         const cur = months[curIdx];
         if (!cur) return null;
         const today0 = new Date(); today0.setHours(0, 0, 0, 0);
@@ -7320,7 +7333,7 @@
         };
         const trend = { budget: trendOf("budget"), processed: trendOf("processed"), ad: trendOf("ad") };
         // Факт месяца (только закрытые дни) и остаток
-        const dim = new Date(Date.UTC(curYear, curIdx + 1, 0)).getUTCDate();
+        const dim = new Date(Date.UTC(curYear, calMi + 1, 0)).getUTCDate();
         const factDays = (cur.days || []).filter((d) => {
           const dt = d.date ? vscParseDMY(d.date) : null;
           return dt && dt < today0 && ((d.budget || 0) > 0 || (d.processed || 0) > 0);
@@ -7330,7 +7343,7 @@
         const lastFactDay = factDays.length ? Math.max.apply(null, factDays.map((d) => vscParseDMY(d.date).getDate())) : 0;
         const rest = { budget: 0, processed: 0, ad: 0, days: 0 };
         for (let day = lastFactDay + 1; day <= dim; day++) {
-          const dt = new Date(curYear, curIdx, day);
+          const dt = new Date(curYear, calMi, day);
           const b = byDow[dt.getDay()] || { budget: 0, processed: 0, ad: 0 };
           rest.budget += b.budget * trend.budget;
           rest.processed += b.processed * trend.processed;
@@ -7357,7 +7370,7 @@
         wrap.appendChild(cap);
         const months = (vscData.months || []).filter((m) => m.total && (m.total.budget || m.total.processed));
         const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
-        const curIdx = nowMsk.getUTCMonth();
+        const curIdx = vscCurMonthIdx();
         const vals = months.map((m, i) => {
           const isCur = (vscData.months || []).indexOf(m) === curIdx;
           if (!isCur) return { x: m.name, fact: (m.total && m.total[key] != null) ? m.total[key] : 0, proj: 0 };
@@ -7407,7 +7420,7 @@
         wrap.appendChild(box);
 
         const months = (vscData.months || []).filter((m) => m.total && m.total.budget);
-        const closed = months.filter((m) => (vscData.months || []).indexOf(m) < new Date(Date.now() + 3 * 3600 * 1000).getUTCMonth());
+        const closed = months.filter((m) => (vscData.months || []).indexOf(m) < vscCurMonthIdx());
         if (!closed.length || !proj) { box.innerHTML = '<div class="vsc-empty">Недостаточно данных.</div>'; return wrap; }
         const revM = proj.total.budget;                       // прогноз выручки месяца
         const cards = [];
