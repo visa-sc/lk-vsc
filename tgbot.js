@@ -151,8 +151,8 @@ async function api(method, url, body, headers, timeoutMs) {
   return r.data;
 }
 // Шаг воронки для панели показателей: /start → страна → пакет → ссылка на оплату
-function ev(chatId, step) {
-  api("post", "/esim/api/ev", { src: "bot", step, vid: "tg" + chatId, ab: abOf(chatId) }).catch(() => {});
+function ev(chatId, step, extra) {
+  api("post", "/esim/api/ev", Object.assign({ src: "bot", step, vid: "tg" + chatId, ab: abOf(chatId) }, extra || {})).catch(() => {});
 }
 // A/B-тест бота (18.09.2026): половина новых чатов после страны сначала выбирает
 // срок поездки («1–3 дня · от 59 ₽»), половина видит сразу весь список пакетов.
@@ -925,9 +925,12 @@ async function onText(chatId, text) {
   const st = getState(chatId);
 
   if (/^\/start/i.test(t)) {
-    ev(chatId, "start");
     // Ссылка из рассылки: t.me/esimvoyo_bot?start=sms — скидка применится сама
     const payload = (t.split(/\s+/)[1] || "").toLowerCase();
+    // Из Instagram: ?start=ig или ?start=ig_reel_turkey — чат попадает в воронку
+    // Instagram в панели, после «ig_» — какая это ссылка (06.10.2026)
+    const igm = /^(ig|insta|instagram)(?:_(.*))?$/.exec(payload);
+    ev(chatId, "start", igm ? { ig: igm[2] || "" } : null);
     if (payload.indexOf("ref_") === 0) {
       setState(chatId, { ref: payload.slice(4).toUpperCase(), step: null });
       await send(chatId, "Вы пришли по приглашению друга — скидка на первую eSIM применится сама.");
