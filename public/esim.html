@@ -671,8 +671,21 @@
       body: JSON.stringify({ src: "site", step: step, vid: VID, ab: AB_FORCED ? undefined : AB,
         // язык телефона и признак рекламного перехода — только для статистики языков
         lang: step === "visit" ? ((navigator.languages && navigator.languages[0]) || navigator.language || "") : undefined,
-        ad: step === "visit" ? /[?&](gclid|gbraid|wbraid|gad_source|yclid|fbclid|utm_source)=/.test(location.search) : undefined
+        ad: step === "visit" ? /[?&](gclid|gbraid|wbraid|gad_source|yclid|fbclid|utm_source)=/.test(location.search) : undefined,
+        ig: step === "visit" ? igLinkOf() : undefined
       }) }); }catch(e){}
+  }
+  // Пришёл из Instagram — по какой ссылке (воронка Instagram в панели, 06.10.2026):
+  // utm_content (link_in_bio — ссылка в профиле, reel_… — свой ролик) или пусто.
+  // null — заход не из Instagram.
+  function igLinkOf(){
+    try{
+      var q = new URLSearchParams(location.search);
+      var fromIg = /^(instagram|ig|insta)$/i.test(q.get("utm_source") || "") ||
+        /(^|\.)instagram\.com$/i.test(document.referrer ? new URL(document.referrer).hostname : "");
+      if(!fromIg) return undefined;
+      return (q.get("utm_content") || q.get("utm_campaign") || "").slice(0, 40);
+    }catch(e){ return undefined; }
   }
   track("visit");
 

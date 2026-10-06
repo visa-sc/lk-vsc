@@ -4005,6 +4005,79 @@ function mount(app, opts) {
     if (!f[key]) { f[key] = {}; f[key + "Since"] = Date.now(); }
     if (!f[key][vid] && Object.keys(f[key]).length < 200000) { f[key][vid] = v; _funnelDirty = true; }
   }
+  // Instagram (просьба Петрова 06.10.2026): сколько людей пришло из Instagram,
+  // по какой ссылке и сколько дошло до оплаты. Витрина при заходе с меткой
+  // utm_source=instagram (или из самого приложения) присылает ig — какая это
+  // ссылка: utm_content (link_in_bio — ссылка в профиле, reel_… — свой ролик)
+  // или пусто. Пишем переход по дням и запоминаем за браузером первую ссылку:
+  // дальше его шаги и оплата делятся по ней.
+  function igLink(v) { return String(v || "").toLowerCase().replace(/[^a-z0-9_.-]/g, "").slice(0, 40); }
+  function igMark(vid, link) {
+    vid = String(vid || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
+    if (vid.length < 6) return;
+    link = igLink(link);
+    const f = funnelData(), day = mskDay(Date.now());
+    if (!f.ig) { f.ig = {}; f.igSince = Date.now(); }
+    if (f.ig[vid] == null && Object.keys(f.ig).length < 200000) { f.ig[vid] = link; _funnelDirty = true; }
+    const d = f.days[day] || (f.days[day] = {});
+    const g = d.ig || (d.ig = {});
+    const list = g[link] || (g[link] = []);
+    if (list.indexOf(vid) < 0 && list.length < 50000) { list.push(vid); _funnelDirty = true; }
+  }
+  // Переходы до запуска счётчика — по журналу nginx (tools/igBackfill.js):
+  // только число людей по дням и ссылкам, шагов и оплат там нет.
+  const IG_HISTORY_FILE = path.join(DIR, "ig-history.json");
+  const isIgTouch = (t) => !!t && (/^(instagram|ig|insta)$/i.test(t.utm_source || "") || /(^|\.)instagram\.com/i.test(t.ref || ""));
+  function igFor(from, to, withTest) {
+    const f = funnelData();
+    const inR = (day) => (!from || day >= from) && (!to || day <= to);
+    const h = readJson(IG_HISTORY_FILE, null) || { days: {} };
+    const liveSince = f.igSince ? mskDay(f.igSince) : null;
+    const links = {};   // ссылка → { visit, country, pack, buy, pay, paid, revenue }
+    const row = (k) => links[k] || (links[k] = { link: k, visit: 0, country: 0, pack: 0, buy: 0, pay: 0, paid: 0, revenue: 0 });
+    // переходы до живого счётчика — по журналу
+    let histVisits = 0;
+    Object.keys(h.days || {}).filter((day) => inR(day) && (!liveSince || day < liveSince)).forEach((day) => {
+      Object.keys(h.days[day]).forEach((k) => { row(k).visit += h.days[day][k]; histVisits += h.days[day][k]; });
+    });
+    // живые: уникальные браузеры за период и их дальнейшие шаги
+    const seen = {};
+    Object.keys(f.days).filter(inR).forEach((day) => {
+      const g = f.days[day].ig || {};
+      Object.keys(g).forEach((k) => g[k].forEach((vid) => { if (!seen[vid]) seen[vid] = k; }));
+    });
+    Object.keys(seen).forEach((vid) => { row(seen[vid]).visit++; });
+    ["country", "pack", "buy", "pay"].forEach((step) => {
+      const u = {};
+      Object.keys(f.days).filter(inR).forEach((day) => {
+        (((f.days[day].site || {})[step]) || []).forEach((vid) => { if (seen[vid] != null) u[vid] = 1; });
+      });
+      Object.keys(u).forEach((vid) => { row(seen[vid])[step]++; });
+    });
+    // оплаты — из заказов: браузер с пометкой Instagram или метка в самом заказе
+    const people = {};
+    readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && inR(mskDay(o.paidAt)) &&
+      (withTest || !isTestOrder(o)) && !o.parentOrderId && !o.groupOf).forEach((o) => {
+      const a = o.ads || {};
+      let k = null;
+      if (o.vid && f.ig && f.ig[o.vid] != null) k = f.ig[o.vid];
+      else if (isIgTouch(a.first) || isIgTouch(a.last)) {
+        const t = isIgTouch(a.last) ? a.last : a.first;
+        k = igLink(t.utm_content || t.utm_campaign || "");
+      }
+      if (k == null) return;
+      const who = o.vid || o.custKey || o.email || o.id;
+      const r = row(k);
+      if (!people[k + "|" + who]) { people[k + "|" + who] = 1; r.paid++; }
+      r.revenue += Number(o.payTotalRub || o.priceRub || 0);   // payTotalRub — весь платёж, если eSIM несколько
+    });
+    const rows = Object.values(links).sort((a, b) => b.visit - a.visit || b.paid - a.paid);
+    const sum = (k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
+    return { liveSince, histSince: h.since ? mskDay(h.since) : null, histVisits,
+      total: { visit: sum("visit"), country: sum("country"), pack: sum("pack"), buy: sum("buy"), pay: sum("pay"), paid: sum("paid"), revenue: sum("revenue") },
+      rows };
+  }
+
   // Блогеры для панели: переходы по QR, выданные коды, что нам стоили бесплатные
   // eSIM и что принесли рефералки блогеров (люди и деньги). 21.09.2026.
   function blogStatsFor(from, to, withTest, rate) {
@@ -4134,6 +4207,7 @@ function mount(app, opts) {
     const b = req.body || {};
     if (b.adm) return res.json({ success: true, skipped: true });   // свои заходы с админ-кодом не считаем
     if (b.step === "visit" && b.lang) { try { langHit(b.lang, b.vid, !!b.ad); } catch (_) {} }
+    if (b.step === "visit" && b.ig != null && b.src !== "bot") { try { igMark(b.vid, b.ig); } catch (_) {} }
     if (b.ab === "old" || b.ab === "new") abMark(b.vid, b.ab);
     if ((b.ab === "days" || b.ab === "list") && b.src === "bot") abMark(b.vid, b.ab, "abBot");
     res.json({ success: funnelHit(String(b.src || "site"), String(b.step || ""), b.vid) });
@@ -4355,6 +4429,7 @@ function mount(app, opts) {
         testShown: withTest, testCount,
         closedThrough: Object.keys(daily).sort().slice(-1)[0] || null,
         funnel: funnelFor(from, to, withTest),
+        ig: igFor(from, to, withTest),
         ab: abFor(from, to, withTest),
         abBot: abBotFor(from, to, withTest),
         blog: blogStatsFor(from, to, withTest, rate),
