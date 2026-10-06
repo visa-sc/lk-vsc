@@ -1777,21 +1777,45 @@ const pbx = require("./pbx");
 // Расход по категории «Сборы» — из P&L Платрума по API-ключу.
 const platrum = require("./platrum");
 // P&L «Потока» Кати (work.voyotravel.ru): с сентября 2026 расходы ведутся там.
-// Её сервис пускает служебный админ-вход как наблюдателя director@ (только просмотр).
+// Ходим туда служебной сессией director@visa-sc.ru — с e-mail, поэтому её модуль
+// пускает нас по своему же списку доступа (data/potok/access.json: director@ — «view»,
+// только просмотр) и никакие правки её кода для этого не нужны: если их откатят,
+// доступ не пропадёт. Сессия живёт 30 дней, обновляем за сутки до конца.
 const potok = require("./potok");
-let _svcAdminTok = null, _svcAdminExp = 0;
-function serviceAdminToken() {
-  if (!_svcAdminTok || Date.now() > _svcAdminExp - 3600 * 1000) { _svcAdminTok = createAdminSession(); _svcAdminExp = Date.now() + ADMIN_SESSION_TTL_MS; }
-  return _svcAdminTok;
+const POTOK_AS = "director@visa-sc.ru";
+let _svcTok = null, _svcExp = 0;
+function servicePotokToken() {
+  if (!_svcTok || !getManagerSession(_svcTok) || Date.now() > _svcExp - 24 * 3600 * 1000) {
+    _svcTok = createManagerSession(POTOK_AS, "Андрей Комисаренко (служебный доступ /vsc)");
+    _svcExp = Date.now() + MANAGER_SESSION_TTL_MS;
+  }
+  return _svcTok;
 }
-potok.init(serviceAdminToken);
+potok.init(servicePotokToken);
 // После каждого обновления «Потока» пересчитываем «Запас на сборы»: иначе после
 // перезапуска сборы успевали посчитаться раньше, чем приезжал P&L, и сентябрь
 // оставался без расхода до следующего получасового прогрева.
+// Сторож: если «Поток» перестал пускать (Катя сняла доступ, сломался её сервис),
+// данные сентября и дальше замирают на последних значениях — письмо директору один
+// раз при пропаже и один раз при восстановлении. Состояние — .vscPotokWatch.json.
+const POTOK_WATCH_FILE = path.join(__dirname, ".vscPotokWatch.json");
+function potokWatch(ok, err) {
+  let st = {}; try { st = JSON.parse(fs.readFileSync(POTOK_WATCH_FILE, "utf8")) || {}; } catch (_) {}
+  const was = st.ok !== false;
+  if (ok === was && st.at) return;
+  st = { ok: ok, at: Date.now(), err: ok ? null : String(err || "").slice(0, 300) };
+  try { fs.writeFileSync(POTOK_WATCH_FILE, JSON.stringify(st), "utf8"); } catch (_) {}
+  if (ok && !was) sendOrQueueDirectorMail({ to: "director@visa-sc.ru", subject: "/vsc: доступ к «Потоку» восстановлен",
+    html: "<p>Данные из «Потока» (work.voyotravel.ru) снова приходят: расход по сборам и доп. расходы на маркетинг для CPL и ДРР обновляются как обычно.</p>" });
+  if (!ok && was) sendOrQueueDirectorMail({ to: "director@visa-sc.ru", subject: "/vsc: нет доступа к «Потоку» Кати",
+    html: "<p>Сервер не смог получить P&amp;L из «Потока» на work.voyotravel.ru: <b>" + String(err || "").replace(/[<>&]/g, "") + "</b>.</p>"
+      + "<p>Пока доступа нет, в /vsc с сентября 2026 замерли на последних значениях: расход в «Запасе на сборы» и доп. расходы в CPL и ДРР «с учётом доп. расходов».</p>"
+      + "<p>Чаще всего причина — в модуле «Поток» у Кати снят доступ для director@visa-sc.ru (нужна роль «просмотр»).</p>" });
+}
 function potokRefreshAndApply() {
   potok.refresh()
-    .then(() => vscSboryData())
-    .catch((e) => console.error("POTOK:", e && e.message));
+    .then(() => { potokWatch(true); return vscSboryData(); })
+    .catch((e) => { console.error("POTOK:", e && e.message); potokWatch(false, e && e.message); });
 }
 setTimeout(potokRefreshAndApply, 40 * 1000);
 setInterval(potokRefreshAndApply, 3 * 3600 * 1000);
@@ -3777,7 +3801,15 @@ function getStaffFromReq(req) {
   const headerToken = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
   const queryToken = String(req.query.token || "").trim();
   const token = headerToken || queryToken;
-  if (isAdminTokenValid(token)) return { role: "admin", name: "Андрей Комисаренко", perms: ["stages"], token };
+  if (isAdminTokenValid(token)) {
+    // Вход паролем director@ — тоже админ, но e-mail при этом не терялся бы: портал
+    // Кати (work.voyotravel.ru) различает людей по e-mail, и без него его модули не
+    // узнавали Андрея (06.10.2026). Вход кодом e-mail по-прежнему не несёт.
+    const ms = getManagerSession(token);
+    const st = { role: "admin", name: "Андрей Комисаренко", perms: ["stages"], token };
+    if (ms && ms.email) st.email = String(ms.email).toLowerCase();
+    return st;
+  }
   const m = getManagerSession(token);
   if (m) {
     // Права берём из актуальной записи руководителя (источник — seed).
@@ -6530,6 +6562,10 @@ app.post("/admin/api/vsc-profit", requireAdmin, (req, res) => {
   if (!month || !isFinite(profit)) return res.status(400).json({ success: false, message: "Нужны month и числовой profit (убыток — отрицательным)" });
   const m = vscLoadProfit(); m[month] = profit;
   const ok = vscSaveProfit(m);
+  // Прибыль сразу уходит и в снимки раздела ФОТ на work.voyotravel.ru (иначе Катя
+  // увидела бы её только после утреннего экспорта в 06:00). Владелец файлов — kateadmin.
+  if (ok) require("child_process").execFile("sh", ["-c", "cd " + __dirname + " && nice -n 15 " + process.execPath + " tools/fot-export.js && chown -R kateadmin:kateadmin /var/www/kateadmin/data/fot"],
+    { timeout: 60 * 1000 }, (err) => { if (err) console.error("FOT EXPORT после прибыли:", err.message); });
   return res.json({ success: ok, profit: m });
 });
 
@@ -8274,14 +8310,29 @@ function dealCycleMonths(d) {
 // Прибыль по месяцам с апреля 2016 по август 2026 — разобрана из VSC.xlsx, из
 // строки итога внизу КАЖДОГО помесячного листа (прибыль = выручка минус расход,
 // ровно то число, что в листе и записано). Данные статичные, лежат в
-// .vscProfitHistory.json рядом с кодом: новые месяцы считает /vsc сам, этот блок
-// только про историю. Чтобы убрать раздел — удалить этот эндпоинт и блок
+// .vscProfitHistory.json рядом с кодом; месяцы после августа 2026 блок берёт из
+// ручного ввода прибыли на дашборде (см. эндпоинт). Чтобы убрать раздел — удалить этот эндпоинт и блок
 // vscProfitHistoryBlock в admin.html, файл данных останется нетронутым.
 const VSC_PROFHIST_FILE = path.join(__dirname, ".vscProfitHistory.json");
 let _profHist = null;
+// Месяцы ПОСЛЕ последнего месяца истории (с сентября 2026) берутся из ручного ввода
+// прибыли — того же, что вносится баннером на дашборде (.vscProfit.json), читается
+// при каждом запросе. 06.10.2026 сентябрь внесли, а блок его не показал: эндпоинт
+// отдавал только статичный файл. История до августа включительно не меняется.
 app.get("/admin/api/vsc/profit-history", requireAdmin, (req, res) => {
   if (!_profHist) { try { _profHist = JSON.parse(fs.readFileSync(VSC_PROFHIST_FILE, "utf8")); } catch (_) { _profHist = { months: {} }; } }
-  res.json({ success: true, data: _profHist });
+  const base = _profHist.months || {};
+  const lastYm = Object.keys(base).sort().pop() || "";
+  const RU = { "январь": 1, "февраль": 2, "март": 3, "апрель": 4, "май": 5, "июнь": 6, "июль": 7, "август": 8, "сентябрь": 9, "октябрь": 10, "ноябрь": 11, "декабрь": 12 };
+  const manual = vscLoadProfit() || {};
+  const months = Object.assign({}, base), added = [];
+  Object.keys(manual).forEach((name) => {
+    const m = /^([А-Яа-яёЁ]+)\s+(\d{4})$/.exec(String(name).trim()); if (!m || !RU[m[1].toLowerCase()]) return;
+    const ym = m[2] + "-" + String(RU[m[1].toLowerCase()]).padStart(2, "0");
+    const v = Number(manual[name]);
+    if (ym > lastYm && isFinite(v)) { months[ym] = Math.round(v); added.push(ym); }
+  });
+  res.json({ success: true, data: Object.assign({}, _profHist, { months: months, historyTo: lastYm, manualMonths: added.sort() }) });
 });
 // ═══ КОНЕЦ БЛОКА «Прибыль за всё время» ══════════════════════════════════════
 app.get("/admin/api/vsc/dealcycle", requireVscDashboard, (req, res) => {

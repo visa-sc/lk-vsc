@@ -97,6 +97,7 @@ async function refresh() {
   const now = new Date(Date.now() + 3 * 3600 * 1000);
   const curYm = now.toISOString().slice(0, 7);
   const months = Object.assign({}, load() || {});
+  let got = 0, lastErr = null;
   for (let i = 0; i < 36; i++) {
     const d = new Date(Date.UTC(+FROM_YM.slice(0, 4), +FROM_YM.slice(5, 7) - 1 + i, 1));
     const ym = d.toISOString().slice(0, 7);
@@ -111,8 +112,12 @@ async function refresh() {
       // Доп. расходы на маркетинг = весь «Маркетинг» минус крупные платежи Директа.
       row.extra = row.marketing != null ? row.marketing - big.sum : null;
       months[nameOf(ym)] = Object.assign(row, { ym: ym, at: Date.now() });
-    } catch (e) { console.error("POTOK " + ym + ":", e.message); }
+      got++;
+    } catch (e) { lastErr = e; console.error("POTOK " + ym + ":", e.message); }
   }
+  // Ни один месяц не пришёл — это сбой доступа, а не пустой «Поток». Прежние цифры
+  // остаются в снимке, сторож в server.js пишет директору.
+  if (!got && lastErr) throw lastErr;
   _cache = months; _at = Date.now();
   try { fs.writeFileSync(FILE, JSON.stringify({ ts: _at, months: months }), "utf8"); } catch (e) { console.error("savePotok:", e.message); }
   console.log("POTOK: P&L обновлён, месяцев " + Object.keys(months).length);

@@ -3278,73 +3278,85 @@
         wrap.appendChild(bars);
         return wrap;
       }
-      // «Конверсия из трафика в лид» в разрезах МЕСЯЦ/ГОД: 3 ОБОСОБЛЕННЫХ столбика на
-      // месяц — общая (синий), МСК (оранжевый), СПБ (фиолетовый); общая ≠ МСК+СПБ (есть
-      // ещё «Остальное»), поэтому именно отдельные столбики. Легенда кликабельна, как на
-      // дне/неделе: любой столбик скрыть/показать; состояние ОБЩЕЕ с линейным графиком
-      // (vscLineChart._hidden[kpi.key]) — выбор переживает переключение разрезов.
-      // Значения — вертикально внутри столбиков; дельта к пред. месяцу — по общей.
+      // «Конверсия из трафика в лид» в разрезах МЕСЯЦ/ГОД. Оформление — как у всех
+      // столбиковых графиков раздела (Андрей 06.10.2026: блок выбивался по стилю):
+      // по умолчанию один столбик «общая» через vscBarChart — значение над столбиком,
+      // общий цвет, дельта к прошлому месяцу. МСК и СПБ включаются переключателем;
+      // тогда рядом встают их столбики в том же стиле (общая ≠ МСК+СПБ — есть ещё
+      // «Остальное», поэтому отдельные столбики, а не стопка). Выбор общий с линейным
+      // графиком дня/недели (vscLineChart._hidden[kpi.key]) и переживает переключения.
       function vscTrafConvBars(kpi, series) {
-        const wrap = document.createElement("div"); wrap.className = "vsc-chart";
-        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = kpi.label;
-        wrap.appendChild(h);
         const allDefs = kpi.lines || [];
         const hid = (vscLineChart._hidden = vscLineChart._hidden || {})[kpi.key] = (vscLineChart._hidden[kpi.key] || {});
         const defs = allDefs.filter((d) => !hid[d.key]);
-        const leg = document.createElement("div");
-        leg.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#5a626f;margin:0 0 10px;";
-        allDefs.forEach((d) => {
-          const chip = document.createElement("span");
-          chip.style.cssText = "white-space:nowrap;cursor:pointer;user-select:none;" + (hid[d.key] ? "opacity:.35;text-decoration:line-through;" : "");
-          chip.innerHTML = '<i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + d.color + ';vertical-align:-1px;margin-right:5px;"></i>' + escapeHtml(d.label || "");
-          chip.title = hid[d.key] ? "Показать столбик" : "Скрыть столбик";
-          chip.addEventListener("click", () => {
-            if (hid[d.key]) delete hid[d.key]; else hid[d.key] = true;
-            if (wrap.parentNode) wrap.parentNode.replaceChild(vscTrafConvBars(kpi, series), wrap);
+        // Переключатель — компактные пилюли под заголовком, в общем стиле раздела.
+        const legend = (wrap) => {
+          const leg = document.createElement("div");
+          leg.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px;";
+          allDefs.forEach((d) => {
+            const on = !hid[d.key];
+            const chip = document.createElement("button");
+            chip.type = "button";
+            chip.style.cssText = "display:inline-flex;align-items:center;gap:5px;border:1px solid " + (on ? "#d5dbe5" : "#eceff4") + ";background:" + (on ? "#fff" : "#f7f8fa")
+              + ";border-radius:999px;padding:3px 10px;font-size:11px;font-family:inherit;color:" + (on ? "#33415a" : "#a0a6b3") + ";cursor:pointer;";
+            chip.innerHTML = '<i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (on ? d.color : "#d5dbe5") + ';"></i>' + escapeHtml(d.label || "");
+            chip.title = on ? "Скрыть" : "Показать";
+            chip.addEventListener("click", () => {
+              if (on && defs.length === 1) return;              // хотя бы один столбик остаётся
+              if (hid[d.key]) delete hid[d.key]; else hid[d.key] = true;
+              if (wrap.parentNode) wrap.parentNode.replaceChild(vscTrafConvBars(kpi, series), wrap);
+            });
+            leg.appendChild(chip);
           });
-          leg.appendChild(chip);
-        });
-        wrap.appendChild(leg);
-        const fmtP = (v) => (Math.round(v * 10) / 10).toLocaleString("ru-RU") + "%";
+          return leg;
+        };
+        // Один показатель — ровно стандартный столбиковый график.
+        if (defs.length === 1) {
+          const one = defs[0];
+          const wrap = vscBarChart({ key: one.key, label: kpi.label, fmt: kpi.fmt || "pct", good: kpi.good }, series);
+          const h = wrap.querySelector(".vsc-chart-h");
+          if (h && h.nextSibling) wrap.insertBefore(legend(wrap), h.nextSibling); else wrap.appendChild(legend(wrap));
+          return wrap;
+        }
+        // Несколько — сгруппированные столбики тех же размеров и с тем же оформлением.
+        const wrap = document.createElement("div"); wrap.className = "vsc-chart";
+        const h = document.createElement("div"); h.className = "vsc-chart-h"; h.textContent = kpi.label;
+        wrap.appendChild(h);
+        wrap.appendChild(legend(wrap));
         const valOf = (s, key) => (s.k && s.k[key] != null && !isNaN(s.k[key])) ? +s.k[key] : null;
-        if (!defs.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Все столбики скрыты — включи нужные в легенде выше."; wrap.appendChild(e); return wrap; }
         const allVals = [];
         series.forEach((s) => defs.forEach((d) => { const v = valOf(s, d.key); if (v != null) allVals.push(v); }));
         if (!allVals.length) { const e = document.createElement("div"); e.className = "vsc-empty"; e.textContent = "Нет данных для выбранного периода."; wrap.appendChild(e); return wrap; }
         const maxO = Math.max.apply(null, allVals) || 1;
-        const mainVals = series.map((s) => valOf(s, kpi.key));
-        const mainVisible = defs.some((d) => d.key === kpi.key);
+        const mainKey = defs.some((d) => d.key === kpi.key) ? kpi.key : defs[0].key;
+        const mainVals = series.map((s) => valOf(s, mainKey));
         const bars = document.createElement("div"); bars.className = "vsc-bars";
         series.forEach((s, i) => {
           const col = document.createElement("div"); col.className = "vsc-bar-col";
-          col.style.flex = "0 0 " + (defs.length * 35 + 8) + "px";
-          col.title = s.x + "\n" + allDefs.map((d) => (d.label || "") + ": " + (valOf(s, d.key) != null ? fmtP(valOf(s, d.key)) : "—")).join("\n");
+          col.style.flex = "0 0 " + (defs.length * 30 + 10) + "px";
+          col.title = s.x + "\n" + allDefs.map((d) => (d.label || "") + ": " + (valOf(s, d.key) != null ? vscFmt(valOf(s, d.key), "pct") : "—")).join("\n");
           const grp = document.createElement("div");
-          grp.style.cssText = "display:flex;align-items:flex-end;gap:3px;";
+          grp.style.cssText = "display:flex;align-items:flex-end;gap:3px;flex:1;";
           defs.forEach((d) => {
             const v = valOf(s, d.key);
-            const b = document.createElement("div");
-            const px = v != null ? Math.max(2, Math.round(v / maxO * 120)) : 2;
-            b.style.cssText = "width:32px;height:" + px + "px;background:" + (v != null ? d.color : "#e3e8ef") + ";border-radius:5px 5px 0 0;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;";
-            b.title = (d.label || "") + ": " + (v != null ? fmtP(v) : "—");
-            if (v != null && px >= 16) {
-              const t = document.createElement("span");
-              t.textContent = fmtP(v);
-              t.style.cssText = "font-size:8.5px;font-weight:700;color:#fff;line-height:1;white-space:nowrap;padding-bottom:4px;text-shadow:0 1px 1px rgba(0,0,0,.25);";
-              b.appendChild(t);
-            }
-            grp.appendChild(b);
+            const cell = document.createElement("div");
+            cell.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px;";
+            const vl = document.createElement("div"); vl.className = "vsc-bar-v"; vl.textContent = v == null ? "" : vscFmt(v, "pct");
+            const bar = document.createElement("div"); bar.className = "vsc-bar";
+            bar.style.width = "26px";
+            bar.style.height = v == null ? "2px" : (Math.max(2, Math.round(v / maxO * 120)) + "px");
+            if (d.key !== kpi.key) bar.style.background = d.color;   // «общая» — общим цветом графиков
+            cell.appendChild(vl); cell.appendChild(bar);
+            grp.appendChild(cell);
           });
           const xl = document.createElement("div"); xl.className = "vsc-bar-x"; xl.textContent = s.x;
           const dl = document.createElement("div"); dl.className = "vsc-bar-d";
-          if (mainVisible) {
-            const v = mainVals[i]; let prevV = null;
-            for (let j = i - 1; j >= 0; j--) { if (mainVals[j] != null) { prevV = mainVals[j]; break; } }
-            if (v != null && prevV != null && prevV !== 0) {
-              const pct = Math.round((v - prevV) / Math.abs(prevV) * 100);
-              if (pct === 0) { dl.className = "vsc-bar-d flat"; dl.textContent = "0%"; }
-              else { dl.className = "vsc-bar-d " + ((kpi.good === -1 ? pct < 0 : pct > 0) ? "up" : "down"); dl.textContent = (pct > 0 ? "▲ " : "▼ ") + Math.abs(pct) + "%"; }
-            }
+          const v = mainVals[i]; let prevV = null;
+          for (let j = i - 1; j >= 0; j--) { if (mainVals[j] != null) { prevV = mainVals[j]; break; } }
+          if (v != null && prevV != null && prevV !== 0) {
+            const pct = Math.round((v - prevV) / Math.abs(prevV) * 100);
+            if (pct === 0) { dl.className = "vsc-bar-d flat"; dl.textContent = "0%"; }
+            else { dl.className = "vsc-bar-d " + ((kpi.good === -1 ? pct < 0 : pct > 0) ? "up" : "down"); dl.textContent = (pct > 0 ? "▲ " : "▼ ") + Math.abs(pct) + "%"; }
           }
           col.appendChild(grp); col.appendChild(xl); col.appendChild(dl);
           bars.appendChild(col);
@@ -4496,6 +4508,9 @@
           box.innerHTML = "";
           const names = Object.keys(months).sort((a, b) => ord(b) - ord(a));
           if (!names.length) { box.innerHTML = '<div class="vsc-empty">Данных пока нет.</div>'; return; }
+          // Виден только последний закрытый месяц, остальные — под «Показать историю»,
+          // как в сверке контактов (Андрей 06.10.2026).
+          const histBox = document.createElement("div"); histBox.style.display = "none";
           names.forEach((name, idx) => {
             const M = months[name];
             const rows = cfg.rows(M.people);
@@ -4536,9 +4551,22 @@
               }));
             };
             head.addEventListener("click", () => { open = !open; paint(); });
-            sec.appendChild(head); sec.appendChild(body); box.appendChild(sec);
+            sec.appendChild(head); sec.appendChild(body);
+            (idx === 0 ? box : histBox).appendChild(sec);
             paint();
           });
+          if (names.length > 1) {
+            const bw = document.createElement("div"); bw.style.marginTop = "10px";
+            const hb = document.createElement("button"); hb.type = "button";
+            hb.style.cssText = "padding:9px 16px;font-size:13px;font-weight:600;border-radius:10px;cursor:pointer;line-height:1;background:#fff;color:#3589BD;border:1px solid #bcdcef;font-family:inherit;";
+            hb.textContent = "Показать историю";
+            hb.addEventListener("click", () => {
+              const show = histBox.style.display === "none";
+              histBox.style.display = show ? "" : "none";
+              hb.textContent = show ? "Скрыть историю" : "Показать историю";
+            });
+            box.appendChild(histBox); bw.appendChild(hb); box.appendChild(bw);
+          }
         }
         const who = (r) => '<div style="font-weight:600;color:#1d2330;">' + escapeHtml(r.name) + '</div><div style="font-size:11.5px;color:#8a93a5;">'
           + escapeHtml([r.group, r.legal].filter(Boolean).join(" · ")) + "</div>";
@@ -5630,7 +5658,7 @@
       // (ищется по «vscProfitHistoryBlock»). Данные статичные, из VSC.xlsx.
       function vscProfitHistoryBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
-        const info = "<b>Что показывает</b><br>Прибыль компании за всё время работы: с апреля 2016 по август 2026.<br><br><b>Откуда цифры</b><br>Разобраны из книги VSC.xlsx — из строки итога внизу каждого помесячного листа (выручка месяца минус расход месяца, ровно то число, что в листе и записано). Это история: новые месяцы сюда сами не добавляются, свежая прибыль живёт в дашборде и в прогнозе.<br><br><b>Детали</b><br>• 2016 год неполный — первый лист книги начинается с апреля.<br>• 2026 год показан по август включительно, сентябрь ещё не закрыт.<br>• Год — сумма своих месяцев, поэтому 2016 и 2026 с остальными впрямую не сравнить.";
+        const info = "<b>Что показывает</b><br>Прибыль компании за всё время работы, с апреля 2016.<br><br><b>Откуда цифры</b><br>С апреля 2016 по август 2026 — из книги VSC.xlsx, из строки итога внизу каждого помесячного листа (выручка месяца минус расход месяца). С сентября 2026 — прибыль, которую вы вносите на дашборде: как только внесли месяц, он сразу появляется здесь.<br><br><b>Детали</b><br>• 2016 год неполный — первый лист книги начинается с апреля.<br>• Текущий год показан по последний внесённый месяц.<br>• Год — сумма своих месяцев, поэтому неполные годы с остальными впрямую не сравнить.";
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Прибыль за всё время — по годам и месяцам"; h.appendChild(vscInfo(info));
         wrap.appendChild(h);
         const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем…</div>';
