@@ -8759,16 +8759,23 @@ async function runBuyoutsCheck(trigger) {
     const bankMonths = (prev && prev.bank) ? Object.assign({}, prev.bank) : {};
     const nowMsk = new Date(Date.now() + 3 * 3600 * 1000);
     let fromISO;
+    let rebuildFrom = null;                 // месяц (ГГГГ-ММ), с которого месяцы пересобираются начисто
     if (prev && prev.fullScanAt) {
-      // Инкремент: переписываем последние 3 месяца (возвраты приходят с лагом).
-      const d = new Date(Date.UTC(nowMsk.getUTCFullYear(), nowMsk.getUTCMonth() - 2, 1));
-      fromISO = d.toISOString().slice(0, 10) + "T00:00:00Z";
-      for (const ym of Object.keys(bankMonths)) { if (ym >= fromISO.slice(0, 7)) delete bankMonths[ym]; }
+      // Инкремент: пересобираем последние 3 месяца (возвраты приходят с лагом). Выписку
+      // берём на месяц раньше, а в пересборку пускаем ТОЛЬКО операции с месяцем авторизации
+      // ≥ rebuildFrom. Раньше операции, авторизованные в конце более раннего месяца и
+      // проведённые в начале следующего, каждую ночь заново прибавлялись к этому раннему
+      // месяцу (его не очищали) — июль 2026 раздуло на 1–2 млн (найдено 06.10.2026).
+      const rb = new Date(Date.UTC(nowMsk.getUTCFullYear(), nowMsk.getUTCMonth() - 2, 1));
+      rebuildFrom = rb.toISOString().slice(0, 7);
+      fromISO = new Date(Date.UTC(rb.getUTCFullYear(), rb.getUTCMonth() - 1, 1)).toISOString().slice(0, 10) + "T00:00:00Z";
+      for (const ym of Object.keys(bankMonths)) { if (ym >= rebuildFrom) delete bankMonths[ym]; }
     } else {
       fromISO = "2020-01-01T00:00:00Z"; // первый прогон — вся история счёта (для «заморожено»)
     }
     const tillISO = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10) + "T00:00:00Z";
-    const ops = await tbFetchOps(acc, fromISO, tillISO);
+    const opsAll = await tbFetchOps(acc, fromISO, tillISO);
+    const ops = rebuildFrom ? opsAll.filter((o) => String(o.authorizationDate || o.operationDate || "").slice(0, 7) >= rebuildFrom) : opsAll;
     tbAggregateMonths(ops, bankMonths);
     const sheetMonths = await buyoutsSheetMonths().catch((e) => { console.error("BUYOUTS sheet:", e.message); return (prev && prev.sheet) || {}; });
     // Заморозка созревших месяцев (снимок банк+таблица) — ДО расчёта «заморожено» и сохранения.

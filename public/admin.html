@@ -4680,7 +4680,7 @@
             meta.innerHTML = sum + ' <span style="color:#a0a6b3;">· ' + (M.source === "work" ? "work.voyotravel.ru" : "таблица Google") + "</span>";
             head.appendChild(arrow); head.appendChild(title); head.appendChild(meta);
             const body = document.createElement("div");
-            let open = idx === 0;
+            let open = false;   // по умолчанию всё свёрнуто, раскрывается кликом (Андрей 06.10.2026)
             let sortKey = cfg.defaultSort, sortDir = -1;
             const paint = () => {
               arrow.textContent = open ? "▼" : "▶";
