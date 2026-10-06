@@ -4061,6 +4061,9 @@
         // Item 13 — налоги (вынесенный НДС, налог 5%, расхождение с фактом НДС).
         const taxSeries = (vscData.months || []).map((mm) => ({ x: short(mm.name), k: mm.taxes || {} }));
         const h6 = document.createElement("div"); h6.className = "ref-sec-h"; h6.style.marginTop = "22px"; h6.textContent = "Налоги — по месяцам";
+        h6.appendChild(vscInfo("<b>Откуда</b><br>С июля 2026 — «Касса → CRM-факт» Кати на work.voyotravel.ru, ровно её расчёт налогов. Январь–июнь — прежняя таблица «срм-факт»."
+          + "<br><br><b>База</b> — бюджеты сделок, оформленных на четыре юрлица (Альта, Комисаренко, Панфилова, Эй Кей). Сделки без договора (наличные без чека, крипто-кошелёк, наличные в валюте) и сборы в базу не входят — поэтому выручка может расти, а налог нет: в сентябре выручка выросла за счёт ВНЖ без договора (2,35 млн против 0,86 млн в августе), а база 9,21 млн против 9,37 млн."
+          + "<br><br><b>Предполагаемый НДС</b> = база × 5 %. <b>Налог 5 %</b> = база × 5 % без НДС в базе (решение Екатерины с сентября; по июль–август налог в таблице считался вместе с НДС, поэтому он там выше НДС). <b>Расхождение</b> = НДС, вынесенный в сделках, минус предполагаемый."));
         vscContent.appendChild(h6);
         vscContent.appendChild(vscBarChart({ key: "nds", label: "Вынесенный НДС (предполагаемый, из выручки)", fmt: "money", good: 0 }, taxSeries));
         vscContent.appendChild(vscBarChart({ key: "tax5", label: "Налог 5%", fmt: "money", good: 0 }, taxSeries));
@@ -5756,7 +5759,7 @@
       // (ищется по «vscProfitHistoryBlock»). Данные статичные, из VSC.xlsx.
       function vscProfitHistoryBlock() {
         const wrap = document.createElement("div"); wrap.style.marginTop = "22px";
-        const info = "<b>Что показывает</b><br>Прибыль компании за всё время работы, с апреля 2016.<br><br><b>Откуда цифры</b><br>С апреля 2016 по август 2026 — из книги VSC.xlsx, из строки итога внизу каждого помесячного листа (выручка месяца минус расход месяца). С сентября 2026 — прибыль, которую вы вносите на дашборде: как только внесли месяц, он сразу появляется здесь.<br><br><b>Детали</b><br>• 2016 год неполный — первый лист книги начинается с апреля.<br>• Текущий год показан по последний внесённый месяц.<br>• Год — сумма своих месяцев, поэтому неполные годы с остальными впрямую не сравнить.";
+        const info = "<b>Что показывает</b><br>Прибыль компании за всё время работы, с апреля 2016.<br><br><b>Откуда цифры</b><br>С апреля 2016 по август 2026 — из книги VSC.xlsx, из строки итога внизу каждого помесячного листа (выручка месяца минус расход месяца). С сентября 2026 — прибыль, которую вы вносите на дашборде: как только внесли месяц, он сразу появляется здесь.<br><br><b>Детали</b><br>• 2016 год неполный — первый лист книги начинается с апреля.<br>• Текущий год показан по последний внесённый месяц.<br>• Год — сумма своих месяцев, поэтому неполные годы с остальными впрямую не сравнить.<br><br><b>Подробнее</b><br>Таблица по месяцам за последние четыре года, окно сдвигается само с началом нового года. Разница — текущий год против прошлого по тем месяцам, где текущий уже внесён; процент считается от модуля прошлого года, чтобы при убыточном месяце знак не переворачивался.";
         const h = document.createElement("div"); h.className = "ref-sec-h"; h.textContent = "Прибыль за всё время — по годам и месяцам"; h.appendChild(vscInfo(info));
         wrap.appendChild(h);
         const box = document.createElement("div"); box.className = "vsc-chart"; box.innerHTML = '<div class="loading-state">Загружаем…</div>';
@@ -5851,13 +5854,55 @@
           sw.appendChild(mkBtn("По месяцам", "months"));
           box.appendChild(sw); box.appendChild(chartHost);
           draw("years");
-          // Таблицу год-на-месяц Андрей убрал 21.09.2026 — остаётся только график,
-          // цифры месяцев видно по наведению. Под графиком строка со сводным итогом.
+          // Полную таблицу год-на-месяц Андрей убрал 21.09.2026; 06.10.2026 вернул её
+          // компактно — последние 4 года под «Подробнее». Под графиком строка со сводным итогом.
           const all = keys.reduce(function (a, k) { return a + ms[k]; }, 0);
           box.insertAdjacentHTML("beforeend", '<div style="font-size:11.5px;color:#9096a3;margin-top:10px;">за всё время: <b style="color:'
             + (all < 0 ? "#a12b3c" : "#2c7a43") + ';">' + money(all) + ' ₽</b> · месяцев: ' + keys.length
             + ' (с ' + MON[+keys[0].slice(5) - 1].toLowerCase() + " " + keys[0].slice(0, 4)
             + " по " + MON[+keys[keys.length - 1].slice(5) - 1].toLowerCase() + " " + keys[keys.length - 1].slice(0, 4) + ")</div>");
+          // «Подробнее» — динамика по месяцам за последние 4 года (Андрей 06.10.2026).
+          // Окно лет едет само: наступит 2027 — станут 2024–2027. Разница — текущий год
+          // против прошлого, только по месяцам, где текущий год уже внесён; процент — от
+          // модуля прошлого года, чтобы при убыточной базе знак не переворачивался.
+          const yNow = +keys[keys.length - 1].slice(0, 4);
+          const ys = [yNow - 3, yNow - 2, yNow - 1, yNow];
+          const val = function (y, m) { const k = y + "-" + String(m).padStart(2, "0"); return ms[k] != null ? ms[k] : null; };
+          const pct = function (cur, prev) { return (cur == null || prev == null || !prev) ? null : (cur - prev) / Math.abs(prev) * 100; };
+          const col = function (v) { return v == null ? "#9096a3" : (v < 0 ? "#a12b3c" : "#2c7a43"); };
+          const TH = 'style="padding:7px 9px;border-bottom:2px solid #e3e6ee;text-align:right;white-space:nowrap;font-weight:700;color:#33415a;"';
+          const TD = "padding:6px 9px;border-bottom:1px solid #eef0f4;text-align:right;white-space:nowrap;";
+          const cell = function (v, bold) { return '<td style="' + TD + (bold ? "font-weight:700;" : "") + (v != null && v < 0 ? "color:#a12b3c;" : "") + '">' + (v == null ? "" : money(v)) + "</td>"; };
+          const pcell = function (v, bold) { return '<td style="' + TD + (bold ? "font-weight:700;" : "") + "color:" + col(v) + ';">' + (v == null ? "" : (v > 0 ? "+" : "") + (Math.round(v * 100) / 100).toLocaleString("ru-RU") + "%") + "</td>"; };
+          const dcell = function (v, bold) { return '<td style="' + TD + (bold ? "font-weight:700;" : "") + "color:" + col(v) + ';">' + (v == null ? "" : (v > 0 ? "+" : "") + money(v)) + "</td>"; };
+          const yy = function (y) { return String(y).slice(2); };
+          let lastM = 0;
+          for (let m = 1; m <= 12; m++) if (val(yNow, m) != null) lastM = m;
+          let t = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:10px;"><table style="width:100%;min-width:640px;border-collapse:collapse;font-size:13px;">'
+            + '<tr><th ' + TH.replace("text-align:right", "text-align:left") + '></th>' + ys.map(function (y) { return "<th " + TH + ">" + y + "</th>"; }).join("")
+            + "<th " + TH + ">Разница " + yy(yNow) + "-" + yy(yNow - 1) + "</th><th " + TH + ">Разница % " + yy(yNow) + "-" + yy(yNow - 1) + "</th></tr>";
+          for (let m = 1; m <= 12; m++) {
+            const cur = val(yNow, m), prev = val(yNow - 1, m);
+            const has = cur != null && prev != null;
+            t += '<tr><td style="' + TD + 'text-align:left;font-weight:600;">' + MONF[m - 1].charAt(0).toUpperCase() + MONF[m - 1].slice(1) + "</td>"
+              + ys.map(function (y) { return cell(val(y, m)); }).join("")
+              + dcell(has ? cur - prev : null) + pcell(has ? pct(cur, prev) : null) + "</tr>";
+          }
+          const sumYear = function (y, upTo) { let a = 0, any = false; for (let m = 1; m <= (upTo || 12); m++) { const v = val(y, m); if (v != null) { a += v; any = true; } } return any ? a : null; };
+          const curT = sumYear(yNow, lastM), prevT = sumYear(yNow - 1, lastM);
+          const hasT = curT != null && prevT != null;
+          t += '<tr style="background:#f7f8fb;"><td style="' + TD + 'text-align:left;font-weight:700;">Итого</td>'
+            + ys.map(function (y) { return cell(sumYear(y), true); }).join("")
+            + dcell(hasT ? curT - prevT : null, true) + pcell(hasT ? pct(curT, prevT) : null, true) + "</tr></table></div>";
+          if (lastM && lastM < 12) t += '<div style="font-size:11.5px;color:#9096a3;margin-top:8px;">Разница в строке «Итого» — за одинаковые месяцы: январь–' + MONF[lastM - 1] + " " + yNow + " против январь–" + MONF[lastM - 1] + " " + (yNow - 1) + ".</div>";
+          const det = document.createElement("details"); det.style.marginTop = "12px";
+          const sm = document.createElement("summary");
+          sm.style.cssText = "cursor:pointer;font-size:13px;font-weight:600;color:#33415a;user-select:none;";
+          sm.textContent = "Подробнее — по месяцам за " + ys[0] + "–" + yNow;
+          if (hasT) sm.innerHTML += '<span style="font-weight:400;color:#9096a3;"> · ' + yNow + " к " + (yNow - 1) + " за те же месяцы: " + '<span style="color:' + col(curT - prevT) + ';">' + (curT - prevT > 0 ? "+" : "") + (Math.round(pct(curT, prevT) * 10) / 10).toString().replace(".", ",") + "%</span></span>";
+          det.appendChild(sm);
+          const tail = document.createElement("div"); tail.innerHTML = t; det.appendChild(tail);
+          box.appendChild(det);
         }).catch(function () { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить.</div>'; });
         return wrap;
       }
