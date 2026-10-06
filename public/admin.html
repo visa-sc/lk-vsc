@@ -3806,7 +3806,7 @@
         // Значения плиток + изменение «к пред.». Месяц — сравнение за сопоставимое
         // число прошедших дней (текущий неполный месяц не искажается).
         let curSub = "", cmpRes = null;
-        if (vscGran === "year") { curSub = "2026 · коэффициенты — взвешенно за год (как Grand total)"; }
+        if (vscGran === "year") { curSub = "2026 · за год"; } // коэффициенты взвешенно за год, как Grand total; коротко — чтобы плитки на телефоне не раздувались
         else if (vscGran === "month") {
           const curM = (vscData.months || [])[vscMonthIdx];
           curSub = curM ? curM.name : "";
