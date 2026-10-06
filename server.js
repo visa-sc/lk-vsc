@@ -1792,6 +1792,9 @@ function servicePotokToken() {
   return _svcTok;
 }
 potok.init(servicePotokToken);
+// Данные раздела Кати вместо Google «срм-факт» и таблицы возвратов (Андрей 06.10.2026).
+const katedata = require("./katedata");
+katedata.init(servicePotokToken);
 // После каждого обновления «Потока» пересчитываем «Запас на сборы»: иначе после
 // перезапуска сборы успевали посчитаться раньше, чем приезжал P&L, и сентябрь
 // оставался без расхода до следующего получасового прогрева.
@@ -5818,12 +5821,9 @@ const VSC_SHEETS = [
 // Отзывы (отдельная Google-таблица, лист «Статистика 2026»). Колонки по буквам:
 // A=месяц, D=позитивные МСК, F=негативные МСК, J=позитивные СПб, L=негативные СПб.
 const VSC_REVIEWS_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRWz9BWp9Dzqj1TQivSvTQ12tE_06UzV3Dy2Lix5kyVBYUkUou9EHhCQvT3fVzafqwNYfCFeyp6UMrT/pub?gid=786742187&single=true&output=csv";
-// «Возвраты» и «Налоги» — отдельные Google-таблицы с ПОМЕСЯЧНЫМИ вкладками (2026).
-// Тянем нужные вкладки по gid (публикация в вебе). Колонки/строки внутри ищем по смыслу.
-const VSC_RETURNS_PUB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRZXCCyCQMDzaSgbuBTf7Uqn9_93uLpEZR7RBEhk_oFEYS67-QjaBv8pnjWtFa4zc8YOkQcgihH2Up-/pub";
-const VSC_TAXES_PUB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRwsrbTIn1uoxuP8lKh2MFM7dpxtHKbF7zU8Jz1_9BXjgxpruguaf9B5QYCXGPNoiTzfNWWxG-DxqAD/pub";
-const VSC_RETURNS_GID = { "Январь 2026": "1436150116", "Февраль 2026": "2074430542", "Март 2026": "198350610", "Апрель 2026": "1458511972", "Май 2026": "1992585040", "Июнь 2026": "1100248812", "Июль 2026": "1604770336" };
-const VSC_TAXES_GID = { "Январь 2026": "9809588", "Февраль 2026": "1136035263", "Март 2026": "2018995646", "Апрель 2026": "437724355", "Май 2026": "2024110337", "Июнь 2026": "1935139822" };
+// «Возвраты» и «Налоги» с 06.10.2026 берутся из раздела Кати (katedata.js), Google-таблицы
+// «срм-факт» и возвратов больше не читаем. Месяцы до июля 2026 (CRM-факт Кати ведётся
+// с июля) — значения прежних таблиц, зафиксированные ниже и в .vscExtraLastGood.json.
 // Парсер CSV (учитывает кавычки, экранирование "" и переводы строк внутри ячеек).
 function vscParseCsv(text) {
   const rows = []; let row = [], field = "", i = 0, q = false;
@@ -6102,57 +6102,11 @@ async function vscFetchReviews() {
     return vscParseReviews(vscParseCsv(r.data));
   } catch (e) { return []; /* недоступна таблица отзывов — просто без неё */ }
 }
-// Возвраты по дням месяца: { "DD.MM.YYYY": суммаУслуг }. У вкладок 2026 шапка из двух
-// строк; столбец «Услуги» и «Дата возврата» ищем по имени (позиции плавают).
-function vscReturnsByDay(rows) {
-  let uslCol = -1, dateCol = -1, faultCol = -1, catCol = -1, hdr = -1;
-  for (let i = 0; i < Math.min(rows.length, 6) && (uslCol < 0 || dateCol < 0 || faultCol < 0 || catCol < 0); i++) {
-    const r = rows[i] || [];
-    for (let c = 0; c < r.length; c++) {
-      const n = String(r[c] || "").replace(/\s+/g, " ").trim().toLowerCase();
-      if (n === "услуги") { uslCol = c; if (hdr < 0) hdr = i; }
-      if (n.indexOf("дата возврата") >= 0) dateCol = c;
-      if (n === "причина") faultCol = c;   // до июля 2026 вина писалась тут
-      if (n === "категория") catCol = c;   // с июля 2026 «Наша/Не наша вина» переехала сюда, «Причина» стала детальной
-    }
-  }
-  // Вина строки: сначала «Категория» (новая схема), затем «Причина» (старая). «Не наша
-  // вина» СОДЕРЖИТ «наша вина» — проверяем «не наш» ПЕРВЫМ. Ни там ни там → неизвестно.
-  const faultOf = (row) => {
-    for (const c of [catCol, faultCol]) {
-      if (c < 0) continue;
-      const t = String(row[c] || "").toLowerCase();
-      if (/не\s*наш/.test(t)) return "notOur";
-      if (/наш/.test(t)) return "our";
-    }
-    return "unknown";
-  };
-  // byDay — суммы «Услуги» по дате возврата (для дней/недель); totalAll — Σ ВСЕХ строк
-  // вкладки, включая строки БЕЗ даты возврата (вкладка = месяц, поэтому месячный итог —
-  // именно totalAll; сверено с ручным подсчётом Андрея). fault — по тем же строкам, что
-  // totalAll → сумма fault = totalAll, общий % возвратов не съезжает при разбивке.
-  const out = { byDay: {}, totalAll: 0, fault: { our: 0, notOur: 0, unknown: 0 } };
-  if (uslCol < 0 || dateCol < 0) return out;
-  for (let i = hdr + 1; i < rows.length; i++) {
-    const row = rows[i] || [];
-    const v = vscNum(row[uslCol]);
-    if (v == null) continue;
-    out.totalAll += v;
-    const d = vscNormDMY(row[dateCol]); // гибко: «1.6.2026» → «01.06.2026» (иначе строки терялись)
-    if (d) out.byDay[d] = (out.byDay[d] || 0) + v;
-    out.fault[faultOf(row)] += v; // строки без даты — в итог и вину входят, в дни — нет
-  }
-  return out;
-}
-// Налоги месяца из строки «Итог»: НДС (предполагаемый), расхождение с фактом, налог 5%.
-function vscParseTaxes(rows) {
-  let itog = -1; for (let i = rows.length - 1; i >= 0; i--) { if (String((rows[i] || [])[0] || "").toLowerCase().indexOf("итог") >= 0) { itog = i; break; } }
-  if (itog < 0) return null;
-  const findCol = (kws) => { for (let i = 0; i < Math.min(rows.length, 6); i++) { const r = rows[i] || []; for (let c = 0; c < r.length; c++) { const n = String(r[c] || "").replace(/\s+/g, " ").trim().toLowerCase(); if (kws.every((k) => n.indexOf(k) >= 0)) return c; } } return -1; };
-  const di = findCol(["предполагаемый", "ндс"]), dj = findCol(["расхождение", "вынесенного"]), dk = findCol(["налог", "5%"]);
-  return { nds: di >= 0 ? vscNum(rows[itog][di]) : null, rasx: dj >= 0 ? vscNum(rows[itog][dj]) : null, tax5: dk >= 0 ? vscNum(rows[itog][dk]) : null };
-}
-// Возвраты (по дням) + налоги (Итог) для всех месяцев 2026 — параллельно, мягко к сбоям.
+// Возвраты по дням и налоги месяца — из раздела Кати (katedata.js):
+//  • возвраты — её модуль возвратов, все месяцы 2026 (перенесены из прежней таблицы,
+//    сверено до рубля): «Услуги» по дате возврата, итог месяца, разбивка по вине;
+//  • налоги — по формулам её «Кассы» из CRM-факта, с июля 2026; месяцы раньше —
+//    прежние значения «срм-факт» (они и так заморожены снимком).
 // «Последнее удачное» (фикс 20.07, Андрей ловил «исчезнувший июнь»): живые месяцы
 // (текущий+прошлый) НЕ покрыты заморозкой, и разовый сбой загрузки вкладки гугла ронял
 // месяц в null — 15-минутный кэш раздавал всем пустую колонку. Теперь: удачная загрузка
@@ -6162,19 +6116,13 @@ let _vscExtraLG = null;
 function vscExtraLGLoad() { if (_vscExtraLG) return _vscExtraLG; try { _vscExtraLG = JSON.parse(fs.readFileSync(VSC_EXTRA_LASTGOOD_FILE, "utf8")) || {}; } catch (_) { _vscExtraLG = {}; } if (!_vscExtraLG.ret) _vscExtraLG.ret = {}; if (!_vscExtraLG.tax) _vscExtraLG.tax = {}; return _vscExtraLG; }
 async function vscFetchExtra() {
   const ret = {}, tax = {};
-  // Вкладки берём из АВТООБНАРУЖЕНИЯ (pubhtml) + хардкода: новые месяцы (июль, август…)
-  // подхватываются сами, без ручного добавления gid. Discovery сбоит → хардкод.
-  const [retDisc, taxDisc] = await Promise.all([vscDiscoverGids(VSC_RETURNS_PUB), vscDiscoverGids(VSC_TAXES_PUB)]);
-  const retTabs = vscMonthTabs(retDisc, VSC_RETURNS_GID);
-  const taxTabs = vscMonthTabs(taxDisc, VSC_TAXES_GID);
-  const oneRet = async (t) => { try { const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + t.gid + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] }); ret[t.name] = vscReturnsByDay(vscParseCsv(r.data)); } catch (e) {} };
-  const oneTax = async (t) => { try { const r = await axios.get(VSC_TAXES_PUB + "?gid=" + t.gid + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] }); tax[t.name] = vscParseTaxes(vscParseCsv(r.data)); } catch (e) {} };
-  await Promise.all([].concat(retTabs.map(oneRet), taxTabs.map(oneTax)));
-  // Слой «последнего удачного»: свежие месяцы → в last-good; пропавшие → из last-good.
+  katedata.returnMonths().forEach((ym) => { const r = katedata.returnsForDashboard(ym); if (r) ret[katedata.ymName(ym)] = r; });
+  katedata.amoMonths().forEach((ym) => { const t = katedata.taxesMonth(ym); if (t) tax[katedata.ymName(ym)] = { nds: t.nds, rasx: t.rasx, tax5: t.tax5, src: "work" }; });
+  // Слой «последнего удачного»: свежие месяцы → в last-good; не прочитавшиеся → из него.
   const lg = vscExtraLGLoad();
   Object.keys(ret).forEach((k) => { lg.ret[k] = ret[k]; });
-  Object.keys(tax).forEach((k) => { if (tax[k] != null) lg.tax[k] = tax[k]; });
-  Object.keys(lg.ret).forEach((k) => { if (!(k in ret)) { ret[k] = lg.ret[k]; console.log("VSC EXTRA: возвраты «" + k + "» не загрузились — взял последнее удачное"); } });
+  Object.keys(tax).forEach((k) => { lg.tax[k] = tax[k]; });
+  Object.keys(lg.ret).forEach((k) => { if (!(k in ret)) ret[k] = lg.ret[k]; });
   Object.keys(lg.tax).forEach((k) => { if (!(k in tax) || tax[k] == null) tax[k] = lg.tax[k]; });
   try { fs.writeFileSync(VSC_EXTRA_LASTGOOD_FILE, JSON.stringify(lg), "utf8"); } catch (_) {}
   return { ret, tax };
@@ -7395,7 +7343,7 @@ const TAXLEG_ENTITIES = [
   { key: "akg", name: "Эй Кей Групп", rate: 0.015, vatStart: "2026-01" }
 ];
 // Хранилище держит ТОЛЬКО ручной ввод — цифры бухгалтера. Всё остальное (выручки, нал,
-// вынесенный НДС, возвраты) тянется автоматом из срм-факт и таблицы возвратов.
+// вынесенный НДС, возвраты) тянется автоматом из раздела Кати (I–II кв. — зафиксировано).
 function vscTaxLegSeed() {
   return {
     quarters: {
@@ -7441,42 +7389,16 @@ function vscTaxLegLG(kind, qkey, data, failed) {
   if (lg[kind][qkey]) { console.log("VSC TAXLEG: " + kind + " " + qkey + " — сбой (" + failed.join(", ") + "), взял последнее удачное"); return lg[kind][qkey]; }
   return data;
 }
-let _taxLegRetCache = {};
-async function vscTaxLegReturns(qkey) { // qkey «2026-Q2»
-  const c = _taxLegRetCache[qkey];
-  if (c && Date.now() - c.at < (c.ttl || 15 * 60 * 1000)) return c.data;
+async function vscTaxLegReturns(qkey) { // qkey «2026-Q2» — из модуля возвратов Кати
   const [year, q] = qkey.split("-");
-  const disc = await vscDiscoverGids(VSC_RETURNS_PUB).catch(() => null);
-  const tabs = vscMonthTabs(disc, VSC_RETURNS_GID);
-  const byEnt = { alta: 0, kom: 0, pan: 0, akg: 0, other: 0 }; const missing = [], failed = [];
+  const byEnt = { alta: 0, kom: 0, pan: 0, akg: 0, other: 0 }; const missing = [];
   for (const mon of TAXLEG_QMONTHS[q] || []) {
-    const name = mon + " " + year;
-    const tab = tabs.find((t) => t.name === name);
-    if (!tab) { missing.push(name); continue; }
-    try {
-      const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 15000, responseType: "text", transformResponse: [(d) => d] });
-      const R = vscParseCsv(r.data);
-      // Методика Андрея (сверено с «2 кв.xlsx» до рубля): возврат = «Услуги» + «НДС».
-      const hdr = R[1] || []; let jUr = -1, jUsl = -1, jNds = -1;
-      hdr.forEach((cc, j) => { const n = String(cc || "").toLowerCase().trim(); if (n === "юр лицо") jUr = j; if (n === "услуги") jUsl = j; if (n === "ндс") jNds = j; });
-      if (jUr < 0 || jUsl < 0) { failed.push(name); continue; }
-      for (let i = 2; i < R.length; i++) {
-        const row = R[i] || []; const ur = String(row[jUr] || "").toLowerCase();
-        const v = (vscNum(row[jUsl]) || 0) + (jNds >= 0 ? (vscNum(row[jNds]) || 0) : 0);
-        if (!v) continue;
-        if (!ur) byEnt.other += v; // пустое юрлицо — в «не привязано» (в общий вычет входит)
-        else if (ur.includes("альта")) byEnt.alta += v;
-        else if (ur.includes("комисар") || ur.includes("комиссар")) byEnt.kom += v;
-        else if (ur.includes("панфилов")) byEnt.pan += v;
-        else if (ur.includes("эй кей") || ur.includes("эйкей")) byEnt.akg += v;
-        else byEnt.other += v;
-      }
-    } catch (e) { failed.push(name); }
+    const ym = katedata.nameYm(mon + " " + year);
+    const e = ym ? katedata.returnsByEntity(ym) : null;
+    if (!e) { missing.push(mon + " " + year); continue; }
+    Object.keys(byEnt).forEach((k) => { byEnt[k] += e[k] || 0; });
   }
-  const data = vscTaxLegLG("taxLegRet", qkey, { byEnt, missing: missing.concat(failed) }, failed);
-  // при сбое кэшируем ненадолго — быстрый повтор вместо «не загрузилось» на 15 минут
-  _taxLegRetCache[qkey] = { at: Date.now(), ttl: failed.length ? 2 * 60 * 1000 : 15 * 60 * 1000, data };
-  return data;
+  return vscTaxLegLG("taxLegRet", qkey, { byEnt, missing }, []);
 }
 // Реклама Санкт-Петербурга — НАПРЯМУЮ из Я.Директа (уточнение Андрея 11.09.2026):
 // берём все кампании, в названии которых есть SPB/СПБ (включая общую «Мск и СПБ»),
@@ -7696,30 +7618,12 @@ async function vscSpbPnl() {
     const ads = await vscSpbAdByMonth();
     for (const name in out) if (ads[name] != null) out[name].ad = ads[name];
   } catch (e) { console.error("spb ad:", e.message); }
-  // 3) Возвраты СПб — «Услуги» по строкам филиала Санкт-Петербург
-  try {
-    const disc = await vscDiscoverGids(VSC_RETURNS_PUB).catch(() => null);
-    const tabs = vscMonthTabs(disc, VSC_RETURNS_GID);
-    for (const tab of tabs) {
-      if (!out[tab.name]) continue;
-      try {
-        const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
-        const R = vscParseCsv(r.data);
-        const hdr = R.findIndex((row) => (row || []).some((c) => String(c || "").trim().toLowerCase() === "услуги"));
-        if (hdr < 0) continue;
-        const head = R[hdr] || [];
-        const bCol = head.findIndex((c) => /филиал/i.test(String(c || "")));
-        const uCol = head.findIndex((c) => String(c || "").trim().toLowerCase() === "услуги");
-        if (bCol < 0 || uCol < 0) continue;
-        let sum = 0;
-        for (let i = hdr + 1; i < R.length; i++) {
-          const b = String((R[i] || [])[bCol] || "").toLowerCase();
-          if (/спб|санкт|питер/.test(b)) sum += money((R[i] || [])[uCol]);
-        }
-        out[tab.name].returns = Math.round(sum);
-      } catch (e) { console.error("spb ret " + tab.name + ":", e.message); }
-    }
-  } catch (e) { console.error("spb ret:", e.message); }
+  // 3) Возвраты СПб — «Услуги» по строкам филиала Санкт-Петербург (модуль возвратов Кати)
+  for (const name in out) {
+    const ym = katedata.nameYm(name);
+    const v = ym ? katedata.returnsSpb(ym) : null;
+    if (v != null) out[name].returns = Math.round(v);
+  }
   // 4) Закрытые месяцы — из снимка (или из сид-значений таблицы Андрея)
   const snap = spbSnapLoad();
   const spbLeadsStore = spbLeadsLoad();
@@ -7791,12 +7695,14 @@ app.get("/admin/api/vsc/spb-pnl", requireAdmin, async (req, res) => {
 })();
 
 // ═══ «Запас на сборы» (Ежемесячный контроль; просьба Андрея 11.09.2026) ══════
-// Приход — деньги, которые клиенты заплатили за сборы и сопутствующее: колонки
-// CU..DD месячной вкладки «срм-факт» (Ваучеры Авиа, Регистрация, Подача, ФОТО,
-// Консульские сборы, Услуги АКК, Запись/БОТ, Сторонние курьеры, Страховка,
-// Языковые переводы), строка «Итог». Возвраты — из таблицы возвратов, блок
-// «РАЗБИВКА СУММЫ ВОЗВРАТА» без колонок «Услуги» и «НДС» (они про наши услуги,
-// а не про сборы). Расход — категория «Сборы» из P&L Платрума, тянется по API.
+// Приход — деньги, которые клиенты заплатили за сборы и сопутствующее (ваучеры авиа,
+// регистрация, подача, фото, консульские сборы, услуги АКК, запись/бот, сторонние
+// курьеры, страховка, языковые переводы). С июля 2026 — CRM-факт Кати (решение Андрея
+// 06.10.2026: «от гугла уходим»); январь–июнь — зафиксированные значения прежнего
+// Google «срм-факт» (VSC_SBORY_OLD). Возвраты — модуль возвратов Кати, вся разбивка
+// кроме «Услуг» и НДС. Расход — категория «Сборы»: до августа Платрум, с сентября
+// P&L «Потока».
+const VSC_SBORY_OLD = {"Январь 2026":{"income":5506363,"incomeParts":{"регистрация":14000,"подача":75146,"языковые переводы":193561,"консульские сборы":2251533,"услуги акк":1878965,"запись/бот":777858,"ваучеры авиа":22000,"сторонние курьеры":7750,"страховка":285550}},"Февраль 2026":{"income":7317119,"incomeParts":{"регистрация":25500,"подача":111554,"фото":1434,"языковые переводы":208146,"консульские сборы":2230010,"услуги акк":3402828,"запись/бот":995621,"ваучеры авиа":68000,"сторонние курьеры":13346,"страховка":260680}},"Март 2026":{"income":8737234,"incomeParts":{"регистрация":18900,"подача":135020,"языковые переводы":113810,"консульские сборы":2137840,"услуги акк":3542948,"запись/бот":2327355,"ваучеры авиа":84000,"сторонние курьеры":33059,"страховка":344302}},"Апрель 2026":{"income":10430106,"incomeParts":{"регистрация":54000,"подача":108059,"языковые переводы":160755,"консульские сборы":2138038,"услуги акк":4637349,"запись/бот":2991975,"ваучеры авиа":27000,"сторонние курьеры":10670,"страховка":302260}},"Май 2026":{"income":10941930,"incomeParts":{"ваучеры авиа":48000,"регистрация":20500,"подача":77688,"фото":500,"консульские сборы":1346479,"услуги акк":5535576,"запись/бот":3334681,"сторонние курьеры":13691,"страховка":351610,"языковые переводы":213205}},"Июнь 2026":{"income":11684370,"incomeParts":{"ваучеры авиа":10000,"регистрация":21500,"подача":60258,"консульские сборы":1681183,"услуги акк":5839523,"запись/бот":3426858,"сторонние курьеры":10413,"страховка":365495,"языковые переводы":269140}}};
 const VSC_SBORY_EXP_FILE = path.join(__dirname, ".vscSboryExpense.json");
 // Расход по категории «Сборы» тянется из P&L Платрума (строка «Сборы» в переменных
 // расходах). Файл .vscSboryExpense.json остался как ручное переопределение на
@@ -7819,16 +7725,15 @@ function vscSboryExpLoad() {
 }
 function vscSboryOverrides() { try { return JSON.parse(fs.readFileSync(VSC_SBORY_EXP_FILE, "utf8")) || {}; } catch (_) { return {}; } }
 function vscSboryExpSave(m) { try { fs.writeFileSync(VSC_SBORY_EXP_FILE, JSON.stringify(m, null, 2), "utf8"); return true; } catch (e) { console.error("vscSboryExpSave:", e.message); return false; } }
-// Колонки ищем ПО НАЗВАНИЯМ, а не по позиции: в январе-апреле вёрстка листа
-// другая (в январе сборы лежат в 87..96, с мая — в 98..107 = CU..DD).
-const VSC_SBORY_NAMES = ["ваучеры авиа", "регистрация", "подача", "фото", "консульские сборы", "услуги акк", "запись/бот", "сторонние курьеры", "страховка", "языковые переводы"];
-// Кэш «Запаса на сборы» тоже держим на диске: расчёт читает несколько Google-вкладок,
+// Кэш «Запаса на сборы» тоже держим на диске: расчёт собирает несколько источников,
 // после перезапуска процесса память пустая и блок висел бы на спиннере.
 const VSC_SBORY_CACHE_FILE = path.join(__dirname, ".vscSboryCache.json");
+// Версия расчёта: при смене источников поднимаем — старый кэш с диска не подхватится.
+const VSC_SBORY_CACHE_V = 2;   // 2 — данные Кати вместо Google (06.10.2026)
 let _sboryCache = { at: 0, data: null }, _sboryRunning = false;
 function _sboryFromDisk() {
   if (_sboryCache.data) return _sboryCache.data;
-  try { const d = JSON.parse(fs.readFileSync(VSC_SBORY_CACHE_FILE, "utf8")); if (d && d.data) _sboryCache = { at: d.ts || 0, data: d.data }; } catch (_) {}
+  try { const d = JSON.parse(fs.readFileSync(VSC_SBORY_CACHE_FILE, "utf8")); if (d && d.data && d.v === VSC_SBORY_CACHE_V) _sboryCache = { at: d.ts || 0, data: d.data }; } catch (_) {}
   return _sboryCache.data;
 }
 function vscSboryWarm() {
@@ -7839,105 +7744,20 @@ function vscSboryWarm() {
 }
 async function vscSboryData() {
   if (_sboryCache.data && Date.now() - _sboryCache.at < 30 * 60 * 1000) return _sboryCache.data;
-  const money = (v) => { const n = parseFloat(String(v == null ? "" : v).replace(/\s|\u00a0/g, "").replace(/₽|руб\.?/gi, "").replace(",", ".")); return isFinite(n) ? n : 0; };
   const out = {};
-  // 1) Приход из срм-факт
-  try {
-    const disc = await vscDiscoverGids(VSC_TAXES_PUB).catch(() => null);
-    const tabs = vscMonthTabs(disc, VSC_TAXES_GID);
-    for (const tab of tabs) {
-      if (!/2026$/.test(tab.name)) continue;
-      try {
-        const r = await axios.get(VSC_TAXES_PUB + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
-        const R = vscParseCsv(r.data);
-        const itog = R.find((row) => String((row || [])[0] || "").trim().toLowerCase() === "итог");
-        if (!itog) continue;
-        let inc = 0; const incParts = {};
-        const width = Math.max.apply(null, [0, 1, 2, 3].map((i) => (R[i] || []).length).concat([itog.length]));
-        for (let j = 0; j < width; j++) {
-          const names = [0, 1, 2, 3].map((i) => String(((R[i] || [])[j]) || "").replace(/\s+/g, " ").trim().toLowerCase());
-          const hit = names.find((n) => VSC_SBORY_NAMES.indexOf(n) >= 0);
-          if (!hit) continue;
-          const v = money(itog[j]);
-          inc += v; if (Math.abs(v) > 0.5) incParts[hit] = Math.round(v);
-        }
-        const recI = (out[tab.name] = out[tab.name] || {});
-        recI.income = Math.round(inc); recI.incomeParts = incParts;
-      } catch (e) { console.error("sbory income " + tab.name + ":", e.message); }
-    }
-  } catch (e) { console.error("sbory income:", e.message); }
-  // 2) Возвраты по сборам
-  try {
-    const disc = await vscDiscoverGids(VSC_RETURNS_PUB).catch(() => null);
-    const tabs = vscMonthTabs(disc, VSC_RETURNS_GID);
-    for (const tab of tabs) {
-      if (!/2026$/.test(tab.name)) continue;
-      try {
-        const r = await axios.get(VSC_RETURNS_PUB + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
-        const R = vscParseCsv(r.data);
-        const hdrRow = R.findIndex((row) => (row || []).some((c) => String(c || "").trim().toLowerCase() === "услуги"));
-        if (hdrRow < 0) continue;
-        const head = R[hdrRow] || [], zone = R[0] || [];
-        let from = -1, to = -1;
-        for (let j = 0; j < zone.length; j++) {
-          const z = String(zone[j] || "").toUpperCase();
-          if (z.includes("РАЗБИВКА")) from = j;
-          else if (from >= 0 && z.trim() && to < 0) to = j - 1;
-        }
-        if (from < 0) continue;
-        if (to < 0) to = head.length - 1;
-        let ret = 0; const parts = {};
-        for (let j = from; j <= to; j++) {
-          const name = String(head[j] || "").trim(), low = name.toLowerCase();
-          if (!name || low === "услуги" || low === "ндс") continue;   // это про наши услуги, не про сборы
-          let sum = 0;
-          for (let i = hdrRow + 1; i < R.length; i++) sum += money((R[i] || [])[j]);
-          if (Math.abs(sum) > 0.5) parts[name] = Math.round(sum);
-          ret += sum;
-        }
-        const rec = (out[tab.name] = out[tab.name] || {});
-        rec.returns = Math.round(ret); rec.returnParts = parts;
-      } catch (e) { console.error("sbory returns " + tab.name + ":", e.message); }
-    }
-  } catch (e) { console.error("sbory returns:", e.message); }
-  // 3) С сентября 2026 — данные Кати на work.voyotravel.ru (Андрей 06.10.2026: Google
-  //    «срм-факт» может перестать вестись). Приход — её «Касса → CRM-факт» (по дням,
-  //    по видам сборов из сделок amoCRM), возвраты — её модуль возвратов (разбивка
-  //    каждого возврата). Сверено: сентябрь — приход 12 866 686, возвраты 459 204,
-  //    до рубля как в Google; июль и август в Google расходятся с её пересчётом, их
-  //    не трогаем. Её файлы только читаем.
-  try {
-    const KATE = "/var/www/kateadmin/data";
-    const IN_MAP = { reg: "регистрация", podacha: "подача", photo: "фото", consul: "консульские сборы", akk: "услуги акк", bot: "запись/бот",
-      voucher: "ваучеры авиа", courier: "сторонние курьеры", insur: "страховка", translate: "языковые переводы" };
-    const RET_MAP = { registration: "Регистрация", submission: "Подача", consular: "Сбор", akk: "Услуги АКК", bot: "Бот", avia: "Ваучеры", insurance: "Страховка" };
-    const MON = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
-    const yms = new Set();
-    try { fs.readdirSync(KATE + "/kassa/amo").forEach((f) => { const m = /^(\d{4}-\d{2})\.json$/.exec(f); if (m) yms.add(m[1]); }); } catch (_) {}
-    try { fs.readdirSync(KATE + "/vozvraty/returns").forEach((f) => { const m = /^(\d{4}-\d{2})\.json$/.exec(f); if (m) yms.add(m[1]); }); } catch (_) {}
-    [...yms].filter((ym) => ym >= potok.FROM_YM).forEach((ym) => {
-      const name = MON[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4);
-      const rec = (out[name] = out[name] || {});
-      try {
-        const j = JSON.parse(fs.readFileSync(KATE + "/kassa/amo/" + ym + ".json", "utf8"));
-        const parts = {}; let inc = 0;
-        Object.values(j.days || {}).forEach((d) => Object.keys(IN_MAP).forEach((f) => { const v = Number(d[f]) || 0; if (v) { parts[IN_MAP[f]] = (parts[IN_MAP[f]] || 0) + v; inc += v; } }));
-        Object.keys(parts).forEach((k) => { parts[k] = Math.round(parts[k]); });
-        rec.income = Math.round(inc); rec.incomeParts = parts; rec.incomeSrc = "work";
-      } catch (_) {}
-      try {
-        const rows = JSON.parse(fs.readFileSync(KATE + "/vozvraty/returns/" + ym + ".json", "utf8"));
-        const parts = {}; let ret = 0;
-        (Array.isArray(rows) ? rows : []).forEach((r) => Object.keys(r.split || {}).forEach((k) => {
-          if (!RET_MAP[k]) return;                       // услуги и НДС — не сборы
-          const v = Number(r.split[k]) || 0; if (!v) return;
-          parts[RET_MAP[k]] = (parts[RET_MAP[k]] || 0) + v; ret += v;
-        }));
-        Object.keys(parts).forEach((k) => { parts[k] = Math.round(parts[k]); });
-        rec.returns = Math.round(ret); rec.returnParts = parts; rec.returnsSrc = "work";
-      } catch (_) {}
-    });
-  } catch (e) { console.error("sbory из work:", e.message); }
+  // 1) Приход: январь–июнь — прежние значения, с июля — CRM-факт Кати.
+  Object.keys(VSC_SBORY_OLD).forEach((name) => { out[name] = { income: VSC_SBORY_OLD[name].income, incomeParts: Object.assign({}, VSC_SBORY_OLD[name].incomeParts), incomeSrc: "google" }; });
+  katedata.amoMonths().forEach((ym) => {
+    const inc = katedata.sboryIncome(ym); if (!inc) return;
+    const rec = (out[katedata.ymName(ym)] = out[katedata.ymName(ym)] || {});
+    rec.income = inc.total; rec.incomeParts = inc.parts; rec.incomeSrc = "work";
+  });
+  // 2) Возвраты по сборам — модуль возвратов Кати, все месяцы.
+  katedata.returnMonths().forEach((ym) => {
+    const r = katedata.returnsSbory(ym); if (!r) return;
+    const rec = (out[katedata.ymName(ym)] = out[katedata.ymName(ym)] || {});
+    rec.returns = r.total; rec.returnParts = r.parts; rec.returnsSrc = "work";
+  });
   // Месяц считается закрытым только с 4-го числа следующего (Андрей 11.09.2026):
   // до этого дня данные в таблицах ещё доносят, показывать их рано.
   const MONF_I = { "январь": 0, "февраль": 1, "март": 2, "апрель": 3, "май": 4, "июнь": 5, "июль": 6, "август": 7, "сентябрь": 8, "октябрь": 9, "ноябрь": 10, "декабрь": 11 };
@@ -7953,7 +7773,7 @@ async function vscSboryData() {
   const exp = vscSboryExpLoad();
   for (const k in out) if (exp[k] != null) out[k].expense = exp[k];
   _sboryCache = { at: Date.now(), data: out };
-  try { fs.writeFileSync(VSC_SBORY_CACHE_FILE, JSON.stringify({ ts: _sboryCache.at, data: out }), "utf8"); } catch (e) { console.error("saveSboryCache:", e.message); }
+  try { fs.writeFileSync(VSC_SBORY_CACHE_FILE, JSON.stringify({ v: VSC_SBORY_CACHE_V, ts: _sboryCache.at, data: out }), "utf8"); } catch (e) { console.error("saveSboryCache:", e.message); }
   return out;
 }
 app.get("/admin/api/vsc/sbory", requireVscDashboard, async (req, res) => {
@@ -7977,53 +7797,33 @@ app.post("/admin/api/vsc/sbory-expense", requireAdmin, (req, res) => {
   res.json({ success: ok, expenses: m });
 });
 
-// Автотяг из «срм-факт» (VSC_TAXES_PUB, месячные вкладки, строка «Итог»):
-//  • выручки 4 юрлиц — зона «ВЫГРУЗКА ИЗ CRM» (колонки по именам юрлиц в шапке);
-//  • нал без чека — Σ колонок с «без чека» (МСК+СПБ);
-//  • вынесенный НДС — колонка «предполагаемый размер НДС» (как в vscParseTaxes).
-// Сверено с xlsx Андрея: апрель 10 569 531/5 041 525/0/33 800, нал 714 480, НДС 15 539,14 ✓.
+// Автотяг налоговой вкладки — из раздела Кати (с июля 2026):
+//  • выручки 4 юрлиц — CRM-факт (бюджеты сделок по юрлицу договора);
+//  • нал без чека — её «Касса → CRM-факт», пересчёт сейфа МСК+СПБ;
+//  • вынесенный НДС — предполагаемый НДС по её формуле: база × 5 %.
+// I и II кварталы 2026 — зафиксированные значения прежнего «срм-факт» (VSC_TAXLEG_OLD),
+// сверенные с xlsx Андрея: апрель 10 569 531/5 041 525/0/33 800, нал 714 480, НДС 15 539,14.
+const VSC_TAXLEG_OLD = {"2026-Q1":{"rev":{"alta":[3315380,7413272,9077373],"kom":[5914855,5866418,5374515],"pan":[1413940,9762,2857],"akg":[1004794,38562,79961]},"cashMonths":[147490,595500,85000],"vatMonths":[134520.48,18965.14,16820.24],"cash":827990,"vatOut":170305.86,"missing":[]},"2026-Q2":{"rev":{"alta":[10569531,277787,26388],"kom":[5041525,125761,0],"pan":[0,6829713,5523265],"akg":[33800,5472470,6325815]},"cashMonths":[714480,992950,1312690],"vatMonths":[15539.14,635286.55,593773.4],"cash":3020120,"vatOut":1244599.09,"missing":[]}};
 let _taxLegAutoCache = {};
 async function vscTaxLegAuto(qkey) {
+  if (VSC_TAXLEG_OLD[qkey]) return VSC_TAXLEG_OLD[qkey];
   const c = _taxLegAutoCache[qkey];
-  if (c && Date.now() - c.at < (c.ttl || 15 * 60 * 1000)) return c.data;
+  if (c && Date.now() - c.at < 15 * 60 * 1000) return c.data;
   const [year, q] = qkey.split("-");
-  const disc = await vscDiscoverGids(VSC_TAXES_PUB).catch(() => null);
-  const tabs = vscMonthTabs(disc, VSC_TAXES_GID);
   const rev = { alta: [null, null, null], kom: [null, null, null], pan: [null, null, null], akg: [null, null, null] };
-  const cash = [null, null, null], vat = [null, null, null]; const missing = [], failed = [];
+  const cash = [null, null, null], vat = [null, null, null]; const missing = [];
   const monsQ = TAXLEG_QMONTHS[q] || [];
   for (let mi = 0; mi < monsQ.length; mi++) {
-    const name = monsQ[mi] + " " + year;
-    const tab = tabs.find((t) => t.name === name);
-    if (!tab) { missing.push(name); continue; }
-    try {
-      const r = await axios.get(VSC_TAXES_PUB + "?gid=" + tab.gid + "&single=true&output=csv", { timeout: 20000, responseType: "text", transformResponse: [(d) => d] });
-      const R = vscParseCsv(r.data);
-      const itog = R.find((row) => String((row || [])[0] || "").trim().toLowerCase() === "итог");
-      if (!itog) { failed.push(name); continue; }
-      const hdr = (j) => [0, 1, 2, 3].map((i) => String(((R[i] || [])[j]) || "").replace(/\s+/g, " ").toLowerCase()).join(" / ");
-      // зона «выгрузка из crm» → в ней колонки юрлиц
-      let zone = -1; (R[0] || []).forEach((v, j) => { if (String(v || "").toLowerCase().includes("выгрузка из crm")) zone = j; });
-      if (zone < 0) { failed.push(name); continue; }
-      for (let j = zone; j < zone + 20; j++) {
-        const h = hdr(j);
-        if (h.includes("альта") && rev.alta[mi] == null) rev.alta[mi] = vscNum(itog[j]);
-        else if ((h.includes("комисаренко") || h.includes("комиссаренко")) && rev.kom[mi] == null) rev.kom[mi] = vscNum(itog[j]);
-        else if (h.includes("панфилова") && rev.pan[mi] == null) rev.pan[mi] = vscNum(itog[j]);
-        else if (h.includes("эй кей") && rev.akg[mi] == null) rev.akg[mi] = vscNum(itog[j]);
-      }
-      // нал без чека (обе колонки, до зоны эквайринга)
-      let cashSum = 0, cashFound = false;
-      for (let j = 0; j < Math.min(42, itog.length); j++) { const h = hdr(j); if (h.includes("без чека") && h.includes("наличные")) { cashSum += vscNum(itog[j]) || 0; cashFound = true; } }
-      if (cashFound) cash[mi] = cashSum;
-      // предполагаемый НДС
-      for (let j = 0; j < itog.length; j++) { const h = hdr(j); if (h.includes("предполагаемый") && h.includes("ндс")) { vat[mi] = vscNum(itog[j]); break; } }
-    } catch (e) { failed.push(name); }
+    const name = monsQ[mi] + " " + year, ym = katedata.nameYm(name);
+    const er = ym ? katedata.entityRevenue(ym) : null;
+    if (!er) { missing.push(name); continue; }
+    rev.alta[mi] = er.alta; rev.kom[mi] = er.kom; rev.pan[mi] = er.pan; rev.akg[mi] = er.akg;
+    const t = katedata.taxesMonth(ym); if (t) vat[mi] = t.nds;
+    const cn = await katedata.cashNoCheck(ym); if (cn) cash[mi] = cn.total;
   }
   const sum = (a) => a.some((v) => v != null) ? a.reduce((x, v) => x + (v || 0), 0) : null;
-  const data = vscTaxLegLG("taxLegAuto", qkey, { rev, cashMonths: cash, vatMonths: vat, cash: sum(cash), vatOut: sum(vat), missing: missing.concat(failed) }, failed);
-  // при сбое кэшируем ненадолго — быстрый повтор вместо «не загрузилось» на 15 минут
-  _taxLegAutoCache[qkey] = { at: Date.now(), ttl: failed.length ? 2 * 60 * 1000 : 15 * 60 * 1000, data };
+  const data = vscTaxLegLG("taxLegAuto", qkey, { rev, cashMonths: cash, vatMonths: vat, cash: sum(cash), vatOut: sum(vat), missing, src: "work" }, []);
+  _taxLegAutoCache[qkey] = { at: Date.now(), data };
   return data;
 }
 // Прогрев кэша вкладки «Налоги» (просьба Андрея 22.07 «чтобы быстрее грузилось»):
