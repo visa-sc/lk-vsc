@@ -11,6 +11,10 @@
 //     заполнены сумма (578360) или причина (578362). Такие в CRM-факт Кати не попадают
 //     вообще, поэтому по её файлу их не увидеть. Копия — ноль нагрузки на amoCRM.
 //
+// Что считаем ошибкой (Андрей 06.10.2026): ТОЛЬКО сумма сертификата есть, а причина
+// не проставлена. Сделки без суммы, номер исходной сделки, «кому скидка» — не
+// проверяем. Контроль с сентября 2026, июль и август не трогаем («старое не ворошить»).
+//
 // Запускается сервером отдельным процессом (better-sqlite3 синхронный — в основном
 // процессе он остановил бы сайт на время запроса).
 // ═══════════════════════════════════════════════════════════════════════════
@@ -21,6 +25,7 @@ const ROOT = path.join(__dirname, "..");
 const KATE_AMO = process.env.KATE_KASSA_AMO || "/var/www/kateadmin/data/kassa/amo";
 const OUT = path.join(ROOT, ".vscCerts.json");
 const FROM_YM = "2026-07";                          // CRM-факт у Кати ведётся с июля 2026
+const CHECK_FROM_YM = "2026-09";                    // проверка заполненности — с сентября
 const CERT_ENUM = 1017540, F_PAY = 449464, F_SUM = 578360, F_WHY = 578362;
 const RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 const ymOf = (ts) => new Date((ts + 3 * 3600) * 1000).toISOString().slice(0, 7);
@@ -35,20 +40,6 @@ function reasonKey(why) {
   if (/переделк/.test(w)) return "redo";
   if (!w.trim()) return "none";
   return "other";
-}
-// Неполное описание: при переносе и переделке в названии должен быть номер исходной
-// сделки (8+ цифр, не своей), при перекрытии скидки — видно клиента (слово с заглавной
-// кириллической буквы). Это подсказка «дописать», не ошибка.
-function describeIssues(c) {
-  const out = [];
-  const nm = String(c.name || "");
-  const rk = reasonKey(c.why);
-  if (rk === "transfer" || rk === "redo") {
-    const nums = (nm.match(/\d{8,}/g) || []).filter((n) => Number(n) !== Number(c.id));
-    if (!nums.length) out.push("нет номера исходной сделки");
-  }
-  if (rk === "discount" && !/[А-ЯЁ][а-яё]{2,}/.test(nm.replace(/^(Доплата|Перенос|Скидка)\b/i, ""))) out.push("не видно клиента");
-  return out;
 }
 const OWNER_RE = /комисаренко|комиссаренко|панфилова|зайцева\s*е/i;
 
@@ -114,16 +105,21 @@ function main() {
     const K = kate.months[ym] || null;
     const items = ((K && K.items) || []).map((c) => Object.assign(c, {
       reason: reasonKey(c.why),
-      issues: describeIssues(c),
       owner: OWNER_RE.test(c.name),
       big: c.sum >= 20000
     }));
     const inKate = new Set(items.map((c) => c.id));
     const crmM = crm.leads.filter((l) => l.ym === ym);
-    // «Не применимо» с нулевой суммой — сознательно не сертификат, не ошибка.
-    const unfilled = crmM.filter((l) => !(l.sum > 0) && !/не применимо/i.test(l.why))
-      .map((l) => ({ date: l.date, id: l.id, name: l.name, why: l.why, what: "нет суммы сертификата" + (!l.why ? ", нет причины" : "") }));
+    const checked = ym >= CHECK_FROM_YM;
+    // Ошибка — сумма есть, причины нет. Смотрим и CRM-факт Кати, и копию amoCRM
+    // (там причина свежее: её могли дописать после утренней выгрузки Кати).
+    const crmWhy = {}; crmM.forEach((l) => { crmWhy[l.id] = l.why; });
+    const noReason = !checked ? [] : items.filter((c) => c.sum > 0 && !String(crmWhy[c.id] != null ? crmWhy[c.id] : c.why).trim()).map((c) => c.id)
+      .concat(crmM.filter((l) => l.sum > 0 && !inKate.has(l.id) && !String(l.why).trim()).map((l) => l.id));
+    // Сертификат с суммой есть в amoCRM, но не попал в CRM-факт — показываем серым, без ошибки.
     const missingInKate = crmM.filter((l) => l.sum > 0 && !inKate.has(l.id)).map((l) => ({ date: l.date, id: l.id, name: l.name, sum: l.sum, why: l.why }));
+    // Если причину дописали в amoCRM после выгрузки Кати — показываем свежую.
+    items.forEach((c) => { if (!String(c.why).trim() && crmWhy[c.id]) { c.why = crmWhy[c.id]; c.reason = reasonKey(c.why); } });
     const by = {};
     items.forEach((c) => { const b = by[c.reason] || (by[c.reason] = { n: 0, sum: 0 }); b.n++; b.sum += c.sum; });
     months[ym] = {
@@ -133,8 +129,8 @@ function main() {
       dayTotal: K ? K.dayTotal : null,
       byReason: by,
       items: items,
-      noReason: items.filter((c) => !c.why.trim()).map((c) => c.id),
-      unfilled: unfilled,
+      checked: checked,
+      noReason: noReason,
       missingInKate: missingInKate,
     };
   });
@@ -142,6 +138,6 @@ function main() {
   fs.writeFileSync(OUT + ".tmp", JSON.stringify(out), "utf8");
   fs.renameSync(OUT + ".tmp", OUT);
   console.log("CERTS: месяцев " + Object.keys(months).length + ", сертификатов " + Object.values(months).reduce((a, m) => a + m.count, 0)
-    + ", не заполнено " + Object.values(months).reduce((a, m) => a + m.unfilled.length, 0) + ", " + out.ms + " мс");
+    + ", без причины " + Object.values(months).reduce((a, m) => a + m.noReason.length, 0) + ", " + out.ms + " мс");
 }
 main();

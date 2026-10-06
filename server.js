@@ -1776,6 +1776,25 @@ const zarplata = require("./zarplata");
 const pbx = require("./pbx");
 // Расход по категории «Сборы» — из P&L Платрума по API-ключу.
 const platrum = require("./platrum");
+// P&L «Потока» Кати (work.voyotravel.ru): с сентября 2026 расходы ведутся там.
+// Её сервис пускает служебный админ-вход как наблюдателя director@ (только просмотр).
+const potok = require("./potok");
+let _svcAdminTok = null, _svcAdminExp = 0;
+function serviceAdminToken() {
+  if (!_svcAdminTok || Date.now() > _svcAdminExp - 3600 * 1000) { _svcAdminTok = createAdminSession(); _svcAdminExp = Date.now() + ADMIN_SESSION_TTL_MS; }
+  return _svcAdminTok;
+}
+potok.init(serviceAdminToken);
+// После каждого обновления «Потока» пересчитываем «Запас на сборы»: иначе после
+// перезапуска сборы успевали посчитаться раньше, чем приезжал P&L, и сентябрь
+// оставался без расхода до следующего получасового прогрева.
+function potokRefreshAndApply() {
+  potok.refresh()
+    .then(() => vscSboryData())
+    .catch((e) => console.error("POTOK:", e && e.message));
+}
+setTimeout(potokRefreshAndApply, 40 * 1000);
+setInterval(potokRefreshAndApply, 3 * 3600 * 1000);
 // Прогрев P&L: через полторы минуты после старта и раз в 6 часов.
 (function schedulePlatrumPrewarm() {
   const warm = () => { platrum.refresh().catch((e) => console.error("PLATRUM prewarm:", e && e.message)); };
@@ -5981,6 +6000,9 @@ function vscParseMonth(rows) {
       repeatPct: repeatPct,
       cplExtra: belowOf("cpl с учетом доп расходов"),
       drrExtra: belowOf("дрр с учетом доп расходов"),
+      // «сопутствующие расходы на маркетинг» — ручная ячейка листа (ФОТ маркетинга +
+      // остальной маркетинг). Пустая → CPL/ДРР доп. считаем по «Потоку» (см. выдачу).
+      mktExtra: belowOf("сопутствующие расходы на маркетинг"),
       planSrc: planSrc
     };
   }
@@ -6459,6 +6481,30 @@ function vscSaveProfit(map) {
   setTimeout(warm, 15 * 1000);
   setInterval(warm, VSC_PREWARM_MS);
 })();
+// CPL и ДРР с учётом доп. расходов. В листе KPI формула: (реклама + «сопутствующие
+// расходы на маркетинг») ÷ набранные контакты и ÷ выручку. Сопутствующие вносили
+// руками; с сентября 2026 ячейка пустая, и показатели совпадали с обычными CPL/ДРР.
+// С сентября 2026 сопутствующие берём из P&L «Потока»: весь «Маркетинг», кроме
+// статьи «Яндекс Директ» (это пополнения рекламного кабинета; мелкие платежи
+// Яндексу Катя относит в «Остальной маркетинг»), и считаем по той же формуле.
+// Проверено на августе: (2 056 131,66 + 780 799) ÷ 1 446 = 1 961,92 — как в листе.
+function vscApplyPotokExtra(data) {
+  if (!data || !Array.isArray(data.months)) return data;
+  let pm = null; try { pm = potok.warm() || {}; } catch (_) { pm = {}; }
+  return Object.assign({}, data, { months: data.months.map((m) => {
+    const c = m && m.ctrl, t = m && m.total, pk = pm[m && m.name];
+    // Месяцы из «Потока» (с сентября 2026) — всегда по P&L, даже если в лист что-то
+    // вписали руками: так решил Андрей 06.10.2026. Август и раньше — как в листе.
+    if (!c || !t || !pk || pk.extra == null || !pk.ym || pk.ym < potok.FROM_YM) return m;
+    const spend = (Number(t.ad) || 0) + pk.extra;
+    const ctrl = Object.assign({}, c, {
+      cplExtra: t.processed ? Math.round(spend / t.processed * 100) / 100 : c.cplExtra,
+      drrExtra: t.budget ? Math.round(spend / t.budget * 10000) / 100 : c.drrExtra,
+      extraSrc: "potok", extraSum: pk.extra
+    });
+    return Object.assign({}, m, { ctrl: ctrl });
+  }) });
+}
 app.get("/admin/api/vsc-dashboard", requireVscDashboard, async (req, res) => {
   try {
     const data = await getVscDashboard();
@@ -6471,7 +6517,7 @@ app.get("/admin/api/vsc-dashboard", requireVscDashboard, async (req, res) => {
     // считается из прибыли на клиенте → без прибыли её тоже не будет.
     const restrict = req.staff && req.staff.vscRestrict;
     const profit = (restrict && restrict.hideProfit) ? {} : vscLoadProfit();
-    return res.json(Object.assign({ success: true }, data, { profit, dayRevenue: loadDayRev(), ydSpendCompare: loadYdSpend() }));
+    return res.json(Object.assign({ success: true }, vscApplyPotokExtra(data), { profit, dayRevenue: loadDayRev(), ydSpendCompare: loadYdSpend() }));
   } catch (e) {
     console.error("vsc dashboard error:", e.message);
     return res.status(500).json({ success: false, message: "Не удалось загрузить данные таблицы" });
@@ -7679,10 +7725,18 @@ const VSC_SBORY_EXP_FILE = path.join(__dirname, ".vscSboryExpense.json");
 // случай, если в Платруме месяц ещё не закрыт: значения из него перекрывают API.
 function vscSboryExpLoad() {
   const fromPlatrum = {};
+  // С сентября 2026 расходы ведутся в «Потоке» Кати, Платрум за сентябрь пустой
+  // (Андрей 06.10.2026). Месяцы до августа включительно — из Платрума, как были.
+  const RU_IDX = { "январь": 0, "февраль": 1, "март": 2, "апрель": 3, "май": 4, "июнь": 5, "июль": 6, "август": 7, "сентябрь": 8, "октябрь": 9, "ноябрь": 10, "декабрь": 11 };
+  const fromPotokYm = (n) => { const p2 = String(n).split(" "); const mi = RU_IDX[String(p2[0] || "").toLowerCase()]; return (mi != null && +p2[1]) ? (+p2[1]) + "-" + String(mi + 1).padStart(2, "0") : null; };
   try {
     const m = platrum.warm() || {};
-    Object.keys(m).forEach((n) => { if (m[n] && m[n].sbory) fromPlatrum[n] = m[n].sbory; });
+    Object.keys(m).forEach((n) => { const ym = fromPotokYm(n); if (ym && ym >= potok.FROM_YM) return; if (m[n] && m[n].sbory) fromPlatrum[n] = m[n].sbory; });
   } catch (e) { console.error("sbory из Платрума:", e && e.message); }
+  try {
+    const pm = potok.warm() || {};
+    Object.keys(pm).forEach((n) => { const ym = fromPotokYm(n); if (ym && ym >= potok.FROM_YM && pm[n] && pm[n].sbory) fromPlatrum[n] = pm[n].sbory; });
+  } catch (e) { console.error("sbory из «Потока»:", e && e.message); }
   try { return Object.assign(fromPlatrum, JSON.parse(fs.readFileSync(VSC_SBORY_EXP_FILE, "utf8")) || {}); } catch (_) { return fromPlatrum; }
 }
 function vscSboryOverrides() { try { return JSON.parse(fs.readFileSync(VSC_SBORY_EXP_FILE, "utf8")) || {}; } catch (_) { return {}; } }
