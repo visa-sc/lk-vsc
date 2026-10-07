@@ -76,6 +76,17 @@ function pick(rep) {
   // ЗП управляющего директора — НАЧИСЛЕНО за месяц (оклад + бонус), как в письме
   // «закрытие месяца» из «Потока». Не путать с выплаченным в месяце (Андрей 06.10.2026).
   const sal = rep.salaryBlock || {};
+  // Для прогноза прибыли (07.10.2026): шаги и категории P&L целиком, итог месяца,
+  // налоговый фонд и прибыль до ЗП управляющей — всё, что нужно для расходной части.
+  const pl = { steps: {}, cats: {} };
+  (rep.steps || []).forEach((st) => {
+    const sn = String(st.name || "").trim(); pl.steps[sn] = Math.round(Number(st.sum) || 0);
+    (st.cats || []).forEach((c) => { pl.cats[sn + "|" + String(c.name || "").trim()] = Math.round(Number(c.sum) || 0); });
+  });
+  const fin = rep.final || {};
+  pl.tax = Math.round(Number(fin.tax) || 0); pl.ebit = Math.round(Number(fin.ebit) || 0); pl.profit = Math.round(Number(fin.profit) || 0);
+  pl.fond = Math.round(Number(sal.fond) || 0); pl.ebitOwn = Math.round(Number(sal.ebitOwn) || 0);
+  out.pl = pl;
   if (sal.total != null) { out.mgrAccrued = Math.round(Number(sal.total) * 100) / 100; out.mgrFixed = Number(sal.fixed) || 0; out.mgrBonus = Math.round((Number(sal.bonus) || 0) * 100) / 100; }
   return out;
 }

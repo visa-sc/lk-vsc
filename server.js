@@ -1868,6 +1868,8 @@ function potokWatch(ok, err) {
 function potokRefreshAndApply() {
   potok.refresh()
     .then(() => { potokWatch(true); return vscSboryData(); })
+    // Прогноз прибыли считает расходы по «Потоку» — после обновления пересчитываем его заново.
+    .then(() => { _fcCost = { at: 0, data: null }; _vscFcAt = 0; return getVscForecast(); })
     .catch((e) => { console.error("POTOK:", e && e.message); potokWatch(false, e && e.message); });
 }
 setTimeout(potokRefreshAndApply, 40 * 1000);
@@ -7266,7 +7268,129 @@ async function vscForecastModel() {
     throw e;
   }
 }
+// ═══ Прибыль прогноза по ФАКТИЧЕСКИМ расходам (Андрей 07.10.2026) ═══════════════════
+// Выручку прогноза считает модель директора (она точная, ±1 %), а расходы — не её жёсткие
+// коэффициенты июня, а факт P&L «Потока» Кати за последние закрытые месяцы (до трёх):
+//   выручка услуг в «Потоке» = бюджет KPI × u (НДС сверху бюджета + мелочь вне бюджета);
+//   + прочие приходы (VOYO mobile, прочее) — среднее; + результат сборов — среднее за 3 мес;
+//   − возвраты по услугам и эквайринг — фактический % от бюджета;
+//   − ФОТ сотрудников = оклады (постоянная часть) + бонусы как % от бюджета, с взносами;
+//     доля окладов — из закрытого месяца зарплат Кати;
+//   − реклама = Директ по прогнозу + средние доп. расходы маркетинга;
+//   − офис и банки — среднее, с поправкой на аренду (VSC_FC_RENT);
+//   − ЗП управляющей = 250 000 + 7 % от (прибыли до её ЗП − налоговый фонд 10 % базы НДС),
+//     как в «Потоке»; − налог из итога «Потока» — средний.
+// Проверка: те же формулы на фактических показателях прошлых месяцев против «Потока».
+const VSC_FC_RENT = {
+  normalize: { "2026-09": 350000 },   // в сентябре аренду (350 тыс.) не платили — выравниваем историю
+  extra: { "2026-10": 350000 }         // в октябре платим за два месяца — разовые +350 тыс.
+};
+let _fcCost = { at: 0, data: null };
+function vscFcCostModel(dashMonths) {
+  if (_fcCost.data && Date.now() - _fcCost.at < 30 * 60 * 1000) return _fcCost.data;
+  const pm = potok.warm() || {};
+  const sb = vscSboryWarm() || {};
+  const now = new Date(Date.now() + 3 * 3600 * 1000), curYm = now.toISOString().slice(0, 7);
+  const byName = {}; (dashMonths || []).forEach((m) => { byName[m.name] = m; });
+  // закрытые месяцы с P&L «Потока» и KPI, не старше трёх последних
+  const hist = Object.keys(pm).map((n) => pm[n]).filter((x) => x && x.pl && x.ym && x.ym < curYm && x.ym >= "2026-08")
+    .sort((a, b) => a.ym.localeCompare(b.ym)).slice(-3);
+  const rows = [];
+  hist.forEach((p) => {
+    const name = katedata.ymName(p.ym), m = byName[name], t = m && m.total, sbm = sb[name] || {};
+    if (!t || !t.budget || sbm.income == null) return;
+    const pl = p.pl, C = (k) => pl.cats[k] || 0, S = (k) => pl.steps[k] || 0;
+    const vsc = C("Валовая выручка|VSC"), gross = S("Валовая выручка");
+    const sbRet = sbm.returns || 0;
+    const fot = C("Переменные расходы|ФОТ"), mgr = p.mgrAccrued != null ? p.mgrAccrued : 0;
+    const base = (katedata.taxesMonth(p.ym) || {}).base;
+    rows.push({
+      ym: p.ym, name, R: t.budget, ad: t.ad || 0,
+      u: (vsc - sbm.income) / t.budget, other: gross - vsc,
+      sboryNet: sbm.income - (sbm.expense != null ? sbm.expense : C("Переменные расходы|Сборы")) - sbRet,
+      retRate: (S("Возвраты") - sbRet) / t.budget, acqRate: S("Комиссии за приём оплат") / t.budget,
+      fotStaff: fot - mgr, extraMkt: C("Переменные расходы|Маркетинг") - (t.ad || 0),
+      fixed: S("Постоянные расходы") + (VSC_FC_RENT.normalize[p.ym] || 0), tax: pl.tax,
+      baseShare: base ? base / t.budget : null, factProfit: pl.profit
+    });
+  });
+  if (!rows.length) return null;
+  const avg = (k) => { const v = rows.map((r) => r[k]).filter((x) => x != null && isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0; };
+  // Сборы — среднее за 3 последних закрытых месяца по блоку «Запас на сборы» (там есть июль).
+  const sbNames = Object.keys(sb).filter((n) => { const ym = katedata.nameYm(n); return ym && ym < curYm && sb[n].income != null && sb[n].expense != null; })
+    .sort((a, b) => katedata.nameYm(a).localeCompare(katedata.nameYm(b))).slice(-3);
+  const sboryNet = sbNames.length ? sbNames.reduce((a, n) => a + (sb[n].income - sb[n].expense - (sb[n].returns || 0)), 0) / sbNames.length : avg("sboryNet");
+  // ФОТ: оклады и процент бонусов — ТОЛЬКО по месяцам, посчитанным в модуле зарплат Кати
+  // (с сентября 2026). Август пришёл из Google-таблицы с другой структурой — по нему бонусы
+  // от выручки не отделить. Бонусы = (начислено − оклады) с взносами, в % от бюджета месяца.
+  const kRows = rows.map((r) => Object.assign({ split: katedata.fotSplit(r.ym) }, r)).filter((r) => r.split);
+  const fixedShare = kRows.length ? kRows[kRows.length - 1].split.fixedShare : 0.42;
+  const fotBase = kRows.length ? kRows : rows;
+  const fotFixed = fotBase.reduce((a, r) => a + r.fotStaff * (r.split ? r.split.fixedShare : fixedShare), 0) / fotBase.length;
+  const fotVarRate = fotBase.reduce((a, r) => a + r.fotStaff * (1 - (r.split ? r.split.fixedShare : fixedShare)) / r.R, 0) / fotBase.length;
+  const params = {
+    months: rows.map((r) => r.name), u: avg("u"), other: avg("other"), sboryNet, sboryMonths: sbNames,
+    retRate: avg("retRate"), acqRate: avg("acqRate"), fotFixed, fotVarRate, fixedShare,
+    fotMonths: fotBase.map((r) => r.name), extraMkt: avg("extraMkt"), fixed: avg("fixed"), tax: avg("tax"), baseShare: avg("baseShare") || 0.8,
+    mgrFixed: 250000, mgrRate: 0.07, fondRate: 0.10
+  };
+  const calc = (R, ad, ym) => {
+    const P = params;
+    const L = {
+      revenue: R * P.u, other: P.other, sbory: P.sboryNet,
+      returns: -R * P.retRate, acquiring: -R * P.acqRate,
+      fot: -(P.fotFixed + P.fotVarRate * R), marketing: -((ad || 0) + P.extraMkt),
+      office: -(P.fixed + ((ym && VSC_FC_RENT.extra[ym]) || 0)),
+    };
+    const ebitOwn = Object.values(L).reduce((a, b) => a + b, 0);
+    const fond = P.fondRate * P.baseShare * R;
+    L.manager = -(P.mgrFixed + P.mgrRate * Math.max(0, ebitOwn - fond));
+    L.tax = -P.tax;
+    const profit = ebitOwn + L.manager + L.tax;
+    return { profit, lines: L };
+  };
+  // проверка на прошлых месяцах: формулы на их фактической выручке и рекламе против «Потока»
+  // Факт «Потока» тоже выравниваем на аренду (в сентябре её не было — прибыль завышена).
+  const check = rows.map((r) => ({ month: r.name, model: Math.round(calc(r.R, r.ad, r.ym).profit), fact: Math.round(r.factProfit - (VSC_FC_RENT.normalize[r.ym] || 0)),
+    rentAdj: VSC_FC_RENT.normalize[r.ym] || 0, sboryFact: Math.round(r.sboryNet), sboryModel: Math.round(sboryNet) }));
+  const data = { params, calc, check };
+  _fcCost = { at: Date.now(), data };
+  return data;
+}
 async function vscBuildForecast() {
+  const d = await vscBuildForecastBase();
+  try {
+    const dash = await getVscDashboard();
+    const cm = vscFcCostModel(dash.months || []);
+    if (!d || !d.month || !cm) return d;
+    const ym = katedata.nameYm(d.monthName);
+    const dim = (() => { const p = (ym || "").split("-"); return p.length === 2 ? new Date(Date.UTC(+p[0], +p[1], 0)).getUTCDate() : 30; })();
+    const adOf = (p) => (p && p.contactsMonth && p.rates && p.rates.cpl) ? p.contactsMonth * p.rates.cpl : null;
+    let adW = 0, revW = 0;
+    (d.weeks || []).forEach((w) => {
+      if (w.pending || !w.revenue) return;
+      const ad = adOf(w);
+      const r = cm.calc(w.revenue, ad, ym);
+      w.profitMonth = r.profit; w.profitWeek = r.profit / dim * 7; w.periodProfit = r.profit * w.days / dim;
+      if (ad) { adW += ad; revW += w.revenue; }
+    });
+    const m = d.month;
+    const drr = revW > 0 ? adW / revW : null;
+    const adM = drr != null ? m.revenue * drr : (adOf(m) || 0);
+    const r = cm.calc(m.revenue, adM, ym);
+    m.profitMonth = r.profit;
+    m.profitWeek = r.profit / dim * 7;
+    if (m.confirmedProfit != null) {
+      m.confirmedProfit = (d.weeks || []).filter((w) => !w.pending).reduce((a, w) => a + (w.periodProfit || 0), 0);
+      if (m.rest) m.rest.profit = r.profit - m.confirmedProfit;
+    }
+    const round = (o) => { const x = {}; Object.keys(o).forEach((k) => { x[k] = Math.round(o[k]); }); return x; };
+    d.costModel = { lines: round(r.lines), ad: Math.round(adM), params: cm.params, check: cm.check, rentExtra: VSC_FC_RENT.extra[ym] || 0 };
+    d.baseline = m;
+  } catch (e) { console.error("VSC FC расходы:", e && e.message); }
+  return d;
+}
+async function vscBuildForecastBase() {
   const [fc, dash] = await Promise.all([vscForecastModel(), getVscDashboard()]);
   const months = (dash.months || []).map((m, i) => ({ m, i })).filter((x) => x.m.total && ((x.m.total.processed > 0) || (x.m.total.budget > 0)));
   if (!months.length) return { success: true, tab: fc.tab, month: null, weeks: [], baseline: null };

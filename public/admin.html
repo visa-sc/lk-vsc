@@ -7663,11 +7663,54 @@
         tiles.appendChild(tile("Прибыль / мес", d.month.profitMonth, basisSub, d.month.profitMonth >= 0 ? " pos" : " neg"));
         tiles.appendChild(tile("Прибыль / нед", d.month.profitWeek, "в среднем за неделю", d.month.profitWeek >= 0 ? " pos" : " neg"));
         box.appendChild(tiles);
+        // «Из чего прибыль» — доходы и расходы месяца по факту «Потока» (Андрей 07.10.2026).
+        if (d.costModel && d.costModel.lines) {
+          const cm = d.costModel, Lx = cm.lines, P = cm.params || {};
+          const pct = (v) => (Math.round(v * 1000) / 10).toString().replace(".", ",") + " %";
+          const names = { revenue: "Выручка услуг (бюджет + НДС сверху)", other: "Прочие приходы (VOYO mobile и др.)", sbory: "Сборы: собрали минус заплатили и вернули",
+            returns: "Возвраты клиентам (услуги)", acquiring: "Эквайринг", fot: "ФОТ сотрудников с взносами", marketing: "Маркетинг: Директ + доп. расходы",
+            office: "Офис и банки", manager: "ЗП управляющей", tax: "Налог (НДС к уплате)" };
+          const how = {
+            revenue: "прогноз выручки × " + (P.u ? P.u.toFixed(3).replace(".", ",") : "—"),
+            other: "среднее за " + (P.months || []).length + " мес.", sbory: "среднее за " + (P.sboryMonths || []).length + " мес.: " + (P.sboryMonths || []).map(shortM).join(", "),
+            returns: (P.retRate != null ? pct(P.retRate) : "") + " от выручки — факт", acquiring: (P.acqRate != null ? pct(P.acqRate) : "") + " от выручки — факт",
+            fot: "оклады " + money(P.fotFixed) + " + бонусы " + (P.fotVarRate != null ? pct(P.fotVarRate) : "") + " от выручки",
+            marketing: "Директ " + money(cm.ad) + " + доп. " + money(P.extraMkt),
+            office: "среднее " + money(P.fixed) + (cm.rentExtra ? " + аренда за прошлый месяц " + money(cm.rentExtra) : ""),
+            manager: "250 000 + 7 % от прибыли после налогового фонда", tax: "среднее за " + (P.months || []).length + " мес." };
+          const TD = "padding:6px 8px;border-bottom:1px solid #eef0f4;";
+          let t = '<div class="vsc-chart-h">Из чего прибыль — ' + escapeHtml(shortM(d.monthName)) + '</div>'
+            + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px;">';
+          Object.keys(names).forEach((k) => {
+            if (Lx[k] == null) return;
+            t += '<tr><td style="' + TD + '">' + names[k] + '<div style="font-size:11px;color:#9096a3;">' + escapeHtml(how[k] || "") + '</div></td>'
+              + '<td style="' + TD + 'text-align:right;white-space:nowrap;font-weight:600;color:' + (Lx[k] < 0 ? "#a12b3c" : "#2c7a43") + ';">' + (Lx[k] > 0 ? "+" : "") + money(Lx[k]) + "</td></tr>";
+          });
+          t += '<tr style="background:#f7f8fb;"><td style="' + TD + 'font-weight:700;">Прибыль</td><td style="' + TD + 'text-align:right;font-weight:800;color:' + (d.month.profitMonth >= 0 ? "#2c7a43" : "#b0263a") + ';">' + money(d.month.profitMonth) + "</td></tr></table></div>";
+          // Проверка на прошлых месяцах
+          if ((cm.check || []).length) {
+            t += '<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:13px;font-weight:600;color:#33415a;user-select:none;">Подробнее — проверка на прошлых месяцах</summary>'
+              + '<div style="overflow-x:auto;margin-top:8px;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:520px;"><tr>'
+              + '<th style="' + TD + 'text-align:left;">Месяц</th><th style="' + TD + 'text-align:right;">Модель</th><th style="' + TD + 'text-align:right;">Факт «Потока»</th><th style="' + TD + 'text-align:right;">Разница</th><th style="' + TD + 'text-align:right;">из неё сборы</th></tr>';
+            cm.check.forEach((x) => {
+              const df = x.model - x.fact, dsb = (x.sboryModel || 0) - (x.sboryFact || 0);
+              t += '<tr><td style="' + TD + '">' + escapeHtml(x.month) + (x.rentAdj ? '<div style="font-size:11px;color:#9096a3;">факт без неоплаченной аренды ' + money(x.rentAdj) + "</div>" : "") + "</td>"
+                + '<td style="' + TD + 'text-align:right;">' + money(x.model) + '</td><td style="' + TD + 'text-align:right;">' + money(x.fact) + "</td>"
+                + '<td style="' + TD + 'text-align:right;font-weight:600;">' + (df > 0 ? "+" : "") + money(df) + '</td><td style="' + TD + 'text-align:right;color:#6b7280;">' + (dsb > 0 ? "+" : "") + money(dsb) + "</td></tr>";
+            });
+            t += "</table></div>"
+              + '<div style="font-size:11.5px;color:#9096a3;margin-top:8px;line-height:1.5;">Модель — те же формулы на фактической выручке и рекламе месяца. Главный источник промаха — сборы: их результат скачет от месяца к месяцу (собрали в одном, заплатили консульствам в другом), в прогноз идёт среднее. Параметры берутся из последних закрытых месяцев «Потока» (сейчас: ' + escapeHtml((P.months || []).join(", ")) + '), ФОТ — из расчёта зарплат Кати (' + escapeHtml((P.fotMonths || []).join(", ")) + '); с каждым закрытым месяцем точность растёт сама.</div></details>';
+          }
+          const cmBox = document.createElement("div"); cmBox.className = "vsc-chart"; cmBox.innerHTML = t;
+          box.appendChild(cmBox);
+        }
 
         const r = d.month.rates || {};
         // «Как считается» — спрятано в значок «i» на подзаголовке headline (по просьбе Андрея).
         const assHtml =
-          '<b>Как считается</b><br>Модель и параметры расходов — из вашей таблицы (вкладка «<b>' + escapeHtml(d.tab) + '</b>»), считаются у нас по вашим формулам. ' +
+          (d.costModel
+            ? '<b>Как считается</b><br><b>Выручка</b> — по модели из вашей таблицы (вкладка «<b>' + escapeHtml(d.tab) + '</b>»): контакты × конверсия × чек, по вашим формулам. <b>Расходы и прибыль</b> — по факту P&amp;L «Потока» Кати за последние закрытые месяцы (блок «Из чего прибыль» ниже). '
+            : '<b>Как считается</b><br>Модель и параметры расходов — из вашей таблицы (вкладка «<b>' + escapeHtml(d.tab) + '</b>»), считаются у нас по вашим формулам. ') +
           (d.basisKind === "weekly-chain"
             ? '<b>Прогноз на месяц</b> = посчитанные недели + оценка остатка. Недели, у которых база закрыта (<b>' + d.weeksDone + ' из ' + d.weeksTotal + '</b>), складываются как есть: каждая прогнозируется по итогам предыдущего ЗАКРЫТОГО периода — первая по итогам ' + escapeHtml(shortM(d.basisMonth)) + ', первая полная по «стыковой» неделе на границе месяцев. ' +
               (d.month.rest ? '<b>Остаток месяца (' + d.month.rest.days + ' дн.)</b> оценивается по усреднённым (объёмно-взвешенным) ставкам подтверждённых периодов' + (d.month.rest.rates ? ': ASP <b>' + ru(d.month.rest.rates.asp) + '</b>, CPL <b>' + ru(d.month.rest.rates.cpl) + '</b>, CV <b>' + (Math.round((d.month.rest.rates.cv || 0) * 10) / 10) + '%</b>, UPT <b>' + (Math.round((d.month.rest.rates.upt || 0) * 100) / 100) + '</b>' : '') + '. С закрытием каждой недели её итоги попадают и в цепочку, и в пул остатка — прогноз сам уточняется. Ставки идущей (незакрытой) недели в расчёт не входят. '

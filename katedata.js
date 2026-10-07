@@ -149,6 +149,17 @@ function opPlan(ym) {
     state: (j.approve && j.approve.state) || "" };
 }
 
+// Зарплата закрытого месяца (zp/closed + zp/fot): оклад = оплата по часам + отпускные +
+// больничные + компенсации; остальное начислено бонусами (продажи, приём, оформление,
+// качество, звонки…). Для прогноза прибыли (07.10.2026).
+function fotSplit(ym) {
+  const c = readJson(KATE + "/zp/closed/" + ym + ".json"), f = readJson(KATE + "/zp/fot/" + ym + ".json");
+  if (!c || !Array.isArray(c.rows) || !c.rows.length || !f || f.fotTotal == null) return null;
+  let fixed = 0, total = 0;
+  c.rows.forEach((r) => { fixed += (Number(r.salary) || 0) + (Number(r.vacPay) || 0) + (Number(r.sickPay) || 0) + (Number(r.compPay) || 0); total += Number(r.total) || 0; });
+  return total > 0 ? { fixedShare: fixed / total, fotTotal: Number(f.fotTotal) || 0, accrued: total } : null;
+}
+
 // Нал без чека по пересчёту сейфа — из API «Кассы» Кати. Токен — служебная сессия
 // director@ (та же, что для «Потока»). При сбое — последнее удачное значение.
 let _tokenFn = null;
@@ -185,4 +196,4 @@ async function cashNoCheck(ym) {
 }
 
 module.exports = { FROM_YM, KATE, ymName, nameYm, returnMonths, amoMonths, returnsForDashboard, returnsSpb, returnsByEntity, returnsSbory,
-  sboryIncome, taxesMonth, entityRevenue, cashNoCheck, opPlan, OP_PLAN_FROM_YM, init };
+  sboryIncome, taxesMonth, entityRevenue, cashNoCheck, opPlan, OP_PLAN_FROM_YM, fotSplit, init };
