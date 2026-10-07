@@ -14,6 +14,7 @@
  * Повторный запуск собирает архив заново целиком, правки статусов/заметок из архива сохраняет.
  *
  * Запуск на сервере: node tools/mskFlexbeImport.js [--dry]
+ * Другой сайт Flexbe: FLEXBE_SITE=ekb MSKCOPY_ARCHIVE=/var/www/ekbcopy/archive-flexbe (07.10.2026 — Екатеринбург).
  * ───────────────────────────────────────────────────────────────────────────── */
 "use strict";
 const fs = require("fs");
@@ -24,17 +25,19 @@ const OUT = process.env.MSKCOPY_ARCHIVE || "/var/www/mskcopy/archive-flexbe";
 const DRY = process.argv.includes("--dry");
 const STATUS = { 0: "new", 1: "work", 2: "success", 10: "refused" };
 const store = JSON.parse(fs.readFileSync(path.join(__dirname, "..", ".phonetest", "store.json"), "utf8"));
-const site = (store.config.flexbe || []).find((x) => x.id === "visa-sc") || {};
+const SITE_ID = process.env.FLEXBE_SITE || "visa-sc";
+const site = (store.config.flexbe || []).find((x) => x.id === SITE_ID) || {};
 if (!site.apiKey) {
-  console.log("нет ключа API Flexbe для visa-sc");
+  console.log("нет ключа API Flexbe для " + SITE_ID);
   process.exit(1);
 }
 const API = site.apiUrl || "https://visa-sc.ru/mod/api/";
+const SITE_ORIGIN = new URL(API).origin;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pathOf = (raw) => {
   raw = String(raw || "/");
   try {
-    return new URL(/^https?:\/\//.test(raw) ? raw : /^[\w.-]+\.[a-z]{2,}\//i.test(raw) ? "https://" + raw : raw, "https://visa-sc.ru").pathname;
+    return new URL(/^https?:\/\//.test(raw) ? raw : /^[\w.-]+\.[a-z]{2,}\//i.test(raw) ? "https://" + raw : raw, SITE_ORIGIN).pathname;
   } catch (_) {
     return "/";
   }
@@ -43,7 +46,8 @@ const pathOf = (raw) => {
 (async () => {
   // Выборка по месяцам (date_from/date_to): большие смещения в общей выдаче Flexbe не отдаёт
   // (на 60 000 перестал отвечать). Каждый скачанный месяц сохраняем — при сбое продолжаем.
-  const RAW = process.env.MSKCOPY_RAW || "/root/msk-flexbe-raw";
+  // кэш закрытых месяцев — свой у каждого сайта (иначе Екатеринбург взял бы месяцы Москвы)
+  const RAW = process.env.MSKCOPY_RAW || (SITE_ID === "visa-sc" ? "/root/msk-flexbe-raw" : "/root/" + SITE_ID + "-flexbe-raw");
   fs.mkdirSync(RAW, { recursive: true });
   let broken = 0;
   const getPage = async (from, to, start, count = 1000, tries = 5) => {
@@ -116,7 +120,7 @@ const pathOf = (raw) => {
   }
   // Заявки, которые API Flexbe не отдаёт вовсе (ошибка 500 на его стороне), перенесены
   // руками из интерфейса Flexbe — tools/mskFlexbeExtra.json (03.10.2026: №70487, №70488)
-  try {
+  if (SITE_ID === "visa-sc") try {
     const have = new Set(all.map((l) => String(l.id)));
     for (const x of JSON.parse(fs.readFileSync(path.join(__dirname, "mskFlexbeExtra.json"), "utf8"))) if (!have.has(String(x.id))) all.push(x);
   } catch (_) {}
