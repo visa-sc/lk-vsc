@@ -81,7 +81,13 @@ function pick(rep) {
   const pl = { steps: {}, cats: {} };
   (rep.steps || []).forEach((st) => {
     const sn = String(st.name || "").trim(); pl.steps[sn] = Math.round(Number(st.sum) || 0);
-    (st.cats || []).forEach((c) => { pl.cats[sn + "|" + String(c.name || "").trim()] = Math.round(Number(c.sum) || 0); });
+    (st.cats || []).forEach((c) => {
+      const cn = sn + "|" + String(c.name || "").trim();
+      pl.cats[cn] = Math.round(Number(c.sum) || 0);
+      [].concat(c.rows || [], ...(c.subs || []).map((sb) => sb.rows || [])).forEach((r) => {
+        const k = cn + "|" + String(r.name || "").trim(); pl.rows = pl.rows || {}; pl.rows[k] = (pl.rows[k] || 0) + Math.round(Number(r.sum) || 0);
+      });
+    });
   });
   const fin = rep.final || {};
   pl.tax = Math.round(Number(fin.tax) || 0); pl.ebit = Math.round(Number(fin.ebit) || 0); pl.profit = Math.round(Number(fin.profit) || 0);

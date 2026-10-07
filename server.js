@@ -7281,6 +7281,7 @@ async function vscForecastModel() {
 //   − ЗП управляющей = 250 000 + 7 % от (прибыли до её ЗП − налоговый фонд 10 % базы НДС),
 //     как в «Потоке»; − налог из итога «Потока» — средний.
 // Проверка: те же формулы на фактических показателях прошлых месяцев против «Потока».
+const VSC_FC_CALIB_FROM = "2026-09";   // с этого месяца все данные — у Кати (калибровка)
 const VSC_FC_RENT = {
   normalize: { "2026-09": 350000 },   // в сентябре аренду (350 тыс.) не платили — выравниваем историю
   extra: { "2026-10": 350000 }         // в октябре платим за два месяца — разовые +350 тыс.
@@ -7292,34 +7293,67 @@ function vscFcCostModel(dashMonths) {
   const sb = vscSboryWarm() || {};
   const now = new Date(Date.now() + 3 * 3600 * 1000), curYm = now.toISOString().slice(0, 7);
   const byName = {}; (dashMonths || []).forEach((m) => { byName[m.name] = m; });
-  // закрытые месяцы с P&L «Потока» и KPI, не старше трёх последних
-  const hist = Object.keys(pm).map((n) => pm[n]).filter((x) => x && x.pl && x.ym && x.ym < curYm && x.ym >= "2026-08")
-    .sort((a, b) => a.ym.localeCompare(b.ym)).slice(-3);
-  const rows = [];
-  hist.forEach((p) => {
+  // Калибровка — по месяцам «эпохи Кати» (с сентября 2026: ФОТ, касса, «Поток» и возвраты —
+  // всё полностью у неё), не старше трёх последних. Август идёт только в проверку: ФОТ там
+  // из старой Google-таблицы. Пока закрытых месяцев эпохи нет — берём с августа.
+  const allHist = Object.keys(pm).map((n) => pm[n]).filter((x) => x && x.pl && x.ym && x.ym < curYm && x.ym >= "2026-08")
+    .sort((a, b) => a.ym.localeCompare(b.ym));
+  const kateEra = allHist.filter((x) => x.ym >= VSC_FC_CALIB_FROM);
+  const hist = (kateEra.length ? kateEra : allHist).slice(-3);
+  const checkHist = allHist.slice(-4);
+  // Сборы по видам: доход клиента (CRM-факт) − оплата (строка «Сборы» в «Потоке») − возврат.
+  // Наценка — консульские (курс), страховка, подача, регистрация, курьер, ваучеры, распечатка;
+  // переводы — отдельно; запись/бот и АКК/ВНЖ — оплаты партнёрам, переходящие между месяцами.
+  const SB_GROUPS = {
+    markup: { inc: ["консульские сборы", "страховка", "подача", "регистрация", "сторонние курьеры", "ваучеры авиа", "фото"], exp: ["Консульские сборы", "Страхование", "Подача", "Регистрации", "Курьерская доставка", "Ваучер Авиа", "Распечатка"], ret: ["Сбор", "Страховка", "Подача", "Регистрация", "Ваучеры"] },
+    translate: { inc: ["языковые переводы"], exp: ["Языковые переводы"], ret: [] },
+    partners: { inc: ["услуги акк", "запись/бот"], exp: ["Услуги АКК", "ВНЖ", "Запись/Бот"], ret: ["Услуги АКК", "Бот"] }
+  };
+  const sbGroupsOf = (p, sbm) => {
+    const rowsP = (p.pl && p.pl.rows) || {}, ip = sbm.incomeParts || {}, rp = sbm.returnParts || {};
+    const expRow = (n) => rowsP["Переменные расходы|Сборы|" + n] || 0;
+    const out = {}; let mapped = 0;
+    Object.keys(SB_GROUPS).forEach((g) => {
+      const G = SB_GROUPS[g];
+      const e = G.exp.reduce((a, n) => a + expRow(n), 0); mapped += e;
+      out[g] = G.inc.reduce((a, n) => a + (ip[n] || 0), 0) - e - G.ret.reduce((a, n) => a + (rp[n] || 0), 0);
+    });
+    // строки «Сборов», не попавшие в группы, — к партнёрам (чтобы сумма сошлась с итогом)
+    const totalExp = (p.pl && p.pl.cats && p.pl.cats["Переменные расходы|Сборы"]) || 0;
+    out.partners -= (totalExp - mapped);
+    return out;
+  };
+  // Разовые приходы — в прогноз не идут (продажа оборудования, излишек сейфа).
+  const ONE_OFF_RE = /продажа оборудования|излишек сейфа/i;
+  const oneOffOf = (p) => Object.keys((p.pl && p.pl.rows) || {}).filter((k) => /^Валовая выручка\|/.test(k) && ONE_OFF_RE.test(k)).reduce((a, k) => a + p.pl.rows[k], 0);
+  const rowOf = (p) => {
     const name = katedata.ymName(p.ym), m = byName[name], t = m && m.total, sbm = sb[name] || {};
-    if (!t || !t.budget || sbm.income == null) return;
+    if (!t || !t.budget || sbm.income == null) return null;
     const pl = p.pl, C = (k) => pl.cats[k] || 0, S = (k) => pl.steps[k] || 0;
     const vsc = C("Валовая выручка|VSC"), gross = S("Валовая выручка");
-    const sbRet = sbm.returns || 0;
+    const sbRet = sbm.returns || 0, oneOff = oneOffOf(p);
     const fot = C("Переменные расходы|ФОТ"), mgr = p.mgrAccrued != null ? p.mgrAccrued : 0;
     const base = (katedata.taxesMonth(p.ym) || {}).base;
-    rows.push({
+    const g = sbGroupsOf(p, sbm);
+    return {
       ym: p.ym, name, R: t.budget, ad: t.ad || 0,
-      u: (vsc - sbm.income) / t.budget, other: gross - vsc,
+      u: (vsc - sbm.income) / t.budget, other: gross - vsc - oneOff, oneOff,
       sboryNet: sbm.income - (sbm.expense != null ? sbm.expense : C("Переменные расходы|Сборы")) - sbRet,
+      sbMarkup: g.markup / t.budget, sbTranslate: g.translate / t.budget, sbPartners: g.partners / t.budget,
       retRate: (S("Возвраты") - sbRet) / t.budget, acqRate: S("Комиссии за приём оплат") / t.budget,
       fotStaff: fot - mgr, extraMkt: C("Переменные расходы|Маркетинг") - (t.ad || 0),
       fixed: S("Постоянные расходы") + (VSC_FC_RENT.normalize[p.ym] || 0), tax: pl.tax,
       baseShare: base ? base / t.budget : null, factProfit: pl.profit
-    });
+    };
+  };
+  const rows = [];
+  hist.forEach((p) => {
+    const r = rowOf(p); if (r) rows.push(r);
   });
   if (!rows.length) return null;
   const avg = (k) => { const v = rows.map((r) => r[k]).filter((x) => x != null && isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0; };
-  // Сборы — среднее за 3 последних закрытых месяца по блоку «Запас на сборы» (там есть июль).
-  const sbNames = Object.keys(sb).filter((n) => { const ym = katedata.nameYm(n); return ym && ym < curYm && sb[n].income != null && sb[n].expense != null; })
-    .sort((a, b) => katedata.nameYm(a).localeCompare(katedata.nameYm(b))).slice(-3);
-  const sboryNet = sbNames.length ? sbNames.reduce((a, n) => a + (sb[n].income - sb[n].expense - (sb[n].returns || 0)), 0) / sbNames.length : avg("sboryNet");
+  const sbNames = rows.map((r) => r.name);
+  const sboryNet = avg("sboryNet");
   // ФОТ: оклады и процент бонусов — ТОЛЬКО по месяцам, посчитанным в модуле зарплат Кати
   // (с сентября 2026). Август пришёл из Google-таблицы с другой структурой — по нему бонусы
   // от выручки не отделить. Бонусы = (начислено − оклады) с взносами, в % от бюджета месяца.
@@ -7330,6 +7364,7 @@ function vscFcCostModel(dashMonths) {
   const fotVarRate = fotBase.reduce((a, r) => a + r.fotStaff * (1 - (r.split ? r.split.fixedShare : fixedShare)) / r.R, 0) / fotBase.length;
   const params = {
     months: rows.map((r) => r.name), u: avg("u"), other: avg("other"), sboryNet, sboryMonths: sbNames,
+    sbMarkup: avg("sbMarkup"), sbTranslate: avg("sbTranslate"), sbPartners: avg("sbPartners"),
     retRate: avg("retRate"), acqRate: avg("acqRate"), fotFixed, fotVarRate, fixedShare,
     fotMonths: fotBase.map((r) => r.name), extraMkt: avg("extraMkt"), fixed: avg("fixed"), tax: avg("tax"), baseShare: avg("baseShare") || 0.8,
     mgrFixed: 250000, mgrRate: 0.07, fondRate: 0.10
@@ -7337,7 +7372,8 @@ function vscFcCostModel(dashMonths) {
   const calc = (R, ad, ym) => {
     const P = params;
     const L = {
-      revenue: R * P.u, other: P.other, sbory: P.sboryNet,
+      revenue: R * P.u, other: P.other,
+      sbMarkup: R * P.sbMarkup, sbTranslate: R * P.sbTranslate, sbPartners: R * P.sbPartners,
       returns: -R * P.retRate, acquiring: -R * P.acqRate,
       fot: -(P.fotFixed + P.fotVarRate * R), marketing: -((ad || 0) + P.extraMkt),
       office: -(P.fixed + ((ym && VSC_FC_RENT.extra[ym]) || 0)),
@@ -7350,9 +7386,15 @@ function vscFcCostModel(dashMonths) {
     return { profit, lines: L };
   };
   // проверка на прошлых месяцах: формулы на их фактической выручке и рекламе против «Потока»
-  // Факт «Потока» тоже выравниваем на аренду (в сентябре её не было — прибыль завышена).
-  const check = rows.map((r) => ({ month: r.name, model: Math.round(calc(r.R, r.ad, r.ym).profit), fact: Math.round(r.factProfit - (VSC_FC_RENT.normalize[r.ym] || 0)),
-    rentAdj: VSC_FC_RENT.normalize[r.ym] || 0, sboryFact: Math.round(r.sboryNet), sboryModel: Math.round(sboryNet) }));
+  // Проверка: те же формулы на фактической выручке и рекламе месяца против «Потока». Факт
+  // выравниваем так же, как модель: без разовых приходов и с арендой (в сентябре её не было).
+  const check = checkHist.map(rowOf).filter(Boolean).map((r) => {
+    const mc = calc(r.R, r.ad, r.ym);
+    const sbModel = mc.lines.sbMarkup + mc.lines.sbTranslate + mc.lines.sbPartners;
+    return { month: r.name, model: Math.round(mc.profit), fact: Math.round(r.factProfit - (VSC_FC_RENT.normalize[r.ym] || 0) - r.oneOff),
+      rentAdj: VSC_FC_RENT.normalize[r.ym] || 0, oneOff: Math.round(r.oneOff), sboryFact: Math.round(r.sboryNet), sboryModel: Math.round(sbModel),
+      calib: rows.some((x) => x.ym === r.ym) };
+  });
   const data = { params, calc, check };
   _fcCost = { at: Date.now(), data };
   return data;

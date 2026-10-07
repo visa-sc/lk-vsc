@@ -7667,12 +7667,15 @@
         if (d.costModel && d.costModel.lines) {
           const cm = d.costModel, Lx = cm.lines, P = cm.params || {};
           const pct = (v) => (Math.round(v * 1000) / 10).toString().replace(".", ",") + " %";
-          const names = { revenue: "Выручка услуг (бюджет + НДС сверху)", other: "Прочие приходы (VOYO mobile и др.)", sbory: "Сборы: собрали минус заплатили и вернули",
+          const names = { revenue: "Выручка услуг (бюджет + НДС сверху)", other: "Прочие приходы (VOYO mobile, проценты и др.)", sbMarkup: "Наценка на сборах (курс, страховка, подача…)", sbTranslate: "Языковые переводы", sbPartners: "Запись/бот, АКК и ВНЖ — разница с партнёрами",
             returns: "Возвраты клиентам (услуги)", acquiring: "Эквайринг", fot: "ФОТ сотрудников с взносами", marketing: "Маркетинг: Директ + доп. расходы",
             office: "Офис и банки", manager: "ЗП управляющей", tax: "Налог (НДС к уплате)" };
           const how = {
             revenue: "прогноз выручки × " + (P.u ? P.u.toFixed(3).replace(".", ",") : "—"),
-            other: "среднее за " + (P.months || []).length + " мес.", sbory: "среднее за " + (P.sboryMonths || []).length + " мес.: " + (P.sboryMonths || []).map(shortM).join(", "),
+            other: "среднее, без разовых (продажа оборудования)",
+            sbMarkup: (P.sbMarkup != null ? pct(P.sbMarkup) : "") + " от выручки — по данным за " + (P.months || []).map(shortM).join(", "),
+            sbTranslate: (P.sbTranslate != null ? pct(P.sbTranslate) : "") + " от выручки",
+            sbPartners: (P.sbPartners != null ? pct(P.sbPartners) : "") + " от выручки — оплаты переходят между месяцами",
             returns: (P.retRate != null ? pct(P.retRate) : "") + " от выручки — факт", acquiring: (P.acqRate != null ? pct(P.acqRate) : "") + " от выручки — факт",
             fot: "оклады " + money(P.fotFixed) + " + бонусы " + (P.fotVarRate != null ? pct(P.fotVarRate) : "") + " от выручки",
             marketing: "Директ " + money(cm.ad) + " + доп. " + money(P.extraMkt),
@@ -7694,12 +7697,13 @@
               + '<th style="' + TD + 'text-align:left;">Месяц</th><th style="' + TD + 'text-align:right;">Модель</th><th style="' + TD + 'text-align:right;">Факт «Потока»</th><th style="' + TD + 'text-align:right;">Разница</th><th style="' + TD + 'text-align:right;">из неё сборы</th></tr>';
             cm.check.forEach((x) => {
               const df = x.model - x.fact, dsb = (x.sboryModel || 0) - (x.sboryFact || 0);
-              t += '<tr><td style="' + TD + '">' + escapeHtml(x.month) + (x.rentAdj ? '<div style="font-size:11px;color:#9096a3;">факт без неоплаченной аренды ' + money(x.rentAdj) + "</div>" : "") + "</td>"
+              t += '<tr><td style="' + TD + '">' + escapeHtml(x.month) + (x.rentAdj || x.oneOff ? '<div style="font-size:11px;color:#9096a3;">факт' + (x.rentAdj ? " с арендой −" + money(x.rentAdj) : "") + (x.oneOff ? " без разовых −" + money(x.oneOff) : "") + "</div>" : "")
+              + (x.calib ? '<div style="font-size:11px;color:#3589BD;">по нему настроена модель</div>' : "") + "</td>"
                 + '<td style="' + TD + 'text-align:right;">' + money(x.model) + '</td><td style="' + TD + 'text-align:right;">' + money(x.fact) + "</td>"
                 + '<td style="' + TD + 'text-align:right;font-weight:600;">' + (df > 0 ? "+" : "") + money(df) + '</td><td style="' + TD + 'text-align:right;color:#6b7280;">' + (dsb > 0 ? "+" : "") + money(dsb) + "</td></tr>";
             });
             t += "</table></div>"
-              + '<div style="font-size:11.5px;color:#9096a3;margin-top:8px;line-height:1.5;">Модель — те же формулы на фактической выручке и рекламе месяца. Главный источник промаха — сборы: их результат скачет от месяца к месяцу (собрали в одном, заплатили консульствам в другом), в прогноз идёт среднее. Параметры берутся из последних закрытых месяцев «Потока» (сейчас: ' + escapeHtml((P.months || []).join(", ")) + '), ФОТ — из расчёта зарплат Кати (' + escapeHtml((P.fotMonths || []).join(", ")) + '); с каждым закрытым месяцем точность растёт сама.</div></details>';
+              + '<div style="font-size:11.5px;color:#9096a3;margin-top:8px;line-height:1.5;">Модель — те же формулы на фактической выручке и рекламе месяца. Модель настроена по месяцам, где все данные у Кати (сейчас: ' + escapeHtml((P.months || []).join(", ")) + '); каждый новый закрытый месяц добавляется в среднее сам. Август — только для проверки: ФОТ там из старой Google-таблицы, а оплаты партнёрам по записи/боту пришлись на него. Главный разброс — расчёты с партнёрами по записи/боту и АКК/ВНЖ: оплаты переходят между месяцами.</div></details>';
           }
           const cmBox = document.createElement("div"); cmBox.className = "vsc-chart"; cmBox.innerHTML = t;
           box.appendChild(cmBox);
