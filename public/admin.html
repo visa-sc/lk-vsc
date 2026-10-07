@@ -7682,14 +7682,16 @@
             office: "среднее " + money(P.fixed) + (cm.rentExtra ? " + аренда за прошлый месяц " + money(cm.rentExtra) : ""),
             manager: "250 000 + 7 % от прибыли после налогового фонда", tax: "среднее за " + (P.months || []).length + " мес." };
           const TD = "padding:6px 8px;border-bottom:1px solid #eef0f4;";
-          let t = '<div class="vsc-chart-h">Из чего прибыль — ' + escapeHtml(shortM(d.monthName)) + '</div>'
-            + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px;">';
+          const SUM = 'cursor:pointer;font-size:13px;font-weight:600;color:#33415a;user-select:none;';
+          let t = '<details><summary style="' + SUM + '">Из чего прибыль — ' + escapeHtml(shortM(d.monthName))
+            + '<span style="font-weight:400;color:#9096a3;"> · доходы и расходы по статьям</span></summary>'
+            + '<div style="overflow-x:auto;margin-top:8px;"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px;">';
           Object.keys(names).forEach((k) => {
             if (Lx[k] == null) return;
             t += '<tr><td style="' + TD + '">' + names[k] + '<div style="font-size:11px;color:#9096a3;">' + escapeHtml(how[k] || "") + '</div></td>'
               + '<td style="' + TD + 'text-align:right;white-space:nowrap;font-weight:600;color:' + (Lx[k] < 0 ? "#a12b3c" : "#2c7a43") + ';">' + (Lx[k] > 0 ? "+" : "") + money(Lx[k]) + "</td></tr>";
           });
-          t += '<tr style="background:#f7f8fb;"><td style="' + TD + 'font-weight:700;">Прибыль</td><td style="' + TD + 'text-align:right;font-weight:800;color:' + (d.month.profitMonth >= 0 ? "#2c7a43" : "#b0263a") + ';">' + money(d.month.profitMonth) + "</td></tr></table></div>";
+          t += '<tr style="background:#f7f8fb;"><td style="' + TD + 'font-weight:700;">Прибыль</td><td style="' + TD + 'text-align:right;font-weight:800;color:' + (d.month.profitMonth >= 0 ? "#2c7a43" : "#b0263a") + ';">' + money(d.month.profitMonth) + "</td></tr></table></div></details>";
           // Проверка на прошлых месяцах
           if ((cm.check || []).length) {
             t += '<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:13px;font-weight:600;color:#33415a;user-select:none;">Подробнее — проверка на прошлых месяцах</summary>'
