@@ -1043,10 +1043,64 @@ function upliftSkipSet(rate) {
   return skip;
 }
 function retailFor(item, rate) {
+  return cnTrPrice(item, rate, retailBeforeCnTr(item, rate));
+}
+function retailBeforeCnTr(item, rate) {
   const base = baseRetailFor(item, rate);
   if (!UPLIFT_STEPS.length) return base;
   if (item.unlimited || !item.dataGb) return upliftOf(base);   // безлимит сравнивать по ГБ не с чем
   return upliftSkipSet(rate).has(item.id) ? base : upliftOf(base);
+}
+// ── КИТАЙ И ТУРЦИЯ БЕЗ TSim (07.10.2026, решение Андрея) ─────────────────
+// TSim поставлен на паузу, и средние и большие пакеты по Китаю и Турции
+// подорожали примерно на треть. Чтобы клиенты не ушли, цена таких пакетов —
+// посередине между обычной и закупкой ×2, но не ниже закупки ×2 (наценка
+// не меньше +100%). Входные пакеты дешевле 200 ₽ не трогаем: на них реклама.
+// ESIM_CNTR_MID=0 возвращает обычные цены.
+const CNTR_MID = String(process.env.ESIM_CNTR_MID || "1") !== "0";
+const CNTR_MIN_MUL = Number(process.env.ESIM_CNTR_MIN_MUL || 2);
+const CNTR_FROM = Number(process.env.ESIM_CNTR_FROM || 200);
+function isCnTr(item) {
+  const c = (item && item.countries) || [];
+  if (c.length === 1 && c[0] === "TR") return true;
+  return c.indexOf("CN") >= 0 && c.every((x) => x === "CN" || x === "HK" || x === "MO");
+}
+function cnTrPrice(item, rate, price) {
+  if (!CNTR_MID || isTsimId(item.id) || !isCnTr(item) || !item.costUsd || price < CNTR_FROM) return price;
+  const floor = up9(Number(item.costUsd) * rate * CNTR_MIN_MUL);
+  if (floor >= price) return price;
+  let target = Math.max(floor, up9((price + floor) / 2));
+  // Дешевле, чем такой же тариф стоил у TSim, не опускаем (Андрей: «если
+  // можешь сделать цену TSim — делай её, ниже не надо»)
+  const ref = tsimRefPrice(item, rate);
+  if (ref) target = Math.max(target, ref);
+  return Math.min(price, target);
+}
+// Цена тарифа TSim с той же страной, тем же объёмом и тем же видом (суточный
+// или на весь срок) — самый близкий срок не длиннее нашего, а если таких нет,
+// самый короткий из более длинных. Каталог TSim лежит в кэше и при паузе.
+let _tsimRef = { key: "", map: null };
+function tsimRefPrice(item, rate) {
+  const cat = loadTsimCatalog();
+  const key = ((cat && cat.ts) || 0) + "|" + rate;
+  if (_tsimRef.key !== key) {
+    const map = new Map();
+    ((cat && cat.products) || []).forEach((p) => {
+      if (!isCnTr(p) || !p.dataGb || p.unlimited) return;
+      const k = (p.countries.indexOf("TR") >= 0 ? "TR" : "CN") + "|" + (p.daily ? "d" : "") + "|" + p.dataGb;
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push({ days: p.days, price: retailFor(p, rate) });
+    });
+    _tsimRef = { key, map };
+  }
+  if (!item.dataGb || item.unlimited) return 0;
+  const list = _tsimRef.map.get((item.countries.indexOf("TR") >= 0 ? "TR" : "CN") + "|" + (item.daily ? "d" : "") + "|" + item.dataGb);
+  if (!list || !list.length) return 0;
+  const days = item.days || 0;
+  const le = list.filter((x) => x.days <= days).sort((a, b) => b.days - a.days || a.price - b.price);
+  if (le.length) return Math.min(...list.filter((x) => x.days === le[0].days).map((x) => x.price));
+  const ge = list.slice().sort((a, b) => a.days - b.days || a.price - b.price);
+  return ge[0].price;
 }
 // СЕБЕСТОИМОСТЬ (одинаково для всех поставщиков, 16.09.2026):
 // закупка × курс ЦБ + 5% на конвертацию + 11% налога. Ниже неё цена не падает
