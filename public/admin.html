@@ -7694,16 +7694,17 @@
           if ((cm.check || []).length) {
             t += '<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:13px;font-weight:600;color:#33415a;user-select:none;">Подробнее — проверка на прошлых месяцах</summary>'
               + '<div style="overflow-x:auto;margin-top:8px;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:520px;"><tr>'
-              + '<th style="' + TD + 'text-align:left;">Месяц</th><th style="' + TD + 'text-align:right;">Модель</th><th style="' + TD + 'text-align:right;">Факт «Потока»</th><th style="' + TD + 'text-align:right;">Разница</th><th style="' + TD + 'text-align:right;">из неё сборы</th></tr>';
+              + '<th style="' + TD + 'text-align:left;">Месяц</th><th style="' + TD + 'text-align:right;">Модель</th><th style="' + TD + 'text-align:right;">Факт «Потока»</th><th style="' + TD + 'text-align:right;">Разница с сопоставимым</th><th style="' + TD + 'text-align:right;">из неё сборы</th></tr>';
             cm.check.forEach((x) => {
               const df = x.model - x.fact, dsb = (x.sboryModel || 0) - (x.sboryFact || 0);
-              t += '<tr><td style="' + TD + '">' + escapeHtml(x.month) + (x.rentAdj || x.oneOff ? '<div style="font-size:11px;color:#9096a3;">факт' + (x.rentAdj ? " с арендой −" + money(x.rentAdj) : "") + (x.oneOff ? " без разовых −" + money(x.oneOff) : "") + "</div>" : "")
+              t += '<tr><td style="' + TD + '">' + escapeHtml(x.month) + (x.rentAdj || x.oneOff ? '<div style="font-size:11px;color:#9096a3;">сопоставимо = факт' + (x.rentAdj ? " − неоплаченная аренда " + money(x.rentAdj) : "") + (x.oneOff ? " − разовые " + money(x.oneOff) : "") + "</div>" : "")
               + (x.calib ? '<div style="font-size:11px;color:#3589BD;">по нему настроена модель</div>' : "") + "</td>"
-                + '<td style="' + TD + 'text-align:right;">' + money(x.model) + '</td><td style="' + TD + 'text-align:right;">' + money(x.fact) + "</td>"
+                + '<td style="' + TD + 'text-align:right;">' + money(x.model) + '</td><td style="' + TD + 'text-align:right;"><b>' + money(x.factRaw != null ? x.factRaw : x.fact) + "</b>"
+                + (x.factRaw != null && x.factRaw !== x.fact ? '<div style="font-size:11px;color:#9096a3;">сопоставимо: ' + money(x.fact) + "</div>" : "") + "</td>"
                 + '<td style="' + TD + 'text-align:right;font-weight:600;">' + (df > 0 ? "+" : "") + money(df) + '</td><td style="' + TD + 'text-align:right;color:#6b7280;">' + (dsb > 0 ? "+" : "") + money(dsb) + "</td></tr>";
             });
             t += "</table></div>"
-              + '<div style="font-size:11.5px;color:#9096a3;margin-top:8px;line-height:1.5;">Модель — те же формулы на фактической выручке и рекламе месяца. Модель настроена по месяцам, где все данные у Кати (сейчас: ' + escapeHtml((P.months || []).join(", ")) + '); каждый новый закрытый месяц добавляется в среднее сам. Август — только для проверки: ФОТ там из старой Google-таблицы, а оплаты партнёрам по записи/боту пришлись на него. Главный разброс — расчёты с партнёрами по записи/боту и АКК/ВНЖ: оплаты переходят между месяцами.</div></details>';
+              + '<div style="font-size:11.5px;color:#9096a3;margin-top:8px;line-height:1.5;">Факт — прибыль месяца в «Потоке». Сопоставимо — тот же факт, приведённый к обычному месяцу: без разовых приходов и с арендой, если её в месяце не платили; с ним и сравнивается модель. Модель — те же формулы на фактической выручке и рекламе месяца. Модель настроена по месяцам, где все данные у Кати (сейчас: ' + escapeHtml((P.months || []).join(", ")) + '); каждый новый закрытый месяц добавляется в среднее сам. Август — только для проверки: ФОТ там из старой Google-таблицы, а оплаты партнёрам по записи/боту пришлись на него. Главный разброс — расчёты с партнёрами по записи/боту и АКК/ВНЖ: оплаты переходят между месяцами.</div></details>';
           }
           const cmBox = document.createElement("div"); cmBox.className = "vsc-chart"; cmBox.innerHTML = t;
           box.appendChild(cmBox);

@@ -7391,7 +7391,7 @@ function vscFcCostModel(dashMonths) {
   const check = checkHist.map(rowOf).filter(Boolean).map((r) => {
     const mc = calc(r.R, r.ad, r.ym);
     const sbModel = mc.lines.sbMarkup + mc.lines.sbTranslate + mc.lines.sbPartners;
-    return { month: r.name, model: Math.round(mc.profit), fact: Math.round(r.factProfit - (VSC_FC_RENT.normalize[r.ym] || 0) - r.oneOff),
+    return { month: r.name, model: Math.round(mc.profit), factRaw: Math.round(r.factProfit), fact: Math.round(r.factProfit - (VSC_FC_RENT.normalize[r.ym] || 0) - r.oneOff),
       rentAdj: VSC_FC_RENT.normalize[r.ym] || 0, oneOff: Math.round(r.oneOff), sboryFact: Math.round(r.sboryNet), sboryModel: Math.round(sbModel),
       calib: rows.some((x) => x.ym === r.ym) };
   });
