@@ -77,6 +77,12 @@ function problems(before, now) {
     await sleep(60000);
     now = await state(); p = problems(before, now);
   }
+  // выдача eSIM идёт в памяти процесса — перезагрузка посреди неё оставляет заказ «fulfilling»
+  try {
+    const orders = JSON.parse(fs.readFileSync(path.join(__dirname, "..", ".esim", "orders.json"), "utf8"));
+    const stuck = (Array.isArray(orders) ? orders : Object.values(orders)).filter((o) => o && o.status === "fulfilling");
+    if (stuck.length) p.push(`eSIM: заказов, оборванных посреди выдачи, — ${stuck.length} (${stuck.map((o) => o.id).join(", ")}); достроить через /esim/api/adm/recover, не покупать повторно`);
+  } catch (_) {}
   const upMin = Math.round(Number(sh("awk '{print $1}' /proc/uptime")) / 60);
   const nOnline = Object.values(now.pm2).reduce((a, l) => a + l.filter((x) => x.status === "online").length, 0);
   const lines = [
