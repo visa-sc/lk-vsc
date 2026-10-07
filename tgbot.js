@@ -1468,6 +1468,15 @@ async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, m
 let _lastHookAt = 0;
 let _hookOn = false;
 let _hookSince = 0;
+// 07.10.2026: одна доставка не дошла (Read timeout expired) — и бот ушёл на
+// опрос насовсем, с письмом Андрею. Телеграм сам повторяет недоставленное,
+// поэтому одна ошибка ничего не теряет. Теперь на опрос уходим, только если
+// ошибки повторяются (две разные за полчаса), застряла очередь или вебхук
+// стоит не тот. С опроса через полчаса пробуем вернуться сами. Письмо — только
+// если за сутки пришлось отступать трижды: тогда это уже не случайность.
+let _hookErrs = [];         // моменты разных ошибок доставки после включения
+let _fellBackAt = 0;        // когда ушли на опрос из-за ошибок
+let _fallbacks = [];        // моменты отступлений за последние сутки
 async function enableWebhook() {
   // Телеграм до нашего сервера не достукивается напрямую (проверено 29.09.2026),
   // поэтому вебхук регистрируем на ретранслятор: он примет и перешлёт нам.
@@ -1483,6 +1492,9 @@ async function enableWebhook() {
     });
     _hookOn = true;
     _hookSince = Date.now();
+    _hookErrs = [];
+    _fellBackAt = 0;
+    _pollGen++;          // если шёл опрос — останавливаем: при вебхуке getUpdates не работает
     _polling = false;
     console.log("tgbot: включён вебхук " + url.replace(/\/tg\/esim\/.*/, "/tg/esim/…"));
   } catch (e) {
@@ -1503,18 +1515,31 @@ async function webhookWatch() {
   const lastErr = Number(info.last_error_date || 0) * 1000;
   // ошибка до включения нас не касается: она осталась от прошлой попытки
   const freshErr = lastErr && lastErr > _hookSince && Date.now() - lastErr < 15 * 60 * 1000;
+  if (freshErr && _hookErrs.indexOf(lastErr) < 0) _hookErrs.push(lastErr);
+  _hookErrs = _hookErrs.filter((t) => Date.now() - t < 30 * 60 * 1000);
   const stuck = Number(info.pending_update_count || 0) > 30;
-  if (!badUrl && !freshErr && !stuck) return;
+  if (!badUrl && !stuck && _hookErrs.length < 2) return;
   console.error("tgbot: вебхук не работает (" + (info.last_error_message || (badUrl ? "чужой адрес" : "очередь " + info.pending_update_count)) + "), возвращаюсь на опрос");
   _hookOn = false;
+  _fellBackAt = Date.now();
+  _fallbacks = _fallbacks.filter((t) => Date.now() - t < 24 * 3600 * 1000).concat(Date.now());
   try { await tg("deleteWebhook", { drop_pending_updates: false }); } catch (_) {}
   if (!_polling) pollLoop();
+  if (_fallbacks.length !== 3) return;   // письмо одно, на третьем отступлении за сутки
   try {
-    require("./mail.js").sendMail({ to: ALERT_TO, subject: "VOYO eSIM: бот вернулся на длинный опрос",
-      text: "Телеграм перестал доставлять вебхуки: " + (info.last_error_message || "нет деталей") +
-        ".\nБот работает как раньше, через опрос: клиенты ничего не замечают.\n" +
-        "Но из-за опроса снова растёт расход памяти на Deno Deploy." }).catch(() => {});
+    require("./mail.js").sendMail({ to: ALERT_TO, subject: "VOYO eSIM: вебхук бота за сутки сбоил трижды",
+      text: "Телеграм не может доставлять сообщения боту через ретранслятор: " + (info.last_error_message || "нет деталей") +
+        ".\nБот работает через опрос, клиенты ничего не замечают, каждые полчаса он пробует вернуться на вебхук.\n" +
+        "Пока он на опросе, растёт расход на Deno Deploy." }).catch(() => {});
   } catch (_) {}
+}
+// С опроса через полчаса пробуем вернуться на вебхук: разовый сбой прошёл —
+// бот снова тратит меньше на Deno Deploy. Не вышло — webhookWatch вернёт опрос.
+function webhookRetry() {
+  if (_hookOn || !_fellBackAt || tgMode() === "poll") return;
+  if (Date.now() - _fellBackAt < 30 * 60 * 1000) return;
+  console.log("tgbot: пробую вернуться на вебхук");
+  enableWebhook().catch(() => {});
 }
 
 // ─────────────────────────── подключение ───────────────────────────
@@ -1546,6 +1571,7 @@ function mount(app, opts) {
   setInterval(watchdogTick, 60 * 1000);
   // Сторож вебхука: если Телеграм не может до нас достучаться, возвращаемся на опрос
   setInterval(() => { webhookWatch().catch(() => {}); }, 5 * 60 * 1000);
+  setInterval(webhookRetry, 10 * 60 * 1000);
   setTimeout(() => { webhookWatch().catch(() => {}); }, 3 * 60 * 1000);
 
   // Состояние бота для проверки руками: /esim/api/tg/health?adm=КОД
