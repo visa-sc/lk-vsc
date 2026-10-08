@@ -839,16 +839,21 @@ function mount(app, deps) {
         }
         reconCurrent.forms.push(fr);
       }
-      // 3) Наш питерский сайт (spb.visa-sc.ru на своём коде с 02.10.2026): заявки
-      //    лежат в /var/www/spbcopy/leads.json, в amo их отправляет spb-amo. Сверяем
-      //    так же — по телефону в amoCRM, плюс отметка о созданной сделке.
-      {
-        const fr = { id: "spbnew", label: "spb.visa-sc.ru (наш сайт)" };
+      // 3) Наши сайты на своём коде: Питер (spb.visa-sc.ru, с 02.10.2026) и Москва
+      //    (visa-sc.ru, после переноса домена с Flexbe; просьба Андрея 09.10.2026). Заявки
+      //    лежат в leads.json копии, в amo их отправляет spb-amo. Сверяем так же —
+      //    по телефону в amoCRM. До переноса у Москвы боевых заявок нет — строка 0/0.
+      const OWN_SITES = [
+        { id: "spbnew", label: "spb.visa-sc.ru (наш сайт)", file: process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json", host: /^(www\.)?spb\.visa-sc\.ru$/i },
+        { id: "msknew", label: "visa-sc.ru (наш сайт)", file: process.env.MSKCOPY_LEADS || "/var/www/mskcopy/leads.json", host: /^(www\.)?visa-sc\.ru$/i },
+      ];
+      for (const own of OWN_SITES) {
+        const fr = { id: own.id, label: own.label };
         try {
-          const raw = JSON.parse(fs.readFileSync(process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json", "utf8"));
+          const raw = fs.existsSync(own.file) ? JSON.parse(fs.readFileSync(own.file, "utf8")) : [];
           const leads = [];
           for (const e of raw) {
-            if (!/^(www\.)?spb\.visa-sc\.ru$/i.test(e.host || "")) continue;
+            if (!own.host.test(e.host || "")) continue;
             const ts = Date.parse(e.at);
             if (!(ts >= fromTs && ts <= toTs)) continue;
             const fl = (e.data && e.data.fields) || [];

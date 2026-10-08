@@ -6522,7 +6522,7 @@
         box.innerHTML = '<div class="loading-state">Загружаем сверку контактов…</div>';
         wrap.appendChild(box);
         // spb — питерский сайт на Flexbe (после переезда 02.10.2026 — техадрес), spbnew — он же на нашем коде
-        const CITY = { "visa-sc": "МСК", "spb": "СПБ Flexbe", "spbnew": "СПБ", "ekb": "ЕКБ" };
+        const CITY = { "visa-sc": "МСК Flexbe", "msknew": "МСК", "spb": "СПБ Flexbe", "spbnew": "СПБ", "ekb": "ЕКБ" }; // msknew — visa-sc.ru на нашем коде (09.10.2026)
         const pill = (ok, txt) => '<span style="font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 7px;white-space:nowrap;color:' + (ok ? "#2c7a43" : "#a12b3c") + ';background:' + (ok ? "#e3f3e7" : "#fbe9ec") + ';">' + txt + '</span>';
         const fmtDay = function (d) { const p = String(d || "").split("-"); return p.length === 3 ? p[2] + "." + p[1] : d; };
         // Строка вида: ✓ Номера (все): 33/33 · Заявки МСК: 10/10 · Заявки СПБ: 3/3 · Заявки ЕКБ: 0/0
