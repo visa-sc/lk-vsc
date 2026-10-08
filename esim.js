@@ -3188,7 +3188,14 @@ function mount(app, opts) {
     };
     try {
       if (String(order.src || "") === "esimaccess") {
-        try { await esimaccess.cancel(id); mark("Refunded"); return "eSIM Access: отменён, деньги вернулись сразу"; }
+        try {
+          await esimaccess.cancel(id); mark("Refunded");
+          // Андрею интересны именно деньги, вернувшиеся на баланс за неиспользованный пакет
+          planMail("VOYO eSIM: поставщик вернул деньги за пакет на баланс",
+            "eSIM Access сразу вернул $" + Number(order.costUsd || 0).toFixed(2) + " за неиспользованный пакет " + id +
+            " (" + (order.label || "") + ") на наш баланс.\nПричина: " + (reason || "—") + ".");
+          return "eSIM Access: отменён, деньги вернулись сразу";
+        }
         catch (e) {
           if (!e.installed) throw e;
           await esimaccess.revoke(id).catch(() => {});
