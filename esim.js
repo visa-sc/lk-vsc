@@ -3974,19 +3974,27 @@ function mount(app, opts) {
   function channelOf(o) {
     const a = (o.ads && (o.ads.first || o.ads)) || null;
     const src = a && String(a.utm_source || "").toLowerCase();
+    if (src === "ig" || src === "insta") return "instagram";
     if (src) return src;
     if (a && a.yclid) return "yandex";
     if (a && a.gclid) return "google";
     const mail = readJson(MAIL_HISTORY_FILE, {})[o.id];
     if (mail) return mail;
     if (o.fromLk || (readJson(LK_HISTORY_FILE, []).indexOf(o.id) >= 0)) return "lk";
-    if (o.tgChatId) return "telegram_bot";
+    if (o.tgChatId) {
+      // в бота пришли по ссылке из Instagram или из нашего Telegram-канала (08.10.2026)
+      const f = funnelData(), v = "tg" + o.tgChatId;
+      if (f.igBot && f.igBot[v] != null) return "instagram";
+      if (f.tgchBot && f.tgchBot[v] != null) return "tg_channel";
+      return "telegram_bot";
+    }
     return "direct";
   }
   const CHANNEL_NAMES = {
     yandex: "Яндекс Директ", google: "Google Ads", telegram_bot: "Телеграм-бот",
     direct: "Прямые заходы", vk: "ВКонтакте", blogger: "Блогеры", lk: "Личный кабинет VOYO",
     sms: "SMS", sms_mass: "SMS-рассылка", email: "Email", tg: "Telegram-рассылка",
+    instagram: "Instagram", tg_channel: "Telegram-канал",
   };
   function channelName(k) { return CHANNEL_NAMES[k] || k; }
   const mskDay = (ts) => new Date(ts + 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -4084,11 +4092,18 @@ function mount(app, opts) {
   // только число людей по дням и ссылкам, шагов и оплат там нет.
   const IG_HISTORY_FILE = path.join(DIR, "ig-history.json");
   const isIgTouch = (t) => !!t && (/^(instagram|ig|insta)$/i.test(t.utm_source || "") || /(^|\.)instagram\.com/i.test(t.ref || ""));
-  function igFor(from, to, withTest) {
+  // Telegram-канал (08.10.2026): сайт — utm_source=tg_channel, бот — ?start=tgch(_ссылка)
+  const isTgchTouch = (t) => !!t && /^tg_channel$/i.test(t.utm_source || "");
+  const SRC_SPECS = {
+    ig: { key: "ig", botKey: "igBot", hist: IG_HISTORY_FILE, touch: isIgTouch },
+    tgch: { key: "tgch", botKey: "tgchBot", hist: null, touch: isTgchTouch },
+  };
+  function igFor(from, to, withTest, spec) {
+    spec = spec || SRC_SPECS.ig;
     const f = funnelData();
     const inR = (day) => (!from || day >= from) && (!to || day <= to);
-    const h = readJson(IG_HISTORY_FILE, null) || { days: {} };
-    const liveSince = f.igSince ? mskDay(f.igSince) : null;
+    const h = (spec.hist && readJson(spec.hist, null)) || { days: {} };
+    const liveSince = f[spec.key + "Since"] ? mskDay(f[spec.key + "Since"]) : null;
     const links = {};   // ссылка → { visit, country, pack, buy, pay, paid, revenue }
     const row = (k) => links[k] || (links[k] = { link: k, visit: 0, country: 0, pack: 0, buy: 0, pay: 0, paid: 0, revenue: 0 });
     // переходы до живого счётчика — по журналу
@@ -4099,7 +4114,7 @@ function mount(app, opts) {
     // живые: уникальные браузеры за период и их дальнейшие шаги
     const seen = {};
     Object.keys(f.days).filter(inR).forEach((day) => {
-      const g = f.days[day].ig || {};
+      const g = f.days[day][spec.key] || {};
       Object.keys(g).forEach((k) => g[k].forEach((vid) => { if (!seen[vid]) seen[vid] = k; }));
     });
     Object.keys(seen).forEach((vid) => { row(seen[vid]).visit++; });
@@ -4117,9 +4132,9 @@ function mount(app, opts) {
     orders.filter((o) => !o.tgChatId).forEach((o) => {
       const a = o.ads || {};
       let k = null;
-      if (o.vid && f.ig && f.ig[o.vid] != null) k = f.ig[o.vid];
-      else if (isIgTouch(a.first) || isIgTouch(a.last)) {
-        const t = isIgTouch(a.last) ? a.last : a.first;
+      if (o.vid && f[spec.key] && f[spec.key][o.vid] != null) k = f[spec.key][o.vid];
+      else if (spec.touch(a.first) || spec.touch(a.last)) {
+        const t = spec.touch(a.last) ? a.last : a.first;
         k = igLink(t.utm_content || t.utm_campaign || "");
       }
       if (k == null) return;
@@ -4132,17 +4147,18 @@ function mount(app, opts) {
     const sum = (k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
     return { liveSince, histSince: h.since ? mskDay(h.since) : null, histVisits,
       total: { visit: sum("visit"), country: sum("country"), pack: sum("pack"), buy: sum("buy"), pay: sum("pay"), paid: sum("paid"), revenue: sum("revenue") },
-      rows, bot: igBotFor(f, inR, orders, withTest) };
+      rows, bot: igBotFor(f, inR, orders, withTest, spec.botKey) };
   }
   // Instagram → телеграм-бот: чаты, пришедшие по t.me/<бот>?start=ig(_ссылка),
   // и их шаги в боте: старт → страна → пакет → ссылка на оплату → оплата
-  function igBotFor(f, inR, orders, withTest) {
+  function igBotFor(f, inR, orders, withTest, botKey) {
+    botKey = botKey || "igBot";
     const links = {};
     const row = (k) => links[k] || (links[k] = { link: k, start: 0, country: 0, pack: 0, pay: 0, paid: 0, revenue: 0 });
     const own = (vid) => !withTest && TEST_TG.indexOf(String(vid).slice(2)) >= 0;
     const seen = {};
     Object.keys(f.days).filter(inR).forEach((day) => {
-      const g = f.days[day].igBot || {};
+      const g = f.days[day][botKey] || {};
       Object.keys(g).forEach((k) => g[k].forEach((vid) => { if (seen[vid] == null && !own(vid)) seen[vid] = k; }));
     });
     Object.keys(seen).forEach((vid) => { row(seen[vid]).start++; });
@@ -4154,14 +4170,14 @@ function mount(app, opts) {
       Object.keys(u).forEach((vid) => { row(seen[vid])[step]++; });
     });
     const people = {};
-    orders.filter((o) => o.tgChatId && f.igBot && f.igBot["tg" + o.tgChatId] != null).forEach((o) => {
-      const k = f.igBot["tg" + o.tgChatId], r = row(k);
+    orders.filter((o) => o.tgChatId && f[botKey] && f[botKey]["tg" + o.tgChatId] != null).forEach((o) => {
+      const k = f[botKey]["tg" + o.tgChatId], r = row(k);
       if (!people[k + "|" + o.tgChatId]) { people[k + "|" + o.tgChatId] = 1; r.paid++; }
       r.revenue += Number(o.payTotalRub || o.priceRub || 0);
     });
     const rows = Object.values(links).sort((a, b) => b.start - a.start || b.paid - a.paid);
     const sum = (k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
-    return { since: f.igBotSince ? mskDay(f.igBotSince) : null,
+    return { since: f[botKey + "Since"] ? mskDay(f[botKey + "Since"]) : null,
       total: { start: sum("start"), country: sum("country"), pack: sum("pack"), pay: sum("pay"), paid: sum("paid"), revenue: sum("revenue") }, rows };
   }
 
@@ -4296,6 +4312,8 @@ function mount(app, opts) {
     if (b.step === "visit" && b.lang) { try { langHit(b.lang, b.vid, !!b.ad); } catch (_) {} }
     if (b.step === "visit" && b.ig != null && b.src !== "bot") { try { igMark(b.vid, b.ig); } catch (_) {} }
     if (b.step === "start" && b.ig != null && b.src === "bot") { try { igMark(b.vid, b.ig, "igBot"); } catch (_) {} }
+    if (b.step === "visit" && b.tgch != null && b.src !== "bot") { try { igMark(b.vid, b.tgch, "tgch"); } catch (_) {} }
+    if (b.step === "start" && b.tgch != null && b.src === "bot") { try { igMark(b.vid, b.tgch, "tgchBot"); } catch (_) {} }
     if (b.ab === "old" || b.ab === "new") abMark(b.vid, b.ab);
     if ((b.ab === "days" || b.ab === "list") && b.src === "bot") abMark(b.vid, b.ab, "abBot");
     res.json({ success: funnelHit(String(b.src || "site"), String(b.step || ""), b.vid) });
@@ -4517,7 +4535,8 @@ function mount(app, opts) {
         testShown: withTest, testCount,
         closedThrough: Object.keys(daily).sort().slice(-1)[0] || null,
         funnel: funnelFor(from, to, withTest),
-        ig: igFor(from, to, withTest),
+        ig: igFor(from, to, withTest, SRC_SPECS.ig),
+        tgch: igFor(from, to, withTest, SRC_SPECS.tgch),
         ab: abFor(from, to, withTest),
         abBot: abBotFor(from, to, withTest),
         blog: blogStatsFor(from, to, withTest, rate),

@@ -339,6 +339,14 @@
         <div class="ig-h" style="margin-top:26px">Телеграм-бот</div>
         <div id="igBotFunnel"></div><div class="scroll" style="margin-top:14px"><table id="tIgBot"></table></div><div class="fun-note" id="igBotHint"></div>
       </div>
+      <!-- Наш Telegram-канал: та же логика, свои метки (08.10.2026) -->
+      <div class="ig-wrap">
+        <div class="ig-title"><span>Telegram-канал</span><span data-info="tgch"></span><span class="ig-sum" id="tgNote"></span></div>
+        <div class="ig-h">Сайт</div>
+        <div id="tgFunnel"></div><div class="scroll" style="margin-top:14px"><table id="tTg"></table></div><div class="fun-note" id="tgHint"></div>
+        <div class="ig-h" style="margin-top:26px">Телеграм-бот</div>
+        <div id="tgBotFunnel"></div><div class="scroll" style="margin-top:14px"><table id="tTgBot"></table></div><div class="fun-note" id="tgBotHint"></div>
+      </div>
     </div>
   </section>
 
@@ -397,6 +405,8 @@
     chart: "Выручка по дням оплаты, время московское. Наведите на график — покажет сумму и число пакетов за день.<br>Прошедшие сутки закрываются в полночь: себестоимость фиксируется по курсу того дня и дальше не меняется. Сегодняшний день — живые цифры.",
     ads: "Канал определяется по метке, с которой человек пришёл впервые (utm, yclid, gclid). Покупки в телеграм-боте — отдельный канал. <b>SMS</b>, <b>Email</b>, <b>SMS-рассылка</b> — по метке в ссылке рассылки. <b>Личный кабинет VOYO</b> — покупки из визового ЛК, если человека не привела реклама или рассылка (иначе сделка идёт тому, что привело).<br><b>Маржа</b> — уже без себестоимости и комиссии банка. <b>Итог</b> — ещё и без расходов на рекламу. <b>ДРР</b> — доля рекламы в выручке.<br>Расход вносится со скриншотов кабинетов общей суммой за всё время.",
     fsite: "Уникальные посетители витрины на всех доменах (voyomobile.ru, voyotravel.ru/esim и другие): зашёл → выбрал страну (открылся список пакетов; на страницах /turkey, /china он открыт сразу) → открыл карточку пакета → нажал «Купить» (появляется поле почты) → нажал «Оплатить» → оплатил. Между карточками — доля перехода с шага на шаг, в синей плашке — сквозная.<br>С 18 сентября шаги пишет сама витрина. <b>До 18 сентября</b> — восстановлено по журналу сервера: «Выбрали страну» там видно только у заходов на страницы стран и по ссылкам из статей, а «Открыли пакет» не записывался вовсе — за те дни в этих шагах только те, кто пошёл дальше. Оплаты всегда берутся из заказов.",
+    tgch: "Люди, пришедшие из нашего Telegram-канала. На сайт — по ссылке с меткой <b>utm_source=tg_channel</b> (voyomobile.ru/?utm_source=tg_channel), в бота — по ссылке <b>t.me/esimvoyo_bot?start=tgch</b>. " +
+      "Для отдельного поста: на сайте добавьте <b>&amp;utm_content=название</b>, в боте — <b>?start=tgch_название</b>: появится своя строка. Обычная ссылка без метки сюда не попадёт.",
     ig: "Люди, пришедшие из Instagram: по ссылке с меткой <b>utm_source=instagram</b> или прямо из приложения. Дальше — те же шаги, что в воронке сайта, и оплаты из заказов.<br>" +
       "Строки таблицы — по ссылкам: <b>Ссылка в профиле</b> (utm_content=link_in_bio), <b>Без пометки</b> — ссылка без utm_content (сторис, директ, комментарии). " +
       "Чтобы видеть каждый Reels отдельно, давайте в нём свою ссылку, например <b>voyomobile.ru/67?utm_source=instagram&amp;utm_content=reel_turkey</b> — она появится отдельной строкой.<br>" +
@@ -691,11 +701,18 @@
     return esc(k);
   }
   function renderIg(){
-    var g = DATA.ig;
-    if (!g) { el("igNote").textContent = ""; el("igFunnel").innerHTML = ""; el("tIg").innerHTML = ""; el("igHint").innerHTML = ""; return; }
+    renderSrc(DATA.ig, { p: "ig", T: "Ig", who: "Перешли из Instagram", none: "из Instagram",
+      botHint: "Ссылка для Instagram: <b>t.me/esimvoyo_bot?start=ig</b>, для отдельного Reels — <b>?start=ig_reel_название</b>." });
+    renderSrc(DATA.tgch, { p: "tg", T: "Tg", who: "Перешли из канала", none: "из Telegram-канала",
+      botHint: "Ссылка для канала: <b>t.me/esimvoyo_bot?start=tgch</b>, для отдельного поста — <b>?start=tgch_название</b>." });
+  }
+  function renderSrc(g, o){
+    var P = o.p, T = o.T;
+    if (!g) { el(P + "Note").textContent = ""; el(P + "Funnel").innerHTML = ""; el("t" + T).innerHTML = ""; el(P + "Hint").innerHTML = "";
+      el(P + "BotFunnel").innerHTML = ""; el("t" + T + "Bot").innerHTML = ""; el(P + "BotHint").innerHTML = ""; return; }
     var t = g.total;
-    el("igFunnel").innerHTML = funnelHtml([
-      { label: "Перешли из Instagram", n: t.visit || 0 },
+    el(P + "Funnel").innerHTML = funnelHtml([
+      { label: o.who, n: t.visit || 0 },
       { label: "Выбрали страну", n: t.country || 0 },
       { label: "Открыли пакет", n: t.pack || 0 },
       { label: "Нажали «Купить»", n: t.buy || 0 },
@@ -703,35 +720,35 @@
       { label: "Оплатили", n: t.paid || 0 },
     ], "человек");
     var rows = g.rows || [];
-    el("tIg").innerHTML = rows.length
+    el("t" + T).innerHTML = rows.length
       ? head(["Ссылка", "Переходы", "Открыли пакет", "Нажали «Оплатить»", "Оплатили", "Выручка"], [0,1,1,1,1,1]) + "<tbody>" +
         rows.map(function(r){
           return "<tr><td>" + igName(r.link) + '</td><td class="r">' + RU(r.visit) + '</td><td class="r">' + RU(r.pack) + '</td><td class="r">' +
             RU(r.pay) + '</td><td class="r">' + RU(r.paid) + '</td><td class="r">' + (r.revenue ? RU(r.revenue) + " ₽" : "—") + "</td></tr>";
         }).join("") + "</tbody>"
-      : "<tr><td>За этот период переходов из Instagram нет.</td></tr>";
+      : "<tr><td>За этот период переходов " + o.none + " нет.</td></tr>";
     var since = g.liveSince ? dShort(g.liveSince) : "6 окт";
-    el("igHint").innerHTML = !g.histVisits ? ""
+    el(P + "Hint").innerHTML = !g.histVisits ? ""
       : (g.histVisits === t.visit ? "Переходы до " + since + " восстановлены по журналу сервера: по ним виден только сам переход. Шаги и оплаты считаются с " + since + "."
         : "Из " + RU(t.visit) + " переходов " + RU(g.histVisits) + " — до " + since + ", по журналу сервера: по ним виден только сам переход, без шагов.");
     var b = g.bot || { total: {}, rows: [] }, bt = b.total;
-    el("igBotFunnel").innerHTML = funnelHtml([
+    el(P + "BotFunnel").innerHTML = funnelHtml([
       { label: "Перешли в бота", n: bt.start || 0 },
       { label: "Выбрали страну", n: bt.country || 0 },
       { label: "Открыли пакет", n: bt.pack || 0 },
       { label: "Перешли к оплате", n: bt.pay || 0 },
       { label: "Оплатили", n: bt.paid || 0 },
     ], "чатов");
-    el("tIgBot").innerHTML = (b.rows || []).length
+    el("t" + T + "Bot").innerHTML = (b.rows || []).length
       ? head(["Ссылка", "Перешли в бота", "Открыли пакет", "Перешли к оплате", "Оплатили", "Выручка"], [0,1,1,1,1,1]) + "<tbody>" +
         b.rows.map(function(r){
           return "<tr><td>" + igName(r.link) + '</td><td class="r">' + RU(r.start) + '</td><td class="r">' + RU(r.pack) + '</td><td class="r">' +
             RU(r.pay) + '</td><td class="r">' + RU(r.paid) + '</td><td class="r">' + (r.revenue ? RU(r.revenue) + " ₽" : "—") + "</td></tr>";
         }).join("") + "</tbody>"
-      : "<tr><td>За этот период переходов из Instagram в бота нет.</td></tr>";
-    el("igBotHint").innerHTML = "Ссылка для Instagram: <b>t.me/esimvoyo_bot?start=ig</b>, для отдельного Reels — <b>?start=ig_reel_название</b>.";
+      : "<tr><td>За этот период переходов " + o.none + " в бота нет.</td></tr>";
+    el(P + "BotHint").innerHTML = o.botHint;
     var paid = (t.paid || 0) + (bt.paid || 0), rev = (t.revenue || 0) + (bt.revenue || 0);
-    el("igNote").textContent = RU(t.visit) + " на сайт · " + RU(bt.start || 0) + " в бота · оплатили " + RU(paid) + (rev ? " · " + RU(rev) + " ₽" : "");
+    el(P + "Note").textContent = RU(t.visit) + " на сайт · " + RU(bt.start || 0) + " в бота · оплатили " + RU(paid) + (rev ? " · " + RU(rev) + " ₽" : "");
   }
 
   function renderAb(){
