@@ -98,13 +98,19 @@ function dossier({ messages, orders, states, ua, ip, country, tried }) {
   L.push("");
   L.push("ЕГО ПАКЕТЫ И ЧТО ГОВОРИТ ПОСТАВЩИК СЕЙЧАС:");
   if (!states || !states.length) L.push("  покупок у нас не нашли");
+  // На какое устройство скачан профиль: у каждого телефона свой чип eSIM (EID).
+  // Разные EID — разные телефоны (08.10.2026: клиент купил две eSIM, вторую
+  // поставил спутнику, а бот уверял, что обе у него на телефоне).
+  const eids = [];
+  (states || []).forEach((s) => { const x = s.u && s.u.eid; if (x && eids.indexOf(x) < 0) eids.push(x); });
+  const dev = (x) => "устройство " + "АБВГДЕ".charAt(eids.indexOf(x));
   (states || []).forEach((s, i) => {
     const o = s.o || {};
     const packs = (s.u && s.u.packages) || [];
     L.push("  " + (i + 1) + ") " + (o.label || "eSIM") +
       ", куплен " + new Date(o.paidAt || o.ts || Date.now()).toLocaleDateString("ru-RU") +
       ", поставщик " + (o.src || "?") +
-      "; профиль скачан на телефон: " + (s.installed ? "да" : "нет") +
+      "; профиль скачан на телефон: " + (s.installed ? "да" + (s.u && s.u.eid ? " (" + dev(s.u.eid) + ")" : "") : "нет") +
       (s.u && s.u.suspended ? "; ПРИОСТАНОВЛЕН У ПОСТАВЩИКА" : ""));
     // каждый пакет на профиле отдельно: основной и продления бывают на разные страны
     packs.forEach((p) => {
@@ -114,6 +120,7 @@ function dossier({ messages, orders, states, ua, ip, country, tried }) {
         (p.expiresAt ? ", до " + String(p.expiresAt).slice(0, 10) : "") + (p.expired ? ", ИСТЁК" : ""));
     });
   });
+  if (eids.length > 1) L.push("  ВАЖНО: его eSIM скачаны на " + eids.length + " РАЗНЫХ устройства (у каждого телефона свой чип eSIM). Значит, это не один телефон: скорее всего, часть eSIM стоит у его спутника. Не говори, что все они у него на телефоне.");
   L.push("");
   L.push("ТЕЛЕФОН И МЕСТО: " + (ua || "неизвестно").slice(0, 160) + (country ? "; страна по адресу: " + country : ""));
   if (tried && tried.length) L.push("МЫ УЖЕ ПРОБОВАЛИ: " + tried.join("; "));

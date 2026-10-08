@@ -304,6 +304,7 @@ const mobimatter = {
     const es = d.esim || {};
     return {
       installed: es.installationStatus === "INSTALLED",
+      eid: es.eid || es.EID || null,
       status: es.status || null, iccid: es.iccid || null, suspended: !!es.isSuspended,
       packages: (d.packages || []).map((p) => ({
         name: p.name, totalMb: Number(p.totalAllowanceMb || 0), usedMb: Number(p.usedMb || 0),
@@ -862,6 +863,7 @@ const esimaccess = {
     const st = String(e.smdpStatus || "").toUpperCase();
     return {
       installed: Boolean(e.installationTime) || /INSTALL|ENABLE|DOWNLOAD/.test(st),
+      eid: e.eid || null,   // чип eSIM телефона: разные EID — разные устройства (08.10.2026)
       status: e.esimStatus || e.smdpStatus || null, iccid: e.iccid || null,
       suspended: String(e.esimStatus || "").toUpperCase() === "SUSPENDED",
       canceled: String(e.esimStatus || "").toUpperCase() === "CANCEL",
