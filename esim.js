@@ -2767,7 +2767,8 @@ function mount(app, opts) {
         "(мы бесплатно выпустим новую eSIM для спутника и отключим лишнюю; reply коротко, текст с QR подставим сами). " +
         "Если подтверждает, что у спутника eSIM есть, — action advice: как включить её в Турции (выбрать эту линию для мобильного " +
         "интернета, включить «Роуминг данных»). Если требует деньги — action advice: предложи бесплатно выпустить новую eSIM для " +
-        "спутника, деньги не обещай. Если он отказывается от замены и снова требует деньги — action escalate."],
+        "спутника, деньги не обещай. Если он отказывается от замены и снова требует деньги — action escalate. " +
+        "В diagnosis первым словом поставь метку: [есть] если у спутника eSIM есть, [нет] если нет, [деньги] если требует деньги, [другое] в остальных случаях."],
     }).catch((e) => { console.error("esim план, доктор:", e.message); return null; });
     if (!seen) return false;
     if (seen.action === "replace") {
@@ -2780,14 +2781,11 @@ function mount(app, opts) {
         "\n\nПусть отсканирует его на своём телефоне: Настройки, Сотовая связь (или SIM-карты), Добавить eSIM. Лучше дома по Wi-Fi, до поездки. " +
         "В Турции для этой линии включите «Роуминг данных».\n\n" +
         "Лишнюю вторую eSIM на вашем телефоне мы отключили, её можно удалить в настройках. Ваша первая eSIM работает как обычно.", "autoFix2");
-      support.queueMail({
-        subject: "VOYO eSIM: спутнику клиента выпустили новую eSIM по плану",
-        text: "Клиент " + (chat.contact || "—") + " подтвердил, что вторая eSIM не у спутника.\n\n" +
-          "Выпустили спутнику новую: " + res.gift.label + " (" + res.gift.mmOrderId + "), ссылка отправлена в чат.\n" +
-          "Лишнюю " + res.spare.mmOrderId + " отключили. Возврат у поставщика: " + res.refund + ".\n" +
-          "Ответ eSIM Access о возврате на баланс придёт на эту почту (письмо им ушло с копией вам).\n\nЧат: " + chat.id,
-      });
-      support.flushQueue(opts && opts.sendMail).catch(() => {});
+      planMail("VOYO eSIM: клиенту сделали замену, лишний пакет отключён у оператора",
+        "Клиент " + (chat.contact || "—") + ": вторая eSIM оказалась не у спутника.\n\n" +
+        "Замена: спутнику бесплатно выпустили новую eSIM " + res.gift.label + " (" + res.gift.mmOrderId + "), ссылка с QR отправлена клиенту в чат.\n" +
+        "Лишний пакет " + res.spare.mmOrderId + " отключён у оператора, возврат за него запрошен: " + res.refund + ".\n" +
+        "Когда eSIM Access вернёт деньги на баланс, придёт отдельное письмо.\n\nЧат: " + chat.id);
       return true;
     }
     if (seen.action === "escalate") {
@@ -2795,9 +2793,58 @@ function mount(app, opts) {
       callOperator(chat, "клиент отказывается от бесплатной замены и требует вернуть деньги за вторую eSIM");
       return true;
     }
-    if (seen.reply) { support.botMessage(chat.id, seen.reply, "autoDiag"); return true; }
+    if (seen.reply) {
+      support.botMessage(chat.id, seen.reply, "autoDiag");
+      if (/^\s*\[есть\]/i.test(String(seen.diagnosis || ""))) {
+        casePlanSave(plan.id, { done: Date.now(), result: "resolved" });
+        planMail("VOYO eSIM: вопрос клиента решён без замены и возврата",
+          "Клиент " + (chat.contact || "—") + " подтвердил, что вторая eSIM стоит у спутника. Объяснили, как включить её в поездке.\n" +
+          "Замены и возврата не было, деньги не тратили.\n\nЧат: " + chat.id);
+      }
+      return true;
+    }
     return false;
   }
+  function planMail(subject, text) {
+    if (!(opts && opts.sendMail)) return;
+    opts.sendMail({ to: "director@visa-sc.ru", subject, text }).catch((x) => console.error("esim план, письмо:", x.message));
+  }
+
+  // ── Возврат eSIM Access на баланс: замечаем сами (08.10.2026) ──────────────
+  // Установленный профиль они возвращают только по письму в поддержку, и признака
+  // «вернули» у заказа нет. Поэтому при запросе запоминаем баланс, а дальше
+  // сравниваем: баланс − наши закупки после этого + мгновенные отмены. Если
+  // сверху появилась сумма пакета — деньги пришли, пишем Андрею. Пополнение
+  // счёта (намного больше пакета) возвратом не считаем: просто сдвигаем точку.
+  async function eaRefundWatch() {
+    const all = readJson(ORDERS_FILE, []);
+    const wait = all.filter((o) => o.supplierRefund && o.supplierRefund.state === "Asked" && o.supplierRefund.eaBal != null &&
+      /^EA-/.test(String(o.mmOrderId || "")) && Date.now() - o.supplierRefund.asked < 30 * 864e5);
+    if (!wait.length) return;
+    let cur;
+    try { cur = (await esimaccess.getBalance()).balanceUsd; } catch (_) { return; }
+    let changed = false;
+    for (const o of wait) {
+      const r = o.supplierRefund, cost = Number(o.costUsd || 0);
+      if (!cost) continue;
+      const spent = all.filter((x) => /^EA-/.test(String(x.mmOrderId || "")) && x.paidAt && x.paidAt > r.eaBalTs && x.id !== o.id)
+        .reduce((a, x) => a + Number(x.costUsd || 0), 0);
+      const back = all.filter((x) => x !== o && x.supplierRefund && x.supplierRefund.state === "Refunded" &&
+        x.supplierRefund.asked > r.eaBalTs && /^EA-/.test(String(x.mmOrderId || ""))).reduce((a, x) => a + Number(x.costUsd || 0), 0);
+      const diff = cur - (r.eaBal - spent + back);
+      if (diff >= cost * 0.9 && diff <= cost * 1.5 + 0.5) {
+        r.state = "Refunded"; r.refundedAt = Date.now(); changed = true;
+        planMail("VOYO eSIM: поставщик вернул деньги за пакет на баланс",
+          "eSIM Access вернул $" + cost.toFixed(2) + " за пакет " + o.mmOrderId + " (" + (o.label || "") + ") на наш баланс.\n" +
+          "Баланс eSIM Access сейчас: $" + cur.toFixed(2) + ".");
+        console.log("esim: eSIM Access вернул $" + cost + " за " + o.mmOrderId);
+      } else if (diff > cost * 1.5 + 0.5) {
+        r.eaBal = cur; r.eaBalTs = Date.now(); changed = true;   // похоже на пополнение счёта
+      }
+    }
+    if (changed) writeJson(ORDERS_FILE, all);
+  }
+  setInterval(() => { eaRefundWatch().catch((x) => console.error("esim сторож возврата EA:", x.message)); }, 30 * 60 * 1000);
 
   async function chatAutoAnswer(chat) {
     try {
@@ -3134,10 +3181,10 @@ function mount(app, opts) {
     const u = await providerFor(id).getUsage(id).catch(() => null);
     const used = ((u && u.packages) || []).reduce((a, x) => a + (x.usedMb || 0), 0);
     if (used >= 10) return "пакет использован, возврат не просим";
-    const mark = (state) => {
+    const mark = (state, extra) => {
       const all = readJson(ORDERS_FILE, []);
       const rec = all.find((x) => x.id === order.id);
-      if (rec) { rec.supplierRefund = { asked: Date.now(), state, reason }; writeJson(ORDERS_FILE, all); }
+      if (rec) { rec.supplierRefund = Object.assign({ asked: Date.now(), state, reason }, extra || {}); writeJson(ORDERS_FILE, all); }
     };
     try {
       if (String(order.src || "") === "esimaccess") {
@@ -3147,7 +3194,11 @@ function mount(app, opts) {
           await esimaccess.revoke(id).catch(() => {});
           askSupplierRefund({ src: order.src, providerOrderId: id, iccid: order.iccid, costUsd: order.costUsd,
             label: order.label, reason, usedMb: used });
-          mark("Asked"); return "eSIM Access: отозван, возврат попросили письмом";
+          // баланс на момент просьбы: по нему сторож заметит, что деньги вернули
+          let bal = null;
+          try { bal = (await esimaccess.getBalance()).balanceUsd; } catch (_) {}
+          mark("Asked", bal != null ? { eaBal: bal, eaBalTs: Date.now() } : null);
+          return "eSIM Access: отозван, возврат попросили письмом";
         }
       }
       if (/^AKGR-/.test(String(id))) { await provider.refund(id); mark("PendingRefund"); return "MobiMatter: возврат оформлен, ждём деньги"; }
