@@ -2715,11 +2715,97 @@ function mount(app, opts) {
     return false;
   }
 
+  // ── План оператора по конкретному человеку (08.10.2026) ─────────────────
+  // Андрей закрывает компьютер, а решение по клиенту уже понятно: кладём его в
+  // .esim/caseplans.json, и сервер, когда человек ответит, действует по плану
+  // сам, без письма. Вид «companion»: две eSIM, вторая была для спутника. Если
+  // у спутника её нет — бесплатно выпускаем такую же новую, лишнюю отключаем и
+  // просим поставщика вернуть за неё деньги (письмо им с копией Андрею).
+  const CASEPLANS_FILE = path.join(DIR, "caseplans.json");
+  function casePlanFor(chat) {
+    const now = Date.now();
+    return readJson(CASEPLANS_FILE, []).find((p) => !p.done && now < (p.until || 0) &&
+      ((p.chats || []).indexOf(chat.id) >= 0 || (p.tg && String(chat.tgChatId || "") === String(p.tg)) ||
+       (p.phone && String(chat.contact || "").replace(/\D/g, "").indexOf(p.phone) >= 0))) || null;
+  }
+  function casePlanSave(id, patch) {
+    const all = readJson(CASEPLANS_FILE, []);
+    const p = all.find((x) => x.id === id);
+    if (p) { Object.assign(p, patch); writeJson(CASEPLANS_FILE, all); }
+  }
+  async function companionReissue(plan, chat) {
+    const spare = readJson(ORDERS_FILE, []).find((x) => x.id === plan.spareOrder);
+    if (!spare || !spare.productId) throw new Error("нет заказа " + plan.spareOrder);
+    const fresh = await esimaccess.createOrder(spare.productId);
+    const orders = readJson(ORDERS_FILE, []);
+    const gift = {
+      id: crypto.randomBytes(6).toString("hex"), ts: Date.now(), status: "done",
+      productId: spare.productId, label: (spare.label || "eSIM") + " · для спутника, замена",
+      priceRub: 0, listPriceRub: 0, email: spare.email || null, phone: spare.phone || null,
+      custKey: spare.custKey || null, tgChatId: spare.tgChatId || null,
+      base: spare.base || BASE_URL, paidAt: Date.now(), src: "esimaccess",
+      mmOrderId: fresh.orderId, iccid: fresh.iccid || null, costUsd: spare.costUsd || null,
+      giftFor: spare.id, giftReason: "вторая eSIM попала не на тот телефон, выпустили спутнику новую",
+    };
+    gift.myUrl = myUrlFor(gift, fresh.orderId);
+    orders.unshift(gift); writeJson(ORDERS_FILE, orders);
+    const r = await refundFromSupplier(spare, "the customer installed the companion's eSIM on the wrong phone, data unused; we issued a new one")
+      .catch((e) => "ошибка: " + e.message);
+    console.log("esim план " + plan.id + ": спутнику выдана " + gift.mmOrderId + ", лишняя " + spare.mmOrderId + ": " + r);
+    return { gift, refund: r, spare };
+  }
+  async function casePlanAnswer(chat, last) {
+    const plan = casePlanFor(chat);
+    if (!plan || plan.kind !== "companion" || last.ts < (plan.since || 0) || !doctor.aiOn()) return false;
+    const mine = await ordersByContact(chat.contact, chat.page).catch(() => []);
+    const st = mine.length ? await orderStates(mine).catch(() => []) : [];
+    const seen = await doctor.diagnose({
+      messages: chat.messages, orders: mine, states: st, ua: chat.ua, ip: chat.ip, refundAllowed: false,
+      tried: ["ПЛАН ОПЕРАТОРА ПО ЭТОМУ ЧЕЛОВЕКУ. Он купил две eSIM, вторая была для его спутника. Мы ответили, что вторая, " +
+        "похоже, уже стоит на другом устройстве, и попросили проверить телефон спутника. Как поступить с его ответом: " +
+        "если у спутника eSIM нет, обе стоят у самого человека, или он просит переделать eSIM для второго человека — action replace " +
+        "(мы бесплатно выпустим новую eSIM для спутника и отключим лишнюю; reply коротко, текст с QR подставим сами). " +
+        "Если подтверждает, что у спутника eSIM есть, — action advice: как включить её в Турции (выбрать эту линию для мобильного " +
+        "интернета, включить «Роуминг данных»). Если требует деньги — action advice: предложи бесплатно выпустить новую eSIM для " +
+        "спутника, деньги не обещай. Если он отказывается от замены и снова требует деньги — action escalate."],
+    }).catch((e) => { console.error("esim план, доктор:", e.message); return null; });
+    if (!seen) return false;
+    if (seen.action === "replace") {
+      let res = null;
+      try { res = await companionReissue(plan, chat); } catch (e) { console.error("esim план, замена:", e.message); }
+      if (!res) { callOperator(chat, "по плану нужно выпустить eSIM спутнику, но выпуск не прошёл"); return true; }
+      casePlanSave(plan.id, { done: Date.now(), result: "reissued", gift: res.gift.mmOrderId, refund: res.refund });
+      support.botMessage(chat.id,
+        "Готово: бесплатно выпустили новую eSIM для второго человека. Перешлите ему эту ссылку, там его QR-код:\n" + res.gift.myUrl +
+        "\n\nПусть отсканирует его на своём телефоне: Настройки, Сотовая связь (или SIM-карты), Добавить eSIM. Лучше дома по Wi-Fi, до поездки. " +
+        "В Турции для этой линии включите «Роуминг данных».\n\n" +
+        "Лишнюю вторую eSIM на вашем телефоне мы отключили, её можно удалить в настройках. Ваша первая eSIM работает как обычно.", "autoFix2");
+      support.queueMail({
+        subject: "VOYO eSIM: спутнику клиента выпустили новую eSIM по плану",
+        text: "Клиент " + (chat.contact || "—") + " подтвердил, что вторая eSIM не у спутника.\n\n" +
+          "Выпустили спутнику новую: " + res.gift.label + " (" + res.gift.mmOrderId + "), ссылка отправлена в чат.\n" +
+          "Лишнюю " + res.spare.mmOrderId + " отключили. Возврат у поставщика: " + res.refund + ".\n" +
+          "Ответ eSIM Access о возврате на баланс придёт на эту почту (письмо им ушло с копией вам).\n\nЧат: " + chat.id,
+      });
+      support.flushQueue(opts && opts.sendMail).catch(() => {});
+      return true;
+    }
+    if (seen.action === "escalate") {
+      casePlanSave(plan.id, { escalated: Date.now() });
+      callOperator(chat, "клиент отказывается от бесплатной замены и требует вернуть деньги за вторую eSIM");
+      return true;
+    }
+    if (seen.reply) { support.botMessage(chat.id, seen.reply, "autoDiag"); return true; }
+    return false;
+  }
+
   async function chatAutoAnswer(chat) {
     try {
       if (!chat || !chat.messages || !chat.messages.length) return;
       const last = chat.messages.filter((m) => m.from === "client").pop();
       if (!last) return;
+      // по человеку есть план оператора — действуем по нему
+      if (await casePlanAnswer(chat, last).catch((e) => { console.error("esim план:", e.message); return false; })) return;
       if (THANKS_RE.test(last.text) && last.text.length < 60) return;   // человеку уже хорошо
       // человек пишет снова после нашего разбора — значит разбор не помог,
       // включаем вторую линию: она чинит сама, а не зовёт оператора
