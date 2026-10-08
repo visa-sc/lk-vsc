@@ -2964,7 +2964,7 @@ function mount(app, opts) {
   // человек открыл чат — заодно заглядываем в почту, чтобы ответ появился сразу
   let _lastPeek = 0;
   app.get("/esim/api/chat/poll", (req, res) => {
-    if (Date.now() - _lastPeek > 15000) { _lastPeek = Date.now(); support.pollMailbox().catch(() => {}); }
+    if (Date.now() - _lastPeek > 120000) { _lastPeek = Date.now(); support.pollMailbox().catch(() => {}); }
     const chat = support.findChat(String(req.query.cid || ""));
     res.set("Cache-Control", "no-store");
     if (!chat) return res.json({ success: true, messages: [] });
@@ -2987,7 +2987,7 @@ function mount(app, opts) {
     if (!chat || !chat.tgChatId || !opts || !opts.notifyTelegram) return;
     opts.notifyTelegram({ chatId: chat.tgChatId, kind: "support", text }).catch(() => {});
   });
-  setInterval(() => { support.pollMailbox().catch(() => {}); }, 45000);
+  setInterval(() => { support.pollMailbox().catch(() => {}); }, 300000); // 08.10.2026: раз в 5 мин (mail.ru отказывал во входе при опросе раз в 45 с); при открытом чате — раз в 2 мин
   setTimeout(() => { support.flushQueue(opts && opts.sendMail).catch(() => {}); support.pollMailbox().catch(() => {}); }, 45000);
 
   // ── «Не получается подключить eSIM»: форма обращения + инструкция ──
