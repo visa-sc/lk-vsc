@@ -9106,21 +9106,27 @@ app.get("/admin/api/vsc/recon-summary", requireVscRecon, (req, res) => res.json(
 // form_invalid — форма показала ошибку поля (например «Некорректный номер телефона»),
 // form_error — сбой отправки (сервер не ответил/ответил ошибкой/не сохранил заявку).
 // Плюс сохранённые заявки из /var/www/spbcopy/leads.json. Считается на лету, последние 31 день.
+// ?site=msk — то же для Москвы (visa-sc.ru на нашем коде; Андрей 09.10.2026). У Москвы считаем
+// только с переезда домена (stat/start.json): до него в журнале лишь проверочные отправки копии.
 app.get("/admin/api/vsc/spb-forms", requireVscRecon, (req, res) => {
-  const STAT = process.env.SPBCOPY_STAT || "/var/www/spbcopy/stat";
-  const LEADS = process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json";
+  const MSK = req.query.site === "msk";
+  const STAT = MSK ? "/var/www/mskcopy/stat" : (process.env.SPBCOPY_STAT || "/var/www/spbcopy/stat");
+  const LEADS = MSK ? "/var/www/mskcopy/leads.json" : (process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json");
+  const HOST_RE = MSK ? /^(www\.)?visa-sc\.ru$/i : /^(www\.)?spb\.visa-sc\.ru$/i;
   const msk = (iso) => new Date(new Date(iso).getTime() + 3 * 3600e3).toISOString();
   const since = msk(new Date(Date.now() - 31 * 864e5).toISOString()).slice(0, 10);
   const days = {};
   const day = (d) => (days[d] = days[d] || { day: d, submits: 0, leads: 0, invalid: 0, errors: 0, items: [] });
   let start = null;
   try { start = JSON.parse(fs.readFileSync(path.join(STAT, "start.json"), "utf8")).at; } catch (_) {}
+  if (MSK && !start) return res.json({ success: true, start: null, days: [], notLive: true });
   try {
     for (const f of fs.readdirSync(STAT).filter((x) => /^events-\d{4}-\d{2}\.jsonl$/.test(x)).sort()) {
       for (const line of fs.readFileSync(path.join(STAT, f), "utf8").split("\n")) {
         if (!line.trim()) continue;
         let e; try { e = JSON.parse(line); } catch (_) { continue; }
         if (!/^form_(submit|invalid|error)$/.test(e.type)) continue;
+        if (MSK && e.at < start) continue;
         const m = msk(e.at); const d = m.slice(0, 10);
         if (d < since) continue;
         const o = day(d);
@@ -9143,7 +9149,7 @@ app.get("/admin/api/vsc/spb-forms", requireVscRecon, (req, res) => {
       }
     } catch (_) {}
     for (const l of JSON.parse(fs.readFileSync(LEADS, "utf8"))) {
-      if (!/^(www\.)?spb\.visa-sc\.ru$/i.test(l.host || "")) continue;
+      if (!HOST_RE.test(l.host || "")) continue;
       const d = msk(l.at).slice(0, 10);
       if (d >= since) day(d).leads++;
     }

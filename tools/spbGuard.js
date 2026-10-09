@@ -18,6 +18,13 @@
  * одно письмо «исправлено». Состояние — /var/lib/spb-guard/state.json.
  *
  * Запуск: node tools/spbGuard.js [--dry] (cron каждые 2 минуты от root). Живой amoCRM не трогает.
+ *
+ * Тот же сторож для МОСКВЫ (visa-sc.ru на нашем коде, с переноса домена) — переменные GUARD_*:
+ *   GUARD_HOST=visa-sc.ru GUARD_DIR=/var/www/mskcopy GUARD_PORT=3007 GUARD_USER=mskadmin
+ *   GUARD_PROC=mskcopy GUARD_AMO=msk-amo GUARD_METRIKA=36733265 GUARD_CITY=МСК
+ *   GUARD_NUMBERS=<номера сайта через запятую> GUARD_STATE=/var/lib/msk-guard
+ * Без переменных — Питер, как было. Включать московский cron только ПОСЛЕ переноса домена:
+ * до него https для visa-sc.ru на нашем nginx нет, и сторож считал бы сайт упавшим.
  * ───────────────────────────────────────────────────────────────────────────── */
 "use strict";
 const fs = require("fs");
@@ -31,10 +38,19 @@ const DRY = process.argv.includes("--dry");
 const TO = process.env.SPB_GUARD_TO || "ap@spt1.ru";
 // Андрей 02.10.2026: о проблемах пишем только Петрову, без копии.
 const CC = process.env.SPB_GUARD_CC || "";
-const STATE_DIR = "/var/lib/spb-guard";
+const STATE_DIR = process.env.GUARD_STATE || "/var/lib/spb-guard";
 const STATE = path.join(STATE_DIR, "state.json");
-const SPB = "/var/www/spbcopy";
-const SPB_NUMBERS = ["78122440468", "78122200365", "78124673878", "78122373387", "78122408545", "78122443427"];
+const SPB = process.env.GUARD_DIR || "/var/www/spbcopy";
+const SPB_NUMBERS = process.env.GUARD_NUMBERS ? process.env.GUARD_NUMBERS.split(",").map((x) => x.trim()).filter(Boolean) : ["78122440468", "78122200365", "78124673878", "78122373387", "78122408545", "78122443427"];
+const HOST = process.env.GUARD_HOST || "spb.visa-sc.ru";
+const HOST_RE = new RegExp("^(www\\.)?" + HOST.replace(/\./g, "\\.") + "$", "i");
+const PORT = Number(process.env.GUARD_PORT || 3006);
+const SITE_USER = process.env.GUARD_USER || "spbadmin";
+const SITE_PROC = process.env.GUARD_PROC || "spbcopy";
+const AMO_PROC = process.env.GUARD_AMO || "spb-amo";
+const METRIKA = process.env.GUARD_METRIKA || "95230258";
+const CITY = process.env.GUARD_CITY || "СПБ";
+const CITY_ADJ = CITY === "СПБ" ? "питерские" : "московские";
 const tail10 = (s) => String(s || "").replace(/\D/g, "").slice(-10);
 
 const sh = (c, t = 60000) => {
@@ -56,8 +72,8 @@ const get = (opts, mod = http) =>
     req.on("error", (e) => resolve({ status: 0, body: "", err: e.message }));
   });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const local = () => get({ host: "127.0.0.1", port: 3006, path: "/italy/", headers: { Host: "spb.visa-sc.ru", "X-Spbcopy-Check": "1" } });
-const pub = () => get({ host: "127.0.0.1", port: 443, path: "/italy/", servername: "spb.visa-sc.ru", headers: { Host: "spb.visa-sc.ru", "X-Spbcopy-Check": "1" }, rejectUnauthorized: true }, https);
+const local = () => get({ host: "127.0.0.1", port: PORT, path: "/italy/", headers: { Host: HOST, "X-Spbcopy-Check": "1" } });
+const pub = () => get({ host: "127.0.0.1", port: 443, path: "/italy/", servername: HOST, headers: { Host: HOST, "X-Spbcopy-Check": "1" }, rejectUnauthorized: true }, https);
 const pm2Status = (name, user) => {
   const out = sh(user ? `su - ${user} -c 'pm2 jlist'` : "pm2 jlist");
   try {
@@ -84,7 +100,7 @@ const pm2Status = (name, user) => {
     r = await local();
   }
   if (r.status !== 200) {
-    const did = DRY ? "(пробный заход — не перезапускал)" : (sh("su - spbadmin -c 'pm2 restart spbcopy'"), "перезапустил сервис сайта spbcopy");
+    const did = DRY ? "(пробный заход — не перезапускал)" : (sh(`su - ${SITE_USER} -c 'pm2 restart ${SITE_PROC}'`), "перезапустил сервис сайта " + SITE_PROC);
     await sleep(8000);
     const r2 = await local();
     issues.site = { what: `сайт не отвечал (код ${r.status || r.err})`, did, fixed: r2.status === 200 };
@@ -97,8 +113,8 @@ const pm2Status = (name, user) => {
       issues.site = { what: `сайт не открывался снаружи по https (код ${p.status || p.err})`, did, fixed: p2.status === 200 };
     } else {
       // Метрика: счётчик и очередь ym на месте (поймано 02.10 — пустая заглушка ym глушила Метрику)
-      const okM = /ym\(95230258|metrika\.95230258|mc\.yandex\.ru\/metrika/.test(p.body) && /window\.ym\.a=window\.ym\.a\|\|\[\]/.test(p.body);
-      if (!okM) issues.metrika = { what: "на странице нет счётчика Метрики 95230258 или сломана очередь ym — визиты в Метрику не считаются", did: "автоматически не чинится — нужна правка страниц", fixed: false };
+      const okM = new RegExp("ym\\(" + METRIKA + "|metrika\\." + METRIKA + "|mc\\.yandex\\.ru\\/metrika").test(p.body) && /window\.ym\.a=window\.ym\.a\|\|\[\]/.test(p.body);
+      if (!okM) issues.metrika = { what: "на странице нет счётчика Метрики " + METRIKA + " или сломана очередь ym — визиты в Метрику не считаются", did: "автоматически не чинится — нужна правка страниц", fixed: false };
       // сертификат
       const exp = p.cert && p.cert.valid_to ? Date.parse(p.cert.valid_to) : 0;
       const days = exp ? Math.floor((exp - now) / 864e5) : -1;
@@ -112,22 +128,22 @@ const pm2Status = (name, user) => {
   }
 
   // ── выгрузка заявок в amo ─────────────────────────────────────────────────
-  const amoSt = pm2Status("spb-amo");
+  const amoSt = pm2Status(AMO_PROC);
   if (amoSt !== "online" && amoSt !== "не прочитать") {
-    const did = DRY ? "(пробный заход)" : (sh("pm2 restart spb-amo"), "перезапустил выгрузку spb-amo");
+    const did = DRY ? "(пробный заход)" : (sh("pm2 restart " + AMO_PROC), "перезапустил выгрузку " + AMO_PROC);
     await sleep(5000);
-    issues.amo = { what: `выгрузка заявок в amoCRM остановилась (${amoSt})`, did, fixed: pm2Status("spb-amo") === "online" };
+    issues.amo = { what: `выгрузка заявок в amoCRM остановилась (${amoSt})`, did, fixed: pm2Status(AMO_PROC) === "online" };
   }
   try {
     const leads = JSON.parse(fs.readFileSync(path.join(SPB, "leads.json"), "utf8"));
     const stuck = leads.filter(
-      (e) => /^(www\.)?spb\.visa-sc\.ru$/i.test(e.host || "") && !e.amo && (e.data && (e.data.fields || []).some((f) => String(f.value || "").trim())) && now - Date.parse(e.at) > 10 * 60e3 && now - Date.parse(e.at) < 3 * 864e5
+      (e) => HOST_RE.test(e.host || "") && !e.amo && (e.data && (e.data.fields || []).some((f) => String(f.value || "").trim())) && now - Date.parse(e.at) > 10 * 60e3 && now - Date.parse(e.at) < 3 * 864e5
     );
     if (stuck.length) {
       const prev = state.leads && state.leads.healedAt;
       let did = "автоматически не чинится";
       if (!prev || now - prev > 30 * 60e3) {
-        did = DRY ? "(пробный заход)" : (sh("pm2 restart spb-amo"), "перезапустил выгрузку spb-amo — заявки уйдут в amo в течение минуты");
+        did = DRY ? "(пробный заход)" : (sh("pm2 restart " + AMO_PROC), "перезапустил выгрузку " + AMO_PROC + " — заявки уйдут в amo в течение минуты");
         state.leads = { ...(state.leads || {}), healedAt: now };
       }
       issues.leads = {
@@ -165,7 +181,7 @@ const pm2Status = (name, user) => {
       });
       if (down.length)
         issues.numbers = {
-          what: "питерские номера не на связи в АТС дольше 11 минут (звонки на них не проходят): " + down.map((t) => "+" + t.number + (t.name ? " (" + t.name + ")" : "") + " — " + t.status + ", с " + new Date(downSince(tail10(t.number)) + 3 * 3600e3).toISOString().slice(11, 16) + " МСК").join(", "),
+          what: CITY_ADJ + " номера не на связи в АТС дольше 11 минут (звонки на них не проходят): " + down.map((t) => "+" + t.number + (t.name ? " (" + t.name + ")" : "") + " — " + t.status + ", с " + new Date(downSince(tail10(t.number)) + 3 * 3600e3).toISOString().slice(11, 16) + " МСК").join(", "),
           did: "автоматически не чинится: регистрация линии — на стороне оператора/АТС; проверьте OnlinePBX → Номера",
           fixed: false
         };
@@ -184,7 +200,7 @@ const pm2Status = (name, user) => {
     if (errs.length)
       issues.forms = {
         what: `${errs.length} сбо(я) отправки формы за 30 минут: ` + errs.slice(0, 8).map((e) => `${new Date(Date.parse(e.at) + 3 * 3600e3).toISOString().slice(11, 16)} ${e.page} — ${e.value}`).join("; "),
-        did: "автоматически не чинится; подробности — /vsc → Ежемесячный контроль → «Формы заявок — СПБ»",
+        did: "автоматически не чинится; подробности — /vsc → Ежемесячный контроль → «Формы заявок — " + CITY + "»",
         fixed: false
       };
   } catch (_) {}
@@ -196,7 +212,7 @@ const pm2Status = (name, user) => {
   // ── письма ────────────────────────────────────────────────────────────────
   const { sendMail } = require(path.join(__dirname, "..", "mail.js"));
   const send = async (subject, lines) => {
-    const html = `<div style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif">${lines.map((l) => `<p style="margin:6px 0">${l}</p>`).join("")}<p style="color:#888;font-size:12px">Сторож spb.visa-sc.ru (tools/spbGuard.js), проверка каждые 2 минуты.</p></div>`;
+    const html = `<div style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif">${lines.map((l) => `<p style="margin:6px 0">${l}</p>`).join("")}<p style="color:#888;font-size:12px">Сторож ${HOST} (tools/spbGuard.js), проверка каждые 2 минуты.</p></div>`;
     if (DRY) return console.log("[письмо]", subject, lines.join(" | "));
     await sendMail(CC ? { to: TO, cc: CC, subject, html } : { to: TO, subject, html });
   };
@@ -204,20 +220,20 @@ const pm2Status = (name, user) => {
   for (const [k, v] of Object.entries(issues)) {
     const s = (state[k] = state[k] || {});
     if (v.fixed) {
-      await send(`spb.visa-sc.ru: был сбой — исправлено автоматически`, [`<b>Что было:</b> ${esc(v.what)}`, `<b>Что сделал:</b> ${esc(v.did)}`, `<b>Итог:</b> ✅ работает`]);
+      await send(`${HOST}: был сбой — исправлено автоматически`, [`<b>Что было:</b> ${esc(v.what)}`, `<b>Что сделал:</b> ${esc(v.did)}`, `<b>Итог:</b> ✅ работает`]);
       state[k] = { lastFixedAt: now };
       continue;
     }
     if (!s.since) s.since = now;
     if (!s.notifiedAt || now - s.notifiedAt > 60 * 60e3) {
-      await send(`⚠️ spb.visa-sc.ru: ${v.what.slice(0, 70)}`, [`<b>Проблема:</b> ${esc(v.what)}`, `<b>Что сделал:</b> ${esc(v.did)}`, `<b>Итог:</b> пока не исправлено — проверю снова через 2 минуты`]);
+      await send(`⚠️ ${HOST}: ${v.what.slice(0, 70)}`, [`<b>Проблема:</b> ${esc(v.what)}`, `<b>Что сделал:</b> ${esc(v.did)}`, `<b>Итог:</b> пока не исправлено — проверю снова через 2 минуты`]);
       s.notifiedAt = now;
     }
   }
   // проблемы, которые ушли сами или после починки
   for (const k of Object.keys(state)) {
     if (issues[k] || !state[k].since) continue;
-    if (state[k].notifiedAt) await send(`spb.visa-sc.ru: исправлено`, [`<b>Проблема «${esc(k)}» больше не наблюдается</b> (была с ${new Date(state[k].since + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ")} МСК).`]);
+    if (state[k].notifiedAt) await send(`${HOST}: исправлено`, [`<b>Проблема «${esc(k)}» больше не наблюдается</b> (была с ${new Date(state[k].since + 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ")} МСК).`]);
     delete state[k];
   }
   if (!DRY) fs.writeFileSync(STATE, JSON.stringify(state));

@@ -4109,7 +4109,7 @@
         // ── Сверка контактов — ТРЕТЬИМ сверху (по просьбе Андрея 31.08); админ и
         //    руководитель с правом recon (Петров, 02.10.2026). Сразу под ней — «Формы заявок».
         const vscReconOk = currentRole() === "admin" || !!(myVscRestrict && Array.isArray(myVscRestrict.tabs) && myVscRestrict.tabs.indexOf("recon") >= 0);
-        if (vscReconOk) { vscContent.appendChild(vscReconBlock()); vscContent.appendChild(vscSpbFormsBlock()); }
+        if (vscReconOk) { vscContent.appendChild(vscReconBlock()); vscContent.appendChild(vscSpbFormsBlock("msk")); vscContent.appendChild(vscSpbFormsBlock()); }
         // ── Цикл сделки — ЧЕТВЁРТЫМ сверху (по просьбе Андрея 06.09) ──
         vscContent.appendChild(vscDealCycleBlock());
         // ── Скорость первого касания лида (был 3-м, теперь 5-й) ──
@@ -6683,9 +6683,11 @@
       // могла потеряться), жёлтая галочка — клиенты ошибались в полях (форма
       // подсказала и не пустила), зелёная — без ошибок. «подробнее» — время, страница
       // и причина каждого случая. Данные /admin/api/vsc/spb-forms, считаются на лету.
-      function vscSpbFormsBlock() {
+      // site: "spb" (по умолчанию) или "msk" — тот же блок для visa-sc.ru (Андрей 09.10.2026).
+      function vscSpbFormsBlock(site) {
+        const SITE = site === "msk" ? { key: "msk", city: "МСК", host: "visa-sc.ru" } : { key: "spb", city: "СПБ", host: "spb.visa-sc.ru" };
         const wrap = document.createElement("div");
-        const h = document.createElement("div"); h.className = "ref-sec-h"; h.style.marginTop = "22px"; h.textContent = "Формы заявок — СПБ";
+        const h = document.createElement("div"); h.className = "ref-sec-h"; h.style.marginTop = "22px"; h.textContent = "Формы заявок — " + SITE.city;
         wrap.appendChild(h);
         const box = document.createElement("div"); box.className = "vsc-chart";
         box.innerHTML = '<div class="loading-state">Загружаем журнал форм…</div>';
@@ -6721,14 +6723,15 @@
               + items.map(function (it) {
                   const why = it.kind === "звонок не дошёл до АТС" ? String(it.reason || "").replace(/^нажал на номер (\S+),.*$/, "$1") : (it.reason || "без подробностей");
                   return '<div style="padding-left:14px;color:' + col + ';overflow-wrap:anywhere;">' + escapeHtml(it.time) + " · "
-                    + '<a href="https://spb.visa-sc.ru' + escapeHtml(it.page) + '" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-decoration-color:rgba(0,0,0,.2);">' + escapeHtml(it.page) + "</a>"
+                    + '<a href="https://' + SITE.host + escapeHtml(it.page) + '" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-decoration-color:rgba(0,0,0,.2);">' + escapeHtml(it.page) + "</a>"
                     + " — " + escapeHtml(why) + "</div>";
                 }).join("");
           }).join("");
         }
-        fetch("/admin/api/vsc/spb-forms", { headers: { Authorization: "Bearer " + getToken() } })
+        fetch("/admin/api/vsc/spb-forms" + (SITE.key === "msk" ? "?site=msk" : ""), { headers: { Authorization: "Bearer " + getToken() } })
           .then(function (r) { return r.json(); })
           .then(function (j) {
+            if (j && j.success && j.notLive) { box.innerHTML = '<div class="vsc-empty">Заработает с переноса домена visa-sc.ru на наш сервер — с этого момента здесь будут отправки форм, ошибки и сбои, как у Питера.</div>'; return; }
             if (!j || !j.success) { box.innerHTML = '<div class="vsc-empty">Не удалось загрузить журнал форм' + (j && j.message ? ": " + escapeHtml(j.message) : "") + '.</div>'; return; }
             // Только полные сутки, как в сверке. Тихие дни (ни отправок, ни заявок) сервер
             // не присылает — достраиваем их нулями от начала журнала до вчера.
@@ -6744,7 +6747,7 @@
             }
             if (!days.length) { box.innerHTML = '<div class="vsc-empty">Журнал форм начался сегодня — первая строка появится завтра.</div>'; return; }
             const top = days[0];
-            let html = '<div style="font-size:11.5px;color:#8a8f9c;margin-bottom:8px;">spb.visa-sc.ru на нашем сервере · за ' + fmtDay(top.day) + " (полные сутки)</div>";
+            let html = '<div style="font-size:11.5px;color:#8a8f9c;margin-bottom:8px;">' + SITE.host + ' на нашем сервере · за ' + fmtDay(top.day) + " (полные сутки)</div>";
             const topHas = (top.items || []).length > 0;
             html += '<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">'
               + '<div style="font-size:13px;color:#1d2330;display:flex;flex-wrap:wrap;align-items:baseline;row-gap:4px;">' + formsLine(top) + "</div>"

@@ -24,6 +24,16 @@
  *   --test  выгрузить и заявки с тестового домена (для разовой проверки);
  *   --only=N выгрузить одну заявку с номером N, с любого домена.
  * Выключатель: SPBCOPY_AMO=0 в .env. Cron — раз в 2 минуты.
+ *
+ * Тот же инструмент выгружает и МОСКВУ (visa-sc.ru на нашем коде, с 09.10.2026) — отдельный
+ * процесс pm2 «msk-amo» с переменными (у Питера всё по умолчанию, как было):
+ *   AMO_PUSH_SITE_ENV=/var/www/mskcopy/.env — откуда взять SPBCOPY_API_TOKEN и SPBCOPY_LIVE_HOSTS сайта;
+ *   SPBCOPY_API_URL=https://msk.voyotravel.ru — откуда брать новые заявки;
+ *   AMO_PUSH_SITE=visa-sc.ru, AMO_PUSH_TAGS=Flexbe, AMO_PUSH_CONTACT_SOURCE=Основной —
+ *   так московские сделки создавал Flexbe (образец 09.10.2026: метка только «Flexbe»,
+ *   источник нового контакта «Основной»; «MSK» и прочее потом ставят автоматизации amo).
+ *   Поле ip_location (город по IP) Flexbe заполнял, мы — нет (как и у Питера).
+ *   Выключатель Москвы: AMO_PUSH_OFF=1 у процесса msk-amo.
  * ───────────────────────────────────────────────────────────────────────────── */
 "use strict";
 
@@ -31,8 +41,18 @@ const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 const axios = require("axios");
 
+// Настройки другого сайта (Москва) — из его .env, чтобы ключи не дублировать и не светить в pm2.
+if (process.env.AMO_PUSH_SITE_ENV) {
+  try {
+    const site = require("dotenv").parse(require("fs").readFileSync(process.env.AMO_PUSH_SITE_ENV));
+    for (const k of ["SPBCOPY_API_TOKEN", "SPBCOPY_LIVE_HOSTS"]) if (site[k]) process.env[k] = site[k];
+  } catch (e) {
+    console.log("не прочитал " + process.env.AMO_PUSH_SITE_ENV + ": " + e.message);
+  }
+}
 const API = (process.env.SPBCOPY_API_URL || "https://spb.voyotravel.ru").replace(/\/$/, "");
 const SPB_TOKEN = process.env.SPBCOPY_API_TOKEN || "";
+const SITE = process.env.AMO_PUSH_SITE || "spb.visa-sc.ru";
 const AMO_TOKEN = process.env.AMO_ACCESS_TOKEN;
 const SUB = String(process.env.AMO_SUBDOMAIN || "").replace(/^https?:\/\//, "").replace(/\..*/, "");
 const AMO = `https://${SUB}.amocrm.ru`;
@@ -47,7 +67,7 @@ const ONLY = (args.find((a) => a.startsWith("--only=")) || "").slice(7); // од
 const PIPELINE_ID = 138231; // Отдел Продаж
 const STATUS_ID = 10687611; // Ещё не связывались
 const RESPONSIBLE_ID = 787932; // Visa Services Center
-const TAGS = ["Flexbe", "SPB"];
+const TAGS = (process.env.AMO_PUSH_TAGS || "Flexbe,SPB").split(",").map((t) => t.trim()).filter(Boolean);
 
 const F = {
   page: 479442, // Страница
@@ -78,7 +98,7 @@ const QUIZ = [
   { re: /занятост/i, id: 445392 }
 ];
 const CONTACT_SOURCE_FIELD = 571754; // «Источник» у контакта
-const CONTACT_SOURCE_VALUE = "СПБ";
+const CONTACT_SOURCE_VALUE = process.env.AMO_PUSH_CONTACT_SOURCE || "СПБ";
 
 // ── amo с паузой 1 запрос в секунду ──────────────────────────────────────────
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -144,7 +164,7 @@ async function findContact(phone) {
 const txt = (id, v) => (v ? { field_id: id, values: [{ value: String(v).slice(0, 250) }] } : null);
 
 async function buildLead(lead) {
-  const pageUrl = `http://${lead.host && LIVE_HOSTS.includes(lead.host) ? lead.host : "spb.visa-sc.ru"}${lead.pagePath || "/"}`;
+  const pageUrl = `http://${lead.host && LIVE_HOSTS.includes(lead.host) ? lead.host : SITE}${lead.pagePath || "/"}`;
   const fields = [
     txt(F.page, lead.pageTitle),
     txt(F.url, pageUrl),
@@ -210,7 +230,8 @@ const BACKOFF = [60e3, 5 * 60e3, 15 * 60e3, 60 * 60e3];
 const fails = new Map();
 
 async function runOnce() {
-  if (process.env.SPBCOPY_AMO === "0") return console.log("выгрузка в amo выключена (SPBCOPY_AMO=0)");
+  if (process.env.AMO_PUSH_OFF === "1") return console.log("выгрузка " + SITE + " в amo выключена (AMO_PUSH_OFF=1)");
+  if (!process.env.AMO_PUSH_SITE && process.env.SPBCOPY_AMO === "0") return console.log("выгрузка в amo выключена (SPBCOPY_AMO=0)");
   if (!AMO_TOKEN || !SUB || !SPB_TOKEN) return console.log("нет AMO_ACCESS_TOKEN / AMO_SUBDOMAIN / SPBCOPY_API_TOKEN");
 
   const { data } = await axios.get(`${API}/leads/api/new?token=${encodeURIComponent(SPB_TOKEN)}`, { timeout: 30000 });
@@ -240,7 +261,7 @@ async function runOnce() {
       if (!leadId) throw new Error("amo не вернул номер сделки");
       if (unmapped.length) {
         await amo("post", `/api/v4/leads/${leadId}/notes`, [
-          { note_type: "common", params: { text: "Заявка с сайта spb.visa-sc.ru\n" + unmapped.join("\n") } }
+          { note_type: "common", params: { text: "Заявка с сайта " + SITE + "\n" + unmapped.join("\n") } }
         ]);
       }
       done.push({ id: lead.id, leadId, contactId: contact ? contact.id : null });
