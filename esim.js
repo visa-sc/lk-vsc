@@ -1753,7 +1753,7 @@ function mount(app, opts) {
       on: () => eaMode() !== "0",
       read: async () => Number((await esimaccess.getBalance()).balanceUsd),
       risk: "Ниже $" + EA_RESERVE_USD + " их пакеты прячутся с витрины — а это весь дешёвый вход " +
-        "(Турция 59 ₽, Китай 79 ₽) и вся реклама, которая на эти цены ведёт.",
+        "(самые дешёвые тарифы Турции, Китая и других стран) и вся реклама, которая на эти цены ведёт.",
       how: "Пополнить: console.esimaccess.com → Balance → Recharge (от $50).",
     },
     {
