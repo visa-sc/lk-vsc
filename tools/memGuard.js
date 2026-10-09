@@ -8,7 +8,7 @@
  *   low   — свободной памяти (MemAvailable) меньше 500 МБ три проверки подряд (~15 мин);
  *   swap  — сервер постоянно гоняет файл подкачки: больше 100 страниц/с туда-обратно
  *           (≈0,4 МБ/с) три проверки подряд;
- *   swapfull — файл подкачки занят больше чем на 85% три проверки подряд;
+ *   swapfull — подкачка занята больше чем на 85% И при этом свободно меньше 800 МБ или идёт обмен;
  *   oom   — система убила процесс из-за нехватки памяти (сразу, без ожидания).
  * Письмо о проблеме — не чаще раза в 12 часов на одну проблему; когда всё прошло — одно
  * письмо «в норме». В письме — сколько свободно и кто сколько занимает.
@@ -30,6 +30,7 @@ const STATE = path.join(STATE_DIR, "state.json");
 const LOW_MB = Number(process.env.MEM_GUARD_LOW_MB || 500);
 const SWAP_RATE = Number(process.env.MEM_GUARD_SWAP_RATE || 100); // страниц в секунду
 const SWAP_FULL = 0.85;
+const SWAP_FULL_LOW_MB = 800;
 const STREAK = 3;
 const REPEAT_MS = 12 * 3600 * 1000;
 
@@ -72,7 +73,9 @@ async function send(subject, lines) {
   const cond = {
     low: availMb < LOW_MB,
     swap: rate > SWAP_RATE,
-    swapfull: swapShare > SWAP_FULL
+    // заполненная подкачка сама по себе не беда: Linux выносит туда давно не нужное и при
+    // свободной памяти; тревожно, только если вместе с ней мало памяти или идёт обмен (09.10.2026)
+    swapfull: swapShare > SWAP_FULL && (availMb < SWAP_FULL_LOW_MB || rate > SWAP_RATE / 4)
   };
   for (const k of Object.keys(cond)) st.streak[k] = cond[k] ? (st.streak[k] || 0) + 1 : 0;
   const active = Object.keys(cond).filter((k) => st.streak[k] >= STREAK);
