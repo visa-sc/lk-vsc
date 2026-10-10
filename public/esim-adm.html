@@ -104,7 +104,6 @@
   .ig-title{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:17px;font-weight:700;color:#161d45;margin:0 0 16px;}
   .ig-sum{margin-left:auto;font-size:13px;font-weight:500;color:var(--mut2);}
   .ig-h{font-size:14px;font-weight:700;color:#161d45;margin:0 0 10px;}
-  #tChan .sub{font-size:11px;color:var(--mut2);font-weight:400;margin-top:2px;white-space:nowrap;}
   .fun-note{color:var(--mut2);font-size:12px;margin-top:12px;}
   @media(max-width:720px){
     .hero-conv{gap:14px;padding:18px}.hero-conv .num{font-size:42px}
@@ -936,29 +935,31 @@
   /* ── реклама ── */
   RENDER.tChan = function(){ renderChannels(); };
   function renderChannels(){
-    var list = DATA.channels, s = { orders:0, revenue:0, margin:0, spend:0, profit:0 };
-    list.forEach(function(c){ s.orders += c.orders; s.revenue += c.revenue; s.margin += c.margin; s.spend += c.spend; s.profit += c.profit; });
+    var list = DATA.channels, s = { orders:0, revenue:0, site:0, bot:0, margin:0, spend:0, profit:0 };
+    list.forEach(function(c){ s.orders += c.orders; s.revenue += c.revenue; s.site += c.revSite || 0; s.bot += c.revBot || 0; s.margin += c.margin; s.spend += c.spend; s.profit += c.profit; });
     el("adsNote").textContent = s.spend ? ("итог " + RU(s.profit) + " ₽") : "";
-    var R = [0,1,1,1,1,1,1,1];
+    var R = [0,1,1,1,1,1,1,1,1,1];
     var rows = sortRows("tChan", list, {
       name: function(c){ return c.name; }, orders: function(c){ return c.orders; }, revenue: function(c){ return c.revenue; },
+      site: function(c){ return c.revSite || 0; }, bot: function(c){ return c.revBot || 0; },
       margin: function(c){ return c.margin; }, spend: function(c){ return c.spend || null; },
       drr: function(c){ return c.spend && c.revenue ? c.drr : null; }, cpo: function(c){ return c.spend && c.orders ? c.cpo : null; },
       profit: function(c){ return c.profit; } });
     el("tChan").innerHTML = sortHead("tChan", [
         { t: "Канал", k: "name" }, { t: "Заказов", k: "orders", r: 1, num: 1 }, { t: "Выручка", k: "revenue", r: 1, num: 1 },
+        { t: "Через сайт", k: "site", r: 1, num: 1 }, { t: "Через бот", k: "bot", r: 1, num: 1 },
         { t: "Маржа", k: "margin", r: 1, num: 1 }, { t: "Расход", k: "spend", r: 1, num: 1 }, { t: "ДРР", k: "drr", r: 1, num: 1 },
         { t: "Заказ стоит", k: "cpo", r: 1, num: 1 }, { t: "Итог", k: "profit", r: 1, num: 1 } ]) +
       "<tbody>" + rows.map(function(c){
         // где купили: на сайте или в боте (бот — витрина, а не канал рекламы)
-        var split = c.revBot ? '<div class="sub">сайт ' + RU(c.revSite || 0) + " · бот " + RU(c.revBot) + "</div>" : "";
-        return row([esc(c.name), RU(c.orders), RU(c.revenue) + " ₽" + split, RU(c.margin) + " ₽",
+        var rub = function(v){ return v ? RU(v) + " ₽" : DASH; };
+        return row([esc(c.name), RU(c.orders), RU(c.revenue) + " ₽", rub(c.revSite), rub(c.revBot), RU(c.margin) + " ₽",
           c.spend ? RU(c.spend) + " ₽" : DASH,
           c.spend && c.revenue ? pct(c.drr) : DASH,
           c.spend && c.orders ? RU(c.cpo) + " ₽" : DASH,
           money(c.profit, true)], R);
       }).join("") + "</tbody>" +
-      "<tfoot>" + row(["Всего", RU(s.orders), RU(s.revenue) + " ₽", RU(s.margin) + " ₽",
+      "<tfoot>" + row(["Всего", RU(s.orders), RU(s.revenue) + " ₽", s.site ? RU(s.site) + " ₽" : "—", s.bot ? RU(s.bot) + " ₽" : "—", RU(s.margin) + " ₽",
         s.spend ? RU(s.spend) + " ₽" : "—",
         s.spend && s.revenue ? pct(Math.round(s.spend / s.revenue * 1000) / 10) : "—",
         s.spend && s.orders ? RU(s.spend / s.orders) + " ₽" : "—",
