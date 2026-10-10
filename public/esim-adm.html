@@ -104,6 +104,7 @@
   .ig-title{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:17px;font-weight:700;color:#161d45;margin:0 0 16px;}
   .ig-sum{margin-left:auto;font-size:13px;font-weight:500;color:var(--mut2);}
   .ig-h{font-size:14px;font-weight:700;color:#161d45;margin:0 0 10px;}
+  #tChan .sub{font-size:11px;color:var(--mut2);font-weight:400;margin-top:2px;white-space:nowrap;}
   .fun-note{color:var(--mut2);font-size:12px;margin-top:12px;}
   @media(max-width:720px){
     .hero-conv{gap:14px;padding:18px}.hero-conv .num{font-size:42px}
@@ -949,7 +950,9 @@
         { t: "Маржа", k: "margin", r: 1, num: 1 }, { t: "Расход", k: "spend", r: 1, num: 1 }, { t: "ДРР", k: "drr", r: 1, num: 1 },
         { t: "Заказ стоит", k: "cpo", r: 1, num: 1 }, { t: "Итог", k: "profit", r: 1, num: 1 } ]) +
       "<tbody>" + rows.map(function(c){
-        return row([esc(c.name), RU(c.orders), RU(c.revenue) + " ₽", RU(c.margin) + " ₽",
+        // где купили: на сайте или в боте (бот — витрина, а не канал рекламы)
+        var split = c.revBot ? '<div class="sub">сайт ' + RU(c.revSite || 0) + " · бот " + RU(c.revBot) + "</div>" : "";
+        return row([esc(c.name), RU(c.orders), RU(c.revenue) + " ₽" + split, RU(c.margin) + " ₽",
           c.spend ? RU(c.spend) + " ₽" : DASH,
           c.spend && c.revenue ? pct(c.drr) : DASH,
           c.spend && c.orders ? RU(c.cpo) + " ₽" : DASH,
@@ -999,7 +1002,8 @@
   }
   function chanName(k){
     return ({ yandex:"Яндекс Директ", google:"Google Ads", telegram_bot:"Телеграм-бот", direct:"Прямой заход", lk:"Личный кабинет VOYO",
-      vk:"ВКонтакте", blogger:"Блогеры", sms:"SMS", sms_mass:"SMS-рассылка", email:"Email", tg:"Telegram-рассылка" })[k] || k;
+      vk:"ВКонтакте", blogger:"Блогеры", sms:"SMS", sms_mass:"SMS-рассылка", email:"Email", tg:"Telegram-рассылка",
+      instagram:"Instagram", tg_channel:"Telegram-канал", referral:"Рефералы" })[k] || k;
   }
   RENDER.tCust = function(){ renderCustomers(); };
   function renderCustomers(){

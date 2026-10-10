@@ -4128,11 +4128,16 @@ function mount(app, opts) {
     if (mail) return mail;
     if (o.fromLk || (readJson(LK_HISTORY_FILE, []).indexOf(o.id) >= 0)) return "lk";
     if (o.tgChatId) {
-      // в бота пришли по ссылке из Instagram или из нашего Telegram-канала (08.10.2026)
+      // Бот — такая же витрина, как сайт, а не рекламный канал (Андрей, 10.10.2026):
+      // покупку относим к тому, откуда человек пришёл в бота, а если не знаем — к прямым
       const f = funnelData(), v = "tg" + o.tgChatId;
       if (f.igBot && f.igBot[v] != null) return "instagram";
       if (f.tgchBot && f.tgchBot[v] != null) return "tg_channel";
-      return "telegram_bot";
+      const from = (f.botSrc && f.botSrc[v]) || "";
+      if (/^ref_/.test(from)) return "referral";
+      if (from === "blogger" || from === "blog") return "blogger";
+      if (["sms", "sms_mass", "email", "tg"].indexOf(from) >= 0) return from;
+      return "direct";
     }
     return "direct";
   }
@@ -4140,7 +4145,7 @@ function mount(app, opts) {
     yandex: "Яндекс Директ", google: "Google Ads", telegram_bot: "Телеграм-бот",
     direct: "Прямые заходы", vk: "ВКонтакте", blogger: "Блогеры", lk: "Личный кабинет VOYO",
     sms: "SMS", sms_mass: "SMS-рассылка", email: "Email", tg: "Telegram-рассылка",
-    instagram: "Instagram", tg_channel: "Telegram-канал",
+    instagram: "Instagram", tg_channel: "Telegram-канал", referral: "Рефералы",
   };
   function channelName(k) { return CHANNEL_NAMES[k] || k; }
   const mskDay = (ts) => new Date(ts + 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -4460,6 +4465,13 @@ function mount(app, opts) {
     if (b.step === "start" && b.ig != null && b.src === "bot") { try { igMark(b.vid, b.ig, "igBot"); } catch (_) {} }
     if (b.step === "visit" && b.tgch != null && b.src !== "bot") { try { igMark(b.vid, b.tgch, "tgch"); } catch (_) {} }
     if (b.step === "start" && b.tgch != null && b.src === "bot") { try { igMark(b.vid, b.tgch, "tgchBot"); } catch (_) {} }
+    // откуда открыли бота (?start=sms, email, tg, ref_…): для канала его покупок (10.10.2026)
+    if (b.step === "start" && b.from && b.src === "bot") {
+      try {
+        const v = String(b.vid || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32), f = funnelData();
+        if (v.length >= 6) { f.botSrc = f.botSrc || {}; if (!f.botSrc[v]) { f.botSrc[v] = String(b.from).toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40); _funnelDirty = true; } }
+      } catch (_) {}
+    }
     if (b.ab === "old" || b.ab === "new") abMark(b.vid, b.ab);
     if ((b.ab === "days" || b.ab === "list") && b.src === "bot") abMark(b.vid, b.ab, "abBot");
     res.json({ success: funnelHit(String(b.src || "site"), String(b.step || ""), b.vid) });
@@ -4600,11 +4612,13 @@ function mount(app, opts) {
         const d = days.get(day) || { day, revenue: 0, orders: 0, esims: 0, cost: 0 };
         d.revenue += o.priceRub; d.orders += one; d.esims++; d.cost += c; days.set(day, d);
         const k = channelOf(o);
-        const ch = chans.get(k) || { key: k, name: channelName(k), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0, acq: 0 };
-        ch.orders += one; ch.esims++; ch.revenue += o.priceRub; ch.cost += c; ch.acq += fee; chans.set(k, ch);
+        const ch = chans.get(k) || { key: k, name: channelName(k), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0, acq: 0, revSite: 0, revBot: 0 };
+        ch.orders += one; ch.esims++; ch.revenue += o.priceRub; ch.cost += c; ch.acq += fee;
+        if (o.tgChatId) ch.revBot += o.priceRub; else ch.revSite += o.priceRub;
+        chans.set(k, ch);
       });
       spend.items.filter((x) => inRange(String(x.date || ""))).forEach((x) => {
-        const ch = chans.get(x.channel) || { key: x.channel, name: channelName(x.channel), orders: 0, revenue: 0, cost: 0, spend: 0 };
+        const ch = chans.get(x.channel) || { key: x.channel, name: channelName(x.channel), orders: 0, revenue: 0, cost: 0, spend: 0, revSite: 0, revBot: 0 };
         ch.spend += Number(x.rub) || 0; chans.set(x.channel, ch);
       });
       const adSpend = spend.items.filter((x) => inRange(String(x.date || "")))

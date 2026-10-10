@@ -932,7 +932,7 @@ async function onText(chatId, text) {
     const igm = /^(ig|insta|instagram)(?:_(.*))?$/.exec(payload);
     // Из нашего Telegram-канала: ?start=tgch или ?start=tgch_пост (08.10.2026)
     const tcm = /^tgch(?:_(.*))?$/.exec(payload);
-    ev(chatId, "start", igm ? { ig: igm[2] || "" } : (tcm ? { tgch: tcm[1] || "" } : null));
+    ev(chatId, "start", igm ? { ig: igm[2] || "" } : (tcm ? { tgch: tcm[1] || "" } : (payload ? { from: payload.slice(0, 40) } : null)));
     if (payload.indexOf("ref_") === 0) {
       setState(chatId, { ref: payload.slice(4).toUpperCase(), step: null });
       await send(chatId, "Вы пришли по приглашению друга — скидка на первую eSIM применится сама.");
