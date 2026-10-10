@@ -38,6 +38,8 @@
   .seg button{font:inherit;font-size:12.5px;font-weight:600;border:0;background:transparent;color:#5a6478;border-radius:9px;
     padding:7px 13px;cursor:pointer;transition:all .2s var(--ease);}
   .seg button:hover{color:var(--ink)}
+  .chart-mode{display:flex;justify-content:flex-end;margin:-4px 0 10px;}
+  .chart-mode .seg button{font-size:12px;padding:5px 11px;}
   .seg button.on{background:#fff;color:var(--accent);box-shadow:0 1px 2px rgba(16,24,40,.05),0 5px 12px -5px rgba(16,32,64,.22);}
   .dates{display:inline-flex;align-items:center;gap:4px;}
   .dates input{font:inherit;font-size:12.5px;color:#4c5568;border:1px solid rgba(20,32,64,.09);border-radius:10px;
@@ -281,8 +283,11 @@
   </section>
 
   <section class="sec" data-id="chart">
-    <div class="sec-h"><h2>Выручка по дням</h2><span data-info="chart"></span><span class="sum" id="chartNote"></span><span class="chev">›</span></div>
-    <div class="sec-b"><div class="chart" id="chart"><div class="tip" id="tip"></div></div></div>
+    <div class="sec-h"><h2 id="chartTitle">Выручка по дням</h2><span data-info="chart"></span><span class="sum" id="chartNote"></span><span class="chev">›</span></div>
+    <div class="sec-b">
+      <div class="chart-mode"><div class="seg" id="chartMode"><button type="button" data-m="day">Дни</button><button type="button" data-m="week">Недели</button><button type="button" data-m="month">Месяцы</button></div></div>
+      <div class="chart" id="chart"><div class="tip" id="tip"></div></div>
+    </div>
   </section>
 
   <section class="sec" data-id="sup">
@@ -402,7 +407,7 @@
   var INFO = {
     sum: "<b>Итог</b> = выручка − себестоимость − комиссия банка − реклама.<br><b>Себестоимость</b> — закупка у поставщика по курсу ЦБ плюс 5% на конвертацию и 11% налога.<br>Свои проверочные покупки в цифры не входят, их можно включить галочкой «тестовые».<br><b>Баланс у поставщиков</b> — сколько денег осталось на закупку eSIM: у eSIM Access и MobiMatter живой остаток из их кабинетов (обновляется раз в полчаса), у TSim — внесённый депозит минус наши закупки. Плитка краснеет, когда кто-то из них подошёл к порогу: ниже него их пакеты прячутся с витрины, а на почту приходит письмо о пополнении.",
     sup: "Все обращения: и чат на сайте и в боте, и форма «не получается подключить».<br><b>Ждёт ответа</b> — последнее слово за человеком. Ответить можно прямо отсюда: человек увидит текст в чате, а если писал из бота — придёт в телеграм. Ответ обычным письмом на уведомление работает как раньше.<br><b>Первая линия</b> — чат сам разобрал проблему по живым данным: нашёл заказ человека, посмотрел остаток у поставщика и дал шаги. Так человек получает помощь сразу, даже ночью.<br>Карточки свёрнуты: видно, кто написал, когда и первую строку. Нажмите на строку, чтобы раскрыть переписку и ответить. Те, что ждут ответа, раскрыты сразу.<br><b>Форма</b> — человек заполнил анкету со своей поломкой: видно модель телефона, что он пробовал, скриншот и ссылку на его персональную страницу. Ответ из поля попадёт на эту же страницу как ответ оператора.<br>На почту письмо уходит, только когда первая линия не справилась: «требуется внимание», не чаще раза в 12 часов на обращение, и только в рабочее окно с понедельника 08:00 до пятницы 15:00 по Москве. Всё остальное живёт здесь.",
-    chart: "Выручка по дням оплаты, время московское. Наведите на график — покажет сумму и число пакетов за день.<br>Прошедшие сутки закрываются в полночь: себестоимость фиксируется по курсу того дня и дальше не меняется. Сегодняшний день — живые цифры.",
+    chart: "Выручка по дням оплаты, время московское. Наведите на график — покажет сумму и число пакетов за день, неделю или месяц.<br>Переключатель над графиком: дни, недели (с понедельника по воскресенье) и месяцы. Крайние неделя и месяц бывают неполными — в них только дни выбранного периода.<br>Прошедшие сутки закрываются в полночь: себестоимость фиксируется по курсу того дня и дальше не меняется. Сегодняшний день — живые цифры.",
     ads: "Канал определяется по метке, с которой человек пришёл впервые (utm, yclid, gclid). Покупки в телеграм-боте — отдельный канал. <b>SMS</b>, <b>Email</b>, <b>SMS-рассылка</b> — по метке в ссылке рассылки. <b>Личный кабинет VOYO</b> — покупки из визового ЛК, если человека не привела реклама или рассылка (иначе сделка идёт тому, что привело).<br><b>Маржа</b> — уже без себестоимости и комиссии банка. <b>Итог</b> — ещё и без расходов на рекламу. <b>ДРР</b> — доля рекламы в выручке.<br>Расход вносится со скриншотов кабинетов общей суммой за всё время.",
     fsite: "Уникальные посетители витрины на всех доменах (voyomobile.ru, voyotravel.ru/esim и другие): зашёл → выбрал страну (открылся список пакетов; на страницах /turkey, /china он открыт сразу) → открыл карточку пакета → нажал «Купить» (появляется поле почты) → нажал «Оплатить» → оплатил. Между карточками — доля перехода с шага на шаг, в синей плашке — сквозная.<br>С 18 сентября шаги пишет сама витрина. <b>До 18 сентября</b> — восстановлено по журналу сервера: «Выбрали страну» там видно только у заходов на страницы стран и по ссылкам из статей, а «Открыли пакет» не записывался вовсе — за те дни в этих шагах только те, кто пошёл дальше. Оплаты всегда берутся из заказов.",
     tgch: "Люди, пришедшие из нашего Telegram-канала. На сайт — по ссылке с меткой <b>utm_source=tg_channel</b> (voyomobile.ru/?utm_source=tg_channel), в бота — по ссылке <b>t.me/esimvoyo_bot?start=tgch</b>. " +
@@ -523,6 +528,29 @@
 
   /* ── график: тонкая плавная линия с заливкой, суммы — только при наведении ── */
   var PTS = [];
+  // Дни / Недели / Месяцы — как в дашборде (10.10.2026). Выбор запоминается в браузере.
+  var CHART_MODE = "day";
+  try{ CHART_MODE = localStorage.getItem("voyo_adm_chart_mode") || "day"; }catch(e){}
+  var MONTH_FULL = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+  function weekStart(d){ var t = new Date(d + "T00:00:00Z"); var w = (t.getUTCDay() + 6) % 7; return addDays(d, -w); }
+  function seriesFor(mode){
+    var days = seriesDays();
+    if (mode === "day") return days.map(function(d){ return Object.assign({ label: dShort(d.day), tip: dShort(d.day) }, d); });
+    var groups = [], cur = null;
+    days.forEach(function(d){
+      var k = mode === "week" ? weekStart(d.day) : d.day.slice(0, 7);
+      if (!cur || cur.key !== k) { cur = { key: k, day: d.day, last: d.day, revenue: 0, orders: 0 }; groups.push(cur); }
+      cur.revenue += d.revenue || 0; cur.orders += d.orders || 0; cur.last = d.day;
+    });
+    return groups.map(function(g){
+      if (mode === "week") {
+        var a = dShort(g.day), b = dShort(g.last);
+        return Object.assign(g, { label: a, tip: a === b ? a : a + " — " + b });
+      }
+      var m = +g.key.slice(5, 7) - 1;
+      return Object.assign(g, { label: MONTH_FULL[m], tip: MONTH_FULL[m] + " " + g.key.slice(0, 4) });
+    });
+  }
   function seriesDays(){
     var r = DATA._range, byDay = {};
     DATA.days.forEach(function(d){ byDay[d.day] = d; });
@@ -555,13 +583,16 @@
   }
   function drawChart(){
     var box = el("chart"); if (!DATA || !box.offsetWidth) return;
-    var days = seriesDays();
+    var days = seriesFor(CHART_MODE);
+    var UNIT = { day: ["день", "дня", "по дням"], week: ["неделю", "недели", "по неделям"], month: ["месяц", "месяца", "по месяцам"] }[CHART_MODE] || ["день", "дня", "по дням"];
+    el("chartTitle").textContent = "Выручка " + UNIT[2];
+    el("chartMode").querySelectorAll("button").forEach(function(b){ b.classList.toggle("on", b.getAttribute("data-m") === CHART_MODE); });
     box.querySelectorAll("svg,.empty").forEach(function(n){ n.remove(); });
     var total = days.reduce(function(a, d){ return a + d.revenue; }, 0);
-    el("chartNote").textContent = days.length ? ("в среднем " + RU(total / days.length) + " ₽ в день") : "";
+    el("chartNote").textContent = days.length ? ("в среднем " + RU(total / days.length) + " ₽ в " + UNIT[0]) : "";
     if (!total || days.length < 2){
       var e = document.createElement("div"); e.className = "empty";
-      e.textContent = total ? "нужно хотя бы два дня, чтобы построить линию" : "за этот период продаж не было";
+      e.textContent = total ? "нужно хотя бы два " + UNIT[1] + ", чтобы построить линию: выберите период подлиннее" : "за этот период продаж не было";
       box.appendChild(e); return;
     }
     var W = box.offsetWidth, H = box.offsetHeight, L = 40, R = 12, T = 14, B = 26;
@@ -585,7 +616,7 @@
       if (!last && i % every) return;
       if (!last && n-1-i < every * 0.7) return;
       lab += '<text x="' + x(i).toFixed(1) + '" y="' + (H-7) + '" text-anchor="' + (i === 0 ? "start" : (last ? "end" : "middle")) +
-        '" font-size="10.5" fill="#9aa3b3">' + dShort(d.day) + '</text>';
+        '" font-size="10.5" fill="#9aa3b3">' + d.label + '</text>';
     });
     var dots = n <= 45 ? PTS.filter(function(p){ return p.d.revenue > 0; }).map(function(p){
       return '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="2.3" fill="#fff" stroke="#0097ca" stroke-width="1.4"/>';
@@ -608,7 +639,7 @@
       PTS.forEach(function(p){ if (Math.abs(p.x - mx) < Math.abs(best.x - mx)) best = p; });
       guide.setAttribute("x1", best.x); guide.setAttribute("x2", best.x); guide.setAttribute("opacity", 1);
       hot.setAttribute("cx", best.x); hot.setAttribute("cy", best.y); hot.setAttribute("opacity", 1);
-      tip.innerHTML = dShort(best.d.day) + "<br><b>" + RU(best.d.revenue) + " ₽</b> · " + best.d.orders + " шт";
+      tip.innerHTML = best.d.tip + "<br><b>" + RU(best.d.revenue) + " ₽</b> · " + best.d.orders + " шт";
       tip.style.left = Math.max(55, Math.min(W - 55, best.x)) + "px"; tip.style.top = best.y + "px"; tip.style.opacity = 1;
     }
     function hide(){ guide.setAttribute("opacity", 0); hot.setAttribute("opacity", 0); tip.style.opacity = 0; }
@@ -616,6 +647,12 @@
     hit.addEventListener("touchstart", show, { passive: true }); hit.addEventListener("touchmove", show, { passive: true });
   }
   var rsz; addEventListener("resize", function(){ clearTimeout(rsz); rsz = setTimeout(drawChart, 150); });
+  el("chartMode").addEventListener("click", function(e){
+    var b = e.target.closest("button"); if (!b) return;
+    CHART_MODE = b.getAttribute("data-m");
+    try{ localStorage.setItem("voyo_adm_chart_mode", CHART_MODE); }catch(_){}
+    drawChart();
+  });
 
   /* ── сортировка таблиц по клику на заголовок ── */
   // Первый клик по числовому столбцу — по убыванию, по текстовому — по алфавиту;
