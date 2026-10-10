@@ -2392,7 +2392,7 @@
       // вносится за закрытые дни) не должны отдавать прошлому периоду лишний
       // полный день (жалоба Андрея 26.08: неделя показывала −31% из-за этого).
       function vscFilledDays(m) {
-        const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+        const today0 = vscMskNow(); today0.setHours(0, 0, 0, 0);
         return (m.days || []).filter((d) => {
           if (!((d.processed != null && d.processed > 0) || (d.budget != null && d.budget > 0))) return false;
           const dd = d.date ? vscParseDMY(d.date) : null;
@@ -2766,7 +2766,7 @@
       // renderVsc(): прибыль уходит в график прибыли и в рентабельность, карточка исчезает.
       function vscProfitBanner() {
         if (!vscData || vscHideProfit()) return null;
-        const today = new Date();
+        const today = vscMskNow();
         if (today.getDate() < 5) return null;                      // с 5 числа месяца
         const pm = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
         const py = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
@@ -2808,7 +2808,7 @@
         // «Заполненный» период — есть реальная активность (обработанные контакты
         // или выручка). cv/прочие формулы дают 0 даже у пустых дней — их НЕ считаем.
         const filled = (o) => o && ((o.processed != null && o.processed > 0) || (o.budget != null && o.budget > 0));
-        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const today = vscMskNow(); today.setHours(0, 0, 0, 0);
         if (vscGran === "week") {
           // Неделя: КАЛЕНДАРНЫЕ недели пн–вс. Берём НЕДЕЛЬНЫЕ строки таблицы («Total») —
           // в них коэффициенты (ATV/CV/CPL/ДРР/ASP/UPT) посчитаны ВЗВЕШЕННО и совпадают
@@ -2924,6 +2924,14 @@
       function vscNearestPrev(series, key, fromIdx) {
         for (let i = fromIdx - 1; i >= 0; i--) { const v = series[i].k ? series[i].k[key] : null; if (v != null && !isNaN(v)) return v; }
         return null;
+      }
+      // «Сейчас» по Москве в виде обычной локальной даты: getDate()/getMonth()/setHours()
+      // дают московские число, месяц и час на любом устройстве (Андрей бывает в Екатеринбурге,
+      // там на 2 часа больше). Даты из таблицы (vscParseDMY) тоже локальные — сравнения сходятся.
+      // В Москве нет перехода на летнее время с 2014 года, сдвиг постоянный +3.
+      function vscMskNow() {
+        const u = new Date(Date.now() + 3 * 3600 * 1000);
+        return new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate(), u.getUTCHours(), u.getUTCMinutes(), u.getUTCSeconds());
       }
       // ── Сравнение «те же дни» (неделя/день) ──
       function vscParseDMY(s) { const p = String(s || "").split("."); if (p.length < 3) return null; const d = new Date(+p[2], +p[1] - 1, +p[0]); d.setHours(0, 0, 0, 0); return isNaN(d.getTime()) ? null : d; }
@@ -3545,7 +3553,7 @@
         // сумма по всем заполненным месяцам, новые месяцы подхватываются сами.
         const yPos = pts.reduce((a, d) => a + (d.pos || 0), 0);
         const yNeg = pts.reduce((a, d) => a + (d.neg || 0), 0);
-        const yearLabel = year || new Date().getFullYear();
+        const yearLabel = year || vscMskNow().getFullYear();
         const yearCol = { x: yearLabel + " год", pos: yPos, neg: yNeg }, yearScale = Math.max(yPos, yNeg) || 1;
         // Нижняя половина — ровно под самый длинный негативный столбик (+ строка с числом):
         // если появится месяц с бо́льшим негативом, отступ до подписей вырастет сам.
@@ -3847,7 +3855,7 @@
         const granWord = ({ year: "за прошлый месяц", month: "за прошлый месяц", week: "за прошлую неделю", day: "за прошедший день" })[vscGran] || "";
         let cplAlert = null;
         (function () {
-          const tdy = new Date(); tdy.setHours(0, 0, 0, 0);
+          const tdy = vscMskNow(); tdy.setHours(0, 0, 0, 0);
           const mondayOf = (dd) => { const x = new Date(dd.getTime()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); x.setHours(0, 0, 0, 0); return x; };
           const curMonShort = VSC_MON_NAMES[tdy.getMonth()];
           const inProgress = (s) => {
@@ -3897,7 +3905,7 @@
             // ТОЛЬКО подпись — сами сравнения (−7 дней) не меняются.
             const WD_INSTR = { "понедельник": "прошлым понедельником", "вторник": "прошлым вторником", "среда": "прошлой средой", "четверг": "прошлым четвергом", "пятница": "прошлой пятницей", "суббота": "прошлой субботой", "воскресенье": "прошлым воскресеньем" };
             const dDate = _ck && _ck.date ? vscParseDMY(_ck.date) : null;
-            const yest = new Date(); yest.setHours(0, 0, 0, 0); yest.setDate(yest.getDate() - 1);
+            const yest = vscMskNow(); yest.setHours(0, 0, 0, 0); yest.setDate(yest.getDate() - 1);
             const dayLbl = (dDate && dDate.getTime() === yest.getTime()) ? "Вчера" : (_cs.x || "");
             const wdKey = _ck && _ck.weekday ? String(_ck.weekday).trim().toLowerCase() : "";
             curSub = dayLbl + (WD_INSTR[wdKey] ? " · по сравнению с " + WD_INSTR[wdKey] : "");
@@ -3905,7 +3913,7 @@
             // Подпись недели: «Текущая неделя 29.06–05.07» / «Прошлая неделя …» (если новая
             // неделя ещё без данных и показывается предыдущая) / «Неделя …» для более старых.
             const _mondayOf = (d) => { const x = new Date(d.getTime()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); x.setHours(0, 0, 0, 0); return x; };
-            const monNow = _mondayOf(new Date()).getTime();
+            const monNow = _mondayOf(vscMskNow()).getTime();
             const kind = (_cs.monTs === monNow) ? "Текущая неделя" : ((_cs.monTs === monNow - 7 * 86400000) ? "Прошлая неделя" : "Неделя");
             curSub = kind + " " + (_cs.range || _cs.x || "");
           }
@@ -3937,7 +3945,7 @@
               // в минус (например −31% при факте пн-вт лучше прошлых пн-вт).
               const prevK = series[idx - 1] ? series[idx - 1].k : null;
               if (VSC_ADDITIVE[kpi.key] && curK && prevK) {
-                const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+                const today0 = vscMskNow(); today0.setHours(0, 0, 0, 0);
                 const closed = (curK.days || []).filter((d) => {
                   if (!vscDayFilled(d)) return false;
                   const dd = d.date ? vscParseDMY(d.date) : null;
@@ -4147,7 +4155,7 @@
         const rev = vscData.reviews || [];
         const msk = rev.map((r) => ({ x: short(r.name), pos: r.mskPos, neg: r.mskNeg }));
         const spb = rev.map((r) => ({ x: short(r.name), pos: r.spbPos, neg: r.spbNeg }));
-        const revYear = (function () { const m = /(20\d\d)/.exec((rev[0] && rev[0].name) || ""); return m ? +m[1] : new Date().getFullYear(); })();
+        const revYear = (function () { const m = /(20\d\d)/.exec((rev[0] && rev[0].name) || ""); return m ? +m[1] : vscMskNow().getFullYear(); })();
         vscContent.appendChild(vscReviewsChart("Отзывы — Москва", msk, revYear));
         vscContent.appendChild(vscReviewsChart("Отзывы — Санкт-Петербург", spb, revYear));
 
@@ -4270,7 +4278,7 @@
             season: [0.75, 0.85, 1.00, 1.10, 1.15, 1.20, 1.15, 1.05, 1.05, 1.00, 0.90, 0.80] // янв..дек, Σ=12
           };
           const RU_MI = { "январь": 0, "февраль": 1, "март": 2, "апрель": 3, "май": 4, "июнь": 5, "июль": 6, "август": 7, "сентябрь": 8, "октябрь": 9, "ноябрь": 10, "декабрь": 11 };
-          const now = new Date(), curKey = now.getFullYear() * 12 + now.getMonth();
+          const now = vscMskNow(), curKey = now.getFullYear() * 12 + now.getMonth();
           const mktRows = [];
           (vscData.months || []).forEach((mm) => {
             const p = /^([А-Яа-яёЁ]+)\s+(\d{4})$/.exec(String(mm.name || "").trim());
@@ -4313,7 +4321,7 @@
         const d = sync.rosterDiff;
         if (d && ((d.added || []).length || (d.removed || []).length)) {
           const fmt = (a) => a.map((x) => escapeHtml(x.name || "") + " (" + escapeHtml(x.ext) + ")").join(", ");
-          const when = d.ts ? new Date(d.ts).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) : "";
+          const when = d.ts ? new Date(d.ts).toLocaleDateString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit" }) : "";
           const bits = [];
           if ((d.added || []).length) bits.push("добавлены " + fmt(d.added));
           if ((d.removed || []).length) bits.push("убраны " + fmt(d.removed));
@@ -4986,7 +4994,7 @@
       // отдельным блоком он занимал место, Андрей попросил убрать его в подсказку.
       function vscStaffSyncInfoHtml(d) {
         if (!d) return "";
-        const when = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+        const when = d.ts ? new Date(d.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
         const nums = [["АТС", (d.pbx && d.pbx.users) || 0, "добавочных"],
                       ["amoCRM", (d.amo && d.amo.active) || 0, "активных"],
                       ["Первая линия", (d.pl && d.pl.ext ? d.pl.ext.length : 0), "операторов"]];
@@ -5444,7 +5452,7 @@
         }, series));
 
         // ── Ввод ЗП управляющей за прошлый месяц (с 4 числа, пока не введена) ──
-        const today = new Date();
+        const today = vscMskNow();
         if (today.getDate() >= 4) {
           const pm = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
           const py = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
@@ -6552,7 +6560,7 @@
           if (!t || !t.total) return null;
           const inc = t.incidents || [];
           const badNums = {}; inc.forEach(function (x) { badNums[x.number] = 1; });
-          const ft = function (ts) { return new Date(ts).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
+          const ft = function (ts) { return new Date(ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
           const bits = inc.map(function (x) {
             const when = x.from ? (ft(x.from) + (x.to ? " — " + ft(x.to) : " — до сих пор")) : "";
             return escapeHtml(x.number) + (x.name ? " (" + escapeHtml(x.name) + ")" : "") + (when ? " " + escapeHtml(when) : "");
@@ -6569,7 +6577,7 @@
               return;
             }
             const L = j.last;
-            const fmtT = function (ts) { return new Date(ts).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
+            const fmtT = function (ts) { return new Date(ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
             const p = L.pbx || {};
             const miss = [];
             (p.missing || []).forEach(function (m) { miss.push("звонок с " + escapeHtml(m.phone)); });
@@ -6983,7 +6991,7 @@
           // Подпись «какие ячейки листа взяли» (просьба Андрея 22.07) — для месяцев,
           // где сервер вернул координаты (живые месяцы; в старых снимках их нет).
           if (c.planKate) {
-            const pk = c.planKate, dt = pk.at ? new Date(pk.at).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) : "";
+            const pk = c.planKate, dt = pk.at ? new Date(pk.at).toLocaleDateString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit" }) : "";
             const st = { draft: "черновик, ещё не утверждён", approved: "утверждён" }[pk.state] || pk.state;
             notes.push(shortN(ms[i].name) + ": план — раздел Кати «Управление персоналом → Стафф → План на месяц ОП»"
               + (pk.by ? ", поставил(а) " + pk.by : "") + (dt ? " " + dt : "") + (st ? " (" + st + ")" : "")
@@ -7349,7 +7357,7 @@
         const calMi = nowMsk.getUTCMonth(), curYear = nowMsk.getUTCFullYear(), curIdx = vscCurMonthIdx();
         const cur = months[curIdx];
         if (!cur) return null;
-        const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+        const today0 = vscMskNow(); today0.setHours(0, 0, 0, 0);
         const allDays = months.reduce((a, m) => a.concat(m.days || []), [])
           .map((d) => ({ d: d, dt: d.date ? vscParseDMY(d.date) : null }))
           .filter((x) => x.dt && x.dt < today0 && ((x.d.budget || 0) > 0 || (x.d.processed || 0) > 0))
