@@ -4252,12 +4252,12 @@ function mount(app, opts) {
   // Переходы до запуска счётчика — по журналу nginx (tools/igBackfill.js):
   // только число людей по дням и ссылкам, шагов и оплат там нет.
   const IG_HISTORY_FILE = path.join(DIR, "ig-history.json");
-  const isIgTouch = (t) => !!t && (/^(instagram|ig|insta)$/i.test(t.utm_source || "") || /(^|\.)instagram\.com/i.test(t.ref || ""));
+  const isIgTouch = (t) => !!t && (/^(instagram|ig|insta)$/i.test(t.utm_source || "") || (!t.utm_source && /(^|\.)instagram\.com/i.test(t.ref || "")));
   // Telegram-канал (08.10.2026): сайт — utm_source=tg_channel, бот — ?start=tgch(_ссылка)
   const isTgchTouch = (t) => !!t && /^tg_channel$/i.test(t.utm_source || "");
   const SRC_SPECS = {
-    ig: { key: "ig", botKey: "igBot", hist: IG_HISTORY_FILE, touch: isIgTouch },
-    tgch: { key: "tgch", botKey: "tgchBot", hist: null, touch: isTgchTouch },
+    ig: { key: "ig", botKey: "igBot", hist: IG_HISTORY_FILE, touch: isIgTouch, channel: "instagram" },
+    tgch: { key: "tgch", botKey: "tgchBot", hist: null, touch: isTgchTouch, channel: "tg_channel" },
   };
   function igFor(from, to, withTest, spec) {
     spec = spec || SRC_SPECS.ig;
@@ -4290,7 +4290,7 @@ function mount(app, opts) {
     const people = {};
     const orders = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && inR(mskDay(o.paidAt)) &&
       (withTest || !isTestOrder(o)) && !o.parentOrderId && !o.groupOf);
-    orders.filter((o) => !o.tgChatId).forEach((o) => {
+    orders.filter((o) => !o.tgChatId && channelOf(o) === spec.channel).forEach((o) => {
       const a = o.ads || {};
       let k = null;
       if (o.vid && f[spec.key] && f[spec.key][o.vid] != null) k = f[spec.key][o.vid];
@@ -4298,7 +4298,7 @@ function mount(app, opts) {
         const t = spec.touch(a.last) ? a.last : a.first;
         k = igLink(t.utm_content || t.utm_campaign || "");
       }
-      if (k == null) return;
+      if (k == null) k = "";
       const who = o.vid || o.custKey || o.email || o.id;
       const r = row(k);
       if (!people[k + "|" + who]) { people[k + "|" + who] = 1; r.paid++; }

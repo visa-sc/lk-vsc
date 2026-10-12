@@ -690,8 +690,10 @@
   function igLinkOf(){
     try{
       var q = new URLSearchParams(location.search);
-      var fromIg = /^(instagram|ig|insta)$/i.test(q.get("utm_source") || "") ||
-        /(^|\.)instagram\.com$/i.test(document.referrer ? new URL(document.referrer).hostname : "");
+      // своя метка ссылки важнее: SMS-ссылку, открытую внутри Instagram, считаем SMS (12.10.2026)
+      var src = q.get("utm_source") || "";
+      var fromIg = /^(instagram|ig|insta)$/i.test(src) ||
+        (!src && /(^|\.)instagram\.com$/i.test(document.referrer ? new URL(document.referrer).hostname : ""));
       if(!fromIg) return undefined;
       return (q.get("utm_content") || q.get("utm_campaign") || "").slice(0, 40);
     }catch(e){ return undefined; }
