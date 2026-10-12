@@ -29,7 +29,7 @@ function knowledge() {
 }
 // Учёт расходов на модель: каждый ответ — строка в .esim/doctor-usage.json
 const PRICE = { "claude-opus-5-5": [4, 20, 0.2, 5], "claude-sonnet-5": [2, 10, 0.2, 2.5], "claude-sonnet-5-5": [2, 10, 0.2, 2.5] };
-function logUsage(model, u) {
+function logUsage(model, u, kind) {
   if (!u) return;
   const p = PRICE[model] || PRICE["claude-opus-5-5"];
   const usd = ((u.input_tokens || 0) * p[0] + (u.output_tokens || 0) * p[1] +
@@ -37,7 +37,7 @@ function logUsage(model, u) {
   const F = path.join(DIR, "doctor-usage.json");
   let all = [];
   try { all = JSON.parse(fsx.readFileSync(F, "utf8")); } catch (_) {}
-  all.push({ ts: Date.now(), model, in: u.input_tokens || 0, out: u.output_tokens || 0,
+  all.push({ ts: Date.now(), kind: kind || undefined, model, in: u.input_tokens || 0, out: u.output_tokens || 0,
     cr: u.cache_read_input_tokens || 0, cw: u.cache_creation_input_tokens || 0, usd: Math.round(usd * 10000) / 10000 });
   try { fsx.writeFileSync(F, JSON.stringify(all.slice(-5000))); } catch (_) {}
 }
@@ -218,4 +218,30 @@ async function diagnose(info) {
   return out;
 }
 
-module.exports = { aiOn, diagnose, dossier, clean };
+// Причина и итог обращения для блока «Сервис» в панели (12.10.2026): одна короткая
+// разметка на обращение, пересчитывается, только когда в переписке появилось новое.
+const REASONS = ["Не ставится", "Нет интернета", "Вторая eSIM / спутник", "Оплата", "Возврат", "Выбор тарифа", "Продление и трафик", "Другое"];
+const REASON_SYSTEM = "Ты размечаешь обращения в поддержку VOYO mobile (eSIM для поездок) для отчёта владельцу.\n" +
+  "Верни только JSON: {\"reason\": \"...\", \"summary\": \"...\"}.\n" +
+  "reason: ровно один вариант из списка: " + REASONS.join(", ") + ". Это главная проблема, с которой человек пришёл, а не то, чем кончилось. " +
+  "«Возврат» ставь, только если человек сразу пришёл за деньгами. Две eSIM на одном телефоне или eSIM для спутника: «Вторая eSIM / спутник». " +
+  "eSIM стоит, но интернета нет: «Нет интернета». Не получается установить, ошибка при сканировании: «Не ставится».\n" +
+  "summary: итог одной фразой до 90 знаков: в чём было дело и чем кончилось. Без имён, телефонов и почт, без тире. " +
+  "Если разговор не закончен, так и напиши, например «ждёт ответа клиента».";
+async function classifyCase(text) {
+  const c = client();
+  if (!c) return null;
+  const msg = await c.messages.create({ model: modelName(), max_tokens: 3000, output_config: { effort: "low" },
+    system: REASON_SYSTEM, messages: [{ role: "user", content: String(text || "").slice(0, 12000) }] });
+  logUsage(msg.model || modelName(), msg.usage, "reason");
+  let text2 = "";
+  for (const b of msg.content || []) if (b.type === "text") text2 += b.text;
+  const m = /\{[\s\S]*\}/.exec(text2);
+  if (!m) return null;
+  let out;
+  try { out = JSON.parse(m[0]); } catch (_) { return null; }
+  const reason = REASONS.indexOf(String(out.reason || "")) >= 0 ? out.reason : "Другое";
+  return { reason, summary: clean(String(out.summary || "")).slice(0, 140) };
+}
+
+module.exports = { aiOn, diagnose, dossier, clean, classifyCase, REASONS };

@@ -69,7 +69,7 @@ const TGWELCOME_FILE = path.join(DIR, "tgwelcome.json"); // каким чата�
 // докупит — но письмо каждого типа шлём ровно один раз на eSIM.
 const NOTIFY_DAYS_BEFORE = Number(process.env.ESIM_NOTIFY_DAYS || 2);   // за сколько дней до конца срока
 const NOTIFY_LOW_SHARE = Number(process.env.ESIM_NOTIFY_LOW || 0.2);    // остаток трафика ниже 20%
-const NOTIFY_EVERY_MS = Number(process.env.ESIM_NOTIFY_EVERY_H || 4) * 3600 * 1000;
+const NOTIFY_EVERY_MS = Number(process.env.ESIM_NOTIFY_EVERY_H || 2) * 3600 * 1000;   // было 4 ч, с 12.10.2026 — 2 ч ради «нет интернета»
 // Приглашение друзей: письмо (или сообщение в бот) через сутки после первой
 // оплаты — человек уже попользовался eSIM и знает, что она работает.
 // Одному клиенту отправляем один раз, отметки в .esim/refinvite.json.
@@ -2526,7 +2526,42 @@ function mount(app, opts) {
       TEST_EMAILS.indexOf(normEmail(c)) >= 0 ||
       (digits && (TEST_PHONES.indexOf(digits) >= 0 || digits === "79990000000"));
   }
+  // Робот не справился и зовёт человека: клиенту честно говорим, что ждать (12.10.2026).
+  // Один раз на эскалацию: пока оператор не ответил, не повторяем.
+  const WAIT_TEXT = "Позвал специалиста, он ответит здесь же, в этом чате. Обычно это занимает до часа. Пожалуйста, немного подождите.";
+  const WAIT_TEXT_OFF = "Позвал специалиста, он ответит здесь же, в этом чате. Сейчас выходные, поэтому ответ может прийти позже обычного. Пожалуйста, подождите.";
+  function tellWaiting(chat) {
+    const c = support.findChat(chat.id) || chat;
+    const lastOp = (c.messages || []).filter((m) => m.from === "operator").pop();
+    if (c.escAt && (!lastOp || lastOp.ts < c.escAt)) return;
+    support.botMessage(c.id, support.mailWindowOpen() ? WAIT_TEXT : WAIT_TEXT_OFF, "escAt");
+  }
+  // Сторож: позвали человека, а через 30 минут ответа всё нет — письмо Андрею (тем же окном, что и остальные)
+  function escalationWatch() {
+    const list = support.loadChats();
+    let dirty = false;
+    list.forEach((c) => {
+      if (!c.escAt || c.escMailedFor === c.escAt) return;
+      const age = Date.now() - c.escAt;
+      if (age < 30 * 60 * 1000 || age > 3 * 864e5) return;
+      if ((c.messages || []).some((m) => m.from === "operator" && m.ts > c.escAt)) return;
+      c.escMailedFor = c.escAt; dirty = true;
+      if (isTestChat(c)) return;
+      const said = (c.messages || []).filter((m) => m.from === "client").slice(-5).map((m) => "\u2022 " + m.text).join("\n");
+      support.queueMail({
+        subject: "VOYO eSIM: 30 минут без ответа, чат #" + c.id,
+        text: "Робот позвал человека " + new Date(c.escAt + 3 * 3600e3).toISOString().slice(11, 16) + " МСК, ответа до сих пор нет. " +
+          "Клиенту сказано, что ответ будет в течение часа.\n\nЧто пишет:\n" + (said || "—") +
+          "\n\nОтветить: " + (process.env.ESIM_PANEL_URL || "https://dev.voyomobile.ru") + ", раздел «Поддержка»." +
+          (c.contact ? "\nКонтакт: " + c.contact : "") + "\nЧат: " + c.id,
+      });
+    });
+    if (dirty) support.saveChats(list);
+  }
+  setInterval(() => { try { escalationWatch(); } catch (err) { console.error("esim сторож эскалаций:", err.message); } }, 5 * 60 * 1000);
+
   function callOperator(chat, why) {
+    tellWaiting(chat);
     if (isTestChat(chat)) { console.log("esim support: тестовый чат", chat.id, "— письмо не шлём (" + why + ")"); return false; }
     return support.attention(chat, why);
   }
@@ -3852,6 +3887,30 @@ function mount(app, opts) {
     } catch (_) { return false; }
   }
 
+  // Шаги «в сети, а интернета нет» — те же, что в боте (tgbot.js, kind noNet)
+  const NO_NET_STEPS = [
+    "Настройки → Сотовая связь → линия eSIM: включите «Роуминг данных».",
+    "Там же, в пункте «Сотовые данные», выберите линию eSIM.",
+    "Включите режим полёта на 15 секунд и выключите.",
+  ];
+  function noNetLetter(item, label) {
+    const acc = BASE_URL + "/esim/account?e=" + encodeURIComponent(item.email) + "&t=" + signEmail(item.email);
+    return {
+      subject: "VOYO mobile: eSIM в сети, а интернета нет?",
+      html: '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#16202e">' +
+        '<p style="font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px">eSIM в сети, а интернета нет?</p>' +
+        '<p style="color:#8b93a5;font-size:14px;margin:0 0 16px">' + esc(label) + '</p>' +
+        '<p style="font-size:14.5px;line-height:1.6;margin:0 0 10px">Ваша eSIM подключилась к сети, но интернет через неё пока не шёл. Обычно дело в одной настройке:</p>' +
+        '<ol style="font-size:14.5px;line-height:1.6;margin:0 0 14px;padding-left:20px">' + NO_NET_STEPS.map((s) => "<li>" + esc(s) + "</li>").join("") + '</ol>' +
+        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">Интернет уже работает: просто не обращайте внимания. Не помогло: напишите в чат на странице eSIM, поможем.</p>' +
+        '<p style="margin:0 0 16px"><a href="' + item.myUrl + '" style="display:inline-block;background:#3589bd;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:12px 20px;border-radius:12px">Открыть мою eSIM</a></p>' +
+        '<p style="font-size:13px;color:#8b93a5;margin:0">Все ваши eSIM: <a href="' + acc + '" style="color:#3589bd">личный кабинет</a></p></div>',
+      text: "eSIM в сети, а интернета нет? " + label + "\n\nВаша eSIM подключилась к сети, но интернет через неё пока не шёл. Обычно дело в одной настройке:\n" +
+        NO_NET_STEPS.map((s, i) => (i + 1) + ". " + s).join("\n") +
+        "\n\nИнтернет уже работает: просто не обращайте внимания. Не помогло: напишите в чат на странице eSIM, поможем.\nМоя eSIM: " + item.myUrl,
+    };
+  }
+
   function notifyLetter({ kind, item, left, total, days, canTopup }) {
     const isData = kind === "lowData";
     const cta = isData ? (canTopup ? "Докупить гигабайты" : "Купить ещё eSIM")
@@ -4047,7 +4106,7 @@ function mount(app, opts) {
     try {
       for (const item of esimsToWatch()) {
         const mark = sent[item.esimId] || {};
-        if (mark.expiry && mark.lowData) continue;          // по этой eSIM всё уже сказано
+        if (mark.expiry && mark.lowData && mark.noNet) continue;          // по этой eSIM всё уже сказано
         let usage = null;
         try { usage = await providerFor(item.esimId).getUsage(item.esimId); } catch (_) { continue; }
         // у суточного пакета трафик обнуляется каждый день — «почти закончился» не пишем
@@ -4068,6 +4127,25 @@ function mount(app, opts) {
         const spent = totalMb > 0 && !(usage && usage.daily) && leftMb / totalMb < 0.02;
         if (spent && !mark.expiry) mark.expiry = -1;
 
+        // 0) Вышла в сеть, а интернета нет: телефон зарегистрировался у оператора, но за
+        //    3–20 часов не прошло ни мегабайта. Почти всегда это выключенный «Роуминг данных»
+        //    или интернет на другой линии. Пишем первыми, один раз на eSIM (12.10.2026).
+        if (!mark.noNet) {
+          const actTs = packs.map((x) => (x.activatedAt ? new Date(x.activatedAt).getTime() : 0)).filter(Boolean).sort()[0] || 0;
+          const age = actTs ? Date.now() - actTs : 0;
+          const usedMb = totalMb - leftMb;
+          if (actTs && age > 20 * 3600e3) mark.noNet = -1;          // давно в сети — поздно и не нужно
+          else if (actTs && age >= 3 * 3600e3 && totalMb > 0 && usedMb < 1 && !(usage && usage.expired)) {
+            const seat = seatOf(item.esimId);
+            const label = (item.label || "eSIM") + (seat && seat.n > 1 ? " (eSIM " + seat.n + ", для спутника)" : "");
+            if (item.email) await opts.sendMail(Object.assign({ to: item.email }, noNetLetter(item, label))).catch(() => {});
+            if (item.tgChatId && opts.notifyTelegram) {
+              await opts.notifyTelegram({ chatId: item.tgChatId, kind: "noNet", label, myUrl: item.myUrl }).catch(() => {});
+            }
+            mark.noNet = Date.now(); mails++;
+            console.log("esim: «нет интернета» написали первыми,", item.esimId);
+          }
+        }
         // 1) срок на исходе — считаем только по активированным, у остальных отсчёт ещё не пошёл
         if (!mark.expiry && activated && daysLeft !== null && daysLeft <= NOTIFY_DAYS_BEFORE && daysLeft >= 0) {
           const canTopup = await hasTopups(item.productId);
@@ -4094,7 +4172,7 @@ function mount(app, opts) {
           }
           mark.lowData = Date.now(); mails++;
         }
-        if (mark.expiry || mark.lowData) sent[item.esimId] = mark;   // −1 = напоминание не нужно
+        if (mark.expiry || mark.lowData || mark.noNet) sent[item.esimId] = mark;   // −1 = напоминание не нужно
         await new Promise((r) => setTimeout(r, 400));       // не долбим API поставщика
       }
       writeJson(NOTIFY_FILE, sent);
@@ -4717,17 +4795,70 @@ function mount(app, opts) {
   // Обращение = один человек с вопросом: чат, форма «не получается подключить»,
   // чат на странице обращения — всё это один случай, если контакт тот же.
   // Не решено = закончилось возвратом денег (на карту или на баланс).
-  function serviceFor(from, to, withTest) {
+  // Причины обращений: размечает робот (doctor.classifyCase), храним по ключу обращения
+  const CASE_REASONS_FILE = path.join(DIR, "case-reasons.json");
+  function caseText(c, chats, forms) {
+    const out = [];
+    c.src.forEach((s) => {
+      if (s.type === "chat") {
+        const ch = chats.find((x) => x.id === s.id);
+        if (!ch) return;
+        out.push("ЧАТ " + (ch.tgChatId ? "в телеграм-боте" : "на сайте") + ":");
+        (ch.messages || []).slice(-40).forEach((m) =>
+          out.push((m.from === "client" ? "Клиент" : m.from === "operator" ? "Оператор" : "Робот") + ": " + String(m.text || "").slice(0, 700)));
+      } else {
+        const h = forms.find((x) => x.id === s.id);
+        if (!h) return;
+        out.push("ФОРМА «не получается подключить»: телефон " + (h.model || "?") + "; пробовал: " + (h.tried || "—") +
+          "; ошибка: " + (h.error || "—") + "; комментарий: " + (h.note || "—") + (h.result ? "; ответ: " + h.result : "") + (h.tag ? "; метка: " + h.tag : ""));
+      }
+    });
+    if (c.refund) out.push("ИТОГ ПО ДЕНЬГАМ: вернули " + (c.refund === "card" ? "на карту" : "на баланс VOYO mobile"));
+    return out.join("\n");
+  }
+  let _reasonsBusy = false;
+  async function reasonsTick() {
+    if (_reasonsBusy || !doctor.aiOn()) return;
+    _reasonsBusy = true;
+    try {
+      const store = readJson(CASE_REASONS_FILE, {});
+      const chats = support.loadChats(), forms = readJson(HELP_FILE, []);
+      const list = serviceFor("", "", false, 0).list;
+      let n = 0;
+      for (const c of list) {
+        const have = store[c.key];
+        if (have && have.upd >= c.last) continue;
+        if (Date.now() - c.last < 15 * 60 * 1000) continue;   // разговор ещё идёт — разметим позже
+        if (n++ >= 8) break;
+        const r = await doctor.classifyCase(caseText(c, chats, forms)).catch((err) => { console.error("esim причины:", err.message); return null; });
+        if (!r) continue;
+        store[c.key] = Object.assign(r, { upd: c.last });
+        writeJson(CASE_REASONS_FILE, store);
+      }
+    } finally { _reasonsBusy = false; }
+  }
+  setTimeout(() => { reasonsTick().catch(() => {}); }, 2 * 60 * 1000);
+  setInterval(() => { reasonsTick().catch(() => {}); }, 20 * 60 * 1000);
+
+  function serviceFor(from, to, withTest, rate) {
     const inR = (day) => (!from || day >= from) && (!to || day <= to);
     const norm = (v) => { const s = String(v || "").toLowerCase(); const d = s.replace(/\D/g, "");
       const m = (s.match(/[^\s]+@[^\s]+/) || [])[0]; return d.length >= 10 ? "p:" + d.slice(-10) : (m ? "e:" + normEmail(m) : ""); };
     const cases = new Map();
-    const add = (key, ts, extra) => { const c = cases.get(key); if (!c || ts < c.ts) cases.set(key, Object.assign({ ts }, c || {}, extra || {}, { ts: Math.min(ts, (c && c.ts) || ts) })); };
+    const add = (key, ts, extra, src) => {
+      let c = cases.get(key);
+      if (!c) { c = { key, ts, last: ts, src: [] }; cases.set(key, c); }
+      c.ts = Math.min(c.ts, ts); c.last = Math.max(c.last, src.last || ts);
+      if (extra && extra.tg) c.tg = extra.tg;
+      if (extra && extra.who && !c.who) c.who = extra.who;
+      c.src.push(src);
+    };
     const forms = readJson(HELP_FILE, []);
     forms.forEach((h) => {
       if (!inR(mskDay(h.ts))) return;
       if (!withTest && isTestChat({ contact: h.contact })) return;
-      add(norm(h.contact) || "f:" + h.id, h.ts, { keys: [norm(h.contact)] });
+      add(norm(h.contact) || "f:" + h.id, h.ts, { who: h.contact || "" },
+        { type: "form", id: h.id, last: h.answeredAt || h.ts, open: !h.answered });
     });
     support.loadChats().forEach((c) => {
       const first = (c.messages || []).find((m) => m.from === "client");
@@ -4736,7 +4867,9 @@ function mount(app, opts) {
       const formId = (/\/esim\/case\/([a-f0-9]+)/.exec(String(c.page || "")) || [])[1];
       const form = formId && forms.find((h) => h.id === formId);
       const key = norm(c.contact) || (form && norm(form.contact)) || (c.tgChatId ? "t:" + c.tgChatId : "") || (formId ? "f:" + formId : "c:" + c.id);
-      add(key, first.ts, { tg: c.tgChatId || null });
+      const msgs = c.messages || [];
+      add(key, first.ts, { tg: c.tgChatId || null, who: c.contact || (form && form.contact) || (c.tgChatId ? "Telegram" : "") },
+        { type: "chat", id: c.id, tg: !!c.tgChatId, last: (msgs[msgs.length - 1] || first).ts });
     });
     const refunds = refundsLoad();
     let card = 0, balance = 0, open = 0;
@@ -4752,7 +4885,26 @@ function mount(app, opts) {
     });
     const total = cases.size, refunded = card + balance;
     const pct = (n) => (total ? Math.round(n / total * 1000) / 10 : 0);
-    return { total, solved: total - refunded, solvedPct: pct(total - refunded), refunded, refundedPct: pct(refunded),
+    // список обращений с причиной и итогом (свёрнутая подобласть в панели)
+    const store = readJson(CASE_REASONS_FILE, {});
+    const list = Array.from(cases.values()).sort((x, y) => y.ts - x.ts);
+    const reasons = {};
+    const rows = list.map((c) => {
+      const r = store[c.key] || null;
+      const reason = r ? r.reason : "";
+      if (reason) reasons[reason] = (reasons[reason] || 0) + 1;
+      const isWait = c.src.some((s) => waiting.has(s.id) || s.open);
+      const ch = Array.from(new Set(c.src.map((s) => (s.type === "form" ? "форма" : s.tg ? "бот" : "чат"))));
+      return { ts: c.ts, ch: ch.join(", "), who: c.who || "", reason, summary: r ? r.summary : "",
+        stale: !!(r && r.upd < c.last), status: c.refund === "card" ? "card" : c.refund ? "balance" : isWait ? "wait" : "ok" };
+    });
+    // расход на робота-поддержку за период: ответы, разметка причин, сборка базы опыта
+    const use = (() => { try { return JSON.parse(fs.readFileSync(path.join(DIR, "doctor-usage.json"), "utf8")) || []; } catch (_) { return []; } })()
+      .filter((x) => x && x.ts && inR(mskDay(x.ts)));
+    const botUsd = use.reduce((s, x) => s + (x.usd || 0), 0);
+    return { list, cases: rows, reasons, botUsd: Math.round(botUsd * 100) / 100, botRub: Math.round(botUsd * (rate || 0)),
+      botAnswers: use.filter((x) => !x.kind).length,
+      total, solved: total - refunded, solvedPct: pct(total - refunded), refunded, refundedPct: pct(refunded),
       refundCard: card, refundBalance: balance, waiting: waiting.size,
       rubCard: refundsSum(from, to, "card"), rubBalance: refundsSum(from, to, "balance"),
       // вернули без обращения в поддержку (например, сами заметили проблему и вернули)
@@ -4907,7 +5059,7 @@ function mount(app, opts) {
         abBot: abBotFor(from, to, withTest),
         blog: blogStatsFor(from, to, withTest, rate),
         support: supportForPanel(),
-        service: serviceFor(from, to, withTest),
+        service: (() => { const s = serviceFor(from, to, withTest, rate); delete s.list; return s; })(),
         balances: supplierBalances(rate),
         totals: {
           revenue, orders: paid.filter((o) => !o.groupOf).length, esims: paid.length, cost: Math.round(cost), acq, acqPct, acqPctIp: rates.ip, adSpend,

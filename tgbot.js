@@ -1460,6 +1460,17 @@ async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, m
         [{ text: "🎁 Мои бонусы", callback_data: "bonus" }, { text: "🌍 Купить eSIM", callback_data: "home" }],
       ] } });
   }
+  // eSIM вышла в сеть, а интернета нет несколько часов: пишем первыми (esim.js, 12.10.2026)
+  if (kind === "noNet") {
+    return send(chatId,
+      "<b>eSIM в сети, а интернета нет?</b>\n" + esc(label || "") + "\n\n" +
+      "Ваша eSIM подключилась к сети, но интернет через неё пока не шёл. Обычно дело в одной настройке:\n" +
+      "1. Настройки → Сотовая связь → линия eSIM: включите «Роуминг данных».\n" +
+      "2. Там же, в пункте «Сотовые данные», выберите линию eSIM.\n" +
+      "3. Включите режим полёта на 15 секунд и выключите.\n\n" +
+      "Интернет уже работает: просто не обращайте внимания. Не помогло: нажмите «Поддержка», поможем.",
+      { reply_markup: { inline_keyboard: [[{ text: "🛟 Поддержка", callback_data: "support" }, { text: "📱 Мои eSIM", callback_data: "my" }]] } });
+  }
   if (kind === "refBonus") {
     return send(chatId,
       "<b>+" + RU(bonusRub) + " ₽ на ваш счёт</b>\nДруг купил eSIM по вашей ссылке. " +

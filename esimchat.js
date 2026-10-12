@@ -251,5 +251,5 @@ async function pollMailbox() {
   return done;
 }
 
-module.exports = { mailWindowOpen, queueMail, attention, flushQueue, loadChats, findChat, newChatId,
+module.exports = { mailWindowOpen, queueMail, attention, flushQueue, loadChats, saveChats, findChat, newChatId,
   clientMessage, operatorMessage, botMessage, onOperator, stripReply, pollMailbox, esc, mskDay, TO, AUTO_REPLY, BLACKOUT };

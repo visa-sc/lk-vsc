@@ -340,7 +340,7 @@ function spendByMonth() {
     const m = slot(mskDay(x.ts).slice(0, 7));
     const a = bucket(m, "support");
     a.usd += x.usd || 0; m.usd += x.usd || 0;
-    if (x.kind !== "kb") a.n++;
+    if (!x.kind) a.n++;   // kb — сборка базы опыта, reason — разметка причин, это не ответы
     if (x.model) a.models[x.model] = (a.models[x.model] || 0) + 1;
   }
   return out;

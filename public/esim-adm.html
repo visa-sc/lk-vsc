@@ -106,6 +106,18 @@
   .ig-title{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:17px;font-weight:700;color:#161d45;margin:0 0 16px;}
   .ig-sum{margin-left:auto;font-size:13px;font-weight:500;color:var(--mut2);}
   .ig-h{font-size:14px;font-weight:700;color:#161d45;margin:0 0 10px;}
+  .svc-sub{margin-top:22px;padding-top:18px;border-top:1px solid #ece7f2;}
+  .svc-sub > summary{list-style:none;cursor:pointer;}
+  .svc-sub > summary::-webkit-details-marker{display:none;}
+  .svc-chev{color:var(--mut2);font-weight:500;transition:transform .18s var(--ease);}
+  .svc-sub[open] .svc-chev{transform:rotate(90deg);}
+  .svc-reasons{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 12px;}
+  .svc-reasons span,.svc-st{border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;background:#f1f3f8;color:#3a4356;white-space:nowrap;}
+  .svc-st.ok{background:#e8f5ee;color:var(--green);}
+  .svc-st.wait{background:#fdecea;color:var(--red);}
+  .svc-st.card{background:#fdecea;color:var(--red);}
+  .svc-st.balance{background:#fdf6e7;color:#9a6a00;}
+  #tSvc td:nth-child(5){white-space:normal;min-width:280px;line-height:1.4;}
   .fun-note{color:var(--mut2);font-size:12px;margin-top:12px;}
   @media(max-width:720px){
     .hero-conv{gap:14px;padding:18px}.hero-conv .num{font-size:42px}
@@ -292,7 +304,14 @@
 
   <section class="sec" data-id="service">
     <div class="sec-h"><h2>Сервис</h2><span data-info="service"></span><span class="sum" id="serviceNote"></span><span class="chev">›</span></div>
-    <div class="sec-b"><div class="tiles" id="serviceTiles"></div></div>
+    <div class="sec-b"><div class="tiles" id="serviceTiles"></div>
+      <!-- Обращения по одному: причина и итог размечает робот (12.10.2026), по умолчанию свёрнуто -->
+      <details class="svc-sub">
+        <summary><span class="ig-title" style="margin:0"><span>Обращения и причины</span><span class="ig-sum" id="svcSum"></span><span class="svc-chev">›</span></span></summary>
+        <div id="svcReasons" class="svc-reasons"></div>
+        <div class="scroll"><table id="tSvc"></table></div>
+      </details>
+    </div>
   </section>
 
   <section class="sec" data-id="sup">
@@ -391,12 +410,23 @@
   // берём оттуда staff-токен и входим без второго кода. Права проверяет сервер
   // (нужно «esimadm»): не пустил — показываем обычную форму входа, как раньше.
   var EMBED = new URLSearchParams(location.search).get("embed") === "1";
-  function staffToken(){
-    try{
-      return localStorage.getItem("voyo_team_token") ||
-             localStorage.getItem("voyo_admin_token") ||
-             localStorage.getItem("voyo_vsc_token") || "";
-    }catch(e){ return ""; }
+  // Токенов в браузере бывает несколько (админка, /team, /vsc), и старый может быть
+  // просрочен: 12.10.2026 в /admin фрейм брал протухший токен /team и просил код.
+  // Пробуем все по очереди и входим с первым, который сервер принимает.
+  function staffTokens(){
+    var out = [];
+    ["voyo_admin_token", "voyo_team_token", "voyo_vsc_token"].forEach(function(k){
+      try{ var v = localStorage.getItem(k); if (v && out.indexOf(v) < 0) out.push(v); }catch(e){}
+    });
+    return out;
+  }
+  async function staffToken(){
+    var list = staffTokens();
+    for (var i = 0; i < list.length; i++){
+      var r = await fetch("/esim/api/adm/payfails?from=2099-01-01", { headers: { Authorization: "Bearer " + list[i] } }).catch(function(){ return null; });
+      if (r && r.ok) return list[i];
+    }
+    return "";
   }
   var DATA = null, DAYS = 0; // по умолчанию «Всё время» (12.10.2026)
   var el = function(id){ return document.getElementById(id); };
@@ -415,7 +445,9 @@
     service: "<b>Обращения</b> — люди, которые писали в поддержку за период: чат на сайте, в боте и форма «не получается подключить». Если один человек писал в несколько мест, это одно обращение.<br>" +
       "<b>Решено</b> — обращение закончилось без возврата денег. <b>Закончились возвратом</b> — по обращению вернули деньги на карту или на баланс VOYO mobile.<br>" +
       "<b>Вернули денег всего</b> — все возвраты за период, в том числе те, что сделали сами, без обращения клиента в поддержку.<br>" +
-      "Возвраты на карту сервер узнаёт у банка раз в сутки (ночью), возвраты на баланс записывает сам.",
+      "Возвраты на карту сервер узнаёт у банка раз в сутки (ночью), возвраты на баланс записывает сам.<br>" +
+      "<b>Расход на бота</b> — сколько стоил Claude в поддержке за период: ответы клиентам, разметка причин и раз в неделю сборка базы опыта. По курсу ЦБ.<br>" +
+      "<b>Обращения и причины</b> — каждое обращение отдельной строкой. Причину и итог одной фразой ставит робот, когда разговор затих на 15 минут; появилось новое сообщение — разметит заново.",
     sup: "Все обращения: и чат на сайте и в боте, и форма «не получается подключить».<br><b>Ждёт ответа</b> — последнее слово за человеком. Ответить можно прямо отсюда: человек увидит текст в чате, а если писал из бота — придёт в телеграм. Ответ обычным письмом на уведомление работает как раньше.<br><b>Первая линия</b> — чат сам разобрал проблему по живым данным: нашёл заказ человека, посмотрел остаток у поставщика и дал шаги. Так человек получает помощь сразу, даже ночью.<br>Карточки свёрнуты: видно, кто написал, когда и первую строку. Нажмите на строку, чтобы раскрыть переписку и ответить. Те, что ждут ответа, раскрыты сразу.<br><b>Форма</b> — человек заполнил анкету со своей поломкой: видно модель телефона, что он пробовал, скриншот и ссылку на его персональную страницу. Ответ из поля попадёт на эту же страницу как ответ оператора.<br>На почту письмо уходит, только когда первая линия не справилась: «требуется внимание», не чаще раза в 12 часов на обращение, и только в рабочее окно с понедельника 08:00 до пятницы 15:00 по Москве. Всё остальное живёт здесь.",
     chart: "Выручка по дням оплаты, время московское. Наведите на график — покажет сумму и число пакетов за день, неделю или месяц.<br>Переключатель над графиком: дни, недели (с понедельника по воскресенье) и месяцы. Крайние неделя и месяц бывают неполными — в них только дни выбранного периода.<br>Прошедшие сутки закрываются в полночь: себестоимость фиксируется по курсу того дня и дальше не меняется. Сегодняшний день — живые цифры.",
     ads: "Канал определяется по метке, с которой человек пришёл впервые (utm, yclid, gclid). Покупки в телеграм-боте — отдельный канал. <b>SMS</b>, <b>Email</b>, <b>SMS-рассылка</b> — по метке в ссылке рассылки. <b>Личный кабинет VOYO</b> — покупки из визового ЛК, если человека не привела реклама или рассылка (иначе сделка идёт тому, что привело).<br><b>Маржа</b> — уже без себестоимости и комиссии банка. <b>Итог</b> — ещё и без расходов на рекламу. <b>ДРР</b> — доля рекламы в выручке.<br>Расход вносится со скриншотов кабинетов общей суммой за всё время.",
@@ -539,7 +571,22 @@
       tile("Решено", RU(v.solved), "· " + pct(v.solvedPct) + " обращений"),
       tile("Закончились возвратом", RU(v.refunded), "обращений · " + pct(v.refundedPct) + (v.refunded ? " · на карту " + v.refundCard + ", на баланс " + v.refundBalance : ""), v.refunded ? "neg" : ""),
       tile("Вернули денег всего", RU((v.rubCard || 0) + (v.rubBalance || 0)), "₽ · на карту " + RU(v.rubCard || 0) + ", на баланс " + RU(v.rubBalance || 0) + (v.rubNoCase ? " · без обращения в поддержку: " + RU(v.rubNoCase) + " ₽" : "")),
+      tile("Расход на бота", RU(v.botRub || 0), "₽ · $" + String(v.botUsd || 0).replace(".", ",") + " · " + RU(v.botAnswers || 0) + " " + plural(v.botAnswers || 0, ["ответ", "ответа", "ответов"])),
     ].join("");
+    // подобласть: по одному обращению, причина и итог
+    var rs = Object.keys(v.reasons || {}).sort(function(a, b){ return v.reasons[b] - v.reasons[a]; });
+    el("svcSum").textContent = !v.total ? "обращений не было"
+      : rs.length ? "чаще всего: " + rs.slice(0, 3).map(function(k){ return k.toLowerCase() + " " + v.reasons[k]; }).join(" · ") : "причины размечаются";
+    el("svcReasons").innerHTML = rs.map(function(k){ return "<span>" + esc(k) + " · " + v.reasons[k] + "</span>"; }).join("");
+    var ST = { ok: "Решено", wait: "Ждёт ответа", card: "Возврат на карту", balance: "Возврат на баланс" };
+    var cs = v.cases || [];
+    el("tSvc").innerHTML = cs.length
+      ? head(["Дата", "Где", "Кто", "Причина", "Итог", "Статус"], [0,0,0,0,0,0]) + "<tbody>" + cs.map(function(c){
+          return row([dShort(new Date(c.ts + 3 * 3600e3).toISOString().slice(0, 10)), esc(c.ch), esc(c.who || "—"),
+            c.reason ? esc(c.reason) : DASH, c.summary ? esc(c.summary) + (c.stale ? ' <span class="dim">(есть новые сообщения)</span>' : "") : '<span class="dim">разметится в течение 20 минут</span>',
+            '<span class="svc-st ' + c.status + '">' + ST[c.status] + "</span>"], [0,0,0,0,0,0]);
+        }).join("") + "</tbody>"
+      : "<tr><td>За этот период обращений нет.</td></tr>";
     el("serviceNote").textContent = v.total ? (RU(v.total) + " обращений · решено " + pct(v.solvedPct)) : "обращений не было";
   }
   function plural(n, f){ var a = Math.abs(n) % 100, b = a % 10; return (a > 10 && a < 20) ? f[2] : (b > 1 && b < 5) ? f[1] : b === 1 ? f[0] : f[2]; }
@@ -1256,8 +1303,8 @@
   (async function(){
     if (EMBED){
       document.body.classList.add("embed");
-      var st = staffToken();
-      if (st){ TOKEN = st; return enter(); }   // нет прав — load() получит 403 и покажет вход
+      var st = await staffToken();
+      if (st){ TOKEN = st; return enter(); }   // ни один не подошёл — обычный вход
     }
     var ok = await gate();
     if (ok){
