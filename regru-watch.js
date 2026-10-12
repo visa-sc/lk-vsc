@@ -7,6 +7,10 @@
 // Два порога (решение Андрея 31.08): ниже 1000 ₽ — ОДНО письмо (повторится,
 // только если баланс поднялся выше и снова упал); ниже 500 ₽ — письмо
 // КАЖДЫЙ день, пока не пополнят. REGRU_BALANCE_WARN_RUB / _ALERT_RUB.
+// 12.10.2026 Андрей поднял пороги до 2000 / 1500 ₽ и попросил присылать письма
+// только с 08:00 понедельника до 15:00 пятницы МСК (и не ночью: в будни с 08:00).
+// Поэтому проверка теперь раз в час, а письмо, которое выпало вне окна, уходит
+// первой проверкой в окне — отметка «отправлено» ставится только при отправке.
 // ─────────────────────────────────────────────────────────────────────────
 const fs = require("fs");
 const path = require("path");
@@ -16,8 +20,14 @@ const STATE = path.join(__dirname, ".regruWatch.json");
 function mount(deps) {
   const sendMail = deps.sendMail;
   const TOKEN = () => (process.env.REGRU_CLOUD_TOKEN || "").trim();
-  const WARN = () => Number(process.env.REGRU_BALANCE_WARN_RUB || 1000);
-  const LIMIT = () => Number(process.env.REGRU_BALANCE_ALERT_RUB || 500);
+  const WARN = () => Number(process.env.REGRU_BALANCE_WARN_RUB || 2000);
+  const LIMIT = () => Number(process.env.REGRU_BALANCE_ALERT_RUB || 1500);
+  // Окно писем: пн–пт с 08:00, в пятницу до 15:00 (МСК).
+  const mailOk = () => {
+    const m = new Date(Date.now() + 3 * 3600000), dow = m.getUTCDay(), h = m.getUTCHours();
+    if (dow < 1 || dow > 5 || h < 8) return false;
+    return !(dow === 5 && h >= 15);
+  };
   const TO = process.env.REGRU_ALERT_EMAIL || "director@visa-sc.ru";
 
   const load = () => { try { return JSON.parse(fs.readFileSync(STATE, "utf8")); } catch (_) { return {}; } };
@@ -57,7 +67,7 @@ function mount(deps) {
     } catch (e) {
       console.error("regru-watch: проверка не удалась: " + e.message);
       const st = load();
-      if (st.errDay !== mskDay()) { // об одной и той же проблеме — не чаще раза в сутки
+      if (st.errDay !== mskDay() && mailOk()) { // об одной и той же проблеме — не чаще раза в сутки
         st.errDay = mskDay(); save(st);
         sendMail({
           to: TO,
@@ -73,7 +83,7 @@ function mount(deps) {
     const st = load();
     if (bal < LIMIT()) {
       // Критично: письмо каждый день, пока не пополнят.
-      if (st.alertDay !== mskDay()) {
+      if (st.alertDay !== mskDay() && mailOk()) {
         st.alertDay = mskDay(); st.warnSent = true; save(st);
         sendMail({
           to: TO,
@@ -86,7 +96,7 @@ function mount(deps) {
       }
     } else if (bal < WARN()) {
       // Предупреждение: одно письмо на «заход» ниже порога, без ежедневных повторов.
-      if (!st.warnSent) {
+      if (!st.warnSent && mailOk()) {
         st.warnSent = true; save(st);
         sendMail({
           to: TO,
@@ -104,13 +114,13 @@ function mount(deps) {
     return bal;
   }
 
-  // Раз в сутки в 03:40 МСК — рядом с остальными ночными сторожами.
+  // Раз в час в :40 (запрос к API рег.облака лёгкий). Письма — только в окне mailOk().
   const msk = new Date(Date.now() + 3 * 3600 * 1000);
-  let msTo = ((((3 - msk.getUTCHours() + 24) % 24) * 60 + (40 - msk.getUTCMinutes())) * 60 - msk.getUTCSeconds()) * 1000;
-  if (msTo <= 0) msTo += 24 * 3600000;
-  setTimeout(() => { check(); setInterval(check, 24 * 3600000); }, msTo);
+  let msTo = ((40 - msk.getUTCMinutes()) * 60 - msk.getUTCSeconds()) * 1000;
+  if (msTo <= 0) msTo += 3600000;
+  setTimeout(() => { check(); setInterval(check, 3600000); }, msTo);
   console.log("regru-watch: " + (TOKEN()
-    ? "проверка баланса Рег.облака раз в сутки в 03:40 МСК (пороги " + WARN() + "/" + LIMIT() + " ₽, ближайшая через " + Math.round(msTo / 60000) + " мин)"
+    ? "проверка баланса Рег.облака раз в час в :40, письма пн 08:00 – пт 15:00 МСК (пороги " + WARN() + "/" + LIMIT() + " ₽, ближайшая через " + Math.round(msTo / 60000) + " мин)"
     : "СПИТ — нет REGRU_CLOUD_TOKEN в .env (токен: панель cloud.reg.ru → API)"));
   return { check };
 }
