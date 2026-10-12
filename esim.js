@@ -712,7 +712,7 @@ function eaItemRaw(p) {
     id: "ea_" + p.packageCode, src: "esimaccess", familyId: "", title: name, operator: "eSIM Access",
     countries: loc, dataGb: Math.round(gb * 10) / 10, unlimited: false, daily: /\/\s*day/i.test(name),
     days, costUsd: cost, retailUsd: Number(p.retailPrice || 0) / 10000 || null,
-    fiveG: /5G/i.test(String(p.speed || "")), hotspot: true, topup: Number(p.supportTopUpType) > 0,
+    fiveG: /5G/i.test(String(p.speed || "")), hotspot: true, topup: Number(p.supportTopUpType) === 2, // 1 нет, 2 да, 3 у суточных почти всегда пусто
     ipBreakout: String(p.ipExport || "").trim(), dataMb: Math.round(gb * 1024),
   };
 }
@@ -732,7 +732,7 @@ function eaItem(p) {
     dataGb: Math.round(gb * 10) / 10, unlimited: false, daily, days,
     costUsd: cost, retailUsd: Number(p.retailPrice || 0) / 10000 || null,
     fiveG: /5G/i.test(String(p.speed || "")), hotspot: true,
-    topup: Number(p.supportTopUpType) > 0,
+    topup: Number(p.supportTopUpType) === 2,
     ipBreakout: String(p.ipExport || "").trim(),
     dataMb: Math.round(gb * 1024),
   };
@@ -1389,6 +1389,19 @@ function readSession(req) {
 // Покупка засчитывается один раз на заказ, где бы её ни поймали: на странице
 // «оплачено» или позже на странице с QR. Клиент после СБП часто не возвращается
 // на сайт, поэтому одной точки мало — заказ 739 ₽ от 16.09 так и потерялся.
+function seatOf(mmOrderId) {
+  const all = readJson(ORDERS_FILE, []);
+  const x = all.find((y) => y.mmOrderId === mmOrderId && y.status === "done" && !y.parentOrderId);
+  if (!x) return null;
+  if (x.groupOf) {
+    const p = all.find((y) => y.id === x.groupOf) || {};
+    const n = Number(String(x.id).split("-").pop()) || 0;
+    const total = Math.max(Number(p.qty) || 0, n);
+    return n > 1 ? { n, total } : null;
+  }
+  const q = Number(x.qty) || 1;
+  return q > 1 ? { n: 1, total: q } : null;
+}
 function orderByProviderId(mmOrderId) {
   return readJson(ORDERS_FILE, []).find(
     (x) => x.status === "done" && (x.mmOrderId === mmOrderId || x.parentOrderId === mmOrderId)) || null;
@@ -1462,6 +1475,12 @@ function mount(app, opts) {
       const adm = String(req.query.adm || "") === ADMIN_CODE;
       // ?land=1 — запрос со страницы страны: там показываем и короткие сроки
       const land = String(req.query.land || "") === "1";
+      // можно ли докупить трафик на эту же eSIM: у MobiMatter — есть продления того же
+      // семейства на все страны пакета, у eSIM Access — флаг из каталога, у TSim продлений нет
+      const fam = new Map();
+      (cat.addons || []).forEach((a) => { if (!fam.has(a.familyId)) fam.set(a.familyId, []); fam.get(a.familyId).push(a.countries || []); });
+      const canTop = (p) => !!p.topup || (!!p.familyId &&
+        (fam.get(p.familyId) || []).some((cs) => (p.countries || []).every((c) => cs.indexOf(c) >= 0)));
       let products = cat.products
         .filter((p) => adm || (!isTestProduct(p) && !(tsimAdmOnly() && isTsimId(p.id)) && !(eaAdmOnly() && isEaId(p.id))))
         .filter((p) => land || adm || !p.landOnly)
@@ -1470,7 +1489,7 @@ function mount(app, opts) {
           id: p.id, title: p.title || "", operator: p.operator || "", countries: p.countries || [],
           dataGb: p.dataGb, unlimited: !!p.unlimited, daily: !!p.daily, days: p.days,
           fiveG: !!p.fiveG, hotspot: p.hotspot !== false, priceRub: tierRub(retailFor(p, rate), req.query.tier),
-          note: packNote(p), ruPick: isRuServicesPick(p),
+          note: packNote(p), ruPick: isRuServicesPick(p), topup: canTop(p),
         };
         if (adm) { o.src = p.src || "mobimatter"; o.costUsd = p.costUsd; o.costRub = costFor(p, rate); o.marginRub = o.priceRub - o.costRub; }
         return o;
@@ -1561,7 +1580,7 @@ function mount(app, opts) {
         if (owner) setSession(res, owner);
         return res.json({
           success: true, pay: tbank.ready(), you: owner || readSession(req),
-          conv: convPayload(orderByProviderId(o)),
+          conv: convPayload(orderByProviderId(o)), seat: seatOf(o),
           order: { id: o, state: "Completed", title: view.title, operator: view.operator, qrDataUrl: view.qrDataUrl,
             lpa: view.lpa, activationCode: view.activationCode, smdp: view.smdp, apn: view.apn, iccid: view.iccid },
           usage: markExpiry(usage), topups: (usage && usage.expired) ? [] : topups,
@@ -1613,7 +1632,7 @@ function mount(app, opts) {
       const owner = emailOfProviderOrder(o);
       if (owner) setSession(res, owner);
       res.json({
-        success: true, pay: tbank.ready(), you: owner || readSession(req),
+        success: true, pay: tbank.ready(), you: owner || readSession(req), seat: seatOf(o),
         order: {
           id: o, state: (order && order.orderState) || null, title: li.title || "", operator: li.providerName || "",
           qrDataUrl: det.QR_CODE || null, lpa: det.LOCAL_PROFILE_ASSISTANT || null,
@@ -1690,11 +1709,12 @@ function mount(app, opts) {
     const best = new Map(); // ключ → { price: минимальная цена, rank: лучший поставщик по этой цене }
     list.forEach((p) => {
       const k = key(p), r = supplierRank(p), b = best.get(k);
-      if (!b || p.priceRub < b.price || (p.priceRub === b.price && r < b.rank)) best.set(k, { price: p.priceRub, rank: r });
+      const t = p.topup ? 0 : 1;
+      if (!b || p.priceRub < b.price || (p.priceRub === b.price && (t < b.t || (t === b.t && r < b.rank)))) best.set(k, { price: p.priceRub, rank: r, t });
     });
     return list.filter((p) => {
       const b = best.get(key(p));
-      return p.priceRub === b.price && supplierRank(p) === b.rank;
+      return p.priceRub === b.price && supplierRank(p) === b.rank && (p.topup ? 0 : 1) === b.t;
     });
   }
 
@@ -1827,9 +1847,11 @@ function mount(app, opts) {
     const tipsCN = isChinaLabel(order.label);
     const btn = (href, text) => '<a href="' + href + '" style="display:inline-block;background:#3589bd;color:#fff;' +
       'text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:12px">' + text + '</a>';
+    // несколько eSIM: сразу видно, какую ставить себе, а какие переслать спутникам
+    const seatName = (i) => (i ? "для спутника" : "для вас");
     const list = many
       ? '<table style="border-collapse:collapse;margin:0 0 18px">' + items.map((it, i) =>
-          '<tr><td style="padding:0 12px 10px 0;font-size:14px;color:#3a4356;white-space:nowrap">eSIM ' + (i + 1) + '</td>' +
+          '<tr><td style="padding:0 12px 10px 0;font-size:14px;color:#3a4356;white-space:nowrap"><b>eSIM ' + (i + 1) + '</b> · ' + seatName(i) + '</td>' +
           '<td style="padding:0 0 10px">' + btn(it.myUrl, "Открыть QR-код") + '</td></tr>').join("") + '</table>'
       : '<p style="margin:0 0 18px">' + btn(items[0].myUrl, "Открыть QR-код и остаток") + '</p>';
     const refLink = refCode ? REF_SITE + "/?ref=" + refCode : "";
@@ -1848,7 +1870,7 @@ function mount(app, opts) {
         '<p style="font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px">' + (many ? "Ваши eSIM готовы" : "Ваша eSIM готова") + '</p>' +
         '<p style="color:#8b93a5;font-size:14px;line-height:1.6;margin:0 0 18px">' + esc(order.label || "") + (many ? " · " + items.length + " шт." : "") + '</p>' +
         list +
-        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">' + (many ? "Каждую eSIM ставьте на свой телефон своим QR-кодом. " : "") +
+        '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">' + (many ? "<b>Каждая eSIM ставится на свой телефон.</b> eSIM 1 поставьте себе, ссылки на остальные перешлите спутникам: каждый откроет свою и установит у себя. " : "") +
         'Установка: Настройки → Сотовая связь → Добавить eSIM → сканировать QR. ' +
         'Сделайте это дома по Wi-Fi, до вылета. В поездке включите «Роуминг данных» для линии eSIM.</p>' +
         '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px;padding:10px 14px;' +
@@ -1857,10 +1879,11 @@ function mount(app, opts) {
         (tipsCN ? chinaTipsHtml() : "") +
         refHtml +
         '<p style="font-size:13px;line-height:1.6;color:#8b93a5;margin:0 0 6px">Ваш личный кабинет со всеми eSIM: <a href="' + acc + '" style="color:#3589bd">открыть</a><br/>' +
-        'Ссылка постоянная — сохраните это письмо.</p>' +
+        'Ссылка постоянная, сохраните это письмо.</p>' +
         '<p style="font-size:12px;color:#a6adbd;margin:18px 0 0">VOYO mobile · выгодный интернет в 209 странах мира</p></div>',
       text: (many ? "Ваши eSIM готовы (" + items.length + " шт.): " : "Ваша eSIM готова: ") + (order.label || "") + "\n\n" +
-        items.map((it, i) => (many ? "eSIM " + (i + 1) + ": " : "QR-код и остаток трафика: ") + it.myUrl).join("\n") +
+        items.map((it, i) => (many ? "eSIM " + (i + 1) + " (" + (i ? "для спутника, перешлите ему" : "для вас") + "): " : "QR-код и остаток трафика: ") + it.myUrl).join("\n") +
+        (many ? "\n\nКаждая eSIM ставится на свой телефон: eSIM 1 себе, остальные ссылки перешлите спутникам." : "") +
         "\n\nОбратите внимание: Перенести eSIM на другой телефон потом нельзя: ставьте её сразу на тот, с которым поедете. Код срабатывает один раз." +
         (tipsCN ? "\n\n" + CHINA_TIPS_TEXT : "") +
         (refCode ? "\n\nПутешествуете не один? Ваш промокод для друзей: " + refCode + " (другу −" + REF_BONUS_RUB + " ₽ на первую eSIM, вам +" +
@@ -3824,7 +3847,8 @@ function mount(app, opts) {
       const cat = await getCatalog(false);
       const main = (cat.products || []).find((x) => x.id === productId);
       if (!main) return false;
-      return (cat.addons || []).some((a) => a.familyId === main.familyId);
+      if (main.topup) return true;
+      return !!main.familyId && (cat.addons || []).some((a) => a.familyId === main.familyId);
     } catch (_) { return false; }
   }
 

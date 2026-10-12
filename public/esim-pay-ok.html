@@ -88,8 +88,8 @@
     <div class="tick">
       <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="m5 13 4.5 4.5L19 7.5" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
-    <h1>eSIM готова</h1>
-    <div class="sub">Отсканируйте QR-код в настройках телефона. Ссылку и чек отправили вам на почту.</div>
+    <h1 id="doneH">eSIM готова</h1>
+    <div class="sub" id="doneSub">Отсканируйте QR-код в настройках телефона. Ссылку и чек отправили вам на почту.</div>
     <img id="qr" class="ym-hide-content" alt="QR-код eSIM" style="width:200px;height:200px;border:1px solid var(--line);border-radius:16px;padding:8px;background:#fff;display:none;margin:0 auto 16px" />
 <div class="tip">
       <span class="ic">
@@ -148,11 +148,14 @@
         // купили сразу несколько eSIM — у каждой своя кнопка
         if(j.extra && j.extra.length){
           var go = document.getElementById("goBtn");
-          go.textContent = "Открыть eSIM 1";
+          go.textContent = "eSIM 1 · для вас";
+          document.getElementById("doneH").textContent = "eSIM готовы: " + (j.extra.length + 1) + " шт.";
+          document.getElementById("doneSub").innerHTML = "QR ниже: <b>eSIM 1, для вашего телефона.</b> " +
+            "Остальные откройте кнопками и перешлите спутникам: каждая eSIM ставится на свой телефон. Все ссылки есть в письме.";
           var after = go;
           j.extra.forEach(function(u, i){
             var a = go.cloneNode(false);
-            a.removeAttribute("id"); a.href = u; a.textContent = "Открыть eSIM " + (i + 2);
+            a.removeAttribute("id"); a.href = u; a.textContent = "eSIM " + (i + 2) + " · для спутника";
             a.style.marginTop = "10px";
             after.parentNode.insertBefore(a, after.nextSibling); after = a;
           });

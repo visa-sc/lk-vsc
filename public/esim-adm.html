@@ -268,8 +268,8 @@
     <div class="ctrl">
       <div class="seg" id="seg">
         <button data-d="7">7 дней</button>
-        <button data-d="30" class="on">30 дней</button>
-        <button data-d="0">Всё время</button>
+        <button data-d="30">30 дней</button>
+        <button data-d="0" class="on">Всё время</button>
       </div>
       <span class="dates"><input id="from" type="date"/><input id="to" type="date"/></span>
       <label class="chk"><input id="withTest" type="checkbox"/> тестовые</label>
@@ -398,7 +398,7 @@
              localStorage.getItem("voyo_vsc_token") || "";
     }catch(e){ return ""; }
   }
-  var DATA = null, DAYS = 30;
+  var DATA = null, DAYS = 0; // по умолчанию «Всё время» (12.10.2026)
   var el = function(id){ return document.getElementById(id); };
   var RU = function(n){ return (Math.round(Number(n)||0)).toLocaleString("ru-RU"); };
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }

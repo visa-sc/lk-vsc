@@ -262,7 +262,8 @@ function dropDominated(list, wide) {
   list.forEach((p) => {
     const q = best[key(p)];
     const n = p.countries.length;
-    if (!q || p.priceRub < q.priceRub || (p.priceRub === q.priceRub &&
+    if (!q || p.priceRub < q.priceRub || (p.priceRub === q.priceRub && !!p.topup !== !!q.topup && p.topup) ||
+        (p.priceRub === q.priceRub && !!p.topup === !!q.topup &&
         (n !== q.countries.length ? (wide ? n > q.countries.length : n < q.countries.length) : String(p.id) < String(q.id)))) best[key(p)] = p;
   });
   const same = list.filter((p) => best[key(p)] === p);
@@ -273,6 +274,7 @@ function dropDominated(list, wide) {
     if (p.ruPick && !q.ruPick) return false;
     if (p.hotspot !== false && q.hotspot === false) return false;
     if (p.fiveG && !q.fiveG) return false;
+    if (p.topup && !q.topup) return false; // продлеваемый не прячем за тарифом без продления
     const dataOk = q.unlimited || (!p.unlimited && (q.dataGb || 0) >= (p.dataGb || 0));
     if (!dataOk || (q.days || 0) < (p.days || 0) || q.priceRub > p.priceRub) return false;
     return q.priceRub < p.priceRub || (q.dataGb || 0) > (p.dataGb || 0) || (q.days || 0) > (p.days || 0) || (!!q.unlimited && !p.unlimited);
@@ -429,6 +431,7 @@ async function showPack(chatId, productId, messageId) {
     "Срок: <b>" + RU(p.days) + " дн.</b> с первого выхода в интернет\n" +
     "Сеть: <b>" + (p.fiveG ? "5G / 4G LTE" : "4G LTE") + "</b>\n" +
     "Раздача Wi-Fi: <b>" + (p.hotspot !== false ? "да" : "нет") + "</b>\n" +
+    "Продление: <b>" + (p.topup ? "можно докупить трафик на эту же eSIM" : "нет, потом нужна новая eSIM") + "</b>\n" +
     // та же сноска, что на витрине: NextLink через Сингапур советуем для российских сервисов
     (p.note ? "✅ " + esc(p.note) + "\n" : "") + "\n";
   if (price.discountRub > 0 || price.balanceUsed > 0) {

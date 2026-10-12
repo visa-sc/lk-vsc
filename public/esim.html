@@ -180,6 +180,10 @@
   .pk .cn small{display:block;font-weight:500;font-size:11.5px;color:var(--mut);margin-top:2px;}
   .badge5g{font-size:10px;font-weight:800;color:#fff;background:var(--grad);border-radius:7px;padding:4px 7px;letter-spacing:.05em;}
   .pk .mid{display:flex;align-items:baseline;gap:9px;margin:0 0 2px;}
+  /* можно докупить трафик на эту же eSIM */
+  .pk .ext{margin-left:auto;font-size:11px;font-weight:700;color:var(--accent);white-space:nowrap;}
+  .specs .b.wide{grid-column:1/-1;}
+  .specs .v small{display:block;font-size:12px;font-weight:500;color:var(--mut);margin-top:2px;letter-spacing:0;}
   /* Пустой добор внизу: карточки в ряду одной высоты, но цена у всех на одной
      линии, а зелёная сноска висит под ценой и ничего не сдвигает. */
   .pk::after{content:"";flex:1 0 auto;}
@@ -823,7 +827,8 @@
     list.forEach(function(p){
       var k = [p.dataGb||0, p.days||0, p.daily?1:0, p.unlimited?1:0, p.fiveG?1:0, p.hotspot===false?1:0, p.note||""].join("|");
       var q = best[k];
-      if(!q || p.priceRub < q.priceRub || (p.priceRub === q.priceRub &&
+      if(!q || p.priceRub < q.priceRub || (p.priceRub === q.priceRub && !!p.topup !== !!q.topup && p.topup) ||
+         (p.priceRub === q.priceRub && !!p.topup === !!q.topup &&
          (p.countries.length !== q.countries.length ? (wide ? p.countries.length > q.countries.length : p.countries.length < q.countries.length) : String(p.id) < String(q.id)))) best[k] = p;
     });
     var same = list.filter(function(p){ return best[[p.dataGb||0, p.days||0, p.daily?1:0, p.unlimited?1:0, p.fiveG?1:0, p.hotspot===false?1:0, p.note||""].join("|")] === p; });
@@ -840,6 +845,7 @@
     if (p.ruPick && !q.ruPick) return false;
     if (p.hotspot !== false && q.hotspot === false) return false;
     if (p.fiveG && !q.fiveG) return false;            // 5G не прячем за тарифом без 5G
+    if (p.topup && !q.topup) return false;            // продлеваемый не прячем за тарифом без продления
     var dataOk = q.unlimited || (!p.unlimited && (q.dataGb||0) >= (p.dataGb||0));
     if (!dataOk || (q.days||0) < (p.days||0) || q.priceRub > p.priceRub) return false;
     return q.priceRub < p.priceRub || (q.dataGb||0) > (p.dataGb||0) || (q.days||0) > (p.days||0) || (!!q.unlimited && !p.unlimited);
@@ -933,7 +939,7 @@
       '<span class="cn">'+esc(head)+'<small>'+esc(sub)+'</small></span>'+
       (p.fiveG?'<span class="badge5g">5G</span>':"")+'</div>'+
       '<div class="mid"><span class="gb">'+gb+'<small>'+(p.unlimited?"безлимит":(p.daily?'ГБ<span class="perday">в день</span>':"ГБ"))+'</small></span>'+
-      '<span class="days">· '+RU(p.days)+' дн.</span></div>'+
+      '<span class="days">· '+RU(p.days)+' дн.</span>'+(p.topup?'<span class="ext" title="Можно докупить трафик на эту же eSIM">+ продление</span>':'')+'</div>'+
       '<div class="bot"><span class="pr">'+RU(p.priceRub)+' ₽'+perGbTxt(p)+'</span><span class="go">Выбрать ›</span></div>'+
       (p.note?'<div class="rupick">'+esc(p.note)+'</div>':"")+
       (p.marginRub!=null?'<div class="adm">закупка '+esc(p.costUsd)+' $ ≈ '+RU(p.costRub)+' ₽ · маржа '+RU(p.marginRub)+' ₽</div>':"")+
@@ -1299,7 +1305,10 @@
       '<div class="b"><div class="k">Интернет</div><div class="v">'+gb+'</div></div>'+
       '<div class="b"><div class="k">Срок</div><div class="v">'+RU(p.days)+' дней</div></div>'+
       '<div class="b"><div class="k">Сеть</div><div class="v">'+(p.fiveG?"5G / 4G LTE":"4G LTE")+'</div></div>'+
-      '<div class="b"><div class="k">Раздача Wi-Fi</div><div class="v">'+(p.hotspot!==false?"Да":"Нет")+'</div></div>';
+      '<div class="b"><div class="k">Раздача Wi-Fi</div><div class="v">'+(p.hotspot!==false?"Да":"Нет")+'</div></div>'+
+      '<div class="b wide"><div class="k">Продление</div><div class="v">'+(p.topup
+        ? 'Можно<small>Кончится трафик или срок: докупите на эту же eSIM, переустанавливать не нужно</small>'
+        : 'Нет<small>Когда пакет кончится, понадобится новая eSIM</small>')+'</div></div>';
     var cov = "";
     if(multi){
       var names = p.countries.slice(0,8).map(cname).join(", ");
