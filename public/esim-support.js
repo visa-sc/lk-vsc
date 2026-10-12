@@ -204,7 +204,8 @@
       btn.disabled = true; ta.value = "";
       try {
         var r = await fetch("/esim/api/chat/send", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cid: cid(), text: text, page: location.pathname + location.search }) });
+          body: JSON.stringify({ cid: cid(), text: text, page: location.pathname + location.search,
+            vid: (function(){ try { return localStorage.getItem("voyo_vid") || ""; } catch (_) { return ""; } })() }) });
         var j = await r.json();
         if (j && j.success) { setCid(j.cid); lastCount = -1; render(box, j.messages || []); }
       } catch (e) {

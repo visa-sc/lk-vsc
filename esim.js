@@ -2403,10 +2403,15 @@ function mount(app, opts) {
     _phoneMails.set(phone, { ts: Date.now(), list });
     return list;
   }
-  async function ordersByContact(contact, page) {
+  async function ordersByContact(contact, page, vid) {
     const all = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.mmOrderId);
     const mm = (/[?&]o=([A-Za-z0-9_-]+)/.exec(String(page || "")) || [])[1];
     if (mm) { const hit = all.filter((o) => String(o.mmOrderId) === mm); if (hit.length) return hit; }
+    // чат без контакта: покупки того же браузера (12.10.2026)
+    if (!contact && vid) {
+      const v = all.filter((o) => o.vid && o.vid === vid);
+      if (v.length) return v.sort((a, b) => (b.paidAt || b.ts || 0) - (a.paidAt || a.ts || 0));
+    }
     const c = String(contact || "");
     const phone = c.replace(/\D/g, "").slice(-10);
     const mails = [normEmail((c.match(/[^\s]+@[^\s]+/) || [])[0] || "")].filter(Boolean);
@@ -2469,7 +2474,7 @@ function mount(app, opts) {
   const TROUBLE_RE = /(не\s*работа|перестал|пропал|отвалил|нет\s*(интернет|сет|связ|трафик)|не\s*лов|не\s*подключ|не\s*могу|не\s*устанав|не\s*актив|не\s*вид|ошибк|сбой|медленн|отключ)/i;
   // заказ человека: сначала по адресу страницы (/esim/my?o=…), потом по контакту
   async function chatOrder(chat) {
-    return (await ordersByContact(chat.contact, chat.page))[0] || null;
+    return (await ordersByContact(chat.contact, chat.page, chat.vid))[0] || null;
   }
   const GB = (mb) => (Math.round(mb / 102.4) / 10).toString().replace(".", ",");
   // шаги «пакет живой, а интернета нет» — ровно то, чем люди и чинят сами
@@ -2509,7 +2514,7 @@ function mount(app, opts) {
     if (!doctor.aiOn()) return false;
     let mine = [], st = [];
     try {
-      mine = await ordersByContact(chat.contact, chat.page);
+      mine = await ordersByContact(chat.contact, chat.page, chat.vid);
       st = mine.length ? await orderStates(mine) : [];
     } catch (_) {}
     const seen = await doctor.diagnose({
@@ -2570,7 +2575,7 @@ function mount(app, opts) {
     const [cat0] = [await getCatalog(false).catch(() => ({ products: [] }))];
     const ctry = (((cat0.products || []).find((x) => x.id === o.productId) || {}).countries || []).slice().sort().join(",");
     if (ctry) {
-      const mine = (await ordersByContact(chat.contact, chat.page)).filter((x) => x.id !== o.id && x.mmOrderId !== o.mmOrderId);
+      const mine = (await ordersByContact(chat.contact, chat.page, chat.vid)).filter((x) => x.id !== o.id && x.mmOrderId !== o.mmOrderId);
       for (const m of mine) {
         const c2 = (((cat0.products || []).find((x) => x.id === m.productId) || {}).countries || []).slice().sort().join(",");
         if (c2 !== ctry) continue;
@@ -2642,7 +2647,7 @@ function mount(app, opts) {
   setInterval(() => { sweepUnusedGifts().catch((e) => console.error("esim подарки:", e.message)); }, 6 * 3600e3);
 
   async function secondLine(chat) {
-    const mine = await ordersByContact(chat.contact, chat.page);
+    const mine = await ordersByContact(chat.contact, chat.page, chat.vid);
     if (!mine.length) return false;
     const st = await orderStates(mine);
     const here = st.find((x) => chat.page && chat.page.indexOf(x.o.mmOrderId) >= 0) || st[0];
@@ -2757,7 +2762,7 @@ function mount(app, opts) {
   async function casePlanAnswer(chat, last) {
     const plan = casePlanFor(chat);
     if (!plan || plan.kind !== "companion" || last.ts < (plan.since || 0) || !doctor.aiOn()) return false;
-    const mine = await ordersByContact(chat.contact, chat.page).catch(() => []);
+    const mine = await ordersByContact(chat.contact, chat.page, chat.vid).catch(() => []);
     const st = mine.length ? await orderStates(mine).catch(() => []) : [];
     const seen = await doctor.diagnose({
       messages: chat.messages, orders: mine, states: st, ua: chat.ua, ip: chat.ip, refundAllowed: false,
@@ -2860,7 +2865,12 @@ function mount(app, opts) {
         const did = await secondLine(chat).catch((e) => {
           console.error("esim вторая линия:", e.message); return false;
         });
-        if (!did) callOperator(chat, "первая линия дала разбор, вторая не нашла, чем помочь");
+        // вторая линия про поломку не помогла — возможно, это просто вопрос («можно через Сбер?»):
+        // сначала даём ответить модели по знаниям о продукте, оператора зовём, только если она пас (12.10.2026)
+        if (!did) {
+          const ok = await doctorReply(chat, "человек пишет снова после разбора").catch(() => false);
+          if (!ok) callOperator(chat, "первая линия дала разбор, вторая не нашла, чем помочь");
+        }
         return;
       }
       if (chat.autoDiag && Date.now() - chat.autoDiag < 6 * 3600e3) return;   // один разбор на историю
@@ -2931,7 +2941,7 @@ function mount(app, opts) {
       const b = req.body || {};
       const chat = support.clientMessage({
         id: String(b.cid || "").replace(/[^a-f0-9]/gi, "").slice(0, 12) || support.newChatId(),
-        text: b.text, page: b.page, contact: b.contact,
+        text: b.text, page: b.page, contact: b.contact, vid: b.vid,
         ua: req.headers["user-agent"], ip: String(req.headers["x-forwarded-for"] || "").split(",")[0].trim(),
       });
       if (!chat) return res.status(400).json({ success: false });

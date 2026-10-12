@@ -27,7 +27,7 @@ const IMAP_STATE = path.join(DIR, "mailin.json");
 const TO = process.env.ESIM_SUPPORT_TO || "director@visa-sc.ru";
 const BLACKOUT = String(process.env.ESIM_SUPPORT_BLACKOUT || "2026-09-28").split(",").map((s) => s.trim()).filter(Boolean);
 const AUTO_REPLY = process.env.ESIM_SUPPORT_AUTOREPLY ||
-  "Ваше сообщение получено. Ожидайте ответа оператора — он придёт сюда же, в этот чат.";
+  "Ваше сообщение получено. Ответ придёт сюда же, в этот чат.";
 
 function readJson(f, d) { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (_) { return d; } }
 function writeJson(f, d) {
@@ -114,7 +114,7 @@ function findChat(id) { return loadChats().find((c) => c.id === String(id || "")
 function newChatId() { return crypto.randomBytes(4).toString("hex"); }
 
 // Сообщение от клиента: кладём в чат, отвечаем автоответом, письмо — в очередь
-function clientMessage({ id, text, page, ua, ip, contact, tgChatId }) {
+function clientMessage({ id, text, page, ua, ip, contact, tgChatId, vid }) {
   const list = loadChats();
   let chat = list.find((c) => c.id === id);
   if (!chat) {
@@ -124,6 +124,8 @@ function clientMessage({ id, text, page, ua, ip, contact, tgChatId }) {
   }
   if (contact) chat.contact = String(contact).slice(0, 120);
   if (tgChatId) chat.tgChatId = String(tgChatId);   // ответ уйдёт человеку в телеграм
+  // браузер покупателя: по нему находим его заказы, даже если контакт не оставлен (12.10.2026)
+  if (vid) chat.vid = String(vid).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
   const clean = String(text || "").slice(0, 4000).trim();
   if (!clean) return null;
   const first = !chat.messages.length;
