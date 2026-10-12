@@ -2765,37 +2765,60 @@ function mount(app, opts) {
   // на следующую поездку. Согласился — письмо «решено». Настаивает на деньгах —
   // подтверждаем возврат, отключаем eSIM у поставщика, просим его вернуть деньги
   // на баланс, Андрею письмо: какую сумму вернуть клиенту на карту.
+  // Вид «keep_or_refund» (12.10.2026): неиспользованную eSIM предложили оставить
+  // на следующую поездку. Согласился — письмо «решено». Просит деньги — сначала
+  // возвращаем на баланс VOYO mobile (Андрей: «сперва на баланс, не устроит —
+  // вернём на карту»), eSIM отключаем у поставщика и просим вернуть деньги нам.
+  // Попросит на карту — снимаем с баланса и пишем Андрею вернуть на карту.
   async function keepOrRefundAnswer(plan, chat) {
     const mine = await ordersByContact(chat.contact, chat.page, chat.vid).catch(() => []);
     const st = mine.length ? await orderStates(mine).catch(() => []) : [];
+    const balanceStage = plan.stage === "balance";
     const seen = await doctor.diagnose({
       messages: chat.messages, orders: mine, states: st, ua: chat.ua, ip: chat.ip, refundAllowed: true,
-      tried: ["ПЛАН ОПЕРАТОРА. Мы предложили человеку оставить неиспользованную eSIM на следующую поездку (она действует до " + (plan.validTill || "весны") +
-        ") или оформить за неё возврат. В diagnosis первым словом поставь метку: [возврат] если он хочет деньги назад, [оставит] если согласен оставить, " +
-        "[другое] если вопрос о другом. reply нужен только для [другое]: коротко ответь по сути."],
-    }).catch((e) => { console.error("esim план, доктор:", e.message); return null; });
+      tried: [balanceStage
+        ? "ПЛАН ОПЕРАТОРА. Мы вернули человеку " + plan.refundRub + " ₽ на баланс VOYO mobile за неиспользованную eSIM и предложили, если удобнее, вернуть на карту. " +
+          "В diagnosis первым словом поставь метку: [карта] если он хочет деньги на карту, [ок] если его устраивает баланс или он благодарит, [другое] если вопрос о другом. reply нужен только для [другое]."
+        : "ПЛАН ОПЕРАТОРА. Мы предложили человеку оставить неиспользованную eSIM на следующую поездку (она действует до " + (plan.validTill || "весны") +
+          ") или оформить за неё возврат. В diagnosis первым словом поставь метку: [возврат] если он хочет деньги назад, [оставит] если согласен оставить, " +
+          "[другое] если вопрос о другом. reply нужен только для [другое]: коротко ответь по сути."],
+    }).catch((x) => { console.error("esim план, доктор:", x.message); return null; });
     const tag = String((seen && seen.diagnosis) || "").trim();
-    if (/^\[возврат\]/i.test(tag)) {
-      const spare = readJson(ORDERS_FILE, []).find((x) => x.id === plan.spareOrder);
-      const r = spare ? await refundFromSupplier(spare, "the customer's companion did not use this eSIM, we refund the customer").catch((e) => "ошибка: " + e.message) : "заказ не найден";
-      casePlanSave(plan.id, { done: Date.now(), result: "refund", refund: r });
-      support.botMessage(chat.id, "Хорошо, оформляем возврат за вторую eSIM: " + (plan.refundRub || "") + " ₽ вернутся на карту, с которой вы платили, обычно в течение нескольких дней. Вторую eSIM мы отключили, первая работает как обычно.", "autoFix2");
-      planMail("VOYO eSIM: клиент просит возврат — верните " + (plan.refundRub || "?") + " ₽ на карту",
-        "Клиент " + (chat.contact || "—") + " отказался оставлять неиспользованную eSIM и попросил деньги.\n\n" +
-        "Верните в Т-Банке " + (plan.refundRub || "?") + " ₽ по платежу " + (plan.paymentId || "—") + " (частичный возврат: " + (plan.refundNote || "") + ").\n" +
-        "Клиенту написали, что возврат оформлен.\n\n" +
-        "Неиспользованная eSIM " + (spare ? spare.mmOrderId : "—") + " отключена у поставщика: " + r + ". Когда поставщик вернёт деньги на баланс, придёт отдельное письмо.\n\nЧат: " + chat.id);
+    const spare = readJson(ORDERS_FILE, []).find((x) => x.id === plan.spareOrder) || {};
+    const who = spare.custKey || spare.email || (chat.tgChatId ? "tg:" + chat.tgChatId : "");
+
+    if (!balanceStage && /^\[возврат\]/i.test(tag)) {
+      if (!who) { callOperator(chat, "по плану нужно вернуть деньги на баланс, но не нашли карточку клиента"); return true; }
+      addBalance(who, plan.refundRub, "возврат за неиспользованную eSIM " + (spare.mmOrderId || ""));
+      const r = spare.mmOrderId ? await refundFromSupplier(spare, "the customer's companion did not use this eSIM, we refund the customer").catch((x) => "ошибка: " + x.message) : "заказ не найден";
+      casePlanSave(plan.id, { stage: "balance", balanceAt: Date.now(), supplier: r, since: Date.now() });
+      support.botMessage(chat.id, "Вернули " + plan.refundRub + " ₽ на ваш баланс в VOYO mobile. Ими можно оплатить следующую eSIM: при покупке баланс спишется сам, в боте и на сайте.\n\n" +
+        "Если удобнее получить деньги на карту, напишите «на карту», вернём туда. Вторую eSIM мы отключили, первая работает как обычно.", "autoFix2");
+      planMail("VOYO eSIM: клиенту вернули " + plan.refundRub + " ₽ на баланс",
+        "Клиент " + (chat.contact || "—") + " попросил деньги за неиспользованную eSIM. Вернули " + plan.refundRub + " ₽ на его баланс VOYO mobile и предложили, если нужно, вернуть на карту.\n\n" +
+        "eSIM " + (spare.mmOrderId || "—") + " отключена у поставщика: " + r + ". Когда поставщик вернёт деньги на баланс, придёт отдельное письмо.\n" +
+        "Если клиент попросит на карту, придёт письмо с суммой.\n\nЧат: " + chat.id);
       return true;
     }
-    if (/^\[оставит\]/i.test(tag)) {
-      casePlanSave(plan.id, { done: Date.now(), result: "kept" });
-      support.botMessage(chat.id, "Отлично, тогда eSIM просто ждёт следующей поездки. В Турции включите её для мобильного интернета и «Роуминг данных», и она заработает. Хорошей поездки!", "autoFix2");
-      planMail("VOYO eSIM: вопрос клиента решён без возврата",
-        "Клиент " + (chat.contact || "—") + " согласился оставить неиспользованную eSIM на следующую поездку. Возврата не будет.\n\nЧат: " + chat.id);
+    if (balanceStage && /^\[карта\]/i.test(tag)) {
+      if (who) addBalance(who, -plan.refundRub, "вернули на карту вместо баланса");
+      casePlanSave(plan.id, { done: Date.now(), result: "card" });
+      support.botMessage(chat.id, "Хорошо, вернём " + plan.refundRub + " ₽ на карту, с которой вы платили. Обычно деньги приходят в течение нескольких дней.", "autoFix2");
+      planMail("VOYO eSIM: верните клиенту " + plan.refundRub + " ₽ на карту",
+        "Клиент " + (chat.contact || "—") + " попросил деньги на карту вместо баланса. С его баланса " + plan.refundRub + " ₽ сняли.\n\n" +
+        "Верните в Т-Банке " + plan.refundRub + " ₽ по платежу " + (plan.paymentId || "—") + " (частичный возврат: " + (plan.refundNote || "") + ").\n" +
+        "Клиенту написали, что деньги придут на карту.\n\nЧат: " + chat.id);
+      return true;
+    }
+    if ((balanceStage && /^\[ок\]/i.test(tag)) || (!balanceStage && /^\[оставит\]/i.test(tag))) {
+      casePlanSave(plan.id, { done: Date.now(), result: balanceStage ? "balance" : "kept" });
+      if (!balanceStage) support.botMessage(chat.id, "Отлично, тогда eSIM просто ждёт следующей поездки. В Турции включите её для мобильного интернета и «Роуминг данных», и она заработает. Хорошей поездки!", "autoFix2");
+      planMail("VOYO eSIM: вопрос клиента решён" + (balanceStage ? " (деньги на балансе)" : " без возврата"),
+        "Клиент " + (chat.contact || "—") + (balanceStage ? " согласен, что " + plan.refundRub + " ₽ остаются на балансе VOYO mobile. Возврата на карту не будет." : " согласился оставить неиспользованную eSIM на следующую поездку. Возврата не будет.") + "\n\nЧат: " + chat.id);
       return true;
     }
     if (seen && seen.reply) { support.botMessage(chat.id, seen.reply, "autoDiag"); return true; }
-    callOperator(chat, "по плану ждали ответа «оставить или вернуть», разобрать ответ не вышло");
+    callOperator(chat, balanceStage ? "по плану ждали ответа «баланс или на карту», разобрать ответ не вышло" : "по плану ждали ответа «оставить или вернуть», разобрать ответ не вышло");
     return true;
   }
   async function casePlanAnswer(chat, last) {
