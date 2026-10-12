@@ -171,6 +171,17 @@ function botMessage(id, text, flag) {
   return chat;
 }
 
+// Служебная строка робота в переписке: вопрос об оценке и «спасибо» после неё.
+// В телеграм её не пересылаем — там бот присылает своё сообщение с кнопками.
+function silentBot(id, text, extra) {
+  const list = loadChats();
+  const chat = list.find((c) => c.id === String(id || ""));
+  if (!chat) return null;
+  chat.messages.push(Object.assign({ from: "bot", text: String(text || "").slice(0, 1000), ts: Date.now() }, extra || {}));
+  saveChats(list);
+  return chat;
+}
+
 // ── разбор ответа из письма: убираем цитату и подпись ──
 function stripReply(raw) {
   const lines = String(raw || "").replace(/\r/g, "").split("\n");
@@ -252,4 +263,4 @@ async function pollMailbox() {
 }
 
 module.exports = { mailWindowOpen, queueMail, attention, flushQueue, loadChats, saveChats, findChat, newChatId,
-  clientMessage, operatorMessage, botMessage, onOperator, stripReply, pollMailbox, esc, mskDay, TO, AUTO_REPLY, BLACKOUT };
+  clientMessage, operatorMessage, botMessage, silentBot, onOperator, stripReply, pollMailbox, esc, mskDay, TO, AUTO_REPLY, BLACKOUT };

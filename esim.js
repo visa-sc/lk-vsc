@@ -3127,7 +3127,7 @@ function mount(app, opts) {
       // в рабочее окно письмо уходит сразу, вне окна — ждёт своей очереди
       support.flushQueue(opts && opts.sendMail).catch(() => {});
       chatAutoAnswer(chat).catch(() => {});             // первая линия отвечает сама
-      res.json({ success: true, cid: chat.id, messages: chat.messages.slice(-50) });
+      res.json({ success: true, cid: chat.id, messages: chat.messages.slice(-50), rated: !!chat.rate });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
   });
   // Обращение из телеграм-бота: тот же чат, но с привязкой к чату бота,
@@ -3159,6 +3159,44 @@ function mount(app, opts) {
     if (!chat) return res.json({ success: true, messages: [] });
     res.json({ success: true, cid: chat.id, messages: chat.messages.slice(-50) });
   });
+  // ── Оценка «Получилось решить вопрос?» ──
+  // Спрашиваем один раз, когда переписка затихла на 6 часов и последнее слово за нами
+  // (не ждёт ни человек, ни оператор). Отвечать необязательно; ответ виден в «Сервисе».
+  const RATE_ASK = "Получилось решить вопрос? Ответ по желанию.";
+  function rateTick() {
+    const now = Date.now();
+    support.loadChats().forEach((c) => {
+      if (c.rateAsk || isTestChat(c) || casePlanFor(c)) return;   // по плану ждём решения клиента — не мешаем
+      const msgs = c.messages || [];
+      const last = msgs[msgs.length - 1];
+      if (!last || last.from === "client") return;
+      const quiet = now - (last.ts || 0);
+      if (quiet < 6 * 3600e3 || quiet > 48 * 3600e3) return;
+      if (c.escAt && !msgs.some((m) => m.from === "operator" && m.ts > c.escAt)) return;   // ещё ждёт человека
+      const answers = msgs.filter((m) => (m.from === "bot" || m.from === "operator") && m.text !== support.AUTO_REPLY);
+      if (!answers.length || !msgs.some((m) => m.from === "client")) return;
+      support.silentBot(c.id, RATE_ASK, { rate: true });
+      const cur = support.findChat(c.id);
+      if (cur) { const list = support.loadChats(); const x = list.find((y) => y.id === c.id); x.rateAsk = now; support.saveChats(list); }
+      if (c.tgChatId && opts && opts.notifyTelegram) opts.notifyTelegram({ chatId: c.tgChatId, kind: "rateAsk", cid: c.id }).catch(() => {});
+    });
+  }
+  setInterval(() => { try { rateTick(); } catch (err) { console.error("esim оценка:", err.message); } }, 15 * 60 * 1000);
+  // ответ на оценку: с сайта (виджет чата) и из бота; номер чата и есть ключ, как у /chat/poll
+  app.post("/esim/api/chat/rate", express.json({ limit: "4kb" }), (req, res) => {
+    const b = req.body || {};
+    const list = support.loadChats();
+    const c = list.find((x) => x.id === String(b.cid || ""));
+    if (!c || !c.rateAsk) return res.status(404).json({ success: false });
+    if (c.rate) return res.json({ success: true, already: true });
+    const v = b.v === "y" ? "yes" : "no";
+    c.rate = { v, at: Date.now(), via: b.tg ? "bot" : "site" };
+    support.saveChats(list);
+    const thanks = v === "yes" ? "Спасибо! Хорошей поездки." : "Спасибо, что сказали. Напишите в двух словах, что не так, разберёмся.";
+    support.silentBot(c.id, thanks);
+    res.json({ success: true, text: thanks });
+  });
+
   // ответ оператора руками (на всякий случай, если почта недоступна)
   app.get("/esim/api/chat/reply", (req, res) => {
     if (!isAdm(req)) return res.status(403).json({ success: false });
@@ -3346,6 +3384,7 @@ function mount(app, opts) {
     if (!one) return res.status(404).json({ success: false });
     one.note = String(req.query.text || "").slice(0, 2000);
     one.answered = Date.now();
+    one.humanAt = one.humanAt || one.answered;   // первый живой ответ — для плитки «Ответ человека»
     writeJson(HELP_FILE, all);
     res.json({ success: true });
   });
@@ -4845,11 +4884,18 @@ function mount(app, opts) {
     const norm = (v) => { const s = String(v || "").toLowerCase(); const d = s.replace(/\D/g, "");
       const m = (s.match(/[^\s]+@[^\s]+/) || [])[0]; return d.length >= 10 ? "p:" + d.slice(-10) : (m ? "e:" + normEmail(m) : ""); };
     const cases = new Map();
+    const allOrders = readJson(ORDERS_FILE, []);
+    const ordersOfChat = (c) => {
+      const o = (/[?&]o=([A-Za-z0-9-]+)/.exec(String(c.page || "")) || [])[1];
+      return allOrders.filter((x) => x.status === "done" && (
+        (o && (x.mmOrderId === o || x.parentOrderId === o)) || (c.vid && x.vid === c.vid)));
+    };
     const add = (key, ts, extra, src) => {
       let c = cases.get(key);
       if (!c) { c = { key, ts, last: ts, src: [] }; cases.set(key, c); }
       c.ts = Math.min(c.ts, ts); c.last = Math.max(c.last, src.last || ts);
       if (extra && extra.tg) c.tg = extra.tg;
+      if (extra && extra.oids) c.oids = (c.oids || []).concat(extra.oids);
       if (extra && extra.who && !c.who) c.who = extra.who;
       c.src.push(src);
     };
@@ -4866,9 +4912,16 @@ function mount(app, opts) {
       if (!withTest && isTestChat(c)) return;
       const formId = (/\/esim\/case\/([a-f0-9]+)/.exec(String(c.page || "")) || [])[1];
       const form = formId && forms.find((h) => h.id === formId);
-      const key = norm(c.contact) || (form && norm(form.contact)) || (c.tgChatId ? "t:" + c.tgChatId : "") || (formId ? "f:" + formId : "c:" + c.id);
+      // Контакта в чате нет — берём его из заказа: человек писал со страницы своей eSIM
+      // (/esim/my?o=…) или из того же браузера, где покупал. 02.10.2026 так потерялся
+      // возврат 639 ₽: чат был без контакта, и обращение числилось решённым без возврата.
+      const mine = ordersOfChat(c);
+      const buyer = mine.find((o) => o.email || o.phone) || null;
+      const key = norm(c.contact) || (form && norm(form.contact)) || (buyer ? norm(buyer.phone || buyer.email) : "") ||
+        (c.tgChatId ? "t:" + c.tgChatId : "") || (formId ? "f:" + formId : "c:" + c.id);
       const msgs = c.messages || [];
-      add(key, first.ts, { tg: c.tgChatId || null, who: c.contact || (form && form.contact) || (c.tgChatId ? "Telegram" : "") },
+      add(key, first.ts, { tg: c.tgChatId || null, oids: mine.map((o) => o.id),
+          who: c.contact || (form && form.contact) || (buyer ? buyer.email || buyer.phone : "") || (c.tgChatId ? "Telegram" : "") },
         { type: "chat", id: c.id, tg: !!c.tgChatId, last: (msgs[msgs.length - 1] || first).ts });
     });
     const refunds = refundsLoad();
@@ -4880,7 +4933,8 @@ function mount(app, opts) {
         (key.indexOf("p:") === 0 && String(r.phone || "").replace(/\D/g, "").slice(-10) === key.slice(2)) ||
         (key.indexOf("e:") === 0 && (normEmail(r.email || "") === key.slice(2) || r.custKey === key.slice(2))) ||
         (key.indexOf("t:") === 0 && String(r.tgChatId || "") === key.slice(2)) ||
-        (c.tg && String(r.tgChatId || "") === String(c.tg))));
+        (c.tg && String(r.tgChatId || "") === String(c.tg)) ||
+        (c.oids && (r.orderIds || []).some((id) => c.oids.indexOf(id) >= 0))));
       if (hit) { c.refund = hit.kind; linked.add(hit.id); if (hit.kind === "card") card++; else balance++; }
     });
     const total = cases.size, refunded = card + balance;
@@ -4898,12 +4952,44 @@ function mount(app, opts) {
       return { ts: c.ts, ch: ch.join(", "), who: c.who || "", reason, summary: r ? r.summary : "",
         stale: !!(r && r.upd < c.last), status: c.refund === "card" ? "card" : c.refund ? "balance" : isWait ? "wait" : "ok" };
     });
+    // Ответ человека: от момента, когда человек стал ждать оператора (робот позвал или
+    // последнее сообщение клиента перед ответом), до первого ответа оператора
+    const waits = [];
+    let longOpen = 0;
+    support.loadChats().forEach((c) => {
+      const msgs = c.messages || [];
+      const first = msgs.find((m) => m.from === "client");
+      if (!first || !inR(mskDay(first.ts))) return;
+      if (!withTest && isTestChat(c)) return;
+      const op = msgs.find((m) => m.from === "operator" && (!c.escAt || m.ts > c.escAt));
+      if (!op) {
+        if (c.escAt && Date.now() - c.escAt > 3600e3) longOpen++;
+        return;
+      }
+      const before = msgs.filter((m) => m.from === "client" && m.ts < op.ts).pop();
+      const start = c.escAt && c.escAt < op.ts ? c.escAt : (before ? before.ts : first.ts);
+      waits.push(Math.max(0, op.ts - start));
+    });
+    forms.forEach((h) => {
+      if (!inR(mskDay(h.ts))) return;
+      if (!withTest && isTestChat({ contact: h.contact })) return;
+      const at = h.humanAt || (h.answered && h.result !== "ok" ? h.answered : 0);
+      if (at) waits.push(Math.max(0, at - h.ts));
+    });
+    waits.sort((x, y) => x - y);
+    const human = { n: waits.length, within1h: waits.filter((w) => w <= 3600e3).length, longOpen,
+      medianMin: waits.length ? Math.round(waits[Math.floor((waits.length - 1) / 2)] / 60000) : null };
+    human.over1h = human.n - human.within1h;
+
+    const rated = support.loadChats().filter((c) => c.rate && inR(mskDay(c.rate.at)) && (withTest || !isTestChat(c)));
+    const rates = { yes: rated.filter((c) => c.rate.v === "yes").length, no: rated.filter((c) => c.rate.v === "no").length };
+
     // расход на робота-поддержку за период: ответы, разметка причин, сборка базы опыта
     const use = (() => { try { return JSON.parse(fs.readFileSync(path.join(DIR, "doctor-usage.json"), "utf8")) || []; } catch (_) { return []; } })()
       .filter((x) => x && x.ts && inR(mskDay(x.ts)));
     const botUsd = use.reduce((s, x) => s + (x.usd || 0), 0);
     return { list, cases: rows, reasons, botUsd: Math.round(botUsd * 100) / 100, botRub: Math.round(botUsd * (rate || 0)),
-      botAnswers: use.filter((x) => !x.kind).length,
+      botAnswers: use.filter((x) => !x.kind).length, human, rates,
       total, solved: total - refunded, solvedPct: pct(total - refunded), refunded, refundedPct: pct(refunded),
       refundCard: card, refundBalance: balance, waiting: waiting.size,
       rubCard: refundsSum(from, to, "card"), rubBalance: refundsSum(from, to, "balance"),

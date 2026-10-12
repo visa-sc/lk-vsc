@@ -45,6 +45,8 @@
 '.vsup-m.me{align-self:flex-end;background:linear-gradient(135deg,#4aa3d4,#2c6f96);color:#fff;border-bottom-right-radius:5px;}' +
 '.vsup-m.they{align-self:flex-start;background:#f1f5f9;color:#16202e;border-bottom-left-radius:5px;}' +
 '.vsup-m .who{display:block;font-size:11.5px;opacity:.75;margin-bottom:3px;}' +
+'.vsup-rate{display:flex;gap:6px;margin-top:8px;}' +
+'.vsup-rate button{font:inherit;font-size:13px;font-weight:600;border:1px solid #d6e3ee;background:#fff;color:#2c6f96;border-radius:10px;padding:6px 16px;cursor:pointer;}' +
 '.vsup-row{display:flex;gap:8px;align-items:flex-end;}' +
 '.vsup-m a{color:inherit;text-decoration:underline;word-break:break-all;overflow-wrap:anywhere;}' +
   '.vsup-row textarea{min-height:48px;height:48px;max-height:120px;padding:13px 14px;line-height:20px;}' +
@@ -153,7 +155,7 @@
   function setCid(v) { try { localStorage.setItem(CID_KEY, v); } catch (e) {} }
   function stopPoll() { if (poll) { clearInterval(poll); poll = null; } }
 
-  function render(box, messages) {
+  function render(box, messages, rated) {
     var log = box.querySelector("#vsupLog");
     if (!log) return;
     if (messages.length === lastCount) return;
@@ -168,8 +170,20 @@
         var clean = u.replace(/[.,;:!?)»]+$/, ""), tail = u.slice(clean.length);
         return '<a href="' + clean + '" target="_blank" rel="noopener">' + clean + "</a>" + tail;
       });
-      return '<div class="vsup-m ' + (mine ? "me" : "they") + '">' + who + text + "</div>";
+      // вопрос об оценке: две кнопки, пока не ответили (ответ необязателен)
+      var rate = m.rate && !rated ? '<div class="vsup-rate"><button type="button" data-rate="y">Да</button><button type="button" data-rate="n">Нет</button></div>' : "";
+      return '<div class="vsup-m ' + (mine ? "me" : "they") + '">' + who + text + rate + "</div>";
     }).join("");
+    Array.prototype.forEach.call(log.querySelectorAll("[data-rate]"), function (btn) {
+      btn.addEventListener("click", async function () {
+        var wrap = btn.parentNode; wrap.innerHTML = "";
+        try {
+          await fetch("/esim/api/chat/rate", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cid: cid(), v: btn.getAttribute("data-rate") }) });
+        } catch (e) {}
+        lastCount = -1;
+      });
+    });
     log.scrollTop = log.scrollHeight;
   }
 
@@ -189,7 +203,7 @@
       try {
         var r = await fetch("/esim/api/chat/poll?cid=" + encodeURIComponent(id));
         var j = await r.json();
-        if (j && j.success) render(box, j.messages || []);
+        if (j && j.success) render(box, j.messages || [], j.rated);
       } catch (e) {}
     }
     refresh();

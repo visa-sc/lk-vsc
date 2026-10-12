@@ -1107,6 +1107,14 @@ async function onCallback(q) {
     return send(chatId, "<code>" + esc(link) + "</code>\n\nНажмите на ссылку — она скопируется.");
   }
   if (data === "support") return supportStart(chatId);
+  if (data.indexOf("rate:") === 0) {
+    const p = data.split(":");
+    const r = await api("post", "/esim/api/chat/rate", { cid: p[1], v: p[2], tg: String(chatId) }).catch(() => null);
+    // кнопки убираем, чтобы не нажать второй раз
+    tg("editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+    if (r && r.success && r.text) return send(chatId, esc(r.text));
+    return;
+  }
   if (data === "blogcopy") {
     const code = (getState(chatId) || {}).promo || "";
     if (!code) return send(chatId, "Код не найден — напишите /start и получите новый.");
@@ -1459,6 +1467,12 @@ async function notifyUsage({ chatId, kind, label, left, total, days, canTopup, m
         [{ text: "📋 Скопировать ссылку", copy_text: { text: link } }],
         [{ text: "🎁 Мои бонусы", callback_data: "bonus" }, { text: "🌍 Купить eSIM", callback_data: "home" }],
       ] } });
+  }
+  // «Получилось решить вопрос?» — один раз после затихшей переписки, отвечать необязательно
+  if (kind === "rateAsk") {
+    const cid = String(arguments[0].cid || "");
+    return send(chatId, "Получилось решить вопрос? Ответ по желанию.",
+      { reply_markup: { inline_keyboard: [[{ text: "Да", callback_data: "rate:" + cid + ":y" }, { text: "Нет", callback_data: "rate:" + cid + ":n" }]] } });
   }
   // eSIM вышла в сеть, а интернета нет несколько часов: пишем первыми (esim.js, 12.10.2026)
   if (kind === "noNet") {
