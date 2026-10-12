@@ -19,7 +19,7 @@
 // Запуск: cron каждую минуту, cd /var/www/voyo && node tools/calcFormulaGuard.js
 //         --dry               — только показать, что было бы сделано
 //         --files a,b,c       — проверить другие файлы (для тестов)
-//         --kate-test         — с --files: проверять в них и страховку, как у Зайцевой
+//         --kate-test         — с --files: проверять в них и откат страховки, как у Зайцевой
 // ═══════════════════════════════════════════════════════════════════════════
 const fs = require("fs");
 const path = require("path");
@@ -111,18 +111,20 @@ function warnOnce(c, st, why, key) {
   log((DRY ? "[dry] " : "") + c.name + ": " + why);
 }
 
-// ═══ Калькулятор страхования у Зайцевой: Совкомбанк + возраст по дате рождения ═══
-// Решение Андрея 12.10.2026: если эти правки (02.10.2026) у Кати пропадут — например,
-// она перезальёт старую версию файла, — сервер сам их вернёт, так же как формулу USDT.
-// Эталон — страховой калькулятор Андрея (public/calc.html). Катино оформление (шапка,
-// логотип, цвет #0093ce) и её расчёт ВНЖ не трогаем: до записи сверяем, что функция
-// расчёта ВНЖ совпадает байт-в-байт, логотип и цвет на месте, скрипт страницы разбирается.
-// Если в файле не найти мест для вставки — не трогаем, лог раз в сутки.
-const MASTER = path.join(ROOT, "public/calc.html");
-const INS_MARK = "  // ПРАВКА АНДРЕЯ (02.10.2026): Совкомбанк и выбор возраста по дате рождения — не откатывать, см. ПРАВКИ-АНДРЕЯ.md\n";
-const KATE_FOCUS = ["rgba(0,113,227,.15)", "rgba(0,147,206,.18)"];   // подсветка поля даты — в её цвете
-const TYPO_RE = /\.seg button \{[^}]*overflow-wrap:\s*anywhere/;
-const MOBDUR_KEY = "#segDur button:nth-child(4)";                  // «46–60 дней» по центру на мобильном
+// ═══ Калькулятор страхования у Зайцевой: защита ТОЛЬКО от отката к старой версии ═══
+// Решения Андрея 12.10.2026:
+//  • если правки 02.10.2026 (Совкомбанк, возраст по дате рождения, вёрстка) пропадут
+//    из-за перезаливки СТАРОЙ версии файла — сервер вернёт их сам;
+//  • но Катя должна и дальше менять свою копию сама, НЕЗАВИСИМО от калькулятора Андрея.
+// Поэтому:
+//  1) эталон — снимок её собственной копии на 12.10.2026 (tools/calc-guard-kate-insurance.json),
+//     а не калькулятор Андрея: его изменения к ней не попадают;
+//  2) срабатываем только на «подпись» версии старше 02.10 — заголовок скрипта
+//     «КАЛЬКУЛЯТОР СТРАХОВАНИЯ АБСОЛЮТ» или карточка страхования без переключателя страховых.
+//     Любые её доработки текущей версии (тарифы, страховые, вёрстка — что угодно) не трогаем.
+// Её оформление (шапка, логотип, #0093ce) и расчёт ВНЖ не трогаем: до записи сверяем, что
+// функция расчёта ВНЖ совпадает, логотип и цвет на месте, скрипт страницы разбирается.
+const SNAPSHOT = path.join(__dirname, "calc-guard-kate-insurance.json");
 
 function block(s, start, end) {
   const i = s.indexOf(start); if (i < 0 || s.indexOf(start, i + 1) >= 0) return null;   // нет или не единственный — не трогаем
@@ -132,61 +134,54 @@ function block(s, start, end) {
 const vnzCalc = (s) => { const i = s.indexOf("function comp(){"); return i < 0 ? null : strip(s.slice(i, s.indexOf("function scheduleMismatchLog", i))); };
 const jsOk = (s) => { let bad = 0; s.replace(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g, (m, js) => { try { new Function(js); } catch (_) { bad++; } }); return !bad; };
 const count = (s, x) => s.split(x).length - 1;
+// версия страхового калькулятора старше 02.10.2026
+const isOldInsurance = (s) => s.includes("// ══ КАЛЬКУЛЯТОР СТРАХОВАНИЯ АБСОЛЮТ") || (s.includes('id="cardIns"') && !s.includes('id="segIns"'));
 
 function healInsurance(c, st) {
   const KEY = c.id + ":ins";
   let src, info;
   try { src = fs.readFileSync(c.file, "utf8"); info = fs.statSync(c.file); } catch (_) { return; }   // нечитаемость уже пишет heal()
-  const hasSov = src.includes("var SOV_BASE"), hasDob = src.includes("dobInput"), hasTypo = TYPO_RE.test(src), hasMob = src.includes(MOBDUR_KEY);
-  if (hasSov && hasDob && hasTypo && hasMob) { delete st[KEY]; return; }                                    // всё на месте — молчим
+  if (!isOldInsurance(src)) { delete st[KEY]; return; }            // её текущая версия, какой бы она ни была, — не трогаем
 
-  let m; try { m = fs.readFileSync(MASTER, "utf8"); } catch (_) { return warnOnce(c, st, "эталон калькулятора не читается — страховку не восстанавливаю", KEY); }
-  const JS = block(m, "  // ══ КАЛЬКУЛЯТОР СТРАХОВАНИЯ", "\n  // ── Переключатель «Калькулятор ВНЖ / Страхование» ──");
-  const HTML = block(m, '    <p class="sub" id="insSub">', '    <div class="receipt" id="receipt"></div>');
-  const CSSDOB = block(m, "  /* Ввод даты рождения", "  .receipt { margin-top: 22px;");
-  const SEG = block(m, "  /* Шрифт мельче и перенос длинных слов", "\n  .seg button.on");
-  const mi = m.indexOf("  /* На узких экранах 4 срока"), me = mi < 0 ? -1 : m.indexOf("\n  }\n", mi);
-  const MOB = mi < 0 || me < 0 ? null : m.slice(mi, me + 5);              // комментарий + @media {…}
-  if (!JS || !HTML || !CSSDOB || !SEG || !MOB || !MOB.includes(MOBDUR_KEY) || !JS.text.includes("var SOV_BASE")) return warnOnce(c, st, "в эталоне не нашёл блоки страхования — не трогаю", KEY);
+  let snap; try { snap = JSON.parse(fs.readFileSync(SNAPSHOT, "utf8")); } catch (_) { return warnOnce(c, st, "снимок страховки не читается — не восстанавливаю", KEY); }
+  if (!snap.js || !snap.html || !snap.cssDob || !snap.cssSeg || !snap.cssMob) return warnOnce(c, st, "снимок страховки неполный — не восстанавливаю", KEY);
 
-  let s = src; const did = [];
-  if (!hasSov || !hasDob) {
-    const kHTML = block(s, '    <p class="sub"', '    <div class="receipt" id="receipt"></div>');
-    if (!kHTML) return warnOnce(c, st, "Совкомбанка/даты рождения нет, но в файле не нашёл карточку страхования — не трогаю", KEY);
-    s = s.slice(0, kHTML.i) + HTML.text + s.slice(kHTML.j);
-    const kJS = block(s, "  // ══ КАЛЬКУЛЯТОР СТРАХОВАНИЯ", "\n  // ── Переключатель «Калькулятор ВНЖ / Страхование» ──");
-    if (!kJS) return warnOnce(c, st, "Совкомбанка/даты рождения нет, но в файле не нашёл скрипт страхования — не трогаю", KEY);
-    const marked = s.slice(Math.max(0, kJS.i - 300), kJS.i).includes("ПРАВКА АНДРЕЯ (02.10.2026)");
-    s = s.slice(0, kJS.i) + (marked ? "" : INS_MARK) + JS.text + s.slice(kJS.j);
-    if (!s.includes("/* Ввод даты рождения")) {
-      const r = block(s, "  .receipt { margin-top: 22px;", "}");
-      if (!r) return warnOnce(c, st, "не нашёл место для стилей поля даты — не трогаю", KEY);
-      s = s.slice(0, r.i) + CSSDOB.text.split(KATE_FOCUS[0]).join(KATE_FOCUS[1]) + s.slice(r.i);
-    }
-    did.push("Совкомбанк и выбор возраста по дате рождения");
+  let s = src;
+  // карточка
+  const kHTML = block(s, '    <p class="sub"', '    <div class="receipt" id="receipt"></div>');
+  if (!kHTML) return warnOnce(c, st, "залита старая версия, но не нашёл в ней карточку страхования — не трогаю", KEY);
+  s = s.slice(0, kHTML.i) + snap.html + s.slice(kHTML.j);
+  // скрипт (вместе с пометкой «ПРАВКА АНДРЕЯ», если она стояла над старым заголовком — заменяем и её)
+  const jsStart = s.indexOf("  // ПРАВКА АНДРЕЯ (02.10.2026)") >= 0 && s.indexOf("  // ПРАВКА АНДРЕЯ (02.10.2026)") < s.indexOf("  // ══ КАЛЬКУЛЯТОР СТРАХОВАНИЯ")
+    ? "  // ПРАВКА АНДРЕЯ (02.10.2026)" : "  // ══ КАЛЬКУЛЯТОР СТРАХОВАНИЯ";
+  const kJS = block(s, jsStart, "\n  // ── Переключатель «Калькулятор ВНЖ / Страхование» ──");
+  if (!kJS) return warnOnce(c, st, "залита старая версия, но не нашёл в ней скрипт страхования — не трогаю", KEY);
+  s = s.slice(0, kJS.i) + snap.js + s.slice(kJS.j);
+  // стили: поле даты, сегменты, «46–60 дней» на мобильном
+  if (!s.includes("/* Ввод даты рождения")) {
+    const r = block(s, "  .receipt { margin-top: 22px;", "}");
+    if (!r) return warnOnce(c, st, "не нашёл место для стилей поля даты — не трогаю", KEY);
+    s = s.slice(0, r.i) + snap.cssDob + s.slice(r.i);
   }
-  if (!TYPO_RE.test(s)) {
+  if (!s.includes("/* Шрифт мельче и перенос длинных слов")) {
     const kSEG = block(s, "  .seg button {", "\n  .seg button.on");
     if (!kSEG) return warnOnce(c, st, "не нашёл стиль кнопок-сегментов — не трогаю", KEY);
-    s = s.slice(0, kSEG.i) + SEG.text + s.slice(kSEG.j);                // вместе с пояснением, как в эталоне
-    did.push("вёрстку сегментов");
+    s = s.slice(0, kSEG.i) + snap.cssSeg + s.slice(kSEG.j);
   }
-
-  if (!s.includes(MOBDUR_KEY)) {
+  if (!s.includes("#segDur button:nth-child(4)")) {
     const on = block(s, "  .seg button.on {", "\n");
     if (!on) return warnOnce(c, st, "не нашёл стиль выбранного сегмента — не трогаю", KEY);
-    s = s.slice(0, on.j + 1) + MOB + s.slice(on.j + 1);
-    did.push("«46–60 дней» по центру на мобильном");
+    s = s.slice(0, on.j + 1) + snap.cssMob + s.slice(on.j + 1);
   }
 
-  // Предохранители: ничего лишнего не задели.
-  const why = !s.includes("var SOV_BASE") || !s.includes("dobInput") ? "после вставки нет Совкомбанка/даты"
+  // Предохранители: вернули что нужно и ничего лишнего не задели.
+  const why = isOldInsurance(s) || !s.includes("var SOV_BASE") || !s.includes("dobInput") ? "после вставки версия всё ещё старая"
     : vnzCalc(src) == null || vnzCalc(src) !== vnzCalc(s) ? "изменился бы расчёт ВНЖ (или не найден)"
     : count(s, "brand-logo") < count(src, "brand-logo") || count(s, "0093ce") < count(src, "0093ce") ? "задело бы оформление площадки"
     : !jsOk(s) ? "скрипт страницы перестал бы разбираться" : null;
   if (why) return warnOnce(c, st, "страховку не восстанавливаю: " + why, KEY);
 
-  if (DRY) { log("[dry] " + c.name + ": вернул бы " + did.join(" и ")); return; }
+  if (DRY) { log("[dry] " + c.name + ": залита версия старше 02.10 — вернул бы Совкомбанк, дату рождения и вёрстку"); return; }
   const bak = c.backupNear ? c.file + ".bak-" + stamp() + "-autoins" : path.join(BACKUPS, path.basename(c.file) + "." + stamp() + ".autoins.bak");
   fs.copyFileSync(c.file, bak);
   try { fs.chownSync(bak, info.uid, info.gid); } catch (_) {}
@@ -196,7 +191,7 @@ function healInsurance(c, st) {
   fs.chmodSync(tmp, info.mode & 0o7777);
   fs.renameSync(tmp, c.file);
   delete st[KEY];
-  log(c.name + ": пропали правки Андрея — вернул " + did.join(" и ") + ". Бэкап: " + bak);
+  log(c.name + ": залита версия старше 02.10 — вернул Совкомбанк, возраст по дате рождения и вёрстку. Бэкап: " + bak);
 }
 
 const st = loadState();
