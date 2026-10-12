@@ -164,7 +164,8 @@ async function diagnose(info) {
   // про возврат решает сервер: если модель всё же написала — убираем абзац
   if (hasRefundTalk(out.reply) && !info.refundAllowed) {
     out.reply = out.reply.split(/\n\n/).filter((p) => !hasRefundTalk(p)).join("\n\n").trim();
-    if (!out.reply) return null;
+    // весь ответ был про деньги: это вопрос к оператору, а не «ответа нет» (12.10.2026)
+    if (!out.reply) { out.action = "escalate"; out.usage = msg.usage || null; out.model = modelName(); return out; }
   }
   out.usage = msg.usage || null;
   out.model = modelName();

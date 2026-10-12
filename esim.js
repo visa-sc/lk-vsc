@@ -2677,6 +2677,8 @@ function mount(app, opts) {
           return true;
         }
       }
+      // вопрос про деньги или что-то, где нужен человек: сразу к оператору (12.10.2026)
+      if (seen && seen.action === "escalate") return false;
     }
 
     // Замену уже выдали, а человек пишет дальше. Раньше здесь сервер сам обещал
@@ -2759,9 +2761,48 @@ function mount(app, opts) {
     console.log("esim план " + plan.id + ": спутнику выдана " + gift.mmOrderId + ", лишняя " + spare.mmOrderId + ": " + r);
     return { gift, refund: r, spare };
   }
+  // Вид «keep_or_refund» (12.10.2026): неиспользованную eSIM предложили оставить
+  // на следующую поездку. Согласился — письмо «решено». Настаивает на деньгах —
+  // подтверждаем возврат, отключаем eSIM у поставщика, просим его вернуть деньги
+  // на баланс, Андрею письмо: какую сумму вернуть клиенту на карту.
+  async function keepOrRefundAnswer(plan, chat) {
+    const mine = await ordersByContact(chat.contact, chat.page, chat.vid).catch(() => []);
+    const st = mine.length ? await orderStates(mine).catch(() => []) : [];
+    const seen = await doctor.diagnose({
+      messages: chat.messages, orders: mine, states: st, ua: chat.ua, ip: chat.ip, refundAllowed: true,
+      tried: ["ПЛАН ОПЕРАТОРА. Мы предложили человеку оставить неиспользованную eSIM на следующую поездку (она действует до " + (plan.validTill || "весны") +
+        ") или оформить за неё возврат. В diagnosis первым словом поставь метку: [возврат] если он хочет деньги назад, [оставит] если согласен оставить, " +
+        "[другое] если вопрос о другом. reply нужен только для [другое]: коротко ответь по сути."],
+    }).catch((e) => { console.error("esim план, доктор:", e.message); return null; });
+    const tag = String((seen && seen.diagnosis) || "").trim();
+    if (/^\[возврат\]/i.test(tag)) {
+      const spare = readJson(ORDERS_FILE, []).find((x) => x.id === plan.spareOrder);
+      const r = spare ? await refundFromSupplier(spare, "the customer's companion did not use this eSIM, we refund the customer").catch((e) => "ошибка: " + e.message) : "заказ не найден";
+      casePlanSave(plan.id, { done: Date.now(), result: "refund", refund: r });
+      support.botMessage(chat.id, "Хорошо, оформляем возврат за вторую eSIM: " + (plan.refundRub || "") + " ₽ вернутся на карту, с которой вы платили, обычно в течение нескольких дней. Вторую eSIM мы отключили, первая работает как обычно.", "autoFix2");
+      planMail("VOYO eSIM: клиент просит возврат — верните " + (plan.refundRub || "?") + " ₽ на карту",
+        "Клиент " + (chat.contact || "—") + " отказался оставлять неиспользованную eSIM и попросил деньги.\n\n" +
+        "Верните в Т-Банке " + (plan.refundRub || "?") + " ₽ по платежу " + (plan.paymentId || "—") + " (частичный возврат: " + (plan.refundNote || "") + ").\n" +
+        "Клиенту написали, что возврат оформлен.\n\n" +
+        "Неиспользованная eSIM " + (spare ? spare.mmOrderId : "—") + " отключена у поставщика: " + r + ". Когда поставщик вернёт деньги на баланс, придёт отдельное письмо.\n\nЧат: " + chat.id);
+      return true;
+    }
+    if (/^\[оставит\]/i.test(tag)) {
+      casePlanSave(plan.id, { done: Date.now(), result: "kept" });
+      support.botMessage(chat.id, "Отлично, тогда eSIM просто ждёт следующей поездки. В Турции включите её для мобильного интернета и «Роуминг данных», и она заработает. Хорошей поездки!", "autoFix2");
+      planMail("VOYO eSIM: вопрос клиента решён без возврата",
+        "Клиент " + (chat.contact || "—") + " согласился оставить неиспользованную eSIM на следующую поездку. Возврата не будет.\n\nЧат: " + chat.id);
+      return true;
+    }
+    if (seen && seen.reply) { support.botMessage(chat.id, seen.reply, "autoDiag"); return true; }
+    callOperator(chat, "по плану ждали ответа «оставить или вернуть», разобрать ответ не вышло");
+    return true;
+  }
   async function casePlanAnswer(chat, last) {
     const plan = casePlanFor(chat);
-    if (!plan || plan.kind !== "companion" || last.ts < (plan.since || 0) || !doctor.aiOn()) return false;
+    if (!plan || last.ts < (plan.since || 0) || !doctor.aiOn()) return false;
+    if (plan.kind === "keep_or_refund") return keepOrRefundAnswer(plan, chat);
+    if (plan.kind !== "companion") return false;
     const mine = await ordersByContact(chat.contact, chat.page, chat.vid).catch(() => []);
     const st = mine.length ? await orderStates(mine).catch(() => []) : [];
     const seen = await doctor.diagnose({
@@ -2775,7 +2816,7 @@ function mount(app, opts) {
         "спутника, деньги не обещай. Если он отказывается от замены и снова требует деньги — action escalate. " +
         "В diagnosis первым словом поставь метку: [есть] если у спутника eSIM есть, [нет] если нет, [деньги] если требует деньги, [другое] в остальных случаях."],
     }).catch((e) => { console.error("esim план, доктор:", e.message); return null; });
-    if (!seen) return false;
+    if (!seen) { callOperator(chat, "по плану клиента ответ модели не получился, нужен живой ответ"); return true; }
     if (seen.action === "replace") {
       let res = null;
       try { res = await companionReissue(plan, chat); } catch (e) { console.error("esim план, замена:", e.message); }
