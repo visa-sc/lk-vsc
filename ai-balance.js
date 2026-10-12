@@ -41,6 +41,10 @@ const path = require("path");
 const FILE = path.join(__dirname, ".aiBalance.json");
 const ENGINE_BUDGET = path.join(__dirname, ".engineBudget.json");
 const SCANNER_STORE = path.join(__dirname, ".scanner", "store.json");
+// Поддержка eSIM (робот-поддержка и сборка её базы опыта) ходит к Claude напрямую,
+// мимо шлюза, поэтому свой журнал: каждая строка уже с ценой в $ (12.10.2026).
+const SUPPORT_LOG = path.join(__dirname, ".esim", "doctor-usage.json");
+function supportEntries() { try { return JSON.parse(fs.readFileSync(SUPPORT_LOG, "utf8")) || []; } catch (_) { return []; } }
 
 // $ за 1M токенов: [вход, выход] — как в шлюзе и сканере. Sonnet 5 — $2/$10
 // (до 05.10.2026 стояли $3/$15, расход завышался).
@@ -188,7 +192,10 @@ function status() {
   }
   svc.sort((a, b) => b.usd - a.usd);
   const undivided = Math.max(0, gw.usd - svcSum);
-  const spent = gw.usd + sc.usd;
+  const sup = supportEntries().filter((x) => x.ts > (t.at || 0));
+  const supUsd = sup.reduce((s, x) => s + (x.usd || 0), 0);
+  if (supUsd > 0) svc.push({ id: "support", title: "Поддержка eSIM", usd: supUsd, calls: sup.length });
+  const spent = gw.usd + sc.usd + supUsd;
   return {
     known: true, topupUsd: t.usd, topupAt: t.at,
     spentUsd: spent, leftUsd: t.usd - spent,
@@ -209,14 +216,15 @@ function status() {
 // служебные прогоны движка попадают в переводы — что по смыслу верно.
 const MONTH_NAMES = ["январь", "февраль", "март", "апрель", "май", "июнь",
   "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
-const MODEL_NAMES = { "claude-opus-5": "Opus 5", "claude-sonnet-5": "Sonnet 5", "claude-haiku-4-5": "Haiku 4.5" };
-const SVC_ORDER = ["translate", "cq", "scanner"];
-const SVC_SHORT = { translate: "Переводы", cq: "Прослушка", scanner: "Сканер паспортов" };
+const MODEL_NAMES = { "claude-opus-5": "Opus 5", "claude-opus-5-5": "Opus 5.5", "claude-sonnet-5": "Sonnet 5", "claude-haiku-4-5": "Haiku 4.5" };
+const SVC_ORDER = ["translate", "cq", "scanner", "support"];
+const SVC_SHORT = { translate: "Переводы", cq: "Прослушка", scanner: "Сканер паспортов", support: "Поддержка eSIM" };
 // Единицы для счётчика: у каждого сервиса своя работа, «обращения» ни о чём не говорят.
 const SVC_UNIT = {
   translate: ["перевод", "перевода", "переводов"],
   cq: ["проверка", "проверки", "проверок"],
   scanner: ["паспорт", "паспорта", "паспортов"],
+  support: ["ответ", "ответа", "ответов"],
 };
 const CQ_DIR = process.env.CQ_DATA_DIR || "/var/www/kateadmin/data";
 const TRANSLATE_ORDERS = process.env.TRANSLATE_ORDERS_FILE || "/var/www/translate-engine/.translate/orders.json";
@@ -326,6 +334,15 @@ function spendByMonth() {
     a.usd += usd; a.n++;
     m.usd += usd;
   }
+  // Поддержка eSIM: ответы клиентам и раз в неделю сборка базы опыта (kind "kb" — не ответ)
+  for (const x of supportEntries()) {
+    if (!x || !x.ts) continue;
+    const m = slot(mskDay(x.ts).slice(0, 7));
+    const a = bucket(m, "support");
+    a.usd += x.usd || 0; m.usd += x.usd || 0;
+    if (x.kind !== "kb") a.n++;
+    if (x.model) a.models[x.model] = (a.models[x.model] || 0) + 1;
+  }
   return out;
 }
 
@@ -339,6 +356,7 @@ function configModel(id) {
   if (id === "translate") return process.env.TRANSLATE_MODEL || "claude-opus-5";
   if (id === "scanner") return process.env.SCANNER_MODEL || "claude-haiku-4-5";
   if (id === "cq") return process.env.CQ_MODEL || "claude-haiku-4-5";
+  if (id === "support") return process.env.ESIM_DOCTOR_MODEL || "claude-opus-5-5";
   return "";
 }
 // Показываем одну — ту, на которой сервис работает в основном. Вторая модель

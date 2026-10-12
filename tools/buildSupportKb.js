@@ -73,6 +73,14 @@ const MANUAL = `
   const out = "<!-- собрано " + new Date().toISOString().slice(0, 10) + " из " + blocks.length + " обращений, tools/buildSupportKb.js -->\n" + text.replace(/[—–]/g, "-") + "\n" + MANUAL;
   fs.writeFileSync(path.join(DIR, "support-kb.md"), out);
   const u = msg.usage || {};
+  // расход — в общий журнал поддержки, его видит сторож баланса Claude
+  try {
+    const F = path.join(DIR, "doctor-usage.json");
+    const all = (() => { try { return JSON.parse(fs.readFileSync(F, "utf8")); } catch (_) { return []; } })();
+    all.push({ ts: Date.now(), kind: "kb", model: msg.model || "claude-opus-5-5", in: u.input_tokens || 0, out: u.output_tokens || 0,
+      usd: Math.round(((u.input_tokens || 0) * 4 + (u.output_tokens || 0) * 20) / 1e6 * 10000) / 10000 });
+    fs.writeFileSync(F, JSON.stringify(all.slice(-5000)));
+  } catch (_) {}
   console.log("готово:", out.length, "символов | токены: вход", u.input_tokens, "выход", u.output_tokens,
     "| ≈ $" + (((u.input_tokens || 0) * 4 + (u.output_tokens || 0) * 20) / 1e6).toFixed(3));
 })().catch((e) => { console.error("ошибка:", e.message); process.exit(1); });
