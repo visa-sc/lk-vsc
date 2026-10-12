@@ -4716,6 +4716,7 @@ function mount(app, opts) {
     });
     const refunds = refundsLoad();
     let card = 0, balance = 0, open = 0;
+    const linked = new Set();   // возвраты, которые пришли из обращений
     const waiting = new Set(supportForPanel().chats.filter((c) => c.waiting).map((c) => c.id));
     cases.forEach((c, key) => {
       const hit = refunds.find((r) => r.ts >= c.ts - 864e5 && (
@@ -4723,13 +4724,15 @@ function mount(app, opts) {
         (key.indexOf("e:") === 0 && (normEmail(r.email || "") === key.slice(2) || r.custKey === key.slice(2))) ||
         (key.indexOf("t:") === 0 && String(r.tgChatId || "") === key.slice(2)) ||
         (c.tg && String(r.tgChatId || "") === String(c.tg))));
-      if (hit) { c.refund = hit.kind; if (hit.kind === "card") card++; else balance++; }
+      if (hit) { c.refund = hit.kind; linked.add(hit.id); if (hit.kind === "card") card++; else balance++; }
     });
     const total = cases.size, refunded = card + balance;
     const pct = (n) => (total ? Math.round(n / total * 1000) / 10 : 0);
     return { total, solved: total - refunded, solvedPct: pct(total - refunded), refunded, refundedPct: pct(refunded),
       refundCard: card, refundBalance: balance, waiting: waiting.size,
-      rubCard: refundsSum(from, to, "card"), rubBalance: refundsSum(from, to, "balance") };
+      rubCard: refundsSum(from, to, "card"), rubBalance: refundsSum(from, to, "balance"),
+      // вернули без обращения в поддержку (например, сами заметили проблему и вернули)
+      rubNoCase: refunds.filter((r) => !linked.has(r.id) && inR(mskDay(r.ts))).reduce((a, r) => a + (r.rub || 0), 0) };
   }
 
   // Обращения из чата — чтобы их было видно не только в почте (23.09.2026).
