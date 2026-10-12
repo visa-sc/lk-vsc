@@ -3020,7 +3020,8 @@ function mount(app, opts) {
         r.state = "Refunded"; r.refundedAt = Date.now(); changed = true;
         planMail("VOYO eSIM: поставщик вернул деньги за пакет на баланс",
           "eSIM Access вернул $" + cost.toFixed(2) + " за пакет " + o.mmOrderId + " (" + (o.label || "") + ") на наш баланс.\n" +
-          "Баланс eSIM Access сейчас: $" + cur.toFixed(2) + ".");
+          "Клиент: " + (o.phone || o.email || (o.tgChatId ? "телеграм " + o.tgChatId : "—")) + ". eSIM аннулирована" +
+          (r.annulledAt ? "" : " (отзыв отправлен)") + ".\nБаланс eSIM Access сейчас: $" + cur.toFixed(2) + ".");
         console.log("esim: eSIM Access вернул $" + cost + " за " + o.mmOrderId);
       } else if (diff > cost * 1.5 + 0.5) {
         r.eaBal = cur; r.eaBalTs = Date.now(); changed = true;   // похоже на пополнение счёта
@@ -3029,6 +3030,54 @@ function mount(app, opts) {
     if (changed) writeJson(ORDERS_FILE, all);
   }
   setInterval(() => { eaRefundWatch().catch((x) => console.error("esim сторож возврата EA:", x.message)); }, 30 * 60 * 1000);
+
+  // Деньги клиенту вернули (на баланс или на карту) — его eSIM должна быть аннулирована
+  // у поставщика, иначе платим дважды. Сторож проверяет статус у eSIM Access, повторяет
+  // отзыв и пишет Андрею, если не выходит; и напоминает, если за неделю денег нам не вернули.
+  const EA_DEAD_RE = /REVOK|CANCEL|DELETE|RELEASE|CLOSE/i;
+  async function annulWatch() {
+    const all = readJson(ORDERS_FILE, []);
+    const list = all.filter((o) => o.supplierRefund && /^EA-/.test(String(o.mmOrderId || "")) &&
+      Date.now() - (o.supplierRefund.asked || 0) < 45 * 864e5);
+    let changed = false;
+    for (const o of list) {
+      const r = o.supplierRefund;
+      if (!r.annulledAt) {
+        const s = await esimaccess._esim(o.mmOrderId).catch(() => null);
+        if (s && (EA_DEAD_RE.test(String(s.esimStatus || "")) || EA_DEAD_RE.test(String(s.smdpStatus || "")))) {
+          r.annulledAt = Date.now(); changed = true;
+          console.log("esim: eSIM " + o.mmOrderId + " аннулирована (" + s.esimStatus + "/" + s.smdpStatus + ")");
+        } else if (s) {
+          const ok = await esimaccess.revoke(o.mmOrderId).then(() => true).catch(() => false);
+          r.revokeTries = (r.revokeTries || 0) + 1; changed = true;
+          if (!ok && r.revokeTries >= 3 && !r.annulMailed) {
+            r.annulMailed = Date.now();
+            planMail("VOYO eSIM: не получается аннулировать eSIM " + o.mmOrderId,
+              "Клиенту за эту eSIM вернули деньги, а отозвать её у eSIM Access не выходит уже " + r.revokeTries + " раза.\n" +
+              "Статус у них: " + (s.esimStatus || "—") + " / " + (s.smdpStatus || "—") + ".\n" +
+              "Пакет: " + (o.label || "—") + ", закупка $" + Number(o.costUsd || 0).toFixed(2) + ".\n" +
+              "Нужно отозвать вручную в кабинете eSIM Access (Revoke) или написать им на support@esimaccess.com.");
+          }
+        }
+      }
+      if (r.state === "Asked" && !r.remindedAt && Date.now() - (r.asked || 0) > 7 * 864e5) {
+        r.remindedAt = Date.now(); changed = true;
+        planMail("VOYO eSIM: eSIM Access неделю не возвращает деньги за " + o.mmOrderId,
+          "Неделю назад попросили вернуть $" + Number(o.costUsd || 0).toFixed(2) + " за пакет " + o.mmOrderId + " (" + (o.label || "") + "), " +
+          "eSIM " + (r.annulledAt ? "аннулирована" : "ещё не аннулирована") + ". На балансе возврата не видно.\n" +
+          "Стоит напомнить им на support@esimaccess.com (письмо с запросом ушло с копией на вашу почту).");
+      }
+      await new Promise((ok) => setTimeout(ok, 300));
+    }
+    if (changed) {
+      // пишем поверх свежей копии: за время запросов заказы могли поменяться
+      const fresh = readJson(ORDERS_FILE, []);
+      list.forEach((o) => { const x = fresh.find((y) => y.id === o.id); if (x) x.supplierRefund = o.supplierRefund; });
+      writeJson(ORDERS_FILE, fresh);
+    }
+  }
+  setTimeout(() => { annulWatch().catch(() => {}); }, 5 * 60 * 1000);
+  setInterval(() => { annulWatch().catch((x) => console.error("esim сторож аннулирования:", x.message)); }, 30 * 60 * 1000);
 
   async function chatAutoAnswer(chat) {
     try {
@@ -3426,14 +3475,16 @@ function mount(app, opts) {
         }
         catch (e) {
           if (!e.installed) throw e;
-          await esimaccess.revoke(id).catch(() => {});
+          const revoked = await esimaccess.revoke(id).then(() => true)
+            .catch((x) => { console.error("esim отзыв eSIM Access " + id + ":", x.message); return false; });
           askSupplierRefund({ src: order.src, providerOrderId: id, iccid: order.iccid, costUsd: order.costUsd,
             label: order.label, reason, usedMb: used });
           // баланс на момент просьбы: по нему сторож заметит, что деньги вернули
           let bal = null;
           try { bal = (await esimaccess.getBalance()).balanceUsd; } catch (_) {}
-          mark("Asked", bal != null ? { eaBal: bal, eaBalTs: Date.now() } : null);
-          return "eSIM Access: отозван, возврат попросили письмом";
+          mark("Asked", Object.assign({ revokeTries: 1, revokeOk: revoked }, bal != null ? { eaBal: bal, eaBalTs: Date.now() } : {}));
+          return revoked ? "eSIM Access: отозван, возврат попросили письмом"
+                         : "eSIM Access: отозвать сразу не вышло, сторож повторит; возврат попросили письмом";
         }
       }
       if (/^AKGR-/.test(String(id))) { await provider.refund(id); mark("PendingRefund"); return "MobiMatter: возврат оформлен, ждём деньги"; }
