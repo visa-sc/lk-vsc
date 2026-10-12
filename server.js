@@ -6752,6 +6752,77 @@ function ydDailyFresh() {
   setTimeout(() => { if (!ydDailyFresh()) Promise.resolve(runYdDaily("startup")).catch(() => {}); }, 2 * 60 * 1000);
   console.log("YD DAILY: расход Директа по дням — в 03:00 МСК за 14 дней, повтор каждые 30 мин до успеха");
 })();
+// Сверка API ↔ лист KPI письмом (просьба Андрея 12.10.2026): РАЗОВОЕ письмо в
+// понедельник 19.10.2026 в 12:00 МСК — по дням за неделю 12.10–18.10, и всё
+// (еженедельно не нужно — уточнил Андрей). Повторить вручную: ydReconWeekly(true).
+// К полудню лист за выходные обычно уже внесён. Дни, где в листе расход меньше
+// 1000 ₽ (не внесён или внесён частично), идут отдельной пометкой, а не как
+// расхождение. Отметка об отправке — в .vscYdRecon.json, чтобы рестарт не дублировал
+// письмо и чтобы после рестарта в понедельник письмо всё равно ушло.
+const YD_RECON_FILE = path.join(__dirname, ".vscYdRecon.json");
+const YD_RECON_FIRST_WEEK = "2026-10-12";
+async function ydReconWeekly(force) {
+  const DAY = 86400000, now = Date.now() + 3 * 3600 * 1000;
+  const today = new Date(now).toISOString().slice(0, 10);
+  const dow = (new Date(now).getUTCDay() + 6) % 7;                 // 0 = понедельник
+  const monThis = new Date(Date.parse(today) - dow * DAY);
+  const weekFrom = new Date(monThis.getTime() - 7 * DAY).toISOString().slice(0, 10);
+  const weekTo = new Date(monThis.getTime() - DAY).toISOString().slice(0, 10);
+  if (weekFrom !== YD_RECON_FIRST_WEEK && !force) return null;
+  let st = {}; try { st = JSON.parse(fs.readFileSync(YD_RECON_FILE, "utf8")) || {}; } catch (_) {}
+  if (st.sentWeek === weekFrom && !force) return null;
+  if (!ydDailyFresh()) await runYdDaily("recon");
+  const yd = loadYdDaily() || {};
+  const dash = await getVscDashboard();                              // сырой лист, без подмены API
+  const sheet = {};
+  for (const m of (dash && dash.months) || []) for (const d of m.days || []) {
+    const p2 = String(d.date || "").split(".");
+    if (p2.length === 3) sheet[p2[2] + "-" + p2[1] + "-" + p2[0]] = d;
+  }
+  const rub = (v) => v == null ? "—" : Math.round(v).toLocaleString("ru-RU") + " ₽";
+  const pct = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(1).replace(".", ",") + "%";
+  const ddmm = (k) => k.slice(8, 10) + "." + k.slice(5, 7);
+  const WD = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+  const lines = [], notFilled = [], noApi = [];
+  let sA = 0, sS = 0, maxAbs = 0;
+  for (let i = 0; i < 7; i++) {
+    const k = new Date(Date.parse(weekFrom) + i * DAY).toISOString().slice(0, 10);
+    const sd = sheet[k] || {}, api = yd.days && yd.days[k] ? yd.days[k].withVat : null;
+    const sh = sd.ad != null ? Number(sd.ad) : null, proc = Number(sd.processed) || 0;
+    const cS = sh && proc ? sh / proc : null, cA = api != null && proc ? api / proc : null;
+    let tail = "";
+    if (api == null) { noApi.push(ddmm(k)); tail = "  ← нет данных API"; }
+    else if (!(sh > 1000)) { notFilled.push(ddmm(k)); tail = "  ← в листе не внесён"; }
+    else { const d = (api - sh) / sh * 100; sA += api; sS += sh; maxAbs = Math.max(maxAbs, Math.abs(d)); tail = "  " + pct(d) + " (" + rub(api - sh) + ")"; }
+    lines.push(ddmm(k) + " " + WD[i] + ":  лист " + rub(sh) + " · API " + rub(api) + " · CPL " + rub(cS) + " → " + rub(cA) + " · контактов " + proc + tail);
+  }
+  const total = sS ? (sA - sS) / sS * 100 : null;
+  const verdict = sS == null || !sS ? "сравнить не с чем — в листе нет внесённых дней или API не ответил"
+    : (maxAbs <= 2 ? "сходится: расхождение по дням не больше 2%" : "есть расхождения больше 2% — см. дни ниже");
+  const text = "Сверка расхода Я.Директа за неделю " + ddmm(weekFrom) + "–" + ddmm(weekTo) + ".\n" +
+    "API — все кампании с расходом, без НДС × " + (1 + YD_VAT_RATE).toFixed(2).replace(".", ",") + ", по дням МСК. Лист — «Рекламные расходы ОБЩИЕ» из таблицы KPI.\n" +
+    "CPL = расход ÷ набранные контакты (как в таблице): слева по листу, справа по API — справа то, что сейчас на дашборде.\n\n" +
+    "Итог: " + verdict + (total != null ? ". За внесённые дни: лист " + rub(sS) + ", API " + rub(sA) + ", разница " + pct(total) + " (" + rub(sA - sS) + ")." : ".") + "\n\n" +
+    lines.join("\n") + "\n" +
+    (notFilled.length ? "\nВ листе расход не внесён (или внесён частично): " + notFilled.join(", ") + " — на дашборде по этим дням расход из API.\n" : "") +
+    (noApi.length ? "\nAPI Директа не отдал данные за: " + noApi.join(", ") + (yd.lastError ? " (последняя ошибка: " + yd.lastError.message + ")" : "") + " — там остаются цифры листа.\n" : "") +
+    "\nКампаний с расходом за последние 14 дней: " + (yd.campaigns || "—") + ". Съём API: " + (yd.ts ? new Date(yd.ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) : "—") + " МСК.\n" +
+    "Письмо разовое, больше по расписанию не придёт.";
+  await mail.sendMail({ to: "director@visa-sc.ru", subject: "Сверка Директа " + ddmm(weekFrom) + "–" + ddmm(weekTo) + ": " + (total == null ? "нет данных" : pct(total)), text });
+  if (!force) fs.writeFileSync(YD_RECON_FILE, JSON.stringify({ sentWeek: weekFrom, ts: Date.now(), total, maxAbs }), "utf8");
+  console.log("YD RECON: письмо за " + weekFrom + "…" + weekTo + " отправлено");
+  return text;
+}
+// Проверка раз в час: в понедельник 19.10 с 12:00 МСК — отправить, если ещё не ушло.
+(function scheduleYdRecon() {
+  if (process.env.YD_DAILY === "0") return;
+  const tick = () => {
+    const m = new Date(Date.now() + 3 * 3600 * 1000);
+    if (m.getUTCDay() === 1 && m.getUTCHours() >= 12) Promise.resolve(ydReconWeekly()).catch((e) => console.error("YD RECON:", e.message));
+  };
+  setInterval(tick, 3600 * 1000);
+  setTimeout(tick, 3 * 60 * 1000);
+})();
 // Подмена рекламы/CPL/ДРР закрытых дней расходом из API. Кэш дашборда не трогаем —
 // месяцы, где что-то поменялось, копируются.
 function vscApplyYdDaily(data) {
