@@ -17,7 +17,30 @@ const ALLOWED = ["advice", "replace", "escalate"];
 function aiOn() {
   return Boolean(process.env.ANTHROPIC_API_KEY) && String(process.env.ESIM_DOCTOR || "1") !== "0";
 }
-function modelName() { return process.env.ESIM_DOCTOR_MODEL || "claude-sonnet-5"; }
+// 12.10.2026: Opus 5.5 вместо Sonnet 5 — точнее разбирает запутанные случаи (две eSIM,
+// спутник, деньги). Обращений немного, разница в цене копеечная. Откат: ESIM_DOCTOR_MODEL.
+function modelName() { return process.env.ESIM_DOCTOR_MODEL || "claude-opus-5-5"; }
+const path = require("path");
+const fsx = require("fs");
+const DIR = path.join(__dirname, ".esim");
+// База опыта: выжимка из всех прошлых обращений (tools/buildSupportKb.js), подклеивается к инструкции
+function knowledge() {
+  try { return fsx.readFileSync(path.join(DIR, "support-kb.md"), "utf8").slice(0, 30000); } catch (_) { return ""; }
+}
+// Учёт расходов на модель: каждый ответ — строка в .esim/doctor-usage.json
+const PRICE = { "claude-opus-5-5": [4, 20, 0.2, 5], "claude-sonnet-5": [2, 10, 0.2, 2.5], "claude-sonnet-5-5": [2, 10, 0.2, 2.5] };
+function logUsage(model, u) {
+  if (!u) return;
+  const p = PRICE[model] || PRICE["claude-opus-5-5"];
+  const usd = ((u.input_tokens || 0) * p[0] + (u.output_tokens || 0) * p[1] +
+    (u.cache_read_input_tokens || 0) * p[2] + (u.cache_creation_input_tokens || 0) * p[3]) / 1e6;
+  const F = path.join(DIR, "doctor-usage.json");
+  let all = [];
+  try { all = JSON.parse(fsx.readFileSync(F, "utf8")); } catch (_) {}
+  all.push({ ts: Date.now(), model, in: u.input_tokens || 0, out: u.output_tokens || 0,
+    cr: u.cache_read_input_tokens || 0, cw: u.cache_creation_input_tokens || 0, usd: Math.round(usd * 10000) / 10000 });
+  try { fsx.writeFileSync(F, JSON.stringify(all.slice(-5000))); } catch (_) {}
+}
 
 let _client = null;
 function client() {
@@ -92,7 +115,14 @@ action:
 • replace, если пакет у поставщика явно нерабочий или человек уже пробовал настройки и не вышло: мы выдадим ему eSIM другого оператора за наш счёт. В reply тогда напиши, что высылаем другую eSIM, и коротко как её поставить;
 • escalate, только если данных не хватает и нужен живой оператор: вопрос про деньги, возврат, сотрудничество, оптовые закупки, юридические вопросы или что-то, чего нет в досье и в знаниях о продукте.
 
-Если вопрос не про поломку, а про сам продукт (что такое eSIM, какой нужен телефон, как оплатить, есть ли физическая симка, работает ли раздача), просто ответь по знаниям выше и поставь action advice.`;
+Если вопрос не про поломку, а про сам продукт (что такое eSIM, какой нужен телефон, как оплатить, есть ли физическая симка, работает ли раздача), просто ответь по знаниям выше и поставь action advice.
+
+НЕСКОЛЬКО eSIM И СПУТНИКИ (частая путаница, отвечай точно):
+• Человек купил несколько eSIM, часть для спутников. В досье у каждой eSIM указано устройство (А, Б…): разные устройства — разные телефоны.
+• Если человек пишет, что у спутника eSIM «не подключилась» или «не работает», и по досье она скачана на другое устройство — значит, она уже стоит у спутника, просто не включена. Дай шаги для телефона спутника: найти линию eSIM в настройках, включить её, выбрать для мобильного интернета, включить «Роуминг данных», режим полёта на 10 секунд. Не пиши, что она у самого человека, и не предлагай купить ещё одну.
+• Если обе eSIM на одном устройстве, а одна была для спутника — action escalate: живой оператор бесплатно выпустит спутнику новую.
+• Если eSIM не скачана ни на одно устройство — QR ещё не использован: его можно переслать спутнику, пусть отсканирует на своём телефоне.
+• Неиспользованная eSIM не сгорает до даты в досье, и срок пакета начнётся только в поездке. Это стоит сказать, если человек думает, что деньги пропали.`;
 
 // ── досье по человеку ──
 function dossier({ messages, orders, states, ua, ip, country, tried }) {
@@ -151,10 +181,23 @@ async function diagnose(info) {
   const c = client();
   if (!c) return null;
   const body = dossier(info);
-  const msg = await c.messages.create({
-    model: modelName(), max_tokens: 1200, system: SYSTEM,
-    messages: [{ role: "user", content: body }],
-  });
+  // Инструкция и база опыта не меняются от обращения к обращению — кэшируем их,
+  // меняется только досье. Обдумывание у Opus 5.5 всегда включено, глубину задаёт effort.
+  const kb = knowledge();
+  const system = [{ type: "text", text: SYSTEM + (kb ? "\n\nОПЫТ ПРОШЛЫХ ОБРАЩЕНИЙ (как такие случаи правильно решали у нас):\n" + kb : ""),
+    cache_control: { type: "ephemeral", ttl: "1h" } }];
+  const params = { model: modelName(), max_tokens: 8000, system, output_config: { effort: "medium" },
+    messages: [{ role: "user", content: body }] };
+  let msg;
+  try {
+    // запасная модель на случай отказа по фильтрам безопасности
+    msg = await c.beta.messages.create(Object.assign({}, params, { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" }));
+  } catch (e) {
+    if (!(e && e.status === 400)) throw e;
+    msg = await c.messages.create(params);   // ретранслятор или аккаунт не принял запасной режим
+  }
+  logUsage(msg.model || modelName(), msg.usage);
+  if (msg.stop_reason === "refusal") return null;
   let text = "";
   for (const b of msg.content || []) if (b.type === "text") text += b.text;
   const m = /\{[\s\S]*\}/.exec(text);
