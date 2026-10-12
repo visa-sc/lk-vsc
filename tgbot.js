@@ -1152,13 +1152,18 @@ async function onIssued(order, n, total) {
       "&t=" + encodeURIComponent(u.searchParams.get("t")));
   } catch (e) { console.error("tgbot onIssued my:", e.message); }
   const o = (j && j.order) || {};
-  const caption = (total > 1 ? "<b>eSIM " + n + " из " + total + " готова</b>\n" : "<b>Ваша eSIM готова</b>\n") + esc(order.label || "") +
-    "\n\nОтсканируйте QR-код на телефоне, куда ставите eSIM.";
+  const caption = total > 1
+    ? (n === 1
+      ? "<b>eSIM 1 из " + total + ": для вашего телефона</b>\n" + esc(order.label || "") +
+        "\n\nОтсканируйте этот QR-код на своём телефоне. Остальные QR-коды ниже перешлите спутникам: каждый ставится на свой телефон и срабатывает один раз."
+      : "<b>eSIM " + n + " из " + total + ": для спутника</b>\n" + esc(order.label || "") +
+        "\n\nНе сканируйте его у себя. Перешлите это сообщение человеку, которому нужна eSIM: он отсканирует QR-код на своём телефоне.")
+    : "<b>Ваша eSIM готова</b>\n" + esc(order.label || "") + "\n\nОтсканируйте QR-код на телефоне, куда ставите eSIM.";
   const sent = await sendQr(chatId, o.qrDataUrl, caption);
   // у нескольких eSIM инструкцию шлём один раз — после последней
   if (n < total) {
-    return send(chatId, (sent ? "" : "QR-код eSIM " + n + " картинкой не пришёл — он на странице по кнопке.\n") +
-      "eSIM " + n + ": остаток трафика и продление — по кнопке." +
+    return send(chatId, (sent ? "" : "QR-код eSIM " + n + " картинкой не пришёл, он на странице по кнопке.\n") +
+      "eSIM " + n + ": остаток трафика и продление по кнопке." +
       (o.lpa ? "\nВручную: <code>" + esc(o.lpa) + "</code>" : ""),
       { reply_markup: { inline_keyboard: [[{ text: "Остаток и продление · eSIM " + n, url: order.myUrl }]] } });
   }
