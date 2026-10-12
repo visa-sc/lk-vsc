@@ -23,6 +23,10 @@
 html,body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
 /* однотонный светлый фон с едва заметным градиентом (вернули по просьбе Андрея 25.08) */
 body{min-height:100vh;background:var(--bg)}
+/* при закрытых записях экран неподвижен: ни прокрутки, ни резинового отскока iOS (Андрей, 12.10);
+   класс lock ставит applyLock() — только если форма целиком влезает в экран */
+html,body{overscroll-behavior:none}
+html.lock,html.lock body{overflow:hidden}
 body::before{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(180deg,#f7fafd 0%,#f2f5f9 45%,#edf1f7 100%)}
 .wrap{max-width:520px;margin:0 auto;padding:0 18px 48px}
 /* форма опущена ближе к середине экрана (просьба Андрея) */
@@ -214,6 +218,7 @@ async function api(path, opts = {}) {
 function showLogin() { $("login").style.display = "flex"; $("main").style.display = "none"; updateBioBtn(); }
 function showMain() {
   $("login").style.display = "none"; $("main").style.display = "block";
+  setTimeout(applyLock, 0); setTimeout(applyLock, 400); // rAF не годится: в фоновой вкладке он не срабатывает
   // кнопка «Включить Face ID» скрыта по умолчанию; показываем ТОЛЬКО когда
   // сервер подтвердил, что ключа ещё нет (ключ переживает переустановку иконки)
   $("bioEnroll").style.display = "none";
@@ -476,8 +481,30 @@ function toggleRecords() {
   $("recToggle").textContent = recordsOpen ? "Скрыть" : "Записи ›";
   // открытые записи: интерфейс до упора вверх; «Скрыть» — обратно на исходный уровень
   $("main").classList.toggle("hist", recordsOpen);
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (recordsOpen) { applyLock(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  else { window.scrollTo(0, 0); applyLock(); }
 }
+// Неподвижный экран: пока записи закрыты и форма влезает целиком — страницу
+// нельзя ни прокрутить, ни оттянуть (iOS иначе «пружинит» и форма скачет).
+// Не влезает (маленький экран) — оставляем прокрутку, чтобы низ был доступен.
+function applyLock() {
+  const html = document.documentElement;
+  if (recordsOpen) { html.classList.remove("lock"); return; }
+  const last = $("main").style.display === "none" ? $("login") : document.querySelector(".recline");
+  const bottom = last.getBoundingClientRect().bottom + window.scrollY;
+  html.classList.toggle("lock", bottom <= window.innerHeight + 1);
+  if (html.classList.contains("lock")) window.scrollTo(0, 0);
+}
+document.addEventListener("touchmove", (e) => {
+  if (!document.documentElement.classList.contains("lock")) return;
+  if (e.target.closest && e.target.closest(".chips")) return; // ленту подсказок листать можно
+  e.preventDefault();
+}, { passive: false });
+// после клавиатуры iOS оставляет страницу сдвинутой — возвращаем на место
+document.addEventListener("focusout", () => {
+  setTimeout(() => { if (document.documentElement.classList.contains("lock")) window.scrollTo(0, 0); }, 60);
+});
+window.addEventListener("resize", () => { if (!document.activeElement || !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) applyLock(); });
 // 1 запись · 2 записи · 5 записей (11–14 — «записей»)
 function plural(n, one, few, many) {
   const a = Math.abs(n) % 100, b = a % 10;
