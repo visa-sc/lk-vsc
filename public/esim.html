@@ -826,7 +826,26 @@
       if(!q || p.priceRub < q.priceRub || (p.priceRub === q.priceRub &&
          (p.countries.length !== q.countries.length ? (wide ? p.countries.length > q.countries.length : p.countries.length < q.countries.length) : String(p.id) < String(q.id)))) best[k] = p;
     });
-    return list.filter(function(p){ return best[[p.dataGb||0, p.days||0, p.daily?1:0, p.unlimited?1:0, p.fiveG?1:0, p.hotspot===false?1:0, p.note||""].join("|")] === p; });
+    var same = list.filter(function(p){ return best[[p.dataGb||0, p.days||0, p.daily?1:0, p.unlimited?1:0, p.fiveG?1:0, p.hotspot===false?1:0, p.note||""].join("|")] === p; });
+    return dropWorse(same);
+  }
+  // Тариф, который хуже соседнего по всем статьям, не показываем (12.10.2026, Петров:
+  // «Турция 7 ГБ за 1 329 ₽, а рядом 10 ГБ за 619 ₽ — один раз увидят и уйдут»).
+  // Хуже — это не больше ГБ и дней, но дороже или так же. Тот же вид пакета
+  // (суточный или на весь срок); пакет с особенностью (note, «работают наши
+  // сервисы») и с раздачей не прячем за пакетом без них.
+  function worseThan(p, q){
+    if (p === q || !!p.daily !== !!q.daily) return false;
+    if (p.note && p.note !== q.note) return false;
+    if (p.ruPick && !q.ruPick) return false;
+    if (p.hotspot !== false && q.hotspot === false) return false;
+    if (p.fiveG && !q.fiveG) return false;            // 5G не прячем за тарифом без 5G
+    var dataOk = q.unlimited || (!p.unlimited && (q.dataGb||0) >= (p.dataGb||0));
+    if (!dataOk || (q.days||0) < (p.days||0) || q.priceRub > p.priceRub) return false;
+    return q.priceRub < p.priceRub || (q.dataGb||0) > (p.dataGb||0) || (q.days||0) > (p.days||0) || (!!q.unlimited && !p.unlimited);
+  }
+  function dropWorse(list){
+    return list.filter(function(p){ return !list.some(function(q){ return worseThan(p, q); }); });
   }
 
   /* ── сортировка списка: выбор клиента, запоминаем в браузере ── */

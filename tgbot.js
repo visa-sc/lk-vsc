@@ -265,7 +265,19 @@ function dropDominated(list, wide) {
     if (!q || p.priceRub < q.priceRub || (p.priceRub === q.priceRub &&
         (n !== q.countries.length ? (wide ? n > q.countries.length : n < q.countries.length) : String(p.id) < String(q.id)))) best[key(p)] = p;
   });
-  return list.filter((p) => best[key(p)] === p);
+  const same = list.filter((p) => best[key(p)] === p);
+  // тариф, который хуже соседнего по всем статьям, не показываем — как на сайте (12.10.2026)
+  const worseThan = (p, q) => {
+    if (p === q || !!p.daily !== !!q.daily) return false;
+    if (p.note && p.note !== q.note) return false;
+    if (p.ruPick && !q.ruPick) return false;
+    if (p.hotspot !== false && q.hotspot === false) return false;
+    if (p.fiveG && !q.fiveG) return false;
+    const dataOk = q.unlimited || (!p.unlimited && (q.dataGb || 0) >= (p.dataGb || 0));
+    if (!dataOk || (q.days || 0) < (p.days || 0) || q.priceRub > p.priceRub) return false;
+    return q.priceRub < p.priceRub || (q.dataGb || 0) > (p.dataGb || 0) || (q.days || 0) > (p.days || 0) || (!!q.unlimited && !p.unlimited);
+  };
+  return same.filter((p) => !same.some((q) => worseThan(p, q)));
 }
 const GBN = (n) => (Math.round((Number(n) || 0) * 10) / 10).toLocaleString("ru-RU");
 // суточные пакеты TSim: «0,5 ГБ в день»
