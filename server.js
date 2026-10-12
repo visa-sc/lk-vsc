@@ -6653,6 +6653,146 @@ scheduleYdSpendCompare();
   if (!c || c.ym !== mo.ym || incomplete) setTimeout(() => { Promise.resolve(runYdSpendCompare(incomplete ? "retry" : "startup")).catch(() => {}); }, 90 * 1000);
 })();
 
+// ── Расход Я.Директа по дням из API (просьба Андрея 12.10.2026) ─────────────
+// В листе KPI «Рекламные расходы ОБЩИЕ» за день вносят с опозданием (а когда у
+// Яндекса сбои — неполными: воскресенье 11.10 стояло 378 ₽ и CPL 11 ₽). Поэтому
+// расход закрытых дней берём прямо из Reports API: все кампании аккаунта — и
+// включённые, и выключенные, и архивные, — по которым за день был расход, без НДС
+// × (1 + YD_VAT_RATE). Дата — по московскому времени (часовой пояс кампаний
+// проверяется в отчёте, см. tz). Каждую ночь в 03:00 МСК перезапрашиваем
+// последние 14 дней: Яндекс ещё несколько дней доправляет статистику (списания
+// за недействительные клики), а заодно подтягиваются дни, пропущенные из-за сбоя.
+// Не получилось (API лежит) — повтор каждые 30 минут, пока не выйдет.
+// В дашборде этим расходом подменяется реклама каждого закрытого дня окна, CPL =
+// расход ÷ набранные контакты (как в листе); итоги недели и месяца пересчитываются
+// на ту же разницу. ДРР дней остаётся из листа (CPL/ДРР с доп. расходами месяца
+// считает vscApplyPotokExtra уже от нового расхода). Дней без данных API
+// это не касается — у них остаётся цифра листа.
+const YD_DAILY_FILE = path.join(__dirname, ".vscYdDaily.json");
+const YD_DAILY_WINDOW = 14;
+let _ydDaily, _ydDailyRunning = false;
+function loadYdDaily() { if (_ydDaily !== undefined) return _ydDaily; try { _ydDaily = JSON.parse(fs.readFileSync(YD_DAILY_FILE, "utf8")); } catch (_) { _ydDaily = null; } return _ydDaily; }
+async function runYdDaily(trigger) {
+  if (_ydDailyRunning || !YD_TOKEN) return null;
+  _ydDailyRunning = true;
+  const prev = loadYdDaily() || {};
+  const iso = (ms) => new Date(ms + 3 * 3600 * 1000).toISOString().slice(0, 10);
+  const to = iso(Date.now() - 86400000), from = iso(Date.now() - YD_DAILY_WINDOW * 86400000);
+  try {
+    const headers = {
+      Authorization: "Bearer " + YD_TOKEN, "Accept-Language": "ru", "Content-Type": "application/json; charset=utf-8",
+      processingMode: "auto", returnMoneyInMicros: "false", skipReportHeader: "true", skipColumnHeader: "true", skipReportSummary: "true"
+    };
+    if (YD_LOGIN) headers["Client-Login"] = YD_LOGIN;
+    const body = { params: {
+      SelectionCriteria: { DateFrom: from, DateTo: to }, FieldNames: ["Date", "CampaignId", "CampaignName", "Cost"],
+      ReportName: "voyo_daily_" + from + "_" + Date.now(), ReportType: "CAMPAIGN_PERFORMANCE_REPORT",
+      DateRangeType: "CUSTOM_DATE", Format: "TSV", IncludeVAT: "NO", IncludeDiscount: "NO"
+    } };
+    let text = null, lastErr = "";
+    for (let attempt = 1; attempt <= 30 && text == null; attempt++) {
+      const r = await axios.post(YD_API_URL + "reports", body, { headers, timeout: 120000, validateStatus: () => true, responseType: "text", transformResponse: [(d) => d] });
+      const uh = r.headers && r.headers.units;
+      if (uh) { const u = String(uh).split("/").map((x) => parseInt(x, 10)); if (u.length === 3 && u.every(Number.isFinite)) _ydUnits = { spent: u[0], balance: u[1], limit: u[2], ts: Date.now() }; }
+      if (r.status === 200) { text = String(r.data || ""); break; }
+      if (r.status === 201 || r.status === 202) { const ri = parseInt((r.headers && r.headers.retryin) || 5, 10); await new Promise((x) => setTimeout(x, (ri || 5) * 1000 + 1000)); continue; }
+      // 204 без тела и без заголовков Директа — так API отвечает во время сбоя Яндекса
+      // (12.10.2026 так отвечал всем, даже на заведомо неверный токен).
+      lastErr = "HTTP " + r.status + (r.status === 204 ? " (пустой ответ — сбой на стороне Яндекса)" : " " + String(r.data || "").slice(0, 200));
+      break;
+    }
+    if (text == null) throw new Error(lastErr || "отчёт не построился");
+    const days = {}, camps = {};
+    for (const line of text.trim().split("\n")) {
+      const [date, id, name, cost] = line.split("\t");
+      if (!/^\d{4}-\d\d-\d\d$/.test(date || "")) continue;
+      const c = parseFloat(String(cost || "").replace(",", "."));
+      if (!Number.isFinite(c)) continue;
+      days[date] = (days[date] || 0) + c;
+      const k = id + "";
+      if (!camps[k]) camps[k] = { name: name || "", cost: 0 };
+      camps[k].cost += c;
+    }
+    const out = { from, to, ts: Date.now(), trigger: trigger || "", vat: YD_VAT_RATE, days: {}, campaigns: Object.keys(camps).length,
+      top: Object.keys(camps).map((k) => ({ id: +k, name: camps[k].name, cost: Math.round(camps[k].cost * (1 + YD_VAT_RATE)) })).sort((a, b) => b.cost - a.cost).slice(0, 40) };
+    for (const d in days) out.days[d] = { net: Math.round(days[d] * 100) / 100, withVat: Math.round(days[d] * (1 + YD_VAT_RATE) * 100) / 100 };
+    // Старые дни (за окном) сохраняем — пригодятся для сверки задним числом.
+    const keep = Object.assign({}, (prev && prev.days) || {});
+    for (const d in keep) if (d >= from) delete keep[d];
+    out.days = Object.assign(keep, out.days);
+    fs.writeFileSync(YD_DAILY_FILE, JSON.stringify(out, null, 1), "utf8");
+    _ydDaily = out;
+    console.log("YD DAILY [" + (trigger || "") + "]: " + from + "…" + to + ", кампаний с расходом " + out.campaigns + ", дней " + Object.keys(days).length);
+    return out;
+  } catch (e) {
+    console.error("YD DAILY [" + (trigger || "") + "]: " + e.message);
+    try { const cur = loadYdDaily() || {}; cur.lastError = { ts: Date.now(), message: e.message }; fs.writeFileSync(YD_DAILY_FILE, JSON.stringify(cur, null, 1), "utf8"); _ydDaily = cur; } catch (_) {}
+    return null;
+  } finally { _ydDailyRunning = false; }
+}
+// Есть ли свежий успешный съём: за вчера (МСК) и после последней ошибки.
+function ydDailyFresh() {
+  const c = loadYdDaily();
+  if (!c || !c.ts) return false;
+  const yest = new Date(Date.now() + 3 * 3600 * 1000 - 86400000).toISOString().slice(0, 10);
+  if (c.to < yest) return false;
+  return !(c.lastError && c.lastError.ts > c.ts);
+}
+(function scheduleYdDaily() {
+  if (process.env.YD_DAILY === "0") return;
+  const MSK = 3 * 3600 * 1000, DAY = 86400000;
+  (function nightly() {
+    const now = Date.now() + MSK;
+    let t = Math.floor(now / DAY) * DAY + 3 * 3600 * 1000;   // 03:00 МСК
+    if (t <= now) t += DAY;
+    setTimeout(() => { Promise.resolve(runYdDaily("03:00")).catch(() => {}); nightly(); }, Math.max(1000, t - now));
+  })();
+  // Повтор каждые 30 минут, пока за вчера нет успешного съёма (сбой API, рестарт).
+  setInterval(() => { if (!ydDailyFresh()) Promise.resolve(runYdDaily("retry")).catch(() => {}); }, 30 * 60 * 1000);
+  setTimeout(() => { if (!ydDailyFresh()) Promise.resolve(runYdDaily("startup")).catch(() => {}); }, 2 * 60 * 1000);
+  console.log("YD DAILY: расход Директа по дням — в 03:00 МСК за 14 дней, повтор каждые 30 мин до успеха");
+})();
+// Подмена рекламы/CPL/ДРР закрытых дней расходом из API. Кэш дашборда не трогаем —
+// месяцы, где что-то поменялось, копируются.
+function vscApplyYdDaily(data) {
+  const yd = loadYdDaily();
+  if (!data || !Array.isArray(data.months) || !yd || !yd.days || process.env.YD_DAILY === "0") return data;
+  const today = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
+  const keyOf = (dmy) => { const p = String(dmy || "").split("."); return p.length === 3 ? p[2] + "-" + p[1] + "-" + p[0] : ""; };
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const fix = (o, ad) => {
+    o.ad = r2(ad);
+    o.cpl = o.processed > 0 ? r2(ad / o.processed) : (ad > 0 ? null : o.cpl);
+    // ДРР не трогаем: выручку дня в лист тоже вносят с опозданием, и настоящий
+    // расход на недовнесённой выручке дал бы ДРР в тысячу процентов (11.10).
+  };
+  return Object.assign({}, data, { months: data.months.map((m) => {
+    if (!m || !Array.isArray(m.days) || !m.days.some((d) => { const k = keyOf(d.date); return k < today && yd.days[k]; })) return m;
+    const mm = JSON.parse(JSON.stringify(m));
+    let monthDelta = 0;
+    const byDate = {};
+    for (const d of mm.days) {
+      const k = keyOf(d.date), api = k < today ? yd.days[k] : null;
+      if (!api) continue;
+      const delta = api.withVat - (Number(d.ad) || 0);
+      d.adSheet = d.ad; d.cplSheet = d.cpl; d.adSrc = "yd-api";
+      fix(d, api.withVat);
+      monthDelta += delta; byDate[d.date] = d;
+    }
+    for (const w of mm.weeks || []) {
+      let wd = 0;
+      w.days = (w.days || []).map((d) => {
+        const nd = byDate[d.date];
+        if (nd) { wd += nd.ad - (Number(nd.adSheet) || 0); return nd; }
+        return d;
+      });
+      if (wd) { w.adSheet = w.ad; w.cplSheet = w.cpl; fix(w, (Number(w.ad) || 0) + wd); }
+    }
+    if (mm.total && monthDelta) { mm.total.adSheet = mm.total.ad; mm.total.cplSheet = mm.total.cpl; fix(mm.total, (Number(mm.total.ad) || 0) + monthDelta); }
+    return mm;
+  }) });
+}
+
 async function getVscDashboard() {
   const now = Date.now();
   if (_vscCache && (now - _vscCacheAt) < VSC_TTL_MS) return _vscCache;
@@ -6725,7 +6865,7 @@ app.get("/admin/api/vsc-dashboard", requireVscDashboard, async (req, res) => {
     // считается из прибыли на клиенте → без прибыли её тоже не будет.
     const restrict = req.staff && req.staff.vscRestrict;
     const profit = (restrict && restrict.hideProfit) ? {} : vscLoadProfit();
-    return res.json(Object.assign({ success: true }, vscApplyPotokExtra(data), { profit, dayRevenue: loadDayRev(), ydSpendCompare: loadYdSpend() }));
+    return res.json(Object.assign({ success: true }, vscApplyPotokExtra(vscApplyYdDaily(data)), { profit, dayRevenue: loadDayRev(), ydSpendCompare: loadYdSpend() }));
   } catch (e) {
     console.error("vsc dashboard error:", e.message);
     return res.status(500).json({ success: false, message: "Не удалось загрузить данные таблицы" });
