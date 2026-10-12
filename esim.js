@@ -2770,6 +2770,59 @@ function mount(app, opts) {
   // возвращаем на баланс VOYO mobile (Андрей: «сперва на баланс, не устроит —
   // вернём на карту»), eSIM отключаем у поставщика и просим вернуть деньги нам.
   // Попросит на карту — снимаем с баланса и пишем Андрею вернуть на карту.
+  // ── Журнал возвратов денег клиентам (12.10.2026) ──────────────────────────
+  // На карту Андрей возвращает в кабинете банка, сервер об этом не знает —
+  // поэтому раз в сутки спрашиваем у банка статус оплат: REFUNDED и
+  // PARTIAL_REFUNDED дают сумму возврата. На баланс VOYO mobile возвращает сам
+  // сервер (план по клиенту) — такие записи кладёт он же. Журнал читает панель:
+  // плитка «Возвраты», «Итог» после возвратов, блок «Сервис».
+  const REFUNDS_FILE = path.join(DIR, "refunds.json");
+  function refundsLoad() { return readJson(REFUNDS_FILE, []); }
+  function refundPut(rec) {
+    const all = refundsLoad().filter((x) => x.id !== rec.id);
+    all.unshift(rec); writeJson(REFUNDS_FILE, all.slice(0, 3000));
+  }
+  function refundDrop(id) { writeJson(REFUNDS_FILE, refundsLoad().filter((x) => x.id !== id)); }
+  let _bankSyncRunning = false;
+  async function syncBankRefunds(full) {
+    if (_bankSyncRunning || !tbank.ready()) return;
+    _bankSyncRunning = true;
+    try {
+      const since = full ? 0 : Date.now() - 75 * 864e5;
+      const all = readJson(ORDERS_FILE, []).filter((o) => o.paymentId && o.paidAt && o.paidAt >= since && (o.priceRub || 0) > 0 && !isTestOrder(o));
+      const byPay = new Map();
+      all.forEach((o) => { const k = String(o.paymentId); if (!byPay.has(k)) byPay.set(k, []); byPay.get(k).push(o); });
+      const have = new Map(refundsLoad().map((x) => [x.id, x]));
+      let found = 0;
+      for (const [pid, list] of byPay) {
+        let st = null;
+        try { st = await tbank.getState(pid, list[0].terminal); } catch (_) { continue; }
+        const s = String((st && st.Status) || "");
+        if (s !== "REFUNDED" && s !== "PARTIAL_REFUNDED") continue;
+        const paid = list.reduce((a, o) => a + (o.priceRub || 0), 0);
+        const left = st.Amount != null ? Number(st.Amount) / 100 : 0;
+        const rub = Math.max(0, Math.round(paid - left));
+        if (!rub) continue;
+        const id = "bank:" + pid, prev = have.get(id);
+        if (prev && prev.rub === rub) continue;
+        const main = list.find((o) => !o.groupOf) || list[0];
+        refundPut({ id, kind: "card", rub, paymentId: pid, orderIds: list.map((o) => o.id),
+          ts: prev ? prev.ts : (full ? (main.paidAt || Date.now()) : Date.now()),
+          phone: main.phone || null, email: main.email || null, custKey: main.custKey || null, tgChatId: main.tgChatId || null,
+          label: main.label || "", note: s === "PARTIAL_REFUNDED" ? "частичный возврат" : "возврат" });
+        found++;
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      if (found) console.log("esim: возвраты по банку — новых или изменённых " + found);
+    } finally { _bankSyncRunning = false; }
+  }
+  // первый раз — по всей истории, дальше раз в сутки в 04:40 МСК за 75 дней
+  setTimeout(() => { syncBankRefunds(!fs.existsSync(REFUNDS_FILE)).catch((x) => console.error("esim возвраты:", x.message)); }, 120000);
+  setInterval(() => {
+    const h = new Date(Date.now() + 3 * 3600e3);
+    if (h.getUTCHours() === 4 && h.getUTCMinutes() >= 40 && h.getUTCMinutes() < 50) syncBankRefunds(false).catch((x) => console.error("esim возвраты:", x.message));
+  }, 10 * 60 * 1000);
+
   async function keepOrRefundAnswer(plan, chat) {
     const mine = await ordersByContact(chat.contact, chat.page, chat.vid).catch(() => []);
     const st = mine.length ? await orderStates(mine).catch(() => []) : [];
@@ -2790,6 +2843,9 @@ function mount(app, opts) {
     if (!balanceStage && /^\[возврат\]/i.test(tag)) {
       if (!who) { callOperator(chat, "по плану нужно вернуть деньги на баланс, но не нашли карточку клиента"); return true; }
       addBalance(who, plan.refundRub, "возврат за неиспользованную eSIM " + (spare.mmOrderId || ""));
+      refundPut({ id: "plan:" + plan.id, kind: "balance", rub: plan.refundRub, ts: Date.now(), orderIds: [spare.id],
+        phone: spare.phone || null, email: spare.email || null, custKey: spare.custKey || null, tgChatId: spare.tgChatId || null,
+        label: spare.label || "", note: "возврат на баланс VOYO mobile" });
       const r = spare.mmOrderId ? await refundFromSupplier(spare, "the customer's companion did not use this eSIM, we refund the customer").catch((x) => "ошибка: " + x.message) : "заказ не найден";
       casePlanSave(plan.id, { stage: "balance", balanceAt: Date.now(), supplier: r, since: Date.now() });
       support.botMessage(chat.id, "Вернули " + plan.refundRub + " ₽ на ваш баланс в VOYO mobile. Ими можно оплатить следующую eSIM: при покупке баланс спишется сам, в боте и на сайте.\n\n" +
@@ -2802,6 +2858,7 @@ function mount(app, opts) {
     }
     if (balanceStage && /^\[карта\]/i.test(tag)) {
       if (who) addBalance(who, -plan.refundRub, "вернули на карту вместо баланса");
+      refundDrop("plan:" + plan.id);   // на карту — запись появится сама после сверки с банком
       casePlanSave(plan.id, { done: Date.now(), result: "card" });
       support.botMessage(chat.id, "Хорошо, вернём " + plan.refundRub + " ₽ на карту, с которой вы платили. Обычно деньги приходят в течение нескольких дней.", "autoFix2");
       planMail("VOYO eSIM: верните клиенту " + plan.refundRub + " ₽ на карту",
@@ -4629,6 +4686,52 @@ function mount(app, opts) {
       low: known.some((x) => x.usd < x.low), stale: known.some((x) => x.ts && Date.now() - x.ts > 3 * 3600e3) };
   }
 
+  function refundsSum(from, to, kind) {
+    const inR = (day) => (!from || day >= from) && (!to || day <= to);
+    return refundsLoad().filter((x) => x.kind === kind && inR(mskDay(x.ts))).reduce((a, x) => a + (x.rub || 0), 0);
+  }
+  // Обращение = один человек с вопросом: чат, форма «не получается подключить»,
+  // чат на странице обращения — всё это один случай, если контакт тот же.
+  // Не решено = закончилось возвратом денег (на карту или на баланс).
+  function serviceFor(from, to, withTest) {
+    const inR = (day) => (!from || day >= from) && (!to || day <= to);
+    const norm = (v) => { const s = String(v || "").toLowerCase(); const d = s.replace(/\D/g, "");
+      const m = (s.match(/[^\s]+@[^\s]+/) || [])[0]; return d.length >= 10 ? "p:" + d.slice(-10) : (m ? "e:" + normEmail(m) : ""); };
+    const cases = new Map();
+    const add = (key, ts, extra) => { const c = cases.get(key); if (!c || ts < c.ts) cases.set(key, Object.assign({ ts }, c || {}, extra || {}, { ts: Math.min(ts, (c && c.ts) || ts) })); };
+    const forms = readJson(HELP_FILE, []);
+    forms.forEach((h) => {
+      if (!inR(mskDay(h.ts))) return;
+      if (!withTest && isTestChat({ contact: h.contact })) return;
+      add(norm(h.contact) || "f:" + h.id, h.ts, { keys: [norm(h.contact)] });
+    });
+    support.loadChats().forEach((c) => {
+      const first = (c.messages || []).find((m) => m.from === "client");
+      if (!first || !inR(mskDay(first.ts))) return;
+      if (!withTest && isTestChat(c)) return;
+      const formId = (/\/esim\/case\/([a-f0-9]+)/.exec(String(c.page || "")) || [])[1];
+      const form = formId && forms.find((h) => h.id === formId);
+      const key = norm(c.contact) || (form && norm(form.contact)) || (c.tgChatId ? "t:" + c.tgChatId : "") || (formId ? "f:" + formId : "c:" + c.id);
+      add(key, first.ts, { tg: c.tgChatId || null });
+    });
+    const refunds = refundsLoad();
+    let card = 0, balance = 0, open = 0;
+    const waiting = new Set(supportForPanel().chats.filter((c) => c.waiting).map((c) => c.id));
+    cases.forEach((c, key) => {
+      const hit = refunds.find((r) => r.ts >= c.ts - 864e5 && (
+        (key.indexOf("p:") === 0 && String(r.phone || "").replace(/\D/g, "").slice(-10) === key.slice(2)) ||
+        (key.indexOf("e:") === 0 && (normEmail(r.email || "") === key.slice(2) || r.custKey === key.slice(2))) ||
+        (key.indexOf("t:") === 0 && String(r.tgChatId || "") === key.slice(2)) ||
+        (c.tg && String(r.tgChatId || "") === String(c.tg))));
+      if (hit) { c.refund = hit.kind; if (hit.kind === "card") card++; else balance++; }
+    });
+    const total = cases.size, refunded = card + balance;
+    const pct = (n) => (total ? Math.round(n / total * 1000) / 10 : 0);
+    return { total, solved: total - refunded, solvedPct: pct(total - refunded), refunded, refundedPct: pct(refunded),
+      refundCard: card, refundBalance: balance, waiting: waiting.size,
+      rubCard: refundsSum(from, to, "card"), rubBalance: refundsSum(from, to, "balance") };
+  }
+
   // Обращения из чата — чтобы их было видно не только в почте (23.09.2026).
   // «Без ответа» — последнее слово за человеком, а оператор ещё не отвечал.
   function supportForPanel() {
@@ -4671,6 +4774,8 @@ function mount(app, opts) {
       const daily = readJson(DAILY_FILE, {});
       const costOf = (o) => {
         if (!o.costUsd) return 0;
+        // поставщик вернул нам деньги за пакет — себестоимости нет (12.10.2026)
+        if (o.supplierRefund && o.supplierRefund.state === "Refunded") return 0;
         const d = daily[mskDay(o.paidAt)];
         return tsimCostRub(o.costUsd, (d && d.rate) || rate);   // закрытый день — по курсу того дня
       };
@@ -4775,10 +4880,13 @@ function mount(app, opts) {
         abBot: abBotFor(from, to, withTest),
         blog: blogStatsFor(from, to, withTest, rate),
         support: supportForPanel(),
+        service: serviceFor(from, to, withTest),
         balances: supplierBalances(rate),
         totals: {
           revenue, orders: paid.filter((o) => !o.groupOf).length, esims: paid.length, cost: Math.round(cost), acq, acqPct, acqPctIp: rates.ip, adSpend,
-          profit: Math.round(revenue - cost - acq - adSpend),
+          refunds: refundsSum(from, to, "card"), refundsBalance: refundsSum(from, to, "balance"),
+          refundPct: revenue ? Math.round(refundsSum(from, to, "card") / revenue * 1000) / 10 : 0,
+          profit: Math.round(revenue - cost - acq - adSpend - refundsSum(from, to, "card")),
           avgCheck: paid.filter((o) => !o.groupOf).length ? Math.round(revenue / paid.filter((o) => !o.groupOf).length) : 0,
           customers: byCust.size, customersAll: Object.keys(cust).filter((k) => withTest || !isTestCustomerKey(k)).length,
         },
