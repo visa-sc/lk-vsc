@@ -4449,9 +4449,28 @@ function mount(app, opts) {
     return !!a.fbclid || /^(meta|facebook|fb)$/.test(src) ||
       (/^(paid|cpc|ppc|paid_social|paidsocial)$/.test(med) && /^(ig|instagram|insta|an|msg|messenger)$/.test(src));
   }
+  // Коды блогеров тоже реферальные, но это отдельный канал (блок «Блогеры»)
+  let _blogOwners = { ts: 0, set: new Set() };
+  function blogRefOwners() {
+    if (Date.now() - _blogOwners.ts < 60000) return _blogOwners.set;
+    const set = new Set(), cust = loadCustomers();
+    (blog.load() || []).forEach((rec) => {
+      let k = rec.chatId ? "tg:" + rec.chatId : (rec.boundEmail || "");
+      for (let i = 0; i < 3 && cust[k] && cust[k].aliasOf; i++) k = cust[k].aliasOf;
+      const card = cust[k];
+      if (card && card.email) set.add(normEmail(card.email));
+      if (k) set.add(normEmail(k));
+    });
+    _blogOwners = { ts: Date.now(), set };
+    return set;
+  }
+  // Покупка друга по реферальной ссылке или коду (скидка «ref», refBy — кто пригласил)
+  function isReferralOrder(o) { return !!(o && o.refBy) && !blogRefOwners().has(normEmail(o.refBy)); }
   function channelOf(o) {
     const a = (o.ads && (o.ads.first || o.ads)) || null;
     const src = a && String(a.utm_source || "").toLowerCase();
+    // рекомендация друга важнее рекламной метки: покупку принесла она, за неё мы и платим бонус
+    if (isReferralOrder(o)) return "referral";
     if (isMetaPaid(a)) return "meta";
     if (src === "ig" || src === "insta") return "instagram";
     if (src) return src;
@@ -4479,7 +4498,7 @@ function mount(app, opts) {
     yandex: "Яндекс Директ", google: "Google Ads", telegram_bot: "Телеграм-бот",
     direct: "Прямые заходы", vk: "ВКонтакте", blogger: "Блогеры", lk: "Личный кабинет VOYO",
     sms: "SMS", sms_mass: "SMS-рассылка", email: "Email", tg: "Telegram-рассылка",
-    instagram: "Instagram", tg_channel: "Telegram-канал", referral: "Рефералы", meta: "Meta (реклама FB/Instagram)",
+    instagram: "Instagram", tg_channel: "Telegram-канал", referral: "Рекомендации (рефералы)", meta: "Meta (реклама FB/Instagram)",
   };
   function channelName(k) { return CHANNEL_NAMES[k] || k; }
   const mskDay = (ts) => new Date(ts + 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -5111,7 +5130,7 @@ function mount(app, opts) {
 
       const days = new Map();
       const chans = new Map();
-      let revenue = 0, cost = 0, acqExact = 0;
+      let revenue = 0, cost = 0, acqExact = 0, refSpend = 0;
       paid.forEach((o) => {
         const day = mskDay(o.paidAt), c = costOf(o);
         const fee = acqFeeOf(o, rates);
@@ -5122,6 +5141,8 @@ function mount(app, opts) {
         const k = channelOf(o);
         const ch = chans.get(k) || { key: k, name: channelName(k), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0, acq: 0, revSite: 0, revBot: 0 };
         ch.orders += one; ch.esims++; ch.revenue += o.priceRub; ch.cost += c; ch.acq += fee;
+        // рекомендация: пригласившему начислили бонус — это наш расход на канал
+        if (k === "referral" && o.refBy) { ch.spend += REF_BONUS_RUB; refSpend += REF_BONUS_RUB; }
         if (o.tgChatId) ch.revBot += o.priceRub; else ch.revSite += o.priceRub;
         chans.set(k, ch);
       });
@@ -5131,11 +5152,11 @@ function mount(app, opts) {
       });
       // Наш визовый Telegram-канал (ссылки ?utm_source=tg_channel и t.me/…?start=tgch):
       // строка видна всегда, даже пока оплат по ней нет (Андрей, 13.10.2026)
-      ["tg_channel", "meta"].forEach((k) => {
+      ["tg_channel", "meta", "referral"].forEach((k) => {
         if (!chans.has(k)) chans.set(k, { key: k, name: channelName(k), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0, acq: 0, revSite: 0, revBot: 0 });
       });
       const adSpend = spend.items.filter((x) => inRange(String(x.date || "")))
-        .reduce((a, x) => a + (Number(x.rub) || 0), 0);
+        .reduce((a, x) => a + (Number(x.rub) || 0), 0) + refSpend;   // плюс бонусы за рекомендации
       const acq = Math.round(acqExact);
       const acqPct = revenue ? Math.round(acqExact / revenue * 10000) / 100 : 0;   // средний за период
 
