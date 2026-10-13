@@ -359,7 +359,7 @@
       <div class="form" id="spendForm">
         <div><label>Канал</label><input id="sChannel" list="chanList" placeholder="yandex" style="width:120px"/>
           <datalist id="chanList"><option value="yandex">Яндекс Директ</option><option value="google">Google Ads</option>
-          <option value="blogger">Блогеры</option><option value="vk">ВКонтакте</option></datalist></div>
+          <option value="meta">Meta (реклама FB/Instagram)</option><option value="blogger">Блогеры</option><option value="vk">ВКонтакте</option></datalist></div>
         <div><label>Дата</label><input id="sDate" type="date"/></div>
         <div><label>Сумма, ₽</label><input id="sRub" type="number" min="1" step="1" style="width:110px"/></div>
         <div><label>Комментарий</label><input id="sNote" style="width:190px"/></div>
@@ -1136,7 +1136,7 @@
   function chanName(k){
     return ({ yandex:"Яндекс Директ", google:"Google Ads", telegram_bot:"Телеграм-бот", direct:"Прямой заход", lk:"Личный кабинет VOYO",
       vk:"ВКонтакте", blogger:"Блогеры", sms:"SMS", sms_mass:"SMS-рассылка", email:"Email", tg:"Telegram-рассылка",
-      instagram:"Instagram", tg_channel:"Telegram-канал", referral:"Рефералы" })[k] || k;
+      instagram:"Instagram", tg_channel:"Telegram-канал", referral:"Рефералы", meta:"Meta (реклама FB/Instagram)" })[k] || k;
   }
   RENDER.tCust = function(){ renderCustomers(); };
   function renderCustomers(){

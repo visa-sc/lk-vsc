@@ -4440,9 +4440,19 @@ function mount(app, opts) {
   // Канал — то, что привело человека: реклама, SMS, письмо. Если меток нет —
   // визовый ЛК (купил из кабинета), бот или прямой заход. Пример 13.09: человек
   // перешёл по SMS, через 4 минуты вошёл в ЛК и купил там — это сделка SMS.
+  // Платная реклама Meta: fbclid в ссылке (Meta добавляет сам) или явная метка
+  // utm_source=meta/facebook/fb, или ig/fb с utm_medium=paid (параметр {{site_source_name}}).
+  // Иначе переход из рекламы в Instagram попал бы в бесплатный Instagram (Reels).
+  function isMetaPaid(a) {
+    if (!a) return false;
+    const src = String(a.utm_source || "").toLowerCase(), med = String(a.utm_medium || "").toLowerCase();
+    return !!a.fbclid || /^(meta|facebook|fb)$/.test(src) ||
+      (/^(paid|cpc|ppc|paid_social|paidsocial)$/.test(med) && /^(ig|instagram|insta|an|msg|messenger)$/.test(src));
+  }
   function channelOf(o) {
     const a = (o.ads && (o.ads.first || o.ads)) || null;
     const src = a && String(a.utm_source || "").toLowerCase();
+    if (isMetaPaid(a)) return "meta";
     if (src === "ig" || src === "insta") return "instagram";
     if (src) return src;
     if (a && a.yclid) return "yandex";
@@ -4458,6 +4468,7 @@ function mount(app, opts) {
       if (f.tgchBot && f.tgchBot[v] != null) return "tg_channel";
       const from = (f.botSrc && f.botSrc[v]) || "";
       if (/^ref_/.test(from)) return "referral";
+      if (/^(meta|fb)/.test(from)) return "meta";   // ссылка на бота из рекламы Meta: ?start=meta_…
       if (from === "blogger" || from === "blog") return "blogger";
       if (["sms", "sms_mass", "email", "tg"].indexOf(from) >= 0) return from;
       return "direct";
@@ -4468,7 +4479,7 @@ function mount(app, opts) {
     yandex: "Яндекс Директ", google: "Google Ads", telegram_bot: "Телеграм-бот",
     direct: "Прямые заходы", vk: "ВКонтакте", blogger: "Блогеры", lk: "Личный кабинет VOYO",
     sms: "SMS", sms_mass: "SMS-рассылка", email: "Email", tg: "Telegram-рассылка",
-    instagram: "Instagram", tg_channel: "Telegram-канал", referral: "Рефералы",
+    instagram: "Instagram", tg_channel: "Telegram-канал", referral: "Рефералы", meta: "Meta (реклама FB/Instagram)",
   };
   function channelName(k) { return CHANNEL_NAMES[k] || k; }
   const mskDay = (ts) => new Date(ts + 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -4565,7 +4576,7 @@ function mount(app, opts) {
   // Переходы до запуска счётчика — по журналу nginx (tools/igBackfill.js):
   // только число людей по дням и ссылкам, шагов и оплат там нет.
   const IG_HISTORY_FILE = path.join(DIR, "ig-history.json");
-  const isIgTouch = (t) => !!t && (/^(instagram|ig|insta)$/i.test(t.utm_source || "") || (!t.utm_source && /(^|\.)instagram\.com/i.test(t.ref || "")));
+  const isIgTouch = (t) => !!t && !isMetaPaid(t) && (/^(instagram|ig|insta)$/i.test(t.utm_source || "") || (!t.utm_source && /(^|\.)instagram\.com/i.test(t.ref || "")));
   // Telegram-канал (08.10.2026): сайт — utm_source=tg_channel, бот — ?start=tgch(_ссылка)
   const isTgchTouch = (t) => !!t && /^tg_channel$/i.test(t.utm_source || "");
   const SRC_SPECS = {
@@ -5118,7 +5129,9 @@ function mount(app, opts) {
       });
       // Наш визовый Telegram-канал (ссылки ?utm_source=tg_channel и t.me/…?start=tgch):
       // строка видна всегда, даже пока оплат по ней нет (Андрей, 13.10.2026)
-      if (!chans.has("tg_channel")) chans.set("tg_channel", { key: "tg_channel", name: channelName("tg_channel"), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0, acq: 0, revSite: 0, revBot: 0 });
+      ["tg_channel", "meta"].forEach((k) => {
+        if (!chans.has(k)) chans.set(k, { key: k, name: channelName(k), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0, acq: 0, revSite: 0, revBot: 0 });
+      });
       const adSpend = spend.items.filter((x) => inRange(String(x.date || "")))
         .reduce((a, x) => a + (Number(x.rub) || 0), 0);
       const acq = Math.round(acqExact);
