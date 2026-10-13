@@ -23,6 +23,7 @@
       products: [{ id: conv.id, name: String(conv.title||"eSIM"), price: Number(conv.price), quantity: 1 }] } } }); }catch(e){}
     try{ (window.VOYO_YM||[]).forEach(function(id){
       ym(id, "reachGoal", "esim_purchase", { order_price: Number(conv.price), currency: "RUB" }); }); }catch(e){}
+    try{ if(window.voyoMeta) voyoMeta("purchase", conv); }catch(e){}
     try{ fetch("/esim/api/conv-ack?o="+encodeURIComponent(conv.id)+"&t="+encodeURIComponent(conv.t), {method:"POST"}); }catch(e){}
   };
 </script>
@@ -247,6 +248,7 @@
   .foot{margin-top:36px;text-align:center;font-size:11.5px;color:var(--mut);line-height:1.7;}
   .foot a{color:var(--accent);text-decoration:none;font-weight:600;}
 </style>
+<script src="/esim_meta.js"></script>
 </head>
 <body>
 <div class="blob b1"></div>

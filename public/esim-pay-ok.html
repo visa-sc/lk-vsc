@@ -71,6 +71,7 @@
   .note{font-size:12px;color:var(--mut);margin-top:14px;line-height:1.55;}
   .hide{display:none;}
 </style>
+<script src="/esim_meta.js"></script>
 </head>
 <body>
 <div class="blob"></div>
@@ -128,6 +129,7 @@
       gtag("event","purchase", g);
       if(conv.aw) gtag("event","conversion", Object.assign({ send_to: conv.aw }, g));
     } }catch(e){}
+    try{ if(window.voyoMeta) voyoMeta("purchase", conv); }catch(e){}
     try{ fetch("/esim/api/conv-ack?o="+encodeURIComponent(conv.id)+"&t="+encodeURIComponent(conv.t), {method:"POST"}); }catch(e){}
   };
 </script>

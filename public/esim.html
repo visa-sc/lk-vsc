@@ -446,6 +446,7 @@
   .err{color:var(--red);font-size:13px;margin-top:9px;display:none;}
   .err.on{display:block;}
 </style>
+<script src="/esim_meta.js"></script>
 </head>
 <body>
 <div class="blob b1"></div>
@@ -642,6 +643,7 @@
     if(step) track(step);
     try{ if(typeof ym==="function") (window.VOYO_YM||[109614823]).forEach(function(id){ ym(id,"reachGoal",name,params||{}); }); }catch(e){}
     try{ if(typeof gtag==="function") gtag("event",name,params||{}); }catch(e){}
+    try{ if(window.voyoMeta) voyoMeta(name, params); }catch(e){}
   }
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
   function el(html){ var t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstChild; }
@@ -1520,6 +1522,7 @@
       mBuy.textContent = PAY ? ("Оплатить "+RU(mP.priceRub)+" ₽") : "Оставить заявку";
       mBuy.dataset.step="2";
       track("buy");                       // воронка: нажал «Купить», дальше ввод почты
+      try{ if(window.voyoMeta) voyoMeta("esim_checkout_open", {country: current || (mP.countries[0]||""), value: mP.priceRub, items: [{item_id: mP.id}]}); }catch(e){}
       if(PAY){ document.getElementById("mQtyWrap").classList.add("on"); qtyUi(); }
       if(PAY) recalc();
       return;
