@@ -5116,6 +5116,9 @@ function mount(app, opts) {
         const ch = chans.get(x.channel) || { key: x.channel, name: channelName(x.channel), orders: 0, revenue: 0, cost: 0, spend: 0, revSite: 0, revBot: 0 };
         ch.spend += Number(x.rub) || 0; chans.set(x.channel, ch);
       });
+      // Наш визовый Telegram-канал (ссылки ?utm_source=tg_channel и t.me/…?start=tgch):
+      // строка видна всегда, даже пока оплат по ней нет (Андрей, 13.10.2026)
+      if (!chans.has("tg_channel")) chans.set("tg_channel", { key: "tg_channel", name: channelName("tg_channel"), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0, acq: 0, revSite: 0, revBot: 0 });
       const adSpend = spend.items.filter((x) => inRange(String(x.date || "")))
         .reduce((a, x) => a + (Number(x.rub) || 0), 0);
       const acq = Math.round(acqExact);
