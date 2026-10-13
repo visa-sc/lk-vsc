@@ -1031,5 +1031,19 @@ fbq('track', 'PageView');
   });
 })();
 </script>
+<script>/* view-beacon */
+(function () {
+  try {
+    var k = "vsc_view_" + location.pathname;
+    if (sessionStorage.getItem(k)) return;
+    sessionStorage.setItem(k, "1");
+    var q = new URLSearchParams(location.search), u = {};
+    ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","fbclid","gclid"].forEach(function (x) { if (q.get(x)) u[x] = q.get(x); });
+    var b = JSON.stringify({ messenger: "view", form: "it-gb", page: location.href, referrer: document.referrer || "", utm: u });
+    if (navigator.sendBeacon) navigator.sendBeacon("/api/vscom-click", new Blob([b], { type: "application/json" }));
+    else fetch("/api/vscom-click", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: b });
+  } catch (e) {}
+})();
+</script>
 </body>
 </html>

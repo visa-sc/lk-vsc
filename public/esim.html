@@ -679,7 +679,9 @@
         lang: step === "visit" ? ((navigator.languages && navigator.languages[0]) || navigator.language || "") : undefined,
         ad: step === "visit" ? /[?&](gclid|gbraid|wbraid|gad_source|yclid|fbclid|utm_source)=/.test(location.search) : undefined,
         ig: step === "visit" ? igLinkOf() : undefined,
-        tgch: step === "visit" ? tgchLinkOf() : undefined
+        tgch: step === "visit" ? tgchLinkOf() : undefined,
+        // переход из рекламы Meta (13.10.2026): отчёт по тесту считает по этим посетителям
+        fb: step === "visit" && /[?&](fbclid=|utm_source=(facebook|instagram|fb|ig)\b)/i.test(location.search) ? (new URLSearchParams(location.search).get("utm_campaign") || "fb") : undefined
       }) }); }catch(e){}
   }
   // Пришёл из Instagram — по какой ссылке (воронка Instagram в панели, 06.10.2026):

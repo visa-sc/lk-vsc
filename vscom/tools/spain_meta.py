@@ -66,7 +66,7 @@ must('<meta property="og:url" content="https://spain.visa-sc.com/ga">',
      '<meta property="og:url" content="https://spain.visa-sc.com/fb">')
 # конверсии Google Ads на странице под Meta не нужны
 html = strip_gads(html)
-html = html.replace("</head>", meta_pixel({"pixel_id": META_PIXEL, "fb_verify": META_VERIFY,
+html = html.replace("</head>", meta_pixel({"pixel_id": META_PIXEL, "fb_verify": META_VERIFY, "form": "spain-fb",
                                            "cur_code": "EUR"}) + "</head>", 1)
 
 # ── шапка: подпись кнопки как на исходной ──

@@ -4798,6 +4798,8 @@ function mount(app, opts) {
     if (b.step === "visit" && b.ig != null && b.src !== "bot") { try { igMark(b.vid, b.ig); } catch (_) {} }
     if (b.step === "start" && b.ig != null && b.src === "bot") { try { igMark(b.vid, b.ig, "igBot"); } catch (_) {} }
     if (b.step === "visit" && b.tgch != null && b.src !== "bot") { try { igMark(b.vid, b.tgch, "tgch"); } catch (_) {} }
+    // заход из рекламы Meta (13.10.2026) — для ежедневного отчёта tools/metaReport.js
+    if (b.step === "visit" && b.fb && b.src !== "bot") { try { igMark(b.vid, b.fb, "fb"); } catch (_) {} }
     if (b.step === "start" && b.tgch != null && b.src === "bot") { try { igMark(b.vid, b.tgch, "tgchBot"); } catch (_) {} }
     // откуда открыли бота (?start=sms, email, tg, ref_…): для канала его покупок (10.10.2026)
     if (b.step === "start" && b.from && b.src === "bot") {
