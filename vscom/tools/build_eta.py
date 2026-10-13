@@ -178,7 +178,7 @@ fbq('track', 'PageView');
       if (kind === "event") {
         if (name === "generate_lead") fbq("track", "Lead", p && p.value ? { value: p.value, currency: p.currency || "__CUR__" } : {});
         else if (name === "phone_click" || name === "messenger_click") fbq("track", "Contact");
-        else if (name === "form_start") fbq("trackCustom", "FormStart");
+        else if (name === "form_start") { fbq("track", "InitiateCheckout"); fbq("trackCustom", "FormStart"); }
         else if (name === "form_step") fbq("trackCustom", "FormStep" + (p && p.step));
         // те же цели в Метрике: лиды, звонки, мессенджеры, начало и шаги формы
         if (typeof window.ym === "function" && /^(generate_lead|phone_click|messenger_click|form_start|form_step)$/.test(name))
