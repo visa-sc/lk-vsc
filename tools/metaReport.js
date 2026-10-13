@@ -42,8 +42,8 @@ const CAMPAIGNS = [
   { key: "vnj_ru", name: "ВНЖ Испании", kind: "lead", forms: ["spain-fb"], goal: "заявка" },
   { key: "eta_us", name: "ETA США", kind: "eta", forms: ["us-gb"], goal: "начал форму" },
   { key: "eta_br", name: "ETA Бразилия", kind: "eta", forms: ["br-gb"], goal: "начал форму" },
-  { key: "eta_es", name: "ETA Испания", kind: "eta", forms: ["es-gb"], goal: "начал форму", off: true },
-  { key: "eta_it", name: "ETA Италия", kind: "eta", forms: ["it-gb"], goal: "начал форму", off: true },
+  // ETA Испания и Италия не запускались (кампании выключены) — в отчёт не включаем.
+  // Включат — вернуть: { key: "eta_es", name: "ETA Испания", kind: "eta", forms: ["es-gb"], goal: "начал форму" }
   { key: "esim_ru", name: "eSIM VOYO mobile", kind: "esim", goal: "покупка" },
 ];
 
