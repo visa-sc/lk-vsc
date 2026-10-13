@@ -3016,7 +3016,9 @@ function mount(app, opts) {
       const back = all.filter((x) => x !== o && x.supplierRefund && x.supplierRefund.state === "Refunded" &&
         x.supplierRefund.asked > r.eaBalTs && /^EA-/.test(String(x.mmOrderId || ""))).reduce((a, x) => a + Number(x.costUsd || 0), 0);
       const diff = cur - (r.eaBal - spent + back);
-      if (diff >= cost * 0.9 && diff <= cost * 1.5 + 0.5) {
+      // eSIM Access возвращает свою цену, а в заказе закупка бывает выше (13.10.2026: вернули
+      // $5,23 при закупке $5,88) — поэтому порог мягкий
+      if (diff >= cost * 0.8 && diff <= cost * 1.5 + 0.5) {
         r.state = "Refunded"; r.refundedAt = Date.now(); changed = true;
         planMail("VOYO eSIM: поставщик вернул деньги за пакет на баланс",
           "eSIM Access вернул $" + cost.toFixed(2) + " за пакет " + o.mmOrderId + " (" + (o.label || "") + ") на наш баланс.\n" +
