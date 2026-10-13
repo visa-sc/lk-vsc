@@ -35,4 +35,13 @@ app.get("/poker", (req, res) => {
   res.sendFile(path.join(PUB, "poker.html"));
 });
 
+// Пульт аромастанции Roma (Web Bluetooth): страницу собирают и заливают с iMac
+// сами, отдельным ключом akco — он умеет только заменить содержимое aroma/
+// (forced command /usr/local/bin/akco-put на сервере). Здесь — только раздача
+// статики; ни данных, ни входа. Каталог aroma/ живёт только на сервере, не в git.
+app.use("/aroma", express.static(path.join(__dirname, "aroma"), {
+  dotfiles: "ignore",
+  setHeaders: (res) => res.set("Cache-Control", "no-cache"),
+}));
+
 app.listen(PORT, "127.0.0.1", () => console.log("AKFIN: личные финансы на порту " + PORT));
