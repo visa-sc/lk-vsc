@@ -772,8 +772,29 @@
     token = null; try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
     showLogin();
   });
+  // Единый вход с /vsc (просьба Андрея 13.10.2026): токены у /vsc и /marketing общие
+  // (одна серверная сессия), а страница хранила свой ключ — и во вкладке «Маркетинг»
+  // на VSC просила войти второй раз. Теперь по очереди пробуем свой токен, токен
+  // /vsc и токен админки; первый, который пустит (доступ проверяет сервер:
+  // админ или руководитель с вкладкой marketing), запоминаем как свой.
+  function tryTokens(list) {
+    if (!list.length) { token = null; showLogin(); if (!mgrMode) tryAutoBioOnLoad(); return; }
+    var t = list[0];
+    fetch("/admin/api/vsc/marketing-plan", { headers: { Authorization: "Bearer " + t } })
+      .then(function (r) { return r.status === 200 ? r.json() : null; })
+      .then(function (j) {
+        if (j && j.success) { token = t; try { localStorage.setItem(TOKEN_KEY, t); } catch (_) {} load(); }
+        else tryTokens(list.slice(1));
+      })
+      .catch(function () { tryTokens(list.slice(1)); });
+  }
+  var cand = [];
+  [TOKEN_KEY, "voyo_vsc_token", "voyo_admin_token"].forEach(function (k) {
+    var v = null; try { v = localStorage.getItem(k); } catch (_) {}
+    if (v && cand.indexOf(v) < 0) cand.push(v);
+  });
   // Как /vsc: без сессии — форма + авто-Face ID (если passkey есть на устройстве).
-  if (token) load(); else { showLogin(); if (!mgrMode) tryAutoBioOnLoad(); }
+  tryTokens(cand);
 })();
 </script>
 </body>
