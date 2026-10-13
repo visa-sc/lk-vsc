@@ -86,34 +86,75 @@ for args in ETA:
     eta(*args, H=1920, suffix="_9x16")  # 9:16 — сторис и Reels
 
 # ВНЖ Испании: фото + плашка
-def vnj(H=W, suffix=""):
-    top = 80 if H == W else 260          # сторис: сверху место под имя аккаунта
+NAVY = (10, 22, 54)
+GOLD = "#F5C518"
+FLAG_X = 712          # центр флага на hero-spain.webp, px исходника
+
+
+def photo(h):
+    """Фото высотой h, кадр шириной W с флагом левее центра."""
     src = Image.open(IMG + "hero-spain.webp").convert("RGB")
-    s = H / src.height
-    src = src.resize((int(src.width * s), H))
-    left = (src.width - W) // 2
-    im = src.crop((left, 0, left + W, H))
-    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    k = h / src.height
+    src = src.resize((int(src.width * k), h))
+    left = max(0, min(src.width - W, int(FLAG_X * k) - int(W * 0.42)))
+    return src.crop((left, 0, left + W, h))
+
+
+def shade(im, y0, y1, a_max=245):
+    """Затемнение в тёмно-синий от y0 (прозрачно) до y1 (a_max) и ниже."""
+    w, h = im.size
+    ov = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     od = ImageDraw.Draw(ov)
-    for yy in range(H):
-        a = int(max(0, (yy - 0.28 * H) / (0.72 * H)) * 235)
-        od.line([(0, yy), (W, yy)], fill=(8, 18, 45, a))
-    im = Image.alpha_composite(im.convert("RGBA"), ov).convert("RGB")
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle([80, top, 80 + d.textlength("ВНЖ ИСПАНИИ", font=font(True, 38)) + 60, top + 70], 35, fill="#F5C518")
-    d.text((110, top + 15), "ВНЖ ИСПАНИИ", font=font(True, 38), fill="#1A1A1A")
-    oy = H - W if H == W else H - W - 300   # сторис: снизу место под кнопку
-    y = 540 + oy
+    for yy in range(h):
+        a = 0 if yy < y0 else int(min(1, (yy - y0) / max(1, y1 - y0)) * a_max)
+        od.line([(0, yy), (w, yy)], fill=NAVY + (a,))
+    return Image.alpha_composite(im.convert("RGBA"), ov).convert("RGB")
+
+
+def pill(d, x, y, text, size, bg, fg, pad=30, right=False):
+    f = font(True, size)
+    tw = d.textlength(text, font=f)
+    if right:
+        x = x - tw - 2 * pad
+    d.rounded_rectangle([x, y, x + tw + 2 * pad, y + size + 2 * (pad // 2) + 8], (size + pad) // 2, fill=bg)
+    d.text((x + pad, y + pad // 2 + 2), text, font=f, fill=fg)
+    return y + size + 2 * (pad // 2) + 8
+
+
+def vnj_text(d, y):
     for ln in wrap(d, "Живите в Испании и ездите по всей Европе", font(True, 74), W - 160):
         d.text((80, y), ln, font=font(True, 74), fill="white"); y += 86
-    y += 20
+    y += 24
     for b in ["Статус сразу на 3 года, семья вместе с вами", "Подача из любой страны"]:
-        d.ellipse([84, y + 12, 106, y + 34], fill="#F5C518")
-        d.text((124, y), b, font=font(False, 40), fill="#F0F0F0"); y += 60
-    d.rounded_rectangle([80, 930 + oy, 80 + d.textlength("Бесплатная консультация", font=font(True, 42)) + 80, 1010 + oy], 40, fill="#F5C518")
-    d.text((120, 946 + oy), "Бесплатная консультация", font=font(True, 42), fill="#1A1A1A")
-    save(im, "vnj_es", suffix)
+        d.ellipse([84, y + 12, 106, y + 34], fill=GOLD)
+        d.text((124, y), b, font=font(False, 40), fill="#EEF2FA"); y += 60
+    return y
+
+
+def vnj():
+    # Лента 1:1: флаг сверху-слева, плашка — тёмная справа на небе, текст на затемнении снизу
+    im = shade(photo(W), 470, 780)
+    d = ImageDraw.Draw(im)
+    pill(d, W - 70, 70, "ВНЖ ИСПАНИИ", 38, NAVY, GOLD, right=True)
+    vnj_text(d, 560)
+    pill(d, 80, 925, "Бесплатная консультация", 42, GOLD, "#1A1A1A", pad=40)
+    save(im, "vnj_es", "")
+
+
+def vnj_story():
+    # Сторис 9:16: фото с флагом в верхних 1250 px, ниже — тёмно-синий блок с текстом.
+    # Сверху ~200 px и снизу ~300 px перекрывают имя аккаунта и кнопка — там ничего важного.
+    H = 1920
+    im = Image.new("RGB", (W, H), NAVY)
+    im.paste(photo(1250), (0, 0))
+    im = shade(im, 820, 1250, 255)
+    d = ImageDraw.Draw(im)
+    y = pill(d, 80, 1130, "ВНЖ ИСПАНИИ", 38, GOLD, "#1A1A1A") + 34
+    y = vnj_text(d, y)
+    pill(d, 80, y + 40, "Бесплатная консультация", 42, GOLD, "#1A1A1A", pad=40)
+    save(im, "vnj_es", "_9x16")
+
 
 vnj()
-vnj(H=1920, suffix="_9x16")
+vnj_story()
 print("ok", sorted(DIRS.values()))
