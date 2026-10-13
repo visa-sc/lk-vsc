@@ -66,6 +66,53 @@ def eta(tag, kicker, head, bullets, price, cta, foot, H=W, suffix=""):
     d.text((80, 985 + oy), foot, font=font(False, 26), fill="#8FA6D6")
     save(im, "eta_" + tag, suffix)
 
+
+def eta_story(tag, kicker, head, bullets, price, cta, foot):
+    """Сторис 9:16. Сверху ~240 px закрывает имя аккаунта, снизу ~340 px — кнопка,
+    поэтому весь блок центрируется между 260 и 1560, крупно — смотрят с телефона."""
+    H, TOP, BOTTOM = 1920, 260, 1560
+    im = Image.new("RGB", (W, H))
+    d = ImageDraw.Draw(im)
+    for yy in range(H):
+        k = yy / H
+        d.line([(0, yy), (W, yy)], fill=(int(8 + 14 * k), int(22 + 34 * k), int(64 + 70 * k)))
+
+    def block(y, draw):
+        fh, fb, fc, ff = font(True, 88), font(False, 54), font(True, 58), font(False, 28)
+        if draw: flag_gb(d, 80, y, 240)
+        y += 150
+        if draw: d.text((80, y), kicker, font=font(True, 50), fill="#9FC3FF")
+        y += 60
+        if draw: d.text((80, y), "UK ETA", font=font(True, 42), fill="white")
+        y += 100
+        for ln in wrap(d, head, fh, W - 160):
+            if draw: d.text((80, y), ln, font=fh, fill="white")
+            y += 104
+        y += 44
+        for b in bullets:
+            if draw:
+                d.ellipse([84, y + 18, 114, y + 48], fill="#3DDC97")
+                d.text((140, y), b, font=fb, fill="#E6EEFF")
+            y += 86
+        y += 50
+        if draw: d.text((80, y), price, font=font(True, 76), fill="white")
+        y += 116
+        if draw:
+            d.rounded_rectangle([80, y, W - 80, y + 120], 60, fill="#3DDC97")
+            d.text((W // 2, y + 60), cta, font=fc, fill="#0A1F4A", anchor="mm")
+        y += 156
+        for ln in wrap(d, foot, ff, W - 160):
+            if draw: d.text((80, y), ln, font=ff, fill="#8FA6D6")
+            y += 38
+        return y
+
+    h = block(0, False)
+    lines = len(wrap(d, head, font(True, 88), W - 160))
+    assert lines <= 2, (tag, "заголовок не в 2 строки")
+    assert h <= BOTTOM - TOP, (tag, h)
+    block(TOP + (BOTTOM - TOP - h) // 2, True)
+    save(im, "eta_" + tag, "_9x16")
+
 ETA = [
     ("br", "Viagem ao Reino Unido", "Autorização UK em ordem antes do voo",
     ["Em português, pelo celular", "Revisão antes do envio", "Resposta a partir de 15 min"],
@@ -83,7 +130,7 @@ ETA = [
 ]
 for args in ETA:
     eta(*args)                      # 1:1 — лента Facebook и Instagram
-    eta(*args, H=1920, suffix="_9x16")  # 9:16 — сторис и Reels
+    eta_story(*args)                # 9:16 — сторис и Reels, своя вёрстка
 
 # ВНЖ Испании: фото + плашка
 NAVY = (10, 22, 54)
