@@ -9,7 +9,7 @@
 поэтому дисклеймеры «не сайт правительства», ссылка на официальный портал и
 раздельные суммы (госпошлина / наша работа) — не украшение, а обязательная часть.
 """
-import io, os
+import io, os, re
 from wizard import WIZ_CSS, wizard_html, wizard_js
 
 BASE = "/Users/andrey/Documents/Бизнес/VOYO/lk-vsc-macbook"
@@ -138,6 +138,16 @@ def form_html(where, cfg, sub=None):
         </form>"""
 
 
+def strip_gads(s):
+    """Копии под Meta: убираем тег и конверсию Google Ads, иначе заявка из
+    Facebook засчитывается Google Ads как своя и портит его статистику.
+    Google Analytics (G-…) остаётся."""
+    s = s.replace("  // Тег Google Ads: без него gtag('event','conversion',{send_to:'AW-…'}) молчит.\n"
+                  "  gtag('config', 'AW-18409333270');\n", "")
+    s = re.sub(r"<!-- Event snippet for [^\n]*-->\s*<script>\s*function gtag_report_conversion[\s\S]*?</script>\s*", "", s)
+    return s
+
+
 def meta_pixel(cfg):
     """Пиксель Meta для копий страниц под Facebook/Instagram.
 
@@ -169,6 +179,10 @@ fbq('track', 'PageView');
         if (name === "generate_lead") fbq("track", "Lead", p && p.value ? { value: p.value, currency: p.currency || "__CUR__" } : {});
         else if (name === "phone_click" || name === "messenger_click") fbq("track", "Contact");
         else if (name === "form_start") fbq("trackCustom", "FormStart");
+        else if (name === "form_step") fbq("trackCustom", "FormStep" + (p && p.step));
+        // те же цели в Метрике: лиды, звонки, мессенджеры, начало и шаги формы
+        if (typeof window.ym === "function" && /^(generate_lead|phone_click|messenger_click|form_start|form_step)$/.test(name))
+          ym(112104063, "reachGoal", name === "form_step" ? "form_step_" + (p && p.step) : name, p || {});
       }
     } catch (e) {}
     return g.apply(this, arguments);
@@ -204,6 +218,7 @@ def build(cfg):
         "background:linear-gradient(100deg,rgba(9,18,40,.90) 0%,rgba(9,18,40,.68) 40%,rgba(9,18,40,.22) 70%,rgba(9,18,40,.30) 100%)}")
     head = head.replace("</style>", EXTRA_CSS, 1)
     if cfg.get("meta"):
+        head = strip_gads(head)
         head = head.replace("</head>", meta_pixel(cfg) + "</head>", 1)
 
     # Копия для Meta: только настоящие контакты. Местных номеров и офисов у нас

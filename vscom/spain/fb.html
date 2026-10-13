@@ -12,26 +12,6 @@
   gtag('js', new Date());
 
   gtag('config', 'G-CD86GW8FPM');
-  // Тег Google Ads: без него gtag('event','conversion',{send_to:'AW-…'}) молчит.
-  gtag('config', 'AW-18409333270');
-</script>
-
-<!-- Event snippet for Отправка формы для потенциальных клиентов conversion page -->
-<script>
-function gtag_report_conversion(url) {
-  var callback = function () {
-    if (typeof(url) != 'undefined') {
-      window.location = url;
-    }
-  };
-  gtag('event', 'conversion', {
-      'send_to': 'AW-18409333270/8l3UCJzmqOccEJbEoMpE',
-      'value': 1.0,
-      'currency': 'RUB',
-      'event_callback': callback
-  });
-  return false;
-}
 </script>
 
 <!-- Yandex.Metrika counter -->
@@ -47,14 +27,14 @@ function gtag_report_conversion(url) {
 </script>
 <noscript><div><img src="https://mc.yandex.ru/watch/112104063" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
 <!-- /Yandex.Metrika counter -->
-<title>ВНЖ Испании: бесплатная консультация | VSC</title>
-<meta name="description" content="Резиденция Испании позволяет жить в Испании и Европе дольше 90 дней. Бесплатная консультация: какая программа подходит именно вам, какие нужны документы, реальные сроки и стоимость.">
+<title>ВНЖ Испании: все преимущества жизни в Европе | VSC</title>
+<meta name="description" content="ВНЖ Испании: оформление от 1 месяца, сразу на 3 года, без обязательного проживания и налогов. Бесплатная консультация эксперта по программам ВНЖ Европы.">
 <meta name="robots" content="noindex, follow">
 <link rel="canonical" href="https://spain.visa-sc.com/fb">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://spain.visa-sc.com/fb">
-<meta property="og:title" content="ВНЖ Испании: бесплатная консультация">
-<meta property="og:description" content="Разберём вашу ситуацию: какая программа подходит, что нужно и сколько это стоит. Бесплатно и ни к чему не обязывает.">
+<meta property="og:title" content="ВНЖ Испании: все преимущества жизни в Европе">
+<meta property="og:description" content="Оформление от 1 месяца. На 3 года. Без необходимости проживания и без налогов. Бесплатная консультация.">
 <meta property="og:image" content="https://spain.visa-sc.com/img/og-cover.jpg">
 <meta property="og:site_name" content="VSC Visa Services Center">
 <meta property="og:locale" content="ru_RU">
@@ -295,6 +275,10 @@ fbq('track', 'PageView');
         if (name === "generate_lead") fbq("track", "Lead", p && p.value ? { value: p.value, currency: p.currency || "EUR" } : {});
         else if (name === "phone_click" || name === "messenger_click") fbq("track", "Contact");
         else if (name === "form_start") fbq("trackCustom", "FormStart");
+        else if (name === "form_step") fbq("trackCustom", "FormStep" + (p && p.step));
+        // те же цели в Метрике: лиды, звонки, мессенджеры, начало и шаги формы
+        if (typeof window.ym === "function" && /^(generate_lead|phone_click|messenger_click|form_start|form_step)$/.test(name))
+          ym(112104063, "reachGoal", name === "form_step" ? "form_step_" + (p && p.step) : name, p || {});
       }
     } catch (e) {}
     return g.apply(this, arguments);
@@ -319,7 +303,7 @@ fbq('track', 'PageView');
     <div class="hdr__tels">
       <a class="hdr__tel" href="tel:+442037699209"><img src="/img/icon-phone.svg" alt="">+44 20 3769 9209</a>
     </div>
-    <a class="btn btn--sm btn--inline" href="#form"><span class="lbl-l">Бесплатная консультация</span><span class="lbl-s">Звонок</span></a>
+    <a class="btn btn--sm btn--inline" href="#form"><span class="lbl-l">Заказать звонок</span><span class="lbl-s">Звонок</span></a>
     <button class="hdr__burger" id="burger" aria-label="Меню"><span></span><span></span><span></span></button>
   </div>
 </header>
@@ -331,42 +315,42 @@ fbq('track', 'PageView');
   <div class="container hero__in">
     <div>
       <h1>
-        Резиденция Испании: больше 90 дней в Испании и всей Европе.<br>
-        <span class="hl">Разберём вашу ситуацию — бесплатно.</span>
+        Ездить в Европу, как раньше,<br>
+        с <span class="hl">ВНЖ Испании</span>!<br>
+        <span class="hl">За 3 месяца</span> сразу <span class="hl">на 3 года</span>,<br>
+        <span class="hl">без</span> проживания и <span class="hl">налогов</span>.
       </h1>
       <p class="hero__sub">
-        Для удалённых сотрудников, фрилансеров, предпринимателей и финансово независимых.<br>
-        Статус выдаётся сразу на 3 года, семья получает его вместе с вами.<br>
-        Подаваться можно из любой страны — присутствие не требуется.<br>
-        Одна бесплатная консультация — и вы точно знаете, какая программа ваша,<br>
-        какие нужны документы, реальные сроки и полную стоимость.
+        Не только для удалённых сотрудников, фрилансеров, ИП и предпринимателей.
+        Подаёмся из любой точки мира — без обязательного проживания и присутствия.
+        Берём все организационные хлопоты на себя.
       </p>
       <div class="facts">
-        <div class="fact"><span>Европа</span><b>29 стран</b></div>
-        <div class="fact"><span>Статус</span><b>сразу на 3 года</b></div>
+        <div class="fact"><span>Срок оформления</span><b>от 3 месяцев</b></div>
+        <div class="fact"><span>ВНЖ выдаётся</span><b>сразу на 3 года</b></div>
         <div class="fact"><span>Семья</span><b>супруг(а) и дети</b></div>
         <div class="fact"><span>Язык</span><b>не требуется</b></div>
-        <div class="fact"><span>Подача</span><b>из любой страны</b></div>
-        <div class="fact"><span>Консультация</span><b>бесплатно</b></div>
+        <div class="fact"><span>Налоги</span><b>не требуются</b></div>
+        <div class="fact"><span>Стоимость</span><b>от €4 000</b></div>
       </div>
     </div>
 
     <div class="card" id="form">
       <form class="vsc-form" data-form="spain-fb">
         <div class="form-body">
-          <div class="card__title"><em>Бесплатная консультация</em><br>по программам резиденции Европы</div>
-          <p class="card__sub">Ни к чему не обязывает. Эксперт перезвонит и разберёт вашу ситуацию.</p>
+          <div class="card__title"><em>Бесплатная консультация</em><br>эксперта по программам ВНЖ Европы</div>
+          <p class="card__sub">Разберём вашу ситуацию и подберём подходящее основание.</p>
           <div class="field"><input type="text" name="name" placeholder="Имя" autocomplete="name"></div>
           <div class="field"><input type="tel" name="phone" placeholder="Телефон, с кодом страны *" autocomplete="tel" required></div>
           <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-          <button class="btn" type="submit">Получить консультацию</button>
+          <button class="btn" type="submit">Подобрать программу</button>
           <p class="consent">Нажимая на кнопку, вы даете согласие на обработку <a href="/files/policy_20241106155551.pdf" target="_blank" rel="noopener">персональных данных</a>.</p>
           <div class="form-note"></div>
         </div>
         <div class="form-done">
           <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
           <h3>Спасибо, заявка получена</h3>
-          <p>Эксперт свяжется с вами, чтобы договориться о времени.</p>
+          <p>Менеджер свяжется с вами, чтобы договориться о времени.</p>
         </div>
       </form>
     </div>
@@ -396,43 +380,41 @@ fbq('track', 'PageView');
 <!-- ============ ПРОГРАММЫ ============ -->
 <section class="section" id="programs">
   <div class="container">
-    <h2>Три программы. Одна из них — ваша.</h2>
+    <h2>Какая программа ВНЖ вам подойдёт</h2>
     <div class="grid grid--3" style="margin-bottom:32px">
       <div class="prog prog--top">
-        <div class="prog__badge">Самая частая</div>
+        <div class="prog__badge">Рекомендуем</div>
         <h3>Digital Nomad</h3>
         <div class="prog__for">Удалёнщики, фриланс, ИП</div>
         <ul>
-          <li>Стабильный доход из-за пределов Испании</li>
-          <li>Диплом или опыт работы по профилю</li>
-          <li>Статус на 3 года</li>
+          <li>Стабильный удалённый доход</li>
+          <li>ВНЖ на 3 года</li>
+          <li>Оформление ~1–2 месяца</li>
         </ul>
       </div>
       <div class="prog">
         <h3>No Lucrativa</h3>
         <div class="prog__for">Финансово независимые, пенсионеры</div>
         <ul>
-          <li>Накопления или пассивный доход</li>
+          <li>Накопления / пассивный доход</li>
           <li>Без права работы в Испании</li>
-          <li>Продлевается, ведёт к ПМЖ</li>
         </ul>
       </div>
       <div class="prog">
         <h3>Startup</h3>
-        <div class="prog__for">Основатели с инновационным проектом</div>
+        <div class="prog__for">Инновационный бизнес-проект</div>
         <ul>
-          <li>Бизнес-план и капитал</li>
-          <li>Статус на 3 года</li>
-          <li>Команда может переехать тоже</li>
+          <li>Бизнес-план + капитал</li>
+          <li>ВНЖ на 3 года</li>
         </ul>
       </div>
     </div>
     <div class="cta">
       <div>
         <h3>Не уверены, какая программа ваша?</h3>
-        <p>Именно для этого и нужна бесплатная консультация: подберём основание и объясним, как к нему прийти.</p>
+        <p>Разберём вашу ситуацию и подберём подходящее основание — бесплатно.</p>
       </div>
-      <a class="btn" href="#form">Получить консультацию</a>
+      <a class="btn" href="#form">Подобрать программу</a>
     </div>
   </div>
 </section>
@@ -456,12 +438,15 @@ fbq('track', 'PageView');
 <!-- ============ КАК ПРОХОДИТ ============ -->
 <section class="section">
   <div class="container">
-    <h2>Как это устроено</h2>
+    <h2>Как мы работаем</h2>
     <div class="steps">
       <div class="step"><b>Заявка</b><span>Имя и телефон, больше ничего.</span></div>
-      <div class="step"><b>Перезвоним</b><span>В день обращения, договоримся о времени.</span></div>
-      <div class="step"><b>Консультация</b><span>Около 30 минут, по-русски, бесплатно.</span></div>
-      <div class="step"><b>Ваш план</b><span>Письменное резюме. Дальше — помогаем его пройти.</span></div>
+      <div class="step"><b>Консультация</b><span>Эксперт свяжется в день обращения.</span></div>
+      <div class="step"><b>Договор</b><span>Фиксируем программу, сроки и стоимость.</span></div>
+      <div class="step"><b>Документы</b><span>Несудимость с апостилем, переводы.</span></div>
+      <div class="step"><b>Подача</b><span>Готовим и подаём заявление.</span></div>
+      <div class="step"><b>Биометрия в Испании</b><span>Единственный визит.</span></div>
+      <div class="step"><b>Карта резидента (TIE)</b><span>Сразу на 3 года.</span></div>
     </div>
   </div>
 </section>
@@ -469,16 +454,16 @@ fbq('track', 'PageView');
 <!-- ============ ОТКАЗЫ ============ -->
 <section class="section section--pale">
   <div class="container">
-    <h2>Почему заявителям отказывают</h2>
+    <h2>Почему могут отказать в ВНЖ Испании</h2>
     <ul class="refuse">
-      <li><b>Неполный пакет документов.</b> Одной недостающей справки или устаревшего бланка достаточно для отказа.</li>
-      <li><b>Документы не соответствуют критериям.</b> Просроченные справки, отсутствие апостиля или заверенного перевода, копии вместо оригиналов.</li>
-      <li><b>Слабое подтверждение дохода.</b> Доход нужно показать так, как этого ждёт миграционная служба, а не так, как он выглядит в банковском приложении.</li>
-      <li><b>Миграционная или уголовная история.</b> Судимость или нарушение правил пребывания почти всегда закрывают дверь.</li>
+      <li><b>Неполный или неправильно собранный пакет документов.</b> Отсутствие даже одной справки, некорректно заполненная анкета или устаревшие бланки — формальное основание для отказа.</li>
+      <li><b>Несоответствие документов критериям.</b> Просроченные справки, документы без апостиля или заверенного перевода, копии вместо оригиналов.</li>
+      <li><b>Недостаточное финансовое обеспечение.</b> Доход нужно показать так, как этого ждёт миграционная служба, а не так, как он выглядит в банковском приложении.</li>
+      <li><b>Нарушение миграционного или уголовного законодательства.</b> Судимость, депортация из стран Шенгена или нарушение условий пребывания практически гарантируют отказ.</li>
     </ul>
     <p style="margin-top:24px;color:var(--muted);max-width:860px">
-      Каждую из этих причин можно заметить заранее — и дешевле сделать это до подачи, чем после отказа.
-      Именно это мы и разбираем на консультации.
+      Каждой из этих причин можно избежать — и дешевле заметить риск до подачи, чем после отказа.
+      Именно это мы разбираем на бесплатной консультации.
     </p>
   </div>
 </section>
@@ -486,10 +471,10 @@ fbq('track', 'PageView');
 <!-- ============ КОМАНДА ============ -->
 <section class="section" id="team">
   <div class="container">
-    <h2>С кем вы будете говорить</h2>
+    <h2>Кто ведёт ваш кейс</h2>
     <div class="grid grid--3">
-      <div class="person"><img src="/img/team-ragoza.webp" alt="Кристина Рагоза" loading="lazy"><b>Кристина Рагоза</b><span>Руководитель отдела по работе с клиентами, Барселона</span></div>
-      <div class="person"><img src="/img/team-kuznetsova.webp" alt="Маргарита Кузнецова" loading="lazy"><b>Маргарита Кузнецова</b><span>Руководитель отдела по работе с клиентами, Мадрид</span></div>
+      <div class="person"><img src="/img/team-ragoza.webp" alt="Кристина Рагоза" loading="lazy"><b>Кристина Рагоза</b><span>Руководитель отдела по работе с клиентами, Москва</span></div>
+      <div class="person"><img src="/img/team-kuznetsova.webp" alt="Маргарита Кузнецова" loading="lazy"><b>Маргарита Кузнецова</b><span>Руководитель отдела по работе с клиентами, Санкт-Петербург</span></div>
       <div class="person"><img src="/img/team-pliner.webp" alt="Анастасия Плинер" loading="lazy"><b>Анастасия Плинер</b><span>Руководитель отдела оформления</span></div>
     </div>
   </div>
@@ -500,14 +485,13 @@ fbq('track', 'PageView');
   <div class="container">
     <h2>Частые вопросы</h2>
     <div class="faq">
-      <details open><summary>Консультация правда бесплатная?</summary><p>Да. Бесплатная и ни к чему не обязывает.</p></details>
-      <details><summary>Подойдёт ли мне, если я не айтишник?</summary><p>Да. Удалённые сотрудники, фрилансеры, ИП и предприниматели из разных сфер.</p></details>
-      <details><summary>Обязательно ли работать удалённо?</summary><p>Нет. Удалённая работа — лишь один из путей. Для предпринимателей, финансово независимых и других случаев есть отдельные программы — подберём вашу на консультации.</p></details>
-      <details><summary>Нужно ли знать испанский язык?</summary><p>Нет. Требования к языку нет, консультация проходит по-русски.</p></details>
-      <details><summary>Можно ли подаваться из России или другой страны?</summary><p>Да. Весь процесс организуется удалённо из любой точки мира — разницу между вариантами подачи объясним на консультации.</p></details>
-      <details><summary>Переедет ли семья вместе со мной?</summary><p>Да. Супруг(а) и дети идут тем же путём, что и основной заявитель.</p></details>
-      <details><summary>Какие налоги платит резидент Испании?</summary><p>Зависит от вашей ситуации. На консультации разберём, как будет выглядеть именно ваша налоговая картина.</p></details>
-      <details><summary>А если мой план нереален?</summary><p>Так и скажем на консультации. Это дешевле для всех, чем выяснить позже.</p></details>
+      <details open><summary>Подойдёт ли мне, если я не айтишник?</summary><p>Да. Программа подходит удалённым сотрудникам, фрилансерам, ИП и предпринимателям из разных сфер.</p></details>
+      <details><summary>Обязательно ли работать удалённо?</summary><p>Нет. Удалённая работа — лишь один из путей к ВНЖ Испании. Под вашу ситуацию подберём подходящее основание: для предпринимателей, финансово независимых и других случаев есть отдельные программы.</p></details>
+      <details><summary>Какие требования к заявителю?</summary><p>Источник дохода или накопления, диплом или опыт работы, справка о несудимости. Точный перечень зависит от программы — разберём на бесплатной консультации.</p></details>
+      <details><summary>Можно ли подаваться из России или другой страны?</summary><p>Да. Организуем процесс удалённо из любой точки мира — личное присутствие в офисе не требуется.</p></details>
+      <details><summary>Нужно ли знать испанский язык?</summary><p>Нет, знание языка для оформления не требуется.</p></details>
+      <details><summary>Переедет ли семья вместе со мной?</summary><p>Да. Супруг(а) и дети получают статус вместе с основным заявителем.</p></details>
+      <details><summary>Какие налоги платит резидент Испании?</summary><p>Налогообложение зависит от вашей ситуации; проконсультируем и поможем разобраться с обязательствами после переезда.</p></details>
     </div>
   </div>
 </section>
@@ -515,12 +499,14 @@ fbq('track', 'PageView');
 <!-- ============ ФИНАЛЬНЫЙ CTA + КОНТАКТЫ ============ -->
 <section class="section" id="contacts">
   <div class="container">
+    <h2>Приняли решение оформлять с нами?</h2>
     <div class="contact-grid">
       <div>
         <div class="office">
           <b>Москва, Ветошный переулок 9</b>
           ТЦ «Никольский Пассаж», офис VSC<br>
-          <a href="tel:+74993256474">+7 (499) 325-64-74</a><br>
+          <a href="tel:+74953691867">+7 (495) 369-18-67</a><br>
+          <a href="tel:+74999385358">+7 (499) 938-53-58</a><br>
           info@visa-sc.com<br>
           <span class="mut">Пн–Пт 10:00–19:00, Сб–Вс 12:00–18:00</span>
         </div>
@@ -532,19 +518,18 @@ fbq('track', 'PageView');
       <div class="card">
         <form class="vsc-form" data-form="spain-fb-bottom">
           <div class="form-body">
-            <div class="card__title"><em>Бесплатная консультация</em><br>по программам резиденции Европы</div>
-            <p class="card__sub">Эксперт перезвонит и разберёт вашу ситуацию.</p>
+            <div class="card__title"><em>Заполните форму</em><br>— менеджер свяжется с готовыми вариантами</div>
             <div class="field"><input type="text" name="name" placeholder="Имя" autocomplete="name"></div>
             <div class="field"><input type="tel" name="phone" placeholder="Телефон, с кодом страны *" autocomplete="tel" required></div>
             <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-            <button class="btn" type="submit">Получить консультацию</button>
+            <button class="btn" type="submit">Отправить заявку</button>
             <p class="consent">Нажимая на кнопку, вы даете согласие на обработку <a href="/files/policy_20241106155551.pdf" target="_blank" rel="noopener">персональных данных</a>.</p>
             <div class="form-note"></div>
           </div>
           <div class="form-done">
             <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
             <h3>Спасибо, заявка получена</h3>
-            <p>Эксперт свяжется с вами в ближайшее время.</p>
+            <p>Менеджер свяжется с вами в ближайшее время.</p>
           </div>
         </form>
       </div>
@@ -558,19 +543,19 @@ fbq('track', 'PageView');
     <button class="modal__x" data-close aria-label="Закрыть">&times;</button>
     <form class="vsc-form" data-form="spain-fb-modal">
       <div class="form-body">
-        <div class="card__title"><em>Бесплатная консультация</em><br>по программам резиденции Европы</div>
-        <p class="card__sub">Ни к чему не обязывает. Эксперт перезвонит и разберёт вашу ситуацию.</p>
+        <div class="card__title"><em>Бесплатная консультация</em><br>эксперта по программам ВНЖ Европы</div>
+        <p class="card__sub">Оставьте контакты — менеджер свяжется с вами.</p>
         <div class="field"><input type="text" name="name" placeholder="Имя" autocomplete="name"></div>
         <div class="field"><input type="tel" name="phone" placeholder="Телефон, с кодом страны *" autocomplete="tel" required></div>
         <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-        <button class="btn" type="submit">Получить консультацию</button>
+        <button class="btn" type="submit">Заказать звонок</button>
         <p class="consent">Нажимая на кнопку, вы даете согласие на обработку <a href="/files/policy_20241106155551.pdf" target="_blank" rel="noopener">персональных данных</a>.</p>
         <div class="form-note"></div>
       </div>
       <div class="form-done">
         <div class="tick-round"><img src="/img/icon-check.svg" width="28" height="28" alt=""></div>
         <h3>Спасибо, заявка получена</h3>
-        <p>Эксперт свяжется с вами, чтобы договориться о времени.</p>
+        <p>Менеджер свяжется с вами, чтобы договориться о времени.</p>
       </div>
     </form>
   </div>
@@ -579,7 +564,7 @@ fbq('track', 'PageView');
 <footer class="ftr">
   <div class="container">
     <b>VSC Визовый центр</b>
-    <p><a href="tel:+442037699209">+44 20 3769 9209</a> · <a href="mailto:info@visa-sc.com">info@visa-sc.com</a></p>
+    <p><a href="tel:+74953691867">+7 (495) 369-18-67</a> · <a href="tel:+74999385358">+7 (499) 938-53-58</a> · <a href="tel:+442037699209">+44 20 3769 9209</a> · <a href="mailto:info@visa-sc.com">info@visa-sc.com</a></p>
     <div class="ftr__fine">
       <p>VSC — частная консалтинговая компания. Мы не консульство, не посольство и не государственный
       орган, и не являемся официальным представительством какой-либо страны. Решения о выдаче виз и
@@ -597,6 +582,33 @@ fbq('track', 'PageView');
 <script>
 (function () {
   "use strict";
+
+  // Свой журнал на сервере (/api/vscom-click): не зависит от блокировщиков рекламы.
+  function beacon(what) {
+    var q = new URLSearchParams(location.search), u = {};
+    ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","fbclid"].forEach(function (k) { if (q.get(k)) u[k] = q.get(k); });
+    var body = JSON.stringify({ messenger: what, form: "spain-fb", page: location.href, referrer: document.referrer || "", utm: u });
+    try {
+      if (navigator.sendBeacon) navigator.sendBeacon("/api/vscom-click", new Blob([body], { type: "application/json" }));
+      else fetch("/api/vscom-click", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: body });
+    } catch (e) {}
+  }
+  // Звонок — такая же цель, как заявка: считаем клик по любому номеру.
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest('a[href^="tel:"]');
+    if (!a) return;
+    var num = a.getAttribute("href").slice(4);
+    beacon("phone");
+    if (typeof window.gtag === "function") gtag("event", "phone_click", { phone: num, form_id: "spain-fb" });
+  });
+  // Начал заполнять форму: первый фокус в поле, один раз на форму.
+  document.addEventListener("focusin", function (e) {
+    var f = e.target.closest && e.target.closest(".vsc-form");
+    if (!f || f.dataset.started) return;
+    f.dataset.started = "1";
+    beacon("form_start");
+    if (typeof window.gtag === "function") gtag("event", "form_start", { form_id: f.dataset.form });
+  });
   var burger = document.getElementById("burger"), nav = document.getElementById("nav");
   if (burger) burger.addEventListener("click", function () { nav.classList.toggle("is-on"); });
   nav.addEventListener("click", function (e) { if (e.target.tagName === "A") nav.classList.remove("is-on"); });

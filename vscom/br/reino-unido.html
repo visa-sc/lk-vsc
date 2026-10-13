@@ -12,26 +12,6 @@
   gtag('js', new Date());
 
   gtag('config', 'G-CD86GW8FPM');
-  // Тег Google Ads: без него gtag('event','conversion',{send_to:'AW-…'}) молчит.
-  gtag('config', 'AW-18409333270');
-</script>
-
-<!-- Event snippet for Отправка формы для потенциальных клиентов conversion page -->
-<script>
-function gtag_report_conversion(url) {
-  var callback = function () {
-    if (typeof(url) != 'undefined') {
-      window.location = url;
-    }
-  };
-  gtag('event', 'conversion', {
-      'send_to': 'AW-18409333270/8l3UCJzmqOccEJbEoMpE',
-      'value': 1.0,
-      'currency': 'RUB',
-      'event_callback': callback
-  });
-  return false;
-}
 </script>
 
 <!-- Yandex.Metrika counter -->
@@ -446,6 +426,10 @@ fbq('track', 'PageView');
         if (name === "generate_lead") fbq("track", "Lead", p && p.value ? { value: p.value, currency: p.currency || "BRL" } : {});
         else if (name === "phone_click" || name === "messenger_click") fbq("track", "Contact");
         else if (name === "form_start") fbq("trackCustom", "FormStart");
+        else if (name === "form_step") fbq("trackCustom", "FormStep" + (p && p.step));
+        // те же цели в Метрике: лиды, звонки, мессенджеры, начало и шаги формы
+        if (typeof window.ym === "function" && /^(generate_lead|phone_click|messenger_click|form_start|form_step)$/.test(name))
+          ym(112104063, "reachGoal", name === "form_step" ? "form_step_" + (p && p.step) : name, p || {});
       }
     } catch (e) {}
     return g.apply(this, arguments);
@@ -926,6 +910,7 @@ fbq('track', 'PageView');
       box.innerHTML = html;
     }
 
+    var reached = {};
     function go(step) {
       [].forEach.call(wiz.querySelectorAll(".wiz__pane"), function (p) {
         p.classList.toggle("is-on", p.dataset.pane === String(step));
@@ -936,6 +921,11 @@ fbq('track', 'PageView');
         s.classList.toggle("is-done", v < step);
       });
       if (step === 3) renderSum();
+      // До какого шага доходят: 2 — выбрали тариф, 3 — ввели путешественников.
+      if (step > 1 && !reached[step]) {
+        reached[step] = true;
+        if (typeof window.gtag === "function") gtag("event", "form_step", { step: step, page_location: location.href });
+      }
       wiz.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 

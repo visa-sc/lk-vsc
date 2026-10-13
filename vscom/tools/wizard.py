@@ -306,6 +306,7 @@ def wizard_js(cfg):
       box.innerHTML = html;
     }
 
+    var reached = {};
     function go(step) {
       [].forEach.call(wiz.querySelectorAll(".wiz__pane"), function (p) {
         p.classList.toggle("is-on", p.dataset.pane === String(step));
@@ -316,6 +317,11 @@ def wizard_js(cfg):
         s.classList.toggle("is-done", v < step);
       });
       if (step === 3) renderSum();
+      // До какого шага доходят: 2 — выбрали тариф, 3 — ввели путешественников.
+      if (step > 1 && !reached[step]) {
+        reached[step] = true;
+        if (typeof window.gtag === "function") gtag("event", "form_step", { step: step, page_location: location.href });
+      }
       wiz.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
