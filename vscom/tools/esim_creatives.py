@@ -46,28 +46,44 @@ def bg(h):
     return im, d
 
 
-def sim_icon(d, x, y, s):
-    """Фирменный компас VOYO (знак из буквы «О», public/favicon.svg) мятным цветом.
-    Рисуется в 4× на прозрачном слое и уменьшается — края гладкие."""
-    S = int(s * 1.25)                      # по высоте как прежний значок SIM
-    k = 4
-    Z = S * k
-    u = Z / 70.0                           # в SVG знак занимает квадрат 15..85
-    P = lambda vx, vy: ((vx - 15) * u, (vy - 15) * u)
-    lay = Image.new("RGBA", (Z, Z), (0, 0, 0, 0))
-    ld = ImageDraw.Draw(lay)
+def compass(ld, cx, cy, R, color):
+    """Фирменный компас VOYO (знак из буквы «О», public/favicon.svg): кольцо
+    с горизонтальными разрывами и стрелка. R — внешний радиус кольца."""
+    u = R / 34.1                           # в SVG внешний радиус 30 + 8,2/2
     r, w = 30 * u, 8.2 * u
-    cx, cy = P(50, 50)
-    ld.ellipse([cx - r - w / 2, cy - r - w / 2, cx + r + w / 2, cy + r + w / 2], fill=MINT)
+    ld.ellipse([cx - R, cy - R, cx + R, cy + R], fill=color)
     ld.ellipse([cx - r + w / 2, cy - r + w / 2, cx + r - w / 2, cy + r - w / 2], fill=(0, 0, 0, 0))
-    # горизонтальные разрывы кольца слева и справа
-    g0, g1 = P(0, 44.4)[1], P(0, 55.6)[1]
-    ld.rectangle([0, g0, P(35, 0)[0], g1], fill=(0, 0, 0, 0))
-    ld.rectangle([P(65, 0)[0], g0, Z, g1], fill=(0, 0, 0, 0))
-    # стрелка
-    ld.polygon([P(66.6, 33.4), P(54.4, 54.4), P(33.4, 66.6), P(45.6, 45.6)], fill=MINT)
-    lay = lay.resize((S, S), Image.LANCZOS)
+    gh = 5.6 * u
+    ld.rectangle([cx - R - 2, cy - gh, cx - 15 * u, cy + gh], fill=(0, 0, 0, 0))
+    ld.rectangle([cx + 15 * u, cy - gh, cx + R + 2, cy + gh], fill=(0, 0, 0, 0))
+    P = lambda vx, vy: (cx + (vx - 50) * u, cy + (vy - 50) * u)
+    ld.polygon([P(66.6, 33.4), P(54.4, 54.4), P(33.4, 66.6), P(45.6, 45.6)], fill=color)
+
+
+def sim_icon(d, x, y, h):
+    """Значок: белая SIM-карта со срезанным углом, на месте чипа — мятная
+    площадка с компасом VOYO. h — высота карты; рисуем в 4× и уменьшаем."""
+    k = 4
+    H = h * k
+    W_ = int(H * 0.74)
+    lay = Image.new("RGBA", (W_, H), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(lay)
+    rad, cut = H * 0.09, W_ * 0.30
+    # тело карты: скруглённый прямоугольник, правый верхний угол срезан
+    ld.rounded_rectangle([0, 0, W_, H], rad, fill="white")
+    ld.polygon([(W_ - cut, -1), (W_ + 1, -1), (W_ + 1, cut)], fill=(0, 0, 0, 0))
+    # «чип»
+    cw, ch = W_ * 0.66, H * 0.42
+    c0x, c0y = (W_ - cw) / 2, H * 0.44
+    ld.rounded_rectangle([c0x, c0y, c0x + cw, c0y + ch], H * 0.06, fill=MINT)
+    # компас внутри чипа, тёмным — на своём слое, иначе его вырезы
+    # пробивают карту насквозь
+    cl = Image.new("RGBA", lay.size, (0, 0, 0, 0))
+    compass(ImageDraw.Draw(cl), c0x + cw / 2, c0y + ch / 2, ch * 0.38, INK)
+    lay = Image.alpha_composite(lay, cl)
+    lay = lay.resize((W_ // k, h), Image.LANCZOS)
     d._image.paste(lay, (int(x), int(y)), lay)
+    return W_ // k
 
 
 def pill(d, x, y, text, f, bg_, fg, pad=28, full_w=None):
@@ -89,9 +105,9 @@ VARIANTS = {
 
 def feed(key, v):
     im, d = bg(W)
-    sim_icon(d, 80, 80, 90)
-    d.text((200, 92), "VOYO mobile", font=font(True, 52), fill="white")
-    d.text((200, 152), "eSIM для путешествий", font=font(False, 34), fill="#D6E9F7")
+    sim_icon(d, 80, 86, 88)
+    d.text((172, 88), "VOYO mobile", font=font(True, 52), fill="white")
+    d.text((172, 146), "eSIM для путешествий", font=font(False, 34), fill="#D6E9F7")
     y = 300
     fh = font(True, 86)
     for ln in wrap(d, v["head"], fh, W - 160):
@@ -113,9 +129,9 @@ def story(key, v):
     fh, fb = font(True, 100), font(False, 56)
 
     def block(y, draw):
-        if draw: sim_icon(d, 80, y, 120)
-        if draw: d.text((240, y + 18), "VOYO mobile", font=font(True, 62), fill="white")
-        if draw: d.text((240, y + 92), "eSIM для путешествий", font=font(False, 40), fill="#D6E9F7")
+        if draw: sim_icon(d, 80, y + 4, 118)
+        if draw: d.text((198, y + 14), "VOYO mobile", font=font(True, 62), fill="white")
+        if draw: d.text((198, y + 86), "eSIM для путешествий", font=font(False, 40), fill="#D6E9F7")
         y += 230
         for ln in wrap(d, v["head"], fh, W - 160):
             if draw: d.text((80, y), ln, font=fh, fill="white")
