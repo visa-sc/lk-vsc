@@ -1418,6 +1418,9 @@
         bw.classList.add("on");
         document.getElementById("mBonusT").textContent = "Списать "+RU(j.balanceCanUse)+" ₽ бонусами";
         document.getElementById("mBonusS").textContent = "У вас "+RU(j.balanceRub)+" ₽. Бонусами можно закрыть до половины стоимости.";
+        // подарок по ссылке друга: сервер списывает его сам — галочка в том же положении
+        if(j.giftRub){ document.getElementById("mBonus").checked = true;
+          document.getElementById("mBonusS").textContent = "Подарок по ссылке: "+RU(j.giftRub)+" ₽ на баланс. Бонусами можно закрыть до половины стоимости."; }
       } else if(j.balanceBlockedBy && j.balanceRub > 0){
         // Бонусы и скидка не складываются — показываем баланс, но списать не даём
         bw.classList.add("on");

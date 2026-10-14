@@ -1280,7 +1280,26 @@ function usePromo(code) {
 //  2. ЛИБО ПРОМОКОД, ЛИБО БАЛЛЫ. Не складываются. Промокод (и реферальная
 //     скидка) в приоритете: его вводят осознанно, а баллы — это переключатель.
 //     Неизрасходованные баллы остаются на балансе до следующей покупки.
-function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, useBalance }) {
+// Код-подарок: промокод с полем gift — сумма падает на баланс человеку, который
+// первым оплачивает по ссылке ?ref=КОД / ?promo=КОД (или ввёл код в боте). Один раз
+// на весь код (giftTo — кому достался). Бонусы списываются как обычно: до половины цены.
+function giftOffer(code, who) {
+  code = String(code || "").trim().toUpperCase();
+  const p = code && loadPromos()[code];
+  if (!p || !(Number(p.gift) > 0) || p.active === false || !who) return null;
+  if (p.giftTo && p.giftTo !== who) return null;
+  return { code, rub: Number(p.gift), claimed: p.giftTo === who };
+}
+function giftClaim(code, who) {
+  const g = giftOffer(code, who);
+  if (!g || g.claimed) return g;
+  const all = loadPromos();
+  all[g.code].giftTo = who; all[g.code].giftAt = Date.now(); all[g.code].uses = (all[g.code].uses || 0) + 1;
+  writeJson(PROMOS_FILE, all);
+  addBalance(who, g.rub, "Подарок по ссылке " + g.code);
+  return Object.assign(g, { claimed: true });
+}
+function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, useBalance, extraBalance }) {
   // Личный код клиента работает и в поле промокода: человеку всё равно, как
   // называется код друга, а объяснять разницу в письме незачем.
   if (promoCode && !refCode) {
@@ -1348,7 +1367,7 @@ function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, use
     out.discountKind = null; out.promoCode = null; out.promoReason = "floor";
   }
   const cust = getCustomer(email, false);
-  out.balanceRub = (cust && cust.balanceRub) || 0;
+  out.balanceRub = ((cust && cust.balanceRub) || 0) + (Number(extraBalance) || 0);   // + подарок по ссылке, ещё не начисленный
   // Баллы идут в дело, только если скидки не было: не больше половины пакета,
   // не больше самого баланса и так, чтобы цена не пробила пол по себестоимости.
   if (out.discountKind && out.discountKind !== "partner") out.balanceBlockedBy = out.discountKind;
@@ -2231,6 +2250,8 @@ function mount(app, opts) {
       if (found.addon && !parentOrderId) return res.status(400).json({ success: false, message: "Топап без исходной eSIM." });
       const listPrice = tierRub(found.item.priceRub || retailFor(found.item, rate), b.tier);
       const who = custKey(email, tgChatId);
+      // подарок по ссылке: начисляем на баланс (один раз) и сразу списываем в этой покупке
+      if (!parentOrderId && giftClaim(b.promo || b.ref, who)) { b.promo = ""; b.ref = ""; b.useBalance = true; }
       const calc = priceWithDiscounts({ listPrice, costRub: costFor(found.item, rate),
         email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
       const priceRub = calc.total;
@@ -2311,8 +2332,10 @@ function mount(app, opts) {
       const email = normEmail(b.email) || readSession(req) || "";
       const who = custKey(email, b.tgChatId);
       const listPrice = tierRub(retailFor(found.item, rate), b.tier);
+      const gift = giftOffer(b.promo || b.ref, who);
+      if (gift) { b.promo = ""; b.ref = ""; b.useBalance = true; }
       const calc = priceWithDiscounts({ listPrice, costRub: costFor(found.item, rate),
-        email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance });
+        email: who, promoCode: b.promo, refCode: b.ref, useBalance: !!b.useBalance, extraBalance: gift && !gift.claimed ? gift.rub : 0 });
       const promoTried = String(b.promo || "").trim();
       const qty = qtyOf(b);
       const ex = extrasFor(calc, listPrice, costFor(found.item, rate));
@@ -2323,7 +2346,7 @@ function mount(app, opts) {
         grandTotal: calc.total + (qty - 1) * extraUnit,
         discountRub: calc.discountRub, discountKind: calc.discountKind,
         balanceRub: calc.balanceRub, balanceCanUse: calc.balanceCanUse, balanceUsed: calc.balanceUsed,
-        balanceBlockedBy: calc.balanceBlockedBy,
+        balanceBlockedBy: calc.balanceBlockedBy, giftRub: gift ? gift.rub : 0,
         // Промокод засчитан, если сервер его принял — хоть скидкой, хоть себестоимостью
         promoOk: promoTried ? !!(calc.promoCode || calc.discountKind === "ref") : null,
         promoReason: calc.promoReason,
