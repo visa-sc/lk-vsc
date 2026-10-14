@@ -29,12 +29,12 @@
     ".brand-vsc .brand img,.brand-vsc .byvsc,.brand-vsc .tgl,.brand-vsc a[href*='t.me/esimvoyo_bot']{display:none!important}" +
     ".brand-vsc .brand{flex-direction:row!important;align-items:center!important;text-decoration:none!important}" +
     // текстовый знак V|S|C и «mobile» заметно мельче (Андрей, 14.10.2026)
-    // V|S|C 22px, промежутки −5%, «mobile» 12px (Андрей, 14.10.2026). !important — у страниц свои стили для .brand span (на «Оплата прошла» буквы становились тонкими)
-    ".brand-vsc .vsc-wm{display:inline-flex!important;align-items:center!important;gap:6.65px!important;" +
+    // V|S|C 23px, промежутки ещё −3% (6,45px), «mobile» 12px (Андрей, 14.10.2026). !important — у страниц свои стили для .brand span (на «Оплата прошла» буквы становились тонкими)
+    ".brand-vsc .vsc-wm{display:inline-flex!important;align-items:center!important;gap:6.45px!important;" +
       "font-family:ui-rounded,'SF Pro Rounded',system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif!important;" +
-      "font-weight:800!important;font-size:22px!important;line-height:1!important;letter-spacing:.02em!important;color:#0097ca!important;" +
+      "font-weight:800!important;font-size:23px!important;line-height:1!important;letter-spacing:.02em!important;color:#0097ca!important;" +
       "white-space:nowrap!important;background:none!important;-webkit-text-fill-color:#0097ca!important;margin:0!important;padding:0!important}" +
-    ".brand-vsc .vsc-wm i{display:block!important;width:1.5px!important;height:16.5px!important;background:#0097ca!important;opacity:.45;border-radius:1px}" +
+    ".brand-vsc .vsc-wm i{display:block!important;width:1.5px!important;height:17.25px!important;background:#0097ca!important;opacity:.45;border-radius:1px}" +
     ".brand-vsc .vsc-wm em{font-style:normal!important;font-weight:400!important;font-size:12px!important;letter-spacing:.02em!important;" +
       "color:#3589bd!important;-webkit-text-fill-color:#3589bd!important;margin-left:2px!important;align-self:flex-end!important;padding-bottom:1px!important;background:none!important}";
   (document.head || root).appendChild(css);
