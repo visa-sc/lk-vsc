@@ -39,11 +39,14 @@ const n = (v) => (v || 0).toLocaleString("ru-RU");
 
 // Кампании теста: как узнать их трафик в наших журналах
 const CAMPAIGNS = [
-  { key: "vnj_ru", name: "ВНЖ Испании", kind: "lead", forms: ["spain-fb"], goal: "заявка" },
-  { key: "eta_us", name: "ETA США", kind: "eta", forms: ["us-gb"], goal: "начал форму" },
-  { key: "eta_br", name: "ETA Бразилия", kind: "eta", forms: ["br-gb"], goal: "начал форму" },
-  // ETA Испания и Италия не запускались (кампании выключены) — в отчёт не включаем.
-  // Включат — вернуть: { key: "eta_es", name: "ETA Испания", kind: "eta", forms: ["es-gb"], goal: "начал форму" }
+  // ВНЖ: две страницы — своя spain/fb и копия visa-sc.ru/spain_vnzh на visa-sc.com
+  // (с 14.10.2026 обе крутятся в одной группе, через неделю сравнить и слабую выключить).
+  { key: "vnj_ru", name: "ВНЖ Испании", kind: "lead", forms: ["spain-fb"], copy: /^\/spain_vnzh/, goal: "заявка" },
+  // США и Великобритания (с 14.10.2026) — копии visa-sc.ru/usa и /britain на visa-sc.com
+  { key: "usa_ru", name: "Виза в США", kind: "lead", forms: ["usa-fb"], copy: /^\/(usa|amerika)\b/, goal: "заявка" },
+  { key: "uk_ru", name: "Виза в Великобританию", kind: "lead", forms: ["uk-fb"], copy: /^\/(britain|angliya)\b/, goal: "заявка" },
+  // ETA (US/BR/ES/IT) выключены 14.10.2026 — в отчёт не включаем.
+  // Включат — вернуть: { key: "eta_us", name: "ETA США", kind: "eta", forms: ["us-gb"], goal: "начал форму" }
   { key: "esim_ru", name: "eSIM VOYO mobile", kind: "esim", goal: "покупка" },
 ];
 
@@ -73,8 +76,27 @@ function siteStats(c, from, to) {
     formStart: cnt("form_start"),
     phone: cnt("phone"),
     msgr: cnt("whatsapp") + cnt("telegram"),
-    leads: leads.length,
+    leads: leads.length + copyLeads(c, from, to),
   };
+}
+
+// Заявки с копий visa-sc.ru на visa-sc.com: их принимает mskcopy (формы Flexbe),
+// пишет в свой leads.json с host visa-sc.com; в amoCRM везёт pm2 «fb-amo».
+const COPY_LEADS = process.env.META_COPY_LEADS || "/var/www/mskcopy/leads.json";
+function copyLeads(c, from, to) {
+  if (!c.copy) return 0;
+  let list = [];
+  try { list = JSON.parse(fs.readFileSync(COPY_LEADS, "utf8")); } catch (_) { return 0; }
+  if (!Array.isArray(list)) list = list.leads || [];
+  return list.filter((l) => {
+    const t = Date.parse(l.at);
+    if (!(t >= from && t < to) || !/(^|\.)visa-sc\.com$/.test(l.host || "")) return false;
+    if (l.amo && l.amo.skipped) return false;                 // помеченные тестовыми
+    let u = {};
+    try { u = JSON.parse((l.data && l.data.utmData) || "{}"); } catch (_) {}
+    if (/test/i.test(u.utm_campaign || "")) return false;
+    return c.copy.test(l.pageUrl || "") && (isMeta(u) || campOf(u) === c.key);
+  }).length;
 }
 
 // ── eSIM: воронка по посетителям с меткой fb ──
@@ -116,7 +138,7 @@ async function metaInsights(since, until) {
     return { _error: (e.response && e.response.data && e.response.data.error && e.response.data.error.message) || e.message };
   }
 }
-const META_NAMES = { vnj_ru: "VSC VNJ Spain RU", eta_us: "VSC ETA US", eta_br: "VSC ETA BR",
+const META_NAMES = { vnj_ru: "VSC VNJ Spain RU", usa_ru: "VSC USA RU", uk_ru: "VSC UK RU", eta_us: "VSC ETA US", eta_br: "VSC ETA BR",
   eta_es: "VSC ETA ES", eta_it: "VSC ETA IT", esim_ru: "VSC eSIM RU" };
 
 function rowsFor(c, s) {
