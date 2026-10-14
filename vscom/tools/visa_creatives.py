@@ -99,10 +99,10 @@ def flag_gb(im, x, y, w):
 
 
 def paste_flag(im, fl, x, y):
-    # скруглённые углы и тонкая белая рамка — флаг читается на тёмном фото
+    # маленький флаг со скруглёнными углами — значок в строке над заголовком
+    r = max(4, fl.width // 12)
     m = Image.new("L", fl.size, 0)
-    ImageDraw.Draw(m).rounded_rectangle([0, 0, fl.width - 1, fl.height - 1], 12, fill=255)
-    ImageDraw.Draw(im).rounded_rectangle([x - 4, y - 4, x + fl.width + 3, y + fl.height + 3], 15, fill="white")
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, fl.width - 1, fl.height - 1], r, fill=255)
     im.paste(fl, (x, y), m)
 
 
@@ -139,29 +139,45 @@ def save(im, c, story):
     im.save(os.path.join(d, "сторис и Reels 9x16.jpg" if story else "лента 1x1.jpg"), quality=92)
 
 
+def label(im, d, c, y, size):
+    """Строка «флаг + ВИЗА В …» золотом над заголовком, на тёмном фоне, не на фото."""
+    fw = int(size * 1.9)
+    fh = int(fw * 10 / 19) if c["flag"] is flag_us else fw // 2
+    c["flag"](im, 80, y + (size - fh) // 2 + 3, fw)
+    d.text((80 + fw + 22, y), c["tag"], font=font(True, size), fill=GOLD)
+    return y + size + 26
+
+
+def block(im, d, c, y, ls, hs, bs, cs):
+    y = label(im, d, c, y, ls)
+    y = text(d, c, y, hs, bs)
+    return pill(d, 80, y + 30, CTA, cs, GOLD, "#1A1A1A", pad=40)
+
+
+def measure(c, *a):
+    tmp = Image.new("RGB", (W, W))
+    return block(tmp, ImageDraw.Draw(tmp), c, 0, *a)
+
+
 def feed(c):
-    im = shade(photo(W, 1750), 470, 700)
-    c["flag"](im, 80, 80, 170)
-    d = ImageDraw.Draw(im)
-    pill(d, W - 70, 80, c["tag"], 36, NAVY, GOLD, right=True)
-    h = text(ImageDraw.Draw(Image.new("RGB", (W, W))), c, 0)
-    text(d, c, 880 - h)
-    pill(d, 80, 920, CTA, 42, GOLD, "#1A1A1A", pad=40)
+    # Лента 1:1: сверху чистое фото, весь текст — на затемнении снизу
+    sz = (34, 70, 40, 42)
+    y0 = 1010 - measure(c, *sz)
+    im = shade(photo(W, 1750), y0 - 200, y0 + 40)
+    block(im, ImageDraw.Draw(im), c, y0, *sz)
     save(im, c, False)
 
 
 def story(c):
-    # Сверху ~250 px закрывает имя аккаунта, снизу ~340 px — кнопка: важное между ними.
+    # Сторис 9:16: сверху ~250 px закрывает имя аккаунта, снизу ~340 px — кнопка.
+    # Фото в верхней части, текст на тёмно-синем ниже, заканчивается к 1580.
     H = 1920
+    sz = (40, 72, 50, 48)
+    y0 = 1580 - measure(c, *sz)
     im = Image.new("RGB", (W, H), NAVY)
-    im.paste(photo(1060), (0, 0))
-    im = shade(im, 600, 1040, 255)
-    c["flag"](im, 80, 280, 220)
-    d = ImageDraw.Draw(im)
-    y = pill(d, 80, 940, c["tag"], 40, GOLD, "#1A1A1A") + 36
-    y = text(d, c, y, 72, 50)
-    pill(d, 80, y + 40, CTA, 48, GOLD, "#1A1A1A", pad=44)
-    assert y + 40 + 110 <= 1580, (c["tag"], y)
+    im.paste(photo(y0 + 80), (0, 0))
+    im = shade(im, y0 - 320, y0 + 40, 255)
+    block(im, ImageDraw.Draw(im), c, y0, *sz)
     save(im, c, True)
 
 
