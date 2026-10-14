@@ -759,7 +759,9 @@
     var src = String(new URLSearchParams(location.search).get("utm_source") || "").toLowerCase();
     // Явный ?promo= из письма главнее метки: в письме про брошенную оплату
     // свой код, и он не должен подменяться кодом рассылки.
-    var urlPromo = String(new URLSearchParams(location.search).get("promo") || "").trim().toUpperCase();
+    // ?promocode= — то же самое (так пишут ссылки в рассылках, 14.10.2026)
+    var urlQs = new URLSearchParams(location.search);
+    var urlPromo = String(urlQs.get("promo") || urlQs.get("promocode") || "").trim().toUpperCase();
     if(urlPromo) localStorage.setItem("voyo_esim_autopromo", urlPromo);
     else if(UTM_PROMOS[src]) localStorage.setItem("voyo_esim_autopromo", UTM_PROMOS[src]);
     AUTO_PROMO = localStorage.getItem("voyo_esim_autopromo") || "";
