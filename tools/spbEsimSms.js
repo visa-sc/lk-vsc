@@ -12,17 +12,25 @@
 // по нему панель eSIM считает расход (строка SMS) и выручку (первая покупка eSIM
 // с этого номера или почты в 30 дней после SMS).
 // Cron прода: 35 * * * * cd /var/www/voyo && /usr/bin/node tools/spbEsimSms.js >> /var/log/spb-esim-sms.log 2>&1
-// С 14.10.2026 включено: текст «Интернет в поездках: ESIM от 69₽. Готовность 1 мин. → voyomobile.ru/v» (69 знаков, 1 SMS ≈ 12,5 ₽),
-// voyomobile.ru/v → витрина VSC mobile (server.js, utm_source=sms, utm_campaign=spb14).
+//             40 * * * * cd /var/www/voyo && /usr/bin/node tools/spbEsimSms.js --city=msk >> /var/log/msk-esim-sms.log 2>&1
+// Москва (--city=msk): та же логика по копии visa-sc.ru (/var/www/mskcopy). Журнал заходов для неё
+// строит тот же tools/spbReturnVisits.js без --live (только журнал, без задач и SMS), см. cron.
+// Заработает сам, когда visa-sc.ru переедет на наш сервер и пойдут заходы.
+// С 14.10.2026 включено: текст Андрея «Интернет в поездках: ESIM от 69₽. Готовность 1 мин. → sms.ru/88GPH»
+// (66 знаков, 1 SMS ≈ 12,5 ₽). Ссылка ведёт на voyotravel.ru/esim?utm_source=sms — по этой метке
+// витрина показывает знак VSC mobile (public/esim-brand.js).
 const fs = require("fs");
 const path = require("path");
 require("dotenv").config({ path: "/var/www/voyo/.env", quiet: true });
 
-const STAT = process.env.SPBCOPY_STAT || "/var/www/spbcopy/stat";
-const LEADS = process.env.SPBCOPY_LEADS || "/var/www/spbcopy/leads.json";
+const CITY = ((process.argv.find((a) => a.indexOf("--city=") === 0) || "").slice(7) || "spb").toLowerCase();
+const SITE_DIR = CITY === "msk" ? "/var/www/mskcopy" : "/var/www/spbcopy";
+const STAT = path.join(SITE_DIR, "stat");
+const LEADS = path.join(SITE_DIR, "leads.json");
 const VISITS = path.join(STAT, "return-visits.json");
 const SPB_SMS = path.join(STAT, "sms.json");
-const OUT = "/var/www/voyo/.esim/spb-esim-sms.json";
+const OUT = "/var/www/voyo/.esim/" + CITY + "-esim-sms.json";
+const OTHER_OUT = "/var/www/voyo/.esim/" + (CITY === "msk" ? "spb" : "msk") + "-esim-sms.json";
 const ORDERS = "/var/www/voyo/.esim/orders.json";
 const DB_PATH = process.env.AMOCOPY_DB || "/var/www/voyo/.amocopy-db/crm.db";
 const SQLITE = process.env.SQLITE_MODULE || "/var/www/voyo/crm-svc/node_modules/better-sqlite3";
@@ -46,7 +54,8 @@ const mskHour = (ms) => new Date(ms + 3 * 3600e3).getUTCHours();
   const orders = readJson(ORDERS, []).filter((o) => o.status === "done" && o.paidAt);
   const store = readJson(OUT, { sends: [], pending: [] });
   const sends = store.sends || [];
-  const sentTo = new Set(sends.filter((x) => x.status === "отправлено").map((x) => x.contactId));
+  // один человек — одна такая SMS, даже если заходил и на питерский, и на московский сайт
+  const sentTo = new Set(sends.concat(readJson(OTHER_OUT, { sends: [] }).sends || []).filter((x) => x.status === "отправлено").map((x) => x.contactId));
 
   const Database = require(SQLITE);
   const db = new Database(DB_PATH, { readonly: true, fileMustExist: true });
@@ -107,14 +116,14 @@ const mskHour = (ms) => new Date(ms + 3 * 3600e3).getUTCHours();
     } catch (_) {}
     const r = await sms.sendMessage("7" + mobile, TEXT);
     const smsId = r.raw && r.raw.sms && r.raw.sms["7" + mobile] && r.raw.sms["7" + mobile].sms_id;
-    sends.push({ contactId: it.contactId, visit: it.start, at: now, phone10: mobile, emails: emails.slice(0, 3),
+    sends.push({ city: CITY, contactId: it.contactId, visit: it.start, at: now, phone10: mobile, emails: emails.slice(0, 3),
       status: r.ok ? "отправлено" : "ошибка: " + (r.error || r.smsStatus || "SMS.ru"), smsId: smsId || null, cost: r.ok ? cost : 0, text: TEXT });
     if (r.ok) { run++; sentTo.add(it.contactId); }
   }
-  const out = { builtAt: new Date().toISOString(), enabled: ON, textSet: !!TEXT, text: TEXT,
+  const out = { builtAt: new Date().toISOString(), city: CITY, enabled: ON, textSet: !!TEXT, text: TEXT,
     rules: { afterDays: 14, gapAfterSpbSmsDays: GAP / 86400e3, hours: "10–20 МСК", maxDay: MAX_DAY },
     sends: sends.filter((x) => now - x.at < 400 * 86400e3), pending };
   if (!DRY) { fs.writeFileSync(OUT + ".tmp", JSON.stringify(out)); fs.renameSync(OUT + ".tmp", OUT); }
-  console.log(new Date().toISOString(), "кандидатов", cands.size, "отправлено", run, ON ? "" : "(выключено)",
+  console.log(new Date().toISOString(), CITY, "кандидатов", cands.size, "отправлено", run, ON ? "" : "(выключено)",
     JSON.stringify(pending.reduce((a, x) => { a[x.status] = (a[x.status] || 0) + 1; return a; }, {})));
 })().catch((e) => { console.error("spbEsimSms:", e.message); process.exit(1); });

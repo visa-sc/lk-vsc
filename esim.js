@@ -4554,7 +4554,8 @@ function mount(app, opts) {
   let _smsAttr = { ts: 0, ids: new Set(), sends: [] };
   function smsAttr() {
     if (Date.now() - _smsAttr.ts < 60000) return _smsAttr;
-    const sends = (readJson(SPB_SMS_FILE, { sends: [] }).sends || []).filter((x) => x.status === "отправлено");
+    const sends = (readJson(SPB_SMS_FILE, { sends: [] }).sends || []).concat(readJson(path.join(DIR, "msk-esim-sms.json"), { sends: [] }).sends || [])
+      .filter((x) => x.status === "отправлено");
     const paidList = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && o.priceRub)
       .sort((a, b) => a.paidAt - b.paidAt);
     const ids = new Set();

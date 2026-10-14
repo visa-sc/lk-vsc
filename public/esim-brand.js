@@ -11,7 +11,9 @@
   var me = document.currentScript;
   var store = me && me.getAttribute("data-store") === "1";   // это витрина
   var qs = new URLSearchParams(location.search);
-  var vsc = /^\/vsc(\/|$)/i.test(location.pathname) || qs.get("b") === "vsc";
+  // utm_source=sms — SMS нашим клиентам визового центра из amoCRM (sms.ru/88GPH и др.):
+  // им тоже витрина VSC (Андрей, 14.10.2026)
+  var vsc = /^\/vsc(\/|$)/i.test(location.pathname) || qs.get("b") === "vsc" || String(qs.get("utm_source") || "").toLowerCase() === "sms";
   try {
     if (vsc) localStorage.setItem(KEY, "vsc");
     else if (store && location.pathname === "/") localStorage.removeItem(KEY);   // главная VOYO mobile
