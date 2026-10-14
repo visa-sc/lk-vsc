@@ -1287,6 +1287,12 @@ function priceWithDiscounts({ listPrice, costRub, email, promoCode, refCode, use
     const byRef = customerByRef(String(promoCode).trim().toUpperCase());
     if (byRef) { refCode = String(promoCode).trim().toUpperCase(); promoCode = null; }
   }
+  // И наоборот: «реферальная» ссылка с кодом, которого нет у клиентов, но есть такой
+  // промокод (?ref=ALEX, t.me/…?start=ref_ALEX), — работает как промокод (14.10.2026)
+  if (refCode && !promoCode) {
+    const rc = String(refCode).trim().toUpperCase();
+    if (!customerByRef(rc) && loadPromos()[rc]) { promoCode = rc; refCode = null; }
+  }
   const out = { listPrice, discountRub: 0, discountKind: null, promoCode: null, promoReason: null, refBy: null,
                 balanceRub: 0, balanceCanUse: 0, balanceUsed: 0, balanceBlockedBy: null, total: listPrice };
   // Ниже этой суммы цена не опускается ни при каких скидках. Себестоимость ещё и
