@@ -97,7 +97,7 @@ const mskHour = (ms) => new Date(ms + 3 * 3600e3).getUTCHours();
   for (const it of cands.values()) {
     const c = qContact.get(it.contactId) || {};
     const phones = String(c.phones || "").split(/[,;\s]+/).map(digits).filter((x) => x.length === 10);
-    const emails = String(c.emails || "").toLowerCase().split(/[,;\s]+/).filter((x) => x.indexOf("@") > 0);
+    const emails = Array.from(new Set(String(c.emails || "").toLowerCase().match(/[^\s"',;\[\]]+@[^\s"',;\[\]]+\.[a-z]{2,}/g) || []));   // amo: JSON-список
     const mobile = phones.find((x) => x[0] === "9");
     const note = (status) => pending.push({ contactId: it.contactId, visit: it.start, status });
     if (!mobile) { note("нет мобильного"); continue; }

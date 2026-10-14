@@ -4588,28 +4588,36 @@ function mount(app, opts) {
   let _smsAttr = { ts: 0, ids: new Set(), sends: [] };
   function smsAttr() {
     if (Date.now() - _smsAttr.ts < 60000) return _smsAttr;
-    const sends = (readJson(SPB_SMS_FILE, { sends: [] }).sends || []).concat(readJson(path.join(DIR, "msk-esim-sms.json"), { sends: [] }).sends || [])
+    // наши SMS через 14 дней (Питер, Москва) и SMS про eSIM из amoCRM (рассылки Петрова, tools/amoEsimSms.js)
+    const ours = (readJson(SPB_SMS_FILE, { sends: [] }).sends || []).map((x) => Object.assign({ campaign: "Питер: заходил на сайт, 14 дней" }, x))
+      .concat((readJson(path.join(DIR, "msk-esim-sms.json"), { sends: [] }).sends || []).map((x) => Object.assign({ campaign: "Москва: заходил на сайт, 14 дней" }, x)))
       .filter((x) => x.status === "отправлено");
+    const amo = (readJson(path.join(DIR, "amo-esim-sms.json"), { sends: [] }).sends || []).map((x) => Object.assign({}, x, { campaign: "amoCRM: " + (x.campaign || "SMS") }));
+    const sends = ours.concat(amo).sort((a, b) => a.at - b.at);
     const paidList = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && o.priceRub)
       .sort((a, b) => a.paidAt - b.paidAt);
-    const ids = new Set();
+    const ids = new Set(), byOrder = new Map();
     const d10 = (s) => String(s || "").replace(/\D/g, "").slice(-10);
     sends.forEach((s) => {
       const hit = paidList.find((o) => o.paidAt >= s.at && o.paidAt <= s.at + 30 * 864e5 && !ids.has(o.id) &&
         ((s.phone10 && d10(o.phone) === s.phone10) || (o.email && (s.emails || []).indexOf(String(o.email).toLowerCase()) >= 0)));
-      if (hit) ids.add(hit.id);
+      if (hit) { ids.add(hit.id); byOrder.set(hit.id, s.campaign); }
     });
-    _smsAttr = { ts: Date.now(), ids, sends };
+    _smsAttr = { ts: Date.now(), ids, sends, byOrder };
     return _smsAttr;
   }
   // Покупка друга по реферальной ссылке или коду (скидка «ref», refBy — кто пригласил)
   function isReferralOrder(o) { return !!(o && o.refBy) && !blogRefOwners().has(normEmail(o.refBy)); }
   function channelOf(o) {
+    const base = channelOfBase(o);
+    if (smsAttr().ids.has(o.id) && ["direct", "sms", "sms_mass", "email", "lk", "tg"].indexOf(base) >= 0) return "sms";
+    return base;
+  }
+  function channelOfBase(o) {
     const a = (o.ads && (o.ads.first || o.ads)) || null;
     const src = a && String(a.utm_source || "").toLowerCase();
     // рекомендация друга важнее рекламной метки: покупку принесла она, за неё мы и платим бонус
     if (isReferralOrder(o)) return "referral";
-    if (smsAttr().ids.has(o.id)) return "sms";   // первая покупка после нашей SMS с промокодом
     if (isMetaPaid(a)) return "meta";
     if (src === "ig" || src === "insta") return "instagram";
     if (src) return src;
@@ -5392,6 +5400,13 @@ function mount(app, opts) {
         },
         days: Array.from(days.values()).sort((a, b) => (a.day < b.day ? -1 : 1))
           .map((d) => Object.assign(d, { cost: Math.round(d.cost), margin: Math.round(d.revenue - d.cost) })),
+        smsCampaigns: (() => {
+          const at = smsAttr(), m = new Map();
+          const row = (k) => m.get(k) || m.set(k, { name: k, sent: 0, cost: 0, orders: 0, revenue: 0 }).get(k);
+          at.sends.filter((x) => inRange(mskDay(x.at))).forEach((x) => { const r = row(x.campaign); r.sent++; r.cost += Number(x.cost) || 0; });
+          paid.forEach((o) => { const k = at.byOrder.get(o.id); if (k && channelOf(o) === "sms") { const r = row(k); r.orders += o.groupOf ? 0 : 1; r.revenue += o.priceRub; } });
+          return Array.from(m.values()).map((r) => Object.assign(r, { cost: Math.round(r.cost) })).sort((a, b) => b.sent - a.sent);
+        })(),
         channels: Array.from(chans.values()).map((c) => {
           const margin = Math.round(c.revenue - c.cost - (c.acq || 0));
           return Object.assign({}, c, { cost: Math.round(c.cost), margin,
