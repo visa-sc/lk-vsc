@@ -38,9 +38,11 @@ const ESIM_LAND_PATHS = ["turkey", "china", "vietnam", "thailand", "egypt", "geo
 const ESIM_PARTNER_PATHS = ["visazen"];
 // Ценовые страницы витрины: voyomobile.ru/67 — пакеты за 69 ₽ стоят 67 ₽ (02.10.2026)
 const ESIM_PRICE_PATHS = ["67"];
+// VSC mobile — та же витрина под знаком VSC для клиентов визового центра (14.10.2026)
+const ESIM_BRAND_PATHS = ["vsc"];
 const ESIM_HOST_ALLOW = new RegExp(
-  "^\\/($|esim(\\/|_|\\?|$)|(?:" + ESIM_LAND_PATHS.concat(ESIM_PARTNER_PATHS, ESIM_PRICE_PATHS).join("|") + ")\\/?$|" +
-  "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|esim-support\\.js$|esim-a2hs\\.js$|favicon[^/]*\\.(?:ico|svg|png)$|robots\\.txt$|sitemap\\.xml$)");
+  "^\\/($|esim(\\/|_|\\?|$)|(?:" + ESIM_LAND_PATHS.concat(ESIM_PARTNER_PATHS, ESIM_PRICE_PATHS, ESIM_BRAND_PATHS).join("|") + ")\\/?$|" +
+  "apple-touch-icon[^/]*\\.png$|voyo-logo\\.png$|esim-support\\.js$|esim-a2hs\\.js$|esim-brand\\.js$|vsc-icon[^/]*\\.png$|favicon[^/]*\\.(?:ico|svg|png)$|robots\\.txt$|sitemap\\.xml$)");
 // dev.voyomobile.ru — панель показателей eSIM (18.09.2026): выручка и пакеты
 // по дням, реклама и её окупаемость, клиенты, промокоды, итог. Отдельное имя,
 // чтобы не мешать витрине; вход по админ-коду, страница закрыта от поисковиков.
@@ -102,7 +104,7 @@ app.get("/", (req, res, next) => {
 });
 // Рекламные адреса стран на сайтах eSIM отдают ту же витрину, заголовок и
 // выбранную страну подставляет сама страница по адресу (список — ESIM_LAND_PATHS).
-app.get(ESIM_LAND_PATHS.concat(ESIM_PRICE_PATHS).map((c) => "/" + c), (req, res, next) => {
+app.get(ESIM_LAND_PATHS.concat(ESIM_PRICE_PATHS, ESIM_BRAND_PATHS).map((c) => "/" + c), (req, res, next) => {
   if (!ESIM_SITE_HOSTS.has(String(req.hostname || "").toLowerCase())) return next();
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   return res.sendFile(path.join(__dirname, "public", "esim.html"));

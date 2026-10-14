@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
+<script src="/esim-brand.js" data-store="1"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
 <!-- Подтверждение прав на voyomobile.ru в Яндекс.Вебмастере и Google Search Console (18.09.2026, Петров) -->
@@ -1540,7 +1541,7 @@
     if(PAY){
       try{
         var pr = await fetch("/esim/api/pay/start",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS, vid:VID, embed:EMBED, qty:QTY, tier:TIER, lang:(navigator.languages&&navigator.languages[0])||navigator.language||"",
+          body:JSON.stringify({productId:mP.id, email:phone, promo:PROMO, ref:REF, adm:ADM, ads:ADS, vid:VID, embed:EMBED, qty:QTY, tier:TIER, brand:window.VOYO_BRAND||"", lang:(navigator.languages&&navigator.languages[0])||navigator.language||"",
             useBalance:document.getElementById("mBonus").checked})});
         var pj = await pr.json();
         if(pj && pj.success && pj.url){

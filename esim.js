@@ -1453,7 +1453,34 @@ function checkSig(orderId, t) {
 
 // ═══════════════ mount ═══════════════
 // opts.fetchCbrRates — общий с калькулятором источник курса ЦБ из server.js
+// Письмо клиенту VSC mobile (карточка с brand: "vsc"): знак VSC вместо VOYO, ссылки
+// на страницы eSIM с ?b=vsc, витрина — voyomobile.ru/vsc. Письма директору не трогаем.
+const OUR_URL_RE = /https?:\/\/(?:[a-z0-9-]+\.)?(?:voyotravel\.ru|voyomobile\.ru|voyomobile\.com|voyovoyo\.ru)(\/[^\s"'<>]*)?/g;
+function vscUrl(u) {
+  const m = /^(https?:\/\/[^/]+)(\/[^?#]*)?(\?[^#]*)?/.exec(u);
+  if (!m) return u;
+  const p = m[2] || "/", q = m[3] || "";
+  if (/^\/(esim\/?)?$/.test(p) || /^\/(turkey|china|vietnam|thailand|egypt|georgia|japan|dubai)\/?$/.test(p)) return "https://voyomobile.ru/vsc" + q;
+  if (/^\/esim\//.test(p) && !/[?&]b=vsc/.test(q)) return m[1] + p + (q ? q + "&" : "?") + "b=vsc";
+  return u;
+}
+function vscText(s) {
+  return String(s == null ? "" : s).replace(/VOYO mobile/g, "VSC mobile").replace(/VOYO/g, "VSC").replace(OUR_URL_RE, vscUrl);
+}
+function isVscEmail(to) {
+  const em = normEmail(String(to || ""));
+  if (!em || /@visa-sc\.ru$/.test(em)) return false;
+  const c = getCustomer(em, false);
+  return !!(c && c.brand === "vsc");
+}
+function brandMail(m) {
+  if (!m || !isVscEmail(m.to)) return m;
+  return Object.assign({}, m, { subject: vscText(m.subject), html: m.html ? vscText(m.html) : m.html,
+    text: m.text ? vscText(m.text) : m.text, fromName: "VSC mobile" });
+}
+
 function mount(app, opts) {
+  if (opts && opts.sendMail) { const rawSend = opts.sendMail; opts.sendMail = (m) => rawSend(brandMail(m)); }
   const fetchCbr = (opts && opts.fetchCbrRates) || null;
   async function usdRate() {
     try { if (fetchCbr) { const c = await fetchCbr(); if (c && c.rates && c.rates.USD) return c.rates.USD; } } catch (_) {}
@@ -1572,11 +1599,15 @@ function mount(app, opts) {
     res.set("Content-Type", "application/manifest+json; charset=utf-8");
     res.set("Cache-Control", "no-store");
     res.send(JSON.stringify({
-      id: "/esim/app", name: "VOYO mobile", short_name: "VOYO mobile",
+      id: req.query.b === "vsc" ? "/esim/app-vsc" : "/esim/app",
+      name: req.query.b === "vsc" ? "VSC mobile" : "VOYO mobile", short_name: req.query.b === "vsc" ? "VSC mobile" : "VOYO mobile",
       description: "eSIM для поездок: QR-коды, остаток трафика и продление",
       start_url: ok ? start : "/esim/account", scope: "/esim", display: "standalone",
       background_color: "#f5f7fb", theme_color: "#f5f7fb", lang: "ru",
-      icons: [
+      icons: req.query.b === "vsc" ? [
+        { src: "/vsc-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: "/vsc-icon.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      ] : [
         { src: "/favicon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
         { src: "/favicon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       ],
@@ -1863,7 +1894,7 @@ function mount(app, opts) {
   }
   function myUrlFor(order, providerOrderId) {
     const key = order.parentOrderId || providerOrderId;
-    return (order.base || BASE_URL) + "/esim/my?o=" + encodeURIComponent(key) + "&t=" + signOrder(key);
+    return (order.base || BASE_URL) + "/esim/my?o=" + encodeURIComponent(key) + "&t=" + signOrder(key) + (order.brand === "vsc" ? "&b=vsc" : "");
   }
 
   // Письмо «eSIM готова»: одна или несколько (купили сразу на всю компанию), плюс
@@ -1967,7 +1998,7 @@ function mount(app, opts) {
             phone: g.order.phone, email: g.order.email, tgChatId: g.order.tgChatId, custKey: g.order.custKey,
             discountRub: Math.max(0, (g.order.listPriceRub || 0) - (g.order.extraUnitRub || 0)), discountKind: "extra",
             groupOf: id, paymentId: g.order.paymentId, ads: g.order.ads, lang: g.order.lang, vid: g.order.vid,
-            fromLk: g.order.fromLk, base: g.order.base,
+            fromLk: g.order.fromLk, base: g.order.base, brand: g.order.brand,
           };
           kids.push(child); all.unshift(child);
         }
@@ -2218,10 +2249,13 @@ function mount(app, opts) {
         // Домен покупки: ссылка с QR должна вести туда же, иначе счётчик Метрики
         // окажется другим и покупка не свяжется с рекламным визитом (17.09.2026)
         base: baseFor(req),
+        brand: (!tgChatId && b.brand === "vsc") ? "vsc" : undefined,   // VSC mobile: витрина /vsc
         os: tgChatId ? undefined : (osOfUa(req.headers["user-agent"]) || undefined),   // iPhone или Android — для письма
         priceTier: tierRub(69, b.tier) !== 69 ? String(b.tier) : undefined,   // куплено со страницы /67
       });
       saveLocal(orders);
+      // клиент VSC mobile: письма ему уходят под знаком VSC (brandMail)
+      if (!tgChatId && who) updateCustomer(who, (c) => { if (b.brand === "vsc") c.brand = "vsc"; else delete c.brand; });
       // Код блогера: платить нечего — сразу выдаём eSIM и ведём на страницу «оплачено»
       if (calc.free && priceRub === 0) {
         // блогер пришёл из бота, а покупает по почте — связываем карточки,
@@ -2244,8 +2278,8 @@ function mount(app, opts) {
         description: (label + (qty > 1 ? " × " + qty : "")).slice(0, 140), itemName: label + (qty > 1 ? " (" + qty + " шт.)" : ""),
         phone, email: validEmail(email) ? email : null,
         notificationUrl: BASE_URL + "/esim/api/pay/notify",
-        successUrl: baseFor(req) + "/esim/pay/ok?o=" + id + "&t=" + signOrder(id),
-        failUrl: baseFor(req) + "/esim/pay/fail?o=" + id,
+        successUrl: baseFor(req) + "/esim/pay/ok?o=" + id + "&t=" + signOrder(id) + (b.brand === "vsc" ? "&b=vsc" : ""),
+        failUrl: baseFor(req) + "/esim/pay/fail?o=" + id + (b.brand === "vsc" ? "&b=vsc" : ""),
       });
       if (!pay.ok) {
         console.error("esim pay init:", pay.message);
@@ -2365,7 +2399,7 @@ function mount(app, opts) {
       const n = Math.min(3, Math.max(1, parseInt(req.query.n, 10) || 1));
       res.set("Content-Type", "text/html; charset=utf-8");
       return res.send('<meta name="viewport" content="width=device-width,initial-scale=1"/><body style="margin:0;padding:24px 16px;background:#fff">' +
-        readyLetter(order, urls.slice(0, n).map((u) => ({ myUrl: u })), c.refCode).html + "</body>");
+        ((h) => (req.query.b === "vsc" ? vscText(h) : h))(readyLetter(order, urls.slice(0, n).map((u) => ({ myUrl: u })), c.refCode).html) + "</body>");
     }
     const sent = [];
     for (const n of [1, 3]) {
@@ -2704,7 +2738,7 @@ function mount(app, opts) {
       custKey: o.custKey || normEmail(o.email) || null, tgChatId: o.tgChatId || null,
       base: o.base || BASE_URL, paidAt: Date.now(), src: "esimaccess",
       mmOrderId: fresh.orderId, iccid: fresh.iccid || null, costUsd: plan.costUsd || null,
-      giftFor: o.id, giftReason: "замена: пакет не заработал у клиента",
+      giftFor: o.id, giftReason: "замена: пакет не заработал у клиента", brand: o.brand,
     };
     gift.myUrl = myUrlFor(gift, fresh.orderId);
     orders.unshift(gift); writeJson(ORDERS_FILE, orders);
@@ -3765,6 +3799,7 @@ function mount(app, opts) {
   app.post("/esim/api/account/login", (req, res) => {
     const email = normEmail((req.body || {}).email);
     if (!validEmail(email)) return res.status(400).json({ success: false, message: "Введите корректный email." });
+    if ((req.body || {}).brand === "vsc" && esimsOf(email).length) updateCustomer(email, (c) => { c.brand = "vsc"; });
     const now = Date.now(), prev = _loginAt.get(email) || 0;
     const mine = esimsOf(email);
     // Клиенту важнее понять, что он ошибся почтой, чем нам скрывать факт покупки:

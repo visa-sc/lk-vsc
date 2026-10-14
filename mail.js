@@ -28,7 +28,7 @@ async function sendMail(opts) {
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
   try {
     const info = await t.sendMail({
-      from: '"VOYO" <' + from + '>',
+      from: '"' + String(opts.fromName || "VOYO").replace(/"/g, "") + '" <' + from + '>',   // fromName — для писем VSC mobile
       to: opts.to,
       subject: opts.subject,
       html: opts.html,

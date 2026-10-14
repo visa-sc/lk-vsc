@@ -127,7 +127,8 @@
   // ── манифест: Android предлагает «Установить», иконка открывает кабинет уже с входом ──
   function setManifest(start) {
     try {
-      var href = "/esim/app.webmanifest" + (start ? "?start=" + encodeURIComponent(start) : "");
+      var href = "/esim/app.webmanifest" + (start ? "?start=" + encodeURIComponent(start) : "") +
+        (window.VOYO_BRAND === "vsc" ? (start ? "&" : "?") + "b=vsc" : "");
       var l = document.querySelector('link[rel="manifest"]');
       if (!l) { l = document.createElement("link"); l.rel = "manifest"; document.head.appendChild(l); }
       l.href = href;

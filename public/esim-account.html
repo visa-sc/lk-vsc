@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
+<script src="/esim-brand.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
 <title>Мои eSIM — VOYO mobile</title>
@@ -255,7 +256,7 @@
       el("bonusV").textContent = RU(j.balanceRub || 0) + " ₽";
       el("bonusS").innerHTML = "Приглашайте друзей — по " + RU(j.refBonus) + " ₽ вам и другу на баланс." +
         (j.balanceRub > 0 ? "<br/>Ваши бонусы спишутся сами со следующей покупки." : "");
-      el("refInp").value = j.refLink || "";
+      el("refInp").value = (window.VOYO_BRAND === "vsc" && j.refCode) ? "https://voyomobile.ru/vsc?ref=" + j.refCode : (j.refLink || "");   // VSC mobile: друг попадёт на витрину VSC
       el("refStat").textContent = j.invitedCount
         ? ("По вашей ссылке купили: " + j.invitedCount)
         : ("Ваш код: " + (j.refCode || ""));
@@ -323,7 +324,7 @@
     this.disabled=true; this.textContent="Отправляем…";
     el("lgEmail").classList.remove("bad");
     try{
-      var r = await fetch("/esim/api/account/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:v, lk:EMBED})});
+      var r = await fetch("/esim/api/account/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:v, lk:EMBED, brand:window.VOYO_BRAND||""})});
       var j = await r.json();
       if(j && j.found){
         // Письмо ушло — форма больше не нужна, вместо неё простая инструкция
