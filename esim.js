@@ -4512,6 +4512,26 @@ function mount(app, opts) {
     _blogOwners = { ts: Date.now(), set };
     return set;
   }
+  // SMS с промокодом eSIM посетителям spb-сайта (tools/spbEsimSms.js): журнал отправок.
+  // Покупке засчитываем SMS, если это первая покупка с того же номера или почты
+  // в 30 дней после SMS; более поздние покупки этого человека SMS не приписываем.
+  const SPB_SMS_FILE = path.join(DIR, "spb-esim-sms.json");
+  let _smsAttr = { ts: 0, ids: new Set(), sends: [] };
+  function smsAttr() {
+    if (Date.now() - _smsAttr.ts < 60000) return _smsAttr;
+    const sends = (readJson(SPB_SMS_FILE, { sends: [] }).sends || []).filter((x) => x.status === "отправлено");
+    const paidList = readJson(ORDERS_FILE, []).filter((o) => o.status === "done" && o.paidAt && o.priceRub)
+      .sort((a, b) => a.paidAt - b.paidAt);
+    const ids = new Set();
+    const d10 = (s) => String(s || "").replace(/\D/g, "").slice(-10);
+    sends.forEach((s) => {
+      const hit = paidList.find((o) => o.paidAt >= s.at && o.paidAt <= s.at + 30 * 864e5 && !ids.has(o.id) &&
+        ((s.phone10 && d10(o.phone) === s.phone10) || (o.email && (s.emails || []).indexOf(String(o.email).toLowerCase()) >= 0)));
+      if (hit) ids.add(hit.id);
+    });
+    _smsAttr = { ts: Date.now(), ids, sends };
+    return _smsAttr;
+  }
   // Покупка друга по реферальной ссылке или коду (скидка «ref», refBy — кто пригласил)
   function isReferralOrder(o) { return !!(o && o.refBy) && !blogRefOwners().has(normEmail(o.refBy)); }
   function channelOf(o) {
@@ -4519,6 +4539,7 @@ function mount(app, opts) {
     const src = a && String(a.utm_source || "").toLowerCase();
     // рекомендация друга важнее рекламной метки: покупку принесла она, за неё мы и платим бонус
     if (isReferralOrder(o)) return "referral";
+    if (smsAttr().ids.has(o.id)) return "sms";   // первая покупка после нашей SMS с промокодом
     if (isMetaPaid(a)) return "meta";
     if (src === "ig" || src === "insta") return "instagram";
     if (src) return src;
@@ -5200,11 +5221,17 @@ function mount(app, opts) {
       });
       // Наш визовый Telegram-канал (ссылки ?utm_source=tg_channel и t.me/…?start=tgch):
       // строка видна всегда, даже пока оплат по ней нет (Андрей, 13.10.2026)
+      const smsSpend = Math.round(smsAttr().sends.filter((x) => inRange(mskDay(x.at))).reduce((a, x) => a + (Number(x.cost) || 0), 0));
+      if (smsSpend) {
+        const ch = chans.get("sms") || { key: "sms", name: channelName("sms"), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0, acq: 0, revSite: 0, revBot: 0 };
+        ch.spend += smsSpend; chans.set("sms", ch);
+      }
       ["tg_channel", "meta", "referral"].forEach((k) => {
         if (!chans.has(k)) chans.set(k, { key: k, name: channelName(k), orders: 0, esims: 0, revenue: 0, cost: 0, spend: 0, acq: 0, revSite: 0, revBot: 0 });
       });
       const adSpend = spend.items.filter((x) => inRange(String(x.date || "")))
-        .reduce((a, x) => a + (Number(x.rub) || 0), 0) + refSpend;   // плюс бонусы за рекомендации
+        .reduce((a, x) => a + (Number(x.rub) || 0), 0) + refSpend +   // плюс бонусы за рекомендации
+        Math.round(smsAttr().sends.filter((x) => inRange(mskDay(x.at))).reduce((a, x) => a + (Number(x.cost) || 0), 0));   // и наши SMS
       const acq = Math.round(acqExact);
       const acqPct = revenue ? Math.round(acqExact / revenue * 10000) / 100 : 0;   // средний за период
 
