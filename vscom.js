@@ -455,7 +455,11 @@ function mount(app, deps) {
       }
     }
 
-    // 3) письмо
+    // 3) письмо. Заявки из рекламы Meta (ВНЖ, США, Великобритания), дошедшие до amoCRM,
+    // письмом не дублируем — Андрей 14.10.2026. Не дошла до amo — письмо уходит, чтобы не потерять.
+    if (isMetaVnj(lead) && amo && amo.leadId) {
+      return res.json({ ok: true });
+    }
     try {
       await mailLead(lead, amo, deps);
     } catch (e) {
