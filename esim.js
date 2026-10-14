@@ -1255,6 +1255,9 @@ function checkPromo(code, listPrice, email) {
   if (p.maxUses && (p.uses || 0) >= p.maxUses) { _promoReason = "limit"; return null; }
   // «Только на первую eSIM» — у клиента ещё не должно быть выданных заказов
   if (p.firstOnly && email && hasOrders(email)) { _promoReason = "first_only"; return null; }
+  // Личный код (ownerLock): закрепляется за первым, кто по нему оплатил, и дальше
+  // работает только у него — на все его заказы (ALEX, 14.10.2026)
+  if (p.ownerLock && p.lockTo && email && normEmail(p.lockTo) !== normEmail(email)) { _promoReason = "used"; return null; }
   // «Один раз на клиента» — код уже засчитан этой почте
   if (p.oncePerUser !== false && email) {
     const c = getCustomer(email, false);
@@ -2063,6 +2066,9 @@ function mount(app, opts) {
         if (g.order.balanceUsed > 0) addBalance(who, -g.order.balanceUsed, "Оплата: " + (g.order.label || ""));
         if (g.order.promoCode) {
           usePromo(g.order.promoCode);
+          // личный код: первый оплативший становится его владельцем
+          (() => { const all = loadPromos(), pc = String(g.order.promoCode).toUpperCase();
+            if (all[pc] && all[pc].ownerLock && !all[pc].lockTo && who) { all[pc].lockTo = who; all[pc].lockAt = Date.now(); writeJson(PROMOS_FILE, all); } })();
           updateCustomer(who, (c) => {
             c.usedPromos = (c.usedPromos || []).concat([g.order.promoCode]).slice(-50);
           });
