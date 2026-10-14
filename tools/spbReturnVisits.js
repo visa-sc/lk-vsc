@@ -22,6 +22,18 @@
  * убрать SPB_RETURN_TASKS=1 из .env. Бережём amo: 1 запрос в 1,1 с, не больше 5 задач за прогон
  * и 30 в сутки, при 429/403 — стоп; удалённые контакты и уже открытые такие задачи — пропуск.
  *
+ * SMS (просьба Андрея 14.10.2026). Тем же «не связался» — SMS клиенту на мобильный из CRM
+ * (SMS.ru, отправитель visa-sc.ru). Включается ДВУМЯ строками в /var/www/voyo/.env:
+ * SPB_RETURN_SMS=1 и SPB_RETURN_SMS_TEXT=<текст>; пока их нет — ничего не шлём, только
+ * пишем, кому ушло бы («нет текста»). Бережём клиента: одному контакту не чаще раза в
+ * SPB_RETURN_SMS_DAYS (30) дней, только 09:00–21:00 МСК (вечерний визит — SMS утром, если
+ * он к тому времени сам не связался, и не позже 14 ч после визита), не больше 20 за прогон
+ * и SPB_RETURN_SMS_MAX_DAY (100) в сутки. Цена — по ответу SMS.ru /sms/cost перед отправкой.
+ * Выручка SMS: ПЕРВАЯ сделка контакта после SMS — новая (создана в течение 30 дней) или уже
+ * открытая, успешно закрытая в эти 30 дней; её сумма, когда сделка успешна (статус 142).
+ * Следующие покупки этого клиента в SMS не идут. Всё — в stat/sms.json, его читает аналитика
+ * сайта (строка «SMS» в «Каналах трафика»).
+ *
  * Запуск: node tools/spbReturnVisits.js [--live]   cron: каждые 10 минут (тест).
  * ───────────────────────────────────────────────────────────────────────────── */
 "use strict";
@@ -41,6 +53,13 @@ const PER_CONTACT = 24 * 3600e3; // не чаще одной задачи на �
 const SITE = "spb.visa-sc.ru";
 const RESPONSIBLE = Number(process.env.SPB_RETURN_RESPONSIBLE || 1605012); // Ксения Маслова
 const MAX_RUN = 5, MAX_DAY = 30;
+const SMS_OUT = path.join(STAT, "sms.json");
+const SMS_TEXT = String(process.env.SPB_RETURN_SMS_TEXT || "").trim();
+const SMS_ON = process.argv.includes("--live") && process.env.SPB_RETURN_SMS === "1" && !!SMS_TEXT;
+const SMS_EVERY = Number(process.env.SPB_RETURN_SMS_DAYS || 30) * 86400e3;
+const SMS_MAX_RUN = 20, SMS_MAX_DAY = Number(process.env.SPB_RETURN_SMS_MAX_DAY || 100);
+const SMS_ATTR = 30 * 86400e3; // окно, в котором первая сделка после SMS засчитывается SMS
+const mskHour = (ms) => new Date(ms + 3 * 3600e3).getUTCHours();
 
 const readJson = (f, d) => {
   try {
@@ -114,6 +133,18 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
   const qOpenTask = db.prepare("SELECT count(*) n FROM tasks WHERE entity_type = 'contacts' AND entity_id = ? AND is_completed = 0");
   const qOurTask = db.prepare("SELECT count(*) n FROM tasks WHERE entity_type = 'contacts' AND entity_id = ? AND is_completed = 0 AND text LIKE '%на сайт%не позвонил%'");
   const respName = (qUser.get(RESPONSIBLE) || {}).name || "";
+  // Связался ли клиент сам между from и to (мс): заявка, звонок на питерский номер,
+  // входящий звонок или новая сделка в amo. Нужна и для задач, и перед отправкой SMS.
+  const contactedWhy = (contactId, phones, vid, from, to) => {
+    const why = [];
+    if (leads.some((l) => Date.parse(l.at) >= from && Date.parse(l.at) <= to && ((vid && l.vid === vid) || Number((l.amo && l.amo.contactId) || 0) === contactId || phones.includes(digits(((l.data && l.data.fields) || []).map((f) => (f.type === "phone" ? f.value : "")).join(""))))))
+      why.push("оставил заявку на сайте");
+    if (calls.some((x) => Number(x.contactId) === contactId && Date.parse(x.at) >= from && Date.parse(x.at) <= to)) why.push("звонил на питерский номер");
+    const fs_ = Math.floor(from / 1000), ts_ = Math.floor(to / 1000);
+    if (qCallIn.get(contactId, fs_, ts_).n + qCallInLead.get(contactId, fs_, ts_).n) why.push("входящий звонок в amo");
+    if (qNewLead.get(contactId, fs_, ts_).n) why.push("новая сделка в amo");
+    return why;
+  };
 
   const prev = readJson(OUT, { items: [], done: {} });
   const done = prev.done || {};
@@ -135,13 +166,7 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
     const c = found || { id: k.contact, name: "", responsible_user_id: 0, phones: "" };
     const phones = String(c.phones || "").split(/[,;\s]+/).map(digits).filter((x) => x.length === 10);
     const from = s.start - 10 * 60e3, to = s.end + 60 * 60e3;
-    const why = [];
-    if (leads.some((l) => Date.parse(l.at) >= from && Date.parse(l.at) <= to && (l.vid === s.vid || Number((l.amo && l.amo.contactId) || 0) === k.contact || phones.includes(digits(((l.data && l.data.fields) || []).map((f) => (f.type === "phone" ? f.value : "")).join(""))))))
-      why.push("оставил заявку на сайте");
-    if (calls.some((x) => Number(x.contactId) === k.contact && Date.parse(x.at) >= from && Date.parse(x.at) <= to)) why.push("звонил на питерский номер");
-    const fs_ = Math.floor(from / 1000), ts_ = Math.floor(to / 1000);
-    if (qCallIn.get(k.contact, fs_, ts_).n + qCallInLead.get(k.contact, fs_, ts_).n) why.push("входящий звонок в amo");
-    if (qNewLead.get(k.contact, fs_, ts_).n) why.push("новая сделка в amo");
+    const why = contactedWhy(k.contact, phones, s.vid, from, to);
     const recent = lastTaskAt.get(k.contact);
     let decision = "задача";
     if (!found) decision = "контакта нет в CRM (удалён)";
@@ -162,6 +187,78 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
     added++;
     if (decision === "задача") lastTaskAt.set(k.contact, s.end);
   }
+
+  // 3b. SMS тем, кто не связался (см. шапку). Без SPB_RETURN_SMS=1 и текста — только запись.
+  const smsStore = readJson(SMS_OUT, { sends: [] });
+  const sends = smsStore.sends || [];
+  const lastSms = new Map();
+  for (const x of sends) if (x.status === "отправлено") lastSms.set(x.contactId, Math.max(lastSms.get(x.contactId) || 0, x.at));
+  const qPhones = db.prepare("SELECT phones FROM contacts WHERE id = ?");
+  const mobileOf = (contactId) => {
+    const ph = String((qPhones.get(contactId) || {}).phones || "").split(/[,;\s]+/).map(digits).filter((x) => x.length === 10);
+    const m = ph.find((x) => x[0] === "9");
+    return { phones: ph, mobile: m ? "7" + m : "" };
+  };
+  const smsRu = SMS_ON ? require("/var/www/voyo/sms.js") : null;
+  const axiosS = SMS_ON ? require("axios") : null;
+  const sentDay = sends.filter((x) => x.status === "отправлено" && now - x.at < 86400e3).length;
+  let smsRun = 0;
+  const hourNow = mskHour(now), dayTime = hourNow >= 9 && hourNow < 21;
+  for (const it of items) {
+    if (it.sms && it.sms.final) continue;
+    if (!/^задача|^уже /.test(it.decision)) continue;            // связался сам или контакта нет — не пишем
+    if (now - it.end > 14 * 3600e3) { if (!it.sms) it.sms = { status: "не отправлено: визит давно", final: true }; else it.sms.final = true; continue; }
+    const { phones, mobile } = mobileOf(it.contactId);
+    const mark = (status, extra) => { it.sms = Object.assign({ status, at: now }, extra || {}); };
+    if (!mobile) { mark("нет мобильного номера", { final: true }); continue; }
+    const masked = "+7 " + mobile.slice(1, 4) + " ***-**-" + mobile.slice(-2);
+    const prevSms = lastSms.get(it.contactId);
+    if (prevSms && now - prevSms < SMS_EVERY) { mark("уже была SMS за " + Math.round(SMS_EVERY / 86400e3) + " дней", { final: true }); continue; }
+    const why = contactedWhy(it.contactId, phones, it.vid, it.start - 10 * 60e3, now);
+    if (why.length) { mark("не нужна: " + why.join(", "), { final: true }); continue; }
+    if (!SMS_ON) { mark(SMS_TEXT ? "выключено (SPB_RETURN_SMS)" : "нет текста — ушла бы", { phone: masked }); continue; }
+    if (!dayTime) { mark("ждёт 09:00 МСК", { phone: masked }); continue; }
+    if (smsRun >= SMS_MAX_RUN || sentDay + smsRun >= SMS_MAX_DAY) { mark("ждёт: лимит", { phone: masked }); continue; }
+    let cost = null;
+    try {
+      const c = await axiosS.get("https://sms.ru/sms/cost", { params: { api_id: process.env.SMS_RU_API_ID, to: mobile, msg: SMS_TEXT, json: 1 }, timeout: 15000 });
+      cost = c.data && c.data.total_cost != null ? Number(c.data.total_cost) : null;
+    } catch (_) {}
+    const r = await smsRu.sendMessage(mobile, SMS_TEXT);
+    const smsId = r.raw && r.raw.sms && r.raw.sms[mobile] && r.raw.sms[mobile].sms_id;
+    if (r.ok) {
+      smsRun++;
+      lastSms.set(it.contactId, now);
+      mark("отправлено", { phone: masked, smsId, cost, final: true });
+      sends.push({ key: it.key, contactId: it.contactId, contactName: it.contactName, phone: masked, at: now, smsId, cost: cost || 0, text: SMS_TEXT, test: !!r.testMode });
+    } else {
+      mark("ошибка: " + (r.error || r.smsStatus || "SMS.ru"), { phone: masked });
+    }
+  }
+
+  // 3c. выручка после SMS: первая сделка контакта в 30 дней после SMS (новая или закрытая успешно)
+  const qDealsAfter = db.prepare("SELECT l.id, l.name, l.price, l.status_id, l.created_at, l.closed_at FROM leads l JOIN lead_contacts lc ON lc.lead_id = l.id WHERE lc.contact_id = ? AND ((l.created_at BETWEEN ? AND ?) OR (l.status_id = 142 AND l.closed_at BETWEEN ? AND ?))");
+  for (const x of sends) {
+    if (x.dealFinal) continue;
+    const a = Math.floor(x.at / 1000), b = Math.floor((x.at + SMS_ATTR) / 1000);
+    const deals = qDealsAfter.all(x.contactId, a, b, a, b)
+      .map((d) => ({ ...d, evt: d.created_at >= a ? d.created_at : d.closed_at }))
+      .sort((p_, q_) => p_.evt - q_.evt);
+    const d = x.dealId ? deals.find((z) => z.id === x.dealId) || deals[0] : deals[0];
+    if (d) {
+      x.dealId = d.id; x.dealName = d.name || ""; x.convAt = d.evt * 1000;
+      x.won = d.status_id === 142; x.revenue = x.won ? Number(d.price) || 0 : 0;
+      if (d.status_id === 142 || d.status_id === 143) x.dealFinal = true;   // сделка закрыта — итог не меняется
+    } else if (now - x.at > SMS_ATTR) x.dealFinal = true;                    // 30 дней прошло — обращения нет
+  }
+  const smsOut = {
+    builtAt: new Date().toISOString(), enabled: SMS_ON, textSet: !!SMS_TEXT, text: SMS_TEXT,
+    rules: { everyDays: SMS_EVERY / 86400e3, hours: "09–21 МСК", maxDay: SMS_MAX_DAY, attrDays: SMS_ATTR / 86400e3 },
+    sends: sends.filter((x) => now - x.at < 400 * 86400e3)
+  };
+  fs.writeFileSync(SMS_OUT + ".tmp", JSON.stringify(smsOut));
+  fs.renameSync(SMS_OUT + ".tmp", SMS_OUT);
+  try { const st = fs.statSync(STAT); fs.chownSync(SMS_OUT, st.uid, st.gid); } catch (_) {}
 
   // 4. (выключено) постановка задач в amo — только SPB_RETURN_TASKS=1 и --live
   if (LIVE) {
@@ -205,7 +302,7 @@ const mskStr = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 16).repl
     const st = fs.statSync(STAT);
     fs.chownSync(OUT, st.uid, st.gid);
   } catch (_) {}
-  console.log(`${out.builtAt} узнаваемых посетителей ${known.size}, посещений ${sessions.length}, новых случаев ${added}, задач ${keep.filter((x) => x.decision === "задача").length} (${out.mode})`);
+  console.log(`${out.builtAt} SMS: ${SMS_ON ? "вкл" : "выкл"}, за прогон ${smsRun}; узнаваемых посетителей ${known.size}, посещений ${sessions.length}, новых случаев ${added}, задач ${keep.filter((x) => x.decision === "задача").length} (${out.mode})`);
 })().catch((e) => {
   console.log("ошибка:", e.message);
   process.exit(1);
