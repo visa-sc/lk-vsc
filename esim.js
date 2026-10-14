@@ -1389,6 +1389,12 @@ function readSession(req) {
 // Покупка засчитывается один раз на заказ, где бы её ни поймали: на странице
 // «оплачено» или позже на странице с QR. Клиент после СБП часто не возвращается
 // на сайт, поэтому одной точки мало — заказ 739 ₽ от 16.09 так и потерялся.
+function osOfUa(ua) {
+  ua = String(ua || "");
+  if (/iPhone|iPad|iPod/.test(ua)) return "ios";
+  if (/Android/i.test(ua)) return "android";
+  return "";
+}
 function seatOf(mmOrderId) {
   const all = readJson(ORDERS_FILE, []);
   const x = all.find((y) => y.mmOrderId === mmOrderId && y.status === "done" && !y.parentOrderId);
@@ -1557,6 +1563,26 @@ function mount(app, opts) {
     return usage;
   }
 
+  // Манифест «приложения» VOYO mobile: Android предлагает «Установить», иконка на экране
+  // открывает кабинет или страницу eSIM сразу с входом (подписанная ссылка в start_url).
+  // На iPhone иконка открывается отдельно от Safari, без его cookies, поэтому вход в ссылке.
+  app.get("/esim/app.webmanifest", (req, res) => {
+    const start = String(req.query.start || "");
+    const ok = /^\/esim\/(account|my)(\?[A-Za-z0-9=&%._-]{0,300})?$/.test(start);
+    res.set("Content-Type", "application/manifest+json; charset=utf-8");
+    res.set("Cache-Control", "no-store");
+    res.send(JSON.stringify({
+      id: "/esim/app", name: "VOYO mobile", short_name: "VOYO mobile",
+      description: "eSIM для поездок: QR-коды, остаток трафика и продление",
+      start_url: ok ? start : "/esim/account", scope: "/esim", display: "standalone",
+      background_color: "#f5f7fb", theme_color: "#f5f7fb", lang: "ru",
+      icons: [
+        { src: "/favicon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: "/favicon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      ],
+    }));
+  });
+
   // ═══ «Моя eSIM» — страница клиента: остаток, срок, QR, продление ═══
   app.get("/esim/my", (req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -1580,7 +1606,7 @@ function mount(app, opts) {
         if (owner) setSession(res, owner);
         return res.json({
           success: true, pay: tbank.ready(), you: owner || readSession(req),
-          conv: convPayload(orderByProviderId(o)), seat: seatOf(o),
+          conv: convPayload(orderByProviderId(o)), seat: seatOf(o), acc: owner ? { e: owner, t: signEmail(owner) } : null,
           order: { id: o, state: "Completed", title: view.title, operator: view.operator, qrDataUrl: view.qrDataUrl,
             lpa: view.lpa, activationCode: view.activationCode, smdp: view.smdp, apn: view.apn, iccid: view.iccid },
           usage: markExpiry(usage), topups: (usage && usage.expired) ? [] : topups,
@@ -1633,6 +1659,7 @@ function mount(app, opts) {
       if (owner) setSession(res, owner);
       res.json({
         success: true, pay: tbank.ready(), you: owner || readSession(req), seat: seatOf(o),
+        acc: owner ? { e: owner, t: signEmail(owner) } : null,
         order: {
           id: o, state: (order && order.orderState) || null, title: li.title || "", operator: li.providerName || "",
           qrDataUrl: det.QR_CODE || null, lpa: det.LOCAL_PROFILE_ASSISTANT || null,
@@ -1854,6 +1881,14 @@ function mount(app, opts) {
           '<tr><td style="padding:0 12px 10px 0;font-size:14px;color:#3a4356;white-space:nowrap"><b>eSIM ' + (i + 1) + '</b> · ' + seatName(i) + '</td>' +
           '<td style="padding:0 0 10px">' + btn(it.myUrl, "Открыть QR-код") + '</td></tr>').join("") + '</table>'
       : '<p style="margin:0 0 18px">' + btn(items[0].myUrl, "Открыть QR-код и остаток") + '</p>';
+    // VOYO mobile на экране телефона: одна строка под устройство, с которого купили (обе, если не знаем)
+    const homeIos = "iPhone, Safari: три точки внизу справа → «Поделиться» → «На экран „Домой“» → «Добавить»";
+    const homeAnd = "Android, Chrome: три точки справа вверху → «Установить приложение» или «Добавить на гл. экран»";
+    const homeLines = order.os === "ios" ? [homeIos] : order.os === "android" ? [homeAnd] : [homeIos, homeAnd];
+    const homeHtml = '<div style="margin:0 0 18px;padding:14px 16px;background:#f4f6fa;border-radius:14px">' +
+      '<p style="font-size:14.5px;font-weight:700;margin:0 0 4px">VOYO mobile на экране телефона</p>' +
+      '<p style="font-size:13px;line-height:1.55;color:#3a4356;margin:0 0 8px">Откройте <a href="' + acc + '" style="color:#3589bd">личный кабинет</a> на телефоне и добавьте его на экран: QR-коды, остаток трафика и продление будут в одно касание.</p>' +
+      homeLines.map((l) => '<p style="font-size:12.5px;line-height:1.5;color:#6b7385;margin:0 0 3px">' + esc(l) + "</p>").join("") + "</div>";
     const refLink = refCode ? REF_SITE + "/?ref=" + refCode : "";
     const refHtml = refCode
       ? '<div style="margin:6px 0 18px;padding:16px 18px;background:#f2f7fb;border:1px solid #e0e9f2;border-radius:14px">' +
@@ -1877,6 +1912,7 @@ function mount(app, opts) {
         'background:#fdf6e7;border:1px solid #f0e2c0;border-radius:12px">Обратите внимание: ' +
         'Перенести eSIM на другой телефон потом нельзя: ставьте её сразу на тот, с которым поедете. Код срабатывает один раз.</p>' +
         (tipsCN ? chinaTipsHtml() : "") +
+        homeHtml +
         refHtml +
         '<p style="font-size:13px;line-height:1.6;color:#8b93a5;margin:0 0 6px">Ваш личный кабинет со всеми eSIM: <a href="' + acc + '" style="color:#3589bd">открыть</a><br/>' +
         'Ссылка постоянная, сохраните это письмо.</p>' +
@@ -1886,6 +1922,7 @@ function mount(app, opts) {
         (many ? "\n\nКаждая eSIM ставится на свой телефон: eSIM 1 себе, остальные ссылки перешлите спутникам." : "") +
         "\n\nОбратите внимание: Перенести eSIM на другой телефон потом нельзя: ставьте её сразу на тот, с которым поедете. Код срабатывает один раз." +
         (tipsCN ? "\n\n" + CHINA_TIPS_TEXT : "") +
+        "\n\nVOYO mobile на экране телефона: откройте личный кабинет на телефоне и добавьте его на экран.\n" + homeLines.join("\n") +
         (refCode ? "\n\nПутешествуете не один? Ваш промокод для друзей: " + refCode + " (другу −" + REF_BONUS_RUB + " ₽ на первую eSIM, вам +" +
           REF_BONUS_RUB + " ₽ на баланс). Ссылка: " + refLink : "") +
         "\nЛичный кабинет со всеми eSIM: " + acc,
@@ -2181,6 +2218,7 @@ function mount(app, opts) {
         // Домен покупки: ссылка с QR должна вести туда же, иначе счётчик Метрики
         // окажется другим и покупка не свяжется с рекламным визитом (17.09.2026)
         base: baseFor(req),
+        os: tgChatId ? undefined : (osOfUa(req.headers["user-agent"]) || undefined),   // iPhone или Android — для письма
         priceTier: tierRub(69, b.tier) !== 69 ? String(b.tier) : undefined,   // куплено со страницы /67
       });
       saveLocal(orders);
@@ -2320,7 +2358,15 @@ function mount(app, opts) {
     const urls = mine.slice(0, 3).map((x) => x.myUrl);
     while (urls.length < 3) urls.push(urls[0] || REF_SITE);
     const c = getCustomer("komizarenko@gmail.com", true);
-    const order = { email: "komizarenko@gmail.com", label: "Вьетнам · 3 ГБ · 30 дней", base: REF_SITE };
+    const order = { email: "komizarenko@gmail.com", label: "Вьетнам · 3 ГБ · 30 дней", base: REF_SITE,
+      os: ["ios", "android"].indexOf(String(req.query.os || "")) >= 0 ? String(req.query.os) : undefined };
+    // ?view=1 — показать письмо в браузере, ничего не отправляя (проверять вёрстку самим)
+    if (String(req.query.view || "") === "1") {
+      const n = Math.min(3, Math.max(1, parseInt(req.query.n, 10) || 1));
+      res.set("Content-Type", "text/html; charset=utf-8");
+      return res.send('<meta name="viewport" content="width=device-width,initial-scale=1"/><body style="margin:0;padding:24px 16px;background:#fff">' +
+        readyLetter(order, urls.slice(0, n).map((u) => ({ myUrl: u })), c.refCode).html + "</body>");
+    }
     const sent = [];
     for (const n of [1, 3]) {
       const L = readyLetter(order, urls.slice(0, n).map((u) => ({ myUrl: u })), c.refCode);
@@ -3703,7 +3749,7 @@ function mount(app, opts) {
     extra.forEach((e) => { list = list.concat(esimsOf(e)); });
     list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
     res.json({
-      success: true, email, esims: list, lk: !!lk,
+      success: true, email, t: signEmail(email), esims: list, lk: !!lk,
       balanceRub: c.balanceRub || 0,
       refCode: c.refCode,
       refLink: BASE_URL + "/esim?ref=" + c.refCode,

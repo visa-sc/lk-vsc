@@ -186,6 +186,9 @@
     <details><summary>Что если что-то не заработает?</summary><div class="a">Мы на связи: поможем с настройкой в чате или по телефону. Если пакет не активировался по нашей вине — вернём деньги.</div></details>
   </div>
 
+  <!-- VOYO mobile на экране телефона: свёрнуто, шаги под устройство (esim-a2hs.js) -->
+  <div id="a2hsHost"></div>
+
   <div class="lkhelp">
     <h3>Нужна помощь?</h3>
     <div class="ha">
@@ -204,6 +207,7 @@
   <div class="foot">VOYO mobile · сервис компании VOYO<br/>Ссылка постоянная — сохраните письмо, чтобы вернуться сюда.</div>
 </div>
 
+<script src="/esim-a2hs.js"></script>
 <script>
 (function(){
   "use strict";
@@ -255,7 +259,17 @@
       el("refStat").textContent = j.invitedCount
         ? ("По вашей ссылке купили: " + j.invitedCount)
         : ("Ваш код: " + (j.refCode || ""));
-      if(E || T){ try{ history.replaceState(null,"",keepEmbed("/esim/account")); }catch(e){} }
+      // В адресе держим постоянную ссылку входа: иконка «на экране» на iPhone открывается
+      // без cookies Safari, и без подписи в адресе человек попал бы на форму почты
+      var signed = j.t ? "/esim/account?e=" + encodeURIComponent(j.email) + "&t=" + encodeURIComponent(j.t) : "/esim/account";
+      if(EMBED){ if(E || T){ try{ history.replaceState(null,"",keepEmbed("/esim/account")); }catch(e){} } }
+      else { try{ history.replaceState(null,"",signed); }catch(e){} }
+      var A2 = window.voyoA2hs;
+      if(A2 && !EMBED && (j.esims||[]).length){
+        A2.setManifest(signed);
+        A2.block(el("a2hsHost"));
+        setTimeout(function(){ A2.popup(); }, 900);
+      }
       var host = el("list");
       if(!(j.esims||[]).length){
         host.innerHTML = '<div class="empty">Здесь появятся ваши eSIM после первой покупки.</div>';
