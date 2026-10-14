@@ -2410,6 +2410,39 @@ function mount(app, opts) {
     res.json({ success: true, sent });
   });
 
+  // Все клиентские письма на одной странице, ничего не отправляя: ?adm=КОД[&b=vsc] (аудит вёрстки, 14.10.2026).
+  // Каждое письмо — в рамке шириной телефона и компьютера, бренд VSC — тем же brandMail, что при отправке.
+  app.get("/esim/api/adm/letters", async (req, res) => {
+    if (String(req.query.adm || "") !== ADMIN_CODE) return res.status(403).send("Нет доступа.");
+    const vsc = req.query.b === "vsc";
+    const mine = readJson(ORDERS_FILE, []).filter((x) => x.status === "done" && x.myUrl && normEmail(x.email) === "komizarenko@gmail.com");
+    const url = (mine[0] && mine[0].myUrl) || REF_SITE;
+    const c = getCustomer("komizarenko@gmail.com", true);
+    const order = { email: "komizarenko@gmail.com", label: "Турция · 3 ГБ · 30 дней", base: REF_SITE, os: "ios", priceRub: 459, id: "preview" };
+    const item = { esimId: "preview", email: "komizarenko@gmail.com", label: "Турция · 3 ГБ · 30 дней", myUrl: url, productId: "" };
+    const list = [
+      ["Письмо с QR, одна eSIM", readyLetter(order, [{ myUrl: url }], c.refCode)],
+      ["Письмо с QR, три eSIM (Android)", readyLetter(Object.assign({}, order, { os: "android" }), [url, url, url].map((u) => ({ myUrl: u })), c.refCode)],
+      ["eSIM в сети, а интернета нет", noNetLetter(item, item.label)],
+      ["Интернет почти закончился (можно докупить)", notifyLetter({ kind: "lowData", item, left: "0,3 ГБ", total: "3 ГБ", canTopup: true })],
+      ["Интернет почти закончился (без продления)", notifyLetter({ kind: "lowData", item, left: "0,3 ГБ", total: "3 ГБ", canTopup: false })],
+      ["Пакет заканчивается через 2 дня", notifyLetter({ kind: "expiry", item, days: 2, canTopup: true })],
+      ["Пакет заканчивается сегодня (без продления)", notifyLetter({ kind: "expiry", item, days: 0, canTopup: false })],
+      ["Брошенная оплата", abandonLetter(order, "abandoned")],
+      ["Банк не пропустил оплату", abandonLetter(order, "declined")],
+      ["Приглашение друзей", refInviteLetter(Object.assign({}, c, { email: "komizarenko@gmail.com" }))],
+    ];
+    const brand = (L) => (vsc ? { subject: vscText(L.subject), html: vscText(L.html) } : L);
+    const frame = (html, w) => '<iframe style="width:' + w + 'px;height:760px;border:1px solid #e6eaf2;border-radius:14px;background:#fff;flex:none" srcdoc="' +
+      String('<meta name="viewport" content="width=device-width,initial-scale=1"/><body style="margin:0;padding:20px 14px;background:#fff">' + html + "</body>").replace(/&/g, "&amp;").replace(/"/g, "&quot;") + '"></iframe>';
+    res.set("Content-Type", "text/html; charset=utf-8");
+    res.send('<meta name="viewport" content="width=device-width,initial-scale=1"/><body style="font-family:-apple-system,sans-serif;background:#f5f7fb;margin:0;padding:24px">' +
+      "<h2>Письма клиентам — " + (vsc ? "VSC mobile" : "VOYO mobile") + "</h2>" +
+      list.map(([name, L0]) => { const L = brand(L0); return '<section data-letter="' + esc(name) + '" style="margin:0 0 34px"><h3 style="margin:0 0 4px">' + esc(name) + '</h3>' +
+        '<div style="color:#6b7385;font-size:13px;margin:0 0 10px">Тема: <b>' + esc(L.subject) + "</b></div>" +
+        '<div style="display:flex;gap:16px;overflow-x:auto">' + frame(L.html, 375) + frame(L.html, 680) + "</div></section>"; }).join("") + "</body>");
+  });
+
   // Вебхук банка. Отвечаем строкой OK — иначе Т-Банк будет повторять.
   app.post("/esim/api/pay/notify", async (req, res) => {
     const b = req.body || {};
@@ -4077,7 +4110,8 @@ function mount(app, opts) {
         '<ol style="font-size:14.5px;line-height:1.6;margin:0 0 14px;padding-left:20px">' + NO_NET_STEPS.map((s) => "<li>" + esc(s) + "</li>").join("") + '</ol>' +
         '<p style="font-size:13.5px;line-height:1.6;color:#3a4356;margin:0 0 14px">Интернет уже работает: просто не обращайте внимания. Не помогло: напишите в чат на странице eSIM, поможем.</p>' +
         '<p style="margin:0 0 16px"><a href="' + item.myUrl + '" style="display:inline-block;background:#3589bd;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:12px 20px;border-radius:12px">Открыть мою eSIM</a></p>' +
-        '<p style="font-size:13px;color:#8b93a5;margin:0">Все ваши eSIM: <a href="' + acc + '" style="color:#3589bd">личный кабинет</a></p></div>',
+        '<p style="font-size:13px;color:#8b93a5;margin:0">Все ваши eSIM: <a href="' + acc + '" style="color:#3589bd">личный кабинет</a></p>' +
+        '<p style="font-size:12px;color:#a6adbd;margin:16px 0 0">VOYO mobile · интернет в поездке</p></div>',
       text: "eSIM в сети, а интернета нет? " + label + "\n\nВаша eSIM подключилась к сети, но интернет через неё пока не шёл. Обычно дело в одной настройке:\n" +
         NO_NET_STEPS.map((s, i) => (i + 1) + ". " + s).join("\n") +
         "\n\nИнтернет уже работает: просто не обращайте внимания. Не помогло: напишите в чат на странице eSIM, поможем.\nМоя eSIM: " + item.myUrl,
