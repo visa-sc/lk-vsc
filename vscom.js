@@ -11,7 +11,9 @@
 //      и единственный канал доставки.
 //   2) Локальный журнал .vscomLeads.json рядом с server.js — последние 2000
 //      заявок, страховка на случай проблем с почтой.
-//   3) amoCRM — ВЫКЛЮЧЕНА (решение Андрея 27.08.2026). Включается VSCOM_AMO=1:
+//   3) amoCRM — для ВНЖ из рекламы Meta (spain-fb*) ВКЛЮЧЕНА с 14.10.2026, формат
+//      питерского сайта, тег Facebook/Instagram (VSCOM_META_AMO=0 — выключить).
+//      Для остальных форм ВЫКЛЮЧЕНА (решение Андрея 27.08.2026). Включается VSCOM_AMO=1:
 //      тогда создаётся контакт + сделка «Отдел продаж» → «Ещё не связывались»
 //      с тегом VSCOM_AMO_TAG и примечанием со всеми полями формы.
 //
@@ -167,6 +169,80 @@ function leadRows(lead) {
   if (utmKeys.length) rows.push(["UTM", utmKeys.map((k) => `${k}=${lead.utm[k]}`).join(", ")]);
   rows.push(["Received", lead.at]);
   return rows;
+}
+
+// ── ВНЖ из рекламы Meta → amoCRM в питерском формате (14.10.2026) ─────────────
+// Решение Андрея: заявки со spain.visa-sc.com/fb заводим сразу, как сайт Питера
+// (tools/spbAmoPush.js): Отдел Продаж → Ещё не связывались, ответственный
+// Visa Services Center, те же поля сделки; тег — Facebook или Instagram (по
+// тому, откуда пришёл человек). Остальные формы visa-sc.com по-прежнему только
+// письмом (VSCOM_AMO). Выключатель: VSCOM_META_AMO=0.
+const META_AMO_ENABLED = process.env.VSCOM_META_AMO !== "0";
+const MA = {
+  pipeline: 138231, status: 10687611, responsible: 787932,
+  f: { page: 479442, url: 568514, form: 479444, created: 571230, ip: 460012,
+    utm_source: 447606, utm_medium: 447608, utm_campaign: 447610, utm_term: 447612, utm_content: 545395 },
+  selects: [[572046, 1091296], [571454, 1091282], [572064, 1091330]],   // Не Wazzup, Не звонок, Новое обращение
+  contactSource: [571754, 1090890]                                        // «Источник» контакта = Основной
+};
+function isMetaVnj(lead) {
+  return /^spain-fb/.test(lead.form || "");
+}
+function metaNetwork(lead) {
+  const u = lead.utm || {};
+  if (/instagram/i.test(lead.referrer || "") || /^(instagram|ig)$/i.test(u.utm_source || "") ||
+      /^ig$/i.test(u.site_source_name || "")) return "Instagram";
+  return "Facebook";
+}
+async function pushMetaVnjToAmo(lead, deps) {
+  const { amoPost, findMatchingContacts, amoBaseUrl } = deps;
+  const baseUrl = amoBaseUrl();
+  const net = metaNetwork(lead);
+  const txt = (id, v) => (v ? { field_id: id, values: [{ value: String(v).slice(0, 250) }] } : null);
+  const u = lead.utm || {};
+
+  let contactId = null;
+  try {
+    const existing = await findMatchingContacts(baseUrl, lead.phoneDigits);
+    if (existing && existing.length) contactId = existing[0].id;
+  } catch (e) {
+    console.error("VSCOM meta amo find contact:", e.message);
+  }
+  if (!contactId) {
+    const cf = [{ field_code: "PHONE", values: [{ value: lead.phoneDisplay, enum_code: "WORK" }] },
+      { field_id: MA.contactSource[0], values: [{ enum_id: MA.contactSource[1] }] }];
+    if (lead.email) cf.push({ field_code: "EMAIL", values: [{ value: lead.email, enum_code: "WORK" }] });
+    const c = await amoPost(`${baseUrl}/api/v4/contacts`, [{ name: lead.name || "Клиент", custom_fields_values: cf }]);
+    contactId = c?._embedded?.contacts?.[0]?.id;
+    if (!contactId) throw new Error("не удалось создать контакт");
+  }
+
+  const fields = [
+    txt(MA.f.page, "ВНЖ Испании: все преимущества жизни в Европе"),
+    txt(MA.f.url, (lead.page || "https://spain.visa-sc.com/fb").split("?")[0]),
+    txt(MA.f.form, "ВНЖ Испании (" + net + ")"),
+    { field_id: MA.f.created, values: [{ value: Math.floor(Date.parse(lead.at) / 1000) }] },
+    txt(MA.f.ip, lead.ip),
+    txt(MA.f.utm_source, u.utm_source), txt(MA.f.utm_medium, u.utm_medium),
+    txt(MA.f.utm_campaign, u.utm_campaign), txt(MA.f.utm_term, u.utm_term), txt(MA.f.utm_content, u.utm_content)
+  ].concat(MA.selects.map(([id, e]) => ({ field_id: id, values: [{ enum_id: e }] }))).filter(Boolean);
+
+  const lr = await amoPost(`${baseUrl}/api/v4/leads`, [{
+    name: "Заявка на ВНЖ Испании (" + net + ")",
+    pipeline_id: MA.pipeline, status_id: MA.status, responsible_user_id: MA.responsible,
+    custom_fields_values: fields,
+    _embedded: { contacts: [{ id: contactId }], tags: [{ name: net }] }
+  }]);
+  const leadId = lr?._embedded?.leads?.[0]?.id;
+  if (!leadId) throw new Error("не удалось создать сделку");
+  try {
+    await amoPost(`${baseUrl}/api/v4/leads/${leadId}/notes`, [{ note_type: "common", params: {
+      text: "Заявка с рекламы " + net + " — spain.visa-sc.com/fb (ВНЖ Испании).\n" +
+        leadRows(lead).map(([k, v]) => `${k}: ${v}`).join("\n") } }]);
+  } catch (e) {
+    console.error("VSCOM meta amo note:", e.message);
+  }
+  return { contactId, leadId };
 }
 
 // ── amoCRM: контакт (без дублей) + сделка + закреплённое примечание ──────────
@@ -350,7 +426,14 @@ function mount(app, deps) {
 
     // 2) amoCRM
     let amo = null;
-    if (AMO_ENABLED) {
+    if (META_AMO_ENABLED && isMetaVnj(lead)) {
+      try {
+        amo = await pushMetaVnjToAmo(lead, deps);
+        console.log(`VSCOM meta lead → amo: contact=${amo.contactId} lead=${amo.leadId} phone=${lead.phoneDisplay}`);
+      } catch (e) {
+        console.error("VSCOM meta lead → amo FAILED:", e.response?.data || e.message);
+      }
+    } else if (AMO_ENABLED) {
       try {
         amo = await pushToAmo(lead, deps);
         console.log(`VSCOM lead → amo: contact=${amo.contactId} lead=${amo.leadId} phone=${lead.phoneDisplay}`);
